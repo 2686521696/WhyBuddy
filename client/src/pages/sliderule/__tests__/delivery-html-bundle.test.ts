@@ -26,7 +26,7 @@ import {
  * JSON.parse 当场炸。数据是**单独一行**，按行取才稳——这条是写这组测试时
  * 当场踩的，记在这儿免得下一个人再踩。
  */
-function payloadOf(html: string): { title: string; at: string; notes: string;
+function payloadOf(html: string): { title: string; at: string; notes: string; tw: string;
                                     pages: Array<{ id: string; name: string; b64: string }> } {
   const line = html.split("\n").find(l => l.trim().startsWith("var D = "))!;
   const json = line.trim().slice("var D = ".length).replace(/;$/, "");
@@ -126,12 +126,38 @@ describe("沙箱口径跟产品里一致", () => {
     expect(decoded).toContain("form-action 'none'");
   });
 
-  it("CSP 插在第一个 script 之前", () => {
+  it("CSP 紧跟 <head> 开标签 —— meta 形式只对其后解析的内容生效", () => {
     const html = serializeSlideRuleDeliveryHtml(PAGES, {});
     const decoded = decode(payloadOf(html).pages[0].b64);
-    expect(decoded.indexOf("Content-Security-Policy")).toBeLessThan(
-      decoded.indexOf("cdn.tailwindcss.com")
-    );
+    expect(decoded).toMatch(/<head[^>]*><meta http-equiv="Content-Security-Policy"/);
+  });
+
+  it("外网 Tailwind 的引用被摘掉 —— 包里 CSP 不放行外域", () => {
+    /**
+     * ⚠ 交付包是拿去**离线**看的。留着外链只会在控制台刷一条被拦的错，
+     * 而样式一条都没有。样式改由打包时内联的那份提供（tailwindJs）。
+     */
+    const decoded = decode(payloadOf(serializeSlideRuleDeliveryHtml(PAGES, {})).pages[0].b64);
+    expect(decoded).not.toContain("cdn.tailwindcss.com");
+  });
+
+  it("script-src 不放行任何外域", () => {
+    // ⚠ CSP 在 base64 里，不在包的裸文本里 —— 判据要取对层，
+    //   在外层搜是搜不到的（会永远绿，等于没这条判据）。
+    const decoded = decode(payloadOf(serializeSlideRuleDeliveryHtml(PAGES, {})).pages[0].b64);
+    expect(decoded).toContain("script-src 'unsafe-inline'");
+    expect(decoded).not.toMatch(/script-src[^;]*https/);
+  });
+
+  it("传了 tailwindJs 就内联进包 —— 离线也有样式", () => {
+    const html = serializeSlideRuleDeliveryHtml(PAGES, { tailwindJs: "/*TW*/window.tailwind={}" });
+    const D = payloadOf(html);
+    expect(D.tw).toBeTruthy();
+    expect(decode(D.tw)).toContain("/*TW*/");
+  });
+
+  it("没传就如实不内联 —— 包照出，只是没样式，不是整个失败", () => {
+    expect(payloadOf(serializeSlideRuleDeliveryHtml(PAGES, {})).tw).toBe("");
   });
 });
 

@@ -48,6 +48,7 @@ spec 的页面清单重排**，而不是照抄被选中那页的菜单。理由�
 from __future__ import annotations
 
 import re
+from html import escape
 from typing import Any, Dict, List, Optional, Tuple
 
 PAGE_SHELL_VERSION = "page-shell-v1"
@@ -146,6 +147,13 @@ def build_nav_items(
             templates["active_class"] if is_current else templates["base_class"],
         )
         link = _set_label(link, icons[i % len(icons)], name)
+        # ⚠ 导航项必须带页面 id（2026-08-14）。宿主要把点击映射回"切到哪一页"，
+        #   而**靠标签文字匹配是不行的**：名字可以重复、可以带图标字符、可以被
+        #   模型改写成另一种说法。这条跟 data-* 绑定孔是同一条纪律——
+        #   界面上的东西要能指回声明，就得有 id，不能靠人眼看得懂的那串字。
+        page_id = str(page.get("id") or "").strip()
+        if page_id:
+            link = link.replace("<a", f'<a data-page-id="{escape(page_id, quote=True)}"', 1)
         if is_current:
             link = link.replace("<a", '<a aria-current="page"', 1)
         out.append(link)
@@ -261,7 +269,12 @@ def unify_shell(
         "version": PAGE_SHELL_VERSION,
         "sourcePageId": source_id,
         "navAnchored": bool(templates),
-        "navItems": [str(p.get("name") or p.get("id")) for p in spec_pages],
+        # ⚠ 带 id，不只是名字。宿主要照它渲染左侧菜单并切页——只有名字的话
+        #   又回到"靠文字认页面"。老口径（纯字符串数组）在 08-14 换掉。
+        "navItems": [
+            {"id": str(p.get("id") or ""), "name": str(p.get("name") or p.get("id") or "")}
+            for p in spec_pages
+        ],
         "appName": app_name or old_brand,
         "personaRole": role or old_role,
         "pages": out,

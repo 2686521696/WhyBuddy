@@ -26,20 +26,30 @@
  *
  * ## 里面照样是沙箱
  *
- * 交付包在**别人的机器上**打开，内容仍然是模型生成的。所以每页还是走
- * `sandbox="allow-scripts"`（不给 allow-same-origin）+ 框内 CSP，判据与理由
- * 跟 sandboxed-page-frame.tsx 一致——那边是产品内，这边是离线包，
- * **威胁模型一样，所以口径也一样**。
+ * 交付包在**别人的机器上**打开，内容仍然是模型生成的。所以每页走
+ * `sandbox="allow-scripts"`（不给 allow-same-origin）+ 框内 CSP。
+ *
+ * ⚠ 这跟产品内那条（html-app-surface.tsx，**同源**框）是有意分开的两种口径，
+ * 因为要求不同：
+ *
+ *     产品内   要填数/点击/游标/切页 ⇒ 宿主必须够得到 contentDocument
+ *              ⇒ 同源框 + DOMPurify 摘掉所有脚本（边界在消毒器）
+ *     交付包   只读、离线、没有宿主 ⇒ 不需要够得到里面
+ *              ⇒ 沙箱不透明源（边界在 sandbox + CSP），页面脚本原样保留
+ *
+ * 交付包保留页面脚本是**故意的**：它要跟当初跑出来的样子一致，而且没有父页面
+ * 可危害。产品内则相反——那里有父页面，所以脚本一律摘掉。
  */
 
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 
 export const DELIVERY_HTML_VERSION = "sliderule-delivery-html-v1";
 
-/** 与 sandboxed-page-frame.tsx 同一份口径。改这里就要同时改那里（有判据钉着）。 */
+/** 交付包专用的框内 CSP。产品内那条走的是同源框，不用这个（见上）。 */
 const FRAME_CSP = [
   "default-src 'none'",
-  "script-src 'unsafe-inline' https://cdn.tailwindcss.com",
+  // 脚本全部内联（Tailwind 由打包时嵌进来），**不放行任何外域**
+  "script-src 'unsafe-inline'",
   "style-src 'unsafe-inline' https:",
   "img-src data: https: blob:",
   "font-src data: https:",
@@ -71,9 +81,18 @@ function escapeText(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-/** 把 CSP 插到 `<head>` 开标签紧后 —— meta 形式只对其后解析的内容生效。 */
+/**
+ * 给一页套上 CSP，并把它对外网 Tailwind 的引用**摘掉**。
+ *
+ * ⚠ CSP 要插在 `<head>` 开标签紧后 —— meta 形式只对其后解析的内容生效。
+ * ⚠ 外链的 `<script src="…cdn.tailwindcss.com">` 必须删：包里 CSP 不放行外域，
+ *   留着只会在控制台刷一条被拦的错。样式由运行时注入的内联那份提供。
+ */
 function withCsp(raw: string): string {
-  const html = raw || "";
+  const html = (raw || "").replace(
+    /<script\b[^>]*\bsrc\s*=\s*["'][^"']*cdn\.tailwindcss\.com[^"']*["'][^>]*>\s*<\/script>/gi,
+    ""
+  );
   const meta = `<meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}">`;
   const m = html.match(/<head[^>]*>/i);
   if (m && m.index !== undefined) {
@@ -81,7 +100,7 @@ function withCsp(raw: string): string {
     return html.slice(0, at) + meta + html.slice(at);
   }
   return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">${meta}`
-    + `<script src="https://cdn.tailwindcss.com"></script></head><body>${html}</body></html>`;
+    + `</head><body>${html}</body></html>`;
 }
 
 export interface DeliveryPage {
@@ -96,6 +115,17 @@ export interface SerializeDeliveryHtmlOpts {
   /** 推演说明（现有的 .md 交付内容）——并进来当"推演说明"那一页 */
   notesMd?: string | null;
   generatedAt?: string;
+  /**
+   * Tailwind Play CDN 的脚本正文，内联进包里。
+   *
+   * ⚠ 不传的话包里那些页面**一条 CSS 都没有**——它们的全部样式都靠这个脚本，
+   * 而交付包是拿去离线看的，不能指望打开它的那台机器连得上
+   * cdn.tailwindcss.com（国内经常连不上，这个仓的容器就一直连不上）。
+   *
+   * 代价是包大约多 400KB。**自包含这件事本身值这个钱**——一个点开没有样式的
+   * 交付包等于没交付，而"看着交付成功了"比没交付更糟。
+   */
+  tailwindJs?: string | null;
 }
 
 /**
@@ -119,10 +149,12 @@ export function serializeSlideRuleDeliveryHtml(
     b64: toBase64Utf8(withCsp(p.html)),
   }));
   const notes = opts.notesMd ? toBase64Utf8(opts.notesMd) : "";
+  // 内联那份 Tailwind：包里每个 iframe 都从它取，不走外网
+  const tw = opts.tailwindJs ? toBase64Utf8(opts.tailwindJs) : "";
 
   // ⚠ 数据走 JSON.stringify 之后再把 `<` 转义掉：JSON 里出现 `</script>`
   //   同样会提前终结宿主脚本（页面 id 理论上可以是任意字符串）。
-  const data = JSON.stringify({ title, at, pages: payload, notes })
+  const data = JSON.stringify({ title, at, pages: payload, notes, tw })
     .replace(/</g, "\\u003c");
 
   return `<!DOCTYPE html>
@@ -194,7 +226,13 @@ pre.notes{margin:0;padding:20px 24px;white-space:pre-wrap;word-break:break-word;
       var f = document.createElement("iframe");
       f.setAttribute("sandbox", "allow-scripts");
       f.setAttribute("referrerpolicy", "no-referrer");
-      f.srcdoc = decode(it.b64);
+      var page = decode(it.b64);
+      if (D.tw) {
+        // 内联 Tailwind：包是拿去离线看的，不能指望打开它的机器连得上外网
+        var s = "<" + "script>" + decode(D.tw) + "<" + "/script>";
+        page = page.replace(/<\/head>/i, s + "</head>");
+      }
+      f.srcdoc = page;
       stage.appendChild(f);
     }
     bar.textContent = it.notes ? "推演说明" : (it.name + "　·　" + D.pages.length + " 页　·　生成于 " + D.at);
@@ -232,13 +270,31 @@ export function deliveryPagesFromState(state: V5SessionState): DeliveryPage[] {
   });
 }
 
-export function downloadSlideRuleDeliveryHtml(
+/**
+ * 取内联用的 Tailwind 正文。取不到就**如实不内联**——包还是能下载，
+ * 只是那些页面没样式；比整个交付失败强，也比假装成功强（角标会看得出来）。
+ */
+async function fetchTailwind(): Promise<string | null> {
+  try {
+    const res = await fetch("/vendor/tailwind-play-3.js");
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
+}
+
+export async function downloadSlideRuleDeliveryHtml(
   state: V5SessionState,
   opts: SerializeDeliveryHtmlOpts = {},
   filename?: string
-): boolean {
+): Promise<boolean> {
   const pages = deliveryPagesFromState(state);
-  const html = serializeSlideRuleDeliveryHtml(pages, opts);
+  if (pages.length === 0) return false; // 先判空，别为一个不会产出的包去拉 400KB
+  const html = serializeSlideRuleDeliveryHtml(pages, {
+    ...opts,
+    tailwindJs: opts.tailwindJs ?? (await fetchTailwind()),
+  });
   if (!html) return false; // 没有页面就如实不交付，由调用方回落 .md
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
   const url = URL.createObjectURL(blob);

@@ -7,9 +7,9 @@
  *   ② 换页时框里还留着上一页（React 复用同一个 iframe）
  *   ③ 手动选了一页，被新到达的页面挤走（存下标而不是 pageId）
  *
- * ⚠ 渲染走沙箱 iframe（srcdoc + sandbox，不透明源），外面伸不进去。
- * 那是**故意的**——所以判据落在"挂了几个框、挂的是哪一页、srcdoc 里有什么"，
- * 不落在框内渲染出来的 DOM 上。
+ * ⚠ 渲染走**同源** iframe（要 contentDocument 才能填数/点击/游标/切页；
+ * 08-14 一度做成沙箱，把这四件事全挡死了）。jsdom 不跑 srcdoc，所以判据
+ * 落在"挂了几个框、挂的是哪一页"，不落在框内渲染出来的 DOM 上。
  *
  * 仓库里没有 @testing-library/react（freeform-actionref 那条注释是明说的），
  * 所以照它的做法拿 createRoot + act 搭挂载器，不引新依赖。
@@ -59,7 +59,7 @@ function update(pages: SpecPageLive[]): void {
 const tab = (id: string) =>
   host!.querySelector<HTMLButtonElement>(`[data-testid="sliderule-spec-page-tab-${id}"]`)!;
 const frames = () =>
-  host!.querySelectorAll<HTMLIFrameElement>('[data-testid="sandboxed-page-frame"]');
+  host!.querySelectorAll<HTMLIFrameElement>('[data-testid="html-app-surface"]');
 const stageText = () =>
   host!.querySelector('[data-testid="sliderule-spec-page-stage"]')!.textContent || "";
 

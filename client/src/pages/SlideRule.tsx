@@ -2126,14 +2126,15 @@ function SlideRuleSessionBody({
         // ⚠ **没有页面时如实回落 .md**，不产出一个空壳包。老链路今天还在跑
         //   （spec-first 挂了会显式回落），那一轮本来就没有 HTML 可交——
         //   交一个点开什么都没有的文件，比不交更糟：它看着像交付成功了。
-        if (
-          !downloadSlideRuleDeliveryHtml(sessionState, {
-            appTitle: goal ? goal.slice(0, 40) : undefined,
-            notesMd: serializeSlideRuleDeliveryMd(sessionState),
-          })
-        ) {
-          downloadSlideRuleDeliveryMd(sessionState);
-        }
+        // ⚠ 不 await：这个处理器不是 async，而且导出本来就该是"点了就走"。
+        //   拉本地那份 Tailwind（400KB、同源）失败时 downloadSlideRuleDeliveryHtml
+        //   自己会 fail-open（包照出，只是没样式），拿不到页面才回落 .md。
+        void downloadSlideRuleDeliveryHtml(sessionState, {
+          appTitle: goal ? goal.slice(0, 40) : undefined,
+          notesMd: serializeSlideRuleDeliveryMd(sessionState),
+        }).then(ok => {
+          if (!ok) downloadSlideRuleDeliveryMd(sessionState);
+        });
       }
     },
     [

@@ -215,7 +215,28 @@ class Test产出形状:
         assert out["version"] == "page-shell-v1"
         assert out["sourcePageId"] in PAGES
         assert out["navAnchored"] is True
-        assert out["navItems"] == ["工单工作台首页", "工单详情页", "新建报修页"]
+        # ⚠ 08-14 起 navItems 带 id：宿主要照它渲染左侧菜单并**切页**，
+        #   只有名字的话又回到"靠文字认页面"（名字可以重复、可以被改写）。
+        assert out["navItems"] == [
+            {"id": "p1", "name": "工单工作台首页"},
+            {"id": "p2", "name": "工单详情页"},
+            {"id": "p3", "name": "新建报修页"},
+        ]
+
+    def test_导航项带_data_page_id(self):
+        """点击要能映射回页面 id —— 这是"左侧菜单可切换"的地基。
+
+        ⚠ 不许退回按标签文字匹配：名字可以重复、可以带图标字符、可以被模型
+        改写成另一种说法。这跟 data-* 绑定孔是同一条纪律。
+        """
+        out = unify_shell(PAGES, SPEC)
+        for pid in ("p1", "p2", "p3"):
+            assert f'data-page-id="{pid}"' in out["pages"]["p1"], f"导航里没有 {pid}"
+
+    def test_当前页仍然标出来(self):
+        out = unify_shell(PAGES, SPEC)
+        # aria-current 与 data-page-id 并存，不能因为加了后者把前者挤掉
+        assert 'aria-current="page"' in out["pages"]["p1"]
 
     def test_零_LLM_调用(self):
         """整条路径是确定性的。这条用例存在的意义是：哪天有人想"让模型

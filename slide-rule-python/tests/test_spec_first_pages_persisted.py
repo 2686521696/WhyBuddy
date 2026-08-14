@@ -221,3 +221,45 @@ class Test页面跟着版本一起回退:
         # ⚠ `or None` 是关键：目标版本没有页面时要**置空**，
         #   保留当前的等于拿另一版的页面冒充这一版的
         assert "or None" in block
+
+
+class Test循环的进展判据:
+    """「执行闭环不了，都执行 9 轮了」——2026-08-14 真机。
+
+    查下来闭环**是成的**（blocked=False、证据 6/6），卡住的是覆盖门里一条
+    `gap-evidence-turn-1`：外部证据缺口，`capabilityId=None`，**没有任何能力
+    负责解它**。而每轮 evidence.search 都产出新产物，于是"产物变多"这个
+    进展信号恒为真、计数器每轮清零，"没进展就停"那道兜底一次都没触发过。
+
+    判据查的是"有没有在干活"，不是"有没有在向门前进"。
+    """
+
+    def test_产物变多不再算进展(self):
+        import inspect
+
+        from services import v5_full_driver as drv
+
+        src = inspect.getsource(drv.drive_full_v5_session_stream)
+        block = src[src.index("# progress tracking"):]
+        block = block[: block.index("if no_progress_streak >= 2")]
+        assert "if now_res > prev_resolved:" in block, "进展判据没收严"
+        assert "now_art > prev_art_count" not in block, (
+            "产物数还在当进展信号——外部证据缺口那种解不掉的场景会一直跑到 max_loops"
+        )
+
+    def test_缺口有新解决仍然算进展(self):
+        """收严不能收成"永远不重置"——那样正常推进的轮次也会被两轮判死。"""
+        import inspect
+
+        from services import v5_full_driver as drv
+
+        src = inspect.getsource(drv.drive_full_v5_session_stream)
+        assert "no_progress_streak = 0" in src
+
+    def test_兜底仍然是两轮(self):
+        import inspect
+
+        from services import v5_full_driver as drv
+
+        src = inspect.getsource(drv.drive_full_v5_session_stream)
+        assert "no_progress_streak >= 2" in src

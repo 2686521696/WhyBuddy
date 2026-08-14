@@ -1906,9 +1906,28 @@ async def drive_full_v5_session_stream(
                     await asyncio.to_thread(persist_state, state)
 
             # progress tracking
+            #
+            # ⚠ 2026-08-14：**产物变多不再算进展**，只有"缺口有新解决"才算。
+            #
+            # 真机现象：一轮跑到 max_loops 还不收口，用户报「执行闭环不了，
+            # 都执行 9 轮了」。查下来闭环其实是成的（blocked=False、证据 6/6），
+            # 卡住的是覆盖门里一条 `gap-evidence-turn-1`——外部证据缺口，
+            # `capabilityId=None`，**没有任何能力负责解它**。
+            #
+            # 而每轮 evidence.search 都会产出一条新产物，于是 `now_art >
+            # prev_art_count` 恒成立、计数器每轮清零，"没进展就停"这道兜底
+            # 一次都没机会触发。
+            #
+            # 判据查的是"有没有在干活"，不是"有没有在向门前进"——**产出产物
+            # 本身不是进展**，解开缺口才是。这跟本仓数了十次的那个形状是同一个：
+            # 只查"产出的对不对"，不查"该有的在不在"。
+            #
+            # ⚠ 收严的代价是可能比以前早两轮停。那是对的：连着两轮一个缺口都
+            #   没解开，再跑十轮也解不开——现在停下来至少把已有的产出交出去，
+            #   而不是烧十轮 LLM 之后交同样的东西。
             now_art = len(getattr(state, "artifacts", []) or [])
             now_res = _count_resolved(state)
-            if now_art > prev_art_count or now_res > prev_resolved:
+            if now_res > prev_resolved:
                 no_progress_streak = 0
             else:
                 no_progress_streak += 1

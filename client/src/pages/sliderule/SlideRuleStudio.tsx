@@ -29,6 +29,16 @@ import {
   SpecPageLiveStage,
   type SpecPageLive,
 } from "./live-runtime/SpecPageLiveStage";
+import {
+  initRuntimeState,
+  addRow,
+  type RuntimeState,
+} from "./live-runtime/live-runtime";
+import { seedRuntimeState } from "./live-runtime/demo-seed";
+import {
+  loadRuntimeState,
+  saveRuntimeState,
+} from "./live-runtime/runtime-persistence";
 import { AppStageErrorBoundary } from "./live-runtime/AppStageErrorBoundary";
 import { XrayPanel, type XrayTarget } from "./XrayPanel";
 import { RollingText } from "./RollingText";
@@ -180,6 +190,48 @@ export function SlideRuleStudio({
     }
     return specPages;
   }, [specFirstPages, specPages]);
+
+  // HTML 应用面的运行时数据。**跟老区块渲染共用同一份**（同一个 sessionId 的
+  // RuntimeState）——各读各的等于同一个应用有两份互不相干的数据，用户在
+  // HTML 页里新建一条，切到区块页就没了。
+  //
+  // ⚠ 种子照走 seedRuntimeState：它管着"每个实体只判一次要不要铺示例"，
+  //   以及"用户写了真实数据就整批清掉示例"。绕过它自己造数据会把这套语义丢掉。
+  const runtimeSessionId = sessionId ?? "sliderule-v51-product";
+  const [htmlRuntime, setHtmlRuntime] = useState<RuntimeState | null>(null);
+  useEffect(() => {
+    if (!fiveSystemModel) return;
+    setHtmlRuntime(
+      seedRuntimeState(
+        loadRuntimeState(runtimeSessionId) ?? initRuntimeState(fiveSystemModel),
+        fiveSystemModel
+      )
+    );
+  }, [fiveSystemModel, runtimeSessionId]);
+
+  // 页面里的动作。⚠ 现在只做"新建"这一件真事——openRecord/editRecord 需要
+  // 一个表单面，那是下一步。**不装作做了**：接不住的动作如实什么都不做，
+  // 而不是弹个假的成功提示。
+  const handleHtmlAction = useCallback(
+    (ev: { kind: string; entityId: string; rowId: string | null }) => {
+      if (ev.kind !== "createRecord" || !fiveSystemModel) return;
+      setHtmlRuntime(prev => {
+        if (!prev) return prev;
+        const entity = (fiveSystemModel.datamodel?.entities ?? []).find(
+          e => e.id === ev.entityId
+        );
+        if (!entity) return prev;
+        const values: Record<string, unknown> = {};
+        for (const f of entity.fields ?? []) if (f?.id) values[f.id] = "";
+        const { state: next } = addRow(
+          prev, ev.entityId, values, new Date().toISOString()
+        );
+        saveRuntimeState(runtimeSessionId, next);
+        return next;
+      });
+    },
+    [fiveSystemModel, runtimeSessionId]
+  );
 
   // 舞台：推演中恒为 live 占位（用户裁决 2026-07-14：执行期不看中间过程
   // ——系统屏/看板/起草预览一律不展示，只留"推演中 + 当前动作"极简态，
@@ -392,6 +444,9 @@ export function SlideRuleStudio({
             pages={livePages}
             statusLabel={isRunning ? liveActionLabel : null}
             running={isRunning}
+            model={fiveSystemModel}
+            runtime={htmlRuntime}
+            onAction={handleHtmlAction}
             className="min-h-0 flex-1"
           />
         ) : stage === "live" ? (

@@ -33,17 +33,17 @@
  * `bound=false` 是第 3 步的素颜页：还没打 data-* 孔（孔要等第 6.5 步，那时
  * 实体字段才定死校验过）。角标如实说明，不装作已经接上了。
  *
- * ⚠ 填数（applyBindings）现在**不在这一层**：沙箱是不透明源，父页面伸不进去
- * 改 DOM。等真有 BindingSource 的时候，正确做法是**先在游离 DOM 上填好数、
- * 再序列化进 srcdoc**，动作走 postMessage 回来。今天 bound 恒为 false
- * （全仓没有一处产出 BindingSource），所以这条路还没到要修的时候——
- * 但别在这里偷偷加一条"直接改 iframe 内部"的路，那要求 allow-same-origin，
- * 而它跟 allow-scripts 同时给出去等于沙箱整个作废。
+ * 填数走 deriveBindingSource（五系统模型 + 运行时状态），跟老区块渲染**共用
+ * 同一份数据**——各读各的等于同一个应用有两份互不相干的数据。
  */
 
 import React from "react";
 
-import { SandboxedPageFrame } from "./sandboxed-page-frame";
+import { HtmlAppSurface } from "./html-app-surface";
+import { deriveBindingSource } from "./derive-binding-source";
+import type { BindingActionEvent } from "./html-binding-runtime";
+import type { RuntimeState } from "./live-runtime";
+import type { FiveSystemModel } from "../system-screens/five-system-model";
 
 export interface SpecPageLive {
   pageId: string;
@@ -60,6 +60,14 @@ export interface SpecPageLiveStageProps {
   /** 还在推演中。角标据此说"生成中 n/m"还是"共 n 页"——**跑完了还挂着
    *  「生成中」是在撒谎**，用户会一直等一个不会再变的东西。 */
   running?: boolean;
+  /** 五系统模型 + 运行时状态 → 页面上的 data-* 孔真的填得上数。
+   *  ⚠ 缺任一个都只是"没数据"，不是"渲染失败"——角标如实说。 */
+  model?: FiveSystemModel | null;
+  runtime?: RuntimeState | null;
+  /** 页面里的动作（新建/查看/编辑）——交给宿主的运行时去改数据 */
+  onAction?: (event: BindingActionEvent) => void;
+  /** 游标：鼠标停在带绑定的元素上 */
+  onHoverBinding?: (info: { attr: string; value: string; el: Element } | null) => void;
   className?: string;
 }
 
@@ -67,12 +75,21 @@ export function SpecPageLiveStage({
   pages,
   statusLabel = null,
   running = true,
+  model = null,
+  runtime = null,
+  onAction,
+  onHoverBinding,
   className = "",
 }: SpecPageLiveStageProps): React.ReactElement | null {
   // 手动选过就听手动的；没选过恒跟最新一页（页面在陆续到达，跟着最新的
   // 才叫"实时"）。⚠ 存 pageId 而不是下标：下标会被新到达的页面挤走，
   // 表现是"我明明点了甲页，它自己跳到乙页去了"。
   const [picked, setPicked] = React.useState<string | null>(null);
+  // 填数报告：填了几个孔、哪些孔填不上。**如实展示**——填不上是模型的问题
+  // （引用了不存在的实体/字段），拿假数据盖住等于把问题藏起来。
+  const [report, setReport] = React.useState<{ filled: number; problems: string[] } | null>(null);
+
+  const source = React.useMemo(() => deriveBindingSource(model, runtime), [model, runtime]);
 
   const activeId =
     (picked && pages.some(p => p.pageId === picked) ? picked : null) ??
@@ -121,12 +138,27 @@ export function SpecPageLiveStage({
           className="ml-auto shrink-0 text-[10px] text-stone-400"
           data-testid="sliderule-spec-page-bound"
           title={
-            active.bound
-              ? "已接上数据（第 6.5 步打过 data-* 孔）"
-              : "第 3 步的页面：还没接数据，孔要等实体字段定死之后才打"
+            report?.problems.length
+              ? `填不上的孔：\n${report.problems.slice(0, 6).join("\n")}`
+              : active.bound
+                ? "已接上数据（第 6.5 步打过 data-* 孔）"
+                : "第 3 步的页面：还没接数据，孔要等实体字段定死之后才打"
           }
         >
-          {active.bound ? "已接数据" : "尚未接数据"}
+          {/* ⚠ 报**实际填了多少**，不是报"这一版理论上打过孔"。
+              两者会分叉：孔打了但引用的实体不存在时，bound 是 true 而
+              一个格子都没填上——那时说"已接数据"就是在撒谎。 */}
+          {report
+            ? report.filled > 0
+              ? `已接数据 · 填了 ${report.filled} 处${
+                  report.problems.length ? ` · ${report.problems.length} 处填不上` : ""
+                }`
+              : active.bound
+                ? "打过孔但没填上数据"
+                : "尚未接数据"
+            : active.bound
+              ? "已接数据"
+              : "尚未接数据"}
         </span>
         {statusLabel && (
           <span className="w-full truncate text-[11px] text-stone-400">
@@ -140,7 +172,20 @@ export function SpecPageLiveStage({
             ⚠ 框内自己滚，外层 overflow-hidden：跟 ComponentsLibraryPage 那次
             拒绝 iframe 的理由（26 份高度要跨文档同步）不一样——这里只有一份，
             而且给的是固定高度，不需要把高度同步回来。 */}
-        <SandboxedPageFrame key={active.pageId} html={active.html} title={active.pageId} />
+        <HtmlAppSurface
+          key={active.pageId}
+          html={active.html}
+          source={source}
+          onAction={onAction}
+          onNavigate={setPicked}
+          onHoverBinding={onHoverBinding}
+          onReport={r =>
+            setReport({
+              filled: Object.values(r.filled).reduce((a, b) => a + b, 0),
+              problems: r.problems,
+            })
+          }
+        />
       </div>
     </div>
   );
