@@ -80,8 +80,9 @@ export function AppBundleScreen({
 }: AppBundleScreenProps) {
   // 运行应用（JSON 渲染的"真系统"）：模型带页面+实体时可用
   const [screenMode, setScreenMode] = useState<"board" | "graph" | "app">("board");
-  // 联动图样式：Mermaid 整体架构图（默认，自动布线）⟷ React Flow 交互图
-  const [graphStyle, setGraphStyle] = useState<"mermaid" | "flow">("mermaid");
+  // 沙盘样式：React Flow 交互沙盘（默认——点选联动 + 断线体检在这条）
+  // ⟷ Mermaid 整体架构图（自动布线的静态全貌）
+  const [graphStyle, setGraphStyle] = useState<"mermaid" | "flow">("flow");
   // 架构图缩放：适宽看全貌（默认）⟷ 原始尺寸滚动看细节
   const [archFit, setArchFit] = useState(true);
   const canRunApp = (model?.page?.pages?.length ?? 0) > 0 && (model?.datamodel?.entities?.length ?? 0) > 0;
@@ -151,7 +152,7 @@ export function AppBundleScreen({
               onChange={value => setScreenMode(value as "board" | "graph" | "app")}
               options={[
                 { id: "board" as const, label: "证据看板" },
-                ...(canLinkage ? [{ id: "graph" as const, label: "联动图" }] : []),
+                ...(canLinkage ? [{ id: "graph" as const, label: "沙盘" }] : []),
                 ...(canRunApp ? [{ id: "app" as const, label: "运行应用" }] : []),
               ].map(({ id, label }) => ({
                 value: id,
@@ -221,8 +222,8 @@ export function AppBundleScreen({
               value={graphStyle}
               onChange={value => setGraphStyle(value as "mermaid" | "flow")}
               options={[
+                { id: "flow" as const, label: "沙盘" },
                 { id: "mermaid" as const, label: "架构图" },
-                { id: "flow" as const, label: "交互图" },
               ].map(({ id, label }) => ({
                 value: id,
                 label: <span data-testid={`appbundle-graph-${id}`}>{label}</span>,
