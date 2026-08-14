@@ -1446,6 +1446,23 @@ async def drive_full_v5_session_stream(
     _enrich_timing.set_stage_sink(
         lambda phase, name, fields: _stage_q.put((phase, name, dict(fields)))
     )
+
+    # spec-first 第 3 步的页面（2026-08-14）。
+    #
+    # 新链路产出的是**一整份能直接打开的 HTML**，而第 3 步在整轮的第二分钟就
+    # 有第一页。此前它一直攒到最后才随模型一起交——右侧那四五分钟纯转圈，
+    # 而东西其实早就在内存里了。
+    #
+    # ⚠ 只在开关开着时才会有事件（sink 装着但没人叫它）。装 sink 这件事本身
+    #   不判断开关：判断开关的地方只该有一处，多一处就多一次漂移的机会。
+    _page_q: "_queue.Queue[tuple[str, str, int, int]]" = _queue.Queue()
+    _spec_first_sink = None
+    try:
+        from .spec_first_pipeline import set_page_sink as _spec_first_sink
+    except Exception:  # noqa: BLE001 — 新模块缺失不该打死整条流
+        pass
+    if _spec_first_sink is not None:
+        _spec_first_sink(lambda pid, html, done, total: _page_q.put((pid, html, done, total)))
     _budget_token = _enrich_timing.begin_run_budget()
     # 与同步入口同一件事：让能力执行看得见本轮用户说了什么。
     # 流式是主路径（前端走 SSE），两条都要接，否则只有回退路径改好了——
@@ -1492,6 +1509,25 @@ async def drive_full_v5_session_stream(
                         yield ev
                         if phase == "end" and active_stage is not None:
                             active_stage = None
+            except _queue.Empty:
+                pass
+            # spec-first 的页面跟上面两条走同一个泵，理由同上：它们发生在
+            # 同一段时间里，分开泵只会让"第 3 步在报进度"和"第 3 步交出了
+            # 第二页"在前端的先后不可预期。
+            try:
+                while True:
+                    _pid, _html, _done, _total = _page_q.get_nowait()
+                    yield {
+                        "type": "spec_page",
+                        "pageId": _pid,
+                        "html": _html,
+                        "current": _done,
+                        "total": _total,
+                        # bound=False：这是第 3 步的**素颜页**，还没打 data-* 孔
+                        # （孔要等第 6.5 步，那时实体字段才定死）。前端据此知道
+                        # 现在渲染的是"长什么样"，数据是后面才接上的。
+                        "bound": False,
+                    }
             except _queue.Empty:
                 pass
             now = _time.perf_counter()
@@ -1937,6 +1973,8 @@ async def drive_full_v5_session_stream(
         _caps.set_capability_delta_sink(None)
         _gen.set_generate_delta_sink(None)
         _enrich_timing.set_stage_sink(None)
+        if _spec_first_sink is not None:
+            _spec_first_sink(None)
         _enrich_timing.reset_run_budget(_budget_token)
         _turn_token.__exit__(None, None, None)
         # E29：精修/直供上下文兜底清理（异常路径防泄漏到下一轮）

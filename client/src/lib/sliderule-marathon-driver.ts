@@ -232,6 +232,22 @@ export interface DriveFullStreamOpts {
   /** LLM 实时内容增量。label 标注来源：能力 id（risk.analyze / report.write…）
    *  或 "five-system-model"（五系统起草）。旧后端不带 label 时为 undefined。 */
   onLlmDelta?: (text: string, label?: string) => void;
+  /** spec-first 第 3 步的页面：每落地一页来一次（2026-08-14）。
+   *
+   *  新链路产出的是**一整份能直接打开的 HTML**，而第一页在整轮的第二分钟
+   *  就有了——比最终模型早四五分钟。这条回调存在的全部理由就是把那四五
+   *  分钟从"转圈"变成"能看"。
+   *
+   *  `bound=false` 是第 3 步的素颜页（还没打 data-* 孔，孔要等第 6.5 步，
+   *  那时实体字段才定死）。渲染方据此知道现在看的是"长什么样"，
+   *  数据是后面才接上的。 */
+  onSpecPage?: (page: {
+    pageId: string;
+    html: string;
+    current: number;
+    total: number;
+    bound: boolean;
+  }) => void;
   /** E25：后端 run id（事件里首见即回调一次）——客户端记书签供刷新后续播。 */
   onRunId?: (runId: string) => void;
   /** E25：仅当服务端亲口宣布 run 终局（complete / run_cancelled / error
@@ -349,6 +365,20 @@ async function consumeDriveStreamResponse(
           case "llm_delta":
             // LLM 实时内容增量（后端 150ms 批量聚合，带来源标签）。
             opts.onLlmDelta?.(event.text as string, event.label as string | undefined);
+            break;
+          case "spec_page":
+            // spec-first 第 3 步落地的一页。⚠ html 缺席时不回调——
+            // 少一页比渲染一份空文档强（空文档在右侧是一整块白，
+            // 看起来像"生成坏了"，而实际只是这条事件没带内容）。
+            if (typeof event.html === "string" && event.html) {
+              opts.onSpecPage?.({
+                pageId: String(event.pageId || ""),
+                html: event.html as string,
+                current: Number(event.current) || 0,
+                total: Number(event.total) || 0,
+                bound: event.bound === true,
+              });
+            }
             break;
           case "skill_start":
             opts.onSkillActivated?.(event.skill as SkillId, event.label as string);

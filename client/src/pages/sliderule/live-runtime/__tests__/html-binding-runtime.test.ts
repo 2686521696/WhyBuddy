@@ -273,3 +273,59 @@ describe("一个孔都没打的页面不许看起来完美通过", () => {
     expect(hasAnyDataSource(dom(TABLE))).toBe(true);
   });
 });
+
+describe("enum 字段显标签，不显内部 id", () => {
+  /**
+   * ⚠ 这组是补的，因为 BindingField.options 头一版写成 `{ value, label }`，
+   * 而 formatFieldText 读的是 `o.id`——两边对不上的后果不是报错，是
+   * **enum 恒显内部 id**（`music_member` 这种漏到界面上，线上截图逮到过）。
+   *
+   * 那时唯一的迹象只是 tsc 的一条类型错。而"类型不对但跑得动"正是这个仓
+   * 反复栽的形状：页面照渲染、problems 是空的、消毒器照常成功。
+   * 所以判据落在**渲染出来的字**上，不落在类型上。
+   */
+  const SRC: BindingSource = {
+    rows: { order: [{ id: "o1", status: "in_transit" }, { id: "o2", status: "unknown_x" }] },
+    fields: {
+      order: [
+        { id: "status", name: "状态", type: "enum",
+          options: [{ id: "in_transit", label: "运输中" }, { id: "done", label: "已完成" }] },
+      ],
+    },
+  };
+
+  it("行内 data-field 出中文标签", () => {
+    const root = dom(
+      '<table><tbody data-rows="order"><tr><td data-field="status"></td></tr></tbody></table>');
+    const r = applyBindings(root, { source: SRC });
+    const cells = Array.from(root.querySelectorAll("td")).map((td) => td.textContent);
+    expect(cells[0]).toBe("运输中");
+    expect(r.problems).toEqual([]);
+  });
+
+  it("值不在 options 里就如实出原文 —— 不猜、不显空", () => {
+    const root = dom(
+      '<table><tbody data-rows="order"><tr><td data-field="status"></td></tr></tbody></table>');
+    applyBindings(root, { source: SRC });
+    const cells = Array.from(root.querySelectorAll("td")).map((td) => td.textContent);
+    expect(cells[1]).toBe("unknown_x");
+  });
+
+  it("data-cell 展开的单元格走同一条格式化 —— 两条读路不许分叉", () => {
+    const root = dom(
+      '<table><tbody data-rows="order"><tr><td data-cell>格</td></tr></tbody></table>');
+    applyBindings(root, { source: SRC });
+    expect(root.querySelector("tbody tr td")?.textContent).toBe("运输中");
+  });
+
+  it("label 缺席时回落 id，不显 undefined", () => {
+    const src: BindingSource = {
+      rows: { order: [{ id: "o1", status: "in_transit" }] },
+      fields: { order: [{ id: "status", type: "enum", options: [{ id: "in_transit" }] }] },
+    };
+    const root = dom(
+      '<table><tbody data-rows="order"><tr><td data-field="status"></td></tr></tbody></table>');
+    applyBindings(root, { source: src });
+    expect(root.querySelector("td")?.textContent).toBe("in_transit");
+  });
+});

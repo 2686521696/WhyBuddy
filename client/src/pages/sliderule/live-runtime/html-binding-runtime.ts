@@ -79,11 +79,46 @@ export type BindingRow = Record<string, unknown>;
 export interface BindingField {
   id: string;
   name?: string;
+  /** 缺省当 "string"（模型里字段类型可以不写，读侧不该因此炸） */
   type?: string;
-  /** 与 field-text 的 FieldLike 对齐，用于格式化（money / percent / mask…） */
+  /** money / percent / progress / score / mask…（见 field-display 的 FieldFormat） */
   format?: string;
-  options?: Array<{ value: string; label?: string }>;
+  /**
+   * enum 声明取值。
+   *
+   * ⚠ 键是 **id**，不是 value。头一版写的是 `{ value, label }`，而
+   * `formatFieldText` 读的是 `o.id`——两边对不上的后果不是报错，是
+   * **enum 恒显内部 id**（`music_member` 这种漏到界面上，线上截图逮到过）。
+   * 页面照常渲染、解释器 problems 是空的、消毒器照常成功，没有一处会红。
+   *
+   * 当时那行注释写着"与 field-text 的 FieldLike 对齐"，而它并没有对齐——
+   * 注释声称的对齐必须由类型或转换函数**兑现**，见下面的 asFieldLike。
+   */
+  options?: Array<{ id: string; label?: string }>;
 }
+
+/**
+ * BindingField → field-text 要的 FieldLike。**真转一次，不是类型断言。**
+ *
+ * 断言只会让编译器闭嘴，字段形状该对不上还是对不上（上面那条 options 就是
+ * 这么漏的）。这里补齐 FieldLike 要求的三处：type 缺省、label 缺省回落 id、
+ * tone 缺省 default。
+ */
+function asFieldLike(f: BindingField) {
+  return {
+    type: f.type || "string",
+    format: f.format as FieldLikeFormat,
+    options: f.options?.map((o) => ({
+      id: o.id,
+      label: o.label ?? o.id,
+      tone: "default" as const,
+    })),
+  };
+}
+
+type FieldLikeFormat = NonNullable<
+  Parameters<typeof formatFieldText>[1]
+>["format"];
 
 export interface BindingSource {
   /** entityId → 行数组 */
@@ -264,7 +299,7 @@ export function applyBindings(
           parent.innerHTML = "";
           fields.forEach((f) => {
             const cell = cellTpl.cloneNode(true) as HTMLElement;
-            cell.textContent = formatFieldText(row[f.id], f);
+            cell.textContent = formatFieldText(row[f.id], asFieldLike(f));
             parent.appendChild(cell);
           });
           rest.forEach((c) => parent.appendChild(c));
@@ -278,7 +313,7 @@ export function applyBindings(
           problems.push(`data-field="${fid}"：不是实体 ${entityId} 的字段`);
           return;
         }
-        el.textContent = formatFieldText(row[fid], f);
+        el.textContent = formatFieldText(row[fid], asFieldLike(f));
         filled.field += 1;
       });
       // 行内动作带得出当前行 —— 取不到 rowId 就发空事件是静默失败，

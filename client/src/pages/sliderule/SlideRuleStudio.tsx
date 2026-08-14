@@ -25,6 +25,10 @@ import {
 } from "./system-screens/five-system-model";
 import { deriveAppRuntimeSchema } from "./live-runtime/app-runtime-schema";
 import { AppRuntimeScreen } from "./live-runtime/AppRuntimeScreen";
+import {
+  SpecPageLiveStage,
+  type SpecPageLive,
+} from "./live-runtime/SpecPageLiveStage";
 import { AppStageErrorBoundary } from "./live-runtime/AppStageErrorBoundary";
 import { XrayPanel, type XrayTarget } from "./XrayPanel";
 import { RollingText } from "./RollingText";
@@ -78,6 +82,15 @@ interface SlideRuleStudioProps {
   /** 当前步骤的一句话状态（如"正在分析风险"）——live 态副标题，
    *  给右侧一个"活着"的锚点，但不重复左栏的完整直播流。 */
   liveActionLabel?: string | null;
+  /** spec-first 第 3 步逐页产出的 HTML（2026-08-14）。
+   *
+   *  有页面时 live 态不再是三个点，而是把页面直接渲染出来——那四五分钟的
+   *  转圈不是"还没算出来"，是"算出来了没往外发"。
+   *
+   *  ⚠ 这不推翻 2026-07-14 那条"执行期不看中间过程"：那条说的是系统屏 /
+   *  证据看板 / 起草 JSON，**过程的碎片**；这里上屏的是成品页面本身，
+   *  跟最后交付的是同一份 HTML。 */
+  specPages?: SpecPageLive[];
 
   className?: string;
 }
@@ -96,6 +109,7 @@ export function SlideRuleStudio({
   llmDraft = "",
   llmDraftLabel = null,
   liveActionLabel = null,
+  specPages = [],
   className = "",
   modelVersions = [],
   currentModelVersionId = null,
@@ -334,6 +348,15 @@ export function SlideRuleStudio({
               )}
             </div>
           </>
+        ) : stage === "live" && specPages.length > 0 ? (
+          /* 新链路已经交出页面：直接渲染，不再摆三个点。
+             判据是"手上有没有能看的东西"，不是阶段名——没有页面时下面那支
+             原样保留（老链路今天还在跑，它整轮都没有可看的中间产物）。 */
+          <SpecPageLiveStage
+            pages={specPages}
+            statusLabel={liveActionLabel}
+            className="min-h-0 flex-1"
+          />
         ) : stage === "live" ? (
           /* 模型还没成形（轮内步骤 / 起草早期）：右侧只报"推演中"——实时想法
              已在左栏流出（用户反馈：右侧别重复直播内容），应用成形后接管舞台。 */

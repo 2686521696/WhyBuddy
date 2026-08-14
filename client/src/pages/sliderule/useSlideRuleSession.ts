@@ -250,6 +250,18 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     Partial<Record<SkillId, string>>
   >({});
   const [latestMermaid, setLatestMermaid] = useState<string | null>(null);
+  // spec-first 第 3 步的页面（2026-08-14）：一页好了就上屏，不等整轮跑完。
+  //
+  // 这一轮 8~9 分钟，此前右侧从头转到尾。第一份能直接打开的 HTML 在第二
+  // 分钟就到了，比最终模型早四五分钟——那四五分钟的转圈不是"还没算出来"，
+  // 是"算出来了没往外发"。
+  //
+  // ⚠ 按 pageId 去重覆盖，不是一味 push：同一页在第 6.5 步打完孔会**再来
+  //   一次**（bound=true）。push 的话右侧会出现两份同名页，而后一份才是
+  //   接上了数据的那份。
+  const [specPages, setSpecPages] = useState<
+    Array<{ pageId: string; html: string; current: number; total: number; bound: boolean }>
+  >([]);
   // LLM 实时草稿（llm_delta 累积）：运行中在左栏流式展示，新一轮开始时清空。
   // 每一步（risk.analyze / report.write / 五系统起草…）各自一份缓冲，展示最近
   // 更新的那份；label 记录当前来源。只是观测投影——真实模型仍以闭环证据为准。
@@ -849,6 +861,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           setLlmDraft("");
           setLlmDraftLabel(null);
           setLlmStreams([]);
+          // ⚠ 新一轮清空：不清的话右侧会先亮上一轮的页面，而用户刚说的是
+          //   "改成 XXX"——看着像改完了，其实一个字都还没动。
+          setSpecPages([]);
           // 每一步 LLM 想法各自缓冲：并行批里不同能力的增量交织到达，
           // 按标签分开累积，展示最近更新的那条（不互相覆盖内容）。
           const llmDraftBuffers = new Map<string, string>();
@@ -939,6 +954,19 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                     label,
                     text,
                   }))
+                );
+              },
+              onSpecPage: page => {
+                setSpecPages(prev => {
+                  const i = prev.findIndex(p => p.pageId === page.pageId);
+                  if (i < 0) return [...prev, page];
+                  // 同一页第二次到达（第 6.5 步打完孔）——覆盖，不是追加
+                  const next = prev.slice();
+                  next[i] = page;
+                  return next;
+                });
+                appendStreamStep(
+                  `🖼 界面已出：${page.pageId}（${page.current}/${page.total}）`
                 );
               },
               onReasoningStep: (capabilityId, loop) => {
@@ -1841,6 +1869,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     // Accumulated per-skill content from SSE events (for system screen renderers).
     skillContents,
     latestMermaid,
+    // spec-first 第 3 步逐页产出的 HTML（运行中实时上屏；新一轮清空）
+    specPages,
     // LLM 实时草稿（运行中流式累积；新一轮清空）+ 当前来源标签
     //（能力 id 或 "five-system-model"，用于左栏实时块的动态标题）。
     llmDraft,

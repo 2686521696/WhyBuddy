@@ -51,9 +51,31 @@ spec_semantics → model_assembly → html_bindings）此前是**七个可独立
 from __future__ import annotations
 
 import os
+from contextvars import ContextVar
 from typing import Any, Callable, Dict, List, Optional
 
 SPEC_FIRST_VERSION = "spec-first-pipeline-v1"
+
+#: 每落地一页叫一次的出口：(page_id, html, done, total)。
+#:
+#: ⚠ **ContextVar 而不是模块属性。** 这条是本仓 2026-08-06 踩出来的：
+#: `last_generate_diagnostic` 当初就是模块属性，多租户下一个请求读到了另一个
+#: 请求的结果。页面 HTML 串台比诊断串台严重得多——那是把 A 的界面推给 B。
+#:
+#: 为什么要有这个通道，而不是把 on_page 从主轴一路当参数传下来：
+#: 中间隔着 v5_capability_executor._try_llm_generate_evidence，那是条**同步**
+#: 函数、且被十几处调用。为一件"顺带推给前端看"的事去改所有调用方的签名不划算。
+#: 同款判断见 set_capability_delta_sink / set_generate_delta_sink / set_stage_sink，
+#: 驱动器那一层已经是这么接的三条流。
+_page_sink_var: ContextVar[Optional[Callable[[str, str, int, int], None]]] = ContextVar(
+    "sliderule_spec_first_page_sink", default=None
+)
+
+
+def set_page_sink(sink: Optional[Callable[[str, str, int, int], None]]) -> None:
+    """装/卸页面出口。驱动器在流开始时装、finally 里卸。"""
+    _page_sink_var.set(sink)
+
 
 _ENABLE_ENV = "SLIDERULE_SPEC_FIRST"
 #: 照 overview_html 的 _OFF_VALUES 同款口径：显式关才关。
@@ -153,7 +175,10 @@ def run_spec_first(
     with _stage("specfirst.pages") as st:
         # on_page 透传：这一步是整条链上**第一个产出可以直接看的东西**的地方，
         # 一份能独立打开的 HTML 比最终模型早四五分钟。攒齐再交等于白白转圈。
-        batch = generate_pages_parallel(spec, on_page=on_page)
+        #
+        # 显式实参优先于 sink：脚本/评测直接调这个函数时不该被"当前请求恰好
+        # 装了个 sink"影响。生产路径（主轴）走 sink，因为中间那层是同步的。
+        batch = generate_pages_parallel(spec, on_page=on_page or _page_sink_var.get())
         pages = dict(batch.get("pages") or {})
         failed = dict(batch.get("failed") or {})
         st["got"] = len(pages)

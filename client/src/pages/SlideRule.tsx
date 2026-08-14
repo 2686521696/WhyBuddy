@@ -1043,6 +1043,7 @@ function SlideRuleUnified({
   activeSkillId = null,
   skillContents = {},
   latestMermaid = null,
+  specPages = [],
   llmDraft = "",
   llmDraftLabel = null,
   llmStreams = [],
@@ -1094,6 +1095,8 @@ function SlideRuleUnified({
     Record<import("@/lib/sliderule-marathon-driver").SkillId, string>
   >;
   latestMermaid?: string | null;
+  /** spec-first 第 3 步逐页产出的 HTML（推演中右侧实时渲染）。 */
+  specPages?: import("./sliderule/live-runtime/SpecPageLiveStage").SpecPageLive[];
   /** LLM 实时草稿（llm_delta 累积）+ 当前来源标签。 */
   llmDraft?: string;
   llmDraftLabel?: string | null;
@@ -1241,6 +1244,10 @@ function SlideRuleUnified({
             llmDraft={isRunning ? llmDraft : ""}
             llmDraftLabel={llmDraftLabel}
             liveActionLabel={isRunning ? (liveAction?.label ?? null) : null}
+            // spec-first 第 3 步的页面：一页好了就上屏。恒传（不按 isRunning
+            // 掐）——掐掉的话闭环那一瞬间页面会先消失、再由应用舞台接管，
+            // 中间闪一下空白。舞台判定在 Studio 里一处做完。
+            specPages={specPages}
             modelVersions={(sessionState as { modelVersions?: Array<{ id: string; instruction?: string }> }).modelVersions ?? []}
             currentModelVersionId={(sessionState as { currentModelVersionId?: string | null }).currentModelVersionId ?? null}
             onRestoreVersion={restoreModelVersion}
@@ -1742,6 +1749,7 @@ function SlideRuleSessionBody({
     activeSkillId,
     skillContents,
     latestMermaid,
+    specPages,
     llmDraft,
     llmDraftLabel,
     llmStreams,
@@ -2188,6 +2196,7 @@ function SlideRuleSessionBody({
     activeSkillId,
     skillContents,
     latestMermaid,
+    specPages,
     llmDraft,
     llmDraftLabel,
     llmStreams,
