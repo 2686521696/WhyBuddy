@@ -42,6 +42,37 @@ import { formatFieldText, EMPTY_TEXT } from "./field-text";
 
 export const HTML_BINDING_RUNTIME_VERSION = "html-binding-runtime-v1";
 
+/**
+ * 这套词汇里**所有**属性名。消毒那一层要照它放行，别处不许手抄第二份。
+ *
+ * ## 为什么必须是单一来源
+ *
+ * 宿主消毒用的是 `ALLOW_DATA_ATTR: false` + 显式白名单（理由见
+ * bound-html-surface.tsx）——也就是说**没列进白名单的 data-* 会被静默删掉**。
+ * 删掉之后页面照常渲染、消毒器照常报成功、解释器 problems 也是空的
+ * （没有孔就没有错误的孔），**那个能力整条无声消失**。
+ *
+ * 这正是本仓数到第九次的形状。而它最常见的成因是**同一份清单被抄了两遍**：
+ * 「区块 uses 声明」与实际渲染不符 316 个、前端手抄的区域词汇与目录漂移——
+ * 都是这么来的。所以词表只有这一份，消毒那边 import 它。
+ */
+export const BINDING_ATTRS = [
+  // 逐行容器与它的取数参数
+  "data-rows", "data-sort", "data-order", "data-limit", "data-fields",
+  // 表头 / 单元格模板
+  "data-head", "data-col", "data-cell",
+  // 取值
+  "data-field", "data-value", "data-aggregate",
+  // 图表
+  "data-chart", "data-entity", "data-dimension", "data-metric", "data-metric-field",
+  // 动作
+  "data-action",
+  // 运行时**写回**的两个：行 id 与算好的 series。
+  // ⚠ 它们由解释器写、不由生成侧写，但消毒发生在解释之**前**也可能在之后
+  //   （重新消毒一份已填好的 HTML），漏了它们等于点击丢行、图表丢数。
+  "data-row-id", "data-series",
+] as const;
+
 /** 一行数据。键是 fieldId。 */
 export type BindingRow = Record<string, unknown>;
 
