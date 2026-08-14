@@ -438,9 +438,14 @@ def _try_llm_generate_evidence(
         from .spec_first_pipeline import run_spec_first, spec_first_enabled as _spec_first_enabled
     except Exception:  # noqa: BLE001 — 新模块缺失不该打死老路
         pass
+    # ⚠ 这个标志决定下面**跑不跑 enrich_***，所以它必须只在新链路真的产出
+    #   模型时为真。回落那一支把它留在 False——那一轮走的是老路，enrich_*
+    #   仍然是它唯一的版式来源，砍掉等于把老路也一起砍了。
+    from_spec_first = False
     if _spec_first_enabled is not None and _spec_first_enabled():
         try:
             model = run_spec_first(goal, llm_json_fn=llm_json_fn)["model"]
+            from_spec_first = True
             print("[v5_capability_executor] spec-first 链路产出模型")
         except Exception as exc:  # noqa: BLE001 — 显式回落，留痕
             print(f"[v5_capability_executor] spec-first 失败，回落老链路：{str(exc)[:200]}")
@@ -584,21 +589,48 @@ def _try_llm_generate_evidence(
     # 注：两段 enrich 的墙钟埋点在各自函数内部（freeform.total / monitor.total），
     # 不在这里——这条链路还有 fresh_topic_shot / 夹具再生成两个入口，
     # 埋在调用点会漏掉它们。
+    # ── enrich_* 两段：**只在老链路上跑**（2026-08-14 补开关）───────────────
+    #
+    # 这两段存在的理由是「AI 不知道这页该长什么样」——老链路除了五系统 JSON
+    # 之外没有任何版式来源，只能让 FreeformInsight 现场设计一棵内容树。
+    #
+    # 新链路上这个问题**不存在**：第 3 步已经产出真 HTML，第 3.5 步统一过外壳，
+    # 第 6.5 步打完 data-* 孔。再跑一遍 enrich 等于**让模型把已经画好的页面
+    # 重新发明一次**，而且发明出来的那份没有任何地方会显示：
+    # freeformOverview / freeformBlocks 全仓只有 AppRuntimeScreen 消费，
+    # 而会话页已经改成渲染 HTML 页（SpecPageLiveStage），区块页不再上舞台。
+    #
+    # ⚠ 这不是新决定，是把**架构图 ⚑⚑B 早就写下的口径落到代码里**：
+    #   「enrich_* 那整层在新链路上不跑」。此前图上写了、代码没跟——图与码
+    #   不符的第六例，跟今天核出来的那五处是同一个形状。
+    #
+    # ⚠ 省下来的是实打实的墙钟：架构图自记 monitor.design 75.1s，
+    #   freeform 那段另算。省的不是"可能没用的东西"，是**确定没人看的东西**。
+    #
+    # ⚠ 回落老链路的那一轮 from_spec_first 为 False，两段照常跑——
+    #   那时区块页仍是唯一产出，砍了就真没东西可看了。
+    if from_spec_first:
+        print("[v5_capability_executor] 新链路产出模型，跳过 enrich_*（版式来自第 3 步 HTML）")
     try:
-        from .freeform_block import enrich_freeform_blocks
+        if not from_spec_first:
+            from .freeform_block import enrich_freeform_blocks
 
-        model = enrich_freeform_blocks(model)
+            model = enrich_freeform_blocks(model)
     except Exception as exc:  # noqa: BLE001 — 二段生成是增强项，故障不改变主路径语义
         print(f"[v5_capability_executor] freeform block enrichment skipped: {str(exc)[:160]}")
     # 参照板收集槽：总览页设计会先画一张参照板给设计 LLM 照着排，那张图同时
     # 也正是应用中心卡片该显示的画面（见 services/app_preview.py）。槽在这里
     # 创建、下面落库时读——**只有闭环发布这条路径收集**；脚本调用方不传槽就
     # 什么都不收，产出的 model.json 和仓库里冻结的域夹具不会混进几 MB base64。
+    #
+    # ⚠ 新链路上连槽都不建：参照板是画给设计 LLM 照着排版的，而新链路不排版。
+    #   建一个空槽不会出错，但会让"这一轮到底有没有走设计段"从日志里看不出来。
     preview_sink = None
     try:
-        from .app_preview import OverviewPreviewSink
+        if not from_spec_first:
+            from .app_preview import OverviewPreviewSink
 
-        preview_sink = OverviewPreviewSink()
+            preview_sink = OverviewPreviewSink()
     except Exception as exc:  # noqa: BLE001 — 缩略图是增强项
         print(f"[v5_capability_executor] preview sink unavailable: {str(exc)[:160]}")
     # 首页/monitor 页面的总览区块也交给 FreeformInsight 设计——同样是增强项，
@@ -606,9 +638,10 @@ def _try_llm_generate_evidence(
     # 落回 AppRuntimeScreen 里固定的 stats/charts/rankings/feeds 骨架，不影响
     # 主路径。
     try:
-        from .freeform_block import enrich_monitor_page_overviews
+        if not from_spec_first:
+            from .freeform_block import enrich_monitor_page_overviews
 
-        model = enrich_monitor_page_overviews(model, preview_sink=preview_sink)
+            model = enrich_monitor_page_overviews(model, preview_sink=preview_sink)
     except Exception as exc:  # noqa: BLE001 — 首页设计是增强项，故障不改变主路径语义
         print(f"[v5_capability_executor] monitor overview enrichment skipped: {str(exc)[:160]}")
     # 增强后补跑一次门禁（2026-08-04）。
