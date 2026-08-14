@@ -100,6 +100,21 @@ def _llm_readiness() -> dict:
     }
 
 
+def _spec_first_readiness() -> dict:
+    """spec-first 七步链路的就绪度。
+
+    跟 blockNarrowing 同一个理由：**会静默失效的功能，健康探针里必须有它的
+    位置**。这里更甚——它是一条可以整条关掉的替代链路，只看日志分不出
+    「没开」和「开了但某个模块导不进来」。effective = 开关开着 ∧ 七个模块都在。
+    """
+    try:
+        from services.spec_first_pipeline import spec_first_readiness
+
+        return spec_first_readiness()
+    except Exception as exc:  # noqa: BLE001 — 探针不许因为被探的东西坏了而炸
+        return {"effective": False, "error": str(exc)[:120]}
+
+
 def _narrowing_readiness() -> dict:
     """目录窄化的就绪度 —— **它是一个会静默失效的功能，所以必须能远程看出来**。
 
@@ -290,6 +305,7 @@ async def health():
         # 目录窄化就绪度：enabled=true 而 scorerPresent=false 意味着"开关开着但
         # 实际退回全量目录"——那是个不报错、不留日志的失效态，只能靠这里看出来。
         "blockNarrowing": _narrowing_readiness(),
+        "specFirst": _spec_first_readiness(),
         "readiness": "ready",
         "probes": {
             "liveness": "/health",

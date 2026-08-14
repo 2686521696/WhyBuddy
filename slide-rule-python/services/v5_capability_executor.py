@@ -417,7 +417,35 @@ def _try_llm_generate_evidence(
             print(f"[v5_capability_executor] model repair skipped: {str(exc)[:120]}")
             return candidate
 
-    model = generate_five_system_model(goal, llm_json_fn=llm_json_fn)
+    # ── spec-first 七步（架构图 ⚑⚑ 那条新链路）──────────────────────
+    #
+    # ⚠ 这条**不是给 GEN5 加参数**，是它不在这条路上：新链路自己产出完整六段
+    #   再过同一个 v5_model_gate。所以 ⛔1（GEN5 只收一句话）与 ⛔3（ECTX 那条边
+    #   不存在）描述的是**下面那条老路**——它今天还在跑，两条都还成立。
+    #
+    # ⚠ 开关缺省关。先例是目录窄化（攒够 3 覆盖域 × 2 臂 × n=6、p=0.00004 才
+    #   翻默认）和 agentic pick（十话题 4:0 才转正）。这条链一轮 8~9 分钟、烧
+    #   十几次 LLM，**没有对照就翻默认是拿生产当实验台**。
+    #
+    # ⚠ 失败**不静默回落**：那样「新链路跑通了」和「新链路挂了但老路兜住了」
+    #   在外面长得一模一样，正是本仓数到第九次的那个形状（闸全绿但东西没了）。
+    #   所以回落是这里显式做的一次决定，而且**打日志留痕**。
+    model = None
+    _spec_first_enabled = None
+    try:
+        from .spec_first_pipeline import run_spec_first, spec_first_enabled as _spec_first_enabled
+    except Exception:  # noqa: BLE001 — 新模块缺失不该打死老路
+        pass
+    if _spec_first_enabled is not None and _spec_first_enabled():
+        try:
+            model = run_spec_first(goal, llm_json_fn=llm_json_fn)["model"]
+            print("[v5_capability_executor] spec-first 链路产出模型")
+        except Exception as exc:  # noqa: BLE001 — 显式回落，留痕
+            print(f"[v5_capability_executor] spec-first 失败，回落老链路：{str(exc)[:200]}")
+            model = None
+
+    if model is None:
+        model = generate_five_system_model(goal, llm_json_fn=llm_json_fn)
     if model is None:
         # 请求域访问器，不是模块属性——属性读法在多租户下会读到别的请求的诊断
         # （2026-08-06，见 v5_llm_generate 里那段请求域状态说明）。
