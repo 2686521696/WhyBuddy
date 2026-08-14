@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -31,7 +32,9 @@ import { describe, expect, it } from "vitest";
  * **同一件事在两处各说各的**——今天已经栽过很多次的那个形状。
  */
 
-const SRC = new URL("..", import.meta.url).pathname;
+// ⚠ fileURLToPath 而不是 .pathname：URL.pathname 在 Windows 上是 "/C:/…"，
+//   丢给 fs 会被拼成 "C:\C:\…"，整个文件在 Windows 机器上必红。
+const SRC = fileURLToPath(new URL("..", import.meta.url));
 const registry = readFileSync(`${SRC}block-registry.tsx`, "utf8");
 const screen = readFileSync(`${SRC}AppRuntimeScreen.tsx`, "utf8");
 
