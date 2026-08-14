@@ -6,7 +6,12 @@
 import { describe, it, expect } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { derivePageXray, describeXrayTarget, XrayPanel } from "../XrayPanel";
+import {
+  derivePageXray,
+  describeXrayTarget,
+  htmlBindingToXrayTarget,
+  XrayPanel,
+} from "../XrayPanel";
 import { deriveAppRuntimeSchema } from "../live-runtime/app-runtime-schema";
 import { SlideRuleStudio } from "../SlideRuleStudio";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
@@ -188,6 +193,103 @@ describe("describeXrayTarget（元素级 AR 焦点解读）", () => {
   });
 });
 
+describe("htmlBindingToXrayTarget（HTML 悬停 → 游标目标的翻译层）", () => {
+  /** 造一个够用的 Element 桩：node 环境没有 DOM，翻译函数只用这三样。 */
+  const fakeEl = (
+    attrs: Record<string, string> = {},
+    opts: { rowsEntity?: string; text?: string } = {}
+  ) =>
+    ({
+      getAttribute: (n: string) => attrs[n] ?? null,
+      closest: () =>
+        opts.rowsEntity ? { getAttribute: () => opts.rowsEntity } : null,
+      textContent: opts.text ?? "",
+    }) as unknown as Element;
+
+  it("data-field 带点号 → field 目标（entity.field 直接拆）", () => {
+    const t = htmlBindingToXrayTarget(
+      { attr: "data-field", value: "pet.species", el: fakeEl() },
+      "p1"
+    );
+    expect(t).toEqual({
+      kind: "field",
+      entityId: "pet",
+      fieldId: "species",
+      label: "pet.species",
+    });
+  });
+
+  it("data-field 裸字段名 → 实体取最近的 data-rows 容器；无容器如实 null", () => {
+    const inRows = htmlBindingToXrayTarget(
+      { attr: "data-field", value: "name", el: fakeEl({}, { rowsEntity: "pet" }) },
+      "p1"
+    );
+    expect(inRows).toEqual({
+      kind: "field",
+      entityId: "pet",
+      fieldId: "name",
+      label: "pet.name",
+    });
+    const orphan = htmlBindingToXrayTarget(
+      { attr: "data-field", value: "name", el: fakeEl() },
+      "p1"
+    );
+    expect(orphan).toBeNull();
+  });
+
+  it("data-rows / data-head → entity 目标；data-chart 取元素上的 entity+dimension", () => {
+    expect(
+      htmlBindingToXrayTarget({ attr: "data-rows", value: "booking", el: fakeEl() }, "p1")
+    ).toEqual({ kind: "entity", entityId: "booking", label: "booking" });
+    expect(
+      htmlBindingToXrayTarget(
+        {
+          attr: "data-chart",
+          value: "bar",
+          el: fakeEl({ "data-entity": "pet", "data-dimension": "species" }),
+        },
+        "p1"
+      )
+    ).toEqual({ kind: "field", entityId: "pet", fieldId: "species", label: "pet.species" });
+  });
+
+  it("data-action → action 目标：如实报公共动作（权限那只手还没接，第三步）", () => {
+    const t = htmlBindingToXrayTarget(
+      { attr: "data-action", value: "createRecord", el: fakeEl({}, { text: "新建预约" }) },
+      "p2"
+    );
+    expect(t).toEqual({
+      kind: "action",
+      label: "新建预约",
+      pageId: "p2",
+      permission: null,
+      granted: true,
+    });
+    // describeXrayTarget 对 permission:null 的解读必须是"公共动作"，不是报错
+    expect(describeXrayTarget(MODEL, t!).lines.join()).toContain("公共动作");
+  });
+
+  it("参数孔（data-sort 等）→ 指认到所在行容器的实体", () => {
+    const t = htmlBindingToXrayTarget(
+      { attr: "data-sort", value: "date", el: fakeEl({}, { rowsEntity: "booking" }) },
+      "p1"
+    );
+    expect(t).toEqual({ kind: "entity", entityId: "booking", label: "booking" });
+  });
+
+  it("entity 目标的解读：字段数 + 哪些页面绑定它", () => {
+    const d = describeXrayTarget(MODEL, {
+      kind: "entity",
+      entityId: "pet",
+      label: "pet",
+    });
+    expect(d.skill).toBe("dataModel");
+    expect(d.title).toBe("宠物档案");
+    expect(d.lines.join()).toContain("2 个字段");
+    expect(d.lines.join()).toContain("宠物档案页");
+  });
+});
+
 describe("SlideRuleStudio 三态舞台", () => {
   it("无模型（空会话）→ board：六系统缩略在场，无应用舞台", () => {
     const html = renderToStaticMarkup(
@@ -196,6 +298,30 @@ describe("SlideRuleStudio 三态舞台", () => {
     expect(html).toContain("AppBundle"); // 缩略条
     expect(html).not.toContain('data-testid="sliderule-app-stage"');
     expect(html).not.toContain('data-testid="sliderule-xray-toggle"');
+  });
+
+  it("成品面顶栏与老链路统一：桌面/代码档 + 游标开关都在场", () => {
+    const html = renderToStaticMarkup(
+      <SlideRuleStudio
+        chatSlot={<div />}
+        activeSkillId={null}
+        specPages={[
+          {
+            pageId: "p1",
+            html: "<!doctype html><html><body>x</body></html>",
+            current: 1,
+            total: 1,
+          },
+        ]}
+      />
+    );
+    expect(html).toContain('data-testid="sliderule-stage-gears"');
+    expect(html).toContain('data-testid="sliderule-stage-view-page"');
+    expect(html).toContain('data-testid="sliderule-stage-view-code"');
+    expect(html).toContain('data-testid="sliderule-xray-toggle"');
+    expect(html).toContain("桌面");
+    expect(html).toContain("代码");
+    expect(html).toContain("游标");
   });
 
   it("推演中且应用未成形 → live 占位（llmDraft 为空也不许闪回 board）", () => {

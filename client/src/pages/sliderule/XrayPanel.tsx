@@ -25,10 +25,65 @@ export interface XraySection {
 /** 元素级游标目标：应用内被悬停的具体元素（对齐焦点）。 */
 export type XrayTarget =
   | { kind: "field"; entityId: string; fieldId: string; label: string }
+  | { kind: "entity"; entityId: string; label: string }
   | { kind: "action"; label: string; pageId: string; permission: string | null; granted: boolean; role?: string }
   | { kind: "menu"; pageId: string; label: string }
   | { kind: "ai"; capId: string; label: string }
   | { kind: "workflow"; label: string; pageId: string };
+
+/**
+ * HTML 页面的悬停绑定 → 游标目标（2026-08-14，spec 舞台的游标复活）。
+ *
+ * 老区块渲染器的探针直接产出结构化 XrayTarget；HTML 页的悬停只有
+ * `{attr, value, el}`（见 html-app-surface 的 onHoverBinding）——这里就是
+ * 中间缺的那层翻译。词表就是 html-binding-runtime 的 BINDING_ATTRS，
+ * 认不出的孔如实返回 null（面板回落到页面级切片），不编目标。
+ *
+ * ⚠ data-action 现在恒 permission:null / granted:true——不是偷懒，是**如实**：
+ *   权限那只手还没伸进 HTML 页（第三步），今天页面上的动作就是公共动作。
+ *   第三步接上角色上下文后，这两个值改从解释器的判定里来。
+ */
+export function htmlBindingToXrayTarget(
+  info: { attr: string; value: string; el: Element },
+  activePageId: string
+): XrayTarget | null {
+  const v = (info.value || "").trim();
+  /** 行内的孔（data-field/data-cell…）的实体上下文 = 最近的逐行容器 */
+  const rowsEntity = () =>
+    info.el.closest?.("[data-rows]")?.getAttribute("data-rows")?.trim() || null;
+
+  switch (info.attr) {
+    case "data-field":
+    case "data-value": {
+      // 值可能是 "entity.field"（页面级取值）或裸 fieldId（行内取当前行）
+      const dot = v.indexOf(".");
+      const entityId = dot > 0 ? v.slice(0, dot) : rowsEntity();
+      const fieldId = dot > 0 ? v.slice(dot + 1) : v;
+      if (!entityId || !fieldId) return null;
+      return { kind: "field", entityId, fieldId, label: `${entityId}.${fieldId}` };
+    }
+    case "data-rows":
+    case "data-head":
+    case "data-entity":
+      return v ? { kind: "entity", entityId: v, label: v } : null;
+    case "data-chart": {
+      const entityId = info.el.getAttribute?.("data-entity")?.trim() || null;
+      const dim = info.el.getAttribute?.("data-dimension")?.trim() || null;
+      if (entityId && dim)
+        return { kind: "field", entityId, fieldId: dim, label: `${entityId}.${dim}` };
+      return entityId ? { kind: "entity", entityId, label: entityId } : null;
+    }
+    case "data-action": {
+      const label = (info.el.textContent || "").trim().slice(0, 24) || v;
+      return { kind: "action", label, pageId: activePageId, permission: null, granted: true };
+    }
+    default: {
+      // sort/order/limit/cell/col… 都是挂在行容器边上的参数孔，指认到实体
+      const entityId = rowsEntity();
+      return entityId ? { kind: "entity", entityId, label: entityId } : null;
+    }
+  }
+}
 
 /** 元素目标 → 背后声明的解读（纯函数，供焦点卡渲染与单测）。 */
 export function describeXrayTarget(
@@ -54,6 +109,23 @@ export function describeXrayTarget(
       skill: "dataModel",
       title: `${entity?.name || target.entityId} · ${field?.name || target.fieldId}`,
       lines,
+    };
+  }
+  if (target.kind === "entity") {
+    const entity = entities.find((e) => e.id === target.entityId);
+    const fields = entity?.fields ?? [];
+    const pages = (model.page?.pages ?? []).filter((p) =>
+      (p.fieldBindings ?? []).some((b) => b.startsWith(`${target.entityId}.`))
+    );
+    return {
+      skill: "dataModel",
+      title: entity?.name || target.entityId,
+      lines: [
+        `${fields.length} 个字段`,
+        pages.length
+          ? `被 ${pages.length} 个页面绑定：${pages.map((p) => p.name || p.id).join("、")}`
+          : "未被页面声明绑定",
+      ],
     };
   }
   if (target.kind === "action") {

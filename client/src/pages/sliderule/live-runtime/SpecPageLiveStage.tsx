@@ -73,6 +73,11 @@ export interface SpecPageLiveStageProps {
    *  应用中心只读预览传落地页——那儿页面是一次到齐的，"最新"没有意义，
    *  开屏看到的应该是导航第一项，跟真用户进应用的第一眼一致。 */
   defaultPageId?: string | null;
+  /** 桌面 = 渲染页面；代码 = 当前页交付的 HTML 原文（顶栏「桌面/代码」档，
+   *  与老区块舞台的档位切换同语义——代码档看的就是交付物本体，不是投影）。 */
+  view?: "page" | "code";
+  /** 当前展示页变化时上报（游标面板要跟随页面切片）。 */
+  onActivePageChange?: (pageId: string) => void;
   className?: string;
 }
 
@@ -85,6 +90,8 @@ export function SpecPageLiveStage({
   onAction,
   onHoverBinding,
   defaultPageId = null,
+  view = "page",
+  onActivePageChange,
   className = "",
 }: SpecPageLiveStageProps): React.ReactElement | null {
   // 手动选过就听手动的；没选过恒跟最新一页（页面在陆续到达，跟着最新的
@@ -109,6 +116,11 @@ export function SpecPageLiveStage({
     pages[pages.length - 1]?.pageId ??
     null;
   const active = pages.find(p => p.pageId === activeId) ?? null;
+
+  // 当前页上报（游标面板跟随）。必须在早退之前——hook 顺序不能随分支变。
+  React.useEffect(() => {
+    if (activeId) onActivePageChange?.(activeId);
+  }, [activeId, onActivePageChange]);
 
   if (!active) return null;
 
@@ -179,6 +191,19 @@ export function SpecPageLiveStage({
           </span>
         )}
       </div>
+      {view === "code" ? (
+        /* 代码档：交付的 HTML 原文本体（不是模型投影）。看的与渲染的是同一份
+           字符串——想核对某个 data-* 孔打没打上，这里一眼见底。 */
+        <div
+          className="min-h-0 flex-1 overflow-auto rounded-md border border-[#e9edf2] bg-[#1e293b] p-4"
+          data-testid="sliderule-spec-page-code"
+        >
+          <pre className="whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-slate-200">
+            {active.html}
+          </pre>
+        </div>
+      ) : (
+      <>
       {/* 缩放画布（2026-08-14）：**页面是照 1920×1080 画的，就得在 1920×1080 里看**。
           此前这里是直接铺满容器的——容器多宽 iframe 就多宽，于是同一份 HTML
           在窄窗口里会掉进 Tailwind 的低断点：`2xl:`（1536）整档失效、多列栅格
@@ -238,6 +263,8 @@ export function SpecPageLiveStage({
           />
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }

@@ -18,7 +18,7 @@
  *   AppRuntimeScreen 本身没删，应用中心（AppBundleScreen）照旧用它。
  */
 
-import React, { useState, useCallback, useMemo, useEffect } from "react";
+import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import type { SkillId } from "@/lib/sliderule-marathon-driver";
 import type { PublishClosureSummary } from "./derive-cross-runtime-summary";
 import { SkillThumbnailBar } from "./SkillThumbnailBar";
@@ -34,16 +34,28 @@ import {
 } from "./live-runtime/SpecPageLiveStage";
 import {
   initRuntimeState,
-  addRow,
   type RuntimeState,
 } from "./live-runtime/live-runtime";
 import { seedRuntimeState } from "./live-runtime/demo-seed";
 import {
   loadRuntimeState,
   saveRuntimeState,
+  notifyRuntimeChanged,
 } from "./live-runtime/runtime-persistence";
+import {
+  RecordFormDrawer,
+  type RecordActionRequest,
+} from "./live-runtime/RecordFormDrawer";
 import { RollingText } from "./RollingText";
-import { X } from "lucide-react";
+import { deriveAppRuntimeSchema } from "./live-runtime/app-runtime-schema";
+import {
+  XrayPanel,
+  htmlBindingToXrayTarget,
+  type XrayTarget,
+} from "./XrayPanel";
+import { Crosshair, X } from "lucide-react";
+
+const XRAY_PREF_KEY = "sliderule:xray-on";
 
 /** 抽屉标题：系统的中文名（游标语境下不再用英文胶囊） */
 const SKILL_LABELS: Record<SkillId, string> = {
@@ -203,28 +215,30 @@ export function SlideRuleStudio({
     );
   }, [fiveSystemModel, runtimeSessionId]);
 
-  // 页面里的动作。⚠ 现在只做"新建"这一件真事——openRecord/editRecord 需要
-  // 一个表单面，那是下一步。**不装作做了**：接不住的动作如实什么都不做，
-  // 而不是弹个假的成功提示。
+  // 页面里的动作 → 表单面（2026-08-14，还掉上一版"那是下一步"的欠条）。
+  // 三种 kind 全部接住：createRecord 不再静默塞空行——先填值再入库，跟
+  // openRecord（详情）/ editRecord（编辑）共用同一张 RecordFormDrawer。
+  // 词表不动：还是那三个词，这里只是让它们产生后果。
+  const [recordAction, setRecordAction] = useState<RecordActionRequest | null>(
+    null
+  );
   const handleHtmlAction = useCallback(
-    (ev: { kind: string; entityId: string; rowId: string | null }) => {
-      if (ev.kind !== "createRecord" || !fiveSystemModel) return;
-      setHtmlRuntime(prev => {
-        if (!prev) return prev;
-        const entity = (fiveSystemModel.datamodel?.entities ?? []).find(
-          e => e.id === ev.entityId
-        );
-        if (!entity) return prev;
-        const values: Record<string, unknown> = {};
-        for (const f of entity.fields ?? []) if (f?.id) values[f.id] = "";
-        const { state: next } = addRow(
-          prev, ev.entityId, values, new Date().toISOString()
-        );
-        saveRuntimeState(runtimeSessionId, next);
-        return next;
-      });
+    (ev: RecordActionRequest) => {
+      // 模型/运行态没就绪时不开一张填不了的表单（推演早期理论上没有动作
+      // 可点，这条是防御性一致：接不住就如实什么都不做）
+      if (!fiveSystemModel || !htmlRuntime) return;
+      setRecordAction(ev);
     },
-    [fiveSystemModel, runtimeSessionId]
+    [fiveSystemModel, htmlRuntime]
+  );
+  const applyRuntime = useCallback(
+    (next: RuntimeState) => {
+      setHtmlRuntime(next);
+      saveRuntimeState(runtimeSessionId, next);
+      // 广播给共享同一份状态的面（EntityDataPanel 在系统抽屉里订阅着它）
+      notifyRuntimeChanged(runtimeSessionId);
+    },
+    [runtimeSessionId]
   );
 
   // 舞台：推演中恒为 live 占位（用户裁决 2026-07-14：执行期不看中间过程
@@ -258,17 +272,50 @@ export function SlideRuleStudio({
         ? "theater"
         : "board";
 
-  // ⚑ 2026-08-14：游标（xray）与档位切换条随区块页一起从本页下架。
-  //
-  // 它们不是"顺手删的"，是**失去了作用对象**：游标透视的是区块页上那些埋了
-  // 五系统声明的元素（XrayPanel 要 appSchema + XrayTarget），档位切换条是
-  // AppRuntimeScreen portal 出来的。区块页不再上舞台，这两样在本页就没有
-  // 任何东西可以对准。
-  //
-  // ⚠ 能力本身没删：XrayPanel / AppRuntimeScreen 都还在，应用中心
-  //   （AppBundleScreen）照旧用。要在 HTML 页上做游标是另一件事——
-  //   悬停给的是 {attr,value,el}（见 SpecPageLiveStage.onHoverBinding），
-  //   跟 XrayTarget 不是同一种东西，得先有个 HTML 版的透视面才谈得上。
+  // ⚑ 2026-08-14（当天回炉）：游标与档位切换随区块页下架后，用户点名要回来
+  // ——「跟以前链路顶部保持统一，之前挺好用的」。这次不是把 AppRuntimeScreen
+  // 的 portal 接回来，而是给 HTML 舞台配齐同一排件：
+  //   · 桌面/代码档：桌面 = 渲染页；代码 = 当前页交付的 HTML 原文
+  //   · 游标：XrayPanel 原样复用（它只吃模型 + schema，纯派生），中间缺的
+  //     那层「{attr,value,el} → XrayTarget」翻译落在 htmlBindingToXrayTarget
+  const [stageView, setStageView] = useState<"page" | "code">("page");
+  const [activeSpecPageId, setActiveSpecPageId] = useState<string>("home");
+  // 游标开关（计算尺游标 hairline 的品牌梗；偏好持久化，键跟老舞台同一个
+  // ——用户在老链路开过游标，这里就该记得）
+  const [xrayOn, setXrayOn] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(XRAY_PREF_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [xrayTarget, setXrayTarget] = useState<XrayTarget | null>(null);
+  const toggleXray = useCallback(() => {
+    setXrayOn(v => {
+      try {
+        localStorage.setItem(XRAY_PREF_KEY, v ? "0" : "1");
+      } catch {
+        /* 隐私模式下存不了偏好，开关本身照常工作 */
+      }
+      if (v) setXrayTarget(null); // 关游标时清掉残留焦点
+      return !v;
+    });
+  }, []);
+  // 悬停监听是 iframe load 时挂的（html-app-surface）：回调必须**恒传**，
+  // 否则"先加载后开游标"的那个框永远没有监听。开没开在这里用 ref 把关。
+  const xrayOnRef = useRef(xrayOn);
+  xrayOnRef.current = xrayOn;
+  const handleHoverBinding = useCallback(
+    (info: { attr: string; value: string; el: Element } | null) => {
+      if (!xrayOnRef.current) return;
+      setXrayTarget(info ? htmlBindingToXrayTarget(info, activeSpecPageId) : null);
+    },
+    [activeSpecPageId]
+  );
+  const appSchema = useMemo(
+    () => deriveAppRuntimeSchema(fiveSystemModel, appTitle || "推演应用"),
+    [fiveSystemModel, appTitle]
+  );
 
   // 系统屏抽屉（游标深入 / 抽屉内六系统横向切换）
   const [drawerSkill, setDrawerSkill] = useState<SkillId | null>(null);
@@ -375,16 +422,75 @@ export function SlideRuleStudio({
                 </span>
               )}
               {versionToolbar}
+              {/* 顶栏右侧三件（2026-08-14 回炉）：桌面/代码档 + 游标——跟老区块
+                  舞台同一排、同一语义（用户点名「跟以前链路顶部保持统一」）。 */}
+              <div
+                className={`${versionToolbar ? "" : "ml-auto "}flex shrink-0 items-center gap-1.5`}
+                data-testid="sliderule-stage-gears"
+              >
+                <div className="flex items-center rounded-full border border-[#e5e7eb] bg-white p-0.5">
+                  {(
+                    [
+                      ["page", "桌面"],
+                      ["code", "代码"],
+                    ] as const
+                  ).map(([v, label]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setStageView(v)}
+                      aria-pressed={stageView === v}
+                      data-testid={`sliderule-stage-view-${v}`}
+                      className={`rounded-full px-2.5 py-0.5 text-[11px] transition ${
+                        stageView === v
+                          ? "bg-[#1f2328] font-medium text-white"
+                          : "text-stone-500 hover:bg-[#f1f3f5]"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={toggleXray}
+                  data-testid="sliderule-xray-toggle"
+                  aria-pressed={xrayOn}
+                  className={`flex h-8 items-center gap-1.5 rounded-full border px-3.5 text-[12px] font-semibold transition ${
+                    xrayOn
+                      ? "border-transparent bg-[#1677ff] text-white shadow-sm"
+                      : "border-[#e5e7eb] bg-white text-stone-600 hover:border-[#d3d8e0] hover:bg-[#f8f9fb]"
+                  }`}
+                  title="计算尺的游标：对齐到元素，读出它在五系统刻度上的对应声明"
+                >
+                  <Crosshair className="h-3.5 w-3.5" />
+                  游标
+                </button>
+              </div>
             </div>
-            <SpecPageLiveStage
-              pages={livePages}
-              statusLabel={isRunning ? liveActionLabel : null}
-              running={isRunning}
-              model={fiveSystemModel}
-              runtime={htmlRuntime}
-              onAction={handleHtmlAction}
-              className="min-h-0 flex-1"
-            />
+            <div className="flex min-h-0 flex-1 gap-3">
+              <SpecPageLiveStage
+                pages={livePages}
+                statusLabel={isRunning ? liveActionLabel : null}
+                running={isRunning}
+                model={fiveSystemModel}
+                runtime={htmlRuntime}
+                onAction={handleHtmlAction}
+                onHoverBinding={handleHoverBinding}
+                onActivePageChange={setActiveSpecPageId}
+                view={stageView}
+                className="min-h-0 min-w-0 flex-1"
+              />
+              {xrayOn && fiveSystemModel && appSchema && (
+                <XrayPanel
+                  model={fiveSystemModel}
+                  schema={appSchema}
+                  activePageId={activeSpecPageId}
+                  target={xrayTarget}
+                  onOpenSystem={setDrawerSkill}
+                />
+              )}
+            </div>
           </>
         ) : stage === "live" ? (
           /* 模型还没成形（轮内步骤 / 起草早期）：右侧只报"推演中"——实时想法
@@ -496,6 +602,16 @@ export function SlideRuleStudio({
             />
           </div>
         )}
+
+        {/* HTML 页面动作的表单面：详情/编辑/新建三态，写回运行态后 data-* 孔
+            随 htmlRuntime 变化立刻重填——写数据闭环的可见反馈就是页面本身。 */}
+        <RecordFormDrawer
+          model={fiveSystemModel}
+          state={htmlRuntime}
+          request={recordAction}
+          onClose={() => setRecordAction(null)}
+          onApply={applyRuntime}
+        />
       </div>
     </div>
   );

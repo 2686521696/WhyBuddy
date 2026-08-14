@@ -401,6 +401,61 @@
 %%     仓里 ws 已有同款写法）；两个测试文件用 URL.pathname 拼 fs 路径，Windows 上
 %%     必红 C:\C:\…（改 fileURLToPath）。
 %% ·
+%% ═══════════════════════════════════════════════════════════════════════════
+%% ⚑⚑I 2026-08-14（傍晚·新落地）：表单面 —— openRecord/editRecord 产生后果
+%% ═══════════════════════════════════════════════════════════════════════════
+%%   欠条原文（SlideRuleStudio.handleHtmlAction 头注）：「现在只做"新建"这一件
+%%   真事——openRecord/editRecord 需要一个表单面，那是下一步」。这一步就是还它。
+%%   落地（live-runtime/RecordFormDrawer.tsx + SlideRuleStudio 接线）：
+%%     · 三态一张抽屉：openRecord → 详情（FieldValue 只读，带编辑入口，取消回
+%%       详情不丢行值）；editRecord → 表单（行值预填）；createRecord → 表单
+%%       （**不再静默塞空行**——先填值过校验再入库，空表单直接保存会被拦）
+%%     · 零新造：字段控件复用 FieldEditor / FieldValue（两侧共读 field-value-type
+%%       那张档位表，即 ant-design/pro-components 的 valueType 机制的本地版）；
+%%       校验 validateRowFields（fail-closed，红字标栏）；落库 addRow/updateRow；
+%%       第一条真实数据前清演示种子（dropSeedRowsFor，与 EntityDataPanel 同纪律）
+%%     · **词表不动**：还是 createRecord/openRecord/editRecord 三个词（Python
+%%       html_bindings.ACTION_KINDS 与前端 ActionKind 一字不差），表单面只是让
+%%       已有的词产生后果。转移词（工作流）留给下一步，不在这轮夹带
+%%     · 写数据闭环的反馈就是页面本身：onApply 把新 RuntimeState 交回宿主
+%%       （saveRuntimeState + notifyRuntimeChanged，系统抽屉里的 EntityDataPanel
+%%       同步看见），deriveBindingSource 重算，data-* 孔立刻重填
+%%     · 应用中心照旧只读：SpecPagesPreview 本来就不传 onAction，动作在解释器
+%%       里就没有去处——只读开关天然在宿主手里，不需要新加 prop
+%%     · 行不存在/实体不在模型里：如实报错（绑定问题不该被表单面掩盖），
+%%       不渲染一张空表单装作能编辑
+%%   判据 record-form-drawer.test.tsx 七条（空表单被拦/种子被清/取消回详情
+%%   不丢值/updateRow 不丢没动的字段/行缺失与实体缺失如实报错）。全量 client
+%%   5776+7 绿（wall-renders-something 那条比例测试在全量并发下偶发超时，
+%%   单跑绿——既有毛病，与本轮无关）。
+%% ·
+%% ═══════════════════════════════════════════════════════════════════════════
+%% ⚑⚑J 2026-08-14（傍晚·回炉）：顶栏三件回岗 —— 桌面/代码档 + 游标上 HTML 舞台
+%% ═══════════════════════════════════════════════════════════════════════════
+%%   区块页下架时（⚑⚑本文件上方 stage 改造那轮）游标和档位切换条跟着没了——
+%%   当时的注释写的是「失去了作用对象」。用户点名要回来：「跟以前链路顶部保持
+%%   统一，之前挺好用的」。这轮不是把 AppRuntimeScreen 的 portal 接回来，而是
+%%   给 HTML 舞台配齐同一排件（SlideRuleStudio 顶栏 + SpecPageLiveStage）：
+%%     · 桌面/代码档：桌面 = 1920×1080 缩放画布；代码 = **当前页交付的 HTML
+%%       原文**（不是模型投影——看的与渲染的是同一份字符串，核对 data-* 孔
+%%       打没打上一眼见底）
+%%     · 游标：XrayPanel 原样复用（纯派生，只吃模型 + schema）。此前缺的那层
+%%       「悬停 {attr,value,el} → XrayTarget」翻译落在 htmlBindingToXrayTarget
+%%       （XrayPanel.tsx）：data-field 带点直接拆，裸字段名沿 closest[data-rows]
+%%       找实体上下文；data-rows/head/entity → 新增的 entity 目标；data-chart
+%%       取元素上的 entity+dimension；参数孔（sort/limit…）指认到所在行容器。
+%%       认不出的孔如实 null，面板回落页面级切片，不编目标
+%%     · ⚠ data-action 恒 permission:null/granted:true——**如实**：权限那只手
+%%       还没伸进 HTML 页（第三步），今天页面上的动作就是公共动作。第三步接上
+%%       角色上下文后这两个值改从解释器判定里来（那时游标立刻能看见锁）
+%%     · 悬停监听是 iframe load 时挂的（html-app-surface 只在回调在场时挂）——
+%%       宿主**恒传**回调、开没开用 xrayOnRef 把关，否则"先加载后开游标"的框
+%%       永远没有监听
+%%     · 偏好键沿用老舞台的 sliderule:xray-on——用户在老链路开过游标，这里就
+%%       该记得
+%%   判据：XrayPanel.test.tsx 新增翻译层六条 + 顶栏在场一条；sliderule 全目录
+%%   138 文件 1340 条绿。
+%% ·
 %% ★ 以下为 V5.9（08-13 白天）图全文，逐字保留；节点区含 ⚑ V6.0 标注的修正：
 %% ---------------------------------------------------------------------------
 %% 面团 AI（原 SlideRule）V5.9 架构图（推演引擎规格 · 继承 V5.8 全图 + ❖ 08-11 升版 + ⛔ 08-13 标红）
