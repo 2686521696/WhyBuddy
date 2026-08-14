@@ -318,6 +318,7 @@ def run_spec_first(
     from .spec_page_html import generate_pages_parallel
     from .spec_semantics import derive_semantics, to_model_sections  # noqa: F401
     from .spec_tree import generate_spec_tree
+    from .run_cancel import raise_if_cancelled
 
     stages: Dict[str, Any] = {}
     device = resolve_preferred_device(goal, None)
@@ -339,6 +340,7 @@ def run_spec_first(
     ]
 
     # ── 第 3 步：每页 HTML（并发；单页失败不拖垮整批）────────────────
+    raise_if_cancelled("第3步 逐页画界面")
     with _stage("specfirst.pages") as st:
         # on_page 透传：这一步是整条链上**第一个产出可以直接看的东西**的地方，
         # 一份能独立打开的 HTML 比最终模型早四五分钟。攒齐再交等于白白转圈。
@@ -375,6 +377,7 @@ def run_spec_first(
         raise SpecFirstError(f"第 3 步一页都没出来：{list(failed.values())[:2]}")
 
     # ── 第 3.5 步：外壳统一（零 LLM）────────────────────────────────
+    raise_if_cancelled("第3.5步 外壳统一")
     with _stage("specfirst.shell") as st:
         shell = unify_shell(pages, spec, device=device)
         pages = dict(shell.get("pages") or pages)
@@ -393,6 +396,7 @@ def run_spec_first(
     _reemit_pages(sink, pages, bound=False)
 
     # ── 第 4 步：HTML → 结构 ────────────────────────────────────────
+    raise_if_cancelled("第4步 反推结构")
     with _stage("specfirst.structure") as st:
         structure_model = derive_structure(pages, goal=goal, llm_json_fn=llm_json_fn)
         structure = (
@@ -407,6 +411,7 @@ def run_spec_first(
     # ── 第 5 步：(结构 + SPEC) → 权限 / 工作流 / 不变式 ───────────────
     # ⚠ 两个输入都要。三臂对照实测：只有 SPEC 会编出结构里没有的对象；
     #   只有结构会把多类使用者塌成一个角色。B 是唯一过闸的那一臂。
+    raise_if_cancelled("第5步 推导语义")
     with _stage("specfirst.semantics") as st:
         semantics_model = derive_semantics(structure, spec, llm_json_fn=llm_json_fn)
         semantics = (
@@ -419,6 +424,7 @@ def run_spec_first(
     stages["semantics"] = dict(st)
 
     # ── 第 6 步：汇合 → 完整六段 → 过结构闸 ─────────────────────────
+    raise_if_cancelled("第6步 汇合过闸")
     with _stage("specfirst.assemble") as st:
         assembled = assemble(structure, semantics, spec, llm_json_fn=llm_json_fn)
         model = assembled.get("model") if isinstance(assembled, dict) else assembled
@@ -432,6 +438,7 @@ def run_spec_first(
     #   那时 datamodel 还不存在，写 data-field 是引用没被发明的 id。
     bound_failed: Dict[str, Any] = {}
     if bind_html:
+        raise_if_cancelled("第6.5步 打绑定孔")
         with _stage("specfirst.bind") as st:
             bound = bind_pages(pages, model)
             if bound.get("pages"):

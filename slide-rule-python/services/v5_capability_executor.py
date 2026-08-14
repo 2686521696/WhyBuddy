@@ -436,6 +436,7 @@ def _try_llm_generate_evidence(
     _spec_first_enabled = None
     try:
         from .spec_first_pipeline import run_spec_first, spec_first_enabled as _spec_first_enabled
+        from .run_cancel import RunCancelled
     except Exception:  # noqa: BLE001 — 新模块缺失不该打死老路
         pass
     # ⚠ 这个标志决定下面**跑不跑 enrich_***，所以它必须只在新链路真的产出
@@ -471,6 +472,17 @@ def _try_llm_generate_evidence(
                 model = run_spec_first(goal, llm_json_fn=llm_json_fn, refine=_spec_refine)["model"]
                 from_spec_first = True
                 print("[v5_capability_executor] spec-first 链路产出模型")
+            except RunCancelled:
+                # ★ 取消不是"新链路挂了"，**不许回落老链路**。
+                #
+                # 2026-08-14 真机就是这个形状：孤儿 run 被判超时后，spec-first
+                # 那一步失败 → 这个宽 except 把它当成故障 → 老链路接着跑了几百秒。
+                # 用户已经不看了，两条链路却前后烧了两遍。
+                #
+                # 往上抛给 run_registry：它捕到 RunCancelled 才把 run 标成
+                # cancelled——那时线程里确实没有活在跑了。
+                print("[v5_capability_executor] 已请求取消，spec-first 停止且不回落老链路")
+                raise
             except Exception as exc:  # noqa: BLE001 — 显式回落，留痕
                 print(f"[v5_capability_executor] spec-first 失败，回落老链路：{str(exc)[:200]}")
                 model = None
