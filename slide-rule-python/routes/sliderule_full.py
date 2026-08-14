@@ -1197,6 +1197,15 @@ def restore_model_version(
         # 已经就是当前版本：无操作（防前进/回退连点）
         return {"restored": False, "reason": "already_current", "state": state.model_dump()}
 
+    # ⚠ 页面跟着版本一起回退。不跟的话回退是**说谎**：指针回到 v1，右侧还是
+    #   v3 的页面。这跟下面 D8 那条修复（"UI 显示回到 v1、实际跑的还是 v3"）
+    #   是同一个病，只是发生在交付物上而不是模型上。
+    #
+    #   ⚠ 目标版本没有页面时**置空，不保留当前的**——早于 _PAGES_KEPT_VERSIONS
+    #   的版本会被抹掉页面（见 record_model_snapshot 的容量说明）。那时右侧
+    #   如实回落老区块渲染，而不是拿另一版的页面冒充这一版的。
+    state.specFirstPages = target.get("specFirstPages") or None
+
     from services.v5_llm_generate import set_model_override
     from services.v5_full_driver import _ensure_runtime_closure_evidence, record_model_version
     from services.v5_publish_closure_response import derive_publish_closure_response

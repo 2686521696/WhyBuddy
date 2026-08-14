@@ -732,6 +732,13 @@ def record_model_version(state: "V5SessionState", publish_closure, instruction: 
     record_model_snapshot(state, model, instruction)
 
 
+#: 有几版带得起整页 HTML。实测单页 19~28KB、五页一版约 125KB，
+#: 而模型版本上限是 20 版——全带就是 2.5MB 的会话 blob，每次存盘都要过一遍。
+#: 3 版覆盖"改一版、发现不对、回上一版"这个真实的来回，再往前的
+#: 回退如实降级（没有那一版的页面就别装作有）。
+_PAGES_KEPT_VERSIONS = 3
+
+
 def record_model_snapshot(
     state: "V5SessionState", model: "Dict[str, Any]", instruction: str
 ) -> None:
@@ -796,8 +803,23 @@ def record_model_snapshot(
         # 模型是照着 goal 生成的，goal 就必须进键；对不上宁可重算。
         "goalDigest": goal_digest(state),
         "model": model,
+        # spec-first 画出来的整页（2026-08-14）。不带的话回退是**说谎**：
+        # 指针回到 v1，右侧还是 v3 的页面——正是这段代码上面那条 D8 修复
+        # （"UI 显示回到 v1、实际跑的还是 v3"）在模型上治过的同一个病。
+        "specFirstPages": getattr(state, "specFirstPages", None),
     })
-    state.modelVersions = versions[-20:]  # 上限 20 版，防状态无限膨胀
+    versions = versions[-20:]  # 上限 20 版，防状态无限膨胀
+    # ⚠ 页面很重：实测单页 19~28KB，五页一版约 125KB。20 版全带 = 2.5MB，
+    #   而这是**每次存盘都要过一遍**的会话 blob。所以只有最近几版带页面，
+    #   更早的版本把这个键抹掉。
+    #
+    #   抹掉之后回退到那些版本会**如实没有页面**（右侧回落老区块渲染），
+    #   而不是拿别的版本的页面凑一个——「东西看着在，其实是旧的」是这仓
+    #   数得最多的形状，这里宁可少给也不给错的。
+    for stale in versions[:-_PAGES_KEPT_VERSIONS]:
+        if isinstance(stale, dict):
+            stale["specFirstPages"] = None
+    state.modelVersions = versions
     state.currentModelVersionId = new_id
 
 

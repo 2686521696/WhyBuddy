@@ -151,3 +151,73 @@ class Test状态字段本身:
         block = text[text.index("function preservePythonEvidenceProjection"):]
         block = block[: block.index("\n}")]
         assert "specFirstPages" in block, "前端存回去时会把它丢掉"
+
+
+class Test页面跟着版本一起回退:
+    """回退不带页面 = **说谎**：指针回到 v1，右侧还是 v3 的页面。
+
+    这跟 restore 那条 D8 修复（"UI 显示回到 v1、实际跑的还是 v3"）是同一个病，
+    只是发生在交付物上而不是模型上。
+    """
+
+    def _snap(self, state, model, pages, instruction="改一版"):
+        from services.v5_full_driver import record_model_snapshot
+
+        state.specFirstPages = pages
+        record_model_snapshot(state, model, instruction)
+
+    def test_快照带上当时的页面(self):
+        state = V5SessionState(sessionId="v1", goal={"text": "x"}, artifacts=[])
+        self._snap(state, {"datamodel": {"entities": [1]}}, {"pages": {"p1": "<html>甲</html>"}})
+        assert state.modelVersions[-1]["specFirstPages"]["pages"]["p1"] == "<html>甲</html>"
+
+    def test_每版记各自那份_不串(self):
+        state = V5SessionState(sessionId="v2", goal={"text": "x"}, artifacts=[])
+        self._snap(state, {"datamodel": {"entities": [1]}}, {"pages": {"p1": "<html>一版</html>"}})
+        self._snap(state, {"datamodel": {"entities": [2]}}, {"pages": {"p1": "<html>二版</html>"}})
+        got = [v["specFirstPages"]["pages"]["p1"] for v in state.modelVersions]
+        assert got == ["<html>一版</html>", "<html>二版</html>"]
+
+    def test_只有最近几版带页面_更早的抹掉(self):
+        """⚠ 容量闸。实测单页 19~28KB、五页一版约 125KB，20 版全带 = 2.5MB
+        的会话 blob，而它每次存盘都要过一遍。"""
+        from services.v5_full_driver import _PAGES_KEPT_VERSIONS
+
+        state = V5SessionState(sessionId="v3", goal={"text": "x"}, artifacts=[])
+        for i in range(_PAGES_KEPT_VERSIONS + 3):
+            self._snap(state, {"datamodel": {"entities": [i]}},
+                       {"pages": {"p1": f"<html>第{i}版</html>"}})
+        carried = [v for v in state.modelVersions if v.get("specFirstPages")]
+        assert len(carried) == _PAGES_KEPT_VERSIONS
+        # 留下的必须是**最近的**那几版，不是最早的
+        assert carried[-1]["specFirstPages"]["pages"]["p1"].endswith(
+            f"第{_PAGES_KEPT_VERSIONS + 2}版</html>")
+
+    def test_抹掉的是页面_不是整条版本(self):
+        """版本记录本身要留着——◀▶ 还得能回退到那一版的模型，
+        只是那一版**如实没有页面**（右侧回落老区块渲染）。"""
+        from services.v5_full_driver import _PAGES_KEPT_VERSIONS
+
+        state = V5SessionState(sessionId="v4", goal={"text": "x"}, artifacts=[])
+        for i in range(_PAGES_KEPT_VERSIONS + 2):
+            self._snap(state, {"datamodel": {"entities": [i]}},
+                       {"pages": {"p1": f"<html>第{i}版</html>"}})
+        oldest = state.modelVersions[0]
+        assert oldest["specFirstPages"] is None
+        assert isinstance(oldest.get("model"), dict), "模型不许跟着页面一起没了"
+
+    def test_回退那一处真的会换页面(self):
+        """判据钉在路由源码上：这条线断了不会有任何用例变红
+        （回退照常成功、模型照常正确，只有页面是上一版的）。"""
+        import pathlib
+
+        src = (pathlib.Path(__file__).resolve().parents[1]
+               / "routes/sliderule_full.py").read_text(encoding="utf-8")
+        block = src[src.index("def restore_model_version"):]
+        block = block[: block.index("\n@router")] if "\n@router" in block else block
+        assert 'state.specFirstPages = target.get("specFirstPages") or None' in block, (
+            "回退没换页面——指针回到 v1，右侧还是 v3 的页"
+        )
+        # ⚠ `or None` 是关键：目标版本没有页面时要**置空**，
+        #   保留当前的等于拿另一版的页面冒充这一版的
+        assert "or None" in block

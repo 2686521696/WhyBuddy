@@ -104,7 +104,8 @@ import {
   graphNodeIdForArtifact,
 } from "./sliderule/derive-lineage-highlight";
 
-import { downloadSlideRuleDeliveryMd } from "./sliderule/serialize-sliderule-delivery-md";
+import { downloadSlideRuleDeliveryMd, serializeSlideRuleDeliveryMd } from "./sliderule/serialize-sliderule-delivery-md";
+import { downloadSlideRuleDeliveryHtml } from "./sliderule/serialize-sliderule-delivery-html";
 import { deriveLatestTurnFromState } from "./sliderule/derive-persisted-turn";
 import { deriveTurnPhases } from "./sliderule/derive-turn-phases";
 import {
@@ -2119,7 +2120,20 @@ function SlideRuleSessionBody({
         return;
       }
       if (action === "export" && reasoningViewModel.terminalMeta?.canExport) {
-        downloadSlideRuleDeliveryMd(sessionState);
+        // 交付口换成 HTML 载体（2026-08-14）：新链路画出来的整套页面打成
+        // 一个自包含文件，推演说明并进去当一页。
+        //
+        // ⚠ **没有页面时如实回落 .md**，不产出一个空壳包。老链路今天还在跑
+        //   （spec-first 挂了会显式回落），那一轮本来就没有 HTML 可交——
+        //   交一个点开什么都没有的文件，比不交更糟：它看着像交付成功了。
+        if (
+          !downloadSlideRuleDeliveryHtml(sessionState, {
+            appTitle: goal ? goal.slice(0, 40) : undefined,
+            notesMd: serializeSlideRuleDeliveryMd(sessionState),
+          })
+        ) {
+          downloadSlideRuleDeliveryMd(sessionState);
+        }
       }
     },
     [
