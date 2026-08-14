@@ -890,8 +890,25 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
         而且失败是静默的（能点、不报错、就是没反应）。
         """
 
-        kind: Literal["createRecord", "openRecord", "editRecord"]
+        #: 词表**直接查 html_bindings.ACTION_KINDS**（2026-08-14 晚收拢）。
+        #: 之前这里手抄了一份 Literal，靠 AST 测试跟那边对齐——四份词表
+        #: 两份是抄写。现在 Python 侧只剩 html_bindings 那一份，这里查表校验，
+        #: 加词只改一处。转移三种在自由树上暂时只是**词表统一**：老链路的
+        #: 提示词不教模型用它们（审批在 Workflow 试运行面做）。
+        kind: str
         entityRef: str
+
+        @field_validator("kind")
+        @classmethod
+        def check_kind(cls, v: str) -> str:
+            from services.html_bindings import ACTION_KINDS
+
+            if v not in ACTION_KINDS:
+                raise ValueError(
+                    f"actionRef.kind '{v}' 不在动作词表里。"
+                    f"只有这些词有后果：{list(ACTION_KINDS)}"
+                )
+            return v
 
         @field_validator("entityRef")
         @classmethod
@@ -1037,7 +1054,9 @@ def build_freeform_models(datamodel: dict[str, Any]) -> type[BaseModel]:
             def walk(node: "FreeformNode", row_entity: Optional[str]) -> None:
                 scope = node.rowsRef.entityRef if node.rowsRef is not None else row_entity
                 a = node.actionRef
-                if a is not None and a.kind in ("openRecord", "editRecord"):
+                # 转移三种跟 open/edit 同一条作用域规则：流程实例挂在具体
+                # 那条记录上，没有"当前行"就没有可提交/可审批的对象。
+                if a is not None and a.kind != "createRecord":
                     if scope is None:
                         raise ValueError(
                             f"actionRef '{a.kind}' 不在任何 rowsRef 里——"

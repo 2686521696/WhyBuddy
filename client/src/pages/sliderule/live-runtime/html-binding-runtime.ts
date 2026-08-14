@@ -33,9 +33,12 @@
  *     data-chart + data-entity + data-dimension + data-metric   图表
  *     data-action + data-entity   动作，点了发事件
  *
- * ⚠ 动作那三种 kind（createRecord / openRecord / editRecord）跟
- *   freeform_block.ActionRef 一字不差。两处表达同一件事，**词表分叉就是下一个
- *   对不齐的地方**——本仓在「手写 uses 声明 / 前端手抄区域词汇」上踩过两次。
+ * ⚠ 动作词表**每种语言只有一份**（2026-08-14 晚收拢）：前端就是本文件的
+ *   ACTION_KINDS（block-registry 的 FreeformActionRef 直接引用 ActionKind 类型），
+ *   Python 是 html_bindings.ACTION_KINDS（freeform_block 查它校验）。
+ *   两份之间靠 test_html_bindings 的跨语言看门测试钉死——**词表分叉就是
+ *   下一个对不齐的地方**，本仓在「手写 uses 声明 / 前端手抄区域词汇」上
+ *   踩过两次。加词只改两处：本文件 + html_bindings.py，看门测试不改就红。
  */
 
 import { formatFieldText, EMPTY_TEXT } from "./field-text";
@@ -67,10 +70,10 @@ export const BINDING_ATTRS = [
   "data-chart", "data-entity", "data-dimension", "data-metric", "data-metric-field",
   // 动作
   "data-action",
-  // 运行时**写回**的两个：行 id 与算好的 series。
+  // 运行时**写回**的三个：行 id、算好的 series、动作上锁的原因。
   // ⚠ 它们由解释器写、不由生成侧写，但消毒发生在解释之**前**也可能在之后
-  //   （重新消毒一份已填好的 HTML），漏了它们等于点击丢行、图表丢数。
-  "data-row-id", "data-series",
+  //   （重新消毒一份已填好的 HTML），漏了它们等于点击丢行、图表丢数、锁丢因。
+  "data-row-id", "data-series", "data-locked",
 ] as const;
 
 /** 一行数据。键是 fieldId。 */
@@ -127,7 +130,31 @@ export interface BindingSource {
   fields: Record<string, BindingField[]>;
 }
 
-export type ActionKind = "createRecord" | "openRecord" | "editRecord";
+/**
+ * 动作封闭词表。数组是运行时判定用的**唯一真相源**，类型从它派生——
+ * 写成手抄 union 的话，加词只改类型不改数组，判定会把新词当垃圾拒掉。
+ *
+ * 总表由两个子表**组合**而成（2026-08-14 晚收拢）：之前总表和转移子表
+ * 是两份重叠手写，改一处漏一处。现在每个词只出现一次。
+ */
+/** 记录三种（openRecord/editRecord 要当前行）。 */
+export const RECORD_ACTION_KINDS = ["createRecord", "openRecord", "editRecord"] as const;
+
+/** 转移三种：把行提交进审批流 / 通过 / 驳回。三个都要当前行、
+ *  要实体真的挂了流程——流程实例是挂在具体那条记录上的（entityRef）。 */
+export const WORKFLOW_ACTION_KINDS = [
+  "submitWorkflow", "approveWorkflow", "rejectWorkflow",
+] as const;
+
+export const ACTION_KINDS = [...RECORD_ACTION_KINDS, ...WORKFLOW_ACTION_KINDS] as const;
+
+export type ActionKind = (typeof ACTION_KINDS)[number];
+export type WorkflowActionKind = (typeof WORKFLOW_ACTION_KINDS)[number];
+
+/** 使用点判断"是不是转移词"统一走这里——别再手写三个 `===` 串。 */
+export function isWorkflowActionKind(v: string): v is WorkflowActionKind {
+  return (WORKFLOW_ACTION_KINDS as readonly string[]).includes(v);
+}
 
 export interface BindingActionEvent {
   kind: ActionKind;
@@ -136,11 +163,40 @@ export interface BindingActionEvent {
   rowId: string | null;
 }
 
+/**
+ * 角色上下文——权限那只手伸进页面的形状（2026-08-14 晚）。
+ *
+ * 模式照 CASL 的 ability：宿主按当前角色**派生一次**（rbac-preview 的
+ * deriveHtmlActionGates），解释器填孔时逐点检查。无权的动作**禁用不隐藏**
+ * ——版式一个像素不能动（打孔那步的纪律），且用户该知道这个动作存在、
+ * 只是当前角色没权（锁原因写进 title，游标也能读到）。
+ *
+ * 不传 gates = 不设卡（跟 rbac-preview 一贯的语义：没声明就是公共的）。
+ */
+export interface ActionGates {
+  /** 当前角色 id；null = 模型没声明角色，不设卡 */
+  role?: string | null;
+  /** 给人看的角色名（锁话术用） */
+  roleLabel?: string;
+  /**
+   * entityId → 新建卡。语义与 rbac-preview 的 PageAccess.canCreate 同源：
+   * 页面声明了 *:create 权限才有卡；granted=false 时锁。
+   */
+  createGate?: Record<string, { permission: string; granted: boolean }>;
+  /**
+   * 挂了审批流的实体（页面 workflowLinked 且有主实体）。undefined = 不校验
+   * （宿主没算，别把没算当成没挂）；空数组 = 真的一个都没挂。
+   */
+  workflowEntities?: readonly string[];
+}
+
 export interface ApplyBindingsOptions {
   source: BindingSource;
   onAction?: (event: BindingActionEvent) => void;
   /** 行 id 从哪个字段取。缺省 "id"。 */
   rowIdField?: string;
+  /** 角色上下文。不传 = 不设卡。 */
+  gates?: ActionGates;
 }
 
 export interface ApplyBindingsReport {
@@ -218,7 +274,7 @@ export function applyBindings(
   const { source, onAction } = opts;
   const rowIdField = opts.rowIdField || "id";
   const filled: Record<string, number> = {
-    rows: 0, field: 0, head: 0, value: 0, chart: 0, action: 0,
+    rows: 0, field: 0, head: 0, value: 0, chart: 0, action: 0, locked: 0,
   };
   const problems: string[] = [];
 
@@ -366,16 +422,38 @@ export function applyBindings(
     filled.chart += 1;
   });
 
-  // ── 动作：点了发事件，且不发空事件 ──────────────────────────────
+  // ── 动作：点了发事件，且不发空事件；无权的锁住不隐藏 ─────────────
+  const gates = opts.gates;
   root.querySelectorAll<HTMLElement>("[data-action]").forEach((el) => {
     const kind = el.getAttribute("data-action") as ActionKind;
     const entityId = el.getAttribute("data-entity") || "";
-    if (kind !== "createRecord" && kind !== "openRecord" && kind !== "editRecord") {
-      problems.push(`data-action="${kind}"：不在封闭词表里（createRecord/openRecord/editRecord）`);
+    if (!(ACTION_KINDS as readonly string[]).includes(kind)) {
+      problems.push(`data-action="${kind}"：不在封闭词表里（${ACTION_KINDS.join("/")}）`);
       return;
+    }
+    // 可重复调用的纪律：上一轮的锁要先卸掉（切了角色再填一遍，
+    // 有权了的按钮不能还挂着锁）。
+    if (el.hasAttribute("data-locked")) {
+      el.removeAttribute("data-locked");
+      el.removeAttribute("aria-disabled");
+      el.removeAttribute("title");
+      el.style.opacity = "";
+      el.style.cursor = "";
     }
     if (!source.rows[entityId]) {
       problems.push(`data-action 的 data-entity="${entityId}"：模型里没有这个实体`);
+      return;
+    }
+    // 转移动作只许打在真的挂了审批流的实体上——没挂流程的实体上一个
+    // 「提交审批」按钮点下去无处可去，那是打孔的问题，如实点名。
+    if (
+      isWorkflowActionKind(kind) &&
+      gates?.workflowEntities &&
+      !gates.workflowEntities.includes(entityId)
+    ) {
+      problems.push(
+        `data-action="${kind}" entity=${entityId}：这个实体没有绑定审批流，转移动作无处可去`
+      );
       return;
     }
     // 行内动作必须带得出行 id。带不出还挂监听，点下去就是一个空事件——
@@ -385,6 +463,20 @@ export function applyBindings(
     if (needsRow && (raw == null || raw === "")) {
       problems.push(`data-action="${kind}" entity=${entityId}：取不到行 id，不挂监听`);
       return;
+    }
+    // 权限卡（目前只有新建有卡，口径与老区块舞台的 canCreate 完全一致）。
+    // 锁 = 禁用 + 原因，不隐藏：版式不动，用户知道动作存在、只是没权。
+    const gate = kind === "createRecord" ? gates?.createGate?.[entityId] : null;
+    if (gate && !gate.granted) {
+      const who = gates?.roleLabel || gates?.role || "当前角色";
+      const reason = `需要权限「${gate.permission}」，${who}未持有`;
+      el.setAttribute("data-locked", reason);
+      el.setAttribute("aria-disabled", "true");
+      el.setAttribute("title", reason);
+      el.style.opacity = "0.45";
+      el.style.cursor = "not-allowed";
+      filled.locked += 1;
+      return; // 不挂监听：锁住的按钮点了不该有任何事发生
     }
     el.setAttribute("role", "button");
     // 键盘可达：axe 会报但没人跑 axe，所以这里直接给上

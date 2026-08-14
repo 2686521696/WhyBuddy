@@ -114,8 +114,11 @@ class Test每个孔都要指到真东西:
         # 它不需要当前行，页头那个"新建"就用它
         assert check_bindings(GOOD, MODEL) == []
 
-    def test_动作词表跟自由树一字不差(self):
-        """两处表达同一件事，词表分叉就是下一个对不齐的地方。
+    def test_自由树不再手抄词表(self):
+        """收拢后（2026-08-14 晚）ActionRef.kind 是 `str` + 查 ACTION_KINDS 校验，
+        Python 侧词表只有 html_bindings 一份。这条 AST 看门从"抄词对比"改成
+        "不许再出现手抄词"——行为面（词表词全过、词表外被拒且报出整张表）
+        由 Test词表跨语言同步.test_自由树校验查的是同一份表 守着。
 
         ⚠ 走 AST 取，不 import：freeform_block 的 ActionRef 定义在函数内部
         （它的校验器要闭包 entities），import 不到。而拿字符串搜 "openRecord"
@@ -124,21 +127,26 @@ class Test每个孔都要指到真东西:
         import ast
         import pathlib
 
-        src = (pathlib.Path(__file__).resolve().parent.parent
-               / "services" / "freeform_block.py").read_text(encoding="utf-8")
-        found = None
+        path = (pathlib.Path(__file__).resolve().parent.parent
+                / "services" / "freeform_block.py")
+        src = path.read_text(encoding="utf-8")
+        kind_ann = None
         for node in ast.walk(ast.parse(src)):
             if not (isinstance(node, ast.ClassDef) and node.name == "ActionRef"):
                 continue
             for stmt in node.body:
                 if (isinstance(stmt, ast.AnnAssign)
                         and getattr(stmt.target, "id", None) == "kind"):
-                    found = {
-                        s.value for s in ast.walk(stmt.annotation)
-                        if isinstance(s, ast.Constant) and isinstance(s.value, str)
-                    }
-        assert found is not None, "freeform_block 里找不到 ActionRef.kind 了"
-        assert found == set(ACTION_KINDS), f"两处词表分叉了：自由树 {found} vs HTML {set(ACTION_KINDS)}"
+                    kind_ann = stmt.annotation
+        assert kind_ann is not None, "freeform_block 里找不到 ActionRef.kind 了"
+        literals = {
+            s.value for s in ast.walk(kind_ann)
+            if isinstance(s, ast.Constant) and isinstance(s.value, str)
+        }
+        assert literals == set(), f"ActionRef.kind 又出现手抄词了：{literals}——词表只有 html_bindings 一份"
+        assert "from services.html_bindings import ACTION_KINDS" in src, (
+            "freeform_block 不再查 html_bindings.ACTION_KINDS 了——校验去哪了？"
+        )
 
 
 class Test一个孔都没打也要被拦:
@@ -183,3 +191,148 @@ class Test提示词:
     def test_校验器原话回喂(self):
         user = build_prompt(GOOD, MODEL, "p1", "某某字段不是 vehicle 的字段")[-1]["content"]
         assert "某某字段不是 vehicle 的字段" in user and "只改这些地方" in user
+
+
+# ── 转移动作（2026-08-14 晚：权限 + 工作流那两只手伸进 HTML 页） ────────────
+
+#: MODEL 加上审批流。GOOD 的行内换一个「提交审批」按钮当合法件。
+MODEL_WF = {
+    **MODEL,
+    "workflow": {
+        "id": "wf_v",
+        "nodes": [{"id": "n1", "name": "评估审核", "assigneeRole": "manager"}],
+        "transitions": [],
+    },
+    "appbundle": {"pageBindings": [{"pageRef": "p1", "workflowRef": "wf_v"}]},
+}
+
+GOOD_WF = GOOD.replace(
+    '<button data-action="openRecord" data-entity="vehicle">查看</button>',
+    '<button data-action="submitWorkflow" data-entity="vehicle">提交审批</button>',
+)
+
+
+class Test转移动作:
+    """三个转移词都要「当前这一行」，且模型必须真的声明了工作流。
+
+    守的洞：没有流程的应用里打出「提交审批」按钮——点下去无处可去，
+    而页面渲染、消毒、填数全程不会有一处报错（静默失效的形状）。
+    """
+
+    def test_合法件_行内提交_模型有工作流(self):
+        assert check_bindings(GOOD_WF, MODEL_WF) == []
+
+    def test_拦_模型没有工作流(self):
+        assert "转移动作无处可去" in "｜".join(
+            p["message"] for p in check_bindings(GOOD_WF, MODEL)
+        )
+
+    def test_拦_转移动作写在列表外(self):
+        bad = GOOD_WF.replace(
+            '<button data-action="createRecord" data-entity="vehicle">新建收车</button>',
+            '<button data-action="approveWorkflow" data-entity="vehicle">通过</button>',
+        )
+        assert "当前这一行" in "｜".join(
+            p["message"] for p in check_bindings(bad, MODEL_WF)
+        )
+
+    def test_提示词_有工作流才出现转移段(self):
+        with_wf = build_prompt(GOOD, MODEL_WF, "p1")[-1]["content"]
+        assert "submitWorkflow" in with_wf and "评估审核" in with_wf
+        assert "这一页绑定了流程" in with_wf  # p1 在 pageBindings 里
+
+        without = build_prompt(GOOD, MODEL, "p1")[-1]["content"]
+        assert "submitWorkflow" not in without
+
+    def test_提示词_没绑流程的页明说不要用(self):
+        other_page = build_prompt(GOOD, MODEL_WF, "p9")[-1]["content"]
+        assert "不要**使用" in other_page or "**不要**使用" in other_page
+
+
+class Test词表跨语言同步:
+    """词表**每种语言只有一份**（2026-08-14 晚收拢），这里是唯一的跨语言接缝。
+
+    收拢前是四份（Python 两份、前端两份），靠两条 AST 测试抄词对比；
+    收拢后 freeform_block 查这边的表、block-registry 引用前端的类型——
+    语言内不再需要看门。剩下 Python ↔ TypeScript 这一条缝没法用 import 消掉
+    （PostHog 那种方案是代码生成 + CI 新鲜度检查，对 6 个词是牛刀），
+    所以留这一条正则钉死：钉在**真实源码**上（数组字面量），不 import 也不猜。
+    """
+
+    def _client(self, *parts: str) -> str:
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parents[2] / "client"
+        return (root.joinpath(*parts)).read_text(encoding="utf-8")
+
+    def test_前端解释器词表一字不差(self):
+        import re
+
+        src = self._client("src", "pages", "sliderule", "live-runtime",
+                           "html-binding-runtime.ts")
+
+        def words(name: str) -> tuple[str, ...]:
+            m = re.search(rf"export const {name} = \[(.*?)\] as const", src, re.S)
+            assert m, f"前端 html-binding-runtime 里找不到 {name} 数组了"
+            return tuple(re.findall(r'"([a-zA-Z]+)"', m.group(1)))
+
+        # 两个子表逐词、按序对齐（顺序也算契约：前端类型联合的顺序从数组来）
+        from services.html_bindings import RECORD_ACTION_KINDS, WORKFLOW_ACTION_KINDS
+
+        assert words("RECORD_ACTION_KINDS") == RECORD_ACTION_KINDS, "记录词分叉"
+        assert words("WORKFLOW_ACTION_KINDS") == WORKFLOW_ACTION_KINDS, "转移词分叉"
+        # 总表必须是组合，不许退化回第三份手抄——手抄的会跟子表悄悄错开
+        assert re.search(
+            r"export const ACTION_KINDS =\s*\[\.\.\.RECORD_ACTION_KINDS,\s*\.\.\.WORKFLOW_ACTION_KINDS\]\s*as const",
+            src,
+        ), "前端 ACTION_KINDS 不再是子表组合——别退回手抄总表"
+
+    def test_前端自由树不再手抄词表(self):
+        """block-registry 的 FreeformActionRef.kind 必须**引用** ActionKind 类型，
+        而不是自己抄一份字符串联合——语言内的分叉靠引用消掉，不靠对比。"""
+        import re
+
+        src = self._client("src", "pages", "sliderule", "live-runtime",
+                           "block-registry.tsx")
+        m = re.search(r"export interface FreeformActionRef \{(.*?)\}", src, re.S)
+        assert m, "block-registry 里找不到 FreeformActionRef 了"
+        body = m.group(1)
+        assert re.search(r"kind:\s*ActionKind;", body), (
+            "FreeformActionRef.kind 不再引用 ActionKind——退回手抄联合了？"
+        )
+        assert '"createRecord"' not in body, "接口体里出现了手抄的词——词表又分叉了"
+        assert re.search(
+            r'import type \{[^}]*\bActionKind\b[^}]*\} from "\./html-binding-runtime"', src
+        ), "block-registry 没有从 html-binding-runtime 引 ActionKind"
+
+    def test_自由树校验查的是同一份表(self):
+        """行为判据：freeform_block 不 import 也能对上——词表里的词全过校验，
+        词表外的词被拒且错误信息把整张表报出来（模型看得见词表才知道能写什么）。"""
+        import pytest as _pytest
+
+        from services.freeform_block import build_freeform_models
+
+        M = build_freeform_models({
+            "entities": [
+                {"id": "e", "name": "E",
+                 "fields": [{"id": "f", "name": "F", "type": "string"}]},
+            ]
+        })
+        rows = {
+            "tag": "ul",
+            "rowsRef": {"entityRef": "e", "fieldRefs": ["f"]},
+            "children": [
+                {"tag": "li", "children": [
+                    {"tag": "span", "actionRef": {"kind": kind, "entityRef": "e"}}
+                    for kind in ACTION_KINDS
+                ]},
+            ],
+        }
+        M.model_validate({"root": rows})  # 六个词都能过
+
+        with _pytest.raises(Exception) as e:
+            M.model_validate({"root": {
+                "tag": "div", "actionRef": {"kind": "deleteRecord", "entityRef": "e"},
+            }})
+        for kind in ACTION_KINDS:
+            assert kind in str(e.value), "拒词的错误信息应报出整张词表"

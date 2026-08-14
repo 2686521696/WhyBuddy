@@ -12,6 +12,7 @@
 
 import { normalizeRoles, type FiveSystemModel } from "../system-screens/five-system-model";
 import type { AppPageSchema } from "./app-runtime-schema";
+import type { ActionGates } from "./html-binding-runtime";
 
 export interface RoleAccess {
   role: string;
@@ -81,6 +82,51 @@ export function accessForRole(
 ): RoleAccess | undefined {
   if (!role) return undefined;
   return deriveRoleAccess(model).find((r) => r.role === role);
+}
+
+/**
+ * HTML 页面的角色上下文（2026-08-14 晚：权限那只手伸进 HTML 页）。
+ *
+ * 模式照 CASL 的 ability：按当前角色**派生一次**，解释器（applyBindings）
+ * 填孔时逐点检查。口径不新造，全部映射既有语义：
+ *   · createGate = PageAccess.canCreate 的实体视角——页面声明了 *:create
+ *     才有卡（fail-open：没声明就是公共动作，跟老区块舞台一字不差）；
+ *     HTML 的动作孔带的是 entity 不是 page，所以按页面主实体归到实体上
+ *   · workflowEntities = workflowLinked 页面的主实体——转移动作只许打在
+ *     真的挂了流程的实体上
+ *
+ * 一个实体被多个页面用且卡不一致时取**最严**的那张卡（fail-closed：
+ * 有一处声明了权限就不能当公共动作放行）。
+ */
+export function deriveHtmlActionGates(
+  model: FiveSystemModel | null | undefined,
+  pages: AppPageSchema[],
+  role: string | undefined
+): ActionGates {
+  const access = accessForRole(model, role);
+  const createGate: Record<string, { permission: string; granted: boolean }> = {};
+  const workflowEntities: string[] = [];
+  for (const pa of pageAccessForRole(pages, access)) {
+    const page = pages.find((p) => p.id === pa.pageId);
+    const entityId = page?.entityId;
+    if (!entityId) continue;
+    if (page.workflowLinked && !workflowEntities.includes(entityId)) {
+      workflowEntities.push(entityId);
+    }
+    if (!pa.createPermission) continue; // 页面没声明 create 卡 → 不设卡
+    const existing = createGate[entityId];
+    // 最严原则：已有一张"锁着"的卡就不被后来的"放行"覆盖
+    if (!existing || (existing.granted && !pa.canCreate)) {
+      createGate[entityId] = { permission: pa.createPermission, granted: pa.canCreate };
+    }
+  }
+  const roleDef = normalizeRoles(model).find((r) => r.id === role);
+  return {
+    role: role ?? null,
+    roleLabel: roleDef?.label,
+    createGate,
+    workflowEntities,
+  };
 }
 
 /**

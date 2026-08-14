@@ -25,6 +25,7 @@ import { SkillThumbnailBar } from "./SkillThumbnailBar";
 import { ActiveSystemScreen } from "./system-screens/ActiveSystemScreen";
 import {
   deriveSettledFiveSystemModel,
+  normalizeRoles,
   parsePartialFiveSystemModel,
   type SkillRuntimeGraphLike,
 } from "./system-screens/five-system-model";
@@ -33,15 +34,23 @@ import {
   type SpecPageLive,
 } from "./live-runtime/SpecPageLiveStage";
 import {
+  applyHtmlWorkflowAction,
   initRuntimeState,
   type RuntimeState,
 } from "./live-runtime/live-runtime";
+import { deriveHtmlActionGates } from "./live-runtime/rbac-preview";
+import { isWorkflowActionKind } from "./live-runtime/html-binding-runtime";
 import { seedRuntimeState } from "./live-runtime/demo-seed";
 import {
   loadRuntimeState,
   saveRuntimeState,
   notifyRuntimeChanged,
+  loadRuntimeRole,
+  saveRuntimeRole,
+  notifyRoleChanged,
+  subscribeRoleChanged,
 } from "./live-runtime/runtime-persistence";
+import { message } from "antd";
 import {
   RecordFormDrawer,
   type RecordActionRequest,
@@ -215,21 +224,40 @@ export function SlideRuleStudio({
     );
   }, [fiveSystemModel, runtimeSessionId]);
 
+  // 当前角色（2026-08-14 晚：权限那只手伸进 HTML 页）。
+  // 持久化和广播沿用老区块舞台那套（loadRuntimeRole + 事件）——RBAC 屏的
+  // 「角色预览」跟这里改的是同一份，谁改都实时生效，不另起一份角色状态。
+  const [role, setRole] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const stored = loadRuntimeRole(runtimeSessionId);
+    setRole(stored ?? normalizeRoles(fiveSystemModel)[0]?.id);
+  }, [runtimeSessionId, fiveSystemModel]);
+  useEffect(
+    () =>
+      subscribeRoleChanged(runtimeSessionId, () => {
+        const next = loadRuntimeRole(runtimeSessionId);
+        if (next) setRole(next);
+      }),
+    [runtimeSessionId]
+  );
+  const changeRole = useCallback(
+    (next: string) => {
+      setRole(next);
+      saveRuntimeRole(runtimeSessionId, next);
+      notifyRoleChanged(runtimeSessionId);
+    },
+    [runtimeSessionId]
+  );
+  const roleOptions = useMemo(
+    () => normalizeRoles(fiveSystemModel),
+    [fiveSystemModel]
+  );
+
   // 页面里的动作 → 表单面（2026-08-14，还掉上一版"那是下一步"的欠条）。
-  // 三种 kind 全部接住：createRecord 不再静默塞空行——先填值再入库，跟
-  // openRecord（详情）/ editRecord（编辑）共用同一张 RecordFormDrawer。
-  // 词表不动：还是那三个词，这里只是让它们产生后果。
+  // 记录三种走 RecordFormDrawer；转移三种（2026-08-14 晚）走状态机纯函数
+  // applyHtmlWorkflowAction——提交/通过/驳回立刻产生后果，结果如实提示。
   const [recordAction, setRecordAction] = useState<RecordActionRequest | null>(
     null
-  );
-  const handleHtmlAction = useCallback(
-    (ev: RecordActionRequest) => {
-      // 模型/运行态没就绪时不开一张填不了的表单（推演早期理论上没有动作
-      // 可点，这条是防御性一致：接不住就如实什么都不做）
-      if (!fiveSystemModel || !htmlRuntime) return;
-      setRecordAction(ev);
-    },
-    [fiveSystemModel, htmlRuntime]
   );
   const applyRuntime = useCallback(
     (next: RuntimeState) => {
@@ -239,6 +267,32 @@ export function SlideRuleStudio({
       notifyRuntimeChanged(runtimeSessionId);
     },
     [runtimeSessionId]
+  );
+  const handleHtmlAction = useCallback(
+    (ev: RecordActionRequest) => {
+      // 模型/运行态没就绪时不接（推演早期理论上没有动作可点，这条是
+      // 防御性一致：接不住就如实什么都不做）
+      if (!fiveSystemModel || !htmlRuntime) return;
+      if (isWorkflowActionKind(ev.kind)) {
+        const res = applyHtmlWorkflowAction(
+          htmlRuntime,
+          fiveSystemModel,
+          ev,
+          role,
+          new Date().toISOString()
+        );
+        if (res.ok) {
+          applyRuntime(res.state);
+          message.success(res.message);
+        } else {
+          // 拒绝不静默：该谁处理、为什么不行，原话给用户
+          message.warning(res.message);
+        }
+        return;
+      }
+      setRecordAction(ev);
+    },
+    [fiveSystemModel, htmlRuntime, role, applyRuntime]
   );
 
   // 舞台：推演中恒为 live 占位（用户裁决 2026-07-14：执行期不看中间过程
@@ -305,16 +359,28 @@ export function SlideRuleStudio({
   // 否则"先加载后开游标"的那个框永远没有监听。开没开在这里用 ref 把关。
   const xrayOnRef = useRef(xrayOn);
   xrayOnRef.current = xrayOn;
-  const handleHoverBinding = useCallback(
-    (info: { attr: string; value: string; el: Element } | null) => {
-      if (!xrayOnRef.current) return;
-      setXrayTarget(info ? htmlBindingToXrayTarget(info, activeSpecPageId) : null);
-    },
-    [activeSpecPageId]
-  );
   const appSchema = useMemo(
     () => deriveAppRuntimeSchema(fiveSystemModel, appTitle || "推演应用"),
     [fiveSystemModel, appTitle]
+  );
+  // 角色上下文（CASL 式 ability）：按当前角色派生一次，解释器填孔时逐点查。
+  // ⚠ 必须 memo——它进 HtmlAppSurface 的 effect 依赖，每渲染一个新对象
+  //   等于每次渲染都整框重载。
+  const actionGates = useMemo(
+    () =>
+      appSchema
+        ? deriveHtmlActionGates(fiveSystemModel, appSchema.pages, role)
+        : undefined,
+    [appSchema, fiveSystemModel, role]
+  );
+  const handleHoverBinding = useCallback(
+    (info: { attr: string; value: string; el: Element } | null) => {
+      if (!xrayOnRef.current) return;
+      setXrayTarget(
+        info ? htmlBindingToXrayTarget(info, activeSpecPageId, actionGates) : null
+      );
+    },
+    [activeSpecPageId, actionGates]
   );
 
   // 系统屏抽屉（游标深入 / 抽屉内六系统横向切换）
@@ -428,6 +494,23 @@ export function SlideRuleStudio({
                 className={`${versionToolbar ? "" : "ml-auto "}flex shrink-0 items-center gap-1.5`}
                 data-testid="sliderule-stage-gears"
               >
+                {/* 角色切换（2026-08-14 晚）：权限那只手的开关。持久化与广播
+                    沿用老区块舞台那套，RBAC 屏「角色预览」改的是同一份。 */}
+                {roleOptions.length > 0 && (
+                  <select
+                    value={role ?? ""}
+                    onChange={e => changeRole(e.target.value)}
+                    data-testid="sliderule-stage-role"
+                    title="以哪个角色试用这个应用（权限门实时生效）"
+                    className="h-8 cursor-pointer rounded-full border border-[#e5e7eb] bg-white px-3 text-[12px] font-medium text-stone-600 outline-none transition hover:border-[#d3d8e0] hover:bg-[#f8f9fb]"
+                  >
+                    {roleOptions.map(r => (
+                      <option key={r.id} value={r.id}>
+                        {r.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <div className="flex items-center rounded-full border border-[#e5e7eb] bg-white p-0.5">
                   {(
                     [
@@ -475,6 +558,7 @@ export function SlideRuleStudio({
                 running={isRunning}
                 model={fiveSystemModel}
                 runtime={htmlRuntime}
+                gates={actionGates}
                 onAction={handleHtmlAction}
                 onHoverBinding={handleHoverBinding}
                 onActivePageChange={setActiveSpecPageId}

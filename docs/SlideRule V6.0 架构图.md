@@ -456,6 +456,96 @@
 %%   判据：XrayPanel.test.tsx 新增翻译层六条 + 顶栏在场一条；sliderule 全目录
 %%   138 文件 1340 条绿。
 %% ·
+%% ═══════════════════════════════════════════════════════════════════════════
+%% ⚑⚑K 2026-08-14（晚）：权限 + 工作流两只手伸进 HTML 页 —— 词表加转移三种 +
+%%      解释器加角色上下文（⚑⚑J 里那张"permission 恒 null"的欠条在这轮还掉）
+%% ═══════════════════════════════════════════════════════════════════════════
+%%   到 ⚑⚑I/J 为止，五系统里的**数据模型**那只手已经全线牵进 HTML 木偶
+%%   （读 + 写 + 表单面），但权限和工作流两只手还停在系统屏里——页面上的动作
+%%   全是公共动作，流程只能去试运行面推。这轮把两只手接进页面本体。
+%% ·
+%%   【词表加转移三种 —— 加在唯一那份词表里，不分叉】
+%%     ACTION_KINDS：createRecord/openRecord/editRecord +
+%%                   **submitWorkflow / approveWorkflow / rejectWorkflow**
+%%     四处钉点同步扩（词表只有一份，分叉就是下一个对不齐的地方）：
+%%       ① html_bindings.ACTION_KINDS（打孔校验）  ② freeform_block.ActionRef
+%%       ③ 前端 html-binding-runtime ACTION_KINDS（数组是运行时判定的唯一
+%%          真相源，ActionKind 类型从它派生——手抄 union 会出现"类型认、判定拒"）
+%%       ④ 前端 block-registry FreeformActionRef
+%%     同步测试三道：Python↔freeform AST 相等（原有）+ Python↔前端两处正则
+%%     钉真实源码（新增，test_html_bindings.Test词表跨语言同步）。
+%%     ⚠ block-registry 的 kind→事件分发原来是三元表达式，词表一扩，新词会被
+%%       else 分支**误路由成「编辑」**（点「提交审批」弹编辑表单）——改成显式
+%%       映射表，认不出的词不发事件。
+%%     转移三种全部要「当前这一行」（流程实例挂 entityRef），打孔校验 + 自由树
+%%     树级校验同一条作用域规则；模型没声明 workflow 时打转移孔直接拦
+%%     （"转移动作无处可去"）。6.5 步提示词只在模型真有流程时出转移段，
+%%     且按 pageBindings 告诉 LLM 这一页绑没绑流程——没绑的页明说不要用。
+%% ·
+%%   【解释器加角色上下文 —— ActionGates，CASL 式 ability】
+%%     开源参照：CASL（@casl/react）的成熟模式——ability 按角色**派生一次**，
+%%     渲染/填孔时逐点 can() 检查；行内动作**禁用优于隐藏**（用户该知道动作
+%%     存在，只是没权；且木偶版式一个像素不能动，隐藏会破版）。落地：
+%%       · deriveHtmlActionGates（rbac-preview）：模型 + schema + 角色 →
+%%         { createGate(实体视角的 canCreate，口径 = 老区块舞台 PageAccess)、
+%%           workflowEntities(workflowLinked 页面的主实体)、role/roleLabel }。
+%%         同实体多张卡取最严（fail-closed）；页面没声明 *:create 不设卡
+%%         （fail-open，公共动作语义与 rbac-preview 一贯一致）
+%%       · applyBindings 收 gates：无权的 createRecord → aria-disabled +
+%%         data-locked=原因 + title + 不挂监听（锁进 filled.locked，不进
+%%         problems——没权是判定不是错误）；重复调用先卸上一轮的锁（切角色
+%%         必须能解锁）。data-locked 进 BINDING_ATTRS（消毒白名单单一来源）
+%%       · 转移动作 → BindingActionEvent 出 iframe，宿主交给纯函数
+%%         applyHtmlWorkflowAction（live-runtime）：submit=startInstance 挂行
+%%         （同一行已有 running 如实拒）；approve/reject=advanceInstance，
+%%         **角色把关在这**——节点声明了 assigneeRole 且当前角色不是它就拒，
+%%         拒绝话术说清该谁处理；分支不猜走向，指去试运行面。老区块舞台的
+%%         submitRequest/approveRequest/rejectRequest 事件走**同一个纯函数**，
+%%         两条渲染路径一份口径
+%% ·
+%%   【宿主与游标】
+%%     · SlideRuleStudio 顶栏加角色切换器（⚑⚑J 那排件左侧）：持久化沿
+%%       loadRuntimeRole/notifyRoleChanged 那套——RBAC 屏「角色预览」改的是
+%%       同一份，谁改都实时生效；gates 必须 memo（进 HtmlAppSurface effect
+%%       依赖，裸对象 = 每渲染整框重载）
+%%     · 游标读数变厚：htmlBindingToXrayTarget 收 gates——createRecord 读真
+%%       权限判定（permission/granted/role），转移三种 → workflow 目标。
+%%       ⚑⚑J 那条"恒 permission:null"的注记就此作废；不传 gates 时维持
+%%       公共动作口径（没算过判定就不编判定）
+%%   判据：Python 30（打孔层，含跨语言同步三道 + 转移动作五道）+ freeform 回归
+%%   119 全绿；前端 html-binding-runtime 35 / live-runtime 10 / rbac-preview 9 /
+%%   XrayPanel 18 全绿；sliderule 全目录 138 文件 1358 条绿。
+%% ·
+%% ═══════════════════════════════════════════════════════════════════════════
+%% ⚑⚑L 2026-08-14（晚二）：词表收拢 —— 四份定义压成两份（每种语言一份）
+%% ═══════════════════════════════════════════════════════════════════════════
+%%   ⚑⚑K 里"四处钉点同步扩"那句话本身就是病灶的自述：四份里两份是**抄写**，
+%%   靠三条看门测试兜着。测试兜得住红，但兜不住"加词要人肉改四处"这个成本，
+%%   而且语言内的分叉本可以用 import 消掉、根本轮不到测试出手。这轮收拢：
+%% ·
+%%   【收拢后的形状 —— 每种语言一份，语言之间一条缝】
+%%     · Python：html_bindings.ACTION_KINDS 是唯一一份，且总表 =
+%%       RECORD_ACTION_KINDS + WORKFLOW_ACTION_KINDS **组合**（此前总表和
+%%       转移子表也是两份重叠手写）。freeform_block.ActionRef 的 kind 从
+%%       Literal 手抄改成 `str` + 查表校验——拒词时把整张词表报进错误信息
+%%       （模型看得见词表才知道能写什么）
+%%     · 前端：html-binding-runtime 的 ACTION_KINDS 同样改成两子表组合，
+%%       block-registry 的 FreeformActionRef.kind 直接引用 ActionKind 类型。
+%%       kind→事件映射表加 satisfies Record<Exclude<ActionKind,"createRecord">,
+%%       string>——词表再加词而漏配映射，**编译期**就红，不用等点了没反应
+%%     · 散落的三词硬编码判断（SlideRuleStudio/XrayPanel 里 v==="submitWorkflow"
+%%       ||... 三连）统一走新守卫 isWorkflowActionKind——判断逻辑也不许抄词
+%% ·
+%%   【看门测试跟着换职责】
+%%     语言内两条从"抄词对比"改成"**不许再出现手抄词**"（AST 查 ActionRef.kind
+%%     注解里零字符串字面量 / 正则查 FreeformActionRef 体内零词字面量），另加
+%%     一条行为判据：词表六个词全过自由树校验、词表外被拒且报出整张表。
+%%     Python↔TypeScript 那条缝没法用 import 消（PostHog 是"一份源 + 代码生成 +
+%%     CI 新鲜度检查"，对 6 个词是牛刀），保留一条正则钉：两个子表逐词**按序**
+%%     对齐 + 总表必须是组合、不许退化回第三份手抄
+%%   判据：Python 词表相关 43 条全绿、全量回归绿；前端 sliderule 138 文件
+%%   1358 条绿（wall-renders-something 并行超时一次，单跑即过，已知雪花）。
+%% ·
 %% ★ 以下为 V5.9（08-13 白天）图全文，逐字保留；节点区含 ⚑ V6.0 标注的修正：
 %% ---------------------------------------------------------------------------
 %% 面团 AI（原 SlideRule）V5.9 架构图（推演引擎规格 · 继承 V5.8 全图 + ❖ 08-11 升版 + ⛔ 08-13 标红）
@@ -1209,7 +1299,7 @@ subgraph CLOSURE["09 五系统闭环装配层 / Five-System Closure（▲ 07-17 
   VISDERIVE["☐ 提案 · 第6步 HTML → 实体 / 字段 / 关联关系 / 页面结构<br/>**唯一有实测撑着的一条边**:同 55 字意图·唯一差别是有没有 HTML 当输入·<br/>字段 25→37 · 区块 10→14 · 臆造 0(A/D 两组同意图·这一对是干净的)<br/>⚠ 但 D 组跑在实验台里·用的是手工 HTML + 手工 spec——**没面对**结构闸 /<br/>316 区块目录 / 权限与工作流要求。生产链上没跑过<br/>⚑ V6.0 步号=**六步第4步**·输入换成 spec 直出的 HTML(不再是图转的)<br/>━━━━━━━━━━ ⚑⚑ 2026-08-14：**已落地** services/html_structure.py ━━━━━━━━━━<br/>⚑ 实测(连锁宠物医院·全新话题):剥噪 136451→30034(−78%)·闸+接地全过·14 实体 72 字段<br/>⚑ 关联推得挺深:appointment→pet/doctor/branch · prescription→doctor/pet ·<br/>　　dispensing_record→prescription · branch_metric→branch<br/>⚠ 修过一个真 bug:spec 5 页只推出 4 页·**p5 权限与审计被整页丢了**——<br/>　　提示词里那条「不要产出权限/角色/工作流」被模型读成「这一页整个跳过」。<br/>　　两处一起改:提示词收窄并**点名这个具体反例**(泛泛一句拦不住·同 GEN5 那条经验)<br/>　　+ 补 check_page_coverage(喂几份出几页·反向也查)。光改提示词不够"]:::landed
   PAGESHELL["⚑⚑ 2026-08-14 新增 · 第3.5步 外壳统一 / services/page_shell.py　**零 LLM**<br/>各页是**独立生成**的·于是每页自己发明一套菜单和导航·拼在一起不像一个系统<br/>这一步把外壳按 spec 的页面清单**锚定**:同一套菜单 · 同一个产品名 · 当前页高亮<br/>⚑ 零 LLM——形状是确定的·没有需要判断的地方·交给模型只多一处会编的地方<br/>⚑ 实测拦下 17 处 → 0 处。其中一类是**5 页全都「标了 0 个当前页」**:<br/>　　各页独立生成时压根没有「我是第几页」的概念<br/>⚠ 修过一个静默失效:nav 定位写在身份替换**之前**·而替换改了 nav 原文·<br/>　　于是导航重排一声不吭地不发生。挪到替换之后 + 用例钉住(那是「闸全绿但东西没了」第 ② 次)"]:::landed
   MODELASM["⚑⚑ 2026-08-14 新增 · 第6步 汇合 / services/model_assembly.py<br/>把第 4/5 步产物 + spec 页面清单拼成完整六段·过 v5_model_gate<br/>⚑ **能机械拼的一律机械拼**:零 LLM 搬运 11 样·只把 5 样跨系统绑定交给一次 LLM 调用。<br/>　　理由是每多交给模型一样就多一处会编的地方·而这一步词表**全封闭**——<br/>　　实体/字段/页面/角色/权限/节点都在前五步定死校验过·模型只能在既有 id 里挑<br/>⚠ **「过结构闸」证明不了做完了**:实测把六段拼齐、绑定层**全部留空**·<br/>　　结构闸依然 passed=True findings=0——它查的是「引用有没有悬空」·<br/>　　而空数组里没有引用·自然没有悬空。所以本步必须有**自己**的判据:<br/>　　　· 有页面一个绑定都没有 → 那一页界面上是空的<br/>　　　· aigc.outputField 出现在 inputFields 里 → 拿一个字段算它自己<br/>　　(两边都是合法引用·结构闸不会说话·用例里确认过它放行)<br/>⚠ 撞出一个真 bug:头一版只 deepcopy 了 model·绑定几段用 list(...)——<br/>　　外层列表复制了·里面的 dict 还是调用方那几个对象。一个用例改了 fixture·<br/>　　后面全跟着坏且看不出坏因。真实链路上更糟:产物要交给下游·中途被别处改掉最难查"]:::landed
-  BINDHOLES["⚑⚑ 2026-08-14 新增 · 第6.5步 给 HTML 打 data-* 孔 / services/html_bindings.py<br/>第 3 步只出版式(那时 datamodel 还不存在·打孔就是引用没被发明的 id)·<br/>到这里实体与字段已经定死校验过·**孔才打得成**<br/>词汇照 docs/绑定契约草案-v1.md·不自创:data-rows/field/head/cell/value/chart/action<br/>⚑ 动作三种 kind(createRecord/openRecord/editRecord)跟 freeform_block.ActionRef **一字不差**<br/>　　——两处表达同一件事·**词表分叉就是下一个对不齐的地方**(手写 uses 声明 / 前端手抄区域词汇·踩过两次)<br/>⚑ **作用域判据是重点**:data-field 光「是个真字段」不够·必须是所在 data-rows 那个实体的字段。<br/>　　拿工单表的一行去取客户的字段·字段是真的·取出来是别人的数据<br/>⚠ 一份一个孔都没打的 HTML·check_bindings 返回空列表(没有绑定就没有错误的绑定)·<br/>　　**看起来完美通过**。所以另有 check_coverage:整页至少要有一个数据源<br/>⚑ 实测 6/6 页打成·231s·零校验问题。版式活着:表格只剩一行模板是对的——<br/>　　运行时按 data-rows 取到几行就重复几次(高度 1268→1080px·少的正是被删掉的示例行)"]:::landed
+  BINDHOLES["⚑⚑ 2026-08-14 新增 · 第6.5步 给 HTML 打 data-* 孔 / services/html_bindings.py<br/>第 3 步只出版式(那时 datamodel 还不存在·打孔就是引用没被发明的 id)·<br/>到这里实体与字段已经定死校验过·**孔才打得成**<br/>词汇照 docs/绑定契约草案-v1.md·不自创:data-rows/field/head/cell/value/chart/action<br/>⚑ 动作词表 ACTION_KINDS(记录三种+转移三种·⚑⚑K 扩)是 **Python 侧唯一一份**——<br/>　　⚑⚑L 起 freeform_block.ActionRef 直接查它校验·不再手抄(**词表分叉就是下一个对不齐的地方**·手写 uses 声明 / 前端手抄区域词汇·踩过两次)<br/>⚑ **作用域判据是重点**:data-field 光「是个真字段」不够·必须是所在 data-rows 那个实体的字段。<br/>　　拿工单表的一行去取客户的字段·字段是真的·取出来是别人的数据<br/>⚠ 一份一个孔都没打的 HTML·check_bindings 返回空列表(没有绑定就没有错误的绑定)·<br/>　　**看起来完美通过**。所以另有 check_coverage:整页至少要有一个数据源<br/>⚑ 实测 6/6 页打成·231s·零校验问题。版式活着:表格只剩一行模板是对的——<br/>　　运行时按 data-rows 取到几行就重复几次(高度 1268→1080px·少的正是被删掉的示例行)"]:::landed
   BINDRT["⚑⚑ 2026-08-14 新增 · 运行时解释器(**穿线那一下**)<br/>client/src/pages/sliderule/live-runtime/html-binding-runtime.ts<br/>到 6.5 为止页面上有孔但**没有任何东西去填**——前六步的产物在产品里仍是一张静态图<br/>⚑ 做成**对一棵已有 DOM 的纯函数**·不是组件:组件只能靠渲染快照测·<br/>　　而这一层恰好机械可判——**改一个字段就断言多一列**(G2 组验过的那条真判据)<br/>⚑ 图表只算不画:算出分桶 series 挂上·画交给 ECharts 那层。<br/>　　画图有自己一堆判据(配色/空态/grain)·混进来两边都测不干净<br/>⚑ 三条同源纪律落在实现里:空数据显「—」不显 0(0 是真值·拿它冒充没有是撒谎) ·<br/>　　缺 data-limit 不等于限 0 行(Number(null)===0 那个坑) ·<br/>　　取不到行 id 就**不挂监听**(否则点下去发空事件·页面开个空详情·看着像「点了没反应」)<br/>⚠ 撞出一个真 bug:表头模板缓存的是 cloneNode 出来的**游离节点**·parentElement 恒为 null·<br/>　　于是第二次调用直接 return——表现是「改了字段清单·列不跟」·**一次都不报错·只是不动**·<br/>　　而那恰好是这条判据要验的东西。改成父节点从活 DOM 现查<br/>⚑⚑F 宿主安全(Shadow DOM 隔离 + DOMPurify)**由挂载它的那层负责·已写**:<br/>　　client/…/live-runtime/bound-html-surface.tsx(17631e3b·与本格同一天)<br/>　　DOMPurify 挡可执行内容 · closed Shadow DOM 挡样式外溢——两件事别混·影子根**不是**安全边界<br/>　　⚠ 本格原文写的是「尚未写」·而正文 ⚑⚑E 段同时写着「✔ 已写」——**节点标签与正文当场打架**<br/>　　两件事各有各的判据·合在一个函数里两边都测不干净:这条**分工仍然成立**·过期的只是「尚未写」三个字<br/>⚠ 依赖闸:dompurify 此前只写在 package.json 的 overrides 段(那是版本范围·不是安装)·<br/>　　pnpm 严格链接下根本解析不出来·vite 启动即红、三份 live-runtime 用例连收集都跑不到。已补进 dependencies"]:::landed
   HTMLCARRIER["⚑ V6.0 新增 · HTML 载体 / data-* 接线孔（**图上此前完全没有这个东西**）<br/>整套方案有个死穴:**纯 HTML 只有视觉·不能读数据·更不能写数据与动作**。<br/>用户 zip 里那四份 HTML 逐个 grep 过·`data-` 属性**一个都没有**·是纯视觉<br/>⚑ 答案不是留着自由树·是**让生成的 HTML 自己带接线孔**——而这件事 08-12 已经写完一半·<br/>随那批回退躺在 backup/2026-08-12-before-revert:<br/>　　services/overview_html.py　　data-fact 19 · data-field 26 · data-chart 11 · data-rows 31<br/>　　client/…/OverviewHtmlSurface.tsx　Shadow DOM 隔离 + DOMPurify(宿主安全)<br/>　　client/…/field-text.ts　　　　值格式化 / 空值显 —<br/>　　tests/test_overview_html.py · tests/test_overview_html_self_verify.py<br/>⚑ 纪律一句话:**HTML 只负责版式·一个数字都不写**。data- 是洞·运行时按 schema 填<br/>⚑ data-rows 那 31 处就是逐行展开·与自由树 rowsRef **同一套词汇**<br/>　　(entityRef / fieldRefs / sortByRef / order / limit)<br/>━━━━━━━━━━ ⚑⚑F 2026-08-14 复核:**本格已落地·虚线改实线** ━━━━━━━━━━<br/>⚑⚑F 原文写「⚠ 缺口:data-action 那半还没写」——**已过期**。services/html_bindings.py 里<br/>　　ACTION_KINDS=(createRecord/openRecord/editRecord)·与 freeform_block.ActionRef 的 Literal 一字不差·<br/>　　另有作用域校验(openRecord/editRecord 必须落在某个 data-rows 子树里)与 check_coverage<br/>⚑⚑F 本格是**概念父格**·实现落在 BINDHOLES(打孔) + BINDRT(填数)两格——<br/>　　那两格 08-14 就已经是实线·**父格却还标着提案**·图上第 1486 行那条边其实早就写明了这件事<br/>⚠ 按 V6.0 自己新加的读图纪律:「一个提案格真的落地了·就必须改成实线」——本格是那条纪律的头一个欠账<br/>⚠ 措辞纪律:「抛弃自由树」的准确说法是**换载体·不是扔能力**。值钱的是那套绑定词汇·<br/>　　树只是它的一个载体;扔掉词汇就等于回到 zip 那种纯视觉 HTML——那是已经判定不行的东西"]:::landed
   SEMLINE["☐ 提案 · 第7步 (第6步产物 + SPEC) → 权限 / 工作流 / 不变式<br/>⚠ **两个输入都要·串行在第6步之后·不是跟它并列**(2026-08-13 用户裁决·<br/>推翻了本图上一版画的「语义线与视觉线并行」——那个画法是错的):<br/>· 第6步产物给「**挂在什么上**」:真实的 entityRef / fieldRef / pageRef<br/>· SPEC 给「**该有什么规则**」:哪几类角色 · 什么审批流 · 什么约束<br/>⚠ 少了第6步产物会怎样·今天就有现场证据(act2 那轮结构闸 findings=1):<br/>invariants[reassignment_preserves_audit_context].refs: invariant ref<br/>'reassign_work_order' not found in model——**不变式引用了一个不存在的东西**<br/>⚠ 少了 SPEC 会怎样·也是实测:4 份 HTML 里「角色/权限/主管/管理员」出现 **0 次**·<br/>「成交/流失/归档/阶段」**0 次**;五组推出来的流程拓扑完全相同(5 节点 6 转移)<br/>——那是模型的行业常识·不是从画面里读到的证据<br/>⚠ 纠正一个曾经的误译:实测说的是「**光有 HTML** 推不出权限/工作流」·<br/>不是「别看 HTML」。**是相加·不是替代**<br/>⚑ V6.0 步号=**六步第5步**。两个输入这条论证一个字没变<br/>━━━━━━━━━━ ⚑⚑ 2026-08-14：**已落地且正面验过** services/spec_semantics.py ━━━━━━━━━━<br/>⚑ 「SPEC + 结构一起喂就推得出」**不再是假设**。三臂对照·唯一变量是喂什么:<br/>　　B 两个都给 → 4 角色 · 0 编的权限对象 · 0 悬空 · **过闸**<br/>　　S 只有SPEC → 4 角色 · 8 编的 · 8 悬空 · 拦(16 findings)<br/>　　H 只有结构 → **1 角色**(4 类使用者塌成 1 个) · 拦(3 findings)<br/>⚑ 合法性抄 Apache Casbin 的 {subject, object, action}——work_order:create 正是 obj:act<br/>⚠ 状态机可达性三条(起点恰好一个/全部可达/至少一个终态)是**通识不是某家约定**:<br/>　　Casbin 是 authz 不管 workflow·OpenFGA 走 Zanzibar 也不管。不假称有出处<br/>⚠ 第一版判据没抓住 H:量的是「角色可溯率」·H 只产 1 个角色而它恰好猜中·于是 100% 全绿。<br/>　　补了反向判据:**SPEC 里每个 persona 都必须有角色认领**·少一个当场拦"]:::landed

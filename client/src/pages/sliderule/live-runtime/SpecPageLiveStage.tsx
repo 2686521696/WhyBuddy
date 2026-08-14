@@ -42,7 +42,7 @@ import React from "react";
 import { HtmlAppSurface } from "./html-app-surface";
 import { ScaleBadge, useScaleToFit, SPEC_PAGE_VIEWPORT } from "./canvas-scale";
 import { deriveBindingSource } from "./derive-binding-source";
-import type { BindingActionEvent } from "./html-binding-runtime";
+import type { ActionGates, BindingActionEvent } from "./html-binding-runtime";
 import type { RuntimeState } from "./live-runtime";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
 
@@ -65,8 +65,10 @@ export interface SpecPageLiveStageProps {
    *  ⚠ 缺任一个都只是"没数据"，不是"渲染失败"——角标如实说。 */
   model?: FiveSystemModel | null;
   runtime?: RuntimeState | null;
-  /** 页面里的动作（新建/查看/编辑）——交给宿主的运行时去改数据 */
+  /** 页面里的动作（新建/查看/编辑/转移）——交给宿主的运行时去改数据 */
   onAction?: (event: BindingActionEvent) => void;
+  /** 角色上下文（权限门）。不传 = 不设卡。宿主务必 memo。 */
+  gates?: ActionGates;
   /** 游标：鼠标停在带绑定的元素上 */
   onHoverBinding?: (info: { attr: string; value: string; el: Element } | null) => void;
   /** 初始选中的页。不传 = 跟最新到达的一页（推演场景，页面在陆续到达）；
@@ -88,6 +90,7 @@ export function SpecPageLiveStage({
   model = null,
   runtime = null,
   onAction,
+  gates,
   onHoverBinding,
   defaultPageId = null,
   view = "page",
@@ -244,6 +247,7 @@ export function SpecPageLiveStage({
               key={active.pageId}
               html={active.html}
               source={source}
+              gates={gates}
               onAction={onAction}
               onNavigate={setPicked}
               onHoverBinding={onHoverBinding}

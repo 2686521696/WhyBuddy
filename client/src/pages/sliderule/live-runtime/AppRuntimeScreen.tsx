@@ -165,6 +165,7 @@ import {
   updateRow,
   validateRowFields,
   startInstance,
+  applyHtmlWorkflowAction,
   nodeById,
 } from "./live-runtime";
 import {
@@ -1712,6 +1713,37 @@ export function AppRuntimeScreen({
     }
     if (actionId === "createRequest") {
       pagePipes.openCreate();
+      return;
+    }
+    // 转移三种（词表 2026-08-14 晚扩容）：与 HTML 舞台走同一个纯函数
+    // applyHtmlWorkflowAction——角色把关、防重复提交、终态判定只有一份口径。
+    if (
+      actionId === "submitRequest" ||
+      actionId === "approveRequest" ||
+      actionId === "rejectRequest"
+    ) {
+      const rowId = String(eventData?.rowId ?? "");
+      const entityRef = String(eventData?.entityRef ?? "");
+      if (!rowId || !entityRef) return;
+      const kind =
+        actionId === "submitRequest"
+          ? "submitWorkflow"
+          : actionId === "approveRequest"
+            ? "approveWorkflow"
+            : "rejectWorkflow";
+      const res = applyHtmlWorkflowAction(
+        state,
+        model,
+        { kind, entityId: entityRef, rowId },
+        role,
+        new Date().toISOString()
+      );
+      if (res.ok) {
+        apply(res.state);
+        toast("success", res.message);
+      } else {
+        toast("warning", res.message);
+      }
       return;
     }
     const action = page.pageActions.find(a => a.id === actionId);

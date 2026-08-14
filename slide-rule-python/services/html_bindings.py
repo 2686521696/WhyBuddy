@@ -51,9 +51,24 @@ from typing import Any, Callable, Dict, List, Optional
 
 HTML_BINDINGS_VERSION = "html-bindings-v1"
 
-#: 动作只允许这三种。跟 freeform_block.ActionRef 的 kind 一字不差——
-#: 两处表达同一件事，词表分叉就是下一个对不齐的地方。
-ACTION_KINDS: tuple[str, ...] = ("createRecord", "openRecord", "editRecord")
+#: 动作封闭词表——**Python 侧唯一一份**（2026-08-14 晚收拢）：
+#: freeform_block.ActionRef 直接查这里校验，不再手抄第二份 Literal。
+#: 跟前端 html-binding-runtime 的 ACTION_KINDS 一字不差，跨语言看门测试钉着
+#: ——词表分叉就是下一个对不齐的地方。
+#:
+#: 总表由两个子表组合而成，每个词只出现一次（之前总表和转移子表重叠手写）。
+
+#: 记录三种（openRecord/editRecord 要"当前行"）。
+RECORD_ACTION_KINDS: tuple[str, ...] = ("createRecord", "openRecord", "editRecord")
+
+#: 转移三种（2026-08-14 晚，权限 + 工作流那两只手伸进 HTML 页）：
+#: 把当前行提交进审批流 / 通过 / 驳回。校验时要求：行内 + 模型真的声明了
+#: 工作流——流程实例挂在具体那条记录上（entityRef），页头没有"当前行"可提交。
+WORKFLOW_ACTION_KINDS: tuple[str, ...] = (
+    "submitWorkflow", "approveWorkflow", "rejectWorkflow",
+)
+
+ACTION_KINDS: tuple[str, ...] = RECORD_ACTION_KINDS + WORKFLOW_ACTION_KINDS
 
 AGGREGATES: tuple[str, ...] = ("count", "sum", "avg")
 
@@ -148,10 +163,20 @@ def check_bindings(markup: str, model: Dict[str, Any]) -> List[Dict[str, str]]:
                     "path": f"<{tag} data-action={a['action']}>",
                     "message": "带了 data-action 却没有 data-entity，不知道操作哪张表",
                 })
-            elif a["action"] in ("openRecord", "editRecord") and not node["scope"]:
+            elif (
+                a["action"] in ("openRecord", "editRecord") + WORKFLOW_ACTION_KINDS
+                and not node["scope"]
+            ):
                 problems.append({
                     "path": f"<{tag} data-action={a['action']}>",
                     "message": f"{a['action']} 要「当前这一行」，必须写在 data-rows 容器内部",
+                })
+            if a["action"] in WORKFLOW_ACTION_KINDS and not (
+                (model.get("workflow") or {}).get("nodes")
+            ):
+                problems.append({
+                    "path": f"<{tag} data-action={a['action']}>",
+                    "message": "这个应用没有声明工作流，转移动作无处可去",
                 })
 
         if "chart" in a:
@@ -192,6 +217,31 @@ def build_prompt(markup: str, model: Dict[str, Any], page_id: str, feedback: str
         for e in model["datamodel"]["entities"]
     }
     fb = f"\n\n⚠ 上一版没通过机械校验，**只改这些地方**：\n{feedback.strip()}\n" if feedback.strip() else ""
+
+    # 转移动作段：只有模型真的声明了工作流才出现——没有流程的应用里
+    # 提这三个词，等于诱导 LLM 打出无处可去的按钮（校验器必拦，白耗重问）。
+    wf_nodes = (model.get("workflow") or {}).get("nodes") or []
+    wf_bound_pages = sorted({
+        str(b.get("pageRef"))
+        for b in ((model.get("appbundle") or {}).get("pageBindings") or [])
+        if b.get("workflowRef") and b.get("pageRef")
+    })
+    if wf_nodes:
+        node_names = "、".join(str(n.get("name") or n.get("id")) for n in wf_nodes[:6])
+        this_page_bound = page_id in wf_bound_pages
+        wf_section = f"""
+    <button data-action="submitWorkflow" data-entity="<实体id>">
+        把当前行提交进审批流。**必须写在 data-rows 容器内部**。
+    <button data-action="approveWorkflow" / "rejectWorkflow" data-entity="<实体id>">
+        通过 / 驳回当前行的流程。同样必须在行内。
+
+本应用的审批流节点：{node_names}。绑定了流程的页面：{wf_bound_pages or '（无）'}。
+{'这一页绑定了流程：列表行内适合加「提交审批」，审批处理视图适合加通过/驳回。'
+ if this_page_bound else
+ '⚠ 这一页没有绑定流程，**不要**使用上面三种转移动作。'}"""
+    else:
+        wf_section = ""
+
     body = f"""把下面这份**静态**页面改造成由数据驱动的模板。
 
 版式一个像素都不要改：不增删元素、不改文案、不动 class。**只往标签上加
@@ -208,8 +258,8 @@ data-* 属性**，把写死的示例数据换成绑定孔。
         单值。aggregate 可以是 count / sum:<字段id> / avg:<字段id>。
     <div data-chart="donut" data-entity="<实体id>" data-dimension="<字段id>" data-metric="count">
     <button data-action="openRecord" data-entity="<实体id>">
-        动作只有三种：createRecord（不需要当前行）/ openRecord / editRecord。
-        后两种要"当前这一行"，**必须写在 data-rows 容器内部**。
+        记录动作三种：createRecord（不需要当前行）/ openRecord / editRecord。
+        后两种要"当前这一行"，**必须写在 data-rows 容器内部**。{wf_section}
 
 这个应用真实的实体与字段（**只能用这些 id，一个都不许新造**）：
 {_json.dumps(slim, ensure_ascii=False, indent=1)}

@@ -237,6 +237,113 @@ describe("动作：点一下真的发事件，且不发空事件", () => {
   });
 });
 
+describe("权限门（gates）——无权的锁住，不隐藏", () => {
+  /**
+   * 2026-08-14 晚：权限那只手伸进 HTML 页。模式照 CASL 的 ability：
+   * 宿主按角色派生一次 gates，这里填孔时逐点查。钉住的都是断掉会
+   * **静默**失效的行为：锁了还挂监听（点了照样开表单）、切角色不解锁、
+   * 锁话术丢失（用户看见灰按钮不知道为什么）。
+   */
+  const CREATE = '<button data-action="createRecord" data-entity="vehicle">新建</button>';
+
+  it("granted:false → 禁用 + 原因 + 不挂监听；filled.locked 计数", () => {
+    const fn = vi.fn();
+    const root = dom(CREATE);
+    const r = applyBindings(root, {
+      source: SOURCE,
+      onAction: fn,
+      gates: {
+        role: "guest",
+        roleLabel: "访客",
+        createGate: { vehicle: { permission: "vehicle:create", granted: false } },
+      },
+    });
+    const btn = root.querySelector("button")!;
+    expect(btn.getAttribute("aria-disabled")).toBe("true");
+    expect(btn.getAttribute("data-locked")).toContain("vehicle:create");
+    expect(btn.getAttribute("data-locked")).toContain("访客");
+    (btn as HTMLElement).click();
+    expect(fn).not.toHaveBeenCalled();
+    expect(r.filled.locked).toBe(1);
+    expect(r.filled.action).toBe(0);
+    expect(r.problems).toEqual([]); // 没权不是错误，是判定——不进 problems
+  });
+
+  it("granted:true / 没这张卡 / 没传 gates → 都不设卡（公共动作语义）", () => {
+    for (const gates of [
+      { createGate: { vehicle: { permission: "vehicle:create", granted: true } } },
+      { createGate: {} },
+      undefined,
+    ]) {
+      const fn = vi.fn();
+      const root = dom(CREATE);
+      applyBindings(root, { source: SOURCE, onAction: fn, gates });
+      (root.querySelector("button") as HTMLElement).click();
+      expect(fn).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("重复调用换角色：上一轮的锁被卸掉", () => {
+    const fn = vi.fn();
+    const root = dom(CREATE);
+    const locked = { createGate: { vehicle: { permission: "vehicle:create", granted: false } } };
+    applyBindings(root, { source: SOURCE, onAction: fn, gates: locked });
+    expect(root.querySelector("button")!.getAttribute("data-locked")).toBeTruthy();
+
+    const granted = { createGate: { vehicle: { permission: "vehicle:create", granted: true } } };
+    applyBindings(root, { source: SOURCE, onAction: fn, gates: granted });
+    const btn = root.querySelector("button")!;
+    expect(btn.getAttribute("data-locked")).toBeNull();
+    expect(btn.getAttribute("aria-disabled")).toBeNull();
+    (btn as HTMLElement).click();
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("转移动作（submitWorkflow / approveWorkflow / rejectWorkflow）", () => {
+  const ROW_SUBMIT = `
+    <table><tbody data-rows="vehicle">
+      <tr><td data-field="plate"></td><td><button data-action="submitWorkflow" data-entity="vehicle">提交审批</button></td></tr>
+    </tbody></table>`;
+
+  it("行内提交：点了发事件，rowId 是当前行", () => {
+    const seen: unknown[] = [];
+    const root = dom(ROW_SUBMIT);
+    const r = applyBindings(root, {
+      source: SOURCE,
+      onAction: (e) => seen.push(e),
+      gates: { workflowEntities: ["vehicle"] },
+    });
+    expect(r.problems).toEqual([]);
+    (root.querySelector("tbody tr button") as HTMLElement).click();
+    expect(seen[0]).toEqual({ kind: "submitWorkflow", entityId: "vehicle", rowId: "v1" });
+  });
+
+  it("列表外的转移动作取不到行 → 如实报，不挂监听", () => {
+    const fn = vi.fn();
+    const root = dom('<button data-action="approveWorkflow" data-entity="vehicle">通过</button>');
+    const r = applyBindings(root, { source: SOURCE, onAction: fn });
+    (root.querySelector("button") as HTMLElement).click();
+    expect(fn).not.toHaveBeenCalled();
+    expect(r.problems.some((p) => p.includes("取不到行 id"))).toBe(true);
+  });
+
+  it("实体没挂审批流 → 打孔问题，如实点名", () => {
+    const root = dom(ROW_SUBMIT);
+    const r = applyBindings(root, {
+      source: SOURCE,
+      gates: { workflowEntities: [] }, // 真的一个都没挂
+    });
+    expect(r.problems.some((p) => p.includes("没有绑定审批流"))).toBe(true);
+  });
+
+  it("宿主没算 workflowEntities（undefined）→ 不校验，别把没算当没挂", () => {
+    const root = dom(ROW_SUBMIT);
+    const r = applyBindings(root, { source: SOURCE, gates: {} });
+    expect(r.problems).toEqual([]);
+  });
+});
+
 describe("引用不存在的东西要如实报，不许静默", () => {
   it("实体不存在", () => {
     // ⚠ 必须裹 <table>：<tbody>/<tr>/<td> 塞进 <div>.innerHTML 会被解析器直接丢掉

@@ -11,13 +11,17 @@ children——**一个"点了干什么"都没有**。设计模型画得出「编
 都收得到，组件区块靠它干活（DataTable 行内那两个链接）。自由树那边调用次数
 是 0——不是线断了，是节点上没有可以接线的地方。
 
-## 为什么只有三种 kind
+## 为什么只有三种 kind（2026-08-14 晚起：词表扩到六种，来源收拢）
 
 `navigate`（跳到某一页）这一版**故意没有**：目标是 page id，而
 `build_freeform_models` 只拿得到 datamodel、结构闸也没走进自由树——
 **验不了的引用不该让模型写**，否则就是又开一个可以瞎填的字段。
 
 这三种全部落在 datamodel 上，验得死。
+
+2026-08-14 晚词表加了转移三种（submitWorkflow/approveWorkflow/rejectWorkflow），
+且 ActionRef 不再手抄 Literal，改为直接查 html_bindings.ACTION_KINDS——
+词表 Python 侧只有那一份。本文件的作用域/串台判据不变。
 
 ## 判据守什么
 
@@ -113,12 +117,14 @@ class Test节点级校验:
                 "actionRef": {"kind": "createRecord", "entityRef": "ghost"}}})
 
     @pytest.mark.parametrize("kind", ["delete", "submit", "navigate", "save"])
-    def test_只认三种_kind(self, M, kind):
+    def test_词表外的词要拦(self, M, kind):
         """navigate 也在拦截之列——**故意的**。它的目标是 page id，这里验不了；
-        验不了的引用不该让模型写。等 page id 能传进来再开。"""
-        with pytest.raises(Exception):
+        验不了的引用不该让模型写。等 page id 能传进来再开。
+        错误信息要把整张词表报出来——模型看得见词表才知道能写什么。"""
+        with pytest.raises(Exception) as e:
             M.model_validate({"root": {"tag": "div",
                 "actionRef": {"kind": kind, "entityRef": "customer"}}})
+        assert "动作词表" in str(e.value)
 
 
 class Test标签白名单没被放宽:

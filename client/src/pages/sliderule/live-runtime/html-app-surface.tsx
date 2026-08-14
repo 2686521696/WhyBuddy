@@ -40,6 +40,7 @@ import {
   applyBindings,
   hasAnyDataSource,
   BINDING_ATTRS,
+  type ActionGates,
   type ApplyBindingsReport,
   type BindingActionEvent,
   type BindingSource,
@@ -193,6 +194,8 @@ function buildDocument(pageHtml: string): string {
 export interface HtmlAppSurfaceProps {
   html: string;
   source: BindingSource;
+  /** 角色上下文（权限门）。不传 = 不设卡。宿主务必 memo——它进 effect 依赖。 */
+  gates?: ActionGates;
   /** 点了带 data-action 的东西 */
   onAction?: (event: BindingActionEvent) => void;
   /** 点了左侧菜单里的某一项（data-page-id） */
@@ -213,6 +216,7 @@ export interface HtmlAppSurfaceProps {
 export function HtmlAppSurface({
   html,
   source,
+  gates,
   onAction,
   onNavigate,
   onHoverBinding,
@@ -240,6 +244,7 @@ export function HtmlAppSurface({
 
       const report = applyBindings(d.body, {
         source,
+        gates,
         onAction: e => cbs.current.onAction?.(e),
       });
       cbs.current.onReport?.({ ...report, hasDataSource: hasAnyDataSource(d.body) });
@@ -273,7 +278,9 @@ export function HtmlAppSurface({
       disposed = true;
       frame.removeEventListener("load", onLoad);
     };
-  }, [html, source]);
+    // gates 进依赖：切角色必须重填一遍（锁上/解锁）。整框重载可接受——
+    // 切角色不是高频操作，且 srcdoc 重写才能把上一轮的行内监听整批清干净。
+  }, [html, source, gates]);
 
   return (
     <iframe

@@ -98,6 +98,7 @@ import catalogJson from "@experience-blocks";
 import { MarkdownEditor, MarkdownView, SqlEditor } from "../base-components/custom-components";
 import type { WorkflowSection } from "../system-screens/five-system-model";
 import type { RuntimeRow } from "./live-runtime";
+import type { ActionKind } from "./html-binding-runtime";
 import type { AppFormFieldSchema } from "./app-runtime-schema";
 import { dedupeDenormalizedFieldIds } from "./app-runtime-schema";
 import type { NormalizedFieldOption } from "./field-display";
@@ -348,9 +349,12 @@ export interface FreeformNode {
   children?: FreeformNode[];
 }
 
-/** 受控动作：只管"打开哪个容器"，写入由组件完成（理由见 Python 侧同名契约）。 */
+/** 受控动作：只管"打开哪个容器"，写入由组件完成（理由见 Python 侧同名契约）。
+ *  kind **直接引用 html-binding-runtime 的 ActionKind**（2026-08-14 晚收拢）：
+ *  之前这里手抄了一份联合类型，靠跨语言测试对齐——现在前端只有那一份词表，
+ *  加词只改一处，这里自动跟着走。 */
 export interface FreeformActionRef {
-  kind: "createRecord" | "openRecord" | "editRecord";
+  kind: ActionKind;
   entityRef: string;
 }
 
@@ -1923,13 +1927,23 @@ function renderFreeformNode(
         onAction("createRequest", { entityRef: action.entityRef });
         return;
       }
-      // openRecord/editRecord 要当前行——Python 侧的树级校验已经保证它必然
-      // 落在 rowsRef 子树内，这里再兜一次：拿不到行就不发，别发一个空事件。
+      // 其余 kind 都要当前行——Python 侧的树级校验已经保证它必然落在
+      // rowsRef 子树内，这里再兜一次：拿不到行就不发，别发一个空事件。
       if (!rowId) return;
-      onAction(action.kind === "openRecord" ? "viewRequest" : "editRequest", {
-        entityRef: action.entityRef,
-        rowId,
-      });
+      // ⚠ 显式映射，不写三元：词表 2026-08-14 晚扩了转移三种，三元的
+      //   else 分支会把新词误路由成「编辑」——点「提交审批」弹出编辑表单。
+      //   键集用 ActionKind 钉死（satisfies）：词表再加词而这里漏配映射，
+      //   编译期就报错，不用等运行时点了没反应才发现。
+      const eventByKind = {
+        openRecord: "viewRequest",
+        editRecord: "editRequest",
+        submitWorkflow: "submitRequest",
+        approveWorkflow: "approveRequest",
+        rejectWorkflow: "rejectRequest",
+      } satisfies Record<Exclude<ActionKind, "createRecord">, string>;
+      const event = eventByKind[action.kind];
+      if (!event) return; // 类型说穷尽了，但存量 JSON 可能带认不出的词——不发比误发便宜
+      onAction(event, { entityRef: action.entityRef, rowId });
     };
     Object.assign(actionProps, {
       role: "button",

@@ -12,6 +12,7 @@ import type { SkillId } from "@/lib/sliderule-marathon-driver";
 import type { FiveSystemModel } from "./system-screens/five-system-model";
 import type { AppRuntimeSchema } from "./live-runtime/app-runtime-schema";
 import { deriveRoleAccess, pageAccessForRole } from "./live-runtime/rbac-preview";
+import { isWorkflowActionKind } from "./live-runtime/html-binding-runtime";
 import { Boxes, Cpu, GitBranch, LayoutTemplate, Users, Waypoints } from "lucide-react";
 
 export interface XraySection {
@@ -39,13 +40,15 @@ export type XrayTarget =
  * 中间缺的那层翻译。词表就是 html-binding-runtime 的 BINDING_ATTRS，
  * 认不出的孔如实返回 null（面板回落到页面级切片），不编目标。
  *
- * ⚠ data-action 现在恒 permission:null / granted:true——不是偷懒，是**如实**：
- *   权限那只手还没伸进 HTML 页（第三步），今天页面上的动作就是公共动作。
- *   第三步接上角色上下文后，这两个值改从解释器的判定里来。
+ * 2026-08-14 晚（第三步落地）：动作读数接上真权限——gates 是宿主按当前角色
+ * 派生的那份 ActionGates（deriveHtmlActionGates），createRecord 的 permission/
+ * granted 从它来；转移三种（submitWorkflow/approveWorkflow/rejectWorkflow）
+ * 映射到 workflow 目标。不传 gates 时保持旧口径（公共动作），不编判定。
  */
 export function htmlBindingToXrayTarget(
   info: { attr: string; value: string; el: Element },
-  activePageId: string
+  activePageId: string,
+  gates?: import("./live-runtime/html-binding-runtime").ActionGates
 ): XrayTarget | null {
   const v = (info.value || "").trim();
   /** 行内的孔（data-field/data-cell…）的实体上下文 = 最近的逐行容器 */
@@ -75,7 +78,21 @@ export function htmlBindingToXrayTarget(
     }
     case "data-action": {
       const label = (info.el.textContent || "").trim().slice(0, 24) || v;
-      return { kind: "action", label, pageId: activePageId, permission: null, granted: true };
+      // 转移词 → workflow 目标（describeXrayTarget 会展示流程绑定与节点）
+      if (isWorkflowActionKind(v)) {
+        return { kind: "workflow", label, pageId: activePageId };
+      }
+      // 新建卡：宿主派生的 gates 里有这张卡就如实读；没卡 = 公共动作
+      const entityId = info.el.getAttribute?.("data-entity")?.trim() || "";
+      const gate = v === "createRecord" ? gates?.createGate?.[entityId] : undefined;
+      return {
+        kind: "action",
+        label,
+        pageId: activePageId,
+        permission: gate?.permission ?? null,
+        granted: gate ? gate.granted : true,
+        role: gates?.role ?? undefined,
+      };
     }
     default: {
       // sort/order/limit/cell/col… 都是挂在行容器边上的参数孔，指认到实体

@@ -253,7 +253,7 @@ describe("htmlBindingToXrayTarget（HTML 悬停 → 游标目标的翻译层）"
     ).toEqual({ kind: "field", entityId: "pet", fieldId: "species", label: "pet.species" });
   });
 
-  it("data-action → action 目标：如实报公共动作（权限那只手还没接，第三步）", () => {
+  it("data-action 不传 gates → 如实报公共动作（没算过判定就不编判定）", () => {
     const t = htmlBindingToXrayTarget(
       { attr: "data-action", value: "createRecord", el: fakeEl({}, { text: "新建预约" }) },
       "p2"
@@ -267,6 +267,39 @@ describe("htmlBindingToXrayTarget（HTML 悬停 → 游标目标的翻译层）"
     });
     // describeXrayTarget 对 permission:null 的解读必须是"公共动作"，不是报错
     expect(describeXrayTarget(MODEL, t!).lines.join()).toContain("公共动作");
+  });
+
+  it("data-action 带 gates → createRecord 读真权限判定（2026-08-14 晚接上）", () => {
+    const t = htmlBindingToXrayTarget(
+      {
+        attr: "data-action",
+        value: "createRecord",
+        el: fakeEl({ "data-entity": "pet" }, { text: "新建宠物" }),
+      },
+      "p2",
+      {
+        role: "guest",
+        createGate: { pet: { permission: "pet:create", granted: false } },
+      }
+    );
+    expect(t).toEqual({
+      kind: "action",
+      label: "新建宠物",
+      pageId: "p2",
+      permission: "pet:create",
+      granted: false,
+      role: "guest",
+    });
+  });
+
+  it("转移三种 → workflow 目标（游标读到的是流程那只手）", () => {
+    for (const v of ["submitWorkflow", "approveWorkflow", "rejectWorkflow"]) {
+      const t = htmlBindingToXrayTarget(
+        { attr: "data-action", value: v, el: fakeEl({}, { text: "提交审批" }) },
+        "p3"
+      );
+      expect(t).toEqual({ kind: "workflow", label: "提交审批", pageId: "p3" });
+    }
   });
 
   it("参数孔（data-sort 等）→ 指认到所在行容器的实体", () => {

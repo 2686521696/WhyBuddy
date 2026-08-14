@@ -297,3 +297,103 @@ export function advanceInstance(
   instances[idx] = next;
   return { state: { ...state, instances } };
 }
+
+// ---------------------------------------------------------------------------
+// HTML 页面的转移动作（2026-08-14 晚：工作流那只手伸进 HTML 页）
+// ---------------------------------------------------------------------------
+
+/** 转移动作的结果：ok=false 时 state 原样返回，message 是给用户看的原话。 */
+export interface WorkflowActionResult {
+  state: RuntimeState;
+  ok: boolean;
+  message: string;
+}
+
+/** 这行记录当前进行中的流程实例（一行至多一个 running——submit 时守住的）。 */
+export function runningInstanceFor(
+  state: RuntimeState,
+  entityId: string,
+  rowId: string
+): WorkflowInstance | null {
+  return (
+    state.instances.find(
+      (i) =>
+        i.status === "running" &&
+        i.entityRef?.entityId === entityId &&
+        i.entityRef?.rowId === rowId
+    ) ?? null
+  );
+}
+
+/**
+ * HTML 页面转移动作 → 状态机。纯函数：宿主拿结果决定存档/提示。
+ *
+ * 语义全部映射既有机器，一条都不新造：
+ *   · submitWorkflow → startInstance（老区块舞台 handleSubmitToWorkflow 的
+ *     同一口径：标题 = 页面语境 + 行首列值，实例挂 entityRef）。
+ *     多一条守卫：同一行已有 running 实例时如实拒绝——重复提交出两个实例，
+ *     审批的人不知道该批哪个。
+ *   · approveWorkflow / rejectWorkflow → advanceInstance。**角色把关在这儿**：
+ *     当前节点声明了 assigneeRole 且当前角色不是它 → 拒绝（fail-closed，
+ *     拒绝话术把该谁处理说清楚）；没声明 → 不设卡（跟 rbac-preview 一贯语义）。
+ *     分支（多出边）如实拒绝并指去工作流试运行面——在一个按钮上选走向
+ *     需要 UI，这里不猜。
+ */
+export function applyHtmlWorkflowAction(
+  state: RuntimeState,
+  model: FiveSystemModel | null | undefined,
+  ev: { kind: string; entityId: string; rowId: string | null },
+  role: string | undefined,
+  now: string
+): WorkflowActionResult {
+  const rowId = ev.rowId;
+  if (!rowId) return { state, ok: false, message: "转移动作缺少当前行" };
+  const row = (state.entities[ev.entityId] ?? []).find((r) => r.id === rowId);
+  if (!row) return { state, ok: false, message: "这条记录不存在（可能已被删除）" };
+  const rowLabel = String(Object.values(row.values)[0] ?? rowId);
+
+  if (ev.kind === "submitWorkflow") {
+    if (runningInstanceFor(state, ev.entityId, rowId)) {
+      return { state, ok: false, message: `「${rowLabel}」已有进行中的流程，不能重复提交` };
+    }
+    const { state: next, instance } = startInstance(
+      state,
+      model,
+      rowLabel,
+      now,
+      { entityId: ev.entityId, rowId }
+    );
+    if (!instance) {
+      return { state, ok: false, message: "这个应用没有声明工作流，提交无处可去" };
+    }
+    return { state: next, ok: true, message: `已提交审批：${instance.title}` };
+  }
+
+  // approveWorkflow / rejectWorkflow
+  const instance = runningInstanceFor(state, ev.entityId, rowId);
+  if (!instance) {
+    return { state, ok: false, message: `「${rowLabel}」没有进行中的流程（先提交审批）` };
+  }
+  const node = nodeById(model, instance.currentNodeId);
+  const assignee = node?.assigneeRole;
+  if (assignee && role && assignee !== role) {
+    return {
+      state,
+      ok: false,
+      message: `当前节点「${node?.name || instance.currentNodeId}」由 ${assignee} 处理，当前角色无权操作`,
+    };
+  }
+  const action = ev.kind === "approveWorkflow" ? "approve" : "reject";
+  const { state: next, error } = advanceInstance(state, model, instance.id, action, now, {
+    byRole: role ?? assignee,
+  });
+  if (error) {
+    // 目前唯一会走到这儿的是分支（多出边）：选走向需要 UI，这里不猜
+    return { state, ok: false, message: `${error}——请到工作流试运行面选择走向` };
+  }
+  return {
+    state: next,
+    ok: true,
+    message: action === "approve" ? `已通过：「${rowLabel}」` : `已驳回：「${rowLabel}」（流程终止）`,
+  };
+}
