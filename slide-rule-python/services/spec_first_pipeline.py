@@ -122,6 +122,7 @@ def run_spec_first(
     evidence: str = "",
     llm_json_fn: Optional[Callable[..., Any]] = None,
     bind_html: bool = True,
+    on_page: Optional[Callable[[str, str, int, int], None]] = None,
 ) -> Dict[str, Any]:
     """一句话 → 完整五系统模型 + 带 data-* 孔的多页 HTML。
 
@@ -150,7 +151,9 @@ def run_spec_first(
 
     # ── 第 3 步：每页 HTML（并发；单页失败不拖垮整批）────────────────
     with _stage("specfirst.pages") as st:
-        batch = generate_pages_parallel(spec)
+        # on_page 透传：这一步是整条链上**第一个产出可以直接看的东西**的地方，
+        # 一份能独立打开的 HTML 比最终模型早四五分钟。攒齐再交等于白白转圈。
+        batch = generate_pages_parallel(spec, on_page=on_page)
         pages = dict(batch.get("pages") or {})
         failed = dict(batch.get("failed") or {})
         st["got"] = len(pages)

@@ -145,3 +145,41 @@ class Test失败不回落占位:
 
     def test_异常类型自己说清纪律(self):
         assert "不回落老链路" in (sfp.SpecFirstError.__doc__ or "")
+
+
+class Test页面一出来就往外交:
+    """`on_page` 从主轴一路透传到第 3 步。
+
+    这条链一轮 8~9 分钟，第 3 步在第二分钟就有能看的东西。中间任何一环把
+    回调丢了，前端就只能等到最后——**而且不会有任何一处报错**（页面照常
+    产出、模型照常返回、闸照常绿）。所以这里钉的是"传到了"，不是"没炸"。
+    """
+
+    def test_透传到第_3_步(self, monkeypatch):
+        seen: dict = {}
+        monkeypatch.setattr(
+            "services.spec_tree.generate_spec_tree",
+            lambda *a, **k: {"pages": [{"id": "p1"}], "nodes": []},
+        )
+        def _capture(spec, **kw):
+            seen["on_page"] = kw.get("on_page")
+            # 第 3 步交白卷 → 抛 SpecFirstError，测试到此为止：
+            # 这条只管"回调有没有传到"，不需要把整条链跑完
+            return {"pages": {}, "failed": {"p1": "到这里就够了"}}
+
+        monkeypatch.setattr("services.spec_page_html.generate_pages_parallel", _capture)
+
+        def sentinel(*_a):
+            return None
+
+        with pytest.raises(sfp.SpecFirstError):
+            sfp.run_spec_first("随便一个话题", on_page=sentinel)
+        assert seen["on_page"] is sentinel, "回调在中间被丢了——前端会一直黑到最后"
+
+    def test_不传也能跑(self):
+        """默认 None——老调用方一个字都不用改。"""
+        import inspect as _inspect
+
+        sig = _inspect.signature(sfp.run_spec_first)
+        assert sig.parameters["on_page"].default is None
+        assert sig.parameters["on_page"].kind is _inspect.Parameter.KEYWORD_ONLY

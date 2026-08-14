@@ -43,6 +43,9 @@ def test_the_slow_stages_are_all_covered():
     写成全等而不是包含：多出来的名字同样要过审。名单外的阶段会被
     `_enrich_stage_event` 直接丢掉（内部子步骤报出来只会把一条清晰的进度线
     拆成一堆碎片），所以加进来就意味着"决定让用户看见"。
+
+    2026-08-14 加了 spec-first 六段。新链路一轮 8~9 分钟，不报的话左侧
+    **从头黑到尾**——不是"某一段黑三分钟"，是整条链一个字都没有。
     """
     assert set(_ENRICH_STAGE_LABELS) == {
         "model.generate",
@@ -50,7 +53,51 @@ def test_the_slow_stages_are_all_covered():
         "monitor.sheet",
         "monitor.palette",
         "monitor.design",
+        # spec-first 七步里报六步。⚠ specfirst.shell 故意不在——见下一条
+        "specfirst.spec",
+        "specfirst.pages",
+        "specfirst.structure",
+        "specfirst.semantics",
+        "specfirst.assemble",
+        "specfirst.bind",
     }
+
+
+def test_the_zero_cost_step_stays_off_the_stream():
+    """外壳统一不报：零 LLM、实测 0.0 秒，start/end 背靠背只会闪一下。
+
+    这跟"内部子步骤不报"是同一条纪律的另一面——那条防的是**碎**，
+    这条防的是**闪**。两者都让进度线变得不像进度线。
+    """
+    assert "specfirst.shell" not in _ENRICH_STAGE_LABELS
+    assert _enrich_stage_event("start", "specfirst.shell", {}) is None
+
+
+def test_spec_first_stages_are_actually_instrumented():
+    """名单里有名字不等于埋点在——这条是上面那条的**反向判据**。
+
+    正向判据（名字在表里）只查"报出来的对不对"，查不出"该报的在不在"：
+    表里写 `specfirst.pages`、而 pipeline 里那个 with 写的是别的名字或者根本
+    没写，两边都不会红，左侧照样黑。本仓数到第十次的失败形态就是这个形状
+    （闸全绿但东西没了），成因每次都是"只有正向判据"。
+
+    所以这里从 pipeline 源码里把 `_stage("…")` 的实参捞出来，跟表逐一对。
+    """
+    import inspect
+    import re
+
+    from services import spec_first_pipeline
+
+    src = inspect.getsource(spec_first_pipeline.run_spec_first)
+    instrumented = set(re.findall(r'_stage\(\s*"([^"]+)"', src))
+    labelled = {n for n in _ENRICH_STAGE_LABELS if n.startswith("specfirst.")}
+
+    assert labelled <= instrumented, f"表里有名字但链路里没埋点：{labelled - instrumented}"
+    # 反过来也要对：埋了点却没进表 = 那一段在左侧是黑的。shell 是唯一的例外，
+    # 而且是**显式**例外——写在这里，改的人躲不过。
+    assert instrumented - labelled == {"specfirst.shell"}, (
+        f"埋了点却没进表（左侧会黑）：{instrumented - labelled - {'specfirst.shell'}}"
+    )
 
 
 def test_model_generation_stage_is_actually_instrumented():

@@ -289,3 +289,85 @@ class Test瞬时错误不该打死整轮:
         from services.spec_page_html import generate_pages_parallel
 
         assert generate_pages_parallel({"pages": []}) == {"pages": {}, "failed": {}}
+
+
+class Test一页好了就交出去:
+    """`on_page` 是这条链上第一份"能直接看的东西"的出口。
+
+    这一步产出的 HTML 比最终模型早四五分钟。攒齐再交，等于把那四五分钟
+    白白变成转圈。
+    """
+
+    _SPEC = {
+        "appName": "x",
+        "nodes": [],
+        "pages": [
+            {"id": "p1", "name": "甲", "purpose": "看", "audience": "谁", "coversNodes": []},
+            {"id": "p2", "name": "乙", "purpose": "看", "audience": "谁", "coversNodes": []},
+        ],
+    }
+    _HTML = ('<!DOCTYPE html><html><head>'
+             '<script src="https://cdn.tailwindcss.com"></script></head>'
+             '<body><main>中文</main></body></html>')
+
+    class _R:
+        content = ('<!DOCTYPE html><html><head>'
+                   '<script src="https://cdn.tailwindcss.com"></script></head>'
+                   '<body><main>中文</main></body></html>')
+
+    def test_每落地一页叫一次_并带进度(self):
+        from services.spec_page_html import generate_pages_parallel
+
+        seen: list = []
+        out = generate_pages_parallel(
+            self._SPEC, max_workers=1, llm_call=lambda *a, **k: self._R(),
+            on_page=lambda pid, html, done, total: seen.append((pid, done, total)))
+
+        assert [(p, d, t) for p, d, t in seen] == [("p1", 1, 2), ("p2", 2, 2)]
+        assert len(out["pages"]) == 2
+
+    def test_交出去的就是最终那份_HTML(self):
+        """交半截等于前端渲染一份坏页面——比不交更糟。"""
+        from services.spec_page_html import generate_pages_parallel
+
+        got: dict = {}
+        out = generate_pages_parallel(
+            self._SPEC, max_workers=1, llm_call=lambda *a, **k: self._R(),
+            on_page=lambda pid, html, *_: got.__setitem__(pid, html))
+        assert got == out["pages"]
+
+    def test_失败的页不叫(self):
+        """失败的页没有产出（见上面那条"不产出占位"），自然也没什么可交。"""
+        from services.spec_page_html import generate_pages_parallel
+
+        seen: list = []
+
+        def boom(*a, **k):
+            raise RuntimeError("网关断开")
+
+        generate_pages_parallel(self._SPEC, max_workers=1, llm_call=boom,
+                                on_page=lambda *a: seen.append(a))
+        assert seen == []
+
+    def test_回调自己炸了不影响产出(self):
+        """⚠ 这条是这个 sink 唯一危险的地方。
+
+        它是"顺带推给前端看"，不是产出的一部分。让一次 UI 推送失败去打死
+        已经生成好的页面，是拿次要的赔主要的——而且那份 HTML 已经烧过一次
+        LLM 了，赔掉就得重烧。
+        """
+        from services.spec_page_html import generate_pages_parallel
+
+        def sink(*_a):
+            raise RuntimeError("SSE 队列满了")
+
+        out = generate_pages_parallel(
+            self._SPEC, max_workers=1, llm_call=lambda *a, **k: self._R(), on_page=sink)
+        assert len(out["pages"]) == 2 and out["failed"] == {}
+
+    def test_不传_on_page_一切照旧(self):
+        """默认不传——老调用方一个字都不用改。"""
+        from services.spec_page_html import generate_pages_parallel
+
+        out = generate_pages_parallel(self._SPEC, llm_call=lambda *a, **k: self._R())
+        assert len(out["pages"]) == 2

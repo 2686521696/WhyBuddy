@@ -224,6 +224,7 @@ def generate_pages_parallel(
     *,
     max_workers: int = 6,
     llm_call: Optional[Callable[..., Any]] = None,
+    on_page: Optional[Callable[[str, str, int, int], None]] = None,
 ) -> Dict[str, Any]:
     """把 spec 的每一页并发生成 HTML。**单页失败不拖垮整批。**
 
@@ -243,6 +244,17 @@ def generate_pages_parallel(
     由调用方决定是整轮停还是带着缺页往下走——第 4 步那条页面覆盖判据会发现
     缺页（喂几份出几页），所以缺页不会被静默吞掉。
 
+    ## on_page：一页好了就交出去，别等整批
+
+    `on_page(page_id, html, done, total)` 每落地一页调一次。有它是因为这一步
+    是整条链上**第一个产出可以直接看的东西**的地方——一份能独立打开的 HTML，
+    比模型早四五分钟。攒齐再交等于把这四五分钟白白变成转圈。
+
+    ⚠ 回调里的异常**吞掉不外抛**：它是"顺带推给前端看"，不是产出的一部分。
+    让一个 UI 推送失败去打死已经生成好的页面，是拿次要的东西赔主要的。
+    （同款判断见 app_preview.OverviewPreviewSink：出图失败是 fail-open 的
+    正常结局，调用方不需要为此加判断。）
+
     返回 {"pages": {pageId: html}, "failed": {pageId: 原因}}。
     """
     pages = list(spec.get("pages") or [])
@@ -258,9 +270,17 @@ def generate_pages_parallel(
             (str(pg.get("id") or ""), pool.submit(generate_page_html, pg, spec, llm_call=llm_call))
             for pg in pages
         ]
+        done = 0
         for page_id, fut in futures:
+            done += 1
             try:
-                ok[page_id] = fut.result()["html"]
+                html = fut.result()["html"]
+                ok[page_id] = html
+                if on_page is not None:
+                    try:
+                        on_page(page_id, html, done, len(futures))
+                    except Exception as sink_exc:  # noqa: BLE001 — 见 docstring
+                        print(f"[spec_page_html] 页面回调失败（不影响产出）：{str(sink_exc)[:120]}")
             except Exception as exc:  # noqa: BLE001 — 单页失败不拖垮整批
                 failed[page_id] = str(exc)[:200]
                 print(f"[spec_page_html] 页面 {page_id} 生成失败：{str(exc)[:160]}")
