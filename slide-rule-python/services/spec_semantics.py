@@ -240,6 +240,8 @@ class SpecSemantics(BaseModel):
         return self
 
 
+from .spec_llm_call import call_spec_json
+
 def check_grounded_in_inputs(
     semantics: SpecSemantics,
     *,
@@ -449,9 +451,15 @@ def derive_semantics(
     messages = build_prompt(structure, spec, with_spec=with_spec, with_structure=with_structure)
     last = "未调用"
     for attempt in range(max_reask + 1):
-        payload = _call(messages, llm_json_fn)
+        outcome = call_spec_json(messages, llm_json_fn, stage="specfirst.semantics")
+        payload = outcome.payload
         if payload is None:
-            last = "LLM 没有返回可解析的 JSON"
+            last = outcome.failure or "LLM 没有返回可解析的 JSON"
+            # 传输/配额层挂了：没拿到任何东西，没有可以喂回去的内容，而且
+            # 下层 call_llm_with_retry 已经退避重试过了。再转两圈是拿重问
+            # 额度去做下层刚做完的事——实测 11.6 秒跑完三次尝试就是这个形状。
+            if outcome.transport:
+                break
         else:
             verdict = validate_semantics(payload, structure=structure, spec=spec)
             if verdict["passed"]:
@@ -500,37 +508,3 @@ def to_model_sections(semantics: SpecSemantics) -> Dict[str, Any]:
     }
 
 
-def _call(
-    messages: List[Dict[str, str]],
-    llm_json_fn: Optional[Callable[[List[Dict[str, str]]], Optional[Dict[str, Any]]]],
-) -> Optional[Dict[str, Any]]:
-    if llm_json_fn is not None:
-        try:
-            return llm_json_fn(messages)
-        except Exception:  # noqa: BLE001
-            return None
-    try:
-        from sliderule_llm.client import call_llm_json
-    except Exception:  # noqa: BLE001
-        return None
-    # 实时增量（2026-08-14）：这一步在"想什么"要能被看见，不是只报一行
-    # "正在执行"。通道是仓里现成的那条（llm_delta → 前端左栏），这里只是接上。
-    #
-    # ⚠ on_delta 在场会**关掉对冲**（call_llm_with_retry 边界一：两份副本会往
-    #   同一个 sink 推，UI 上是两份内容交替出现）。这一步是单次调用、不算最慢
-    #   的那两步，拿"看得见"换掉对冲划算；逐页并发的第 3/6.5 步则相反，
-    #   所以那两步不接（理由见 capabilities.delta_emitter 的头注）。
-    try:
-        from sliderule_llm.capabilities import delta_emitter
-
-        _on_delta = delta_emitter("specfirst.semantics")
-    except Exception:  # noqa: BLE001 — 观测钩子不可用不该打死这一步
-        _on_delta = None
-    try:
-        payload, _ = call_llm_json(
-            messages, temperature=0.2,
-            **({"on_delta": _on_delta} if _on_delta is not None else {}),
-        )
-    except Exception:  # noqa: BLE001
-        return None
-    return payload if isinstance(payload, dict) else None

@@ -47,14 +47,62 @@ STREAMED = {
 NOT_STREAMED = ("spec_page_html", "html_bindings")
 
 
+def _stage_args(mod: str) -> list[str]:
+    """AST 取该模块所有 `call_spec_json(..., stage="X")` 的 X。
+
+    ⚠ 走 AST 不走文本：注释里出现 `delta_emitter("specfirst.spec")` 这种
+      对照说明是常事，文本判据会把注释算成真调用。本仓为这件事付过两次学费
+      （tenacity 那条被注释判红、run_spec_first 被 grep 数出 4 处实际只有 1 处）。
+    """
+    src = __import__(f"services.{mod}", fromlist=["*"])
+    tree = ast.parse(inspect.getsource(src))
+    out = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        name = fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", None)
+        if name != "call_spec_json":
+            continue
+        for kw in node.keywords:
+            if kw.arg == "stage" and isinstance(kw.value, ast.Constant):
+                out.append(kw.value.value)
+    return out
+
+
 @pytest.mark.parametrize("mod,label", sorted(STREAMED.items()))
 def test_这一步真的接了增量(mod, label):
-    """名单里写了不等于接了——判据钉在源码的真实调用上。"""
-    src = __import__(f"services.{mod}", fromlist=["*"])
-    text = inspect.getsource(src)
-    assert "delta_emitter" in text, f"{mod} 没接增量通道"
-    assert f'delta_emitter("{label}")' in text, f"{mod} 的 label 不是 {label}"
-    assert "on_delta" in text, f"{mod} 拿到了 emitter 却没往 LLM 调用上传"
+    """名单里写了不等于接了——判据钉在真实调用上。
+
+    ⚑ 2026-08-14 机制搬家：`delta_emitter(label)` 原本四个模块各写一份，
+      现已收进 services/spec_llm_call.py（同一次把「传输挂了」与「模型吐了
+      坏 JSON」分开）。**行为一个字没变**——每步仍按自己的 label 推流——
+      变的是这个 label 现在以 `stage=` 实参的形式传进去。
+      所以判据跟着搬：查这一步传了哪个 stage，再由下面那条钉住共用文件
+      真的把 stage 接到 delta_emitter 上。
+    """
+    stages = _stage_args(mod)
+    assert stages, f"{mod} 没有走 call_spec_json —— 增量通道整条没接上"
+    assert label in stages, f"{mod} 传的 stage 是 {stages}，不是 {label}"
+
+
+def test_共用口真的把_stage_接到增量通道上():
+    """⚠ 上面那条只验"传了 stage"。stage 传进去之后被丢掉的话，四条全绿而
+    左栏一个字都不会有——**判据链断在中间是最难发现的一种**。
+
+    所以这里正面验共用文件里那一环：stage → delta_emitter → on_delta。
+    """
+    from services import spec_llm_call
+
+    tree = ast.parse(inspect.getsource(spec_llm_call))
+    passed_stage_to_emitter = any(
+        isinstance(n, ast.Call)
+        and getattr(n.func, "id", getattr(n.func, "attr", None)) == "delta_emitter"
+        and any(isinstance(a, ast.Name) and a.id == "stage" for a in n.args)
+        for n in ast.walk(tree)
+    )
+    assert passed_stage_to_emitter, "spec_llm_call 没把 stage 传给 delta_emitter"
+    assert "on_delta" in inspect.getsource(spec_llm_call), "拿到 emitter 却没往 LLM 调用上传"
 
 
 @pytest.mark.parametrize("mod", NOT_STREAMED)
@@ -68,6 +116,11 @@ def test_逐页并发的两步不许接(mod):
     text = inspect.getsource(src)
     assert "delta_emitter" not in text, (
         f"{mod} 是逐页并发的步骤，接增量会交织并关掉对冲——见文件头"
+    )
+    # ⚑ 2026-08-14：增量现在挂在共用口 call_spec_json 上，所以「不接」也得
+    #   连这条路一起堵——只查 delta_emitter 已经不够了，走了共用口就自动有增量。
+    assert not _stage_args(mod), (
+        f"{mod} 走了 call_spec_json，会自动拿到增量——这两步必须留在共用口之外"
     )
 
 

@@ -331,6 +331,12 @@ def run_spec_first(
         st["pages"] = len(spec.get("pages") or [])
         st["nodes"] = len(spec.get("nodes") or [])
     stages["spec"] = dict(st)
+    # SPEC 声明的页面清单——**交付对账的基准**。在这里取一次，下面第 3 步
+    # 拿它跟实交页面比。⚠ 取 id 不取数量：只比数量的话，"少了 p5、多了 p9"
+    # 会两两相消，数字对得上而内容错位——本仓在别处栽过这种"数对了东西不对"。
+    spec_pages_declared = [
+        str(p.get("id") or "") for p in (spec.get("pages") or []) if isinstance(p, dict) and p.get("id")
+    ]
 
     # ── 第 3 步：每页 HTML（并发；单页失败不拖垮整批）────────────────
     with _stage("specfirst.pages") as st:
@@ -344,6 +350,26 @@ def run_spec_first(
         failed = dict(batch.get("failed") or {})
         st["got"] = len(pages)
         st["failed"] = len(failed)
+        # ★ 交付页数对账（2026-08-14）：**SPEC 说要几页，就得交几页**。
+        #
+        # 第 4 步的 check_page_coverage 守的是「喂几份 HTML → 出几个页面」，
+        # 它比的是**这一步的输入**。而这一步自己少产一页时，第 4 步收到的
+        # 就是少了的那份，喂 4 出 4——**判据全绿，缺口在它上游**。
+        #
+        # 真机撞到过（2026-08-14 市政园林那轮）：spec 5 页、第 3 步 failed=1，
+        # 后面所有步骤按 4 页跑完，闭环 6/6、blocked=false，没有任何一处
+        # 提过"少了一页"。缺的那页记在 failedPages 里，但没人拿它跟 spec 对账。
+        #
+        # ⚠ 只记不拦：单页失败本来就是 fail-open 设计（另外几页已经烧掉几分钟，
+        #   不该被一页拖垮）。这里补的是**让它说得出话**，不是把它改成 fail-closed。
+        st["declaredPages"] = len(spec_pages_declared)
+        missing_pages = [pid for pid in spec_pages_declared if pid not in pages]
+        if missing_pages:
+            st["missingPages"] = ",".join(missing_pages)
+            print(
+                f"[spec_first] ⚠ 交付页数对不上 SPEC：声明 {len(spec_pages_declared)} 页、"
+                f"实交 {len(pages)} 页，缺 {missing_pages}（失败原因见 failedPages）"
+            )
     stages["pages"] = dict(st)
     if not pages:
         raise SpecFirstError(f"第 3 步一页都没出来：{list(failed.values())[:2]}")
@@ -434,6 +460,10 @@ def run_spec_first(
         "pages": pages,
         "navItems": shell.get("navItems") or [],
         "failedPages": {**failed, **bound_failed},
+        # SPEC 声明了、最终没交出来的页。**空列表和缺这个键是两回事**：
+        # 空 = 对过账、一页不缺；缺键 = 老产物，没对过账。所以恒给出来。
+        "missingPages": missing_pages,
+        "declaredPages": spec_pages_declared,
         "stages": stages,
         "device": device,
     }
@@ -446,6 +476,10 @@ def run_spec_first(
         "navItems": list(result["navItems"]),
         "boundPages": len(pages) if bind_html and not bound_failed else 0,
         "failedPages": dict(result["failedPages"]),
+        # 交付对账结果一并落库：**刷新之后仍然说得出"这个应用少了一页"**。
+        # 只留在日志里等于只有当场看着的人知道，第二天打开应用中心的人不知道。
+        "missingPages": list(missing_pages),
+        "declaredPages": list(spec_pages_declared),
         # 前端（直播舞台/应用中心）拿它选画布视口：desktop 横屏 / phone 竖屏
         "device": device,
     })
