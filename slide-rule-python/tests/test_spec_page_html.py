@@ -371,3 +371,57 @@ class Test一页好了就交出去:
 
         out = generate_pages_parallel(self._SPEC, llm_call=lambda *a, **k: self._R())
         assert len(out["pages"]) == 2
+
+    def test_谁先好谁先交_不按提交顺序等(self):
+        """⚠ 这条是整个 sink 的**成败判据**，2026-08-14 真机打脸补的。
+
+        头一版写的是 `for page_id, fut in futures: fut.result()`——按提交顺序
+        阻塞。五页并发跑着，可只要第一页慢，后面早就好了的页也得排队。真机
+        量到的样子：
+
+            [347s] p1  [347s] p2  [348s] p3   ← 三页挤在同一秒
+            [369s] p4  [369s] p5
+
+        用户原话「看着是画完了才显示，不是实时画的」。**接线全通、判据全绿、
+        效果被一行遍历顺序抵消掉**——这正是本仓反复栽的那个形状，只不过这次
+        栽在"我自己刚写的判据只查了叫没叫，没查什么时候叫"。
+        """
+        import threading
+
+        from services.spec_page_html import generate_pages_parallel
+
+        spec = {
+            "appName": "x", "nodes": [],
+            "pages": [
+                {"id": "慢页", "name": "甲", "purpose": "看", "audience": "谁", "coversNodes": []},
+                {"id": "快页", "name": "乙", "purpose": "看", "audience": "谁", "coversNodes": []},
+            ],
+        }
+        released = threading.Event()
+
+        def call(messages, **kwargs):
+            # 第一页（提交顺序在前）卡住，直到第二页交付完才放行
+            if "甲" in str(messages):
+                assert released.wait(timeout=5), "第二页没能先交付——还在按提交顺序等"
+            return self._R()
+
+        seen: list = []
+        out = generate_pages_parallel(
+            spec, max_workers=2, llm_call=call,
+            on_page=lambda pid, *_: (seen.append(pid), released.set()))
+
+        assert seen[0] == "快页", f"先交付的应该是先跑完的那页，实际 {seen}"
+        assert len(out["pages"]) == 2 and out["failed"] == {}
+
+    def test_进度分母是总页数_不因乱序而错(self):
+        """乱序交付之后 done/total 仍要单调数满，不能出现 2/2 之后还有一页。"""
+        from services.spec_page_html import generate_pages_parallel
+
+        spec = {"appName": "x", "nodes": [], "pages": [
+            {"id": f"p{i}", "name": f"第{i}页", "purpose": "看",
+             "audience": "谁", "coversNodes": []} for i in range(1, 5)]}
+        seen: list = []
+        generate_pages_parallel(spec, max_workers=4, llm_call=lambda *a, **k: self._R(),
+                                on_page=lambda pid, html, d, t: seen.append((d, t)))
+        assert [d for d, _ in seen] == [1, 2, 3, 4]
+        assert {t for _, t in seen} == {4}

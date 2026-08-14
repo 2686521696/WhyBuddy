@@ -64,6 +64,32 @@ def _delta_emitter(capability_id: str) -> Callable[[str], None] | None:
     return _emit
 
 
+def delta_emitter(label: str) -> Callable[[str], None] | None:
+    """给**能力执行之外**的调用点用的同一条增量通道（2026-08-14）。
+
+    ## 为什么要这个公开口
+
+    spec-first 那六步不是"能力"，走的是自己的模块，于是它们一条增量都不发——
+    真机一轮 884 个 llm_delta **全部**来自老链路的轮内能力，新链路是零。
+    表现就是左栏只有"正在执行 XXX"这行标题，底下什么都没有。
+
+    参照 666ghj/BettaFish 的 forum 流：它把每个 Agent **说的话**逐行推成
+    `{sender, content, timestamp}`，前端渲染成发言。要流的是**内容**，
+    不是"正在执行 X"。我们这条通道本来就是干这个的，缺的只是接上去。
+
+    ⚠ 传进去的 label 会原样变成 SSE 事件里的 `label`，前端据它起标题、分缓冲。
+    前端认不出来的 label 会被原样显示成内部 id——所以加新 label 时，
+    humanLlmLabel 那张表要同步加（判据见 test_spec_first_streaming）。
+
+    ⚠ **不要给逐页并发的步骤用**（第 3 步画界面、第 6.5 步打孔）：
+      · 五路并发往同一个 label 里推，前端拼出来是交织的乱码；
+      · `on_delta` 在场会**关掉对冲**（见 call_llm_with_retry 边界一），
+        而那两步恰恰是最慢、最需要对冲治长尾的（bind 实测 552 秒）。
+      那两步的进度另有出口：页面本身就是逐页交付的。
+    """
+    return _delta_emitter(label)
+
+
 CAPABILITY_PROMPTS: dict[str, str] = {
     "intent.clarify": (
         "You are SlideRule V5's intent-clarification role. Given the user's goal and message, write a "

@@ -4,12 +4,12 @@
  *
  * 这一层要挡的是三件**都不会报错**的事：
  *   ① 页面到了但右侧还在转圈（接线断在任何一环，没有一处会红）
- *   ② 换页时影子根还留着上一页（React 复用 host 元素）
+ *   ② 换页时框里还留着上一页（React 复用同一个 iframe）
  *   ③ 手动选了一页，被新到达的页面挤走（存下标而不是 pageId）
  *
- * ⚠ 渲染走 BoundHtmlSurface（closed shadow root），外面 querySelector 进不去。
- * 那是**故意的**——所以判据落在"挂了几个面、挂的是哪一页"，不落在影子里
- * 的 DOM。要看内容有 onReport。
+ * ⚠ 渲染走沙箱 iframe（srcdoc + sandbox，不透明源），外面伸不进去。
+ * 那是**故意的**——所以判据落在"挂了几个框、挂的是哪一页、srcdoc 里有什么"，
+ * 不落在框内渲染出来的 DOM 上。
  *
  * 仓库里没有 @testing-library/react（freeform-actionref 那条注释是明说的），
  * 所以照它的做法拿 createRoot + act 搭挂载器，不引新依赖。
@@ -58,7 +58,8 @@ function update(pages: SpecPageLive[]): void {
 
 const tab = (id: string) =>
   host!.querySelector<HTMLButtonElement>(`[data-testid="sliderule-spec-page-tab-${id}"]`)!;
-const surfaces = () => host!.querySelectorAll('[data-testid="bound-html-surface"]');
+const frames = () =>
+  host!.querySelectorAll<HTMLIFrameElement>('[data-testid="sandboxed-page-frame"]');
 const stageText = () =>
   host!.querySelector('[data-testid="sliderule-spec-page-stage"]')!.textContent || "";
 
@@ -67,14 +68,14 @@ describe("有页面就渲染，没页面就让位", () => {
     expect(mount([]).firstChild).toBeNull();
   });
 
-  it("有页面就挂出渲染面", () => {
+  it("有页面就挂出渲染框", () => {
     mount([page("p1", 1)]);
-    expect(surfaces()).toHaveLength(1);
+    expect(frames()).toHaveLength(1);
   });
 
-  it("同时只挂一个面 —— 不是把所有页堆在一起", () => {
+  it("同时只挂一个框 —— 不是把所有页堆在一起", () => {
     mount([page("p1", 1), page("p2", 2)]);
-    expect(surfaces()).toHaveLength(1);
+    expect(frames()).toHaveLength(1);
   });
 });
 
@@ -131,15 +132,16 @@ describe("进度与接数状态如实说", () => {
 });
 
 describe("换页要重挂，不能留着上一页", () => {
-  it("切页后渲染面被替换（key 带 pageId）", () => {
+  it("切页后 iframe 被整个替换（key 带 pageId）", () => {
     /**
-     * 影子根是 closed 的，内容看不见。所以判据落在**节点身份**上：
-     * key 变了 React 会新建一个 host 元素，旧的那个不再在文档里。
-     * key 不带 pageId 的话 host 会被复用——那时这条会红。
+     * 沙箱是不透明源，框内内容看不见。所以判据落在**节点身份**上：
+     * key 变了 React 会新建一个 iframe，旧的那个不再在文档里。
+     * key 不带 pageId 的话 iframe 会被复用，srcdoc 换值时浏览器的重载时机
+     * 不一致，能看到上一页残留一瞬——那时这条会红。
      */
     mount([page("p1", 1), page("p2", 2)]);
-    const before = surfaces()[0];
+    const before = frames()[0];
     act(() => tab("p1").click());
-    expect(surfaces()[0]).not.toBe(before);
+    expect(frames()[0]).not.toBe(before);
   });
 });

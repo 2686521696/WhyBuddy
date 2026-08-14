@@ -13,24 +13,37 @@
  * 证据看板、起草 JSON——**过程的碎片**，看了也拼不出东西。这里上屏的是
  * 成品页面本身，跟最后交付的是同一份 HTML。两者不是一类东西。
  *
- * ## 渲染走宿主安全层，不自己拼一个
+ * ## 渲染走沙箱 iframe，不走 Shadow DOM —— 这条是踩出来的
  *
- * 内容是 LLM 生成的整份 HTML，直接 `dangerouslySetInnerHTML` 进主文档有
- * 两个独立的问题（可执行内容、样式外溢），各由 DOMPurify 与 Shadow DOM 治。
- * 那一层已经写好了（BoundHtmlSurface），这里只管挂——**安全判据只有一处**，
- * 多一条渲染路径就多一处会漏的地方。
+ * 第一版挂的是 BoundHtmlSurface（DOMPurify + closed Shadow DOM）。真机一跑，
+ * 右侧是一堆裸文字加一个撑满屏的蓝图标：**一条 CSS 都没生效**。
+ *
+ * 病因不是"样式丢了"，是页面的**全部**样式来自两个 script（Tailwind Play CDN
+ * 的运行时 JIT + 内联的 `tailwind.config` 配色），而消毒层按定义要摘掉 script。
+ * 而且这不是"放行 script 就能修"：Play CDN 扫 document 再往 document.head 注
+ * 样式，影子根里的元素它扫不到、注出来的也跨不过影子边界——
+ * **Shadow DOM 与 CDN 版 Tailwind 在原理上不兼容。**
+ *
+ * 换成 sandbox iframe（v0 / bolt / screenshot-to-code 的同款做法）：脚本能跑，
+ * 但跑在不透明源里，外带与表单提交由框内 CSP 掐死。判据与取舍写在
+ * sandboxed-page-frame.tsx 头注，那边是唯一的安全边界所在。
  *
  * ## 素颜页与打过孔的页
  *
  * `bound=false` 是第 3 步的素颜页：还没打 data-* 孔（孔要等第 6.5 步，那时
- * 实体字段才定死校验过）。所以此时数据源恒为空——**不是渲染失败**，是这个
- * 阶段本来就还没有数据。角标如实说明，不装作已经接上了。
+ * 实体字段才定死校验过）。角标如实说明，不装作已经接上了。
+ *
+ * ⚠ 填数（applyBindings）现在**不在这一层**：沙箱是不透明源，父页面伸不进去
+ * 改 DOM。等真有 BindingSource 的时候，正确做法是**先在游离 DOM 上填好数、
+ * 再序列化进 srcdoc**，动作走 postMessage 回来。今天 bound 恒为 false
+ * （全仓没有一处产出 BindingSource），所以这条路还没到要修的时候——
+ * 但别在这里偷偷加一条"直接改 iframe 内部"的路，那要求 allow-same-origin，
+ * 而它跟 allow-scripts 同时给出去等于沙箱整个作废。
  */
 
 import React from "react";
 
-import { BoundHtmlSurface } from "./bound-html-surface";
-import type { BindingSource } from "./html-binding-runtime";
+import { SandboxedPageFrame } from "./sandboxed-page-frame";
 
 export interface SpecPageLive {
   pageId: string;
@@ -40,21 +53,16 @@ export interface SpecPageLive {
   bound: boolean;
 }
 
-/** 素颜页没有数据源。空对象而不是 undefined——解释器要的是形状，不是可选。 */
-const EMPTY_SOURCE: BindingSource = { rows: {}, fields: {} };
-
 export interface SpecPageLiveStageProps {
   pages: SpecPageLive[];
   /** 当前步骤一句话（"逐页画界面（并发）"…）——右上角标注，不重复左栏 */
   statusLabel?: string | null;
-  source?: BindingSource;
   className?: string;
 }
 
 export function SpecPageLiveStage({
   pages,
   statusLabel = null,
-  source,
   className = "",
 }: SpecPageLiveStageProps): React.ReactElement | null {
   // 手动选过就听手动的；没选过恒跟最新一页（页面在陆续到达，跟着最新的
@@ -116,14 +124,13 @@ export function SpecPageLiveStage({
           </span>
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-auto rounded-xl bg-white shadow-sm ring-1 ring-[#e5e7eb]">
-        <BoundHtmlSurface
-          // ⚠ key 带 pageId：换页要重挂，否则影子根里还是上一页的内容
-          //   （挂载副作用按 html 变化重跑，但 host 元素被 React 复用）。
-          key={active.pageId}
-          html={active.html}
-          source={source ?? EMPTY_SOURCE}
-        />
+      <div className="min-h-0 flex-1 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-[#e5e7eb]">
+        {/* ⚠ key 带 pageId：换页必须重建 iframe。srcdoc 换值时浏览器的重载
+            时机不一致（Safari 上尤其），复用同一个框会看到上一页残留一瞬。
+            ⚠ 框内自己滚，外层 overflow-hidden：跟 ComponentsLibraryPage 那次
+            拒绝 iframe 的理由（26 份高度要跨文档同步）不一样——这里只有一份，
+            而且给的是固定高度，不需要把高度同步回来。 */}
+        <SandboxedPageFrame key={active.pageId} html={active.html} title={active.pageId} />
       </div>
     </div>
   );

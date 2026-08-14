@@ -545,8 +545,24 @@ def _call(messages: list[dict[str, str]], llm_json_fn: Optional[Any]) -> Optiona
         from sliderule_llm.client import call_llm_json
     except Exception:  # noqa: BLE001 — 客户端不可用时按没产出处理，由调用方报失败
         return None
+    # 实时增量（2026-08-14）：这一步在"想什么"要能被看见，不是只报一行
+    # "正在执行"。通道是仓里现成的那条（llm_delta → 前端左栏），这里只是接上。
+    #
+    # ⚠ on_delta 在场会**关掉对冲**（call_llm_with_retry 边界一：两份副本会往
+    #   同一个 sink 推，UI 上是两份内容交替出现）。这一步是单次调用、不算最慢
+    #   的那两步，拿"看得见"换掉对冲划算；逐页并发的第 3/6.5 步则相反，
+    #   所以那两步不接（理由见 capabilities.delta_emitter 的头注）。
     try:
-        payload, _ = call_llm_json(messages, temperature=0.2)
+        from sliderule_llm.capabilities import delta_emitter
+
+        _on_delta = delta_emitter("specfirst.spec")
+    except Exception:  # noqa: BLE001 — 观测钩子不可用不该打死这一步
+        _on_delta = None
+    try:
+        payload, _ = call_llm_json(
+            messages, temperature=0.2,
+            **({"on_delta": _on_delta} if _on_delta is not None else {}),
+        )
     except Exception:  # noqa: BLE001
         return None
     return payload if isinstance(payload, dict) else None

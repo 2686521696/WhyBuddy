@@ -867,9 +867,23 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           // 每一步 LLM 想法各自缓冲：并行批里不同能力的增量交织到达，
           // 按标签分开累积，展示最近更新的那条（不互相覆盖内容）。
           const llmDraftBuffers = new Map<string, string>();
+          // spec-first 四步的实时输出（2026-08-14）。
+          //
+          // ⚠ 这张表跟后端 delta_emitter 传的 label 是**同一份词汇的两半**，
+          //   而它俩隔着一条 SSE，谁也编译不到谁。漏一个的后果不是报错，是
+          //   左栏冒出一行 "LLM 正在执行 specfirst.structure"——内部 id 直接
+          //   漏到用户脸上。判据在 test_spec_first_streaming（后端）与
+          //   spec-first-stream-labels.test.ts（前端）两边各钉一次。
+          const SPEC_FIRST_LLM_LABELS: Record<string, string> = {
+            "specfirst.spec": "LLM 正在起草规格：成功判据、需求节点与页面清单",
+            "specfirst.structure": "LLM 正在从界面反推数据模型与关联关系",
+            "specfirst.semantics": "LLM 正在推导权限、工作流与不变式",
+            "specfirst.assemble": "LLM 正在汇合五系统模型",
+          };
           const humanLlmLabel = (key: string): string => {
             if (key === "five-system-model") return "LLM 正在起草五系统模型";
             if (key === "closure.summary") return "LLM 正在整理推演总结";
+            if (SPEC_FIRST_LLM_LABELS[key]) return SPEC_FIRST_LLM_LABELS[key];
             const entry = (
               CAPABILITY_PROCESS_LABELS as Record<
                 string,

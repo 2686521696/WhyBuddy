@@ -261,24 +261,40 @@ def generate_pages_parallel(
     if not pages:
         return {"pages": {}, "failed": {}}
 
-    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     ok: Dict[str, str] = {}
     failed: Dict[str, str] = {}
     with ThreadPoolExecutor(max_workers=min(max_workers, len(pages))) as pool:
-        futures = [
-            (str(pg.get("id") or ""), pool.submit(generate_page_html, pg, spec, llm_call=llm_call))
+        # ⚠ **as_completed，不是按提交顺序 for fut in futures。** 这条是真机
+        #   量出来的（2026-08-14，宠物医院一轮）：
+        #
+        #       [347s] p1  [347s] p2  [348s] p3   ← 三页挤在同一秒
+        #       [369s] p4  [369s] p5              ← 又两页挤在一起
+        #
+        #   五页是并发跑的，可 `fut.result()` **按提交顺序阻塞**：p1 慢，
+        #   p2/p3 早就好了也得等它。用户看到的就是"画完了才一起显示"，
+        #   而 on_page 这个 sink 存在的全部意义正是"一页好了就交出去"——
+        #   接线全通、判据全绿，效果被一行遍历顺序抵消掉。
+        #
+        #   ⚠ 代价是**产出顺序不再是 spec 的页面顺序**。ok 是 dict 不是 list，
+        #     下游按 page_id 取，所以不受影响；真正在乎顺序的是导航，而导航由
+        #     page_shell 按 spec.pages 重排（见 unify_shell）——不靠这里。
+        fut_to_id = {
+            pool.submit(generate_page_html, pg, spec, llm_call=llm_call): str(pg.get("id") or "")
             for pg in pages
-        ]
+        }
+        total = len(fut_to_id)
         done = 0
-        for page_id, fut in futures:
+        for fut in as_completed(fut_to_id):
+            page_id = fut_to_id[fut]
             done += 1
             try:
                 html = fut.result()["html"]
                 ok[page_id] = html
                 if on_page is not None:
                     try:
-                        on_page(page_id, html, done, len(futures))
+                        on_page(page_id, html, done, total)
                     except Exception as sink_exc:  # noqa: BLE001 — 见 docstring
                         print(f"[spec_page_html] 页面回调失败（不影响产出）：{str(sink_exc)[:120]}")
             except Exception as exc:  # noqa: BLE001 — 单页失败不拖垮整批
