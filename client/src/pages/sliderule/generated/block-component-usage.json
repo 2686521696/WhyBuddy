@@ -1521,6 +1521,7 @@
         "Flex",
         "Image",
         "List",
+        "Progress",
         "Tag",
         "Typography"
       ],
@@ -2382,6 +2383,7 @@
         "DragSortTable",
         "Empty",
         "Image",
+        "Progress",
         "Space",
         "Table",
         "Tag",
@@ -3170,6 +3172,7 @@
         "Empty",
         "Image",
         "ProDescriptions",
+        "Progress",
         "Tag",
         "Typography"
       ],
@@ -4532,6 +4535,7 @@
         "Empty",
         "Image",
         "ProDescriptions",
+        "Progress",
         "Tag",
         "Typography"
       ],
@@ -5321,6 +5325,7 @@
         "Flex",
         "Image",
         "List",
+        "Progress",
         "Tag",
         "Typography"
       ],
@@ -6091,6 +6096,7 @@
         "Empty",
         "Image",
         "ProDescriptions",
+        "Progress",
         "Tag",
         "Typography"
       ],
