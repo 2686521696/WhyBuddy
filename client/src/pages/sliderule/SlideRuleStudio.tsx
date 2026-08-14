@@ -3,14 +3,19 @@
  *
  * 左侧：Chat 对话区（ClaudeChatSurface，含唯一空态：logo 水印 + hero 文案 + 示例 chips）。
  *
- * 右侧主舞台（方向 B：应用为主，五系统是游标透视层）——三态：
+ * 右侧主舞台——四态：
+ *   pages   — **成品面**：spec-first 那条链路产出的 HTML 页面，装在
+ *             1920×1080 的等比缩放画布里（见 live-runtime/canvas-scale.tsx）。
+ *             推演中逐页到达就开始渲染，跑完继续由它接管，中途不换面孔；
  *   theater — 五系统生成中（SSE activeSkillId 驱动），系统屏生成剧场逐屏亮相；
- *   app     — 闭环出应用后，运行应用整高铺满为默认舞台；「游标」开关透视
- *             当前页面背后的实体/流程/角色/AI，点任何一节侧滑抽屉深入系统屏；
- *   live    — 推演已开始但应用未成形（澄清/路线/风险等早期轮次），占位报
- *             "推演中 + 当前步骤"，不重复左栏直播流；
- *   board   — 尚无可运行应用（空会话/未闭环），保留六系统缩略 + 证据看板。
- * 六系统屏不再是并列切屏，而是应用的透视层（抽屉承载，全部保留）。
+ *   live    — 推演已开始但一页都还没交出来，占位报"推演中 + 当前步骤"，
+ *             不重复左栏直播流；
+ *   board   — 尚无可看产出（空会话/未闭环），保留六系统缩略 + 证据看板。
+ * 六系统屏不再是并列切屏，而是抽屉承载的透视层（全部保留）。
+ *
+ * ⚑ 2026-08-14：原来那个 `app` 态（AppRuntimeScreen 区块渲染）**已从本页下架**
+ *   ——用户裁决：跑完之后只认新链路的页面。理由与代价写在下面 stage 那处，
+ *   AppRuntimeScreen 本身没删，应用中心（AppBundleScreen）照旧用它。
  */
 
 import React, { useState, useCallback, useMemo, useEffect } from "react";
@@ -23,8 +28,6 @@ import {
   parsePartialFiveSystemModel,
   type SkillRuntimeGraphLike,
 } from "./system-screens/five-system-model";
-import { deriveAppRuntimeSchema } from "./live-runtime/app-runtime-schema";
-import { AppRuntimeScreen } from "./live-runtime/AppRuntimeScreen";
 import {
   SpecPageLiveStage,
   type SpecPageLive,
@@ -39,12 +42,8 @@ import {
   loadRuntimeState,
   saveRuntimeState,
 } from "./live-runtime/runtime-persistence";
-import { AppStageErrorBoundary } from "./live-runtime/AppStageErrorBoundary";
-import { XrayPanel, type XrayTarget } from "./XrayPanel";
 import { RollingText } from "./RollingText";
-import { Crosshair, X } from "lucide-react";
-
-const XRAY_PREF_KEY = "sliderule:xray-on";
+import { X } from "lucide-react";
 
 /** 抽屉标题：系统的中文名（游标语境下不再用英文胶囊） */
 const SKILL_LABELS: Record<SkillId, string> = {
@@ -167,11 +166,6 @@ export function SlideRuleStudio({
 
   const fiveSystemModel = settledModel ?? draftModel;
   const modelIsDraft = !settledModel && !!draftModel;
-  const appSchema = useMemo(
-    () => deriveAppRuntimeSchema(fiveSystemModel, appTitle || "推演应用"),
-    [fiveSystemModel, appTitle]
-  );
-
   // 两个来源合并成一份：推演中走 SSE 逐页到达（specPages），跑完/刷新之后
   // 走落库的那份（specFirstPages）。
   //
@@ -243,40 +237,38 @@ export function SlideRuleStudio({
   // 一收口就换成 AppRuntimeScreen 那套区块渲染（示例数据、年龄 148 那种）。
   // 花 18 分钟画出来的五页在交付那一刻被顶掉。
   //
-  // ⚠ 没有新链路页面时**原样走老路**：老链路今天还在跑（spec-first 挂了会
-  //   显式回落），那时区块页是唯一的产出，不能因为这条判定把它也挡掉。
+  // ⚑ 2026-08-14（用户裁决）：跑完之后**区块页彻底不再上舞台**。
+  //
+  // 上一版这里留着一条回落：没有新链路页面就退回 AppRuntimeScreen 那套区块
+  // 渲染。留它的理由是"spec-first 挂了的时候区块页是唯一产出"——理由本身
+  // 没错，但用户看到的结果是**同一个产品有两种完全不同的成品面孔**，而且
+  // 切换发生在自己看不见的地方（livePages 空不空取决于这一轮 spec-first
+  // 有没有跑通）。同一个入口两种面孔，比少一种面孔更难解释。
+  //
+  // ⚠ 这条是明知代价拍的板：**spec-first 挂掉的那些轮次，右侧不再有可交互的
+  //   应用**，退到推演剧场/证据看板（都是既有状态，不是白屏）。也就是说
+  //   新链路的失败从此**在界面上是看得见的**，不再被区块页悄悄兜住——
+  //   而"兜住"正是本仓数过很多次的那个形状：闸全绿但东西已经换了一个。
+  //   真要恢复兜底，改这一处即可（把 appSchema && fiveSystemModel 那档加回来）。
   const stage: "theater" | "app" | "live" | "pages" | "board" = isRunning
     ? "live"
     : livePages.length > 0
       ? "pages"
-      : appSchema && fiveSystemModel
-        ? "app"
-        : activeSkillId
-          ? "theater"
-          : "board";
+      : activeSkillId
+        ? "theater"
+        : "board";
 
-  // 游标开关（计算尺游标 hairline 的品牌梗；偏好持久化）+ 跟随应用内当前页
-  const [xrayOn, setXrayOn] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(XRAY_PREF_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
-  const toggleXray = useCallback(() => {
-    setXrayOn(v => {
-      try {
-        localStorage.setItem(XRAY_PREF_KEY, v ? "0" : "1");
-      } catch {}
-      if (v) setXrayTarget(null); // 关游标时清掉残留焦点
-      return !v;
-    });
-  }, []);
-  const [appActivePageId, setAppActivePageId] = useState<string>("home");
-  // 元素级焦点：应用内被悬停元素的背后声明（AR）
-  const [xrayTarget, setXrayTarget] = useState<XrayTarget | null>(null);
-  // 设备/代码档位切换条的挂载点（顶条「游标」左侧，AppRuntimeScreen portal）
-  const [gearSlot, setGearSlot] = useState<HTMLDivElement | null>(null);
+  // ⚑ 2026-08-14：游标（xray）与档位切换条随区块页一起从本页下架。
+  //
+  // 它们不是"顺手删的"，是**失去了作用对象**：游标透视的是区块页上那些埋了
+  // 五系统声明的元素（XrayPanel 要 appSchema + XrayTarget），档位切换条是
+  // AppRuntimeScreen portal 出来的。区块页不再上舞台，这两样在本页就没有
+  // 任何东西可以对准。
+  //
+  // ⚠ 能力本身没删：XrayPanel / AppRuntimeScreen 都还在，应用中心
+  //   （AppBundleScreen）照旧用。要在 HTML 页上做游标是另一件事——
+  //   悬停给的是 {attr,value,el}（见 SpecPageLiveStage.onHoverBinding），
+  //   跟 XrayTarget 不是同一种东西，得先有个 HTML 版的透视面才谈得上。
 
   // 系统屏抽屉（游标深入 / 抽屉内六系统横向切换）
   const [drawerSkill, setDrawerSkill] = useState<SkillId | null>(null);
@@ -358,9 +350,14 @@ export function SlideRuleStudio({
           ——用户反馈"背景颜色不一致，会话页面背景不是白色的"。
           现在两边共用一个 token，"改这一个值 = 整壳换底色"这条重新成立。 */}
       <div className="relative flex min-w-0 flex-1 flex-col gap-3 overflow-hidden bg-[var(--sr-shell-bg,#ffffff)] p-4">
-        {stage === "app" && fiveSystemModel ? (
+        {(stage === "live" && livePages.length > 0) || stage === "pages" ? (
+          /* 新链路已经交出页面：直接渲染，不再摆三个点。
+             判据是"手上有没有能看的东西"，不是阶段名——没有页面时下面那支
+             原样保留（老链路今天还在跑，它整轮都没有可看的中间产物）。 */
           <>
-            {/* 应用主舞台：细头条（话题 + 游标开关），其下应用整高铺满 */}
+            {/* 头条（2026-08-14 从原区块页舞台挪过来）：话题名 + 起草/运行中 +
+                版本前进回退。区块页下架之后这三样没了着落，而它们跟渲染的是
+                哪一套页面无关——都是**这一轮推演本身**的信息。 */}
             <div
               className="flex shrink-0 items-center gap-2"
               data-testid="sliderule-app-stage-bar"
@@ -369,9 +366,8 @@ export function SlideRuleStudio({
                 {appTitle || "推演应用"}
               </span>
               {modelIsDraft ? (
-                <span className="flex items-center gap-1.5 rounded-full bg-[#FDF6F1] px-2 py-0.5 text-[10px] font-medium text-[#C05621]">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#1677ff]" />
-                  生成中 · 实时渲染
+                <span className="rounded-full bg-[#FDF6F1] px-2 py-0.5 text-[10px] font-medium text-[#C05621]">
+                  起草中
                 </span>
               ) : (
                 <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
@@ -379,76 +375,17 @@ export function SlideRuleStudio({
                 </span>
               )}
               {versionToolbar}
-              {/* 设备/代码档位切换：AppRuntimeScreen portal 到这里
-                  （用户裁决：显示在「游标」左侧，不再浮在画布上） */}
-              <div
-                ref={setGearSlot}
-                className="ml-auto flex items-center"
-                data-testid="sliderule-stage-gears"
-              />
-              <button
-                type="button"
-                onClick={toggleXray}
-                data-testid="sliderule-xray-toggle"
-                aria-pressed={xrayOn}
-                className={`flex h-8 items-center gap-1.5 rounded-full border px-3.5 text-[12px] font-semibold transition ${
-                  xrayOn
-                    ? "border-transparent bg-[#1677ff] text-white shadow-sm"
-                    : "border-[#e5e7eb] bg-white text-stone-600 hover:border-[#d3d8e0] hover:bg-[#f8f9fb]"
-                }`}
-                title="计算尺的游标：对齐到元素，读出它在五系统刻度上的对应声明"
-              >
-                <Crosshair className="h-4 w-4" />
-                游标
-              </button>
             </div>
-            <div
-              className="flex min-h-0 flex-1 gap-3"
-              data-testid="sliderule-app-stage"
-            >
-              {/* 画布直接浮在奶油底上（自带投影），不再包白色卡框叠色 */}
-              <div className="min-w-0 flex-1 overflow-hidden">
-                <AppStageErrorBoundary
-                  // 新模型/新会话到来自动复位（渲染炸过的坏树被替换后无需手动重试）
-                  resetKeys={[fiveSystemModel, sessionId]}
-                >
-                  <AppRuntimeScreen
-                    // 起草预览：模型每 +300 字符长一截，重挂让新页面/字段即刻上屏
-                    key={modelIsDraft ? `draft-${draftParseKey}` : "settled"}
-                    model={fiveSystemModel}
-                    sessionId={sessionId ?? "sliderule-v51-product"}
-                    appTitle={appTitle}
-                    onActivePageChange={setAppActivePageId}
-                    xrayActive={xrayOn}
-                    onXrayTarget={setXrayTarget}
-                    controlsContainer={gearSlot}
-                  />
-                </AppStageErrorBoundary>
-              </div>
-              {xrayOn && appSchema && (
-                <XrayPanel
-                  model={fiveSystemModel}
-                  schema={appSchema}
-                  activePageId={appActivePageId}
-                  target={xrayTarget}
-                  onOpenSystem={setDrawerSkill}
-                />
-              )}
-            </div>
+            <SpecPageLiveStage
+              pages={livePages}
+              statusLabel={isRunning ? liveActionLabel : null}
+              running={isRunning}
+              model={fiveSystemModel}
+              runtime={htmlRuntime}
+              onAction={handleHtmlAction}
+              className="min-h-0 flex-1"
+            />
           </>
-        ) : (stage === "live" && livePages.length > 0) || stage === "pages" ? (
-          /* 新链路已经交出页面：直接渲染，不再摆三个点。
-             判据是"手上有没有能看的东西"，不是阶段名——没有页面时下面那支
-             原样保留（老链路今天还在跑，它整轮都没有可看的中间产物）。 */
-          <SpecPageLiveStage
-            pages={livePages}
-            statusLabel={isRunning ? liveActionLabel : null}
-            running={isRunning}
-            model={fiveSystemModel}
-            runtime={htmlRuntime}
-            onAction={handleHtmlAction}
-            className="min-h-0 flex-1"
-          />
         ) : stage === "live" ? (
           /* 模型还没成形（轮内步骤 / 起草早期）：右侧只报"推演中"——实时想法
              已在左栏流出（用户反馈：右侧别重复直播内容），应用成形后接管舞台。 */

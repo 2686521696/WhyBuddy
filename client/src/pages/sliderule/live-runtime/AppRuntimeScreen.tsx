@@ -18,6 +18,7 @@
 
 import React from "react";
 import { createPortal } from "react-dom";
+import { ScaleBadge, useScaleToFit, type ScaleFitMode } from "./canvas-scale";
 import {
   Layout,
   Menu,
@@ -357,59 +358,11 @@ export function deviceModalSizing(device: DeviceKey): {
   };
 }
 
-/** 容器实测尺寸 → 等比缩放系数（min(宽比, 高比)，letterbox 居中）。 */
-/**
- * 缩放模式（2026-07-30 补 "width"）。
- *
- *   contain — min(w/W, h/H)：保证整个应用可见，代价是宽高比不匹配时留边。
- *             应用舞台要这个：用户要看全。
- *   width   — w/W：**只按宽度算，高度由内容推导**。缩略图墙要这个。
- *
- * 为什么加这一档：作品墙那版设计里卡片大中小交错、宽高比五花八门，用 contain
- * 的结果是每张卡两侧一大片灰（实测 778×272 的卡里应用只有 484px 宽，
- * 383×130 的卡里只有 230px）。
- *
- * 做法照 WordPress Gutenberg 的 ScaledBlockPreview
- * （packages/block-editor/src/components/block-preview/auto.js）：
- *     const scale = containerWidth / viewportWidth;
- *     const aspectRatio = containerWidth / (contentHeight * scale);
- * 它也是缩放真实渲染的组件树（不是 iframe、不是截图），跟这里同一个问题。
- * 关键在**宽度定缩放、高度跟着内容走**，而不是把内容塞进一个固定尺寸的盒子
- * ——后者必然要么留边要么裁切。调用方据此把容器高度设成 designH×scale。
- */
-export type ScaleFitMode = "contain" | "width";
-
-function useScaleToFit(
-  designW: number,
-  designH: number,
-  mode: ScaleFitMode = "contain"
-): {
-  ref: React.RefObject<HTMLDivElement | null>;
-  scale: number;
-} {
-  const ref = React.useRef<HTMLDivElement | null>(null);
-  const [scale, setScale] = React.useState(1);
-  React.useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const measure = () => {
-      const w = el.clientWidth;
-      const h = el.clientHeight;
-      if (w <= 0) return;
-      if (mode === "width") {
-        setScale(w / designW);
-        return;
-      }
-      if (h > 0) setScale(Math.min(w / designW, h / designH));
-    };
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [designW, designH, mode]);
-  return { ref, scale };
-}
+// 缩放画布（useScaleToFit / ScaleFitMode / ScaleBadge）2026-08-14 抽去了
+// ./canvas-scale —— spec-first 那条链路的页面也要同一套等比缩放，两处共用
+// 一份实现而不是各抄一遍（理由见那个文件的头注）。
+// ⚠ 抽走的只是机制，本文件的设计分辨率仍是 DEVICE_SPECS 里那三档。
+export type { ScaleFitMode } from "./canvas-scale";
 
 const MENU_ICONS = [
   TableOutlined,
@@ -4415,12 +4368,7 @@ export function AppRuntimeScreen({
           : null;
       })()}
       {!codeView && showScaleBadge && (
-        <span
-          className="absolute bottom-2 right-3 rounded-full bg-black/30 px-2 py-0.5 font-mono text-[9px] text-white/90"
-          title={`固定 ${spec.w}×${spec.h} 设计分辨率，按容器等比缩放显示`}
-        >
-          {spec.w}×{spec.h} · {Math.round(scale * 100)}%
-        </span>
+        <ScaleBadge w={spec.w} h={spec.h} scale={scale} />
       )}
     </div>
   );

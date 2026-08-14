@@ -40,6 +40,7 @@
 import React from "react";
 
 import { HtmlAppSurface } from "./html-app-surface";
+import { ScaleBadge, useScaleToFit, SPEC_PAGE_VIEWPORT } from "./canvas-scale";
 import { deriveBindingSource } from "./derive-binding-source";
 import type { BindingActionEvent } from "./html-binding-runtime";
 import type { RuntimeState } from "./live-runtime";
@@ -90,6 +91,13 @@ export function SpecPageLiveStage({
   const [report, setReport] = React.useState<{ filled: number; problems: string[] } | null>(null);
 
   const source = React.useMemo(() => deriveBindingSource(model, runtime), [model, runtime]);
+
+  // ⚠ 必须在下面那个 `if (!active) return null` **之前**调用：hook 的调用
+  //   顺序不能随渲染分支变化，放到早退之后第一帧就会炸 hook order。
+  const { ref: fitRef, scale } = useScaleToFit(
+    SPEC_PAGE_VIEWPORT.w,
+    SPEC_PAGE_VIEWPORT.h
+  );
 
   const activeId =
     (picked && pages.some(p => p.pageId === picked) ? picked : null) ??
@@ -166,26 +174,64 @@ export function SpecPageLiveStage({
           </span>
         )}
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-[#e5e7eb]">
-        {/* ⚠ key 带 pageId：换页必须重建 iframe。srcdoc 换值时浏览器的重载
-            时机不一致（Safari 上尤其），复用同一个框会看到上一页残留一瞬。
-            ⚠ 框内自己滚，外层 overflow-hidden：跟 ComponentsLibraryPage 那次
-            拒绝 iframe 的理由（26 份高度要跨文档同步）不一样——这里只有一份，
-            而且给的是固定高度，不需要把高度同步回来。 */}
-        <HtmlAppSurface
-          key={active.pageId}
-          html={active.html}
-          source={source}
-          onAction={onAction}
-          onNavigate={setPicked}
-          onHoverBinding={onHoverBinding}
-          onReport={r =>
-            setReport({
-              filled: Object.values(r.filled).reduce((a, b) => a + b, 0),
-              problems: r.problems,
-            })
-          }
-        />
+      {/* 缩放画布（2026-08-14）：**页面是照 1920×1080 画的，就得在 1920×1080 里看**。
+          此前这里是直接铺满容器的——容器多宽 iframe 就多宽，于是同一份 HTML
+          在窄窗口里会掉进 Tailwind 的低断点：`2xl:`（1536）整档失效、多列栅格
+          塌成少列。而这些页面的唯一参照渲染器 render_pages.cjs 用的正是
+          1920×1080 视口，V6.0 那次「有图/无图」的裁决也是照着那批 1920 宽的
+          截图做的。看的宽度跟画的宽度对不上，等于在看一个从没被验收过的版式。
+          机制与区块页共用 ./canvas-scale，不各写一套。 */}
+      <div
+        ref={fitRef}
+        className="flex min-h-0 flex-1 items-center justify-center overflow-hidden"
+        data-testid="sliderule-spec-page-canvas"
+      >
+        <div
+          style={{
+            width: SPEC_PAGE_VIEWPORT.w * scale,
+            height: SPEC_PAGE_VIEWPORT.h * scale,
+            position: "relative",
+          }}
+        >
+          <div
+            style={{
+              width: SPEC_PAGE_VIEWPORT.w,
+              height: SPEC_PAGE_VIEWPORT.h,
+              transform: `scale(${scale})`,
+              transformOrigin: "top left",
+              overflow: "hidden",
+              borderRadius: 5,
+              background: "#fff",
+              boxShadow: "0 8px 32px rgba(60,50,30,0.18)",
+            }}
+          >
+            {/* ⚠ key 带 pageId：换页必须重建 iframe。srcdoc 换值时浏览器的重载
+                时机不一致（Safari 上尤其），复用同一个框会看到上一页残留一瞬。
+                ⚠ 框内自己滚，外层 overflow-hidden：跟 ComponentsLibraryPage 那次
+                拒绝 iframe 的理由（26 份高度要跨文档同步）不一样——这里只有一份，
+                而且给的是固定高度，不需要把高度同步回来。 */}
+            <HtmlAppSurface
+              key={active.pageId}
+              html={active.html}
+              source={source}
+              onAction={onAction}
+              onNavigate={setPicked}
+              onHoverBinding={onHoverBinding}
+              onReport={r =>
+                setReport({
+                  filled: Object.values(r.filled).reduce((a, b) => a + b, 0),
+                  problems: r.problems,
+                })
+              }
+            />
+          </div>
+          <ScaleBadge
+            w={SPEC_PAGE_VIEWPORT.w}
+            h={SPEC_PAGE_VIEWPORT.h}
+            scale={scale}
+            testId="sliderule-spec-page-scale"
+          />
+        </div>
       </div>
     </div>
   );

@@ -171,3 +171,44 @@ describe("跑完之后不许假装还在生成", () => {
     expect(stageText()).toContain("生成中");
   });
 });
+
+/**
+ * 缩放画布（2026-08-14）。
+ *
+ * 这些页面是照 1920×1080 画的——唯一的参照渲染器
+ * `experiments/visual-first/render_pages.cjs` 就是拿这个视口截的图，V6.0 那次
+ * 「有图 / 无图哪个好」的裁决也是照着那批 1920 宽的截图做的。
+ *
+ * 在此之前这里是**直接铺满容器**的：容器多宽 iframe 就多宽。那不会报错，
+ * 只是让同一份 HTML 掉进 Tailwind 的低断点（`2xl:` 是 1536，1440 的容器里
+ * 整档失效，多列栅格塌成少列）——**页面看着"就是长这样"，没有任何一处会说
+ * 你看到的不是它被验收时的样子**。所以判据钉在"设计分辨率是不是 1920×1080"，
+ * 不钉在缩放系数（那个跟容器走，jsdom 里量不出真值）。
+ */
+describe("页面装在 1920×1080 的画布里看", () => {
+  const canvas = () =>
+    host!.querySelector<HTMLElement>('[data-testid="sliderule-spec-page-canvas"]')!;
+
+  it("有画布容器，iframe 不再直接铺满外层", () => {
+    mount([page("p1", 1, 1)]);
+    expect(canvas()).toBeTruthy();
+    // iframe 落在画布里面，不是画布的兄弟节点
+    expect(canvas().contains(frames()[0])).toBe(true);
+  });
+
+  it("设计分辨率钉死 1920×1080 —— 换了就是换了个没被验收过的版式", () => {
+    mount([page("p1", 1, 1)]);
+    const stage = frames()[0].parentElement as HTMLElement;
+    expect(stage.style.width).toBe("1920px");
+    expect(stage.style.height).toBe("1080px");
+    // 等比缩放靠 transform，不是把内容塞进小盒子（后者会裁切）
+    expect(stage.style.transform).toMatch(/^scale\(/);
+    expect(stage.style.transformOrigin).toBe("top left");
+  });
+
+  it("右下角那枚自述标识报的是设计分辨率，不是容器尺寸", () => {
+    mount([page("p1", 1, 1)]);
+    const badge = host!.querySelector('[data-testid="sliderule-spec-page-scale"]');
+    expect(badge?.textContent).toContain("1920×1080");
+  });
+});
