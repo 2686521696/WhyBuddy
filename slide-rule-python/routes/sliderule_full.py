@@ -1574,10 +1574,14 @@ def prompt_refine(payload: Dict[str, Any], x_internal_key: Optional[str] = Heade
     }
 
 
-# ⚑ GET /builtin-examples（E41 官方示例库）已下架（2026-08-14，用户裁决）：
-#   四张示例卡是老区块链路的冻结模型投影，spec-first 成为默认链路后
-#   失去参照价值。前端消费面（AppsWorkbench examples tab）同批移除。
-#   E35 冻结模型本体（builtin_domain_models.json）保留——组件库等处还在用。
+@router.get("/builtin-examples")
+def builtin_examples():
+    """官方示例库（E41）：过门冻结模型的摘要投影——真身份、真指标、
+    起手意图。没有上架条目就返回空列表（2026-08-14 起数据清空，功能
+    保留；上架方式见 services/builtin_examples._EXAMPLE_META）。"""
+    from services.builtin_examples import list_builtin_examples
+
+    return {"examples": list_builtin_examples()}
 
 
 @router.post("/attachments/extract")

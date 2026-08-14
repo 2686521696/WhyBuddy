@@ -4,24 +4,25 @@
  * 布局定稿（用户三条硬性要求，2026-07-17）：
  *   1. 卡片一律 16:9，字段内容以底部浮层压在图上（不再图上字下两段式）；
  *   2. 「我的应用 / 官方示例库」tab 切换——筛选口径不同，卡片样式相同；
- *      ⚑ 2026-08-14 下架：E41 官方示例（四个 E35 冻结模型的投影卡）随
- *      spec-first 成为默认链路后失去参照价值（示例是老区块链路的产物，
- *      点卡起手的效果不再代表现在的生成质量），用户裁决清除。整个
- *      examples tab / 分类 chips / 分页器 / 空态起手卡一并移除，
- *      「我的应用」是唯一视图。
+ *      ⚑ 2026-08-14 示例**数据**清空（用户裁决：清数据不删功能）：老链路
+ *      的四张示例卡下架，功能骨架（tab/分类/分页/点卡起手）原样保留，
+ *      货架空着如实显示空态；后端 _EXAMPLE_META 上架新条目即恢复展示。
  *   3. 一行 4 张、每页最多三行（12 张），超出走分页器。
- *      ⚑ 分页器随示例库一起下架——「我的应用」2026-07-31 起就是无限流。
+ *      （「我的应用」2026-07-31 起改无限流，分页器只剩示例库在用。）
  *
  * 北极星纪律不变：全部真数据、fail-closed——
  *   列表     — GET /api/sliderule/sessions（话题/时间/阶段）
  *   卡片详情 — GET /api/sliderule/sessions/:id 渐进拉取，
  *              五系统模型解析自持久化 perSkillEvidence（同应用舞台同源）
  *   我的应用缩略 — 按真实模型示意渲染（导航=真实页面名），不闭环不摆假截图
+ *   示例库   — GET /api/sliderule/builtin-examples（冻结过门模型投影）；
+ *              拉不到/没上架就如实空态
  *   状态     — 门语言（closed 6/6 / blocked / 推演中），不发明"质量分"
  */
 
 import React from "react";
 import { canWriteApp, useAuth } from "@/lib/use-auth";
+import { Pagination } from "antd";
 
 import { useContainerPosition } from "masonic";
 
@@ -479,6 +480,9 @@ const STATUS_META: Record<AppCardStatus, { label: string; cls: string; dot: stri
   awaiting: { label: "待补充", cls: "bg-amber-50 text-amber-700", dot: "bg-amber-400" },
   draft: { label: "推演中", cls: "bg-blue-50 text-[#1677ff]", dot: "bg-[#4d9aff]" },
 };
+
+/** 每页 12 张 = 一行 4 × 最多三行（用户硬性要求），超出走分页器。 */
+const PAGE_SIZE = 12;
 
 /** 未闭环/无模型时的占位态（推演中 / blocked）——不是缩略图失败兜底，是诚实展示进度。 */
 function PendingAppThumb({ detail }: { detail: AppCardDetail | null }) {
@@ -1191,6 +1195,24 @@ function AppWall({
   );
 }
 
+/** 官方示例（E41）：冻结过门模型的摘要投影（API 返回，全真数据）。 */
+export interface BuiltinExample {
+  domain: string;
+  productName: string;
+  theme: string;
+  icon: string;
+  nav: string;
+  intent: string;
+  category: string;
+  pages: number;
+  roles: number;
+  aiCapabilities: number;
+  tags: string[];
+}
+
+/** 点模板 = 新会话 + 暂存起手意图（SlideRule 页挂载时消费预填输入框）。 */
+export const PENDING_TEMPLATE_INTENT_KEY = "sliderule:pending-template-intent";
+
 export function AppsWorkbench() {
   // 两条数据源：apps = App Store 闭环应用（摘要，有血缘/版本/可复刻）；
   // sessions = 会话（含尚未落库的在推演草稿）。合并成画廊条目（mergeGalleryItems）。
@@ -1204,6 +1226,7 @@ export function AppsWorkbench() {
   const [pyOk, setPyOk] = React.useState<boolean | null>(null);
   const [llm, setLlm] = React.useState<{ provider: string; model: string; keyPresent: boolean } | null | false>(null);
   const [healthOpen, setHealthOpen] = React.useState(false);
+  const [tab, setTab] = React.useState<"mine" | "examples">("mine");
   // 登录态：决定复刻/删除按钮显不显示（真判定在后端）
   const { user: authUser, capabilities } = useAuth();
   const [filter, setFilter] = React.useState<GalleryFilter>("all");
@@ -1228,13 +1251,21 @@ export function AppsWorkbench() {
   const [previewModal, setPreviewModal] = React.useState<GalleryItem | null>(null);
   const [forkBusy, setForkBusy] = React.useState(false);
   const [forkError, setForkError] = React.useState<string | null>(null);
+  const [page, setPage] = React.useState(1);
   // E28：订阅会话库更新事件（侧栏删会话/新话题落盘）→ 重拉画廊
   const [reloadKey, setReloadKey] = React.useState(0);
+  // E41 官方示例库（2026-08-14 起货架清空但功能保留；后端上架即恢复展示）
+  const [examples, setExamples] = React.useState<BuiltinExample[]>([]);
+  const [exampleCat, setExampleCat] = React.useState("全部");
   React.useEffect(() => {
     const bump = () => setReloadKey(k => k + 1);
     window.addEventListener(SESSIONS_UPDATED_EVENT, bump);
     return () => window.removeEventListener(SESSIONS_UPDATED_EVENT, bump);
   }, []);
+  // 筛选口径变化 → 回第一页（分页器与筛选联动）
+  React.useEffect(() => {
+    setPage(1);
+  }, [tab, filter, query, exampleCat, sortDesc]);
 
   React.useEffect(() => {
     let alive = true;
@@ -1331,6 +1362,10 @@ export function AppsWorkbench() {
       });
       void Promise.all(workers);
     });
+    fetch("/api/sliderule/builtin-examples")
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => alive && setExamples(Array.isArray(d?.examples) ? d.examples : []))
+      .catch(() => alive && setExamples([]));
     fetch("/api/health")
       .then(r => alive && setNodeOk(r.ok))
       .catch(() => alive && setNodeOk(false));
@@ -1384,6 +1419,15 @@ export function AppsWorkbench() {
         setListError(String(e instanceof Error ? e.message : e));
       }
     })();
+  };
+
+  const useTemplate = (example: BuiltinExample) => {
+    try {
+      localStorage.setItem(PENDING_TEMPLATE_INTENT_KEY, example.intent);
+    } catch {
+      /* 隐私模式无存储：仍然打开新会话，用户手动输入 */
+    }
+    openNewSession();
   };
 
   /** 删卡：App Store 卡删记录（DELETE /apps/{id}，不动会话）；会话草稿卡删会话。 */
@@ -1479,6 +1523,26 @@ export function AppsWorkbench() {
     blocked: paired.filter(p => p.detail && p.detail.blocked && p.detail.status !== "runnable").length,
     draft: paired.filter(p => p.detail && p.detail.status !== "runnable" && !p.detail.blocked).length,
   };
+  // 示例库筛选：分类 chips + 共享搜索框（搜产品名/意图/分类）
+  const q = query.trim().toLowerCase();
+  const visibleExamples = examples.filter(e => {
+    if (exampleCat !== "全部" && e.category !== exampleCat) return false;
+    if (!q) return true;
+    return (
+      e.productName.toLowerCase().includes(q) ||
+      e.intent.toLowerCase().includes(q) ||
+      e.category.toLowerCase().includes(q)
+    );
+  });
+  // 分页只剩「官方示例」这一个 tab 在用。
+  //
+  // 「我的应用」2026-07-31 起改成无限流（用户裁决）：卡片墙要的是一条连续的墙，
+  // 12 张在 5 列里只有 2.4 行，怎么调都堆不出墙的观感。取消切片之后靠虚拟化
+  // 扛住数量——SpanMasonry 只渲染视口内外两屏的格子，跟一页 12 张时的挂载量
+  // 是同一个数量级。示例库是普通网格、条目固定且少，保持原样。
+  const totalItems = visibleExamples.length;
+  const pagedExamples = visibleExamples.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   // ── 「我的应用」卡片墙（2026-07-31）──────────────────────────────────
   //
   // 走 **masonic**（jaredLunde，1406★）。为什么从 react-photo-album 换过来：
@@ -1767,7 +1831,9 @@ export function AppsWorkbench() {
             data-testid="apps-search"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="搜索应用、功能或解决方案…"
+            placeholder={
+              tab === "mine" ? "搜索应用、功能或解决方案…" : "搜索官方示例…"
+            }
             className="w-full rounded-lg border-0 bg-white/70 py-2.5 pl-10 pr-4 text-[13px] text-slate-800 outline-none ring-1 ring-slate-200/60 placeholder:text-slate-400 transition focus:bg-white focus:ring-2 focus:ring-[#5b6cff]/25"
           />
         </div>
@@ -1845,9 +1911,41 @@ export function AppsWorkbench() {
         </div>
       </div>
 
-      {/* 第二行：门语言筛选 — 无底板。库切换（我的应用/官方示例）2026-08-14
-          随示例库下架：只剩一个库，切换器本身就是噪音。 */}
+      {/* 第二行：库切换 + 门语言筛选 / 分类 — 无底板 */}
       <div className="mt-4 flex flex-wrap items-center gap-1.5">
+        {(
+          [
+            { key: "mine" as const, label: "我的应用", count: paired.length },
+            { key: "examples" as const, label: "官方示例", count: examples.length },
+          ]
+        ).map(t => (
+          <button
+            key={t.key}
+            type="button"
+            aria-pressed={tab === t.key}
+            data-testid={`apps-tab-${t.key}`}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition ${
+              tab === t.key
+                ? "bg-[#e8eeff] text-[#3b5bdb]"
+                : "bg-transparent text-slate-500 hover:bg-white/60 hover:text-slate-700"
+            }`}
+            onClick={() => setTab(t.key)}
+          >
+            {t.label}
+            <span
+              className={`tabular-nums text-[11px] ${
+                tab === t.key ? "text-[#3b5bdb]/80" : "text-slate-400"
+              }`}
+            >
+              {t.count}
+            </span>
+          </button>
+        ))}
+
+        <span className="mx-1 hidden h-4 w-px bg-slate-200 sm:inline-block" />
+
+        {tab === "mine" ? (
+          <>
             <StatChip
               icon={<LayoutGrid size={13} />}
               label="全部"
@@ -1887,11 +1985,29 @@ export function AppsWorkbench() {
                 {sortDesc ? "最近更新" : "最早更新"}
               </button>
             </div>
+          </>
+        ) : (
+          ["全部", ...Array.from(new Set(examples.map(e => e.category)))].map(cat => (
+            <button
+              key={cat}
+              data-testid={`example-cat-${cat}`}
+              className={`rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition ${
+                exampleCat === cat
+                  ? "bg-[#e8eeff] text-[#3b5bdb]"
+                  : "bg-transparent text-slate-500 hover:bg-white/60 hover:text-slate-700"
+              }`}
+              onClick={() => setExampleCat(cat)}
+            >
+              {cat}
+            </button>
+          ))
+        )}
       </div>
       </div>
 
-      {/* ===== 我的应用（唯一视图） ===== */}
-      {(listError ? (
+      {/* ===== 我的应用 tab ===== */}
+      {tab === "mine" &&
+        (listError ? (
           <div className="mt-8 text-[13px] text-red-500">会话列表拉取失败：{listError}</div>
         ) : items == null ? (
           // 骨架屏（对标 ToolJet AppList skeleton）：铺等尺寸占位卡，不跳版
@@ -1919,6 +2035,30 @@ export function AppsWorkbench() {
               >
                 <span className="text-[15px] leading-none">+</span> 创建新应用
               </button>
+              {examples.length > 0 && (
+                <div className="mt-8 w-full max-w-lg">
+                  <div className="mb-2.5 text-[12px] text-slate-400">或从官方示例起手</div>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {examples.slice(0, 4).map(ex => {
+                      const th = resolveIdentityTheme(ex.theme);
+                      return (
+                        <button
+                          key={ex.domain}
+                          data-testid={`empty-starter-${ex.domain}`}
+                          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12.5px] text-slate-700 shadow-sm transition hover:border-[#5b6cff]/50 hover:shadow"
+                          onClick={() => useTemplate(ex)}
+                        >
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ background: th.primary }}
+                          />
+                          {ex.productName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             // 搜不到（有应用，但当前搜索/筛选无匹配）
