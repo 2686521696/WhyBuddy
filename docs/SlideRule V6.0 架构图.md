@@ -112,7 +112,11 @@
 %%       ③ **08-14 起：新链路压根不走它**（model_assembly 直接产六段过闸）。
 %%          所以答案不是「给 GEN5 加参数」，是它不在这条路上。
 %%     ⚠ ⛔1 / ⛔3 **仍然精确**，只是它们描述的是**老链路**——那条路今天还在跑
-%%     （v5_capability_executor 主轴未接新链路），所以两条都不删。
+%%     （作为显式回落的安全网），所以两条都不删。
+%%     ⚑⚑F 更正：这里原本写的是「v5_capability_executor 主轴未接新链路」，**已过期**。
+%%       同一份文件 ⚑⚑E 段写着「✔ 已接」且开关 08-14 起默认开，两处打架。
+%%       真相源是 v5_capability_executor.py 里那段 run_spec_first 调用与显式回落，
+%%       以及 spec_first_pipeline.py:122 的 _ENABLE_ENV——**图上不复述第二份口径**。
 %%     ───────── 以下为本条原文（②那个阶段）─────────
 %%     ⛔1 仍然精确：`generate_five_system_model(goal: str, *, llm_json_fn, gate_feedback)`
 %%     签名一个字没动，`_build_user_content(goal, *, final_instruction)` 也没动。
@@ -262,9 +266,63 @@
 %%       res["pages"] 整个丢弃。推演**过程中**右侧能看到新链路的 HTML
 %%       （spec_page 事件 → SpecPageLiveStage），推演**结束后**接管舞台的
 %%       还是老 ENRICH 路径生成的东西。HTML 载体这条线在交付口上还没接通。
-%%     · **没有人造 BindingSource**：第 6.5 步打的 data-* 孔要填数，得先把
-%%       五系统模型转成 {rows, fields}。全仓零处产出这个结构，所以解释器
-%%       今天恒收到空数据源，spec_page 事件里的 bound 恒为 false。
+%%     · ~~**没有人造 BindingSource**~~ —— ⚑⚑F 更正：**这条当场就过期了**。
+%%       原文写「全仓零处产出这个结构，所以解释器今天恒收到空数据源、bound 恒为 false」，
+%%       但 client/…/live-runtime/derive-binding-source.ts 已经存在，且
+%%       SpecPageLiveStage.tsx 正在调它（deriveBindingSource(model, runtime)）。
+%%       ⚠ 它落在 **135e847d —— 也就是这份图自己所在的那个 commit**。
+%%       写「还欠」的那一刻它已经在仓库里了：**同一轮里既改代码又写图，
+%%       图那半是照着动手前的记忆写的**。这是本文件这次栽的五跤里最典型的一次。
+%% ·
+%% ═══════════════════════════════════════════════════════════════════════════
+%% ⚑⚑F 2026-08-14（复核）：**图码对照第二遍 —— 五处不符，全是同一个方向**
+%% ═══════════════════════════════════════════════════════════════════════════
+%%   这一轮同样没有新功能。是拿 HEAD（135e847d）逐条核对图上的断言，
+%%   核出**五处图与代码不符**。关键不是数量，是**方向完全一致**：
+%%
+%%     五处**全是「东西已经做完了，图上还标着没做」**，一处反向的都没有。
+%%
+%%   而这恰好是 V6.0 自己在【⚑ 读图纪律】里新加的那一条所防的方向
+%%   （「一个提案格真的落地了，就必须改成实线」）。**纪律写下了，同一轮里就欠了五笔。**
+%% ·
+%%   【逐条】
+%%     ① HTMLCARRIER 仍是 :::propose，且写着「⚠ 缺口：data-action 那半还没写」
+%%        → html_bindings.py 里 ACTION_KINDS 三种齐全、与 ActionRef 的 Literal 一字不差，
+%%          还带作用域校验与 check_coverage。**同一子图里 BINDHOLES 早就是实线**。
+%%     ② SPECGAP 写着「本子图没有任何一条对应代码」
+%%        → 它所在的 CLOSURE 子图现有 9 个实线落地格 + GEN5/MGATE/DREPAIR。
+%%     ③ BINDRT 写着「宿主安全…尚未写」
+%%        → bound-html-surface.tsx 同一天就落地了（17631e3b）；
+%%          **而正文 ⚑⚑E 段同时写着「✔ 已写」——节点标签与正文当场打架**。
+%%     ④ ⚑6 写着「v5_capability_executor 主轴未接新链路」
+%%        → 同一份文件 ⚑⚑E 写「✔ 已接」，开关 08-14 起默认开。
+%%     ⑤ ⚑⚑E' 写着「没有人造 BindingSource」
+%%        → derive-binding-source.ts **就落在这份图自己所在的那个 commit 里**。
+%% ·
+%%   【根因：不是懒，是追加式升版的固有形状】
+%%     08-14 那批把 ⚑⚑ 作为**新的一层追加在正文里**，新增了 PAGESHELL / MODELASM /
+%%     BINDHOLES / BINDRT 四格说「这些做完了」，**但没回头退役被它们顶替掉的旧提案格**。
+%%     于是新说法与旧说法并存 —— 读图的人看到哪个算哪个。
+%%     ⚠ 这正是 ⚑7 自己下的判语：**「同一个事实在图上出现两次，就必然漂移。」**
+%%       ⚑7 抓的是 pageKinds 那个数字，抓完**没有把同一条判据反过来扫一遍全图**。
+%%       所以 ⚑⚑F 的教训不是「又漂了一次」，是：
+%%         **发现一类病之后，要扫的是这一类的全部实例，不是把当场那一个改掉。**
+%% ·
+%%   【口径纪律（本轮新加）】
+%%     ③④⑤ 三条的共同形状是：**正文已经写对了，节点标签/旧段落还是错的**。
+%%     所以本轮所有更正一律采用「原文作废 + 指向真相源」的墓碑体例（沿用 ⚑7 的做法），
+%%     **不在图上留第二份口径**。真相源分别是：
+%%       html_bindings.ACTION_KINDS · spec_first_pipeline.py:122 _ENABLE_ENV ·
+%%       bound-html-surface.tsx · derive-binding-source.ts
+%% ·
+%%   【顺带修掉一个真 bug（依赖闸，不是图的问题）】
+%%     dompurify 在 package.json 里**只出现在 overrides / pnpm.overrides**——那是
+%%     「谁依赖它就得满足这个版本范围」，不是「装它」。仓库无任何传递依赖把它拉到根，
+%%     pnpm 严格链接下 node_modules/dompurify 根本不存在。表现是**硬报错不是降级**：
+%%     vite 启动即 Failed to resolve import，三份 live-runtime 用例连收集都跑不到。
+%%     已补进 dependencies（66 条用例随即全过）。
+%%     ⚠ 同时发现 committed lockfile 与 package.json 本就对不上（jsdom 声明了却不在
+%%       importers 段），CI 若跑 --frozen-lockfile 会直接失败；已一并对齐。
 %% ·
 %% ★ 以下为 V5.9（08-13 白天）图全文，逐字保留；节点区含 ⚑ V6.0 标注的修正：
 %% ---------------------------------------------------------------------------
@@ -1020,10 +1078,10 @@ subgraph CLOSURE["09 五系统闭环装配层 / Five-System Closure（▲ 07-17 
   PAGESHELL["⚑⚑ 2026-08-14 新增 · 第3.5步 外壳统一 / services/page_shell.py　**零 LLM**<br/>各页是**独立生成**的·于是每页自己发明一套菜单和导航·拼在一起不像一个系统<br/>这一步把外壳按 spec 的页面清单**锚定**:同一套菜单 · 同一个产品名 · 当前页高亮<br/>⚑ 零 LLM——形状是确定的·没有需要判断的地方·交给模型只多一处会编的地方<br/>⚑ 实测拦下 17 处 → 0 处。其中一类是**5 页全都「标了 0 个当前页」**:<br/>　　各页独立生成时压根没有「我是第几页」的概念<br/>⚠ 修过一个静默失效:nav 定位写在身份替换**之前**·而替换改了 nav 原文·<br/>　　于是导航重排一声不吭地不发生。挪到替换之后 + 用例钉住(那是「闸全绿但东西没了」第 ② 次)"]:::landed
   MODELASM["⚑⚑ 2026-08-14 新增 · 第6步 汇合 / services/model_assembly.py<br/>把第 4/5 步产物 + spec 页面清单拼成完整六段·过 v5_model_gate<br/>⚑ **能机械拼的一律机械拼**:零 LLM 搬运 11 样·只把 5 样跨系统绑定交给一次 LLM 调用。<br/>　　理由是每多交给模型一样就多一处会编的地方·而这一步词表**全封闭**——<br/>　　实体/字段/页面/角色/权限/节点都在前五步定死校验过·模型只能在既有 id 里挑<br/>⚠ **「过结构闸」证明不了做完了**:实测把六段拼齐、绑定层**全部留空**·<br/>　　结构闸依然 passed=True findings=0——它查的是「引用有没有悬空」·<br/>　　而空数组里没有引用·自然没有悬空。所以本步必须有**自己**的判据:<br/>　　　· 有页面一个绑定都没有 → 那一页界面上是空的<br/>　　　· aigc.outputField 出现在 inputFields 里 → 拿一个字段算它自己<br/>　　(两边都是合法引用·结构闸不会说话·用例里确认过它放行)<br/>⚠ 撞出一个真 bug:头一版只 deepcopy 了 model·绑定几段用 list(...)——<br/>　　外层列表复制了·里面的 dict 还是调用方那几个对象。一个用例改了 fixture·<br/>　　后面全跟着坏且看不出坏因。真实链路上更糟:产物要交给下游·中途被别处改掉最难查"]:::landed
   BINDHOLES["⚑⚑ 2026-08-14 新增 · 第6.5步 给 HTML 打 data-* 孔 / services/html_bindings.py<br/>第 3 步只出版式(那时 datamodel 还不存在·打孔就是引用没被发明的 id)·<br/>到这里实体与字段已经定死校验过·**孔才打得成**<br/>词汇照 docs/绑定契约草案-v1.md·不自创:data-rows/field/head/cell/value/chart/action<br/>⚑ 动作三种 kind(createRecord/openRecord/editRecord)跟 freeform_block.ActionRef **一字不差**<br/>　　——两处表达同一件事·**词表分叉就是下一个对不齐的地方**(手写 uses 声明 / 前端手抄区域词汇·踩过两次)<br/>⚑ **作用域判据是重点**:data-field 光「是个真字段」不够·必须是所在 data-rows 那个实体的字段。<br/>　　拿工单表的一行去取客户的字段·字段是真的·取出来是别人的数据<br/>⚠ 一份一个孔都没打的 HTML·check_bindings 返回空列表(没有绑定就没有错误的绑定)·<br/>　　**看起来完美通过**。所以另有 check_coverage:整页至少要有一个数据源<br/>⚑ 实测 6/6 页打成·231s·零校验问题。版式活着:表格只剩一行模板是对的——<br/>　　运行时按 data-rows 取到几行就重复几次(高度 1268→1080px·少的正是被删掉的示例行)"]:::landed
-  BINDRT["⚑⚑ 2026-08-14 新增 · 运行时解释器(**穿线那一下**)<br/>client/src/pages/sliderule/live-runtime/html-binding-runtime.ts<br/>到 6.5 为止页面上有孔但**没有任何东西去填**——前六步的产物在产品里仍是一张静态图<br/>⚑ 做成**对一棵已有 DOM 的纯函数**·不是组件:组件只能靠渲染快照测·<br/>　　而这一层恰好机械可判——**改一个字段就断言多一列**(G2 组验过的那条真判据)<br/>⚑ 图表只算不画:算出分桶 series 挂上·画交给 ECharts 那层。<br/>　　画图有自己一堆判据(配色/空态/grain)·混进来两边都测不干净<br/>⚑ 三条同源纪律落在实现里:空数据显「—」不显 0(0 是真值·拿它冒充没有是撒谎) ·<br/>　　缺 data-limit 不等于限 0 行(Number(null)===0 那个坑) ·<br/>　　取不到行 id 就**不挂监听**(否则点下去发空事件·页面开个空详情·看着像「点了没反应」)<br/>⚠ 撞出一个真 bug:表头模板缓存的是 cloneNode 出来的**游离节点**·parentElement 恒为 null·<br/>　　于是第二次调用直接 return——表现是「改了字段清单·列不跟」·**一次都不报错·只是不动**·<br/>　　而那恰好是这条判据要验的东西。改成父节点从活 DOM 现查<br/>⚠ 宿主安全(Shadow DOM 隔离 + DOMPurify)**由挂载它的那层负责·尚未写**——<br/>　　两件事各有各的判据·合在一个函数里两边都测不干净。这是有意分工·不是漏了"]:::landed
-  HTMLCARRIER["⚑ V6.0 新增 · HTML 载体 / data-* 接线孔（**图上此前完全没有这个东西**）<br/>整套方案有个死穴:**纯 HTML 只有视觉·不能读数据·更不能写数据与动作**。<br/>用户 zip 里那四份 HTML 逐个 grep 过·`data-` 属性**一个都没有**·是纯视觉<br/>⚑ 答案不是留着自由树·是**让生成的 HTML 自己带接线孔**——而这件事 08-12 已经写完一半·<br/>随那批回退躺在 backup/2026-08-12-before-revert:<br/>　　services/overview_html.py　　data-fact 19 · data-field 26 · data-chart 11 · data-rows 31<br/>　　client/…/OverviewHtmlSurface.tsx　Shadow DOM 隔离 + DOMPurify(宿主安全)<br/>　　client/…/field-text.ts　　　　值格式化 / 空值显 —<br/>　　tests/test_overview_html.py · tests/test_overview_html_self_verify.py<br/>⚑ 纪律一句话:**HTML 只负责版式·一个数字都不写**。data- 是洞·运行时按 schema 填<br/>⚑ data-rows 那 31 处就是逐行展开·与自由树 rowsRef **同一套词汇**<br/>　　(entityRef / fieldRefs / sortByRef / order / limit)<br/>⚠ 缺口:**data-action 那半还没写**(对应自由树刚补的 actionRef)<br/>⚠ 措辞纪律:「抛弃自由树」的准确说法是**换载体·不是扔能力**。值钱的是那套绑定词汇·<br/>　　树只是它的一个载体;扔掉词汇就等于回到 zip 那种纯视觉 HTML——那是已经判定不行的东西"]:::propose
+  BINDRT["⚑⚑ 2026-08-14 新增 · 运行时解释器(**穿线那一下**)<br/>client/src/pages/sliderule/live-runtime/html-binding-runtime.ts<br/>到 6.5 为止页面上有孔但**没有任何东西去填**——前六步的产物在产品里仍是一张静态图<br/>⚑ 做成**对一棵已有 DOM 的纯函数**·不是组件:组件只能靠渲染快照测·<br/>　　而这一层恰好机械可判——**改一个字段就断言多一列**(G2 组验过的那条真判据)<br/>⚑ 图表只算不画:算出分桶 series 挂上·画交给 ECharts 那层。<br/>　　画图有自己一堆判据(配色/空态/grain)·混进来两边都测不干净<br/>⚑ 三条同源纪律落在实现里:空数据显「—」不显 0(0 是真值·拿它冒充没有是撒谎) ·<br/>　　缺 data-limit 不等于限 0 行(Number(null)===0 那个坑) ·<br/>　　取不到行 id 就**不挂监听**(否则点下去发空事件·页面开个空详情·看着像「点了没反应」)<br/>⚠ 撞出一个真 bug:表头模板缓存的是 cloneNode 出来的**游离节点**·parentElement 恒为 null·<br/>　　于是第二次调用直接 return——表现是「改了字段清单·列不跟」·**一次都不报错·只是不动**·<br/>　　而那恰好是这条判据要验的东西。改成父节点从活 DOM 现查<br/>⚑⚑F 宿主安全(Shadow DOM 隔离 + DOMPurify)**由挂载它的那层负责·已写**:<br/>　　client/…/live-runtime/bound-html-surface.tsx(17631e3b·与本格同一天)<br/>　　DOMPurify 挡可执行内容 · closed Shadow DOM 挡样式外溢——两件事别混·影子根**不是**安全边界<br/>　　⚠ 本格原文写的是「尚未写」·而正文 ⚑⚑E 段同时写着「✔ 已写」——**节点标签与正文当场打架**<br/>　　两件事各有各的判据·合在一个函数里两边都测不干净:这条**分工仍然成立**·过期的只是「尚未写」三个字<br/>⚠ 依赖闸:dompurify 此前只写在 package.json 的 overrides 段(那是版本范围·不是安装)·<br/>　　pnpm 严格链接下根本解析不出来·vite 启动即红、三份 live-runtime 用例连收集都跑不到。已补进 dependencies"]:::landed
+  HTMLCARRIER["⚑ V6.0 新增 · HTML 载体 / data-* 接线孔（**图上此前完全没有这个东西**）<br/>整套方案有个死穴:**纯 HTML 只有视觉·不能读数据·更不能写数据与动作**。<br/>用户 zip 里那四份 HTML 逐个 grep 过·`data-` 属性**一个都没有**·是纯视觉<br/>⚑ 答案不是留着自由树·是**让生成的 HTML 自己带接线孔**——而这件事 08-12 已经写完一半·<br/>随那批回退躺在 backup/2026-08-12-before-revert:<br/>　　services/overview_html.py　　data-fact 19 · data-field 26 · data-chart 11 · data-rows 31<br/>　　client/…/OverviewHtmlSurface.tsx　Shadow DOM 隔离 + DOMPurify(宿主安全)<br/>　　client/…/field-text.ts　　　　值格式化 / 空值显 —<br/>　　tests/test_overview_html.py · tests/test_overview_html_self_verify.py<br/>⚑ 纪律一句话:**HTML 只负责版式·一个数字都不写**。data- 是洞·运行时按 schema 填<br/>⚑ data-rows 那 31 处就是逐行展开·与自由树 rowsRef **同一套词汇**<br/>　　(entityRef / fieldRefs / sortByRef / order / limit)<br/>━━━━━━━━━━ ⚑⚑F 2026-08-14 复核:**本格已落地·虚线改实线** ━━━━━━━━━━<br/>⚑⚑F 原文写「⚠ 缺口:data-action 那半还没写」——**已过期**。services/html_bindings.py 里<br/>　　ACTION_KINDS=(createRecord/openRecord/editRecord)·与 freeform_block.ActionRef 的 Literal 一字不差·<br/>　　另有作用域校验(openRecord/editRecord 必须落在某个 data-rows 子树里)与 check_coverage<br/>⚑⚑F 本格是**概念父格**·实现落在 BINDHOLES(打孔) + BINDRT(填数)两格——<br/>　　那两格 08-14 就已经是实线·**父格却还标着提案**·图上第 1486 行那条边其实早就写明了这件事<br/>⚠ 按 V6.0 自己新加的读图纪律:「一个提案格真的落地了·就必须改成实线」——本格是那条纪律的头一个欠账<br/>⚠ 措辞纪律:「抛弃自由树」的准确说法是**换载体·不是扔能力**。值钱的是那套绑定词汇·<br/>　　树只是它的一个载体;扔掉词汇就等于回到 zip 那种纯视觉 HTML——那是已经判定不行的东西"]:::landed
   SEMLINE["☐ 提案 · 第7步 (第6步产物 + SPEC) → 权限 / 工作流 / 不变式<br/>⚠ **两个输入都要·串行在第6步之后·不是跟它并列**(2026-08-13 用户裁决·<br/>推翻了本图上一版画的「语义线与视觉线并行」——那个画法是错的):<br/>· 第6步产物给「**挂在什么上**」:真实的 entityRef / fieldRef / pageRef<br/>· SPEC 给「**该有什么规则**」:哪几类角色 · 什么审批流 · 什么约束<br/>⚠ 少了第6步产物会怎样·今天就有现场证据(act2 那轮结构闸 findings=1):<br/>invariants[reassignment_preserves_audit_context].refs: invariant ref<br/>'reassign_work_order' not found in model——**不变式引用了一个不存在的东西**<br/>⚠ 少了 SPEC 会怎样·也是实测:4 份 HTML 里「角色/权限/主管/管理员」出现 **0 次**·<br/>「成交/流失/归档/阶段」**0 次**;五组推出来的流程拓扑完全相同(5 节点 6 转移)<br/>——那是模型的行业常识·不是从画面里读到的证据<br/>⚠ 纠正一个曾经的误译:实测说的是「**光有 HTML** 推不出权限/工作流」·<br/>不是「别看 HTML」。**是相加·不是替代**<br/>⚑ V6.0 步号=**六步第5步**。两个输入这条论证一个字没变<br/>━━━━━━━━━━ ⚑⚑ 2026-08-14：**已落地且正面验过** services/spec_semantics.py ━━━━━━━━━━<br/>⚑ 「SPEC + 结构一起喂就推得出」**不再是假设**。三臂对照·唯一变量是喂什么:<br/>　　B 两个都给 → 4 角色 · 0 编的权限对象 · 0 悬空 · **过闸**<br/>　　S 只有SPEC → 4 角色 · 8 编的 · 8 悬空 · 拦(16 findings)<br/>　　H 只有结构 → **1 角色**(4 类使用者塌成 1 个) · 拦(3 findings)<br/>⚑ 合法性抄 Apache Casbin 的 {subject, object, action}——work_order:create 正是 obj:act<br/>⚠ 状态机可达性三条(起点恰好一个/全部可达/至少一个终态)是**通识不是某家约定**:<br/>　　Casbin 是 authz 不管 workflow·OpenFGA 走 Zanzibar 也不管。不假称有出处<br/>⚠ 第一版判据没抓住 H:量的是「角色可溯率」·H 只产 1 个角色而它恰好猜中·于是 100% 全绿。<br/>　　补了反向判据:**SPEC 里每个 persona 都必须有角色认领**·少一个当场拦"]:::landed
-  SPECGAP["☐ ⚠ 读图纪律:本子图**没有任何一条对应代码**<br/>画上来是因为「有想法没接线」被误当成已生效·是这份文件反复吃过亏的那种错<br/>(V5.8 图八天渲染不出来没人发现 · 手写 uses 声明与实际渲染不符 316 个 ·<br/>ECTX ⇢ GEN5 那条边被以为通了很久)<br/>判据:这一格里任何一个节点接进主轴之前·虚线红框都不许改成实线"]:::propose
+  SPECGAP["☐ ⚠ 读图纪律(⚑⚑F 已重新划定适用范围)<br/>━━━━━━━━━━ 原文作废:「本子图**没有任何一条对应代码**」 ━━━━━━━━━━<br/>⚑⚑F 这句话**对它自己所在的子图早就不成立**:CLOSURE 里现在有 8 个实线落地格<br/>　　(VISHTML/VISDERIVE/PAGESHELL/MODELASM/BINDHOLES/BINDRT/HTMLCARRIER/SEMLINE)·<br/>　　外加 GEN5 / MGATE / DREPAIR 这些早就在跑的东西。写这句时它还是个独立的提案簇·<br/>　　⚠ 数字与名单**以 :::landed 标记为准·图上不复述第二份口径**(SPECSRC/SPECREAL 也是实线·<br/>　　但它们在 POOL 不在本子图——核这条时我自己头一版就把这两格错算了进来)<br/>　　后来落地的格子**长在了它身边·而这句话没跟着收口**<br/>⚑⚑F 现在的准确说法:**仍是纯提案的只剩 VISPROMPT / VISIMG 两格**(出图那条线·⚑3 已裁决不建)<br/>纪律本身**一个字不改·仍然有效**:「有想法没接线」被误当成已生效·是这份文件反复吃过亏的那种错<br/>(V5.8 图八天渲染不出来没人发现 · 手写 uses 声明与实际渲染不符 316 个 ·<br/>ECTX ⇢ GEN5 那条边被以为通了很久)<br/>判据:**那两格**接进主轴之前·虚线红框都不许改成实线<br/>⚠ 反向那条同样是纪律(V6.0 加·⚑⚑F 兑现):真落地了就必须改成实线——<br/>　　本格自己就是**忘了收口**的活样本:错的不是纪律·是**没人回头看这句话还罩不罩得住**"]:::propose
   GEN5["▲ 五系统起草 / v5_llm_generate<br/>schema契约+已装技能硬注入+业界参考软引用<br/>E29 精修上下文(增量改)·模型直供(回退)两通道<br/>✱07-30:prompt 里的哨兵词/占位字面量长得像值就会被当成值——binding=none 让<br/>模型给 QuickActionPanel 全填了 entityRef:「none」(4条门禁不过);「with slots」被读成<br/>键名让一轮 6 页排版全丢。两处都改成祈使句<br/>❖08-11 **区块清单不再是全量**:走 NARROW 挑出的 ~60 条进 prompt(≈7.4K token·<br/>此前 5.6 万)。窄化失效时自动退回全量·所以这条边**永远有货**·只是货有多有少<br/>❖08-11 每个区块条目加 `pages=`(允许的页型)·并补一句点名反例的规则句——<br/>光有字段不够:区域限制当初也有条目字段·照样反复被违反·直到补上举反例的<br/>规则句才收住。规则句还必须**给出路**(该改页的 kind·而不是硬塞区块)·<br/>不给出路的禁令会被绕过成「干脆不用那个区块」<br/>⛔08-13 标红:**系统真正的输入就是那一句话**。签名 generate_five_system_model(goal: str)<br/>没有第二个内容参数;_build_user_content(goal) 拼进去的只有:意图那 55~100 字 +<br/>已安装技能 + 按 goal 检索命中的参考语料/设计菜谱 + refine_ctx(仅二次精修)<br/>一个 LLM 调用要从一句话里同时发明 实体/字段/enum/页面/权限/工作流/不变式·<br/>还要从 316 个区块里选型。实测两轮全新话题都是第一次没过闸·attempts=2<br/>⚠ 病不在 GEN5 写得不好·在**它上游是空的**:没有任何一层在它之前把需求变厚<br/>━━━━━━━━━━ ⚑ V6.0：⛔1 仍然精确·但**病因描述过期了** ━━━━━━━━━━<br/>⚑ 签名与 _build_user_content 一个字没动·⛔1 原样成立<br/>⚑ **但上游不再是空的**:spec 已经造出来(见 SPECREAL)·调度核也在读它·<br/>　　只是**没有一条边把它送进来**。状态从「上游是空的」变成了「**有货没通路**」<br/>⚠ 这两种状态在图上长得一模一样(那条边都不存在)·意思却相反:<br/>　　前者是没东西可送·后者是东西造好了堆在门口。按本文件的纪律·这种差别正是最该画出来的<br/>⚑ 施工顺序的结论:**先开消费端**(签名 + prompt 装配)——否则第3、4步做完<br/>　　只是再造一个没有消费者的生产者·spec 和 HTML 一起堆在门口"]:::cap
   DREPAIR["▲ 确定性修复 / v5_model_repair（零LLM·留痕）<br/>不变式refs近邻改写(唯一命中)·修不好整条剔除<br/>E37 展示层charts/stats同款处方(枚举违规剔除·非法format清除)<br/>骨架六系统不修——仍由门硬拦<br/>❖08-11 页型越界:**只记不改**(pageKindViolations)。跟 layout 槽位违规不同——<br/>那条改模型是因为槽位摆错会把页面真搞坏(PageHeader 钉在底部操作条上是实测过的)·<br/>页型摆错不影响渲染<br/>⚠ 不上闸的真正理由是**这条约束本身经不起推敲**:控住领域族之后仍有若干对(⚑V6.0:数字以棘轮基线 _CONTRADICTION_BASELINE 为准·当前 **7**·图上不复述)<br/>同域同能力的严格子集矛盾·而 pageKinds 从来没集中评审过(随每个区块被添加时手写)。<br/>拿一条可能标错的规则去硬拒模型·是把「违规发出去」换成「合规的也发不出去」"]:::core
   MGATE{"▲ 结构门 / v5_model_gate<br/>跨系统引用全解析·枚举合法域·页面范式绑定<br/>二元机械·任何悬空=拦<br/>✱07-30补两处漏:①**实体字段 type 纳入校验**——此前 FIELD_TYPES 只在技能<br/>binding 那儿用过·实体字段的 type 一路无人查(所谓「封闭合法域」只是 prompt 里<br/>的一句约定)。代价不是「写错没人说」而是**静默降级**:前端对认不出的类型一律<br/>return text，一个 file 字段会安安静静变成普通文本框——用户以为能传附件实际<br/>只能打字·不报错不提示测试全绿。②沿用该段口径「出现即校验·缺省不罚」"}:::gate
