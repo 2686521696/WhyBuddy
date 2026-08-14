@@ -48,7 +48,9 @@ experiments/visual-first/runner.py:220：用成熟工具跑，被测的那条路
 
 from __future__ import annotations
 
+import os
 import re
+import time
 from typing import Any, Callable, Dict, List, Optional
 
 SPEC_PAGE_HTML_VERSION = "spec-page-html-v1"
@@ -245,6 +247,19 @@ def generate_page_html(
     )
 
 
+def _straggler_idle_seconds() -> float:
+    """落后者截止线：整批**静默**超过这么久就收尾（锚在上次有页落地）。
+
+    120s 是量出来的，不是拍的：干净并发 5 页实测 200.8s 全部到齐，页与页之间
+    最大间隔 43s（157.5 / 163.2 / 173.8 / 177.2 / 200.8）。120s 留了近三倍
+    余量，正常慢页碰不到；而真机那次卡死的一页在最后一张成功页之后又耗了
+    **667 秒**（占整步 936s 的 71%）——那种形状一眼就越线。
+
+    ⚠ 调这个值前先想清楚锚点：它量的是「这批还在不在动」，不是「一共跑了多久」。
+    """
+    return float(os.getenv("SLIDERULE_SPEC_PAGE_STRAGGLER_IDLE_SECONDS", "120"))
+
+
 def generate_pages_parallel(
     spec: Dict[str, Any],
     *,
@@ -288,11 +303,15 @@ def generate_pages_parallel(
     if not pages:
         return {"pages": {}, "failed": {}}
 
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
     ok: Dict[str, str] = {}
     failed: Dict[str, str] = {}
-    with ThreadPoolExecutor(max_workers=min(max_workers, len(pages))) as pool:
+    # ⚠ **不用 `with`**：ThreadPoolExecutor.__exit__ 是 shutdown(wait=True)，
+    #   它会一直等到所有线程跑完——那正是这条截止线要避免的事。用了 with，
+    #   截止线只会让日志早一点写，墙钟一秒都省不下来。
+    pool = ThreadPoolExecutor(max_workers=min(max_workers, len(pages)))
+    try:
         # ⚠ **as_completed，不是按提交顺序 for fut in futures。** 这条是真机
         #   量出来的（2026-08-14，宠物医院一轮）：
         #
@@ -315,18 +334,52 @@ def generate_pages_parallel(
         }
         total = len(fut_to_id)
         done = 0
-        for fut in as_completed(fut_to_id):
-            page_id = fut_to_id[fut]
-            done += 1
-            try:
-                html = fut.result()["html"]
-                ok[page_id] = html
-                if on_page is not None:
-                    try:
-                        on_page(page_id, html, done, total)
-                    except Exception as sink_exc:  # noqa: BLE001 — 见 docstring
-                        print(f"[spec_page_html] 页面回调失败（不影响产出）：{str(sink_exc)[:120]}")
-            except Exception as exc:  # noqa: BLE001 — 单页失败不拖垮整批
-                failed[page_id] = str(exc)[:200]
-                print(f"[spec_page_html] 页面 {page_id} 生成失败：{str(exc)[:160]}")
+        pending = set(fut_to_id)
+        idle_budget = _straggler_idle_seconds()
+        # 截止线**锚在"上一次有进展"上，不锚在整批开始**。
+        #
+        # 锚在开始的话，页数一多就必然误伤：6 页本来就比 3 页久，一个固定的
+        # 总时长要么对小批太松、要么对大批太严。锚在"上次有页落地"则跟批量
+        # 大小无关，量的是**这批还在不在动**。
+        last_progress = time.monotonic()
+        while pending:
+            waited, pending = wait(
+                pending,
+                timeout=max(0.0, idle_budget - (time.monotonic() - last_progress)),
+                return_when=FIRST_COMPLETED,
+            )
+            if not waited:
+                # 静默超过预算：剩下的按超时收尾。**不产出占位 HTML**——
+                # 与单页失败同一条纪律，缺页由 failedPages / missingPages 说话。
+                for fut in pending:
+                    page_id = fut_to_id[fut]
+                    failed[page_id] = (
+                        f"整批静默超过 {idle_budget:.0f}s（最后一页落地之后再无进展），"
+                        f"按超时收尾"
+                    )
+                    print(f"[spec_page_html] 页面 {page_id} 触发落后者截止线，放弃等待")
+                    fut.cancel()  # 只取消**还没开跑**的；已在跑的取消不掉
+                break
+            last_progress = time.monotonic()
+            for fut in waited:
+                page_id = fut_to_id[fut]
+                done += 1
+                try:
+                    html = fut.result()["html"]
+                    ok[page_id] = html
+                    if on_page is not None:
+                        try:
+                            on_page(page_id, html, done, total)
+                        except Exception as sink_exc:  # noqa: BLE001 — 见 docstring
+                            print(f"[spec_page_html] 页面回调失败（不影响产出）：{str(sink_exc)[:120]}")
+                except Exception as exc:  # noqa: BLE001 — 单页失败不拖垮整批
+                    failed[page_id] = str(exc)[:200]
+                    print(f"[spec_page_html] 页面 {page_id} 生成失败：{str(exc)[:160]}")
+    finally:
+        # ⚠ wait=False：**不等落后者**，那正是这条截止线的全部意义。
+        #   cancel_futures 只能取消还没开跑的；已经在飞的 HTTP 请求停不掉
+        #   （同 run_cancel 那条教训：线程里的活取消不了）。所以这里的语义
+        #   诚实地说是「**不再等它**」，不是「已经把它停了」——它会在后台
+        #   自己跑完然后被丢弃。
+        pool.shutdown(wait=False, cancel_futures=True)
     return {"pages": ok, "failed": failed}
