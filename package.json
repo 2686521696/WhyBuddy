@@ -187,6 +187,7 @@
     "esbuild": "^0.25.12",
     "fake-indexeddb": "^6.2.5",
     "fast-check": "^4.9.0",
+    "jsdom": "^30.0.1",
     "pnpm": "^10.34.5",
     "postcss": "^8.5.16",
     "prettier": "^3.9.5",
