@@ -186,7 +186,11 @@ class Test页面一出来就往外交:
     """
 
     def test_透传到第_3_步(self, monkeypatch):
+        """2026-08-14 竖屏改：回调不再原样透传，而是包了一层 _with_device
+        （每个页面事件注入 device，前端选画布视口用）。所以判据从
+        「is 同一个对象」改成「叫它一次，事件真到了原回调手里、且带 device」。"""
         seen: dict = {}
+        calls: list = []
         monkeypatch.setattr(
             "services.spec_tree.generate_spec_tree",
             lambda *a, **k: {"pages": [{"id": "p1"}], "nodes": []},
@@ -199,12 +203,14 @@ class Test页面一出来就往外交:
 
         monkeypatch.setattr("services.spec_page_html.generate_pages_parallel", _capture)
 
-        def sentinel(*_a):
-            return None
+        def sentinel(pid, html, done, total, **kw):
+            calls.append((pid, kw.get("device")))
 
         with pytest.raises(sfp.SpecFirstError):
             sfp.run_spec_first("随便一个话题", on_page=sentinel)
-        assert seen["on_page"] is sentinel, "回调在中间被丢了——前端会一直黑到最后"
+        assert seen["on_page"] is not None, "回调在中间被丢了——前端会一直黑到最后"
+        seen["on_page"]("p1", "<html/>", 1, 1)
+        assert calls == [("p1", "desktop")], "事件没到原回调手里，或没带 device"
 
     def test_不传也能跑(self):
         """默认 None——老调用方一个字都不用改。"""
@@ -213,3 +219,103 @@ class Test页面一出来就往外交:
         sig = _inspect.signature(sfp.run_spec_first)
         assert sig.parameters["on_page"].default is None
         assert sig.parameters["on_page"].kind is _inspect.Parameter.KEYWORD_ONLY
+
+
+class Test统一与打孔后重发页面:
+    """3.5 / 6.5 之后要把改好的页面**再冲一遍** sink（2026-08-14 晚）。
+
+    病灶：第 3 步直播的是各页各自发明菜单的素颜页（「三个产品名、三套菜单」，
+    见 page_shell.py 头注），3.5 修好了、6.5 打完孔——但改好的页面从不回推。
+    前端 onSpecPage 早就写好了"同一页第二次到达——覆盖"的逻辑，后端却一次
+    都没发过第二次。用户整个推演期（十几分钟）盯着的都是错误画面，
+    要等 finalState 才换，**而且没有一处报错**。
+    """
+
+    def _wire_full_chain(self, monkeypatch):
+        monkeypatch.setattr(
+            "services.spec_tree.generate_spec_tree",
+            lambda *a, **k: {
+                "appName": "网",
+                "pages": [{"id": "p1", "name": "甲"}, {"id": "p2", "name": "乙"}],
+                "nodes": [],
+            },
+        )
+        monkeypatch.setattr(
+            "services.spec_page_html.generate_pages_parallel",
+            lambda spec, **kw: {
+                "pages": {"p1": "<html>素1</html>", "p2": "<html>素2</html>"},
+                "failed": {},
+            },
+        )
+        monkeypatch.setattr(
+            "services.page_shell.unify_shell",
+            # **kw 收下 device（2026-08-14 竖屏加的实参）
+            lambda pages, spec, **kw: {
+                "pages": {"p1": "<html>壳1</html>", "p2": "<html>壳2</html>"},
+                "navItems": [{"id": "p1", "name": "甲"}, {"id": "p2", "name": "乙"}],
+            },
+        )
+        monkeypatch.setattr(
+            "services.page_shell.check_shell_consistency", lambda *a, **k: []
+        )
+        monkeypatch.setattr(
+            "services.html_structure.derive_structure",
+            lambda *a, **k: {"entities": [], "pages": []},
+        )
+        monkeypatch.setattr(
+            "services.spec_semantics.derive_semantics", lambda *a, **k: {"roles": []}
+        )
+        monkeypatch.setattr(
+            "services.model_assembly.assemble", lambda *a, **k: {"model": {"ok": 1}}
+        )
+        monkeypatch.setattr(
+            "services.html_bindings.bind_pages",
+            lambda pages, model, **kw: {
+                "pages": {"p1": "<html>孔1</html>", "p2": "<html>孔2</html>"},
+                "failed": {},
+            },
+        )
+
+    def test_统一后重发_打孔后再重发且带_bound(self, monkeypatch):
+        self._wire_full_chain(monkeypatch)
+        emitted: list = []
+
+        def sink(pid, html, done, total, bound=False, device="desktop"):
+            emitted.append((pid, html, bound))
+
+        sfp.run_spec_first("随便一个话题", on_page=sink)
+
+        # 3.5 统一后的壳版（bound=False）先到，6.5 打孔版（bound=True）后到。
+        # 第 3 步素颜页的直播由 generate_pages_parallel 内部调 sink，
+        # 这里被 stub 掉了，所以列表里只有两轮重发——正好把重发单独钉住。
+        assert emitted == [
+            ("p1", "<html>壳1</html>", False),
+            ("p2", "<html>壳2</html>", False),
+            ("p1", "<html>孔1</html>", True),
+            ("p2", "<html>孔2</html>", True),
+        ]
+
+    def test_四参老_sink_不炸整条链(self, monkeypatch):
+        """重发多带一个 bound 参数。老 sink 只收四个位置参——TypeError 必须
+        被吞掉（UI 推送失败不许赔掉已经烧过 LLM 的页面，纪律同
+        generate_pages_parallel 的 on_page）。"""
+        self._wire_full_chain(monkeypatch)
+
+        def old_sink(pid, html, done, total):  # 故意少一个参数
+            return None
+
+        out = sfp.run_spec_first("随便一个话题", on_page=old_sink)
+        assert out["model"] == {"ok": 1}, "老 sink 炸了不该带走整轮产物"
+
+    def test_外壳一致性判据接进了生产账本(self, monkeypatch):
+        """check_shell_consistency 此前只在测试里跑——生产链路统一完没人验，
+        6.5 的 LLM 改写更没人验（提示词说"一个像素不改"，但那只是请求）。
+        这里钉的是两处都记了账：shell.problems 与 bind.shellProblems。"""
+        self._wire_full_chain(monkeypatch)
+        monkeypatch.setattr(
+            "services.page_shell.check_shell_consistency",
+            lambda *a, **k: [{"path": "p2.nav", "message": "菜单被动了"}],
+        )
+        out = sfp.run_spec_first("随便一个话题")
+        assert out["stages"]["shell"]["problems"] == 1
+        assert out["stages"]["bind"]["shellProblems"] == 1

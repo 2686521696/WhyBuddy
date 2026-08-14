@@ -408,17 +408,38 @@ def build_spec_prompt(
     *,
     clarified: str = "",
     evidence: str = "",
+    refine: Optional[dict] = None,
 ) -> list[dict[str, str]]:
     """装配 spec 生成的对话。
 
     输入刻意**不是原始那一句话**，而是第 1 步的产物（澄清后的需求 + 外部证据）。
     直接吃原句等于把「从一句话发明」原样往前挪一格，什么也没改善。
+
+    ## refine（2026-08-14 晚加）：增量迭代不是从零造
+
+    `refine = {"instruction": 本轮追加要求, "modelDigest": 上一版模型摘要}`。
+    在场时把两样都摊进 prompt，并下连续性硬要求。此前 spec-first 第二轮
+    只拿冻结的原始 goal 重抽——用户的追加指令和上一版结构全被丢掉，
+    「迭代」实际是「按原话重抽一次」（E29 精修只喂了老链路，没喂这条）。
+    口径照开源里同型做法（GPT-Engineer improve 模式 / Aider）：
+    旧产物 + 增量指令 + 「没被波及的保持稳定」约束，整体重生成。
     """
     parts = [f"产品意图：\n{goal.strip()}"]
     if clarified.strip():
         parts.append(f"澄清与假设（第 1 步产物）：\n{clarified.strip()}")
     if evidence.strip():
         parts.append(f"外部证据（第 1 步检索到的）：\n{evidence.strip()}")
+    if refine and (str(refine.get("instruction") or "").strip()):
+        digest = str(refine.get("modelDigest") or "").strip()
+        if digest:
+            parts.append(f"既有应用结构（上一版，本轮在它基础上迭代）：\n{digest[:4000]}")
+        parts.append(
+            "本轮迭代要求（增量修改，不是重做）：\n"
+            f"{str(refine['instruction']).strip()[:2000]}\n\n"
+            "连续性硬要求：没被迭代要求波及的页面/角色/判据必须保留，"
+            "名字与 id 与上一版保持一致；被要求改动的地方如实改。"
+            "不许因为重新生成就把整个应用换一套设计。"
+        )
 
     parts.append(
         """请产出这个产品的规格树，JSON 形状严格如下，key 名一字不差：
@@ -489,6 +510,7 @@ def generate_spec_tree(
     *,
     clarified: str = "",
     evidence: str = "",
+    refine: Optional[dict] = None,
     llm_json_fn: Optional[Any] = None,
     max_reask: int = 2,
 ) -> SpecTree:
@@ -505,7 +527,7 @@ def generate_spec_tree(
     一份恒定 1 需求 1 风险 1 交付物的假树，看起来跟真的一样，还能过自己的闸。
     宁可如实报失败，也不要再造一个看着像那么回事的空壳。
     """
-    messages = build_spec_prompt(goal, clarified=clarified, evidence=evidence)
+    messages = build_spec_prompt(goal, clarified=clarified, evidence=evidence, refine=refine)
     last_err = "未调用"
 
     for attempt in range(max_reask + 1):

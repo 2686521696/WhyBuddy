@@ -149,9 +149,25 @@ def start_registration(email: str, password: str) -> dict[str, Any]:
         "codeSent": True,
         "message": "验证码已发送，请查收邮件",
         # 没配邮件服务时把码带回来，否则自部署的人第一步就卡死。
-        # **配了就绝不外泄**——那等于把验证码这道关直接拆掉。
-        **({"devCode": code} if not delivered else {}),
+        # **配了就绝不外泄**；生产环境即使没配也不外泄（_dev_code_allowed）。
+        **({"devCode": code} if (not delivered and _dev_code_allowed()) else {}),
     }
+
+
+def _dev_code_allowed() -> bool:
+    """没配邮件服务时能不能把验证码放进响应（devCode）。
+
+    devCode 的本意是自部署第一步不卡死（没邮件服务照样能注册）。但这个
+    便利只属于**非生产**：生产环境没配邮件属于配置错误，把码直接回给
+    请求者等于任何人都能替任意邮箱注册/重置密码——验证码这道关等于拆掉。
+    判据复用 settings.is_production（NODE_ENV / APP_ENV），2026-08-14 审计补。
+    """
+    try:
+        from config.settings import settings
+
+        return not settings.is_production
+    except Exception:  # noqa: BLE001 — 判不出环境时按生产从严
+        return False
 
 
 def _code_invalid() -> dict[str, Any]:
@@ -326,8 +342,8 @@ def start_password_reset(email: str) -> dict[str, Any]:
         "ok": True,
         "codeSent": True,
         "message": RESET_CODE_SENT,
-        # 没配邮件服务时把码带回来（同注册），**配了就绝不外泄**
-        **({"devCode": code} if not delivered else {}),
+        # 没配邮件服务时把码带回来（同注册）；生产环境一律不外泄
+        **({"devCode": code} if (not delivered and _dev_code_allowed()) else {}),
     }
 
 

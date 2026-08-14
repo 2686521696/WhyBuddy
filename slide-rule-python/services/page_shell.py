@@ -208,10 +208,83 @@ def _pick_shell_source(pages_html: Dict[str, str]) -> str:
     return best
 
 
+def _pick_shell_source_phone(pages_html: Dict[str, str]) -> str:
+    """移动端选源页：**页面级 <nav>（底部标签栏）链接最多的那页**。
+
+    与桌面 _pick_shell_source 同一动机（图标模板越多越好），差别只在
+    移动端的导航不在 <aside> 里——设计系统明说了不要侧栏。
+    """
+    best, best_n = "", -1
+    for page_id, markup in pages_html.items():
+        nav = _NAV.search(markup or "")
+        n = len(_LINK.findall(nav.group(0))) if nav else 0
+        if n > best_n:
+            best, best_n = page_id, n
+    return best
+
+
+def _unify_shell_phone(pages_html: Dict[str, str], spec: Dict[str, Any]) -> Dict[str, Any]:
+    """移动端（竖屏）的壳统一：<header> 顶栏 + 页面级 <nav> 底部标签栏。
+
+    与桌面版同一套病灶与药方（各页各编产品名/登录人/菜单 → 取一页的壳
+    整体复用，导航按 spec.pages 重排），只是壳的部件不同：
+    没有 <aside>，产品名和角色在 <header> 里认。
+    """
+    spec_pages = list(spec.get("pages") or [])
+    source_id = _pick_shell_source_phone(pages_html)
+    src = pages_html[source_id]
+    header_m = _HEADER.search(src)
+    nav_m = _NAV.search(src)
+    if not header_m and not nav_m:
+        raise PageShellError(f"选中的源页 {source_id} 既没有 <header> 也没有 <nav>，抠不出移动壳")
+
+    header = header_m.group(0) if header_m else ""
+    app_name = str(spec.get("appName") or "").strip()
+    personas = list(spec.get("personas") or [])
+    role = str((personas[0] or {}).get("name") or "").strip() if personas else ""
+    old_brand, old_role = detect_brand_and_role(header)
+    header = _apply_identity(header, old_brand, app_name)
+    header = _apply_identity(header, old_role, role)
+
+    templates = nav_templates(nav_m.group(0)) if nav_m else None
+
+    out: Dict[str, str] = {}
+    for page_id, markup in pages_html.items():
+        html = markup
+        if header:
+            html = _HEADER.sub(lambda _m: header, html, count=1) if _HEADER.search(html) else html
+        if templates and nav_m:
+            items = build_nav_items(templates, spec_pages, page_id)
+            new_nav = re.sub(
+                r"(<nav\b[^>]*>)[\s\S]*(</nav>)",
+                lambda m: m.group(1) + "\n" + items + "\n" + m.group(2),
+                nav_m.group(0),
+                count=1,
+            )
+            html = _NAV.sub(lambda _m: new_nav, html, count=1) if _NAV.search(html) else html
+        out[page_id] = html
+
+    return {
+        "version": PAGE_SHELL_VERSION,
+        "sourcePageId": source_id,
+        "navAnchored": bool(templates),
+        "navItems": [
+            {"id": str(p.get("id") or ""), "name": str(p.get("name") or p.get("id") or "")}
+            for p in spec_pages
+        ],
+        "appName": app_name or old_brand,
+        "personaRole": role or old_role,
+        "pages": out,
+    }
+
+
 def unify_shell(
-    pages_html: Dict[str, str], spec: Dict[str, Any]
+    pages_html: Dict[str, str], spec: Dict[str, Any], *, device: str = "desktop"
 ) -> Dict[str, Any]:
     """把多页 HTML 的壳统一成一套，导航按 spec.pages 重排。零 LLM 调用。
+
+    device（2026-08-14 晚加）：`"phone"` 走移动分支（<header> + 页面级
+    <nav> 底部标签栏，没有 <aside>）。词表沿用 device_policy 的 Device。
 
     返回 {"version", "sourcePageId", "pages": {page_id: html}, "navItems": [...]}。
     """
@@ -220,6 +293,8 @@ def unify_shell(
     spec_pages = list(spec.get("pages") or [])
     if not spec_pages:
         raise PageShellError("spec 里没有页面清单，导航无从锚定")
+    if device == "phone":
+        return _unify_shell_phone(pages_html, spec)
 
     source_id = _pick_shell_source(pages_html)
     shell = extract_shell(pages_html[source_id])
@@ -314,6 +389,15 @@ def check_shell_consistency(
     problems: List[Dict[str, str]] = []
     shells = {pid: extract_shell(h) for pid, h in pages_html.items()}
 
+    # 移动端没有 <aside>，导航是页面级 <nav>（底部标签栏）。aside 在时照旧
+    # 只认 aside 里的 nav（桌面页面可能另有面包屑 nav，不该被误查）；
+    # aside 不在才回落到整页找（2026-08-14 竖屏加）。
+    def _nav_of(pid: str) -> Optional[re.Match]:
+        aside = shells[pid]["aside"]
+        if aside:
+            return _NAV.search(aside)
+        return _NAV.search(pages_html[pid])
+
     for part in ("aside", "header"):
         distinct = {shell_fingerprint(s[part]) for s in shells.values() if s[part]}
         if len(distinct) > 1:
@@ -322,8 +406,18 @@ def check_shell_consistency(
                 "message": f"{len(distinct)} 种不同的 <{part}>——各页还不是同一套壳",
             })
 
+    # 全部页面都没 aside（移动端）时，标签栏本身也要各页一致
+    if not any(s["aside"] for s in shells.values()):
+        navs = {pid: _nav_of(pid) for pid in shells}
+        distinct_nav = {shell_fingerprint(m.group(0)) for m in navs.values() if m}
+        if len(distinct_nav) > 1:
+            problems.append({
+                "path": "nav",
+                "message": f"{len(distinct_nav)} 种不同的 <nav>——底部标签栏还不是同一套",
+            })
+
     for pid, s in shells.items():
-        nav = _NAV.search(s["aside"])
+        nav = _nav_of(pid)
         if not nav:
             continue
         marked = len(re.findall(r'aria-current="page"', nav.group(0), re.I))
@@ -335,7 +429,7 @@ def check_shell_consistency(
 
     want = [str(p.get("name") or p.get("id") or "").strip() for p in (spec.get("pages") or [])]
     for pid, s in shells.items():
-        nav = _NAV.search(s["aside"])
+        nav = _nav_of(pid)
         if not nav:
             continue
         got = [

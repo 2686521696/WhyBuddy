@@ -126,7 +126,11 @@ interface SlideRuleStudioProps {
    *
    *  ⚠ 跟 specPages 不是二选一，是**同一份东西的两个来源**：推演中走 SSE
    *  逐页到达，跑完/刷新之后走这份。合并逻辑在下面一处做完，别在两处判。 */
-  specFirstPages?: { pages?: Record<string, string>; navItems?: unknown[] } | null;
+  specFirstPages?: {
+    pages?: Record<string, string>;
+    navItems?: unknown[];
+    device?: "desktop" | "phone";
+  } | null;
 
   className?: string;
 }
@@ -201,6 +205,8 @@ export function SlideRuleStudio({
         pageId: id, html: settled[id], current: i + 1, total: ids.length,
         // 落库那份是走完 6.5 步的。boundPages 为 0 时说明打孔没成，如实说
         bound: Number((specFirstPages as { boundPages?: number })?.boundPages ?? 0) > 0,
+        // 设备维度跟着落库载荷走：竖屏应用刷新后不掉回横屏画布
+        device: specFirstPages?.device,
       }));
     }
     return specPages;

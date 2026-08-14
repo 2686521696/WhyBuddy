@@ -46,7 +46,7 @@ import hmac
 from datetime import datetime, timezone
 from typing import Annotated, Optional
 
-from fastapi import Cookie, Depends, Header, HTTPException, Response, status
+from fastapi import Cookie, Depends, Header, HTTPException, Request, Response, status
 
 from services.auth_tokens import (
     DEFAULT_TTL_S,
@@ -94,6 +94,7 @@ def _maybe_renew(
     user: User,
     *,
     from_cookie: bool,
+    secure: bool = False,
 ) -> None:
     """过半程就换新令牌（只对 Cookie 来路，见模块头）。
 
@@ -114,12 +115,14 @@ def _maybe_renew(
         )
         # Cookie 属性必须跟签发处（routes/account._set_auth_cookie）一致，
         # 否则续期会写出一个属性不同的 Cookie，浏览器当成另一个，出现两份并存。
+        # secure 同样跟随请求协议（2026-08-14 审计补，与签发处同一口径）。
         response.set_cookie(
             key=AUTH_COOKIE,
             value=fresh,
             max_age=DEFAULT_TTL_S,
             httponly=True,
             samesite="lax",
+            secure=secure,
             path="/",
         )
     except Exception:  # noqa: BLE001 — 见 docstring
@@ -127,6 +130,7 @@ def _maybe_renew(
 
 
 def optional_user(
+    request: Request,
     response: Response,
     authorization: Annotated[Optional[str], Header()] = None,
     sliderule_token: Annotated[Optional[str], Cookie(alias=AUTH_COOKIE)] = None,
@@ -193,6 +197,11 @@ def optional_user(
         payload,
         user,
         from_cookie=not _extract_bearer_token(authorization),
+        # 与 routes/account._client_is_https 同一判据（x-forwarded-proto 优先）
+        secure=(
+            (request.headers.get("x-forwarded-proto") or request.url.scheme or "")
+            .lower() == "https"
+        ),
     )
     return user
 

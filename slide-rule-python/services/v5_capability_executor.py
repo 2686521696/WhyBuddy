@@ -443,13 +443,37 @@ def _try_llm_generate_evidence(
     #   仍然是它唯一的版式来源，砍掉等于把老路也一起砍了。
     from_spec_first = False
     if _spec_first_enabled is not None and _spec_first_enabled():
-        try:
-            model = run_spec_first(goal, llm_json_fn=llm_json_fn)["model"]
-            from_spec_first = True
-            print("[v5_capability_executor] spec-first 链路产出模型")
-        except Exception as exc:  # noqa: BLE001 — 显式回落，留痕
-            print(f"[v5_capability_executor] spec-first 失败，回落老链路：{str(exc)[:200]}")
-            model = None
+        from .v5_llm_generate import get_model_override, get_refine_context
+
+        if get_model_override() is not None:
+            # 版本回退 / fork 直供：快照本身就是权威，老生成器会原样返回它
+            # （v5_llm_generate 的 override 分支）。spec-first 不检查这条的话，
+            # 「回退到 v2」会被静默变成「按原话重抽一次」——用户点的是恢复，
+            # 拿到的是一个全新应用，而且没有一处报错。
+            print("[v5_capability_executor] 模型直供（回退/fork）在场，spec-first 让路")
+        else:
+            # E29 增量迭代接到新链路（2026-08-14 晚）。此前 refine 上下文只有
+            # 老生成器的 prompt 在读，而默认路径是 spec-first——于是「建好应用
+            # 后再发消息」实际拿冻结的原始 goal 从头重抽，追加指令和上一版
+            # 结构全被丢掉。这里把两样翻译成 spec_tree 认识的 refine 段：
+            # 指令原文 + 上一版模型的结构摘要（粒度对齐 SPEC，不喂全量 JSON）。
+            _refine_ctx = get_refine_context()
+            _spec_refine = None
+            if _refine_ctx and str(_refine_ctx.get("instruction") or "").strip():
+                from .spec_first_pipeline import model_refine_digest
+
+                _spec_refine = {
+                    "instruction": _refine_ctx["instruction"],
+                    "modelDigest": model_refine_digest(_refine_ctx.get("model")),
+                }
+                print("[v5_capability_executor] spec-first 精修模式：带上一版结构 + 本轮指令")
+            try:
+                model = run_spec_first(goal, llm_json_fn=llm_json_fn, refine=_spec_refine)["model"]
+                from_spec_first = True
+                print("[v5_capability_executor] spec-first 链路产出模型")
+            except Exception as exc:  # noqa: BLE001 — 显式回落，留痕
+                print(f"[v5_capability_executor] spec-first 失败，回落老链路：{str(exc)[:200]}")
+                model = None
 
     if model is None:
         model = generate_five_system_model(goal, llm_json_fn=llm_json_fn)

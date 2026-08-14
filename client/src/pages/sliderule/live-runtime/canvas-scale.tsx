@@ -56,6 +56,21 @@ export type ScaleFitMode = "contain" | "width";
 export const SPEC_PAGE_VIEWPORT = { w: 1920, h: 1080 } as const;
 
 /**
+ * 移动端竖屏的设计分辨率（2026-08-14）。
+ *
+ * 1080×1920 = 桌面的转置：spec-first 认出「手机/移动端/App」话题时
+ * （device_policy 同一份词表），页面按移动设计系统生成（顶栏 + 底部
+ * 标签栏，无侧栏），画布用这个视口。1080 宽下 Tailwind 的 lg:（1024）
+ * 断点仍生效、xl:（1280）不生效——移动页的提示词本来就不该写 xl:。
+ */
+export const SPEC_PAGE_VIEWPORT_PHONE = { w: 1080, h: 1920 } as const;
+
+/** 按设备取 spec 页画布视口。词表与后端 device_policy 一致（desktop/phone）。 */
+export function specPageViewport(device?: string | null): { w: number; h: number } {
+  return device === "phone" ? SPEC_PAGE_VIEWPORT_PHONE : SPEC_PAGE_VIEWPORT;
+}
+
+/**
  * 容器实测尺寸 → 等比缩放系数。
  *
  * ⚠ 只在 ResizeObserver 里量，不监听 window.resize：容器被侧栏折叠、抽屉

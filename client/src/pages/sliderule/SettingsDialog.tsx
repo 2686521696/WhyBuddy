@@ -1,5 +1,5 @@
 import React from "react";
-import { Cpu, Server, SlidersHorizontal, X } from "lucide-react";
+import { BarChart3, Cpu, Server, SlidersHorizontal, X } from "lucide-react";
 import { Switch } from "antd";
 import { toast } from "sonner";
 import {
@@ -31,7 +31,7 @@ import {
   type LlmProvidersConfig,
 } from "@/lib/sliderule-llm-providers";
 
-type CategoryId = "channel" | "llm" | "system";
+type CategoryId = "channel" | "llm" | "system" | "usage";
 
 export type SettingsSurfaceProps = {
   /** 本话题运行时数据（行/实例/角色）的会话 id，供「数据管理」清理 */
@@ -59,6 +59,7 @@ const NAV_ITEMS: Array<{
   },
   { id: "channel", label: "推演通道", icon: <Server className="h-4 w-4" /> },
   { id: "llm", label: "浏览器直连", icon: <Cpu className="h-4 w-4" /> },
+  { id: "usage", label: "用量统计", icon: <BarChart3 className="h-4 w-4" /> },
 ];
 
 /**
@@ -261,6 +262,10 @@ function SettingsSurface(
                 <LlmProviderSettings draft={draft} setDraft={setDraft} />
               </div>
             ) : null
+          ) : category === "usage" ? (
+            <div className="flex-1 overflow-y-auto px-6 py-5">
+              <UsageStatsSection />
+            </div>
           ) : (
             <div className="flex-1 overflow-y-auto px-6 py-5">
               <SystemPrefs {...props} />
@@ -527,6 +532,234 @@ function PrivacyFactsSection() {
           可用上方「清空本话题运行时数据」随时清掉。
         </li>
       </ul>
+    </div>
+  );
+}
+
+// ─────────────────────────────────── 用量统计 ───────────────────────────────────
+
+interface UsageSummary {
+  totals: {
+    sessions: number;
+    runs: number;
+    estimatedTokens: number;
+    estimatedCostUsd: number;
+    durationMs: number;
+  };
+  byCapability: Array<{
+    capabilityId: string;
+    runs: number;
+    estimatedTokens: number;
+    estimatedCostUsd: number;
+    durationMs: number;
+  }>;
+  byDay: Array<{
+    date: string;
+    runs: number;
+    estimatedTokens: number;
+    estimatedCostUsd: number;
+  }>;
+  bySource: Record<string, number>;
+  bySession: Array<{
+    sessionId: string;
+    goal: string;
+    runs: number;
+    estimatedTokens: number;
+    estimatedCostUsd: number;
+  }>;
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+/**
+ * 用量统计：聚合当前账号读得到的会话里的 costLedger（GET /api/sliderule/usage）。
+ *
+ * ⚠ 数字如实标「估算」：台账绝大多数记录是 source="estimated"
+ * （len(content)//4 的粗估，见 slide_rule_executor._write_capability_telemetry），
+ * 不是计费口径。把估算当账单展示是比没有账单更糟的事，所以「估算」
+ * 两个字常驻标题，不藏在 tooltip 里。
+ *
+ * 匿名访问时后端按归属过滤返回空账（与会话列表同一口径）——这里如实
+ * 显示"没有可统计的用量"，不报错。
+ */
+function UsageStatsSection() {
+  const [data, setData] = React.useState<UsageSummary | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    let alive = true;
+    fetch("/api/sliderule/usage")
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(d => {
+        if (alive) setData(d as UsageSummary);
+      })
+      .catch(e => {
+        if (alive) setError(String(e?.message || e));
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const labelClass = "mb-1.5 block text-[12px] font-semibold text-stone-600";
+
+  if (loading) {
+    return (
+      <div
+        className="text-[12px] text-stone-400"
+        data-testid="sliderule-settings-usage"
+      >
+        正在读取用量台账…
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div
+        className="text-[12px] text-stone-500"
+        data-testid="sliderule-settings-usage"
+      >
+        用量台账暂时读不到（{error}）。服务端未启动或未登录时都会这样，
+        不影响其它设置。
+      </div>
+    );
+  }
+  if (!data || data.totals.runs === 0) {
+    return (
+      <div
+        className="text-[12px] text-stone-400"
+        data-testid="sliderule-settings-usage"
+      >
+        还没有可统计的用量——跑一轮推演之后，这里会按能力/天/话题分账展示。
+      </div>
+    );
+  }
+
+  const { totals } = data;
+  const estimatedCount = data.bySource["estimated"] ?? 0;
+  const mostlyEstimated = estimatedCount >= totals.runs / 2;
+
+  const statCard = (label: string, value: string, hint?: string) => (
+    <div className="rounded-md bg-[#eef0f4] px-4 py-3 ring-1 ring-[#e5e7eb]">
+      <div className="text-[11px] text-stone-500">{label}</div>
+      <div className="mt-0.5 font-mono text-[18px] font-bold text-stone-800">
+        {value}
+      </div>
+      {hint && <div className="mt-0.5 text-[10px] text-stone-400">{hint}</div>}
+    </div>
+  );
+
+  return (
+    <div
+      className="max-w-2xl space-y-6"
+      data-testid="sliderule-settings-usage"
+    >
+      <div>
+        <label className={labelClass}>
+          用量总览{mostlyEstimated ? "（估算口径）" : ""}
+        </label>
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          {statCard("会话", String(totals.sessions))}
+          {statCard("能力执行", String(totals.runs))}
+          {statCard("Token（估算）", formatTokens(totals.estimatedTokens))}
+          {statCard(
+            "费用（估算）",
+            `$${totals.estimatedCostUsd.toFixed(2)}`,
+            "非计费口径，仅供参考"
+          )}
+        </div>
+        <p className="mt-1.5 text-[11px] text-stone-400">
+          数据来自每次能力执行的成本台账（costLedger），其中
+          {estimatedCount}/{totals.runs} 条为估算值，不是服务商账单。
+        </p>
+      </div>
+
+      <div>
+        <label className={labelClass}>按能力分账</label>
+        <div className="overflow-hidden rounded-md ring-1 ring-[#e5e7eb]">
+          <table className="w-full text-[12px]">
+            <thead>
+              <tr className="bg-[#eef0f4] text-left text-[11px] text-stone-500">
+                <th className="px-3 py-2 font-semibold">能力</th>
+                <th className="px-3 py-2 text-right font-semibold">次数</th>
+                <th className="px-3 py-2 text-right font-semibold">Token</th>
+                <th className="px-3 py-2 text-right font-semibold">费用</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.byCapability.slice(0, 12).map(c => (
+                <tr
+                  key={c.capabilityId}
+                  className="border-t border-[#f0f1f4] text-stone-600"
+                >
+                  <td className="px-3 py-1.5 font-mono text-[11px]">
+                    {c.capabilityId}
+                  </td>
+                  <td className="px-3 py-1.5 text-right">{c.runs}</td>
+                  <td className="px-3 py-1.5 text-right font-mono">
+                    {formatTokens(c.estimatedTokens)}
+                  </td>
+                  <td className="px-3 py-1.5 text-right font-mono">
+                    ${c.estimatedCostUsd.toFixed(3)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {data.bySession.length > 0 && (
+        <div>
+          <label className={labelClass}>话题排行（按 Token）</label>
+          <ul className="space-y-1">
+            {data.bySession.slice(0, 8).map(s => (
+              <li
+                key={s.sessionId}
+                className="flex items-center justify-between gap-3 rounded bg-[#f6f7f9] px-3 py-1.5 text-[12px] text-stone-600 ring-1 ring-[#eef0f4]"
+              >
+                <span className="min-w-0 truncate">
+                  {s.goal || s.sessionId}
+                </span>
+                <span className="shrink-0 font-mono text-[11px] text-stone-500">
+                  {formatTokens(s.estimatedTokens)} · {s.runs} 次
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {data.byDay.length > 0 && (
+        <div>
+          <label className={labelClass}>最近用量（按天）</label>
+          <ul className="space-y-1">
+            {data.byDay.slice(-7).map(d => (
+              <li
+                key={d.date}
+                className="flex items-center justify-between gap-3 px-1 text-[12px] text-stone-500"
+              >
+                <span className="font-mono">{d.date}</span>
+                <span className="font-mono text-[11px]">
+                  {d.runs} 次 · {formatTokens(d.estimatedTokens)} tok · $
+                  {d.estimatedCostUsd.toFixed(3)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

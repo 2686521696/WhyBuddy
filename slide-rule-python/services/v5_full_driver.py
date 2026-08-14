@@ -1484,14 +1484,22 @@ async def drive_full_v5_session_stream(
     #
     # ⚠ 只在开关开着时才会有事件（sink 装着但没人叫它）。装 sink 这件事本身
     #   不判断开关：判断开关的地方只该有一处，多一处就多一次漂移的机会。
-    _page_q: "_queue.Queue[tuple[str, str, int, int]]" = _queue.Queue()
+    # 第 5 位 bound 默认 False：第 3 步素颜页不带它，3.5/6.5 的重发才带
+    # （见 spec_first_pipeline._reemit_pages）。默认值兜住老调用方。
+    # 第 6 位 device（2026-08-14 竖屏加）：管道在开头认一次设备并注进每次
+    # sink 调用（spec_first_pipeline._with_device），前端拿它选画布视口。
+    _page_q: "_queue.Queue[tuple[str, str, int, int, bool, str]]" = _queue.Queue()
     _spec_first_sink = None
     try:
         from .spec_first_pipeline import set_page_sink as _spec_first_sink
     except Exception:  # noqa: BLE001 — 新模块缺失不该打死整条流
         pass
     if _spec_first_sink is not None:
-        _spec_first_sink(lambda pid, html, done, total: _page_q.put((pid, html, done, total)))
+        _spec_first_sink(
+            lambda pid, html, done, total, bound=False, device="desktop": _page_q.put(
+                (pid, html, done, total, bool(bound), str(device))
+            )
+        )
     _budget_token = _enrich_timing.begin_run_budget()
     # 与同步入口同一件事：让能力执行看得见本轮用户说了什么。
     # 流式是主路径（前端走 SSE），两条都要接，否则只有回退路径改好了——
@@ -1545,17 +1553,19 @@ async def drive_full_v5_session_stream(
             # 第二页"在前端的先后不可预期。
             try:
                 while True:
-                    _pid, _html, _done, _total = _page_q.get_nowait()
+                    _pid, _html, _done, _total, _bound, _device = _page_q.get_nowait()
                     yield {
                         "type": "spec_page",
                         "pageId": _pid,
                         "html": _html,
                         "current": _done,
                         "total": _total,
-                        # bound=False：这是第 3 步的**素颜页**，还没打 data-* 孔
-                        # （孔要等第 6.5 步，那时实体字段才定死）。前端据此知道
-                        # 现在渲染的是"长什么样"，数据是后面才接上的。
-                        "bound": False,
+                        # 同一页会到达多次：第 3 步素颜页（bound=False）→
+                        # 3.5 外壳统一后重发（仍 False，菜单已按 spec 锚定）→
+                        # 6.5 打完 data-* 孔重发（True）。前端按 pageId 覆盖。
+                        "bound": _bound,
+                        # desktop 横屏 / phone 竖屏——前端选画布视口用
+                        "device": _device,
                     }
             except _queue.Empty:
                 pass

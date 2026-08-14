@@ -80,6 +80,25 @@ If the design system conflicts with other instructions, prioritize the design sy
 计数写 ×,×××，人名写「张师傅」这类。表格要有真实的中文列名。
 </design_system>"""
 
+#: 移动端（竖屏 1080×1920）的设计系统。壳的形状是**硬约束**，不是风格偏好：
+#: 第 3.5 步 page_shell 要按它抠壳统一——桌面抠 <aside>+<header>，移动抠
+#: <header>+页面级 <nav>（底部标签栏）。这里不写成 <nav>，3.5 就没得抠，
+#: 菜单一致性那套判据对移动端整个失效。占位数据纪律与桌面同一份。
+_DESIGN_SYSTEM_MOBILE = """## Design system
+
+If the design system conflicts with other instructions, prioritize the design system.
+
+<design_system>
+移动端 App 风格（竖屏手机，视口 1080×1920），浅色底，单列布局。
+顶部一个 <header>（左侧产品名，右侧当前登录角色），
+底部一个固定的 <nav> 标签栏（bottom tab bar，每个页面入口是一个 <a>，图标在上文字在下）。
+**不要左侧边栏（不要 <aside>）**，内容区是可上下滚动的单列卡片流。
+触控目标要够大（按钮/列表项高度 ≥ 88px 视觉高度），正文字号偏大。
+占位数据必须写成**可读的中文文字**，不许用灰色横条或色块代替：
+日期写 20XX-XX-XX，金额写 ¥ ××,×××，百分比写 ××.×%，计数写 ×,×××，
+人名写「张师傅」这类。列表要有真实的中文字段名。
+</design_system>"""
+
 
 class SpecPageHtmlError(RuntimeError):
     """这一步失败就如实失败，不回落占位。
@@ -111,11 +130,17 @@ def build_page_brief(page: Dict[str, Any], spec: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def build_page_html_prompt(brief: str) -> str:
-    """create/text.py 的 USER_PROMPT，逐字对齐（image policy 取 disabled 那一支）。"""
+def build_page_html_prompt(brief: str, *, device: str = "desktop") -> str:
+    """create/text.py 的 USER_PROMPT，逐字对齐（image policy 取 disabled 那一支）。
+
+    device（2026-08-14 晚加）：`"phone"` 时换移动端设计系统（竖屏 1080×1920、
+    顶栏 + 底部标签栏、无侧栏）。词表沿用 device_policy 的 Device
+    （"desktop"/"phone"），不另发明。
+    """
+    design = _DESIGN_SYSTEM_MOBILE if device == "phone" else _DESIGN_SYSTEM
     return f"""Generate UI for {brief}.
 {_STACK}
-{_DESIGN_SYSTEM}
+{design}
 
 # Instructions
 
@@ -164,6 +189,7 @@ def generate_page_html(
     page: Dict[str, Any],
     spec: Dict[str, Any],
     *,
+    device: str = "desktop",
     llm_call: Optional[Callable[..., Any]] = None,
     max_attempts: int = 2,
 ) -> Dict[str, Any]:
@@ -172,7 +198,7 @@ def generate_page_html(
     返回 {"version", "pageId", "html", "brief", "prompt"}。
     """
     brief = build_page_brief(page, spec)
-    prompt = build_page_html_prompt(brief)
+    prompt = build_page_html_prompt(brief, device=device)
     if llm_call is None:
         # ⚠ 用带重试的那个，不是裸 call_llm（2026-08-13 修）。
         #
@@ -222,6 +248,7 @@ def generate_page_html(
 def generate_pages_parallel(
     spec: Dict[str, Any],
     *,
+    device: str = "desktop",
     max_workers: int = 6,
     llm_call: Optional[Callable[..., Any]] = None,
     on_page: Optional[Callable[[str, str, int, int], None]] = None,
@@ -281,7 +308,9 @@ def generate_pages_parallel(
         #     下游按 page_id 取，所以不受影响；真正在乎顺序的是导航，而导航由
         #     page_shell 按 spec.pages 重排（见 unify_shell）——不靠这里。
         fut_to_id = {
-            pool.submit(generate_page_html, pg, spec, llm_call=llm_call): str(pg.get("id") or "")
+            pool.submit(
+                generate_page_html, pg, spec, device=device, llm_call=llm_call
+            ): str(pg.get("id") or "")
             for pg in pages
         }
         total = len(fut_to_id)

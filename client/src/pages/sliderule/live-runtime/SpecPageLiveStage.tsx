@@ -35,12 +35,21 @@
  *
  * 填数走 deriveBindingSource（五系统模型 + 运行时状态），跟老区块渲染**共用
  * 同一份数据**——各读各的等于同一个应用有两份互不相干的数据。
+ *
+ * ## 页签条下架（2026-08-14 晚）
+ *
+ * 顶部那排 p1…pN 页签删了：页面自己的左侧菜单已经能切页（data-page-id →
+ * onNavigate），同一件事两套控件是歧义不是便利——菜单才是真用户看到的那套。
+ * 页签上挂着的两样如实信息**收编不删**：生成进度与填数报告降级成画布左下角
+ * 两枚小徽标（与右下角分辨率徽标同一形制）。选页判定抽成 resolveActivePageId
+ * 纯函数单测钉着——「手动选过的页不被新到达的页挤走」这条行为的入口只剩
+ * 框内菜单点击，jsdom 跑不了 srcdoc，组件层测不到它，判定就必须可单测。
  */
 
 import React from "react";
 
 import { HtmlAppSurface } from "./html-app-surface";
-import { ScaleBadge, useScaleToFit, SPEC_PAGE_VIEWPORT } from "./canvas-scale";
+import { ScaleBadge, useScaleToFit, specPageViewport } from "./canvas-scale";
 import { deriveBindingSource } from "./derive-binding-source";
 import type { ActionGates, BindingActionEvent } from "./html-binding-runtime";
 import type { RuntimeState } from "./live-runtime";
@@ -52,6 +61,9 @@ export interface SpecPageLive {
   current: number;
   total: number;
   bound: boolean;
+  /** desktop 横屏 1920×1080 / phone 竖屏 1080×1920（2026-08-14）。
+   *  缺席按桌面兜底——老事件/老存档没有这个字段，行为与从前一致。 */
+  device?: "desktop" | "phone";
 }
 
 export interface SpecPageLiveStageProps {
@@ -83,6 +95,23 @@ export interface SpecPageLiveStageProps {
   className?: string;
 }
 
+/**
+ * 选页判定（纯函数，单测钉着）：手动选过就听手动的；没选过、或选的那页
+ * 不存在，恒跟最新一页（页面在陆续到达，跟着最新的才叫"实时"）。
+ * ⚠ 存 pageId 而不是下标：下标会被新到达的页面挤走，表现是
+ * "我明明点了甲页，它自己跳到乙页去了"。
+ */
+export function resolveActivePageId(
+  picked: string | null,
+  pages: readonly Pick<SpecPageLive, "pageId">[]
+): string | null {
+  return (
+    (picked && pages.some(p => p.pageId === picked) ? picked : null) ??
+    pages[pages.length - 1]?.pageId ??
+    null
+  );
+}
+
 export function SpecPageLiveStage({
   pages,
   statusLabel = null,
@@ -97,9 +126,8 @@ export function SpecPageLiveStage({
   onActivePageChange,
   className = "",
 }: SpecPageLiveStageProps): React.ReactElement | null {
-  // 手动选过就听手动的；没选过恒跟最新一页（页面在陆续到达，跟着最新的
-  // 才叫"实时"）。⚠ 存 pageId 而不是下标：下标会被新到达的页面挤走，
-  // 表现是"我明明点了甲页，它自己跳到乙页去了"。
+  // 切页唯一入口是页面自己的左侧菜单（data-page-id → onNavigate）——
+  // 顶部页签条 2026-08-14 晚下架，同一件事不留两套控件。
   const [picked, setPicked] = React.useState<string | null>(defaultPageId);
   // 填数报告：填了几个孔、哪些孔填不上。**如实展示**——填不上是模型的问题
   // （引用了不存在的实体/字段），拿假数据盖住等于把问题藏起来。
@@ -107,17 +135,15 @@ export function SpecPageLiveStage({
 
   const source = React.useMemo(() => deriveBindingSource(model, runtime), [model, runtime]);
 
+  // 视口按设备选（2026-08-14 竖屏）：desktop 1920×1080 / phone 1080×1920。
+  // 一轮里所有页面同一设备（管道开头认一次），取第一个带 device 的页面即可。
+  const viewport = specPageViewport(pages.find(p => p.device)?.device);
+
   // ⚠ 必须在下面那个 `if (!active) return null` **之前**调用：hook 的调用
   //   顺序不能随渲染分支变化，放到早退之后第一帧就会炸 hook order。
-  const { ref: fitRef, scale } = useScaleToFit(
-    SPEC_PAGE_VIEWPORT.w,
-    SPEC_PAGE_VIEWPORT.h
-  );
+  const { ref: fitRef, scale } = useScaleToFit(viewport.w, viewport.h);
 
-  const activeId =
-    (picked && pages.some(p => p.pageId === picked) ? picked : null) ??
-    pages[pages.length - 1]?.pageId ??
-    null;
+  const activeId = resolveActivePageId(picked, pages);
   const active = pages.find(p => p.pageId === activeId) ?? null;
 
   // 当前页上报（游标面板跟随）。必须在早退之前——hook 顺序不能随分支变。
@@ -133,67 +159,8 @@ export function SpecPageLiveStage({
     <div
       className={`flex min-h-0 flex-1 flex-col gap-2 ${className}`}
       data-testid="sliderule-spec-page-stage"
+      data-active-page={activeId ?? undefined}
     >
-      <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-        {running ? (
-          <span className="flex items-center gap-1.5 rounded-full bg-[#FDF6F1] px-2 py-0.5 text-[10px] font-medium text-[#C05621]">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#1677ff]" />
-            界面生成中 {pages.length}/{total || pages.length}
-          </span>
-        ) : (
-          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-            运行中 · 共 {pages.length} 页
-          </span>
-        )}
-        {pages.map(p => (
-          <button
-            key={p.pageId}
-            type="button"
-            onClick={() => setPicked(p.pageId)}
-            data-testid={`sliderule-spec-page-tab-${p.pageId}`}
-            aria-pressed={p.pageId === activeId}
-            className={`max-w-[140px] truncate rounded-full px-2.5 py-0.5 text-[11px] transition ${
-              p.pageId === activeId
-                ? "bg-[#1677ff] font-medium text-white"
-                : "bg-white text-stone-500 ring-1 ring-[#e5e7eb] hover:bg-[#f8f9fb]"
-            }`}
-            title={p.pageId}
-          >
-            {p.pageId}
-          </button>
-        ))}
-        <span
-          className="ml-auto shrink-0 text-[10px] text-stone-400"
-          data-testid="sliderule-spec-page-bound"
-          title={
-            report?.problems.length
-              ? `填不上的孔：\n${report.problems.slice(0, 6).join("\n")}`
-              : active.bound
-                ? "已接上数据（第 6.5 步打过 data-* 孔）"
-                : "第 3 步的页面：还没接数据，孔要等实体字段定死之后才打"
-          }
-        >
-          {/* ⚠ 报**实际填了多少**，不是报"这一版理论上打过孔"。
-              两者会分叉：孔打了但引用的实体不存在时，bound 是 true 而
-              一个格子都没填上——那时说"已接数据"就是在撒谎。 */}
-          {report
-            ? report.filled > 0
-              ? `已接数据 · 填了 ${report.filled} 处${
-                  report.problems.length ? ` · ${report.problems.length} 处填不上` : ""
-                }`
-              : active.bound
-                ? "打过孔但没填上数据"
-                : "尚未接数据"
-            : active.bound
-              ? "已接数据"
-              : "尚未接数据"}
-        </span>
-        {statusLabel && (
-          <span className="w-full truncate text-[11px] text-stone-400">
-            {statusLabel}
-          </span>
-        )}
-      </div>
       {view === "code" ? (
         /* 代码档：交付的 HTML 原文本体（不是模型投影）。看的与渲染的是同一份
            字符串——想核对某个 data-* 孔打没打上，这里一眼见底。 */
@@ -221,15 +188,15 @@ export function SpecPageLiveStage({
       >
         <div
           style={{
-            width: SPEC_PAGE_VIEWPORT.w * scale,
-            height: SPEC_PAGE_VIEWPORT.h * scale,
+            width: viewport.w * scale,
+            height: viewport.h * scale,
             position: "relative",
           }}
         >
           <div
             style={{
-              width: SPEC_PAGE_VIEWPORT.w,
-              height: SPEC_PAGE_VIEWPORT.h,
+              width: viewport.w,
+              height: viewport.h,
               transform: `scale(${scale})`,
               transformOrigin: "top left",
               overflow: "hidden",
@@ -260,11 +227,50 @@ export function SpecPageLiveStage({
             />
           </div>
           <ScaleBadge
-            w={SPEC_PAGE_VIEWPORT.w}
-            h={SPEC_PAGE_VIEWPORT.h}
+            w={viewport.w}
+            h={viewport.h}
             scale={scale}
             testId="sliderule-spec-page-scale"
           />
+          {/* 页签条下架后收编来的两枚如实徽标（左下，与右下分辨率徽标同形制）：
+              生成进度 + 填数报告。切页归页面自己的菜单，这里不再有控件。 */}
+          <div className="pointer-events-none absolute bottom-1.5 left-2 flex max-w-[70%] flex-wrap items-center gap-1">
+            {running && (
+              <span
+                className="pointer-events-auto flex items-center gap-1 rounded-full bg-black/45 px-2 py-0.5 text-[9px] text-white/90"
+                title={statusLabel ?? undefined}
+              >
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#69b1ff]" />
+                界面生成中 {pages.length}/{total || pages.length}
+              </span>
+            )}
+            <span
+              className="pointer-events-auto rounded-full bg-black/45 px-2 py-0.5 text-[9px] text-white/90"
+              data-testid="sliderule-spec-page-bound"
+              title={
+                report?.problems.length
+                  ? `填不上的孔：\n${report.problems.slice(0, 6).join("\n")}`
+                  : active.bound
+                    ? "已接上数据（第 6.5 步打过 data-* 孔）"
+                    : "第 3 步的页面：还没接数据，孔要等实体字段定死之后才打"
+              }
+            >
+              {/* ⚠ 报**实际填了多少**，不是报"这一版理论上打过孔"。
+                  两者会分叉：孔打了但引用的实体不存在时，bound 是 true 而
+                  一个格子都没填上——那时说"已接数据"就是在撒谎。 */}
+              {report
+                ? report.filled > 0
+                  ? `已接数据 · 填了 ${report.filled} 处${
+                      report.problems.length ? ` · ${report.problems.length} 处填不上` : ""
+                    }`
+                  : active.bound
+                    ? "打过孔但没填上数据"
+                    : "尚未接数据"
+                : active.bound
+                  ? "已接数据"
+                  : "尚未接数据"}
+            </span>
+          </div>
         </div>
       </div>
       </>

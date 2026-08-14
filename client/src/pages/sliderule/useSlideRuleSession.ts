@@ -266,7 +266,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   //   一次**（bound=true）。push 的话右侧会出现两份同名页，而后一份才是
   //   接上了数据的那份。
   const [specPages, setSpecPages] = useState<
-    Array<{ pageId: string; html: string; current: number; total: number; bound: boolean }>
+    Array<{
+      pageId: string;
+      html: string;
+      current: number;
+      total: number;
+      bound: boolean;
+      // desktop 横屏 / phone 竖屏（2026-08-14）：画布视口据此选
+      device?: "desktop" | "phone";
+    }>
   >([]);
   // LLM 实时草稿（llm_delta 累积）：运行中在左栏流式展示，新一轮开始时清空。
   // 每一步（risk.analyze / report.write / 五系统起草…）各自一份缓冲，展示最近

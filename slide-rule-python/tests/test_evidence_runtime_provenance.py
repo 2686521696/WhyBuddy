@@ -188,6 +188,14 @@ def _make_full_client():
     # import here to use the edited full router which wires execute_evidence_runtime
     from routes.sliderule_full import router as full_router  # noqa: E402
     app.include_router(full_router, prefix="/api/sliderule")
+    # 2026-08-14 权限批量修后 /execute-capability 要登录。conftest 的默认
+    # 登录覆盖只装在全局 app 上，这里是自建的裸 app——照 conftest._TestUser
+    # 装同一份（这条测的是 provenance 载荷，不是鉴权；鉴权在
+    # test_auth_hardening_batch 里专测）。
+    from middlewares.current_user import optional_user  # noqa: E402
+    from conftest import _TestUser  # noqa: E402
+
+    app.dependency_overrides[optional_user] = lambda: _TestUser()
     return TestClient(app, raise_server_exceptions=False)
 
 

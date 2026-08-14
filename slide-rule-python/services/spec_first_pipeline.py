@@ -72,7 +72,15 @@ from typing import Any, Callable, Dict, List, Optional
 
 SPEC_FIRST_VERSION = "spec-first-pipeline-v1"
 
-#: 每落地一页叫一次的出口：(page_id, html, done, total)。
+#: 每落地一页叫一次的出口：(page_id, html, done, total[, bound])。
+#:
+#: 第 5 个参数 bound（2026-08-14 晚加）：同一页会到达**不止一次**——
+#: 第 3 步素颜页先到（bound=False），第 3.5 步外壳统一后重发一遍（仍 False，
+#: 但菜单已经按 spec 锚定），第 6.5 步打完 data-* 孔再发（bound=True）。
+#: 前端按 pageId 覆盖（useSlideRuleSession.onSpecPage 那句"同一页第二次
+#: 到达——覆盖，不是追加"）。不重发的话，用户整个推演期盯着的都是
+#: 各页各自发明菜单的中间态——「三个产品名、三个登录人」那个病灶
+#: （page_shell.py 头注），修好了却只有落库那份能看见。
 #:
 #: ⚠ **ContextVar 而不是模块属性。** 这条是本仓 2026-08-06 踩出来的：
 #: `last_generate_diagnostic` 当初就是模块属性，多租户下一个请求读到了另一个
@@ -83,12 +91,12 @@ SPEC_FIRST_VERSION = "spec-first-pipeline-v1"
 #: 函数、且被十几处调用。为一件"顺带推给前端看"的事去改所有调用方的签名不划算。
 #: 同款判断见 set_capability_delta_sink / set_generate_delta_sink / set_stage_sink，
 #: 驱动器那一层已经是这么接的三条流。
-_page_sink_var: ContextVar[Optional[Callable[[str, str, int, int], None]]] = ContextVar(
+_page_sink_var: ContextVar[Optional[Callable[..., None]]] = ContextVar(
     "sliderule_spec_first_page_sink", default=None
 )
 
 
-def set_page_sink(sink: Optional[Callable[[str, str, int, int], None]]) -> None:
+def set_page_sink(sink: Optional[Callable[..., None]]) -> None:
     """装/卸页面出口。驱动器在流开始时装、finally 里卸。"""
     _page_sink_var.set(sink)
 
@@ -202,34 +210,123 @@ def _stage(name: str, **fields: Any):
     return stage(name, **fields)
 
 
+def model_refine_digest(model: Optional[Dict[str, Any]]) -> str:
+    """把上一版五系统模型摊成给 SPEC 步看的结构摘要（纯函数，零 LLM）。
+
+    增量迭代时喂给 spec_tree 的 refine 段用。**是摘要不是全量 JSON**：
+    SPEC 步只需要「有哪些实体/页面/角色/流程节点」来保持连续性，
+    全量 JSON（几十 KB）里绝大部分是它不该管的细节（字段枚举、主题、
+    绑定），塞进去只会稀释注意力——E29 老链路喂全量是因为老生成器
+    直接产模型，这里产的是 SPEC，粒度对齐 SPEC。
+    """
+    if not isinstance(model, dict):
+        return ""
+    lines: List[str] = []
+    entities = ((model.get("datamodel") or {}).get("entities") or [])[:20]
+    if entities:
+        ent_lines = []
+        for e in entities:
+            fields = ", ".join(
+                str(f.get("name") or f.get("id") or "") for f in (e.get("fields") or [])[:12]
+            )
+            ent_lines.append(f"  - {e.get('name') or e.get('id')}（{fields}）")
+        lines.append("实体：\n" + "\n".join(ent_lines))
+    pages = ((model.get("page") or {}).get("pages") or [])[:12]
+    if pages:
+        lines.append("页面：" + "、".join(str(p.get("name") or p.get("id") or "") for p in pages))
+    roles = (model.get("rbac") or {}).get("roles") or []
+    if roles:
+        lines.append("角色：" + "、".join(str(r) for r in roles[:10]))
+    nodes = ((model.get("workflow") or {}).get("nodes") or [])[:12]
+    if nodes:
+        lines.append("流程节点：" + "、".join(str(n.get("name") or n.get("id") or "") for n in nodes))
+    return "\n".join(lines)[:4000]
+
+
+def _reemit_pages(
+    sink: Optional[Callable[..., None]],
+    pages: Dict[str, str],
+    *,
+    bound: bool,
+) -> None:
+    """把统一/打孔后的整批页面再冲一遍 sink（前端按 pageId 覆盖）。
+
+    异常吞掉：与 generate_pages_parallel 的 on_page 同一条纪律——
+    UI 推送失败不许赔掉已经生成好的页面。"""
+    if sink is None:
+        return
+    total = len(pages)
+    for i, (pid, html) in enumerate(pages.items(), 1):
+        try:
+            sink(pid, html, i, total, bound)
+        except Exception as exc:  # noqa: BLE001 — 顺路推送，不打死主链
+            print(f"[spec_first_pipeline] 页面重发失败（不影响产出）：{str(exc)[:120]}")
+
+
+def _with_device(
+    raw_sink: Optional[Callable[..., None]], device: str
+) -> Optional[Callable[..., None]]:
+    """给页面 sink 注入 device（2026-08-14 竖屏加）。
+
+    设备在管道开头定一次，每个页面事件都该带着它——前端拿它选画布视口
+    （桌面 1920×1080 / 手机 1080×1920），不带的话竖屏页会被塞进横屏画布。
+    老 sink（不收 device 的四参/五参）带不动就按原参重调——UI 推送的
+    兼容问题不许赔掉已经烧过 LLM 的页面。
+    """
+    if raw_sink is None:
+        return None
+
+    def _sink(pid: str, html: str, done: int, total: int, *args: Any, **kw: Any) -> None:
+        try:
+            raw_sink(pid, html, done, total, *args, device=device, **kw)
+        except TypeError:
+            raw_sink(pid, html, done, total, *args, **kw)
+
+    return _sink
+
+
 def run_spec_first(
     goal: str,
     *,
     evidence: str = "",
+    refine: Optional[Dict[str, Any]] = None,
     llm_json_fn: Optional[Callable[..., Any]] = None,
     bind_html: bool = True,
     on_page: Optional[Callable[[str, str, int, int], None]] = None,
 ) -> Dict[str, Any]:
     """一句话 → 完整五系统模型 + 带 data-* 孔的多页 HTML。
 
+    refine（2026-08-14 晚加）：增量迭代上下文
+    `{"instruction": 本轮追加要求, "modelDigest": model_refine_digest(上一版)}`。
+    只影响第 2 步的 SPEC 提示词（加既有结构 + 连续性约束），后续步骤
+    照常从新 SPEC 往下走——页面/模型是重新生成的，但被要求保持稳定。
+
+    device（2026-08-14 竖屏加）：从 goal 里认（device_policy 同一份词表，
+    「手机/移动端/App/小程序」→ phone），一处定、处处跟——页面提示词换
+    移动设计系统，3.5 抠移动壳（顶栏+底部标签栏），页面事件与产物都带
+    device 字段，前端据此选竖屏画布。
+
     返回 {"version", "model", "spec", "structure", "semantics", "pages",
-          "navItems", "failedPages", "stages"}。
+          "navItems", "failedPages", "stages", "device"}。
     任何一步失败抛 SpecFirstError，**不回落占位、不回落老链路**。
     """
+    from .device_policy import resolve_preferred_device
     from .html_bindings import bind_pages
     from .html_structure import derive_structure, to_datamodel  # noqa: F401
     from .model_assembly import assemble
-    from .page_shell import unify_shell
+    from .page_shell import check_shell_consistency, unify_shell
     from .spec_page_html import generate_pages_parallel
     from .spec_semantics import derive_semantics, to_model_sections  # noqa: F401
     from .spec_tree import generate_spec_tree
 
     stages: Dict[str, Any] = {}
+    device = resolve_preferred_device(goal, None)
+    sink = _with_device(on_page or _page_sink_var.get(), device)
 
     # ── 第 2 步：起草 SPEC ──────────────────────────────────────────
     # （第 1 步「澄清 + 缺口 + 证据」用的是现有能力，由调用方把 evidence 传进来）
     with _stage("specfirst.spec") as st:
-        spec_model = generate_spec_tree(goal, evidence=evidence)
+        spec_model = generate_spec_tree(goal, evidence=evidence, refine=refine)
         spec = spec_model.model_dump(mode="json") if hasattr(spec_model, "model_dump") else spec_model
         st["pages"] = len(spec.get("pages") or [])
         st["nodes"] = len(spec.get("nodes") or [])
@@ -242,7 +339,7 @@ def run_spec_first(
         #
         # 显式实参优先于 sink：脚本/评测直接调这个函数时不该被"当前请求恰好
         # 装了个 sink"影响。生产路径（主轴）走 sink，因为中间那层是同步的。
-        batch = generate_pages_parallel(spec, on_page=on_page or _page_sink_var.get())
+        batch = generate_pages_parallel(spec, device=device, on_page=sink)
         pages = dict(batch.get("pages") or {})
         failed = dict(batch.get("failed") or {})
         st["got"] = len(pages)
@@ -253,10 +350,21 @@ def run_spec_first(
 
     # ── 第 3.5 步：外壳统一（零 LLM）────────────────────────────────
     with _stage("specfirst.shell") as st:
-        shell = unify_shell(pages, spec)
+        shell = unify_shell(pages, spec, device=device)
         pages = dict(shell.get("pages") or pages)
         st["pages"] = len(pages)
+        # 判据接进生产（此前只在测试里跑）：统一完还剩几处不一致，如实记账。
+        # 只记不拦——挡运行的闸在结构那边，这里的职责是让漂移**看得见**。
+        shell_problems = check_shell_consistency(pages, spec)
+        st["problems"] = len(shell_problems)
+        for p in shell_problems[:3]:
+            print(f"[spec_first_pipeline] 外壳统一后仍不一致：{p['path']} — {p['message']}")
     stages["shell"] = dict(st)
+
+    # 统一后的页面立刻重发一遍（bound 仍是 False，但菜单已按 spec 锚定）。
+    # 不发的话，前端直播舞台从第 3 步起一直摆着「三个产品名、三套菜单」的
+    # 素颜页，要等整轮跑完 finalState 到达才换——那是十几分钟的错误画面。
+    _reemit_pages(sink, pages, bound=False)
 
     # ── 第 4 步：HTML → 结构 ────────────────────────────────────────
     with _stage("specfirst.structure") as st:
@@ -305,7 +413,17 @@ def run_spec_first(
             bound_failed = dict(bound.get("failed") or {})
             st["bound"] = len(bound.get("pages") or {})
             st["failed"] = len(bound_failed)
+            # 6.5 是 LLM 改写整页（提示词说"版式一个像素不改"，但没人验过）。
+            # 打完孔再量一次外壳一致性：菜单被 LLM 顺手动了，这里当场点名。
+            drift = check_shell_consistency(pages, spec)
+            st["shellProblems"] = len(drift)
+            for p in drift[:3]:
+                print(f"[spec_first_pipeline] 打孔后外壳漂移：{p['path']} — {p['message']}")
         stages["bind"] = dict(st)
+
+        # 打完孔的成品页重发（bound=True）：前端徽标从「尚未接数据」翻成
+        # 「已接数据」，不用等交付那一刻的 finalState。
+        _reemit_pages(sink, pages, bound=True)
 
     result = {
         "version": SPEC_FIRST_VERSION,
@@ -317,6 +435,7 @@ def run_spec_first(
         "navItems": shell.get("navItems") or [],
         "failedPages": {**failed, **bound_failed},
         "stages": stages,
+        "device": device,
     }
     # 顺路把页面留给调用方落库（见 take_last_pages 的说明）。
     # ⚠ 只在**整条链跑成**之后写：中途抛 SpecFirstError 时这里根本不执行，
@@ -327,5 +446,7 @@ def run_spec_first(
         "navItems": list(result["navItems"]),
         "boundPages": len(pages) if bind_html and not bound_failed else 0,
         "failedPages": dict(result["failedPages"]),
+        # 前端（直播舞台/应用中心）拿它选画布视口：desktop 横屏 / phone 竖屏
+        "device": device,
     })
     return result

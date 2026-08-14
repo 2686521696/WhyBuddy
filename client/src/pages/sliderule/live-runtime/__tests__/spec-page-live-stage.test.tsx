@@ -19,7 +19,11 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { SpecPageLiveStage, type SpecPageLive } from "../SpecPageLiveStage";
+import {
+  SpecPageLiveStage,
+  resolveActivePageId,
+  type SpecPageLive,
+} from "../SpecPageLiveStage";
 
 // 不设这个标志 React 会走"环境不支持 act"的兼容分支，更新不保证在 act 返回前
 // 冲干净——断言就变成在赛跑。
@@ -56,8 +60,12 @@ function update(pages: SpecPageLive[]): void {
   act(() => root!.render(<SpecPageLiveStage pages={pages} />));
 }
 
-const tab = (id: string) =>
-  host!.querySelector<HTMLButtonElement>(`[data-testid="sliderule-spec-page-tab-${id}"]`)!;
+// 页签条 2026-08-14 晚下架（切页归页面自己的菜单），当前页从舞台根节点的
+// data-active-page 属性读——它同时也是宿主/游标跟随的依据。
+const activePage = () =>
+  host!
+    .querySelector('[data-testid="sliderule-spec-page-stage"]')!
+    .getAttribute("data-active-page");
 const frames = () =>
   host!.querySelectorAll<HTMLIFrameElement>('[data-testid="html-app-surface"]');
 const stageText = () =>
@@ -82,24 +90,55 @@ describe("有页面就渲染，没页面就让位", () => {
 describe("没手动选过就跟最新一页", () => {
   it("页面陆续到达时，显示的是最后到的那页", () => {
     mount([page("p1", 1)]);
-    expect(tab("p1").getAttribute("aria-pressed")).toBe("true");
+    expect(activePage()).toBe("p1");
 
     update([page("p1", 1), page("p2", 2)]);
-    expect(tab("p2").getAttribute("aria-pressed")).toBe("true");
-    expect(tab("p1").getAttribute("aria-pressed")).toBe("false");
+    expect(activePage()).toBe("p2");
   });
 
-  it("手动选过之后，新页面到达不许把它挤走", () => {
+  it("选页判定：手动选过的页不被新到达的页挤走（resolveActivePageId）", () => {
     /**
      * ⚠ 这条钉的是"存 pageId 不是存下标"。存下标时新页面一到，同一个下标
      * 指向的就是另一页了——表现是"我明明点了甲页，它自己跳到乙页去"。
+     * 页签下架后手动选页的唯一入口是**框内菜单**（data-page-id → onNavigate
+     * → setPicked），jsdom 跑不了 srcdoc、组件层点不到——所以判定抽成
+     * 纯函数在这钉死，组件里就是原样调它。
      */
-    mount([page("p1", 1), page("p2", 2)]);
-    act(() => tab("p1").click());
-    expect(tab("p1").getAttribute("aria-pressed")).toBe("true");
+    const ps = [page("p1", 1), page("p2", 2), page("p3", 3)];
+    // 选过的页还在 → 听手动的，新页到达不挤
+    expect(resolveActivePageId("p1", ps)).toBe("p1");
+    // 没选过 → 跟最新
+    expect(resolveActivePageId(null, ps)).toBe("p3");
+    // 选的页不存在（换了一轮推演）→ 回落最新，不悬空
+    expect(resolveActivePageId("ghost", ps)).toBe("p3");
+    expect(resolveActivePageId(null, [])).toBeNull();
+  });
 
-    update([page("p1", 1), page("p2", 2), page("p3", 3)]);
-    expect(tab("p1").getAttribute("aria-pressed")).toBe("true");
+  it("defaultPageId 指定开屏页（应用中心预览落导航第一页用它）", () => {
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() =>
+      root!.render(
+        <SpecPageLiveStage pages={[page("p1", 1), page("p2", 2)]} defaultPageId="p1" />
+      )
+    );
+    expect(activePage()).toBe("p1");
+  });
+});
+
+describe("画布视口按设备选（2026-08-14 竖屏）", () => {
+  const badge = () =>
+    host!.querySelector('[data-testid="sliderule-spec-page-scale"]')!.textContent || "";
+
+  it("桌面页（device 缺席按桌面兜底）用 1920×1080", () => {
+    mount([page("p1", 1)]);
+    expect(badge()).toContain("1920×1080");
+  });
+
+  it("手机页用 1080×1920 —— 竖屏页塞进横屏画布等于看一个没被验收过的版式", () => {
+    mount([{ ...page("p1", 1), device: "phone" as const }]);
+    expect(badge()).toContain("1080×1920");
   });
 });
 
@@ -134,14 +173,15 @@ describe("进度与接数状态如实说", () => {
 describe("换页要重挂，不能留着上一页", () => {
   it("切页后 iframe 被整个替换（key 带 pageId）", () => {
     /**
-     * 沙箱是不透明源，框内内容看不见。所以判据落在**节点身份**上：
-     * key 变了 React 会新建一个 iframe，旧的那个不再在文档里。
-     * key 不带 pageId 的话 iframe 会被复用，srcdoc 换值时浏览器的重载时机
-     * 不一致，能看到上一页残留一瞬——那时这条会红。
+     * 判据落在**节点身份**上：key 变了 React 会新建一个 iframe，旧的那个
+     * 不再在文档里。key 不带 pageId 的话 iframe 会被复用，srcdoc 换值时
+     * 浏览器的重载时机不一致，能看到上一页残留一瞬——那时这条会红。
+     * 页签下架后组件层能触发的换页是"新页到达、跟随最新"，判据不变。
      */
-    mount([page("p1", 1), page("p2", 2)]);
+    mount([page("p1", 1)]);
     const before = frames()[0];
-    act(() => tab("p1").click());
+    update([page("p1", 1), page("p2", 2)]);
+    expect(activePage()).toBe("p2");
     expect(frames()[0]).not.toBe(before);
   });
 });
@@ -151,8 +191,10 @@ describe("跑完之后不许假装还在生成", () => {
    * ⚠ 这条是 08-14 那次交接改动带出来的：舞台在推演结束后**继续**渲染
    * 新链路的页面（原来是一收口就换回老链路区块页）。角标如果还挂着
    * 「界面生成中 5/5」，用户会一直等一个不会再变的东西。
+   * 页签条下架后 running=false 不再有任何进度角标——页数菜单里数得出来，
+   * 填数报告徽标留着（那是另一件事）。
    */
-  it("running=false 时角标说『共几页』，不说『生成中』", () => {
+  it("running=false 时没有『生成中』字样，填数徽标还在", () => {
     host = document.createElement("div");
     document.body.appendChild(host);
     root = createRoot(host);
@@ -161,9 +203,8 @@ describe("跑完之后不许假装还在生成", () => {
         <SpecPageLiveStage pages={[page("p1", 1, 2), page("p2", 2, 2)]} running={false} />
       )
     );
-    const text = stageText();
-    expect(text).toContain("共 2 页");
-    expect(text).not.toContain("生成中");
+    expect(stageText()).not.toContain("生成中");
+    expect(host!.querySelector('[data-testid="sliderule-spec-page-bound"]')).toBeTruthy();
   });
 
   it("默认仍按推演中处理 —— 老调用方不受影响", () => {

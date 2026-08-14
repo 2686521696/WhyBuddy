@@ -435,25 +435,9 @@ function HomeEmptyState({
     );
   };
 
-  // E41 官方示例库：工作台点模板卡 → 暂存起手意图 → 这里（空态挂载时）
-  // 消费预填输入框——用户按回车即以该场景起手推演，同一条管线无特殊通道。
-  useEffect(() => {
-    let pending = "";
-    try {
-      pending = localStorage.getItem("sliderule:pending-template-intent") ?? "";
-      if (pending) localStorage.removeItem("sliderule:pending-template-intent");
-    } catch {
-      return;
-    }
-    if (!pending) return;
-    // ComposerDock 的 fill-prompt 监听在子组件挂载后注册——迟一拍派发
-    const timer = window.setTimeout(() => {
-      window.dispatchEvent(
-        new CustomEvent("sliderule:fill-prompt", { detail: { text: pending } })
-      );
-    }, 300);
-    return () => window.clearTimeout(timer);
-  }, []);
+  // ⚑ E41 官方示例的「点模板卡 → 暂存起手意图 → 空态预填」消费端
+  //   已随示例库一起下架（2026-08-14，用户裁决清除四个官方示例）——
+  //   没有生产者再往 sliderule:pending-template-intent 写值。
   return (
     <div
       className="flex h-full flex-col items-center justify-center gap-9 text-center"

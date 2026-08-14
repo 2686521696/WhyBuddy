@@ -247,6 +247,8 @@ export interface DriveFullStreamOpts {
     current: number;
     total: number;
     bound: boolean;
+    /** desktop 横屏 1920×1080 / phone 竖屏 1080×1920——画布视口据此选（2026-08-14）。 */
+    device: "desktop" | "phone";
   }) => void;
   /** E25：后端 run id（事件里首见即回调一次）——客户端记书签供刷新后续播。 */
   onRunId?: (runId: string) => void;
@@ -377,6 +379,8 @@ async function consumeDriveStreamResponse(
                 current: Number(event.current) || 0,
                 total: Number(event.total) || 0,
                 bound: event.bound === true,
+                // 老后端不带 device——按桌面兜底，行为与从前逐字一致
+                device: event.device === "phone" ? "phone" : "desktop",
               });
             }
             break;

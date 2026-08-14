@@ -62,8 +62,21 @@ describe("spec_page 事件落到 onSpecPage", () => {
       (p) => got.push(p)
     );
     expect(got).toEqual([
-      { pageId: "p1", html: HTML, current: 1, total: 3, bound: false },
+      // device 缺席按桌面兜底（老后端没有这个字段，行为与从前一致）
+      { pageId: "p1", html: HTML, current: 1, total: 3, bound: false, device: "desktop" },
     ]);
+  });
+
+  it("device=phone 原样带过去 —— 竖屏页要进竖屏画布（2026-08-14）", async () => {
+    const got: Array<{ device: string }> = [];
+    await drive(
+      [
+        { type: "spec_page", pageId: "p1", html: HTML, current: 1, total: 1, bound: false, device: "phone" },
+        { type: "complete", state: STATE },
+      ],
+      (p) => got.push(p as { device: string })
+    );
+    expect(got[0].device).toBe("phone");
   });
 
   it("多页按到达顺序逐条回调 —— 不是攒齐一次给", async () => {
@@ -108,7 +121,7 @@ describe("spec_page 事件落到 onSpecPage", () => {
       (p) => got.push(p)
     );
     expect(got).toEqual([
-      { pageId: "p3", html: HTML, current: 1, total: 1, bound: false },
+      { pageId: "p3", html: HTML, current: 1, total: 1, bound: false, device: "desktop" },
     ]);
   });
 

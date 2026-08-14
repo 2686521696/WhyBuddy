@@ -36,14 +36,17 @@ from services.identity_store import get_identity_store
 router = APIRouter(tags=["Account"])
 
 
-def _set_auth_cookie(response: Response, token: str) -> None:
+def _set_auth_cookie(response: Response, token: str, request: Optional[Request] = None) -> None:
     """种登录 Cookie。
 
     · httponly —— XSS 拿不到
     · samesite=lax —— 挡住跨站表单/图片发起的写操作，同时不影响正常的站内跳转
     · secure 跟随请求协议：本地 http 开发也要能登上，所以不硬编码 True
       （硬编码会让 http://localhost 上的 Set-Cookie 被浏览器直接丢掉，
-       表现是"登录返回 200 但下一个请求还是未登录"，很难查）
+       表现是"登录返回 200 但下一个请求还是未登录"，很难查）。
+      2026-08-14 审计补：docstring 早就这么写了，实现里却一直没传 secure ——
+      HTTPS 部署下 cookie 照样能走明文 http 外带。现在真的跟随协议：
+      https（含反代 x-forwarded-proto）就打 Secure，本地 http 不打。
     """
     response.set_cookie(
         key=AUTH_COOKIE,
@@ -51,6 +54,7 @@ def _set_auth_cookie(response: Response, token: str) -> None:
         max_age=DEFAULT_TTL_S,
         httponly=True,
         samesite="lax",
+        secure=_client_is_https(request) if request is not None else False,
         path="/",
     )
 
@@ -94,7 +98,7 @@ async def register_complete(
     )
     if not result.get("ok"):
         raise HTTPException(400, result.get("message") or "注册失败")
-    _set_auth_cookie(response, result["token"])
+    _set_auth_cookie(response, result["token"], request)
     return result
 
 
@@ -111,7 +115,7 @@ async def login(response: Response, request: Request, payload: dict[str, Any] = 
         # 401 而不是 400：前端据此判断"要重新输密码"而不是"参数错了"。
         # 消息本身对"邮箱不存在"和"密码错误"是同一句（见 auth_service）。
         raise HTTPException(401, result.get("message") or "登录失败")
-    _set_auth_cookie(response, result["token"])
+    _set_auth_cookie(response, result["token"], request)
     return result
 
 
@@ -152,7 +156,7 @@ async def password_reset_complete(
     )
     if not result.get("ok"):
         raise HTTPException(400, result.get("message") or "重置失败")
-    _set_auth_cookie(response, result["token"])
+    _set_auth_cookie(response, result["token"], request)
     return result
 
 

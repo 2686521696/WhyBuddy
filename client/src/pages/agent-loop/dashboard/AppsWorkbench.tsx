@@ -4,21 +4,24 @@
  * 布局定稿（用户三条硬性要求，2026-07-17）：
  *   1. 卡片一律 16:9，字段内容以底部浮层压在图上（不再图上字下两段式）；
  *   2. 「我的应用 / 官方示例库」tab 切换——筛选口径不同，卡片样式相同；
+ *      ⚑ 2026-08-14 下架：E41 官方示例（四个 E35 冻结模型的投影卡）随
+ *      spec-first 成为默认链路后失去参照价值（示例是老区块链路的产物，
+ *      点卡起手的效果不再代表现在的生成质量），用户裁决清除。整个
+ *      examples tab / 分类 chips / 分页器 / 空态起手卡一并移除，
+ *      「我的应用」是唯一视图。
  *   3. 一行 4 张、每页最多三行（12 张），超出走分页器。
+ *      ⚑ 分页器随示例库一起下架——「我的应用」2026-07-31 起就是无限流。
  *
  * 北极星纪律不变：全部真数据、fail-closed——
  *   列表     — GET /api/sliderule/sessions（话题/时间/阶段）
  *   卡片详情 — GET /api/sliderule/sessions/:id 渐进拉取，
  *              五系统模型解析自持久化 perSkillEvidence（同应用舞台同源）
  *   我的应用缩略 — 按真实模型示意渲染（导航=真实页面名），不闭环不摆假截图
- *   示例库   — GET /api/sliderule/builtin-examples（E35 冻结过门模型投影）
- *              + 真截图资产；拉不到就如实空态
  *   状态     — 门语言（closed 6/6 / blocked / 推演中），不发明"质量分"
  */
 
 import React from "react";
 import { canWriteApp, useAuth } from "@/lib/use-auth";
-import { Pagination } from "antd";
 
 import { useContainerPosition } from "masonic";
 
@@ -54,7 +57,7 @@ import { captureAndUpload } from "@/lib/thumb-capture";
 import { resolveIdentityTheme } from "@/pages/sliderule/live-runtime/identity-themes";
 // spec-first HTML 应用面的配料（2026-08-14 应用中心接线）。这几个都是轻量纯
 // TS（无重依赖）；重的 DOMPurify/渲染面走下面的 React.lazy 分包。
-import { SPEC_PAGE_VIEWPORT, useScaleToFit } from "@/pages/sliderule/live-runtime/canvas-scale";
+import { specPageViewport, useScaleToFit } from "@/pages/sliderule/live-runtime/canvas-scale";
 import { deriveBindingSource } from "@/pages/sliderule/live-runtime/derive-binding-source";
 import { initRuntimeState } from "@/pages/sliderule/live-runtime/live-runtime";
 import { seedRuntimeState } from "@/pages/sliderule/live-runtime/demo-seed";
@@ -112,6 +115,9 @@ export interface SpecPagesDetail {
   navItems: Array<{ pageId?: string; label?: string }>;
   /** 打过孔（6.5 步绑定成功）的页数；0 = 素颜页 */
   boundPages: number;
+  /** desktop 横屏 1920×1080 / phone 竖屏 1080×1920（2026-08-14）。
+   *  老存档没有这个字段——按桌面兜底，行为与从前一致。 */
+  device?: "desktop" | "phone";
 }
 
 /**
@@ -139,6 +145,7 @@ export function extractSpecPages(raw: unknown): SpecPagesDetail | null {
     pages,
     navItems,
     boundPages: typeof r.boundPages === "number" ? r.boundPages : 0,
+    device: r.device === "phone" ? "phone" : "desktop",
   };
 }
 
@@ -473,9 +480,6 @@ const STATUS_META: Record<AppCardStatus, { label: string; cls: string; dot: stri
   draft: { label: "推演中", cls: "bg-blue-50 text-[#1677ff]", dot: "bg-[#4d9aff]" },
 };
 
-/** 每页 12 张 = 一行 4 × 最多三行（用户硬性要求），超出走分页器。 */
-const PAGE_SIZE = 12;
-
 /** 未闭环/无模型时的占位态（推演中 / blocked）——不是缩略图失败兜底，是诚实展示进度。 */
 function PendingAppThumb({ detail }: { detail: AppCardDetail | null }) {
   return (
@@ -563,7 +567,8 @@ const LazyHtmlAppSurface = React.lazy(() =>
   }))
 );
 
-// 只读预览模态用的整页舞台（页签 + 缩放画布 + 填数角标），与推演右侧同一个组件。
+// 只读预览模态用的整页舞台（缩放画布 + 填数徽标，切页走页面自己的菜单），
+// 与推演右侧同一个组件。
 const LazySpecPageStage = React.lazy(() =>
   import("@/pages/sliderule/live-runtime/SpecPageLiveStage").then(m => ({
     default: m.SpecPageLiveStage,
@@ -760,13 +765,11 @@ function HtmlLiveThumb({
   model: FiveSystemModel | null;
 }) {
   const { wrapRef, visible } = useThumbMountGate();
+  // 视口按设备选（2026-08-14 竖屏）：桌面 1920×1080 / 手机 1080×1920。
+  const viewport = specPageViewport(specPages.device);
   // 宽度定缩放（跟 LiveAppThumb 的 scaleFit="width" 同一条理由）：页面是照
-  // 1920 画的，卡片看顶部那一屏就够；contain 在 9:16 的手机档卡里会留大灰边。
-  const { ref: fitRef, scale } = useScaleToFit(
-    SPEC_PAGE_VIEWPORT.w,
-    SPEC_PAGE_VIEWPORT.h,
-    "width"
-  );
+  // 固定视口画的，卡片看顶部那一屏就够；contain 在 9:16 的手机档卡里会留大灰边。
+  const { ref: fitRef, scale } = useScaleToFit(viewport.w, viewport.h, "width");
   const landing = React.useMemo(() => orderedSpecPages(specPages)[0] ?? null, [specPages]);
   const source = React.useMemo(
     () => deriveBindingSource(model, model ? seedRuntimeState(initRuntimeState(model), model) : null),
@@ -783,8 +786,8 @@ function HtmlLiveThumb({
           <React.Suspense fallback={<div className="h-full w-full bg-[#f0f2f5]" />}>
             <div
               style={{
-                width: SPEC_PAGE_VIEWPORT.w,
-                height: SPEC_PAGE_VIEWPORT.h,
+                width: viewport.w,
+                height: viewport.h,
                 transform: `scale(${scale})`,
                 transformOrigin: "top left",
                 overflow: "hidden",
@@ -802,8 +805,9 @@ function HtmlLiveThumb({
 
 /**
  * 只读预览模态里的 HTML 应用面：与推演右侧同一个舞台组件
- * （SpecPageLiveStage：页签 + 1920×1080 缩放画布 + 填数角标），running=false、
- * 开屏落在导航第一页。运行时是**内存种子**、不传 onAction——只读预览既不该
+ * （SpecPageLiveStage：1920×1080 缩放画布 + 填数徽标，切页走页面自己的
+ * 菜单），running=false、开屏落在导航第一页。运行时是**内存种子**、
+ * 不传 onAction——只读预览既不该
  * 改数据，也不该在本机留痕（比 preview:{id} 命名空间做得更干净：连槽位都不占）。
  */
 function SpecPagesPreview({
@@ -825,6 +829,8 @@ function SpecPagesPreview({
       current: i + 1,
       total: ordered.length,
       bound: (specPages.boundPages ?? 0) > 0,
+      // 竖屏应用在预览模态里也得进竖屏画布（SpecPageLiveStage 按它选视口）
+      device: specPages.device,
     }));
   }, [specPages]);
   return (
@@ -1185,24 +1191,6 @@ function AppWall({
   );
 }
 
-/** 官方示例（E41）：E35 冻结过门模型的摘要投影（API 返回，全真数据）。 */
-export interface BuiltinExample {
-  domain: string;
-  productName: string;
-  theme: string;
-  icon: string;
-  nav: string;
-  intent: string;
-  category: string;
-  pages: number;
-  roles: number;
-  aiCapabilities: number;
-  tags: string[];
-}
-
-/** 点模板 = 新会话 + 暂存起手意图（SlideRule 页挂载时消费预填输入框）。 */
-export const PENDING_TEMPLATE_INTENT_KEY = "sliderule:pending-template-intent";
-
 export function AppsWorkbench() {
   // 两条数据源：apps = App Store 闭环应用（摘要，有血缘/版本/可复刻）；
   // sessions = 会话（含尚未落库的在推演草稿）。合并成画廊条目（mergeGalleryItems）。
@@ -1216,7 +1204,6 @@ export function AppsWorkbench() {
   const [pyOk, setPyOk] = React.useState<boolean | null>(null);
   const [llm, setLlm] = React.useState<{ provider: string; model: string; keyPresent: boolean } | null | false>(null);
   const [healthOpen, setHealthOpen] = React.useState(false);
-  const [tab, setTab] = React.useState<"mine" | "examples">("mine");
   // 登录态：决定复刻/删除按钮显不显示（真判定在后端）
   const { user: authUser, capabilities } = useAuth();
   const [filter, setFilter] = React.useState<GalleryFilter>("all");
@@ -1241,21 +1228,13 @@ export function AppsWorkbench() {
   const [previewModal, setPreviewModal] = React.useState<GalleryItem | null>(null);
   const [forkBusy, setForkBusy] = React.useState(false);
   const [forkError, setForkError] = React.useState<string | null>(null);
-  const [page, setPage] = React.useState(1);
   // E28：订阅会话库更新事件（侧栏删会话/新话题落盘）→ 重拉画廊
   const [reloadKey, setReloadKey] = React.useState(0);
-  // E41 官方示例库（静态演示无后端 → 不拉不显示，如实为空）
-  const [examples, setExamples] = React.useState<BuiltinExample[]>([]);
-  const [exampleCat, setExampleCat] = React.useState("全部");
   React.useEffect(() => {
     const bump = () => setReloadKey(k => k + 1);
     window.addEventListener(SESSIONS_UPDATED_EVENT, bump);
     return () => window.removeEventListener(SESSIONS_UPDATED_EVENT, bump);
   }, []);
-  // 筛选口径变化 → 回第一页（分页器与筛选联动）
-  React.useEffect(() => {
-    setPage(1);
-  }, [tab, filter, query, exampleCat, sortDesc]);
 
   React.useEffect(() => {
     let alive = true;
@@ -1352,10 +1331,6 @@ export function AppsWorkbench() {
       });
       void Promise.all(workers);
     });
-    fetch("/api/sliderule/builtin-examples")
-      .then(r => (r.ok ? r.json() : null))
-      .then(d => alive && setExamples(Array.isArray(d?.examples) ? d.examples : []))
-      .catch(() => alive && setExamples([]));
     fetch("/api/health")
       .then(r => alive && setNodeOk(r.ok))
       .catch(() => alive && setNodeOk(false));
@@ -1409,15 +1384,6 @@ export function AppsWorkbench() {
         setListError(String(e instanceof Error ? e.message : e));
       }
     })();
-  };
-
-  const useTemplate = (example: BuiltinExample) => {
-    try {
-      localStorage.setItem(PENDING_TEMPLATE_INTENT_KEY, example.intent);
-    } catch {
-      /* 隐私模式无存储：仍然打开新会话，用户手动输入 */
-    }
-    openNewSession();
   };
 
   /** 删卡：App Store 卡删记录（DELETE /apps/{id}，不动会话）；会话草稿卡删会话。 */
@@ -1513,26 +1479,6 @@ export function AppsWorkbench() {
     blocked: paired.filter(p => p.detail && p.detail.blocked && p.detail.status !== "runnable").length,
     draft: paired.filter(p => p.detail && p.detail.status !== "runnable" && !p.detail.blocked).length,
   };
-  // 示例库筛选：分类 chips + 共享搜索框（搜产品名/意图/分类）
-  const q = query.trim().toLowerCase();
-  const visibleExamples = examples.filter(e => {
-    if (exampleCat !== "全部" && e.category !== exampleCat) return false;
-    if (!q) return true;
-    return (
-      e.productName.toLowerCase().includes(q) ||
-      e.intent.toLowerCase().includes(q) ||
-      e.category.toLowerCase().includes(q)
-    );
-  });
-  // 分页只剩「官方示例」这一个 tab 在用。
-  //
-  // 「我的应用」2026-07-31 起改成无限流（用户裁决）：卡片墙要的是一条连续的墙，
-  // 12 张在 5 列里只有 2.4 行，怎么调都堆不出墙的观感。取消切片之后靠虚拟化
-  // 扛住数量——SpanMasonry 只渲染视口内外两屏的格子，跟一页 12 张时的挂载量
-  // 是同一个数量级。示例库是普通网格、条目固定且少，保持原样。
-  const totalItems = visibleExamples.length;
-  const pagedExamples = visibleExamples.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
   // ── 「我的应用」卡片墙（2026-07-31）──────────────────────────────────
   //
   // 走 **masonic**（jaredLunde，1406★）。为什么从 react-photo-album 换过来：
@@ -1821,9 +1767,7 @@ export function AppsWorkbench() {
             data-testid="apps-search"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder={
-              tab === "mine" ? "搜索应用、功能或解决方案…" : "搜索官方示例…"
-            }
+            placeholder="搜索应用、功能或解决方案…"
             className="w-full rounded-lg border-0 bg-white/70 py-2.5 pl-10 pr-4 text-[13px] text-slate-800 outline-none ring-1 ring-slate-200/60 placeholder:text-slate-400 transition focus:bg-white focus:ring-2 focus:ring-[#5b6cff]/25"
           />
         </div>
@@ -1901,41 +1845,9 @@ export function AppsWorkbench() {
         </div>
       </div>
 
-      {/* 第二行：库切换 + 门语言筛选 / 分类 — 无底板 */}
+      {/* 第二行：门语言筛选 — 无底板。库切换（我的应用/官方示例）2026-08-14
+          随示例库下架：只剩一个库，切换器本身就是噪音。 */}
       <div className="mt-4 flex flex-wrap items-center gap-1.5">
-        {(
-          [
-            { key: "mine" as const, label: "我的应用", count: paired.length },
-            { key: "examples" as const, label: "官方示例", count: examples.length },
-          ]
-        ).map(t => (
-          <button
-            key={t.key}
-            type="button"
-            aria-pressed={tab === t.key}
-            data-testid={`apps-tab-${t.key}`}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition ${
-              tab === t.key
-                ? "bg-[#e8eeff] text-[#3b5bdb]"
-                : "bg-transparent text-slate-500 hover:bg-white/60 hover:text-slate-700"
-            }`}
-            onClick={() => setTab(t.key)}
-          >
-            {t.label}
-            <span
-              className={`tabular-nums text-[11px] ${
-                tab === t.key ? "text-[#3b5bdb]/80" : "text-slate-400"
-              }`}
-            >
-              {t.count}
-            </span>
-          </button>
-        ))}
-
-        <span className="mx-1 hidden h-4 w-px bg-slate-200 sm:inline-block" />
-
-        {tab === "mine" ? (
-          <>
             <StatChip
               icon={<LayoutGrid size={13} />}
               label="全部"
@@ -1975,29 +1887,11 @@ export function AppsWorkbench() {
                 {sortDesc ? "最近更新" : "最早更新"}
               </button>
             </div>
-          </>
-        ) : (
-          ["全部", ...Array.from(new Set(examples.map(e => e.category)))].map(cat => (
-            <button
-              key={cat}
-              data-testid={`example-cat-${cat}`}
-              className={`rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition ${
-                exampleCat === cat
-                  ? "bg-[#e8eeff] text-[#3b5bdb]"
-                  : "bg-transparent text-slate-500 hover:bg-white/60 hover:text-slate-700"
-              }`}
-              onClick={() => setExampleCat(cat)}
-            >
-              {cat}
-            </button>
-          ))
-        )}
       </div>
       </div>
 
-      {/* ===== 我的应用 tab ===== */}
-      {tab === "mine" &&
-        (listError ? (
+      {/* ===== 我的应用（唯一视图） ===== */}
+      {(listError ? (
           <div className="mt-8 text-[13px] text-red-500">会话列表拉取失败：{listError}</div>
         ) : items == null ? (
           // 骨架屏（对标 ToolJet AppList skeleton）：铺等尺寸占位卡，不跳版
@@ -2011,7 +1905,7 @@ export function AppsWorkbench() {
           </div>
         ) : visible.length === 0 ? (
           paired.length === 0 ? (
-            // 首次空态（对标 ToolJet BlankPage）：插画 + 引导 + 创建 CTA + 官方示例起手卡
+            // 首次空态（对标 ToolJet BlankPage）：插画 + 引导 + 创建 CTA
             <div className="mt-10 flex flex-col items-center text-center" data-testid="apps-empty-first">
               <EmptyGalleryArt />
               <div className="mt-4 text-[15px] font-semibold text-slate-800">还没有应用</div>
@@ -2025,30 +1919,6 @@ export function AppsWorkbench() {
               >
                 <span className="text-[15px] leading-none">+</span> 创建新应用
               </button>
-              {examples.length > 0 && (
-                <div className="mt-8 w-full max-w-lg">
-                  <div className="mb-2.5 text-[12px] text-slate-400">或从官方示例起手</div>
-                  <div className="flex flex-wrap justify-center gap-2">
-                    {examples.slice(0, 4).map(ex => {
-                      const th = resolveIdentityTheme(ex.theme);
-                      return (
-                        <button
-                          key={ex.domain}
-                          data-testid={`empty-starter-${ex.domain}`}
-                          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12.5px] text-slate-700 shadow-sm transition hover:border-[#5b6cff]/50 hover:shadow"
-                          onClick={() => useTemplate(ex)}
-                        >
-                          <span
-                            className="h-2.5 w-2.5 rounded-full"
-                            style={{ background: th.primary }}
-                          />
-                          {ex.productName}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </div>
           ) : (
             // 搜不到（有应用，但当前搜索/筛选无匹配）
@@ -2074,89 +1944,11 @@ export function AppsWorkbench() {
             // key 跟着筛选走：定位器的高度缓存按 index 存，换了数据集不重建的话
             // 会拿旧高度去摆新卡片。数量变化不进 key——那是无限流追加的正常情形，
             // 重建会把已量到的高度全丢掉，追加一批就整墙闪一次。
-            key={`wall-${tab}-${filter}-${query}`}
+            key={`wall-${filter}-${query}`}
             items={visible}
             renderCard={renderAppCard}
           />
         ))}
-
-      {/* ===== 官方示例库 tab =====
-          每张卡背后是一个过了结构门的冻结五系统模型——真产品名/真主题/
-          真指标/真截图，数量如实（有几个过门模型摆几张）。
-          点卡 = 新会话预填起手意图，走同一条推演管线（不是复制死模板）。 */}
-      {tab === "examples" &&
-        (examples.length === 0 ? (
-          <div className="mt-8 text-[13px] text-stone-400" data-testid="example-gallery-empty">
-            示例库暂不可用——需要 Python 推演服务在线（/api/sliderule/builtin-examples）
-          </div>
-        ) : visibleExamples.length === 0 ? (
-          <div className="mt-8 text-[13px] text-stone-400">没有匹配的示例</div>
-        ) : (
-          <div className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4" data-testid="example-gallery">
-            {pagedExamples.map(example => {
-              const theme = resolveIdentityTheme(example.theme);
-              const Icon = BRAND_LUCIDE[example.icon] ?? Boxes;
-              const shot = `${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/assets/examples/${example.domain}.png`;
-              return (
-                // CenterCard 2026-07-31 起填满父容器（宽高比交给调用方决定）。
-                // 官方示例仍是等尺寸网格，比例由这层 aspect-video 提供。
-                <div key={example.domain} className="aspect-video">
-                <CenterCard
-                  testid={`example-card-${example.domain}`}
-                  title={example.productName}
-                  titleAttr={example.intent}
-                  Icon={Icon}
-                  iconBg={theme.primary}
-                  media={
-                    <div className="relative h-full w-full bg-[#f4f6f9]">
-                      {/* 真应用截图（playwright 实跑闭环后拍摄；缺图诚实显示占位说明） */}
-                      <img
-                        src={shot}
-                        alt={`${example.productName} 真实截图`}
-                        className="h-full w-full object-cover object-top"
-                        loading="lazy"
-                        onError={e => {
-                          (e.currentTarget as HTMLImageElement).style.display = "none";
-                          (e.currentTarget.nextElementSibling as HTMLElement | null)?.classList.remove("hidden");
-                        }}
-                      />
-                      <div className="hidden absolute inset-0 items-center justify-center text-[11px] text-stone-400">
-                        截图生成中
-                      </div>
-                    </div>
-                  }
-                  metrics={
-                    <>
-                      <span>页面 {example.pages}</span>
-                      <span>角色 {example.roles}</span>
-                      <span>AI {example.aiCapabilities}</span>
-                      <span className="text-white/60 opacity-0 transition group-hover:opacity-100">
-                        点卡起手 →
-                      </span>
-                    </>
-                  }
-                  statusDot="bg-emerald-400"
-                  statusLabel="closed 6/6"
-                  onClick={() => useTemplate(example)}
-                />
-                </div>
-              );
-            })}
-          </div>
-        ))}
-
-      {/* 分页器：一页 12 张（4 × 3）。只剩示例库在用——「我的应用」改无限流了。 */}
-      {tab === "examples" && totalItems > PAGE_SIZE && (
-        <div className="mt-6 flex justify-center" data-testid="apps-pagination">
-          <Pagination
-            current={page}
-            pageSize={PAGE_SIZE}
-            total={totalItems}
-            onChange={p => setPage(p)}
-            showSizeChanger={false}
-          />
-        </div>
-      )}
 
       {/* 只读预览：点开别人的应用走这里，不进对方的会话（见 previewModal 的说明）。
           渲染器就是活渲染缩略图用的那一个，模型也是同一份，只是不再缩到卡片里。 */}

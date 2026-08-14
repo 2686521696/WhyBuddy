@@ -65,6 +65,17 @@ describe("SettingsDialog（设置中心重构）", () => {
     expect(html).toBe("");
   });
 
+  it("用量统计分类在导航上（2026-08-14 加）", () => {
+    // renderToStaticMarkup 不跑 effect——这里只验导航项在场；
+    // 面板本体要 fetch /api/sliderule/usage，聚合口径由后端
+    // test_usage_summary.py 三条钉住（归属过滤/分账/空账）。
+    const html = renderToStaticMarkup(
+      <SettingsDialog open onClose={() => {}} sessionId="s1" />
+    );
+    expect(html).toContain('data-testid="sliderule-settings-nav-usage"');
+    expect(html).toContain("用量统计");
+  });
+
   it("系统设置：「偏好」三控件（减少动效/完成通知/Enter 行为）+ 隐私事实说明在场", () => {
     const html = renderToStaticMarkup(<SystemPrefs sessionId="s1" />);
     expect(html).toContain('data-testid="sliderule-settings-user-prefs"');

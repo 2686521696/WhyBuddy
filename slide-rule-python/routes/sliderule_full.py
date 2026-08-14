@@ -332,6 +332,107 @@ def _session_payload(state: Any) -> Dict[str, Any]:
     }
 
 
+@router.get("/usage")
+def usage_summary(
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """用量统计：把当前访问者**读得到的**会话里的 costLedger 聚合成一份账。
+
+    ## 数据从哪来
+    每次能力执行都会往 state.costLedger 记一条 CapabilityCostRecord
+    （estimatedTokens / estimatedCostUsd / durationMs / source，见
+    models/v5_state.py 与 slide_rule_executor._write_capability_telemetry）。
+    账一直在记，只是此前**没有任何一个接口把它读出来**——设置面板要展示
+    用量，缺的是出口不是台账。
+
+    ## 归属口径与 GET /sessions 完全同一条
+    session_access >= READ 才计入。匿名访问者读不到任何会话 → 空账，
+    与会话列表"匿名返回空"同一行为，不另发明第二套判定（列表与聚合
+    漂移就是泄漏：A 看不见的会话却出现在 A 的账单里）。
+
+    ## 为什么如实带 source
+    绝大多数记录是 source="estimated"（len(content)//4 的粗估），不是
+    计费口径。前端必须能把「估算」两个字写在脸上——把估算当账单是
+    比没有账单更糟的事。
+    """
+    _auth(x_internal_key)
+    from services.app_access import session_access, Access
+
+    states = list((load_all() or {}).values()) or list(_sessions.values())
+    totals = {"sessions": 0, "runs": 0, "estimatedTokens": 0,
+              "estimatedCostUsd": 0.0, "durationMs": 0}
+    by_capability: Dict[str, Dict[str, Any]] = {}
+    by_day: Dict[str, Dict[str, Any]] = {}
+    by_source: Dict[str, int] = {}
+    by_session: Dict[str, Dict[str, Any]] = {}
+
+    for s in states:
+        if session_access(_session_payload(s), viewer) < Access.READ:
+            continue
+        ledger = getattr(s, "costLedger", None) or []
+        if not ledger:
+            continue
+        sid = getattr(s, "sessionId", "")
+        g = s.goal if isinstance(getattr(s, "goal", None), dict) else {}
+        goal_text = (g.get("text", "") if isinstance(g, dict) else "")[:60]
+        totals["sessions"] += 1
+        sess_agg = by_session.setdefault(sid, {
+            "sessionId": sid, "goal": goal_text, "runs": 0,
+            "estimatedTokens": 0, "estimatedCostUsd": 0.0,
+        })
+        for rec in ledger:
+            r = rec if isinstance(rec, dict) else (
+                rec.model_dump() if hasattr(rec, "model_dump") else {}
+            )
+            tokens = int(r.get("estimatedTokens") or 0)
+            cost = float(r.get("estimatedCostUsd") or 0.0)
+            duration = int(r.get("durationMs") or 0)
+            cap = str(r.get("capabilityId") or "unknown")
+            source = str(r.get("source") or "estimated")
+            day = str(r.get("createdAt") or "")[:10]
+
+            totals["runs"] += 1
+            totals["estimatedTokens"] += tokens
+            totals["estimatedCostUsd"] += cost
+            totals["durationMs"] += duration
+            by_source[source] = by_source.get(source, 0) + 1
+            sess_agg["runs"] += 1
+            sess_agg["estimatedTokens"] += tokens
+            sess_agg["estimatedCostUsd"] += cost
+
+            cap_agg = by_capability.setdefault(cap, {
+                "capabilityId": cap, "runs": 0,
+                "estimatedTokens": 0, "estimatedCostUsd": 0.0, "durationMs": 0,
+            })
+            cap_agg["runs"] += 1
+            cap_agg["estimatedTokens"] += tokens
+            cap_agg["estimatedCostUsd"] += cost
+            cap_agg["durationMs"] += duration
+
+            if day:
+                day_agg = by_day.setdefault(day, {
+                    "date": day, "runs": 0,
+                    "estimatedTokens": 0, "estimatedCostUsd": 0.0,
+                })
+                day_agg["runs"] += 1
+                day_agg["estimatedTokens"] += tokens
+                day_agg["estimatedCostUsd"] += cost
+
+    return {
+        "totals": totals,
+        "byCapability": sorted(
+            by_capability.values(),
+            key=lambda x: (-x["estimatedTokens"], x["capabilityId"]),
+        ),
+        "byDay": sorted(by_day.values(), key=lambda x: x["date"]),
+        "bySource": by_source,
+        "bySession": sorted(
+            by_session.values(), key=lambda x: -x["estimatedTokens"]
+        )[:20],
+    }
+
+
 def _adopt_owner(state, viewer):
     """会话没有归属时，认到当前访问者名下。**每个"从请求体造会话"的地方都要调。**
 
@@ -441,6 +542,19 @@ def _require_login(viewer) -> None:
     from services.request_context import set_current_user
 
     set_current_user(viewer)
+
+
+def _require_superuser(viewer) -> None:
+    """服务器级配置（LLM 通道 override、全量导出）只归平台管理员。
+
+    2026-08-14 审计补：这几条路此前只有 `_auth`（内部密钥），而非生产环境
+    密钥可以不带——等于任何能连到端口的人都能改服务端 LLM 通道、拖走全部
+    应用记录。判定与 app_access._is_super 同一字段（is_superuser），
+    不另发明第二套管理员概念。
+    """
+    _require_login(viewer)
+    if not bool(getattr(viewer, "is_superuser", False)):
+        raise HTTPException(status_code=403, detail="需要管理员权限")
 
 
 @router.post("/sessions")
@@ -713,8 +827,15 @@ def delete_sess(
     return {**result, "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
 @router.post("/orchestrate-plan")
-async def plan(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
+async def plan(
+    payload: Dict[str, Any],
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
+    # 2026-08-14 审计补：与 drive-full 同一条门（匿名只能查看，推演类动作
+    # 要登录）。此前这条只有内部密钥，非生产环境等于全开。
     _auth(x_internal_key)
+    _require_login(viewer)
     res = await _run_orchestrate_plan(payload)
     if isinstance(res, dict):
         res["provenance"] = res.get("provenance") or PROVENANCE_PYTHON_RAG
@@ -722,8 +843,15 @@ async def plan(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(N
     return res
 
 @router.post("/execute-capability")
-async def exec_cap(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
+async def exec_cap(
+    payload: Dict[str, Any],
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
+    # 2026-08-14 审计补：这条会 save_session（能写库），却连 viewer 都没取。
+    # 与 drive-full / orchestrate-plan 同一条门。
     _auth(x_internal_key)
+    _require_login(viewer)
     # For execute-capability in drive context (JS driver or mixed), the incoming state
     # may contain previously server-constructed artifacts (with producedBy, gated_pass etc.)
     # from prior commits in the same turn or loaded session state.
@@ -981,6 +1109,10 @@ async def drive_marathon_route(
     the Python decision instead of owning maxTurns/maxRuns/maxRepeat/maxTokens locally.
     """
     _auth(x_internal_key)
+    # 2026-08-14 审计补：会落库的推演路必须登录（与 drive-full 的 :920 同款）。
+    # 此前只认了归属没设门——匿名跑一轮，_adopt_owner 认不到主体，
+    # 造出来的还是无主会话。
+    _require_login(viewer)
     # 它把 drive_reasoning_turn 当步进器跑，而那个函数内部会 save_session ——
     # 也就是**这条路会落库**，所以同样得认归属（2026-08-09）。原来这条路由
     # 连 viewer 都没取，无从认起。
@@ -1442,13 +1574,10 @@ def prompt_refine(payload: Dict[str, Any], x_internal_key: Optional[str] = Heade
     }
 
 
-@router.get("/builtin-examples")
-def builtin_examples():
-    """官方示例库（E41）：E35 冻结过门模型的摘要投影——真身份、真指标、
-    起手意图。没有过门模型就没有示例（数量如实）。"""
-    from services.builtin_examples import list_builtin_examples
-
-    return {"examples": list_builtin_examples()}
+# ⚑ GET /builtin-examples（E41 官方示例库）已下架（2026-08-14，用户裁决）：
+#   四张示例卡是老区块链路的冻结模型投影，spec-first 成为默认链路后
+#   失去参照价值。前端消费面（AppsWorkbench examples tab）同批移除。
+#   E35 冻结模型本体（builtin_domain_models.json）保留——组件库等处还在用。
 
 
 @router.post("/attachments/extract")
@@ -1672,16 +1801,32 @@ def llm_channel_status(x_internal_key: Optional[str] = Header(None)):
 
 
 @router.post("/llm-channel")
-def llm_channel_update(payload: Dict[str, Any], x_internal_key: Optional[str] = Header(None)):
-    """更新通道 override：非空字符串=覆盖，空串/null=清除回退 .env。"""
+def llm_channel_update(
+    payload: Dict[str, Any],
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """更新通道 override：非空字符串=覆盖，空串/null=清除回退 .env。
+
+    2026-08-14 审计补：改的是**服务器级** LLM 通道（所有人的推演都走它），
+    只归管理员。此前任何人都能把全站的 LLM 指到自己的端点上。
+    """
     _auth(x_internal_key)
+    _require_superuser(viewer)
     return _llm_channel_set(payload or {})
 
 
 @router.post("/llm-channel/test")
-def llm_channel_test(x_internal_key: Optional[str] = Header(None)):
-    """对真通道发一次极小请求，结果如实返回（不粉饰失败）。"""
+def llm_channel_test(
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """对真通道发一次极小请求，结果如实返回（不粉饰失败）。
+
+    与更新同一道门：测试会真烧一次 LLM 调用，也不该对匿名开放。
+    """
     _auth(x_internal_key)
+    _require_superuser(viewer)
     return _llm_channel_test()
 
 
@@ -1983,6 +2128,7 @@ def _looks_like_image(data: bytes) -> bool:
 async def upload_generated_app_shot(
     app_id: str,
     request: Request,
+    viewer: CurrentUserOptional,
     x_internal_key: Optional[str] = Header(None),
 ):
     """收前端采集到的应用真实截图（缩略图优先级的第一级）。
@@ -2011,8 +2157,14 @@ async def upload_generated_app_shot(
     from services import app_store
 
     # 同步库调用走 to_thread，理由见 list_generated_apps。
-    if await asyncio.to_thread(app_store.get_app, app_id) is None:
+    record = await asyncio.to_thread(app_store.get_app, app_id)
+    if record is None:
         raise HTTPException(404, "app not found")
+    # 2026-08-14 审计补：门槛是 **READ 不是 WRITE**——采集的设计本来就是
+    # "谁在应用中心看见这张卡，谁的浏览器顺手把图补上"（见上面的头注），
+    # 公共应用的众包补图要保住。挡的是另一半：看不见的私有应用不许被
+    # 盲猜 id 塞图（require 对无权者报 404，不确认 id 存在）。
+    app_access.require("view", record, viewer)
     if await asyncio.to_thread(app_store.app_has_shot, app_id):
         return {"stored": False, "reason": "already_has_shot"}
 
@@ -2031,13 +2183,23 @@ async def upload_generated_app_shot(
 
 
 @router.get("/apps/{root_id}/versions")
-async def list_generated_app_versions(root_id: str, x_internal_key: Optional[str] = Header(None)):
-    """一个应用的改版历史（同 root 的所有版本，按 version 升序，摘要）。"""
+async def list_generated_app_versions(
+    root_id: str,
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """一个应用的改版历史（同 root 的所有版本，按 version 升序，摘要）。
+
+    2026-08-14 审计补：逐条过 filter_records——列表路由 `/apps` 早就过滤了，
+    这条改版历史漏了，私有应用的版本链（含名字、话题摘要）拿 root_id 就能枚举。
+    摘要字段里 owner_id/visibility 都在（_summary 只去大载荷），直接复用同一份判定。
+    """
     _auth(x_internal_key)
     from services import app_store
+    from services.app_access import filter_records
 
     versions = await asyncio.to_thread(app_store.list_versions, root_id)
-    return {"versions": versions}
+    return {"versions": filter_records(versions, viewer)}
 
 
 @router.post("/components/assemble")
@@ -2187,6 +2349,7 @@ async def list_component_presets(
 @router.post("/components/presets")
 async def save_component_preset(
     payload: Dict[str, Any],
+    viewer: CurrentUserOptional,
     x_internal_key: Optional[str] = Header(None),
 ):
     """把一次 AI 组装的结果存成模板。
@@ -2199,8 +2362,12 @@ async def save_component_preset(
     逐条过完契约的那一份。再验一遍不是更安全，是给了调用方一个"绕过组装直接
     塞任意 blocks"的入口——真要那样，验的也该是同一个 _validate，而不是另写
     一套判据。所以这里只做形状检查，内容信任来源。
+
+    2026-08-14 审计补：要登录——删模板那条早就要（"读公开，写删不是"），
+    存这条漏了，匿名可以往公共模板库里无限塞条目。
     """
     _auth(x_internal_key)
+    _require_login(viewer)
     from services.component_preset_store import get_preset_store
 
     blocks = payload.get("blocks")
@@ -2384,9 +2551,17 @@ async def delete_generated_app(
 
 
 @router.get("/apps-export")
-async def export_generated_apps(x_internal_key: Optional[str] = Header(None)):
-    """导出全部应用记录（备份/迁移）——无论后端在哪，手上永远有一份可迁移真数据。"""
+async def export_generated_apps(
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """导出全部应用记录（备份/迁移）——无论后端在哪，手上永远有一份可迁移真数据。
+
+    2026-08-14 审计补：全量导出含**所有人**的私有应用（完整 model_json），
+    是管理员的备份工具，不是公共接口。此前匿名一个 GET 就能拖走全库。
+    """
     _auth(x_internal_key)
+    _require_superuser(viewer)
     from services import app_store
 
     return {"apps": app_store.export_all()}
