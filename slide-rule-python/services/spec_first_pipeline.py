@@ -36,12 +36,28 @@ spec_semantics → model_assembly → html_bindings）此前是**七个可独立
 的 create/text.py，第 5 步的权限合法性照 Apache Casbin 的 {subject, object, action}。
 编排这一层没有可抄的。
 
-## 上线方式照仓里的老规矩：开关默认关，拿证据换默认开
+## 开关：2026-08-14 起**默认开**，`SLIDERULE_SPEC_FIRST=0` 才关
 
-`SLIDERULE_SPEC_FIRST` 缺省 off。先例：目录窄化默认关到攒够评测
-（3 覆盖域 × 2 臂 × n=6，p=0.00004）才翻默认；agentic pick 也是十话题 4:0
-之后才转正。这条链路一轮 8~9 分钟、烧十几次 LLM，**没有对照就翻默认是拿
-生产当实验台**。
+原先缺省 off，照的是目录窄化（3 覆盖域 × 2 臂 × n=6，p=0.00004）和 agentic
+pick（十话题 4:0）那两次"拿证据换默认开"的老规矩。
+
+翻默认由用户拍板。手上的对照支持这个方向，但**要如实说清它有多薄**：
+n=3 的一轮 A/B（experiments/visual-first/ab_spec_first.py），同一个话题——
+
+    过闸      NEW 3/3          OLD 2/3
+    findings  NEW 恒 0          OLD 有拦
+    页面数    NEW 恒 5          OLD 4~6（同一句话，页数自己在飘）
+    字段      NEW 声明 40 / 页面真用 38（95%）
+              OLD 声明 51 / 页面真用 36（71%，15 个字段一次都没出现过）
+
+⚠ 那条"OLD 字段多 30%"是**判据错**，不是结论：它数的是声明数，不是用到的数。
+按用到的数 NEW 38 > OLD 36。这一轮里判据被返工过四次，记在这儿是为了下次
+别再拿"造个数替代看一眼"当证据。
+
+⚠ 一轮 n=3 够不上前两次翻默认的量级（那两次是 p 值和十话题）。所以这不是
+"攒够了证据"，是**用户在知道证据有多薄的前提下决定的**。真正的兜底是失败
+不静默：整条链挂了就抛，由 v5_capability_executor 显式回落老路并打日志——
+"新链路跑通了"和"新链路挂了但老路兜住了"在日志里长得不一样。
 
 ⚠ 同时进 /ready 的 `specFirst` 探针。理由是 rank-bm25 那次的教训：
 **会静默失效的功能，健康探针里必须有它的位置**——开关开着不算数，
@@ -78,8 +94,10 @@ def set_page_sink(sink: Optional[Callable[[str, str, int, int], None]]) -> None:
 
 
 _ENABLE_ENV = "SLIDERULE_SPEC_FIRST"
-#: 照 overview_html 的 _OFF_VALUES 同款口径：显式关才关。
-_ON_VALUES = frozenset({"1", "true", "yes", "on"})
+#: **默认开，显式关才关**（2026-08-14）。词表照仓里另外六处同款开关逐字一致
+#: （enrich_timing / block_narrowing / intake_judge / v5_parallel_generate /
+#: mailer / v5_full_driver 两处）——开关口径分叉的代价是"我明明关了它还在跑"。
+_OFF_VALUES = frozenset({"0", "false", "no", "off"})
 
 #: 七步各自的模块名。**探针与 import 共用这一份**，不手抄两遍——
 #: 手抄两份必然漂移（本仓在「区块 uses 声明」「前端手抄区域词汇」上踩过两次）。
@@ -104,7 +122,12 @@ class SpecFirstError(RuntimeError):
 
 
 def spec_first_enabled() -> bool:
-    return (os.environ.get(_ENABLE_ENV) or "").strip().lower() in _ON_VALUES
+    """默认开。**没设过 = 开**，设成 0/false/no/off 才关。
+
+    ⚠ 空串按"没设过"处理，跟 `.env` 里留一行 `SLIDERULE_SPEC_FIRST=` 是一回事。
+    仓里六处同款开关都是这个口径，别在这儿自创一种。
+    """
+    return (os.environ.get(_ENABLE_ENV) or "").strip().lower() not in _OFF_VALUES
 
 
 def spec_first_readiness() -> Dict[str, Any]:

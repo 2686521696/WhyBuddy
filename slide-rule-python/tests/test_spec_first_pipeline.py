@@ -2,7 +2,7 @@
 """spec-first 七步接主轴。
 
 这组测试钉的不是"链路跑得通"（那要真 LLM，另有跑批脚本），而是**接线本身
-不许出错的那几条**：默认关、失败不静默、探针看得见、以及不引编排依赖。
+不许出错的那几条**：开关口径、失败不静默、探针看得见、以及不引编排依赖。
 """
 
 import ast
@@ -13,25 +13,45 @@ import pytest
 from services import spec_first_pipeline as sfp
 
 
-class Test默认关且开关口径明确:
-    def test_缺省不开(self, monkeypatch):
-        """一轮 8~9 分钟、烧十几次 LLM。没有对照就翻默认是拿生产当实验台。
+class Test默认开且关得掉:
+    """2026-08-14 由默认关翻成默认开（用户拍板）。
 
-        先例：目录窄化攒够 3 覆盖域 × 2 臂 × n=6（p=0.00004）才翻默认；
-        agentic pick 十话题 4:0 才转正。
-        """
+    ⚠ 翻默认的证据只有 n=3 的一轮 A/B，够不上目录窄化那次 p=0.00004 的量级。
+    所以这组测试的重点从"证明它默认关着"变成了**"证明它关得掉"**——默认开
+    之后，用户唯一的退路就是这个开关，它必须真的好使。
+    """
+
+    def test_没设过就是开(self, monkeypatch):
         monkeypatch.delenv("SLIDERULE_SPEC_FIRST", raising=False)
+        assert sfp.spec_first_enabled() is True
+
+    @pytest.mark.parametrize("off", ["0", "false", "FALSE", "no", "off", " off "])
+    def test_显式关就关得掉(self, monkeypatch, off):
+        """这条是默认开之后唯一的退路，比上面那条更要紧。
+
+        大小写与前后空格都要认：`.env` 里写 `SLIDERULE_SPEC_FIRST=OFF ` 却没
+        关掉，用户看到的是"我明明关了它还在跑"，而且没有一处会报错。
+        """
+        monkeypatch.setenv("SLIDERULE_SPEC_FIRST", off)
         assert sfp.spec_first_enabled() is False
 
-    @pytest.mark.parametrize("on", ["1", "true", "TRUE", "yes", "on"])
-    def test_显式开才开(self, monkeypatch, on):
+    @pytest.mark.parametrize("on", ["", "1", "true", "yes", "on", "随便写"])
+    def test_写别的一律当开(self, monkeypatch, on):
+        """空串按"没设过"算——`.env` 里留一行 `SLIDERULE_SPEC_FIRST=` 是常见写法。
+
+        写不认识的值也当开：这是默认开该有的样子（拼错一个词不该让功能
+        悄悄消失）。要关就得写清楚。
+        """
         monkeypatch.setenv("SLIDERULE_SPEC_FIRST", on)
         assert sfp.spec_first_enabled() is True
 
-    @pytest.mark.parametrize("off", ["", "0", "false", "no", "off", "随便写"])
-    def test_写别的一律当没开(self, monkeypatch, off):
-        monkeypatch.setenv("SLIDERULE_SPEC_FIRST", off)
-        assert sfp.spec_first_enabled() is False
+    def test_开关词表跟仓里其它开关一个字不差(self):
+        """口径分叉的代价是"我在 A 处关得掉、B 处关不掉"。
+
+        仓里默认开的开关都用同一份 off 词表（enrich_timing / block_narrowing /
+        intake_judge / v5_parallel_generate / mailer / v5_full_driver 两处）。
+        """
+        assert sfp._OFF_VALUES == frozenset({"0", "false", "no", "off"})
 
 
 class Test探针能看出静默失效:
@@ -46,11 +66,21 @@ class Test探针能看出静默失效:
         assert r["effective"] is True
 
     def test_开关关着就不算_effective(self, monkeypatch):
-        monkeypatch.delenv("SLIDERULE_SPEC_FIRST", raising=False)
+        # ⚠ 默认开之后要**显式关**才测得到这一支（delenv 现在等于开）。
+        #   这条一度是 delenv，翻默认那天它会静悄悄地变成"测默认开"——
+        #   用例照常绿，而"关掉之后探针怎么说"从此没人管。
+        monkeypatch.setenv("SLIDERULE_SPEC_FIRST", "0")
         r = sfp.spec_first_readiness()
         assert r["enabled"] is False and r["effective"] is False
         # ⚠ 但模块数照报——「没开」和「开了但缺模块」必须分得出来
         assert r["modules"] == len(sfp._STEP_MODULES)
+
+    def test_默认状态下探针就说自己是开的(self, monkeypatch):
+        """默认开了，探针也得跟着说开——两处口径分叉的话，
+        /ready 会在功能正跑的时候报"没启用"。"""
+        monkeypatch.delenv("SLIDERULE_SPEC_FIRST", raising=False)
+        r = sfp.spec_first_readiness()
+        assert r["enabled"] is True and r["effective"] is True
 
     def test_模块清单只有一份_不手抄(self):
         """探针与 import 共用 _STEP_MODULES。手抄两份必然漂移——
