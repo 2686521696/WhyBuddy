@@ -344,6 +344,9 @@ describe("SlideRuleStudio 三态舞台", () => {
             html: "<!doctype html><html><body>x</body></html>",
             current: 1,
             total: 1,
+            // 第 3 步的素颜页：孔要等第 6.5 步才打。这条用例只看顶栏三件在不在，
+            // 跟接没接数据无关，取 false 即可。
+            bound: false,
           },
         ]}
       />
