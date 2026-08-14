@@ -336,3 +336,65 @@ class Test词表跨语言同步:
             }})
         for kind in ACTION_KINDS:
             assert kind in str(e.value), "拒词的错误信息应报出整张词表"
+
+
+class Test批量打孔按完成顺序收结果:
+    """⚠ 这一条对**总时长没有影响**——两种写法都要等全部完成。
+
+    钉它是因为 spec_page_html 已经为同一行付过学费（那边注释记着实测：
+    五页分散在 347/347/348/369/369s 好，按提交顺序 `fut.result()` 等，
+    用户看到的却是"憋着不动、然后哗啦一下全出来"）。而这一步迟早要加
+    「打好孔的页先亮起来」那种逐页回调，到那时按提交顺序会让所有回调堆到
+    最后一起触发：**接线全通、判据全绿，效果被一行遍历顺序抵消掉。**
+
+    2026-08-14 复核时这里还留着老写法，趁没人踩先起雷。
+    """
+
+    class _Resp:
+        def __init__(self, content: str) -> None:
+            self.content = content
+
+    def _slow_first(self, delays: dict):
+        """假 llm：按 page_id 卡不同时长，返回同一份合法产物。"""
+        import time
+
+        def llm_call(messages, **kw):
+            blob = " ".join(m["content"] for m in messages)
+            for pid, d in delays.items():
+                # 提示词里带着 page_id（build_prompt 会写进去）
+                if pid in blob:
+                    time.sleep(d)
+                    break
+            return self._Resp(GOOD)
+
+        return llm_call
+
+    def test_快的页先落袋_不被慢页挡住(self):
+        from services.html_bindings import bind_pages
+
+        res = bind_pages(
+            {"slowpage": GOOD, "fastpage": GOOD},
+            MODEL,
+            max_workers=2,
+            llm_call=self._slow_first({"slowpage": 0.8}),
+        )
+        assert set(res["pages"]) == {"slowpage", "fastpage"}, "两页都该成功"
+        # dict 保插入序：先落袋的排前面。按提交顺序取的话，slowpage 会排第一。
+        assert list(res["pages"])[0] == "fastpage", (
+            "结果是按提交顺序收的（慢页排在前面）—— "
+            "改回 `for pid, fut in futures` 了？该用 as_completed"
+        )
+
+    def test_单页失败仍不拖垮整批(self):
+        """顺序换了，这条老纪律不许跟着变。"""
+        from services.html_bindings import bind_pages
+
+        def llm_call(messages, **kw):
+            blob = " ".join(m["content"] for m in messages)
+            if "badpage" in blob:
+                raise RuntimeError("用例注入：这一页挂了")
+            return self._Resp(GOOD)
+
+        res = bind_pages({"badpage": GOOD, "okpage": GOOD}, MODEL, llm_call=llm_call)
+        assert list(res["pages"]) == ["okpage"]
+        assert "badpage" in res["failed"]

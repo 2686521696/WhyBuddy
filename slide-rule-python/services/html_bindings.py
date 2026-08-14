@@ -331,16 +331,31 @@ def bind_pages(
     """并发给每一页打孔。**单页失败不拖垮整批**（写法同 spec_page_html）。"""
     if not pages_html:
         return {"pages": {}, "failed": {}}
-    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     ok: Dict[str, str] = {}
     failed: Dict[str, str] = {}
     with ThreadPoolExecutor(max_workers=min(max_workers, len(pages_html))) as pool:
-        futures = [
-            (pid, pool.submit(bind_page, html, model, pid, llm_call=llm_call))
+        fut_to_id = {
+            pool.submit(bind_page, html, model, pid, llm_call=llm_call): pid
             for pid, html in pages_html.items()
-        ]
-        for pid, fut in futures:
+        }
+        # ⚠ **as_completed，不是按提交顺序 `for pid, fut in futures`。**
+        #
+        # 这一条是 spec_page_html 已经付过学费的（那边注释里记着实测：
+        # 五页分散在 347/347/348/369/369s 好，按提交顺序等就变成"憋着不动、
+        # 然后哗啦一下全出来"）。这里 2026-08-14 复核时还留着老写法。
+        #
+        # ⚠ 对**总时长没有影响**——两种写法都要等全部完成。改它是因为这一步
+        #   迟早要加「打好孔的页先亮起来」那种逐页回调（第 3 步的 on_page
+        #   就是干这个的），到那时这一行会让所有回调堆到最后一起触发：
+        #   **接线全通、判据全绿，效果被一行遍历顺序抵消掉**。趁现在起雷。
+        #
+        # ⚠ 代价与那边同源：产出顺序不再是页面顺序。ok 是 dict 不是 list，
+        #   下游按 page_id 取；真正在乎顺序的导航由 page_shell 按 spec.pages
+        #   重排（见 unify_shell），不靠这里。
+        for fut in as_completed(fut_to_id):
+            pid = fut_to_id[fut]
             try:
                 ok[pid] = fut.result()
             except Exception as exc:  # noqa: BLE001 — 单页失败不拖垮整批
