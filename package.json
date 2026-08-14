@@ -117,6 +117,7 @@
     "dagre": "^0.8.5",
     "dayjs": "1.11.21",
     "dockerode": "^4.0.12",
+    "dompurify": "^3.4.11",
     "dotenv": "^17.4.2",
     "echarts": "^6.1.0",
     "embla-carousel-autoplay": "^8.6.0",
