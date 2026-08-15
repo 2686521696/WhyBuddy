@@ -53,8 +53,12 @@ def test_the_slow_stages_are_all_covered():
         "monitor.sheet",
         "monitor.palette",
         "monitor.design",
-        # spec-first 七步里报六步。⚠ specfirst.shell 故意不在——见下一条
+        # spec-first 里报七步。⚠ specfirst.shell 故意不在——见下一条
         "specfirst.spec",
+        # 2026-08-15 晚加：按应用定设计语言（风格那一半，注进第 3 步的槽位）。
+        # 报它是因为它**会花十几秒且用户能感知结果**（整个应用的配色与密度
+        # 由它定）——跟 shell 那种零 LLM、0.0 秒的不是一类东西。
+        "specfirst.design",
         "specfirst.pages",
         "specfirst.structure",
         "specfirst.semantics",

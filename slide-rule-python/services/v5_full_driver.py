@@ -1361,6 +1361,7 @@ _ENRICH_STAGE_LABELS: Dict[str, tuple] = {
     #
     # ⚠ 整轮 18 分钟，不是当初估的 8~9 分钟。bind 一步吃掉一半。
     "specfirst.spec": ("起草规格：成功判据、需求节点与页面清单", "通常 60~90 秒"),
+    "specfirst.design": ("定这个应用的设计语言", "通常 10~20 秒"),
     "specfirst.pages": ("逐页画界面（并发）", "通常 3~4 分钟，页数越多越久"),
     "specfirst.structure": ("从界面反推数据模型与关联关系", "通常 60~120 秒"),
     "specfirst.semantics": ("推导权限、工作流与不变式", "通常 60~120 秒"),

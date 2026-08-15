@@ -293,6 +293,7 @@ def run_spec_first(
     llm_json_fn: Optional[Callable[..., Any]] = None,
     bind_html: bool = True,
     design_system: Optional[str] = None,
+    design_override: Optional[Dict[str, Any]] = None,
     on_page: Optional[Callable[[str, str, int, int], None]] = None,
 ) -> Dict[str, Any]:
     """一句话 → 完整五系统模型 + 带 data-* 孔的多页 HTML。
@@ -317,6 +318,7 @@ def run_spec_first(
     任何一步失败抛 SpecFirstError，**不回落占位、不回落老链路**。
     """
     from .device_policy import resolve_preferred_device
+    from .design_language import generate_design_language, render_design_language
     from .html_bindings import bind_pages
     from .html_structure import derive_structure, to_datamodel  # noqa: F401
     from .model_assembly import assemble
@@ -348,6 +350,26 @@ def run_spec_first(
     spec_pages_declared = [
         str(p.get("id") or "") for p in (spec.get("pages") or []) if isinstance(p, dict) and p.get("id")
     ]
+
+    # ── 第 2.5 步：定这个应用的设计语言（风格那一半）────────────────
+    #
+    # 链路原来从"起草规格"直接跳到"逐页画界面"，中间没有"这个应用长什么样"
+    # 的环节——于是不管什么业务出来都是同一个模子。
+    #
+    # ⚠ 人给了散文就**不调 LLM**：显式指定优先于生成，这跟 on_page 那条
+    #   "显式实参优先于 sink"是同一条纪律。省一次调用是顺带的，主要是
+    #   别让生成结果去覆盖人明确写下的东西。
+    # ⚠ 契约不经过这一步。它只出风格，塞进 spec_page_html 的槽位，
+    #   结构契约照旧由代码拼在后面——见 build_design_system_prompt_block。
+    design_language: Optional[Dict[str, Any]] = None
+    if not (design_system or "").strip():
+        raise_if_cancelled("第2.5步 定设计语言")
+        with _stage("specfirst.design") as st:
+            design_language = generate_design_language(spec, override=design_override)
+            design_system = render_design_language(design_language)
+            st["density"] = design_language.get("density")
+            st["charts"] = bool(design_language.get("charts"))
+        stages["design"] = dict(st)
 
     # ── 第 3 步：每页 HTML（并发；单页失败不拖垮整批）────────────────
     raise_if_cancelled("第3步 逐页画界面")
@@ -494,6 +516,7 @@ def run_spec_first(
         # 空 = 对过账、一页不缺；缺键 = 老产物，没对过账。所以恒给出来。
         "missingPages": missing_pages,
         "declaredPages": spec_pages_declared,
+        "designLanguage": design_language,
         "stages": stages,
         "device": device,
     }
