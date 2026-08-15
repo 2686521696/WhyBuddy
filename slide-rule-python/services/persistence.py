@@ -23,6 +23,8 @@ the older Python mapping shape so existing local dev files can be recovered.
 服务器是两个进程，光靠进程锁挡不住。CAS 失败就重读重算（见 _MAX_CAS_RETRY）。
 """
 
+import sys
+import time
 import json
 import os
 import re
@@ -667,5 +669,29 @@ def delete_session_record(session_id: str, store_file: Optional[StorePath] = Non
     return {"ok": True, "sessionId": session_id}
 
 
+#: 落库慢到这个秒数就打一行。**不是告警，是留痕**——一轮里 persist_state 会被
+#: 调十几次，每次都打会把日志淹掉；只在异常慢的时候说话。
+_PERSIST_SLOW_SECONDS = float(os.getenv("SLIDERULE_PERSIST_SLOW_SECONDS", "5"))
+
+
 def persist_state(state: V5SessionState):
-    return save_session_record(state)
+    """落库。慢的时候要说话——**此前它是完全静默的**。
+
+    ⚑ 2026-08-14：收尾那 821 秒排查不下去，正是因为这里不吭声。
+      代码上只隔三行的 record_model_version 与 publish_closure 之间隔了 821 秒，
+      而这三行里唯一会阻塞的就是它（会话载荷 324KB，走远端 HTTPS SQL 网关）。
+      "写卡住了" 和 "别处卡住了" 在日志里长得一模一样，只能靠猜——
+      这次把它变成一眼可见的。
+    """
+    _t0 = time.monotonic()
+    try:
+        return save_session_record(state)
+    finally:
+        _took = time.monotonic() - _t0
+        if _took >= _PERSIST_SLOW_SECONDS:
+            _sid = getattr(state, "sessionId", "?")
+            print(
+                f"[persist] 会话 {_sid} 落库耗时 {_took:.1f}s（超过 {_PERSIST_SLOW_SECONDS:.0f}s 阈值）",
+                file=sys.stderr,
+                flush=True,
+            )

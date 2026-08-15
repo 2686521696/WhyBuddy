@@ -2088,11 +2088,18 @@ async def drive_full_v5_session_stream(
             def _summarize() -> Optional[str]:
                 from .v5_closure_summary import generate_closure_chat_summary
 
-                return generate_closure_chat_summary(
-                    state,
-                    publish_closure,
-                    on_delta=lambda chunk: _delta_q.put(("closure.summary", chunk)),
-                )
+                # ⚑ 2026-08-14 补埋点：收尾这一段此前**整段没有耗时记录**。
+                #   排查那 821 秒时，六步 specfirst.* 都有 enrich-timing，
+                #   唯独收尾没有——只能靠事后单独复跑去排除它（实测 18.4s）。
+                #   接进同一套，下次一眼可见。
+                with _enrich_timing.stage("closure.summary") as _st:
+                    _out = generate_closure_chat_summary(
+                        state,
+                        publish_closure,
+                        on_delta=lambda chunk: _delta_q.put(("closure.summary", chunk)),
+                    )
+                    _st["chars"] = len(_out or "")
+                    return _out
 
             summary_task = asyncio.ensure_future(asyncio.to_thread(_summarize))
             async for _delta_event in _pump_llm_deltas(summary_task):

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import os
+import sys
 import time
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Iterable, Literal
@@ -952,11 +953,29 @@ def call_llm_with_retry(
     delay_ms = 0 if kwargs.get("on_delta") is not None else _hedge_delay_ms()
     last_error: LlmError | None = None
     for attempt in range(1, max_attempts + 1):
+        _t0 = time.monotonic()
         try:
             # 边界二：只有第一次尝试对冲，重试不再对冲（见上，防相乘）
             return _call_llm_hedged(messages, delay_ms if attempt == 1 else 0, **kwargs)
         except LlmError as error:
             last_error = error
+            # ⚑ 2026-08-14 补这一行日志：**重试此前是完全静默的**。
+            #
+            # 代价实测过两次：第 3 步那次 429 查了半天（对外报的是"模型吐了坏
+            # JSON"，真因埋在静默重试里）；收尾那 821 秒到现在都没定论，
+            # 因为"重试了三轮"和"某处卡住了"在日志里长得一模一样。
+            #
+            # ⚠ 打 stderr 不打 stdout：这层是库，产出走返回值，日志不该混进
+            #   调用方的正常输出里。
+            _took = time.monotonic() - _t0
+            _kind = "可重试" if error.transient else "不可重试"
+            _status = f"HTTP {error.status} " if getattr(error, "status", None) else ""
+            print(
+                f"[llm-retry] 第 {attempt}/{max_attempts} 次失败（{_status}{_kind}，"
+                f"耗时 {_took:.1f}s）：{str(error)[:160]}",
+                file=sys.stderr,
+                flush=True,
+            )
             if not error.transient or attempt >= max_attempts:
                 raise
             time.sleep(backoff_ms / 1000.0)
