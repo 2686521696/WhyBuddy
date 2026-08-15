@@ -62,6 +62,7 @@ _SVG = re.compile(r"<svg\b[\s\S]*?</svg>", re.I)
 #: 内容区容器的开标签。抠的是 class，因为**位移全写在 class 上**
 #: （`ml-64` / `ml-[248px]` / `flex-1`）。
 _MAIN_OPEN = re.compile(r"<main\b[^>]*>", re.I)
+_ASIDE_OPEN = re.compile(r"<aside\b[^>]*>", re.I)
 
 
 class PageShellError(RuntimeError):
@@ -545,7 +546,9 @@ def unify_shell(
         # ★ 只去掉多余的左偏移，**不抄源页的 main class**（2026-08-15 当天返工）。
         #   抄整段那一版真机当场炸了：p1 是左右分栏（flex 横向），抄给纵向排布的
         #   p3，子元素全被横着排、文字竖排、整页不可用。见 main_offset_tokens。
-        html = strip_main_offset(html)
+        # ★ 两个方向都要（2026-08-15 晚）：统一后的侧栏若是 fixed，它不占位，
+        #   没有偏移的那一页会被压在侧栏底下（真机 p4 就这么坏的）。
+        html = reconcile_main_offset(html)
         if need_fallback and _ACTIVE_FALLBACK_CSS not in html:
             # 塞进 </head> 之前；没有 head 就退到 <body> 之后（都没有就不塞）。
             if "</head>" in html:
@@ -599,16 +602,66 @@ _BODY_OPEN = re.compile(r"<body\b[^>]*>", re.I)
 
 
 def _body_is_flex_row(markup: str) -> bool:
-    """`<body>` 是不是一个横向 flex 容器（侧栏和内容区并排的那种布局）。
-
-    是的话，内容区**已经**被 flex 排在侧栏右边了，再加 `ml-64` 就是双倍偏移。
-    """
+    """`<body>` 是不是一个横向 flex 容器（侧栏和内容区并排的那种布局）。"""
     m = _BODY_OPEN.search(markup or "")
     if not m:
         return False
     cls = _CLASS.search(m.group(0))
     toks = set(cls.group(1).split()) if cls else set()
     return "flex" in toks and "flex-col" not in toks
+
+
+#: 脱离文档流的定位类。`fixed`/`absolute` 的侧栏**不占位**。
+_OUT_OF_FLOW = ("fixed", "absolute")
+_WIDTH_CLS = re.compile(r"^w-(\d+|\[[^\]]+\])$")
+
+
+def _aside_tokens(markup: str) -> set:
+    m = _ASIDE_OPEN.search(markup or "")
+    if not m:
+        return set()
+    cls = _CLASS.search(m.group(0))
+    return set(cls.group(1).split()) if cls else set()
+
+
+def aside_out_of_flow(markup: str) -> bool:
+    """侧栏是不是脱离了文档流（`fixed` / `absolute`）。
+
+    ## ⚠ 这才是「内容区该不该带左偏移」的真正判据（2026-08-15 晚返工）
+
+    此前只问 `<body>` 是不是横向 flex，**漏了一半**：`fixed` 的侧栏根本不参与
+    flex 排布，flex 不会给它留出 256px。这时内容区**必须**自己带 `ml-64`，
+    否则直接被压在侧栏底下。
+
+    真机（社区药店 p4）当场撞上：
+
+        <body class="flex h-screen overflow-hidden">        ← 横向 flex
+        <aside class="w-64 … fixed h-full">                 ← 却是 fixed，不占位
+        <main class="flex-1 flex flex-col min-w-0 …">       ← 没有偏移
+
+    截图上侧栏整个压在表格上，「登记时间」「流水单号」两列被盖住。
+    而判据全绿——旧规则看到 body 有 flex 就认定「已经排好了」。
+
+    实测：给这一页加回 `ml-64`，main 左边界 256px = 侧栏右边界 256px，严丝合缝。
+
+    ⚠ 这个 `fixed` 还是 **unify_shell 自己贴上去的**：源页的侧栏是 fixed，
+      统一时整段复制给了各页，而各页的 main 各自按原来的侧栏形态写偏移。
+      壳统一了、承载层没跟着对齐——所以下面 reconcile_main_offset 要成对做。
+    """
+    return bool(_aside_tokens(markup) & set(_OUT_OF_FLOW))
+
+
+def aside_offset_token(markup: str) -> Optional[str]:
+    """侧栏宽度对应的左偏移类：`w-64` → `ml-64`，`w-[248px]` → `ml-[248px]`。
+
+    ⚠ 宽度认不出来就返回 None，**不猜一个 ml-64 塞进去**：猜错的偏移
+      跟没有偏移一样是坏版式，而且更难查。
+    """
+    for tok in _aside_tokens(markup):
+        m = _WIDTH_CLS.match(tok)
+        if m:
+            return f"ml-{m.group(1)}"
+    return None
 
 
 def main_offset_tokens(markup: str) -> List[str]:
@@ -645,13 +698,38 @@ def main_offset_tokens(markup: str) -> List[str]:
     return sorted(t for t in cls.group(1).split() if _OFFSET_CLS.match(t))
 
 
-def strip_main_offset(markup: str) -> str:
-    """`<body>` 已经是横向 flex 时，把内容区上多余的左偏移去掉。
+def _rewrite_main_class(markup: str, toks: List[str]) -> str:
+    m = _MAIN_OPEN.search(markup or "")
+    if not m:
+        return markup
+    cls = _CLASS.search(m.group(0))
+    if not cls:
+        return markup
+    if toks == cls.group(1).split():
+        return markup
+    new_tag = m.group(0).replace(cls.group(0), f'class="{" ".join(toks)}"', 1)
+    return markup[: m.start()] + new_tag + markup[m.end():]
 
-    这是真机上那个「整屏右移 256px」的确定性修法：`ml-64` 叠在 flex 排布之上
-    等于偏移两次。只删偏移类，其余 class 一个不动。
+
+def offset_needed(markup: str) -> bool:
+    """内容区**该不该**带左偏移。侧栏占不占位说了算，不是 body 说了算。
+
+      · 侧栏 fixed/absolute（不占位）→ 该带：不带就被压在侧栏底下
+      · 侧栏在流内 + body 横向 flex   → 不该带：flex 已经排好了，再带就偏两次
+      · 其余（没侧栏 / 纵向布局）      → 不动它，这是页面自己的版式
     """
-    if not _body_is_flex_row(markup):
+    return aside_out_of_flow(markup)
+
+
+def strip_main_offset(markup: str) -> str:
+    """去掉内容区上**多余**的左偏移（侧栏在流内、body 又是横排的那种）。
+
+    真机上那个「整屏右移 256px」的确定性修法：`ml-64` 叠在 flex 排布之上
+    等于偏移两次。只删偏移类，其余 class 一个不动。
+
+    ⚠ `fixed` 的侧栏不占位，那时偏移**不是多余的**——见 aside_out_of_flow。
+    """
+    if aside_out_of_flow(markup) or not _body_is_flex_row(markup):
         return markup
     m = _MAIN_OPEN.search(markup or "")
     if not m:
@@ -659,11 +737,43 @@ def strip_main_offset(markup: str) -> str:
     cls = _CLASS.search(m.group(0))
     if not cls:
         return markup
-    kept = [t for t in cls.group(1).split() if not _OFFSET_CLS.match(t)]
-    if len(kept) == len(cls.group(1).split()):
+    return _rewrite_main_class(
+        markup, [t for t in cls.group(1).split() if not _OFFSET_CLS.match(t)]
+    )
+
+
+def reconcile_main_offset(markup: str) -> str:
+    """让内容区的左偏移跟**这一页现在这个侧栏**对齐。两个方向都要做。
+
+    ## 为什么必须成对（2026-08-15 晚，真机 p4 被压穿之后补）
+
+    `unify_shell` 把源页的 `<aside>` 整段复制给各页——**连定位方式一起复制**。
+    源页的侧栏是 `fixed`，于是各页的侧栏全变成 `fixed`；而各页的 `<main>`
+    还写着它原来那套侧栏形态下的偏移：
+
+        p2/p3  main class="ml-64 …"    ← 本来就配 fixed 侧栏，正好
+        p4     main class="flex-1 …"   ← 本来配的是流内侧栏，现在没人占位了
+
+    结果 p4 的内容区整个滑到侧栏底下，两列表头被盖住。**壳统一了，
+    承载层没跟着对齐**——这正是「只修一半」的形状。
+
+    所以这里两个方向都补：该带的补上，多余的去掉。
+    """
+    m = _MAIN_OPEN.search(markup or "")
+    if not m:
         return markup
-    new_tag = m.group(0).replace(cls.group(0), f'class="{" ".join(kept)}"', 1)
-    return markup[: m.start()] + new_tag + markup[m.end() :]
+    cls = _CLASS.search(m.group(0))
+    if not cls:
+        return markup
+    toks = cls.group(1).split()
+    if not aside_out_of_flow(markup):
+        return strip_main_offset(markup)
+    if any(_OFFSET_CLS.match(t) for t in toks):
+        return markup  # 已经让位了
+    want = aside_offset_token(markup)
+    if not want:
+        return markup  # 宽度认不出来，不猜
+    return _rewrite_main_class(markup, [want] + toks)
 
 
 def main_signature(markup: str) -> str:
@@ -837,12 +947,25 @@ def check_shell_consistency(
     #   本来就该各页不同。第一版比整段，等于把「页面各有各的排布」报成漂移，
     #   而按它去"修"（抄源页 class）真机当场把页面排炸了——见 main_offset_tokens。
     for pid, html in pages_html.items():
-        if _body_is_flex_row(html) and main_offset_tokens(html):
+        out_of_flow = aside_out_of_flow(html)
+        offsets = main_offset_tokens(html)
+        if not out_of_flow and _body_is_flex_row(html) and offsets:
             problems.append({
                 "path": f"{pid}.main",
                 "message": (
-                    f"内容区带着 {'、'.join(main_offset_tokens(html))}，"
+                    f"内容区带着 {'、'.join(offsets)}，"
                     f"而它已经被 flex 排在侧栏右边了——偏移了两次"
+                ),
+            })
+        # ⚠ 反方向，真机 p4 撞的就是这条：fixed 侧栏不占位，内容区不让位
+        #   就被压在底下。旧判据只查「偏移了两次」，这一半是**空的**——
+        #   页面坏成那样，shellProblems 里一个字都没有。
+        elif out_of_flow and not offsets and _ASIDE_OPEN.search(html or ""):
+            problems.append({
+                "path": f"{pid}.main",
+                "message": (
+                    f"侧栏是 fixed/absolute（不占位），而内容区没有左偏移——"
+                    f"内容会被压在侧栏底下"
                 ),
             })
 
