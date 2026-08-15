@@ -248,16 +248,81 @@ def generate_page_html(
 
 
 def _straggler_idle_seconds() -> float:
-    """落后者截止线：整批**静默**超过这么久就收尾（锚在上次有页落地）。
+    """落后者预算的**下限**（锚在上次有页落地）。
 
     120s 是量出来的，不是拍的：干净并发 5 页实测 200.8s 全部到齐，页与页之间
-    最大间隔 43s（157.5 / 163.2 / 173.8 / 177.2 / 200.8）。120s 留了近三倍
-    余量，正常慢页碰不到；而真机那次卡死的一页在最后一张成功页之后又耗了
-    **667 秒**（占整步 936s 的 71%）——那种形状一眼就越线。
+    最大间隔 43s（157.5 / 163.2 / 173.8 / 177.2 / 200.8）。120s 留了近三倍余量。
+
+    ⚠ 它现在是**下限**而不是预算本身——见 `_straggler_budget`。改成下限之后
+      这条线只会比原来更宽松，绝不会更严，所以它不可能引入新的误杀。
 
     ⚠ 调这个值前先想清楚锚点：它量的是「这批还在不在动」，不是「一共跑了多久」。
     """
     return float(os.getenv("SLIDERULE_SPEC_PAGE_STRAGGLER_IDLE_SECONDS", "120"))
+
+
+def _straggler_multiplier() -> float:
+    """预算 = 首页实测耗时 × 这个倍率。
+
+    1.5 的来处：干净那批页间最大间隔 43s、首页 157.5s，比值 0.27。取 1.5 是
+    留了五倍余量，同时仍远小于「一页从头重跑」的量级。
+    """
+    return float(os.getenv("SLIDERULE_SPEC_PAGE_STRAGGLER_MULTIPLIER", "1.5"))
+
+
+def _straggler_max_seconds() -> float:
+    """预算的**上限**：首页本身病态地慢时，不许把截止线撑到形同虚设。
+
+    首页可能因为重试而耗到 990s（真机见过一次 331.1s 的空挂，重试 3 次）。
+    没有上限的话预算会被它带到 1485s，这条线就白设了。
+    """
+    return float(os.getenv("SLIDERULE_SPEC_PAGE_STRAGGLER_MAX_SECONDS", "600"))
+
+
+def _straggler_budget(first_page_seconds: float) -> float:
+    """按首页实测耗时定这一批的落后者预算。
+
+    ## 为什么要自适应
+
+    固定 120s 在真机上把 5 页里的 4 页误杀了（2026-08-15 口腔连锁）：
+
+        181.7s  页面步开始
+        357.9s  p2 到 (+176.2s)   ← 上膛
+        477.9s  整步结束           ← 357.9 + 120，算术分毫不差
+
+    截止线**按设计动作了**，是 120s 这个数低于这条链路的正常页间方差。而
+    120s 的来处是「干净那批页间最大间隔 43s」——那批**首页只要 157.5s**。
+    同一个绝对值套到一个首页 176s、上游还在抖的批次上就不成立了：页间方差
+    是跟着单页生成成本走的，不是一个跨环境的常数。
+
+    所以改成**拿这一批自己的首页耗时当尺子**——它天然编码了当前模型、话题
+    长度、上游拥塞的综合快慢，不需要我们替每种组合各拍一个数。
+
+    ## 三个数怎么合成
+
+        budget = min(max(下限, 首页耗时 × 倍率), 上限)
+
+    下限保证它**永不比原来更严**（所以这次改动不可能引入新误杀）；上限保证
+    一个病态的首页不会把线撑到形同虚设。
+
+    ## 拿两批真机数据回算
+
+    · 市政园林（当初促成这条线的那批）：首页 175.6s → 预算 263s。
+      p3/p4/p5 的间隔 6.3 / 52.9 / 34.9s 全在预算内照常交付；p1 永远不来，
+      在 760.4s 之后 263s 开火 ≈ 整步 533s，仍从 936s 里砍掉 400s。
+      **这条线的原始用途完好。**
+    · 口腔连锁（这次被误杀的那批）：首页 176.2s → 预算 264s，是原来的 2.2 倍。
+    · 干净基线：首页 157.5s → 预算 236s，页间最大 43s，永不触发。
+
+    ⚠ 首页取的是「**第一个完成的 future**」，成功失败都算，不是「第一个成功的页」。
+      理由：这把尺子量的是「当前上游把一页跑完要多久」，一次带重试的失败同样
+      是这个环境真实的耗时形状。而一个**秒失败**（比如校验不过）会把尺子量小——
+      那一半由下限兜住，落回原来的 120s，不会更糟。
+    """
+    return min(
+        max(_straggler_idle_seconds(), first_page_seconds * _straggler_multiplier()),
+        _straggler_max_seconds(),
+    )
 
 
 def generate_pages_parallel(
@@ -335,6 +400,8 @@ def generate_pages_parallel(
         total = len(fut_to_id)
         done = 0
         pending = set(fut_to_id)
+        batch_started = time.monotonic()
+        # 首页落地之前用不上（那之前不设限），落地时按 _straggler_budget 改写。
         idle_budget = _straggler_idle_seconds()
         # 截止线**锚在"上一次有进展"上，不锚在整批开始**。
         #
@@ -355,6 +422,10 @@ def generate_pages_parallel(
         #   概念上也应当如此：「落后者」的前提是**别人已经到了**。一个都没到
         #   的时候大家都在飞，没有落后者可言。那一段的兜底是每页自己的
         #   LLM 超时与重试（call_llm_with_retry），不归这条线管。
+        #
+        # ★★ 首页落地的**同时**，顺手拿它的耗时把预算定下来（2026-08-15）。
+        #    固定 120s 在真机上误杀了 5 页里的 4 页——不是逻辑错，是那个绝对值
+        #    低于这条链路的正常页间方差。详见 `_straggler_budget` 的回算。
         last_progress: Optional[float] = None
         while pending:
             # last_progress 为 None = 还没有任何一页落地 → 不设限，等着
@@ -373,14 +444,27 @@ def generate_pages_parallel(
                 # 与单页失败同一条纪律，缺页由 failedPages / missingPages 说话。
                 for fut in pending:
                     page_id = fut_to_id[fut]
+                    # ⚠ 报**算出来的**预算，不是那个下限常数。排障时会拿它对
+                    #   时间轴做算术（口腔连锁那次正是靠「357.9 + 120 = 477.9
+                    #   分毫不差」定位的），印一个从没生效过的数会把人带沟里。
                     failed[page_id] = (
-                        f"整批静默超过 {idle_budget:.0f}s（最后一页落地之后再无进展），"
+                        f"整批静默超过 {idle_budget:.1f}s（最后一页落地之后再无进展），"
                         f"按超时收尾"
                     )
                     print(f"[spec_page_html] 页面 {page_id} 触发落后者截止线，放弃等待")
                     fut.cancel()  # 只取消**还没开跑**的；已在跑的取消不掉
                 break
-            last_progress = time.monotonic()
+            now = time.monotonic()
+            if last_progress is None:
+                first_page_seconds = now - batch_started
+                idle_budget = _straggler_budget(first_page_seconds)
+                print(
+                    f"[spec_page_html] 首页 {first_page_seconds:.1f}s 落地 → "
+                    f"落后者预算 {idle_budget:.0f}s"
+                    f"（下限 {_straggler_idle_seconds():.0f}s ×{_straggler_multiplier()} "
+                    f"上限 {_straggler_max_seconds():.0f}s）"
+                )
+            last_progress = now
             for fut in waited:
                 page_id = fut_to_id[fut]
                 done += 1
