@@ -42,7 +42,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.page_shell import set_breadcrumb_current, unify_shell  # noqa: E402
-from services.spec_page_html import _DESIGN_SYSTEM  # noqa: E402
+from services.spec_page_html import build_page_html_prompt  # noqa: E402
 
 
 def _text(header: str) -> str:
@@ -170,8 +170,25 @@ class Test不许误伤:
 
 
 class Test生成侧要求按APG出:
-    def test_设计系统里写了_aria_current(self):
+    def test_提示词里写了_aria_current(self):
         """判据只能认它已知的形状。所以**生成侧也要引导** ——
-        两边都做才闭环：模型按 APG 出 → 判据认得出 → 逐页改对。"""
-        assert 'aria-current="page"' in _DESIGN_SYSTEM
-        assert "Breadcrumb" in _DESIGN_SYSTEM
+        两边都做才闭环：模型按 APG 出 → 判据认得出 → 逐页改对。
+
+        ⚠ 钉在**最终提示词**上，不钉某个常量：设计系统 2026-08-15 晚劈成了
+          「契约 + 可注入风格」两半，钉常量的写法当天就失效了。而且钉提示词
+          更准——真正送到模型面前的是它，不是任何一个中间常量。
+        """
+        p = build_page_html_prompt("某页")
+        assert 'aria-current="page"' in p
+        assert "Breadcrumb" in p
+
+    def test_注入风格也冲不掉面包屑要求(self):
+        """★ 劈成两半之后最要紧的一条：风格是外面给的，**契约必须还在**。
+
+        注入方写「极简单栏、去掉一切导航装饰」这类描述是完全合法的，
+        而它一旦把面包屑冲掉，set_breadcrumb_current 就没东西可改——
+        四页面包屑一模一样，且判据全绿（今天刚这么栽过一次）。
+        """
+        p = build_page_html_prompt("某页", design_system="极简风，单栏，去掉一切导航装饰")
+        assert 'aria-current="page"' in p and "Breadcrumb" in p
+        assert "极简风" in p, "注入的风格没进去"

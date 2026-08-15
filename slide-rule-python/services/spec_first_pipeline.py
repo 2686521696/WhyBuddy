@@ -292,9 +292,15 @@ def run_spec_first(
     refine: Optional[Dict[str, Any]] = None,
     llm_json_fn: Optional[Callable[..., Any]] = None,
     bind_html: bool = True,
+    design_system: Optional[str] = None,
     on_page: Optional[Callable[[str, str, int, int], None]] = None,
 ) -> Dict[str, Any]:
     """一句话 → 完整五系统模型 + 带 data-* 孔的多页 HTML。
+
+    design_system（2026-08-15 晚加）：这个应用的**风格**描述（版式原型、密度、
+    组件词汇、配色基调），一路透到第 3 步注进提示词。不传就用缺省那一句。
+    ⚠ 它只管风格：结构契约（<aside>/<header>/面包屑/无脚本…）永远由代码
+      拼在后面，注入方碰不到——见 spec_page_html.build_design_system_prompt_block。
 
     refine（2026-08-14 晚加）：增量迭代上下文
     `{"instruction": 本轮追加要求, "modelDigest": model_refine_digest(上一版)}`。
@@ -351,7 +357,9 @@ def run_spec_first(
         #
         # 显式实参优先于 sink：脚本/评测直接调这个函数时不该被"当前请求恰好
         # 装了个 sink"影响。生产路径（主轴）走 sink，因为中间那层是同步的。
-        batch = generate_pages_parallel(spec, device=device, on_page=sink)
+        batch = generate_pages_parallel(
+            spec, device=device, design_system=design_system, on_page=sink
+        )
         pages = dict(batch.get("pages") or {})
         failed = dict(batch.get("failed") or {})
         st["got"] = len(pages)

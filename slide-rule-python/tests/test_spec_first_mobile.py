@@ -29,7 +29,7 @@ class Test页面提示词:
         p = build_page_html_prompt("某页", device="phone")
         for word in ["1080×1920", "底部", "<nav>", "不要左侧边栏"]:
             assert word in p, f"移动设计系统里少了「{word}」"
-        assert "左侧固定主导航" not in p, "移动端不该有左侧栏"
+        assert "<aside> 固定主导航" not in p, "移动端不该有左侧栏"
 
     def test_desktop缺省即桌面(self):
         assert build_page_html_prompt("某页") == build_page_html_prompt("某页", device="desktop")
@@ -41,10 +41,14 @@ class Test页面提示词:
         它钉的是措辞，而措辞本来就该能改。留下的是真正不该变的那一条：
         桌面有 <aside> 左侧栏、移动端没有。page_shell 抠壳按这个分岔走，
         写反了移动端整套判据静默失效。
+
+        ⚠ 同一晚设计系统又劈成「契约 + 可注入风格」，措辞第二次变——
+          所以这里只钉 `<aside>` 这个**标签本身**，它是 extract_shell
+          真正 search 的东西，措辞怎么改都绕不开它。
         """
         desk = build_page_html_prompt("某页", device="desktop")
         phone = build_page_html_prompt("某页", device="phone")
-        assert "左侧固定主导航" in desk and "<aside>" in desk
+        assert "<aside>" in desk and "不要左侧边栏" not in desk
         assert "不要 <aside>" in phone or "不要左侧边栏" in phone
 
 

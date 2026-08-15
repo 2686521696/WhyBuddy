@@ -67,28 +67,34 @@ _STACK = (
     "Return ONLY the full HTML file content. No explanation, no markdown fences."
 )
 
-#: design_system 块。走它 build_design_system_prompt_block 的形状（含冲突时的
-#: 优先级声明），内容换成本仓的两条老经验：
-#:   · 占位必须是**看得见的可读中文**——「不许用灰条/色块/留空」这条在参照图那边
-#:     早就有（freeform_block.py:1224），改两段式时漏掉过一次，实测灰条当场复发
-#:   · 表头要中文显示名——SAFEREND 那条同源（此前表头直接甩 lot_code / frozen）
-_DESIGN_SYSTEM = """## Design system
-
-If the design system conflicts with other instructions, prioritize the design system.
-
-<design_system>
-企业后台风格，浅色底，信息密度高。
-
-## 版式骨架（必须照这个分区）
-
-    <aside>   左侧固定主导航（宽度约 w-64）
-    <header>  顶栏：面包屑 + 全局搜索 + 通知 + 当前登录角色
-    <main>    工作区，内部再横向分成两栏：
-                · 主栏（flex-1）：这一页的主要内容
-                · 右栏（定宽 w-80 上下）：当前选中项的详情 / 属性 / 操作指引 / 相关记录
-
-右栏用 <section> 或 <div>，**不要用 <aside>**（<aside> 只留给左侧主导航）。
-这一页确实没有"当前选中项"这类内容时，右栏可以省掉，但主栏要相应铺满。
+#: ## 设计系统劈成两半：**契约写死，风格可注入**（2026-08-15 晚）
+#:
+#: 上游 screenshot-to-code 的 `build_design_system_prompt_block(design_system: str|None)`
+#: 本来就是个**槽位**——传什么注什么，不传整块消失
+#: （scratchpad/oss/screenshot-to-code/backend/prompts/design_system.py）。
+#: 本仓此前把一个常量焊进了这个槽位，等于把人家留的注入点堵上了。
+#:
+#: 劈的依据不是"重要不重要"，是**下游代码依不依赖它**：
+#:
+#:   契约（_STRUCTURAL_CONTRACT）——写死，永远在，LLM 碰不到
+#:     <aside>/<header>/<main>   page_shell 抠壳、导航锚定、内容区让位全靠它
+#:     面包屑 APG + aria-current  set_breadcrumb_current 与 .breadcrumb 判据认它
+#:     Tailwind / 中文占位        validate_page_html 硬判
+#:     不许出现生成方身份与外链   scan_foreign_references 硬判
+#:     脚本不会执行              宿主 DOMPurify 摘 script，这是**事实**不是审美
+#:
+#:   风格（design_system 参数）——每个应用可以不一样，缺省给一句话
+#:     版式原型、密度档位、组件词汇、配色基调、图表用几个
+#:
+#: ⚠ 为什么必须这么劈：让 LLM 写整块设计系统，它一句"用卡片流布局"就能把
+#:   <aside> 写没——而外壳统一、导航锚定、面包屑跟页会**静默失效**（今天刚踩过
+#:   两次：面包屑四页一样、侧栏压穿内容，两次都是判据全绿）。劈开之后 LLM
+#:   压根没机会碰契约，也就不需要"生成完再校验有没有破坏契约"那一整套判据。
+#:
+#: ⚠ 2026-08-15 晚做过一次密度对照实验（同话题同模型，只改这一处）：
+#:   字符 +53%、面板 +34%、右侧栏 0/3→3/3 页、图表 0/3→3/3 页。
+#:   有效，但那些**全是风格**，不该焊死在代码里——所以搬到槽位里去。
+_STRUCTURAL_CONTRACT = """左侧一个 <aside> 固定主导航，顶部一个 <header>（含面包屑），正文放在 <main> 里。
 
 面包屑照 W3C ARIA APG 的写法（当前页那一节必须带 aria-current="page"）：
 
@@ -97,27 +103,8 @@ If the design system conflicts with other instructions, prioritize the design sy
       <li><a href="#" aria-current="page">当前页名</a></li>
     </ol></nav>
 
-## 信息密度（一屏要撑得住）
-
-这是给天天用它干活的人看的后台，不是落地页。同一屏里要能看到足够多的东西：
-
-- 顶部先给一组统计卡（3~5 个），每个卡有：指标名、大号数值、单位、以及同比/环比
-  或状态说明这类第二行小字
-- 主栏至少 3 个信息面板（表格、图表、列表、表单分区都算），每个面板有标题栏，
-  标题栏右侧放该面板自己的操作（筛选、切换、导出、查看全部）
-- 主表格至少 6 列，且要有：行内状态标签、行内操作列、表头、分页或"共 N 条"统计
-- 该有筛选区就写筛选区（日期范围、下拉、搜索框、重置按钮排成一行）
-
-## 组件词汇（按内容需要选，不要硬凑）
-
-步骤条（带序号和箭头分隔）、状态标签 chip、进度条、时间线、树形目录、
-折叠面板、标签页、开关、头像 + 姓名的组合、徽标数字、空状态提示。
-
-## 图表必须用内联 <svg> 自己画出来
-
-不要引任何图表库，也不要写 JS 去渲染——**页面里的脚本不会执行**。
-折线、柱状、环形、迷你走势图都用 <svg> 的 <polyline>/<rect>/<path>/<circle>
-直接画出坐标，配上坐标轴刻度和图例。每个看板类页面至少一个图表。
+页面里的 <script> **不会被执行**（渲染方会移除）。所以不要引图表库、不要写 JS
+渲染——图表一律用内联 <svg> 的 <polyline>/<rect>/<path>/<circle> 直接画出来。
 
 占位数据必须写成**可读的中文文字**，
 不许用灰色横条或色块代替：日期写 20XX-XX-XX，金额写 ¥ ××,×××，百分比写 ××.×%，
@@ -125,30 +112,57 @@ If the design system conflicts with other instructions, prioritize the design sy
 
 这是**客户自己的产品**。页脚、logo、版权行、关于页里不许出现你（生成方）的名字、
 品牌、域名或联系方式；除了上面指定的 Tailwind CDN 与 placehold.co，不要写任何
-外部网址。产品名要从客户的业务里起，不要用你自己的名字。
-</design_system>"""
+外部网址。产品名要从客户的业务里起，不要用你自己的名字。"""
 
-#: 移动端（竖屏 1080×1920）的设计系统。壳的形状是**硬约束**，不是风格偏好：
-#: 第 3.5 步 page_shell 要按它抠壳统一——桌面抠 <aside>+<header>，移动抠
-#: <header>+页面级 <nav>（底部标签栏）。这里不写成 <nav>，3.5 就没得抠，
-#: 菜单一致性那套判据对移动端整个失效。占位数据纪律与桌面同一份。
-_DESIGN_SYSTEM_MOBILE = """## Design system
+#: 移动端契约。壳的形状同样是**硬约束**：3.5 步抠 <header> + 页面级 <nav>
+#: （底部标签栏），这里不写成 <nav>，3.5 就没得抠，移动端那套判据整个失效。
+_STRUCTURAL_CONTRACT_MOBILE = """顶部一个 <header>（左侧产品名，右侧当前登录角色），
+底部一个固定的 <nav> 标签栏（每个页面入口是一个 <a>，图标在上文字在下）。
+**不要左侧边栏（不要 <aside>）**，内容区是可上下滚动的单列。
+
+页面里的 <script> **不会被执行**（渲染方会移除）。所以不要引图表库、不要写 JS
+渲染——图表一律用内联 <svg> 的 <polyline>/<rect>/<path>/<circle> 直接画出来。
+
+占位数据必须写成**可读的中文文字**，
+不许用灰色横条或色块代替：日期写 20XX-XX-XX，金额写 ¥ ××,×××，百分比写 ××.×%，
+计数写 ×,×××，人名写「张师傅」这类。列表要有真实的中文字段名。
+
+这是**客户自己的产品**。页脚、logo、版权行、关于页里不许出现你（生成方）的名字、
+品牌、域名或联系方式；除了上面指定的 Tailwind CDN 与 placehold.co，不要写任何
+外部网址。产品名要从客户的业务里起，不要用你自己的名字。"""
+
+#: 缺省风格。**一句话**——它只是没人指定时的兜底，不是"推荐版式"。
+#: 密度、版式原型、组件词汇这些该由上游按应用给（第 1.5 步生成 / 人工覆盖）。
+_DEFAULT_STYLE = "企业后台风格，浅色底。"
+_DEFAULT_STYLE_MOBILE = "移动端 App 风格（竖屏 1080×1920），浅色底，单列卡片流。触控目标要够大（按钮/列表项高度 ≥ 88px），正文字号偏大。"
+
+
+def build_design_system_prompt_block(
+    design_system: Optional[str], *, device: str = "desktop"
+) -> str:
+    """拼出 `<design_system>` 块：**风格在前，契约在后**。
+
+    形状沿用上游 screenshot-to-code 的同名函数（含"冲突时以设计系统为准"
+    那句优先级声明），差别是本仓把契约那一半固定接在后面。
+
+    ⚠ 契约放**最后**，并且明写"与上面冲突时以这一节为准"：
+      注入进来的风格描述可能跟契约打架（比如要求"极简单栏、去掉侧边导航"），
+      而契约输了的代价不是难看，是 page_shell 抠不到壳、整套外壳判据静默失效。
+    """
+    style = (design_system or "").strip() or (
+        _DEFAULT_STYLE_MOBILE if device == "phone" else _DEFAULT_STYLE
+    )
+    contract = _STRUCTURAL_CONTRACT_MOBILE if device == "phone" else _STRUCTURAL_CONTRACT
+    return f"""## Design system
 
 If the design system conflicts with other instructions, prioritize the design system.
 
 <design_system>
-移动端 App 风格（竖屏手机，视口 1080×1920），浅色底，单列布局。
-顶部一个 <header>（左侧产品名，右侧当前登录角色），
-底部一个固定的 <nav> 标签栏（bottom tab bar，每个页面入口是一个 <a>，图标在上文字在下）。
-**不要左侧边栏（不要 <aside>）**，内容区是可上下滚动的单列卡片流。
-触控目标要够大（按钮/列表项高度 ≥ 88px 视觉高度），正文字号偏大。
-占位数据必须写成**可读的中文文字**，不许用灰色横条或色块代替：
-日期写 20XX-XX-XX，金额写 ¥ ××,×××，百分比写 ××.×%，计数写 ×,×××，
-人名写「张师傅」这类。列表要有真实的中文字段名。
+{style}
 
-这是**客户自己的产品**。页脚、logo、版权行、关于页里不许出现你（生成方）的名字、
-品牌、域名或联系方式；除了上面指定的 Tailwind CDN 与 placehold.co，不要写任何
-外部网址。产品名要从客户的业务里起，不要用你自己的名字。
+## 以下几条是硬约束，与上面的风格描述冲突时以这一节为准
+
+{contract}
 </design_system>"""
 
 
@@ -182,14 +196,20 @@ def build_page_brief(page: Dict[str, Any], spec: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def build_page_html_prompt(brief: str, *, device: str = "desktop") -> str:
+def build_page_html_prompt(
+    brief: str, *, device: str = "desktop", design_system: Optional[str] = None
+) -> str:
     """create/text.py 的 USER_PROMPT，逐字对齐（image policy 取 disabled 那一支）。
 
-    device（2026-08-14 晚加）：`"phone"` 时换移动端设计系统（竖屏 1080×1920、
+    device（2026-08-14 晚加）：`"phone"` 时换移动端契约（竖屏 1080×1920、
     顶栏 + 底部标签栏、无侧栏）。词表沿用 device_policy 的 Device
     （"desktop"/"phone"），不另发明。
+
+    design_system（2026-08-15 晚加）：这个应用的**风格**描述，一路可以从
+    调用方传进来（生成 / 人工覆盖都走这个口）。不传就用缺省那一句话。
+    结构契约不受它影响——见 build_design_system_prompt_block。
     """
-    design = _DESIGN_SYSTEM_MOBILE if device == "phone" else _DESIGN_SYSTEM
+    design = build_design_system_prompt_block(design_system, device=device)
     return f"""Generate UI for {brief}.
 {_STACK}
 {design}
@@ -350,6 +370,7 @@ def generate_page_html(
     spec: Dict[str, Any],
     *,
     device: str = "desktop",
+    design_system: Optional[str] = None,
     llm_call: Optional[Callable[..., Any]] = None,
     max_attempts: int = 2,
 ) -> Dict[str, Any]:
@@ -358,7 +379,7 @@ def generate_page_html(
     返回 {"version", "pageId", "html", "brief", "prompt"}。
     """
     brief = build_page_brief(page, spec)
-    prompt = build_page_html_prompt(brief, device=device)
+    prompt = build_page_html_prompt(brief, device=device, design_system=design_system)
     if llm_call is None:
         # ⚠ 用带重试的那个，不是裸 call_llm（2026-08-13 修）。
         #
@@ -487,6 +508,7 @@ def generate_pages_parallel(
     spec: Dict[str, Any],
     *,
     device: str = "desktop",
+    design_system: Optional[str] = None,
     max_workers: int = 6,
     llm_call: Optional[Callable[..., Any]] = None,
     on_page: Optional[Callable[[str, str, int, int], None]] = None,
@@ -551,7 +573,8 @@ def generate_pages_parallel(
         #     page_shell 按 spec.pages 重排（见 unify_shell）——不靠这里。
         fut_to_id = {
             pool.submit(
-                generate_page_html, pg, spec, device=device, llm_call=llm_call
+                generate_page_html, pg, spec, device=device,
+                design_system=design_system, llm_call=llm_call
             ): str(pg.get("id") or "")
             for pg in pages
         }
