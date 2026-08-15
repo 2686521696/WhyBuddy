@@ -101,10 +101,27 @@ def nav_templates(nav_html: str) -> Optional[Dict[str, Any]]:
         return None
     token_sets = [set(_class_tokens(a)) for a in links]
     base = set.intersection(*token_sets) if token_sets else set()
-    # 激活链接 = 独有词最多的那个。全都一样时退回第一个（那时也没有激活态可认）
-    extras = [len(ts - base) for ts in token_sets]
+    # ⚠ 认激活链接时**先把状态变体剔掉**（2026-08-15）。
+    #
+    # 真机形状（汽修那趟）：
+    #     base_class   = flex font-medium items-center px-4 py-3 rounded-lg …
+    #     active_class = base + **hover:bg-slate-50**
+    #
+    # `hover:` 是悬停样式，鼠标不放上去**没有任何视觉差别**——于是
+    # aria-current 打对了、判据也绿了，界面上却看不出当前页在哪。
+    # 又一次「闸绿了但功能没生效」。
+    #
+    # Tailwind 的变体一律带冒号（hover: / focus: / dark: / md: / group-hover:），
+    # 它们都不能表示一个**持续**的激活状态，所以按冒号一刀切掉。
+    def _stable(ts: set) -> set:
+        return {t for t in ts if ":" not in t}
+
+    stable_sets = [_stable(ts) for ts in token_sets]
+    stable_base = _stable(base)
+    extras = [len(ts - stable_base) for ts in stable_sets]
     active_idx = extras.index(max(extras)) if max(extras) > 0 else 0
-    active_tokens = sorted(token_sets[active_idx])
+    # 激活 class 也只留稳定词：把 hover: 抄过去等于抄了个空。
+    active_tokens = sorted(stable_sets[active_idx]) if max(extras) > 0 else sorted(stable_base)
     icons = [(_SVG.search(a).group(0) if _SVG.search(a) else "") for a in links]
     return {
         "link": links[0 if active_idx != 0 else -1],  # 拿一个**非激活**的当基座
@@ -112,6 +129,58 @@ def nav_templates(nav_html: str) -> Optional[Dict[str, Any]]:
         "active_class": " ".join(active_tokens),
         "icons": icons,
     }
+
+
+#: 源导航本来就没有激活样式时的兜底。挂在 `aria-current="page"` 上，
+#: 而 aria-current 是 build_nav_items 一定会打的，所以不依赖任何 class 命名。
+#:
+#: ⚠ 用 `currentColor` 派生而不是写死颜色：侧栏可能是白底也可能是深色底
+#:   （真机两种都见过），写死 `bg-slate-100` 在深色侧栏上等于没有。
+_ACTIVE_FALLBACK_CSS = (
+    "<style>[aria-current=\"page\"]{"
+    "background-color:color-mix(in srgb, currentColor 12%, transparent);"
+    "font-weight:600}</style>"
+)
+
+_BREADCRUMB_NAV = re.compile(
+    r'<nav\b[^>]*aria-label="Breadcrumb"[^>]*>[\s\S]*?</nav>', re.I
+)
+#: ⚠ 不能用「负向前瞻找最后一个 li」那种写法：惰性组会一路吞到最后一个
+#:   `</li>`，等于从**第一个** li 替换到末尾。真机上当场把「首页 ›」连同
+#:   分隔符一起吃掉了，面包屑只剩当前页一节。改成 finditer 取最后一个 match。
+_ONE_LI = re.compile(r"<li\b[^>]*>[\s\S]*?</li>", re.I)
+_LI_INNER = re.compile(r"(<li\b[^>]*>)([\s\S]*)(</li>)", re.I)
+
+
+def set_breadcrumb_current(header_html: str, page_name: str) -> str:
+    """把面包屑最后一节换成当前页名。
+
+    ## 为什么需要
+
+    外壳统一是整段复制 `<header>`，而面包屑就住在 header 里——于是四个页面
+    的面包屑全都写着源页那一节。真机（汽修那趟）：p3 是库存明细页，
+    面包屑却写「首页 › 服务接车」。
+
+    这是外壳统一的**固有代价**，不是 bug：壳里的东西必然各页相同。
+    修法是给"本该按页变的那部分"单独留一个位置——面包屑最后一节、
+    以及导航的激活态，都属于这一类。
+
+    ⚠ 只换**最后一个** `<li>` 的文本，前面的层级（首页 › 模块）原样留着：
+      那几节是应用结构，本来就该各页一样。
+    ⚠ 找不到面包屑就原样返回——没有面包屑是合法的，硬塞一个是新的破坏。
+    """
+    nav = _BREADCRUMB_NAV.search(header_html or "")
+    if not nav or not page_name:
+        return header_html
+    lis = list(_ONE_LI.finditer(nav.group(0)))
+    if not lis:
+        return header_html
+    last = lis[-1]
+    replaced = _LI_INNER.sub(
+        lambda m: m.group(1) + escape(page_name) + m.group(3), last.group(0), count=1
+    )
+    fixed_nav = nav.group(0)[: last.start()] + replaced + nav.group(0)[last.end() :]
+    return header_html.replace(nav.group(0), fixed_nav, 1)
 
 
 def _set_class(link: str, value: str) -> str:
@@ -329,9 +398,31 @@ def unify_shell(
     _src_main = _MAIN_OPEN.search(pages_html[source_id])
     main_open = _src_main.group(0) if _src_main else ""
 
+    # ⚠ **无条件注入**这条兜底，不再试图判断"源导航有没有激活样式"。
+    #
+    # 判断过一版，两次都判错：
+    #   ① 第一版拿「独有 class 词最多」认激活链接 → 认到了 `hover:bg-slate-50`，
+    #      悬停样式，静态下零差别；
+    #   ② 剔掉变体之后认到 `text-slate-600`，而基座是 `text-slate-700`——
+    #      两个都是灰，肉眼同样看不出。
+    #
+    # 「这个 class 在视觉上够不够显眼」机械判不了，而判错的代价是**当前页
+    # 没有任何标记**。所以不判了：aria-current 一定会打，就挂在它上面加一层
+    # 底色和字重，有没有原生激活样式都不冲突（叠加在已有高亮上仍然读得通）。
+    need_fallback = bool(templates)
+
+    # 页面 id → 名字，给面包屑用
+    name_of = {
+        str(p.get("id") or ""): str(p.get("name") or p.get("id") or "").strip()
+        for p in spec_pages
+    }
+
     out: Dict[str, str] = {}
     for page_id, markup in pages_html.items():
         aside, header = shell["aside"], shell["header"]
+        # ★ 面包屑按页改（2026-08-15）：壳是整段复制的，面包屑住在里面，
+        #   不单独处理的话每页都写着源页那一节。
+        header = set_breadcrumb_current(header, name_of.get(page_id, ""))
         if templates and nav_match:
             items = build_nav_items(templates, spec_pages, page_id)
             new_nav = re.sub(
@@ -357,6 +448,17 @@ def unify_shell(
         #   上，而内容里可能有 bind 打的绑定孔，碰不得。
         if main_open:
             html = _MAIN_OPEN.sub(lambda _m: main_open, html, count=1)
+        if need_fallback and _ACTIVE_FALLBACK_CSS not in html:
+            # 塞进 </head> 之前；没有 head 就退到 <body> 之后（都没有就不塞）。
+            if "</head>" in html:
+                html = html.replace("</head>", _ACTIVE_FALLBACK_CSS + "</head>", 1)
+            else:
+                html = re.sub(
+                    r"(<body\b[^>]*>)",
+                    lambda m: m.group(1) + _ACTIVE_FALLBACK_CSS,
+                    html,
+                    count=1,
+                )
         out[page_id] = html
 
     return {
