@@ -324,7 +324,7 @@ def run_spec_first(
     from .model_assembly import assemble
     from .page_shell import (
         check_shell_consistency,
-        restore_shell_after_bind,
+        repair_pages_after_bind,
         unify_shell,
     )
     from .spec_page_html import generate_pages_parallel
@@ -488,10 +488,16 @@ def run_spec_first(
             # 直接换回来，不用再问模型。
             # ⚠ 只还原**结构被改**的；bind 往壳里打的合法绑定孔要保留
             #   （实测 34 份里 12 份壳里有 data-*）。判定见 restore_shell_after_bind。
-            pages, restored = restore_shell_after_bind(pages, before_bind)
+            # ⚠ 还要把内容区偏移重新对齐一遍：bind 重写整页时会把 <main> 上的
+            #   ml-64 一起吃掉，而还原那一步只管 aside/header。真机（律所那趟）
+            #   4 页里 2 页被吃，判据报了但没人修——见 repair_pages_after_bind。
+            pages, restored, reconciled = repair_pages_after_bind(pages, before_bind)
             st["shellRestored"] = len(restored)
+            st["mainReconciled"] = len(reconciled)
             if restored:
                 print(f"[spec_first_pipeline] 打孔后外壳被改，已还原：{'、'.join(restored)}")
+            if reconciled:
+                print(f"[spec_first_pipeline] 打孔后内容区偏移已重新对齐：{'、'.join(reconciled)}")
             # 还原之后再量一次：剩下的才是还原不了的（比如两页壳本来就不同源）。
             drift = check_shell_consistency(pages, spec)
             st["shellProblems"] = len(drift)

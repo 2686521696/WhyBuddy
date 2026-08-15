@@ -864,6 +864,42 @@ def restore_shell_after_bind(
     return fixed, restored
 
 
+def repair_pages_after_bind(
+    bound: Dict[str, str], before: Dict[str, str]
+) -> Tuple[Dict[str, str], List[str], List[str]]:
+    """bind 之后的确定性收尾：**换回被改坏的壳 + 重新对齐内容区偏移**。零 LLM。
+
+    ## ⚠ 为什么偏移要再做一遍（2026-08-15 晚，律所那趟量出来的）
+
+    第 3.5 步 `unify_shell` 已经调过 `reconcile_main_offset`——但 bind 是
+    **让 LLM 重写整页**，它会把 `<main>` 上的 `ml-64` 一起改掉。而
+    `restore_shell_after_bind` 只管 `<aside>`/`<header>` 两段，**不碰 main**，
+    于是没有任何一处把偏移补回来。
+
+    真机（律所案件管理，4 页）：
+
+        p2/p3  main class="ml-64 …"   ← bind 留着了
+        p1/p4  main class="…"         ← bind 把 ml-64 吃掉了
+
+    判据当场报了 `p1.main` / `p4.main`「侧栏是 fixed，内容区没有左偏移」——
+    **报得对，但没人修**。一半的页面会以侧栏压穿正文的样子交付出去，
+    而那正是当天早些时候刚修过的那个形状。
+
+    ⚠ 顺序要紧：先还原壳再对齐偏移。偏移该不该有取决于**侧栏是不是 fixed**，
+      而侧栏可能刚被换回打孔前那份——先算偏移就是拿旧侧栏做的判断。
+
+    返回 (修好的页面, 被还原的壳, 被重新对齐的内容区)。
+    """
+    fixed, restored = restore_shell_after_bind(bound, before)
+    reconciled: List[str] = []
+    for pid, html in list(fixed.items()):
+        out = reconcile_main_offset(html)
+        if out != html:
+            fixed[pid] = out
+            reconciled.append(f"{pid}.main")
+    return fixed, restored, reconciled
+
+
 def _drift_fingerprint(part: str, part_html: str) -> str:
     """比「各页是不是同一套壳」时用的指纹。**比 shell_fingerprint 多抹两样。**
 

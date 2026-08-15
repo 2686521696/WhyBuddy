@@ -197,3 +197,76 @@ class Test统一外壳时成对处理:
         tgt = _page(body="flex h-screen", aside="w-64 border-r flex flex-col", main="ml-64 flex-1")
         out = unify_shell({"p1": src, "p2": tgt}, SPEC)["pages"]
         assert main_offset_tokens(out["p2"]) == []
+
+
+class Test打孔之后还要再对齐一次:
+    """★ 律所那趟量出来的（2026-08-15 晚，4 页里 2 页坏）。
+
+    第 3.5 步 unify_shell 已经对齐过偏移，但 bind 是**让 LLM 重写整页**，
+    它会把 <main> 上的 ml-64 一起改掉；而 restore_shell_after_bind 只管
+    <aside>/<header>，**不碰 main**——于是没有任何一处把偏移补回来。
+
+        p2/p3  main class="ml-64 …"   ← bind 留着了
+        p1/p4  main class="…"         ← bind 吃掉了
+
+    判据当场报了 p1.main / p4.main，**报得对，但没人修**——一半页面会以
+    侧栏压穿正文的样子交付，而那正是当天早些时候刚修过的形状。
+
+    ⚠ 判据报了却没有对应的修复动作，等于把问题从"看不见"挪到"看得见但还在"。
+    """
+
+    def test_bind吃掉偏移后补回来(self):
+        from services.page_shell import repair_pages_after_bind
+
+        before = {"p1": P2}                      # 打孔前：fixed 侧栏 + ml-64
+        after = {"p1": P4}                       # bind 后：同样的壳，但偏移没了
+        fixed, _restored, reconciled = repair_pages_after_bind(after, before)
+        assert reconciled == ["p1.main"]
+        assert main_offset_tokens(fixed["p1"]) == ["ml-64"]
+
+    def test_没被吃的不动(self):
+        from services.page_shell import repair_pages_after_bind
+
+        fixed, _r, reconciled = repair_pages_after_bind({"p1": P2}, {"p1": P2})
+        assert reconciled == [] and fixed["p1"] == P2
+
+    def test_还原壳的老行为没丢(self):
+        """⚠ 新函数包着老函数，老那条纪律不能在包装里掉了：
+        bind 改了结构就换回打孔前那份。"""
+        from services.page_shell import repair_pages_after_bind
+
+        broken = P2.replace('<a data-page-id="p2"><span>乙页</span></a>', "")
+        _fixed, restored, _rec = repair_pages_after_bind({"p1": broken}, {"p1": P2})
+        assert "p1.aside" in restored
+
+    def test_先还原壳再算偏移(self):
+        """⚠ 顺序要紧：偏移该不该有取决于**侧栏是不是 fixed**，而侧栏可能刚被
+        换回打孔前那份。先算偏移就是拿旧侧栏做的判断。
+
+        ⚠ 这条第一版构造错了，值得记：我只把侧栏的 class 从 fixed 改成流内，
+          以为那算"壳被改了"。**不算**——shell_fingerprint 会把 class 整个
+          抹成 `class=""`（它要抹掉的是激活态差异），于是**类名改动对还原
+          判定是不可见的**。所以要触发还原，得有真正的结构差异。
+
+          顺带记住这条本身：bind 把侧栏从 fixed 改成流内、只动类名的话，
+          restore_shell_after_bind **不会**还原它——那时靠的是
+          reconcile_main_offset 按 bind 后的侧栏重新算，结果依然是对的。
+        """
+        from services.page_shell import repair_pages_after_bind
+
+        # 结构真的不一样（少了一个菜单项）+ 定位也变了
+        after = _page(body="flex h-screen", aside="w-64 border-r flex flex-col",
+                      main="flex-1 flex flex-col").replace(
+            '<a data-page-id="p2"><span>乙页</span></a>', "")
+        fixed, restored, reconciled = repair_pages_after_bind({"p1": after}, {"p1": P2})
+        assert "p1.aside" in restored, "侧栏没被换回来，这条用例的前提没了"
+        assert aside_out_of_flow(fixed["p1"]), "换回来的应该是 fixed 侧栏"
+        assert reconciled == ["p1.main"], "换回 fixed 侧栏后没有补偏移"
+
+    def test_链路里接的是新函数(self):
+        import pathlib
+
+        src = (pathlib.Path(__file__).resolve().parents[1]
+               / "services/spec_first_pipeline.py").read_text(encoding="utf-8")
+        assert "repair_pages_after_bind" in src
+        assert "mainReconciled" in src, "没埋点，跑起来看不见它修了几处"
