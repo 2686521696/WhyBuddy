@@ -106,10 +106,15 @@ def scan_bindings(markup: str) -> List[Dict[str, Any]]:
             continue
         attrs = _attrs(body)
         scope = next((s for _, s in reversed(stack) if s), None)
-        if any(k in attrs for k in ("rows", "field", "value", "action", "chart", "fields")):
+        if any(k in attrs for k in ("rows", "record", "field", "value", "action", "chart", "fields")):
             out.append({"tag": tag, "attrs": attrs, "scope": scope, "pos": m.start()})
         if tag not in void and not selfclose:
-            stack.append((tag, attrs.get("rows")))
+            # ⚠ `data-record` 与 `data-rows` **同样开作用域**（2026-08-15）。
+            #   照 petite-vue：它的 v-scope 和 v-for 走同一个
+            #   createScopedContext（walk.ts:44 / for.ts:105），差别只在要不要
+            #   循环。我们原来只认 rows，于是详情卡没有合法写法——真机上模型
+            #   把 data-field 打在容器外面，重问两次都改不对，整页 bind 失败。
+            stack.append((tag, attrs.get("rows") or attrs.get("record")))
         pos = m.end()
     del pos
     return out
@@ -123,7 +128,9 @@ def check_bindings(markup: str, model: Dict[str, Any]) -> List[Dict[str, str]]:
     for node in scan_bindings(markup):
         a, tag = node["attrs"], node["tag"]
 
-        ent = a.get("rows") or a.get("value") or a.get("entity")
+        # ⚠ record 也要算：漏了它 `data-record="不存在的实体"` 会静默放行，
+        #   然后运行时取不到数据、页面一片空白而没有任何一处报错。
+        ent = a.get("rows") or a.get("record") or a.get("value") or a.get("entity")
         if ent and ent not in entities:
             problems.append({
                 "path": f"<{tag} data-*>",
@@ -135,7 +142,8 @@ def check_bindings(markup: str, model: Dict[str, Any]) -> List[Dict[str, str]]:
             if not scope:
                 problems.append({
                     "path": f"<{tag} data-field={a['field']}>",
-                    "message": "写在 data-rows 容器外面——没有「当前行」，取不到东西",
+                    "message": "写在作用域外面——没有「当前这条」，取不到东西。"
+                               "列表用 data-rows，单条记录（详情卡/表单）用 data-record",
                 })
             elif scope in entities and a["field"] not in entities[scope]:
                 problems.append({
@@ -249,11 +257,22 @@ data-* 属性**，把写死的示例数据换成绑定孔。
 
 绑定词汇（必须一字不差）：
 
+先分清这两个——**它们是「要不要循环」的差别，不是「能不能取字段」的差别**：
+
     <tbody data-rows="<实体id>" data-sort="<字段id>" data-order="desc" data-limit="8">
-        逐行容器。里面**只留一行**当模板，其余示例行删掉。
+        **列表**：逐行容器。里面**只留一行**当模板，其余示例行删掉。
+    <div data-record="<实体id>">
+        **单条**：详情卡、主从视图的右侧面板、编辑表单、"当前选中那条"的
+        摘要区——这些地方**不要循环**，用它开一个作用域就行。
+        想指定是哪一条加 data-record-id="<行id>"，不写就是第一条。
+
     <td data-field="<字段id>">
-        取当前行的某个字段。**只能是所在 data-rows 那个实体的字段**——
-        拿这张表的行去取别的表的字段，取出来是别人的数据。
+        取**当前作用域**那条记录的字段。作用域可以是一行（data-rows），
+        也可以是一条记录（data-record），两种写法完全一样。
+        ⚠ 字段必须属于开作用域的那个实体——拿这张表的行去取别的表的字段，
+          取出来是别人的数据。
+        ⚠ **两个作用域都不在里面就不要写 data-field**：没有"当前这条"，
+          取不到东西。这种地方要么套一个 data-record，要么干脆不绑。
     <span data-value="<实体id>" data-aggregate="count">
         单值。aggregate 可以是 count / sum:<字段id> / avg:<字段id>。
     <div data-chart="donut" data-entity="<实体id>" data-dimension="<字段id>" data-metric="count">
@@ -268,7 +287,9 @@ data-* 属性**，把写死的示例数据换成绑定孔。
 
 1. 这一页至少要有一个数据源（data-rows / data-value / data-chart），
    否则渲染出来还是一张死的静态页。
-2. 表格、列表这类逐行内容一律用 data-rows + data-field；KPI 数字用 data-value。
+2. 挑容器：**多条**用 data-rows，**一条**用 data-record，**聚合数字**用 data-value。
+   判断方法：这块地方在页面上会不会重复出现多份？会 → data-rows；
+   只有一份、展示某一个对象 → data-record；是个统计数 → data-value。
 3. 纯装饰文字（标题、说明、页脚）**不要绑定**。
 4. 挑不到合适字段的地方就不绑，**不要造一个看着像的 id**。
 5. 这是客户自己的产品：**不许**往页面里加你（生成方）的名字、品牌、域名或

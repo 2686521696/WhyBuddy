@@ -436,3 +436,90 @@ describe("enum 字段显标签，不显内部 id", () => {
     expect(root.querySelector("td")?.textContent).toBe("in_transit");
   });
 });
+
+/**
+ * 单条记录作用域 —— `data-record`（2026-08-15）。
+ *
+ * 真机（烘焙那趟 gemini-3.5-flash）bind 挂了一页，重问 2 次没改对：
+ *
+ *     <h4 data-field=product_ref>：写在 data-rows 容器外面——没有「当前行」
+ *
+ * 那是主从视图右侧的详情面板。病根不是模型不会写，是**契约缺了原语**：
+ * 原来只有 data-rows（迭代+作用域焊死）和 data-value（聚合数字），
+ * 「显示单条记录的某个字段」压根没有对应的词。
+ *
+ * 照 petite-vue 的 v-scope 做：它的 v-scope 与 v-for 走同一个
+ * createScopedContext（walk.ts:44 / for.ts:105），读字段的指令不关心
+ * 作用域从哪来。所以 data-field 保持一个词，不另造 data-record-field。
+ */
+describe("单条记录作用域", () => {
+  it("填的是那一条的字段", () => {
+    const root = dom(
+      '<div data-record="vehicle"><h4 data-field="plate">示例</h4>' +
+        '<span data-field="owner">示例</span></div>'
+    );
+    const r = applyBindings(root, { source: SOURCE });
+    expect(root.querySelector("h4")!.textContent).toBe("京A·11111");
+    expect(root.querySelector("span")!.textContent).toBe("张师傅");
+    expect(r.problems).toEqual([]);
+    expect(r.filled.record).toBe(1);
+  });
+
+  it("data-record-id 指定取哪一条", () => {
+    const root = dom(
+      '<div data-record="vehicle" data-record-id="v3"><h4 data-field="plate">x</h4></div>'
+    );
+    applyBindings(root, { source: SOURCE });
+    expect(root.querySelector("h4")!.textContent).toBe("京C·33333");
+  });
+
+  it("动作带得出当前这条的 id", () => {
+    const root = dom(
+      '<div data-record="vehicle" data-record-id="v2">' +
+        '<button data-action="editRecord" data-entity="vehicle">编辑</button></div>'
+    );
+    applyBindings(root, { source: SOURCE });
+    expect(root.querySelector("button")!.getAttribute("data-row-id")).toBe("v2");
+  });
+
+  /**
+   * ⚠ **本组最要紧的一条**。data-record 那一轮如果不跳过 data-rows 内部，
+   * 会拿"第一条记录"把每一行都覆盖一遍——**表格里每行变成同一条数据**，
+   * 而且没有任何一处报错（填充成功、problems 为空）。
+   *
+   * petite-vue 靠原型链让内层作用域覆盖外层；我们结构简单，按 closest 判归属。
+   */
+  it("不许把行内字段覆盖成同一条", () => {
+    // ⚠ 危险形状是 data-record **嵌在行模板里**：行被复制 N 份之后，
+    //   每一份里都有一个 data-record，后面那轮会拿"第一条"把它们全刷成一样。
+    //   ⚠ 第一版这条用例把 data-record 写成表格的**兄弟节点**，
+    //     closest("[data-rows]") 本来就是 null——守卫删掉也不红，
+    //     变异测试当场逮到。形状不对的判据等于没有判据。
+    const root = dom(
+      '<table><tbody data-rows="vehicle" data-limit="3">' +
+        '<tr><td data-field="plate">x</td>' +
+        '<td><div data-record="vehicle"><em data-field="owner">y</em></div></td>' +
+        "</tr></tbody></table>"
+    );
+    applyBindings(root, { source: SOURCE });
+    const plates = [...root.querySelectorAll("td[data-field]")].map((c) => c.textContent);
+    expect(plates).toEqual(["京A·11111", "京B·22222", "京C·33333"]);
+    // 行内那个 data-record 里的字段也该跟着**各自的行**走，不是全变第一条
+    const owners = [...root.querySelectorAll("em")].map((c) => c.textContent);
+    expect(owners).toEqual(["张师傅", "李师傅", "王师傅"]);
+  });
+
+  it("实体不存在时如实报，不静默", () => {
+    const root = dom('<div data-record="ghost"><h4 data-field="plate">x</h4></div>');
+    const r = applyBindings(root, { source: SOURCE });
+    expect(r.problems.join()).toContain("ghost");
+  });
+
+  it("data-record-id 取不到记录时报错", () => {
+    const root = dom(
+      '<div data-record="vehicle" data-record-id="nope"><h4 data-field="plate">x</h4></div>'
+    );
+    const r = applyBindings(root, { source: SOURCE });
+    expect(r.problems.join()).toContain("取不到记录");
+  });
+});

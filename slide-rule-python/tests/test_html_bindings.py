@@ -70,8 +70,14 @@ class Test作用域_不只是存在性:
         assert "不是 'vehicle' 的字段" in 失败原因(bad)
 
     def test_拦_data_field_写在列表外面(self):
+        # ⚠ 断言钉**行为**不钉措辞（2026-08-15 改）：原来写的是
+        #   `"没有「当前行」" in ...`，加了 data-record 之后话术改成
+        #   「没有「当前这条」」，用例当场红——而行为一点没变。
+        #   钉措辞的判据会在每次改文案时假红，久了就没人信它。
         bad = GOOD.replace("<main>", '<main><span data-field="plate">X</span>')
-        assert "没有「当前行」" in 失败原因(bad)
+        msg = 失败原因(bad)
+        assert "作用域外面" in msg or "当前" in msg
+        assert "data-rows" in msg and "data-record" in msg, "报错要指出两种容器怎么选"
 
     def test_嵌套标签内也能算出作用域(self):
         nested = GOOD.replace(
@@ -81,7 +87,8 @@ class Test作用域_不只是存在性:
 
     def test_闭合之后作用域要弹掉(self):
         after = GOOD.replace("</main>", '<span data-field="plate">跑到外面了</span></main>')
-        assert "没有「当前行」" in 失败原因(after)
+        msg = 失败原因(after)
+        assert "作用域外面" in msg or "当前" in msg
 
 
 class Test每个孔都要指到真东西:
@@ -181,8 +188,11 @@ class Test提示词:
         assert "不增删元素" in user and "不动 class" in user
 
     def test_把作用域那条写进去(self):
+        """提示词必须讲清「字段属于开作用域的那个实体」，且两种容器都要出现。
+        ⚠ 同样钉规则不钉原句——加 data-record 时这条为措辞红过一次。"""
         user = build_prompt(GOOD, MODEL, "p1")[-1]["content"]
-        assert "只能是所在 data-rows 那个实体的字段" in user
+        assert "data-rows" in user and "data-record" in user
+        assert "别的表的字段" in user or "不是所在" in user or "必须属于" in user
 
     def test_挑不到就不绑_不要造(self):
         user = build_prompt(GOOD, MODEL, "p1")[-1]["content"]

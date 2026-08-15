@@ -26,7 +26,9 @@
  * ## 词汇表照 docs/绑定契约草案-v1.md，一个字不自创
  *
  *     data-rows="<entity>"        逐行容器；可带 data-sort / data-order / data-limit
- *     data-field="<fieldId>"      取**当前行**的字段
+ *     data-record="<entity>"      **单条记录作用域**；可带 data-record-id
+ *     data-field="<fieldId>"      取**当前作用域**那条记录的字段
+ *                                 （行内 = 当前行，data-record 内 = 那一条）
  *     data-head="<entity>" + data-col   表头按字段清单展开
  *     data-cell                   行内单元格模板，按字段清单展开
  *     data-value + data-aggregate 单值聚合（count / sum / avg / max / min）
@@ -62,6 +64,9 @@ export const HTML_BINDING_RUNTIME_VERSION = "html-binding-runtime-v1";
 export const BINDING_ATTRS = [
   // 逐行容器与它的取数参数
   "data-rows", "data-sort", "data-order", "data-limit", "data-fields",
+  // 单条记录作用域（只建作用域、不迭代）。照 petite-vue 的 v-scope：
+  // 它跟 v-for 走同一个 createScopedContext，读字段的指令不关心作用域从哪来。
+  "data-record", "data-record-id",
   // 表头 / 单元格模板
   "data-head", "data-col", "data-cell",
   // 取值
@@ -267,6 +272,38 @@ function fieldOf(fields: BindingField[] | undefined, id: string): BindingField |
  * 所以「改一份 JSON 再调一次」能得到正确结果，而不是在上一次的产物上叠加。
  * 这正是「只迭代业务逻辑模型就能无限迭代」那句话在运行时的落点。
  */
+/**
+ * 在一个**作用域元素**内部填充 `data-field`。
+ *
+ * ⚠ 抽出来是为了让「一行」和「一条记录」共用同一段逻辑——这条是照
+ *   petite-vue 学的：它的 `v-scope` 和 `v-for` 都走同一个
+ *   `createScopedContext(ctx, data)`（walk.ts:44 与 for.ts:105），
+ *   而读字段的指令根本不关心作用域是循环建的还是 scope 建的。
+ *
+ *   我们原来把「作用域」和「迭代」焊死在 `data-rows` 一个词里，于是详情卡
+ *   （只要作用域、不要循环）无路可走——真机上模型只能把 data-field 打在
+ *   容器外面，然后被判据拦下、整页 bind 失败。
+ */
+function fillFields(
+  scope: Element,
+  record: Record<string, unknown>,
+  fields: Array<{ id: string; name?: string; type?: string }>,
+  entityId: string,
+  problems: string[],
+  filled: Record<string, number>
+): void {
+  scope.querySelectorAll<HTMLElement>("[data-field]").forEach((el) => {
+    const fid = el.getAttribute("data-field") || "";
+    const f = fieldOf(fields, fid);
+    if (!f) {
+      problems.push(`data-field="${fid}"：不是实体 ${entityId} 的字段`);
+      return;
+    }
+    el.textContent = formatFieldText(record[fid], asFieldLike(f));
+    filled.field += 1;
+  });
+}
+
 export function applyBindings(
   root: Element,
   opts: ApplyBindingsOptions
@@ -274,7 +311,7 @@ export function applyBindings(
   const { source, onAction } = opts;
   const rowIdField = opts.rowIdField || "id";
   const filled: Record<string, number> = {
-    rows: 0, field: 0, head: 0, value: 0, chart: 0, action: 0, locked: 0,
+    rows: 0, record: 0, field: 0, head: 0, value: 0, chart: 0, action: 0, locked: 0,
   };
   const problems: string[] = [];
 
@@ -362,16 +399,7 @@ export function applyBindings(
         }
       }
       // 行内 data-field：作用域是**这一行**
-      tr.querySelectorAll<HTMLElement>("[data-field]").forEach((el) => {
-        const fid = el.getAttribute("data-field") || "";
-        const f = fieldOf(fields, fid);
-        if (!f) {
-          problems.push(`data-field="${fid}"：不是实体 ${entityId} 的字段`);
-          return;
-        }
-        el.textContent = formatFieldText(row[fid], asFieldLike(f));
-        filled.field += 1;
-      });
+      fillFields(tr, row, fields, entityId, problems, filled);
       // 行内动作带得出当前行 —— 取不到 rowId 就发空事件是静默失败，
       // actionRef 那轮补运行时判据时点过名，这里同样不许发生
       const rid = row[rowIdField];
@@ -381,6 +409,46 @@ export function applyBindings(
       box.appendChild(tr);
     });
     filled.rows += rows.length;
+  });
+
+  // ── 单条记录作用域 ─────────────────────────────────────────────
+  //
+  // 照 petite-vue 的 `v-scope`：**只建作用域、不迭代**。详情卡、主从视图的
+  // 右侧面板、编辑表单都是这个形状——真机（烘焙那趟 p1 右侧「多因子算法分析」
+  // 面板）就是它，而此前词表里压根没有它的位置。
+  //
+  // ⚠ 跳过已经在 data-rows 里的：那些字段属于「当前行」，上面那轮已经填过。
+  //   petite-vue 靠原型链让内层作用域覆盖外层，我们这里结构简单，
+  //   直接按 closest 判归属就够——但**必须判**，否则行内字段会被这一轮
+  //   拿"第一条记录"再覆盖一次，表格里每行都变成同一条数据。
+  root.querySelectorAll<HTMLElement>("[data-record]").forEach((box) => {
+    if (box.closest("[data-rows]")) return;
+    const entityId = box.getAttribute("data-record") || "";
+    const rows = source.rows[entityId];
+    const fields = source.fields[entityId];
+    if (!rows || !fields) {
+      problems.push(`data-record="${entityId}"：模型里没有这个实体`);
+      return;
+    }
+    // 指定了 id 就取那条，否则取第一条（预览态下"展示某一条"的合理默认）
+    const wanted = box.getAttribute("data-record-id");
+    const record =
+      wanted != null
+        ? rows.find((r) => String(r[rowIdField]) === wanted)
+        : rows[0];
+    if (!record) {
+      problems.push(
+        `data-record="${entityId}"${wanted != null ? ` data-record-id="${wanted}"` : ""}：取不到记录`
+      );
+      return;
+    }
+    fillFields(box, record, fields, entityId, problems, filled);
+    // 作用域里的动作同样带得出"当前这条"——跟行内一个口径
+    const rid = record[rowIdField];
+    box.querySelectorAll<HTMLElement>("[data-action]").forEach((el) => {
+      el.setAttribute("data-row-id", rid == null ? "" : String(rid));
+    });
+    filled.record += 1;
   });
 
   // ── 单值聚合 ───────────────────────────────────────────────────
