@@ -77,7 +77,16 @@ _DESIGN_SYSTEM = """## Design system
 If the design system conflicts with other instructions, prioritize the design system.
 
 <design_system>
-企业后台风格，浅色底，左侧固定菜单 + 顶部面包屑。占位数据必须写成**可读的中文文字**，
+企业后台风格，浅色底，左侧固定菜单 + 顶部面包屑。
+
+面包屑照 W3C ARIA APG 的写法（当前页那一节必须带 aria-current="page"）：
+
+    <nav aria-label="Breadcrumb"><ol>
+      <li><a href="#">模块名</a></li>
+      <li><a href="#" aria-current="page">当前页名</a></li>
+    </ol></nav>
+
+占位数据必须写成**可读的中文文字**，
 不许用灰色横条或色块代替：日期写 20XX-XX-XX，金额写 ¥ ××,×××，百分比写 ××.×%，
 计数写 ×,×××，人名写「张师傅」这类。表格要有真实的中文列名。
 

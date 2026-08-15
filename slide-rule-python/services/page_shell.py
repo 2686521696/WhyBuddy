@@ -142,45 +142,92 @@ _ACTIVE_FALLBACK_CSS = (
     "font-weight:600}</style>"
 )
 
+#: 面包屑那个 nav。**两种都认**：
+#:   · APG 标准写法 `<nav aria-label="Breadcrumb">`
+#:   · 真机上模型常写的裸 nav（无 aria-label，用 <span> + 图标分隔符）
+#: ⚠ 第一版只认前者，真机（烘焙那趟 ouyi）四页的面包屑全是后者——
+#:   修复静静地不生效，没有报错、没有告警、判据全绿。
 _BREADCRUMB_NAV = re.compile(
     r'<nav\b[^>]*aria-label="Breadcrumb"[^>]*>[\s\S]*?</nav>', re.I
 )
-#: ⚠ 不能用「负向前瞻找最后一个 li」那种写法：惰性组会一路吞到最后一个
-#:   `</li>`，等于从**第一个** li 替换到末尾。真机上当场把「首页 ›」连同
-#:   分隔符一起吃掉了，面包屑只剩当前页一节。改成 finditer 取最后一个 match。
-_ONE_LI = re.compile(r"<li\b[^>]*>[\s\S]*?</li>", re.I)
-_LI_INNER = re.compile(r"(<li\b[^>]*>)([\s\S]*)(</li>)", re.I)
+#: header 里的第一个 nav（回落用）。header 里通常只有面包屑一个 nav；
+#: 侧栏导航在 <aside> 里，不会被这条捞到。
+_ANY_NAV = re.compile(r"<nav\b[^>]*>[\s\S]*?</nav>", re.I)
+
+#: 带 aria-current="page" 的那个元素（**任意标签**）。
+#: W3C ARIA APG 的 Breadcrumb 模式规定当前项打这个属性：
+#:
+#:     <li><a href="./breadcrumb.html" aria-current="page">Breadcrumb Example</a></li>
+#:
+#: （拉了官方示例源码对照：aria-practices/content/patterns/breadcrumb/examples/breadcrumb.html）
+#: Bootstrap / Ant Design / Tailwind UI 的面包屑组件都照这个出。
+#:
+#: ⚠ 认 aria-current 而不是认 `<li>`：真机上模型写过 <span>、<a>、<li> 三种，
+#:   按结构猜必然漏。而这个属性是**标准**，且我们侧栏已经在用、已经验证能
+#:   穿过消毒器——不另造 data-crumb-current，词表分叉是下一个对不齐的地方。
+_ARIA_CURRENT_EL = re.compile(
+    r'<(\w+)\b[^>]*aria-current="page"[^>]*>([\s\S]*?)</\1>', re.I
+)
+
+#: 回落：认不出 aria-current 时取最后一个"文本节"。
+#: ⚠ 不能用「负向前瞻找最后一个」那种写法：惰性组会一路吞到最后一个闭合标签，
+#:   等于从**第一个**节替换到末尾。真机上当场把「首页 ›」连同分隔符一起吃掉。
+_CRUMB_SEG = re.compile(r"<(li|span|a)\b[^>]*>[^<>]*</\1>", re.I)
+_SEG_INNER = re.compile(r"(<\w+\b[^>]*>)([\s\S]*)(</\w+>)", re.I)
+
+
+def _breadcrumb_nav(header_html: str) -> Optional[re.Match]:
+    return _BREADCRUMB_NAV.search(header_html or "") or _ANY_NAV.search(header_html or "")
 
 
 def set_breadcrumb_current(header_html: str, page_name: str) -> str:
-    """把面包屑最后一节换成当前页名。
+    """把面包屑的**当前节**换成当前页名。
 
     ## 为什么需要
 
-    外壳统一是整段复制 `<header>`，而面包屑就住在 header 里——于是四个页面
-    的面包屑全都写着源页那一节。真机（汽修那趟）：p3 是库存明细页，
-    面包屑却写「首页 › 服务接车」。
+    外壳统一是整段复制 `<header>`，而面包屑就住在 header 里——于是各页的
+    面包屑全都写着源页那一节。真机（汽修）：p3 是库存明细页，面包屑却写
+    「首页 › 服务接车」。壳里的东西必然各页相同，而面包屑最后一节
+    **本来就该各页不同**，得单独留个位置。
 
-    这是外壳统一的**固有代价**，不是 bug：壳里的东西必然各页相同。
-    修法是给"本该按页变的那部分"单独留一个位置——面包屑最后一节、
-    以及导航的激活态，都属于这一类。
+    ## 怎么认「当前节」——照 W3C ARIA APG
 
-    ⚠ 只换**最后一个** `<li>` 的文本，前面的层级（首页 › 模块）原样留着：
-      那几节是应用结构，本来就该各页一样。
+    优先认 `aria-current="page"`（APG Breadcrumb 模式的标准标记，
+    Bootstrap / antd / Tailwind UI 都这么出）。认不到才回落到"最后一个文本节"。
+
+    ⚠ **第一版只认 `<nav aria-label="Breadcrumb">` 里的 `<li>`**，那是从
+      汽修那一趟的 markup 抄的结构。烘焙那趟 ouyi 写的是裸 `<nav>` + `<span>`
+      + 图标分隔符，四页面包屑一模一样——**修复静静地不生效**，没有报错、
+      没有告警、判据全绿，我差点把它记成「没触发」。
+      拿一个样本的 markup 当通用结构，这是同一类错误的第五次。
+
+    ⚠ 前面的层级（首页 › 模块）原样留着：那几节是应用结构，本该各页一样。
     ⚠ 找不到面包屑就原样返回——没有面包屑是合法的，硬塞一个是新的破坏。
     """
-    nav = _BREADCRUMB_NAV.search(header_html or "")
-    if not nav or not page_name:
+    if not page_name:
         return header_html
-    lis = list(_ONE_LI.finditer(nav.group(0)))
-    if not lis:
+    nav = _breadcrumb_nav(header_html)
+    if not nav:
         return header_html
-    last = lis[-1]
-    replaced = _LI_INNER.sub(
-        lambda m: m.group(1) + escape(page_name) + m.group(3), last.group(0), count=1
+    body = nav.group(0)
+
+    cur = _ARIA_CURRENT_EL.search(body)
+    if cur:
+        replaced = body[: cur.start()] + _SEG_INNER.sub(
+            lambda m: m.group(1) + escape(page_name) + m.group(3), cur.group(0), count=1
+        ) + body[cur.end():]
+        return header_html.replace(body, replaced, 1)
+
+    segs = [m for m in _CRUMB_SEG.finditer(body) if m.group(0).strip()]
+    if not segs:
+        return header_html
+    last = segs[-1]
+    replaced = (
+        body[: last.start()]
+        + _SEG_INNER.sub(lambda m: m.group(1) + escape(page_name) + m.group(3), last.group(0), count=1)
+        + body[last.end():]
     )
-    fixed_nav = nav.group(0)[: last.start()] + replaced + nav.group(0)[last.end() :]
-    return header_html.replace(nav.group(0), fixed_nav, 1)
+    return header_html.replace(body, replaced, 1)
 
 
 def _set_class(link: str, value: str) -> str:
