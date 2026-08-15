@@ -200,19 +200,18 @@ class Test统一外壳时成对处理:
 
 
 class Test打孔之后还要再对齐一次:
-    """★ 律所那趟量出来的（2026-08-15 晚，4 页里 2 页坏）。
+    """bind 会重写整页，可能把内容区那一层的偏移一起改掉——补一次兜底。
 
-    第 3.5 步 unify_shell 已经对齐过偏移，但 bind 是**让 LLM 重写整页**，
-    它会把 <main> 上的 ml-64 一起改掉；而 restore_shell_after_bind 只管
-    <aside>/<header>，**不碰 main**——于是没有任何一处把偏移补回来。
+    ⚠ **这一组是从一次假警报里长出来的，如实记着**：
 
-        p2/p3  main class="ml-64 …"   ← bind 留着了
-        p1/p4  main class="…"         ← bind 吃掉了
+    加它的时候理由写的是"律所那趟 4 页里 2 页被 bind 吃掉偏移"。后来查明
+    那批 `p1.main` / `p4.main` 告警是**假的**——当时 main_offset_tokens 只看
+    `<main>` 一层，而真机那两页的偏移写在包裹层上（见 Test偏移可能写在祖先层上）。
+    交付页本来就是好的；而按那个错判据去"修"，浏览器里量到 main.left=512px，
+    整屏右移了一整个侧栏宽度。
 
-    判据当场报了 p1.main / p4.main，**报得对，但没人修**——一半页面会以
-    侧栏压穿正文的样子交付，而那正是当天早些时候刚修过的形状。
-
-    ⚠ 判据报了却没有对应的修复动作，等于把问题从"看不见"挪到"看得见但还在"。
+    也就是说下面这些用例的输入是**构造**的，不是真机采到的形状。
+    留着是因为这条兜底便宜，不是因为它救过火。
     """
 
     def test_bind吃掉偏移后补回来(self):
@@ -270,3 +269,70 @@ class Test打孔之后还要再对齐一次:
                / "services/spec_first_pipeline.py").read_text(encoding="utf-8")
         assert "repair_pages_after_bind" in src
         assert "mainReconciled" in src, "没埋点，跑起来看不见它修了几处"
+
+
+#: 真机 p1 的形状：偏移写在**包裹层**上，<main> 自己干干净净
+WRAPPED = (
+    '<!doctype html><html><head></head><body class="flex h-screen">'
+    '<aside class="w-64 border-r fixed h-full"><nav>'
+    '<a data-page-id="p1" aria-current="page"><span>甲页</span></a>'
+    '<a data-page-id="p2"><span>乙页</span></a></nav></aside>'
+    '<div class="flex-1 ml-64 flex flex-col">'
+    '<header class="h-16"><nav aria-label="Breadcrumb"><ol>'
+    '<li><a href="/">模块</a></li>'
+    '<li><a aria-current="page">甲页</a></li></ol></nav></header>'
+    '<main class="flex-1 overflow-y-auto"><div>正文</div></main>'
+    "</div></body></html>"
+)
+
+
+class Test偏移可能写在祖先层上:
+    """★ 律所那趟当场打脸的一条（2026-08-15 晚）。
+
+    真机 p1：偏移写在包裹层 `<div class="flex-1 ml-64 flex flex-col">` 上，
+    `<main>` 自己没有。只看 <main> 的判据于是报「内容区没有左偏移」——
+    **假警报**；而按它去修（给 main 补 ml-64）浏览器里当场量到
+    main.left=512px，整屏右移了一整个侧栏宽度。
+
+    ⚠ 判据错和修复错是同一个根因：**拿一个节点推的结论套到整棵子树上**。
+      这是同一处第五次返工（抄整段 class → 只删不补 → 只看 body →
+      只看 main → 只看一层）。
+    """
+
+    def test_祖先层带偏移就算已让位(self):
+        assert main_offset_tokens(WRAPPED) == ["ml-64"]
+
+    def test_不误报(self):
+        assert not _mains(check_shell_consistency({"p1": WRAPPED, "p2": WRAPPED}, SPEC))
+
+    def test_不重复补成双倍偏移(self):
+        """★ 修复侧：已经让位了就一个字都别动。"""
+        assert reconcile_main_offset(WRAPPED) == WRAPPED
+
+    def test_祖先链取到main为止(self):
+        from services.page_shell import main_offset_chain
+
+        chain = main_offset_chain(WRAPPED)
+        assert chain and chain[-1][2].startswith("<main")
+        assert any("ml-64" in t for _s, _e, t in chain), "包裹层没进链"
+
+    def test_侧栏不进链(self):
+        """⚠ <aside> 在 <main> 之前就闭合了，它不是 main 的祖先。
+        进了链的话侧栏自己的 w-64 之类会被当成内容区的偏移。"""
+        from services.page_shell import main_offset_chain
+
+        assert not any("<aside" in t for _s, _e, t in main_offset_chain(WRAPPED))
+
+    def test_空元素不破坏祖先关系(self):
+        """⚠ <img>/<br> 没有闭合标签，压进栈会把后面所有祖先关系算错。"""
+        from services.page_shell import main_offset_chain
+
+        h = WRAPPED.replace("<header ", '<img src="/x.png"><br><header ')
+        chain = main_offset_chain(h)
+        assert any("ml-64" in t for _s, _e, t in chain)
+        assert not any("<img" in t or "<br" in t for _s, _e, t in chain)
+
+    def test_流内侧栏时从祖先层上摘掉多余偏移(self):
+        """反方向：偏移在祖先层、而侧栏在流内 + body 横排 → 该摘的是祖先层那个。"""
+        h = WRAPPED.replace('class="w-64 border-r fixed h-full"', 'class="w-64 border-r flex flex-col"')
+        assert main_offset_tokens(reconcile_main_offset(h)) == []

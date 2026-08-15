@@ -664,6 +664,60 @@ def aside_offset_token(markup: str) -> Optional[str]:
     return None
 
 
+_TAG = re.compile(r"<(/?)([a-zA-Z][\w-]*)\b([^>]*?)(/?)>")
+#: 空元素不进栈——它们没有闭合标签，压进去会把后面所有祖先关系算错。
+_VOID = frozenset({
+    "area", "base", "br", "col", "embed", "hr", "img", "input",
+    "link", "meta", "param", "source", "track", "wbr",
+})
+
+
+def _offset_tokens_of(open_tag: str) -> List[str]:
+    cls = _CLASS.search(open_tag or "")
+    if not cls:
+        return []
+    return [t for t in cls.group(1).split() if _OFFSET_CLS.match(t)]
+
+
+def main_offset_chain(markup: str) -> List[Tuple[int, int, str]]:
+    """`<main>` **自己和它到 `<body>` 之间的每一层祖先**的开标签，由外向内。
+
+    ## ⚠ 为什么不能只看 `<main>`（2026-08-15 晚，律所那趟当场打脸）
+
+    真机 p1 长这样——偏移写在**包裹层**上，`<main>` 自己干干净净：
+
+        <body class="flex h-screen">
+          <aside class="w-64 … fixed">…</aside>
+          <div class="flex-1 ml-64 flex flex-col">   ← 让位的是它
+            <header>…</header>
+            <main class="flex-1 …">…</main>          ← 这一层没有偏移
+
+    只看 `<main>` 的判据于是报「内容区没有左偏移」——**假警报**；
+    而按它去"修"（给 main 补 ml-64）真机当场量到 main.left=512px，
+    整屏右移了一整个侧栏的宽度。**判据错和修复错是同一个根因。**
+
+    这是同一处第五次返工，也是同一类错误又一次：**拿一个节点推的结论
+    套到整棵子树上**。前四次是 class 抄整段 / 只删不补 / 只看 body /
+    只看 main，这次是只看一层。
+    """
+    src = markup or ""
+    body = _BODY_OPEN.search(src)
+    start = body.end() if body else 0
+    stack: List[Tuple[int, int, str]] = []
+    for m in _TAG.finditer(src, start):
+        closing, name, _attrs, selfclose = m.group(1), m.group(2).lower(), m.group(3), m.group(4)
+        if name == "main" and not closing:
+            return stack + [(m.start(), m.end(), m.group(0))]
+        if closing:
+            for i in range(len(stack) - 1, -1, -1):
+                if stack[i][2][1:].split(None, 1)[0].rstrip(">").lower() == name:
+                    del stack[i:]
+                    break
+        elif not selfclose and name not in _VOID:
+            stack.append((m.start(), m.end(), m.group(0)))
+    return []
+
+
 def main_offset_tokens(markup: str) -> List[str]:
     """内容区容器上的**左偏移**类，只取这一类。
 
@@ -689,13 +743,8 @@ def main_offset_tokens(markup: str) -> List[str]:
     ⚠ 这次的教训：我拿 39 份历史产出验过「main 收敛到 1 种」，但**没验页面
       还能不能看**。指标绿了不等于东西对——这一天里第三次栽在同一处。
     """
-    m = _MAIN_OPEN.search(markup or "")
-    if not m:
-        return []
-    cls = _CLASS.search(m.group(0))
-    if not cls:
-        return []
-    return sorted(t for t in cls.group(1).split() if _OFFSET_CLS.match(t))
+    return sorted({t for _s, _e, tag in main_offset_chain(markup)
+                   for t in _offset_tokens_of(tag)})
 
 
 def _rewrite_main_class(markup: str, toks: List[str]) -> str:
@@ -731,15 +780,15 @@ def strip_main_offset(markup: str) -> str:
     """
     if aside_out_of_flow(markup) or not _body_is_flex_row(markup):
         return markup
-    m = _MAIN_OPEN.search(markup or "")
-    if not m:
-        return markup
-    cls = _CLASS.search(m.group(0))
-    if not cls:
-        return markup
-    return _rewrite_main_class(
-        markup, [t for t in cls.group(1).split() if not _OFFSET_CLS.match(t)]
-    )
+    out = markup
+    # 从内往外改，先改后面的：改了前面的会让后面记下来的偏移量失效。
+    for start, end, tag in reversed(main_offset_chain(markup)):
+        if not _offset_tokens_of(tag):
+            continue
+        cls = _CLASS.search(tag)
+        kept = [t for t in cls.group(1).split() if not _OFFSET_CLS.match(t)]
+        out = out[:start] + tag.replace(cls.group(0), f'class="{" ".join(kept)}"', 1) + out[end:]
+    return out
 
 
 def reconcile_main_offset(markup: str) -> str:
@@ -768,7 +817,9 @@ def reconcile_main_offset(markup: str) -> str:
     toks = cls.group(1).split()
     if not aside_out_of_flow(markup):
         return strip_main_offset(markup)
-    if any(_OFFSET_CLS.match(t) for t in toks):
+    # ⚠ 问的是**整条祖先链**有没有让位，不是只问 <main>：真机 p1 的偏移
+    #   写在包裹层上，只看 main 会以为没让位，补一个就成了双倍偏移（512px）。
+    if main_offset_tokens(markup):
         return markup  # 已经让位了
     want = aside_offset_token(markup)
     if not want:
@@ -869,21 +920,23 @@ def repair_pages_after_bind(
 ) -> Tuple[Dict[str, str], List[str], List[str]]:
     """bind 之后的确定性收尾：**换回被改坏的壳 + 重新对齐内容区偏移**。零 LLM。
 
-    ## ⚠ 为什么偏移要再做一遍（2026-08-15 晚，律所那趟量出来的）
+    ## ⚠ 为什么偏移要再做一遍
 
     第 3.5 步 `unify_shell` 已经调过 `reconcile_main_offset`——但 bind 是
-    **让 LLM 重写整页**，它会把 `<main>` 上的 `ml-64` 一起改掉。而
+    **让 LLM 重写整页**，它可以把内容区那一层的 `ml-64` 一起改掉。而
     `restore_shell_after_bind` 只管 `<aside>`/`<header>` 两段，**不碰 main**，
-    于是没有任何一处把偏移补回来。
+    于是没有任何一处把偏移补回来。这是一条**兜底**，代价是零 LLM 的一次扫描。
 
-    真机（律所案件管理，4 页）：
+    ## ⚠ 诚实记账：它是从一次**假警报**里推出来的
 
-        p2/p3  main class="ml-64 …"   ← bind 留着了
-        p1/p4  main class="…"         ← bind 把 ml-64 吃掉了
+    本函数 2026-08-15 晚加的时候，理由写的是"律所那趟 4 页里 2 页被 bind
+    吃掉了偏移"。后来查明那批告警是假的——当时 `main_offset_tokens` 只看
+    `<main>` 一层，而真机 p1/p4 的偏移写在**包裹层**上（见 main_offset_chain）。
+    交付页本来就是好的，是判据错了；而按那个错判据去"修"，真机量到
+    main.left=512px，**整屏右移了一整个侧栏宽度**——判据错和修复错同根。
 
-    判据当场报了 `p1.main` / `p4.main`「侧栏是 fixed，内容区没有左偏移」——
-    **报得对，但没人修**。一半的页面会以侧栏压穿正文的样子交付出去，
-    而那正是当天早些时候刚修过的那个形状。
+    所以「bind 吃掉偏移」这个形状**至今没有在真机上观测到**，单测里那份是
+    构造出来的。留着它是因为便宜，不是因为它救过火。
 
     ⚠ 顺序要紧：先还原壳再对齐偏移。偏移该不该有取决于**侧栏是不是 fixed**，
       而侧栏可能刚被换回打孔前那份——先算偏移就是拿旧侧栏做的判断。
