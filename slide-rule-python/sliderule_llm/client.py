@@ -625,12 +625,12 @@ def _call_llm_once(
 
     started = time.time()
     try:
-        with httpx.Client(timeout=timeout_s) as client:
+        with httpx.Client(timeout=_http_timeout(timeout_s)) as client:
             r = client.post(url, headers=_headers(cfg.api_key), json=payload)
     except httpx.TimeoutException as e:
         raise LlmError(f"timeout after {timeout_s:.0f}s", transient=True) from e
     except httpx.HTTPError as e:
-        raise LlmError(f"cannot reach {url}: {e}", transient=True) from e
+        raise LlmError(f"cannot reach {url}: {_describe_http_error(e)}", transient=True) from e
 
     latency = int((time.time() - started) * 1000)
     if r.status_code >= 400:
@@ -702,7 +702,7 @@ def _call_llm_once_streaming(
     finish: str | None = None
     resolved_model = model
     try:
-        with httpx.Client(timeout=timeout_s) as client:
+        with httpx.Client(timeout=_http_timeout(timeout_s)) as client:
             with client.stream("POST", url, headers=_headers(cfg.api_key), json=payload) as r:
                 if r.status_code >= 400:
                     body = r.read().decode("utf-8", "replace")
@@ -746,7 +746,7 @@ def _call_llm_once_streaming(
     except httpx.TimeoutException as e:
         raise LlmError(f"timeout after {timeout_s:.0f}s", transient=True) from e
     except httpx.HTTPError as e:
-        raise LlmError(f"cannot reach {url}: {e}", transient=True) from e
+        raise LlmError(f"cannot reach {url}: {_describe_http_error(e)}", transient=True) from e
 
     latency = int((time.time() - started) * 1000)
     content = "".join(content_parts)
@@ -869,6 +869,41 @@ def _hedge_delay_ms() -> int:
         return int(str(raw).strip())
     except ValueError:
         return _HEDGE_DELAY_MS_DEFAULT
+
+
+#: 连接阶段的超时。**照抄 openai SDK 的默认**（openai/_constants.py:9：
+#: `DEFAULT_TIMEOUT = httpx.Timeout(timeout=600, connect=5.0)`）。
+#:
+#: ## 为什么要单独拆出来（2026-08-14 真机）
+#:
+#: 此前给 httpx 传的是一个**裸数字**，而那个值会被同时用在四个阶段上
+#: （connect / read / write / pool）。于是 LLM_TIMEOUT_MS=600000 不只是
+#: "读响应最多等 10 分钟"，连"建连最多等 10 分钟"也一起给了。
+#:
+#: 代价实测到了：一次 `Server disconnected without sending a response`
+#: **挂了 331 秒才失败**，三次重试就是十几分钟——而收尾那 821 秒的黑洞
+#: 正是这么来的（见 [llm-retry] 那行日志）。
+#:
+#: ⚠ **read 那 600 秒不能动**：一次页面生成实测 149~200s、bind 单页 185s，
+#:   缩短读超时会当场误杀正常的长生成。要治的只是"建不上连还傻等"。
+_CONNECT_TIMEOUT_SECONDS = float(os.getenv("LLM_CONNECT_TIMEOUT_SECONDS", "5"))
+
+
+def _http_timeout(timeout_s: float) -> "httpx.Timeout":
+    """整体 timeout_s，**只把 connect 压短**。形状与 openai SDK 一致。"""
+    return httpx.Timeout(timeout=timeout_s, connect=_CONNECT_TIMEOUT_SECONDS)
+
+
+def _describe_http_error(error: Exception) -> str:
+    """把 httpx 异常的**类型**带出来。
+
+    ⚑ 2026-08-14：此前 ConnectError / RemoteProtocolError / ReadError 全被
+      `except httpx.HTTPError` 一把捞走，消息里只有 "cannot reach …"。
+      于是"连不上"和"连上了但对面中途断开"在日志里长得一模一样——
+      而这两者要的修法不同（前者靠短 connect 超时，后者得靠首字节超时或对冲）。
+      331 秒那次就卡在分不出是哪一种。
+    """
+    return f"{type(error).__name__}: {error}"
 
 
 def call_llm_with_retry(
