@@ -508,6 +508,8 @@ def _try_llm_generate_evidence(
         model,
         require_landing_page_ref=require_landing_page_ref,
         require_preferred_device=True,
+        # 页型必填字段只对老链路生效（见 v5_model_gate 那段注释）
+        require_page_kind_contract=not from_spec_first,
     )
     if not gate.get("passed"):
         # E37 门裁决回喂：确定性修复兜不住的裁决（骨架级悬空引用等），把门的
@@ -590,6 +592,7 @@ def _try_llm_generate_evidence(
                 retry_model,
                 require_landing_page_ref=require_landing_page_ref,
                 require_preferred_device=True,
+                require_page_kind_contract=not from_spec_first,
             )
             if retry_gate.get("passed"):
                 model, gate = retry_model, retry_gate
@@ -703,6 +706,7 @@ def _try_llm_generate_evidence(
             model,
             require_landing_page_ref=require_landing_page_ref,
             require_preferred_device=True,
+            require_page_kind_contract=not from_spec_first,
         )
         if not post_gate.get("passed"):
             findings = post_gate.get("findings") or []

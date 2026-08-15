@@ -429,6 +429,7 @@ def validate_five_system_model(
     *,
     require_landing_page_ref: bool = False,
     require_preferred_device: bool = False,
+    require_page_kind_contract: bool = True,
 ) -> Dict[str, Any]:
     """Structural closure gate. Returns {'passed': bool, 'findings': [...]}.
 
@@ -441,6 +442,19 @@ def validate_five_system_model(
 
     require_preferred_device=True: appbundle.preferredDevice must be exactly
     desktop or phone. The tolerant default still accepts missing/tablet historic data.
+
+    require_page_kind_contract（2026-08-14 加，默认 True = 老行为）：
+      kanban 必须有 statusField、calendar 必须有 dateField。这两条是**老渲染器
+      （AppRuntimeScreen）的输入需求**——它渲染看板/日历时要知道按哪个字段分列、
+      按哪个字段排期。
+
+      **新链路传 False**：那条链路的交付物是第 3 步的 HTML，页面长什么样由 HTML
+      决定；全仓 dateField 没有一个新链路消费者，运行时也不读 page.kind。
+      拿一个没人会用的字段拦下整条链路，代价是回落老路（2026-08-14 口腔连锁
+      那轮就是这么挂的）。
+
+      ⚠ 只关「必须存在」这一支。字段**给了就必须指到本页实体的对应类型字段**——
+        那条解析/类型校验对两条链路一视同仁，不受此开关影响。
     """
     findings: List[Dict[str, Any]] = []
     m = _as_dict(model)
@@ -685,8 +699,25 @@ def validate_five_system_model(
                     ref=ref, skill="page",
                 ))
 
-        _check_view_binding("statusField", "enum", required=kind == "kanban")
-        _check_view_binding("dateField", "date", required=kind == "calendar")
+        # ⚑ 2026-08-14：`required` 这一支是**老渲染器契约**，按链路开关。
+        #
+        # kanban 要 statusField、calendar 要 dateField，这两条存在的理由是
+        # AppRuntimeScreen 渲染看板/日历时得知道按哪个字段分列、按哪个字段排期。
+        # 换句话说它们是**区块渲染器的输入需求**，不是模型自身的完整性。
+        #
+        # 新链路的交付物是第 3 步那份 HTML，页面长什么样由 HTML 决定：
+        # 全仓 `dateField` 没有一个新链路消费者（前端精确匹配只命中类型声明、
+        # 老渲染器用例与 demo 模板），而 html-binding-runtime / derive-binding-source
+        # 压根不读 page.pages[].kind。拿一个没人会用的字段去拦整条链路，
+        # 拦下来的代价是回落老路——2026-08-14 口腔连锁那轮就是这么挂的
+        # （calendar 页缺 dateField，重问 2 次未补，整条回落）。
+        #
+        # ⚠ **只松「必须存在」，不松「存在就得对」**：下面 _check_view_binding 里
+        #   的解析与类型校验对两条链路一视同仁。新链路真给了 dateField，它照样
+        #   必须指到本页实体的 date 字段——放行悬空引用是另一个病，不在这次范围。
+        _kind_contract = require_page_kind_contract
+        _check_view_binding("statusField", "enum", required=_kind_contract and kind == "kanban")
+        _check_view_binding("dateField", "date", required=_kind_contract and kind == "calendar")
         _check_view_binding("colorBy", "enum", required=False)
         for fb in _as_list(pd.get("fieldBindings")):
             ref = str(fb).strip()

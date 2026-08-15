@@ -319,7 +319,14 @@ def assemble(
             model = apply_bindings(skeleton, payload)
             own = check_bindings_closed(model)
             gate = validate_five_system_model(
-                model, require_landing_page_ref=True, require_preferred_device=True
+                model,
+                require_landing_page_ref=True,
+                require_preferred_device=True,
+                # 新链路的交付物是第 3 步那份 HTML，页面长什么样由 HTML 决定。
+                # kanban/calendar 的 statusField/dateField 是老渲染器的输入需求，
+                # 这条链路上没有任何消费者——拿它拦住整条链只会回落老路。
+                # ⚠ 只关「必须存在」；给了仍然必须指到真字段（见闸里那段注释）。
+                require_page_kind_contract=False,
             )
             if not own and gate["passed"]:
                 return {"model": model, "gate": gate}
