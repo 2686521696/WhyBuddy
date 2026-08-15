@@ -29,11 +29,23 @@ class Test页面提示词:
         p = build_page_html_prompt("某页", device="phone")
         for word in ["1080×1920", "底部", "<nav>", "不要左侧边栏"]:
             assert word in p, f"移动设计系统里少了「{word}」"
-        assert "左侧固定菜单" not in p
+        assert "左侧固定主导航" not in p, "移动端不该有左侧栏"
 
-    def test_desktop提示词与从前逐字一致(self):
+    def test_desktop缺省即桌面(self):
         assert build_page_html_prompt("某页") == build_page_html_prompt("某页", device="desktop")
-        assert "左侧固定菜单" in build_page_html_prompt("某页")
+
+    def test_桌面要左侧栏_移动不要(self):
+        """⚠ 这条钉的是**两边分岔本身**，不是某一版的措辞。
+
+        2026-08-15 晚提密度时改了桌面设计系统，原来那条「逐字一致」当场红——
+        它钉的是措辞，而措辞本来就该能改。留下的是真正不该变的那一条：
+        桌面有 <aside> 左侧栏、移动端没有。page_shell 抠壳按这个分岔走，
+        写反了移动端整套判据静默失效。
+        """
+        desk = build_page_html_prompt("某页", device="desktop")
+        phone = build_page_html_prompt("某页", device="phone")
+        assert "左侧固定主导航" in desk and "<aside>" in desk
+        assert "不要 <aside>" in phone or "不要左侧边栏" in phone
 
 
 def _phone_page(brand: str, role: str, nav_labels: list[str], active: int) -> str:
