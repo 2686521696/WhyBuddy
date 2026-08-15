@@ -80,6 +80,10 @@ If the design system conflicts with other instructions, prioritize the design sy
 企业后台风格，浅色底，左侧固定菜单 + 顶部面包屑。占位数据必须写成**可读的中文文字**，
 不许用灰色横条或色块代替：日期写 20XX-XX-XX，金额写 ¥ ××,×××，百分比写 ××.×%，
 计数写 ×,×××，人名写「张师傅」这类。表格要有真实的中文列名。
+
+这是**客户自己的产品**。页脚、logo、版权行、关于页里不许出现你（生成方）的名字、
+品牌、域名或联系方式；除了上面指定的 Tailwind CDN 与 placehold.co，不要写任何
+外部网址。产品名要从客户的业务里起，不要用你自己的名字。
 </design_system>"""
 
 #: 移动端（竖屏 1080×1920）的设计系统。壳的形状是**硬约束**，不是风格偏好：
@@ -99,6 +103,10 @@ If the design system conflicts with other instructions, prioritize the design sy
 占位数据必须写成**可读的中文文字**，不许用灰色横条或色块代替：
 日期写 20XX-XX-XX，金额写 ¥ ××,×××，百分比写 ××.×%，计数写 ×,×××，
 人名写「张师傅」这类。列表要有真实的中文字段名。
+
+这是**客户自己的产品**。页脚、logo、版权行、关于页里不许出现你（生成方）的名字、
+品牌、域名或联系方式；除了上面指定的 Tailwind CDN 与 placehold.co，不要写任何
+外部网址。产品名要从客户的业务里起，不要用你自己的名字。
 </design_system>"""
 
 
@@ -163,6 +171,108 @@ def _strip_fences(text: str) -> str:
     return out[idx:] if idx > 0 else out
 
 
+#: 提示词里**明确要求或允许**的外部主机。只有这三类：
+#:   · cdn.tailwindcss.com —— 栈约束点名要引的
+#:   · placehold.co        —— 抄 screenshot-to-code 的 image policy 里写的占位图
+#:   · fonts.google*       —— 「用现代专业字体」这条的常见实现；渲染器本来就 abort 它，
+#:                            放进白名单纯粹是别让它变成噪音告警
+_ALLOWED_HOSTS = (
+    "cdn.tailwindcss.com",
+    "placehold.co",
+    "fonts.googleapis.com",
+    "fonts.gstatic.com",
+)
+
+#: 模型供应商自己的身份。这几个词出现在**客户的交付物**里永远是错的。
+#: ⚠ 真机原文（2026-08-15，连锁药房那趟 p3 页脚）：
+#:     © 2024 欧亿智能库存效期管理系统 | 全局同步延迟 < 1s | 唯一官方: https://www.rcouyi.com
+#:   同一天还见过它拿这个名字当产品名：欧亿智造系统 / 欧亿口腔 / 欧亿医疗连锁。
+#:   根源是中转站往请求里注入的人设（跟 agentic-pick 那次寒暄同源），
+#:   只是这次泄漏到了产出里。
+_VENDOR_IDENTITY = ("欧亿", "ouyi", "rcouyi")
+
+#: 图标/组件库的公共 CDN。**不是品牌泄漏**，是依赖选择。
+#: ⚠ 实测：35 份真机产出里，cdnjs 出现在 14 份、unpkg 出现在 3 份。
+#:   把它们当硬失败等于每页都要重问，整步必挂——这条判据本身会变成事故。
+_COMMON_CDN_HOSTS = ("cdnjs.cloudflare.com", "unpkg.com", "cdn.jsdelivr.net")
+
+#: XML 命名空间**不是链接**。`xmlns="http://www.w3.org/2000/svg"` 是每个内联
+#: SVG 都有的东西，扫 URL 时必须先排掉——第一版没排，真机 35 页里当场误报。
+_XMLNS_RE = re.compile(r'xmlns(?::\w+)?\s*=\s*["\'][^"\']*["\']')
+
+_URL_RE = re.compile(r"https?://([A-Za-z0-9.-]+)")
+
+
+def scan_foreign_references(markup: str) -> List[str]:
+    """扫产出里的**外部链接**与**模型供应商身份**。
+
+    ## 为什么要有这条
+
+    真机（连锁药房，2026-08-15）：模型把中转站自己的域名写进了客户的页脚。
+    这跟外壳漂移不是一个量级——那是排版问题，这是**交付物里混进了第三方的
+    品牌与链接**，直接发给客户就是事故。
+
+    ## ⚠ 只拦两类，不拦「品牌名」本身
+
+    这条**刻意不做**通用的品牌词过滤。同一天的产出里有
+    士卓曼 (Straumann BLT)、诺贝尔 (Nobel Biocare)、Bio-Oss 骨粉、
+    瑞士ITI种植体——那些是**正确的领域细节**，是这个模型最值钱的地方，
+    拦掉就把好东西一起杀了。
+
+    所以判据收窄成两条机械可判的：
+      ① 白名单之外的外部主机（提示词只授权了 tailwind CDN 和 placehold.co）
+      ② 模型供应商自己的身份（欧亿 / OuYi / rcouyi）——这个在客户产品里
+        没有任何正当出现的理由
+
+    ## ⚠ 分两档，因为上线前量了 35 份真机产出：**94% 会命中**
+
+    第一版把所有命中都当阻断，等于每页都要重问、整步必挂——**这条判据本身
+    会变成事故**（同 120s 落后者截止线那次：拿一批数据推的阈值套到另一批上）。
+    拆开看三类性质完全不同：
+
+      · `www.w3.org`                 内联 SVG 的 xmlns，**纯误报**，先抠掉再扫
+      · cdnjs / unpkg                图标库 CDN，35 份里 17 份有。是**依赖选择**，
+                                     不是品牌泄漏 → 只提醒，不阻断
+      · 欧亿 / rcouyi.com            **真事故** → 阻断
+
+    返回 (阻断项, 提醒项)。**只有阻断项进 validate_page_html。**
+    """
+    text = markup or ""
+    blocking: List[str] = []
+    notes: List[str] = []
+
+    # ⚠ 先把 xmlns 抠掉再扫 URL，否则每个内联 SVG 都误报 w3.org。
+    scannable = _XMLNS_RE.sub("", text)
+    hosts = {
+        host
+        for host in _URL_RE.findall(scannable)
+        if not any(host == a or host.endswith("." + a) for a in _ALLOWED_HOSTS)
+    }
+    cdn = sorted(
+        h for h in hosts if any(h == c or h.endswith("." + c) for c in _COMMON_CDN_HOSTS)
+    )
+    other = sorted(hosts - set(cdn))
+
+    if other:
+        blocking.append(
+            f"页面里出现了未授权的外部链接：{'、'.join(other[:5])}"
+            f"（只允许 {'、'.join(_ALLOWED_HOSTS)}）"
+        )
+    if cdn:
+        # 提醒不阻断：要不要收敛 CDN 依赖是**产品决策**，
+        # 不该由一条校验规则替人做主，更不该拿它去打死整步。
+        notes.append(f"页面引了公共 CDN：{'、'.join(cdn)}（不阻断，离线环境会掉样式）")
+
+    low = text.lower()
+    hit = [w for w in _VENDOR_IDENTITY if w in low or w in text]
+    if hit:
+        blocking.append(
+            f"页面里出现了模型供应商的身份标识：{'、'.join(hit)}——"
+            f"这是客户的产品，不许出现生成方的品牌、域名或联系方式"
+        )
+    return blocking, notes
+
+
 #: 一份能用的页面至少要有的东西。**每一条都能机械判**，没有「看着够不够丰富」
 #: 这种判断——今天在这上面栽过三次（数字段 / 数语义标签 / 拿坏渲染器截图）。
 #: ⚠ 这里刻意**不判丰富度**：丰富度得渲染出来用眼睛看，机械判据只负责挡住
@@ -184,6 +294,12 @@ def validate_page_html(markup: str) -> List[str]:
     # 「只示意不写真实数据」的反面：模型有时会返回一段解释再跟 HTML
     if low.strip().startswith(("here", "sure", "好的", "以下")):
         problems.append("正文前面带了解释性文字，没有按要求只返回 HTML")
+    # 外链与供应商身份。放在最后：前面几条判的是「是不是一份完整页面」，
+    # 这条判的是「这份页面能不能交给客户」。
+    # ⚠ 只取阻断档；提醒档（公共 CDN）由调用方自己决定要不要打印，
+    #   混进来会让 35 份真机产出里 94% 都触发重问。
+    blocking, _notes = scan_foreign_references(text)
+    problems.extend(blocking)
     return problems
 
 
