@@ -314,7 +314,11 @@ def run_spec_first(
     from .html_bindings import bind_pages
     from .html_structure import derive_structure, to_datamodel  # noqa: F401
     from .model_assembly import assemble
-    from .page_shell import check_shell_consistency, unify_shell
+    from .page_shell import (
+        check_shell_consistency,
+        restore_shell_after_bind,
+        unify_shell,
+    )
     from .spec_page_html import generate_pages_parallel
     from .spec_semantics import derive_semantics, to_model_sections  # noqa: F401
     from .spec_tree import generate_spec_tree
@@ -440,14 +444,25 @@ def run_spec_first(
     if bind_html:
         raise_if_cancelled("第6.5步 打绑定孔")
         with _stage("specfirst.bind") as st:
+            before_bind = dict(pages)
             bound = bind_pages(pages, model)
             if bound.get("pages"):
                 pages = dict(bound["pages"])
             bound_failed = dict(bound.get("failed") or {})
             st["bound"] = len(bound.get("pages") or {})
             st["failed"] = len(bound_failed)
-            # 6.5 是 LLM 改写整页（提示词说"版式一个像素不改"，但没人验过）。
-            # 打完孔再量一次外壳一致性：菜单被 LLM 顺手动了，这里当场点名。
+            # ★ 把 bind 改坏的壳换回打孔前那份（2026-08-15）。
+            #
+            # 3.5 步已经把壳统一好了，bind 又给弄乱——八趟八次，最狠一次是
+            # 同一个应用两个产品名两套菜单。打孔前那份是**已知正确**的，
+            # 直接换回来，不用再问模型。
+            # ⚠ 只还原**结构被改**的；bind 往壳里打的合法绑定孔要保留
+            #   （实测 34 份里 12 份壳里有 data-*）。判定见 restore_shell_after_bind。
+            pages, restored = restore_shell_after_bind(pages, before_bind)
+            st["shellRestored"] = len(restored)
+            if restored:
+                print(f"[spec_first_pipeline] 打孔后外壳被改，已还原：{'、'.join(restored)}")
+            # 还原之后再量一次：剩下的才是还原不了的（比如两页壳本来就不同源）。
             drift = check_shell_consistency(pages, spec)
             st["shellProblems"] = len(drift)
             for p in drift[:3]:

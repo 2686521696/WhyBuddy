@@ -59,6 +59,9 @@ _NAV = re.compile(r"<nav\b[\s\S]*?</nav>", re.I)
 _LINK = re.compile(r"<a\b[^>]*>[\s\S]*?</a>", re.I)
 _CLASS = re.compile(r'class="([^"]*)"', re.I)
 _SVG = re.compile(r"<svg\b[\s\S]*?</svg>", re.I)
+#: 内容区容器的开标签。抠的是 class，因为**位移全写在 class 上**
+#: （`ml-64` / `ml-[248px]` / `flex-1`）。
+_MAIN_OPEN = re.compile(r"<main\b[^>]*>", re.I)
 
 
 class PageShellError(RuntimeError):
@@ -321,6 +324,11 @@ def unify_shell(
     nav_match = _NAV.search(shell["aside"])
     templates = nav_templates(nav_match.group(0)) if nav_match else None
 
+    # 源页的 <main> 开标签，原样拿来给所有页用。源页没有 main 就不动
+    #（全屏向导页是合法的，硬塞一个容器反而是新的破坏）。
+    _src_main = _MAIN_OPEN.search(pages_html[source_id])
+    main_open = _src_main.group(0) if _src_main else ""
+
     out: Dict[str, str] = {}
     for page_id, markup in pages_html.items():
         aside, header = shell["aside"], shell["header"]
@@ -338,6 +346,17 @@ def unify_shell(
             html = _ASIDE.sub(lambda _m: aside, html, count=1) if _ASIDE.search(html) else html
         if header:
             html = _HEADER.sub(lambda _m: header, html, count=1) if _HEADER.search(html) else html
+        # ★ 内容区容器也要统一（2026-08-15 补）。
+        #
+        # 此前这里只换 aside/header，**承载它们的那一层没人管**：真机上
+        # aside 被收成 1 种、main 仍是 5 种，其中一页写着 `ml-64`——它已经
+        # 靠 flex 排在 256px 侧栏右边，再叠 256px 左边距，整个内容区右移一屏。
+        # 而判据当时也不看 main，于是 shellProblems=0，**假绿**。
+        #
+        # ⚠ 只换开标签上的 class，不动 main 里面的任何东西：位移全写在 class
+        #   上，而内容里可能有 bind 打的绑定孔，碰不得。
+        if main_open:
+            html = _MAIN_OPEN.sub(lambda _m: main_open, html, count=1)
         out[page_id] = html
 
     return {
@@ -374,13 +393,103 @@ def shell_fingerprint(part_html: str) -> str:
     return _CLASS.sub('class=""', text)
 
 
+def main_signature(markup: str) -> str:
+    """内容区容器的 class 指纹。**位移全写在这里**，而它一直没人查。
+
+    ⚠ 2026-08-15 补：此前判据只给 `<aside>` / `<header>` 打指纹，
+      **不看承载它们的那一层**。真机上因此出过「假绿」：
+
+          header 指纹   p1/p2/p3/p4 完全相同（len=904）
+          <main> class  p1/p2: flex-1 flex flex-col min-w-0 overflow-hidden
+                        p3:    flex-1 flex flex-col min-w-0 bg-slate-50 relative
+                        p4:    **ml-64** flex-1 flex flex-col     ← 左边距 256px
+
+      p4 已经靠 flex 排在 256px 侧栏右边，又叠了 `ml-64` 的 256px，
+      整个内容区右移一屏——而 `shellProblems=0`。
+
+    ⚠ 全仓量过一遍，**三个模型全漏**：think 3 种 / ouyi 4 种 / luna 5 种
+      （`ml-[236px]` `ml-[248px]` `ml-[244px]` `main-wrap` `main-shell`）。
+      luna 只是漏得不显眼——差几个像素肉眼无感，不代表没病。
+
+    抠不到 `<main>` 返回空串：没有 main 是合法的（全屏向导页），
+    由调用方按「有的页才比」处理。
+    """
+    m = _MAIN_OPEN.search(markup or "")
+    if not m:
+        return ""
+    cls = _CLASS.search(m.group(0))
+    # class 顺序不该影响判定——排序后比对，避免把「同一套壳换了个书写顺序」
+    # 误报成漂移。
+    return " ".join(sorted(cls.group(1).split())) if cls else ""
+
+
+_DATA_ATTR = re.compile(r'\s*data-[a-z-]+="[^"]*"', re.I)
+
+
+def restore_shell_after_bind(
+    bound: Dict[str, str], before: Dict[str, str]
+) -> Tuple[Dict[str, str], List[str]]:
+    """bind 把壳改坏的页，用打孔前那份壳换回来。**零 LLM。**
+
+    ## 为什么需要
+
+    第 3.5 步 `unify_shell` 已经把各页的壳统一成一套了。然后第 6.5 步 bind
+    让 LLM 重写整页——提示词明写「版式一个像素都不要改」，但真机八趟八次
+    都测出漂移，最狠的一次是同一个应用里出现两个产品名、两套侧栏菜单。
+
+    既然打孔前那份壳是**已知正确**的，就不用再问模型，直接换回来。
+
+    ## ⚠ 不能无脑全换：bind 也会往壳里打合法的孔
+
+    实测 34 份产出里 **12 份**壳里有 `data-*`，例如：
+
+        <span data-value="booking" data-aggregate="count">今日已有 N 节排课</span>
+        <button data-action="createRecord" data-entity="vaccine_plan">
+
+    无脑还原会把这些孔洗掉，页面退回死的静态壳。
+
+    所以判定标准是**结构**，不是原文：把 `data-*` 属性抠掉之后再比指纹。
+
+      · 抠掉 data-* 后一致 → bind 只是加了孔，**保留 bind 的版本**
+      · 抠掉 data-* 后仍不同 → bind 动了结构，**换回打孔前那份**
+
+    真机 A/B（同一批 5 页，bind 前后逐页比对）验证过这个划分：
+        p2.header  结构被改了      → 该还原
+        p5.aside   结构被改了      → 该还原
+        p4.aside   只加了 data-*   → 该保留
+
+    返回 (修正后的页面, 被还原的位置清单)。
+    """
+    fixed = dict(bound)
+    restored: List[str] = []
+    for pid, after_html in bound.items():
+        src = before.get(pid)
+        if not src:
+            continue
+        a, b = extract_shell(src), extract_shell(after_html)
+        for part, pattern in (("aside", _ASIDE), ("header", _HEADER)):
+            if not a[part] or not b[part]:
+                continue
+            if shell_fingerprint(a[part]) == shell_fingerprint(b[part]):
+                continue  # 原样没动
+            if shell_fingerprint(_DATA_ATTR.sub("", a[part])) == shell_fingerprint(
+                _DATA_ATTR.sub("", b[part])
+            ):
+                continue  # 只加了孔，保留
+            fixed[pid] = pattern.sub(lambda _m: a[part], fixed[pid], count=1)
+            restored.append(f"{pid}.{part}")
+    return fixed, restored
+
+
 def check_shell_consistency(
     pages_html: Dict[str, str], spec: Dict[str, Any]
 ) -> List[Dict[str, str]]:
     """判据：统一之后还剩几处不一致。**这是本模块存在的理由，别删。**
 
-    四条，每条对应量到过的一个真实症状：
+    五条，每条对应量到过的一个真实症状：
       · 壳（除当前页标记外）必须各页一致（对应「三个产品名、三个登录人」）
+      · **内容区容器必须各页一致**（对应 p4 叠了 ml-64、整屏右移；
+        这条 2026-08-15 才补——此前只查壳本身不查承载层，出过假绿）
       · 导航项必须**恰好等于** spec 的页面清单（对应 p3 发明 5 个不存在的入口）
       · 每页恰好标一个当前页（第一版漏掉的——归一化抹平激活态之后，
         "全都不激活"和"标了三个"都会静静通过）
@@ -405,6 +514,19 @@ def check_shell_consistency(
                 "path": part,
                 "message": f"{len(distinct)} 种不同的 <{part}>——各页还不是同一套壳",
             })
+
+    # 内容区容器。⚠ 只比**有 main 的那些页**：没有 main 是合法的
+    #（全屏向导页），拿"有 vs 没有"当漂移会误报。
+    mains = {pid: main_signature(h) for pid, h in pages_html.items()}
+    distinct_main = {sig for sig in mains.values() if sig}
+    if len(distinct_main) > 1:
+        problems.append({
+            "path": "main",
+            "message": (
+                f"{len(distinct_main)} 种不同的 <main> 容器——壳一样但内容区"
+                f"位置不一样（位移写在 class 上，如 ml-64）"
+            ),
+        })
 
     # 全部页面都没 aside（移动端）时，标签栏本身也要各页一致
     if not any(s["aside"] for s in shells.values()):
