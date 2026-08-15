@@ -48,7 +48,7 @@ spec 的页面清单重排**，而不是照抄被选中那页的菜单。理由�
 from __future__ import annotations
 
 import re
-from html import escape
+from html import escape, unescape
 from typing import Any, Dict, List, Optional, Tuple
 
 PAGE_SHELL_VERSION = "page-shell-v1"
@@ -180,6 +180,65 @@ def _breadcrumb_nav(header_html: str) -> Optional[re.Match]:
     return _BREADCRUMB_NAV.search(header_html or "") or _ANY_NAV.search(header_html or "")
 
 
+def _breadcrumb_current_span(header_html: str) -> Optional[Tuple[re.Match, re.Match]]:
+    """定位面包屑的**当前节**，返回 (nav 匹配, 该节匹配)。
+
+    ⚠ 抽出来是因为有三个调用方要用**同一套**定位：写（set_）、读（_text）、
+      抹平（blank_）。三份各写各的，就是下一处「一个改了另一个没改」。
+      本模块刚在归一化上栽过一次：restore_shell_after_bind 知道 data-* 不算
+      漂移，check_shell_consistency 不知道——同一个模块两套标准。
+    """
+    nav = _breadcrumb_nav(header_html)
+    if not nav:
+        return None
+    body = nav.group(0)
+    cur = _ARIA_CURRENT_EL.search(body)
+    if cur:
+        return nav, cur
+    segs = [m for m in _CRUMB_SEG.finditer(body) if m.group(0).strip()]
+    if not segs:
+        return None
+    return nav, segs[-1]
+
+
+def breadcrumb_current_text(header_html: str) -> Optional[str]:
+    """面包屑当前节的**文本**。没有面包屑返回 None（合法，不是错）。"""
+    found = _breadcrumb_current_span(header_html)
+    if not found:
+        return None
+    inner = _SEG_INNER.search(found[1].group(0))
+    raw = inner.group(2) if inner else found[1].group(0)
+    return " ".join(unescape(re.sub(r"<[^>]+>", " ", raw)).split())
+
+
+def blank_breadcrumb_current(header_html: str) -> str:
+    """把面包屑当前节的文本抹掉，用于**比各页外壳是不是同一套**。
+
+    ⚠ 这一节 `set_breadcrumb_current` **故意**写成各页不同——它是壳里唯一
+      该逐页变的东西。比指纹时不抹掉，各页 header 必然不同，判据就会把
+      「修复正常工作」报成「3 种不同的 header」。
+
+      真机实测（社区药店，2026-08-15）：三页 header 指纹两两不同，抹平
+      aria-current 和 class 之后**唯一**的差异就是这一节的文字——
+      「进货入库管理页」/「库存看板与效期监控」/「处方登记审计日志」。
+
+      一道对正确行为报警的闸比没有闸更糟：它会训练人忽略它。所以照
+      shell_fingerprint 对 aria-current 的老办法——**比之前抹平，
+      该查的另开一条判据去查**（见 check_shell_consistency 的 .breadcrumb）。
+    """
+    found = _breadcrumb_current_span(header_html)
+    if not found:
+        return header_html
+    nav, seg = found
+    body = nav.group(0)
+    replaced = (
+        body[: seg.start()]
+        + _SEG_INNER.sub(lambda m: m.group(1) + m.group(3), seg.group(0), count=1)
+        + body[seg.end():]
+    )
+    return header_html.replace(body, replaced, 1)
+
+
 def set_breadcrumb_current(header_html: str, page_name: str) -> str:
     """把面包屑的**当前节**换成当前页名。
 
@@ -209,23 +268,17 @@ def set_breadcrumb_current(header_html: str, page_name: str) -> str:
     nav = _breadcrumb_nav(header_html)
     if not nav:
         return header_html
-    body = nav.group(0)
-
-    cur = _ARIA_CURRENT_EL.search(body)
-    if cur:
-        replaced = body[: cur.start()] + _SEG_INNER.sub(
-            lambda m: m.group(1) + escape(page_name) + m.group(3), cur.group(0), count=1
-        ) + body[cur.end():]
-        return header_html.replace(body, replaced, 1)
-
-    segs = [m for m in _CRUMB_SEG.finditer(body) if m.group(0).strip()]
-    if not segs:
+    found = _breadcrumb_current_span(header_html)
+    if not found:
         return header_html
-    last = segs[-1]
+    nav, seg = found
+    body = nav.group(0)
     replaced = (
-        body[: last.start()]
-        + _SEG_INNER.sub(lambda m: m.group(1) + escape(page_name) + m.group(3), last.group(0), count=1)
-        + body[last.end():]
+        body[: seg.start()]
+        + _SEG_INNER.sub(
+            lambda m: m.group(1) + escape(page_name) + m.group(3), seg.group(0), count=1
+        )
+        + body[seg.end():]
     )
     return header_html.replace(body, replaced, 1)
 
@@ -701,6 +754,29 @@ def restore_shell_after_bind(
     return fixed, restored
 
 
+def _drift_fingerprint(part: str, part_html: str) -> str:
+    """比「各页是不是同一套壳」时用的指纹。**比 shell_fingerprint 多抹两样。**
+
+    ⚠ 两样都是真机上量出来的**假警报**（社区药店，2026-08-15，一趟报了 2 条，
+      两条全是把正确行为当故障）：
+
+      1. `data-*`：bind 会往壳里打**合法的**孔（侧栏那块登录人卡片打了
+         `data-record="pharmacist"` + `data-field="name"`）。三页打的位置深浅
+         不同（p2 打在外层 div、p3 打在内层、p4 没打），指纹就三种。
+         **restore_shell_after_bind 早就知道这条**（它比之前先 _DATA_ATTR.sub），
+         而这里不知道——同一个模块两套归一化标准，是这次假警报的直接原因。
+
+      2. 面包屑当前节：`set_breadcrumb_current` 故意让它逐页不同。
+
+    抹掉的东西不是不查，是**另开判据查**：孔的合法性归 html_bindings，
+    面包屑末节归下面的 `.breadcrumb` 那条。
+    """
+    stripped = _DATA_ATTR.sub("", part_html or "")
+    if part == "header":
+        stripped = blank_breadcrumb_current(stripped)
+    return shell_fingerprint(stripped)
+
+
 def check_shell_consistency(
     pages_html: Dict[str, str], spec: Dict[str, Any]
 ) -> List[Dict[str, str]]:
@@ -728,11 +804,32 @@ def check_shell_consistency(
         return _NAV.search(pages_html[pid])
 
     for part in ("aside", "header"):
-        distinct = {shell_fingerprint(s[part]) for s in shells.values() if s[part]}
+        distinct = {_drift_fingerprint(part, s[part]) for s in shells.values() if s[part]}
         if len(distinct) > 1:
             problems.append({
                 "path": part,
                 "message": f"{len(distinct)} 种不同的 <{part}>——各页还不是同一套壳",
+            })
+
+    # 面包屑末节：上面比指纹时**故意**抹掉了它，这里单独查。
+    # ⚠ 归一化抹掉什么，就得另开一条判据查什么——否则「逐页改对」和
+    #   「压根没改、全是源页那一节」会一起静静通过（aria-current 那条
+    #   就是这么补的）。
+    names = {
+        str(p.get("id") or ""): str(p.get("name") or "").strip()
+        for p in (spec.get("pages") or [])
+    }
+    for pid, s in shells.items():
+        want = names.get(pid)
+        if not want or not s["header"]:
+            continue
+        got = breadcrumb_current_text(s["header"])
+        if got is None:
+            continue  # 没有面包屑是合法的，硬塞一个是新的破坏
+        if got != want:
+            problems.append({
+                "path": f"{pid}.breadcrumb",
+                "message": f"面包屑末节写着「{got}」，而这一页是「{want}」",
             })
 
     # 内容区的**定位**。⚠ 只查左偏移，不比整段 class：
