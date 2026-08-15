@@ -39,8 +39,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.page_shell import (  # noqa: E402
     check_shell_consistency,
-    main_signature,
+    main_offset_tokens,
     restore_shell_after_bind,
+    strip_main_offset,
     unify_shell,
 )
 
@@ -58,56 +59,93 @@ def _page(main_cls: str, *, aside: str = _ASIDE, header: str = _HEADER) -> str:
     )
 
 
-class Test判据补上了main容器:
-    def test_ml64_那种双倍偏移被报出来(self):
-        """★ 真机形状：壳一模一样，就 main 多了个 ml-64。"""
-        pages = {
-            "p1": _page("flex-1 flex flex-col"),
-            "p2": _page("ml-64 flex-1 flex flex-col"),
-        }
-        spec = {"pages": [{"id": "p1", "name": "首页"}, {"id": "p2", "name": "排期"}]}
-        paths = {p["path"] for p in check_shell_consistency(pages, spec)}
-        assert "main" in paths, "main 容器漂移又没被看见"
+class Test只管定位_不管版式:
+    """⚠ **当天返工出来的一组**。
 
-    def test_class_顺序不同不算漂移(self):
-        """⚠ 反向：同一套壳换个书写顺序不该报——那会变成对正确行为报警，
-        而一道对正确行为报警的闸比没有闸更糟（它会训练人忽略它）。"""
-        pages = {"p1": _page("flex-1 flex flex-col"), "p2": _page("flex-col flex flex-1")}
-        spec = {"pages": [{"id": "p1", "name": "首页"}, {"id": "p2", "name": "排期"}]}
-        assert "main" not in {p["path"] for p in check_shell_consistency(pages, spec)}
+    第一版拿整个 `<main>` 的 class 当指纹，还让 unify_shell 把源页的整段
+    class 抄给所有页。真机（烘焙那趟 p3）当场排炸：
 
-    def test_没有main的页不参与比对(self):
-        """全屏向导页可以没有 main，拿「有 vs 没有」当漂移是误报。"""
-        pages = {
-            "p1": _page("flex-1"),
-            "p2": "<!doctype html><html><body><div>全屏向导</div></body></html>",
-        }
-        spec = {"pages": [{"id": "p1", "name": "首页"}, {"id": "p2", "name": "向导"}]}
-        assert "main" not in {p["path"] for p in check_shell_consistency(pages, spec)}
+        p1 main: flex-1 flex overflow-hidden …   子元素是左右两栏 section
+        p3 main: 同上（抄来的）                   子元素是 header + 纵向内容
 
+    `flex` 默认横向，p3 的纵向内容被横着排，文字竖排、整页不可用。
+    加回 `flex-col` 就完全正常。
 
-class Test统一时把main也收了:
-    def test_unify_把各页main收成一种(self):
-        """★ 此前 aside 收成 1 种、main 还是 N 种——这条钉住那个缺口。"""
-        pages = {
-            "p1": _page("ml-64 flex-1"),
-            "p2": _page("flex-1 overflow-hidden"),
-            "p3": _page("custom-scroll p-8"),
-        }
-        spec = {"pages": [{"id": k, "name": k} for k in pages]}
-        out = unify_shell(pages, spec)["pages"]
-        sigs = {main_signature(h) for h in out.values() if main_signature(h)}
-        assert len(sigs) == 1, f"main 没被统一：{sigs}"
+    根因：main 的 class 混着**相对侧栏的定位**（该一致）和**本页自己的版式**
+    （必须不同）。抄整段 = 把源页的版式强加给别人。
 
-    def test_main_里面的内容不许被动(self):
-        """⚠ 只换开标签的 class。正文里可能有 bind 打的孔，碰不得。"""
-        pages = {"p1": _page("ml-64 flex-1"), "p2": _page("flex-1")}
-        pages["p1"] = pages["p1"].replace(
-            "<div>正文</div>", '<div data-rows="case"><span data-field="name">x</span></div>'
+    ⚠ 我当时拿 39 份历史产出验过「main 收敛到 1 种」——**指标绿了，页面废了**。
+    """
+
+    def _page(self, main_cls: str, body_cls: str = "flex") -> str:
+        return (
+            f'<!doctype html><html><head></head><body class="{body_cls}">'
+            '<aside class="w-64"><nav><a class="flex">甲</a><a class="flex">乙</a></nav></aside>'
+            f'<main class="{main_cls}"><div>正文</div></main></body></html>'
         )
-        spec = {"pages": [{"id": k, "name": k} for k in pages]}
+
+    def test_双倍偏移被报出来(self):
+        """★ 真机那个整屏右移 256px 的形状：body 是横向 flex，main 又加 ml-64。"""
+        pages = {"p1": self._page("flex-1 flex flex-col"), "p2": self._page("ml-64 flex-1")}
+        spec = {"pages": [{"id": "p1", "name": "甲"}, {"id": "p2", "name": "乙"}]}
+        paths = {p["path"] for p in check_shell_consistency(pages, spec)}
+        assert "p2.main" in paths and "p1.main" not in paths
+
+    def test_版式不同不算漂移(self):
+        """⚠ **本组最要紧的一条**：一页左右分栏、一页上下堆叠，是**正常的**。
+        把它报成漂移，就会有人照着去"修"，然后把页面排炸。"""
+        pages = {
+            "p1": self._page("flex-1 flex overflow-hidden"),
+            "p2": self._page("flex-1 flex flex-col overflow-y-auto p-8"),
+        }
+        spec = {"pages": [{"id": "p1", "name": "甲"}, {"id": "p2", "name": "乙"}]}
+        assert [p for p in check_shell_consistency(pages, spec) if "main" in p["path"]] == []
+
+    def test_body_不是横向flex时偏移是合法的(self):
+        """侧栏用 fixed 定位时，内容区**必须**自己留 ml-64，那不是双倍偏移。"""
+        pages = {"p1": self._page("ml-64 flex-1", body_cls="min-h-screen")}
+        spec = {"pages": [{"id": "p1", "name": "甲"}]}
+        assert [p for p in check_shell_consistency(pages, spec) if "main" in p["path"]] == []
+
+
+class Test去掉多余偏移:
+    def _page(self, main_cls: str, body_cls: str = "flex") -> str:
+        return (
+            f'<!doctype html><html><head></head><body class="{body_cls}">'
+            '<aside class="w-64"></aside>'
+            f'<main class="{main_cls}"><div>正文</div></main></body></html>'
+        )
+
+    def test_删掉偏移_其余class一个不动(self):
+        out = strip_main_offset(self._page("ml-64 flex-1 flex flex-col overflow-hidden"))
+        assert main_offset_tokens(out) == []
+        for keep in ("flex-1", "flex", "flex-col", "overflow-hidden"):
+            assert keep in out, f"{keep} 被误删了"
+
+    def test_flex_col_不许被动(self):
+        """★ 真机排炸就炸在这个词上。"""
+        out = strip_main_offset(self._page("ml-64 flex-1 flex flex-col"))
+        assert "flex-col" in out
+
+    def test_body_不是横向flex时不动(self):
+        src = self._page("ml-64 flex-1", body_cls="min-h-screen")
+        assert strip_main_offset(src) == src
+
+    def test_没有偏移时原样返回(self):
+        src = self._page("flex-1 flex flex-col")
+        assert strip_main_offset(src) == src
+
+    def test_接进了_unify_shell(self):
+        """⚠ 光有函数不算数——同 breadcrumb 那次的教训。"""
+        pages = {"p1": self._page("ml-64 flex-1 flex flex-col"),
+                 "p2": self._page("flex-1 flex flex-col")}
+        pages = {k: v.replace("<aside class=\"w-64\"></aside>",
+                              '<aside class="w-64"><nav><a class="flex">甲</a><a class="flex">乙</a></nav></aside>')
+                 for k, v in pages.items()}
+        spec = {"pages": [{"id": "p1", "name": "甲"}, {"id": "p2", "name": "乙"}]}
         out = unify_shell(pages, spec)["pages"]
-        assert 'data-rows="case"' in out["p1"] and 'data-field="name"' in out["p1"]
+        assert main_offset_tokens(out["p1"]) == [], "偏移没被去掉——没接线？"
+        assert "flex-col" in out["p1"], "版式被动了"
 
 
 class Test还原bind改坏的壳:

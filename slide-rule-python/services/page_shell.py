@@ -393,10 +393,6 @@ def unify_shell(
     nav_match = _NAV.search(shell["aside"])
     templates = nav_templates(nav_match.group(0)) if nav_match else None
 
-    # 源页的 <main> 开标签，原样拿来给所有页用。源页没有 main 就不动
-    #（全屏向导页是合法的，硬塞一个容器反而是新的破坏）。
-    _src_main = _MAIN_OPEN.search(pages_html[source_id])
-    main_open = _src_main.group(0) if _src_main else ""
 
     # ⚠ **无条件注入**这条兜底，不再试图判断"源导航有没有激活样式"。
     #
@@ -446,8 +442,10 @@ def unify_shell(
         #
         # ⚠ 只换开标签上的 class，不动 main 里面的任何东西：位移全写在 class
         #   上，而内容里可能有 bind 打的绑定孔，碰不得。
-        if main_open:
-            html = _MAIN_OPEN.sub(lambda _m: main_open, html, count=1)
+        # ★ 只去掉多余的左偏移，**不抄源页的 main class**（2026-08-15 当天返工）。
+        #   抄整段那一版真机当场炸了：p1 是左右分栏（flex 横向），抄给纵向排布的
+        #   p3，子元素全被横着排、文字竖排、整页不可用。见 main_offset_tokens。
+        html = strip_main_offset(html)
         if need_fallback and _ACTIVE_FALLBACK_CSS not in html:
             # 塞进 </head> 之前；没有 head 就退到 <body> 之后（都没有就不塞）。
             if "</head>" in html:
@@ -493,6 +491,79 @@ def shell_fingerprint(part_html: str) -> str:
     """
     text = _ARIA_CURRENT.sub("", part_html or "")
     return _CLASS.sub('class=""', text)
+
+
+#: 左偏移类：`ml-64` / `ml-[248px]` / `pl-64` 这一类。
+_OFFSET_CLS = re.compile(r"^(ml|pl)-(\d+|\[[^\]]+\])$")
+_BODY_OPEN = re.compile(r"<body\b[^>]*>", re.I)
+
+
+def _body_is_flex_row(markup: str) -> bool:
+    """`<body>` 是不是一个横向 flex 容器（侧栏和内容区并排的那种布局）。
+
+    是的话，内容区**已经**被 flex 排在侧栏右边了，再加 `ml-64` 就是双倍偏移。
+    """
+    m = _BODY_OPEN.search(markup or "")
+    if not m:
+        return False
+    cls = _CLASS.search(m.group(0))
+    toks = set(cls.group(1).split()) if cls else set()
+    return "flex" in toks and "flex-col" not in toks
+
+
+def main_offset_tokens(markup: str) -> List[str]:
+    """内容区容器上的**左偏移**类，只取这一类。
+
+    ## ⚠ 为什么只看偏移，不看整个 class（2026-08-15 当天返工）
+
+    第一版拿整个 `<main>` 的 class 当指纹，还让 unify_shell 把源页的整段
+    class 抄给所有页。**真机当场炸了**（烘焙那趟 p3）：
+
+        p1 main: flex-1 flex overflow-hidden …   子元素是左右两栏 section
+        p3 main: 同上（从 p1 抄的）              子元素是 header + 纵向内容
+
+    `flex` 默认横向，p3 的纵向内容被横着排，每个子元素挤成窄条、文字竖排，
+    整页不可用。加回 `flex-col` 就完全正常。
+
+    根因是 main 的 class 混着两种东西：
+
+        ml-64        相对侧栏的**定位**    ← 该各页一致
+        flex/flex-col overflow p-8
+                     **本页自己的版式**    ← 必须各页不同
+
+    抄整段 = 把源页的版式强加给别人。所以收窄到只管偏移那一半。
+
+    ⚠ 这次的教训：我拿 39 份历史产出验过「main 收敛到 1 种」，但**没验页面
+      还能不能看**。指标绿了不等于东西对——这一天里第三次栽在同一处。
+    """
+    m = _MAIN_OPEN.search(markup or "")
+    if not m:
+        return []
+    cls = _CLASS.search(m.group(0))
+    if not cls:
+        return []
+    return sorted(t for t in cls.group(1).split() if _OFFSET_CLS.match(t))
+
+
+def strip_main_offset(markup: str) -> str:
+    """`<body>` 已经是横向 flex 时，把内容区上多余的左偏移去掉。
+
+    这是真机上那个「整屏右移 256px」的确定性修法：`ml-64` 叠在 flex 排布之上
+    等于偏移两次。只删偏移类，其余 class 一个不动。
+    """
+    if not _body_is_flex_row(markup):
+        return markup
+    m = _MAIN_OPEN.search(markup or "")
+    if not m:
+        return markup
+    cls = _CLASS.search(m.group(0))
+    if not cls:
+        return markup
+    kept = [t for t in cls.group(1).split() if not _OFFSET_CLS.match(t)]
+    if len(kept) == len(cls.group(1).split()):
+        return markup
+    new_tag = m.group(0).replace(cls.group(0), f'class="{" ".join(kept)}"', 1)
+    return markup[: m.start()] + new_tag + markup[m.end() :]
 
 
 def main_signature(markup: str) -> str:
@@ -617,18 +688,19 @@ def check_shell_consistency(
                 "message": f"{len(distinct)} 种不同的 <{part}>——各页还不是同一套壳",
             })
 
-    # 内容区容器。⚠ 只比**有 main 的那些页**：没有 main 是合法的
-    #（全屏向导页），拿"有 vs 没有"当漂移会误报。
-    mains = {pid: main_signature(h) for pid, h in pages_html.items()}
-    distinct_main = {sig for sig in mains.values() if sig}
-    if len(distinct_main) > 1:
-        problems.append({
-            "path": "main",
-            "message": (
-                f"{len(distinct_main)} 种不同的 <main> 容器——壳一样但内容区"
-                f"位置不一样（位移写在 class 上，如 ml-64）"
-            ),
-        })
+    # 内容区的**定位**。⚠ 只查左偏移，不比整段 class：
+    #   `flex` vs `flex-col`、overflow、padding 都是**这一页自己的版式**，
+    #   本来就该各页不同。第一版比整段，等于把「页面各有各的排布」报成漂移，
+    #   而按它去"修"（抄源页 class）真机当场把页面排炸了——见 main_offset_tokens。
+    for pid, html in pages_html.items():
+        if _body_is_flex_row(html) and main_offset_tokens(html):
+            problems.append({
+                "path": f"{pid}.main",
+                "message": (
+                    f"内容区带着 {'、'.join(main_offset_tokens(html))}，"
+                    f"而它已经被 flex 排在侧栏右边了——偏移了两次"
+                ),
+            })
 
     # 全部页面都没 aside（移动端）时，标签栏本身也要各页一致
     if not any(s["aside"] for s in shells.values()):
