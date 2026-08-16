@@ -744,6 +744,69 @@ def extract_model_from_closure(closure) -> "Optional[Dict[str, Any]]":
     return model
 
 
+def enter_refine_mode(state: "V5SessionState", user_instruction: str) -> bool:
+    """轮次**开始前**判定这一轮是不是精修，是就把上下文设好。返回是否设了。
+
+    ## 为什么必须在循环之前
+
+    真机证据（2026-08-16，两组对照 sr-20260816165447 / sr-20260816170934）：
+    用户只说「预警消息中心那一页的消息流是空的，给它加一些模拟数据」，产出的
+    mv-2 **六段指纹全变、保留 0 段**，菜单四个名字全换，其中一组页面还从 4 掉到 3
+    ——用户提到的那一页直接不存在了。
+
+    根因是时序，不是提示词：
+
+        while 主循环:
+            execute_v5_capability(...)        ← 五系统模型在这里生成
+            ...                                 此时 refine context 是**空的**
+        循环结束
+        _ensure_runtime_closure_evidence(...) ← 到这里才设 refine context
+
+    也就是说，模型生成时**压根不知道自己在做精修**；等上下文设好，模型已经被
+    从零重写并记成新版本了。之前两次修复（48ffe604 让 blocked 时也能设、
+    0f5686e5 让精修提示词不自相矛盾）都作用在循环之后那一步，打偏了。
+
+    ## 做法取自 Aider
+
+    Aider 的 edit format（whole / diff / udiff）是**请求进来时就选定**、全程生效的，
+    不是跑到一半才想起来。这里同理：精修是一种**模式**，在轮次入口判定一次，
+    整轮带着走。
+
+    ## 基线可以来自版本史，不只是闭环
+
+    `extract_model_from_closure` 要求闭环六段齐全，缺一段返回 None。而用户来精修
+    的场景恰恰常常是"上一轮没收好口"（真机那条会话闭环一直是 blocked）。所以闭环
+    取不到时回落到 `modelVersions[-1]`——精修的基线是"上一版模型"，它不必须是一个
+    完整闭环。
+
+    取不到任何基线才返回 False（那是真的没东西可精修，照旧从零生成）。
+    """
+    instruction = (user_instruction or "").strip()
+    if not instruction:
+        return False
+    goal_text = state.goal.get("text", "") if isinstance(state.goal, dict) else str(state.goal or "")
+    if instruction == (goal_text or "").strip():
+        return False  # 指令与话题原文相同 = 重新推演，不是精修
+
+    model = None
+    closure = derive_publish_closure_response(state)
+    if closure is not None:
+        model = extract_model_from_closure(closure)
+    if not isinstance(model, dict) or not model:
+        versions = list(getattr(state, "modelVersions", None) or [])
+        if versions and isinstance(versions[-1], dict):
+            candidate = versions[-1].get("model")
+            if isinstance(candidate, dict) and candidate:
+                model = candidate
+    if not isinstance(model, dict) or not model:
+        return False
+
+    from .v5_llm_generate import set_refine_context
+
+    set_refine_context(model, instruction)
+    return True
+
+
 def record_model_version(state: "V5SessionState", publish_closure, instruction: str) -> None:
     """E29 版本快照：闭环携带完整模型且与上一版本不同 → 追加 modelVersions。"""
     model = extract_model_from_closure(publish_closure)
@@ -980,6 +1043,12 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
     _budget_token = _enrich_timing.begin_run_budget()
     state = initial_state
     _advance_turn_version(state)
+    # ★ 精修判定必须在主循环**之前**（见 enter_refine_mode 的文档）。
+    #   放在这里，循环里的模型生成才带得上基线和"只改这一处"的约束。
+    if enter_refine_mode(state, user_instruction):
+        from .v5_llm_generate import set_refine_context as _clear_refine
+
+        _turn_ctx.callback(lambda: _clear_refine(None))
     state.runtimePhase = "orchestrating"
     turn_base = f"full-{datetime.now(timezone.utc).strftime('%H%M%S')}"
     append_replay_event(state, kind="decision", turnId=f"loop-0", decisionId=f"phase-orchestrating-full")
@@ -1649,6 +1718,10 @@ async def drive_full_v5_session_stream(
     from .repeat_policy import max_repeat_per_cap
 
     MAX_REPEAT_PER_CAP = max_repeat_per_cap()  # 阈值与窗口见 services/repeat_policy.py
+
+    # ★ 流式是主路径（前端走 SSE），同步那条改了这条也必须改——否则只有回退
+    #   路径修好了。清理由末尾已有的 set_refine_context(None) 负责。
+    enter_refine_mode(state, user_instruction)
 
     try:
         prev_art_count = len(getattr(state, "artifacts", []) or [])
