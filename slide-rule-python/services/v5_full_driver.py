@@ -793,6 +793,30 @@ def record_model_snapshot(
     """
     if not isinstance(model, dict) or not model:
         return
+    # ★ 回退/前进期间一律不记快照（2026-08-16 线上实测）。
+    #
+    # 版本切换是**指针移动**，不是新产出——restore 路由自己的注释就写着
+    # 「指针移动，不追加副本（经典 undo/redo）」。但重建闭环会走到生成层，
+    # 生成层把直供回来的历史模型当成"刚产出的模型"记一版，在路由背后把
+    # 那条纪律破坏掉。
+    #
+    # 真机证据（sr-20260816114340）：两轮推演只产出 2 份不同的模型，用户
+    # 来回点了几下 ◀▶ 之后 modelVersions 变成 9 条——按 A B A B A B A 交替，
+    # 间隔约 10 秒，全部挂在同一个 turn-4-drive-full 上。用户看到的就是
+    # 「每点一次数字加 1」。
+    #
+    # 为什么下面那个去重挡不住：它**只跟队尾比**。回退到 A 时队尾是 B →
+    # 不相等 → 追加 A；再切到 B 时队尾成了 A → 又追加 B。来回点就是无限增长。
+    # （也正因如此，恰好回退到与队尾同模型的那一版时不会涨——排查时一度
+    #  以为复现不了，就是踩在这个巧合上。）
+    #
+    # 把去重改成"跟所有历史版本比"也能压住条数，但那是治标：它默认了
+    # "回退时记一版是对的，只是别记重复的"。不对——**回退时一版都不该记**。
+    # override 在场 = 正在直供一份已经存在于历史里的快照，按定义没有新东西。
+    from .v5_llm_generate import get_model_override
+
+    if get_model_override() is not None:
+        return
     versions = list(getattr(state, "modelVersions", None) or [])
     if versions:
         last = versions[-1].get("model") if isinstance(versions[-1], dict) else None
