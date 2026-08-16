@@ -305,7 +305,10 @@ class Test统一与打孔后重发页面:
             return None
 
         out = sfp.run_spec_first("随便一个话题", on_page=old_sink)
-        assert out["model"] == {"ok": 1}, "老 sink 炸了不该带走整轮产物"
+        # ⚠ 比"模型还在不在"，不比整份相等：run_spec_first 会往 model 上挂
+        #   designLanguage（那是它唯一被落库的通道）。比全等的话，链路每加
+        #   一个随模型走的产物，这条不相干的用例就红一次。
+        assert out["model"]["ok"] == 1, "老 sink 炸了不该带走整轮产物"
 
     def test_外壳一致性判据接进了生产账本(self, monkeypatch):
         """check_shell_consistency 此前只在测试里跑——生产链路统一完没人验，

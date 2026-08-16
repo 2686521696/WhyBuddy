@@ -294,6 +294,7 @@ def run_spec_first(
     bind_html: bool = True,
     design_system: Optional[str] = None,
     design_override: Optional[Dict[str, Any]] = None,
+    reuse_language: Optional[Dict[str, Any]] = None,
     on_page: Optional[Callable[[str, str, int, int], None]] = None,
 ) -> Dict[str, Any]:
     """一句话 → 完整五系统模型 + 带 data-* 孔的多页 HTML。
@@ -318,7 +319,12 @@ def run_spec_first(
     任何一步失败抛 SpecFirstError，**不回落占位、不回落老链路**。
     """
     from .device_policy import resolve_preferred_device
-    from .design_language import generate_design_language, render_design_language
+    from .design_language import (
+        generate_design_language,
+        merge_override,
+        normalize_design_language,
+        render_design_language,
+    )
     from .html_bindings import bind_pages
     from .html_structure import derive_structure, to_datamodel  # noqa: F401
     from .model_assembly import assemble
@@ -361,8 +367,22 @@ def run_spec_first(
     #   别让生成结果去覆盖人明确写下的东西。
     # ⚠ 契约不经过这一步。它只出风格，塞进 spec_page_html 的槽位，
     #   结构契约照旧由代码拼在后面——见 build_design_system_prompt_block。
+    # ⚠ 复用优先于重新生成（2026-08-15 晚补）。真机量到过：同一个应用连着
+    #   跑两次，配色一次 #1b3a57+#a1824a、一次 #1e3a8a+#b45309——气质同向，
+    #   具体值全变。修补/迭代场景下用户会看见界面颜色莫名其妙换掉，而那是
+    #   **一眼可见**的不稳定，比密度不够伤得多。
     design_language: Optional[Dict[str, Any]] = None
-    if not (design_system or "").strip():
+    if (design_system or "").strip():
+        pass  # 人直接给了散文，最高优先，连生成带复用一起跳过
+    elif reuse_language:
+        design_language = merge_override(
+            normalize_design_language(reuse_language), design_override
+        )
+        design_system = render_design_language(design_language)
+        # ⚠ 零 LLM、瞬时完成，**不进进度线**——照 specfirst.shell 那条：
+        #   start/end 背靠背发出去只会在左侧闪一下。
+        print("[spec_first_pipeline] 复用上一版设计语言，不重新生成")
+    else:
         raise_if_cancelled("第2.5步 定设计语言")
         with _stage("specfirst.design") as st:
             design_language = generate_design_language(spec, override=design_override)
@@ -509,10 +529,18 @@ def run_spec_first(
         # 「已接数据」，不用等交付那一刻的 finalState。
         _reemit_pages(sink, pages, bound=True)
 
+    # 挂进 model：它是唯一被落库、也是精修时回流的那份。
+    if design_language and isinstance(model, dict):
+        model["designLanguage"] = design_language
+
     result = {
         "version": SPEC_FIRST_VERSION,
         "model": model,
         "spec": spec,
+        # ⚠ designLanguage 同时**挂进 model**（见下面那行）而不是只放在这里：
+        #   model 是唯一被落库的那份（app_store 的 model_json），也是精修时
+        #   回流的那份（refine_ctx["model"]）。只放返回值里的话，谁都不会存它
+        #   ——真机验过：唯一的调用方只取 result["model"]。
         "structure": structure,
         "semantics": semantics,
         "pages": pages,

@@ -103,7 +103,7 @@ class Test渲染成散文:
 
     def test_关键字段都进散文(self):
         s = render_design_language(GOOD)
-        for mark in ["克制的医疗后台", "#0e7490", "6px", "紧凑", "状态标签"]:
+        for mark in ["克制的医疗后台", "#0e7490", "6px", "状态标签"]:
             assert mark in s
 
     def test_不要图表就不提图表(self):
@@ -245,11 +245,16 @@ class Test接进链路:
 
     def test_人给了散文就不调LLM(self):
         """⚠ 显式指定优先于生成——跟 on_page「显式实参优先于 sink」同一条纪律。
-        省一次调用是顺带的，主要是别让生成结果覆盖人明确写下的东西。"""
+        省一次调用是顺带的，主要是别让生成结果覆盖人明确写下的东西。
+
+        ⚠ 这条第一版钉的是 `if not (design_system or "").strip():` 这行**原文**，
+          加了"复用上一版"那支之后条件重写成三岔，它当场红了——钉措辞的老毛病。
+          现在钉的是次序：散文那支必须排在生成之前。
+        """
         src = self._spec_first_src()
-        i = src.index("specfirst.design")
-        head = src[max(0, i - 600):i]
-        assert 'if not (design_system or "").strip():' in head
+        prose = src.index('if (design_system or "").strip():')
+        gen = src.index("generate_design_language(spec")
+        assert prose < gen, "人给了散文却还是先跑生成"
 
     def test_设计语言随结果交出去(self):
         """存得下来，重跑/修补才能复用同一份——否则同一个应用每轮换个样子。"""
@@ -265,3 +270,122 @@ class Test接进链路:
             assert "design_system" in inspect.signature(fn).parameters, (
                 f"{fn.__name__} 没接 design_system，风格传不到第 3 步"
             )
+
+
+class Test落库与复用:
+    """② 同一个应用重跑不许换配色（2026-08-15 晚）。
+
+    ⚠ 真机量到的形状：同一份页面清单连着调两次第 2.5 步——
+
+        第一次  primary=#1b3a57  accent=#a1824a   （深藏青 + 金棕）
+        第二次  primary=#1e3a8a  accent=#b45309   （藏青 + 琥珀）
+
+    气质同向、具体值全变。精修场景下用户只是让改一句话，界面颜色却整个换掉，
+    **那是一眼可见的不稳定**，比密度不够伤得多。
+
+    ⚠ 而更早的一版里我写过"designLanguage 存得下来能复用"——那是**半句真话**：
+      字段确实在 run_spec_first 的返回值里，但唯一的调用方只取 result["model"]，
+      **没有任何一处持久化它**。所以这次把它挂进 model：model 是唯一被落库
+      （app_store.model_json）也是精修时回流（refine_ctx["model"]）的那份。
+    """
+
+    def _src(self, name: str) -> str:
+        import pathlib
+
+        return (pathlib.Path(__file__).resolve().parents[1]
+                / f"services/{name}").read_text(encoding="utf-8")
+
+    def test_挂进model才会被落库(self):
+        """⚠ 钉在**落库那条路**上，不是钉在返回值里——返回值那份没人存。"""
+        src = self._src("spec_first_pipeline.py")
+        assert 'model["designLanguage"] = design_language' in src, (
+            "设计语言没挂进 model，app_store 存的是 model_json，等于没落库"
+        )
+
+    def test_精修时把上一版带回去(self):
+        src = self._src("v5_capability_executor.py")
+        assert 'designLanguage' in src and "reuse_language=" in src, (
+            "精修没沿用上一版设计语言，同一个应用每轮换个配色"
+        )
+
+    def test_复用时不再调LLM(self):
+        """★ 复用的意义就在这——既省一次调用，更重要的是**结果稳定**。"""
+        src = self._src("spec_first_pipeline.py")
+        i = src.index("elif reuse_language:")
+        j = src.index("else:", i)
+        branch = src[i:j]
+        assert "generate_design_language" not in branch, "复用分支里还在调生成"
+        assert "render_design_language" in branch
+
+    def test_复用的也过归一化(self):
+        """⚠ 上一版可能是老格式、也可能被人手工改坏过。存进来的不等于可信的。"""
+        src = self._src("spec_first_pipeline.py")
+        i = src.index("elif reuse_language:")
+        assert "normalize_design_language" in src[i:src.index("else:", i)]
+
+    def test_人给的散文仍然最高优先(self):
+        """三层优先级：散文 > 复用 > 生成。散文那支要在最前面。"""
+        src = self._src("spec_first_pipeline.py")
+        a = src.index('if (design_system or "").strip():')
+        b = src.index("elif reuse_language:")
+        c = src.index("raise_if_cancelled(\"第2.5步 定设计语言\")")
+        assert a < b < c
+
+    def test_复用之上还能再覆盖(self):
+        """沿用上一版、但这次想把密度调紧——两者要能叠。"""
+        base = normalize_design_language(GOOD)
+        out = merge_override(base, {"density": "宽松"})
+        assert out["density"] == "宽松" and out["primary"] == base["primary"]
+
+
+class Test密度档位要展开成具体条款:
+    """① 只写"信息密度标准"四个字，模型推不出该画什么（2026-08-15 晚）。
+
+    ⚠ 三次对照量出来的：
+
+        A 旧提示词（一句话）                 字符 16892/页  面板 16.7  右侧栏 0/3
+        B 硬写死密度条款（统计卡/面板/列数）  字符 25838/页  面板 22.3  右侧栏 3/3
+        C 换成生成的设计语言（只给档位词）    字符 18748/页  面板 17.8  右侧栏 0/4
+
+    B 涨的那 53% **全来自具体条款**，不是来自"密度"这个词；C 把条款撤掉、
+    只留档位词，密度当场掉回去。
+
+    所以分工是：**档位是模型的判断，档位具体意味着什么是代码的事**——
+    跟 DTCG 那条同源（模型给 hex，分量由代码算）。这样既没把风格写死
+    （模型仍可选三档、人也能覆盖），又不让"密度"变成一句空话。
+    """
+
+    def _render(self, density: str) -> str:
+        return render_design_language({**GOOD, "density": density})
+
+    @pytest.mark.parametrize("density", DENSITIES)
+    def test_每一档都有具体条款(self, density):
+        s = self._render(density)
+        assert "统计卡" in s and "面板" in s and "表格" in s, f"{density} 档没展开"
+
+    def test_三档展开得不一样(self):
+        outs = {d: self._render(d) for d in DENSITIES}
+        assert len(set(outs.values())) == 3, "三档渲染出同一段话，等于档位没起作用"
+
+    def test_越紧凑要求越多(self):
+        """⚠ 方向要对。第一版有可能把区间抄反而没人发现——数值单调是能机械判的。"""
+        import re
+
+        def first_num(s: str) -> int:
+            return int(re.search(r"统计卡（(\d+)", s).group(1))
+
+        assert first_num(self._render("紧凑")) > first_num(self._render("宽松"))
+
+    def test_表格列数也跟着档位走(self):
+        assert "8 列" in self._render("紧凑")
+        assert "6 列" in self._render("标准")
+
+    def test_展开的条款里没有结构词(self):
+        """⚠ 密度是风格，不许借机把契约那半塞进来。"""
+        for d in DENSITIES:
+            s = self._render(d)
+            for word in ["aside", "面包屑", "Tailwind", "<header>"]:
+                assert word not in s
+
+    def test_渲染仍然是确定性的(self):
+        assert self._render("紧凑") == self._render("紧凑")

@@ -460,6 +460,20 @@ def _try_llm_generate_evidence(
             # 指令原文 + 上一版模型的结构摘要（粒度对齐 SPEC，不喂全量 JSON）。
             _refine_ctx = get_refine_context()
             _spec_refine = None
+            # ★ 上一版的设计语言原样带回去（2026-08-15 晚）。
+            #
+            # 真机量到过：同一个应用连着跑两次，配色一次 #1b3a57+#a1824a、
+            # 一次 #1e3a8a+#b45309——气质同向，具体值全变。精修场景下用户
+            # 只是让改一句话，界面颜色却整个换掉，**那是一眼可见的不稳定**。
+            #
+            # 它随 model 落库（run_spec_first 把它挂在 model["designLanguage"] 上），
+            # 所以这里从上一版 model 里读回来就行，不用另开存储。
+            _prev_model = (_refine_ctx or {}).get("model")
+            _reuse_language = (
+                _prev_model.get("designLanguage") if isinstance(_prev_model, dict) else None
+            )
+            if _reuse_language:
+                print("[v5_capability_executor] 精修沿用上一版设计语言")
             if _refine_ctx and str(_refine_ctx.get("instruction") or "").strip():
                 from .spec_first_pipeline import model_refine_digest
 
@@ -469,7 +483,12 @@ def _try_llm_generate_evidence(
                 }
                 print("[v5_capability_executor] spec-first 精修模式：带上一版结构 + 本轮指令")
             try:
-                model = run_spec_first(goal, llm_json_fn=llm_json_fn, refine=_spec_refine)["model"]
+                model = run_spec_first(
+                    goal,
+                    llm_json_fn=llm_json_fn,
+                    refine=_spec_refine,
+                    reuse_language=_reuse_language,
+                )["model"]
                 from_spec_first = True
                 print("[v5_capability_executor] spec-first 链路产出模型")
             except RunCancelled:

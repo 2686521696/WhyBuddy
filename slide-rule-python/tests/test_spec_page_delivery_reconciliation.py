@@ -142,5 +142,7 @@ class Test只记不拦:
         本轮补的是"说得出话"，不是把它改成 fail-closed。"""
         res = _run(monkeypatch, declared=["p1", "p2", "p3"], produced=["p1", "p3"])
         assert set(res["pages"]) == {"p1", "p3"}, "缺一页不该让整批作废"
-        assert res["model"] == {"ok": True}, "后面几步照常跑完"
+        # ⚠ 比"模型还在不在"，不比整份相等——理由同 test_四参老_sink_不炸整条链：
+        #   model 上会挂 designLanguage（它随模型落库）。
+        assert res["model"]["ok"] is True, "后面几步照常跑完"
         assert "p2" in res["failedPages"], "失败原因仍然如实记着"
