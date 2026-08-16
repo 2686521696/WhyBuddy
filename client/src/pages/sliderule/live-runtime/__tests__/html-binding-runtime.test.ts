@@ -600,3 +600,56 @@ describe("内层作用域的字段归内层管", () => {
     expect(root.querySelector("span")!.textContent).toBe("张三");
   });
 });
+
+describe("作用域自己也算在内", () => {
+  /**
+   * ⚠ 真机（健身房 p4）：行模板的**根节点自己**带着 data-action —
+   *
+   *     <div data-rows="lesson_bill">
+   *       <div data-action="openRecord" data-entity="lesson_bill">   ← 行根节点
+   *
+   * querySelectorAll 只找后代，于是行 id 没打上，12 个动作全报
+   * 「取不到行 id，不挂监听」——**整块列表点不动**，而 Python 判据看嵌套判 0 条。
+   */
+  const source = {
+    rows: { bill: [{ id: "b1", no: "A-1" }, { id: "b2", no: "A-2" }] },
+    fields: { bill: [{ id: "no", name: "单号" }] },
+  };
+
+  function mount(html: string): HTMLElement {
+    const root = document.createElement("div");
+    root.innerHTML = html;
+    document.body.appendChild(root);
+    return root;
+  }
+
+  it("动作在行根节点上也要打上行 id", () => {
+    const root = mount(
+      '<div data-rows="bill">' +
+        '<div data-action="openRecord" data-entity="bill"><span data-field="no">x</span></div>' +
+        "</div>"
+    );
+    const report = applyBindings(root, { source });
+    expect(report.problems).toEqual([]);
+    const ids = [...root.querySelectorAll("[data-action]")].map((el) =>
+      el.getAttribute("data-row-id")
+    );
+    expect(ids).toEqual(["b1", "b2"]);
+  });
+
+  it("字段在作用域根节点上也要填", () => {
+    const root = mount('<div data-record="bill" data-field="no">占位</div>');
+    applyBindings(root, { source });
+    expect(root.firstElementChild!.textContent).toBe("A-1");
+  });
+
+  it("后代上的动作照旧（别把老行为改没）", () => {
+    const root = mount(
+      '<div data-rows="bill"><div><button data-action="openRecord" data-entity="bill">开</button>' +
+        '<span data-field="no">x</span></div></div>'
+    );
+    applyBindings(root, { source });
+    const ids = [...root.querySelectorAll("button")].map((el) => el.getAttribute("data-row-id"));
+    expect(ids).toEqual(["b1", "b2"]);
+  });
+});

@@ -284,6 +284,26 @@ function fieldOf(fields: BindingField[] | undefined, id: string): BindingField |
  *   （只要作用域、不要循环）无路可走——真机上模型只能把 data-field 打在
  *   容器外面，然后被判据拦下、整页 bind 失败。
  */
+/**
+ * 作用域**自己和它的后代**里匹配 selector 的元素。
+ *
+ * ⚠ `querySelectorAll` **只找后代，不含自己**。真机（健身房 p4）撞上：
+ * 行模板的根节点自己带着 `data-action="openRecord"`——
+ *
+ *     <div data-rows="lesson_bill">
+ *       <div data-action="openRecord" data-entity="lesson_bill">   ← 行根节点
+ *
+ * 于是 `tr.querySelectorAll("[data-action]")` 一个都没找到，行 id 没打上，
+ * 12 个动作全报「取不到行 id，不挂监听」——**整块列表点不动**。
+ * 而 Python 侧判据看的是标签嵌套，判 0 条：又一次两边语义不一致。
+ */
+function selfAndDescendants<T extends Element>(scope: Element, selector: string): T[] {
+  const out = Array.from(scope.querySelectorAll<T>(selector));
+  if (scope.matches(selector)) out.unshift(scope as unknown as T);
+  return out;
+}
+
+
 function fillFields(
   scope: Element,
   record: Record<string, unknown>,
@@ -294,7 +314,7 @@ function fillFields(
   /** 这一轮是不是"行内"（data-rows 的每一行）。决定嵌套 data-record 归谁填。 */
   inRow: boolean
 ): void {
-  scope.querySelectorAll<HTMLElement>("[data-field]").forEach((el) => {
+  selfAndDescendants<HTMLElement>(scope, "[data-field]").forEach((el) => {
     // ⚠ **内层作用域的字段归内层管**（2026-08-16 真机揪出来的）。
     //
     // querySelectorAll 抓的是**全部后代**，包括嵌套在内层 data-rows /
@@ -444,7 +464,7 @@ export function applyBindings(
       // 行内动作带得出当前行 —— 取不到 rowId 就发空事件是静默失败，
       // actionRef 那轮补运行时判据时点过名，这里同样不许发生
       const rid = row[rowIdField];
-      tr.querySelectorAll<HTMLElement>("[data-action]").forEach((el) => {
+      selfAndDescendants<HTMLElement>(tr, "[data-action]").forEach((el) => {
         el.setAttribute("data-row-id", rid == null ? "" : String(rid));
       });
       box.appendChild(tr);
@@ -486,7 +506,7 @@ export function applyBindings(
     fillFields(box, record, fields, entityId, problems, filled, false);
     // 作用域里的动作同样带得出"当前这条"——跟行内一个口径
     const rid = record[rowIdField];
-    box.querySelectorAll<HTMLElement>("[data-action]").forEach((el) => {
+    selfAndDescendants<HTMLElement>(box, "[data-action]").forEach((el) => {
       el.setAttribute("data-row-id", rid == null ? "" : String(rid));
     });
     filled.record += 1;
