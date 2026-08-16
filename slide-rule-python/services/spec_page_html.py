@@ -538,11 +538,23 @@ def _straggler_budget(first_page_seconds: float) -> float:
     )
 
 
+def _style_for(design_system: Any, page_id: str) -> Optional[str]:
+    """风格段可以是**一段**（全应用共用）或**一份 pid→段的表**（逐页各拿各的）。
+
+    ⚠ 逐页那种是 2026-08-16 换成 LLM 现写之后才需要的：对照实验里 B 臂的
+      风格段是应用级的，而模型自发写成了逐页版式计划——于是 p1 的提示词里
+      塞着 p2/p3/p4 该怎么排。密度腰斩多半有这一份。
+    """
+    if isinstance(design_system, dict):
+        return design_system.get(page_id) or design_system.get("*")
+    return design_system
+
+
 def generate_pages_parallel(
     spec: Dict[str, Any],
     *,
     device: str = "desktop",
-    design_system: Optional[str] = None,
+    design_system: Optional[Any] = None,
     product: str = "",
     max_workers: int = 6,
     llm_call: Optional[Callable[..., Any]] = None,
@@ -609,7 +621,8 @@ def generate_pages_parallel(
         fut_to_id = {
             pool.submit(
                 generate_page_html, pg, spec, device=device,
-                design_system=design_system, product=product, llm_call=llm_call
+                design_system=_style_for(design_system, str(pg.get("id") or "")),
+                product=product, llm_call=llm_call
             ): str(pg.get("id") or "")
             for pg in pages
         }

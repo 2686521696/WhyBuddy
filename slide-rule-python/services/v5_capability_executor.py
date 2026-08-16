@@ -472,7 +472,12 @@ def _try_llm_generate_evidence(
             _reuse_language = (
                 _prev_model.get("designLanguage") if isinstance(_prev_model, dict) else None
             )
-            if _reuse_language:
+            _reuse_style = (
+                _prev_model.get("styleBrief") if isinstance(_prev_model, dict) else None
+            )
+            if _reuse_style:
+                print("[v5_capability_executor] 精修沿用上一版风格段")
+            elif _reuse_language:
                 print("[v5_capability_executor] 精修沿用上一版设计语言")
             if _refine_ctx and str(_refine_ctx.get("instruction") or "").strip():
                 from .spec_first_pipeline import model_refine_digest
@@ -488,6 +493,7 @@ def _try_llm_generate_evidence(
                     llm_json_fn=llm_json_fn,
                     refine=_spec_refine,
                     reuse_language=_reuse_language,
+                    reuse_style_brief=_reuse_style,
                 )["model"]
                 from_spec_first = True
                 print("[v5_capability_executor] spec-first 链路产出模型")

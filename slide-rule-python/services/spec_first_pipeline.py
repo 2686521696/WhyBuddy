@@ -295,6 +295,7 @@ def run_spec_first(
     design_system: Optional[str] = None,
     design_override: Optional[Dict[str, Any]] = None,
     reuse_language: Optional[Dict[str, Any]] = None,
+    reuse_style_brief: Optional[Dict[str, Any]] = None,
     on_page: Optional[Callable[[str, str, int, int], None]] = None,
 ) -> Dict[str, Any]:
     """一句话 → 完整五系统模型 + 带 data-* 孔的多页 HTML。
@@ -325,6 +326,11 @@ def run_spec_first(
         normalize_design_language,
         render_design_language,
     )
+    from .design_language import (
+        generate_style_brief,
+        style_brief_ok,
+        style_for_page,
+    )
     from .html_bindings import bind_pages
     from .html_structure import derive_structure, to_datamodel  # noqa: F401
     from .model_assembly import assemble
@@ -353,6 +359,9 @@ def run_spec_first(
     # SPEC 声明的页面清单——**交付对账的基准**。在这里取一次，下面第 3 步
     # 拿它跟实交页面比。⚠ 取 id 不取数量：只比数量的话，"少了 p5、多了 p9"
     # 会两两相消，数字对得上而内容错位——本仓在别处栽过这种"数对了东西不对"。
+    spec_pages_declared_objs = [
+        p for p in (spec.get("pages") or []) if isinstance(p, dict) and p.get("id")
+    ]
     spec_pages_declared = [
         str(p.get("id") or "") for p in (spec.get("pages") or []) if isinstance(p, dict) and p.get("id")
     ]
@@ -372,8 +381,14 @@ def run_spec_first(
     #   具体值全变。修补/迭代场景下用户会看见界面颜色莫名其妙换掉，而那是
     #   **一眼可见**的不稳定，比密度不够伤得多。
     design_language: Optional[Dict[str, Any]] = None
+    style_brief: Optional[Dict[str, Any]] = None
     if (design_system or "").strip():
         pass  # 人直接给了散文，最高优先，连生成带复用一起跳过
+    elif reuse_style_brief and style_brief_ok(
+        reuse_style_brief, [str(p.get("id")) for p in spec_pages_declared_objs]
+    ):
+        style_brief = reuse_style_brief
+        print("[spec_first_pipeline] 复用上一版风格段，不重新生成")
     elif reuse_language:
         design_language = merge_override(
             normalize_design_language(reuse_language), design_override
@@ -385,11 +400,25 @@ def run_spec_first(
     else:
         raise_if_cancelled("第2.5步 定设计语言")
         with _stage("specfirst.design") as st:
-            design_language = generate_design_language(spec, override=design_override)
-            design_system = render_design_language(design_language)
-            st["density"] = design_language.get("density")
-            st["charts"] = bool(design_language.get("charts"))
+            # ★ 2026-08-16 用户裁决：风格段改由 LLM **现写**——
+            #   「a 就算内容再多也是写死的」。确定性那套降为回落。
+            style_brief = generate_style_brief(spec)
+            st["mode"] = "llm" if style_brief else "fallback"
+            if style_brief is None:
+                # ⚠ 回落不是可有可无：审美挂了不该打死整轮，而确定性那套
+                #   永远出得来。这跟 spec_tree「失败不回落占位」不矛盾——
+                #   那条护的是内容，这里回落的是审美。
+                design_language = generate_design_language(spec, override=design_override)
+                design_system = render_design_language(design_language)
+                st["density"] = design_language.get("density")
         stages["design"] = dict(st)
+
+    # 逐页各拿各的那份；应用级基调对每页相同，所以页面才像同一个产品。
+    if style_brief:
+        design_system = {
+            str(p.get("id")): style_for_page(style_brief, str(p.get("id")))
+            for p in spec_pages_declared_objs
+        }
 
     # ── 第 3 步：每页 HTML（并发；单页失败不拖垮整批）────────────────
     raise_if_cancelled("第3步 逐页画界面")
@@ -531,8 +560,11 @@ def run_spec_first(
         _reemit_pages(sink, pages, bound=True)
 
     # 挂进 model：它是唯一被落库、也是精修时回流的那份。
-    if design_language and isinstance(model, dict):
-        model["designLanguage"] = design_language
+    if isinstance(model, dict):
+        if design_language:
+            model["designLanguage"] = design_language
+        if style_brief:
+            model["styleBrief"] = style_brief
 
     result = {
         "version": SPEC_FIRST_VERSION,
