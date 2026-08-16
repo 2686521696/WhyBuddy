@@ -523,3 +523,80 @@ describe("单条记录作用域", () => {
     expect(r.problems.join()).toContain("取不到记录");
   });
 });
+
+describe("内层作用域的字段归内层管", () => {
+  /**
+   * ⚠ 2026-08-16 真机（健身房完整链路）揪出来的：p1/p2 各报 8~9 条
+   * 「data-field=date：不是实体 member 的字段」。
+   *
+   * 形状是 data-record 里套着 data-rows：
+   *
+   *     <div data-record="member">                会员详情卡
+   *       <tbody data-rows="consumption_record">  里面套着消费流水表
+   *         <td data-field="date">                它属于 consumption_record
+   *
+   * fillFields 用的是 scope.querySelectorAll("[data-field]")——抓全部后代，
+   * 于是 member 那一轮把内层的字段也认领走了。
+   *
+   * ⚠ 而 Python 侧 scan_bindings 用**标签栈**，内层天然覆盖外层，判 0 problems。
+   *   **两边语义不一致**：判据说没事，运行时报一串。petite-vue 用原型链
+   *   实现同样的覆盖，这里按 closest 判归属。
+   */
+  const source = {
+    rows: {
+      member: [{ id: "m1", name: "张三" }],
+      consumption_record: [
+        { id: "c1", date: "2026-01-01" },
+        { id: "c2", date: "2026-01-02" },
+      ],
+    },
+    fields: {
+      member: [{ id: "name", name: "姓名" }],
+      consumption_record: [{ id: "date", name: "日期" }],
+    },
+  };
+
+  function mount(html: string): HTMLElement {
+    const root = document.createElement("div");
+    root.innerHTML = html;
+    document.body.appendChild(root);
+    return root;
+  }
+
+  it("record 里套 rows：内层字段不被外层认领", () => {
+    const root = mount(`
+      <div data-record="member">
+        <h4 data-field="name">占位</h4>
+        <table><tbody data-rows="consumption_record">
+          <tr><td data-field="date">占位</td></tr>
+        </tbody></table>
+      </div>`);
+    const report = applyBindings(root, { source });
+    expect(report.problems).toEqual([]);
+    expect(root.querySelector("h4")!.textContent).toBe("张三");
+  });
+
+  it("内层 rows 照常按记录克隆", () => {
+    const root = mount(`
+      <div data-record="member">
+        <span data-field="name">占位</span>
+        <table><tbody data-rows="consumption_record">
+          <tr><td data-field="date">占位</td></tr>
+        </tbody></table>
+      </div>`);
+    applyBindings(root, { source });
+    expect(root.querySelectorAll("tbody tr").length).toBe(2);
+    expect(root.querySelectorAll("tbody td")[0].textContent).toBe("2026-01-01");
+    expect(root.querySelectorAll("tbody td")[1].textContent).toBe("2026-01-02");
+  });
+
+  it("直属字段仍然要填（别把该填的也跳过）", () => {
+    const root = mount(`
+      <div data-record="member">
+        <div class="wrap"><span data-field="name">占位</span></div>
+      </div>`);
+    const report = applyBindings(root, { source });
+    expect(report.problems).toEqual([]);
+    expect(root.querySelector("span")!.textContent).toBe("张三");
+  });
+});

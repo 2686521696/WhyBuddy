@@ -290,9 +290,50 @@ function fillFields(
   fields: Array<{ id: string; name?: string; type?: string }>,
   entityId: string,
   problems: string[],
-  filled: Record<string, number>
+  filled: Record<string, number>,
+  /** 这一轮是不是"行内"（data-rows 的每一行）。决定嵌套 data-record 归谁填。 */
+  inRow: boolean
 ): void {
   scope.querySelectorAll<HTMLElement>("[data-field]").forEach((el) => {
+    // ⚠ **内层作用域的字段归内层管**（2026-08-16 真机揪出来的）。
+    //
+    // querySelectorAll 抓的是**全部后代**，包括嵌套在内层 data-rows /
+    // data-record 里的字段。真机形状（健身房 p1/p2）：
+    //
+    //     <div data-record="member">          ← 会员详情卡
+    //       …
+    //       <tbody data-rows="consumption_record">   ← 里面套着消费流水表
+    //         <td data-field="date">…         ← 它属于 consumption_record
+    //
+    // 不判归属的话，member 那一轮会把 date/store_ref/project_name 也认领走，
+    // 然后报「不是实体 member 的字段」——真机一页报 8~9 条。
+    //
+    // ⚠ 而 Python 侧的 scan_bindings 用**标签栈**，内层作用域天然覆盖外层，
+    //   所以它判 0 problems。**两边语义不一致**：判据说没事，运行时报一串。
+    //   petite-vue 靠原型链实现同样的覆盖（createScopedContext），
+    //   这里结构简单，按 closest 判归属就够——但必须判。
+    //
+    // ⚠ 判据是「内层那个作用域**会不会被独立处理**」，不是「有没有内层作用域」。
+    //
+    //   内层 data-rows            → 上面那一轮一定会处理它  → 跳过
+    //   内层 data-record 在行里    → record 那一轮会 closest 守卫跳过它，
+    //                               约定是**由当前行来填**（见下面那段注释与
+    //                               「不许把行内字段覆盖成同一条」用例）→ 不跳
+    //   内层 data-record 不在行里  → record 那一轮会处理它 → 跳过
+    //
+    // ⚠ 第一版只判「有没有内层作用域」，把行里那个 data-record 也跳了，
+    //   既有用例当场红（三行的 owner 全留在占位符 'y'）。
+    // ⚠ 第二版改成去 DOM 里查「这个 data-record 在不在 data-rows 里」——**也错**：
+    //   行内那一轮的 scope 是**还没挂进文档的克隆行**，closest 查不到外面的
+    //   容器，于是判成"独立处理"又跳了。所以用显式的 inRow，不靠挂载状态。
+    const owner = el.parentElement?.closest("[data-rows],[data-record]");
+    if (owner && owner !== scope && scope.contains(owner)) {
+      // 内层 data-rows 一定会被那一轮独立处理；内层 data-record 只有**不在行里**
+      // 时才会（record 那一轮自己有 closest("[data-rows]") 守卫）。
+      const ownedIndependently = owner.hasAttribute("data-rows") || !inRow;
+      if (ownedIndependently) return;
+    }
+
     const fid = el.getAttribute("data-field") || "";
     const f = fieldOf(fields, fid);
     if (!f) {
@@ -399,7 +440,7 @@ export function applyBindings(
         }
       }
       // 行内 data-field：作用域是**这一行**
-      fillFields(tr, row, fields, entityId, problems, filled);
+      fillFields(tr, row, fields, entityId, problems, filled, true);
       // 行内动作带得出当前行 —— 取不到 rowId 就发空事件是静默失败，
       // actionRef 那轮补运行时判据时点过名，这里同样不许发生
       const rid = row[rowIdField];
@@ -442,7 +483,7 @@ export function applyBindings(
       );
       return;
     }
-    fillFields(box, record, fields, entityId, problems, filled);
+    fillFields(box, record, fields, entityId, problems, filled, false);
     // 作用域里的动作同样带得出"当前这条"——跟行内一个口径
     const rid = record[rowIdField];
     box.querySelectorAll<HTMLElement>("[data-action]").forEach((el) => {
