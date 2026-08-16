@@ -400,7 +400,8 @@ def run_spec_first(
         # 显式实参优先于 sink：脚本/评测直接调这个函数时不该被"当前请求恰好
         # 装了个 sink"影响。生产路径（主轴）走 sink，因为中间那层是同步的。
         batch = generate_pages_parallel(
-            spec, device=device, design_system=design_system, on_page=sink
+            spec, device=device, design_system=design_system,
+            product=goal, on_page=sink
         )
         pages = dict(batch.get("pages") or {})
         failed = dict(batch.get("failed") or {})

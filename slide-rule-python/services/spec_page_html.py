@@ -174,25 +174,58 @@ class SpecPageHtmlError(RuntimeError):
     """
 
 
-def build_page_brief(page: Dict[str, Any], spec: Dict[str, Any]) -> str:
+def build_page_brief(
+    page: Dict[str, Any], spec: Dict[str, Any], *, product: str = ""
+) -> str:
     """把 spec 的一页摊成自然语言，喂给出 HTML 的那一步。
 
     只用 spec 里**这一页真的覆盖到**的需求节点（coversNodes），不把整棵树倒进去：
     倒整棵树会让每一页都长得一样，而 spec 的页面清单本来就是按职责切好的。
+
+    ## 照仓里那份**真出过好效果**的模板补齐（2026-08-15 晚）
+
+    参照 experiments/visual-first/img_hop2.py 的 `image_prompt_from_spec`——
+    它逐字对着 materials/previews/provenance-crm-4pages.json，那是"唯一真出过
+    好效果的样本"。它的六段里，本函数原来缺两段：
+
+      ① **产品一句话**。img_hop2 的注释直接点了名：「旧那份的 page_brief 没有
+         ——模型不知道这是个什么产品」。而本函数**就是那个旧那份**。
+         少了它，模型只知道"这一页叫库存台账管理页"，不知道它属于一个什么东西。
+
+      ④ **设计要点（notes）**。原来写的是 `acceptance or notes`——**有验收条件
+         就把设计要点丢掉**。而参照模板是两段都要：acceptance 进"要能体现"，
+         notes 进"设计要点"。notes 恰好是唯一一处**逐页不同的版式提示**
+         （"列表页提供关键词搜索与效期区间筛选"这类），丢掉它等于把 spec 里
+         仅有的排布信息扔了。
+
+    ⚠ 量过才改：改之前两个完全不同业务（药店库存 / 律所工时）的最终提示词
+      **逐字相同 95.7%**，整份 1642 字里随业务变的只有 69 字。而 2026-07-31
+      记在 freeform_block.py 的那次同款测量是 87%，当时就判成病了。
     """
     by_id = {str(n.get("id")): n for n in (spec.get("nodes") or [])}
-    lines = [
+    lines: List[str] = []
+    if (product or "").strip():
+        lines.append(f"产品：{product.strip()}")
+    if str(spec.get("appName") or "").strip():
+        lines.append(f"产品名：{str(spec['appName']).strip()}")
+    lines += [
         f"页面：{page.get('name', '')}",
         f"使用者：{page.get('audience', '')}",
         f"用途：{page.get('purpose', '')}",
         "这一页要承载的需求：",
     ]
+    notes: List[str] = []
     for ref in page.get("coversNodes") or []:
         node = by_id.get(str(ref))
         if not node:
             continue
-        detail = node.get("acceptance") or node.get("notes") or ""
-        lines.append(f"- {node.get('title', '')}：{detail}")
+        lines.append(f"- {node.get('title', '')}：{node.get('acceptance') or ''}")
+        if str(node.get("notes") or "").strip():
+            notes.append(str(node["notes"]).strip())
+    if notes:
+        # ⚠ 单独成段，不塞回需求那一行：它说的是**怎么排**，跟"要满足什么"
+        #   不是一类信息，混在一起模型会当成验收条件的补充说明读过去。
+        lines.append("设计要点：" + "；".join(notes))
     return "\n".join(lines)
 
 
@@ -371,6 +404,7 @@ def generate_page_html(
     *,
     device: str = "desktop",
     design_system: Optional[str] = None,
+    product: str = "",
     llm_call: Optional[Callable[..., Any]] = None,
     max_attempts: int = 2,
 ) -> Dict[str, Any]:
@@ -378,7 +412,7 @@ def generate_page_html(
 
     返回 {"version", "pageId", "html", "brief", "prompt"}。
     """
-    brief = build_page_brief(page, spec)
+    brief = build_page_brief(page, spec, product=product)
     prompt = build_page_html_prompt(brief, device=device, design_system=design_system)
     if llm_call is None:
         # ⚠ 用带重试的那个，不是裸 call_llm（2026-08-13 修）。
@@ -509,6 +543,7 @@ def generate_pages_parallel(
     *,
     device: str = "desktop",
     design_system: Optional[str] = None,
+    product: str = "",
     max_workers: int = 6,
     llm_call: Optional[Callable[..., Any]] = None,
     on_page: Optional[Callable[[str, str, int, int], None]] = None,
@@ -574,7 +609,7 @@ def generate_pages_parallel(
         fut_to_id = {
             pool.submit(
                 generate_page_html, pg, spec, device=device,
-                design_system=design_system, llm_call=llm_call
+                design_system=design_system, product=product, llm_call=llm_call
             ): str(pg.get("id") or "")
             for pg in pages
         }
