@@ -859,15 +859,36 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             appBundle: "应用装配",
           };
           let streamStepSeq = 0;
-          const appendStreamStep = (label: string) => {
+          /**
+           * 把一条 SSE 事件翻成左栏的一枚 chip。
+           *
+           * ⚠ `capabilityId` 必须由调用方给真的（2026-08-16 线上实测）。
+           *
+           * 此前这里写死 `"intent.parse" as any`，于是真机一轮 79 条步骤
+           * **每一条都标着 intent.parse、realLlm 全 false**，而那一轮实际跑了
+           * 27 个能力（gap.ask 9.1s · structure.decompose 12.1s ·
+           * appbundle.runtimeClosure 148.3s …）。用户看到的是"正在理解你的
+           * 目标"滚了七十多遍——屏幕上像卡在第一步，实际早跑到生成应用了。
+           *
+           * 那个 `as any` 就是记号：类型要一个能力 id，而这里没有，于是拿第一个
+           * 顶上。真正的信息一直在调用点手里（onReasoningStep 的第一个参数就是
+           * 能力 id），只是没往下传。
+           *
+           * 默认值保留 intent.parse：确实说不出属于哪个能力的系统提示（"指令已
+           * 接收"之类）维持原样，不为了消灭 `as any` 而编一个假的归属。
+           */
+          const appendStreamStep = (
+            label: string,
+            opts?: { capabilityId?: string; realLlm?: boolean }
+          ) => {
             streamStepSeq += 1;
             appendStep({
               id: `${turnId}-stream-${streamStepSeq}`,
               kind: "chip",
-              capabilityId: "intent.parse" as any,
+              capabilityId: (opts?.capabilityId || "intent.parse") as any,
               roleId: "system",
               label,
-              realLlm: false,
+              realLlm: Boolean(opts?.realLlm),
               loopTurnId: turnId,
               progressType: "thinking",
             });
@@ -972,7 +993,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 );
                 if (firstSight) {
                   const human = humanLlmLabel(key);
-                  appendStreamStep(`🖋 ${human}（实时输出见下方）...`);
+                  // 这一条是真·LLM 在吐字（onLlmDelta 就是流式增量），
+                  // realLlm 打真的——左栏靠它把"模型在想"和"系统在报进度"
+                  // 用不同颜色分开（TurnRouteTimeline 那个 text-[#0958d9]）。
+                  appendStreamStep(`🖋 ${human}（实时输出见下方）...`, {
+                    realLlm: true,
+                  });
                   setLiveAction({ label: `${human}...`, external: false });
                 }
                 setLlmDraftLabel(key);
@@ -1009,7 +1035,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   typeof loop === "number"
                     ? `第 ${loop + 1} 轮 · ${human}`
                     : human;
-                appendStreamStep(label);
+                // 真实能力 id 就在第一个参数上——这里是那 65 条 chip 的
+                // 主要来源，写死 intent.parse 的代价全在这一行上。
+                appendStreamStep(label, { capabilityId: capabilityId });
                 setLiveAction({ label: human, external: false });
               },
               onSkillActivated: (skillId, _label) => {
