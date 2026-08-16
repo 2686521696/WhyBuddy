@@ -24,8 +24,10 @@
  *
  *   # dev server 转发到线上后端（两个 target 都指 Node —— /api/agent-loop/sessions
  *   # 是 Node 提供的，指 Python 会 404，墙就空了）
- *   PYTHON_API_TARGET=https://whybuddy.onrender.com \
- *   AGENT_LOOP_API_TARGET=https://whybuddy.onrender.com npx vite --port 5311
+ *   # 地址填当前部署的 Node 服务（docker-compose.prod.yml 那台，默认 :3000）。
+ *   # 2026-08-16：原来这里写的是 whybuddy.onrender.com，Render 已不再使用，是死链。
+ *   PYTHON_API_TARGET=https://你的线上域名 \
+ *   AGENT_LOOP_API_TARGET=https://你的线上域名 npx vite --port 5311
  *
  *   node scripts/app-wall-holes.mjs http://localhost:5311/agent-loop/workbench 1920 out.png
  *

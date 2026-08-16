@@ -470,9 +470,9 @@
 %% ═══════════════════════════════════════════════════════════════════════════
 %%   这一轮同样没有新功能。是拿 HEAD（135e847d）逐条核对图上的断言，
 %%   核出**五处图与代码不符**。关键不是数量，是**方向完全一致**：
-%%
+%% ·
 %%     五处**全是「东西已经做完了，图上还标着没做」**，一处反向的都没有。
-%%
+%% ·
 %%   而这恰好是 V6.0 自己在【⚑ 读图纪律】里新加的那一条所防的方向
 %%   （「一个提案格真的落地了，就必须改成实线」）。**纪律写下了，同一轮里就欠了五笔。**
 %% ·
@@ -1592,7 +1592,7 @@ subgraph EXEC["08 执行层 / Executor Topology（● U2 新增子图）"]
   CTX["● 分级上下文供给 / capability-context<br/>收敛全文6000/24000 · 分析800 · 轻220<br/>截断显式标注"]:::ledger
   KEYPOOL["● key池调度 / ByokDispatcher<br/>租约·least-busy·429冷却·401禁用<br/>raceMode默认false(成本诚实)<br/>◆ 待补:FIFO排队 · per-key计费"]:::core
   DEPLOY{"部署形态 / Deployment<br/>Pages纯浏览器BYOK / 自托管server"}:::gate
-  BLUEPRINT["✧ 部署蓝图 / render.yaml（07-31 新增·一键部署的单一真相源）<br/>漏配不会报错·只会**静默少一半功能**:补齐四个开关后才有完整链路<br/>UVICORN_HOST 必须 0.0.0.0——**不能用镜像默认的 ::**。健康检查走 IPv4·<br/>容器 v6only=1 时 :: 收不到 IPv4 连接;当时日志是铁证:端口探测从 ::1 打进来<br/>通了·中间15分钟一条 /health 都没有·最后 Timed Out·而服务其实一直是好的<br/>Neon 持久化 + E2B 沙盒 + 会话密钥随蓝图下发(内部 API 靠共享密钥挡)<br/>服务间走公网地址而不是私网:Render 跨服务是 IPv4·:: 绑定 v6only 时收不到"]:::core
+  BLUEPRINT["✧ 部署蓝图 / render.yaml（07-31 新增）<br/>❖08-16 **Render 已停用**·当前部署真相源是 docker-compose.prod.yml<br/>(deploy-images.yml 构镜像推 ghcr → 服务器 pull 后 up · caddy/Caddyfile 收 HTTPS<br/>· 存储走 deploy/postgres-https-api)。下面两条教训**跨平台仍然成立**·别当历史读<br/>漏配不会报错·只会**静默少一半功能**:补齐四个开关后才有完整链路<br/>UVICORN_HOST 必须 0.0.0.0——**不能用镜像默认的 ::**。健康检查走 IPv4·<br/>容器 v6only=1 时 :: 收不到 IPv4 连接;当时日志是铁证:端口探测从 ::1 打进来<br/>通了·中间15分钟一条 /health 都没有·最后 Timed Out·而服务其实一直是好的<br/>Neon 持久化 + E2B 沙盒 + 会话密钥随蓝图下发(内部 API 靠共享密钥挡)<br/>服务间走公网地址而不是私网:Render 跨服务是 IPv4·:: 绑定 v6only 时收不到"]:::core
   KEYISO["● key零信任边界<br/>仅localStorage+闭包 · 不进STATE/台账/导出<br/>序列化隔离测试锁定"]:::trust
   SREASK["■ 结构化生成通道 / structured_llm_json<br/>校验错误回喂 reask(借Instructor语义)<br/>强制流式免CF-524 · SLIDERULE_STRUCTURED_LLM"]:::core
 end
