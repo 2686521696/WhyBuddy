@@ -811,6 +811,29 @@ def _build_user_content(
             f"Current model JSON:\n{model_json}\n"
             f"Follow-up instruction:\n{refine_ctx['instruction']}"
         )
+        # ⚠ 精修模式下**换掉收尾那句**（2026-08-16 线上实测）。
+        #
+        # 默认收尾是 "Produce the complete SystemContract JSON now."——它跟上面
+        # 那段 "return the current model unchanged / keep byte-identical" 直接
+        # 打架，而且它在**最后**。LLM 对末尾指令权重最高，于是照着"产出完整的"
+        # 干，把整份模型重写一遍。
+        #
+        # 真机证据（sr-20260816113435）：用户只说「预警消息中心的消息流没有
+        # 数据」，产出的 mv-2 **六段指纹全变**，一段没留；菜单从
+        # 「守望地图首页/预警消息中心/拐杖参数配置页」换成
+        # 「监护实时看护舱/志愿者接单大厅/安全与硬件设置页」——**用户提的那
+        # 一页直接不存在了**。
+        #
+        # 这跟 build_design_system_prompt_block 当初那个是同一个形状：约束被埋
+        # 在中间，后面的话把它盖掉。那次的修法是把契约挪到最后并写明"冲突时
+        # 以这一节为准"，这里同理——但不动块顺序（顺序会影响别的分支），
+        # 只把最后一句换成不打架的措辞。
+        final_instruction = (
+            "Return the updated SystemContract JSON now. It MUST be the current "
+            "model above with ONLY the follow-up instruction applied — every "
+            "other id, name and field byte-identical. Do NOT redesign, rename or "
+            "re-scope anything the instruction did not mention."
+        )
     parts.append(final_instruction)
     return "\n\n".join(parts)
 
