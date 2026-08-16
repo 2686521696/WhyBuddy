@@ -81,6 +81,8 @@ interface SlideRuleStudioProps {
   modelVersions?: Array<{ id: string; instruction?: string; createdAt?: string }>;
   currentModelVersionId?: string | null;
   onRestoreVersion?: (versionId: string) => void;
+  /** 版本切换请求在飞：两个按钮都置灰。缺省 false（老调用点行为不变）。 */
+  isRestoringVersion?: boolean;
   // --- Chat panel (left) ---
   chatSlot: React.ReactNode;
 
@@ -155,6 +157,7 @@ export function SlideRuleStudio({
   modelVersions = [],
   currentModelVersionId = null,
   onRestoreVersion,
+  isRestoringVersion = false,
 }: SlideRuleStudioProps) {
   // Allow manual override of the displayed screen (click thumbnail, board/theater 态)
   const [manualSkill, setManualSkill] = useState<SkillId | null>(null);
@@ -415,7 +418,9 @@ export function SlideRuleStudio({
         <button
           type="button"
           data-testid="sliderule-version-back"
-          disabled={!prev}
+          // ⚠ 边界禁用不够（2026-08-16 实测）：原来只有 !prev，于是请求在飞
+          //   的时候按钮照样能点，用户连点几下、三个并发 POST 全被后端接受。
+          disabled={!prev || isRestoringVersion}
           onClick={() => prev && onRestoreVersion?.(prev.id)}
           className="rounded-full px-1.5 py-0.5 text-[11px] text-stone-500 transition hover:bg-[#e9edf2] hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-30"
           title={prev ? `回退到 v${idx}${prev.instruction ? `（${prev.instruction.slice(0, 24)}）` : ""}` : "已是最早版本"}
@@ -428,7 +433,7 @@ export function SlideRuleStudio({
         <button
           type="button"
           data-testid="sliderule-version-forward"
-          disabled={!next}
+          disabled={!next || isRestoringVersion}
           onClick={() => next && onRestoreVersion?.(next.id)}
           className="rounded-full px-1.5 py-0.5 text-[11px] text-stone-500 transition hover:bg-[#e9edf2] hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-30"
           title={next ? `前进到 v${idx + 2}${next.instruction ? `（${next.instruction.slice(0, 24)}）` : ""}` : "已是最新版本"}

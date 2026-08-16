@@ -230,6 +230,18 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const [uiTurns, setUiTurns] = useState<UiTurn[]>([]);
   const [input, setInput] = useState("");
   const [isRunning, setIsRunning] = useState(false);
+  /**
+   * 版本回退/前进是否有请求在飞（2026-08-16 线上实测）。
+   *
+   * `isRunning` 只挡"推演中"，挡不住"上一次回退还没回来"。真机上用户连点
+   * ◀ 好几下，三个并发 POST 全部被后端接受——按钮既不置灰也没有任何反馈。
+   *
+   * ⚠ 用 ref 而不只是 state 做判据：setState 是异步的，连点两下之间
+   * React 可能还没重渲染，读 state 会读到旧值，闸形同虚设。ref 同步生效，
+   * state 只负责让按钮变灰。
+   */
+  const [isRestoring, setIsRestoring] = useState(false);
+  const restoringRef = useRef(false);
   const [liveAction, setLiveAction] = useState<LiveAction | null>(null);
   const [nextGateShouldFail, setNextGateShouldFail] = useState(false);
   const [executorMode, setExecutorMode] =
@@ -1623,17 +1635,38 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   // 返回的新状态直接应用；SSE 残留的 skillContents 清空，屏幕改读闭环里的模型。
   const restoreModelVersion = async (versionId: string) => {
     if (isRunning) return;
+    // 连点闸：ref 同步判定（见 restoringRef 的声明），state 只管按钮置灰。
+    if (restoringRef.current) return;
+    restoringRef.current = true;
+    setIsRestoring(true);
     const sid = sessionState.sessionId || sessionId;
     try {
       const res = await fetch(
         `/api/sliderule/sessions/${encodeURIComponent(sid)}/model-versions/${encodeURIComponent(versionId)}/restore`,
         { method: "POST" }
       );
-      let body: { state?: unknown; reason?: string; detail?: string } | null = null;
+      let body:
+        | { state?: unknown; reason?: string; detail?: string; restored?: boolean }
+        | null = null;
       try {
         body = await res.json();
       } catch {
         body = null;
+      }
+      // ⚠ 先判 restored，再判 res.ok（2026-08-16 线上实测）。
+      //
+      // 后端对"已经是这一版"返回的是 **HTTP 200 + restored:false + 完整
+      // state**。原来的 `if (res.ok && body?.state)` 会在这里直接 return，
+      // 于是下面那句"已经是当前版本"永远走不到——无效点击零反馈。
+      // 这段代码自己的注释写着「点了没反应还不知道为什么是最差的体验」，
+      // 而它正被这个短路造出来。
+      if (res.ok && body?.restored === false) {
+        const why =
+          body.reason === "already_current"
+            ? "已经是当前版本"
+            : body.detail || body.reason || "未生效";
+        notifyRestoreFailure(why);
+        return;
       }
       if (res.ok && body?.state) {
         setSkillContents({});
@@ -1650,6 +1683,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       notifyRestoreFailure(reason);
     } catch {
       notifyRestoreFailure("后端不可达，请稍后重试");
+    } finally {
+      // finally 不能省：上面每条分支都有 return，写在末尾的话
+      // 成功路径永远解不开闸，第二次回退就再也点不动了。
+      restoringRef.current = false;
+      setIsRestoring(false);
     }
   };
 
@@ -1909,6 +1947,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     answerClarifications,
     generateDeliverables,
     isRunning,
+    /** 版本切换请求在飞。名字带 Version 是给消费方看的——那边同名 prop 直传按钮。 */
+    isRestoringVersion: isRestoring,
     liveAction,
     sessionState,
     executorMode,

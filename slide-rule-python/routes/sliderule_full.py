@@ -13,6 +13,7 @@ import base64
 import binascii
 import os
 import re
+import threading
 
 from fastapi import APIRouter, HTTPException, Header, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -1307,6 +1308,27 @@ async def run_stream(
     return _run_sse_response(run, since=since)
 
 
+#: 每会话一把回退锁。前端加了 in-flight 闸之后仍要有这一层——闸只挡住
+#: "同一个浏览器标签连点"，挡不住多标签/刷新后重放/直接打接口。而回退不是
+#: 只读操作：它会重建闭环并写回会话，两个请求交叠就是读改写竞态
+#: （2026-08-16 实测：三个并发 POST 全部被接受并各自跑完）。
+#:
+#: ⚠ 用普通字典而不是 WeakValueDictionary：锁对象本身不该被回收——正在等锁
+#:   的请求手里有引用，但"刚放开、下一个还没拿到"那一瞬没有，回收掉就等于没锁。
+#:   会话数量级有限，常驻不心疼。
+_RESTORE_LOCKS: Dict[str, threading.Lock] = {}
+_RESTORE_LOCKS_GUARD = threading.Lock()
+
+
+def _restore_lock(sid: str) -> threading.Lock:
+    with _RESTORE_LOCKS_GUARD:
+        lock = _RESTORE_LOCKS.get(sid)
+        if lock is None:
+            lock = threading.Lock()
+            _RESTORE_LOCKS[sid] = lock
+        return lock
+
+
 @router.post("/sessions/{sid}/model-versions/{version_id}/restore")
 def restore_model_version(
     sid: str,
@@ -1318,6 +1340,11 @@ def restore_model_version(
     快照经 set_model_override 直供生成层（不调 LLM），同一结构闸照常校验，
     闭环/联动图重新推导，随后追加一条「回退」版本记录。"""
     _auth(x_internal_key)
+    with _restore_lock(sid):
+        return _restore_model_version_locked(sid, version_id)
+
+
+def _restore_model_version_locked(sid: str, version_id: str):
     state = load_session(sid)
     if state is None:
         return JSONResponse(status_code=404, content={"error": "session_not_found"})
