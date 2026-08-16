@@ -83,11 +83,18 @@ def test_refine_prompt_ends_by_forbidding_unrelated_changes():
     但那样末尾就没有约束了，等于把最强的位置浪费掉。
     """
     gen.set_refine_context({"datamodel": {"entities": []}}, "消息流是空的，加些模拟数据")
-    tail = _tail(_prompt()).lower()
-    assert "byte-identical" in tail, "末尾没有『其余逐字节保持』的约束"
-    assert "did not mention" in tail or "do not redesign" in tail, (
-        "末尾没有明确禁止『重新设计/改名/改范围』"
-    )
+    tail = _tail(_prompt(), 700).lower()
+    # ⚠ 契约在 2026-08-16 晚换过一次，判据跟着换（意图不变）。
+    #
+    #   旧契约：要整份模型，措辞是 "every other field byte-identical"
+    #   新契约：要 Merge Patch（RFC 7386），"省略即保持"是**结构保证**，
+    #           不再需要那句措辞——省略的键根本没机会被改
+    #
+    # 所以这里断言的是新契约的等价约束：说清"只给要改的键"且"省略的自动保持"。
+    # 直接删掉这条测试是错的：末尾这个最强位置必须**正面**约束住范围，
+    # 否则等于把它浪费掉。
+    assert "only the keys you need to change" in tail, "末尾没有把范围收到『只给要改的键』"
+    assert "keeps its current value" in tail, "末尾没有说明『省略的键自动保持』"
 
 
 def test_normal_generation_keeps_the_original_ending():

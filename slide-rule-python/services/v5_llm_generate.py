@@ -805,9 +805,7 @@ def _build_user_content(
         parts.append(
             "REFINE MODE — an approved five-system model for this app already "
             "exists. Apply the user's follow-up instruction as a MINIMAL "
-            "incremental edit on top of it. Keep every id/field not affected "
-            "by the instruction byte-identical. If the instruction does not "
-            "ask for any design change, return the current model unchanged.\n"
+            "incremental edit on top of it.\n"
             f"Current model JSON:\n{model_json}\n"
             f"Follow-up instruction:\n{refine_ctx['instruction']}"
         )
@@ -828,11 +826,27 @@ def _build_user_content(
         # 在中间，后面的话把它盖掉。那次的修法是把契约挪到最后并写明"冲突时
         # 以这一节为准"，这里同理——但不动块顺序（顺序会影响别的分支），
         # 只把最后一句换成不打架的措辞。
+        # ★ 只要补丁，不要整份（2026-08-16 晚，RFC 7386）。
+        #
+        # 上一版这里要的是"完整模型，但只改一处"——线上干净复测
+        # （sr-20260816201658）证明这条路到头了：菜单保住了 3/3，**六段指纹仍
+        # 然全变**，包括跟指令毫不相干的 workflow / rbac，而那轮指令里明写着
+        # 「其他页面不要动」。
+        #
+        # 换成要 Merge Patch：模型**只被允许输出要改的那部分**，其余由代码从基线
+        # 合并。没提到的段想变也变不了——从"求它自觉"变成"结构上做不到"。
+        #
+        # 模型不配合、还是吐了整份时：合并等价于整份替换，行为退化成修复前，
+        # **不会更糟**（见 merge_patch.looks_like_full_model 的说明）。
         final_instruction = (
-            "Return the updated SystemContract JSON now. It MUST be the current "
-            "model above with ONLY the follow-up instruction applied — every "
-            "other id, name and field byte-identical. Do NOT redesign, rename or "
-            "re-scope anything the instruction did not mention."
+            "Return a JSON Merge Patch (RFC 7386) against the current model "
+            "above — NOT the full model. Include ONLY the keys you need to "
+            "change; every key you omit keeps its current value automatically. "
+            "Keep the same nesting shape as the model (top-level keys are "
+            "datamodel / workflow / rbac / page / aigc / appbundle; include a "
+            "top-level key ONLY if the instruction requires changing inside it). "
+            "Arrays are replaced wholesale, so when you touch an array include "
+            "all of its items. Output the patch object only."
         )
     parts.append(final_instruction)
     return "\n\n".join(parts)
@@ -988,6 +1002,55 @@ def _default_llm_json_fn(goal: str, gate_feedback: Optional[str] = None) -> Opti
         return None
 
 
+def _refine_merge_patch_enabled() -> bool:
+    """默认开。留开关是因为它改的是生成契约本身，线上出事要能一条环境变量退回。"""
+    raw = (os.environ.get("SLIDERULE_REFINE_MERGE_PATCH") or "1").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+def _apply_refine_patch(model: "Optional[Dict[str, Any]]") -> "Optional[Dict[str, Any]]":
+    """精修模式：把 LLM 交回的补丁合并回基线；非精修原样放行。
+
+    三条防线，任何一条不成立都退回"原样返回"，绝不把一次能跑的生成搞崩：
+      · 没开开关 / 不在精修模式 / 拿不到基线 → 原样
+      · 模型无视要求吐了整份（六段齐全）→ 合并等价整份替换，行为同修复前
+      · 合并本身抛异常 → 原样（这是优化，不是必经之路）
+    """
+    if not isinstance(model, dict) or not model:
+        return model
+    if not _refine_merge_patch_enabled():
+        return model
+    ctx = get_refine_context()
+    base = (ctx or {}).get("model") if isinstance(ctx, dict) else None
+    if not isinstance(base, dict) or not base:
+        return model
+    try:
+        from .merge_patch import looks_like_full_model, merge_patch, patch_touches
+
+        touched = patch_touches(model)
+        if looks_like_full_model(model, _REQUIRED_SECTIONS):
+            # ⚠ 六段齐全 = 模型没按补丁交付。这时**不能合并**。
+            #
+            # 写这段时我一度以为"合并等价于整份替换，退化成修复前"，测试当场
+            # 打脸：Merge Patch 是**递归**合并，整份补丁会跟基线逐键混合，
+            # 基线里那些新版本本该丢掉的键会留下来——拿到的是缝合怪，
+            # 比整份替换更糟。
+            #
+            # 所以这里按整份走，行为与修复前一致：不配合就优雅降级，不发明
+            # 一个两者都不是的第三种东西。
+            print(f"[v5_llm_generate] 精修：模型交回整份（六段齐全），按整份处理不合并")
+            return model
+        merged = merge_patch(base, model)
+        kept = [s for s in _REQUIRED_SECTIONS if s not in touched]
+        print(
+            f"[v5_llm_generate] 精修合并（RFC 7386）：补丁动了 {touched}，未触及 {kept}"
+        )
+        return merged if isinstance(merged, dict) else model
+    except Exception as exc:  # noqa: BLE001 — 合并是优化，炸了不能拖垮生成
+        print(f"[v5_llm_generate] 精修合并失败，按整份处理：{str(exc)[:160]}")
+        return model
+
+
 def generate_five_system_model(
     goal: str,
     *,
@@ -1067,6 +1130,10 @@ def generate_five_system_model(
                 print(f"[v5_llm_generate] attempt {attempt + 1}/{attempts} raised: {str(exc)[:200]}")
                 last_detail = f"{type(exc).__name__}: {str(exc)[:180]}"
                 model = None
+            # ★ 精修模式下，LLM 交回的是**补丁**，在这里合并回基线（RFC 7386）。
+            #   放在完整性校验之前：补丁只含一两段，直接过校验必然判"缺段"。
+            #   合并之后拿到的是完整模型，后面的闸一条都不用改。
+            model = _apply_refine_patch(model)
             if isinstance(model, dict) and all(section in model for section in _REQUIRED_SECTIONS):
                 _diagnostic_var.set({"outcome": "ok"})
                 _st["used"] = attempt + 1
