@@ -336,6 +336,13 @@ def assemble(
             )
         if attempt == max_reask:
             break
+        # ⚠ 重问必须留痕（2026-08-16 补）。真机一趟这里花了 82.6s，
+        #   而平常 9~12s——**日志里一个字都没有**，查不出重问过几次、为什么。
+        #   慢 8 倍却说不出原因，等于这一步对运维是黑的。
+        print(
+            f"[model_assembly] 过不了闸，重问第 {attempt + 1} 次："
+            f"{last[:200]}"
+        )
         feedback = last
 
     raise ModelAssemblyError(f"汇合后过不了闸（重问 {max_reask} 次后）：{last}")

@@ -341,6 +341,9 @@ def bind_page(
         last = "；".join(f"{p['path']}：{p['message']}" for p in problems[:8])
         if attempt == max_reask:
             break
+        # ⚠ 同 model_assembly 那条：重问留痕。这一步真机跑过 50s 与 102s
+        #   两种，差一倍而日志说不出是重问还是上游慢。
+        print(f"[html_bindings] 页面 {page_id} 重问第 {attempt + 1} 次：{last[:200]}")
         feedback = last
     raise HtmlBindingsError(f"页面 {page_id} 打孔失败（重问 {max_reask} 次后）：{last}")
 
