@@ -462,29 +462,49 @@ def _ensure_runtime_closure_evidence(
     _refine_set = False
     if existing_closure is not None and derive_skill_runtime_graph_response(state) is not None:
         blocked = bool(existing_closure.get("blocked")) if isinstance(existing_closure, dict) else bool(getattr(existing_closure, "blocked", False))
-        if not blocked:
-            # E29 增量迭代：闭环已收口 + 用户带来新的补充指令 → 精修模式，
-            # 在现有五系统模型上做最小增量修改（同一结构闸把关），
-            # 不再整轮白跑/模型原地不动。指令与话题原文相同（重新推演）不精修。
-            current_model = extract_model_from_closure(existing_closure)
-            if (
-                instruction
-                and instruction != (goal_text or "").strip()
-                and current_model is not None
-            ):
-                from .v5_llm_generate import set_refine_context
+        # E29 增量迭代：闭环已收口 + 用户带来新的补充指令 → 精修模式，
+        # 在现有五系统模型上做最小增量修改（同一结构闸把关），
+        # 不再整轮白跑/模型原地不动。指令与话题原文相同（重新推演）不精修。
+        current_model = extract_model_from_closure(existing_closure)
+        wants_refine = bool(
+            instruction
+            and instruction != (goal_text or "").strip()
+            and current_model is not None
+        )
+        # ⚠ 这里**不能**再挂在 `if not blocked` 之下（2026-08-16 线上实测）。
+        #
+        # 真机证据（sr-20260816095147，"步伴 AI 拐杖"）：第一轮闭环因
+        # CLOSURE_GOAL_RELEVANCE_FAILED 判 blocked=True——那道闸把营销标题
+        # 「【硬件+社会公益】步伴 AI 拐杖——这一次，我们重新定义智能拐杖！」
+        # 按标点切成三个伪业务点，再拿页面名去比，必然 0%。用户随后发了
+        # 「菜单的显示看着有问题」，而精修分支被 blocked 挡在门外：
+        #
+        #   set_refine_context 从未调用
+        #     → 执行器里 _refine_active=False
+        #     → 走"整轮重建"，_try_llm_generate_evidence(goal, …) 拿的还是原话题
+        #     → 页面重画 204.8 秒，产出与上一版等价
+        #     → awaitReason=no_progress，streak 2
+        #
+        # **用户明确说出口的话，不该因为上一轮的闸红了就被丢掉。**
+        # blocked 该决定的是"要不要重建"，不是"要不要听用户说话"。
+        #
+        # 真正防住"没有模型可精修"的是 `current_model is not None`——
+        # 证据真缺失（0/6）时 extract_model_from_closure 返回 None，
+        # wants_refine 自然为 False，照旧走重建。fail-closed 语义不变。
+        if wants_refine:
+            from .v5_llm_generate import set_refine_context
 
-                # 老会话没有版本史：先把现有模型记为 v1，精修后的才是 v2，
-                # 否则「回退」无处可回
-                if not (getattr(state, "modelVersions", None) or []):
-                    record_model_version(
-                        state, existing_closure,
-                        goal_text or "初始版本",
-                    )
-                set_refine_context(current_model, instruction)
-                _refine_set = True
-            else:
-                return state
+            # 老会话没有版本史：先把现有模型记为 v1，精修后的才是 v2，
+            # 否则「回退」无处可回
+            if not (getattr(state, "modelVersions", None) or []):
+                record_model_version(
+                    state, existing_closure,
+                    goal_text or "初始版本",
+                )
+            set_refine_context(current_model, instruction)
+            _refine_set = True
+        elif not blocked:
+            return state
         # blocked 的闭环允许在新一轮重建（例如 LLM 瞬时失败导致 0/6）：
         # fail-closed 语义不变——证据真缺失时重建后依然 blocked。
 
