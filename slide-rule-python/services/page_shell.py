@@ -143,6 +143,72 @@ _ACTIVE_FALLBACK_CSS = (
     "font-weight:600}</style>"
 )
 
+_STYLE_BLOCK = re.compile(r"<style\b[^>]*>([\s\S]*?)</style>", re.I)
+#: 只认「单个类选择器 + 一条规则」这种最朴素的写法——真机上模型给自定义类
+#: 写的就是这个形状（`.bg-primary { background-color: #2D5CF7; }`）。
+#: 复合选择器 / 伪类 / 媒体查询一律不认：移植它们要连上下文一起搬，
+#: 而搬错比不搬更糟。
+_SIMPLE_RULE = re.compile(r"(?<![\w.\-])\.([A-Za-z][\w-]*)\s*\{([^{}]*)\}")
+
+
+def style_class_rules(markup: str) -> Dict[str, str]:
+    """页面自己的 <style> 里定义了哪些类 → 规则原文。"""
+    rules: Dict[str, str] = {}
+    for block in _STYLE_BLOCK.findall(markup or ""):
+        for name, body in _SIMPLE_RULE.findall(block):
+            rules.setdefault(name, body.strip())
+    return rules
+
+
+def shell_class_tokens(*shell_parts: str) -> set:
+    """统一外壳（aside/header）用到的全部 class 名。"""
+    tokens: set = set()
+    for part in shell_parts:
+        for value in _CLASS.findall(part or ""):
+            tokens.update(t for t in value.split() if t)
+    return tokens
+
+
+def transplant_shell_css(html: str, needed: Dict[str, str]) -> str:
+    """把外壳依赖、而本页 <style> 里没有的类定义补回来。
+
+    ## 这条防的是一个必然会周期性发生的形态
+
+    真机证据（sr-20260816095147「步伴 AI 拐杖」，2026-08-16）：侧栏是四页
+    **统一**的外壳，导航项都写着 `rounded-custom`；而每页的 `<style>` 是
+    **各写各的**——p1/p3/p4 定义了 `.rounded-custom`，**p2 没有**。于是同一段
+    外壳在 p2 上圆角失效，四页菜单长得不一样。
+
+    这不是运气问题：外壳统一之后，它依赖的类名就成了**跨页契约**，而定义那些
+    类的 CSS 仍由每页的 LLM 各自即兴发挥。只要页数 × 类数够多，总会漏。
+
+    ## 为什么是"移植"而不是"兜底默认值"
+
+    不发明数值。补给 p2 的那条 `.rounded-custom` 就是 p1 写的那条原文——
+    外壳本来就是从某一页抄过来的，它依赖的样式跟着一起抄才叫完整。
+    随手写个 `border-radius:8px` 看着也能跑，但那是**另一种设计**，
+    会让 p2 的圆角跟其它页不一致——把一个明显的 bug 换成一个不易察觉的。
+
+    没有任何页定义过的类（真机上的 `ring-primary`）**不补**：没有真相来源时
+    编一个出来，就是拿"看起来对"冒充"是对的"。它照旧交给 Tailwind 运行时。
+
+    ## 插在最前面
+
+    插在页面自己的 <style> **之前**，所以本页若自己定义了同名类，
+    按 CSS 后来者胜，本页那条照常赢。这一段只填空，不覆盖。
+    """
+    if not needed:
+        return html
+    css = "".join(f".{name}{{{body}}}" for name, body in sorted(needed.items()))
+    tag = f"<style data-shell-css>{css}</style>"
+    first = _STYLE_BLOCK.search(html or "")
+    if first:
+        return html[: first.start()] + tag + html[first.start() :]
+    if "</head>" in html:
+        return html.replace("</head>", tag + "</head>", 1)
+    return re.sub(r"(<body\b[^>]*>)", lambda m: m.group(1) + tag, html, count=1)
+
+
 #: 面包屑那个 nav。**两种都认**：
 #:   · APG 标准写法 `<nav aria-label="Breadcrumb">`
 #:   · 真机上模型常写的裸 nav（无 aria-label，用 <span> + 图标分隔符）
@@ -514,6 +580,15 @@ def unify_shell(
         for p in spec_pages
     }
 
+    # 全站自定义类词表：任意一页定义过的类，都算"这套设计里有的东西"。
+    # 外壳依赖其中某个类而本页没写，就从这里把定义搬过去（见
+    # transplant_shell_css）。取并集而不是只取源页：外壳的图标/徽标可能
+    # 用到源页之外定义的类。
+    vocabulary: Dict[str, str] = {}
+    for _markup in pages_html.values():
+        for _name, _body in style_class_rules(_markup).items():
+            vocabulary.setdefault(_name, _body)
+
     out: Dict[str, str] = {}
     for page_id, markup in pages_html.items():
         aside, header = shell["aside"], shell["header"]
@@ -549,6 +624,16 @@ def unify_shell(
         # ★ 两个方向都要（2026-08-15 晚）：统一后的侧栏若是 fixed，它不占位，
         #   没有偏移的那一页会被压在侧栏底下（真机 p4 就这么坏的）。
         html = reconcile_main_offset(html)
+        # ★ 外壳依赖的自定义类，本页没定义就从别页搬一份（2026-08-16）。
+        #   放在 reconcile 之后：那时 aside/header 已经是最终形态，
+        #   数出来的 class 才是这一页真正会用到的。
+        _own = style_class_rules(html)
+        _missing = {
+            name: body
+            for name, body in vocabulary.items()
+            if name in shell_class_tokens(aside, header) and name not in _own
+        }
+        html = transplant_shell_css(html, _missing)
         if need_fallback and _ACTIVE_FALLBACK_CSS not in html:
             # 塞进 </head> 之前；没有 head 就退到 <body> 之后（都没有就不塞）。
             if "</head>" in html:
