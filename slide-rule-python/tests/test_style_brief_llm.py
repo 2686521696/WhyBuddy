@@ -116,6 +116,34 @@ class Test提示词不诱导谈结构:
         assert "不要提任何 HTML 标签" in joined
         assert "只返回 JSON" in joined
 
+    def test_逼它逐个点名面板(self):
+        """★ 对照实验落地的那一条（2026-08-16，同一份 spec 四臂）：
+
+            臂                      面板   图表   表格列数   标题
+            A 写死密度条款          21.3   0.3    5.5       4.8
+            C LLM逐页（只问分几区） 14.5   0.3    3.8       2.5
+            D C + 逐个点名面板      11.3   1.5    5.3       5.5
+
+        只问"分几个区"时模型给的是笼统描述；逼它把面板写成清单之后，
+        **表格列数从 3.8 追回 5.3**、图表翻五倍、标题最多。
+
+        ⚠ 「面板」那列反而更低，是**指标在骗人**：它数圆角+边框的容器，
+          chip/徽标/内层小盒子全算，A 的密度条款催生大量嵌套小盒子把数刷高了。
+          渲染图上 D 的看板每张统计卡带 sparkline、主图带坐标轴、右侧环形仪表，
+          视觉信息量不低于 A。
+        """
+        joined = " ".join(m["content"] for m in build_style_brief_prompt(SPEC))
+        assert "逐个点名" in joined
+
+    def test_明说不许为了凑数硬加(self):
+        """⚠ 跟上一条成对，缺了就会退回"密度无条件越高越好"。
+
+        实测 D 的销课台只点了 4 个面板（大扫码框 + 会员核验卡 + 课包卡 + 流水），
+        而 A 被密度条款催出 25 个。**对一个前台销课页，少才是对的。**
+        """
+        joined = " ".join(m["content"] for m in build_style_brief_prompt(SPEC))
+        assert "不要为了凑数硬加" in joined
+
     def test_把页面id给它(self):
         joined = " ".join(m["content"] for m in build_style_brief_prompt(SPEC))
         assert "p1" in joined and "p2" in joined, "不给 id 它没法按页返回"
