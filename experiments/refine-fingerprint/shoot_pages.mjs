@@ -20,7 +20,17 @@ if (!runDir || !outDir) {
 }
 mkdirSync(outDir, { recursive: true });
 
-const browser = await chromium.launch({ executablePath: CHROME });
+// ⚠ 生成的页面靠 https://cdn.tailwindcss.com 提供样式（163 个 class 全是
+//   Tailwind 的，内联 CSS 只有 476 字符）。浏览器取不到 CDN 的话，截出来的是
+//   **裸奔的页面**——图标撑成巨幅、版式全塌。
+//   拿那种图当「效果」看，就是判据落在一个坏掉的观测上：页面没问题，是尺子坏了。
+//   所以浏览器必须跟 curl 走同一个出站代理。
+const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
+const browser = await chromium.launch({
+  executablePath: CHROME,
+  ...(proxy ? { proxy: { server: proxy } } : {}),
+});
+if (!proxy) console.warn('⚠ 没有 HTTPS_PROXY，页面样式很可能加载不到，截图不可信');
 for (const tag of ['round1', 'round2']) {
   const dir = join(runDir, `pages_${tag}`);
   if (!existsSync(dir)) {
