@@ -10,35 +10,19 @@
  * 纯函数模块：模型/schema 进、访问判定出，无副作用，便于单测。
  */
 
-import { normalizeRoles, type FiveSystemModel } from "../system-screens/five-system-model";
+import {
+  deriveRoleAccess,
+  normalizeRoles,
+  type FiveSystemModel,
+  type RoleAccess,
+} from "../system-screens/five-system-model";
+
+// ⚠ 2026-08-17 实现搬到 five-system-model（图的唯一事实源，见那边头注）。
+//   这里再导出，现有消费者（RbacScreen / XrayPanel / sandbox-graph）不受影响。
+export { deriveRoleAccess };
+export type { RoleAccess };
 import type { AppPageSchema } from "./app-runtime-schema";
 import type { ActionGates } from "./html-binding-runtime";
-
-export interface RoleAccess {
-  role: string;
-  /** roleRefs 含该角色的菜单的 permissionRefs 并集 */
-  permissions: string[];
-  /** 该角色可见的 rbac 菜单标签（证据侧口径，供预览展示） */
-  menuLabels: string[];
-  /** 给人看的角色名；补中文名之前生成的应用回落成 role 本身 */
-  label: string;
-}
-
-export function deriveRoleAccess(model: FiveSystemModel | null | undefined): RoleAccess[] {
-  // 归一后取 **id**：menu.roleRefs 里存的是引用键，拿显示名去 includes
-  // 会全部落空，表现为"每个角色都没有任何权限"。
-  const roles = normalizeRoles(model);
-  const menus = model?.rbac?.menus ?? [];
-  return roles.map(({ id: role, label }) => {
-    const roleMenus = menus.filter((m) => (m.roleRefs ?? []).includes(role));
-    return {
-      role,
-      label,
-      permissions: [...new Set(roleMenus.flatMap((m) => m.permissionRefs ?? []))],
-      menuLabels: roleMenus.map((m) => m.label || m.id || "").filter(Boolean),
-    };
-  });
-}
 
 export interface PageAccess {
   pageId: string;

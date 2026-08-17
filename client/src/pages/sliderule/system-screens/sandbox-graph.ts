@@ -79,29 +79,11 @@ export function deriveSandboxGraph(
 
   const pages = model?.page?.pages ?? [];
 
-  // 1) 页→实体：fieldBindings 里出现过的每个实体都画（去重靠 push）。
-  //    联动图的"主导实体"边已在 base 里，这里补齐其余引用。
-  for (const [i, p] of pages.entries()) {
-    const pid = p.id || `page-${i}`;
-    for (const b of p.fieldBindings ?? []) {
-      const dot = b.indexOf(".");
-      if (dot > 0) push(`page:${pid}`, `datamodel:${b.slice(0, dot)}`, "page-entity");
-    }
-  }
-
-  // 2) 角色→页面：与 rbac-preview.pageAccessForRole 的可见性同一判据
-  //    （页面声明的动作权限 ∩ 角色经菜单持有的权限非空）。
-  const access = deriveRoleAccess(model);
-  for (const [i, p] of pages.entries()) {
-    const pid = p.id || `page-${i}`;
-    const declared = p.actionPermissions ?? [];
-    if (declared.length === 0) continue; // 公共页不画：人人可进=没有信息
-    for (const a of access) {
-      if (a.permissions.some((perm) => declared.includes(perm))) {
-        push(`rbac:${a.role}`, `page:${pid}`, "role-page");
-      }
-    }
-  }
+  // ⚠ 2026-08-17：原来这里有两段加边（页→实体补全、角色→页面），
+  //   **已下沉到 deriveSystemLinkageGraph**。留在这里的后果是架构图看不到它们
+  //   ——同一份模型两个视图画出来不是同一张网，而没有任何一处会报错。
+  //   判据：__tests__/app-graph-contract.test.ts「两份 TS builder 必须算出同一张网」。
+  //   这里现在只做沙盘特有的事：断线体检。
 
   // 3) 断线体检：按成员逐个查度数（只报机械可判的孤岛）。
   const problems: SandboxProblem[] = [];

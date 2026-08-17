@@ -1107,7 +1107,11 @@ export interface LinkageEdge {
     | "page-workflow"
     | "node-role"
     | "aigc-entity"
-    | "aigc-role";
+    | "aigc-role"
+    // ⚠ 2026-08-17 补。这个联合类型此前缺 role-page，是"架构图少一手权限"
+    //   在类型上的形态——下沉那两段边时编译器当场把它点了出来。
+    //   六种边的词汇表以 shared/app-graph/edge-contract.json 为准。
+    | "role-page";
 }
 
 export interface LinkageGroup {
@@ -1121,6 +1125,45 @@ export interface LinkageGroup {
  * 排布由渲染器负责），跨系统引用连线。只画模型里真实存在且解析得到的
  * 引用（悬空引用不入图——各屏已负责标红）。少于 2 个非空组返回 null。
  */
+/**
+ * 角色经**菜单**持有哪些权限。
+ *
+ * ⚠ 口径以 `rbac.menus` 为准，不是 `rbac.rolePermissions`——48 份真机模型里
+ *   后者**键根本不存在**，真实数据一条不落全在 menus 里。走错口径的表现是
+ *   "每个角色都没有任何权限"，而没有任何一处会报错。
+ *   契约：shared/app-graph/edge-contract.json 的 role-perms-intersect-page-actions。
+ *
+ * ⚠ 2026-08-17 从 live-runtime/rbac-preview.ts 搬到这里，rbac-preview 再导出。
+ *   原因：这张图的 role→page 边要用它，而 rbac-preview 又引本文件的
+ *   normalizeRoles——直接反向引会成环。搬过来是为了让**图的唯一事实源**
+ *   自给自足，不是为了省一个 import。
+ */
+export interface RoleAccess {
+  role: string;
+  /** roleRefs 含该角色的菜单的 permissionRefs 并集 */
+  permissions: string[];
+  /** 该角色可见的 rbac 菜单标签（证据侧口径，供预览展示） */
+  menuLabels: string[];
+  /** 给人看的角色名；补中文名之前生成的应用回落成 role 本身 */
+  label: string;
+}
+
+export function deriveRoleAccess(model: FiveSystemModel | null | undefined): RoleAccess[] {
+  // 归一后取 **id**：menu.roleRefs 里存的是引用键，拿显示名去 includes
+  // 会全部落空，表现为"每个角色都没有任何权限"。
+  const roles = normalizeRoles(model);
+  const menus = model?.rbac?.menus ?? [];
+  return roles.map(({ id: role, label }) => {
+    const roleMenus = menus.filter((m) => (m.roleRefs ?? []).includes(role));
+    return {
+      role,
+      label,
+      permissions: [...new Set(roleMenus.flatMap((m) => m.permissionRefs ?? []))],
+      menuLabels: roleMenus.map((m) => m.label || m.id || "").filter(Boolean),
+    };
+  });
+}
+
 export function deriveSystemLinkageGraph(
   model: FiveSystemModel | null | undefined
 ): { groups: LinkageGroup[]; edges: LinkageEdge[] } | null {
@@ -1248,6 +1291,48 @@ export function deriveSystemLinkageGraph(
     }
   }
 
+  // ★ 2026-08-17：下面两段原本在 sandbox-graph.ts 里，只有沙盘看得到。
+  //   架构图（linkageToMermaid）走的是本函数，于是**同一份模型两个视图画出来
+  //   不是同一张网**。拿仓里 48 份真机模型量到的差距：
+  //
+  //       边种类           沙盘    架构图    差
+  //       page-entity     262    202     +60
+  //       role-page       306      0     +306   ← 整种边缺失
+  //       合计            990    624     架构图少 36%
+  //
+  //   用户切到「架构图」看到的是打了 36% 折的网，**没有任何一处提示他少了什么**。
+  //   而这个产品的核心主张恰恰是"整张网可以被整体看见、整体校验"。
+  //
+  //   ⚠ 修法是把增量**下沉到这里**，不是让架构图改吃 deriveSandboxGraph。
+  //     后者一行就能改完，但会留下一个"故意不完整的底"，下一个调它的人照样
+  //     拿到残图。事实源只能有一份。沙盘那边现在只剩它自己特有的断线体检。
+
+  // 页→实体：fieldBindings 里出现过的**每个**实体都画。
+  // 上面那段只画了"主导实体"（占比最高的那个），一页绑多个实体时其余全丢——
+  // 这就是 page-entity 少 60 条的来源。
+  for (const [i, p] of pages.entries()) {
+    const pid = p.id || `page-${i}`;
+    for (const b of p.fieldBindings ?? []) {
+      const dot = b.indexOf(".");
+      if (dot > 0) push(key("page", pid), key("datamodel", b.slice(0, dot)), "page-entity");
+    }
+  }
+
+  // 角色→页面（可进入）：页面声明的动作权限 ∩ 角色经菜单持有的权限非空。
+  // 判据与 rbac-preview.pageAccessForRole 的可见性同源，口径由
+  // shared/app-graph/edge-contract.json 钉死。
+  const access = deriveRoleAccess(model);
+  for (const [i, p] of pages.entries()) {
+    const pid = p.id || `page-${i}`;
+    const declared = p.actionPermissions ?? [];
+    if (declared.length === 0) continue; // 公共页不画：人人可进 = 全连接 = 零信息量
+    for (const a of access) {
+      if (a.permissions.some((perm) => declared.includes(perm))) {
+        push(key("rbac", a.role), key("page", pid), "role-page");
+      }
+    }
+  }
+
   return { groups, edges };
 }
 
@@ -1332,6 +1417,9 @@ const LINKAGE_EDGE_LABEL: Record<LinkageEdge["kind"], string> = {
   "node-role": "审批人",
   "aigc-entity": "写回字段",
   "aigc-role": "可用角色",
+  // 文案跟沙盘图例（SystemLinkageGraph 的 EDGE_META）同源：那边叫
+  // 「角色 → 页面（可进入）」，这里是连线标签，取语义词「可进入」。
+  "role-page": "可进入",
 };
 
 /**
