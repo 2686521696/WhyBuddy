@@ -22,12 +22,7 @@
      },
      {
       "id": "grid",
-      "name": "所属社区网格",
-      "type": "string"
-     },
-     {
-      "id": "health_status",
-      "name": "健康状态标签",
+      "name": "居住社区",
       "type": "string"
      },
      {
@@ -48,7 +43,7 @@
      },
      {
       "id": "elder_ref",
-      "name": "求助老人",
+      "name": "老人姓名",
       "type": "ref",
       "refEntity": "elder"
      },
@@ -63,18 +58,8 @@
       "type": "string"
      },
      {
-      "id": "appointment_time",
-      "name": "预约时间",
-      "type": "date"
-     },
-     {
       "id": "status",
-      "name": "当前状态",
-      "type": "string"
-     },
-     {
-      "id": "assignee",
-      "name": "指派人员",
+      "name": "指派状态",
       "type": "string"
      }
     ]
@@ -90,23 +75,23 @@
      },
      {
       "id": "institution",
-      "name": "服务机构或人员",
+      "name": "服务机构",
       "type": "string"
      },
      {
       "id": "order_count",
-      "name": "关联工单总数",
-      "type": "number"
+      "name": "工单总数",
+      "type": "string"
      },
      {
       "id": "total_amount",
       "name": "服务总金额",
-      "type": "number"
+      "type": "string"
      },
      {
       "id": "subsidy_amount",
       "name": "核算补贴额",
-      "type": "number"
+      "type": "string"
      },
      {
       "id": "audit_status",
@@ -244,39 +229,34 @@
  "page": {
   "pages": [
    {
-    "id": "p1_page",
+    "id": "work_order_board_p1",
     "name": "工作台首页",
     "kind": "workbench",
-    "fieldBindings": [
-     "work_order.order_no",
-     "work_order.status"
-    ],
+    "fieldBindings": [],
     "actionPermissions": [
-     "work_order:read"
+     "work_order:read",
+     "elder:read"
     ]
    },
    {
-    "id": "p3_page",
+    "id": "work_order_board_p2",
     "name": "服务工单调度页",
-    "kind": "kanban",
+    "kind": "workbench",
     "fieldBindings": [
      "work_order.order_no",
      "work_order.elder_ref",
      "work_order.service_type",
      "work_order.urgency",
-     "work_order.appointment_time",
-     "work_order.status",
-     "work_order.assignee"
+     "work_order.status"
     ],
     "actionPermissions": [
      "work_order:read",
-     "work_order:create",
      "work_order:update",
      "work_order:assign"
     ]
    },
    {
-    "id": "p2_page",
+    "id": "work_order_board_p3",
     "name": "老人档案管理页",
     "kind": "workbench",
     "fieldBindings": [
@@ -284,7 +264,6 @@
      "elder.gender_age",
      "elder.id_card",
      "elder.grid",
-     "elder.health_status",
      "elder.care_level"
     ],
     "actionPermissions": [
@@ -294,9 +273,9 @@
     ]
    },
    {
-    "id": "p4_page",
+    "id": "work_order_board_p4",
     "name": "财务结算与对账页",
-    "kind": "dashboard",
+    "kind": "workbench",
     "fieldBindings": [
      "financial_settlement.batch_no",
      "financial_settlement.institution",
@@ -307,9 +286,7 @@
     ],
     "actionPermissions": [
      "financial_settlement:read",
-     "financial_settlement:create",
-     "financial_settlement:approve",
-     "financial_settlement:manage"
+     "financial_settlement:approve"
     ]
    }
   ]
@@ -317,15 +294,15 @@
  "aigc": {
   "capabilities": [
    {
-    "id": "ai_health_assess",
-    "name": "健康状况智能评估",
+    "id": "cap_urgency_assess",
+    "name": "工单紧急程度智能评估",
     "inputFields": [
-     "elder.health_status"
+     "work_order.service_type"
     ],
-    "outputField": "elder.care_level",
+    "outputField": "work_order.urgency",
     "roleRefs": [
-     "role_consultant",
-     "role_manager"
+     "role_manager",
+     "role_consultant"
     ]
    }
   ]
@@ -333,27 +310,11 @@
  "appbundle": {
   "pageBindings": [
    {
-    "pageRef": "p3_page",
+    "pageRef": "work_order_board_p2",
     "workflowRef": "main_flow"
-   },
-   {
-    "pageRef": "p3_page",
-    "workflowRef": "node_created"
-   },
-   {
-    "pageRef": "p3_page",
-    "workflowRef": "node_assigned"
-   },
-   {
-    "pageRef": "p3_page",
-    "workflowRef": "node_completed"
-   },
-   {
-    "pageRef": "p4_page",
-    "workflowRef": "node_audited"
    }
   ],
-  "landingPageRef": "p1_page",
+  "landingPageRef": "work_order_board_p1",
   "preferredDevice": "desktop",
   "roleRefs": [
    "role_consultant",
@@ -370,29 +331,28 @@
   },
   "invariants": [
    {
-    "id": "inv_elder_ref",
-    "statement": "服务工单必须关联系统内存在的有效老人档案",
+    "id": "inv_work_order_elder_ref",
+    "statement": "服务工单必须关联有效的老人档案",
     "systems": [
      "datamodel"
     ],
     "refs": [
      "work_order",
-     "work_order.elder_ref",
-     "elder"
+     "elder",
+     "work_order.elder_ref"
     ]
    },
    {
-    "id": "inv_settlement_flow",
-    "statement": "工单必须流转至完成节点后方可纳入财务结算",
+    "id": "inv_financial_settlement_audit",
+    "statement": "财务结算流程的最终状态必须由运营主管进行审核",
     "systems": [
      "workflow",
      "datamodel"
     ],
     "refs": [
-     "work_order",
-     "work_order.status",
+     "role_manager",
      "financial_settlement",
-     "node_completed"
+     "node_audited"
     ]
    }
   ],

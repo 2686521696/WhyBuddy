@@ -35,6 +35,15 @@ sys.path.insert(0, _HERE)
 from analyze_ids import pairs_of_class, CLASSES  # noqa: E402
 
 
+def _seg_fp(seg) -> str:
+    """段指纹。判断"这一段有没有被沿用"的**事实依据**——跟日志说什么无关。"""
+    import hashlib
+
+    return hashlib.sha256(
+        json.dumps(seg, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()[:12]
+
+
 def keep_rate(m1, m2, path):
     """一类对象的 id 保住率与名字保住率。分母用两版里较大的个数——
     个数本身会变（3 实体 → 5 实体），用较大者才不会把"变多了"读成"保住了"。"""
@@ -238,22 +247,25 @@ def main():
         e1 = len(pairs_of_class(m1, ["datamodel", "entities"]))
         e2 = len(pairs_of_class(m2, ["datamodel", "entities"]))
         text = open(os.path.join(d, "run.log"), encoding="utf-8", errors="replace").read()
-        # ⚠ 一轮里沿用可能发生**不止一次**：two_round_drive 用 max_loops=2，
-        #   第二轮的流水线会跑两遍（真机 on-4 就是两条）。最终交付的模型来自
-        #   **最后一遍**，所以取最后一条，不是第一条——第一版用 .search() 取首条，
-        #   在两条的轮次上会报出一个并未交付的结论，而且不会有任何报错。
-        events = re.findall(r"精修沿用上一版模型段：(.+)|(精修沿用逐段退让到空)", text)
-        n_events = len(events)
-        last = events[-1] if events else None
-        if last is None:
-            result = "未发生沿用"
-        elif last[1]:
-            result = "退让到空"
-        else:
-            result = f"沿用 {last[0][:18]}"
-        retreated = bool(last and last[1])
-        if n_events > 1:
-            result += f" [共{n_events}次]"
+        # ★ 沿用结果从**落盘模型的段指纹**读，不从日志读（2026-08-17 改）。
+        #
+        #   前两版都读日志，两次都出错：
+        #     · 第一版 .search() 取首条，而 max_loops=2 时一轮有两条，交付的是最后一条
+        #     · 第二版取最后一条，但真机 on-4 那条日志**被并发写坏了**：
+        #         …aigc field 'elder.health_[html_bindings] 页面 p3 重问第 1 次：…
+        #                                 ↑ 没有换行，两条日志撞在一起
+        #       第 3 步页面生成是并发的，多线程 print 到同一个 stdout 不是原子操作。
+        #       于是聚合器判 on-4「未发生沿用」，而落盘模型显示 rbac 和 workflow
+        #       的段指纹跟上一版**逐字节相同**——它明明沿用了。
+        #
+        #   教训是本仓纪律五的原话：判据要落在真正的产物上，不要量中间表征。
+        #   日志是尽力而为的叙述，模型是事实。并发一撕，叙述就不可信了。
+        reused_segs = [
+            s for s in ("rbac", "workflow", "aigc")
+            if s in m1 and _seg_fp(m1.get(s)) == _seg_fp(m2.get(s))
+        ]
+        retreated = not reused_segs
+        result = f"沿用 {'、'.join(reused_segs)}" if reused_segs else "一段没沿用"
         rejects = other_cause.findall(text)
         if rejects:
             hit = perm_miss.search(rejects[0])

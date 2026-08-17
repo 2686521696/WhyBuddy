@@ -154,16 +154,35 @@ class Test静默失效必须说得出话:
             assert seg in out, f"日志没说沿用了 {seg}——出问题时对不出账"
 
     def test_退让时说清丢了哪一段(self, capsys):
+        """⚠ 判据盯的是**语义**：丢了段就得说出丢的是哪一段、为什么。
+
+        原来写的是 `"重新生成这一段" in out`——盯的是某句话的字面。2026-08-17
+        退让算法改成 1-maximal 后文案变成「沿用 X（丢掉 aigc，首次拒绝：…）」，
+        这条当场变红，而**行为其实没退化，反而更全**（现在还多说了首次拒绝的
+        理由）。CLAUDE.md 点名过这个形态：盯字面的判据在换实现时会误报，
+        盯语义的不会。
+
+        所以改成钉三件事，都是"出问题时对得出账"真正需要的：
+          · 丢掉的那一段的名字在
+          · 说得出这是"丢/退让"而不是正常沿用
+          · 带上了拒绝理由（不然只知道丢了、不知道为什么）
+        """
         base = _baseline()
 
         def picky(model):
             if _fp(model["aigc"]) == _fp(base["aigc"]):
-                return {"passed": False, "findings": [{"path": "aigc", "message": "悬空"}]}
+                return {"passed": False, "findings": [
+                    {"path": "aigc.capabilities[c1]", "message": "悬空"},
+                ]}
             return {"passed": True, "findings": []}
 
         apply_refine_segment_reuse(_fresh(), base, [], gate_fn=picky)
         out = capsys.readouterr().out
-        assert "aigc" in out and "重新生成这一段" in out
+        assert "aigc" in out, "没说丢掉的是哪一段"
+        assert ("丢掉" in out or "重新生成这一段" in out), (
+            "没说清这是退让——只报「沿用了 X」会让人以为一切正常"
+        )
+        assert "悬空" in out, "没带上拒绝理由，出问题时只知道丢了、不知道为什么"
 
 
 class Test不许沿用的段:
@@ -214,6 +233,75 @@ class Test过不了闸时逐段退让:
             fresh, base, [], gate_fn=lambda m: {"passed": False, "findings": []}
         )
         assert out == fresh
+
+    def test_罪魁排在最前时_也要保住后面的段(self):
+        """★ 真机 6/6 的形态：卡住的**永远是 rbac**，而它排在退让链最前面。
+
+        新生成的 page 引用了旧 rbac 没有的权限（`service_staff:export` 之类，
+        实测 6/6 零例外），所以只要沿用 rbac 就过不了闸。而按顺序从尾巴丢的话：
+
+            丢 aigc     → 还是 rbac 的病，白丢
+            丢 workflow → 还是 rbac 的病，白丢
+            丢 rbac     → 此时其余早已赔光 → 退让到空
+
+        离线 replay（experiments/refine-fingerprint/replay_reuse_search.py）证实
+        冻结臂 3 轮里有 2 轮存在 {workflow, aigc} 这个能过闸的组合，而前缀链
+        够不到。赔掉的 workflow 正是用户最初抱怨被换掉的那两段之一。
+
+        ⚠ 这条跟上面 test_只丢过不了闸的那段_其余保住 **不能互相替代**：那条的
+          罪魁是 aigc，排在最后，从尾巴丢正好第一下就丢对，前缀退让照样绿。
+          必须让罪魁排在最前，判据才咬得住"退让顺序"这件事本身。
+        """
+        base, fresh = _baseline(), _fresh()
+
+        def rbac_is_the_culprit(model):
+            if _fp(model["rbac"]) == _fp(base["rbac"]):
+                return {"passed": False, "findings": [
+                    {"path": "page.pages[p1].actionPermissions",
+                     "message": "page action permission 'x:export' not found in rbac.permissions"},
+                ]}
+            return {"passed": True, "findings": []}
+
+        out = apply_refine_segment_reuse(fresh, base, [], gate_fn=rbac_is_the_culprit)
+
+        assert _fp(out["rbac"]) == _fp(fresh["rbac"]), "过不了闸的 rbac 还是被沿用了"
+        for seg in ("workflow", "aigc"):
+            assert _fp(out[seg]) == _fp(base[seg]), (
+                f"{seg} 本来能过闸，却因为罪魁 rbac 排在退让链最前面被一起赔掉了"
+                f"——这正是真机 on-2/on-3 白丢两段的那个形状"
+            )
+
+    def test_整体能过时_只过一次闸(self):
+        """反向判据：别为了 1-maximal 把常见路径拖慢。
+
+        绝大多数轮次（冻结生效且本轮没新增权限）是整体一次就过的，那条路径
+        必须仍然只调一次闸——退化成"无论如何都逐个试加"会让闸的调用次数
+        从 1 涨到 n，而闸虽然不调 LLM，也不是免费的。
+        """
+        calls = []
+
+        def counting_gate(model):
+            calls.append(1)
+            return {"passed": True, "findings": []}
+
+        base, fresh = _baseline(), _fresh()
+        apply_refine_segment_reuse(fresh, base, [], gate_fn=counting_gate)
+        assert len(calls) == 1, f"整体能过却调了 {len(calls)} 次闸"
+
+    def test_闸的调用次数不超过段数加一(self):
+        """代价上界不许涨：原来是 n+1，改成 1-maximal 之后仍是 n+1
+        （整体试 1 次 + 逐个试加 n 次）。"""
+        calls = []
+
+        def always_fail(model):
+            calls.append(1)
+            return {"passed": False, "findings": []}
+
+        base, fresh = _baseline(), _fresh()
+        apply_refine_segment_reuse(fresh, base, [], gate_fn=always_fail)
+        assert len(calls) <= len(REFINE_REUSABLE_SEGMENTS) + 1, (
+            f"过闸 {len(calls)} 次，超了 n+1={len(REFINE_REUSABLE_SEGMENTS)+1} 的上界"
+        )
 
     def test_闸自己抛异常时_不拖垮主链路(self):
         """纪律七：沿用属增强类，自己炸了不许拖垮主链路。

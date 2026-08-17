@@ -396,8 +396,40 @@ def apply_refine_segment_reuse(
       探针咬出来）：aigc 的 inputFields 指 datamodel 字段，而 datamodel 永远重新
       生成，字段 id 一飘 aigc 就悬空——全有全无的话，一个 aigc 悬空会把 rbac 和
       workflow 的沿用一起赔掉，而那两段本来是好的、也正是用户抱怨的那两段。
-      按 REFINE_REUSABLE_SEGMENTS 的顺序从尾巴丢（耦合最高的先丢），最多过 n+1 次闸；
-      闸是纯机械的、不调 LLM，这个代价换"尽可能多保住几段"是划算的。
+
+    ## 退让顺序：从"按顺序丢"改成 1-maximal（2026-08-17 晚，多轮真机）
+
+    第二版按 REFINE_REUSABLE_SEGMENTS 从尾巴丢（`candidates.pop()`），于是**可达
+    的沿用组合只有前缀**：
+
+        {rbac, workflow, aigc} → {rbac, workflow} → {rbac} → {}
+
+    多轮 A/B（`experiments/refine-fingerprint/runs`，冻结臂 3 轮）实测：**卡住的
+    永远是 rbac**——新生成的 page 引用了旧 rbac 没有的权限（4/4 零例外，
+    如 `service_staff:export`）。而 rbac 排在最前、最后才被丢，丢 aigc 丢 workflow
+    根本治不了这个病，等轮到 rbac 时其余早已赔光 → 退让到空。
+
+    离线 replay（`replay_reuse_search.py`，闸是纯函数可精确复算）证实：冻结臂
+    3 轮里有 **2 轮** 存在 `{workflow, aigc}` 这个能过闸的组合，而前缀链够不到它。
+    赔掉的 workflow 正是用户最初抱怨的那两段之一。
+
+    ⚠ 注意因果方向：**是 id 冻结制造了"部分稳定"，才让前缀限制开始咬人**。
+      冻结关掉的两轮里全枚举都找不到能过的子集（每个 id 都重铸），前缀限制
+      一分钱没损失——所以这个改动在冻结之前做是没有收益的，先后顺序不能倒。
+
+    改法照 **ddmax**（Kirschner/Gopinath/Zeller, ICSE 2020；debuggingbook 的 `dd`
+    算法 `'+'` 模式）：ddmin 找最小的致败子集，ddmax 反过来找**最大的能通过的
+    子集**，终止条件是 1-maximal——再加任何一个元素都会失败。这里元素是可沿用
+    段、测试是闸。**借的是判据（1-maximal），不是它的分块二分循环**——那是给
+    n 很大时省测试次数用的，这里 n=3，线性试加才是最优形状。
+
+    代价不涨：先整体试一次（成功就 1 次过闸，跟原来一样快），失败再逐个试加
+    n 次，上界仍是 n+1。
+
+    ⚠ 贪心不保证全局最优（landing 在哪个 1-maximal 集合取决于试加顺序）。n=3
+      时全枚举也只要 7 次，但那会把上界从 n+1 抬到 2ⁿ-1；实测两轮 ddmax 与全
+      枚举一致，且 `replay_reuse_search.py` 会持续报告两者是否分叉——真分叉了
+      再谈换算法，别现在就为假想的收益付代价。
     """
     import copy
 
@@ -428,40 +460,73 @@ def apply_refine_segment_reuse(
     if not candidates:
         return model
 
-    while candidates:
+    def build(segs):
         candidate = dict(model)
-        for seg in candidates:
+        for seg in segs:
             candidate[seg] = copy.deepcopy(baseline[seg])
+        return candidate
 
-        if gate_fn is None:
-            print(f"[spec_first_pipeline] 精修沿用上一版模型段：{'、'.join(candidates)}")
-            return candidate
+    if gate_fn is None:
+        print(f"[spec_first_pipeline] 精修沿用上一版模型段：{'、'.join(candidates)}")
+        return build(candidates)
 
+    class _GateBlewUp(Exception):
+        """闸自己抛了。单独一个类型，好把它跟"闸判不通过"分开——前者要整份
+        退回（纪律七 fail-open），后者是正常的退让信号。"""
+
+    def try_gate(segs):
+        """返回 (过了吗, 头三条 findings 的人话)。闸抛异常单独往上抛。"""
         try:
-            verdict = gate_fn(candidate)
+            verdict = gate_fn(build(segs))
         except Exception as exc:  # noqa: BLE001
-            # 纪律七：沿用是增强类，**自己炸了不许拖垮主链路**。闸抛异常时整份
-            # 退回重新生成的那份——它在 assemble 里已经过过闸，是已知可用的。
-            # 抛出去的话，一个"少改点东西"的优化会让整轮推演崩掉。
-            print(
-                f"[spec_first_pipeline] ⚠ 精修沿用重过闸时闸自己抛了，"
-                f"整份退回重新生成的那份：{type(exc).__name__}: {str(exc)[:200]}"
-            )
-            return model
+            raise _GateBlewUp(f"{type(exc).__name__}: {str(exc)[:200]}") from exc
         if isinstance(verdict, dict) and verdict.get("passed"):
-            print(f"[spec_first_pipeline] 精修沿用上一版模型段：{'、'.join(candidates)}")
-            return candidate
-
+            return True, ""
         findings = (verdict or {}).get("findings") or []
-        detail = "；".join(f"{f.get('path')}：{f.get('message')}" for f in findings[:3])
-        dropped = candidates.pop()
-        print(
-            f"[spec_first_pipeline] ⚠ 沿用「{dropped}」后过不了闸，改为重新生成这一段"
-            f"（其余继续沿用）：{detail[:200]}"
-        )
+        return False, "；".join(
+            f"{f.get('path')}：{f.get('message')}" for f in findings[:3]
+        )[:200]
 
-    print("[spec_first_pipeline] ⚠ 精修沿用逐段退让到空，整份用重新生成的那份")
-    return model
+    try:
+        # 第一次：整体试。成功就 1 次过闸收工，跟改之前一样快——绝大多数
+        # 情况（冻结生效且本轮没新增权限）走的就是这条。
+        ok, detail = try_gate(candidates)
+        if ok:
+            print(f"[spec_first_pipeline] 精修沿用上一版模型段：{'、'.join(candidates)}")
+            return build(candidates)
+
+        # 整体过不了 → 逐个试加，落在一个 1-maximal 集合上（见文档串里的 ddmax）。
+        # ⚠ 关键差别：这里是**试加**不是**试减**。试减只能走前缀，而卡住的那段
+        #   （实测永远是 rbac）恰恰排在最前面，试减永远轮不到丢它。
+        first_reject = detail
+        keep: list[str] = []
+        for seg in candidates:
+            ok, _ = try_gate(keep + [seg])
+            if ok:
+                keep.append(seg)
+    except _GateBlewUp as exc:
+        # 纪律七：沿用是增强类，**自己炸了不许拖垮主链路**。闸抛异常时整份
+        # 退回重新生成的那份——它在 assemble 里已经过过闸，是已知可用的。
+        # 抛出去的话，一个"少改点东西"的优化会让整轮推演崩掉。
+        print(
+            f"[spec_first_pipeline] ⚠ 精修沿用重过闸时闸自己抛了，"
+            f"整份退回重新生成的那份：{exc}"
+        )
+        return model
+
+    dropped = [s for s in candidates if s not in keep]
+    if not keep:
+        print(
+            f"[spec_first_pipeline] ⚠ 精修沿用逐段退让到空，整份用重新生成的那份"
+            f"（首次拒绝：{first_reject}）"
+        )
+        return model
+
+    print(
+        f"[spec_first_pipeline] 精修沿用上一版模型段：{'、'.join(keep)}"
+        f"（丢掉 {'、'.join(dropped)}，首次拒绝：{first_reject}）"
+    )
+    return build(keep)
 
 
 def _reemit_pages(
