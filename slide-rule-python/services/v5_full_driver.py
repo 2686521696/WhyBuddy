@@ -803,7 +803,13 @@ def enter_refine_mode(state: "V5SessionState", user_instruction: str) -> bool:
 
     from .v5_llm_generate import set_refine_context
 
-    set_refine_context(model, instruction)
+    # ★ 上一版页面 HTML 一起带上（2026-08-17）：给按需重画用——指令没点到的
+    #   页面原样照搬，不进 LLM。取不到就是空，退回全量重画（今天的行为）。
+    #   ⚠ 这里是**唯一**能拿到 state 的地方；executor 那一层只有请求域上下文，
+    #     拿不到 state（见 _cache_spec_first_pages 的说明）。
+    _prev_pages = getattr(state, "specFirstPages", None)
+    _prev_html = (_prev_pages or {}).get("pages") if isinstance(_prev_pages, dict) else None
+    set_refine_context(model, instruction, pages=_prev_html)
     return True
 
 

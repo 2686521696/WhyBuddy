@@ -693,10 +693,26 @@ _model_override_var: "ContextVar[Optional[Dict[str, Any]]]" = ContextVar(
 )
 
 
-def set_refine_context(model: "Optional[Dict[str, Any]]", instruction: str = "") -> None:
-    """设置本轮精修上下文：现有五系统模型 + 用户补充指令。传 None 清空。"""
+def set_refine_context(
+    model: "Optional[Dict[str, Any]]",
+    instruction: str = "",
+    pages: "Optional[Dict[str, Any]]" = None,
+) -> None:
+    """设置本轮精修上下文：现有五系统模型 + 用户补充指令 + 上一版页面 HTML。
+
+    传 None 清空。
+
+    pages（2026-08-17 加）：上一版的 `{pageId: html}`，来自 `state.specFirstPages`。
+    给按需重画用——指令没点到的页面**原样照搬，不进 LLM**（见
+    services/refine_page_scope.py）。⚠ 它是**可选**的：取不到就退回全量重画，
+    也就是这条参数出现之前的行为，不许因为缺它就把精修打死。
+    """
     _refine_context_var.set(
-        {"model": model, "instruction": str(instruction or "").strip()[:2000]}
+        {
+            "model": model,
+            "instruction": str(instruction or "").strip()[:2000],
+            "pages": pages if isinstance(pages, dict) else None,
+        }
         if model
         else None
     )

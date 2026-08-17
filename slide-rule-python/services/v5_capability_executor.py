@@ -500,6 +500,9 @@ def _try_llm_generate_evidence(
                     #   `_prev_model` 就是上面读 designLanguage/styleBrief 的那份，
                     #   同一个来源，不另开一条取数路径。
                     reuse_model=_prev_model,
+                    # ★ 上一版页面：按需重画用（2026-08-17）。跟 reuse_model
+                    #   同一个来源（refine 上下文），不另开取数路径。
+                    reuse_pages=(_refine_ctx or {}).get("pages"),
                 )["model"]
                 from_spec_first = True
                 print("[v5_capability_executor] spec-first 链路产出模型")

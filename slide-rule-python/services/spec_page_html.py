@@ -550,6 +550,26 @@ def _style_for(design_system: Any, page_id: str) -> Optional[str]:
     return design_system
 
 
+def _safe_on_page(
+    on_page: Optional[Callable[[str, str, int, int], None]],
+    page_id: str,
+    html: str,
+    done: int,
+    total: int,
+) -> None:
+    """推一页给前端，回调炸了只记账不外抛。
+
+    单独提出来是因为**有两处在推**（重画完的、原样照搬的），两处各写一遍
+    try/except 迟早漂移——本仓在"手抄两份必然漂移"上栽过好几次。
+    """
+    if on_page is None:
+        return
+    try:
+        on_page(page_id, html, done, total)
+    except Exception as sink_exc:  # noqa: BLE001 — 见 generate_pages_parallel docstring
+        print(f"[spec_page_html] 页面回调失败（不影响产出）：{str(sink_exc)[:120]}")
+
+
 def generate_pages_parallel(
     spec: Dict[str, Any],
     *,
@@ -559,6 +579,7 @@ def generate_pages_parallel(
     max_workers: int = 6,
     llm_call: Optional[Callable[..., Any]] = None,
     on_page: Optional[Callable[[str, str, int, int], None]] = None,
+    reuse_pages: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """把 spec 的每一页并发生成 HTML。**单页失败不拖垮整批。**
 
@@ -599,6 +620,36 @@ def generate_pages_parallel(
 
     ok: Dict[str, str] = {}
     failed: Dict[str, str] = {}
+
+    # ★ 按需重画（2026-08-17）：在 reuse_pages 里的页**原样交付、根本不提交给
+    #   线程池**，一次 LLM 都不调。做法取自 Aider——没 add 到 chat 的文件模型
+    #   碰不到，那是**能力边界**不是约束。见 services/refine_page_scope.py。
+    #
+    # ⚠ 照搬的页也要走 on_page：前端直播舞台按 pageId 覆盖，不发的话用户会
+    #   盯着一批空位，以为这些页丢了。它们是"已经好了"，不是"还没轮到"。
+    #
+    # ⚠ 也要计进 total：第 4 步的页面覆盖判据比的是"喂几份 HTML 出几个页面"，
+    #   而上游 spec_pages_declared 对账比的是 SPEC 声明数。照搬的页不计数的话，
+    #   两处都会把它当成缺页——判据会报一个并不存在的缺口。
+    reused: Dict[str, str] = {}
+    if reuse_pages:
+        for pg in pages:
+            pid = str(pg.get("id") or "")
+            html = reuse_pages.get(pid)
+            if pid and isinstance(html, str) and html.strip():
+                reused[pid] = html
+    if reused:
+        ok.update(reused)
+        print(
+            f"[spec_page_html] 按需重画：{len(reused)}/{len(pages)} 页原样沿用上一版"
+            f"（{'、'.join(sorted(reused))}），只重画 {len(pages) - len(reused)} 页"
+        )
+    pages = [pg for pg in pages if str(pg.get("id") or "") not in reused]
+    if not pages:
+        # 全部照搬：也要把它们推给前端，然后直接收工。
+        for i, (pid, html) in enumerate(reused.items(), 1):
+            _safe_on_page(on_page, pid, html, i, len(reused))
+        return {"pages": dict(ok), "failed": {}}
     # ⚠ **不用 `with`**：ThreadPoolExecutor.__exit__ 是 shutdown(wait=True)，
     #   它会一直等到所有线程跑完——那正是这条截止线要避免的事。用了 with，
     #   截止线只会让日志早一点写，墙钟一秒都省不下来。
@@ -626,8 +677,13 @@ def generate_pages_parallel(
             ): str(pg.get("id") or "")
             for pg in pages
         }
-        total = len(fut_to_id)
+        # ⚠ 进度的分母要含照搬的那批，否则前端会显示「3 页里第 1 页」而实际
+        #   有 5 页——照搬的先推、编号在前，重画的接着往下数。
+        total = len(fut_to_id) + len(reused)
         done = 0
+        for pid, html in reused.items():
+            done += 1
+            _safe_on_page(on_page, pid, html, done, total)
         pending = set(fut_to_id)
         batch_started = time.monotonic()
         # 首页落地之前用不上（那之前不设限），落地时按 _straggler_budget 改写。
@@ -700,11 +756,7 @@ def generate_pages_parallel(
                 try:
                     html = fut.result()["html"]
                     ok[page_id] = html
-                    if on_page is not None:
-                        try:
-                            on_page(page_id, html, done, total)
-                        except Exception as sink_exc:  # noqa: BLE001 — 见 docstring
-                            print(f"[spec_page_html] 页面回调失败（不影响产出）：{str(sink_exc)[:120]}")
+                    _safe_on_page(on_page, page_id, html, done, total)
                 except Exception as exc:  # noqa: BLE001 — 单页失败不拖垮整批
                     failed[page_id] = str(exc)[:200]
                     print(f"[spec_page_html] 页面 {page_id} 生成失败：{str(exc)[:160]}")

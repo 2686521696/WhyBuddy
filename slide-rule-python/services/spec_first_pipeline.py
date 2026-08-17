@@ -737,6 +737,7 @@ def run_spec_first(
     reuse_language: Optional[Dict[str, Any]] = None,
     reuse_style_brief: Optional[Dict[str, Any]] = None,
     reuse_model: Optional[Dict[str, Any]] = None,
+    reuse_pages: Optional[Dict[str, str]] = None,
     on_page: Optional[Callable[[str, str, int, int], None]] = None,
 ) -> Dict[str, Any]:
     """一句话 → 完整五系统模型 + 带 data-* 孔的多页 HTML。
@@ -899,9 +900,32 @@ def run_spec_first(
         #
         # 显式实参优先于 sink：脚本/评测直接调这个函数时不该被"当前请求恰好
         # 装了个 sink"影响。生产路径（主轴）走 sink，因为中间那层是同步的。
+        # ★ 按需重画（2026-08-17）：精修时先判"这条指令要动哪几页"，没点到的
+        #   原样照搬上一版，一次 LLM 都不调。做法取自 Aider 的 ContextCoder，
+        #   见 services/refine_page_scope.py 模块头。
+        #
+        # ⚠ fail-open 到**全量重画**：判作用域挂了最多是慢一点、回到今天的行为。
+        #   绝不能 fail 成"一页都不改"——那会让用户说了话而应用一动不动。
+        _reuse_now: Dict[str, str] = {}
+        if refine and reuse_pages:
+            from .refine_page_scope import (
+                decide_pages_to_regenerate,
+                split_pages_for_refine,
+            )
+
+            _scope = decide_pages_to_regenerate(
+                str((refine or {}).get("instruction") or ""),
+                spec_pages_declared_objs,
+                llm_json_fn=llm_json_fn,
+            )
+            _reuse_now = split_pages_for_refine(
+                spec_pages_declared_objs, reuse_pages, _scope
+            )
+            st["scopePages"] = ",".join(_scope or []) or "(全量)"
+            st["reusedPages"] = len(_reuse_now)
         batch = generate_pages_parallel(
             spec, device=device, design_system=design_system,
-            product=goal, on_page=sink
+            product=goal, on_page=sink, reuse_pages=_reuse_now,
         )
         pages = dict(batch.get("pages") or {})
         failed = dict(batch.get("failed") or {})
