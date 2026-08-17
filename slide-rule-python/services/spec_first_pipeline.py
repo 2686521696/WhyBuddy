@@ -892,30 +892,31 @@ def run_spec_first(
             for p in spec_pages_declared_objs
         }
 
-    # ── 第 3 步：每页 HTML（并发；单页失败不拖垮整批）────────────────
-    raise_if_cancelled("第3步 逐页画界面")
-    with _stage("specfirst.pages") as st:
-        # on_page 透传：这一步是整条链上**第一个产出可以直接看的东西**的地方，
-        # 一份能独立打开的 HTML 比最终模型早四五分钟。攒齐再交等于白白转圈。
-        #
-        # 显式实参优先于 sink：脚本/评测直接调这个函数时不该被"当前请求恰好
-        # 装了个 sink"影响。生产路径（主轴）走 sink，因为中间那层是同步的。
-        # ★ 按需重画（2026-08-17）：精修时先判"这条指令要动哪几页"，没点到的
-        #   原样照搬上一版，一次 LLM 都不调。做法取自 Aider 的 ContextCoder，
-        #   见 services/refine_page_scope.py 模块头。
-        #
-        # ⚠ fail-open 到**全量重画**：判作用域挂了最多是慢一点、回到今天的行为。
-        #   绝不能 fail 成"一页都不改"——那会让用户说了话而应用一动不动。
-        _reuse_now: Dict[str, str] = {}
-        if refine and not reuse_pages:
-            # ⚠ 静默失效的老形状：精修轮却没拿到上一版页面 → 照样全量重画，
-            #   而日志里一个字都没有。2026-08-17 真机第一次跑就撞上，靠"该有的
-            #   日志一行都没出现"才发现——这条留痕就是当时补的。
-            print(
-                "[spec_first_pipeline] ⚠ 精修轮但没拿到上一版页面，按需重画未生效，"
-                "本轮全量重画（reuse_pages 空）"
-            )
-        if refine and reuse_pages:
+    # ── 第 2.8 步：判本轮要重画哪几页（只有精修轮有这一步）──────────
+    #
+    # ★ 按需重画（2026-08-17）：指令没点到的页面原样照搬上一版，一次 LLM 都
+    #   不调。做法取自 Aider 的 ContextCoder，见 services/refine_page_scope.py。
+    #
+    # ⚠ **独立一步、独立埋点**，不并进第 3 步（2026-08-17 真机量完才挪出来的）：
+    #   它自己是一次 LLM 调用。混在画页那一格里，"少画 3 页省了多少"和"多花
+    #   一次判定花了多少"两个数会互相抵消——第一次量出来是「只画 1 页(42.6s)
+    #   反而比画 4 页(27.6s)还慢」，而那里面一半是这次判定、一半是页面本来就
+    #   并发画的。**两件事混在一个埋点里，量出来的墙钟说明不了任何事。**
+    #
+    # ⚠ fail-open 到**全量重画**：判作用域挂了最多是慢一点、回到今天的行为。
+    #   绝不能 fail 成"一页都不改"——那会让用户说了话而应用一动不动。
+    _reuse_now: Dict[str, str] = {}
+    if refine and not reuse_pages:
+        # ⚠ 静默失效的老形状：精修轮却没拿到上一版页面 → 照样全量重画，而
+        #   日志里一个字都没有。2026-08-17 真机第一次跑就撞上（`set_refine_context`
+        #   两个调用点只改了一个），靠"该有的日志一行都没出现"才发现。
+        print(
+            "[spec_first_pipeline] ⚠ 精修轮但没拿到上一版页面，按需重画未生效，"
+            "本轮全量重画（reuse_pages 空）"
+        )
+    if refine and reuse_pages:
+        raise_if_cancelled("第2.8步 判重画范围")
+        with _stage("specfirst.pagescope") as sst:
             from .refine_page_scope import (
                 decide_pages_to_regenerate,
                 split_pages_for_refine,
@@ -929,8 +930,19 @@ def run_spec_first(
             _reuse_now = split_pages_for_refine(
                 spec_pages_declared_objs, reuse_pages, _scope
             )
-            st["scopePages"] = ",".join(_scope or []) or "(全量)"
-            st["reusedPages"] = len(_reuse_now)
+            sst["scopePages"] = ",".join(_scope or []) or "(全量)"
+            sst["reusedPages"] = len(_reuse_now)
+        stages["pagescope"] = dict(sst)
+
+    # ── 第 3 步：每页 HTML（并发；单页失败不拖垮整批）────────────────
+    raise_if_cancelled("第3步 逐页画界面")
+    with _stage("specfirst.pages") as st:
+        # on_page 透传：这一步是整条链上**第一个产出可以直接看的东西**的地方，
+        # 一份能独立打开的 HTML 比最终模型早四五分钟。攒齐再交等于白白转圈。
+        #
+        # 显式实参优先于 sink：脚本/评测直接调这个函数时不该被"当前请求恰好
+        # 装了个 sink"影响。生产路径（主轴）走 sink，因为中间那层是同步的。
+        st["reusedPages"] = len(_reuse_now)
         batch = generate_pages_parallel(
             spec, device=device, design_system=design_system,
             product=goal, on_page=sink, reuse_pages=_reuse_now,

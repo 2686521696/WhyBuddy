@@ -59,6 +59,12 @@ def test_the_slow_stages_are_all_covered():
         # 报它是因为它**会花十几秒且用户能感知结果**（整个应用的配色与密度
         # 由它定）——跟 shell 那种零 LLM、0.0 秒的不是一类东西。
         "specfirst.design",
+        # 2026-08-17 加：精修时判"这次要改哪几页"（按需重画）。
+        # 报它的理由跟 specfirst.design 同款——**一次 LLM 调用、5~15 秒、
+        # 而且用户能感知结果**（它决定了接下来哪几页会被重画）。跟 shell
+        # 那种零 LLM、0.0 秒的不是一类东西。
+        # ⚠ 只有精修轮会出现；新建应用那条路上这一步根本不进。
+        "specfirst.pagescope",
         "specfirst.pages",
         "specfirst.structure",
         "specfirst.semantics",
