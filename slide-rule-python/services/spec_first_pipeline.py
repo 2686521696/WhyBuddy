@@ -1152,6 +1152,48 @@ def run_spec_first(
             ],
         }
 
+    # ── 第 6.3 步：断线体检（零 LLM，只报不拦）───────────────────────
+    #
+    # ★ 闸查「引用有没有悬空」，体检查反面「东西在不在网里」——空数组里没有
+    #   引用自然没有悬空，闸一个字不说（test_app_graph 的
+    #   test_闸对这些孤岛全部放行）。此前体检只在前端沙盘里：应用可以带着
+    #   孤岛交付，只有人打开沙盘才看得见。这里挪到交付时刻的服务端出口。
+    #
+    # ⚠ 位置：必须在第 6.2 步**之后**——段沿用换过段，体检要量的是交付的
+    #   那份；bind 之前也行，它不改 model。
+    #
+    # ⚠ 精修轮把**新增**和**存量**分开报：上一版就有的孤岛不是这次修改造成
+    #   的，混在一起报，"改坏了什么"会被存量淹没。口径同 SonarQube
+    #   Clean as You Code / betterer 那类 baseline-ratchet：只对"新代码"较真。
+    #
+    # ⚠ 只报不拦（纪律七），体检自己炸了也 fail-open。不包 _stage：零 LLM、
+    #   毫秒级，上进度线只会闪一下（同 specfirst.shell 不进表的理由）；
+    #   stages 里记一笔是给排查用的。
+    try:
+        from .app_graph import build_app_graph as _bag
+        from .app_graph import find_orphans as _fo
+
+        _cur_orphans = _fo(_bag(model))
+        _baseline_known = bool(refine) and isinstance(reuse_model, dict)
+        _prev_keys = {o["key"] for o in _fo(_bag(reuse_model))} if _baseline_known else set()
+        _fresh = [o for o in _cur_orphans if o["key"] not in _prev_keys]
+        _stale = [o for o in _cur_orphans if o["key"] in _prev_keys]
+        stages["orphans"] = {
+            "total": len(_cur_orphans), "new": len(_fresh), "stale": len(_stale),
+            "baseline": _baseline_known,
+        }
+        if _fresh:
+            _head = "、".join(f"{o['key']}（{o['reason']}）" for o in _fresh[:5])
+            _label = "这次修改新产生" if _baseline_known else "交付的应用带着"
+            print(f"[spec_first_pipeline] ⚠ 断线体检：{_label} {len(_fresh)} 个孤岛：{_head}")
+        if _stale:
+            print(
+                f"[spec_first_pipeline] 断线体检：存量孤岛 {len(_stale)} 个"
+                f"（上一版就有，非本次造成）：{'、'.join(o['key'] for o in _stale[:5])}"
+            )
+    except Exception as exc:  # noqa: BLE001 — 体检是增强类，不许拦交付
+        print(f"[spec_first_pipeline] ⚠ 断线体检自己失败了（不拦交付）：{str(exc)[:200]}")
+
     # ── 第 6.5 步：给 HTML 打 data-* 孔 ─────────────────────────────
     # ⚠ 到这里实体与字段才定死校验过，孔才打得成。第 3 步打不了——
     #   那时 datamodel 还不存在，写 data-field 是引用没被发明的 id。
