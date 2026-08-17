@@ -20,20 +20,22 @@ DANGLING 检查里——闸每次都在走这些边，走完就丢，没人把�
 `entity:order` / `page:p1` / `role:mgr` / `perm:order:read` / `wf:n1` /
 `aigc:c1` / `field:order.amount`。
 
-## ⚠ 无界闭包会吞掉整个**连通分量**，所以必须限跳数
+## ⚠ 无界闭包会吞掉全图，所以必须限跳数（这个结论被翻过两次）
 
-原本我写的是"这张网强连通，无界闭包必然覆盖全图"。**写判据一验就翻了**：
-订单页出发走十二跳只覆盖 11/15 个节点，客户那一簇（`entity:cust` /
-`field:cust.phone` / `perm:cust:read` / `page:p2`）一个都够不着——两簇之间
-没有共享的字段、权限或角色。
+  1. 最初写"这张网强连通，无界闭包必然覆盖全图"。
+  2. 判据一验就红：订单页出发十二跳只覆盖 11/15，客户那一簇够不着。
+     于是**更正**成"按实体簇分块，簇内连通、簇间隔离"。
+  3. 然后发现图**漏了一条边**——`role → page`（可进入），前端沙盘
+     （`system-screens/sandbox-graph.ts`）早就画了。补上之后再验，全图重新
+     连通：角色是跨簇的桥，同一个角色既在订单流程里当审批人、又能进客户页。
 
-所以准确的说法是：**图按实体簇天然分块，簇内连通、簇间隔离**。
-无界闭包吞掉的是整个连通分量，不是全图。
+所以第 2 步那个"更正"是**基于不完整的图得出的错误结论**，而且它看起来
+完全合理。真正的教训不是"图分不分块"，是：
 
-这反而是影响分析真正的价值所在——改订单页无论走多少跳都碰不到客户那一簇，
-那一簇本来就不该重算。而簇**内部**确实连通，改一个字段无界扩散会把这一簇
-整个卷进来，所以 `impacted_closure` 仍然强制要传跳数：
-"牵扯到什么"这句话在图上**只有带半径才有意义**。
+    **图缺一条边，影响分析就会系统性低估影响面——而低估的结果毫无破绽。**
+
+正因为全图连通，`impacted_closure` 才必须强制传跳数：半径得自己划，
+图不会替你划。
 
 ## 边的方向：引用者 → 被引用者
 
@@ -169,8 +171,32 @@ def build_app_graph(model: Dict[str, Any]) -> Dict[str, Any]:
         bd = _as_dict(pb)
         pid = _sid("page", bd.get("pageRef"))
         add_edge(pid, _sid("wf", bd.get("workflowRef")), "drives_workflow")
-    for rr in _as_list(appbundle.get("roleRefs")):
-        add_edge(_sid("role", rr), _sid("role", rr), "bundled")  # 自环：只为标记它在册
+
+    # 角色 → 页面（可进入）。**这条是推导出来的，不是字面引用**——
+    #
+    # ⚠ 2026-08-17 我第一版漏了它，是用户把沙盘截图摆出来才发现的：
+    #   前端 `client/src/pages/sliderule/system-screens/sandbox-graph.ts`
+    #   早就画了这条 `role-page` 边，而我这份 Python 图没有。少了它，
+    #   「改了这一页的权限，哪些角色进不来了」这个问题在服务端答不出来
+    #   ——而那正是影响分析要回答的问题。
+    #
+    # 判据跟 TS 侧逐字对齐（sandbox-graph.ts 第 2 条 + rbac-preview 的
+    # PageAccess）：页面声明的 actionPermissions 与角色持有的权限**有交集**
+    # 才算可进。两边口径分叉的话，同一份模型会在前端和后端得出不同的可达性
+    # ——正是 CLAUDE.md 第四条「Python 判定 / TypeScript 运行时」那一行。
+    role_perms: Dict[str, Set[str]] = {}
+    for role_id, perms in _as_dict(rbac.get("rolePermissions")).items():
+        role_perms[str(role_id)] = {str(p) for p in _as_list(perms)}
+    for p in _as_list(page.get("pages")):
+        pd = _as_dict(p)
+        declared = {str(x) for x in _as_list(pd.get("actionPermissions"))}
+        # ⚠ 公共页（没声明权限）**不画**：那是"人人可进"，画出来是
+        #   角色 × 页面的全连接，信息量为零还会把闭包撑爆。同 TS 侧。
+        if not declared:
+            continue
+        for role_id, held in role_perms.items():
+            if held & declared:
+                add_edge(_sid("role", role_id), _sid("page", pd.get("id")), "can_enter")
 
     return {"nodes": nodes, "edges": edges}
 
@@ -201,9 +227,10 @@ def impacted_closure(
         "dependencies"  只顺着边走 —— 我依赖谁。改了我，**我引的还在吗**
         "both"          两边都走
 
-    ⚠ `hops` **是必填的**，不给默认值。这张网强连通，无界闭包最后必然
-      覆盖全图——那时"影响面"等于"全部"，跟不做影响分析没区别。
-      "牵扯到什么"这句话在图上只有带半径才有意义。
+    ⚠ `hops` **是必填的**，不给默认值。补齐 role→page 之后全图连通
+      （角色是跨簇的桥），无界闭包最后必然覆盖全部节点——那时"影响面"
+      等于"全部"，跟不做影响分析没区别。半径得自己划，图不会替你划。
+      这个结论被翻过两次，来回见模块头。
 
     ⚠ 不在图里的 seed 直接忽略，不报错也不硬塞。硬塞会让一个拼错的 id
       变成一个孤立节点，闭包算出来只有它自己，看起来像"影响面很小"——
