@@ -25,12 +25,22 @@ mkdirSync(outDir, { recursive: true });
 //   **裸奔的页面**——图标撑成巨幅、版式全塌。
 //   拿那种图当「效果」看，就是判据落在一个坏掉的观测上：页面没问题，是尺子坏了。
 //   所以浏览器必须跟 curl 走同一个出站代理。
-const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
-const browser = await chromium.launch({
-  executablePath: CHROME,
-  ...(proxy ? { proxy: { server: proxy } } : {}),
-});
-if (!proxy) console.warn('⚠ 没有 HTTPS_PROXY，页面样式很可能加载不到，截图不可信');
+// 第一版想让浏览器走 HTTPS_PROXY，**没用**：代理是 TLS 拦截的，浏览器不信任
+// 它的 CA，请求照样失败，截出来还是裸页。与其去动浏览器的证书信任（麻烦且
+// 影响面大），不如把 Tailwind 抓到本地、拦截那个请求用本地文件应答——
+// 完全不依赖浏览器的网络和证书。
+const TAILWIND = process.env.TAILWIND_JS;
+if (!TAILWIND || !existsSync(TAILWIND)) {
+  console.error(
+    '✗ 缺 TAILWIND_JS（本地 tailwind 脚本路径）。页面 163 个 class 全靠它，\n' +
+    '  没有它截出来的是版式全塌的裸页——那种图看起来像个结论，其实是尺子坏了。\n' +
+    '  先跑：curl -sSL https://cdn.tailwindcss.com -o /tmp/tailwind.js'
+  );
+  process.exit(3);
+}
+const tailwindJs = readFileSync(TAILWIND, 'utf8');
+
+const browser = await chromium.launch({ executablePath: CHROME });
 for (const tag of ['round1', 'round2']) {
   const dir = join(runDir, `pages_${tag}`);
   if (!existsSync(dir)) {
@@ -40,6 +50,17 @@ for (const tag of ['round1', 'round2']) {
   const files = readdirSync(dir).filter((f) => f.endsWith('.html')).sort();
   for (const f of files) {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    // 拦下 CDN，用本地那份应答。**顺带断掉其余外部请求**：截图要的是
+    // 「这一版页面长什么样」，不是「今天网络通不通」——放任外部资源会让
+    // 同一份 HTML 在不同时刻截出不同的图，那样的对照没法信。
+    await page.route('**/*', (route) => {
+      const url = route.request().url();
+      if (url.includes('cdn.tailwindcss.com')) {
+        return route.fulfill({ contentType: 'application/javascript', body: tailwindJs });
+      }
+      if (url.startsWith('http')) return route.abort();
+      return route.continue();
+    });
     // file:// 而不是 setContent：页面里的相对资源、脚本执行时机都更接近真实。
     await page.setContent(readFileSync(join(dir, f), 'utf8'), {
       waitUntil: 'networkidle',
