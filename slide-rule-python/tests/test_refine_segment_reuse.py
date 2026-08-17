@@ -701,3 +701,68 @@ class Test沿用的rbac要能吃增量:
         merged, added = merge_needed_permissions(base["rbac"], base)
         assert added == [], f"没东西可并却并了 {added}"
         assert merged is base["rbac"], "没可并的还是复制了一份，白费"
+
+
+class Test两个开关:
+    """⚠ 开关最贵的失效方式是**传丢了不报错**：A/B 的两臂悄悄变成同一臂，
+    跑出「看起来 n=10 其实 10 个都是同一边」的假数据。所以每条都验正反两向。
+    """
+
+    def test_默认两个都开(self, monkeypatch):
+        monkeypatch.delenv("SLIDERULE_REFINE_REUSE_1MAXIMAL", raising=False)
+        monkeypatch.delenv("SLIDERULE_REFINE_RBAC_MERGE", raising=False)
+        assert sfp.refine_reuse_1maximal_enabled() is True
+        assert sfp.refine_rbac_merge_enabled() is True
+
+    def test_策略状态每轮都说出来_两个开关都在里面(self, capsys):
+        apply_refine_segment_reuse(_perm_fresh(), _perm_baseline(), [], gate_fn=_gate)
+        out = capsys.readouterr().out
+        assert "沿用策略：" in out, "没打策略状态行——A/B 台子没法自证跑的是哪一臂"
+        assert "1maximal=on" in out and "rbacmerge=on" in out
+
+    def test_关掉1maximal时退回按序丢(self, monkeypatch, capsys):
+        """罪魁排在最前的场景：老行为必然退到空，这正是要治的病。"""
+        monkeypatch.setenv("SLIDERULE_REFINE_REUSE_1MAXIMAL", "0")
+        base, fresh = _baseline(), _fresh()
+
+        def rbac_is_the_culprit(model):
+            if _fp(model["rbac"]) == _fp(base["rbac"]):
+                return {"passed": False, "findings": [{"path": "page", "message": "缺权限"}]}
+            return {"passed": True, "findings": []}
+
+        out = apply_refine_segment_reuse(fresh, base, [], gate_fn=rbac_is_the_culprit)
+        for seg in ("workflow", "aigc"):
+            assert _fp(out[seg]) == _fp(fresh[seg]), (
+                f"开关关了却还是保住了 {seg}——老行为没被真正退回，对照臂是假的"
+            )
+        assert "1maximal=off" in capsys.readouterr().out
+
+    def test_关掉rbac合并时不并权限(self, monkeypatch, capsys):
+        monkeypatch.setenv("SLIDERULE_REFINE_RBAC_MERGE", "0")
+        out = apply_refine_segment_reuse(
+            _perm_fresh(), _perm_baseline(), [], gate_fn=_gate
+        )
+        assert _fp(out["rbac"]) == _fp(_perm_fresh()["rbac"]), (
+            "合并关了，rbac 却不是新生成的那份——关掉后本该过不了闸而回落"
+        )
+        log = capsys.readouterr().out
+        assert "rbacmerge=off" in log
+        assert "并入本轮页面需要的权限" not in log, "开关关了日志却还在说并了权限"
+
+    def test_两个开关互相独立(self, monkeypatch, capsys):
+        """只关合并时，1-maximal 仍该生效——这正是留两根杆的意义。"""
+        monkeypatch.setenv("SLIDERULE_REFINE_RBAC_MERGE", "0")
+        base, fresh = _baseline(), _fresh()
+
+        def rbac_is_the_culprit(model):
+            if _fp(model["rbac"]) == _fp(base["rbac"]):
+                return {"passed": False, "findings": [{"path": "page", "message": "缺权限"}]}
+            return {"passed": True, "findings": []}
+
+        out = apply_refine_segment_reuse(fresh, base, [], gate_fn=rbac_is_the_culprit)
+        for seg in ("workflow", "aigc"):
+            assert _fp(out[seg]) == _fp(base[seg]), (
+                f"只关了合并，{seg} 却没保住——两个开关黏在一起了，"
+                f"线上想只退合并时会把没问题的 1-maximal 一起赔掉"
+            )
+        assert "1maximal=on rbacmerge=off" in capsys.readouterr().out

@@ -353,6 +353,33 @@ def refine_reuse_enabled() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
+def refine_reuse_1maximal_enabled() -> bool:
+    """`SLIDERULE_REFINE_REUSE_1MAXIMAL=0` 退回「按顺序从尾巴丢」的老退让。默认开。
+
+    ⚠ **跟下面那个合并开关分开，是故意的。** 两件事互相独立：
+      · 1-maximal 退让：OFF 臂 5/5 证明它无害（那里全枚举也找不到能过的子集），
+        ON 臂 3/3 证明它有用。**单独就是净收益。**
+      · 权限合并：会改动沿用回来的 rbac 内容，风险面比前者大。
+    合成一个开关的话，万一线上是合并出问题，退回时会把明明没问题的 1-maximal
+    一起赔掉。留两根杆才退得准。
+
+    这两个开关也是 A/B 对照臂的实现方式（experiments/refine-fingerprint/），
+    跟 SLIDERULE_REFINE_ID_FREEZE 那次一样：**线上回退杆和对照臂两用**。
+    """
+    raw = str(os.environ.get("SLIDERULE_REFINE_REUSE_1MAXIMAL", "1")).strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def refine_rbac_merge_enabled() -> bool:
+    """`SLIDERULE_REFINE_RBAC_MERGE=0` 关掉「沿用的 rbac 吃增量」。默认开。
+
+    这是本轮**唯一会改动沿用回来的那一段内容**的地方——沿用 rbac 却往它的
+    permissions 里加了东西。风险面比纯粹的"照搬/不照搬"大，所以单独留杆。
+    """
+    raw = str(os.environ.get("SLIDERULE_REFINE_RBAC_MERGE", "1")).strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
 def _permission_id(perm: Any) -> str:
     """一条权限的 id。**两种形态都要认**——字符串和 `{"id": ...}`。
 
@@ -540,11 +567,23 @@ def apply_refine_segment_reuse(
     if not candidates:
         return model
 
+    one_maximal = refine_reuse_1maximal_enabled()
+    rbac_merge = refine_rbac_merge_enabled()
+    # ⚠ **一行把两个开关的状态都说出来，每轮都说。**
+    #   照 SLIDERULE_REFINE_ID_FREEZE 那次的教训：开关走 env 传子进程，传丢了
+    #   不报错，只会让 A/B 的两臂**悄悄变成同一臂**——跑出"看起来 n=10 其实
+    #   10 个都是同一边"的假数据，比样本少糟得多。
+    #   写成一行固定格式，正反两向都能 grep：本臂特征串必须在、对臂的必须不在。
+    print(
+        f"[spec_first_pipeline] 沿用策略：1maximal={'on' if one_maximal else 'off'} "
+        f"rbacmerge={'on' if rbac_merge else 'off'}"
+    )
+
     def build(segs):
         candidate = dict(model)
         for seg in segs:
             candidate[seg] = copy.deepcopy(baseline[seg])
-        if "rbac" in segs:
+        if rbac_merge and "rbac" in segs:
             # 沿用旧 rbac 的同时，把本轮页面真正需要的权限并进来。
             # 不并的话这一段 8/9 会被闸拒（见 merge_needed_permissions 头注）。
             candidate["rbac"], _ = merge_needed_permissions(candidate["rbac"], model)
@@ -557,7 +596,7 @@ def apply_refine_segment_reuse(
           permissions。不打日志的话就是"东西看着是旧的、其实改过"——本仓
           反复数到的那个形态，出问题时对不出账。
         """
-        if "rbac" not in segs:
+        if not rbac_merge or "rbac" not in segs:
             return ""
         _, added = merge_needed_permissions(baseline.get("rbac"), model)
         return f"（并入本轮页面需要的权限：{'、'.join(added)}）" if added else ""
@@ -601,11 +640,24 @@ def apply_refine_segment_reuse(
         # ⚠ 关键差别：这里是**试加**不是**试减**。试减只能走前缀，而卡住的那段
         #   （实测永远是 rbac）恰恰排在最前面，试减永远轮不到丢它。
         first_reject = detail
-        keep: list[str] = []
-        for seg in candidates:
-            ok, _ = try_gate(keep + [seg])
-            if ok:
-                keep.append(seg)
+        if one_maximal:
+            keep: list[str] = []
+            for seg in candidates:
+                ok, _ = try_gate(keep + [seg])
+                if ok:
+                    keep.append(seg)
+        else:
+            # 老行为：按 REFINE_REUSABLE_SEGMENTS 的顺序从尾巴丢，可达组合只有前缀。
+            # 留着是为了当对照臂 + 线上一键退回，**别把它当成"另一种同样好的写法"**
+            # ——真机 ON 臂 3/3 证明它够不到 {workflow, aigc}（见 merge 头注）。
+            keep = list(candidates)
+            while keep:
+                keep.pop()
+                if not keep:
+                    break
+                ok, _ = try_gate(keep)
+                if ok:
+                    break
     except _GateBlewUp as exc:
         # 纪律七：沿用是增强类，**自己炸了不许拖垮主链路**。闸抛异常时整份
         # 退回重新生成的那份——它在 assemble 里已经过过闸，是已知可用的。

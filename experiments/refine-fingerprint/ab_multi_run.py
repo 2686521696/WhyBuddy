@@ -54,9 +54,42 @@ DEFAULT_GOAL = "做一个社区养老服务管理平台"
 # 判据盯字面量最容易在源码改词后**静默失效**（本仓踩过：判据写
 # "Produce the complete" 而实际收尾是 "Produce the five-system JSON now."，
 # 断言直接打空）。所以这里配一条反向判据：ON 的日志里不许出现 OFF 的特征行。
-ARM_MARK = {
-    "on": "精修 id 冻结：",
-    "off": "id 冻结被开关关掉",
+#
+# 每个臂 = 一组 env + 一条**只有这个臂才会出现**的日志特征行。
+#
+# ⚠ 2026-08-17 深夜加了第二组臂（v1/v2）。它们跟 on/off **不是同一个维度**：
+#   on/off 变的是 id 冻结；v1/v2 里冻结**固定开**，变的是沿用策略。
+#   所以别在同一批里混跑 on,off,v1,v2——那是两个自变量一起动，跑出来的差值
+#   归不了因。要跑就 `--arms on,off` 或 `--arms v1,v2`。
+ARMS = {
+    # 第一组：id 冻结开 / 关
+    "on": {
+        "env": {"SLIDERULE_REFINE_ID_FREEZE": "1"},
+        "mark": "精修 id 冻结：",
+    },
+    "off": {
+        "env": {"SLIDERULE_REFINE_ID_FREEZE": "0"},
+        "mark": "id 冻结被开关关掉",
+    },
+    # 第二组：冻结固定开，比"新沿用策略"和"老沿用策略"
+    #   v2 = 1-maximal 退让 + rbac 吃增量（现在的默认）
+    #   v1 = 按序从尾巴丢 + 不合并权限（2026-08-17 傍晚之前的行为）
+    "v2": {
+        "env": {
+            "SLIDERULE_REFINE_ID_FREEZE": "1",
+            "SLIDERULE_REFINE_REUSE_1MAXIMAL": "1",
+            "SLIDERULE_REFINE_RBAC_MERGE": "1",
+        },
+        "mark": "1maximal=on rbacmerge=on",
+    },
+    "v1": {
+        "env": {
+            "SLIDERULE_REFINE_ID_FREEZE": "1",
+            "SLIDERULE_REFINE_REUSE_1MAXIMAL": "0",
+            "SLIDERULE_REFINE_RBAC_MERGE": "0",
+        },
+        "mark": "1maximal=off rbacmerge=off",
+    },
 }
 
 
@@ -92,18 +125,28 @@ def run_done(d):
     ) and os.path.exists(os.path.join(d, "OK"))
 
 
-def verify_arm(log_text, arm):
-    """开关真的生效了吗？正反两条都要过。"""
-    want = ARM_MARK[arm]
-    other = ARM_MARK["off" if arm == "on" else "on"]
+def verify_arm(log_text, arm, all_arms):
+    """开关真的生效了吗？正反两条都要过。
+
+    ⚠ 反向那条要拿**本批实际在跑的其余臂**去比，不能写死"另一个臂"。
+      第一版写死 on/off 互为对臂；加了 v1/v2 之后那种写法会拿错的串去比，
+      而比错了**不会报错**——只会让自证形同虚设，正是它本来要防的那件事。
+    """
+    want = ARMS[arm]["mark"]
     if want not in log_text:
         return False, f"日志里没有本臂特征行 {want!r} —— 开关很可能没传进去"
-    if other in log_text:
-        return False, f"日志里出现了**对臂**特征行 {other!r} —— 两臂被跑成了同一臂"
+    for other in all_arms:
+        if other == arm:
+            continue
+        mark = ARMS[other]["mark"]
+        if mark in log_text:
+            return False, (
+                f"日志里出现了**对臂 {other}** 的特征行 {mark!r} —— 两臂被跑成了同一臂"
+            )
     return True, ""
 
 
-def one_run(arm, idx, goal, runs_dir, timeout_s):
+def one_run(arm, idx, goal, runs_dir, timeout_s, all_arms):
     d = os.path.join(runs_dir, f"{arm}-{idx}")
     os.makedirs(d, exist_ok=True)
     if run_done(d):
@@ -111,12 +154,13 @@ def one_run(arm, idx, goal, runs_dir, timeout_s):
         return "skip", 0.0
 
     env = dict(os.environ)
-    env["SLIDERULE_REFINE_ID_FREEZE"] = "1" if arm == "on" else "0"
+    env.update(ARMS[arm]["env"])
     env["REFINE_FP_OUT"] = d
     env["PYTHONUNBUFFERED"] = "1"
 
     t0 = time.time()
-    print(f"[ab] ▶ {arm}-{idx} 开跑（freeze={env['SLIDERULE_REFINE_ID_FREEZE']}）", flush=True)
+    knobs = " ".join(f"{k.replace('SLIDERULE_REFINE_', '')}={v}" for k, v in ARMS[arm]["env"].items())
+    print(f"[ab] ▶ {arm}-{idx} 开跑（{knobs}）", flush=True)
     log_path = os.path.join(d, "run.log")
     with open(log_path, "w", encoding="utf-8") as lf:
         try:
@@ -139,7 +183,7 @@ def one_run(arm, idx, goal, runs_dir, timeout_s):
         print(f"[ab] ✗ {arm}-{idx} 退出码 {rc}（{dt:.0f}s），作废。日志：{log_path}")
         return "fail", dt
 
-    ok, why = verify_arm(log_text, arm)
+    ok, why = verify_arm(log_text, arm, all_arms)
     if not ok:
         print(f"[ab] ✗ {arm}-{idx} 开关自证失败：{why}")
         return "unverified", dt
@@ -174,7 +218,7 @@ def main():
     # 时间漂，按臂分块会把"时间"混进"处理"里——那正是这一整天反复栽的形态。
     for i in range(1, args.repeats + 1):
         for arm in arms:
-            status, dt = one_run(arm, i, args.goal, args.runs_dir, args.timeout)
+            status, dt = one_run(arm, i, args.goal, args.runs_dir, args.timeout, arms)
             tally[status] = tally.get(status, 0) + 1
 
     print(f"\n[ab] 全部结束，用时 {(time.time()-t0)/60:.1f} 分钟")
