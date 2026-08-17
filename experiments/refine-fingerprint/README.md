@@ -53,3 +53,21 @@ raw          原样 sha256                              ← 现在判据在用�
 
 - 只换 id、内容一字不改 → 应读出 `raw 0/6`、`抹 id 后 6/6`
 - 真改内容 → 对应段应落在「基本重写」
+
+## ab-2026-08-17/：id 冻结的 A/B 数据
+
+同模型（flash-lite）、同话题、同指令，只差 `SLIDERULE_REFINE_ID_FREEZE`：
+
+```bash
+python3 experiments/refine-fingerprint/analyze_ids.py experiments/refine-fingerprint/ab-2026-08-17
+# ↑ 默认读 model_round{1,2}.json，比 A/B 要先把 on_/off_ 那对改名或分目录放
+```
+
+结果见 `docs/交接-精修增量化-2026-08-16.md` 第六节。每臂 n=1，方向一致
+幅度大但下不了统计结论。
+
+## ⚠ 跨模型不能比
+
+根目录那两份 `model_round{1,2}.json` 是 **flash** 跑的，`ab-2026-08-17/` 四份是
+**flash-lite**。**别互相比**——换模型比前后是把两个变量混在一起。要对照就
+同模型重跑两臂（跑一轮才 100~150 秒，别省这个）。
