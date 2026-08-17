@@ -460,6 +460,95 @@ def generate_page_html(
     )
 
 
+def edit_page_html(
+    page: Dict[str, Any],
+    prev_html: str,
+    instruction: str,
+    *,
+    llm_call: Optional[Callable[..., Any]] = None,
+    max_attempts: int = 2,
+) -> Optional[Dict[str, Any]]:
+    """在已有页面上**改一小块**，成功返回同 generate_page_html 的形状；
+    改不动返回 **None**，由调用方回落整页重画。
+
+    ## 为什么是 None 而不是抛
+
+    改不动不是故障，是"这条路没走通"，正常结局是退回整页重画（今天的行为）。
+    抛异常会被上层当成"这一页挂了"记进 failed，于是**一次可以正常降级的
+    事故被记成缺页**——第 4 步的页面覆盖判据会报一个并不存在的缺口。
+
+    ## 三道关，缺一不可
+
+        1. 模型得给出 SEARCH/REPLACE 块        —— 给不出就是没走通
+        2. 至少套上一块                        —— 一块都没套上 = 页面原样，
+                                                 当成"改好了"交出去就是说谎
+        3. 改完的 HTML 仍要过 validate_page_html —— 局部改也能把页面改坏
+
+    ⚠ 第 2 条特别重要：`apply_edit_blocks` 匹配不上时**原样返回**输入 HTML。
+      不看 applied 数就交出去，表现是"用户说了话、页面一个字没变、日志全绿"。
+    """
+    from .page_edit_blocks import (
+        apply_edit_blocks,
+        build_edit_prompt,
+        describe_failures,
+        parse_edit_blocks,
+    )
+
+    page_id = str(page.get("id") or "")
+    if not prev_html.strip() or not (instruction or "").strip():
+        return None
+
+    if llm_call is None:
+        from sliderule_llm.client import call_llm_with_retry
+
+        def llm_call(messages, **kwargs):  # type: ignore[misc]
+            return call_llm_with_retry(messages, max_attempts=3, backoff_ms=2000, **kwargs)
+
+    messages = build_edit_prompt(page_id, prev_html, instruction)
+    for attempt in range(max(1, max_attempts)):
+        response = llm_call(messages, temperature=0.2)
+        text = getattr(response, "content", "") or ""
+        blocks = parse_edit_blocks(text)
+        if not blocks:
+            print(f"[spec_page_html] 页面 {page_id} 局部改：模型没给出 SEARCH/REPLACE 块")
+            return None
+
+        got = apply_edit_blocks(prev_html, blocks)
+        if not got["applied"]:
+            # 一块都没套上。照 Aider 的做法把**原文里最接近的几行**回喂过去
+            # ——光说"没匹配上"模型不知道自己差在哪。
+            if attempt + 1 < max(1, max_attempts):
+                messages = messages + [
+                    {"role": "assistant", "content": text[:4000]},
+                    {"role": "user", "content": describe_failures(prev_html, got["failed"])},
+                ]
+                continue
+            print(f"[spec_page_html] 页面 {page_id} 局部改：{len(blocks)} 块一块都没匹配上")
+            return None
+
+        problems = validate_page_html(got["html"])
+        if problems:
+            print(
+                f"[spec_page_html] 页面 {page_id} 局部改后没过校验，回落整页重画："
+                f"{'；'.join(problems)[:160]}"
+            )
+            return None
+
+        print(
+            f"[spec_page_html] 页面 {page_id} 局部改：套上 {len(got['applied'])} 块"
+            + (f"，{len(got['failed'])} 块没匹配上" if got["failed"] else "")
+        )
+        return {
+            "version": SPEC_PAGE_HTML_VERSION,
+            "pageId": page_id,
+            "html": got["html"],
+            "brief": "",
+            "prompt": "",
+            "editedBlocks": len(got["applied"]),
+        }
+    return None
+
+
 def _straggler_idle_seconds() -> float:
     """落后者预算的**下限**（锚在上次有页落地）。
 
@@ -580,6 +669,8 @@ def generate_pages_parallel(
     llm_call: Optional[Callable[..., Any]] = None,
     on_page: Optional[Callable[[str, str, int, int], None]] = None,
     reuse_pages: Optional[Dict[str, str]] = None,
+    edit_base: Optional[Dict[str, str]] = None,
+    edit_instruction: str = "",
 ) -> Dict[str, Any]:
     """把 spec 的每一页并发生成 HTML。**单页失败不拖垮整批。**
 
@@ -669,12 +760,37 @@ def generate_pages_parallel(
         #   ⚠ 代价是**产出顺序不再是 spec 的页面顺序**。ok 是 dict 不是 list，
         #     下游按 page_id 取，所以不受影响；真正在乎顺序的是导航，而导航由
         #     page_shell 按 spec.pages 重排（见 unify_shell）——不靠这里。
+        def _make_page(pg):
+            """一页的活：能局部改就局部改，改不动整页重画。
+
+            ★ 2026-08-17：这是"按需"的第二层。第一层（refine_page_scope）把
+              范围从"所有页"缩到"指令点到的页"；这一层再从"整页重画"缩到
+              "只改那几行"——用户说的多半是「菜单栏换个图标」「这个模块加点
+              数据」，为这个重画整页，既慢又会把没提的地方一起改掉。
+
+            ⚠ 回落方向是**整页重画**，不是"这页不改"。局部改不动是常事
+              （模型没给出块、SEARCH 对不上、改完过不了校验），那时退回今天
+              的行为即可；退成"不改"会让用户说了话而页面一动不动。
+            """
+            pid = str(pg.get("id") or "")
+            prev = (edit_base or {}).get(pid)
+            if prev and (edit_instruction or "").strip():
+                try:
+                    got = edit_page_html(
+                        pg, prev, edit_instruction, llm_call=llm_call
+                    )
+                    if got is not None:
+                        return got
+                except Exception as exc:  # noqa: BLE001 — 局部改属增强，炸了走重画
+                    print(f"[spec_page_html] 页面 {pid} 局部改异常，回落整页重画：{str(exc)[:160]}")
+            return generate_page_html(
+                pg, spec, device=device,
+                design_system=_style_for(design_system, pid),
+                product=product, llm_call=llm_call,
+            )
+
         fut_to_id = {
-            pool.submit(
-                generate_page_html, pg, spec, device=device,
-                design_system=_style_for(design_system, str(pg.get("id") or "")),
-                product=product, llm_call=llm_call
-            ): str(pg.get("id") or "")
+            pool.submit(_make_page, pg): str(pg.get("id") or "")
             for pg in pages
         }
         # ⚠ 进度的分母要含照搬的那批，否则前端会显示「3 页里第 1 页」而实际

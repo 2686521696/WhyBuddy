@@ -946,6 +946,11 @@ def run_spec_first(
         batch = generate_pages_parallel(
             spec, device=device, design_system=design_system,
             product=goal, on_page=sink, reuse_pages=_reuse_now,
+            # ★ "按需"的第二层：点到的那几页也尽量**只改那几行**，别整页重画。
+            #   edit_base 只在精修轮给，且只含上一版真有的页；新页没有基线，
+            #   自然走整页生成。
+            edit_base=(reuse_pages or {}) if refine else {},
+            edit_instruction=str((refine or {}).get("instruction") or "") if refine else "",
         )
         pages = dict(batch.get("pages") or {})
         failed = dict(batch.get("failed") or {})
