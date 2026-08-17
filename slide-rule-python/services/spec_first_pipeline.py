@@ -322,9 +322,22 @@ def apply_refine_segment_reuse(
     """
     import copy
 
-    if not isinstance(model, dict) or not isinstance(baseline, dict):
+    # ⚠ 三条"什么都不做"的出口**都要说话**（2026-08-17 补）。
+    #
+    # 第一版三条全是静默 return。而这个功能最可能的失效方式恰恰是"整个没生效"：
+    # 模型不吐 refineScope → scope 恒为 None → 一段都不沿用 → **判据全绿、
+    # 线上照旧全量重写、日志里一个字都没有**。那正是本仓数到第十次以上的形状。
+    # 会静默失效的功能必须说得出话——同 rank-bm25 那次的教训。
+    if not isinstance(model, dict):
+        return model
+    if not isinstance(baseline, dict):
+        print("[spec_first_pipeline] 精修沿用跳过：没拿到上一版模型（reuse_model 为空）")
         return model
     if scope is None:
+        print(
+            "[spec_first_pipeline] ⚠ 精修沿用跳过：SPEC 没声明 refineScope，"
+            "按「不知道」处理，一段都不沿用（模型没答？prompt 没要？）"
+        )
         return model
 
     named = {str(s).strip() for s in scope if str(s).strip()}

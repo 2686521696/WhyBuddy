@@ -127,6 +127,45 @@ class Test沿用本身:
         assert apply_refine_segment_reuse(fresh, None, [], gate_fn=_gate) == fresh
 
 
+class Test静默失效必须说得出话:
+    """这个功能最可能的失效方式是「整个没生效」，而那种失效**天生无声**。
+
+    模型不吐 refineScope → scope 恒为 None → 一段都不沿用 → 判据全绿、线上
+    照旧全量重写、日志里一个字都没有。所以三条"什么都不做"的出口都得留痕。
+    """
+
+    def test_没声明scope时打日志(self, capsys):
+        apply_refine_segment_reuse(_fresh(), _baseline(), None, gate_fn=_gate)
+        out = capsys.readouterr().out
+        assert "refineScope" in out and "不沿用" in out, (
+            "SPEC 没声明 refineScope 时一声不吭——线上会出现「修好了但完全没生效」"
+            "且无从排查"
+        )
+
+    def test_没有上一版时打日志(self, capsys):
+        apply_refine_segment_reuse(_fresh(), None, [], gate_fn=_gate)
+        assert "上一版" in capsys.readouterr().out
+
+    def test_真沿用时也打日志_并说清沿用了哪几段(self, capsys):
+        apply_refine_segment_reuse(_fresh(), _baseline(), [], gate_fn=_gate)
+        out = capsys.readouterr().out
+        assert "沿用上一版模型段" in out
+        for seg in REFINE_REUSABLE_SEGMENTS:
+            assert seg in out, f"日志没说沿用了 {seg}——出问题时对不出账"
+
+    def test_退让时说清丢了哪一段(self, capsys):
+        base = _baseline()
+
+        def picky(model):
+            if _fp(model["aigc"]) == _fp(base["aigc"]):
+                return {"passed": False, "findings": [{"path": "aigc", "message": "悬空"}]}
+            return {"passed": True, "findings": []}
+
+        apply_refine_segment_reuse(_fresh(), base, [], gate_fn=picky)
+        out = capsys.readouterr().out
+        assert "aigc" in out and "重新生成这一段" in out
+
+
 class Test不许沿用的段:
     """反向判据。纪律三：每写一条"应该有 X"，配一条"不该有 Y"。"""
 
