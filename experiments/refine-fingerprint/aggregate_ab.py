@@ -218,7 +218,14 @@ def main():
     perm_miss = re.compile(
         r"page action permission '([^']+)' not found in rbac\.permissions"
     )
-    other_cause = re.compile(r"⚠ 沿用「[^」]+」后过不了闸[^\n]*")
+    # ⚠ 两种日志格式都要认，否则统计会**静默归零**：
+    #   前缀退让（旧）：⚠ 沿用「aigc」后过不了闸，改为重新生成这一段：<理由>
+    #   1-maximal（新）：精修沿用上一版模型段：workflow、aigc（丢掉 rbac，首次拒绝：<理由>）
+    #                    精修沿用逐段退让到空，整份用重新生成的那份（首次拒绝：<理由>）
+    #   只认旧的那条，等 ddmax 改造落地后每一轮都会显示"没被拒过"——数字变好看了，
+    #   其实是判据瞎了。这正是本仓纪律四点名的形状，只不过这次的两半是
+    #   "被观测的代码"和"观测它的判据"。
+    other_cause = re.compile(r"⚠ 沿用「[^」]+」后过不了闸[^\n]*|首次拒绝：[^\n)]*")
     print(f"  {'轮次':<9}{'实体 r1→r2':<13}{'沿用结果':<26}{'首条拒绝理由'}")
     print("  " + "-" * 88)
     causes = {"page缺权限": 0, "其他": 0}
@@ -231,9 +238,22 @@ def main():
         e1 = len(pairs_of_class(m1, ["datamodel", "entities"]))
         e2 = len(pairs_of_class(m2, ["datamodel", "entities"]))
         text = open(os.path.join(d, "run.log"), encoding="utf-8", errors="replace").read()
-        retreated = "精修沿用逐段退让到空" in text
-        m = GATEWAY_PATTERNS["reuse_applied"].search(text)
-        result = "退让到空" if retreated else (f"沿用 {m.group(1)[:18]}" if m else "未发生沿用")
+        # ⚠ 一轮里沿用可能发生**不止一次**：two_round_drive 用 max_loops=2，
+        #   第二轮的流水线会跑两遍（真机 on-4 就是两条）。最终交付的模型来自
+        #   **最后一遍**，所以取最后一条，不是第一条——第一版用 .search() 取首条，
+        #   在两条的轮次上会报出一个并未交付的结论，而且不会有任何报错。
+        events = re.findall(r"精修沿用上一版模型段：(.+)|(精修沿用逐段退让到空)", text)
+        n_events = len(events)
+        last = events[-1] if events else None
+        if last is None:
+            result = "未发生沿用"
+        elif last[1]:
+            result = "退让到空"
+        else:
+            result = f"沿用 {last[0][:18]}"
+        retreated = bool(last and last[1])
+        if n_events > 1:
+            result += f" [共{n_events}次]"
         rejects = other_cause.findall(text)
         if rejects:
             hit = perm_miss.search(rejects[0])
