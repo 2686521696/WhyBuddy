@@ -65,6 +65,10 @@ def test_the_slow_stages_are_all_covered():
         # 那种零 LLM、0.0 秒的不是一类东西。
         # ⚠ 只有精修轮会出现；新建应用那条路上这一步根本不进。
         "specfirst.pagescope",
+        # 2026-08-17 加：图判作用域（影子）。同 pagescope 的理由：一次 LLM
+        # 调用、3~10 秒，不报左侧会黑。⚠ 它出生时是影子模式（只打对照日志、
+        # 不改行为），但墙钟是真花的——"影子"省的是行为风险，省不了时间。
+        "specfirst.graphscope",
         "specfirst.pages",
         "specfirst.structure",
         "specfirst.semantics",

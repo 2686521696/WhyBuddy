@@ -906,6 +906,7 @@ def run_spec_first(
     # ⚠ fail-open 到**全量重画**：判作用域挂了最多是慢一点、回到今天的行为。
     #   绝不能 fail 成"一页都不改"——那会让用户说了话而应用一动不动。
     _reuse_now: Dict[str, str] = {}
+    _scope: Optional[List[str]] = None  # 文本判作用域的结果，第 2.85 步对照要读
     if refine and not reuse_pages:
         # ⚠ 静默失效的老形状：精修轮却没拿到上一版页面 → 照样全量重画，而
         #   日志里一个字都没有。2026-08-17 真机第一次跑就撞上（`set_refine_context`
@@ -933,6 +934,54 @@ def run_spec_first(
             sst["scopePages"] = ",".join(_scope or []) or "(全量)"
             sst["reusedPages"] = len(_reuse_now)
         stages["pagescope"] = dict(sst)
+
+    # ── 第 2.85 步：图判作用域（影子模式：只对照，不改行为）──────────
+    #
+    # ★ 图接进链路的第一针（2026-08-17）：LLM 只判**种子**（这句话直接点名
+    #   改什么），牵连由上一版模型建出的图（services/app_graph.py）用
+    #   impacted_closure 确定性地扩——「改这一块，牵扯的工作流/权限/数据模型
+    #   也要更新」从这里开始有答案。种子/扩散的分工理由见
+    #   services/refine_graph_scope.py 模块头（对着 Aider ContextCoder 原文核过）。
+    #
+    # ⚠ 影子模式：本步只打日志对照，真正决定重画哪几页的仍是上面第 2.8 步。
+    #   切行为前先拿真机日志确认图算的作用域比文本猜的好（纪律五：判据落在
+    #   真机上，不落在"判据全绿"上）。切的时候 tests/test_refine_graph_scope.py
+    #   「影子期不许碰行为」那条判据要跟着改，别硬绕。
+    #
+    # ⚠ 独立埋点（第 2.8 步同款教训）：它自己是一次 LLM 调用，混进别的段，
+    #   量出来的墙钟说明不了任何事。
+    #
+    # ⚠ 只依赖 reuse_model（跟 id 冻结同源），不依赖 reuse_pages——上一版页面
+    #   丢了不该连累图判；但那时 _scope 是 None，对照行如实写"(全量)"。
+    _shadow_on = str(
+        os.environ.get("SLIDERULE_GRAPH_SCOPE_SHADOW", "1")
+    ).strip().lower() not in ("0", "false", "no", "off")
+    if refine and reuse_model and _shadow_on:
+        raise_if_cancelled("第2.85步 图判作用域（影子）")
+        with _stage("specfirst.graphscope") as gst:
+            try:
+                from .app_graph import build_app_graph
+                from .refine_graph_scope import (
+                    decide_seed_nodes,
+                    graph_scope_verdict,
+                    shadow_compare_line,
+                )
+
+                _graph = build_app_graph(reuse_model)
+                _seeds = decide_seed_nodes(
+                    str((refine or {}).get("instruction") or ""),
+                    _graph,
+                    llm_json_fn=llm_json_fn,
+                )
+                _verdict = graph_scope_verdict(_graph, _seeds) if _seeds else None
+                print(shadow_compare_line(_scope, _verdict))
+                gst["seeds"] = ",".join((_verdict or {}).get("seeds") or []) or "(无)"
+                gst["graphPages"] = ",".join((_verdict or {}).get("pages") or [])
+                gst["graphSegments"] = ",".join((_verdict or {}).get("segments") or [])
+            except Exception as exc:  # noqa: BLE001 — 影子是增强类，绝不拖垮主链路
+                print(f"[spec_first_pipeline] ⚠ 图判作用域（影子）失败：{str(exc)[:200]}")
+                gst["failed"] = str(exc)[:120]
+        stages["graphscope"] = dict(gst)
 
     # ── 第 3 步：每页 HTML（并发；单页失败不拖垮整批）────────────────
     raise_if_cancelled("第3步 逐页画界面")
