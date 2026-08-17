@@ -17,6 +17,7 @@ import type { SchedulingDecision } from "@shared/blueprint/v5-reasoning-state";
 import { challengeTargetLabel } from "./challenge-target-label";
 import { buildTurnRoundsFromDrive } from "./turn-round-facts";
 import { stampTurnNarration } from "./turn-narration";
+import { deriveTurnsFromState } from "./derive-persisted-turn";
 import {
   saveActiveRun,
   loadActiveRun,
@@ -463,6 +464,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         const hydrated = preservePythonEvidenceProjection(loaded);
         setSessionState(hydrated);
         setSessionHydrated(true);
+        // 刷新后内存 uiTurns 是空的。版本史/叙述里有用户逐轮发出的话，
+        // 不在这里灌回去，左栏就只剩首轮结论（2026-08-18 烘焙店真机）。
+        const restored = deriveTurnsFromState(hydrated);
+        if (restored.length > 0) setUiTurns(restored);
         // 演示预填：空会话（未推演过）时输入框直接放好项目意图，
         // 访客只需点「发送」即可看全程推演（模板回放）。
         if (

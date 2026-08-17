@@ -861,6 +861,120 @@
 %%   判据：test_spec_first_mobile 6 条（提示词分设备/移动壳统一/判据认得
 %%   页面级 nav/管道一处定处处跟）+ 前端舞台竖屏画布 2 条 + 事件 device 2 条。
 %% ·
+%% ═══════════════════════════════════════════════════════════════════════════
+%% ⚑⚑S 2026-08-17/18：精修从「整轮重抽」到「图判定范围」—— ⚑⚑P 只把指令喂进去，
+%%   这一针让图的结论真正决定**重画哪几页**
+%% ═══════════════════════════════════════════════════════════════════════════
+%%   ⚑⚑P 接通的是「追加指令进 prompt + 段级沿用」，但重画范围仍由文本判
+%%   （specfirst.pagescope：LLM 读指令挑页）独走。08-17 先以**影子模式**接入
+%%   specfirst.graphscope：LLM 只判**种子**（这句话直接点名改什么），牵连由
+%%   上一版模型建出的应用图（services/app_graph.py）用 impacted_closure
+%%   确定性扩——LLM 猜牵连猜不全，图遍历不会漏。影子期只打对照日志不碰行为
+%%   （shadow_compare_line：图闭包页 vs 文本挑页，交集/单侧差全列）。
+%%   08-18 真机三轮对照后切执行，口径参考 Nx affected（受影响子图才重跑）。
+%% ·
+%%   【三级 fail-open：图判 → 文本判 → 全量重画】
+%%     图闭包有页 → 接管 _scope 与照搬集；种子判失败或闭包无页 → 回落文本判；
+%%     两级都缺席 → 全量重画。**宁可多画不许漏画**——范围优化是增强类，
+%%     按 fail-open 纪律自己挂了不许拖垮精修主链路。
+%%     ⚠ 切执行时 test_refine_graph_scope 里「影子期不许碰行为」那条判据
+%%     **必须跟着翻**（改成「图判决定重画范围」+ 三级回落各一条）——
+%%     判据钉着旧行为不放，切换就是在跟自己的测试打架。
+%% ·
+%%   【局部打孔 —— 照搬页不再重新 bind】
+%%     6.5 打孔此前对全部页面重跑（LLM 改写整页，精修轮 4 页 ~60s）。
+%%     照搬页的 HTML 与绑定引用逐字未变（id 冻结 + 段级沿用保证），重打
+%%     是纯浪费：现在只重打重画页，照搬页沿用上一轮打孔结果直接并入交付
+%%     （SLIDERULE_REFINE_PARTIAL_BIND，默认开）。账本记 bindSkipped。
+%%     真机：宠物医院精修 bound=1 skipped=3（17.7s）；烘焙店二针 bound=2 skipped=2。
+%% ·
+%%   【设计段沿用 —— 修的是「带不回」，不是「不会用」】
+%%     specfirst.design 每轮 mode=llm 重抽风格段（10~16s），病灶在上下文注入侧：
+%%     extract_model_from_closure 只抽六段模型，styleBrief/designLanguage
+%%     从来没进过精修上下文——沿用逻辑一直在等一份永远不来的输入。
+%%     修法 v5_full_driver.refine_model_of：从 state.specFirstPages 把两段注回
+%%     current_model 再 set_refine_context（⚠ 两处调用点都要换——只改一处
+%%     会被另一处覆盖，静默失效，见「只改一半」纪律）。
+%%     ⚠ 生效滞后一轮：本轮先把风格段存进载体，**下一轮才看得到沿用**。
+%%     烘焙店二针实测：「精修沿用上一版风格段 → 复用上一版风格段，不重新生成」，
+%%     进度条上 specfirst.design 消失。
+%% ·
+%%   【断线体检（孤岛报告）走 baseline-ratchet】
+%%     交付前对模型建图找孤儿节点；存量孤岛点名「上一版就有，非本次造成」，
+%%     只有新增孤岛才算本轮的账——不然每轮都替历史背锅，报警疲劳后没人看。
+%% ·
+%%   【⚠ GBK 事故 —— 一枚 ⚠ 字符把整条新链路打回老路】
+%%     断线体检那行 print 带 ⚠，Windows 控制台默认 GBK → UnicodeEncodeError；
+%%     except 里再 print 一遍 ⚠，**第二次逃出 try**，spec-first 被判失败、
+%%     整条回落老链路（真机日志：「spec-first 失败，回落老链路：'gbk' codec
+%%     can't encode character '\u26a0'」）。修法 _safe_print：except 自己的
+%%     日志必须永远打得出来，按当前 stdout 编码 replace 回落。
+%%     判据 test_orphan_exit_report 专门造 GBK 控制台钉着「打不出警告符不拦交付」。
+%% ·
+%%   【真机对照（宠物医院 + 烘焙店，2026-08-18）】
+%%     · 宠物医院精修 211s：图判点 1 页照搬 3 页，pages 9.6s、bind 17.7s，
+%%       图判与文本判完全一致（交集=全集，两侧差空）——图不是替代文本判，
+%%       是在文本判缺席/漏判时兜确定性。
+%%     · 烘焙店首轮被上游 525 打回老链路 → 精修第一针 reuse_pages 空、
+%%       如实全量重画（fail-open 生效的样子就该是这样，不是装作有得照搬）；
+%%       第二针照搬 2 页 + 设计段沿用 + 局部打孔全生效，160s。
+%%     · 未触及阶段仍每轮跑：structure/semantics 反构、外圈风险/任务清单/
+%%       交接材料。语义推导判过**不跳**（反构风险大收益小，6.2 已有输出级
+%%       段沿用）；外圈 ~140s 是下一针。
+%%   真相源：services/refine_graph_scope.py · spec_first_pipeline.py（2.85 步
+%%   与 6.5 局部打孔）· v5_full_driver.refine_model_of；判据
+%%   test_refine_graph_scope（图判接管/三级回落/局部打孔正反配对）。
+%% ·
+%% ═══════════════════════════════════════════════════════════════════════════
+%% ⚑⚑T 2026-08-18：刷新后迭代消息消失 —— 对话只活在浏览器内存
+%% ═══════════════════════════════════════════════════════════════════════════
+%%   真机（烘焙店那趟）：迭代发了两针精修，刷新后左栏只剩首轮结论，
+%%   后面发出去的话气泡全没了。**不是没落盘**——modelVersions[].instruction
+%%   （服务端专有投影，上限 20 条）正是用户逐轮发出的指令，turnNarrations
+%%   留着最近 3 轮的步骤回放——是**没人把它们灌回对话**：
+%%     · 页面只调 deriveLatestTurnFromState 重建**最近一轮**；
+%%     · 客户端 turnId 是毫秒时间戳（turn-1755…），对不上服务端
+%%       turn-N-drive-full，narration 按 turnId 找不到 → 恢复轮 user 是空串；
+%%     · ImUserMessage 对空 user 直接 return null——气泡整条不画。
+%%   三层各自都「合理」，合起来就是「刷新即失忆」，且没有一处报错。
+%% ·
+%%   【修法 —— derive-persisted-turn.deriveTurnsFromState】
+%%     按版本史铺全部用户气泡（首条缺 instruction 用 goal 兜底），叙述按
+%%     turnId 精确取、取不到再按用户原文匹配贴回；水合时整段灌回 uiTurns。
+%%     没有版本史的旧会话回落 turnNarrations 全量，再回落单轮重建——
+%%     空状态不编一轮假对话。
+%%   判据：derive-persisted-turn.test（三条指令按发出顺序全回来；反向：
+%%   改回「只灌 latest」即红）+ SlideRule.unified-surface（刷新后每条
+%%   迭代消息都在，不落空态）。
+%% ·
+%% ═══════════════════════════════════════════════════════════════════════════
+%% ⚑⚑U 2026-08-18：精修环上图 —— 新画子图 REFINELOOP，迭代不再是标注段里的缝缝补补
+%% ═══════════════════════════════════════════════════════════════════════════
+%%   审查结论先说清：**代码层面迭代早就不走老路了**——已闭环话题再发一条消息，
+%%   跑的是 spec-first 的精修分支（id 冻结 → 2.8 文本判 → 2.85 图判 → 按需重画
+%%   → 6.2 段级沿用 → 6.5 局部打孔 → 断线体检），⚑⚑P/⚑⚑S 两段记的就是它。
+%%   「缝缝补补」的是**图**：精修环在图身上零节点，全部口径散在标注段里 +
+%%   GEN5 老节点那句「E29 精修上下文」——而那句描述的是**老链路**的精修通道
+%%   （老生成器 REFINE MODE 段），读图的人会以为迭代还从 GEN5 走。
+%% ·
+%%   【为什么这次可以画成独立子图 —— 与 08-13 拆散 SPECFIRST 那条教训不冲突】
+%%     08-13 把 SPECFIRST 子图拆散，是因为 dagre 会把 cluster 扔到画布角落，
+%%     「读作旁边那块」——而那八步**本来就是主轴**，不该被读成附件。
+%%     精修环相反：它**真的是旁边那个环**——第二条入口（已有应用 + 一条追加
+%%     指令），不是首轮主轴的一段。位置说的是它该在哪，这次「旁边」是对的。
+%%     环上各站与主轴的接线用粗边（==>）画明：从哪进（SPECREAL 的 refine 段）、
+%%     在哪合流（VISHTML 重画集 / MODELASM 后的 6.2 / BINDHOLES 前的 6.5）。
+%% ·
+%%   【审查里如实记下的两笔账】
+%%     · GEN5 那句「E29 精修上下文（增量改）」**不删**：老链路仍是显式回落的
+%%       安全网（真机今晚就回落过一次，上游 525），那条通道还活着——但它只在
+%%       回落轮生效，主路径的精修走 REFINELOOP。两条并存，图上首次分开画。
+%%     · 外圈 ~140s（风险分析/任务清单/交接材料）**不分精修轮**，每轮照跑——
+%%       这是下一针，图上不预支（没做的不画成做了）。
+%%   真相源：v5_capability_executor 的 spec-first 精修分支 · v5_full_driver
+%%   set_refine_context/refine_model_of · spec_first_pipeline 精修各站 ·
+%%   refine_graph_scope.py · app_graph.py。
+%% ·
 %% ★ 以下为 V5.9（08-13 白天）图全文，逐字保留；节点区含 ⚑ V6.0 标注的修正：
 %% ---------------------------------------------------------------------------
 %% 面团 AI（原 SlideRule）V5.9 架构图（推演引擎规格 · 继承 V5.8 全图 + ❖ 08-11 升版 + ⛔ 08-13 标红）
@@ -1631,6 +1745,18 @@ subgraph CLOSURE["09 五系统闭环装配层 / Five-System Closure（▲ 07-17 
   APPSTAGE["▲ app 主舞台 / App Stage<br/>closed 6/6 → 右栏长出可操作应用<br/>切角色·录数据·走流程·桌面/手机/代码三视图"]:::done
 end
 
+subgraph REFINELOOP["09.5 精修环 / Refine Loop（⚑⚑U 08-18 新增子图 · 已闭环应用的第二条入口 · 范围类优化全程 fail-open）"]
+  direction TB
+  RFCTX["⚑⚑ 精修上下文注入 / v5_full_driver.set_refine_context + refine_model_of<br/>上一版六段模型直供 reuse_model + 本轮指令 + model_refine_digest 摘要（不喂全量 JSON·<br/>SPEC 步的粒度是清单不是绑定）<br/>⚑ 08-18 补 refine_model_of:styleBrief/designLanguage 从 specFirstPages 注回——<br/>extract_model_from_closure 只抽六段·风格段此前**从来没进过精修上下文**·<br/>设计段每轮 mode=llm 白重抽 10~16s·沿用逻辑一直在等一份永远不来的输入<br/>⚠ 生效滞后一轮:本轮先存·下一轮才看得到「复用上一版风格段·不重新生成」<br/>⚠ set_refine_context 有**两处调用点**·只改一处会被另一处覆盖·静默失效<br/>⚠ 模型直供（版本回退/fork）在场时 spec-first 必须让路（⚑⚑P 顺手修的洞）"]:::landed
+  RFIDF["⚑⚑ 08-17 · id 冻结 / model_id_lexicon<br/>上一版「概念名 → id」词表注进第 2/4/5 步·同一概念不许换 id<br/>⚠ 页面 id 的铸造点在第 2 步·冻结必须在第 2 步下针——第 4/5 步那两针冻不到它<br/>⚑ 口径参考 RecLLM 的标识符冻结<br/>⚠ 因果方向:**是冻结制造了「部分稳定」·段级沿用才开始有命中**·先后顺序不能倒"]:::landed
+  RFSCOPETXT["⚑⚑ 第2.8步 · 文本判作用域 / specfirst.pagescope<br/>LLM 读本轮指令挑要重画的页·只有精修轮有这一步<br/>独立埋点独立计时（混进别的段就没人知道它花了多少）·判不出=全量重画"]:::landed
+  RFSCOPEG{"⚑⚑ 第2.85步 · 图判作用域 / refine_graph_scope + app_graph<br/>LLM 只判**种子**（这句话直接点名改什么）·牵连由上一版模型建图<br/>impacted_closure 确定性扩——LLM 猜牵连猜不全·图遍历不会漏<br/>08-17 影子对照 → 08-18 切执行·口径参考 Nx affected<br/>三级 fail-open:图判 → 文本判 → 全量重画·宁可多画不许漏画<br/>⚠ 切执行时「影子期不许碰行为」那条判据必须跟着翻·否则跟自己的测试打架"}:::gate
+  RFSEGREUSE["⚑⚑ 第6.2步 · 段级沿用 / apply_refine_segment_reuse<br/>refineScope 没点名的段整段照搬上一版（候选按对本轮产物的耦合度排序·<br/>page/appbundle 永不沿用——旧字段 id 绑新 HTML 必然错位）<br/>⚑ None 与空清单**必须分开**:模型没答 ≠ 明确说一段都没碰<br/>⚑ 1-maximal 前缀退让:过不了闸从尾巴丢·闸自己抛异常整份用重新生成的<br/>⚑ 沿用 rbac 时并入本轮页面新增权限——沿用失败 8/9 是缺新权限·<br/>整段照搬天然容纳不了增量·**id 冻结救不了这个**（冻结保已有 id·管不了多出来一条）"]:::landed
+  RFBIND["⚑⚑ 08-18 · 第6.5步 · 局部打孔 / SLIDERULE_REFINE_PARTIAL_BIND（默认开）<br/>照搬页的 HTML 与绑定引用逐字未变（id 冻结 + 段级沿用保证）·重打是纯浪费——<br/>只重打重画页·照搬页沿用上一轮打孔结果直接并入交付·bindSkipped 记账<br/>真机:宠物医院 bound=1 skipped=3（17.7s）·烘焙店二针 bound=2 skipped=2"]:::landed
+  RFORPHAN["⚑⚑ 断线体检 / app_graph.find_orphans（baseline-ratchet·只记不拦）<br/>交付前建图找孤儿节点·存量孤岛点名「上一版就有·非本次造成」·<br/>只有新增孤岛算本轮的账——每轮替历史背锅·报警疲劳后就没人看了<br/>⚠ GBK 事故:这行日志的警告符在 Windows 控制台 UnicodeEncodeError·<br/>except 里再打一遍**二次逃出 try**·spec-first 被判失败整条回落老链路——<br/>_safe_print 兜住:except 自己的日志必须永远打得出来"]:::trust
+  RFVERHIST["⚑⚑ 版本史 + 刷新回放 / modelVersions（E29）+ deriveTurnsFromState（⚑⚑T）<br/>每轮指令随版本存档（instruction·上限 20 版·近 3 版带整页 HTML·更早的如实抹掉）<br/>◀▶ 回退=指针移动不追加副本·restore 期间一律不记快照（来回点 9 条那次事故）<br/>刷新后整段对话从版本史/叙述灌回——修的是「迭代消息刷新即失忆」"]:::ledger
+end
+
 subgraph ENRICH["10 体验层生成 / Experience Enrichment（★ 07-24 新增子图 · 过门后·装配前·全程 fail-open）"]
   direction TB
   THEME["✪ 08-03 **本节点已整体移除**（保留在图上是为了让读到 V5.7 的人知道它去哪了）<br/>全站一个颜色(用户裁决)·enrich_identity_theme 整段从 v5_capability_executor 删除<br/>_theme_palette 恒返回 BRAND_SEED·存量库里的 generatedTheme 读到即忽略·不需迁移<br/>⚠ 省掉的不只是一个函数:那一步要**花一次生图(~74s)换一个色值**·而那张图从不展示给任何人<br/>───────── 以下为 V5.7 原文 ─────────<br/>★ 身份主题生成 / enrich_identity_theme<br/>生图参照→视觉LLM取色(条件:生图key+图片parts声明·缺则纯文本取色)<br/>写回 appIdentity.generatedTheme·合格契约两端同源(identity_theme_presets.json)<br/>✧07-31修正:8套预设**不是降级为兜底·是彻底不参与配色**——色板改由种子色<br/>算出来(vendor MCU 的 HCT/TonalPalette)·_theme_palette 函数体第一行 del theme_id<br/>实测:8个合法主题id派生出的主色**只有一个值**(#5b6b7c 即 FALLBACK_SEED)<br/>appIdentity.theme 仍是 Gate 校验的合法分类值·但不再对应任何色板<br/>颜色真正的来源只剩两个:LLM 选的种子色·或 FALLBACK_SEED"]:::cap
@@ -2105,6 +2231,26 @@ SPECREAL -.⚑⚑改口径:新链路不再需要这条边·它走 MODELASM;⛔1 
 VISIMG -.☐ 同一张图复用为版式参照·设计段不再重新生图.-> MONITOROV
 SHEET -.☐ 这条下游出图路被 VISIMG 取代(⛔4).-x VISIMG
 SPECREAL -.- SPECGAP
+
+%% ===== ⚑⚑U 精修环接线（08-18 · 已闭环话题再发一条消息走的路）=====
+%%  精修不是重走首轮主轴：从 SPECREAL 带着 refine 段进·在重画/汇合/打孔三处
+%%  与主轴合流。GEN5 那条 E29 通道是**老链路回落轮**的精修·两条并存·别混。
+CHAT -.⚑⚑已闭环话题再发一条·就是精修.-> RFCTX
+STATE -.⚑⚑上一版模型+specFirstPages+风格段从这来.-> RFCTX
+RFCTX ==>|"⚑⚑ refine 段进 SPEC 起草：本轮指令+上一版摘要+连续性硬要求"| SPECREAL
+RFCTX --> RFIDF
+RFIDF -.⚑⚑词表注进第2/4/5步·同名概念 id 不许漂.-> SPECREAL
+SPECREAL ==>|"⚑⚑ 第2.8步·精修轮才有"| RFSCOPETXT
+RFSCOPETXT ==>|"⚑⚑ 第2.85步·图判在场就接管·缺席回落文本判"| RFSCOPEG
+RFSCOPEG ==>|"⚑⚑ 图闭包页=重画集·其余照搬上一版"| VISHTML
+RFSCOPEG -.⚑⚑照搬集同时决定打孔步谁不用重打.-> RFBIND
+MODELASM ==>|"⚑⚑ 第6.2步·精修轮"| RFSEGREUSE
+RFSEGREUSE ==>|"⚑⚑ 沿用组合重过闸·退让到空整份用新的"| MGATE
+RFBIND ==>|"⚑⚑ 只重打重画页·bindSkipped 记账"| BINDHOLES
+MGATE -.⚑⚑过门后·交付前体检·只记不拦.-> RFORPHAN
+CLOSEV -.⚑⚑每轮存档 instruction+模型+近3版页面.-> RFVERHIST
+RFVERHIST -.⚑⚑◀▶ 回退=模型直供·spec-first 让路.-> RFCTX
+GEN5 -.⚑⚑E29 那句描述的是老链路回落轮的精修·主路径精修走本环.-x RFCTX
 
 %% ===== 输出 =====
 C_REP ==> REPORT

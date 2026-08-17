@@ -387,6 +387,97 @@ class Test生成与重问:
             generate_spec_tree("设备报修", llm_json_fn=boom)
 
 
+class Test精修轮冻结页的coversNodes豁免:
+    """2026-08-18 真机（步伴 AI 拐杖）：精修指令只加一列，LLM 照抄沿用页
+    'family_monitor' 时漏了 coversNodes，重问 2 次仍漏 → spec-first 整条
+    被判失败回落老链路 → 全量重抽。用户看到「发一句精修，整个应用重画」。
+
+    豁免范围必须精确：**只有精修轮的冻结页**（上一版页面 id）允许缺
+    coversNodes——它的承载关系上一轮验证过；新页与非精修轮一个字不放宽。
+    正反配对：把豁免扩大到所有页（删掉严格检查）会让反向那三条变红。
+    """
+
+    def _冻结页缺covers(self) -> dict:
+        spec = copy.deepcopy(GOOD)
+        spec["pages"][0]["coversNodes"] = []
+        return spec
+
+    def test_精修轮冻结页缺coversNodes不拦(self):
+        verdict = validate_spec_tree(self._冻结页缺covers(), frozen_page_ids={"p1"})
+        assert verdict == {"passed": True, "findings": []}
+
+    def test_反向_非精修轮同一份照拦(self):
+        # 有人把严格检查整个删掉的话，这条会红
+        assert "coversNodes" in 失败原因(self._冻结页缺covers())
+
+    def test_反向_新页缺coversNodes即使精修轮也拦(self):
+        spec = copy.deepcopy(GOOD)
+        spec["pages"][1]["coversNodes"] = []  # p2 不在冻结清单里
+        verdict = validate_spec_tree(spec, frozen_page_ids={"p1"})
+        assert verdict["passed"] is False
+        assert any("p2" in f["message"] for f in verdict["findings"])
+
+    def test_反向_冻结页给了引用仍逐条查真(self):
+        # 豁免的是「缺声明」，不是「乱声明」：悬空引用照拦
+        spec = copy.deepcopy(GOOD)
+        spec["pages"][0]["coversNodes"] = ["n404"]
+        verdict = validate_spec_tree(spec, frozen_page_ids={"p1"})
+        assert verdict["passed"] is False
+
+    def test_端到端_精修轮LLM漏了沿用页的covers也能一次过(self):
+        # 真机那次的形状：重问机制救不了它（两次都漏）。现在第一次就该过。
+        payload = self._冻结页缺covers()
+        spec = generate_spec_tree(
+            "步伴拐杖",
+            refine={"instruction": "公益申请列表增加年龄列", "modelDigest": "…"},
+            prev_pages=[{"id": "p1", "name": "车间报修总览"}],
+            llm_json_fn=lambda _m: copy.deepcopy(payload),
+        )
+        assert isinstance(spec, SpecTree)
+        assert spec.pages[0].coversNodes == []
+
+    def test_端到端_冻结页的跨轮悬空引用被剪掉而不是拦死(self):
+        """spec 节点 id 每轮重铸：沿用页照抄上一版 coversNodes 必然悬空。
+        这是命名空间错位不是模型编造——机械剪掉，剪空了由豁免接住。"""
+        payload = copy.deepcopy(GOOD)
+        payload["pages"][0]["coversNodes"] = ["prev_n7", "n1"]  # 一真一悬空
+        spec = generate_spec_tree(
+            "步伴拐杖",
+            refine={"instruction": "加一列", "modelDigest": "…"},
+            prev_pages=[{"id": "p1", "name": "车间报修总览"}],
+            llm_json_fn=lambda _m: copy.deepcopy(payload),
+        )
+        assert spec.pages[0].coversNodes == ["n1"]  # 真的留下，悬空的剪掉
+
+    def test_反向_新页的悬空引用不剪照旧重问到抛(self):
+        payload = copy.deepcopy(GOOD)
+        payload["pages"][1]["coversNodes"] = ["prev_n7"]  # p2 是新页
+        with pytest.raises(SpecGenerationError):
+            generate_spec_tree(
+                "步伴拐杖",
+                refine={"instruction": "加一列", "modelDigest": "…"},
+                prev_pages=[{"id": "p1", "name": "车间报修总览"}],
+                llm_json_fn=lambda _m: copy.deepcopy(payload),
+            )
+
+    def test_反向_只传prev_pages不传refine不算精修_不豁免(self):
+        with pytest.raises(SpecGenerationError):
+            generate_spec_tree(
+                "步伴拐杖",
+                prev_pages=[{"id": "p1", "name": "车间报修总览"}],
+                llm_json_fn=lambda _m: self._冻结页缺covers(),
+            )
+
+    def test_提示词点名_照抄页也要重给coversNodes(self):
+        msgs = build_spec_prompt(
+            "步伴拐杖",
+            refine={"instruction": "加一列", "modelDigest": "…"},
+            prev_pages=[{"id": "p1", "name": "总览"}],
+        )
+        user = msgs[-1]["content"]
+        assert "照抄上一版页面时，coversNodes 也要重新给" in user
+
+
 class Test提示词:
     def test_吃的是第一步产物_不是原始那句话(self):
         """直接吃原句等于把「从一句话发明」原样往前挪一格，什么也没改善。"""

@@ -329,6 +329,61 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).toContain('data-answer-present="true"');
   });
 
+  it("reload restores every iterated user message, not just the first or last turn", () => {
+    // 2026-08-18 真机：刷新后只剩首轮，后面发出的精修指令从左栏消失。
+    // 反向：若 conversationTurns 仍是 [latestTurn]，这里只会看到最后一句。
+    const html = renderPage({
+      goal: "给连锁烘焙店做一套门店订货与损耗管控系统",
+      uiTurns: [],
+      sessionState: {
+        sessionId: "sliderule-unified-test",
+        goal: { text: "给连锁烘焙店做一套门店订货与损耗管控系统", status: "clear" },
+        artifacts: [],
+        coverageGaps: [],
+        runtimePhase: "concluded",
+        lastTurnId: "turn-3-drive-full",
+        capabilityRuns: [
+          {
+            capabilityId: "synthesis.merge",
+            roleId: "agent",
+            turnId: "turn-3-drive-full",
+            gateResults: [],
+          },
+        ],
+        decisionLedger: [
+          {
+            id: "dl-3",
+            turnId: "turn-3-drive-full",
+            source: "llm",
+            chose: ["synthesis.merge"],
+          },
+        ],
+        modelVersions: [
+          {
+            id: "mv-1",
+            turnId: "turn-1-drive-full",
+            instruction: "给连锁烘焙店做一套门店订货与损耗管控系统",
+          },
+          {
+            id: "mv-2",
+            turnId: "turn-2-drive-full",
+            instruction: "损耗登记页加临期预警",
+          },
+          {
+            id: "mv-3",
+            turnId: "turn-3-drive-full",
+            instruction: "收货对账页给到货差异加一键发起补货申请",
+          },
+        ],
+      },
+    });
+
+    expect(html).not.toContain('data-testid="sliderule-empty-state"');
+    expect(html).toContain("损耗登记页加临期预警");
+    expect(html).toContain("收货对账页给到货差异加一键发起补货申请");
+    expect(html).toContain("给连锁烘焙店做一套门店订货与损耗管控系统");
+  });
+
   it("Work 模式已迁私有主仓：旧偏好残留也不再切走界面", () => {
     const prev = (globalThis as { localStorage?: unknown }).localStorage;
     (globalThis as { localStorage?: unknown }).localStorage = {

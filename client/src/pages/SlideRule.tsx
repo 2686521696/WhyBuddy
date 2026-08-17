@@ -106,7 +106,10 @@ import {
 
 import { downloadSlideRuleDeliveryMd, serializeSlideRuleDeliveryMd } from "./sliderule/serialize-sliderule-delivery-md";
 import { downloadSlideRuleDeliveryHtml } from "./sliderule/serialize-sliderule-delivery-html";
-import { deriveLatestTurnFromState } from "./sliderule/derive-persisted-turn";
+import {
+  deriveLatestTurnFromState,
+  deriveTurnsFromState,
+} from "./sliderule/derive-persisted-turn";
 import { deriveTurnPhases } from "./sliderule/derive-turn-phases";
 import {
   PROJECTION_DENSITY_STORAGE_KEY,
@@ -551,7 +554,7 @@ function useImTurn(): ImItem | null {
 
 function ImUserMessage() {
   const item = useImTurn();
-  // 从持久化状态恢复的轮次没有用户文本——整条不渲染（与迁移前一致）
+  // 没有用户文本的轮次不渲染气泡（系统提示 / 空恢复轮）
   if (!item?.turn.user) return null;
   const text = item.turn.user;
   return (
@@ -1106,11 +1109,15 @@ function SlideRuleUnified({
   const showClarify =
     clarifications.length > 0 && !clarifyHidden && !!answerClarifications;
 
-  // Conversation column: live turns during/after a run; after reload uiTurns is
-  // empty but the latest turn is rebuilt from persisted state — surface it so the
-  // page restores instead of falling back to the empty state.
+  // Conversation column: live turns during/after a run. After reload uiTurns is
+  // empty — rebuild the **whole** thread from persisted versions/narrations.
+  // ⚠ 2026-08-18 真机：只灌 latestTurn 一轮，后面迭代发出的话刷新后全没了。
+  const restoredTurns = useMemo(
+    () => (uiTurns.length === 0 ? deriveTurnsFromState(sessionState) : []),
+    [uiTurns.length, sessionState]
+  );
   const conversationTurns =
-    uiTurns.length > 0 ? uiTurns : latestTurn ? [latestTurn] : [];
+    uiTurns.length > 0 ? uiTurns : restoredTurns;
 
   // E34.1 墨刀式首页：空态（无轮次且未在跑）时 ComposerDock 渲染在首页
   // hero 里；否则回底部停靠。二选一，永远只有一个输入条实例。
@@ -1836,14 +1843,16 @@ function SlideRuleSessionBody({
 
   const imSurfaceMode = useMemo(() => resolveImSurfaceMode(), []);
   const isImmersion = imSurfaceMode !== "engineering";
-  // Rebuild the latest turn from persisted session state after refresh when uiTurns is empty.
-  const restoredLatestTurn = useMemo(
-    () =>
-      uiTurns.length === 0 ? deriveLatestTurnFromState(sessionState) : null,
+  // Rebuild the thread from persisted session state after refresh when uiTurns is empty.
+  const restoredTurns = useMemo(
+    () => (uiTurns.length === 0 ? deriveTurnsFromState(sessionState) : []),
     [uiTurns.length, sessionState]
   );
   const latestTurn =
-    uiTurns.length > 0 ? uiTurns[uiTurns.length - 1] : restoredLatestTurn;
+    uiTurns.length > 0
+      ? uiTurns[uiTurns.length - 1]
+      : restoredTurns[restoredTurns.length - 1] ??
+        deriveLatestTurnFromState(sessionState);
   const latestTurnId = latestTurn?.id ?? null;
 
   const [projectionDensity, setProjectionDensity] = useState<ProjectionDensity>(

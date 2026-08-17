@@ -148,3 +148,25 @@ class Test只报不拦:
         out = _drive(monkeypatch, assembled_model=MODEL_WITH_ORPHAN)
         assert out.get("model"), "体检把交付拖死了——增强类写成了 fail-closed"
         assert "不拦交付" in capsys.readouterr().out
+
+    def test_Windows控制台打不出警告符_不拦交付(self, monkeypatch):
+        """2026-08-18 真机：⚠ 在 GBK 控制台 UnicodeEncodeError，except 再
+        print 一遍 ⚠ 又炸，逃出 try，spec-first 整条回落老链路。
+
+        判据盯的是**交付还在**，不是日志里还有没有那个符号——符号打不出
+        是控制台的事，把主链路拖死才是事故。
+        """
+
+        class GbkConsole:
+            encoding = "gbk"
+
+            def write(self, s):
+                s.encode("gbk")  # ⚠ 在这里炸，跟真机控制台同一形状
+                return len(s)
+
+            def flush(self):
+                return None
+
+        monkeypatch.setattr(sys, "stdout", GbkConsole())
+        out = _drive(monkeypatch, assembled_model=MODEL_WITH_ORPHAN)
+        assert out.get("model"), "⚠ 打不出就把交付拖死了——跟真机回落老链路同一形状"

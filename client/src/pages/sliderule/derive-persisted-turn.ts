@@ -3,6 +3,25 @@ import { deriveTurnRoute, type TurnRouteFacts } from "@shared/blueprint/sliderul
 import type { UiTurn } from "./types";
 import { narrationStepsFor } from "./turn-narration";
 
+type ModelVersionSnap = {
+  id?: string;
+  turnId?: string;
+  instruction?: string;
+};
+
+function modelVersionsOf(state: V5SessionState): ModelVersionSnap[] {
+  const raw = (state as { modelVersions?: unknown }).modelVersions;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((v): v is ModelVersionSnap => !!v && typeof v === "object");
+}
+
+function validNarrations(state: V5SessionState) {
+  return (state.turnNarrations || []).filter(
+    (n): n is { turnId: string; user?: string; steps: unknown[] } =>
+      !!n && typeof n.turnId === "string" && Array.isArray(n.steps)
+  );
+}
+
 /**
  * 刷新后内存 `uiTurns` 为空 → 右上角「架构执行记录」(依赖 latestTurn)整块消失,
  * 但画布仍在(来自持久化的 sessionState.graph)。本函数从**已持久化**的
@@ -39,6 +58,68 @@ export function deriveLatestTurnFromState(
     runs[runs.length - 1]?.turnId ||
     ledger[ledger.length - 1]?.turnId ||
     "restored-turn";
+  return buildRestoredTurn(state, String(turnId), undefined);
+}
+
+/**
+ * 刷新后把**整段对话**从持久化状态灌回左栏。
+ *
+ * 2026-08-18 真机（烘焙店那趟）：迭代发了两针精修，刷新后只剩首轮结论，
+ * 后面发出去的话气泡全没了。成因不是没落盘——`modelVersions[].instruction`
+ * 和 `turnNarrations[].user` 都在——是页面只调用 `deriveLatestTurnFromState`
+ * 重建一轮，而且客户端 `turn-${Date.now()}` 对不上服务端 `turn-N-drive-full`，
+ * 恢复轮的 `user` 经常是空串，ImUserMessage 直接 `return null`。
+ *
+ * 版本史是服务端专有、上限 20 条，正好是用户逐轮发出的指令；叙述只留最近
+ * 几轮的步骤回放。先按版本史铺气泡，再把叙述按 turnId / 原文贴回去。
+ */
+export function deriveTurnsFromState(
+  state: V5SessionState | null | undefined
+): UiTurn[] {
+  if (!state) return [];
+  const versions = modelVersionsOf(state);
+  const fromVersions: UiTurn[] = [];
+  for (let i = 0; i < versions.length; i++) {
+    const v = versions[i];
+    const instruction = String(v.instruction || "").trim();
+    const user =
+      instruction ||
+      (i === 0 ? String(state.goal?.text || "").trim() : "");
+    if (!user) continue;
+    const turnId = String(v.turnId || v.id || `restored-mv-${i}`);
+    fromVersions.push(buildRestoredTurn(state, turnId, user));
+  }
+  if (fromVersions.length > 0) return fromVersions;
+
+  const fromNarr = validNarrations(state)
+    .map((n) => buildRestoredTurn(state, n.turnId, String(n.user || "").trim()))
+    .filter((t) => t.user || t.steps.length > 0);
+  if (fromNarr.length > 0) return fromNarr;
+
+  const latest = deriveLatestTurnFromState(state);
+  if (!latest) return [];
+  if (!latest.user) {
+    latest.user = String(state.goal?.text || "").trim();
+  }
+  return [latest];
+}
+
+function buildRestoredTurn(
+  state: V5SessionState,
+  turnId: string,
+  userOverride: string | undefined
+): UiTurn {
+  const runs = (state.capabilityRuns || []) as Array<{
+    capabilityId?: string;
+    roleId?: string;
+    turnId?: string;
+    gateResults?: Array<{ status?: string }>;
+  }>;
+  const ledger = (state.decisionLedger || []) as Array<{
+    id?: string;
+    turnId?: string;
+    source?: string;
+  }>;
   const base = String(turnId).split("-r")[0];
 
   const belongs = (t: unknown) => {
@@ -101,11 +182,15 @@ export function deriveLatestTurnFromState(
   const narration =
     narrationStepsFor(state, turnId) ??
     narrationStepsFor(state, base) ??
-    narrationStepsFor(state, null);
+    (userOverride
+      ? matchNarrationByUser(state, userOverride)
+      : narrationStepsFor(state, null));
+
+  const user = (userOverride ?? narration?.user ?? "").trim();
 
   return {
     id: base,
-    user: narration?.user || "",
+    user,
     status: "complete",
     durationMs: narration?.durationMs,
     steps: narration?.steps ?? [],
@@ -117,6 +202,17 @@ export function deriveLatestTurnFromState(
     main: null,
     actions: [],
   } as UiTurn;
+}
+
+function matchNarrationByUser(state: V5SessionState, user: string) {
+  const needle = user.trim();
+  if (!needle) return null;
+  for (const n of validNarrations(state)) {
+    if (String(n.user || "").trim() === needle) {
+      return narrationStepsFor(state, n.turnId);
+    }
+  }
+  return null;
 }
 
 export function mergePublishClosureForPersistedTurn(

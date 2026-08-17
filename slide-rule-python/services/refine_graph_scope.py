@@ -23,24 +23,47 @@ be modified"）——因为 Aider 手里没有一张可靠的依赖图，只能�
 （scope / graphyn / nodestradamus）全是同一形状：图的构建与遍历零 LLM、
 深度限制、方向可选——扩散这一步没有一家交给模型。
 
-## ⚠ 影子模式先行（本文件出生时的状态）
+## 执行模式（2026-08-18 从影子切过来）
 
-这一步现在**只打日志对照，不改变行为**：真正决定重画哪几页的仍是
-refine_page_scope。原因是纪律五——图算出来的作用域好不好，要拿真机日志
-跟现状对照过才知道，不是写完判据绿了就切。切换行为时，接线点在
-`spec_first_pipeline` 第 2.85 步旁边的 graphscope 段，判据在
-`tests/test_refine_graph_scope.py` 的「影子期不许碰行为」那条——切的时候
-那条要跟着改，别硬绕。
+出生时是影子（只打对照日志不改行为，纪律五：先拿真机对照）。2026-08-18
+攒到两轮真机对照后由用户拍板切执行：加列那轮文本/图完全一致且图更窄；
+改权限那轮种子带角色、两跳扩全图——宽了但方向安全（多画不会画错）。
 
-## hops=2 是拍的，等真机日志标定
+现在 `spec_first_pipeline` 第 2.85 步按**判官阶梯**用它：图闭包页 →（缺席时）
+文本判 →（再缺席）全量重画，每一级 fail-open 且比上一级宽。
+`SLIDERULE_GRAPH_SCOPE_DRIVE=0` 退回纯影子。对照日志在执行期照打——它仍是
+hops 标定集的唯一来源。判据在 `tests/test_refine_graph_scope.py` 的
+「图判决定重画范围」那组；退回影子的行为钉在「开关关掉退回影子」。
 
-页 → 字段/权限 → 实体/角色，两跳够到"三只手"的第一层。按纪律六：改这个
-数字要连同标定一起做（影子日志攒的就是标定集），别只改数字。
+形状对齐 Nx affected（种子 → 图遍历 → 只跑受影响的任务集）：扩散那一步
+Nx / Turborepo / Bazel 没有一家交给模型猜，全是确定性遍历。
+
+## hops=2 是拍的，标定继续攒
+
+页 → 字段/权限 → 实体/角色，两跳够到"三只手"的第一层。已知形状（2026-08-18
+真机）：种子带角色时两跳会扩到该角色能进的所有页——宽但安全。按纪律六：
+改这个数字要连同标定一起做（对照日志攒的就是标定集），别只改数字。
 """
 
 from __future__ import annotations
 
+import sys
 from typing import Any, Dict, List, Optional
+
+
+def _safe_print(msg: str) -> None:
+    """Windows 控制台默认 GBK，⚠ 会 UnicodeEncodeError。
+
+    2026-08-18 真机：同文件的警告符把 spec-first 整条打回老链路（见
+    spec_first_pipeline._safe_print）。图判种子失败时这里也会 print ⚠，
+    不接住的话影子对照永远攒不到标定集。
+    """
+    try:
+        print(msg)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+        print(msg.encode(encoding, errors="replace").decode(encoding, errors="replace"))
+
 
 DEFAULT_HOPS = 2
 
@@ -131,7 +154,7 @@ def parse_node_scope(payload: Any, graph: Dict[str, Any]) -> Optional[List[str]]
     picked = [x for x in got if x in known]
     dropped = [x for x in got if x not in known]
     if dropped:
-        print(f"[refine_graph_scope] ⚠ 模型报了图上没有的节点 id，已丢弃：{dropped[:8]}")
+        _safe_print(f"[refine_graph_scope] ⚠ 模型报了图上没有的节点 id，已丢弃：{dropped[:8]}")
     return picked
 
 
@@ -152,7 +175,7 @@ def decide_seed_nodes(
     if not nodes:
         return None
     if len(nodes) > MAX_NODES_FOR_PROMPT:
-        print(
+        _safe_print(
             f"[refine_graph_scope] ⚠ 图有 {len(nodes)} 个节点，超过 {MAX_NODES_FOR_PROMPT}，"
             "放弃图判作用域（清单太长挑选质量不可信）"
         )
@@ -167,10 +190,10 @@ def decide_seed_nodes(
         )
         picked = parse_node_scope(outcome.payload, graph)
     except Exception as exc:  # noqa: BLE001 — 增强类，不许打死主链路
-        print(f"[refine_graph_scope] ⚠ 图判种子失败：{str(exc)[:200]}")
+        _safe_print(f"[refine_graph_scope] ⚠ 图判种子失败：{str(exc)[:200]}")
         return None
     if not picked:
-        print("[refine_graph_scope] ⚠ 图判种子没给出可用节点")
+        _safe_print("[refine_graph_scope] ⚠ 图判种子没给出可用节点")
         return None
     return picked
 

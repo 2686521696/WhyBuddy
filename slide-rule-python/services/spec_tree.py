@@ -44,7 +44,14 @@ import json
 import re
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 SPEC_VERSION = 3
 
@@ -302,18 +309,39 @@ class SpecTree(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def pages_are_usable(self) -> "SpecTree":
+    def pages_are_usable(self, info: ValidationInfo) -> "SpecTree":
         """页面清单要能被第 3 步真的拿去逐页出图。
 
         `coversNodes` 只准指 requirement / design：task 是工程活儿、evidence 是
         依据，两者都画不出界面。指错了下游会拿着一条「定义客户数据模型」去让
         生图模型画一个页面，画出来必然是废的。
+
+        ## 精修轮的冻结页豁免（2026-08-18 真机）
+
+        步伴 AI 拐杖那轮：精修指令只加一列，LLM 照抄沿用页 'family_monitor'
+        时漏了 coversNodes，重问 2 次仍漏 → 整条 spec-first 被判失败回落
+        老链路 → 全量重抽。用户看到的是「发了一句精修，整个应用重画」——
+        被这条校验拦下的恰恰是**上一轮已经验证过承载关系的页**。
+
+        另一半原因是结构性的：spec 节点 id（n0/n1…）每轮重铸，不在 id 冻结
+        词表里。沿用页就算带着上一版的 coversNodes 回来，指向的也是上一版的
+        节点命名空间——本轮多半悬空。要求 LLM 跨命名空间重连一个「内容没变」
+        的页，是把必然出错的活儿派给它。
+
+        所以：validation context 里带 frozenPageIds（精修轮的上一版页面 id）
+        时，这些页的 coversNodes **允许为空**（语义=「沿用页，承载关系见
+        上一版」）；给了引用仍逐条查真。**新页（不在冻结清单里）一个字不放宽**
+        ——它没有上一版可依，说不清承载什么就是真说不清。非精修轮无 context，
+        行为逐字不变。
         """
+        frozen: set = set((info.context or {}).get("frozenPageIds") or set())
         if not self.pages:
             raise ValueError("pages 不能为空——第 3 步要按页逐张出图，没有页就没有下游")
         ok_types = {n.id: n.type for n in self.nodes if n.type in ("requirement", "design")}
         for p in self.pages:
             if not p.coversNodes:
+                if p.id in frozen:
+                    continue  # 沿用页：承载关系上一轮验证过，本轮缺声明不拦
                 raise ValueError(f"页面 '{p.id}' 没有 coversNodes——说不清它承载哪条需求")
             for ref in p.coversNodes:
                 if ref not in ok_types:
@@ -326,17 +354,25 @@ class SpecTree(BaseModel):
 
 from .spec_llm_call import call_spec_json
 
-def validate_spec_tree(payload: Any) -> dict[str, Any]:
+def validate_spec_tree(
+    payload: Any, *, frozen_page_ids: Optional[set] = None
+) -> dict[str, Any]:
     """独立的闸：给一份 spec（dict 或已解析的模型），返回 {passed, findings}。
 
     跟 v5_model_gate.validate_five_system_model 同一个口径——二元、机械、
     fail-closed，findings 说人话。给不是本模块生成的 spec（比如人手写的、
     或将来从别处导入的）也能过一遍同一把尺子。
+
+    `frozen_page_ids`：精修轮的上一版页面 id。这些页 coversNodes 允许为空
+    （豁免理由见 pages_are_usable 的 docstring）。缺省 None = 不豁免，
+    非精修调用方行为逐字不变。
     """
     if isinstance(payload, SpecTree):
         return {"passed": True, "findings": []}
     try:
-        SpecTree.model_validate(payload)
+        SpecTree.model_validate(
+            payload, context={"frozenPageIds": frozen_page_ids or set()}
+        )
     except ValidationError as exc:
         findings = []
         for err in exc.errors():
@@ -499,6 +535,8 @@ def build_spec_prompt(
                 "不许改。只有本轮真正新增的页面才起新 id；被迭代要求删掉的页面"
                 "直接不出现。不许把「改这一页的内容」做成「换一个 id 的新页」——"
                 "id 一换，这一页的历史就断了。"
+                "照抄上一版页面时，coversNodes 也要重新给：指向你**本轮 nodes**"
+                "里它承载的需求节点，不要照抄上一版的节点 id（那些 id 本轮不存在）。"
             )
         parts.append(
             "另外，请在 JSON 顶层加一个 refineScope 字段：一个字符串数组，"
@@ -571,6 +609,38 @@ def build_spec_prompt(
     ]
 
 
+def _prune_stale_covers_on_frozen_pages(payload: Any, frozen_ids: set) -> None:
+    """精修轮：把冻结页 coversNodes 里的跨轮悬空引用剪掉（原地改，只动冻结页）。
+
+    spec 节点 id 每轮重铸（不在 id 冻结词表里），沿用页照抄上一版时带回来的
+    coversNodes 指向的是**上一版的节点命名空间**——本轮多半悬空。这不是模型
+    在编东西，是两轮命名空间对不上，属于机械可判可修的形状：引用真实存在的
+    留下，悬空的剪掉；剪空了由冻结页豁免接住（见 pages_are_usable）。
+    **新页一条不剪**——新页的悬空引用是真错误，照旧喂回重问。
+    """
+    if not isinstance(payload, dict):
+        return
+    ok_ids = {
+        str(n.get("id"))
+        for n in (payload.get("nodes") or [])
+        if isinstance(n, dict) and n.get("type") in ("requirement", "design")
+    }
+    for p in payload.get("pages") or []:
+        if not isinstance(p, dict) or str(p.get("id")) not in frozen_ids:
+            continue
+        covers = p.get("coversNodes")
+        if not isinstance(covers, list):
+            continue
+        kept = [c for c in covers if str(c) in ok_ids]
+        dropped = [str(c) for c in covers if str(c) not in ok_ids]
+        if dropped:
+            print(
+                f"[spec_tree] 精修沿用页 '{p.get('id')}' 的 coversNodes 剪掉跨轮悬空引用："
+                f"{'、'.join(dropped[:6])}（上一版节点命名空间，本轮不存在）"
+            )
+            p["coversNodes"] = kept
+
+
 class SpecGenerationError(RuntimeError):
     """生成失败。**故意不提供占位兜底**——那正是被替换的那份的病。"""
 
@@ -602,6 +672,13 @@ def generate_spec_tree(
         goal, clarified=clarified, evidence=evidence, refine=refine, prev_pages=prev_pages
     )
     last_err = "未调用"
+    # 精修轮的冻结页 id：coversNodes 校验对它们放宽（豁免理由与真机事故见
+    # pages_are_usable）。只有 refine 在场才算冻结——首轮传 prev_pages 是不存在的。
+    frozen_ids: set = (
+        {str(p.get("id")) for p in prev_pages if isinstance(p, dict) and p.get("id")}
+        if (refine and prev_pages)
+        else set()
+    )
 
     for attempt in range(max_reask + 1):
         outcome = call_spec_json(messages, llm_json_fn, stage="specfirst.spec")
@@ -613,9 +690,13 @@ def generate_spec_tree(
             if outcome.transport:
                 break
         else:
-            verdict = validate_spec_tree(payload)
+            if frozen_ids:
+                _prune_stale_covers_on_frozen_pages(payload, frozen_ids)
+            verdict = validate_spec_tree(payload, frozen_page_ids=frozen_ids)
             if verdict["passed"]:
-                return SpecTree.model_validate(payload)
+                return SpecTree.model_validate(
+                    payload, context={"frozenPageIds": frozen_ids}
+                )
             last_err = "；".join(
                 f"{f['path']}：{f['message']}" for f in verdict["findings"][:6]
             )

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""图判作用域（影子模式）：LLM 只报种子，扩散交给图算（2026-08-17）。
+"""图判作用域（执行模式）：LLM 只报种子，扩散交给图算，图闭包定重画范围。
 
 ## 为什么有这个
 
@@ -8,14 +8,18 @@ refine_page_scope 让 LLM 直接猜"重画哪几页"——它答不了"改这一
 LLM 判**种子**（语义题），`impacted_closure` 算**牵连**（机械题）。
 跟 Aider ContextCoder 的分工差异见 services/refine_graph_scope.py 模块头。
 
-## 这组判据守三件事
+2026-08-17 出生时是影子（只对照不改行为）；2026-08-18 攒到两轮真机对照后
+切执行。当时钉的「影子期不许碰行为」按约定**改判据**成现在的
+「图判决定重画范围」——不是绕过，是履约。
 
-1. **fail 的方向**：判不出来回 None，由调用方退回现状行为（纪律七，
-   同 refine_page_scope 那组的核心）。
+## 这组判据守四件事
+
+1. **fail 的方向**：判不出来回 None，由调用方走判官阶梯退一级（纪律七）。
 2. **翻译不许丢齿**：闭包出来的页面必须是裸 id——带着 `page:` 前缀对不上
-   SPEC/reuse_pages 的键，表现是"影子对照两边永远零交集"，尺子先坏。
-3. **影子期不许碰行为**：真正决定重画哪几页的仍是文本判作用域。切行为的
-   那天，「影子期不许碰行为」那条判据要**改判据**，不许绕。
+   SPEC/reuse_pages 的键，表现是"对照两边永远零交集"，尺子先坏。
+3. **判官阶梯**：图闭包页 → 文本判 → 全量重画，每一级缺席都退下一级，
+   绝不 fail 成"一页都不改"。
+4. **对照日志执行期照打**：它是 hops 标定集的唯一来源，切了执行更不能停。
 """
 
 import os
@@ -208,66 +212,83 @@ class Test影子对照日志行:
         assert "(全量)" in line
 
 
-class Test接线:
-    """★ 纪律一：影子步必须接在**真正在跑的那条链**（run_spec_first）上。
+SPEC_WIRE = {
+    "rootNodeId": "n0", "version": 3, "appName": "维保云",
+    "personas": [{"id": "u1", "name": "维修主管", "goals": ["派工"]}],
+    "successCriteria": [{"id": "sc1", "text": "24 小时内派工"}],
+    "nodes": [],
+    "pages": [{"id": "p1", "name": "工单页"}, {"id": "p2", "name": "报表页"}],
+}
 
-    驱动 harness 抄自 test_refine_page_scope.Test端到端接线——同一条链，
-    多验一节。
+PREV_PAGES = {"p1": "<html>旧1</html>", "p2": "<html>旧2</html>"}
+
+
+def _drive_pipeline(monkeypatch, *, refine=True, reuse_model=None,
+                    reuse_pages=None, text_scope=None, seed_fn=None):
+    """跑真实 run_spec_first 控制流（抄自 test_refine_page_scope.Test端到端接线）。
+
+    fake bind 给重打的页盖 `bound-` 戳：谁被重新打孔、谁沿用上一轮，
+    在最终产物里一眼可辨——局部打孔的判据全靠这个戳。
     """
+    import services.html_bindings as hb
+    import services.html_structure as hs
+    import services.model_assembly as ma
+    import services.page_shell as ps
+    import services.refine_graph_scope as rgs
+    import services.refine_page_scope as rps
+    import services.spec_page_html as sph
+    import services.spec_semantics as ss
+    import services.spec_tree as spec_tree
+    from services import spec_first_pipeline as sfp
 
-    SPEC = {
-        "rootNodeId": "n0", "version": 3, "appName": "维保云",
-        "personas": [{"id": "u1", "name": "维修主管", "goals": ["派工"]}],
-        "successCriteria": [{"id": "sc1", "text": "24 小时内派工"}],
-        "nodes": [],
-        "pages": [{"id": "p1", "name": "工单页"}, {"id": "p2", "name": "报表页"}],
-    }
+    seen = {}
 
-    def _drive(self, monkeypatch, *, refine=True, reuse_model=None,
-               reuse_pages=None, text_scope=None, seed_fn=None):
-        import services.html_bindings as hb
-        import services.html_structure as hs
-        import services.model_assembly as ma
-        import services.page_shell as ps
-        import services.refine_graph_scope as rgs
-        import services.refine_page_scope as rps
-        import services.spec_page_html as sph
-        import services.spec_semantics as ss
-        import services.spec_tree as spec_tree
-        from services import spec_first_pipeline as sfp
+    monkeypatch.setattr(spec_tree, "generate_spec_tree", lambda g, **kw: dict(SPEC_WIRE))
+    monkeypatch.setattr(rps, "decide_pages_to_regenerate", lambda i, p, **kw: text_scope)
+    if seed_fn is not None:
+        monkeypatch.setattr(rgs, "decide_seed_nodes", seed_fn)
 
-        seen = {}
+    def fake_pages(spec, **kw):
+        seen["reuse_pages"] = kw.get("reuse_pages")
+        # 跟真 generate_pages_parallel 同约定：照搬页原样回传，重画页新产出。
+        reused = dict(kw.get("reuse_pages") or {})
+        drawn = {pid: f"<html>新画-{pid}</html>"
+                 for pid in ("p1", "p2") if pid not in reused}
+        return {"pages": {**reused, **drawn}, "failed": {}}
 
-        monkeypatch.setattr(spec_tree, "generate_spec_tree", lambda g, **kw: dict(self.SPEC))
-        monkeypatch.setattr(rps, "decide_pages_to_regenerate", lambda i, p, **kw: text_scope)
-        if seed_fn is not None:
-            monkeypatch.setattr(rgs, "decide_seed_nodes", seed_fn)
+    def fake_bind(p, m):
+        seen["bind_input"] = sorted(p.keys())
+        return {"pages": {pid: f"<html>bound-{pid}</html>" for pid in p}, "failed": {}}
 
-        def fake_pages(spec, **kw):
-            seen["reuse_pages"] = kw.get("reuse_pages")
-            return {"pages": {"p1": "<html>x</html>", "p2": "<html>y</html>"}, "failed": {}}
+    monkeypatch.setattr(sph, "generate_pages_parallel", fake_pages)
+    monkeypatch.setattr(ps, "unify_shell", lambda p, s, **kw: {"pages": dict(p)})
+    monkeypatch.setattr(ps, "check_shell_consistency", lambda p, s: [])
+    monkeypatch.setattr(ps, "repair_pages_after_bind", lambda p, b: (dict(p), [], []))
+    monkeypatch.setattr(hs, "derive_structure", lambda p, **kw: {"entities": [], "pages": []})
+    monkeypatch.setattr(ss, "derive_semantics", lambda st, sp, **kw: {"roles": []})
+    monkeypatch.setattr(
+        ma, "assemble", lambda *a, **k: {"model": {"datamodel": {}}, "gate": {"passed": True}}
+    )
+    monkeypatch.setattr(hb, "bind_pages", fake_bind)
 
-        monkeypatch.setattr(sph, "generate_pages_parallel", fake_pages)
-        monkeypatch.setattr(ps, "unify_shell", lambda p, s, **kw: {"pages": dict(p)})
-        monkeypatch.setattr(ps, "check_shell_consistency", lambda p, s: [])
-        monkeypatch.setattr(ps, "repair_pages_after_bind", lambda p, b: (dict(p), [], []))
-        monkeypatch.setattr(hs, "derive_structure", lambda p, **kw: {"entities": [], "pages": []})
-        monkeypatch.setattr(ss, "derive_semantics", lambda st, sp, **kw: {"roles": []})
-        monkeypatch.setattr(
-            ma, "assemble", lambda *a, **k: {"model": {"datamodel": {}}, "gate": {"passed": True}}
-        )
-        monkeypatch.setattr(hb, "bind_pages", lambda p, m: {"pages": dict(p), "failed": {}})
+    out = sfp.run_spec_first(
+        "做个工单系统",
+        refine=({"instruction": "报表页只给主管看", "modelDigest": "d"} if refine else None),
+        reuse_pages=reuse_pages,
+        reuse_model=reuse_model,
+    )
+    seen["stages"] = out.get("stages") or {}
+    seen["pages"] = out.get("pages") or {}
+    return seen
 
-        out = sfp.run_spec_first(
-            "做个工单系统",
-            refine=({"instruction": "报表页只给主管看", "modelDigest": "d"} if refine else None),
-            reuse_pages=reuse_pages,
-            reuse_model=reuse_model,
-        )
-        seen["stages"] = out.get("stages") or {}
-        return seen
 
-    PREV = {"p1": "<html>旧1</html>", "p2": "<html>旧2</html>"}
+class Test接线:
+    """★ 纪律一：图判必须接在**真正在跑的那条链**（run_spec_first）上。"""
+
+    def _drive(self, monkeypatch, **kw):
+        return _drive_pipeline(monkeypatch, **kw)
+
+    PREV = PREV_PAGES
 
     def test_影子步真的在链路上跑_且图建自上一版模型(self, monkeypatch):
         got = {}
@@ -298,45 +319,143 @@ class Test接线:
         assert "影子对照" in out, "对照日志没打出来——影子模式白跑，标定集攒不起来"
         assert "只有图有" in out
 
-    def test_影子期不许碰行为(self, monkeypatch):
-        """★ 本文件最要紧的一条。重画哪几页仍由**文本判作用域**决定。
+    def test_图判决定重画范围(self, monkeypatch):
+        """★ 本文件最要紧的一条（2026-08-18 从「影子期不许碰行为」按约定改判据）。
 
-        文本说改 p2（p1 照搬）；图种子故意指向 p1。若有人把图的结论接进
-        行为，照搬集就会变——这条当场红。**切行为的那天改这条判据，别绕。**
+        重画哪几页由**图闭包**决定：文本说改 p2，图种子指向 p1（闭包页只有
+        p1）——照搬集必须跟图走（照搬 p2）。谁把这行为退回文本判，这条当场红。
         """
         seen = self._drive(monkeypatch, reuse_model=MODEL, reuse_pages=self.PREV,
                            text_scope=["p2"], seed_fn=lambda i, g, **kw: ["page:p1"])
+        assert seen["reuse_pages"] == {"p2": "<html>旧2</html>"}, (
+            "重画范围没跟图闭包走——执行模式没接上（或被悄悄退回了影子）"
+        )
+        assert seen["stages"]["graphscope"]["decider"] == "graph"
+
+    def test_图判缺席回落文本判(self, monkeypatch):
+        """判官阶梯第二级：种子判不出来（None）→ 文本判说了算。"""
+        seen = self._drive(monkeypatch, reuse_model=MODEL, reuse_pages=self.PREV,
+                           text_scope=["p2"], seed_fn=lambda i, g, **kw: None)
         assert seen["reuse_pages"] == {"p1": "<html>旧1</html>"}, (
-            "照搬集不再由文本判作用域决定——影子模式被悄悄切成实弹了"
+            "图判缺席时没回落文本判"
+        )
+        assert seen["stages"]["graphscope"]["decider"] == "text"
+
+    def test_闭包无页回落文本判(self, monkeypatch):
+        """种子判出来了但闭包一页都不含——按判错处理，回落文本判。
+        接管一个空重画集等于"一页都不改"，那是 fail 错方向。
+        """
+        import services.refine_graph_scope as rgs
+
+        monkeypatch.setattr(
+            rgs, "graph_scope_verdict",
+            lambda g, s, **kw: {"seeds": s, "impacted": [], "pages": [], "segments": []},
+        )
+        seen = self._drive(monkeypatch, reuse_model=MODEL, reuse_pages=self.PREV,
+                           text_scope=["p2"], seed_fn=lambda i, g, **kw: ["role:mgr"])
+        assert seen["reuse_pages"] == {"p1": "<html>旧1</html>"}
+        assert seen["stages"]["graphscope"]["decider"] == "text"
+
+    def test_文本判失败图判仍接管(self, monkeypatch):
+        """阶梯是双向兜底：2026-08-18 真机第二轮就是文本判全量（reuse 丢失场景
+        的近亲）——图判成了就该接管，别让一级的失败拖垮另一级。
+        """
+        seen = self._drive(monkeypatch, reuse_model=MODEL, reuse_pages=self.PREV,
+                           text_scope=None, seed_fn=lambda i, g, **kw: ["page:p1"])
+        assert seen["reuse_pages"] == {"p2": "<html>旧2</html>"}, (
+            "文本判失败时图判没接管，白白全量重画"
         )
 
-    def test_影子失败不拖垮主链路(self, monkeypatch):
-        """纪律七：影子是增强类，它炸了主链路必须照跑。"""
+    def test_两级都缺席全量重画(self, monkeypatch):
+        """阶梯的底：谁都判不出来 → 全量重画（最老的行为），绝不是"一页不改"。"""
+        seen = self._drive(monkeypatch, reuse_model=MODEL, reuse_pages=self.PREV,
+                           text_scope=None, seed_fn=lambda i, g, **kw: None)
+        assert seen["reuse_pages"] == {}, "两级都缺席时没有退到全量重画"
+
+    def test_图判炸了不拖垮主链路(self, monkeypatch):
+        """纪律七：图判是增强类，它炸了主链路必须照跑（回落文本判）。"""
         def boom(instruction, graph, **kw):
-            raise RuntimeError("影子炸了")
+            raise RuntimeError("图判炸了")
 
         seen = self._drive(monkeypatch, reuse_model=MODEL, reuse_pages=self.PREV,
                            text_scope=["p2"], seed_fn=boom)
-        assert seen["reuse_pages"] == {"p1": "<html>旧1</html>"}, "主链路被影子拖垮了"
+        assert seen["reuse_pages"] == {"p1": "<html>旧1</html>"}, "主链路被图判拖垮了"
 
-    def test_开关能关掉(self, monkeypatch):
+    def test_执行开关关掉退回影子(self, monkeypatch):
+        """`SLIDERULE_GRAPH_SCOPE_DRIVE=0`：图照跑、对照照打，但**不碰行为**——
+        这就是 2026-08-17 的影子模式，留作执行期出问题时的退路。
+        """
+        monkeypatch.setenv("SLIDERULE_GRAPH_SCOPE_DRIVE", "0")
+        seen = self._drive(monkeypatch, reuse_model=MODEL, reuse_pages=self.PREV,
+                           text_scope=["p2"], seed_fn=lambda i, g, **kw: ["page:p1"])
+        assert seen["reuse_pages"] == {"p1": "<html>旧1</html>"}, (
+            "退回影子后图判还在碰行为"
+        )
+        assert seen["stages"]["graphscope"]["decider"] == "shadow"
+
+    def test_总开关关掉图判整个不跑(self, monkeypatch):
         monkeypatch.setenv("SLIDERULE_GRAPH_SCOPE_SHADOW", "0")
         called = []
-        self._drive(monkeypatch, reuse_model=MODEL, reuse_pages=self.PREV,
-                    text_scope=["p2"],
-                    seed_fn=lambda i, g, **kw: called.append(1) or ["page:p1"])
-        assert not called, "开关关了影子还在跑"
+        seen = self._drive(monkeypatch, reuse_model=MODEL, reuse_pages=self.PREV,
+                           text_scope=["p2"],
+                           seed_fn=lambda i, g, **kw: called.append(1) or ["page:p1"])
+        assert not called, "总开关关了图判还在跑"
+        assert seen["reuse_pages"] == {"p1": "<html>旧1</html>"}, "行为该由文本判决定"
 
-    def test_非精修轮不跑影子(self, monkeypatch):
+    def test_非精修轮不跑图判(self, monkeypatch):
         """反向判据：新建应用没有上一版，建图没有对象，跑了就是白烧一次 LLM。"""
         called = []
         self._drive(monkeypatch, refine=False, reuse_model=MODEL,
                     seed_fn=lambda i, g, **kw: called.append(1) or ["page:p1"])
         assert not called
 
-    def test_没有上一版模型时不跑影子(self, monkeypatch):
+    def test_没有上一版模型时不跑图判(self, monkeypatch):
         called = []
         self._drive(monkeypatch, reuse_model=None, reuse_pages=self.PREV,
                     text_scope=["p2"],
                     seed_fn=lambda i, g, **kw: called.append(1) or ["page:p1"])
         assert not called
+
+
+class Test局部打孔:
+    """照搬页不再重新打孔（2026-08-18，Turborepo cache-hit 同形状）。
+
+    照搬页的 HTML 就是上一版打过孔的交付页；id 冻结 + 段沿用保证引用不漂。
+    此前每轮对照搬页也全量重打（真机第三轮 4 页里 3 页照搬、bind 照样 71.9s
+    打满 4 页）。判据靠 fake bind 的 `bound-` 戳分辨谁被重打。
+    """
+
+    def test_只重打图判点中的页(self, monkeypatch):
+        """图闭包=p1 → bind 只收 p1；p2 沿用上一轮打孔结果原样交付。"""
+        seen = _drive_pipeline(monkeypatch, reuse_model=MODEL, reuse_pages=PREV_PAGES,
+                               text_scope=["p2"], seed_fn=lambda i, g, **kw: ["page:p1"])
+        assert seen["bind_input"] == ["p1"], "照搬页也被送去重新打孔了"
+        assert seen["pages"]["p1"] == "<html>bound-p1</html>"
+        assert seen["pages"]["p2"] == "<html>旧2</html>", (
+            "照搬页丢了或被改——省了打孔、赔了页面"
+        )
+
+    def test_照搬页必须还在交付里(self, monkeypatch):
+        """★ 反向判据单独钉：bound 只有重打页，谁把合并写成整份替换，
+        照搬页就从交付里消失——判据全绿但页面没了的标准形状。
+        """
+        seen = _drive_pipeline(monkeypatch, reuse_model=MODEL, reuse_pages=PREV_PAGES,
+                               text_scope=["p2"], seed_fn=lambda i, g, **kw: ["page:p1"])
+        assert set(seen["pages"]) == {"p1", "p2"}, "交付页数少了"
+        assert seen["stages"]["bind"]["bindSkipped"] == 1
+
+    def test_开关关掉回全量打孔(self, monkeypatch):
+        monkeypatch.setenv("SLIDERULE_REFINE_PARTIAL_BIND", "0")
+        seen = _drive_pipeline(monkeypatch, reuse_model=MODEL, reuse_pages=PREV_PAGES,
+                               text_scope=["p2"], seed_fn=lambda i, g, **kw: ["page:p1"])
+        assert seen["bind_input"] == ["p1", "p2"], "开关关了还在局部打孔"
+
+    def test_非精修轮全量打孔(self, monkeypatch):
+        seen = _drive_pipeline(monkeypatch, refine=False)
+        assert seen["bind_input"] == ["p1", "p2"]
+
+    def test_全量重画时全量打孔(self, monkeypatch):
+        """照搬集为空（两级判官都缺席）→ 没有可沿用的孔，必须全量重打。"""
+        seen = _drive_pipeline(monkeypatch, reuse_model=MODEL, reuse_pages=PREV_PAGES,
+                               text_scope=None, seed_fn=lambda i, g, **kw: None)
+        assert seen["bind_input"] == ["p1", "p2"]

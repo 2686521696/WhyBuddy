@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import { deriveTurnRoute } from "@shared/blueprint/sliderule-turn-route";
-import { deriveLatestTurnFromState, mergePublishClosureForPersistedTurn } from "../derive-persisted-turn";
+import {
+  deriveLatestTurnFromState,
+  deriveTurnsFromState,
+  mergePublishClosureForPersistedTurn,
+} from "../derive-persisted-turn";
 import { __sessionEvidenceTestHelpers, looksLikeNewAppIntent } from "../useSlideRuleSession";
 
 /**
@@ -40,6 +44,70 @@ describe("deriveLatestTurnFromState (执行记录刷新后重建)", () => {
     expect(turn!.routeFacts.planSource).toBe("llm");
     // 关键:能据此渲染出非空站点序列(执行记录可见)
     expect(deriveTurnRoute(turn!.routeFacts).length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * 2026-08-18：刷新后后面迭代发出的话看不到。
+ * 正向：版本史三条指令都要回到对话里，且顺序就是发出去的顺序。
+ * 反向：只重建 latestTurn 一轮会让本测试红（只剩最后一句）。
+ */
+describe("deriveTurnsFromState (刷新后整段对话)", () => {
+  it("按 modelVersions 指令重建全部用户气泡，不只最后一轮", () => {
+    const state = {
+      goal: { text: "给连锁烘焙店做一套门店订货与损耗管控系统", status: "clear" },
+      lastTurnId: "turn-3-drive-full",
+      capabilityRuns: [
+        { capabilityId: "synthesis.merge", roleId: "综合", turnId: "turn-3-drive-full" },
+      ],
+      decisionLedger: [{ id: "d3", turnId: "turn-3-drive-full", source: "llm" }],
+      modelVersions: [
+        { id: "mv-1", turnId: "turn-1-drive-full", instruction: "给连锁烘焙店做一套门店订货与损耗管控系统" },
+        { id: "mv-2", turnId: "turn-2-drive-full", instruction: "损耗登记页加临期预警" },
+        { id: "mv-3", turnId: "turn-3-drive-full", instruction: "收货对账页给到货差异加一键发起补货申请" },
+      ],
+    } as unknown as V5SessionState;
+
+    const turns = deriveTurnsFromState(state);
+    expect(turns.map((t) => t.user)).toEqual([
+      "给连锁烘焙店做一套门店订货与损耗管控系统",
+      "损耗登记页加临期预警",
+      "收货对账页给到货差异加一键发起补货申请",
+    ]);
+    // 反向：若有人把实现改回「只灌 latest」，这里会只剩 1 条
+    expect(turns).toHaveLength(3);
+    expect(deriveLatestTurnFromState(state)?.user).not.toEqual(turns[0].user);
+  });
+
+  it("没有版本史时回落 turnNarrations 全量，而不是只取最新一条", () => {
+    const step = (id: string, text: string) => ({
+      id,
+      kind: "narration" as const,
+      text,
+      source: "llm" as const,
+    });
+    const state = {
+      goal: { text: "宠物医院", status: "clear" },
+      lastTurnId: "turn-client-999",
+      capabilityRuns: [
+        { capabilityId: "risk.analysis", roleId: "架构", turnId: "turn-client-999" },
+      ],
+      turnNarrations: [
+        { turnId: "turn-client-1", user: "做一个宠物医院预约管理系统", steps: [step("a", "首轮")] },
+        { turnId: "turn-client-2", user: "预约排班页给超时未到的号加红色标记", steps: [step("b", "精修")] },
+      ],
+    } as unknown as V5SessionState;
+
+    const turns = deriveTurnsFromState(state);
+    expect(turns).toHaveLength(2);
+    expect(turns[0].user).toContain("宠物医院预约");
+    expect(turns[1].user).toContain("超时未到");
+    expect(turns[1].steps).toHaveLength(1);
+  });
+
+  it("空状态不编一轮假对话", () => {
+    expect(deriveTurnsFromState(null)).toEqual([]);
+    expect(deriveTurnsFromState({ capabilityRuns: [], decisionLedger: [] } as any)).toEqual([]);
   });
 });
 

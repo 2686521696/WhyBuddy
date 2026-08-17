@@ -366,3 +366,124 @@ class Test两个调用点都要带页面:
         assert refine_pages_of(state) is None
         state.specFirstPages = {"pages": {"p1": "<html>1</html>"}}
         assert refine_pages_of(state) == {"p1": "<html>1</html>"}
+
+
+class Test设计段随精修上下文回流:
+    """★ 同上一个类的病灶换了个键：extract_model_from_closure 只拼六段，
+    styleBrief/designLanguage 是应用级附加键，**天生不在闭环证据里**。
+    executor 读的是 model["styleBrief"]，于是设计语言的沿用从出生起没通电——
+    2026-08-18 真机三轮 specfirst.design 全是 mode=llm 重新生成，
+    「精修沿用上一版风格段」一次没打，每轮白烧 ~10s 还冒配色漂移的风险。
+
+    修法：附加键随 state.specFirstPages 载体走，两个 set_refine_context
+    调用点都用 refine_model_of 合回模型。
+    """
+
+    @staticmethod
+    def _setter_windows():
+        import inspect
+        import re
+
+        from services import v5_full_driver as drv
+
+        src = re.sub(r"#.*", "", re.sub(r'"""[\s\S]*?"""', "", inspect.getsource(drv)))
+        out = []
+        for m in re.finditer(r"set_refine_context\(", src):
+            win = src[m.end():m.end() + 200]
+            if win.lstrip().startswith("None"):
+                continue
+            out.append(win)
+        return out
+
+    def test_每个调用点都包了refine_model_of(self):
+        """两处只包一处必然静默失效（谁后跑谁覆盖）——跟 pages 那次同款。"""
+        wins = self._setter_windows()
+        assert len(wins) >= 2, f"调用点少于 2 个，链路变了先确认现状：{len(wins)}"
+        for w in wins:
+            assert "refine_model_of(state," in w, (
+                f"这个 set_refine_context 的 model 没包 refine_model_of，"
+                f"设计段沿用会被它悄悄抹掉：{w[:120]}"
+            )
+
+    def test_合回上一版的设计段(self):
+        from models.v5_state import V5SessionState
+        from services.v5_full_driver import refine_model_of
+
+        state = V5SessionState(sessionId="s", goal={"text": "x"})
+        state.specFirstPages = {
+            "pages": {"p1": "<html>1</html>"},
+            "styleBrief": {"tone": "克制"},
+            "designLanguage": {"palette": "navy"},
+        }
+        got = refine_model_of(state, {"datamodel": {}})
+        assert got["styleBrief"] == {"tone": "克制"}
+        assert got["designLanguage"] == {"palette": "navy"}
+        assert got["datamodel"] == {}, "合并不许动六段本体"
+
+    def test_载体缺席时模型原样返回(self):
+        """fail-open：老会话/老链路轮次没有载体，不许因此报错或造假键。"""
+        from models.v5_state import V5SessionState
+        from services.v5_full_driver import refine_model_of
+
+        state = V5SessionState(sessionId="s", goal={"text": "x"})
+        model = {"datamodel": {}}
+        assert refine_model_of(state, model) == model
+        state.specFirstPages = {"pages": {"p1": "x"}}  # 有页面但没有设计段
+        assert refine_model_of(state, model) == model
+        assert refine_model_of(state, None) is None
+
+    def test_模型自带的键不被覆盖(self):
+        """反向判据：直调场景模型里真带着 styleBrief 时以模型为准。"""
+        from models.v5_state import V5SessionState
+        from services.v5_full_driver import refine_model_of
+
+        state = V5SessionState(sessionId="s", goal={"text": "x"})
+        state.specFirstPages = {"styleBrief": {"tone": "载体"}}
+        got = refine_model_of(state, {"styleBrief": {"tone": "模型"}})
+        assert got["styleBrief"] == {"tone": "模型"}
+
+    def test_载体真的捎带了设计段(self, monkeypatch):
+        """★ 接线判据：run_spec_first 跑成后，take_last_pages 的载荷里必须有
+        designLanguage（本 harness 下 LLM 不可用，风格段回落确定性设计语言，
+        所以断的是 designLanguage 非空、styleBrief 键存在）。
+        把 _last_pages_var.set 里那两行删掉，这条当场红。
+        """
+        import services.html_bindings as hb
+        import services.html_structure as hs
+        import services.model_assembly as ma
+        import services.page_shell as ps
+        import services.spec_page_html as sph
+        import services.spec_semantics as ss
+        import services.spec_tree as spec_tree
+        from services import spec_first_pipeline as sfp
+
+        spec = {
+            "rootNodeId": "n0", "version": 3, "appName": "维保云",
+            "personas": [{"id": "u1", "name": "主管", "goals": ["派工"]}],
+            "successCriteria": [{"id": "sc1", "text": "24 小时派工"}],
+            "nodes": [], "pages": [{"id": "p1", "name": "工单页"}],
+        }
+        monkeypatch.setattr(spec_tree, "generate_spec_tree", lambda g, **kw: dict(spec))
+        monkeypatch.setattr(
+            sph, "generate_pages_parallel",
+            lambda s, **kw: {"pages": {"p1": "<html>x</html>"}, "failed": {}},
+        )
+        monkeypatch.setattr(ps, "unify_shell", lambda p, s, **kw: {"pages": dict(p)})
+        monkeypatch.setattr(ps, "check_shell_consistency", lambda p, s: [])
+        monkeypatch.setattr(ps, "repair_pages_after_bind", lambda p, b: (dict(p), [], []))
+        monkeypatch.setattr(hs, "derive_structure", lambda p, **kw: {"entities": [], "pages": []})
+        monkeypatch.setattr(ss, "derive_semantics", lambda st, sp, **kw: {"roles": []})
+        monkeypatch.setattr(
+            ma, "assemble", lambda *a, **k: {"model": {"datamodel": {}}, "gate": {"passed": True}}
+        )
+        monkeypatch.setattr(hb, "bind_pages", lambda p, m: {"pages": dict(p), "failed": {}})
+
+        sfp.run_spec_first("做个工单系统")
+        got = sfp.take_last_pages()
+        assert got is not None
+        assert "styleBrief" in got and "designLanguage" in got, (
+            "载体没捎带设计段——refine_model_of 永远合不回任何东西"
+        )
+        assert isinstance(got["designLanguage"], dict) and got["designLanguage"], (
+            "回落确定性设计语言的轮次，designLanguage 该是非空 dict"
+        )

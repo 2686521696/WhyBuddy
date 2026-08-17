@@ -67,10 +67,25 @@ n=3 的一轮 A/B（experiments/visual-first/ab_spec_first.py），同一个话�
 from __future__ import annotations
 
 import os
+import sys
 from contextvars import ContextVar
 from typing import Any, Callable, Dict, List, Optional
 
 SPEC_FIRST_VERSION = "spec-first-pipeline-v1"
+
+
+def _safe_print(msg: str) -> None:
+    """Windows 控制台默认 GBK，⚠ 会 UnicodeEncodeError。
+
+    2026-08-18 真机：断线体检那行 print 带 ⚠，except 里再 print 一遍 ⚠，
+    第二次逃出 try，spec-first 被判失败、整条回落老链路。except 自己的
+    日志必须永远打得出来。回落按当前 stdout 编码 replace，中文还能留下。
+    """
+    try:
+        print(msg)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+        print(msg.encode(encoding, errors="replace").decode(encoding, errors="replace"))
 
 #: 每落地一页叫一次的出口：(page_id, html, done, total[, bound])。
 #:
@@ -838,7 +853,7 @@ def run_spec_first(
     elif refine:
         # 静默失效的老形状：精修轮却没有词表（reuse_model 没传/上一版是空的）。
         # 不说话的话，线上表现是"id 照样每轮重铸"而日志一个字都没有。
-        print("[spec_first_pipeline] ⚠ 精修轮但拿不到上一版 id 词表，id 冻结未生效")
+        _safe_print("[spec_first_pipeline] ⚠ 精修轮但拿不到上一版 id 词表，id 冻结未生效")
 
     # ── 第 2 步：起草 SPEC ──────────────────────────────────────────
     # （第 1 步「澄清 + 缺口 + 证据」用的是现有能力，由调用方把 evidence 传进来）
@@ -962,29 +977,41 @@ def run_spec_first(
             sst["reusedPages"] = len(_reuse_now)
         stages["pagescope"] = dict(sst)
 
-    # ── 第 2.85 步：图判作用域（影子模式：只对照，不改行为）──────────
+    # ── 第 2.85 步：图判作用域（执行模式：图闭包决定重画范围）──────────
     #
-    # ★ 图接进链路的第一针（2026-08-17）：LLM 只判**种子**（这句话直接点名
-    #   改什么），牵连由上一版模型建出的图（services/app_graph.py）用
-    #   impacted_closure 确定性地扩——「改这一块，牵扯的工作流/权限/数据模型
-    #   也要更新」从这里开始有答案。种子/扩散的分工理由见
-    #   services/refine_graph_scope.py 模块头（对着 Aider ContextCoder 原文核过）。
+    # ★ 图接进链路的第一针（2026-08-17 影子，2026-08-18 切执行）：LLM 只判
+    #   **种子**（这句话直接点名改什么），牵连由上一版模型建出的图
+    #   （services/app_graph.py）用 impacted_closure 确定性地扩——「改这一块，
+    #   牵扯的工作流/权限/数据模型也要更新」从这里开始有答案。种子/扩散的
+    #   分工理由见 services/refine_graph_scope.py 模块头。
     #
-    # ⚠ 影子模式：本步只打日志对照，真正决定重画哪几页的仍是上面第 2.8 步。
-    #   切行为前先拿真机日志确认图算的作用域比文本猜的好（纪律五：判据落在
-    #   真机上，不落在"判据全绿"上）。切的时候 tests/test_refine_graph_scope.py
-    #   「影子期不许碰行为」那条判据要跟着改，别硬绕。
+    # ★ 形状对齐 Nx affected（nx/src/project-graph/affected）：改动映射成
+    #   种子节点 → 反向图遍历出受影响集合 → **任务只跑受影响的**。扩散那一步
+    #   Nx / Turborepo / Bazel 没有一家交给模型猜，全是确定性遍历。
+    #
+    # ⚠ 判官阶梯 fail-open（纪律七）：图判成了 → 图闭包页定重画范围；
+    #   图判缺席（种子判失败/闭包无页/建图炸了）→ 回落第 2.8 步的文本判；
+    #   文本判也缺席 → 全量重画（最老的行为）。每一级都比上一级宽，
+    #   绝不会 fail 成"一页都不改"。
+    #
+    # ⚠ 切执行的依据（2026-08-18 真机两轮对照）：加列那轮文本/图完全一致且
+    #   图更窄可复用；改权限那轮种子带角色、两跳扩全图——宽了但方向安全
+    #   （多画不会画错）。对照日志继续打，hops 标定继续攒（纪律六）。
+    #   `SLIDERULE_GRAPH_SCOPE_DRIVE=0` 退回纯影子（只对照不接管）。
     #
     # ⚠ 独立埋点（第 2.8 步同款教训）：它自己是一次 LLM 调用，混进别的段，
     #   量出来的墙钟说明不了任何事。
     #
     # ⚠ 只依赖 reuse_model（跟 id 冻结同源），不依赖 reuse_pages——上一版页面
-    #   丢了不该连累图判；但那时 _scope 是 None，对照行如实写"(全量)"。
+    #   丢了不该连累图判；但那时照搬集注定是空的，接管只是换个理由全量重画。
     _shadow_on = str(
         os.environ.get("SLIDERULE_GRAPH_SCOPE_SHADOW", "1")
     ).strip().lower() not in ("0", "false", "no", "off")
+    _graph_drive_on = str(
+        os.environ.get("SLIDERULE_GRAPH_SCOPE_DRIVE", "1")
+    ).strip().lower() not in ("0", "false", "no", "off")
     if refine and reuse_model and _shadow_on:
-        raise_if_cancelled("第2.85步 图判作用域（影子）")
+        raise_if_cancelled("第2.85步 图判作用域")
         with _stage("specfirst.graphscope") as gst:
             try:
                 from .app_graph import build_app_graph
@@ -993,6 +1020,7 @@ def run_spec_first(
                     graph_scope_verdict,
                     shadow_compare_line,
                 )
+                from .refine_page_scope import split_pages_for_refine as _split
 
                 _graph = build_app_graph(reuse_model)
                 _seeds = decide_seed_nodes(
@@ -1001,13 +1029,37 @@ def run_spec_first(
                     llm_json_fn=llm_json_fn,
                 )
                 _verdict = graph_scope_verdict(_graph, _seeds) if _seeds else None
-                print(shadow_compare_line(_scope, _verdict))
+                # 对照行照打：这是 hops 标定集的来源，执行期比影子期更需要它
+                #（现在打偏是真的会打偏，不再只是日志难看）。
+                _safe_print(shadow_compare_line(_scope, _verdict))
                 gst["seeds"] = ",".join((_verdict or {}).get("seeds") or []) or "(无)"
                 gst["graphPages"] = ",".join((_verdict or {}).get("pages") or [])
                 gst["graphSegments"] = ",".join((_verdict or {}).get("segments") or [])
-            except Exception as exc:  # noqa: BLE001 — 影子是增强类，绝不拖垮主链路
-                print(f"[spec_first_pipeline] ⚠ 图判作用域（影子）失败：{str(exc)[:200]}")
+                if _graph_drive_on and _verdict is not None and _verdict.get("pages"):
+                    # ⚠ 闭包页为空不接管：一条精修指令一页都不牵扯，多半是种子
+                    #   判偏了（同 refine_page_scope 对空清单的判法），回落文本判。
+                    _scope = list(_verdict["pages"])
+                    _reuse_now = _split(
+                        spec_pages_declared_objs, reuse_pages, _scope
+                    )
+                    gst["decider"] = "graph"
+                    gst["reusedPages"] = len(_reuse_now)
+                    print(
+                        f"[spec_first_pipeline] 图判作用域接管重画范围："
+                        f"重画 {sorted(_scope)}，照搬 {len(_reuse_now)} 页"
+                    )
+                elif _graph_drive_on:
+                    gst["decider"] = "text"
+                    _safe_print(
+                        "[spec_first_pipeline] ⚠ 图判作用域缺席（种子判失败或闭包无页），"
+                        "重画范围回落文本判"
+                    )
+                else:
+                    gst["decider"] = "shadow"
+            except Exception as exc:  # noqa: BLE001 — 图判是增强类，绝不拖垮主链路
+                _safe_print(f"[spec_first_pipeline] ⚠ 图判作用域失败（回落文本判）：{str(exc)[:200]}")
                 gst["failed"] = str(exc)[:120]
+                gst["decider"] = "text"
         stages["graphscope"] = dict(gst)
 
     # ── 第 3 步：每页 HTML（并发；单页失败不拖垮整批）────────────────
@@ -1185,14 +1237,14 @@ def run_spec_first(
         if _fresh:
             _head = "、".join(f"{o['key']}（{o['reason']}）" for o in _fresh[:5])
             _label = "这次修改新产生" if _baseline_known else "交付的应用带着"
-            print(f"[spec_first_pipeline] ⚠ 断线体检：{_label} {len(_fresh)} 个孤岛：{_head}")
+            _safe_print(f"[spec_first_pipeline] ⚠ 断线体检：{_label} {len(_fresh)} 个孤岛：{_head}")
         if _stale:
-            print(
+            _safe_print(
                 f"[spec_first_pipeline] 断线体检：存量孤岛 {len(_stale)} 个"
                 f"（上一版就有，非本次造成）：{'、'.join(o['key'] for o in _stale[:5])}"
             )
     except Exception as exc:  # noqa: BLE001 — 体检是增强类，不许拦交付
-        print(f"[spec_first_pipeline] ⚠ 断线体检自己失败了（不拦交付）：{str(exc)[:200]}")
+        _safe_print(f"[spec_first_pipeline] ⚠ 断线体检自己失败了（不拦交付）：{str(exc)[:200]}")
 
     # ── 第 6.5 步：给 HTML 打 data-* 孔 ─────────────────────────────
     # ⚠ 到这里实体与字段才定死校验过，孔才打得成。第 3 步打不了——
@@ -1202,12 +1254,40 @@ def run_spec_first(
         raise_if_cancelled("第6.5步 打绑定孔")
         with _stage("specfirst.bind") as st:
             before_bind = dict(pages)
-            bound = bind_pages(pages, model)
+            # ★ 局部打孔（2026-08-18）：照搬页的 HTML 就是上一版**打过孔的**
+            #   交付页（reuse_pages 的来源），id 冻结 + 第 6.2 步段沿用保证它
+            #   引用的字段/权限 id 这轮还在——输入没变就不重打，直接沿用上次
+            #   产物。形状对齐 Turborepo cache-hit（指纹没变 → skip + replay）。
+            #   bind 是全链最贵的一步（真机 46~72s），此前每轮对照搬页也全量
+            #   重打（2026-08-18 宠物医院第三轮：4 页里 3 页原样照搬，bind
+            #   照样打满 4 页、71.9s）。
+            # ⚠ fail-open：开关关掉、非精修、照搬集为空，都回到全量打孔。
+            # ⚠ 已知让步：第 3.5 步外壳统一可能把照搬页壳里的 data-* 抹掉
+            #   （34 份里 12 份壳里有 data-*），全量重打会补回来，局部打孔
+            #   不会。真机验证时要看照搬页渲染后的 DOM，不看源码（纪律五）。
+            _partial_on = str(
+                os.environ.get("SLIDERULE_REFINE_PARTIAL_BIND", "1")
+            ).strip().lower() not in ("0", "false", "no", "off")
+            _skip_bind = (
+                set(_reuse_now.keys()) & set(pages.keys())
+                if (_partial_on and refine)
+                else set()
+            )
+            to_bind = {pid: h for pid, h in pages.items() if pid not in _skip_bind}
+            bound = bind_pages(to_bind, model)
             if bound.get("pages"):
-                pages = dict(bound["pages"])
+                # ⚠ 必须合并回全集：bound 只有重打的那几页，直接整份替换会把
+                #   照搬页从交付里弄丢——那是"省了打孔、赔了页面"。
+                pages = {**pages, **dict(bound["pages"])}
             bound_failed = dict(bound.get("failed") or {})
             st["bound"] = len(bound.get("pages") or {})
             st["failed"] = len(bound_failed)
+            st["bindSkipped"] = len(_skip_bind)
+            if _skip_bind:
+                print(
+                    f"[spec_first_pipeline] 局部打孔：{len(_skip_bind)} 页沿用上一轮"
+                    f"打孔结果，只重打 {len(to_bind)} 页"
+                )
             # ★ 把 bind 改坏的壳换回打孔前那份（2026-08-15）。
             #
             # 3.5 步已经把壳统一好了，bind 又给弄乱——八趟八次，最狠一次是
@@ -1273,6 +1353,14 @@ def run_spec_first(
         "navItems": list(result["navItems"]),
         "boundPages": len(pages) if bind_html and not bound_failed else 0,
         "failedPages": dict(result["failedPages"]),
+        # ★ 设计段随载体回流（2026-08-18）。此前只挂在 model 上，而精修回流的
+        #   模型是 extract_model_from_closure 从闭环证据拼的**六段**——应用级
+        #   附加键天生被剥掉，styleBrief 的沿用接线从出生起没通过电：真机三轮
+        #   specfirst.design 全是 mode=llm 重新生成，「精修沿用上一版风格段」
+        #   一次没打。载体走 state.specFirstPages（随会话持久化、随版本快照
+        #   回退），合回模型的动作在 v5_full_driver.refine_model_of。
+        "styleBrief": dict(style_brief) if isinstance(style_brief, dict) else None,
+        "designLanguage": dict(design_language) if isinstance(design_language, dict) else None,
         # 交付对账结果一并落库：**刷新之后仍然说得出"这个应用少了一页"**。
         # 只留在日志里等于只有当场看着的人知道，第二天打开应用中心的人不知道。
         "missingPages": list(missing_pages),

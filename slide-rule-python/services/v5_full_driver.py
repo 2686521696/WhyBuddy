@@ -501,7 +501,10 @@ def _ensure_runtime_closure_evidence(
                     state, existing_closure,
                     goal_text or "初始版本",
                 )
-            set_refine_context(current_model, instruction, pages=refine_pages_of(state))
+            set_refine_context(
+                refine_model_of(state, current_model), instruction,
+                pages=refine_pages_of(state),
+            )
             _refine_set = True
         elif not blocked:
             return state
@@ -764,6 +767,38 @@ def refine_pages_of(state: "V5SessionState") -> "Optional[Dict[str, Any]]":
     return pages if isinstance(pages, dict) and pages else None
 
 
+def refine_model_of(state: "V5SessionState", model: "Optional[Dict[str, Any]]") -> "Optional[Dict[str, Any]]":
+    """把上一版的 styleBrief / designLanguage 合回精修模型（2026-08-18）。
+
+    ⚠ 病灶：extract_model_from_closure 只从闭环证据拼**六段**，应用级附加键
+      （styleBrief/designLanguage）天生不在里面。executor 读的是
+      `model["styleBrief"]`（那边的注释以为"随 model 落库读回来就行"），
+      于是设计语言的沿用**从出生起没通过电**——2026-08-18 真机三轮
+      specfirst.design 全是 mode=llm 重新生成，每轮白烧 ~10s，还冒着
+      「精修一次配色整个换掉」的风险（design_language 模块头量过的那个病）。
+
+    附加键的真实载体是 state.specFirstPages（spec_first_pipeline 的
+    _last_pages_var 顺路捎带，随会话持久化、随版本快照回退）。
+
+    ⚠ 跟 refine_pages_of 同一条纪律：set_refine_context 有**两个**调用点，
+      两处都必须包这一层，只包一处必然静默失效。
+      判据见 tests/test_refine_page_scope.py::Test设计段随精修上下文回流。
+
+    ⚠ 不覆盖已有键：模型里真带着 styleBrief 时（直调场景）以模型为准。
+    """
+    if not isinstance(model, dict):
+        return model
+    prev = getattr(state, "specFirstPages", None)
+    if not isinstance(prev, dict):
+        return model
+    extras = {
+        k: prev.get(k)
+        for k in ("styleBrief", "designLanguage")
+        if isinstance(prev.get(k), dict) and model.get(k) is None
+    }
+    return {**model, **extras} if extras else model
+
+
 def enter_refine_mode(state: "V5SessionState", user_instruction: str) -> bool:
     """轮次**开始前**判定这一轮是不是精修，是就把上下文设好。返回是否设了。
 
@@ -823,7 +858,9 @@ def enter_refine_mode(state: "V5SessionState", user_instruction: str) -> bool:
 
     from .v5_llm_generate import set_refine_context
 
-    set_refine_context(model, instruction, pages=refine_pages_of(state))
+    set_refine_context(
+        refine_model_of(state, model), instruction, pages=refine_pages_of(state)
+    )
     return True
 
 
