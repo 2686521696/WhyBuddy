@@ -40,7 +40,16 @@ MODEL = {
     "rbac": {
         "roles": [{"id": "mgr", "name": "店长"}, {"id": "clerk", "name": "店员"}],
         "permissions": ["order:read", "order:create", "cust:read"],
-        "rolePermissions": {"mgr": ["order:read", "order:create"], "clerk": ["cust:read"]},
+        # ⚠ 形状按**真机**来：真实模型里 rolePermissions 恒为空，权限全在 menus。
+        #   2026-08-17 我第一版 fixture 只写了 rolePermissions，于是判据全绿而
+        #   功能在真机上是死的。留一个空的在这儿，就是钉住"别再照假形状写"。
+        "rolePermissions": {},
+        "menus": [
+            {"id": "m1", "label": "订单", "roleRefs": ["mgr"],
+             "permissionRefs": ["order:read", "order:create"]},
+            {"id": "m2", "label": "客户", "roleRefs": ["clerk"],
+             "permissionRefs": ["cust:read"]},
+        ],
     },
     "workflow": {"nodes": [
         {"id": "submit", "name": "提交", "assigneeRole": "clerk"},
@@ -288,21 +297,49 @@ class Test角色到页面_推导出来的那条边:
         assert "role:clerk" not in got
 
 
-class Test两份实现不许漂移:
-    """图在**两个运行时里各有一份**：这份 Python 的（服务端算影响面）和
-    前端 `system-screens/sandbox-graph.ts` 的（画沙盘 + 断线体检）。
+class Test两份实现钉在同一份契约上:
+    """图在**两个运行时里各有一份**：Python 这份（服务端算影响面）和前端
+    `system-screens/sandbox-graph.ts`（画沙盘 + 断线体检）。
 
     两份是有理由的——用途和运行时都不同，不是重复造轮子。但**边的词汇表
-    必须对得上**：同一份模型在两边得出不同的连接关系，会让"前端画出来是通的、
-    后端算影响面时却是断的"，而这种不一致没有任何一处会报错。
+    不能各定一套**：同一份模型在前端画出来是通的、后端算影响面时却是断的，
+    而这种不一致没有任何一处会报错。
+
+    契约在 `shared/app-graph/edge-contract.json`，两边各自实现提取逻辑，
+    但都必须覆盖它列的每一种边、且不许产出它没有的边。
     """
 
-    def test_TS的六种边这边都覆盖得到(self):
-        """逐条对 sandbox-graph.ts 的 SandboxEdgeKind。
+    @staticmethod
+    def _contract():
+        import json
+        import pathlib
 
-        ⚠ 粒度可以不同（TS 为了画图把 page→field→entity 聚合成 page-entity），
-          但**语义必须都在**。这里只钉"覆盖得到"，不钉一一对应。
+        p = pathlib.Path(__file__).resolve().parents[2] / "shared/app-graph/edge-contract.json"
+        return json.loads(p.read_text(encoding="utf-8"))
+
+    def test_契约里每种边这边都产得出(self, G):
+        contract = self._contract()
+        produced = {lbl for _, _, lbl in G["edges"]}
+        for spec in contract["edges"]:
+            want = set(spec["pythonLabels"])
+            assert want & produced, (
+                f"契约里的 `{spec['kind']}`（{spec['displayLabel']}）这边一条都没产出。"
+                f"期望标签之一：{sorted(want)}"
+            )
+
+    def test_不许产出契约外的边(self, G):
+        """反向判据：多出来的边同样要过审，写进契约才算数。
+
+        悄悄多一种边，前端沙盘上就少一根线，而两边谁都不会报错。
         """
+        contract = self._contract()
+        allowed = {lbl for spec in contract["edges"] for lbl in spec["pythonLabels"]}
+        allowed |= set(contract.get("pythonOnlyLabels") or {})
+        produced = {lbl for _, _, lbl in G["edges"]}
+        extra = produced - allowed
+        assert not extra, f"这些边不在契约里：{sorted(extra)}——加边要先写进契约"
+
+    def test_契约与TS的边类型一一对上(self):
         import pathlib
         import re
 
@@ -313,22 +350,225 @@ class Test两份实现不许漂移:
             import pytest as _pytest
 
             _pytest.skip("前端源码不在这个检出里")
-        src = ts.read_text(encoding="utf-8")
-        m = re.search(r"export type SandboxEdgeKind\s*=([^;]+);", src)
+        m = re.search(r"export type SandboxEdgeKind\s*=([^;]+);", ts.read_text(encoding="utf-8"))
         assert m, "TS 侧的边类型定义找不到了——链路变了，先确认现状再改判据"
         ts_kinds = set(re.findall(r'"([a-z-]+)"', m.group(1)))
+        contract_kinds = {spec["kind"] for spec in self._contract()["edges"]}
+        assert ts_kinds == contract_kinds, (
+            f"契约与 TS 对不上。TS 多出：{sorted(ts_kinds - contract_kinds)}；"
+            f"契约多出：{sorted(contract_kinds - ts_kinds)}"
+        )
 
-        # Python 侧对应关系（粒度不同处注明）
-        covered = {
-            "page-entity": "page→field→entity（这边更细，多一跳）",
-            "page-workflow": "drives_workflow",
-            "node-role": "assigned_to",
-            "role-page": "can_enter",
-            "aigc-entity": "reads_field / writes_field（这边到字段，TS 聚合到实体）",
-            "aigc-role": "for_role",
+    def test_角色权限的口径由契约钉死(self):
+        """★ 这条是这份契约存在的直接原因。
+
+        TS 走 menus、Python 第一版走 rolePermissions，而真机里后者恒空——
+        两边对"这个角色能进哪些页"得出完全不同的答案，没有任何一处报错。
+        """
+        rule = self._contract()["rules"]["role-perms-intersect-page-actions"]
+        assert "menus" in rule["roleHeldPermissions"]["authoritative"]
+        import inspect
+        import re
+
+        from services import app_graph
+
+        src = re.sub(r"#.*", "", re.sub(r'"""[\s\S]*?"""', "", inspect.getsource(app_graph)))
+        at_menus = src.find('rbac.get("menus")')
+        at_rp = src.find('rbac.get("rolePermissions")')
+        assert at_menus != -1, "没读 menus——真机上这条边会是零"
+        assert at_rp == -1 or at_menus < at_rp, "rolePermissions 排在 menus 前面，口径反了"
+
+    def test_源码里没有另抄一份id提取(self):
+        """反向判据：只准从 v5_model_gate 导入 collector，不许自己写一遍。"""
+        import inspect
+        import re
+
+        from services import app_graph
+
+        src = re.sub(r"#.*", "", re.sub(r'"""[\s\S]*?"""', "", inspect.getsource(app_graph)))
+        assert "from .v5_model_gate import" in src, "没复用闸的 collector"
+        assert "def _collect_" not in src, "自己另抄了一份 id 提取逻辑，迟早跟闸漂移"
+
+
+class Test拿真机模型验:
+    """★ 判据必须落在**真实数据的形状**上，不是我自己编的形状。
+
+    2026-08-17：`role → page` 那条边我第一版读 `rbac.rolePermissions`，
+    fixture 里我自己填了它，判据全绿。而仓里四份真机模型的
+    `rolePermissions` **全是空的**——真实数据一条不落全在 `rbac.menus` 里。
+    也就是说那条边在真机上一条都产不出来，而没有任何一处会报错。
+
+    这一组直接读 `experiments/refine-fingerprint/` 里落盘的真机模型。
+    """
+
+    @staticmethod
+    def _real_models():
+        import glob
+        import json
+        import pathlib
+
+        root = pathlib.Path(__file__).resolve().parents[2]
+        out = []
+        for f in sorted(glob.glob(str(root / "experiments/refine-fingerprint/**/*round*.json"),
+                                  recursive=True)):
+            try:
+                out.append((f, json.load(open(f, encoding="utf-8"))))
+            except Exception:  # noqa: BLE001
+                continue
+        return out
+
+    def test_真机模型上能建出图(self):
+        models = self._real_models()
+        if not models:
+            import pytest as _pytest
+
+            _pytest.skip("仓里没有落盘的真机模型")
+        for path, m in models:
+            g = build_app_graph(m)
+            assert g["nodes"], f"{path}：真机模型建不出节点"
+            assert g["edges"], f"{path}：真机模型建不出任何边"
+
+    def test_真机模型上角色到页面的边不是零(self):
+        """★ 本文件最要紧的一条。这条边一旦为零，影响分析就系统性漏掉权限那一手。"""
+        models = self._real_models()
+        if not models:
+            import pytest as _pytest
+
+            _pytest.skip("仓里没有落盘的真机模型")
+        for path, m in models:
+            g = build_app_graph(m)
+            enters = [e for e in g["edges"] if e[2] == "can_enter"]
+            menus = ((m.get("rbac") or {}).get("menus")) or []
+            if not menus:
+                continue  # 模型自己就没菜单，产不出这条边是如实反映
+            assert enters, (
+                f"{path}：模型里有 {len(menus)} 条菜单，却一条 can_enter 都没产出"
+                f"——权限那只手在图上没连到页面"
+            )
+
+    def test_真机模型里rolePermissions确实是空的(self):
+        """把"真实形状长什么样"这件事本身钉住。
+
+        哪天它不空了，说明第 5 步的产物开始能活到第 6 步之后——那时这条
+        兜底逻辑要重新评估，别让两份数据悄悄都生效。
+        """
+        models = self._real_models()
+        if not models:
+            import pytest as _pytest
+
+            _pytest.skip("仓里没有落盘的真机模型")
+        filled = [p for p, m in models if ((m.get("rbac") or {}).get("rolePermissions"))]
+        assert not filled, (
+            f"这些真机模型的 rolePermissions 不再是空的：{filled}。"
+            f"模型里同一件事有两份数据（menus / rolePermissions），"
+            f"两份都生效时口径以哪个为准要重新定。"
+        )
+
+
+class Test断线体检:
+    """★ 闸查「引用有没有悬空」，体检查反面「东西在不在网里」。
+
+    空数组里没有引用，自然没有悬空——**闸一个字都不会说**。一张没人读的表、
+    一个没有手的角色、一页没有数据孔的界面，闸全部放行。
+
+    ⚠ 2026-08-17 之前这件事**只有前端知道**：体检逻辑只在 sandbox-graph.ts
+      里，意味着生成出来的应用可以带着孤岛交付，只有人打开沙盘才看得见。
+      而增量迭代更容易制造孤岛——改一页把某个实体的最后一个引用删掉，
+      那张表就悬空了，没有任何一处会拦。
+    """
+
+    def test_没人读的表报出来(self):
+        from services.app_graph import find_orphans
+
+        m = {
+            "datamodel": {"entities": [
+                {"id": "used", "name": "用着的", "fields": [{"id": "f", "name": "F"}]},
+                {"id": "lonely", "name": "没人读的", "fields": [{"id": "g", "name": "G"}]},
+            ]},
+            "rbac": {"roles": [], "permissions": []},
+            "page": {"pages": [{"id": "p1", "name": "页", "fieldBindings": ["used.f"]}]},
         }
-        missing = ts_kinds - set(covered)
-        assert not missing, (
-            f"TS 沙盘上有这些边而 Python 图里没有对应语义：{sorted(missing)}。"
-            f"两边对同一份模型会得出不同的连接关系，而这种不一致不会报错。"
+        g = build_app_graph(m)
+        keys = {o["key"] for o in find_orphans(g)}
+        assert "entity:lonely" in keys
+        assert "entity:used" not in keys
+
+    def test_没有数据孔的页面报出来(self):
+        from services.app_graph import find_orphans
+
+        m = {
+            "datamodel": {"entities": [{"id": "e", "name": "表", "fields": [{"id": "f", "name": "F"}]}]},
+            "rbac": {"roles": [], "permissions": []},
+            "page": {"pages": [
+                {"id": "ok", "name": "有孔", "fieldBindings": ["e.f"]},
+                {"id": "empty", "name": "空页"},
+            ]},
+        }
+        g = build_app_graph(m)
+        reasons = {o["key"]: o["reason"] for o in find_orphans(g)}
+        assert "page:empty" in reasons and "没有数据孔" in reasons["page:empty"]
+        assert "page:ok" not in reasons
+
+    def test_没有手的角色报出来(self):
+        from services.app_graph import find_orphans
+
+        m = {
+            "datamodel": {"entities": [{"id": "e", "name": "表", "fields": [{"id": "f", "name": "F"}]}]},
+            "rbac": {"roles": [{"id": "busy", "name": "干活的"}, {"id": "idle", "name": "闲着的"}],
+                     "permissions": ["e:read"],
+                     "menus": [{"id": "m", "roleRefs": ["busy"], "permissionRefs": ["e:read"]}]},
+            "page": {"pages": [{"id": "p", "name": "页", "fieldBindings": ["e.f"],
+                                "actionPermissions": ["e:read"]}]},
+        }
+        g = build_app_graph(m)
+        keys = {o["key"] for o in find_orphans(g)}
+        assert "role:idle" in keys
+        assert "role:busy" not in keys
+
+    def test_接线全通时不报(self):
+        """反向判据：别把正常的也报出来，否则这条提示会被当噪音忽略。"""
+        from services.app_graph import find_orphans
+
+        m = {
+            "datamodel": {"entities": [{"id": "e", "name": "表", "fields": [{"id": "f", "name": "F"}]}]},
+            "rbac": {"roles": [{"id": "r", "name": "角色"}], "permissions": ["e:read"],
+                     "menus": [{"id": "m", "roleRefs": ["r"], "permissionRefs": ["e:read"]}]},
+            "page": {"pages": [{"id": "p", "name": "页", "fieldBindings": ["e.f"],
+                                "actionPermissions": ["e:read"]}]},
+        }
+        assert find_orphans(build_app_graph(m)) == []
+
+    def test_工作流节点不判(self):
+        """节点间连通性（transitions）不在这张图上，归流程屏判，这里不冤枉人。"""
+        from services.app_graph import find_orphans
+
+        m = {
+            "datamodel": {"entities": []}, "rbac": {"roles": [], "permissions": []},
+            "page": {"pages": []},
+            "workflow": {"nodes": [{"id": "n1", "name": "孤立节点"}]},
+        }
+        assert [o for o in find_orphans(build_app_graph(m)) if o["kind"] == "wf"] == []
+
+    def test_闸对这些孤岛全部放行(self):
+        """★ 这条说明体检为什么必须存在：同一份模型，闸是绿的。"""
+        from services.app_graph import find_orphans
+        from services.v5_model_gate import validate_five_system_model
+
+        m = {
+            "datamodel": {"entities": [
+                {"id": "e", "name": "表", "fields": [{"id": "f", "name": "F", "type": "string"}]},
+                {"id": "lonely", "name": "没人读的", "fields": [{"id": "g", "name": "G", "type": "string"}]},
+            ]},
+            "rbac": {"roles": [{"id": "r", "name": "角色"}], "permissions": ["e:read"],
+                     "menus": [{"id": "m", "roleRefs": ["r"], "permissionRefs": ["e:read"]}]},
+            "workflow": {"nodes": []},
+            "page": {"pages": [{"id": "p", "name": "页", "fieldBindings": ["e.f"],
+                                "actionPermissions": ["e:read"]}]},
+            "aigc": {"capabilities": []},
+            "appbundle": {"landingPageRef": "p", "preferredDevice": "desktop"},
+        }
+        verdict = validate_five_system_model(m, require_page_kind_contract=False)
+        assert verdict["passed"], "这份模型闸本来就该放行——孤岛不是悬空引用"
+        assert any(o["key"] == "entity:lonely" for o in find_orphans(build_app_graph(m))), (
+            "闸放行了，体检也不报，那这个孤岛就没有任何一处看得见"
         )

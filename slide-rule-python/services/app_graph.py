@@ -184,9 +184,30 @@ def build_app_graph(model: Dict[str, Any]) -> Dict[str, Any]:
     # PageAccess）：页面声明的 actionPermissions 与角色持有的权限**有交集**
     # 才算可进。两边口径分叉的话，同一份模型会在前端和后端得出不同的可达性
     # ——正是 CLAUDE.md 第四条「Python 判定 / TypeScript 运行时」那一行。
+    # ⚠⚠ 角色持有哪些权限，模型里**有两份数据**，而且它们不一致：
+    #
+    #     rbac.rolePermissions       第 5 步（spec_semantics）产出
+    #     rbac.menus[].roleRefs/permissionRefs   第 6 步（汇合绑定）产出
+    #
+    #   2026-08-17 拿仓里四份真机模型验过：**rolePermissions 全是空的**，
+    #   真实数据一条不落全在 menus 里。我第一版读 rolePermissions，于是这条边
+    #   在真机上一条都产不出来——而判据全绿，因为 fixture 是我自己编的、
+    #   带着 rolePermissions。**判据验的是我的假设，不是现实。**
+    #
+    #   所以以 menus 为准（跟 TS 侧 rbac-preview.deriveRoleAccess 同源），
+    #   rolePermissions 仅在 menus 缺席时兜底。
+    #
+    # ⚠ 「同一件事两份数据」本身是个待清理的问题，不归这个模块解决；
+    #   这里只保证**不再多出第三种口径**。
     role_perms: Dict[str, Set[str]] = {}
-    for role_id, perms in _as_dict(rbac.get("rolePermissions")).items():
-        role_perms[str(role_id)] = {str(p) for p in _as_list(perms)}
+    for mn in _as_list(rbac.get("menus")):
+        md = _as_dict(mn)
+        perms = {str(p) for p in _as_list(md.get("permissionRefs"))}
+        for rr in _as_list(md.get("roleRefs")):
+            role_perms.setdefault(str(rr), set()).update(perms)
+    if not role_perms:
+        for role_id, perms in _as_dict(rbac.get("rolePermissions")).items():
+            role_perms[str(role_id)] = {str(p) for p in _as_list(perms)}
     for p in _as_list(page.get("pages")):
         pd = _as_dict(p)
         declared = {str(x) for x in _as_list(pd.get("actionPermissions"))}
@@ -280,4 +301,93 @@ def segments_touched(graph: Dict[str, Any], node_ids: Iterable[str]) -> Set[str]
             seg = kind_to_segment.get(meta["kind"])
             if seg:
                 out.add(seg)
+    return out
+
+
+#: 断线体检的判据表。**逐条对齐前端 sandbox-graph.ts 的第 3 节**——
+#: 那边是给人看的（打开沙盘才知道），这边是给生成链路用的（产出时就知道）。
+#:
+#: ⚠ 只报**机械可判**的，不猜。工作流节点之间的连通性（transitions）不在
+#:   这张图上，归流程屏判，这里不冤枉人——同 TS 侧。
+_ORPHAN_RULES = {
+    # ⚠ 实体这条要**穿一层字段**看，不能只看指向实体自己的边。
+    #   TS 那边 page→entity 是直连；这边更细，是 page→field→entity 两跳。
+    #   照抄 TS 的写法（只看实体自己的入边）会把 `belongs_to` 算成"有人用"
+    #   ——而每个实体都有自己的字段指向它，于是**永远判不出孤岛**。
+    #   2026-08-17 第一版就是这么写的，判据当场咬出来。
+    "entity": (
+        "via-fields", ("binds_field", "reads_field", "writes_field"),
+        "没有任何页面读它、也没有 AIGC 写它——这张表是孤岛",
+    ),
+    "page": (
+        "dependencies", ("binds_field",),
+        "一个实体都没绑——这一页没有数据孔，界面是空的",
+    ),
+    "role": (
+        "any", (),
+        "没有连到任何页面/审批点/AIGC——这个角色在应用里没有手",
+    ),
+    "aigc": (
+        "dependencies", ("writes_field", "reads_field"),
+        "输出字段没有落在任何实体上——生成的东西无处安放",
+    ),
+}
+
+
+def find_orphans(graph: Dict[str, Any]) -> List[Dict[str, str]]:
+    """图上的孤岛：**东西在不在网里**。返回 `[{key, kind, name, reason}]`。
+
+    ## 为什么闸查不出来
+
+    `v5_model_gate` 查的是「引用有没有悬空」——引用了一个不存在的 id 才报。
+    而孤岛是**反面**：空数组里没有引用，自然没有悬空，**闸一个字都不会说**。
+    一张没人读的表、一个没有手的角色、一页没有数据孔的界面，闸全部放行。
+
+    这对判据（闸 = 正向，体检 = 反向）是 CLAUDE.md 第三条在架构层面的样子。
+
+    ## ⚠ 2026-08-17 之前这件事**只有前端知道**
+
+    体检逻辑原本只在 `client/.../sandbox-graph.ts` 里，意味着：生成出来的应用
+    可以**带着孤岛交付，只有人打开沙盘才看得见**。而增量迭代更容易制造孤岛
+    ——改一页把某个实体的最后一个引用删掉，那张表就悬空了，没有任何一处会拦。
+    这个函数把同一套判据搬到服务端，让孤岛在产出时就说得出话。
+
+    ## fail 的方向
+
+    **只报不拦。** 孤岛是质量问题不是正确性问题（模型本身仍然自洽、闸也过），
+    拿它去打死一次能跑完的推演不划算。调用方决定怎么用——记账、提示、
+    或者在精修时当作"这一改把东西改没了"的信号。
+    """
+    nodes = graph.get("nodes") or {}
+    fwd, rev = _adjacency(graph)
+    labels: Dict[Tuple[str, str], Set[str]] = {}
+    for src, dst, lbl in graph.get("edges") or []:
+        labels.setdefault((src, dst), set()).add(lbl)
+
+    def has(node: str, side: str, kinds: Tuple[str, ...]) -> bool:
+        if side == "any":
+            return bool(fwd.get(node)) or bool(rev.get(node))
+        if side == "via-fields":
+            # 实体专用：看它**自己或它的任一字段**有没有被绑/读/写。
+            targets = [node] + [
+                n for n in nodes
+                if nodes[n]["kind"] == "field"
+                and n.split(":", 1)[1].split(".", 1)[0] == node.split(":", 1)[1]
+            ]
+            return any(has(t, "dependents", kinds) for t in targets)
+        peers = fwd.get(node, set()) if side == "dependencies" else rev.get(node, set())
+        for peer in peers:
+            pair = (node, peer) if side == "dependencies" else (peer, node)
+            if labels.get(pair, set()) & set(kinds):
+                return True
+        return False
+
+    out: List[Dict[str, str]] = []
+    for nid, meta in nodes.items():
+        rule = _ORPHAN_RULES.get(meta["kind"])
+        if not rule:
+            continue
+        side, kinds, reason = rule
+        if not has(nid, side, kinds):
+            out.append({"key": nid, "kind": meta["kind"], "name": meta["name"], "reason": reason})
     return out
