@@ -580,13 +580,21 @@ def run_spec_first(
     #   各拿一份。**只在精修轮**——新建应用没有上一版，给它一批无关 id 只会
     #   让它硬凑。算一次给两处用，不在两边各取一次数（两处取数迟早对不齐，
     #   本仓在别处栽过）。
-    _prev_ids = model_id_lexicon(reuse_model) if refine else {}
+    #   `SLIDERULE_REFINE_ID_FREEZE=0` 关掉：既是线上一键回退，也是**对照臂开关**
+    #   ——量"是不是它起的作用"必须同模型同话题跑 A/B，换个模型比前后是把两个
+    #   变量混在一起（本仓吃过"拿造出来的数替代看一眼"的亏）。
+    _freeze_on = str(
+        os.environ.get("SLIDERULE_REFINE_ID_FREEZE", "1")
+    ).strip().lower() not in ("0", "false", "no", "off")
+    _prev_ids = model_id_lexicon(reuse_model) if (refine and _freeze_on) else {}
     if _prev_ids:
         print(
             f"[spec_first_pipeline] 精修 id 冻结：实体 {len(_prev_ids.get('entities') or [])}、"
             f"角色 {len(_prev_ids.get('roles') or [])}、"
             f"流程节点 {len(_prev_ids.get('workflowNodes') or [])}"
         )
+    elif refine and not _freeze_on:
+        print("[spec_first_pipeline] id 冻结被开关关掉（SLIDERULE_REFINE_ID_FREEZE=0）")
     elif refine:
         # 静默失效的老形状：精修轮却没有词表（reuse_model 没传/上一版是空的）。
         # 不说话的话，线上表现是"id 照样每轮重铸"而日志一个字都没有。

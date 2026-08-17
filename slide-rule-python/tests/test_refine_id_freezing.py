@@ -235,6 +235,18 @@ class Test接线_两步都要传:
         assert not seen["structure_prev_ids"]
         assert not seen["semantics_prev_ids"]
 
+    def test_开关关掉时退回旧行为_且说得出话(self, monkeypatch, capsys):
+        """既是线上一键回退，也是量因果用的对照臂开关。
+
+        没有它就只能拿"改之前/改之后"比，而那两次往往还换了模型或话题——
+        两个变量混在一起，量出来的数说明不了是谁起的作用。
+        """
+        monkeypatch.setenv("SLIDERULE_REFINE_ID_FREEZE", "0")
+        seen = self._drive(monkeypatch, refine=True, reuse_model=BASELINE)
+        assert not seen["structure_prev_ids"]
+        assert not seen["semantics_prev_ids"]
+        assert "开关关掉" in capsys.readouterr().out
+
     def test_精修但没有上一版时不炸_且说得出话(self, monkeypatch, capsys):
         """反向判据 + 留痕。这是"整个没生效"的那条静默路径。"""
         seen = self._drive(monkeypatch, refine=True, reuse_model=None)
