@@ -934,6 +934,26 @@ def run_spec_first(
             sst["reusedPages"] = len(_reuse_now)
         stages["pagescope"] = dict(sst)
 
+        # ── 第 2.85 步：影子对照——图闭包挑页 vs 文本挑页（2026-08-17）──
+        #
+        # ★ 纯影子：只打一行对照日志，**绝不**改 _scope / _reuse_now。
+        #   文本判作用域看不到数据模型/权限/工作流那几只手；app_graph 上
+        #   有这层知识。先并排跑攒真机对照，再决定切不切——两个变量别混
+        #   在一起改。开关 SLIDERULE_GRAPH_SCOPE_SHADOW=0、fail-open，
+        #   细节见 services/refine_graph_scope.py 模块头。
+        # ⚠ 故意不包 _stage()：test_enrich_stage_visibility 的全等判据会把
+        #   没进表的埋点当场咬红，而影子对用户没有可感知的产出，不该上
+        #   左侧进度线。
+        from .refine_graph_scope import compare_graph_scope_shadow
+
+        compare_graph_scope_shadow(
+            str((refine or {}).get("instruction") or ""),
+            reuse_model,
+            _scope,
+            spec_pages_declared_objs,
+            llm_json_fn=llm_json_fn,
+        )
+
     # ── 第 3 步：每页 HTML（并发；单页失败不拖垮整批）────────────────
     raise_if_cancelled("第3步 逐页画界面")
     with _stage("specfirst.pages") as st:
