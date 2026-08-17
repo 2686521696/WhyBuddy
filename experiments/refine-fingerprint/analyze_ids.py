@@ -31,6 +31,30 @@ import os
 OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(os.path.abspath(__file__))
 SEGMENTS = ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"]
 
+# ⚠ CLASSES / pairs_of_class 提到模块级是给 aggregate_ab.py 复用的（2026-08-17）。
+#   多轮聚合要的"逐类 id 保住率"跟这里第四把尺子是同一个算法——照抄一份到
+#   聚合脚本里，是纪律四点名的形态，而且更阴：两份算出不同的数还都像对的。
+#   改这里的口径，聚合那边自动跟上；反过来也是。
+CLASSES = [
+    ("datamodel.entities", ["datamodel", "entities"]),
+    ("rbac.roles", ["rbac", "roles"]),
+    ("rbac.permissions", ["rbac", "permissions"]),
+    ("workflow.nodes", ["workflow", "nodes"]),
+    ("page.pages", ["page", "pages"]),
+    ("aigc.capabilities", ["aigc", "capabilities"]),
+]
+
+
+def pairs_of_class(model, path):
+    """取一类对象的 (id, name) 列表。权限是裸字符串，name 为 None。"""
+    node = model
+    for k in path:
+        node = (node or {}).get(k) or []
+    out = []
+    for x in node:
+        out.append((x.get("id"), x.get("name")) if isinstance(x, dict) else (x, None))
+    return out
+
 
 def sha(obj) -> str:
     return hashlib.sha256(
@@ -159,27 +183,10 @@ def main():
     # 逐类数「id 保住几个 / 名字保住几个」躲得开这个坑：名字保住得多而 id
     # 保住得少，就是 id 抖动，不管字符串长什么样。
     print("\n逐类对象：id 与 名字 各保住多少（名字 ≫ id 就是 id 抖动）\n")
-    classes = [
-        ("datamodel.entities", ["datamodel", "entities"]),
-        ("rbac.roles", ["rbac", "roles"]),
-        ("rbac.permissions", ["rbac", "permissions"]),
-        ("workflow.nodes", ["workflow", "nodes"]),
-        ("page.pages", ["page", "pages"]),
-        ("aigc.capabilities", ["aigc", "capabilities"]),
-    ]
-
-    def pairs(model, path):
-        node = model
-        for k in path:
-            node = (node or {}).get(k) or []
-        out = []
-        for x in node:
-            out.append((x.get("id"), x.get("name")) if isinstance(x, dict) else (x, None))
-        return out
 
     churn = []
-    for label, path in classes:
-        a, b = pairs(m1, path), pairs(m2, path)
+    for label, path in CLASSES:
+        a, b = pairs_of_class(m1, path), pairs_of_class(m2, path)
         ia, ib = {i for i, _ in a if i}, {i for i, _ in b if i}
         na, nb = {x for _, x in a if x}, {x for _, x in b if x}
         id_keep = f"{len(ia & ib)}/{max(len(ia), len(ib)) or 1}"
