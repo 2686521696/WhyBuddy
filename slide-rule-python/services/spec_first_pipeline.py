@@ -243,6 +243,85 @@ def model_refine_digest(model: Optional[Dict[str, Any]]) -> str:
     return "\n".join(lines)[:4000]
 
 
+def model_id_lexicon(model: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """把上一版模型摊成「概念名 → id」词表，喂给第 4/5 步当"认出同一个就照抄"。
+
+    ## 为什么需要它（2026-08-17 实测）
+
+    精修第二轮，同一个「社区养老站长」拿到过三套 id：
+
+        station_manager  →  role_station_manager  →  manager_role
+        elder:read       →  care_order:read       →  elder_archive:read
+        wo_created       →  wf_pending            →  node_pending
+
+    **不是随机重铸，是近义漂移**：id 由概念名派生，派生规则稳定但用词不稳定。
+    后果是跨轮引用全部悬空——逐段沿用四次尝试全被引用完整性闸拒绝，
+    「逐段指纹 0/6」里有四段其实是这个造成的，不是内容真被重写
+    （量法与数据见 experiments/refine-fingerprint/）。
+
+    根因是 refine 上下文**只到达第 2 步**：
+
+        grep -c refine services/html_structure.py services/spec_semantics.py
+        # 都是 0
+
+    而铸 id 的恰恰是第 4 步（实体/字段）和第 5 步（角色/流程节点）。
+    第 6 步不用管——它的提示词已经写死"只能用下面这些 id，一个都不许新造"，
+    词表从第 4/5 步来，上游稳了它自然稳。权限同理：形状是 `<实体id>:create`，
+    跟着实体 id 走。
+
+    ## 做法照 identifier freezing，不是新发明
+
+    RecLLM 的 Reformer 用"标识符冻结"保证重训练前后 item id 不变；MCP 的
+    LFID 提案（modelcontextprotocol#1626）把"语义信号"和"稳定 canonical_id"
+    分开——**以人类可读名字为锚、id 照抄**。本仓自己也早有同款：
+    `html_structure.build_prompt` 第 5 条写着「sourcePageId 照抄上面给你的
+    页面 id，不要自己改名」，而实测**唯一 id 保住 5/5 的段恰好就是 page**。
+    这条只是把已经跑通的做法推广到实体/角色/节点。
+
+    ## 只给名字和 id，不给别的
+
+    跟 model_refine_digest 一样是摘要不是全量：这里要解决的是"同一个概念
+    换了名字"，字段枚举、绑定、主题都与它无关，塞进去只会稀释注意力。
+    """
+    if not isinstance(model, dict):
+        return {}
+    lex: Dict[str, Any] = {}
+
+    entities = []
+    for e in ((model.get("datamodel") or {}).get("entities") or [])[:20]:
+        if not isinstance(e, dict) or not e.get("id"):
+            continue
+        entities.append({
+            "id": e.get("id"),
+            "name": e.get("name"),
+            "fields": [
+                {"id": f.get("id"), "name": f.get("name")}
+                for f in (e.get("fields") or [])[:15]
+                if isinstance(f, dict) and f.get("id")
+            ],
+        })
+    if entities:
+        lex["entities"] = entities
+
+    roles = [
+        {"id": r.get("id"), "name": r.get("name")}
+        for r in ((model.get("rbac") or {}).get("roles") or [])[:12]
+        if isinstance(r, dict) and r.get("id")
+    ]
+    if roles:
+        lex["roles"] = roles
+
+    nodes = [
+        {"id": n.get("id"), "name": n.get("name")}
+        for n in ((model.get("workflow") or {}).get("nodes") or [])[:15]
+        if isinstance(n, dict) and n.get("id")
+    ]
+    if nodes:
+        lex["workflowNodes"] = nodes
+
+    return lex
+
+
 #: 精修时**可以整段沿用上一版**的模型段。**顺序有意义**：按「对本轮产物的耦合度」
 #: 从低到高排，过不了闸时从尾巴开始丢（见 apply_refine_segment_reuse）。
 #:
@@ -497,6 +576,22 @@ def run_spec_first(
     device = resolve_preferred_device(goal, None)
     sink = _with_device(on_page or _page_sink_var.get(), device)
 
+    # ★ id 冻结（2026-08-17）：把上一版的「概念名 → id」词表算出来，第 4/5 步
+    #   各拿一份。**只在精修轮**——新建应用没有上一版，给它一批无关 id 只会
+    #   让它硬凑。算一次给两处用，不在两边各取一次数（两处取数迟早对不齐，
+    #   本仓在别处栽过）。
+    _prev_ids = model_id_lexicon(reuse_model) if refine else {}
+    if _prev_ids:
+        print(
+            f"[spec_first_pipeline] 精修 id 冻结：实体 {len(_prev_ids.get('entities') or [])}、"
+            f"角色 {len(_prev_ids.get('roles') or [])}、"
+            f"流程节点 {len(_prev_ids.get('workflowNodes') or [])}"
+        )
+    elif refine:
+        # 静默失效的老形状：精修轮却没有词表（reuse_model 没传/上一版是空的）。
+        # 不说话的话，线上表现是"id 照样每轮重铸"而日志一个字都没有。
+        print("[spec_first_pipeline] ⚠ 精修轮但拿不到上一版 id 词表，id 冻结未生效")
+
     # ── 第 2 步：起草 SPEC ──────────────────────────────────────────
     # （第 1 步「澄清 + 缺口 + 证据」用的是现有能力，由调用方把 evidence 传进来）
     with _stage("specfirst.spec") as st:
@@ -631,7 +726,9 @@ def run_spec_first(
     # ── 第 4 步：HTML → 结构 ────────────────────────────────────────
     raise_if_cancelled("第4步 反推结构")
     with _stage("specfirst.structure") as st:
-        structure_model = derive_structure(pages, goal=goal, llm_json_fn=llm_json_fn)
+        structure_model = derive_structure(
+            pages, goal=goal, llm_json_fn=llm_json_fn, prev_ids=_prev_ids
+        )
         structure = (
             structure_model.model_dump(mode="json")
             if hasattr(structure_model, "model_dump")
@@ -646,7 +743,9 @@ def run_spec_first(
     #   只有结构会把多类使用者塌成一个角色。B 是唯一过闸的那一臂。
     raise_if_cancelled("第5步 推导语义")
     with _stage("specfirst.semantics") as st:
-        semantics_model = derive_semantics(structure, spec, llm_json_fn=llm_json_fn)
+        semantics_model = derive_semantics(
+            structure, spec, llm_json_fn=llm_json_fn, prev_ids=_prev_ids
+        )
         semantics = (
             semantics_model.model_dump(mode="json")
             if hasattr(semantics_model, "model_dump")

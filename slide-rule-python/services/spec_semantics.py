@@ -346,18 +346,56 @@ _SYSTEM = (
 )
 
 
+def build_prev_ids_block(prev_ids: Optional[Dict[str, Any]]) -> str:
+    """精修时把上一版的「角色/流程节点名 → id」摆出来，要求认出同一个就照抄。
+
+    ⚠ 权限不在这里列。它的形状是 `<实体id>:create`，**跟着实体 id 走**——
+      实体 id 在第 4 步就稳住了，权限自然跟着稳。单独再列一份权限表，
+      等于给同一件事两个真相，对不上时不知道该信谁。
+
+    ⚠ 锚是名字不是位置，理由同 html_structure.build_prev_ids_block。
+    """
+    import json as _json
+
+    parts = []
+    for key, label in (("roles", "角色"), ("workflowNodes", "流程节点")):
+        items = (prev_ids or {}).get(key) or []
+        if items:
+            parts.append(f"{label}：\n{_json.dumps(items, ensure_ascii=False, indent=1)}")
+    if not parts:
+        return ""
+    return f"""
+=== 上一版已经有的角色与流程节点 id（本轮是在它基础上迭代）===
+
+{chr(10).join(parts)}
+
+**认出同一个东西就照抄它的 id，一个字母都不要改。** 判断依据是 name：
+上面叫「社区养老站长」的角色，这一轮你又推出「社区养老站长」，那它的 id
+就必须还是上面那个，不许换成近义词（`station_manager` / `role_station_manager`
+/ `manager_role` 是同一个东西，换来换去会让工作流、权限、页面上所有引用它的
+地方全部悬空）。流程节点同理。
+
+真正**新增**的角色/节点才自己起 id；上一版有而本轮 SPEC 里确实没有的，
+不用硬凑进来。
+"""
+
+
 def build_prompt(
     structure: Dict[str, Any],
     spec: Dict[str, Any],
     *,
     with_spec: bool = True,
     with_structure: bool = True,
+    prev_ids: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, str]]:
     """装配对话。
 
     `with_spec` / `with_structure` 两个开关是给**三臂对照实验**用的：
     关掉一侧就能量出"少了它会怎样"。生产路径两个都开——两侧的反证都有实测，
     见模块头注。
+
+    prev_ids（2026-08-17 加）：精修时上一版的角色/节点 id 词表，见
+    build_prev_ids_block。不传则提示词逐字不变。
     """
     import json as _json
 
@@ -427,7 +465,7 @@ def build_prompt(
    孤儿节点和死胡同能过形状校验，却会在运行时把流程卡死。
 5. 不变式的 refs 只能指：实体 id、`实体id.字段id`、角色 id、工作流节点 id。
    指不到的就是悬空引用——**宁可少写一条不变式，也不要写一条指不到东西的。**
-
+{build_prev_ids_block(prev_ids)}
 {chr(10).join(blocks)}"""
     return [
         {"role": "system", "content": _SYSTEM},
@@ -447,8 +485,12 @@ def derive_semantics(
     max_reask: int = 2,
     with_spec: bool = True,
     with_structure: bool = True,
+    prev_ids: Optional[Dict[str, Any]] = None,
 ) -> SpecSemantics:
-    messages = build_prompt(structure, spec, with_spec=with_spec, with_structure=with_structure)
+    messages = build_prompt(
+        structure, spec,
+        with_spec=with_spec, with_structure=with_structure, prev_ids=prev_ids,
+    )
     last = "未调用"
     for attempt in range(max_reask + 1):
         outcome = call_spec_json(messages, llm_json_fn, stage="specfirst.semantics")

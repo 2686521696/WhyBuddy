@@ -350,8 +350,47 @@ _SYSTEM = (
 )
 
 
-def build_prompt(html_by_page: Dict[str, str], goal: str = "") -> List[Dict[str, str]]:
-    """装配反推对话。喂进去的是**剥过的 HTML**，不是原件。"""
+def build_prev_ids_block(prev_ids: Optional[Dict[str, Any]]) -> str:
+    """精修时把上一版的「实体/字段名 → id」摆出来，要求认出同一个就照抄。
+
+    ⚠ 锚是**名字**不是位置：实体顺序每轮都会变，按位置对齐必然错配。
+      identifier freezing 的常规做法也是名字锚定（见 spec_first_pipeline.
+      model_id_lexicon 的文档串）。
+
+    ⚠ 只在精修轮出现。新建应用没有"上一版"，多这一段等于给模型一批
+      跟本轮无关的 id，它会当成必须用上的东西。
+    """
+    import json as _json
+
+    entities = (prev_ids or {}).get("entities") or []
+    if not entities:
+        return ""
+    return f"""
+=== 上一版已经有的实体与字段 id（本轮是在它基础上迭代）===
+
+{_json.dumps(entities, ensure_ascii=False, indent=1)}
+
+**认出同一个东西就照抄它的 id，一个字母都不要改。** 判断依据是 name：
+上面叫「老人档案」的实体，这一轮你从画面上又读出「老人档案」，那它的 id
+就必须还是上面那个，不许换成近义词（`elder` / `elderly` / `elder_archive`
+是同一个东西，换来换去会让所有引用它的地方全部悬空）。字段同理。
+
+真正**新出现**的实体/字段才自己起 id；上一版有而这一轮画面上确实没有的，
+不用硬凑进来。
+"""
+
+
+def build_prompt(
+    html_by_page: Dict[str, str],
+    goal: str = "",
+    *,
+    prev_ids: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, str]]:
+    """装配反推对话。喂进去的是**剥过的 HTML**，不是原件。
+
+    prev_ids（2026-08-17 加）：上一版的 id 词表（spec_first_pipeline.
+    model_id_lexicon 的产物）。只在精修轮传，见 build_prev_ids_block。
+    """
     blocks = []
     for page_id, markup in html_by_page.items():
         blocks.append(f"—— 页面 {page_id} ——\n{strip_for_schema(markup)}")
@@ -400,7 +439,7 @@ def build_prompt(html_by_page: Dict[str, str], goal: str = "") -> List[Dict[str,
    不要展开里面的角色和权限清单）。**给你几份 HTML 就要产出几个页面，
    一页都不许少。**
 8. **每一份输入的 HTML 都必须对应一个 pages 条目**，sourcePageId 逐一对上。
-
+{build_prev_ids_block(prev_ids)}
 {chr(10).join(blocks)}"""
     return [
         {"role": "system", "content": _SYSTEM},
@@ -418,16 +457,20 @@ def derive_structure(
     goal: str = "",
     llm_json_fn: Optional[Callable[[List[Dict[str, str]]], Optional[Dict[str, Any]]]] = None,
     max_reask: int = 2,
+    prev_ids: Optional[Dict[str, Any]] = None,
 ) -> HtmlStructure:
     """从 HTML 反推结构，校验不过就把校验器原话喂回去重问，耗尽则抛。
 
     ⚠ 失败不回落。第 2 步那份 f-string spec 的教训：一份**永远成功**的假产物，
     看起来跟真的一样、还能过自己的闸，于是没有任何一处会发现它是假的。
+
+    prev_ids（2026-08-17 加）：精修时上一版的实体/字段 id 词表，要求同名概念
+    照抄 id。不传就是新建应用那条路，提示词逐字不变。
     """
     if not html_by_page:
         raise HtmlStructureError("没有任何 HTML 可反推")
 
-    messages = build_prompt(html_by_page, goal)
+    messages = build_prompt(html_by_page, goal, prev_ids=prev_ids)
     last = "未调用"
     for attempt in range(max_reask + 1):
         outcome = call_spec_json(messages, llm_json_fn, stage="specfirst.structure")
