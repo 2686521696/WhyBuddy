@@ -302,3 +302,67 @@ class Test端到端接线:
         prev = {"p1": "<html>旧1</html>", "p2": "<html>旧2</html>"}
         seen = self._drive(monkeypatch, refine=True, reuse_pages=prev, scope=None)
         assert not seen["reuse_pages"]
+
+
+class Test两个调用点都要带页面:
+    """★ 纪律四的现场：`set_refine_context` 有**两个**调用点。
+
+    2026-08-17 真机第一次跑就翻在这儿：只改了 enter_refine_mode 那个，
+    wants_refine 分支那个照旧只传 model。两处谁后跑谁覆盖，漏传的那次把
+    pages 抹成 None——于是**模型到了、页面没到**，表现是"按需重画完全不生效"，
+    而日志里什么都不缺（`精修 id 冻结` 照常打，因为它只依赖 model）。
+
+    源码判据，剥注释后数：注释里就写着这些函数名，不剥必然假绿。
+    """
+
+    @staticmethod
+    def _setter_windows():
+        """取每个"设置"型调用点后面的一小段原文。
+
+        ⚠ 别用 `set_refine_context\\((.*?)\\)` 这种非贪婪正则取实参：实参里
+          嵌着 `refine_pages_of(state)`，第一个 `)` 就把它截断了，判据会对着
+          半截字符串报错——2026-08-17 写这条判据时当场踩到。按窗口取更稳。
+        """
+        import inspect
+        import re
+
+        from services import v5_full_driver as drv
+
+        src = re.sub(r"#.*", "", re.sub(r'"""[\s\S]*?"""', "", inspect.getsource(drv)))
+        out = []
+        for m in re.finditer(r"set_refine_context\(", src):
+            win = src[m.end():m.end() + 160]
+            if win.lstrip().startswith("None"):
+                continue  # 清空用的调用，不是设置
+            out.append(win)
+        return out
+
+    def test_每个调用点都传了pages(self):
+        wins = self._setter_windows()
+        assert len(wins) >= 2, f"调用点少于 2 个，链路变了先确认现状：{len(wins)}"
+        for w in wins:
+            assert "pages=" in w, (
+                f"这个 set_refine_context 没带 pages，按需重画会被它悄悄抹掉：{w[:100]}"
+            )
+
+    def test_两处用的是同一个取数函数(self):
+        """反向判据：两处各写一遍取数逻辑迟早漂移，必须共用同一个入口。
+
+        ⚠ 不能拿"`specFirstPages` 在本文件只出现一次"当判据——版本快照那边
+          （record_model_snapshot）也读它，是另一回事。判据要盯**精修这条路**。
+        """
+        for w in self._setter_windows():
+            assert "refine_pages_of(state)" in w, (
+                f"没走 refine_pages_of，自己另抄了一遍取数：{w[:100]}"
+            )
+
+    def test_取不到页面时回None而不是空壳(self):
+        from models.v5_state import V5SessionState
+        from services.v5_full_driver import refine_pages_of
+
+        state = V5SessionState(sessionId="s", goal={"text": "x"})
+        assert refine_pages_of(state) is None
+        state.specFirstPages = {"pages": {}}
+        assert refine_pages_of(state) is None
+        state.specFirstPages = {"pages": {"p1": "<html>1</html>"}}
+        assert refine_pages_of(state) == {"p1": "<html>1</html>"}

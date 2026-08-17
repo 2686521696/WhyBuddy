@@ -907,6 +907,14 @@ def run_spec_first(
         # ⚠ fail-open 到**全量重画**：判作用域挂了最多是慢一点、回到今天的行为。
         #   绝不能 fail 成"一页都不改"——那会让用户说了话而应用一动不动。
         _reuse_now: Dict[str, str] = {}
+        if refine and not reuse_pages:
+            # ⚠ 静默失效的老形状：精修轮却没拿到上一版页面 → 照样全量重画，
+            #   而日志里一个字都没有。2026-08-17 真机第一次跑就撞上，靠"该有的
+            #   日志一行都没出现"才发现——这条留痕就是当时补的。
+            print(
+                "[spec_first_pipeline] ⚠ 精修轮但没拿到上一版页面，按需重画未生效，"
+                "本轮全量重画（reuse_pages 空）"
+            )
         if refine and reuse_pages:
             from .refine_page_scope import (
                 decide_pages_to_regenerate,

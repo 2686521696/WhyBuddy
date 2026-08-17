@@ -501,7 +501,7 @@ def _ensure_runtime_closure_evidence(
                     state, existing_closure,
                     goal_text or "初始版本",
                 )
-            set_refine_context(current_model, instruction)
+            set_refine_context(current_model, instruction, pages=refine_pages_of(state))
             _refine_set = True
         elif not blocked:
             return state
@@ -744,6 +744,26 @@ def extract_model_from_closure(closure) -> "Optional[Dict[str, Any]]":
     return model
 
 
+def refine_pages_of(state: "V5SessionState") -> "Optional[Dict[str, Any]]":
+    """取上一版页面 HTML `{pageId: html}`，给按需重画用（2026-08-17）。
+
+    ⚠ **`set_refine_context` 有两个调用点**（wants_refine 分支 + enter_refine_mode），
+      提成函数是因为只改一个必然静默失效：两处谁后跑谁覆盖，漏传的那次会把
+      pages 抹成 None，于是模型到了、页面没到，表现是"按需重画不生效"而
+      日志里什么都不缺。真机第一次跑就是这么翻的车——`按需重画` 那行一次
+      都没出现，`精修 id 冻结` 却好好的（那条只依赖 model）。
+      判据见 tests/test_refine_page_scope.py::Test两个调用点都要带页面。
+
+    ⚠ 这两处是**唯二**拿得到 state 的地方；executor 那层只有请求域上下文
+      （见 _cache_spec_first_pages 的说明）。
+    """
+    prev = getattr(state, "specFirstPages", None)
+    if not isinstance(prev, dict):
+        return None
+    pages = prev.get("pages")
+    return pages if isinstance(pages, dict) and pages else None
+
+
 def enter_refine_mode(state: "V5SessionState", user_instruction: str) -> bool:
     """轮次**开始前**判定这一轮是不是精修，是就把上下文设好。返回是否设了。
 
@@ -803,13 +823,7 @@ def enter_refine_mode(state: "V5SessionState", user_instruction: str) -> bool:
 
     from .v5_llm_generate import set_refine_context
 
-    # ★ 上一版页面 HTML 一起带上（2026-08-17）：给按需重画用——指令没点到的
-    #   页面原样照搬，不进 LLM。取不到就是空，退回全量重画（今天的行为）。
-    #   ⚠ 这里是**唯一**能拿到 state 的地方；executor 那一层只有请求域上下文，
-    #     拿不到 state（见 _cache_spec_first_pages 的说明）。
-    _prev_pages = getattr(state, "specFirstPages", None)
-    _prev_html = (_prev_pages or {}).get("pages") if isinstance(_prev_pages, dict) else None
-    set_refine_context(model, instruction, pages=_prev_html)
+    set_refine_context(model, instruction, pages=refine_pages_of(state))
     return True
 
 

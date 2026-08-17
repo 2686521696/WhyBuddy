@@ -72,7 +72,13 @@ def spy(monkeypatch):
     import services.v5_llm_generate as gen
 
     calls = []
-    monkeypatch.setattr(gen, "set_refine_context", lambda m, i="": calls.append((m, i)))
+    # ⚠ 收 **kwargs：`set_refine_context` 后来加了 pages（按需重画用，2026-08-17）。
+    #   spy 的签名钉死实参个数的话，被测函数一加参数这里就 TypeError——那是
+    #   **判据自己坏了**，跟它要守的"指令有没有交出去"毫无关系，却会红得像
+    #   真出了事。只记这条判据关心的 (model, instruction)。
+    monkeypatch.setattr(
+        gen, "set_refine_context", lambda m, i="", **kw: calls.append((m, i))
+    )
     monkeypatch.setattr(driver, "derive_skill_runtime_graph_response", lambda _s: {"bySkill": {}})
     monkeypatch.setattr(driver, "execute_v5_capability", lambda *a, **k: None)
     return calls
