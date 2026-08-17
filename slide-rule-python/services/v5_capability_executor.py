@@ -846,7 +846,11 @@ def _cache_gate_passed_model(
         for skill in REQUIRED_EVIDENCE_KEYS:
             section = (llm_result.get(skill) or {}).get("_model_section")
             if section is None:
-                return  # 缺段就不记 —— 半份模型复用出去比不复用更糟
+                # 缺段就不记 —— 半份模型复用出去比不复用更糟。
+                # ⚠ 必须留痕（2026-08-18）：这条静默 return 曾让"精修成功但版本
+                # 史一动不动"排查了一整晚——写入侧四个出口只有它一声不吭。
+                print(f"[v5_capability_executor] 模型快照不记：{skill} 段缺 _model_section")
+                return
             model[skill] = section
         record_model_snapshot(state, model, instruction)
     except Exception as exc:  # noqa: BLE001
@@ -946,7 +950,29 @@ def _build_per_skill_evidence(
             file=__import__("sys").stderr, flush=True,
         )
         recognized_domain = None
-    if _refine_active and not blocked_signal:
+    if (
+        _refine_active
+        and not blocked_signal
+        and not _is_override
+        and _reuse_this_turn_model(state, matches)
+    ):
+        # ★ 精修轮的同轮第二次收口，先问复用锁（2026-08-18 烘焙店真机）。
+        #
+        # 真机形状：第一遍 spec-first 局部打孔成功（只重画 order_workbench
+        # 1 页，3 页沿用），agentic-pick 在外圈下一轮又放行了收口；第二遍
+        # spec 生成撞 525/超时 → 回落老链路 GEN5 **整份重画**，把第一遍的
+        # 局部产物冲掉——用户等了两遍的钱，拿到的还不如第一遍。
+        #
+        # 复用锁的作用域本来就是**单轮**（turnId + goalDigest，见
+        # reusable_model_for_turn），精修轮内第二次收口命中的正是本轮第一遍
+        # 的精修产物——不存在"拿旧模型糊弄新指令"：上一轮的快照 turnId
+        # 对不上，根本不会命中。锁合不合得上取决于第一遍有没有记快照，
+        # 那一半由 record_model_snapshot 的"页面也进比较键"保证。
+        #
+        # override（版本回退）不走这条：直供通道生成层不调 LLM，没有可省的，
+        # 而且 override 语义是"精确直供那一份"，不该被复用锁劫走。
+        pass
+    elif _refine_active and not blocked_signal:
         # 精修/回退：走 LLM 生成分支（override 时生成层不调 LLM 直接返回快照）
         # override 路径传 False（历史快照无 landingPageRef 仍可恢复）；
         # refine 路径传 True（精修是新产物，必须声明首屏）。
@@ -958,7 +984,15 @@ def _build_per_skill_evidence(
         if llm_result is not None:
             for skill in REQUIRED_EVIDENCE_KEYS:
                 matches[skill] = llm_result[skill]
-            _cache_gate_passed_model(state, llm_result, goal)
+            # ⚠ 版本史的 instruction 必须是**这一轮用户说的话**，不是 goal。
+            #   此前三轮精修的版本 instruction 全是首轮 goal 原文（2026-08-18
+            #   烘焙店真机实锤），刷新回放按版本史铺气泡时，每一轮都顶着
+            #   首轮的话——对话史整段失真。精修轮的指令原文就在 refine 上下文
+            #   里；取不到（纯 override 回退）才落回 goal。
+            _refine_instruction = str(
+                (_gen_mod.get_refine_context() or {}).get("instruction") or ""
+            ).strip()
+            _cache_gate_passed_model(state, llm_result, _refine_instruction or goal)
             _cache_spec_first_pages(state)
         else:
             # D2 修复（2026-07-27 迭代体验审查）：精修失败（LLM 网关抖动/

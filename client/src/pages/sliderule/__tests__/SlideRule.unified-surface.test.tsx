@@ -414,3 +414,46 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).toContain("这个审批流需要几级审批？");
   });
 });
+
+describe("buildImItems（消息 id 对账——重复 id 会让 assistant-ui 整页崩）", () => {
+  // 2026-08-18 步伴真机：两个同 id 轮次进了外部存储，MessageRepository
+  // 对重复消息 id 直接抛错，整页只剩 "An unexpected error occurred"。
+  // 适配层是最后一道闸：撞 id 只许丢一条 + console.warn，不许崩页面。
+  const turn = (id: string, user: string) =>
+    ({
+      id,
+      user,
+      status: "complete",
+      steps: [],
+      routeFacts: { turnId: id },
+      routeExpanded: false,
+      routeLitCount: 0,
+      assistant: "",
+      assistantSource: "llm",
+      main: null,
+      actions: [],
+    }) as never;
+
+  it("正常轮次：用户+助手成对展开，顺序不变", async () => {
+    const { buildImItems } = await import("@/pages/SlideRule");
+    const items = buildImItems([turn("t1", "第一句"), turn("t2", "第二句")]);
+    expect(items.map(i => i.id)).toEqual([
+      "t1-user", "t1-assistant", "t2-user", "t2-assistant",
+    ]);
+  });
+
+  it("撞 id 时丢先出现的、留后出现的，绝不外泄重复 id", async () => {
+    const { buildImItems } = await import("@/pages/SlideRule");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const items = buildImItems([turn("t1", "旧的一份"), turn("t1", "新的一份")]);
+      const ids = items.map(i => i.id);
+      expect(new Set(ids).size).toBe(ids.length);
+      // 留下的是后出现（更新）的那轮
+      expect(items.find(i => i.id === "t1-user")?.turn.user).toBe("新的一份");
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});

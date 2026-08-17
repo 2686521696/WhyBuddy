@@ -511,6 +511,37 @@ function HomeEmptyState({
 /** uiTurns（用户+助手成对）→ 扁平消息项；turn 原对象随消息绑定回取。 */
 type ImItem = { id: string; role: "user" | "assistant"; turn: UiTurn };
 
+/**
+ * uiTurns → 外部存储消息数组。**id 必须唯一**：assistant-ui 的
+ * MessageRepository 对重复消息 id 直接抛错，React 边界接住后整页只剩
+ * "An unexpected error occurred"（2026-08-18 步伴真机：版本史同轮存了两份
+ * → 恢复出两个同 id 轮次 → 白屏）。源头已在 deriveTurnsFromState 收口，
+ * 这里是适配层的最后一道对账——上游官方适配器同样在同步前做 id 对账
+ * （assistant-ui#2380 / #4037），任何未来的新造轮路径撞了 id，也只该丢一条
+ * 消息并留告警，不该崩掉整个页面。同 id 保留**后出现**的那条（更新）。
+ */
+export function buildImItems(uiTurns: UiTurn[]): ImItem[] {
+  const flat = uiTurns.flatMap(turn => [
+    ...(turn.user
+      ? ([{ id: `${turn.id}-user`, role: "user", turn }] as ImItem[])
+      : []),
+    { id: `${turn.id}-assistant`, role: "assistant" as const, turn },
+  ]);
+  const seen = new Set<string>();
+  const keep: ImItem[] = [];
+  for (let i = flat.length - 1; i >= 0; i--) {
+    if (seen.has(flat[i].id)) {
+      console.warn(
+        `[sliderule] 消息 id 撞车，丢弃先出现的一条以保住页面：${flat[i].id}`
+      );
+      continue;
+    }
+    seen.add(flat[i].id);
+    keep.push(flat[i]);
+  }
+  return keep.reverse();
+}
+
 /** 轮次之外的渲染上下文（草稿流/闭环/话题），经 context 传给自定义消息组件——
  *  组件定义在模块层保持身份稳定（每帧重建会让 Messages 整列重挂）。 */
 const ImSurfaceContext = React.createContext<{
@@ -782,16 +813,7 @@ export function ClaudeChatSurface({
         : "发布闭环完成"
       : "正在推演...");
 
-  const items = useMemo<ImItem[]>(
-    () =>
-      uiTurns.flatMap(turn => [
-        ...(turn.user
-          ? ([{ id: `${turn.id}-user`, role: "user", turn }] as ImItem[])
-          : []),
-        { id: `${turn.id}-assistant`, role: "assistant" as const, turn },
-      ]),
-    [uiTurns]
-  );
+  const items = useMemo<ImItem[]>(() => buildImItems(uiTurns), [uiTurns]);
 
   const runtime = useExternalStoreRuntime<ImItem>({
     messages: items,

@@ -69,12 +69,39 @@ class Test记快照:
         record_model_snapshot(st, _model(), "目标")
         assert len(st.modelVersions) == 1, "同一份模型记两遍不该产生两个版本"
 
-    def test_模型变了才追加(self):
+    def test_同轮模型变了_替换队尾不追加(self):
+        """★ 2026-08-18 步伴真机：同一轮两遍 spec-first（第一遍 p2 被 525 打掉、
+        第二遍补全）产出两份不同模型，旧逻辑追加成 mv-2/mv-3 同挂一个 turnId。
+        前端刷新回放按「一轮=一个气泡」铺消息，两条同轮版本 = 两个同 id 气泡，
+        assistant-ui MessageRepository 抛错整页白屏。同轮第二份 = 该轮最终产物，
+        **就地替换队尾**：id 不变、模型换新、指令刷新。"""
         st = _state()
-        record_model_snapshot(st, _model("v1"), "目标")
-        record_model_snapshot(st, _model("v2"), "目标")
+        record_model_snapshot(st, _model("v1"), "第一遍（残次）")
+        record_model_snapshot(st, _model("v2"), "第二遍（补全）")
+        assert [v["id"] for v in st.modelVersions] == ["mv-1"], \
+            "同轮第二份模型追加了新版本——刷新回放会撞出两个同 id 气泡"
+        assert st.modelVersions[0]["model"] == _model("v2"), "替换后队尾必须是新模型"
+        assert st.modelVersions[0]["instruction"] == "第二遍（补全）"
+        assert st.currentModelVersionId == "mv-1"
+        # 复用锁读的是队尾——替换后拿到的必须是最新那份
+        assert reusable_model_for_turn(st) == _model("v2")
+
+    def test_换轮模型变了才追加(self):
+        # 反向配对：跨轮才是新版本。只有上面那条没有这条 = 版本史再也长不大。
+        st = _state("turn-1")
+        record_model_snapshot(st, _model("v1"), "首轮")
+        st.lastTurnId = "turn-2"
+        record_model_snapshot(st, _model("v2"), "第二轮")
         assert [v["id"] for v in st.modelVersions] == ["mv-1", "mv-2"]
         assert st.currentModelVersionId == "mv-2"
+
+    def test_没有turnId时同轮替换不生效_照旧追加(self):
+        # 旧会话/测试夹具可能没有 lastTurnId——空 turnId 判不了"同轮"，
+        # 宁可多存也不许把两轮误合成一轮。
+        st = V5SessionState(sessionId="s-1", goal={"text": "g"})
+        record_model_snapshot(st, _model("v1"), "a")
+        record_model_snapshot(st, _model("v2"), "b")
+        assert len(st.modelVersions) == 2
 
     def test_空模型不记(self):
         st = _state()
@@ -94,6 +121,96 @@ class Test记快照:
         record_model_snapshot(st, _model(), "目标")
         st.lastTurnId = "turn-2"
         assert reusable_model_for_turn(st) is None
+
+
+class Test页面也进比较键:
+    """★ 2026-08-18 烘焙店真机：精修加「临期预警」列，六段 model 字节全没变
+    （rbac/workflow/aigc 沿用、实体角色没动），**只有页面 HTML 变了**。
+    `last == model` 只看模型 → 判"没变"跳过 → 版本不涨（预览停在 v3）、
+    同轮复用锁合不上 → 外圈第二遍全价重跑。turborepo#4572 的原型坑：
+    影响输出的输入没进比较键。
+
+    页面从请求域暂存 peek（spec_first_pipeline._last_pages_var）。
+    """
+
+    @staticmethod
+    def _pages(tag: str) -> dict:
+        return {
+            "version": "spec-first-pipeline-v1",
+            "pages": {"order_workbench": f"<html>{tag}</html>"},
+            "navItems": [{"id": "order_workbench", "name": "订货台"}],
+        }
+
+    @pytest.fixture(autouse=True)
+    def _clean_stash(self):
+        from services.spec_first_pipeline import _last_pages_var
+
+        token = _last_pages_var.set(None)
+        yield
+        _last_pages_var.reset(token)
+
+    def _seed(self, pages) -> None:
+        from services.spec_first_pipeline import _last_pages_var
+
+        _last_pages_var.set(pages)
+
+    def test_只改页面不改模型_也要涨版本(self):
+        st = _state("turn-1")
+        self._seed(self._pages("旧"))
+        record_model_snapshot(st, _model(), "首轮")
+        st.lastTurnId = "turn-2"
+        self._seed(self._pages("加了临期预警列"))
+        record_model_snapshot(st, _model(), "订货工作台加临期预警列")
+        assert len(st.modelVersions) == 2, \
+            "页面变了模型没变 → 没记版本：预览停在旧页、复用锁合不上、外圈第二遍全价重跑"
+        tail = st.modelVersions[-1]
+        assert tail["turnId"] == "turn-2"
+        assert tail["instruction"] == "订货工作台加临期预警列"
+        assert tail["specFirstPages"] == self._pages("加了临期预警列")
+        # 整件事的目的：同轮锁当场合上，第二次收口直接复用
+        assert reusable_model_for_turn(st) == _model()
+
+    def test_页面模型都没变_照旧不追加(self):
+        # 反向配对：判据必须能分辨"真没变"。没有这条，上面那条也可以靠
+        # "无脑每次都追加"变绿——版本史会被回放/重试灌爆。
+        st = _state("turn-1")
+        self._seed(self._pages("同一份"))
+        record_model_snapshot(st, _model(), "首轮")
+        st.lastTurnId = "turn-2"
+        self._seed(self._pages("同一份"))
+        record_model_snapshot(st, _model(), "第二轮")
+        assert len(st.modelVersions) == 1, "页面模型都没变还追加——版本史膨胀"
+        assert st.currentModelVersionId == st.modelVersions[0]["id"]
+
+    def test_暂存为空_页面维度不参与判定(self):
+        # 回落老链路/纯模型轮：暂存是空的（take 语义 + 只在整链跑成时写入），
+        # 此时行为必须与旧版逐字一致——模型没变就不追加。
+        st = _state("turn-1")
+        record_model_snapshot(st, _model(), "首轮")
+        st.lastTurnId = "turn-2"
+        record_model_snapshot(st, _model(), "第二轮")
+        assert len(st.modelVersions) == 1
+
+    def test_同轮只改页面_替换队尾不追加(self):
+        # 与「同轮模型变了_替换队尾不追加」同一条纪律：同轮第二份是该轮
+        # 最终产物，就地替换——追加会撞出两个同 id 气泡（P0 白屏的形状）。
+        st = _state("turn-1")
+        self._seed(self._pages("第一遍"))
+        record_model_snapshot(st, _model(), "第一遍")
+        self._seed(self._pages("第二遍补全"))
+        record_model_snapshot(st, _model(), "第二遍")
+        assert [v["id"] for v in st.modelVersions] == ["mv-1"]
+        assert st.modelVersions[0]["specFirstPages"] == self._pages("第二遍补全")
+        assert st.modelVersions[0]["instruction"] == "第二遍"
+
+    def test_追加时页面取本轮暂存_不取上一轮残留(self):
+        # 此调用点在 _cache_spec_first_pages 之前，state.specFirstPages 还是
+        # 上一轮的旧页——直接存它就是"新模型配旧页"（东西看着在，其实是旧的）。
+        st = _state("turn-2")
+        st.specFirstPages = self._pages("上一轮残留")
+        self._seed(self._pages("本轮新画"))
+        record_model_snapshot(st, _model("v2"), "本轮")
+        assert st.modelVersions[-1]["specFirstPages"] == self._pages("本轮新画")
 
 
 class Test过闸即缓存:
@@ -201,3 +318,79 @@ class Test接线:
         _build_per_skill_evidence(st, blocked_signal=False, goal=st.goal["text"])
         assert st.modelVersions, "过闸了却没记快照 —— 下一轮会全价重新生成一遍"
         assert reusable_model_for_turn(st) == gate_passes
+
+    def test_精修轮同轮第二次收口_直接复用不再生成(self, gate_passes, monkeypatch):
+        """★ 2026-08-18 烘焙店真机：第一遍 spec-first 局部打孔成功后，外圈
+        又放行了一次收口；第二遍生成撞 525 → 回落老链路 GEN5 整份重画，把
+        第一遍"只重画 1 页"的产物冲掉。精修分支此前**从不问**同轮复用锁
+        （文档还写着"精修在走到这里之前就分流了"），锁形同虚设。
+
+        判据走真实 _build_per_skill_evidence：本轮已有快照时，生成入口
+        一次都不许被调。
+        """
+        import services.v5_capability_executor as ex
+        from services.v5_capability_executor import _build_per_skill_evidence
+        from services.v5_llm_generate import set_refine_context
+
+        st = _state()
+        record_model_snapshot(st, _model("refined"), "本轮精修指令")
+        assert reusable_model_for_turn(st) == _model("refined"), "前置：锁必须已合上"
+
+        calls = []
+        monkeypatch.setattr(
+            ex, "_try_llm_generate_evidence",
+            lambda *a, **kw: calls.append(1) or None,
+        )
+        set_refine_context(_model("prev"), "本轮精修指令")
+        try:
+            matches = _build_per_skill_evidence(
+                st, blocked_signal=False, goal=st.goal["text"]
+            )
+        finally:
+            set_refine_context(None)
+        assert calls == [], "同轮已有快照，第二次收口仍去重新生成——GEN5 覆盖事故的入口"
+        for skill in SECTIONS:
+            assert skill in matches, f"复用命中后证据没铺上 {skill}"
+
+    def test_精修轮第一次收口_没有快照照常生成(self, gate_passes, monkeypatch):
+        # 反向配对：锁没合上（本轮还没产物）时精修必须照常生成，
+        # 否则精修永远吃上一轮的旧模型。
+        import services.v5_capability_executor as ex
+        from services.v5_capability_executor import _build_per_skill_evidence
+        from services.v5_llm_generate import set_refine_context
+
+        st = _state()
+        assert st.modelVersions == []
+        calls = []
+
+        def _fake_generate(*a, **kw):
+            calls.append(1)
+            return None  # 生成失败走 D2 保底，本条只看"有没有去生成"
+
+        monkeypatch.setattr(ex, "_try_llm_generate_evidence", _fake_generate)
+        set_refine_context(_model("prev"), "本轮精修指令")
+        try:
+            _build_per_skill_evidence(st, blocked_signal=False, goal=st.goal["text"])
+        finally:
+            set_refine_context(None)
+        assert calls == [1], "没有本轮快照时精修必须走生成，不许静默复用旧模型"
+
+    def test_精修轮版本史记的是本轮指令_不是goal(self, gate_passes):
+        """★ 2026-08-18 烘焙店真机：三轮精修的版本 instruction 全是首轮 goal
+        原文——刷新回放按版本史铺气泡，每一轮都顶着首轮的话，对话史整段失真。
+        精修指令原文就在 refine 上下文里，接线判据走真实 _build_per_skill_evidence。
+        """
+        from services.v5_capability_executor import _build_per_skill_evidence
+        from services.v5_llm_generate import set_refine_context
+
+        st = _state()
+        set_refine_context(_model("prev"), "损耗登记页的表格增加一列残次原因分类")
+        try:
+            _build_per_skill_evidence(st, blocked_signal=False, goal=st.goal["text"])
+        finally:
+            set_refine_context(None)
+        assert st.modelVersions, "精修过闸没记快照"
+        assert (
+            st.modelVersions[-1]["instruction"]
+            == "损耗登记页的表格增加一列残次原因分类"
+        ), f"精修轮存的是 {st.modelVersions[-1]['instruction']!r}——goal 顶替了本轮指令"

@@ -874,9 +874,17 @@ def record_model_version(state: "V5SessionState", publish_closure, instruction: 
 
 #: 有几版带得起整页 HTML。实测单页 19~28KB、五页一版约 125KB，
 #: 而模型版本上限是 20 版——全带就是 2.5MB 的会话 blob，每次存盘都要过一遍。
-#: 3 版覆盖"改一版、发现不对、回上一版"这个真实的来回，再往前的
-#: 回退如实降级（没有那一版的页面就别装作有）。
-_PAGES_KEPT_VERSIONS = 3
+#:
+#: ⚠ 3 → 1（2026-08-18 真机 413）：烘焙店会话本体已 605KB（capabilityRuns
+#:   179KB + artifacts 130KB 的永续历史），第二份带页版本一追加就把落库
+#:   请求顶过 Neon 网关上限——`neon http 413: request body too large`，
+#:   此后**每一次**落盘全部失败：版本史、轮叙述、lastTurnId 改名全蒸发，
+#:   库里停在轮初快照，用户看到"过程卡在动、预览纹丝不动"。
+#:   只留队尾一版带页 = 回到出事前那晚验证过能落库的体积包络。
+#:   代价：◀ 回退到上一版时页面如实降级（回落区块渲染）——比起"整轮
+#:   产物全部丢失"，这是能接受的一头。持久层另有 413 兜底（见
+#:   persistence._strip_version_pages），两道闸独立成立。
+_PAGES_KEPT_VERSIONS = 1
 
 
 def record_model_snapshot(
@@ -938,12 +946,76 @@ def record_model_snapshot(
     if get_model_override() is not None:
         return
     versions = list(getattr(state, "modelVersions", None) or [])
+    # ★ "变没变"必须连页面一起比（2026-08-18 烘焙店真机）。
+    #
+    # 局部精修的常态是：六段 model 字节不变（rbac/workflow/aigc 全沿用、
+    # 实体角色没动），**只有页面 HTML 变了**（加一列「临期预警」）。下面那个
+    # `last == model` 只看模型 → 判成"没变"直接跳过 → 三连锁反应：
+    #   ① 版本不涨，预览停在旧页（用户看到"过程卡在动、右边纹丝不动"）；
+    #   ② 队尾 turnId 还是上一轮 → reusable_model_for_turn 的同轮锁合不上；
+    #   ③ 外圈第二次收口拿不到复用 → 全价重跑 spec-first，撞 525 后回落
+    #      GEN5 整份重画，把第一遍"只重画 1 页"的产物冲掉。
+    #
+    # turborepo#4572 的同一个坑：**影响输出的输入没进比较键**，改了东西
+    # 还吃旧结果。页面就是那个漏掉的输入。
+    #
+    # 本轮页面从请求域暂存 peek（不 take——take 会把之后
+    # _cache_spec_first_pages 的会话落库饿死，见 peek_last_pages 头注）。
+    # peek 为空 = 本轮没跑成 spec-first（回落老链路/纯模型轮），此时页面
+    # 维度不参与判定，行为与旧版完全一致。
+    fresh_pages = None
+    try:
+        from .spec_first_pipeline import peek_last_pages
+
+        _got = peek_last_pages()
+        if isinstance(_got, dict) and (_got.get("pages") or {}):
+            fresh_pages = _got
+    except Exception:
+        fresh_pages = None  # 顺路读暂存；读不到不改变主判定（fail-open）
     if versions:
-        last = versions[-1].get("model") if isinstance(versions[-1], dict) else None
-        if last == model:
-            # 模型没变：不记新版本，但指针对齐到该版本（可能刚从回退态回来）
-            state.currentModelVersionId = versions[-1].get("id")
-            return
+        tail0 = versions[-1] if isinstance(versions[-1], dict) else {}
+        if tail0.get("model") == model:
+            if fresh_pages is None or tail0.get("specFirstPages") == fresh_pages:
+                # 模型、页面都没变：不记新版本，指针对齐（可能刚从回退态回来）
+                print(
+                    "[record_model_snapshot] 模型与页面都没变，不记新版本"
+                    f"（本轮页面暂存：{'有' if fresh_pages is not None else '无'}）"
+                )
+                state.currentModelVersionId = tail0.get("id")
+                return
+            print("[record_model_snapshot] 模型没变但页面变了，照常记版本")
+    # ★ 同一轮的第二份模型 → **替换队尾，不追加**（2026-08-18 步伴真机）。
+    #
+    # 真机形状：精修第一遍 p2 被网关 525 打掉（3/4 页残次交付），外圈第二遍
+    # 补全重跑——同一个 turnId 下产出两份**不同**的模型，上面的"跟队尾比"
+    # 挡不住，mv-2/mv-3 同挂 turn-1786997607853 进了版本史。
+    #
+    # 前端刷新回放按「一轮 = 一个气泡」从版本史铺消息，两条同轮版本 = 两个
+    # 同 id 气泡，assistant-ui 的 MessageRepository 对重复 id 直接抛错，
+    # **整页白屏**（上游口径同此：外部存储的消息 id 必须唯一，见
+    # assistant-ui#2380/#4037——官方适配器都在同步前做 id 对账）。
+    #
+    # 轮内中间态对 ◀▶ 回退也没有价值：那是一份缺页的残次品，回退到它
+    # 等于把 525 事故重新端给用户。同轮的最终产物才是这一轮的版本。
+    turn_id = str(getattr(state, "lastTurnId", "") or "")
+    if (
+        turn_id
+        and versions
+        and isinstance(versions[-1], dict)
+        and str(versions[-1].get("turnId") or "") == turn_id
+    ):
+        tail = dict(versions[-1])
+        tail["model"] = model
+        tail["instruction"] = str(instruction or "")[:300]
+        tail["createdAt"] = datetime.now(timezone.utc).isoformat()
+        # 页面优先取本轮暂存（此调用点在 _cache_spec_first_pages **之前**，
+        # state.specFirstPages 还是上一轮的旧页——直接存它就是"新模型配旧页"）
+        tail["specFirstPages"] = fresh_pages or getattr(state, "specFirstPages", None)
+        versions[-1] = tail
+        state.modelVersions = versions
+        state.currentModelVersionId = tail.get("id")
+        print(f"[record_model_snapshot] 同轮替换队尾 {tail.get('id')}（turn={turn_id[:40]}）")
+        return
     # ID 必须单调递增、与截断解耦——旧实现 len(versions)+1 配合下面的 [-20:]
     # 截断,从第 22 版起恒生成 "mv-21":restore/findIndex 命中第一个同名旧
     # 快照,◀▶ 错乱(审查实锤)。取"历史最大序号+1",截断也不回卷。
@@ -970,7 +1042,8 @@ def record_model_snapshot(
         # spec-first 画出来的整页（2026-08-14）。不带的话回退是**说谎**：
         # 指针回到 v1，右侧还是 v3 的页面——正是这段代码上面那条 D8 修复
         # （"UI 显示回到 v1、实际跑的还是 v3"）在模型上治过的同一个病。
-        "specFirstPages": getattr(state, "specFirstPages", None),
+        # 取本轮暂存优先，理由同上面的同轮替换分支。
+        "specFirstPages": fresh_pages or getattr(state, "specFirstPages", None),
     })
     versions = versions[-20:]  # 上限 20 版，防状态无限膨胀
     # ⚠ 页面很重：实测单页 19~28KB，五页一版约 125KB。20 版全带 = 2.5MB，
@@ -985,6 +1058,12 @@ def record_model_snapshot(
             stale["specFirstPages"] = None
     state.modelVersions = versions
     state.currentModelVersionId = new_id
+    # 写入侧四个出口原本只有追加不出声（2026-08-18 排查代价一整晚）——补上。
+    print(
+        f"[record_model_snapshot] 追加版本 {new_id}"
+        f"（turn={str(getattr(state, 'lastTurnId', '') or '')[:40]}，"
+        f"页面：{'本轮暂存' if fresh_pages else ('沿用state' if getattr(state, 'specFirstPages', None) else '无')}）"
+    )
 
 
 _TRANSIENT_ERROR_MARKERS = (

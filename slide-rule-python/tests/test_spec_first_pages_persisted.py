@@ -208,11 +208,16 @@ class Test页面跟着版本一起回退:
         assert state.modelVersions[-1]["specFirstPages"]["pages"]["p1"] == "<html>甲</html>"
 
     def test_每版记各自那份_不串(self):
+        # ⚠ 2026-08-18 起 _PAGES_KEPT_VERSIONS=1（413 事故，见常量头注）：
+        #   追加新版时旧版页面**如实置空**，不是拿新版页面冒充。所以判据改成：
+        #   队尾是自己那份，旧版是 None——两者都不许串成对方的。
         state = V5SessionState(sessionId="v2", goal={"text": "x"}, artifacts=[])
         self._snap(state, {"datamodel": {"entities": [1]}}, {"pages": {"p1": "<html>一版</html>"}})
         self._snap(state, {"datamodel": {"entities": [2]}}, {"pages": {"p1": "<html>二版</html>"}})
-        got = [v["specFirstPages"]["pages"]["p1"] for v in state.modelVersions]
-        assert got == ["<html>一版</html>", "<html>二版</html>"]
+        assert state.modelVersions[-1]["specFirstPages"]["pages"]["p1"] == "<html>二版</html>"
+        older = state.modelVersions[0]["specFirstPages"]
+        assert older is None or older["pages"]["p1"] == "<html>一版</html>", \
+            "旧版页面要么如实置空，要么是自己那份——绝不许是新版的"
 
     def test_只有最近几版带页面_更早的抹掉(self):
         """⚠ 容量闸。实测单页 19~28KB、五页一版约 125KB，20 版全带 = 2.5MB

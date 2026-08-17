@@ -61,6 +61,35 @@ export function deriveLatestTurnFromState(
   return buildRestoredTurn(state, String(turnId), undefined);
 }
 
+/** 时间戳级 turnId（毫秒 epoch）才启用「差 ≤2ms 视为同轮」：客户端造
+ * `turn-<Date.now()>`（叙述用它），服务端开局步进把它 +1 存进版本史
+ * （`_advance_turn_version`）——同一轮在两份持久化里顶着差 1ms 的两个名字，
+ * 按 turnId 精确对永远对不上（2026-08-18 烘焙店真机：叙述 turn-…087、
+ * 版本 turn-…088，×3 轮全是如此）。
+ * ⚠ 老编号（turn-3 / turn-4）是**真实相邻轮次**，差 1 绝不许合并——
+ * 邻近判定只对 epoch 毫秒量级的数字开。 */
+const EPOCH_MS_FLOOR = 1e12;
+const SAME_TURN_STAMP_TOLERANCE_MS = 2;
+
+function turnStampOf(turnId: string): number | null {
+  const nums = String(turnId).match(/\d+/g);
+  if (!nums || nums.length === 0) return null;
+  return Math.max(...nums.map(Number));
+}
+
+function sameRestoredTurn(a: string, b: string): boolean {
+  if (a === b) return true;
+  const sa = turnStampOf(a);
+  const sb = turnStampOf(b);
+  return (
+    sa != null &&
+    sb != null &&
+    sa > EPOCH_MS_FLOOR &&
+    sb > EPOCH_MS_FLOOR &&
+    Math.abs(sa - sb) <= SAME_TURN_STAMP_TOLERANCE_MS
+  );
+}
+
 /**
  * 刷新后把**整段对话**从持久化状态灌回左栏。
  *
@@ -70,36 +99,88 @@ export function deriveLatestTurnFromState(
  * 重建一轮，而且客户端 `turn-${Date.now()}` 对不上服务端 `turn-N-drive-full`，
  * 恢复轮的 `user` 经常是空串，ImUserMessage 直接 `return null`。
  *
- * 版本史是服务端专有、上限 20 条，正好是用户逐轮发出的指令；叙述只留最近
- * 几轮的步骤回放。先按版本史铺气泡，再把叙述按 turnId / 原文贴回去。
+ * ⚠ 2026-08-18 深夜二修（步伴真机整页白屏）：第一版按版本史铺气泡，
+ * 而版本史里同一轮可以有多条（缺页残次交付 → 外圈第二遍补全，mv-2/mv-3
+ * 同挂一个 turnId）→ 两个同 id 的 UiTurn → assistant-ui MessageRepository
+ * 对重复消息 id 直接抛错，**整个页面崩掉**。上游口径一致：外部存储的
+ * 消息 id 必须唯一，官方适配器都在同步前做 id 对账（assistant-ui#2380 /
+ * #4037）。所以这里的输出必须**无条件保证 id 唯一**，别指望写入侧永远干净
+ * ——存量会话里的脏数据已经落库了。
+ *
+ * 重建策略（第二版）：
+ * 1. 叙述轮（turnNarrations，≤3 轮）永远出——它有真实的用户原文和逐步回放；
+ * 2. 版本史先按轮去重（同 turnId 取最后一份），再只补叙述没覆盖的更早轮次
+ *    （同轮判定见 sameRestoredTurn：精确匹配 + 时间戳差 ≤2ms 的跨端桥）；
+ * 3. 按时间戳排序、末端 id 唯一闸——撞车的丢弃并 console.warn，绝不外泄。
  */
 export function deriveTurnsFromState(
   state: V5SessionState | null | undefined
 ): UiTurn[] {
   if (!state) return [];
-  const versions = modelVersionsOf(state);
-  const fromVersions: UiTurn[] = [];
-  for (let i = 0; i < versions.length; i++) {
-    const v = versions[i];
-    const instruction = String(v.instruction || "").trim();
-    const user =
-      instruction ||
-      (i === 0 ? String(state.goal?.text || "").trim() : "");
-    if (!user) continue;
-    const turnId = String(v.turnId || v.id || `restored-mv-${i}`);
-    fromVersions.push(buildRestoredTurn(state, turnId, user));
-  }
-  if (fromVersions.length > 0) return fromVersions;
+  const entries: { stamp: number | null; turn: UiTurn }[] = [];
 
-  const fromNarr = validNarrations(state)
-    .map((n) => buildRestoredTurn(state, n.turnId, String(n.user || "").trim()))
-    .filter((t) => t.user || t.steps.length > 0);
-  if (fromNarr.length > 0) return fromNarr;
+  // 1) 版本史按轮去重：同一 turnId 只留最后一份快照（同轮多次过闸 = 同一轮）
+  const versions = modelVersionsOf(state);
+  const dedupedVersions: ModelVersionSnap[] = [];
+  const slotByTurn = new Map<string, number>();
+  for (const v of versions) {
+    const key = String(v.turnId || v.id || "");
+    const slot = slotByTurn.get(key);
+    if (key && slot !== undefined) dedupedVersions[slot] = v;
+    else {
+      slotByTurn.set(key, dedupedVersions.length);
+      dedupedVersions.push(v);
+    }
+  }
+
+  // 2) 叙述轮永远出（用户原文 + 逐步回放都是真的）
+  const narrated: string[] = [];
+  for (const n of validNarrations(state)) {
+    const turn = buildRestoredTurn(state, n.turnId, String(n.user || "").trim());
+    if (!turn.user && turn.steps.length === 0) continue;
+    narrated.push(n.turnId);
+    entries.push({ stamp: turnStampOf(n.turnId), turn });
+  }
+
+  // 3) 版本轮只补叙述没覆盖的轮次（叙述只留最近 3 轮，更早的靠版本史）；
+  //    已被叙述轮占用的叙述不许再被版本轮按原文认领（见 buildRestoredTurn）
+  const claimed = new Set(narrated);
+  const goalText = String(state.goal?.text || "").trim();
+  for (let i = 0; i < dedupedVersions.length; i++) {
+    const v = dedupedVersions[i];
+    const turnId = String(v.turnId || v.id || `restored-mv-${i}`);
+    if (narrated.some((nid) => sameRestoredTurn(nid, turnId))) continue;
+    const instruction = String(v.instruction || "").trim();
+    const user = instruction || (i === 0 ? goalText : "");
+    if (!user) continue;
+    entries.push({
+      stamp: turnStampOf(turnId),
+      turn: buildRestoredTurn(state, turnId, user, claimed),
+    });
+  }
+
+  // 4) 时间序（无时间戳的保持插入序——sort 稳定）+ id 唯一闸
+  entries.sort((a, b) =>
+    a.stamp != null && b.stamp != null ? a.stamp - b.stamp : 0
+  );
+  const seen = new Set<string>();
+  const out: UiTurn[] = [];
+  for (const e of entries) {
+    if (seen.has(e.turn.id)) {
+      console.warn(
+        `[sliderule] 恢复对话时丢弃重复轮次 id=${e.turn.id}（持久化里同一轮存了多份）`
+      );
+      continue;
+    }
+    seen.add(e.turn.id);
+    out.push(e.turn);
+  }
+  if (out.length > 0) return out;
 
   const latest = deriveLatestTurnFromState(state);
   if (!latest) return [];
   if (!latest.user) {
-    latest.user = String(state.goal?.text || "").trim();
+    latest.user = goalText;
   }
   return [latest];
 }
@@ -107,7 +188,8 @@ export function deriveTurnsFromState(
 function buildRestoredTurn(
   state: V5SessionState,
   turnId: string,
-  userOverride: string | undefined
+  userOverride: string | undefined,
+  claimedNarrationIds?: Set<string>
 ): UiTurn {
   const runs = (state.capabilityRuns || []) as Array<{
     capabilityId?: string;
@@ -179,12 +261,22 @@ function buildRestoredTurn(
 
   // E13：直播叙述已随会话持久化（turnNarrations）——优先按 turnId 取本轮
   // 步骤完整回放；没有（旧会话/持久化失败）再回落骨架轮次（steps 空）。
-  const narration =
-    narrationStepsFor(state, turnId) ??
-    narrationStepsFor(state, base) ??
-    (userOverride
+  //
+  // ⚠ 按原文兜底配叙述时，**已被别的轮占用的叙述不许再认领**（2026-08-18
+  //   步伴/烘焙店真机）：存量版本史的 instruction 被 goal 顶替过，好几轮的
+  //   user 文本一模一样，按原文一配全配到同一份叙述——左栏出现两三份逐字
+  //   相同的"推演过程"。宁可 steps 空着（如实：这轮的叙述已被裁掉），
+  //   也不给它穿别的轮的衣服。
+  let narration =
+    narrationStepsFor(state, turnId) ?? narrationStepsFor(state, base);
+  if (!narration) {
+    const fallback = userOverride
       ? matchNarrationByUser(state, userOverride)
-      : narrationStepsFor(state, null));
+      : narrationStepsFor(state, null);
+    if (fallback && !claimedNarrationIds?.has(fallback.turnId)) {
+      narration = fallback;
+    }
+  }
 
   const user = (userOverride ?? narration?.user ?? "").trim();
 

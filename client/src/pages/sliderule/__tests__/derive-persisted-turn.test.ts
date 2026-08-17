@@ -109,6 +109,116 @@ describe("deriveTurnsFromState (刷新后整段对话)", () => {
     expect(deriveTurnsFromState(null)).toEqual([]);
     expect(deriveTurnsFromState({ capabilityRuns: [], decisionLedger: [] } as any)).toEqual([]);
   });
+
+  it("同一轮存了两份版本（步伴白屏真机数据）→ 只出一轮，id 全场唯一", () => {
+    // 2026-08-18 真机：精修第一遍 p2 被 525 打掉、外圈第二遍补全，
+    // mv-2/mv-3 同挂 turn-1786997607853。旧实现恢复出两个同 id 轮次，
+    // 消息 id `${turn.id}-user` 撞车 → assistant-ui MessageRepository 抛错，
+    // React 边界接住后整页只剩 "An unexpected error occurred"。
+    const state = {
+      goal: { text: "【硬件+社会公益】步伴 AI 拐杖", status: "clear" },
+      lastTurnId: "turn-1786997607854-drive-full",
+      capabilityRuns: [],
+      modelVersions: [
+        { id: "mv-1", turnId: "turn-1786936093823", instruction: "【硬件+社会公益】步伴 AI 拐杖" },
+        // 第一遍（残次交付）存的还是 goal 顶替的旧文本，第二遍才是本轮真话——
+        // 同轮去重必须留**后写入**的那份，只靠末端 id 闸会留成第一份。
+        { id: "mv-2", turnId: "turn-1786997607853", instruction: "【硬件+社会公益】步伴 AI 拐杖" },
+        { id: "mv-3", turnId: "turn-1786997607853", instruction: "公益申请列表增加老年人年龄列" },
+      ],
+    } as unknown as V5SessionState;
+
+    const turns = deriveTurnsFromState(state);
+    const ids = turns.map((t) => t.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    // 同轮两份 = 一个气泡；首轮 + 精修轮 = 2
+    expect(turns).toHaveLength(2);
+    expect(turns[1].user).toBe("公益申请列表增加老年人年龄列");
+  });
+
+  it("版本 turnId 与叙述 turnId 差 1ms（跨端命名错位）→ 不出双份，叙述原文赢", () => {
+    // 2026-08-18 烘焙店真机：客户端叙述 turn-…087、服务端版本 turn-…088，
+    // 且版本 instruction 存的全是首轮 goal 原文——按版本史铺气泡时每一轮
+    // 都顶着首轮的话（左栏"三份一模一样"的病根）。叙述有真实指令，必须赢。
+    const step = (id: string, text: string) => ({
+      id, kind: "narration" as const, text, source: "llm" as const,
+    });
+    const GOAL = "给连锁烘焙店做一套门店订货与损耗管控系统";
+    const state = {
+      goal: { text: GOAL, status: "clear" },
+      lastTurnId: "turn-1786997294050",
+      capabilityRuns: [],
+      modelVersions: [
+        { id: "mv-1", turnId: "turn-1786992625138", instruction: GOAL },
+        { id: "mv-2", turnId: "turn-1786992958088", instruction: GOAL },
+        { id: "mv-3", turnId: "turn-1786993271691", instruction: GOAL },
+      ],
+      turnNarrations: [
+        { turnId: "turn-1786992958087", user: "损耗登记页加临期预警", steps: [step("a", "精修1")] },
+        { turnId: "turn-1786993271690", user: "收货对账页加一键补货", steps: [step("b", "精修2")] },
+        { turnId: "turn-1786997294049", user: "损耗登记页加残次原因分类", steps: [step("c", "精修3")] },
+      ],
+    } as unknown as V5SessionState;
+
+    const turns = deriveTurnsFromState(state);
+    // 首轮（仅版本史有）+ 3 轮精修（叙述覆盖，版本被邻近判定吸收）= 4，不是 6
+    expect(turns.map((t) => t.user)).toEqual([
+      GOAL,
+      "损耗登记页加临期预警",
+      "收货对账页加一键补货",
+      "损耗登记页加残次原因分类",
+    ]);
+    const ids = turns.map((t) => t.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("版本轮的叙述兜底不许偷走已被别的轮占用的叙述（两份一模一样的病根）", () => {
+    // 2026-08-18 真机：存量版本史 instruction 被 goal 顶替，好几轮 user 文本
+    // 相同，按原文兜底全配到同一份叙述——左栏出现逐字相同的"推演过程"×N。
+    const step = (id: string, text: string) => ({
+      id, kind: "narration" as const, text, source: "llm" as const,
+    });
+    const GOAL = "【硬件+社会公益】步伴 AI 拐杖";
+    const state = {
+      goal: { text: GOAL, status: "clear" },
+      capabilityRuns: [],
+      modelVersions: [
+        // 首轮：与叙述差 1ms，被叙述轮吸收
+        { id: "mv-1", turnId: "turn-1786936093823", instruction: GOAL },
+        // 精修轮：instruction 被 goal 顶替（存量脏数据），与任何叙述都不邻近
+        { id: "mv-3", turnId: "turn-1786997607853", instruction: GOAL },
+      ],
+      turnNarrations: [
+        { turnId: "turn-1786936093822", user: GOAL, steps: [step("a", "首轮叙述")] },
+      ],
+    } as unknown as V5SessionState;
+
+    const turns = deriveTurnsFromState(state);
+    expect(turns).toHaveLength(2);
+    expect(turns[0].steps).toHaveLength(1);
+    // 精修轮拿不到自己的叙述就如实空着，不许穿首轮的衣服
+    expect(turns[1].steps).toHaveLength(0);
+  });
+
+  it("反向：老编号 turn-3/turn-4 差 1 是真实相邻轮次，绝不许合并", () => {
+    // 邻近判定只对 epoch 毫秒量级的时间戳开——老编号差 1 合并会吃掉真轮次。
+    const step = (id: string, text: string) => ({
+      id, kind: "narration" as const, text, source: "llm" as const,
+    });
+    const state = {
+      goal: { text: "话题", status: "clear" },
+      capabilityRuns: [],
+      modelVersions: [
+        { id: "mv-1", turnId: "turn-3", instruction: "第三轮的指令" },
+      ],
+      turnNarrations: [
+        { turnId: "turn-4", user: "第四轮的指令", steps: [step("a", "x")] },
+      ],
+    } as unknown as V5SessionState;
+
+    const turns = deriveTurnsFromState(state);
+    expect(turns.map((t) => t.user)).toEqual(["第三轮的指令", "第四轮的指令"]);
+  });
 });
 
 /**

@@ -51,6 +51,36 @@ def _resolve_store_file(store_file: Optional[StorePath] = None) -> Path:
     return Path(env_file or STORE_FILE)
 
 
+def _payload_too_large(exc: Exception) -> bool:
+    """写库异常是不是「请求体超限」。判据盯语义词（413 / too large），
+    不盯网关实现的整句原文——网关换了措辞不该让降级失灵。"""
+    msg = str(exc).lower()
+    return "413" in msg or "too large" in msg or "payload too large" in msg
+
+
+def _strip_version_pages(state: V5SessionState) -> Optional[V5SessionState]:
+    """抹掉版本史里的整页 HTML（specFirstPages），其余原样。
+
+    只在落库超限的降级路径上用。没有任何一版带页时返回 None——那说明
+    超限不是页面造成的，降级重写没有意义，让调用方如实报错。
+    不动传入的 state：调用方手里那份还要继续当作内存权威用。
+    """
+    versions = list(getattr(state, "modelVersions", None) or [])
+    stripped = []
+    changed = False
+    for v in versions:
+        if isinstance(v, dict) and v.get("specFirstPages"):
+            v = {**v, "specFirstPages": None}
+            changed = True
+        stripped.append(v)
+    if not changed:
+        return None
+    try:
+        return state.model_copy(update={"modelVersions": stripped})
+    except Exception:  # noqa: BLE001 — 降级自己不许把主写入路径带崩
+        return None
+
+
 def _store_error(reason: str, message: str) -> StoreError:
     return {
         "ok": False,
@@ -575,6 +605,50 @@ def _save_session_record_db(store, state: V5SessionState) -> StoreError:
                     expected_rev=row.rev if row is not None else None,
                 )
             except Exception as exc:  # noqa: BLE001
+                # ★ 请求体超限 → 抹掉版本史页面降级重写一次（2026-08-18 真机）。
+                #
+                # 烘焙店会话 605KB，追加一份带页版本（~77KB）后每次落盘都撞
+                # `neon http 413: request body too large`，且此前这个失败被
+                # 静默吞掉——整轮产物（版本史/轮叙述/lastTurnId）全部蒸发，
+                # 库里停在轮初快照。
+                #
+                # 页面是增强类载荷（fail-open）：版本史里的整页 HTML 丢了，
+                # 回退那一版会如实回落区块渲染；而模型/对话/叙述是核心，
+                # 让它们陪着页面一起丢才是真正的事故。所以超限时抹掉
+                # modelVersions[].specFirstPages 重试一次；state.specFirstPages
+                # （当前预览的数据源）不动。仍失败就如实报错（上面那条
+                # persist_state 的失败留痕会出声）。
+                if _payload_too_large(exc):
+                    slim = _strip_version_pages(write_state)
+                    if slim is not None:
+                        try:
+                            ok = store.save(
+                                slim.sessionId,
+                                slim.model_dump(),
+                                expected_rev=row.rev if row is not None else None,
+                            )
+                        except Exception as exc2:  # noqa: BLE001
+                            return {
+                                "ok": False,
+                                "error": "persist_failed",
+                                "reason": "db_write_failed",
+                                "message": f"超限降级重写也失败：{str(exc2)[:160]}",
+                            }
+                        if ok:
+                            print(
+                                f"[persistence] 会话 {slim.sessionId} 落库超限，"
+                                "已抹掉版本史页面降级重写成功（当前预览页面不受影响）",
+                                file=sys.stderr,
+                                flush=True,
+                            )
+                            return {
+                                "ok": True,
+                                "sessionId": slim.sessionId,
+                                "state": slim,
+                                "degradedVersionPagesStripped": True,
+                            }
+                        # 降级写也撞 CAS：走外层重读重算（守卫必须重新过一遍）
+                        continue
                 return {
                     "ok": False,
                     "error": "persist_failed",
@@ -684,12 +758,25 @@ def persist_state(state: V5SessionState):
       这次把它变成一眼可见的。
     """
     _t0 = time.monotonic()
+    result: Any = None
     try:
-        return save_session_record(state)
+        result = save_session_record(state)
+        return result
     finally:
         _took = time.monotonic() - _t0
+        _sid = getattr(state, "sessionId", "?")
+        # 失败必须出声（2026-08-18）：终局落盘失败被静默吞掉的代价是——
+        # 驱动器内存里的 modelVersions/turnNarrations/lastTurnId 改名全部
+        # 蒸发，库里停在轮初快照，且日志一行不吭。排查只能靠"库里少了东西"
+        # 倒推。与下面慢写警告同一条纪律：写卡住/写失败都要一眼可见。
+        if isinstance(result, dict) and not result.get("ok"):
+            print(
+                f"[persist] 会话 {_sid} 落库失败："
+                f"{result.get('reason')}: {str(result.get('message') or '')[:200]}",
+                file=sys.stderr,
+                flush=True,
+            )
         if _took >= _PERSIST_SLOW_SECONDS:
-            _sid = getattr(state, "sessionId", "?")
             print(
                 f"[persist] 会话 {_sid} 落库耗时 {_took:.1f}s（超过 {_PERSIST_SLOW_SECONDS:.0f}s 阈值）",
                 file=sys.stderr,
