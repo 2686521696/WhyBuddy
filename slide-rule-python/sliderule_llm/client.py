@@ -628,7 +628,9 @@ def _call_llm_once(
         with httpx.Client(timeout=_http_timeout(timeout_s)) as client:
             r = client.post(url, headers=_headers(cfg.api_key), json=payload)
     except httpx.TimeoutException as e:
-        raise LlmError(f"timeout after {timeout_s:.0f}s", transient=True) from e
+        raise LlmError(
+            _describe_timeout(e, timeout_s, time.time() - started), transient=True
+        ) from e
     except httpx.HTTPError as e:
         raise LlmError(f"cannot reach {url}: {_describe_http_error(e)}", transient=True) from e
 
@@ -744,7 +746,9 @@ def _call_llm_once_streaming(
                         if payload_obj.get("usage"):
                             usage = payload_obj["usage"]
     except httpx.TimeoutException as e:
-        raise LlmError(f"timeout after {timeout_s:.0f}s", transient=True) from e
+        raise LlmError(
+            _describe_timeout(e, timeout_s, time.time() - started), transient=True
+        ) from e
     except httpx.HTTPError as e:
         raise LlmError(f"cannot reach {url}: {_describe_http_error(e)}", transient=True) from e
 
@@ -892,6 +896,31 @@ _CONNECT_TIMEOUT_SECONDS = float(os.getenv("LLM_CONNECT_TIMEOUT_SECONDS", "5"))
 def _http_timeout(timeout_s: float) -> "httpx.Timeout":
     """整体 timeout_s，**只把 connect 压短**。形状与 openai SDK 一致。"""
     return httpx.Timeout(timeout=timeout_s, connect=_CONNECT_TIMEOUT_SECONDS)
+
+
+def _describe_timeout(error: Exception, timeout_s: float, waited_s: float) -> str:
+    """超时要说清**哪一档**超的、真等了多久、预算是多少。
+
+    ⚑ 2026-08-17 真机踩到，一行自相矛盾的日志：
+
+        [llm-retry] 第 2/3 次失败（可重试，耗时 5.2s）：timeout after 600s
+
+    **耗时 5.2 秒却报 600 秒，差 120 倍。** 根因：`_http_timeout` 把 connect
+    压到 5s、其余三档留 600s（见上），而 `httpx.ConnectTimeout` 是
+    `TimeoutException` 的子类，被这个分支一把捞走之后，消息里填的是**配置的
+    整体预算** `timeout_s`，不是真正生效的那档。
+
+    这跟下面 `_describe_http_error`（2026-08-14）是**同一个病**：不同的失败
+    长成同一行日志。当时只修了 `HTTPError` 分支，`TimeoutException` 分支漏了
+    ——典型的只改一半，而且因为两个 except 挨着写，看代码时特别容易略过。
+
+    后果不是不好看：**连不上**（该查网关可达性/网络）和**生成太慢**（该查模型
+    与预算）要的修法完全相反，而日志把前者写成了后者。收尾那 821 秒的黑洞
+    至今没定论，靠的就是这类分不出成分的日志。
+    """
+    kind = type(error).__name__
+    budget = _CONNECT_TIMEOUT_SECONDS if isinstance(error, httpx.ConnectTimeout) else timeout_s
+    return f"{kind} after {waited_s:.1f}s (budget {budget:.0f}s)"
 
 
 def _describe_http_error(error: Exception) -> str:
