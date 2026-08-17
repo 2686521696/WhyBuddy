@@ -269,6 +269,17 @@ def model_id_lexicon(model: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     词表从第 4/5 步来，上游稳了它自然稳。权限同理：形状是 `<实体id>:create`，
     跟着实体 id 走。
 
+    ## 页面档（2026-08-17 晚补）：铸造点在第 2 步，冻结也得在第 2 步
+
+    页面 id 跟上面三类不同：它在 **SPEC 起草（第 2 步）**就铸出来了。第 2 步
+    虽然拿得到 refine 上下文，但对 id 只有一句软约束（"名字与 id 与上一版
+    保持一致"）——求自觉。真机第二轮的下场：HTML 侧的键还是 `p1..p4`，
+    模型侧页面 id 已整套重铸成 `elder_management` 等，交集为空
+    （experiments/refine-fingerprint/ 截图对照时撞到的）。页面 id 一漂，
+    两样东西直接失效：按需重画的照搬对不上号、图判作用域算出的"重画这一页"
+    找不到对应产物。所以词表加 `pages` 档，喂给第 2 步当硬词表块——
+    跟第 4/5 步同一个模子。
+
     ## 做法照 identifier freezing，不是新发明
 
     RecLLM 的 Reformer 用"标识符冻结"保证重训练前后 item id 不变；MCP 的
@@ -318,6 +329,14 @@ def model_id_lexicon(model: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     ]
     if nodes:
         lex["workflowNodes"] = nodes
+
+    pages = [
+        {"id": p.get("id"), "name": p.get("name")}
+        for p in ((model.get("page") or {}).get("pages") or [])[:12]
+        if isinstance(p, dict) and p.get("id")
+    ]
+    if pages:
+        lex["pages"] = pages
 
     return lex
 
@@ -811,7 +830,8 @@ def run_spec_first(
         print(
             f"[spec_first_pipeline] 精修 id 冻结：实体 {len(_prev_ids.get('entities') or [])}、"
             f"角色 {len(_prev_ids.get('roles') or [])}、"
-            f"流程节点 {len(_prev_ids.get('workflowNodes') or [])}"
+            f"流程节点 {len(_prev_ids.get('workflowNodes') or [])}、"
+            f"页面 {len(_prev_ids.get('pages') or [])}"
         )
     elif refine and not _freeze_on:
         print("[spec_first_pipeline] id 冻结被开关关掉（SLIDERULE_REFINE_ID_FREEZE=0）")
@@ -823,7 +843,14 @@ def run_spec_first(
     # ── 第 2 步：起草 SPEC ──────────────────────────────────────────
     # （第 1 步「澄清 + 缺口 + 证据」用的是现有能力，由调用方把 evidence 传进来）
     with _stage("specfirst.spec") as st:
-        spec_model = generate_spec_tree(goal, evidence=evidence, refine=refine)
+        # prev_pages：页面 id 冻结的词表（只在精修轮非空）。页面 id 在**这一步**
+        # 铸出来，所以冻结必须在这里下——第 4/5 步那两针冻不到它。真机第二轮
+        # 页面 id 整套重铸（p1..p4 → elder_management），按需重画的照搬和图判
+        # 作用域的"重画这一页"就都对不上号了。见 model_id_lexicon 的页面档注释。
+        spec_model = generate_spec_tree(
+            goal, evidence=evidence, refine=refine,
+            prev_pages=(_prev_ids.get("pages") or None),
+        )
         spec = spec_model.model_dump(mode="json") if hasattr(spec_model, "model_dump") else spec_model
         st["pages"] = len(spec.get("pages") or [])
         st["nodes"] = len(spec.get("nodes") or [])

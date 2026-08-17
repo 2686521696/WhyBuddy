@@ -62,6 +62,17 @@ BASELINE = {
 
 
 class Test词表:
+    def test_摘出页面的id与名字(self):
+        """★ 页面档（2026-08-17 晚补）。页面 id 在第 2 步（SPEC）铸出来，
+        跟实体/角色/节点不同——所以词表带上它，冻结针下在第 2 步。
+
+        真机证据：第二轮页面 id 从 p1..p4 整套重铸成 elder_management 等，
+        HTML 侧的键与模型侧交集为空。页面 id 一漂，按需重画的照搬和图判
+        作用域的"重画这一页"都对不上号。
+        """
+        lex = model_id_lexicon(BASELINE)
+        assert [(p["id"], p["name"]) for p in lex["pages"]] == [("p1", "工单页")]
+
     def test_摘出实体字段角色节点的id与名字(self):
         lex = model_id_lexicon(BASELINE)
         assert [(e["id"], e["name"]) for e in lex["entities"]] == [
@@ -123,6 +134,44 @@ class Test提示词:
         assert "wo_created" in block and "待派单" in block
         assert "照抄" in block
 
+    def test_第2步给出页面id并要求照抄(self):
+        """页面 id 冻结的硬词表块。此前 SPEC 步对 id 只有一句"保持一致"的
+        软约束——求自觉，真机实测求不动（同一个教训第三次了：逐段指纹 0/6、
+        角色三套 id、页面整套重铸）。
+        """
+        from services.spec_tree import build_spec_prompt
+
+        lex = model_id_lexicon(BASELINE)
+        user = build_spec_prompt(
+            "做个工单系统",
+            refine={"instruction": "加点模拟数据", "modelDigest": "d"},
+            prev_pages=lex["pages"],
+        )[-1]["content"]
+        assert "p1" in user and "工单页" in user
+        assert "照抄" in user, "没要求照抄，摆一份页面清单出来模型不知道要干嘛"
+        assert "名字" in user, "没说清判断锚是名字（顺序会变，名字不会）"
+        assert "新增" in user, "没给新页面留出口——全冻死的话加页需求会被憋成改旧页"
+
+    def test_非精修轮不带页面块(self):
+        """反向判据：新建应用没有上一版。prev_pages 只在 refine 分支里生效，
+        单独传了也必须逐字不变——防止哪天有人把它挪出 refine 分支。
+        """
+        from services.spec_tree import build_spec_prompt
+
+        lex = model_id_lexicon(BASELINE)
+        assert build_spec_prompt("做个工单系统") == build_spec_prompt(
+            "做个工单系统", prev_pages=lex["pages"]
+        )
+
+    def test_精修但没有页面词表时提示词不变(self):
+        from services.spec_tree import build_spec_prompt
+
+        refine = {"instruction": "加点模拟数据", "modelDigest": "d"}
+        assert build_spec_prompt("做个工单系统", refine=refine) == build_spec_prompt(
+            "做个工单系统", refine=refine, prev_pages=None
+        )
+        assert "页面 id 冻结" not in build_spec_prompt("做个工单系统", refine=refine)[-1]["content"]
+
     def test_第5步不列权限(self):
         """反向判据：权限形状是 `<实体id>:create`，**跟着实体 id 走**。
 
@@ -158,12 +207,14 @@ class Test提示词:
         assert "上一版已经有的" not in p5(structure, spec)[-1]["content"]
 
 
-class Test接线_两步都要传:
+class Test接线_三步都要传:
     """★ 纪律四：只改一半必然静默失效。
 
-    第 4 步管实体/字段 id，第 5 步管角色/节点 id。**只接一步的话另一半照旧
-    每轮重铸**，而且不会报错——正是本仓反复踩的形状。这组跑真实的
-    run_spec_first 控制流，两步各捕一次实参。
+    第 2 步管页面 id（铸造点在 SPEC），第 4 步管实体/字段 id，第 5 步管
+    角色/节点 id。**少接哪一步，那一类 id 就照旧每轮重铸**，而且不会报错
+    ——正是本仓反复踩的形状。这组跑真实的 run_spec_first 控制流，
+    三步各捕一次实参。（2026-08-17 晚从"两步"升成"三步"：页面档补上时，
+    这个类名和下面的判据必须一起动，别只加一条正向的。）
     """
 
     SPEC = {
@@ -185,7 +236,11 @@ class Test接线_两步都要传:
 
         seen = {}
 
-        monkeypatch.setattr(spec_tree, "generate_spec_tree", lambda g, **kw: dict(self.SPEC))
+        def fake_spec(g, **kw):
+            seen["spec_prev_pages"] = kw.get("prev_pages")
+            return dict(self.SPEC)
+
+        monkeypatch.setattr(spec_tree, "generate_spec_tree", fake_spec)
         monkeypatch.setattr(
             sph, "generate_pages_parallel",
             lambda s, **kw: {"pages": {"p1": "<html>x</html>"}, "failed": {}},
@@ -217,6 +272,14 @@ class Test接线_两步都要传:
         )
         return seen
 
+    def test_第2步收到页面id词表(self, monkeypatch, capsys):
+        seen = self._drive(monkeypatch, refine=True, reuse_model=BASELINE)
+        assert seen["spec_prev_pages"] == [{"id": "p1", "name": "工单页"}], (
+            "第 2 步没收到页面词表——页面 id 照旧每轮重铸，"
+            "按需重画的照搬和图判作用域的页 id 都会对不上号"
+        )
+        assert "页面 1" in capsys.readouterr().out, "冻结日志没报页面档，线上无从确认它生效"
+
     def test_第4步收到实体id词表(self, monkeypatch):
         seen = self._drive(monkeypatch, refine=True, reuse_model=BASELINE)
         lex = seen["structure_prev_ids"]
@@ -230,8 +293,9 @@ class Test接线_两步都要传:
         assert [r["id"] for r in lex["roles"]] == ["station_manager", "nursing_staff"]
         assert [n["id"] for n in lex["workflowNodes"]] == ["wo_created", "wo_closed"]
 
-    def test_非精修轮两步都不带词表(self, monkeypatch):
+    def test_非精修轮三步都不带词表(self, monkeypatch):
         seen = self._drive(monkeypatch, refine=False, reuse_model=BASELINE)
+        assert not seen["spec_prev_pages"]
         assert not seen["structure_prev_ids"]
         assert not seen["semantics_prev_ids"]
 
@@ -243,6 +307,7 @@ class Test接线_两步都要传:
         """
         monkeypatch.setenv("SLIDERULE_REFINE_ID_FREEZE", "0")
         seen = self._drive(monkeypatch, refine=True, reuse_model=BASELINE)
+        assert not seen["spec_prev_pages"], "开关关了页面档还在传——对照臂被污染"
         assert not seen["structure_prev_ids"]
         assert not seen["semantics_prev_ids"]
         assert "开关关掉" in capsys.readouterr().out

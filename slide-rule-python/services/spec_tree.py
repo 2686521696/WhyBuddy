@@ -425,6 +425,7 @@ def build_spec_prompt(
     clarified: str = "",
     evidence: str = "",
     refine: Optional[dict] = None,
+    prev_pages: Optional[list] = None,
 ) -> list[dict[str, str]]:
     """装配 spec 生成的对话。
 
@@ -439,6 +440,18 @@ def build_spec_prompt(
     「迭代」实际是「按原话重抽一次」（E29 精修只喂了老链路，没喂这条）。
     口径照开源里同型做法（GPT-Engineer improve 模式 / Aider）：
     旧产物 + 增量指令 + 「没被波及的保持稳定」约束，整体重生成。
+
+    ## prev_pages（2026-08-17 晚加）：页面 id 冻结的硬词表块
+
+    `[{"id","name"}]`，上一版模型里的页面清单（spec_first_pipeline.
+    model_id_lexicon 的 pages 档）。只在精修轮传；不传则提示词**逐字不变**。
+
+    ⚠ 上面"连续性硬要求"那句对 id 是**求自觉**，真机实测求不动：第二轮
+      页面 id 从 `p1..p4` 整套重铸成 `elder_management` 等，与 HTML 侧的键
+      交集为空。这里换成跟第 4/5 步 build_prev_ids_block 同一个模子——
+      名单 + 照抄要求 + 以名字为锚。page 曾是唯一 id 保住 5/5 的段，靠的
+      正是 html_structure 提示词里那句「sourcePageId 照抄」；SPEC 步此前
+      没有这句，所以漂的恰恰是它铸的 id。
     """
     parts = [f"产品意图：\n{goal.strip()}"]
     if clarified.strip():
@@ -470,6 +483,23 @@ def build_spec_prompt(
         #   ⚠ 这份清单必须跟 spec_first_pipeline.REFINE_REUSABLE_SEGMENTS 一致——
         #     一边给选项另一边不认，是本仓典型的"只改一半"，且完全静默。
         #     由 tests/test_refine_segment_reuse.py 的同名判据钉住。
+        if prev_pages:
+            # ★ 页面 id 冻结（2026-08-17）。判断锚是**名字/用途**，不是位置——
+            #   同 html_structure.build_prev_ids_block 的理由：顺序会变，名字不会。
+            listing = "\n".join(
+                f"    {p.get('id')}  ←→  {p.get('name')}"
+                for p in prev_pages
+                if isinstance(p, dict) and p.get("id")
+            )
+            parts.append(
+                "上一版已有这些页面（id ←→ 名字）：\n\n"
+                f"{listing}\n\n"
+                "页面 id 冻结（硬要求）：本轮页面清单里，凡是跟上面**说的是同一页**的"
+                "（以名字和用途判断，不看顺序），id 和 name 都**照抄**，一个字符都"
+                "不许改。只有本轮真正新增的页面才起新 id；被迭代要求删掉的页面"
+                "直接不出现。不许把「改这一页的内容」做成「换一个 id 的新页」——"
+                "id 一换，这一页的历史就断了。"
+            )
         parts.append(
             "另外，请在 JSON 顶层加一个 refineScope 字段：一个字符串数组，"
             "列出**本轮迭代要求真正涉及**的模型段，可选值只有这三个："
@@ -551,6 +581,7 @@ def generate_spec_tree(
     clarified: str = "",
     evidence: str = "",
     refine: Optional[dict] = None,
+    prev_pages: Optional[list] = None,
     llm_json_fn: Optional[Any] = None,
     max_reask: int = 2,
 ) -> SpecTree:
@@ -567,7 +598,9 @@ def generate_spec_tree(
     一份恒定 1 需求 1 风险 1 交付物的假树，看起来跟真的一样，还能过自己的闸。
     宁可如实报失败，也不要再造一个看着像那么回事的空壳。
     """
-    messages = build_spec_prompt(goal, clarified=clarified, evidence=evidence, refine=refine)
+    messages = build_spec_prompt(
+        goal, clarified=clarified, evidence=evidence, refine=refine, prev_pages=prev_pages
+    )
     last_err = "未调用"
 
     for attempt in range(max_reask + 1):
