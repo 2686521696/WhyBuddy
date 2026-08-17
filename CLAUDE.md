@@ -100,7 +100,10 @@
 
 ```bash
 # Python（必须用 venv，系统 python 缺依赖）
-slide-rule-python/.venv/bin/python -m pytest tests/ -q -k "关键词"
+# ⚠ 两个路径都得带 slide-rule-python/ 前缀：venv 和 tests/ 都在包里，不在仓根。
+#   写成 `... -m pytest tests/ -q` 在仓根跑是 "file or directory not found: tests/"，
+#   而这是"开局必读"里的第一条命令——2026-08-17 新会话照抄就卡住了。
+slide-rule-python/.venv/bin/python -m pytest slide-rule-python/tests/ -q -k "关键词"
 
 # 前端
 npx vitest run client/src/pages/sliderule/__tests__

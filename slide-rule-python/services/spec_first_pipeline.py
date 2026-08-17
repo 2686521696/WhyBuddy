@@ -243,6 +243,135 @@ def model_refine_digest(model: Optional[Dict[str, Any]]) -> str:
     return "\n".join(lines)[:4000]
 
 
+#: 精修时**可以整段沿用上一版**的模型段。**顺序有意义**：按「对本轮产物的耦合度」
+#: 从低到高排，过不了闸时从尾巴开始丢（见 apply_refine_segment_reuse）。
+#:
+#: ⚠ 为什么不含 datamodel / page：这两段跟第 3 步刚生成的 HTML 是绑定关系——
+#:   页面里的 data-field 指向 datamodel 的字段 id，bind_pages 按 page.pages 打孔。
+#:   沿用上一版 = 拿旧字段 id 去绑新 HTML，必然错位。它们该重新生成，
+#:   保结构靠的是 SPEC 步的连续性约束（那条对页面/角色**是**管用的，
+#:   实测菜单 4/4；管不住的是这里这几段）。
+#:
+#: ⚠ 为什么不含 appbundle（2026-08-17 写第一版时错放进来了，被闸当场咬出来）：
+#:   它整段都是**指向本轮产物的引用**——pageBindings.pageRef ∈ page.pages、
+#:   landingPageRef ∈ page.pages、roleRefs ∈ rbac.roles、dataModelRefs ∈ entities，
+#:   外加一个 preferredDevice。它是连接表，不是自有内容，沿用上一版等于拿旧
+#:   页面 id 当落地页。跟 page 是同一类错误，只是没那么显眼。
+#:
+#: ⚠ aigc 排在最后是因为它的 inputFields 指 datamodel 字段、roleRefs 指 rbac 角色，
+#:   而 datamodel **永远重新生成**——字段 id 一飘它就悬空。留着它是因为
+#:   capabilities 是用户真正在意的自有内容，丢了可惜；排最后是因为它最先该被丢。
+REFINE_REUSABLE_SEGMENTS = ("rbac", "workflow", "aigc")
+
+
+def refine_reuse_enabled() -> bool:
+    """`SLIDERULE_REFINE_REUSE_SEGMENTS=0` 关掉整个沿用。默认开。
+
+    留开关是因为这是本轮唯一会**改变落库内容**的改动，线上出问题要能一键退回
+    「全量重生成」的老行为，不用回滚部署。
+    """
+    raw = str(os.environ.get("SLIDERULE_REFINE_REUSE_SEGMENTS", "1")).strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def apply_refine_segment_reuse(
+    model: Dict[str, Any],
+    baseline: Optional[Dict[str, Any]],
+    scope: Optional[List[str]],
+    *,
+    gate_fn: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """精修时把**指令没点名的段**整段换回上一版。返回换好的 model（不改入参）。
+
+    ## 为什么是"沿用"不是"打补丁"
+
+    2026-08-16 先试的是 RFC 7386 Merge Patch（`services/merge_patch.py`，实现和
+    12 条单测都对），真机跑完发现诊断日志一次都没出现——它接在
+    `generate_five_system_model` 上，而真正在跑的是 spec-first。补丁语义跟
+    「从 spec 树重新生成、出口永远是完整模型」这条链**架构上不兼容**，不是接线
+    问题。改用同文件里已有的 `reuse_language` / `reuse_style_brief` 那套做法：
+    不问模型要增量，直接在出口把不该动的段按住。思路同 Kubernetes server-side
+    apply 的字段归属——谁拥有哪一段，重新生成就不许覆盖不属于它的部分。
+
+    ## scope 的三种取值，语义不同
+
+        None  模型没声明（老 spec / 非精修 / 它没答）→ 按"不知道"处理，一段都不沿用
+        []    模型明确说"一段都没碰"                  → 四段全沿用
+        [...] 点名的段重新生成，其余沿用
+
+    None 和 [] **必须分开**：混成一个会让"模型没答"静默变成"全沿用"，
+    那是拿沉默当授权——用户真要求改权限时权限会一声不吭地不生效。
+
+    ## fail-open，而且是有意的
+
+    换完要重过一遍闸（`gate_fn`）。过不了就**逐段往回退**，退到能过为止；一段都
+    过不了就整份用重新生成的那份。沿用是质量增强（少改点东西），不是证据/闭环
+    类的东西，把它写成 fail-closed 会让一次本来能跑完的推演直接崩掉。
+    每次退让都打日志，别静默——按纪律七分类。
+
+    ⚠ 重过闸不是可选项。reused 的 workflow 里 `assigneeRole` 指的是**上一版**的
+      角色 id，而 rbac 若被点名重新生成，角色 id 可能整套换了——不重过闸就是
+      拿"闸之前绿过"给换过内容的模型发绿灯，正是本仓说的伪造绿灯。
+
+    ⚠ 退让必须**逐段**，不能全有或全无（2026-08-17 第一版就是全有全无，被自己的
+      探针咬出来）：aigc 的 inputFields 指 datamodel 字段，而 datamodel 永远重新
+      生成，字段 id 一飘 aigc 就悬空——全有全无的话，一个 aigc 悬空会把 rbac 和
+      workflow 的沿用一起赔掉，而那两段本来是好的、也正是用户抱怨的那两段。
+      按 REFINE_REUSABLE_SEGMENTS 的顺序从尾巴丢（耦合最高的先丢），最多过 n+1 次闸；
+      闸是纯机械的、不调 LLM，这个代价换"尽可能多保住几段"是划算的。
+    """
+    import copy
+
+    if not isinstance(model, dict) or not isinstance(baseline, dict):
+        return model
+    if scope is None:
+        return model
+
+    named = {str(s).strip() for s in scope if str(s).strip()}
+    candidates = [
+        seg
+        for seg in REFINE_REUSABLE_SEGMENTS
+        if seg not in named and isinstance(baseline.get(seg), (dict, list))
+    ]
+    if not candidates:
+        return model
+
+    while candidates:
+        candidate = dict(model)
+        for seg in candidates:
+            candidate[seg] = copy.deepcopy(baseline[seg])
+
+        if gate_fn is None:
+            print(f"[spec_first_pipeline] 精修沿用上一版模型段：{'、'.join(candidates)}")
+            return candidate
+
+        try:
+            verdict = gate_fn(candidate)
+        except Exception as exc:  # noqa: BLE001
+            # 纪律七：沿用是增强类，**自己炸了不许拖垮主链路**。闸抛异常时整份
+            # 退回重新生成的那份——它在 assemble 里已经过过闸，是已知可用的。
+            # 抛出去的话，一个"少改点东西"的优化会让整轮推演崩掉。
+            print(
+                f"[spec_first_pipeline] ⚠ 精修沿用重过闸时闸自己抛了，"
+                f"整份退回重新生成的那份：{type(exc).__name__}: {str(exc)[:200]}"
+            )
+            return model
+        if isinstance(verdict, dict) and verdict.get("passed"):
+            print(f"[spec_first_pipeline] 精修沿用上一版模型段：{'、'.join(candidates)}")
+            return candidate
+
+        findings = (verdict or {}).get("findings") or []
+        detail = "；".join(f"{f.get('path')}：{f.get('message')}" for f in findings[:3])
+        dropped = candidates.pop()
+        print(
+            f"[spec_first_pipeline] ⚠ 沿用「{dropped}」后过不了闸，改为重新生成这一段"
+            f"（其余继续沿用）：{detail[:200]}"
+        )
+
+    print("[spec_first_pipeline] ⚠ 精修沿用逐段退让到空，整份用重新生成的那份")
+    return model
+
+
 def _reemit_pages(
     sink: Optional[Callable[..., None]],
     pages: Dict[str, str],
@@ -296,6 +425,7 @@ def run_spec_first(
     design_override: Optional[Dict[str, Any]] = None,
     reuse_language: Optional[Dict[str, Any]] = None,
     reuse_style_brief: Optional[Dict[str, Any]] = None,
+    reuse_model: Optional[Dict[str, Any]] = None,
     on_page: Optional[Callable[[str, str, int, int], None]] = None,
 ) -> Dict[str, Any]:
     """一句话 → 完整五系统模型 + 带 data-* 孔的多页 HTML。
@@ -309,6 +439,12 @@ def run_spec_first(
     `{"instruction": 本轮追加要求, "modelDigest": model_refine_digest(上一版)}`。
     只影响第 2 步的 SPEC 提示词（加既有结构 + 连续性约束），后续步骤
     照常从新 SPEC 往下走——页面/模型是重新生成的，但被要求保持稳定。
+
+    reuse_model（2026-08-17 加）：**上一版的完整模型**，精修时未被指令点名的段
+    从它整段复制（第 6.2 步）。跟 refine 的 modelDigest 是两回事，别合并：
+    digest 是喂给 LLM 看的摘要（几百字、有意丢细节），这个是拿来**照搬**的
+    原始数据，丢了细节就搬不回去。"点名了哪几段"由 SPEC 步的 refineScope 声明。
+    ⚠ 只在 refine 在场时生效——非精修轮传了也不会沿用，那是新建应用，没有上一版。
 
     device（2026-08-14 竖屏加）：从 goal 里认（device_policy 同一份词表，
     「手机/移动端/App/小程序」→ phone），一处定、处处跟——页面提示词换
@@ -516,6 +652,41 @@ def run_spec_first(
             raise SpecFirstError("第 6 步没有产出模型")
         st["ok"] = 1
     stages["assemble"] = dict(st)
+
+    # ── 第 6.2 步：精修时，指令没点名的段沿用上一版 ─────────────────
+    #
+    # ⚠ 位置很要紧：必须在**这个** model 上做，不是在别处。2026-08-16 同一件事
+    #   打偏过三次，全是改在没通电的那一步上（闭环重建、提示词收尾、老生成器）。
+    #   这里是 assemble 的出口，也是下面 bind / 落库 / 精修回流拿到的同一份对象——
+    #   接线由 tests/test_refine_segment_reuse.py 端到端钉住（跑真实控制流，非 mock）。
+    #
+    # 放在 bind 之前：bind_pages 要用 model 打孔，让它看到最终那份，别打完再换。
+    if refine and refine_reuse_enabled():
+        from .v5_model_gate import validate_five_system_model
+
+        model = apply_refine_segment_reuse(
+            model,
+            reuse_model,
+            (spec or {}).get("refineScope"),
+            gate_fn=lambda m: validate_five_system_model(
+                m,
+                require_landing_page_ref=True,
+                require_preferred_device=True,
+                # 跟 model_assembly.assemble 里那次过闸**必须同参**：换了参数就是
+                # 换了把尺子，"重新量一遍"会量出跟原来不同的结论，退回逻辑失真。
+                require_page_kind_contract=False,
+            ),
+        )
+        stages["refineReuse"] = {
+            "scopeDeclared": (spec or {}).get("refineScope") is not None,
+            "reused": [
+                seg
+                for seg in REFINE_REUSABLE_SEGMENTS
+                if isinstance(reuse_model, dict)
+                and model.get(seg) is not None
+                and model.get(seg) == (reuse_model or {}).get(seg)
+            ],
+        }
 
     # ── 第 6.5 步：给 HTML 打 data-* 孔 ─────────────────────────────
     # ⚠ 到这里实体与字段才定死校验过，孔才打得成。第 3 步打不了——

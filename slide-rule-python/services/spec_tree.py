@@ -179,6 +179,20 @@ class SpecTree(BaseModel):
     successCriteria: list[SuccessCriterion]
     nodes: list[SpecNode]
     pages: list[SpecPage]
+    #: 精修时**本轮指令点名要改的模型段**（只在 refine 模式下有意义，其余时候 None）。
+    #:
+    #: ⚠ 2026-08-16 那天「改一句话把整个应用换掉」修了四次都只保住结构：
+    #:   `workflow`/`rbac` 这些跟指令毫不相干的段照样被整段重写（逐段指纹 0/6）。
+    #:   根因是 spec-first 天生「从 spec 树重新生成」，出口永远是完整模型——
+    #:   没有任何地方说得出「这一段用户根本没提，别动它」。这个字段就是那句话。
+    #:
+    #: 语义是**声明，不是执行**：它只说指令碰了哪几段，真正的沿用发生在
+    #: spec_first_pipeline 的汇合出口（apply_refine_segment_reuse）。放在 SPEC 步
+    #: 是因为那一步本来就在读指令原文，顺带声明不多花一次 LLM 调用。
+    #:
+    #: None 与 [] 语义不同，别混：None = 模型没声明（老 spec、非精修、或它没答），
+    #: 按"不知道"处理，一段都不敢沿用；[] = 模型明确说"一段都没碰"，全部沿用。
+    refineScope: list[str] | None = None
 
     @field_validator("appName")
     @classmethod
@@ -441,6 +455,30 @@ def build_spec_prompt(
             "连续性硬要求：没被迭代要求波及的页面/角色/判据必须保留，"
             "名字与 id 与上一版保持一致；被要求改动的地方如实改。"
             "不许因为重新生成就把整个应用换一套设计。"
+        )
+        # ★ 让 SPEC 步顺带声明「这条指令碰了哪几段」（2026-08-17）。
+        #
+        # 上面那条"连续性硬要求"是**求它自觉**，实测四组基线逐段指纹 0/6——
+        # 求不动。这里把它从措辞升级成一个结构化字段：模型说没碰的段，
+        # 汇合出口会**直接从上一版复制**，它写什么都盖不掉。
+        #
+        # ⚠ 只列可沿用的三段。datamodel / page / appbundle 故意不在选项里：
+        #   前两者跟第 3 步刚生成的 HTML 是绑定关系（data-field 指字段、
+        #   bind_pages 按 page 打孔），appbundle 整段都是指向本轮产物的引用
+        #   （landingPageRef / pageBindings）。三者沿用上一版都必然错位，
+        #   给了选项模型迟早会选，不如根本不给。
+        #   ⚠ 这份清单必须跟 spec_first_pipeline.REFINE_REUSABLE_SEGMENTS 一致——
+        #     一边给选项另一边不认，是本仓典型的"只改一半"，且完全静默。
+        #     由 tests/test_refine_segment_reuse.py 的同名判据钉住。
+        parts.append(
+            "另外，请在 JSON 顶层加一个 refineScope 字段：一个字符串数组，"
+            "列出**本轮迭代要求真正涉及**的模型段，可选值只有这三个："
+            '"rbac"（角色与权限）、"workflow"（流程节点与流转）、'
+            '"aigc"（AI 能力与编排）。\n'
+            "判断标准是「这条要求不改这一段就做不到吗」——只改某页的展示内容、"
+            "加模拟数据、调文案措辞，这三样都**不涉及**上述任何一段，"
+            "此时给空数组 []。宁可少列，不要顺手多列：列进来的段会被重新生成，"
+            "没列的段原样沿用上一版。"
         )
 
     parts.append(

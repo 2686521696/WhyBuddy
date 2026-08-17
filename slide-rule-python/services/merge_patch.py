@@ -48,6 +48,24 @@ Merge Patch 不用写下标：给一份形状跟原文档一样、只含要改�
 表达不了"把某字段设为 null"的原因。规范原文就这么定的，不要"改良"。
 
 ⚠ 数组**整体替换**，不做逐项合并。同样是规范定的：数组走的是 else 分支。
+
+## 2026-08-17：它守的是**老链路**，别再往 spec-first 上接
+
+写这个文件那天接错了插座——挂在 `generate_five_system_model` 上，而那一轮真正
+产出模型的是 spec-first。后来没有把它硬塞进 spec-first，因为**方案跟那条链的
+架构不兼容**：spec-first 天生"从 spec 树重新生成"，出口永远是完整六段，合并器
+看到六段齐全就判"没按补丁交付"、原样放行。这不是接线问题。
+
+现在两条精修路径各有各的机制，**不是重复，是分工**：
+
+    老链路（generate_five_system_model）   Merge Patch —— 模型只吐增量
+                                           v5_llm_generate.py:1136 在用，还活着
+    spec-first（默认路径）                 逐段沿用 —— 模型声明碰了哪几段，
+                                           出口把其余段按住
+                                           spec_first_pipeline.apply_refine_segment_reuse
+
+老链路在 spec-first 失败时兜底，所以这个文件**没死、别删**。但也别再试图把它
+接到 spec-first 上——那条路走过了，不通。
 """
 
 from __future__ import annotations

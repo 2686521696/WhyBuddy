@@ -494,6 +494,12 @@ def _try_llm_generate_evidence(
                     refine=_spec_refine,
                     reuse_language=_reuse_language,
                     reuse_style_brief=_reuse_style,
+                    # ★ 上一版模型整份带过去（2026-08-17）：指令没点名的段在
+                    #   spec-first 汇合出口直接从它复制。传的是**完整模型**不是
+                    #   digest——digest 是给 LLM 看的摘要，照搬得用原始数据。
+                    #   `_prev_model` 就是上面读 designLanguage/styleBrief 的那份，
+                    #   同一个来源，不另开一条取数路径。
+                    reuse_model=_prev_model,
                 )["model"]
                 from_spec_first = True
                 print("[v5_capability_executor] spec-first 链路产出模型")
