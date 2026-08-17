@@ -353,6 +353,86 @@ def refine_reuse_enabled() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
+def _permission_id(perm: Any) -> str:
+    """一条权限的 id。**两种形态都要认**——字符串和 `{"id": ...}`。
+
+    ⚠ 不是想多了：闸的 `_collect_permission_ids`（v5_model_gate:336）两种都收。
+      这边只认字符串的话，字典形态的模型会走到"一条都没并进来"，而且不报错、
+      判据也不红——沿用照旧退让到空，看起来"这个功能就是没生效"。
+      本仓纪律四点名的形状：同一件事两处实现，改一半等于没改。
+    """
+    if isinstance(perm, str):
+        return perm.strip()
+    if isinstance(perm, dict):
+        return str(perm.get("id") or perm.get("name") or "").strip()
+    return ""
+
+
+def merge_needed_permissions(old_rbac: Any, fresh_model: Any):
+    """沿用旧 rbac 时，把**本轮页面真正引用、而旧 rbac 没有**的权限并进来。
+
+    返回 `(合并后的 rbac, 并进来的权限 id 列表)`；没什么可并就原样返回。
+
+    ## 为什么需要这个（2026-08-17 深夜，每臂 n=5 的多轮 A/B）
+
+    沿用失败 8/9 是同一条：新生成的 page 引用了旧 rbac 没有的权限
+    （`service_staff:export`、`elderly:delete`、`community_branch:read` …）。
+    权限形如 `<实体id>:动作`，而 rbac 是**上一版的快照**——这一轮但凡新产生
+    任何权限需求，快照就装不下。
+
+    ⚠ **这不是 id 漂移，id 冻结救不了。** 冻结保的是"已有 id 别改名"，
+      管不了"多出来一条"。沿用是整段照搬，整段照搬天然容纳不了增量。
+
+    ## 为什么是"并页面需要的"，不是别的两种并法
+
+    三种都拿真闸在真机数据（on-2/on-3/on-5）上试过，**全都能过闸**，所以闸
+    判不出优劣，得按原则选：
+
+      A 旧 ∪ 新全部    并进来的权限里有页面根本没引用的，没有依据，且累积更快
+      B 只沿用 roles、权限用新的
+                      **淘汰**：真机 on-2 的新权限丢了 `work_order:export`
+                      和 `work_order:manage`，而用户那轮只说了"加点模拟数据"。
+                      权限凭空消失正是最初被抱怨的形态。
+      C 旧 ∪ 页面所需  ← 选它。修法跟病灶一样大，每条都有页面在引用它
+
+    ⚠ **只加不删。** 想删旧权限的话，那是用户点名要改 rbac 的场景，而那时
+      rbac 压根不进沿用候选（见 candidates 那句 `seg not in named`），
+      根本走不到这里。
+
+    ⚠ 合并结果**不免检**：它跟其余段一起组成候选，再整份过一遍同一个闸。
+      这里不设任何特权通道——伪造绿灯是本仓的红线。
+    """
+    if not isinstance(old_rbac, dict):
+        return old_rbac, []
+    perms = old_rbac.get("permissions")
+    if not isinstance(perms, list):
+        return old_rbac, []
+
+    have = {pid for pid in (_permission_id(p) for p in perms) if pid}
+    needed: List[str] = []
+    for page in (((fresh_model or {}).get("page") or {}).get("pages") or []):
+        if not isinstance(page, dict):
+            continue
+        for ap in page.get("actionPermissions") or []:
+            ref = str(ap).strip()
+            if ref and ref not in have:
+                have.add(ref)
+                needed.append(ref)
+    if not needed:
+        return old_rbac, []
+
+    import copy as _copy
+
+    merged = _copy.deepcopy(old_rbac)
+    # 跟已有元素的形态保持一致，别把 [{...}] 搞成 [{...}, "str"] 的混合列表。
+    # 闸对混合列表是宽容的，但落库的东西会被下游各种消费，形态一致是便宜的保险。
+    as_dict = bool(perms) and all(isinstance(p, dict) for p in perms)
+    merged["permissions"] = list(merged.get("permissions") or []) + [
+        ({"id": ref} if as_dict else ref) for ref in needed
+    ]
+    return merged, needed
+
+
 def apply_refine_segment_reuse(
     model: Dict[str, Any],
     baseline: Optional[Dict[str, Any]],
@@ -464,10 +544,29 @@ def apply_refine_segment_reuse(
         candidate = dict(model)
         for seg in segs:
             candidate[seg] = copy.deepcopy(baseline[seg])
+        if "rbac" in segs:
+            # 沿用旧 rbac 的同时，把本轮页面真正需要的权限并进来。
+            # 不并的话这一段 8/9 会被闸拒（见 merge_needed_permissions 头注）。
+            candidate["rbac"], _ = merge_needed_permissions(candidate["rbac"], model)
         return candidate
 
+    def merge_note(segs) -> str:
+        """给日志用：这次沿用往 rbac 里并了哪几条权限。
+
+        ⚠ **必须说出来。** "沿用 rbac"读起来是整段照搬，而这里其实动了它的
+          permissions。不打日志的话就是"东西看着是旧的、其实改过"——本仓
+          反复数到的那个形态，出问题时对不出账。
+        """
+        if "rbac" not in segs:
+            return ""
+        _, added = merge_needed_permissions(baseline.get("rbac"), model)
+        return f"（并入本轮页面需要的权限：{'、'.join(added)}）" if added else ""
+
     if gate_fn is None:
-        print(f"[spec_first_pipeline] 精修沿用上一版模型段：{'、'.join(candidates)}")
+        print(
+            f"[spec_first_pipeline] 精修沿用上一版模型段：{'、'.join(candidates)}"
+            f"{merge_note(candidates)}"
+        )
         return build(candidates)
 
     class _GateBlewUp(Exception):
@@ -492,7 +591,10 @@ def apply_refine_segment_reuse(
         # 情况（冻结生效且本轮没新增权限）走的就是这条。
         ok, detail = try_gate(candidates)
         if ok:
-            print(f"[spec_first_pipeline] 精修沿用上一版模型段：{'、'.join(candidates)}")
+            print(
+                f"[spec_first_pipeline] 精修沿用上一版模型段：{'、'.join(candidates)}"
+                f"{merge_note(candidates)}"
+            )
             return build(candidates)
 
         # 整体过不了 → 逐个试加，落在一个 1-maximal 集合上（见文档串里的 ddmax）。
@@ -523,7 +625,7 @@ def apply_refine_segment_reuse(
         return model
 
     print(
-        f"[spec_first_pipeline] 精修沿用上一版模型段：{'、'.join(keep)}"
+        f"[spec_first_pipeline] 精修沿用上一版模型段：{'、'.join(keep)}{merge_note(keep)}"
         f"（丢掉 {'、'.join(dropped)}，首次拒绝：{first_reject}）"
     )
     return build(keep)

@@ -532,3 +532,172 @@ class Test提示词与实现不许只改一半:
             ],
         })
         assert spec2.refineScope is None
+
+
+# ══════════════════════════════════════════════════════════════════════
+# rbac 吃增量（2026-08-17 深夜）
+#
+# 病灶：沿用失败 8/9 是同一条——新生成的 page 引用了旧 rbac 没有的权限。
+# 现有夹具 _baseline/_fresh 的 rbac 只有 roles、没有 permissions，页面也不带
+# actionPermissions，**一条都碰不到这个病**，所以这里另起一套。
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _perm_baseline() -> dict:
+    """上一版：两条权限，页面只用到 read。"""
+    m = _baseline()
+    m["rbac"] = {
+        "roles": [{"id": "mgr", "name": "主管"}, {"id": "eng", "name": "维修工"}],
+        "permissions": ["wo:read", "wo:create"],
+    }
+    m["page"] = {"pages": [{
+        "id": "p1", "name": "工单页",
+        "fieldBindings": ["wo.amt"], "actionPermissions": ["wo:read"],
+    }]}
+    return m
+
+
+def _perm_fresh() -> dict:
+    """这一轮：页面多引用了 wo:export，新 rbac 自己也铸了它（真机 4/4 就是这样）。
+
+    另外新 rbac 还铸了 wo:archive，但**没有任何页面引用它**——用来区分
+    「并页面所需」和「把新权限全并进来」这两种做法。
+
+    ⚠ 新权限里**故意丢掉了 wo:create**（旧的有）。第一版夹具让新的是旧的
+      超集，结果「权限用新的、丢旧的」那种退化实现**照样全绿**——超集之下
+      根本丢不掉东西，夹具没还原病灶。真机 on-2 正是丢了 work_order:export
+      和 work_order:manage 两条，而用户那轮只说了「加点模拟数据」。
+    """
+    m = _perm_baseline()
+    m["rbac"] = {
+        "roles": [{"id": "mgr", "name": "店长"}],
+        "permissions": ["wo:read", "wo:export", "wo:archive"],
+    }
+    m["page"] = {"pages": [{
+        "id": "p1", "name": "工单页",
+        "fieldBindings": ["wo.amt"], "actionPermissions": ["wo:read", "wo:export"],
+    }]}
+    return m
+
+
+class Test沿用的rbac要能吃增量:
+    def test_页面引用的新权限被并进来(self):
+        """真机 8/9 的病灶：不并就过不了闸，整段 rbac 白丢。
+
+        ⚠ **必须先钉住「rbac 确实是沿用来的」再看权限。** 第一版只断言
+          `"wo:export" in perms`，而把合并整个删掉时 rbac 会回落到**新生成的
+          那份**，新的那份本来就有 wo:export——判据被回落路径白送了绿灯，
+          变异咬不动。CLAUDE.md 第三条：正向判据齐全、反向判据缺失。
+        """
+        base = _perm_baseline()
+        out = apply_refine_segment_reuse(_perm_fresh(), base, [], gate_fn=_gate)
+        assert _fp(out["rbac"]["roles"]) == _fp(base["rbac"]["roles"]), (
+            "rbac 根本没被沿用（回落到新生成的那份了）——下面那条权限断言"
+            "会被回落路径白送绿灯，先钉死这里"
+        )
+        assert "wo:export" in out["rbac"]["permissions"], (
+            "页面引用了 wo:export，沿用的旧 rbac 里没有，也没并进来"
+            "——闸会拒，整段 rbac 又白丢了"
+        )
+
+    def test_页面没引用的新权限不并进来(self):
+        """★ 反向判据：修法要跟病灶一样大。
+
+        wo:archive 是新 rbac 铸的，但没有任何页面引用它。并它进来没有依据，
+        而且会让权限逐轮单调累积。少了这条，实现退化成「旧 ∪ 新全部」也照样绿。
+        """
+        out = apply_refine_segment_reuse(
+            _perm_fresh(), _perm_baseline(), [], gate_fn=_gate
+        )
+        assert "wo:archive" not in out["rbac"]["permissions"], (
+            "把页面根本没用到的新权限也并进来了——并进来的每一条都该有页面在引用它"
+        )
+
+    def test_旧权限一条都不许少(self):
+        """★ 反向判据：防止退化成「只沿用 roles、权限用新的」。
+
+        真机 on-2 的新权限丢了 work_order:export 和 work_order:manage，而用户
+        那轮只说了「加点模拟数据」。权限凭空消失正是最初被抱怨的形态。
+        """
+        base = _perm_baseline()
+        out = apply_refine_segment_reuse(_perm_fresh(), base, [], gate_fn=_gate)
+        assert _fp(out["rbac"]["roles"]) == _fp(base["rbac"]["roles"]), (
+            "rbac 根本没被沿用——同上，先钉死这里再看权限"
+        )
+        for p in base["rbac"]["permissions"]:
+            assert p in out["rbac"]["permissions"], (
+                f"旧权限 {p} 被弄丢了——用户这轮根本没提权限"
+            )
+
+    def test_角色仍然沿用的是上一版(self):
+        """并权限不该顺手把角色也换了——角色才是用户抱怨被换掉的东西。"""
+        base = _perm_baseline()
+        out = apply_refine_segment_reuse(_perm_fresh(), base, [], gate_fn=_gate)
+        assert _fp(out["rbac"]["roles"]) == _fp(base["rbac"]["roles"]), (
+            "rbac 的角色没沿用上一版"
+        )
+
+    def test_用户点名rbac时根本不合并(self):
+        """用户明确要改权限时，rbac 压根不进沿用候选，自然也不该被并。
+
+        这是「会不会把用户要删的权限又并回来」那个担心的正面回答。
+        """
+        base = _perm_baseline()
+        out = apply_refine_segment_reuse(
+            _perm_fresh(), base, ["rbac"], gate_fn=_gate
+        )
+        assert _fp(out["rbac"]) == _fp(_perm_fresh()["rbac"]), (
+            "用户点名要改 rbac，却给了他一份沿用+合并过的——用户的要求静默失效了"
+        )
+
+    def test_权限是字典形态时也能并(self):
+        """⚠ 闸的 _collect_permission_ids 两种形态都收（字符串 / {"id":...}）。
+
+        只认字符串的话，字典形态的模型会「一条都没并进来」，而且不报错、判据
+        也不红——沿用照旧退让，看起来像「这功能就是没生效」。纪律四的形状。
+        """
+        from services.spec_first_pipeline import merge_needed_permissions
+
+        base = _perm_baseline()
+        base["rbac"]["permissions"] = [{"id": "wo:read"}, {"id": "wo:create"}]
+        merged, added = merge_needed_permissions(base["rbac"], _perm_fresh())
+        assert added == ["wo:export"], f"字典形态下没并对：{added}"
+        assert all(isinstance(p, dict) for p in merged["permissions"]), (
+            "把字典列表并成了字典和字符串混合的——落库后下游各自解析会分叉"
+        )
+
+    def test_合并结果照样过闸_没有免检通道(self):
+        """合并不是特权：并完的整份候选要跟其余段一起再过一遍同一个闸。
+
+        用一个「见到 wo:export 就拒」的闸——如果合并有免检通道，这条会绿。
+        """
+        def rejects_export(model):
+            if "wo:export" in ((model.get("rbac") or {}).get("permissions") or []):
+                return {"passed": False, "findings": [
+                    {"path": "rbac.permissions", "message": "不许有 export"},
+                ]}
+            return {"passed": True, "findings": []}
+
+        base = _perm_baseline()
+        out = apply_refine_segment_reuse(
+            _perm_fresh(), base, [], gate_fn=rejects_export
+        )
+        assert _fp(out["rbac"]) == _fp(_perm_fresh()["rbac"]), (
+            "闸拒了合并结果，却还是把它端了出去——伪造绿灯"
+        )
+
+    def test_并了权限要在日志里说出来(self, capsys):
+        """「沿用 rbac」读起来是整段照搬，而这里其实动了它的 permissions。
+        不说的话就是「东西看着是旧的、其实改过」，出问题时对不出账。"""
+        apply_refine_segment_reuse(_perm_fresh(), _perm_baseline(), [], gate_fn=_gate)
+        out = capsys.readouterr().out
+        assert "wo:export" in out, "并了权限却没在日志里说是哪几条"
+
+    def test_没什么可并时原样返回(self):
+        """页面没引用任何新权限时不该无中生有地改 rbac。"""
+        from services.spec_first_pipeline import merge_needed_permissions
+
+        base = _perm_baseline()
+        merged, added = merge_needed_permissions(base["rbac"], base)
+        assert added == [], f"没东西可并却并了 {added}"
+        assert merged is base["rbac"], "没可并的还是复制了一份，白费"
