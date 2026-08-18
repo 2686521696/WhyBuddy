@@ -66,7 +66,13 @@ _DB_URL_ATTR = "APP_STORE_DATABASE_URL"
 # 不进库——这两个环境变量本来就是「会话存档在哪」的意思，沿用它的语义。
 _FILE_OVERRIDE_ENVS = ("SLIDERULE_SESSIONS_FILE", "WHYBUDDY_SESSIONS_FILE")
 
-_HTTP_TIMEOUT_S = 15
+#: 会话 UPSERT 是几百 KB 的 JSONB，不是应用库那种百毫秒读。
+#: 2026-08-18 咖啡馆 10 轮：客户端把 app_store 的 8s statement_timeout 照抄
+#: 过来，语句被 Postgres 掐死，线上 /db-api 回 500（不是 413）。墙钟必须
+#: **宽过**语句超时，不然 httpx 先报 timed out，服务端还在写。
+#: 30s 对齐 db-api 的 DEFAULT_TIMEOUT_MS。
+_BLOB_STATEMENT_TIMEOUT_MS = 30_000
+_HTTP_TIMEOUT_S = 45
 
 
 def _now_iso() -> str:
@@ -444,7 +450,9 @@ class HttpApiSessionBlobStore(NeonHttpSessionBlobStore):
         self._q(f"alter table {TABLE} add column if not exists owner_id varchar(64)")
 
     def _q(self, sql: str, params: Optional[list[Any]] = None) -> list[dict[str, Any]]:
-        return self._gateway.query(sql, params)
+        return self._gateway.query(
+            sql, params, timeout_ms=_BLOB_STATEMENT_TIMEOUT_MS
+        )
 
 
 def _db_url() -> str:

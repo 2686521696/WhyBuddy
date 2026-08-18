@@ -1262,6 +1262,7 @@ def run_spec_first(
     # ⚠ 2026-08-18 过夜咖啡馆：种子 `role:staff`（或从一页两跳踩到它）把
     #   三页全吃。修法在 refine_graph_scope：枢纽不当扩散起点，不改 hops。
     #   `SLIDERULE_GRAPH_SCOPE_HUB_BARRIER=0` 退回沿角色扫全图。
+    #   同日 10 轮：角色堵住了，大盘页还在当桥——`page` 进 no_expand，不当种子丢。
     #
     # ⚠ 独立埋点（第 2.8 步同款教训）：它自己是一次 LLM 调用，混进别的段，
     #   量出来的墙钟说明不了任何事。

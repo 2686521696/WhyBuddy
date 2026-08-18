@@ -324,6 +324,33 @@ def test_http_api_backend_uses_sql_endpoint_and_bearer_token(monkeypatch):
     assert client.posts[-1][1]["timeout_ms"] == store._PG_STATEMENT_TIMEOUT_MS
 
 
+def test_会话档语句超时比应用库宽_墙钟宽过语句(monkeypatch):
+    """咖啡馆 10 轮：会话 UPSERT 被 8s statement_timeout 掐死，/db-api 回 500。
+
+    应用库仍是百毫秒级读，保持 8s。谁把会话通道改回默认 8s，这条必红。
+    """
+    import httpx
+    from services import session_blob_store as sbs
+
+    _FakeHttpxClient.instances.clear()
+    monkeypatch.setattr(httpx, "Client", _FakeHttpxClient)
+
+    blob = sbs.HttpApiSessionBlobStore("https://miantuan.ai/db-api", "secret-token")
+    client = _FakeHttpxClient.instances[-1]
+    assert client.timeout == sbs._HTTP_TIMEOUT_S
+    assert client.timeout > sbs._BLOB_STATEMENT_TIMEOUT_MS / 1000, (
+        "墙钟必须宽过语句超时，否则 httpx 先报 timed out"
+    )
+    blob._q("select 1", [])
+    assert client.posts[-1][1]["timeout_ms"] == sbs._BLOB_STATEMENT_TIMEOUT_MS
+    assert client.posts[-1][1]["timeout_ms"] != store._PG_STATEMENT_TIMEOUT_MS
+
+    app = store.HttpApiAppStore("https://miantuan.ai/db-api", "secret-token")
+    app_client = _FakeHttpxClient.instances[-1]
+    app._q("select 1", [])
+    assert app_client.posts[-1][1]["timeout_ms"] == store._PG_STATEMENT_TIMEOUT_MS
+
+
 def test_http_api_base_url_takes_priority_when_configured(tmp_path, monkeypatch):
     chosen = []
 

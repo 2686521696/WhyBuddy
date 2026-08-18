@@ -51,7 +51,7 @@ def _resolve_store_file(store_file: Optional[StorePath] = None) -> Path:
     return Path(env_file or STORE_FILE)
 
 
-#: /db-api 默认 MAX_BODY_BYTES=1MB（见 deploy/postgres-https-api）。
+#: /db-api 默认 MAX_BODY_BYTES=4MB（见 deploy/postgres-https-api）。
 #: 会话 JSON 再塞进 SQL 参数的 JSON，转义后大约 1.2–1.4 倍。700KB 本体
 #: 是留给包裹的余量。过夜那批 413 不是 Neon——进程打的是 miantuan.ai/db-api，
 #: 异常前缀 neon http 是 HttpSqlGateway 复用了旧格式化函数。

@@ -50,6 +50,10 @@ from config.settings import settings
 
 #: 单条语句上限。正常查询是百毫秒级（最大的一次是取一张几百 KB 的缩略图），
 #: 8s 只用来兜"不正常"，不会误伤。
+#:
+#: ⚠ 会话档的 JSONB UPSERT 不是百毫秒级。2026-08-18 咖啡馆 10 轮把这条 8s
+#: 照抄到会话写入上，Postgres 57014 → 线上 /db-api 回 500，一轮炸十几次。
+#: 会话通道自己传更宽的 timeout_ms，这里的 8s 只给应用库/身份库。
 _PG_STATEMENT_TIMEOUT_MS = 8_000
 #: 等锁上限。专门给 DDL——ALTER TABLE 要 ACCESS EXCLUSIVE 锁，撞上任何一个
 #: 正在读这张表的连接就会**无限等**。3s 等不到就放弃，下次启动再补。
@@ -1513,6 +1517,7 @@ class HttpSqlGateway:
         params: Optional[list[Any]] = None,
         *,
         max_rows: int = _HTTP_API_MAX_ROWS,
+        timeout_ms: Optional[int] = None,
     ) -> list[dict[str, Any]]:
         # 占位符方言在这里转，**不改调用方那些 SQL**（2026-08-05）：那些语句是
         # Neon 后端和本通道共用的一份，改了会让 Neon 那条路挂掉。见 numeric_to_format。
@@ -1522,7 +1527,9 @@ class HttpSqlGateway:
             json={
                 "sql": out_sql,
                 "params": out_params,
-                "timeout_ms": _PG_STATEMENT_TIMEOUT_MS,
+                "timeout_ms": (
+                    _PG_STATEMENT_TIMEOUT_MS if timeout_ms is None else timeout_ms
+                ),
                 "max_rows": max_rows,
             },
         )

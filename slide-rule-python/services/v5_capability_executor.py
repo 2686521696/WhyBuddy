@@ -384,6 +384,10 @@ def _findings_all_sectioned(findings: List[Dict[str, Any]]) -> bool:
 #:
 #: 过夜物业/活动室 R6：525 过密时「整条再试」自己喂自己，然后 GEN5 配
 #: 「沿用state」——版本涨了页还是旧的。熔断已开就不要再试、不要 GEN5。
+#:
+#: 2026-08-18 咖啡馆 10 轮 R5/R10：病根换了，症状没换。结构闸说「所需积分」
+#: 是臆造的 → 宽 except 仍打回 GEN5 → 版本 mv-4→mv-5，预览还是上一轮。
+#: 传输词拦不住它。结构闸自己已经重问 2 次，整条再试只会再撞同一道闸。
 _SPEC_FIRST_NO_GEN5_MARKERS = (
     "json parse",
     "没有返回可解析",
@@ -396,19 +400,46 @@ _SPEC_FIRST_NO_GEN5_MARKERS = (
     "cannot reach",
 )
 
+#: 结构闸失败 ≠ 第 3 步交白卷。后者仍回落 GEN5（enrich 反向保险）。
+#: 词盯语义（结构反推尽了 / 臆造），不盯某一句原文。
+_SPEC_FIRST_STRUCTURE_MARKERS = (
+    "结构反推失败",
+    "htmlstructureerror",
+    "这是臆造的",
+)
+
 
 def spec_first_no_gen5_on_transport() -> bool:
-    """`SLIDERULE_SPEC_FIRST_NO_GEN5_ON_TRANSPORT=0` 退回「一律打回 GEN5」。"""
+    """`SLIDERULE_SPEC_FIRST_NO_GEN5_ON_TRANSPORT=0` 退回「一律打回 GEN5」。
+
+    开关名留 transport，是历史名字。2026-08-18 起同一根杆也管结构闸臆造：
+    两件事的用户症状都是「版本涨了页还是旧的」，退路也该同一根。
+    """
     raw = str(os.environ.get("SLIDERULE_SPEC_FIRST_NO_GEN5_ON_TRANSPORT", "1")).strip().lower()
     return raw not in ("0", "false", "no", "off")
 
 
-def spec_first_failure_blocks_gen5(exc: BaseException) -> bool:
-    """JSON parse / 525 / 连接超时不许把整条打回老链路。"""
+def _spec_first_exc_text(exc: BaseException) -> str:
+    return f"{type(exc).__name__} {exc}".lower()
+
+
+def spec_first_failure_is_transport(exc: BaseException) -> bool:
     if not spec_first_no_gen5_on_transport():
         return False
-    text = f"{type(exc).__name__} {exc}".lower()
+    text = _spec_first_exc_text(exc)
     return any(marker in text for marker in _SPEC_FIRST_NO_GEN5_MARKERS)
+
+
+def spec_first_failure_is_structure(exc: BaseException) -> bool:
+    if not spec_first_no_gen5_on_transport():
+        return False
+    text = _spec_first_exc_text(exc)
+    return any(marker in text for marker in _SPEC_FIRST_STRUCTURE_MARKERS)
+
+
+def spec_first_failure_blocks_gen5(exc: BaseException) -> bool:
+    """JSON parse / 525 / 连接超时 / 结构闸臆造不许把整条打回老链路。"""
+    return spec_first_failure_is_transport(exc) or spec_first_failure_is_structure(exc)
 
 
 def _try_llm_generate_evidence(
@@ -575,7 +606,7 @@ def _try_llm_generate_evidence(
                 # cancelled——那时线程里确实没有活在跑了。
                 print("[v5_capability_executor] 已请求取消，spec-first 停止且不回落老链路")
                 raise
-            except Exception as exc:  # noqa: BLE001 — 传输/解析另议，其余显式回落
+            except Exception as exc:  # noqa: BLE001 — 传输/结构另议，其余显式回落
                 if spec_first_failure_blocks_gen5(exc):
                     # 过夜咖啡馆：525 / JSON parse 打回 GEN5 = 首轮「页面：无」。
                     # 下层 call_llm_with_retry 已经退避过，这里整条再试一次
@@ -584,12 +615,24 @@ def _try_llm_generate_evidence(
                     # ⚠ 过夜物业/活动室 R6：525 **过密**时整条再试 = 自己喂自己。
                     #   熔断已开就停，精修保住上一版；首轮 blocked。不要再 GEN5
                     #   配「沿用state」——那就是版本涨了页还是旧的。
+                    #
+                    # ⚠ 2026-08-18 咖啡馆 R5/R10：结构闸臆造字段。derive_structure
+                    #   已经重问 2 次；整条再试只会再撞同一道闸。也不 GEN5。
+                    #
+                    # ⚠ 再试成功后必须把模型留下。第一版把 `model = None` 写在
+                    #   except 外面，再试过了也被扔掉——gen5==0 的判据照样绿。
                     from sliderule_llm.gateway_circuit import is_open as _gw_open
 
-                    if _gw_open():
+                    _no_retry = spec_first_failure_is_structure(exc) or _gw_open()
+                    if _no_retry:
+                        why = (
+                            "结构闸已重问尽"
+                            if spec_first_failure_is_structure(exc)
+                            else "网关熔断已开"
+                        )
                         print(
-                            "[v5_capability_executor] spec-first 传输/解析失败，"
-                            "网关熔断已开，不再整条再试，不回落老链路："
+                            f"[v5_capability_executor] spec-first 失败（{why}），"
+                            "不再整条再试，不回落老链路："
                             f"{str(exc)[:200]}"
                         )
                         model = None
@@ -611,8 +654,8 @@ def _try_llm_generate_evidence(
                                 "[v5_capability_executor] spec-first 再试仍失败，"
                                 f"不回落老链路（避免首轮无页）：{str(exc2)[:200]}"
                             )
-                        model = None
-                        _block_gen5 = True
+                            model = None
+                            _block_gen5 = True
                 else:
                     print(f"[v5_capability_executor] spec-first 失败，回落老链路：{str(exc)[:200]}")
                     model = None

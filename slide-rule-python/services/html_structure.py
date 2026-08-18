@@ -60,8 +60,9 @@ grounding 管住。所以这里不设 relations，关联由 ref 字段承载，�
 
 from __future__ import annotations
 
+import copy
 import re
-from typing import Any, Callable, Dict, List, Literal, Optional
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
@@ -342,6 +343,93 @@ def validate_structure(payload: Any, html_by_page: Optional[Dict[str, str]] = No
     return {"passed": not findings, "findings": findings}
 
 
+_FIELD_PATH = re.compile(r"^entities\[([^\]]+)\]\.fields\[([^\]]+)\]$")
+_ENTITY_PATH = re.compile(r"^entities\[([^\]]+)\]$")
+
+
+def prune_ungrounded(
+    payload: Any, html_by_page: Dict[str, str]
+) -> Tuple[Optional[HtmlStructure], List[str]]:
+    """臆造字段/实体剪掉，其余留下。剪完仍过闸才算数。
+
+    2026-08-18 咖啡馆 R5/R10：模型给 drink 加了「所需积分」，画面上没有。
+    重问已经写了「抄不回来就把字段删掉」，它不听；整条结构闸失败 →
+    spec-first 回落 GEN5 → 版本涨了页还是旧的。
+
+    做法不是新发明：google/langextract 对 `char_interval is None` 的抽取
+    是丢那一条，文档还在。本仓 aigc 沿用也是「对不上就剪引用，不整段扔」。
+    页面条目不剪——少一页是另一类事故（check_page_coverage），不能靠删页过闸。
+    """
+    if not isinstance(payload, dict) or not html_by_page:
+        return None, []
+    try:
+        structure = HtmlStructure.model_validate(payload)
+    except Exception:  # noqa: BLE001 — 形状都不对，剪无可剪
+        return None, []
+    findings = check_grounding(structure, html_by_page)
+    if not findings:
+        # 接地过了但页覆盖/形状可能没过——那种不能当「剪成功」。
+        verdict = validate_structure(structure, html_by_page)
+        if verdict["passed"]:
+            return structure, []
+        return None, []
+    if any(str(f.get("path") or "").startswith("pages[") for f in findings):
+        return None, []
+
+    drop_fields: set[tuple[str, str]] = set()
+    drop_entities: set[str] = set()
+    dropped: List[str] = []
+    for item in findings:
+        path = str(item.get("path") or "")
+        field_hit = _FIELD_PATH.match(path)
+        if field_hit:
+            drop_fields.add((field_hit.group(1), field_hit.group(2)))
+            dropped.append(path)
+            continue
+        ent_hit = _ENTITY_PATH.match(path)
+        if ent_hit:
+            drop_entities.add(ent_hit.group(1))
+            dropped.append(path)
+
+    if not dropped:
+        return None, []
+
+    data = copy.deepcopy(payload)
+    kept_entities = []
+    for ent in data.get("entities") or []:
+        if not isinstance(ent, dict):
+            continue
+        eid = str(ent.get("id") or "")
+        if eid in drop_entities:
+            continue
+        fields = [
+            f for f in (ent.get("fields") or [])
+            if isinstance(f, dict) and (eid, str(f.get("id") or "")) not in drop_fields
+        ]
+        if not fields:
+            dropped.append(f"entities[{eid}]")
+            continue
+        ent = {**ent, "fields": fields}
+        kept_entities.append(ent)
+    data["entities"] = kept_entities
+
+    known = {str(e.get("id") or "") for e in kept_entities}
+    for ent in kept_entities:
+        cleaned = []
+        for f in ent.get("fields") or []:
+            if str(f.get("type") or "") == "ref" and str(f.get("refEntity") or "") not in known:
+                dropped.append(f"entities[{ent.get('id')}].fields[{f.get('id')}]")
+                continue
+            cleaned.append(f)
+        ent["fields"] = cleaned
+    data["entities"] = [e for e in kept_entities if e.get("fields")]
+
+    verdict = validate_structure(data, html_by_page)
+    if not verdict["passed"]:
+        return None, dropped
+    return HtmlStructure.model_validate(data), dropped
+
+
 # ── 生成 ────────────────────────────────────────────────────────────────
 
 _SYSTEM = (
@@ -503,6 +591,15 @@ def derive_structure(
                 ),
             },
         ]
+    # 重问尽了：模型不删臆造字段，就机械代劳（langextract 丢条不丢文档）。
+    # 剪完仍过不了闸，才整条失败——不许回落一份假结构。
+    pruned, dropped = prune_ungrounded(payload, html_by_page)
+    if pruned is not None:
+        if dropped:
+            print(
+                f"[html_structure] 臆造剪掉：{'、'.join(dropped[:8])}，其余过闸"
+            )
+        return pruned
     raise HtmlStructureError(f"结构反推失败（重问 {max_reask} 次后）：{last}")
 
 

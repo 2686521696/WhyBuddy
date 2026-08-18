@@ -49,6 +49,11 @@ Nx / Turborepo / Bazel 没有一家交给模型猜，全是确定性遍历。
 **枢纽不当扩散起点**：种子只认本轮碰到的页/实体/字段；`role`/`perm`
 落进闭包可以，不从它们往外走。Nx 后来也不再把 `package.json` 标成 `"*"`
 隐式依赖，同一形状。`SLIDERULE_GRAPH_SCOPE_HUB_BARRIER=0` 退回老行为。
+
+⚠ 2026-08-18 咖啡馆 10 轮：角色那条堵住了，大盘页还在当桥。p3 绑了预约/
+积分/座位，从 `page:p3` 走两步三页全到——「给上座率加昨日环比」变成
+重画 3、照搬 0。页可以当种子（`narrow_page_seeds` 必须留着），但**不从
+页面往外走**。实体/字段种子仍能走到绑了它的页。hops 不动。
 """
 
 from __future__ import annotations
@@ -78,7 +83,12 @@ DEFAULT_HOPS = 2
 #: 该角色能进的页全重画（过夜咖啡馆）。流程/能力点名了可以当种子，
 #: 但不沿角色继续扫。
 PAGE_SCOPE_SEED_KINDS = frozenset({"page", "entity", "field", "wf", "aigc"})
+#: 种子收窄丢掉的 kind。**不要把 page 放进来**——放进来 `narrow_page_seeds`
+#: 会把页种子整条扔掉，图判永远无页、永远回落文本判。
 HUB_KINDS = frozenset({"role", "perm"})
+#: 闭包算进这些节点，但不从它们往外走。page 在这里、不在 HUB_KINDS：
+#: 大盘是种子，不是桥。
+EXPAND_HUB_KINDS = frozenset({"role", "perm", "page"})
 
 
 def hub_barrier_enabled() -> bool:
@@ -274,7 +284,7 @@ def graph_scope_verdict(
     no_expand = None
     if hub_barrier_enabled():
         page_seeds, dropped_hubs = narrow_page_seeds(raw_seeds, graph)
-        no_expand = HUB_KINDS
+        no_expand = EXPAND_HUB_KINDS
         if dropped_hubs:
             _safe_print(
                 "[refine_graph_scope] 闭包不沿枢纽扩散："

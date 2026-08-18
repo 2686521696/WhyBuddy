@@ -22,6 +22,8 @@ LLM 判**种子**（语义题），`impacted_closure` 算**牵连**（机械题�
 4. **对照日志执行期照打**：它是 hops 标定集的唯一来源，切了执行更不能停。
 5. **枢纽不当扩散起点**（2026-08-18 过夜咖啡馆）：`role:staff` 两跳吃三页。
    种子只认页/实体/字段；沿角色扫全图必须红。
+6. **大盘页也不当桥**（2026-08-18 咖啡馆 10 轮）：p3 绑了预约/积分/座位，
+   从 `page:p3` 走两步仍三页全到。页可当种子，不从页往外走。
 """
 
 import os
@@ -228,7 +230,8 @@ CAFE_MODEL = {
         {"id": "p2", "name": "积分页",
          "fieldBindings": ["point.balance"], "actionPermissions": ["point:read"]},
         {"id": "p3", "name": "大盘",
-         "fieldBindings": ["dash.rate"], "actionPermissions": ["dash:read"]},
+         "fieldBindings": ["dash.rate", "seat.status", "point.balance"],
+         "actionPermissions": ["dash:read"]},
     ]},
     "aigc": {"capabilities": []},
     "appbundle": {"landingPageRef": "p1", "preferredDevice": "desktop",
@@ -291,6 +294,55 @@ class Test咖啡馆枢纽:
         monkeypatch.setenv("SLIDERULE_GRAPH_SCOPE_HUB_BARRIER", "0")
         v = graph_scope_verdict(CAFE_G, ["role:staff"])
         assert set(v["pages"]) == {"p1", "p2", "p3"}, "对照臂没复现咖啡馆那病"
+
+
+class Test大盘页枢纽:
+    """咖啡馆 10 轮：角色堵住了，大盘自己连着三张表，两跳仍整本重画。
+
+    删掉 EXPAND_HUB_KINDS 里的 page，这组必红。page 不许进 HUB_KINDS——
+    那是种子收窄用的，放进去以后谁把 narrow 改回按 HUB 丢，页种子就没了。
+    """
+
+    def test_页是种子不是收窄要丢的枢纽(self):
+        from services.refine_graph_scope import EXPAND_HUB_KINDS, HUB_KINDS
+
+        assert "page" in EXPAND_HUB_KINDS
+        assert "page" not in HUB_KINDS
+
+    def test_大盘绑了邻居的字段_图上是连着的(self):
+        """尺子先校准：边没画上的话，后面「没吃三页」是假绿。"""
+        edges = CAFE_G["edges"]
+        assert ("page:p3", "field:dash.rate", "binds_field") in edges
+        assert ("page:p3", "field:seat.status", "binds_field") in edges
+        assert ("page:p3", "field:point.balance", "binds_field") in edges
+
+    def test_只拦角色时从大盘两跳仍吃三页(self):
+        """反向：旧屏障（role/perm）治不好大盘。"""
+        from services.app_graph import impacted_closure
+
+        eaten = impacted_closure(
+            CAFE_G, ["page:p3"], hops=DEFAULT_HOPS,
+            no_expand_kinds=("role", "perm"),
+        )
+        pages = {n.split(":", 1)[1] for n in eaten if n.startswith("page:")}
+        assert pages == {"p1", "p2", "p3"}, (
+            f"尺子坏了：只拦角色时大盘闭包是 {pages}，后面「只剩 p3」证明不了病"
+        )
+
+    def test_大盘种子只重画自己(self):
+        v = graph_scope_verdict(CAFE_G, ["page:p3"])
+        assert v["pages"] == ["p3"], f"从大盘吃到了邻居：{v['pages']}"
+
+    def test_改座位实体仍能到预约台(self):
+        """页面不当桥 ≠ 实体种子走不到绑了它的页。"""
+        v = graph_scope_verdict(CAFE_G, ["entity:seat"])
+        assert "p1" in v["pages"], "座位种子没到预约台"
+        assert "p2" not in v["pages"], "座位种子跨到了积分页"
+
+    def test_开关关掉大盘仍吃三页(self, monkeypatch):
+        monkeypatch.setenv("SLIDERULE_GRAPH_SCOPE_HUB_BARRIER", "0")
+        v = graph_scope_verdict(CAFE_G, ["page:p3"])
+        assert set(v["pages"]) == {"p1", "p2", "p3"}, "对照臂没复现大盘那病"
 
 
 class Test影子对照日志行:
@@ -528,6 +580,22 @@ class Test接线:
         assert seen["reuse_pages"] == {
             "p2": "<html>旧2</html>", "p3": "<html>旧3</html>",
         }, f"从 p1 经角色吃到了邻居：照搬={seen.get('reuse_pages')}"
+        assert seen["stages"]["graphscope"]["decider"] == "graph"
+
+    def test_大盘种子接管但不吃邻居(self, monkeypatch):
+        """纪律一：大盘病必须在 run_spec_first 上红。
+
+        种子 page:p3、文本说改 p1。图只该重画大盘，预约台和积分页照搬。
+        谁把 page 从 no_expand 拿掉，照搬集变空。
+        """
+        seen = self._drive(
+            monkeypatch, reuse_model=CAFE_MODEL, reuse_pages=PREV_CAFE,
+            text_scope=["p1"], seed_fn=lambda i, g, **kw: ["page:p3"],
+            spec=SPEC_CAFE, page_ids=("p1", "p2", "p3"),
+        )
+        assert seen["reuse_pages"] == {
+            "p1": "<html>旧1</html>", "p2": "<html>旧2</html>",
+        }, f"从大盘吃到了邻居：照搬={seen.get('reuse_pages')}"
         assert seen["stages"]["graphscope"]["decider"] == "graph"
 
     def test_非精修轮不跑图判(self, monkeypatch):

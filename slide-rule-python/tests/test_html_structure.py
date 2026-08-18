@@ -22,6 +22,7 @@ from services.html_structure import (
     build_prompt,
     check_grounding,
     derive_structure,
+    prune_ungrounded,
     strip_for_schema,
     to_datamodel,
     validate_structure,
@@ -317,6 +318,61 @@ class Test生成与重问:
         with pytest.raises(HtmlStructureError) as exc:
             derive_structure(PAGES, llm_json_fn=lambda _m: copy.deepcopy(bad))
         assert "不能为空" in str(exc.value)
+
+    def test_重问尽了剪掉臆造字段_其余过闸(self):
+        """咖啡馆 R5：模型给工单加了「所需积分」，画面上没有。
+
+        重问提示已经写了「抄不回来就把字段删掉」，它不听。剪完必须留下
+        画面上真有的 order_no。删掉 derive_structure 里 prune 那一针，这条必红。
+        """
+        bait = copy.deepcopy(GOOD)
+        bait["entities"][0]["fields"].append({
+            "id": "points_required",
+            "name": "所需积分",
+            "type": "string",
+            "evidence": "所需积分",
+        })
+        calls: list = []
+
+        def fake(_messages):
+            calls.append(1)
+            return copy.deepcopy(bait)
+
+        s = derive_structure(PAGES, llm_json_fn=fake)
+        assert len(calls) == 3, f"没走到重问尽：只调了 {len(calls)} 次"
+        work_order = next(e for e in s.entities if e.id == "work_order")
+        field_ids = [f.id for f in work_order.fields]
+        assert "points_required" not in field_ids
+        assert "order_no" in field_ids
+
+    def test_全是臆造剪完仍失败(self):
+        """反向：剪的是臆造条，不是「过不了闸就整份放行」。"""
+        bad = copy.deepcopy(GOOD)
+        for ent in bad["entities"]:
+            ent["evidence"] = "根本没有的实体名"
+            for field in ent["fields"]:
+                field["evidence"] = "根本没有的列名"
+        with pytest.raises(HtmlStructureError):
+            derive_structure(PAGES, llm_json_fn=lambda _m: copy.deepcopy(bad))
+
+    def test_页面依据臆造不靠删页过闸(self):
+        bad = copy.deepcopy(GOOD)
+        bad["pages"][0]["evidence"] = "数据大屏"
+        with pytest.raises(HtmlStructureError):
+            derive_structure(PAGES, llm_json_fn=lambda _m: copy.deepcopy(bad))
+
+    def test_prune_ungrounded_只剪字段留下其余(self):
+        bait = copy.deepcopy(GOOD)
+        bait["entities"][0]["fields"].append({
+            "id": "points_required",
+            "name": "所需积分",
+            "type": "string",
+            "evidence": "所需积分",
+        })
+        pruned, dropped = prune_ungrounded(bait, PAGES)
+        assert pruned is not None
+        assert any("points_required" in d for d in dropped)
+        assert "order_no" in [f.id for e in pruned.entities if e.id == "work_order" for f in e.fields]
 
     def test_没有_HTML_直接抛(self):
         with pytest.raises(HtmlStructureError):
