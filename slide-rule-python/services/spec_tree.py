@@ -527,6 +527,9 @@ def build_spec_prompt(
                 for p in prev_pages
                 if isinstance(p, dict) and p.get("id")
             )
+            # ⚠ 2026-08-18 过夜：这段提示词照常出现，模型照样加后缀/改名。
+            #   真正拨回在 spec_first_pipeline 第 2 步出口（page_id_freeze），
+            #   这里继续喂词表是为了少漂一次，不指望它自觉。
             parts.append(
                 "上一版已有这些页面（id ←→ 名字）：\n\n"
                 f"{listing}\n\n"

@@ -295,6 +295,12 @@ def model_id_lexicon(model: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     找不到对应产物。所以词表加 `pages` 档，喂给第 2 步当硬词表块——
     跟第 4/5 步同一个模子。
 
+    ⚠ 2026-08-18 过夜：提示词冻结日志照常打「精修 id 冻结：页面 N」，
+    模型照样把 p1 改成 p1_page / equipment_hall。求自觉求不动。结构拨回
+    在 generate_spec_tree **之后**立刻跑（services/page_id_freeze.py），
+    必须赶在 spec_pages_declared / 图判 / 照搬 / 画页之前——id 在那些
+    步骤里已经当键用了，事后再拨等于没拨。
+
     ## 做法照 identifier freezing，不是新发明
 
     RecLLM 的 Reformer 用"标识符冻结"保证重训练前后 item id 不变；MCP 的
@@ -824,6 +830,12 @@ def run_spec_first(
     from .spec_page_html import generate_pages_parallel
     from .spec_semantics import derive_semantics, to_model_sections  # noqa: F401
     from .spec_tree import generate_spec_tree
+    from .page_id_freeze import (
+        freeze_pages_in_model,
+        freeze_spec_pages,
+        log_freeze,
+        refine_id_freeze_enabled,
+    )
     from .run_cancel import raise_if_cancelled
 
     stages: Dict[str, Any] = {}
@@ -837,9 +849,7 @@ def run_spec_first(
     #   `SLIDERULE_REFINE_ID_FREEZE=0` 关掉：既是线上一键回退，也是**对照臂开关**
     #   ——量"是不是它起的作用"必须同模型同话题跑 A/B，换个模型比前后是把两个
     #   变量混在一起（本仓吃过"拿造出来的数替代看一眼"的亏）。
-    _freeze_on = str(
-        os.environ.get("SLIDERULE_REFINE_ID_FREEZE", "1")
-    ).strip().lower() not in ("0", "false", "no", "off")
+    _freeze_on = refine_id_freeze_enabled()
     _prev_ids = model_id_lexicon(reuse_model) if (refine and _freeze_on) else {}
     if _prev_ids:
         print(
@@ -867,6 +877,20 @@ def run_spec_first(
             prev_pages=(_prev_ids.get("pages") or None),
         )
         spec = spec_model.model_dump(mode="json") if hasattr(spec_model, "model_dump") else spec_model
+        # ★ 结构拨回（2026-08-18 过夜）：提示词冻结求不动。必须在
+        #   spec_pages_declared 取值之前——图判、照搬、画页、风格复用
+        #   全都拿那份清单当键。拨完再取，键才对得上上一版。
+        if refine and _freeze_on and _prev_ids.get("pages"):
+            _prev_page_objs = None
+            if isinstance(reuse_model, dict):
+                _prev_page_objs = ((reuse_model.get("page") or {}).get("pages") or None)
+            spec, _page_freeze = freeze_spec_pages(
+                spec, _prev_ids.get("pages"), _prev_page_objs
+            )
+            log_freeze(_page_freeze, where="第2步 SPEC")
+            st["pageIdRemapped"] = len(_page_freeze.get("mapping") or {})
+            if _page_freeze.get("restored"):
+                st["pageIdRestored"] = ",".join(_page_freeze["restored"])
         st["pages"] = len(spec.get("pages") or [])
         st["nodes"] = len(spec.get("nodes") or [])
     stages["spec"] = dict(st)
@@ -995,9 +1019,12 @@ def run_spec_first(
     #   绝不会 fail 成"一页都不改"。
     #
     # ⚠ 切执行的依据（2026-08-18 真机两轮对照）：加列那轮文本/图完全一致且
-    #   图更窄可复用；改权限那轮种子带角色、两跳扩全图——宽了但方向安全
-    #   （多画不会画错）。对照日志继续打，hops 标定继续攒（纪律六）。
+    #   图更窄可复用。对照日志继续打，hops 标定继续攒（纪律六）。
     #   `SLIDERULE_GRAPH_SCOPE_DRIVE=0` 退回纯影子（只对照不接管）。
+    #
+    # ⚠ 2026-08-18 过夜咖啡馆：种子 `role:staff`（或从一页两跳踩到它）把
+    #   三页全吃。修法在 refine_graph_scope：枢纽不当扩散起点，不改 hops。
+    #   `SLIDERULE_GRAPH_SCOPE_HUB_BARRIER=0` 退回沿角色扫全图。
     #
     # ⚠ 独立埋点（第 2.8 步同款教训）：它自己是一次 LLM 调用，混进别的段，
     #   量出来的墙钟说明不了任何事。
@@ -1140,6 +1167,15 @@ def run_spec_first(
         )
         st["entities"] = len(structure.get("entities") or [])
         st["pages"] = len(structure.get("pages") or [])
+        # 第 4 步 LLM 仍可能把 page.id 改名。HTML 键已经是拨回后的 id，
+        # 这里只重映射、不补页——结构页没有 purpose/audience，补进去
+        # 过不了 DerivedPage。缺页由第 2 步补回后再画。
+        if refine and _freeze_on and _prev_ids.get("pages"):
+            structure, _struct_freeze = freeze_spec_pages(
+                structure, _prev_ids.get("pages"), restore=False
+            )
+            log_freeze(_struct_freeze, where="第4步 structure")
+            st["pages"] = len(structure.get("pages") or [])
     stages["structure"] = dict(st)
 
     # ── 第 5 步：(结构 + SPEC) → 权限 / 工作流 / 不变式 ───────────────
@@ -1203,6 +1239,12 @@ def run_spec_first(
                 and model.get(seg) == (reuse_model or {}).get(seg)
             ],
         }
+
+    # 汇合出口再拨一次：assemble / 段沿用都可能把 landingPageRef 写成
+    # 本轮漂过的 id。第 2 步已经拨过 SPEC，这里守模型侧引用。
+    if refine and _freeze_on and isinstance(reuse_model, dict):
+        model, _model_freeze = freeze_pages_in_model(model, reuse_model)
+        log_freeze(_model_freeze, where="第6步 assemble")
 
     # ── 第 6.3 步：断线体检（零 LLM，只报不拦）───────────────────────
     #

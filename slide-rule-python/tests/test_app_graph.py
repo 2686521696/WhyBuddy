@@ -296,6 +296,15 @@ class Test角色到页面_推导出来的那条边:
         assert "role:mgr" in got, "改订单页的权限，店长受影响却没被算进来"
         assert "role:clerk" not in got
 
+    def test_枢纽不往外走_角色落进闭包但不扫邻页(self, G):
+        """精修作用域用的旋钮。默认闭包仍走全图（上面几条不能破）。"""
+        got = impacted_closure(
+            G, ["page:p1"], hops=2, direction="both",
+            no_expand_kinds=("role", "perm"),
+        )
+        assert "role:mgr" in got
+        assert "page:p2" not in got, "经角色扫到了不相干的页"
+
 
 class Test两份实现钉在同一份契约上:
     """图在**两个运行时里各有一份**：Python 这份（服务端算影响面）和前端

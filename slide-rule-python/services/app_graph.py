@@ -239,6 +239,7 @@ def impacted_closure(
     *,
     hops: int,
     direction: str = "both",
+    no_expand_kinds: Optional[Iterable[str]] = None,
 ) -> Set[str]:
     """从 seeds 出发走 `hops` 跳，返回**受影响的节点集合**（含 seeds 本身）。
 
@@ -247,6 +248,12 @@ def impacted_closure(
         "dependents"    只逆着边走 —— 谁依赖我。改了我，**谁会被弄坏**
         "dependencies"  只顺着边走 —— 我依赖谁。改了我，**我引的还在吗**
         "both"          两边都走
+
+    `no_expand_kinds`：落在这些 kind 上算进闭包，但**不从它们往外走**。
+    角色是跨簇的桥（模块头翻过两次的那条），沿 `role` 再走一跳等于扫全图。
+    过夜咖啡馆：种子哪怕是对的那一页，两跳也会经 `role:staff` 把三页全吃进去。
+    形状对齐 Nx 后来不再把 `package.json` 当成 `"*"` 隐式依赖——枢纽节点
+    不当扩散起点。默认不拦（沙盘/体检要看完整可达性）；精修作用域自己打开。
 
     ⚠ `hops` **是必填的**，不给默认值。补齐 role→page 之后全图连通
       （角色是跨簇的桥），无界闭包最后必然覆盖全部节点——那时"影响面"
@@ -260,12 +267,15 @@ def impacted_closure(
     if hops < 0:
         raise ValueError("hops 不能是负数")
     nodes = graph.get("nodes") or {}
+    blocked = {str(k) for k in (no_expand_kinds or ()) if k}
     fwd, rev = _adjacency(graph)
     frontier = {s for s in seeds if s in nodes}
     seen: Set[str] = set(frontier)
     for _ in range(hops):
         nxt: Set[str] = set()
         for n in frontier:
+            if blocked and (nodes.get(n) or {}).get("kind") in blocked:
+                continue
             if direction in ("both", "dependencies"):
                 nxt |= fwd.get(n, set())
             if direction in ("both", "dependents"):

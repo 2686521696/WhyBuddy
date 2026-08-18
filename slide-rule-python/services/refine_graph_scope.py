@@ -40,15 +40,22 @@ Nx / Turborepo / Bazel 没有一家交给模型猜，全是确定性遍历。
 
 ## hops=2 是拍的，标定继续攒
 
-页 → 字段/权限 → 实体/角色，两跳够到"三只手"的第一层。已知形状（2026-08-18
-真机）：种子带角色时两跳会扩到该角色能进的所有页——宽但安全。按纪律六：
-改这个数字要连同标定一起做（对照日志攒的就是标定集），别只改数字。
+页 → 字段/权限 → 实体/角色，两跳够到"三只手"的第一层。按纪律六：改这个
+数字要连同标定一起做，别只改数字。
+
+⚠ 2026-08-18 过夜咖啡馆：种子落到 `role:staff`（或从一页两跳踩到它），
+角色是跨簇的桥，再走一跳三页全吃——加一列红标却整栋重画。当时注释写
+「宽但安全」，过夜证明宽得跟没判一样。修法不是改 hops（纪律六），是
+**枢纽不当扩散起点**：种子只认本轮碰到的页/实体/字段；`role`/`perm`
+落进闭包可以，不从它们往外走。Nx 后来也不再把 `package.json` 标成 `"*"`
+隐式依赖，同一形状。`SLIDERULE_GRAPH_SCOPE_HUB_BARRIER=0` 退回老行为。
 """
 
 from __future__ import annotations
 
+import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
 def _safe_print(msg: str) -> None:
@@ -66,6 +73,37 @@ def _safe_print(msg: str) -> None:
 
 
 DEFAULT_HOPS = 2
+
+#: 精修页作用域的种子。角色/权限是跨簇的桥，当种子或从它们往外走 =
+#: 该角色能进的页全重画（过夜咖啡馆）。流程/能力点名了可以当种子，
+#: 但不沿角色继续扫。
+PAGE_SCOPE_SEED_KINDS = frozenset({"page", "entity", "field", "wf", "aigc"})
+HUB_KINDS = frozenset({"role", "perm"})
+
+
+def hub_barrier_enabled() -> bool:
+    """`SLIDERULE_GRAPH_SCOPE_HUB_BARRIER=0` 退回「沿角色扫全图」。默认开。"""
+    raw = str(os.environ.get("SLIDERULE_GRAPH_SCOPE_HUB_BARRIER", "1")).strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def narrow_page_seeds(
+    seeds: Iterable[str], graph: Dict[str, Any]
+) -> Tuple[List[str], List[str]]:
+    """留下页/实体/字段，枢纽种子单独记账。"""
+    nodes = graph.get("nodes") or {}
+    kept: List[str] = []
+    dropped: List[str] = []
+    for raw in seeds:
+        nid = str(raw).strip()
+        if not nid:
+            continue
+        kind = (nodes.get(nid) or {}).get("kind")
+        if kind in PAGE_SCOPE_SEED_KINDS:
+            kept.append(nid)
+        else:
+            dropped.append(nid)
+    return kept, dropped
 
 #: 节点太多时放弃图判（fail-open 到现状），不硬塞超长清单给 LLM——
 #: 清单一长挑选质量掉得比省的那点还多。真机模型目前 50~120 个节点。
@@ -126,11 +164,12 @@ def build_node_scope_prompt(
 
 硬性要求：
 
-1. **只列这句话直接点到的节点**，不要列"会被牵连"的节点——
+1. **只列这句话直接点到的页面 / 数据表 / 字段**。不要列角色、权限、流程——
+   沿角色扫会把该角色能进的所有页都吃进去（改一页红标变成整栋重画）。
    牵连关系系统会沿着图自动算，你多列反而会把范围撑大。
 2. 节点 id **必须从上面的清单里挑**，不许新造、不许改写。
 3. 判断标准：「不动这个节点，用户的要求就没被满足吗」。
-4. 要求指名了某一页/某个角色/某个流程，就列那个节点本身。
+4. 要求指名了某一页或某一张表，就列那个页面/实体/字段本身。
 """
     return [
         {"role": "system", "content": _SYSTEM},
@@ -195,6 +234,17 @@ def decide_seed_nodes(
     if not picked:
         _safe_print("[refine_graph_scope] ⚠ 图判种子没给出可用节点")
         return None
+    if hub_barrier_enabled():
+        kept, hubs = narrow_page_seeds(picked, graph)
+        if hubs:
+            _safe_print(
+                "[refine_graph_scope] 枢纽种子丢弃（不当页作用域起点）："
+                + "、".join(hubs)
+            )
+        if not kept:
+            _safe_print("[refine_graph_scope] ⚠ 图判种子只剩角色/权限，不当页作用域")
+            return None
+        return kept
     return picked
 
 
@@ -218,7 +268,28 @@ def graph_scope_verdict(
     """
     from .app_graph import impacted_closure, segments_touched
 
-    impacted = impacted_closure(graph, seeds, hops=hops, direction="both")
+    raw_seeds = [str(s).strip() for s in seeds if str(s).strip()]
+    page_seeds = list(raw_seeds)
+    dropped_hubs: List[str] = []
+    no_expand = None
+    if hub_barrier_enabled():
+        page_seeds, dropped_hubs = narrow_page_seeds(raw_seeds, graph)
+        no_expand = HUB_KINDS
+        if dropped_hubs:
+            _safe_print(
+                "[refine_graph_scope] 闭包不沿枢纽扩散："
+                + "、".join(dropped_hubs)
+            )
+    impacted = (
+        impacted_closure(
+            graph, page_seeds, hops=hops, direction="both",
+            no_expand_kinds=no_expand,
+        )
+        if page_seeds
+        else set()
+    )
+    if dropped_hubs:
+        impacted |= set(dropped_hubs)
     nodes = graph.get("nodes") or {}
     pages = sorted(
         nid.split(":", 1)[1]
@@ -226,7 +297,8 @@ def graph_scope_verdict(
         if nodes.get(nid, {}).get("kind") == "page"
     )
     return {
-        "seeds": sorted(seeds),
+        "seeds": sorted(page_seeds),
+        "droppedHubs": dropped_hubs,
         "impacted": sorted(impacted),
         "pages": pages,
         "segments": sorted(segments_touched(graph, impacted)),

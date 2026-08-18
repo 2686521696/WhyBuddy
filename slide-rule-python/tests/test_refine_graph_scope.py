@@ -20,6 +20,8 @@ LLM 判**种子**（语义题），`impacted_closure` 算**牵连**（机械题�
 3. **判官阶梯**：图闭包页 → 文本判 → 全量重画，每一级缺席都退下一级，
    绝不 fail 成"一页都不改"。
 4. **对照日志执行期照打**：它是 hops 标定集的唯一来源，切了执行更不能停。
+5. **枢纽不当扩散起点**（2026-08-18 过夜咖啡馆）：`role:staff` 两跳吃三页。
+   种子只认页/实体/字段；沿角色扫全图必须红。
 """
 
 import os
@@ -34,6 +36,7 @@ from services.refine_graph_scope import (  # noqa: E402
     build_node_scope_prompt,
     decide_seed_nodes,
     graph_scope_verdict,
+    narrow_page_seeds,
     parse_node_scope,
     shadow_compare_line,
 )
@@ -98,6 +101,7 @@ class Test提示词:
         user = build_node_scope_prompt("改点东西", G)[-1]["content"]
         assert "直接点" in user
         assert "牵连" in user and "自动" in user
+        assert "不要列角色" in user, "提示词还在怂恿列角色——咖啡馆那病会再来"
 
 
 class Test收答案:
@@ -163,16 +167,22 @@ class Test判不出来必须fail_open:
     def test_判出来了如实返回(self):
         assert decide_seed_nodes(
             "这一页只给店长看", G, llm_json_fn=lambda m: {"nodes": ["page:p1", "role:mgr"]}
-        ) == ["page:p1", "role:mgr"]
+        ) == ["page:p1"]
+
+    def test_只有角色种子算判不出来(self):
+        """咖啡馆：模型只报 role:staff → 不当页作用域，回落文本判。"""
+        assert decide_seed_nodes(
+            "给店员加个红标", G, llm_json_fn=lambda m: {"nodes": ["role:mgr"]}
+        ) is None
 
 
 class Test闭包翻译:
-    def test_种子扩成页面和段(self):
-        """改店长（role:mgr）：能进的页、审批的节点、可用的能力都该被卷进来。"""
+    def test_角色种子不再扫页(self):
+        """2026-08-18 过夜改判：沿角色走等于扫全图，不当页作用域。"""
         v = graph_scope_verdict(G, ["role:mgr"])
-        assert v["pages"] == ["p1"], "店长能进订单页，它该在受影响页里"
-        assert "p2" not in v["pages"], "店长跟客户页无关，卷进来就是扩散过宽"
-        assert {"rbac", "page", "workflow", "aigc"} <= set(v["segments"])
+        assert v["pages"] == [], "角色种子还在扫页——咖啡馆那病没治"
+        assert v["droppedHubs"] == ["role:mgr"]
+        assert "rbac" in v["segments"]
 
     def test_页面清单是裸id(self):
         """★ 反向判据（变异咬这里）：带 `page:` 前缀对不上 SPEC/reuse_pages
@@ -196,9 +206,96 @@ class Test闭包翻译:
         assert "page:p2" in v["impacted"] and "p2" in v["pages"]
 
 
+# 过夜咖啡馆：一个店员角色能进三页。沿它走两跳 = 加一列红标整栋重画。
+CAFE_MODEL = {
+    "datamodel": {"entities": [
+        {"id": "seat", "name": "座位", "fields": [{"id": "status", "name": "状态"}]},
+        {"id": "point", "name": "积分", "fields": [{"id": "balance", "name": "余额"}]},
+        {"id": "dash", "name": "大盘指标", "fields": [{"id": "rate", "name": "上座率"}]},
+    ]},
+    "rbac": {
+        "roles": [{"id": "staff", "name": "店员"}],
+        "permissions": ["seat:read", "point:read", "dash:read"],
+        "menus": [{
+            "id": "m_all", "label": "店员菜单", "roleRefs": ["staff"],
+            "permissionRefs": ["seat:read", "point:read", "dash:read"],
+        }],
+    },
+    "workflow": {"nodes": []},
+    "page": {"pages": [
+        {"id": "p1", "name": "预约台",
+         "fieldBindings": ["seat.status"], "actionPermissions": ["seat:read"]},
+        {"id": "p2", "name": "积分页",
+         "fieldBindings": ["point.balance"], "actionPermissions": ["point:read"]},
+        {"id": "p3", "name": "大盘",
+         "fieldBindings": ["dash.rate"], "actionPermissions": ["dash:read"]},
+    ]},
+    "aigc": {"capabilities": []},
+    "appbundle": {"landingPageRef": "p1", "preferredDevice": "desktop",
+                  "pageBindings": []},
+}
+CAFE_G = build_app_graph(CAFE_MODEL)
+SPEC_CAFE = {
+    "rootNodeId": "n0", "version": 3, "appName": "咖啡馆",
+    "personas": [{"id": "u1", "name": "店员", "goals": ["预约"]}],
+    "successCriteria": [{"id": "sc1", "text": "能预约"}],
+    "nodes": [],
+    "pages": [
+        {"id": "p1", "name": "预约台"},
+        {"id": "p2", "name": "积分页"},
+        {"id": "p3", "name": "大盘"},
+    ],
+}
+PREV_CAFE = {
+    "p1": "<html>旧1</html>", "p2": "<html>旧2</html>", "p3": "<html>旧3</html>",
+}
+
+
+class Test咖啡馆枢纽:
+    """过夜咖啡馆：role:staff 吃三页。删掉 no_expand / 收窄，这组必红。"""
+
+    def test_角色能进三页_图上是连着的(self):
+        """尺子先校准：要是边没画上，后面「没吃三页」是假绿。"""
+        edges = CAFE_G["edges"]
+        assert ("role:staff", "page:p1", "can_enter") in edges
+        assert ("role:staff", "page:p2", "can_enter") in edges
+        assert ("role:staff", "page:p3", "can_enter") in edges
+
+    def test_沿角色两跳会吃三页_所以必须拦住(self):
+        """反向：不拦枢纽时的病。开关关掉必须复现，证明拦的是这个。"""
+        from services.app_graph import impacted_closure
+
+        eaten = impacted_closure(CAFE_G, ["role:staff"], hops=DEFAULT_HOPS)
+        pages = {n.split(":", 1)[1] for n in eaten if n.startswith("page:")}
+        assert pages == {"p1", "p2", "p3"}
+
+    def test_角色种子不扫三页(self):
+        v = graph_scope_verdict(CAFE_G, ["role:staff"])
+        assert v["pages"] == [], f"角色种子仍扫到 {v['pages']}"
+        assert v["droppedHubs"] == ["role:staff"]
+
+    def test_对的页种子不经角色吃邻居(self):
+        """加预约台红标：种子是 p1，经 staff 两跳会把积分页和大盘也吃掉。"""
+        v = graph_scope_verdict(CAFE_G, ["page:p1"])
+        assert v["pages"] == ["p1"]
+        assert "p2" not in v["pages"] and "p3" not in v["pages"]
+
+    def test_种子收窄丢掉角色留下页(self):
+        kept, dropped = narrow_page_seeds(
+            ["page:p1", "role:staff", "entity:seat"], CAFE_G
+        )
+        assert kept == ["page:p1", "entity:seat"]
+        assert dropped == ["role:staff"]
+
+    def test_开关关掉退回沿角色扫全图(self, monkeypatch):
+        monkeypatch.setenv("SLIDERULE_GRAPH_SCOPE_HUB_BARRIER", "0")
+        v = graph_scope_verdict(CAFE_G, ["role:staff"])
+        assert set(v["pages"]) == {"p1", "p2", "p3"}, "对照臂没复现咖啡馆那病"
+
+
 class Test影子对照日志行:
     def test_两边都有时报交集和差集(self):
-        v = graph_scope_verdict(G, ["role:mgr"])
+        v = graph_scope_verdict(G, ["page:p1"])
         line = shadow_compare_line(["p1", "p3"], v)
         assert "交集=['p1']" in line
         assert "只有文本有=['p3']" in line
@@ -224,7 +321,8 @@ PREV_PAGES = {"p1": "<html>旧1</html>", "p2": "<html>旧2</html>"}
 
 
 def _drive_pipeline(monkeypatch, *, refine=True, reuse_model=None,
-                    reuse_pages=None, text_scope=None, seed_fn=None):
+                    reuse_pages=None, text_scope=None, seed_fn=None,
+                    spec=None, page_ids=None):
     """跑真实 run_spec_first 控制流（抄自 test_refine_page_scope.Test端到端接线）。
 
     fake bind 给重打的页盖 `bound-` 戳：谁被重新打孔、谁沿用上一轮，
@@ -242,8 +340,10 @@ def _drive_pipeline(monkeypatch, *, refine=True, reuse_model=None,
     from services import spec_first_pipeline as sfp
 
     seen = {}
+    spec = spec or SPEC_WIRE
+    page_ids = page_ids or ("p1", "p2")
 
-    monkeypatch.setattr(spec_tree, "generate_spec_tree", lambda g, **kw: dict(SPEC_WIRE))
+    monkeypatch.setattr(spec_tree, "generate_spec_tree", lambda g, **kw: dict(spec))
     monkeypatch.setattr(rps, "decide_pages_to_regenerate", lambda i, p, **kw: text_scope)
     if seed_fn is not None:
         monkeypatch.setattr(rgs, "decide_seed_nodes", seed_fn)
@@ -253,7 +353,7 @@ def _drive_pipeline(monkeypatch, *, refine=True, reuse_model=None,
         # 跟真 generate_pages_parallel 同约定：照搬页原样回传，重画页新产出。
         reused = dict(kw.get("reuse_pages") or {})
         drawn = {pid: f"<html>新画-{pid}</html>"
-                 for pid in ("p1", "p2") if pid not in reused}
+                 for pid in page_ids if pid not in reused}
         return {"pages": {**reused, **drawn}, "failed": {}}
 
     def fake_bind(p, m):
@@ -401,6 +501,34 @@ class Test接线:
                            seed_fn=lambda i, g, **kw: called.append(1) or ["page:p1"])
         assert not called, "总开关关了图判还在跑"
         assert seen["reuse_pages"] == {"p1": "<html>旧1</html>"}, "行为该由文本判决定"
+
+    def test_角色种子不接管三页_回落文本判(self, monkeypatch):
+        """纪律一：咖啡馆病必须在 run_spec_first 上红。
+
+        种子 role:staff、文本只点 p1。拦枢纽之后图闭包无页 → 回落文本判，
+        只重画预约台，积分页和大盘照搬。谁把枢纽拦拿掉，照搬集变空。
+        """
+        seen = self._drive(
+            monkeypatch, reuse_model=CAFE_MODEL, reuse_pages=PREV_CAFE,
+            text_scope=["p1"], seed_fn=lambda i, g, **kw: ["role:staff"],
+            spec=SPEC_CAFE, page_ids=("p1", "p2", "p3"),
+        )
+        assert seen["reuse_pages"] == {
+            "p2": "<html>旧2</html>", "p3": "<html>旧3</html>",
+        }, f"角色种子仍在接管重画：照搬={seen.get('reuse_pages')}"
+        assert seen["stages"]["graphscope"]["decider"] == "text"
+
+    def test_对的页种子接管但不吃邻居(self, monkeypatch):
+        """种子 page:p1、文本说改 p2：图只该重画 p1，p2/p3 照搬。"""
+        seen = self._drive(
+            monkeypatch, reuse_model=CAFE_MODEL, reuse_pages=PREV_CAFE,
+            text_scope=["p2"], seed_fn=lambda i, g, **kw: ["page:p1"],
+            spec=SPEC_CAFE, page_ids=("p1", "p2", "p3"),
+        )
+        assert seen["reuse_pages"] == {
+            "p2": "<html>旧2</html>", "p3": "<html>旧3</html>",
+        }, f"从 p1 经角色吃到了邻居：照搬={seen.get('reuse_pages')}"
+        assert seen["stages"]["graphscope"]["decider"] == "graph"
 
     def test_非精修轮不跑图判(self, monkeypatch):
         """反向判据：新建应用没有上一版，建图没有对象，跑了就是白烧一次 LLM。"""

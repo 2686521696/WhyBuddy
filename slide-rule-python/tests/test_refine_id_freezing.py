@@ -27,6 +27,10 @@ MCP 的 LFID 提案（语义信号与稳定 canonical_id 分开）都是同一�
 本仓自己也早有同款：`html_structure.build_prompt` 第 5 条「sourcePageId
 照抄上面给你的页面 id，不要自己改名」——而实测**唯一 id 保住 5/5 的段
 恰好就是 page**。这组测试守的是把它推广到实体/角色/节点这件事。
+
+⚠ 2026-08-18 过夜：提示词接线全绿，页 id 照样漂。结构拨回的单元形状在
+`test_page_id_freeze.py`；本文件补的是**调用点**——generate_pages_parallel
+必须看到拨回后的 id。把 freeze_spec_pages 那一针拔掉，下面过夜形状必红。
 """
 
 import os
@@ -319,3 +323,212 @@ class Test接线_三步都要传:
         assert "id 冻结未生效" in capsys.readouterr().out, (
             "精修轮拿不到词表却一声不吭——线上表现是 id 照旧重铸，无从排查"
         )
+
+
+class Test结构拨回_过夜形状:
+    """纪律一：拨回必须赶在第 3 步之前。只测 freeze_spec_pages 本身，
+    把调用点删掉照样全绿——过夜就是这个形状。
+    """
+
+    def _drive(self, monkeypatch, *, spec_pages, reuse_model, refine=True, reuse_pages=None):
+        import services.html_bindings as hb
+        import services.html_structure as hs
+        import services.model_assembly as ma
+        import services.page_shell as ps
+        import services.refine_page_scope as rps
+        import services.spec_page_html as sph
+        import services.spec_semantics as ss
+        import services.spec_tree as spec_tree
+        from services import spec_first_pipeline as sfp
+
+        seen = {}
+        monkeypatch.setenv("SLIDERULE_GRAPH_SCOPE_SHADOW", "0")
+
+        def fake_spec(g, **kw):
+            return {
+                "rootNodeId": "n0", "version": 3, "appName": "维保云",
+                "personas": [{"id": "u1", "name": "维修主管", "goals": ["派工"]}],
+                "successCriteria": [{"id": "sc1", "text": "24 小时内派工"}],
+                "nodes": [],
+                "pages": spec_pages,
+            }
+
+        def fake_pages(spec, **kw):
+            seen["page_ids"] = [p["id"] for p in (spec.get("pages") or [])]
+            seen["reuse_keys"] = sorted((kw.get("reuse_pages") or {}).keys())
+            return {
+                "pages": {pid: "<html>x</html>" for pid in seen["page_ids"]},
+                "failed": {},
+            }
+
+        monkeypatch.setattr(spec_tree, "generate_spec_tree", fake_spec)
+        monkeypatch.setattr(rps, "decide_pages_to_regenerate", lambda i, p, **kw: ["p2"])
+        monkeypatch.setattr(sph, "generate_pages_parallel", fake_pages)
+        monkeypatch.setattr(ps, "unify_shell", lambda p, s, **kw: {"pages": dict(p)})
+        monkeypatch.setattr(ps, "check_shell_consistency", lambda p, s: [])
+        monkeypatch.setattr(ps, "repair_pages_after_bind", lambda p, b: (dict(p), [], []))
+        monkeypatch.setattr(hs, "derive_structure", lambda p, **kw: {"entities": [], "pages": []})
+        monkeypatch.setattr(ss, "derive_semantics", lambda st, sp, **kw: {"roles": []})
+        monkeypatch.setattr(
+            ma, "assemble",
+            lambda *a, **k: {"model": {"datamodel": {}, "page": {"pages": []}}, "gate": {"passed": True}},
+        )
+        monkeypatch.setattr(hb, "bind_pages", lambda p, m: {"pages": dict(p), "failed": {}})
+
+        sfp.run_spec_first(
+            "做一个维保工单系统",
+            refine=({"instruction": "把报表改一下", "modelDigest": "d"} if refine else None),
+            reuse_model=reuse_model,
+            reuse_pages=reuse_pages,
+        )
+        return seen
+
+    def test_加后缀时第3步看到原id(self, monkeypatch):
+        """过夜快递：SPEC 吐 p1_page，画页必须仍按 p1 当键，照搬才对得上。"""
+        prev_html = {"p1": "<html>旧</html>", "p2": "<html>旧2</html>"}
+        seen = self._drive(
+            monkeypatch,
+            spec_pages=[
+                {"id": "p1_page", "name": "工单页", "purpose": "看工单", "audience": "主管"},
+                {"id": "p2_page", "name": "报表页", "purpose": "看报表", "audience": "主管"},
+            ],
+            reuse_model={
+                "page": {"pages": [
+                    {"id": "p1", "name": "工单页"},
+                    {"id": "p2", "name": "报表页"},
+                ]}
+            },
+            reuse_pages=prev_html,
+        )
+        assert seen["page_ids"] == ["p1", "p2"], (
+            f"第 3 步仍看到漂过的 id {seen['page_ids']}——"
+            "结构拨回没接到 generate_spec_tree 出口，照搬/图判键对不上"
+        )
+        assert seen["reuse_keys"] == ["p1"], (
+            f"照搬键是 {seen['reuse_keys']}，说明拨回没赶在 split_pages 之前"
+        )
+
+    def test_语义改名第3步看到原id(self, monkeypatch):
+        """过夜活动室：equipment_hall 必须拨回 p1。"""
+        seen = self._drive(
+            monkeypatch,
+            spec_pages=[
+                {"id": "equipment_hall", "name": "工单页", "purpose": "看工单", "audience": "主管"}
+            ],
+            reuse_model={"page": {"pages": [{"id": "p1", "name": "工单页"}]}},
+        )
+        assert seen["page_ids"] == ["p1"]
+
+    def test_加后缀丢页会补回(self, monkeypatch):
+        """过夜物业：p2 失踪且其余加后缀 → 补回 p2。"""
+        seen = self._drive(
+            monkeypatch,
+            spec_pages=[
+                {"id": "p1_page", "name": "工单页", "purpose": "a", "audience": "u"},
+                {"id": "p3_page", "name": "派工页", "purpose": "a", "audience": "u"},
+            ],
+            reuse_model={
+                "page": {"pages": [
+                    {"id": "p1", "name": "工单页"},
+                    {"id": "p2", "name": "报表页"},
+                    {"id": "p3", "name": "派工页"},
+                ]}
+            },
+        )
+        assert seen["page_ids"] == ["p1", "p2", "p3"]
+
+    def test_真删不补(self, monkeypatch):
+        seen = self._drive(
+            monkeypatch,
+            spec_pages=[
+                {"id": "p1", "name": "工单页", "purpose": "a", "audience": "u"},
+                {"id": "p3", "name": "派工页", "purpose": "a", "audience": "u"},
+            ],
+            reuse_model={
+                "page": {"pages": [
+                    {"id": "p1", "name": "工单页"},
+                    {"id": "p2", "name": "报表页"},
+                    {"id": "p3", "name": "派工页"},
+                ]}
+            },
+        )
+        assert seen["page_ids"] == ["p1", "p3"]
+
+    def test_开关关掉不拨(self, monkeypatch):
+        monkeypatch.setenv("SLIDERULE_REFINE_ID_FREEZE", "0")
+        seen = self._drive(
+            monkeypatch,
+            spec_pages=[
+                {"id": "p1_page", "name": "工单页", "purpose": "a", "audience": "u"}
+            ],
+            reuse_model={"page": {"pages": [{"id": "p1", "name": "工单页"}]}},
+        )
+        assert seen["page_ids"] == ["p1_page"], "对照臂被结构拨回污染了"
+
+    def test_非精修轮不拨(self, monkeypatch):
+        seen = self._drive(
+            monkeypatch,
+            spec_pages=[
+                {"id": "p1_page", "name": "工单页", "purpose": "a", "audience": "u"}
+            ],
+            reuse_model={"page": {"pages": [{"id": "p1", "name": "工单页"}]}},
+            refine=False,
+        )
+        assert seen["page_ids"] == ["p1_page"]
+
+    def test_GEN5回落也拨(self, monkeypatch):
+        """纪律四：spec-first 挂了走老生成器，只改主路等于改一半。"""
+        from services import v5_capability_executor as ex
+        from services.v5_llm_generate import set_refine_context
+
+        drifted = {
+            "page": {"pages": [{"id": "p1_page", "name": "工单页"}]},
+            "appbundle": {"landingPageRef": "p1_page"},
+        }
+        seen = {}
+
+        def fake_artifacts(model, goal):
+            seen["ids"] = [p["id"] for p in ((model.get("page") or {}).get("pages") or [])]
+            seen["landing"] = ((model.get("appbundle") or {}).get("landingPageRef"))
+            return []
+
+        monkeypatch.setenv("SLIDERULE_SPEC_FIRST", "1")
+        monkeypatch.setattr(
+            "services.spec_first_pipeline.run_spec_first",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("spec-first 挂了")),
+        )
+        monkeypatch.setattr(
+            "services.v5_llm_generate.generate_five_system_model",
+            lambda *a, **k: drifted,
+        )
+        monkeypatch.setattr(
+            "services.v5_model_repair.repair_five_system_model",
+            lambda m: {"model": m},
+        )
+        monkeypatch.setattr(
+            "services.v5_model_gate.validate_five_system_model",
+            lambda *a, **k: {"passed": True},
+        )
+        monkeypatch.setattr(
+            "services.device_policy.normalize_model_preferred_device",
+            lambda g, m: m,
+        )
+        monkeypatch.setattr(
+            "services.v5_llm_generate.model_to_linkage_artifacts",
+            fake_artifacts,
+        )
+
+        set_refine_context(
+            {"page": {"pages": [{"id": "p1", "name": "工单页"}]}},
+            "改一下文案",
+        )
+        try:
+            ex._try_llm_generate_evidence("做个工单系统", None)
+        finally:
+            set_refine_context(None)
+
+        assert seen.get("ids") == ["p1"], (
+            f"GEN5 回落没拨页 id（看到 {seen}）——只改了 spec-first 那一半"
+        )
+        assert seen.get("landing") == "p1"
+

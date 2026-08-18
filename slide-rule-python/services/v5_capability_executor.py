@@ -406,6 +406,25 @@ def _try_llm_generate_evidence(
         })
         return None
 
+    def _freeze_gen5_pages(candidate: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        # GEN5 回落同样会漂页 id（过夜快递那轮 spec-first 挂了就走这里）。
+        # 跟 spec-first 同一根开关、同一套拨回，只改一半必然静默失效。
+        if candidate is None:
+            return None
+        from .page_id_freeze import (
+            freeze_pages_in_model,
+            log_freeze,
+            refine_id_freeze_enabled,
+        )
+        from .v5_llm_generate import get_refine_context as _get_refine_for_freeze
+
+        prev = (_get_refine_for_freeze() or {}).get("model")
+        if not refine_id_freeze_enabled() or not isinstance(prev, dict):
+            return candidate
+        frozen, report = freeze_pages_in_model(candidate, prev)
+        log_freeze(report, where="GEN5 回落")
+        return frozen
+
     def _repair(candidate: Dict[str, Any]) -> Dict[str, Any]:
         # 门禁前确定性修复：不变式/展示层引用近邻修复 + 修不好的整条剔除
         # （零 LLM，留痕）。骨架五段不修——悬挂仍由下面的门禁硬拦。
@@ -522,7 +541,9 @@ def _try_llm_generate_evidence(
                 model = None
 
     if model is None:
-        model = generate_five_system_model(goal, llm_json_fn=llm_json_fn)
+        model = _freeze_gen5_pages(
+            generate_five_system_model(goal, llm_json_fn=llm_json_fn)
+        )
     if model is None:
         # 请求域访问器，不是模块属性——属性读法在多租户下会读到别的请求的诊断
         # （2026-08-06，见 v5_llm_generate 里那段请求域状态说明）。
@@ -620,6 +641,7 @@ def _try_llm_generate_evidence(
             print(f"[v5_capability_executor] gate-feedback retry skipped: {str(exc)[:120]}")
             retry_model = None
         if retry_model is not None:
+            retry_model = _freeze_gen5_pages(retry_model)
             retry_model = _repair(retry_model)
             retry_model = normalize_model_preferred_device(goal, retry_model)
             retry_gate = validate_five_system_model(
