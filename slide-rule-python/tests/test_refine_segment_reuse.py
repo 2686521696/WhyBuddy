@@ -711,14 +711,17 @@ class Test两个开关:
     def test_默认两个都开(self, monkeypatch):
         monkeypatch.delenv("SLIDERULE_REFINE_REUSE_1MAXIMAL", raising=False)
         monkeypatch.delenv("SLIDERULE_REFINE_RBAC_MERGE", raising=False)
+        monkeypatch.delenv("SLIDERULE_REFINE_REF_ALIGN", raising=False)
         assert sfp.refine_reuse_1maximal_enabled() is True
         assert sfp.refine_rbac_merge_enabled() is True
+        assert sfp.refine_ref_align_enabled() is True
 
     def test_策略状态每轮都说出来_两个开关都在里面(self, capsys):
         apply_refine_segment_reuse(_perm_fresh(), _perm_baseline(), [], gate_fn=_gate)
         out = capsys.readouterr().out
         assert "沿用策略：" in out, "没打策略状态行——A/B 台子没法自证跑的是哪一臂"
         assert "1maximal=on" in out and "rbacmerge=on" in out
+        assert "refalign=on" in out
 
     def test_关掉1maximal时退回按序丢(self, monkeypatch, capsys):
         """罪魁排在最前的场景：老行为必然退到空，这正是要治的病。"""
@@ -765,4 +768,160 @@ class Test两个开关:
                 f"只关了合并，{seg} 却没保住——两个开关黏在一起了，"
                 f"线上想只退合并时会把没问题的 1-maximal 一起赔掉"
             )
-        assert "1maximal=on rbacmerge=off" in capsys.readouterr().out
+        log = capsys.readouterr().out
+        assert "1maximal=on rbacmerge=off" in log
+        assert "refalign=on" in log
+
+
+def _allergy_baseline() -> dict:
+    """过夜食堂那轮：过敏核验能力指着 resident.age。"""
+    return {
+        "datamodel": {"entities": [
+            {"id": "resident", "name": "住户", "fields": [
+                {"id": "name", "name": "姓名", "type": "string"},
+                {"id": "age", "name": "年龄", "type": "number"},
+            ]},
+        ]},
+        "rbac": {"roles": [{"id": "chef", "name": "厨师"}]},
+        "workflow": {"id": "meal_flow", "nodes": [
+            {"id": "n1", "name": "核验", "assigneeRole": "chef"},
+        ]},
+        "page": {"pages": [{"id": "p1", "name": "订餐页", "fieldBindings": ["resident.name"]}]},
+        "aigc": {"capabilities": [
+            {"id": "ai_allergy_check", "name": "过敏核验",
+             "inputFields": ["resident.age", "resident.name"], "roleRefs": ["chef"]},
+        ]},
+        "appbundle": {
+            "landingPageRef": "p1", "preferredDevice": "desktop",
+            "pageBindings": [{"pageRef": "p1", "workflowRef": "meal_flow"}],
+            "roleRefs": ["chef"], "dataModelRefs": ["resident"],
+        },
+    }
+
+
+def _allergy_fresh() -> dict:
+    """本轮 datamodel 丢掉 age；新 aigc / workflow 被重写成更薄的一份。"""
+    m = copy.deepcopy(_allergy_baseline())
+    m["datamodel"]["entities"][0]["fields"] = [
+        {"id": "name", "name": "姓名", "type": "string"},
+        {"id": "birth_date", "name": "生日", "type": "date"},
+    ]
+    m["aigc"] = {"capabilities": [
+        {"id": "c9", "name": "重写过的能力", "inputFields": ["resident.name"], "roleRefs": ["chef"]},
+    ]}
+    m["workflow"] = {"id": "main_flow", "nodes": [
+        {"id": "z9", "name": "重写", "assigneeRole": "chef"},
+    ]}
+    m["appbundle"]["pageBindings"] = [{"pageRef": "p1", "workflowRef": "main_flow"}]
+    return m
+
+
+class Test字段对不上不整段扔:
+    """过夜食堂/咖啡馆：一个字段对不上就把整段 aigc 扔了，闭环仍绿灯。
+
+    删掉 apply_refine_segment_reuse.build 里 align_reused_aigc 那一针，下面必红。
+    """
+
+    def test_悬空字段剪掉_能力还在(self):
+        base, fresh = _allergy_baseline(), _allergy_fresh()
+        out = apply_refine_segment_reuse(fresh, base, [], gate_fn=_gate)
+        caps = (out.get("aigc") or {}).get("capabilities") or []
+        ids = [c.get("id") for c in caps if isinstance(c, dict)]
+        assert "ai_allergy_check" in ids, (
+            f"aigc 被整段扔了（看到 {ids}）——过夜就是闭环绿灯、过敏核验没了"
+        )
+        assert "c9" not in ids, "回落到新生成的薄 aigc 了，判据会被回落路径白送绿灯"
+        fields = caps[0].get("inputFields") or []
+        assert "resident.age" not in fields, "悬空字段没剪掉，闸还会拒、整段再被扔"
+        assert "resident.name" in fields
+
+    def test_字段只是改了id_按名字拨回(self):
+        base = _allergy_baseline()
+        fresh = _allergy_fresh()
+        fresh["datamodel"]["entities"][0]["fields"] = [
+            {"id": "name", "name": "姓名", "type": "string"},
+            {"id": "years", "name": "年龄", "type": "number"},
+        ]
+        out = apply_refine_segment_reuse(fresh, base, [], gate_fn=_gate)
+        fields = out["aigc"]["capabilities"][0]["inputFields"]
+        assert "resident.years" in fields, f"同名字段没拨回去：{fields}"
+        assert "resident.age" not in fields
+        assert out["aigc"]["capabilities"][0]["id"] == "ai_allergy_check"
+
+    def test_workflowRef漂了_旧流程还在(self):
+        """咖啡馆第一轮：appbundle 指 main_flow，旧流程是 meal_flow，整段 workflow 被连坐。"""
+        base, fresh = _allergy_baseline(), _allergy_fresh()
+        out = apply_refine_segment_reuse(fresh, base, [], gate_fn=_gate)
+        assert out["workflow"]["id"] == "meal_flow", (
+            "workflow 被整段扔了——连接表一个号对不上就连坐"
+        )
+        wref = (out["appbundle"]["pageBindings"] or [{}])[0].get("workflowRef")
+        assert wref == "meal_flow", f"连接表没拨到旧流程：{wref}"
+
+    def test_开关关掉退回整段扔(self, monkeypatch):
+        """反向：关掉对齐必须回到过夜行为，否则杆是假的。"""
+        monkeypatch.setenv("SLIDERULE_REFINE_REF_ALIGN", "0")
+        base, fresh = _allergy_baseline(), _allergy_fresh()
+        out = apply_refine_segment_reuse(fresh, base, [], gate_fn=_gate)
+        ids = [c.get("id") for c in (out["aigc"].get("capabilities") or [])]
+        assert ids == ["c9"], (
+            f"关了对齐还保住了旧能力 {ids}——杆没接到真正改内容的那一步"
+        )
+
+    def test_对齐时打日志(self, capsys):
+        apply_refine_segment_reuse(_allergy_fresh(), _allergy_baseline(), [], gate_fn=_gate)
+        out = capsys.readouterr().out
+        assert "对齐 aigc" in out and "resident.age" in out, (
+            f"剪了字段却不说：{out[:400]}"
+        )
+        assert "refalign=on" in out
+
+    def test_真实链路出口也不扔(self, monkeypatch):
+        """纪律一：只测 helper 会假绿。assemble 出口必须还是旧能力。"""
+        import services.html_bindings as hb
+        import services.html_structure as hs
+        import services.model_assembly as ma
+        import services.page_shell as ps
+        import services.spec_page_html as sph
+        import services.spec_semantics as ss
+        import services.spec_tree as spec_tree
+
+        spec = {
+            "rootNodeId": "n0", "version": 3, "appName": "食堂",
+            "personas": [{"id": "u1", "name": "厨师", "goals": ["核验"]}],
+            "successCriteria": [{"id": "sc1", "text": "过敏不漏"}],
+            "nodes": [], "pages": [{"id": "p1", "name": "订餐页"}],
+            "refineScope": [],
+        }
+        monkeypatch.setattr(spec_tree, "generate_spec_tree", lambda goal, **kw: spec)
+        monkeypatch.setattr(
+            sph, "generate_pages_parallel",
+            lambda s, **kw: {"pages": {"p1": "<html>x</html>"}, "failed": {}},
+        )
+        monkeypatch.setattr(ps, "unify_shell", lambda pages, s, **kw: {"pages": dict(pages)})
+        monkeypatch.setattr(ps, "check_shell_consistency", lambda pages, s: [])
+        monkeypatch.setattr(
+            ps, "repair_pages_after_bind", lambda pages, before: (dict(pages), [], [])
+        )
+        monkeypatch.setattr(
+            hs, "derive_structure", lambda pages, **kw: {"entities": [], "pages": []}
+        )
+        monkeypatch.setattr(
+            ss, "derive_semantics", lambda st, s, **kw: {"roles": [], "workflowNodes": []}
+        )
+        monkeypatch.setattr(
+            ma, "assemble",
+            lambda *a, **k: {"model": _allergy_fresh(), "gate": {"passed": True, "findings": []}},
+        )
+        monkeypatch.setattr(
+            hb, "bind_pages", lambda pages, model: {"pages": dict(pages), "failed": {}}
+        )
+        out = sfp.run_spec_first(
+            "食堂订餐过敏",
+            refine={"instruction": "加一列过敏原", "modelDigest": "实体：住户"},
+            reuse_model=_allergy_baseline(),
+        )
+        ids = [c.get("id") for c in (out["model"]["aigc"].get("capabilities") or [])]
+        assert "ai_allergy_check" in ids, (
+            f"真实链路出口把 aigc 扔了（{ids}）——接线断了"
+        )

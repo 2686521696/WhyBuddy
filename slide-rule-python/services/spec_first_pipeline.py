@@ -380,6 +380,8 @@ def model_id_lexicon(model: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 #: ⚠ aigc 排在最后是因为它的 inputFields 指 datamodel 字段、roleRefs 指 rbac 角色，
 #:   而 datamodel **永远重新生成**——字段 id 一飘它就悬空。留着它是因为
 #:   capabilities 是用户真正在意的自有内容，丢了可惜；排最后是因为它最先该被丢。
+#:   过夜食堂/咖啡馆：一个字段对不上就整段扔，闭环仍绿灯。对齐引用
+#:   （align_reused_aigc）之后，悬空字段不再株连整段。
 REFINE_REUSABLE_SEGMENTS = ("rbac", "workflow", "aigc")
 
 
@@ -417,6 +419,16 @@ def refine_rbac_merge_enabled() -> bool:
     permissions 里加了东西。风险面比纯粹的"照搬/不照搬"大，所以单独留杆。
     """
     raw = str(os.environ.get("SLIDERULE_REFINE_RBAC_MERGE", "1")).strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def refine_ref_align_enabled() -> bool:
+    """`SLIDERULE_REFINE_REF_ALIGN=0` 关掉「沿用段对齐悬空引用」。默认开。
+
+    跟权限合并同一类：会改动沿用回来的内容（字段/流程引用），单独留杆。
+    关掉退回「对不上就整段扔」的过夜行为。
+    """
+    raw = str(os.environ.get("SLIDERULE_REFINE_REF_ALIGN", "1")).strip().lower()
     return raw not in ("0", "false", "no", "off")
 
 
@@ -498,6 +510,203 @@ def merge_needed_permissions(old_rbac: Any, fresh_model: Any):
         ({"id": ref} if as_dict else ref) for ref in needed
     ]
     return merged, needed
+
+
+def _datamodel_field_catalog(datamodel: Any) -> List[Dict[str, str]]:
+    """上一版/本轮字段对照表：id 会漂，名字通常还在。"""
+    rows: List[Dict[str, str]] = []
+    if not isinstance(datamodel, dict):
+        return rows
+    for entity in datamodel.get("entities") or []:
+        if not isinstance(entity, dict):
+            continue
+        eid = str(entity.get("id") or entity.get("name") or "").strip()
+        ename = str(entity.get("name") or entity.get("id") or "").strip()
+        if not eid:
+            continue
+        for field in entity.get("fields") or []:
+            if not isinstance(field, dict):
+                continue
+            fid = str(field.get("id") or field.get("name") or "").strip()
+            fname = str(field.get("name") or field.get("id") or "").strip()
+            if not fid:
+                continue
+            rows.append({
+                "ref": f"{eid}.{fid}",
+                "eid": eid,
+                "fid": fid,
+                "ename": ename,
+                "fname": fname,
+            })
+    return rows
+
+
+def _resolve_stale_ref(ref: str, known: set, *, old_rows=None, new_rows=None) -> tuple:
+    """把一条悬空引用拨到本轮还在的 id 上。歧义不猜，对不上就 (None, 'drop')。
+
+    顺序照本仓 `_unique_near_match` + coversNodes 剪枝：精确 → 名字唯一 →
+    近邻唯一 → 剪掉。json-schema-ref-parser 的 fixDanglingRefs 也是这套
+    （悬空 $ref 唯一命中才改写，对不上不拆父对象）。
+    """
+    if not ref or ref in known:
+        return ref, "keep"
+    if old_rows and new_rows:
+        old = next((r for r in old_rows if r["ref"] == ref), None)
+        if old:
+            by_name = [
+                r for r in new_rows
+                if r["ename"] == old["ename"] and r["fname"] == old["fname"]
+            ]
+            if len(by_name) == 1:
+                return by_name[0]["ref"], "name"
+            by_eid = [
+                r for r in new_rows
+                if r["eid"] == old["eid"] and r["fname"] == old["fname"]
+            ]
+            if len(by_eid) == 1:
+                return by_eid[0]["ref"], "field-name"
+    from .v5_model_repair import _unique_near_match
+
+    near = _unique_near_match(ref, known)
+    if near:
+        return near, "near"
+    return None, "drop"
+
+
+def align_reused_aigc(old_aigc: Any, fresh_model: Any, baseline: Any = None):
+    """沿用旧 aigc 时，把对不上本轮 datamodel / rbac 的字段、角色拨回去或剪掉。
+
+    返回 `(对齐后的 aigc, 人话留痕)`。
+
+    ## 过夜（2026-08-18）
+
+    食堂 / 咖啡馆精修同一句话：
+
+        丢掉 aigc，首次拒绝：aigc field 'resident.age' not found in datamodel fields
+
+    能力还在，就一个字段 id 漂了。沿用是整段照搬，闸一看悬空就把**整段**
+    退回新生成的那份——新的往往更薄。闭环 evidence=6 照样绿灯。
+    闸全绿但东西没了。
+
+    修法跟 `merge_needed_permissions`、`_prune_stale_covers_on_frozen_pages`
+    同一条：保段，只动坏引用。字段引用逐个核，留下核得过的
+    （block_assembler 第 179 行已经写过，这边是同一纪律补到沿用出口）。
+    """
+    if not isinstance(old_aigc, dict):
+        return old_aigc, []
+    from .v5_model_gate import _collect_datamodel_field_refs, _collect_role_ids
+
+    dm = (fresh_model or {}).get("datamodel") if isinstance(fresh_model, dict) else {}
+    if not isinstance(dm, dict):
+        dm = {}
+    field_refs = _collect_datamodel_field_refs(dm)
+    # 近邻只在 entity.field 里找——裸实体 id 是 `resident` 这种超串，
+    # 会把 resident.age 唯一「近邻」成 resident，看起来像修好了其实指错层。
+    dotted = {r for r in field_refs if "." in r}
+    rbac = (fresh_model or {}).get("rbac") if isinstance(fresh_model, dict) else {}
+    role_ids = _collect_role_ids(rbac if isinstance(rbac, dict) else {})
+    old_rows = _datamodel_field_catalog(
+        (baseline or {}).get("datamodel") if isinstance(baseline, dict) else None
+    )
+    new_rows = _datamodel_field_catalog(
+        (fresh_model or {}).get("datamodel") if isinstance(fresh_model, dict) else None
+    )
+
+    import copy as _copy
+
+    aligned = _copy.deepcopy(old_aigc)
+    notes: List[str] = []
+    for cap in aligned.get("capabilities") or []:
+        if not isinstance(cap, dict):
+            continue
+        cid = str(cap.get("id") or cap.get("name") or "?").strip()
+        inputs = cap.get("inputFields")
+        if isinstance(inputs, list):
+            kept: List[str] = []
+            for raw in inputs:
+                ref = str(raw).strip()
+                if not ref:
+                    continue
+                resolved, how = _resolve_stale_ref(
+                    ref, dotted, old_rows=old_rows, new_rows=new_rows
+                )
+                if how == "keep":
+                    kept.append(ref)
+                elif resolved:
+                    kept.append(resolved)
+                    notes.append(f"{cid}:{ref}→{resolved}")
+                else:
+                    notes.append(f"{cid}:剪掉 {ref}")
+            cap["inputFields"] = kept
+        out_ref = str(cap.get("outputField") or "").strip()
+        if out_ref:
+            resolved, how = _resolve_stale_ref(
+                out_ref, dotted, old_rows=old_rows, new_rows=new_rows
+            )
+            if how == "keep":
+                pass
+            elif resolved:
+                cap["outputField"] = resolved
+                notes.append(f"{cid}.out:{out_ref}→{resolved}")
+            else:
+                cap.pop("outputField", None)
+                notes.append(f"{cid}.out:剪掉 {out_ref}")
+        roles = cap.get("roleRefs")
+        if isinstance(roles, list) and role_ids:
+            kept_roles: List[str] = []
+            for raw in roles:
+                ref = str(raw).strip()
+                if not ref:
+                    continue
+                resolved, how = _resolve_stale_ref(ref, role_ids)
+                if how == "keep":
+                    kept_roles.append(ref)
+                elif resolved:
+                    kept_roles.append(resolved)
+                    notes.append(f"{cid}.role:{ref}→{resolved}")
+                else:
+                    notes.append(f"{cid}.role:剪掉 {ref}")
+            cap["roleRefs"] = kept_roles
+    return aligned, notes
+
+
+def align_reused_workflow_bindings(candidate: Dict[str, Any]):
+    """沿用旧 workflow 时，把本轮 appbundle.workflowRef 拨到还在的流程 id。
+
+    过夜咖啡馆第一轮精修：aigc 字段悬空的同时，
+    `appbundle workflowRef 'main_flow' not found in workflow`——新连接表
+    指着新铸的流程号，旧流程整段被连坐丢掉。
+
+    只改连接表（appbundle 本就不沿用），不动流程节点。歧义不猜。
+    """
+    if not isinstance(candidate, dict):
+        return candidate, []
+    from .v5_model_gate import _collect_workflow_ids
+
+    known = _collect_workflow_ids(candidate.get("workflow") or {})
+    bundle = candidate.get("appbundle")
+    if not known or not isinstance(bundle, dict):
+        return candidate, []
+    notes: List[str] = []
+    changed = False
+    import copy as _copy
+
+    new_bundle = _copy.deepcopy(bundle)
+    for bd in new_bundle.get("pageBindings") or []:
+        if not isinstance(bd, dict):
+            continue
+        wref = str(bd.get("workflowRef") or "").strip()
+        if not wref or wref in known:
+            continue
+        resolved, how = _resolve_stale_ref(wref, known)
+        if resolved and how != "keep":
+            bd["workflowRef"] = resolved
+            notes.append(f"workflowRef {wref}→{resolved}")
+            changed = True
+    if changed:
+        candidate = dict(candidate)
+        candidate["appbundle"] = new_bundle
+    return candidate, notes
 
 
 def apply_refine_segment_reuse(
@@ -609,14 +818,16 @@ def apply_refine_segment_reuse(
 
     one_maximal = refine_reuse_1maximal_enabled()
     rbac_merge = refine_rbac_merge_enabled()
-    # ⚠ **一行把两个开关的状态都说出来，每轮都说。**
+    ref_align = refine_ref_align_enabled()
+    # ⚠ **一行把开关的状态都说出来，每轮都说。**
     #   照 SLIDERULE_REFINE_ID_FREEZE 那次的教训：开关走 env 传子进程，传丢了
     #   不报错，只会让 A/B 的两臂**悄悄变成同一臂**——跑出"看起来 n=10 其实
     #   10 个都是同一边"的假数据，比样本少糟得多。
     #   写成一行固定格式，正反两向都能 grep：本臂特征串必须在、对臂的必须不在。
     print(
         f"[spec_first_pipeline] 沿用策略：1maximal={'on' if one_maximal else 'off'} "
-        f"rbacmerge={'on' if rbac_merge else 'off'}"
+        f"rbacmerge={'on' if rbac_merge else 'off'} "
+        f"refalign={'on' if ref_align else 'off'}"
     )
 
     def build(segs):
@@ -627,6 +838,13 @@ def apply_refine_segment_reuse(
             # 沿用旧 rbac 的同时，把本轮页面真正需要的权限并进来。
             # 不并的话这一段 8/9 会被闸拒（见 merge_needed_permissions 头注）。
             candidate["rbac"], _ = merge_needed_permissions(candidate["rbac"], model)
+        if ref_align and "aigc" in segs:
+            # 过夜食堂/咖啡馆：一个字段对不上就把整段 aigc 扔了。
+            candidate["aigc"], _ = align_reused_aigc(
+                candidate["aigc"], candidate, baseline
+            )
+        if ref_align and "workflow" in segs:
+            candidate, _ = align_reused_workflow_bindings(candidate)
         return candidate
 
     def merge_note(segs) -> str:
@@ -636,10 +854,26 @@ def apply_refine_segment_reuse(
           permissions。不打日志的话就是"东西看着是旧的、其实改过"——本仓
           反复数到的那个形态，出问题时对不出账。
         """
-        if not rbac_merge or "rbac" not in segs:
-            return ""
-        _, added = merge_needed_permissions(baseline.get("rbac"), model)
-        return f"（并入本轮页面需要的权限：{'、'.join(added)}）" if added else ""
+        bits: List[str] = []
+        if rbac_merge and "rbac" in segs:
+            _, added = merge_needed_permissions(baseline.get("rbac"), model)
+            if added:
+                bits.append(f"并入本轮页面需要的权限：{'、'.join(added)}")
+        if ref_align and "aigc" in segs:
+            probe = dict(model)
+            probe["aigc"] = copy.deepcopy(baseline.get("aigc"))
+            if "rbac" in segs:
+                probe["rbac"] = copy.deepcopy(baseline.get("rbac"))
+            _, notes = align_reused_aigc(probe.get("aigc"), probe, baseline)
+            if notes:
+                bits.append(f"对齐 aigc：{'、'.join(notes[:8])}")
+        if ref_align and "workflow" in segs:
+            probe = dict(model)
+            probe["workflow"] = copy.deepcopy(baseline.get("workflow"))
+            _, notes = align_reused_workflow_bindings(probe)
+            if notes:
+                bits.append(f"对齐 workflowRef：{'、'.join(notes[:6])}")
+        return f"（{'；'.join(bits)}）" if bits else ""
 
     if gate_fn is None:
         print(
