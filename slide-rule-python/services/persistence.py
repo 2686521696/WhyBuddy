@@ -51,6 +51,16 @@ def _resolve_store_file(store_file: Optional[StorePath] = None) -> Path:
     return Path(env_file or STORE_FILE)
 
 
+#: /db-api 默认 MAX_BODY_BYTES=1MB（见 deploy/postgres-https-api）。
+#: 会话 JSON 再塞进 SQL 参数的 JSON，转义后大约 1.2–1.4 倍。700KB 本体
+#: 是留给包裹的余量。过夜那批 413 不是 Neon——进程打的是 miantuan.ai/db-api，
+#: 异常前缀 neon http 是 HttpSqlGateway 复用了旧格式化函数。
+_PERSIST_BODY_BUDGET = int(os.getenv("SLIDERULE_PERSIST_BODY_BUDGET", "700000"))
+_REPLAY_KEEP = 80
+_RUNS_KEEP = 24
+_ARTIFACTS_KEEP = 40
+
+
 def _payload_too_large(exc: Exception) -> bool:
     """写库异常是不是「请求体超限」。判据盯语义词（413 / too large），
     不盯网关实现的整句原文——网关换了措辞不该让降级失灵。"""
@@ -58,11 +68,29 @@ def _payload_too_large(exc: Exception) -> bool:
     return "413" in msg or "too large" in msg or "payload too large" in msg
 
 
+def _should_retry_slim(exc: Exception, write_state: V5SessionState) -> bool:
+    """超限必削；大包碰上 500/超时也削一档——咖啡馆过夜几乎每轮 neon/db-api
+    500，不是 413，只认 413 会让降级整晚不上场。"""
+    if _payload_too_large(exc):
+        return True
+    if _encoded_bytes(write_state) <= _PERSIST_BODY_BUDGET:
+        return False
+    msg = str(exc).lower()
+    return any(m in msg for m in ("500", "timed out", "timeout", "disconnected"))
+
+
+def _encoded_bytes(state: V5SessionState) -> int:
+    try:
+        return len(json.dumps(state.model_dump(), ensure_ascii=False, default=str).encode("utf-8"))
+    except Exception:  # noqa: BLE001 — 量体积自己不许把写入带崩
+        return _PERSIST_BODY_BUDGET + 1
+
+
 def _strip_version_pages(state: V5SessionState) -> Optional[V5SessionState]:
     """抹掉版本史里的整页 HTML（specFirstPages），其余原样。
 
     只在落库超限的降级路径上用。没有任何一版带页时返回 None——那说明
-    超限不是页面造成的，降级重写没有意义，让调用方如实报错。
+    超限不是版本史页面造成的，让调用方走下一档（当前页 / 历史）。
     不动传入的 state：调用方手里那份还要继续当作内存权威用。
     """
     versions = list(getattr(state, "modelVersions", None) or [])
@@ -79,6 +107,58 @@ def _strip_version_pages(state: V5SessionState) -> Optional[V5SessionState]:
         return state.model_copy(update={"modelVersions": stripped})
     except Exception:  # noqa: BLE001 — 降级自己不许把主写入路径带崩
         return None
+
+
+def _next_slim(state: V5SessionState) -> Optional[Tuple[V5SessionState, str]]:
+    """按增强→观测→旧历史的顺序削一档。削不动返回 None。
+
+    页面是增强类（fail-open）。capabilityRuns/artifacts 是证据，只在前几档
+    仍超预算时才裁旧尾——当轮闭环留下，旧轮历史丢掉，总比整包写不进去、
+    当轮版本指针被钉死强。
+    """
+    versions_slim = _strip_version_pages(state)
+    if versions_slim is not None:
+        return versions_slim, "version_pages"
+    if getattr(state, "specFirstPages", None):
+        try:
+            return state.model_copy(update={"specFirstPages": None}), "current_pages"
+        except Exception:  # noqa: BLE001
+            return None
+    replay = list(getattr(state, "sessionReplayLog", None) or [])
+    reas = list(getattr(state, "reasoningEvents", None) or [])
+    if len(replay) > _REPLAY_KEEP or len(reas) > _REPLAY_KEEP:
+        try:
+            return state.model_copy(update={
+                "sessionReplayLog": replay[-_REPLAY_KEEP:],
+                "reasoningEvents": reas[-_REPLAY_KEEP:],
+            }), "replay_trimmed"
+        except Exception:  # noqa: BLE001
+            return None
+    runs = list(getattr(state, "capabilityRuns", None) or [])
+    arts = list(getattr(state, "artifacts", None) or [])
+    if len(runs) > _RUNS_KEEP or len(arts) > _ARTIFACTS_KEEP:
+        try:
+            return state.model_copy(update={
+                "capabilityRuns": runs[-_RUNS_KEEP:],
+                "artifacts": arts[-_ARTIFACTS_KEEP:],
+            }), "history_trimmed"
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def _slim_to_budget(state: V5SessionState) -> Tuple[V5SessionState, List[str]]:
+    """还没撞网关就按预算预削。过夜那批：抹掉版本史后立刻又 413，
+    只等网关拒绝永远慢一拍。"""
+    flags: List[str] = []
+    write = state
+    while _encoded_bytes(write) > _PERSIST_BODY_BUDGET:
+        nxt = _next_slim(write)
+        if nxt is None:
+            break
+        write, flag = nxt
+        flags.append(flag)
+    return write, flags
 
 
 def _store_error(reason: str, message: str) -> StoreError:
@@ -586,6 +666,7 @@ def _save_session_record_db(store, state: V5SessionState) -> StoreError:
                     prior = coerced
 
             write_state = _resolve_write_state(prior, state)
+            write_state, degrade_flags = _slim_to_budget(write_state)
             new_payload = write_state.model_dump()
 
             # 内容没变就别写（对标 django-reversion 的 ignore_duplicates）。
@@ -605,22 +686,16 @@ def _save_session_record_db(store, state: V5SessionState) -> StoreError:
                     expected_rev=row.rev if row is not None else None,
                 )
             except Exception as exc:  # noqa: BLE001
-                # ★ 请求体超限 → 抹掉版本史页面降级重写一次（2026-08-18 真机）。
+                # ★ 请求体超限 / 大包 500 → 按档位再削一次重写（2026-08-18）。
                 #
-                # 烘焙店会话 605KB，追加一份带页版本（~77KB）后每次落盘都撞
-                # `neon http 413: request body too large`，且此前这个失败被
-                # 静默吞掉——整轮产物（版本史/轮叙述/lastTurnId）全部蒸发，
-                # 库里停在轮初快照。
-                #
-                # 页面是增强类载荷（fail-open）：版本史里的整页 HTML 丢了，
-                # 回退那一版会如实回落区块渲染；而模型/对话/叙述是核心，
-                # 让它们陪着页面一起丢才是真正的事故。所以超限时抹掉
-                # modelVersions[].specFirstPages 重试一次；state.specFirstPages
-                # （当前预览的数据源）不动。仍失败就如实报错（上面那条
-                # persist_state 的失败留痕会出声）。
-                if _payload_too_large(exc):
-                    slim = _strip_version_pages(write_state)
-                    if slim is not None:
+                # 烘焙店 + 过夜 6 话题：只抹版本史页面不够，当前页 +
+                # capabilityRuns + artifacts 仍顶满 /db-api 1MB。失败被
+                # 静默吞掉时，驱动器内存里版本涨了，库停在轮初；轮末前端
+                # PUT 再用新 lastTurnId 把旧版本钉死。
+                if _should_retry_slim(exc, write_state):
+                    nxt = _next_slim(write_state)
+                    if nxt is not None:
+                        slim, flag = nxt
                         try:
                             ok = store.save(
                                 slim.sessionId,
@@ -635,9 +710,10 @@ def _save_session_record_db(store, state: V5SessionState) -> StoreError:
                                 "message": f"超限降级重写也失败：{str(exc2)[:160]}",
                             }
                         if ok:
+                            flags = [*degrade_flags, flag]
                             print(
                                 f"[persistence] 会话 {slim.sessionId} 落库超限，"
-                                "已抹掉版本史页面降级重写成功（当前预览页面不受影响）",
+                                f"已降级 {','.join(flags)}（内存权威未改）",
                                 file=sys.stderr,
                                 flush=True,
                             )
@@ -645,7 +721,8 @@ def _save_session_record_db(store, state: V5SessionState) -> StoreError:
                                 "ok": True,
                                 "sessionId": slim.sessionId,
                                 "state": slim,
-                                "degradedVersionPagesStripped": True,
+                                "degradedVersionPagesStripped": "version_pages" in flags,
+                                "degradeFlags": flags,
                             }
                         # 降级写也撞 CAS：走外层重读重算（守卫必须重新过一遍）
                         continue
@@ -659,7 +736,15 @@ def _save_session_record_db(store, state: V5SessionState) -> StoreError:
                 # 把刚写下去的状态一并返回：调用方（slide_rule_session.save_session）
                 # 本来要再 load 一次来对账，而这里手上就是权威结果——省掉的是
                 # 每次 save 的第三趟全量往返（实测 264ms → 约 180ms）。
-                return {"ok": True, "sessionId": write_state.sessionId, "state": write_state}
+                out: StoreError = {
+                    "ok": True,
+                    "sessionId": write_state.sessionId,
+                    "state": write_state,
+                }
+                if degrade_flags:
+                    out["degradeFlags"] = degrade_flags
+                    out["degradedVersionPagesStripped"] = "version_pages" in degrade_flags
+                return out
             # 写不进去 = 这一瞬间别人改过同一条。重读重算——注意必须重新过一遍
             # 守卫，不能拿刚才算好的 write_state 硬写，否则就把别人的提交冲掉了。
         return {
@@ -776,6 +861,16 @@ def persist_state(state: V5SessionState):
                 file=sys.stderr,
                 flush=True,
             )
+        # 驱动器走 persist_state 不经 save_session。库写失败/降级后，
+        # GET 若只信库会读到旧指针；把当轮内存钉进缓存，让 load_session
+        # 在「内存比库新」时把预览和版本交出去（2026-08-18 过夜）。
+        if getattr(state, "sessionId", None):
+            try:
+                from .slide_rule_session import _sessions
+
+                _sessions[state.sessionId] = state
+            except Exception:  # noqa: BLE001 — 缓存留痕不许拖垮写入
+                pass
         if _took >= _PERSIST_SLOW_SECONDS:
             print(
                 f"[persist] 会话 {_sid} 落库耗时 {_took:.1f}s（超过 {_PERSIST_SLOW_SECONDS:.0f}s 阈值）",

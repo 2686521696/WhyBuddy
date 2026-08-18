@@ -367,6 +367,22 @@ class Test两个调用点都要带页面:
         state.specFirstPages = {"pages": {"p1": "<html>1</html>"}}
         assert refine_pages_of(state) == {"p1": "<html>1</html>"}
 
+    def test_当前页空时回落到版本史带页那一版(self):
+        """过夜：首轮 GEN5 无页，mv-2 才带页。当前 specFirstPages 空时
+        必须能从版本史拿到旧页，否则按需重画永远全量。"""
+        from models.v5_state import V5SessionState
+        from services.v5_full_driver import refine_pages_of
+
+        state = V5SessionState(sessionId="s", goal={"text": "x"})
+        state.specFirstPages = None
+        state.modelVersions = [
+            {"id": "mv-1", "specFirstPages": None},
+            {"id": "mv-2", "specFirstPages": {"pages": {"p1": "<html>旧</html>"}}},
+        ]
+        assert refine_pages_of(state) == {"p1": "<html>旧</html>"}
+        state.modelVersions = [{"id": "mv-1", "specFirstPages": None}]
+        assert refine_pages_of(state) is None, "版本史也没页还返回了东西"
+
 
 class Test设计段随精修上下文回流:
     """★ 同上一个类的病灶换了个键：extract_model_from_closure 只拼六段，

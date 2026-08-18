@@ -765,7 +765,10 @@ def save_sess(
             # publishClosure intentionally NOT excluded: allows roundtrip persist of publish closure evidence into session state.
             # ownerId 在 exclude 里 —— 见上面 pop 那段：不排除的话，一次普通
             # 保存就会把服务端的归属覆盖成 None。
-            updates = client_contrib.model_dump(exclude={"sessionId", "ownerId", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents", "modelVersions", "currentModelVersionId"})
+            # lastTurnId / specFirstPages 也是服务端的：过夜实测前端 PUT 带
+            # 新 lastTurnId、旧页面/无版本史，落库失败后把旧指针钉死。
+            # 409 守卫仍看 client lastTurnId（更旧的请求照样拒），只是合并时不吃。
+            updates = client_contrib.model_dump(exclude={"sessionId", "ownerId", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents", "modelVersions", "currentModelVersionId", "lastTurnId", "specFirstPages"})
             for k, v in updates.items():
                 if hasattr(merged, k):
                     setattr(merged, k, v)

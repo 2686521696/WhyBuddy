@@ -4,26 +4,26 @@
 
 烘焙店会话 sr-20260818010027 本体 605KB（capabilityRuns 179KB + artifacts
 130KB 的永续历史打底），精修轮追加第二份带页版本（~77KB 整页 HTML）后，
-每一次落盘都撞 `neon http 413: request body too large`——而这个失败此前被
-**静默吞掉**（persist_state 不看返回值、_store_error 不打日志）。表现：
+每一次落盘都撞网关 413。过夜 6 话题打的是 miantuan.ai/db-api（默认 1MB），
+日志前缀曾写成 `neon http`——Neon 已经不用了。失败此前被**静默吞掉**。
+表现：
 
     驱动器内存里 mv-4 追加成功、轮叙述写了、lastTurnId 改了名，
     库里却停在轮初快照；轮末前端 PUT 一来，内存缓存也被刷回旧值。
     用户看到"过程卡在动、预览纹丝不动"，日志一行不吭。
 
-## 修法（两道独立的闸）
-
-① v5_full_driver._PAGES_KEPT_VERSIONS 3 → 1：结构上不让 blob 长到超限；
-② 本文件测的这道：真撞了 413，抹掉版本史页面（增强类载荷，fail-open）
-   降级重写一次；模型/对话/叙述（核心）不许陪葬。仍失败就如实报错出声。
+只抹版本史页面不够：当前页 + runs + artifacts 仍超限。咖啡馆几乎每轮
+是 500 不是 413。所以降级是阶梯，500/超时在大包上也削。
 """
 
 import pytest
 
 from models.v5_state import V5SessionState
 from services.persistence import (
+    _next_slim,
     _payload_too_large,
     _save_session_record_db,
+    _should_retry_slim,
     _strip_version_pages,
 )
 
@@ -91,13 +91,28 @@ class Test超限降级:
         assert result["reason"] == "db_write_failed"
         assert store.save_calls == 1, "非超限错误不许有第二次写"
 
-    def test_413但没有版本页面可抹_如实报错(self):
-        # 超限不是页面造成的（比如 capabilityRuns 自己就超了）——降级没意义，
-        # 报错出声比"抹了个寂寞然后再撞一次"诚实。
+    def test_413但没有版本页面可抹_削当前页重写成功(self):
+        # 过夜：版本史已经没页了，超限的是当前预览页。旧判据「没版本页就
+        # 如实报错」会让 6 个话题后期整包写不进去。当前页是增强类，可 fail-open。
         st = _state_with_versions()
         st.modelVersions = [
             {"id": "mv-1", "turnId": "turn-8", "model": {"a": 1}, "specFirstPages": None}
         ]
+        store = _FakeStore(fail_times=1)
+        result = _save_session_record_db(store, st)
+        assert result["ok"] is True
+        assert "current_pages" in (result.get("degradeFlags") or [])
+        assert store.saved_payloads[-1].get("specFirstPages") in (None, {})
+        assert st.specFirstPages["pages"]["p1"] == "<html>页</html>", (
+            "内存里的当前页被降级顺手抹了——预览当场没了"
+        )
+
+    def test_什么都削不动才如实报错(self):
+        # 反向：当前页/版本页/历史都没有可削的，不许空转第二次写。
+        st = V5SessionState(sessionId="s-empty", goal={"text": "g"})
+        st.lastTurnId = "turn-1"
+        st.specFirstPages = None
+        st.modelVersions = [{"id": "mv-1", "model": {}, "specFirstPages": None}]
         store = _FakeStore(fail_times=9)
         result = _save_session_record_db(store, st)
         assert result["ok"] is False
@@ -114,10 +129,20 @@ class Test超限降级:
 class Test判据本身:
     def test_payload_too_large_认语义词(self):
         assert _payload_too_large(RuntimeError("neon http 413: request body too large"))
+        assert _payload_too_large(RuntimeError("db-api http 413: request body too large"))
         assert _payload_too_large(RuntimeError("Payload Too Large"))
         assert not _payload_too_large(RuntimeError("connection reset"))
+
+    def test_大包500也走降级_小包500不走(self):
+        fat = _state_with_versions()
+        fat.specFirstPages = {"pages": {"p1": "x" * 800_000}}
+        assert _should_retry_slim(RuntimeError("db-api http 500: Internal Server Error"), fat)
+        thin = V5SessionState(sessionId="s", goal={"text": "g"})
+        assert not _should_retry_slim(RuntimeError("db-api http 500: Internal Server Error"), thin)
 
     def test_strip_没页面返回None(self):
         st = V5SessionState(sessionId="s", goal={"text": "g"})
         st.modelVersions = [{"id": "mv-1", "model": {}, "specFirstPages": None}]
         assert _strip_version_pages(st) is None
+        nxt = _next_slim(st)
+        assert nxt is None, "没有可削的还返回下一档——空转"

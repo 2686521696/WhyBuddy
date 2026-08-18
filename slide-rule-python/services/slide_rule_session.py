@@ -141,20 +141,61 @@ def create_session(goal_text: str, session_id: Optional[str] = None) -> V5Sessio
     save_session_record(state)  # 单条守卫式写入，绝不整体覆写存档
     return state
 
+def _mv_seq(vid: Any) -> int:
+    s = str(vid or "")
+    if s.startswith("mv-"):
+        try:
+            return int(s[3:])
+        except ValueError:
+            return 0
+    return 0
+
+
+def _memory_ahead_of_store(mem: Optional[V5SessionState], disk: Optional[V5SessionState]) -> bool:
+    """本进程刚推演完、落库失败/降级时，内存比库新。
+
+    ⚠ 2026-08-18 过夜：共享库下 GET 无条件回库，读到旧指针；前端 PUT 再
+    把新 lastTurnId 盖上去，版本史被钉死。另一台机器写了更新的库行时
+    内存并不 ahead——那种情况仍信库。
+    """
+    if mem is None or disk is None:
+        return False
+    from .persistence import _monotonic_key
+
+    if _monotonic_key(mem)[0] > _monotonic_key(disk)[0]:
+        return True
+    m_vers = list(getattr(mem, "modelVersions", None) or [])
+    d_vers = list(getattr(disk, "modelVersions", None) or [])
+    if len(m_vers) > len(d_vers):
+        return True
+    if _mv_seq(getattr(mem, "currentModelVersionId", None)) > _mv_seq(
+        getattr(disk, "currentModelVersionId", None)
+    ):
+        return True
+    mem_pages = getattr(mem, "specFirstPages", None)
+    disk_pages = getattr(disk, "specFirstPages", None)
+    mem_has = isinstance(mem_pages, dict) and bool(mem_pages.get("pages"))
+    disk_has = isinstance(disk_pages, dict) and bool(disk_pages.get("pages"))
+    return bool(mem_has and not disk_has)
+
+
 def load_session(session_id: str) -> Optional[V5SessionState]:
     # 会话落库之后（2026-08-02）缓存不能再无条件相信：库是**跨机器共享**的，
     # 本进程的缓存看不见别的机器刚写进去的内容，返回缓存等于返回陈旧数据。
     # 存档还在本机文件里时不存在这个问题（本进程独占那个文件），所以只在库
     # 后端下绕开缓存。代价是每次读一趟库（HTTP 通道实测 p50 77ms）。
     if _shared_store_active():
+        cached = _sessions.get(session_id)
         result = load_session_record(session_id)
         if result.get("ok"):
             state = result["session"]
+            if _memory_ahead_of_store(cached, state):
+                return cached
             _sessions[session_id] = state
             return state
         # 库读不到：可能是这一条真不存在，也可能是库临时不可用。后者不该让
         # 正在进行的推演丢掉手上的状态，所以回落到缓存（有就用，没有才 None）。
-        return _sessions.get(session_id)
+        return cached
 
     if not _sessions:
         _load_sessions()
@@ -180,11 +221,19 @@ def save_session(state: V5SessionState) -> V5SessionState:
     # 文件后端不带这个字段，照旧走下面的 load 对账。
     authoritative = saved.get("state") if saved.get("ok") else None
     if authoritative is not None:
+        if _memory_ahead_of_store(state, authoritative):
+            # 库是削过页的降级包：缓存留调用方，下一轮精修还能拿到 reuse_pages
+            _sessions[state.sessionId] = state
+            return state
         _sessions[state.sessionId] = authoritative
         return authoritative
     rec = load_session_record(state.sessionId)
     if rec.get("ok"):
         final = rec["session"]
+        if _memory_ahead_of_store(state, final):
+            # ⚠ 落库失败后回读旧库再写进缓存 = 过夜那次 PUT 钉死的前奏
+            _sessions[state.sessionId] = state
+            return state
         _sessions[state.sessionId] = final
         return final
     # rare persist error: fall back (do not leave caller assuming success)

@@ -406,6 +406,13 @@ def test_neon_error_extracts_structured_fields():
     assert "code=23505" in text and "constraint=generated_app_pkey" in text
 
 
+def test_http_gateway_error_does_not_say_neon():
+    """过夜清单把 /db-api 413 写成了 Neon。前缀必须能区分两条通道。"""
+    err = store._http_gateway_error(_FakeResp(413, {"detail": "request body too large"}))
+    assert "db-api http 413" in str(err)
+    assert "neon http" not in str(err)
+
+
 def test_neon_error_falls_back_to_text_for_non_json():
     """网关 5xx 常返回 HTML——解析不了就回落文本截断，绝不因此再抛一个异常。"""
     err = store._neon_http_error(_FakeResp(502, None, "<html>Bad Gateway</html>"))

@@ -18,7 +18,9 @@ API_KEY = os.environ["DB_API_KEY"]
 MAX_ROWS_LIMIT = int(os.environ.get("DB_API_MAX_ROWS", "5000"))
 DEFAULT_TIMEOUT_MS = int(os.environ.get("DB_API_STATEMENT_TIMEOUT_MS", "30000"))
 MAX_TIMEOUT_MS = int(os.environ.get("DB_API_MAX_STATEMENT_TIMEOUT_MS", "120000"))
-MAX_BODY_BYTES = int(os.environ.get("DB_API_MAX_BODY_BYTES", str(1024 * 1024)))
+# ⚠ 2026-08-18 过夜：会话 UPSERT 在 1MB 上 413，精修轮版本钉死。
+# 默认提到 4MB；调用方 persistence 仍按 700KB 预削，双闸。
+MAX_BODY_BYTES = int(os.environ.get("DB_API_MAX_BODY_BYTES", str(4 * 1024 * 1024)))
 
 
 def db_connect() -> psycopg.Connection:

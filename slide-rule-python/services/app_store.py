@@ -1060,22 +1060,36 @@ class NeonHttpError(RuntimeError):
         return value if isinstance(value, bool) else None
 
 
-def _neon_http_error(resp: Any) -> NeonHttpError:
+def _gateway_http_error(resp: Any, *, prefix: str) -> NeonHttpError:
     """把一个失败响应解析成带结构化字段的异常；非 JSON 响应回落到文本截断。"""
     try:
         payload = resp.json()
         if not isinstance(payload, dict):
             raise ValueError("payload not an object")
     except Exception:  # noqa: BLE001 — 网关 5xx 常返回 HTML，回落文本即可
-        return NeonHttpError(f"neon http {resp.status_code}: {resp.text[:200]}", resp.status_code)
+        return NeonHttpError(f"{prefix} {resp.status_code}: {resp.text[:200]}", resp.status_code)
     fields = {k: payload[k] for k in _NEON_ERROR_FIELDS if payload.get(k) not in (None, "")}
     message = str(payload.get("message") or payload.get("detail") or "").strip() or resp.text[:200]
     # 摘要里带上最常用来定位的三项，日志一眼能看出是什么错
     summary = ", ".join(
         f"{k}={fields[k]}" for k in ("code", "constraint", "detail") if k in fields
     )
-    text = f"neon http {resp.status_code}: {message}" + (f" ({summary})" if summary else "")
+    text = f"{prefix} {resp.status_code}: {message}" + (f" ({summary})" if summary else "")
     return NeonHttpError(text, resp.status_code, fields)
+
+
+def _neon_http_error(resp: Any) -> NeonHttpError:
+    return _gateway_http_error(resp, prefix="neon http")
+
+
+def _http_gateway_error(resp: Any) -> NeonHttpError:
+    """自定义 /db-api 的错误前缀。
+
+    ⚠ 2026-08-18 过夜清单把 413/500 写成了 Neon 上限。进程打的是
+    miantuan.ai/db-api，只是 HttpSqlGateway 复用了 neon http 前缀——
+    排查会整晚找错库。判据仍认 413 / too large，不认前缀字面。
+    """
+    return _gateway_http_error(resp, prefix="db-api http")
 
 
 # 记录字段顺序——INSERT 的列序与占位符序绑定在这里，改字段只改这一处
@@ -1513,7 +1527,7 @@ class HttpSqlGateway:
             },
         )
         if resp.status_code >= 400:
-            raise _neon_http_error(resp)
+            raise _http_gateway_error(resp)
         body = resp.json()
         if body.get("truncated"):
             raise NeonHttpError(

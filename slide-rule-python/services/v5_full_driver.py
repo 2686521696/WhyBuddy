@@ -761,10 +761,23 @@ def refine_pages_of(state: "V5SessionState") -> "Optional[Dict[str, Any]]":
       （见 _cache_spec_first_pages 的说明）。
     """
     prev = getattr(state, "specFirstPages", None)
-    if not isinstance(prev, dict):
-        return None
-    pages = prev.get("pages")
-    return pages if isinstance(pages, dict) and pages else None
+    if isinstance(prev, dict):
+        pages = prev.get("pages")
+        if isinstance(pages, dict) and pages:
+            return pages
+    # ⚠ 2026-08-18 过夜：首轮 spec-first 回落 GEN5，mv-1「页面：无」，
+    # state.specFirstPages 空。下一轮按需重画拿不到旧页就全量，图判再
+    # 扩到整张图。版本史里若有带页的一版，用它——比空页起步诚实。
+    for v in reversed(list(getattr(state, "modelVersions", None) or [])):
+        if not isinstance(v, dict):
+            continue
+        blob = v.get("specFirstPages")
+        if not isinstance(blob, dict):
+            continue
+        pages = blob.get("pages")
+        if isinstance(pages, dict) and pages:
+            return pages
+    return None
 
 
 def refine_model_of(state: "V5SessionState", model: "Optional[Dict[str, Any]]") -> "Optional[Dict[str, Any]]":
@@ -877,13 +890,13 @@ def record_model_version(state: "V5SessionState", publish_closure, instruction: 
 #:
 #: ⚠ 3 → 1（2026-08-18 真机 413）：烘焙店会话本体已 605KB（capabilityRuns
 #:   179KB + artifacts 130KB 的永续历史），第二份带页版本一追加就把落库
-#:   请求顶过 Neon 网关上限——`neon http 413: request body too large`，
-#:   此后**每一次**落盘全部失败：版本史、轮叙述、lastTurnId 改名全蒸发，
-#:   库里停在轮初快照，用户看到"过程卡在动、预览纹丝不动"。
+#:   请求顶过 /db-api 1MB 上限——日志曾写成 `neon http 413`，其实打的是
+#:   miantuan.ai/db-api。此后**每一次**落盘全部失败：版本史、轮叙述、
+#:   lastTurnId 改名全蒸发，库里停在轮初快照。
 #:   只留队尾一版带页 = 回到出事前那晚验证过能落库的体积包络。
 #:   代价：◀ 回退到上一版时页面如实降级（回落区块渲染）——比起"整轮
-#:   产物全部丢失"，这是能接受的一头。持久层另有 413 兜底（见
-#:   persistence._strip_version_pages），两道闸独立成立。
+#:   产物全部丢失"，这是能接受的一头。持久层另有超限阶梯降级（见
+#:   persistence._next_slim），两道闸独立成立。
 _PAGES_KEPT_VERSIONS = 1
 
 

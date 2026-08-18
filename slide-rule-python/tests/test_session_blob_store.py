@@ -432,6 +432,27 @@ def test_load_session_bypasses_the_process_cache_when_the_store_is_shared(db):
     )
 
 
+def test_load_session_keeps_memory_when_persist_failed_and_memory_is_ahead(db):
+    """过夜：落库失败后库停在 mv-1，内存已是 mv-5。GET 必须把内存交出去，
+    否则前端看到旧指针，下一轮精修从空页起步。
+
+    反向：另一台机器把库推到更新的 turn 时（上一条）必须仍信库。
+    """
+    from services import slide_rule_session as svc
+
+    svc._sessions.clear()
+    persistence.save_session_record(_state("sr-ahead", turn="turn-1", goal="库里的旧的"))
+    live = _state("sr-ahead", turn="turn-5", goal="内存里的新的")
+    live.currentModelVersionId = "mv-5"
+    live.modelVersions = [{"id": "mv-5", "model": {"a": 1}}]
+    svc._sessions["sr-ahead"] = live
+
+    got = svc.load_session("sr-ahead")
+    assert got is live
+    assert got.goal["text"] == "内存里的新的"
+    assert got.currentModelVersionId == "mv-5"
+
+
 def test_load_session_still_uses_the_cache_on_the_file_backend(tmp_path, monkeypatch):
     """文件后端保持原有的缓存优先行为——那条路上缓存是安全的，绕开只会白白变慢。"""
     from config.settings import settings

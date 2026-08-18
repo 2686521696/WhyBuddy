@@ -765,6 +765,68 @@ def test_put_route_returns_409_on_stale_lastturn_and_does_not_overwrite(monkeypa
     route_mod._sessions.pop(sid, None)
 
 
+def test_put_does_not_advance_last_turn_or_pin_stale_versions(monkeypatch):
+    """过夜：落库失败后库是 mv-1/t1，前端 PUT 带 t99。合并若吃 lastTurnId，
+    旧版本被钉在新 turn 上，下一轮守卫以为已经赶上。
+
+    lastTurnId 必须留在服务端；409 仍拒更旧的 PUT（上一条）。
+    """
+    try:
+        from fastapi.testclient import TestClient
+        from app import app
+        import routes.sliderule_full as route_mod
+        import services.slide_rule_session as sess_mod
+        from models.v5_state import V5SessionState
+        from services.persistence import save_session_record
+    except Exception as e:
+        pytest.skip(f"imports for put pin test: {e}")
+
+    client = TestClient(app)
+    headers = {"X-Internal-Key": "dev-slide-rule-internal"}
+    sid = "put-pin-stale-001"
+    server = V5SessionState(
+        sessionId=sid,
+        ownerId=TEST_USER_ID,
+        goal={"text": "server-live", "status": "needs_refinement"},
+        artifacts=[],
+        capabilityRuns=[],
+        coverageGaps=[],
+        conversation=[],
+        lastTurnId="t1",
+        currentModelVersionId="mv-1",
+        modelVersions=[{"id": "mv-1", "model": {"a": 1}}],
+    )
+    sess_mod._sessions[sid] = server
+    route_mod._sessions[sid] = server
+    save_session_record(server)
+
+    put_resp = client.put(
+        f"/api/sliderule/sessions/{sid}",
+        json={
+            "sessionId": sid,
+            "goal": {"text": "client-should-not-move-turn"},
+            "artifacts": [],
+            "capabilityRuns": [],
+            "coverageGaps": [],
+            "conversation": [],
+            "lastTurnId": "t99",
+            "currentModelVersionId": "mv-1",
+        },
+        headers=headers,
+    )
+    assert put_resp.status_code == 200, put_resp.text
+    get_resp = client.get(f"/api/sliderule/sessions/{sid}", headers=headers)
+    assert get_resp.status_code == 200
+    got = get_resp.json()["state"]
+    assert got["lastTurnId"] == "t1", f"PUT 把 lastTurnId 推到了 {got['lastTurnId']}"
+    assert got["currentModelVersionId"] == "mv-1"
+    assert (got.get("modelVersions") or [{}])[0].get("id") == "mv-1"
+
+    client.delete(f"/api/sliderule/sessions/{sid}", headers=headers)
+    sess_mod._sessions.pop(sid, None)
+    route_mod._sessions.pop(sid, None)
+
+
 # Additional focused pytest for sliderule-python-v52-session-concurrency-guard-105 (review fix).
 # Covers Finding 1: stale service-layer save_session() must not overwrite _sessions cache or load_session readable state.
 # Uses the service save path (not only direct pers or route PUT), asserts cache + load + pers all retain newer.
