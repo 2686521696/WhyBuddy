@@ -1014,13 +1014,33 @@ def call_llm_with_retry(
     """
     # 边界一：流式一律不对冲（见上）。判据是**调用方传没传 on_delta**，
     # 不是"通道支不支持流式"——真正决定会不会双写的是有没有那个回调。
+    # 过夜 525 过密：熔断开着连第一下都不发（话术带 525，上层才不会 GEN5）。
+    # 半开探活 / 关闭态走下面的循环。详见 gateway_circuit 头注。
+    from .gateway_circuit import note_failure, note_success, reject_reason, retries_allowed
+
+    blocked = reject_reason()
+    if blocked is not None:
+        raise LlmError(blocked, status=525, transient=True)
+
     delay_ms = 0 if kwargs.get("on_delta") is not None else _hedge_delay_ms()
     last_error: LlmError | None = None
     for attempt in range(1, max_attempts + 1):
+        # AWS standard：熔断开了只关重试。半开探活也只打第一下，不对冲。
+        if attempt > 1 and not retries_allowed():
+            if last_error is not None:
+                raise last_error
+            raise LlmError(
+                "gateway circuit open (525): retries disabled",
+                status=525,
+                transient=True,
+            )
         _t0 = time.monotonic()
         try:
             # 边界二：只有第一次尝试对冲，重试不再对冲（见上，防相乘）
-            return _call_llm_hedged(messages, delay_ms if attempt == 1 else 0, **kwargs)
+            hedge_ms = delay_ms if attempt == 1 and retries_allowed() else 0
+            result = _call_llm_hedged(messages, hedge_ms, **kwargs)
+            note_success()
+            return result
         except LlmError as error:
             last_error = error
             # ⚑ 2026-08-14 补这一行日志：**重试此前是完全静默的**。
@@ -1040,7 +1060,10 @@ def call_llm_with_retry(
                 file=sys.stderr,
                 flush=True,
             )
+            note_failure(error)
             if not error.transient or attempt >= max_attempts:
+                raise
+            if not retries_allowed():
                 raise
             time.sleep(backoff_ms / 1000.0)
     if last_error is not None:

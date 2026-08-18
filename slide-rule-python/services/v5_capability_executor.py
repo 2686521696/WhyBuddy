@@ -381,6 +381,9 @@ def _findings_all_sectioned(findings: List[Dict[str, Any]]) -> bool:
 #: 打回 GEN5 →「页面：无」。版本史也空，第一轮精修只能全量。这些错再试一次
 #: spec-first，仍失败也不回落老路（精修轮会保住上一版；首轮宁可 blocked
 #: 也不端一份没页的成功）。
+#:
+#: 过夜物业/活动室 R6：525 过密时「整条再试」自己喂自己，然后 GEN5 配
+#: 「沿用state」——版本涨了页还是旧的。熔断已开就不要再试、不要 GEN5。
 _SPEC_FIRST_NO_GEN5_MARKERS = (
     "json parse",
     "没有返回可解析",
@@ -577,22 +580,37 @@ def _try_llm_generate_evidence(
                     # 过夜咖啡馆：525 / JSON parse 打回 GEN5 = 首轮「页面：无」。
                     # 下层 call_llm_with_retry 已经退避过，这里整条再试一次
                     # （网关抖一下常过）；仍失败也不回落——GEN5 没有 HTML 页。
-                    print(
-                        "[v5_capability_executor] spec-first 传输/解析失败，"
-                        f"整条再试一次，不回落老链路：{str(exc)[:200]}"
-                    )
-                    try:
-                        model = _invoke_spec_first()
-                        from_spec_first = True
-                        print("[v5_capability_executor] spec-first 再试后产出模型")
-                    except RunCancelled:
-                        print("[v5_capability_executor] 已请求取消，spec-first 停止且不回落老链路")
-                        raise
-                    except Exception as exc2:  # noqa: BLE001
+                    #
+                    # ⚠ 过夜物业/活动室 R6：525 **过密**时整条再试 = 自己喂自己。
+                    #   熔断已开就停，精修保住上一版；首轮 blocked。不要再 GEN5
+                    #   配「沿用state」——那就是版本涨了页还是旧的。
+                    from sliderule_llm.gateway_circuit import is_open as _gw_open
+
+                    if _gw_open():
                         print(
-                            "[v5_capability_executor] spec-first 再试仍失败，"
-                            f"不回落老链路（避免首轮无页）：{str(exc2)[:200]}"
+                            "[v5_capability_executor] spec-first 传输/解析失败，"
+                            "网关熔断已开，不再整条再试，不回落老链路："
+                            f"{str(exc)[:200]}"
                         )
+                        model = None
+                        _block_gen5 = True
+                    else:
+                        print(
+                            "[v5_capability_executor] spec-first 传输/解析失败，"
+                            f"整条再试一次，不回落老链路：{str(exc)[:200]}"
+                        )
+                        try:
+                            model = _invoke_spec_first()
+                            from_spec_first = True
+                            print("[v5_capability_executor] spec-first 再试后产出模型")
+                        except RunCancelled:
+                            print("[v5_capability_executor] 已请求取消，spec-first 停止且不回落老链路")
+                            raise
+                        except Exception as exc2:  # noqa: BLE001
+                            print(
+                                "[v5_capability_executor] spec-first 再试仍失败，"
+                                f"不回落老链路（避免首轮无页）：{str(exc2)[:200]}"
+                            )
                         model = None
                         _block_gen5 = True
                 else:
