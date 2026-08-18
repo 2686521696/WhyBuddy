@@ -121,7 +121,9 @@ async function getJson<T>(url: string): Promise<T> {
 export async function listApps(
   opts: { limit?: number; offset?: number } = {}
 ): Promise<AppStoreSummary[]> {
-  const limit = opts.limit ?? 200;
+  // 默认一页 12 张（跟应用中心 PAGE_SIZE 对齐）。⚠ 2026-08-18 以前默认 200，
+  // 首页 `listApps()` 不传参就把全表摘要一次拉回——滚动分页形同虚设。
+  const limit = opts.limit ?? 12;
   const offset = opts.offset ?? 0;
   const data = await getJson<{ apps?: AppStoreSummary[] }>(
     `${BASE}/apps?limit=${limit}&offset=${offset}`

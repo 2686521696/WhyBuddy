@@ -152,6 +152,12 @@ export interface SpanPositioner {
   columnCount: number;
   columnWidth: number;
   set: (index: number, height: number) => void;
+  /**
+   * 按已经定过的 column/span 落位。列宽变了要重算 left/width，但**不重选列**。
+   * 滚动条出现把容器挤窄几像素时，seed+place 会整墙重选列——顶部已落位的
+   * 卡换列，用户看见「滚到底，上面又重拍了」。
+   */
+  setPreserving: (index: number, height: number, column: number, span: number) => void;
   get: (index: number) => SpanPositionerItem | undefined;
   update: (updates: number[]) => void;
   range: (
@@ -347,10 +353,24 @@ export function createSpanPositioner(opts: SpanPositionerOptions): SpanPositione
       // 同一个下标被 set 两次时按改高处理：再 place 一次会往 order 里塞重复项，
       // reflow 就会把同一张卡放两遍（第二遍落在自己下面）——正是"偶发重叠"。
       if (items[index] !== undefined) {
+        if (Math.floor(items[index].height) === Math.floor(height)) return;
         reflow();
         return;
       }
       place(index, height);
+    },
+    setPreserving(index, height, column, span) {
+      const clampedSpan = Math.max(1, Math.min(columnCount, Math.floor(span) || 1));
+      const clampedCol = Math.max(0, Math.min(columnCount - clampedSpan, Math.floor(column) || 0));
+      if (measured[index] !== height) revision++;
+      measured[index] = height;
+      if (items[index] !== undefined) {
+        items[index] = { ...items[index], column: clampedCol, span: clampedSpan };
+        reflow();
+        return;
+      }
+      settle(index, height, clampedCol, clampedSpan);
+      order.push(index);
     },
     get: index => items[index],
     update(updates) {
@@ -417,4 +437,21 @@ export function createSpanPositioner(opts: SpanPositionerOptions): SpanPositione
       return true;
     },
   };
+}
+
+/**
+ * 列数没变、只是列宽变了：把旧墙的 column/span 搬过去，用新几何重算 left/top。
+ * 走 `set()` 会 `place()` 重选列——那就是滚动条挤窄之后顶部卡换列。
+ *
+ * 碰到第一个没落位的下标就停，保持连续前缀。
+ */
+export function copyPlacements(from: SpanPositioner, to: SpanPositioner): number {
+  let n = 0;
+  while (true) {
+    const pos = from.get(n);
+    if (pos === undefined) break;
+    to.setPreserving(n, pos.height, pos.column, pos.span);
+    n += 1;
+  }
+  return n;
 }

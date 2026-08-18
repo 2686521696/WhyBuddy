@@ -7,7 +7,6 @@ import {
   AppstoreOutlined,
   LeftOutlined,
   PlayCircleFilled,
-  QuestionCircleOutlined,
   BlockOutlined,
   ReloadOutlined,
   RightOutlined,
@@ -1228,9 +1227,8 @@ function AgentLoopSidebar({
           </a>
         ))}
       </nav>
-      {/* Claude 式会话区：新建会话 + 最近列表。Pages 纯浏览器演示是单会话
-          （无后端会话库），提供本地「新建会话」：清空演示存档并回到
-          预填意图的初始体验。 */}
+      {/* 会话区。Pages 纯浏览器演示是单会话（无后端会话库），提供本地
+          「新建会话」：清空演示存档并回到预填意图的初始体验。 */}
       {IS_GITHUB_PAGES ? (
         <div className="native-agent-sessions" data-testid="sidebar-sessions">
           <button
@@ -1270,19 +1268,26 @@ function AgentLoopSidebar({
       ) : (
         <SidebarSessions onOpenSliderule={() => onViewChange("sliderule")} />
       )}
-      <button
-        type="button"
-        className="native-agent-help"
-        data-testid="sidebar-help-docs"
-        onClick={() => onViewChange("help")}
-      >
-        <QuestionCircleOutlined />
-        <span>帮助文档</span>
-        <RightOutlined />
-      </button>
-      {/* 2026-08-02：账号体系接上了。原来这里是写死的
-          「SlideRule 团队 · 企业版」占位（title 里写着"账号体系接入后可切换"）。*/}
-      <AccountPanel />
+      {/* 2026-08-18：底栏照 Cursor 聊天侧栏，不是设置页列表。
+          帮助仍单独一行（账号菜单里不重复），但不再带右箭头、不再画成卡片。 */}
+      <div className="native-agent-footer">
+        <button
+          type="button"
+          className={`native-agent-help${view === "help" ? " native-agent-help-active" : ""}`}
+          data-testid="sidebar-help-docs"
+          onClick={() => onViewChange("help")}
+        >
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+            <circle cx="12" cy="12" r="8" />
+            <path d="M9.7 9.6a2.4 2.4 0 1 1 3.4 2.2c-.7.4-1.1 1-1.1 1.8" />
+            <path d="M12 17h.01" strokeWidth="2.4" strokeLinecap="round" />
+          </svg>
+          <span>帮助文档</span>
+        </button>
+        {/* 2026-08-02：账号体系接上了。原来这里是写死的
+            「SlideRule 团队 · 企业版」占位（title 里写着"账号体系接入后可切换"）。*/}
+        <AccountPanel />
+      </div>
     </aside>
   );
 }

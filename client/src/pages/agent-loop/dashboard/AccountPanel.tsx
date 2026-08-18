@@ -35,6 +35,9 @@
  *   ② 危险项（登出）单独一组、隔一条线——不和常规项挤在一起误点。
  *   ③ 触发行有折角指示"这里能展开"，而不是把动作直接摆成一个裸图标。
  *
+ * 2026-08-18 触发行外观改成 Cursor 侧栏底栏：去掉白底描边卡片，字号/行高
+ * 跟上面的会话行齐。菜单条目没动——那是另一件事。
+ *
  * 原来那版把「退出登录」做成常驻的小图标钉在行尾：既没有可发现性（没人知道
  * 那个图标是登出），又离"点错就掉线"只有一次误触的距离。
  *
@@ -50,7 +53,6 @@ import {
   LogoutOutlined,
   ReadOutlined,
   SettingOutlined,
-  UpOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import React from "react";
@@ -230,7 +232,9 @@ export function AccountPanel() {
           className={`native-agent-user-caret${open ? " is-open" : ""}`}
           aria-hidden
         >
-          <UpOutlined />
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M6 14l6-6 6 6" />
+          </svg>
         </span>
       </button>
     </div>

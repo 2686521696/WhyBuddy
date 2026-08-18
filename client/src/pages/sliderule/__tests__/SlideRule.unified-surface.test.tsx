@@ -5,7 +5,7 @@
  *   - studio skeleton (left conversation + right skill rail) is the only surface;
  *   - the 聊天/推演 toggle pills and the surface-mode localStorage key are gone;
  *   - one header row (brand/topic + STATUS + 交付物/重置会话/Dev);
- *   - one empty state (classical logo watermark + hero copy + 3 suggestion chips);
+ *   - one empty state (short greeting + composer + 3 suggestion chips);
  *   - the execution timeline + SKILL LINKAGE fold into the right rail as 推演过程;
  *   - the pan/zoom reasoning canvas is no longer rendered here (?im=dev keeps
  *     the split engineering cockpit).
@@ -125,12 +125,16 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain('href="/sliderule/dev"');
   });
 
-  it("empty session shows THE single empty state: hero + 3 quick chips + Enter hint (E39 简约稿)", () => {
+  it("empty session shows THE single empty state: short greeting + composer + 3 chips", () => {
     const html = renderPage();
 
     expect(html.match(/data-testid="sliderule-empty-state"/g)?.length).toBe(1);
-    expect(html).toContain("把一句模糊想法，快速推演成可执行的完整应用");
-    expect(html).toContain("能跑起来");
+    expect(html).toContain("想推演成什么应用？");
+    // 不该有：落地页主张句 / logo / 回车提示。变异：把旧文案加回必红。
+    expect(html).not.toContain("把一句模糊想法");
+    expect(html).not.toContain("能跑起来");
+    expect(html).not.toContain("miantuan-mark.png");
+    expect(html).not.toContain("Shift + Enter 换行");
     // E39：模式模板卡整块移除（用户裁决：右侧密度做减法）
     expect(html).not.toContain('data-testid="sliderule-home-mode-');
     // 三个快速开始 chips（完整场景名，无小标题）
@@ -139,8 +143,6 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).toContain('data-testid="sliderule-quick-start-客户管理系统"');
     expect(html).not.toContain("从需求文档开始");
     expect(html).not.toContain(">快速开始<");
-    // 回车提示（视觉稿底部一行）
-    expect(html).toContain("Shift + Enter 换行");
     // hero composer 仍在首页流里，且全页仍只有一个 ComposerDock
     expect(html).toContain('data-testid="sliderule-hero-composer"');
     expect(html.match(/data-testid="sliderule-composer-dock"/g)?.length).toBe(
@@ -238,23 +240,20 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain("▊");
   });
 
-  it("会话在场但未运行（无模型）→ board：六系统缩略 + 证据看板", () => {
+  it("会话在场但未运行（无模型）→ board：接线沙盘 + Checks，不是六圆钮", () => {
     const html = renderPage({
       goal: "做一个采购审批应用",
       uiTurns: [streamingTurn],
       isRunning: false,
     });
 
-    for (const label of [
-      "DataModel",
-      "Workflow",
-      "RBAC",
-      "Page",
-      "AIGC",
-      "AppBundle",
-    ]) {
-      expect(html).toContain(label);
-    }
+    expect(html).toContain('data-testid="sliderule-architecture-stage"');
+    expect(html).toContain('data-testid="architecture-checks"');
+    expect(html).toContain("Checks");
+    // 不该有：顶栏彩色圆钮。变异：把 SkillThumbnailBar 加回必红。
+    expect(html).not.toContain("bg-blue-400");
+    expect(html).not.toContain("bg-emerald-400");
+    expect(html).not.toContain("发布证据看板");
   });
 
   it("while running the left column carries the live process; the rail stays on 系统画面", () => {

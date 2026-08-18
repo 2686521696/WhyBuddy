@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { createSpanPositioner, bestSpanStart } from "../span-positioner";
+import { copyPlacements, createSpanPositioner, bestSpanStart } from "../span-positioner";
 
 const W = 100;
 const G = 10;
@@ -457,5 +457,36 @@ describe("resettle", () => {
     const r2 = p.revision();
     p.resettle();
     expect(p.revision(), "resettle 自己不能推高 revision，否则会自激").toBe(r2);
+  });
+});
+
+describe("copyPlacements", () => {
+  it("列宽变了也沿用原来的列，不该有：place() 重选之后换列", () => {
+    const wide = createSpanPositioner({
+      columnCount: 4,
+      columnWidth: 300,
+      columnGutter: G,
+      rowGutter: G,
+      getSpan: i => (i === 2 ? 2 : 1),
+    });
+    [180, 180, 360, 180, 180, 180].forEach((h, i) => wide.set(i, h));
+    const cols = [0, 1, 2, 3, 4, 5].map(i => wide.get(i)!.column);
+
+    const narrow = createSpanPositioner({
+      columnCount: 4,
+      columnWidth: 285,
+      columnGutter: G,
+      rowGutter: G,
+      // 故意换一套 getSpan：走 set() 就会按新规则重选列
+      getSpan: () => 1,
+    });
+    expect(copyPlacements(wide, narrow)).toBe(6);
+    for (let i = 0; i < 6; i++) {
+      expect(narrow.get(i)!.column, `#${i} 必须还在原列`).toBe(cols[i]);
+      expect(narrow.get(i)!.span).toBe(wide.get(i)!.span);
+    }
+    expect(narrow.get(0)!.width).toBe(285);
+    expect(narrow.get(2)!.width).toBe(285 * 2 + G);
+    assertNoOverlap(narrow.all());
   });
 });

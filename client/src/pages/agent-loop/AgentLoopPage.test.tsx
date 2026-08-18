@@ -1817,6 +1817,7 @@ it("agentloop dashboard shell constrains content to an internal scroll area", ()
   expect(css).toMatch(/\.native-agent-main\s*\{[\s\S]*?height:\s*100%/);
   expect(css).toMatch(/\.native-content\s*\{[\s\S]*?overflow:\s*auto/);
   expect(css).toMatch(/\.native-content\s*\{[\s\S]*?min-height:\s*0/);
+  expect(css).toMatch(/\.native-content\s*\{[\s\S]*?scrollbar-gutter:\s*stable/);
 });
 
 it("agentloop workbench cards stretch to their grid columns", () => {

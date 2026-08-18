@@ -50,7 +50,7 @@
   display: flex;
   gap: 9px;
   margin: 0 0 12px;
-  padding: 8px 8px;
+  padding: 0;
   text-decoration: none;
   transition: background 0.15s ease;
 }
@@ -83,8 +83,7 @@
   gap: 4px;
 }
 
-.native-agent-nav-item,
-.native-agent-help {
+.native-agent-nav-item {
   align-items: center;
   background: transparent;
   border: 0;
@@ -104,8 +103,7 @@
   width: 100%;
 }
 
-.native-agent-nav-item:hover,
-.native-agent-help:hover {
+.native-agent-nav-item:hover {
   background: rgba(255, 255, 255, 0.65);
   color: #0f172a;
 }
@@ -123,63 +121,180 @@
   color: #1d4ed8;
 }
 
-/* --- Claude 式会话区：新建会话 + 最近列表（占据侧栏弹性空间，内部滚动） --- */
+/* --- 会话区：搜索 + 按日分组（2026-08-18 照 Cursor 聊天历史，不是仓库树） --- */
 .native-agent-sessions {
+  --session-pad: 8px;
+  --session-gap: 6px;
+  --session-icon: 13px;
   display: flex;
   flex: 1;
   flex-direction: column;
+  /* 新建 / 搜索 / 列表同一字号，字才齐。分组标题另用 11px。 */
+  font-size: 13px;
   margin-top: 12px;
   min-height: 0;
   padding-top: 10px;
   border-top: 1px solid rgba(15, 23, 42, 0.06);
 }
 
-.native-agent-session-new {
+.native-agent-session-new,
+.native-agent-session-search {
   align-items: center;
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px dashed rgba(37, 99, 235, 0.35);
-  border-radius: 12px;
   box-sizing: border-box;
-  color: #2563eb;
-  cursor: pointer;
-  display: inline-flex;
+  display: flex;
   font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  gap: 6px;
-  height: 38px;
-  justify-content: center;
-  line-height: 1;
-  padding: 0 12px;
-  text-align: center;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  font-size: inherit;
+  gap: var(--session-gap);
+  height: 32px;
+  padding: 0 var(--session-pad);
   width: 100%;
 }
 
-.native-agent-session-new:hover {
-  background: #ffffff;
-  border-color: rgba(37, 99, 235, 0.55);
+.native-agent-session-new {
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: #334155;
+  cursor: pointer;
+  font-weight: 400;
+  justify-content: flex-start;
+  line-height: 1;
+  text-align: left;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 
-.native-agent-session-new-plus {
-  display: inline-flex;
+.native-agent-session-new:hover {
+  background: rgba(15, 23, 42, 0.05);
+  color: #0f172a;
+}
+
+.native-agent-session-tools {
+  display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 4px;
+  margin: 6px 0 4px;
+  min-width: 0;
+  position: relative;
+}
+
+.native-agent-session-search {
+  background: rgba(15, 23, 42, 0.04);
+  border-radius: 8px;
+  color: #94a3b8;
+  flex: 1;
+  margin: 0;
+  min-width: 0;
+}
+
+.native-agent-session-filter {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: #64748b;
+  cursor: pointer;
+  display: inline-flex;
   flex-shrink: 0;
-  width: 14px;
-  height: 14px;
-  font-size: 15px;
+  height: 32px;
+  justify-content: center;
+  padding: 0;
+  width: 32px;
+}
+
+.native-agent-session-filter:hover,
+.native-agent-session-filter[aria-expanded="true"] {
+  background: rgba(15, 23, 42, 0.05);
+  color: #0f172a;
+}
+
+.native-agent-session-filter-on {
+  color: #2563eb;
+}
+
+.native-agent-session-menu {
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 148px;
+  padding: 6px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+}
+
+.native-agent-session-menu[hidden] {
+  display: none;
+}
+
+.native-agent-session-menu-cap {
+  color: #94a3b8;
+  font-size: 11px;
   font-weight: 600;
-  line-height: 1;
+  padding: 6px 8px 2px;
+}
+
+.native-agent-session-menu button {
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: #334155;
+  cursor: pointer;
+  font: inherit;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.native-agent-session-menu button:hover,
+.native-agent-session-menu button[data-active="true"] {
+  background: rgba(15, 23, 42, 0.06);
+  color: #0f172a;
+}
+
+.native-agent-session-search input {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: #334155;
+  flex: 1;
+  font: inherit;
+  font-size: inherit;
+  min-width: 0;
+  outline: none;
+  padding: 0;
+}
+
+.native-agent-session-search input::placeholder {
+  color: #94a3b8;
+}
+
+.native-agent-session-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.native-agent-session-new-plus,
+.native-agent-session-search svg {
+  display: block;
+  flex-shrink: 0;
+  height: var(--session-icon);
+  width: var(--session-icon);
 }
 
 .native-agent-sessions-label {
   color: #94a3b8;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  margin: 12px 0 6px;
-  padding: 0 10px;
+  letter-spacing: 0.02em;
+  margin: 10px 0 2px;
+  padding: 0 var(--session-pad);
   text-transform: none;
 }
 
@@ -195,30 +310,30 @@
 
 .native-agent-sessions-hint {
   color: #94a3b8;
-  font-size: 12px;
+  font-size: inherit;
   line-height: 1.45;
   padding: 8px 10px;
 }
 
 .native-agent-session-row {
   align-items: center;
-  border-radius: 10px;
+  border-radius: 8px;
   display: flex;
   min-width: 0;
   transition: background 0.12s ease;
 }
 
 .native-agent-session-row:hover {
-  background: rgba(255, 255, 255, 0.65);
+  background: rgba(15, 23, 42, 0.05);
 }
 
 .native-agent-session-row-active {
-  background: #ffffff;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  background: rgba(15, 23, 42, 0.07);
+  box-shadow: none;
 }
 
 .native-agent-session-row-active:hover {
-  background: #ffffff;
+  background: rgba(15, 23, 42, 0.09);
 }
 
 .native-agent-session-item {
@@ -229,18 +344,18 @@
   display: block;
   flex: 1;
   font: inherit;
-  font-size: 12.5px;
+  font-size: inherit;
   line-height: 1.35;
   min-width: 0;
   overflow: hidden;
-  padding: 8px 4px 8px 10px;
+  padding: 7px 4px 7px var(--session-pad);
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .native-agent-session-row-active .native-agent-session-item {
-  color: #1d4ed8;
+  color: #0f172a;
   font-weight: 600;
 }
 
@@ -280,11 +395,121 @@
   font-weight: 700;
 }
 
-.native-agent-help .anticon-right,
-.native-agent-help .agent-anticon-right {
-  margin-left: auto;
+/* 底栏：跟会话行同一套尺度。display:flex 写在这里（媒体查询之前），
+   后面 ≤900px 才能把它藏掉——写到文件末尾会压过 display:none。 */
+.native-agent-footer {
+  --session-pad: 8px;
+  --session-gap: 6px;
+  --session-icon: 13px;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  font-size: 13px;
+  gap: 2px;
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.native-agent-help {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: #334155;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: inherit;
+  font-weight: 400;
+  gap: var(--session-gap);
+  height: 32px;
+  padding: 0 var(--session-pad);
+  text-align: left;
+  transition: background 0.12s ease, color 0.12s ease;
+  width: 100%;
+}
+
+.native-agent-help:hover,
+.native-agent-help-active,
+.native-agent-user:hover,
+.native-agent-user.is-trigger[aria-expanded="true"] {
+  background: rgba(15, 23, 42, 0.05);
+  color: #0f172a;
+}
+
+.native-agent-help svg {
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.native-agent-user {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 8px;
+  margin: 0;
+  min-height: 36px;
+  padding: 4px var(--session-pad, 8px);
+  text-align: left;
+  transition: background 0.12s ease;
+  width: 100%;
+}
+
+.native-agent-user-avatar {
+  align-items: center;
+  background: linear-gradient(135deg, #2563eb, #38bdf8);
+  border-radius: 50%;
+  color: #fff;
+  display: inline-flex;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  height: 22px;
+  justify-content: center;
+  line-height: 1;
+  width: 22px;
+}
+
+.native-agent-user-avatar .anticon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.native-agent-user-meta {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+.native-agent-user-name {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.native-agent-user-plan {
   color: #94a3b8;
-  font-size: 10px;
+  font-size: 11px;
+}
+
+.native-agent-user-caret {
+  color: #94a3b8;
+  display: inline-flex;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
 }
 
 .native-agent-main {
@@ -353,6 +578,9 @@
   min-height: 0;
   overflow: auto;
   overflow-x: hidden;
+  /* 墙一溢出就出现滚动条，可用宽少一截 → columnWidth 变 → 定位器重建。
+     首页分页把卡往下堆时，已经出来的卡会跟着整墙重拍。预留槽位，宽稳住。 */
+  scrollbar-gutter: stable;
   background: var(--sr-shell-bg, #ffffff) !important;
   /* padding: 12px; */
 }
@@ -2457,79 +2685,12 @@
 
 /* --- 样式版：底部工作区卡（对齐效果图） --------------- */
 
-.native-agent-nav-item,
-.native-agent-help {
+.native-agent-nav-item {
   border-radius: 6px;
   font-size: 15px;
   gap: 12px;
   height: 44px;
   padding: 0 12px;
-}
-
-.native-agent-user {
-  align-items: center;
-  background: rgba(255, 255, 255, 0.75);
-  border: 1px solid rgba(15, 23, 42, 0.06);
-  border-radius: 14px;
-  display: flex;
-  gap: 10px;
-  margin-top: 8px;
-  padding: 10px 10px;
-  transition: background 0.12s ease;
-}
-
-.native-agent-user:hover {
-  background: #ffffff;
-}
-
-.native-agent-user-avatar {
-  align-items: center;
-  background: linear-gradient(135deg, #2563eb, #38bdf8);
-  border-radius: 50%;
-  color: #fff;
-  display: inline-flex;
-  flex-shrink: 0;
-  font-size: 15px;
-  height: 32px;
-  justify-content: center;
-  line-height: 1;
-  width: 32px;
-}
-
-.native-agent-user-avatar .anticon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  line-height: 1;
-}
-
-.native-agent-user-meta {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  line-height: 1.25;
-  min-width: 0;
-}
-
-.native-agent-user-name {
-  color: #0f172a;
-  font-size: 12.5px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.native-agent-user-plan {
-  color: #94a3b8;
-  font-size: 11px;
-}
-
-.native-agent-user-caret {
-  color: #94a3b8;
-  font-size: 10px;
-  transition: transform 0.15s ease;
 }
 
 /* ── 账号弹出菜单（2026-08-07，形制参照 claude.ai 的账号菜单）──────────
@@ -2636,14 +2797,3 @@
   opacity: 0.55;
 }
 
-/* 帮助文档行：底部分隔后独立圆角行（勿再写 display:flex，否则会压过 ≤900px 的 display:none） */
-.native-agent-help {
-  align-items: center;
-  border-radius: 12px;
-  border-top: 1px solid rgba(15, 23, 42, 0.06);
-  box-sizing: border-box;
-  height: 44px;
-  line-height: 1;
-  margin-top: 8px;
-  padding: 0 12px;
-}

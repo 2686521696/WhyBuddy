@@ -7,8 +7,9 @@
  *      ⚑ 2026-08-14 示例**数据**清空（用户裁决：清数据不删功能）：老链路
  *      的四张示例卡下架，功能骨架（tab/分类/分页/点卡起手）原样保留，
  *      货架空着如实显示空态；后端 _EXAMPLE_META 上架新条目即恢复展示。
- *   3. 一行 4 张、每页最多三行（12 张），超出走分页器。
- *      （「我的应用」2026-07-31 起改无限流，分页器只剩示例库在用。）
+ *   3. 一行 4 张、每页 12 张。「我的应用」滚到底再要下一页（服务端
+ *      limit/offset，不在前端一次切 200 张）；完整模型按卡挂载再拉。
+ *      官方示例仍是网格 + 分页器。
  *
  * 北极星纪律不变：全部真数据、fail-closed——
  *   列表     — GET /api/sliderule/sessions（话题/时间/阶段）
@@ -28,7 +29,8 @@ import { useContainerPosition } from "masonic";
 
 import { useScrollerIn } from "./useScrollerIn";
 import { SpanMasonry } from "./SpanMasonry";
-import { computeSpanKeys, spanForColumnCount } from "./app-wall-span";
+import { appendStableItems, shouldFetchAppPage } from "./masonry-append";
+import { appendStableSpanKeys, spanForColumnCount } from "./app-wall-span";
 import { DEVICE_ASPECT, aspectForDevice } from "@/lib/justified-rows";
 import {
   LayoutGrid,
@@ -481,8 +483,17 @@ const STATUS_META: Record<AppCardStatus, { label: string; cls: string; dot: stri
   draft: { label: "推演中", cls: "bg-blue-50 text-[#1677ff]", dot: "bg-[#4d9aff]" },
 };
 
-/** 每页 12 张 = 一行 4 × 最多三行（用户硬性要求），超出走分页器。 */
-const PAGE_SIZE = 12;
+/** 每页 12 张 = 一行 4 × 最多三行。我的应用滚到底再要；示例库走分页器。 */
+export const GALLERY_PAGE_SIZE = 12;
+const PAGE_SIZE = GALLERY_PAGE_SIZE;
+
+/**
+ * 这一页是不是满的——满了才继续向后要，短页就是到底了。
+ * ⚠ 别写成 `>`：刚好 12 张是「还有可能有下一页」，写成 `>` 会在满页停住。
+ */
+export function pageLooksFull(received: number, pageSize: number = GALLERY_PAGE_SIZE): boolean {
+  return received >= pageSize;
+}
 
 /** 未闭环/无模型时的占位态（推演中 / blocked）——不是缩略图失败兜底，是诚实展示进度。 */
 function PendingAppThumb({ detail }: { detail: AppCardDetail | null }) {
@@ -515,25 +526,49 @@ function PendingAppThumb({ detail }: { detail: AppCardDetail | null }) {
 }
 
 /**
- * 骨架卡（对标 ToolJet AppList 的 react-loading-skeleton）：加载时铺等尺寸的
- * 16:9 灰块占位——结构跟真卡片一致，数据到了直接"填进去"不跳版。用 animate-pulse
- * 做呼吸微光，不引新依赖。
+ * 首屏还没数据时的占位。
+ *
+ * GitHub Primer《Loading》大区标准答案（不是口味）：
+ *   https://primer.style/product/ui-patterns/loading
+ *   · 大块内容区只在区域中央放一个不确定进度指示器（Spinner）
+ *   · 相邻的一簇内容共用一次加载宣告，禁止每张卡一个指示器
+ *   · 不到约 300ms 先不画（SkeletonBox delay=short），闪一下反而显得慢
+ *
+ * ⚠ 2026-08-18 以前铺 8 张 16:9 空卡（对标 ToolJet AppList）。真墙是
+ * 错落瀑布流，等大灰块对不上任何一张真卡，数据到了照样跳版；用户看见
+ * 的就是一面假货架。那条「不跳版」在这条链路上不成立。
  */
-function SkeletonCard() {
+const GALLERY_LOADING_DELAY_MS = 300;
+
+function GalleryLoading({
+  testid,
+  label,
+}: {
+  testid: string;
+  label: string;
+}) {
+  const [show, setShow] = React.useState(false);
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => setShow(true), GALLERY_LOADING_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
   return (
-    <div className="aspect-video overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm">
-      <div className="flex h-full w-full animate-pulse flex-col justify-end bg-gradient-to-br from-stone-100 to-stone-50 p-3.5">
-        <div className="flex items-center gap-1.5">
-          <div className="h-5 w-5 shrink-0 rounded-[6px] bg-stone-200" />
-          <div className="h-3 w-2/5 rounded bg-stone-200" />
-        </div>
-        <div className="mt-2 flex items-center gap-2">
-          <div className="h-2.5 w-12 rounded bg-stone-200" />
-          <div className="h-2.5 w-12 rounded bg-stone-200" />
-          <div className="h-2.5 w-10 rounded bg-stone-200" />
-          <div className="ml-auto h-2.5 w-14 rounded bg-stone-200" />
-        </div>
-      </div>
+    <div
+      data-testid={testid}
+      className="mt-16 flex min-h-[240px] flex-col items-center justify-center"
+      aria-busy="true"
+    >
+      {show ? (
+        <>
+          <span
+            className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-[#5b6cff]"
+            aria-hidden
+          />
+          <span role="status" className="mt-3 text-[13px] text-slate-400">
+            {label}
+          </span>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -1133,10 +1168,33 @@ const WALL_GUTTER = 16;
  * 单独抽成组件而不是写在 AppsWorkbench 里，是因为这几个都是 hook——卡片墙
  * 在「空态/搜索无结果/有结果」三岔里只有一岔渲染，写在外层就成了条件调用。
  */
+/**
+ * 卡片一挂上（虚拟化进视口 / 隐藏量高）才去拉完整模型。
+ * 开局用 4 个工人扫全表 getApp——2026-08-18 首页就是这样把全部应用一次加载完的。
+ */
+function GalleryCardGate({
+  item,
+  ensure,
+  children,
+}: {
+  item: GalleryItem;
+  ensure: (gi: GalleryItem) => void;
+  children: React.ReactNode;
+}) {
+  const itemRef = React.useRef(item);
+  itemRef.current = item;
+  React.useEffect(() => {
+    ensure(itemRef.current);
+    // item 每轮渲染都是新对象，按 key 钉住，避免每帧重入 ensure。
+  }, [item.key, ensure]);
+  return <>{children}</>;
+}
+
 function AppWall({
   items,
   renderCard,
   onReachEnd,
+  ensureDetail,
 }: {
   items: WallEntry[];
   renderCard: (
@@ -1146,18 +1204,29 @@ function AppWall({
     span: number,
   ) => React.ReactNode;
   onReachEnd?: () => void;
+  ensureDetail: (gi: GalleryItem) => void;
 }) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const { scrollTop, isScrolling, height } = useScrollerIn(containerRef);
   // width 要跟着容器走（侧栏收起、窗口缩放都会变），deps 给 height 让它重量。
   const { offset: _offset, width } = useContainerPosition(containerRef, [height]);
 
-  // 跨列集合按整份列表算一次：只依赖 items，不依赖详情加载，所以详情回来之后
-  // 不会再重排一遍墙。
-  const spanKeys = React.useMemo(
-    () => computeSpanKeys(items.map(e => e.item)),
-    [items],
-  );
+  // 跨列集合：追加下一页时冻结已落位卡的 span（masonry-append.ts），
+  // 详情回来只换对象、key 不变，也不该重算。
+  const spanMemo = React.useRef<{ keys: string[]; spans: Set<string> }>({
+    keys: [],
+    spans: new Set(),
+  });
+  const itemKeySig = items.map(e => e.item.key).join("\0");
+  const spanKeys = React.useMemo(() => {
+    const nextItems = items.map(e => e.item);
+    const nextKeys = nextItems.map(it => it.key);
+    const spans = appendStableSpanKeys(spanMemo.current.spans, spanMemo.current.keys, nextItems);
+    spanMemo.current = { keys: nextKeys, spans };
+    return spans;
+    // itemKeySig 变了才重算；items 每轮都是新数组，不能当依赖。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemKeySig]);
 
   return (
     <div data-testid="apps-wall" style={{ display: "contents" }}>
@@ -1171,6 +1240,9 @@ function AppWall({
         minColumnWidth={WALL_COLUMN_WIDTH}
         gutter={WALL_GUTTER}
         overscanBy={2}
+        // 已落位的活缩略图不许随滚动卸挂。overscan 只管还要量谁。
+        // 2026-08-18：overscanBy=2 按窗口裁切，滚出的 iframe 整卡重渲。
+        retainPlaced
         // 首屏还没量到真实高度时用它估行数。桌面卡 260/1.78≈146 + 信息区 ≈52，
         // 手机卡 260/0.46≈563 + 52；取中间偏桌面一侧，因为桌面档占多数。
         itemHeightEstimate={240}
@@ -1181,14 +1253,14 @@ function AppWall({
         className="mt-5"
         onReachEnd={onReachEnd}
         render={(entry, _i, cellW, columnCount) => (
-          <>
+          <GalleryCardGate item={entry.item} ensure={ensureDetail}>
             {renderCard(
               entry.item,
               entry.detail,
               cellW,
               spanForColumnCount(spanKeys.has(entry.item.key), columnCount),
             )}
-          </>
+          </GalleryCardGate>
         )}
       />
     </div>
@@ -1252,6 +1324,15 @@ export function AppsWorkbench() {
   const [forkBusy, setForkBusy] = React.useState(false);
   const [forkError, setForkError] = React.useState<string | null>(null);
   const [page, setPage] = React.useState(1);
+  /** 我的应用墙当前露出多少张。滚到底 +PAGE_SIZE；筛选/搜索回第一页。 */
+  const [shown, setShown] = React.useState(PAGE_SIZE);
+  const [appsHasMore, setAppsHasMore] = React.useState(false);
+  const appsOffsetRef = React.useRef(0);
+  const loadingMoreRef = React.useRef(false);
+  const visibleOrderRef = React.useRef<string[]>([]);
+  const aliveRef = React.useRef(true);
+  const detailsRef = React.useRef<Record<string, AppCardDetail | null>>({});
+  const inflightRef = React.useRef(new Set<string>());
   // E28：订阅会话库更新事件（侧栏删会话/新话题落盘）→ 重拉画廊
   const [reloadKey, setReloadKey] = React.useState(0);
   // E41 官方示例库（2026-08-14 起货架清空但功能保留；后端上架即恢复展示）
@@ -1262,13 +1343,20 @@ export function AppsWorkbench() {
     window.addEventListener(SESSIONS_UPDATED_EVENT, bump);
     return () => window.removeEventListener(SESSIONS_UPDATED_EVENT, bump);
   }, []);
-  // 筛选口径变化 → 回第一页（分页器与筛选联动）
+  detailsRef.current = details;
+  // 筛选口径变化 → 回第一页（分页器与滚动分页都回到开头）
   React.useEffect(() => {
     setPage(1);
+    setShown(PAGE_SIZE);
   }, [tab, filter, query, exampleCat, sortDesc]);
 
   React.useEffect(() => {
     let alive = true;
+    aliveRef.current = true;
+    appsOffsetRef.current = 0;
+    inflightRef.current.clear();
+    setShown(PAGE_SIZE);
+    setAppsHasMore(false);
     if (IS_GITHUB_PAGES) {
       // 静态演示（无后端）：画廊 = 主演示会话 + 画廊示例种子（E18：新引擎
       // 真实推演的闭环终态，懒加载不进主包）。不打任何 /api/*。App Store 无后端 → 空。
@@ -1300,40 +1388,11 @@ export function AppsWorkbench() {
         alive = false;
       };
     }
-    // 真实态：并行拉两条源（App Store 摘要 + 会话列表），合并后按卡渐进拉详情。
+    // 真实态：摘要按页拉（limit=12），会话列表仍是瘦列表。
+    // 完整模型禁止在这里扫全表——按卡挂载走 ensureDetail（2026-08-18）。
     // App Store 失败 fail-open 空数组（画廊退化成纯会话卡，零回退）。
-    const loadDetail = async (gi: GalleryItem) => {
-      try {
-        if (gi.source === "app" && gi.appId) {
-          const rec = await getApp(gi.appId);
-          if (!alive) return;
-          setDetails(prev => ({
-            ...prev,
-            [gi.key]: rec
-              ? deriveDetailFromAppRecord(rec.model_json, rec.pages_json) // 完整模型+页面 → 活渲染 + 全指标
-              : gi.summary
-                ? deriveDetailFromAppSummary(gi.summary) // 拉不到详情退摘要占位
-                : null,
-          }));
-        } else if (gi.sessionId) {
-          const res = await fetch(`/api/sliderule/sessions/${encodeURIComponent(gi.sessionId)}`);
-          const body = res.ok ? await res.json() : null;
-          if (!alive) return;
-          setDetails(prev => ({
-            ...prev,
-            [gi.key]: body?.state ? deriveAppCardDetail(body.state) : null,
-          }));
-        }
-      } catch {
-        if (!alive) return;
-        setDetails(prev => ({
-          ...prev,
-          [gi.key]: gi.source === "app" && gi.summary ? deriveDetailFromAppSummary(gi.summary) : null,
-        }));
-      }
-    };
     void Promise.allSettled([
-      listApps(),
+      listApps({ limit: PAGE_SIZE, offset: 0 }),
       fetch("/api/sliderule/sessions").then(r =>
         r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))
       ),
@@ -1341,9 +1400,10 @@ export function AppsWorkbench() {
       if (!alive) return;
       const appList = appsRes.status === "fulfilled" ? appsRes.value : [];
       setApps(appList);
-      let sessionList: SessionListItem[] = [];
+      appsOffsetRef.current = appList.length;
+      setAppsHasMore(pageLooksFull(appList.length, PAGE_SIZE));
       if (sessRes.status === "fulfilled") {
-        sessionList = ((sessRes.value?.sessions ?? []) as SessionListItem[]).filter(
+        const sessionList = ((sessRes.value?.sessions ?? []) as SessionListItem[]).filter(
           (s: SessionListItem) => s.sessionId
         );
         setSessions(sessionList);
@@ -1351,16 +1411,6 @@ export function AppsWorkbench() {
         setSessions([]);
         setListError(String((sessRes.reason as Error)?.message ?? sessRes.reason));
       }
-      // 渐进拉详情（并发 4；app→getApp 完整模型 / session→会话态；失败退占位/ null）
-      const queue = mergeGalleryItems(appList, sessionList);
-      const workers = Array.from({ length: 4 }, async () => {
-        for (;;) {
-          const gi = queue.shift();
-          if (!gi || !alive) return;
-          await loadDetail(gi);
-        }
-      });
-      void Promise.all(workers);
     });
     fetch("/api/sliderule/builtin-examples")
       .then(r => (r.ok ? r.json() : null))
@@ -1390,10 +1440,70 @@ export function AppsWorkbench() {
       .catch(() => alive && setLlm(false));
     return () => {
       alive = false;
+      aliveRef.current = false;
     };
     // reloadKey：会话库变更事件（侧栏删除/话题落盘）触发整体重拉，
     // 应用中心与左侧会话列表保持双向同步（E28）
   }, [reloadKey]);
+
+  const ensureDetail = React.useCallback((gi: GalleryItem) => {
+    if (detailsRef.current[gi.key] !== undefined) return;
+    if (inflightRef.current.has(gi.key)) return;
+    inflightRef.current.add(gi.key);
+    void (async () => {
+      try {
+        if (gi.source === "app" && gi.appId) {
+          const rec = await getApp(gi.appId);
+          if (!aliveRef.current) return;
+          setDetails(prev => ({
+            ...prev,
+            [gi.key]: rec
+              ? deriveDetailFromAppRecord(rec.model_json, rec.pages_json)
+              : gi.summary
+                ? deriveDetailFromAppSummary(gi.summary)
+                : null,
+          }));
+        } else if (gi.sessionId) {
+          const res = await fetch(`/api/sliderule/sessions/${encodeURIComponent(gi.sessionId)}`);
+          const body = res.ok ? await res.json() : null;
+          if (!aliveRef.current) return;
+          setDetails(prev => ({
+            ...prev,
+            [gi.key]: body?.state ? deriveAppCardDetail(body.state) : null,
+          }));
+        }
+      } catch {
+        if (!aliveRef.current) return;
+        setDetails(prev => ({
+          ...prev,
+          [gi.key]: gi.source === "app" && gi.summary ? deriveDetailFromAppSummary(gi.summary) : null,
+        }));
+      } finally {
+        inflightRef.current.delete(gi.key);
+      }
+    })();
+  }, []);
+
+  const loadMoreApps = React.useCallback(async () => {
+    if (loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    try {
+      const offset = appsOffsetRef.current;
+      const list = await listApps({ limit: PAGE_SIZE, offset });
+      if (!aliveRef.current) return;
+      setApps(prev => [...(prev ?? []), ...list]);
+      appsOffsetRef.current = offset + list.length;
+      setAppsHasMore(pageLooksFull(list.length, PAGE_SIZE));
+    } catch {
+      if (aliveRef.current) setAppsHasMore(false);
+    } finally {
+      loadingMoreRef.current = false;
+    }
+  }, []);
+
+  const onWallReachEnd = React.useCallback(() => {
+    setShown(n => n + PAGE_SIZE);
+  }, []);
 
   const open = (sessionId: string) => {
     activateSession(sessionId);
@@ -1516,7 +1626,11 @@ export function AppsWorkbench() {
     const kb = String(b.item.lastActive ?? b.item.createdAt ?? "");
     return sortDesc ? kb.localeCompare(ka) : ka.localeCompare(kb);
   });
-  const visible = filterCards(paired, filter, query);
+  const visibleRaw = filterCards(paired, filter, query);
+  // 下一页并进来时全表重排会把新卡插进第一页——顶部已落位的卡换 key。
+  // 只多不少就冻结已露出的序（masonry-append.appendStableItems）。
+  const visible = appendStableItems(visibleOrderRef.current, visibleRaw, p => p.item.key);
+  visibleOrderRef.current = visible.map(p => p.item.key);
   const counts = {
     all: paired.length,
     runnable: paired.filter(p => p.detail?.status === "runnable").length,
@@ -1534,14 +1648,20 @@ export function AppsWorkbench() {
       e.category.toLowerCase().includes(q)
     );
   });
-  // 分页只剩「官方示例」这一个 tab 在用。
-  //
-  // 「我的应用」2026-07-31 起改成无限流（用户裁决）：卡片墙要的是一条连续的墙，
-  // 12 张在 5 列里只有 2.4 行，怎么调都堆不出墙的观感。取消切片之后靠虚拟化
-  // 扛住数量——SpanMasonry 只渲染视口内外两屏的格子，跟一页 12 张时的挂载量
-  // 是同一个数量级。示例库是普通网格、条目固定且少，保持原样。
+  // 「我的应用」滚动分页：墙只吃前 `shown` 张，滚到底 +12；摘要也按页向
+  // 服务端要，禁止一次 list 200。示例库仍是网格 + 分页器。
   const totalItems = visibleExamples.length;
   const pagedExamples = visibleExamples.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const wallItems = visible.slice(0, shown);
+
+  React.useEffect(() => {
+    if (tab !== "mine") return;
+    if (!shouldFetchAppPage(shown, visible.length, appsHasMore)) return;
+    if (loadingMoreRef.current) return;
+    // 推演中 / 待补充主要是会话卡，不必为筛选项把后面的应用页要齐。
+    if (filter === "draft" || filter === "blocked") return;
+    void loadMoreApps();
+  }, [tab, shown, visible.length, appsHasMore, filter, loadMoreApps]);
 
   // ── 「我的应用」卡片墙（2026-07-31）──────────────────────────────────
   //
@@ -2010,15 +2130,9 @@ export function AppsWorkbench() {
         (listError ? (
           <div className="mt-8 text-[13px] text-red-500">会话列表拉取失败：{listError}</div>
         ) : items == null ? (
-          // 骨架屏（对标 ToolJet AppList skeleton）：铺等尺寸占位卡，不跳版
-          <div
-            className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4"
-            data-testid="apps-skeleton"
-          >
-            {Array.from({ length: 8 }).map((_, i) => (
-              <SkeletonCard key={i} />
-            ))}
-          </div>
+          <GalleryLoading testid="apps-skeleton" label="正在加载应用" />
+        ) : visible.length === 0 && appsHasMore ? (
+          <GalleryLoading testid="apps-skeleton-more" label="正在加载应用" />
         ) : visible.length === 0 ? (
           paired.length === 0 ? (
             // 首次空态（对标 ToolJet BlankPage）：插画 + 引导 + 创建 CTA
@@ -2082,11 +2196,13 @@ export function AppsWorkbench() {
         ) : (
           <AppWall
             // key 跟着筛选走：定位器的高度缓存按 index 存，换了数据集不重建的话
-            // 会拿旧高度去摆新卡片。数量变化不进 key——那是无限流追加的正常情形，
+            // 会拿旧高度去摆新卡片。数量变化不进 key——那是滚动分页追加的正常情形，
             // 重建会把已量到的高度全丢掉，追加一批就整墙闪一次。
             key={`wall-${filter}-${query}`}
-            items={visible}
+            items={wallItems}
             renderCard={renderAppCard}
+            onReachEnd={onWallReachEnd}
+            ensureDetail={ensureDetail}
           />
         ))}
 

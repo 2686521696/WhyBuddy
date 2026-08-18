@@ -768,3 +768,130 @@ def test_pages_json_copied_on_fork(configured_store):
     src = store.save_app(_model("咖营通"), session_id="s1", pages_json=_pages())
     fk = store.fork_app(src, session_id="s9")
     assert store.get_app(fk)["pages_json"]["pages"] == _pages()["pages"]
+
+
+def test_list_limit_offset_returns_adjacent_pages(configured_store):
+    store.save_app(_model("甲"), session_id="s1")
+    store.save_app(_model("乙"), session_id="s2")
+    store.save_app(_model("丙"), session_id="s3")
+    page0 = store.list_apps(limit=1, offset=0)
+    page1 = store.list_apps(limit=1, offset=1)
+    assert len(page0) == 1 and len(page1) == 1
+    assert page0[0]["id"] != page1[0]["id"]
+    assert {page0[0]["product_name"], page1[0]["product_name"]} <= {"甲", "乙", "丙"}
+
+
+def test_list_apps_sql_omits_payloads_and_paginates():
+    """判据盯 SQL 文本本身：把 model_json 加回选出列、或改回 select *、
+    或拿掉 LIMIT，这条必须红。注释里会写旧语句，所以只看函数返回值。"""
+    sql = store.list_apps_sql(latest_per_root=True).lower()
+    assert "select *" not in sql
+    assert "model_json" not in sql
+    leftover = sql.replace("pages_json is not null", "")
+    assert "pages_json" not in leftover, "pages_json 只允许出现在 IS NOT NULL，不能当选出列"
+    assert "limit $1" in sql and "offset $2" in sql
+    assert "row_number()" in sql
+    all_versions = store.list_apps_sql(latest_per_root=False).lower()
+    assert "row_number()" not in all_versions
+    assert "limit $1" in all_versions and "model_json" not in all_versions
+
+
+def test_http_list_sends_summary_sql_with_limit():
+    """真机 list 走 NeonHttpAppStore（HttpApiAppStore 继承它）。
+    直接 new 会打网关；用未初始化实例钉住发出去的 SQL 和参数。"""
+    captured: list[tuple[str, list]] = []
+
+    inst = object.__new__(store.NeonHttpAppStore)
+
+    def _q(sql, params=None):
+        captured.append((sql, list(params or [])))
+        return [{
+            "id": "a1", "root_id": "a1", "parent_id": None, "version": 2,
+            "session_id": "s1", "goal": "g", "product_name": "咖营通",
+            "theme_id": "forest", "theme_label": "forest·测试", "device": "desktop",
+            "landing_page_ref": "p0", "entity_count": 2, "page_count": 2,
+            "gate_passed": True, "dedup_key": None,
+            "created_at": "2026-08-18 00:00:00+00",
+            "owner_id": None, "visibility": "public",
+            "has_pages": True,
+        }]
+
+    inst._q = _q  # type: ignore[method-assign]
+    rows = store.NeonHttpAppStore.list(inst, limit=12, offset=0, latest_per_root=True)
+    assert captured, "list() 必须打 _q，否则装在不通电的插座上"
+    sql, params = captured[0]
+    assert sql == store.list_apps_sql(latest_per_root=True)
+    assert params == [12, 0]
+    assert rows[0]["has_pages"] is True
+    assert rows[0]["product_name"] == "咖营通"
+    assert "model_json" not in rows[0] and "pages_json" not in rows[0]
+
+
+def _unparse_method(source: str, class_name: str, method_name: str) -> str:
+    import ast
+
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef) or node.name != class_name:
+            continue
+        for item in node.body:
+            if not isinstance(item, ast.FunctionDef) or item.name != method_name:
+                continue
+            if (
+                item.body
+                and isinstance(item.body[0], ast.Expr)
+                and isinstance(item.body[0].value, ast.Constant)
+                and isinstance(item.body[0].value.value, str)
+            ):
+                item.body.pop(0)
+            return ast.unparse(item)
+    raise AssertionError(f"{class_name}.{method_name} 不在源码里")
+
+
+def test_list_methods_do_not_select_star_or_hydrate_blobs():
+    """正：三条 list 都走摘要/SQL 分页。反：把 select * 或 to_record 装回去必须红。
+
+    ⚠ 先剥方法文档串再匹配——NeonHttpAppStore.list 的事故注释里原样引用了
+    `select * from generated_app`，不剥就会假绿。
+    """
+    from pathlib import Path
+
+    src = Path(store.__file__).read_text(encoding="utf-8")
+    neon = _unparse_method(src, "NeonHttpAppStore", "list")
+    sql_backend = _unparse_method(src, "SqlAppStore", "list")
+    json_backend = _unparse_method(src, "JsonFileAppStore", "list")
+    assert "list_apps_sql" in neon
+    assert "select * from generated_app" not in neon
+    assert "to_record" not in sql_backend
+    assert "select(GeneratedApp)" not in sql_backend
+    assert "_summary" in json_backend
+    assert "_paginate_latest" in json_backend
+    # 自检：剥注释真的把事故原文去掉了。不剥的话上面那条会被文档串喂饱。
+    assert "select * from generated_app" in src, "事故原文应从注释里能找到，否则剥注释自检没锚"
+
+
+def test_gallery_route_calls_list_apps_on_the_live_path():
+    """GET /apps 必须 to_thread(list_apps)。改了摘要查询但路由去调别的 = 没改。"""
+    import ast
+    from pathlib import Path
+
+    path = Path(store.__file__).resolve().parent.parent / "routes" / "sliderule_full.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    fn = next(
+        (
+            n for n in ast.walk(tree)
+            if isinstance(n, ast.AsyncFunctionDef) and n.name == "list_generated_apps"
+        ),
+        None,
+    )
+    assert fn is not None, "list_generated_apps 不在 sliderule_full.py——接口换地方了？"
+    if (
+        fn.body
+        and isinstance(fn.body[0], ast.Expr)
+        and isinstance(fn.body[0].value, ast.Constant)
+        and isinstance(fn.body[0].value.value, str)
+    ):
+        fn.body.pop(0)
+    code = ast.unparse(fn)
+    assert "app_store.list_apps" in code
+    assert "to_thread" in code

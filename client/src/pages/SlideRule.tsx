@@ -2,8 +2,8 @@
  * SlideRule product view (/sliderule): ONE unified surface (studio skeleton).
  *
  * - Single header row: brand/topic + STATUS summary + actions (交付物/重置会话/Dev)
- * - Left column: conversation (single empty state: logo watermark + hero + chips)
- * - Right rail: SkillThumbnailBar + system screens ⟷ 推演过程 (execution timeline + skill linkage)
+ * - Left column: conversation (single empty state: short greeting + composer + chips)
+ * - Right rail: ArchitectureStage (sandbox / C4) + drawer inspector / Checks
  * - Bottom center: single ComposerDock (+ 实用动作菜单 / ✨优化提示词), clarification cards above it
  *
  * The old chat/reasoning/studio surface toggle was removed (2026-07): one page,
@@ -32,9 +32,6 @@ import {
   Check,
   ChevronRight,
   LoaderCircle,
-  ShoppingCart,
-  UserPlus,
-  Users,
 } from "lucide-react";
 import {
   ChainOfThought,
@@ -405,25 +402,22 @@ function TurnPhaseTimeline({
   );
 }
 
-// E39 快速开始 chips（用户简约稿）：三个完整场景，点击把完整意图填进输入框
-// （fill-prompt 机制不变）。上传需求文档的路径收进输入框的「上传资料」按钮，
-// 不再单列 chip——右侧密度做减法（E34 模式卡同轮裁决移除）。
+// 快速开始：三个完整场景，点击把意图填进输入框（fill-prompt 不变）。
+// 2026-08-18 空态按 Cursor 新会话收：短问候 + 轻输入框 + 扁平 chips。
+// 上一版是 logo + 主张句 + 副标题 + 投影卡片 + 回车提示——侧栏已经是
+// Cursor 尺度，中间还停在落地页，两边不像一套产品。
 const QUICK_STARTS: ReadonlyArray<{
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
   fill: string;
 }> = [
-  { label: "采购审批应用", icon: ShoppingCart, fill: EXAMPLE_INTENT_TEXTS[0] },
-  { label: "员工入职流程", icon: UserPlus, fill: EXAMPLE_INTENT_TEXTS[1] },
+  { label: "采购审批应用", fill: EXAMPLE_INTENT_TEXTS[0] },
+  { label: "员工入职流程", fill: EXAMPLE_INTENT_TEXTS[1] },
   {
     label: "客户管理系统",
-    icon: Users,
     fill: "做一个客户管理系统，包含客户档案、跟进记录、销售漏斗和分级权限",
   },
 ];
 
-/** E39 空态首页（用户简约稿）：主张标题 + hero 大输入框 + 三个快速开始
- *  chips 居中 + 回车提示。模式模板卡按用户裁决整块移除（密度做减法）。 */
 function HomeEmptyState({
   isRunning,
   composerSlot,
@@ -443,38 +437,24 @@ function HomeEmptyState({
   //   没有生产者再往 sliderule:pending-template-intent 写值。
   return (
     <div
-      className="flex h-full flex-col items-center justify-center gap-9 text-center"
+      className="flex h-full flex-col items-center justify-center gap-6 text-center"
       data-testid="sliderule-empty-state"
     >
-      <div className="flex flex-col items-center gap-3">
-        <div className="flex items-center gap-3.5">
-          <img
-            src={`${import.meta.env.BASE_URL}brand/miantuan-mark.png`}
-            alt="面团 AI"
-            className="h-10 w-10 shrink-0"
-          />
-          <h1 className="font-display text-[clamp(22px,2.4vw,30px)] font-semibold tracking-tight text-[#1f2329]">
-            把一句模糊想法，快速推演成可执行的完整应用
-          </h1>
-        </div>
-        <p className="text-[14px] text-stone-500">
-          面团 AI「产品推演引擎」——一句话把业务意图推演成「能跑起来」的企业应用数字孪生
-        </p>
-      </div>
+      <h1 className="text-[22px] font-medium tracking-tight text-[#171717]">
+        想推演成什么应用？
+      </h1>
 
-      {/* hero 输入区（多行大框）：空态时唯一的 ComposerDock 就在这里 */}
       {composerSlot && (
         <div
-          className="w-full max-w-[880px]"
+          className="w-full max-w-[640px]"
           data-testid="sliderule-hero-composer"
         >
           {composerSlot}
         </div>
       )}
 
-      {/* 快速开始：三个场景 chips，居中（无小标题，密度做减法） */}
-      <div className="flex flex-wrap justify-center gap-3">
-        {QUICK_STARTS.map(({ label, icon: Icon, fill }) => (
+      <div className="flex flex-wrap justify-center gap-2">
+        {QUICK_STARTS.map(({ label, fill }) => (
           <button
             key={label}
             type="button"
@@ -482,17 +462,11 @@ function HomeEmptyState({
             data-testid={`sliderule-quick-start-${label}`}
             title={fill}
             onClick={() => fillPrompt(fill)}
-            className="flex items-center gap-2 rounded-[12px] border border-[#e5e7eb] bg-white px-4 py-2.5 text-[13px] text-stone-700 shadow-[0_2px_10px_rgb(15_23_42/0.04)] transition hover:border-[#d3d8e0] hover:shadow-[0_4px_14px_rgb(15_23_42/0.08)] disabled:opacity-50"
+            className="rounded-full bg-[#f3f4f6] px-3 py-1.5 text-[13px] text-[#444] transition hover:bg-[#e8eaed] disabled:opacity-50"
           >
-            <Icon className="h-4 w-4 text-stone-500" />
             {label}
           </button>
         ))}
-      </div>
-
-      {/* 回车提示（视觉稿底部一行，弱化处理） */}
-      <div className="text-[12px] text-stone-400">
-        按 Enter 发送，Shift + Enter 换行
       </div>
     </div>
   );
@@ -501,7 +475,7 @@ function HomeEmptyState({
 /**
  * ClaudeChatSurface — 统一页左栏对话区（Claude 风格轻量 prose 布局）。
  * 头部动作（交付物 / 重置会话 / Dev）由页面唯一顶栏承担；这里只负责对话流与
- * 唯一空态（古典 logo 水印 + hero 文案 + 3 个示例 chips）。
+ * 唯一空态（短问候 + 输入框 + 3 个示例 chips）。
  */
 // --- assistant-ui 迁移（左栏 IM 地基）--------------------------------------
 // 滚动跟随 / 消息列表 / 空态分支由 Thread 原语接管（Viewport 自带贴底跟随，
@@ -589,10 +563,13 @@ function ImUserMessage() {
   if (!item?.turn.user) return null;
   const text = item.turn.user;
   return (
-    <div className="group mb-4 flex flex-col items-end">
-      {/* 用户气泡随壳体走冷调（用户反馈：旧暖色与中性冷调壳体不搭）——
-          取品牌蓝浅色，与侧栏选中态同源 */}
-      <div className="max-w-[520px] rounded-lg bg-[#e6f4ff] px-4 py-2.5 text-[14px] leading-[26px] text-[#1f2329]">
+    <div className="group mb-3 flex flex-col items-end">
+      {/* 2026-08-18：用户块改 Cursor 灰底，不是品牌蓝气泡。
+          上一版 #e6f4ff 在对话流里像消费级聊天，跟侧栏/空会话那套对不上。 */}
+      <div
+        data-testid="sliderule-user-bubble"
+        className="max-w-[560px] rounded-[10px] bg-[#f3f4f6] px-3 py-2 text-[13.5px] leading-6 text-[#171717]"
+      >
         {text}
       </div>
       {/* 迭代环：意图原文回填输入条，改半句再推（悬停显现，不抢注意力） */}
@@ -604,7 +581,7 @@ function ImUserMessage() {
             new CustomEvent("sliderule:fill-prompt", { detail: { text } })
           );
         }}
-        className="mt-1 rounded-full px-2 py-0.5 text-[11px] text-stone-400 opacity-0 transition-opacity hover:bg-[#e9edf2] hover:text-stone-600 focus:opacity-100 group-hover:opacity-100"
+        className="mt-0.5 rounded-md px-1.5 py-0.5 text-[11px] text-stone-400 opacity-0 transition-opacity hover:bg-[#f3f4f6] hover:text-stone-600 focus:opacity-100 group-hover:opacity-100"
       >
         编辑重跑
       </button>
@@ -627,10 +604,10 @@ function ImAssistantMessage() {
   } = ctx;
   const answer = assistantTextForTurn(turn, publishClosure, goalText);
   return (
-    <div className="mb-6 max-w-[640px]">
+    <div className="mb-5 max-w-[640px]">
       {turn.status === "streaming" ? (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-sm text-stone-500">
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2 text-[13px] text-stone-500">
             <span className="inline-flex items-end gap-1">
               {Array.from({ length: 3 }).map((_, i) => (
                 <span
@@ -663,15 +640,12 @@ function ImAssistantMessage() {
         </div>
       ) : (
         /* 14px 正文（用户裁决：再小一号，信息密度优先） */
-        <div className="space-y-2 text-[14px] leading-[26px] text-stone-800">
-          {/* Claude 式顺序：折叠的推演过程 + 闭环徽标在前，总结正文在后
-              （items-start：展开过程时徽标停在首行不跟着下坠） */}
-          <div className="flex flex-wrap items-start gap-2 text-xs text-stone-400">
+        <div className="space-y-1.5 text-[14px] leading-6 text-[#171717]">
+          {/* 过程行压成 Cursor 那种一行缩略：徽标不再做成灰胶囊 */}
+          <div className="flex flex-wrap items-start gap-2 text-[12px] text-stone-400">
             <TurnPhaseTimeline turn={turn} publishClosure={publishClosure} />
             {publishClosure && (
-              /* mt-0.5：胶囊比 12px 文字行高 4px（py-0.5×2），上边距少 2px
-                 才与「推演过程」首行光学垂直居中（用户反馈） */
-              <span className="mt-0.5 rounded-full bg-[#e9edf2] px-2 py-0.5">
+              <span className="mt-0.5 tabular-nums">
                 {publishClosure.blocked ? "blocked" : "closed"}{" "}
                 {publishClosure.evidencePresentCount}/
                 {publishClosure.skillCount}
@@ -706,7 +680,7 @@ function ImAssistantMessage() {
                data-answer-present：Response 在 SSR/静态渲染下产出为空
                （客户端才填充），测试以此属性断言"回答已就位"。 */
             <div
-              className="max-w-none text-[13.5px] leading-[1.75] text-stone-700"
+              className="max-w-none text-[14px] leading-[1.7] text-[#171717]"
               data-testid="sliderule-turn-answer"
               data-answer-present={answer ? "true" : "false"}
             >
@@ -714,7 +688,7 @@ function ImAssistantMessage() {
             </div>
           )}
           {(turn.main || turn.user) && (
-            <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
+            <div className="flex flex-wrap items-center gap-1 text-[12px] text-stone-400">
               {/* E26：闭环被闸拦截（证据缺口）→ 主动作是「哪里缺补哪里」——
                   服务端只重跑覆盖门标红的能力，已 PASS 产物原样复用；
                   旁边的「重新推演」保持整轮重推语义，两个按钮各说各话 */}
@@ -728,7 +702,7 @@ function ImAssistantMessage() {
                       new CustomEvent("sliderule:repair-gaps")
                     );
                   }}
-                  className="rounded-full bg-[#e6f4ff] px-2.5 py-0.5 font-medium text-[#1264a3] hover:bg-[#d5ebfc] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-md px-1.5 py-0.5 font-medium text-[#1264a3] hover:bg-[#f3f4f6] disabled:cursor-not-allowed disabled:opacity-50"
                   title="只重跑证据缺口对应的能力，已完成的产物原样保留"
                 >
                   补齐缺口
@@ -738,7 +712,7 @@ function ImAssistantMessage() {
                 <button
                   type="button"
                   onClick={() => onChallenge(turn.main!.artifactId)}
-                  className="rounded-full bg-[#e9edf2] px-2 py-0.5 hover:bg-[#e5e7eb]"
+                  className="rounded-md px-1.5 py-0.5 hover:bg-[#f3f4f6] hover:text-stone-600"
                 >
                   质疑本轮
                 </button>
@@ -756,7 +730,7 @@ function ImAssistantMessage() {
                       })
                     );
                   }}
-                  className="rounded-full bg-[#e9edf2] px-2 py-0.5 hover:bg-[#e5e7eb] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-md px-1.5 py-0.5 hover:bg-[#f3f4f6] hover:text-stone-600 disabled:cursor-not-allowed disabled:opacity-50"
                   title="以同一句意图基于当前推演状态整轮重推"
                 >
                   重新推演
@@ -798,7 +772,7 @@ export function ClaudeChatSurface({
   /** 会话话题（恢复的轮次没有 turn.user，总结用它兜底） */
   goalText?: string;
   onChallenge: (id: string) => void;
-  /** E34.1 空态时嵌进首页流的 ComposerDock（墨刀式 hero 输入区） */
+  /** 空态时嵌进首页流的 ComposerDock */
   composerSlot?: React.ReactNode;
 }) {
   const latestStepText = latestTurn
@@ -864,17 +838,16 @@ export function ClaudeChatSurface({
               <ArrowDown className="h-3 w-3" />
               回到底部
             </ThreadPrimitive.ScrollToBottom>
-            <ThreadPrimitive.Viewport className="mx-auto flex min-h-0 w-full max-w-[780px] flex-1 flex-col overflow-y-auto px-4 pb-4 pt-4 [scrollbar-gutter:stable] sm:px-6">
+            <ThreadPrimitive.Viewport className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col overflow-y-auto px-4 pb-3 pt-3 [scrollbar-gutter:stable] sm:px-5">
               <ThreadPrimitive.Empty>
-                {/* E34 空态首页（用户视觉稿 2026-07-17）：品牌主张 + 模式模板卡 +
-                    快速开始。模式卡与 chips 都走 fill-prompt 填输入框——同一条
-                    推演管线的不同起手式，不造假功能入口。 */}
+                {/* 空态：短问候 + 输入框 + chips。chips 走 fill-prompt，
+                    同一条推演管线的不同起手，不造假功能入口。 */}
                 <HomeEmptyState
                   isRunning={isRunning}
                   composerSlot={composerSlot}
                 />
               </ThreadPrimitive.Empty>
-              <div className="py-2">
+              <div className="py-0">
                 <ThreadPrimitive.Messages
                   components={{
                     UserMessage: ImUserMessage,
@@ -1009,8 +982,8 @@ export async function loadPythonRuntimeProjectionFromSession(
  * SlideRuleUnified — 唯一产品界面（studio 骨架，无模式切换）。
  *
  * - 顶部单行 header：品牌/话题 + STATUS 摘要（待细化/话题/阶段）+ 动作（交付物/设置/重置会话/Dev）。
- * - 左栏：对话流（含唯一空态：古典 logo 水印 + hero 文案 + 示例 chips）。
- * - 右栏：SkillThumbnailBar + 内容区（六系统画面 ⟷「推演过程」执行时间线 + SKILL LINKAGE）。
+ * - 左栏：对话流（含唯一空态：短问候 + 输入框 + 示例 chips）。
+ * - 右栏：ArchitectureStage（沙盘/架构图）+ 抽屉 inspector / Checks。
  * - 底部：唯一 ComposerDock（+ 实用动作菜单 / ✨优化提示词），澄清卡片浮在其上。
  *
  * 旧的 pan/zoom 推理画布（v4 面）已从本页移除；工程画布仍可经 ?im=dev 进入
@@ -1141,7 +1114,7 @@ function SlideRuleUnified({
   const conversationTurns =
     uiTurns.length > 0 ? uiTurns : restoredTurns;
 
-  // E34.1 墨刀式首页：空态（无轮次且未在跑）时 ComposerDock 渲染在首页
+  // 空态（无轮次且未在跑）时 ComposerDock 渲染在首页
   // hero 里；否则回底部停靠。二选一，永远只有一个输入条实例。
   const isHomeEmpty = conversationTurns.length === 0 && !isRunning;
 
@@ -1231,7 +1204,7 @@ function SlideRuleUnified({
                       goal={goal}
                       hintChips={composerHints}
                       stop={stop}
-                      placeholder="描述你想构建的业务系统，也可以上传需求文档或现有页面……"
+                      placeholder="描述你想构建的业务系统…"
                       hero
                     />
                   ) : undefined
@@ -1280,7 +1253,7 @@ function SlideRuleUnified({
         </div>
       }
 
-      {/* Single bottom composer + clarification cards（E34.1 墨刀式：空态时
+      {/* Single bottom composer + clarification cards（空态时
           唯一的 ComposerDock 渲染在首页 hero 里，这里只留澄清卡；开聊后
           回到底部停靠——同一受控组件二选一渲染，input 状态在页面层不丢） */}
       {

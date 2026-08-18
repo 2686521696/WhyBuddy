@@ -1,11 +1,22 @@
 /**
- * SidebarSessions（Claude 式侧栏会话区）单测：纯函数 + 静态结构。
- * 列表数据靠 effect 拉取，静态渲染只断言骨架（新建按钮 + 最近标签 + 列表容器）。
+ * SidebarSessions 单测：纯函数 + 静态结构。
+ * 列表数据靠 effect 拉取，静态渲染只断言骨架（新建 + 搜索 + 列表容器）。
  */
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createSessionId, SidebarSessions, sortSessionsByRecency } from "../SidebarSessions";
+import {
+  createSessionId,
+  filterSessionsByPhase,
+  filterSessionsByQuery,
+  groupSessionsByAge,
+  sessionAgeGroup,
+  sessionPhaseBucket,
+  SidebarSessions,
+  sortSessions,
+  sortSessionsByRecency,
+} from "../SidebarSessions";
 
 describe("createSessionId", () => {
   // 2026-08-06：id 从本地生成改成**向服务端要**。
@@ -78,13 +89,118 @@ describe("sortSessionsByRecency", () => {
   });
 });
 
+describe("sortSessions · 创建时间", () => {
+  it("按 createdAt 排，不被 lastActive 带偏（不该有：创建序仍走活跃时间）", () => {
+    const input = [
+      { sessionId: "old-but-hot", goal: "老", createdAt: "2026-07-01T10:00:00", lastActive: "2026-08-18T10:00:00" },
+      { sessionId: "new-quiet", goal: "新", createdAt: "2026-08-10T10:00:00", lastActive: "2026-08-10T10:00:00" },
+    ];
+    expect(sortSessions(input, "active").map(s => s.sessionId)).toEqual(["old-but-hot", "new-quiet"]);
+    expect(sortSessions(input, "created").map(s => s.sessionId)).toEqual(["new-quiet", "old-but-hot"]);
+  });
+});
+
+describe("sessionPhaseBucket / filterSessionsByPhase", () => {
+  it("只认 runtimePhase 三档，done/failed 不得混进推演中", () => {
+    expect(sessionPhaseBucket("orchestrating")).toBe("running");
+    expect(sessionPhaseBucket("awaiting")).toBe("running");
+    expect(sessionPhaseBucket("idle")).toBe("running");
+    expect(sessionPhaseBucket(null)).toBe("running");
+    expect(sessionPhaseBucket("done")).toBe("done");
+    expect(sessionPhaseBucket("concluded")).toBe("done");
+    expect(sessionPhaseBucket("failed")).toBe("failed");
+
+    const rows = [
+      { sessionId: "r", goal: "跑", phase: "orchestrating" },
+      { sessionId: "d", goal: "完", phase: "done" },
+      { sessionId: "f", goal: "挂", phase: "failed" },
+    ];
+    expect(filterSessionsByPhase(rows, "all").map(s => s.sessionId)).toEqual(["r", "d", "f"]);
+    expect(filterSessionsByPhase(rows, "running").map(s => s.sessionId)).toEqual(["r"]);
+    expect(filterSessionsByPhase(rows, "done").map(s => s.sessionId)).toEqual(["d"]);
+    expect(filterSessionsByPhase(rows, "failed").map(s => s.sessionId)).toEqual(["f"]);
+    expect(filterSessionsByPhase(rows, "running").some(s => s.phase === "done")).toBe(false);
+  });
+});
+
+describe("sessionAgeGroup / groupSessionsByAge", () => {
+  it("按本地日历分桶，缺时间戳进更早；空桶不出现", () => {
+    const now = Date.parse("2026-08-18T12:00:00.000Z");
+    const today0 = (() => {
+      const d = new Date(now);
+      d.setHours(0, 0, 0, 0);
+      return d.getTime();
+    })();
+    const at = (days: number) => new Date(today0 + days * 86400000 + 3600000).toISOString();
+    expect(sessionAgeGroup(at(0), now)).toBe("today");
+    expect(sessionAgeGroup(at(-1), now)).toBe("yesterday");
+    expect(sessionAgeGroup(at(-3), now)).toBe("week");
+    expect(sessionAgeGroup(at(-10), now)).toBe("month");
+    expect(sessionAgeGroup(at(-40), now)).toBe("older");
+    expect(sessionAgeGroup(null, now)).toBe("older");
+
+    const groups = groupSessionsByAge(
+      [
+        { sessionId: "t", goal: "今", lastActive: at(0) },
+        { sessionId: "y", goal: "昨", lastActive: at(-1) },
+        { sessionId: "w", goal: "周", lastActive: at(-3) },
+        { sessionId: "none", goal: "无" },
+      ],
+      now,
+    );
+    expect(groups.map(g => [g.id, g.label, g.sessions.map(s => s.sessionId)])).toEqual([
+      ["today", "今天", ["t"]],
+      ["yesterday", "昨天", ["y"]],
+      ["week", "近 7 天", ["w"]],
+      ["older", "更早", ["none"]],
+    ]);
+    expect(groups.some(g => g.id === "month")).toBe(false);
+  });
+});
+
+describe("filterSessionsByQuery", () => {
+  const rows = [
+    { sessionId: "a", goal: "社区快递代收" },
+    { sessionId: "b", goal: "养老服务平台" },
+  ];
+  it("空串原样返回（不该有：空搜索搜出空表）", () => {
+    expect(filterSessionsByQuery(rows, "  ").map(s => s.sessionId)).toEqual(["a", "b"]);
+  });
+  it("只按标题匹配，大小写不敏感", () => {
+    expect(filterSessionsByQuery(rows, "养老").map(s => s.sessionId)).toEqual(["b"]);
+    expect(filterSessionsByQuery(rows, "XYZ")).toEqual([]);
+  });
+});
+
 describe("SidebarSessions 静态渲染", () => {
-  it("骨架：新建会话按钮 + 「最近」标签 + 列表容器", () => {
+  it("骨架：新建会话 + 搜索 + 两档菜单，没有 PR/仓库空壳", () => {
     const html = renderToStaticMarkup(<SidebarSessions />);
     expect(html).toContain('data-testid="sidebar-sessions"');
     expect(html).toContain('data-testid="sidebar-session-new"');
     expect(html).toContain("新建会话");
-    expect(html).toContain("最近");
+    expect(html).toContain('data-testid="sidebar-session-search"');
+    expect(html).toContain("搜索会话");
     expect(html).toContain('data-testid="sidebar-session-list"');
+    expect(html).toContain('data-testid="sidebar-session-filter"');
+    expect(html).toContain("最近活跃");
+    expect(html).toContain("创建时间");
+    expect(html).toContain("推演中");
+    expect(html).toContain("已完成");
+    expect(html).toContain("失败");
+    // 旧扁平「最近」标签。分组标题要有数据才出现。
+    expect(html).not.toMatch(/>最近</);
+    expect(html).not.toContain("PR");
+    expect(html).not.toContain("Environment");
+    expect(html).not.toContain("Archived");
+    expect(html).not.toContain("仓库");
+  });
+
+  it("渲染层真的调用排序和阶段筛（装在不通电的插座上会绿）", () => {
+    const src = readFileSync(new URL("../SidebarSessions.tsx", import.meta.url), "utf8");
+    expect(src).toContain("sortSessions(");
+    expect(src).toContain("filterSessionsByPhase");
+    expect(src).toContain("phaseFilter");
+    expect(src).toContain("sortOrder");
+    expect(src).not.toMatch(/setSessions\(sortSessionsByRecency/);
   });
 });

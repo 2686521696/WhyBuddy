@@ -70,11 +70,8 @@ export function DataModelScreen({
       data-active={isActive}
     >
       {/* Header */}
-      <div className="flex items-center gap-2 border-b border-[#e8eaee] px-4 py-2.5">
-        <div className="h-2 w-2 rounded-full bg-blue-400" />
-        <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">
-          DataModel
-        </span>
+      <div className="flex items-center gap-2 border-b border-[#e5e7eb] px-4 py-2">
+        <span className="text-[12px] font-medium text-stone-700">数据模型</span>
         <div className="ml-auto flex items-center gap-1.5">
           {canEditData && (
             <Segmented
@@ -100,7 +97,7 @@ export function DataModelScreen({
           <EntityDataPanel model={model} sessionId={sessionId} />
         </div>
       ) : canEditData ? (
-        // 结构化模型在手 → G6 实体关系图（卡片节点 + 关联边 + 拖拽缩放）
+        // 结构化模型在手 → 表节点 ER 图（字段行上接线）
         <div className="min-h-0 flex-1">
           <EntityRelationGraph datamodel={model!.datamodel} />
         </div>

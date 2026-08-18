@@ -9,9 +9,8 @@ import {
   ImagePlus,
   Lightbulb,
   Loader2,
-  Mic,
   Plus,
-  SendHorizontal,
+  ArrowUp,
   Sparkles,
   Square,
   X,
@@ -191,9 +190,9 @@ export function ComposerDock({
 
   hintChips?: string[];
   stop?: () => void;
-  /** E34.1 空态首页嵌入时的占位文案（墨刀式 hero 输入区） */
+  /** 空态首页嵌入时的占位文案 */
   placeholder?: string;
-  /** E34.2 hero 变体（墨刀式多行大框）：文字区在上、操作排在底行 */
+  /** 空态变体：文字在上、工具行在下；外观按 Cursor 新会话收，不是落地页大卡片 */
   hero?: boolean;
 }) {
   // 模式选择器已删（用户裁决 2026-07-10）：深思一轮就是唯一产品路径
@@ -227,8 +226,8 @@ export function ComposerDock({
   const adjustTextareaHeight = React.useCallback(() => {
     const ta = textareaRef.current;
     if (!ta) return;
-    const minH = hero ? 96 : 44;
-    const maxH = hero ? 200 : 112;
+    const minH = hero ? 72 : 32;
+    const maxH = hero ? 160 : 112;
     if (!ta.value.trim()) {
       ta.style.height = `${minH}px`;
       return;
@@ -463,7 +462,7 @@ export function ComposerDock({
   const judgement = useIntakeJudge(input, hasApp, !isRunning, appSummary);
 
   return (
-    <div className={`pointer-events-none flex flex-col items-center gap-2 ${hero ? "w-full" : "w-[min(820px,calc(100vw-32px))]"}`}>
+    <div className={`pointer-events-none flex flex-col items-center gap-2 ${hero ? "w-full" : "w-[min(640px,calc(100vw-32px))]"}`}>
       {/* 「本轮 · ...」浮标已移除：话题在顶栏 STATUS 常驻，这里只是重复噪声
           （用户反馈：分散注意力，且与交付物按钮在完成态重叠）。 */}
       <IntakeHintBar
@@ -483,9 +482,7 @@ export function ComposerDock({
         </div>
       )}
       <div
-        className={`pointer-events-auto relative w-full border bg-white shadow-[0_10px_36px_rgb(15_23_42/0.12)] transition-colors ${hero ? "rounded-[16px] px-4 py-3.5" : "rounded-[14px] px-3 py-2.5"} ${
-          isDragOver ? "border-[#1677ff] bg-[#e6f4ff]/40" : "border-[#e5e7eb]"
-        }`}
+        className={`pointer-events-auto relative w-full rounded-[12px] border bg-white px-3 py-1.5 shadow-none transition-colors ${isDragOver ? "border-[#1677ff] bg-[#e6f4ff]/40" : "border-[#e5e7eb]"}`}
         data-testid="sliderule-composer-dock"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -556,7 +553,10 @@ export function ComposerDock({
             ))}
           </div>
         )}
-        <div className={hero ? "flex flex-wrap items-center gap-2" : "flex items-end gap-2"}>
+        {/* 停靠条：字和图标必须同一行高 + items-center。
+            2026-08-18 真机：textarea min-h-11（44px）配 h-8 图标再 items-end，
+            「畅所欲问」和图标不在一条中线上，整行看起来顶上去了。 */}
+        <div className={hero ? "flex flex-wrap items-center gap-2" : "flex items-center gap-2"}>
           <div className="relative shrink-0" ref={menuRef}>
             <button
               type="button"
@@ -565,11 +565,11 @@ export function ComposerDock({
                 setMenuView("actions");
               }}
               disabled={isRunning}
-              className="flex h-11 w-11 items-center justify-center rounded-full text-stone-700 transition hover:bg-[#e9edf2] disabled:opacity-45"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-[#5e5e5e] transition hover:bg-[#f2f2f2] disabled:opacity-45"
               title="更多动作"
               data-testid="sliderule-composer-plus"
             >
-              <Plus className="h-5 w-5" />
+              <Plus className="h-4 w-4" />
             </button>
             {/* 隐藏文件选择器：与拖拽同一行为（addAttachments 出预览卡） */}
             <input
@@ -750,22 +750,21 @@ export function ComposerDock({
             </div>
           </div>
 
-          {/* E34.2 hero 底行：显式「上传资料」按钮（与 + 菜单里的文件入口
-              同一 fileInputRef，效果图的主入口位） */}
           {hero && (
             <button
               type="button"
               disabled={isRunning}
               onClick={() => fileInputRef.current?.click()}
               data-testid="sliderule-hero-upload"
-              className="flex h-9 shrink-0 items-center gap-1.5 rounded-[9px] border border-[#e5e7eb] bg-white px-3 text-[13px] text-stone-600 transition hover:border-[#d3d8e0] hover:bg-[#eef0f4] disabled:opacity-45"
+              title="上传资料"
+              aria-label="上传资料"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[#5e5e5e] transition hover:bg-[#f2f2f2] disabled:opacity-45"
             >
-              <Paperclip className="h-3.5 w-3.5" />
-              上传资料
+              <Paperclip className="h-4 w-4" />
             </button>
           )}
 
-          <div className={hero ? "order-first basis-full" : "min-w-0 flex-1 pb-0.5"}>
+          <div className={hero ? "order-first basis-full" : "min-w-0 flex-1"}>
             <textarea
               ref={textareaRef}
               value={input}
@@ -785,7 +784,7 @@ export function ComposerDock({
               aria-label={placeholderText}
               rows={1}
               disabled={isRunning}
-              className={`block w-full resize-none bg-transparent text-[15px] leading-6 text-[#1f2329] outline-none placeholder:text-stone-400 disabled:opacity-60 ${hero ? "max-h-[200px] min-h-24 px-1 py-1" : "max-h-28 min-h-11 px-1 py-2.5"}`}
+              className={`block w-full resize-none bg-transparent text-[#171717] outline-none placeholder:text-[#9ca3af] disabled:opacity-60 ${hero ? "max-h-40 min-h-[72px] px-1 py-0.5 text-[15px] leading-6" : "max-h-28 min-h-8 px-1 py-0 text-[14px] leading-8"}`}
               data-testid="sliderule-composer-input"
             />
           </div>
@@ -793,7 +792,7 @@ export function ComposerDock({
           {/* 优化提示词（用户裁决：原模式切换与左侧 + 菜单重复，改为提示词优化器） */}
           <button
             type="button"
-            className={`hidden h-11 w-11 shrink-0 items-center justify-center rounded-full text-stone-700 transition hover:bg-[#e9edf2] disabled:opacity-45 sm:flex ${hero ? "ml-auto" : ""}`}
+            className={`${hero ? "ml-auto" : ""} hidden h-8 w-8 shrink-0 items-center justify-center rounded-md text-[#5e5e5e] transition hover:bg-[#f2f2f2] disabled:opacity-45 sm:flex`}
             title="优化提示词：把意图改写得更完整（实体/流程/角色/页面/AI）"
             data-testid="sliderule-prompt-refine"
             onClick={refinePrompt}
@@ -807,23 +806,15 @@ export function ComposerDock({
           </button>
           <button
             type="button"
-            className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-full text-stone-700 transition hover:bg-[#e9edf2] sm:flex"
-            title="语音输入"
-            disabled
-          >
-            <Mic className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
             onClick={isRunning ? stop || (() => {}) : doSend}
             disabled={!isRunning && !input.trim() && attachments.length === 0}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#E08663] to-[#1677ff] text-white shadow-[0_4px_14px_rgb(217_119_87/0.45)] transition hover:from-[#1677ff] hover:to-[#0958d9] disabled:cursor-not-allowed disabled:opacity-35"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#171717] text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-[#ececef] disabled:text-[#b0b0b5]"
             title={isRunning ? "停止" : "发送"}
           >
             {isRunning ? (
-              <Square className="h-4 w-4 fill-current" />
+              <Square className="h-3.5 w-3.5 fill-current" />
             ) : (
-              <SendHorizontal className="h-4 w-4" />
+              <ArrowUp className="h-4 w-4" />
             )}
           </button>
         </div>

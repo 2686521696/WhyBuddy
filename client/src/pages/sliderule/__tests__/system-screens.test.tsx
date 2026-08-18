@@ -16,8 +16,16 @@ import { WorkflowScreen } from "../system-screens/WorkflowScreen";
 import { AigcScreen } from "../system-screens/AigcScreen";
 import { AppBundleScreen } from "../system-screens/AppBundleScreen";
 import { ActiveSystemScreen } from "../system-screens/ActiveSystemScreen";
+import { ArchitectureStage } from "../ArchitectureStage";
+import { LINKAGE_TO_SKILL } from "../system-screens/SystemLinkageGraph";
+import { ReactFlowProvider } from "@xyflow/react";
 import { DataModelScreen } from "../system-screens/DataModelScreen";
-import { PageScreen } from "../system-screens/PageScreen";
+import {
+  ErTableCard,
+  isPkField,
+  pkHandleId,
+} from "../system-screens/EntityRelationGraph";
+import { PageScreen, SaltPageCard } from "../system-screens/PageScreen";
 import { RbacScreen } from "../system-screens/RbacScreen";
 import { WorkflowRuntimePanel } from "../live-runtime/WorkflowRuntimePanel";
 import { AigcPipelinePanel } from "../live-runtime/AigcPipelinePanel";
@@ -37,6 +45,7 @@ import {
   deriveWorkflowGraphData,
   deriveSystemLinkageGraph,
   linkageToMermaid,
+  bundleLinkageEdges,
   evidenceSourceOf,
   resolveFieldRef,
   resolveRoleRef,
@@ -542,25 +551,38 @@ describe("AppBundleScreen", () => {
     expect(html).toContain("digest=digest99");
     expect(html).toContain("versionPins=checked");
     expect(html).not.toContain('data-testid="appbundle-blockers"');
+    expect(html).toContain('data-testid="appbundle-evidence-list"');
+    expect(html).toContain("Checks");
+    // 不该有：3×2 绿卡、沙盘切到 Checks 里。变异：把 grid 卡或 mode toggle 加回必红。
+    expect(html).not.toContain("grid-cols-2");
+    expect(html).not.toContain("grid-cols-3");
+    expect(html).not.toContain("appbundle-mode-toggle");
+    expect(html).not.toContain("data-missing=\"true\"");
   });
 
-  it("blocked 闭环（E27 定稿）：极简错误页——图标 + 标题 + 一行人话，杂项全收纳", () => {
+  it("blocked 闭环：拦截条 + Checks 红行（缺的必须看得见，不许整面盖住）", () => {
     const html = renderToStaticMarkup(
       <AppBundleScreen publishClosure={CLOSURE_BLOCKED} />
     );
     expect(html).toContain('data-testid="appbundle-gate-blocked"');
     expect(html).toContain("发布检查未通过");
-    // 默认副标题：讲证据缺口数（2/6 到位 → 缺 4 项）
     expect(html).toContain("当前缺少 4 项系统证据，补齐后即可继续发布。");
-    // 极简：看板头条/进度条/blocked 徽章整体让位
     expect(html).not.toContain("发布证据看板");
     expect(html).not.toContain("blocked 2/6");
-    // 工程字段进「技术详情」折叠区（如实保留，不再当正文）
+    expect(html).toContain("failed 2/6");
     expect(html).toContain("技术详情");
     expect(html).toContain("APPBUNDLE_RUNTIME_CLOSURE_BLOCKED");
     expect(html).toContain("runtimeClosure.perSkillEvidence");
-    // 老的生肉阻塞盒不复存在
     expect(html).not.toContain('data-testid="appbundle-blockers"');
+    // 清单仍在：缺的两行是红的。变异：整面只留盾牌、藏掉 list 必红。
+    expect(html).toContain('data-testid="appbundle-evidence-list"');
+    expect(html).toContain('data-testid="appbundle-check-aigc"');
+    expect(html).toMatch(/data-testid="appbundle-check-aigc"[^>]*data-missing="true"/);
+    expect(html).toMatch(/data-testid="appbundle-check-workflow"[^>]*data-missing="true"/);
+    expect(html).toMatch(/data-testid="appbundle-check-datamodel"[^>]*data-missing="false"/);
+    expect(html).toContain("证据缺失");
+    expect(html).not.toContain("grid-cols-2");
+    expect(html).not.toContain("bg-emerald-50");
   });
 
   it("blocked 闭环（E27 定稿）：副标题按拦截原因自适应说人话", () => {
@@ -660,7 +682,8 @@ describe("AppBundleScreen", () => {
   it("空态：无 publishClosure → 诚实提示，无绑定区", () => {
     const html = renderToStaticMarkup(<AppBundleScreen />);
     expect(html).toContain("发送应用意图后");
-    expect(html).toContain("blocked 0/6");
+    expect(html).toContain("failed 0/6");
+    expect(html).toContain('data-missing="true"');
     expect(html).not.toContain('data-testid="appbundle-bindings"');
   });
 
@@ -700,6 +723,52 @@ describe("AppBundleScreen", () => {
   });
 });
 
+describe("ArchitectureStage", () => {
+  it("无模型：空沙盘 + 红 Checks，不是六圆钮", () => {
+    const html = renderToStaticMarkup(
+      <ArchitectureStage onInspect={() => {}} publishClosure={null} />
+    );
+    expect(html).toContain('data-testid="sliderule-architecture-stage"');
+    expect(html).toContain('data-testid="architecture-empty"');
+    expect(html).toContain('data-testid="architecture-checks"');
+    expect(html).toContain("Checks 0/6");
+    expect(html).toContain("text-red-600");
+    expect(html).not.toContain("bg-blue-400");
+    expect(html).not.toContain("SkillThumbnailBar");
+    expect(html).not.toContain("发布证据看板");
+  });
+
+  it("有模型：默认沙盘（组在图上），Checks 吃闭环", () => {
+    const html = renderToStaticMarkup(
+      <ArchitectureStage
+        model={MODEL}
+        publishClosure={CLOSURE_CLOSED}
+        onInspect={() => {}}
+      />
+    );
+    expect(html).toContain('data-testid="system-linkage-graph"');
+    expect(html).toContain('data-testid="architecture-graph-style"');
+    expect(html).toContain("沙盘");
+    expect(html).toContain("架构图");
+    expect(html).toContain("Checks 6/6");
+    expect(html).not.toContain('data-testid="architecture-empty"');
+    expect(html).not.toContain("appbundle-mode-toggle");
+    expect(html).not.toContain("图例");
+    expect(html).toContain('data-testid="sandbox-problems"');
+  });
+
+  it("图上的组对应抽屉系统屏（AppBundle 不在映射里）", () => {
+    expect(LINKAGE_TO_SKILL).toEqual({
+      datamodel: "dataModel",
+      page: "page",
+      workflow: "workflow",
+      rbac: "rbac",
+      aigc: "aigc",
+    });
+    expect(LINKAGE_TO_SKILL).not.toHaveProperty("appbundle");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // ActiveSystemScreen — 派发 + skillContents 模型注入集成
 // ---------------------------------------------------------------------------
@@ -725,8 +794,11 @@ describe("ActiveSystemScreen 派发", () => {
         publishClosure={CLOSURE_CLOSED}
       />
     );
-    expect(html).toContain("发布证据看板");
+    expect(html).toContain("Checks");
+    expect(html).toContain('data-testid="appbundle-evidence-list"');
     expect(html).toContain('data-testid="appbundle-bindings"');
+    expect(html).not.toContain("发布证据看板");
+    expect(html).not.toContain("appbundle-mode-toggle");
   });
 
   it("aigc 激活时能力卡片可见", () => {
@@ -902,6 +974,57 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
     expect(deriveErGraphData({ entities: [] })).toBeNull();
   });
 
+  it("ErTableCard：字段名在左、类型在右，PK/FK 标在行上，无暖色表头", () => {
+    const html = renderToStaticMarkup(
+      <ReactFlowProvider>
+        <ErTableCard
+          er={{
+            id: "birth_info",
+            name: "出生信息",
+            fields: [
+              { id: "id", name: "编号", type: "string", refTarget: null },
+              { id: "user_ref", name: "所属用户", type: "ref", refTarget: "user_profile" },
+              { id: "date", name: "日期", type: "date", refTarget: null },
+            ],
+          }}
+        />
+      </ReactFlowProvider>
+    );
+    expect(html).toContain('data-testid="er-table-birth_info"');
+    expect(html).toContain('data-testid="er-field-birth_info-id"');
+    expect(html).toContain('data-pk="true"');
+    expect(html).toContain('data-testid="er-field-birth_info-user_ref"');
+    expect(html).toContain('data-fk="true"');
+    expect(html).toContain("所属用户");
+    expect(html).toContain("ref");
+    // 名在左、类型在右：所属用户 出现在 ref 之前（同一行里）
+    expect(html.indexOf("所属用户")).toBeLessThan(html.indexOf(">ref<"));
+    // 不该有：暖色边、浅蓝表头、类型在左、行内 → target。变异加回必红。
+    expect(html).not.toContain("#E3DED2");
+    expect(html).not.toContain("#eef0f4");
+    expect(html).not.toContain("#f4f1ea");
+    expect(html).not.toContain("→ user_profile");
+  });
+
+  it("pkHandleId：有 id 字段接到 id，否则接到表头", () => {
+    expect(
+      pkHandleId({
+        id: "u",
+        name: "用户",
+        fields: [{ id: "id", name: "编号", type: "string", refTarget: null }],
+      })
+    ).toBe("id");
+    expect(
+      pkHandleId({
+        id: "u",
+        name: "用户",
+        fields: [{ id: "name", name: "姓名", type: "string", refTarget: null }],
+      })
+    ).toBe("table");
+    expect(isPkField({ id: "id", name: "编号", type: "string", refTarget: null })).toBe(true);
+    expect(isPkField({ id: "user_ref", name: "用户", type: "ref", refTarget: "u" })).toBe(false);
+  });
+
   it("ER 图两条路都吃 refEntity 声明 —— 名字对不上的关系以前根本画不出来", () => {
     // assigned_team → oncall_teams：词干完全不同，猜测无解。这是真实样本里
     // 最常见的失败形态（181 份模型 1689 个 ref 字段，猜得出的只有 41%）。
@@ -1016,6 +1139,12 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
     expect(chart).toMatch(/sg_page -->\|"字段绑定 ×\d+"\| sg_datamodel/);
     expect(chart).toMatch(/sg_workflow -->\|"审批人 ×\d+"\| sg_rbac/);
     expect(chart).toMatch(/sg_aigc -->\|"写回字段 ×\d+"\| sg_datamodel/);
+    // 捆扎函数是架构图和沙盘 L2 的同一份
+    const bundled = bundleLinkageEdges(
+      deriveSystemLinkageGraph(MODEL)!.edges
+    );
+    expect(bundled.some(e => e.label === "字段绑定")).toBe(true);
+    expect(chart).not.toContain("ghost_role");
     // 系统配色：classDef + class 绑定
     expect(chart).toContain("classDef workflow");
     expect(chart).toMatch(/class .*workflow__submit.* workflow/);
@@ -1102,8 +1231,49 @@ describe("诚实路径标注（来源徽章 + 占位明示）", () => {
     expect(html).toContain("课程.课程名"); // resolved → 实体名.字段名
     expect(html).toContain("✗ nonexistent.field"); // unresolved 如实标红
     expect(html).toContain("course:read");
+    expect(html).toContain('data-testid="salt-page-enroll_page"');
     expect(html).not.toContain("占位示意");
     expect(html).not.toContain("采购申请表");
+    expect(html).not.toContain("bg-teal-400");
+    expect(html).not.toContain("bg-teal-500");
+  });
+
+  it("SaltPageCard：假窗顶栏、字段名在左空槽在右、动作全灰", () => {
+    const html = renderToStaticMarkup(
+      <SaltPageCard
+        page={{
+          id: "enroll_page",
+          title: "选课页",
+          fields: [
+            { ref: "course.title", name: "课程.课程名", bound: true },
+            { ref: "nonexistent.field", name: "nonexistent.field", bound: false },
+          ],
+          actions: ["course:read", "course:create"],
+        }}
+      />
+    );
+    expect(html).toContain('data-testid="salt-page-enroll_page"');
+    expect(html).toContain('data-testid="salt-page-chrome"');
+    expect(html).toContain('data-testid="salt-window-dots"');
+    expect(html).toContain("选课页");
+    expect(html).toContain("enroll_page");
+    expect(html).toContain('data-testid="salt-field-course.title"');
+    expect(html).toContain('data-bound="true"');
+    expect(html).toContain("课程.课程名");
+    expect(html).toContain('data-testid="salt-field-nonexistent.field"');
+    expect(html).toContain("✗ nonexistent.field");
+    expect(html).toContain('data-testid="salt-action-course:read"');
+    expect(html).toContain('data-testid="salt-action-course:create"');
+    // 名在左、空槽在右：字段名出现在本行空槽之前
+    const nameAt = html.indexOf("课程.课程名");
+    const slotAt = html.indexOf('data-slot="empty"');
+    expect(nameAt).toBeGreaterThan(-1);
+    expect(slotAt).toBeGreaterThan(nameAt);
+    // 不该有：灰底卡、teal 圆点、第一个动作涂实心。变异加回必红。
+    expect(html).not.toContain("#eef0f4");
+    expect(html).not.toContain("bg-teal-400");
+    expect(html).not.toContain("bg-teal-500");
+    expect(html).not.toContain("text-white");
   });
 });
 
@@ -1133,6 +1303,8 @@ describe("浏览器运行时（试运行）入口", () => {
     const withModel = renderToStaticMarkup(<DataModelScreen model={MODEL} sessionId="t-dm" />);
     expect(withModel).toContain('data-testid="datamodel-mode-toggle"');
     expect(withModel).toContain("数据表");
+    expect(withModel).toContain('data-testid="er-graph"');
+    expect(withModel).not.toContain("bg-blue-400");
     const withoutModel = renderToStaticMarkup(<DataModelScreen />);
     expect(withoutModel).not.toContain('data-testid="datamodel-mode-toggle"');
   });

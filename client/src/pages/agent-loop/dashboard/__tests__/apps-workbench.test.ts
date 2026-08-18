@@ -15,6 +15,8 @@ import {
   filterCards,
   formatUpdatedAt,
   formatRelativeTime,
+  pageLooksFull,
+  GALLERY_PAGE_SIZE,
   type SessionListItem,
 } from "../AppsWorkbench";
 import type { AppStoreSummary } from "../app-store-client";
@@ -408,6 +410,7 @@ describe("卡片墙走 masonic，高度由内容决定", () => {
   it("滚动源找的是最近可滚动祖先，不是 window", () => {
     expect(scroller).toContain("findScrollParent");
     expect(scroller).toMatch(/overflowY === "auto"/);
+    expect(scroller).toContain("native-content");
     // scrollTop 必须是**相对网格**的（照抄官方 use-scroller.js 最后一行），
     // 否则网格上方那段顶栏高度会被当成已滚距离。
     expect(scroller).toMatch(/Math\.max\(0,\s*raw - offset\)/);
@@ -474,5 +477,58 @@ describe("卡片墙走 masonic，高度由内容决定", () => {
     // 它还服务运行时和 dev-harness，那里要的是真实设备比例。
     const lib = readFileSync(new URL("../../../../lib/justified-rows.ts", import.meta.url), "utf8");
     expect(lib).not.toContain("WALL_MIN_ASPECT");
+  });
+});
+
+function sourceWithoutComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+}
+
+describe("pageLooksFull", () => {
+  it("满页才继续向后要，短页就是到底", () => {
+    expect(GALLERY_PAGE_SIZE).toBe(12);
+    expect(pageLooksFull(12, 12)).toBe(true);
+    expect(pageLooksFull(13, 12)).toBe(true);
+    expect(pageLooksFull(11, 12)).toBe(false);
+    expect(pageLooksFull(0, 12)).toBe(false);
+  });
+});
+
+describe("应用中心滚动分页接在真链路上", () => {
+  const raw = readFileSync(new URL("../AppsWorkbench.tsx", import.meta.url), "utf8");
+  const src = sourceWithoutComments(raw);
+  const client = sourceWithoutComments(
+    readFileSync(new URL("../app-store-client.ts", import.meta.url), "utf8")
+  );
+
+  it("首屏按页拉应用，不一次 listApps 空参把默认上限打满", () => {
+    expect(src).not.toMatch(/listApps\(\s*\)/);
+    expect(raw).toContain("listApps({ limit: PAGE_SIZE, offset: 0 })");
+    expect(raw).toContain("listApps({ limit: PAGE_SIZE, offset })");
+    expect(raw).toContain("onReachEnd={onWallReachEnd}");
+    expect(raw).toContain("items={wallItems}");
+  });
+
+  it("详情按卡挂载再拉，开局不许 4 工人扫全表", () => {
+    expect(src).toContain("GalleryCardGate");
+    expect(src).toContain("ensureDetail");
+    expect(src).not.toMatch(/const queue = mergeGalleryItems/);
+    expect(src).not.toMatch(/Array\.from\(\s*\{\s*length:\s*4\s*\}\s*,\s*async/);
+    expect(src).not.toMatch(/queue\.shift\(\)/);
+  });
+
+  it("首屏加载走 Primer 大区单指示器，不铺 8 张空卡", () => {
+    // https://primer.style/product/ui-patterns/loading
+    // 大区中央一个 Spinner + 一次 status 宣告。铺 8 张等大灰块是假货架。
+    expect(src).toContain("GalleryLoading");
+    expect(src).toContain('role="status"');
+    expect(src).toContain('testid="apps-skeleton"');
+    expect(src).not.toMatch(/Array\.from\(\s*\{\s*length:\s*8\s*\}/);
+    expect(src).not.toContain("function SkeletonCard");
+  });
+
+  it("listApps 默认一页 12，不许退回 200", () => {
+    expect(client).toMatch(/opts\.limit \?\? 12/);
+    expect(client).not.toMatch(/opts\.limit \?\? 200/);
   });
 });

@@ -10,6 +10,7 @@
  * 仓库约定：react-dom/server renderToStaticMarkup，不引 jsdom/RTL。
  */
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ClaudeChatSurface } from "../../SlideRule";
@@ -61,5 +62,42 @@ describe("迭代环一期：编辑重跑 / 重新推演", () => {
     const html = surface([completeTurn()], true);
     const btn = html.slice(html.indexOf('data-testid="sliderule-rerun-turn"') - 200);
     expect(btn).toContain("disabled");
+  });
+
+  it("用户块是灰底不是品牌蓝气泡（不该有：#e6f4ff 聊天气泡）", () => {
+    const html = surface([completeTurn()]);
+    const start = html.indexOf('data-testid="sliderule-user-bubble"');
+    expect(start).toBeGreaterThan(-1);
+    const bubble = html.slice(start, html.indexOf("编辑重跑"));
+    expect(bubble).toContain("bg-[#f3f4f6]");
+    expect(bubble).not.toContain("bg-[#e6f4ff]");
+  });
+});
+
+describe("对话区 / 输入条 Cursor 尺度（装在真链路上）", () => {
+  it("停靠输入条不再用渐变发送和大投影", () => {
+    const userFn = readFileSync(
+      new URL("../../SlideRule.tsx", import.meta.url),
+      "utf8",
+    );
+    const slice = userFn.slice(
+      userFn.indexOf("function ImUserMessage"),
+      userFn.indexOf("function ImAssistantMessage"),
+    );
+    expect(slice).toContain("bg-[#f3f4f6]");
+    expect(slice).not.toContain("bg-[#e6f4ff]");
+
+    const dock = readFileSync(
+      new URL("../ComposerDock.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(dock).not.toContain("from-[#E08663]");
+    expect(dock).not.toContain("shadow-[0_10px_36px");
+    expect(dock).toContain("ArrowUp");
+    // 停靠条：同行垂直居中。变异：items-end 或 textarea 再高于图标必红。
+    expect(dock).toContain('hero ? "flex flex-wrap items-center gap-2" : "flex items-center gap-2"');
+    expect(dock).not.toContain("flex items-end gap-2");
+    expect(dock).toContain("hero ? 72 : 32");
+    expect(dock).not.toContain("min-w-0 flex-1 pb-0.5");
   });
 });

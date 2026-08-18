@@ -215,6 +215,97 @@ def model_signature(session_id: Optional[str], model: dict[str, Any]) -> str:
     return f"{(session_id or '-')[:40]}:{digest}"
 
 
+#: 画廊列表要的列。刻意不含 model_json / pages_json——那两列是 jsonb，
+#: spec-first 一份 pages_json 约 100KB+，list 一旦 select * 就会把整表
+#: 过网，再在 Python 里切 12 条（2026-08-18 应用中心首屏：响应 8KB，
+#: 墙钟 3.5–5s，真机走自定义 HTTPS SQL API）。
+_LIST_COLUMNS: tuple[str, ...] = (
+    "id", "root_id", "parent_id", "version", "session_id", "goal",
+    "product_name", "theme_id", "theme_label", "device", "landing_page_ref",
+    "entity_count", "page_count", "gate_passed", "dedup_key", "created_at",
+    "owner_id", "visibility",
+)
+
+
+def list_apps_sql(*, latest_per_root: bool = True) -> str:
+    """画廊列表 SQL。``$1`` = limit，``$2`` = offset。
+
+    同 root 内以 version 为准挑最新（created_at 在 dedup 幂等更新时可能
+    保留旧值，单靠时间会把 v1 排到 v2 前面）。卡片之间再按时间倒序。
+
+    has_pages 用 ``pages_json is not null``，不 ``->`` 取值：Postgres
+    判断 NULL 不拆 TOAST，访问 ``->'pages'`` 会把整份 HTML 解出来。
+    空壳 ``{"pages": {}}`` 在落库口已经归一成 NULL（见 save）。
+
+    ⚠ 2026-08-18 真机（应用中心 limit=12）：旧句是
+    ``select * from generated_app order by version desc, created_at desc``
+    无 LIMIT，整表 jsonb 经 /db-api 过网。响应 8KB，墙钟 3.5–5s。
+    测试剥注释后再禁这条原文——本段是锚，删掉剥注释自检会红。
+    """
+    cols = ", ".join(_LIST_COLUMNS)
+    has_pages = "(pages_json is not null) as has_pages"
+    if latest_per_root:
+        return (
+            f"select {cols}, has_pages from ("
+            f" select {cols}, {has_pages},"
+            f" row_number() over ("
+            f" partition by coalesce(root_id, id)"
+            f" order by version desc, created_at desc"
+            f" ) as rn"
+            f" from generated_app"
+            f") t where rn = 1"
+            f" order by created_at desc"
+            f" limit $1 offset $2"
+        )
+    return (
+        f"select {cols}, {has_pages} from generated_app"
+        f" order by version desc, created_at desc"
+        f" limit $1 offset $2"
+    )
+
+
+def _list_summary(row: dict[str, Any], *, has_pages: Optional[bool] = None) -> dict[str, Any]:
+    """把一行（可能已经没有 jsonb 列）收成列表摘要。
+
+    不能走 ``_neon_normalize_row``：那条会把缺席的 pages_json 补成
+    None，再交给 ``_summary`` 就会把 SQL 算好的 has_pages 抹成 False。
+    """
+    out = {k: row.get(k) for k in _LIST_COLUMNS}
+    ts = out.get("created_at")
+    if isinstance(ts, datetime):
+        out["created_at"] = ts.isoformat()
+    elif isinstance(ts, str) and ts:
+        try:
+            out["created_at"] = datetime.fromisoformat(ts.replace("Z", "+00:00")).isoformat()
+        except ValueError:
+            pass
+    if has_pages is None:
+        pages = row.get("pages_json")
+        has_pages = bool(isinstance(pages, dict) and pages.get("pages"))
+    out["has_pages"] = bool(has_pages)
+    return out
+
+
+def _paginate_latest(
+    rows: list[dict[str, Any]], *, limit: int, offset: int, latest_per_root: bool
+) -> list[dict[str, Any]]:
+    """JSON 文件后端用：已经 slim 过的行在内存里做与 SQL 相同的排序/去重/切片。"""
+    rows = sorted(
+        rows, key=lambda r: (r.get("version") or 0, r.get("created_at") or ""), reverse=True
+    )
+    if latest_per_root:
+        seen: set[str] = set()
+        latest: list[dict[str, Any]] = []
+        for r in rows:
+            root = r.get("root_id") or r.get("id")
+            if root in seen:
+                continue
+            seen.add(root)
+            latest.append(r)
+        rows = sorted(latest, key=lambda r: (r.get("created_at") or ""), reverse=True)
+    return rows[offset:offset + limit]
+
+
 def _summary(record: dict[str, Any]) -> dict[str, Any]:
     """列表用摘要——去掉 model_json / pages_json 两个大载荷（后者是整套页面
     HTML，一份约 100KB+），只留可查询/展示字段 + has_pages 一位布尔：前端靠它
@@ -361,24 +452,14 @@ class JsonFileAppStore(AppStoreBackend):
     def list(self, *, limit: int, offset: int, latest_per_root: bool) -> list[dict[str, Any]]:
         with self._lock:
             rows = self._read()
-        # 排序键 (version, created_at) 双降序——同 root 内"最新"以 version 为准
-        # （created_at 在 dedup 幂等更新时可能被保留为旧值，单靠时间会把 v1
-        # 排到 v2 前面，画廊展示旧版当最新）。
-        rows.sort(key=lambda r: (r.get("version") or 0, r.get("created_at") or ""), reverse=True)
-        if latest_per_root:
-            seen: set[str] = set()
-            latest: list[dict[str, Any]] = []
-            # rows 已按 (version, 时间) 倒序 → 每个 root 第一次遇到就是最新版
-            for r in rows:
-                root = r.get("root_id") or r.get("id")
-                if root in seen:
-                    continue
-                seen.add(root)
-                latest.append(r)
-            rows = latest
-            # 卡片间仍按时间倒序展示（跨应用之间 version 没有可比性）
-            rows.sort(key=lambda r: (r.get("created_at") or ""), reverse=True)
-        return [_summary(r) for r in rows[offset:offset + limit]]
+        # 文件后端避不开整文件 parse；立刻 slim 掉两份 jsonb，排序/去重
+        # 不再拖着每份 100KB+ 的 HTML。分页语义与 list_apps_sql 对齐。
+        return _paginate_latest(
+            [_summary(r) for r in rows],
+            limit=limit,
+            offset=offset,
+            latest_per_root=latest_per_root,
+        )
 
     def find_latest_by_session(self, session_id: str) -> Optional[dict[str, Any]]:
         with self._lock:
@@ -605,7 +686,7 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
     """延迟导入 SQLAlchemy——只在真配了连接串时才 import，没配就完全不碰
     这条依赖（保持"无 DB 也能启动"）。"""
     from sqlalchemy import (
-        Boolean, Column, DateTime, Integer, String, Text, create_engine, select, JSON,
+        Boolean, Column, DateTime, Integer, String, Text, and_, create_engine, func, select, JSON,
     )
     from sqlalchemy.dialects.postgresql import JSONB
     from sqlalchemy.orm import Session, declarative_base
@@ -832,23 +913,46 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 return row.to_record() if row else None
 
         def list(self, *, limit: int, offset: int, latest_per_root: bool) -> list[dict[str, Any]]:
-            with Session(engine) as s:
-                # 同 root 内以 version 为准挑最新（created_at 在 dedup 幂等更新
-                # 时可能保留旧值，见 JSON 后端同注释）。
-                rows = list(s.scalars(select(GeneratedApp).order_by(
-                    GeneratedApp.version.desc(), GeneratedApp.created_at.desc()
-                )))
+            # 只选摘要列 + has_pages。select(GeneratedApp) 会把 model_json /
+            # pages_json 整表物化再 Python 切片——跟 Neon HTTP 那条 select *
+            # 是同一个坑，limit=12 救不了。
+            cols = [getattr(GeneratedApp, name) for name in _LIST_COLUMNS]
+            # Postgres JSONB：Python None 落 SQL NULL，IS NOT NULL 不拆 TOAST。
+            # SQLite JSON：SQLAlchemy 把 None dumps 成文本 'null'，IS NOT NULL
+            # 恒真——2026-08-18 用 IS NOT NULL 时「没页面」的卡 has_pages 全亮。
+            if engine.dialect.name == "sqlite":
+                pages_key = func.json_extract(GeneratedApp.pages_json, "$.pages")
+                has_pages_col = and_(
+                    pages_key.isnot(None),
+                    pages_key.notin_(("{}", "[]")),
+                ).label("has_pages")
+            else:
+                has_pages_col = GeneratedApp.pages_json.isnot(None).label("has_pages")
             if latest_per_root:
-                seen: set[str] = set()
-                latest: list[GeneratedApp] = []
-                for r in rows:
-                    if r.root_id in seen:
-                        continue
-                    seen.add(r.root_id)
-                    latest.append(r)
-                rows = latest
-                rows.sort(key=lambda r: (r.created_at or ""), reverse=True)
-            return [_summary(r.to_record()) for r in rows[offset:offset + limit]]
+                rn = func.row_number().over(
+                    partition_by=func.coalesce(GeneratedApp.root_id, GeneratedApp.id),
+                    order_by=(GeneratedApp.version.desc(), GeneratedApp.created_at.desc()),
+                ).label("rn")
+                inner = select(*cols, has_pages_col, rn).subquery()
+                stmt = (
+                    select(*[inner.c[name] for name in _LIST_COLUMNS], inner.c.has_pages)
+                    .where(inner.c.rn == 1)
+                    .order_by(inner.c.created_at.desc())
+                    .limit(limit)
+                    .offset(offset)
+                )
+            else:
+                stmt = (
+                    select(*cols, has_pages_col)
+                    .order_by(GeneratedApp.version.desc(), GeneratedApp.created_at.desc())
+                    .limit(limit)
+                    .offset(offset)
+                )
+            with Session(engine) as s:
+                mapped = s.execute(stmt).mappings().all()
+            return [
+                _list_summary(dict(row), has_pages=row["has_pages"]) for row in mapped
+            ]
 
         def find_latest_by_session(self, session_id: str) -> Optional[dict[str, Any]]:
             with Session(engine) as s:
@@ -1096,14 +1200,9 @@ def _http_gateway_error(resp: Any) -> NeonHttpError:
     return _gateway_http_error(resp, prefix="db-api http")
 
 
-# 记录字段顺序——INSERT 的列序与占位符序绑定在这里，改字段只改这一处
-_NEON_COLUMNS = (
-    "id", "root_id", "parent_id", "version", "session_id", "goal",
-    "product_name", "theme_id", "theme_label", "device", "landing_page_ref",
-    "entity_count", "page_count", "gate_passed", "dedup_key", "created_at",
-    "owner_id", "visibility",
-    "model_json", "pages_json",
-)
+# 记录字段顺序——INSERT 的列序与占位符序绑定在这里。摘要列与 list 共用
+# _LIST_COLUMNS，改字段只改那一处，避免 list 漏列、INSERT 多列。
+_NEON_COLUMNS = (*_LIST_COLUMNS, "model_json", "pages_json")
 
 #: jsonb 列——绑参按 JSON 文本传、占位符带 ::jsonb 转型的那几列。
 _NEON_JSON_COLUMNS = frozenset({"model_json", "pages_json"})
@@ -1235,26 +1334,14 @@ class NeonHttpAppStore(AppStoreBackend):
         return _neon_normalize_row(rows[0]) if rows else None
 
     def list(self, *, limit: int, offset: int, latest_per_root: bool) -> list[dict[str, Any]]:
-        # 排序/去重语义与另外两个后端逐字对齐（见 JSON 后端 list 注释）：
-        # 同 root 内以 version 为准挑最新，卡片之间再按时间倒序。
-        rows = [
-            _neon_normalize_row(r)
-            for r in self._q(
-                "select * from generated_app order by version desc, created_at desc"
-            )
-        ]
-        if latest_per_root:
-            seen: set[str] = set()
-            latest: list[dict[str, Any]] = []
-            for r in rows:
-                root = r.get("root_id") or r.get("id")
-                if root in seen:
-                    continue
-                seen.add(root)
-                latest.append(r)
-            rows = latest
-            rows.sort(key=lambda r: (r.get("created_at") or ""), reverse=True)
-        return [_summary(r) for r in rows[offset:offset + limit]]
+        # 2026-08-18：真机走 HttpApiAppStore（本类子类）。旧实现
+        # `select * from generated_app` 无 LIMIT，把每份 pages_json
+        # （~100KB HTML）经 /db-api 拉回再切片。limit=12 的响应只有
+        # 8KB，墙钟却 3.5–5s；网关还为此回过 413。
+        # 不走 _neon_normalize_row：它会把没选出的 pages_json 补成
+        # None，has_pages 就被 _summary 抹掉。
+        rows = self._q(list_apps_sql(latest_per_root=latest_per_root), [limit, offset])
+        return [_list_summary(r, has_pages=r.get("has_pages")) for r in rows]
 
     def versions(self, root_id: str) -> list[dict[str, Any]]:
         rows = self._q(

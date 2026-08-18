@@ -58,6 +58,7 @@
  */
 
 import type { GalleryItem } from "./AppsWorkbench";
+import { isKeyPrefixAppend } from "./masonry-append";
 
 /** 明确是这一档就没有跨列资格，理由见文件头 ①。 */
 const NON_SPANNABLE_DEVICE = "phone";
@@ -125,6 +126,33 @@ export function computeSpanKeys(items: GalleryItem[], ratio = 0.25): Set<string>
     if (best) picked.add(best.key);
   }
   return picked;
+}
+
+/**
+ * 滚动分页追加时的跨列集合：已经拿了两列的卡继续拿，只在**新尾巴**上再跑
+ * 一遍分段规则。
+ *
+ * `computeSpanKeys` 的分段边界是 `floor(n * ratio)`，n 一变，第一页里谁该宽
+ * 就会跟着变——这就是下一页到来时整墙「重新拍」的另一半。gestalt 把「这张
+ * 是不是两列」当成卡片自己的属性，不按当前列表长度重算；我们没有把 span
+ * 写进数据，就用「旧决策冻结 + 新页局部再算」对齐同一条纪律。
+ *
+ * 换筛选/换排序（不是前缀追加）仍走全量 `computeSpanKeys`，该重拍就重拍。
+ */
+export function appendStableSpanKeys(
+  prevSpans: ReadonlySet<string>,
+  prevKeys: readonly string[],
+  nextItems: GalleryItem[],
+  ratio = 0.25,
+): Set<string> {
+  const nextKeys = nextItems.map(item => item.key);
+  if (!isKeyPrefixAppend(prevKeys, nextKeys)) {
+    return computeSpanKeys(nextItems, ratio);
+  }
+  const tail = nextItems.slice(prevKeys.length);
+  const next = new Set(prevSpans);
+  for (const key of computeSpanKeys(tail, ratio)) next.add(key);
+  return next;
 }
 
 /**

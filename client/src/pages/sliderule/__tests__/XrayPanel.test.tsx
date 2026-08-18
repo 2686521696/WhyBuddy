@@ -1,7 +1,7 @@
 /**
  * 方向 B（应用主舞台 + X 光）回归：
  * - derivePageXray 纯函数：home 全景切片 / 具体页面切片（主实体、可见角色、流程、AI）
- * - SlideRuleStudio 三态：无模型 → board（六系统缩略在场，无应用舞台）
+ * - SlideRuleStudio 三态：无模型 → board（接线沙盘在场，无应用舞台）
  */
 import { describe, it, expect } from "vitest";
 import React from "react";
@@ -324,11 +324,16 @@ describe("htmlBindingToXrayTarget（HTML 悬停 → 游标目标的翻译层）"
 });
 
 describe("SlideRuleStudio 三态舞台", () => {
-  it("无模型（空会话）→ board：六系统缩略在场，无应用舞台", () => {
+  it("无模型（空会话）→ board：接线沙盘在场，无应用舞台", () => {
     const html = renderToStaticMarkup(
       <SlideRuleStudio chatSlot={<div />} activeSkillId={null} />
     );
-    expect(html).toContain("AppBundle"); // 缩略条
+    expect(html).toContain('data-testid="sliderule-architecture-stage"');
+    expect(html).toContain('data-testid="architecture-checks"');
+    expect(html).toContain('data-testid="architecture-empty"');
+    // 不该有：顶栏六圆钮。变异：把 SkillThumbnailBar 加回必红。
+    expect(html).not.toContain("bg-blue-400");
+    expect(html).not.toContain("bg-emerald-400");
     expect(html).not.toContain('data-testid="sliderule-app-stage"');
     expect(html).not.toContain('data-testid="sliderule-xray-toggle"');
   });
@@ -358,6 +363,28 @@ describe("SlideRuleStudio 三态舞台", () => {
     expect(html).toContain("桌面");
     expect(html).toContain("代码");
     expect(html).toContain("游标");
+  });
+
+  it("开聊后对话/舞台之间是可拖可折分隔；空会话没有这条缝", () => {
+    const split = renderToStaticMarkup(
+      <SlideRuleStudio chatSlot={<div />} activeSkillId={null} />
+    );
+    expect(split).toContain('data-testid="sliderule-studio-split"');
+    expect(split).toContain('data-testid="sliderule-studio-split-handle"');
+    expect(split).toContain('data-testid="sliderule-studio-split-toggle-chat"');
+    expect(split).toContain('data-testid="sliderule-studio-split-toggle-stage"');
+    // 不该有：写死 38%。变异：把 style width 38% 加回、拆掉 handle 必红。
+    expect(split).not.toContain('width:38%');
+    expect(split).not.toContain("width: 38%");
+
+    const empty = renderToStaticMarkup(
+      <SlideRuleStudio
+        chatSlot={<div />}
+        activeSkillId={null}
+        stageVisible={false}
+      />
+    );
+    expect(empty).not.toContain('data-testid="sliderule-studio-split-handle"');
   });
 
   it("推演中且应用未成形 → live 占位（llmDraft 为空也不许闪回 board）", () => {

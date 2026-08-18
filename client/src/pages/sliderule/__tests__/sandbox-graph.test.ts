@@ -14,6 +14,8 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { deriveSandboxGraph } from "../system-screens/sandbox-graph";
 import { SystemLinkageGraph } from "../system-screens/SystemLinkageGraph";
+import { buildSandboxView } from "../system-screens/sandbox-view";
+import { bundleLinkageEdges } from "../system-screens/five-system-model";
 
 const MODEL = {
   datamodel: {
@@ -122,19 +124,56 @@ describe("deriveSandboxGraph · 断线体检", () => {
   });
 });
 
-describe("SystemLinkageGraph（沙盘面）· 体检条与图例", () => {
+describe("C4 L2 投影（默认不铺成员边）", () => {
+  it("未选中：只有组间捆扎边，成员边为空", () => {
+    const g = deriveSandboxGraph(MODEL)!;
+    const view = buildSandboxView(g, { selectedKey: null });
+    expect(view.memberEdges).toEqual([]);
+    expect(view.l2Edges.length).toBeGreaterThan(0);
+    expect(view.l2Edges.length).toBeLessThan(g.edges.length);
+    expect(view.l2Edges.some(e => e.kind === "role-page" && e.count >= 1)).toBe(true);
+    const pageEntity = view.l2Edges.find(e => e.kind === "page-entity");
+    expect(pageEntity?.fromSystem).toBe("page");
+    expect(pageEntity?.toSystem).toBe("datamodel");
+    expect(pageEntity?.count).toBe(
+      g.edges.filter(e => e.kind === "page-entity").length
+    );
+  });
+
+  it("选中成员：只露出挨着它的边，不是全网", () => {
+    const g = deriveSandboxGraph(MODEL)!;
+    const view = buildSandboxView(g, { selectedKey: "page:order_page" });
+    expect(view.memberEdges.length).toBeGreaterThan(0);
+    expect(view.memberEdges.every(e => e.from === "page:order_page" || e.to === "page:order_page")).toBe(true);
+    expect(view.memberEdges.length).toBeLessThan(g.edges.length);
+    // 变异：默认把 data.edges 全画出来，selectedKey=null 时 memberEdges 非空必红。
+    expect(buildSandboxView(g, { selectedKey: null }).memberEdges).toHaveLength(0);
+  });
+
+  it("捆扎函数与成员边条数对得上（沙盘/架构图共用）", () => {
+    const g = deriveSandboxGraph(MODEL)!;
+    const bundled = bundleLinkageEdges(g.edges);
+    expect(bundled.reduce((n, e) => n + e.count, 0)).toBe(g.edges.length);
+  });
+});
+
+describe("SystemLinkageGraph（沙盘面）· L2 chrome 与体检", () => {
   // 尺寸门控（useContainerSized）在 SSR 下不触发，ReactFlow 画布不渲染——
-  // 但图例条和体检条在门控外，静态渲染就能验点名。
-  it("断线体检条逐个点名，tooltip 带人话原因", () => {
+  // 体检名单在门控外，静态渲染就能验。
+  it("断线是 Problems 行，不是图例彩带", () => {
     const html = renderToStaticMarkup(React.createElement(SystemLinkageGraph, { model: MODEL }));
-    expect(html).toContain("断线 4 处");
+    expect(html).toContain("断线 4");
+    expect(html).toContain('data-testid="sandbox-problem-row"');
     for (const name of ["孤岛表", "空页", "ghost", "悬空能力"]) {
       expect(html).toContain(name);
     }
     expect(html).toContain("这张表是孤岛");
+    // 不该有：五色图例条。变异：把图例条加回必红。
+    expect(html).not.toContain("图例");
+    expect(html).not.toContain("页面 → 实体（字段绑定）");
   });
 
-  it("接线全通时如实说全通，不列名单", () => {
+  it("接线全通时不列名单，也不用绿灯假装庆祝", () => {
     const html = renderToStaticMarkup(
       React.createElement(SystemLinkageGraph, {
         model: {
@@ -148,11 +187,10 @@ describe("SystemLinkageGraph（沙盘面）· 体检条与图例", () => {
         },
       })
     );
-    expect(html).toContain("接线全通");
-  });
-
-  it("图例含新边种：角色 → 页面（权限那只手上图）", () => {
-    const html = renderToStaticMarkup(React.createElement(SystemLinkageGraph, { model: MODEL }));
-    expect(html).toContain("角色 → 页面");
+    expect(html).toContain('data-clear="true"');
+    expect(html).toContain("没有孤岛成员");
+    expect(html).not.toContain('data-testid="sandbox-problem-row"');
+    expect(html).not.toContain("接线全通");
+    expect(html).not.toContain("图例");
   });
 });

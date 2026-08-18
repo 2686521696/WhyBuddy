@@ -1411,16 +1411,54 @@ export function derivePhaseLanes(
 
 // --- 五系统整体架构图（Mermaid flowchart，AppBundle 屏「架构图」视图） -------
 
-const LINKAGE_EDGE_LABEL: Record<LinkageEdge["kind"], string> = {
+export const LINKAGE_EDGE_LABEL: Record<LinkageEdge["kind"], string> = {
   "page-entity": "字段绑定",
   "page-workflow": "发起流程",
   "node-role": "审批人",
   "aigc-entity": "写回字段",
   "aigc-role": "可用角色",
-  // 文案跟沙盘图例（SystemLinkageGraph 的 EDGE_META）同源：那边叫
-  // 「角色 → 页面（可进入）」，这里是连线标签，取语义词「可进入」。
   "role-page": "可进入",
 };
+
+export interface BundledLinkageEdge {
+  fromSystem: LinkageSystem;
+  toSystem: LinkageSystem;
+  kind: LinkageEdge["kind"];
+  count: number;
+  label: string;
+}
+
+/**
+ * C4 L2：成员边捆成组间边。沙盘默认面和 Mermaid 架构图共用，
+ * 不许两处各聚一次（条数对不上不会报错，只会看起来像两张网）。
+ */
+export function bundleLinkageEdges(
+  edges: Array<{ from: string; to: string; kind: string }>
+): BundledLinkageEdge[] {
+  const bundled = new Map<string, BundledLinkageEdge>();
+  for (const e of edges) {
+    const fromCut = e.from.indexOf(":");
+    const toCut = e.to.indexOf(":");
+    if (fromCut < 1 || toCut < 1) continue;
+    const fromSystem = e.from.slice(0, fromCut) as LinkageSystem;
+    const toSystem = e.to.slice(0, toCut) as LinkageSystem;
+    const kind = e.kind as LinkageEdge["kind"];
+    const sig = `${fromSystem}|${toSystem}|${kind}`;
+    const cur = bundled.get(sig);
+    if (cur) {
+      cur.count += 1;
+    } else {
+      bundled.set(sig, {
+        fromSystem,
+        toSystem,
+        kind,
+        count: 1,
+        label: LINKAGE_EDGE_LABEL[kind] ?? kind,
+      });
+    }
+  }
+  return [...bundled.values()];
+}
 
 /**
  * 五系统整体架构图：Mermaid flowchart —— 每个系统一个 subgraph 分组
@@ -1477,19 +1515,9 @@ export function linkageToMermaid(
     lines.push("  end");
     lines.push(`  class ${g.items.map(i => nid(i.key)).join(",")} ${g.system}`);
   }
-  // 组间捆扎边：同 (来源系统, 目标系统, 语义) 聚合为一条，标注条数
-  const bundled = new Map<string, number>();
-  for (const e of data.edges) {
-    const fromSys = e.from.slice(0, e.from.indexOf(":"));
-    const toSys = e.to.slice(0, e.to.indexOf(":"));
-    const sig = `${fromSys}|${toSys}|${e.kind}`;
-    bundled.set(sig, (bundled.get(sig) ?? 0) + 1);
-  }
-  for (const [sig, count] of bundled) {
-    const [fromSys, toSys, kind] = sig.split("|");
-    const label = LINKAGE_EDGE_LABEL[kind as LinkageEdge["kind"]];
+  for (const b of bundleLinkageEdges(data.edges)) {
     lines.push(
-      `  sg_${fromSys} -->|"${mermaidLabel(label)} ×${count}"| sg_${toSys}`
+      `  sg_${b.fromSystem} -->|"${mermaidLabel(b.label)} ×${b.count}"| sg_${b.toSystem}`
     );
   }
   return lines.join("\n");

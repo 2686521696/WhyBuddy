@@ -1,27 +1,28 @@
 /**
- * SlideRuleStudio — 统一页主布局容器（左 38% + 右 62%）
+ * SlideRuleStudio — 统一页主布局容器（对话 / 舞台可拖可折，默认 38 / 62）
  *
- * 左侧：Chat 对话区（ClaudeChatSurface，含唯一空态：logo 水印 + hero 文案 + 示例 chips）。
+ * 左侧：Chat 对话区（ClaudeChatSurface，含唯一空态：短问候 + 输入框 + 示例 chips）。
  *
  * 右侧主舞台——四态：
  *   pages   — **成品面**：spec-first 那条链路产出的 HTML 页面，装在
  *             1920×1080 的等比缩放画布里（见 live-runtime/canvas-scale.tsx）。
  *             推演中逐页到达就开始渲染，跑完继续由它接管，中途不换面孔；
- *   theater — 五系统生成中（SSE activeSkillId 驱动），系统屏生成剧场逐屏亮相；
+ *   theater — 跑完但没有成品页（spec-first 没交出 HTML），右侧是接线沙盘；
  *   live    — 推演已开始但一页都还没交出来，占位报"推演中 + 当前步骤"，
  *             不重复左栏直播流；
- *   board   — 尚无可看产出（空会话/未闭环），保留六系统缩略 + 证据看板。
+ *   board   — 尚无可看产出：C4 L2 沙盘/架构图。六个系统是图上的组，
+ *             不是顶栏；点组或游标打开抽屉。AppBundle 只做 Checks。
  * 六系统屏不再是并列切屏，而是抽屉承载的透视层（全部保留）。
  *
  * ⚑ 2026-08-14：原来那个 `app` 态（AppRuntimeScreen 区块渲染）**已从本页下架**
  *   ——用户裁决：跑完之后只认新链路的页面。理由与代价写在下面 stage 那处，
- *   AppRuntimeScreen 本身没删，应用中心（AppBundleScreen）照旧用它。
+ *   AppRuntimeScreen 本身没删，应用中心仍可能用它；会话页舞台不再走它。
  */
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import type { SkillId } from "@/lib/sliderule-marathon-driver";
 import type { PublishClosureSummary } from "./derive-cross-runtime-summary";
-import { SkillThumbnailBar } from "./SkillThumbnailBar";
+import { ArchitectureStage } from "./ArchitectureStage";
 import { ActiveSystemScreen } from "./system-screens/ActiveSystemScreen";
 import {
   deriveSettledFiveSystemModel,
@@ -63,6 +64,7 @@ import {
   type XrayTarget,
 } from "./XrayPanel";
 import { Crosshair, X } from "lucide-react";
+import { StudioSplit } from "./StudioSplit";
 
 const XRAY_PREF_KEY = "sliderule:xray-on";
 
@@ -73,7 +75,7 @@ const SKILL_LABELS: Record<SkillId, string> = {
   rbac: "角色权限",
   page: "页面",
   aigc: "AI 能力",
-  appBundle: "应用装配 · 联动总图",
+  appBundle: "发布检查",
 };
 
 interface SlideRuleStudioProps {
@@ -159,15 +161,7 @@ export function SlideRuleStudio({
   onRestoreVersion,
   isRestoringVersion = false,
 }: SlideRuleStudioProps) {
-  // Allow manual override of the displayed screen (click thumbnail, board/theater 态)
-  const [manualSkill, setManualSkill] = useState<SkillId | null>(null);
-
-  // SSE events take priority during a run; manual selection persists between runs.
-  const displaySkillId = activeSkillId ?? manualSkill;
-
-  const handleThumbnailSelect = useCallback((id: SkillId) => {
-    setManualSkill(id);
-  }, []);
+  // SSE 当前 skill 不再切屏，只给沙盘描边（没有成员级 flow 证据就不编路径）。
 
   // 五系统模型在此解析一次：舞台判定（能否运行应用）+ 抽屉/游标共享
   const settledModel = useMemo(
@@ -307,7 +301,7 @@ export function SlideRuleStudio({
   // 舞台：推演中恒为 live 占位（用户裁决 2026-07-14：执行期不看中间过程
   // ——系统屏/看板/起草预览一律不展示，只留"推演中 + 当前动作"极简态，
   // 过程细节由左栏分阶段叙事承载）；推演完成直接呈现效果页：
-  // 应用主舞台 > 推演剧场（缩略图手动透视）> 证据看板。
+  // 应用主舞台 > 接线沙盘（点组透视）> Checks。
   // ⚑ 2026-08-14：跑完之后**新链路的页面优先于老链路的区块页**。
   //
   // 用户原话「最后执行完，我发现变成老链路了」——过程中右侧是新链路的 HTML，
@@ -404,7 +398,7 @@ export function SlideRuleStudio({
   }, [drawerSkill]);
 
 
-  // E29 版本前进/回退工具栏（app 主舞台头条与 board 缩略条行共用）
+  // E29 版本前进/回退工具栏（成品面顶栏与沙盘 Checks 行共用）
   const versionToolbar = modelVersions.length > 1 ? (() => {
     const i = modelVersions.findIndex(v => v.id === currentModelVersionId);
     const idx = i >= 0 ? i : modelVersions.length - 1;
@@ -455,25 +449,15 @@ export function SlideRuleStudio({
     );
   }
 
-  return (
-    <div className={`flex h-full w-full overflow-hidden ${className}`}>
-      {/* Left panel — 38% — Chat（对话 + 实时推演过程） */}
-      <div
-        className="flex h-full shrink-0 flex-col border-r border-[#e5e7eb] bg-[var(--sr-shell-bg,#ffffff)]"
-        style={{ width: "38%" }}
-      >
-        {chatSlot}
-      </div>
-
-      {/* Right panel — 62% — 主舞台 */}
-      {/* 与左侧 IM 同一底色（用户反馈：右侧多种颜色不统一）。
+  const stagePanel = (
+      /* 主舞台。与左侧 IM 同一底色（用户反馈：右侧多种颜色不统一）。
           2026-08-07 再统一一层：底色不再写死 #f7f8fa，改读外壳的
           --sr-shell-bg（定义在 dashboard.css 的 .native-agent-shell /
           .native-dashboard 上，会话页就渲染在它里面）。
           此前会话页是 #f7f8fa、应用中心是 #ffffff，两页切换看得出色差
           ——用户反馈"背景颜色不一致，会话页面背景不是白色的"。
-          现在两边共用一个 token，"改这一个值 = 整壳换底色"这条重新成立。 */}
-      <div className="relative flex min-w-0 flex-1 flex-col gap-3 overflow-hidden bg-[var(--sr-shell-bg,#ffffff)] p-4">
+          现在两边共用一个 token，"改这一个值 = 整壳换底色"这条重新成立。 */
+      <div className="relative flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden bg-[var(--sr-shell-bg,#ffffff)] p-4">
         {(stage === "live" && livePages.length > 0) || stage === "pages" ? (
           /* 新链路已经交出页面：直接渲染，不再摆三个点。
              判据是"手上有没有能看的东西"，不是阶段名——没有页面时下面那支
@@ -613,50 +597,14 @@ export function SlideRuleStudio({
             )}
           </div>
         ) : (
-          <>
-            {/* 推演剧场 / 证据看板：六系统缩略 + 16:9 系统屏。
-                执行期隐藏 tab 切换栏（用户反馈：与"生成中"覆盖层重复、
-                且此时点击切换无意义），闭环后出现供浏览。
-                E27：被闸拦截且 0 证据时也隐藏——六个屏全是空态，切换无意义，
-                右侧只留极简错误页（用户定稿风格）。 */}
-            {!isRunning &&
-              !(
-                publishClosure?.blocked &&
-                (publishClosure?.evidencePresentCount ?? 0) === 0
-              ) && (
-              <div className="flex shrink-0 items-center">
-                <SkillThumbnailBar
-                  activeSkillId={displaySkillId}
-                  publishClosure={publishClosure}
-                  onSelect={handleThumbnailSelect}
-                />
-                {versionToolbar}
-              </div>
-            )}
-            {/* D3 修复（2026-07-27）：0 证据 blocked 态缩略条整行隐藏是对的
-                （六屏全空），但版本工具栏必须逆势可见——这正是用户唯一的
-                恢复入口（回退到还能跑的版本），藏起来等于"失败即失去作品"。 */}
-            {!isRunning &&
-              publishClosure?.blocked &&
-              (publishClosure?.evidencePresentCount ?? 0) === 0 &&
-              versionToolbar && (
-                <div className="flex shrink-0 items-center justify-end">
-                  {versionToolbar}
-                </div>
-              )}
-
-            <ActiveSystemScreen
-              activeSkillId={displaySkillId}
-              running={isRunning}
-              publishClosure={publishClosure}
-              latestMermaid={latestMermaid}
-              skillContents={skillContents}
-              skillRuntimeGraph={skillRuntimeGraph}
-              sessionId={sessionId}
-              appTitle={appTitle}
-              className="min-h-0 flex-1"
-            />
-          </>
+          <ArchitectureStage
+            model={fiveSystemModel}
+            publishClosure={publishClosure}
+            onInspect={setDrawerSkill}
+            focusSkill={activeSkillId}
+            versionToolbar={versionToolbar}
+            className="min-h-0 flex-1"
+          />
         )}
 
         {/* 系统屏抽屉：单类别全幅呈现——点哪类看哪类（用户反馈：去六系统切换条、去白卡嵌套、占满区域） */}
@@ -708,6 +656,18 @@ export function SlideRuleStudio({
           onApply={applyRuntime}
         />
       </div>
+  );
+
+  return (
+    <div className={`h-full w-full overflow-hidden ${className}`}>
+      <StudioSplit
+        chat={
+          <div className="flex h-full min-h-0 flex-col bg-[var(--sr-shell-bg,#ffffff)]">
+            {chatSlot}
+          </div>
+        }
+        stage={stagePanel}
+      />
     </div>
   );
 }

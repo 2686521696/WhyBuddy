@@ -3,7 +3,7 @@
  * cool-gray page (#f7f8fa base, #eef0f4 wells), cool ink text (#1f2329),
  * single blue accent (#1677ff, hover #0958d9, tint #e6f4ff),
  * neutral borders (#e5e7eb). Success/danger stay green/red.
- * 暖色降级为点缀：只保留品牌 logo（用户气泡已随后续反馈改冷调 #e6f4ff）
+ * 暖色降级为点缀：只保留品牌 logo（用户块 2026-08-18 改成 Cursor 灰底 #f3f4f6）
  * ——暖米色铺满全屏
  * 是 Claude 聊天产品的强联想；冷调更像独立的推演引擎，也与运行应用画布
  * （antd 蓝系）、技能库页面统一。
@@ -36,7 +36,7 @@ export const autopilotTheme = {
   overlayBar:
     "flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 px-0 py-1 text-[11px] text-stone-700",
   immersionOverlayBottom:
-    "pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center px-5 pb-[max(28px,env(safe-area-inset-bottom))] pt-1 sm:px-6 sm:pb-[max(34px,env(safe-area-inset-bottom))]",
+    "pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-1 sm:px-5 sm:pb-[max(20px,env(safe-area-inset-bottom))]",
   glassPanel:
     "pointer-events-auto max-h-[min(70vh,520px)] w-[min(100%,340px)] overflow-hidden rounded-lg border border-[#e8eaee]/80 bg-[#ffffff]/80 px-3 py-3 shadow-[0_8px_32px_rgb(15_23_42/0.10)] backdrop-blur-xl sm:px-4 sm:py-3.5",
   glassPanelWide:

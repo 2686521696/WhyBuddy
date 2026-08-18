@@ -24,10 +24,18 @@
 
 import * as React from "react";
 import {
+  copyPlacements,
   createSpanPositioner,
   type SpanPositioner,
   type SpanPositionerOptions,
 } from "./span-positioner";
+import { nextLayoutEpoch } from "./masonry-append";
+import {
+  collectPaintIndices,
+  nextMeasureBatchSize,
+  shouldMeasureUnplaced,
+} from "./masonry-paint";
+import { findScrollParent } from "./useScrollerIn";
 
 /** masonic `getColumns()` 的同款算法：由容器宽度推列数，再把列宽撑满剩余空间。 */
 export function computeColumns(
@@ -96,8 +104,23 @@ function useSpanPositioner(
   ]);
   const key = [columnCount, columnWidth, columnGutter, rowGutter, ...deps];
   if (key.length !== prevKey.current.length || key.some((v, i) => prevKey.current[i] !== v)) {
+    const prev = ref.current;
     const next = init();
-    seed(next);
+    const prevCount = Number(prevKey.current[0]);
+    const prevSig = String(prevKey.current[prevKey.current.length - 1] ?? "");
+    const nextSig = String(deps[0] ?? "");
+    // 列数相同且还是同一面墙：只搬 column/span，不 place() 重选列。
+    // 滚动条出现会让 columnWidth 变一两像素——seed+place 就是顶部重拍。
+    if (
+      prev &&
+      prev.size() > 0 &&
+      prevCount === columnCount &&
+      prevSig === nextSig
+    ) {
+      copyPlacements(prev, next);
+    } else {
+      seed(next);
+    }
     prevKey.current = key;
     ref.current = next;
   }
@@ -144,9 +167,11 @@ const SETTLE_MS = 250;
  * 分不清"没铺开的中间态"和"这张卡真的变高了"。实测把图表画完那次真增长也吞了，
  * 定位器记的高度比实际小 140px，直接压到下一张上面。
  *
- * 所以这条从测量层撤掉了，改在**调用方**解决：区块墙那种"每张卡都是活组件"的，
- * 直接不虚拟化（见 ComponentsLibraryPage 的 overscanBy 注释），不卸载就没有重挂。
- * 这一层只保留一条纪律：**整像素相同不算变化**（死区，同 gestalt 的 Math.floor）。
+ * 所以这条从测量层撤掉了。卸挂本身由 `retainPlaced`（默认开）拦住：
+ * 已落位的卡保持挂载，overscan 只决定还要量谁。区块墙 2026-08-09 用
+ * overscanBy=50 躲开过同一件事（ComponentsLibraryPage）；2026-08-18 首页
+ * 活缩略图又踩了一次——overscanBy=2 把滚出窗口的 iframe 卸挂再挂。
+ * 这一层只保留一条测量纪律：**整像素相同不算变化**（死区，同 gestalt 的 Math.floor）。
  */
 function useSpanResizeObserver(
   positionerRef: React.MutableRefObject<SpanPositioner>,
@@ -243,8 +268,18 @@ export interface SpanMasonryProps<T> {
   render: (item: T, index: number, width: number, columnCount: number) => React.ReactNode;
   /** 首屏还没量到真实高度时用来估总高。 */
   itemHeightEstimate?: number;
-  /** 视口外多渲染几屏，默认 2。 */
+  /**
+   * 视口外多**量**几屏，默认 2。只决定隐藏批次从哪往前铺，
+   * 不决定把已经落下的卡卸掉——那是 `retainPlaced` 的事。
+   */
   overscanBy?: number;
+  /**
+   * 已落位的卡保持挂载。默认开。
+   *
+   * 关了才走 masonic 那套视口裁切：滚出 `scrollTop ± overscan/2` 就卸挂。
+   * 活缩略图（iframe / 运行时屏）卸挂 = 整卡重渲，首页 2026-08-18 踩过。
+   */
+  retainPlaced?: boolean;
   /**
    * 允许「沉降重排」：全部落位且高度安静下来之后，用真高度**重选一次列**。
    * 默认关。
@@ -280,6 +315,7 @@ export function SpanMasonry<T>({
   render,
   itemHeightEstimate = 240,
   overscanBy = 2,
+  retainPlaced = true,
   settleLayout = false,
   className,
   containerRef,
@@ -327,21 +363,23 @@ export function SpanMasonry<T>({
     [heights, cellGeneration]
   );
 
-  // 数据集指纹：**内容**变了才重建定位器。原来只看 items.length ——
-  // 筛选前后条数碰巧一样时定位器根本不重建，新数据就一直用着旧数据的落位。
-  const signature = React.useMemo(() => {
-    let h = 2166136261;
-    for (let i = 0; i < items.length; i++) {
-      const s = String(keyRef.current(items[i], i));
-      for (let c = 0; c < s.length; c++) {
-        h = Math.imul(h ^ s.charCodeAt(c), 16777619);
-      }
-      h = Math.imul(h ^ 31, 16777619);
-    }
-    return `${items.length}:${(h >>> 0).toString(36)}`;
-    // itemKey 每次渲染都是新函数，进不了依赖数组；数组换了才重算（用 ref 读最新的）。
+  // 数据集指纹：换筛选/换排序才重建定位器。下一页追加（旧 key 是新 key 的
+  // 前缀）必须留下同一实例——desandro `appended` / gestalt MeasurementStore
+  // 的同一条。⚠ 2026-08-18 以前把整串 key 哈希进指纹，追加 12 张就整墙
+  // `place()` 重来，已落位的卡换列，用户看见「重新拍了」。
+  const keysJoined = React.useMemo(
+    () => items.map((it, i) => String(keyRef.current(it, i))).join("\n"),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items]);
+    [items],
+  );
+  const epochRef = React.useRef(0);
+  const prevKeysRef = React.useRef<string[]>([]);
+  const signature = React.useMemo(() => {
+    const keys = keysJoined === "" ? [] : keysJoined.split("\n");
+    epochRef.current = nextLayoutEpoch(prevKeysRef.current, keys, epochRef.current);
+    prevKeysRef.current = keys;
+    return String(epochRef.current);
+  }, [keysJoined]);
 
   // 重建后把缓存里的高度喂回去。只喂**从头开始连续命中**的那一段：
   // SpanMasonry 拿 positioner.size() 当"下一个该量的下标"，中间留洞会漏格子。
@@ -388,14 +426,33 @@ export function SpanMasonry<T>({
   const shortestColumnSize = positioner.shortestColumn();
   const overscan = height * overscanBy;
   const rangeEnd = scrollTop + overscan;
-  const needsFreshBatch = shortestColumnSize < rangeEnd && measuredCount < itemCount;
+  // retain 墙：下一页一到就量，不等 overscan 窗口。列高过两屏时旧判据
+  // 为假，estimateHeight 先垫出大洞，再往上滑再往下才补——2026-08-18 截图。
+  const needsFreshBatch = shouldMeasureUnplaced({
+    unplaced: itemCount - measuredCount,
+    measureAllUnplaced: retainPlaced,
+    shortestColumn: shortestColumnSize,
+    rangeEnd,
+  });
 
   const children: React.ReactNode[] = [];
-  // 已量到高度的：按区间树查视口内的，绝对定位画出来。
-  positioner.range(Math.max(0, scrollTop - overscan / 2), rangeEnd, index => {
+  // 已落位的卡：retainPlaced 时全部画。视口 range 只在关了 retain 时用来裁切。
+  // 2026-08-18：首页 overscanBy=2 按窗口卸挂活缩略图，已经出来的卡整卡重渲。
+  const inViewport: number[] = [];
+  if (!retainPlaced) {
+    positioner.range(Math.max(0, scrollTop - overscan / 2), rangeEnd, index => {
+      inViewport.push(index);
+    });
+  }
+  const paint = collectPaintIndices({
+    retainPlaced,
+    placedCount: measuredCount,
+    inViewport,
+  });
+  for (const index of paint) {
     const item = items[index];
     const pos = positioner.get(index);
-    if (item === undefined || pos === undefined) return;
+    if (item === undefined || pos === undefined) continue;
     children.push(
       <div
         key={itemKey(item, index)}
@@ -413,15 +470,20 @@ export function SpanMasonry<T>({
         {render(item, index, pos.width, columnCount)}
       </div>
     );
-  });
+  }
 
   // 还没量到高度的：先按各自的真实宽度隐藏渲染一批，量完下一轮才定位。
   // 宽度必须是**跨列后的宽度**，否则跨列卡会按一列宽换行、量出偏高的高度。
   if (needsFreshBatch) {
-    const batchSize = Math.min(
-      itemCount - measuredCount,
-      Math.ceil(((scrollTop + overscan - shortestColumnSize) / itemHeightEstimate) * columnCount)
-    );
+    const batchSize = nextMeasureBatchSize({
+      unplaced: itemCount - measuredCount,
+      measureAllUnplaced: retainPlaced,
+      scrollTop,
+      overscan,
+      shortestColumn: shortestColumnSize,
+      itemHeightEstimate,
+      columnCount,
+    });
     let queued = 0;
     for (let index = measuredCount; index < itemCount && queued < batchSize; index++) {
       const item = items[index];
@@ -453,10 +515,12 @@ export function SpanMasonry<T>({
     }
   }
 
-  // 量完一批要再渲染一轮把它们定位上去。
+  // 量完一批要再渲染一轮把它们定位上去。measuredCount 必须进依赖：
+  // 只盯 needsFreshBatch 的话，它保持 true 时 effect 不再跑，后半页就
+  // 停在「已 set、未画」，直到下一次滚动才补上。
   React.useEffect(() => {
     if (needsFreshBatch) forceUpdate();
-  }, [needsFreshBatch, positioner, forceUpdate]);
+  }, [needsFreshBatch, measuredCount, itemCount, forceUpdate]);
 
   // 沉降：全部落位、且高度安静下来之后，用真高度重选一次列。**只一次**，
   // 闸在定位器里（`resettle` 自带 `resettled` 标志），理由见 span-positioner 文件头。
@@ -486,17 +550,50 @@ export function SpanMasonry<T>({
   }, [positioner, revision, measuredCount, itemCount, settleLayout, forceUpdate]);
 
   // 无限流：滚到只剩不到一屏就喊一次。用 ref 记住上次喊的项数，避免同一批重复喊。
+  // 底部哨兵走 IntersectionObserver——不依赖 scrollTop。2026-08-18 首帧
+  // width=0 占位让滚动监听绑到 window，scrollTop 恒 0，墙一高过两屏就再也不喊。
   const lastAsked = React.useRef(-1);
+  const askMore = React.useCallback(() => {
+    if (!onReachEnd || width <= 0 || itemCount === 0) return;
+    if (lastAsked.current === itemCount) return;
+    lastAsked.current = itemCount;
+    onReachEnd();
+  }, [onReachEnd, width, itemCount]);
   React.useEffect(() => {
-    if (!onReachEnd) return;
+    if (width <= 0) return;
     const tallest = positioner.estimateHeight(itemCount, itemHeightEstimate);
-    if (scrollTop + height >= tallest - height && lastAsked.current !== itemCount) {
-      lastAsked.current = itemCount;
-      onReachEnd();
-    }
-  }, [scrollTop, height, itemCount, positioner, itemHeightEstimate, onReachEnd]);
+    if (scrollTop + height >= tallest - height) askMore();
+  }, [scrollTop, height, itemCount, positioner, itemHeightEstimate, width, askMore]);
+  const sentinelRef = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    if (!onReachEnd || width <= 0) return;
+    const el = sentinelRef.current;
+    const grid = containerRef.current;
+    if (!el || !grid || typeof IntersectionObserver === "undefined") return;
+    const root = findScrollParent(grid);
+    const io = new IntersectionObserver(
+      entries => {
+        if (entries.some(e => e.isIntersecting)) askMore();
+      },
+      { root, rootMargin: "400px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [onReachEnd, width, itemCount, askMore, containerRef]);
 
   const estimated = Math.ceil(positioner.estimateHeight(itemCount, itemHeightEstimate));
+  // 宽度还没量到就先占位：用 0 宽 place 成 1 列，量到真宽再 seed+place，
+  // 等于开场先拍一次又整墙重拍。容器必须先挂上，useContainerPosition 才量得到。
+  if (width <= 0) {
+    return (
+      <div
+        ref={containerRef}
+        role="list"
+        className={className}
+        style={{ position: "relative", width: "100%", minHeight: 1 }}
+      />
+    );
+  }
   return (
     <div
       ref={containerRef}
@@ -513,6 +610,19 @@ export function SpanMasonry<T>({
       }}
     >
       {children}
+      <div
+        ref={sentinelRef}
+        aria-hidden
+        data-testid="masonry-end"
+        style={{
+          position: "absolute",
+          left: 0,
+          top: Math.max(0, estimated - 1),
+          width: 1,
+          height: 1,
+          pointerEvents: "none",
+        }}
+      />
     </div>
   );
 }
