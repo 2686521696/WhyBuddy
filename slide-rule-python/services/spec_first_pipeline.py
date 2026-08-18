@@ -806,6 +806,9 @@ def run_spec_first(
     返回 {"version", "model", "spec", "structure", "semantics", "pages",
           "navItems", "failedPages", "stages", "device"}。
     任何一步失败抛 SpecFirstError，**不回落占位、不回落老链路**。
+    ⚠ 2026-08-18 过夜：JSON parse / 525 若在执行器宽 except 里打回 GEN5，
+    首轮「页面：无」。那种错执行器整条再试一次，仍失败也不回落
+    （见 spec_first_failure_blocks_gen5）。
     """
     from .device_policy import resolve_preferred_device
     from .design_language import (

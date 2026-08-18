@@ -1120,6 +1120,22 @@ def call_llm_json_with_shape(
     raise LlmError("JSON shape validation failed", transient=False)
 
 
+def _repair_llm_json_object(raw: str) -> dict[str, Any] | None:
+    """语法烂、结构还在：用 json-repair 机械补一次（freeform 已用过）。
+
+    instructor 会把这种当校验失败再问一轮 LLM。本仓第 3 步和 spec_llm_call
+    头注写过：传输层已经退避过了，再问是浪费。截断不当修——补出来的尾巴
+    是猜的，看起来像成功。
+    """
+    try:
+        import json_repair
+
+        payload = json.loads(json_repair.repair_json(raw))
+    except Exception:  # noqa: BLE001 — 修不了就当没修，调用方照旧报 parse
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def call_llm_json(messages: list[Message], **kwargs: Any) -> tuple[dict[str, Any], LlmResult]:
     """call_llm_with_retry + parse the content as a JSON object. Raises LlmError if not parseable."""
     max_attempts = int(kwargs.pop("max_attempts", 3))
@@ -1141,4 +1157,8 @@ def call_llm_json(messages: list[Message], **kwargs: Any) -> tuple[dict[str, Any
                 "Raise LLM_MAX_TOKENS or reduce the requested JSON size.",
                 transient=False,
             ) from e
+        repaired = _repair_llm_json_object(raw)
+        if repaired is not None:
+            print("[llm] JSON parse 失败，json-repair 救回，不重问")
+            return repaired, result
         raise LlmError(f"LLM JSON parse failed: {result.content[:200]}", transient=False) from e

@@ -377,6 +377,37 @@ def _findings_all_sectioned(findings: List[Dict[str, Any]]) -> bool:
     )
 
 
+#: 过夜咖啡馆首轮：spec 步撞 JSON parse / 525 → 整条 spec-first 被宽 except
+#: 打回 GEN5 →「页面：无」。版本史也空，第一轮精修只能全量。这些错再试一次
+#: spec-first，仍失败也不回落老路（精修轮会保住上一版；首轮宁可 blocked
+#: 也不端一份没页的成功）。
+_SPEC_FIRST_NO_GEN5_MARKERS = (
+    "json parse",
+    "没有返回可解析",
+    "525",
+    "524",
+    "connecttimeout",
+    "connect timeout",
+    "connection timed out",
+    "gateway timeout",
+    "cannot reach",
+)
+
+
+def spec_first_no_gen5_on_transport() -> bool:
+    """`SLIDERULE_SPEC_FIRST_NO_GEN5_ON_TRANSPORT=0` 退回「一律打回 GEN5」。"""
+    raw = str(os.environ.get("SLIDERULE_SPEC_FIRST_NO_GEN5_ON_TRANSPORT", "1")).strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def spec_first_failure_blocks_gen5(exc: BaseException) -> bool:
+    """JSON parse / 525 / 连接超时不许把整条打回老链路。"""
+    if not spec_first_no_gen5_on_transport():
+        return False
+    text = f"{type(exc).__name__} {exc}".lower()
+    return any(marker in text for marker in _SPEC_FIRST_NO_GEN5_MARKERS)
+
+
 def _try_llm_generate_evidence(
     goal: str,
     llm_json_fn: Optional[Callable[[str], Any]],
@@ -462,6 +493,7 @@ def _try_llm_generate_evidence(
     #   模型时为真。回落那一支把它留在 False——那一轮走的是老路，enrich_*
     #   仍然是它唯一的版式来源，砍掉等于把老路也一起砍了。
     from_spec_first = False
+    _block_gen5 = False
     if _spec_first_enabled is not None and _spec_first_enabled():
         from .v5_llm_generate import get_model_override, get_refine_context
 
@@ -506,8 +538,9 @@ def _try_llm_generate_evidence(
                     "modelDigest": model_refine_digest(_refine_ctx.get("model")),
                 }
                 print("[v5_capability_executor] spec-first 精修模式：带上一版结构 + 本轮指令")
-            try:
-                model = run_spec_first(
+
+            def _invoke_spec_first():
+                return run_spec_first(
                     goal,
                     llm_json_fn=llm_json_fn,
                     refine=_spec_refine,
@@ -523,6 +556,9 @@ def _try_llm_generate_evidence(
                     #   同一个来源（refine 上下文），不另开取数路径。
                     reuse_pages=(_refine_ctx or {}).get("pages"),
                 )["model"]
+
+            try:
+                model = _invoke_spec_first()
                 from_spec_first = True
                 print("[v5_capability_executor] spec-first 链路产出模型")
             except RunCancelled:
@@ -536,11 +572,34 @@ def _try_llm_generate_evidence(
                 # cancelled——那时线程里确实没有活在跑了。
                 print("[v5_capability_executor] 已请求取消，spec-first 停止且不回落老链路")
                 raise
-            except Exception as exc:  # noqa: BLE001 — 显式回落，留痕
-                print(f"[v5_capability_executor] spec-first 失败，回落老链路：{str(exc)[:200]}")
-                model = None
+            except Exception as exc:  # noqa: BLE001 — 传输/解析另议，其余显式回落
+                if spec_first_failure_blocks_gen5(exc):
+                    # 过夜咖啡馆：525 / JSON parse 打回 GEN5 = 首轮「页面：无」。
+                    # 下层 call_llm_with_retry 已经退避过，这里整条再试一次
+                    # （网关抖一下常过）；仍失败也不回落——GEN5 没有 HTML 页。
+                    print(
+                        "[v5_capability_executor] spec-first 传输/解析失败，"
+                        f"整条再试一次，不回落老链路：{str(exc)[:200]}"
+                    )
+                    try:
+                        model = _invoke_spec_first()
+                        from_spec_first = True
+                        print("[v5_capability_executor] spec-first 再试后产出模型")
+                    except RunCancelled:
+                        print("[v5_capability_executor] 已请求取消，spec-first 停止且不回落老链路")
+                        raise
+                    except Exception as exc2:  # noqa: BLE001
+                        print(
+                            "[v5_capability_executor] spec-first 再试仍失败，"
+                            f"不回落老链路（避免首轮无页）：{str(exc2)[:200]}"
+                        )
+                        model = None
+                        _block_gen5 = True
+                else:
+                    print(f"[v5_capability_executor] spec-first 失败，回落老链路：{str(exc)[:200]}")
+                    model = None
 
-    if model is None:
+    if model is None and not _block_gen5:
         model = _freeze_gen5_pages(
             generate_five_system_model(goal, llm_json_fn=llm_json_fn)
         )
