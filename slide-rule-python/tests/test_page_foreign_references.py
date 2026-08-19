@@ -85,6 +85,7 @@ class Test外部链接:
         assert not blocking(
             '<script src="https://cdn.tailwindcss.com"></script>'
             '<img src="https://placehold.co/600x400">'
+            '<img src="https://images.unsplash.com/photo-ok">'
             '<link href="https://fonts.googleapis.com/css2?family=Inter">'
         )
 

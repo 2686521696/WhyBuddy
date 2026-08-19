@@ -79,6 +79,7 @@ class Test口径抄的是_screenshot_to_code:
         p = sph.build_page_html_prompt("x")
         assert "Image generation is disabled for this request." in p
         assert "Do not call generate_images." in p
+        assert "Do not invent unsplash or pexels photo IDs" in p
 
     def test_设计系统带冲突优先级声明(self):
         p = sph.build_page_html_prompt("x")

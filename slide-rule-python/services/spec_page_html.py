@@ -51,7 +51,7 @@ from __future__ import annotations
 import os
 import re
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 SPEC_PAGE_HTML_VERSION = "spec-page-html-v1"
 
@@ -111,8 +111,10 @@ _STRUCTURAL_CONTRACT = """左侧一个 <aside> 固定主导航，顶部一个 <h
 计数写 ×,×××，人名写「张师傅」这类。表格要有真实的中文列名。
 
 这是**客户自己的产品**。页脚、logo、版权行、关于页里不许出现你（生成方）的名字、
-品牌、域名或联系方式；除了上面指定的 Tailwind CDN 与 placehold.co，不要写任何
-外部网址。产品名要从客户的业务里起，不要用你自己的名字。"""
+品牌、域名或联系方式；除了上面指定的 Tailwind CDN、placehold.co，以及
+库存图床（images.unsplash.com / images.pexels.com / upload.wikimedia.org /
+staticflickr.com / rawpixel.com），不要写任何外部网址。库存图必须用提示词里给出的完整 URL，
+不许自己编 photo id。产品名要从客户的业务里起，不要用你自己的名字。"""
 
 #: 移动端契约。壳的形状同样是**硬约束**：3.5 步抠 <header> + 页面级 <nav>
 #: （底部标签栏），这里不写成 <nav>，3.5 就没得抠，移动端那套判据整个失效。
@@ -128,8 +130,10 @@ _STRUCTURAL_CONTRACT_MOBILE = """顶部一个 <header>（左侧产品名，右�
 计数写 ×,×××，人名写「张师傅」这类。列表要有真实的中文字段名。
 
 这是**客户自己的产品**。页脚、logo、版权行、关于页里不许出现你（生成方）的名字、
-品牌、域名或联系方式；除了上面指定的 Tailwind CDN 与 placehold.co，不要写任何
-外部网址。产品名要从客户的业务里起，不要用你自己的名字。"""
+品牌、域名或联系方式；除了上面指定的 Tailwind CDN、placehold.co，以及
+库存图床（images.unsplash.com / images.pexels.com / upload.wikimedia.org /
+staticflickr.com / rawpixel.com），不要写任何外部网址。库存图必须用提示词里给出的完整 URL，
+不许自己编 photo id。产品名要从客户的业务里起，不要用你自己的名字。"""
 
 #: 缺省风格。**一句话**——它只是没人指定时的兜底，不是"推荐版式"。
 #: 密度、版式原型、组件词汇这些该由上游按应用给（第 1.5 步生成 / 人工覆盖）。
@@ -253,7 +257,8 @@ def build_page_html_prompt(
 - Use modern, professional fonts and colors.
 - Follow UX best practices.
 - Image generation is disabled for this request. Do not call generate_images. \
-Use provided media, CSS effects, or placeholder URLs (https://placehold.co)."""
+If the design system lists 库存图 URLs, use those exact https addresses in <img src>. \
+Do not invent unsplash or pexels photo IDs. Otherwise use placeholder URLs (https://placehold.co)."""
 
 
 def _strip_fences(text: str) -> str:
@@ -266,17 +271,21 @@ def _strip_fences(text: str) -> str:
     return out[idx:] if idx > 0 else out
 
 
-#: 提示词里**明确要求或允许**的外部主机。只有这三类：
+#: 提示词里**明确要求或允许**的外部主机。
 #:   · cdn.tailwindcss.com —— 栈约束点名要引的
 #:   · placehold.co        —— 抄 screenshot-to-code 的 image policy 里写的占位图
 #:   · fonts.google*       —— 「用现代专业字体」这条的常见实现；渲染器本来就 abort 它，
 #:                            放进白名单纯粹是别让它变成噪音告警
-_ALLOWED_HOSTS = (
+#:   · 库存图床            —— 2026-08-19：搜到的真 URL 直挂 <img src>，不下载。
+#:                            真机 unsplash 被闸整页丢掉过（refine_page_scope 头注）。
+from .stock_images import STOCK_IMAGE_HOSTS
+
+_ALLOWED_HOSTS: Tuple[str, ...] = (
     "cdn.tailwindcss.com",
     "placehold.co",
     "fonts.googleapis.com",
     "fonts.gstatic.com",
-)
+) + STOCK_IMAGE_HOSTS
 
 #: 模型供应商自己的身份。这几个词出现在**客户的交付物**里永远是错的。
 #: ⚠ 真机原文（2026-08-15，连锁药房那趟 p3 页脚）：

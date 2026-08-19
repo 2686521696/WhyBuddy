@@ -173,10 +173,15 @@ class Test挂了要回落:
 
         src = (pathlib.Path(__file__).resolve().parents[1]
                / "services/spec_first_pipeline.py").read_text(encoding="utf-8")
-        i = src.index("style_brief = generate_style_brief(spec)")
+        i = src.index("style_brief = generate_style_brief(spec")
         tail = src[i:i + 700]
         assert "if style_brief is None:" in tail
         assert "render_design_language" in tail, "没有回落，风格段挂了整轮就没风格"
+        # 2026-08-19 卸掉 ui-ux-pro-max 查表。反向：调用点不许再带压缩包。
+        assert "style_pack=" not in src[i:i + 80]
+        assert "from .style_pack import" not in src
+        assert "build_style_pack(" not in src
+        assert "attach_style_pack(" not in src
 
 
 class Test逐页风格接到生成侧:

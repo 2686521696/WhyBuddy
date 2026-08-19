@@ -1378,6 +1378,11 @@ def run_spec_first(
     #   跑两次，配色一次 #1b3a57+#a1824a、一次 #1e3a8a+#b45309——气质同向，
     #   具体值全变。修补/迭代场景下用户会看见界面颜色莫名其妙换掉，而那是
     #   **一眼可见**的不稳定，比密度不够伤得多。
+    #
+    # ⚠ 2026-08-19：接过 ui-ux-pro-max CSV 查表（style_pack），真机团购
+    #   工作台命中 Food Delivery 行——色板当整页墙纸，着陆页半边和桌面
+    #   契约打架，画面并不比 LLM 自己写风格段好。用户裁决卸掉。别再把
+    #   上游 CSV 倒进画页提示词。
     design_language: Optional[Dict[str, Any]] = None
     style_brief: Optional[Dict[str, Any]] = None
     if (design_system or "").strip():
@@ -1479,6 +1484,40 @@ def run_spec_first(
         # 显式实参优先于 sink：脚本/评测直接调这个函数时不该被"当前请求恰好
         # 装了个 sink"影响。生产路径（主轴）走 sink，因为中间那层是同步的。
         st["reusedPages"] = len(_reuse_now)
+        # 库存图直挂地址，不下载。搜不到就仍用 placehold.co。
+        # ⚠ 必须赶在 generate_pages_parallel 之前：提示词在那一步锁死。
+        try:
+            from .stock_images import (
+                attach_stock_images,
+                lookup_stock_images,
+                render_stock_images,
+            )
+
+            _stock = lookup_stock_images(spec, goal=goal)
+            print(
+                f"[spec_first_pipeline] stock_images n={len(_stock)}"
+                + (
+                    f" source={_stock[0].get('source')} host="
+                    f"{_stock[0].get('url', '').split('/')[2]}"
+                    if _stock
+                    else ""
+                )
+            )
+            if _stock:
+                _block = render_stock_images(_stock)
+                if isinstance(design_system, dict):
+                    design_system = {
+                        pid: attach_stock_images(str(prose or ""), _block)
+                        for pid, prose in design_system.items()
+                    }
+                else:
+                    design_system = attach_stock_images(
+                        str(design_system or ""), _block
+                    )
+        except Exception as exc:  # noqa: BLE001 — 搜图是增强，不许拖画页
+            _safe_print(
+                f"[spec_first_pipeline] ⚠ 库存图查找失败（不拦画页）：{str(exc)[:200]}"
+            )
         batch = generate_pages_parallel(
             spec, device=device, design_system=design_system,
             product=goal, on_page=sink, reuse_pages=_reuse_now,

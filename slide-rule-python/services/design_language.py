@@ -433,7 +433,9 @@ def build_style_brief_prompt(spec: Dict[str, Any]) -> List[Dict[str, str]]:
 
 
 def generate_style_brief(
-    spec: Dict[str, Any], *, llm_json_fn: Optional[Any] = None
+    spec: Dict[str, Any],
+    *,
+    llm_json_fn: Optional[Any] = None,
 ) -> Optional[Dict[str, Any]]:
     """一次调用出两层风格。**挂了返回 None**，由调用方回落到确定性那套。"""
     page_ids = [str(p.get("id")) for p in (spec.get("pages") or [])
@@ -444,7 +446,9 @@ def generate_style_brief(
 
     try:
         outcome = call_spec_json(
-            build_style_brief_prompt(spec), llm_json_fn, stage="specfirst.design"
+            build_style_brief_prompt(spec),
+            llm_json_fn,
+            stage="specfirst.design",
         )
     except Exception as exc:  # noqa: BLE001 — 审美挂了不该打死整轮
         print(f"[design_language] 风格段生成抛错：{str(exc)[:200]}")

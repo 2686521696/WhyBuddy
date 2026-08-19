@@ -58,6 +58,7 @@ CONTRACT_MARKS = [
     ("<svg>", "图表只能内联 svg 画"),
     ("可读的中文文字", "validate_page_html 判中文"),
     ("不许出现你（生成方）", "scan_foreign_references 判品牌泄漏"),
+    ("库存图床", "搜到的图直挂 src，闸要放行这几家"),
 ]
 
 
