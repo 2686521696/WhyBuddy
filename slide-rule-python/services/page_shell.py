@@ -402,6 +402,10 @@ def build_nav_items(
 _CN_TEXT = re.compile(r">([^<>]+)<")
 
 
+def _cn_len(text: str) -> int:
+    return len(re.findall(r"[\u4e00-\u9fff]", text))
+
+
 def detect_brand_and_role(aside_html: str) -> Tuple[str, str]:
     """从一段侧栏里认出「模型编的产品名」和「模型编的角色」。
 
@@ -416,19 +420,44 @@ def detect_brand_and_role(aside_html: str) -> Tuple[str, str]:
     （check_shell_consistency 里那条 appName）：spec 的名字必须出现在每一页、
     旧名字必须一处不剩。认错就当场报出来，绝不半改——半改比不改更糟，
     那会出现"侧栏是新名字、顶栏还是旧名字"这种没人看得懂的中间态。
+
+    2026-08-18 CareBridge：方块里一个「循」是缩写，不是品名。把它当 old
+    去做全局 replace，已经写对的「循护桥」会变成「循护桥护桥」。
+    单字中文不当品牌/角色——标定集里最短的品名也是「维保云」。
     """
     texts = [s.strip() for s in _CN_TEXT.findall(aside_html or "") if s.strip()]
-    texts = [s for s in texts if re.search(r"[\u4e00-\u9fff]", s)]
+    texts = [s for s in texts if _cn_len(s) >= 2]
     if not texts:
         return "", ""
     return texts[0], texts[-1]
 
 
 def _apply_identity(shell_part: str, old: str, new: str) -> str:
-    """整段替换产品名 / 角色。空值或没变化时原样返回。"""
+    """整段替换产品名 / 角色。空值或没变化时原样返回。
+
+    对照 WHATWG DOM / BeautifulSoup：只改**文本节点**，不动属性、标签名。
+    成熟做法是遍历 NavigableString（bs4 文档「NavigableString」；DOM 的
+    ``Text``），禁止对整段 markup 做 ``str.replace``——那会把
+    ``class="维保云-theme"`` 一并改掉，壳还在、主题类名却丢了。
+
+    旧名是新名的真子串时还要更严：禁止「节点里出现旧名就换」。
+    ``「循护桥」.replace("循", "循护桥")`` 就是「循护桥护桥」。
+    这种只改**整段文本恰好等于旧名**的节点（方块缩写），已经写对的新名留下。
+    """
     if not old or not new or old == new:
         return shell_part
-    return shell_part.replace(old, new)
+    exact_only = old in new
+
+    def _one(match: re.Match[str]) -> str:
+        text = match.group(1)
+        if exact_only:
+            if text.strip() != old:
+                return match.group(0)
+        elif old not in text:
+            return match.group(0)
+        return f">{text.replace(old, new)}<"
+
+    return _CN_TEXT.sub(_one, shell_part)
 
 
 def _pick_shell_source(pages_html: Dict[str, str]) -> str:

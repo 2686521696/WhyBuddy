@@ -25,8 +25,10 @@ import pytest
 
 from services.page_shell import (
     PageShellError,
+    _apply_identity,
     build_nav_items,
     check_shell_consistency,
+    detect_brand_and_role,
     extract_shell,
     nav_templates,
     shell_fingerprint,
@@ -336,3 +338,68 @@ class Test身份替换与导航重排的先后顺序:
             for want in ("工单工作台首页", "工单详情页", "新建报修页"):
                 assert want in aside, f"{pid} 的导航没被重排——多半是踩了顺序坑"
             assert "设备台账" not in aside
+
+
+class Test子串替换不许叠名:
+    """2026-08-18 CareBridge 真机：侧栏方块「循」、标题已是「循护桥」，
+    全局 replace 把标题叠成「循护桥护桥」。正向：标题仍是三字。
+    反向：旧名是新名的子串时还走 str.replace，这条必绿——那就是没修。"""
+
+    ASIDE = (
+        '<aside><div class="mark">循</div><h1>循护桥</h1>'
+        '<nav><a class="x"><span>工作台首页</span></a>'
+        '<a class="x"><span>档案页</span></a></nav>'
+        '<div class="user">社区健康员</div></aside>'
+    )
+
+    def test_单字缩写不当品牌(self):
+        brand, role = detect_brand_and_role(self.ASIDE)
+        assert brand == "循护桥"
+        assert role == "社区健康员"
+        assert brand != "循"
+
+    def test_子串旧名只换恰好相等的节点(self):
+        html = _apply_identity(self.ASIDE, "循", "循护桥")
+        assert "循护桥护桥" not in html
+        assert html.count("循护桥") == 2
+        assert ">循<" not in html
+
+    def test_只改文本节点不改属性(self):
+        """BeautifulSoup / WHATWG：class/id 里的旧名不是品名节点。
+        退回整段 str.replace，这条必红——主题类名会被一起改掉。"""
+        html = '<aside><h1 class="维保云-theme" data-brand="维保云">维保云</h1></aside>'
+        out = _apply_identity(html, "维保云", "循护桥")
+        assert 'class="维保云-theme"' in out
+        assert 'data-brand="维保云"' in out
+        assert ">循护桥<" in out
+        assert ">维保云<" not in out
+
+    def test_非子串旧名仍换文本里的词(self):
+        html = "<aside><p>欢迎使用维保云</p></aside>"
+        out = _apply_identity(html, "维保云", "循护桥")
+        assert "欢迎使用循护桥" in out
+
+    def test_统一后首页标题不叠字(self):
+        pages = {
+            "p1": (
+                "<!DOCTYPE html><html lang='zh-CN'><body>"
+                f"{self.ASIDE}"
+                "<header><span>循护桥 · 顶栏</span></header>"
+                "<main><p>列表</p></main></body></html>"
+            ),
+            "p2": page("护桥", "健康员", ["工作台首页", "档案页"], "<p>表</p>"),
+        }
+        spec = {
+            "pages": [
+                {"id": "p1", "name": "工作台首页"},
+                {"id": "p2", "name": "档案页"},
+            ],
+            "appName": "循护桥",
+            "personas": [{"id": "u1", "name": "社区健康员", "goals": []}],
+        }
+        out = unify_shell(pages, spec)
+        aside = extract_shell(out["pages"]["p1"])["aside"]
+        assert "循护桥" in aside
+        assert "循护桥护桥" not in aside
+        assert "循护桥护桥" not in out["pages"]["p1"]
+        assert "循护桥护桥" not in out["pages"]["p2"]
