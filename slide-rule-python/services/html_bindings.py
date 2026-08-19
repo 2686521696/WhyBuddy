@@ -72,6 +72,15 @@ ACTION_KINDS: tuple[str, ...] = RECORD_ACTION_KINDS + WORKFLOW_ACTION_KINDS
 
 AGGREGATES: tuple[str, ...] = ("count", "sum", "avg")
 
+#: 整页「能取到数」的数据源。check_coverage / 提示词硬性要求 / 前端
+#: hasAnyDataSource 必须认同一份——漏一个，那种页打对了孔也会被判死。
+#:
+#: ⚠ 2026-08-15 加了 data-record（详情卡/表单/向导），scan 和 check_bindings
+#:   都认了，check_coverage 还只认 rows/value/chart。真机 CareBridge /
+#:   妇幼保健站 p2：表单只有 field+createRecord，或按第 2 条写了 data-record，
+#:   覆盖闸一律「没有任何数据源」，重问 2 次仍挂。前端徽标同一漏。
+DATA_SOURCE_KEYS: tuple[str, ...] = ("rows", "record", "value", "chart")
+
 _TAG = re.compile(r"<([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>")
 _ATTR = re.compile(r'data-([a-z]+)="([^"]*)"')
 
@@ -207,10 +216,14 @@ def check_coverage(markup: str, model: Dict[str, Any]) -> List[Dict[str, str]]:
     nodes = scan_bindings(markup)
     if not nodes:
         return [{"path": "page", "message": "整页一个 data-* 绑定都没有——渲染出来还是死的静态页"}]
-    kinds = {k for n in nodes for k in n["attrs"] if k in ("rows", "value", "chart")}
+    kinds = {k for n in nodes for k in n["attrs"] if k in DATA_SOURCE_KEYS}
     if not kinds:
-        return [{"path": "page", "message": "只有 data-field/data-action，没有任何数据源"
-                                            "（data-rows / data-value / data-chart），取不到数"}]
+        sources = " / ".join(f"data-{k}" for k in DATA_SOURCE_KEYS)
+        return [{"path": "page", "message": (
+            "只有 data-field/data-action，没有任何数据源"
+            f"（{sources}），取不到数。"
+            "表单/向导用 data-record，列表用 data-rows，不要只打动作孔。"
+        )}]
     return []
 
 
@@ -285,7 +298,7 @@ data-* 属性**，把写死的示例数据换成绑定孔。
 
 硬性要求：
 
-1. 这一页至少要有一个数据源（data-rows / data-value / data-chart），
+1. 这一页至少要有一个数据源（{" / ".join(f"data-{k}" for k in DATA_SOURCE_KEYS)}），
    否则渲染出来还是一张死的静态页。
 2. 挑容器：**多条**用 data-rows，**一条**用 data-record，**聚合数字**用 data-value。
    判断方法：这块地方在页面上会不会重复出现多份？会 → data-rows；
@@ -310,6 +323,70 @@ def _strip_fences(text: str) -> str:
     return t[i:] if i > 0 else t
 
 
+_FORM_OPEN = re.compile(r"<form\b([^>]*)>", re.I)
+_FORM_CLOSE = re.compile(r"</form>", re.I)
+_ENTITY_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+_WRITE_ENTITY_A = re.compile(
+    r'data-action="(?:createRecord|editRecord)"[^>]*data-entity="([^"]+)"'
+)
+_WRITE_ENTITY_B = re.compile(
+    r'data-entity="([^"]+)"[^>]*data-action="(?:createRecord|editRecord)"'
+)
+
+
+def stamp_implicit_form_record(markup: str) -> str:
+    """给漏写 ``data-record`` 的表单盖上单条作用域。
+
+    对照三处成熟口径，不自创「表单要不要有数据源」：
+
+    - WHATWG HTML **form owner**：控件归属于最近的 ``<form>``，表单本身
+      就是一条记录的容器（html.spec.whatwg.org/#form-owner）。
+    - HTMX：``hx-post`` 挂在 form 上，表单是请求单元，不必再套一层
+      列表作用域（bigskysoftware/htmx）。
+    - petite-vue：``<div v-scope>`` **可以省略值**，仍然
+      ``createScopedContext``（walk.ts）——作用域在，数据从父级/表单来。
+
+    ⚠ 只在能 **fail-closed** 推出唯一实体时盖：表单里恰好一个
+    createRecord/editRecord 的 data-entity，且有 data-field。
+    两个实体或只有动作孔 → 不猜，交给覆盖闸拦。
+    已经写了 data-record / data-rows 的表单不动。
+    """
+    text = markup or ""
+    if not text or "<form" not in text.lower():
+        return text
+
+    pieces: List[str] = []
+    pos = 0
+    for open_m in _FORM_OPEN.finditer(text):
+        attrs = _attrs(open_m.group(1))
+        if "rows" in attrs or "record" in attrs:
+            continue
+        close_m = _FORM_CLOSE.search(text, open_m.end())
+        if not close_m:
+            continue
+        inner = text[open_m.end() : close_m.start()]
+        if re.search(r"<form\b", inner, re.I):
+            continue
+        entities = set(_WRITE_ENTITY_A.findall(inner)) | set(_WRITE_ENTITY_B.findall(inner))
+        form_ent = attrs.get("entity")
+        if form_ent:
+            if entities and form_ent not in entities:
+                continue
+            entities = {form_ent} | entities
+        if len(entities) != 1 or "data-field=" not in inner:
+            continue
+        ent = next(iter(entities))
+        if not _ENTITY_ID.match(ent):
+            continue
+        pieces.append(text[pos:open_m.start()])
+        pieces.append(f"<form{open_m.group(1)} data-record=\"{ent}\">")
+        pos = open_m.end()
+    if not pieces:
+        return text
+    pieces.append(text[pos:])
+    return "".join(pieces)
+
+
 def bind_page(
     markup: str,
     model: Dict[str, Any],
@@ -330,7 +407,7 @@ def bind_page(
     feedback, last = "", "未调用"
     for attempt in range(max_reask + 1):
         resp = llm_call(build_prompt(markup, model, page_id, feedback), temperature=0.2)
-        out = _strip_fences(getattr(resp, "content", "") or "")
+        out = stamp_implicit_form_record(_strip_fences(getattr(resp, "content", "") or ""))
         problems = (
             [{"path": "html", "message": p} for p in validate_page_html(out)]
             + check_bindings(out, model)

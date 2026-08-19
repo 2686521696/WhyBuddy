@@ -36,6 +36,7 @@ Alpine 的 `x-data` / `x-for` 同构。
 词表分叉就是下一个对不齐的地方（本仓在动作词表上踩过）。
 """
 
+import inspect
 import os
 import re
 import sys
@@ -44,7 +45,15 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services.html_bindings import check_bindings, scan_bindings  # noqa: E402
+from services.html_bindings import (  # noqa: E402
+    DATA_SOURCE_KEYS,
+    bind_page,
+    build_prompt,
+    check_bindings,
+    check_coverage,
+    scan_bindings,
+    stamp_implicit_form_record,
+)
 
 MODEL = {
     "datamodel": {
@@ -167,3 +176,122 @@ class Test词表跨语言同步_绑定属性:
         front = self._frontend_attrs()
         missing = [k for k in keys if f"data-{k}" not in front]
         assert not missing, f"这些属性 Python 认、前端会删：{missing}"
+
+
+class Test覆盖闸认单条数据源:
+    """2026-08-18/19 向导页：scan / check_bindings 认 data-record，
+    check_coverage 还只认 rows/value/chart。表单打对了孔也整页失败。
+    """
+
+    WIZARD = (
+        '<form data-record="product">'
+        '<h4 data-field="name">示例</h4>'
+        '<button data-action="createRecord" data-entity="product">提交</button>'
+        "</form>"
+    )
+
+    def test_只有_data_record_的表单算有数据源(self):
+        """正向：向导/建档页的合法形状必须过。"""
+        assert check_coverage(self.WIZARD, MODEL) == []
+        assert check_bindings(self.WIZARD, MODEL) == []
+
+    def test_只有动作孔仍拦(self):
+        """反向：放开 record 不等于「有个 createRecord 就算接上了」。"""
+        html = '<button data-action="createRecord" data-entity="product">提交</button>'
+        msgs = check_coverage(html, MODEL)
+        assert msgs and "取不到数" in msgs[0]["message"]
+        assert "data-record" in msgs[0]["message"], (
+            "重问话术必须点出向导该用的词，否则模型会去硬套 data-rows"
+        )
+
+    def test_覆盖词表含_record_且前端选择器同步(self):
+        assert "record" in DATA_SOURCE_KEYS
+        # 只测 helper 会假绿：覆盖闸改了、前端 hasAnyDataSource 没改，
+        # 徽标仍说「尚未接数据」。剥注释再抠函数体，头注里的词喂不绿。
+        import pathlib
+
+        ts = (
+            pathlib.Path(__file__).resolve().parents[2]
+            / "client/src/pages/sliderule/live-runtime/html-binding-runtime.ts"
+        ).read_text(encoding="utf-8")
+        stripped = re.sub(r"/\*[\s\S]*?\*/", "", ts)
+        stripped = re.sub(r"//.*", "", stripped)
+        fn = stripped[stripped.index("export function hasAnyDataSource") :]
+        fn = fn[: fn.index("\n}")]
+        assert "[data-record]" in fn, "前端 hasAnyDataSource 还不认 data-record"
+
+    def test_提示词第一条硬性要求也把_record_算进去(self):
+        user = build_prompt("<html></html>", MODEL, "p2")[-1]["content"]
+        req1 = user.split("硬性要求")[1].split("2.")[0]
+        assert "data-record" in req1, (
+            "第 1 条还在说必须有 rows/value/chart——"
+            "向导按第 2 条写了 data-record，第 1 条照样判死"
+        )
+
+
+class Test表单隐式单条作用域:
+    """对照 WHATWG form owner / HTMX / petite-vue 可省略的 v-scope：
+    模型漏写 data-record 时，唯一写入实体的表单应被盖上，而不是整页 bind 失败。
+    """
+
+    BARE = (
+        '<form class="w">'
+        '<h4 data-field="name">示例</h4>'
+        '<button data-action="createRecord" data-entity="product">提交</button>'
+        "</form>"
+    )
+
+    def test_漏写_data_record_盖上唯一实体(self):
+        out = stamp_implicit_form_record(self.BARE)
+        assert 'data-record="product"' in out
+        assert check_bindings(out, MODEL) == []
+        assert check_coverage(out, MODEL) == []
+
+    def test_两个写入实体不猜(self):
+        html = (
+            "<form>"
+            '<span data-field="name">x</span>'
+            '<button data-action="createRecord" data-entity="product">甲</button>'
+            '<button data-action="createRecord" data-entity="store">乙</button>'
+            "</form>"
+        )
+        assert stamp_implicit_form_record(html) == html
+        assert check_bindings(html, MODEL)
+
+    def test_只有动作孔不盖(self):
+        html = (
+            '<form><button data-action="createRecord" data-entity="product">'
+            "提交</button></form>"
+        )
+        assert stamp_implicit_form_record(html) == html
+        msgs = check_coverage(html, MODEL)
+        assert msgs and "取不到数" in msgs[0]["message"]
+
+    def test_已有_data_record_不改(self):
+        html = (
+            '<form data-record="product">'
+            '<h4 data-field="name">示例</h4></form>'
+        )
+        assert stamp_implicit_form_record(html) == html
+
+    def test_bind_page_先盖再过闸(self):
+        """只测 stamp 会假绿：helper 对、bind_page 没接上，真机向导照挂。"""
+        src = inspect.getsource(bind_page)
+        assert src.index("stamp_implicit_form_record") < src.index("check_coverage")
+
+    def test_bind_page_漏写也能过(self):
+        full = (
+            "<!DOCTYPE html><html><head>"
+            '<script src="https://cdn.tailwindcss.com"></script>'
+            "</head><body>"
+            f"{self.BARE.replace('示例', '商品名')}"
+            "</body></html>"
+        )
+
+        def llm(_messages, **_kwargs):
+            return type("R", (), {"content": full})()
+
+        out = bind_page("<html></html>", MODEL, "p2", llm_call=llm, max_reask=0)
+        assert 'data-record="product"' in out
+        assert check_bindings(out, MODEL) == []
+        assert check_coverage(out, MODEL) == []

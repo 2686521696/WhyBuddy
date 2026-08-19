@@ -379,6 +379,21 @@ describe("一个孔都没打的页面不许看起来完美通过", () => {
     expect(hasAnyDataSource(dom("<div><h1>死页</h1></div>"))).toBe(false);
     expect(hasAnyDataSource(dom(TABLE))).toBe(true);
   });
+
+  it("data-record 也是数据源——向导/表单不能只认 rows/value/chart", () => {
+    expect(
+      hasAnyDataSource(
+        dom(
+          '<form data-record="product"><span data-field="name"></span></form>'
+        )
+      )
+    ).toBe(true);
+    expect(
+      hasAnyDataSource(
+        dom('<button data-action="createRecord" data-entity="product">提交</button>')
+      )
+    ).toBe(false);
+  });
 });
 
 describe("enum 字段显标签，不显内部 id", () => {

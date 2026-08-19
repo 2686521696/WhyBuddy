@@ -629,5 +629,9 @@ export function applyBindings(
  * 「没有绑定就没有错误的绑定」——今天在这个形状上栽了五次，所以单列一条。
  */
 export function hasAnyDataSource(root: Element): boolean {
-  return Boolean(root.querySelector("[data-rows], [data-value], [data-chart]"));
+  // ⚠ 必须与 html_bindings.DATA_SOURCE_KEYS 同一份。漏 data-record
+  //   时，向导/表单打对了孔，徽标仍说「尚未接数据」。
+  return Boolean(
+    root.querySelector("[data-rows], [data-record], [data-value], [data-chart]")
+  );
 }
