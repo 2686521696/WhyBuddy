@@ -9,6 +9,18 @@ import type { TurnStep } from "./types";
  * 缩成「1 阶段 0 步」。本模块把轮次落定时的 steps 随既有 PUT 通道写进
  * 会话状态（turnNarrations，纯展示投影、无信任语义；Python 侧封顶
  * 3 轮 × 300 步 × 1200 字符），刷新后完整回放。
+ *
+ * 2026-08-18：驱动器自己也写这份字段。客户端打戳必须认服务端已有的
+ * turnId，不能再拿 `turn-${Date.now()}` 另起一条——两份对不上，
+ * 刷新后又是一排有用户原文、0 步的骨架。
+ *
+ * ⚠ 2026-08-18 快递柜新话题（sr-20260818075023）：函数已经「认同原文」，
+ * 刷新仍出双胞胎（5 阶段 24 步 + 6 阶段 50 步）。三件套叠在一起：
+ * 1. 引擎写 `turn-1`，收尾把 lastTurnId 改成 `turn-2-drive-full`（守卫用）；
+ * 2. 打戳若没吃到叙述，旧实现把 `-drive-full` 或 `turn-${Date.now()}` 当新轮；
+ * 3. stamp 只按 turnId 覆盖，同原文两条并排进 blob。
+ *    deriveTurnsFromState 叙述轮「永远出」→ 左栏两轮同题。
+ * 打戳必须盖住引擎的 drive 编号；同原文旧条直接丢掉。
  */
 
 export type TurnNarrationEntry = {
@@ -22,6 +34,9 @@ export type TurnNarrationEntry = {
 const MAX_TURNS = 3;
 const MAX_STEPS = 300;
 const MAX_TEXT = 1200;
+/** 与 derive-persisted-turn 同一条线：低于此的 `turn-N` 是引擎编号，
+ *  高于此的是客户端 `Date.now()`。老编号差 1 是真轮次，不许当时间戳。 */
+const EPOCH_MS_FLOOR = 1e12;
 
 function slimStep(step: TurnStep): TurnStep {
   const slim: Record<string, unknown> = { ...step };
@@ -34,26 +49,157 @@ function slimStep(step: TurnStep): TurnStep {
   return slim as TurnStep;
 }
 
+function trimUser(value: unknown): string {
+  return String(value || "").trim();
+}
+
+/** 引擎 drive 开头那格：`turn-1` / `turn-3`。`turn-2-drive-full` 是收尾
+ *  守卫改名，`turn-<Date.now()>` 是客户端直播 id，都不能当落库键。 */
+export function isEngineDriveTurnId(turnId: string): boolean {
+  const m = /^turn-(\d+)$/.exec(String(turnId || "").trim());
+  if (!m) return false;
+  return Number(m[1]) < EPOCH_MS_FLOOR;
+}
+
+function usersMatch(a: unknown, b: unknown): boolean {
+  const left = trimUser(a);
+  const right = trimUser(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  // modelVersions.instruction 在 Python 截到 300；叙述 user 截到 600。
+  return left.slice(0, 300) === right.slice(0, 300);
+}
+
+type NarrationLike = {
+  turnId: string;
+  user?: string;
+  steps?: unknown[];
+  durationMs?: number;
+};
+
+function pickSameUserNarration<T extends NarrationLike>(
+  a: T,
+  b: T,
+  preferTurnIds: ReadonlySet<string>
+): T {
+  const id = preferTurnIds.has(a.turnId)
+    ? a.turnId
+    : preferTurnIds.has(b.turnId)
+      ? b.turnId
+      : isEngineDriveTurnId(a.turnId)
+        ? a.turnId
+        : isEngineDriveTurnId(b.turnId)
+          ? b.turnId
+          : a.turnId;
+  const aSteps = Array.isArray(a.steps) ? a.steps.length : 0;
+  const bSteps = Array.isArray(b.steps) ? b.steps.length : 0;
+  const richer = bSteps > aSteps ? b : a;
+  return { ...richer, turnId: id };
+}
+
+/** 同原文只留一条：id 认引擎/版本史，步骤认更细的那份（直播 50 步盖过引擎 24 步）。 */
+export function dedupeTurnNarrations<T extends NarrationLike>(
+  entries: T[],
+  preferTurnIds: Iterable<string> = []
+): T[] {
+  const prefer = new Set(
+    [...preferTurnIds].filter((id): id is string => typeof id === "string" && !!id)
+  );
+  const kept: T[] = [];
+  const slotByUser = new Map<string, number>();
+  for (const entry of entries) {
+    if (!entry || typeof entry.turnId !== "string" || !entry.turnId) continue;
+    const user = trimUser(entry.user);
+    if (!user) {
+      kept.push(entry);
+      continue;
+    }
+    const slot = slotByUser.get(user);
+    if (slot === undefined) {
+      slotByUser.set(user, kept.length);
+      kept.push(entry);
+      continue;
+    }
+    kept[slot] = pickSameUserNarration(kept[slot], entry, prefer);
+  }
+  return kept;
+}
+
+function modelVersionTurnIdFor(
+  state: V5SessionState | null | undefined,
+  user: string
+): string {
+  const raw = (state as { modelVersions?: unknown } | null | undefined)?.modelVersions;
+  if (!Array.isArray(raw)) return "";
+  for (let i = raw.length - 1; i >= 0; i--) {
+    const version = raw[i];
+    if (!version || typeof version !== "object") continue;
+    const turnId = String((version as { turnId?: unknown }).turnId || "");
+    const instruction = (version as { instruction?: unknown }).instruction;
+    if (user && usersMatch(instruction, user) && isEngineDriveTurnId(turnId)) {
+      return turnId;
+    }
+  }
+  return "";
+}
+
+/** `turn-2-drive-full` 是 drive1 收尾改名，叙述键仍是开头的 `turn-1`。 */
+function driveTurnIdFromLastTurnId(lastTurnId: string): string {
+  const closing = /^turn-(\d+)-drive-full$/.exec(lastTurnId);
+  if (closing) {
+    const seq = Number(closing[1]);
+    return seq >= 2 ? `turn-${seq - 1}` : "";
+  }
+  return isEngineDriveTurnId(lastTurnId) ? lastTurnId : "";
+}
+
 /** 轮次落定时打戳：把本轮 steps 合并进 state.turnNarrations（同轮覆盖，
- *  只留最近 MAX_TURNS 轮）。原地不动传入对象——返回带戳的浅拷贝。 */
+ *  同原文旧条丢掉，只留最近 MAX_TURNS 轮）。原地不动传入对象——返回带戳的浅拷贝。 */
 export function stampTurnNarration(
   state: V5SessionState,
   entry: TurnNarrationEntry
 ): V5SessionState {
   if (!entry.turnId || entry.steps.length === 0) return state;
-  const prior = (state.turnNarrations || []).filter(
-    n => n && n.turnId !== entry.turnId
-  );
+  const user = (entry.user || "").slice(0, 600);
+  const prior = (state.turnNarrations || []).filter(n => {
+    if (!n || n.turnId === entry.turnId) return false;
+    return !usersMatch(n.user, user);
+  });
   const stamped = [
     ...prior,
     {
       turnId: entry.turnId,
-      user: (entry.user || "").slice(0, 600),
+      user,
       steps: entry.steps.slice(0, MAX_STEPS).map(slimStep),
       ...(entry.durationMs ? { durationMs: Math.round(entry.durationMs) } : {}),
     },
   ].slice(-MAX_TURNS);
   return { ...state, turnNarrations: stamped };
+}
+
+/** 轮末打戳用的 turnId：盖住引擎 drive 编号，绝不另起时间戳或 `-drive-full`。 */
+export function narrationTurnIdFor(
+  state: V5SessionState | null | undefined,
+  userText: string,
+  fallbackTurnId: string
+): string {
+  const user = trimUser(userText);
+  const all = (state?.turnNarrations || []).filter(
+    (n): n is { turnId: string; user?: string } =>
+      !!n && typeof n.turnId === "string"
+  );
+  if (user) {
+    const hits = all.filter(n => usersMatch(n.user, user));
+    if (hits.length > 0) {
+      const engineHit = [...hits].reverse().find(n => isEngineDriveTurnId(n.turnId));
+      return (engineHit || hits[hits.length - 1]).turnId;
+    }
+  }
+  const fromVersion = modelVersionTurnIdFor(state, user);
+  if (fromVersion) return fromVersion;
+  const fromLast = driveTurnIdFromLastTurnId(String(state?.lastTurnId || "").trim());
+  if (fromLast) return fromLast;
+  return fallbackTurnId;
 }
 
 const KNOWN_KINDS = new Set([

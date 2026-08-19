@@ -16,7 +16,7 @@ import { resolveImSurfaceMode } from "./im-surface-mode";
 import type { SchedulingDecision } from "@shared/blueprint/v5-reasoning-state";
 import { challengeTargetLabel } from "./challenge-target-label";
 import { buildTurnRoundsFromDrive } from "./turn-round-facts";
-import { stampTurnNarration } from "./turn-narration";
+import { narrationTurnIdFor, stampTurnNarration } from "./turn-narration";
 import { deriveTurnsFromState } from "./derive-persisted-turn";
 import {
   saveActiveRun,
@@ -1209,7 +1209,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             : preparedState;
           // E13：失败轮也留半程时间线（刷新后能看到断在哪一步）
           snap = stampTurnNarration(snap, {
-            turnId,
+            turnId: narrationTurnIdFor(snap, userText, turnId),
             user: userText,
             steps: collectedSteps,
             durationMs: Date.now() - turnStartMs,
@@ -1239,9 +1239,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         final,
         (drive as any)?.publishClosure
       );
-      // E13：轮次落定，把本轮直播叙述打进状态随 PUT 持久化（刷新可回放）
+      // E13：轮次落定。turnId 必须盖住引擎的 turn-1，不能用本函数开头
+      // 的 `turn-${Date.now()}`——2026-08-18 快递柜刷新出双胞胎。
       final = stampTurnNarration(final, {
-        turnId,
+        turnId: narrationTurnIdFor(final, userText, turnId),
         user: userText,
         steps: collectedSteps,
         durationMs: Date.now() - turnStartMs,

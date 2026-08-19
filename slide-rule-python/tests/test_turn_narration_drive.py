@@ -1,0 +1,108 @@
+# -*- coding: utf-8 -*-
+"""驱动器把步骤写进 turnNarrations（会话 blob / 库），不另开表。
+
+2026-08-18 社区工具屋 sr-20260818172818：四轮都画了页，库里
+turnNarrations=[]，左栏「1 阶段 · 0 步」。字段早就在，没人写。
+
+删掉 stamp_drive_narration / 把 events_cursor 改成 0，下面必红。
+"""
+
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from types import SimpleNamespace  # noqa: E402
+
+from services.turn_narration import (  # noqa: E402
+    project_drive_steps,
+    stamp_drive_narration,
+    stamp_turn_narration,
+)
+
+
+def _event(kind, *, text="", cap="intent.parse", turn="loop-0"):
+    return {
+        "kind": kind,
+        "text": text,
+        "capabilityId": cap,
+        "turnId": turn,
+    }
+
+
+def _state(**kw):
+    base = dict(
+        sessionId="n",
+        goal={"text": "社区篮球馆", "status": "clear"},
+        reasoningEvents=[],
+        specFirstPages=None,
+        publishClosure=None,
+        turnNarrations=[],
+    )
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def test_project_skips_prior_drive_events():
+    """精修轮不得把首轮 intent.parse 再投一遍。"""
+    st = _state(reasoningEvents=[
+        _event("capability_start", cap="intent.parse", turn="loop-0"),
+        _event("capability_start", cap="risk.analyze", turn="loop-1"),
+        _event(
+            "think",
+            text="refine_skip_planning: 跳过规划循环，直进 appbundle.runtimeClosure",
+            cap="driver",
+        ),
+    ])
+    labels = [
+        str(s.get("label") or s.get("text") or "")
+        for s in project_drive_steps(st, user="加红标", events_cursor=2)
+    ]
+    assert any("精修" in x and "跳过规划" in x for x in labels)
+    assert not any("正在理解你的目标" in x for x in labels)
+    assert not any("正在分析风险" in x for x in labels)
+    # 反向：cursor=0 必须能看见首轮规划——否则上面那条绿灯是因为标签写错了
+    all_labels = [
+        str(s.get("label") or s.get("text") or "")
+        for s in project_drive_steps(st, user="加红标", events_cursor=0)
+    ]
+    assert any("正在理解你的目标" in x for x in all_labels)
+
+
+def test_project_pages_and_refine_narration():
+    st = _state(
+        goal={"text": "社区工具屋", "status": "clear"},
+        specFirstPages={"pages": {"p2": "<html>台账</html>", "p5": "<html>逾期</html>"}},
+        publishClosure={"refinePaintNote": "", "chatSummary": "含 2 角色、3 页面。"},
+    )
+    steps = project_drive_steps(st, user="台账加预约排队人数", events_cursor=0)
+    labels = [s.get("label") or s.get("text") or "" for s in steps]
+    assert any("🖼 界面已出：p2" in x for x in labels)
+    assert any("🖼 界面已出：p5" in x for x in labels)
+    finals = [s["text"] for s in steps if s.get("kind") == "narration" and s.get("isFinal")]
+    assert finals == ["本轮已按指令改画页面。"]
+    assert "含 2 角色" not in "".join(finals)
+
+
+def test_stamp_drive_writes_on_state_and_caps_three_turns():
+    st = _state(goal={"text": "x", "status": "clear"})
+    for i in range(4):
+        st.reasoningEvents = list(st.reasoningEvents or []) + [
+            _event("capability_start", cap="intent.parse", turn="loop-0")
+        ]
+        cursor = len(st.reasoningEvents) - 1
+        stamp_drive_narration(
+            st,
+            turn_id=f"turn-{i + 1}",
+            user=f"指令{i}",
+            events_cursor=cursor,
+        )
+    assert len(st.turnNarrations) == 3
+    assert [n["turnId"] for n in st.turnNarrations] == ["turn-2", "turn-3", "turn-4"]
+    assert st.turnNarrations[-1]["steps"], "最新一轮 steps 空着"
+
+
+def test_empty_steps_do_not_stamp():
+    st = _state(goal={"text": "x"})
+    stamp_turn_narration(st, turn_id="turn-1", user="u", steps=[])
+    assert st.turnNarrations == []

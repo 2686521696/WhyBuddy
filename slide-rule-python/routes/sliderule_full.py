@@ -650,36 +650,10 @@ def get_sess(
     return {"state": state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
 def _cap_turn_narrations(state: V5SessionState) -> None:
-    """E13 展示数据封顶：turnNarrations 只留最近 3 轮，每轮 ≤300 步、
-    文本字段 ≤1200 字符——回放足够，状态文件不膨胀。"""
-    raw = getattr(state, "turnNarrations", None) or []
-    capped: List[Dict[str, Any]] = []
-    for entry in raw[-3:]:
-        if not isinstance(entry, dict) or not entry.get("turnId"):
-            continue
-        steps = []
-        for step in (entry.get("steps") or [])[:300]:
-            if not isinstance(step, dict):
-                continue
-            slim = dict(step)
-            for key in ("text", "message", "label", "title"):
-                if isinstance(slim.get(key), str) and len(slim[key]) > 1200:
-                    slim[key] = slim[key][:1200] + "…"
-            steps.append(slim)
-        slim_entry: Dict[str, Any] = {
-            "turnId": str(entry["turnId"]),
-            "user": str(entry.get("user") or "")[:600],
-            "steps": steps,
-        }
-        # E16 收口句：本轮真实用时随叙述持久化（非数值丢弃，不编数据）
-        try:
-            duration = int(entry.get("durationMs") or 0)
-            if duration > 0:
-                slim_entry["durationMs"] = min(duration, 24 * 3600 * 1000)
-        except (TypeError, ValueError):
-            pass
-        capped.append(slim_entry)
-    state.turnNarrations = capped
+    """E13 展示数据封顶。实现与驱动器共用，避免 PUT 一条、drive 一条。"""
+    from services.turn_narration import cap_turn_narrations
+
+    cap_turn_narrations(state)
 
 
 @router.put("/sessions/{sid}")

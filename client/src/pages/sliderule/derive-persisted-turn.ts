@@ -1,7 +1,7 @@
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import { deriveTurnRoute, type TurnRouteFacts } from "@shared/blueprint/sliderule-turn-route";
 import type { UiTurn } from "./types";
-import { narrationStepsFor } from "./turn-narration";
+import { dedupeTurnNarrations, narrationStepsFor } from "./turn-narration";
 
 type ModelVersionSnap = {
   id?: string;
@@ -109,6 +109,8 @@ function sameRestoredTurn(a: string, b: string): boolean {
  *
  * 重建策略（第二版）：
  * 1. 叙述轮（turnNarrations，≤3 轮）永远出——它有真实的用户原文和逐步回放；
+ *    同原文两条（引擎 turn-1 + 客户端时间戳）先收成一条，否则「永远出」
+ *    会铺出双胞胎（2026-08-18 快递柜刷新）；
  * 2. 版本史先按轮去重（同 turnId 取最后一份），再只补叙述没覆盖的更早轮次
  *    （同轮判定见 sameRestoredTurn：精确匹配 + 时间戳差 ≤2ms 的跨端桥）；
  * 3. 按时间戳排序、末端 id 唯一闸——撞车的丢弃并 console.warn，绝不外泄。
@@ -133,10 +135,18 @@ export function deriveTurnsFromState(
     }
   }
 
-  // 2) 叙述轮永远出（用户原文 + 逐步回放都是真的）
+  // 2) 叙述轮永远出（用户原文 + 逐步回放都是真的）。
+  //    同原文双胞胎先收成一条，否则引擎 turn-1 + 客户端时间戳会各铺一轮。
+  const replayState: V5SessionState = {
+    ...state,
+    turnNarrations: dedupeTurnNarrations(
+      validNarrations(state),
+      versions.map(v => String(v.turnId || ""))
+    ),
+  };
   const narrated: string[] = [];
-  for (const n of validNarrations(state)) {
-    const turn = buildRestoredTurn(state, n.turnId, String(n.user || "").trim());
+  for (const n of validNarrations(replayState)) {
+    const turn = buildRestoredTurn(replayState, n.turnId, String(n.user || "").trim());
     if (!turn.user && turn.steps.length === 0) continue;
     narrated.push(n.turnId);
     entries.push({ stamp: turnStampOf(n.turnId), turn });
@@ -155,7 +165,7 @@ export function deriveTurnsFromState(
     if (!user) continue;
     entries.push({
       stamp: turnStampOf(turnId),
-      turn: buildRestoredTurn(state, turnId, user, claimed),
+      turn: buildRestoredTurn(replayState, turnId, user, claimed),
     });
   }
 

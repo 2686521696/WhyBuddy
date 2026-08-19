@@ -200,6 +200,34 @@ describe("deriveTurnsFromState (刷新后整段对话)", () => {
     expect(turns[1].steps).toHaveLength(0);
   });
 
+  it("引擎 turn-1 与客户端时间戳同原文 → 刷新只出一轮，步骤认更细的那份", () => {
+    // 2026-08-18 快递柜：Python 写 turn-1（24 步），前端另起 turn-<Date.now()>
+    // （50 步），刷新左栏双胞胎。打戳应覆盖；存量脏数据水合也要收成一条。
+    const USER = "给小区快递柜做一套取件码核销与超时滞留提醒系统";
+    const step = (id: string, text: string) => ({
+      id, kind: "narration" as const, text, source: "llm" as const,
+    });
+    const liveSteps = Array.from({ length: 8 }, (_, i) =>
+      step(`live-${i}`, `直播 ${i}`)
+    );
+    const state = {
+      goal: { text: USER, status: "clear" },
+      lastTurnId: "turn-2-drive-full",
+      capabilityRuns: [],
+      modelVersions: [{ id: "mv-1", turnId: "turn-1", instruction: USER }],
+      turnNarrations: [
+        { turnId: "turn-1", user: USER, steps: [step("srv-1", "引擎")] },
+        { turnId: "turn-1787051749500", user: USER, steps: liveSteps },
+      ],
+    } as unknown as V5SessionState;
+
+    const turns = deriveTurnsFromState(state);
+    expect(turns).toHaveLength(1);
+    expect(turns[0].id).toBe("turn-1");
+    expect(turns[0].steps).toHaveLength(8);
+    expect(turns[0].user).toBe(USER);
+  });
+
   it("反向：老编号 turn-3/turn-4 差 1 是真实相邻轮次，绝不许合并", () => {
     // 邻近判定只对 epoch 毫秒量级的时间戳开——老编号差 1 合并会吃掉真轮次。
     const step = (id: string, text: string) => ({

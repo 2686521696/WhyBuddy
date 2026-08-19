@@ -146,9 +146,10 @@ export function ArchitectureProcessPanel({
           }`}
         >
           {!liveAction.external && (
-            <span className="mr-1.5 inline-flex gap-0.5 align-middle">
-              <span className="size-1 animate-pulse rounded-full bg-stone-400" />
-              <span className="size-1 animate-pulse rounded-full bg-stone-400 [animation-delay:100ms]" />
+            <span className="mr-1.5 inline-flex items-end gap-0.5 align-middle" aria-hidden>
+              <span className="sr-dot size-1 rounded-full bg-stone-400" />
+              <span className="sr-dot size-1 rounded-full bg-stone-400" />
+              <span className="sr-dot size-1 rounded-full bg-stone-400" />
             </span>
           )}
           {liveAction.label}

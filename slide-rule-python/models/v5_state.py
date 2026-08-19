@@ -379,9 +379,10 @@ class V5SessionState(BaseModel):
     # No Node fallback; explicit minimal models for schema validation and roundtrips.
     sessionReplayLog: List[SlideRuleReplayEvent] = Field(default_factory=list)
     reasoningEvents: List[ReasoningEvent] = Field(default_factory=list)
-    # E13 直播时间线持久化：最近几轮左栏叙述步骤（纯展示数据，无信任语义，
-    # 客户端轮次落定时随 PUT 回传；刷新后前端据此完整回放推演时间线）。
-    # 封顶（3 轮 × 步数/字数）在 routes/sliderule_full.py PUT 落库前强制。
+    # E13 直播时间线持久化：最近几轮左栏叙述步骤（纯展示数据，无信任语义）。
+    # 2026-08-18 起由驱动器轮末写（旁路 drive / 刷新才看得到步骤）；
+    # 客户端 PUT 仍可覆盖同轮更细的直播芯片。封顶与 drive 共用
+    # services.turn_narration.cap_turn_narrations。
     turnNarrations: List[Dict[str, Any]] = Field(default_factory=list)
     # additional durable V5.2 session fields (currentFocus, userIntervention, booleans, dirty) for full schema parity (sliderule-python-v52-state-ts-parity-golden-105)
     currentFocus: Optional[Dict[str, Any]] = None
@@ -404,7 +405,8 @@ class V5SessionState(BaseModel):
     # Kept durable alongside publishClosure so browser reload can replay Skill linkage surfaces.
     skillRuntimeGraph: Optional[Dict[str, Any]] = None
     # spec-first 链路产出的整页 HTML（2026-08-14）：
-    # {version, pages: {pageId: html}, navItems: [...], boundPages: int}
+    # {version, pages: {pageId: html}, navItems: [...], boundPages: int,
+    #  pageBindStatus: {pageId: bound|failed|skipped}}
     #
     # ## 为什么必须落到状态里，而不是只走 SSE
     #
