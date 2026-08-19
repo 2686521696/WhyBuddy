@@ -66,7 +66,7 @@ import {
   ModalForm,
   ProCard,
   ProDescriptions,
-  ProForm,
+  ProForm as AntProForm,
   ProFormDateRangePicker,
   ProFormDatePicker,
   ProFormDateTimePicker,
@@ -80,10 +80,10 @@ import {
   ProFormSwitch,
   ProFormText,
   ProFormTextArea,
-  QueryFilter,
+  QueryFilter as AntQueryFilter,
   RowEditorTable,
   StatisticCard,
-  StepsForm,
+  StepsForm as AntStepsForm,
 } from "@ant-design/pro-components";
 // WorkflowTimeline 自己的节点箭头（组件 UI，用静态 import；freeform 的
 // 动态图标解析走下面的 AntdIcons 命名空间 + 目录别名表，两回事）。
@@ -114,6 +114,45 @@ import {
   ImportMappingWizardRenderer,
   OnboardingChecklistWizardRenderer,
 } from "./practice-wizards";
+import { useLibraryPreview } from "../library-preview-focus";
+
+/** 组件库预览里关掉首字段 autofocus；真应用仍走 ProForm 默认（true）。 */
+function ProForm(
+  props: React.ComponentProps<typeof AntProForm>
+) {
+  const preview = useLibraryPreview();
+  return (
+    <AntProForm
+      {...props}
+      autoFocusFirstInput={preview ? false : props.autoFocusFirstInput}
+    />
+  );
+}
+
+function QueryFilter(
+  props: React.ComponentProps<typeof AntQueryFilter>
+) {
+  const preview = useLibraryPreview();
+  return (
+    <AntQueryFilter
+      {...props}
+      autoFocusFirstInput={preview ? false : props.autoFocusFirstInput}
+    />
+  );
+}
+
+const StepsForm = Object.assign(
+  function StepsForm(props: React.ComponentProps<typeof AntStepsForm>) {
+    const preview = useLibraryPreview();
+    return (
+      <AntStepsForm
+        {...props}
+        autoFocusFirstInput={preview ? false : props.autoFocusFirstInput}
+      />
+    );
+  },
+  { StepForm: AntStepsForm.StepForm }
+);
 
 /** enum 字段取值声明的按需查询（entityId + fieldId → 归一化 options）。 */
 export type EnumOptionsLookup = (
@@ -5964,11 +6003,12 @@ const ReferenceManyManagerRenderer: ExperienceBlockRenderer = ({ block, children
 };
 
 const GlobalSearchPaletteRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {
+  const preview = useLibraryPreview();
   if (children !== undefined && children !== null) return <>{children}</>;
   const bound = rowsOfBinding(block, entityRows); const titleRef = fieldRefOf(block, "titleFieldRef"); const categoryRef = fieldRefOf(block, "categoryFieldRef"); const descRef = fieldRefOf(block, "descFieldRef"); const [keyword, setKeyword] = React.useState("");
   if (!bound || !titleRef) return <BlockShell block={block} title={String(block.props?.title ?? "全局搜索")} testid="global-search-palette"><BlockEmpty hint="全局搜索尚未绑定标题字段" /></BlockShell>;
   const normalized = keyword.trim().toLowerCase(); const rows = bound.rows.filter(row => normalized && [row.values?.[titleRef], descRef ? row.values?.[descRef] : ""].some(value => String(value ?? "").toLowerCase().includes(normalized))).slice(0, 12);
-  return <BlockShell block={block} title={String(block.props?.title ?? "全局搜索")} testid="global-search-palette"><Input.Search autoFocus allowClear value={keyword} onChange={event => setKeyword(event.target.value)} placeholder="搜索页面、记录或操作" />{!normalized ? <Typography.Paragraph type="secondary" style={{ margin: "12px 0 0" }}>输入关键词后显示匹配结果</Typography.Paragraph> : <List size="small" dataSource={rows} locale={{ emptyText: <BlockEmpty hint="没有匹配结果" /> }} renderItem={row => <List.Item onClick={() => onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: row.id })}><List.Item.Meta title={String(row.values?.[titleRef] ?? "未命名结果")} description={[categoryRef ? row.values?.[categoryRef] : "", descRef ? row.values?.[descRef] : ""].filter(Boolean).map(String).join(" · ")} /></List.Item>} />}</BlockShell>;
+  return <BlockShell block={block} title={String(block.props?.title ?? "全局搜索")} testid="global-search-palette"><Input.Search autoFocus={!preview} allowClear value={keyword} onChange={event => setKeyword(event.target.value)} placeholder="搜索页面、记录或操作" />{!normalized ? <Typography.Paragraph type="secondary" style={{ margin: "12px 0 0" }}>输入关键词后显示匹配结果</Typography.Paragraph> : <List size="small" dataSource={rows} locale={{ emptyText: <BlockEmpty hint="没有匹配结果" /> }} renderItem={row => <List.Item onClick={() => onAction?.("itemSelect", { entityRef: bound.entityRef, rowId: row.id })}><List.Item.Meta title={String(row.values?.[titleRef] ?? "未命名结果")} description={[categoryRef ? row.values?.[categoryRef] : "", descRef ? row.values?.[descRef] : ""].filter(Boolean).map(String).join(" · ")} /></List.Item>} />}</BlockShell>;
 };
 
 const LiveChangeReviewRenderer: ExperienceBlockRenderer = ({ block, children, entityRows, onAction }) => {

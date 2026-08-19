@@ -151,10 +151,18 @@ const COLS = [
  *
  * `submitter={false}` 去掉提交按钮：这一层是看"控件长什么样"，不是让人真的
  * 提交；每条示例底下挂一个「提 交」按钮只会把列表撑得又长又吵。
+ *
+ * `autoFocusFirstInput={false}`：这份文件只给组件库目录用。ProForm 默认
+ * 会给首字段加 autofocus，三十多张示例一起挂时整页被滚到最后一张表单。
  */
 function InForm({ children }: { children: React.ReactNode }) {
   return (
-    <ProForm submitter={false} layout="vertical" style={{ maxWidth: 360 }}>
+    <ProForm
+      submitter={false}
+      layout="vertical"
+      style={{ maxWidth: 360 }}
+      autoFocusFirstInput={false}
+    >
       {children}
     </ProForm>
   );
@@ -260,7 +268,7 @@ export const PRO_BASE_COMPONENTS: BaseComponentDef[] = [
     platform: "pc",
     source: "pro-components",
     render: () => (
-      <ProForm layout="vertical" style={{ maxWidth: 360 }} submitter={{ searchConfig: { submitText: "提交" } }}>
+      <ProForm layout="vertical" style={{ maxWidth: 360 }} autoFocusFirstInput={false} submitter={{ searchConfig: { submitText: "提交" } }}>
         <ProFormText name="a" label="名称" placeholder="请输入" />
         <ProFormSelect name="b" label="分类" options={OPTIONS} />
       </ProForm>
@@ -300,7 +308,7 @@ export const PRO_BASE_COMPONENTS: BaseComponentDef[] = [
     platform: "pc",
     source: "pro-components",
     render: () => (
-      <StepsForm>
+      <StepsForm autoFocusFirstInput={false}>
         <StepsForm.StepForm name="s1" title="第一步">
           <ProFormText name="a" label="名称" placeholder="请输入" />
         </StepsForm.StepForm>
@@ -318,7 +326,7 @@ export const PRO_BASE_COMPONENTS: BaseComponentDef[] = [
     platform: "pc",
     source: "pro-components",
     render: () => (
-      <QueryFilter defaultCollapsed>
+      <QueryFilter defaultCollapsed autoFocusFirstInput={false}>
         <ProFormText name="a" label="名称" />
         <ProFormSelect name="b" label="分类" options={OPTIONS} />
         <ProFormDatePicker name="c" label="日期" />
@@ -348,7 +356,7 @@ export const PRO_BASE_COMPONENTS: BaseComponentDef[] = [
     source: "pro-components",
     render: () => (
       <div style={{ maxWidth: 360 }}>
-        <LoginForm title="登录" subTitle="示例" submitter={{ searchConfig: { submitText: "登 录" } }}>
+        <LoginForm title="登录" subTitle="示例" autoFocusFirstInput={false} submitter={{ searchConfig: { submitText: "登 录" } }}>
           <ProFormText name="u" placeholder="用户名" />
           <ProFormText.Password name="p" placeholder="密码" />
         </LoginForm>

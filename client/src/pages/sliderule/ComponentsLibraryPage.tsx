@@ -62,6 +62,7 @@ import {
   BASE_SOURCES,
 } from "./base-components/base-catalog";
 import { findScrollParent } from "../agent-loop/dashboard/useScrollerIn";
+import { LibraryPreviewScope } from "./library-preview-focus";
 import { buildIndex } from "./component-search";
 import { blocksUsing, usageForBlock, usageMapFor, usageStats } from "./component-usage";
 import {
@@ -4537,10 +4538,12 @@ export default function ComponentsLibraryPage() {
     [filtered, device, searchHits]
   );
   return (
+    <LibraryPreviewScope>
     <div
       ref={scrollAnchorRef}
       data-testid="components-library"
       className="px-6 pb-10 pt-5 md:px-8 md:pt-6"
+      style={{ overflowAnchor: "none" }}
     >
       {/* 吸顶头：与应用中心同一套（-mx/-mt 抵消外层内边距，保证背景铺满） */}
       <div className="sticky top-0 z-30 -mx-6 -mt-5 bg-[var(--sr-shell-bg,#fff)] px-6 pt-5 pb-3 md:-mx-8 md:-mt-6 md:px-8 md:pt-6">
@@ -4787,5 +4790,6 @@ export default function ComponentsLibraryPage() {
         />
       )}
     </div>
+    </LibraryPreviewScope>
   );
 }

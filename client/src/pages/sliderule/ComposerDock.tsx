@@ -192,7 +192,7 @@ export function ComposerDock({
   stop?: () => void;
   /** 空态首页嵌入时的占位文案 */
   placeholder?: string;
-  /** 空态变体：文字在上、工具行在下；外观按 Cursor 新会话收，不是落地页大卡片 */
+  /** 空态变体：文字在上、工具行在下；外观按 Stitch 软底光晕收 */
   hero?: boolean;
 }) {
   // 模式选择器已删（用户裁决 2026-07-10）：深思一轮就是唯一产品路径
@@ -226,7 +226,7 @@ export function ComposerDock({
   const adjustTextareaHeight = React.useCallback(() => {
     const ta = textareaRef.current;
     if (!ta) return;
-    const minH = hero ? 72 : 32;
+    const minH = hero ? 88 : 32;
     const maxH = hero ? 160 : 112;
     if (!ta.value.trim()) {
       ta.style.height = `${minH}px`;
@@ -481,15 +481,32 @@ export function ComposerDock({
           {attachmentHint}
         </div>
       )}
+      <div className={hero ? "relative w-full" : "contents"}>
+      {hero && (
+        <div
+          aria-hidden
+          data-testid="sliderule-hero-glow"
+          className="pointer-events-none absolute -inset-[2px] rounded-[30px] opacity-70"
+          style={{
+            background:
+              "linear-gradient(120deg, rgba(167,139,250,.55), rgba(125,211,252,.45), rgba(244,114,182,.4))",
+            filter: "blur(10px)",
+          }}
+        />
+      )}
       <div
-        className={`pointer-events-auto relative w-full rounded-[12px] border bg-white px-3 py-1.5 shadow-none transition-colors ${isDragOver ? "border-[#1677ff] bg-[#e6f4ff]/40" : "border-[#e5e7eb]"}`}
+        className={
+          hero
+            ? `pointer-events-auto relative w-full rounded-[28px] border-0 bg-[#f3f4f6] px-4 py-3 ${isDragOver ? "bg-[#e6f4ff]/55" : ""}`
+            : `pointer-events-auto relative w-full rounded-[12px] border bg-white px-3 py-1.5 shadow-none transition-colors ${isDragOver ? "border-[#1677ff] bg-[#e6f4ff]/40" : "border-[#e5e7eb]"}`
+        }
         data-testid="sliderule-composer-dock"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
         {isDragOver && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-[12px] bg-[#e6f4ff]/60">
+          <div className={`pointer-events-none absolute inset-0 flex items-center justify-center bg-[#e6f4ff]/60 ${hero ? "rounded-[28px]" : "rounded-[12px]"}`}>
             <div className="flex items-center gap-2 text-sm font-medium text-[#0958d9]">
               <FileText className="h-4 w-4" />
               拖拽文件到这里
@@ -565,7 +582,7 @@ export function ComposerDock({
                 setMenuView("actions");
               }}
               disabled={isRunning}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-[#5e5e5e] transition hover:bg-[#f2f2f2] disabled:opacity-45"
+              className={`flex h-8 w-8 items-center justify-center text-[#5e5e5e] transition hover:bg-[#ececef] disabled:opacity-45 ${hero ? "rounded-full bg-white" : "rounded-md hover:bg-[#f2f2f2]"}`}
               title="更多动作"
               data-testid="sliderule-composer-plus"
             >
@@ -758,7 +775,7 @@ export function ComposerDock({
               data-testid="sliderule-hero-upload"
               title="上传资料"
               aria-label="上传资料"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[#5e5e5e] transition hover:bg-[#f2f2f2] disabled:opacity-45"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-[#5e5e5e] transition hover:bg-[#ececef] disabled:opacity-45"
             >
               <Paperclip className="h-4 w-4" />
             </button>
@@ -784,7 +801,7 @@ export function ComposerDock({
               aria-label={placeholderText}
               rows={1}
               disabled={isRunning}
-              className={`block w-full resize-none bg-transparent text-[#171717] outline-none placeholder:text-[#9ca3af] disabled:opacity-60 ${hero ? "max-h-40 min-h-[72px] px-1 py-0.5 text-[15px] leading-6" : "max-h-28 min-h-8 px-1 py-0 text-[14px] leading-8"}`}
+              className={`block w-full resize-none bg-transparent text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60 ${hero ? "max-h-40 min-h-[88px] px-1 py-1 text-[16px] leading-7" : "max-h-28 min-h-8 px-1 py-0 text-[14px] leading-8"}`}
               data-testid="sliderule-composer-input"
             />
           </div>
@@ -792,7 +809,7 @@ export function ComposerDock({
           {/* 优化提示词（用户裁决：原模式切换与左侧 + 菜单重复，改为提示词优化器） */}
           <button
             type="button"
-            className={`${hero ? "ml-auto" : ""} hidden h-8 w-8 shrink-0 items-center justify-center rounded-md text-[#5e5e5e] transition hover:bg-[#f2f2f2] disabled:opacity-45 sm:flex`}
+            className={`${hero ? "ml-auto rounded-full bg-white hover:bg-[#ececef]" : "rounded-md hover:bg-[#f2f2f2]"} hidden h-8 w-8 shrink-0 items-center justify-center text-[#5e5e5e] transition disabled:opacity-45 sm:flex`}
             title="优化提示词：把意图改写得更完整（实体/流程/角色/页面/AI）"
             data-testid="sliderule-prompt-refine"
             onClick={refinePrompt}
@@ -818,6 +835,7 @@ export function ComposerDock({
             )}
           </button>
         </div>
+      </div>
       </div>
     </div>
   );

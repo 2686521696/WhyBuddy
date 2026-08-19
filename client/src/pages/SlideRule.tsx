@@ -27,7 +27,7 @@ import {
   useMessage,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
-import { ArrowDown } from "lucide-react";
+import { ArrowDown, Plus } from "lucide-react";
 import type { BrainstormReasoningNode } from "@shared/blueprint";
 import { ReasoningFlowSurface } from "@/components/autopilot/ReasoningFlowSurface";
 import { useSlideRuleSession } from "./sliderule/useSlideRuleSession";
@@ -66,6 +66,7 @@ import {
 import { resolveImSurfaceMode } from "./sliderule/im-surface-mode";
 import { deriveSettledFiveSystemModel } from "./sliderule/system-screens/five-system-model";
 import { assistantTextForTurn } from "./sliderule/assistant-text-for-turn";
+import { ensureReadableChatMarkdown } from "./sliderule/readable-chat-markdown";
 import { SlideRuleStatusBar } from "./sliderule/SlideRuleStatusBar";
 import { SlideRuleTopHud } from "./sliderule/SlideRuleTopHud";
 import { StudioLayoutProvider } from "./sliderule/StudioLayoutContext";
@@ -76,6 +77,7 @@ import {
 } from "./sliderule/ClarificationCard";
 import { DeliverablesPanel } from "./sliderule/DeliverablesPanel";
 import { ComposerDock } from "./sliderule/ComposerDock";
+import { HomeInspiration } from "./sliderule/home-inspiration";
 import { EXAMPLE_INTENT_TEXTS } from "./sliderule/example-intents";
 import { deriveComposerHintChips } from "./sliderule/derive-composer-hints";
 import type { UiTurn } from "./sliderule/types";
@@ -282,9 +284,10 @@ function TurnPhaseTimeline({
 }
 
 // 快速开始：三个完整场景，点击把意图填进输入框（fill-prompt 不变）。
-// 2026-08-18 空态按 Cursor 新会话收：短问候 + 轻输入框 + 扁平 chips。
-// 上一版是 logo + 主张句 + 副标题 + 投影卡片 + 回车提示——侧栏已经是
-// Cursor 尺度，中间还停在落地页，两边不像一套产品。
+// 2026-08-19 空态按 Stitch 工作台收：大问候 + 软底光晕输入 + 扁胶囊 +
+// 底部灵感（一句导去应用中心 Fork，不画卡）。
+// 上一版 Cursor 新会话太瘦；再上一版 logo + 主张句 + 投影卡又太像落地页
+// （测试仍禁止那些旧文案）。
 const QUICK_STARTS: ReadonlyArray<{
   label: string;
   fill: string;
@@ -297,6 +300,12 @@ const QUICK_STARTS: ReadonlyArray<{
   },
 ];
 
+function fillPrompt(text: string) {
+  window.dispatchEvent(
+    new CustomEvent("sliderule:fill-prompt", { detail: { text } })
+  );
+}
+
 function HomeEmptyState({
   isRunning,
   composerSlot,
@@ -305,48 +314,72 @@ function HomeEmptyState({
   /** 空态时唯一的 ComposerDock 挪进首页流（开聊后回底部停靠，二选一渲染） */
   composerSlot?: React.ReactNode;
 }) {
-  const fillPrompt = (text: string) => {
-    window.dispatchEvent(
-      new CustomEvent("sliderule:fill-prompt", { detail: { text } })
-    );
-  };
-
   // ⚑ E41 官方示例的「点模板卡 → 暂存起手意图 → 空态预填」消费端
   //   已随示例库一起下架（2026-08-14，用户裁决清除四个官方示例）——
   //   没有生产者再往 sliderule:pending-template-intent 写值。
   return (
     <div
-      className="flex h-full flex-col items-center justify-center gap-6 text-center"
+      className="flex min-h-full flex-col"
       data-testid="sliderule-empty-state"
     >
-      <h1 className="text-[22px] font-medium tracking-tight text-[#171717]">
-        想推演成什么应用？
-      </h1>
-
-      {composerSlot && (
-        <div
-          className="w-full max-w-[640px]"
-          data-testid="sliderule-hero-composer"
-        >
-          {composerSlot}
+      <div className="flex flex-1 flex-col items-center justify-center gap-7 px-1 py-6">
+        <div className="flex w-full flex-wrap items-center justify-center gap-3">
+          <h1 className="text-[26px] font-semibold tracking-tight text-[#171717] sm:text-[28px]">
+            想推演成什么应用？
+          </h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={isRunning}
+              data-testid="sliderule-empty-upload"
+              onClick={() =>
+                window.dispatchEvent(new Event("sliderule:open-file-picker"))
+              }
+              className="inline-flex items-center gap-1 rounded-full bg-[#f3f4f6] px-3 py-1.5 text-[13px] text-[#333] transition hover:bg-[#e8eaed] disabled:opacity-50"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              上传资料
+            </button>
+            <button
+              type="button"
+              disabled={isRunning}
+              data-testid="sliderule-empty-example"
+              onClick={() => fillPrompt(QUICK_STARTS[0].fill)}
+              className="inline-flex items-center gap-1 rounded-full bg-[#f3f4f6] px-3 py-1.5 text-[13px] text-[#333] transition hover:bg-[#e8eaed] disabled:opacity-50"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              从示例开始
+            </button>
+          </div>
         </div>
-      )}
 
-      <div className="flex flex-wrap justify-center gap-2">
-        {QUICK_STARTS.map(({ label, fill }) => (
-          <button
-            key={label}
-            type="button"
-            disabled={isRunning}
-            data-testid={`sliderule-quick-start-${label}`}
-            title={fill}
-            onClick={() => fillPrompt(fill)}
-            className="rounded-full bg-[#f3f4f6] px-3 py-1.5 text-[13px] text-[#444] transition hover:bg-[#e8eaed] disabled:opacity-50"
+        {composerSlot && (
+          <div
+            className="w-full max-w-[680px]"
+            data-testid="sliderule-hero-composer"
           >
-            {label}
-          </button>
-        ))}
+            {composerSlot}
+          </div>
+        )}
+
+        <div className="flex max-w-[680px] flex-wrap justify-center gap-2">
+          {QUICK_STARTS.map(({ label, fill }) => (
+            <button
+              key={label}
+              type="button"
+              disabled={isRunning}
+              data-testid={`sliderule-quick-start-${label}`}
+              title={fill}
+              onClick={() => fillPrompt(fill)}
+              className="rounded-full bg-[#f3f4f6] px-3.5 py-1.5 text-[13px] text-[#444] transition hover:bg-[#e8eaed] disabled:opacity-50"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
+
+      <HomeInspiration />
     </div>
   );
 }
@@ -354,7 +387,7 @@ function HomeEmptyState({
 /**
  * ClaudeChatSurface — 统一页左栏对话区（Claude 风格轻量 prose 布局）。
  * 头部动作（交付物 / 重置会话 / Dev）由页面唯一顶栏承担；这里只负责对话流与
- * 唯一空态（短问候 + 输入框 + 3 个示例 chips）。
+ * 唯一空态（问候 + 光晕输入 + chips + 灵感一句）。
  */
 // --- assistant-ui 迁移（左栏 IM 地基）--------------------------------------
 // 滚动跟随 / 消息列表 / 空态分支由 Thread 原语接管（Viewport 自带贴底跟随，
@@ -481,7 +514,9 @@ function ImAssistantMessage() {
     thinkingText,
     onChallenge,
   } = ctx;
-  const answer = assistantTextForTurn(turn, publishClosure, goalText);
+  const answer = ensureReadableChatMarkdown(
+    assistantTextForTurn(turn, publishClosure, goalText)
+  );
   return (
     <div className="mb-5 max-w-[640px]">
       {turn.status === "streaming" ? (
@@ -545,11 +580,16 @@ function ImAssistantMessage() {
                data-answer-present：Response 在 SSR/静态渲染下产出为空
                （客户端才填充），测试以此属性断言"回答已就位"。 */
             <div
-              className="max-w-none text-[14px] leading-[1.7] text-[#171717]"
+              className="max-w-none overflow-visible pb-1 text-[14px] leading-[1.7] text-[#171717]"
               data-testid="sliderule-turn-answer"
               data-answer-present={answer ? "true" : "false"}
             >
-              <Response parseIncompleteMarkdown={false}>{answer}</Response>
+              <Response
+                parseIncompleteMarkdown={false}
+                className="h-auto w-full overflow-visible"
+              >
+                {answer}
+              </Response>
             </div>
           )}
           {(turn.main || turn.user) && (
@@ -705,8 +745,8 @@ export function ClaudeChatSurface({
             </ThreadPrimitive.ScrollToBottom>
             <ThreadPrimitive.Viewport className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col overflow-y-auto px-4 pb-3 pt-3 [scrollbar-gutter:stable] sm:px-5">
               <ThreadPrimitive.Empty>
-                {/* 空态：短问候 + 输入框 + chips。chips 走 fill-prompt，
-                    同一条推演管线的不同起手，不造假功能入口。 */}
+                {/* 空态：问候 + 输入 + chips + 底栏一句。chips 走 fill-prompt，
+                    灵感句只导去应用中心，不造假功能入口。 */}
                 <HomeEmptyState
                   isRunning={isRunning}
                   composerSlot={composerSlot}
@@ -847,7 +887,7 @@ export async function loadPythonRuntimeProjectionFromSession(
  * SlideRuleUnified — 唯一产品界面（studio 骨架，无模式切换）。
  *
  * - 顶部单行 header：Cursor 式布局图标簇 + 交付物/重置会话。
- * - 左栏：对话流（含唯一空态：短问候 + 输入框 + 示例 chips）。
+ * - 左栏：对话流（含唯一空态：问候 + 光晕输入 + chips + 灵感卡）。
  * - 右栏：ArchitectureStage（沙盘/架构图）+ 抽屉 inspector / Checks。
  * - 底部：唯一 ComposerDock（+ 实用动作菜单 / ✨优化提示词），澄清卡片浮在其上。
  *

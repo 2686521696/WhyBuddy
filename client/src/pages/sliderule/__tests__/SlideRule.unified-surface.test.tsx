@@ -130,7 +130,7 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain('href="/sliderule/dev"');
   });
 
-  it("empty session shows THE single empty state: short greeting + composer + 3 chips", () => {
+  it("empty session shows THE single empty state: greeting + glow composer + chips + inspiration", () => {
     const html = renderPage();
 
     expect(html.match(/data-testid="sliderule-empty-state"/g)?.length).toBe(1);
@@ -148,6 +148,17 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).toContain('data-testid="sliderule-quick-start-客户管理系统"');
     expect(html).not.toContain("从需求文档开始");
     expect(html).not.toContain(">快速开始<");
+    // 光晕输入 + 底栏一句（不画灵感卡）
+    expect(html).toContain('data-testid="sliderule-hero-glow"');
+    expect(html).toContain("需要灵感？");
+    expect(html).toContain("Fork一下，快人一步");
+    expect(html).toContain('data-testid="sliderule-inspiration"');
+    expect(html).toContain('data-testid="sliderule-inspiration-all"');
+    expect(html).not.toContain(
+      'data-testid="sliderule-inspiration-采购审批应用"'
+    );
+    expect(html).not.toContain('data-testid="sliderule-inspiration-wall"');
+    expect(html).not.toContain("应用中心还没有可展示的项目");
     // hero composer 仍在首页流里，且全页仍只有一个 ComposerDock
     expect(html).toContain('data-testid="sliderule-hero-composer"');
     expect(html.match(/data-testid="sliderule-composer-dock"/g)?.length).toBe(

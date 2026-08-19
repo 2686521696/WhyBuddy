@@ -97,7 +97,7 @@ describe("对话区 / 输入条 Cursor 尺度（装在真链路上）", () => {
     // 停靠条：同行垂直居中。变异：items-end 或 textarea 再高于图标必红。
     expect(dock).toContain('hero ? "flex flex-wrap items-center gap-2" : "flex items-center gap-2"');
     expect(dock).not.toContain("flex items-end gap-2");
-    expect(dock).toContain("hero ? 72 : 32");
+    expect(dock).toContain("hero ? 88 : 32");
     expect(dock).not.toContain("min-w-0 flex-1 pb-0.5");
   });
 });
