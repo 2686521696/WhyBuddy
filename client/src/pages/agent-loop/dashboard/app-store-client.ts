@@ -43,6 +43,8 @@ export interface AppStoreSummary {
    */
   owner_id?: string | null;
   visibility?: "public" | "unlisted" | "private";
+  /** 官方货架。缺省按 false——老后端没这个字段。 */
+  is_official?: boolean;
   /**
    * 这条记录有没有缩略图。有就贴图，没有就回落活渲染。
    *
@@ -110,25 +112,39 @@ export interface AppStoreRecord extends AppStoreSummary {
 
 const BASE = "/api/sliderule";
 
+/**
+ * 缩略图地址。`?v=` 是缓存版本位（摘要 preview_tag）。
+ * 响应 immutable 强缓存，图变了 URL 必须跟着变。
+ */
+export function appPreviewUrl(appId: string, tag?: string | null): string {
+  const base = `${BASE}/apps/${encodeURIComponent(appId)}/preview`;
+  return tag ? `${base}?v=${encodeURIComponent(tag)}` : base;
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { headers: { accept: "application/json" } });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return (await res.json()) as T;
 }
 
+export type AppShelf = "market" | "mine" | "official";
+
 /**
  * 应用画廊列表——默认每个应用只出最新版，摘要不含大模型载荷。
  * 对标 ToolJet getAll：翻页/条数是服务端参数，不在前端全量切片。
+ *
+ * `scope` 是货架：market / mine / official。不传则走旧列表（侧栏缩略图）。
  */
 export async function listApps(
-  opts: { limit?: number; offset?: number } = {}
+  opts: { limit?: number; offset?: number; scope?: AppShelf } = {}
 ): Promise<AppStoreSummary[]> {
   // 默认一页 12 张（跟应用中心 PAGE_SIZE 对齐）。⚠ 2026-08-18 以前默认 200，
   // 首页 `listApps()` 不传参就把全表摘要一次拉回——滚动分页形同虚设。
   const limit = opts.limit ?? 12;
   const offset = opts.offset ?? 0;
+  const scope = opts.scope ? `&scope=${encodeURIComponent(opts.scope)}` : "";
   const data = await getJson<{ apps?: AppStoreSummary[] }>(
-    `${BASE}/apps?limit=${limit}&offset=${offset}`
+    `${BASE}/apps?limit=${limit}&offset=${offset}${scope}`
   );
   return Array.isArray(data?.apps) ? data.apps : [];
 }
@@ -140,6 +156,24 @@ export async function listApps(
 export async function getApp(id: string): Promise<AppStoreRecord | null> {
   try {
     return await getJson<AppStoreRecord>(`${BASE}/apps/${encodeURIComponent(id)}`);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 这个会话最新落库的那条应用摘要。推演收口靠它拿到 app_id 去回传截图。
+ * 404 / 网络失败返回 null——截图是增强项，没有 id 就这次不采。
+ */
+export async function getGeneratedAppForSession(
+  sessionId: string
+): Promise<AppStoreSummary | null> {
+  const id = sessionId.trim();
+  if (!id) return null;
+  try {
+    return await getJson<AppStoreSummary>(
+      `${BASE}/sessions/${encodeURIComponent(id)}/generated-app`
+    );
   } catch {
     return null;
   }
@@ -197,5 +231,23 @@ export async function deleteApp(id: string): Promise<boolean> {
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+/** 改可见性 / 官方标记。失败返回 null。 */
+export async function patchApp(
+  id: string,
+  body: { visibility?: "public" | "unlisted" | "private"; is_official?: boolean }
+): Promise<{ visibility?: string; is_official?: boolean } | null> {
+  try {
+    const res = await fetch(`${BASE}/apps/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as { visibility?: string; is_official?: boolean };
+  } catch {
+    return null;
   }
 }

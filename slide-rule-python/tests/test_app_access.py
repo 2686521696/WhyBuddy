@@ -13,13 +13,18 @@ import pytest
 
 from services.app_access import (
     Access,
+    OFFICIAL_OWNER_ID,
+    Shelf,
     Visibility,
     access_for,
     can,
     filter_records,
     fork_visibility,
+    matches_shelf,
     normalize_visibility,
     require,
+    transfer_from_official,
+    transfer_to_official,
 )
 
 
@@ -155,21 +160,17 @@ def test_only_owner_can_change_visibility_or_delete():
 
 
 def test_fork_of_a_private_app_stays_private():
-    """**这条最容易做反。**
-
-    Fork 产出的是一条新记录、新所有者，写成默认公开非常自然——而那样 Fork 就成了
-    绕过私有的后门：被授权的协作者 Fork 一下就把别人的私有应用公开了。
-    Gitea 的做法是继承（services/repository/fork.go:97）。
-    """
+    """私有源复刻后仍私有——这条是后门防线，Gitea git fork 与模板生成都成立。"""
     assert fork_visibility(app(visibility=Visibility.PRIVATE)) == Visibility.PRIVATE
 
 
-def test_fork_of_unlisted_stays_unlisted():
-    assert fork_visibility(app(visibility=Visibility.UNLISTED)) == Visibility.UNLISTED
+def test_fork_of_a_public_or_unlisted_app_starts_private():
+    """对标 Gitea GenerateRepository：复刻进我的应用，要上市场再点公开。
 
-
-def test_fork_of_public_stays_public():
-    assert fork_visibility(app(visibility=Visibility.PUBLIC)) == Visibility.PUBLIC
+    反：把公开源的复刻写成 public，市场会立刻多一张孪生卡。
+    """
+    assert fork_visibility(app(visibility=Visibility.PUBLIC)) == Visibility.PRIVATE
+    assert fork_visibility(app(visibility=Visibility.UNLISTED)) == Visibility.PRIVATE
 
 
 def test_fork_visibility_never_downgrades_privacy():
@@ -262,3 +263,74 @@ def test_require_passes_when_allowed():
     require("view", app(), None)
     require("delete", app(), ALICE)
     require("delete", app(visibility=Visibility.PRIVATE, owner_id="x"), ROOT)
+
+
+# ────────────────────── ⑦ 货架（展示口径，不是第二套权限） ──────────────────────
+
+
+def test_mine_shelf_is_owner_only_even_for_superuser():
+    """⚠ 2026-08-19：原先「我的应用」= filter_records 之后全部可见。
+    超管会把自己的、别人的、广场上的混成一墙。货架必须按 owner_id 切。"""
+    records = [
+        app(id="alice-pub", owner_id="u-alice", visibility=Visibility.PUBLIC),
+        app(id="root-own", owner_id="u-root", visibility=Visibility.PRIVATE),
+        app(id="bob-pub", owner_id="u-bob", visibility=Visibility.PUBLIC),
+    ]
+    mine_root = [r["id"] for r in records if matches_shelf(r, Shelf.MINE, ROOT)]
+    assert mine_root == ["root-own"]
+    mine_alice = [r["id"] for r in records if matches_shelf(r, Shelf.MINE, ALICE)]
+    assert mine_alice == ["alice-pub"]
+    assert matches_shelf(app(owner_id="u-alice"), Shelf.MINE, None) is False
+
+
+def test_official_app_is_not_on_the_market_shelf():
+    rec = app(is_official=True, visibility=Visibility.PUBLIC)
+    assert matches_shelf(rec, Shelf.OFFICIAL, None) is True
+    assert matches_shelf(rec, Shelf.MARKET, None) is False
+    assert matches_shelf(rec, Shelf.MINE, ALICE) is True
+
+
+def test_private_owned_app_is_mine_not_market():
+    rec = app(visibility=Visibility.PRIVATE, owner_id="u-alice")
+    assert matches_shelf(rec, Shelf.MINE, ALICE) is True
+    assert matches_shelf(rec, Shelf.MARKET, ALICE) is False
+    assert matches_shelf(rec, Shelf.MARKET, None) is False
+
+
+def test_public_non_official_is_on_the_market():
+    rec = app(visibility=Visibility.PUBLIC, is_official=False)
+    assert matches_shelf(rec, Shelf.MARKET, None) is True
+    assert matches_shelf(rec, Shelf.OFFICIAL, None) is False
+
+
+def test_transfer_to_official_changes_owner_not_just_a_flag():
+    """对标 Gitea transferOwnership：官方货架上的应用归面团官方，不归原作者。"""
+    rec = transfer_to_official(app(owner_id="u-alice", visibility=Visibility.PRIVATE))
+    assert rec["owner_id"] == OFFICIAL_OWNER_ID
+    assert rec["prior_owner_id"] == "u-alice"
+    assert rec["is_official"] is True
+    assert rec["visibility"] == Visibility.PUBLIC
+    assert matches_shelf(rec, Shelf.MINE, ALICE) is False
+    assert matches_shelf(rec, Shelf.OFFICIAL, None) is True
+    assert matches_shelf(rec, Shelf.MARKET, None) is False
+
+
+def test_transfer_from_official_returns_the_prior_owner():
+    rec = transfer_from_official(
+        transfer_to_official(app(owner_id="u-alice", visibility=Visibility.PUBLIC))
+    )
+    assert rec["owner_id"] == "u-alice"
+    assert rec["prior_owner_id"] is None
+    assert rec["is_official"] is False
+    assert matches_shelf(rec, Shelf.MINE, ALICE) is True
+    assert matches_shelf(rec, Shelf.OFFICIAL, None) is False
+
+
+def test_legacy_flag_without_transfer_still_counts_as_official_shelf():
+    """过渡：老数据只打了勾、owner 还是原作者。货架认旗；交还时只摘旗。"""
+    rec = app(is_official=True, owner_id="u-alice", visibility=Visibility.PUBLIC)
+    assert matches_shelf(rec, Shelf.OFFICIAL, None) is True
+    assert matches_shelf(rec, Shelf.MINE, ALICE) is True
+    released = transfer_from_official(dict(rec))
+    assert released["owner_id"] == "u-alice"
+    assert released["is_official"] is False

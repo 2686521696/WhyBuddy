@@ -188,6 +188,28 @@ def test_公开应用的众包补图保住了(env):
     assert r.status_code == 200
 
 
+def test_路过的访客不能覆盖别人已经采好的图(env):
+    """replace 要写权限。众包只补空槽，不能把作者推演收口那张改掉。"""
+    store, c = env["store"], env["client"]
+    aid = _seed(store, owner_id=env["alice"]["user"]["id"], visibility="public", name="公开货2")
+    first = c.post(
+        f"{API}/apps/{aid}/preview", content=_PNG,
+        headers={**_hdr(env["alice"]), "content-type": "image/png"},
+    )
+    assert first.status_code == 200 and first.json()["stored"] is True
+    nxt = b"\x89PNG\r\n\x1a\n" + b"\x01" * 32
+    r = c.post(
+        f"{API}/apps/{aid}/preview?replace=true", content=nxt,
+        headers={**_hdr(env["bob"]), "content-type": "image/png"},
+    )
+    assert r.status_code == 403
+    owner = c.post(
+        f"{API}/apps/{aid}/preview?replace=true", content=nxt,
+        headers={**_hdr(env["alice"]), "content-type": "image/png"},
+    )
+    assert owner.status_code == 200 and owner.json()["stored"] is True
+
+
 # ────────────────── ⑥ 模板库写入要登录 ──────────────────
 
 

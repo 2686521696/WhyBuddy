@@ -202,6 +202,127 @@ def test_cannot_fork_what_you_cannot_see(env):
     assert c.post(f"{API}/apps/{aid}/fork", headers=_hdr(env["bob"])).status_code == 404
 
 
+def _shelf_names(client, who, scope):
+    r = client.get(f"{API}/apps", params={"scope": scope, "limit": 50}, headers=_hdr(who))
+    assert r.status_code == 200, r.text
+    return {a.get("product_name") for a in r.json()["apps"]}
+
+
+# ────────────────────── 货架 scope=market|mine|official ──────────────────────
+
+
+def test_unknown_shelf_is_400(env):
+    c = env["client"]
+    assert c.get(f"{API}/apps", params={"scope": "everything"}, headers=_hdr()).status_code == 400
+
+
+def test_anonymous_mine_shelf_is_empty(env):
+    store, c = env["store"], env["client"]
+    _seed(store, owner_id=env["alice"]["user"]["id"], visibility="public", name="广场上的")
+    got = c.get(f"{API}/apps", params={"scope": "mine"}, headers=_hdr()).json()["apps"]
+    assert got == []
+
+
+def test_mine_shelf_is_owner_scoped_even_for_superuser(env):
+    """超管的「我的应用」也只装他自己创建/Fork 的，不能把全站货架混进来。"""
+    store, c = env["store"], env["client"]
+    _seed(store, owner_id=env["alice"]["user"]["id"], visibility="public", name="爱丽丝的公开")
+    _seed(store, owner_id=env["bob"]["user"]["id"], visibility="public", name="鲍勃的公开")
+    _seed(store, owner_id=env["root"]["user"]["id"], visibility="private", name="超管自己的")
+
+    root_mine = _shelf_names(c, env["root"], "mine")
+    assert "超管自己的" in root_mine
+    assert "爱丽丝的公开" not in root_mine
+    assert "鲍勃的公开" not in root_mine
+    alice_mine = _shelf_names(c, env["alice"], "mine")
+    assert alice_mine == {"爱丽丝的公开"}
+
+
+def test_market_hides_private_and_official_apps(env):
+    store, c = env["store"], env["client"]
+    alice_id = env["alice"]["user"]["id"]
+    public_id = _seed(store, owner_id=alice_id, visibility="public", name="广场货")
+    _seed(store, owner_id=alice_id, visibility="private", name="私房货")
+    official_id = _seed(store, owner_id=alice_id, visibility="public", name="官方货")
+    store.patch_app(official_id, is_official=True)
+
+    market = _shelf_names(c, None, "market")
+    assert "广场货" in market
+    assert "私房货" not in market
+    assert "官方货" not in market
+    official = _shelf_names(c, None, "official")
+    assert official == {"官方货"}
+    assert public_id not in {a["id"] for a in c.get(f"{API}/apps", params={"scope": "official"}, headers=_hdr()).json()["apps"]}
+
+
+def test_owner_can_publish_and_unpublish(env):
+    store, c = env["store"], env["client"]
+    aid = _seed(store, owner_id=env["alice"]["user"]["id"], visibility="private", name="先私后公")
+    assert "先私后公" not in _shelf_names(c, env["alice"], "market")
+    assert "先私后公" in _shelf_names(c, env["alice"], "mine")
+
+    ok = c.patch(f"{API}/apps/{aid}", json={"visibility": "public"}, headers=_hdr(env["alice"]))
+    assert ok.status_code == 200
+    assert ok.json()["visibility"] == "public"
+    assert "先私后公" in _shelf_names(c, None, "market")
+
+    # 公开之后别人看得见，但改可见性仍要 OWNER；看不见的私有应用走 404，
+    # 这条必须钉在「看得见但不够权」上，否则 403 断言会被 404 喂饱。
+    denied = c.patch(f"{API}/apps/{aid}", json={"visibility": "private"}, headers=_hdr(env["bob"]))
+    assert denied.status_code == 403
+
+    back = c.patch(f"{API}/apps/{aid}", json={"visibility": "private"}, headers=_hdr(env["alice"]))
+    assert back.status_code == 200
+    assert "先私后公" not in _shelf_names(c, None, "market")
+    assert "先私后公" in _shelf_names(c, env["alice"], "mine")
+
+
+def test_only_superuser_can_mark_official(env):
+    store, c = env["store"], env["client"]
+    aid = _seed(store, owner_id=env["alice"]["user"]["id"], visibility="public", name="候选官方")
+
+    as_owner = c.patch(f"{API}/apps/{aid}", json={"is_official": True}, headers=_hdr(env["alice"]))
+    assert as_owner.status_code == 403
+    as_root = c.patch(f"{API}/apps/{aid}", json={"is_official": True}, headers=_hdr(env["root"]))
+    assert as_root.status_code == 200
+    assert as_root.json()["is_official"] is True
+    assert as_root.json()["owner_id"] == "system:official"
+    assert as_root.json()["prior_owner_id"] == env["alice"]["user"]["id"]
+    assert "候选官方" in _shelf_names(c, None, "official")
+    assert "候选官方" not in _shelf_names(c, None, "market")
+    assert "候选官方" not in _shelf_names(c, env["alice"], "mine"), "移交后不应再出现在原作者的我的应用"
+
+    back = c.patch(f"{API}/apps/{aid}", json={"is_official": False}, headers=_hdr(env["root"]))
+    assert back.status_code == 200
+    assert back.json()["owner_id"] == env["alice"]["user"]["id"]
+    assert "候选官方" in _shelf_names(c, env["alice"], "mine")
+    assert "候选官方" not in _shelf_names(c, None, "official")
+
+
+def test_fork_lands_on_forkers_mine_shelf(env):
+    store, c = env["store"], env["client"]
+    aid = _seed(store, owner_id=env["alice"]["user"]["id"], visibility="public", name="可复刻")
+    resp = c.post(f"{API}/apps/{aid}/fork", json={"name": "我的副本"}, headers=_hdr(env["bob"]))
+    assert resp.status_code == 200
+    assert "我的副本" in _shelf_names(c, env["bob"], "mine")
+    assert "我的副本" not in _shelf_names(c, env["alice"], "mine")
+    copy = store.get_app(resp.json()["id"])
+    assert copy["is_official"] is False
+    assert copy["visibility"] == "private"
+    assert "我的副本" not in _shelf_names(c, None, "market")
+
+
+def test_new_app_without_visibility_stays_off_the_market(env):
+    """闭环默认 private：不显式公开就不进应用市场。"""
+    store, c = env["store"], env["client"]
+    model = {"appbundle": {"appIdentity": {"productName": "刚闭环"}}, "dataModel": {"entities": []}}
+    store.save_app(model, goal="刚闭环", session_id=None, gate_passed=True, owner_id=env["alice"]["user"]["id"])
+    rec = store.get_app(store.list_apps(shelf="mine", owner_id=env["alice"]["user"]["id"])[0]["id"])
+    assert rec["visibility"] == "private"
+    assert "刚闭环" in _shelf_names(c, env["alice"], "mine")
+    assert "刚闭环" not in _shelf_names(c, env["alice"], "market")
+
+
 # ────────────────────── 推演：匿名只能查看 ──────────────────────
 
 

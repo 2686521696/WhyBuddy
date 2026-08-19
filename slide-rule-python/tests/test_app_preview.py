@@ -432,9 +432,17 @@ def api_client(configured_store):
 _PNG = b"\x89PNG\r\n\x1a\n" + b"X" * 64
 
 
+def _public_app(session_id: str, **kw) -> str:
+    """上传夹具走公开应用：新建默认私有，匿名 TestClient 看不见，POST 会 404。
+    众包补图本就只发生在能看见的卡上。"""
+    return store.save_app(
+        _model(), goal="g", session_id=session_id, visibility="public", **kw
+    )
+
+
 def test_upload_stores_the_shot_and_it_wins(api_client):
     """回传的截图存进 shot 槽，并顶掉参照板成为取图默认。"""
-    app_id = store.save_app_or_version(_model(), goal="g", session_id="u1", preview_png_b64=PNG_A)
+    app_id = _public_app("u1", preview_png_b64=PNG_A)
     res = api_client.post(f"/api/sliderule/apps/{app_id}/preview", content=_PNG,
                           headers={"content-type": "image/png"})
     assert res.status_code == 200 and res.json()["stored"] is True
@@ -446,7 +454,7 @@ def test_upload_stores_the_shot_and_it_wins(api_client):
 def test_upload_is_idempotent(api_client):
     """已经有截图就跳过。同一张卡可能被多个标签页/来回滚动重复采集——重复写只是
     白费带宽，还会平白让 immutable 缓存失效一次。"""
-    app_id = store.save_app_or_version(_model(), goal="g", session_id="u2", preview_png_b64=PNG_A)
+    app_id = _public_app("u2", preview_png_b64=PNG_A)
     first = api_client.post(f"/api/sliderule/apps/{app_id}/preview", content=_PNG,
                             headers={"content-type": "image/png"})
     assert first.json()["stored"] is True
@@ -456,10 +464,42 @@ def test_upload_is_idempotent(api_client):
     assert store.get_app_preview_png(app_id) == _PNG, "第二次不该覆盖"
 
 
+def test_upload_replace_without_writer_is_rejected(api_client):
+    """覆盖要写权限。这条夹具里的应用无主，匿名只有读——replace 必须 401，
+    不能因为测试里没登录就把别人的 shot 换掉。真覆盖见 test_auth_hardening。"""
+    app_id = _public_app("u2b", preview_png_b64=PNG_A)
+    first = api_client.post(
+        f"/api/sliderule/apps/{app_id}/preview",
+        content=_PNG,
+        headers={"content-type": "image/png"},
+    )
+    assert first.json()["stored"] is True
+    nxt = b"\x89PNG\r\n\x1a\n" + b"Y" * 64
+    replaced = api_client.post(
+        f"/api/sliderule/apps/{app_id}/preview?replace=true",
+        content=nxt,
+        headers={"content-type": "image/png"},
+    )
+    assert replaced.status_code == 401
+    assert store.get_app_preview_png(app_id) == _PNG
+
+
+def test_session_generated_app_returns_summary(api_client):
+    """推演收口用 session_id 反查 app_id，不许把 model_json 拖回来。"""
+    app_id = _public_app("hero-session")
+    res = api_client.get("/api/sliderule/sessions/hero-session/generated-app")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["id"] == app_id
+    assert "model_json" not in body and "pages_json" not in body
+    miss = api_client.get("/api/sliderule/sessions/no-such-session/generated-app")
+    assert miss.status_code == 404
+
+
 def test_upload_rejects_non_png(api_client):
     """只认 PNG。取图路由是按 image/png 回的，别的格式进来会让浏览器拿到一个
     声称是 PNG 的 JPEG。"""
-    app_id = store.save_app_or_version(_model(), goal="g", session_id="u3")
+    app_id = _public_app("u3")
     res = api_client.post(f"/api/sliderule/apps/{app_id}/preview", content=b"\xff\xd8\xff" + b"J" * 64,
                           headers={"content-type": "image/png"})
     assert res.status_code == 415
@@ -470,7 +510,7 @@ def test_upload_rejects_oversized(api_client):
     """体积上限：这是一张缩略图，几 MB 的东西进来只会把列表接口和库拖慢。"""
     from routes import sliderule_full
 
-    app_id = store.save_app_or_version(_model(), goal="g", session_id="u4")
+    app_id = _public_app("u4")
     big = b"\x89PNG\r\n\x1a\n" + b"X" * (sliderule_full._MAX_SHOT_BYTES + 1)
     res = api_client.post(f"/api/sliderule/apps/{app_id}/preview", content=big,
                           headers={"content-type": "image/png"})
@@ -486,7 +526,7 @@ def test_upload_rejects_unknown_app(api_client):
 
 
 def test_upload_rejects_empty_body(api_client):
-    app_id = store.save_app_or_version(_model(), goal="g", session_id="u5")
+    app_id = _public_app("u5")
     res = api_client.post(f"/api/sliderule/apps/{app_id}/preview", content=b"",
                           headers={"content-type": "image/png"})
     assert res.status_code == 400

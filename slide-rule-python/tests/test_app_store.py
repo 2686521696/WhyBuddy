@@ -53,6 +53,8 @@ def test_save_and_get_roundtrip(configured_store):
     assert rec["entity_count"] == 2 and rec["page_count"] == 2
     assert rec["gate_passed"] is True
     assert rec["model_json"]["appbundle"]["landingPageRef"] == "p0"  # 完整模型回读得到
+    assert rec["visibility"] == "private", "新建默认私有，否则一闭环就出现在应用市场"
+    assert rec.get("is_official") is False
 
 
 def test_get_missing_returns_none(configured_store):
@@ -111,6 +113,24 @@ def test_fork_default_does_not_inherit_source_session(configured_store):
     a = store.save_app(_model("咖营通"), session_id="s1")
     fk = store.fork_app(a)  # 不传 session_id
     assert store.get_app(fk)["session_id"] is None
+
+
+def test_fork_of_an_official_app_is_not_official(configured_store):
+    """官方货架上的应用被 Fork 之后是普通副本，不能带着官方标记进我的应用。"""
+    a = store.save_app(_model("官方样板"), session_id="s1", visibility="public")
+    store.patch_app(a, is_official=True)
+    assert store.get_app(a)["is_official"] is True
+    assert store.get_app(a)["owner_id"] == "system:official"
+    fk = store.fork_app(a, owner_id="u-bob")
+    copy = store.get_app(fk)
+    assert copy["is_official"] is False
+    assert copy["visibility"] == "private"
+    assert copy["owner_id"] == "u-bob"
+    mine = store.list_apps(shelf="mine", owner_id="u-bob")
+    assert copy["id"] in {r["id"] for r in mine}
+    official = store.list_apps(shelf="official")
+    assert copy["id"] not in {r["id"] for r in official}
+    assert a in {r["id"] for r in official}
 
 
 def test_dedup_key_is_idempotent(configured_store):
@@ -733,6 +753,17 @@ def test_pages_json_roundtrip_and_summary_flag(configured_store):
     assert summaries["宠医云"]["has_pages"] is False
 
 
+def test_latest_app_for_session_is_summary_not_payload(configured_store):
+    """推演收口前端靠这条拿到 app_id。完整记录太大，摘要里不许带页面/模型。"""
+    app_id = store.save_app(_model("咖营通"), session_id="sess-shot", pages_json=_pages())
+    row = store.get_latest_app_for_session("sess-shot")
+    assert row is not None and row["id"] == app_id
+    assert "model_json" not in row and "pages_json" not in row
+    assert row["has_pages"] is True
+    assert store.get_latest_app_for_session("missing") is None
+    assert store.get_latest_app_for_session("") is None
+
+
 def test_pages_json_empty_pages_normalized_to_none(configured_store):
     """{"pages": {}} 这种"有壳没页"的载荷落成 None——前端拿到空壳会当成
     "有页面但空"，判定分支走错。判空在落库口做一次，三个后端同一行为。"""
@@ -791,9 +822,57 @@ def test_list_apps_sql_omits_payloads_and_paginates():
     assert "pages_json" not in leftover, "pages_json 只允许出现在 IS NOT NULL，不能当选出列"
     assert "limit $1" in sql and "offset $2" in sql
     assert "row_number()" in sql
+    assert "order by created_at desc, id desc" in sql
+    assert "order by version desc, created_at desc, id desc" in sql
+    assert "owner_id = $3" not in sql
     all_versions = store.list_apps_sql(latest_per_root=False).lower()
     assert "row_number()" not in all_versions
     assert "limit $1" in all_versions and "model_json" not in all_versions
+    assert "id desc" in all_versions
+    mine = store.list_apps_sql(latest_per_root=True, shelf="mine").lower()
+    assert "owner_id = $3" in mine
+    market = store.list_apps_sql(latest_per_root=True, shelf="market").lower()
+    assert "is_official" in market and "public" in market
+    official = store.list_apps_sql(latest_per_root=True, shelf="official").lower()
+    assert "is_official" in official and "<> 0" in official
+
+
+def test_paginate_latest_same_timestamp_does_not_skip_or_dup():
+    """created_at 全相同的 36 行，按 12 翻三页：每页 12、并集 36、页间无交集。
+
+    输入顺序反过来，第一页必须还是同一批 id——没有 id 决胜的话 stable sort
+    会跟着输入走，OFFSET 窗口就对不上（真机 12→24→35→48 的根）。
+    """
+    stamp = "2026-08-20T00:00:00"
+
+    def rows(order: list[int]) -> list[dict]:
+        return [
+            {"id": f"a{i:02d}", "root_id": f"a{i:02d}", "version": 1, "created_at": stamp}
+            for i in order
+        ]
+
+    forward = rows(list(range(36)))
+    backward = rows(list(reversed(range(36))))
+    first_fwd = [r["id"] for r in store._paginate_latest(
+        forward, limit=12, offset=0, latest_per_root=True
+    )]
+    first_bwd = [r["id"] for r in store._paginate_latest(
+        backward, limit=12, offset=0, latest_per_root=True
+    )]
+    assert first_fwd == first_bwd
+
+    pages = [
+        [r["id"] for r in store._paginate_latest(
+            forward, limit=12, offset=off, latest_per_root=True
+        )]
+        for off in (0, 12, 24)
+    ]
+    assert [len(p) for p in pages] == [12, 12, 12]
+    flat = [i for p in pages for i in p]
+    assert len(flat) == 36
+    assert len(set(flat)) == 36
+    assert set(pages[0]).isdisjoint(pages[1])
+    assert set(pages[1]).isdisjoint(pages[2])
 
 
 def test_http_list_sends_summary_sql_with_limit():
@@ -895,3 +974,33 @@ def test_gallery_route_calls_list_apps_on_the_live_path():
     code = ast.unparse(fn)
     assert "app_store.list_apps" in code
     assert "to_thread" in code
+    assert "matches_shelf" in code
+    assert "normalize_shelf" in code
+    assert "shelf=" in code
+    assert "owner_id=" in code
+
+
+def test_patch_app_transfers_ownership_on_the_live_path():
+    """PATCH 官方必须走 transfer_to_official。只改 is_official 旗、owner 不动 = 没改。"""
+    import ast
+    from pathlib import Path
+
+    tree = ast.parse(Path(store.__file__).read_text(encoding="utf-8"))
+    fn = next(
+        (
+            n for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef) and n.name == "patch_app"
+        ),
+        None,
+    )
+    assert fn is not None
+    if (
+        fn.body
+        and isinstance(fn.body[0], ast.Expr)
+        and isinstance(fn.body[0].value, ast.Constant)
+        and isinstance(fn.body[0].value.value, str)
+    ):
+        fn.body.pop(0)
+    code = ast.unparse(fn)
+    assert "transfer_to_official" in code
+    assert "transfer_from_official" in code

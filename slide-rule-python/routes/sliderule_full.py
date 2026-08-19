@@ -262,7 +262,8 @@ async def _run_orchestrate_plan(payload: Any):
 #
 # 实测（对着线上库）：
 #     GET /sessions 的 load_all()  →  34 条会话、5.2 MB payload、2278 ms
-# 这 2.3 秒里整个服务什么都干不了。推演途中每次 persist_state 再冻几百毫秒。
+# 2026-08-19：列表改走 list_summaries（库内 JSON 抽取，不把 payload 拉回进程）。
+# 点进某一条才 GET /sessions/{sid} 读完整 blob。
 #
 # 框架本来就给了答案。fastapi/routing.py:344 —
 #
@@ -298,28 +299,29 @@ def list_sess(
     全量返回——实测匿名请求能列出全站所有人的会话，连业务目标原文都在里面。
     过滤复用 app_access（会话与应用共用同一套阶梯），不另写条件：列表与单条
     判定漂移是这类系统最常见的泄漏方式。
+
+    ⚠ 2026-08-19：归属过滤之后仍 `load_all()`。侧栏只需要 id / 目标 / 阶段 /
+    产物数 / 时间戳，却把每一条会话的整页 HTML 经 HTTPS 网关拉回来
+    （34 条 5.2 MB / 2.3s）。完整 blob 只在 GET /sessions/{sid}。
     """
     _auth(x_internal_key)
     from services.app_access import session_access, Access
-    from services.persistence import read_session_meta
+    from services.persistence import list_session_summaries
 
-    states = list((load_all() or {}).values()) or list(_sessions.values())
-    meta = read_session_meta()
     items = []
-    for s in states:
-        if session_access(_session_payload(s), viewer) < Access.READ:
+    for summary in list_session_summaries():
+        if session_access(
+            {"sessionId": summary.get("sessionId"), "ownerId": summary.get("ownerId")},
+            viewer,
+        ) < Access.READ:
             continue
-        g = s.goal if isinstance(getattr(s, "goal", None), dict) else {}
-        sid = getattr(s, "sessionId", "")
-        m = meta.get(sid) if isinstance(meta.get(sid), dict) else {}
         items.append({
-            "sessionId": sid,
-            "goal": g.get("text", "") if isinstance(g, dict) else "",
-            # 时间戳来自落盘 sidecar meta（模型本身无时间字段）——侧栏"最近"排序用
-            "createdAt": m.get("createdAt"),
-            "lastActive": m.get("lastActive"),
-            "artifactCount": len(getattr(s, "artifacts", []) or []),
-            "phase": getattr(s, "runtimePhase", None),
+            "sessionId": summary.get("sessionId") or "",
+            "goal": summary.get("goal") or "",
+            "createdAt": summary.get("createdAt"),
+            "lastActive": summary.get("lastActive"),
+            "artifactCount": int(summary.get("artifactCount") or 0),
+            "phase": summary.get("phase"),
         })
     return {"sessions": items}
 
@@ -1975,6 +1977,7 @@ async def list_generated_apps(
     viewer: CurrentUserOptional,
     limit: int = 50,
     offset: int = 0,
+    scope: Optional[str] = None,
     x_internal_key: Optional[str] = Header(None),
 ):
     """应用画廊列表——默认每个应用只出最新版，摘要不含大模型载荷。
@@ -1987,16 +1990,37 @@ async def list_generated_apps(
 
     本文件里 LLM/RAG/附件解析那几条早就是这么写的（见 asyncio.to_thread 的
     其它调用点），app store 这几条是漏网的。
+
+    ⚠ 2026-08-19：`scope=market|mine|official` 是货架，不是第二套权限。
+    不传 scope 保持旧行为（filter_records 之后的全部可见记录），侧栏缩略图
+    仍走这条。应用中心三个 tab 必须带 scope，否则超管的「我的应用」又会
+    把全站货架混进来。
     """
     _auth(x_internal_key)
     from services import app_store
-    from services.app_access import filter_records
+    from services.app_access import filter_records, matches_shelf, normalize_shelf
 
-    apps = await asyncio.to_thread(app_store.list_apps, limit=limit, offset=offset)
+    raw = (scope or "").strip().lower()
+    shelf = normalize_shelf(scope)
+    if raw and raw != "all" and shelf is None:
+        raise HTTPException(400, "unknown shelf")
+    if shelf == "mine" and viewer is None:
+        return {"apps": []}
+    owner_id = getattr(viewer, "id", None) if shelf == "mine" else None
+    apps = await asyncio.to_thread(
+        app_store.list_apps,
+        limit=limit,
+        offset=offset,
+        shelf=shelf,
+        owner_id=owner_id,
+    )
     # 列表过滤与单条判定共用 app_access 的同一份判定——两套代码漂移是这类系统
     # 最常见的泄露方式（列表少过滤一个条件，私有应用就出现在广场上，而单条打开
     # 是好的，所以没人会报 bug）。见 tests/test_app_access.py 那条穷举测试。
-    return {"apps": filter_records(apps, viewer)}
+    visible = filter_records(apps, viewer)
+    if shelf:
+        visible = [row for row in visible if matches_shelf(row, shelf, viewer)]
+    return {"apps": visible}
 
 
 @router.get("/apps/{app_id}")
@@ -2019,6 +2043,61 @@ async def get_generated_app(
     # 可以被用来枚举别人的私有应用。require 内部已按此实现。
     app_access.require("view", record, viewer)
     return record
+
+
+@router.patch("/apps/{app_id}")
+async def patch_generated_app(
+    app_id: str,
+    request: Request,
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """改可见性（所有者）或官方归属（仅超管）。
+
+    ⚠ 2026-08-19：access 模型里 `set_visibility` 早就在 REQUIRED 里，
+    但没有任何路由挂上——前端旋钮装了也是死的。官方不是资源 Owner 就能把
+    自己的应用送上官方货架：对标 Gitea 转让，只认 is_superuser，并改 owner_id。
+    """
+    _auth(x_internal_key)
+    from services import app_store
+
+    record = await asyncio.to_thread(app_store.get_app, app_id)
+    if record is None:
+        raise HTTPException(404, "app not found")
+    body: dict[str, Any] = {}
+    try:
+        raw = await request.json()
+        if isinstance(raw, dict):
+            body = raw
+    except Exception:
+        body = {}
+    visibility = body.get("visibility") if "visibility" in body else None
+    official = body.get("is_official") if "is_official" in body else None
+    if visibility is None and official is None:
+        raise HTTPException(400, "nothing to patch")
+    if visibility is not None:
+        app_access.require("set_visibility", record, viewer)
+    if official is not None:
+        if viewer is None:
+            raise HTTPException(401, "请先登录", headers={"WWW-Authenticate": "Bearer"})
+        if not bool(getattr(viewer, "is_superuser", False)):
+            raise HTTPException(403, "只有超管能把应用移交给官方")
+        app_access.require("view", record, viewer)
+    patched = await asyncio.to_thread(
+        app_store.patch_app,
+        app_id,
+        visibility=str(visibility) if visibility is not None else None,
+        is_official=bool(official) if official is not None else None,
+    )
+    if patched is None:
+        raise HTTPException(404, "app not found")
+    return {
+        "id": patched.get("id"),
+        "visibility": patched.get("visibility"),
+        "is_official": bool(patched.get("is_official")),
+        "owner_id": patched.get("owner_id"),
+        "prior_owner_id": patched.get("prior_owner_id"),
+    }
 
 
 @router.get("/apps/{app_id}/preview")
@@ -2109,6 +2188,31 @@ async def get_generated_session_preview(
     )
 
 
+@router.get("/sessions/{session_id}/generated-app")
+async def get_session_generated_app(
+    session_id: str,
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """这个会话最新落库的那条应用摘要。
+
+    推演收口前端要 app_id 才能把 html2canvas 的图 POST 回去。列表接口按货架
+    分页，用它反查会漏；会话 GET 又不带应用 id。这条只多一次按 session_id
+    的查找，载荷是摘要（不含 model_json / pages_json）。
+    """
+    _auth(x_internal_key)
+    from services import app_store
+
+    row = await asyncio.to_thread(app_store.get_latest_app_for_session, session_id)
+    if row is None:
+        raise HTTPException(404, "app not found")
+    full = await asyncio.to_thread(app_store.get_app, str(row.get("id") or ""))
+    if full is None:
+        raise HTTPException(404, "app not found")
+    app_access.require("view", full, viewer)
+    return row
+
+
 #: 回传截图的体积上限。实测一张 1440×810、pixelRatio 2 的应用截图约 325KB；
 #: 留到 3MB 是给手机档（720×1280 更高）和复杂页面的余量。超了直接 413——
 #: 这是一张缩略图，几 MB 的东西进来只会把列表接口和 Neon 拖慢。
@@ -2144,9 +2248,9 @@ async def upload_generated_app_shot(
     ## 为什么由前端采集，而不是服务端起浏览器
 
     应用中心里**没有图的卡片本来就在活渲染**——每张卡挂一个真的
-    AppRuntimeScreen。既然那次昂贵的渲染已经发生了，就地把它采下来存住，等于
-    「这次渲染是最后一次」。服务端再起一个浏览器去渲染同一个东西是纯浪费，还要
-    背上沙盒/容器/无头浏览器那一整套运维面。
+    AppRuntimeScreen / spec-first iframe。既然那次昂贵的渲染已经发生了，就地
+    把它采下来存住，等于「这次渲染是最后一次」。服务端再起一个浏览器去渲染
+    同一个东西是纯浪费，还要背上沙盒/容器/无头浏览器那一整套运维面。
 
     副作用是白赚的：**存量应用也会被自动补上**。老应用没有会话可供服务端打开
     （会话不跨重启存活），但只要有人在应用中心看见过那张卡，它就有图了。
@@ -2154,11 +2258,14 @@ async def upload_generated_app_shot(
     ## 幂等
 
     同一张卡可能被多个标签页、或滚动来回时重复采集。已经有截图就直接跳过
-    （返回 stored=false），省掉一次写库和一次强缓存失效。真想换图就先删那一行。
+    （返回 stored=false），省掉一次写库和一次强缓存失效。
+
+    `?replace=1` 给**写者**覆盖已有 shot：推演收口那一次必须换图（这一版跟
+    上一版长得不一样）。路过的访客没有写权限，不能把别人采好的图改掉。
 
     ## 请求体
 
-    原始 PNG 字节（Content-Type: image/png）。不用 multipart / base64 JSON——
+    原始 PNG / WebP 字节。不用 multipart / base64 JSON——
     一张图一个请求，裸字节最省，也不给解析器留歧义。
     """
     _auth(x_internal_key)
@@ -2173,7 +2280,14 @@ async def upload_generated_app_shot(
     # 公共应用的众包补图要保住。挡的是另一半：看不见的私有应用不许被
     # 盲猜 id 塞图（require 对无权者报 404，不确认 id 存在）。
     app_access.require("view", record, viewer)
-    if await asyncio.to_thread(app_store.app_has_shot, app_id):
+    replace = (request.query_params.get("replace") or "").strip().lower() in (
+        "1", "true", "yes",
+    )
+    # 覆盖只给写者：推演收口换图是作者的事。路过的访客只能补「还没有 shot」
+    # 的卡，不能把别人已经采好的图改掉。
+    if replace:
+        app_access.require("revise", record, viewer)
+    elif await asyncio.to_thread(app_store.app_has_shot, app_id):
         return {"stored": False, "reason": "already_has_shot"}
 
     body = await request.body()
@@ -2424,9 +2538,9 @@ async def fork_generated_app(
     权限（2026-08-02）：**能看就能 Fork**（Gitea 同款），但必须登录——Fork 产出
     的是一条归属于你的新记录，匿名没有可绑定的主体。
 
-    ⚠️ 副本的可见性**继承源**，不是默认公开（app_access.fork_visibility）。
-    写成默认公开非常自然，而那样 Fork 就成了绕过私有的后门：被授权能读某个私有
-    应用的人，Fork 一下就把它公开了。
+    ⚠️ 副本的可见性对标 Gitea 从模板生成（默认私有），不是继承源。
+    从市场复刻一张公开卡不会立刻再上架一份；要上市场在「我的应用」里点公开。
+    私有源仍然不得因为复刻变公开（fork_visibility 恒为 private，这条自然成立）。
     """
     _auth(x_internal_key)
     from services import app_store

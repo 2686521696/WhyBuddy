@@ -164,6 +164,12 @@ def derive_app_metadata(model: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _as_official(value: Any) -> bool:
+    from .app_access import is_official_app
+
+    return is_official_app({"is_official": value})
+
+
 def _build_record(
     model: dict[str, Any],
     *,
@@ -178,10 +184,16 @@ def _build_record(
     owner_id: Optional[str] = None,
     visibility: Optional[str] = None,
     pages_json: Optional[dict[str, Any]] = None,
+    is_official: Optional[bool] = None,
+    prior_owner_id: Optional[str] = None,
 ) -> dict[str, Any]:
-    from .app_access import normalize_visibility
+    from .app_access import Visibility, normalize_visibility
 
     meta = derive_app_metadata(model)
+    if visibility is None:
+        vis = Visibility.PRIVATE
+    else:
+        vis = normalize_visibility(visibility)
     return {
         "id": app_id,
         "root_id": root_id,
@@ -194,8 +206,12 @@ def _build_record(
         "created_at": _now_iso(),
         # 归属与可见性（2026-08-02）。owner_id 为 None = 无主的存量应用，
         # 语义在 app_access 里定义：可读、不可写（超管除外）。
+        # ⚠ 2026-08-19：新建默认 private，否则一闭环就出现在应用市场。
+        # 没传 visibility（None）才走默认；显式 "" 仍走 normalize（存量）。
         "owner_id": (owner_id or None),
-        "visibility": normalize_visibility(visibility),
+        "visibility": vis,
+        "is_official": _as_official(is_official),
+        "prior_owner_id": (prior_owner_id or None),
         "model_json": model,
         # spec-first 链路画的整页 HTML（{version, pages, navItems, boundPages,
         # failedPages}，形状与会话侧 state.specFirstPages 同源）。None = 这一版
@@ -223,15 +239,31 @@ _LIST_COLUMNS: tuple[str, ...] = (
     "id", "root_id", "parent_id", "version", "session_id", "goal",
     "product_name", "theme_id", "theme_label", "device", "landing_page_ref",
     "entity_count", "page_count", "gate_passed", "dedup_key", "created_at",
-    "owner_id", "visibility",
+    "owner_id", "visibility", "is_official", "prior_owner_id",
 )
 
 
-def list_apps_sql(*, latest_per_root: bool = True) -> str:
+def _shelf_outer_sql(shelf: Optional[str]) -> str:
+    """列表货架谓词，接在 `where rn = 1` 后面。mine 用 `$3` = owner_id。"""
+    if not shelf:
+        return ""
+    if shelf == "mine":
+        return " and owner_id = $3"
+    if shelf == "official":
+        return " and coalesce(is_official, 0) <> 0"
+    if shelf == "market":
+        return (
+            " and coalesce(visibility, 'public') = 'public'"
+            " and coalesce(is_official, 0) = 0"
+        )
+    return ""
+
+
+def list_apps_sql(*, latest_per_root: bool = True, shelf: Optional[str] = None) -> str:
     """画廊列表 SQL。``$1`` = limit，``$2`` = offset。
 
     同 root 内以 version 为准挑最新（created_at 在 dedup 幂等更新时可能
-    保留旧值，单靠时间会把 v1 排到 v2 前面）。卡片之间再按时间倒序。
+    保留旧值，单靠时间会把 v1 排到 v2 前面）。    卡片之间再按时间倒序，**并列时用 id 决胜**（OFFSET 翻页否则会漏/重）。
 
     has_pages 用 ``pages_json is not null``，不 ``->`` 取值：Postgres
     判断 NULL 不拆 TOAST，访问 ``->'pages'`` 会把整份 HTML 解出来。
@@ -244,22 +276,30 @@ def list_apps_sql(*, latest_per_root: bool = True) -> str:
     """
     cols = ", ".join(_LIST_COLUMNS)
     has_pages = "(pages_json is not null) as has_pages"
+    shelf_sql = _shelf_outer_sql(shelf)
     if latest_per_root:
         return (
             f"select {cols}, has_pages from ("
             f" select {cols}, {has_pages},"
             f" row_number() over ("
             f" partition by coalesce(root_id, id)"
-            f" order by version desc, created_at desc"
+            f" order by version desc, created_at desc, id desc"
             f" ) as rn"
             f" from generated_app"
-            f") t where rn = 1"
-            f" order by created_at desc"
+            f") t where rn = 1{shelf_sql}"
+            f" order by created_at desc, id desc"
+            f" limit $1 offset $2"
+        )
+    if shelf_sql:
+        return (
+            f"select {cols}, {has_pages} from generated_app"
+            f" where {shelf_sql[5:]}"
+            f" order by version desc, created_at desc, id desc"
             f" limit $1 offset $2"
         )
     return (
         f"select {cols}, {has_pages} from generated_app"
-        f" order by version desc, created_at desc"
+        f" order by version desc, created_at desc, id desc"
         f" limit $1 offset $2"
     )
 
@@ -283,7 +323,18 @@ def _list_summary(row: dict[str, Any], *, has_pages: Optional[bool] = None) -> d
         pages = row.get("pages_json")
         has_pages = bool(isinstance(pages, dict) and pages.get("pages"))
     out["has_pages"] = bool(has_pages)
+    out["is_official"] = _as_official(out.get("is_official"))
     return out
+
+
+def _list_tiebreak(row: dict[str, Any]) -> tuple[str, str]:
+    """created_at 相同时用 id 决胜，否则 OFFSET 翻页会漏一行/重一行。
+
+    Postgres 对并列键的顺序**跨查询不稳定**（open-msupply #12291 同一条）。
+    首页真机 12→24→35→48：第三页和前两页叠了一条，唯一卡变成 35，
+    前端再 concat 第四页就到 48。JSON 后端必须跟 SQL ``id desc`` 同一把尺子。
+    """
+    return (str(row.get("created_at") or ""), str(row.get("id") or ""))
 
 
 def _paginate_latest(
@@ -291,7 +342,9 @@ def _paginate_latest(
 ) -> list[dict[str, Any]]:
     """JSON 文件后端用：已经 slim 过的行在内存里做与 SQL 相同的排序/去重/切片。"""
     rows = sorted(
-        rows, key=lambda r: (r.get("version") or 0, r.get("created_at") or ""), reverse=True
+        rows,
+        key=lambda r: (r.get("version") or 0, *_list_tiebreak(r)),
+        reverse=True,
     )
     if latest_per_root:
         seen: set[str] = set()
@@ -302,7 +355,7 @@ def _paginate_latest(
                 continue
             seen.add(root)
             latest.append(r)
-        rows = sorted(latest, key=lambda r: (r.get("created_at") or ""), reverse=True)
+        rows = sorted(latest, key=_list_tiebreak, reverse=True)
     return rows[offset:offset + limit]
 
 
@@ -313,6 +366,7 @@ def _summary(record: dict[str, Any]) -> dict[str, Any]:
     out = {k: v for k, v in record.items() if k not in ("model_json", "pages_json")}
     pages = record.get("pages_json")
     out["has_pages"] = bool(isinstance(pages, dict) and pages.get("pages"))
+    out["is_official"] = _as_official(out.get("is_official"))
     return out
 
 
@@ -325,7 +379,15 @@ class AppStoreBackend:
     def get(self, app_id: str) -> Optional[dict[str, Any]]:  # pragma: no cover
         raise NotImplementedError
 
-    def list(self, *, limit: int, offset: int, latest_per_root: bool) -> list[dict[str, Any]]:  # pragma: no cover
+    def list(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        latest_per_root: bool,
+        shelf: Optional[str] = None,
+        owner_id: Optional[str] = None,
+    ) -> list[dict[str, Any]]:  # pragma: no cover
         raise NotImplementedError
 
     def versions(self, root_id: str) -> list[dict[str, Any]]:  # pragma: no cover
@@ -449,13 +511,30 @@ class JsonFileAppStore(AppStoreBackend):
                     return r
         return None
 
-    def list(self, *, limit: int, offset: int, latest_per_root: bool) -> list[dict[str, Any]]:
+    def list(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        latest_per_root: bool,
+        shelf: Optional[str] = None,
+        owner_id: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
         with self._lock:
             rows = self._read()
         # 文件后端避不开整文件 parse；立刻 slim 掉两份 jsonb，排序/去重
         # 不再拖着每份 100KB+ 的 HTML。分页语义与 list_apps_sql 对齐。
+        from types import SimpleNamespace
+        from .app_access import matches_shelf
+
+        summaries = [_summary(r) for r in rows]
+        if shelf:
+            if shelf == "mine" and not owner_id:
+                return []
+            viewer = SimpleNamespace(id=owner_id, is_superuser=False, is_active=True) if owner_id else None
+            summaries = [r for r in summaries if matches_shelf(r, shelf, viewer)]
         return _paginate_latest(
-            [_summary(r) for r in rows],
+            summaries,
             limit=limit,
             offset=offset,
             latest_per_root=latest_per_root,
@@ -727,6 +806,8 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
         # create_all 对已存在的表不会加新列。
         owner_id = Column(String(64), nullable=True, index=True)
         visibility = Column(String(16), default="public", index=True)
+        is_official = Column(Integer, default=0, index=True)
+        prior_owner_id = Column(String(64), nullable=True)
         model_json = Column(json_type)
         # spec-first 整页 HTML（2026-08-14）。老库靠 _init 里的 add-column
         # 就地补；补不上读到 None，等同"这一版没有页面"，前端回落区块渲染。
@@ -744,6 +825,8 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 "created_at": self.created_at.isoformat() if self.created_at else None,
                 "owner_id": self.owner_id,
                 "visibility": self.visibility or "public",
+                "is_official": _as_official(self.is_official),
+                "prior_owner_id": self.prior_owner_id,
                 "model_json": self.model_json,
                 "pages_json": self.pages_json if isinstance(self.pages_json, dict) else None,
             }
@@ -861,6 +944,8 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                     "visibility",
                     "alter table generated_app add column visibility varchar(16) default 'public'",
                 ),
+                ("is_official", "alter table generated_app add column is_official integer default 0"),
+                ("prior_owner_id", "alter table generated_app add column prior_owner_id varchar(64)"),
                 ("pages_json", _pages_ddl),
             ):
                 if _col not in _app_cols:
@@ -893,6 +978,8 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 dedup_key=record.get("dedup_key"),
                 owner_id=record.get("owner_id"),
                 visibility=record.get("visibility") or "public",
+                is_official=1 if _as_official(record.get("is_official")) else 0,
+                prior_owner_id=record.get("prior_owner_id"),
                 model_json=record.get("model_json") or {},
                 pages_json=record.get("pages_json"),
             )
@@ -912,7 +999,15 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 row = s.get(GeneratedApp, app_id)
                 return row.to_record() if row else None
 
-        def list(self, *, limit: int, offset: int, latest_per_root: bool) -> list[dict[str, Any]]:
+        def list(
+            self,
+            *,
+            limit: int,
+            offset: int,
+            latest_per_root: bool,
+            shelf: Optional[str] = None,
+            owner_id: Optional[str] = None,
+        ) -> list[dict[str, Any]]:
             # 只选摘要列 + has_pages。select(GeneratedApp) 会把 model_json /
             # pages_json 整表物化再 Python 切片——跟 Neon HTTP 那条 select *
             # 是同一个坑，limit=12 救不了。
@@ -920,6 +1015,8 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
             # Postgres JSONB：Python None 落 SQL NULL，IS NOT NULL 不拆 TOAST。
             # SQLite JSON：SQLAlchemy 把 None dumps 成文本 'null'，IS NOT NULL
             # 恒真——2026-08-18 用 IS NOT NULL 时「没页面」的卡 has_pages 全亮。
+            if shelf == "mine" and not owner_id:
+                return []
             if engine.dialect.name == "sqlite":
                 pages_key = func.json_extract(GeneratedApp.pages_json, "$.pages")
                 has_pages_col = and_(
@@ -937,14 +1034,26 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 stmt = (
                     select(*[inner.c[name] for name in _LIST_COLUMNS], inner.c.has_pages)
                     .where(inner.c.rn == 1)
-                    .order_by(inner.c.created_at.desc())
-                    .limit(limit)
-                    .offset(offset)
                 )
+                if shelf == "mine":
+                    stmt = stmt.where(inner.c.owner_id == owner_id)
+                elif shelf == "official":
+                    stmt = stmt.where(func.coalesce(inner.c.is_official, 0) != 0)
+                elif shelf == "market":
+                    stmt = stmt.where(func.coalesce(inner.c.visibility, "public") == "public")
+                    stmt = stmt.where(func.coalesce(inner.c.is_official, 0) == 0)
+                stmt = stmt.order_by(inner.c.created_at.desc()).limit(limit).offset(offset)
             else:
+                stmt = select(*cols, has_pages_col)
+                if shelf == "mine":
+                    stmt = stmt.where(GeneratedApp.owner_id == owner_id)
+                elif shelf == "official":
+                    stmt = stmt.where(func.coalesce(GeneratedApp.is_official, 0) != 0)
+                elif shelf == "market":
+                    stmt = stmt.where(func.coalesce(GeneratedApp.visibility, "public") == "public")
+                    stmt = stmt.where(func.coalesce(GeneratedApp.is_official, 0) == 0)
                 stmt = (
-                    select(*cols, has_pages_col)
-                    .order_by(GeneratedApp.version.desc(), GeneratedApp.created_at.desc())
+                    stmt.order_by(GeneratedApp.version.desc(), GeneratedApp.created_at.desc())
                     .limit(limit)
                     .offset(offset)
                 )
@@ -1290,6 +1399,8 @@ class NeonHttpAppStore(AppStoreBackend):
         # spec-first 整页 HTML（2026-08-14）：老库就地补列，补不上读到 NULL，
         # 等同"这一版没有页面"，前端回落区块渲染。
         self._q("alter table generated_app add column if not exists pages_json jsonb")
+        self._q("alter table generated_app add column if not exists is_official integer default 0")
+        self._q("alter table generated_app add column if not exists prior_owner_id varchar(64)")
         self._q(
             "create table if not exists generated_app_grant ("
             " app_id varchar(36) not null, user_id varchar(64) not null,"
@@ -1316,6 +1427,8 @@ class NeonHttpAppStore(AppStoreBackend):
                 val = int(val or 0)
             elif col == "gate_passed":
                 val = bool(val)
+            elif col == "is_official":
+                val = 1 if _as_official(val) else 0
             params.append(val)
         placeholders = ", ".join(
             f"${i + 1}::jsonb" if col in _NEON_JSON_COLUMNS else f"${i + 1}"
@@ -1333,14 +1446,30 @@ class NeonHttpAppStore(AppStoreBackend):
         rows = self._q("select * from generated_app where id = $1", [app_id])
         return _neon_normalize_row(rows[0]) if rows else None
 
-    def list(self, *, limit: int, offset: int, latest_per_root: bool) -> list[dict[str, Any]]:
+    def list(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        latest_per_root: bool,
+        shelf: Optional[str] = None,
+        owner_id: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
         # 2026-08-18：真机走 HttpApiAppStore（本类子类）。旧实现
         # `select * from generated_app` 无 LIMIT，把每份 pages_json
         # （~100KB HTML）经 /db-api 拉回再切片。limit=12 的响应只有
         # 8KB，墙钟却 3.5–5s；网关还为此回过 413。
         # 不走 _neon_normalize_row：它会把没选出的 pages_json 补成
         # None，has_pages 就被 _summary 抹掉。
-        rows = self._q(list_apps_sql(latest_per_root=latest_per_root), [limit, offset])
+        if shelf == "mine" and not owner_id:
+            return []
+        params: list[Any] = [limit, offset]
+        if shelf == "mine":
+            params.append(owner_id)
+        rows = self._q(
+            list_apps_sql(latest_per_root=latest_per_root, shelf=shelf),
+            params,
+        )
         return [_list_summary(r, has_pages=r.get("has_pages")) for r in rows]
 
     def versions(self, root_id: str) -> list[dict[str, Any]]:
@@ -1896,6 +2025,8 @@ def save_app(
                 # 已有主的应用变成无主、把私有变成公开。
                 owner_id=existing.get("owner_id") or owner_id,
                 visibility=existing.get("visibility") or visibility,
+                is_official=existing.get("is_official"),
+                prior_owner_id=existing.get("prior_owner_id"),
                 pages_json=pages_json if pages_json is not None else existing.get("pages_json"),
             )
             record["created_at"] = existing.get("created_at") or record["created_at"]
@@ -2082,6 +2213,8 @@ def save_version(
         app_id=app_id, root_id=root_id, parent_id=parent_id, version=next_version,
         owner_id=(base or {}).get("owner_id"),
         visibility=(base or {}).get("visibility"),
+        is_official=(base or {}).get("is_official"),
+        prior_owner_id=(base or {}).get("prior_owner_id"),
         pages_json=pages_json,
     )
     saved = backend.save(record)
@@ -2117,18 +2250,20 @@ def fork_app(
         identity = appbundle.setdefault("appIdentity", {})
         identity["productName"] = str(new_name)[:120]
     app_id = _new_id()
+    from .app_access import fork_visibility as fork_visibility_of
+
     record = _build_record(
         model, goal=source.get("goal") or "",
         session_id=session_id,
         gate_passed=bool(source.get("gate_passed")),
         app_id=app_id, root_id=app_id, parent_id=source_id, version=1,
-        # 副本归 Fork 的人所有；可见性由调用方按 app_access.fork_visibility 算好
-        # 传进来——**不在这里默认 public**，那会让 Fork 成为绕过私有的后门。
+        # 副本归 Fork 的人所有。可见性对标 Gitea GenerateRepository
+        # （template.go:85，调用方按 fork_visibility 传入，默认 private），
+        # 不是 git fork 那条继承源可见性。官方标记不跟着走。
         owner_id=owner_id,
-        visibility=visibility if visibility is not None else source.get("visibility"),
-        # 副本的设计层逐字拷贝，页面 HTML 是设计层的一部分：模型没变，
-        # 孔照样对得上，跟着走。这跟 save_version 的"不继承"不矛盾——
-        # 那边是模型变了，这边是模型没变。
+        visibility=visibility if visibility is not None else fork_visibility_of(source),
+        is_official=False,
+        prior_owner_id=None,
         pages_json=source.get("pages_json"),
     )
     backend = get_backend()
@@ -2180,6 +2315,25 @@ def get_session_preview_png(session_id: str, *, source: Optional[str] = None) ->
     return get_app_preview_png(app_id, source=source) if app_id else None
 
 
+def get_latest_app_for_session(session_id: str) -> Optional[dict[str, Any]]:
+    """这个会话最新落库的那条应用摘要。推演收口前端靠它拿到 app_id 去回传截图。
+
+    完整记录含 model_json / pages_json，这里只回摘要（与 list_apps 同一套
+    _summary + 缩略图三件套）。找不到或存储故障返回 None——截图是增强项，
+    调用方 404 即可，不要把收口链路打成 500。
+    """
+    if not str(session_id or "").strip():
+        return None
+    try:
+        record = get_backend().find_latest_by_session(str(session_id))
+    except Exception as exc:  # noqa: BLE001 — 缩略图是增强项
+        print(f"[app_store] 会话应用查询失败: {str(exc)[:160]}")
+        return None
+    if not record:
+        return None
+    return _mark_previews([_summary(record)])[0]
+
+
 def _mark_previews(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """给一批摘要打上缩略图三件套——前端据此决定这张卡贴哪张图、还是活渲染。
 
@@ -2207,11 +2361,56 @@ def _mark_previews(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
-def list_apps(*, limit: int = 50, offset: int = 0, latest_per_root: bool = True) -> list[dict[str, Any]]:
+def list_apps(
+    *,
+    limit: int = 50,
+    offset: int = 0,
+    latest_per_root: bool = True,
+    shelf: Optional[str] = None,
+    owner_id: Optional[str] = None,
+) -> list[dict[str, Any]]:
     """列表（默认每个应用只出最新版），返回摘要（不含 model_json / 缩略图本体）。"""
-    return _mark_previews(get_backend().list(
-        limit=max(1, min(limit, 200)), offset=max(0, offset), latest_per_root=latest_per_root
-    ))
+    return _mark_previews(
+        get_backend().list(
+            limit=max(1, min(limit, 200)),
+            offset=max(0, offset),
+            latest_per_root=latest_per_root,
+            shelf=shelf,
+            owner_id=owner_id,
+        )
+    )
+
+
+def patch_app(
+    app_id: str,
+    *,
+    visibility: Optional[str] = None,
+    is_official: Optional[bool] = None,
+) -> Optional[dict[str, Any]]:
+    """改可见性 / 官方归属。完整记录 roundtrip，不丢 model_json。
+
+    官方不是打勾：对标 Gitea transferOwnership，改 owner_id。
+    送上官方货架时一并公开——私有官方等于空货架。
+    """
+    from .app_access import (
+        normalize_visibility,
+        transfer_from_official,
+        transfer_to_official,
+    )
+
+    backend = get_backend()
+    rec = backend.get(app_id)
+    if rec is None:
+        return None
+    if visibility is not None:
+        rec["visibility"] = normalize_visibility(visibility)
+    if is_official is not None:
+        if is_official:
+            rec = transfer_to_official(rec)
+        else:
+            rec = transfer_from_official(rec)
+    backend.save(rec)
+    return rec
 
 
 def list_versions(root_id: str) -> list[dict[str, Any]]:

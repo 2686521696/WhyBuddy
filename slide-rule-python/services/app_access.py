@@ -19,10 +19,16 @@
     每一步**只能抬高、不能压低**。这个性质让"漏了某个分支"的后果是**权限不足**
     （用户会来报），而不是**权限过大**（没人会来报）。
 
-  · **Fork 继承私有**（`services/repository/fork.go:97`）
-        IsPrivate: opts.BaseRepo.IsPrivate || owner private
-    私有应用被 Fork 之后**仍然私有**。这条很容易做反——Fork 出的是新记录、新
-    所有者，很自然就写成默认公开，于是 Fork 成了绕过私有的后门。
+  · **复刻不是 git fork**（2026-08-19）
+        Gitea 有两条路：`fork.go:97` 继承源可见性（协作网络），
+        `template.go:85` `IsPrivate: opts.Private`（从模板生成，可见性独立）。
+        面团的「复刻」是拿一份自己改，对标后者：默认 private，要上市场再点公开。
+        git fork 那条仍禁止「私有被复刻后变公开」（后门）。
+
+  · **官方是所有权转让，不是打勾**（对标 `transfer.go` `repo.OwnerID = newOwner.ID`）
+        GitHub/Gitea 的官方仓库归官方组织。超管把应用送上官方货架 = 把
+        `owner_id` 改成面团官方主体，不是在别人的应用上插一面旗。
+        `is_official` 仍留下作为货架投影和存量过渡；交还时按 `prior_owner_id` 转回去。
 
 ## 三档可见性
 
@@ -71,6 +77,22 @@ class Visibility:
 
     ALL = (PUBLIC, UNLISTED, PRIVATE)
     DEFAULT = PUBLIC
+
+
+class Shelf:
+    """应用中心三个货架。⚠ 2026-08-19：原先「我的应用」其实是
+    filter_records 之后的全部可见记录——超管把自己的、别人的、广场上的
+    混在一墙。货架是展示口径，不是第二套权限。"""
+
+    MARKET = "market"
+    MINE = "mine"
+    OFFICIAL = "official"
+    ALL = (MARKET, MINE, OFFICIAL)
+
+
+#: 面团官方主体。不是某个超管的登录 id——超管自己创建的应用仍在「我的应用」。
+#: 对标 Gitea/GitHub 的官方组织命名空间，不对应可登录账号。
+OFFICIAL_OWNER_ID = "system:official"
 
 
 def normalize_visibility(value: Optional[str]) -> str:
@@ -230,21 +252,16 @@ def require(action: str, record: dict[str, Any], viewer: Any = None, **kw: Any) 
 
 
 def fork_visibility(source_record: dict[str, Any]) -> str:
-    """Fork 出来的应用用什么可见性。
+    """复刻出来的应用用什么可见性。
 
-    **私有只能继承、不能因为 Fork 就降级**（Gitea services/repository/fork.go:97
-    同款）。这条很容易做反：Fork 产出的是一条新记录、新所有者，写成默认公开非常
-    自然，而那样 Fork 就成了绕过私有的后门——任何能读到私有应用的人（比如被授权
-    的协作者）Fork 一下就把它公开了。
+    ⚠ 2026-08-19：面团的复刻对标 Gitea `GenerateRepository`
+    （`services/repository/template.go:85`，`IsPrivate: opts.Private`），
+    **不是** git fork（`fork.go:97` 继承源可见性）。从市场复刻一张公开卡
+    若跟着公开，等于立刻又上架一份——要上市场请在「我的应用」里点公开。
 
-    unlisted 同理不升级为 public。public 的 Fork 保持 public。
+    私有源仍然不得升级为公开：那是绕过私有的后门，Gitea fork 那条没丢。
     """
-    source = normalize_visibility(source_record.get("visibility"))
-    if source == Visibility.PRIVATE:
-        return Visibility.PRIVATE
-    if source == Visibility.UNLISTED:
-        return Visibility.UNLISTED
-    return Visibility.PUBLIC
+    return Visibility.PRIVATE
 
 
 # ────────────────────────── 列表过滤 ──────────────────────────
@@ -268,6 +285,81 @@ def visible_filter(viewer: Any = None) -> dict[str, Any]:
     if viewer_id is None:
         return {"scope": "public_only"}
     return {"scope": "public_plus_own", "viewer_id": viewer_id}
+
+
+def normalize_shelf(value: Optional[str]) -> Optional[str]:
+    """列表 `scope=`。空 = 不按货架切（兼容老调用）。认不出 → None。"""
+    v = (value or "").strip().lower()
+    if not v or v == "all":
+        return None
+    return v if v in Shelf.ALL else None
+
+
+def is_official_app(record: dict[str, Any]) -> bool:
+    """官方货架投影。货架看旗；所有权看 owner_id == OFFICIAL_OWNER_ID。
+    移交时两份一起写，旗留下是为了存量过渡和 SQL 货架谓词。"""
+    value = record.get("is_official") if isinstance(record, dict) else None
+    if value is True or value == 1:
+        return True
+    if isinstance(value, str) and value.strip().lower() in ("1", "true", "yes"):
+        return True
+    return False
+
+
+def is_official_owner(owner_id: Any) -> bool:
+    return (owner_id or None) == OFFICIAL_OWNER_ID
+
+
+def transfer_to_official(record: dict[str, Any]) -> dict[str, Any]:
+    """把应用交给面团官方。对标 Gitea `transferOwnership`：改 OwnerID。
+
+    第一次移交才记下 prior_owner_id，交还时转回去。已经在官方名下不再覆盖原主。
+    官方货架给人看，顺手公开（unlisted 除外）。
+    """
+    owner = record.get("owner_id") or None
+    if not is_official_owner(owner):
+        if not record.get("prior_owner_id"):
+            record["prior_owner_id"] = owner
+        record["owner_id"] = OFFICIAL_OWNER_ID
+    record["is_official"] = True
+    if normalize_visibility(record.get("visibility")) != Visibility.UNLISTED:
+        record["visibility"] = Visibility.PUBLIC
+    return record
+
+
+def transfer_from_official(record: dict[str, Any]) -> dict[str, Any]:
+    """从官方货架交还。有 prior_owner_id 才改回 OwnerID；没有则只摘旗
+    （存量「只打勾没转让」的应用，所有者本来就是原作者）。"""
+    prior = record.get("prior_owner_id") or None
+    if is_official_owner(record.get("owner_id")) and prior:
+        record["owner_id"] = prior
+    record["prior_owner_id"] = None
+    record["is_official"] = False
+    return record
+
+
+def matches_shelf(
+    record: dict[str, Any],
+    shelf: Optional[str],
+    viewer: Any = None,
+) -> bool:
+    """这条记录进哪个货架。权限仍由 filter_records / access_for 把关。
+
+    · market   — 公开、且不是官方（广场）
+    · mine     — owner_id == 当前用户（新建 / Fork 都落这里；超管也不例外）
+    · official — is_official
+    """
+    if not shelf:
+        return True
+    official = is_official_app(record)
+    if shelf == Shelf.OFFICIAL:
+        return official
+    if shelf == Shelf.MINE:
+        vid = _viewer_id(viewer)
+        return bool(vid) and (record.get("owner_id") or None) == vid
+    if shelf == Shelf.MARKET:
+        return (not official) and normalize_visibility(record.get("visibility")) == Visibility.PUBLIC
+    return False
 
 
 def filter_records(
