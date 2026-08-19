@@ -69,6 +69,10 @@ describe("左栏步骤的能力归属", () => {
       handler,
       "onReasoningStep 手里就有能力 id 却没往下传 —— 这是那 65 条 chip 的主要来源"
     ).toMatch(/appendStreamStep\([^)]*\{[^}]*capabilityId/s);
+    expect(
+      handler,
+      "内部 id 必须先翻人话，不能直接「正在执行 specfirst.design」"
+    ).toContain("humanReasoningStepLabel");
   });
 
   it("LLM 流式那条要标 realLlm，否则左栏两种事分不开", () => {
@@ -88,5 +92,21 @@ describe("左栏步骤的能力归属", () => {
       body,
       "realLlm 写死 false 的话，模型在想和系统报进度在左栏长得一模一样"
     ).not.toMatch(/realLlm:\s*false/);
+  });
+});
+
+describe("marathon reasoning_step 传机器 id", () => {
+  it("有 stage 就传 stage，不把人话当能力 id", () => {
+    const marathon = readFileSync(
+      fileURLToPath(new URL("../../../lib/sliderule-marathon-driver.ts", import.meta.url)),
+      "utf-8"
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^[ \t]*\/\/.*$/gm, "");
+    const at = marathon.indexOf('case "reasoning_step"');
+    expect(at).toBeGreaterThan(-1);
+    const handler = marathon.slice(at, at + 500);
+    expect(handler).toMatch(/event\.stage/);
+    expect(handler).toMatch(/onReasoningStep/);
   });
 });

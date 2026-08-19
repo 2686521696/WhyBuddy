@@ -558,6 +558,28 @@ class Test断线体检:
         }
         assert [o for o in find_orphans(build_app_graph(m)) if o["kind"] == "wf"] == []
 
+    def test_HTML有数据孔的空绑定页不报空界面(self):
+        """覆盖闸认 data-record；体检查模型网。不是同一件事。
+
+        不传 HTML 时仍报——沙盘 / 单测保持模型口径。
+        """
+        from services.app_graph import find_orphans
+
+        m = {
+            "datamodel": {"entities": [{"id": "e", "name": "表", "fields": [{"id": "f", "name": "F"}]}]},
+            "rbac": {"roles": [], "permissions": []},
+            "page": {"pages": [{"id": "p3", "name": "指南"}]},
+        }
+        g = build_app_graph(m)
+        assert any(o["key"] == "page:p3" for o in find_orphans(g))
+        html = {"p3": '<section data-record="guide"><p>入口</p></section>'}
+        keys = {o["key"] for o in find_orphans(g, page_html=html)}
+        assert "page:p3" not in keys
+        still_empty = {"p3": "<section><p>纯文案</p></section>"}
+        assert any(
+            o["key"] == "page:p3" for o in find_orphans(g, page_html=still_empty)
+        )
+
     def test_闸对这些孤岛全部放行(self):
         """★ 这条说明体检为什么必须存在：同一份模型，闸是绿的。"""
         from services.app_graph import find_orphans

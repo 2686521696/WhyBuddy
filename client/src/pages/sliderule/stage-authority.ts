@@ -5,9 +5,9 @@
  * 左栏若混成一张无规则清单，两种活就看不出来。
  * 这里只分权属，不装论坛互辩——仓里没有主持人，FLOWB 还要剥 debate。
  *
- * 真机坑：marathon 把 reasoning_step 的 **label**（人话）传给
- * onReasoningStep，再被包成「第 N 轮 · 正在执行 …」。
- * 配方步会顶着 round 前缀进来。必须按文案/能力 id 认，不能只看「第 N 轮」。
+ * 真机坑：marathon 曾把 reasoning_step 的 **label**（人话）传给
+ * onReasoningStep；现在优先传 **stage**（机器 id），左栏再翻人话。
+ * 配方步仍会顶着 round 前缀进来。必须按文案/能力 id 认，不能只看「第 N 轮」。
  */
 
 import type { PlanSourceValue } from "@shared/blueprint/sliderule-turn-route";

@@ -362,7 +362,14 @@ async function consumeDriveStreamResponse(
 
         switch (event.type) {
           case "reasoning_step":
-            opts.onReasoningStep?.(event.label as string, event.loop as number | undefined);
+            // enrich 阶段 SSE 的 label 是人话、stage 是机器 id
+            // （GitHub Actions name vs id）。有 stage 就传 id，左栏自己翻人话；
+            // 只把人话往下传时，humanReasoningStepLabel 会原样留下。
+            opts.onReasoningStep?.(
+              (typeof event.stage === "string" && event.stage) ||
+                (event.label as string),
+              event.loop as number | undefined
+            );
             break;
           case "llm_delta":
             // LLM 实时内容增量（后端 150ms 批量聚合，带来源标签）。

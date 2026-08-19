@@ -28,6 +28,7 @@ from services.model_assembly import (
     assemble_mechanical,
     build_binding_prompt,
     check_bindings_closed,
+    ensure_wizard_workflow_refs,
 )
 from services.v5_model_gate import validate_five_system_model
 
@@ -251,6 +252,72 @@ class Test汇合与重问:
     def test_LLM_没产出也抛(self):
         with pytest.raises(ModelAssemblyError):
             assemble(STRUCTURE, SEMANTICS, SPEC, llm_json_fn=lambda _m: None)
+
+
+class Test向导workflowRef机械补:
+    """对照 rustc --fix：闸认得的洞先机械补，再问模型。"""
+
+    def _wizard_structure(self):
+        st = copy.deepcopy(STRUCTURE)
+        st["pages"].append({
+            "id": "p3", "name": "登记向导", "kind": "wizard",
+            "sourcePageId": "p3", "sections": ["步骤"], "evidence": "向导",
+        })
+        return st
+
+    def _wizard_bindings(self, *, with_ref: bool):
+        b = copy.deepcopy(BINDINGS)
+        b["pageBindings"].append({
+            "pageId": "p3",
+            "fieldBindings": ["vehicle.plate"],
+            "actionPermissions": ["vehicle:create"],
+        })
+        if with_ref:
+            b["workflowPageBindings"].append(
+                {"pageRef": "p3", "workflowRef": "main_flow"}
+            )
+        return b
+
+    def test_漏写向导绑定_一次过闸不重问(self):
+        calls: list = []
+
+        def fake(messages):
+            calls.append(messages)
+            return self._wizard_bindings(with_ref=False)
+
+        r = assemble(
+            self._wizard_structure(), SEMANTICS, SPEC, llm_json_fn=fake
+        )
+        assert len(calls) == 1, "机械补得了还去重问——活路径又绕回模型"
+        assert r["gate"]["passed"] is True
+        bound = {
+            str(pb.get("pageRef")): str(pb.get("workflowRef") or "")
+            for pb in r["model"]["appbundle"]["pageBindings"]
+        }
+        assert bound.get("p3") == "main_flow"
+
+    def test_两个流程没有_main_flow_不猜(self):
+        m = {
+            "workflow": {
+                "id": "intake",
+                "nodes": [{"id": "n1", "name": "收"}],
+                "chains": [{"id": "billing", "nodes": [{"id": "n2", "name": "结"}]}],
+            },
+            "page": {"pages": [{"id": "p3", "kind": "wizard", "name": "向导"}]},
+            "appbundle": {"pageBindings": []},
+        }
+        assert ensure_wizard_workflow_refs(m) == []
+        assert m["appbundle"]["pageBindings"] == []
+
+    def test_接线在闸前面(self):
+        """函数写对了 ≠ 接在 assemble 循环上。钉调用点。"""
+        import inspect
+        from services.model_assembly import assemble as _assemble
+
+        src = inspect.getsource(_assemble)
+        assert src.index("ensure_wizard_workflow_refs(model)") < src.index(
+            "gate = validate_five_system_model"
+        )
 
 
 class Test产物不许跟输入共享对象:

@@ -286,6 +286,59 @@ def check_bindings_closed(model: Dict[str, Any]) -> List[Dict[str, str]]:
     return problems
 
 
+def ensure_wizard_workflow_refs(model: Dict[str, Any]) -> List[str]:
+    """机械补向导页的 workflowRef。对照 rustc --fix / TypeScript codefix：
+    闸认得的洞，先自己补，再问模型。
+
+    ⚠ 2026-08-19 安康随访通：装配重问第 1 次
+    `page.pages[p2].kind：wizard page must be bound…`，随后自己恢复。
+    活路径是本文件的 assemble 循环，**不是** GEN5 的 v5_model_repair——
+    那边对向导拒绝编 ref，改那边等于没改（纪律一）。
+
+    fail-closed：只在 `main_flow` 已在闸的合法域，或合法域里只剩一个 id
+    时才补。两个流程且没有 main_flow → 不猜，留给闸重问。
+    合法域复用 `v5_model_gate._collect_workflow_ids`，不另造第二份。
+    """
+    from .v5_model_gate import _collect_workflow_ids
+
+    legal = _collect_workflow_ids(model.get("workflow") or {})
+    if "main_flow" in legal:
+        pick = "main_flow"
+    elif len(legal) == 1:
+        pick = next(iter(legal))
+    else:
+        return []
+
+    appbundle = model.setdefault("appbundle", {})
+    bindings = list(appbundle.get("pageBindings") or [])
+    by_page: Dict[str, int] = {}
+    for i, pb in enumerate(bindings):
+        pref = str((pb or {}).get("pageRef") or "").strip()
+        if pref:
+            by_page[pref] = i
+
+    stamped: List[str] = []
+    for page in (model.get("page") or {}).get("pages") or []:
+        if str((page or {}).get("kind") or "").strip() != "wizard":
+            continue
+        pid = str((page or {}).get("id") or (page or {}).get("name") or "").strip()
+        if not pid:
+            continue
+        idx = by_page.get(pid)
+        if idx is None:
+            bindings.append({"pageRef": pid, "workflowRef": pick})
+            by_page[pid] = len(bindings) - 1
+            stamped.append(pid)
+            continue
+        existing = str((bindings[idx] or {}).get("workflowRef") or "").strip()
+        if existing and existing in legal:
+            continue
+        bindings[idx] = {**(bindings[idx] or {}), "workflowRef": pick}
+        stamped.append(pid)
+    appbundle["pageBindings"] = bindings
+    return stamped
+
+
 def assemble(
     structure: Dict[str, Any],
     semantics: Dict[str, Any],
@@ -317,6 +370,7 @@ def assemble(
                 break
         else:
             model = apply_bindings(skeleton, payload)
+            ensure_wizard_workflow_refs(model)
             own = check_bindings_closed(model)
             gate = validate_five_system_model(
                 model,

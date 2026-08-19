@@ -128,6 +128,48 @@ def build_summary_messages(state: Any, publish_closure: Dict[str, Any]) -> List[
     ]
 
 
+# 模型把指令清单写进正文时的记号。对照 Instructor / LangChain 的
+# output parser：看起来像 prompt 回声的 completion 直接拒收。
+#
+# ⚠ 2026-08-19 安康随访通：chatSummary 落成「存审计日志 / 字数与格式检查」。
+#   不是 1200 字中段被截，是模型把 system 里的检查项复述出来了。
+#   「不要复述这段指令」写在 prompt 里挡不住——必须在出口拦。
+_ECHO_MARKERS = (
+    "字数与格式检查",
+    "不要复述这段指令",
+    "现在输出总结",
+    "字数：大约",
+    "符合「",
+)
+
+
+def summary_looks_like_instruction_echo(text: str) -> bool:
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    first = raw.splitlines()[0].strip()
+    if first.startswith("存审计日志"):
+        return True
+    return any(mark in raw for mark in _ECHO_MARKERS)
+
+
+def _mechanical_summary(publish_closure: Dict[str, Any]) -> Optional[str]:
+    """方案 A 同款事实行：闭环状态 + 五系统统计。零 LLM。"""
+    lines = _model_stats_lines(publish_closure)
+    if not lines:
+        return None
+    blocked = bool(publish_closure.get("blocked"))
+    per_skill = publish_closure.get("perSkillEvidence") or {}
+    present = sum(
+        1 for v in per_skill.values() if isinstance(v, dict) and v.get("evidencePresent")
+    )
+    head = (
+        f"闭环{'被拦截' if blocked else '已闭合'} · "
+        f"证据 {present}/{len(per_skill) or 6}。"
+    )
+    return head + "\n" + "\n".join(lines)
+
+
 def generate_closure_chat_summary(
     state: Any,
     publish_closure: Dict[str, Any],
@@ -139,11 +181,24 @@ def generate_closure_chat_summary(
 
         messages = build_summary_messages(state, publish_closure)
         kwargs: Dict[str, Any] = {"max_tokens": 900, "temperature": 0.3}
+        buffered: List[str] = []
         if on_delta is not None:
-            kwargs["on_delta"] = on_delta
+            kwargs["on_delta"] = buffered.append
         result = call_llm_with_retry(messages, **kwargs)
         text = (result.content or "").strip()
-        return text or None
+        if not text:
+            return None
+        if summary_looks_like_instruction_echo(text):
+            # 回声不许落库、也不许流到左栏。机械行跟客户端模板同一批事实。
+            print("[v5_closure_summary] model echoed the checklist, using mechanical facts")
+            mech = _mechanical_summary(publish_closure)
+            if mech and on_delta is not None:
+                on_delta(mech)
+            return mech
+        if on_delta is not None:
+            for chunk in buffered:
+                on_delta(chunk)
+        return text
     except Exception as exc:  # noqa: BLE001 — 总结永远不挡闭环
         print(f"[v5_closure_summary] summary failed, fallback to template: {str(exc)[:160]}")
         return None

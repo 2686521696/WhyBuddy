@@ -10,10 +10,15 @@
 666ghj/BettaFish 的 forum 流：它把每个 Agent **说的话**逐行推成
 `{sender, content, timestamp}`。要流的是**内容**，不是"正在执行 X"。
 
-## 为什么只接四步，不是六步都接
+## 为什么并发两步不接，其余单次 LLM 步都接
 
-  接：spec / structure / semantics / assemble —— 单次调用，输出是给人看的推理
+  接：spec / design / pagescope / graphscope / structure / semantics / assemble
+      —— 单次调用，输出是给人看的推理
   不接：pages（第 3 步）/ bind（第 6.5 步）—— 逐页并发
+
+  ⚠ 2026-08-19：design 早就在流（design_language.stage=specfirst.design），
+    但这张 STREAMED 表没跟上。前端 SPEC_FIRST_LLM_LABELS 被这条「表=流」
+    的反向判据锁在最初四步，左栏漏出「执行 specfirst.design」。
 
 不接那两步有两条独立理由，任何一条单独成立：
 
@@ -33,10 +38,13 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-#: 接了增量的四步：模块名 → label。**这份表是判据的唯一来源**，
+#: 接了增量的单次 LLM 步：模块名 → label。**这份表是判据的唯一来源**，
 #: 下面每条用例都从它派生，不手抄第二遍。
 STREAMED = {
     "spec_tree": "specfirst.spec",
+    "design_language": "specfirst.design",
+    "refine_page_scope": "specfirst.pagescope",
+    "refine_graph_scope": "specfirst.graphscope",
     "html_structure": "specfirst.structure",
     "spec_semantics": "specfirst.semantics",
     "model_assembly": "specfirst.assemble",
@@ -87,7 +95,7 @@ def test_这一步真的接了增量(mod, label):
 
 
 def test_共用口真的把_stage_接到增量通道上():
-    """⚠ 上面那条只验"传了 stage"。stage 传进去之后被丢掉的话，四条全绿而
+    """⚠ 上面那条只验"传了 stage"。stage 传进去之后被丢掉的话，表里全绿而
     左栏一个字都不会有——**判据链断在中间是最难发现的一种**。
 
     所以这里正面验共用文件里那一环：stage → delta_emitter → on_delta。
@@ -175,7 +183,7 @@ def test_sink_自己炸了不打死这一步():
         set_capability_delta_sink(None)
 
 
-def test_前端认得出这四个_label():
+def test_前端认得出所有流式_label():
     """⚠ 跨端判据：label 是**同一份词汇的两半**，隔着一条 SSE，谁也编译不到谁。
 
     漏一个的后果不是报错，是左栏冒出 "LLM 正在执行 specfirst.structure"

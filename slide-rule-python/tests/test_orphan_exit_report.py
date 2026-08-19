@@ -136,6 +136,22 @@ class Test精修轮_新增与存量分开:
         assert rec == {"total": 1, "new": 0, "stale": 1, "baseline": True}
 
 
+class Test体检在打孔之后:
+    def test_源码顺序_先bind再find_orphans(self):
+        """⚠ 打孔前体检会把指南页报成孤岛。钉活路径的顺序，不钉措辞。"""
+        import inspect
+        import re
+        from services import spec_first_pipeline as sfp
+
+        src = inspect.getsource(sfp.run_spec_first)
+        code = re.sub(r'""".*?"""', "", src, flags=re.S)
+        code = re.sub(r"#.*", "", code)
+        assert code.index("bound = bind_pages") < code.index("_cur_orphans"), (
+            "断线体检又跑到打孔前面了——page 孤岛会谎报"
+        )
+        assert "page_html=pages" in src, "交付出口没把打过孔的 HTML 传给体检"
+
+
 class Test只报不拦:
     def test_体检自己炸了不拦交付(self, monkeypatch, capsys):
         """纪律七：体检是增强类。它炸了交付必须照常，且要说得出话。"""

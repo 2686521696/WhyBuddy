@@ -344,8 +344,25 @@ _ORPHAN_RULES = {
 }
 
 
-def find_orphans(graph: Dict[str, Any]) -> List[Dict[str, str]]:
+def _page_has_visible_data_source(html: str) -> bool:
+    """用户看得见的数据孔。键表跟打孔那一步同一份，不另造。"""
+    from .html_bindings import DATA_SOURCE_KEYS
+
+    text = html or ""
+    return any(f"data-{k}=" in text for k in DATA_SOURCE_KEYS)
+
+
+def find_orphans(
+    graph: Dict[str, Any],
+    *,
+    page_html: Optional[Dict[str, str]] = None,
+) -> List[Dict[str, str]]:
     """图上的孤岛：**东西在不在网里**。返回 `[{key, kind, name, reason}]`。
+
+    page_html（2026-08-19）：交付出口在打孔之后才调用。指南页常见
+    `data-record` / `data-rows` 而模型 `fieldBindings` 为空——覆盖闸认孔，
+    体检查的是模型网。打孔前按模型网报「一个实体都没绑」是谎。
+    沙盘（sandbox-graph.ts）仍只看模型网，两边用途不同，不许悄悄并成一套。
 
     ## 为什么闸查不出来
 
@@ -398,6 +415,11 @@ def find_orphans(graph: Dict[str, Any]) -> List[Dict[str, str]]:
         if not rule:
             continue
         side, kinds, reason = rule
+        if meta["kind"] == "page" and page_html is not None:
+            page_id = nid.split(":", 1)[1]
+            html = page_html.get(page_id)
+            if html is not None and _page_has_visible_data_source(html):
+                continue
         if not has(nid, side, kinds):
             out.append({"key": nid, "kind": meta["kind"], "name": meta["name"], "reason": reason})
     return out

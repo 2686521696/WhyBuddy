@@ -64,6 +64,19 @@ describe("activity-rows（Cursor 活动行语法）", () => {
     expect(compactVerb("正在分析风险")).toBe("分析风险");
   });
 
+  it("人话标签剥完不许露出 specfirst 机器 id", () => {
+    expect(compactVerb("LLM 正在定这个应用的设计语言")).toBe(
+      "定这个应用的设计语言"
+    );
+    expect(compactVerb("LLM 正在定这个应用的设计语言")).not.toMatch(
+      /specfirst/
+    );
+    expect(
+      parseActivityLine("🖋 LLM 正在定这个应用的设计语言（实时输出见下方）...")
+        .verb
+    ).not.toMatch(/specfirst/);
+  });
+
   it("完成后 running 行要落成 done；失败行不许被洗绿", () => {
     const groups = groupsFromPhases(
       deriveTurnPhases({ stepTexts: STEPS, streaming: false })

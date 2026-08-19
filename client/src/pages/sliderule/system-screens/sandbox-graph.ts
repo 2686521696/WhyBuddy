@@ -105,6 +105,9 @@ export function deriveSandboxGraph(
           }
           break;
         case "page":
+          // 沙盘只看模型网（fieldBindings）。交付出口的 Python 体检在打孔后
+          // 还会看 HTML data-*——指南页常有 data-record 而模型没绑实体。
+          // 两边用途不同，不要把 HTML 口径悄悄并进来。
           if (!touchesAsSource(item.key, ["page-entity"])) {
             problems.push({
               key: item.key, system: g.system, name: item.name,

@@ -33,6 +33,10 @@ import { createHttpSlideRuleSessionStore } from "@/lib/sliderule-http-store";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { loadByokPool, validateByokPool } from "@/lib/sliderule-byok-config";
 import type { V5CapabilityId } from "@shared/blueprint/contracts";
+import {
+  humanReasoningStepLabel,
+  SPEC_FIRST_LIVE_LABELS,
+} from "@shared/blueprint/spec-first-labels";
 import type {
   TurnStep,
   UiTurn,
@@ -919,15 +923,18 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           // 每一步 LLM 想法各自缓冲：并行批里不同能力的增量交织到达，
           // 按标签分开累积，展示最近更新的那条（不互相覆盖内容）。
           const llmDraftBuffers = new Map<string, string>();
-          // spec-first 四步的实时输出（2026-08-14）。
+          // spec-first 流式步的实时输出。对照 GitHub Actions 的 name vs id：
+          // SSE `label` 是机器 id，左栏只许出现人话。
           //
           // ⚠ 这张表跟后端 delta_emitter 传的 label 是**同一份词汇的两半**，
           //   而它俩隔着一条 SSE，谁也编译不到谁。漏一个的后果不是报错，是
-          //   左栏冒出一行 "LLM 正在执行 specfirst.structure"——内部 id 直接
-          //   漏到用户脸上。判据在 test_spec_first_streaming（后端）与
-          //   spec-first-stream-labels.test.ts（前端）两边各钉一次。
+          //   左栏冒出一行 "LLM 正在执行 specfirst.design"——2026-08-19
+          //   安康随访通就是这样漏的。判据在 test_spec_first_streaming。
           const SPEC_FIRST_LLM_LABELS: Record<string, string> = {
             "specfirst.spec": "LLM 正在起草规格：成功判据、需求节点与页面清单",
+            "specfirst.design": "LLM 正在定这个应用的设计语言",
+            "specfirst.pagescope": "LLM 正在判断这次要改哪几页",
+            "specfirst.graphscope": "LLM 正在分析这次修改牵扯的范围",
             "specfirst.structure": "LLM 正在从界面反推数据模型与关联关系",
             "specfirst.semantics": "LLM 正在推导权限、工作流与不变式",
             "specfirst.assemble": "LLM 正在汇合五系统模型",
@@ -936,6 +943,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             if (key === "five-system-model") return "LLM 正在起草五系统模型";
             if (key === "closure.summary") return "LLM 正在整理推演总结";
             if (SPEC_FIRST_LLM_LABELS[key]) return SPEC_FIRST_LLM_LABELS[key];
+            // 不流式的步（pages / bind）也会走 reasoning_step，人话表兜住。
+            if (SPEC_FIRST_LIVE_LABELS[key]) {
+              return `LLM 正在${SPEC_FIRST_LIVE_LABELS[key]}`;
+            }
             const entry = (
               CAPABILITY_PROCESS_LABELS as Record<
                 string,
@@ -1041,13 +1052,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 );
               },
               onReasoningStep: (capabilityId, loop) => {
-                const human =
-                  (
-                    CAPABILITY_PROCESS_LABELS as Record<
-                      string,
-                      { liveLabel?: string }
-                    >
-                  )[capabilityId]?.liveLabel || `正在执行 ${capabilityId}`;
+                const human = humanReasoningStepLabel(capabilityId);
                 const label =
                   typeof loop === "number"
                     ? `第 ${loop + 1} 轮 · ${human}`
