@@ -107,23 +107,34 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain("sliderule-viewmode-toggle");
     // v4 pan/zoom canvas never renders on the default page
     expect(html).not.toContain("mock-reasoning-canvas");
-    // exactly one header bar (the merged STATUS header)
-    expect(html.match(/data-testid="sliderule-status-bar"/g)?.length).toBe(1);
+    // 空会话不挂图标簇（交付物/重置也会占一条底边）
+    expect(html).not.toContain('data-testid="sliderule-status-bar"');
   });
 
-  it("single header row：交付物/重置会话（STATUS、Work/Code 胶囊与 Dev 入口均退役）", () => {
+  it("empty session hides the chrome cluster（交付物/重置也占一条底边，空态不挂）", () => {
     const html = renderPage();
+    expect(html).not.toContain('data-testid="sliderule-status-bar"');
+    expect(html).not.toContain('data-testid="sliderule-deliverables-open"');
+    expect(html).not.toContain('data-testid="sliderule-reset-session"');
+    expect(html).not.toContain('data-testid="sliderule-layout-controls"');
+  });
+
+  it("有轮次才挂交付物/重置，且只出现一次（不占整页顶栏）", () => {
+    const html = renderPage({
+      goal: "做一个采购审批应用",
+      uiTurns: [streamingTurn],
+      isRunning: false,
+    });
 
     // Work 模式迁私有主仓：公开仓不再有模式切换
     expect(html).not.toContain('data-testid="sliderule-surface-mode"');
     expect(html).not.toContain('data-testid="sliderule-mode-work"');
     expect(html).not.toContain('data-testid="sliderule-conclusion-badge"');
     expect(html).not.toContain('data-testid="sliderule-goal-display"');
+    expect(html.match(/data-testid="sliderule-status-bar"/g)?.length).toBe(1);
     expect(html).toContain('data-testid="sliderule-deliverables-open"');
     expect(html).toContain('data-testid="sliderule-reset-session"');
     expect(html).toContain('data-testid="sliderule-layout-controls"');
-    // 空会话舞台未登场：顶栏不提前挂舞台折钮
-    expect(html).not.toContain('data-testid="sliderule-layout-stage"');
     expect(html).not.toContain(">交付物<");
     expect(html).not.toContain(">重置会话<");
     // E28：Dev 入口移除（用户裁决）——工程驾驶舱直接访问 /sliderule/dev
@@ -164,9 +175,37 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html.match(/data-testid="sliderule-composer-dock"/g)?.length).toBe(
       1
     );
+    expect(html).not.toContain('data-testid="sliderule-composer-footer"');
+    expect(html).not.toContain('data-testid="sliderule-composer-actions"');
+    expect(html).not.toContain('data-testid="sliderule-composer-context"');
     // the old duplicate empty-state copy is gone
     expect(html).not.toContain("把应用意图发给 SlideRule");
     expect(html).not.toContain("Welcome to SlideRule V5.");
+  });
+
+  it("开聊后输入条贴在会话流底部，不再整页浮层截断分隔线", () => {
+    const html = renderPage({
+      goal: "做一个采购审批应用",
+      uiTurns: [streamingTurn],
+      isRunning: false,
+    });
+    expect(html).toContain('data-testid="sliderule-composer-footer"');
+    expect(html.match(/data-testid="sliderule-composer-dock"/g)?.length).toBe(
+      1
+    );
+    expect(html).not.toContain('data-testid="sliderule-hero-composer"');
+    expect(html).not.toContain("pb-[104px]");
+    const footer = html.slice(
+      html.indexOf('data-testid="sliderule-composer-footer"'),
+      html.indexOf('data-testid="sliderule-composer-dock"')
+    );
+    expect(footer).toContain("max-w-[720px]");
+    expect(footer).not.toContain("border-t");
+    // Cursor 三行：芯片 / 胶囊 / 状态。空态 hero 不画这三行。
+    expect(html).toContain('data-testid="sliderule-composer-actions"');
+    expect(html).toContain('data-testid="sliderule-composer-hint-chip"');
+    expect(html).toContain('data-testid="sliderule-composer-context"');
+    expect(html).toContain("推演");
   });
 
   it("empty session hides the right stage entirely（欢迎页独占全宽，不摆空壳看板）", () => {

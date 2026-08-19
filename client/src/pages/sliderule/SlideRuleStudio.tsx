@@ -1,7 +1,7 @@
 /**
  * SlideRuleStudio — 统一页主布局容器（对话 / 舞台可拖可折，默认 38 / 62）
  *
- * 左侧：Chat 对话区（ClaudeChatSurface，含唯一空态：问候 + 光晕输入 + chips + 灵感卡）。
+ * 左侧：Chat 对话区（ClaudeChatSurface，含唯一空态：问候 + Cursor 卡片输入 + chips + 灵感卡）。
  *
  * 右侧主舞台——四态：
  *   pages   — **成品面**：spec-first 那条链路产出的 HTML 页面，装在
@@ -64,9 +64,10 @@ import {
   htmlBindingToXrayTarget,
   type XrayTarget,
 } from "./XrayPanel";
-import { Crosshair, X } from "lucide-react";
+import { ChevronDown, Crosshair, X } from "lucide-react";
 import { StudioSplit } from "./StudioSplit";
 import { useStudioLayout } from "./StudioLayoutContext";
+import { isStagePageShown } from "./studio-layout";
 import { StudioLandingShot } from "./studio-landing-shot";
 
 const XRAY_PREF_KEY = "sliderule:xray-on";
@@ -142,6 +143,8 @@ interface SlideRuleStudioProps {
   } | null;
 
   className?: string;
+  /** 舞台头条右侧：隐藏页面 / 最大化 / 交付物 / 重置。不另占整页顶栏。 */
+  chromeSlot?: React.ReactNode;
 }
 
 export function SlideRuleStudio({
@@ -165,6 +168,7 @@ export function SlideRuleStudio({
   currentModelVersionId = null,
   onRestoreVersion,
   isRestoringVersion = false,
+  chromeSlot,
 }: SlideRuleStudioProps) {
   const layout = useStudioLayout();
   // 顶栏「隐藏页面」必须卸掉右侧舞台，不是把宽度收成 0。
@@ -345,7 +349,7 @@ export function SlideRuleStudio({
   //   · 桌面/代码档：桌面 = 渲染页；代码 = 当前页交付的 HTML 原文
   //   · 游标：XrayPanel 原样复用（它只吃模型 + schema，纯派生），中间缺的
   //     那层「{attr,value,el} → XrayTarget」翻译落在 htmlBindingToXrayTarget
-  const [stageView, setStageView] = useState<"page" | "code">("page");
+  const [stageView, setStageView] = useState<"page" | "code" | "board">("page");
   const [activeSpecPageId, setActiveSpecPageId] = useState<string>("home");
   // 游标开关（计算尺游标 hairline 的品牌梗；偏好持久化，键跟老舞台同一个
   // ——用户在老链路开过游标，这里就该记得）
@@ -453,6 +457,11 @@ export function SlideRuleStudio({
     return (
       <div className={`flex h-full w-full overflow-hidden ${className}`}>
         <div className="flex h-full w-full flex-col bg-[var(--sr-shell-bg,#ffffff)]">
+          {chromeSlot ? (
+            <div className="flex shrink-0 justify-end px-3 py-1">
+              {chromeSlot}
+            </div>
+          ) : null}
           {chatSlot}
         </div>
       </div>
@@ -493,34 +502,38 @@ export function SlideRuleStudio({
                 </span>
               )}
               {versionToolbar}
-              {/* 顶栏右侧三件（2026-08-14 回炉）：桌面/代码档 + 游标——跟老区块
-                  舞台同一排、同一语义（用户点名「跟以前链路顶部保持统一」）。 */}
+              {/* 顶栏：桌面/代码/沙盘 + 透视。图标簇贴在这一行最右，
+                  不再独占整页顶栏（2026-08-20 真机占一条底边）。 */}
               <div
-                className={`${versionToolbar ? "" : "ml-auto "}flex shrink-0 items-center gap-1.5`}
+                className="ml-auto flex shrink-0 items-center gap-1.5"
                 data-testid="sliderule-stage-gears"
               >
                 {/* 角色切换（2026-08-14 晚）：权限那只手的开关。持久化与广播
                     沿用老区块舞台那套，RBAC 屏「角色预览」改的是同一份。 */}
                 {roleOptions.length > 0 && (
-                  <select
-                    value={role ?? ""}
-                    onChange={e => changeRole(e.target.value)}
-                    data-testid="sliderule-stage-role"
-                    title="以哪个角色试用这个应用（权限门实时生效）"
-                    className="h-8 cursor-pointer rounded-full border border-[#e5e7eb] bg-white px-3 text-[12px] font-medium text-stone-600 outline-none transition hover:border-[#d3d8e0] hover:bg-[#f8f9fb]"
-                  >
-                    {roleOptions.map(r => (
-                      <option key={r.id} value={r.id}>
-                        {r.label}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <select
+                      value={role ?? ""}
+                      onChange={e => changeRole(e.target.value)}
+                      data-testid="sliderule-stage-role"
+                      title="以哪个角色试用这个应用（权限门实时生效）"
+                      className="h-8 cursor-pointer appearance-none rounded-full border border-[#e5e7eb] bg-white pl-3 pr-8 text-[12px] font-medium text-stone-600 outline-none transition hover:border-[#d3d8e0] hover:bg-[#f8f9fb]"
+                    >
+                      {roleOptions.map(r => (
+                        <option key={r.id} value={r.id}>
+                          {r.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
+                  </div>
                 )}
                 <div className="flex items-center rounded-full border border-[#e5e7eb] bg-white p-0.5">
                   {(
                     [
                       ["page", "桌面"],
                       ["code", "代码"],
+                      ["board", "沙盘"],
                     ] as const
                   ).map(([v, label]) => (
                     <button
@@ -541,22 +554,36 @@ export function SlideRuleStudio({
                 </div>
                 <button
                   type="button"
-                  onClick={toggleXray}
+                  onClick={() => {
+                    if (stageView !== "page") setStageView("page");
+                    if (stageView === "page" || !xrayOn) toggleXray();
+                  }}
                   data-testid="sliderule-xray-toggle"
-                  aria-pressed={xrayOn}
+                  aria-pressed={xrayOn && stageView === "page"}
                   className={`flex h-8 items-center gap-1.5 rounded-full border px-3.5 text-[12px] font-semibold transition ${
-                    xrayOn
+                    xrayOn && stageView === "page"
                       ? "border-transparent bg-[#1677ff] text-white shadow-sm"
                       : "border-[#e5e7eb] bg-white text-stone-600 hover:border-[#d3d8e0] hover:bg-[#f8f9fb]"
                   }`}
-                  title="计算尺的游标：对齐到元素，读出它在五系统刻度上的对应声明"
+                  title="对准页面上的元素，看它背后的数据、流程和权限"
                 >
                   <Crosshair className="h-3.5 w-3.5" />
-                  游标
+                  透视
                 </button>
+                {chromeSlot}
               </div>
             </div>
             <div className="flex min-h-0 flex-1 gap-3">
+              {stageView === "board" ? (
+                <ArchitectureStage
+                  model={fiveSystemModel}
+                  publishClosure={publishClosure}
+                  onInspect={setDrawerSkill}
+                  focusSkill={activeSkillId}
+                  className="min-h-0 flex-1"
+                />
+              ) : (
+                <>
               <SpecPageLiveStage
                 pages={livePages}
                 statusLabel={isRunning ? liveActionLabel : null}
@@ -577,7 +604,10 @@ export function SlideRuleStudio({
                   activePageId={activeSpecPageId}
                   target={xrayTarget}
                   onOpenSystem={setDrawerSkill}
+                  onOpenSandbox={() => setStageView("board")}
                 />
+              )}
+                </>
               )}
             </div>
           </>
@@ -585,9 +615,12 @@ export function SlideRuleStudio({
           /* 模型还没成形（轮内步骤 / 起草早期）：右侧只报"推演中"——实时想法
              已在左栏流出（用户反馈：右侧别重复直播内容），应用成形后接管舞台。 */
           <div
-            className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3"
+            className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-3"
             data-testid="sliderule-live-stage"
           >
+            {chromeSlot ? (
+              <div className="absolute right-0 top-0">{chromeSlot}</div>
+            ) : null}
             <span className="inline-flex items-end gap-1.5" aria-hidden>
               <span className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]" />
               <span className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]" />
@@ -609,6 +642,7 @@ export function SlideRuleStudio({
             onInspect={setDrawerSkill}
             focusSkill={activeSkillId}
             versionToolbar={versionToolbar}
+            trailing={chromeSlot}
             className="min-h-0 flex-1"
           />
         )}
@@ -624,7 +658,7 @@ export function SlideRuleStudio({
                 {SKILL_LABELS[drawerSkill]}
               </span>
               <span className="text-[11px] text-stone-400">
-                游标透视 · 应用背后的声明
+                透视 · 应用背后的声明
               </span>
               <button
                 type="button"

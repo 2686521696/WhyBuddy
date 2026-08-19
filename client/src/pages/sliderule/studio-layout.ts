@@ -56,3 +56,14 @@ export function isStagePageShown(
 ): boolean {
   return stageVisible && !stagePageHidden;
 }
+
+/**
+ * 还没开始推演时顶栏整条不挂。
+ *
+ * ⚠ 2026-08-20 空态：舞台折钮已经靠 `available=false` 藏了，但交付物 /
+ * 重置仍占一条带底边的栏，用户指着右上角说不要。变异：只藏图标、留那条
+ * 底边，看起来还在。
+ */
+export function isStudioChromeShown(isHomeEmpty: boolean): boolean {
+  return !isHomeEmpty;
+}

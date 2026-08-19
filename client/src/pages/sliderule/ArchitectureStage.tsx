@@ -23,6 +23,7 @@ export function ArchitectureStage({
   onInspect,
   focusSkill,
   versionToolbar,
+  trailing,
   className = "",
 }: {
   model?: FiveSystemModel | null;
@@ -31,6 +32,8 @@ export function ArchitectureStage({
   /** 最近一次推演落到的系统：沙盘只描边，不编造路径 */
   focusSkill?: SkillId | null;
   versionToolbar?: React.ReactNode;
+  /** 标题行最右：工作台图标簇（隐藏页面/交付物…） */
+  trailing?: React.ReactNode;
   className?: string;
 }) {
   const [graphStyle, setGraphStyle] = useState<"flow" | "mermaid">("flow");
@@ -104,6 +107,7 @@ export function ArchitectureStage({
             {checksFailed ? "✗" : "✓"} Checks {present}/{total}
           </button>
           {versionToolbar}
+          {trailing}
         </div>
       </div>
 

@@ -3,6 +3,7 @@ import {
   canCollapsePart,
   isStageMaximized,
   isStagePageShown,
+  isStudioChromeShown,
   maximizeIntent,
   nextStagePageHidden,
 } from "../studio-layout";
@@ -39,5 +40,7 @@ describe("studio-layout（VS Code 分栏对照）", () => {
     expect(isStagePageShown(true, true)).toBe(false);
     expect(isStagePageShown(false, false)).toBe(false);
     expect(isStagePageShown(false, true)).toBe(false);
+    expect(isStudioChromeShown(true)).toBe(false);
+    expect(isStudioChromeShown(false)).toBe(true);
   });
 });

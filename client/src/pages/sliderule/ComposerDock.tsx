@@ -1,7 +1,8 @@
 import React from "react";
+import { createPortal } from "react-dom";
 import {
+  AppWindow,
   Blocks,
-  Paperclip,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -74,11 +75,47 @@ export function isExtractableAttachment(name: string): boolean {
   return EXTRACTABLE_ATTACHMENT_EXT.test(name);
 }
 
+/**
+ * 是否还有附件在「解析中」。
+ *
+ * 2026-08-20 真机：缩略图写着「解析中…」，发送键却是亮的。点下去
+ * 旧逻辑会立刻清掉附件卡、在后台等提取再发——用户没法改口，看起来
+ * 像发出去了。LobeChat（`isUploadingFiles` 同时闸 disabled 和 handleSend）
+ * 与 LibreChat（`filesLoading` 闸 SendButton；#2078 专门修了「只禁按钮、
+ * Enter 照样发」）都是同一条：任一文件未就绪就不许提交。
+ *
+ * failed 不算 pending——提取失败本来就 fail-open 只带文件名，不能把发送锁死。
+ */
+export function isAttachmentExtractPending(
+  attachments: Array<{ extractStatus?: "pending" | "ready" | "failed" }>
+): boolean {
+  return attachments.some(a => a.extractStatus === "pending");
+}
+
+/**
+ * 发送键该不该灰。推演中按钮是「停止」，永远不锁。
+ * 空输入且无附件 → 灰；任一附件解析中 → 灰。
+ */
+export function isComposerSendBlocked(opts: {
+  isRunning: boolean;
+  input: string;
+  attachments: Array<{ extractStatus?: "pending" | "ready" | "failed" }>;
+}): boolean {
+  if (opts.isRunning) return false;
+  if (isAttachmentExtractPending(opts.attachments)) return true;
+  return !opts.input.trim() && opts.attachments.length === 0;
+}
+
+/** 视觉 LLM 实测可到 100s+；超时必须 fail-open，否则发送键永远灰着。 */
+export const EXTRACT_CLIENT_TIMEOUT_MS = 180_000;
+
 /** E31：上传附件给后端提取内容（图片→视觉 LLM，PDF→E2B 沙盒）。
- *  网络/服务异常一律归一成 ok:false + 人话 detail（诚实降级）。 */
+ *  网络/服务异常/超时一律归一成 ok:false + 人话 detail（诚实降级）。 */
 export async function extractAttachmentRemote(
   file: File
 ): Promise<AttachmentExtractOutcome> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), EXTRACT_CLIENT_TIMEOUT_MS);
   try {
     const res = await fetch(
       `/api/sliderule/attachments/extract?name=${encodeURIComponent(file.name)}`,
@@ -86,6 +123,7 @@ export async function extractAttachmentRemote(
         method: "POST",
         headers: { "Content-Type": "application/octet-stream" },
         body: file,
+        signal: ctrl.signal,
       }
     );
     if (!res.ok) return { ok: false, detail: `HTTP ${res.status}` };
@@ -93,7 +131,15 @@ export async function extractAttachmentRemote(
     if (body.ok && (body.context || "").trim()) return body;
     return { ok: false, detail: body.detail || "服务返回空内容" };
   } catch (e) {
+    const aborted =
+      (typeof DOMException !== "undefined" &&
+        e instanceof DOMException &&
+        e.name === "AbortError") ||
+      (e instanceof Error && e.name === "AbortError");
+    if (aborted) return { ok: false, detail: "解析超时，仅携带文件名" };
     return { ok: false, detail: `网络异常：${String(e)}` };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -149,6 +195,63 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+/**
+ * 附件缩略图点击放大（2026-08-20）。
+ *
+ * 缩略图只有 40×40，真机上传截图后根本看不清内容。抽成展示组件而不是
+ * 内联在 ComposerDock 的 state 里，是因为仓库没有 jsdom，SSR 测不到
+ * 「点开之后」那一帧；这里 props 进来就能 renderToStaticMarkup。
+ *
+ * ⚠ 必须 createPortal 到 document.body：首页 composer 嵌在 Studio 的
+ * overflow-hidden 列里，fixed 遮罩写在输入条内部会被裁掉，点了像没反应。
+ */
+export function AttachmentImageLightbox({
+  src,
+  name,
+  onClose,
+}: {
+  src: string;
+  name: string;
+  onClose: () => void;
+}) {
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={name}
+      data-testid="sliderule-attachment-lightbox"
+      className="pointer-events-auto fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4 sm:p-8"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        data-testid="sliderule-attachment-lightbox-close"
+        title="关闭预览"
+        aria-label="关闭预览"
+        className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-stone-700 shadow hover:bg-white"
+      >
+        <X className="h-4 w-4" />
+      </button>
+      <img
+        src={src}
+        alt={name}
+        data-testid="sliderule-attachment-lightbox-image"
+        className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      />
+    </div>
+  );
+}
+
 /** Returns true if the text looks like a URL. */
 function looksLikeUrl(text: string): boolean {
   return /^https?:\/\/[^\s]{4,}/.test(text.trim());
@@ -172,6 +275,8 @@ export function ComposerDock({
   hero = false,
   hasApp = false,
   appSummary = "",
+  hintChips = [],
+  statusPill = null,
 }: {
   input: string;
   setInput: (v: string) => void;
@@ -189,6 +294,8 @@ export function ComposerDock({
   appSummary?: string;
 
   hintChips?: string[];
+  /** 闭环/缺口胶囊。主文案是已收口/未收口，分数在 title。 */
+  statusPill?: { label: string; blocked?: boolean; title?: string } | null;
   stop?: () => void;
   /** 空态首页嵌入时的占位文案 */
   placeholder?: string;
@@ -226,15 +333,16 @@ export function ComposerDock({
   const adjustTextareaHeight = React.useCallback(() => {
     const ta = textareaRef.current;
     if (!ta) return;
-    const minH = hero ? 88 : 32;
-    const maxH = hero ? 160 : 112;
+    // Cursor 胶囊是单行高度（约 28px 字区），长文在胶囊里长高，不再给空态单独垫 88px。
+    const minH = 28;
+    const maxH = 160;
     if (!ta.value.trim()) {
       ta.style.height = `${minH}px`;
       return;
     }
     ta.style.height = "auto";
     ta.style.height = `${Math.max(minH, Math.min(ta.scrollHeight, maxH))}px`;
-  }, [hero]);
+  }, []);
 
   React.useEffect(() => {
     adjustTextareaHeight();
@@ -296,6 +404,10 @@ export function ComposerDock({
   const [attachments, setAttachments] = React.useState<ComposerAttachment[]>(
     []
   );
+  const [lightbox, setLightbox] = React.useState<{
+    src: string;
+    name: string;
+  } | null>(null);
   const attachmentSeq = React.useRef(0);
   // E31：附件 id → 服务端提取 promise（上传即解析；发送时 doSend 等它落定。
   // 移除附件不取消请求——结果落定后 setAttachments 找不到卡片就自然丢弃）
@@ -370,11 +482,13 @@ export function ComposerDock({
     [addAttachments]
   );
 
-  /** 发送：有附件时把附件名 + 文本类附件内容并进消息，发完清预览卡。 */
+  /** 发送：有附件时把附件名 + 文本类附件内容并进消息，发完清预览卡。
+   *  解析中直接拒绝——不清附件、不排队等提取。LobeChat handleSend 在
+   *  isUploadingFiles 时 return；只靠按钮 disabled 挡不住 Enter。 */
   const doSend = React.useCallback(() => {
     if (isRunning) return;
+    if (isComposerSendBlocked({ isRunning: false, input, attachments })) return;
     const text = input.trim();
-    if (!text && attachments.length === 0) return;
     if (attachments.length > 0) {
       const snapshot = attachments;
       setAttachments(prev => {
@@ -460,11 +574,18 @@ export function ComposerDock({
   // 语境用 hasApp（真有成形应用）而不是 Boolean(goal)（只是有目标文案），
   // 摘要让引导话术具体到这个应用而不是泛泛的"指出当前应用要怎么改"。
   const judgement = useIntakeJudge(input, hasApp, !isRunning, appSummary);
+  const extractPending = isAttachmentExtractPending(attachments);
+  const sendBlocked = isComposerSendBlocked({ isRunning, input, attachments });
+
+  const actionHints = hintChips.slice(0, statusPill ? 1 : 2);
+  const showActionRow =
+    attachments.length > 0 ||
+    (!hero && (actionHints.length > 0 || !!statusPill));
+  const topicLabel = goal.trim() || "新话题";
+  const surfaceLabel = hasApp ? "成品" : "推演";
 
   return (
-    <div className={`pointer-events-none flex flex-col items-center gap-2 ${hero ? "w-full" : "w-[min(640px,calc(100vw-32px))]"}`}>
-      {/* 「本轮 · ...」浮标已移除：话题在顶栏 STATUS 常驻，这里只是重复噪声
-          （用户反馈：分散注意力，且与交付物按钮在完成态重叠）。 */}
+    <div className="pointer-events-none flex w-full flex-col items-stretch gap-1.5">
       <IntakeHintBar
         judgement={judgement}
         onRewrite={text => {
@@ -473,20 +594,131 @@ export function ComposerDock({
           textareaRef.current?.focus();
         }}
       />
-      {attachmentHint && (
+      {/*
+        Cursor Composer 三行（横排，不是页面三栏）：
+          1. Changes / Commit 芯片
+          2. 胶囊输入 + 右侧实心圆发送
+          3. branch / This PC 状态行
+        Void SidebarChat 同一结构：SelectedFiles → textarea → 底栏。
+        ⚠ hintChips 从 SlideRule 传来却从未渲染（2026-08-20）——顶行就是把它接上。
+        不许编 git / Commit；闭环胶囊和提示词芯片都是仓里已有的。
+      */}
+      {showActionRow ? (
         <div
-          className="pointer-events-auto rounded-full border border-[#e5e7eb] bg-white px-3 py-1 text-[11px] text-stone-500 shadow-sm"
-          data-testid="sliderule-composer-hint"
+          className="pointer-events-auto flex flex-wrap items-center gap-1.5"
+          data-testid="sliderule-composer-actions"
         >
-          {attachmentHint}
+          {statusPill ? (
+            <span
+              data-testid="sliderule-composer-status-pill"
+              title={statusPill.title}
+              className={`inline-flex items-center gap-1 rounded-full border bg-white px-3 py-1 text-[12px] ${
+                statusPill.blocked
+                  ? "border-[#fecaca] text-[#b91c1c]"
+                  : "border-[#e5e7eb] text-[#3f3f46]"
+              }`}
+            >
+              <span aria-hidden>{statusPill.blocked ? "✗" : "✓"}</span>
+              {statusPill.label}
+            </span>
+          ) : null}
+          {actionHints.map(text => (
+            <button
+              key={text}
+              type="button"
+              data-testid="sliderule-composer-hint-chip"
+              title="填入输入框，可再编辑"
+              onClick={() => {
+                setInput(text);
+                requestAnimationFrame(adjustTextareaHeight);
+                textareaRef.current?.focus();
+              }}
+              className="rounded-full border border-[#e5e7eb] bg-white px-3 py-1 text-[12px] text-[#3f3f46] transition hover:bg-[#f4f4f5]"
+            >
+              {text}
+            </button>
+          ))}
+          {attachments.length > 0 ? (
+            <div
+              className="flex flex-wrap gap-2"
+              data-testid="sliderule-attachments"
+            >
+              {attachments.map(att => (
+                <div
+                  key={att.id}
+                  className="group relative flex items-center gap-2 rounded-full border border-[#e5e7eb] bg-white p-1 pr-2.5"
+                  data-testid="sliderule-attachment-card"
+                >
+                  {att.previewUrl ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setLightbox({ src: att.previewUrl!, name: att.name })
+                      }
+                      data-testid="sliderule-attachment-preview-open"
+                      title="点击放大"
+                      className="shrink-0 cursor-zoom-in rounded-full"
+                    >
+                      <img
+                        src={att.previewUrl}
+                        alt={att.name}
+                        className="h-10 w-10 rounded-full object-cover"
+                      />
+                    </button>
+                  ) : (
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#e9edf2] text-stone-500">
+                      <FileText className="h-4 w-4" />
+                    </span>
+                  )}
+                  <span className="min-w-0">
+                    <span className="block max-w-[160px] truncate text-[11px] font-medium text-stone-700">
+                      {att.name}
+                    </span>
+                    <span
+                      className="block text-[10px] text-stone-400"
+                      title={
+                        att.extractStatus === "failed"
+                          ? att.extractDetail
+                          : undefined
+                      }
+                      data-testid={`sliderule-attachment-status-${att.extractStatus ?? "none"}`}
+                    >
+                      {formatFileSize(att.size)}
+                      {att.extractStatus === "pending" && " · 解析中…"}
+                      {att.extractStatus === "ready" &&
+                        ` · 已解析 ${att.extractChars ?? 0} 字`}
+                      {att.extractStatus === "failed" &&
+                        " · 解析失败，仅带文件名"}
+                      {!att.extractStatus &&
+                        (isTextAttachment(att)
+                          ? " · 发送时注入内容"
+                          : " · 仅随消息带文件名")}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeAttachment(att.id)}
+                    data-testid="sliderule-attachment-remove"
+                    title="移除附件"
+                    className="flex h-4.5 w-4.5 items-center justify-center rounded-full border border-[#e5e7eb] bg-white text-stone-400 shadow-sm transition hover:text-stone-700"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
-      )}
-      <div className={hero ? "relative w-full" : "contents"}>
+      ) : null}
+      {/* 发送圆必须跟胶囊同一中线。2026-08-20：items-end + mb-0.5 让圆相对
+          「畅所欲问」那一行看起来没居中（真机红箭头指发送键）。 */}
+      <div className="flex w-full items-center gap-2">
+      <div className="relative min-w-0 flex-1">
       {hero && (
         <div
           aria-hidden
           data-testid="sliderule-hero-glow"
-          className="pointer-events-none absolute -inset-[2px] rounded-[30px] opacity-70"
+          className="pointer-events-none absolute -inset-[2px] rounded-[26px] opacity-70"
           style={{
             background:
               "linear-gradient(120deg, rgba(167,139,250,.55), rgba(125,211,252,.45), rgba(244,114,182,.4))",
@@ -495,85 +727,29 @@ export function ComposerDock({
         />
       )}
       <div
-        className={
-          hero
-            ? `pointer-events-auto relative w-full rounded-[28px] border-0 bg-[#f3f4f6] px-4 py-3 ${isDragOver ? "bg-[#e6f4ff]/55" : ""}`
-            : `pointer-events-auto relative w-full rounded-[12px] border bg-white px-3 py-1.5 shadow-none transition-colors ${isDragOver ? "border-[#1677ff] bg-[#e6f4ff]/40" : "border-[#e5e7eb]"}`
-        }
+        className={`pointer-events-auto relative w-full rounded-[24px] border bg-white px-2 py-1.5 transition-colors ${
+          isDragOver
+            ? "border-[#1677ff] bg-[#e6f4ff]/40"
+            : "border-[#e5e7eb]"
+        }`}
         data-testid="sliderule-composer-dock"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
         {isDragOver && (
-          <div className={`pointer-events-none absolute inset-0 flex items-center justify-center bg-[#e6f4ff]/60 ${hero ? "rounded-[28px]" : "rounded-[12px]"}`}>
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-[24px] bg-[#e6f4ff]/60">
             <div className="flex items-center gap-2 text-sm font-medium text-[#0958d9]">
               <FileText className="h-4 w-4" />
               拖拽文件到这里
             </div>
           </div>
         )}
-        {/* 附件预览卡（Claude 式）：图片缩略图 / 文件卡 + 移除钮 */}
-        {attachments.length > 0 && (
-          <div
-            className="mb-2 flex flex-wrap gap-2"
-            data-testid="sliderule-attachments"
-          >
-            {attachments.map(att => (
-              <div
-                key={att.id}
-                className="group relative flex items-center gap-2 rounded-[9px] border border-[#e5e7eb] bg-[#f8f9fb] p-1.5 pr-2.5"
-                data-testid="sliderule-attachment-card"
-              >
-                {att.previewUrl ? (
-                  <img
-                    src={att.previewUrl}
-                    alt={att.name}
-                    className="h-10 w-10 rounded-[6px] object-cover"
-                  />
-                ) : (
-                  <span className="flex h-10 w-10 items-center justify-center rounded-[6px] bg-[#e9edf2] text-stone-500">
-                    <FileText className="h-4 w-4" />
-                  </span>
-                )}
-                <span className="min-w-0">
-                  <span className="block max-w-[160px] truncate text-[11px] font-medium text-stone-700">
-                    {att.name}
-                  </span>
-                  {/* E31 提取状态如实展示：解析中/已解析/失败（失败悬停看原因） */}
-                  <span
-                    className="block text-[10px] text-stone-400"
-                    title={att.extractStatus === "failed" ? att.extractDetail : undefined}
-                    data-testid={`sliderule-attachment-status-${att.extractStatus ?? "none"}`}
-                  >
-                    {formatFileSize(att.size)}
-                    {att.extractStatus === "pending" && " · 解析中…"}
-                    {att.extractStatus === "ready" &&
-                      ` · 已解析 ${att.extractChars ?? 0} 字`}
-                    {att.extractStatus === "failed" && " · 解析失败，仅带文件名"}
-                    {!att.extractStatus &&
-                      (isTextAttachment(att)
-                        ? " · 发送时注入内容"
-                        : " · 仅随消息带文件名")}
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => removeAttachment(att.id)}
-                  data-testid="sliderule-attachment-remove"
-                  title="移除附件"
-                  className="absolute -right-1.5 -top-1.5 flex h-4.5 w-4.5 items-center justify-center rounded-full border border-[#e5e7eb] bg-white text-stone-400 opacity-0 shadow-sm transition hover:text-stone-700 focus:opacity-100 group-hover:opacity-100"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
         {/* 停靠条：字和图标必须同一行高 + items-center。
             2026-08-18 真机：textarea min-h-11（44px）配 h-8 图标再 items-end，
-            「畅所欲问」和图标不在一条中线上，整行看起来顶上去了。 */}
-        <div className={hero ? "flex flex-wrap items-center gap-2" : "flex items-center gap-2"}>
+            「畅所欲问」和图标不在一条中线上，整行看起来顶上去了。
+            2026-08-20：改成 Cursor 单行胶囊——+ 与发送都是圆，不再 wrap 成两行。 */}
+        <div className="flex items-center gap-1.5">
           <div className="relative shrink-0" ref={menuRef}>
             <button
               type="button"
@@ -582,7 +758,7 @@ export function ComposerDock({
                 setMenuView("actions");
               }}
               disabled={isRunning}
-              className={`flex h-8 w-8 items-center justify-center text-[#5e5e5e] transition hover:bg-[#ececef] disabled:opacity-45 ${hero ? "rounded-full bg-white" : "rounded-md hover:bg-[#f2f2f2]"}`}
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-[#f4f4f5] text-[#5e5e5e] transition hover:bg-[#ececef] disabled:opacity-45"
               title="更多动作"
               data-testid="sliderule-composer-plus"
             >
@@ -767,21 +943,7 @@ export function ComposerDock({
             </div>
           </div>
 
-          {hero && (
-            <button
-              type="button"
-              disabled={isRunning}
-              onClick={() => fileInputRef.current?.click()}
-              data-testid="sliderule-hero-upload"
-              title="上传资料"
-              aria-label="上传资料"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-[#5e5e5e] transition hover:bg-[#ececef] disabled:opacity-45"
-            >
-              <Paperclip className="h-4 w-4" />
-            </button>
-          )}
-
-          <div className={hero ? "order-first basis-full" : "min-w-0 flex-1"}>
+          <div className="min-w-0 flex-1">
             <textarea
               ref={textareaRef}
               value={input}
@@ -793,7 +955,8 @@ export function ComposerDock({
                 // Enter 行为偏好（设置页可切 Enter/Ctrl+Enter 发送）
                 if (shouldSendOnKey(event)) {
                   event.preventDefault();
-                  doSend();
+                  // LibreChat #2078：只禁发送键挡不住 Enter，这里同样闸住
+                  if (!extractPending) doSend();
                 }
               }}
               onPaste={handlePaste}
@@ -801,42 +964,92 @@ export function ComposerDock({
               aria-label={placeholderText}
               rows={1}
               disabled={isRunning}
-              className={`block w-full resize-none bg-transparent text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60 ${hero ? "max-h-40 min-h-[88px] px-1 py-1 text-[16px] leading-7" : "max-h-28 min-h-8 px-1 py-0 text-[14px] leading-8"}`}
+              className="block max-h-40 min-h-7 w-full resize-none bg-transparent px-1 py-0 text-[14px] leading-7 text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60"
               data-testid="sliderule-composer-input"
             />
           </div>
 
-          {/* 优化提示词（用户裁决：原模式切换与左侧 + 菜单重复，改为提示词优化器） */}
+          {/* 优化提示词：占 Cursor「High」那个右控位置——动作不是下拉，所以不画 chevron。 */}
           <button
             type="button"
-            className={`${hero ? "ml-auto rounded-full bg-white hover:bg-[#ececef]" : "rounded-md hover:bg-[#f2f2f2]"} hidden h-8 w-8 shrink-0 items-center justify-center text-[#5e5e5e] transition disabled:opacity-45 sm:flex`}
+            className="hidden h-7 shrink-0 items-center gap-1 rounded-full px-1.5 text-[12px] text-[#5e5e5e] transition hover:bg-[#f4f4f5] disabled:opacity-45 sm:flex"
             title="优化提示词：把意图改写得更完整（实体/流程/角色/页面/AI）"
             data-testid="sliderule-prompt-refine"
             onClick={refinePrompt}
             disabled={isRunning || isRefining || !input.trim()}
           >
             {isRefining ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <Sparkles className="h-4 w-4" />
+              <Sparkles className="h-3.5 w-3.5" />
             )}
-          </button>
-          <button
-            type="button"
-            onClick={isRunning ? stop || (() => {}) : doSend}
-            disabled={!isRunning && !input.trim() && attachments.length === 0}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#171717] text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-[#ececef] disabled:text-[#b0b0b5]"
-            title={isRunning ? "停止" : "发送"}
-          >
-            {isRunning ? (
-              <Square className="h-3.5 w-3.5 fill-current" />
-            ) : (
-              <ArrowUp className="h-4 w-4" />
-            )}
+            <span>优化</span>
           </button>
         </div>
       </div>
       </div>
+          <button
+            type="button"
+            onClick={isRunning ? stop || (() => {}) : doSend}
+            disabled={sendBlocked}
+            data-testid="sliderule-composer-send"
+            aria-busy={extractPending}
+            className="pointer-events-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#171717] text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-[#ececef] disabled:text-[#b0b0b5]"
+            title={
+              isRunning
+                ? "停止"
+                : extractPending
+                  ? "附件解析中，请稍候"
+                  : "发送"
+            }
+          >
+            {isRunning ? (
+              <Square className="h-3.5 w-3.5 fill-current" />
+            ) : extractPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <ArrowUp className="h-4 w-4" />
+            )}
+          </button>
+      </div>
+      {!hero ? (
+        <div
+          className="pointer-events-auto flex w-full items-center gap-3 px-0.5 text-[11px] leading-4 text-[#71717a]"
+          data-testid="sliderule-composer-context"
+        >
+          <span className="min-w-0 truncate" title={topicLabel}>
+            {topicLabel}
+          </span>
+          <span className="flex shrink-0 items-center gap-1">
+            <AppWindow className="h-3 w-3" />
+            {surfaceLabel}
+          </span>
+          {attachmentHint && !isRunning && !extractPending ? (
+            <span
+              className="min-w-0 truncate"
+              data-testid="sliderule-composer-hint"
+            >
+              {attachmentHint}
+            </span>
+          ) : null}
+          {(isRunning || extractPending) && (
+            <Loader2
+              className="ml-auto h-3 w-3 shrink-0 animate-spin"
+              data-testid="sliderule-composer-context-spin"
+            />
+          )}
+        </div>
+      ) : null}
+      {lightbox &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <AttachmentImageLightbox
+            src={lightbox.src}
+            name={lightbox.name}
+            onClose={() => setLightbox(null)}
+          />,
+          document.body
+        )}
     </div>
   );
 }

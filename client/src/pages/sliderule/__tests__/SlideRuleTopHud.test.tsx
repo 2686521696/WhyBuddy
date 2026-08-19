@@ -9,19 +9,13 @@ vi.mock("@/lib/deploy-target", () => ({
 }));
 
 describe("SlideRuleTopHud", () => {
-  it("hides the wordmark when rendered inside AgentLoop", () => {
+  it("不再画整页顶栏字标（字标在侧栏）", () => {
     const html = renderToStaticMarkup(
       <SlideRuleTopHud isRunning={false} embedded />
     );
-
     expect(html).toContain('data-testid="sliderule-status-bar"');
     expect(html).not.toContain("sliderule_logo_wordmark_transparent.png");
-  });
-
-  it("keeps the wordmark for the standalone immersion surface", () => {
-    const html = renderToStaticMarkup(<SlideRuleTopHud isRunning={false} />);
-
-    expect(html).toContain("sliderule_logo_wordmark_transparent.png");
+    expect(html).not.toContain("<header");
   });
 
   it("STATUS 状态盒与 Work/Code 胶囊均退役（Work 模式迁私有主仓）", () => {
@@ -61,25 +55,18 @@ describe("SlideRuleTopHud", () => {
   });
 
   it("只有右侧页面显隐 + 最大化，没有会话栏/对话键", () => {
-    const standalone = renderToStaticMarkup(
+    const html = renderToStaticMarkup(
       <StudioLayoutProvider available>
         <SlideRuleTopHud isRunning={false} />
       </StudioLayoutProvider>
     );
-    const embedded = renderToStaticMarkup(
-      <StudioLayoutProvider available>
-        <SlideRuleTopHud isRunning={false} embedded />
-      </StudioLayoutProvider>
-    );
-    for (const html of [standalone, embedded]) {
-      expect(html).toContain('data-testid="sliderule-layout-stage"');
-      expect(html).toContain('aria-label="隐藏页面"');
-      expect(html).toContain('data-testid="sliderule-layout-maximize"');
-      expect(html).not.toContain('data-testid="sliderule-layout-sidebar"');
-      expect(html).not.toContain('data-testid="sliderule-layout-chat"');
-      expect(html).not.toContain("折叠舞台");
-      expect(html).not.toContain("折叠会话栏");
-      expect(html).not.toContain("折叠对话");
-    }
+    expect(html).toContain('data-testid="sliderule-layout-stage"');
+    expect(html).toContain('aria-label="隐藏页面"');
+    expect(html).toContain('data-testid="sliderule-layout-maximize"');
+    expect(html).not.toContain('data-testid="sliderule-layout-sidebar"');
+    expect(html).not.toContain('data-testid="sliderule-layout-chat"');
+    expect(html).not.toContain("折叠舞台");
+    expect(html).not.toContain("折叠会话栏");
+    expect(html).not.toContain("折叠对话");
   });
 });

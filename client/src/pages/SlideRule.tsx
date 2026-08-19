@@ -2,9 +2,8 @@
  * SlideRule product view (/sliderule): ONE unified surface (studio skeleton).
  *
  * - Single header row: brand/topic + STATUS summary + actions (交付物/重置会话/Dev)
- * - Left column: conversation (single empty state: short greeting + composer + chips)
+ * - Left column: conversation; composer sits under the thread (not a page-wide overlay)
  * - Right rail: ArchitectureStage (sandbox / C4) + drawer inspector / Checks
- * - Bottom center: single ComposerDock (+ 实用动作菜单 / ✨优化提示词), clarification cards above it
  *
  * The old chat/reasoning/studio surface toggle was removed (2026-07): one page,
  * one mental model. The v4 pan/zoom reasoning canvas is gone from this page;
@@ -70,6 +69,7 @@ import { ensureReadableChatMarkdown } from "./sliderule/readable-chat-markdown";
 import { SlideRuleStatusBar } from "./sliderule/SlideRuleStatusBar";
 import { SlideRuleTopHud } from "./sliderule/SlideRuleTopHud";
 import { StudioLayoutProvider } from "./sliderule/StudioLayoutContext";
+import { isStudioChromeShown } from "./sliderule/studio-layout";
 import { SESSION_CHANGED_EVENT } from "./agent-loop/dashboard/SidebarSessions";
 import {
   ClarificationCard,
@@ -80,6 +80,7 @@ import { ComposerDock } from "./sliderule/ComposerDock";
 import { HomeInspiration } from "./sliderule/home-inspiration";
 import { EXAMPLE_INTENT_TEXTS } from "./sliderule/example-intents";
 import { deriveComposerHintChips } from "./sliderule/derive-composer-hints";
+import { formatComposerClosurePill } from "./sliderule/composer-closure-pill";
 import type { UiTurn } from "./sliderule/types";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import {
@@ -309,10 +310,13 @@ function fillPrompt(text: string) {
 function HomeEmptyState({
   isRunning,
   composerSlot,
+  clarifySlot,
 }: {
   isRunning: boolean;
-  /** 空态时唯一的 ComposerDock 挪进首页流（开聊后回底部停靠，二选一渲染） */
+  /** 空态时唯一的 ComposerDock 挪进首页流（开聊后贴在会话流底部，二选一渲染） */
   composerSlot?: React.ReactNode;
+  /** 空态也可能出澄清卡（覆盖层已撤，得跟输入条一起进首页流） */
+  clarifySlot?: React.ReactNode;
 }) {
   // ⚑ E41 官方示例的「点模板卡 → 暂存起手意图 → 空态预填」消费端
   //   已随示例库一起下架（2026-08-14，用户裁决清除四个官方示例）——
@@ -353,6 +357,7 @@ function HomeEmptyState({
           </div>
         </div>
 
+        {clarifySlot}
         {composerSlot && (
           <div
             className="w-full max-w-[680px]"
@@ -518,7 +523,7 @@ function ImAssistantMessage() {
     assistantTextForTurn(turn, publishClosure, goalText)
   );
   return (
-    <div className="mb-5 max-w-[640px]">
+    <div className="mb-3 max-w-[640px]">
       {turn.status === "streaming" ? (
         <div className="space-y-1.5">
           <div className="flex items-center gap-2 text-[13px] text-stone-500">
@@ -662,6 +667,7 @@ export function ClaudeChatSurface({
   goalText,
   onChallenge,
   composerSlot,
+  clarifySlot,
 }: {
   uiTurns: UiTurn[];
   isRunning: boolean;
@@ -677,8 +683,10 @@ export function ClaudeChatSurface({
   /** 会话话题（恢复的轮次没有 turn.user，总结用它兜底） */
   goalText?: string;
   onChallenge: (id: string) => void;
-  /** 空态时嵌进首页流的 ComposerDock */
+  /** 空态嵌进首页流；开聊后改贴在会话流底部（同一受控组件二选一） */
   composerSlot?: React.ReactNode;
+  /** 澄清卡跟输入条走：空态进首页流，开聊后贴在输入条上方 */
+  clarifySlot?: React.ReactNode;
 }) {
   const latestStepText = latestTurn
     ? textFromStep(latestTurn.steps.at(-1))
@@ -693,6 +701,7 @@ export function ClaudeChatSurface({
       : "正在推演...");
 
   const items = useMemo<ImItem[]>(() => buildImItems(uiTurns), [uiTurns]);
+  const isEmptyThread = uiTurns.length === 0 && !isRunning;
 
   const runtime = useExternalStoreRuntime<ImItem>({
     messages: items,
@@ -736,6 +745,7 @@ export function ClaudeChatSurface({
           <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col">
             {/* E16 智能滚动补件：用户上滚回看时出「回到底部」胶囊
                 （Viewport 本身已带贴底跟随；贴底时该按钮自动 disabled → 隐藏） */}
+            <div className="relative flex min-h-0 flex-1 flex-col">
             <ThreadPrimitive.ScrollToBottom
               data-testid="sliderule-scroll-to-bottom"
               className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-[12px] font-medium text-stone-600 shadow-md transition hover:bg-stone-50 disabled:hidden"
@@ -743,13 +753,14 @@ export function ClaudeChatSurface({
               <ArrowDown className="h-3 w-3" />
               回到底部
             </ThreadPrimitive.ScrollToBottom>
-            <ThreadPrimitive.Viewport className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col overflow-y-auto px-4 pb-3 pt-3 [scrollbar-gutter:stable] sm:px-5">
+            <ThreadPrimitive.Viewport className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col overflow-y-auto px-4 pb-1 pt-3 [scrollbar-gutter:stable] sm:px-5">
               <ThreadPrimitive.Empty>
                 {/* 空态：问候 + 输入 + chips + 底栏一句。chips 走 fill-prompt，
                     灵感句只导去应用中心，不造假功能入口。 */}
                 <HomeEmptyState
                   isRunning={isRunning}
-                  composerSlot={composerSlot}
+                  composerSlot={isEmptyThread ? composerSlot : undefined}
+                  clarifySlot={isEmptyThread ? clarifySlot : undefined}
                 />
               </ThreadPrimitive.Empty>
               <div className="py-0">
@@ -761,6 +772,19 @@ export function ClaudeChatSurface({
                 />
               </div>
             </ThreadPrimitive.Viewport>
+            </div>
+            {!isEmptyThread && (composerSlot || clarifySlot) ? (
+              <div
+                className="pointer-events-auto shrink-0 bg-[var(--sr-shell-bg,#ffffff)] px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-1 sm:px-5"
+                data-testid="sliderule-composer-footer"
+              >
+                {/* Cursor / LobeChat：输入条浮在对话列里，不要横切 border-t 把步骤和输入割开。 */}
+                <div className="relative mx-auto w-full max-w-[720px]">
+                  {clarifySlot ? <div className="mb-2">{clarifySlot}</div> : null}
+                  {composerSlot}
+                </div>
+              </div>
+            ) : null}
           </ThreadPrimitive.Root>
         </ImSurfaceContext.Provider>
       </AssistantRuntimeProvider>
@@ -887,9 +911,8 @@ export async function loadPythonRuntimeProjectionFromSession(
  * SlideRuleUnified — 唯一产品界面（studio 骨架，无模式切换）。
  *
  * - 顶部单行 header：Cursor 式布局图标簇 + 交付物/重置会话。
- * - 左栏：对话流（含唯一空态：问候 + 光晕输入 + chips + 灵感卡）。
+ * - 左栏：对话流；输入条贴在会话下面（不是整页底部浮层）。
  * - 右栏：ArchitectureStage（沙盘/架构图）+ 抽屉 inspector / Checks。
- * - 底部：唯一 ComposerDock（+ 实用动作菜单 / ✨优化提示词），澄清卡片浮在其上。
  *
  * 旧的 pan/zoom 推理画布（v4 面）已从本页移除；工程画布仍可经 ?im=dev 进入
  * SlideRuleSplitEngineering 查看。
@@ -1020,7 +1043,7 @@ function SlideRuleUnified({
     uiTurns.length > 0 ? uiTurns : restoredTurns;
 
   // 空态（无轮次且未在跑）时 ComposerDock 渲染在首页
-  // hero 里；否则回底部停靠。二选一，永远只有一个输入条实例。
+  // hero 里；否则贴在左栏会话流底部。二选一，永远只有一个输入条实例。
   const isHomeEmpty = conversationTurns.length === 0 && !isRunning;
 
   // 入站判定的语境：「这个会话里到底有没有一个成形的应用」。
@@ -1044,49 +1067,43 @@ function SlideRuleUnified({
     return publishClosure?.chatSummary?.trim() || goal.trim();
   }, [hasApp, publishClosure, goal]);
 
+  const showStudioChrome = isStudioChromeShown(isHomeEmpty);
+
   return (
-    <StudioLayoutProvider available={!isHomeEmpty}>
+    <StudioLayoutProvider available={showStudioChrome}>
     <div className={`${autopilotTheme.immersionPage} flex flex-col`}>
-      {/* ONE header row — Cursor 式布局图标簇 + 交付物/重置 */}
-      <div className="relative z-20 shrink-0 border-b border-[#e5e7eb]/70 bg-white/90 px-3 backdrop-blur sm:px-4">
-        <SlideRuleTopHud
-          isRunning={isRunning}
-          onResetSession={resetSession}
-          onOpenDeliverables={openDeliverables}
-          embedded={embedded}
-        />
-        {/* Python backend failure visible + recoverable status/retry for core SlideRule workflows (105 req 2)。
-            GitHub Pages 静态演示本就无后端：降级横幅是预期内噪音，不展示。 */}
-        {!IS_GITHUB_PAGES && (pythonApiError || pythonStatusMsg) && (
-          <div
-            className="mb-2 inline-flex rounded border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-800 shadow-sm"
-            title={pythonStatusMsg}
+      {/* 还没推演：顶栏整条不挂（交付物/重置也占一条底边，空态看着像少了一截）。 */}
+      {showStudioChrome && !IS_GITHUB_PAGES && (pythonApiError || pythonStatusMsg) ? (
+        <div
+          className="mb-2 inline-flex rounded border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-800 shadow-sm"
+          title={pythonStatusMsg}
+        >
+          Python backend: {pythonStatusMsg || "degraded/timeout"} ·
+          <button
+            type="button"
+            onClick={retryPythonBackend}
+            className="ml-2 underline"
           >
-            Python backend: {pythonStatusMsg || "degraded/timeout"} ·
-            <button
-              type="button"
-              onClick={retryPythonBackend}
-              className="ml-2 underline"
-            >
-              Retry
-            </button>
-            {getLegacyFallbackReason(pythonApiError) && (
-              <span className="ml-2 text-amber-600">fallback active</span>
-            )}
-            {isDegradedApiError(pythonApiError) && (
-              <span className="ml-1">(degraded envelope)</span>
-            )}
-          </div>
-        )}
+            Retry
+          </button>
+          {getLegacyFallbackReason(pythonApiError) && (
+            <span className="ml-2 text-amber-600">fallback active</span>
+          )}
+          {isDegradedApiError(pythonApiError) && (
+            <span className="ml-1">(degraded envelope)</span>
+          )}
+        </div>
+      ) : null}
+      {showStudioChrome ? (
         <DriveFullStatusBanner
           status={driveFullStatus}
           className="mb-2 inline-flex"
         />
-      </div>
+      ) : null}
 
-      {/* Studio body — left conversation column + right skill rail */}
+      {/* Studio body — 图标簇在舞台头条右侧，不再独占整页顶栏。 */}
       {
-        <div className="relative z-0 min-h-0 flex-1 pb-[104px]">
+        <div className="relative z-0 min-h-0 flex-1">
           <SlideRuleStudio
             chatSlot={
               <ClaudeChatSurface
@@ -1101,19 +1118,35 @@ function SlideRuleUnified({
                 llmDraftLabel={llmDraftLabel}
                 onChallenge={challengeTurn}
                 composerSlot={
-                  isHomeEmpty ? (
-                    <ComposerDock
-                      input={input}
-                      setInput={setInput}
-                      sendMessage={sendMessage}
-                      isRunning={isRunning}
-                      goal={goal}
-                      hintChips={composerHints}
-                      stop={stop}
-                      placeholder="描述你想构建的业务系统…"
-                      hero
+                  <ComposerDock
+                    input={input}
+                    setInput={setInput}
+                    sendMessage={sendMessage}
+                    isRunning={isRunning}
+                    goal={goal}
+                    hasApp={hasApp}
+                    appSummary={appSummary}
+                    hintChips={composerHints}
+                    statusPill={
+                      publishClosure
+                        ? formatComposerClosurePill(publishClosure)
+                        : null
+                    }
+                    stop={stop}
+                    placeholder={
+                      isHomeEmpty ? "描述你想构建的业务系统…" : undefined
+                    }
+                    hero={isHomeEmpty}
+                  />
+                }
+                clarifySlot={
+                  showClarify ? (
+                    <ClarificationCard
+                      questions={clarifications}
+                      onSubmit={answers => answerClarifications?.(answers)}
+                      onClose={() => setClarifyHidden(true)}
                     />
-                  ) : undefined
+                  ) : null
                 }
               />
             }
@@ -1152,41 +1185,19 @@ function SlideRuleUnified({
             currentModelVersionId={(sessionState as { currentModelVersionId?: string | null }).currentModelVersionId ?? null}
             onRestoreVersion={restoreModelVersion}
             isRestoringVersion={isRestoringVersion}
+            chromeSlot={
+              showStudioChrome ? (
+                <SlideRuleTopHud
+                  isRunning={isRunning}
+                  onResetSession={resetSession}
+                  onOpenDeliverables={openDeliverables}
+                />
+              ) : null
+            }
             className="h-full"
           />
           {/* 右栏「推演过程」标签页已移除：左栏对话流本身就是实时推演过程
             （步骤流 + LLM 实时草稿），右栏只保留系统画面（用户反馈去重）。 */}
-        </div>
-      }
-
-      {/* Single bottom composer + clarification cards（空态时
-          唯一的 ComposerDock 渲染在首页 hero 里，这里只留澄清卡；开聊后
-          回到底部停靠——同一受控组件二选一渲染，input 状态在页面层不丢） */}
-      {
-        <div className={autopilotTheme.immersionOverlayBottom}>
-          <div className="pointer-events-none flex w-full max-w-2xl flex-col items-center">
-            {showClarify && (
-              <ClarificationCard
-                questions={clarifications}
-                onSubmit={answers => answerClarifications?.(answers)}
-                onClose={() => setClarifyHidden(true)}
-              />
-            )}
-
-            {!isHomeEmpty && (
-              <ComposerDock
-                input={input}
-                setInput={setInput}
-                sendMessage={sendMessage}
-                isRunning={isRunning}
-                goal={goal}
-                hasApp={hasApp}
-                appSummary={appSummary}
-                hintChips={composerHints}
-                stop={stop}
-              />
-            )}
-          </div>
         </div>
       }
 

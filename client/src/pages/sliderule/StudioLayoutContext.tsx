@@ -1,9 +1,8 @@
 /**
  * 对话/舞台折叠的命令中心。顶栏图标簇和分隔条折钮共用这一份。
  *
- * 状态不能只活在 StudioSplit 里：SlideRuleTopHud 在它上面，
- * 2026-08-18 真机顶栏只有「交付物/重置会话」胶囊，Cursor 式展开
- * 折叠接不上去。
+ * 状态不能只活在 StudioSplit 里：图标簇挂在舞台头条右侧，
+ * 跟分隔条折钮不在同一棵子树，靠这份 context 共用折叠态。
  */
 import React from "react";
 import type { ImperativePanelHandle } from "react-resizable-panels";

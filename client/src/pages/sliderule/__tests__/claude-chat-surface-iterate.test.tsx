@@ -94,10 +94,14 @@ describe("对话区 / 输入条 Cursor 尺度（装在真链路上）", () => {
     expect(dock).not.toContain("from-[#E08663]");
     expect(dock).not.toContain("shadow-[0_10px_36px");
     expect(dock).toContain("ArrowUp");
-    // 停靠条：同行垂直居中。变异：items-end 或 textarea 再高于图标必红。
-    expect(dock).toContain('hero ? "flex flex-wrap items-center gap-2" : "flex items-center gap-2"');
+    // 胶囊单行：变异 wrap 成两行或 textarea 再垫 88px 必红。
+    expect(dock).toContain("flex items-center gap-1.5");
+    expect(dock).toContain("flex w-full items-center gap-2");
     expect(dock).not.toContain("flex items-end gap-2");
-    expect(dock).toContain("hero ? 88 : 32");
+    expect(dock).not.toContain("flex w-full items-end gap-2");
+    expect(dock).not.toContain("flex flex-wrap items-center gap-2");
+    expect(dock).toContain("const minH = 28");
+    expect(dock).not.toContain("hero ? 88 : 32");
     expect(dock).not.toContain("min-w-0 flex-1 pb-0.5");
   });
 });

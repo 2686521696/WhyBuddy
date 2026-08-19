@@ -14,6 +14,7 @@ import {
 } from "../XrayPanel";
 import { deriveAppRuntimeSchema } from "../live-runtime/app-runtime-schema";
 import { SlideRuleStudio } from "../SlideRuleStudio";
+import { StudioLayoutProvider } from "../StudioLayoutContext";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
 
 const MODEL: FiveSystemModel = {
@@ -120,6 +121,11 @@ describe("derivePageXray", () => {
     expect(html).toContain('data-testid="xray-section-dataModel"');
     expect(html).toContain('data-testid="xray-section-appBundle"');
     expect(html).toContain("宠物档案页");
+    expect(html).toContain("打开沙盘");
+    expect(html).toContain("透视");
+    expect(html).toContain('data-testid="xray-hover-hint"');
+    expect(html).not.toContain("游标 · 页面背后");
+    expect(html).not.toContain("五系统联动总图");
   });
 });
 
@@ -338,7 +344,7 @@ describe("SlideRuleStudio 三态舞台", () => {
     expect(html).not.toContain('data-testid="sliderule-xray-toggle"');
   });
 
-  it("成品面顶栏与老链路统一：桌面/代码档 + 游标开关都在场", () => {
+  it("成品面顶栏：桌面/代码/沙盘 + 透视开关都在场", () => {
     const html = renderToStaticMarkup(
       <SlideRuleStudio
         chatSlot={<div />}
@@ -359,15 +365,46 @@ describe("SlideRuleStudio 三态舞台", () => {
     expect(html).toContain('data-testid="sliderule-stage-gears"');
     expect(html).toContain('data-testid="sliderule-stage-view-page"');
     expect(html).toContain('data-testid="sliderule-stage-view-code"');
+    expect(html).toContain('data-testid="sliderule-stage-view-board"');
     expect(html).toContain('data-testid="sliderule-xray-toggle"');
     expect(html).toContain("桌面");
     expect(html).toContain("代码");
-    expect(html).toContain("游标");
+    expect(html).toContain("沙盘");
+    expect(html).toContain("透视");
+    expect(html).not.toContain(">游标<");
+  });
+
+  it("工作台图标簇落在透视右侧，不另起一行顶栏", () => {
+    const html = renderToStaticMarkup(
+      <SlideRuleStudio
+        chatSlot={<div />}
+        activeSkillId={null}
+        specPages={[
+          {
+            pageId: "p1",
+            html: "<!doctype html><html><body>x</body></html>",
+            current: 1,
+            total: 1,
+            bound: false,
+          },
+        ]}
+        chromeSlot={<div data-testid="sliderule-status-bar">icons</div>}
+      />
+    );
+    const gearsAt = html.indexOf('data-testid="sliderule-stage-gears"');
+    const xrayAt = html.indexOf('data-testid="sliderule-xray-toggle"');
+    const chromeAt = html.indexOf('data-testid="sliderule-status-bar"');
+    expect(gearsAt).toBeGreaterThan(-1);
+    expect(xrayAt).toBeGreaterThan(gearsAt);
+    expect(chromeAt).toBeGreaterThan(xrayAt);
+    expect(html.match(/data-testid="sliderule-status-bar"/g)?.length).toBe(1);
   });
 
   it("开聊后对话/舞台之间是可拖可折分隔；空会话没有这条缝", () => {
     const split = renderToStaticMarkup(
-      <SlideRuleStudio chatSlot={<div />} activeSkillId={null} />
+      <StudioLayoutProvider available>
+        <SlideRuleStudio chatSlot={<div />} activeSkillId={null} />
+      </StudioLayoutProvider>
     );
     expect(split).toContain('data-testid="sliderule-studio-split"');
     expect(split).toContain('data-testid="sliderule-studio-split-handle"');

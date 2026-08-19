@@ -1,10 +1,12 @@
 /**
- * XrayPanel — 应用主舞台的「游标」透视栏（计算尺游标：对齐读数）。
+ * XrayPanel — 应用主舞台的「透视」侧栏。
  *
- * 融合哲学（方向 B）：运行应用是主角，五系统不是六个并列模块，而是应用
- * 背后的骨架。开游标后，本栏跟随你在应用里的当前页面，实时透视它背后的
- * 实体/流程/角色/AI 能力/页面蓝图；点任何一节侧滑抽屉进入对应系统屏深看。
- * 纯派生渲染：模型进、透视出，不持有任何状态。
+ * 2026-08-20：按钮原名「游标」是计算尺梗，真机上没人懂它在干什么。
+ * Chrome / Figma / LocatorJS 这一类对准元素看背后声明的能力，公开名
+ * 都是 Inspect；中文用「透视」——点开后把鼠标移到页面元素上，读它在
+ * 五系统上的对应声明。侧栏按 Inspect 面板收：对准焦点优先，百科全书
+ * 式五系统清单靠后，沙盘入口放顶上（成品页会把 ArchitectureStage 整块
+ * 换掉，只把「五系统联动总图」埋在清单底等于沙盘失踪）。
  */
 
 import React from "react";
@@ -334,6 +336,7 @@ export function XrayPanel({
   activePageId,
   target = null,
   onOpenSystem,
+  onOpenSandbox,
 }: {
   model: FiveSystemModel;
   schema: AppRuntimeSchema;
@@ -342,6 +345,8 @@ export function XrayPanel({
   target?: XrayTarget | null;
   /** 深入某个系统屏（侧滑抽屉） */
   onOpenSystem: (skill: SkillId) => void;
+  /** 切到接线沙盘（成品页把沙盘换掉之后，这里是唯一显式入口） */
+  onOpenSandbox?: () => void;
 }) {
   const xray = React.useMemo(
     () => derivePageXray(model, schema, activePageId),
@@ -352,25 +357,33 @@ export function XrayPanel({
     [model, target]
   );
 
-  // TRAE Work 式右栏：灰色小节标题 + 图标文字行，去卡片/胶囊，留白呼吸
+  // Inspect 侧栏：对准焦点优先，页面切片收成清单，沙盘入口钉在顶上。
   return (
     <div
-      className="flex h-full w-[276px] shrink-0 flex-col overflow-hidden rounded-md border border-[#e9edf2] bg-white"
+      className="flex h-full w-[240px] shrink-0 flex-col overflow-hidden rounded-md border border-[#e5e7eb] bg-white"
       data-testid="sliderule-xray-panel"
     >
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3">
-        <div className="text-[12px] text-stone-400">游标 · 页面背后</div>
-        <div className="mt-1 truncate text-[13px] font-semibold text-stone-800" data-testid="xray-page-title">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3">
+        <div className="text-[11px] text-stone-400">透视</div>
+        <div className="mt-0.5 truncate text-[13px] font-semibold text-stone-800" data-testid="xray-page-title">
           {xray.pageTitle}
         </div>
+        <button
+          type="button"
+          onClick={() => (onOpenSandbox ? onOpenSandbox() : onOpenSystem("appBundle"))}
+          data-testid="xray-section-appBundle"
+          className="mt-2 flex w-full items-center gap-1.5 rounded-md border border-[#e5e7eb] bg-[#f8f9fb] px-2 py-1.5 text-left text-[12px] text-stone-600 transition hover:border-[#d3d8e0] hover:bg-white"
+        >
+          <Waypoints className="h-3.5 w-3.5 shrink-0 text-stone-400" />
+          打开沙盘
+        </button>
 
-        {/* 对齐焦点：悬停应用内元素时浮出其背后声明（点击深入对应系统屏） */}
-        {focus && (
+        {focus ? (
           <button
             type="button"
             onClick={() => onOpenSystem(focus.skill)}
             data-testid="xray-focus"
-            className="mt-3 block w-full rounded border-l-2 border-[#1677ff] bg-[#FDF6F1] px-3 py-2 text-left transition hover:bg-[#FBEEE5]"
+            className="mt-3 block w-full rounded border-l-2 border-[#1677ff] bg-[#e6f4ff]/40 px-2.5 py-2 text-left transition hover:bg-[#e6f4ff]/70"
           >
             <div className="flex items-center gap-1.5 text-[12px] font-semibold text-stone-800">
               <span className="text-[#1677ff]">{SECTION_ICON[focus.skill] ?? <Waypoints className="h-3.5 w-3.5" />}</span>
@@ -384,53 +397,45 @@ export function XrayPanel({
               ))}
             </div>
           </button>
+        ) : (
+          <div className="mt-3 text-[11px] leading-4 text-stone-400" data-testid="xray-hover-hint">
+            把鼠标移到页面元素上，看它背后的数据、流程和权限
+          </div>
         )}
 
-        <div className="mt-5 space-y-5">
+        <div className="mt-4 space-y-3">
           {xray.sections.map((s) => (
             <div key={s.skill} data-testid={`xray-section-${s.skill}`}>
               <button
                 type="button"
                 onClick={() => onOpenSystem(s.skill)}
                 title={`深入${s.title} · ${s.relation}`}
-                className="group flex w-full items-center gap-1.5 text-left text-[12px] text-stone-400 transition hover:text-stone-600"
+                className="group flex w-full items-center gap-1.5 text-left text-[11px] text-stone-400 transition hover:text-stone-600"
               >
                 {s.title}
                 <span className="opacity-0 transition group-hover:opacity-100">›</span>
               </button>
-              <div className="mt-1.5">
+              <div className="mt-1">
                 {s.items.length === 0 && (
                   <div className="px-0.5 py-0.5 text-[12px] text-stone-300">{s.relation}</div>
                 )}
-                {s.items.slice(0, 5).map((it, i) => (
+                {s.items.slice(0, 4).map((it, i) => (
                   <button
                     key={i}
                     type="button"
                     onClick={() => onOpenSystem(s.skill)}
-                    className="flex w-full items-center gap-2 rounded-sm px-1 py-[3px] text-left transition hover:bg-[#F7F5F0]"
+                    className="flex w-full items-center gap-2 rounded-sm px-1 py-[2px] text-left transition hover:bg-[#f3f4f6]"
                   >
                     <span className="shrink-0 text-stone-300">{SECTION_ICON[s.skill]}</span>
-                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-stone-700">{it}</span>
+                    <span className="min-w-0 flex-1 truncate text-[12px] text-stone-700">{it}</span>
                   </button>
                 ))}
-                {s.items.length > 5 && (
-                  <div className="px-1 py-0.5 text-[11px] text-stone-300">还有 {s.items.length - 5} 项…</div>
+                {s.items.length > 4 && (
+                  <div className="px-1 py-0.5 text-[11px] text-stone-300">还有 {s.items.length - 4} 项…</div>
                 )}
               </div>
             </div>
           ))}
-
-          <div data-testid="xray-section-appBundle">
-            <button
-              type="button"
-              onClick={() => onOpenSystem("appBundle")}
-              className="group flex w-full items-center gap-2 rounded-sm px-1 py-[3px] text-left transition hover:bg-[#F7F5F0]"
-            >
-              <Waypoints className="h-3.5 w-3.5 shrink-0 text-stone-300" />
-              <span className="text-[12.5px] text-stone-700">五系统联动总图</span>
-              <span className="ml-auto text-stone-300 opacity-0 transition group-hover:opacity-100">›</span>
-            </button>
-          </div>
         </div>
       </div>
     </div>

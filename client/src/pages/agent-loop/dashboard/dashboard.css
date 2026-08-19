@@ -27,10 +27,12 @@
 }
 
 .native-agent-sidebar {
-  /* 与主内容区同色（现在都是白），右边线保留极轻分隔——整壳同色之后，
-     这条线是侧栏与内容区之间唯一的边界，不能一起去掉。 */
+  /* GitHub Primer PageLayout：分栏是 1px muted 线，不是投影。
+     2026-08-20 真机：20px 向右渐变在白底上像刀口阴影，比发丝线更尖锐。
+     primer/css page-layout.scss → border-right: $border-width solid $Layout-divider-color
+     primer primitives --borderColor-muted: #d1d9e0b3（半透明，比实心 #e5e7eb 软）。 */
   background: var(--sr-shell-bg, #ffffff);
-  border-right: 1px solid rgba(15, 23, 42, 0.06);
+  border-right: 1px solid var(--sr-border-muted, #d1d9e0b3);
   box-shadow: none;
   display: flex;
   flex: 0 0 252px;
@@ -667,6 +669,9 @@
 .native-agent-shell,
 .native-dashboard {
   --sr-shell-bg: #ffffff;
+  /* Primer light --borderColor-muted（github.com 分栏标准色）。
+     投影只给 overlay，不分栏——见 primer box-shadow 文档、page-layout.scss。 */
+  --sr-border-muted: #d1d9e0b3;
 }
 
 .native-header {
@@ -2394,8 +2399,9 @@
   }
 
   .native-agent-sidebar {
-    border-bottom: 1px solid #dfe8f6;
+    border-bottom: 1px solid var(--sr-border-muted, #d1d9e0b3);
     border-right: 0;
+    box-shadow: none;
     height: auto;
     min-height: auto;
     overflow: visible;

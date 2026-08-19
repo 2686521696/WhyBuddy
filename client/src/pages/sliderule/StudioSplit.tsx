@@ -7,6 +7,15 @@
  * 默认仍是 38/62（老布局的标定），拖过的比例经 autoSaveId 记住。
  * 两侧不能同时折没：折一个时另一个的折钮禁用，否则整页只剩一条缝。
  *
+ * 缝本身占 1px 布局（hover 热区用 after 加宽，不把缝画成 6px 槽）。
+ *
+ * 2026-08-20：GitHub Primer 分栏的标准答案是 1px muted 线，不是投影。
+ * primer/css PageLayout → border: $border-width solid $Layout-divider-color
+ * primer primitives --borderColor-muted = #d1d9e0b3（半透明，比实心 #e5e7eb 软）
+ * Primer box-shadow 文档写明投影只给 overlay / 浮层，不分栏区域。
+ * VS Code sash.css 也是静止透明、hover 才显色——可拖的那条缝同样不画阴影。
+ * 上一版 20px 向右渐变在真机上像刀口，比发丝线更尖锐。
+ *
  * 缝上的右箭头跟顶栏一样：隐藏整块预览页，不是把舞台宽度收成 0。
  */
 import React from "react";
@@ -33,6 +42,7 @@ function SplitFallback({
       <div className="min-h-0 min-w-0" style={{ flex: `${CHAT_DEFAULT} 1 0` }}>
         {chat}
       </div>
+      <div className="w-px shrink-0 bg-[#d1d9e0b3]" aria-hidden />
       <div className="min-h-0 min-w-0" style={{ flex: `${STAGE_DEFAULT} 1 0` }}>
         {stage}
       </div>
@@ -89,11 +99,10 @@ export function StudioSplit({
 
       <PanelResizeHandle
         data-testid="sliderule-studio-split-handle"
-        className="group relative z-20 flex w-1.5 shrink-0 items-center justify-center bg-transparent outline-none hover:bg-[#d4d4d8] data-[resize-handle-active]:bg-[#a1a1aa]"
+        className="group relative z-20 flex w-px shrink-0 items-center justify-center bg-[#d1d9e0b3] outline-none after:absolute after:inset-y-0 after:-left-1 after:w-2.5 after:content-[''] hover:bg-[#d1d9e0] data-[resize-handle-active]:bg-[#d1d9e0]"
         onDoubleClick={resetSplit}
         title="拖动调整宽度 · 双击恢复默认"
       >
-        <span className="pointer-events-none absolute inset-y-0 w-px bg-[#e5e7eb] group-hover:bg-transparent group-data-[resize-handle-active]:bg-transparent" />
         <div
           className="relative z-10 flex flex-col gap-px rounded-md border border-[#e5e7eb] bg-white p-px opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-data-[resize-handle-active]:opacity-100"
           onPointerDown={event => event.stopPropagation()}
