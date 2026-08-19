@@ -782,24 +782,64 @@ def _load_session_record_file(session_id: str, store_file: Optional[StorePath] =
     return {"ok": True, "sessionId": session_id, "session": state}
 
 
+def _summary_from_state(state: V5SessionState, meta: Dict[str, Any]) -> dict[str, Any]:
+    sid = getattr(state, "sessionId", "") or ""
+    m = meta.get(sid) if isinstance(meta.get(sid), dict) else {}
+    owner = str(getattr(state, "ownerId", None) or "").strip() or None
+    goal = state.goal if isinstance(getattr(state, "goal", None), dict) else {}
+    return {
+        "sessionId": sid,
+        "ownerId": owner,
+        "goal": goal.get("text", "") if isinstance(goal, dict) else "",
+        "createdAt": m.get("createdAt"),
+        "lastActive": m.get("lastActive"),
+        "artifactCount": len(getattr(state, "artifacts", None) or []),
+        "phase": getattr(state, "runtimePhase", None),
+    }
+
+
+def _public_list_item(summary: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "sessionId": summary.get("sessionId") or "",
+        "goal": summary.get("goal") or "",
+        "createdAt": summary.get("createdAt"),
+        "lastActive": summary.get("lastActive"),
+        "artifactCount": int(summary.get("artifactCount") or 0),
+        "phase": summary.get("phase"),
+    }
+
+
+def _list_session_summaries_raw(
+    store_file: Optional[StorePath] = None,
+) -> Tuple[Optional[list], Optional[StoreError]]:
+    store = _blob_store(store_file)
+    if store is not None:
+        try:
+            return store.list_summaries(), None
+        except Exception as exc:  # noqa: BLE001
+            return None, _store_error("db_read_failed", str(exc)[:200])
+    sessions, error = _read_store_file(store_file)
+    if error:
+        return None, error
+    meta = read_session_meta(store_file)
+    return [_summary_from_state(state, meta) for state in sessions.values()], None
+
+
+def list_session_summaries(store_file: Optional[StorePath] = None) -> list:
+    """侧栏列表：带 ownerId 供归属过滤。库后端不 hydrate payload。"""
+    rows, error = _list_session_summaries_raw(store_file)
+    if error or rows is None:
+        return []
+    return rows
+
+
 def list_session_records(store_file: Optional[StorePath] = None) -> StoreError:
-    sessions, error = _read_store(store_file)
+    rows, error = _list_session_summaries_raw(store_file)
     if error:
         return error
-    meta = read_session_meta(store_file)
     return {
         "ok": True,
-        "sessions": [
-            {
-                "sessionId": state.sessionId,
-                "goal": state.goal.get("text", "") if isinstance(state.goal, dict) else "",
-                "createdAt": (meta.get(state.sessionId) or {}).get("createdAt"),
-                "lastActive": (meta.get(state.sessionId) or {}).get("lastActive"),
-                "artifactCount": len(state.artifacts or []),
-                "phase": getattr(state, "runtimePhase", None),
-            }
-            for state in sessions.values()
-        ],
+        "sessions": [_public_list_item(row) for row in (rows or [])],
     }
 
 

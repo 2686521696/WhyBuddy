@@ -58,6 +58,60 @@ from typing import Any, Dict, Optional, Tuple
 
 TABLE = "sliderule_session"
 
+#: 侧栏 GET /sessions 的瘦查询。⚠ 2026-08-19 白天：`select session_id, payload`
+#: 把 5 MB blob 拉过 HTTPS。改成 `payload->>'…'` 之后仍 ~1.6s——Postgres 要
+#: 解压 TOAST 才能抽字段。列表列是投影（与 owner_id 同一路子），这条 SQL
+#: **不得再出现 payload**。完整 blob 只在 GET /sessions/{sid}。
+_LIST_SUMMARY_SQL_PG = f"""
+select
+  session_id,
+  owner_id,
+  created_at,
+  last_active,
+  goal_text,
+  runtime_phase as phase,
+  coalesce(artifact_count, 0) as artifact_count
+from {TABLE}
+"""
+
+_LIST_SUMMARY_SQL_SQLITE = f"""
+select
+  session_id,
+  owner_id,
+  created_at,
+  last_active,
+  goal_text,
+  runtime_phase as phase,
+  coalesce(artifact_count, 0) as artifact_count
+from {TABLE}
+"""
+
+_LIST_PROJ_COLUMNS = (
+    ("goal_text", "text"),
+    ("runtime_phase", "varchar(32)"),
+    ("artifact_count", "integer"),
+)
+
+_BACKFILL_LIST_PROJ_PG = f"""
+update {TABLE} set
+  goal_text = payload->'goal'->>'text',
+  runtime_phase = payload->>'runtimePhase',
+  artifact_count = case
+    when jsonb_typeof(coalesce(payload->'artifacts', '[]'::jsonb)) = 'array'
+    then jsonb_array_length(coalesce(payload->'artifacts', '[]'::jsonb))
+    else 0
+  end
+where artifact_count is null
+"""
+
+_BACKFILL_LIST_PROJ_SQLITE = f"""
+update {TABLE} set
+  goal_text = json_extract(payload, '$.goal.text'),
+  runtime_phase = json_extract(payload, '$.runtimePhase'),
+  artifact_count = coalesce(json_array_length(json_extract(payload, '$.artifacts')), 0)
+where artifact_count is null
+"""
+
 # 与 app_store 共用的连接串；会话和应用落在同一个库是这次改动的全部意义所在。
 _DB_URL_ATTR = "APP_STORE_DATABASE_URL"
 
@@ -79,6 +133,37 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _list_projection(payload: dict[str, Any]) -> dict[str, Any]:
+    """写入列表列的投影。判定仍读 payload；这些列只给侧栏扫，不当事真相。"""
+    summary = _summary_from_payload("", payload if isinstance(payload, dict) else {})
+    return {
+        "owner": summary["ownerId"],
+        "goal": summary["goal"] or "",
+        "phase": summary["phase"],
+        "n_art": int(summary["artifactCount"] or 0),
+    }
+
+
+def _ensure_list_projection(run_sql, *, is_sqlite: bool) -> None:
+    """老表就地补列表列，并一次性从 payload 灌进去。
+
+    增强类：补列 / 回填自己炸了不许拖垮主链路。回填只打
+    `artifact_count is null` 的行，灌过之后列表查询不再碰 payload。
+    """
+    for name, typ in _LIST_PROJ_COLUMNS:
+        try:
+            if is_sqlite:
+                run_sql(f"alter table {TABLE} add column {name} {typ}")
+            else:
+                run_sql(f"alter table {TABLE} add column if not exists {name} {typ}")
+        except Exception:  # noqa: BLE001 — 列已存在
+            pass
+    try:
+        run_sql(_BACKFILL_LIST_PROJ_SQLITE if is_sqlite else _BACKFILL_LIST_PROJ_PG)
+    except Exception as exc:  # noqa: BLE001 — 回填失败就让列表缺标题，下次 save 会补
+        print(f"[session_store] list projection backfill skipped: {str(exc)[:200]}")
+
+
 def _owner_of(payload: dict[str, Any]) -> Optional[str]:
     """从 payload 里取归属，写进 owner_id 列。
 
@@ -89,6 +174,70 @@ def _owner_of(payload: dict[str, Any]) -> Optional[str]:
     value = payload.get("ownerId") if isinstance(payload, dict) else None
     text_value = str(value or "").strip()
     return text_value or None
+
+
+def _stamp_iso(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    text = str(value).strip()
+    return text or None
+
+
+def _summary_from_payload(
+    session_id: str,
+    payload: dict[str, Any],
+    *,
+    created: Any = None,
+    active: Any = None,
+) -> dict[str, Any]:
+    goal = payload.get("goal") if isinstance(payload, dict) else {}
+    artifacts = payload.get("artifacts") if isinstance(payload, dict) else None
+    return {
+        "sessionId": session_id,
+        "ownerId": _owner_of(payload if isinstance(payload, dict) else {}),
+        "goal": goal.get("text", "") if isinstance(goal, dict) else "",
+        "createdAt": _stamp_iso(created),
+        "lastActive": _stamp_iso(active),
+        "artifactCount": len(artifacts) if isinstance(artifacts, list) else 0,
+        "phase": payload.get("runtimePhase") if isinstance(payload, dict) else None,
+    }
+
+
+def _cell(row: Any, *keys: str) -> Any:
+    if isinstance(row, dict):
+        lower = {str(k).lower(): v for k, v in row.items()}
+        for key in keys:
+            if key in row and row[key] is not None:
+                return row[key]
+            found = lower.get(key.lower())
+            if found is not None:
+                return found
+        return None
+    mapping = getattr(row, "_mapping", None)
+    if mapping is not None:
+        return _cell(dict(mapping), *keys)
+    return None
+
+
+def row_to_summary(row: Any) -> dict[str, Any]:
+    artifacts = _cell(row, "artifact_count", "artifactCount")
+    try:
+        count = int(artifacts or 0)
+    except (TypeError, ValueError):
+        count = 0
+    owner = _cell(row, "owner_id", "ownerId")
+    phase = _cell(row, "phase", "runtimePhase")
+    return {
+        "sessionId": str(_cell(row, "session_id", "sessionId") or ""),
+        "ownerId": str(owner).strip() if owner else None,
+        "goal": str(_cell(row, "goal_text", "goal") or ""),
+        "createdAt": _stamp_iso(_cell(row, "created_at", "createdAt")),
+        "lastActive": _stamp_iso(_cell(row, "last_active", "lastActive")),
+        "artifactCount": count,
+        "phase": phase,
+    }
 
 
 class BlobRow:
@@ -117,6 +266,13 @@ class SessionBlobStore:
     def meta(self) -> Dict[str, dict[str, Any]]:
         """sessionId → {"createdAt": iso, "lastActive": iso}，纯观测用。"""
         raise NotImplementedError
+
+    def list_summaries(self) -> list[dict[str, Any]]:
+        """侧栏列表用的瘦行。默认走 load_all，库后端必须覆盖，禁止把 payload 整列拉回。"""
+        out: list[dict[str, Any]] = []
+        for sid, payload in self.load_all().items():
+            out.append(_summary_from_payload(sid, payload, created=None, active=None))
+        return out
 
     def save(
         self, session_id: str, payload: dict[str, Any], *, expected_rev: Optional[int]
@@ -153,7 +309,10 @@ create table if not exists {TABLE} (
     rev integer not null default 1,
     created_at timestamptz,
     last_active timestamptz,
-    owner_id varchar(64)
+    owner_id varchar(64),
+    goal_text text,
+    runtime_phase varchar(32),
+    artifact_count integer
 )
 """
 
@@ -164,7 +323,10 @@ create table if not exists {TABLE} (
     rev integer not null default 1,
     created_at text,
     last_active text,
-    owner_id varchar(64)
+    owner_id varchar(64),
+    goal_text text,
+    runtime_phase varchar(32),
+    artifact_count integer
 )
 """
 
@@ -208,6 +370,10 @@ class SqlSessionBlobStore(SessionBlobStore):
                     )
             except Exception:  # noqa: BLE001 — 列已存在
                 pass
+            _ensure_list_projection(
+                lambda sql: conn.execute(text(sql)),
+                is_sqlite=self._is_sqlite,
+            )
 
     def _decode(self, raw: Any) -> dict[str, Any]:
         if isinstance(raw, dict):
@@ -238,6 +404,12 @@ class SqlSessionBlobStore(SessionBlobStore):
             rows = conn.execute(self._text(f"select session_id, payload from {TABLE}")).all()
         return {r[0]: self._decode(r[1]) for r in rows}
 
+    def list_summaries(self) -> list[dict[str, Any]]:
+        sql = _LIST_SUMMARY_SQL_SQLITE if self._is_sqlite else _LIST_SUMMARY_SQL_PG
+        with self._engine.connect() as conn:
+            rows = conn.execute(self._text(sql)).all()
+        return [row_to_summary(row) for row in rows]
+
     def meta(self) -> Dict[str, dict[str, Any]]:
         with self._engine.connect() as conn:
             rows = conn.execute(
@@ -260,7 +432,16 @@ class SqlSessionBlobStore(SessionBlobStore):
         # 列是 payload 的**投影**，不是第二份真相：判定一律读 payload.ownerId
         # （见 app_access.session_record）。写进列只为将来能用 SQL 过滤/建索引，
         # 跟 generated_app 既存 model_json 又存 goal/product_name 一个路子。
-        owner_id = _owner_of(payload)
+        proj = _list_projection(payload)
+        binds = {
+            "sid": session_id,
+            "p": blob,
+            "now": now,
+            "owner": proj["owner"],
+            "goal": proj["goal"],
+            "phase": proj["phase"],
+            "n_art": proj["n_art"],
+        }
         with self._engine.begin() as conn:
             if expected_rev is None:
                 # 这条还不存在（或调用方明说不做 CAS）：插入，撞主键说明别人
@@ -269,10 +450,12 @@ class SqlSessionBlobStore(SessionBlobStore):
                     conn.execute(
                         self._text(
                             f"insert into {TABLE} "
-                            f"(session_id, payload, rev, created_at, last_active, owner_id) "
-                            f"values (:sid, {payload_expr}, 1, :now, :now, :owner)"
+                            f"(session_id, payload, rev, created_at, last_active, "
+                            f"owner_id, goal_text, runtime_phase, artifact_count) "
+                            f"values (:sid, {payload_expr}, 1, :now, :now, "
+                            f":owner, :goal, :phase, :n_art)"
                         ),
-                        {"sid": session_id, "p": blob, "now": now, "owner": owner_id},
+                        binds,
                     )
                     return True
                 except Exception:  # noqa: BLE001 — 唯一键冲突 = 并发插入
@@ -280,10 +463,11 @@ class SqlSessionBlobStore(SessionBlobStore):
             result = conn.execute(
                 self._text(
                     f"update {TABLE} set payload = {payload_expr}, rev = rev + 1, "
-                    f"last_active = :now, owner_id = :owner "
+                    f"last_active = :now, owner_id = :owner, goal_text = :goal, "
+                    f"runtime_phase = :phase, artifact_count = :n_art "
                     f"where session_id = :sid and rev = :rev"
                 ),
-                {"sid": session_id, "p": blob, "now": now, "rev": expected_rev, "owner": owner_id},
+                {**binds, "rev": expected_rev},
             )
             return (result.rowcount or 0) > 0
 
@@ -321,6 +505,7 @@ class NeonHttpSessionBlobStore(SessionBlobStore):
         # 老库就地补列，理由同 SqlSessionBlobStore.__init__ 里那句。
         # 线上走的就是这条 HTTP 分支，漏了它 = 线上永远没有 owner_id 列。
         self._q(f"alter table {TABLE} add column if not exists owner_id varchar(64)")
+        _ensure_list_projection(self._q, is_sqlite=False)
 
     def _q(self, sql: str, params: Optional[list[Any]] = None) -> list[dict[str, Any]]:
         from .app_store import _neon_http_error
@@ -361,6 +546,10 @@ class NeonHttpSessionBlobStore(SessionBlobStore):
         rows = self._q(f"select session_id, payload from {TABLE}")
         return {r["session_id"]: self._decode(r.get("payload")) for r in rows}
 
+    def list_summaries(self) -> list[dict[str, Any]]:
+        rows = self._q(_LIST_SUMMARY_SQL_PG)
+        return [row_to_summary(row) for row in rows]
+
     def meta(self) -> Dict[str, dict[str, Any]]:
         rows = self._q(f"select session_id, created_at, last_active from {TABLE}")
         out: Dict[str, dict[str, Any]] = {}
@@ -376,21 +565,39 @@ class NeonHttpSessionBlobStore(SessionBlobStore):
     ) -> bool:
         blob = json.dumps(payload, ensure_ascii=False)
         now = _now_iso()
-        owner_id = _owner_of(payload)   # 列是 payload 的投影，见 _owner_of
+        proj = _list_projection(payload)
         if expected_rev is None:
             # on conflict do nothing + returning：撞上了返回 0 行 = CAS 失败
             affected = self._rows_affected(
-                f"insert into {TABLE} (session_id, payload, rev, created_at, last_active, owner_id) "
-                f"values ($1, $2::jsonb, 1, $3, $3, $4) "
+                f"insert into {TABLE} (session_id, payload, rev, created_at, last_active, "
+                f"owner_id, goal_text, runtime_phase, artifact_count) "
+                f"values ($1, $2::jsonb, 1, $3, $3, $4, $5, $6, $7) "
                 f"on conflict (session_id) do nothing returning session_id",
-                [session_id, blob, now, owner_id],
+                [
+                    session_id,
+                    blob,
+                    now,
+                    proj["owner"],
+                    proj["goal"],
+                    proj["phase"],
+                    proj["n_art"],
+                ],
             )
             return affected > 0
         affected = self._rows_affected(
             f"update {TABLE} set payload = $2::jsonb, rev = rev + 1, last_active = $3, "
-            f"owner_id = $5 "
+            f"owner_id = $5, goal_text = $6, runtime_phase = $7, artifact_count = $8 "
             f"where session_id = $1 and rev = $4 returning session_id",
-            [session_id, blob, now, expected_rev, owner_id],
+            [
+                session_id,
+                blob,
+                now,
+                expected_rev,
+                proj["owner"],
+                proj["goal"],
+                proj["phase"],
+                proj["n_art"],
+            ],
         )
         return affected > 0
 
@@ -448,6 +655,7 @@ class HttpApiSessionBlobStore(NeonHttpSessionBlobStore):
         # 老库就地补列，理由同 SqlSessionBlobStore.__init__ 里那句。
         # 线上走的就是这条 HTTP 分支，漏了它 = 线上永远没有 owner_id 列。
         self._q(f"alter table {TABLE} add column if not exists owner_id varchar(64)")
+        _ensure_list_projection(self._q, is_sqlite=False)
 
     def _q(self, sql: str, params: Optional[list[Any]] = None) -> list[dict[str, Any]]:
         return self._gateway.query(

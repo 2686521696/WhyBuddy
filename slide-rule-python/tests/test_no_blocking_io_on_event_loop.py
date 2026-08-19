@@ -55,6 +55,7 @@ BLOCKING_CALLS = {
     "save_session_record",
     "persist_state",
     "read_session_meta",
+    "list_session_summaries",
 }
 
 TARGETS = [

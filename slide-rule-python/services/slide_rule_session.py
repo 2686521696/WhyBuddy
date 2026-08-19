@@ -30,6 +30,10 @@ _sessions: Dict[str, V5SessionState] = {}
 
 def _load_sessions():
     global _sessions
+    # ⚠ 2026-08-19：曾经在模块 import 末尾无条件调用。HTTPS 网关
+    # `select session_id, payload` 全表（80 条 × 几百 KB，墙钟数秒到
+    # statement_timeout 30s）会挡住 uvicorn 的 Application startup complete，
+    # dev:all 看起来像卡住。文件后端仍在 load_session 里缓存为空时懒加载。
     _sessions = load_all()
     return _sessions
 
@@ -957,10 +961,6 @@ def pick_repair_capabilities(state: V5SessionState) -> list[dict]:
         _add("evidence.search")
 
     return picks[:5]
-
-
-# Load on import
-_load_sessions()
 
 
 # --- Python-owned commitArtifact (V5.2) ---

@@ -78,7 +78,6 @@ from routes.rag import router as rag_router
 # 的自检同一条纪律——坏账本不带病进 Prompt。本轮还没接进推演（下一轮做），
 # 但自检要从落地第一天就生效，否则"启动即失败"只是一句写在文档里的话。
 from services.app_template import SEED_APP_TEMPLATES as _SEED_APP_TEMPLATES  # noqa: F401
-from services.persistence import load_all
 from services.slide_rule_session import save_session
 from services.v5_full_driver import drive_full_v5_session
 from services.v5_capability_executor import _llm_generate_enabled
@@ -178,10 +177,12 @@ async def lifespan(app: FastAPI):
             "process environment — novel intents WILL fail-closed to blocked 0/6. "
             "Put LLM_API_KEY in the repo-root .env (or slide-rule-python/.env) and restart."
         )
-    # Load persisted V5 sessions (readiness log only — this snapshot must never
-    # be written back: routes mutate services.slide_rule_session._sessions and
-    # every mutation already persists per-record at write time).
-    print(f"Loaded {len(load_all())} V5 sessions.")
+    # ⚠ 2026-08-19：这里曾经 `load_all()` 把库里每一条会话 blob 拉进进程。
+    # 34 条就要 5.2 MB / 2.3s（sliderule_full 事故注释）；现在 80 条还要
+    # 叠 HTTPS 网关。这条又在 slide_rule_session **import** 时跑过一遍，
+    # `--reload` 下 worker 再来一次。dev:all 卡在 Application startup complete
+    # 就是在等这个。payload 改到第一次 GET /sessions 再拉。
+    print("[startup] session archive: payloads deferred until first request")
     # skill.invoke / mcp.call production runtimes (node-bridge strangler; see
     # services/node_bridge_runtime.py). Without this the executor degrades.
     from services.node_bridge_runtime import configure_node_bridge_runtimes
