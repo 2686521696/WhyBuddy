@@ -64,6 +64,7 @@ import { specPageViewport, useScaleToFit } from "@/pages/sliderule/live-runtime/
 import { deriveBindingSource } from "@/pages/sliderule/live-runtime/derive-binding-source";
 import { initRuntimeState } from "@/pages/sliderule/live-runtime/live-runtime";
 import { seedRuntimeState } from "@/pages/sliderule/live-runtime/demo-seed";
+import { pageIsBoundFromSpec } from "@/pages/sliderule/spec-page-bound";
 import {
   mergeFiveSystemModels,
   parseFiveSystemModelFromPerSkillEvidence,
@@ -116,8 +117,12 @@ export interface SpecPagesDetail {
   pages: Record<string, string>;
   /** 外壳统一时定下的导航顺序；第一项就是落地页 */
   navItems: Array<{ pageId?: string; label?: string }>;
-  /** 打过孔（6.5 步绑定成功）的页数；0 = 素颜页 */
+  /** 打过孔（6.5 步绑定成功）的页数；0 = 没跑打孔或一页都没打上 */
   boundPages: number;
+  /** 每页打孔相位（bound / failed / skipped）。有它就认它，不靠成功数反推。 */
+  pageBindStatus?: Record<string, string>;
+  /** 画页或打孔失败的页 → 原因。打孔部分失败时成功页仍计入 boundPages。 */
+  failedPages?: Record<string, unknown>;
   /** desktop 横屏 1920×1080 / phone 竖屏 1080×1920（2026-08-14）。
    *  老存档没有这个字段——按桌面兜底，行为与从前一致。 */
   device?: "desktop" | "phone";
@@ -148,6 +153,14 @@ export function extractSpecPages(raw: unknown): SpecPagesDetail | null {
     pages,
     navItems,
     boundPages: typeof r.boundPages === "number" ? r.boundPages : 0,
+    pageBindStatus:
+      r.pageBindStatus && typeof r.pageBindStatus === "object" && !Array.isArray(r.pageBindStatus)
+        ? (r.pageBindStatus as Record<string, string>)
+        : undefined,
+    failedPages:
+      r.failedPages && typeof r.failedPages === "object" && !Array.isArray(r.failedPages)
+        ? (r.failedPages as Record<string, unknown>)
+        : undefined,
     device: r.device === "phone" ? "phone" : "desktop",
   };
 }
@@ -867,7 +880,7 @@ function SpecPagesPreview({
       html: p.html,
       current: i + 1,
       total: ordered.length,
-      bound: (specPages.boundPages ?? 0) > 0,
+      bound: pageIsBoundFromSpec(p.pageId, specPages),
       // 竖屏应用在预览模态里也得进竖屏画布（SpecPageLiveStage 按它选视口）
       device: specPages.device,
     }));

@@ -187,6 +187,31 @@ describe("extractSpecPages", () => {
     expect(sp.navItems[0].pageId).toBe("page-home");
   });
 
+  it("部分打孔失败：成功数和失败名单都留下，不许只留开关", () => {
+    const sp = extractSpecPages({
+      ...pagesPayload,
+      boundPages: 3,
+      failedPages: { p2: "页面 p2 打孔失败" },
+    })!;
+    expect(sp.boundPages).toBe(3);
+    expect(sp.failedPages).toEqual({ p2: "页面 p2 打孔失败" });
+  });
+
+  it("每页相位要留下——丢掉就只能靠成功数反推", () => {
+    const sp = extractSpecPages({
+      ...pagesPayload,
+      boundPages: 3,
+      pageBindStatus: { p1: "bound", p2: "failed", p3: "bound", p4: "bound" },
+      failedPages: { p2: "页面 p2 打孔失败" },
+    })!;
+    expect(sp.pageBindStatus).toEqual({
+      p1: "bound",
+      p2: "failed",
+      p3: "bound",
+      p4: "bound",
+    });
+  });
+
   it("空壳/坏形状一律 null——空壳判成有页面会挂出一个空白 iframe", () => {
     expect(extractSpecPages(null)).toBeNull();
     expect(extractSpecPages("nope")).toBeNull();

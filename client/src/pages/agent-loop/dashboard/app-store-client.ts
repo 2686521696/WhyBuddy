@@ -97,6 +97,8 @@ export interface SpecPagesPayload {
   navItems?: Array<{ pageId?: string; label?: string }>;
   /** 打过孔（6.5 步绑定成功）的页数；0 = 素颜页 */
   boundPages?: number;
+  /** 每页打孔相位；有则优先于 boundPages 反推 */
+  pageBindStatus?: Record<string, string>;
 }
 
 /** 完整记录——摘要 + model_json（可直接重开渲染）+ pages_json（整页 HTML）。 */
