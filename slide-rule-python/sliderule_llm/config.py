@@ -75,7 +75,25 @@ def _positive_int(v: str | None, default: int) -> int:
 #: 还会**反向咬人**——旧 .env 里一个 `LLM_ROUND_CAP_MAX_TOKENS=32000`
 #: 会让那条路悄悄比全局窄，正是要根除的形态。现在只剩一个 `LLM_MAX_TOKENS`：
 #: 调它，全链路一起变；旧变量留在 .env 里也只是被忽略，不会再造成局部收窄。
-DEFAULT_MAX_TOKENS = 65536
+#:
+#: ⚠ 2026-08-19 换 ouyi-5-preview：网关按 Gemini 口径，maxOutputTokens
+#: **1 含、65536 不含**。默认 65536 原样发出去，HTTP 400 不可重试。
+#: 真机 PEJBRSVSD1、MFQJ4JECA5 的 spec / 画页全灭；本趟 P0CJH3JV3P 的
+#: structure / evidence / risk / spec-first 又全 400。不是题目坏了。
+#: 上限是开区间右端减一，不是再加一个分路旋钮。
+WIRE_MAX_OUTPUT_TOKENS = 65535
+DEFAULT_MAX_TOKENS = WIRE_MAX_OUTPUT_TOKENS
+
+
+def clamp_max_tokens(n: int) -> int:
+    """发出去之前卡在上游开区间里。`.env` 仍写 65536 也不许再 400。"""
+    try:
+        raw = int(n)
+    except (TypeError, ValueError):
+        raw = DEFAULT_MAX_TOKENS
+    if raw <= 0:
+        raw = DEFAULT_MAX_TOKENS
+    return min(raw, WIRE_MAX_OUTPUT_TOKENS)
 
 
 def default_max_tokens() -> int:
@@ -85,7 +103,9 @@ def default_max_tokens() -> int:
     写坏了（空/非数字/非正数）退回默认值而不是抛——配错一个数就让整场推演
     挂掉，比用默认值糟得多。
     """
-    return _positive_int(os.environ.get("LLM_MAX_TOKENS"), DEFAULT_MAX_TOKENS)
+    return clamp_max_tokens(
+        _positive_int(os.environ.get("LLM_MAX_TOKENS"), DEFAULT_MAX_TOKENS)
+    )
 
 
 #: 推理档位没有分路旋钮——**一律走 .env 的 `LLM_REASONING_EFFORT`**（2026-08-13）。

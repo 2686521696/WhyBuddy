@@ -21,6 +21,7 @@ import httpx
 from .config import (
     FallbackLlmConfig,
     LlmConfig,
+    clamp_max_tokens,
     default_max_tokens,
     get_fallback_llm_config,
     get_llm_config,
@@ -605,7 +606,8 @@ def _call_llm_once(
         raise LlmError("LLM not configured (no api_key)", transient=False)
     # 预算在**这里**兜底，不在签名默认值上：以前写死 2000，凡是没显式传的调用点
     # 都被悄悄按在 2000——推理模型下等于必然空正文。见 config.DEFAULT_MAX_TOKENS。
-    max_tokens = max_tokens or default_max_tokens()
+    # clamp：欧亿 Gemini 口径 65536 不含，显式传入 65536 也得在出网口卡住。
+    max_tokens = clamp_max_tokens(max_tokens or default_max_tokens())
     messages = _normalize_messages(messages)
     if _has_image_content_parts(messages) and not cfg.supports_image_content_parts:
         raise LlmError(
@@ -679,7 +681,8 @@ def _call_llm_once_streaming(
         raise LlmError("LLM not configured (no api_key)", transient=False)
     # 预算在**这里**兜底，不在签名默认值上：以前写死 2000，凡是没显式传的调用点
     # 都被悄悄按在 2000——推理模型下等于必然空正文。见 config.DEFAULT_MAX_TOKENS。
-    max_tokens = max_tokens or default_max_tokens()
+    # clamp：欧亿 Gemini 口径 65536 不含，显式传入 65536 也得在出网口卡住。
+    max_tokens = clamp_max_tokens(max_tokens or default_max_tokens())
     messages = _normalize_messages(messages)
     if _has_image_content_parts(messages) and not cfg.supports_image_content_parts:
         raise LlmError(

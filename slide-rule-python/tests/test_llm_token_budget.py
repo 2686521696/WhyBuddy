@@ -26,7 +26,7 @@
 `client.py` 的 `max_tokens: int = 2000` 是最深的一处——凡是没显式传参的调用点
 全被它按在 2000，谁都看不见。
 
-现在全链路一个 `LLM_MAX_TOKENS`（默认 65536，见 `config.DEFAULT_MAX_TOKENS`）：
+现在全链路一个 `LLM_MAX_TOKENS`（默认 65535，见 `config.DEFAULT_MAX_TOKENS`）：
 
 - 写死的预算**一处都不许留**（本文件的 AST 扫描是判据，不是靠 grep 靠自觉）；
 - 分路旋钮 `LLM_GENERATE_MAX_TOKENS` / `LLM_ROUND_CAP_MAX_TOKENS` **已删**，
@@ -43,7 +43,12 @@ from pathlib import Path
 import pytest
 
 from sliderule_llm import capabilities as caps
-from sliderule_llm.config import DEFAULT_MAX_TOKENS, default_max_tokens
+from sliderule_llm.config import (
+    DEFAULT_MAX_TOKENS,
+    WIRE_MAX_OUTPUT_TOKENS,
+    clamp_max_tokens,
+    default_max_tokens,
+)
 
 _PY_ROOT = Path(__file__).resolve().parent.parent
 _LLM_DIR = _PY_ROOT / "sliderule_llm"
@@ -100,8 +105,32 @@ class Test全链路只有一个旋钮:
             "（签名，让下游兜底）。理由见本文件头——这个病已经犯过三次。"
         )
 
-    def test_默认值是六万五(self):
-        assert default_max_tokens() == DEFAULT_MAX_TOKENS == 65536
+    def test_默认值贴着上游开区间(self):
+        """2026-08-19 ouyi-5-preview：65536 是右开端，原样发出去 HTTP 400。"""
+        assert default_max_tokens() == DEFAULT_MAX_TOKENS == WIRE_MAX_OUTPUT_TOKENS == 65535
+
+    def test_65536会被钳住(self, monkeypatch):
+        monkeypatch.setenv("LLM_MAX_TOKENS", "65536")
+        assert default_max_tokens() == 65535
+        assert clamp_max_tokens(65536) == 65535
+
+    def test_发出去之前也钳(self):
+        """只改 default 不够：显式传入 65536 仍会 400。钳必须在 client 出网口。
+
+        剥注释再匹配：标识符写在 docstring 里、调用删掉，判据会假绿。
+        """
+        import re
+
+        import sliderule_llm.client as client
+
+        def _code(fn):
+            src = re.sub(r'""".*?"""', "", inspect.getsource(fn), flags=re.S)
+            return re.sub(r"#.*", "", src)
+
+        once = _code(client._call_llm_once)
+        stream = _code(client._call_llm_once_streaming)
+        assert "clamp_max_tokens" in once
+        assert "clamp_max_tokens" in stream
 
     def test_环境变量能覆盖(self, monkeypatch):
         monkeypatch.setenv("LLM_MAX_TOKENS", "32000")
