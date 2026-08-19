@@ -487,6 +487,9 @@ describe("卡片墙走 masonic，高度由内容决定", () => {
     // 出现"筛选叫 blocked、卡片叫待补充"。
     expect(src).toContain("label={STATUS_META.runnable.label}");
     expect(src).toContain("label={STATUS_META.awaiting.label}");
+    // ⚠ 2026-08-19：货架改成三个 tab 时把筛选收进「我的应用」，
+    // 市场/官方那一排只剩「最近更新」。三个货架都要这排门语言。
+    expect(src).not.toMatch(/tab === "mine" \? \([\s\S]*?<StatChip/);
     expect(src).not.toMatch(/label="closed 6\/6"/);
     expect(src).not.toMatch(/label="blocked"/);
     // **反过来钉：6/6 不许回来。**
@@ -528,10 +531,14 @@ describe("应用中心滚动分页接在真链路上", () => {
 
   it("首屏按页拉应用，不一次 listApps 空参把默认上限打满", () => {
     expect(src).not.toMatch(/listApps\(\s*\)/);
-    expect(raw).toContain("listApps({ limit: PAGE_SIZE, offset: 0 })");
-    expect(raw).toContain("listApps({ limit: PAGE_SIZE, offset })");
+    expect(raw).toContain("listApps({ limit: PAGE_SIZE, offset: 0, scope: tab })");
+    expect(raw).toContain("listApps({ limit: PAGE_SIZE, offset, scope: tab })");
     expect(raw).toContain("onReachEnd={onWallReachEnd}");
     expect(raw).toContain("items={wallItems}");
+    expect(src).toContain("appendUniqueById");
+    expect(src).toContain("wallItems = visible");
+    expect(src).not.toMatch(/visible\.slice\(\s*0\s*,\s*shown/);
+    expect(src).not.toMatch(/\[\.\.\.\(prev \?\? \[\]\), \.\.\.list\]/);
   });
 
   it("详情按卡挂载再拉，开局不许 4 工人扫全表", () => {
@@ -555,5 +562,46 @@ describe("应用中心滚动分页接在真链路上", () => {
   it("listApps 默认一页 12，不许退回 200", () => {
     expect(client).toMatch(/opts\.limit \?\? 12/);
     expect(client).not.toMatch(/opts\.limit \?\? 200/);
+  });
+});
+
+describe("三个货架接在真链路上", () => {
+  const raw = readFileSync(new URL("../AppsWorkbench.tsx", import.meta.url), "utf8");
+  const src = sourceWithoutComments(raw);
+  const client = sourceWithoutComments(
+    readFileSync(new URL("../app-store-client.ts", import.meta.url), "utf8")
+  );
+
+  it("默认应用市场，三个 tab，没有官方示例 tab", () => {
+    expect(src).toContain('useState<AppShelf>("market")');
+    expect(src).toContain('data-testid={`apps-tab-${t.key}`}');
+    expect(src).toContain('label: "应用市场"');
+    expect(src).toContain('label: "我的应用"');
+    expect(src).toContain('label: "官方应用"');
+    expect(src).not.toContain("apps-tab-examples");
+    expect(src).toContain("复刻到我的应用");
+    expect(src).toContain("设为公开");
+    expect(src).toContain("设为私有");
+    expect(src).toContain("移交到官方应用");
+    expect(src).toContain("从官方交还");
+    expect(src).not.toContain("标为官方应用");
+  });
+
+  it("列表必须带当前货架，Fork 之后切到我的应用", () => {
+    expect(raw).toContain("listApps({ limit: PAGE_SIZE, offset: 0, scope: tab })");
+    expect(src).toContain('setTab("mine")');
+    expect(src).toContain("patchApp");
+    expect(client).toContain('scope=${encodeURIComponent(opts.scope)}');
+  });
+
+  it("只有我的应用合并会话草稿，切 tab 时 apps 为空就算加载中", () => {
+    expect(src).toContain('mergeGalleryItems(apps, tab === "mine" ? sessions ?? [] : [])');
+    expect(src).toContain("apps === null");
+    expect(src).not.toContain("apps === null && sessions === null");
+  });
+
+  it("推演收口能按会话反查 app_id——列表分页反查会漏", () => {
+    expect(client).toContain("function getGeneratedAppForSession");
+    expect(client).toContain("/sessions/${encodeURIComponent(id)}/generated-app");
   });
 });

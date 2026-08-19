@@ -73,17 +73,30 @@ export function appendStableItems<T>(
 }
 
 /**
- * 本地已经露出的卡看完了，该向服务端要下一页。
+ * 无限流下一页按身份并进去，禁止 `[...prev, ...page]`。
  *
- * ⚠ 必须是 `>=` 不是 `>`。墙上 52 张、shown 也是 52 时，再 +12 才会变成
- * `>`；而 onReachEnd 用 lastAsked===itemCount 防重入，墙高过两屏且
- * scrollTop 没跟上（绑错滚动源）时那一下永远不来——shown 停在 52，
- * `>` 判据把取数也挡死。2026-08-18 首页「滚到底不加载」就是这两条叠在一起。
+ * GitHub 上这件事也有标准答案，不是口味：
+ *
+ *   · frontendcache/pagination-normalize `appendPage`：有过的 id 更新实体、
+ *     不另占一个下标
+ *   · open-noodle/gallery #847：OFFSET 不是快照，页间重叠一行就会把
+ *     keyed each 卡死；每一页都走 `appendUniqueById`
+ *
+ * 2026-08-20 首页真机是 12→24→35→48：第三页和前两页叠了一条（唯一 35），
+ * `concat` 第四页按数组长度变成 48。「全部」芯片数的是数组长度，墙上却少一张。
  */
-export function shouldFetchAppPage(
-  shown: number,
-  visibleCount: number,
-  hasMore: boolean,
-): boolean {
-  return hasMore && visibleCount > 0 && shown >= visibleCount;
+export function appendUniqueById<T>(
+  prev: readonly T[] | null | undefined,
+  next: readonly T[],
+  getId: (item: T) => string,
+): T[] {
+  const out: T[] = [...(prev ?? [])];
+  const seen = new Set(out.map(getId).filter(Boolean));
+  for (const item of next) {
+    const id = getId(item);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(item);
+  }
+  return out;
 }

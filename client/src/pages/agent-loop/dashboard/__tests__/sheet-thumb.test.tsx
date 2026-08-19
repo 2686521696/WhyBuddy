@@ -46,6 +46,12 @@ describe("shouldUseSheetThumb", () => {
     expect(shouldUseSheetThumb({ appId: null, summary: { has_preview: true } })).toBe(false);
     expect(shouldUseSheetThumb({ appId: "", summary: { has_preview: true } })).toBe(false);
   });
+
+  it("spec-first 有图也贴图——不再因为 iframe 截不到就永远活渲染", () => {
+    // 判据本身不看 has_pages：有 appId + has_preview 就贴。media 分支必须先
+    // 问 shouldUseSheetThumb，再决定要不要挂 HtmlLiveThumb（源码顺序下面钉）。
+    expect(shouldUseSheetThumb({ appId: "spec-1", summary: { has_preview: true } })).toBe(true);
+  });
 });
 
 describe("appPreviewUrl", () => {
@@ -164,5 +170,32 @@ describe("SheetThumb", () => {
       <SheetThumb appId="app-77" alt="园务通" fallback={fallback} previewTag="shot.1" />
     );
     expect(asShot.replace("v=shot.1", "v=sheet.1")).toBe(asSheet);
+  });
+});
+
+describe("spec-first 卡有图就贴图", () => {
+  const stripped = readFileSync(new URL("../AppsWorkbench.tsx", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/\/\/[^\n]*/g, " ");
+
+  it("media 有图先 return SheetThumb，HtmlLiveThumb 只当没图或 img 失败的回落", () => {
+    const mediaStart = stripped.indexOf("media={(() => {");
+    const media = stripped.slice(mediaStart, stripped.indexOf("metrics=", mediaStart));
+    expect(media).toContain("shouldUseSheetThumb");
+    expect(media).toContain("HtmlLiveThumb");
+    const sheetReturn = media.indexOf("if (shouldUseSheetThumb");
+    const htmlReturn = media.indexOf("if (htmlLive) return htmlLive");
+    expect(sheetReturn).toBeGreaterThan(-1);
+    expect(htmlReturn).toBeGreaterThan(-1);
+    expect(sheetReturn).toBeLessThan(htmlReturn);
+    // 反面：无条件 `if (specPages) return <HtmlLiveThumb` 会让有图也挂 iframe
+    expect(media).not.toMatch(/if\s*\(\s*detail\?\.specPages\s*\)\s*\{\s*return\s+</);
+  });
+
+  it("HtmlLiveThumb 没图时会采集——剥注释后必须还能看到 captureAndUpload", () => {
+    const fnStart = stripped.indexOf("function HtmlLiveThumb");
+    const fn = stripped.slice(fnStart, stripped.indexOf("function SpecPagesPreview"));
+    expect(fn).toContain("captureAndUpload");
+    expect(fn).toContain("captureFor");
   });
 });

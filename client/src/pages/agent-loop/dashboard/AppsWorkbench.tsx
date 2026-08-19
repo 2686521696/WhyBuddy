@@ -3,7 +3,10 @@
  *
  * 布局定稿（用户三条硬性要求，2026-07-17）：
  *   1. 卡片一律 16:9，字段内容以底部浮层压在图上（不再图上字下两段式）；
- *   2. 「我的应用 / 官方示例库」tab 切换——筛选口径不同，卡片样式相同；
+ *   2. 「应用市场 / 我的应用 / 官方应用」三个货架——筛选口径不同，卡片样式相同；
+ *      ⚠ 2026-08-19：原先「我的应用」其实是后端可见的全部应用，超管会把
+ *      全站货架混进来。新建和 Fork 进「我的应用」；公开的进「应用市场」；
+ *      标了官方的进「官方应用」。
  *      ⚑ 2026-08-14 示例**数据**清空（用户裁决：清数据不删功能）：老链路
  *      的四张示例卡下架，功能骨架（tab/分类/分页/点卡起手）原样保留，
  *      货架空着如实显示空态；后端 _EXAMPLE_META 上架新条目即恢复展示。
@@ -29,7 +32,7 @@ import { useContainerPosition } from "masonic";
 
 import { useScrollerIn } from "./useScrollerIn";
 import { SpanMasonry } from "./SpanMasonry";
-import { appendStableItems, shouldFetchAppPage } from "./masonry-append";
+import { appendStableItems, appendUniqueById } from "./masonry-append";
 import { appendStableSpanKeys, spanForColumnCount } from "./app-wall-span";
 import { DEVICE_ASPECT, aspectForDevice } from "@/lib/justified-rows";
 import {
@@ -51,6 +54,7 @@ import {
   FileText as FileIcon,
   Sparkles,
   Globe,
+  Lock,
   Wrench,
   Heart,
   BookOpen,
@@ -82,8 +86,13 @@ import {
   getApp,
   forkApp,
   deleteApp,
+  patchApp,
+  appPreviewUrl,
   type AppStoreSummary,
+  type AppShelf,
 } from "./app-store-client";
+
+export { appPreviewUrl };
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import {
   GITHUB_PAGES_DEMO_GOAL,
@@ -790,31 +799,28 @@ function LiveAppThumb({
 /**
  * spec-first HTML 应用的活渲染缩略图（2026-08-14 应用中心接线）。
  *
- * ## 为什么它排在 shot / sheet 之前（见卡片 media 处的判定）
+ * 有 shot 时卡片走 SheetThumb，**不会挂到这里**。这里只是没图时的回落，
+ * 以及回落发生时顺手采一张（captureFor）——SnapDOM 拍同源 iframe
+ * （documentElement，不是父容器、也不是 body），不再采出一张空白。
  *
- * 带 pages_json 的应用，另外两级来源都是**错的或不存在的**：
- *   - shot：html-to-image 拍不到 iframe 框内内容（同源 srcdoc 也拍不到），
- *     存量的 shot 是接线前老区块渲染器画的光板 antd 表格——正是这次要消掉的
- *     歧义本身，贴它等于把病灶存档展览；
- *   - sheet：⚑3 定案后 spec-first 轮次不再生成首页参照板，压根没有。
- * 所以有页面就直接活渲染真页面。同理，这张卡**不参与截图采集**
- * （captureAndUpload 拍到的会是一张空白）。
+ * 08-14 曾把这一支排在 shot 前面：当时截图拍不到 iframe，存量 shot 还是
+ * 接线前老区块渲染器的光板表格。拍框内文档之后那条理由不成立了，有图就贴图。
  *
- * ## 渲染成本
- *
- * 比 LiveAppThumb 轻：一个 iframe + Tailwind Play 编译一页，没有 antd 表格
- * /echarts 全家桶。仍然过同一套双闸（视口 + 挂载调度），滚动时不齐射。
+ * 渲染仍过同一套双闸（视口 + 挂载调度），滚动时不齐射。
  *
  * 落地页取导航第一项（orderedSpecPages）——跟推演舞台/交付物的页序同源。
- * 填数走 deriveBindingSource(model, 种子运行时)：缩略图要让人看出"这是个
- * 有数据的真应用"，跟 AppRuntimeScreen 缩略图用同一份种子纪律。
+ * 填数走 deriveBindingSource(model, 种子运行时)。
  */
 function HtmlLiveThumb({
   specPages,
   model,
+  captureFor,
+  device,
 }: {
   specPages: SpecPagesDetail;
   model: FiveSystemModel | null;
+  captureFor?: string | null;
+  device?: string | null;
 }) {
   const { wrapRef, visible } = useThumbMountGate();
   // 视口按设备选（2026-08-14 竖屏）：桌面 1920×1080 / 手机 1080×1920。
@@ -827,6 +833,20 @@ function HtmlLiveThumb({
     () => deriveBindingSource(model, model ? seedRuntimeState(initRuntimeState(model), model) : null),
     [model]
   );
+
+  React.useEffect(() => {
+    if (!visible || !captureFor) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled || !wrapRef.current) return;
+      void captureAndUpload({ appId: captureFor, container: wrapRef.current, device });
+    }, CAPTURE_SETTLE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [visible, captureFor, device]);
+
   return (
     <div
       ref={wrapRef}
@@ -899,23 +919,6 @@ function SpecPagesPreview({
       />
     </React.Suspense>
   );
-}
-
-/**
- * 缩略图接口地址。
- *
- * `?v=` 是缓存版本位，值就是摘要里的 preview_tag（后端给的"来源.写入时刻"）。
- * **不是可选的装饰**：那个响应带 immutable 强缓存，而同一个 app_id 的图是会变
- * 的——真截图是事后采集回传的（lib/thumb-capture.ts），卡片会从参照板升级成
- * 真截图。URL 不跟着变，浏览器就永远停在升级前那张。
- *
- * 记录本身仍然不可变（精修产生新 app_id），所以 id + tag 这一对确定了字节，
- * immutable 依然成立。tag 缺失（老后端）就不带——退回"URL 只按 id 变"的老行为，
- * 强缓存照旧生效，只是拿不到回填后的新图。
- */
-export function appPreviewUrl(appId: string, tag?: string | null): string {
-  const base = `/api/sliderule/apps/${encodeURIComponent(appId)}/preview`;
-  return tag ? `${base}?v=${encodeURIComponent(tag)}` : base;
 }
 
 /**
@@ -1311,7 +1314,7 @@ export function AppsWorkbench() {
   const [pyOk, setPyOk] = React.useState<boolean | null>(null);
   const [llm, setLlm] = React.useState<{ provider: string; model: string; keyPresent: boolean } | null | false>(null);
   const [healthOpen, setHealthOpen] = React.useState(false);
-  const [tab, setTab] = React.useState<"mine" | "examples">("mine");
+  const [tab, setTab] = React.useState<AppShelf>("market");
   // 登录态：决定复刻/删除按钮显不显示（真判定在后端）
   const { user: authUser, capabilities } = useAuth();
   const [filter, setFilter] = React.useState<GalleryFilter>("all");
@@ -1337,10 +1340,9 @@ export function AppsWorkbench() {
   const [forkBusy, setForkBusy] = React.useState(false);
   const [forkError, setForkError] = React.useState<string | null>(null);
   const [page, setPage] = React.useState(1);
-  /** 我的应用墙当前露出多少张。滚到底 +PAGE_SIZE；筛选/搜索回第一页。 */
-  const [shown, setShown] = React.useState(PAGE_SIZE);
   const [appsHasMore, setAppsHasMore] = React.useState(false);
   const appsOffsetRef = React.useRef(0);
+  const appsIdsRef = React.useRef(new Set<string>());
   const loadingMoreRef = React.useRef(false);
   const visibleOrderRef = React.useRef<string[]>([]);
   const aliveRef = React.useRef(true);
@@ -1360,15 +1362,17 @@ export function AppsWorkbench() {
   // 筛选口径变化 → 回第一页（分页器与滚动分页都回到开头）
   React.useEffect(() => {
     setPage(1);
-    setShown(PAGE_SIZE);
+    visibleOrderRef.current = [];
   }, [tab, filter, query, exampleCat, sortDesc]);
 
   React.useEffect(() => {
     let alive = true;
     aliveRef.current = true;
     appsOffsetRef.current = 0;
+    appsIdsRef.current = new Set();
     inflightRef.current.clear();
-    setShown(PAGE_SIZE);
+    visibleOrderRef.current = [];
+    setApps(null);
     setAppsHasMore(false);
     if (IS_GITHUB_PAGES) {
       // 静态演示（无后端）：画廊 = 主演示会话 + 画廊示例种子（E18：新引擎
@@ -1405,7 +1409,7 @@ export function AppsWorkbench() {
     // 完整模型禁止在这里扫全表——按卡挂载走 ensureDetail（2026-08-18）。
     // App Store 失败 fail-open 空数组（画廊退化成纯会话卡，零回退）。
     void Promise.allSettled([
-      listApps({ limit: PAGE_SIZE, offset: 0 }),
+      listApps({ limit: PAGE_SIZE, offset: 0, scope: tab }),
       fetch("/api/sliderule/sessions").then(r =>
         r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))
       ),
@@ -1414,6 +1418,7 @@ export function AppsWorkbench() {
       const appList = appsRes.status === "fulfilled" ? appsRes.value : [];
       setApps(appList);
       appsOffsetRef.current = appList.length;
+      appsIdsRef.current = new Set(appList.map(a => String(a.id || "")).filter(Boolean));
       setAppsHasMore(pageLooksFull(appList.length, PAGE_SIZE));
       if (sessRes.status === "fulfilled") {
         const sessionList = ((sessRes.value?.sessions ?? []) as SessionListItem[]).filter(
@@ -1457,7 +1462,7 @@ export function AppsWorkbench() {
     };
     // reloadKey：会话库变更事件（侧栏删除/话题落盘）触发整体重拉，
     // 应用中心与左侧会话列表保持双向同步（E28）
-  }, [reloadKey]);
+  }, [reloadKey, tab]);
 
   const ensureDetail = React.useCallback((gi: GalleryItem) => {
     if (detailsRef.current[gi.key] !== undefined) return;
@@ -1502,21 +1507,33 @@ export function AppsWorkbench() {
     loadingMoreRef.current = true;
     try {
       const offset = appsOffsetRef.current;
-      const list = await listApps({ limit: PAGE_SIZE, offset });
+      const list = await listApps({ limit: PAGE_SIZE, offset, scope: tab });
       if (!aliveRef.current) return;
-      setApps(prev => [...(prev ?? []), ...list]);
+      const added = list.filter(a => {
+        const id = String(a.id || "");
+        return Boolean(id) && !appsIdsRef.current.has(id);
+      }).length;
+      setApps(prev => {
+        const out = appendUniqueById(prev, list, a => String(a.id || ""));
+        appsIdsRef.current = new Set(out.map(a => String(a.id || "")).filter(Boolean));
+        return out;
+      });
       appsOffsetRef.current = offset + list.length;
-      setAppsHasMore(pageLooksFull(list.length, PAGE_SIZE));
+      // 满页但一条新身份都没有 = OFFSET 窗口在打转，再要只会 35→48。
+      setAppsHasMore(pageLooksFull(list.length, PAGE_SIZE) && added > 0);
     } catch {
       if (aliveRef.current) setAppsHasMore(false);
     } finally {
       loadingMoreRef.current = false;
     }
-  }, []);
+  }, [tab]);
 
   const onWallReachEnd = React.useCallback(() => {
-    setShown(n => n + PAGE_SIZE);
-  }, []);
+    // 推演中 / 待补充主要是会话卡，不必为筛选项把后面的应用页要齐。
+    if (filter === "draft" || filter === "blocked") return;
+    if (!appsHasMore) return;
+    void loadMoreApps();
+  }, [filter, loadMoreApps, appsHasMore]);
 
   const open = (sessionId: string) => {
     activateSession(sessionId);
@@ -1618,14 +1635,17 @@ export function AppsWorkbench() {
     }
     setForkError(null);
     setForkModal(null);
+    setTab("mine");
     setReloadKey(k => k + 1);
   };
 
   // 合并两条数据源为画廊条目；详情按条目 key 索引，app 卡在模型加载前用摘要占位。
+  // 切货架会把 apps 置 null 重拉。sessions 往往还在——若用「两边都空才算
+  // 加载中」，市场/官方会闪一帧空态，我的应用还会把会话草稿卡先铺上去。
   const items: GalleryItem[] | null =
-    apps === null && sessions === null
+    apps === null
       ? null
-      : mergeGalleryItems(apps ?? [], sessions ?? []);
+      : mergeGalleryItems(apps, tab === "mine" ? sessions ?? [] : []);
   const paired = (items ?? []).map(item => ({
     item,
     detail:
@@ -1661,20 +1681,14 @@ export function AppsWorkbench() {
       e.category.toLowerCase().includes(q)
     );
   });
-  // 「我的应用」滚动分页：墙只吃前 `shown` 张，滚到底 +12；摘要也按页向
-  // 服务端要，禁止一次 list 200。示例库仍是网格 + 分页器。
+  // 「我的应用」滚动分页：墙吃已经拉到的全部卡（虚拟化自己裁视口），
+  // 滚到底只向服务端要下一页。⚠ 别再加一层 shown+=12：shown 与 loaded
+  // 对齐时 effect 会立刻再打一页，哨兵再喊一次，真机就是 12→24→35→48。
+  // Pinterest gestalt Masonry 的 loadItems({ from }) 也是「缺哪页要哪页」，
+  // 没有第二套窗口计数。示例库仍是网格 + 分页器。
   const totalItems = visibleExamples.length;
   const pagedExamples = visibleExamples.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const wallItems = visible.slice(0, shown);
-
-  React.useEffect(() => {
-    if (tab !== "mine") return;
-    if (!shouldFetchAppPage(shown, visible.length, appsHasMore)) return;
-    if (loadingMoreRef.current) return;
-    // 推演中 / 待补充主要是会话卡，不必为筛选项把后面的应用页要齐。
-    if (filter === "draft" || filter === "blocked") return;
-    void loadMoreApps();
-  }, [tab, shown, visible.length, appsHasMore, filter, loadMoreApps]);
+  const wallItems = visible;
 
   // ── 「我的应用」卡片墙（2026-07-31）──────────────────────────────────
   //
@@ -1758,8 +1772,9 @@ export function AppsWorkbench() {
         Icon={BrandIcon}
         iconBg={detail?.identity ? themePrimary(detail.identity.theme) : undefined}
         media={(() => {
-          // 回落链：贴图 → 活渲染 → 占位卡。后两级就是贴图方案落地前的全部
-          // 逻辑，一行没动——贴图只是插在最前面，拿不到就原样落回去。
+          // 回落链：贴图 → 活渲染 → 占位卡。有图就贴 <img>，不要给每张卡
+          // 挂一个 Tailwind iframe（2026-08-20：应用市场同屏几十张活渲染
+          // 把主线程打满；推演收口会 SnapDOM 存一张 shot）。
           //
           // 贴图这一级内部还有两路（真截图优先于参照板），但那是服务端的事：
           // 同一个 URL、同一套画幅，这里看到的只有"有图/没图"。
@@ -1768,22 +1783,17 @@ export function AppsWorkbench() {
           // 上就地采一张存住**，于是这次活渲染是最后一次
           // （见 lib/thumb-capture.ts）。已经有真截图的（preview_source==="shot"）
           // 不再采——那正是这套东西要消灭的重复劳动。
-          // spec-first 应用（有整页 HTML）一律活渲染真页面，**不走 shot/sheet**：
-          // 截图拍不到 iframe 内容，存量 shot 是接线前老区块渲染器画的光板表格
-          // ——正是要消掉的歧义；sheet 在 spec-first 轮次根本不生成。
-          // 判定也不看 status：页面本身就是成品，有就摆出来。
-          if (detail?.specPages) {
-            return <HtmlLiveThumb specPages={detail.specPages} model={detail.model} />;
-          }
-          // 摘要说有页面、完整记录还没拉到：宁可空一拍，也不先贴 shot——
-          // 这类应用的存量 shot 是错渲染器的光板表格，闪一下再换等于把
-          // 病灶展示一遍。detail 到了自然走上面那个分支。
-          if (!detail && item.summary?.has_pages) {
-            return <div className="h-full w-full bg-[#f0f2f5]" data-testid="app-thumb-html-pending" />;
-          }
           const needsShot =
             Boolean(item.appId) && item.summary?.preview_source !== "shot";
-          const live =
+          const htmlLive = detail?.specPages ? (
+            <HtmlLiveThumb
+              specPages={detail.specPages}
+              model={detail.model}
+              captureFor={needsShot ? item.appId : null}
+              device={item.summary?.device}
+            />
+          ) : null;
+          const blockLive =
             detail?.status === "runnable" && detail.model ? (
               <LiveAppThumb
                 sessionId={thumbId}
@@ -1795,15 +1805,23 @@ export function AppsWorkbench() {
             ) : (
               <PendingAppThumb detail={detail} />
             );
-          if (!shouldUseSheetThumb(item)) return live;
-          return (
-            <SheetThumb
-              appId={item.appId!}
-              alt={detail?.identity?.productName || item.goal || "应用首页示意"}
-              fallback={live}
-              previewTag={item.summary?.preview_tag}
-            />
-          );
+          const live = htmlLive ?? blockLive;
+          if (shouldUseSheetThumb(item)) {
+            return (
+              <SheetThumb
+                appId={item.appId!}
+                alt={detail?.identity?.productName || item.goal || "应用首页示意"}
+                fallback={live}
+                previewTag={item.summary?.preview_tag}
+              />
+            );
+          }
+          if (htmlLive) return htmlLive;
+          // 摘要说有页面、完整记录还没拉到：空一拍等详情，避免先挂错渲染器。
+          if (!detail && item.summary?.has_pages) {
+            return <div className="h-full w-full bg-[#f0f2f5]" data-testid="app-thumb-html-pending" />;
+          }
+          return blockLive;
         })()}
         metrics={
           detail ? (
@@ -1883,7 +1901,45 @@ export function AppsWorkbench() {
                     title={canFork ? undefined : "登录后可复刻"}
                     onClick={() => openForkModal(item)}
                   >
-                    <GitBranch size={13} /> 复刻应用
+                    <GitBranch size={13} /> 复刻到我的应用
+                  </button>
+                )}
+                {isApp && canWrite && (
+                  <button
+                    data-testid={`app-visibility-${item.appId}`}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50"
+                    onClick={() => {
+                      const next =
+                        item.summary?.visibility === "private" ? "public" : "private";
+                      void (async () => {
+                        const ok = await patchApp(item.appId!, { visibility: next });
+                        if (ok) setReloadKey(k => k + 1);
+                        setMenuFor(null);
+                      })();
+                    }}
+                  >
+                    {item.summary?.visibility === "private" ? (
+                      <><Globe size={13} /> 设为公开</>
+                    ) : (
+                      <><Lock size={13} /> 设为私有</>
+                    )}
+                  </button>
+                )}
+                {isApp && authUser?.isSuperuser && (
+                  <button
+                    data-testid={`app-official-${item.appId}`}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50"
+                    onClick={() => {
+                      const next = !item.summary?.is_official;
+                      void (async () => {
+                        const ok = await patchApp(item.appId!, { is_official: next });
+                        if (ok) setReloadKey(k => k + 1);
+                        setMenuFor(null);
+                      })();
+                    }}
+                  >
+                    <Sparkles size={13} />
+                    {item.summary?.is_official ? "从官方交还" : "移交到官方应用"}
                   </button>
                 )}
                 {canWrite && (
@@ -1951,7 +2007,7 @@ export function AppsWorkbench() {
             <LayoutGrid size={18} strokeWidth={2.2} />
           </span>
           <h1 className="text-[18px] font-bold tracking-tight text-slate-900 md:text-[20px]">
-            应用中心
+            {tab === "market" ? "应用市场" : tab === "official" ? "官方应用" : "我的应用"}
           </h1>
         </div>
 
@@ -1965,7 +2021,11 @@ export function AppsWorkbench() {
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder={
-              tab === "mine" ? "搜索应用、功能或解决方案…" : "搜索官方示例…"
+              tab === "market"
+                ? "搜索公开应用…"
+                : tab === "official"
+                  ? "搜索官方应用…"
+                  : "搜索我的应用…"
             }
             className="w-full rounded-lg border-0 bg-white/70 py-2.5 pl-10 pr-4 text-[13px] text-slate-800 outline-none ring-1 ring-slate-200/60 placeholder:text-slate-400 transition focus:bg-white focus:ring-2 focus:ring-[#5b6cff]/25"
           />
@@ -2048,8 +2108,9 @@ export function AppsWorkbench() {
       <div className="mt-4 flex flex-wrap items-center gap-1.5">
         {(
           [
-            { key: "mine" as const, label: "我的应用", count: paired.length },
-            { key: "examples" as const, label: "官方示例", count: examples.length },
+            { key: "market" as const, label: "应用市场", count: tab === "market" ? paired.length : undefined },
+            { key: "mine" as const, label: "我的应用", count: tab === "mine" ? paired.length : undefined },
+            { key: "official" as const, label: "官方应用", count: tab === "official" ? paired.length : undefined },
           ]
         ).map(t => (
           <button
@@ -2065,6 +2126,7 @@ export function AppsWorkbench() {
             onClick={() => setTab(t.key)}
           >
             {t.label}
+            {typeof t.count === "number" && (
             <span
               className={`tabular-nums text-[11px] ${
                 tab === t.key ? "text-[#3b5bdb]/80" : "text-slate-400"
@@ -2072,75 +2134,56 @@ export function AppsWorkbench() {
             >
               {t.count}
             </span>
+            )}
           </button>
         ))}
 
         <span className="mx-1 hidden h-4 w-px bg-slate-200 sm:inline-block" />
 
-        {tab === "mine" ? (
-          <>
-            <StatChip
-              icon={<LayoutGrid size={13} />}
-              label="全部"
-              count={counts.all}
-              active={filter === "all"}
-              onClick={() => setFilter("all")}
-            />
-            <StatChip
-              icon={<Hourglass size={13} className="text-amber-500" />}
-              label="推演中"
-              count={counts.draft}
-              active={filter === "draft"}
-              onClick={() => setFilter("draft")}
-            />
-            <StatChip
-              icon={<CircleCheck size={13} className="text-emerald-500" />}
-              label={STATUS_META.runnable.label}
-              count={counts.runnable}
-              active={filter === "runnable"}
-              onClick={() => setFilter("runnable")}
-            />
-            <StatChip
-              icon={<Hourglass size={13} className="text-orange-400" />}
-              // 筛选条与卡片徽标读同一份 STATUS_META：此前两处各写一份字面量，
-              // 改文案漏掉一处就会出现"筛选叫 blocked、卡片叫待补充"。
-              label={STATUS_META.awaiting.label}
-              count={counts.blocked}
-              active={filter === "blocked"}
-              onClick={() => setFilter("blocked")}
-            />
-            <div className="ml-auto flex items-center gap-2">
-              <button
-                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-slate-500 transition hover:bg-white/60 hover:text-slate-700"
-                onClick={() => setSortDesc(v => !v)}
-              >
-                <ArrowUpDown size={13} className="text-slate-400" />
-                {sortDesc ? "最近更新" : "最早更新"}
-              </button>
-            </div>
-          </>
-        ) : (
-          ["全部", ...Array.from(new Set(examples.map(e => e.category)))].map(cat => (
-            <button
-              key={cat}
-              data-testid={`example-cat-${cat}`}
-              className={`rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition ${
-                exampleCat === cat
-                  ? "bg-[#e8eeff] text-[#3b5bdb]"
-                  : "bg-transparent text-slate-500 hover:bg-white/60 hover:text-slate-700"
-              }`}
-              onClick={() => setExampleCat(cat)}
-            >
-              {cat}
-            </button>
-          ))
-        )}
+        <StatChip
+          icon={<LayoutGrid size={13} />}
+          label="全部"
+          count={counts.all}
+          active={filter === "all"}
+          onClick={() => setFilter("all")}
+        />
+        <StatChip
+          icon={<Hourglass size={13} className="text-amber-500" />}
+          label="推演中"
+          count={counts.draft}
+          active={filter === "draft"}
+          onClick={() => setFilter("draft")}
+        />
+        <StatChip
+          icon={<CircleCheck size={13} className="text-emerald-500" />}
+          label={STATUS_META.runnable.label}
+          count={counts.runnable}
+          active={filter === "runnable"}
+          onClick={() => setFilter("runnable")}
+        />
+        <StatChip
+          icon={<Hourglass size={13} className="text-orange-400" />}
+          // 筛选条与卡片徽标读同一份 STATUS_META：此前两处各写一份字面量，
+          // 改文案漏掉一处就会出现"筛选叫 blocked、卡片叫待补充"。
+          label={STATUS_META.awaiting.label}
+          count={counts.blocked}
+          active={filter === "blocked"}
+          onClick={() => setFilter("blocked")}
+        />
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-slate-500 transition hover:bg-white/60 hover:text-slate-700"
+            onClick={() => setSortDesc(v => !v)}
+          >
+            <ArrowUpDown size={13} className="text-slate-400" />
+            {sortDesc ? "最近更新" : "最早更新"}
+          </button>
+        </div>
       </div>
       </div>
 
-      {/* ===== 我的应用 tab ===== */}
-      {tab === "mine" &&
-        (listError ? (
+      {/* ===== 三个货架共用卡片墙 ===== */}
+      {listError ? (
           <div className="mt-8 text-[13px] text-red-500">会话列表拉取失败：{listError}</div>
         ) : items == null ? (
           <GalleryLoading testid="apps-skeleton" label="正在加载应用" />
@@ -2151,9 +2194,15 @@ export function AppsWorkbench() {
             // 首次空态（对标 ToolJet BlankPage）：插画 + 引导 + 创建 CTA
             <div className="mt-10 flex flex-col items-center text-center" data-testid="apps-empty-first">
               <EmptyGalleryArt />
-              <div className="mt-4 text-[15px] font-semibold text-slate-800">还没有应用</div>
+              <div className="mt-4 text-[15px] font-semibold text-slate-800">
+                {tab === "market" ? "还没有公开应用" : tab === "official" ? "还没有官方应用" : "还没有应用"}
+              </div>
               <div className="mt-1 text-[13px] text-slate-500">
-                描述你想要的系统，让 AI 推演出你的第一个应用
+                {tab === "mine"
+                  ? "描述你想要的系统，让 AI 推演出你的第一个应用"
+                  : tab === "official"
+                    ? "超管可以把应用移交给面团官方，出现在这里"
+                    : "公开的应用会出现在这里，也可以从官方应用复刻一份到我的应用"}
               </div>
               <button
                 data-testid="apps-empty-create"
@@ -2211,13 +2260,13 @@ export function AppsWorkbench() {
             // key 跟着筛选走：定位器的高度缓存按 index 存，换了数据集不重建的话
             // 会拿旧高度去摆新卡片。数量变化不进 key——那是滚动分页追加的正常情形，
             // 重建会把已量到的高度全丢掉，追加一批就整墙闪一次。
-            key={`wall-${filter}-${query}`}
+            key={`wall-${tab}-${filter}-${query}`}
             items={wallItems}
             renderCard={renderAppCard}
             onReachEnd={onWallReachEnd}
             ensureDetail={ensureDetail}
           />
-        ))}
+        )}
 
       {/* 只读预览：点开别人的应用走这里，不进对方的会话（见 previewModal 的说明）。
           渲染器就是活渲染缩略图用的那一个，模型也是同一份，只是不再缩到卡片里。 */}

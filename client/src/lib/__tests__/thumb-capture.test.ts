@@ -7,10 +7,14 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
+import { readFileSync } from "node:fs";
+
 import { aspectForDevice, DEVICE_ASPECT } from "@/lib/justified-rows";
 import {
   captureAndUpload,
   captureBudgetLeft,
+  previewUploadUrl,
+  resolveCaptureNode,
   shotAspectForDevice,
   shotMatchesCardAspect,
   __resetCaptureStateForTests,
@@ -92,7 +96,7 @@ describe("绝不能拖住浏览的人", () => {
   });
 
   it("采集异常不外抛——调用方在渲染路径上", async () => {
-    // 容器里没有缩放层、html-to-image 抛错、fetch 挂掉……任何一种都只该意味着
+    // 容器里没有缩放层、SnapDOM 抛错、fetch 挂掉……任何一种都只该意味着
     // "这张卡这次没补上图"，绝不能把一个渲染中的组件炸掉。
     const broken = {
       querySelector: () => {
@@ -100,5 +104,88 @@ describe("绝不能拖住浏览的人", () => {
       },
     } as unknown as HTMLElement;
     await expect(captureAndUpload({ appId: "x", container: broken })).resolves.toBe(false);
+  });
+
+  it("推演收口 bypassBudget 不占首页配额", async () => {
+    const left = captureBudgetLeft();
+    await captureAndUpload({
+      appId: "studio-one",
+      container: fakeContainer(),
+      bypassBudget: true,
+    });
+    expect(captureBudgetLeft()).toBe(left);
+    // 首页配额还在，普通采集仍能排队
+    expect(await captureAndUpload({ appId: "gallery", container: fakeContainer() })).toBe(false);
+    expect(captureBudgetLeft()).toBe(left - 1);
+  });
+});
+
+describe("采的是 iframe 里的真页面", () => {
+  it("回传地址：默认幂等，replace 才带查询串", () => {
+    expect(previewUploadUrl("abc")).toBe("/api/sliderule/apps/abc/preview");
+    expect(previewUploadUrl("abc", true)).toBe("/api/sliderule/apps/abc/preview?replace=1");
+    expect(previewUploadUrl("a/b", true)).toBe("/api/sliderule/apps/a%2Fb/preview?replace=1");
+  });
+
+  it("同源 iframe 把 iframe 元素交给 SnapDOM，不是 body、也不是父容器", () => {
+    // SnapDOM rasterizeIframe 内部采 contentDocument.documentElement
+    // （monday.com / modern-screenshot 同一条）。拍 body 会丢掉 <head> 里的
+    // Tailwind。拍父容器框内是空白。
+    const body = {
+      childElementCount: 2,
+      textContent: "首页",
+      offsetWidth: 1920,
+      scrollWidth: 1920,
+    };
+    const documentElement = { tagName: "HTML" };
+    const iframe = {
+      tagName: "IFRAME",
+      clientWidth: 1920,
+      contentDocument: { body, documentElement },
+    };
+    const container = {
+      querySelector: (sel: string) =>
+        String(sel).includes("html-app-surface") ? iframe : null,
+    } as unknown as HTMLElement;
+    const got = resolveCaptureNode(container);
+    expect(got?.kind).toBe("iframe");
+    expect(got?.node).toBe(iframe);
+    expect(got?.node).not.toBe(body);
+  });
+
+  it("iframe 还是空的 → 不硬采空白，回落到缩放层", () => {
+    const emptyBody = {
+      childElementCount: 0,
+      textContent: "   ",
+      offsetWidth: 0,
+      scrollWidth: 0,
+    };
+    const inner = { offsetWidth: 1440, offsetHeight: 810 };
+    const scaled = { firstElementChild: inner, offsetWidth: 1440, offsetHeight: 810 };
+    const container = {
+      querySelector: (sel: string) => {
+        if (String(sel).includes("html-app-surface")) {
+          return { contentDocument: { body: emptyBody, documentElement: {} } };
+        }
+        if (String(sel).includes("transform")) return scaled;
+        return null;
+      },
+    } as unknown as HTMLElement;
+    expect(resolveCaptureNode(container)?.kind).toBe("dom");
+    expect(resolveCaptureNode(container)?.node).toBe(inner);
+  });
+
+  it("采集路径真的 POST previewUploadUrl（含 replace）——剥注释才算数", () => {
+    const src = readFileSync(new URL("../thumb-capture.ts", import.meta.url), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/\/\/[^\n]*/g, " ");
+    expect(src).toContain("previewUploadUrl(appId, replace)");
+    expect(src).toContain("snapdom.toCanvas");
+    expect(src).toContain("@zumer/snapdom");
+    expect(src).toContain("embedFonts: false");
+    expect(src).toContain("contentDocument");
+    expect(src).toContain("documentElement");
+    expect(src).not.toContain("html2canvas");
+    expect(src).not.toContain("html-to-image");
   });
 });

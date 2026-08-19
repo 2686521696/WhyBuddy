@@ -1,7 +1,7 @@
 /**
  * SlideRuleStudio — 统一页主布局容器（对话 / 舞台可拖可折，默认 38 / 62）
  *
- * 左侧：Chat 对话区（ClaudeChatSurface，含唯一空态：短问候 + 输入框 + 示例 chips）。
+ * 左侧：Chat 对话区（ClaudeChatSurface，含唯一空态：问候 + 光晕输入 + chips + 灵感卡）。
  *
  * 右侧主舞台——四态：
  *   pages   — **成品面**：spec-first 那条链路产出的 HTML 页面，装在
@@ -67,7 +67,7 @@ import {
 import { Crosshair, X } from "lucide-react";
 import { StudioSplit } from "./StudioSplit";
 import { useStudioLayout } from "./StudioLayoutContext";
-import { isStagePageShown } from "./studio-layout";
+import { StudioLandingShot } from "./studio-landing-shot";
 
 const XRAY_PREF_KEY = "sliderule:xray-on";
 
@@ -654,6 +654,14 @@ export function SlideRuleStudio({
 
         {/* HTML 页面动作的表单面：详情/编辑/新建三态，写回运行态后 data-* 孔
             随 htmlRuntime 变化立刻重填——写数据闭环的可见反馈就是页面本身。 */}
+        <StudioLandingShot
+          sessionId={sessionId}
+          running={isRunning}
+          specFirstPages={specFirstPages}
+          specPages={specPages}
+          model={fiveSystemModel}
+          runtime={htmlRuntime}
+        />
         <RecordFormDrawer
           model={fiveSystemModel}
           state={htmlRuntime}

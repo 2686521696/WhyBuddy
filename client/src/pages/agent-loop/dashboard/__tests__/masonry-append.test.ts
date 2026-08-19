@@ -9,9 +9,9 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   appendStableItems,
+  appendUniqueById,
   isKeyPrefixAppend,
   nextLayoutEpoch,
-  shouldFetchAppPage,
 } from "../masonry-append";
 import { appendStableSpanKeys, computeSpanKeys } from "../app-wall-span";
 import type { GalleryItem } from "../AppsWorkbench";
@@ -137,13 +137,31 @@ describe("appendStableItems", () => {
   });
 });
 
-describe("shouldFetchAppPage", () => {
-  it("本地卡看完了就要下一页，shown 等于可见数也要（不该有：必须再 +12 才要）", () => {
-    expect(shouldFetchAppPage(52, 52, true)).toBe(true);
-    expect(shouldFetchAppPage(12, 52, true)).toBe(false);
-    expect(shouldFetchAppPage(60, 52, true)).toBe(true);
-    expect(shouldFetchAppPage(52, 52, false)).toBe(false);
-    expect(shouldFetchAppPage(0, 0, true)).toBe(false);
+describe("appendUniqueById", () => {
+  it("页间重叠一行时并进去是 35，concat 才是 48", () => {
+    const page1 = Array.from({ length: 12 }, (_, i) => ({ id: `a${i}` }));
+    const page2 = Array.from({ length: 12 }, (_, i) => ({ id: `a${i + 12}` }));
+    // 第三页第一条是第二页最后一条——OFFSET 无决胜时的典型重叠。
+    const page3 = [{ id: "a23" }, ...Array.from({ length: 11 }, (_, i) => ({ id: `a${i + 24}` }))];
+    const page4 = Array.from({ length: 12 }, (_, i) => ({ id: `a${i + 35}` }));
+
+    let apps = appendUniqueById([], page1, a => a.id);
+    apps = appendUniqueById(apps, page2, a => a.id);
+    expect(apps).toHaveLength(24);
+    apps = appendUniqueById(apps, page3, a => a.id);
+    expect(apps).toHaveLength(35);
+    expect(apps.filter(a => a.id === "a23")).toHaveLength(1);
+    const naive = [...page1, ...page2, ...page3, ...page4];
+    expect(naive).toHaveLength(48);
+    apps = appendUniqueById(apps, page4, a => a.id);
+    expect(apps.length).toBeLessThan(naive.length);
+    expect(new Set(apps.map(a => a.id)).size).toBe(apps.length);
+  });
+
+  it("空 prev 就是第一页原样", () => {
+    const page = [{ id: "x" }, { id: "y" }];
+    expect(appendUniqueById(null, page, a => a.id)).toEqual(page);
+    expect(appendUniqueById(undefined, page, a => a.id)).toEqual(page);
   });
 });
 
@@ -153,11 +171,23 @@ describe("追加纪律接在真链路上", () => {
     const masonry = readFileSync(new URL("../SpanMasonry.tsx", import.meta.url), "utf8");
     expect(wall).toContain("appendStableSpanKeys");
     expect(wall).toContain("appendStableItems");
-    expect(wall).toContain("shouldFetchAppPage");
-    expect(wall).not.toMatch(/if \(shown <= visible\.length\) return/);
+    expect(wall).toContain("appendUniqueById");
     expect(wall).not.toMatch(/computeSpanKeys\(items\.map/);
     expect(masonry).toContain("nextLayoutEpoch");
     expect(masonry).toContain("copyPlacements");
     expect(masonry).not.toMatch(/return `\$\{items\.length\}:/);
+  });
+
+  it("无限流只向服务端要下一页，不许 shown+=12 再自动连打", () => {
+    const wallRaw = readFileSync(new URL("../AppsWorkbench.tsx", import.meta.url), "utf8");
+    const masonryRaw = readFileSync(new URL("../SpanMasonry.tsx", import.meta.url), "utf8");
+    expect(wallRaw).toContain("const wallItems = visible;");
+    expect(wallRaw).toContain("void loadMoreApps();");
+    expect(wallRaw).not.toContain("shouldFetchAppPage");
+    expect(wallRaw).not.toContain("setShown");
+    expect(wallRaw).not.toMatch(/\[\.\.\.\(prev \?\? \[\]\), \.\.\.list\]/);
+    expect(wallRaw).not.toMatch(/visible\.slice\(\s*0\s*,\s*shown\s*\)/);
+    // 哨兵观察者不许跟 itemCount 绑在一起——项数一变就重建 IO，立刻再喊一页。
+    expect(masonryRaw).not.toMatch(/\[onReachEnd, width, itemCount, askMore/);
   });
 });

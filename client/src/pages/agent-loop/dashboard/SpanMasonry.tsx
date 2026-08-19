@@ -552,13 +552,23 @@ export function SpanMasonry<T>({
   // 无限流：滚到只剩不到一屏就喊一次。用 ref 记住上次喊的项数，避免同一批重复喊。
   // 底部哨兵走 IntersectionObserver——不依赖 scrollTop。2026-08-18 首帧
   // width=0 占位让滚动监听绑到 window，scrollTop 恒 0，墙一高过两屏就再也不喊。
+  //
+  // ⚠ 观察者依赖里不许有 itemCount。open-noodle/gallery #847：哨兵还在视口里
+  // 时重建 IO 会立刻再报 intersecting，同一页被 concat 两次。项数变了由下面
+  // 那条高度估算去 catch-up（lastAsked 按 itemCount 闸）。
   const lastAsked = React.useRef(-1);
+  const onReachEndRef = React.useRef(onReachEnd);
+  onReachEndRef.current = onReachEnd;
+  const itemCountRef = React.useRef(itemCount);
+  itemCountRef.current = itemCount;
   const askMore = React.useCallback(() => {
-    if (!onReachEnd || width <= 0 || itemCount === 0) return;
-    if (lastAsked.current === itemCount) return;
-    lastAsked.current = itemCount;
-    onReachEnd();
-  }, [onReachEnd, width, itemCount]);
+    const more = onReachEndRef.current;
+    const n = itemCountRef.current;
+    if (!more || width <= 0 || n === 0) return;
+    if (lastAsked.current === n) return;
+    lastAsked.current = n;
+    more();
+  }, [width]);
   React.useEffect(() => {
     if (width <= 0) return;
     const tallest = positioner.estimateHeight(itemCount, itemHeightEstimate);
@@ -579,7 +589,7 @@ export function SpanMasonry<T>({
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [onReachEnd, width, itemCount, askMore, containerRef]);
+  }, [onReachEnd, width, askMore, containerRef]);
 
   const estimated = Math.ceil(positioner.estimateHeight(itemCount, itemHeightEstimate));
   // 宽度还没量到就先占位：用 0 宽 place 成 1 列，量到真宽再 seed+place，
