@@ -1141,21 +1141,38 @@
 }
 
 /* --- SlideRule 流式指示动效（2026-07-10 用户裁决：点点动画要明显、光标别乱闪） --- */
-/* 思考点：弹跳 + 透明度呼吸，比 animate-pulse 醒目一个量级 */
+/* 思考点：弹跳 + 透明度呼吸，比 animate-pulse 醒目一个量级。
+ *
+ * 2026-08-18 真机：左栏和右舞台各有一串蓝点，看起来像卡死再突然跳。
+ * 成因是正 animation-delay + 没有 fill-mode——delay 期间点停在默认实心
+ * （opacity:1、translateY:0），三颗齐钉 320ms，然后才进 0% 关键帧。
+ * GitHub 上这块的标准答是 tobiasahlin/SpinKit 的 three-bounce：
+ * `animation-fill-mode: both` + **负** delay，第一帧就在波浪中途。
+ * 表达仍用位移+透明度（07-10 裁决），不改成 SpinKit 的 scale(0)
+ * ——6px 的点缩没会更像坏了。 */
 @keyframes sr-dot-bounce {
   0%,
-  80%,
+  60%,
   100% {
     transform: translateY(0);
     opacity: 0.35;
   }
-  40% {
+  30% {
     transform: translateY(-3px);
     opacity: 1;
   }
 }
 .sr-dot {
-  animation: sr-dot-bounce 1.2s ease-in-out infinite;
+  animation: sr-dot-bounce 1.4s ease-in-out infinite both;
+}
+.sr-dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+.sr-dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+.sr-dot:nth-child(3) {
+  animation-delay: 0s;
 }
 
 /* 打字机光标：终端式阶跃闪烁（steps 硬切，不做平滑渐隐——平滑版看着"发虚"） */

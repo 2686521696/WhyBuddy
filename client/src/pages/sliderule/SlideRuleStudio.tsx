@@ -34,6 +34,7 @@ import {
   SpecPageLiveStage,
   type SpecPageLive,
 } from "./live-runtime/SpecPageLiveStage";
+import { pageIsBoundFromSpec } from "./spec-page-bound";
 import {
   applyHtmlWorkflowAction,
   initRuntimeState,
@@ -65,6 +66,8 @@ import {
 } from "./XrayPanel";
 import { Crosshair, X } from "lucide-react";
 import { StudioSplit } from "./StudioSplit";
+import { useStudioLayout } from "./StudioLayoutContext";
+import { isStagePageShown } from "./studio-layout";
 
 const XRAY_PREF_KEY = "sliderule:xray-on";
 
@@ -134,6 +137,8 @@ interface SlideRuleStudioProps {
     pages?: Record<string, string>;
     navItems?: unknown[];
     device?: "desktop" | "phone";
+    boundPages?: number;
+    failedPages?: Record<string, unknown> | null;
   } | null;
 
   className?: string;
@@ -161,6 +166,11 @@ export function SlideRuleStudio({
   onRestoreVersion,
   isRestoringVersion = false,
 }: SlideRuleStudioProps) {
+  const layout = useStudioLayout();
+  // 顶栏「隐藏页面」必须卸掉右侧舞台，不是把宽度收成 0。
+  // 2026-08-18 真机：左边那个图标不要；右边这个控制页面显隐。
+  const showStage = isStagePageShown(stageVisible, !!layout?.stagePageHidden);
+
   // SSE 当前 skill 不再切屏，只给沙盘描边（没有成员级 flow 证据就不编路径）。
 
   // 五系统模型在此解析一次：舞台判定（能否运行应用）+ 抽屉/游标共享
@@ -200,8 +210,8 @@ export function SlideRuleStudio({
       const ids = Object.keys(settled);
       return ids.map((id, i) => ({
         pageId: id, html: settled[id], current: i + 1, total: ids.length,
-        // 落库那份是走完 6.5 步的。boundPages 为 0 时说明打孔没成，如实说
-        bound: Number((specFirstPages as { boundPages?: number })?.boundPages ?? 0) > 0,
+        // 落库那份是走完 6.5 步的。boundPages 是成功数，失败页看 failedPages
+        bound: pageIsBoundFromSpec(id, specFirstPages),
         // 设备维度跟着落库载荷走：竖屏应用刷新后不掉回横屏画布
         device: specFirstPages?.device,
       }));
@@ -438,8 +448,8 @@ export function SlideRuleStudio({
     );
   })() : null;
 
-  // 空会话：欢迎页独占全宽，右侧舞台整体不渲染（用户还没输入，没内容可看）
-  if (!stageVisible) {
+  // 空会话或用户点了「隐藏页面」：对话独占全宽。右侧舞台不渲染。
+  if (!showStage) {
     return (
       <div className={`flex h-full w-full overflow-hidden ${className}`}>
         <div className="flex h-full w-full flex-col bg-[var(--sr-shell-bg,#ffffff)]">
@@ -578,14 +588,10 @@ export function SlideRuleStudio({
             className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3"
             data-testid="sliderule-live-stage"
           >
-            <span className="inline-flex items-end gap-1.5">
-              {[0, 1, 2].map(i => (
-                <span
-                  key={i}
-                  className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]"
-                  style={{ animationDelay: `${i * 160}ms` }}
-                />
-              ))}
+            <span className="inline-flex items-end gap-1.5" aria-hidden>
+              <span className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]" />
+              <span className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]" />
+              <span className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]" />
             </span>
             <div className="text-[13px] font-medium text-stone-500">推演中</div>
             {/* 一行步骤锚点即可（用户反馈：字太多）——文案翻滚过渡 */}

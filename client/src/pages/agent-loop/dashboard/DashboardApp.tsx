@@ -90,6 +90,7 @@ export function shouldRequestSettingsForView(view: ViewKey): boolean {
   return view === "settings-legacy" || view === "workbench-legacy";
 }
 import SlideRulePage from "@/pages/SlideRule";
+import { ShellSidebarProvider, useShellSidebar } from "@/pages/sliderule/ShellSidebarContext";
 import { SettingsPage } from "@/pages/sliderule/SettingsDialog";
 import { SidebarSessions } from "./SidebarSessions";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
@@ -1379,7 +1380,9 @@ function AgentLoopTopbar({
 export function DashboardApp(props: React.ComponentProps<typeof DashboardAppInner>) {
   return (
     <AuthProvider>
-      <DashboardAppInner {...props} />
+      <ShellSidebarProvider>
+        <DashboardAppInner {...props} />
+      </ShellSidebarProvider>
     </AuthProvider>
   );
 }
@@ -1414,6 +1417,7 @@ function DashboardAppInner({
   const [queueApply, setQueueApply] = useState<any>(null);
   const [exportedSettings, setExportedSettings] = useState<any>(null);
   const [importResult, setImportResult] = useState<any>(null);
+  const shellSidebar = useShellSidebar();
   const [diagnosticsData, setDiagnosticsData] = useState<any>(null);
   const [pythonHealth, setPythonHealth] = useState<any>(null);
   const [profilesData, setProfilesData] = useState<any>(null);
@@ -1790,7 +1794,10 @@ function DashboardAppInner({
           : undefined
       }
     >
-      <Layout className="native-dashboard native-agent-shell">
+      <Layout
+        className="native-dashboard native-agent-shell"
+        data-sidebar-collapsed={shellSidebar?.collapsed ? "true" : "false"}
+      >
         <AgentLoopSidebar
           view={view}
           onViewChange={handleViewChange}

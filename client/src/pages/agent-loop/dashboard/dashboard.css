@@ -42,6 +42,18 @@
   width: 252px;
 }
 
+/* ⚠ 2026-08-18：折叠后宽为 0。顶栏左边会话栏键已撤，默认不再折叠；
+   不要在这里留一条半残侧栏——半残会把会话列表裁成不可用还占 48px。 */
+.native-agent-shell[data-sidebar-collapsed="true"] .native-agent-sidebar {
+  border-right: none;
+  flex-basis: 0;
+  opacity: 0;
+  overflow: hidden;
+  padding: 0;
+  pointer-events: none;
+  width: 0;
+}
+
 /* 品牌区（可点击 → 推演视图）：面团 AI 横版标识（2026-08-03） */
 .native-agent-brand {
   align-items: center;

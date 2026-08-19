@@ -201,6 +201,7 @@ describe("AgentLoopPage", () => {
     );
 
     expect(html).toContain("native-agent-shell");
+    expect(html).toContain('data-sidebar-collapsed="false"');
     expect(html).toContain("native-workbench-content");
     expect(html).toContain("native-sliderule-content");
     expect(html).toContain("native-sliderule-shell");

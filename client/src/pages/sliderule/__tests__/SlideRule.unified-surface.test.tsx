@@ -121,6 +121,11 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain('data-testid="sliderule-goal-display"');
     expect(html).toContain('data-testid="sliderule-deliverables-open"');
     expect(html).toContain('data-testid="sliderule-reset-session"');
+    expect(html).toContain('data-testid="sliderule-layout-controls"');
+    // 空会话舞台未登场：顶栏不提前挂舞台折钮
+    expect(html).not.toContain('data-testid="sliderule-layout-stage"');
+    expect(html).not.toContain(">交付物<");
+    expect(html).not.toContain(">重置会话<");
     // E28：Dev 入口移除（用户裁决）——工程驾驶舱直接访问 /sliderule/dev
     expect(html).not.toContain('href="/sliderule/dev"');
   });
@@ -179,6 +184,12 @@ describe("unified /sliderule surface (single mental model)", () => {
     // 用户反馈：发了消息右侧还是老面板——推演中必须是 live 占位
     expect(html).toContain('data-testid="sliderule-live-stage"');
     expect(html).toContain("推演中");
+    expect(html).toContain('data-testid="sliderule-layout-stage"');
+    expect(html).toContain('aria-label="隐藏页面"');
+    expect(html).toContain('data-testid="sliderule-layout-maximize"');
+    expect(html).not.toContain('data-testid="sliderule-layout-sidebar"');
+    expect(html).not.toContain('data-testid="sliderule-layout-chat"');
+    expect(html).not.toContain("折叠舞台");
     expect(html).not.toContain("发布证据看板");
     // 「推演过程」右栏标签页已删（与左栏步骤流+LLM 实时草稿完全重复）
     expect(html).not.toContain('data-testid="sliderule-rail-tab-screens"');
@@ -234,6 +245,9 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).toContain('data-testid="sliderule-llm-archives"');
     expect(html).toContain("分析风险");
     expect(html).toContain("起草五系统模型");
+    expect(html).toContain("字");
+    expect(html).not.toContain("字符");
+    expect(html).not.toContain("推演过程");
     // 归档默认折叠：正文不直接出现在 DOM（点开才渲染）
     expect(html).not.toContain("版本合并冲突的可视化成本");
     // 归档态无流式光标
@@ -264,13 +278,65 @@ describe("unified /sliderule surface (single mental model)", () => {
       liveAction: { label: "C_EVID · 证据收集中", external: false },
     });
 
-    // conversation shows the live turn + thinking feed
+    // conversation shows the live turn + 活动行（动词去掉「正在」）
     expect(html).toContain("做一个采购审批应用");
-    expect(html).toContain("正在解析意图并规划六系统推演");
+    expect(html).toContain("解析意图并规划六系统推演");
+    expect(html).toContain('data-testid="sliderule-activity-row"');
+    expect(html).not.toContain("正在解析意图并规划六系统推演");
+    expect(html).toContain('data-authority="agent"');
     // rail is the system screens, never a duplicate process feed
     expect(html).not.toContain('data-testid="sliderule-rail-process"');
     // no empty state while a run is on screen
     expect(html).not.toContain('data-testid="sliderule-empty-state"');
+  });
+
+  it("左栏拆出 Agent 选 和 配方轨，未到的配方步是 pending", () => {
+    const html = renderPage({
+      goal: "做一个采购审批应用",
+      isRunning: true,
+      uiTurns: [
+        {
+          ...streamingTurn,
+          routeFacts: {
+            rounds: [],
+            planSelectedCount: 2,
+            planSource: "llm",
+          },
+          steps: [
+            {
+              id: "s0",
+              kind: "narration",
+              text: "指令已接收 · 启动推理",
+              source: "fallback",
+            },
+            {
+              id: "s1",
+              kind: "chip",
+              capabilityId: "intent.parse",
+              roleId: "system",
+              label: "第 1 轮 · 正在澄清需求",
+              realLlm: false,
+            },
+            {
+              id: "s2",
+              kind: "chip",
+              capabilityId: "intent.parse",
+              roleId: "system",
+              label:
+                "第 2 轮 · 正在执行 起草规格：成功判据、需求节点与页面清单",
+              realLlm: true,
+            },
+          ],
+        },
+      ],
+    });
+    expect(html).toContain("Agent 选");
+    expect(html).toContain("配方");
+    expect(html).toContain("起草规格");
+    expect(html).toContain("接上数据");
+    expect(html).toContain('data-status="pending"');
+    expect(html).toContain('data-authority="recipe"');
+    expect(html).not.toContain("ChainOfThought");
   });
 
   it("SSE skill activation keeps the minimal live stage (no mid-run system screens)", () => {

@@ -6,18 +6,39 @@
  *
  * 默认仍是 38/62（老布局的标定），拖过的比例经 autoSaveId 记住。
  * 两侧不能同时折没：折一个时另一个的折钮禁用，否则整页只剩一条缝。
+ *
+ * 缝上的右箭头跟顶栏一样：隐藏整块预览页，不是把舞台宽度收成 0。
  */
 import React from "react";
 import {
   Panel,
   PanelGroup,
   PanelResizeHandle,
-  type ImperativePanelHandle,
 } from "react-resizable-panels";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useStudioLayout } from "./StudioLayoutContext";
 
 const CHAT_DEFAULT = 38;
 const STAGE_DEFAULT = 62;
+
+function SplitFallback({
+  chat,
+  stage,
+}: {
+  chat: React.ReactNode;
+  stage: React.ReactNode;
+}) {
+  return (
+    <div className="flex h-full w-full" data-testid="sliderule-studio-split">
+      <div className="min-h-0 min-w-0" style={{ flex: `${CHAT_DEFAULT} 1 0` }}>
+        {chat}
+      </div>
+      <div className="min-h-0 min-w-0" style={{ flex: `${STAGE_DEFAULT} 1 0` }}>
+        {stage}
+      </div>
+    </div>
+  );
+}
 
 export function StudioSplit({
   chat,
@@ -26,24 +47,18 @@ export function StudioSplit({
   chat: React.ReactNode;
   stage: React.ReactNode;
 }) {
-  const chatRef = React.useRef<ImperativePanelHandle>(null);
-  const stageRef = React.useRef<ImperativePanelHandle>(null);
-  const [chatCollapsed, setChatCollapsed] = React.useState(false);
-  const [stageCollapsed, setStageCollapsed] = React.useState(false);
+  const layout = useStudioLayout();
+  if (!layout) return <SplitFallback chat={chat} stage={stage} />;
 
-  const toggleChat = () => {
-    const panel = chatRef.current;
-    if (!panel) return;
-    if (panel.isCollapsed()) panel.expand();
-    else if (!stageCollapsed) panel.collapse();
-  };
-
-  const toggleStage = () => {
-    const panel = stageRef.current;
-    if (!panel) return;
-    if (panel.isCollapsed()) panel.expand();
-    else if (!chatCollapsed) panel.collapse();
-  };
+  const {
+    chatRef,
+    stageRef,
+    collapsed,
+    setChatCollapsed,
+    setStageCollapsed,
+    toggleChat,
+    toggleStagePage,
+  } = layout;
 
   const resetSplit = () => {
     chatRef.current?.resize(CHAT_DEFAULT);
@@ -86,12 +101,12 @@ export function StudioSplit({
           <button
             type="button"
             data-testid="sliderule-studio-split-toggle-chat"
-            aria-label={chatCollapsed ? "展开对话" : "折叠对话"}
-            disabled={stageCollapsed}
+            aria-label={collapsed.chat ? "展开对话" : "折叠对话"}
+            disabled={collapsed.stage}
             onClick={toggleChat}
             className="flex h-5 w-5 items-center justify-center rounded-[4px] text-[#52525b] hover:bg-[#f4f4f5] disabled:opacity-30"
           >
-            {chatCollapsed ? (
+            {collapsed.chat ? (
               <ChevronRight className="h-3.5 w-3.5" />
             ) : (
               <ChevronLeft className="h-3.5 w-3.5" />
@@ -100,16 +115,11 @@ export function StudioSplit({
           <button
             type="button"
             data-testid="sliderule-studio-split-toggle-stage"
-            aria-label={stageCollapsed ? "展开舞台" : "折叠舞台"}
-            disabled={chatCollapsed}
-            onClick={toggleStage}
-            className="flex h-5 w-5 items-center justify-center rounded-[4px] text-[#52525b] hover:bg-[#f4f4f5] disabled:opacity-30"
+            aria-label="隐藏页面"
+            onClick={toggleStagePage}
+            className="flex h-5 w-5 items-center justify-center rounded-[4px] text-[#52525b] hover:bg-[#f4f4f5]"
           >
-            {stageCollapsed ? (
-              <ChevronLeft className="h-3.5 w-3.5" />
-            ) : (
-              <ChevronRight className="h-3.5 w-3.5" />
-            )}
+            <ChevronRight className="h-3.5 w-3.5" />
           </button>
         </div>
       </PanelResizeHandle>

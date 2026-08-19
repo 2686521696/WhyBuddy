@@ -27,18 +27,7 @@ import {
   useMessage,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
-import {
-  ArrowDown,
-  Check,
-  ChevronRight,
-  LoaderCircle,
-} from "lucide-react";
-import {
-  ChainOfThought,
-  ChainOfThoughtHeader,
-  ChainOfThoughtContent,
-  ChainOfThoughtStep,
-} from "@/components/ai/chain-of-thought";
+import { ArrowDown } from "lucide-react";
 import type { BrainstormReasoningNode } from "@shared/blueprint";
 import { ReasoningFlowSurface } from "@/components/autopilot/ReasoningFlowSurface";
 import { useSlideRuleSession } from "./sliderule/useSlideRuleSession";
@@ -47,6 +36,9 @@ import type { LiveAction } from "@shared/blueprint/capability-process-labels";
 import { CAPABILITY_PROCESS_LABELS } from "@shared/blueprint/capability-process-labels";
 import { LlmLiveOutput } from "./sliderule/LlmLiveOutput";
 import { RollingText } from "./sliderule/RollingText";
+import { turnTimelineHeader } from "./sliderule/activity-rows";
+import { ActivityList } from "./sliderule/ActivityList";
+import { deriveStageBands } from "./sliderule/stage-authority";
 
 /** llm_delta 来源标签 → 实时块标题（能力 id / "five-system-model" / "closure.summary"）。 */
 function llmDraftTitle(label: string | null | undefined): string {
@@ -63,7 +55,6 @@ function llmDraftTitle(label: string | null | undefined): string {
 }
 import { narrationFallbackHint } from "@/lib/sliderule-narrator";
 import { TurnRouteTimeline } from "./sliderule/TurnRouteTimeline";
-import { finalNarrationStep } from "./sliderule/turn-route-steps";
 import { deriveSlideRuleReasoningViewModel } from "./sliderule/derive-reasoning-view-model";
 import {
   deriveCrossRuntimeGraphSummary,
@@ -73,13 +64,11 @@ import {
   type PublishClosureSummary,
 } from "./sliderule/derive-cross-runtime-summary";
 import { resolveImSurfaceMode } from "./sliderule/im-surface-mode";
-import {
-  deriveSettledFiveSystemModel,
-  parseFiveSystemModelFromPerSkillEvidence,
-  summarizeClosureForChat,
-} from "./sliderule/system-screens/five-system-model";
+import { deriveSettledFiveSystemModel } from "./sliderule/system-screens/five-system-model";
+import { assistantTextForTurn } from "./sliderule/assistant-text-for-turn";
 import { SlideRuleStatusBar } from "./sliderule/SlideRuleStatusBar";
 import { SlideRuleTopHud } from "./sliderule/SlideRuleTopHud";
+import { StudioLayoutProvider } from "./sliderule/StudioLayoutContext";
 import { SESSION_CHANGED_EVENT } from "./agent-loop/dashboard/SidebarSessions";
 import {
   ClarificationCard,
@@ -107,7 +96,6 @@ import {
   deriveLatestTurnFromState,
   deriveTurnsFromState,
 } from "./sliderule/derive-persisted-turn";
-import { deriveTurnPhases } from "./sliderule/derive-turn-phases";
 import {
   PROJECTION_DENSITY_STORAGE_KEY,
   SLIDERULE_TERMINAL_NODE_ID,
@@ -123,7 +111,6 @@ import { deriveApplication, slideRule } from "@/lib/skills/slideRule";
 import { Spin } from "antd";
 import { SlideRuleStudio } from "./sliderule/SlideRuleStudio";
 import { Response } from "@/components/ai/response";
-import { Shimmer } from "@/components/ai/shimmer";
 
 // Python full-path E2E wiring (105): /agent-loop/sliderule and /sliderule
 // render this component, while turn/evidence/report calls surface Python
@@ -148,10 +135,10 @@ function LiveActionIndicator({ liveAction }: { liveAction: LiveAction }) {
       }
     >
       {!liveAction.external && (
-        <span className="mr-2 inline-flex gap-1 align-middle">
-          <span className="size-1.5 animate-pulse rounded-full bg-stone-400" />
-          <span className="size-1.5 animate-pulse rounded-full bg-stone-400 [animation-delay:120ms]" />
-          <span className="size-1.5 animate-pulse rounded-full bg-stone-400 [animation-delay:240ms]" />
+        <span className="mr-2 inline-flex items-end gap-1 align-middle" aria-hidden>
+          <span className="sr-dot size-1.5 rounded-full bg-stone-400" />
+          <span className="sr-dot size-1.5 rounded-full bg-stone-400" />
+          <span className="sr-dot size-1.5 rounded-full bg-stone-400" />
         </span>
       )}
       {liveAction.label}
@@ -232,45 +219,10 @@ function textFromStep(
   return "";
 }
 
-function assistantTextForTurn(
-  turn: UiTurn,
-  publishClosure?: PublishClosureSummary | null,
-  goalText?: string
-): string {
-  const assistant = turn.assistant?.trim();
-  if (assistant) return assistant;
-  const finalStepText = finalNarrationStep(turn.steps)?.text?.trim();
-  if (finalStepText) return finalStepText;
-  // 不再回退到最后一枚过程 chip（会把「指令已接收 · 启动推理」当成回答复读）；
-  // 过程细节由 TurnPhaseTimeline 分阶段折叠承载，这里给零 LLM 模板总结（方案 A）：
-  // 事实全部来自五系统模型 + 闭环证据，替换旧的机械状态行。
-  if (publishClosure) {
-    // 方案 B 优先：python 真 LLM 收口总结（结合推演全程上下文）；
-    // 缺失（未配通道/上游失败）回落零 LLM 模板 A——总结永远有，但从不编造。
-    if (publishClosure.chatSummary?.trim())
-      return publishClosure.chatSummary.trim();
-    const model = parseFiveSystemModelFromPerSkillEvidence(
-      publishClosure.perSkillEvidence as Parameters<
-        typeof parseFiveSystemModelFromPerSkillEvidence
-      >[0]
-    );
-    return summarizeClosureForChat(model, {
-      goalText: turn.user || goalText,
-      blocked: !!publishClosure.blocked,
-      evidencePresentCount: publishClosure.evidencePresentCount ?? 0,
-      skillCount: publishClosure.skillCount ?? 6,
-      versionPinsChecked: !!publishClosure.versionPinsChecked,
-    });
-  }
-  return turn.status === "streaming"
-    ? "正在整理推演结果..."
-    : "本轮已完成，但还没有生成可展示的回答。";
-}
-
 /**
- * TurnPhaseTimeline — Claude 式分阶段过程叙事（V5.2 闭环的阶段结构）。
- * 运行中：已完成阶段折叠成 ✓ 标题行，当前阶段展开、实时流出步骤；
- * 完成后：整体折叠为一行「推演过程 · M 阶段 · N 步」，点开按阶段回放。
+ * TurnPhaseTimeline — 左栏活动列表。
+ * 权属分带（选材 / 画应用 / 闸），对照 BettaFish「阶段 ≠ 正文」，
+ * 不装论坛。运行中铺最近动作；完成后收成「N 步 · Ns」。
  */
 function TurnPhaseTimeline({
   turn,
@@ -282,123 +234,50 @@ function TurnPhaseTimeline({
   publishClosure?: PublishClosureSummary | null;
 }) {
   const streaming = turn.status === "streaming";
-  const [expanded, setExpanded] = React.useState(false);
-  // 手动展开的已完成阶段（运行中默认只展开当前阶段）
-  const [openPhases, setOpenPhases] = React.useState<Record<string, boolean>>(
-    {}
-  );
-  const stepTexts = turn.steps.map(textFromStep).filter(Boolean);
-  const phases = React.useMemo(
+  const extraTexts: string[] = [];
+  if (llmDraft) extraTexts.push(`最新定义：起草中 · 已产出 ${llmDraft.length} 字符`);
+  if (publishClosure && !streaming) {
+    extraTexts.push(
+      publishClosure.blocked
+        ? `blocked ${publishClosure.evidencePresentCount}/${publishClosure.skillCount}`
+        : `closed ${publishClosure.evidencePresentCount}/${publishClosure.skillCount}`
+    );
+  }
+  const groups = React.useMemo(
     () =>
-      deriveTurnPhases({
-        stepTexts,
+      deriveStageBands({
+        steps: turn.steps,
         streaming,
-        llmDraft,
-        closure: publishClosure
-          ? {
-              blocked: !!publishClosure.blocked,
-              evidencePresentCount: publishClosure.evidencePresentCount ?? 0,
-              skillCount: publishClosure.skillCount ?? 6,
-            }
-          : null,
+        planSource: turn.routeFacts.planSource,
+        extraTexts,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stepTexts.join("\n"), streaming, llmDraft, publishClosure]
+    [
+      turn.steps.map(textFromStep).join("\n"),
+      streaming,
+      llmDraft,
+      publishClosure,
+      turn.routeFacts.planSource,
+    ]
   );
-  if (phases.length === 0) return null;
+  const stepTexts = turn.steps.map(textFromStep).filter(Boolean);
+  if (groups.length === 0) return null;
 
-  const totalSteps = stepTexts.length;
-
-  // E16b：换装 ai-elements ChainOfThought（连接线 + 状态图标 + 开合动画）。
-  // 逻辑保持原样：流式恒展开、完成后折叠成收口句、已完成阶段点击展开。
   return (
-    <ChainOfThought
-      className="mt-1 max-w-none space-y-2"
-      data-testid="sliderule-turn-phases"
-      open={streaming || expanded}
-      onOpenChange={next => {
-        if (!streaming) setExpanded(next);
-      }}
-    >
-      {!streaming && (
-        <ChainOfThoughtHeader
-          className="text-xs text-stone-400 hover:text-stone-600"
-          data-testid="sliderule-turn-steps-toggle"
-        >
-          {/* E16 收口句：带量词（Claude 的"Thought for Xs"语感），时长来自
-              本轮真实计时，没有就不编 */}
-          推演过程 · {phases.length} 阶段 · {totalSteps} 步
-          {turn.durationMs
-            ? ` · 用时 ${Math.max(1, Math.round(turn.durationMs / 1000))}s`
-            : ""}
-        </ChainOfThoughtHeader>
-      )}
-      <ChainOfThoughtContent className="mt-1.5 space-y-2.5">
-        {phases.map(phase => {
-          const running = phase.status === "running";
-          const open =
-            running || !!openPhases[phase.id] || (!streaming && expanded);
-          return (
-            <ChainOfThoughtStep
-              key={phase.id}
-              data-testid={`sliderule-phase-${phase.id}`}
-              icon={running ? LoaderCircle : Check}
-              status={running ? "active" : "complete"}
-              className={
-                running
-                  ? "[&>div:first-child>svg]:animate-spin [&>div:first-child>svg]:text-[#1677ff]"
-                  : "[&>div:first-child>svg]:text-emerald-500"
-              }
-              label={
-                <button
-                  type="button"
-                  onClick={() =>
-                    setOpenPhases(prev => ({ ...prev, [phase.id]: !open }))
-                  }
-                  className="flex cursor-pointer items-center gap-2 rounded text-xs transition-colors hover:text-stone-700"
-                >
-                  {/* E16 微动效纪律：只动"正在发生"的——进行中标题走
-                      shimmer 微光，完成态纯静止 */}
-                  {running ? (
-                    <Shimmer as="span" className="text-xs font-medium">
-                      {phase.title}
-                    </Shimmer>
-                  ) : (
-                    <span className="text-stone-500">{phase.title}</span>
-                  )}
-                  <span className="text-[10px] text-stone-300">
-                    {phase.lines.length} 步
-                  </span>
-                  {/* 可展开暗示（用户反馈：完成阶段看不出能点开）——箭头随展开态旋转 */}
-                  {!running && phase.lines.length > 0 && (
-                    <ChevronRight
-                      className={`h-2.5 w-2.5 shrink-0 text-stone-300 transition-transform ${open ? "rotate-90" : ""}`}
-                    />
-                  )}
-                </button>
-              }
-            >
-              {open && phase.lines.length > 0 && (
-                <div className="space-y-1">
-                  {(running ? phase.lines.slice(-4) : phase.lines).map(
-                    (t, i) => (
-                      <div key={i} className="text-xs leading-5 text-stone-400">
-                        {/* 「最新定义」是原位持续更替的语义槽 → 翻滚过渡 */}
-                        {t.startsWith("最新定义：") ? (
-                          <RollingText text={t} className="max-w-full" />
-                        ) : (
-                          t
-                        )}
-                      </div>
-                    )
-                  )}
-                </div>
-              )}
-            </ChainOfThoughtStep>
-          );
-        })}
-      </ChainOfThoughtContent>
-    </ChainOfThought>
+    <ActivityList
+      groups={groups}
+      streaming={streaming}
+      header={turnTimelineHeader({
+        stepCount: stepTexts.length,
+        durationMs: turn.durationMs,
+        refineReuseNote: publishClosure?.refineReuseNote,
+      })}
+      closureMeta={
+        publishClosure
+          ? `${publishClosure.evidencePresentCount}/${publishClosure.skillCount}`
+          : null
+      }
+    />
   );
 }
 
@@ -608,14 +487,10 @@ function ImAssistantMessage() {
       {turn.status === "streaming" ? (
         <div className="space-y-1.5">
           <div className="flex items-center gap-2 text-[13px] text-stone-500">
-            <span className="inline-flex items-end gap-1">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <span
-                  key={i}
-                  className="sr-dot h-1.5 w-1.5 rounded-full bg-[#1677ff]"
-                  style={{ animationDelay: `${i * 160}ms` }}
-                />
-              ))}
+            <span className="inline-flex items-end gap-1" aria-hidden>
+              <span className="sr-dot h-1.5 w-1.5 rounded-full bg-[#1677ff]" />
+              <span className="sr-dot h-1.5 w-1.5 rounded-full bg-[#1677ff]" />
+              <span className="sr-dot h-1.5 w-1.5 rounded-full bg-[#1677ff]" />
             </span>
             {/* 状态文案翻滚过渡（anime.js）——不再生硬跳变 */}
             <RollingText text={thinkingText} className="min-w-0 flex-1" />
@@ -641,17 +516,7 @@ function ImAssistantMessage() {
       ) : (
         /* 14px 正文（用户裁决：再小一号，信息密度优先） */
         <div className="space-y-1.5 text-[14px] leading-6 text-[#171717]">
-          {/* 过程行压成 Cursor 那种一行缩略：徽标不再做成灰胶囊 */}
-          <div className="flex flex-wrap items-start gap-2 text-[12px] text-stone-400">
-            <TurnPhaseTimeline turn={turn} publishClosure={publishClosure} />
-            {publishClosure && (
-              <span className="mt-0.5 tabular-nums">
-                {publishClosure.blocked ? "blocked" : "closed"}{" "}
-                {publishClosure.evidencePresentCount}/
-                {publishClosure.skillCount}
-              </span>
-            )}
-          </div>
+          <TurnPhaseTimeline turn={turn} publishClosure={publishClosure} />
           {/* 思考流留档：推演中每步 LLM 的完整输出，完成后保留成可折叠
               记录（Claude 式）——想法不消失，要看随时点开 */}
           {turn.steps.some(s => s.kind === "llm_output") && (
@@ -981,7 +846,7 @@ export async function loadPythonRuntimeProjectionFromSession(
 /**
  * SlideRuleUnified — 唯一产品界面（studio 骨架，无模式切换）。
  *
- * - 顶部单行 header：品牌/话题 + STATUS 摘要（待细化/话题/阶段）+ 动作（交付物/设置/重置会话/Dev）。
+ * - 顶部单行 header：Cursor 式布局图标簇 + 交付物/重置会话。
  * - 左栏：对话流（含唯一空态：短问候 + 输入框 + 示例 chips）。
  * - 右栏：ArchitectureStage（沙盘/架构图）+ 抽屉 inspector / Checks。
  * - 底部：唯一 ComposerDock（+ 实用动作菜单 / ✨优化提示词），澄清卡片浮在其上。
@@ -1140,8 +1005,9 @@ function SlideRuleUnified({
   }, [hasApp, publishClosure, goal]);
 
   return (
+    <StudioLayoutProvider available={!isHomeEmpty}>
     <div className={`${autopilotTheme.immersionPage} flex flex-col`}>
-      {/* ONE header row — brand + Work/Code 模式切换 + actions */}
+      {/* ONE header row — Cursor 式布局图标簇 + 交付物/重置 */}
       <div className="relative z-20 shrink-0 border-b border-[#e5e7eb]/70 bg-white/90 px-3 backdrop-blur sm:px-4">
         <SlideRuleTopHud
           isRunning={isRunning}
@@ -1296,6 +1162,7 @@ function SlideRuleUnified({
         publishClosure={publishClosure}
       />
     </div>
+    </StudioLayoutProvider>
   );
 }
 
