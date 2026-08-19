@@ -13,9 +13,13 @@ import {
   groupSessionsByAge,
   sessionAgeGroup,
   sessionPhaseBucket,
+  sessionWhen,
+  SIDEBAR_RECENT_LIMIT,
+  SIDEBAR_WEEK_LIMIT,
   SidebarSessions,
   sortSessions,
   sortSessionsByRecency,
+  splitSidebarSessions,
 } from "../SidebarSessions";
 
 describe("createSessionId", () => {
@@ -172,8 +176,62 @@ describe("filterSessionsByQuery", () => {
   });
 });
 
+describe("splitSidebarSessions / sessionWhen", () => {
+  it("最近 4 条，近七天再取 6 条，更早的进 hiddenCount", () => {
+    const now = Date.parse("2026-08-19T12:00:00");
+    const today0 = (() => {
+      const d = new Date(now);
+      d.setHours(0, 0, 0, 0);
+      return d.getTime();
+    })();
+    const at = (days: number) => new Date(today0 + days * 86400000 + 3600000).toISOString();
+    const rows = [
+      ...Array.from({ length: 4 }, (_, i) => ({
+        sessionId: `r${i}`,
+        goal: `近${i}`,
+        lastActive: at(0),
+      })),
+      ...Array.from({ length: 7 }, (_, i) => ({
+        sessionId: `w${i}`,
+        goal: `周${i}`,
+        lastActive: at(-3),
+      })),
+      { sessionId: "old", goal: "更早", lastActive: at(-20) },
+    ];
+    const { recent, week, hiddenCount } = splitSidebarSessions(rows, now);
+    expect(SIDEBAR_RECENT_LIMIT).toBe(4);
+    expect(SIDEBAR_WEEK_LIMIT).toBe(6);
+    expect(recent.map(s => s.sessionId)).toEqual(["r0", "r1", "r2", "r3"]);
+    expect(week).toHaveLength(6);
+    expect(week[0].sessionId).toBe("w0");
+    expect(hiddenCount).toBe(2);
+    expect(week.some(s => s.sessionId === "old")).toBe(false);
+
+    const few = splitSidebarSessions(rows.slice(0, 3), now);
+    expect(few.recent).toHaveLength(3);
+    expect(few.week).toHaveLength(0);
+    expect(few.hiddenCount).toBe(0);
+  });
+
+  it("副行日期：今天 / 昨天 / 同年月日", () => {
+    const now = Date.parse("2026-08-19T12:00:00");
+    const today0 = (() => {
+      const d = new Date(now);
+      d.setHours(0, 0, 0, 0);
+      return d.getTime();
+    })();
+    const at = (days: number) => new Date(today0 + days * 86400000 + 3600000).toISOString();
+    expect(sessionWhen(at(0), now)).toBe("今天");
+    expect(sessionWhen(at(-1), now)).toBe("昨天");
+    expect(sessionWhen(at(-10), now)).toBe("8月9日");
+    expect(sessionWhen("2025-12-01T00:00:00", now)).toBe("2025年12月1日");
+    expect(sessionWhen(null, now)).toBe("");
+  });
+
+});
+
 describe("SidebarSessions 静态渲染", () => {
-  it("骨架：新建会话 + 搜索 + 两档菜单，没有 PR/仓库空壳", () => {
+  it("骨架：新建 + 搜索 + 筛选，没有 PR 空壳", () => {
     const html = renderToStaticMarkup(<SidebarSessions />);
     expect(html).toContain('data-testid="sidebar-sessions"');
     expect(html).toContain('data-testid="sidebar-session-new"');
@@ -187,20 +245,46 @@ describe("SidebarSessions 静态渲染", () => {
     expect(html).toContain("推演中");
     expect(html).toContain("已完成");
     expect(html).toContain("失败");
-    // 旧扁平「最近」标签。分组标题要有数据才出现。
-    expect(html).not.toMatch(/>最近</);
     expect(html).not.toContain("PR");
     expect(html).not.toContain("Environment");
     expect(html).not.toContain("Archived");
     expect(html).not.toContain("仓库");
   });
 
-  it("渲染层真的调用排序和阶段筛（装在不通电的插座上会绿）", () => {
-    const src = readFileSync(new URL("../SidebarSessions.tsx", import.meta.url), "utf8");
+  it("活路径先筛再拆最近/近七天，多了链到应用中心", () => {
+    const src = readFileSync(new URL("../SidebarSessions.tsx", import.meta.url), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^[ \t]*\/\/.*$/gm, "");
+    expect(src).toContain("splitSidebarSessions(");
     expect(src).toContain("sortSessions(");
     expect(src).toContain("filterSessionsByPhase");
-    expect(src).toContain("phaseFilter");
-    expect(src).toContain("sortOrder");
-    expect(src).not.toMatch(/setSessions\(sortSessionsByRecency/);
+    expect(src).toContain("sidebar-session-filter");
+    expect(src).toContain(">近七天<");
+    expect(src).toContain('href="/agent-loop/workbench"');
+    expect(src).toContain("sidebar-session-more");
+    expect(src).toContain("listApps");
+    expect(src).toContain("SessionThumb");
+    expect(src).not.toContain("groupSessionsByAge(shown");
+    expect(src).not.toContain("AppsWorkbench");
+  });
+
+  it("列表超高可滚，搜索在横排里可以 flex:1", () => {
+    const css = readFileSync(new URL("../dashboard.css", import.meta.url), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "");
+    const list = css.match(/\.native-agent-sessions-list\s*\{([^}]*)\}/);
+    expect(list?.[1]).toMatch(/overflow-y:\s*auto/);
+    expect(list?.[1]).toMatch(/margin-right:\s*-12px/);
+    expect(list?.[1]).toMatch(/padding-right:\s*12px/);
+    expect(list?.[1]).toMatch(/scrollbar-color:\s*rgba\(15,\s*23,\s*42,\s*0\.14\)/);
+  });
+
+  it("行样式是小方图，图在格里 cover 占满", () => {
+    const css = readFileSync(new URL("../dashboard.css", import.meta.url), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "");
+    const thumb = css.match(/\.native-agent-session-thumb\s*\{([^}]*)\}/);
+    expect(thumb?.[1]).toMatch(/width:\s*48px/);
+    expect(thumb?.[1]).toMatch(/height:\s*48px/);
+    expect(thumb?.[1]).not.toMatch(/aspect-ratio/);
+    expect(css).toMatch(/object-fit:\s*cover/);
   });
 });

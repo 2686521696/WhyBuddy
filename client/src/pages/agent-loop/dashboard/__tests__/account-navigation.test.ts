@@ -61,9 +61,20 @@ describe("侧栏底栏 · Cursor 尺度", () => {
 
     const help = cssBlocks(dashboardCss, ".native-agent-help");
     expect(help.some(b => /height:\s*44px/.test(b))).toBe(false);
-    expect(help.some(b => /height:\s*32px/.test(b))).toBe(true);
+    expect(help.some(b => /height:\s*36px/.test(b))).toBe(true);
+    expect(help.some(b => /padding:\s*0 var\(--dock-pad\)/.test(b))).toBe(true);
+
+    const userPad = user.some(b => /padding:\s*0 var\(--dock-pad\)/.test(b));
+    expect(userPad).toBe(true);
 
     const footer = cssBlocks(dashboardCss, ".native-agent-footer");
     expect(footer.some(b => /border-top/.test(b))).toBe(true);
+    expect(footer.some(b => /--dock-slot:\s*20px/.test(b))).toBe(true);
+  });
+
+  it("帮助图标和头像占同一列，账号行不再写已登录", () => {
+    expect(dashboardSource).toContain('className="native-agent-dock-slot"');
+    expect(accountPanelSource).toContain("native-agent-dock-slot");
+    expect(stripComments(accountPanelSource)).not.toContain("已登录");
   });
 });

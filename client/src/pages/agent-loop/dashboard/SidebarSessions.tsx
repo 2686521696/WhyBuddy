@@ -1,14 +1,10 @@
 /**
  * SidebarSessions — 侧栏会话区。
  *
- * 2026-08-18 按 Cursor 聊天历史抄了三样，没抄仓库树 / Automations
- * （这边没有对应物，硬搬就是空壳）：
- *
- *   · 搜索，名单一长就找不着
- *   · 按本地日历分组（今天 / 昨天 / 近 7 天 / 近 30 天 / 更早）
- *   · 「新建」是一行操作，不是虚线大按钮
- *   · 排序（最近活跃 / 创建时间）+ 按阶段筛（推演中 / 已完成 / 失败）
- *     阶段只认 GET /sessions 已有的 ``phase``（runtimePhase），不造 PR/仓库档
+ * ⚠ 2026-08-19：先铺过今天/昨天整表，侧栏被撑出屏幕；又收成「最近 6 条」
+ *   把筛选一起撤了。用户要留着筛选，列表改成「最近 4 + 近七天 6」，
+ *   超高就在列表里滚，再多走「更多」去应用中心。
+ *   行样式仍是小方图 + 标题，封面 cover 占满。
  *
  * 数据：GET /api/sliderule/sessions（python 会话库）。切换/新建只做两件事：
  * 写 localStorage 的 active-session-id + 广播 window 事件——SlideRule 会话壳
@@ -16,6 +12,14 @@
  */
 
 import React from "react";
+import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
+import { listApps, type AppStoreSummary } from "./app-store-client";
+import {
+  SESSION_THUMB_APP_LIMIT,
+  SessionThumb,
+  indexAppsBySession,
+  sessionRowTitle,
+} from "./session-thumb";
 
 export const ACTIVE_SESSION_KEY = "sliderule:active-session-id";
 export const SESSION_CHANGED_EVENT = "sliderule:active-session-changed";
@@ -104,6 +108,68 @@ export function sortSessions(
 /** 最近活跃倒序（无时间戳的沉底，稳定排序）。 */
 export function sortSessionsByRecency(sessions: SessionMeta[]): SessionMeta[] {
   return sortSessions(sessions, "active");
+}
+
+export const SIDEBAR_RECENT_LIMIT = 4;
+export const SIDEBAR_WEEK_LIMIT = 6;
+
+export function isWithinLast7Days(
+  iso: string | null | undefined,
+  now: number = Date.now(),
+): boolean {
+  const g = sessionAgeGroup(iso, now);
+  return g === "today" || g === "yesterday" || g === "week";
+}
+
+/**
+ * 已经排好序的名单：头 4 条进「最近」，其后 7 天内再取 6 条进「近七天」，
+ * 剩下的 hiddenCount 走「更多」。不在这里再排一次——排序由调用方的筛选项定。
+ */
+export function splitSidebarSessions(
+  sessions: SessionMeta[],
+  now: number = Date.now(),
+  order: SessionSort = "active",
+): { recent: SessionMeta[]; week: SessionMeta[]; hiddenCount: number } {
+  const recent = sessions.slice(0, SIDEBAR_RECENT_LIMIT);
+  const rest = sessions.slice(SIDEBAR_RECENT_LIMIT);
+  const week = rest
+    .filter(s => isWithinLast7Days(sessionSortTime(s, order) || null, now))
+    .slice(0, SIDEBAR_WEEK_LIMIT);
+  const shown = new Set([...recent, ...week].map(s => s.sessionId));
+  return {
+    recent,
+    week,
+    hiddenCount: sessions.filter(s => !shown.has(s.sessionId)).length,
+  };
+}
+
+export function takeRecentSessions(
+  sessions: SessionMeta[],
+  limit: number = SIDEBAR_RECENT_LIMIT,
+): { shown: SessionMeta[]; hiddenCount: number } {
+  const sorted = sortSessionsByRecency(sessions);
+  const n = Math.max(0, limit);
+  return {
+    shown: sorted.slice(0, n),
+    hiddenCount: Math.max(0, sorted.length - n),
+  };
+}
+
+/** 副行日期。今天 / 昨天 / M月D日，对得上 Stitch 那行日历，不引 AppsWorkbench。 */
+export function sessionWhen(
+  iso?: string | null,
+  now: number = Date.now(),
+): string {
+  const t = Date.parse(String(iso ?? ""));
+  if (!Number.isFinite(t)) return "";
+  const today0 = startOfLocalDay(now);
+  if (t >= today0) return "今天";
+  if (t >= today0 - DAY_MS) return "昨天";
+  const d = new Date(t);
+  const sameYear = d.getFullYear() === new Date(now).getFullYear();
+  return sameYear
+    ? `${d.getMonth() + 1}月${d.getDate()}日`
+    : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
 /**
@@ -208,8 +274,15 @@ function readActiveSessionId(): string {
   }
 }
 
-export function SidebarSessions({ onOpenSliderule }: { onOpenSliderule?: () => void }) {
+export function SidebarSessions({
+  onOpenSliderule,
+  onOpenWorkbench,
+}: {
+  onOpenSliderule?: () => void;
+  onOpenWorkbench?: () => void;
+}) {
   const [sessions, setSessions] = React.useState<SessionMeta[] | null>(null);
+  const [apps, setApps] = React.useState<AppStoreSummary[]>([]);
   const [error, setError] = React.useState<string | null>(null);
   const [query, setQuery] = React.useState("");
   const [sortOrder, setSortOrder] = React.useState<SessionSort>("active");
@@ -229,6 +302,10 @@ export function SidebarSessions({ onOpenSliderule }: { onOpenSliderule?: () => v
         setError(null);
       })
       .catch((e) => setError(String(e)));
+    if (IS_GITHUB_PAGES) return;
+    listApps({ limit: SESSION_THUMB_APP_LIMIT, offset: 0 })
+      .then(rows => setApps(rows))
+      .catch(() => setApps([]));
   }, []);
 
   React.useEffect(() => {
@@ -295,12 +372,77 @@ export function SidebarSessions({ onOpenSliderule }: { onOpenSliderule?: () => v
   };
 
   const named = (sessions ?? []).filter(s => (s.goal || "").trim());
-  const shown = sortSessions(
+  const listed = sortSessions(
     filterSessionsByPhase(filterSessionsByQuery(named, query), phaseFilter),
     sortOrder,
   );
-  const groups = groupSessionsByAge(shown, Date.now(), sortOrder);
+  const { recent, week, hiddenCount } = splitSidebarSessions(
+    listed,
+    Date.now(),
+    sortOrder,
+  );
+  const appsBySession = React.useMemo(() => indexAppsBySession(apps), [apps]);
   const filterDirty = sortOrder !== "active" || phaseFilter !== "all";
+
+  const openWorkbench = (ev: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!onOpenWorkbench) return;
+    ev.preventDefault();
+    onOpenWorkbench();
+  };
+
+  const renderRow = (s: SessionMeta) => {
+    const active = s.sessionId === activeId;
+    const confirming = confirmDeleteId === s.sessionId;
+    const when = sessionWhen(s.lastActive || s.createdAt);
+    const app = appsBySession.get(s.sessionId);
+    const title = sessionRowTitle(s.goal, app);
+    return (
+      <div
+        key={s.sessionId}
+        className={`native-agent-session-row${active ? " native-agent-session-row-active" : ""}`}
+      >
+        <button
+          type="button"
+          title={title}
+          data-testid={`sidebar-session-item-${s.sessionId}`}
+          className="native-agent-session-item"
+          onClick={() => pick(s.sessionId)}
+        >
+          <SessionThumb sessionId={s.sessionId} title={title} app={app} />
+          <span className="native-agent-session-copy">
+            <span className="native-agent-session-title">{title}</span>
+            {when && (
+              <span className="native-agent-session-meta">
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                  <rect x="4" y="5" width="16" height="16" rx="2" />
+                  <path d="M4 10h16M8 3v4M16 3v4" />
+                </svg>
+                {when}
+              </span>
+            )}
+          </span>
+        </button>
+        <button
+          type="button"
+          title={confirming ? "再点一次确认删除" : "删除会话"}
+          aria-label={confirming ? "确认删除" : "删除会话"}
+          data-testid={`sidebar-session-delete-${s.sessionId}`}
+          className={`native-agent-session-delete${confirming ? " native-agent-session-delete-confirm" : ""}`}
+          onClick={ev => {
+            ev.stopPropagation();
+            if (confirming) void remove(s.sessionId);
+            else setConfirmDeleteId(s.sessionId);
+          }}
+        >
+          {confirming ? "确认" : (
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+            </svg>
+          )}
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div className="native-agent-sessions" data-testid="sidebar-sessions">
@@ -406,54 +548,32 @@ export function SidebarSessions({ onOpenSliderule }: { onOpenSliderule?: () => v
         {sessions?.length === 0 && <div className="native-agent-sessions-hint">暂无历史会话</div>}
         {/* E30：空会话（无话题）不进列表——它们只是还没说话的壳，显示成
             一排「新会话」是纯噪音（冒烟遗留的空会话同样隐藏） */}
-        {sessions &&
-          groups.map(group => (
-            <div key={group.id} className="native-agent-session-group">
-              <div className="native-agent-sessions-label">{group.label}</div>
-              {group.sessions.map(s => {
-                const active = s.sessionId === activeId;
-                const confirming = confirmDeleteId === s.sessionId;
-                return (
-                  <div
-                    key={s.sessionId}
-                    className={`native-agent-session-row${active ? " native-agent-session-row-active" : ""}`}
-                  >
-                    <button
-                      type="button"
-                      title={s.goal || s.sessionId}
-                      data-testid={`sidebar-session-item-${s.sessionId}`}
-                      className="native-agent-session-item"
-                      onClick={() => pick(s.sessionId)}
-                    >
-                      {s.goal || "新会话"}
-                    </button>
-                    <button
-                      type="button"
-                      title={confirming ? "再点一次确认删除" : "删除会话"}
-                      aria-label={confirming ? "确认删除" : "删除会话"}
-                      data-testid={`sidebar-session-delete-${s.sessionId}`}
-                      className={`native-agent-session-delete${confirming ? " native-agent-session-delete-confirm" : ""}`}
-                      onClick={ev => {
-                        ev.stopPropagation();
-                        if (confirming) void remove(s.sessionId);
-                        else setConfirmDeleteId(s.sessionId);
-                      }}
-                    >
-                      {confirming ? "确认" : (
-                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                          <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                        </svg>
-                      )}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        {sessions !== null && !error && shown.length === 0 && named.length > 0 && (
+        {sessions && recent.length > 0 && (
+          <div className="native-agent-session-group">
+            <div className="native-agent-sessions-label">最近</div>
+            {recent.map(renderRow)}
+          </div>
+        )}
+        {sessions && week.length > 0 && (
+          <div className="native-agent-session-group">
+            <div className="native-agent-sessions-label">近七天</div>
+            {week.map(renderRow)}
+          </div>
+        )}
+        {sessions !== null && !error && listed.length === 0 && named.length > 0 && (
           <div className="native-agent-sessions-hint">没有匹配的会话</div>
         )}
       </div>
+      {hiddenCount > 0 && (
+        <a
+          href="/agent-loop/workbench"
+          className="native-agent-session-more"
+          data-testid="sidebar-session-more"
+          onClick={openWorkbench}
+        >
+          更多
+        </a>
+      )}
     </div>
   );
 }

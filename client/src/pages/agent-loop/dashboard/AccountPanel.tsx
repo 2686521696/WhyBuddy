@@ -38,6 +38,9 @@
  * 2026-08-18 触发行外观改成 Cursor 侧栏底栏：去掉白底描边卡片，字号/行高
  * 跟上面的会话行齐。菜单条目没动——那是另一件事。
  *
+ * 2026-08-19：帮助图标和头像改成同一槽宽，账号行去掉「已登录」第二行
+ * （完整邮箱在菜单头里）。对照 Cursor 底栏：同一 inset、一行字、右边折角。
+ *
  * 原来那版把「退出登录」做成常驻的小图标钉在行尾：既没有可发现性（没人知道
  * 那个图标是登出），又离"点错就掉线"只有一次误触的距离。
  *
@@ -102,7 +105,7 @@ export function AccountPanel() {
     // 这里只是不显示"登录"字样，避免拿到结果后从"登录"闪成邮箱。
     return (
       <div className="native-agent-user" title="正在确认登录状态">
-        <span className="native-agent-user-avatar" aria-hidden>
+        <span className="native-agent-user-avatar native-agent-dock-slot" aria-hidden>
           <LoadingOutlined />
         </span>
         <span className="native-agent-user-meta">
@@ -130,7 +133,7 @@ export function AccountPanel() {
         }}
         title="登录后可以复刻应用、继续推演"
       >
-        <span className="native-agent-user-avatar" aria-hidden>
+        <span className="native-agent-user-avatar native-agent-dock-slot" aria-hidden>
           <UserOutlined />
         </span>
         <span className="native-agent-user-meta">
@@ -217,16 +220,16 @@ export function AccountPanel() {
         aria-expanded={open}
         onClick={() => setOpen(v => !v)}
       >
-        <span className="native-agent-user-avatar" aria-hidden>
+        <span className="native-agent-user-avatar native-agent-dock-slot" aria-hidden>
           {initialsOf(user) || <UserOutlined />}
         </span>
         <span className="native-agent-user-meta">
           <span className="native-agent-user-name">
             {user.displayName || user.email}
           </span>
-          <span className="native-agent-user-plan">
-            {user.isSuperuser ? "管理员" : "已登录"}
-          </span>
+          {user.isSuperuser ? (
+            <span className="native-agent-user-plan">管理员</span>
+          ) : null}
         </span>
         <span
           className={`native-agent-user-caret${open ? " is-open" : ""}`}

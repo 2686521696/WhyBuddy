@@ -1182,7 +1182,7 @@ function AgentLoopSidebar({
     label: string;
     icon: React.ReactNode;
   }> = [
-    { key: "workbench", label: "应用中心", icon: <AppstoreOutlined /> },
+    { key: "workbench", label: "应用市场", icon: <AppstoreOutlined /> },
     { key: "components", label: "组件库", icon: <BlockOutlined /> },
     { key: "settings", label: "设置", icon: <SettingOutlined /> },
   ];
@@ -1267,7 +1267,10 @@ function AgentLoopSidebar({
           </div>
         </div>
       ) : (
-        <SidebarSessions onOpenSliderule={() => onViewChange("sliderule")} />
+        <SidebarSessions
+          onOpenSliderule={() => onViewChange("sliderule")}
+          onOpenWorkbench={() => onViewChange("workbench")}
+        />
       )}
       {/* 2026-08-18：底栏照 Cursor 聊天侧栏，不是设置页列表。
           帮助仍单独一行（账号菜单里不重复），但不再带右箭头、不再画成卡片。 */}
@@ -1278,11 +1281,13 @@ function AgentLoopSidebar({
           data-testid="sidebar-help-docs"
           onClick={() => onViewChange("help")}
         >
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-            <circle cx="12" cy="12" r="8" />
-            <path d="M9.7 9.6a2.4 2.4 0 1 1 3.4 2.2c-.7.4-1.1 1-1.1 1.8" />
-            <path d="M12 17h.01" strokeWidth="2.4" strokeLinecap="round" />
-          </svg>
+          <span className="native-agent-dock-slot" aria-hidden>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.75">
+              <circle cx="12" cy="12" r="8.25" />
+              <path d="M9.7 9.6a2.4 2.4 0 1 1 3.4 2.2c-.7.4-1.1 1-1.1 1.8" />
+              <path d="M12 17h.01" strokeWidth="2.2" strokeLinecap="round" />
+            </svg>
+          </span>
           <span>帮助文档</span>
         </button>
         {/* 2026-08-02：账号体系接上了。原来这里是写死的
@@ -1319,7 +1324,7 @@ function AgentLoopTopbar({
               ? "面团 / 帮助文档"
               : view === "workbench-legacy"
               ? "面团 / 任务队列（legacy）"
-              : "面团 / 应用中心";
+              : "面团 / 应用市场";
 
   const pythonStatus = pythonHealth?.service?.status || "unknown";
   const pythonTone =
@@ -1452,7 +1457,7 @@ function DashboardAppInner({
     if (view === "sliderule") return;
     const label =
       view === "workbench"
-        ? "应用中心"
+        ? "应用市场"
         : view === "skills"
           ? "技能库"
           : view === "components"
