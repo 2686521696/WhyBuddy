@@ -157,6 +157,53 @@ def peek_last_pages() -> Optional[Dict[str, Any]]:
     return _last_pages_var.get()
 
 
+#: 单页打孔相位。对照 Kubernetes Pod.Status.phase /
+#: Deployment.status.readyReplicas（kubernetes/api/core/v1）：
+#: 副本数是聚合，**每单元自己的 phase 才是权威**——有 phase 就不要
+#: 用「成功数 > 0 且不在失败名单」去反推。
+PAGE_BIND_BOUND = "bound"
+PAGE_BIND_FAILED = "failed"
+PAGE_BIND_SKIPPED = "skipped"
+
+
+def page_bind_status(
+    page_ids: Any,
+    bind_ran: bool,
+    bound_failed: Any,
+) -> Dict[str, str]:
+    """每页打孔相位。这是 pageBindStatus 落库的唯一算法。"""
+    failed = bound_failed if isinstance(bound_failed, dict) else {}
+    if not bind_ran:
+        return {str(pid): PAGE_BIND_SKIPPED for pid in page_ids}
+    return {
+        str(pid): PAGE_BIND_FAILED if pid in failed else PAGE_BIND_BOUND
+        for pid in page_ids
+    }
+
+
+def count_bound_pages(
+    page_ids: Any,
+    bind_ran: bool,
+    bound_failed: Any,
+) -> int:
+    """打孔成功的页数。等于 pageBindStatus 里 bound 的个数。
+
+    ⚠ 2026-08-18 CareBridge（sr-20260818225943-XP690MY4PG）：日志
+    `bound=3 failed=1`，落库却写成
+    ``len(pages) if bind_html and not bound_failed else 0``——
+    字典非空即真，一页失败就把三页成功也记成 0。刷新后舞台四页全说
+    「尚未接数据」，failedPages 里明明只挂着 p2。
+
+    boundPages 是聚合（K8s readyReplicas），pageBindStatus 是每页 phase。
+    0 = 没跑打孔或一页都没打上。不许再用「有失败就整记 0」。
+    """
+    return sum(
+        1
+        for status in page_bind_status(page_ids, bind_ran, bound_failed).values()
+        if status == PAGE_BIND_BOUND
+    )
+
+
 _ENABLE_ENV = "SLIDERULE_SPEC_FIRST"
 #: **默认开，显式关才关**（2026-08-14）。词表照仓里另外六处同款开关逐字一致
 #: （enrich_timing / block_narrowing / intake_judge / v5_parallel_generate /
@@ -977,6 +1024,85 @@ def _reemit_pages(
             print(f"[spec_first_pipeline] 页面重发失败（不影响产出）：{str(exc)[:120]}")
 
 
+def _assemble_gate_fn():
+    """assemble 出口和 6.2 / page-only 短路必须共用这一把尺子。换参就是换闸。"""
+    from .v5_model_gate import validate_five_system_model
+
+    return lambda m: validate_five_system_model(
+        m,
+        require_landing_page_ref=True,
+        require_preferred_device=True,
+        require_page_kind_contract=False,
+    )
+
+
+def _apply_graph_scope(
+    *,
+    instruction: str,
+    reuse_model: Dict[str, Any],
+    reuse_pages: Optional[Dict[str, str]],
+    spec_pages: List[Dict[str, Any]],
+    text_scope: Optional[List[str]],
+    llm_json_fn: Optional[Callable[..., Any]],
+    drive_on: bool,
+) -> Dict[str, Any]:
+    """第 2.85 步：LLM 只判种子，闭包定重画范围。给 SPEC 之前的短路用。
+
+    返回 {verdict, stage, took_over, scope, reuse_now}。炸了 fail-open，
+    took_over=False，scope 保持调用方传入的 text_scope。
+    """
+    from .refine_page_scope import split_pages_for_refine as _split
+
+    stage: Dict[str, Any] = {}
+    out = {
+        "verdict": None,
+        "stage": stage,
+        "took_over": False,
+        "scope": text_scope,
+        "reuse_now": {},
+    }
+    try:
+        from .app_graph import build_app_graph
+        from .refine_graph_scope import (
+            decide_seed_nodes,
+            graph_scope_verdict,
+            shadow_compare_line,
+        )
+
+        graph = build_app_graph(reuse_model)
+        seeds = decide_seed_nodes(instruction, graph, llm_json_fn=llm_json_fn)
+        verdict = graph_scope_verdict(graph, seeds) if seeds else None
+        _safe_print(shadow_compare_line(text_scope, verdict))
+        out["verdict"] = verdict
+        stage["seeds"] = ",".join((verdict or {}).get("seeds") or []) or "(无)"
+        stage["graphPages"] = ",".join((verdict or {}).get("pages") or [])
+        stage["graphSegments"] = ",".join((verdict or {}).get("segments") or [])
+        if drive_on and verdict is not None and verdict.get("pages"):
+            scope = list(verdict["pages"])
+            out["scope"] = scope
+            out["reuse_now"] = _split(spec_pages, reuse_pages, scope)
+            out["took_over"] = True
+            stage["decider"] = "graph"
+            stage["reusedPages"] = len(out["reuse_now"])
+            print(
+                f"[spec_first_pipeline] 图判作用域接管重画范围："
+                f"重画 {sorted(scope)}，照搬 {len(out['reuse_now'])} 页"
+            )
+        elif drive_on:
+            stage["decider"] = "text"
+            _safe_print(
+                "[spec_first_pipeline] ⚠ 图判作用域缺席（种子判失败或闭包无页），"
+                "重画范围回落文本判"
+            )
+        else:
+            stage["decider"] = "shadow"
+    except Exception as exc:  # noqa: BLE001 — 图判是增强类，绝不拖垮主链路
+        _safe_print(f"[spec_first_pipeline] ⚠ 图判作用域失败（回落文本判）：{str(exc)[:200]}")
+        stage["failed"] = str(exc)[:120]
+        stage["decider"] = "text"
+    return out
+
+
 def _with_device(
     raw_sink: Optional[Callable[..., None]], device: str
 ) -> Optional[Callable[..., None]]:
@@ -1102,35 +1228,132 @@ def run_spec_first(
         # 不说话的话，线上表现是"id 照样每轮重铸"而日志一个字都没有。
         _safe_print("[spec_first_pipeline] ⚠ 精修轮但拿不到上一版 id 词表，id 冻结未生效")
 
-    # ── 第 2 步：起草 SPEC ──────────────────────────────────────────
-    # （第 1 步「澄清 + 缺口 + 证据」用的是现有能力，由调用方把 evidence 传进来）
-    with _stage("specfirst.spec") as st:
-        # prev_pages：页面 id 冻结的词表（只在精修轮非空）。页面 id 在**这一步**
-        # 铸出来，所以冻结必须在这里下——第 4/5 步那两针冻不到它。真机第二轮
-        # 页面 id 整套重铸（p1..p4 → elder_management），按需重画的照搬和图判
-        # 作用域的"重画这一页"就都对不上号了。见 model_id_lexicon 的页面档注释。
-        spec_model = generate_spec_tree(
-            goal, evidence=evidence, refine=refine,
-            prev_pages=(_prev_ids.get("pages") or None),
-        )
-        spec = spec_model.model_dump(mode="json") if hasattr(spec_model, "model_dump") else spec_model
-        # ★ 结构拨回（2026-08-18 过夜）：提示词冻结求不动。必须在
-        #   spec_pages_declared 取值之前——图判、照搬、画页、风格复用
-        #   全都拿那份清单当键。拨完再取，键才对得上上一版。
-        if refine and _freeze_on and _prev_ids.get("pages"):
-            _prev_page_objs = None
-            if isinstance(reuse_model, dict):
-                _prev_page_objs = ((reuse_model.get("page") or {}).get("pages") or None)
-            spec, _page_freeze = freeze_spec_pages(
-                spec, _prev_ids.get("pages"), _prev_page_objs
+    # ── 第 2.85 步提前：图判必须赶在 SPEC 之前（2026-08-18）────────
+    #
+    # 图只依赖 reuse_model，不依赖新 SPEC。洗衣房真机 graphSegments=page
+    # 时仍先整本重写规格、再编权限、再 6.2 盖回——先做再盖。把图判提前，
+    # page-only 才能在 generate_spec_tree 之前短路。对照日志、判官阶梯、
+    # hops 标定一行不改，只是挪了插座。
+    #
+    # ⚠ 独立埋点仍叫 specfirst.graphscope：前端阶段词表和 hops 标定集
+    #   都认这个名字，换名等于把标定集作废。
+    from .refine_page_scope import split_pages_for_refine
+    from .refine_short_circuit import (
+        format_refine_reuse_note,
+        hold_spec_from_reuse,
+        is_page_only_verdict,
+        merge_held_structure,
+        overlay_page_only_model,
+        page_names_from_spec_or_model,
+        page_objs_from_model,
+        page_only_shortcircuit_enabled,
+    )
+
+    _reuse_now: Dict[str, str] = {}
+    _scope: Optional[List[str]] = None
+    _graph_verdict: Optional[Dict[str, Any]] = None
+    _graph_took_over = False
+    _held_spec = False
+    _held_semantics = False
+    _held_assemble = False
+    _held_structure = False
+    _shadow_on = str(
+        os.environ.get("SLIDERULE_GRAPH_SCOPE_SHADOW", "1")
+    ).strip().lower() not in ("0", "false", "no", "off")
+    _graph_drive_on = str(
+        os.environ.get("SLIDERULE_GRAPH_SCOPE_DRIVE", "1")
+    ).strip().lower() not in ("0", "false", "no", "off")
+    if refine and reuse_model and _shadow_on:
+        raise_if_cancelled("第2.85步 图判作用域")
+        with _stage("specfirst.graphscope") as gst:
+            _graph = _apply_graph_scope(
+                instruction=str((refine or {}).get("instruction") or ""),
+                reuse_model=reuse_model,
+                reuse_pages=reuse_pages,
+                spec_pages=page_objs_from_model(reuse_model),
+                text_scope=_scope,
+                llm_json_fn=llm_json_fn,
+                drive_on=_graph_drive_on,
             )
-            log_freeze(_page_freeze, where="第2步 SPEC")
-            st["pageIdRemapped"] = len(_page_freeze.get("mapping") or {})
-            if _page_freeze.get("restored"):
-                st["pageIdRestored"] = ",".join(_page_freeze["restored"])
-        st["pages"] = len(spec.get("pages") or [])
-        st["nodes"] = len(spec.get("nodes") or [])
-    stages["spec"] = dict(st)
+            gst.update(_graph["stage"])
+            _graph_verdict = _graph["verdict"]
+            if _graph["took_over"]:
+                _scope = _graph["scope"]
+                _reuse_now = _graph["reuse_now"]
+                _graph_took_over = True
+        stages["graphscope"] = dict(gst)
+
+    # ── 第 2 步：起草 SPEC（page-only 改为打补丁，不整本重写）────────
+    # （第 1 步「澄清 + 缺口 + 证据」用的是现有能力，由调用方把 evidence 传进来）
+    spec: Optional[Dict[str, Any]] = None
+    if (
+        refine
+        and page_only_shortcircuit_enabled()
+        and _graph_took_over
+        and is_page_only_verdict(_graph_verdict)
+    ):
+        spec = hold_spec_from_reuse(
+            reuse_model,
+            instruction=str((refine or {}).get("instruction") or ""),
+            scope_pages=_scope,
+        )
+        if spec is not None:
+            _held_spec = True
+            with _stage("specfirst.spec") as st:
+                st["held"] = 1
+                st["patched"] = 1
+                st["pages"] = len(spec.get("pages") or [])
+                st["nodes"] = len(spec.get("nodes") or [])
+            stages["spec"] = dict(st)
+            print(
+                "[spec_first_pipeline] 精修短路：规格沿用上一版（打补丁，不整本重写），"
+                f"refineScope=[]，作用域 {sorted(_scope or [])}"
+            )
+        else:
+            _safe_print(
+                "[spec_first_pipeline] ⚠ 规格沿用重建失败，回落整本起草"
+            )
+
+    if not _held_spec:
+        with _stage("specfirst.spec") as st:
+            # prev_pages：页面 id 冻结的词表（只在精修轮非空）。页面 id 在**这一步**
+            # 铸出来，所以冻结必须在这里下——第 4/5 步那两针冻不到它。真机第二轮
+            # 页面 id 整套重铸（p1..p4 → elder_management），按需重画的照搬和图判
+            # 作用域的"重画这一页"就都对不上号了。见 model_id_lexicon 的页面档注释。
+            spec_model = generate_spec_tree(
+                goal, evidence=evidence, refine=refine,
+                prev_pages=(_prev_ids.get("pages") or None),
+            )
+            spec = spec_model.model_dump(mode="json") if hasattr(spec_model, "model_dump") else spec_model
+            # ★ 结构拨回（2026-08-18 过夜）：提示词冻结求不动。必须在
+            #   spec_pages_declared 取值之前——图判、照搬、画页、风格复用
+            #   全都拿那份清单当键。拨完再取，键才对得上上一版。
+            if refine and _freeze_on and _prev_ids.get("pages"):
+                _prev_page_objs = None
+                if isinstance(reuse_model, dict):
+                    _prev_page_objs = ((reuse_model.get("page") or {}).get("pages") or None)
+                spec, _page_freeze = freeze_spec_pages(
+                    spec, _prev_ids.get("pages"), _prev_page_objs
+                )
+                log_freeze(_page_freeze, where="第2步 SPEC")
+                st["pageIdRemapped"] = len(_page_freeze.get("mapping") or {})
+                if _page_freeze.get("restored"):
+                    st["pageIdRestored"] = ",".join(_page_freeze["restored"])
+            st["pages"] = len(spec.get("pages") or [])
+            st["nodes"] = len(spec.get("nodes") or [])
+        stages["spec"] = dict(st)
+
+    if spec is None:
+        raise SpecFirstError("第 2 步没有产出 SPEC")
+    # 图只碰 page 时，没声明 refineScope 也按「一段都没点名」——否则 6.2
+    # 把 None 当成不知道，权限/流程仍先做再盖。
+    if (
+        refine
+        and is_page_only_verdict(_graph_verdict)
+        and _graph_took_over
+        and spec.get("refineScope") is None
+    ):
+        spec["refineScope"] = []
     # SPEC 声明的页面清单——**交付对账的基准**。在这里取一次，下面第 3 步
     # 拿它跟实交页面比。⚠ 取 id 不取数量：只比数量的话，"少了 p5、多了 p9"
     # 会两两相消，数字对得上而内容错位——本仓在别处栽过这种"数对了东西不对"。
@@ -1195,6 +1418,14 @@ def run_spec_first(
             for p in spec_pages_declared_objs
         }
 
+    # 图判在 SPEC 之前用上一版页面清单 split 过一次。SPEC 页 id 拨回之后
+    # 再对一次声明集——声明里没了的页不许照搬回来（split_pages_for_refine
+    # 第三条）。图没接管时 _scope 仍是 None，split 会回空集，行为跟从前一样。
+    if refine and reuse_pages and _scope is not None:
+        _reuse_now = split_pages_for_refine(
+            spec_pages_declared_objs, reuse_pages, _scope
+        )
+
     # ── 第 2.8 步：判本轮要重画哪几页（只有精修轮有这一步）──────────
     #
     # ★ 按需重画（2026-08-17）：指令没点到的页面原样照搬上一版，一次 LLM 都
@@ -1208,8 +1439,9 @@ def run_spec_first(
     #
     # ⚠ fail-open 到**全量重画**：判作用域挂了最多是慢一点、回到今天的行为。
     #   绝不能 fail 成"一页都不改"——那会让用户说了话而应用一动不动。
-    _reuse_now: Dict[str, str] = {}
-    _scope: Optional[List[str]] = None  # 文本判作用域的结果，第 2.85 步对照要读
+    #
+    # ⚠ 2026-08-18：图判已经接管时不再烧这一次 LLM。图是更高一级判官，
+    #   文本判的答案本来也会被盖掉；先问再扔就是 pagescope 那 2 秒白烧。
     if refine and not reuse_pages:
         # ⚠ 静默失效的老形状：精修轮却没拿到上一版页面 → 照样全量重画，而
         #   日志里一个字都没有。2026-08-17 真机第一次跑就撞上（`set_refine_context`
@@ -1218,13 +1450,10 @@ def run_spec_first(
             "[spec_first_pipeline] ⚠ 精修轮但没拿到上一版页面，按需重画未生效，"
             "本轮全量重画（reuse_pages 空）"
         )
-    if refine and reuse_pages:
+    if refine and reuse_pages and not _graph_took_over:
         raise_if_cancelled("第2.8步 判重画范围")
         with _stage("specfirst.pagescope") as sst:
-            from .refine_page_scope import (
-                decide_pages_to_regenerate,
-                split_pages_for_refine,
-            )
+            from .refine_page_scope import decide_pages_to_regenerate
 
             _scope = decide_pages_to_regenerate(
                 str((refine or {}).get("instruction") or ""),
@@ -1238,94 +1467,8 @@ def run_spec_first(
             sst["reusedPages"] = len(_reuse_now)
         stages["pagescope"] = dict(sst)
 
-    # ── 第 2.85 步：图判作用域（执行模式：图闭包决定重画范围）──────────
-    #
-    # ★ 图接进链路的第一针（2026-08-17 影子，2026-08-18 切执行）：LLM 只判
-    #   **种子**（这句话直接点名改什么），牵连由上一版模型建出的图
-    #   （services/app_graph.py）用 impacted_closure 确定性地扩——「改这一块，
-    #   牵扯的工作流/权限/数据模型也要更新」从这里开始有答案。种子/扩散的
-    #   分工理由见 services/refine_graph_scope.py 模块头。
-    #
-    # ★ 形状对齐 Nx affected（nx/src/project-graph/affected）：改动映射成
-    #   种子节点 → 反向图遍历出受影响集合 → **任务只跑受影响的**。扩散那一步
-    #   Nx / Turborepo / Bazel 没有一家交给模型猜，全是确定性遍历。
-    #
-    # ⚠ 判官阶梯 fail-open（纪律七）：图判成了 → 图闭包页定重画范围；
-    #   图判缺席（种子判失败/闭包无页/建图炸了）→ 回落第 2.8 步的文本判；
-    #   文本判也缺席 → 全量重画（最老的行为）。每一级都比上一级宽，
-    #   绝不会 fail 成"一页都不改"。
-    #
-    # ⚠ 切执行的依据（2026-08-18 真机两轮对照）：加列那轮文本/图完全一致且
-    #   图更窄可复用。对照日志继续打，hops 标定继续攒（纪律六）。
-    #   `SLIDERULE_GRAPH_SCOPE_DRIVE=0` 退回纯影子（只对照不接管）。
-    #
-    # ⚠ 2026-08-18 过夜咖啡馆：种子 `role:staff`（或从一页两跳踩到它）把
-    #   三页全吃。修法在 refine_graph_scope：枢纽不当扩散起点，不改 hops。
-    #   `SLIDERULE_GRAPH_SCOPE_HUB_BARRIER=0` 退回沿角色扫全图。
-    #   同日 10 轮：角色堵住了，大盘页还在当桥——`page` 进 no_expand，不当种子丢。
-    #
-    # ⚠ 独立埋点（第 2.8 步同款教训）：它自己是一次 LLM 调用，混进别的段，
-    #   量出来的墙钟说明不了任何事。
-    #
-    # ⚠ 只依赖 reuse_model（跟 id 冻结同源），不依赖 reuse_pages——上一版页面
-    #   丢了不该连累图判；但那时照搬集注定是空的，接管只是换个理由全量重画。
-    _shadow_on = str(
-        os.environ.get("SLIDERULE_GRAPH_SCOPE_SHADOW", "1")
-    ).strip().lower() not in ("0", "false", "no", "off")
-    _graph_drive_on = str(
-        os.environ.get("SLIDERULE_GRAPH_SCOPE_DRIVE", "1")
-    ).strip().lower() not in ("0", "false", "no", "off")
-    if refine and reuse_model and _shadow_on:
-        raise_if_cancelled("第2.85步 图判作用域")
-        with _stage("specfirst.graphscope") as gst:
-            try:
-                from .app_graph import build_app_graph
-                from .refine_graph_scope import (
-                    decide_seed_nodes,
-                    graph_scope_verdict,
-                    shadow_compare_line,
-                )
-                from .refine_page_scope import split_pages_for_refine as _split
-
-                _graph = build_app_graph(reuse_model)
-                _seeds = decide_seed_nodes(
-                    str((refine or {}).get("instruction") or ""),
-                    _graph,
-                    llm_json_fn=llm_json_fn,
-                )
-                _verdict = graph_scope_verdict(_graph, _seeds) if _seeds else None
-                # 对照行照打：这是 hops 标定集的来源，执行期比影子期更需要它
-                #（现在打偏是真的会打偏，不再只是日志难看）。
-                _safe_print(shadow_compare_line(_scope, _verdict))
-                gst["seeds"] = ",".join((_verdict or {}).get("seeds") or []) or "(无)"
-                gst["graphPages"] = ",".join((_verdict or {}).get("pages") or [])
-                gst["graphSegments"] = ",".join((_verdict or {}).get("segments") or [])
-                if _graph_drive_on and _verdict is not None and _verdict.get("pages"):
-                    # ⚠ 闭包页为空不接管：一条精修指令一页都不牵扯，多半是种子
-                    #   判偏了（同 refine_page_scope 对空清单的判法），回落文本判。
-                    _scope = list(_verdict["pages"])
-                    _reuse_now = _split(
-                        spec_pages_declared_objs, reuse_pages, _scope
-                    )
-                    gst["decider"] = "graph"
-                    gst["reusedPages"] = len(_reuse_now)
-                    print(
-                        f"[spec_first_pipeline] 图判作用域接管重画范围："
-                        f"重画 {sorted(_scope)}，照搬 {len(_reuse_now)} 页"
-                    )
-                elif _graph_drive_on:
-                    gst["decider"] = "text"
-                    _safe_print(
-                        "[spec_first_pipeline] ⚠ 图判作用域缺席（种子判失败或闭包无页），"
-                        "重画范围回落文本判"
-                    )
-                else:
-                    gst["decider"] = "shadow"
-            except Exception as exc:  # noqa: BLE001 — 图判是增强类，绝不拖垮主链路
-                _safe_print(f"[spec_first_pipeline] ⚠ 图判作用域失败（回落文本判）：{str(exc)[:200]}")
-                gst["failed"] = str(exc)[:120]
-                gst["decider"] = "text"
-        stages["graphscope"] = dict(gst)
+    # 图判已挪到 SPEC 之前（同一埋点 specfirst.graphscope）。这里再跑一次
+    # 会把种子 LLM 付两遍钱，对照日志打两行，标定集作废。
 
     # ── 第 3 步：每页 HTML（并发；单页失败不拖垮整批）────────────────
     raise_if_cancelled("第3步 逐页画界面")
@@ -1393,16 +1536,60 @@ def run_spec_first(
     _reemit_pages(sink, pages, bound=False)
 
     # ── 第 4 步：HTML → 结构 ────────────────────────────────────────
+    # 照搬页 HTML 没变，数据结构沿用上一版。只把重画页送去反推，再和
+    # 沿用页拼回完整结构。整份四页再送一次是洗衣房那 11 秒白烧。
     raise_if_cancelled("第4步 反推结构")
     with _stage("specfirst.structure") as st:
-        structure_model = derive_structure(
-            pages, goal=goal, llm_json_fn=llm_json_fn, prev_ids=_prev_ids
-        )
-        structure = (
-            structure_model.model_dump(mode="json")
-            if hasattr(structure_model, "model_dump")
-            else structure_model
-        )
+        _redrawn_html = {
+            pid: html for pid, html in pages.items() if pid not in _reuse_now
+        }
+        if (
+            refine
+            and page_only_shortcircuit_enabled()
+            and _reuse_now
+            and _redrawn_html
+        ):
+            structure_model = derive_structure(
+                _redrawn_html, goal=goal, llm_json_fn=llm_json_fn, prev_ids=_prev_ids
+            )
+            merged = merge_held_structure(
+                structure_model,
+                reuse_model,
+                _reuse_now.keys(),
+                required_page_ids=pages.keys(),
+            )
+            if merged is not None:
+                structure = merged
+                _held_structure = True
+                st["heldPages"] = len(_reuse_now)
+                st["derivedPages"] = len(_redrawn_html)
+            else:
+                _safe_print(
+                    "[spec_first_pipeline] ⚠ 未改页结构沿用拼不回，回落全量反推"
+                )
+                structure_model = derive_structure(
+                    pages, goal=goal, llm_json_fn=llm_json_fn, prev_ids=_prev_ids
+                )
+                structure = (
+                    structure_model.model_dump(mode="json")
+                    if hasattr(structure_model, "model_dump")
+                    else structure_model
+                )
+        else:
+            structure_model = derive_structure(
+                pages, goal=goal, llm_json_fn=llm_json_fn, prev_ids=_prev_ids
+            )
+            structure = (
+                structure_model.model_dump(mode="json")
+                if hasattr(structure_model, "model_dump")
+                else structure_model
+            )
+        if not isinstance(structure, dict):
+            structure = (
+                structure.model_dump(mode="json")
+                if hasattr(structure, "model_dump")
+                else {}
+            )
         st["entities"] = len(structure.get("entities") or [])
         st["pages"] = len(structure.get("pages") or [])
         # 第 4 步 LLM 仍可能把 page.id 改名。HTML 键已经是拨回后的 id，
@@ -1416,32 +1603,64 @@ def run_spec_first(
             st["pages"] = len(structure.get("pages") or [])
     stages["structure"] = dict(st)
 
-    # ── 第 5 步：(结构 + SPEC) → 权限 / 工作流 / 不变式 ───────────────
-    # ⚠ 两个输入都要。三臂对照实测：只有 SPEC 会编出结构里没有的对象；
-    #   只有结构会把多类使用者塌成一个角色。B 是唯一过闸的那一臂。
-    raise_if_cancelled("第5步 推导语义")
-    with _stage("specfirst.semantics") as st:
-        semantics_model = derive_semantics(
-            structure, spec, llm_json_fn=llm_json_fn, prev_ids=_prev_ids
-        )
-        semantics = (
-            semantics_model.model_dump(mode="json")
-            if hasattr(semantics_model, "model_dump")
-            else semantics_model
-        )
-        st["roles"] = len(semantics.get("roles") or [])
-        st["nodes"] = len(semantics.get("workflowNodes") or semantics.get("nodes") or [])
-    stages["semantics"] = dict(st)
+    # ── 第 5 / 6 步：page-only 时权限流程直接沿用，不先做再盖 ───────
+    model: Optional[Dict[str, Any]] = None
+    semantics: Dict[str, Any] = {}
+    _page_only = (
+        refine
+        and page_only_shortcircuit_enabled()
+        and _graph_took_over
+        and is_page_only_verdict(_graph_verdict)
+    )
+    if _page_only:
+        overlay = overlay_page_only_model(reuse_model, structure)
+        gate = _assemble_gate_fn()(overlay) if overlay else {"passed": False}
+        if overlay and gate.get("passed"):
+            model = overlay
+            _held_semantics = True
+            _held_assemble = True
+            semantics = {"reused": True}
+            with _stage("specfirst.semantics") as st:
+                st["skipped"] = "page-only"
+                st["reused"] = 1
+            stages["semantics"] = dict(st)
+            with _stage("specfirst.assemble") as st:
+                st["skipped"] = "page-only"
+                st["mechanical"] = 1
+                st["ok"] = 1
+            stages["assemble"] = dict(st)
+        else:
+            _safe_print(
+                "[spec_first_pipeline] ⚠ page-only 沿用过不了闸，回落语义+汇合"
+            )
 
-    # ── 第 6 步：汇合 → 完整六段 → 过结构闸 ─────────────────────────
-    raise_if_cancelled("第6步 汇合过闸")
-    with _stage("specfirst.assemble") as st:
-        assembled = assemble(structure, semantics, spec, llm_json_fn=llm_json_fn)
-        model = assembled.get("model") if isinstance(assembled, dict) else assembled
-        if not isinstance(model, dict):
-            raise SpecFirstError("第 6 步没有产出模型")
-        st["ok"] = 1
-    stages["assemble"] = dict(st)
+    if model is None:
+        # ── 第 5 步：(结构 + SPEC) → 权限 / 工作流 / 不变式 ───────────────
+        # ⚠ 两个输入都要。三臂对照实测：只有 SPEC 会编出结构里没有的对象；
+        #   只有结构会把多类使用者塌成一个角色。B 是唯一过闸的那一臂。
+        raise_if_cancelled("第5步 推导语义")
+        with _stage("specfirst.semantics") as st:
+            semantics_model = derive_semantics(
+                structure, spec, llm_json_fn=llm_json_fn, prev_ids=_prev_ids
+            )
+            semantics = (
+                semantics_model.model_dump(mode="json")
+                if hasattr(semantics_model, "model_dump")
+                else semantics_model
+            )
+            st["roles"] = len(semantics.get("roles") or [])
+            st["nodes"] = len(semantics.get("workflowNodes") or semantics.get("nodes") or [])
+        stages["semantics"] = dict(st)
+
+        # ── 第 6 步：汇合 → 完整六段 → 过结构闸 ─────────────────────────
+        raise_if_cancelled("第6步 汇合过闸")
+        with _stage("specfirst.assemble") as st:
+            assembled = assemble(structure, semantics, spec, llm_json_fn=llm_json_fn)
+            model = assembled.get("model") if isinstance(assembled, dict) else assembled
+            if not isinstance(model, dict):
+                raise SpecFirstError("第 6 步没有产出模型")
+            st["ok"] = 1
+        stages["assemble"] = dict(st)
 
     # ── 第 6.2 步：精修时，指令没点名的段沿用上一版 ─────────────────
     #
@@ -1452,20 +1671,11 @@ def run_spec_first(
     #
     # 放在 bind 之前：bind_pages 要用 model 打孔，让它看到最终那份，别打完再换。
     if refine and refine_reuse_enabled():
-        from .v5_model_gate import validate_five_system_model
-
         model = apply_refine_segment_reuse(
             model,
             reuse_model,
             (spec or {}).get("refineScope"),
-            gate_fn=lambda m: validate_five_system_model(
-                m,
-                require_landing_page_ref=True,
-                require_preferred_device=True,
-                # 跟 model_assembly.assemble 里那次过闸**必须同参**：换了参数就是
-                # 换了把尺子，"重新量一遍"会量出跟原来不同的结论，退回逻辑失真。
-                require_page_kind_contract=False,
-            ),
+            gate_fn=_assemble_gate_fn(),
         )
         stages["refineReuse"] = {
             "scopeDeclared": (spec or {}).get("refineScope") is not None,
@@ -1603,10 +1813,23 @@ def run_spec_first(
         if style_brief:
             model["styleBrief"] = style_brief
 
+    _redrawn_ids = [pid for pid in pages if pid not in _reuse_now]
+    _refine_reuse_note = format_refine_reuse_note(
+        redrawn_ids=_redrawn_ids,
+        reused_count=len(_reuse_now),
+        held_spec=_held_spec,
+        held_semantics=_held_semantics,
+        held_structure=_held_structure,
+        page_names=page_names_from_spec_or_model(spec, reuse_model),
+    )
+    if _refine_reuse_note:
+        print(f"[spec_first_pipeline] 精修短路：{_refine_reuse_note}")
+
     result = {
         "version": SPEC_FIRST_VERSION,
         "model": model,
         "spec": spec,
+        "refineReuseNote": _refine_reuse_note,
         # ⚠ designLanguage 同时**挂进 model**（见下面那行）而不是只放在这里：
         #   model 是唯一被落库的那份（app_store 的 model_json），也是精修时
         #   回流的那份（refine_ctx["model"]）。只放返回值里的话，谁都不会存它
@@ -1631,7 +1854,8 @@ def run_spec_first(
         "version": SPEC_FIRST_VERSION,
         "pages": dict(pages),
         "navItems": list(result["navItems"]),
-        "boundPages": len(pages) if bind_html and not bound_failed else 0,
+        "boundPages": count_bound_pages(pages, bind_html, bound_failed),
+        "pageBindStatus": page_bind_status(pages, bind_html, bound_failed),
         "failedPages": dict(result["failedPages"]),
         # ★ 设计段随载体回流（2026-08-18）。此前只挂在 model 上，而精修回流的
         #   模型是 extract_model_from_closure 从闭环证据拼的**六段**——应用级
@@ -1647,5 +1871,8 @@ def run_spec_first(
         "declaredPages": list(spec_pages_declared),
         # 前端（直播舞台/应用中心）拿它选画布视口：desktop 横屏 / phone 竖屏
         "device": device,
+        # 左栏收口句。执行器只取 result["model"]，这句话走页面载体，
+        # 闭环白名单再投影一次（跟 refinePaintNote 同一条路）。
+        "refineReuseNote": _refine_reuse_note,
     })
     return result

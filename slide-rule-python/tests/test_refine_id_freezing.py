@@ -476,21 +476,23 @@ class Test结构拨回_过夜形状:
         )
         assert seen["page_ids"] == ["p1_page"]
 
-    def test_GEN5回落也拨(self, monkeypatch):
-        """纪律四：spec-first 挂了走老生成器，只改主路等于改一半。"""
+    def test_spec_first挂了不走GEN5所以也不拨(self, monkeypatch):
+        """2026-08-18：spec-first 挂了不许回落 GEN5。拨 id 的那一半不再通电。
+
+        原先钉『回落也要拨』；回落本身没了，再断言拨到 p1 会假绿——
+        GEN5 根本没跑，seen 是空的。
+        """
         from services import v5_capability_executor as ex
         from services.v5_llm_generate import set_refine_context
 
-        drifted = {
-            "page": {"pages": [{"id": "p1_page", "name": "工单页"}]},
-            "appbundle": {"landingPageRef": "p1_page"},
-        }
-        seen = {}
+        seen = {"gen5": 0}
 
-        def fake_artifacts(model, goal):
-            seen["ids"] = [p["id"] for p in ((model.get("page") or {}).get("pages") or [])]
-            seen["landing"] = ((model.get("appbundle") or {}).get("landingPageRef"))
-            return []
+        def fake_gen5(*a, **k):
+            seen["gen5"] += 1
+            return {
+                "page": {"pages": [{"id": "p1_page", "name": "工单页"}]},
+                "appbundle": {"landingPageRef": "p1_page"},
+            }
 
         monkeypatch.setenv("SLIDERULE_SPEC_FIRST", "1")
         monkeypatch.setattr(
@@ -499,7 +501,7 @@ class Test结构拨回_过夜形状:
         )
         monkeypatch.setattr(
             "services.v5_llm_generate.generate_five_system_model",
-            lambda *a, **k: drifted,
+            fake_gen5,
         )
         monkeypatch.setattr(
             "services.v5_model_repair.repair_five_system_model",
@@ -513,22 +515,16 @@ class Test结构拨回_过夜形状:
             "services.device_policy.normalize_model_preferred_device",
             lambda g, m: m,
         )
-        monkeypatch.setattr(
-            "services.v5_llm_generate.model_to_linkage_artifacts",
-            fake_artifacts,
-        )
 
         set_refine_context(
             {"page": {"pages": [{"id": "p1", "name": "工单页"}]}},
             "改一下文案",
         )
         try:
-            ex._try_llm_generate_evidence("做个工单系统", None)
+            out = ex._try_llm_generate_evidence("做个工单系统", None)
         finally:
             set_refine_context(None)
 
-        assert seen.get("ids") == ["p1"], (
-            f"GEN5 回落没拨页 id（看到 {seen}）——只改了 spec-first 那一半"
-        )
-        assert seen.get("landing") == "p1"
+        assert seen["gen5"] == 0, "spec-first 挂了还走 GEN5——版本涨了页还是空的"
+        assert out is None, "没页却交了模型"
 

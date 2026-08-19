@@ -63,6 +63,10 @@ class PublishClosureResponse(BaseModel):
     goalRelevance: Optional[Dict[str, Any]] = None
     runConditions: List[Dict[str, Any]] = Field(default_factory=list)
     degradationSummary: str = ""
+    # 精修没画上时给对话的那一句。空 = 本轮不是「保住上一版」。
+    refinePaintNote: str = ""
+    # 精修沿用收口句。空 = 左栏继续用「M 阶段 · N 步」。
+    refineReuseNote: str = ""
 
 
 def _as_dict(value: Any) -> Dict[str, Any]:
@@ -153,6 +157,8 @@ def _to_publish_closure_summary(report: Dict[str, Any]) -> Optional[Dict[str, An
             _as_dict(c) for c in (report.get("runConditions") or [])
         ],
         "degradationSummary": str(report.get("degradationSummary") or ""),
+        "refinePaintNote": str(report.get("refinePaintNote") or ""),
+        "refineReuseNote": str(report.get("refineReuseNote") or ""),
     }
     # Enforce typed schema (positive evidence of schema); raises on shape violation.
     PublishClosureResponse.model_validate(summary)

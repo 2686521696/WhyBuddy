@@ -76,6 +76,39 @@ def _diagnostic() -> Dict[str, str]:
         _llm_generate_diagnostic_var.set(d)
     return d
 
+
+def refine_paint_note_from_diagnostic() -> str:
+    """精修没画上时给对话的那一句。空 = 不是「保住上一版」这条路。"""
+    diag = _diagnostic()
+    if diag.get("code") != "REFINE_PAINT_FAILED":
+        return ""
+    why = str(diag.get("detail") or "精修未画出新页").strip()
+    return f"这一处没画上：{why}"
+
+
+def _refine_reuse_note_from_pages(state: Optional["V5SessionState"] = None) -> str:
+    """精修沿用收口句。空 = 本轮没有「改了哪一页、沿用了什么」可说。
+
+    ⚠ 2026-08-18 社区团购真机：第一版只 peek last_pages，注释还写着
+    「take 还没发生」。实际顺序是 `_cache_spec_first_pages` 先 take，
+    闭环重建（execute_v5_capability:1733）后 peek —— 日志打了
+    「改了 售后及缺货退款管理页（p5） · 沿用 4 页」，左栏仍是「40 步」。
+    take 之后 note 在 state.specFirstPages 上，必须先读已落库的那份。
+    """
+    if state is not None:
+        blob = getattr(state, "specFirstPages", None) or {}
+        if isinstance(blob, dict):
+            note = str(blob.get("refineReuseNote") or "").strip()
+            if note:
+                return note
+    try:
+        from .spec_first_pipeline import peek_last_pages
+
+        blob = peek_last_pages() or {}
+    except Exception:  # noqa: BLE001 — 收口句丢了不许拖垮闭环
+        return ""
+    return str(blob.get("refineReuseNote") or "").strip()
+
 REQUIRED_EVIDENCE_KEYS = ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"]
 
 RUNTIME_CLOSURE_EDGES = [
@@ -400,7 +433,9 @@ _SPEC_FIRST_NO_GEN5_MARKERS = (
     "cannot reach",
 )
 
-#: 结构闸失败 ≠ 第 3 步交白卷。后者仍回落 GEN5（enrich 反向保险）。
+#: 结构闸失败 ≠ 第 3 步交白卷。分类函数仍分开记（enrich 反向保险看标记）。
+#: 2026-08-18 篮球/咖啡馆：执行器不再按这个分类回落 GEN5——spec-first
+#: 试过了，任何失败都 fail-closed；精修保住上一版，首轮 blocked。
 #: 词盯语义（结构反推尽了 / 臆造），不盯某一句原文。
 _SPEC_FIRST_STRUCTURE_MARKERS = (
     "结构反推失败",
@@ -512,10 +547,13 @@ def _try_llm_generate_evidence(
     #   95% vs 71%），够不上目录窄化那次 p=0.00004 的量级——这是用户在知道
     #   证据有多薄的前提下拍的板，判据与返工记录见 spec_first_pipeline 头注。
     #
-    # ⚠ **默认开之后，下面这段回落就从"兜底"变成了唯一的安全网**，它必须一直
-    #   看得见。失败**不静默回落**：那样「新链路跑通了」和「新链路挂了但老路
-    #   兜住了」在外面长得一模一样，正是本仓数到第九次的那个形状（闸全绿但
-    #   东西没了）。所以回落是这里显式做的一次决定，而且**打日志留痕**。
+    # ⚠ **默认开之后，回落 GEN5 不再是安全网**。2026-08-18 篮球馆 / 咖啡馆：
+    #   结构闸说臆造字段，宽 except 仍打回 GEN5 → 版本涨了、页还是空的
+    #   （GEN5 只有 fieldBindings / actionPermissions，红标、一键改约没处画）。
+    #   spec-first 试过了：传输/结构/第 3 步交白卷，一律不回落。精修保住
+    #   上一版；首轮 blocked，不许交一份没页的 6/6。
+    #   ``SLIDERULE_SPEC_FIRST_NO_GEN5_ON_TRANSPORT=0`` 才退回「打回 GEN5」，
+    #   那一针必须打日志，不许静默。
     model = None
     _spec_first_enabled = None
     try:
@@ -606,7 +644,7 @@ def _try_llm_generate_evidence(
                 # cancelled——那时线程里确实没有活在跑了。
                 print("[v5_capability_executor] 已请求取消，spec-first 停止且不回落老链路")
                 raise
-            except Exception as exc:  # noqa: BLE001 — 传输/结构另议，其余显式回落
+            except Exception as exc:  # noqa: BLE001 — 传输可再试，其余也不回落 GEN5
                 if spec_first_failure_blocks_gen5(exc):
                     # 过夜咖啡馆：525 / JSON parse 打回 GEN5 = 首轮「页面：无」。
                     # 下层 call_llm_with_retry 已经退避过，这里整条再试一次
@@ -637,6 +675,10 @@ def _try_llm_generate_evidence(
                         )
                         model = None
                         _block_gen5 = True
+                        _diagnostic().update({
+                            "code": "LLM_GENERATE_FAILED",
+                            "detail": str(exc)[:200],
+                        })
                     else:
                         print(
                             "[v5_capability_executor] spec-first 传输/解析失败，"
@@ -656,6 +698,23 @@ def _try_llm_generate_evidence(
                             )
                             model = None
                             _block_gen5 = True
+                            _diagnostic().update({
+                                "code": "LLM_GENERATE_FAILED",
+                                "detail": str(exc2)[:200],
+                            })
+                elif spec_first_no_gen5_on_transport():
+                    # 2026-08-18 篮球馆：第 3 步交白卷原先走这条 else，打回
+                    # GEN5，版本涨了页还是空的。spec-first 试过了就不回落。
+                    print(
+                        "[v5_capability_executor] spec-first 失败，不回落老链路："
+                        f"{str(exc)[:200]}"
+                    )
+                    model = None
+                    _block_gen5 = True
+                    _diagnostic().update({
+                        "code": "LLM_GENERATE_FAILED",
+                        "detail": str(exc)[:200],
+                    })
                 else:
                     print(f"[v5_capability_executor] spec-first 失败，回落老链路：{str(exc)[:200]}")
                     model = None
@@ -670,11 +729,15 @@ def _try_llm_generate_evidence(
         from .v5_llm_generate import get_generate_diagnostic
 
         _diag = get_generate_diagnostic()
+        prior = str(_diagnostic().get("detail") or "").strip()
         _diagnostic().clear()
 
         _diagnostic().update({
             "code": "LLM_GENERATE_FAILED",
-            "detail": str((_diag or {}).get("detail") or "LLM 未返回完整五系统模型")[:200],
+            "detail": (
+                prior
+                or str((_diag or {}).get("detail") or "LLM 未返回完整五系统模型")
+            )[:200],
         })
         return None
     model = _repair(model)
@@ -753,10 +816,18 @@ def _try_llm_generate_evidence(
                     )
                     fallback_to_full_retry = True
             if retry_model is None and fallback_to_full_retry:
-                feedback = _format_gate_findings(findings)
-                retry_model = generate_five_system_model(
-                    goal, llm_json_fn=llm_json_fn, gate_feedback=feedback
-                )
+                if from_spec_first:
+                    # 2026-08-18：spec-first 已经交过卷，过不了 v5 结构闸
+                    # 也不许整包打回 GEN5——GEN5 没有 HTML。
+                    print(
+                        "[v5_capability_executor] spec-first 未过结构闸，"
+                        "不回落 GEN5 整包重生成"
+                    )
+                else:
+                    feedback = _format_gate_findings(findings)
+                    retry_model = generate_five_system_model(
+                        goal, llm_json_fn=llm_json_fn, gate_feedback=feedback
+                    )
         except Exception as exc:  # noqa: BLE001 — 回喂重试是增强项，失败不改变主路径语义
             print(f"[v5_capability_executor] gate-feedback retry skipped: {str(exc)[:120]}")
             retry_model = None
@@ -1155,6 +1226,10 @@ def _build_per_skill_evidence(
                     if skill in keep_by_skill:
                         matches[skill] = keep_by_skill[skill]
                 detail = str(_diagnostic().get("detail") or "")[:160]
+                _diagnostic().update({
+                    "code": "REFINE_PAINT_FAILED",
+                    "detail": detail or "精修未画出新页",
+                })
                 print(
                     "[v5_capability_executor] refine failed, keeping previous model "
                     f"(本轮修改未生效): {detail}"
@@ -1660,6 +1735,10 @@ def execute_v5_capability(
                     "warning": [],
                     "info": [],
                 },
+                # 精修没画上：应用仍跑上一版，对话必须说这一处，不许套首轮总结。
+                "refinePaintNote": refine_paint_note_from_diagnostic(),
+                # 精修沿用收口句。take 先于本段（见 _refine_reuse_note_from_pages）。
+                "refineReuseNote": _refine_reuse_note_from_pages(state),
             }
         )
         return result

@@ -66,6 +66,56 @@ class Test暂存的取用语义:
         assert "return result" in src[set_at:], "写入之后才 return"
 
 
+class Test打孔成功数不许被一页失败清零:
+    """2026-08-18 CareBridge：bind 3 成 1 败，落库 boundPages=0。
+
+    类型注释一直写的是成功数。有失败就把成功数改成 0，刷新后舞台撒谎。
+    """
+
+    def test_部分失败记成功数(self):
+        assert sfp.count_bound_pages(
+            ["p1", "p2", "p3", "p4"], True, {"p2": "打孔失败"}
+        ) == 3
+
+    def test_没跑打孔就是零(self):
+        assert sfp.count_bound_pages(["p1", "p2"], False, {}) == 0
+        # 反向：就算失败名单是空的，没跑也不能冒充打上了
+        assert sfp.count_bound_pages(["p1"], False, {}) == 0
+
+    def test_全失败是零_全成功是页数(self):
+        ids = ["p1", "p2"]
+        assert sfp.count_bound_pages(ids, True, {"p1": "a", "p2": "b"}) == 0
+        assert sfp.count_bound_pages(ids, True, {}) == 2
+
+    def test_相位与成功数同源(self):
+        ids = ["p1", "p2", "p3", "p4"]
+        failed = {"p2": "打孔失败"}
+        status = sfp.page_bind_status(ids, True, failed)
+        assert status == {
+            "p1": sfp.PAGE_BIND_BOUND,
+            "p2": sfp.PAGE_BIND_FAILED,
+            "p3": sfp.PAGE_BIND_BOUND,
+            "p4": sfp.PAGE_BIND_BOUND,
+        }
+        assert sfp.count_bound_pages(ids, True, failed) == 3
+        assert sfp.page_bind_status(ids, False, {}) == {
+            pid: sfp.PAGE_BIND_SKIPPED for pid in ids
+        }
+
+    def test_落库那行走计数函数_不许退回全有全无(self):
+        """只测 helper 会假绿：把调用改回 `if not bound_failed else 0`，
+        helper 用例仍绿，真机刷新还是 0。判据钉在 run_spec_first 落库块。"""
+        src = inspect.getsource(sfp.run_spec_first)
+        blob = src[src.index("_last_pages_var.set") : src.index("return result")]
+        assert "count_bound_pages(" in blob, "落库没走计数——成功数到不了会话"
+        assert "page_bind_status(" in blob, (
+            "落库没走每页相位——前端只能靠成功数反推，K8s 那条就空了"
+        )
+        assert "not bound_failed else 0" not in blob, (
+            "又退回「有失败就整记 0」——CareBridge 那次的谎"
+        )
+
+
 class Test落库那一处:
     def test_主轴真的调了落库(self):
         from services import v5_capability_executor as ex

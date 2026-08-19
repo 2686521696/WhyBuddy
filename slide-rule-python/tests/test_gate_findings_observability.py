@@ -181,6 +181,11 @@ class TestSerialSectionRepairWiring:
                 calls["repair"] += 1
                 return repair_returns
 
+            # 这条测的是 GEN5 过闸失败后的 section 修复。spec-first 默认开
+            # 且失败不再回落，不关掉的话根本走不到这里。
+            monkeypatch.setattr(
+                "services.spec_first_pipeline.spec_first_enabled", lambda: False
+            )
             monkeypatch.setattr(gen_mod, "generate_five_system_model", fake_generate)
             monkeypatch.setattr(gate_mod, "validate_five_system_model", fake_gate)
             monkeypatch.setattr(par_mod, "regenerate_failed_sections", fake_repair)

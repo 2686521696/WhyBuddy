@@ -838,7 +838,9 @@ def enter_refine_mode(state: "V5SessionState", user_instruction: str) -> bool:
 
     Aider 的 edit format（whole / diff / udiff）是**请求进来时就选定**、全程生效的，
     不是跑到一半才想起来。这里同理：精修是一种**模式**，在轮次入口判定一次，
-    整轮带着走。
+    整轮带着走。设好之后 ``skip_planning_loop_for_refine`` 会跳过
+    intent.parse / risk / handoff，直进收口——2026-08-18 篮球馆那场
+    每轮 pick 两圈覆盖同一 art-0-*，就是判定设了、循环还在跑。
 
     ## 基线可以来自版本史，不只是闭环
 
@@ -875,6 +877,58 @@ def enter_refine_mode(state: "V5SessionState", user_instruction: str) -> bool:
         refine_model_of(state, model), instruction, pages=refine_pages_of(state)
     )
     return True
+
+
+def skip_planning_loop_for_refine(*, repair: bool = False) -> bool:
+    """精修轮不跑 intent.parse / risk / handoff，直进收口。
+
+    2026-08-18 篮球馆半场预约（sr-20260818033315）：每轮精修仍走规划循环，
+    agentic pick 两圈覆盖同一 ``art-0-*`` → ``no_progress``，说明书改了、
+    页没动。Aider 的 ``/code`` 是进门就定 edit，不先把仓库 re-plan 一遍
+    （``enter_refine_mode`` 头注同一出处）。
+
+    ``repair`` 仍走循环：覆盖门决定修什么，不给精修短路。
+    首轮（指令==话题 / 无基线）``enter_refine_mode`` 为假，这里也是假。
+    """
+    if repair:
+        return False
+    from .v5_llm_generate import get_refine_context
+
+    ctx = get_refine_context() or {}
+    return bool(str(ctx.get("instruction") or "").strip())
+
+
+def record_refine_skip_planning(
+    state: "V5SessionState", user_instruction: str
+) -> None:
+    """台账留痕：这一轮选了收口、跳过了规划。删掉必让精修再黑成 pick 两圈。"""
+    now = datetime.now(timezone.utc).isoformat()
+    dl = getattr(state, "decisionLedger", []) or []
+    dl.append(SchedulingDecision(
+        id="dec-0-refine-skip-planning",
+        turnId="loop-0",
+        saw=["refine.mode", (user_instruction or "")[:80]],
+        chose=["appbundle.runtimeClosure"],
+        skipped=[
+            {"capabilityId": "planning", "reason": "refine_skip_planning"},
+            {"capabilityId": "intent.parse", "reason": "refine_skip_planning"},
+            {"capabilityId": "risk.analyze", "reason": "refine_skip_planning"},
+            {"capabilityId": "handoff.package", "reason": "refine_skip_planning"},
+        ],
+        rationale="精修模式：跳过规划循环，直进收口（Aider：进门就定 edit）",
+        createdAt=now,
+        source="local_heuristic",
+    ))
+    state.decisionLedger = dl
+    append_reasoning_event(
+        state,
+        turnId="loop-0",
+        capabilityRunId="refine-skip-planning",
+        capabilityId="driver",
+        kind="think",
+        text="refine_skip_planning: 跳过规划循环，直进 appbundle.runtimeClosure",
+        order=0,
+    )
 
 
 def record_model_version(state: "V5SessionState", publish_closure, instruction: str) -> None:
@@ -1192,6 +1246,11 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
     _budget_token = _enrich_timing.begin_run_budget()
     state = initial_state
     _advance_turn_version(state)
+    # 步骤记录跟版本史用同一个 turnId（drive 开头那格）。收尾改名
+    # turn-N-drive-full 只服务持久化守卫；叙述对不上版本就会再铺一个空气泡。
+    drive_turn_id = str(state.lastTurnId or "")
+    events_cursor = len(getattr(state, "reasoningEvents", None) or [])
+    drive_started = time.monotonic()
     # ★ 精修判定必须在主循环**之前**（见 enter_refine_mode 的文档）。
     #   放在这里，循环里的模型生成才带得上基线和"只改这一处"的约束。
     if enter_refine_mode(state, user_instruction):
@@ -1222,6 +1281,10 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
         prev_resolved = _count_resolved(state)
         while loop < max_loops:
             ui = user_instruction or ""
+            if skip_planning_loop_for_refine(repair=False):
+                record_refine_skip_planning(state, ui)
+                persist_state(state)
+                break
             if trusted_closure_decision(state, ui, repair=False) == "end":
                 state = resolve_coverage_gaps_from_state(state)
                 gate = evaluate_coverage_gate(state)
@@ -1509,6 +1572,23 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
         state.awaitDetail = f"drive error: {str(exc)[:120]}"
         append_reasoning_event(state, turnId=f"loop-{loop}", capabilityRunId="phase-full-end", capabilityId="driver", kind="think", text=f"phase_changed: failed", order=10)
         persist_state(state)
+    # 驱动器自己写步骤。只靠客户端 PUT 的话，旁路 drive / 刷新水合都是 0 步
+    # （2026-08-18 社区工具屋 sr-20260818172818：四轮画了页，turnNarrations=[]）。
+    # 闭环派生失败不许拖垮主链路——步骤是展示投影，fail-open。
+    try:
+        if not getattr(state, "publishClosure", None):
+            state.publishClosure = derive_publish_closure_response(state)
+    except Exception:
+        pass
+    from .turn_narration import stamp_drive_narration
+
+    stamp_drive_narration(
+        state,
+        turn_id=drive_turn_id,
+        user=user_instruction,
+        events_cursor=events_cursor,
+        started_monotonic=drive_started,
+    )
     persist_state(state)
     _enrich_timing.reset_run_budget(_budget_token)
     _turn_ctx.close()
@@ -1856,6 +1936,9 @@ async def drive_full_v5_session_stream(
     if repair:
         max_loops = min(max_loops, 2)
     _advance_turn_version(state)
+    drive_turn_id = str(state.lastTurnId or "")
+    events_cursor = len(getattr(state, "reasoningEvents", None) or [])
+    drive_started = _time.monotonic()
     state.runtimePhase = "orchestrating"
     append_replay_event(state, kind="decision", turnId="loop-0", decisionId="phase-orchestrating-full")
     append_reasoning_event(
@@ -1892,6 +1975,11 @@ async def drive_full_v5_session_stream(
 
         while loop < max_loops:
             ui = user_instruction or ""
+            if skip_planning_loop_for_refine(repair=repair):
+                record_refine_skip_planning(state, ui)
+                yield {"type": "reasoning_step", "label": "refine", "loop": 0}
+                await asyncio.to_thread(persist_state, state)
+                break
             if trusted_closure_decision(state, ui, repair=repair) == "end":
                 state = await asyncio.to_thread(resolve_coverage_gaps_from_state, state)
                 gate = await asyncio.to_thread(evaluate_coverage_gate, state)
@@ -2312,6 +2400,16 @@ async def drive_full_v5_session_stream(
         _gen.set_refine_context(None)
         _gen.set_model_override(None)
 
+    # 旁路 drive 没有客户端 PUT。这里不写，刷新就是「1 阶段 · 0 步」。
+    from .turn_narration import stamp_drive_narration
+
+    stamp_drive_narration(
+        state,
+        turn_id=drive_turn_id,
+        user=user_instruction,
+        events_cursor=events_cursor,
+        started_monotonic=drive_started,
+    )
     await asyncio.to_thread(persist_state, state)
 
     # Compute publish closure + skill graph (the REAL 5-system evidence).
@@ -2408,6 +2506,15 @@ async def drive_full_v5_session_stream(
         state.lastTurnId = f"turn-{(max(_prev_seq) + 1) if _prev_seq else 1}-drive-full"
         # E29：模型变化才追加版本快照（前进/回退按钮的数据源）
         record_model_version(state, publish_closure, user_instruction)
+        # 收口总结写进 closure 后再打一次，终局叙述才能带上 chatSummary /
+        # refinePaintNote。turnId 仍用 drive 开头那格，对得上版本史。
+        stamp_drive_narration(
+            state,
+            turn_id=drive_turn_id,
+            user=user_instruction,
+            events_cursor=events_cursor,
+            started_monotonic=drive_started,
+        )
         await asyncio.to_thread(persist_state, state)
         yield {"type": "publish_closure", "data": publish_closure}
 

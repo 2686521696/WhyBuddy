@@ -32,6 +32,15 @@ from services.v5_capability_executor import _build_per_skill_evidence, REQUIRED_
 from models.v5_state import V5SessionState
 
 
+@pytest.fixture(autouse=True)
+def _this_file_is_the_gen5_socket(monkeypatch):
+    """本文件测的是 GEN5 + 结构闸。spec-first 默认开且失败不再回落，
+    不关掉的话假 LLM 根本走不到这里。"""
+    monkeypatch.setattr(
+        "services.spec_first_pipeline.spec_first_enabled", lambda: False
+    )
+
+
 def _valid_library_model():
     """A novel domain (library lending) with fully-resolved cross-refs."""
     return {

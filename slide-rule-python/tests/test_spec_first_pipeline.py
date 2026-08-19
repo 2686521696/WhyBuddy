@@ -109,7 +109,8 @@ class Test接主轴那一处:
         from services import v5_capability_executor as ex
 
         src = inspect.getsource(ex._try_llm_generate_evidence)
-        assert "spec-first 失败，回落老链路" in src
+        assert "spec-first 失败，不回落老链路" in src
+        assert "_block_gen5 = True" in src
 
     def test_新模块缺失不打死老路(self):
         from services import v5_capability_executor as ex

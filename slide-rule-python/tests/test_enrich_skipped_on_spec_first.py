@@ -31,8 +31,11 @@
 ## 反向那半同样重要
 
 只查"新链路不跑"是不够的：把两行 enrich 直接删掉也能让那条断言变绿，
-而那会**把老链路一起砍掉**——回落的那一轮区块页是唯一产出，没了 enrich
-它就是一页空的。所以两个方向各一条。
+而那会**把老链路一起砍掉**——``SLIDERULE_SPEC_FIRST=0`` 时区块页是唯一
+产出，没了 enrich 它就是一页空的。所以两个方向各一条。
+
+2026-08-18 起 spec-first **试过失败不再回落 GEN5**。那一轮 enrich 不该跑
+（没有模型）。老路保险改钉在「把新链路关掉」。
 """
 
 import json
@@ -89,22 +92,27 @@ def _clear_stash():
     sfp._last_pages_var.set(None)
 
 
-def _run(monkeypatch, *, spec_first_ok: bool, 记账):
-    """跑一趟 _try_llm_generate_evidence，控制 spec-first 成不成。"""
+def _run(monkeypatch, *, spec_first_ok: bool, 记账, spec_first_enabled: bool = True):
+    """跑一趟 _try_llm_generate_evidence，控制 spec-first 成不成 / 开不开。"""
     model = _gate_passing_model()
 
-    monkeypatch.setattr(sfp, "spec_first_enabled", lambda: True, raising=False)
+    monkeypatch.setattr(sfp, "spec_first_enabled", lambda: spec_first_enabled, raising=False)
 
-    if spec_first_ok:
+    if spec_first_enabled and spec_first_ok:
         monkeypatch.setattr(
             sfp, "run_spec_first", lambda goal, **k: {"model": model}, raising=False
         )
-    else:
+    elif spec_first_enabled:
         def _boom(goal, **k):
             raise sfp.SpecFirstError("用例注入：新链路挂了")
 
         monkeypatch.setattr(sfp, "run_spec_first", _boom, raising=False)
-        # 回落那一支要有东西可回落，否则函数在 model is None 处就返回了
+        from services import v5_llm_generate
+
+        monkeypatch.setattr(
+            v5_llm_generate, "generate_five_system_model", lambda *a, **k: model, raising=False
+        )
+    else:
         from services import v5_llm_generate
 
         monkeypatch.setattr(
@@ -130,13 +138,22 @@ class Test新链路上不再重新发明版式:
 
 
 class Test老链路照旧:
-    def test_回落那一轮两段_enrich_必须照跑(self, monkeypatch, 记账):
+    def test_关掉新链路时两段_enrich_必须照跑(self, monkeypatch, 记账):
         """⚠ 这条是上面那条的反向保险。
 
         把两行 enrich 直接删掉，上面那条也会变绿——而那等于把老链路一起
-        砍了：回落的那一轮区块页是唯一产出，没有 enrich 它就是一页空的。
+        砍了。老路只在 ``SLIDERULE_SPEC_FIRST=0`` 时还是主路。
+        spec-first 试过失败不再回落 GEN5，那一轮没有模型，enrich 不该跑。
         """
-        out = _run(monkeypatch, spec_first_ok=False, 记账=记账)
+        out = _run(
+            monkeypatch, spec_first_ok=False, 记账=记账, spec_first_enabled=False
+        )
         assert out is not None
-        assert 记账["freeform"] == 1, "回落老链路时 enrich_freeform_blocks 必须照跑"
-        assert 记账["monitor"] == 1, "回落老链路时 enrich_monitor_page_overviews 必须照跑"
+        assert 记账["freeform"] == 1, "老链路 enrich_freeform_blocks 必须照跑"
+        assert 记账["monitor"] == 1, "老链路 enrich_monitor_page_overviews 必须照跑"
+
+    def test_spec_first_失败不回落所以enrich也不跑(self, monkeypatch, 记账):
+        out = _run(monkeypatch, spec_first_ok=False, 记账=记账)
+        assert out is None, "spec-first 挂了还交了模型——又在回落 GEN5"
+        assert 记账["freeform"] == 0
+        assert 记账["monitor"] == 0

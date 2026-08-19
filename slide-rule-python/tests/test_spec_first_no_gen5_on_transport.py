@@ -71,7 +71,7 @@ class Test哪些错不许回落:
 class Test接线_执行器:
     """纪律一：必须跑 _try_llm_generate_evidence，只测分类函数会假绿。"""
 
-    def _drive(self, monkeypatch, *, spec_fn, gen5_fn=None):
+    def _drive(self, monkeypatch, *, spec_fn, gen5_fn=None, gate_fn=None):
         from services import v5_capability_executor as ex
         from services.v5_llm_generate import set_refine_context
 
@@ -96,7 +96,7 @@ class Test接线_执行器:
         )
         monkeypatch.setattr(
             "services.v5_model_gate.validate_five_system_model",
-            lambda *a, **k: {"passed": True},
+            gate_fn or (lambda *a, **k: {"passed": True}),
         )
         monkeypatch.setattr(
             "services.device_policy.normalize_model_preferred_device",
@@ -139,12 +139,15 @@ class Test接线_执行器:
             "parse 仍打回 GEN5——咖啡馆首轮「页面：无」会再来"
         )
 
-    def test_别的故障仍回落GEN5(self, monkeypatch):
+    def test_第3步交白卷也不走GEN5(self, monkeypatch):
+        """篮球馆 / 咖啡馆：结构闸以外的失败打回 GEN5 = 版本涨了页还是空的。"""
         def boom(*a, **k):
             raise RuntimeError("第 3 步一页都没出来：p1 画挂了")
 
         seen = self._drive(monkeypatch, spec_fn=boom)
-        assert seen["gen5"] == 1, "非传输故障也被拦住回落——老路安全网没了"
+        assert seen["gen5"] == 0, (
+            "第 3 步交白卷仍打回 GEN5——首轮会交一份没页的 6/6"
+        )
 
     def test_熔断开了不再整条再试(self, monkeypatch):
         """过夜物业 R6：525 过密时整条再试 = 自己喂自己。"""
@@ -164,6 +167,28 @@ class Test接线_执行器:
             f"熔断已开还整条再试了 {hits['n']} 次——525 过密的入口"
         )
         assert seen["gen5"] == 0, "熔断后再试被跳过，却仍打回 GEN5"
+
+    def test_spec_first交卷但v5闸拦了也不GEN5(self, monkeypatch):
+        """第二条插座：模型出来了、过不了 v5 结构闸，也不许整包打回 GEN5。"""
+        hits = {"n": 0}
+
+        def fake_spec(*a, **k):
+            hits["n"] += 1
+            return {"model": {"page": {"pages": [{"id": "p1"}]}}}
+
+        def fake_gate(*a, **k):
+            return {
+                "passed": False,
+                "findings": [{"path": "page", "message": "缺落地页", "affectedSkill": "page"}],
+            }
+
+        monkeypatch.setattr(
+            "services.v5_parallel_generate.regenerate_failed_sections",
+            lambda *a, **k: None,
+        )
+        seen = self._drive(monkeypatch, spec_fn=fake_spec, gate_fn=fake_gate)
+        assert hits["n"] == 1
+        assert seen["gen5"] == 0, "spec-first 未过闸仍整包 GEN5"
 
     def test_结构闸失败不再试也不走GEN5(self, monkeypatch):
         """咖啡馆 R5：结构闸已经重问尽，整条再试只会再撞同一道闸。"""
@@ -310,3 +335,20 @@ class Test精修失败版本不涨页不旧:
         )
         assert st.currentModelVersionId == "mv-5"
         assert st.specFirstPages == pages
+
+    def test_精修第3步交白卷_不GEN5_对话写没画上(self, monkeypatch):
+        from services.v5_capability_executor import (
+            _diagnostic,
+            refine_paint_note_from_diagnostic,
+        )
+
+        seen, st, pages = self._drive(
+            monkeypatch, "第 3 步一页都没出来：p1 画挂了"
+        )
+        assert seen["gen5"] == 0
+        assert [v["id"] for v in st.modelVersions] == ["mv-5"]
+        assert st.specFirstPages == pages
+        assert _diagnostic().get("code") == "REFINE_PAINT_FAILED"
+        note = refine_paint_note_from_diagnostic()
+        assert note.startswith("这一处没画上："), note
+        assert "第 3 步" in note or "画挂" in note

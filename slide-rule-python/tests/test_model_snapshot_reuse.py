@@ -292,6 +292,11 @@ class Test接线:
 
         model = _model()
         monkeypatch.setattr(ex, "_llm_generate_enabled", lambda: True)
+        # 活路径是 spec-first。只钉 GEN5 会在「新链路挂了不回落」之后假绿/假红。
+        monkeypatch.setattr(
+            "services.spec_first_pipeline.run_spec_first",
+            lambda goal, **k: {"model": dict(model)},
+        )
         monkeypatch.setattr(
             gen_mod, "generate_five_system_model",
             lambda goal, llm_json_fn=None, gate_feedback=None: dict(model),
