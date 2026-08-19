@@ -19,14 +19,15 @@ describe("ComposerDock Cursor 三行形态", () => {
       readFileSync(new URL("../ComposerDock.tsx", import.meta.url), "utf8")
     );
     const shell = dock.slice(
-      dock.indexOf("sliderule-composer-dock") - 280,
+      dock.indexOf("sliderule-composer-dock") - 420,
       dock.indexOf("sliderule-composer-dock") + 80
     );
     expect(shell).toContain("rounded-[24px]");
+    expect(shell).toContain("rounded-[12px]");
     expect(shell).toContain("bg-white");
     expect(shell).toContain("border-[#e5e7eb]");
-    expect(shell).not.toContain("rounded-[12px]");
     expect(shell).not.toContain("bg-[#f3f4f6]");
+    expect(dock).not.toContain("sliderule-hero-glow");
 
     const plus = dock.slice(
       dock.indexOf("sliderule-composer-plus") - 420,
@@ -49,6 +50,36 @@ describe("ComposerDock Cursor 三行形态", () => {
     expect(dock).toContain(">优化<");
     expect(dock).not.toContain("sliderule-hero-upload");
     expect(dock).not.toContain("order-first basis-full");
+  });
+
+  it("空态是 Cursor 卡片：字在上、发送在卡片里，没有粉紫光晕", () => {
+    const dock = stripComments(
+      readFileSync(new URL("../ComposerDock.tsx", import.meta.url), "utf8")
+    );
+    expect(dock).toContain("grid-cols-[auto_auto_1fr_auto]");
+    expect(dock).toContain("min-h-[72px]");
+    expect(dock).toContain("shadow-[0_2px_8px_rgba(31,35,40,0.06)]");
+    expect(dock).toContain("col-start-4 row-start-2");
+    expect(dock).toContain("{refineButton}");
+    expect(dock).toContain("{sendButton}");
+    // 空态：优化和发送同一簇靠右，优化在前。变异把优化塞回 + 右侧 col-start-3 必红。
+    const heroSend = dock.slice(
+      dock.indexOf("col-start-4 row-start-2"),
+      dock.indexOf("{hero ? null : sendButton}")
+    );
+    expect(heroSend.indexOf("{refineButton}")).toBeLessThan(
+      heroSend.indexOf("{sendButton}")
+    );
+    expect(dock).not.toContain("col-start-3 row-start-2");
+    expect(dock).not.toContain("col-start-5 row-start-2");
+    expect(dock).toContain("sliderule-composer-device");
+    expect(dock).toContain("COMPOSER_DEVICE_OPTIONS");
+    expect(dock).toContain("{hero ? null : sendButton}");
+    expect(dock).not.toContain("sliderule-hero-glow");
+    expect(dock).not.toContain("rgba(167,139,250");
+    expect(dock).not.toContain("filter: \"blur(10px)\"");
+    expect(dock).not.toContain("This PC");
+    expect(dock).not.toContain("Microphone");
   });
 
   it("顶行真的渲染 hintChips，不是只在 props 里占位", () => {
@@ -102,5 +133,20 @@ describe("对话列接到输入条，不要横切分隔线", () => {
     expect(call).toContain("formatComposerClosurePill");
     expect(call).not.toContain("statusPill={null}");
     expect(call).not.toContain("闭环 ${");
+  });
+
+  it("应用/Web 开关接到 drive-full-stream 请求体，不是只画在输入条上", () => {
+    const session = stripComments(
+      readFileSync(new URL("../useSlideRuleSession.ts", import.meta.url), "utf8")
+    );
+    expect(session).toContain("preferredDevice: loadPreferredDevice()");
+    const driver = stripComments(
+      readFileSync(
+        new URL("../../../lib/sliderule-marathon-driver.ts", import.meta.url),
+        "utf8"
+      )
+    );
+    expect(driver).toContain("preferredDevice: opts.preferredDevice");
+    expect(driver).toContain("/drive-full-stream");
   });
 });

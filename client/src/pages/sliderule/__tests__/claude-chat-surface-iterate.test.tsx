@@ -100,7 +100,7 @@ describe("对话区 / 输入条 Cursor 尺度（装在真链路上）", () => {
     expect(dock).not.toContain("flex items-end gap-2");
     expect(dock).not.toContain("flex w-full items-end gap-2");
     expect(dock).not.toContain("flex flex-wrap items-center gap-2");
-    expect(dock).toContain("const minH = 28");
+    expect(dock).toContain("hero ? 72 : 28");
     expect(dock).not.toContain("hero ? 88 : 32");
     expect(dock).not.toContain("min-w-0 flex-1 pb-0.5");
   });

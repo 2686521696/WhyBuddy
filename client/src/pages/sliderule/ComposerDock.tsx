@@ -14,13 +14,24 @@ import {
   ArrowUp,
   Sparkles,
   Square,
+  Monitor,
+  Smartphone,
   X,
 } from "lucide-react";
 // 用 navigate 函数而非 useLocation hook：hook 渲染期就读 window.location，
 // 会炸掉 node 环境的静态渲染测试；navigate 只在点击时触达 history。
 import { navigate } from "wouter/use-browser-location";
 import { EXAMPLE_INTENT_TEXTS } from "./example-intents";
-import { shouldSendOnKey } from "./user-prefs";
+import {
+  loadPreferredDevice,
+  setPreferredDevice,
+  shouldSendOnKey,
+} from "./user-prefs";
+import {
+  COMPOSER_DEVICE_OPTIONS,
+  composerHeroPlaceholder,
+  type ComposerDevice,
+} from "./composer-device";
 import { useIntakeJudge } from "./use-intake-judge";
 import { IntakeHintBar } from "./IntakeHintBar";
 import {
@@ -299,7 +310,7 @@ export function ComposerDock({
   stop?: () => void;
   /** 空态首页嵌入时的占位文案 */
   placeholder?: string;
-  /** 空态变体：文字在上、工具行在下；外观按 Stitch 软底光晕收 */
+  /** 空态变体：Cursor / Continue 卡片——字在上、工具行在下；开聊后仍是胶囊。 */
   hero?: boolean;
 }) {
   // 模式选择器已删（用户裁决 2026-07-10）：深思一轮就是唯一产品路径
@@ -314,6 +325,7 @@ export function ComposerDock({
   const [attachmentHint, setAttachmentHint] = React.useState<string | null>(
     null
   );
+  const [device, setDevice] = React.useState<ComposerDevice>(loadPreferredDevice);
   const menuRef = React.useRef<HTMLDivElement | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
@@ -333,8 +345,9 @@ export function ComposerDock({
   const adjustTextareaHeight = React.useCallback(() => {
     const ta = textareaRef.current;
     if (!ta) return;
-    // Cursor 胶囊是单行高度（约 28px 字区），长文在胶囊里长高，不再给空态单独垫 88px。
-    const minH = 28;
+    // 开聊后胶囊单行约 28px；空态 Cursor 卡片要有一块可点的字区
+    // （Continue InputToolbar 在编辑器下面，上面得留行）。
+    const minH = hero ? 72 : 28;
     const maxH = 160;
     if (!ta.value.trim()) {
       ta.style.height = `${minH}px`;
@@ -342,7 +355,7 @@ export function ComposerDock({
     }
     ta.style.height = "auto";
     ta.style.height = `${Math.max(minH, Math.min(ta.scrollHeight, maxH))}px`;
-  }, []);
+  }, [hero]);
 
   React.useEffect(() => {
     adjustTextareaHeight();
@@ -568,7 +581,9 @@ export function ComposerDock({
     }
   }, [isRefining, setInput]);
 
-  const placeholderText = placeholder || "畅所欲问";
+  const placeholderText =
+    placeholder ||
+    (hero ? composerHeroPlaceholder(device) : "畅所欲问");
 
   // 入站判定：推演中不判（用户这会儿打的字多半是下一轮的草稿，判了也没用）。
   // 语境用 hasApp（真有成形应用）而不是 Boolean(goal)（只是有目标文案），
@@ -583,6 +598,50 @@ export function ComposerDock({
     (!hero && (actionHints.length > 0 || !!statusPill));
   const topicLabel = goal.trim() || "新话题";
   const surfaceLabel = hasApp ? "成品" : "推演";
+
+  const refineButton = (
+          <button
+            type="button"
+            className="hidden h-7 shrink-0 items-center gap-1 rounded-full px-1.5 text-[12px] text-[#5e5e5e] transition hover:bg-[#f4f4f5] disabled:opacity-45 sm:flex"
+            title="优化提示词：把意图改写得更完整（实体/流程/角色/页面/AI）"
+            data-testid="sliderule-prompt-refine"
+            onClick={refinePrompt}
+            disabled={isRunning || isRefining || !input.trim()}
+          >
+            {isRefining ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5" />
+            )}
+            <span>优化</span>
+          </button>
+  );
+
+  const sendButton = (
+          <button
+            type="button"
+            onClick={isRunning ? stop || (() => {}) : doSend}
+            disabled={sendBlocked}
+            data-testid="sliderule-composer-send"
+            aria-busy={extractPending}
+            className="pointer-events-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#171717] text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-[#ececef] disabled:text-[#b0b0b5]"
+            title={
+              isRunning
+                ? "停止"
+                : extractPending
+                  ? "附件解析中，请稍候"
+                  : "发送"
+            }
+          >
+            {isRunning ? (
+              <Square className="h-3.5 w-3.5 fill-current" />
+            ) : extractPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <ArrowUp className="h-4 w-4" />
+            )}
+          </button>
+  );
 
   return (
     <div className="pointer-events-none flex w-full flex-col items-stretch gap-1.5">
@@ -710,24 +769,15 @@ export function ComposerDock({
           ) : null}
         </div>
       ) : null}
-      {/* 发送圆必须跟胶囊同一中线。2026-08-20：items-end + mb-0.5 让圆相对
-          「畅所欲问」那一行看起来没居中（真机红箭头指发送键）。 */}
-      <div className="flex w-full items-center gap-2">
+      {/* 开聊后：发送圆跟胶囊同一中线。空态：Continue InputToolbar 把发送放进卡片底栏。 */}
+      <div className={hero ? "w-full" : "flex w-full items-center gap-2"}>
       <div className="relative min-w-0 flex-1">
-      {hero && (
-        <div
-          aria-hidden
-          data-testid="sliderule-hero-glow"
-          className="pointer-events-none absolute -inset-[2px] rounded-[26px] opacity-70"
-          style={{
-            background:
-              "linear-gradient(120deg, rgba(167,139,250,.55), rgba(125,211,252,.45), rgba(244,114,182,.4))",
-            filter: "blur(10px)",
-          }}
-        />
-      )}
       <div
-        className={`pointer-events-auto relative w-full rounded-[24px] border bg-white px-2 py-1.5 transition-colors ${
+        className={`pointer-events-auto relative w-full border bg-white transition-colors ${
+          hero
+            ? "rounded-[12px] px-3 pb-2 pt-3 shadow-[0_2px_8px_rgba(31,35,40,0.06)]"
+            : "rounded-[24px] px-2 py-1.5"
+        } ${
           isDragOver
             ? "border-[#1677ff] bg-[#e6f4ff]/40"
             : "border-[#e5e7eb]"
@@ -738,19 +788,26 @@ export function ComposerDock({
         onDrop={handleDrop}
       >
         {isDragOver && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-[24px] bg-[#e6f4ff]/60">
+          <div className={`pointer-events-none absolute inset-0 flex items-center justify-center bg-[#e6f4ff]/60 ${hero ? "rounded-[12px]" : "rounded-[24px]"}`}>
             <div className="flex items-center gap-2 text-sm font-medium text-[#0958d9]">
               <FileText className="h-4 w-4" />
               拖拽文件到这里
             </div>
           </div>
         )}
-        {/* 停靠条：字和图标必须同一行高 + items-center。
-            2026-08-18 真机：textarea min-h-11（44px）配 h-8 图标再 items-end，
-            「畅所欲问」和图标不在一条中线上，整行看起来顶上去了。
-            2026-08-20：改成 Cursor 单行胶囊——+ 与发送都是圆，不再 wrap 成两行。 */}
-        <div className="flex items-center gap-1.5">
-          <div className="relative shrink-0" ref={menuRef}>
+        {/* 空态：Cursor / Continue 卡片（字在上；底栏 + / 应用Web 在左，优化贴发送左边）。
+            开聊后：单行胶囊，发送在胶囊外。 */}
+        <div
+          className={
+            hero
+              ? "grid grid-cols-[auto_auto_1fr_auto] items-center gap-x-1.5 gap-y-2"
+              : "flex items-center gap-1.5"
+          }
+        >
+          <div
+            className={`relative shrink-0 ${hero ? "col-start-1 row-start-2" : ""}`}
+            ref={menuRef}
+          >
             <button
               type="button"
               onClick={() => {
@@ -943,7 +1000,49 @@ export function ComposerDock({
             </div>
           </div>
 
-          <div className="min-w-0 flex-1">
+          {hero ? (
+            <div
+              role="group"
+              aria-label="目标形态"
+              data-testid="sliderule-composer-device"
+              className="col-start-2 row-start-2 flex h-7 shrink-0 items-center rounded-full bg-[#f4f4f5] p-0.5"
+            >
+              {COMPOSER_DEVICE_OPTIONS.map(opt => {
+                const on = device === opt.id;
+                const Icon = opt.id === "phone" ? Smartphone : Monitor;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    aria-pressed={on}
+                    data-testid={`sliderule-composer-device-${opt.id}`}
+                    disabled={isRunning}
+                    title={
+                      opt.id === "phone"
+                        ? "按手机应用推演（竖屏、底栏）"
+                        : "按网页应用推演（横屏、侧栏）"
+                    }
+                    onClick={() => {
+                      setDevice(opt.id);
+                      setPreferredDevice(opt.id);
+                    }}
+                    className={`inline-flex h-6 items-center gap-1 rounded-full px-2 text-[12px] transition ${
+                      on
+                        ? "bg-white font-medium text-[#171717] shadow-sm"
+                        : "text-[#5e5e5e] hover:text-[#171717]"
+                    } disabled:opacity-45`}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+
+          <div
+            className={`min-w-0 ${hero ? "col-span-4 row-start-1" : "flex-1"}`}
+          >
             <textarea
               ref={textareaRef}
               value={input}
@@ -964,53 +1063,28 @@ export function ComposerDock({
               aria-label={placeholderText}
               rows={1}
               disabled={isRunning}
-              className="block max-h-40 min-h-7 w-full resize-none bg-transparent px-1 py-0 text-[14px] leading-7 text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60"
+              className={`block max-h-40 w-full resize-none bg-transparent py-0 text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60 ${
+                hero
+                  ? "min-h-[72px] px-0.5 text-[15px] leading-6"
+                  : "min-h-7 px-1 text-[14px] leading-7"
+              }`}
               data-testid="sliderule-composer-input"
             />
           </div>
 
-          {/* 优化提示词：占 Cursor「High」那个右控位置——动作不是下拉，所以不画 chevron。 */}
-          <button
-            type="button"
-            className="hidden h-7 shrink-0 items-center gap-1 rounded-full px-1.5 text-[12px] text-[#5e5e5e] transition hover:bg-[#f4f4f5] disabled:opacity-45 sm:flex"
-            title="优化提示词：把意图改写得更完整（实体/流程/角色/页面/AI）"
-            data-testid="sliderule-prompt-refine"
-            onClick={refinePrompt}
-            disabled={isRunning || isRefining || !input.trim()}
-          >
-            {isRefining ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="h-3.5 w-3.5" />
-            )}
-            <span>优化</span>
-          </button>
+          {/* 优化贴发送左边。空态跟发送同一簇靠右；开聊后仍在字右边、发送圆左边。 */}
+          {hero ? (
+            <div className="col-start-4 row-start-2 flex items-center gap-1 justify-self-end">
+              {refineButton}
+              {sendButton}
+            </div>
+          ) : (
+            refineButton
+          )}
         </div>
       </div>
       </div>
-          <button
-            type="button"
-            onClick={isRunning ? stop || (() => {}) : doSend}
-            disabled={sendBlocked}
-            data-testid="sliderule-composer-send"
-            aria-busy={extractPending}
-            className="pointer-events-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#171717] text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-[#ececef] disabled:text-[#b0b0b5]"
-            title={
-              isRunning
-                ? "停止"
-                : extractPending
-                  ? "附件解析中，请稍候"
-                  : "发送"
-            }
-          >
-            {isRunning ? (
-              <Square className="h-3.5 w-3.5 fill-current" />
-            ) : extractPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <ArrowUp className="h-4 w-4" />
-            )}
-          </button>
+          {hero ? null : sendButton}
       </div>
       {!hero ? (
         <div

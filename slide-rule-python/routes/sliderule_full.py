@@ -1042,10 +1042,14 @@ def drive_full(
     from services.v5_llm_generate import set_installed_skills
 
     set_installed_skills(payload.get("installedSkills"))
+    from services.device_policy import set_preferred_device_override
+
+    set_preferred_device_override(payload.get("preferredDevice"))
     try:
         new_state = drive_full_v5_session(state, max_loops=max_loops, user_instruction=user_text)
     finally:
         set_installed_skills(None)
+        set_preferred_device_override(None)
     # Compat (task 119-04): capability results may be Pydantic models (model_dump) or plain dicts.
     # Normalize them to plain dicts BEFORE sanitize/derive/persist so json persistence and the
     # response envelope never see a non-serializable result object.
@@ -1194,6 +1198,9 @@ async def drive_full_stream(
     # 跑完也要落库）。同会话已有活跃 run 时附着既有 run（防重复发起）。
     async def stream_factory():
         set_installed_skills(installed_skills)
+        from services.device_policy import set_preferred_device_override
+
+        set_preferred_device_override(payload.get("preferredDevice"))
         try:
             async for event in drive_full_v5_session_stream(
                 state, max_loops=max_loops, user_instruction=user_text, repair=repair
@@ -1215,6 +1222,7 @@ async def drive_full_stream(
                 yield event
         finally:
             set_installed_skills(None)
+            set_preferred_device_override(None)
 
     async def on_complete(event: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(event.get("state"), dict):

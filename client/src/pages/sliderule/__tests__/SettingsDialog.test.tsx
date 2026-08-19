@@ -84,6 +84,7 @@ describe("SettingsDialog（设置中心重构）", () => {
     expect(html).toContain("Enter 键行为");
     expect(html).toContain("Enter 发送");
     expect(html).toContain("Ctrl+Enter 发送");
+    expect(html).toContain("Shift+Enter 始终换行；改动即时生效。");
     // 隐私事实（人话版）：只陈述已成立的事实
     expect(html).toContain('data-testid="sliderule-settings-privacy-facts"');
     expect(html).toContain("你的数据存在哪里");

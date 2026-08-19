@@ -10,6 +10,7 @@ import {
   setEnterBehavior,
   setNotifyCompletePref,
   setReduceMotionPref,
+  ENTER_SHIFT_NEWLINE_HINT,
   type EnterBehavior,
 } from "./user-prefs";
 import {
@@ -497,7 +498,7 @@ function UserPrefsSection() {
           ]}
         />
         <p className="mt-1.5 text-[11px] text-stone-400">
-          Shift+Enter 始终换行；改动即时生效。
+          {ENTER_SHIFT_NEWLINE_HINT}；改动即时生效。
         </p>
       </div>
     </div>

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Literal, MutableMapping
+from typing import Any, Literal, MutableMapping, Optional
 
 
 Device = Literal["desktop", "phone"]
@@ -18,9 +18,31 @@ _PHONE_EXPLICIT = re.compile(
     re.IGNORECASE,
 )
 
+# 作曲家「应用 / Web」开关。模块级而不是 ContextVar：spec-first 跑在
+# asyncio.to_thread 里，ContextVar 过不了线程（installed_skills 同款）。
+# 本地单人推演可接受；finally 必须清掉，否则下一轮脏读。
+_override: Optional[Device] = None
+
+
+def set_preferred_device_override(raw: Any) -> None:
+    """本轮推演的用户显式选择。非法值 / None = 不清、走话题推断。"""
+    global _override
+    _override = raw if raw in ("desktop", "phone") else None
+
+
+def preferred_device_override() -> Optional[Device]:
+    return _override
+
 
 def resolve_preferred_device(goal: str, model_choice: Any) -> Device:
-    """Resolve one device from explicit goal language, then the model choice."""
+    """用户开关 > 话题里的显式设备词 > 模型已有选择 > desktop。
+
+    开关要压过「网站/App」用词：空态点了「应用」再写「做个库存系统」，
+    必须出竖屏，不能等用户把「手机」写进句子才认。
+    """
+    if _override in ("desktop", "phone"):
+        return _override
+
     text = str(goal or "")
     asks_desktop = bool(_DESKTOP_EXPLICIT.search(text))
     asks_phone = bool(_PHONE_EXPLICIT.search(text))

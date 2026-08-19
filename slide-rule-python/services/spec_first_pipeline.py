@@ -1162,6 +1162,9 @@ def run_spec_first(
     「手机/移动端/App/小程序」→ phone），一处定、处处跟——页面提示词换
     移动设计系统，3.5 抠移动壳（顶栏+底部标签栏），页面事件与产物都带
     device 字段，前端据此选竖屏画布。
+    2026-08-20：作曲家「应用 / Web」经 preferredDevice 覆盖词表——空态点了
+    「应用」不必把「手机」写进句子。覆盖装在 drive-full(-stream) 上，
+    真正读它的是 resolve_preferred_device（spec-first 入口那一处）。
 
     返回 {"version", "model", "spec", "structure", "semantics", "pages",
           "navItems", "failedPages", "stages", "device"}。

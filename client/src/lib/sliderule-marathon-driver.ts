@@ -153,7 +153,12 @@ export function classifyDriveFullStatus(
 export async function driveFullViaPython(
   state: V5SessionState,
   userText: string,
-  opts: { stopSignal?: AbortSignal; maxLoops?: number; turnId?: string } = {}
+  opts: {
+    stopSignal?: AbortSignal;
+    maxLoops?: number;
+    turnId?: string;
+    preferredDevice?: "desktop" | "phone";
+  } = {}
 ): Promise<{ finalState: V5SessionState; stopReason?: string; loops?: any[]; publishClosure?: any } | null> {
   if (typeof fetch !== "function") return null;
   try {
@@ -167,6 +172,9 @@ export async function driveFullViaPython(
         max_loops: opts.maxLoops ?? 10,
         turnId: opts.turnId,
         installedSkills: installedSkillsDrivePayload(),
+        ...(opts.preferredDevice
+          ? { preferredDevice: opts.preferredDevice }
+          : {}),
       }),
     });
     await throwIfAuthRequired(res);
@@ -256,6 +264,8 @@ export interface DriveFullStreamOpts {
    *  事件到达）时回调一次。纯连接断开（刷新/跳页/网络抖动）不触发——
    *  run 仍在后台跑，续播书签必须保留。 */
   onRunSettled?: (reason: "complete" | "cancelled" | "error") => void;
+  /** 空态作曲家「应用 / Web」。desktop 横屏 / phone 竖屏，跟 device_policy 同词表。 */
+  preferredDevice?: "desktop" | "phone";
 }
 
 /**
@@ -284,6 +294,7 @@ export async function driveFullViaPythonStream(
         turnId: opts.turnId,
         installedSkills: installedSkillsDrivePayload(),
         ...(opts.mode ? { mode: opts.mode } : {}),
+        ...(opts.preferredDevice ? { preferredDevice: opts.preferredDevice } : {}),
       }),
     });
     await throwIfAuthRequired(res);

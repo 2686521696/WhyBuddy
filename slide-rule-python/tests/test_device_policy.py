@@ -66,3 +66,26 @@ def test_normalization_repairs_a_non_mapping_appbundle():
         "preferredDevice": "desktop",
         "deviceAuthority": "single-v1",
     }
+
+
+def test_composer_override_beats_goal_language_and_model_choice():
+    """空态点了「应用」必须出 phone，哪怕句子里写的是网站。"""
+    from services.device_policy import set_preferred_device_override
+
+    set_preferred_device_override("phone")
+    try:
+        assert resolve_preferred_device("做一个库存系统", "desktop") == "phone"
+        assert resolve_preferred_device("做一个采购审批网站", None) == "phone"
+    finally:
+        set_preferred_device_override(None)
+    assert resolve_preferred_device("做一个库存系统", None) == "desktop"
+
+
+def test_invalid_override_is_ignored():
+    from services.device_policy import set_preferred_device_override
+
+    set_preferred_device_override("tablet")
+    try:
+        assert resolve_preferred_device("做一个库存系统", None) == "desktop"
+    finally:
+        set_preferred_device_override(None)

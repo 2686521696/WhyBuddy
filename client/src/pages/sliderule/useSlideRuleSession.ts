@@ -28,7 +28,7 @@ import {
   mapArtifactsToWhyArtifacts,
 } from "./ui-capability-executor";
 import { mergePublishClosureForPersistedTurn } from "./derive-persisted-turn";
-import { notifyDriveComplete } from "./user-prefs";
+import { notifyDriveComplete, loadPreferredDevice } from "./user-prefs";
 import { createHttpSlideRuleSessionStore } from "@/lib/sliderule-http-store";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { loadByokPool, validateByokPool } from "@/lib/sliderule-byok-config";
@@ -994,6 +994,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           const streamOpts = {
               stopSignal: controller.signal,
               turnId,
+              preferredDevice: loadPreferredDevice(),
               ...(mode === "repair" ? { mode } : {}),
               onRunId: (runId: string) => {
                 sawRunId = true;

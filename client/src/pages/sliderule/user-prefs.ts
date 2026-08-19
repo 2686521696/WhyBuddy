@@ -5,12 +5,18 @@
  * - 减少动态效果：根元素 class `sr-reduce-motion`（CSS 覆盖）+
  *   RollingText 运行时判断；同时自动尊重系统 prefers-reduced-motion；
  * - 推演完成通知：浏览器 Notification（切走标签页才弹，盯着看不打扰）；
- * - Enter 键行为：ComposerDock keydown 每次按键实时读取（设置即改即生效）。
+ * - Enter 键行为：ComposerDock keydown 每次按键实时读取（设置即改即生效）；
+ * - 目标形态（应用 / Web）：作曲家开关，发送时随 drive-full-stream 带上。
  */
+import {
+  parseComposerDevice,
+  type ComposerDevice,
+} from "./composer-device";
 
 const REDUCE_MOTION_KEY = "sliderule:reduce-motion";
 const NOTIFY_COMPLETE_KEY = "sliderule:notify-complete";
 const ENTER_TO_SEND_KEY = "sliderule:enter-to-send";
+const PREFERRED_DEVICE_KEY = "sliderule:preferred-device";
 
 const REDUCE_MOTION_CLASS = "sr-reduce-motion";
 
@@ -123,6 +129,17 @@ export function setEnterBehavior(behavior: EnterBehavior): void {
   writeFlag(ENTER_TO_SEND_KEY, behavior === "enter");
 }
 
+/** 设置页与空态共用：Shift+Enter 恒换行。 */
+export const ENTER_SHIFT_NEWLINE_HINT = "Shift+Enter 始终换行";
+
+/** 空态输入框下方：当前发送键 + 恒换行。跟设置页同一事实，不许另写一句。 */
+export function composerEnterHintLabel(
+  mode: EnterBehavior = loadEnterBehavior()
+): string {
+  const send = mode === "enter" ? "Enter 发送" : "Ctrl+Enter 发送";
+  return `${send} · ${ENTER_SHIFT_NEWLINE_HINT}`;
+}
+
 /** keydown 判定：本次按键是否应触发发送（Shift+Enter 恒为换行）。 */
 export function shouldSendOnKey(ev: {
   key: string;
@@ -134,6 +151,24 @@ export function shouldSendOnKey(ev: {
   return loadEnterBehavior() === "enter"
     ? !ev.ctrlKey && !ev.metaKey
     : ev.ctrlKey || ev.metaKey;
+}
+
+// --- 目标形态（应用 / Web） ----------------------------------------------------
+
+export function loadPreferredDevice(): ComposerDevice {
+  try {
+    return parseComposerDevice(localStorage.getItem(PREFERRED_DEVICE_KEY));
+  } catch {
+    return "desktop";
+  }
+}
+
+export function setPreferredDevice(value: ComposerDevice): void {
+  try {
+    localStorage.setItem(PREFERRED_DEVICE_KEY, parseComposerDevice(value));
+  } catch {
+    /* 存储不可用 → 本次会话内仍按调用方内存态生效 */
+  }
 }
 
 // --- Work 巡演 LLM 台词（五期入魂档，默认关）-----------------------------------

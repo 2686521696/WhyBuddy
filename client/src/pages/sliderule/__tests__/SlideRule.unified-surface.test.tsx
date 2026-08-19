@@ -141,7 +141,7 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain('href="/sliderule/dev"');
   });
 
-  it("empty session shows THE single empty state: greeting + glow composer + chips + inspiration", () => {
+  it("empty session shows THE single empty state: greeting + Cursor composer card + chips + inspiration", () => {
     const html = renderPage();
 
     expect(html.match(/data-testid="sliderule-empty-state"/g)?.length).toBe(1);
@@ -150,7 +150,16 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain("把一句模糊想法");
     expect(html).not.toContain("能跑起来");
     expect(html).not.toContain("miantuan-mark.png");
+    // 2026-08-20：空态芯片下要有键盘提示（设置页同一事实）。旧空格写法是落地页残留。
+    expect(html).toContain('data-testid="sliderule-empty-enter-hint"');
+    expect(html).toContain("Enter 发送 · Shift+Enter 始终换行");
     expect(html).not.toContain("Shift + Enter 换行");
+    // 输入框 → 芯片 → 键盘提示共用外层 gap-7。变异：再套一层更小的 gap-2.5 必红。
+    const stack = html.slice(
+      html.indexOf('data-testid="sliderule-hero-composer"'),
+      html.indexOf('data-testid="sliderule-empty-enter-hint"')
+    );
+    expect(stack).not.toContain("gap-2.5");
     // E39：模式模板卡整块移除（用户裁决：右侧密度做减法）
     expect(html).not.toContain('data-testid="sliderule-home-mode-');
     // 三个快速开始 chips（完整场景名，无小标题）
@@ -159,8 +168,10 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).toContain('data-testid="sliderule-quick-start-客户管理系统"');
     expect(html).not.toContain("从需求文档开始");
     expect(html).not.toContain(">快速开始<");
-    // 光晕输入 + 底栏一句（不画灵感卡）
-    expect(html).toContain('data-testid="sliderule-hero-glow"');
+    // Cursor 卡片输入：没有粉紫光晕。变异：把 glow 加回必红。
+    expect(html).not.toContain('data-testid="sliderule-hero-glow"');
+    expect(html).not.toContain("rgba(167,139,250");
+    expect(html).toContain("rounded-[12px]");
     expect(html).toContain("需要灵感？");
     expect(html).toContain("Fork一下，快人一步");
     expect(html).toContain('data-testid="sliderule-inspiration"');
@@ -172,6 +183,16 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain("应用中心还没有可展示的项目");
     // hero composer 仍在首页流里，且全页仍只有一个 ComposerDock
     expect(html).toContain('data-testid="sliderule-hero-composer"');
+    expect(html).toContain('data-testid="sliderule-composer-device"');
+    expect(html).toContain('data-testid="sliderule-composer-device-phone"');
+    expect(html).toContain('data-testid="sliderule-composer-device-desktop"');
+    const phoneChip = html.slice(
+      html.indexOf("sliderule-composer-device-phone"),
+      html.indexOf("sliderule-composer-device-desktop")
+    );
+    expect(phoneChip).toContain("应用");
+    expect(html).toContain("描述你想构建的业务系统");
+    expect(html).not.toContain('data-testid="sliderule-empty-dot-field"');
     expect(html.match(/data-testid="sliderule-composer-dock"/g)?.length).toBe(
       1
     );
@@ -194,6 +215,9 @@ describe("unified /sliderule surface (single mental model)", () => {
       1
     );
     expect(html).not.toContain('data-testid="sliderule-hero-composer"');
+    expect(html).not.toContain('data-testid="sliderule-empty-enter-hint"');
+    expect(html).not.toContain('data-testid="sliderule-composer-device"');
+    expect(html).not.toContain('data-testid="sliderule-empty-dot-field"');
     expect(html).not.toContain("pb-[104px]");
     const footer = html.slice(
       html.indexOf('data-testid="sliderule-composer-footer"'),

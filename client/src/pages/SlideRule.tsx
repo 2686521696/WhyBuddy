@@ -78,6 +78,7 @@ import {
 import { DeliverablesPanel } from "./sliderule/DeliverablesPanel";
 import { ComposerDock } from "./sliderule/ComposerDock";
 import { HomeInspiration } from "./sliderule/home-inspiration";
+import { composerEnterHintLabel } from "./sliderule/user-prefs";
 import { EXAMPLE_INTENT_TEXTS } from "./sliderule/example-intents";
 import { deriveComposerHintChips } from "./sliderule/derive-composer-hints";
 import { formatComposerClosurePill } from "./sliderule/composer-closure-pill";
@@ -285,8 +286,8 @@ function TurnPhaseTimeline({
 }
 
 // 快速开始：三个完整场景，点击把意图填进输入框（fill-prompt 不变）。
-// 2026-08-19 空态按 Stitch 工作台收：大问候 + 软底光晕输入 + 扁胶囊 +
-// 底部灵感（一句导去应用中心 Fork，不画卡）。
+// 2026-08-20 空态输入对照 Cursor / Continue：圆角卡片 + 字在上工具在下，
+// 不要 Stitch 粉紫光晕。底部灵感仍是一句导去应用中心 Fork，不画卡。
 // 上一版 Cursor 新会话太瘦；再上一版 logo + 主张句 + 投影卡又太像落地页
 // （测试仍禁止那些旧文案）。
 const QUICK_STARTS: ReadonlyArray<{
@@ -382,6 +383,12 @@ function HomeEmptyState({
             </button>
           ))}
         </div>
+        <p
+          className="text-center text-[12px] leading-5 text-[#a1a1aa]"
+          data-testid="sliderule-empty-enter-hint"
+        >
+          {composerEnterHintLabel()}
+        </p>
       </div>
 
       <HomeInspiration />
@@ -392,7 +399,7 @@ function HomeEmptyState({
 /**
  * ClaudeChatSurface — 统一页左栏对话区（Claude 风格轻量 prose 布局）。
  * 头部动作（交付物 / 重置会话 / Dev）由页面唯一顶栏承担；这里只负责对话流与
- * 唯一空态（问候 + 光晕输入 + chips + 灵感一句）。
+ * 唯一空态（问候 + Cursor 卡片输入 + chips + 灵感一句）。
  */
 // --- assistant-ui 迁移（左栏 IM 地基）--------------------------------------
 // 滚动跟随 / 消息列表 / 空态分支由 Thread 原语接管（Viewport 自带贴底跟随，
@@ -1133,9 +1140,6 @@ function SlideRuleUnified({
                         : null
                     }
                     stop={stop}
-                    placeholder={
-                      isHomeEmpty ? "描述你想构建的业务系统…" : undefined
-                    }
                     hero={isHomeEmpty}
                   />
                 }
