@@ -89,7 +89,7 @@ describe("isAttachmentExtractPending / isComposerSendBlocked", () => {
     ).toBe(false);
   });
 
-  it("澄清/优化在飞锁发送；打完字、卡片已出不锁；推演中仍是停止键", () => {
+  it("审查/优化在飞锁发送；打完字、卡片已出不锁；推演中仍是停止键", () => {
     expect(
       isComposerSendBlocked({
         isRunning: false,

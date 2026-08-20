@@ -55,7 +55,7 @@ export function ArchitectureStage({
       <div className="flex shrink-0 items-center gap-2 border-b border-[#e5e7eb] px-1 py-1">
         {canLinkage && (
           <div
-            className="flex items-center rounded-md border border-[#e5e7eb] p-0.5"
+            className="flex items-center rounded-lg bg-[#f4f4f5] p-0.5"
             data-testid="architecture-graph-style"
           >
             {(
@@ -70,10 +70,10 @@ export function ArchitectureStage({
                 data-testid={`architecture-graph-${id}`}
                 aria-pressed={graphStyle === id}
                 onClick={() => setGraphStyle(id)}
-                className={`rounded px-2 py-0.5 text-[11px] transition ${
+                className={`rounded-md px-2 py-0.5 text-[11px] transition ${
                   graphStyle === id
-                    ? "bg-[#1f2328] font-medium text-white"
-                    : "text-stone-500 hover:bg-[#f4f4f5]"
+                    ? "bg-white font-medium text-stone-800 shadow-sm"
+                    : "text-stone-500 hover:text-stone-700"
                 }`}
               >
                 {label}

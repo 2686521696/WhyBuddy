@@ -38,8 +38,8 @@
  * 2026-08-18 触发行外观改成 Cursor 侧栏底栏：去掉白底描边卡片，字号/行高
  * 跟上面的会话行齐。菜单条目没动——那是另一件事。
  *
- * 2026-08-19：帮助图标和头像改成同一槽宽，账号行去掉「已登录」第二行
- * （完整邮箱在菜单头里）。对照 Cursor 底栏：同一 inset、一行字、右边折角。
+ * 2026-08-20：触发行再收一档，对照 Cursor 侧栏底栏——档位写 Admin、
+ * 头像纯色圆（不要蓝青渐变）、字色保持 muted，hover 只铺一层浅底。
  *
  * 原来那版把「退出登录」做成常驻的小图标钉在行尾：既没有可发现性（没人知道
  * 那个图标是登出），又离"点错就掉线"只有一次误触的距离。
@@ -228,7 +228,7 @@ export function AccountPanel() {
             {user.displayName || user.email}
           </span>
           {user.isSuperuser ? (
-            <span className="native-agent-user-plan">管理员</span>
+            <span className="native-agent-user-plan">Admin</span>
           ) : null}
         </span>
         <span

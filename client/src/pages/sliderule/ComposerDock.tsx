@@ -33,7 +33,7 @@ import {
   type ComposerDevice,
 } from "./composer-device";
 import { useIntakeJudge } from "./use-intake-judge";
-import { IntakeHintBar } from "./IntakeHintBar";
+import { IntakeHintBar, INTAKE_JUDGING_LABEL } from "./IntakeHintBar";
 import {
   installKeyOf,
   loadInjectDisabledKeys,
@@ -106,7 +106,7 @@ export function isAttachmentExtractPending(
 /**
  * 发送键该不该灰。推演中按钮是「停止」，永远不锁。
  * 空输入且无附件 → 灰；任一附件解析中 → 灰。
- * 入站澄清 / 优化提示词在飞 → 灰（2026-08-20：生成澄清卡时发送仍亮，
+ * 入站审查 / 优化提示词在飞 → 灰（2026-08-20：生成审查卡时发送仍亮，
  * 半成品意图会被直接推演；优化同理，改写还没回填就能把原文发出去）。
  */
 export function isComposerSendBlocked(opts: {
@@ -515,7 +515,7 @@ export function ComposerDock({
   /** 发送：有附件时把附件名 + 文本类附件内容并进消息，发完清预览卡。
    *  解析中直接拒绝——不清附件、不排队等提取。LobeChat handleSend 在
    *  isUploadingFiles 时 return；只靠按钮 disabled 挡不住 Enter。
-   *  澄清/优化在飞同样拒绝——生成卡的时候发送必须灰。 */
+   *  审查/优化在飞同样拒绝——生成卡的时候发送必须灰。 */
   const doSend = React.useCallback(() => {
     // 开关在 React 态里，发送却读 localStorage。点了「应用」如果没写进
     // 存储（隐私模式 / 只改了画面），推演仍按 desktop 出 PC 端。
@@ -665,7 +665,7 @@ export function ComposerDock({
                   : isRefining
                     ? "正在优化提示词"
                     : isJudging
-                      ? "正在澄清需求"
+                      ? INTAKE_JUDGING_LABEL
                       : "发送"
             }
           >
@@ -681,15 +681,6 @@ export function ComposerDock({
 
   return (
     <div className="pointer-events-none flex w-full flex-col items-stretch gap-1.5">
-      <IntakeHintBar
-        judgement={judgement}
-        isJudging={isJudging}
-        onRewrite={text => {
-          setInput(text);
-          requestAnimationFrame(adjustTextareaHeight);
-          textareaRef.current?.focus();
-        }}
-      />
       {/*
         Cursor Composer 三行（横排，不是页面三栏）：
           1. Changes / Commit 芯片
@@ -810,7 +801,7 @@ export function ComposerDock({
       <div className={hero ? "w-full" : "flex w-full items-center gap-2"}>
       <div className="relative min-w-0 flex-1">
       <div
-        className={`pointer-events-auto relative w-full border bg-white transition-colors ${
+        className={`pointer-events-auto relative z-20 w-full border bg-white transition-colors ${
           hero
             ? "rounded-[12px] px-3 pb-2 pt-3 shadow-[0_2px_8px_rgba(31,35,40,0.06)]"
             : "rounded-[24px] px-2 py-1.5"
@@ -1120,6 +1111,16 @@ export function ComposerDock({
           )}
         </div>
       </div>
+      {/* 审查卡叠在输入框上方，不进外层 flex——进流会把输入顶走。 */}
+      <IntakeHintBar
+        judgement={judgement}
+        isJudging={isJudging}
+        onRewrite={text => {
+          setInput(text);
+          requestAnimationFrame(adjustTextareaHeight);
+          textareaRef.current?.focus();
+        }}
+      />
       </div>
           {hero ? null : sendButton}
       </div>

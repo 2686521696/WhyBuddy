@@ -2,7 +2,9 @@ import React from "react";
 import { Check, ChevronLeft, ChevronRight, X } from "lucide-react";
 
 /**
- * G_READY 澄清问题卡片（多步分页）。弹在输入框上方。
+ * G_READY 澄清问题卡片（多步分页）。
+ * ⚠ 2026-08-20：必须 absolute 叠在输入框上方。进 flex 流（mb-2 占位）
+ * 会把输入框顶走——空态 justify-center 时整块重新居中，跳得更明显。
  * 词汇对齐 V4 `BlueprintClarificationQuestion`（type/options:string[]/defaultAnswer/context）。
  * 数据源：sessionState.coverageGaps 的 open open_question gaps（由 SlideRule.tsx 派生传入）。
  */
@@ -98,7 +100,7 @@ export function ClarificationCard({
 
   return (
     <div
-      className="pointer-events-auto mb-2 w-full max-w-2xl rounded-lg border border-[#EBCEC0]/70 bg-white/95 shadow-[0_12px_40px_rgb(217_119_87/0.12)] backdrop-blur-xl"
+      className="pointer-events-auto absolute bottom-full left-0 right-0 z-[30] mb-2 w-full origin-bottom sr-composer-pop rounded-lg border border-[#EBCEC0]/70 bg-white/95 shadow-[0_12px_40px_rgb(217_119_87/0.12)] backdrop-blur-xl"
       data-testid="sliderule-clarification-card"
     >
       <div className="flex items-center justify-between border-b border-[#e8eaee] px-4 py-2.5">

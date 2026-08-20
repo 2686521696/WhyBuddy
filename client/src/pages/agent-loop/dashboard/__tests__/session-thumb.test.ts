@@ -90,4 +90,11 @@ describe("侧栏封面回落链", () => {
     expect(src).not.toContain("AppsWorkbench");
     expect(src).not.toContain("from \"./AppsWorkbench\"");
   });
+
+  it("侧栏活渲染手机页必须 fillPhone——剥注释后还在", () => {
+    const src = readFileSync(new URL("../session-thumb.tsx", import.meta.url), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^[ \t]*\/\/.*$/gm, "");
+    expect(src).toContain('fillPhone={payload.device === "phone"}');
+  });
 });

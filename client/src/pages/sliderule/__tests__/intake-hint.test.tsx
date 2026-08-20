@@ -8,9 +8,10 @@
  *     （生成过程中的发送锁在 ComposerDock，不在这张卡上）。
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { IntakeHintBar, shouldShowIntakeHint } from "../IntakeHintBar";
+import { IntakeHintBar, INTAKE_JUDGING_LABEL, shouldShowIntakeHint } from "../IntakeHintBar";
 import {
   judgeIntake,
   parseJudgement,
@@ -151,14 +152,36 @@ describe("IntakeHintBar", () => {
     expect(html).not.toContain("bg-[#fffbf0]");
   });
 
-  it("判定在途：占位「正在澄清」，不渲染改写卡片", () => {
+  it("判定在途：占位「正在审查」，不渲染改写卡片，也不叫澄清", () => {
+    // 澄清是发送之后主轴第 1 步。填标题时是 intake_judge 审查。
+    // 改回「正在澄清需求」，这条必红。
     const html = renderToStaticMarkup(
       <IntakeHintBar judgement={HINT} isJudging onRewrite={() => {}} />
     );
     expect(html).toContain('data-pending="true"');
-    expect(html).toContain("正在澄清需求");
+    expect(html).toContain(INTAKE_JUDGING_LABEL);
+    expect(INTAKE_JUDGING_LABEL).toContain("审查");
+    expect(html).not.toContain("澄清");
     expect(html).not.toContain(HINT.guidance);
     expect(html).not.toContain('data-testid="sliderule-intake-rewrite"');
+  });
+
+  it("审查卡叠在输入框上方，带弹出动画，不进文档流", () => {
+    // 进 flex 流会把输入框顶下去；空态还是 justify-center，跳得更明显。
+    // 变异：拿掉 absolute / bottom-full，这条必红。
+    const html = renderToStaticMarkup(
+      <IntakeHintBar judgement={HINT} onRewrite={() => {}} />
+    );
+    expect(html).toContain("absolute");
+    expect(html).toContain("bottom-full");
+    expect(html).toContain("sr-composer-pop");
+    expect(html).not.toMatch(/class="pointer-events-auto w-full rounded/);
+    const css = readFileSync(new URL("../../../index.css", import.meta.url), "utf8");
+    expect(css).toContain("@keyframes sr-composer-pop");
+    expect(css).toMatch(/\.sr-composer-pop\s*\{/);
+    expect(css).toMatch(
+      /prefers-reduced-motion: reduce\)[\s\S]*\.sr-composer-pop/
+    );
   });
 
   it("proceed / 无判定 / 空引导：不占用户视线", () => {
@@ -208,5 +231,38 @@ describe("useIntakeJudge 的陈旧判定处理", () => {
       /setTimeout\(\(\) => \{[\s\S]*setIsJudging\(true\)/
     );
     expect(src.match(/setIsJudging\(true\)/g)?.length).toBe(1);
+  });
+});
+
+describe("发送键 title 跟提示条同一句审查", () => {
+  it("ComposerDock 判定在途用 INTAKE_JUDGING_LABEL，不写澄清", () => {
+    const src = readFileSync(new URL("../ComposerDock.tsx", import.meta.url), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/\/\/[^\n]*/g, " ");
+    expect(src).toContain("INTAKE_JUDGING_LABEL");
+    expect(src).not.toContain("正在澄清需求");
+  });
+});
+
+describe("审查卡挂在输入框的 relative 壳上", () => {
+  it("IntakeHintBar 不是外层 flex-col 的第一个孩子", () => {
+    // 挂在 flex-col 顶部会占高度，输入框跟着跳。必须进 relative 壳、
+    // 叠在 dock 上方。变异：把 <IntakeHintBar 搬回 return 后第一行，这条必红。
+    const dock = readFileSync(new URL("../ComposerDock.tsx", import.meta.url), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/\/\/[^\n]*/g, " ");
+    const head = dock.slice(
+      dock.indexOf("pointer-events-none flex w-full flex-col"),
+      dock.indexOf("relative min-w-0 flex-1")
+    );
+    expect(head).not.toContain("<IntakeHintBar");
+    const around = dock.slice(
+      dock.indexOf("relative min-w-0 flex-1"),
+      dock.indexOf("{hero ? null : sendButton}")
+    );
+    expect(around).toContain("<IntakeHintBar");
+    expect(around.indexOf("sliderule-composer-dock")).toBeLessThan(
+      around.indexOf("<IntakeHintBar")
+    );
   });
 });

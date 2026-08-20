@@ -1190,15 +1190,33 @@
   animation: sr-caret-blink 1.1s steps(1, end) infinite;
 }
 
+/* 输入框上方的审查/澄清弹出。对照 ComposerDock + 菜单：从下方 8px 淡入。
+   2026-08-20：进 flex 流会把输入框顶走；动画只做出现，卸载即消失。 */
+@keyframes sr-composer-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.sr-composer-pop {
+  animation: sr-composer-pop 0.16s ease-out;
+}
+
 /* 减少动态效果（偏好开关 sr-reduce-motion + 系统 prefers-reduced-motion 双入口） */
 .sr-reduce-motion .sr-dot,
 .sr-reduce-motion .sr-caret,
+.sr-reduce-motion .sr-composer-pop,
 .sr-reduce-motion .animate-pulse {
   animation: none !important;
 }
 @media (prefers-reduced-motion: reduce) {
   .sr-dot,
-  .sr-caret {
+  .sr-caret,
+  .sr-composer-pop {
     animation: none;
   }
 }

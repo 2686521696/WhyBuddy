@@ -5,9 +5,9 @@
 }
 
 .native-dashboard {
-  /* 白底（2026-08-03 用户裁决）。此前是冷灰 #eef2f7，靠"侧栏白、内容灰"分层；
-     现在整壳同白，分层交给卡片自己的描边与投影。 */
-  background: var(--sr-shell-bg, #ffffff);
+  /* 2026-08-20：对照 Stitch / Cursor 浅色壳——菜单灰一档、内容更淡。
+     两页仍读同一对 token，避免再出现「会话页一种底、应用中心另一种」。 */
+  background: var(--sr-shell-bg, #f4f4f6);
   color: rgba(15, 23, 42, 0.88);
   height: 100%;
   min-height: 100vh;
@@ -19,7 +19,7 @@
 }
 
 .native-agent-shell {
-  background: var(--sr-shell-bg, #ffffff);
+  background: var(--sr-shell-bg, #f4f4f6);
   flex-direction: row;
   height: 100%;
   min-height: 0;
@@ -30,8 +30,10 @@
   /* GitHub Primer PageLayout：分栏是 1px muted 线，不是投影。
      2026-08-20 真机：20px 向右渐变在白底上像刀口阴影，比发丝线更尖锐。
      primer/css page-layout.scss → border-right: $border-width solid $Layout-divider-color
-     primer primitives --borderColor-muted: #d1d9e0b3（半透明，比实心 #e5e7eb 软）。 */
-  background: var(--sr-shell-bg, #ffffff);
+     primer primitives --borderColor-muted: #d1d9e0b3（半透明，比实心 #e5e7eb 软）。
+     宽 252px 与 shell-sidebar-layout.SHELL_SIDEBAR_WIDTH_PX 同数
+     （对话栏默认 = 侧栏×2）。 */
+  background: var(--sr-sidebar-bg, #e8e9ed);
   border-right: 1px solid var(--sr-border-muted, #d1d9e0b3);
   box-shadow: none;
   display: flex;
@@ -63,7 +65,9 @@
   cursor: pointer;
   display: flex;
   gap: 9px;
+  justify-content: flex-start;
   margin: 0 0 12px;
+  min-height: 56px;
   padding: 0;
   text-decoration: none;
   transition: background 0.15s ease;
@@ -81,7 +85,10 @@
  * 跟原来的字标基本齐平。
  *
  * max-width 兜底：侧栏 252px 减去左右各 8px 的内边距。素材换成更扁的比例时
- * 不至于顶出去。 */
+ * 不至于顶出去。
+ *
+ * 2026-08-20：容器 min-height 与图同高，object-position 左中——图里图标比
+ * 字标高，默认 object-fit:contain 会显得字往下掉。 */
 .native-agent-brand-logo {
   display: block;
   flex-shrink: 0;
@@ -89,6 +96,8 @@
   width: auto;
   max-width: 100%;
   object-fit: contain;
+  object-position: left center;
+  vertical-align: middle;
 }
 
 .native-agent-nav {
@@ -546,7 +555,7 @@
   background: transparent;
   border: 0;
   border-radius: 8px;
-  color: #64748b;
+  color: #71717a;
   cursor: pointer;
   display: flex;
   font: inherit;
@@ -564,8 +573,7 @@
 .native-agent-help-active,
 .native-agent-user:hover,
 .native-agent-user.is-trigger[aria-expanded="true"] {
-  background: rgba(15, 23, 42, 0.05);
-  color: #0f172a;
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .native-agent-dock-slot {
@@ -578,12 +586,12 @@
 }
 
 .native-agent-help .native-agent-dock-slot {
-  color: #64748b;
+  color: #a1a1aa;
 }
 
 .native-agent-help:hover .native-agent-dock-slot,
 .native-agent-help-active .native-agent-dock-slot {
-  color: #0f172a;
+  color: #71717a;
 }
 
 .native-agent-user {
@@ -606,9 +614,9 @@
 
 .native-agent-user-avatar {
   align-items: center;
-  background: linear-gradient(135deg, #2563eb, #38bdf8);
+  background: #e4e4e7;
   border-radius: 50%;
-  color: #fff;
+  color: #52525b;
   display: inline-flex;
   flex-shrink: 0;
   font-size: 10px;
@@ -636,7 +644,7 @@
 }
 
 .native-agent-user-name {
-  color: #0f172a;
+  color: #52525b;
   font-size: 13px;
   font-weight: 400;
   line-height: 1.2;
@@ -646,13 +654,13 @@
 }
 
 .native-agent-user-plan {
-  color: #94a3b8;
+  color: #a1a1aa;
   font-size: 11px;
   line-height: 1.2;
 }
 
 .native-agent-user-caret {
-  color: #94a3b8;
+  color: #a1a1aa;
   display: inline-flex;
   flex-shrink: 0;
   transition: transform 0.15s ease;
@@ -673,13 +681,15 @@
   overflow: hidden;
 }
 
-/* 页面壳统一底色（顶栏 / 内容 / Layout 必须同 token，否则 antd 默认 #fff 会露馅）。
+/* 页面壳底色。--sr-sidebar-bg 管菜单，--sr-shell-bg 管内容区。
  *
- * 改这一个值 = 整壳换底色：侧栏、顶栏、内容区、antd Layout 六处都读它。
- * 2026-08-03 由 #eef2f7 改为白（用户裁决）。 */
+ * 2026-08-03 曾整壳同白。2026-08-20 对照 Stitch / Cursor：菜单深一档、
+ * 内容区淡一档，输入卡自己仍是白底。侧栏若再读 --sr-shell-bg，两区会
+ * 糊成一块灰，看不出分栏。 */
 .native-agent-shell,
 .native-dashboard {
-  --sr-shell-bg: #ffffff;
+  --sr-sidebar-bg: #e8e9ed;
+  --sr-shell-bg: #f4f4f6;
   /* Primer light --borderColor-muted（github.com 分栏标准色）。
      投影只给 overlay，不分栏——见 primer box-shadow 文档、page-layout.scss。 */
   --sr-border-muted: #d1d9e0b3;
@@ -706,7 +716,7 @@
 
 .native-header {
   align-items: center;
-  background: var(--sr-shell-bg, #ffffff) !important;
+  background: var(--sr-shell-bg, #f4f4f6) !important;
   border-bottom: none !important;
   box-shadow: none !important;
   display: flex;
@@ -720,12 +730,12 @@
 .native-main.agent-ant-layout,
 .native-agent-main.agent-ant-layout,
 .native-main.agent-ant-layout .agent-ant-layout {
-  background: var(--sr-shell-bg, #ffffff) !important;
+  background: var(--sr-shell-bg, #f4f4f6) !important;
 }
 
 .native-header.agent-ant-layout-header,
 .agent-ant-layout-header.native-header {
-  background: var(--sr-shell-bg, #ffffff) !important;
+  background: var(--sr-shell-bg, #f4f4f6) !important;
   border-bottom: none !important;
   box-shadow: none !important;
   line-height: 48px;
@@ -749,19 +759,19 @@
   /* 墙一溢出就出现滚动条，可用宽少一截 → columnWidth 变 → 定位器重建。
      首页分页把卡往下堆时，已经出来的卡会跟着整墙重拍。预留槽位，宽稳住。 */
   scrollbar-gutter: stable;
-  background: var(--sr-shell-bg, #ffffff) !important;
+  background: var(--sr-shell-bg, #f4f4f6) !important;
   /* padding: 12px; */
 }
 
 .native-content.agent-ant-layout-content,
 .agent-ant-layout-content.native-content {
-  background: var(--sr-shell-bg, #ffffff) !important;
+  background: var(--sr-shell-bg, #f4f4f6) !important;
 }
 
 .native-agent-main > .native-settings-content,
 .native-agent-main > .native-workbench-content {
   padding: 0;
-  background: var(--sr-shell-bg, #ffffff) !important;
+  background: var(--sr-shell-bg, #f4f4f6) !important;
 }
 
 /* Detail uses same scroll container; must beat shell bg !important above */
@@ -1527,7 +1537,7 @@
  * ⚠️ 这一条是**最外层**，压在 SlideRuleStudio 自己那几处底色上面。
  * 只改组件里的 class 而漏了这里，页面看着一点没变——踩过一次。 */
 .native-sliderule-content {
-  background: var(--sr-shell-bg, #ffffff);
+  background: var(--sr-shell-bg, #f4f4f6);
 }
 
 .native-sliderule-workbench {

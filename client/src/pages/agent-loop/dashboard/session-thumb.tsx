@@ -243,7 +243,11 @@ function LiveCanvas({
           }}
         >
           {payload.kind === "html" ? (
-            <LazyHtmlAppSurface html={payload.html} source={source} />
+            <LazyHtmlAppSurface
+              html={payload.html}
+              source={source}
+              fillPhone={payload.device === "phone"}
+            />
           ) : (
             <LazyAppRuntimeScreen
               model={payload.model}

@@ -77,4 +77,17 @@ describe("侧栏底栏 · Cursor 尺度", () => {
     expect(accountPanelSource).toContain("native-agent-dock-slot");
     expect(stripComments(accountPanelSource)).not.toContain("已登录");
   });
+
+  it("超管档位写 Admin，头像是纯色圆不是蓝青渐变", () => {
+    const panel = stripComments(accountPanelSource);
+    expect(panel).toContain(">Admin<");
+    expect(panel).not.toContain("管理员");
+    const avatar = cssBlocks(dashboardCss, ".native-agent-user-avatar").join(" ");
+    expect(avatar).not.toMatch(/linear-gradient/);
+    expect(avatar).toMatch(/background:\s*#e4e4e7/);
+    expect(avatar).toMatch(/color:\s*#52525b/);
+    const name = cssBlocks(dashboardCss, ".native-agent-user-name").join(" ");
+    expect(name).not.toMatch(/#0f172a/);
+    expect(name).toMatch(/#52525b/);
+  });
 });

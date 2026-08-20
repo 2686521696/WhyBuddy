@@ -198,4 +198,26 @@ describe("spec-first 卡有图就贴图", () => {
     expect(fn).toContain("captureAndUpload");
     expect(fn).toContain("captureFor");
   });
+
+  it("HtmlLiveThumb 必须 cover + fillPhone，画布层必须脱离文档流", () => {
+    // ⚠ 2026-08-20 真机：width 缩放把 1920×1080 缩进 9:16 卡，顶上指甲盖、
+    // 下面全白；流式 1920 高还把 masonry 格子撑爆。改回 width / 拿掉
+    // absolute / 不传 fillPhone，这条必红。
+    const fnStart = stripped.indexOf("function HtmlLiveThumb");
+    const fn = stripped.slice(fnStart, stripped.indexOf("function SpecPagesPreview"));
+    expect(fn).toMatch(/useScaleToFit\([^)]*"cover"/);
+    expect(fn).not.toMatch(/useScaleToFit\([^)]*"width"/);
+    expect(fn).toContain("fillPhone={isPhone}");
+    expect(fn).toContain('position: "absolute"');
+  });
+});
+
+describe("SheetThumb 图必须铺满格子", () => {
+  it("img 绝对定位 + object-cover，固有尺寸不能赢", () => {
+    const html = renderToStaticMarkup(
+      <SheetThumb appId="app-77" alt="园务通" fallback={<div />} />
+    );
+    expect(html).toMatch(/class="[^"]*absolute inset-0[^"]*object-cover/);
+    expect(html).not.toMatch(/class="h-full w-full object-cover"/);
+  });
 });
