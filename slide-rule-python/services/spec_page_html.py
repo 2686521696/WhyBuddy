@@ -120,7 +120,19 @@ staticflickr.com / rawpixel.com），不要写任何外部网址。库存图必�
 #: （底部标签栏），这里不写成 <nav>，3.5 就没得抠，移动端那套判据整个失效。
 _STRUCTURAL_CONTRACT_MOBILE = """顶部一个 <header>（左侧产品名，右侧当前登录角色），
 底部一个固定的 <nav> 标签栏（每个页面入口是一个 <a>，图标在上文字在下）。
+<nav> 必须 position:fixed; left:0; right:0; bottom:0（Tailwind：fixed inset-x-0 bottom-0 z-20）。
 **不要左侧边栏（不要 <aside>）**，内容区是可上下滚动的单列。
+<main> 底部必须留出标签栏高度（Tailwind：pb-32），内容不许被底栏挡住。
+
+视口已经是手机 CSS 像素（390×844，Playwright iPhone 14 / Chrome DevTools 同款）。
+html 与 body 必须 width:100%; min-height:100%。内容铺满视口。
+不要再套一层手机外框，不要用 max-w-sm / max-w-md / mx-auto 把整页收成居中卡片，
+不要写 w-[390px] 再居中——预览区已经有设备框，你输出的就是 App 本身。
+不要把四个页面入口画成屏幕正中的一排图标：那是底部 <nav>，不是首页内容。
+结构只能是 header 顶、main 铺满（列表/表单/详情）、nav 贴底。
+
+这一页的主内容必须是本页 purpose 说的那件任务（列表 / 表单 / 详情）。
+不许用「个人资料卡 + 设置入口 + 退出登录」顶替业务页。
 
 页面里的 <script> **不会被执行**（渲染方会移除）。所以不要引图表库、不要写 JS
 渲染——图表一律用内联 <svg> 的 <polyline>/<rect>/<path>/<circle> 直接画出来。
@@ -138,7 +150,7 @@ staticflickr.com / rawpixel.com），不要写任何外部网址。库存图必�
 #: 缺省风格。**一句话**——它只是没人指定时的兜底，不是"推荐版式"。
 #: 密度、版式原型、组件词汇这些该由上游按应用给（第 1.5 步生成 / 人工覆盖）。
 _DEFAULT_STYLE = "企业后台风格，浅色底。"
-_DEFAULT_STYLE_MOBILE = "移动端 App 风格（竖屏 1080×1920），浅色底，单列卡片流。触控目标要够大（按钮/列表项高度 ≥ 88px），正文字号偏大。"
+_DEFAULT_STYLE_MOBILE = "移动端 App 风格（竖屏 390×844 CSS 像素），浅色底，单列卡片流铺满视口。触控目标 ≥ 44px（Apple HIG），不要按 1080 物理像素去画 88px 大按钮。"
 
 
 def build_design_system_prompt_block(
@@ -238,8 +250,8 @@ def build_page_html_prompt(
 ) -> str:
     """create/text.py 的 USER_PROMPT，逐字对齐（image policy 取 disabled 那一支）。
 
-    device（2026-08-14 晚加）：`"phone"` 时换移动端契约（竖屏 1080×1920、
-    顶栏 + 底部标签栏、无侧栏）。词表沿用 device_policy 的 Device
+    device（2026-08-14 晚加）：`"phone"` 时换移动端契约（竖屏 390×844 CSS
+    像素、顶栏 + 底部标签栏、无侧栏）。词表沿用 device_policy 的 Device
     （"desktop"/"phone"），不另发明。
 
     design_system（2026-08-15 晚加）：这个应用的**风格**描述，一路可以从

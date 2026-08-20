@@ -31,6 +31,7 @@ from services.page_shell import (
     detect_brand_and_role,
     extract_shell,
     nav_templates,
+    outside_html_comments,
     shell_fingerprint,
     unify_shell,
 )
@@ -403,3 +404,66 @@ class Test子串替换不许叠名:
         assert "循护桥护桥" not in aside
         assert "循护桥护桥" not in out["pages"]["p1"]
         assert "循护桥护桥" not in out["pages"]["p2"]
+
+
+class Test桌面侧栏困在注释或被精修删掉:
+    """2026-08-20 过夜律所：r0 未闭合注释吞 aside，r1 精修只留注释。"""
+
+    _SWALLOWED = (
+        "<!DOCTYPE html><html lang='zh-CN'><body>"
+        "<header class='h-16'>律易通 · 顶栏</header>"
+        "<div class='flex'>"
+        "<!-- 左侧导航 <aside class='w-64'><div class='brand'>律易通</div>"
+        "<nav><a class='nav-item' href='#'><span>个人工作台</span></a>"
+        "<a class='nav-item' href='#'><span>案件台账页</span></a></nav>"
+        "</aside>\n"
+        "<!-- 主正文 <main> -->\n"
+        "<main class='p-6'>工时列表</main></div></body></html>"
+    )
+
+    def test_剥注释之后源码里的aside不算活的(self):
+        raw = self._SWALLOWED
+        assert "<aside" in raw
+        assert "<aside" not in outside_html_comments(raw)
+        # 已闭合的说明注释不许误伤后面的 main
+        assert "<main" in outside_html_comments(raw)
+
+    def test_unify把未闭合注释里的侧栏捞出来(self):
+        pages = {"p1": self._SWALLOWED, "p2": PAGES["p2"]}
+        spec = {
+            "pages": [
+                {"id": "p1", "name": "个人工作台"},
+                {"id": "p2", "name": "案件台账页"},
+            ],
+            "appName": "律易通",
+        }
+        html = unify_shell(pages, spec)["pages"]["p1"]
+        vis = outside_html_comments(html)
+        aside_at = vis.lower().find("<aside")
+        assert aside_at >= 0
+        assert "律易通" in vis[aside_at : aside_at + 400]
+        # 已闭合的 ``<!-- 主正文 <main> -->`` 还在，main 仍是活的
+        assert "<!-- 主正文 <main> -->" in html
+        assert "<main" in vis
+
+    def test_精修删掉aside但留了顶栏时要补回去(self):
+        """r1：``<!-- 左侧导航 -->`` 后面没有标签。向导页（无 header）仍放过。"""
+        missing = (
+            "<!DOCTYPE html><html><body>"
+            "<header class='h-16'>律易通 · 顶栏</header>"
+            "<!-- 左侧导航 -->"
+            "<main class='p-6'>工时列表</main></body></html>"
+        )
+        pages = {"p1": missing, "p2": PAGES["p2"]}
+        spec = {
+            "pages": [
+                {"id": "p1", "name": "个人工作台"},
+                {"id": "p2", "name": "案件台账页"},
+            ],
+            "appName": "律易通",
+        }
+        html = unify_shell(pages, spec)["pages"]["p1"]
+        vis = outside_html_comments(html)
+        assert "<aside" in vis
+        assert "工时列表" in html
+

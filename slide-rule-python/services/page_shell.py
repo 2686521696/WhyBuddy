@@ -63,6 +63,175 @@ _SVG = re.compile(r"<svg\b[\s\S]*?</svg>", re.I)
 #: （`ml-64` / `ml-[248px]` / `flex-1`）。
 _MAIN_OPEN = re.compile(r"<main\b[^>]*>", re.I)
 _ASIDE_OPEN = re.compile(r"<aside\b[^>]*>", re.I)
+_NAV_OPEN = re.compile(r"<nav\b[^>]*>", re.I)
+
+#: 移动端底栏挡住正文（2026-08-20 真机）：壳换成顶栏+底栏之后，
+#: 模型常把 <nav> 写在文档流末尾、main 不留底衬，列表最后几行被标签栏盖住。
+#: 对照 antd-mobile TabBar（高度约 50 + safe area）和 Apple HIG Tab Bar：
+#: 内容区必须自己让出底栏。不靠 LLM 自觉——跟 reconcile_main_offset 同一类机械补。
+_PHONE_NAV_PIN = ("fixed", "inset-x-0", "bottom-0", "z-20")
+#: ⚠ 2026-08-20 过夜（幼安行 r2）：模型写成
+#: ``<nav class="fixed inset-x-0 bottom-0 z-20">``，没有 flex 横排。
+#: 五个 <a> 按块级竖着堆，截图里底栏占了半屏，页内「一键确认」叠在上面。
+#: 已有 fixed 时旧逻辑不再补 class——横排必须单独保证。
+_PHONE_NAV_ROW = ("flex", "justify-around", "items-center")
+_PHONE_NAV_NOT_COL = frozenset(("flex-col", "flex-column"))
+_PHONE_MAIN_CLEAR = ("pb-32",)
+_PINNED_POS = frozenset(("fixed", "absolute", "sticky"))
+
+#: 铺满手机视口（2026-08-20 真机）：画布曾是 1080×1920，模型按 v0 习惯
+#: 输出 max-w-md mx-auto 机模，内容缩在框中间。对照 Playwright iPhone 14
+#: 与 Chrome DevTools：视口改成 390×844 之后，仍要机械盖一层 CSS——
+#: 已经生成的 HTML 不会自己把 mx-auto 拿掉。id 与前端 html-app-surface
+#: 的 PHONE_FILL_STYLE_ID 同名，两边注入幂等。
+_PHONE_FILL_STYLE_ID = "sliderule-phone-fill"
+#: ⚠ 2026-08-20 第二趟：只盖 body>max-w-md 不够。真机（选题库）是
+#: body>div.min-h-screen.flex.items-center.justify-center 包着一排底栏图标，
+#: 视觉上四个入口漂在屏幕正中。对照 antd-mobile TabBar：header 顶、main 吃
+#: 剩余高度、nav 贴底。选择器与前端 html-app-surface.PHONE_FILL_CSS 同文。
+#: ⚠ 2026-08-20 第三趟：第二趟写成 body>div[class*="items-center"]，顶栏几乎
+#: 都是 flex items-center justify-between——被当成整页容器拉到 100% 高，
+#: 用户看到的就是「顶部区域样式有问题」。居中陷阱盯 justify-center /
+#: min-h-screen，不要单独盯 items-center。main 不要 display:flex，否则
+#: 内部 header 变成竖排 flex 项，滚动也没了。
+_PHONE_FILL_CSS = (
+    "html,body{margin:0!important;width:100%!important;height:100%!important;"
+    "min-height:100%!important;max-width:none!important;overflow:hidden!important}"
+    "body{display:flex!important;flex-direction:column!important;"
+    "align-items:stretch!important;justify-content:flex-start!important}"
+    "body>*{width:100%!important;max-width:none!important;"
+    "margin-left:0!important;margin-right:0!important;box-sizing:border-box!important}"
+    'body>div[class*="min-h-screen"],body>div[class*="justify-center"]{'
+    "display:flex!important;flex-direction:column!important;"
+    "align-items:stretch!important;justify-content:flex-start!important;"
+    "min-height:0!important;flex:1 1 auto!important;height:100%!important;width:100%!important;"
+    "overflow:hidden!important}"
+    "header{flex:0 0 auto!important;width:100%!important}"
+    "main{flex:1 1 auto!important;min-height:0!important;width:100%!important;"
+    "overflow-y:auto!important;overflow-x:hidden!important;"
+    "-webkit-overflow-scrolling:touch}"
+    "nav{display:flex!important;flex-direction:row!important;"
+    "justify-content:space-around!important;align-items:center!important;"
+    "flex:0 0 auto!important;width:100%!important}"
+)
+
+
+def _ensure_tag_classes(markup: str, opener: re.Pattern[str], needed: Tuple[str, ...]) -> str:
+    m = opener.search(markup or "")
+    if not m:
+        return markup
+    open_tag = m.group(0)
+    cls = _CLASS.search(open_tag)
+    have = cls.group(1).split() if cls else []
+    extra = [c for c in needed if c not in have]
+    if not extra:
+        return markup
+    if cls:
+        new_tag = open_tag.replace(cls.group(0), f'class="{" ".join(have + extra)}"', 1)
+    else:
+        new_tag = open_tag[:-1] + f' class="{" ".join(needed)}">'
+    return markup[: m.start()] + new_tag + markup[m.end():]
+
+
+#: 未闭合注释把壳吃掉。壳正则照样能 match 并替换，替换完仍在注释里——
+#: 截图上看不见，判据 grep 源码却是绿的。
+#:
+#:   2026-08-20 过夜，团长帮 p3：``<!-- 底部固定的 <nav class="fixed …``
+#:   2026-08-20 过夜，律所 r0：``<!-- 左侧导航 <aside class="w-64 …``
+#:     下一句才是 ``<!-- 主正文 <main> -->``，第一个 ``-->`` 在那儿，
+#:     整段侧栏被当成注释。inspect 直接搜 ``<aside`` 假绿。
+#:
+#: 只捞 aside/nav。模型常写已闭合的 ``<!-- 主正文 <main> -->``，捞 main
+#: 会把说明注释截断、留下裸 ``-->``。
+_UNCLOSED_COMMENT_SHELL = re.compile(
+    r"<!--(?:(?!-->).)*?(<(?:aside|nav)\b)", re.I | re.S
+)
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
+_NAV_PAGE_ID_ATTR = re.compile(r"\sdata-page-id=\"[^\"]*\"", re.I)
+_NAV_ARIA_CURRENT_ATTR = re.compile(r"\saria-current=\"[^\"]*\"", re.I)
+
+
+def ensure_nav_not_commented(markup: str) -> str:
+    """把未闭合注释里的 <aside>/<nav> 捞出来。幂等：已闭合的 ``<!-- … -->`` 不动。"""
+    return _UNCLOSED_COMMENT_SHELL.sub(r"\1", markup or "")
+
+
+def outside_html_comments(markup: str) -> str:
+    """剥掉 HTML 注释（含未闭合拖到文末的）。查「页上有没有这个标签」用这个。
+
+    ⚠ 直接 grep 源码会把注释里的 ``<aside>`` 当成活标签——律所 r0 过夜闸
+    就是这么假绿的。把本函数改成恒等，那条闸会再绿。
+    """
+    text = _HTML_COMMENT.sub("", markup or "")
+    cut = text.find("<!--")
+    return text[:cut] if cut >= 0 else text
+
+
+def _strip_tag_classes(markup: str, opener: re.Pattern[str], drop: frozenset[str]) -> str:
+    m = opener.search(markup or "")
+    if not m:
+        return markup
+    open_tag = m.group(0)
+    cls = _CLASS.search(open_tag)
+    if not cls:
+        return markup
+    have = [c for c in cls.group(1).split() if c not in drop]
+    if have == cls.group(1).split():
+        return markup
+    new_tag = open_tag.replace(cls.group(0), f'class="{" ".join(have)}"', 1)
+    return markup[: m.start()] + new_tag + markup[m.end():]
+
+
+def ensure_phone_safe_area(markup: str) -> str:
+    """底栏钉在屏幕底部，main 让出高度。模型漏写时由代码补，不重问。"""
+    markup = ensure_nav_not_commented(markup)
+    nav_m = _NAV_OPEN.search(markup or "")
+    if nav_m:
+        have = set()
+        cls = _CLASS.search(nav_m.group(0))
+        if cls:
+            have = set(cls.group(1).split())
+        if have.isdisjoint(_PINNED_POS):
+            markup = _ensure_tag_classes(markup, _NAV_OPEN, _PHONE_NAV_PIN)
+        markup = _strip_tag_classes(markup, _NAV_OPEN, _PHONE_NAV_NOT_COL)
+        markup = _ensure_tag_classes(markup, _NAV_OPEN, _PHONE_NAV_ROW)
+    main_m = _MAIN_OPEN.search(markup or "")
+    if main_m:
+        have = []
+        cls = _CLASS.search(main_m.group(0))
+        if cls:
+            have = cls.group(1).split()
+        if not any(t.startswith("pb-") or t.startswith("mb-") for t in have):
+            markup = _ensure_tag_classes(markup, _MAIN_OPEN, _PHONE_MAIN_CLEAR)
+    return markup
+
+
+def ensure_phone_viewport_fill(markup: str) -> str:
+    """把套在 max-w-md / mx-auto 里的机模撑满视口。模型漏写时由代码补。
+
+    幂等：已经有 #sliderule-phone-fill 不再插第二份。
+    """
+    html = markup or ""
+    tag_inner = f'<style id="{_PHONE_FILL_STYLE_ID}">{_PHONE_FILL_CSS}</style>'
+    if f'id="{_PHONE_FILL_STYLE_ID}"' in html:
+        # 精修沿用旧页时 style 还在，但文案可能是上一版（缺 nav 横排）。
+        return re.sub(
+            rf'(<style id="{re.escape(_PHONE_FILL_STYLE_ID)}">)[\s\S]*?(</style>)',
+            lambda m: m.group(1) + _PHONE_FILL_CSS + m.group(2),
+            html,
+            count=1,
+            flags=re.I,
+        )
+    tag = tag_inner
+    head = re.search(r"<head\b[^>]*>", html, re.I)
+    if head:
+        at = head.end()
+        return html[:at] + tag + html[at:]
+    html_open = re.search(r"<html\b[^>]*>", html, re.I)
+    if html_open:
+        at = html_open.end()
+        return html[:at] + f"<head>{tag}</head>" + html[at:]
+    return tag + html
 
 
 class PageShellError(RuntimeError):
@@ -367,8 +536,34 @@ def _set_label(link: str, icon: str, label: str) -> str:
     return re.sub(r"(<a\b[^>]*>)[\s\S]*(</a>)", lambda m: m.group(1) + inner + m.group(2), link, count=1)
 
 
+def nav_tab_label(name: str, app_name: str = "") -> str:
+    """底栏标签只要短名。精修后 spec.pages.name 常被写成「产品名 - 某页」。
+
+    ⚠ 不能见到 `` - `` 就 rsplit 取后半：真机有过「订单详情 - 团长帮」，
+    一刀切会把标签变成产品名。只剥**前缀或后缀等于产品名**的那一截。
+    """
+    text = str(name or "").strip()
+    brand = str(app_name or "").strip()
+    if not brand:
+        return text
+    if text.startswith(brand):
+        rest = text[len(brand) :].lstrip(" -·|/")
+        if rest:
+            text = rest
+    for sep in (" - ", " · ", " | "):
+        suffix = f"{sep}{brand}"
+        if text.endswith(suffix) and len(text) > len(suffix):
+            text = text[: -len(suffix)].strip()
+            break
+    return text
+
+
 def build_nav_items(
-    templates: Dict[str, Any], spec_pages: List[Dict[str, Any]], current_page_id: str
+    templates: Dict[str, Any],
+    spec_pages: List[Dict[str, Any]],
+    current_page_id: str,
+    *,
+    app_name: str = "",
 ) -> str:
     """按 spec 的页面清单生成导航项。
 
@@ -379,7 +574,7 @@ def build_nav_items(
     icons = [i for i in templates["icons"] if i] or [""]
     out: List[str] = []
     for i, page in enumerate(spec_pages):
-        name = str(page.get("name") or page.get("id") or "").strip()
+        name = nav_tab_label(str(page.get("name") or page.get("id") or ""), app_name)
         is_current = str(page.get("id") or "") == current_page_id
         link = _set_class(
             templates["link"],
@@ -390,11 +585,22 @@ def build_nav_items(
         #   而**靠标签文字匹配是不行的**：名字可以重复、可以带图标字符、可以被
         #   模型改写成另一种说法。这条跟 data-* 绑定孔是同一条纪律——
         #   界面上的东西要能指回声明，就得有 id，不能靠人眼看得懂的那串字。
+        # ⚠ 2026-08-20 精修第二轮：模板链接上已经有上一轮的 data-page-id，
+        #   再 replace("<a", ...) 会写成 data-page-id="p5" data-page-id="p1"。
+        #   HTML 认第一个，点哪都跳到模板那一页。先剥再盖。
         page_id = str(page.get("id") or "").strip()
+        link = _NAV_PAGE_ID_ATTR.sub("", link)
+        link = _NAV_ARIA_CURRENT_ATTR.sub("", link)
         if page_id:
-            link = link.replace("<a", f'<a data-page-id="{escape(page_id, quote=True)}"', 1)
+            link = re.sub(
+                r"<a\b",
+                f'<a data-page-id="{escape(page_id, quote=True)}"',
+                link,
+                count=1,
+                flags=re.I,
+            )
         if is_current:
-            link = link.replace("<a", '<a aria-current="page"', 1)
+            link = re.sub(r"<a\b", '<a aria-current="page"', link, count=1, flags=re.I)
         out.append(link)
     return "\n".join(out)
 
@@ -491,6 +697,25 @@ def _pick_shell_source_phone(pages_html: Dict[str, str]) -> str:
     return best
 
 
+def _ensure_desktop_aside(html: str, aside: str) -> str:
+    """桌面页有侧栏就换上统一那份；精修把 ``<aside>`` 整段删了则补回去。
+
+    ⚠ 2026-08-20 律所 r1：局部改只留 ``<!-- 左侧导航 -->``，标签没了。
+    旧逻辑 ``_ASIDE.search`` 失败就原样放过——壳统一问题=2，截图仍无侧栏。
+
+    向导页故意不放侧栏（只有 ``<main>``、没有 ``<header>``）仍然放过，
+    见 ``test_某一页没有壳时不会被塞坏``。
+    """
+    if _ASIDE.search(html or ""):
+        return _ASIDE.sub(lambda _m: aside, html, count=1)
+    if not _HEADER.search(html or "") or not _MAIN_OPEN.search(html or ""):
+        return html
+    main_at = re.search(r"<main\b", html, re.I)
+    if not main_at:
+        return html
+    return html[: main_at.start()] + aside + "\n" + html[main_at.start() :]
+
+
 def _unify_shell_phone(pages_html: Dict[str, str], spec: Dict[str, Any]) -> Dict[str, Any]:
     """移动端（竖屏）的壳统一：<header> 顶栏 + 页面级 <nav> 底部标签栏。
 
@@ -499,6 +724,7 @@ def _unify_shell_phone(pages_html: Dict[str, str], spec: Dict[str, Any]) -> Dict
     没有 <aside>，产品名和角色在 <header> 里认。
     """
     spec_pages = list(spec.get("pages") or [])
+    pages_html = {pid: ensure_nav_not_commented(html) for pid, html in pages_html.items()}
     source_id = _pick_shell_source_phone(pages_html)
     src = pages_html[source_id]
     header_m = _HEADER.search(src)
@@ -522,7 +748,7 @@ def _unify_shell_phone(pages_html: Dict[str, str], spec: Dict[str, Any]) -> Dict
         if header:
             html = _HEADER.sub(lambda _m: header, html, count=1) if _HEADER.search(html) else html
         if templates and nav_m:
-            items = build_nav_items(templates, spec_pages, page_id)
+            items = build_nav_items(templates, spec_pages, page_id, app_name=app_name)
             new_nav = re.sub(
                 r"(<nav\b[^>]*>)[\s\S]*(</nav>)",
                 lambda m: m.group(1) + "\n" + items + "\n" + m.group(2),
@@ -530,7 +756,7 @@ def _unify_shell_phone(pages_html: Dict[str, str], spec: Dict[str, Any]) -> Dict
                 count=1,
             )
             html = _NAV.sub(lambda _m: new_nav, html, count=1) if _NAV.search(html) else html
-        out[page_id] = html
+        out[page_id] = ensure_phone_viewport_fill(ensure_phone_safe_area(html))
 
     return {
         "version": PAGE_SHELL_VERSION,
@@ -564,6 +790,9 @@ def unify_shell(
     if device == "phone":
         return _unify_shell_phone(pages_html, spec)
 
+    # ⚠ 桌面也曾只在移动分支捞注释（2026-08-20 律所）。unify 替换的
+    # aside 仍困在 ``<!-- 左侧导航 <aside`` 里，截图没有侧栏。
+    pages_html = {pid: ensure_nav_not_commented(html) for pid, html in pages_html.items()}
     source_id = _pick_shell_source(pages_html)
     shell = extract_shell(pages_html[source_id])
     if not shell["aside"] and not shell["header"]:
@@ -625,7 +854,7 @@ def unify_shell(
         #   不单独处理的话每页都写着源页那一节。
         header = set_breadcrumb_current(header, name_of.get(page_id, ""))
         if templates and nav_match:
-            items = build_nav_items(templates, spec_pages, page_id)
+            items = build_nav_items(templates, spec_pages, page_id, app_name=app_name)
             new_nav = re.sub(
                 r"(<nav\b[^>]*>)[\s\S]*(</nav>)",
                 lambda m: m.group(1) + "\n" + items + "\n" + m.group(2),
@@ -635,7 +864,7 @@ def unify_shell(
             aside = aside.replace(nav_match.group(0), new_nav, 1)
         html = markup
         if aside:
-            html = _ASIDE.sub(lambda _m: aside, html, count=1) if _ASIDE.search(html) else html
+            html = _ensure_desktop_aside(html, aside)
         if header:
             html = _HEADER.sub(lambda _m: header, html, count=1) if _HEADER.search(html) else html
         # ★ 内容区容器也要统一（2026-08-15 补）。
