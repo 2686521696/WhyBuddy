@@ -68,6 +68,7 @@ describe("接在活路径上", () => {
     expect(src).toContain("getGeneratedAppForSession");
     expect(src).toContain("captureAndUpload");
     expect(src).toContain("HtmlAppSurface");
+    expect(src).toContain('fillPhone={job.device === "phone"}');
   });
 
   it("SlideRuleStudio 挂了 StudioLandingShot——卸掉就采不到", () => {
@@ -76,5 +77,16 @@ describe("接在活路径上", () => {
     );
     expect(src).toContain("<StudioLandingShot");
     expect(src).toContain("running={isRunning}");
+    expect(src).toContain("StudioShareToggle");
+  });
+
+  it("私有/开放开关在生成前也占位 —— 卸掉 app 就整颗消失，用户找不到", () => {
+    const src = stripComments(
+      readFileSync(new URL("../StudioShareToggle.tsx", import.meta.url), "utf8")
+    );
+    expect(src).toContain('data-testid="sliderule-share-toggle"');
+    expect(src).toContain("私有");
+    expect(src).toContain("开放");
+    expect(src).not.toMatch(/if\s*\(\s*!sessionId\s*\|\|\s*!app/);
   });
 });

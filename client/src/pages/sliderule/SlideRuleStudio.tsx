@@ -69,6 +69,7 @@ import { StudioSplit } from "./StudioSplit";
 import { useStudioLayout } from "./StudioLayoutContext";
 import { isStagePageShown } from "./studio-layout";
 import { StudioLandingShot } from "./studio-landing-shot";
+import { StudioShareToggle } from "./StudioShareToggle";
 
 const XRAY_PREF_KEY = "sliderule:xray-on";
 
@@ -346,7 +347,7 @@ export function SlideRuleStudio({
   // ⚑ 2026-08-14（当天回炉）：游标与档位切换随区块页下架后，用户点名要回来
   // ——「跟以前链路顶部保持统一，之前挺好用的」。这次不是把 AppRuntimeScreen
   // 的 portal 接回来，而是给 HTML 舞台配齐同一排件：
-  //   · 桌面/代码档：桌面 = 渲染页；代码 = 当前页交付的 HTML 原文
+  //   · 页面/代码档：页面 = 渲染页；代码 = 当前页交付的 HTML 原文
   //   · 游标：XrayPanel 原样复用（它只吃模型 + schema，纯派生），中间缺的
   //     那层「{attr,value,el} → XrayTarget」翻译落在 htmlBindingToXrayTarget
   const [stageView, setStageView] = useState<"page" | "code" | "board">("page");
@@ -502,8 +503,9 @@ export function SlideRuleStudio({
                 </span>
               )}
               {versionToolbar}
-              {/* 顶栏：桌面/代码/沙盘 + 透视。图标簇贴在这一行最右，
-                  不再独占整页顶栏（2026-08-20 真机占一条底边）。 */}
+              {/* 顶栏：页面/代码/沙盘 + 透视。
+                  ⚠ 2026-08-20：这一档叫「页面」不是「桌面」——桌面是设备，
+                  点了「应用」之后顶栏还写桌面会让人以为预览仍是 PC。 */}
               <div
                 className="ml-auto flex shrink-0 items-center gap-1.5"
                 data-testid="sliderule-stage-gears"
@@ -531,7 +533,7 @@ export function SlideRuleStudio({
                 <div className="flex items-center rounded-full border border-[#e5e7eb] bg-white p-0.5">
                   {(
                     [
-                      ["page", "桌面"],
+                      ["page", "页面"],
                       ["code", "代码"],
                       ["board", "沙盘"],
                     ] as const
@@ -552,6 +554,7 @@ export function SlideRuleStudio({
                     </button>
                   ))}
                 </div>
+                <StudioShareToggle sessionId={sessionId} running={isRunning} />
                 <button
                   type="button"
                   onClick={() => {

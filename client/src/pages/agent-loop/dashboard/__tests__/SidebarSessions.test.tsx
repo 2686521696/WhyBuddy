@@ -6,6 +6,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import type { AppStoreSummary } from "../app-store-client";
 import {
   createSessionId,
   filterSessionsByPhase,
@@ -13,6 +14,10 @@ import {
   groupSessionsByAge,
   sessionAgeGroup,
   sessionPhaseBucket,
+  SessionRowMeta,
+  sessionRowDevice,
+  sessionRowVisibility,
+  sessionRowVisibilityLabel,
   sessionWhen,
   SIDEBAR_RECENT_LIMIT,
   SIDEBAR_WEEK_LIMIT,
@@ -21,6 +26,27 @@ import {
   sortSessionsByRecency,
   splitSidebarSessions,
 } from "../SidebarSessions";
+
+function summary(partial: Partial<AppStoreSummary>): AppStoreSummary {
+  return {
+    id: "app-1",
+    root_id: "root-1",
+    parent_id: null,
+    version: 1,
+    session_id: "sr-1",
+    goal: "做一个社区团购站",
+    gate_passed: true,
+    created_at: "2026-08-19",
+    product_name: "安康随访通",
+    theme_id: "azure",
+    theme_label: "Azure",
+    device: "desktop",
+    landing_page_ref: "p1",
+    entity_count: 4,
+    page_count: 4,
+    ...partial,
+  };
+}
 
 describe("createSessionId", () => {
   // 2026-08-06：id 从本地生成改成**向服务端要**。
@@ -230,6 +256,70 @@ describe("splitSidebarSessions / sessionWhen", () => {
 
 });
 
+describe("sessionRowDevice / sessionRowVisibility", () => {
+  it("设备只认 desktop/phone，无 app 或空字段不默认成 Web", () => {
+    expect(sessionRowDevice(null)).toBeNull();
+    expect(sessionRowDevice(summary({ device: "phone" }))).toBe("phone");
+    expect(sessionRowDevice(summary({ device: "desktop" }))).toBe("desktop");
+    expect(sessionRowDevice(summary({ device: "" }))).toBeNull();
+    expect(sessionRowDevice(summary({ device: "tablet" }))).toBeNull();
+  });
+
+  it("可见性来自关联应用：公开→已分享，私有→私有；无 app 不伪造", () => {
+    expect(sessionRowVisibility(null)).toBeNull();
+    expect(sessionRowVisibility(summary({}))).toBeNull();
+    expect(sessionRowVisibility(summary({ visibility: "public" }))).toBe("public");
+    expect(sessionRowVisibility(summary({ visibility: "unlisted" }))).toBe("public");
+    expect(sessionRowVisibility(summary({ visibility: "private" }))).toBe("private");
+    expect(sessionRowVisibilityLabel("public")).toBe("已分享");
+    expect(sessionRowVisibilityLabel("private")).toBe("私有");
+    expect(sessionRowVisibility(summary({ visibility: "private" }))).not.toBe("public");
+  });
+});
+
+describe("SessionRowMeta", () => {
+  it("公开应用副行有设备 + 已分享，没有私有", () => {
+    const html = renderToStaticMarkup(
+      <SessionRowMeta when="今天" device="phone" visibility="public" />,
+    );
+    expect(html).toContain("native-agent-session-meta");
+    expect(html).toContain('data-device="phone"');
+    expect(html).toContain("今天");
+    expect(html).toContain("已分享");
+    expect(html).toContain('data-visibility="public"');
+    expect(html).not.toContain("私有");
+  });
+
+  it("私有应用副行写私有，不该有已分享", () => {
+    const html = renderToStaticMarkup(
+      <SessionRowMeta when="昨天" device="desktop" visibility="private" />,
+    );
+    expect(html).toContain("私有");
+    expect(html).toContain('data-device="desktop"');
+    expect(html).toContain('data-visibility="private"');
+    expect(html).not.toContain("已分享");
+  });
+
+  it("没有关联应用：只有日期，不该出现已分享/私有/设备", () => {
+    const html = renderToStaticMarkup(
+      <SessionRowMeta when="8月9日" device={null} visibility={null} />,
+    );
+    expect(html).toContain("8月9日");
+    expect(html).not.toContain("已分享");
+    expect(html).not.toContain("私有");
+    expect(html).not.toContain("sidebar-session-device");
+    expect(html).not.toContain("sidebar-session-visibility");
+  });
+
+  it("三项全空不渲染副行", () => {
+    expect(
+      renderToStaticMarkup(
+        <SessionRowMeta when="" device={null} visibility={null} />,
+      ),
+    ).toBe("");
+  });
+});
+
 describe("SidebarSessions 静态渲染", () => {
   it("骨架：新建 + 搜索 + 筛选，没有 PR 空壳", () => {
     const html = renderToStaticMarkup(<SidebarSessions />);
@@ -264,6 +354,9 @@ describe("SidebarSessions 静态渲染", () => {
     expect(src).toContain("sidebar-session-more");
     expect(src).toContain("listApps");
     expect(src).toContain("SessionThumb");
+    expect(src).toContain("SessionRowMeta");
+    expect(src).toContain("sessionRowDevice(app)");
+    expect(src).toContain("sessionRowVisibility(app)");
     expect(src).not.toContain("groupSessionsByAge(shown");
     expect(src).not.toContain("AppsWorkbench");
   });
@@ -286,5 +379,9 @@ describe("SidebarSessions 静态渲染", () => {
     expect(thumb?.[1]).toMatch(/height:\s*48px/);
     expect(thumb?.[1]).not.toMatch(/aspect-ratio/);
     expect(css).toMatch(/object-fit:\s*cover/);
+    const copy = css.match(/\.native-agent-session-copy\s*\{([^}]*)\}/);
+    expect(copy?.[1]).toMatch(/gap:\s*8px/);
+    const meta = css.match(/\.native-agent-session-meta\s*\{([^}]*)\}/);
+    expect(meta?.[1]).not.toMatch(/margin-top:\s*2px/);
   });
 });

@@ -4,7 +4,8 @@
  * ⚠ 2026-08-19：先铺过今天/昨天整表，侧栏被撑出屏幕；又收成「最近 6 条」
  *   把筛选一起撤了。用户要留着筛选，列表改成「最近 4 + 近七天 6」，
  *   超高就在列表里滚，再多走「更多」去应用中心。
- *   行样式仍是小方图 + 标题，封面 cover 占满。
+ *   行样式是小方图 + 标题 + 副行（设备 / 日期 / 已分享或私有）。
+ *   可见性来自关联应用，不是会话本身——会话恒 private，分享的是应用。
  *
  * 数据：GET /api/sliderule/sessions（python 会话库）。切换/新建只做两件事：
  * 写 localStorage 的 active-session-id + 广播 window 事件——SlideRule 会话壳
@@ -155,7 +156,7 @@ export function takeRecentSessions(
   };
 }
 
-/** 副行日期。今天 / 昨天 / M月D日，对得上 Stitch 那行日历，不引 AppsWorkbench。 */
+/** 副行日期。今天 / 昨天 / M月D日。不引 AppsWorkbench。 */
 export function sessionWhen(
   iso?: string | null,
   now: number = Date.now(),
@@ -170,6 +171,125 @@ export function sessionWhen(
   return sameYear
     ? `${d.getMonth() + 1}月${d.getDate()}日`
     : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
+export type SessionRowDevice = "desktop" | "phone";
+export type SessionRowVisibility = "public" | "private";
+
+/**
+ * 副行设备。词表跟 composer / device_policy 对齐（desktop / phone）。
+ * 没有关联应用、或 device 不是这两档 → 不画，不默认成 Web。
+ */
+export function sessionRowDevice(
+  app?: AppStoreSummary | null,
+): SessionRowDevice | null {
+  if (!app) return null;
+  const d = String(app.device || "").trim();
+  if (d === "phone") return "phone";
+  if (d === "desktop") return "desktop";
+  return null;
+}
+
+/**
+ * 副行可见性。只认关联应用上的 visibility。
+ *
+ * 无 app → null，不许伪造「已分享」（会话本身恒 private，见 app_access
+ * session_record）。缺字段也不猜成 public——那是访问层的存量规则，
+ * 画成已分享会把还没公开的应用端成绿灯。
+ *
+ * unlisted 能点开链接，算已分享，只是不进应用市场。
+ */
+export function sessionRowVisibility(
+  app?: AppStoreSummary | null,
+): SessionRowVisibility | null {
+  if (!app) return null;
+  const v = app.visibility;
+  if (v === "private") return "private";
+  if (v === "public" || v === "unlisted") return "public";
+  return null;
+}
+
+export function sessionRowVisibilityLabel(kind: SessionRowVisibility): string {
+  return kind === "public" ? "已分享" : "私有";
+}
+
+/**
+ * 会话行副行：设备图标 + 日期 + 已分享/私有。形状对标 Stitch 项目列表
+ * （手机/显示器、日期、双人「已分享」）。没有应用就不画设备/可见性。
+ */
+export function SessionRowMeta({
+  when,
+  device,
+  visibility,
+}: {
+  when: string;
+  device: SessionRowDevice | null;
+  visibility: SessionRowVisibility | null;
+}) {
+  if (!when && !device && !visibility) return null;
+  return (
+    <span className="native-agent-session-meta">
+      {device && (
+        <span
+          className="native-agent-session-chip"
+          data-testid="sidebar-session-device"
+          data-device={device}
+          title={device === "phone" ? "应用" : "Web"}
+        >
+          {device === "phone" ? <PhoneGlyph /> : <MonitorGlyph />}
+        </span>
+      )}
+      {when && <span className="native-agent-session-chip">{when}</span>}
+      {visibility && (
+        <span
+          className="native-agent-session-chip"
+          data-testid="sidebar-session-visibility"
+          data-visibility={visibility}
+        >
+          {visibility === "public" ? <PeopleGlyph /> : <LockGlyph />}
+          {sessionRowVisibilityLabel(visibility)}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function PhoneGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <rect x="7" y="2" width="10" height="20" rx="2" />
+      <path d="M11 18h2" />
+    </svg>
+  );
+}
+
+function MonitorGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <rect x="2" y="4" width="20" height="13" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </svg>
+  );
+}
+
+function PeopleGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3 20c0-3.2 2.7-5.5 6-5.5s6 2.3 6 5.5" />
+      <circle cx="17" cy="9.5" r="2.4" />
+      <path d="M21.5 20c0-2.4-1.6-4.2-4-4.6" />
+    </svg>
+  );
+}
+
+function LockGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </svg>
+  );
 }
 
 /**
@@ -411,15 +531,11 @@ export function SidebarSessions({
           <SessionThumb sessionId={s.sessionId} title={title} app={app} />
           <span className="native-agent-session-copy">
             <span className="native-agent-session-title">{title}</span>
-            {when && (
-              <span className="native-agent-session-meta">
-                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                  <rect x="4" y="5" width="16" height="16" rx="2" />
-                  <path d="M4 10h16M8 3v4M16 3v4" />
-                </svg>
-                {when}
-              </span>
-            )}
+            <SessionRowMeta
+              when={when}
+              device={sessionRowDevice(app)}
+              visibility={sessionRowVisibility(app)}
+            />
           </span>
         </button>
         <button

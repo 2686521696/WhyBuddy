@@ -344,7 +344,7 @@ describe("SlideRuleStudio 三态舞台", () => {
     expect(html).not.toContain('data-testid="sliderule-xray-toggle"');
   });
 
-  it("成品面顶栏：桌面/代码/沙盘 + 透视开关都在场", () => {
+  it("成品面顶栏：页面/代码/沙盘 + 透视开关都在场", () => {
     const html = renderToStaticMarkup(
       <SlideRuleStudio
         chatSlot={<div />}
@@ -367,7 +367,12 @@ describe("SlideRuleStudio 三态舞台", () => {
     expect(html).toContain('data-testid="sliderule-stage-view-code"');
     expect(html).toContain('data-testid="sliderule-stage-view-board"');
     expect(html).toContain('data-testid="sliderule-xray-toggle"');
-    expect(html).toContain("桌面");
+    const pageBtn = html.slice(
+      html.indexOf('data-testid="sliderule-stage-view-page"'),
+      html.indexOf('data-testid="sliderule-stage-view-code"')
+    );
+    expect(pageBtn).toContain("页面");
+    expect(pageBtn).not.toContain("桌面");
     expect(html).toContain("代码");
     expect(html).toContain("沙盘");
     expect(html).toContain("透视");
