@@ -213,6 +213,48 @@ describe("画布视口按设备选（2026-08-14 竖屏）", () => {
     ).toBeTruthy();
   });
 
+  it("分辨率徽标在左侧，手机默认报 80%", () => {
+    /**
+     * ⚠ 2026-08-20：徽标曾经 ml-auto 贴在右上角，跟顶栏工具挤在一起。
+     * 手机 contain 会到 110%。改回右侧或默认 100% 必须红。
+     */
+    mount([{ ...page("p1", 1), device: "phone" as const }]);
+    const meta = host!.querySelector('[data-testid="sliderule-stage-meta"]')!;
+    const scale = host!.querySelector('[data-testid="sliderule-spec-page-scale"]')!;
+    const bound = host!.querySelector('[data-testid="sliderule-spec-page-bound"]')!;
+    expect(meta.contains(scale)).toBe(true);
+    expect(scale.className).not.toMatch(/ml-auto/);
+    expect(scale.className).not.toMatch(/rounded-full/);
+    expect(scale.className).not.toMatch(/bg-stone-100/);
+    expect(meta.innerHTML.indexOf("sliderule-spec-page-scale")).toBeLessThan(
+      meta.innerHTML.indexOf("sliderule-spec-page-bound")
+    );
+    expect(scale.textContent).toContain("390×844");
+    expect(scale.textContent).toMatch(/80%/);
+  });
+
+  it("角色落在说明行右侧，不跟分辨率抢左边", () => {
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() =>
+      root!.render(
+        <SpecPageLiveStage
+          pages={[{ ...page("p1", 1), device: "phone" as const }]}
+          metaTrailing={<button type="button" data-testid="role-slot">项目经理</button>}
+        />
+      )
+    );
+    const meta = host.querySelector('[data-testid="sliderule-stage-meta"]')!;
+    const trailing = host.querySelector('[data-testid="sliderule-stage-meta-trailing"]')!;
+    expect(meta.contains(trailing)).toBe(true);
+    expect(trailing.textContent).toContain("项目经理");
+    expect(trailing.className).toMatch(/ml-auto/);
+    expect(meta.innerHTML.indexOf("sliderule-spec-page-scale")).toBeLessThan(
+      meta.innerHTML.indexOf("sliderule-stage-meta-trailing")
+    );
+  });
+
   it("接数和分辨率在机框外 —— 叠在底栏上会挡住切换", () => {
     mount([{ ...page("p1", 1), device: "phone" as const, bound: true }]);
     const frame = host!.querySelector('[data-testid="sliderule-phone-frame"]')!;

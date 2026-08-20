@@ -4,7 +4,9 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  PHONE_STAGE_MAX_SCALE,
   SCALE_EPSILON,
+  clampCanvasScale,
   computeScaleToFit,
   scaleNeedsCommit,
   specPageViewport,
@@ -43,6 +45,18 @@ describe("scaleNeedsCommit", () => {
   it("亚像素抖动不提交", () => {
     expect(scaleNeedsCommit(0.5, 0.5 + SCALE_EPSILON / 2)).toBe(false);
     expect(scaleNeedsCommit(0.5, 0.52)).toBe(true);
+  });
+});
+
+describe("手机舞台缩放封顶", () => {
+  it("手机舞台缩放封顶 80%，容器更小时仍按 contain 再缩", () => {
+    /**
+     * ⚠ 2026-08-20：用户指着 110% 说默认 80%。改回 1 或拿掉封顶必须红。
+     */
+    expect(PHONE_STAGE_MAX_SCALE).toBe(0.8);
+    expect(clampCanvasScale(1.1, PHONE_STAGE_MAX_SCALE)).toBe(0.8);
+    expect(clampCanvasScale(0.5, PHONE_STAGE_MAX_SCALE)).toBe(0.5);
+    expect(clampCanvasScale(0.9)).toBe(0.9);
   });
 });
 

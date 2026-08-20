@@ -13,14 +13,14 @@ function stripComments(src: string): string {
     .replace(/^[ \t]*\/\/.*$/gm, "");
 }
 
-describe("空态灵感是一句导去应用中心", () => {
-  it("文案是需要灵感？应用中心，Fork一下，快人一步", () => {
+describe("空态灵感是一句导去应用市场", () => {
+  it("文案是需要灵感？应用市场，Fork一下，快人一步", () => {
     expect(`${INSPIRATION_LEAD}${INSPIRATION_LINK}${INSPIRATION_TAIL}`).toBe(
-      "需要灵感？应用中心，Fork一下，快人一步"
+      "需要灵感？应用市场，Fork一下，快人一步"
     );
   });
 
-  it("活路径只有应用中心链接，不拉货架、不画卡", () => {
+  it("活路径只有应用市场链接，不拉货架、不画卡", () => {
     const src = stripComments(
       readFileSync(
         fileURLToPath(new URL("../home-inspiration.tsx", import.meta.url)),

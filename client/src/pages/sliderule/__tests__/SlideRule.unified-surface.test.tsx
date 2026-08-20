@@ -192,7 +192,7 @@ describe("unified /sliderule surface (single mental model)", () => {
     );
     expect(phoneChip).toContain("应用");
     expect(html).toContain("描述你想构建的业务系统");
-    // 静态营销网点仍禁；鼠标点阵只欢迎页有。
+    // 静态营销网点仍禁；鼠标点阵空态和工作台都有。
     expect(html).not.toContain('data-testid="sliderule-empty-dot-field"');
     expect(html).toContain('data-testid="sliderule-home-hover-dots"');
     expect(html.match(/data-testid="sliderule-composer-dock"/g)?.length).toBe(
@@ -220,7 +220,7 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain('data-testid="sliderule-empty-enter-hint"');
     expect(html).not.toContain('data-testid="sliderule-composer-device"');
     expect(html).not.toContain('data-testid="sliderule-empty-dot-field"');
-    expect(html).not.toContain('data-testid="sliderule-home-hover-dots"');
+    expect(html).toContain('data-testid="sliderule-home-hover-dots"');
     expect(html).not.toContain("pb-[104px]");
     const footer = html.slice(
       html.indexOf('data-testid="sliderule-composer-footer"'),

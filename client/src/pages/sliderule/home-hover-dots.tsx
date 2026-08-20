@@ -1,10 +1,13 @@
 /**
- * 空态欢迎页的鼠标点阵。
+ * 推演页（/agent-loop/sliderule）的鼠标点阵：空欢迎和工作台同一张网。
  *
  * ⚠ 2026-08-20 真机：interactive-dot-grid 那套 canvas 每帧 `beginPath`+`arc`
  * 几万个点——间距收到 8px 之后欢迎页明显卡。Stitch / grid-cursor 的做法是
  * **GPU 铺点**：`radial-gradient` 当 repeating tile，鼠标只改 CSS 变量驱动
  * `mask-image`。密多少都不进 JS 循环。不要 Stitch 粉紫光晕。
+ *
+ * 挂点在 SlideRuleStudio，不在 HomeEmptyState / 空线程门闩——Empty 会被
+ * Viewport 裁成中缝，开聊后门闩会把点卸掉。
  */
 import React from "react";
 
@@ -23,9 +26,9 @@ export const HOME_HOVER_DOT = {
   dotMax: (1.35 / 3) * 1.8,
   // 真机 200px 光斑像一块饼。收到约 72。
   radiusEffect: 72,
-  // 淡 2/3 之后底网点看不见。再重一些：取加浓版的 2/3，不回到 0.2。
-  baseAlpha: (0.2 * 2) / 3,
-  maxAlpha: (0.78 * 2) / 3,
+  // 2026-08-20 全宽铺开后用户要再淡一半（相对加浓那版的 2/3 再 /2）。
+  baseAlpha: (0.2 * 2) / 3 / 2,
+  maxAlpha: (0.78 * 2) / 3 / 2,
   /** warm gray，不是紫 */
   color: "88,84,80",
   smoothing: 0.18,
@@ -119,7 +122,7 @@ export function HomeHoverDots(): React.ReactElement {
       ref={ref}
       aria-hidden
       data-testid="sliderule-home-hover-dots"
-      className="pointer-events-none absolute inset-0 z-[1] overflow-hidden"
+      className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
     />
   );
 }

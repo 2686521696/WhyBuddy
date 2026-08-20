@@ -324,10 +324,10 @@ function HomeEmptyState({
   //   没有生产者再往 sliderule:pending-template-intent 写值。
   return (
     <div
-      className="flex min-h-full flex-col"
+      className="relative flex min-h-full flex-1 flex-col"
       data-testid="sliderule-empty-state"
     >
-      <div className="flex flex-1 flex-col items-center justify-center gap-7 px-1 py-6">
+      <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-7 px-1 py-6">
         <div className="flex w-full flex-wrap items-center justify-center gap-3">
           <h1 className="text-[26px] font-semibold tracking-tight text-[#171717] sm:text-[28px]">
             想推演成什么应用？
@@ -391,7 +391,9 @@ function HomeEmptyState({
         </p>
       </div>
 
-      <HomeInspiration />
+      <div className="relative z-10">
+        <HomeInspiration />
+      </div>
     </div>
   );
 }
@@ -745,11 +747,13 @@ export function ClaudeChatSurface({
   );
 
   return (
-    <div className="relative z-0 flex h-full flex-col overflow-hidden bg-[var(--sr-shell-bg,#f4f4f6)] text-[#1f2329]">
+    <div className="relative z-0 flex h-full flex-col overflow-hidden bg-transparent text-[#1f2329]">
+      {/* 点阵改挂 SlideRuleStudio 外壳（空态+开聊同一张网）。这里铺实心底
+          会把那层点挡住——2026-08-20 已经踩过一次。 */}
       {/* Chat area — Viewport 自带贴底跟随（增量到达自动滚底、回翻停住） */}
       <AssistantRuntimeProvider runtime={runtime}>
         <ImSurfaceContext.Provider value={ctxValue}>
-          <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col">
+          <ThreadPrimitive.Root className="relative z-10 flex min-h-0 flex-1 flex-col">
             {/* E16 智能滚动补件：用户上滚回看时出「回到底部」胶囊
                 （Viewport 本身已带贴底跟随；贴底时该按钮自动 disabled → 隐藏） */}
             <div className="relative flex min-h-0 flex-1 flex-col">
@@ -782,7 +786,7 @@ export function ClaudeChatSurface({
             </div>
             {!isEmptyThread && (composerSlot || clarifySlot) ? (
               <div
-                className="pointer-events-auto shrink-0 bg-[var(--sr-shell-bg,#f4f4f6)] px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-1 sm:px-5"
+                className="pointer-events-auto shrink-0 bg-transparent px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-1 sm:px-5"
                 data-testid="sliderule-composer-footer"
               >
                 {/* Cursor / LobeChat：输入条浮在对话列里，不要横切 border-t 把步骤和输入割开。 */}

@@ -1,5 +1,5 @@
 /**
- * 欢迎页鼠标点阵：对照 interactive-dot-grid 的二次衰减，接线必须在空舞台。
+ * 推演页鼠标点阵：对照 interactive-dot-grid 的二次衰减，接线必须在 Studio 外壳。
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -25,10 +25,10 @@ describe("cursorInfluence 二次衰减", () => {
 });
 
 describe("点色是浅灰不是粉紫", () => {
-  it("暖灰，相对加浓那版再淡 2/3，密和小剩 1/3", () => {
+  it("暖灰，相对加浓那版再淡 2/3，全宽后再淡一半，密和小剩 1/3", () => {
     expect(HOME_HOVER_DOT.color).toBe("88,84,80");
-    expect(HOME_HOVER_DOT.baseAlpha).toBeCloseTo((0.2 * 2) / 3, 5);
-    expect(HOME_HOVER_DOT.maxAlpha).toBeCloseTo((0.78 * 2) / 3, 5);
+    expect(HOME_HOVER_DOT.baseAlpha).toBeCloseTo((0.2 * 2) / 3 / 2, 5);
+    expect(HOME_HOVER_DOT.maxAlpha).toBeCloseTo((0.78 * 2) / 3 / 2, 5);
     expect(HOME_HOVER_DOT.spacing).toBeCloseTo(24 / 3, 5);
     expect(HOME_HOVER_DOT.dotMin).toBeCloseTo(1.35 / 3, 5);
     expect(HOME_HOVER_DOT.dotMax).toBeCloseTo((1.35 / 3) * 1.8, 5);
@@ -42,22 +42,48 @@ describe("点色是浅灰不是粉紫", () => {
   });
 });
 
-describe("活路径：只欢迎页挂，开聊不挂", () => {
-  it("SlideRuleStudio 空舞台才渲染 HomeHoverDots，且听 window 不是听 canvas", () => {
+describe("活路径：Studio 全页挂点，空态和开聊都有", () => {
+  it("SlideRuleStudio 外壳挂 HomeHoverDots，对话栏透底，听 window 不是听 canvas", () => {
+    const slideRule = stripComments(
+      readFileSync(
+        fileURLToPath(new URL("../../SlideRule.tsx", import.meta.url)),
+        "utf8"
+      )
+    );
+    const emptyAt = slideRule.indexOf("function HomeEmptyState");
+    expect(emptyAt).toBeGreaterThan(-1);
+    const empty = slideRule.slice(
+      emptyAt,
+      slideRule.indexOf("function ClaudeChatSurface", emptyAt)
+    );
+    // 反：挂回 Empty 会被 Viewport max-w-[720px] 裁成中间一条。
+    expect(empty).not.toContain("HomeHoverDots");
+
+    const surfaceAt = slideRule.indexOf("function ClaudeChatSurface");
+    expect(surfaceAt).toBeGreaterThan(-1);
+    const surface = slideRule.slice(surfaceAt);
+    // 反：只挂空线程，开聊（/agent-loop/sliderule 工作台）会丢点。
+    expect(surface).not.toContain("HomeHoverDots");
+    expect(surface).toContain("bg-transparent");
+    expect(surface).toContain("max-w-[720px]");
+
     const studio = stripComments(
       readFileSync(
         fileURLToPath(new URL("../SlideRuleStudio.tsx", import.meta.url)),
         "utf8"
       )
     );
-    const emptyAt = studio.indexOf("if (!showStage)");
-    expect(emptyAt).toBeGreaterThan(-1);
-    const empty = studio.slice(emptyAt, studio.indexOf("const stagePanel", emptyAt));
-    expect(empty).toContain("HomeHoverDots");
-    expect(empty).toContain("!stageVisible");
-    // 变异：挂到有舞台的分栏上，欢迎页独占全宽这条就看不见。
-    const split = studio.slice(studio.indexOf("const stagePanel"));
-    expect(split).not.toContain("HomeHoverDots");
+    expect(studio).toContain("HomeHoverDots");
+    expect(studio).toContain("function StudioChrome");
+    const early = studio.slice(
+      studio.indexOf("if (!showStage)"),
+      studio.indexOf("const stagePanel")
+    );
+    // 反：只挂分栏 return，空会话 early return 会丢点。
+    expect(early).toContain("StudioChrome");
+    const splitReturn = studio.slice(studio.lastIndexOf("return ("));
+    expect(splitReturn).toContain("StudioChrome");
+    expect(splitReturn).toContain("bg-transparent");
 
     const dotsRaw = readFileSync(
       fileURLToPath(new URL("../home-hover-dots.tsx", import.meta.url)),

@@ -80,6 +80,32 @@ export function studioStageDefaultPercent(splitWidthPx: number): number {
   return 100 - studioChatDefaultPercent(splitWidthPx);
 }
 
+/**
+ * 手机预览列默认宽 = 左侧菜单 ×2，且不可拖。
+ *
+ * 桌面把「菜单×2」给对话栏、舞台吃剩余。手机机框只有 390 CSS 像素，
+ * 舞台再吃 70% 会把 contain 拉到 110%，对话被挤成一条。对调：预览列
+ * 锁在菜单×2（504px），对话吃剩余。
+ *
+ * ⚠ 2026-08-20：用户原话「手机端视图默认给个宽度，菜单那块的两倍，不可拖拽」。
+ * 改回跟桌面同一套 38/62、或仍让手机舞台可拖，这条必须红。
+ */
+export function studioPhoneStageDefaultPx(): number {
+  return studioChatDefaultPx();
+}
+
+export function studioPhoneStageDefaultPercent(splitWidthPx: number): number {
+  return studioChatDefaultPercent(splitWidthPx);
+}
+
+export function studioPhoneChatDefaultPercent(splitWidthPx: number): number {
+  return 100 - studioPhoneStageDefaultPercent(splitWidthPx);
+}
+
+export function isPhoneStudioDevice(device?: string | null): boolean {
+  return device === "phone";
+}
+
 /** 猜分栏容器宽：视口减去展开侧栏。侧栏折没时整窗都是分栏。 */
 export function guessStudioSplitWidthPx(
   viewportWidth: number,

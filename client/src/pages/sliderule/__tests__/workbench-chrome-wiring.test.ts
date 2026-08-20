@@ -93,7 +93,7 @@ describe("workbench chrome live-path wiring", () => {
     expect(handle).not.toContain("linear-gradient");
     expect(handle).not.toContain("bg-[#e5e7eb]");
     expect(handle).not.toContain("w-1.5");
-    expect(src).toContain("onDragging={layout.setResizing}");
+    expect(src).toContain("onDragging={phone ? undefined : layout.setResizing}");
     expect(src).toContain('data-studio-resizing={layout.resizing ? "true" : undefined}');
 
     const css = stripComments(
@@ -118,6 +118,15 @@ describe("workbench chrome live-path wiring", () => {
     expect(css).toContain("--sr-border-muted: #d1d9e0b3");
     expect(css).toContain("--sr-sidebar-bg: #e8e9ed");
     expect(css).toContain("--sr-shell-bg: #f4f4f6");
+    /* 侧栏选中项：同色压深，不要白底胶囊 + Ant 蓝（2026-08-20 设置页截图） */
+    const navActive = css.slice(
+      css.indexOf(".native-agent-nav-item-active {"),
+      css.indexOf(".native-agent-nav-item-active:hover")
+    );
+    expect(navActive).toContain("rgba(15, 23, 42, 0.07)");
+    expect(navActive).toContain("color: #171717");
+    expect(navActive).not.toContain("#ffffff");
+    expect(navActive).not.toContain("#1d4ed8");
     const dragCss = css.slice(css.indexOf('[data-studio-resizing="true"]'));
     expect(dragCss).toContain("pointer-events: none");
     expect(dragCss).toContain("contain: strict");
@@ -127,7 +136,7 @@ describe("workbench chrome live-path wiring", () => {
     const split = stripComments(
       readFileSync(new URL("../StudioSplit.tsx", import.meta.url), "utf8")
     );
-    expect(split).toContain("onDragging={layout.setResizing}");
+    expect(split).toContain("onDragging={phone ? undefined : layout.setResizing}");
 
     const stage = stripComments(
       readFileSync(
@@ -136,6 +145,8 @@ describe("workbench chrome live-path wiring", () => {
       )
     );
     expect(stage).toContain("studioLayout?.resizing ?? false");
+    expect(stage).toContain("PHONE_STAGE_MAX_SCALE");
+    expect(stage).not.toContain('className="ml-auto rounded-full');
 
     const scale = stripComments(
       readFileSync(
@@ -157,7 +168,9 @@ describe("workbench chrome live-path wiring", () => {
     );
     expect(split).toContain("studioChatDefaultPercent");
     expect(split).toContain("studioChatDefaultPx");
-    expect(split).toContain("onDoubleClick={resetLayout}");
+    expect(split).toContain("studioPhoneStageDefaultPercent");
+    expect(split).toContain("disabled={phone}");
+    expect(split).toContain("onDoubleClick={phone ? undefined : resetLayout}");
     expect(split).toContain("sliderule-studio-split-v2");
     expect(split).toContain("layoutGeneration");
     expect(split).not.toContain("defaultSize={38}");
@@ -180,10 +193,9 @@ describe("workbench chrome live-path wiring", () => {
     const src = stripComments(
       readFileSync(new URL("../SlideRuleStudio.tsx", import.meta.url), "utf8")
     );
-    const role = src.slice(
-      src.indexOf("sliderule-stage-role"),
-      src.indexOf("sliderule-stage-view-page")
-    );
+    const roleAt = src.indexOf("sliderule-stage-role");
+    const role = src.slice(roleAt, roleAt + 900);
+    expect(roleAt).toBeGreaterThan(-1);
     expect(role).toContain("appearance-none");
     expect(role).toContain("pr-8");
     expect(role).toContain("right-2.5");
@@ -210,7 +222,11 @@ describe("workbench chrome live-path wiring", () => {
     expect(gears).not.toContain("text-white");
   });
 
-  it("图标簇挂在舞台头条右侧，不占整页顶栏", () => {
+  it("图标簇挂在标题右侧同一行，不占整页顶栏", () => {
+    /**
+     * Primer PageHeader：标题在左、Trailing actions 在右，同一行。
+     * 窄列用 nowrap + 图标，不要 flex-col 再叠一行工具条。
+     */
     const page = stripComments(
       readFileSync(new URL("../../SlideRule.tsx", import.meta.url), "utf8")
     );
@@ -225,14 +241,40 @@ describe("workbench chrome live-path wiring", () => {
     const studio = stripComments(
       readFileSync(new URL("../SlideRuleStudio.tsx", import.meta.url), "utf8")
     );
+    const barAt = studio.indexOf("sliderule-app-stage-bar");
+    const barOpen = studio.slice(Math.max(0, barAt - 180), barAt + 90);
+    expect(barOpen).toContain("border-[#d1d9e0b3]");
+    expect(barOpen).toContain("primer-page-header");
+    expect(barOpen).toContain("min-w-0");
+    expect(barOpen).not.toContain("flex-col");
+    expect(studio).toContain("compact={isPhoneStage}");
+
+    const titleAt = studio.indexOf("sliderule-app-stage-bar");
     const gearsAt = studio.indexOf("sliderule-stage-gears");
+    const titleCluster = studio.slice(titleAt, gearsAt);
+    expect(titleCluster).toContain("sliderule-stage-model-draft");
+    expect(titleCluster).toContain("起草中");
+    expect(titleCluster).not.toContain("运行中");
+    expect(titleCluster).not.toContain("bg-emerald-50");
+
+    const gearsTag = studio.slice(
+      studio.lastIndexOf("<div", gearsAt),
+      studio.indexOf(">", gearsAt) + 1
+    );
+    expect(gearsTag).toContain("ml-auto");
+    expect(gearsTag).toContain("min-w-0");
+    expect(gearsTag).toContain("overflow-x-auto");
+    expect(gearsTag).not.toContain("shrink-0");
     const stageBodyAt = studio.indexOf("flex min-h-0 flex-1 gap-3", gearsAt);
     const gears = studio.slice(gearsAt, stageBodyAt);
+    expect(gears).toContain("flex shrink-0 items-center gap-1");
     expect(gears).toContain("透视");
     expect(gears.indexOf("透视")).toBeLessThan(gears.indexOf("{chromeSlot}"));
+    expect(gears).not.toContain("sliderule-stage-role");
+    expect(studio).toContain("metaTrailing={roleControl}");
 
     const boardAt = studio.lastIndexOf('stageView === "board"');
-    const boardTab = studio.slice(boardAt, boardAt + 360);
+    const boardTab = studio.slice(boardAt, boardAt + 900);
     expect(boardTab).toContain("<ArchitectureStage");
     expect(boardTab).not.toContain("trailing=");
   });

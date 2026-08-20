@@ -49,7 +49,7 @@
 import React from "react";
 
 import { HtmlAppSurface } from "./html-app-surface";
-import { useScaleToFit, specPageViewport } from "./canvas-scale";
+import { useScaleToFit, specPageViewport, PHONE_STAGE_MAX_SCALE } from "./canvas-scale";
 import { deriveBindingSource } from "./derive-binding-source";
 import type { ActionGates, BindingActionEvent } from "./html-binding-runtime";
 import type { RuntimeState } from "./live-runtime";
@@ -85,6 +85,8 @@ export interface SpecPageLiveStageProps {
   onAction?: (event: BindingActionEvent) => void;
   /** 角色上下文（权限门）。不传 = 不设卡。宿主务必 memo。 */
   gates?: ActionGates;
+  /** 说明行右侧（角色切换）。Primer description 的 trailing visual。 */
+  metaTrailing?: React.ReactNode;
   /** 游标：鼠标停在带绑定的元素上 */
   onHoverBinding?: (info: { attr: string; value: string; el: Element } | null) => void;
   /** 初始选中的页。不传 = 跟最新到达的一页（推演场景，页面在陆续到达）；
@@ -130,6 +132,7 @@ export function SpecPageLiveStage({
   runtime = null,
   onAction,
   gates,
+  metaTrailing = null,
   onHoverBinding,
   defaultPageId = null,
   view = "page",
@@ -162,7 +165,8 @@ export function SpecPageLiveStage({
     viewport.h,
     "contain",
     studioLayout?.resizing ?? false,
-    isPhone ? { x: 36, y: 48 } : { x: 0, y: 0 }
+    isPhone ? { x: 36, y: 48 } : { x: 0, y: 0 },
+    isPhone ? PHONE_STAGE_MAX_SCALE : undefined
   );
 
   const activeId = resolveActivePageId(picked, pages, {
@@ -207,6 +211,39 @@ export function SpecPageLiveStage({
       data-testid="sliderule-spec-page-stage"
       data-active-page={activeId ?? undefined}
     >
+      {/* 接数 / 分辨率：Primer PageHeader 的 description。角色放这一行右侧
+          （2026-08-20 用户原话），不要跟顶栏页面/透视挤在一起。 */}
+      <div
+        className="flex shrink-0 items-center gap-2 px-0.5 text-[11px] leading-4 text-stone-400"
+        data-testid="sliderule-stage-meta"
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <span
+            className="font-mono tabular-nums"
+            data-testid="sliderule-spec-page-scale"
+            title={`固定 ${viewport.w}×${viewport.h} 设计分辨率，按容器等比缩放显示${
+              isPhone ? `，手机默认不超过 ${Math.round(PHONE_STAGE_MAX_SCALE * 100)}%` : ""
+            }`}
+          >
+            {viewport.w}×{viewport.h} · {Math.round(scale * 100)}%
+          </span>
+          {running && (
+            <span className="flex items-center gap-1" title={statusLabel ?? undefined}>
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#69b1ff]" />
+              界面生成中 {delivered.length}/{total || delivered.length}
+            </span>
+          )}
+          <span aria-hidden>·</span>
+          <span data-testid="sliderule-spec-page-bound" title={boundTitle}>
+            {boundLabel}
+          </span>
+        </div>
+        {metaTrailing ? (
+          <div className="ml-auto shrink-0" data-testid="sliderule-stage-meta-trailing">
+            {metaTrailing}
+          </div>
+        ) : null}
+      </div>
       {view === "code" ? (
         /* 代码档：交付的 HTML 原文本体（不是模型投影）。看的与渲染的是同一份
            字符串——想核对某个 data-* 孔打没打上，这里一眼见底。 */
@@ -220,33 +257,6 @@ export function SpecPageLiveStage({
         </div>
       ) : (
       <>
-      {/* 接数 / 分辨率集中在画布外面（2026-08-20）：叠在机框底上会挡住
-          标签栏。对照 Chrome DevTools device mode——尺寸写在框外。 */}
-      <div
-        className="flex shrink-0 items-center gap-2 px-0.5 font-mono text-[10px] text-stone-500"
-        data-testid="sliderule-stage-meta"
-      >
-        {running && (
-          <span className="flex items-center gap-1 rounded-full bg-stone-100 px-2 py-0.5 text-stone-600" title={statusLabel ?? undefined}>
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#69b1ff]" />
-            界面生成中 {delivered.length}/{total || delivered.length}
-          </span>
-        )}
-        <span
-          className="rounded-full bg-stone-100 px-2 py-0.5 text-stone-600"
-          data-testid="sliderule-spec-page-bound"
-          title={boundTitle}
-        >
-          {boundLabel}
-        </span>
-        <span
-          className="ml-auto rounded-full bg-stone-100 px-2 py-0.5"
-          data-testid="sliderule-spec-page-scale"
-          title={`固定 ${viewport.w}×${viewport.h} 设计分辨率，按容器等比缩放显示`}
-        >
-          {viewport.w}×{viewport.h} · {Math.round(scale * 100)}%
-        </span>
-      </div>
       {/* 缩放画布：页面照固定视口画，就得在那个视口里看。手机框的描边算进
           layout（padding），不再用会溢出被切掉的 box-shadow。
           ⚠ 2026-08-20 午前满电青年：16:9 + items-center 曾让 Header 像掉下来，

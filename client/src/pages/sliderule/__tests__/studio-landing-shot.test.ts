@@ -92,7 +92,7 @@ describe("接在活路径上", () => {
     const src = stripComments(
       readFileSync(new URL("../StudioShareToggle.tsx", import.meta.url), "utf8")
     );
-    expect(src).toContain('data-testid="sliderule-share-toggle"');
+    expect(src).toContain("compact");
     expect(src).toContain("私有");
     expect(src).toContain("开放");
     expect(src).not.toMatch(/if\s*\(\s*!sessionId\s*\|\|\s*!app/);

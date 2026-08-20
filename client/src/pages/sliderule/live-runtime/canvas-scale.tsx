@@ -85,6 +85,19 @@ export function specPageViewport(device?: string | null): { w: number; h: number
 }
 
 /**
+ * 手机舞台默认缩放。contain 会按列高把 390×844 放大到 110%+，真机看起来
+ * 比真机还大。封顶 80%；容器更窄时仍按 contain 再缩小。
+ *
+ * ⚠ 2026-08-20：用户指着 110% 说默认 80% 合适。改回 1 或拿掉封顶必须红。
+ */
+export const PHONE_STAGE_MAX_SCALE = 0.8;
+
+export function clampCanvasScale(raw: number, maxScale?: number): number {
+  if (maxScale == null || !(maxScale > 0)) return raw;
+  return Math.min(raw, maxScale);
+}
+
+/**
  * 容器实测尺寸 → 等比缩放系数。纯函数，ResizeObserver 只负责喂数。
  *
  * ⚠ 只在 ResizeObserver 里量，不监听 window.resize：容器被侧栏折叠、抽屉
@@ -130,14 +143,16 @@ export function useScaleToFit(
   paused = false,
   /** 从容器里扣掉的边（机框描边、下巴）。box-shadow 描边不算进 layout，
    *  不扣的话 12px 外圈会被 overflow:hidden 切掉顶。 */
-  pad: { x: number; y: number } = { x: 0, y: 0 }
+  pad: { x: number; y: number } = { x: 0, y: 0 },
+  maxScale?: number
 ): {
   ref: React.RefObject<HTMLDivElement | null>;
   scale: number;
 } {
+  const initial = maxScale && maxScale > 0 ? maxScale : 1;
   const ref = React.useRef<HTMLDivElement | null>(null);
-  const [scale, setScale] = React.useState(1);
-  const scaleRef = React.useRef(1);
+  const [scale, setScale] = React.useState(initial);
+  const scaleRef = React.useRef(initial);
   const pausedRef = React.useRef(paused);
   pausedRef.current = paused;
   const padX = pad.x;
@@ -152,14 +167,16 @@ export function useScaleToFit(
   const readScale = React.useCallback(() => {
     const el = ref.current;
     if (!el) return null;
-    return computeScaleToFit(
+    const raw = computeScaleToFit(
       Math.max(0, el.clientWidth - padX),
       Math.max(0, el.clientHeight - padY),
       designW,
       designH,
       mode
     );
-  }, [designW, designH, mode, padX, padY]);
+    if (raw == null) return null;
+    return clampCanvasScale(raw, maxScale);
+  }, [designW, designH, mode, padX, padY, maxScale]);
 
   React.useEffect(() => {
     const el = ref.current;

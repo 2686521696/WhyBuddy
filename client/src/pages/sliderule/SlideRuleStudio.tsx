@@ -3,6 +3,8 @@
  *
  * 左侧：Chat 对话区（ClaudeChatSurface，含唯一空态：问候 + Cursor 卡片输入 + chips + 灵感卡）。
  *
+ * 分栏默认：桌面对话栏 = 左侧菜单 ×2；手机把同一宽度锁给预览列且不可拖。
+ *
  * 右侧主舞台——四态：
  *   pages   — **成品面**：spec-first 那条链路产出的 HTML 页面，装在
  *             1920×1080 的等比缩放画布里（见 live-runtime/canvas-scale.tsx）。
@@ -71,6 +73,29 @@ import { isStagePageShown } from "./studio-layout";
 import { StudioLandingShot } from "./studio-landing-shot";
 import { StudioShareToggle } from "./StudioShareToggle";
 import { HomeHoverDots } from "./home-hover-dots";
+
+/**
+ * 推演页底色 + 点阵。子栏必须透底，否则实心 --sr-shell-bg 会把点挡住
+ * （2026-08-20：点阵先挂欢迎页，用户要把同一套铺到 /agent-loop/sliderule
+ * 开聊后的对话栏和舞台留白。挂在 ClaudeChatSurface 空线程上，舞台一出现
+ * 就被卸掉；挂 Studio 再铺实心底，等于没挂）。
+ */
+function StudioChrome({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}): React.ReactElement {
+  return (
+    <div
+      className={`relative h-full w-full overflow-hidden bg-[var(--sr-shell-bg,#f4f4f6)] ${className}`}
+    >
+      <HomeHoverDots />
+      <div className="relative z-10 h-full w-full overflow-hidden">{children}</div>
+    </div>
+  );
+}
 
 const XRAY_PREF_KEY = "sliderule:xray-on";
 
@@ -214,6 +239,9 @@ export function SlideRuleStudio({
     () => livePagesFromSpec(specFirstPages, specPages),
     [specFirstPages, specPages]
   );
+  const stageDevice =
+    livePages.find(p => p.device)?.device ?? specFirstPages?.device;
+  const isPhoneStage = stageDevice === "phone";
 
   // HTML 应用面的运行时数据。**跟老区块渲染共用同一份**（同一个 sessionId 的
   // RuntimeState）——各读各的等于同一个应用有两份互不相干的数据，用户在
@@ -447,87 +475,96 @@ export function SlideRuleStudio({
   // 空会话或用户点了「隐藏页面」：对话独占全宽。右侧舞台不渲染。
   if (!showStage) {
     return (
-      <div className={`relative flex h-full w-full overflow-hidden ${className}`}>
-        <div className="relative flex h-full w-full flex-col bg-[var(--sr-shell-bg,#f4f4f6)]">
+      <StudioChrome className={className}>
+        <div className="relative flex h-full w-full flex-col">
           {chromeSlot ? (
             <div className="flex shrink-0 justify-end px-3 py-1">
               {chromeSlot}
             </div>
           ) : null}
           {chatSlot}
-          {/* 覆盖层 pointer-events:none，点击仍落到输入卡。
-              只欢迎页挂；「隐藏页面」后的全宽对话不挂。 */}
-          {!stageVisible ? <HomeHoverDots /> : null}
         </div>
-      </div>
+      </StudioChrome>
     );
   }
 
+  const roleControl =
+    roleOptions.length > 0 ? (
+      /* 角色切换（2026-08-14 晚）：权限那只手的开关。放在说明行右侧，
+         不跟顶栏页面/透视抢位（2026-08-20）。 */
+      <div className="relative shrink-0">
+        <select
+          value={role ?? ""}
+          onChange={e => changeRole(e.target.value)}
+          data-testid="sliderule-stage-role"
+          title="以哪个角色试用这个应用（权限门实时生效）"
+          className={`h-7 cursor-pointer appearance-none rounded-md border border-[#e5e7eb] bg-white text-[12px] font-medium text-stone-600 outline-none transition hover:border-[#d3d8e0] hover:bg-[#f8f9fb] ${
+            isPhoneStage ? "max-w-[5.5rem] truncate pl-2 pr-6" : "pl-3 pr-8"
+          }`}
+        >
+          {roleOptions.map(r => (
+            <option key={r.id} value={r.id}>
+              {r.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown
+          className={`pointer-events-none absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400 ${
+            isPhoneStage ? "right-1.5" : "right-2.5"
+          }`}
+        />
+      </div>
+    ) : null;
+
   const stagePanel = (
-      /* 主舞台。与左侧 IM 同一底色（用户反馈：右侧多种颜色不统一）。
-          2026-08-07 再统一一层：底色不再写死 #f7f8fa，改读外壳的
-          --sr-shell-bg（定义在 dashboard.css 的 .native-agent-shell /
-          .native-dashboard 上，会话页就渲染在它里面）。
-          此前会话页是 #f7f8fa、应用中心是 #ffffff，两页切换看得出色差
-          ——用户反馈"背景颜色不一致，会话页面背景不是白色的"。
-          现在两边共用一个 token，"改这一个值 = 整壳换底色"这条重新成立。 */
-      <div className="relative flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden bg-[var(--sr-shell-bg,#f4f4f6)] p-4">
+      /* 主舞台。底色在 StudioChrome；这里透底才能看见点阵，画布本身不透。
+          2026-08-07：不再写死 #f7f8fa，改读外壳 --sr-shell-bg。 */
+      <div className="relative flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden bg-transparent p-4">
         {(stage === "live" && livePages.length > 0) || stage === "pages" ? (
           /* 新链路已经交出页面：直接渲染，不再摆三个点。
              判据是"手上有没有能看的东西"，不是阶段名——没有页面时下面那支
              原样保留（老链路今天还在跑，它整轮都没有可看的中间产物）。 */
           <>
-            {/* 头条（2026-08-14 从原区块页舞台挪过来）：话题名 + 起草/运行中 +
-                版本前进回退。区块页下架之后这三样没了着落，而它们跟渲染的是
-                哪一套页面无关——都是**这一轮推演本身**的信息。 */}
+            {/* Primer PageHeader（分栏用 subtitle 档）：标题在左、操作在右，
+                同一行。窄视口（手机预览列）把带字的操作收成图标，不要再
+                叠第二行工具条——那是 2026-08-20 为了防挤改的，桌面左对齐
+                像孤儿工具条。指南：
+                https://primer.style/product/components/page-header/guidelines/
+                Trailing action：窄视口用 overflow / 图标，不换行。 */}
             <div
-              className="flex shrink-0 items-center gap-2"
+              className="flex min-w-0 shrink-0 items-center gap-2 border-b border-[#d1d9e0b3] pb-2"
               data-testid="sliderule-app-stage-bar"
+              data-header-pattern="primer-page-header"
             >
-              <span className="min-w-0 truncate text-[12px] font-semibold text-stone-600">
-                {appTitle || "推演应用"}
-              </span>
-              {modelIsDraft ? (
-                <span className="rounded-full bg-[#FDF6F1] px-2 py-0.5 text-[10px] font-medium text-[#C05621]">
-                  起草中
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <span className="min-w-0 truncate text-[12px] font-semibold text-stone-600">
+                  {appTitle || "推演应用"}
                 </span>
-              ) : (
-                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                  运行中
-                </span>
-              )}
-              {versionToolbar}
-              {/* 顶栏：页面/代码/沙盘 + 透视。
-                  ⚠ 2026-08-20：这一档叫「页面」不是「桌面」——桌面是设备，
-                  点了「应用」之后顶栏还写桌面会让人以为预览仍是 PC。 */}
+                {modelIsDraft ? (
+                  /* 默认态不打「运行中」——成品预览本来就是在跑。
+                     2026-08-20 手机 504 列：绿徽章跟标题抢宽，名字被截成
+                     「构建古籍数…」。Primer Label：只标非默认态。 */
+                  <span
+                    className="shrink-0 rounded-full bg-[#FDF6F1] px-2 py-0.5 text-[10px] font-medium text-[#C05621]"
+                    data-testid="sliderule-stage-model-draft"
+                  >
+                    起草中
+                  </span>
+                ) : null}
+                {versionToolbar}
+              </div>
               <div
-                className="ml-auto flex shrink-0 items-center gap-1.5"
+                className="ml-auto flex min-w-0 flex-1 items-center overflow-x-auto [scrollbar-width:thin]"
                 data-testid="sliderule-stage-gears"
               >
-                {/* 角色切换（2026-08-14 晚）：权限那只手的开关。持久化与广播
-                    沿用老区块舞台那套，RBAC 屏「角色预览」改的是同一份。 */}
-                {roleOptions.length > 0 && (
-                  <div className="relative">
-                    <select
-                      value={role ?? ""}
-                      onChange={e => changeRole(e.target.value)}
-                      data-testid="sliderule-stage-role"
-                      title="以哪个角色试用这个应用（权限门实时生效）"
-                      className="h-8 cursor-pointer appearance-none rounded-full border border-[#e5e7eb] bg-white pl-3 pr-8 text-[12px] font-medium text-stone-600 outline-none transition hover:border-[#d3d8e0] hover:bg-[#f8f9fb]"
-                    >
-                      {roleOptions.map(r => (
-                        <option key={r.id} value={r.id}>
-                          {r.label}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
-                  </div>
-                )}
+                {/* 2026-08-20 1440：外层 overflow-hidden + 这一排 shrink-0，
+                    右侧图标被裁掉；overflow-x-auto 写在不能收缩的盒子上等于
+                    没写。内层 shrink-0 保住按钮固有宽，外层才是真正的滑槽。 */}
+                <div className="ml-auto flex shrink-0 items-center gap-1">
                 {/* Primer / shadcn ToggleGroup：浅底轨 + 白片选中，不要黑底白字。
                     2026-08-20 满电青年：这里曾经 bg-[#1f2328] text-white，
-                    浅色舞台头条上像一块开关，跟「运行中」徽章完全不搭。 */}
-                <div className="flex items-center rounded-lg bg-[#f4f4f5] p-0.5">
+                    浅色舞台头条上像一块开关。 */}
+                <div className="flex h-7 items-center rounded-md bg-[#f4f4f5] p-0.5">
                   {(
                     [
                       ["page", "页面"],
@@ -541,7 +578,7 @@ export function SlideRuleStudio({
                       onClick={() => setStageView(v)}
                       aria-pressed={stageView === v}
                       data-testid={`sliderule-stage-view-${v}`}
-                      className={`rounded-md px-2.5 py-0.5 text-[11px] transition ${
+                      className={`rounded-[5px] px-2 py-0.5 text-[11px] transition ${
                         stageView === v
                           ? "bg-white font-medium text-stone-800 shadow-sm"
                           : "text-stone-500 hover:text-stone-700"
@@ -551,7 +588,11 @@ export function SlideRuleStudio({
                     </button>
                   ))}
                 </div>
-                <StudioShareToggle sessionId={sessionId} running={isRunning} />
+                <StudioShareToggle
+                  sessionId={sessionId}
+                  running={isRunning}
+                  compact={isPhoneStage}
+                />
                 <button
                   type="button"
                   onClick={() => {
@@ -559,29 +600,41 @@ export function SlideRuleStudio({
                     if (stageView === "page" || !xrayOn) toggleXray();
                   }}
                   data-testid="sliderule-xray-toggle"
+                  aria-label="透视"
                   aria-pressed={xrayOn && stageView === "page"}
-                  className={`flex h-8 items-center gap-1.5 rounded-full border px-3.5 text-[12px] font-semibold transition ${
+                  className={`flex h-7 items-center rounded-md border text-[12px] font-medium transition ${
                     xrayOn && stageView === "page"
                       ? "border-transparent bg-[#1677ff] text-white shadow-sm"
                       : "border-[#e5e7eb] bg-white text-stone-600 hover:border-[#d3d8e0] hover:bg-[#f8f9fb]"
-                  }`}
+                  } ${isPhoneStage ? "w-7 justify-center" : "gap-1.5 px-2.5"}`}
                   title="对准页面上的元素，看它背后的数据、流程和权限"
                 >
                   <Crosshair className="h-3.5 w-3.5" />
-                  透视
+                  {isPhoneStage ? null : "透视"}
                 </button>
                 {chromeSlot}
+                </div>
               </div>
             </div>
             <div className="flex min-h-0 flex-1 gap-3">
               {stageView === "board" ? (
-                <ArchitectureStage
-                  model={fiveSystemModel}
-                  publishClosure={publishClosure}
-                  onInspect={setDrawerSkill}
-                  focusSkill={activeSkillId}
-                  className="min-h-0 flex-1"
-                />
+                <div className="flex min-h-0 flex-1 flex-col gap-2">
+                  {roleControl ? (
+                    <div
+                      className="flex shrink-0 justify-end"
+                      data-testid="sliderule-stage-meta-trailing"
+                    >
+                      {roleControl}
+                    </div>
+                  ) : null}
+                  <ArchitectureStage
+                    model={fiveSystemModel}
+                    publishClosure={publishClosure}
+                    onInspect={setDrawerSkill}
+                    focusSkill={activeSkillId}
+                    className="min-h-0 flex-1"
+                  />
+                </div>
               ) : (
                 <>
               <SpecPageLiveStage
@@ -595,6 +648,7 @@ export function SlideRuleStudio({
                 onHoverBinding={handleHoverBinding}
                 onActivePageChange={setActiveSpecPageId}
                 view={stageView}
+                metaTrailing={roleControl}
                 className="min-h-0 min-w-0 flex-1"
               />
               {xrayOn && fiveSystemModel && appSchema && (
@@ -707,15 +761,16 @@ export function SlideRuleStudio({
   );
 
   return (
-    <div className={`h-full w-full overflow-hidden ${className}`}>
+    <StudioChrome className={className}>
       <StudioSplit
+        device={stageDevice}
         chat={
-          <div className="flex h-full min-h-0 flex-col bg-[var(--sr-shell-bg,#f4f4f6)]">
+          <div className="flex h-full min-h-0 flex-col bg-transparent">
             {chatSlot}
           </div>
         }
         stage={stagePanel}
       />
-    </div>
+    </StudioChrome>
   );
 }

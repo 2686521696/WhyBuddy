@@ -17,9 +17,12 @@ import {
 export function StudioShareToggle({
   sessionId,
   running = false,
+  compact = false,
 }: {
   sessionId?: string;
   running?: boolean;
+  /** 窄列（手机预览）只留图标。Primer：Trailing action 在 narrow 收成图标。 */
+  compact?: boolean;
 }): React.ReactElement | null {
   const [app, setApp] = React.useState<AppStoreSummary | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -46,6 +49,7 @@ export function StudioShareToggle({
       type="button"
       data-testid="sliderule-share-toggle"
       aria-pressed={!isPrivate}
+      aria-label={label}
       disabled={busy || !ready}
       title={
         !ready
@@ -54,11 +58,11 @@ export function StudioShareToggle({
             ? "当前私有，点一下开放到应用市场"
             : "当前开放，点一下改回私有"
       }
-      className={`flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] font-medium transition ${
+      className={`flex h-7 items-center rounded-md border text-[12px] font-medium transition ${
         isPrivate
           ? "border-[#e5e7eb] bg-white text-stone-600 hover:bg-[#f8f9fb]"
           : "border-transparent bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
-      }`}
+      } ${compact ? "w-7 justify-center" : "gap-1.5 px-2.5"}`}
       onClick={() => {
         if (!app?.id) return;
         const next = isPrivate ? "public" : "private";
@@ -71,7 +75,7 @@ export function StudioShareToggle({
       }}
     >
       {isPrivate ? <Lock className="h-3.5 w-3.5" /> : <Globe className="h-3.5 w-3.5" />}
-      {label}
+      {compact ? null : label}
     </button>
   );
 }

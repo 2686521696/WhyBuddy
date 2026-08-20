@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import {
   canCollapsePart,
   guessStudioSplitWidthPx,
+  isPhoneStudioDevice,
   isStageMaximized,
   isStagePageShown,
   isStudioChromeShown,
@@ -14,6 +15,9 @@ import {
   STUDIO_CHAT_SIDEBAR_MULTIPLIER,
   studioChatDefaultPercent,
   studioChatDefaultPx,
+  studioPhoneChatDefaultPercent,
+  studioPhoneStageDefaultPercent,
+  studioPhoneStageDefaultPx,
   studioStageDefaultPercent,
 } from "../studio-layout";
 import { SHELL_SIDEBAR_WIDTH_PX } from "../shell-sidebar-layout";
@@ -91,5 +95,26 @@ describe("对话栏默认 = 左侧菜单 ×2", () => {
     expect(studioChatDefaultPercent(10_000)).toBe(STUDIO_CHAT_MIN_PERCENT);
     expect(guessStudioSplitWidthPx(1920)).toBe(1920 - SHELL_SIDEBAR_WIDTH_PX);
     expect(guessStudioSplitWidthPx(1920, true)).toBe(1920);
+  });
+});
+
+describe("手机预览列默认 = 左侧菜单 ×2", () => {
+  it("跟桌面对话栏同一像素，只是换到舞台列", () => {
+    /**
+     * ⚠ 2026-08-20：用户要手机视图宽 = 菜单两倍且不可拖。
+     * 跟桌面对话栏用同一个 504，对调面板；改回 38/62 或倍数改成 1 必须红。
+     */
+    const split = 1920 - SHELL_SIDEBAR_WIDTH_PX;
+    expect(studioPhoneStageDefaultPx()).toBe(studioChatDefaultPx());
+    expect(studioPhoneStageDefaultPx()).toBe(504);
+    expect(studioPhoneStageDefaultPercent(split)).toBeCloseTo(
+      studioChatDefaultPercent(split)
+    );
+    expect(studioPhoneChatDefaultPercent(split)).toBeCloseTo(
+      studioStageDefaultPercent(split)
+    );
+    expect(isPhoneStudioDevice("phone")).toBe(true);
+    expect(isPhoneStudioDevice("desktop")).toBe(false);
+    expect(isPhoneStudioDevice(undefined)).toBe(false);
   });
 });

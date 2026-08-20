@@ -379,7 +379,7 @@ describe("SlideRuleStudio 三态舞台", () => {
     expect(html).not.toContain(">游标<");
   });
 
-  it("工作台图标簇落在透视右侧，不另起一行顶栏", () => {
+  it("工作台图标簇落在透视右侧，跟标题同一行", () => {
     const html = renderToStaticMarkup(
       <SlideRuleStudio
         chatSlot={<div />}
@@ -403,6 +403,13 @@ describe("SlideRuleStudio 三态舞台", () => {
     expect(xrayAt).toBeGreaterThan(gearsAt);
     expect(chromeAt).toBeGreaterThan(xrayAt);
     expect(html.match(/data-testid="sliderule-status-bar"/g)?.length).toBe(1);
+    const gearsTag = html.slice(
+      html.lastIndexOf("<div", gearsAt),
+      html.indexOf(">", gearsAt) + 1
+    );
+    expect(gearsTag).toContain("overflow-x-auto");
+    expect(gearsTag).toContain("min-w-0");
+    expect(gearsTag).not.toContain("shrink-0");
   });
 
   it("开聊后对话/舞台之间是可拖可折分隔；空会话没有这条缝", () => {
@@ -427,6 +434,29 @@ describe("SlideRuleStudio 三态舞台", () => {
       />
     );
     expect(empty).not.toContain('data-testid="sliderule-studio-split-handle"');
+  });
+
+  it("手机预览锁成分栏右侧菜单×2，缝不可拖", () => {
+    const html = renderToStaticMarkup(
+      <StudioLayoutProvider available>
+        <SlideRuleStudio
+          chatSlot={<div />}
+          activeSkillId={null}
+          specPages={[
+            {
+              pageId: "p1",
+              html: "<!doctype html><html><body>x</body></html>",
+              current: 1,
+              total: 1,
+              bound: false,
+              device: "phone",
+            },
+          ]}
+        />
+      </StudioLayoutProvider>
+    );
+    expect(html).toContain('data-split-locked="phone"');
+    expect(html).toContain("手机预览宽度已锁定为菜单栏两倍");
   });
 
   it("推演中且应用未成形 → live 占位（llmDraft 为空也不许闪回 board）", () => {

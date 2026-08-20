@@ -7,6 +7,9 @@
  * 2026-08-20 City Walk：默认不再是 38/62。对话栏默认 = 左侧菜单宽度 ×2
  * （见 studio-layout.studioChatDefaultPercent）。拖过的比例经 autoSaveId
  * 记住；顶栏「重置布局」和缝上双击走同一条 resetLayout。
+ *
+ * 同日晚：手机预览对调——舞台列 = 菜单×2 且缝不可拖（contain 会把
+ * 390×844 放到 110%）。桌面仍可拖，autoSaveId 互不覆盖。
  * 两侧不能同时折没：折一个时另一个的折钮禁用，否则整页只剩一条缝。
  *
  * 缝本身占 1px 布局（hover 热区用 after 加宽，不把缝画成 6px 槽）。
@@ -40,16 +43,26 @@ import {
   STUDIO_CHAT_MAX_PERCENT,
   STUDIO_CHAT_MIN_PERCENT,
   guessStudioSplitWidthPx,
+  isPhoneStudioDevice,
   studioChatDefaultPercent,
   studioChatDefaultPx,
+  studioPhoneChatDefaultPercent,
+  studioPhoneStageDefaultPercent,
+  studioPhoneStageDefaultPx,
   studioStageDefaultPercent,
 } from "./studio-layout";
 
-function splitDefaults() {
+function splitDefaults(device?: "desktop" | "phone") {
   const splitPx =
     typeof window !== "undefined"
       ? guessStudioSplitWidthPx(window.innerWidth)
       : 0;
+  if (isPhoneStudioDevice(device)) {
+    return {
+      chat: studioPhoneChatDefaultPercent(splitPx),
+      stage: studioPhoneStageDefaultPercent(splitPx),
+    };
+  }
   return {
     chat: studioChatDefaultPercent(splitPx),
     stage: studioStageDefaultPercent(splitPx),
@@ -59,20 +72,26 @@ function splitDefaults() {
 function SplitFallback({
   chat,
   stage,
+  device,
 }: {
   chat: React.ReactNode;
   stage: React.ReactNode;
+  device?: "desktop" | "phone";
 }) {
+  const phone = isPhoneStudioDevice(device);
   return (
     <div className="flex h-full w-full" data-testid="sliderule-studio-split">
       <div
         className="min-h-0 min-w-0"
-        style={{ flex: `0 1 ${studioChatDefaultPx()}px` }}
+        style={{ flex: phone ? "1 1 0" : `0 1 ${studioChatDefaultPx()}px` }}
       >
         {chat}
       </div>
       <div className="w-px shrink-0 bg-[#d1d9e0b3]" aria-hidden />
-      <div className="min-h-0 min-w-0" style={{ flex: "1 1 0" }}>
+      <div
+        className="min-h-0 min-w-0"
+        style={{ flex: phone ? `0 0 ${studioPhoneStageDefaultPx()}px` : "1 1 0" }}
+      >
         {stage}
       </div>
     </div>
@@ -82,23 +101,29 @@ function SplitFallback({
 export function StudioSplit({
   chat,
   stage,
+  device,
 }: {
   chat: React.ReactNode;
   stage: React.ReactNode;
+  device?: "desktop" | "phone";
 }) {
   const layout = useStudioLayout();
-  if (!layout) return <SplitFallback chat={chat} stage={stage} />;
-  return <StudioSplitLive layout={layout} chat={chat} stage={stage} />;
+  if (!layout) return <SplitFallback chat={chat} stage={stage} device={device} />;
+  return (
+    <StudioSplitLive layout={layout} chat={chat} stage={stage} device={device} />
+  );
 }
 
 function StudioSplitLive({
   layout,
   chat,
   stage,
+  device,
 }: {
   layout: NonNullable<ReturnType<typeof useStudioLayout>>;
   chat: React.ReactNode;
   stage: React.ReactNode;
+  device?: "desktop" | "phone";
 }) {
   const {
     chatRef,
@@ -113,10 +138,10 @@ function StudioSplitLive({
     layoutGeneration,
   } = layout;
 
-  const defaults = splitDefaults();
+  const phone = isPhoneStudioDevice(device);
+  const defaults = splitDefaults(device);
 
-  React.useEffect(() => {
-    if (!layoutGeneration) return;
+  const applyDefaults = React.useCallback(() => {
     const chatPanel = chatRef.current;
     const stagePanel = stageRef.current;
     if (chatPanel?.isCollapsed()) chatPanel.expand();
@@ -126,17 +151,29 @@ function StudioSplitLive({
       (typeof window !== "undefined"
         ? guessStudioSplitWidthPx(window.innerWidth)
         : 0);
+    if (phone) {
+      chatPanel?.resize(studioPhoneChatDefaultPercent(splitPx));
+      stagePanel?.resize(studioPhoneStageDefaultPercent(splitPx));
+      return;
+    }
     chatPanel?.resize(studioChatDefaultPercent(splitPx));
     stagePanel?.resize(studioStageDefaultPercent(splitPx));
-  }, [layoutGeneration, chatRef, stageRef, splitElRef]);
+  }, [phone, chatRef, stageRef, splitElRef]);
+
+  React.useEffect(() => {
+    if (!layoutGeneration) return;
+    applyDefaults();
+  }, [layoutGeneration, applyDefaults]);
 
   return (
     <div ref={splitElRef} className="h-full w-full min-h-0 min-w-0">
       <PanelGroup
+        key={phone ? "phone" : "desktop"}
         direction="horizontal"
-        autoSaveId="sliderule-studio-split-v2"
+        autoSaveId={phone ? undefined : "sliderule-studio-split-v2"}
         className="h-full w-full"
         data-testid="sliderule-studio-split"
+        data-split-locked={phone ? "phone" : undefined}
         data-studio-resizing={layout.resizing ? "true" : undefined}
       >
         <Panel
@@ -156,10 +193,19 @@ function StudioSplitLive({
 
         <PanelResizeHandle
           data-testid="sliderule-studio-split-handle"
-          className="group relative z-20 flex w-px shrink-0 items-center justify-center bg-[#d1d9e0b3] outline-none after:absolute after:inset-y-0 after:-left-1 after:w-2.5 after:content-[''] hover:bg-[#d1d9e0] data-[resize-handle-active]:bg-[#d1d9e0]"
-          onDragging={layout.setResizing}
-          onDoubleClick={resetLayout}
-          title="拖动调整宽度 · 双击恢复默认"
+          disabled={phone}
+          className={`group relative z-20 flex w-px shrink-0 items-center justify-center bg-[#d1d9e0b3] outline-none after:absolute after:inset-y-0 after:-left-1 after:w-2.5 after:content-[''] ${
+            phone
+              ? "cursor-default"
+              : "hover:bg-[#d1d9e0] data-[resize-handle-active]:bg-[#d1d9e0]"
+          }`}
+          onDragging={phone ? undefined : layout.setResizing}
+          onDoubleClick={phone ? undefined : resetLayout}
+          title={
+            phone
+              ? "手机预览宽度已锁定为菜单栏两倍"
+              : "拖动调整宽度 · 双击恢复默认"
+          }
         >
           <div
             className="relative z-10 flex flex-col gap-px rounded-md border border-[#e5e7eb] bg-white p-px opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-data-[resize-handle-active]:opacity-100"
