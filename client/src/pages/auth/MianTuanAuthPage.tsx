@@ -434,7 +434,7 @@ export function AuthCard({
           onClick={() => onBrowse()}
           data-testid="auth-browse-without-login"
         >
-          暂不登录，浏览应用中心
+          暂不登录，浏览应用市场
         </button>
       )}
 

@@ -120,7 +120,7 @@ describe("登录页", () => {
       <AuthCard onDone={() => {}} onBrowse={() => {}} />
     );
     expect(markup).toContain('data-testid="auth-browse-without-login"');
-    expect(markup).toContain("暂不登录，浏览应用中心");
+    expect(markup).toContain("暂不登录，浏览应用市场");
   });
 
   it("字段有独立标签，不只靠 placeholder", () => {

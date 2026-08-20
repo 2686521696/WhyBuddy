@@ -30,6 +30,7 @@ export interface AuthUser {
   id: string;
   email: string;
   displayName?: string | null;
+  avatarUrl?: string | null;
   isSuperuser: boolean;
   isVerified: boolean;
   createdAt?: string | null;
@@ -94,6 +95,30 @@ export async function fetchMe(): Promise<AuthUser | null> {
   }
 }
 
+export async function updateProfile(patch: {
+  displayName?: string | null;
+  avatarUrl?: string | null;
+}): Promise<AuthUser> {
+  const res = await fetch(`${BASE}/account/me`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    credentials: "include",
+    body: JSON.stringify(patch),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    user?: AuthUser;
+    detail?: string;
+    message?: string;
+  };
+  if (!res.ok) {
+    throw new Error(String(data.detail || data.message || "保存失败"));
+  }
+  if (!data.user) {
+    throw new Error("保存失败");
+  }
+  return data.user;
+}
+
 /**
  * 推演 401「请先登录」时的人话。侧栏账号是启动时 `/account/me` 的缓存，
  * 不会在这次 401 上自动刷新——已登录用户会看到互相矛盾的两句话。
@@ -118,7 +143,7 @@ export async function describeDriveAuthFailure(backendMessage: string): Promise<
   return {
     stillLoggedIn: false,
     banner: text,
-    step: `${text}——浏览应用中心无需登录，推演和复刻需要账号；左下角「登录 / 注册」可以登录。`,
+    step: `${text}——浏览应用市场无需登录，推演和复刻需要账号；左下角「登录 / 注册」可以登录。`,
   };
 }
 

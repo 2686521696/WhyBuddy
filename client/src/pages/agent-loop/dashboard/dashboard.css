@@ -74,7 +74,8 @@
 }
 
 .native-agent-brand:hover {
-  background: rgba(255, 255, 255, 0.55);
+  /* 跟菜单选中同一套：灰底上压一层黑，不要半透明白（会闪成一块白卡） */
+  background: rgba(15, 23, 42, 0.05);
 }
 
 /* 横版标识：字标在图里，不再单独排文字。
@@ -127,21 +128,23 @@
 }
 
 .native-agent-nav-item:hover {
-  background: rgba(255, 255, 255, 0.65);
-  color: #0f172a;
+  background: rgba(15, 23, 42, 0.05);
+  color: #171717;
 }
 
 .native-agent-nav-item-active {
-  /* 激活态：白底胶囊，在同色灰底上仍可辨 */
-  background: #ffffff;
-  color: #1d4ed8;
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  /* ⚠ 2026-08-20：白底胶囊 + #1d4ed8 在灰侧栏上像一张白卡
+     （用户截图红箭头指「设置」）。会话行已经是同色压深；菜单要对齐
+     Cursor：选中压一层黑 6%，字保持近黑，不要反白。 */
+  background: rgba(15, 23, 42, 0.07);
+  box-shadow: none;
+  color: #171717;
+  font-weight: 500;
 }
 
 .native-agent-nav-item-active:hover {
-  background: #ffffff;
-  color: #1d4ed8;
+  background: rgba(15, 23, 42, 0.09);
+  color: #171717;
 }
 
 /* --- 会话区：最近几条（2026-08-19 照 Stitch 行样式，多了走应用中心） --- */
@@ -624,6 +627,7 @@
   height: var(--dock-slot, 20px);
   justify-content: center;
   line-height: 1;
+  overflow: hidden;
   width: var(--dock-slot, 20px);
 }
 
@@ -633,6 +637,13 @@
   justify-content: center;
   font-size: 12px;
   line-height: 1;
+}
+
+.native-agent-user-avatar img {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
 }
 
 .native-agent-user-meta {

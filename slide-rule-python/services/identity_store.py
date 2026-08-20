@@ -57,6 +57,9 @@ EMAIL_CODE_MAX_ATTEMPTS = 5
 
 _MIN_PASSWORD_LEN = 8
 
+#: update_profile 用：没出现在调用里的字段不要动。
+_UNSET = object()
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -213,6 +216,7 @@ create table if not exists {TABLE} (
     is_superuser boolean not null default false,
     is_verified boolean not null default false,
     display_name varchar(120),
+    avatar_url text,
     created_at timestamptz,
     last_login_at timestamptz
 )
@@ -227,6 +231,7 @@ create table if not exists {TABLE} (
     is_superuser integer not null default 0,
     is_verified integer not null default 0,
     display_name varchar(120),
+    avatar_url text,
     created_at text,
     last_login_at text
 )
@@ -315,13 +320,18 @@ class User(dict):
 
     def public(self) -> dict[str, Any]:
         """对外可见的字段。**password_hash 永远不出现在这里**。"""
+        avatar = self.get("avatar_url")
+        if avatar is None:
+            avatar = self.get("avatarUrl")
+        avatar_text = str(avatar).strip() if avatar else ""
         return {
             "id": self.id,
             "email": self.email,
-            "displayName": self.get("display_name"),
+            "displayName": self.get("display_name") or self.get("displayName"),
+            "avatarUrl": avatar_text or None,
             "isSuperuser": self.is_superuser,
             "isVerified": self.is_verified,
-            "createdAt": self.get("created_at"),
+            "createdAt": self.get("created_at") or self.get("createdAt"),
         }
 
 
@@ -334,6 +344,22 @@ class IdentityStore:
         self._x.execute(_DDL_SQLITE if is_sqlite else _DDL_PG)
         self._x.execute(_CODE_DDL_SQLITE if is_sqlite else _CODE_DDL_PG)
         self._x.execute(_REVOKE_DDL_SQLITE if is_sqlite else _REVOKE_DDL_PG)
+        self._ensure_profile_columns()
+
+    def _ensure_profile_columns(self) -> None:
+        """老表就地补头像列。create table if not exists 对已有表一列都不加。
+
+        增强类：补列失败不许拖垮登录。列已存在时 SQLite 会抛，Postgres
+        走 if not exists。
+        """
+        if self._is_sqlite:
+            sql = f"alter table {TABLE} add column avatar_url text"
+        else:
+            sql = f"alter table {TABLE} add column if not exists avatar_url text"
+        try:
+            self._x.execute(sql)
+        except Exception:  # noqa: BLE001 — 列已存在 / 网关不认 IF NOT EXISTS
+            pass
 
     # ── 用户 ──────────────────────────────────────────
     def get_by_email(self, email: str) -> Optional[User]:
@@ -418,6 +444,37 @@ class IdentityStore:
         self._x.execute(
             f"update {TABLE} set is_superuser = {p(1)} where id = {p(2)}", [value, user_id]
         )
+
+    def update_profile(
+        self,
+        user_id: str,
+        *,
+        display_name: Any = _UNSET,
+        avatar_url: Any = _UNSET,
+    ) -> Optional[User]:
+        """改昵称 / 头像。没传的字段保持原值。
+
+        头像存 data URL（JPG/PNG/GIF/WebP，上限见路由校验）。空串/None 表示清掉。
+        """
+        uid = str(user_id or "").strip()
+        if not uid:
+            return None
+        assignments: list[str] = []
+        params: list[Any] = []
+        p = self._x.ph
+        if display_name is not _UNSET:
+            assignments.append(f"display_name = {p(len(params) + 1)}")
+            params.append(display_name)
+        if avatar_url is not _UNSET:
+            assignments.append(f"avatar_url = {p(len(params) + 1)}")
+            params.append(avatar_url)
+        if assignments:
+            params.append(uid)
+            self._x.execute(
+                f"update {TABLE} set {', '.join(assignments)} where id = {p(len(params))}",
+                params,
+            )
+        return self.get_by_id(uid)
 
     # ── 邮箱验证码 ────────────────────────────────────
     def put_code(self, email: str, code_hash: str, purpose: str) -> None:

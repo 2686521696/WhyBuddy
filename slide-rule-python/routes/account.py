@@ -24,11 +24,13 @@ strategy（jwt/db），同一份身份可以走多个 transport。这里不需�
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Optional
+import base64
+import re
+from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Cookie, Header, HTTPException, Request, Response
 
-from middlewares.current_user import AUTH_COOKIE, CurrentUserOptional, SuperUser
+from middlewares.current_user import AUTH_COOKIE, CurrentUser, CurrentUserOptional, SuperUser
 from services import auth_service
 from services.auth_tokens import DEFAULT_TTL_S, decode_access_token
 from services.identity_store import get_identity_store
@@ -224,6 +226,83 @@ async def me(viewer: CurrentUserOptional):
     "401 就跳登录页"拦截器误伤。匿名是正常状态，不是错误。
     """
     return {"user": viewer.public() if viewer is not None else None}
+
+
+_DISPLAY_NAME_MAX = 40
+_AVATAR_MAX_BYTES = 2 * 1024 * 1024
+_AVATAR_DATA_URL = re.compile(
+    r"^data:(image/(?:jpeg|jpg|png|gif|webp));base64,([A-Za-z0-9+/=\s]+)$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_display_name(value: Any) -> tuple[Optional[str], Optional[str]]:
+    if value is None:
+        return None, None
+    text = str(value).strip()
+    if not text:
+        return None, None
+    if any(ch in text for ch in "\n\r\t"):
+        return None, "昵称不能包含换行"
+    if len(text) > _DISPLAY_NAME_MAX:
+        return None, f"昵称最多 {_DISPLAY_NAME_MAX} 个字"
+    return text, None
+
+
+def _normalize_avatar_url(value: Any) -> tuple[Optional[str], Optional[str]]:
+    """None / 空串 = 清掉头像。只收本页上传的 data URL，不收外链。"""
+    if value is None:
+        return None, None
+    if not isinstance(value, str):
+        return None, "头像格式不支持"
+    text = value.strip()
+    if not text:
+        return None, None
+    matched = _AVATAR_DATA_URL.match(text)
+    if not matched:
+        return None, "请上传 JPG、PNG、GIF 或 WebP 图片"
+    try:
+        raw = base64.b64decode(matched.group(2), validate=False)
+    except Exception:  # noqa: BLE001
+        return None, "头像文件损坏"
+    if len(raw) > _AVATAR_MAX_BYTES:
+        return None, "头像不能超过 2 MB"
+    if len(raw) < 24:
+        return None, "头像文件损坏"
+    return text, None
+
+
+@router.patch("/account/me")
+async def patch_me(viewer: CurrentUser, payload: dict[str, Any] = Body(default={})):
+    """改当前登录者的昵称和头像。对照 TRAE 账号设置：本人改自己的资料。
+
+    字段可缺：没传的保持原值。`displayName` / `avatarUrl` 传空串表示清掉。
+    """
+    import asyncio
+
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "请求格式不对")
+    kwargs: dict[str, Any] = {}
+    if "displayName" in payload:
+        name, err = _normalize_display_name(payload.get("displayName"))
+        if err:
+            raise HTTPException(400, err)
+        kwargs["display_name"] = name
+    if "avatarUrl" in payload:
+        url, err = _normalize_avatar_url(payload.get("avatarUrl"))
+        if err:
+            raise HTTPException(400, err)
+        kwargs["avatar_url"] = url
+    if not kwargs:
+        return {"user": viewer.public()}
+
+    def _go() -> Any:
+        return get_identity_store().update_profile(viewer.id, **kwargs)
+
+    updated = await asyncio.to_thread(_go)
+    if updated is None:
+        raise HTTPException(404, "用户不存在")
+    return {"user": updated.public()}
 
 
 @router.get("/account/capabilities")

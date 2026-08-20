@@ -221,7 +221,11 @@ export function AccountPanel() {
         onClick={() => setOpen(v => !v)}
       >
         <span className="native-agent-user-avatar native-agent-dock-slot" aria-hidden>
-          {initialsOf(user) || <UserOutlined />}
+          {user.avatarUrl ? (
+            <img src={user.avatarUrl} alt="" />
+          ) : (
+            initialsOf(user) || <UserOutlined />
+          )}
         </span>
         <span className="native-agent-user-meta">
           <span className="native-agent-user-name">
