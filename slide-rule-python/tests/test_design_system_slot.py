@@ -55,6 +55,8 @@ CONTRACT_MARKS = [
     ('aria-current="page"', "set_breadcrumb_current 认它"),
     ("Breadcrumb", "_BREADCRUMB_NAV 优先认这个 aria-label"),
     ("不会被执行", "宿主摘 script，这是事实"),
+    ("fixed inset-0", "打开态浮层会挡住菜单"),
+    ("hidden", "抽屉默认关上，对照 Radix defaultOpen=false"),
     ("<svg>", "图表只能内联 svg 画"),
     ("可读的中文文字", "validate_page_html 判中文"),
     ("不许出现你（生成方）", "scan_foreign_references 判品牌泄漏"),

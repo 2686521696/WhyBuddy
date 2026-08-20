@@ -80,6 +80,10 @@ class Test口径抄的是_screenshot_to_code:
         assert "Image generation is disabled for this request." in p
         assert "Do not call generate_images." in p
         assert "Do not invent unsplash or pexels photo IDs" in p
+        assert "通用后台" in p
+        assert "bg-slate-900" in p
+        assert "placehold.co" in p
+        assert "exact https addresses" not in p
 
     def test_设计系统带冲突优先级声明(self):
         p = sph.build_page_html_prompt("x")
@@ -89,6 +93,26 @@ class Test口径抄的是_screenshot_to_code:
         """这条在参照图那边早就有，改两段式时漏掉过一次，实测灰条当场复发。"""
         p = sph.build_page_html_prompt("x")
         assert "不许用灰色横条或色块代替" in p
+
+    def test_桌面契约禁止整页居中卡片(self):
+        """满电青年：max-w-6xl mx-auto 白卡片漂在浅绿底上。手机契约有铺满，桌面漏了。"""
+        p = sph.build_page_html_prompt("x")
+        assert "铺满 1920×1080" in p
+        assert "铺满 1920×1920" not in p
+        assert "mx-auto" in p
+        assert "items-center justify-center" in p
+        phone = sph.build_page_html_prompt("x", device="phone")
+        assert "铺满 1920×1080" not in phone
+
+    def test_桌面侧栏要给文字留宽度(self):
+        """满电青年：工单页写成 w-16，点进去侧栏瘪了。契约得说清楚。"""
+        p = sph.build_page_html_prompt("x")
+        assert "w-64" in p
+        assert "w-16" in p
+        assert "items-center" in p
+        assert "bg-zinc-950" in p
+        phone = sph.build_page_html_prompt("x", device="phone")
+        assert "不要写成图标轨 w-16" not in phone
 
 
 class Test机械校验只挡明显不完整的:
@@ -154,6 +178,35 @@ class Test失败不回落占位:
 
         out = sph.generate_page_html(PAGE, SPEC, llm_call=lambda *a, **k: _R())
         assert out["html"].startswith("<!doctype html")
+
+    def test_示例外链剥掉后页面留下(self):
+        """★ Foclip：示例域名不能再把整页打进 failedPages。
+
+        把 generate_page_html 里的 neutralize 调用删掉，本条必须红。
+        """
+
+        class _R:
+            content = _OK_HTML.replace(
+                "</body>",
+                '<a href="https://tech.example.com/clip">来源条目</a></body>',
+            )
+
+        out = sph.generate_page_html(PAGE, SPEC, llm_call=lambda *a, **k: _R())
+        assert "tech.example.com" not in out["html"]
+        assert "来源条目" in out["html"]
+
+    def test_生成入口真的调用了剥外链(self):
+        """判据钉 AST 调用，不钉注释里出现过这个词。"""
+        import ast
+        import inspect
+
+        tree = ast.parse(inspect.getsource(sph.generate_page_html))
+        names = [
+            n.func.id
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+        ]
+        assert "neutralize_foreign_urls" in names
 
 
 class Test这里不打_data_洞:

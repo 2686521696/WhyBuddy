@@ -36,6 +36,7 @@ Alpine 的 `x-data` / `x-for` 同构。
 词表分叉就是下一个对不齐的地方（本仓在动作词表上踩过）。
 """
 
+import ast
 import inspect
 import os
 import re
@@ -278,6 +279,15 @@ class Test表单隐式单条作用域:
         """只测 stamp 会假绿：helper 对、bind_page 没接上，真机向导照挂。"""
         src = inspect.getsource(bind_page)
         assert src.index("stamp_implicit_form_record") < src.index("check_coverage")
+        tree = ast.parse(src)
+        names = [
+            n.func.id
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+        ]
+        assert "neutralize_foreign_urls" in names
+        assert "conceal_open_overlays" in names
+        assert "stamp_implicit_form_record" in names
 
     def test_bind_page_漏写也能过(self):
         full = (

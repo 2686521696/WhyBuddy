@@ -103,8 +103,20 @@ _STRUCTURAL_CONTRACT = """左侧一个 <aside> 固定主导航，顶部一个 <h
       <li><a href="#" aria-current="page">当前页名</a></li>
     </ol></nav>
 
+html 与 body 必须 width:100%; height:100%。<aside>、<header>、<main> 铺满 1920×1080 视口。
+侧栏有菜单文字时必须用 w-64（约 16rem，对照 shadcn Sidebar 展开态），
+不要写成图标轨 w-16；品牌行（图标+产品名）用 flex items-center 垂直对齐。
+Header 右侧的分段控件跟顶栏同色系（浅底深字），不要 bg-zinc-950 / bg-black。
+不要用 max-w-5xl / max-w-6xl / max-w-7xl / mx-auto 把整页收成屏幕正中一张卡片，
+不要给 body 写 items-center justify-center 或大 padding 把后台漂在浅色底中间。
+
 页面里的 <script> **不会被执行**（渲染方会移除）。所以不要引图表库、不要写 JS
 渲染——图表一律用内联 <svg> 的 <polyline>/<rect>/<path>/<circle> 直接画出来。
+
+浮层（抽屉 / 对话框 / Slide-over）默认必须关上。根节点若是
+``fixed inset-0``（Tailwind UI Slide-over / Radix Dialog Overlay 那层），
+必须带 ``hidden``。不要把「点开后的样子」画成这一页的首屏——脚本不跑，
+打开态的遮罩关不掉，也会挡住左侧菜单。
 
 占位数据必须写成**可读的中文文字**，
 不许用灰色横条或色块代替：日期写 20XX-XX-XX，金额写 ¥ ××,×××，百分比写 ××.×%，
@@ -113,8 +125,10 @@ _STRUCTURAL_CONTRACT = """左侧一个 <aside> 固定主导航，顶部一个 <h
 这是**客户自己的产品**。页脚、logo、版权行、关于页里不许出现你（生成方）的名字、
 品牌、域名或联系方式；除了上面指定的 Tailwind CDN、placehold.co，以及
 库存图床（images.unsplash.com / images.pexels.com / upload.wikimedia.org /
-staticflickr.com / rawpixel.com），不要写任何外部网址。库存图必须用提示词里给出的完整 URL，
-不许自己编 photo id。产品名要从客户的业务里起，不要用你自己的名字。"""
+staticflickr.com / rawpixel.com），不要写任何外部网址。配图用
+https://placehold.co，每张 <img> 的 alt 写成这张照片的英文检索词（画面上是什么，
+例如 ev charging station；不要写用户分层）。不许自己编 unsplash / pexels
+photo id。产品名要从客户的业务里起，不要用你自己的名字。"""
 
 #: 移动端契约。壳的形状同样是**硬约束**：3.5 步抠 <header> + 页面级 <nav>
 #: （底部标签栏），这里不写成 <nav>，3.5 就没得抠，移动端那套判据整个失效。
@@ -137,6 +151,9 @@ html 与 body 必须 width:100%; min-height:100%。内容铺满视口。
 页面里的 <script> **不会被执行**（渲染方会移除）。所以不要引图表库、不要写 JS
 渲染——图表一律用内联 <svg> 的 <polyline>/<rect>/<path>/<circle> 直接画出来。
 
+浮层（抽屉 / 对话框 / 底部 Sheet）默认必须关上。根节点若是
+``fixed inset-0``，必须带 ``hidden``。不要把打开态画成这一页的首屏。
+
 占位数据必须写成**可读的中文文字**，
 不许用灰色横条或色块代替：日期写 20XX-XX-XX，金额写 ¥ ××,×××，百分比写 ××.×%，
 计数写 ×,×××，人名写「张师傅」这类。列表要有真实的中文字段名。
@@ -144,8 +161,10 @@ html 与 body 必须 width:100%; min-height:100%。内容铺满视口。
 这是**客户自己的产品**。页脚、logo、版权行、关于页里不许出现你（生成方）的名字、
 品牌、域名或联系方式；除了上面指定的 Tailwind CDN、placehold.co，以及
 库存图床（images.unsplash.com / images.pexels.com / upload.wikimedia.org /
-staticflickr.com / rawpixel.com），不要写任何外部网址。库存图必须用提示词里给出的完整 URL，
-不许自己编 photo id。产品名要从客户的业务里起，不要用你自己的名字。"""
+staticflickr.com / rawpixel.com），不要写任何外部网址。配图用
+https://placehold.co，每张 <img> 的 alt 写成这张照片的英文检索词（画面上是什么，
+例如 ev charging station；不要写用户分层）。不许自己编 unsplash / pexels
+photo id。产品名要从客户的业务里起，不要用你自己的名字。"""
 
 #: 缺省风格。**一句话**——它只是没人指定时的兜底，不是"推荐版式"。
 #: 密度、版式原型、组件词汇这些该由上游按应用给（第 1.5 步生成 / 人工覆盖）。
@@ -268,9 +287,11 @@ def build_page_html_prompt(
 - Make sure to make it look modern and sleek.
 - Use modern, professional fonts and colors.
 - Follow UX best practices.
+- Pick one surface for the whole app (light OR dark). Do not mix a light page with bg-slate-900 / bg-black cards, and do not paint the top header and the sidebar two different darks.
+- Breadcrumb first item is the product name from the brief. Never write 通用后台, Admin, 控制台, or Dashboard as the root.
 - Image generation is disabled for this request. Do not call generate_images. \
-If the design system lists 库存图 URLs, use those exact https addresses in <img src>. \
-Do not invent unsplash or pexels photo IDs. Otherwise use placeholder URLs (https://placehold.co)."""
+Do not invent unsplash or pexels photo IDs. \
+Use placeholder URLs (https://placehold.co). Put a specific English photo search query in each img alt (what the picture shows, not the user segment)."""
 
 
 def _strip_fences(text: str) -> str:
@@ -288,8 +309,8 @@ def _strip_fences(text: str) -> str:
 #:   · placehold.co        —— 抄 screenshot-to-code 的 image policy 里写的占位图
 #:   · fonts.google*       —— 「用现代专业字体」这条的常见实现；渲染器本来就 abort 它，
 #:                            放进白名单纯粹是别让它变成噪音告警
-#:   · 库存图床            —— 2026-08-19：搜到的真 URL 直挂 <img src>，不下载。
-#:                            真机 unsplash 被闸整页丢掉过（refine_page_scope 头注）。
+#:   · 库存图床            —— 画页后按 alt 直挂搜到的 URL（stock_images.fill）。
+#:                            闸仍放行，否则换图后的成品会被当成未授权外链。
 from .stock_images import STOCK_IMAGE_HOSTS
 
 _ALLOWED_HOSTS: Tuple[str, ...] = (
@@ -317,6 +338,125 @@ _COMMON_CDN_HOSTS = ("cdnjs.cloudflare.com", "unpkg.com", "cdn.jsdelivr.net")
 _XMLNS_RE = re.compile(r'xmlns(?::\w+)?\s*=\s*["\'][^"\']*["\']')
 
 _URL_RE = re.compile(r"https?://([A-Za-z0-9.-]+)")
+#: 剥外链时要整段换掉，不能只抠 host，不然 href 还指着原址。
+_URL_FULL_RE = re.compile(
+    r"https?://[A-Za-z0-9.-]+(?::\d+)?(?:/[^\s\"'<>]*)?",
+    re.I,
+)
+#: xmlns 里的 w3.org 不是外链。剥的时候也要放过，否则每个内联 SVG 被改成 #。
+_NEUTRALIZE_KEEP_HOSTS: Tuple[str, ...] = _ALLOWED_HOSTS + _COMMON_CDN_HOSTS + ("w3.org",)
+
+
+def _host_is(host: str, allowed: Tuple[str, ...]) -> bool:
+    name = (host or "").lower().rstrip(".")
+    return any(name == a or name.endswith("." + a) for a in allowed)
+
+
+def neutralize_foreign_urls(markup: str) -> str:
+    """白名单外的 http(s) 改成 ``#``，而不是把整页扔掉。
+
+    ⚠ 2026-08-20 Foclip（sr-20260820153501-ZWNB860JKH）：拾取工作台 /
+    知识资产库把示例条目写成 ``tech.example.com``、``blog.dev.io``。
+    ``validate_page_html`` 把整页判死刑，``page_shell`` 仍按 spec 把四条
+    菜单写进剩下两页的侧栏。宿主点 ``data-page-id=p1`` 在 pages 里找不到
+    页，``resolveActivePageId`` 静默回落最新页——看起来像「菜单路由坏了」。
+
+    外链不该出现在交付物里（连锁药房页脚那次），但修法是**拔掉链接**：
+    这一页还在，菜单点得进去。供应商身份（欧亿 / rcouyi 字样）不走这里，
+    那是品牌泄漏，继续 fail-closed。
+    """
+
+    def _repl(match: re.Match[str]) -> str:
+        url = match.group(0)
+        host = url.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0]
+        if _host_is(host, _NEUTRALIZE_KEEP_HOSTS):
+            return url
+        return "#"
+
+    return _URL_FULL_RE.sub(_repl, markup or "")
+
+
+#: Tailwind UI Slide-over / Radix Dialog Overlay 的打开态快照。
+#: ``fixed`` + 铺满视口；底栏 ``fixed inset-x-0 bottom-0`` 不在此列。
+_OVERLAY_OPEN_TAG_RE = re.compile(
+    r"<(div|section|aside|article|dialog)(\s[^>]*?)?>",
+    re.I,
+)
+_OVERLAY_CLASS_RE = re.compile(r"\sclass=(['\"])(.*?)\1", re.I)
+_OVERLAY_STYLE_RE = re.compile(r"\sstyle=(['\"])(.*?)\1", re.I)
+_OVERLAY_Z_LOW = frozenset({"z-0", "z-10", "z-20"})
+
+
+def _class_is_open_viewport_overlay(cls: str) -> bool:
+    """打开态的全屏遮罩。已经 ``hidden`` 的不算——那是关上的抽屉。"""
+    tokens = (cls or "").split()
+    if not tokens:
+        return False
+    found = set(tokens)
+    if "fixed" not in found or "hidden" in found:
+        return False
+    covers = "inset-0" in found or (
+        "top-0" in found
+        and "right-0" in found
+        and "bottom-0" in found
+        and "left-0" in found
+    )
+    if not covers:
+        return False
+    z_ok = any(t.startswith("z-") and t not in _OVERLAY_Z_LOW for t in tokens)
+    dim = any(
+        t.startswith("bg-black") or t.startswith("bg-gray") or t.startswith("bg-zinc")
+        or t.startswith("bg-slate") or t.startswith("bg-neutral")
+        for t in tokens
+    )
+    slide = "justify-end" in found or "justify-center" in found
+    return z_ok or dim or slide
+
+
+def conceal_open_overlays(markup: str) -> str:
+    """打开态的 ``fixed inset-0`` 收成 ``hidden``，不把整页扔掉。
+
+    ⚠ 2026-08-20 智能硬件巡检（sr-20260820141057-34FBKCBG7B）：p3
+    把 Tailwind UI Slide-over 的**打开态快照**当成成品首屏。注释写着
+    「当点击任意行时呈现」，DOM 却没 ``hidden``。``fixed inset-0 z-50``
+    盖住 ``<aside>``，宿主切页听 ``data-page-id``，点到的是遮罩——菜单
+    像坏了。页面 script 已被 DOMPurify 摘掉，✕ 按钮也没有处理函数。
+
+    对照 radix-ui/primitives Dialog：``defaultOpen=false``；打开是 Trigger
+    的事。提示词拦不住（同会话 p1 会写 hidden、p3 不会），修法跟剥外链
+    同一条：中和，不判死刑。
+
+    Tailwind 里 ``hidden`` 和 ``flex`` 特异性相同，CSS 源序不一定听 HTML
+    的 class 顺序，所以顺手钉 ``display:none!important``——宿主打开时再清。
+    """
+
+    def _repl(match: re.Match[str]) -> str:
+        tag = match.group(1)
+        attrs = match.group(2) or ""
+        class_m = _OVERLAY_CLASS_RE.search(attrs)
+        if not class_m or not _class_is_open_viewport_overlay(class_m.group(2)):
+            return match.group(0)
+        cls = class_m.group(2)
+        if "hidden" not in cls.split():
+            attrs = (
+                attrs[: class_m.start()]
+                + f" class={class_m.group(1)}{cls} hidden{class_m.group(1)}"
+                + attrs[class_m.end() :]
+            )
+        style_m = _OVERLAY_STYLE_RE.search(attrs)
+        if style_m:
+            val = style_m.group(2)
+            if "display:" not in val.lower():
+                attrs = (
+                    attrs[: style_m.start()]
+                    + f" style={style_m.group(1)}display:none!important;{val}{style_m.group(1)}"
+                    + attrs[style_m.end() :]
+                )
+        else:
+            attrs += ' style="display:none!important"'
+        return f"<{tag}{attrs}>"
+
+    return _OVERLAY_OPEN_TAG_RE.sub(_repl, markup or "")
 
 
 def scan_foreign_references(markup: str) -> List[str]:
@@ -362,7 +502,7 @@ def scan_foreign_references(markup: str) -> List[str]:
     hosts = {
         host
         for host in _URL_RE.findall(scannable)
-        if not any(host == a or host.endswith("." + a) for a in _ALLOWED_HOSTS)
+        if not _host_is(host, _ALLOWED_HOSTS)
     }
     cdn = sorted(
         h for h in hosts if any(h == c or h.endswith("." + c) for c in _COMMON_CDN_HOSTS)
@@ -466,7 +606,7 @@ def generate_page_html(
             ],
             temperature=0.2,
         )
-        html = _strip_fences(getattr(response, "content", "") or "")
+        html = conceal_open_overlays(neutralize_foreign_urls(_strip_fences(getattr(response, "content", "") or "")))
         last = validate_page_html(html)
         if not last:
             return {
@@ -547,7 +687,8 @@ def edit_page_html(
             print(f"[spec_page_html] 页面 {page_id} 局部改：{len(blocks)} 块一块都没匹配上")
             return None
 
-        problems = validate_page_html(got["html"])
+        cleaned = conceal_open_overlays(neutralize_foreign_urls(got["html"]))
+        problems = validate_page_html(cleaned)
         if problems:
             print(
                 f"[spec_page_html] 页面 {page_id} 局部改后没过校验，回落整页重画："
@@ -562,7 +703,7 @@ def edit_page_html(
         return {
             "version": SPEC_PAGE_HTML_VERSION,
             "pageId": page_id,
-            "html": got["html"],
+            "html": cleaned,
             "brief": "",
             "prompt": "",
             "editedBlocks": len(got["applied"]),

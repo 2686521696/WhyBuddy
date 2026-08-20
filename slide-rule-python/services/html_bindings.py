@@ -396,7 +396,7 @@ def bind_page(
     max_reask: int = 2,
 ) -> str:
     """给一页打孔。校验不过就把校验器原话喂回去重问，耗尽则抛。"""
-    from .spec_page_html import validate_page_html
+    from .spec_page_html import conceal_open_overlays, neutralize_foreign_urls, validate_page_html
 
     if llm_call is None:
         from sliderule_llm.client import call_llm_with_retry
@@ -407,7 +407,11 @@ def bind_page(
     feedback, last = "", "未调用"
     for attempt in range(max_reask + 1):
         resp = llm_call(build_prompt(markup, model, page_id, feedback), temperature=0.2)
-        out = stamp_implicit_form_record(_strip_fences(getattr(resp, "content", "") or ""))
+        out = conceal_open_overlays(
+            neutralize_foreign_urls(
+                stamp_implicit_form_record(_strip_fences(getattr(resp, "content", "") or ""))
+            )
+        )
         problems = (
             [{"path": "html", "message": p} for p in validate_page_html(out)]
             + check_bindings(out, model)
