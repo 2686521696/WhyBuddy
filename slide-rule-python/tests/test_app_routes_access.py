@@ -537,10 +537,16 @@ def test_delete_app_drops_bound_session(env):
         goal="工单", session_id=sid, gate_passed=True,
         owner_id=env["alice"]["user"]["id"],
     )
-    r = c.delete(f"{API}/apps/{aid}", headers=_hdr(env["alice"]))
+    v2 = store.save_version(
+        root_id=aid, parent_id=aid,
+        model={"appbundle": {"appIdentity": {"productName": "工单"}}},
+        goal="工单", session_id=sid, gate_passed=True,
+    )
+    r = c.delete(f"{API}/apps/{v2}", headers=_hdr(env["alice"]))
     assert r.status_code == 200, r.text
     assert r.json().get("sessionDeleted") is True
-    assert store.get_app(aid) is None
+    assert store.get_app(v2) is None
+    assert store.get_app(aid) is None, "同血缘旧版必须一起下架，否则刷新冒出 v1"
     assert load_session(sid) is None
 
 

@@ -159,6 +159,33 @@ def test_delete_removes_record(configured_store):
     assert len(store.list_apps()) == 1, "删掉一条后列表只剩另一条"
 
 
+def test_delete_app_drops_entire_version_chain(configured_store):
+    """画廊一张卡 = 一个 root。只删最新版的话刷新会把上一版顶回来。
+
+    把 ``delete_app`` 改回 ``backend.delete(最新 id)``，这条必红。
+    """
+    v1 = store.save_app(_model("咖营通"), session_id="s1")
+    v2 = store.save_version(root_id=v1, parent_id=v1, model=_model("咖营通", entities=3))
+    v3 = store.save_version(root_id=v1, parent_id=v2, model=_model("咖营通", entities=4))
+    other = store.save_app(_model("宠医云"), session_id="s2")
+    assert store.delete_app(v3) is True
+    assert store.get_app(v1) is None
+    assert store.get_app(v2) is None
+    assert store.get_app(v3) is None
+    leftover = store.list_apps()
+    assert [a["id"] for a in leftover] == [other]
+    assert store.delete_app(v3) is False
+
+
+def test_delete_app_does_not_touch_fork_source(configured_store):
+    src = store.save_app(_model("咖营通"), session_id="s1")
+    fk = store.fork_app(src, new_name="奶茶版")
+    assert store.delete_app(fk) is True
+    assert store.get_app(fk) is None
+    assert store.get_app(src) is not None
+    assert store.get_app(src)["product_name"] == "咖营通"
+
+
 def test_unbind_session_clears_pointer_keeps_app(configured_store):
     """删 Codespace 不删仓库：卡留下，session_id 必须空。"""
     a = store.save_app(_model("咖营通"), session_id="sr-dead")

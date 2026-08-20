@@ -402,6 +402,10 @@ class AppStoreBackend:
     def delete(self, app_id: str) -> bool:  # pragma: no cover
         raise NotImplementedError
 
+    def ids_for_root(self, root_id: str) -> list[str]:
+        """同一血缘上所有版本的 id。画廊删卡要一次清干净，不能只 select *。"""
+        return [str(v.get("id")) for v in self.versions(root_id) if v.get("id")]
+
     def export_all(self) -> list[dict[str, Any]]:  # pragma: no cover
         raise NotImplementedError
 
@@ -561,6 +565,16 @@ class JsonFileAppStore(AppStoreBackend):
                 if r.get("dedup_key") == dedup_key:
                     return r
         return None
+
+    def ids_for_root(self, root_id: str) -> list[str]:
+        with self._lock:
+            rows = self._read()
+        rid = str(root_id or "")
+        return [
+            str(r["id"])
+            for r in rows
+            if r.get("id") and (str(r.get("id")) == rid or str(r.get("root_id") or r.get("id")) == rid)
+        ]
 
     def delete(self, app_id: str) -> bool:
         with self._lock:
@@ -1086,6 +1100,16 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 ).first()
                 return row.to_record() if row else None
 
+        def ids_for_root(self, root_id: str) -> list[str]:
+            rid = str(root_id or "")
+            with Session(engine) as s:
+                rows = s.execute(
+                    select(GeneratedApp.id).where(
+                        (GeneratedApp.root_id == rid) | (GeneratedApp.id == rid)
+                    )
+                ).all()
+            return [str(row[0]) for row in rows if row[0]]
+
         def delete(self, app_id: str) -> bool:
             with Session(engine) as s:
                 row = s.get(GeneratedApp, app_id)
@@ -1491,6 +1515,15 @@ class NeonHttpAppStore(AppStoreBackend):
             [session_id],
         )
         return _neon_normalize_row(rows[0]) if rows else None
+
+    def ids_for_root(self, root_id: str) -> list[str]:
+        # 只取 id：versions() 的 select * 会把每版 pages_json 拖过网关，
+        # 删卡这条路径会 413，摘针失败、卡还在（2026-08-21）。
+        rows = self._q(
+            "select id from generated_app where coalesce(root_id, id) = $1",
+            [root_id],
+        )
+        return [str(r["id"]) for r in rows if r.get("id")]
 
     def delete(self, app_id: str) -> bool:
         rows = self._q("delete from generated_app where id = $1 returning id", [app_id])
@@ -2418,13 +2451,30 @@ def list_versions(root_id: str) -> list[dict[str, Any]]:
 
 
 def delete_app(app_id: str) -> bool:
-    """从画廊移除一个应用记录。返回是否真删到（不存在返回 False）。
+    """从画廊下架一个应用。返回是否真删到（不存在返回 False）。
 
-    只删这一条记录。绑定会话由路由在删卡之后另删（对照 GitHub：删仓库
-    会清掉挂在这仓库上的 Codespace；存储层不跨表级联，避免 JSON/SQLite/
-    Neon 三条后端各写一份）。
+    ⚠ 2026-08-21：画廊 ``latest_per_root`` 一张卡 = 整条血缘。删卡却只
+    ``delete where id=最新版``，v3 没了会话也跟着没了，刷新 ``list_apps``
+    把 v2 顶上来——用户看见「我的应用还在」。存储层 ``delete(id)`` 仍是
+    单行原语；这里按 root 把同血缘版本和各自缩略图一起清。Fork 是新
+    root，不会误伤源应用。
+
+    绑定会话由路由在删卡之后另删（对照 GitHub：删仓库会清 Codespace；
+    存储层不跨表级联，避免 JSON/SQLite/Neon 三条后端各写一份）。
     """
-    return get_backend().delete(app_id)
+    backend = get_backend()
+    rec = backend.get(app_id)
+    if rec is None:
+        return False
+    root = str(rec.get("root_id") or rec.get("id") or app_id)
+    ids = backend.ids_for_root(root)
+    if app_id not in ids:
+        ids.append(app_id)
+    deleted = False
+    for vid in ids:
+        if backend.delete(vid):
+            deleted = True
+    return deleted
 
 
 def bind_session(app_id: str, session_id: Optional[str]) -> Optional[dict[str, Any]]:
