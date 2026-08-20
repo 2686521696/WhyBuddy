@@ -149,6 +149,39 @@ class Test提示词不诱导谈结构:
         assert "p1" in joined and "p2" in joined, "不给 id 它没法按页返回"
 
 
+class Test手机风格段:
+    """2026-08-20：风格段点名「主表几列 / 右侧详情栏」会把竖屏画成 PC 工作台。"""
+
+    def test_phone不点名宽表和右侧栏(self):
+        joined = " ".join(m["content"] for m in build_style_brief_prompt(SPEC, device="phone"))
+        assert "手机竖屏 App" in joined
+        assert "不要左右分栏" in joined
+        assert "主表几列" not in joined
+        assert "有没有右侧详情栏" not in joined
+        assert "逐个点名" in joined
+        assert "不要为了凑数硬加" in joined
+        assert "个人中心" in joined
+        assert "手机外框" in joined
+        assert "390×844" in joined
+
+    def test_desktop仍点名主表和右侧栏(self):
+        joined = " ".join(m["content"] for m in build_style_brief_prompt(SPEC))
+        assert "主表几列" in joined
+        assert "有没有右侧详情栏" in joined
+        assert "手机竖屏 App" not in joined
+
+    def test_generate_style_brief把device送进prompt(self):
+        seen: dict = {}
+
+        def fake(messages):
+            seen["joined"] = " ".join(m["content"] for m in messages)
+            return GOOD
+
+        out = generate_style_brief(SPEC, device="phone", llm_json_fn=fake)
+        assert out is not None
+        assert "手机竖屏 App" in seen["joined"]
+
+
 class Test挂了要回落:
     """⚠ 审美挂了不该打死整轮。确定性那套**不删**，就是留着当回落的。"""
 

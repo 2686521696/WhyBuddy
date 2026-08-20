@@ -612,6 +612,11 @@ def _try_llm_generate_evidence(
                 print("[v5_capability_executor] spec-first 精修模式：带上一版结构 + 本轮指令")
 
             def _invoke_spec_first():
+                from .device_policy import preferred_device_override
+
+                # ⚠ 必须把开关传进 run_spec_first：只靠模块全局，to_thread
+                #   里能读到，但 assemble 仍写死 desktop。显式参数是画页和
+                #   落库共用的那一个 device。
                 return run_spec_first(
                     goal,
                     llm_json_fn=llm_json_fn,
@@ -627,6 +632,7 @@ def _try_llm_generate_evidence(
                     # ★ 上一版页面：按需重画用（2026-08-17）。跟 reuse_model
                     #   同一个来源（refine 上下文），不另开取数路径。
                     reuse_pages=(_refine_ctx or {}).get("pages"),
+                    preferred_device=preferred_device_override(),
                 )["model"]
 
             try:

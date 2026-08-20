@@ -619,3 +619,34 @@ class Test产品名与使用者_把外壳也锚住:
         user = build_spec_prompt("设备报修")[-1]["content"]
         assert "appName" in user and "personas" in user
         assert "侧栏" in user, "不说用途，模型不知道为什么要统一"
+
+
+class Test设备进规格提示词:
+    """2026-08-20：点了「应用」SPEC 仍按 PC 后台切页。
+
+    画页契约换成顶栏+底栏不够——purpose 写成「左侧大表 + 右侧新建」时，
+    第 3 步只能把那份工作台塞进竖屏壳。设备必须进这一份 user 消息。
+    """
+
+    def test_phone把切页约束写进user消息(self):
+        user = build_spec_prompt("随访系统", device="phone")[-1]["content"]
+        for mark in ("手机 App", "一屏一件主任务", "不要左右分栏", "顶栏", "主工作列表", "个人中心", "手机外框"):
+            assert mark in user, f"手机 SPEC 提示词少了「{mark}」"
+        assert "每一页的侧栏上" not in user
+
+    def test_desktop不掺手机切页(self):
+        user = build_spec_prompt("随访系统")[-1]["content"]
+        assert "一屏一件主任务" not in user
+        assert "每一页的侧栏上" in user
+
+    def test_generate_spec_tree把device送进prompt(self):
+        """直接测 build_spec_prompt 绿了也不够——调用点漏传 device 会静默回桌面。"""
+        seen: dict = {}
+
+        def fake(_messages):
+            seen["user"] = _messages[-1]["content"]
+            return copy.deepcopy(GOOD)
+
+        generate_spec_tree("设备报修", device="phone", llm_json_fn=fake)
+        assert "一屏一件主任务" in seen["user"]
+        assert "每一页的侧栏上" not in seen["user"]

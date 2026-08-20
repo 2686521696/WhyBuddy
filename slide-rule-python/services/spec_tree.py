@@ -455,6 +455,23 @@ _SYSTEM = (
 )
 
 
+#: 作曲家点了「应用」之后必须进这一步（2026-08-20 真机）。
+#: 此前 device 只传到第 3 步画页：壳换成顶栏+底栏，但 SPEC 仍按 PC 后台切页
+#: （「左侧大表 + 右侧新建」），风格段还在点名「主表几列 / 右侧详情栏」。
+#: 用户看到的就是带底栏的宽屏工作台——画布对了、信息架构没换。
+#: 这一段只在 device=phone 时进 user 消息；桌面提示词一字不改。
+_PHONE_SPEC_IA = """设备：手机 App（竖屏）。不是 PC 后台。
+
+切页硬要求：
+- 一屏一件主任务。列表和新建/编辑/详情必须拆成不同页，purpose 不许写成「左侧大表 + 右侧表单」这种宽屏工作台。
+- 入口是底部 3~5 个标签，不是左侧菜单。
+- 列表用单列卡片或行（标题 + 状态 + 日期），不要 6 列以上的宽表，不要左右分栏。
+- 每页 purpose 写成手机上一眼能看完的动作，例如「上滑看随访任务，点一条进详情」。
+- pages 数组第一项必须是这个产品的主工作列表（打开 App 第一眼看见的那页）。我的/设置若有，必须排在标签栏最后，且不能当首页。
+- 不要把某一页画成「个人资料 + 设置入口 + 退出登录」——那是个人中心的偷懒模板，不是这个产品。
+- 页面本身就是手机 App，不要在页面里再套一层手机外框或把整页收成居中卡片。"""
+
+
 def build_spec_prompt(
     goal: str,
     *,
@@ -462,6 +479,7 @@ def build_spec_prompt(
     evidence: str = "",
     refine: Optional[dict] = None,
     prev_pages: Optional[list] = None,
+    device: str = "desktop",
 ) -> list[dict[str, str]]:
     """装配 spec 生成的对话。
 
@@ -606,6 +624,11 @@ def build_spec_prompt(
 规模按这个产品**真实的复杂度**来，不要凑数也不要偷懒：
 判据 3~6 条，requirement 3~8 个，页面 3~8 页是常见区间。"""
     )
+    if device == "phone":
+        # 桌面规则第 7 条仍写「侧栏」——手机壳挂的是顶栏。只改这一处，
+        # 整段 JSON 形状里的花括号不能进 f-string。
+        parts[-1] = parts[-1].replace("每一页的侧栏上", "每一页的顶栏上")
+        parts.append(_PHONE_SPEC_IA)
     return [
         {"role": "system", "content": _SYSTEM},
         {"role": "user", "content": "\n\n".join(parts)},
@@ -655,6 +678,7 @@ def generate_spec_tree(
     evidence: str = "",
     refine: Optional[dict] = None,
     prev_pages: Optional[list] = None,
+    device: str = "desktop",
     llm_json_fn: Optional[Any] = None,
     max_reask: int = 2,
 ) -> SpecTree:
@@ -672,7 +696,12 @@ def generate_spec_tree(
     宁可如实报失败，也不要再造一个看着像那么回事的空壳。
     """
     messages = build_spec_prompt(
-        goal, clarified=clarified, evidence=evidence, refine=refine, prev_pages=prev_pages
+        goal,
+        clarified=clarified,
+        evidence=evidence,
+        refine=refine,
+        prev_pages=prev_pages,
+        device=device,
     )
     last_err = "未调用"
     # 精修轮的冻结页 id：coversNodes 校验对它们放宽（豁免理由与真机事故见

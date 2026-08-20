@@ -253,7 +253,7 @@ class Test接进链路:
         """
         src = self._spec_first_src()
         prose = src.index('if (design_system or "").strip():')
-        gen = src.index("generate_design_language(spec")
+        gen = src.index("generate_design_language(")
         assert prose < gen, "人给了散文却还是先跑生成"
 
     def test_设计语言随结果交出去(self):
@@ -389,3 +389,28 @@ class Test密度档位要展开成具体条款:
 
     def test_渲染仍然是确定性的(self):
         assert self._render("紧凑") == self._render("紧凑")
+
+
+class Test手机密度条款:
+    """回落支（LLM 风格段挂了）也必须按竖屏展开，不能复用「后台 + 6 列宽表」。"""
+
+    def test_phone不写宽表后台(self):
+        s = render_design_language(GOOD, device="phone")
+        assert "手机竖屏 App" in s
+        assert "单列" in s
+        assert "不要左右分栏" in s
+        assert "主表格至少" not in s
+        assert "这是给天天用它干活的人看的后台" not in s
+
+    def test_desktop仍是后台宽表(self):
+        s = render_design_language(GOOD)
+        assert "后台" in s
+        assert "8 列" in s
+        assert "手机竖屏 App" not in s
+
+    def test_phone提示词不写成企业后台(self):
+        joined = " ".join(m["content"] for m in build_design_language_prompt(SPEC, device="phone"))
+        assert "手机竖屏 App" in joined
+        assert "移动端产品设计师" in joined
+        assert "B 端产品设计师" not in joined
+        assert "克制的企业后台" not in joined

@@ -172,9 +172,7 @@ export async function driveFullViaPython(
         max_loops: opts.maxLoops ?? 10,
         turnId: opts.turnId,
         installedSkills: installedSkillsDrivePayload(),
-        ...(opts.preferredDevice
-          ? { preferredDevice: opts.preferredDevice }
-          : {}),
+        preferredDevice: opts.preferredDevice ?? "desktop",
       }),
     });
     await throwIfAuthRequired(res);
@@ -255,7 +253,7 @@ export interface DriveFullStreamOpts {
     current: number;
     total: number;
     bound: boolean;
-    /** desktop 横屏 1920×1080 / phone 竖屏 1080×1920——画布视口据此选（2026-08-14）。 */
+    /** desktop 横屏 1920×1080 / phone 竖屏 390×844 CSS 像素——画布视口据此选。 */
     device: "desktop" | "phone";
   }) => void;
   /** E25：后端 run id（事件里首见即回调一次）——客户端记书签供刷新后续播。 */
@@ -294,7 +292,7 @@ export async function driveFullViaPythonStream(
         turnId: opts.turnId,
         installedSkills: installedSkillsDrivePayload(),
         ...(opts.mode ? { mode: opts.mode } : {}),
-        ...(opts.preferredDevice ? { preferredDevice: opts.preferredDevice } : {}),
+        preferredDevice: opts.preferredDevice ?? "desktop",
       }),
     });
     await throwIfAuthRequired(res);

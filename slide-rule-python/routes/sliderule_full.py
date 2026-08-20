@@ -1044,7 +1044,9 @@ def drive_full(
     set_installed_skills(payload.get("installedSkills"))
     from services.device_policy import set_preferred_device_override
 
-    set_preferred_device_override(payload.get("preferredDevice"))
+    set_preferred_device_override(
+        payload.get("preferredDevice") or payload.get("preferred_device")
+    )
     try:
         new_state = drive_full_v5_session(state, max_loops=max_loops, user_instruction=user_text)
     finally:
@@ -1200,7 +1202,9 @@ async def drive_full_stream(
         set_installed_skills(installed_skills)
         from services.device_policy import set_preferred_device_override
 
-        set_preferred_device_override(payload.get("preferredDevice"))
+        set_preferred_device_override(
+            payload.get("preferredDevice") or payload.get("preferred_device")
+        )
         try:
             async for event in drive_full_v5_session_stream(
                 state, max_loops=max_loops, user_instruction=user_text, repair=repair

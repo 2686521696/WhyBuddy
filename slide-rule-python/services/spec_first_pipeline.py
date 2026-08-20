@@ -1109,7 +1109,7 @@ def _with_device(
     """给页面 sink 注入 device（2026-08-14 竖屏加）。
 
     设备在管道开头定一次，每个页面事件都该带着它——前端拿它选画布视口
-    （桌面 1920×1080 / 手机 1080×1920），不带的话竖屏页会被塞进横屏画布。
+    （桌面 1920×1080 / 手机 390×844 CSS 像素），不带的话竖屏页会被塞进横屏画布。
     老 sink（不收 device 的四参/五参）带不动就按原参重调——UI 推送的
     兼容问题不许赔掉已经烧过 LLM 的页面。
     """
@@ -1125,6 +1125,21 @@ def _with_device(
     return _sink
 
 
+def _stamp_preferred_device(model: Any, device: str) -> None:
+    """把管道开头定下的 device 写进模型。assemble 默认 desktop，不盖回去
+    就会出现「页是竖屏、落库是 PC」——舞台按模型兜底横屏。"""
+    from .device_policy import DEVICE_AUTHORITY
+
+    if not isinstance(model, dict):
+        return
+    bundle = model.get("appbundle")
+    if not isinstance(bundle, dict):
+        bundle = {}
+        model["appbundle"] = bundle
+    bundle["preferredDevice"] = device
+    bundle["deviceAuthority"] = DEVICE_AUTHORITY
+
+
 def run_spec_first(
     goal: str,
     *,
@@ -1138,6 +1153,7 @@ def run_spec_first(
     reuse_style_brief: Optional[Dict[str, Any]] = None,
     reuse_model: Optional[Dict[str, Any]] = None,
     reuse_pages: Optional[Dict[str, str]] = None,
+    preferred_device: Optional[str] = None,
     on_page: Optional[Callable[[str, str, int, int], None]] = None,
 ) -> Dict[str, Any]:
     """一句话 → 完整五系统模型 + 带 data-* 孔的多页 HTML。
@@ -1163,8 +1179,16 @@ def run_spec_first(
     移动设计系统，3.5 抠移动壳（顶栏+底部标签栏），页面事件与产物都带
     device 字段，前端据此选竖屏画布。
     2026-08-20：作曲家「应用 / Web」经 preferredDevice 覆盖词表——空态点了
-    「应用」不必把「手机」写进句子。覆盖装在 drive-full(-stream) 上，
-    真正读它的是 resolve_preferred_device（spec-first 入口那一处）。
+    「应用」不必把「手机」写进句子。覆盖装在 drive-full(-stream) 上。
+    ⚠ 2026-08-20 晚：只 set 模块全局不够。执行器 `run_spec_first(goal)` 没把
+    开关传进来，汇合 `assemble` 又把 appbundle.preferredDevice 写死成
+    desktop——页面可能按 phone 画，落库模型仍是 PC，舞台按模型兜底横屏。
+    开关必须作为 preferred_device 传进这一处，并且用**同一个 device 变量**
+    盖回模型，不能再 resolve 第二次。
+    ⚠ 2026-08-20 更晚：device 传到第 3 步还不够。SPEC 和风格段此前不认设备，
+    切页仍是「左侧大表 + 右侧表单」，风格段点名「主表几列 / 右侧详情栏」——
+    壳是手机、内容是 PC。必须把同一个 device 传进 generate_spec_tree 和
+    generate_style_brief / generate_design_language / render_design_language。
 
     返回 {"version", "model", "spec", "structure", "semantics", "pages",
           "navItems", "failedPages", "stages", "device"}。
@@ -1205,7 +1229,13 @@ def run_spec_first(
     from .run_cancel import raise_if_cancelled
 
     stages: Dict[str, Any] = {}
-    device = resolve_preferred_device(goal, None)
+    # 显式开关压过话题词表：点了「应用」再写「做个库存系统」必须出竖屏。
+    # 不传则走 resolve（模块 override > 句子里的设备词 > desktop）。
+    if preferred_device in ("desktop", "phone"):
+        device = preferred_device
+    else:
+        device = resolve_preferred_device(goal, None)
+    print(f"[spec_first_pipeline] preferredDevice={device}")
     sink = _with_device(on_page or _page_sink_var.get(), device)
 
     # ★ id 冻结（2026-08-17）：把上一版的「概念名 → id」词表算出来，第 4/5 步
@@ -1326,6 +1356,7 @@ def run_spec_first(
             spec_model = generate_spec_tree(
                 goal, evidence=evidence, refine=refine,
                 prev_pages=(_prev_ids.get("pages") or None),
+                device=device,
             )
             spec = spec_model.model_dump(mode="json") if hasattr(spec_model, "model_dump") else spec_model
             # ★ 结构拨回（2026-08-18 过夜）：提示词冻结求不动。必须在
@@ -1399,7 +1430,7 @@ def run_spec_first(
         design_language = merge_override(
             normalize_design_language(reuse_language), design_override
         )
-        design_system = render_design_language(design_language)
+        design_system = render_design_language(design_language, device=device)
         # ⚠ 零 LLM、瞬时完成，**不进进度线**——照 specfirst.shell 那条：
         #   start/end 背靠背发出去只会在左侧闪一下。
         print("[spec_first_pipeline] 复用上一版设计语言，不重新生成")
@@ -1408,14 +1439,16 @@ def run_spec_first(
         with _stage("specfirst.design") as st:
             # ★ 2026-08-16 用户裁决：风格段改由 LLM **现写**——
             #   「a 就算内容再多也是写死的」。确定性那套降为回落。
-            style_brief = generate_style_brief(spec)
+            style_brief = generate_style_brief(spec, device=device)
             st["mode"] = "llm" if style_brief else "fallback"
             if style_brief is None:
                 # ⚠ 回落不是可有可无：审美挂了不该打死整轮，而确定性那套
                 #   永远出得来。这跟 spec_tree「失败不回落占位」不矛盾——
                 #   那条护的是内容，这里回落的是审美。
-                design_language = generate_design_language(spec, override=design_override)
-                design_system = render_design_language(design_language)
+                design_language = generate_design_language(
+                    spec, override=design_override, device=device
+                )
+                design_system = render_design_language(design_language, device=device)
                 st["density"] = design_language.get("density")
         stages["design"] = dict(st)
 
@@ -1703,6 +1736,8 @@ def run_spec_first(
                 raise SpecFirstError("第 6 步没有产出模型")
             st["ok"] = 1
         stages["assemble"] = dict(st)
+
+    _stamp_preferred_device(model, device)
 
     # ── 第 6.2 步：精修时，指令没点名的段沿用上一版 ─────────────────
     #

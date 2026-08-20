@@ -91,6 +91,26 @@ _DENSITY_RULES = {
     ),
 }
 
+#: 手机密度。桌面那套写「主表格 6~8 列 / 筛选排成一行 / 右侧栏」——
+#: 2026-08-20 真机：画页契约已经是竖屏单列，风格段仍在点名宽表和右侧栏，
+#: 出来的就是「底栏 + 宽屏工作台」。条款必须跟契约同一套信息架构。
+_DENSITY_RULES_PHONE = {
+    "紧凑": (
+        "顶部 3~4 张指标卡（两列）。主区单列卡片流。"
+        "列表每行一条：标题、状态、日期，不要 6 列以上的宽表。"
+        "不要左右分栏，不要右侧详情栏。"
+    ),
+    "标准": (
+        "顶部 2~3 张指标卡。主区单列：列表卡片或一张主表单。"
+        "触控行高够大。列表和填写拆开，不要一屏左右两栏。"
+        "不要 6 列以上的宽表，不要右侧详情栏。"
+    ),
+    "宽松": (
+        "少卡片、大字号、单列。一屏一件主任务。"
+        "不要左右分栏，不要右侧详情栏。"
+    ),
+}
+
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 #: 缺省设计语言。**没人指定时的兜底**，不是"推荐配置"。
@@ -164,7 +184,9 @@ def merge_override(base: Dict[str, Any], override: Optional[Dict[str, Any]]) -> 
     return normalize_design_language(out)
 
 
-def render_design_language(dl: Optional[Dict[str, Any]]) -> str:
+def render_design_language(
+    dl: Optional[Dict[str, Any]], *, device: str = "desktop"
+) -> str:
     """设计语言 → 塞进 `design_system` 槽位的那段散文。**纯函数，零 LLM。**
 
     ⚠ 由代码渲染而不是让模型直接写散文：这样覆盖才能是**逐字段**的，
@@ -177,7 +199,16 @@ def render_design_language(dl: Optional[Dict[str, Any]]) -> str:
     # ⚠ 档位要**展开成具体条款**再进提示词：只写"信息密度标准"四个字，
     #   模型推不出该画几个统计卡、几个面板、表格几列——实测密度会掉回去。
     #   见 _DENSITY_RULES 头上那三行对照数据。
-    bits.append(f"这是给天天用它干活的人看的后台，不是落地页。{_DENSITY_RULES[d['density']]}")
+    # ⚠ 2026-08-20：phone 不能复用「这是后台」那句——那一句会把竖屏契约
+    #   又画回宽表工作台。条款换 _DENSITY_RULES_PHONE，主语换成手机 App。
+    if device == "phone":
+        bits.append(
+            f"这是手机竖屏 App，不是 PC 后台。{_DENSITY_RULES_PHONE[d['density']]}"
+        )
+    else:
+        bits.append(
+            f"这是给天天用它干活的人看的后台，不是落地页。{_DENSITY_RULES[d['density']]}"
+        )
     if d["components"]:
         bits.append("按内容需要用这些组件（不要硬凑）：" + "、".join(d["components"]) + "。")
     if d["charts"]:
@@ -185,7 +216,9 @@ def render_design_language(dl: Optional[Dict[str, Any]]) -> str:
     return "\n".join(bits)
 
 
-def build_design_language_prompt(spec: Dict[str, Any]) -> List[Dict[str, str]]:
+def build_design_language_prompt(
+    spec: Dict[str, Any], *, device: str = "desktop"
+) -> List[Dict[str, str]]:
     """按 spec 问一次「这个应用该长什么样」。
 
     只喂**页面清单与用途**，不喂整棵需求树：定风格要的是"这是个什么应用"，
@@ -197,6 +230,21 @@ def build_design_language_prompt(spec: Dict[str, Any]) -> List[Dict[str, str]]:
         if isinstance(p, dict)
     ]
     app = _clean_str(spec.get("appName"), 40)
+    role = (
+        "你是资深移动端产品设计师。看一眼这个应用是干什么的，定下它的视觉风格。"
+        if device == "phone"
+        else "你是资深 B 端产品设计师。看一眼这个应用是干什么的，定下它的视觉风格。"
+    )
+    extra = (
+        "这是手机竖屏 App，不是 PC 后台。基调按移动应用来，不要写成桌面管理系统。\n\n"
+        if device == "phone"
+        else ""
+    )
+    tone_ex = (
+        "「清爽的医疗移动应用，浅色底，大触控」"
+        if device == "phone"
+        else "「克制的企业后台，浅色底，弱化装饰」"
+    )
     body = (
         f"应用名：{app or '（未命名）'}\n"
         f"页面清单：\n" + ("\n".join(pages[:12]) or "（空）")
@@ -205,17 +253,17 @@ def build_design_language_prompt(spec: Dict[str, Any]) -> List[Dict[str, str]]:
         {
             "role": "system",
             "content": (
-                "你是资深 B 端产品设计师。看一眼这个应用是干什么的，定下它的视觉风格。"
+                f"{role}"
                 "只谈风格，不要谈页面结构或具体标签。只返回 JSON。"
             ),
         },
         {
             "role": "user",
             "content": (
-                f"{body}\n\n"
+                f"{extra}{body}\n\n"
                 "按这个形状返回 JSON：\n"
                 "{\n"
-                '  "tone": "一句话风格基调，30 字以内，例如「克制的企业后台，浅色底，弱化装饰」",\n'
+                f'  "tone": "一句话风格基调，30 字以内，例如{tone_ex}",\n'
                 f'  "primary": "主色 hex，形如 #2563eb",\n'
                 f'  "accent": "强调色 hex",\n'
                 '  "radius": "圆角，形如 8px",\n'
@@ -235,6 +283,7 @@ def generate_design_language(
     *,
     llm_json_fn: Optional[Any] = None,
     override: Optional[Dict[str, Any]] = None,
+    device: str = "desktop",
 ) -> Dict[str, Any]:
     """生成这个应用的设计语言。**挂了回落缺省，不抛。**
 
@@ -246,7 +295,7 @@ def generate_design_language(
     dl = dict(DEFAULT_DESIGN_LANGUAGE)
     try:
         outcome = call_spec_json(
-            build_design_language_prompt(spec), llm_json_fn, stage="specfirst.design"
+            build_design_language_prompt(spec, device=device), llm_json_fn, stage="specfirst.design"
         )
         if outcome.payload is not None:
             dl = normalize_design_language(outcome.payload)
@@ -376,7 +425,9 @@ def style_for_page(brief: Optional[Dict[str, Any]], page_id: str) -> str:
     return "\n".join(b for b in bits if b)
 
 
-def build_style_brief_prompt(spec: Dict[str, Any]) -> List[Dict[str, str]]:
+def build_style_brief_prompt(
+    spec: Dict[str, Any], *, device: str = "desktop"
+) -> List[Dict[str, str]]:
     """问一次「这个应用长什么样 + 每一页怎么排」。
 
     ## ⚠ 逐个点名面板，是量出来的（2026-08-16，同一份 spec 四臂）
@@ -403,9 +454,31 @@ def build_style_brief_prompt(spec: Dict[str, Any]) -> List[Dict[str, str]]:
         for p in pages
     )
     ids = "、".join(str(p["id"]) for p in pages)
+    designer = (
+        "你是资深移动端产品设计师。"
+        if device == "phone"
+        else "你是资深 B 端产品设计师。"
+    )
+    layout_ask = (
+        "每页那段必须**把这一页要放的区块逐个点名**，写成清单：每个区块叫什么、"
+        "放什么内容、大概占多大。这一页该放几个区块由你按它的活儿定——"
+        "列表页通常一张指标区 + 一列任务卡，表单页就一个主表单，不要为了凑数硬加。"
+        "点名之后再补：顶部指标卡几张分别是什么、主列表是卡片还是行、有没有底部主按钮。"
+        "这是手机竖屏 App，不是 PC 后台：单列、不要左右分栏、不要右侧详情栏、不要 6 列以上的宽表。"
+        "第一屏是业务列表（卡片/行 + 状态），不要画成个人中心、设置页或退出登录页。"
+        "内容铺满 390×844 视口，不要再套手机外框，不要用 max-w-md / mx-auto 把整页收成居中卡片。"
+        if device == "phone"
+        else (
+            "每页那段必须**把这一页要放的面板逐个点名**，写成清单：每个面板叫什么、"
+            "放什么内容、大概占多大。这一页该放几个面板由你按它的活儿定——"
+            "台账类通常要得多，扫码核销这类专注操作的页面要得少，不要为了凑数硬加。"
+            "点名之后再补：统计卡几张分别是什么指标、主表几列分别是哪些列、"
+            "配不配图表配哪种、有没有右侧详情栏。"
+        )
+    )
     return [
         {"role": "system", "content": (
-            "你是资深 B 端产品设计师。给这个应用定视觉风格，并为每一页定版式计划。"
+            f"{designer}给这个应用定视觉风格，并为每一页定版式计划。"
             "**只谈风格与版面**：气质基调、配色、圆角、字号、一屏放多少东西、"
             "用哪些组件、要不要图表、各区怎么分。"
             "**不要提任何 HTML 标签，不要提侧边导航/面包屑这类外壳结构，不要提技术栈**"
@@ -423,11 +496,9 @@ def build_style_brief_prompt(spec: Dict[str, Any]) -> List[Dict[str, str]]:
             # ★ 逐个点名（2026-08-16 对照实验落地）：只问"分几个区"时模型给的是
             #   笼统描述；逼它把面板写成清单之后，表格列数从 3.8 回到 5.3、
             #   图表 0.3→1.5、标题 2.5→5.5。见函数 docstring 里的四臂数据。
-            "每页那段必须**把这一页要放的面板逐个点名**，写成清单：每个面板叫什么、"
-            "放什么内容、大概占多大。这一页该放几个面板由你按它的活儿定——"
-            "台账类通常要得多，扫码核销这类专注操作的页面要得少，不要为了凑数硬加。"
-            "点名之后再补：统计卡几张分别是什么指标、主表几列分别是哪些列、"
-            "配不配图表配哪种、有没有右侧详情栏。"
+            # ⚠ 2026-08-20：phone 不能再点名「主表几列 / 右侧详情栏」，那就是
+            #   把 PC 工作台写进风格段。桌面那句原样保留。
+            f"{layout_ask}"
         )},
     ]
 
@@ -436,6 +507,7 @@ def generate_style_brief(
     spec: Dict[str, Any],
     *,
     llm_json_fn: Optional[Any] = None,
+    device: str = "desktop",
 ) -> Optional[Dict[str, Any]]:
     """一次调用出两层风格。**挂了返回 None**，由调用方回落到确定性那套。"""
     page_ids = [str(p.get("id")) for p in (spec.get("pages") or [])
@@ -446,7 +518,7 @@ def generate_style_brief(
 
     try:
         outcome = call_spec_json(
-            build_style_brief_prompt(spec),
+            build_style_brief_prompt(spec, device=device),
             llm_json_fn,
             stage="specfirst.design",
         )
