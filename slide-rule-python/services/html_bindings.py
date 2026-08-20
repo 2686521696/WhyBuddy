@@ -308,6 +308,9 @@ data-* 属性**，把写死的示例数据换成绑定孔。
 5. 这是客户自己的产品：**不许**往页面里加你（生成方）的名字、品牌、域名或
    联系方式，也不许加任何新的外部网址。原页面的品牌与页脚原样保留。
    ⚠ 真机踩过：打完孔的页脚变成了「© 2024 欧亿智能… 唯一官方: https://www.rcouyi.com」。
+6. 原页面里带 ``hidden`` / ``aria-hidden="true"`` / ``data-state="closed"`` 的
+   浮层，打孔时**不许剥掉**，也不许改成看得见的右侧「编辑表单」面板。
+   打开态抽屉关不掉，脚本已经被摘了。
 {fb}
 === 页面 {page_id} 的 HTML ===
 {markup}"""
@@ -396,7 +399,7 @@ def bind_page(
     max_reask: int = 2,
 ) -> str:
     """给一页打孔。校验不过就把校验器原话喂回去重问，耗尽则抛。"""
-    from .spec_page_html import conceal_open_overlays, neutralize_foreign_urls, validate_page_html
+    from .spec_page_html import neutralize_foreign_urls, validate_page_html
 
     if llm_call is None:
         from sliderule_llm.client import call_llm_with_retry
@@ -407,10 +410,8 @@ def bind_page(
     feedback, last = "", "未调用"
     for attempt in range(max_reask + 1):
         resp = llm_call(build_prompt(markup, model, page_id, feedback), temperature=0.2)
-        out = conceal_open_overlays(
-            neutralize_foreign_urls(
-                stamp_implicit_form_record(_strip_fences(getattr(resp, "content", "") or ""))
-            )
+        out = neutralize_foreign_urls(
+            stamp_implicit_form_record(_strip_fences(getattr(resp, "content", "") or ""))
         )
         problems = (
             [{"path": "html", "message": p} for p in validate_page_html(out)]

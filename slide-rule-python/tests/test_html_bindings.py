@@ -198,6 +198,12 @@ class Test提示词:
         user = build_prompt(GOOD, MODEL, "p1")[-1]["content"]
         assert "不要造一个看着像的 id" in user
 
+    def test_打孔不许剥hidden浮层(self):
+        """绑定提示词写「不动 class」，打孔仍把 hidden 剥掉。要点名。"""
+        user = build_prompt(GOOD, MODEL, "p1")[-1]["content"]
+        assert "hidden" in user
+        assert "不许剥" in user
+
     def test_校验器原话回喂(self):
         user = build_prompt(GOOD, MODEL, "p1", "某某字段不是 vehicle 的字段")[-1]["content"]
         assert "某某字段不是 vehicle 的字段" in user and "只改这些地方" in user

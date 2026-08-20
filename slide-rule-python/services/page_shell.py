@@ -64,20 +64,27 @@ _SVG = re.compile(r"<svg\b[\s\S]*?</svg>", re.I)
 _MAIN_OPEN = re.compile(r"<main\b[^>]*>", re.I)
 _ASIDE_OPEN = re.compile(r"<aside\b[^>]*>", re.I)
 _NAV_OPEN = re.compile(r"<nav\b[^>]*>", re.I)
+_HEADER_OPEN = re.compile(r"<header\b[^>]*>", re.I)
 
 #: 移动端底栏挡住正文（2026-08-20 真机）：壳换成顶栏+底栏之后，
-#: 模型常把 <nav> 写在文档流末尾、main 不留底衬，列表最后几行被标签栏盖住。
-#: 对照 antd-mobile TabBar（高度约 50 + safe area）和 Apple HIG Tab Bar：
-#: 内容区必须自己让出底栏。不靠 LLM 自觉——跟 reconcile_main_offset 同一类机械补。
-_PHONE_NAV_PIN = ("fixed", "inset-x-0", "bottom-0", "z-20")
-#: ⚠ 2026-08-20 过夜（幼安行 r2）：模型写成
-#: ``<nav class="fixed inset-x-0 bottom-0 z-20">``，没有 flex 横排。
-#: 五个 <a> 按块级竖着堆，截图里底栏占了半屏，页内「一键确认」叠在上面。
-#: 已有 fixed 时旧逻辑不再补 class——横排必须单独保证。
+#: 模型常把 <nav> 写在文档流末尾、main 不留底衬。当时对照 antd-mobile
+#: TabBar 用了网站写法（fixed + pb-32）。第五趟改抄官方 demo2.less：
+#: 底栏在 flex 列里 flex:0，不再钉 fixed、不再垫 pb-32。
+#: ⚠ 2026-08-20 过夜（幼安行 r2）：模型写成没有 flex 横排的底栏，
+#: 五个 <a> 按块级竖着堆。横排必须单独保证。
 _PHONE_NAV_ROW = ("flex", "justify-around", "items-center")
 _PHONE_NAV_NOT_COL = frozenset(("flex-col", "flex-column"))
-_PHONE_MAIN_CLEAR = ("pb-32",)
-_PINNED_POS = frozenset(("fixed", "absolute", "sticky"))
+#: overlay 定位从顶栏/底栏剥掉，让它们重新参加 body 的 flex 列。
+_OVERLAY_POS = frozenset(("fixed", "absolute", "sticky"))
+_NAV_OVERLAY_LEFTOVER = frozenset(("inset-x-0", "inset-y-0", "inset-0", "bottom-0", "top-0"))
+_HEADER_OVERLAY_LEFTOVER = frozenset(("inset-x-0", "inset-0", "top-0"))
+#: 模型常用的顶栏/底栏让位档。pt-4 / pb-4 是内容内边距，不要剥。
+_MAIN_CHROME_TOP_PAD = frozenset(
+    ("pt-10", "pt-12", "pt-14", "pt-16", "pt-20", "pt-24", "pt-28", "pt-32")
+)
+_MAIN_CHROME_BOTTOM_PAD = frozenset(
+    ("pb-20", "pb-24", "pb-28", "pb-32", "pb-36")
+)
 
 #: 铺满手机视口（2026-08-20 真机）：画布曾是 1080×1920，模型按 v0 习惯
 #: 输出 max-w-md mx-auto 机模，内容缩在框中间。对照 Playwright iPhone 14
@@ -94,6 +101,11 @@ _PHONE_FILL_STYLE_ID = "sliderule-phone-fill"
 #: 用户看到的就是「顶部区域样式有问题」。居中陷阱盯 justify-center /
 #: min-h-screen，不要单独盯 items-center。main 不要 display:flex，否则
 #: 内部 header 变成竖排 flex 项，滚动也没了。
+#: ⚠ 2026-08-20 第五趟：网站壳（fixed nav + pb-32 + sticky header + pt-16）
+#: 和 flex 列铺满对打。改抄 ant-design-mobile TabBar demo2.less——
+#: .app { height:100vh; flex-direction:column } .top/.bottom { flex:0 }
+#: .body { flex:1 }。TabBar 文档：本身不含定位。NavBar 默认也在文档流。
+#: 旧会话烤着的 fixed 用 position:static 拉回流。选择器与前端同文。
 _PHONE_FILL_CSS = (
     "html,body{margin:0!important;width:100%!important;height:100%!important;"
     "min-height:100%!important;max-width:none!important;overflow:hidden!important}"
@@ -106,13 +118,29 @@ _PHONE_FILL_CSS = (
     "align-items:stretch!important;justify-content:flex-start!important;"
     "min-height:0!important;flex:1 1 auto!important;height:100%!important;width:100%!important;"
     "overflow:hidden!important}"
-    "header{flex:0 0 auto!important;width:100%!important}"
+    "header{position:static!important;flex:0 0 auto!important;width:100%!important}"
     "main{flex:1 1 auto!important;min-height:0!important;width:100%!important;"
     "overflow-y:auto!important;overflow-x:hidden!important;"
+    "padding-top:0!important;padding-bottom:0!important;"
     "-webkit-overflow-scrolling:touch}"
-    "nav{display:flex!important;flex-direction:row!important;"
-    "justify-content:space-around!important;align-items:center!important;"
-    "flex:0 0 auto!important;width:100%!important}"
+    'body>nav,body>div[class*="min-h-screen"]>nav,'
+    'body>div[class*="justify-center"]>nav,nav.fixed,nav[class*="bottom-0"]{'
+    "position:static!important;display:flex!important;flex-direction:row!important;"
+    "flex-wrap:nowrap!important;justify-content:space-around!important;"
+    "align-items:stretch!important;flex:0 0 auto!important;width:100%!important;"
+    "min-height:48px!important}"
+    'body>nav>a,body>div[class*="min-h-screen"]>nav>a,'
+    'body>div[class*="justify-center"]>nav>a,nav.fixed>a,nav[class*="bottom-0"]>a{'
+    "flex:1 1 0!important;min-width:0!important;"
+    "display:flex!important;flex-direction:column!important;"
+    "align-items:center!important;justify-content:center!important;"
+    "white-space:nowrap!important;font-size:10px!important;"
+    "line-height:1.2!important;text-align:center!important;padding:4px 8px!important}"
+    'body>nav>a span,body>div[class*="min-h-screen"]>nav>a span,'
+    'body>div[class*="justify-center"]>nav>a span,nav.fixed>a span,nav[class*="bottom-0"]>a span{'
+    "white-space:nowrap!important;overflow:hidden!important;"
+    "text-overflow:ellipsis!important;max-width:100%!important;"
+    "font-size:10px!important;line-height:15px!important}"
 )
 
 #: 铺满桌面 1920×1080（2026-08-20 满电青年）：模型把 aside+header+main
@@ -253,28 +281,47 @@ def _strip_tag_classes(markup: str, opener: re.Pattern[str], drop: frozenset[str
     return markup[: m.start()] + new_tag + markup[m.end():]
 
 
+def _strip_main_chrome_pad(markup: str) -> str:
+    """flex 列壳不需要 main 为 overlay 顶栏/底栏让位。pt-16 / pb-32 会变成空带。"""
+    main_m = _MAIN_OPEN.search(markup or "")
+    if not main_m:
+        return markup
+    cls = _CLASS.search(main_m.group(0))
+    if not cls:
+        return markup
+    drop = frozenset(
+        t
+        for t in cls.group(1).split()
+        if t in _MAIN_CHROME_TOP_PAD
+        or t in _MAIN_CHROME_BOTTOM_PAD
+        or (t.startswith("pt-[") and t.endswith("]"))
+        or (t.startswith("pb-[") and t.endswith("]"))
+    )
+    if not drop:
+        return markup
+    return _strip_tag_classes(markup, _MAIN_OPEN, drop)
+
+
 def ensure_phone_safe_area(markup: str) -> str:
-    """底栏钉在屏幕底部，main 让出高度。模型漏写时由代码补，不重问。"""
+    """把模型写的网站壳收成 antd-mobile demo2 那列 flex。不重问。
+
+    ⚠ 2026-08-20：曾强制 nav.fixed + main.pb-32，和铺满 CSS 的 flex 列对打，
+    sticky 顶栏再叠 pt-16 变成空带。官方 TabBar 不含定位——剥 overlay，
+    横排留给 class，钉底靠 body 竖排 flex。
+    """
     markup = ensure_nav_not_commented(markup)
     nav_m = _NAV_OPEN.search(markup or "")
     if nav_m:
-        have = set()
-        cls = _CLASS.search(nav_m.group(0))
-        if cls:
-            have = set(cls.group(1).split())
-        if have.isdisjoint(_PINNED_POS):
-            markup = _ensure_tag_classes(markup, _NAV_OPEN, _PHONE_NAV_PIN)
-        markup = _strip_tag_classes(markup, _NAV_OPEN, _PHONE_NAV_NOT_COL)
+        markup = _strip_tag_classes(
+            markup, _NAV_OPEN, _OVERLAY_POS | _NAV_OVERLAY_LEFTOVER | _PHONE_NAV_NOT_COL
+        )
         markup = _ensure_tag_classes(markup, _NAV_OPEN, _PHONE_NAV_ROW)
-    main_m = _MAIN_OPEN.search(markup or "")
-    if main_m:
-        have = []
-        cls = _CLASS.search(main_m.group(0))
-        if cls:
-            have = cls.group(1).split()
-        if not any(t.startswith("pb-") or t.startswith("mb-") for t in have):
-            markup = _ensure_tag_classes(markup, _MAIN_OPEN, _PHONE_MAIN_CLEAR)
-    return markup
+    header_m = _HEADER_OPEN.search(markup or "")
+    if header_m:
+        markup = _strip_tag_classes(
+            markup, _HEADER_OPEN, _OVERLAY_POS | _HEADER_OVERLAY_LEFTOVER
+        )
+    return _strip_main_chrome_pad(markup)
 
 
 def ensure_phone_viewport_fill(markup: str) -> str:
@@ -664,6 +711,20 @@ def _set_label(link: str, icon: str, label: str) -> str:
     return re.sub(r"(<a\b[^>]*>)[\s\S]*(</a>)", lambda m: m.group(1) + inner + m.group(2), link, count=1)
 
 
+def _strip_page_suffix(text: str) -> str:
+    """底栏不要「某某页」的「页」。
+
+    ⚠ 2026-08-20 芸编智管：spec.pages.name 全是「古籍列表页」，五项 × 390px，
+    「页」单独折成第三行。对照 iOS Tab Bar：标签是短名。「首页」本身就是短名；
+    剥完只剩一个字也留着。
+    """
+    if text.endswith("页") and not text.endswith("首页"):
+        stripped = text[:-1].rstrip()
+        if len(stripped) >= 2:
+            return stripped
+    return text
+
+
 def nav_tab_label(name: str, app_name: str = "") -> str:
     """底栏标签只要短名。精修后 spec.pages.name 常被写成「产品名 - 某页」。
 
@@ -672,18 +733,17 @@ def nav_tab_label(name: str, app_name: str = "") -> str:
     """
     text = str(name or "").strip()
     brand = str(app_name or "").strip()
-    if not brand:
-        return text
-    if text.startswith(brand):
-        rest = text[len(brand) :].lstrip(" -·|/")
-        if rest:
-            text = rest
-    for sep in (" - ", " · ", " | "):
-        suffix = f"{sep}{brand}"
-        if text.endswith(suffix) and len(text) > len(suffix):
-            text = text[: -len(suffix)].strip()
-            break
-    return text
+    if brand:
+        if text.startswith(brand):
+            rest = text[len(brand) :].lstrip(" -·|/")
+            if rest:
+                text = rest
+        for sep in (" - ", " · ", " | "):
+            suffix = f"{sep}{brand}"
+            if text.endswith(suffix) and len(text) > len(suffix):
+                text = text[: -len(suffix)].strip()
+                break
+    return _strip_page_suffix(text)
 
 
 def build_nav_items(

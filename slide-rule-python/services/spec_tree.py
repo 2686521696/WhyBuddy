@@ -460,11 +460,15 @@ _SYSTEM = (
 #: （「左侧大表 + 右侧新建」），风格段还在点名「主表几列 / 右侧详情栏」。
 #: 用户看到的就是带底栏的宽屏工作台——画布对了、信息架构没换。
 #: 这一段只在 device=phone 时进 user 消息；桌面提示词一字不改。
+#: 对照 ant-design-mobile TabBar 官方 demo（src/components/tab-bar/demos）：
+#: title 是「首页 / 待办 / 消息 / 我的」，不是站点地图「某某列表页」。
+#: name 会原样打进底栏，带「页」就会在 390px 折成三行（2026-08-20 芸编智管）。
 _PHONE_SPEC_IA = """设备：手机 App（竖屏）。不是 PC 后台。
 
 切页硬要求：
 - 一屏一件主任务。列表和新建/编辑/详情必须拆成不同页，purpose 不许写成「左侧大表 + 右侧表单」这种宽屏工作台。
 - 入口是底部 3~5 个标签，不是左侧菜单。
+- pages.name 就是底栏 Tab 上那几个字（对照 antd-mobile TabBar.Item title：首页、待办、消息、我的）：2～4 个汉字，不要带「页」，不要产品名前缀。不要写成「古籍列表页」——那是站点地图，不是 Tab 标签。页内大标题写在 purpose 里。
 - 列表用单列卡片或行（标题 + 状态 + 日期），不要 6 列以上的宽表，不要左右分栏。
 - 每页 purpose 写成手机上一眼能看完的动作，例如「上滑看随访任务，点一条进详情」。
 - pages 数组第一项必须是这个产品的主工作列表（打开 App 第一眼看见的那页）。我的/设置若有，必须排在标签栏最后，且不能当首页。
@@ -598,7 +602,7 @@ def build_spec_prompt(
   ],
   "pages": [
     {"id": "p1", "name": "页面名", "audience": "谁用这一页",
-     "purpose": "打开这一页要干什么（写得具体到能照着画出界面）",
+     "purpose": "打开这一页第一眼看见什么（列表/看板/一张详情，不是点开之后的表单）",
      "coversNodes": ["n0", "n4"]}
   ]
 }
@@ -614,12 +618,16 @@ def build_spec_prompt(
 4. evidenceRefs 只能指向 type 为 evidence 的节点。
 5. pages 至少一页，coversNodes 只能指 requirement 或 design
    （task 是工程活儿、evidence 是依据，都画不出界面）。
-6. pages 是**粗粒度**的：说清楚有哪几页、每页给谁用、要干什么就够了，
+6. pages 是**粗粒度**的：说清楚有哪几页、每页给谁用、打开时看见什么就够了，
    不要写字段名、组件名、接口名——那些由下游根据界面反推，不归你定。
 7. **appName 和 personas 会被挂到每一页的侧栏上**，所以它们必须是这个产品的
    一套、而不是每页各来一套。appName 要是个真名字（「维保云」「智维工单」），
    单独一个「系统」「平台」「管理系统」会被拦下来。personas 至少一条，
    排在第一位的那个是界面上默认的登录身份。
+8. purpose 写的是**打开这一页时的静息态**。列表页就写「看账号列表、筛状态」，
+   不要写成「列表 + 新增表单 + 分配角色」——下游会把后半段画进首屏，抽屉关不掉。
+   「新增 / 编辑」是从本页出发的按钮，不是这一页第一眼的主界面。
+   桌面也不许把一页写成「左侧列表 + 右侧新建表单」；新建要么另起一页，要么只是按钮。
 
 规模按这个产品**真实的复杂度**来，不要凑数也不要偷懒：
 判据 3~6 条，requirement 3~8 个，页面 3~8 页是常见区间。"""
@@ -628,11 +636,34 @@ def build_spec_prompt(
         # 桌面规则第 7 条仍写「侧栏」——手机壳挂的是顶栏。只改这一处，
         # 整段 JSON 形状里的花括号不能进 f-string。
         parts[-1] = parts[-1].replace("每一页的侧栏上", "每一页的顶栏上")
+        parts[-1] = parts[-1].replace(
+            '"name": "页面名"',
+            '"name": "列表（底栏短名，2~4字，不要带页）"',
+        )
         parts.append(_PHONE_SPEC_IA)
     return [
         {"role": "system", "content": _SYSTEM},
         {"role": "user", "content": "\n\n".join(parts)},
     ]
+
+
+def _sanitize_phone_page_names(payload: Any) -> None:
+    """手机 spec 的 pages.name 就是 Tab 短名。模型仍爱写成「某某页」，出口机械剥。
+
+    不重问：跟 page_shell.nav_tab_label 同一把刀，求自觉已经失败过。
+    """
+    if not isinstance(payload, dict):
+        return
+    from services.page_shell import nav_tab_label
+
+    app = str(payload.get("appName") or "").strip()
+    for page in payload.get("pages") or []:
+        if not isinstance(page, dict):
+            continue
+        raw = str(page.get("name") or "").strip()
+        if not raw:
+            continue
+        page["name"] = nav_tab_label(raw, app)
 
 
 def _prune_stale_covers_on_frozen_pages(payload: Any, frozen_ids: set) -> None:
@@ -722,6 +753,8 @@ def generate_spec_tree(
             if outcome.transport:
                 break
         else:
+            if device == "phone":
+                _sanitize_phone_page_names(payload)
             if frozen_ids:
                 _prune_stale_covers_on_frozen_pages(payload, frozen_ids)
             verdict = validate_spec_tree(payload, frozen_page_ids=frozen_ids)

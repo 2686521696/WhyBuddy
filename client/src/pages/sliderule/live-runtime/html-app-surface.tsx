@@ -62,8 +62,12 @@ export const PHONE_FILL_STYLE_ID = "sliderule-phone-fill";
  * 屏幕正中——居中层是 `min-h-screen flex items-center justify-center`。
  * 第三趟：`items-center` 单独当选择器会误伤顶栏（flex items-center
  * justify-between），把顶栏拉成整页高。盯 min-h-screen / justify-center。
- * Tailwind Play 还会在我们之后往 head 注样式，所以渲染时还要把这份
- * style 挪到 head 末尾（pinPhoneFillStyle）。文案与 Python 同文。
+ * 第五趟：网站壳（fixed nav + pb-32 + sticky+pt-16）和 flex 列对打。
+ * 改抄 ant-design-mobile TabBar demo2.less：.app 竖排 flex，.top/.bottom
+ * flex:0，.body flex:1。TabBar 文档原句不含定位；旧会话的 fixed 用
+ * position:static 拉回流。Tailwind Play 还会在我们之后往 head 注样式，
+ * 所以渲染时还要把这份 style 挪到 head 末尾（pinPhoneFillStyle）。
+ * 文案与 Python 同文。
  */
 export const PHONE_FILL_CSS =
   "html,body{margin:0!important;width:100%!important;height:100%!important;" +
@@ -77,13 +81,29 @@ export const PHONE_FILL_CSS =
   "align-items:stretch!important;justify-content:flex-start!important;" +
   "min-height:0!important;flex:1 1 auto!important;height:100%!important;width:100%!important;" +
   "overflow:hidden!important}" +
-  "header{flex:0 0 auto!important;width:100%!important}" +
+  "header{position:static!important;flex:0 0 auto!important;width:100%!important}" +
   "main{flex:1 1 auto!important;min-height:0!important;width:100%!important;" +
   "overflow-y:auto!important;overflow-x:hidden!important;" +
+  "padding-top:0!important;padding-bottom:0!important;" +
   "-webkit-overflow-scrolling:touch}" +
-  "nav{display:flex!important;flex-direction:row!important;" +
-  "justify-content:space-around!important;align-items:center!important;" +
-  "flex:0 0 auto!important;width:100%!important}";
+  'body>nav,body>div[class*="min-h-screen"]>nav,' +
+  'body>div[class*="justify-center"]>nav,nav.fixed,nav[class*="bottom-0"]{' +
+  "position:static!important;display:flex!important;flex-direction:row!important;" +
+  "flex-wrap:nowrap!important;justify-content:space-around!important;" +
+  "align-items:stretch!important;flex:0 0 auto!important;width:100%!important;" +
+  "min-height:48px!important}" +
+  'body>nav>a,body>div[class*="min-h-screen"]>nav>a,' +
+  'body>div[class*="justify-center"]>nav>a,nav.fixed>a,nav[class*="bottom-0"]>a{' +
+  "flex:1 1 0!important;min-width:0!important;" +
+  "display:flex!important;flex-direction:column!important;" +
+  "align-items:center!important;justify-content:center!important;" +
+  "white-space:nowrap!important;font-size:10px!important;" +
+  "line-height:1.2!important;text-align:center!important;padding:4px 8px!important}" +
+  'body>nav>a span,body>div[class*="min-h-screen"]>nav>a span,' +
+  'body>div[class*="justify-center"]>nav>a span,nav.fixed>a span,nav[class*="bottom-0"]>a span{' +
+  "white-space:nowrap!important;overflow:hidden!important;" +
+  "text-overflow:ellipsis!important;max-width:100%!important;" +
+  "font-size:10px!important;line-height:15px!important}";
 
 /**
  * 桌面页铺满 1920×1080（2026-08-20 满电青年）。
@@ -180,7 +200,54 @@ export function previewChromeCss(fillPhone: boolean): string {
 }
 
 export function applyPreviewChrome(html: string, fillPhone = false): string {
-  return injectHeadStyle(html, PREVIEW_CHROME_STYLE_ID, previewChromeCss(fillPhone));
+  let out = html || "";
+  // 旧会话 head 里烤着上一版 #sliderule-phone-fill（全局 nav{}）。合成表
+  // 会盖一部分，但旧选择器特异性不够被撤掉——有同 id 就先换成当前文案。
+  if (fillPhone && out.includes(`id="${PHONE_FILL_STYLE_ID}"`)) {
+    out = injectHeadStyle(out, PHONE_FILL_STYLE_ID, PHONE_FILL_CSS);
+  }
+  return injectHeadStyle(out, PREVIEW_CHROME_STYLE_ID, previewChromeCss(fillPhone));
+}
+
+/**
+ * 底栏短名。与 Python `page_shell.nav_tab_label` 同规则：剥产品前后缀，
+ * 再剥末尾「页」（「首页」留下）。
+ */
+export function navTabLabel(name: string, appName = ""): string {
+  let text = String(name || "").trim();
+  const brand = String(appName || "").trim();
+  if (brand) {
+    if (text.startsWith(brand)) {
+      const rest = text.slice(brand.length).replace(/^[ \-·|/]+/, "");
+      if (rest) text = rest;
+    }
+    for (const sep of [" - ", " · ", " | "]) {
+      const suffix = `${sep}${brand}`;
+      if (text.endsWith(suffix) && text.length > suffix.length) {
+        text = text.slice(0, -suffix.length).trim();
+        break;
+      }
+    }
+  }
+  if (text.endsWith("页") && !text.endsWith("首页")) {
+    const stripped = text.slice(0, -1).trimEnd();
+    if (stripped.length >= 2) return stripped;
+  }
+  return text;
+}
+
+/** 已生成的会话刷新即生效：底栏 span 里的「古籍列表页」改成「古籍列表」。 */
+export function rewritePhoneNavLabels(html: string): string {
+  if (!html) return html;
+  return html.replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, block => {
+    const open = block.match(/^<nav\b[^>]*>/i)?.[0] || "";
+    if (/aria-label=["']Breadcrumb/i.test(open)) return block;
+    return block.replace(
+      /(<span\b[^>]*>)([^<]*)(<\/span>)/gi,
+      (_m, openSpan: string, text: string, close: string) =>
+        `${openSpan}${navTabLabel(text)}${close}`
+    );
+  });
 }
 
 /** 把铺满样式钉到 head 末尾。Tailwind Play 后注的 utility 没有 !important，后到也能被盖住。 */
@@ -398,7 +465,8 @@ export function sanitizeAppHtml(markup: string): string {
 function buildDocument(pageHtml: string, fillPhone = false): string {
   const clean = sanitizeAppHtml(pageHtml);
   if (!clean) return "";
-  const page = applyPreviewChrome(clean, fillPhone);
+  let page = applyPreviewChrome(clean, fillPhone);
+  if (fillPhone) page = rewritePhoneNavLabels(page);
   const palette = extractPalette(pageHtml);
   const cfg = `window.tailwind=window.tailwind||{};`
     + `window.tailwind.config={theme:{extend:{colors:${JSON.stringify(palette)}}}};`;

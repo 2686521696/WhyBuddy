@@ -30,6 +30,8 @@ import {
   pinPreviewChromeStyles,
   watchPreviewChromePin,
   stripOrphanCommentClosers,
+  navTabLabel,
+  rewritePhoneNavLabels,
   PHONE_FILL_STYLE_ID,
   DESKTOP_FILL_STYLE_ID,
   DESKTOP_FILL_CSS,
@@ -325,6 +327,11 @@ describe("手机页铺满视口", () => {
     expect(once).toContain("overflow-y:auto!important");
     expect(once).toContain('body>div[class*="justify-center"]');
     expect(once).toContain("flex-direction:row");
+    expect(once).toContain("nav.fixed");
+    expect(once).toContain("position:static!important");
+    expect(once).toContain("padding-bottom:0!important");
+    expect(once).toContain("min-height:48px!important");
+    expect(once).not.toContain("nav{display:flex");
     expect(once).not.toContain('body>div[class*="items-center"]{');
     expect(once).not.toContain("main{display:flex");
     expect(once).toContain("max-w-md");
@@ -365,6 +372,7 @@ describe("手机页铺满视口", () => {
     const surface = strip(pick("src/pages/sliderule/live-runtime/html-app-surface.tsx"));
     expect(surface).toContain("buildDocument(html, fillPhone)");
     expect(surface).toContain("applyPreviewChrome(clean, fillPhone)");
+    expect(surface).toContain("rewritePhoneNavLabels(page)");
     expect(surface).not.toContain("applyDesktopViewportFill(clean)");
     expect(surface).not.toContain("applyPhoneViewportFill(clean)");
     expect(surface).not.toContain("applyChromeContrast(filled)");
@@ -378,6 +386,33 @@ describe("手机页铺满视口", () => {
     expect(pinFn).not.toContain("pinDesktopFillStyle");
     expect(pinFn).not.toContain("pinPhoneFillStyle");
     expect(pinFn).not.toContain("pinChromeContrastStyle");
+  });
+
+  it("旧会话烤着的全局 nav{} 要换成当前文案", () => {
+    const stale =
+      '<html><head><style id="sliderule-phone-fill">nav{width:100%}</style></head>' +
+      "<body>中文</body></html>";
+    const out = applyPreviewChrome(stale, true);
+    expect(out).toContain("nav.fixed");
+    expect(out).not.toContain("nav{width:100%}");
+    expect(out.match(/id="sliderule-phone-fill"/g)?.length).toBe(1);
+  });
+
+  it("底栏剥页字，首页留下；面包屑 nav 不动", () => {
+    expect(navTabLabel("团长帮 - 核销首页", "团长帮")).toBe("核销首页");
+    expect(navTabLabel("古籍列表页", "芸编智管")).toBe("古籍列表");
+    expect(navTabLabel("档案页")).toBe("档案");
+    expect(navTabLabel("首页")).toBe("首页");
+    const src =
+      '<header><nav aria-label="Breadcrumb"><a><span>古籍详情页</span></a></nav></header>' +
+      '<nav class="fixed inset-x-0 bottom-0">' +
+      '<a data-page-id="p1"><span>古籍列表页</span></a>' +
+      '<a data-page-id="p2"><span>首页</span></a></nav>';
+    const out = rewritePhoneNavLabels(src);
+    expect(out).toContain(">古籍列表</span>");
+    expect(out).not.toContain(">古籍列表页</span>");
+    expect(out).toContain(">首页</span>");
+    expect(out).toContain(">古籍详情页</span>");
   });
 });
 

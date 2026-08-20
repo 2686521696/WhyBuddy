@@ -113,10 +113,14 @@ Header 右侧的分段控件跟顶栏同色系（浅底深字），不要 bg-zin
 页面里的 <script> **不会被执行**（渲染方会移除）。所以不要引图表库、不要写 JS
 渲染——图表一律用内联 <svg> 的 <polyline>/<rect>/<path>/<circle> 直接画出来。
 
-浮层（抽屉 / 对话框 / Slide-over）默认必须关上。根节点若是
-``fixed inset-0``（Tailwind UI Slide-over / Radix Dialog Overlay 那层），
-必须带 ``hidden``。不要把「点开后的样子」画成这一页的首屏——脚本不跑，
-打开态的遮罩关不掉，也会挡住左侧菜单。
+这一页的首屏是 brief 里「用途」处于**未打开浮层**的状态。
+列表 / 台账页的首屏是表格或卡片，只要一个「新增」按钮；不要把新增表单、
+编辑表单、Slide-over、对话框画进首屏——script 不跑，画出来的抽屉关不掉。
+新建和编辑由宿主提供表单，页面里不要再画一份打不开也关不掉的表单。
+不要从 Tailwind UI / Headless UI 文档抄打开态快照。
+
+若必须预留浮层 DOM，根节点若是 ``fixed inset-0``（或 ``inset-y-0`` 侧滑面板、
+它的 backdrop 兄弟），必须带 ``hidden``。不要把「点开后的样子」画成这一页的首屏。
 
 占位数据必须写成**可读的中文文字**，
 不许用灰色横条或色块代替：日期写 20XX-XX-XX，金额写 ¥ ××,×××，百分比写 ××.×%，
@@ -132,14 +136,35 @@ photo id。产品名要从客户的业务里起，不要用你自己的名字。
 
 #: 移动端契约。壳的形状同样是**硬约束**：3.5 步抠 <header> + 页面级 <nav>
 #: （底部标签栏），这里不写成 <nav>，3.5 就没得抠，移动端那套判据整个失效。
-_STRUCTURAL_CONTRACT_MOBILE = """顶部一个 <header>（左侧产品名，右侧当前登录角色），
-底部一个固定的 <nav> 标签栏（每个页面入口是一个 <a>，图标在上文字在下）。
-<nav> 必须 position:fixed; left:0; right:0; bottom:0（Tailwind：fixed inset-x-0 bottom-0 z-20）。
-**不要左侧边栏（不要 <aside>）**，内容区是可上下滚动的单列。
-<main> 底部必须留出标签栏高度（Tailwind：pb-32），内容不许被底栏挡住。
+#:
+#: ⚠ 2026-08-20 第四/五趟：第一版写成网站壳（fixed 底栏 + main.pb-32 +
+#: sticky 顶栏再叠 pt-16），事后用 !important 对打，越补越伤。配方改抄
+#: ant-design-mobile 官方 TabBar demo2.less：
+#:   .app { height:100vh; display:flex; flex-direction:column }
+#:   .top { flex:0 }  .body { flex:1 }  .bottom { flex:0 }
+#: 文档原句：TabBar 本身不含定位，外层 flex 列才是壳。NavBar 默认也不是
+#: position:fixed（nav-bar.less --height:45px，在文档流里）。
+_STRUCTURAL_CONTRACT_MOBILE = """整页按 ant-design-mobile 的 App 壳来排（官方 TabBar demo2.less）：
+一列 flex，不是网站那种 position:fixed 顶栏/底栏再给 main 垫 pt-16 / pb-32。
+
+html 与 body：width:100%; height:100%; overflow:hidden。
+body：display:flex; flex-direction:column（Tailwind：flex flex-col h-full overflow-hidden）。
+
+顶部 <header>：在文档流里，flex-shrink:0。不要 sticky、不要 fixed、不要再给 <main> 写 pt-16。
+左侧产品名，右侧当前登录角色。高度随内容，不要再套一层手机外框。
+
+中间 <main>：flex:1; min-height:0; overflow-y:auto。不要 pt-16，不要 pb-32。
+内容区是可上下滚动的单列，本页 purpose 说的那件任务。
+
+底部 <nav>：body 的最后一个子元素，在文档流里，flex-shrink:0。
+**不要 position:fixed**（官方：TabBar 本身不含定位，外层 flex 列把底栏钉住）。
+每个页面入口是一个 <a>，图标在上文字在下；文字是 2～4 个字的短名，不要带「页」
+（对照 TabBar.Item title：首页 / 待办 / 消息 / 我的），加 text-[10px] whitespace-nowrap。
+
+**不要左侧边栏（不要 <aside>）**。
 
 视口已经是手机 CSS 像素（390×844，Playwright iPhone 14 / Chrome DevTools 同款）。
-html 与 body 必须 width:100%; min-height:100%。内容铺满视口。
+内容铺满视口。
 不要再套一层手机外框，不要用 max-w-sm / max-w-md / mx-auto 把整页收成居中卡片，
 不要写 w-[390px] 再居中——预览区已经有设备框，你输出的就是 App 本身。
 不要把四个页面入口画成屏幕正中的一排图标：那是底部 <nav>，不是首页内容。
@@ -151,8 +176,11 @@ html 与 body 必须 width:100%; min-height:100%。内容铺满视口。
 页面里的 <script> **不会被执行**（渲染方会移除）。所以不要引图表库、不要写 JS
 渲染——图表一律用内联 <svg> 的 <polyline>/<rect>/<path>/<circle> 直接画出来。
 
-浮层（抽屉 / 对话框 / 底部 Sheet）默认必须关上。根节点若是
-``fixed inset-0``，必须带 ``hidden``。不要把打开态画成这一页的首屏。
+这一页的首屏是本页 purpose 说的那件任务处于**未打开浮层**的状态。
+列表页首屏是列表；不要把新增/编辑表单或底部 Sheet 画进首屏。
+新建和编辑由宿主提供表单。不要抄打开态快照。
+
+若必须预留浮层 DOM，根节点若是 ``fixed inset-0``，必须带 ``hidden``。
 
 占位数据必须写成**可读的中文文字**，
 不许用灰色横条或色块代替：日期写 20XX-XX-XX，金额写 ¥ ××,×××，百分比写 ××.×%，
@@ -168,6 +196,7 @@ photo id。产品名要从客户的业务里起，不要用你自己的名字。
 
 #: 缺省风格。**一句话**——它只是没人指定时的兜底，不是"推荐版式"。
 #: 密度、版式原型、组件词汇这些该由上游按应用给（第 1.5 步生成 / 人工覆盖）。
+#: 移动端单独一句——桌面那句「克制的企业后台」会把竖屏画回 PC。
 _DEFAULT_STYLE = "企业后台风格，浅色底。"
 _DEFAULT_STYLE_MOBILE = "移动端 App 风格（竖屏 390×844 CSS 像素），浅色底，单列卡片流铺满视口。触控目标 ≥ 44px（Apple HIG），不要按 1080 物理像素去画 88px 大按钮。"
 
@@ -287,6 +316,7 @@ def build_page_html_prompt(
 - Make sure to make it look modern and sleek.
 - Use modern, professional fonts and colors.
 - Follow UX best practices.
+- The first screen is the page **at rest**. A list/ledger page shows the table or cards and a single "新增" button — not an open create/edit drawer or dialog. Do not copy Tailwind UI Slide-over "open" snapshots. Create/edit forms are provided by the host; page scripts will not run, so an open drawer cannot be closed.
 - Pick one surface for the whole app (light OR dark). Do not mix a light page with bg-slate-900 / bg-black cards, and do not paint the top header and the sidebar two different darks.
 - Breadcrumb first item is the product name from the brief. Never write 通用后台, Admin, 控制台, or Dashboard as the root.
 - Image generation is disabled for this request. Do not call generate_images. \
@@ -374,89 +404,6 @@ def neutralize_foreign_urls(markup: str) -> str:
         return "#"
 
     return _URL_FULL_RE.sub(_repl, markup or "")
-
-
-#: Tailwind UI Slide-over / Radix Dialog Overlay 的打开态快照。
-#: ``fixed`` + 铺满视口；底栏 ``fixed inset-x-0 bottom-0`` 不在此列。
-_OVERLAY_OPEN_TAG_RE = re.compile(
-    r"<(div|section|aside|article|dialog)(\s[^>]*?)?>",
-    re.I,
-)
-_OVERLAY_CLASS_RE = re.compile(r"\sclass=(['\"])(.*?)\1", re.I)
-_OVERLAY_STYLE_RE = re.compile(r"\sstyle=(['\"])(.*?)\1", re.I)
-_OVERLAY_Z_LOW = frozenset({"z-0", "z-10", "z-20"})
-
-
-def _class_is_open_viewport_overlay(cls: str) -> bool:
-    """打开态的全屏遮罩。已经 ``hidden`` 的不算——那是关上的抽屉。"""
-    tokens = (cls or "").split()
-    if not tokens:
-        return False
-    found = set(tokens)
-    if "fixed" not in found or "hidden" in found:
-        return False
-    covers = "inset-0" in found or (
-        "top-0" in found
-        and "right-0" in found
-        and "bottom-0" in found
-        and "left-0" in found
-    )
-    if not covers:
-        return False
-    z_ok = any(t.startswith("z-") and t not in _OVERLAY_Z_LOW for t in tokens)
-    dim = any(
-        t.startswith("bg-black") or t.startswith("bg-gray") or t.startswith("bg-zinc")
-        or t.startswith("bg-slate") or t.startswith("bg-neutral")
-        for t in tokens
-    )
-    slide = "justify-end" in found or "justify-center" in found
-    return z_ok or dim or slide
-
-
-def conceal_open_overlays(markup: str) -> str:
-    """打开态的 ``fixed inset-0`` 收成 ``hidden``，不把整页扔掉。
-
-    ⚠ 2026-08-20 智能硬件巡检（sr-20260820141057-34FBKCBG7B）：p3
-    把 Tailwind UI Slide-over 的**打开态快照**当成成品首屏。注释写着
-    「当点击任意行时呈现」，DOM 却没 ``hidden``。``fixed inset-0 z-50``
-    盖住 ``<aside>``，宿主切页听 ``data-page-id``，点到的是遮罩——菜单
-    像坏了。页面 script 已被 DOMPurify 摘掉，✕ 按钮也没有处理函数。
-
-    对照 radix-ui/primitives Dialog：``defaultOpen=false``；打开是 Trigger
-    的事。提示词拦不住（同会话 p1 会写 hidden、p3 不会），修法跟剥外链
-    同一条：中和，不判死刑。
-
-    Tailwind 里 ``hidden`` 和 ``flex`` 特异性相同，CSS 源序不一定听 HTML
-    的 class 顺序，所以顺手钉 ``display:none!important``——宿主打开时再清。
-    """
-
-    def _repl(match: re.Match[str]) -> str:
-        tag = match.group(1)
-        attrs = match.group(2) or ""
-        class_m = _OVERLAY_CLASS_RE.search(attrs)
-        if not class_m or not _class_is_open_viewport_overlay(class_m.group(2)):
-            return match.group(0)
-        cls = class_m.group(2)
-        if "hidden" not in cls.split():
-            attrs = (
-                attrs[: class_m.start()]
-                + f" class={class_m.group(1)}{cls} hidden{class_m.group(1)}"
-                + attrs[class_m.end() :]
-            )
-        style_m = _OVERLAY_STYLE_RE.search(attrs)
-        if style_m:
-            val = style_m.group(2)
-            if "display:" not in val.lower():
-                attrs = (
-                    attrs[: style_m.start()]
-                    + f" style={style_m.group(1)}display:none!important;{val}{style_m.group(1)}"
-                    + attrs[style_m.end() :]
-                )
-        else:
-            attrs += ' style="display:none!important"'
-        return f"<{tag}{attrs}>"
-
-    return _OVERLAY_OPEN_TAG_RE.sub(_repl, markup or "")
 
 
 def scan_foreign_references(markup: str) -> List[str]:
@@ -606,7 +553,7 @@ def generate_page_html(
             ],
             temperature=0.2,
         )
-        html = conceal_open_overlays(neutralize_foreign_urls(_strip_fences(getattr(response, "content", "") or "")))
+        html = neutralize_foreign_urls(_strip_fences(getattr(response, "content", "") or ""))
         last = validate_page_html(html)
         if not last:
             return {
@@ -687,7 +634,7 @@ def edit_page_html(
             print(f"[spec_page_html] 页面 {page_id} 局部改：{len(blocks)} 块一块都没匹配上")
             return None
 
-        cleaned = conceal_open_overlays(neutralize_foreign_urls(got["html"]))
+        cleaned = neutralize_foreign_urls(got["html"])
         problems = validate_page_html(cleaned)
         if problems:
             print(

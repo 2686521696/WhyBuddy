@@ -12,8 +12,8 @@
  *     useOutsideClick 关；Panel onClick stopPropagation
  *     useEscape 关最上面那一层
  *
- * Tailwind UI Slide-over 文档给的 HTML 是打开态快照。模型常把它当首屏
- * 交出来（2026-08-20 巡检 p3）。``fixed inset-0`` 盖住侧栏，菜单像坏了。
+ * 页面 script 已被摘掉，开和关由宿主接（Radix onOpenChange）。
+ * 首屏是不是打开态，由生成提示词约束静息态，不在这里事后藏。
  */
 
 const CLOSE_LABEL = /^(关闭|取消|close|dismiss|×|✕|x)$/i;
@@ -141,7 +141,8 @@ function topOpenOverlay(root: ParentNode): HTMLElement | null {
  * RecordFormDrawer。新建/编辑仍留给宿主表单（要校验和保存）。
  */
 export function wireOverlays(doc: Document): () => void {
-  overlayRoots(doc).forEach(el => setOverlayOpen(el, false));
+  // 首屏关不关是生成提示词的事（静息态）。这里只接管点开 / 点关：
+  // 页面 script 已被摘掉，对照 Radix onOpenChange。
 
   const onClick = (ev: MouseEvent) => {
     const target = ev.target;

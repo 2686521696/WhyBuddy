@@ -33,9 +33,11 @@ from services.spec_page_html import build_page_html_prompt
 class Test页面提示词:
     def test_phone换移动设计系统(self):
         p = build_page_html_prompt("某页", device="phone")
-        for word in ["390×844", "底部", "<nav>", "不要左侧边栏", "pb-32", "个人资料", "max-w-md", "44px", "正中"]:
+        for word in ["390×844", "底部", "<nav>", "不要左侧边栏", "demo2.less", "个人资料", "max-w-md", "44px", "正中"]:
             assert word in p, f"移动设计系统里少了「{word}」"
         assert "<aside> 固定主导航" not in p, "移动端不该有左侧栏"
+        assert "Tailwind：pb-32" not in p, "不要再教模型写网站壳的 pb-32"
+        assert "fixed inset-x-0 bottom-0" not in p
 
     def test_desktop缺省即桌面(self):
         assert build_page_html_prompt("某页") == build_page_html_prompt("某页", device="desktop")
@@ -127,6 +129,10 @@ class Test移动壳统一:
         assert nav_tab_label("团长帮 - 核销首页", "团长帮") == "核销首页"
         assert nav_tab_label("订单详情 - 团长帮", "团长帮") == "订单详情"
         assert nav_tab_label("工单", "维保云") == "工单"
+        assert nav_tab_label("古籍列表页", "芸编智管") == "古籍列表"
+        assert nav_tab_label("档案页", "") == "档案"
+        assert nav_tab_label("首页", "维保云") == "首页"
+        assert nav_tab_label("核销首页", "") == "核销首页"
 
         src = _phone_page("维保云", "维修主管", ["工单", "档案"], 0)
         src = src.replace("<a href", '<a data-page-id="p9" href', 1)
@@ -149,44 +155,60 @@ class Test移动壳统一:
         assert nav.count('data-page-id="p2"') == 1
         assert "维保云 - 工单" not in nav
         assert ">工单</span>" in nav
+        assert ">档案</span>" in nav
+        assert "档案页" not in nav
 
 
-    def test_底栏钉住且main让出高度(self):
-        """模型漏写 fixed / pb-32 时由壳补——否则列表最后几行被标签栏盖住。"""
+    def test_底栏在文档流里_不钉fixed不垫pb32(self):
+        """antd-mobile demo2：底栏 flex:0，不是 fixed + pb-32。
+
+        正向：横排还在，铺满 CSS 在。
+        反向：再给 nav 打 fixed / 给 main 打 pb-32，本条必须红。
+        """
         pages = {
             "p1": _phone_page("维保云", "维修主管", ["工单", "档案"], 0),
             "p2": _phone_page("维保云", "维修主管", ["工单", "档案"], 1),
         }
         out = unify_shell(pages, SPEC, device="phone")
         for html in out["pages"].values():
-            assert "fixed" in html and "bottom-0" in html
-            assert "pb-32" in html
-            assert 'id="sliderule-phone-fill"' in html
+            nav_open = html[html.lower().find("<nav") : html.lower().find(">", html.lower().find("<nav")) + 1]
+            main_open = html[html.lower().find("<main") : html.lower().find(">", html.lower().find("<main")) + 1]
+            assert "fixed" not in nav_open
+            assert "pb-32" not in main_open
             assert "justify-around" in html
-            assert "flex-direction:row" in html
+            assert 'id="sliderule-phone-fill"' in html
+            assert "position:static!important" in html
+            assert "min-height:48px" in html
 
-    def test_已有fixed的底栏也要横排_不能竖着堆(self):
-        """幼安行 r2：nav 已有 fixed，旧逻辑不再补 class，五个入口竖着堆半屏。"""
+    def test_已有fixed的底栏要拉回文档流_还要横排(self):
+        """幼安行 r2 竖堆 + 芸编智管 fixed 对打 flex 列。剥 overlay，横排留下。"""
         from services.page_shell import ensure_phone_safe_area, ensure_phone_viewport_fill
 
         src = (
             "<!DOCTYPE html><html><head></head><body>"
-            "<header>维保云</header><main class='pb-32'>列表</main>"
+            '<header class="sticky top-0">维保云</header>'
+            '<main class="pt-16 pb-32">列表</main>'
             "<nav class=\"fixed inset-x-0 bottom-0 z-20 flex-col\">"
             "<a class='tab'>工单</a><a class='tab'>档案</a></nav>"
             "</body></html>"
         )
         out = ensure_phone_safe_area(src)
-        nav = out[out.lower().find("<nav") : out.lower().find("</nav>")]
-        assert "flex-col" not in nav.split(">")[0]
-        assert "flex" in nav.split(">")[0]
-        assert "justify-around" in nav.split(">")[0]
+        nav_open = out[out.lower().find("<nav") : out.lower().find(">", out.lower().find("<nav")) + 1]
+        header_open = out[out.lower().find("<header") : out.lower().find(">", out.lower().find("<header")) + 1]
+        main_open = out[out.lower().find("<main") : out.lower().find(">", out.lower().find("<main")) + 1]
+        assert "fixed" not in nav_open
+        assert "flex-col" not in nav_open
+        assert "flex" in nav_open and "justify-around" in nav_open
+        assert "sticky" not in header_open
+        assert "pt-16" not in main_open
+        assert "pb-32" not in main_open
         stale = (
             '<html><head><style id="sliderule-phone-fill">nav{width:100%}</style></head>'
             "<body>中文</body></html>"
         )
         filled = ensure_phone_viewport_fill(stale)
         assert filled.count('id="sliderule-phone-fill"') == 1
+        assert "position:static!important" in filled
         assert "flex-direction:row" in filled
 
     def test_机模css撑满视口且幂等(self):
@@ -229,12 +251,49 @@ class Test移动壳统一:
             "-webkit-overflow-scrolling:touch",
             "flex-direction:row",
             "justify-content:space-around",
+            'nav.fixed,nav[class*="bottom-0"]',
+            "position:static!important",
+            "padding-bottom:0!important",
+            "min-height:48px!important",
+            "white-space:nowrap!important",
         ):
             assert token in _PHONE_FILL_CSS, token
             assert token in ts, token
         assert 'body>div[class*="items-center"]{' not in _PHONE_FILL_CSS
         assert "main{display:flex" not in _PHONE_FILL_CSS
         assert "main{display:flex" not in ts
+        assert "nav{display:flex" not in _PHONE_FILL_CSS
+        assert "nav{display:flex" not in ts
+        # 第五趟：铺满层不许再教 fixed——那是网站壳
+        assert "position:fixed" not in _PHONE_FILL_CSS
+
+    def test_sticky顶栏和fixed底栏都剥掉_chrome让位也剥(self):
+        """芸编智管：sticky+pt-16、fixed+pb-32 两套网站壳都要收成 flex 列。"""
+        from services.page_shell import ensure_phone_safe_area
+
+        src = (
+            "<!DOCTYPE html><html><body>"
+            '<header class="sticky top-0 z-30">芸编智管</header>'
+            '<main class="w-full flex-1 pt-16 pb-32 px-4">搜索</main>'
+            '<nav class="fixed inset-x-0 bottom-0 z-20 flex justify-around">'
+            "<a>列表</a></nav></body></html>"
+        )
+        out = ensure_phone_safe_area(src)
+        header_open = out[out.lower().find("<header") : out.lower().find(">", out.lower().find("<header")) + 1]
+        main_open = out[out.lower().find("<main") : out.lower().find(">", out.lower().find("<main")) + 1]
+        nav_open = out[out.lower().find("<nav") : out.lower().find(">", out.lower().find("<nav")) + 1]
+        assert "sticky" not in header_open
+        assert "fixed" not in nav_open
+        assert "pt-16" not in main_open
+        assert "pb-32" not in main_open
+        assert "px-4" in main_open
+
+    def test_phone提示词是flex列壳不是网站壳(self):
+        p = build_page_html_prompt("某页", device="phone")
+        assert "demo2.less" in p
+        assert "不要 position:fixed" in p
+        assert "不要 pb-32" in p
+        assert "TabBar.Item" in p
 
     def test_一致性判据认得页面级nav(self):
         """移动页没有 <aside>，判据要回落到整页找 <nav>——不然移动端

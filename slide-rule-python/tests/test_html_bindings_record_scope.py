@@ -286,7 +286,6 @@ class Test表单隐式单条作用域:
             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
         ]
         assert "neutralize_foreign_urls" in names
-        assert "conceal_open_overlays" in names
         assert "stamp_implicit_form_record" in names
 
     def test_bind_page_漏写也能过(self):

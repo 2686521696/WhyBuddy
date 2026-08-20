@@ -71,17 +71,17 @@ describe("认遮罩，不认底栏和图片蒙层", () => {
 });
 
 describe("开 / 关（Radix onOpenChange）", () => {
-  it("默认关：wire 之后 hidden", () => {
+  it("不在 wire 时强行关上 —— 首屏关着是生成提示词的事", () => {
     const host = mount(DRAWER);
     wire();
-    const overlay = overlayRoots(host)[0];
-    expect(isOverlayOpen(overlay)).toBe(false);
+    expect(isOverlayOpen(overlayRoots(host)[0])).toBe(true);
   });
 
   it("点行打开，点遮罩关上", () => {
     const host = mount(DRAWER);
     wire();
     const overlay = overlayRoots(host)[0];
+    setOverlayOpen(overlay, false);
     host.querySelector("td")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(isOverlayOpen(overlay)).toBe(true);
     overlay.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -134,6 +134,7 @@ describe("开 / 关（Radix onOpenChange）", () => {
     `);
     wire();
     const overlay = overlayRoots(host)[0];
+    setOverlayOpen(overlay, false);
     const createEv = new MouseEvent("click", { bubbles: true, cancelable: true });
     host.querySelector("[data-action='createRecord']")!.dispatchEvent(createEv);
     expect(isOverlayOpen(overlay)).toBe(false);
@@ -147,6 +148,7 @@ describe("开 / 关（Radix onOpenChange）", () => {
   it("关上的遮罩不偷切页", () => {
     const host = mount(DRAWER);
     wire();
+    setOverlayOpen(overlayRoots(host)[0], false);
     const ev = new MouseEvent("click", { bubbles: true, cancelable: true });
     host.querySelector("[data-page-id]")!.dispatchEvent(ev);
     expect(isOverlayOpen(overlayRoots(host)[0])).toBe(false);

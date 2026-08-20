@@ -630,14 +630,40 @@ class Test设备进规格提示词:
 
     def test_phone把切页约束写进user消息(self):
         user = build_spec_prompt("随访系统", device="phone")[-1]["content"]
-        for mark in ("手机 App", "一屏一件主任务", "不要左右分栏", "顶栏", "主工作列表", "个人中心", "手机外框"):
+        for mark in ("手机 App", "一屏一件主任务", "不要左右分栏", "顶栏", "主工作列表", "个人中心", "手机外框", "TabBar.Item", "不要带「页」"):
             assert mark in user, f"手机 SPEC 提示词少了「{mark}」"
         assert "每一页的侧栏上" not in user
+        assert "古籍列表页" in user
+
+    def test_phone规格页名出口剥页字(self):
+        """求自觉已经失败过。device=phone 时 generate_spec_tree 必须机械剥。
+
+        反向：desktop 原样保留「页」，证明剥字接在 phone 活路上，不是误伤桌面。
+        """
+        phone_payload = copy.deepcopy(GOOD)
+        phone_payload["pages"][0]["name"] = "古籍列表页"
+        spec = generate_spec_tree("设备报修", device="phone", llm_json_fn=lambda _m: phone_payload)
+        assert spec.pages[0].name == "古籍列表"
+
+        desk_payload = copy.deepcopy(GOOD)
+        desk_payload["pages"][0]["name"] = "古籍列表页"
+        desk = generate_spec_tree("设备报修", device="desktop", llm_json_fn=lambda _m: desk_payload)
+        assert desk.pages[0].name == "古籍列表页"
 
     def test_desktop不掺手机切页(self):
         user = build_spec_prompt("随访系统")[-1]["content"]
         assert "一屏一件主任务" not in user
         assert "每一页的侧栏上" in user
+
+    def test_桌面purpose写的是静息态(self):
+        """⚠ 2026-08-20 古籍数字资源库：purpose 写成列表+新增+分配角色，
+        第 3 步把新增表单画进首屏。手机已禁「左侧大表+右侧新建」，桌面漏了。
+        把「静息态」从桌面提示词拿掉，本条必须红。"""
+        user = build_spec_prompt("权限管理")[-1]["content"]
+        assert "静息态" in user
+        assert "第一眼" in user
+        assert "左侧列表 + 右侧新建表单" in user
+        assert "一屏一件主任务" not in user
 
     def test_generate_spec_tree把device送进prompt(self):
         """直接测 build_spec_prompt 绿了也不够——调用点漏传 device 会静默回桌面。"""
