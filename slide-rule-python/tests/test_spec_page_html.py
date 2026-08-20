@@ -84,6 +84,8 @@ class Test口径抄的是_screenshot_to_code:
         assert "bg-slate-900" in p
         assert "placehold.co" in p
         assert "exact https addresses" not in p
+        assert "面团" in p
+        assert "SlideRule" in p
 
     def test_设计系统带冲突优先级声明(self):
         p = sph.build_page_html_prompt("x")

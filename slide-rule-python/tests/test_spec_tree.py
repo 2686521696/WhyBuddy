@@ -588,6 +588,18 @@ class Test产品名与使用者_把外壳也锚住:
         # 「维保云管理系统」有自己的名字在前面，不该被误伤
         assert validate_spec_tree(broken(appName="维保云管理系统"))["passed"] is True
 
+    def test_拦_产品名是生成方品牌(self):
+        """⚠ 2026-08-21 素材雷达：模型把宿主品牌写成 appName，
+        unify 之后每一页顶栏 / 面包屑都变成「面团AI系统」。"""
+        from services.spec_tree import is_host_brand_name
+
+        assert is_host_brand_name("面团AI系统")
+        assert is_host_brand_name("SlideRule")
+        assert not is_host_brand_name("内容雷达")
+        assert "生成方" in 失败原因(broken(appName="面团AI系统"))
+        assert "生成方" in 失败原因(broken(appName="面团 AI"))
+        assert validate_spec_tree(broken(appName="内容雷达"))["passed"] is True
+
     def test_拦_产品名太长(self):
         assert "太长" in 失败原因(broken(appName="设备报修与维修工单全生命周期综合管理服务平台系统"))
 

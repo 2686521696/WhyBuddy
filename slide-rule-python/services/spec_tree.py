@@ -65,6 +65,21 @@ _EARS_CN = re.compile(r"(当|若|如果)[^。\n]{2,80}(应|必须|须)")
 #: 壳上挂它等于没起名，而且每次生成都会撞脸。
 _GENERIC_APP_NAMES = {"系统", "平台", "管理系统", "管理平台", "应用", "工具", "后台"}
 
+#: 生成方自己的名字。模型常把宿主品牌写成 appName，unify 之后每一页顶栏
+#: / 面包屑都变成「面团AI系统」（2026-08-21 素材雷达）。
+_HOST_BRAND_RE = re.compile(r"(面团\s*AI|SlideRule|MianTuan|miantuan)", re.I)
+_HOST_BRAND_EXACT = frozenset({"面团", "面团AI", "面团 AI", "面团AI系统", "面团 AI 系统"})
+
+
+def is_host_brand_name(name: str) -> bool:
+    """产品名是不是生成方（面团 AI / SlideRule）自己的牌子。"""
+    text = (name or "").strip()
+    if not text:
+        return False
+    if text in _HOST_BRAND_EXACT:
+        return True
+    return bool(_HOST_BRAND_RE.search(text))
+
 
 class Persona(BaseModel):
     """一类使用者。形状照 `experiments/visual-first/materials/clarified_brief.json`
@@ -210,6 +225,10 @@ class SpecTree(BaseModel):
         if name in _GENERIC_APP_NAMES:
             raise ValueError(
                 f"appName「{name}」是品类不是名字，换一个这个产品自己的名字"
+            )
+        if is_host_brand_name(name):
+            raise ValueError(
+                f"appName「{name}」是生成方的名字，换一个这个产品自己的名字"
             )
         if len(name) > 20:
             raise ValueError(f"appName「{name[:20]}…」太长了，侧栏挂不下，控制在 20 字以内")
@@ -622,7 +641,8 @@ def build_spec_prompt(
    不要写字段名、组件名、接口名——那些由下游根据界面反推，不归你定。
 7. **appName 和 personas 会被挂到每一页的侧栏上**，所以它们必须是这个产品的
    一套、而不是每页各来一套。appName 要是个真名字（「维保云」「智维工单」），
-   单独一个「系统」「平台」「管理系统」会被拦下来。personas 至少一条，
+   单独一个「系统」「平台」「管理系统」会被拦下来。也不许写成「面团」
+   「面团AI」「SlideRule」——那是生成方的名字。personas 至少一条，
    排在第一位的那个是界面上默认的登录身份。
 8. purpose 写的是**打开这一页时的静息态**。列表页就写「看账号列表、筛状态」，
    不要写成「列表 + 新增表单 + 分配角色」——下游会把后半段画进首屏，抽屉关不掉。

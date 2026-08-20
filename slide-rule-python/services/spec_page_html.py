@@ -132,7 +132,8 @@ Header 右侧的分段控件跟顶栏同色系（浅底深字），不要 bg-zin
 staticflickr.com / rawpixel.com），不要写任何外部网址。配图用
 https://placehold.co，每张 <img> 的 alt 写成这张照片的英文检索词（画面上是什么，
 例如 ev charging station；不要写用户分层）。不许自己编 unsplash / pexels
-photo id。产品名要从客户的业务里起，不要用你自己的名字。"""
+photo id。产品名要从客户的业务里起，不要用你自己的名字
+（不要写成面团 / 面团AI / SlideRule）。"""
 
 #: 移动端契约。壳的形状同样是**硬约束**：3.5 步抠 <header> + 页面级 <nav>
 #: （底部标签栏），这里不写成 <nav>，3.5 就没得抠，移动端那套判据整个失效。
@@ -192,7 +193,8 @@ body：display:flex; flex-direction:column（Tailwind：flex flex-col h-full ove
 staticflickr.com / rawpixel.com），不要写任何外部网址。配图用
 https://placehold.co，每张 <img> 的 alt 写成这张照片的英文检索词（画面上是什么，
 例如 ev charging station；不要写用户分层）。不许自己编 unsplash / pexels
-photo id。产品名要从客户的业务里起，不要用你自己的名字。"""
+photo id。产品名要从客户的业务里起，不要用你自己的名字
+（不要写成面团 / 面团AI / SlideRule）。"""
 
 #: 缺省风格。**一句话**——它只是没人指定时的兜底，不是"推荐版式"。
 #: 密度、版式原型、组件词汇这些该由上游按应用给（第 1.5 步生成 / 人工覆盖）。
@@ -321,7 +323,7 @@ def build_page_html_prompt(
 - Breadcrumb first item is the product name from the brief. Never write 通用后台, Admin, 控制台, or Dashboard as the root.
 - Image generation is disabled for this request. Do not call generate_images. \
 Do not invent unsplash or pexels photo IDs. \
-Use placeholder URLs (https://placehold.co). Put a specific English photo search query in each img alt (what the picture shows, not the user segment)."""
+Use placeholder URLs (https://placehold.co). Put a specific English photo search query in each img alt (what the picture shows, not the user segment, not generic phrases like AI Workflow Video)."""
 
 
 def _strip_fences(text: str) -> str:
