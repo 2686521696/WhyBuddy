@@ -89,6 +89,7 @@ import {
   forkApp,
   reopenApp,
   deleteApp,
+  getGeneratedAppForSession,
   patchApp,
   appPreviewUrl,
   type AppStoreSummary,
@@ -1365,6 +1366,7 @@ export function AppsWorkbench() {
   // 复刻改名弹框（对标 Budibase duplicateApp：预填「源名 副本」让用户改名）
   const [forkModal, setForkModal] = React.useState<{ item: GalleryItem; name: string } | null>(null);
   const [deleteModal, setDeleteModal] = React.useState<GalleryItem | null>(null);
+  const [deleteError, setDeleteError] = React.useState<string | null>(null);
   const [reopenBusy, setReopenBusy] = React.useState(false);
   /**
    * 只读预览（2026-08-06）：点开**别人的**应用时用它，而不是往对方的会话里跳。
@@ -1613,14 +1615,29 @@ export function AppsWorkbench() {
     openNewSession();
   };
 
-  /** 删卡：App Store 卡走确认框（更重）；会话草稿卡删会话。 */
+  /** 删卡：App Store 卡走确认框（更重）。会话草稿若已经落过库，按删应用走，
+   *  否则只删会话。菜单写的是「删除应用」——只 DELETE session 会留下货架卡。 */
   const removeCard = async (gi: GalleryItem) => {
     try {
       if (gi.source === "app" && gi.appId) {
+        setDeleteError(null);
         setDeleteModal(gi);
         setMenuFor(null);
         return;
       } else if (gi.sessionId) {
+        const bound = await getGeneratedAppForSession(gi.sessionId);
+        if (bound?.id) {
+          setDeleteError(null);
+          setDeleteModal({
+            ...gi,
+            source: "app",
+            appId: bound.id,
+            rootId: bound.root_id,
+            summary: bound,
+          });
+          setMenuFor(null);
+          return;
+        }
         // DELETE 幂等（G1 契约）；成功后本地摘卡，不整页刷新
         await fetch(`/api/sliderule/sessions/${encodeURIComponent(gi.sessionId)}`, {
           method: "DELETE",
@@ -1651,11 +1668,22 @@ export function AppsWorkbench() {
     const gi = deleteModal;
     if (!gi?.appId) return;
     const ok = await deleteApp(gi.appId);
-    if (ok) {
-      setApps(prev => (prev ?? []).filter(a => a.id !== gi.appId));
-      // 绑定会话服务端已删，侧栏必须跟着摘，否则还挂着一条进不去的草稿。
-      notifySessionsUpdated();
+    if (!ok) {
+      // ⚠ 2026-08-21：失败也关弹窗 = 点了「确认删除」零反馈，货架卡还在。
+      setDeleteError("没有从货架上拿掉。请再试一次。");
+      return;
     }
+    setDeleteError(null);
+    // 同 root 旧版会在刷新时顶上来；按血缘从本地列表摘干净。
+    setApps(prev =>
+      (prev ?? []).filter(a => {
+        if (a.id === gi.appId) return false;
+        if (gi.rootId && a.root_id === gi.rootId) return false;
+        return true;
+      })
+    );
+    // 绑定会话服务端已删，侧栏必须跟着摘，否则还挂着一条进不去的草稿。
+    notifySessionsUpdated();
     setDeleteModal(null);
     setMenuFor(null);
   };
@@ -2441,6 +2469,11 @@ export function AppsWorkbench() {
                 deleteModal.goal ||
                 "这张应用"}」会从货架下架，绑定的推演会话也会一并删除，不可恢复。
             </div>
+            {deleteError ? (
+              <div className="mt-2 text-[12.5px] leading-5 text-red-600" data-testid="delete-app-error">
+                {deleteError}
+              </div>
+            ) : null}
             <div className="mt-4 flex justify-end gap-2">
               <button
                 className="rounded-lg px-3 py-1.5 text-[12.5px] font-medium text-slate-500 transition hover:bg-slate-100"

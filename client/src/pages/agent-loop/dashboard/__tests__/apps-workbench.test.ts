@@ -669,6 +669,14 @@ describe("三个货架接在真链路上", () => {
     expect(client).toContain("/sessions/${encodeURIComponent(id)}/generated-app");
   });
 
+  it("删卡按血缘摘本地列表，会话草稿若已落库走删应用", () => {
+    expect(src).toContain("a.root_id === gi.rootId");
+    expect(src).toContain("getGeneratedAppForSession");
+    expect(src).toContain("bound?.id");
+    expect(src).toContain("没有从货架上拿掉");
+    expect(src).toContain("delete-app-error");
+  });
+
   it("点卡走 canOpenGalleryItem，死会话不 open(sessionId)", () => {
     expect(src).toContain("canOpenGalleryItem(item, sessions, authUser)");
     expect(src).toContain("continueOnCard");
