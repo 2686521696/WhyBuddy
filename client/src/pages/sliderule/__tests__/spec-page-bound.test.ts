@@ -51,10 +51,15 @@ describe("pageIsBoundFromSpec", () => {
 
 describe("打孔徽标接在通电的两处", () => {
   it("会话舞台和中心预览都走 pageIsBoundFromSpec，不许退回 boundPages>0", () => {
+    const live = stripComments(
+      readFileSync(new URL("../spec-live-pages.ts", import.meta.url), "utf8")
+    );
+    expect(live).toContain("pageIsBoundFromSpec");
+
     const studio = stripComments(
       readFileSync(new URL("../SlideRuleStudio.tsx", import.meta.url), "utf8")
     );
-    expect(studio).toContain("pageIsBoundFromSpec");
+    expect(studio).toContain("livePagesFromSpec");
     expect(studio).not.toContain("boundPages ?? 0) > 0");
 
     const workbench = stripComments(
@@ -66,7 +71,7 @@ describe("打孔徽标接在通电的两处", () => {
         "utf8"
       )
     );
-    expect(workbench).toContain("pageIsBoundFromSpec");
+    expect(workbench).toContain("livePagesFromSpec");
     expect(workbench).not.toContain("boundPages ?? 0) > 0");
   });
 });

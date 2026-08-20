@@ -1,0 +1,111 @@
+/**
+ * 舞台上的页面清单：落库 HTML + 导航里有、成品却缺的页。
+ *
+ * ⚠ 2026-08-20 Foclip：spec 四页，校验杀掉 p1/p4，侧栏仍列出四项。
+ * 点「拾取工作台」时宿主 pages 里没有 p1，resolveActivePageId 回落最新
+ * 页——点击像没发生。缺页必须仍能切过去，且不能冒充成品。
+ */
+import { navItemId, navItemName } from "./nav-item";
+import { pageIsBoundFromSpec } from "./spec-page-bound";
+import type { SpecPageLive } from "./live-runtime/SpecPageLiveStage";
+
+export type SpecFirstPagesBlob = {
+  pages?: Record<string, string>;
+  navItems?: unknown[];
+  device?: "desktop" | "phone";
+  boundPages?: number;
+  failedPages?: Record<string, unknown> | null;
+  pageBindStatus?: Record<string, unknown> | null;
+} | null;
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+export function missingPageHtml(opts: {
+  pageId: string;
+  name: string;
+  reason: string;
+  nav: Array<{ pageId: string; name: string }>;
+}): string {
+  const links = opts.nav
+    .map(item => {
+      const current = item.pageId === opts.pageId ? ' aria-current="page"' : "";
+      return `<a data-page-id="${escapeHtml(item.pageId)}" href="#"${current}><span>${escapeHtml(item.name || item.pageId)}</span></a>`;
+    })
+    .join("\n");
+  const title = escapeHtml(opts.name || opts.pageId);
+  const reason = escapeHtml(opts.reason || "生成校验未通过，这一页没有成品 HTML。");
+  return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
+<script src="https://cdn.tailwindcss.com"></script></head>
+<body>
+<aside><nav>${links}</nav></aside>
+<main data-missing-page="${escapeHtml(opts.pageId)}">
+<h1>${title}</h1>
+<p>这一页没有成品界面。菜单可以点进来，但内容不会假装还在另一页上。</p>
+<p>${reason}</p>
+</main>
+</body></html>`;
+}
+
+export function specNavEntries(spec: SpecFirstPagesBlob): Array<{ pageId: string; name: string }> {
+  const nav = Array.isArray(spec?.navItems) ? spec!.navItems! : [];
+  const out: Array<{ pageId: string; name: string }> = [];
+  const seen = new Set<string>();
+  for (const item of nav) {
+    const id = navItemId(item);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push({ pageId: id, name: navItemName(item) || id });
+  }
+  return out;
+}
+
+/** 导航顺序优先，落库有、导航没提到的页排后面。缺页也留在名单里。 */
+export function specLivePageIds(spec: SpecFirstPagesBlob): string[] {
+  const pages = spec?.pages && typeof spec.pages === "object" ? spec.pages : {};
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const item of specNavEntries(spec)) {
+    ids.push(item.pageId);
+    seen.add(item.pageId);
+  }
+  for (const id of Object.keys(pages)) {
+    if (!seen.has(id)) {
+      ids.push(id);
+      seen.add(id);
+    }
+  }
+  return ids;
+}
+
+export function livePagesFromSpec(
+  specFirstPages: SpecFirstPagesBlob,
+  specPages: SpecPageLive[] = []
+): SpecPageLive[] {
+  const settled = specFirstPages?.pages || null;
+  if (!settled || Object.keys(settled).length === 0) return specPages;
+
+  const nav = specNavEntries(specFirstPages);
+  const ids = specLivePageIds(specFirstPages);
+  const realCount = ids.filter(id => typeof settled[id] === "string" && settled[id]!.trim()).length;
+  return ids.map((id, i) => {
+    const html = typeof settled[id] === "string" ? settled[id] : "";
+    const missing = !html.trim();
+    const name = nav.find(n => n.pageId === id)?.name || id;
+    const reason = String(specFirstPages?.failedPages?.[id] ?? "");
+    return {
+      pageId: id,
+      html: missing ? missingPageHtml({ pageId: id, name, reason, nav: nav.length ? nav : ids.map(pid => ({ pageId: pid, name: pid })) }) : html,
+      current: i + 1,
+      total: realCount,
+      bound: missing ? false : pageIsBoundFromSpec(id, specFirstPages),
+      device: specFirstPages?.device,
+      missing,
+    };
+  });
+}
