@@ -65,8 +65,8 @@ describe("AdminLayout", () => {
       </AdminLayout>
     );
 
-    expect(markup).toContain("Checking session");
-    expect(markup).not.toContain("Sign in required");
+    expect(markup).toContain("正在确认登录");
+    expect(markup).not.toContain("需要登录");
     expect(markup).not.toContain('data-testid="admin-overview-page"');
   });
 
@@ -77,9 +77,10 @@ describe("AdminLayout", () => {
       </AdminLayout>
     );
 
-    expect(markup).toContain("Sign in required");
+    expect(markup).toContain("需要登录");
     // 指向新登录页；旧的 /login 只剩一条重定向
     expect(markup).toContain("/signin");
+    expect(markup).toContain("去登录");
     expect(markup).not.toContain('data-testid="admin-overview-page"');
   });
 
@@ -92,8 +93,8 @@ describe("AdminLayout", () => {
       </AdminLayout>
     );
 
-    expect(markup).toContain("Admin access required");
-    expect(markup).not.toContain("Admin navigation");
+    expect(markup).toContain("需要超管权限");
+    expect(markup).not.toContain("管理导航");
     expect(markup).not.toContain('data-testid="admin-overview-page"');
   });
 
@@ -110,8 +111,10 @@ describe("AdminLayout", () => {
       </AdminLayout>
     );
 
-    expect(markup).toContain("Admin Console");
-    expect(markup).toContain("Admin navigation");
+    expect(markup).toContain("管理台");
+    expect(markup).toContain("超管");
+    expect(markup).not.toContain("Read only");
+    expect(markup).toContain("管理导航");
     expect(markup).toContain("/admin/users");
     expect(markup).toContain("/admin/projects");
     expect(markup).toContain('data-testid="admin-child-page"');

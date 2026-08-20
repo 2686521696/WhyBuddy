@@ -28,12 +28,22 @@ export interface AdminUserView {
   displayName: string | null;
   isSuperuser: boolean;
   isVerified: boolean;
+  isActive: boolean;
   createdAt: string | null;
+  lastLoginAt: string | null;
+  sessions: number;
+  estimatedTokens: number;
+  estimatedCostUsd: number;
 }
 
 export interface AdminUsersReader {
-  list(auth: ForwardedCredentials): Promise<AdminUserView[]>;
+  list(auth: ForwardedCredentials, q?: string): Promise<AdminUserView[]>;
   findById(userId: string, auth: ForwardedCredentials): Promise<AdminUserView | null>;
+  setActive(
+    userId: string,
+    isActive: boolean,
+    auth: ForwardedCredentials,
+  ): Promise<AdminUserView | null>;
 }
 
 export interface SlideRuleAdminUsersOptions {
@@ -53,7 +63,12 @@ function toView(raw: unknown): AdminUserView | null {
     displayName: typeof record.displayName === "string" ? record.displayName : null,
     isSuperuser: record.isSuperuser === true,
     isVerified: record.isVerified === true,
+    isActive: record.isActive !== false,
     createdAt: typeof record.createdAt === "string" ? record.createdAt : null,
+    lastLoginAt: typeof record.lastLoginAt === "string" ? record.lastLoginAt : null,
+    sessions: Number(record.sessions) || 0,
+    estimatedTokens: Number(record.estimatedTokens) || 0,
+    estimatedCostUsd: Number(record.estimatedCostUsd) || 0,
   };
 }
 
@@ -62,7 +77,11 @@ export function createSlideRuleAdminUsersReader(
 ): AdminUsersReader {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
-  async function call(path: string, auth: ForwardedCredentials): Promise<unknown> {
+  async function call(
+    path: string,
+    auth: ForwardedCredentials,
+    init: { method?: string; body?: string } = {},
+  ): Promise<unknown> {
     const doFetch = options.fetchImpl ?? globalThis.fetch;
     if (typeof doFetch !== "function") throw new Error("fetch unavailable");
     const base = options.baseUrl
@@ -72,13 +91,15 @@ export function createSlideRuleAdminUsersReader(
     const headers: Record<string, string> = { accept: "application/json" };
     if (auth.cookie) headers.cookie = auth.cookie;
     if (auth.authorization) headers.authorization = auth.authorization;
+    if (init.body) headers["content-type"] = "application/json";
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await doFetch(`${base}${path}`, {
-        method: "GET",
+        method: init.method ?? "GET",
         headers,
+        body: init.body,
         signal: controller.signal,
       });
       // 404 交给调用方判断是"没这个人"还是"路径不对"——两者响应体不同，
@@ -94,8 +115,9 @@ export function createSlideRuleAdminUsersReader(
   }
 
   return {
-    async list(auth) {
-      const body = (await call("/api/sliderule/account/admin/users", auth)) as
+    async list(auth, q) {
+      const query = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+      const body = (await call(`/api/sliderule/account/admin/users${query}`, auth)) as
         | { items?: unknown }
         | null;
       const items = body && Array.isArray(body.items) ? body.items : [];
@@ -106,6 +128,16 @@ export function createSlideRuleAdminUsersReader(
       const body = (await call(
         `/api/sliderule/account/admin/users/${encodeURIComponent(userId)}`,
         auth
+      )) as { user?: unknown } | null;
+      if (!body) return null;
+      return toView(body.user);
+    },
+
+    async setActive(userId, isActive, auth) {
+      const body = (await call(
+        `/api/sliderule/account/admin/users/${encodeURIComponent(userId)}`,
+        auth,
+        { method: "PATCH", body: JSON.stringify({ isActive }) },
       )) as { user?: unknown } | null;
       if (!body) return null;
       return toView(body.user);

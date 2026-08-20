@@ -112,6 +112,23 @@ update {TABLE} set
 where artifact_count is null
 """
 
+# ⚠ 2026-08-21：owner_id 列当初就地补上了，但回填 SQL 只打 artifact_count is null。
+# 已经有 artifact_count、payload 里却有 ownerId、列仍是空的那批——超管侧栏
+# 靠「无主 = 超管可见」能看见，用户表按 ownerId 汇总话题全是 0。
+_BACKFILL_OWNER_PG = f"""
+update {TABLE} set
+  owner_id = nullif(payload->>'ownerId', '')
+where owner_id is null
+  and coalesce(payload->>'ownerId', '') <> ''
+"""
+
+_BACKFILL_OWNER_SQLITE = f"""
+update {TABLE} set
+  owner_id = nullif(json_extract(payload, '$.ownerId'), '')
+where owner_id is null
+  and coalesce(json_extract(payload, '$.ownerId'), '') <> ''
+"""
+
 # 与 app_store 共用的连接串；会话和应用落在同一个库是这次改动的全部意义所在。
 _DB_URL_ATTR = "APP_STORE_DATABASE_URL"
 
@@ -145,10 +162,12 @@ def _list_projection(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _ensure_list_projection(run_sql, *, is_sqlite: bool) -> None:
-    """老表就地补列表列，并一次性从 payload 灌进去。
+    """老表就地补列表列，并从 payload 灌投影。
 
-    增强类：补列 / 回填自己炸了不许拖垮主链路。回填只打
-    `artifact_count is null` 的行，灌过之后列表查询不再碰 payload。
+    增强类：补列 / 回填自己炸了不许拖垮主链路。标题/阶段/产物数只打
+    `artifact_count is null` 的行——灌过之后列表查询不再碰 payload。
+    owner_id 另走一条：已经有 artifact_count、列却空着的存量行，标题回填
+    打不中，超管侧栏仍按无主可见、用户表按列汇总话题全是 0。
     """
     for name, typ in _LIST_PROJ_COLUMNS:
         try:
@@ -162,6 +181,10 @@ def _ensure_list_projection(run_sql, *, is_sqlite: bool) -> None:
         run_sql(_BACKFILL_LIST_PROJ_SQLITE if is_sqlite else _BACKFILL_LIST_PROJ_PG)
     except Exception as exc:  # noqa: BLE001 — 回填失败就让列表缺标题，下次 save 会补
         print(f"[session_store] list projection backfill skipped: {str(exc)[:200]}")
+    try:
+        run_sql(_BACKFILL_OWNER_SQLITE if is_sqlite else _BACKFILL_OWNER_PG)
+    except Exception as exc:  # noqa: BLE001 — 归属回填失败不许拖垮启动
+        print(f"[session_store] owner_id backfill skipped: {str(exc)[:200]}")
 
 
 def _owner_of(payload: dict[str, Any]) -> Optional[str]:

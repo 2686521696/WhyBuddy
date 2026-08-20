@@ -21,12 +21,16 @@ export const SETTINGS_DANGER_BTN =
 export function SettingsPane({
   title,
   children,
+  wide = false,
 }: {
   title: string;
   children: React.ReactNode;
+  wide?: boolean;
 }): React.ReactElement {
   return (
-    <div className="mx-auto w-full max-w-[720px] px-8 py-8">
+    <div
+      className={`mx-auto w-full px-8 py-8 ${wide ? "max-w-[1100px]" : "max-w-[720px]"}`}
+    >
       <h1 className="mb-6 text-[22px] font-semibold tracking-tight text-[#171717]">
         {title}
       </h1>

@@ -42,27 +42,6 @@ const LegacyCommandCenterPage = lazy(
 );
 const LineagePage = lazy(() => import("@/pages/lineage/LineagePage"));
 const ProjectCockpitHome = lazy(() => import("./pages/ProjectCockpitHome"));
-const AdminAuditPage = lazy(() =>
-  import("./pages/admin/AdminLayout").then(m => ({ default: m.AdminAuditPage }))
-);
-const AdminFailuresPage = lazy(() =>
-  import("./pages/admin/AdminLayout").then(m => ({ default: m.AdminFailuresPage }))
-);
-const AdminLayout = lazy(() =>
-  import("./pages/admin/AdminLayout").then(m => ({ default: m.AdminLayout }))
-);
-const AdminOverviewPage = lazy(() =>
-  import("./pages/admin/AdminLayout").then(m => ({ default: m.AdminOverviewPage }))
-);
-const AdminProjectsPage = lazy(() =>
-  import("./pages/admin/AdminLayout").then(m => ({ default: m.AdminProjectsPage }))
-);
-const AdminRunsPage = lazy(() =>
-  import("./pages/admin/AdminLayout").then(m => ({ default: m.AdminRunsPage }))
-);
-const AdminUsersPage = lazy(() =>
-  import("./pages/admin/AdminLayout").then(m => ({ default: m.AdminUsersPage }))
-);
 const AutopilotRoutePage = lazy(
   () => import("./pages/autopilot/AutopilotRoutePage")
 );
@@ -140,47 +119,23 @@ function Router() {
           <RedirectRoute to={IS_GITHUB_PAGES ? PROJECTS_PATH : "/signin"} />
         )}
       </Route>
-      <Route path={"/admin"}>
-        {() => (
-          <AdminLayout>
-            <AdminOverviewPage />
-          </AdminLayout>
-        )}
-      </Route>
       <Route path={"/admin/users"}>
-        {() => (
-          <AdminLayout>
-            <AdminUsersPage />
-          </AdminLayout>
-        )}
+        {() => <RedirectRoute to="/agent-loop/admin/users" />}
       </Route>
       <Route path={"/admin/projects"}>
-        {() => (
-          <AdminLayout>
-            <AdminProjectsPage />
-          </AdminLayout>
-        )}
+        {() => <RedirectRoute to="/agent-loop/admin/projects" />}
       </Route>
       <Route path={"/admin/runs"}>
-        {() => (
-          <AdminLayout>
-            <AdminRunsPage />
-          </AdminLayout>
-        )}
+        {() => <RedirectRoute to="/agent-loop/admin/runs" />}
       </Route>
       <Route path={"/admin/failures"}>
-        {() => (
-          <AdminLayout>
-            <AdminFailuresPage />
-          </AdminLayout>
-        )}
+        {() => <RedirectRoute to="/agent-loop/admin/failures" />}
       </Route>
       <Route path={"/admin/audit"}>
-        {() => (
-          <AdminLayout>
-            <AdminAuditPage />
-          </AdminLayout>
-        )}
+        {() => <RedirectRoute to="/agent-loop/admin/audit" />}
+      </Route>
+      <Route path={"/admin"}>
+        {() => <RedirectRoute to="/agent-loop/admin" />}
       </Route>
       <Route path={"/tasks"}>{() => <TasksPage />}</Route>
       <Route path={"/specs"} component={SpecCenterPage} />
@@ -220,6 +175,8 @@ function Router() {
       <Route path={`${AGENT_LOOP_PATH}/help`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/settings`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/settings/legacy`} component={AgentLoopPage} />
+      <Route path={`${AGENT_LOOP_PATH}/admin/:section`} component={AgentLoopPage} />
+      <Route path={`${AGENT_LOOP_PATH}/admin`} component={AgentLoopPage} />
       <Route path={`${AGENT_LOOP_PATH}/runs/:runId`} component={AgentLoopPage} />
       <Route path={AGENT_LOOP_PATH} component={AgentLoopPage} />
       {/* Direct /sliderule redirects above; AgentLoop hosts the embedded 推演 surface. */}

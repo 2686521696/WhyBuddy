@@ -205,6 +205,19 @@ def new_email_code() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
+def _public_time(value: Any) -> Optional[str]:
+    """身份库三种后端吐出来的时间可能是 datetime / 字符串 / None。对外一律 ISO。"""
+    if value is None:
+        return None
+    if hasattr(value, "isoformat") and not isinstance(value, (str, bytes)):
+        try:
+            return value.isoformat()
+        except Exception:  # noqa: BLE001
+            return None
+    text = str(value).strip()
+    return text or None
+
+
 # ────────────────────────── 存储 ──────────────────────────
 
 _DDL_PG = f"""
@@ -331,7 +344,9 @@ class User(dict):
             "avatarUrl": avatar_text or None,
             "isSuperuser": self.is_superuser,
             "isVerified": self.is_verified,
-            "createdAt": self.get("created_at") or self.get("createdAt"),
+            "isActive": self.is_active,
+            "createdAt": _public_time(self.get("created_at") or self.get("createdAt")),
+            "lastLoginAt": _public_time(self.get("last_login_at") or self.get("lastLoginAt")),
         }
 
 
@@ -347,19 +362,27 @@ class IdentityStore:
         self._ensure_profile_columns()
 
     def _ensure_profile_columns(self) -> None:
-        """老表就地补头像列。create table if not exists 对已有表一列都不加。
+        """老表就地补头像列和 last_login_at。create table if not exists 对已有表一列都不加。
 
         增强类：补列失败不许拖垮登录。列已存在时 SQLite 会抛，Postgres
         走 if not exists。
         """
-        if self._is_sqlite:
-            sql = f"alter table {TABLE} add column avatar_url text"
-        else:
-            sql = f"alter table {TABLE} add column if not exists avatar_url text"
-        try:
-            self._x.execute(sql)
-        except Exception:  # noqa: BLE001 — 列已存在 / 网关不认 IF NOT EXISTS
-            pass
+        extra = (
+            [
+                f"alter table {TABLE} add column avatar_url text",
+                f"alter table {TABLE} add column last_login_at text",
+            ]
+            if self._is_sqlite
+            else [
+                f"alter table {TABLE} add column if not exists avatar_url text",
+                f"alter table {TABLE} add column if not exists last_login_at timestamptz",
+            ]
+        )
+        for sql in extra:
+            try:
+                self._x.execute(sql)
+            except Exception:  # noqa: BLE001 — 列已存在 / 网关不认 IF NOT EXISTS
+                pass
 
     # ── 用户 ──────────────────────────────────────────
     def get_by_email(self, email: str) -> Optional[User]:
@@ -444,6 +467,21 @@ class IdentityStore:
         self._x.execute(
             f"update {TABLE} set is_superuser = {p(1)} where id = {p(2)}", [value, user_id]
         )
+
+    def set_active(self, user_id: str, value: bool) -> Optional[User]:
+        """停用 / 恢复登录。对照 Gitea `ProhibitLogin` / `Activate`：不删行。
+
+        登录链路已经拒 `is_active=false`（auth_service.login）。这里只翻位。
+        """
+        uid = str(user_id or "").strip()
+        if not uid:
+            return None
+        p = self._x.ph
+        self._x.execute(
+            f"update {TABLE} set is_active = {p(1)} where id = {p(2)}",
+            [bool(value), uid],
+        )
+        return self.get_by_id(uid)
 
     def update_profile(
         self,

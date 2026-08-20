@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 
 import { DashboardApp, DashboardDetailApp } from "./dashboard/DashboardApp";
 import { setCommandHandler } from "./dashboard/bridge";
+import { getStaffConsolePath } from "@/pages/admin/StaffConsolePage";
 import {
   cancelCurrent,
   fetchDetail,
@@ -26,7 +27,7 @@ if (typeof window !== "undefined") {
 }
 
 type View = "overview" | "detail";
-type DashboardRouteView = "sliderule" | "workbench" | "workbench-legacy" | "skills" | "components" | "help" | "settings" | "settings-legacy";
+type DashboardRouteView = "sliderule" | "workbench" | "workbench-legacy" | "skills" | "components" | "help" | "settings" | "settings-legacy" | "admin";
 
 export type AgentLoopRouteState =
   | { kind: "sliderule" }
@@ -37,6 +38,7 @@ export type AgentLoopRouteState =
   | { kind: "help" }
   | { kind: "settings" }
   | { kind: "settings-legacy" }
+  | { kind: "admin" }
   | { kind: "detail"; runId: string };
 
 export function getAgentLoopSliderulePath(): string {
@@ -68,6 +70,10 @@ export function getAgentLoopHelpPath(): string {
 
 export function getAgentLoopSettingsPath(): string {
   return "/agent-loop/settings";
+}
+
+export function getAgentLoopAdminPath(): string {
+  return getStaffConsolePath();
 }
 
 /** legacy AgentLoop 设置页：摘除导航、保留 URL 直达。 */
@@ -108,6 +114,12 @@ export function parseAgentLoopLocation(location: string): AgentLoopRouteState {
   if (normalized === "/agent-loop/settings") {
     return { kind: "settings" };
   }
+  if (
+    normalized === "/agent-loop/admin" ||
+    normalized.startsWith("/agent-loop/admin/")
+  ) {
+    return { kind: "admin" };
+  }
 
   const runPrefix = "/agent-loop/runs/";
   if (normalized.startsWith(runPrefix)) {
@@ -129,6 +141,7 @@ export function resolveAgentLoopLiveEventRunId(
     route.kind === "sliderule" ||
     route.kind === "settings" ||
     route.kind === "settings-legacy" ||
+    route.kind === "admin" ||
     route.kind === "skills" ||
     route.kind === "components" ||
     route.kind === "help" ||
@@ -245,6 +258,10 @@ export default function AgentLoopPage() {
         ? getAgentLoopSliderulePath()
         : next === "settings"
           ? getAgentLoopSettingsPath()
+          : next === "admin"
+            ? (route.kind === "admin"
+              ? (location.split(/[?#]/, 1)[0] || getAgentLoopAdminPath())
+              : getAgentLoopAdminPath())
           : next === "settings-legacy"
             ? getAgentLoopSettingsLegacyPath()
             : next === "skills"
@@ -586,6 +603,8 @@ export default function AgentLoopPage() {
   const dashboardView: DashboardRouteView =
     route.kind === "settings"
       ? "settings"
+      : route.kind === "admin"
+        ? "admin"
       : route.kind === "settings-legacy"
         ? "settings-legacy"
         : route.kind === "sliderule"
@@ -623,6 +642,10 @@ export default function AgentLoopPage() {
               ? getAgentLoopSliderulePath()
               : next === "settings"
                 ? getAgentLoopSettingsPath()
+                : next === "admin"
+                  ? (route.kind === "admin"
+                    ? (location.split(/[?#]/, 1)[0] || getAgentLoopAdminPath())
+                    : getAgentLoopAdminPath())
                 : next === "settings-legacy"
                   ? getAgentLoopSettingsLegacyPath()
                   : next === "skills"

@@ -121,7 +121,9 @@ export function createAdminRouter(deps: AdminRouterDeps) {
   router.get(
     "/users",
     asyncRoute(async (request, response) => {
-      const users = await deps.users.list(forwardedCredentials(request));
+      const rawQ = request.query.q;
+      const q = typeof rawQ === "string" ? rawQ : "";
+      const users = await deps.users.list(forwardedCredentials(request), q);
       response.json({ success: true, items: users });
     }),
   );
@@ -138,6 +140,23 @@ export function createAdminRouter(deps: AdminRouterDeps) {
         return;
       }
 
+      response.json({ success: true, user });
+    }),
+  );
+
+  router.patch(
+    "/users/:userId",
+    asyncRoute(async (request, response) => {
+      const body = request.body as { isActive?: unknown };
+      const user = await deps.users.setActive(
+        request.params.userId,
+        body?.isActive !== false,
+        forwardedCredentials(request),
+      );
+      if (!user) {
+        response.status(404).json({ success: false, error: "User not found" });
+        return;
+      }
       response.json({ success: true, user });
     }),
   );

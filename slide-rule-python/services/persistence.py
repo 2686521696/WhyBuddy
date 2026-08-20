@@ -833,6 +833,16 @@ def list_session_summaries(store_file: Optional[StorePath] = None) -> list:
     return rows
 
 
+def session_has_goal(row: Any) -> bool:
+    """侧栏「话题」：有目标原文才算一条。
+
+    ⚠ 2026-08-21：点「+ 新会话」会先落一条 idle、goal 为空的壳。侧栏
+    `named = sessions.filter(s => goal.trim())` 把它藏掉，管理台按行数
+    汇总就会比人看见的多 1。用户表「话题」必须跟这条同一口径。
+    """
+    return bool(str((row or {}).get("goal") or "").strip())
+
+
 def list_session_records(store_file: Optional[StorePath] = None) -> StoreError:
     rows, error = _list_session_summaries_raw(store_file)
     if error:

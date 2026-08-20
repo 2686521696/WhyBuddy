@@ -13,6 +13,7 @@ import {
   DownOutlined,
   RobotOutlined,
   SettingOutlined,
+  SafetyCertificateOutlined,
   SnippetsOutlined,
   TeamOutlined,
   UploadOutlined,
@@ -20,7 +21,7 @@ import {
 } from "@ant-design/icons";
 import { Graph, type GraphData } from "@antv/g6";
 import { AccountPanel } from "./AccountPanel";
-import { AuthProvider } from "@/lib/use-auth";
+import { AuthProvider, useAuth } from "@/lib/use-auth";
 import {
   Alert,
   Breadcrumb,
@@ -66,7 +67,8 @@ export type ViewKey =
   | "components"
   | "help"
   | "settings"
-  | "settings-legacy";
+  | "settings-legacy"
+  | "admin";
 
 // 技能库（索引 JSON 打在页面 chunk 里）：点开才加载，不占主包
 const LazySkillsLibraryPage = React.lazy(
@@ -92,6 +94,7 @@ export function shouldRequestSettingsForView(view: ViewKey): boolean {
 import SlideRulePage from "@/pages/SlideRule";
 import { ShellSidebarProvider, useShellSidebar } from "@/pages/sliderule/ShellSidebarContext";
 import { SettingsPage } from "@/pages/sliderule/SettingsDialog";
+import { StaffConsolePage } from "@/pages/admin/StaffConsolePage";
 import { SidebarSessions } from "./SidebarSessions";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { AppsWorkbench } from "./AppsWorkbench";
@@ -1177,6 +1180,7 @@ function AgentLoopSidebar({
   getViewPath?: (next: ViewKey) => string | undefined;
 }) {
   // 「推演」不再单列菜单项：点品牌 logo / 点会话 / 新建会话都通向推演视图
+  const isStaff = useAuth().user?.isSuperuser === true;
   const navItems: Array<{
     key: ViewKey;
     label: string;
@@ -1185,6 +1189,15 @@ function AgentLoopSidebar({
     { key: "workbench", label: "应用市场", icon: <AppstoreOutlined /> },
     { key: "components", label: "组件库", icon: <BlockOutlined /> },
     { key: "settings", label: "设置", icon: <SettingOutlined /> },
+    ...(isStaff
+      ? [
+          {
+            key: "admin" as const,
+            label: "管理台",
+            icon: <SafetyCertificateOutlined />,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -1215,7 +1228,11 @@ function AgentLoopSidebar({
             href={getViewPath?.(item.key)}
             className={`native-agent-nav-item${view === item.key ? " native-agent-nav-item-active" : ""}`}
             data-testid={
-              item.key === "settings" ? "agent-nav-settings" : undefined
+              item.key === "settings"
+                ? "agent-nav-settings"
+                : item.key === "admin"
+                  ? "agent-nav-admin"
+                  : undefined
             }
             onClick={event => {
               if (getViewPath?.(item.key)) event.preventDefault();
@@ -1314,6 +1331,8 @@ function AgentLoopTopbar({
       ? "面团 / 推演"
       : view === "settings"
         ? "面团 / 设置"
+        : view === "admin"
+          ? "面团 / 管理台"
         : view === "settings-legacy"
           ? "面团 / 设置（legacy）"
           : view === "skills"
@@ -1464,6 +1483,8 @@ function DashboardAppInner({
             ? "组件库"
           : view === "settings"
             ? "设置"
+            : view === "admin"
+              ? "管理台"
             : view === "settings-legacy"
               ? "设置（legacy）"
               : "任务队列（legacy）";
@@ -1855,6 +1876,8 @@ function DashboardAppInner({
               </React.Suspense>
             ) : view === "settings" ? (
               <SettingsPage />
+            ) : view === "admin" ? (
+              <StaffConsolePage />
             ) : (
               settingsContent
             )}

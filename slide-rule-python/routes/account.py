@@ -28,7 +28,7 @@ import base64
 import re
 from typing import Any, Optional
 
-from fastapi import APIRouter, Body, Cookie, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Body, Cookie, Header, HTTPException, Query, Request, Response
 
 from middlewares.current_user import AUTH_COOKIE, CurrentUser, CurrentUserOptional, SuperUser
 from services import auth_service
@@ -224,7 +224,24 @@ async def me(viewer: CurrentUserOptional):
 
     前端启动时要用它判断登录态，401 会在控制台刷一片红、也容易被通用的
     "401 就跳登录页"拦截器误伤。匿名是正常状态，不是错误。
+
+    ⚠ 2026-08-21：注册完直接发 cookie，从不走 login()，last_login_at 一直空。
+    管理台就把正在用的超管写成「从未登录」。cookie 会话也是在用，空着就补一刀。
     """
+    import asyncio
+
+    if viewer is not None and not viewer.public().get("lastLoginAt"):
+        def _stamp():
+            store = get_identity_store()
+            store.touch_login(viewer.id)
+            return store.get_by_id(viewer.id)
+
+        try:
+            fresh = await asyncio.to_thread(_stamp)
+            if fresh is not None:
+                viewer = fresh
+        except Exception:  # noqa: BLE001 — 增强类，戳不上不许拖垮「我是谁」
+            pass
     return {"user": viewer.public() if viewer is not None else None}
 
 
@@ -338,11 +355,134 @@ async def capabilities(viewer: CurrentUserOptional):
 
 
 @router.get("/account/admin/users")
-async def admin_list_users(_admin: SuperUser):
+async def admin_list_users(
+    _admin: SuperUser,
+    q: str = Query(default=""),
+):
+    """全站用户。对照 Gitea `/admin/users`：搜索 + 停用位，不建号、不配菜单权限。
+
+    用量按会话 ownerId 挂上。设置里的 GET /usage 只看自己的账，这里才是所有人。
+    """
     import asyncio
 
-    users = await asyncio.to_thread(lambda: get_identity_store().list_users())
-    return {"ok": True, "items": [u.public() for u in users]}
+    needle = str(q or "").strip().lower()
+
+    def _go() -> list[dict[str, Any]]:
+        from services.cost_ledger import usage_by_owner
+
+        users = get_identity_store().list_users()
+        usage = usage_by_owner()
+        rows: list[dict[str, Any]] = []
+        for user in users:
+            if needle:
+                name = str(user.public().get("displayName") or "").lower()
+                if needle not in user.email.lower() and needle not in name:
+                    continue
+            row = user.public()
+            stats = usage.get(user.id) or {}
+            row["sessions"] = int(stats.get("sessions") or 0)
+            row["estimatedTokens"] = int(stats.get("estimatedTokens") or 0)
+            row["estimatedCostUsd"] = round(float(stats.get("estimatedCostUsd") or 0.0), 8)
+            # 最后活动：身份库的 last_login_at（密码登录）和会话 lastActive
+            # 取更近的。注册发 cookie 不走 login()，只看 last_login_at 会
+            # 把正在用的超管显示成「从未登录」。
+            row["lastActiveAt"] = stats.get("lastActiveAt") or row.get("lastLoginAt")
+            rows.append(row)
+        return rows
+
+    items = await asyncio.to_thread(_go)
+    return {"ok": True, "items": items}
+
+
+def _staff_needle(row: dict[str, Any], needle: str) -> bool:
+    if not needle:
+        return True
+    blob = " ".join(str(row.get(key) or "") for key in row).lower()
+    return needle in blob
+
+
+def _staff_app_row(row: dict[str, Any]) -> dict[str, Any]:
+    """应用摘要给管理台。对照 Gitea `/admin/repos`：主人、可见性、时间。"""
+    return {
+        "id": str(row.get("id") or ""),
+        "productName": str(row.get("product_name") or ""),
+        "goal": str(row.get("goal") or ""),
+        "ownerId": row.get("owner_id") or None,
+        "visibility": str(row.get("visibility") or "private"),
+        "isOfficial": bool(row.get("is_official")),
+        "sessionId": row.get("session_id") or None,
+        "createdAt": row.get("created_at"),
+        "updatedAt": row.get("updated_at") or row.get("created_at"),
+        "pageCount": int(row.get("page_count") or 0),
+        "entityCount": int(row.get("entity_count") or 0),
+        "version": int(row.get("version") or 1),
+    }
+
+
+def _staff_session_row(row: dict[str, Any]) -> dict[str, Any]:
+    """会话摘要给管理台。侧栏 GET /sessions 会剥掉 ownerId；超管清单要留着。"""
+    return {
+        "id": str(row.get("sessionId") or ""),
+        "goal": str(row.get("goal") or ""),
+        "ownerId": row.get("ownerId") or None,
+        "phase": str(row.get("phase") or "idle"),
+        "createdAt": row.get("createdAt"),
+        "lastActive": row.get("lastActive"),
+        "artifactCount": int(row.get("artifactCount") or 0),
+    }
+
+
+@router.get("/account/admin/apps")
+async def admin_list_apps(
+    _admin: SuperUser,
+    q: str = Query(default=""),
+):
+    """全站应用。对照 Gitea `/admin/repos`。
+
+    ⚠ 2026-08-21：管理台项目页原先打 Node `/api/admin/projects`。sliderule
+    活路径只代理 `/api/sliderule`，那张表是空的，页面看起来像「还没有项目」。
+    真数据在 app_store，跟应用中心同一份。
+    """
+    import asyncio
+
+    needle = str(q or "").strip().lower()
+
+    def _go() -> list[dict[str, Any]]:
+        from services import app_store
+
+        rows = [_staff_app_row(raw) for raw in app_store.list_apps(limit=200, offset=0)]
+        return [row for row in rows if _staff_needle(row, needle)]
+
+    items = await asyncio.to_thread(_go)
+    return {"ok": True, "items": items}
+
+
+@router.get("/account/admin/sessions")
+async def admin_list_sessions(
+    _admin: SuperUser,
+    q: str = Query(default=""),
+):
+    """全站话题。对照 Gitea 仓库列表的「全站、带主人」。
+
+    侧栏 GET /sessions 按 app_access 过滤且不回 ownerId。超管清单要看所有人的，
+    并且要能对上用户表。失败页从 phase=failed 筛，不另起一张死表。
+    """
+    import asyncio
+
+    needle = str(q or "").strip().lower()
+
+    def _go() -> list[dict[str, Any]]:
+        from services.persistence import list_session_summaries, session_has_goal
+
+        rows = [
+            _staff_session_row(raw)
+            for raw in list_session_summaries()
+            if session_has_goal(raw)
+        ]
+        return [row for row in rows if _staff_needle(row, needle)]
+
+    items = await asyncio.to_thread(_go)
+    return {"ok": True, "items": items}
 
 
 @router.get("/account/admin/users/{user_id}")
@@ -353,3 +493,44 @@ async def admin_get_user(user_id: str, _admin: SuperUser):
     if user is None:
         raise HTTPException(404, "用户不存在")
     return {"ok": True, "user": user.public()}
+
+
+@router.patch("/account/admin/users/{user_id}")
+async def admin_patch_user(
+    user_id: str,
+    admin: SuperUser,
+    payload: dict[str, Any] = Body(default={}),
+):
+    """停用 / 恢复。对照 Gitea ProhibitLogin：不删账号，登录直接说已被停用。
+
+    不能停自己（Gitea 同款，否则超管会把自己关在门外）。
+    不能停其他超管——To-C 只有一档员工位，互停没有产品语义。
+    """
+    import asyncio
+
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "请求格式不对")
+    if "isActive" not in payload:
+        raise HTTPException(400, "没有要改的字段")
+    want_active = bool(payload.get("isActive"))
+    uid = str(user_id or "").strip()
+    if not uid:
+        raise HTTPException(404, "用户不存在")
+    if uid == admin.id and not want_active:
+        raise HTTPException(400, "不能停用自己")
+
+    def _go() -> tuple[str, Any]:
+        store = get_identity_store()
+        target = store.get_by_id(uid)
+        if target is None:
+            return "missing", None
+        if target.is_superuser and uid != admin.id:
+            return "other_super", None
+        return "ok", store.set_active(uid, want_active)
+
+    kind, updated = await asyncio.to_thread(_go)
+    if kind == "other_super":
+        raise HTTPException(400, "不能停用其他超管")
+    if kind == "missing" or updated is None:
+        raise HTTPException(404, "用户不存在")
+    return {"ok": True, "user": updated.public()}

@@ -553,3 +553,57 @@ def test_skipped_write_still_returns_the_guarded_state(db):
     got = svc.save_session(_state("sr-guarded", turn="turn-2", goal="迟到的旧快照"))
 
     assert got.goal["text"] == "已提交的新内容", "跳过写入时把调用方的旧状态吐回去了"
+
+
+def test_owner_backfill_is_wired_into_store_open():
+    """剥注释再匹配：docstring 会写 _BACKFILL_OWNER 事故，不能让那句话把判据打空。"""
+    import inspect
+    import re
+
+    src = inspect.getsource(session_blob_store._ensure_list_projection)
+    stripped = re.sub(r'""".*?"""', "", src, flags=re.S)
+    stripped = re.sub(r"#.*", "", stripped)
+    assert "_BACKFILL_OWNER" in stripped
+
+
+def test_owner_id_backfill_reaches_rows_that_already_have_artifact_count(db):
+    """真机：侧栏看得见、用户表话题=0。
+
+    标题回填只打 `artifact_count is null`。已经有产物数、payload 里有
+    ownerId、owner_id 列却空着的那批，超管侧栏按无主可见，usage_by_owner
+    按列汇总全是 0。重开 store（启动路径）必须把列灌回来。
+    """
+    from sqlalchemy import text
+
+    from services.cost_ledger import usage_by_owner
+
+    owned = _state("sr-owned", goal="古籍数字化")
+    owned.ownerId = "u-root"
+    persistence.save_session_record(owned)
+
+    store = session_blob_store.get_store()
+    with store._engine.begin() as conn:
+        conn.execute(
+            text(f"update {session_blob_store.TABLE} set owner_id = null where session_id = :sid"),
+            {"sid": "sr-owned"},
+        )
+        row = conn.execute(
+            text(
+                f"select owner_id, artifact_count from {session_blob_store.TABLE} "
+                "where session_id = :sid"
+            ),
+            {"sid": "sr-owned"},
+        ).first()
+        assert row[0] is None
+        assert row[1] is not None, "产物数空了就会走标题回填，咬不到这次事故"
+
+    before = {s["sessionId"]: s for s in store.list_summaries()}
+    assert "sr-owned" in before, "侧栏必须仍能看见这条（超管无主可见）"
+    assert not before["sr-owned"].get("ownerId")
+    assert usage_by_owner().get("u-root", {}).get("sessions", 0) == 0
+
+    session_blob_store.reset_cache()
+    reopened = session_blob_store.get_store()
+    after = {s["sessionId"]: s for s in reopened.list_summaries()}
+    assert after["sr-owned"]["ownerId"] == "u-root"
+    assert usage_by_owner()["u-root"]["sessions"] >= 1

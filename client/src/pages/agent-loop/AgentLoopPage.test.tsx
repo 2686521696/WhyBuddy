@@ -4,6 +4,7 @@ import * as bridge from "./dashboard/bridge";
 import * as api from "./dashboard/agentLoopApi";
 import AgentLoopPage, {
   createAgentLoopLiveEventHandlers,
+  getAgentLoopAdminPath,
   getAgentLoopRunPath,
   getAgentLoopSettingsPath,
   getAgentLoopSliderulePath,
@@ -61,6 +62,7 @@ describe("AgentLoopPage", () => {
     expect(getAgentLoopSliderulePath()).toBe("/agent-loop/sliderule");
     expect(getAgentLoopWorkbenchPath()).toBe("/agent-loop/workbench");
     expect(getAgentLoopSettingsPath()).toBe("/agent-loop/settings");
+    expect(getAgentLoopAdminPath()).toBe("/agent-loop/admin");
     expect(getAgentLoopRunPath("2026-06-27T01-02-03-004Z")).toBe(
       "/agent-loop/runs/2026-06-27T01-02-03-004Z",
     );
@@ -72,6 +74,8 @@ describe("AgentLoopPage", () => {
     expect(parseAgentLoopLocation("/agent-loop/skills")).toEqual({ kind: "skills" });
     expect(parseAgentLoopLocation("/agent-loop/settings")).toEqual({ kind: "settings" });
     expect(parseAgentLoopLocation("/agent-loop/settings/legacy")).toEqual({ kind: "settings-legacy" });
+    expect(parseAgentLoopLocation("/agent-loop/admin")).toEqual({ kind: "admin" });
+    expect(parseAgentLoopLocation("/agent-loop/admin/users")).toEqual({ kind: "admin" });
     expect(parseAgentLoopLocation("/agent-loop/runs/run%201")).toEqual({ kind: "detail", runId: "run 1" });
   });
 
@@ -134,6 +138,7 @@ describe("AgentLoopPage", () => {
     expect(shouldRequestSettingsForView("workbench-legacy")).toBe(true);
     // 设置整页（SettingsPage）自管本地配置，不消费 AgentLoop settings payload
     expect(shouldRequestSettingsForView("settings")).toBe(false);
+    expect(shouldRequestSettingsForView("admin")).toBe(false);
     expect(shouldRequestSettingsForView("settings-legacy")).toBe(true);
   });
 
@@ -164,6 +169,8 @@ describe("AgentLoopPage", () => {
     );
     expect(settingsHtml).toContain('data-testid="sliderule-settings-page"');
     expect(settingsHtml).not.toContain("native-settings-content");
+    expect(settingsHtml).not.toContain('data-testid="agent-nav-admin"');
+    expect(settingsHtml).not.toContain("管理台");
 
     // legacy AgentLoop 设置页保留 URL 直达
     const legacyHtml = renderToStaticMarkup(

@@ -237,9 +237,13 @@ def complete_registration(email: str, password: str, code: str) -> dict[str, Any
         is_verified=True,  # 走完验证码即视为已验证
     )
     store.drop_code(email)
+    # 注册完即登录态（发 cookie / token）。不戳 last_login_at 的话，管理台
+    # 会把第一个超管显示成「从未登录」——人就在页面底下。
+    store.touch_login(user.id)
+    fresh = store.get_by_id(user.id) or user
     return {
         "ok": True,
-        "user": user.public(),
+        "user": fresh.public(),
         # 带上密码戳（pv）：改密码即全端失效，见 auth_tokens 模块头 ①
         "token": create_access_token(user.id, password_hash=str(user.get("password_hash") or "")),
         "isFirstSuperuser": first,

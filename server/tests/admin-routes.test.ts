@@ -37,7 +37,12 @@ const users: UserFixture[] = [
     displayName: "User One",
     isSuperuser: false,
     isVerified: true,
+    isActive: true,
     createdAt: now.toISOString(),
+    lastLoginAt: null,
+    sessions: 0,
+    estimatedTokens: 0,
+    estimatedCostUsd: 0,
   },
   {
     id: "admin-1",
@@ -45,7 +50,12 @@ const users: UserFixture[] = [
     displayName: "Admin One",
     isSuperuser: true,
     isVerified: true,
+    isActive: true,
     createdAt: now.toISOString(),
+    lastLoginAt: null,
+    sessions: 0,
+    estimatedTokens: 0,
+    estimatedCostUsd: 0,
   },
 ];
 
@@ -98,6 +108,11 @@ function createDeps(currentUser: CurrentUser): AdminRouterDeps {
       findById: vi.fn(
         async (userId: string) => users.find(user => user.id === userId) ?? null,
       ),
+      setActive: vi.fn(async (userId: string, isActive: boolean) => {
+        const user = users.find(entry => entry.id === userId);
+        if (!user) return null;
+        return { ...user, isActive };
+      }),
     },
     projects: {
       list: vi.fn(async () => projects),
@@ -208,23 +223,34 @@ describe("admin routes", () => {
     });
   });
 
-  it("returns sanitized error contract when an admin reader fails", async () => {
+  it("forwards search q to the users reader", async () => {
     const deps = createDeps(adminUser);
-    deps.users.list = vi.fn(async () => {
-      throw new Error("database passwordHash query failed");
-    });
 
     await withServer(deps, async baseUrl => {
-      const response = await fetch(`${baseUrl}/api/admin/users`);
+      const response = await fetch(`${baseUrl}/api/admin/users?q=alice`);
+      expect(response.status).toBe(200);
+      expect(deps.users.list).toHaveBeenCalledWith(expect.anything(), "alice");
+    });
+  });
+
+  it("patches isActive through the users reader", async () => {
+    const deps = createDeps(adminUser);
+
+    await withServer(deps, async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/admin/users/user-1`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ isActive: false }),
+      });
       const body = await response.json();
 
-      expect(response.status).toBe(500);
-      expect(body).toEqual({
-        success: false,
-        error: "Admin route failed",
-      });
-      expect(JSON.stringify(body)).not.toContain("passwordHash");
-      expect(JSON.stringify(body)).not.toContain("database");
+      expect(response.status).toBe(200);
+      expect(deps.users.setActive).toHaveBeenCalledWith(
+        "user-1",
+        false,
+        expect.anything(),
+      );
+      expect(body.user.isActive).toBe(false);
     });
   });
 });

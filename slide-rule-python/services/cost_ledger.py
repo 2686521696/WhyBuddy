@@ -85,3 +85,45 @@ def _record_llm_result(state: Any, result: LlmResult) -> None:
         state["costLedger"] = existing
     else:
         state.costLedger = existing
+
+
+def usage_by_owner() -> dict[str, dict[str, Any]]:
+    """Stafftools：按会话主人汇总话题数。
+
+    ⚠ 2026-08-21：第一版走 `persistence.load_all()`。那是把每条会话的整页
+    HTML 经网关拉回来——侧栏 2026-08-19 已经改成 `list_session_summaries`
+    就是因为 34 条 5.2MB / 2.3s。`load_all` 一超时就 fail-open 空账，管理台
+    用户表「话题」全是 0，左侧栏却明明挂着这个人的会话。
+    话题数必须跟侧栏同一条 `list_session_summaries`，并且只计有 goal 的行
+    （空壳新会话侧栏不展示）。token 不在摘要列上，这里不强行再 hydrate blob
+    （为了用量把主链路再堵一次，比显示 0 更糟）。
+    """
+    out: dict[str, dict[str, Any]] = {}
+    try:
+        from services.persistence import list_session_summaries, session_has_goal
+
+        rows = list_session_summaries()
+    except Exception:  # noqa: BLE001
+        return out
+    for row in rows:
+        owner = str((row or {}).get("ownerId") or "").strip()
+        if not owner:
+            continue
+        if not session_has_goal(row):
+            continue
+        bucket = out.setdefault(
+            owner,
+            {
+                "sessions": 0,
+                "estimatedTokens": 0,
+                "estimatedCostUsd": 0.0,
+                "lastActiveAt": None,
+            },
+        )
+        bucket["sessions"] += 1
+        active = row.get("lastActive") or row.get("createdAt")
+        if active and (
+            not bucket["lastActiveAt"] or str(active) > str(bucket["lastActiveAt"])
+        ):
+            bucket["lastActiveAt"] = active
+    return out
