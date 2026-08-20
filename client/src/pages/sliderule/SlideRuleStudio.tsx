@@ -1,5 +1,5 @@
 /**
- * SlideRuleStudio — 统一页主布局容器（对话 / 舞台可拖可折，默认 38 / 62）
+ * SlideRuleStudio — 统一页主布局容器（对话 / 舞台可拖可折，默认对话栏 = 侧栏×2）
  *
  * 左侧：Chat 对话区（ClaudeChatSurface，含唯一空态：问候 + Cursor 卡片输入 + chips + 灵感卡）。
  *
@@ -34,7 +34,7 @@ import {
   SpecPageLiveStage,
   type SpecPageLive,
 } from "./live-runtime/SpecPageLiveStage";
-import { pageIsBoundFromSpec } from "./spec-page-bound";
+import { livePagesFromSpec } from "./spec-live-pages";
 import {
   applyHtmlWorkflowAction,
   initRuntimeState,
@@ -70,6 +70,7 @@ import { useStudioLayout } from "./StudioLayoutContext";
 import { isStagePageShown } from "./studio-layout";
 import { StudioLandingShot } from "./studio-landing-shot";
 import { StudioShareToggle } from "./StudioShareToggle";
+import { HomeHoverDots } from "./home-hover-dots";
 
 const XRAY_PREF_KEY = "sliderule:xray-on";
 
@@ -209,20 +210,10 @@ export function SlideRuleStudio({
   // ⚠ **落库的那份优先**：它是第 6.5 步打完孔、外壳统一之后的成品；
   //   SSE 那份是第 3 步的素颜页。两份同 pageId 时拿素颜页覆盖成品，
   //   等于把做完的活儿退回去——而且不会有任何一处报错。
-  const livePages = useMemo<SpecPageLive[]>(() => {
-    const settled = specFirstPages?.pages || null;
-    if (settled && Object.keys(settled).length > 0) {
-      const ids = Object.keys(settled);
-      return ids.map((id, i) => ({
-        pageId: id, html: settled[id], current: i + 1, total: ids.length,
-        // 落库那份是走完 6.5 步的。boundPages 是成功数，失败页看 failedPages
-        bound: pageIsBoundFromSpec(id, specFirstPages),
-        // 设备维度跟着落库载荷走：竖屏应用刷新后不掉回横屏画布
-        device: specFirstPages?.device,
-      }));
-    }
-    return specPages;
-  }, [specFirstPages, specPages]);
+  const livePages = useMemo<SpecPageLive[]>(
+    () => livePagesFromSpec(specFirstPages, specPages),
+    [specFirstPages, specPages]
+  );
 
   // HTML 应用面的运行时数据。**跟老区块渲染共用同一份**（同一个 sessionId 的
   // RuntimeState）——各读各的等于同一个应用有两份互不相干的数据，用户在
@@ -456,14 +447,17 @@ export function SlideRuleStudio({
   // 空会话或用户点了「隐藏页面」：对话独占全宽。右侧舞台不渲染。
   if (!showStage) {
     return (
-      <div className={`flex h-full w-full overflow-hidden ${className}`}>
-        <div className="flex h-full w-full flex-col bg-[var(--sr-shell-bg,#ffffff)]">
+      <div className={`relative flex h-full w-full overflow-hidden ${className}`}>
+        <div className="relative flex h-full w-full flex-col bg-[var(--sr-shell-bg,#f4f4f6)]">
           {chromeSlot ? (
             <div className="flex shrink-0 justify-end px-3 py-1">
               {chromeSlot}
             </div>
           ) : null}
           {chatSlot}
+          {/* 覆盖层 pointer-events:none，点击仍落到输入卡。
+              只欢迎页挂；「隐藏页面」后的全宽对话不挂。 */}
+          {!stageVisible ? <HomeHoverDots /> : null}
         </div>
       </div>
     );
@@ -477,7 +471,7 @@ export function SlideRuleStudio({
           此前会话页是 #f7f8fa、应用中心是 #ffffff，两页切换看得出色差
           ——用户反馈"背景颜色不一致，会话页面背景不是白色的"。
           现在两边共用一个 token，"改这一个值 = 整壳换底色"这条重新成立。 */
-      <div className="relative flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden bg-[var(--sr-shell-bg,#ffffff)] p-4">
+      <div className="relative flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden bg-[var(--sr-shell-bg,#f4f4f6)] p-4">
         {(stage === "live" && livePages.length > 0) || stage === "pages" ? (
           /* 新链路已经交出页面：直接渲染，不再摆三个点。
              判据是"手上有没有能看的东西"，不是阶段名——没有页面时下面那支
@@ -530,7 +524,10 @@ export function SlideRuleStudio({
                     <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
                   </div>
                 )}
-                <div className="flex items-center rounded-full border border-[#e5e7eb] bg-white p-0.5">
+                {/* Primer / shadcn ToggleGroup：浅底轨 + 白片选中，不要黑底白字。
+                    2026-08-20 满电青年：这里曾经 bg-[#1f2328] text-white，
+                    浅色舞台头条上像一块开关，跟「运行中」徽章完全不搭。 */}
+                <div className="flex items-center rounded-lg bg-[#f4f4f5] p-0.5">
                   {(
                     [
                       ["page", "页面"],
@@ -544,10 +541,10 @@ export function SlideRuleStudio({
                       onClick={() => setStageView(v)}
                       aria-pressed={stageView === v}
                       data-testid={`sliderule-stage-view-${v}`}
-                      className={`rounded-full px-2.5 py-0.5 text-[11px] transition ${
+                      className={`rounded-md px-2.5 py-0.5 text-[11px] transition ${
                         stageView === v
-                          ? "bg-[#1f2328] font-medium text-white"
-                          : "text-stone-500 hover:bg-[#f1f3f5]"
+                          ? "bg-white font-medium text-stone-800 shadow-sm"
+                          : "text-stone-500 hover:text-stone-700"
                       }`}
                     >
                       {label}
@@ -653,7 +650,7 @@ export function SlideRuleStudio({
         {/* 系统屏抽屉：单类别全幅呈现——点哪类看哪类（用户反馈：去六系统切换条、去白卡嵌套、占满区域） */}
         {drawerSkill && (
           <div
-            className="absolute inset-0 z-40 flex flex-col bg-[var(--sr-shell-bg,#ffffff)]"
+            className="absolute inset-0 z-40 flex flex-col bg-[var(--sr-shell-bg,#f4f4f6)]"
             data-testid="sliderule-system-drawer"
           >
             <div className="flex shrink-0 items-center gap-2 px-4 pb-1 pt-3">
@@ -713,7 +710,7 @@ export function SlideRuleStudio({
     <div className={`h-full w-full overflow-hidden ${className}`}>
       <StudioSplit
         chat={
-          <div className="flex h-full min-h-0 flex-col bg-[var(--sr-shell-bg,#ffffff)]">
+          <div className="flex h-full min-h-0 flex-col bg-[var(--sr-shell-bg,#f4f4f6)]">
             {chatSlot}
           </div>
         }

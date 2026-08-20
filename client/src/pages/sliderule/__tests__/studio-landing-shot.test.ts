@@ -37,6 +37,14 @@ describe("landingPageFromSpec", () => {
     expect(landing?.device).toBe("desktop");
   });
 
+  it("Python 壳的导航是 id/name，缺页要跳到下一份真 HTML", () => {
+    const landing = landingPageFromSpec({
+      pages: { p2: "<html>加工</html>", p3: "<html>分发</html>" },
+      navItems: [{ id: "p1", name: "拾取" }, { id: "p2", name: "加工" }],
+    });
+    expect(landing?.html).toContain("加工");
+  });
+
   it("没有导航就按 pages 里第一份非空 HTML", () => {
     const landing = landingPageFromSpec({
       pages: { only: "<html>独页</html>" },

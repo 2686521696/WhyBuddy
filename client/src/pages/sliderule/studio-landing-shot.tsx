@@ -21,6 +21,7 @@ import { deriveBindingSource } from "./live-runtime/derive-binding-source";
 import { HtmlAppSurface } from "./live-runtime/html-app-surface";
 import { seedRuntimeState } from "./live-runtime/demo-seed";
 import { initRuntimeState, type RuntimeState } from "./live-runtime/live-runtime";
+import { navItemId } from "./nav-item";
 import type { FiveSystemModel } from "./system-screens/five-system-model";
 import type { SpecPageLive } from "./live-runtime/SpecPageLiveStage";
 
@@ -44,10 +45,7 @@ export function landingPageFromSpec(
   const nav = Array.isArray(specFirstPages?.navItems) ? specFirstPages!.navItems : [];
   if (pages && typeof pages === "object") {
     for (const item of nav) {
-      const id =
-        item && typeof item === "object"
-          ? String((item as { pageId?: string }).pageId || "")
-          : "";
+      const id = navItemId(item);
       const html = id && typeof pages[id] === "string" ? pages[id].trim() : "";
       if (html) {
         return { html, device: specFirstPages?.device };

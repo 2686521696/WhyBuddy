@@ -316,7 +316,7 @@ function HomeEmptyState({
   isRunning: boolean;
   /** 空态时唯一的 ComposerDock 挪进首页流（开聊后贴在会话流底部，二选一渲染） */
   composerSlot?: React.ReactNode;
-  /** 空态也可能出澄清卡（覆盖层已撤，得跟输入条一起进首页流） */
+  /** 澄清卡叠在输入框上方（absolute），不能当 flex 孩子——会把输入顶走 */
   clarifySlot?: React.ReactNode;
 }) {
   // ⚑ E41 官方示例的「点模板卡 → 暂存起手意图 → 空态预填」消费端
@@ -358,12 +358,12 @@ function HomeEmptyState({
           </div>
         </div>
 
-        {clarifySlot}
         {composerSlot && (
           <div
-            className="w-full max-w-[680px]"
+            className="relative w-full max-w-[680px]"
             data-testid="sliderule-hero-composer"
           >
+            {clarifySlot}
             {composerSlot}
           </div>
         )}
@@ -745,7 +745,7 @@ export function ClaudeChatSurface({
   );
 
   return (
-    <div className="relative z-0 flex h-full flex-col overflow-hidden bg-[var(--sr-shell-bg,#ffffff)] text-[#1f2329]">
+    <div className="relative z-0 flex h-full flex-col overflow-hidden bg-[var(--sr-shell-bg,#f4f4f6)] text-[#1f2329]">
       {/* Chat area — Viewport 自带贴底跟随（增量到达自动滚底、回翻停住） */}
       <AssistantRuntimeProvider runtime={runtime}>
         <ImSurfaceContext.Provider value={ctxValue}>
@@ -782,12 +782,12 @@ export function ClaudeChatSurface({
             </div>
             {!isEmptyThread && (composerSlot || clarifySlot) ? (
               <div
-                className="pointer-events-auto shrink-0 bg-[var(--sr-shell-bg,#ffffff)] px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-1 sm:px-5"
+                className="pointer-events-auto shrink-0 bg-[var(--sr-shell-bg,#f4f4f6)] px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-1 sm:px-5"
                 data-testid="sliderule-composer-footer"
               >
                 {/* Cursor / LobeChat：输入条浮在对话列里，不要横切 border-t 把步骤和输入割开。 */}
                 <div className="relative mx-auto w-full max-w-[720px]">
-                  {clarifySlot ? <div className="mb-2">{clarifySlot}</div> : null}
+                  {clarifySlot}
                   {composerSlot}
                 </div>
               </div>
