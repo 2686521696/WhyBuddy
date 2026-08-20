@@ -31,6 +31,14 @@
 Authorization: Bearer 优先，其次 Cookie。两个都支持是因为前端目前是同源部署
 （Cookie 更省事、且 httpOnly 能挡 XSS 取 token），而脚本/CLI 调用惯用 Bearer。
 
+⚠ 2026-08-20：Bearer **非空就丢掉 Cookie** 是错的。真机左下角显示已登录 Admin，
+`PUT /sessions` 200，紧接着 `POST /drive-full-stream` 401「请先登录后再推演」。
+任何一层塞了一个解不开的 Authorization（扩展、代理、空 Bearer 残值），有效
+登录 Cookie 就会被判成匿名。解不开的 Bearer 必须回落到 Cookie。
+
+Cookie 也不只信 FastAPI 的 `Cookie()` 注入：带 JSON body 的 POST 上它偶发是
+空的，而 `Request.cookies` / 原始 Cookie 头仍在。注入没有就从请求头再读一次。
+
 ## 自动续期（2026-08-04）
 
 令牌过半程之后，下一次请求顺手换一张新的（滑动窗口）。7 天于是从"绝对上限"
@@ -70,16 +78,53 @@ def _extract_bearer_token(authorization: Optional[str]) -> str:
     return ""
 
 
+def _cookie_token(request: Request, injected: Optional[str]) -> Optional[str]:
+    """登录 Cookie。注入优先，没有就从请求头再拆一次。
+
+    FastAPI `Cookie()` 在部分带 JSON body 的 POST 上会是 None，而浏览器其实
+    带了 `sliderule_token`——只信注入就会把已登录用户判成匿名。
+    """
+    if injected and injected.strip():
+        return injected.strip()
+    got = (request.cookies.get(AUTH_COOKIE) or "").strip()
+    if got:
+        return got
+    header = request.headers.get("cookie") or ""
+    for part in header.split(";"):
+        name, _, value = part.partition("=")
+        if name.strip() == AUTH_COOKIE:
+            return value.strip() or None
+    return None
+
+
 def _extract_token(
     authorization: Optional[str], cookie_token: Optional[str]
 ) -> Optional[str]:
-    if authorization:
-        parts = authorization.split(None, 1)
-        if len(parts) == 2 and parts[0].lower() == "bearer":
-            candidate = parts[1].strip()
-            if candidate:
-                return candidate
-    return (cookie_token or "").strip() or None
+    """兼容旧调用。新路径用 `_pick_access_token`，会在 Bearer 解不开时回落 Cookie。"""
+    token, _, _ = _pick_access_token(authorization, cookie_token)
+    return token
+
+
+def _pick_access_token(
+    authorization: Optional[str], cookie_token: Optional[str]
+) -> tuple[Optional[str], Optional[dict], bool]:
+    """选出一张能解开的令牌。
+
+    返回 `(token, payload, from_cookie)`。Bearer 优先；**解不开再试 Cookie**。
+    原来 Bearer 非空就忽略 Cookie，坏 Authorization 会把有效登录态盖掉。
+    """
+    cookie = (cookie_token or "").strip()
+    candidates: list[str] = []
+    bearer = _extract_bearer_token(authorization)
+    if bearer:
+        candidates.append(bearer)
+    if cookie and cookie not in candidates:
+        candidates.append(cookie)
+    for token in candidates:
+        payload = decode_access_token(token)
+        if payload:
+            return token, payload, token == cookie
+    return None, None, False
 
 
 #: 令牌走过这么久之后就换一张新的（滑动续期，见模块头）。
@@ -152,11 +197,9 @@ def optional_user(
     出现"某个入口漏做了"的情况（这正是抄 fastapi-users 那条"匿名和拒绝共用
     同一条判定链"的原因）。
     """
-    token = _extract_token(authorization, sliderule_token)
-    if not token:
-        return None
-    payload = decode_access_token(token)
-    if not payload:
+    cookie = _cookie_token(request, sliderule_token)
+    token, payload, from_cookie = _pick_access_token(authorization, cookie)
+    if not token or not payload:
         return None
     user_id = str(payload.get("sub") or "")
     if not user_id:
@@ -164,7 +207,11 @@ def optional_user(
     try:
         store = get_identity_store()
         user = store.get_by_id(user_id)
-    except Exception:  # noqa: BLE001 — 身份库抖动时按匿名处理，不拖垮只读接口
+    except Exception as exc:  # noqa: BLE001 — 身份库抖动时按匿名处理，不拖垮只读接口
+        # 只读接口 fail-open 成匿名是对的；写接口（推演）随后会 401「请先登录」，
+        # 而侧栏还显示着启动时缓存的账号——2026-08-20 真机就是这个形状。
+        # 这里至少把原因打出来，避免再当成"用户没登录"。
+        print(f"[auth] identity lookup failed path={request.url.path}: {type(exc).__name__}: {exc}")
         return None
     # 停用的账号等同未登录：令牌还没过期但人已经被停了，不能继续按登录态放行。
     if user is None or not user.is_active:
@@ -192,11 +239,13 @@ def optional_user(
 
     # 过半程换新（见模块头「自动续期」）。放在全部判定通过之后——
     # 一张验不过的令牌当然不该被续。
+    # from_cookie 必须看**实际用上的那张令牌**：junk Bearer 回落到 Cookie 时，
+    # 仍该按 Cookie 来路续期（旧写法看 Authorization 非空就跳过续期）。
     _maybe_renew(
         response,
         payload,
         user,
-        from_cookie=not _extract_bearer_token(authorization),
+        from_cookie=from_cookie,
         # 与 routes/account._client_is_https 同一判据（x-forwarded-proto 优先）
         secure=(
             (request.headers.get("x-forwarded-proto") or request.url.scheme or "")

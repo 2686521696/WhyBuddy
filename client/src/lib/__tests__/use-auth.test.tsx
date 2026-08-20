@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ANONYMOUS_CAPABILITIES,
+  describeDriveAuthFailure,
   fetchCapabilities,
   fetchMe,
   type AuthUser,
@@ -56,6 +57,34 @@ describe("取登录态", () => {
       throw new Error("network down");
     }));
     await expect(fetchMe()).resolves.toBeNull();
+  });
+});
+
+describe("推演 401 文案", () => {
+  it("侧栏还显示账号时，不要叫人去登录", async () => {
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ user: ALICE }), { status: 200 })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const got = await describeDriveAuthFailure("请先登录后再推演");
+    expect(got.stillLoggedIn).toBe(true);
+    expect(got.banner).toContain("没带到");
+    expect(got.step).not.toMatch(/登录 \/ 注册/);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/account/me"),
+      expect.objectContaining({ cache: "no-store", credentials: "include" })
+    );
+  });
+
+  it("真的没登录时，才指向左下角登录", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ user: null }), { status: 200 }))
+    );
+    const got = await describeDriveAuthFailure("请先登录后再推演");
+    expect(got.stillLoggedIn).toBe(false);
+    expect(got.banner).toContain("请先登录后再推演");
+    expect(got.step).toContain("登录 / 注册");
   });
 });
 

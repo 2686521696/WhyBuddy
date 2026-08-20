@@ -103,6 +103,7 @@ async function driveMarathonViaPython(
     const res = await fetch("/api/sliderule/drive-marathon", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       signal: opts.stopSignal,
       body: JSON.stringify({
         state,
@@ -165,6 +166,7 @@ export async function driveFullViaPython(
     const res = await fetch("/api/sliderule/drive-full", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       signal: opts.stopSignal,
       body: JSON.stringify({
         state,
@@ -284,6 +286,7 @@ export async function driveFullViaPythonStream(
     const res = await fetch("/api/sliderule/drive-full-stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       signal: opts.stopSignal,
       body: JSON.stringify({
         state,
@@ -318,7 +321,7 @@ export async function resumeDriveFullStream(
   try {
     const res = await fetch(
       `/api/sliderule/runs/${encodeURIComponent(runId)}/stream?since=0`,
-      { signal: opts.stopSignal }
+      { signal: opts.stopSignal, credentials: "include" }
     );
     await throwIfAuthRequired(res);
     if (!res.ok || !res.body) return null;

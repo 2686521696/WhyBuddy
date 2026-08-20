@@ -87,6 +87,13 @@ describe("401 必须抛权限异常，不能吞成 null", () => {
     stubFetch(unauthorized());
     await expect(driveFullViaPython(STATE, "x")).rejects.toThrow(DriveAuthRequiredError);
   });
+
+  it("推演请求显式带上 Cookie（credentials include）", async () => {
+    const fetchMock = vi.fn(async () => unauthorized());
+    vi.stubGlobal("fetch", fetchMock);
+    await driveFullViaPythonStream(STATE, "x").catch(() => undefined);
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ credentials: "include" });
+  });
 });
 
 describe("其余失败维持原约定（降级路径本身是对的）", () => {

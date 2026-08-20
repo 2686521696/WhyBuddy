@@ -32,6 +32,8 @@ import { notifyDriveComplete, loadPreferredDevice } from "./user-prefs";
 import { createHttpSlideRuleSessionStore } from "@/lib/sliderule-http-store";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { loadByokPool, validateByokPool } from "@/lib/sliderule-byok-config";
+import { describeDriveAuthFailure } from "@/lib/auth-client";
+import { useAuth } from "@/lib/use-auth";
 import type { V5CapabilityId } from "@shared/blueprint/contracts";
 import {
   humanReasoningStepLabel,
@@ -231,6 +233,7 @@ export type UseSlideRuleSessionOptions = {
 };
 
 export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
+  const { refresh: refreshAuth } = useAuth();
   const sessionId = options.sessionId ?? DEFAULT_SESSION_ID;
   const [uiTurns, setUiTurns] = useState<UiTurn[]>([]);
   const [input, setInput] = useState("");
@@ -1196,6 +1199,16 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         // 走到这里时兜底已经不会发生，所以这里不需要再 throw——re-throw 只会连
         // 带跳过下面的半程落盘与收尾。只把话说对就够。
         const needsLogin = Boolean(driveErr?.needsLogin);
+        let stepMessage = `驱动执行失败（已降级显示）：${errMsg.slice(0, 140)}`;
+        let bannerMsg = errMsg.slice(0, 200);
+        if (needsLogin) {
+          // 侧栏账号是启动时的缓存，这次 401 不会自动刷新。再问一次 /me，
+          // 人还在就不要叫用户去登录——2026-08-20 真机左下角 Admin 还亮着。
+          const described = await describeDriveAuthFailure(errMsg);
+          stepMessage = described.step;
+          bannerMsg = described.banner;
+          void refreshAuth();
+        }
         appendStep({
           id: `${turnId}-drive-${needsLogin ? "auth" : "err"}`,
           kind: "capability_fail",
@@ -1204,9 +1217,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           loopTurnId: turnId,
           capabilityRunId: `${turnId}-drive-err`,
           runIndex: 0,
-          message: needsLogin
-            ? `${errMsg}——浏览应用中心无需登录，推演和复刻需要账号；左下角「登录 / 注册」可以登录。`
-            : `驱动执行失败（已降级显示）：${errMsg.slice(0, 140)}`,
+          message: stepMessage,
         });
         // Try to at least persist the intake state so graph has something
         try {
@@ -1230,7 +1241,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   ...t,
                   status: "complete",
                   durationMs: Date.now() - turnStartMs,
-                  assistant: `推演中断：${errMsg.slice(0, 200)}（可重试或换指令）`,
+                  assistant: `推演中断：${bannerMsg}（可重试或换指令）`,
                   assistantSource: "fallback",
                 }
               : t

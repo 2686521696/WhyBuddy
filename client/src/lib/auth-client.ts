@@ -81,13 +81,45 @@ async function post<T>(path: string, body: unknown): Promise<T> {
  */
 export async function fetchMe(): Promise<AuthUser | null> {
   try {
-    const res = await fetch(`${BASE}/account/me`, { headers: { accept: "application/json" } });
+    const res = await fetch(`${BASE}/account/me`, {
+      headers: { accept: "application/json" },
+      credentials: "include",
+      cache: "no-store",
+    });
     if (!res.ok) return null;
     const data = (await res.json()) as { user?: AuthUser | null };
     return data?.user ?? null;
   } catch {
     return null;
   }
+}
+
+/**
+ * 推演 401「请先登录」时的人话。侧栏账号是启动时 `/account/me` 的缓存，
+ * 不会在这次 401 上自动刷新——已登录用户会看到互相矛盾的两句话。
+ *
+ * ⚠ 2026-08-20 真机：左下角 Admin + 邮箱还在，黄条却写「请先登录后再推演」。
+ * 再问一次 /me：人还在，就把话改成「凭据没带到这次请求」，而不是叫人去登录。
+ */
+export async function describeDriveAuthFailure(backendMessage: string): Promise<{
+  stillLoggedIn: boolean;
+  banner: string;
+  step: string;
+}> {
+  const me = await fetchMe();
+  if (me) {
+    return {
+      stillLoggedIn: true,
+      banner: "登录凭据这次没带到推演请求上。刷新页面后再试",
+      step: `${backendMessage}——左下角账号还在，但这次推演请求没有登录凭据。刷新页面后再试。`,
+    };
+  }
+  const text = backendMessage || "请先登录后再推演";
+  return {
+    stillLoggedIn: false,
+    banner: text,
+    step: `${text}——浏览应用中心无需登录，推演和复刻需要账号；左下角「登录 / 注册」可以登录。`,
+  };
 }
 
 export async function fetchCapabilities(): Promise<Capabilities> {
