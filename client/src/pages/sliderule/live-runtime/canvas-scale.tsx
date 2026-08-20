@@ -24,7 +24,13 @@ import React from "react";
  *
  *   contain — min(w/W, h/H)：保证整个应用可见，代价是宽高比不匹配时留边。
  *             应用舞台要这个：用户要看全。
- *   width   — w/W：**只按宽度算，高度由内容推导**。缩略图墙要这个。
+ *   width   — w/W：**只按宽度算，高度由内容推导**。画布与卡片同比时用。
+ *   cover   — max(w/W, h/H)：铺满盒子，多出来的裁掉。应用中心卡片要这个。
+ *
+ * ⚠ 2026-08-20：spec-first 手机画布改回 390×844（0.462），卡片墙仍是
+ * 9:16（0.5625）。width 把 16:9 画布缩进竖卡时，缩放高度远矮于卡片，
+ * 顶上缩成一小块、下面全白——真机应用市场就是这样。cover 跟
+ * object-fit:cover / session-thumb 同一几何。
  *
  * 为什么加这一档：作品墙那版设计里卡片大中小交错、宽高比五花八门，用 contain
  * 的结果是每张卡两侧一大片灰（实测 778×272 的卡里应用只有 484px 宽，
@@ -38,7 +44,7 @@ import React from "react";
  * 关键在**宽度定缩放、高度跟着内容走**，而不是把内容塞进一个固定尺寸的盒子
  * ——后者必然要么留边要么裁切。调用方据此把容器高度设成 designH×scale。
  */
-export type ScaleFitMode = "contain" | "width";
+export type ScaleFitMode = "contain" | "width" | "cover";
 
 /**
  * spec-first 那条链路的设计分辨率。
@@ -52,6 +58,8 @@ export type ScaleFitMode = "contain" | "width";
  * 也就是说：**页面是照着 1920 画的，验收也是在 1920 下做的**。画布用别的
  * 宽度，等于让用户看一个从没被验收过的版式——1440 下 Tailwind 的
  * `xl:` 断点（1280）还在，但 `2xl:`（1536）整档失效，多列栅格会塌成少列。
+ *
+ * ⚠ 2026-08-20 晚试过 1920×1920，用户看完改回 16:9。高改成 1920 这条必须红。
  */
 export const SPEC_PAGE_VIEWPORT = { w: 1920, h: 1080 } as const;
 
@@ -92,7 +100,9 @@ export function computeScaleToFit(
   if (containerW <= 0 || designW <= 0) return null;
   if (mode === "width") return containerW / designW;
   if (containerH <= 0 || designH <= 0) return null;
-  return Math.min(containerW / designW, containerH / designH);
+  const byW = containerW / designW;
+  const byH = containerH / designH;
+  return mode === "cover" ? Math.max(byW, byH) : Math.min(byW, byH);
 }
 
 /** 拖分栏时跳过亚像素抖动，避免每帧 setState。 */

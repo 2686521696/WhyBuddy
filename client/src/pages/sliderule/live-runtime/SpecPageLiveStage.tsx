@@ -62,9 +62,12 @@ export interface SpecPageLive {
   current: number;
   total: number;
   bound: boolean;
-  /** desktop 横屏 1920×1080 / phone 竖屏 390×844 CSS 像素（2026-08-20）。
+  /** desktop 横屏 1920×1080 / phone 竖屏 390×844 CSS 像素。
    *  缺席按桌面兜底——老事件/老存档没有这个字段，行为与从前一致。 */
   device?: "desktop" | "phone";
+  /** 导航有这一项、落库却没有成品 HTML。点进来要停在失败页，
+   *  不能回落最新页假装没点。缺席 = 成品页。 */
+  missing?: boolean;
 }
 
 export interface SpecPageLiveStageProps {
@@ -97,20 +100,26 @@ export interface SpecPageLiveStageProps {
 }
 
 /**
- * 选页判定（纯函数，单测钉着）：手动选过就听手动的；没选过、或选的那页
- * 不存在，恒跟最新一页（页面在陆续到达，跟着最新的才叫"实时"）。
+ * 选页判定（纯函数，单测钉着）：手动选过就听手动的；推演中没选过跟最新
+ * 到达的页；跑完没选过落落地页（导航第一项成品），不许停在最后画完的那页。
  * ⚠ 存 pageId 而不是下标：下标会被新到达的页面挤走，表现是
  * "我明明点了甲页，它自己跳到乙页去了"。
  */
 export function resolveActivePageId(
   picked: string | null,
-  pages: readonly Pick<SpecPageLive, "pageId">[]
+  pages: readonly Pick<SpecPageLive, "pageId" | "missing">[],
+  opts?: { running?: boolean; landingPageId?: string | null }
 ): string | null {
-  return (
-    (picked && pages.some(p => p.pageId === picked) ? picked : null) ??
-    pages[pages.length - 1]?.pageId ??
-    null
-  );
+  if (picked && pages.some(p => p.pageId === picked)) return picked;
+  const arrived = pages.filter(p => !p.missing);
+  // 推演中跟最新到达的页。跑完若还跟最后一页，用户会停在 p3 打开态抽屉
+  // （2026-08-20 巡检），而应用中心预览早已落导航第一项。
+  if (opts && opts.running === false) {
+    const land = opts.landingPageId;
+    if (land && arrived.some(p => p.pageId === land)) return land;
+    return arrived[0]?.pageId ?? pages[0]?.pageId ?? null;
+  }
+  return arrived[arrived.length - 1]?.pageId ?? pages[pages.length - 1]?.pageId ?? null;
 }
 
 export function SpecPageLiveStage({
@@ -156,7 +165,10 @@ export function SpecPageLiveStage({
     isPhone ? { x: 36, y: 48 } : { x: 0, y: 0 }
   );
 
-  const activeId = resolveActivePageId(picked, pages);
+  const activeId = resolveActivePageId(picked, pages, {
+    running,
+    landingPageId: defaultPageId ?? pages.find(p => !p.missing)?.pageId ?? null,
+  });
   const active = pages.find(p => p.pageId === activeId) ?? null;
 
   // 当前页上报（游标面板跟随）。必须在早退之前——hook 顺序不能随分支变。
@@ -166,8 +178,11 @@ export function SpecPageLiveStage({
 
   if (!active) return null;
 
-  const total = Math.max(active.total || 0, pages.length);
-  const boundLabel = report
+  const delivered = pages.filter(p => !p.missing);
+  const total = Math.max(active.total || 0, delivered.length);
+  const boundLabel = active.missing
+    ? "本页未通过校验"
+    : report
     ? report.filled > 0
       ? `已接数据 · 填了 ${report.filled} 处${
           report.problems.length ? ` · ${report.problems.length} 处填不上` : ""
@@ -178,7 +193,9 @@ export function SpecPageLiveStage({
     : active.bound
       ? "已接数据"
       : "尚未接数据";
-  const boundTitle = report?.problems.length
+  const boundTitle = active.missing
+    ? "导航有这一项，生成时没有交出成品 HTML"
+    : report?.problems.length
     ? `填不上的孔：\n${report.problems.slice(0, 6).join("\n")}`
     : active.bound
       ? "已接上数据（第 6.5 步打过 data-* 孔）"
@@ -212,7 +229,7 @@ export function SpecPageLiveStage({
         {running && (
           <span className="flex items-center gap-1 rounded-full bg-stone-100 px-2 py-0.5 text-stone-600" title={statusLabel ?? undefined}>
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#69b1ff]" />
-            界面生成中 {pages.length}/{total || pages.length}
+            界面生成中 {delivered.length}/{total || delivered.length}
           </span>
         )}
         <span
@@ -231,7 +248,10 @@ export function SpecPageLiveStage({
         </span>
       </div>
       {/* 缩放画布：页面照固定视口画，就得在那个视口里看。手机框的描边算进
-          layout（padding），不再用会溢出被切掉的 box-shadow。 */}
+          layout（padding），不再用会溢出被切掉的 box-shadow。
+          ⚠ 2026-08-20 午前满电青年：16:9 + items-center 曾让 Header 像掉下来，
+          改成顶对齐。同日晚 City Walk：用户要垂直居中；正方形 1920×1920
+          试过又改回 16:9，居中留下。改回 items-start，本条必须红。 */}
       <div
         ref={fitRef}
         className="flex min-h-0 flex-1 items-center justify-center overflow-hidden"

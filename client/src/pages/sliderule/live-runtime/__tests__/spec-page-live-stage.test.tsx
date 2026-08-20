@@ -114,6 +114,18 @@ describe("没手动选过就跟最新一页", () => {
     expect(resolveActivePageId(null, [])).toBeNull();
   });
 
+  it("导航缺页也能选中，默认仍落在最后一页成品上", () => {
+    const ps = [
+      { ...page("p1", 1), missing: true },
+      page("p2", 2),
+      page("p3", 3),
+      { ...page("p4", 4), missing: true },
+    ];
+    expect(resolveActivePageId(null, ps)).toBe("p3");
+    expect(resolveActivePageId("p1", ps)).toBe("p1");
+    expect(resolveActivePageId("ghost", ps)).toBe("p3");
+  });
+
   it("defaultPageId 指定开屏页（应用中心预览落导航第一页用它）", () => {
     host = document.createElement("div");
     document.body.appendChild(host);
@@ -124,6 +136,53 @@ describe("没手动选过就跟最新一页", () => {
       )
     );
     expect(activePage()).toBe("p1");
+  });
+
+  it("跑完落落地页，不跟最后画完的那页（resolveActivePageId）", () => {
+    /**
+     * 2026-08-20 巡检：推演跟最新页没错，跑完还停在 p3，打开态抽屉盖住菜单。
+     * 应用中心预览早已落导航第一项；舞台跑完必须同一口径。
+     * 把调用点的 opts 拿掉，下面那条挂载用例必须红——本条只钉纯函数。
+     */
+    const ps = [page("p1", 1), page("p2", 2), page("p3", 3)];
+    expect(resolveActivePageId(null, ps, { running: false, landingPageId: "p1" })).toBe("p1");
+    expect(resolveActivePageId("p2", ps, { running: false, landingPageId: "p1" })).toBe("p2");
+    expect(resolveActivePageId(null, ps, { running: true, landingPageId: "p1" })).toBe("p3");
+    expect(resolveActivePageId(null, ps)).toBe("p3");
+  });
+
+  it("running=false 挂载落第一页成品 —— 调用点漏传 opts 本条红", () => {
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() =>
+      root!.render(
+        <SpecPageLiveStage
+          pages={[page("p1", 1), page("p2", 2), page("p3", 3)]}
+          running={false}
+        />
+      )
+    );
+    expect(activePage()).toBe("p1");
+  });
+
+  it("跑完落第一份成品，缺页 stub 不算落地", () => {
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() =>
+      root!.render(
+        <SpecPageLiveStage
+          pages={[
+            { ...page("p1", 1), missing: true },
+            page("p2", 2),
+            page("p3", 3),
+          ]}
+          running={false}
+        />
+      )
+    );
+    expect(activePage()).toBe("p2");
   });
 });
 
@@ -271,6 +330,8 @@ describe("跑完之后不许假装还在生成", () => {
  * 整档失效，多列栅格塌成少列）——**页面看着"就是长这样"，没有任何一处会说
  * 你看到的不是它被验收时的样子**。所以判据钉在"设计分辨率是不是 1920×1080"，
  * 不钉在缩放系数（那个跟容器走，jsdom 里量不出真值）。
+ *
+ * ⚠ 2026-08-20 晚试过 1920×1920，用户看完改回 16:9。高改成 1920 必须红。
  */
 describe("页面装在 1920×1080 的画布里看", () => {
   const canvas = () =>
@@ -288,6 +349,7 @@ describe("页面装在 1920×1080 的画布里看", () => {
     const stage = frames()[0].parentElement as HTMLElement;
     expect(stage.style.width).toBe("1920px");
     expect(stage.style.height).toBe("1080px");
+    expect(stage.style.height).not.toBe("1920px");
     // 等比缩放靠 transform，不是把内容塞进小盒子（后者会裁切）
     expect(stage.style.transform).toMatch(/^scale\(/);
     expect(stage.style.transformOrigin).toBe("top left");
@@ -297,5 +359,27 @@ describe("页面装在 1920×1080 的画布里看", () => {
     mount([page("p1", 1, 1)]);
     const badge = host!.querySelector('[data-testid="sliderule-spec-page-scale"]');
     expect(badge?.textContent).toContain("1920×1080");
+    expect(badge?.textContent).not.toContain("1920×1920");
+  });
+
+  it("桌面画布垂直居中，不要顶对齐把上下留白全堆到下面", () => {
+    /**
+     * ⚠ 2026-08-20 午前满电青年曾禁 items-center（Header 像掉下来）。
+     * 同日晚 City Walk：用户要垂直居中；正方形试过又改回 16:9，居中留下。
+     * 改回 items-start 必须红。
+     */
+    mount([page("p1", 1, 1)]);
+    const toks = canvas().className.split(/\s+/);
+    expect(toks).toContain("items-center");
+    expect(toks).toContain("justify-center");
+    expect(toks).not.toContain("items-start");
+    expect(toks).not.toContain("justify-start");
+  });
+
+  it("手机机模仍垂直居中", () => {
+    mount([{ ...page("p1", 1, 1), device: "phone" }]);
+    const toks = canvas().className.split(/\s+/);
+    expect(toks).toContain("items-center");
+    expect(toks).not.toContain("items-start");
   });
 });

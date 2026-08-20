@@ -20,10 +20,22 @@ describe("computeScaleToFit", () => {
     expect(computeScaleToFit(960, 10, 1920, 1080, "width")).toBe(0.5);
   });
 
+  it("cover 取更能铺满的那一档——宽画布进竖卡不能只按宽度缩", () => {
+    // 300×533 的 9:16 卡 × 1920×1080：width = 300/1920 ≈ 0.156，
+    // 缩放后高 169，卡还剩一大截白。cover 按高度 = 533/1080。
+    const cover = computeScaleToFit(300, 533, 1920, 1080, "cover");
+    const widthOnly = computeScaleToFit(300, 533, 1920, 1080, "width");
+    expect(cover).toBeCloseTo(533 / 1080);
+    expect(cover!).toBeGreaterThan(widthOnly!);
+    expect(1920 * cover!).toBeGreaterThanOrEqual(300);
+    expect(1080 * cover!).toBeGreaterThanOrEqual(533);
+  });
+
   it("量不到容器就不要瞎给 1——1 会把 1920 画布撑出容器", () => {
     expect(computeScaleToFit(0, 540, 1920, 1080)).toBeNull();
     expect(computeScaleToFit(960, 0, 1920, 1080)).toBeNull();
     expect(computeScaleToFit(960, 0, 1920, 1080, "width")).toBe(0.5);
+    expect(computeScaleToFit(960, 0, 1920, 1080, "cover")).toBeNull();
   });
 });
 
@@ -42,6 +54,14 @@ describe("specPageViewport", () => {
      */
     expect(specPageViewport("phone")).toEqual({ w: 390, h: 844 });
     expect(specPageViewport("phone").w).toBeLessThan(640);
+  });
+
+  it("桌面画布钉 1920×1080 —— 试过正方形又改回 16:9", () => {
+    /**
+     * 2026-08-20 晚试过 1920×1920，用户看完改回 16:9。
+     * 高改成 1920 这条必须红。宽改离 1920，`2xl:` 会塌。
+     */
     expect(specPageViewport("desktop")).toEqual({ w: 1920, h: 1080 });
+    expect(specPageViewport("desktop").h).not.toBe(1920);
   });
 });
