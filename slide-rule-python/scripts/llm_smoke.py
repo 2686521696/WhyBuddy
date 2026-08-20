@@ -17,14 +17,13 @@ import sys
 import time
 from pathlib import Path
 
-try:  # Windows 控制台默认 GBK，中文诊断需要 UTF-8
-    sys.stdout.reconfigure(encoding="utf-8")
-except Exception:
-    pass
-
 _PY_DIR = Path(__file__).resolve().parent.parent
 _ROOT = _PY_DIR.parent
 sys.path.insert(0, str(_PY_DIR))
+
+from stdio_utf8 import configure_stdio_utf8
+
+configure_stdio_utf8()
 
 
 def _load_env_file(path: Path) -> int:

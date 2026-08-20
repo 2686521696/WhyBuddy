@@ -17,14 +17,13 @@ import sys
 import time
 from pathlib import Path
 
-try:
-    sys.stdout.reconfigure(encoding="utf-8")
-except Exception:
-    pass
-
 _PY_DIR = Path(__file__).resolve().parent.parent
 _ROOT = _PY_DIR.parent
 sys.path.insert(0, str(_PY_DIR))
+
+from stdio_utf8 import configure_stdio_utf8
+
+configure_stdio_utf8()
 
 OUT = _ROOT / ".manus-logs" / "overnight-iter-0820"
 

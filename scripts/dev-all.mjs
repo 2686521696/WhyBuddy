@@ -61,6 +61,17 @@ export function resolvePythonReloadArgs(pythonDir, env = process.env) {
   return ["--reload", "--reload-dir", pythonDir];
 }
 
+export function pythonStdioEnv(env = process.env) {
+  // CPython：Windows 对 pipe（非控制台）用 ANSI 代码页。dev:all 等就绪时
+  // stdout/stderr 就是 pipe，print(⚠) → UnicodeEncodeError，被当成推演失败。
+  // 标准答案是 PYTHONIOENCODING=utf-8:replace（sys.stdout 文档）+ PYTHONUTF8=1
+  // （PEP 540）。用户显式设过的不覆盖。
+  return {
+    PYTHONIOENCODING: env.PYTHONIOENCODING || "utf-8:replace",
+    PYTHONUTF8: env.PYTHONUTF8 || "1",
+  };
+}
+
 export function buildPythonUvicornArgs(pythonDir, pythonPort, env = process.env) {
   return [
     "-m",
@@ -680,6 +691,7 @@ function startPythonBackend(sharedDevEnv) {
   // and shows zero runs. A user-set value always wins.
   const pythonEnv = {
     ...sharedDevEnv,
+    ...pythonStdioEnv(sharedDevEnv),
     AGENT_LOOP_RUNS_DIR:
       process.env.AGENT_LOOP_RUNS_DIR ??
       resolve(__projectRoot, ".agent-loop", "runs"),

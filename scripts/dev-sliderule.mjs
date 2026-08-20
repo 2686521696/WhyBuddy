@@ -14,7 +14,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 
-import { buildPythonUvicornArgs } from "./dev-all.mjs";
+import { buildPythonUvicornArgs, pythonStdioEnv } from "./dev-all.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
@@ -135,6 +135,7 @@ async function main() {
       cwd: pythonDir,
       portGuard: Number(port),
       env: {
+        ...pythonStdioEnv(process.env),
         AGENT_LOOP_RUNS_DIR:
           process.env.AGENT_LOOP_RUNS_DIR ?? resolve(root, ".agent-loop", "runs"),
         AGENT_LOOP_EVENTS_DIR:

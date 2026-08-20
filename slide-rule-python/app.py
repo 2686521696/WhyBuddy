@@ -17,16 +17,23 @@ Node .env: PYTHON_SLIDE_RULE_BASE_URL=http://localhost:9700 + internal key
 """
 
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+from stdio_utf8 import configure_stdio_utf8
+
+# ⚠ 必须赶在任何会 print ⚠ 的 import / 请求之前。Windows 管道默认 GBK，
+#   漏钉 = 日志行把自己写成 LLM_GENERATE_FAILED（2026-08-20 Foclip）。
+configure_stdio_utf8()
+
 import os
 import re
-from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-
-sys.path.insert(0, str(Path(__file__).parent))
 
 
 def _hydrate_env_files() -> None:

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildPythonUvicornArgs, collectLlmBypassHosts, hostnameFromMaybeUrl } from "./dev-all.mjs";
+import { buildPythonUvicornArgs, collectLlmBypassHosts, hostnameFromMaybeUrl, pythonStdioEnv } from "./dev-all.mjs";
 
 function sourceWithoutComments(src) {
   return src
@@ -67,6 +67,35 @@ test("buildPythonUvicornArgs can disable Python backend reload with env", () => 
     "--port",
     "9700",
   ]);
+});
+
+test("pythonStdioEnv pins utf-8 replace so Windows pipes cannot kill a print", () => {
+  const env = pythonStdioEnv({});
+  assert.equal(env.PYTHONIOENCODING, "utf-8:replace");
+  assert.equal(env.PYTHONUTF8, "1");
+  const kept = pythonStdioEnv({
+    PYTHONIOENCODING: "gbk",
+    PYTHONUTF8: "0",
+  });
+  assert.equal(kept.PYTHONIOENCODING, "gbk");
+  assert.equal(kept.PYTHONUTF8, "0");
+});
+
+test("dev:all and dev:sliderule actually pass pythonStdioEnv to the child", () => {
+  const allSrc = sourceWithoutComments(
+    readFileSync(fileURLToPath(new URL("./dev-all.mjs", import.meta.url)), "utf8")
+  );
+  const slideruleSrc = sourceWithoutComments(
+    readFileSync(fileURLToPath(new URL("./dev-sliderule.mjs", import.meta.url)), "utf8")
+  );
+  const pyStart = allSrc.indexOf("function startPythonBackend");
+  const pyFn = allSrc.slice(pyStart, allSrc.indexOf("async function main()"));
+  assert.match(pyFn, /pythonStdioEnv\(/, "dev:all starts python without PYTHONIOENCODING");
+  assert.match(
+    slideruleSrc,
+    /pythonStdioEnv\(/,
+    "dev:sliderule starts python without PYTHONIOENCODING"
+  );
 });
 
 test("hostnameFromMaybeUrl keeps the host and drops the path", () => {
