@@ -187,7 +187,14 @@ def _write_capability_telemetry(state: V5SessionState, capability_id: str, role_
     # Per-run id (ts-based run_id) dedup only: allows multiple real runs of same (capabilityId, turnId).
     # Delegate nesting double (mapped<->cap) is prevented by skip-write checks at call sites (see execute_mapped and execute_cap wrapper).
     # This ensures *every* capability run writes its timing + cost telemetry (addresses finding 1 major).
-    if not any(getattr(c, "id", None) == cost_rec.id for c in existing_costs):
+    #
+    # ⚠ 2026-08-20：drive 绑定了 LLM 实调用钩子时，同一趟会再按 content//4
+    # 估一笔——用量页把一趟算两次。钩子在场就只让 call_llm 记。
+    from sliderule_llm.client import llm_result_hook_active
+
+    if not llm_result_hook_active() and not any(
+        getattr(c, "id", None) == cost_rec.id for c in existing_costs
+    ):
         existing_costs.append(cost_rec)
         state.costLedger = existing_costs
     # write/ensure CapabilityRun with timing (idempotent)

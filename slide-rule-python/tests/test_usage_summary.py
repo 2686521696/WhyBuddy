@@ -3,7 +3,8 @@
 ## 为什么要有这个接口
 
 costLedger 从 V5.1 起每次能力执行都在记（tokens/费用/耗时/来源），但
-**没有任何一个接口把它读出来**——设置面板要展示用量，缺的是出口不是台账。
+主循环的 LLM 调用曾把 telemetry 丢掉，设置面板读出来是空账。出口在
+GET /usage；记账在 call_llm 成功钩子（见 test_cost_ledger）。
 
 ## 这组测试钉两件事
 
@@ -112,6 +113,24 @@ def test_别人的会话不进我的账单():
     data = got.json()
     sessions = {s["sessionId"] for s in data["bySession"]}
     assert "usage-foreign-1" not in sessions, "别人的会话进了我的账单——归属过滤漏了"
+
+
+def test_usage_dict_payload_也能聚():
+    """load_all 偶发交出 dict 时 getattr(costLedger) 恒为空——那就是空账假象。"""
+    sid = "usage-dict-1"
+    from services.persistence import save_session_record
+    from models.v5_state import V5SessionState
+
+    st = V5SessionState(sessionId=sid, artifacts=[], goal={"text": "dict 账", "status": "clear"})
+    st.ownerId = TEST_USER_ID
+    st.costLedger = [_ledger_record("d1", "model.generate", 400, 0.01, "2026-08-20")]
+    save_session_record(st)
+
+    got = client.get("/api/sliderule/usage", headers=KEY)
+    assert got.status_code == 200
+    sessions = {s["sessionId"]: s for s in got.json()["bySession"]}
+    assert sid in sessions
+    assert sessions[sid]["estimatedTokens"] >= 400
 
 
 def test_没有台账时返回空账不报错():

@@ -187,6 +187,12 @@ def _fmt_value(v: Any) -> str:
 #:
 #: ⚠ 纪律不变：sink 自身出任何问题都必须静默，绝不能把被测流水线搞崩。
 _stage_sink_var: ContextVar[Any] = ContextVar("sliderule_stage_sink", default=None)
+_active_stage_var: ContextVar[str] = ContextVar("sliderule_active_stage", default="")
+
+
+def current_stage_name() -> str:
+    """当前 `stage()` 块的名字。用量台账拿它当 capabilityId；没进块则空串。"""
+    return _active_stage_var.get() or ""
 
 
 def set_stage_sink(fn: Any) -> None:
@@ -239,6 +245,7 @@ def stage(name: str, **fields: Any) -> Iterator[dict[str, Any]]:
     started = time.perf_counter()
     extra: dict[str, Any] = {}
     ok = True
+    stage_token = _active_stage_var.set(name)
     _notify("start", name, dict(fields))
     try:
         yield extra
@@ -250,3 +257,4 @@ def stage(name: str, **fields: Any) -> Iterator[dict[str, Any]]:
         merged = {**fields, **extra}
         _notify("end", name, {**merged, "ms": elapsed_ms, "ok": ok})
         _emit(name, elapsed_ms, ok, merged)
+        _active_stage_var.reset(stage_token)

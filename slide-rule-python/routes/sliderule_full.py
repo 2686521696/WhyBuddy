@@ -361,6 +361,7 @@ def usage_summary(
     """
     _auth(x_internal_key)
     from services.app_access import session_access, Access
+    from services.cost_ledger import ledger_entries
 
     states = list((load_all() or {}).values()) or list(_sessions.values())
     totals = {"sessions": 0, "runs": 0, "estimatedTokens": 0,
@@ -373,11 +374,18 @@ def usage_summary(
     for s in states:
         if session_access(_session_payload(s), viewer) < Access.READ:
             continue
-        ledger = getattr(s, "costLedger", None) or []
+        ledger = ledger_entries(s)
         if not ledger:
             continue
-        sid = getattr(s, "sessionId", "")
-        g = s.goal if isinstance(getattr(s, "goal", None), dict) else {}
+        sid = (
+            s.get("sessionId")
+            if isinstance(s, dict)
+            else getattr(s, "sessionId", "")
+        )
+        raw_goal = (
+            s.get("goal") if isinstance(s, dict) else getattr(s, "goal", None)
+        )
+        g = raw_goal if isinstance(raw_goal, dict) else {}
         goal_text = (g.get("text", "") if isinstance(g, dict) else "")[:60]
         totals["sessions"] += 1
         sess_agg = by_session.setdefault(sid, {

@@ -13,7 +13,9 @@ import os
 import sys
 import time
 from dataclasses import dataclass, replace
-from typing import Any, Callable, Iterable, Literal
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Callable, Iterable, Iterator, Literal, Optional
 from urllib.parse import urlparse
 
 import httpx
@@ -579,6 +581,29 @@ def iter_stream_events_from_sse(
     return events
 
 
+_result_hook_var: ContextVar[Optional[Callable[["LlmResult"], None]]] = ContextVar(
+    "sliderule_llm_result_hook", default=None
+)
+
+
+def llm_result_hook_active() -> bool:
+    return _result_hook_var.get() is not None
+
+
+@contextmanager
+def result_hook(fn: Callable[["LlmResult"], None]) -> Iterator[None]:
+    """请求域观察者：每次成功的 LLM 调用（_finalize_result）调一次。
+
+    用量台账挂在这里，而不是散落在 `parsed, _ = call_llm_json` 那些丢弃点。
+    观察者自己炸了必须静默——增强类 fail-open。
+    """
+    token = _result_hook_var.set(fn)
+    try:
+        yield
+    finally:
+        _result_hook_var.reset(token)
+
+
 def _finalize_result(result: LlmResult) -> LlmResult:
     finalized = LlmResult(
         content=result.content,
@@ -588,7 +613,14 @@ def _finalize_result(result: LlmResult) -> LlmResult:
         latency_ms=result.latency_ms,
         provider=result.provider,
     )
-    return replace(finalized, telemetry=build_llm_telemetry(finalized))
+    out = replace(finalized, telemetry=build_llm_telemetry(finalized))
+    hook = _result_hook_var.get()
+    if hook is not None:
+        try:
+            hook(out)
+        except Exception:  # noqa: BLE001 — 观察者不许拖垮主调用
+            pass
+    return out
 
 
 

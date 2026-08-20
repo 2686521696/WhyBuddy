@@ -1243,6 +1243,9 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
 
     _turn_ctx = _ExitStack()
     _turn_ctx.enter_context(_turn_instruction(user_instruction))
+    from .cost_ledger import bind_cost_session
+
+    _turn_ctx.enter_context(bind_cost_session(initial_state))
     _budget_token = _enrich_timing.begin_run_budget()
     state = initial_state
     _advance_turn_version(state)
@@ -1857,6 +1860,10 @@ async def drive_full_v5_session_stream(
 
     _turn_token = _turn_instruction(user_instruction)
     _turn_token.__enter__()
+    from .cost_ledger import bind_cost_session
+
+    _cost_cm = bind_cost_session(initial_state)
+    _cost_cm.__enter__()
 
     async def _pump_llm_deltas(task: "asyncio.Task"):
         """任务运行期间持续排水：把队列里的（标签, 增量）按相邻同标签聚合成
@@ -2396,6 +2403,7 @@ async def drive_full_v5_session_stream(
             _spec_first_sink(None)
         _enrich_timing.reset_run_budget(_budget_token)
         _turn_token.__exit__(None, None, None)
+        _cost_cm.__exit__(None, None, None)
         # E29：精修/直供上下文兜底清理（异常路径防泄漏到下一轮）
         _gen.set_refine_context(None)
         _gen.set_model_override(None)
