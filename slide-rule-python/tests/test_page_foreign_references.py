@@ -34,6 +34,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.spec_page_html import (  # noqa: E402
+    neutralize_foreign_urls,
     scan_foreign_references,
     validate_page_html,
 )
@@ -172,3 +173,29 @@ class Test上线前那次量出来的两个坑:
     def test_真事故仍然阻断(self):
         """⚠ 放宽之后，最该拦的那个必须还拦得住。"""
         assert blocking('<footer>唯一官方: https://www.rcouyi.com</footer>')
+
+
+class Test示例外链剥掉而不是整页扔掉:
+    """2026-08-20 Foclip：示例 href 把拾取工作台整页判死刑，菜单还在。"""
+
+    def test_脏页校验仍报_剥完就过(self):
+        """正向：留下正文。反向：不剥的话 validate 必须还红——否则判据打空。"""
+        raw = _page('<a href="https://tech.example.com/clip">来源条目</a>')
+        assert any("外部链接" in p for p in validate_page_html(raw))
+        cleaned = neutralize_foreign_urls(raw)
+        assert "tech.example.com" not in cleaned
+        assert "来源条目" in cleaned
+        assert validate_page_html(cleaned) == []
+
+    def test_白名单和_xmlns_不动(self):
+        raw = _page(
+            '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
+            '<img src="https://placehold.co/600x300">'
+        )
+        assert neutralize_foreign_urls(raw) == raw
+
+    def test_供应商字样不靠剥链接放行(self):
+        """欧亿是品牌泄漏，剥掉 rcouyi.com 之后字还在，必须继续 fail-closed。"""
+        raw = _page("<footer>欧亿智能库存效期管理系统</footer>")
+        assert any("供应商" in p for p in validate_page_html(neutralize_foreign_urls(raw)))
+

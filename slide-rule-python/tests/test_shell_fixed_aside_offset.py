@@ -35,6 +35,9 @@ flex 不会给它留 256px——这一半旧判据里是空的：坏成那样，
 ⚠ 这是同一处第四次返工（抄整段 class → 只删偏移 → 只删不补 → 两个方向）。
   前三次都是「拿一批数据推的规则套到另一批上」，这次是**规则本身只覆盖
   了一半的输入空间**，而没覆盖的那一半在判据里是静默的。
+
+2026-08-20 满电青年又撞上第六次：规则覆盖了「该不该带」，没覆盖
+「带的宽度是不是这一根侧栏的」。见 Test让位宽度必须跟侧栏一致。
 """
 
 import os
@@ -131,6 +134,7 @@ class Test判定侧栏占不占位:
     @pytest.mark.parametrize("cls,want", [
         ("w-64 fixed", "ml-64"),
         ("w-72 fixed", "ml-72"),
+        ("w-16 fixed", "ml-16"),
         ("w-[248px] fixed", "ml-[248px]"),
     ])
     def test_偏移跟着侧栏宽度走(self, cls, want):
@@ -336,3 +340,157 @@ class Test偏移可能写在祖先层上:
         """反方向：偏移在祖先层、而侧栏在流内 + body 横排 → 该摘的是祖先层那个。"""
         h = WRAPPED.replace('class="w-64 border-r fixed h-full"', 'class="w-64 border-r flex flex-col"')
         assert main_offset_tokens(reconcile_main_offset(h)) == []
+
+
+#: 满电青年 2026-08-20 桌面 1920×1080：源页图标轨 w-16，unify 整段复制；
+#: 别的页还写着给 w-64 让的 ml-64 → 64px 轨 + 256px 让位 = 中间 ~192px 黑洞。
+ICON_GAP = _page(body="bg-gray-50 text-gray-800",
+                 aside="w-16 bg-zinc-950 border-r fixed h-full",
+                 main="ml-64 min-h-screen")
+
+ICON_OK = _page(body="bg-gray-50 text-gray-800",
+                aside="w-16 bg-zinc-950 border-r fixed h-full",
+                main="ml-16 min-h-screen")
+
+ICON_WRAPPED = WRAPPED.replace(
+    'class="w-64 border-r fixed h-full"',
+    'class="w-16 border-r fixed h-full"',
+)
+
+
+class Test让位宽度必须跟侧栏一致:
+    """★ 同一处第六次返工（2026-08-20）。
+
+    前五次覆盖了「该不该带偏移」；这一次是「带了，但宽度是上一根侧栏的」。
+    旧修复 `if main_offset_tokens: return markup` 把这种形状当成已经让位——
+    判据假绿，中间一条缝没有人报。
+
+    对照 shadcn/ui Sidebar：`--sidebar-width` 与 `--sidebar-width-icon` 是
+    两个值，gap 元素始终跟**当前**宽度走，不会留下展开态的 16rem 空隙。
+    """
+
+    def test_图标轨配宽侧栏偏移_判据要报(self):
+        """旧判据这一半是空的：有 ml-* 就不问对不对。"""
+        probs = _mains(check_shell_consistency({"p1": ICON_GAP, "p2": ICON_GAP}, SPEC))
+        assert probs, "w-16 + ml-64 中间一条缝，判据一个字都没说"
+        assert "ml-64" in probs[0]["message"] and "ml-16" in probs[0]["message"]
+
+    def test_对上了就不报(self):
+        assert not _mains(check_shell_consistency({"p1": ICON_OK, "p2": ICON_OK}, SPEC))
+
+    def test_把错的偏移改成跟侧栏一样宽(self):
+        """★ 修真机那条缝。把 `if main_offset_tokens: return markup` 加回去，
+        本条必须红——那就是上一版的静默失效。"""
+        out = reconcile_main_offset(ICON_GAP)
+        assert main_offset_tokens(out) == ["ml-16"]
+        assert 'class="ml-16 min-h-screen"' in out
+        assert "flex-1 flex flex-col" not in out, "不许抄整段 main class"
+
+    def test_已经对上了就不动(self):
+        assert reconcile_main_offset(ICON_OK) == ICON_OK
+
+    def test_祖先层写错也改那一层_不给main再叠一份(self):
+        """⚠ 律所那趟的 512px：偏移在包裹层上，给 main 再补就双倍。"""
+        out = reconcile_main_offset(ICON_WRAPPED)
+        assert main_offset_tokens(out) == ["ml-16"]
+        assert 'class="flex-1 ml-16 flex flex-col"' in out
+        assert '<main class="flex-1 overflow-y-auto">' in out
+
+    def test_unify文字侧栏不被图标轨源页收窄(self):
+        """★ 满电青年第二趟：点进「服务工单工作台」侧栏瘪成 64px。
+
+        旧逻辑只数链接，工单页多一个发明的入口就被当成壳源，w-16 灌到
+        每一页。让位跟着收成 ml-16 缝没了，菜单文字挤成一竖条——用户看到
+        的是「侧栏缩小了」。shadcn 有 label 时宽度是 16rem，不是 3rem。
+
+        把选源改回只数链接，``sourcePageId`` 会变成窄页，本条必须红。
+        """
+        from services.page_shell import _aside_tokens
+
+        narrow = ICON_OK.replace(
+            "</nav>",
+            '<a data-page-id="p9"><span>发明的入口</span></a></nav>',
+            1,
+        )
+        wide = P2
+        out = unify_shell({"p1": narrow, "p2": wide}, SPEC)
+        assert out["sourcePageId"] == "p2", "链接更多的图标轨不该当壳源"
+        assert "w-64" in _aside_tokens(out["pages"]["p1"])
+        assert "w-16" not in _aside_tokens(out["pages"]["p1"])
+        assert "w-64" in _aside_tokens(out["pages"]["p2"])
+        assert main_offset_tokens(out["pages"]["p1"]) == ["ml-64"]
+        assert "ensure_labeled_aside_width" in __import__(
+            "inspect"
+        ).getsource(unify_shell)
+
+    def test_unify文字图标轨抬成宽轨(self):
+        """两页都是带中文的 w-16：没有宽源可抄，也要抬到 w-64。"""
+        from services.page_shell import _aside_tokens
+
+        out = unify_shell({"p1": ICON_OK, "p2": ICON_OK}, SPEC)["pages"]
+        assert "w-64" in _aside_tokens(out["p1"])
+        assert "w-16" not in _aside_tokens(out["p1"])
+        assert main_offset_tokens(out["p1"]) == ["ml-64"]
+        assert not _mains(check_shell_consistency(out, SPEC))
+
+    def test_unify源页图标轨_灌进中文菜单后抬成宽轨(self):
+        """源页即便是纯 SVG 图标轨，unify 仍按 spec 写入「甲页」「乙页」。
+
+        有文字之后必须抬到 w-64。旧断言盯着 w-16 留着，和「侧栏瘪了」对着干。
+        让位跟宽度走仍由上面 reconcile 单测守。
+        """
+        src = (
+            '<!doctype html><html><head></head>'
+            '<body class="bg-gray-50">'
+            '<aside class="w-16 bg-zinc-950 border-r fixed h-full"><nav>'
+            '<a data-page-id="p1" aria-current="page"><svg><path d="M1"/></svg></a>'
+            '<a data-page-id="p2"><svg><path d="M2"/></svg></a>'
+            '<a data-page-id="p9"><svg><path d="M9"/></svg></a>'
+            "</nav></aside>"
+            '<header class="h-16"></header>'
+            '<main class="ml-16 min-h-screen"><div>正文</div></main></body></html>'
+        )
+        tgt = (
+            '<!doctype html><html><head></head>'
+            '<body class="flex h-screen">'
+            '<aside class="w-64 border-r flex flex-col"><nav>'
+            '<a data-page-id="p1"><svg><path d="M1"/></svg></a>'
+            '<a data-page-id="p2"><svg><path d="M2"/></svg></a>'
+            "</nav></aside>"
+            '<header class="h-16"></header>'
+            '<main class="ml-64 flex-1"><div>正文</div></main></body></html>'
+        )
+        out = unify_shell({"p1": src, "p2": tgt}, SPEC)["pages"]
+        from services.page_shell import _aside_tokens
+
+        assert "w-64" in _aside_tokens(out["p2"])
+        assert "w-16" not in _aside_tokens(out["p2"])
+        assert aside_out_of_flow(out["p2"])
+        assert main_offset_tokens(out["p2"]) == ["ml-64"]
+        assert not _mains(check_shell_consistency(out, SPEC))
+
+    def test_bind留下错宽度也改(self):
+        from services.page_shell import _aside_tokens, repair_pages_after_bind
+
+        # 打孔前已是文字轨 w-16；repair 应抬到 w-64，让位跟着到 ml-64。
+        fixed, _r, reconciled = repair_pages_after_bind({"p1": ICON_GAP}, {"p1": ICON_OK})
+        assert "w-64" in _aside_tokens(fixed["p1"])
+        assert main_offset_tokens(fixed["p1"]) == ["ml-64"]
+
+    def test_bind只改宽度类_锁回宽轨(self):
+        """fingerprint 抹 class，只把 w-64 改成 w-16 时 restore 看不见。
+
+        把 canonical_labeled_aside_width / apply_aside_width_token 从
+        repair_pages_after_bind 拿掉，本条必须红——那就是点进工单页侧栏瘪了。
+        """
+        from services.page_shell import _aside_tokens, repair_pages_after_bind
+
+        after = P2.replace("w-64", "w-16", 1).replace("ml-64", "ml-16", 1)
+        fixed, restored, _rec = repair_pages_after_bind({"p1": after}, {"p1": P2})
+        assert "p1.aside" not in restored
+        assert "w-64" in _aside_tokens(fixed["p1"])
+        assert "w-16" not in _aside_tokens(fixed["p1"])
+        assert main_offset_tokens(fixed["p1"]) == ["ml-64"]
+        src = __import__("inspect").getsource(repair_pages_after_bind)
+        assert "canonical_labeled_aside_width" in src
+        assert "apply_aside_width_token" in src

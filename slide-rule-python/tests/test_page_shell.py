@@ -21,6 +21,8 @@ spec 里只有 3 页——它凭空发明了 5 个不存在的页面。
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from services.page_shell import (
@@ -466,4 +468,46 @@ class Test桌面侧栏困在注释或被精修删掉:
         vis = outside_html_comments(html)
         assert "<aside" in vis
         assert "工时列表" in html
+
+    def test_捞开注释后不许留下裸的闭合符(self):
+        """★ 满电青年：``<!-- <aside>…</aside> -->`` 捞开后 ``-->`` 顶在左上角。
+
+        把 ``_ORPHAN_COMMENT_CLOSE`` 那一行去掉，本条必须红。
+        """
+        from services.page_shell import ensure_nav_not_commented
+
+        raw = (
+            "<!DOCTYPE html><html><body>"
+            "<!-- 左侧导航 <aside class='w-16 fixed'><nav>"
+            "<a data-page-id='p1'>甲</a></nav></aside> -->\n"
+            "<header>满电青年</header>"
+            "<main class='ml-16'>正文</main></body></html>"
+        )
+        out = ensure_nav_not_commented(raw)
+        assert "<aside" in out
+        assert "-->" not in out.replace("<!-- 主正文 <main> -->", "")
+        assert not re.search(r"</aside\s*>\s*-->", out, re.I)
+        html = unify_shell(
+            {"p1": raw, "p2": PAGES["p2"]},
+            {
+                "pages": [
+                    {"id": "p1", "name": "个人工作台"},
+                    {"id": "p2", "name": "案件台账页"},
+                ],
+                "appName": "满电青年",
+            },
+        )["pages"]["p1"]
+        assert not re.search(r"</aside\s*>\s*-->", html, re.I)
+        vis = outside_html_comments(html)
+        assert vis.strip().startswith("<!DOCTYPE") or "<aside" in vis
+        assert "-->" not in vis
+
+    def test_说明注释里的闭合符不许误伤(self):
+        """⚠ 捞 main 会截断 ``<!-- 主正文 <main> -->``。这条必须继续绿。"""
+        from services.page_shell import ensure_nav_not_commented
+
+        html = ensure_nav_not_commented(self._SWALLOWED)
+        assert "<!-- 主正文 <main> -->" in html
+        assert "<main" in html
+
 

@@ -43,6 +43,7 @@ from services.page_shell import (  # noqa: E402
     extract_shell,
     nav_templates,
     set_breadcrumb_current,
+    set_breadcrumb_root,
     unify_shell,
 )
 
@@ -110,6 +111,58 @@ class Test面包屑最后一节跟着页面走:
         assert _crumb_text(extract_shell(out["p2"])["header"]) == "首页 配件库存页"
 
 
+class Test面包屑套话根换成产品名:
+    """2026-08-20 满电青年：Header 写着「通用后台 / 运营地图首页」。"""
+
+    _GENERIC = (
+        '<header class="h-16">'
+        '<nav aria-label="Breadcrumb"><ol>'
+        "<li>通用后台</li>"
+        '<li class="font-medium">运营地图首页</li>'
+        "</ol></nav></header>"
+    )
+
+    def test_通用后台换成产品名(self):
+        out = set_breadcrumb_root(self._GENERIC, "满电青年")
+        assert "通用后台" not in out
+        assert "满电青年" in out
+        assert "运营地图首页" in out
+
+    def test_真IA第一级不动(self):
+        real = (
+            '<header><nav aria-label="Breadcrumb"><ol>'
+            "<li>充电业务</li>"
+            "<li>运营地图首页</li>"
+            "</ol></nav></header>"
+        )
+        assert set_breadcrumb_root(real, "满电青年") == real
+
+    def test_首页那种合法根不动(self):
+        out = set_breadcrumb_root(_CRUMB, "满电青年")
+        assert "首页" in out
+        assert "满电青年" not in out
+
+    def test_走unify_shell(self):
+        page = (
+            "<!doctype html><html><head></head><body>"
+            '<aside class="w-64"><nav><a class="flex">甲</a><a class="flex">乙</a></nav></aside>'
+            + self._GENERIC
+            + '<main class="flex-1"><div>正文</div></main></body></html>'
+        )
+        spec = {
+            "appName": "满电青年",
+            "pages": [
+                {"id": "p1", "name": "运营地图首页"},
+                {"id": "p2", "name": "我的工作台"},
+            ],
+        }
+        out = unify_shell({"p1": page, "p2": page}, spec)["pages"]
+        h1 = extract_shell(out["p1"])["header"]
+        assert "通用后台" not in h1
+        assert "满电青年" in h1
+        assert "运营地图首页" in h1
+
+
 class Test激活态识别不许被状态变体骗:
     def test_hover_不算激活样式(self):
         """★ **踩过的第二跤**：唯一差别是 hover:bg-slate-50，静态下零差别。"""
@@ -168,11 +221,14 @@ class Test兜底样式无条件注入:
         spec = {"pages": [{"id": "p1", "name": "甲"}, {"id": "p2", "name": "乙"}]}
         html = unify_shell(self._pages(), spec)["pages"]["p1"]
         assert "currentColor" in html
+        assert "aside [aria-current=\"page\"]" in html
+        assert "Breadcrumb" in html
 
     def test_只注入一次(self):
         spec = {"pages": [{"id": "p1", "name": "甲"}, {"id": "p2", "name": "乙"}]}
         html = unify_shell(self._pages(), spec)["pages"]["p1"]
-        assert html.count('aria-current="page"]{') == 1
+        # 侧栏一条 + 面包屑一条。改回全局 `[aria-current="page"]` 会把面包屑涂白。
+        assert html.count('aria-current="page"]{') == 2
 
     def test_当前页真的带_aria_current(self):
         """兜底样式挂在 aria-current 上，那这个属性必须真的打上——

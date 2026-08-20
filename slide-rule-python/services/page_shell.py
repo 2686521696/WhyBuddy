@@ -115,6 +115,62 @@ _PHONE_FILL_CSS = (
     "flex:0 0 auto!important;width:100%!important}"
 )
 
+#: 铺满桌面 1920×1080（2026-08-20 满电青年）：模型把 aside+header+main
+#: 塞进 ``max-w-6xl mx-auto`` 白卡片，再给 body 浅绿底 + items-center
+#: justify-center。画布是满的，应用缩在正中——三支箭头指的是卡片四周的底。
+#: 手机页已有铺满层，桌面漏了。id 与前端 html-app-surface 同名，两边注入幂等。
+#:
+#: ⚠ **不许**抄手机那条 ``body>*{margin-left:0}``：桌面 fixed 侧栏靠
+#: ``ml-64`` / ``ml-16`` 让位，一盖就回到侧栏压穿 / 中间空缝。
+#: ⚠ **不许**给 body 写 ``flex-direction:column``：aside 和 main 并排
+#: 会被竖着叠。只拆掉整页居中卡片，不改壳的横竖。
+_DESKTOP_FILL_STYLE_ID = "sliderule-desktop-fill"
+_DESKTOP_FILL_CSS = (
+    "html,body{margin:0!important;width:100%!important;height:100%!important;"
+    "min-height:100%!important;max-width:none!important;overflow:hidden!important}"
+    "body{align-items:stretch!important;justify-content:flex-start!important;"
+    "padding:0!important}"
+    'body>[class*="mx-auto"]{'
+    "max-width:none!important;width:100%!important;height:100%!important;"
+    "margin:0!important;box-sizing:border-box!important;"
+    "border-radius:0!important;box-shadow:none!important}"
+    'body>div[class*="min-h-screen"],body>div[class*="justify-center"]{'
+    "display:flex!important;align-items:stretch!important;"
+    "justify-content:flex-start!important;"
+    "width:100%!important;height:100%!important;max-width:none!important;"
+    "padding:0!important;margin:0!important;box-sizing:border-box!important}"
+    'body>div[class*="min-h-screen"]>[class*="mx-auto"],'
+    'body>div[class*="min-h-screen"]>[class*="max-w-"],'
+    'body>div[class*="justify-center"]>[class*="mx-auto"],'
+    'body>div[class*="justify-center"]>[class*="max-w-"]{'
+    "max-width:none!important;width:100%!important;height:100%!important;"
+    "margin:0!important;box-sizing:border-box!important;"
+    "border-radius:0!important;box-shadow:none!important}"
+)
+
+
+def _inject_head_style(html: str, style_id: str, css: str) -> str:
+    """往 <head> 里塞一份带 id 的 <style>。已有同 id 就换文案，不插第二份。"""
+    src = html or ""
+    if f'id="{style_id}"' in src:
+        return re.sub(
+            rf'(<style id="{re.escape(style_id)}">)[\s\S]*?(</style>)',
+            lambda m: m.group(1) + css + m.group(2),
+            src,
+            count=1,
+            flags=re.I,
+        )
+    tag = f'<style id="{style_id}">{css}</style>'
+    head = re.search(r"<head\b[^>]*>", src, re.I)
+    if head:
+        at = head.end()
+        return src[:at] + tag + src[at:]
+    html_open = re.search(r"<html\b[^>]*>", src, re.I)
+    if html_open:
+        at = html_open.end()
+        return src[:at] + f"<head>{tag}</head>" + src[at:]
+    return tag + src
+
 
 def _ensure_tag_classes(markup: str, opener: re.Pattern[str], needed: Tuple[str, ...]) -> str:
     m = opener.search(markup or "")
@@ -143,8 +199,18 @@ def _ensure_tag_classes(markup: str, opener: re.Pattern[str], needed: Tuple[str,
 #:
 #: 只捞 aside/nav。模型常写已闭合的 ``<!-- 主正文 <main> -->``，捞 main
 #: 会把说明注释截断、留下裸 ``-->``。
+#:
+#: ⚠ 2026-08-20 满电青年：``<!-- 左侧导航 <aside>…</aside> -->`` 这种
+#: **两边都有**的写法，捞开会标签之后 ``-->`` 还在。aside 是 fixed 不占位，
+#: 这个 ``-->`` 就成了 body 里第一段真正排版的文字——顶在预览左上角。
+#: 已闭合的 ``<!-- 主正文 <main> -->`` 是开标签后面的 ``-->``，不是
+#: ``</aside> -->``，下面这条正则碰不到它。
 _UNCLOSED_COMMENT_SHELL = re.compile(
     r"<!--(?:(?!-->).)*?(<(?:aside|nav)\b)", re.I | re.S
+)
+_ORPHAN_COMMENT_CLOSE = re.compile(
+    r"(</(?:aside|nav|header|main|div)\s*>|<body\b[^>]*>)\s*-->",
+    re.I,
 )
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
 _NAV_PAGE_ID_ATTR = re.compile(r"\sdata-page-id=\"[^\"]*\"", re.I)
@@ -152,8 +218,13 @@ _NAV_ARIA_CURRENT_ATTR = re.compile(r"\saria-current=\"[^\"]*\"", re.I)
 
 
 def ensure_nav_not_commented(markup: str) -> str:
-    """把未闭合注释里的 <aside>/<nav> 捞出来。幂等：已闭合的 ``<!-- … -->`` 不动。"""
-    return _UNCLOSED_COMMENT_SHELL.sub(r"\1", markup or "")
+    """把未闭合注释里的 <aside>/<nav> 捞出来。幂等：已闭合的 ``<!-- … -->`` 不动。
+
+    捞开 ``<!--`` 之后，若注释本来写了闭合 ``-->``，把它一并摘掉，
+    免得变成页面左上角三个字符。
+    """
+    html = _UNCLOSED_COMMENT_SHELL.sub(r"\1", markup or "")
+    return _ORPHAN_COMMENT_CLOSE.sub(r"\1", html)
 
 
 def outside_html_comments(markup: str) -> str:
@@ -211,27 +282,15 @@ def ensure_phone_viewport_fill(markup: str) -> str:
 
     幂等：已经有 #sliderule-phone-fill 不再插第二份。
     """
-    html = markup or ""
-    tag_inner = f'<style id="{_PHONE_FILL_STYLE_ID}">{_PHONE_FILL_CSS}</style>'
-    if f'id="{_PHONE_FILL_STYLE_ID}"' in html:
-        # 精修沿用旧页时 style 还在，但文案可能是上一版（缺 nav 横排）。
-        return re.sub(
-            rf'(<style id="{re.escape(_PHONE_FILL_STYLE_ID)}">)[\s\S]*?(</style>)',
-            lambda m: m.group(1) + _PHONE_FILL_CSS + m.group(2),
-            html,
-            count=1,
-            flags=re.I,
-        )
-    tag = tag_inner
-    head = re.search(r"<head\b[^>]*>", html, re.I)
-    if head:
-        at = head.end()
-        return html[:at] + tag + html[at:]
-    html_open = re.search(r"<html\b[^>]*>", html, re.I)
-    if html_open:
-        at = html_open.end()
-        return html[:at] + f"<head>{tag}</head>" + html[at:]
-    return tag + html
+    return _inject_head_style(markup or "", _PHONE_FILL_STYLE_ID, _PHONE_FILL_CSS)
+
+
+def ensure_desktop_viewport_fill(markup: str) -> str:
+    """把套在 max-w-6xl / mx-auto 里的整页卡片撑满 1920×1080。模型漏写时由代码补。
+
+    幂等：已经有 #sliderule-desktop-fill 不再插第二份。
+    """
+    return _inject_head_style(markup or "", _DESKTOP_FILL_STYLE_ID, _DESKTOP_FILL_CSS)
 
 
 class PageShellError(RuntimeError):
@@ -307,9 +366,16 @@ def nav_templates(nav_html: str) -> Optional[Dict[str, Any]]:
 #: ⚠ 用 `currentColor` 派生而不是写死颜色：侧栏可能是白底也可能是深色底
 #:   （真机两种都见过），写死 `bg-slate-100` 在深色侧栏上等于没有。
 _ACTIVE_FALLBACK_CSS = (
-    "<style>[aria-current=\"page\"]{"
-    "background-color:color-mix(in srgb, currentColor 12%, transparent);"
-    "font-weight:600}</style>"
+    "<style>"
+    "aside [aria-current=\"page\"]{"
+    "background-color:color-mix(in srgb, var(--primary, currentColor) 16%, transparent);"
+    "color:var(--chrome-fg, inherit);"
+    "font-weight:600}"
+    "header nav[aria-label=\"Breadcrumb\"] [aria-current=\"page\"]{"
+    "background-color:transparent;"
+    "color:var(--chrome-fg, inherit);"
+    "font-weight:600}"
+    "</style>"
 )
 
 _STYLE_BLOCK = re.compile(r"<style\b[^>]*>([\s\S]*?)</style>", re.I)
@@ -497,6 +563,9 @@ def set_breadcrumb_current(header_html: str, page_name: str) -> str:
       拿一个样本的 markup 当通用结构，这是同一类错误的第五次。
 
     ⚠ 前面的层级（首页 › 模块）原样留着：那几节是应用结构，本该各页一样。
+      **例外**：第一节约成「通用后台 / Admin / 控制台」这种套话时，换成
+      产品名——真机（满电青年 2026-08-20）Header 写着「通用后台 /
+      运营地图首页」，跟侧栏产品名不是同一个应用。见 set_breadcrumb_root。
     ⚠ 找不到面包屑就原样返回——没有面包屑是合法的，硬塞一个是新的破坏。
     """
     if not page_name:
@@ -517,6 +586,65 @@ def set_breadcrumb_current(header_html: str, page_name: str) -> str:
         + body[seg.end():]
     )
     return header_html.replace(body, replaced, 1)
+
+
+#: 面包屑第一节约成这些，就不是应用结构，是模型套的通用后台模板。
+_GENERIC_CRUMB_ROOTS = frozenset({
+    "通用后台", "管理后台", "管理系统", "控制台", "后台",
+    "后台首页", "通用系统", "Admin", "Dashboard", "Console",
+    "Administration", "Control Panel",
+})
+
+
+def _crumb_plain(seg_html: str) -> str:
+    inner = _SEG_INNER.search(seg_html or "")
+    raw = inner.group(2) if inner else (seg_html or "")
+    return " ".join(unescape(re.sub(r"<[^>]+>", " ", raw)).split())
+
+
+def _is_generic_crumb_root(text: str) -> bool:
+    t = (text or "").strip()
+    if t in _GENERIC_CRUMB_ROOTS:
+        return True
+    return "通用" in t and ("后台" in t or "系统" in t)
+
+
+def set_breadcrumb_root(header_html: str, app_name: str) -> str:
+    """把面包屑**第一级套话**换成产品名。零 LLM。
+
+    ⚠ 只动套话，不动「充电业务 › 运营地图」这种真 IA。W3C APG 面包屑
+      第一项本来就是站点名（aria-practices breadcrumb 示例的 Home /
+      WAI 那一级）——有产品名却写「通用后台」，就是套错了模板。
+    """
+    if not (app_name or "").strip():
+        return header_html
+    nav = _breadcrumb_nav(header_html)
+    if not nav:
+        return header_html
+    current = _breadcrumb_current_span(header_html)
+    current_html = current[1].group(0) if current else ""
+    body = nav.group(0)
+    root = None
+    for m in _CRUMB_SEG.finditer(body):
+        if current_html and m.group(0) == current_html:
+            continue
+        text = _crumb_plain(m.group(0))
+        if len(text) < 2:
+            continue
+        root = m
+        break
+    if root is None:
+        return header_html
+    text = _crumb_plain(root.group(0))
+    if text == app_name.strip() or not _is_generic_crumb_root(text):
+        return header_html
+    replaced_seg = _SEG_INNER.sub(
+        lambda m: m.group(1) + escape(app_name.strip()) + m.group(3),
+        root.group(0),
+        count=1,
+    )
+    new_body = body[: root.start()] + replaced_seg + body[root.end():]
+    return header_html.replace(body, new_body, 1)
 
 
 def _set_class(link: str, value: str) -> str:
@@ -667,19 +795,28 @@ def _apply_identity(shell_part: str, old: str, new: str) -> str:
 
 
 def _pick_shell_source(pages_html: Dict[str, str]) -> str:
-    """选哪一页的壳当模板：**导航链接最多的那一页**。
+    """选哪一页的壳当模板：有文字的宽侧栏优先，其次导航链接最多。
 
-    不是因为它"更对"（p3 那页恰恰发明了 5 个不存在的入口），而是因为链接越多、
-    可复用的图标模板越多。导航内容反正要按 spec 重排，被选中那页菜单里的
-    错误不会被带过去——留下的只有它的视觉外框。
+    链接多仍有用——图标模板多。但 2026-08-20 满电青年真机：工单页链接
+    略多、侧栏却是 ``w-16``，unify 把 64px 轨灌到首页。点进「服务工单工作台」
+    菜单文字挤成一竖条，像侧栏自己收成了图标模式。
+
+    对照 shadcn/ui Sidebar：``--sidebar-width: 16rem`` 是展开态（有 label），
+    ``--sidebar-width-icon: 3rem`` 只在 *collapsible=icon* 时切。有菜单文字
+    时不许拿图标轨当整站壳。导航内容仍按 spec 重排，带走的只有外框。
     """
-    best, best_n = "", -1
+    labeled_wide: List[Tuple[int, int, str]] = []
+    all_pages: List[Tuple[int, int, str]] = []
     for page_id, markup in pages_html.items():
         nav = _NAV.search(extract_shell(markup)["aside"] or markup)
         n = len(_LINK.findall(nav.group(0))) if nav else 0
-        if n > best_n:
-            best, best_n = page_id, n
-    return best
+        w = aside_width_rank(markup)
+        all_pages.append((n, w, page_id))
+        if aside_has_text_labels(markup) and w >= _LABELED_ASIDE_MIN_RANK:
+            labeled_wide.append((n, w, page_id))
+    pool = labeled_wide or all_pages
+    pool.sort(key=lambda row: (row[0], row[1]), reverse=True)
+    return pool[0][2] if pool else ""
 
 
 def _pick_shell_source_phone(pages_html: Dict[str, str]) -> str:
@@ -739,6 +876,7 @@ def _unify_shell_phone(pages_html: Dict[str, str], spec: Dict[str, Any]) -> Dict
     old_brand, old_role = detect_brand_and_role(header)
     header = _apply_identity(header, old_brand, app_name)
     header = _apply_identity(header, old_role, role)
+    header = set_breadcrumb_root(header, app_name)
 
     templates = nav_templates(nav_m.group(0)) if nav_m else None
 
@@ -853,6 +991,7 @@ def unify_shell(
         # ★ 面包屑按页改（2026-08-15）：壳是整段复制的，面包屑住在里面，
         #   不单独处理的话每页都写着源页那一节。
         header = set_breadcrumb_current(header, name_of.get(page_id, ""))
+        header = set_breadcrumb_root(header, app_name)
         if templates and nav_match:
             items = build_nav_items(templates, spec_pages, page_id, app_name=app_name)
             new_nav = re.sub(
@@ -865,6 +1004,10 @@ def unify_shell(
         html = markup
         if aside:
             html = _ensure_desktop_aside(html, aside)
+        # ★ 有菜单文字时不许停在图标轨。源页若是 w-16（或 bind 之后才变窄），
+        #   整段复制会把「点进某页侧栏瘪了」扩散到每一页。抬到 w-64 必须在
+        #   reconcile **之前**：让位跟的是抬完之后的宽度。
+        html = ensure_labeled_aside_width(html)
         if header:
             html = _HEADER.sub(lambda _m: header, html, count=1) if _HEADER.search(html) else html
         # ★ 内容区容器也要统一（2026-08-15 补）。
@@ -903,7 +1046,9 @@ def unify_shell(
                     html,
                     count=1,
                 )
-        out[page_id] = html
+        # ★ 整页居中卡片撑满视口（2026-08-20 满电青年）。放在 reconcile
+        #   之后：ml-16 已经写对，铺满层才不会去动让位。
+        out[page_id] = ensure_desktop_viewport_fill(html)
 
     return {
         "version": PAGE_SHELL_VERSION,
@@ -957,6 +1102,11 @@ def _body_is_flex_row(markup: str) -> bool:
 #: 脱离文档流的定位类。`fixed`/`absolute` 的侧栏**不占位**。
 _OUT_OF_FLOW = ("fixed", "absolute")
 _WIDTH_CLS = re.compile(r"^w-(\d+|\[[^\]]+\])$")
+_STRIP_TAGS = re.compile(r"<[^>]+>")
+#: 有菜单文字时低于这个 Tailwind 档算图标轨。w-56 = 14rem 是文字轨下限；
+#: shadcn 展开态是 16rem = w-64。
+_LABELED_ASIDE_MIN_RANK = 56
+_LABELED_ASIDE_WIDTH = "w-64"
 
 
 def _aside_tokens(markup: str) -> set:
@@ -1000,11 +1150,116 @@ def aside_offset_token(markup: str) -> Optional[str]:
     ⚠ 宽度认不出来就返回 None，**不猜一个 ml-64 塞进去**：猜错的偏移
       跟没有偏移一样是坏版式，而且更难查。
     """
+    tok = aside_width_token(markup)
+    if not tok:
+        return None
+    m = _WIDTH_CLS.match(tok)
+    return f"ml-{m.group(1)}" if m else None
+
+
+def aside_width_token(markup: str) -> Optional[str]:
+    """侧栏开标签上的 ``w-*``。没有就 None，不猜。"""
     for tok in _aside_tokens(markup):
-        m = _WIDTH_CLS.match(tok)
-        if m:
-            return f"ml-{m.group(1)}"
+        if _WIDTH_CLS.match(tok):
+            return tok
     return None
+
+
+def aside_width_rank(markup: str) -> int:
+    """把 ``w-16`` / ``w-[256px]`` 收成可比较的整数。越大越宽。
+
+    Tailwind 数字档：``w-16``=64px，``w-64``=256px。任意值 ``w-[256px]``
+    除以 4 对齐到同一把尺。认不出就 0。
+    """
+    tok = aside_width_token(markup)
+    if not tok:
+        return 0
+    inner = _WIDTH_CLS.match(tok).group(1)
+    if inner.isdigit():
+        return int(inner)
+    px = re.fullmatch(r"\[(\d+)px\]", inner)
+    if px:
+        return int(px.group(1)) // 4
+    rem = re.fullmatch(r"\[(\d+(?:\.\d+)?)rem\]", inner)
+    if rem:
+        return int(round(float(rem.group(1)) * 4))
+    return 0
+
+
+def aside_has_text_labels(markup: str) -> bool:
+    """侧栏导航是不是带着可读文字（不是纯 SVG 图标轨）。
+
+    剥标签再看：中文，或连续三个以上拉丁字母。path 的 ``d=`` 已经随标签走了。
+    """
+    block = _ASIDE.search(markup or "")
+    if not block:
+        return False
+    nav = _NAV.search(block.group(0))
+    blob = nav.group(0) if nav else block.group(0)
+    text = unescape(_STRIP_TAGS.sub(" ", blob))
+    if re.search(r"[\u4e00-\u9fff]", text):
+        return True
+    return bool(re.search(r"[A-Za-z]{3,}", text))
+
+
+def apply_aside_width_token(html: str, width_tok: str) -> str:
+    """改 ``<aside>`` 开标签上的宽度类，其它 class 一个不动。"""
+    m = _ASIDE_OPEN.search(html or "")
+    if not m or not width_tok:
+        return html
+    tag = m.group(0)
+    cls = _CLASS.search(tag)
+    if not cls:
+        new_tag = re.sub(r"<aside\b", f'<aside class="{width_tok}"', tag, count=1, flags=re.I)
+        return html[: m.start()] + new_tag + html[m.end() :]
+    toks = cls.group(1).split()
+    new: List[str] = []
+    replaced = False
+    for t in toks:
+        if _WIDTH_CLS.match(t):
+            if not replaced:
+                new.append(width_tok)
+                replaced = True
+        else:
+            new.append(t)
+    if not replaced:
+        new.insert(0, width_tok)
+    new_tag = tag.replace(cls.group(0), f'class="{" ".join(new)}"', 1)
+    return html[: m.start()] + new_tag + html[m.end() :]
+
+
+def ensure_labeled_aside_width(markup: str) -> str:
+    """有菜单文字的侧栏抬到 ``w-64``。已经够宽或纯图标轨不动。
+
+    ⚠ 2026-08-20 满电青年：首页 ``w-64`` 文字排得下，工单页 ``w-16``
+    同样四个中文项挤成一列。unify 若源页是窄的，点进去就像侧栏自己收了。
+    shadcn 展开态是 16rem，不是 3rem。
+    """
+    if not aside_has_text_labels(markup):
+        return markup
+    rank = aside_width_rank(markup)
+    if rank >= _LABELED_ASIDE_MIN_RANK:
+        return markup
+    return apply_aside_width_token(markup, _LABELED_ASIDE_WIDTH)
+
+
+def canonical_labeled_aside_width(pages_html: Dict[str, str]) -> Optional[str]:
+    """多页里文字侧栏该锁的宽度：够宽的取最宽；全是图标轨则抬到 ``w-64``。"""
+    best_rank, best_tok = -1, None
+    labeled = False
+    for html in pages_html.values():
+        if not aside_has_text_labels(html):
+            continue
+        labeled = True
+        tok = aside_width_token(html)
+        rank = aside_width_rank(html)
+        if tok and rank > best_rank:
+            best_rank, best_tok = rank, tok
+    if not labeled:
+        return None
+    if best_tok and best_rank >= _LABELED_ASIDE_MIN_RANK:
+        return best_tok
+    return _LABELED_ASIDE_WIDTH
 
 
 _TAG = re.compile(r"<(/?)([a-zA-Z][\w-]*)\b([^>]*?)(/?)>")
@@ -1090,17 +1345,49 @@ def main_offset_tokens(markup: str) -> List[str]:
                    for t in _offset_tokens_of(tag)})
 
 
-def _rewrite_main_class(markup: str, toks: List[str]) -> str:
-    m = _MAIN_OPEN.search(markup or "")
-    if not m:
-        return markup
-    cls = _CLASS.search(m.group(0))
+def _replace_offset_classes(tag: str, want: Optional[str]) -> str:
+    """只动左偏移类，其余 class 一个不碰。want=None 就是摘掉偏移。"""
+    cls = _CLASS.search(tag)
     if not cls:
+        if not want:
+            return tag
+        if tag.endswith("/>"):
+            return f'{tag[:-2]} class="{want}"/>'
+        if tag.endswith(">"):
+            return f'{tag[:-1]} class="{want}">'
+        return tag
+    toks = cls.group(1).split()
+    kept = [t for t in toks if not _OFFSET_CLS.match(t)]
+    if want:
+        first_off = next((i for i, t in enumerate(toks) if _OFFSET_CLS.match(t)), 0)
+        kept.insert(min(first_off, len(kept)), want)
+    return tag.replace(cls.group(0), f'class="{" ".join(kept)}"', 1)
+
+
+def _apply_wanted_offset(markup: str, want: str) -> str:
+    """让祖先链上**恰好一层**带着 `want`，错的改、缺的补、多的摘。
+
+    ⚠ 必须改**已经带着偏移的那一层**，不许给 `<main>` 再叠一份——
+    律所那趟偏移写在包裹层上，给 main 补 ml-64 当场量到 512px。
+    """
+    chain = main_offset_chain(markup)
+    if not chain:
         return markup
-    if toks == cls.group(1).split():
-        return markup
-    new_tag = m.group(0).replace(cls.group(0), f'class="{" ".join(toks)}"', 1)
-    return markup[: m.start()] + new_tag + markup[m.end():]
+    with_off = [(s, e, t) for s, e, t in chain if _offset_tokens_of(t)]
+    if not with_off:
+        start, end, tag = chain[-1]
+        return markup[:start] + _replace_offset_classes(tag, want) + markup[end:]
+    keeper = (with_off[0][0], with_off[0][1])
+    out = markup
+    for start, end, tag in reversed(chain):
+        offs = _offset_tokens_of(tag)
+        is_keeper = (start, end) == keeper
+        if not offs and not is_keeper:
+            continue
+        new_tag = _replace_offset_classes(tag, want if is_keeper else None)
+        if new_tag != tag:
+            out = out[:start] + new_tag + out[end:]
+    return out
 
 
 def offset_needed(markup: str) -> bool:
@@ -1150,24 +1437,35 @@ def reconcile_main_offset(markup: str) -> str:
     承载层没跟着对齐**——这正是「只修一半」的形状。
 
     所以这里两个方向都补：该带的补上，多余的去掉。
+
+    ## ⚠ 有偏移 ≠ 偏移对（2026-08-20 满电青年，第六次返工）
+
+    上一版看到祖先链上有任何 `ml-*` 就 `return markup`——问的是「让了没有」，
+    不问「让的是不是这一根侧栏的宽度」。真机源页图标轨 `w-16`（64px），
+    别的页还写着给 `w-64` 让的 `ml-64`（256px）。unify 把窄轨贴上去之后，
+    中间空出 ~192px 的深色缝，看起来像多了一列空侧栏。
+
+    成熟实现（shadcn/ui Sidebar）用**同一个宽度变量**同时驱动轨和让位：
+    `--sidebar-width: 16rem` / `--sidebar-width-icon: 3rem`，gap 元素写
+    `w-(--sidebar-width)`，收成图标轨时切到 `--sidebar-width-icon`。
+    静态 Tailwind 页面做不到 CSS 变量，等价约束是：`w-16` 就必须 `ml-16`，
+    `w-64` 就必须 `ml-64`。错了就改**已经带着偏移的那一层**，不要再给
+    `<main>` 叠一份。
     """
-    m = _MAIN_OPEN.search(markup or "")
-    if not m:
+    if not _MAIN_OPEN.search(markup or ""):
         return markup
-    cls = _CLASS.search(m.group(0))
-    if not cls:
-        return markup
-    toks = cls.group(1).split()
     if not aside_out_of_flow(markup):
         return strip_main_offset(markup)
-    # ⚠ 问的是**整条祖先链**有没有让位，不是只问 <main>：真机 p1 的偏移
-    #   写在包裹层上，只看 main 会以为没让位，补一个就成了双倍偏移（512px）。
-    if main_offset_tokens(markup):
-        return markup  # 已经让位了
     want = aside_offset_token(markup)
     if not want:
         return markup  # 宽度认不出来，不猜
-    return _rewrite_main_class(markup, [want] + toks)
+    # ⚠ 问的是**整条祖先链**有没有让位，不是只问 <main>：真机 p1 的偏移
+    #   写在包裹层上，只看 main 会以为没让位，补一个就成了双倍偏移（512px）。
+    layers = [t for _s, _e, t in main_offset_chain(markup) if _offset_tokens_of(t)]
+    have = main_offset_tokens(markup)
+    if have == [want] and len(layers) == 1:
+        return markup  # 已经让对了，一个字都别动
+    return _apply_wanted_offset(markup, want)
 
 
 def main_signature(markup: str) -> str:
@@ -1281,18 +1579,29 @@ def repair_pages_after_bind(
     所以「bind 吃掉偏移」这个形状**至今没有在真机上观测到**，单测里那份是
     构造出来的。留着它是因为便宜，不是因为它救过火。
 
-    ⚠ 顺序要紧：先还原壳再对齐偏移。偏移该不该有取决于**侧栏是不是 fixed**，
-      而侧栏可能刚被换回打孔前那份——先算偏移就是拿旧侧栏做的判断。
+    ⚠ 顺序要紧：先还原壳，再锁文字侧栏宽度，再对齐偏移。偏移该不该有
+      取决于**侧栏是不是 fixed**，宽度取决于**锁完之后的 w-***——先算偏移
+      就是拿旧侧栏做的判断。
 
     返回 (修好的页面, 被还原的壳, 被重新对齐的内容区)。
     """
     fixed, restored = restore_shell_after_bind(bound, before)
+    # bind 常只改 class（w-64 → w-16）。shell_fingerprint 把 class 抹平，
+    # restore 会以为没动——侧栏就这么瘪了。锁回打孔前那套文字轨宽度。
+    canonical = canonical_labeled_aside_width(before) or canonical_labeled_aside_width(
+        fixed
+    )
     reconciled: List[str] = []
     for pid, html in list(fixed.items()):
-        out = reconcile_main_offset(html)
-        if out != html:
-            fixed[pid] = out
-            reconciled.append(f"{pid}.main")
+        out = html
+        if canonical:
+            out = apply_aside_width_token(out, canonical)
+        out = ensure_labeled_aside_width(out)
+        aligned = reconcile_main_offset(out)
+        if aligned != html:
+            fixed[pid] = aligned
+            if main_offset_tokens(aligned) != main_offset_tokens(html):
+                reconciled.append(f"{pid}.main")
     return fixed, restored, reconciled
 
 
@@ -1400,6 +1709,19 @@ def check_shell_consistency(
                     f"内容会被压在侧栏底下"
                 ),
             })
+        # ⚠ 2026-08-20 满电青年：旧判据只问「有没有偏移」，`w-16`+`ml-64`
+        #   也算「已经让位了」——假绿，中间一条 192px 的缝没有人报。
+        elif out_of_flow and offsets:
+            want = aside_offset_token(html)
+            if want and any(t != want for t in offsets):
+                problems.append({
+                    "path": f"{pid}.main",
+                    "message": (
+                        f"内容区让位是 {'、'.join(offsets)}，"
+                        f"侧栏宽度对应的是 {want}——"
+                        f"中间会空出一条缝（或内容被压住）"
+                    ),
+                })
 
     # 全部页面都没 aside（移动端）时，标签栏本身也要各页一致
     if not any(s["aside"] for s in shells.values()):
