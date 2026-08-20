@@ -94,6 +94,13 @@ _ZH_HINTS = (
     ("面包", "bakery bread"),
     ("电池", "electric vehicle battery"),
     ("充电", "ev charging cable"),
+    ("内容团队", "creative team office"),
+    ("自媒体", "content creator filming"),
+    ("短视频", "smartphone filming video"),
+    ("素材库", "digital content library"),
+    ("创作者", "content creator studio"),
+    ("素材", "photo video footage"),
+    ("封面", "video thumbnail still"),
 )
 
 # 车辆 vs 食物：用户分层里的「外卖骑手」不是画面要搜的东西。
@@ -189,6 +196,13 @@ _GENERIC_TAIL_RE = re.compile(
 )
 _IMG_RE = re.compile(r"<img\b[^>]*>", re.I | re.S)
 _PLACEHOLD_SIZE_RE = re.compile(r"placehold\.co/(\d+)x(\d+)", re.I)
+#: 模型常把模板英文写进 alt，placehold.co?text= 会把「AI Workflow Video」
+#: 印在卡片上（2026-08-21 素材雷达）。这种 alt 不能当检索词。
+_GENERIC_ALT_RE = re.compile(
+    r"(workflow|dashboard|placeholder|hero(?:\s+image)?|"
+    r"\bai\s+video\b|stock\s+photo|lorem|dummy)",
+    re.I,
+)
 
 
 def _host_ok(url: str) -> bool:
@@ -454,6 +468,8 @@ def _aspect_of(src: str) -> Optional[str]:
 def _img_search_query(alt: str, topic_queries: List[str]) -> Optional[str]:
     """tteg：检索词描述**这张照片**。车辆话题里的「外卖骑手」改搜电摩，不搜外卖。"""
     text = " ".join((alt or "").split())
+    if _GENERIC_ALT_RE.search(text):
+        return topic_queries[0] if topic_queries else "content creator smartphone video"
     if len(text) < 3:
         return None
     vehicle_topic = any(query in _VEHICLE_EN for query in topic_queries)
@@ -504,6 +520,28 @@ def _resolve_query(
     return url
 
 
+def _blank_placehold_src(src: str) -> str:
+    match = _PLACEHOLD_SIZE_RE.search(src or "")
+    if not match:
+        return src
+    return f"https://placehold.co/{match.group(1)}x{match.group(2)}/e2e8f0/cbd5e1"
+
+
+def _neutralize_placehold_text(html: str) -> str:
+    """剥掉 placehold.co?text= 里的英文模板词。搜不到真图时卡片也不该写 AI Workflow Video。"""
+
+    def fix(tag: str) -> str:
+        src = _attr(tag, "src")
+        low = (src or "").lower()
+        if "placehold.co" not in low:
+            return tag
+        if "text=" not in low and "text%3d" not in low:
+            return tag
+        return _set_src(tag, _blank_placehold_src(src))
+
+    return _IMG_RE.sub(lambda m: fix(m.group(0)), html or "")
+
+
 def fill_stock_placeholders(
     html: str,
     *,
@@ -541,7 +579,7 @@ def fill_stock_placeholders(
             seen_q += 1
         jobs.append((match, tag, query, aspect))
     if not jobs:
-        return markup
+        return _neutralize_placehold_text(markup)
     for _match, _tag, query, aspect in jobs:
         _resolve_query(query, fetch_fn=fetch_fn, aspect=aspect, cache=store)
     out = markup
@@ -550,7 +588,7 @@ def fill_stock_placeholders(
         if not url:
             continue
         out = out[: match.start()] + _set_src(tag, url) + out[match.end() :]
-    return out
+    return _neutralize_placehold_text(out)
 
 
 def fill_stock_in_pages(

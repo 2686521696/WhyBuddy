@@ -374,6 +374,34 @@ class Test按格换图:
         )
         assert "placehold.co" in out
 
+    def test_模板英文alt不印在卡片上_改搜话题(self):
+        """⚠ 2026-08-21 素材雷达：placehold.co?text=AI+Workflow+Video。"""
+        from services.stock_images import _img_search_query
+
+        spec = {
+            "appName": "内容雷达",
+            "pages": [{"name": "首页", "purpose": "看自媒体素材封面"}],
+        }
+        goal = "面向自媒体创作者与内容团队的素材雷达"
+        topics = _queries(spec, goal)
+        blob = " ".join(topics).lower()
+        assert "creator" in blob or "footage" in blob or "filming" in blob
+        assert _img_search_query("AI Workflow Video", topics) != "AI Workflow Video"
+
+        html = (
+            '<img src="https://placehold.co/600x400?text=AI+Workflow+Video" '
+            'alt="AI Workflow Video">'
+        )
+
+        def fake(_q: str) -> dict:
+            return {"results": []}
+
+        out = fill_stock_placeholders(html, spec=spec, goal=goal, fetch_fn=fake)
+        assert "AI+Workflow" not in out
+        assert "text=" not in out.lower()
+        assert "placehold.co" in out
+        assert 'alt="AI Workflow Video"' in out
+
 
 class Test接在画页之后:
     def test_主链路先画再按格填(self):
