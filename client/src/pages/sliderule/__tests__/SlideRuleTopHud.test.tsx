@@ -52,9 +52,10 @@ describe("SlideRuleTopHud", () => {
     expect(html).not.toContain('data-testid="sliderule-layout-chat"');
     expect(html).not.toContain('data-testid="sliderule-layout-stage"');
     expect(html).not.toContain('data-testid="sliderule-layout-maximize"');
+    expect(html).not.toContain('data-testid="sliderule-layout-reset"');
   });
 
-  it("只有右侧页面显隐 + 最大化，没有会话栏/对话键", () => {
+  it("只有右侧页面显隐 + 最大化 + 重置布局，没有会话栏/对话键", () => {
     const html = renderToStaticMarkup(
       <StudioLayoutProvider available>
         <SlideRuleTopHud isRunning={false} />
@@ -63,6 +64,8 @@ describe("SlideRuleTopHud", () => {
     expect(html).toContain('data-testid="sliderule-layout-stage"');
     expect(html).toContain('aria-label="隐藏页面"');
     expect(html).toContain('data-testid="sliderule-layout-maximize"');
+    expect(html).toContain('data-testid="sliderule-layout-reset"');
+    expect(html).toContain('aria-label="重置布局"');
     expect(html).not.toContain('data-testid="sliderule-layout-sidebar"');
     expect(html).not.toContain('data-testid="sliderule-layout-chat"');
     expect(html).not.toContain("折叠舞台");

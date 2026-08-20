@@ -44,6 +44,9 @@ describe("workbench chrome live-path wiring", () => {
     expect(src).toContain("studio?.toggleStagePage");
     expect(src).toContain("隐藏页面");
     expect(src).toContain("sliderule-layout-maximize");
+    expect(src).toContain("sliderule-layout-reset");
+    expect(src).toContain("studio?.resetLayout");
+    expect(src).toContain("重置布局");
     expect(src).not.toContain("useShellSidebar");
     expect(src).not.toContain("sliderule-layout-sidebar");
     expect(src).not.toContain("sliderule-layout-chat");
@@ -108,9 +111,13 @@ describe("workbench chrome live-path wiring", () => {
     );
     expect(sidebar).toContain("border-right: 1px solid var(--sr-border-muted");
     expect(sidebar).toContain("#d1d9e0b3");
+    expect(sidebar).toContain("var(--sr-sidebar-bg");
+    expect(sidebar).not.toContain("var(--sr-shell-bg");
     expect(sidebar).not.toContain("linear-gradient");
     expect(css).not.toContain(".native-agent-main::before");
     expect(css).toContain("--sr-border-muted: #d1d9e0b3");
+    expect(css).toContain("--sr-sidebar-bg: #e8e9ed");
+    expect(css).toContain("--sr-shell-bg: #f4f4f6");
     const dragCss = css.slice(css.indexOf('[data-studio-resizing="true"]'));
     expect(dragCss).toContain("pointer-events: none");
     expect(dragCss).toContain("contain: strict");
@@ -140,6 +147,35 @@ describe("workbench chrome live-path wiring", () => {
     expect(scale).toContain("requestAnimationFrame");
   });
 
+  it("对话栏默认走侧栏×2，重置布局接在顶栏和双击上", () => {
+    /**
+     * ⚠ 2026-08-20：只改 helper 不接线会假绿。把 defaultSize 写回 38、
+     * 顶栏不调 resetLayout，这条必须红。
+     */
+    const split = stripComments(
+      readFileSync(new URL("../StudioSplit.tsx", import.meta.url), "utf8")
+    );
+    expect(split).toContain("studioChatDefaultPercent");
+    expect(split).toContain("studioChatDefaultPx");
+    expect(split).toContain("onDoubleClick={resetLayout}");
+    expect(split).toContain("sliderule-studio-split-v2");
+    expect(split).toContain("layoutGeneration");
+    expect(split).not.toContain("defaultSize={38}");
+    expect(split).not.toContain("defaultSize={62}");
+    expect(split).not.toMatch(/CHAT_DEFAULT\s*=\s*38/);
+
+    const ctx = stripComments(
+      readFileSync(
+        new URL("../StudioLayoutContext.tsx", import.meta.url),
+        "utf8"
+      )
+    );
+    expect(ctx).toContain("resetLayout");
+    expect(ctx).toContain("layoutGeneration");
+    expect(ctx).toContain("setStagePageHidden(false)");
+    expect(ctx).not.toContain("studioChatDefaultPercent");
+  });
+
   it("角色切换箭头有右边距，不用系统原生贴边三角", () => {
     const src = stripComments(
       readFileSync(new URL("../SlideRuleStudio.tsx", import.meta.url), "utf8")
@@ -153,6 +189,25 @@ describe("workbench chrome live-path wiring", () => {
     expect(role).toContain("right-2.5");
     expect(role).toContain("ChevronDown");
     expect(role).not.toContain("bg-white px-3 text-[12px]");
+  });
+
+  it("舞台档位不是黑底白字", () => {
+    const studio = stripComments(
+      readFileSync(new URL("../SlideRuleStudio.tsx", import.meta.url), "utf8")
+    );
+    const arch = stripComments(
+      readFileSync(new URL("../ArchitectureStage.tsx", import.meta.url), "utf8")
+    );
+    expect(studio).not.toContain("bg-[#1f2328]");
+    expect(arch).not.toContain("bg-[#1f2328]");
+    const gears = studio.slice(
+      studio.indexOf("sliderule-stage-gears"),
+      studio.indexOf("sliderule-xray-toggle")
+    );
+    expect(gears).toContain("bg-[#f4f4f5]");
+    expect(gears).toContain("shadow-sm");
+    expect(gears).toContain("bg-white");
+    expect(gears).not.toContain("text-white");
   });
 
   it("图标簇挂在舞台头条右侧，不占整页顶栏", () => {

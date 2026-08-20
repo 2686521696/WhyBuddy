@@ -6,7 +6,7 @@
  * 面板标题行同一侧同一套。
  */
 import React from "react";
-import { Layers, Maximize2, Minimize2, RotateCw } from "lucide-react";
+import { Columns2, Layers, Maximize2, Minimize2, RotateCw } from "lucide-react";
 import { useStudioLayout } from "./StudioLayoutContext";
 import { isStageMaximized, maximizeIntent } from "./studio-layout";
 
@@ -118,6 +118,13 @@ export function SlideRuleTopHud({
               ) : (
                 <Maximize2 className="h-3.5 w-3.5" strokeWidth={1.75} />
               )}
+            </LayoutBtn>
+            <LayoutBtn
+              testId="sliderule-layout-reset"
+              label="重置布局"
+              onClick={studio?.resetLayout}
+            >
+              <Columns2 className="h-3.5 w-3.5" strokeWidth={1.75} />
             </LayoutBtn>
           </>
         ) : null}

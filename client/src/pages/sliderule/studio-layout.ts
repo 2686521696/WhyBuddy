@@ -13,6 +13,8 @@
  *   最大化 ≈ 折对话、舞台铺满（再按还原）
  */
 
+import { SHELL_SIDEBAR_WIDTH_PX } from "./shell-sidebar-layout";
+
 export type StudioPart = "chat" | "stage";
 
 export type StudioCollapsed = {
@@ -43,10 +45,48 @@ export function maximizeIntent(collapsed: StudioCollapsed): MaximizeIntent {
  *
  * 2026-08-18 真机：顶栏右侧栏图标走了 `panel.collapse()`，那是改 flex
  * 尺寸（宽变成 0），用户原话「不是控制它的宽度的」。隐藏 = 整块不渲染，
- * 对话铺满；再按一次按 38/62 默认分栏重新挂上。
+ * 对话铺满；再按一次按默认分栏重新挂上。
  */
 export function nextStagePageHidden(hidden: boolean): boolean {
   return !hidden;
+}
+
+/**
+ * 对话栏默认宽 = 左侧菜单的二倍。
+ *
+ * ⚠ 2026-08-20 City Walk：38/62 百分比让对话栏比侧栏宽一截，用户指着
+ * 说默认要菜单宽度的二倍。百分比跟窗口走，会漂；用侧栏像素 ×2 再折成
+ * 分栏百分比。量不到容器时回落 30%（约 1920−252 工作区上的 504px）。
+ */
+export const STUDIO_CHAT_SIDEBAR_MULTIPLIER = 2;
+export const STUDIO_CHAT_MIN_PERCENT = 20;
+export const STUDIO_CHAT_MAX_PERCENT = 72;
+export const STUDIO_CHAT_FALLBACK_PERCENT = 30;
+
+export function studioChatDefaultPx(): number {
+  return SHELL_SIDEBAR_WIDTH_PX * STUDIO_CHAT_SIDEBAR_MULTIPLIER;
+}
+
+export function studioChatDefaultPercent(splitWidthPx: number): number {
+  if (!(splitWidthPx > 0)) return STUDIO_CHAT_FALLBACK_PERCENT;
+  const pct = (studioChatDefaultPx() / splitWidthPx) * 100;
+  return Math.min(
+    STUDIO_CHAT_MAX_PERCENT,
+    Math.max(STUDIO_CHAT_MIN_PERCENT, pct)
+  );
+}
+
+export function studioStageDefaultPercent(splitWidthPx: number): number {
+  return 100 - studioChatDefaultPercent(splitWidthPx);
+}
+
+/** 猜分栏容器宽：视口减去展开侧栏。侧栏折没时整窗都是分栏。 */
+export function guessStudioSplitWidthPx(
+  viewportWidth: number,
+  sidebarCollapsed = false
+): number {
+  const side = sidebarCollapsed ? 0 : SHELL_SIDEBAR_WIDTH_PX;
+  return Math.max(0, viewportWidth - side);
 }
 
 /** 空会话或用户藏了预览页：右侧整块不渲染。不是把宽度收成 0。 */

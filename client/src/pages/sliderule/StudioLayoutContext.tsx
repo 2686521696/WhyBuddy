@@ -27,6 +27,7 @@ export type StudioLayoutApi = {
   resizing: boolean;
   chatRef: React.RefObject<ImperativePanelHandle | null>;
   stageRef: React.RefObject<ImperativePanelHandle | null>;
+  splitElRef: React.RefObject<HTMLDivElement | null>;
   setChatCollapsed: (next: boolean) => void;
   setStageCollapsed: (next: boolean) => void;
   setResizing: (next: boolean) => void;
@@ -34,6 +35,10 @@ export type StudioLayoutApi = {
   toggleStage: () => void;
   toggleStagePage: () => void;
   toggleMaximize: () => void;
+  /** 展开两侧、显示预览页、对话栏回到侧栏×2。拖过之后的一键还原。 */
+  resetLayout: () => void;
+  /** resetLayout 每按一次 +1。分栏可能被卸掉（藏预览页），要等重新挂上再 resize。 */
+  layoutGeneration: number;
 };
 
 const StudioLayoutContext = React.createContext<StudioLayoutApi | null>(null);
@@ -47,10 +52,12 @@ export function StudioLayoutProvider({
 }) {
   const chatRef = React.useRef<ImperativePanelHandle>(null);
   const stageRef = React.useRef<ImperativePanelHandle>(null);
+  const splitElRef = React.useRef<HTMLDivElement | null>(null);
   const [chatCollapsed, setChatCollapsed] = React.useState(false);
   const [stageCollapsed, setStageCollapsed] = React.useState(false);
   const [stagePageHidden, setStagePageHidden] = React.useState(false);
   const [resizing, setResizing] = React.useState(false);
+  const [layoutGeneration, setLayoutGeneration] = React.useState(0);
   const collapsed = { chat: chatCollapsed, stage: stageCollapsed };
 
   React.useEffect(() => {
@@ -97,6 +104,15 @@ export function StudioLayoutProvider({
     else if (intent === "restore") chat.expand();
   }, [stageCollapsed]);
 
+  const resetLayout = React.useCallback(() => {
+    // 隐藏页面 / 最大化都算布局偏离。分栏可能此刻不在树上
+    // （藏了预览页），只翻状态 + 代数；真正 resize 在 StudioSplit 里做。
+    setStagePageHidden(false);
+    setChatCollapsed(false);
+    setStageCollapsed(false);
+    setLayoutGeneration(n => n + 1);
+  }, []);
+
   const value = React.useMemo<StudioLayoutApi>(
     () => ({
       available,
@@ -105,6 +121,7 @@ export function StudioLayoutProvider({
       resizing,
       chatRef,
       stageRef,
+      splitElRef,
       setChatCollapsed,
       setStageCollapsed,
       setResizing,
@@ -112,6 +129,8 @@ export function StudioLayoutProvider({
       toggleStage,
       toggleStagePage,
       toggleMaximize,
+      resetLayout,
+      layoutGeneration,
     }),
     [
       available,
@@ -123,6 +142,8 @@ export function StudioLayoutProvider({
       toggleStage,
       toggleStagePage,
       toggleMaximize,
+      resetLayout,
+      layoutGeneration,
     ]
   );
 

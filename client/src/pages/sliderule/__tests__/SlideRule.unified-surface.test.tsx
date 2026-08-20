@@ -192,7 +192,9 @@ describe("unified /sliderule surface (single mental model)", () => {
     );
     expect(phoneChip).toContain("应用");
     expect(html).toContain("描述你想构建的业务系统");
+    // 静态营销网点仍禁；鼠标点阵只欢迎页有。
     expect(html).not.toContain('data-testid="sliderule-empty-dot-field"');
+    expect(html).toContain('data-testid="sliderule-home-hover-dots"');
     expect(html.match(/data-testid="sliderule-composer-dock"/g)?.length).toBe(
       1
     );
@@ -218,6 +220,7 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain('data-testid="sliderule-empty-enter-hint"');
     expect(html).not.toContain('data-testid="sliderule-composer-device"');
     expect(html).not.toContain('data-testid="sliderule-empty-dot-field"');
+    expect(html).not.toContain('data-testid="sliderule-home-hover-dots"');
     expect(html).not.toContain("pb-[104px]");
     const footer = html.slice(
       html.indexOf('data-testid="sliderule-composer-footer"'),
@@ -261,6 +264,7 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).toContain('data-testid="sliderule-layout-stage"');
     expect(html).toContain('aria-label="隐藏页面"');
     expect(html).toContain('data-testid="sliderule-layout-maximize"');
+    expect(html).toContain('data-testid="sliderule-layout-reset"');
     expect(html).not.toContain('data-testid="sliderule-layout-sidebar"');
     expect(html).not.toContain('data-testid="sliderule-layout-chat"');
     expect(html).not.toContain("折叠舞台");
@@ -551,6 +555,19 @@ describe("unified /sliderule surface (single mental model)", () => {
     });
 
     expect(html).toContain("这个审批流需要几级审批？");
+    // 叠在输入框上方，不进 flex 流顶走输入。变异：改回 mb-2 占位必红。
+    const card = html.slice(
+      html.indexOf("sliderule-clarification-card") - 420,
+      html.indexOf("sliderule-clarification-card") + 40
+    );
+    expect(card).toContain("absolute");
+    expect(card).toContain("bottom-full");
+    expect(card).toContain("sr-composer-pop");
+    const hero = html.slice(
+      html.indexOf("sliderule-hero-composer"),
+      html.indexOf("sliderule-composer-dock")
+    );
+    expect(hero).toContain("sliderule-clarification-card");
   });
 });
 
