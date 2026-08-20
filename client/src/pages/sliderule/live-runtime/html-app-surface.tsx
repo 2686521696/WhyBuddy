@@ -68,10 +68,14 @@ export const PHONE_FILL_STYLE_ID = "sliderule-phone-fill";
  * position:static 拉回流。Tailwind Play 还会在我们之后往 head 注样式，
  * 所以渲染时还要把这份 style 挪到 head 末尾（pinPhoneFillStyle）。
  * 文案与 Python 同文。
+ * 2026-08-21：header/nav 自己补圆角 inset；html/body 白底，缺页不再透黑。
+ * 同日晚：main 一律 padding-top/bottom:0 会盖掉 .p-4 的上下（左右还在）。
+ * 只清 pt-16/pb-32 这种给 fixed 壳让位的档，p-4 留下。
  */
 export const PHONE_FILL_CSS =
   "html,body{margin:0!important;width:100%!important;height:100%!important;" +
-  "min-height:100%!important;max-width:none!important;overflow:hidden!important}" +
+  "min-height:100%!important;max-width:none!important;overflow:hidden!important;" +
+  "background:#fff!important}" +
   "body{display:flex!important;flex-direction:column!important;" +
   "align-items:stretch!important;justify-content:flex-start!important}" +
   "body>*{width:100%!important;max-width:none!important;" +
@@ -81,17 +85,20 @@ export const PHONE_FILL_CSS =
   "align-items:stretch!important;justify-content:flex-start!important;" +
   "min-height:0!important;flex:1 1 auto!important;height:100%!important;width:100%!important;" +
   "overflow:hidden!important}" +
-  "header{position:static!important;flex:0 0 auto!important;width:100%!important}" +
+  "header{position:static!important;flex:0 0 auto!important;width:100%!important;" +
+  "padding-top:12px!important}" +
   "main{flex:1 1 auto!important;min-height:0!important;width:100%!important;" +
   "overflow-y:auto!important;overflow-x:hidden!important;" +
-  "padding-top:0!important;padding-bottom:0!important;" +
   "-webkit-overflow-scrolling:touch}" +
+  "main.pt-10,main.pt-12,main.pt-14,main.pt-16,main.pt-20,main.pt-24," +
+  "main.pt-28,main.pt-32{padding-top:0!important}" +
+  "main.pb-20,main.pb-24,main.pb-28,main.pb-32,main.pb-36{padding-bottom:0!important}" +
   'body>nav,body>div[class*="min-h-screen"]>nav,' +
   'body>div[class*="justify-center"]>nav,nav.fixed,nav[class*="bottom-0"]{' +
   "position:static!important;display:flex!important;flex-direction:row!important;" +
   "flex-wrap:nowrap!important;justify-content:space-around!important;" +
   "align-items:stretch!important;flex:0 0 auto!important;width:100%!important;" +
-  "min-height:48px!important}" +
+  "min-height:56px!important;padding-top:6px!important;padding-bottom:16px!important}" +
   'body>nav>a,body>div[class*="min-h-screen"]>nav>a,' +
   'body>div[class*="justify-center"]>nav>a,nav.fixed>a,nav[class*="bottom-0"]>a{' +
   "flex:1 1 0!important;min-width:0!important;" +
@@ -433,37 +440,113 @@ function installHooks(p: PurifyLike): void {
  * 不开这个开关 DOMPurify 会把 html/head/body 拆掉，`<style>` 和 `<meta>` 跟着
  * 散架——那正是 08-14 那版"一堆裸文字"的另一半原因。
  */
+function commentSpans(html: string): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  const re = /<!--[\s\S]*?-->/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) spans.push([m.index, m.index + m[0].length]);
+  const rest = spans.length ? spans[spans.length - 1][1] : 0;
+  const dangling = html.indexOf("<!--", rest);
+  if (dangling >= 0) spans.push([dangling, html.length]);
+  return spans;
+}
+
 export function stripOrphanCommentClosers(html: string): string {
   /**
    * ⚠ 2026-08-20 满电青年：page_shell 把 ``<!-- 左侧导航 <aside>`` 捞出来
    * 之后，闭合 ``-->`` 变成 body 里第一段文字，顶在预览左上角。
    * 消毒层不会当注释删——它已经不是注释了。这里与 Python
-   * ``_ORPHAN_COMMENT_CLOSE`` 同形，已闭合的 ``<!-- 主正文 <main> -->``
-   * 碰不到（那是开标签后面的 -->）。
+   * ``_strip_orphan_comment_closes`` 同形。注释内部的 ``-->`` 不动，
+   * 不然 ``<!-- 顶栏 <header>…</header> -->`` 会被截成未闭合注释。
    */
-  return (html || "").replace(
-    /(<\/(?:aside|nav|header|main|div)\s*>|<body\b[^>]*>)\s*-->/gi,
-    "$1"
-  );
+  const src = html || "";
+  const spans = commentSpans(src);
+  const re = /(<\/(?:aside|nav|header|main|div)\s*>|<body\b[^>]*>)\s*-->/gi;
+  let out = "";
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src))) {
+    if (spans.some(([a, b]) => m!.index >= a && m!.index < b)) continue;
+    out += src.slice(last, m.index) + m[1];
+    last = m.index + m[0].length;
+  }
+  return out + src.slice(last);
+}
+
+/**
+ * 听令工单 2026-08-21：说明注释里的 ``<header>：在文档流里，flex-shrink:0 -->``
+ * 被壳正则当成真顶栏复制出来，变成可见节点。Python
+ * ``_strip_comment_gutter_headers`` 同形。注释内部的说明不动。
+ */
+export function stripCommentGutterHeaders(html: string): string {
+  const src = html || "";
+  const spans = commentSpans(src);
+  const re = /<header\b[^>]*>\s*[^<]{0,120}-->\s*(?:<\/header\s*>)?/gi;
+  let out = "";
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src))) {
+    if (spans.some(([a, b]) => m!.index >= a && m!.index < b)) continue;
+    out += src.slice(last, m.index);
+    last = m.index + m[0].length;
+  }
+  return out + src.slice(last);
 }
 
 export function sanitizeAppHtml(markup: string): string {
   const purify = DOMPurify as unknown as PurifyLike;
   if (typeof purify.sanitize !== "function") return "";
   installHooks(purify);
-  return purify.sanitize(stripOrphanCommentClosers(markup || ""), {
-    ALLOWED_TAGS,
-    ALLOWED_ATTR,
-    FORBID_TAGS,
-    WHOLE_DOCUMENT: true,
-    ALLOW_DATA_ATTR: false,
-    KEEP_CONTENT: true,
+  return purify.sanitize(
+    stripCommentGutterHeaders(stripOrphanCommentClosers(markup || "")),
+    {
+      ALLOWED_TAGS,
+      ALLOWED_ATTR,
+      FORBID_TAGS,
+      WHOLE_DOCUMENT: true,
+      ALLOW_DATA_ATTR: false,
+      KEEP_CONTENT: true,
+    }
+  );
+}
+
+/**
+ * 摘掉会把 srcdoc iframe 导航走的 href。
+ *
+ * ⚠ 2026-08-21 猎网卫士：刷新正常，推演刚结束点底栏就串到面团空态。
+ * 同源 srcdoc 的 fallback base 是宿主 URL，`href="#"` / `href="/线索"`
+ * 都会卸掉 srcdoc、换成工作台。打孔后同一 pageId 的 iframe 被复用，
+ * 同步 onLoad 会把点击监听挂在**旧** document 上——新页裸链就能漏出去。
+ * 刷新时 iframe 从 about:blank 起，空 body 跳过同步接线，load 才挂上，
+ * 所以「刷新就好」。桌面侧栏/面包屑契约同样写 `href="#"`，这条不按设备分叉。
+ *
+ * `<a>` 去掉 href 就不是超链接，浏览器不会导航。data-page-id 留下，
+ * 切页仍靠点击回调。外链同样会离框，预览里一并摘。
+ */
+export function stripFrameNavigatingHrefs(html: string): string {
+  return (html || "").replace(/<a\b([^>]*?)>/gi, (open, attrs: string) => {
+    if (!/\bhref\s*=/i.test(attrs)) return open;
+    return `<a${attrs.replace(/\s*href\s*=\s*(?:'[^']*'|"[^"]*"|[^\s>]+)/gi, "")}>`;
   });
+}
+
+/** 给这一次 srcdoc 打戳。onLoad 对不上就还是上一份文档，不许接线。 */
+export function markSrcdocGeneration(html: string, token: string): string {
+  if (!html || !token) return html || "";
+  if (/<html\b[^>]*\bdata-sr-frame=/i.test(html)) {
+    return html.replace(/\bdata-sr-frame="[^"]*"/i, `data-sr-frame="${token}"`);
+  }
+  return html.replace(/<html\b/i, `<html data-sr-frame="${token}"`);
+}
+
+function isMarkedSrcdoc(doc: Document | null, token: string): boolean {
+  const stamp = doc?.documentElement?.getAttribute?.("data-sr-frame");
+  return Boolean(token) && stamp === token;
 }
 
 /** 注入 Tailwind + 我们读出来的配色。**只有这一段脚本会跑。** */
 function buildDocument(pageHtml: string, fillPhone = false): string {
-  const clean = sanitizeAppHtml(pageHtml);
+  const clean = stripFrameNavigatingHrefs(sanitizeAppHtml(pageHtml));
   if (!clean) return "";
   let page = applyPreviewChrome(clean, fillPhone);
   if (fillPhone) page = rewritePhoneNavLabels(page);
@@ -526,8 +609,10 @@ export function HtmlAppSurface({
   React.useEffect(() => {
     const frame = ref.current;
     if (!frame) return;
-    const doc = buildDocument(html, fillPhone);
-    if (!doc) return;
+    const raw = buildDocument(html, fillPhone);
+    if (!raw) return;
+    const token = `n${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const doc = markSrcdocGeneration(raw, token);
     let disposed = false;
     let fillMo: MutationObserver | null = null;
     let wired = false;
@@ -537,6 +622,9 @@ export function HtmlAppSurface({
       if (disposed || wired) return;
       const d = frame.contentDocument;
       if (!d || !d.body) return;
+      // 打孔后同一 pageId 复用 iframe：srcdoc 赋值常常是异步的，同步
+      // onLoad 看到的还是上一份文档。接到旧 document 上 = 新页裸链能漏到宿主。
+      if (!isMarkedSrcdoc(d, token)) return;
       // about:blank 在 srcdoc 真正写进去之前也会 complete。空 body 不算接好。
       if (!d.body.childNodes.length && !d.head?.childNodes.length) return;
       wired = true;
@@ -565,13 +653,21 @@ export function HtmlAppSurface({
       unwireOverlays = wireOverlays(d);
 
       // 左侧菜单切页：认 data-page-id，**不认标签文字**（名字会重复、会被改写）
-      d.body.addEventListener("click", ev => {
+      // 挂在 document 上：body 被替换时也不会丢。href 已在写框前摘掉，
+      // 这里仍 preventDefault——万一消毒/替换漏了一条。
+      d.addEventListener("click", ev => {
         const el = (ev.target as Element | null)?.closest?.("[data-page-id]");
         const pid = el?.getAttribute("data-page-id");
         if (pid) {
           ev.preventDefault();
           ev.stopPropagation();
           cbs.current.onNavigate?.(pid);
+          return;
+        }
+        const a = (ev.target as Element | null)?.closest?.("a");
+        if (a) {
+          ev.preventDefault();
+          ev.stopPropagation();
         }
       }, true);
 

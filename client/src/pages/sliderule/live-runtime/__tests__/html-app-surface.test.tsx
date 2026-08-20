@@ -30,8 +30,11 @@ import {
   pinPreviewChromeStyles,
   watchPreviewChromePin,
   stripOrphanCommentClosers,
+  stripCommentGutterHeaders,
   navTabLabel,
   rewritePhoneNavLabels,
+  stripFrameNavigatingHrefs,
+  markSrcdocGeneration,
   PHONE_FILL_STYLE_ID,
   DESKTOP_FILL_STYLE_ID,
   DESKTOP_FILL_CSS,
@@ -122,6 +125,35 @@ describe("捞开注释后不许留下裸 -->", () => {
       "utf8"
     ).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     expect(src).toContain("stripOrphanCommentClosers(markup");
+    expect(src).toContain("stripCommentGutterHeaders(stripOrphanCommentClosers");
+  });
+});
+
+describe("说明注释里的 header 残片不许顶在预览最上头", () => {
+  it("已经漏出注释的 <header>：…--> 要摘掉，说明注释本身不动", () => {
+    /**
+     * ⚠ 2026-08-21 听令工单：模型写 ``<!-- 顶部 <header>：在文档流里 -->``，
+     * 壳正则把注释里的标签当成真顶栏复制出来。刷新不必重跑推演，消毒层摘掉。
+     * 把 ``stripCommentGutterHeaders`` 从 sanitize 拿掉，本条必须红。
+     */
+    const leaked =
+      "<html><body><!-- 顶部 Header -->" +
+      "<header>：在文档流里，flex-shrink:0 -->" +
+      '<header class="flex-shrink-0"><h1>听令工单</h1></header>' +
+      "<main>列表</main></body></html>";
+    const stripped = stripCommentGutterHeaders(leaked);
+    expect(stripped).toContain("听令工单");
+    expect(stripped).not.toMatch(/：在文档流/);
+    expect(stripped).toContain("<!-- 顶部 Header -->");
+    const out = sanitizeAppHtml(leaked);
+    expect(out).toContain("听令工单");
+    expect(out).not.toMatch(/：在文档流/);
+    const explained =
+      "<!-- 顶部 <header>：在文档流里，flex-shrink:0 -->" +
+      '<header class="flex-shrink-0"><h1>听令工单</h1></header>';
+    expect(stripCommentGutterHeaders(explained)).toContain(
+      "<!-- 顶部 <header>：在文档流里，flex-shrink:0 -->"
+    );
   });
 });
 
@@ -196,6 +228,14 @@ describe("四件事各自的接线点都在", () => {
     expect(src).not.toMatch(/textContent\s*===/);
   });
 
+  it("srcdoc 里普通 a[href] 不许把 iframe 导航到宿主", () => {
+    // 2026-08-21：底栏没打上 data-page-id 时，href=/ 会把同源 iframe
+    // 从 srcdoc 切到面团 AI 自己的路由，看起来像黑屏 / 串台。
+    expect(src).toContain('closest?.("a")');
+    expect(src).toContain("preventDefault");
+    expect(src).toContain("stripFrameNavigatingHrefs");
+  });
+
   it("切页监听赶在 srcdoc 之前 —— 后挂会错过同步 load", () => {
     const loadAt = src.indexOf('addEventListener("load"');
     const srcdocAt = src.indexOf("frame.srcdoc = doc");
@@ -244,6 +284,54 @@ describe("四件事各自的接线点都在", () => {
     for (const attr of BINDING_ATTRS) {
       expect(sanitizeAppHtml(`<html><body><div ${attr}="x">格</div></body></html>`)).toContain(attr);
     }
+  });
+});
+
+describe("推演刚结束点菜单不许漏到宿主", () => {
+  /**
+   * 2026-08-21 猎网卫士：刷新正常，打孔后点底栏串到面团空态。
+   * 同一 pageId 复用 iframe，同步 onLoad 接到旧 document；新 srcdoc 里
+   * href="#" 的 fallback base 是宿主 URL。摘 href + 只给带戳的文档接线。
+   * 桌面侧栏/面包屑契约同样写 href="#"，漏不按设备分叉。
+   */
+  const rel = "src/pages/sliderule/live-runtime/html-app-surface.tsx";
+  const found = [`client/${rel}`, rel]
+    .map(c => resolve(process.cwd(), c))
+    .find(c => existsSync(c))!;
+  const src = readFileSync(found, "utf8").replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/.*$/gm, " ");
+
+  it("摘掉 #、站内路径、外链，留下 data-page-id 和标签", () => {
+    const out = stripFrameNavigatingHrefs(
+      '<nav><a data-page-id="p2" href="/线索">线索</a>' +
+        '<a href="#">我的</a><a href="https://x.test/x">外</a></nav>'
+    );
+    expect(out).toContain('data-page-id="p2"');
+    expect(out).toContain(">线索</a>");
+    expect(out).toContain(">我的</a>");
+    expect(out).not.toMatch(/\bhref\s*=/);
+  });
+
+  it("桌面侧栏和面包屑的 href=# 同样要摘 —— 契约就教模型这么写", () => {
+    const out = stripFrameNavigatingHrefs(
+      '<aside><nav><a data-page-id="p1" href="#">工作台</a>' +
+        '<a data-page-id="p2" href="/案件台账">案件</a></nav></aside>' +
+        '<header><nav aria-label="Breadcrumb"><a href="#">模块名</a>' +
+        '<a href="#" aria-current="page">当前页</a></nav></header>'
+    );
+    expect(out).toContain("<aside");
+    expect(out).toContain('data-page-id="p2"');
+    expect(out).toContain('aria-label="Breadcrumb"');
+    expect(out).not.toMatch(/\bhref\s*=/);
+  });
+
+  it("写进框的那份经过摘 href —— 只测函数会假绿", () => {
+    expect(src).toMatch(/stripFrameNavigatingHrefs\(\s*sanitizeAppHtml/);
+  });
+
+  it("换 srcdoc 只给带这一次戳的文档接线", () => {
+    expect(markSrcdocGeneration("<html lang='zh'>", "n1")).toContain('data-sr-frame="n1"');
+    expect(src).toContain("markSrcdocGeneration(raw, token)");
+    expect(src).toMatch(/if\s*\(\s*!isMarkedSrcdoc\(\s*d\s*,\s*token\s*\)\s*\)\s*return/);
   });
 });
 
@@ -329,8 +417,14 @@ describe("手机页铺满视口", () => {
     expect(once).toContain("flex-direction:row");
     expect(once).toContain("nav.fixed");
     expect(once).toContain("position:static!important");
-    expect(once).toContain("padding-bottom:0!important");
-    expect(once).toContain("min-height:48px!important");
+    expect(once).toContain("main.pt-16");
+    expect(once).toContain("main.pb-32");
+    expect(once).not.toContain(
+      "overflow-x:hidden!important;padding-top:0!important;padding-bottom:0!important"
+    );
+    expect(once).toContain("min-height:56px!important");
+    expect(once).toContain("padding-bottom:16px!important");
+    expect(once).toContain("background:#fff!important");
     expect(once).not.toContain("nav{display:flex");
     expect(once).not.toContain('body>div[class*="items-center"]{');
     expect(once).not.toContain("main{display:flex");

@@ -56,6 +56,10 @@ PAGE_SHELL_VERSION = "page-shell-v1"
 _ASIDE = re.compile(r"<aside\b[\s\S]*?</aside>", re.I)
 _HEADER = re.compile(r"<header\b[\s\S]*?</header>", re.I)
 _NAV = re.compile(r"<nav\b[\s\S]*?</nav>", re.I)
+_BREADCRUMB_NAV = re.compile(
+    r"<nav\b[^>]*aria-label\s*=\s*['\"]Breadcrumb['\"]",
+    re.I,
+)
 _LINK = re.compile(r"<a\b[^>]*>[\s\S]*?</a>", re.I)
 _CLASS = re.compile(r'class="([^"]*)"', re.I)
 _SVG = re.compile(r"<svg\b[\s\S]*?</svg>", re.I)
@@ -106,9 +110,16 @@ _PHONE_FILL_STYLE_ID = "sliderule-phone-fill"
 #: .app { height:100vh; flex-direction:column } .top/.bottom { flex:0 }
 #: .body { flex:1 }。TabBar 文档：本身不含定位。NavBar 默认也在文档流。
 #: 旧会话烤着的 fixed 用 position:static 拉回流。选择器与前端同文。
+#: ⚠ 2026-08-21：铺满层把 main padding 清零之后，顶栏贴着机框圆角、
+#: 底栏贴着 Home Indicator 那一圈。header/nav 自己补 inset；html/body
+#: 白底——缺页或透明页不再透过 iframe 黑底看起来像黑屏。
+#: ⚠ 同日晚 猎网卫士：main 一律 padding-top/bottom:0 把 .p-4 的上下
+#: 也盖掉了（左右 1rem 还在、卡片贴着顶栏底栏）。pt-4/pb-4 是内容
+#: 内边距，_MAIN_CHROME_* 本来就不剥。只清给 fixed 壳让位的大档。
 _PHONE_FILL_CSS = (
     "html,body{margin:0!important;width:100%!important;height:100%!important;"
-    "min-height:100%!important;max-width:none!important;overflow:hidden!important}"
+    "min-height:100%!important;max-width:none!important;overflow:hidden!important;"
+    "background:#fff!important}"
     "body{display:flex!important;flex-direction:column!important;"
     "align-items:stretch!important;justify-content:flex-start!important}"
     "body>*{width:100%!important;max-width:none!important;"
@@ -118,17 +129,20 @@ _PHONE_FILL_CSS = (
     "align-items:stretch!important;justify-content:flex-start!important;"
     "min-height:0!important;flex:1 1 auto!important;height:100%!important;width:100%!important;"
     "overflow:hidden!important}"
-    "header{position:static!important;flex:0 0 auto!important;width:100%!important}"
+    "header{position:static!important;flex:0 0 auto!important;width:100%!important;"
+    "padding-top:12px!important}"
     "main{flex:1 1 auto!important;min-height:0!important;width:100%!important;"
     "overflow-y:auto!important;overflow-x:hidden!important;"
-    "padding-top:0!important;padding-bottom:0!important;"
     "-webkit-overflow-scrolling:touch}"
+    "main.pt-10,main.pt-12,main.pt-14,main.pt-16,main.pt-20,main.pt-24,"
+    "main.pt-28,main.pt-32{padding-top:0!important}"
+    "main.pb-20,main.pb-24,main.pb-28,main.pb-32,main.pb-36{padding-bottom:0!important}"
     'body>nav,body>div[class*="min-h-screen"]>nav,'
     'body>div[class*="justify-center"]>nav,nav.fixed,nav[class*="bottom-0"]{'
     "position:static!important;display:flex!important;flex-direction:row!important;"
     "flex-wrap:nowrap!important;justify-content:space-around!important;"
     "align-items:stretch!important;flex:0 0 auto!important;width:100%!important;"
-    "min-height:48px!important}"
+    "min-height:56px!important;padding-top:6px!important;padding-bottom:16px!important}"
     'body>nav>a,body>div[class*="min-h-screen"]>nav>a,'
     'body>div[class*="justify-center"]>nav>a,nav.fixed>a,nav[class*="bottom-0"]>a{'
     "flex:1 1 0!important;min-width:0!important;"
@@ -201,7 +215,7 @@ def _inject_head_style(html: str, style_id: str, css: str) -> str:
 
 
 def _ensure_tag_classes(markup: str, opener: re.Pattern[str], needed: Tuple[str, ...]) -> str:
-    m = opener.search(markup or "")
+    m = _search_outside_comments(opener, markup or "")
     if not m:
         return markup
     open_tag = m.group(0)
@@ -225,19 +239,34 @@ def _ensure_tag_classes(markup: str, opener: re.Pattern[str], needed: Tuple[str,
 #:     下一句才是 ``<!-- 主正文 <main> -->``，第一个 ``-->`` 在那儿，
 #:     整段侧栏被当成注释。inspect 直接搜 ``<aside`` 假绿。
 #:
-#: 只捞 aside/nav。模型常写已闭合的 ``<!-- 主正文 <main> -->``，捞 main
-#: 会把说明注释截断、留下裸 ``-->``。
+#: 只捞 aside/nav，以及**带着属性的** header。模型常写已闭合的
+#: ``<!-- 主正文 <main> -->`` / ``<!-- 顶部 <header>：在文档流里 -->``，
+#: 捞裸 ``<header>`` / ``<main>`` 会把说明注释截断、留下裸 ``-->``，
+#: 或者把说明里的标签名当成真顶栏。
 #:
 #: ⚠ 2026-08-20 满电青年：``<!-- 左侧导航 <aside>…</aside> -->`` 这种
 #: **两边都有**的写法，捞开会标签之后 ``-->`` 还在。aside 是 fixed 不占位，
 #: 这个 ``-->`` 就成了 body 里第一段真正排版的文字——顶在预览左上角。
 #: 已闭合的 ``<!-- 主正文 <main> -->`` 是开标签后面的 ``-->``，不是
 #: ``</aside> -->``，下面这条正则碰不到它。
+#:
+#: ⚠ 2026-08-21 听令工单：模型在真 ``<header class="flex-shrink-0">`` 前面
+#: 写 ``<!-- 顶部 <header>：在文档流里，flex-shrink:0 -->``。壳正则从注释
+#: 里那个裸 ``<header>`` 一路吃到真 ``</header>``，unify 把这段残片复制到
+#: 别页，变成可见的 ``：在文档流里，flex-shrink:0 -->`` 顶在手机最上头。
+#: 跟满电青年同一类注释手术，只是这次标签在说明注释里、后面还有真顶栏。
+#: 药方是：壳标签的 search/sub **跳过注释内部**；裸 ``<header>`` 不当活标签捞。
 _UNCLOSED_COMMENT_SHELL = re.compile(
-    r"<!--(?:(?!-->).)*?(<(?:aside|nav)\b)", re.I | re.S
+    r"<!--(?:(?!-->).)*?(<(?:aside|nav)\b|<header\b(?=[^>]*[\s/]))",
+    re.I | re.S,
 )
 _ORPHAN_COMMENT_CLOSE = re.compile(
     r"(</(?:aside|nav|header|main|div)\s*>|<body\b[^>]*>)\s*-->",
+    re.I,
+)
+#: 已经被抠出注释、变成真节点的说明残片。``<header>：…-->`` 中间没有子标签。
+_COMMENT_GUTTER_HEADER = re.compile(
+    r"<header\b[^>]*>\s*[^<]{0,120}-->\s*(?:</header\s*>)?",
     re.I,
 )
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
@@ -245,14 +274,103 @@ _NAV_PAGE_ID_ATTR = re.compile(r"\sdata-page-id=\"[^\"]*\"", re.I)
 _NAV_ARIA_CURRENT_ATTR = re.compile(r"\saria-current=\"[^\"]*\"", re.I)
 
 
+def _comment_spans(markup: str) -> Tuple[Tuple[int, int], ...]:
+    """闭合并的 ``<!-- … -->``，外加拖到文末的未闭合 ``<!--``。"""
+    text = markup or ""
+    spans = [(m.start(), m.end()) for m in _HTML_COMMENT.finditer(text)]
+    rest = spans[-1][1] if spans else 0
+    dangling = text.find("<!--", rest)
+    if dangling >= 0:
+        spans.append((dangling, len(text)))
+    return tuple(spans)
+
+
+def _pos_in_spans(pos: int, spans: Tuple[Tuple[int, int], ...]) -> bool:
+    return any(start <= pos < end for start, end in spans)
+
+
+def _blank_comments(markup: str) -> str:
+    """注释换成空格，长度不变。壳正则就没法从注释里的标签吃到真 ``</header>``。"""
+    text = markup or ""
+    if not text:
+        return text
+    chars = list(text)
+    for start, end in _comment_spans(text):
+        for i in range(start, end):
+            if chars[i] not in "\n\r":
+                chars[i] = " "
+    return "".join(chars)
+
+
+def _search_outside_comments(pattern: re.Pattern[str], markup: str) -> Optional[re.Match[str]]:
+    """壳正则不许进注释。听令工单：注释里的 ``<header>：说明`` 不是真顶栏。
+
+    只跳过「起点在注释内」不够：``<header>：说明 -->`` 没有自己的闭合标签，
+    ``<header>[\\s\\S]*?</header>`` 会从注释里一路吃到真顶栏的 ``</header>``，
+    整段被当成一次命中丢掉，真顶栏就没了。
+    """
+    text = markup or ""
+    match = pattern.search(_blank_comments(text))
+    if not match:
+        return None
+    return pattern.search(text, match.start(), match.end())
+
+
+def _sub_first_outside_comments(pattern: re.Pattern[str], repl: str, markup: str) -> str:
+    match = _search_outside_comments(pattern, markup)
+    if not match:
+        return markup or ""
+    return (markup or "")[: match.start()] + repl + (markup or "")[match.end() :]
+
+
+def _strip_orphan_comment_closes(markup: str) -> str:
+    """摘 ``</aside> -->`` 这种已经漏出注释的闭合符。注释内部的 ``-->`` 不动。"""
+    text = markup or ""
+    spans = _comment_spans(text)
+    parts: List[str] = []
+    cursor = 0
+    for match in _ORPHAN_COMMENT_CLOSE.finditer(text):
+        if _pos_in_spans(match.start(), spans):
+            continue
+        parts.append(text[cursor:match.start()])
+        parts.append(match.group(1))
+        cursor = match.end()
+    parts.append(text[cursor:])
+    return "".join(parts)
+
+
+def _strip_comment_gutter_headers(markup: str) -> str:
+    """摘掉已经漏出注释、顶在页面上的 ``<header>：…-->``。注释内部不动。"""
+    text = markup or ""
+    spans = _comment_spans(text)
+    cuts: List[Tuple[int, int]] = []
+    for match in _COMMENT_GUTTER_HEADER.finditer(text):
+        if not _pos_in_spans(match.start(), spans):
+            cuts.append((match.start(), match.end()))
+    if not cuts:
+        return text
+    parts: List[str] = []
+    cursor = 0
+    for start, end in cuts:
+        parts.append(text[cursor:start])
+        cursor = end
+    parts.append(text[cursor:])
+    return "".join(parts)
+
+
 def ensure_nav_not_commented(markup: str) -> str:
-    """把未闭合注释里的 <aside>/<nav> 捞出来。幂等：已闭合的 ``<!-- … -->`` 不动。
+    """把未闭合注释里的 <aside>/<nav>/真 <header> 捞出来。
+
+    幂等：已闭合的说明注释 ``<!-- 主正文 <main> -->`` /
+    ``<!-- 顶部 <header>：在文档流里 -->`` 不动。
 
     捞开 ``<!--`` 之后，若注释本来写了闭合 ``-->``，把它一并摘掉，
-    免得变成页面左上角三个字符。
+    免得变成页面左上角三个字符。已经漏成活节点的 ``<header>：…-->``
+    也摘掉——听令工单落库页刷新时靠这一下，不必重跑推演。
     """
     html = _UNCLOSED_COMMENT_SHELL.sub(r"\1", markup or "")
-    return _ORPHAN_COMMENT_CLOSE.sub(r"\1", html)
+    html = _strip_orphan_comment_closes(html)
+    return _strip_comment_gutter_headers(html)
 
 
 def outside_html_comments(markup: str) -> str:
@@ -267,7 +385,7 @@ def outside_html_comments(markup: str) -> str:
 
 
 def _strip_tag_classes(markup: str, opener: re.Pattern[str], drop: frozenset[str]) -> str:
-    m = opener.search(markup or "")
+    m = _search_outside_comments(opener, markup or "")
     if not m:
         return markup
     open_tag = m.group(0)
@@ -283,7 +401,7 @@ def _strip_tag_classes(markup: str, opener: re.Pattern[str], drop: frozenset[str
 
 def _strip_main_chrome_pad(markup: str) -> str:
     """flex 列壳不需要 main 为 overlay 顶栏/底栏让位。pt-16 / pb-32 会变成空带。"""
-    main_m = _MAIN_OPEN.search(markup or "")
+    main_m = _search_outside_comments(_MAIN_OPEN, markup or "")
     if not main_m:
         return markup
     cls = _CLASS.search(main_m.group(0))
@@ -310,13 +428,13 @@ def ensure_phone_safe_area(markup: str) -> str:
     横排留给 class，钉底靠 body 竖排 flex。
     """
     markup = ensure_nav_not_commented(markup)
-    nav_m = _NAV_OPEN.search(markup or "")
+    nav_m = _search_outside_comments(_NAV_OPEN, markup or "")
     if nav_m:
         markup = _strip_tag_classes(
             markup, _NAV_OPEN, _OVERLAY_POS | _NAV_OVERLAY_LEFTOVER | _PHONE_NAV_NOT_COL
         )
         markup = _ensure_tag_classes(markup, _NAV_OPEN, _PHONE_NAV_ROW)
-    header_m = _HEADER_OPEN.search(markup or "")
+    header_m = _search_outside_comments(_HEADER_OPEN, markup or "")
     if header_m:
         markup = _strip_tag_classes(
             markup, _HEADER_OPEN, _OVERLAY_POS | _HEADER_OVERLAY_LEFTOVER
@@ -350,8 +468,8 @@ def extract_shell(markup: str) -> Dict[str, str]:
     抠不到就返回空串，由调用方判断——这里不抛，因为"这一页没有壳"本身
     是合法的（比如向导页可能故意不放侧栏）。
     """
-    aside = _ASIDE.search(markup or "")
-    header = _HEADER.search(markup or "")
+    aside = _search_outside_comments(_ASIDE, markup or "")
+    header = _search_outside_comments(_HEADER, markup or "")
     return {
         "aside": aside.group(0) if aside else "",
         "header": header.group(0) if header else "",
@@ -640,6 +758,8 @@ _GENERIC_CRUMB_ROOTS = frozenset({
     "通用后台", "管理后台", "管理系统", "控制台", "后台",
     "后台首页", "通用系统", "Admin", "Dashboard", "Console",
     "Administration", "Control Panel",
+    "面团", "面团AI", "面团 AI", "面团AI系统", "面团 AI 系统",
+    "SlideRule", "MianTuan",
 })
 
 
@@ -653,7 +773,11 @@ def _is_generic_crumb_root(text: str) -> bool:
     t = (text or "").strip()
     if t in _GENERIC_CRUMB_ROOTS:
         return True
-    return "通用" in t and ("后台" in t or "系统" in t)
+    if "通用" in t and ("后台" in t or "系统" in t):
+        return True
+    from services.spec_tree import is_host_brand_name
+
+    return is_host_brand_name(t)
 
 
 def set_breadcrumb_root(header_html: str, app_name: str) -> str:
@@ -879,6 +1003,75 @@ def _pick_shell_source(pages_html: Dict[str, str]) -> str:
     return pool[0][2] if pool else ""
 
 
+def _is_breadcrumb_nav(nav_html: str) -> bool:
+    return bool(_BREADCRUMB_NAV.search(nav_html or ""))
+
+
+def _page_nav(markup: str) -> Optional[re.Match[str]]:
+    """页面级 <nav>：底部标签栏 / 侧栏菜单。不是 header 里的面包屑。
+
+    ⚠ 2026-08-21 素材雷达：手机 header 带着 Breadcrumb。<nav> 正则先吃到
+    它，unify 把底栏模板写进顶栏，底部原链（href=/创作）还在——点「创作」
+    把同源 srcdoc iframe 导航到宿主（面团 AI），看起来像黑屏 / 路由串台。
+    """
+    text = markup or ""
+    for match in _NAV.finditer(_blank_comments(text)):
+        real = _NAV.search(text, match.start(), match.end())
+        if not real or _is_breadcrumb_nav(real.group(0)):
+            continue
+        return real
+    return None
+
+
+def _ensure_phone_header(html: str, header: str) -> str:
+    """有顶栏就换成统一那份；精修/校验把 header 整段删了则补回去。
+
+    手机没有「向导页故意不放侧栏」那条桌面豁免——缺顶栏的页点进去就是
+    黑屏。缺了就塞，比原样放过更接近同一个 App。
+    """
+    if not header:
+        return html or ""
+    if _search_outside_comments(_HEADER, html or ""):
+        return _sub_first_outside_comments(_HEADER, header, html)
+    if re.search(r"<body\b[^>]*>", html or "", re.I):
+        return re.sub(
+            r"(<body\b[^>]*>)",
+            lambda m: m.group(1) + "\n" + header,
+            html,
+            count=1,
+            flags=re.I,
+        )
+    return header + (html or "")
+
+
+def _ensure_phone_nav(html: str, new_nav: str) -> str:
+    found = _page_nav(html or "")
+    if found:
+        return html[: found.start()] + new_nav + html[found.end() :]
+    if re.search(r"</body>", html or "", re.I):
+        return re.sub(r"</body>", new_nav + "\n</body>", html, count=1, flags=re.I)
+    return (html or "") + new_nav
+
+
+def _usable_app_name(spec_name: str, detected: str) -> str:
+    """spec.appName 若是生成方品牌（面团 AI / SlideRule），改用页上认出的真名。
+
+    校验闸会拦新生成的；已经落库的坏 spec 仍会走进 unify——这里是第二道。
+    spec 没给名字时返回空：统一是本模块的职责，起名不是。
+    """
+    from services.spec_tree import is_host_brand_name
+
+    name = (spec_name or "").strip()
+    if not name:
+        return ""
+    if not is_host_brand_name(name):
+        return name
+    fallback = (detected or "").strip()
+    if fallback and not is_host_brand_name(fallback):
+        return fallback
+    return name
+
+
 def _pick_shell_source_phone(pages_html: Dict[str, str]) -> str:
     """移动端选源页：**页面级 <nav>（底部标签栏）链接最多的那页**。
 
@@ -887,7 +1080,7 @@ def _pick_shell_source_phone(pages_html: Dict[str, str]) -> str:
     """
     best, best_n = "", -1
     for page_id, markup in pages_html.items():
-        nav = _NAV.search(markup or "")
+        nav = _page_nav(markup or "")
         n = len(_LINK.findall(nav.group(0))) if nav else 0
         if n > best_n:
             best, best_n = page_id, n
@@ -903,9 +1096,11 @@ def _ensure_desktop_aside(html: str, aside: str) -> str:
     向导页故意不放侧栏（只有 ``<main>``、没有 ``<header>``）仍然放过，
     见 ``test_某一页没有壳时不会被塞坏``。
     """
-    if _ASIDE.search(html or ""):
-        return _ASIDE.sub(lambda _m: aside, html, count=1)
-    if not _HEADER.search(html or "") or not _MAIN_OPEN.search(html or ""):
+    if _search_outside_comments(_ASIDE, html or ""):
+        return _sub_first_outside_comments(_ASIDE, aside, html)
+    if not _search_outside_comments(_HEADER, html or "") or not _search_outside_comments(
+        _MAIN_OPEN, html or ""
+    ):
         return html
     main_at = re.search(r"<main\b", html, re.I)
     if not main_at:
@@ -924,27 +1119,35 @@ def _unify_shell_phone(pages_html: Dict[str, str], spec: Dict[str, Any]) -> Dict
     pages_html = {pid: ensure_nav_not_commented(html) for pid, html in pages_html.items()}
     source_id = _pick_shell_source_phone(pages_html)
     src = pages_html[source_id]
-    header_m = _HEADER.search(src)
-    nav_m = _NAV.search(src)
+    header_m = _search_outside_comments(_HEADER, src)
+    nav_m = _page_nav(src)
     if not header_m and not nav_m:
         raise PageShellError(f"选中的源页 {source_id} 既没有 <header> 也没有 <nav>，抠不出移动壳")
 
     header = header_m.group(0) if header_m else ""
-    app_name = str(spec.get("appName") or "").strip()
     personas = list(spec.get("personas") or [])
     role = str((personas[0] or {}).get("name") or "").strip() if personas else ""
     old_brand, old_role = detect_brand_and_role(header)
+    app_name = _usable_app_name(str(spec.get("appName") or "").strip(), old_brand)
     header = _apply_identity(header, old_brand, app_name)
     header = _apply_identity(header, old_role, role)
-    header = set_breadcrumb_root(header, app_name)
 
     templates = nav_templates(nav_m.group(0)) if nav_m else None
+    name_of = {
+        str(p.get("id") or ""): str(p.get("name") or p.get("id") or "").strip()
+        for p in spec_pages
+    }
 
     out: Dict[str, str] = {}
     for page_id, markup in pages_html.items():
         html = markup
-        if header:
-            html = _HEADER.sub(lambda _m: header, html, count=1) if _HEADER.search(html) else html
+        page_header = header
+        if page_header:
+            # ★ 面包屑按页改。桌面 unify 一直这么做；手机分支此前整段复制
+            #   源页 header，点进「创作」路由仍写着源页 / 宿主品牌。
+            page_header = set_breadcrumb_current(page_header, name_of.get(page_id, ""))
+            page_header = set_breadcrumb_root(page_header, app_name)
+            html = _ensure_phone_header(html, page_header)
         if templates and nav_m:
             items = build_nav_items(templates, spec_pages, page_id, app_name=app_name)
             new_nav = re.sub(
@@ -953,7 +1156,7 @@ def _unify_shell_phone(pages_html: Dict[str, str], spec: Dict[str, Any]) -> Dict
                 nav_m.group(0),
                 count=1,
             )
-            html = _NAV.sub(lambda _m: new_nav, html, count=1) if _NAV.search(html) else html
+            html = _ensure_phone_nav(html, new_nav)
         out[page_id] = ensure_phone_viewport_fill(ensure_phone_safe_area(html))
 
     return {
@@ -998,10 +1201,10 @@ def unify_shell(
 
     # 产品名与角色：spec 里有就按 spec 灌，没有就保持模型编的那一套。
     # 保持也算合格——统一是本模块的职责，起名不是；spec 没给就不该由这里发明。
-    app_name = str(spec.get("appName") or "").strip()
     personas = list(spec.get("personas") or [])
     role = str((personas[0] or {}).get("name") or "").strip() if personas else ""
     old_brand, old_role = detect_brand_and_role(shell["aside"])
+    app_name = _usable_app_name(str(spec.get("appName") or "").strip(), old_brand)
     for part in ("aside", "header"):
         shell[part] = _apply_identity(shell[part], old_brand, app_name)
         shell[part] = _apply_identity(shell[part], old_role, role)
@@ -1069,7 +1272,11 @@ def unify_shell(
         #   reconcile **之前**：让位跟的是抬完之后的宽度。
         html = ensure_labeled_aside_width(html)
         if header:
-            html = _HEADER.sub(lambda _m: header, html, count=1) if _HEADER.search(html) else html
+            html = (
+                _sub_first_outside_comments(_HEADER, header, html)
+                if _search_outside_comments(_HEADER, html)
+                else html
+            )
         # ★ 内容区容器也要统一（2026-08-15 补）。
         #
         # 此前这里只换 aside/header，**承载它们的那一层没人管**：真机上
@@ -1708,11 +1915,12 @@ def check_shell_consistency(
     # 移动端没有 <aside>，导航是页面级 <nav>（底部标签栏）。aside 在时照旧
     # 只认 aside 里的 nav（桌面页面可能另有面包屑 nav，不该被误查）；
     # aside 不在才回落到整页找（2026-08-14 竖屏加）。
+    # ⚠ 2026-08-21：整页找必须跳过 Breadcrumb，否则手机顶栏面包屑被当成底栏。
     def _nav_of(pid: str) -> Optional[re.Match]:
         aside = shells[pid]["aside"]
         if aside:
             return _NAV.search(aside)
-        return _NAV.search(pages_html[pid])
+        return _page_nav(pages_html[pid])
 
     for part in ("aside", "header"):
         distinct = {_drift_fingerprint(part, s[part]) for s in shells.values() if s[part]}
@@ -1821,7 +2029,9 @@ def check_shell_consistency(
             })
 
     app_name = str(spec.get("appName") or "").strip()
-    if app_name:
+    from services.spec_tree import is_host_brand_name
+
+    if app_name and not is_host_brand_name(app_name):
         for pid, s in shells.items():
             blob = s["aside"] + s["header"]
             if blob and app_name not in blob:

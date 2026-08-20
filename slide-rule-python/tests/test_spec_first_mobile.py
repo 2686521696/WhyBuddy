@@ -122,6 +122,91 @@ class Test移动壳统一:
         assert "<nav>" in ensure_nav_not_commented(closed)
         assert "<!-- 底部固定的导航栏 -->" in ensure_nav_not_commented(closed)
 
+    def test_说明注释里的header不许当成真顶栏(self):
+        """★ 听令工单 2026-08-21：``<!-- 顶部 <header>：在文档流里，flex-shrink:0 -->``
+        后面才是真顶栏。壳正则从注释里的裸 ``<header>`` 吃到真 ``</header>``，
+        unify 复制到别页，变成可见的 ``：在文档流里，flex-shrink:0 -->``。
+
+        把 ``_search_outside_comments(_HEADER`` 改回 ``_HEADER.search``，本条必须红。
+        """
+        from services.page_shell import (
+            ensure_nav_not_commented,
+            extract_shell,
+            outside_html_comments,
+        )
+
+        p1 = (
+            "<!DOCTYPE html><html><body>"
+            "<!-- 顶部 <header>：在文档流里，flex-shrink:0 -->"
+            '<header class="flex-shrink-0"><h1>听令工单</h1><span>一线人员</span></header>'
+            "<main>录音</main>"
+            "<nav class='bottom-bar'><a class='tab'>听令</a><a class='tab'>工单</a></nav>"
+            "</body></html>"
+        )
+        p2 = (
+            "<!DOCTYPE html><html><body>"
+            "<!-- 顶部 Header -->"
+            '<header class="flex-shrink-0"><h1>调度台</h1><span>调度员</span></header>'
+            "<main>列表</main>"
+            "<nav class='bottom-bar'><a class='tab'>听令</a><a class='tab'>工单</a></nav>"
+            "</body></html>"
+        )
+        spec = {
+            "appName": "听令工单",
+            "personas": [{"id": "u1", "name": "一线人员", "goals": []}],
+            "pages": [{"id": "p1", "name": "听令"}, {"id": "p2", "name": "工单"}],
+        }
+        kept = ensure_nav_not_commented(p1)
+        assert "<!-- 顶部 <header>：在文档流里，flex-shrink:0 -->" in kept
+        # 抽壳必须跳过注释。只靠后面摘残片，把 search 改回去这条仍会绿。
+        extracted = extract_shell(p1)["header"]
+        assert "听令工单" in extracted
+        assert "：在文档流" not in extracted
+        already_leaked = (
+            "<!-- 顶部 Header -->"
+            "<header>：在文档流里，flex-shrink:0 -->"
+            '<header class="flex-shrink-0"><h1>听令工单</h1></header>'
+        )
+        cleaned = ensure_nav_not_commented(already_leaked)
+        assert "：在文档流" not in cleaned
+        assert "听令工单" in cleaned
+
+        out = unify_shell({"p1": p1, "p2": p2}, spec, device="phone")
+        for html in out["pages"].values():
+            vis = outside_html_comments(html)
+            assert "-->" not in vis, "说明注释残片漏到了可见 DOM"
+            assert "：在文档流" not in vis
+            assert "听令工单" in vis
+            assert vis.lower().count("<header") == 1
+
+    def test_注释包住的真顶栏要捞出来且不留箭头(self):
+        """手机满电青年同款：``<!-- 顶栏 <header class=…>…</header> -->``。"""
+        from services.page_shell import ensure_nav_not_commented, outside_html_comments
+
+        raw = (
+            "<!DOCTYPE html><html><body>"
+            "<!-- 顶栏 <header class='shrink-0'><h1>听令工单</h1><span>一线人员</span></header> -->"
+            "<main>列表</main>"
+            "<nav class='bottom-bar'><a class='tab'>听令</a><a class='tab'>工单</a></nav>"
+            "</body></html>"
+        )
+        fished = ensure_nav_not_commented(raw)
+        assert "<header" in outside_html_comments(fished)
+        assert "-->" not in outside_html_comments(fished)
+        other = _phone_page("听令工单", "一线人员", ["听令", "工单"], 1)
+        html = unify_shell(
+            {"p1": raw, "p2": other},
+            {
+                "appName": "听令工单",
+                "personas": [{"id": "u1", "name": "一线人员", "goals": []}],
+                "pages": [{"id": "p1", "name": "听令"}, {"id": "p2", "name": "工单"}],
+            },
+            device="phone",
+        )["pages"]["p1"]
+        vis = outside_html_comments(html)
+        assert "听令工单" in vis
+        assert "-->" not in vis
+
     def test_精修后导航id不叠两个_底栏不带产品名前缀(self):
         """模板链接已有 data-page-id 时再盖一层，HTML 认第一个，点哪都跳错页。"""
         from services.page_shell import nav_tab_label
@@ -178,7 +263,7 @@ class Test移动壳统一:
             assert "justify-around" in html
             assert 'id="sliderule-phone-fill"' in html
             assert "position:static!important" in html
-            assert "min-height:48px" in html
+            assert "min-height:56px" in html
 
     def test_已有fixed的底栏要拉回文档流_还要横排(self):
         """幼安行 r2 竖堆 + 芸编智管 fixed 对打 flex 列。剥 overlay，横排留下。"""
@@ -253,8 +338,12 @@ class Test移动壳统一:
             "justify-content:space-around",
             'nav.fixed,nav[class*="bottom-0"]',
             "position:static!important",
-            "padding-bottom:0!important",
-            "min-height:48px!important",
+            "main.pt-16",
+            "main.pb-32",
+            "min-height:56px!important",
+            "padding-bottom:16px!important",
+            "padding-top:12px!important",
+            "background:#fff!important",
             "white-space:nowrap!important",
         ):
             assert token in _PHONE_FILL_CSS, token
@@ -266,6 +355,15 @@ class Test移动壳统一:
         assert "nav{display:flex" not in ts
         # 第五趟：铺满层不许再教 fixed——那是网站壳
         assert "position:fixed" not in _PHONE_FILL_CSS
+        # 猎网卫士：main 自己那条不许再清全部上下 padding，否则 p-4 只剩左右
+        assert (
+            "overflow-x:hidden!important;padding-top:0!important;padding-bottom:0!important"
+            not in _PHONE_FILL_CSS
+        )
+        assert (
+            "overflow-x:hidden!important;padding-top:0!important;padding-bottom:0!important"
+            not in ts
+        )
 
     def test_sticky顶栏和fixed底栏都剥掉_chrome让位也剥(self):
         """芸编智管：sticky+pt-16、fixed+pb-32 两套网站壳都要收成 flex 列。"""
@@ -304,6 +402,80 @@ class Test移动壳统一:
         }
         problems = check_shell_consistency(pages, SPEC)
         assert any("nav" in p["path"] for p in problems), "p2 菜单跟 spec 对不上却没人喊"
+
+    def test_面包屑nav不是底栏_替换落到页面级nav(self):
+        """⚠ 2026-08-21：header 里的 Breadcrumb 是第一个 <nav>。
+        认错的话底栏还是 href=/档案，点进去把 iframe 送到宿主。"""
+        import re
+
+        def with_crumb(active: int) -> str:
+            labels = ["工单", "档案"]
+            current = labels[active]
+            links = []
+            for i, label in enumerate(labels):
+                cls = "tab active-tab" if i == active else "tab"
+                links.append(
+                    f'<a href="/{label}" class="{cls}"><span>{label}</span></a>'
+                )
+            return (
+                "<!DOCTYPE html><html><head></head><body>"
+                "<header><h1>内容雷达</h1><span>创作者</span>"
+                '<nav aria-label="Breadcrumb"><ol>'
+                "<li>面团AI系统</li>"
+                f'<li class="font-medium">{current}</li>'
+                "</ol></nav></header>"
+                "<main>正文内容</main>"
+                f'<nav class="bottom-bar">{"".join(links)}</nav>'
+                "</body></html>"
+            )
+
+        spec = {
+            "appName": "内容雷达",
+            "personas": [{"id": "u1", "name": "创作者", "goals": []}],
+            "pages": SPEC["pages"],
+        }
+        out = unify_shell(
+            {"p1": with_crumb(0), "p2": with_crumb(1)}, spec, device="phone"
+        )
+        html = out["pages"]["p2"]
+        assert "面团AI系统" not in html
+        tabs = re.search(r'<nav class="bottom-bar"[\s\S]*?</nav>', html)
+        assert tabs, html
+        assert 'data-page-id="p1"' in tabs.group(0)
+        assert 'data-page-id="p2"' in tabs.group(0)
+        crumb = re.search(r'aria-label="Breadcrumb"[\s\S]*?</nav>', html)
+        assert crumb
+        assert "data-page-id" not in crumb.group(0)
+        assert "档案" in crumb.group(0)
+        assert check_shell_consistency(out["pages"], spec) == []
+
+    def test_spec产品名是宿主品牌时顶栏仍用页面上的真名(self):
+        pages = {
+            "p1": _phone_page("内容雷达", "创作者", ["工单", "档案"], 0),
+            "p2": _phone_page("内容雷达", "创作者", ["工单", "档案"], 1),
+        }
+        spec = {
+            "appName": "面团AI系统",
+            "personas": [{"id": "u1", "name": "创作者", "goals": []}],
+            "pages": SPEC["pages"],
+        }
+        out = unify_shell(pages, spec, device="phone")
+        for html in out["pages"].values():
+            assert "内容雷达" in html
+            assert "面团AI系统" not in html
+
+    def test_缺顶栏的页会被补上壳(self):
+        pages = {
+            "p1": _phone_page("维保云", "维修主管", ["工单", "档案"], 0),
+            "p2": "<!DOCTYPE html><html><body><main>创作页没有壳</main></body></html>",
+        }
+        out = unify_shell(pages, SPEC, device="phone")
+        html = out["pages"]["p2"]
+        assert "<header" in html
+        assert 'data-page-id="p1"' in html
+        assert 'data-page-id="p2"' in html
+        assert "创作页没有壳" in html
+        assert "维保云" in html
 
 
 class Test管道一处定处处跟:

@@ -170,7 +170,7 @@ export function StudioLandingShot({
         background: "#fff",
       }}
     >
-      <HtmlAppSurface html={job.html} source={source} fillPhone={job.device === "phone"} className={job.device === "phone" ? "bg-black" : "bg-white"} />
+      <HtmlAppSurface html={job.html} source={source} fillPhone={job.device === "phone"} className="bg-white" />
     </div>
   );
 }

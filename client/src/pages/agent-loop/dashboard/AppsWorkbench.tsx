@@ -905,14 +905,14 @@ function HtmlLiveThumb({
                 transform: `scale(${scale})`,
                 transformOrigin: "top left",
                 overflow: "hidden",
-                background: isPhone ? "#000" : "#fff",
+                background: "#fff",
               }}
             >
               <LazyHtmlAppSurface
                 html={landing.html}
                 source={source}
                 fillPhone={isPhone}
-                className={isPhone ? "bg-black" : "bg-white"}
+                className="bg-white"
               />
             </div>
           </React.Suspense>

@@ -274,7 +274,7 @@ describe("画布视口按设备选（2026-08-14 竖屏）", () => {
     );
   });
 
-  it("机框用边框当边框，内屏黑底 —— 不靠溢出的 box-shadow，不露白边", () => {
+  it("机框用边框当边框，内屏白底 —— 不靠溢出的 box-shadow，缺页不再透黑", () => {
     mount([{ ...page("p1", 1), device: "phone" as const }]);
     const frame = host!.querySelector('[data-testid="sliderule-phone-frame"]') as HTMLElement;
     const border = `${frame.style.border} ${frame.style.borderWidth} ${frame.style.borderStyle} ${frame.style.borderColor}`;
@@ -284,7 +284,7 @@ describe("画布视口按设备选（2026-08-14 竖屏）", () => {
     const screen = frame.firstElementChild as HTMLElement;
     expect(screen.style.overflow).toBe("hidden");
     expect((screen.style.background || screen.style.backgroundColor).replace(/\s/g, "")).toMatch(
-      /#000|#000000|rgb\(0,0,0\)/
+      /#fff|#ffffff|rgb\(255,255,255\)/
     );
   });
 });

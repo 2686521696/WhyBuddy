@@ -65,6 +65,42 @@ describe("missingPageHtml", () => {
     expect(html).toContain('data-missing-page="p1"');
     expect(html).toContain('aria-current="page"');
     expect(html).not.toContain("已接数据");
+    expect(html).toContain("<aside");
+    expect(html).not.toMatch(/\bhref\s*=/);
+  });
+
+  it("手机缺页必须自带白底顶栏底栏，不许塞进黑 iframe", () => {
+    const html = missingPageHtml({
+      pageId: "p2",
+      name: "创作",
+      reason: "校验未通过",
+      nav: [
+        { pageId: "p1", name: "首页" },
+        { pageId: "p2", name: "创作" },
+      ],
+      device: "phone",
+    });
+    expect(html).toContain("bg-white");
+    expect(html).toContain("<header");
+    expect(html).toContain("<nav");
+    expect(html).toContain('data-page-id="p1"');
+    expect(html).not.toMatch(/\bhref\s*=/);
+    expect(html).not.toContain("<aside");
+    expect(html).toContain('data-missing-page="p2"');
+  });
+
+  it("livePagesFromSpec 把 device 传给缺页骨架", () => {
+    const pages = livePagesFromSpec({
+      device: "phone",
+      pages: { p1: "<html>首页</html>" },
+      navItems: [
+        { id: "p1", name: "首页" },
+        { id: "p2", name: "创作" },
+      ],
+    });
+    expect(pages[1].missing).toBe(true);
+    expect(pages[1].html).toContain("bg-white");
+    expect(pages[1].html).not.toContain("<aside");
   });
 });
 

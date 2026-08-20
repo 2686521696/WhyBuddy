@@ -303,7 +303,7 @@ export function SpecPageLiveStage({
               position: "relative",
               overflow: "hidden",
               borderRadius: isPhone ? 28 : 5,
-              background: isPhone ? "#000" : "#fff",
+              background: "#fff",
             }}
           >
             <div
@@ -313,14 +313,14 @@ export function SpecPageLiveStage({
                 transform: `scale(${scale})`,
                 transformOrigin: "top left",
                 overflow: "hidden",
-                background: isPhone ? "#000" : "#fff",
+                background: "#fff",
               }}
             >
               <HtmlAppSurface
                 key={active.pageId}
                 html={active.html}
                 fillPhone={isPhone}
-                className={isPhone ? "bg-black" : "bg-white"}
+                className="bg-white"
                 source={source}
                 gates={gates}
                 onAction={onAction}

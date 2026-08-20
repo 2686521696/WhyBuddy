@@ -142,6 +142,20 @@ class Test面包屑套话根换成产品名:
         assert "首页" in out
         assert "满电青年" not in out
 
+    def test_宿主品牌根换成产品名(self):
+        """⚠ 2026-08-21：模型把面包屑第一级写成「面团AI系统」。"""
+        src = (
+            '<header class="h-16">'
+            '<nav aria-label="Breadcrumb"><ol>'
+            "<li>面团AI系统</li>"
+            '<li class="font-medium">首页</li>'
+            "</ol></nav></header>"
+        )
+        out = set_breadcrumb_root(src, "内容雷达")
+        assert "面团AI系统" not in out
+        assert "内容雷达" in out
+        assert "首页" in out
+
     def test_走unify_shell(self):
         page = (
             "<!doctype html><html><head></head><body>"

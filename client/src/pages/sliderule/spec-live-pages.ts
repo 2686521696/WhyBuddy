@@ -31,18 +31,40 @@ export function missingPageHtml(opts: {
   name: string;
   reason: string;
   nav: Array<{ pageId: string; name: string }>;
+  device?: "desktop" | "phone";
 }): string {
   const links = opts.nav
     .map(item => {
       const current = item.pageId === opts.pageId ? ' aria-current="page"' : "";
-      return `<a data-page-id="${escapeHtml(item.pageId)}" href="#"${current}><span>${escapeHtml(item.name || item.pageId)}</span></a>`;
+      return `<a data-page-id="${escapeHtml(item.pageId)}"${current}><span>${escapeHtml(item.name || item.pageId)}</span></a>`;
     })
     .join("\n");
   const title = escapeHtml(opts.name || opts.pageId);
   const reason = escapeHtml(opts.reason || "生成校验未通过，这一页没有成品 HTML。");
+  /**
+   * ⚠ 2026-08-21 素材雷达：缺页骨架原来是桌面 aside+main、没有底、没有
+   * 白底。塞进手机黑 iframe 就是「点创作黑屏」。手机必须自己带 header +
+   * 底栏 + bg-white，菜单还能切回去。
+   */
+  if (opts.device === "phone") {
+    return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.tailwindcss.com"></script></head>
+<body class="bg-white text-slate-800 flex flex-col h-full">
+<header class="px-4 pb-3 border-b border-slate-100">
+<div class="text-sm font-semibold">${title}</div>
+</header>
+<main class="flex-1 bg-white p-4" data-missing-page="${escapeHtml(opts.pageId)}">
+<h1 class="text-base font-semibold">${title}</h1>
+<p>这一页没有成品界面。菜单可以点进来，但内容不会假装还在另一页上。</p>
+<p>${reason}</p>
+</main>
+<nav class="flex justify-around border-t border-slate-200 bg-white">${links}</nav>
+</body></html>`;
+  }
   return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
 <script src="https://cdn.tailwindcss.com"></script></head>
-<body>
+<body class="bg-white text-slate-800">
 <aside><nav>${links}</nav></aside>
 <main data-missing-page="${escapeHtml(opts.pageId)}">
 <h1>${title}</h1>
@@ -100,7 +122,7 @@ export function livePagesFromSpec(
     const reason = String(specFirstPages?.failedPages?.[id] ?? "");
     return {
       pageId: id,
-      html: missing ? missingPageHtml({ pageId: id, name, reason, nav: nav.length ? nav : ids.map(pid => ({ pageId: pid, name: pid })) }) : html,
+      html: missing ? missingPageHtml({ pageId: id, name, reason, nav: nav.length ? nav : ids.map(pid => ({ pageId: pid, name: pid })), device: specFirstPages?.device }) : html,
       current: i + 1,
       total: realCount,
       bound: missing ? false : pageIsBoundFromSpec(id, specFirstPages),
