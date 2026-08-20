@@ -26,6 +26,7 @@
 
 import React from "react";
 import { canWriteApp, useAuth } from "@/lib/use-auth";
+import type { AuthUser } from "@/lib/auth-client";
 import { Pagination } from "antd";
 
 import { useContainerPosition } from "masonic";
@@ -68,7 +69,8 @@ import { specPageViewport, useScaleToFit } from "@/pages/sliderule/live-runtime/
 import { deriveBindingSource } from "@/pages/sliderule/live-runtime/derive-binding-source";
 import { initRuntimeState } from "@/pages/sliderule/live-runtime/live-runtime";
 import { seedRuntimeState } from "@/pages/sliderule/live-runtime/demo-seed";
-import { pageIsBoundFromSpec } from "@/pages/sliderule/spec-page-bound";
+import { navItemId, navItemName } from "@/pages/sliderule/nav-item";
+import { livePagesFromSpec } from "@/pages/sliderule/spec-live-pages";
 import {
   mergeFiveSystemModels,
   parseFiveSystemModelFromPerSkillEvidence,
@@ -85,6 +87,7 @@ import {
   listApps,
   getApp,
   forkApp,
+  reopenApp,
   deleteApp,
   patchApp,
   appPreviewUrl,
@@ -153,10 +156,13 @@ export function extractSpecPages(raw: unknown): SpecPagesDetail | null {
   }
   if (Object.keys(pages).length === 0) return null;
   const navItems = Array.isArray(r.navItems)
-    ? (r.navItems.filter(n => n && typeof n === "object") as Array<{
-        pageId?: string;
-        label?: string;
-      }>)
+    ? (r.navItems
+        .filter(n => n && typeof n === "object")
+        .map(n => ({
+          pageId: navItemId(n),
+          label: navItemName(n),
+        }))
+        .filter(n => n.pageId) as Array<{ pageId?: string; label?: string }>)
     : [];
   return {
     pages,
@@ -401,6 +407,36 @@ export function mergeGalleryItems(
       phase: s.phase,
     }));
   return [...appItems, ...sessionItems];
+}
+
+/**
+ * 会话还在不在。列表还没拉回来时当「在」——免得首屏闪一帧只读预览。
+ * 对照 GitHub：点仓库时 Codespace 没了，不会假装还能进那台机器。
+ */
+export function sessionIsAlive(
+  sessionId: string | undefined,
+  sessions: readonly Pick<SessionListItem, "sessionId">[] | null
+): boolean {
+  if (!sessionId) return false;
+  if (sessions == null) return true;
+  return sessions.some(s => s.sessionId === sessionId);
+}
+
+/**
+ * 点卡能不能进会话。自己的卡、会话还在 → 进；会话没了 → 走快照预览。
+ * 别人的卡永远不进对方会话（2026-08-06 白屏）。
+ */
+export function canOpenGalleryItem(
+  item: Pick<GalleryItem, "source" | "sessionId"> & {
+    summary?: { owner_id?: string | null } | null;
+  },
+  sessions: readonly Pick<SessionListItem, "sessionId">[] | null,
+  user: AuthUser | null
+): boolean {
+  if (!item.sessionId) return false;
+  if (item.source === "session") return true;
+  if (!canWriteApp(item.summary?.owner_id ?? null, user)) return false;
+  return sessionIsAlive(item.sessionId, sessions);
 }
 
 export type GalleryFilter = "all" | "runnable" | "draft" | "blocked";
@@ -823,11 +859,12 @@ function HtmlLiveThumb({
   device?: string | null;
 }) {
   const { wrapRef, visible } = useThumbMountGate();
-  // 视口按设备选：桌面 1920×1080 / 手机 390×844（Playwright iPhone 14）。
+  // 视口按设备选：桌面 1920×1080 / 手机 390×844。
+  // 卡片墙仍是 16:9 / 9:16（DEVICE_ASPECT），跟 390×844 不同比。
+  // 必须 cover：width 会把横屏画布缩进竖卡后底下留白。
   const viewport = specPageViewport(specPages.device);
-  // 宽度定缩放（跟 LiveAppThumb 的 scaleFit="width" 同一条理由）：页面是照
-  // 固定视口画的，卡片看顶部那一屏就够；contain 在 9:16 的手机档卡里会留大灰边。
-  const { ref: fitRef, scale } = useScaleToFit(viewport.w, viewport.h, "width");
+  const { ref: fitRef, scale } = useScaleToFit(viewport.w, viewport.h, "cover");
+  const isPhone = specPages.device === "phone";
   const landing = React.useMemo(() => orderedSpecPages(specPages)[0] ?? null, [specPages]);
   const source = React.useMemo(
     () => deriveBindingSource(model, model ? seedRuntimeState(initRuntimeState(model), model) : null),
@@ -853,20 +890,30 @@ function HtmlLiveThumb({
       className="pointer-events-none h-full w-full overflow-hidden bg-[#f0f2f5]"
       data-testid="app-thumb-html"
     >
-      <div ref={fitRef} className="h-full w-full overflow-hidden">
+      <div ref={fitRef} className="relative h-full w-full overflow-hidden">
         {visible && landing && (
           <React.Suspense fallback={<div className="h-full w-full bg-[#f0f2f5]" />}>
             <div
+              // absolute：transform 不占文档流。流式 1920×1080 会把
+              // masonic 量到的格子撑成一整屏（真机卡片顶上缩成指甲盖）。
               style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
                 width: viewport.w,
                 height: viewport.h,
                 transform: `scale(${scale})`,
                 transformOrigin: "top left",
                 overflow: "hidden",
-                background: "#fff",
+                background: isPhone ? "#000" : "#fff",
               }}
             >
-              <LazyHtmlAppSurface html={landing.html} source={source} />
+              <LazyHtmlAppSurface
+                html={landing.html}
+                source={source}
+                fillPhone={isPhone}
+                className={isPhone ? "bg-black" : "bg-white"}
+              />
             </div>
           </React.Suspense>
         )}
@@ -893,18 +940,8 @@ function SpecPagesPreview({
     () => (model ? seedRuntimeState(initRuntimeState(model), model) : null),
     [model]
   );
-  const pages = React.useMemo(() => {
-    const ordered = orderedSpecPages(specPages);
-    return ordered.map((p, i) => ({
-      pageId: p.pageId,
-      html: p.html,
-      current: i + 1,
-      total: ordered.length,
-      bound: pageIsBoundFromSpec(p.pageId, specPages),
-      // 竖屏应用在预览模态里也得进竖屏画布（SpecPageLiveStage 按它选视口）
-      device: specPages.device,
-    }));
-  }, [specPages]);
+  const pages = React.useMemo(() => livePagesFromSpec(specPages), [specPages]);
+  const landingId = pages.find(p => !p.missing)?.pageId ?? pages[0]?.pageId ?? null;
   return (
     <React.Suspense
       fallback={<div className="p-6 text-[13px] text-slate-400">预览加载中…</div>}
@@ -914,7 +951,7 @@ function SpecPagesPreview({
         running={false}
         model={model}
         runtime={runtime}
-        defaultPageId={pages[0]?.pageId ?? null}
+        defaultPageId={landingId}
         className="h-full p-3"
       />
     </React.Suspense>
@@ -999,15 +1036,15 @@ export function SheetThumb({
   if (failed) return <>{fallback}</>;
   return (
     <div
-      className="pointer-events-none h-full w-full overflow-hidden bg-[#f0f2f5]"
+      className="pointer-events-none relative h-full w-full overflow-hidden bg-[#f0f2f5]"
       data-testid="app-thumb-sheet"
     >
       <img
         src={appPreviewUrl(appId, previewTag)}
         alt={alt}
-        // 卡片比例跟出图画布是对齐的（见 lib/justified-rows 的 DEVICE_ASPECT），
-        // 所以 cover 不会真的裁掉内容，只是吃掉取整产生的那一两个像素缝。
-        className="h-full w-full object-cover"
+        // absolute 才能压住图的固有尺寸。只写 h-full 时，有的存量 shot
+        // 固有宽高比卡片小，img 停在左上角指甲盖大，卡片剩下白底。
+        className="absolute inset-0 h-full w-full object-cover"
         loading="lazy"
         decoding="async"
         // 首屏之外的卡不参与解码排队，跟 loading=lazy 是一组
@@ -1110,6 +1147,10 @@ function CenterCard({
       // 深色监控盘，所以用从下往上的黑色渐变（底部 85% 到顶部全透明）而不是
       // 一整块半透明——整块会在浅色截图上糊掉一条，渐变只压住文字那一带，
       // 上面的画面照常看得见。再叠一层 backdrop-blur 兜住高频花纹的底。
+      //
+      // 2026-08-20：整层默认 opacity-30，悬停再拉满。用户要先看清截图，
+      // 字和渐变一起淡——只淡字、渐变仍 85% 的话，底还是一条黑带。
+      // hover 仍走 85% 底，任意深浅截图都能读。漏掉 group-hover 就永远 30%。
       className="group relative h-full w-full cursor-pointer overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm transition hover:border-[#1677ff]/60 hover:shadow-lg"
       style={{ height: mediaHeight }}
       onClick={onClick}
@@ -1118,7 +1159,7 @@ function CenterCard({
       <div className="absolute inset-0 overflow-hidden">{media}</div>
       {topRight}
       {/* 信息条：浮在画面底部，不占卡片高度 */}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/60 to-transparent px-3 pb-2 pt-7 backdrop-blur-[1px]">
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/60 to-transparent px-3 pb-2 pt-7 opacity-30 backdrop-blur-[1px] transition-opacity group-hover:opacity-100">
         <div className="flex items-center gap-1.5">
           {Icon && (
             <span
@@ -1323,6 +1364,8 @@ export function AppsWorkbench() {
   const [menuFor, setMenuFor] = React.useState<string | null>(null);
   // 复刻改名弹框（对标 Budibase duplicateApp：预填「源名 副本」让用户改名）
   const [forkModal, setForkModal] = React.useState<{ item: GalleryItem; name: string } | null>(null);
+  const [deleteModal, setDeleteModal] = React.useState<GalleryItem | null>(null);
+  const [reopenBusy, setReopenBusy] = React.useState(false);
   /**
    * 只读预览（2026-08-06）：点开**别人的**应用时用它，而不是往对方的会话里跳。
    *
@@ -1570,12 +1613,13 @@ export function AppsWorkbench() {
     openNewSession();
   };
 
-  /** 删卡：App Store 卡删记录（DELETE /apps/{id}，不动会话）；会话草稿卡删会话。 */
+  /** 删卡：App Store 卡走确认框（更重）；会话草稿卡删会话。 */
   const removeCard = async (gi: GalleryItem) => {
     try {
       if (gi.source === "app" && gi.appId) {
-        const ok = await deleteApp(gi.appId);
-        if (ok) setApps(prev => (prev ?? []).filter(a => a.id !== gi.appId));
+        setDeleteModal(gi);
+        setMenuFor(null);
+        return;
       } else if (gi.sessionId) {
         // DELETE 幂等（G1 契约）；成功后本地摘卡，不整页刷新
         await fetch(`/api/sliderule/sessions/${encodeURIComponent(gi.sessionId)}`, {
@@ -1601,6 +1645,33 @@ export function AppsWorkbench() {
       /* 网络失败保持原样，用户可重试 */
     }
     setMenuFor(null);
+  };
+
+  const confirmDeleteApp = async () => {
+    const gi = deleteModal;
+    if (!gi?.appId) return;
+    const ok = await deleteApp(gi.appId);
+    if (ok) {
+      setApps(prev => (prev ?? []).filter(a => a.id !== gi.appId));
+      // 绑定会话服务端已删，侧栏必须跟着摘，否则还挂着一条进不去的草稿。
+      notifySessionsUpdated();
+    }
+    setDeleteModal(null);
+    setMenuFor(null);
+  };
+
+  const continueOnCard = async (gi: GalleryItem) => {
+    if (!gi.appId || reopenBusy) return;
+    setReopenBusy(true);
+    const result = await reopenApp(gi.appId);
+    setReopenBusy(false);
+    if (!result?.sessionId) {
+      setListError("无法从快照重建工作区，请稍后重试");
+      return;
+    }
+    setPreviewModal(null);
+    notifySessionsUpdated();
+    open(result.sessionId);
   };
 
   /**
@@ -1745,9 +1816,7 @@ export function AppsWorkbench() {
     //                （filter_sessions），列出来的就是你的，直接可进。
     //   app 卡     —— 来自 GET /apps，公开应用人人可见，绑定的会话却是
     //                作者的。必须按 owner 判。
-    const canOpen =
-      Boolean(item.sessionId) &&
-      (item.source === "session" || canWriteApp(item.summary?.owner_id ?? null, authUser));
+    const canOpen = canOpenGalleryItem(item, sessions, authUser);
     // 能不能复刻/删除。无主的存量应用除超管外谁都不能删——判成"谁都能删"
     // 等于权限一上线就把历史数据敞开（与后端 app_access 同一套规则）。
     const canFork = capabilities.can.fork;
@@ -1972,7 +2041,7 @@ export function AppsWorkbench() {
   return (
     <div
       data-testid="apps-workbench"
-      className="min-h-full bg-[var(--sr-shell-bg,#fff)] px-6 py-5 md:px-8 md:py-6"
+      className="min-h-full bg-[var(--sr-shell-bg,#f4f4f6)] px-6 py-5 md:px-8 md:py-6"
       onClick={() => {
         if (menuFor) setMenuFor(null);
         if (healthOpen) setHealthOpen(false);
@@ -2000,7 +2069,7 @@ export function AppsWorkbench() {
         · z-30 高于卡片菜单(z-10)与健康浮层(z-20)：健康浮层本身在这块里面，
           跟着一起吸顶，不会被卡片盖住。
       */}
-      <div className="sticky top-0 z-30 -mx-6 -mt-5 bg-[var(--sr-shell-bg,#fff)] px-6 pt-5 pb-3 md:-mx-8 md:-mt-6 md:px-8 md:pt-6">
+      <div className="sticky top-0 z-30 -mx-6 -mt-5 bg-[var(--sr-shell-bg,#f4f4f6)] px-6 pt-5 pb-3 md:-mx-8 md:-mt-6 md:px-8 md:pt-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="flex min-w-0 shrink-0 items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg text-[#5b6cff]">
@@ -2291,20 +2360,30 @@ export function AppsWorkbench() {
                 只读预览
               </span>
               <div className="ml-auto flex shrink-0 items-center gap-2">
-                {/* 想改就 Fork 一份成自己的——这是这条动线的出口，
-                    别让用户在只读页里找不到下一步。 */}
-                <button
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-[#5b6cff] px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-[#4a5aef] disabled:opacity-40"
-                  disabled={!capabilities.can.fork || previewModal.source !== "app"}
-                  title={capabilities.can.fork ? undefined : "登录后可复刻"}
-                  onClick={() => {
-                    const gi = previewModal;
-                    setPreviewModal(null);
-                    openForkModal(gi);
-                  }}
-                >
-                  <GitBranch size={13} /> 复刻到我的
-                </button>
+                {canWriteApp(previewModal.summary?.owner_id ?? null, authUser) &&
+                previewModal.source === "app" ? (
+                  <button
+                    data-testid="app-reopen"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#5b6cff] px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-[#4a5aef] disabled:opacity-40"
+                    disabled={reopenBusy || !previewModal.appId}
+                    onClick={() => void continueOnCard(previewModal)}
+                  >
+                    <Wrench size={13} /> {reopenBusy ? "正在重建工作区…" : "在新会话继续改"}
+                  </button>
+                ) : (
+                  <button
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#5b6cff] px-3 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-[#4a5aef] disabled:opacity-40"
+                    disabled={!capabilities.can.fork || previewModal.source !== "app"}
+                    title={capabilities.can.fork ? undefined : "登录后可复刻"}
+                    onClick={() => {
+                      const gi = previewModal;
+                      setPreviewModal(null);
+                      openForkModal(gi);
+                    }}
+                  >
+                    <GitBranch size={13} /> 复刻到我的
+                  </button>
+                )}
                 <button
                   className="rounded-lg px-2.5 py-1.5 text-[12.5px] text-slate-500 transition hover:bg-slate-100"
                   onClick={() => setPreviewModal(null)}
@@ -2337,6 +2416,45 @@ export function AppsWorkbench() {
                   />
                 </React.Suspense>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 删应用比删会话重：对照 GitHub 删仓库要确认。绑定工作区会一起没。 */}
+      {deleteModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          data-testid="delete-app-modal"
+          onClick={() => setDeleteModal(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 text-[15px] font-semibold text-slate-900">
+              <Trash2 size={16} className="text-red-500" /> 删除应用
+            </div>
+            <div className="mt-2 text-[12.5px] leading-5 text-slate-600">
+              「{details[deleteModal.key]?.identity?.productName ||
+                deleteModal.summary?.product_name ||
+                deleteModal.goal ||
+                "这张应用"}」会从货架下架，绑定的推演会话也会一并删除，不可恢复。
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="rounded-lg px-3 py-1.5 text-[12.5px] font-medium text-slate-500 transition hover:bg-slate-100"
+                onClick={() => setDeleteModal(null)}
+              >
+                取消
+              </button>
+              <button
+                data-testid="delete-app-confirm"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-1.5 text-[12.5px] font-semibold text-white transition hover:bg-red-700"
+                onClick={() => void confirmDeleteApp()}
+              >
+                确认删除
+              </button>
             </div>
           </div>
         </div>

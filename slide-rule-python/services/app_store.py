@@ -2419,8 +2419,48 @@ def list_versions(root_id: str) -> list[dict[str, Any]]:
 
 def delete_app(app_id: str) -> bool:
     """从画廊移除一个应用记录。返回是否真删到（不存在返回 False）。
-    只删这一条记录，不动它对应的推演会话（会话另有独立生命周期）。"""
+
+    只删这一条记录。绑定会话由路由在删卡之后另删（对照 GitHub：删仓库
+    会清掉挂在这仓库上的 Codespace；存储层不跨表级联，避免 JSON/SQLite/
+    Neon 三条后端各写一份）。
+    """
     return get_backend().delete(app_id)
+
+
+def bind_session(app_id: str, session_id: Optional[str]) -> Optional[dict[str, Any]]:
+    """把工作区绑到这张卡上。``session_id`` 空 = 解开。"""
+    backend = get_backend()
+    rec = backend.get(app_id)
+    if rec is None:
+        return None
+    rec["session_id"] = (session_id or "")[:64] or None
+    backend.save(rec)
+    return rec
+
+
+def unbind_session(session_id: str) -> int:
+    """删工作区之后，仓库不许再指向那台已经没了的机器。
+
+    对照 GitHub Codespaces：删 Codespace 不删仓库，但再点仓库不会跳进
+    已经 404 的那台。``app.session_id`` 就是存错了的「当前 Codespace id」，
+    会话一删必须摘掉，否则点卡进死会话（2026-08-20）。
+
+    用现成的 find_latest_by_session + save，三条后端不用各加方法。
+    同 session 挂了多条版本时循环摘干净。
+    """
+    sid = str(session_id or "").strip()
+    if not sid:
+        return 0
+    backend = get_backend()
+    n = 0
+    while n < 64:
+        rec = backend.find_latest_by_session(sid)
+        if not rec:
+            return n
+        rec["session_id"] = None
+        backend.save(rec)
+        n += 1
+    return n
 
 
 def export_all() -> list[dict[str, Any]]:

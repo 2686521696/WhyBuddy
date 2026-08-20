@@ -17,6 +17,8 @@ import {
   formatRelativeTime,
   pageLooksFull,
   GALLERY_PAGE_SIZE,
+  canOpenGalleryItem,
+  sessionIsAlive,
   type SessionListItem,
 } from "../AppsWorkbench";
 import type { AppStoreSummary } from "../app-store-client";
@@ -225,6 +227,15 @@ describe("extractSpecPages", () => {
     const sp = extractSpecPages({ pages: { good: "<html></html>", bad: 42 } })!;
     expect(Object.keys(sp.pages)).toEqual(["good"]);
   });
+
+  it("Python 壳的导航是 id/name，要收成 pageId", () => {
+    const sp = extractSpecPages({
+      pages: { p2: "<html>加工</html>" },
+      navItems: [{ id: "p1", name: "拾取" }, { id: "p2", name: "加工" }],
+    })!;
+    expect(sp.navItems.map(n => n.pageId)).toEqual(["p1", "p2"]);
+    expect(sp.navItems[0].label).toBe("拾取");
+  });
 });
 
 describe("orderedSpecPages", () => {
@@ -291,6 +302,46 @@ describe("mergeGalleryItems", () => {
     const items = mergeGalleryItems([], [sess("s1", "a"), sess("s2", "b")]);
     expect(items).toHaveLength(2);
     expect(items.every(i => i.source === "session")).toBe(true);
+  });
+});
+
+describe("点卡：会话在就进，没了就看快照", () => {
+  const me = { id: "u1", email: "a@b.c", isSuperuser: false, isVerified: true };
+  const own = {
+    source: "app" as const,
+    sessionId: "s1",
+    summary: { owner_id: "u1" },
+  };
+  const listed = [{ sessionId: "s1" }, { sessionId: "s2" }];
+
+  it("自己的卡、会话还在 → 进会话", () => {
+    expect(canOpenGalleryItem(own, listed, me)).toBe(true);
+  });
+
+  it("自己的卡、会话没了 → 不进死会话", () => {
+    expect(canOpenGalleryItem(own, [{ sessionId: "s2" }], me)).toBe(false);
+    expect(canOpenGalleryItem({ ...own, sessionId: undefined }, listed, me)).toBe(false);
+  });
+
+  it("别人的卡不进对方会话", () => {
+    expect(
+      canOpenGalleryItem(
+        { source: "app", sessionId: "s1", summary: { owner_id: "other" } },
+        listed,
+        me
+      )
+    ).toBe(false);
+  });
+
+  it("会话草稿卡仍可进", () => {
+    expect(
+      canOpenGalleryItem({ source: "session", sessionId: "s2", summary: null }, listed, me)
+    ).toBe(true);
+  });
+
+  it("列表没回来时不闪预览", () => {
+    expect(sessionIsAlive("s1", null)).toBe(true);
+    expect(sessionIsAlive("s1", [])).toBe(false);
   });
 });
 
@@ -465,6 +516,19 @@ describe("卡片墙走 masonic，高度由内容决定", () => {
     expect(src).toContain("absolute inset-0 overflow-hidden");
   });
 
+  it("信息条默认 30% 透明，悬停才拉满（2026-08-20）", () => {
+    // 用户原话：渐变和上面的字默认透明度 30%，鼠标移上去再显示。
+    // 钉在**同一条**浮层上——只淡字、渐变仍 85%，底还是一条黑带。
+    // 右上角菜单是另一套 opacity-0 / group-hover，不能拿它冒充这条。
+    const overlay = src.match(/className="absolute inset-x-0 bottom-0 [^"]+"/)?.[0];
+    expect(overlay).toBeTruthy();
+    expect(overlay).toContain("opacity-30");
+    expect(overlay).toContain("group-hover:opacity-100");
+    expect(overlay.replace("group-hover:opacity-100", "")).not.toMatch(/opacity-100/);
+    // group-hover 挂在卡片壳上；壳丢了 group，悬停永远不亮。
+    expect(src).toMatch(/className="group relative h-full w-full cursor-pointer/);
+  });
+
   it("压在渐变上的元素不能留浅底深字", () => {
     // 版本徽标原本是 bg-slate-100 + text-slate-600（图下白底时对的），
     // 挪到黑色渐变上就反了。这条防止以后再往信息条里加浅底元素。
@@ -603,5 +667,15 @@ describe("三个货架接在真链路上", () => {
   it("推演收口能按会话反查 app_id——列表分页反查会漏", () => {
     expect(client).toContain("function getGeneratedAppForSession");
     expect(client).toContain("/sessions/${encodeURIComponent(id)}/generated-app");
+  });
+
+  it("点卡走 canOpenGalleryItem，死会话不 open(sessionId)", () => {
+    expect(src).toContain("canOpenGalleryItem(item, sessions, authUser)");
+    expect(src).toContain("continueOnCard");
+    expect(src).toContain("在新会话继续改");
+    expect(src).toContain("data-testid=\"delete-app-modal\"");
+    expect(src).toContain("绑定的推演会话也会一并删除");
+    expect(client).toContain("function reopenApp");
+    expect(client).toContain("/apps/${encodeURIComponent(id)}/reopen");
   });
 });

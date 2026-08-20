@@ -213,6 +213,9 @@ REQUIRED: dict[str, Access] = {
     "set_visibility": Access.OWNER,
     "grant": Access.OWNER,      # 把权限分给别人
     "delete": Access.OWNER,
+    # 从快照重建工作区（对照 GitHub create codespace）。不是 fork：
+    # 还是这一张卡，只换一台工作区。要能改这个应用。
+    "reopen": Access.WRITE,
 }
 
 

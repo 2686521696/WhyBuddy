@@ -219,8 +219,29 @@ export async function forkApp(id: string, name?: string): Promise<ForkResult | n
 }
 
 /**
- * 从画廊移除一个应用记录（只删记录，不动对应推演会话）。返回是否删成功。
- * 对标三家的 deleteApp：DELETE 幂等，失败/网络异常返回 false 让调用方保持原样。
+ * 同一张卡上重建工作区（对照 GitHub create codespace）。不是 fork。
+ * 会话还在就复用；没了才从快照灌一条新会话。
+ */
+export async function reopenApp(
+  id: string
+): Promise<{ id: string; sessionId: string; reused: boolean } | null> {
+  try {
+    const res = await fetch(`${BASE}/apps/${encodeURIComponent(id)}/reopen`, {
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/json" },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { id?: string; sessionId?: string; reused?: boolean };
+    if (typeof data?.id !== "string" || typeof data?.sessionId !== "string") return null;
+    return { id: data.id, sessionId: data.sessionId, reused: Boolean(data.reused) };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 从画廊移除一个应用记录。绑定的推演会话由服务端一并删（对照 GitHub
+ * 删仓库会清 Codespace）。失败/网络异常返回 false，调用方保持原样。
  */
 export async function deleteApp(id: string): Promise<boolean> {
   try {

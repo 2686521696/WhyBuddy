@@ -359,6 +359,7 @@ describe("SidebarSessions 静态渲染", () => {
     expect(src).toContain("sessionRowVisibility(app)");
     expect(src).not.toContain("groupSessionsByAge(shown");
     expect(src).not.toContain("AppsWorkbench");
+    expect(src).toMatch(/setSessions\(remaining\);\s*notifySessionsUpdated\(\)/);
   });
 
   it("列表超高可滚，搜索在横排里可以 flex:1", () => {

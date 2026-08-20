@@ -159,6 +159,26 @@ def test_delete_removes_record(configured_store):
     assert len(store.list_apps()) == 1, "删掉一条后列表只剩另一条"
 
 
+def test_unbind_session_clears_pointer_keeps_app(configured_store):
+    """删 Codespace 不删仓库：卡留下，session_id 必须空。"""
+    a = store.save_app(_model("咖营通"), session_id="sr-dead")
+    b = store.save_app(_model("宠医云"), session_id="sr-live")
+    assert store.unbind_session("sr-dead") == 1
+    assert store.get_app(a)["session_id"] is None
+    assert store.get_app(a) is not None
+    assert store.get_app(b)["session_id"] == "sr-live"
+    assert store.unbind_session("sr-dead") == 0
+    assert store.unbind_session("") == 0
+
+
+def test_bind_session_rewrites_workspace(configured_store):
+    a = store.save_app(_model("咖营通"), session_id="old")
+    rec = store.bind_session(a, "sliderule-work-abc")
+    assert rec["session_id"] == "sliderule-work-abc"
+    assert store.get_app(a)["session_id"] == "sliderule-work-abc"
+    assert store.bind_session("missing", "x") is None
+
+
 def test_delete_missing_returns_false(configured_store):
     assert store.delete_app("does-not-exist") is False
 

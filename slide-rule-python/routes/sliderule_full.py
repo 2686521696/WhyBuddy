@@ -797,6 +797,13 @@ def delete_sess(
         _require_session(_existing, "delete", viewer)
     result = delete_session(sid)
     _sessions.pop(sid, None)
+    # GitHub：删 Codespace 不删仓库，但仓库不再指向已删的那台。
+    # 不摘 session_id，点卡就会 GET 死会话 404（2026-08-20）。
+    try:
+        from services import app_store as _apps
+        _apps.unbind_session(sid)
+    except Exception as exc:  # noqa: BLE001 — 摘指针失败不能把已删会话变回 500
+        print(f"[sliderule_full] unbind_session after delete failed: {exc}")
     if not result.get("ok"):
         if result.get("error") == "not_found":
             return {"ok": True, "sessionId": sid, "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
@@ -2594,75 +2601,77 @@ async def fork_generated_app(
         raise HTTPException(404, "source app not found")
 
     def _init_fork_session() -> None:
-        """给副本建绑定会话。**整段跑在线程池里，且不打外网**。
+        """给副本建绑定会话。整段跑在线程池里，且不打外网。
 
-        2026-08-06 用户实测"点 fork 等待时间超级长"，剖析结果：
-
-            _ensure_runtime_closure_evidence   11027 ms   占 fork 总耗时 99.3%
-              └ 里面 14 次 Wikipedia 请求        9910 ms
-
-        两处都要治：
-
-        ① `suppress_web_search()` —— 复刻的是一份**已经推演完的模型**，
-           重建闭环证据不需要重新去外网找证据（抓回来的还是「PC」
-           「PCI Express」这种无关词条）。理由写在 mcp_tools 那个上下文
-           管理器里。
-
-        ② `asyncio.to_thread` —— 这原本是直接在 `async def` 路由体里同步跑的，
-           11 秒**全程占着事件循环**。也就是说一个人点 fork，同一时间所有人的
-           请求（包括正在推演的 SSE）都被卡住。这才是"整站都变慢"的来源，
-           比 fork 自己慢更严重。
-
-        ContextVar 在 to_thread 里是**父到子**方向传递的，而这里正是这个方向
-        （父设标记、子读标记），没有"子写父读"的问题。
+        实现抽到 ``app_working_session``：reopen（同一张卡重建工作区）走同一条，
+        只改 fork 等于点「继续改」仍是空工作台。
         """
         nonlocal session_error
-        try:
-            record = app_store.get_app(new_id) or {}
-            model = record.get("model_json") or {}
-            goal_text = str(record.get("goal") or new_name or "复刻应用")
-            from models.v5_state import V5SessionState
-            from services.mcp_tools import suppress_web_search
-            from services.v5_full_driver import (
-                _ensure_runtime_closure_evidence,
-                record_model_version,
-            )
-            from services.v5_llm_generate import set_model_override, set_refine_context
+        from services.app_working_session import init_working_session_from_app
 
-            fork_state = V5SessionState(
-                sessionId=fork_sid,
-                # inherited=True 只是**如实标注**"这个话题是从源应用继承来的，
-                # 不是本人提的"，不改变任何行为。留着它是因为副本会话"过程串
-                # 话题"的问题还没定方案（见文件上方那段说明），真要修时判据
-                # 就在这个字段上，不用再去猜。
-                goal={"text": goal_text, "status": "clear", "inherited": True},
-                ownerId=viewer.id,
-            )
-            fork_state.runtimePhase = "done"
-            set_model_override(model)
-            set_refine_context(model, f"fork 初始化：{new_name or goal_text}")
-            try:
-                with suppress_web_search():
-                    fork_state = _ensure_runtime_closure_evidence(
-                        fork_state, f"fork:{new_id}", 0
-                    )
-            finally:
-                set_model_override(None)
-                set_refine_context(None)
-            closure = derive_publish_closure_response(fork_state)
-            if closure is not None:
-                fork_state.publishClosure = closure
-                fork_state.skillRuntimeGraph = derive_skill_runtime_graph_response(fork_state)
-                record_model_version(fork_state, closure, f"复刻自 {app_id}")
-            save_session(fork_state)
-        except Exception as exc:  # noqa: BLE001 — 会话初始化失败不吞掉 fork 本身
-            session_error = str(exc)[:200]
-            print(f"[sliderule_full] fork session init failed: {session_error}")
+        record = app_store.get_app(new_id) or {}
+        session_error = init_working_session_from_app(
+            record,
+            session_id=fork_sid,
+            owner_id=viewer.id,
+            note=f"复刻自 {app_id}",
+        )
 
     session_error: Optional[str] = None
     await asyncio.to_thread(_init_fork_session)
 
     return {"id": new_id, "sessionId": fork_sid, "sessionError": session_error}
+
+
+@router.post("/apps/{app_id}/reopen")
+async def reopen_generated_app(
+    app_id: str,
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """同一张卡上重建工作区。对照 GitHub「create a codespace for this repo」。
+
+    不是 fork：不新开应用、不改血缘。会话还在就复用；没了才从 ``model_json`` /
+    ``pages_json`` 灌一条新会话并 ``bind_session``。
+    """
+    _auth(x_internal_key)
+    from services import app_store
+    from services.app_working_session import init_working_session_from_app
+    import uuid as _uuid
+
+    record = await asyncio.to_thread(app_store.get_app, app_id)
+    if record is None:
+        raise HTTPException(404, "app not found")
+    app_access.require("reopen", record, viewer)
+    if viewer is None:
+        raise HTTPException(401, "请先登录后再继续改")
+
+    existing_sid = str(record.get("session_id") or "").strip()
+    if existing_sid:
+        live = load_session(existing_sid) or _sessions.get(existing_sid)
+        if live is not None:
+            return {"id": app_id, "sessionId": existing_sid, "reused": True}
+
+    work_sid = f"sliderule-work-{_uuid.uuid4().hex[:10]}"
+    session_error: Optional[str] = None
+
+    def _go() -> None:
+        nonlocal session_error
+        session_error = init_working_session_from_app(
+            record,
+            session_id=work_sid,
+            owner_id=viewer.id,
+            note=f"从快照重建工作区 {app_id}",
+        )
+        app_store.bind_session(app_id, work_sid)
+
+    await asyncio.to_thread(_go)
+    return {
+        "id": app_id,
+        "sessionId": work_sid,
+        "sessionError": session_error,
+        "reused": False,
+    }
 
 
 @router.delete("/apps/{app_id}")
@@ -2671,7 +2680,11 @@ async def delete_generated_app(
     viewer: CurrentUserOptional,
     x_internal_key: Optional[str] = Header(None),
 ):
-    """从画廊移除一个生成应用记录（只删记录，不动对应推演会话）。"""
+    """从画廊移除一个生成应用记录。
+
+    对照 GitHub 删仓库：挂在这张卡上的工作区会话一并删（删得了才删）。
+    会话删失败不回滚应用——货架已经下架，孤儿会话用户还能在侧栏自己清。
+    """
     _auth(x_internal_key)
     from services import app_store
 
@@ -2679,9 +2692,23 @@ async def delete_generated_app(
     if record is None:
         raise HTTPException(404, "app not found")
     app_access.require("delete", record, viewer)
+    bound_sid = str(record.get("session_id") or "").strip()
     if not await asyncio.to_thread(app_store.delete_app, app_id):
         raise HTTPException(404, "app not found")
-    return {"ok": True}
+    session_deleted = False
+    if bound_sid:
+        try:
+            existing = load_session(bound_sid) or _sessions.get(bound_sid)
+            if existing is not None:
+                _require_session(existing, "delete", viewer)
+                delete_session(bound_sid)
+                _sessions.pop(bound_sid, None)
+                session_deleted = True
+        except HTTPException:
+            session_deleted = False
+        except Exception as exc:  # noqa: BLE001
+            print(f"[sliderule_full] drop workspace after delete_app failed: {exc}")
+    return {"ok": True, "sessionDeleted": session_deleted}
 
 
 @router.get("/apps-export")

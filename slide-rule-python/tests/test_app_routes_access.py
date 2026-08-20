@@ -449,3 +449,144 @@ def test_cookie_alone_authenticates_without_a_bearer_header(env):
     assert me["user"]["email"] == "alice@example.com"
     caps = c.get(f"{API}/account/capabilities", headers=_hdr()).json()
     assert caps["can"]["drive"] is True
+
+
+def _drive_probe_body():
+    """故意不合法的 state：身份关过后会 400，不会真跑 LLM。
+
+    sessionId 必须是 str。用错类型卡在校验，断言只盯"不是 401"。
+    """
+    return {
+        "state": {"sessionId": 1},
+        "userText": "试试",
+        "turnId": "t-1",
+        "max_loops": 1,
+    }
+
+
+def test_cookie_alone_reaches_drive_full_stream(env):
+    """浏览器推演只有 Cookie。这条必须不是 401。
+
+    ⚠ 2026-08-20 真机：左下角 Admin 已登录，PUT /sessions 200，紧接着
+    POST /drive-full-stream 401「请先登录后再推演」。GET /account/me 的 Cookie
+    通路有测试，drive 这条没有——Bearer 测过「登录可过身份关」，Cookie 没测过
+    推演入口。闸全绿但东西没了。
+    """
+    c = env["client"]
+    c.post(
+        f"{API}/account/login",
+        json={"email": "alice@example.com", "password": "correct-horse-battery"},
+        headers=_hdr(),
+    )
+    r = c.post(f"{API}/drive-full-stream", json=_drive_probe_body(), headers=_hdr())
+    assert r.status_code != 401, f"Cookie 登录用户被推演身份关挡住了（{r.status_code} {r.text[:200]}）"
+
+
+def test_junk_bearer_does_not_mask_a_valid_cookie_on_drive(env):
+    """坏 Authorization 不许把有效 Cookie 盖成匿名。
+
+    `_extract_token` 原来 Bearer 非空就忽略 Cookie。代理/扩展塞一个解不开的
+    Bearer 时，已登录用户的推演会 401，而前后的 GET/PUT 没有这个头所以仍是 200。
+    """
+    c = env["client"]
+    c.post(
+        f"{API}/account/login",
+        json={"email": "alice@example.com", "password": "correct-horse-battery"},
+        headers=_hdr(),
+    )
+    headers = {**_hdr(), "Authorization": "Bearer definitely-not-a-jwt"}
+    r = c.post(f"{API}/drive-full-stream", json=_drive_probe_body(), headers=headers)
+    assert r.status_code != 401, f"坏 Bearer 把 Cookie 登录态盖掉了（{r.status_code} {r.text[:200]}）"
+    # 反向：没有 Cookie 的坏 Bearer 仍然是匿名
+    from fastapi.testclient import TestClient
+    from app import app as fastapi_app
+
+    fresh = TestClient(fastapi_app)
+    denied = fresh.post(
+        f"{API}/drive-full-stream", json=_drive_probe_body(), headers=headers
+    )
+    assert denied.status_code == 401, "没 Cookie 的坏 Bearer 不该放行"
+
+
+def test_delete_session_unbinds_app_keeps_card(env):
+    """对照 GitHub 删 Codespace：卡留下，session_id 必须空。"""
+    store, c = env["store"], env["client"]
+    aid = store.save_app(
+        {"appbundle": {"appIdentity": {"productName": "工单"}}},
+        goal="工单", session_id="sr-ghost", gate_passed=True,
+        owner_id=env["alice"]["user"]["id"],
+    )
+    r = c.delete(f"{API}/sessions/sr-ghost", headers=_hdr(env["alice"]))
+    assert r.status_code == 200, r.text
+    rec = store.get_app(aid)
+    assert rec is not None
+    assert rec["session_id"] is None
+
+
+def test_delete_app_drops_bound_session(env):
+    """对照 GitHub 删仓库：挂着的工作区一并没。"""
+    from services.slide_rule_session import create_session, load_session, save_session
+
+    store, c = env["store"], env["client"]
+    sid = "sr-cascade-1"
+    st = create_session("工单", session_id=sid)
+    st.ownerId = env["alice"]["user"]["id"]
+    save_session(st)
+    aid = store.save_app(
+        {"appbundle": {"appIdentity": {"productName": "工单"}}},
+        goal="工单", session_id=sid, gate_passed=True,
+        owner_id=env["alice"]["user"]["id"],
+    )
+    r = c.delete(f"{API}/apps/{aid}", headers=_hdr(env["alice"]))
+    assert r.status_code == 200, r.text
+    assert r.json().get("sessionDeleted") is True
+    assert store.get_app(aid) is None
+    assert load_session(sid) is None
+
+
+def test_reopen_binds_same_app_not_a_fork(env):
+    store, c = env["store"], env["client"]
+    aid = _seed(store, owner_id=env["alice"]["user"]["id"], visibility="private", name="快照卡")
+    r = c.post(f"{API}/apps/{aid}/reopen", headers=_hdr(env["alice"]))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["id"] == aid, "reopen 不许新开一张卡"
+    assert body["sessionId"]
+    assert body.get("reused") is False
+    assert store.get_app(aid)["session_id"] == body["sessionId"]
+    again = c.post(f"{API}/apps/{aid}/reopen", headers=_hdr(env["alice"]))
+    assert again.status_code == 200, again.text
+    assert again.json()["reused"] is True
+    assert again.json()["sessionId"] == body["sessionId"]
+    assert again.json()["id"] == aid
+
+
+def test_cannot_reopen_what_you_cannot_write(env):
+    store, c = env["store"], env["client"]
+    aid = _seed(store, owner_id=env["alice"]["user"]["id"], visibility="private")
+    assert c.post(f"{API}/apps/{aid}/reopen", headers=_hdr(env["bob"])).status_code == 404
+
+
+def test_delete_sess_and_fork_call_working_session_helpers():
+    """活路上必须点名调用。写在注释里不算。"""
+    import ast
+    import inspect
+
+    from routes.sliderule_full import delete_sess, fork_generated_app, reopen_generated_app
+
+    def names(fn):
+        tree = ast.parse(inspect.getsource(fn))
+        out = []
+        for n in ast.walk(tree):
+            if not isinstance(n, ast.Call):
+                continue
+            if isinstance(n.func, ast.Name):
+                out.append(n.func.id)
+            elif isinstance(n.func, ast.Attribute):
+                out.append(n.func.attr)
+        return out
+
+    assert "unbind_session" in names(delete_sess)
+    assert "init_working_session_from_app" in names(fork_generated_app)
+    assert "init_working_session_from_app" in names(reopen_generated_app)
+    assert "bind_session" in names(reopen_generated_app)

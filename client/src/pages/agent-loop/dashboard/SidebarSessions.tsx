@@ -475,6 +475,7 @@ export function SidebarSessions({
     }
     const remaining = (sessions ?? []).filter((s) => s.sessionId !== id);
     setSessions(remaining);
+    notifySessionsUpdated();
     // 删的是当前会话：切到最近的剩余会话；一个不剩才向服务端要一个新的
     if (id === activeId) {
       let next = remaining[0]?.sessionId;

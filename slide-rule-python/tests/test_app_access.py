@@ -148,6 +148,14 @@ def test_driving_requires_write_not_just_read():
     assert can("drive", app(), ALICE) is True
 
 
+def test_reopen_is_write_not_fork():
+    """从快照重建工作区要能改这张卡。能看就能 fork，但不能 reopen 别人的。"""
+    assert can("reopen", app(), ALICE) is True
+    assert can("reopen", app(), BOB) is False
+    assert can("fork", app(), BOB) is True
+    assert can("reopen", app(), None) is False
+
+
 def test_only_owner_can_change_visibility_or_delete():
     grant = lambda _a, _u: Access.WRITE  # noqa: E731
     rec = app()
