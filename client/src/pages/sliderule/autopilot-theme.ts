@@ -22,7 +22,7 @@ export const autopilotTheme = {
    * SlideRule.tsx:1151 一处用，而那处必然渲染在外壳内（token 有定义）；
    * 回落只在极端情况下生效，届时与应用中心一致比与旧值一致更重要。 */
   immersionPage:
-    "relative h-screen w-screen overflow-hidden bg-[var(--sr-shell-bg,#ffffff)] text-[#1f2329]",
+    "relative h-screen w-screen overflow-hidden bg-[var(--sr-shell-bg,#f4f4f6)] text-[#1f2329]",
   immersionCanvas: "absolute inset-0 z-0",
   immersionOverlayTop:
     "pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col gap-2 px-2 pt-2 sm:gap-2.5 sm:px-3 sm:pt-2",

@@ -289,12 +289,15 @@ class Test统一与打孔后重发页面:
         # 3.5 统一后的壳版（bound=False）先到，6.5 打孔版（bound=True）后到。
         # 第 3 步素颜页的直播由 generate_pages_parallel 内部调 sink，
         # 这里被 stub 掉了，所以列表里只有两轮重发——正好把重发单独钉住。
-        assert emitted == [
-            ("p1", "<html>壳1</html>", False),
-            ("p2", "<html>壳2</html>", False),
-            ("p1", "<html>孔1</html>", True),
-            ("p2", "<html>孔2</html>", True),
-        ]
+        # 统一之后立刻钉语义色，第一轮重发是带 token 的壳，不是 stub 原文。
+        assert [e[0] for e in emitted] == ["p1", "p2", "p1", "p2"]
+        assert [e[2] for e in emitted] == [False, False, True, True]
+        assert "壳1" in emitted[0][1] and "sliderule-theme" in emitted[0][1]
+        assert "壳2" in emitted[1][1] and "sliderule-theme" in emitted[1][1]
+        assert emitted[2][0] == "p1" and emitted[2][2] is True
+        assert "孔1" in emitted[2][1] and "sliderule-theme" in emitted[2][1]
+        assert emitted[3][0] == "p2" and emitted[3][2] is True
+        assert "孔2" in emitted[3][1] and "sliderule-theme" in emitted[3][1]
 
     def test_四参老_sink_不炸整条链(self, monkeypatch):
         """重发多带一个 bound 参数。老 sink 只收四个位置参——TypeError 必须
@@ -323,3 +326,74 @@ class Test统一与打孔后重发页面:
         out = sfp.run_spec_first("随便一个话题")
         assert out["stages"]["shell"]["problems"] == 1
         assert out["stages"]["bind"]["shellProblems"] == 1
+
+
+class Test缺页日志不许炸交付:
+    """2026-08-20 Foclip 真机：声明几页、第 3 步少交几页，对账那行
+    `[spec_first] ⚠ 交付页数对不上 SPEC` 是裸 print。Windows 控制台 GBK
+    编不出 ⚠（报错 position 13），UnicodeEncodeError 逃出第 3 步，被当成
+    LLM_GENERATE_FAILED——规格和设计都写完了，六段模型整份丢掉，右栏空白、
+    证据 0/6。缺页本身只记不拦；日志把自己写成 fail-closed 才是事故。
+    """
+
+    def test_Windows控制台打不出警告符_缺页仍交付(self, monkeypatch):
+        import sys
+
+        class GbkConsole:
+            encoding = "gbk"
+
+            def write(self, s):
+                s.encode("gbk")
+                return len(s)
+
+            def flush(self):
+                return None
+
+        monkeypatch.setattr(sys, "stdout", GbkConsole())
+        monkeypatch.setattr(
+            "services.spec_tree.generate_spec_tree",
+            lambda *a, **k: {
+                "appName": "网",
+                "pages": [{"id": "p1", "name": "甲"}, {"id": "p2", "name": "乙"}],
+                "nodes": [],
+            },
+        )
+        monkeypatch.setattr(
+            "services.spec_page_html.generate_pages_parallel",
+            lambda spec, **kw: {
+                "pages": {"p1": "<html>素1</html>"},
+                "failed": {"p2": "超时"},
+            },
+        )
+        monkeypatch.setattr(
+            "services.page_shell.unify_shell",
+            lambda pages, spec, **kw: {
+                "pages": {pid: f"<html>壳{pid}</html>" for pid in pages},
+                "navItems": [{"id": pid, "name": pid} for pid in pages],
+            },
+        )
+        monkeypatch.setattr(
+            "services.page_shell.check_shell_consistency", lambda *a, **k: []
+        )
+        monkeypatch.setattr(
+            "services.html_structure.derive_structure",
+            lambda *a, **k: {"entities": [], "pages": []},
+        )
+        monkeypatch.setattr(
+            "services.spec_semantics.derive_semantics", lambda *a, **k: {"roles": []}
+        )
+        monkeypatch.setattr(
+            "services.model_assembly.assemble", lambda *a, **k: {"model": {"ok": 1}}
+        )
+        monkeypatch.setattr(
+            "services.html_bindings.bind_pages",
+            lambda pages, model, **kw: {
+                "pages": {pid: f"<html>孔{pid}</html>" for pid in pages},
+                "failed": {},
+            },
+        )
+        out = sfp.run_spec_first("随便一个话题")
+        assert out["model"]["ok"] == 1, (
+            "缺页对账的 ⚠ 打不出就把交付拖死了——跟 Foclip 那轮 0/6 同一形状"
+        )
+        assert out["stages"]["pages"].get("missingPages") == "p2"

@@ -1520,43 +1520,34 @@ def run_spec_first(
         # 显式实参优先于 sink：脚本/评测直接调这个函数时不该被"当前请求恰好
         # 装了个 sink"影响。生产路径（主轴）走 sink，因为中间那层是同步的。
         st["reusedPages"] = len(_reuse_now)
-        # 库存图直挂地址，不下载。搜不到就仍用 placehold.co。
-        # ⚠ 必须赶在 generate_pages_parallel 之前：提示词在那一步锁死。
-        try:
-            from .stock_images import (
-                attach_stock_images,
-                lookup_stock_images,
-                render_stock_images,
-            )
+        # 库存图：screenshot-to-code / tteg 的口径——先画 placehold，落地后再
+        # 按每张 img 的 alt 搜。一袋 URL 注进提示词会让模型把番茄贴进充电桩卡。
+        _stock_cache: Dict[str, Optional[str]] = {}
 
-            _stock = lookup_stock_images(spec, goal=goal)
-            print(
-                f"[spec_first_pipeline] stock_images n={len(_stock)}"
-                + (
-                    f" source={_stock[0].get('source')} host="
-                    f"{_stock[0].get('url', '').split('/')[2]}"
-                    if _stock
-                    else ""
+        def _fill_html(markup: str) -> str:
+            try:
+                from .stock_images import fill_stock_placeholders
+
+                return fill_stock_placeholders(
+                    markup, spec=spec, goal=goal, cache=_stock_cache
                 )
-            )
-            if _stock:
-                _block = render_stock_images(_stock)
-                if isinstance(design_system, dict):
-                    design_system = {
-                        pid: attach_stock_images(str(prose or ""), _block)
-                        for pid, prose in design_system.items()
-                    }
-                else:
-                    design_system = attach_stock_images(
-                        str(design_system or ""), _block
-                    )
-        except Exception as exc:  # noqa: BLE001 — 搜图是增强，不许拖画页
-            _safe_print(
-                f"[spec_first_pipeline] ⚠ 库存图查找失败（不拦画页）：{str(exc)[:200]}"
-            )
+            except Exception as exc:  # noqa: BLE001 — 搜图是增强，不许拖画页
+                _safe_print(
+                    f"[spec_first_pipeline] ⚠ 库存图换图失败（不拦画页）：{str(exc)[:200]}"
+                )
+                return markup
+
+        def _sink_stock(
+            pid: str, markup: str, done: int, total: int, *args: Any, **kw: Any
+        ) -> None:
+            if pid not in _reuse_now:
+                markup = _fill_html(markup)
+            if sink:
+                sink(pid, markup, done, total, *args, **kw)
+
         batch = generate_pages_parallel(
             spec, device=device, design_system=design_system,
-            product=goal, on_page=sink, reuse_pages=_reuse_now,
+            product=goal, on_page=_sink_stock if sink else None, reuse_pages=_reuse_now,
             # ★ "按需"的第二层：点到的那几页也尽量**只改那几行**，别整页重画。
             #   edit_base 只在精修轮给，且只含上一版真有的页；新页没有基线，
             #   自然走整页生成。
@@ -1564,6 +1555,10 @@ def run_spec_first(
             edit_instruction=str((refine or {}).get("instruction") or "") if refine else "",
         )
         pages = dict(batch.get("pages") or {})
+        pages = {
+            pid: html if pid in _reuse_now else _fill_html(html)
+            for pid, html in pages.items()
+        }
         failed = dict(batch.get("failed") or {})
         st["got"] = len(pages)
         st["failed"] = len(failed)
@@ -1583,7 +1578,12 @@ def run_spec_first(
         missing_pages = [pid for pid in spec_pages_declared if pid not in pages]
         if missing_pages:
             st["missingPages"] = ",".join(missing_pages)
-            print(
+            # ⚠ 2026-08-20 Foclip 真机：这里曾是裸 print。Windows 控制台 GBK
+            #   编不出 ⚠（报错 position 13，正好是 `[spec_first] ⚠` 那个符），
+            #   UnicodeEncodeError 逃出第 3 步，被当成 LLM_GENERATE_FAILED，
+            #   规格和设计都写完了、六段模型整份丢掉，右栏空白、证据 0/6。
+            #   缺页本身是只记不拦；日志把自己写成 fail-closed 才是事故。
+            _safe_print(
                 f"[spec_first] ⚠ 交付页数对不上 SPEC：声明 {len(spec_pages_declared)} 页、"
                 f"实交 {len(pages)} 页，缺 {missing_pages}（失败原因见 failedPages）"
             )
@@ -1599,6 +1599,22 @@ def run_spec_first(
         st["pages"] = len(pages)
         # 判据接进生产（此前只在测试里跑）：统一完还剩几处不一致，如实记账。
         # 只记不拦——挡运行的闸在结构那边，这里的职责是让漂移**看得见**。
+        # ★ 2026-08-20：壳统一之后立刻钉语义色。unify 只换 DOM 结构，
+        #   不换颜色——顶栏黑、侧栏海军蓝、浅页深砖，unify 全绿。
+        _theme_lang = None
+        try:
+            from .theme_tokens import apply_theme_to_pages, resolve_theme_language
+
+            _theme_lang = resolve_theme_language(
+                design_language, style_brief, design_system
+            )
+            pages = apply_theme_to_pages(pages, _theme_lang)
+            st["themePrimary"] = _theme_lang.get("primary")
+        except Exception as exc:  # noqa: BLE001 — 钉色是增强，不许拖画页
+            _safe_print(
+                f"[spec_first_pipeline] ⚠ 主题锁定失败（不拦画页）：{str(exc)[:200]}"
+            )
+            _theme_lang = None
         shell_problems = check_shell_consistency(pages, spec)
         st["problems"] = len(shell_problems)
         for p in shell_problems[:3]:
@@ -1836,6 +1852,23 @@ def run_spec_first(
                 print(f"[spec_first_pipeline] 打孔后外壳被改，已还原：{'、'.join(restored)}")
             if reconciled:
                 print(f"[spec_first_pipeline] 打孔后内容区偏移已重新对齐：{'、'.join(reconciled)}")
+            # bind 常整页重写，head 里的语义色会被吃掉。还原壳只管
+            # aside/header，主题 CSS 要再钉一次，否则用户看到的成品页又漂。
+            if _theme_lang is not None:
+                try:
+                    from .theme_tokens import apply_theme_to_pages
+
+                    pages = apply_theme_to_pages(pages, _theme_lang)
+                except Exception as exc:  # noqa: BLE001 — 钉色是增强
+                    _safe_print(
+                        f"[spec_first_pipeline] ⚠ 打孔后主题锁定失败（不拦）：{str(exc)[:200]}"
+                    )
+            # bind 整页重写会把 src 改回占位或默写番茄图，按 alt 再换一次。
+            # 照搬页上一轮已经换过，跳过以免重复打 Openverse。
+            pages = {
+                pid: html if pid in _skip_bind else _fill_html(html)
+                for pid, html in pages.items()
+            }
             # 还原之后再量一次：剩下的才是还原不了的（比如两页壳本来就不同源）。
             drift = check_shell_consistency(pages, spec)
             st["shellProblems"] = len(drift)
