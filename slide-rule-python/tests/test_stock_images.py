@@ -16,7 +16,9 @@ from services.spec_page_html import (  # noqa: E402
 )
 from services.stock_images import (  # noqa: E402
     STOCK_IMAGE_HOSTS,
+    _queries,
     attach_stock_images,
+    fill_stock_placeholders,
     lookup_stock_images,
     render_stock_images,
 )
@@ -29,8 +31,16 @@ from services.stock_images import (  # noqa: E402
 }
 
 
-def _openverse(title: str, url: str, license_: str = "cc0") -> dict:
-    return {"title": title, "thumbnail": url, "url": url, "license": license_}
+def _openverse(
+    title: str,
+    url: str,
+    license_: str = "cc0",
+    tags=None,
+) -> dict:
+    row = {"title": title, "thumbnail": url, "url": url, "license": license_}
+    if tags is not None:
+        row["tags"] = tags
+    return row
 
 
 def _fetch_ok(_query: str) -> dict:
@@ -133,23 +143,240 @@ class Test提示词和闸:
         )
         assert blocking
 
-    def test_画页提示词要求用列出的地址(self):
-        p = build_page_html_prompt(
-            "x",
-            design_system=attach_stock_images(
-                "后台",
-                render_stock_images(
-                    [{"url": "https://images.unsplash.com/photo-real", "label": "苹果"}]
-                ),
-            ),
-        )
+    def test_画页提示词不再塞一袋地址(self):
+        """screenshot-to-code disabled + tteg：占位 + alt，不让模型粘贴 URL。"""
+        p = build_page_html_prompt("x")
         assert "Image generation is disabled for this request." in p
-        assert "https://images.unsplash.com/photo-real" in p
         assert "Do not invent unsplash or pexels photo IDs" in p
+        assert "placehold.co" in p
+        assert "exact https addresses" not in p
+        assert "库存图 URLs" not in p
+        assert "img alt" in p or "search query" in p
 
 
-class Test接在画页之前:
-    def test_主链路先查再画(self):
+class Test查询跟着话题走:
+    """2026-08-20：满电青年卡上出现枇杷——词表对不上就搜生鲜。"""
+
+    def test_电动车不搜生鲜(self):
+        spec = {
+            "appName": "满电青年",
+            "pages": [
+                {
+                    "name": "充电桩地图",
+                    "purpose": "给外卖骑手和通勤用户找附近充电桩",
+                },
+                {"name": "电池健康", "purpose": "看电池健康检测"},
+            ],
+        }
+        goal = "【生活娱乐赛道】满电青年——电动车一站式综合服务平台"
+        qs = _queries(spec, goal)
+        blob = " ".join(qs).lower()
+        assert qs, "电动车话题必须能产出查询，不能空着又去生鲜默认"
+        assert "groceries" not in blob
+        assert "fruit" not in blob
+        assert "apple" not in blob
+        # ⚠ 真机第二趟：purpose 里的「外卖骑手」把 food delivery 塞进前三条。
+        # 删掉 _reconcile_queries 里丢掉 _FOOD_EN 的那行，这条必红。
+        assert "takeaway" not in blob
+        assert "food" not in blob
+        assert any(
+            "electric" in q.lower() or "charg" in q.lower() or "battery" in q.lower()
+            for q in qs
+        )
+
+        seen: list[str] = []
+
+        def fetch(q: str) -> dict:
+            seen.append(q)
+            return {"results": []}
+
+        lookup_stock_images(spec, goal=goal, fetch_fn=fetch)
+        assert seen == qs
+
+    def test_团购话题仍搜生鲜(self):
+        qs = _queries(团购, "社区团购门店工作台")
+        blob = " ".join(qs).lower()
+        assert "groc" in blob or "apple" in blob or "vegetable" in blob or "fruit" in blob
+
+    def test_词表对不上也不回落生鲜(self):
+        qs = _queries(
+            {"appName": "星盘台", "pages": [{"name": "排盘", "purpose": "排本命盘"}]},
+            "星盘排盘工作台",
+        )
+        blob = " ".join(qs).lower()
+        assert "fresh groceries produce" not in qs
+        assert "groc" not in blob
+        assert "fruit" not in blob
+        assert "apple" not in blob
+
+    def test_源码去掉注释后没有生鲜默认回落(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        src = open(
+            os.path.join(root, "services", "stock_images.py"),
+            encoding="utf-8",
+        ).read()
+        stripped = re.sub(r'""".*?"""', "", src, flags=re.S)
+        stripped = re.sub(r"#.*", "", stripped)
+        fn = stripped[stripped.index("def _queries") : stripped.index("def _fetch_openverse")]
+        assert "fresh groceries produce" not in fn
+        assert "found or" not in fn
+
+    def test_默认拉取只要照片(self):
+        # 满电青年那张「Battery Error」是文字梗图。category=photograph
+        # 把插画/梗图挡在 API 侧。去掉这条参数，这条必红。
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        src = open(
+            os.path.join(root, "services", "stock_images.py"),
+            encoding="utf-8",
+        ).read()
+        stripped = re.sub(r'""".*?"""', "", src, flags=re.S)
+        stripped = re.sub(r"#.*", "", stripped)
+        fn = stripped[
+            stripped.index("def _default_fetch") : stripped.index("def lookup_stock_images")
+        ]
+        assert "photograph" in fn
+        assert "category" in fn
+
+
+class Test检索结果必须跟话题:
+    """查询对了仍可能把番茄排在第一。注入前按标题/标签丢掉。"""
+
+    _EV = {
+        "appName": "满电青年",
+        "pages": [
+            {
+                "name": "充电桩地图",
+                "purpose": "给外卖骑手和通勤用户找附近充电桩",
+            }
+        ],
+    }
+    _GOAL = "【生活娱乐赛道】满电青年——电动车一站式综合服务平台"
+
+    def test_电动车宁可空也不要苹果图(self):
+        # _fetch_ok 是团购那组生鲜。车辆查询吃到它必须吐空，不能再注入。
+        hits = lookup_stock_images(self._EV, goal=self._GOAL, fetch_fn=_fetch_ok)
+        assert hits == []
+
+    def test_电动车丢掉番茄留下充电桩(self):
+        def fake(_q: str) -> dict:
+            return {
+                "results": [
+                    _openverse(
+                        "Ripe tomatoes and peppers",
+                        "https://images.unsplash.com/photo-tomato",
+                        tags=["tomato", "pepper", "vegetable"],
+                    ),
+                    _openverse(
+                        "EV charging station",
+                        "https://images.unsplash.com/photo-charger",
+                        tags=["ev", "charging"],
+                    ),
+                ]
+            }
+
+        hits = lookup_stock_images(self._EV, goal=self._GOAL, fetch_fn=fake)
+        blob = " ".join(f"{h.get('label', '')} {h['url']}" for h in hits).lower()
+        assert "tomato" not in blob
+        assert "pepper" not in blob
+        assert "charger" in blob
+
+    def test_团购仍收下生鲜照片(self):
+        def fake(_q: str) -> dict:
+            return {
+                "results": [
+                    _openverse(
+                        "Ripe tomatoes and peppers",
+                        "https://images.unsplash.com/photo-tomato",
+                        tags=["tomato", "pepper"],
+                    )
+                ]
+            }
+
+        hits = lookup_stock_images(团购, goal="社区团购门店工作台", fetch_fn=fake)
+        assert any("tomato" in h["url"] for h in hits)
+
+
+class Test按格换图:
+    """screenshot-to-code：页面落地后按 alt 换 src。反向：全局袋子会把番茄贴进充电桩。"""
+
+    _EV = Test检索结果必须跟话题._EV
+    _GOAL = Test检索结果必须跟话题._GOAL
+
+    def test_充电桩占位换成充电桩图不要番茄(self):
+        html = (
+            '<img src="https://placehold.co/600x400" alt="ev charging station">'
+            '<img src="https://placehold.co/80x80" alt="外卖骑手头像">'
+        )
+        seen: list[str] = []
+
+        def fake(q: str) -> dict:
+            seen.append(q)
+            return {
+                "results": [
+                    _openverse(
+                        "Ripe tomatoes and peppers",
+                        "https://images.unsplash.com/photo-tomato",
+                        tags=["tomato", "pepper"],
+                    ),
+                    _openverse(
+                        "EV charging station",
+                        "https://images.unsplash.com/photo-charger",
+                        tags=["ev", "charging"],
+                    ),
+                    _openverse(
+                        "Electric scooter rider",
+                        "https://images.unsplash.com/photo-scooter",
+                        tags=["scooter", "electric"],
+                    ),
+                ]
+            }
+
+        out = fill_stock_placeholders(
+            html, spec=self._EV, goal=self._GOAL, fetch_fn=fake
+        )
+        blob = " ".join(seen).lower()
+        assert "takeaway" not in blob
+        assert "food" not in blob
+        assert "tomato" not in out
+        assert "placehold.co" not in out
+        assert "photo-charger" in out or "photo-scooter" in out
+
+    def test_同一_alt_只搜一次(self):
+        html = (
+            '<img src="https://placehold.co/40x40" alt="ev charging station">'
+            '<img src="https://placehold.co/80x80" alt="ev charging station">'
+        )
+        seen: list[str] = []
+
+        def fake(q: str) -> dict:
+            seen.append(q)
+            return {
+                "results": [
+                    _openverse(
+                        "EV charging station",
+                        "https://images.unsplash.com/photo-charger",
+                        tags=["ev"],
+                    )
+                ]
+            }
+
+        fill_stock_placeholders(html, spec=self._EV, goal=self._GOAL, fetch_fn=fake)
+        assert seen == ["ev charging station"]
+
+    def test_搜空就留占位(self):
+        html = '<img src="https://placehold.co/600x400" alt="ev charging station">'
+
+        def fake(_q: str) -> dict:
+            return {"results": []}
+
+        out = fill_stock_placeholders(
+            html, spec=self._EV, goal=self._GOAL, fetch_fn=fake
+        )
+        assert "placehold.co" in out
+
+
+class Test接在画页之后:
+    def test_主链路先画再按格填(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         src = open(
             os.path.join(root, "services", "spec_first_pipeline.py"),
@@ -157,10 +384,18 @@ class Test接在画页之前:
         ).read()
         stripped = re.sub(r'""".*?"""', "", src, flags=re.S)
         stripped = re.sub(r"#.*", "", stripped)
-        i = stripped.index("lookup_stock_images(")
-        j = stripped.index("generate_pages_parallel(", i)
-        assert i < j
-        assert "attach_stock_images(" in stripped[i:j]
+        pages = stripped[
+            stripped.index("specfirst.pages") : stripped.index("specfirst.shell")
+        ]
+        assert "attach_stock_images(" not in pages
+        assert "lookup_stock_images(" not in pages
+        i = pages.index("generate_pages_parallel(")
+        # 嵌套函数定义可能出现在调用 generate 之前；真正换的是返回后的 pages。
+        assert "fill_stock_placeholders(" in pages
+        assert pages.rindex("_fill_html(") > i
+        bind = stripped[stripped.index("repair_pages_after_bind(") :]
+        assert "_fill_html(" in bind[:4000]
+        # 删掉画页后的 _fill_html，这条必红——提示词不再塞 URL，不填就没有真图。
 
     def test_图床名单两边一致(self):
         from services import spec_page_html as sph
