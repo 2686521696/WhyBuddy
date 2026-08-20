@@ -79,6 +79,16 @@ FIT_COLUMNS_DDL = (
     "alter table forum_topic add column if not exists fit_reason varchar(60)",
     "alter table forum_topic add column if not exists fit_model   varchar(60)",
     "alter table forum_topic add column if not exists fit_at      timestamptz",
+    # 正文复核。标题档和正文档必须分列：2026-08-21 标题-only 把「删帖删帖」
+    # 「111111你好」也打成 A，覆盖会把事故证据一起抹掉。
+    "alter table forum_topic add column if not exists fit_body_grade  varchar(1)",
+    "alter table forum_topic add column if not exists fit_body_reason varchar(60)",
+    "alter table forum_topic add column if not exists fit_body_model  varchar(60)",
+    "alter table forum_topic add column if not exists fit_body_at     timestamptz",
+    "alter table forum_topic add column if not exists fit_device      varchar(16)",
+    "alter table forum_topic add column if not exists fit_device_why  varchar(60)",
+    "alter table forum_topic add column if not exists fit_device_model varchar(60)",
+    "alter table forum_topic add column if not exists fit_device_at   timestamptz",
 )
 
 #: 分档含义。判定基准是 SlideRule 的能力圈——它产出五系统模型
@@ -157,6 +167,11 @@ class Store:
         for ddl in FIT_COLUMNS_DDL:
             self.q(ddl)
         self.q("create index if not exists ix_forum_topic_fit_grade on forum_topic (fit_grade)")
+        self.q(
+            "create index if not exists ix_forum_topic_fit_body_grade "
+            "on forum_topic (fit_body_grade)"
+        )
+        self.q("create index if not exists ix_forum_topic_fit_device on forum_topic (fit_device)")
 
     @staticmethod
     def _row_params(rec: dict[str, Any]) -> list[Any]:
