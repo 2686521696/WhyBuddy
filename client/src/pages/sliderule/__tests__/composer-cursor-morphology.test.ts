@@ -140,13 +140,25 @@ describe("对话列接到输入条，不要横切分隔线", () => {
       readFileSync(new URL("../useSlideRuleSession.ts", import.meta.url), "utf8")
     );
     expect(session).toContain("preferredDevice: loadPreferredDevice()");
+    const dock = stripComments(
+      readFileSync(new URL("../ComposerDock.tsx", import.meta.url), "utf8")
+    );
+    const doSend = dock.slice(
+      dock.indexOf("const doSend = React.useCallback"),
+      dock.indexOf("const [installedSkills")
+    );
+    expect(doSend).toContain("setPreferredDevice(device)");
+    expect(doSend.indexOf("setPreferredDevice(device)")).toBeLessThan(
+      doSend.indexOf("sendMessage")
+    );
     const driver = stripComments(
       readFileSync(
         new URL("../../../lib/sliderule-marathon-driver.ts", import.meta.url),
         "utf8"
       )
     );
-    expect(driver).toContain("preferredDevice: opts.preferredDevice");
+    expect(driver).toContain('preferredDevice: opts.preferredDevice ?? "desktop"');
     expect(driver).toContain("/drive-full-stream");
+    expect(driver).not.toContain("...(opts.preferredDevice");
   });
 });

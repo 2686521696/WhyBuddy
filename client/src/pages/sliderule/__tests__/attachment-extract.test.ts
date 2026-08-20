@@ -88,6 +88,43 @@ describe("isAttachmentExtractPending / isComposerSendBlocked", () => {
       })
     ).toBe(false);
   });
+
+  it("澄清/优化在飞锁发送；打完字、卡片已出不锁；推演中仍是停止键", () => {
+    expect(
+      isComposerSendBlocked({
+        isRunning: false,
+        input: "给社区做随访",
+        attachments: [],
+        isJudging: true,
+      })
+    ).toBe(true);
+    expect(
+      isComposerSendBlocked({
+        isRunning: false,
+        input: "给社区做随访",
+        attachments: [],
+        isRefining: true,
+      })
+    ).toBe(true);
+    expect(
+      isComposerSendBlocked({
+        isRunning: false,
+        input: "给社区做随访",
+        attachments: [],
+        isJudging: false,
+        isRefining: false,
+      })
+    ).toBe(false);
+    expect(
+      isComposerSendBlocked({
+        isRunning: true,
+        input: "给社区做随访",
+        attachments: [],
+        isJudging: true,
+        isRefining: true,
+      })
+    ).toBe(false);
+  });
 });
 
 describe("extractAttachmentRemote", () => {
@@ -187,6 +224,8 @@ describe("ComposerDock 解析中发送闸接在通电链上", () => {
       src.indexOf("const [installedSkills")
     );
     expect(doSend).toContain("isComposerSendBlocked");
+    expect(doSend).toContain("isJudging");
+    expect(doSend).toContain("isRefining");
     // 闸在清附件之前：否则解析中一点发送，卡立刻消失、后台偷偷发
     expect(doSend.indexOf("isComposerSendBlocked")).toBeLessThan(
       doSend.indexOf("setAttachments")
@@ -197,7 +236,7 @@ describe("ComposerDock 解析中发送闸接在通电链上", () => {
       src.indexOf("sliderule-composer-send") + 900
     );
     expect(sendBtn).toContain("disabled={sendBlocked}");
-    expect(sendBtn).toContain("extractPending");
+    expect(sendBtn).toContain("sendBusy");
     expect(sendBtn).not.toContain(
       "disabled={!isRunning && !input.trim() && attachments.length === 0}"
     );
@@ -206,7 +245,8 @@ describe("ComposerDock 解析中发送闸接在通电链上", () => {
       src.indexOf("onKeyDown={event =>"),
       src.indexOf("onPaste={handlePaste}")
     );
-    expect(keydown).toContain("if (!extractPending) doSend()");
+    expect(keydown).toContain("if (!sendBlocked) doSend()");
     expect(keydown).not.toMatch(/preventDefault\(\);\s*doSend\(\)/);
+    expect(keydown).not.toContain("if (!extractPending) doSend()");
   });
 });

@@ -106,13 +106,18 @@ export function isAttachmentExtractPending(
 /**
  * 发送键该不该灰。推演中按钮是「停止」，永远不锁。
  * 空输入且无附件 → 灰；任一附件解析中 → 灰。
+ * 入站澄清 / 优化提示词在飞 → 灰（2026-08-20：生成澄清卡时发送仍亮，
+ * 半成品意图会被直接推演；优化同理，改写还没回填就能把原文发出去）。
  */
 export function isComposerSendBlocked(opts: {
   isRunning: boolean;
   input: string;
   attachments: Array<{ extractStatus?: "pending" | "ready" | "failed" }>;
+  isJudging?: boolean;
+  isRefining?: boolean;
 }): boolean {
   if (opts.isRunning) return false;
+  if (opts.isJudging || opts.isRefining) return true;
   if (isAttachmentExtractPending(opts.attachments)) return true;
   return !opts.input.trim() && opts.attachments.length === 0;
 }
@@ -495,12 +500,37 @@ export function ComposerDock({
     [addAttachments]
   );
 
+  // 优化提示词进行中：锁发送，避免改写还没回填就把原文推出去。
+  const [isRefining, setIsRefining] = React.useState(false);
+  // 入站判定：推演中不判（用户这会儿打的字多半是下一轮的草稿，判了也没用）。
+  // 语境用 hasApp（真有成形应用）而不是 Boolean(goal)（只是有目标文案），
+  // 摘要让引导话术具体到这个应用而不是泛泛的"指出当前应用要怎么改"。
+  const { judgement, isJudging } = useIntakeJudge(
+    input,
+    hasApp,
+    !isRunning,
+    appSummary
+  );
+
   /** 发送：有附件时把附件名 + 文本类附件内容并进消息，发完清预览卡。
    *  解析中直接拒绝——不清附件、不排队等提取。LobeChat handleSend 在
-   *  isUploadingFiles 时 return；只靠按钮 disabled 挡不住 Enter。 */
+   *  isUploadingFiles 时 return；只靠按钮 disabled 挡不住 Enter。
+   *  澄清/优化在飞同样拒绝——生成卡的时候发送必须灰。 */
   const doSend = React.useCallback(() => {
+    // 开关在 React 态里，发送却读 localStorage。点了「应用」如果没写进
+    // 存储（隐私模式 / 只改了画面），推演仍按 desktop 出 PC 端。
+    setPreferredDevice(device);
     if (isRunning) return;
-    if (isComposerSendBlocked({ isRunning: false, input, attachments })) return;
+    if (
+      isComposerSendBlocked({
+        isRunning: false,
+        input,
+        attachments,
+        isJudging,
+        isRefining,
+      })
+    )
+      return;
     const text = input.trim();
     if (attachments.length > 0) {
       const snapshot = attachments;
@@ -523,7 +553,7 @@ export function ComposerDock({
     } else {
       sendMessage();
     }
-  }, [isRunning, input, attachments, sendMessage]);
+  }, [isRunning, input, attachments, sendMessage, isJudging, isRefining, device]);
 
   // 已安装技能（+ 菜单就地勾选哪些注入推演）；打开 skills 视图时重读
   const [installedSkills, setInstalledSkills] = React.useState<
@@ -548,7 +578,6 @@ export function ComposerDock({
 
   // 优化提示词：把输入框里的一句话意图送去真 LLM 通道改写成信息更全的
   // 推演提示词，回填输入框让用户过目再发（不代发）。失败人话提示、不改原文。
-  const [isRefining, setIsRefining] = React.useState(false);
   const refinePrompt = React.useCallback(async () => {
     const text = textareaRef.current?.value?.trim() ?? "";
     if (!text || isRefining) return;
@@ -585,12 +614,15 @@ export function ComposerDock({
     placeholder ||
     (hero ? composerHeroPlaceholder(device) : "畅所欲问");
 
-  // 入站判定：推演中不判（用户这会儿打的字多半是下一轮的草稿，判了也没用）。
-  // 语境用 hasApp（真有成形应用）而不是 Boolean(goal)（只是有目标文案），
-  // 摘要让引导话术具体到这个应用而不是泛泛的"指出当前应用要怎么改"。
-  const judgement = useIntakeJudge(input, hasApp, !isRunning, appSummary);
   const extractPending = isAttachmentExtractPending(attachments);
-  const sendBlocked = isComposerSendBlocked({ isRunning, input, attachments });
+  const sendBusy = extractPending || isJudging || isRefining;
+  const sendBlocked = isComposerSendBlocked({
+    isRunning,
+    input,
+    attachments,
+    isJudging,
+    isRefining,
+  });
 
   const actionHints = hintChips.slice(0, statusPill ? 1 : 2);
   const showActionRow =
@@ -606,7 +638,7 @@ export function ComposerDock({
             title="优化提示词：把意图改写得更完整（实体/流程/角色/页面/AI）"
             data-testid="sliderule-prompt-refine"
             onClick={refinePrompt}
-            disabled={isRunning || isRefining || !input.trim()}
+            disabled={isRunning || isRefining || isJudging || !input.trim()}
           >
             {isRefining ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -623,19 +655,23 @@ export function ComposerDock({
             onClick={isRunning ? stop || (() => {}) : doSend}
             disabled={sendBlocked}
             data-testid="sliderule-composer-send"
-            aria-busy={extractPending}
+            aria-busy={sendBusy}
             className="pointer-events-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#171717] text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-[#ececef] disabled:text-[#b0b0b5]"
             title={
               isRunning
                 ? "停止"
                 : extractPending
                   ? "附件解析中，请稍候"
-                  : "发送"
+                  : isRefining
+                    ? "正在优化提示词"
+                    : isJudging
+                      ? "正在澄清需求"
+                      : "发送"
             }
           >
             {isRunning ? (
               <Square className="h-3.5 w-3.5 fill-current" />
-            ) : extractPending ? (
+            ) : sendBusy ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <ArrowUp className="h-4 w-4" />
@@ -647,6 +683,7 @@ export function ComposerDock({
     <div className="pointer-events-none flex w-full flex-col items-stretch gap-1.5">
       <IntakeHintBar
         judgement={judgement}
+        isJudging={isJudging}
         onRewrite={text => {
           setInput(text);
           requestAnimationFrame(adjustTextareaHeight);
@@ -1055,7 +1092,7 @@ export function ComposerDock({
                 if (shouldSendOnKey(event)) {
                   event.preventDefault();
                   // LibreChat #2078：只禁发送键挡不住 Enter，这里同样闸住
-                  if (!extractPending) doSend();
+                  if (!sendBlocked) doSend();
                 }
               }}
               onPaste={handlePaste}
@@ -1106,7 +1143,7 @@ export function ComposerDock({
               {attachmentHint}
             </span>
           ) : null}
-          {(isRunning || extractPending) && (
+          {(isRunning || sendBusy) && (
             <Loader2
               className="ml-auto h-3 w-3 shrink-0 animate-spin"
               data-testid="sliderule-composer-context-spin"

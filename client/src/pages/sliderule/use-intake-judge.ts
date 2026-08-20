@@ -2,8 +2,12 @@
  * 入站判定闸门的前端消费侧（2026-07-27）。
  *
  * 后端 services/intake_judge.py 判这一轮输入是真需求 / 真迭代，还是闲聊、
- * 产品咨询、太模糊。第一版**只提示不阻断**：这里拿到 action=hint 就在输入框
- * 上方给一句引导 + 可点的改写建议，用户永远能直接发。
+ * 产品咨询、太模糊。卡片出来之后**只提示不阻断**：action=hint 就在输入框
+ * 上方给一句引导 + 可点的改写建议，用户仍可自己改完再发。
+ *
+ * ⚠ 2026-08-20：生成这张卡的过程中必须锁发送。真机上判定还在飞，发送键
+ * 是亮的，用户把半成品意图发出去，卡片回来已经晚了。锁的是 isJudging 这一
+ * 段请求，不是卡片本身——debounce 期间不锁，打字不会一下一下灰掉发送。
  *
  * 三条纪律与后端一致：
  *  1. fail-open —— 网络错、超时、返回体不合约，一律当没判过（返回 null），
@@ -119,7 +123,7 @@ export async function judgeIntake(
 }
 
 /**
- * 输入框旁的判定订阅。返回当前该展示的判定（不该展示时为 null）。
+ * 输入框旁的判定订阅。
  *
  * `hasApp` 变化会重判：同一句话在"还没有应用"和"已有应用"两种语境下
  * 判决不同（后端按 scope 分规则域），语境变了旧判决就不再成立。
@@ -134,7 +138,7 @@ export function useIntakeJudge(
   hasApp: boolean,
   enabled = true,
   appSummary = ""
-): IntakeJudgement | null {
+): { judgement: IntakeJudgement | null; isJudging: boolean } {
   // 连同"这条判定是判的哪句话"一起存。判定在途时输入已经变了的话，旧判定
   // 对新输入就是一句错话——真机验证时点了改写建议（回填的是一句完全合格的
   // 需求），界面还在说"你这句太模糊"，持续到新判定回来为止。宁可这几秒什么
@@ -143,6 +147,7 @@ export function useIntakeJudge(
     judgedFor: string;
     judgement: IntakeJudgement | null;
   }>({ judgedFor: "", judgement: null });
+  const [isJudging, setIsJudging] = React.useState(false);
   // 单调递增的请求号：只有最新一次请求的结果能落盘，防止慢响应盖掉新判定。
   const latestRef = React.useRef(0);
 
@@ -150,19 +155,25 @@ export function useIntakeJudge(
     const trimmed = text.trim();
     if (!enabled || trimmed.length < MIN_JUDGE_CHARS) {
       setState({ judgedFor: "", judgement: null });
+      setIsJudging(false);
       return;
     }
     const seq = ++latestRef.current;
+    setIsJudging(false);
     const controller = new AbortController();
     const timer = setTimeout(() => {
+      // 锁发送从这里开始：debounce 结束、请求真正发出。打字期间不锁。
+      setIsJudging(true);
       void judgeIntake(trimmed, hasApp, controller.signal, appSummary).then(result => {
-        if (seq === latestRef.current)
-          setState({ judgedFor: trimmed, judgement: result });
+        if (seq !== latestRef.current) return;
+        setIsJudging(false);
+        setState({ judgedFor: trimmed, judgement: result });
       });
     }, JUDGE_DEBOUNCE_MS);
     return () => {
       clearTimeout(timer);
       controller.abort();
+      if (seq === latestRef.current) setIsJudging(false);
     };
     // appSummary 不进依赖：它随应用摘要刷新而变，但同一个应用换个措辞不该
     // 重判一次（每次重判都是一次 LLM 调用）。hasApp 翻转才是真语境切换。
@@ -170,5 +181,8 @@ export function useIntakeJudge(
   }, [text, hasApp, enabled]);
 
   // 判的不是当前这句话就不给——输入一变，旧提示立刻消失。
-  return state.judgedFor === text.trim() ? state.judgement : null;
+  return {
+    judgement: state.judgedFor === text.trim() ? state.judgement : null,
+    isJudging: enabled && isJudging,
+  };
 }

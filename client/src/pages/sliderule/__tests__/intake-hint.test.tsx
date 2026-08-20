@@ -4,8 +4,8 @@
  * 锁三件事，都是"闸门坏了不能变成产品坏了"的具体形态：
  *  1. parseJudgement 对畸形返回体一律 null（fail-open，不把脏数据画到界面上）；
  *  2. judgeIntake 对 HTTP 失败/网络异常一律 null，不往上抛；
- *  3. 提示条只在 action=hint 且有引导话术时出现，且永远带"仍会照常推演"
- *     这句——第一版的产品承诺是只提示不阻断，这句话消失就是承诺被改了。
+ *  3. 提示条只在 action=hint 且有引导话术时出现；卡片出来之后仍可自己发
+ *     （生成过程中的发送锁在 ComposerDock，不在这张卡上）。
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -136,15 +136,29 @@ describe("IntakeHintBar", () => {
     expect(html).toContain('data-verdict="vague"');
     expect(html).toContain(HINT.guidance);
     expect(html.match(/data-testid="sliderule-intake-rewrite"/g)).toHaveLength(2);
+    expect(html).not.toContain("#fffbf0");
+    expect(html).not.toContain("#ffe3a3");
   });
 
-  it("哨兵：只提示不阻断的承诺必须写在明面上", () => {
+  it("哨兵：卡片出来之后仍可自己发送，不该再装成警告黄条", () => {
     const html = renderToStaticMarkup(
       <IntakeHintBar judgement={HINT} onRewrite={() => {}} />
     );
-    // 这句话是第一版的产品契约（后端 action 恒为 proceed|hint）。要删它，
-    // 必须同时改后端 _resolve_action 真开阻断，不能只在界面上悄悄拿掉。
-    expect(html).toContain("直接发送仍会照常推演");
+    expect(html).toContain("继续编辑后发送");
+    expect(html).not.toContain("直接发送仍会照常推演");
+    expect(html).toContain("rounded-[12px]");
+    expect(html).toContain("border-[#e5e7eb]");
+    expect(html).not.toContain("bg-[#fffbf0]");
+  });
+
+  it("判定在途：占位「正在澄清」，不渲染改写卡片", () => {
+    const html = renderToStaticMarkup(
+      <IntakeHintBar judgement={HINT} isJudging onRewrite={() => {}} />
+    );
+    expect(html).toContain('data-pending="true"');
+    expect(html).toContain("正在澄清需求");
+    expect(html).not.toContain(HINT.guidance);
+    expect(html).not.toContain('data-testid="sliderule-intake-rewrite"');
   });
 
   it("proceed / 无判定 / 空引导：不占用户视线", () => {
@@ -187,5 +201,12 @@ describe("useIntakeJudge 的陈旧判定处理", () => {
     expect(src).toContain("judgedFor");
     // 返回前必须比对当前文本，而不是无条件把上一次的结果吐出来
     expect(src).toContain("state.judgedFor === text.trim()");
+    expect(src).toContain("isJudging");
+    // 锁发送从 debounce 结束、请求发出才开始——setIsJudging(true) 必须在
+    // setTimeout 回调里。打字期间先 false，变异成一输入就 true 会把发送锁死。
+    expect(src).toMatch(
+      /setTimeout\(\(\) => \{[\s\S]*setIsJudging\(true\)/
+    );
+    expect(src.match(/setIsJudging\(true\)/g)?.length).toBe(1);
   });
 });
