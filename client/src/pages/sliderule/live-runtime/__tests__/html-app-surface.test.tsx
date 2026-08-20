@@ -20,6 +20,9 @@ import { describe, expect, it } from "vitest";
 import {
   extractPalette,
   sanitizeAppHtml,
+  applyPhoneViewportFill,
+  pinPhoneFillStyle,
+  PHONE_FILL_STYLE_ID,
   HTML_APP_SURFACE_VERSION,
 } from "../html-app-surface";
 import { deriveBindingSource } from "../derive-binding-source";
@@ -231,5 +234,59 @@ describe("数据源产出", () => {
 describe("版本号在", () => {
   it("有版本号，便于日志对齐", () => {
     expect(HTML_APP_SURFACE_VERSION).toBe("html-app-surface-v1");
+  });
+});
+
+describe("手机页铺满视口", () => {
+  it("机模 CSS 注入且幂等 —— 不删原文，用覆盖撑满", () => {
+    const src =
+      '<html><head></head><body class="flex items-center justify-center">' +
+      '<div class="max-w-md mx-auto">卡</div></body></html>';
+    const once = applyPhoneViewportFill(src);
+    expect(once).toContain(`id="${PHONE_FILL_STYLE_ID}"`);
+    expect(once).toContain("overflow-y:auto!important");
+    expect(once).toContain('body>div[class*="justify-center"]');
+    expect(once).toContain("flex-direction:row");
+    expect(once).not.toContain('body>div[class*="items-center"]{');
+    expect(once).not.toContain("main{display:flex");
+    expect(once).toContain("max-w-md");
+    expect(applyPhoneViewportFill(once)).toBe(once);
+  });
+
+  it("Tailwind 后注的样式要把铺满层再钉到 head 末尾", () => {
+    /**
+     * 真机：首屏看起来铺满了，Play CDN 扫完 class 往 head 末尾注 utility，
+     * items-center 把底栏重新居中。钉末尾 + 已在末尾则不动，避免观察者死循环。
+     */
+    const doc = document.implementation.createHTMLDocument("");
+    const tw = doc.createElement("style");
+    tw.id = "tw";
+    doc.head.appendChild(tw);
+    pinPhoneFillStyle(doc);
+    expect(doc.head.lastElementChild?.id).toBe(PHONE_FILL_STYLE_ID);
+    const later = doc.createElement("style");
+    later.id = "tw-late";
+    doc.head.appendChild(later);
+    pinPhoneFillStyle(doc);
+    expect(doc.head.lastElementChild?.id).toBe(PHONE_FILL_STYLE_ID);
+    const before = doc.head.lastElementChild;
+    pinPhoneFillStyle(doc);
+    expect(doc.head.lastElementChild).toBe(before);
+  });
+
+  it("舞台手机页把 fillPhone 接到活路上，并且 load 后会钉样式", () => {
+    const pick = (rel: string) =>
+      [`client/${rel}`, rel]
+        .map(c => resolve(process.cwd(), c))
+        .find(c => existsSync(c))!;
+    const strip = (p: string) =>
+      readFileSync(p, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    expect(strip(pick("src/pages/sliderule/live-runtime/SpecPageLiveStage.tsx"))).toContain(
+      "fillPhone={isPhone}"
+    );
+    const surface = strip(pick("src/pages/sliderule/live-runtime/html-app-surface.tsx"));
+    expect(surface).toContain("buildDocument(html, fillPhone)");
+    expect(surface).toContain("if (fillPhone)");
+    expect(surface).toContain("pinPhoneFillStyle(d)");
   });
 });

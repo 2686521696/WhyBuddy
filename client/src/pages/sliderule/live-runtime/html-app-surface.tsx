@@ -49,6 +49,79 @@ import {
 export const HTML_APP_SURFACE_VERSION = "html-app-surface-v1";
 
 /**
+ * 手机页铺满视口（2026-08-20）。
+ *
+ * 模型常把整页装进 `max-w-md mx-auto` 的机模——预览已经是 Playwright
+ * iPhone 14 的 390×844，再套一层就缩在框中间。CSS 与 Python
+ * `page_shell.ensure_phone_viewport_fill` 同 id、同规则，两边注入幂等。
+ */
+export const PHONE_FILL_STYLE_ID = "sliderule-phone-fill";
+/**
+ * ⚠ 2026-08-20 第二趟：只盖 body>max-w-md 不够。真机四个页面入口漂在
+ * 屏幕正中——居中层是 `min-h-screen flex items-center justify-center`。
+ * 第三趟：`items-center` 单独当选择器会误伤顶栏（flex items-center
+ * justify-between），把顶栏拉成整页高。盯 min-h-screen / justify-center。
+ * Tailwind Play 还会在我们之后往 head 注样式，所以渲染时还要把这份
+ * style 挪到 head 末尾（pinPhoneFillStyle）。文案与 Python 同文。
+ */
+export const PHONE_FILL_CSS =
+  "html,body{margin:0!important;width:100%!important;height:100%!important;" +
+  "min-height:100%!important;max-width:none!important;overflow:hidden!important}" +
+  "body{display:flex!important;flex-direction:column!important;" +
+  "align-items:stretch!important;justify-content:flex-start!important}" +
+  "body>*{width:100%!important;max-width:none!important;" +
+  "margin-left:0!important;margin-right:0!important;box-sizing:border-box!important}" +
+  'body>div[class*="min-h-screen"],body>div[class*="justify-center"]{' +
+  "display:flex!important;flex-direction:column!important;" +
+  "align-items:stretch!important;justify-content:flex-start!important;" +
+  "min-height:0!important;flex:1 1 auto!important;height:100%!important;width:100%!important;" +
+  "overflow:hidden!important}" +
+  "header{flex:0 0 auto!important;width:100%!important}" +
+  "main{flex:1 1 auto!important;min-height:0!important;width:100%!important;" +
+  "overflow-y:auto!important;overflow-x:hidden!important;" +
+  "-webkit-overflow-scrolling:touch}" +
+  "nav{display:flex!important;flex-direction:row!important;" +
+  "justify-content:space-around!important;align-items:center!important;" +
+  "flex:0 0 auto!important;width:100%!important}";
+
+export function applyPhoneViewportFill(html: string): string {
+  if (!html) return html;
+  if (html.includes(`id="${PHONE_FILL_STYLE_ID}"`)) {
+    return html.replace(
+      new RegExp(`(<style id="${PHONE_FILL_STYLE_ID}">)[\\s\\S]*?(</style>)`, "i"),
+      `$1${PHONE_FILL_CSS}$2`
+    );
+  }
+  const tag = `<style id="${PHONE_FILL_STYLE_ID}">${PHONE_FILL_CSS}</style>`;
+  const head = html.match(/<head[^>]*>/i);
+  if (head && head.index !== undefined) {
+    const at = head.index + head[0].length;
+    return html.slice(0, at) + tag + html.slice(at);
+  }
+  const htmlOpen = html.match(/<html[^>]*>/i);
+  if (htmlOpen && htmlOpen.index !== undefined) {
+    const at = htmlOpen.index + htmlOpen[0].length;
+    return html.slice(0, at) + `<head>${tag}</head>` + html.slice(at);
+  }
+  return tag + html;
+}
+
+/** 把铺满样式钉到 head 末尾。Tailwind Play 后注的 utility 没有 !important，后到也能被盖住。 */
+export function pinPhoneFillStyle(doc: Document): void {
+  const head = doc.head;
+  if (!head) return;
+  let el = doc.getElementById(PHONE_FILL_STYLE_ID) as HTMLStyleElement | null;
+  if (!el) {
+    el = doc.createElement("style");
+    el.id = PHONE_FILL_STYLE_ID;
+    el.textContent = PHONE_FILL_CSS;
+  } else if (el.textContent !== PHONE_FILL_CSS) {
+    el.textContent = PHONE_FILL_CSS;
+  }
+  if (head.lastElementChild !== el) head.appendChild(el);
+}
+
+/**
  * Tailwind 从**自己的源**取，不走 cdn.tailwindcss.com。
  *
  * ⚠ 这条是线上打脸打出来的（2026-08-14）：右侧渲染出来一条 CSS 都没有。
@@ -173,22 +246,23 @@ export function sanitizeAppHtml(markup: string): string {
 }
 
 /** 注入 Tailwind + 我们读出来的配色。**只有这一段脚本会跑。** */
-function buildDocument(pageHtml: string): string {
+function buildDocument(pageHtml: string, fillPhone = false): string {
   const clean = sanitizeAppHtml(pageHtml);
   if (!clean) return "";
+  const page = fillPhone ? applyPhoneViewportFill(clean) : clean;
   const palette = extractPalette(pageHtml);
   const cfg = `window.tailwind=window.tailwind||{};`
     + `window.tailwind.config={theme:{extend:{colors:${JSON.stringify(palette)}}}};`;
   // ⚠ config 必须在 CDN 脚本**之前**赋值：Play CDN 加载即刻编译一遍，
   //   晚了的话首屏那一版没有自定义色，闪一下才变过来。
   const inject = `<script>${cfg}</script><script src="${TAILWIND_SRC}"></script>`;
-  const m = clean.match(/<head[^>]*>/i);
+  const m = page.match(/<head[^>]*>/i);
   if (m && m.index !== undefined) {
     const at = m.index + m[0].length;
-    return clean.slice(0, at) + inject + clean.slice(at);
+    return page.slice(0, at) + inject + page.slice(at);
   }
   return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">${inject}</head>`
-    + `<body>${clean}</body></html>`;
+    + `<body>${page}</body></html>`;
 }
 
 export interface HtmlAppSurfaceProps {
@@ -203,6 +277,8 @@ export interface HtmlAppSurfaceProps {
   /** 游标：鼠标停在某个带绑定的元素上 */
   onHoverBinding?: (info: { attr: string; value: string; el: Element } | null) => void;
   onReport?: (report: ApplyBindingsReport & { hasDataSource: boolean }) => void;
+  /** 手机画布：把套在 max-w-md 里的机模撑满 390×844。桌面页不要开。 */
+  fillPhone?: boolean;
   className?: string;
 }
 
@@ -221,6 +297,7 @@ export function HtmlAppSurface({
   onNavigate,
   onHoverBinding,
   onReport,
+  fillPhone = false,
   className = "",
 }: HtmlAppSurfaceProps): React.ReactElement {
   const ref = React.useRef<HTMLIFrameElement | null>(null);
@@ -232,15 +309,28 @@ export function HtmlAppSurface({
   React.useEffect(() => {
     const frame = ref.current;
     if (!frame) return;
-    const doc = buildDocument(html);
+    const doc = buildDocument(html, fillPhone);
     if (!doc) return;
     let disposed = false;
+    let fillMo: MutationObserver | null = null;
 
     frame.srcdoc = doc;
     const onLoad = () => {
       if (disposed) return;
       const d = frame.contentDocument;
       if (!d || !d.body) return;
+
+      // 手机页：Tailwind Play 扫完 DOM 会再往 head 注一层 utility。
+      // 铺满样式若停在那一层前面，items-center 会把底栏重新居中——
+      // 真机表现就是「刚看好了，过一秒四个图标漂到屏幕中间」。
+      if (fillPhone) {
+        pinPhoneFillStyle(d);
+        if (d.head && typeof MutationObserver !== "undefined") {
+          const mo = new MutationObserver(() => pinPhoneFillStyle(d));
+          mo.observe(d.head, { childList: true });
+          fillMo = mo;
+        }
+      }
 
       const report = applyBindings(d.body, {
         source,
@@ -276,11 +366,12 @@ export function HtmlAppSurface({
     frame.addEventListener("load", onLoad);
     return () => {
       disposed = true;
+      fillMo?.disconnect();
       frame.removeEventListener("load", onLoad);
     };
     // gates 进依赖：切角色必须重填一遍（锁上/解锁）。整框重载可接受——
     // 切角色不是高频操作，且 srcdoc 重写才能把上一轮的行内监听整批清干净。
-  }, [html, source, gates]);
+  }, [html, source, gates, fillPhone]);
 
   return (
     <iframe
@@ -291,7 +382,7 @@ export function HtmlAppSurface({
       //   就没了，框里跑的只有我们自己注入的 Tailwind。
       referrerPolicy="no-referrer"
       data-testid="html-app-surface"
-      className={`h-full w-full border-0 bg-white ${className}`}
+      className={`h-full w-full border-0 ${className || "bg-white"}`}
     />
   );
 }

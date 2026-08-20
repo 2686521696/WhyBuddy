@@ -17,6 +17,14 @@
  * 上一版 20px 向右渐变在真机上像刀口，比发丝线更尖锐。
  *
  * 缝上的右箭头跟顶栏一样：隐藏整块预览页，不是把舞台宽度收成 0。
+ *
+ * 2026-08-20：生成完应用后拖这条缝会卡。不是缝本身（已经是
+ * react-resizable-panels，库在拖时给 Panel 加 pointer-events:none），
+ * 是舞台同源 iframe 按 1920×1080 整页缩放——ResizeObserver 每帧
+ * setScale 会把 React 提交和 iframe 合成拖成一顿一顿。
+ * 对照 bvaughn/react-resizable-panels#64、VS Code sash-dragging、
+ * Gutenberg ScaledBlockPreview：拖的时候冻结缩放、iframe 不接指针，
+ * 松手再量一次。onDragging 是 v3 公开的口。
  */
 import React from "react";
 import {
@@ -81,6 +89,7 @@ export function StudioSplit({
       autoSaveId="sliderule-studio-split"
       className="h-full w-full"
       data-testid="sliderule-studio-split"
+      data-studio-resizing={layout.resizing ? "true" : undefined}
     >
       <Panel
         id="sliderule-chat"
@@ -100,6 +109,7 @@ export function StudioSplit({
       <PanelResizeHandle
         data-testid="sliderule-studio-split-handle"
         className="group relative z-20 flex w-px shrink-0 items-center justify-center bg-[#d1d9e0b3] outline-none after:absolute after:inset-y-0 after:-left-1 after:w-2.5 after:content-[''] hover:bg-[#d1d9e0] data-[resize-handle-active]:bg-[#d1d9e0]"
+        onDragging={layout.setResizing}
         onDoubleClick={resetSplit}
         title="拖动调整宽度 · 双击恢复默认"
       >

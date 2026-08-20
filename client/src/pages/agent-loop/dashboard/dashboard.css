@@ -433,6 +433,7 @@
   display: flex;
   flex: 1;
   flex-direction: column;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -448,8 +449,18 @@
   color: #94a3b8;
   display: flex;
   font-size: 11px;
-  gap: 4px;
-  margin-top: 2px;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.native-agent-session-chip {
+  align-items: center;
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 3px;
+  min-width: 0;
 }
 
 .native-agent-session-meta svg {
@@ -672,6 +683,25 @@
   /* Primer light --borderColor-muted（github.com 分栏标准色）。
      投影只给 overlay，不分栏——见 primer box-shadow 文档、page-layout.scss。 */
   --sr-border-muted: #d1d9e0b3;
+}
+
+/*
+ * 拖分栏时冻结舞台预览（2026-08-20）。
+ *
+ * 对照：
+ *   · VS Code workbench.sash-dragging → iframe { pointer-events: none }
+ *   · bvaughn/react-resizable-panels#64：iframe 会把 pointermove 吃掉
+ *   · Gutenberg ScaledBlockPreview：缩放按容器宽算，拖时不重提交
+ *
+ * 库已经给 Panel 加了 pointer-events:none；这里再钉 iframe / 画布，
+ * 并 contain:strict 把 1920×1080 那层隔离出父级 flex 重排。
+ */
+[data-studio-resizing="true"] iframe {
+  pointer-events: none !important;
+}
+[data-studio-resizing="true"] [data-testid="sliderule-spec-page-canvas"] {
+  contain: strict;
+  will-change: transform;
 }
 
 .native-header {

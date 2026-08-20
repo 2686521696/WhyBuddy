@@ -90,6 +90,8 @@ describe("workbench chrome live-path wiring", () => {
     expect(handle).not.toContain("linear-gradient");
     expect(handle).not.toContain("bg-[#e5e7eb]");
     expect(handle).not.toContain("w-1.5");
+    expect(src).toContain("onDragging={layout.setResizing}");
+    expect(src).toContain('data-studio-resizing={layout.resizing ? "true" : undefined}');
 
     const css = stripComments(
       readFileSync(
@@ -109,6 +111,33 @@ describe("workbench chrome live-path wiring", () => {
     expect(sidebar).not.toContain("linear-gradient");
     expect(css).not.toContain(".native-agent-main::before");
     expect(css).toContain("--sr-border-muted: #d1d9e0b3");
+    const dragCss = css.slice(css.indexOf('[data-studio-resizing="true"]'));
+    expect(dragCss).toContain("pointer-events: none");
+    expect(dragCss).toContain("contain: strict");
+  });
+
+  it("拖分栏时冻结舞台缩放，不每帧 setScale", () => {
+    const split = stripComments(
+      readFileSync(new URL("../StudioSplit.tsx", import.meta.url), "utf8")
+    );
+    expect(split).toContain("onDragging={layout.setResizing}");
+
+    const stage = stripComments(
+      readFileSync(
+        new URL("../live-runtime/SpecPageLiveStage.tsx", import.meta.url),
+        "utf8"
+      )
+    );
+    expect(stage).toContain("studioLayout?.resizing ?? false");
+
+    const scale = stripComments(
+      readFileSync(
+        new URL("../live-runtime/canvas-scale.tsx", import.meta.url),
+        "utf8"
+      )
+    );
+    expect(scale).toContain("if (pausedRef.current) return");
+    expect(scale).toContain("requestAnimationFrame");
   });
 
   it("角色切换箭头有右边距，不用系统原生贴边三角", () => {

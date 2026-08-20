@@ -49,11 +49,12 @@
 import React from "react";
 
 import { HtmlAppSurface } from "./html-app-surface";
-import { ScaleBadge, useScaleToFit, specPageViewport } from "./canvas-scale";
+import { useScaleToFit, specPageViewport } from "./canvas-scale";
 import { deriveBindingSource } from "./derive-binding-source";
 import type { ActionGates, BindingActionEvent } from "./html-binding-runtime";
 import type { RuntimeState } from "./live-runtime";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
+import { useStudioLayout } from "../StudioLayoutContext";
 
 export interface SpecPageLive {
   pageId: string;
@@ -61,7 +62,7 @@ export interface SpecPageLive {
   current: number;
   total: number;
   bound: boolean;
-  /** desktop 横屏 1920×1080 / phone 竖屏 1080×1920（2026-08-14）。
+  /** desktop 横屏 1920×1080 / phone 竖屏 390×844 CSS 像素（2026-08-20）。
    *  缺席按桌面兜底——老事件/老存档没有这个字段，行为与从前一致。 */
   device?: "desktop" | "phone";
 }
@@ -87,8 +88,8 @@ export interface SpecPageLiveStageProps {
    *  应用中心只读预览传落地页——那儿页面是一次到齐的，"最新"没有意义，
    *  开屏看到的应该是导航第一项，跟真用户进应用的第一眼一致。 */
   defaultPageId?: string | null;
-  /** 桌面 = 渲染页面；代码 = 当前页交付的 HTML 原文（顶栏「桌面/代码」档，
-   *  与老区块舞台的档位切换同语义——代码档看的就是交付物本体，不是投影）。 */
+  /** 页面 = 渲染出来的界面；代码 = 当前页交付的 HTML 原文（顶栏档位，
+   *  不是设备。点了「应用」之后这里仍叫页面，避免跟 PC 桌面搅在一起）。 */
   view?: "page" | "code";
   /** 当前展示页变化时上报（游标面板要跟随页面切片）。 */
   onActivePageChange?: (pageId: string) => void;
@@ -135,13 +136,25 @@ export function SpecPageLiveStage({
 
   const source = React.useMemo(() => deriveBindingSource(model, runtime), [model, runtime]);
 
-  // 视口按设备选（2026-08-14 竖屏）：desktop 1920×1080 / phone 1080×1920。
+  // 视口按设备选：desktop 1920×1080 / phone 390×844（Playwright iPhone 14）。
   // 一轮里所有页面同一设备（管道开头认一次），取第一个带 device 的页面即可。
-  const viewport = specPageViewport(pages.find(p => p.device)?.device);
+  const device = pages.find(p => p.device)?.device;
+  const isPhone = device === "phone";
+  const viewport = specPageViewport(device);
+
+  // 拖分栏时冻结缩放（2026-08-20）：见 useScaleToFit / StudioSplit 头注。
+  // 没有 Provider（单测、应用中心）时不暂停——那边没有这条缝。
+  const studioLayout = useStudioLayout();
 
   // ⚠ 必须在下面那个 `if (!active) return null` **之前**调用：hook 的调用
   //   顺序不能随渲染分支变化，放到早退之后第一帧就会炸 hook order。
-  const { ref: fitRef, scale } = useScaleToFit(viewport.w, viewport.h);
+  const { ref: fitRef, scale } = useScaleToFit(
+    viewport.w,
+    viewport.h,
+    "contain",
+    studioLayout?.resizing ?? false,
+    isPhone ? { x: 36, y: 48 } : { x: 0, y: 0 }
+  );
 
   const activeId = resolveActivePageId(picked, pages);
   const active = pages.find(p => p.pageId === activeId) ?? null;
@@ -154,6 +167,22 @@ export function SpecPageLiveStage({
   if (!active) return null;
 
   const total = Math.max(active.total || 0, pages.length);
+  const boundLabel = report
+    ? report.filled > 0
+      ? `已接数据 · 填了 ${report.filled} 处${
+          report.problems.length ? ` · ${report.problems.length} 处填不上` : ""
+        }`
+      : active.bound
+        ? "打过孔但没填上数据"
+        : "尚未接数据"
+    : active.bound
+      ? "已接数据"
+      : "尚未接数据";
+  const boundTitle = report?.problems.length
+    ? `填不上的孔：\n${report.problems.slice(0, 6).join("\n")}`
+    : active.bound
+      ? "已接上数据（第 6.5 步打过 data-* 孔）"
+      : "第 3 步的页面：还没接数据，孔要等实体字段定死之后才打";
 
   return (
     <div
@@ -174,103 +203,115 @@ export function SpecPageLiveStage({
         </div>
       ) : (
       <>
-      {/* 缩放画布（2026-08-14）：**页面是照 1920×1080 画的，就得在 1920×1080 里看**。
-          此前这里是直接铺满容器的——容器多宽 iframe 就多宽，于是同一份 HTML
-          在窄窗口里会掉进 Tailwind 的低断点：`2xl:`（1536）整档失效、多列栅格
-          塌成少列。而这些页面的唯一参照渲染器 render_pages.cjs 用的正是
-          1920×1080 视口，V6.0 那次「有图/无图」的裁决也是照着那批 1920 宽的
-          截图做的。看的宽度跟画的宽度对不上，等于在看一个从没被验收过的版式。
-          机制与区块页共用 ./canvas-scale，不各写一套。 */}
+      {/* 接数 / 分辨率集中在画布外面（2026-08-20）：叠在机框底上会挡住
+          标签栏。对照 Chrome DevTools device mode——尺寸写在框外。 */}
+      <div
+        className="flex shrink-0 items-center gap-2 px-0.5 font-mono text-[10px] text-stone-500"
+        data-testid="sliderule-stage-meta"
+      >
+        {running && (
+          <span className="flex items-center gap-1 rounded-full bg-stone-100 px-2 py-0.5 text-stone-600" title={statusLabel ?? undefined}>
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#69b1ff]" />
+            界面生成中 {pages.length}/{total || pages.length}
+          </span>
+        )}
+        <span
+          className="rounded-full bg-stone-100 px-2 py-0.5 text-stone-600"
+          data-testid="sliderule-spec-page-bound"
+          title={boundTitle}
+        >
+          {boundLabel}
+        </span>
+        <span
+          className="ml-auto rounded-full bg-stone-100 px-2 py-0.5"
+          data-testid="sliderule-spec-page-scale"
+          title={`固定 ${viewport.w}×${viewport.h} 设计分辨率，按容器等比缩放显示`}
+        >
+          {viewport.w}×{viewport.h} · {Math.round(scale * 100)}%
+        </span>
+      </div>
+      {/* 缩放画布：页面照固定视口画，就得在那个视口里看。手机框的描边算进
+          layout（padding），不再用会溢出被切掉的 box-shadow。 */}
       <div
         ref={fitRef}
         className="flex min-h-0 flex-1 items-center justify-center overflow-hidden"
         data-testid="sliderule-spec-page-canvas"
       >
         <div
-          style={{
-            width: viewport.w * scale,
-            height: viewport.h * scale,
-            position: "relative",
-          }}
+          data-testid={isPhone ? "sliderule-phone-frame" : undefined}
+          style={
+            isPhone
+              ? {
+                  // Flowbite device-mockups：边框就是机身（border-[14px]
+                  // rounded-[2.5rem]），内屏 rounded + overflow-hidden。
+                  // 第一版用 box-shadow 描边，overflow:hidden 把顶切掉；
+                  // 第二版用 padding + 内屏白底，圆角缝里露出白边。
+                  boxSizing: "border-box",
+                  width: viewport.w * scale + 24,
+                  border: "12px solid #1c1c1e",
+                  borderBottomWidth: 20,
+                  borderRadius: 40,
+                  background: "#1c1c1e",
+                  boxShadow: "0 18px 40px rgba(15,23,42,0.28)",
+                  position: "relative",
+                }
+              : {
+                  width: viewport.w * scale,
+                  height: viewport.h * scale,
+                  position: "relative",
+                  borderRadius: 5,
+                  boxShadow: "0 8px 32px rgba(60,50,30,0.18)",
+                  overflow: "hidden",
+                  background: "#fff",
+                }
+          }
         >
           <div
             style={{
-              width: viewport.w,
-              height: viewport.h,
-              transform: `scale(${scale})`,
-              transformOrigin: "top left",
+              width: viewport.w * scale,
+              height: viewport.h * scale,
+              position: "relative",
               overflow: "hidden",
-              borderRadius: 5,
-              background: "#fff",
-              boxShadow: "0 8px 32px rgba(60,50,30,0.18)",
+              borderRadius: isPhone ? 28 : 5,
+              background: isPhone ? "#000" : "#fff",
             }}
           >
-            {/* ⚠ key 带 pageId：换页必须重建 iframe。srcdoc 换值时浏览器的重载
-                时机不一致（Safari 上尤其），复用同一个框会看到上一页残留一瞬。
-                ⚠ 框内自己滚，外层 overflow-hidden：跟 ComponentsLibraryPage 那次
-                拒绝 iframe 的理由（26 份高度要跨文档同步）不一样——这里只有一份，
-                而且给的是固定高度，不需要把高度同步回来。 */}
-            <HtmlAppSurface
-              key={active.pageId}
-              html={active.html}
-              source={source}
-              gates={gates}
-              onAction={onAction}
-              onNavigate={setPicked}
-              onHoverBinding={onHoverBinding}
-              onReport={r =>
-                setReport({
-                  filled: Object.values(r.filled).reduce((a, b) => a + b, 0),
-                  problems: r.problems,
-                })
-              }
-            />
-          </div>
-          <ScaleBadge
-            w={viewport.w}
-            h={viewport.h}
-            scale={scale}
-            testId="sliderule-spec-page-scale"
-          />
-          {/* 页签条下架后收编来的两枚如实徽标（左下，与右下分辨率徽标同形制）：
-              生成进度 + 填数报告。切页归页面自己的菜单，这里不再有控件。 */}
-          <div className="pointer-events-none absolute bottom-1.5 left-2 flex max-w-[70%] flex-wrap items-center gap-1">
-            {running && (
-              <span
-                className="pointer-events-auto flex items-center gap-1 rounded-full bg-black/45 px-2 py-0.5 text-[9px] text-white/90"
-                title={statusLabel ?? undefined}
-              >
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#69b1ff]" />
-                界面生成中 {pages.length}/{total || pages.length}
-              </span>
-            )}
-            <span
-              className="pointer-events-auto rounded-full bg-black/45 px-2 py-0.5 text-[9px] text-white/90"
-              data-testid="sliderule-spec-page-bound"
-              title={
-                report?.problems.length
-                  ? `填不上的孔：\n${report.problems.slice(0, 6).join("\n")}`
-                  : active.bound
-                    ? "已接上数据（第 6.5 步打过 data-* 孔）"
-                    : "第 3 步的页面：还没接数据，孔要等实体字段定死之后才打"
-              }
+            <div
+              style={{
+                width: viewport.w,
+                height: viewport.h,
+                transform: `scale(${scale})`,
+                transformOrigin: "top left",
+                overflow: "hidden",
+                background: isPhone ? "#000" : "#fff",
+              }}
             >
-              {/* ⚠ 报**实际填了多少**，不是报"这一版理论上打过孔"。
-                  两者会分叉：孔打了但引用的实体不存在时，bound 是 true 而
-                  一个格子都没填上——那时说"已接数据"就是在撒谎。 */}
-              {report
-                ? report.filled > 0
-                  ? `已接数据 · 填了 ${report.filled} 处${
-                      report.problems.length ? ` · ${report.problems.length} 处填不上` : ""
-                    }`
-                  : active.bound
-                    ? "打过孔但没填上数据"
-                    : "尚未接数据"
-                : active.bound
-                  ? "已接数据"
-                  : "尚未接数据"}
-            </span>
+              <HtmlAppSurface
+                key={active.pageId}
+                html={active.html}
+                fillPhone={isPhone}
+                className={isPhone ? "bg-black" : "bg-white"}
+                source={source}
+                gates={gates}
+                onAction={onAction}
+                onNavigate={setPicked}
+                onHoverBinding={onHoverBinding}
+                onReport={r =>
+                  setReport({
+                    filled: Object.values(r.filled).reduce((a, b) => a + b, 0),
+                    problems: r.problems,
+                  })
+                }
+              />
+            </div>
           </div>
+          {isPhone ? (
+            <div
+              aria-hidden
+              className="pointer-events-none mx-auto mt-1.5 h-1 w-28 rounded-full bg-white/30"
+              data-testid="sliderule-phone-home-indicator"
+            />
+          ) : null}
         </div>
       </div>
       </>

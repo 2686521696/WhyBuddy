@@ -136,9 +136,55 @@ describe("画布视口按设备选（2026-08-14 竖屏）", () => {
     expect(badge()).toContain("1920×1080");
   });
 
-  it("手机页用 1080×1920 —— 竖屏页塞进横屏画布等于看一个没被验收过的版式", () => {
+  it("手机页用 390×844 —— 1080 宽会让 Tailwind lg: 着火，内容缩成机模", () => {
     mount([{ ...page("p1", 1), device: "phone" as const }]);
-    expect(badge()).toContain("1080×1920");
+    expect(badge()).toContain("390×844");
+    const stage = frames()[0].parentElement as HTMLElement;
+    expect(stage.style.width).toBe("390px");
+    expect(stage.style.height).toBe("844px");
+  });
+
+  it("手机页套设备框，桌面页不套", () => {
+    mount([page("p1", 1)]);
+    expect(host!.querySelector('[data-testid="sliderule-phone-frame"]')).toBeNull();
+    update([{ ...page("p1", 1), device: "phone" as const }]);
+    expect(host!.querySelector('[data-testid="sliderule-phone-frame"]')).toBeTruthy();
+    expect(
+      host!.querySelector('[data-testid="sliderule-phone-home-indicator"]')
+    ).toBeTruthy();
+  });
+
+  it("接数和分辨率在机框外 —— 叠在底栏上会挡住切换", () => {
+    mount([{ ...page("p1", 1), device: "phone" as const, bound: true }]);
+    const frame = host!.querySelector('[data-testid="sliderule-phone-frame"]')!;
+    const meta = host!.querySelector('[data-testid="sliderule-stage-meta"]')!;
+    expect(meta).toBeTruthy();
+    expect(meta.contains(host!.querySelector('[data-testid="sliderule-spec-page-bound"]'))).toBe(
+      true
+    );
+    expect(meta.contains(host!.querySelector('[data-testid="sliderule-spec-page-scale"]'))).toBe(
+      true
+    );
+    expect(frame.contains(host!.querySelector('[data-testid="sliderule-spec-page-bound"]'))).toBe(
+      false
+    );
+    expect(frame.contains(host!.querySelector('[data-testid="sliderule-spec-page-scale"]'))).toBe(
+      false
+    );
+  });
+
+  it("机框用边框当边框，内屏黑底 —— 不靠溢出的 box-shadow，不露白边", () => {
+    mount([{ ...page("p1", 1), device: "phone" as const }]);
+    const frame = host!.querySelector('[data-testid="sliderule-phone-frame"]') as HTMLElement;
+    const border = `${frame.style.border} ${frame.style.borderWidth} ${frame.style.borderStyle} ${frame.style.borderColor}`;
+    expect(border).toMatch(/12px/);
+    expect(border.toLowerCase()).toMatch(/solid/);
+    expect(frame.style.boxShadow).not.toMatch(/0px 0px 0px 12px/);
+    const screen = frame.firstElementChild as HTMLElement;
+    expect(screen.style.overflow).toBe("hidden");
+    expect((screen.style.background || screen.style.backgroundColor).replace(/\s/g, "")).toMatch(
+      /#000|#000000|rgb\(0,0,0\)/
+    );
   });
 });
 

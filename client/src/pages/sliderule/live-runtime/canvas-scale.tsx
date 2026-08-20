@@ -56,14 +56,20 @@ export type ScaleFitMode = "contain" | "width";
 export const SPEC_PAGE_VIEWPORT = { w: 1920, h: 1080 } as const;
 
 /**
- * 移动端竖屏的设计分辨率（2026-08-14）。
+ * 移动端竖屏的设计分辨率（2026-08-20 改成 CSS 像素）。
  *
- * 1080×1920 = 桌面的转置：spec-first 认出「手机/移动端/App」话题时
- * （device_policy 同一份词表），页面按移动设计系统生成（顶栏 + 底部
- * 标签栏，无侧栏），画布用这个视口。1080 宽下 Tailwind 的 lg:（1024）
- * 断点仍生效、xl:（1280）不生效——移动页的提示词本来就不该写 xl:。
+ * ⚠ 第一版写成 1080×1920（桌面的转置）。那是物理像素，不是布局视口。
+ * 真机（选题库那趟）：舞台机框是 1080 宽，模型却按 v0 / screenshot-to-code
+ * 的习惯输出 `max-w-md mx-auto`（~448px）「机模」，整页缩在框中间一块
+ * 暗色卡片上——用户画红框说「没有占满手机尺寸」。同时 Tailwind `lg:`
+ * （1024）在 1080 下生效，移动页看起来还是 PC。
+ *
+ * 改成 Playwright `devices['iPhone 14']` / Chrome DevTools 同款
+ * **390×844 CSS 像素**（不是 1080 物理像素）。390 < sm(640)，`md:`/`lg:`
+ * 都不会着火。老区块链路 AppRuntimeScreen 的 405×720 是给 9:16 出图卡片
+ * 用的，别跟这条 spec-first 画布混成一个数。
  */
-export const SPEC_PAGE_VIEWPORT_PHONE = { w: 1080, h: 1920 } as const;
+export const SPEC_PAGE_VIEWPORT_PHONE = { w: 390, h: 844 } as const;
 
 /** 按设备取 spec 页画布视口。词表与后端 device_policy 一致（desktop/phone）。 */
 export function specPageViewport(device?: string | null): { w: number; h: number } {
@@ -71,40 +77,113 @@ export function specPageViewport(device?: string | null): { w: number; h: number
 }
 
 /**
- * 容器实测尺寸 → 等比缩放系数。
+ * 容器实测尺寸 → 等比缩放系数。纯函数，ResizeObserver 只负责喂数。
  *
  * ⚠ 只在 ResizeObserver 里量，不监听 window.resize：容器被侧栏折叠、抽屉
  *   推挤而变形时 window 尺寸一动不动，靠 resize 事件会漏掉一整类变化。
  */
-export function useScaleToFit(
+export function computeScaleToFit(
+  containerW: number,
+  containerH: number,
   designW: number,
   designH: number,
   mode: ScaleFitMode = "contain"
+): number | null {
+  if (containerW <= 0 || designW <= 0) return null;
+  if (mode === "width") return containerW / designW;
+  if (containerH <= 0 || designH <= 0) return null;
+  return Math.min(containerW / designW, containerH / designH);
+}
+
+/** 拖分栏时跳过亚像素抖动，避免每帧 setState。 */
+export const SCALE_EPSILON = 0.001;
+
+export function scaleNeedsCommit(prev: number, next: number): boolean {
+  return Math.abs(next - prev) >= SCALE_EPSILON;
+}
+
+/**
+ * 容器实测尺寸 → 等比缩放系数。
+ *
+ * ⚠ 只在 ResizeObserver 里量，不监听 window.resize：容器被侧栏折叠、抽屉
+ *   推挤而变形时 window 尺寸一动不动，靠 resize 事件会漏掉一整类变化。
+ *
+ * ⚠ 2026-08-20：拖分栏时 paused=true。舞台 iframe 是 1920×1080 整页，
+ *   每帧 setScale 会把 React 提交拖成卡顿。对照 Gutenberg ScaledBlockPreview
+ *   和 VS Code sash：拖的时候不重算，松手再量。ResizeObserver 回调还要
+ *   rAF 合并——同一帧多次 entry 只提交一次。
+ */
+export function useScaleToFit(
+  designW: number,
+  designH: number,
+  mode: ScaleFitMode = "contain",
+  paused = false,
+  /** 从容器里扣掉的边（机框描边、下巴）。box-shadow 描边不算进 layout，
+   *  不扣的话 12px 外圈会被 overflow:hidden 切掉顶。 */
+  pad: { x: number; y: number } = { x: 0, y: 0 }
 ): {
   ref: React.RefObject<HTMLDivElement | null>;
   scale: number;
 } {
   const ref = React.useRef<HTMLDivElement | null>(null);
   const [scale, setScale] = React.useState(1);
+  const scaleRef = React.useRef(1);
+  const pausedRef = React.useRef(paused);
+  pausedRef.current = paused;
+  const padX = pad.x;
+  const padY = pad.y;
+
+  const commit = React.useCallback((next: number) => {
+    if (!scaleNeedsCommit(scaleRef.current, next)) return;
+    scaleRef.current = next;
+    setScale(next);
+  }, []);
+
+  const readScale = React.useCallback(() => {
+    const el = ref.current;
+    if (!el) return null;
+    return computeScaleToFit(
+      Math.max(0, el.clientWidth - padX),
+      Math.max(0, el.clientHeight - padY),
+      designW,
+      designH,
+      mode
+    );
+  }, [designW, designH, mode, padX, padY]);
+
   React.useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    let raf = 0;
     const measure = () => {
-      const w = el.clientWidth;
-      const h = el.clientHeight;
-      if (w <= 0) return;
-      if (mode === "width") {
-        setScale(w / designW);
-        return;
-      }
-      if (h > 0) setScale(Math.min(w / designW, h / designH));
+      if (pausedRef.current) return;
+      const next = readScale();
+      if (next == null) return;
+      commit(next);
+    };
+    const schedule = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        measure();
+      });
     };
     measure();
     if (typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(measure);
+    const ro = new ResizeObserver(schedule);
     ro.observe(el);
-    return () => ro.disconnect();
-  }, [designW, designH, mode]);
+    return () => {
+      ro.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [readScale, commit]);
+
+  React.useEffect(() => {
+    if (paused) return;
+    const next = readScale();
+    if (next != null) commit(next);
+  }, [paused, readScale, commit]);
+
   return { ref, scale };
 }
 

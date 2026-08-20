@@ -18,10 +18,18 @@ export type StudioLayoutApi = {
   collapsed: StudioCollapsed;
   /** 整块预览页不渲染。跟 collapsed.stage（改宽度）不是一回事。 */
   stagePageHidden: boolean;
+  /**
+   * 正在拖分栏缝。舞台里的同源 iframe 是按 1920×1080 画的整页，
+   * 拖的时候每帧 ResizeObserver → setScale 会把拖条拖成一卡一卡。
+   * 对照：VS Code sash-dragging 期间 iframe { pointer-events:none }，
+   * Gutenberg ScaledBlockPreview 拖时不重算缩放，松手再量一次。
+   */
+  resizing: boolean;
   chatRef: React.RefObject<ImperativePanelHandle | null>;
   stageRef: React.RefObject<ImperativePanelHandle | null>;
   setChatCollapsed: (next: boolean) => void;
   setStageCollapsed: (next: boolean) => void;
+  setResizing: (next: boolean) => void;
   toggleChat: () => void;
   toggleStage: () => void;
   toggleStagePage: () => void;
@@ -42,6 +50,7 @@ export function StudioLayoutProvider({
   const [chatCollapsed, setChatCollapsed] = React.useState(false);
   const [stageCollapsed, setStageCollapsed] = React.useState(false);
   const [stagePageHidden, setStagePageHidden] = React.useState(false);
+  const [resizing, setResizing] = React.useState(false);
   const collapsed = { chat: chatCollapsed, stage: stageCollapsed };
 
   React.useEffect(() => {
@@ -49,6 +58,7 @@ export function StudioLayoutProvider({
     setChatCollapsed(false);
     setStageCollapsed(false);
     setStagePageHidden(false);
+    setResizing(false);
   }, [available]);
 
   const toggleStagePage = React.useCallback(() => {
@@ -92,10 +102,12 @@ export function StudioLayoutProvider({
       available,
       collapsed,
       stagePageHidden,
+      resizing,
       chatRef,
       stageRef,
       setChatCollapsed,
       setStageCollapsed,
+      setResizing,
       toggleChat,
       toggleStage,
       toggleStagePage,
@@ -106,6 +118,7 @@ export function StudioLayoutProvider({
       chatCollapsed,
       stageCollapsed,
       stagePageHidden,
+      resizing,
       toggleChat,
       toggleStage,
       toggleStagePage,

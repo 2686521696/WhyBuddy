@@ -132,7 +132,7 @@ export interface SpecPagesDetail {
   pageBindStatus?: Record<string, string>;
   /** 画页或打孔失败的页 → 原因。打孔部分失败时成功页仍计入 boundPages。 */
   failedPages?: Record<string, unknown>;
-  /** desktop 横屏 1920×1080 / phone 竖屏 1080×1920（2026-08-14）。
+  /** desktop 横屏 1920×1080 / phone 竖屏 390×844 CSS 像素。
    *  老存档没有这个字段——按桌面兜底，行为与从前一致。 */
   device?: "desktop" | "phone";
 }
@@ -823,7 +823,7 @@ function HtmlLiveThumb({
   device?: string | null;
 }) {
   const { wrapRef, visible } = useThumbMountGate();
-  // 视口按设备选（2026-08-14 竖屏）：桌面 1920×1080 / 手机 1080×1920。
+  // 视口按设备选：桌面 1920×1080 / 手机 390×844（Playwright iPhone 14）。
   const viewport = specPageViewport(specPages.device);
   // 宽度定缩放（跟 LiveAppThumb 的 scaleFit="width" 同一条理由）：页面是照
   // 固定视口画的，卡片看顶部那一屏就够；contain 在 9:16 的手机档卡里会留大灰边。
