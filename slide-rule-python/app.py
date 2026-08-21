@@ -167,9 +167,74 @@ def _turn_seq_for_drive_full(value) -> int:
 def _advance_drive_full_turn_id(value) -> str:
     return f"turn-{_turn_seq_for_drive_full(value) + 1}-drive-full"
 
+#: 事件循环默认执行器的线程数。`SLIDERULE_EXECUTOR_THREADS` 可覆盖。
+#:
+#: ## 为什么必须显式设，不能用默认值（2026-08-21 事故）
+#:
+#: 用户原话：「多个人使用，第二个人页面一直 loading」。
+#:
+#: `asyncio.to_thread` 用事件循环的默认执行器，容量 `min(32, cpu_count + 4)`
+#: ——线上 4 核就是 **8 槽**。而流式驱动（前端主路径）把每个能力执行都丢进
+#: 这个池：
+#:
+#:     v5_full_driver.drive_full_v5_session_stream:2141
+#:         asyncio.gather(*[asyncio.to_thread(_timed_execute, ...) for sel in group])
+#:
+#: 一组并行能力最多 5 个（v5_full_driver:330「picker caps selection at 5」），
+#: 每个跑一次 LLM、30~180 秒。于是 1 个人占 5/8、**2 个人就把池占满**。
+#: 池一满，任何还想 to_thread 的请求就排队——包括新用户开页面时那句
+#: `await asyncio.to_thread(load_session, sid)`。那是毫秒级操作，却要等别人的
+#: LLM 调用还槽，实测换算下来 28~168 秒白屏。
+#:
+#: ⚠ **`min(32, cpu+4)` 是给 CPU 密集任务定的口径**，这里全是网络等待，
+#:   线程绝大部分时间阻塞在 socket 上、不吃 CPU。按核数算线程数是错的尺子。
+#:
+#: ⚠ 这跟 2026-08-02 那次事故**同因不同路**：那次修的是 `/drive-full`
+#:   （改 `def` → 交给 anyio 的 40 槽池，见 routes/sliderule_full.py 头注），
+#:   而流式后来才成为主路径，走的是另一个只有 8 槽的池。**两个池互不相通**，
+#:   当年算的「40 槽够用」在这条路上不成立。改一半的经典形状。
+#:
+#: 64 的来历：一组 5 个 × 约 12 个并发推演。不是拍的，但也不是精算——
+#: 真到扛不住的那天，正确解法是把推演挪进任务队列（跟 /drive-full 头注
+#: 那条「别把 40 调大」同一个判断），不是继续调这个数。
+_DEFAULT_EXECUTOR_THREADS = 64
+
+
+def configure_event_loop_executor() -> int:
+    """把默认执行器换成够大的池，返回实际线程数。
+
+    幂等：重复调用只会再换一个池，不会出错。判据 tests/test_thread_pool_not_starved.py
+    直接调它，保证测的跟线上跑的是同一条路。
+    """
+    import asyncio as _asyncio
+    from concurrent.futures import ThreadPoolExecutor as _TPE
+
+    raw = (os.environ.get("SLIDERULE_EXECUTOR_THREADS") or "").strip()
+    try:
+        n = int(raw) if raw else _DEFAULT_EXECUTOR_THREADS
+        if n <= 0:
+            raise ValueError
+    except ValueError:
+        # 配错一个数就让服务起不来，比用默认值糟得多（同 default_max_tokens 那条）。
+        print(f"[startup] ⚠ SLIDERULE_EXECUTOR_THREADS={raw!r} 不是正整数，回退 {_DEFAULT_EXECUTOR_THREADS}")
+        n = _DEFAULT_EXECUTOR_THREADS
+    _asyncio.get_running_loop().set_default_executor(
+        _TPE(max_workers=n, thread_name_prefix="sliderule")
+    )
+    return n
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("[startup] SlideRule V5 Python Backend starting...")
+    # ⚠ 必须在这里、且在任何 to_thread 之前：默认执行器一旦被首次 to_thread
+    #   建出来，后面再 set 也换不掉已经排在旧池上的任务。
+    _threads = configure_event_loop_executor()
+    print(
+        f"[startup] event-loop executor: {_threads} threads "
+        f"(默认 min(32, cpu+4)={min(32, (os.cpu_count() or 1) + 4)}，"
+        f"流式推演一组占 5 槽——不显式放大则 2 人并发即排队)"
+    )
     # 启动即亮牌：LLM 配置就绪度一行可见（缺 key 时新颖意图必然 0/6，
     # 这必须在启动日志里喊出来，而不是等用户撞上 blocked 再排查）。
     llm = _llm_readiness()
