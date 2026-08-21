@@ -49,7 +49,12 @@ for (const tag of ['round1', 'round2']) {
   }
   const files = readdirSync(dir).filter((f) => f.endsWith('.html')).sort();
   for (const f of files) {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    // 视口按设备走：手机端页面是照 390×844 设计的（page_shell 里 antd-mobile
+    // TabBar demo2 那套），拿 1440 宽去截，底栏和卡片全会被拉变形——
+    // 那样截出来的"问题"是尺子造成的，不是页面的。
+    const vw = process.env.SHOT_VIEWPORT === 'phone'
+      ? { width: 390, height: 844 } : { width: 1440, height: 900 };
+    const page = await browser.newPage({ viewport: vw });
     // 拦下 CDN，用本地那份应答。**顺带断掉其余外部请求**：截图要的是
     // 「这一版页面长什么样」，不是「今天网络通不通」——放任外部资源会让
     // 同一份 HTML 在不同时刻截出不同的图，那样的对照没法信。
