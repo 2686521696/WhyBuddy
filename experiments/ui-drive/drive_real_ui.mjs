@@ -26,7 +26,23 @@ if (!OUT || !GOAL) { console.error('用法: drive_real_ui.mjs <输出目录> <�
 // 不显式指路径会报 "Executable doesn't exist"。**不要 playwright install**。
 const CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const b = await chromium.launch({ executablePath: CHROME });
-const p = await (await b.newContext({ viewport: { width: 1920, height: 1080 } })).newPage();
+const ctx = await b.newContext({ viewport: { width: 1920, height: 1080 } });
+
+// ⚠ 必须先登录：推演接口要鉴权，未登录时 POST /drive-full-stream 直接 401，
+//   而前端**不会把这个错显示出来**——它只是原地反复重试 PUT /sessions（404），
+//   界面停在「2 步 1s」不动。表现完全像「推演很慢」，其实是压根没开始。
+//   凭据从环境变量取，不写死在文件里。
+const EMAIL = process.env.UI_EMAIL, PASSWORD = process.env.UI_PASSWORD;
+if (EMAIL && PASSWORD) {
+  const r = await ctx.request.post('http://127.0.0.1:3000/api/sliderule/account/login', {
+    data: { email: EMAIL, password: PASSWORD },
+  });
+  console.log(`  登录 HTTP ${r.status()}${r.ok() ? '' : ' —— 未登录会 401，推演不会开始'}`);
+  if (!r.ok()) { await b.close(); process.exit(1); }
+} else {
+  console.log('  ⚠ 没给 UI_EMAIL / UI_PASSWORD，推演大概率 401');
+}
+const p = await ctx.newPage();
 p.on('console', m => {
   const t = m.text();
   if (/error|Error|失败/i.test(t) && !/favicon/.test(t)) console.log('  [console]', t.slice(0, 130));
