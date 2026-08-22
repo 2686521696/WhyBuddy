@@ -33,6 +33,18 @@ export interface AppStoreSummary {
   entity_count: number;
   page_count: number;
   /**
+   * 角色数 / AI 能力数（2026-08-22）。卡片指标行要显示它们，此前只能对每张卡
+   * 再打一次 `GET /apps/{id}` 把整包 model_json + pages_json 拉下来数——首屏
+   * 30 张卡就是 30 次请求、1.9 MB，全为了两个数字。
+   *
+   * **可能是 null，且 null ≠ 0**：null 是「这份模型里没有 rbac / aigc 这一段，
+   * 数不出来」，0 是「确实一个角色都没有」。两者在卡片上必须长得不一样——
+   * 数不出来就不画这个徽标，画个 0 是在编（后端同一条纪律见 app_store 的
+   * _count_or_none）。可选：老后端不返回这两个字段，缺失同样按「不知道」处理。
+   */
+  role_count?: number | null;
+  ai_count?: number | null;
+  /**
    * 归属与可见性（2026-08-02）。
    *
    * owner_id 为 null = 无主的存量应用。语义与后端一致（app_access）：

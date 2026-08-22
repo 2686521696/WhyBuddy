@@ -1,14 +1,24 @@
 /**
- * 应用中心卡片缩略图：贴参照板 vs 活渲染的取舍。
+ * 应用中心卡片封面：贴图 vs 空态。
  *
- * 背景：卡片此前一律活渲染——每张挂一个真的 AppRuntimeScreen（antd 表格 +
- * echarts）。LiveAppThumb 自己的注释记着实测「生产构建下同屏 14 张卡，最长
- * 单任务 4106ms，主线程连续堵四秒」。生成应用时本来就画过一张首页参照板，
- * 现在把那张图落库当缩略图，活渲染降级成回落路径。
+ * ## 两段历史
  *
- * 这份测试盯两件事：
- *   ① 取舍判据本身（新能力缺席时必须退回旧行为，不是退化成空白卡）；
- *   ② 有图时**活渲染不被挂载**——那正是这次改动省下来的开销，挂了就白改。
+ * ① 2026-08-01 之前，卡片一律**活渲染**——每张挂一个真的 AppRuntimeScreen
+ *    （antd 表格 + echarts）。那个组件自己的注释记着实测「生产构建下同屏 14 张
+ *    卡，最长单任务 4106ms，主线程连续堵四秒」。于是把生成时那张首页参照板
+ *    落库当缩略图，活渲染降级成回落路径。
+ *
+ * ② 2026-08-22，**回落路径整个删掉**（用户："以图片为主，动态渲染就不要了，
+ *    如果没图就使用 Ant Design 的暂无图片"）。卡片封面从此只有两档：
+ *    有图贴图 / 没图 antd Empty。
+ *
+ * 这份测试盯三件事：
+ *   ① 取舍判据本身（shouldUseSheetThumb）；
+ *   ② 有图时**不渲染 fallback**——那正是当初省下来的开销；
+ *   ③ 活渲染真的从卡片上消失了，**而采集点没跟着一起消失**——真截图仍由推演
+ *      收口那次渲染采（studio-landing-shot）。删一半会让新应用从此永远没图，
+ *      而卡片照样"正常"显示空态，没有任何报错。这是本仓第三条（正向判据齐全、
+ *      反向判据缺失）最典型的形状，所以下面专门有一条反向判据钉它。
  *
  * 没有 jsdom（仓库里 React 测试统一用 renderToStaticMarkup），所以 onError
  * 触发的回落转换测不了；判据本身抽成了纯函数 shouldUseSheetThumb，转换后要
@@ -21,35 +31,35 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it, expect } from "vitest";
 
 import { DEVICE_ASPECT } from "@/lib/justified-rows";
-import { SheetThumb, appPreviewUrl, shouldUseSheetThumb } from "../AppsWorkbench";
+import { EmptyThumb, SheetThumb, appPreviewUrl, shouldUseSheetThumb } from "../AppsWorkbench";
 
 describe("shouldUseSheetThumb", () => {
   it("App Store 卡且后端说有图 → 贴图", () => {
     expect(shouldUseSheetThumb({ appId: "a1", summary: { has_preview: true } })).toBe(true);
   });
 
-  it("后端说没图 → 活渲染（老记录就是这一档）", () => {
+  it("后端说没图 → 空态（老记录就是这一档）", () => {
     expect(shouldUseSheetThumb({ appId: "a1", summary: { has_preview: false } })).toBe(false);
   });
 
-  it("has_preview 字段缺席 → 活渲染，即改动前的行为", () => {
-    // 老 Python 后端不返回这个字段。新能力缺席必须退回旧行为，
-    // 不能退化成空白卡。
+  it("has_preview 字段缺席 → 空态（老后端就是这一档）", () => {
+    // 老 Python 后端不返回这个字段，缺失一律按"没图"。
+    // ⚠ 2026-08-22 之前这一档回落活渲染，所以当时的说法是"新能力缺席退回旧
+    //   行为"；现在这一档是 antd Empty。判据本身没变，变的是 false 的去处。
     expect(shouldUseSheetThumb({ appId: "a1", summary: {} })).toBe(false);
     expect(shouldUseSheetThumb({ appId: "a1", summary: null })).toBe(false);
     expect(shouldUseSheetThumb({ appId: "a1" })).toBe(false);
   });
 
-  it("会话卡没有 app_id → 无图可取，活渲染", () => {
+  it("会话卡没有 app_id → 无图可取，空态", () => {
     // 还没落进 App Store 的会话卡：就算摘要里莫名带了 has_preview，
     // 也没有能取图的 id。
     expect(shouldUseSheetThumb({ appId: null, summary: { has_preview: true } })).toBe(false);
     expect(shouldUseSheetThumb({ appId: "", summary: { has_preview: true } })).toBe(false);
   });
 
-  it("spec-first 有图也贴图——不再因为 iframe 截不到就永远活渲染", () => {
-    // 判据本身不看 has_pages：有 appId + has_preview 就贴。media 分支必须先
-    // 问 shouldUseSheetThumb，再决定要不要挂 HtmlLiveThumb（源码顺序下面钉）。
+  it("spec-first 有图也贴图——不因为它是整页 HTML 就另开一路", () => {
+    // 判据本身不看 has_pages：有 appId + has_preview 就贴。
     expect(shouldUseSheetThumb({ appId: "spec-1", summary: { has_preview: true } })).toBe(true);
   });
 });
@@ -85,15 +95,14 @@ describe("appPreviewUrl", () => {
   });
 });
 
-describe("回落的活渲染必须按宽度缩放", () => {
-  const src = readFileSync(new URL("../AppsWorkbench.tsx", import.meta.url), "utf8");
-
-  it("卡片比例与活渲染画布同比（2026-08-03 起）", () => {
+describe("卡片画幅与出图画布同比", () => {
+  it("卡片比例与渲染画布同比（2026-08-03 起）", () => {
     // 这条原先断言的是**两者不相等**——08-01 卡片对齐出图、画布留在 0.462
     // 时的状态。08-03 画布也改成 9:16 之后前提反转了，断言跟着反转。
     //
-    // 相等之后 contain 与 width 两种缩放算出来一样，下面那条 scaleFit 断言
-    // 就不再是"修补"而是"显式声明"——它仍然必须在，理由见那一条。
+    // 卡片不再活渲染之后这条仍然有意义：贴上来的真截图就是照这个画布拍的
+    // （studio-landing-shot），画幅一旦分叉，图进卡片就会被 object-cover 裁掉
+    // 一截或留边。
     const canvas = readFileSync(
       new URL("../../../sliderule/live-runtime/AppRuntimeScreen.tsx", import.meta.url),
       "utf8"
@@ -105,15 +114,6 @@ describe("回落的活渲染必须按宽度缩放", () => {
     expect(canvasAspect).toBeCloseTo(0.5625, 4);
   });
 
-  it("LiveAppThumb 必须传 scaleFit=\"width\"", () => {
-    // 不传吃的是默认 contain。上面那条已经证明两个比例不相等，于是 contain
-    // 会在手机档卡片两侧各留一条灰边（实测宽度只铺 81.8%）。
-    // "width" 模式就是为缩略图墙加的（见 AppRuntimeScreen 的 ScaleFitMode）。
-    const block = src.slice(src.indexOf("function LiveAppThumb"));
-    const mount = block.slice(0, block.indexOf("</React.Suspense>"));
-    expect(mount).toContain("LazyAppRuntimeScreen");
-    expect(mount).toMatch(/scaleFit=["{]?["']?width/);
-  });
 });
 
 describe("SheetThumb", () => {
@@ -173,42 +173,69 @@ describe("SheetThumb", () => {
   });
 });
 
-describe("spec-first 卡有图就贴图", () => {
-  const stripped = readFileSync(new URL("../AppsWorkbench.tsx", import.meta.url), "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/\/\/[^\n]*/g, " ");
+describe("卡片封面只有两档：贴图 / 空态", () => {
+  const raw = readFileSync(new URL("../AppsWorkbench.tsx", import.meta.url), "utf8");
+  // 先剥行注释再剥块注释。反过来会出事：源码里一句
+  // `// …不打任何 /api/*。` 的斜杠星号被当成块注释开头，一口吞掉几千字符。
+  const stripped = raw.replace(/\/\/[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, " ");
+  const media = (() => {
+    const from = stripped.indexOf("media={(() => {");
+    return stripped.slice(from, stripped.indexOf("metrics=", from));
+  })();
 
-  it("media 有图先 return SheetThumb，HtmlLiveThumb 只当没图或 img 失败的回落", () => {
-    const mediaStart = stripped.indexOf("media={(() => {");
-    const media = stripped.slice(mediaStart, stripped.indexOf("metrics=", mediaStart));
+  it("有图 → SheetThumb；剩下一律 EmptyThumb", () => {
     expect(media).toContain("shouldUseSheetThumb");
-    expect(media).toContain("HtmlLiveThumb");
-    const sheetReturn = media.indexOf("if (shouldUseSheetThumb");
-    const htmlReturn = media.indexOf("if (htmlLive) return htmlLive");
-    expect(sheetReturn).toBeGreaterThan(-1);
-    expect(htmlReturn).toBeGreaterThan(-1);
-    expect(sheetReturn).toBeLessThan(htmlReturn);
-    // 反面：无条件 `if (specPages) return <HtmlLiveThumb` 会让有图也挂 iframe
-    expect(media).not.toMatch(/if\s*\(\s*detail\?\.specPages\s*\)\s*\{\s*return\s+</);
+    expect(media).toContain("SheetThumb");
+    expect(media).toContain("EmptyThumb");
+    // SheetThumb 的 fallback（图拉不到时）也必须是空态，不能又摸回活渲染。
+    expect(media).toMatch(/fallback=\{<EmptyThumb\s*\/>\}/);
   });
 
-  it("HtmlLiveThumb 没图时会采集——剥注释后必须还能看到 captureAndUpload", () => {
-    const fnStart = stripped.indexOf("function HtmlLiveThumb");
-    const fn = stripped.slice(fnStart, stripped.indexOf("function SpecPagesPreview"));
-    expect(fn).toContain("captureAndUpload");
-    expect(fn).toContain("captureFor");
+  it("★ 活渲染在卡片上必须彻底消失——留一处就等于没改", () => {
+    // 这条盯的是本仓第一条纪律的反面：改了不通电的那一处。三个组件里只要
+    // 还剩一个挂在 media 上，同屏几十张卡照样把主线程堵死，而"贴图"这套
+    // 判据全绿。整文件级地断言，不只看 media 那一段。
+    for (const gone of ["HtmlLiveThumb", "LiveAppThumb", "useThumbMountGate", "PendingAppThumb"]) {
+      expect(stripped, `${gone} 还在 AppsWorkbench 里`).not.toContain(gone);
+    }
+    // 卡片上不许再有应用运行时/整页面。只读预览是另一回事——它在
+    // SpecPagesPreview / 预览弹窗里，不在 media 分支。
+    expect(media).not.toContain("AppRuntimeScreen");
+    expect(media).not.toContain("HtmlAppSurface");
   });
 
-  it("HtmlLiveThumb 必须 cover + fillPhone，画布层必须脱离文档流", () => {
-    // ⚠ 2026-08-20 真机：width 缩放把 1920×1080 缩进 9:16 卡，顶上指甲盖、
-    // 下面全白；流式 1920 高还把 masonry 格子撑爆。改回 width / 拿掉
-    // absolute / 不传 fillPhone，这条必红。
-    const fnStart = stripped.indexOf("function HtmlLiveThumb");
-    const fn = stripped.slice(fnStart, stripped.indexOf("function SpecPagesPreview"));
-    expect(fn).toMatch(/useScaleToFit\([^)]*"cover"/);
-    expect(fn).not.toMatch(/useScaleToFit\([^)]*"width"/);
-    expect(fn).toContain("fillPhone={isPhone}");
-    expect(fn).toContain('position: "absolute"');
+  it("★ 反向：采集点不许跟着一起没——否则新应用从此永远没图", () => {
+    // 卡片过去兼着"没图就顺手采一张"的活（captureAndUpload + captureFor）。
+    // 删活渲染时把这条支路一起删掉是必然的，**但采集本身必须还有人干**，
+    // 否则线上会是：卡片一切正常（空态嘛），而截图从此再也不产生，谁都不会
+    // 收到报错。真截图现在由推演收口那次渲染采。
+    const shot = readFileSync(
+      new URL("../../../sliderule/studio-landing-shot.tsx", import.meta.url),
+      "utf8"
+    );
+    expect(shot).toContain("captureAndUpload");
+    // 而卡片这边确实不再是采集点。
+    expect(stripped).not.toContain("captureAndUpload(");
+  });
+
+  it("会话卡的空态说的是进度，不是「这个应用没图」", () => {
+    // 两件事长成一个样，用户就没法从卡片上区分"生成失败"和"还在跑"。
+    expect(media).toContain('item.source === "session"');
+    expect(media).toContain("推演未闭环");
+    expect(media).toContain("待补充信息");
+  });
+
+  it("空态用的是 antd Empty（用户指定），且不会把矮卡撑破", () => {
+    const html = renderToStaticMarkup(<EmptyThumb />);
+    // antd Empty 的类名前缀是它自己的约定，换成手搓 div 这条就红。
+    expect(html).toContain("ant-empty");
+    expect(html).toContain("暂无预览图");
+    // antd 默认 image 高 100px，塞进 146px 高的桌面卡会顶掉文案。
+    expect(html).toMatch(/height:\s*44px/);
+  });
+
+  it("会话卡的描述能传进空态", () => {
+    expect(renderToStaticMarkup(<EmptyThumb description="推演未闭环" />)).toContain("推演未闭环");
   });
 });
 

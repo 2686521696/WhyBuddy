@@ -130,14 +130,104 @@ const summary = (over: Partial<AppStoreSummary> = {}): AppStoreSummary => ({
 });
 
 describe("deriveDetailFromAppSummary", () => {
-  it("App Store 摘要 → 即时 runnable 占位，计数取摘要、模型待懒拉", () => {
-    const d = deriveDetailFromAppSummary(summary());
+  it("App Store 摘要 → runnable 卡片详情，计数全取摘要", () => {
+    const d = deriveDetailFromAppSummary(summary({ role_count: 2, ai_count: 1 }));
     expect(d.status).toBe("runnable"); // App Store 只存闭环应用
     expect(d.entities).toBe(3);
     expect(d.pages).toBe(4);
-    expect(d.model).toBeNull(); // 摘要不含模型，进视口再拉
+    expect(d.roles).toBe(2);
+    expect(d.aiCaps).toBe(1);
+    // 摘要给不出的两样保持 null，不编（点开预览才按需拉整包）。
+    expect(d.model).toBeNull();
+    expect(d.specPages).toBeNull();
     expect(d.identity?.productName).toBe("咖营通");
     expect(d.identity?.theme).toBe("forest");
+  });
+
+  it("★ null ≠ 0：数不出来的计数保持 null，不许落成 0", () => {
+    // 0 是在断言"这个应用没有角色"，null 是"这份模型里没这一段，数不出来"。
+    // 写成 `s.role_count || 0` 这条必红——那正是 2026-08-22 前的写法会犯的错。
+    const d = deriveDetailFromAppSummary(summary({ role_count: null, ai_count: undefined }));
+    expect(d.roles).toBeNull();
+    expect(d.aiCaps).toBeNull();
+  });
+
+  it("★ 0 是合法计数，不许被当成缺失吞掉", () => {
+    // `??` 和 `||` 的分水岭就在这一条：`||` 会把 0 和 undefined 一起吞成 0，
+    // 于是"确实没有角色"和"数不出来"合并成同一个显示，判据也就永远咬不住。
+    const d = deriveDetailFromAppSummary(summary({ role_count: 0, ai_count: 0 }));
+    expect(d.roles).toBe(0);
+    expect(d.aiCaps).toBe(0);
+  });
+});
+
+/**
+ * ★ 2026-08-22：卡片不再为了两个数字拉整包。
+ *
+ * 改动前每张 App Store 卡进视口就 `GET /apps/{id}`，把整包 model_json +
+ * pages_json 拉下来数角色/AI——首屏 30 张卡 = 30 次请求、1.9 MB。后端把
+ * role_count / ai_count 放进列表摘要之后，卡片这一趟网络整个没了。
+ *
+ * 这一组盯的是**接线**，不是纯函数：函数写对了不等于它被用上，本仓第三条。
+ */
+describe("应用卡不再拉整包", () => {
+  const raw = readFileSync(new URL("../AppsWorkbench.tsx", import.meta.url), "utf8");
+  const src = sourceWithoutComments(raw);
+  const ensure = src.slice(
+    src.indexOf("const ensureDetail = React.useCallback"),
+    src.indexOf("const ensureFullDetail = React.useCallback")
+  );
+
+  it("ensureDetail 的 app 分支不打网络", () => {
+    expect(ensure).toContain("deriveDetailFromAppSummary");
+    // 反向：整段 ensureDetail 里不许再出现 getApp。
+    expect(ensure).not.toContain("getApp");
+    // app 分支必须先 return，别掉进下面那条会话卡的 fetch 里。
+    expect(ensure).toMatch(/gi\.source === "app"[\s\S]{0,400}?return;/);
+  });
+
+  it("会话卡还得拉——它们没落进 App Store，状态只在会话档里", () => {
+    // 反向的反向：一起删掉会让推演中的卡永远显示"加载中…"。
+    expect(ensure).toContain("/api/sliderule/sessions/");
+  });
+
+  it("★ 整包改成点开预览才拉，且真的接在点击上", () => {
+    // 只写一个 ensureFullDetail 不接线，跑出来的现象是：点开弹窗永远空白，
+    // 而所有纯函数判据全绿。这就是本仓第三条说的那种"闸全绿但东西没了"。
+    const full = src.slice(
+      src.indexOf("const ensureFullDetail = React.useCallback"),
+      src.indexOf("const loadMoreApps")
+    );
+    expect(full).toContain("getApp(");
+    expect(full).toContain("deriveDetailFromAppRecord");
+    // 接线：卡片 onClick 里必须调它，且和开弹窗在一起。
+    const click = src.slice(src.indexOf("onClick={() => {"), src.indexOf("topRight={"));
+    expect(click).toContain("ensureFullDetail(item)");
+    expect(click).toContain("setPreviewModal(item)");
+  });
+
+  it("★ 点开的判据不能再问 model/specPages —— 那两样如今恒为 null", () => {
+    // 改动前是 `detail?.model || detail?.specPages ? setPreviewModal : undefined`。
+    // 卡片详情改从摘要推之后这两样永远是 null，那条判据会把每一张 App Store
+    // 卡判成"点了没反应"——没有报错、没有告警、判据全绿。
+    const click = src.slice(src.indexOf("onClick={() => {"), src.indexOf("topRight={"));
+    expect(click).toMatch(/if\s*\(isApp\)/);
+    const appBranch = click.slice(click.indexOf("if (isApp)"), click.indexOf("}", click.indexOf("setPreviewModal(item)")));
+    expect(appBranch).not.toContain("detail?.model");
+  });
+
+  it("指标行：数不出来就不画那个徽标", () => {
+    const metrics = src.slice(src.indexOf("metrics={"), src.indexOf("statusDot={"));
+    expect(metrics).toContain("detail.roles !== null");
+    expect(metrics).toContain("detail.aiCaps !== null");
+  });
+
+  it("摘要类型带上这两个可空计数（前后端同一口径）", () => {
+    const client = sourceWithoutComments(
+      readFileSync(new URL("../app-store-client.ts", import.meta.url), "utf8")
+    );
+    expect(client).toMatch(/role_count\?:\s*number \| null/);
+    expect(client).toMatch(/ai_count\?:\s*number \| null/);
   });
 });
 

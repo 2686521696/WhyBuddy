@@ -60,13 +60,10 @@ import {
   Heart,
   BookOpen,
 } from "lucide-react";
-import { requestMountPermit } from "@/lib/mount-scheduler";
-import { captureAndUpload } from "@/lib/thumb-capture";
+// 卡片封面的空态。antd 已经是本仓依赖（admin 后台整套在用），不新引包。
+import { Empty } from "antd";
 import { resolveIdentityTheme } from "@/pages/sliderule/live-runtime/identity-themes";
-// spec-first HTML 应用面的配料（2026-08-14 应用中心接线）。这几个都是轻量纯
-// TS（无重依赖）；重的 DOMPurify/渲染面走下面的 React.lazy 分包。
-import { specPageViewport, useScaleToFit } from "@/pages/sliderule/live-runtime/canvas-scale";
-import { deriveBindingSource } from "@/pages/sliderule/live-runtime/derive-binding-source";
+// 只读预览的运行时种子（卡片不再活渲染，但点开大图仍是真渲染）。
 import { initRuntimeState } from "@/pages/sliderule/live-runtime/live-runtime";
 import { seedRuntimeState } from "@/pages/sliderule/live-runtime/demo-seed";
 import { navItemId, navItemName } from "@/pages/sliderule/nav-item";
@@ -253,9 +250,17 @@ export interface AppCardDetail {
   entities: number;
   pages: number;
   flowNodes: number;
-  roles: number;
-  /** AI 能力数（model.aigc.capabilities，E41 指标行） */
-  aiCaps: number;
+  /**
+   * 角色数 / AI 能力数（model.rbac.roles / model.aigc.capabilities，E41 指标行）。
+   *
+   * **null ≠ 0**（2026-08-22）：卡片指标改从列表摘要读之后，这两个数可能是
+   * 「数不出来」——那份模型里压根没有 rbac / aigc 这一段。数不出来就不画这个
+   * 徽标，画个 0 是在断言「这个应用没有角色」。后端同一条纪律见 Python 侧
+   * app_store._count_or_none。从模型算出来的那条路（buildDetailFromModel）
+   * 永远给数字，不会是 null。
+   */
+  roles: number | null;
+  aiCaps: number | null;
   pageNames: string[];
   entityNames: string[];
   /** 应用身份（E40.2）：产品名/主题/图标——应用中心卡片的"脸" */
@@ -361,9 +366,17 @@ export function deriveDetailFromAppRecord(modelJson: unknown, pagesJson?: unknow
 }
 
 /**
- * App Store 列表摘要 → 卡片「即时」详情（模型加载前的占位）。摘要不含完整模型，
- * 所以 model=null、roles/aiCaps 暂 0，进视口懒拉到 model 后由 deriveDetailFromAppRecord
- * 升级。产品名/主题/页面数/实体数摘要里就有，先渲染出来。
+ * App Store 列表摘要 → 卡片详情。
+ *
+ * ⚠ 2026-08-22 之前这只是「模型加载前的占位」：roles/aiCaps 暂填 0，卡片进视口
+ * 再 `getApp` 拉整包升级。实测代价——应用中心首屏 30 张卡 = 30 次 `/apps/{id}`、
+ * 1.9 MB（整包 model_json + pages_json），**全为了指标行那两个数字**。
+ * 后端把 role_count / ai_count 放进摘要之后，这条路成了卡片的**唯一**取数路径，
+ * 不再有"升级"这一步（点开只读预览才拉整包，见 ensureFullDetail）。
+ *
+ * 摘要给不出的两样东西保持 null，不编：
+ *   model     —— 五系统模型本体（预览要用，卡片不用了）
+ *   specPages —— 整页 HTML 本体（同上；has_pages 只是一位布尔）
  */
 export function deriveDetailFromAppSummary(s: AppStoreSummary): AppCardDetail {
   return {
@@ -373,21 +386,28 @@ export function deriveDetailFromAppSummary(s: AppStoreSummary): AppCardDetail {
     entities: s.entity_count || 0,
     pages: s.page_count || 0,
     flowNodes: 0,
-    roles: 0,
-    aiCaps: 0,
+    // `?? null` 而不是 `|| 0`：0 是合法的计数（"确实没有角色"），
+    // `||` 会把它和 undefined 一起吞成 0，两种语义就此合并。
+    roles: s.role_count ?? null,
+    aiCaps: s.ai_count ?? null,
     identity:
       s.product_name || s.theme_id
         ? {
             productName: s.product_name || "",
             theme: s.theme_id || "azure",
-            icon: "boxes", // 摘要不含 icon，默认；模型加载后升级
+            // 摘要不含 icon —— 2026-08-22 起卡片不再拉整包，也就没有「模型
+            // 加载后升级」这一步了，App Store 卡一律是这个通用图标。要恢复
+            // 得给摘要再加一列（同 role_count 那套迁移），暂未做。
+            icon: "boxes",
           }
         : null,
     pageNames: [],
     entityNames: [],
     stableDigest: undefined,
-    model: null, // 懒加载：卡进视口再 getApp 拉完整模型
-    specPages: null, // 摘要不含页面本体（has_pages 只是一位布尔），拉到完整记录再升级
+    // 卡片不需要这两样（封面走贴图，指标走摘要）。点开只读预览才按需拉整包
+    // 并就地把这条详情换掉——见 ensureFullDetail。
+    model: null,
+    specPages: null,
   };
 }
 
@@ -599,36 +619,6 @@ export function pageLooksFull(received: number, pageSize: number = GALLERY_PAGE_
   return received >= pageSize;
 }
 
-/** 未闭环/无模型时的占位态（推演中 / blocked）——不是缩略图失败兜底，是诚实展示进度。 */
-function PendingAppThumb({ detail }: { detail: AppCardDetail | null }) {
-  return (
-    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#eef4ff] to-[#f7f8fa]">
-      <div className="text-center">
-        <span className="inline-flex items-end gap-1">
-          {[0, 1, 2].map(i => (
-            <span
-              key={i}
-              className="h-1 w-1 animate-pulse rounded-full bg-[#1677ff]"
-              style={{ animationDelay: `${i * 160}ms` }}
-            />
-          ))}
-        </span>
-        <div className="mt-1 text-[11px] text-stone-400">
-          {detail?.blocked ? "待补充信息" : "推演未闭环"}
-        </div>
-        {detail && (
-          <div className="mx-auto mt-1.5 h-[3px] w-16 overflow-hidden rounded-full bg-stone-200">
-            <div
-              className="h-full rounded-full bg-[#1677ff]"
-              style={{ width: `${Math.min(100, (detail.evidenceCount / 6) * 100)}%` }}
-            />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 /**
  * 首屏还没数据时的占位。
  *
@@ -704,12 +694,6 @@ const LazyAppRuntimeScreen = React.lazy(() =>
 
 // spec-first HTML 应用面（同源 iframe + DOMPurify + 填孔运行时）。DOMPurify
 // 不该进应用中心首屏包——只有带 pages_json 的卡才需要它，同一套 lazy 纪律。
-const LazyHtmlAppSurface = React.lazy(() =>
-  import("@/pages/sliderule/live-runtime/html-app-surface").then(m => ({
-    default: m.HtmlAppSurface,
-  }))
-);
-
 // 只读预览模态用的整页舞台（缩放画布 + 填数徽标，切页走页面自己的菜单），
 // 与推演右侧同一个组件。
 const LazySpecPageStage = React.lazy(() =>
@@ -719,251 +703,42 @@ const LazySpecPageStage = React.lazy(() =>
 );
 
 /**
- * 活渲染缩略图（2026-07-23，取代 Phase A 的服务端截图方案）。
+ * ⚠ 2026-08-22：这里原本住着卡片的**活渲染缩略图**——useThumbMountGate（视口 +
+ * 挂载调度双闸）、LiveAppThumb（每张卡挂一个真的 AppRuntimeScreen）、
+ * HtmlLiveThumb（每张卡挂一个 spec-first 整页 iframe），外加它们就地采集真截图
+ * 回传的那条支路（captureAndUpload + CAPTURE_SETTLE_MS）。整套删掉了。
  *
- * 应用本来就是拿 five-system 模型实时渲染出来的（AppRuntimeScreen），缩略图
- * 没必要额外截一张图存起来——直接把同一个组件按卡片尺寸挂载、禁用交互即可：
- * 永远最新、零缓存失效问题、不用额外的存储/沙盒基建。
+ * 为什么删：卡片封面统一走**贴图**。活渲染的代价是它自己的注释记着的——
+ * 「生产构建下同屏 14 张卡，最长单任务 4106ms，主线程连续堵四秒」；分批挂载
+ * 只是把这四秒摊开，总工作量一点没少。而一张 <img> 的解码在合成线程，主线程
+ * 零成本。
  *
- * AppRuntimeScreen 自己的 useScaleToFit 会把 1440×810 画布按容器实际尺寸
- * 等比缩小，这里只需要给够 h-full w-full 的容器；设备切换条经 controlsContainer
- * portal 到一个隐藏节点，缩略图里不需要看见它。
+ * 删了之后真截图从哪来：推演收口那次渲染（pages/sliderule/studio-landing-shot.tsx）
+ * ——那次渲染本来就要发生，采下来存住。**卡片不再是采集点**，所以此前从没被
+ * 活渲染过的存量应用不会再自己长出图来，它们的封面就是"暂无预览图"。
+ * 这是明确取舍（用户 2026-08-22：不补拍）。
  *
- * 2026-07-30 追加**分批挂载**（requestMountPermit）。进视口只是拿到"该挂了"，
- * 真正挂哪一批由全局排队器决定。理由是实测：生产构建下同屏 14 张卡，最长
- * 单任务 4106ms——主线程连续堵四秒，这四秒里页面点不动滚不动。滚动本身全档
- * 稳在 60fps、20 张堆内存才 93MB，所以问题只在首屏挂载这一处，分批就能治，
- * 不需要虚拟化。详见 lib/mount-scheduler.ts 与 scripts/app-wall-perf.mjs。
- *
- * 两道闸串联的顺序要对：**先进视口、再排队**。反过来（先排队再看视口）会把
- * 滚动到很远处的卡也排进队里，白占许可名额。
+ * 会话卡同理：没落进 App Store 就没有图，走同一张空态。
  */
-/**
- * 活渲染挂上之后，等多久再采集。
- *
- * 挂载完成 ≠ 画面就绪：echarts 要拿到容器尺寸后才画，表格与图标还有懒加载的
- * chunk。1500ms 是照 freeform 预览截图那条已经在生产验证过的路径取的同一个数
- * （Python 侧 _FREEFORM_PREVIEW_SCREENSHOT_JS_TEMPLATE 里的 waitForTimeout）。
- * 采早了拿到的是半渲染的画面，而它会被当成"这个应用长这样"存起来——比没有更糟。
- */
-const CAPTURE_SETTLE_MS = 1500;
 
-/**
- * 活渲染缩略图的双闸（LiveAppThumb / HtmlLiveThumb 共用）：
- *   闸一：进视口了吗（IntersectionObserver，rootMargin 200px 预热）；
- *   闸二：排到我了吗（requestMountPermit，全局批 3、批间 yield）。
- * 两个都过才挂真渲染。原先整套长在 LiveAppThumb 里，HTML 缩略图要同一套
- * 节流——抽出来共用而不是复制一份（复制必然分叉，本仓数过太多次）。
- */
-function useThumbMountGate(): {
-  wrapRef: React.RefObject<HTMLDivElement | null>;
-  visible: boolean;
-} {
-  const wrapRef = React.useRef<HTMLDivElement | null>(null);
-  const [inView, setInView] = React.useState(false);
-  const [granted, setGranted] = React.useState(false);
-
-  React.useEffect(() => {
-    const el = wrapRef.current;
-    if (!el || typeof IntersectionObserver === "undefined") {
-      setInView(true);
-      return;
-    }
-    const io = new IntersectionObserver(
-      entries => {
-        if (entries.some(e => e.isIntersecting)) {
-          setInView(true);
-          io.disconnect();
+/** 没有封面图时的统一空态（antd Empty，用户 2026-08-22 指定）。 */
+export function EmptyThumb({ description }: { description?: React.ReactNode }) {
+  return (
+    <div
+      className="flex h-full w-full items-center justify-center bg-[#f7f8fa]"
+      data-testid="app-thumb-empty"
+    >
+      <Empty
+        image={Empty.PRESENTED_IMAGE_SIMPLE}
+        // antd 默认给 image 一个 100px 高度 + 8px margin，卡片矮的时候会被裁。
+        // 缩到 44px，跟卡片信息条的字号量级对得上。
+        // 用 styles.image 而不是 imageStyle —— 后者在 antd 5 已废弃，留着每次
+        // 渲染都往控制台打一条 deprecated（测试里就打出来了）。
+        styles={{ image: { height: 44, marginBottom: 4 } }}
+        description={
+          <span className="text-[11px] text-stone-400">{description ?? "暂无预览图"}</span>
         }
-      },
-      { rootMargin: "200px" }
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-
-  // 进了视口才排队（顺序见文件头）。清理函数必须取消排队——卡片在拿到许可前
-  // 被卸载是常态（改搜索、翻页、切库），不取消就会对已卸载组件 setState。
-  React.useEffect(() => {
-    if (!inView) return;
-    return requestMountPermit(() => setGranted(true));
-  }, [inView]);
-
-  return { wrapRef, visible: inView && granted };
-}
-
-function LiveAppThumb({
-  sessionId,
-  model,
-  goal,
-  captureFor,
-  device,
-}: {
-  sessionId: string;
-  model: FiveSystemModel;
-  goal: string;
-  /**
-   * 采集回传的目标 app_id。传了就表示"这张卡是在活渲染，而这个应用还没有真
-   * 截图"——渲染稳定之后就地采一张存住，于是这次活渲染是最后一次
-   * （见 lib/thumb-capture.ts）。不传（会话卡、已经有图）就只渲染，不采集。
-   */
-  captureFor?: string | null;
-  /** 应用档位，决定采集画幅。 */
-  device?: string | null;
-}) {
-  const { wrapRef, visible } = useThumbMountGate();
-  const [hiddenControls, setHiddenControls] = React.useState<HTMLDivElement | null>(null);
-
-  // 渲染稳定之后采一张存住（缩略图三级来源的第一级，见 lib/thumb-capture.ts）。
-  //
-  // 时机：挂上之后再等 CAPTURE_SETTLE_MS。挂载完成 ≠ 画面就绪——echarts 要一帧
-  // 去量容器再画，表格还有懒加载的 chunk。采早了会得到一张半渲染的图，而它会被
-  // 当成"这个应用长这样"存起来，比没有更糟。
-  //
-  // 卸载即取消：滚出去、改搜索、翻页都会卸载这张卡，那时候再采就是对着已经拆掉
-  // 的 DOM 采。节流与预算在 thumb-capture 里全局管，这里只管"什么时候可以采"。
-  React.useEffect(() => {
-    if (!visible || !captureFor) return;
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      if (cancelled || !wrapRef.current) return;
-      void captureAndUpload({ appId: captureFor, container: wrapRef.current, device });
-    }, CAPTURE_SETTLE_MS);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [visible, captureFor, device]);
-
-  return (
-    <div
-      ref={wrapRef}
-      className="pointer-events-none h-full w-full overflow-hidden bg-[#f0f2f5]"
-      data-testid="app-thumb-live"
-    >
-      <div ref={setHiddenControls} style={{ display: "none" }} />
-      {visible && (
-        <React.Suspense fallback={<div className="h-full w-full bg-[#f0f2f5]" />}>
-          <LazyAppRuntimeScreen
-            model={model}
-            sessionId={sessionId}
-            appTitle={goal}
-            controlsContainer={hiddenControls}
-            // 宽度定缩放（2026-08-01 补）。**此前这里什么都没传，吃的是默认
-            // 的 contain**——min(w/W, h/H)，卡片比例跟画布比例对不上时按更紧
-            // 的那一边缩，另一边留边。
-            //
-            // 一直没暴露是因为两边比例恰好相等：卡片比例本来就是照
-            // DEVICE_SPECS 抄的，contain 的两项算出来一样大，等于白留了个坑。
-            // 卡片比例改成跟出图画布对齐（手机档 0.462 → 0.5625）之后坑就踩响
-            // 了：手机档画布 390×844 装进 9:16 的卡，contain 按高度缩，实测
-            // 宽度只铺到 **81.8%**，两侧各留一条灰边。
-            //
-            // 2026-08-03 画布也改成 9:16（405×720），两边又相等了，这个参数
-            // 当下与 contain 等价。**仍然显式传**：等价是当前尺寸表的巧合，
-            // 不是约定；哪张表再动一次，没传的那一边就会重新留边。
-            //
-            // "width" 模式就是为缩略图墙加的（见 ScaleFitMode 的说明与
-            // dev-harness/AppWallPerfHarness——那边一直传着，所以压测台从来
-            // 没复现过这个现象）。宽度铺满、高度按内容溢出后裁掉：缩略图看的
-            // 是"这个应用长什么样"，顶部那一屏就够，留灰边反而更糟。
-            scaleFit="width"
-            // 缩略图不画缩放标识：9px 的字再缩到 21% 读不出来，而且会跟卡片
-            // 底部那条信息浮层抢同一个右下角，叠成一块糊斑。
-            showScaleBadge={false}
-          />
-        </React.Suspense>
-      )}
-    </div>
-  );
-}
-
-/**
- * spec-first HTML 应用的活渲染缩略图（2026-08-14 应用中心接线）。
- *
- * 有 shot 时卡片走 SheetThumb，**不会挂到这里**。这里只是没图时的回落，
- * 以及回落发生时顺手采一张（captureFor）——SnapDOM 拍同源 iframe
- * （documentElement，不是父容器、也不是 body），不再采出一张空白。
- *
- * 08-14 曾把这一支排在 shot 前面：当时截图拍不到 iframe，存量 shot 还是
- * 接线前老区块渲染器的光板表格。拍框内文档之后那条理由不成立了，有图就贴图。
- *
- * 渲染仍过同一套双闸（视口 + 挂载调度），滚动时不齐射。
- *
- * 落地页取导航第一项（orderedSpecPages）——跟推演舞台/交付物的页序同源。
- * 填数走 deriveBindingSource(model, 种子运行时)。
- */
-function HtmlLiveThumb({
-  specPages,
-  model,
-  captureFor,
-  device,
-}: {
-  specPages: SpecPagesDetail;
-  model: FiveSystemModel | null;
-  captureFor?: string | null;
-  device?: string | null;
-}) {
-  const { wrapRef, visible } = useThumbMountGate();
-  // 视口按设备选：桌面 1920×1080 / 手机 390×844。
-  // 卡片墙仍是 16:9 / 9:16（DEVICE_ASPECT），跟 390×844 不同比。
-  // 必须 cover：width 会把横屏画布缩进竖卡后底下留白。
-  const viewport = specPageViewport(specPages.device);
-  const { ref: fitRef, scale } = useScaleToFit(viewport.w, viewport.h, "cover");
-  const isPhone = specPages.device === "phone";
-  const landing = React.useMemo(() => orderedSpecPages(specPages)[0] ?? null, [specPages]);
-  const source = React.useMemo(
-    () => deriveBindingSource(model, model ? seedRuntimeState(initRuntimeState(model), model) : null),
-    [model]
-  );
-
-  React.useEffect(() => {
-    if (!visible || !captureFor) return;
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      if (cancelled || !wrapRef.current) return;
-      void captureAndUpload({ appId: captureFor, container: wrapRef.current, device });
-    }, CAPTURE_SETTLE_MS);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [visible, captureFor, device]);
-
-  return (
-    <div
-      ref={wrapRef}
-      className="pointer-events-none h-full w-full overflow-hidden bg-[#f0f2f5]"
-      data-testid="app-thumb-html"
-    >
-      <div ref={fitRef} className="relative h-full w-full overflow-hidden">
-        {visible && landing && (
-          <React.Suspense fallback={<div className="h-full w-full bg-[#f0f2f5]" />}>
-            <div
-              // absolute：transform 不占文档流。流式 1920×1080 会把
-              // masonic 量到的格子撑成一整屏（真机卡片顶上缩成指甲盖）。
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: viewport.w,
-                height: viewport.h,
-                transform: `scale(${scale})`,
-                transformOrigin: "top left",
-                overflow: "hidden",
-                background: "#fff",
-              }}
-            >
-              <LazyHtmlAppSurface
-                html={landing.html}
-                source={source}
-                fillPhone={isPhone}
-                className="bg-white"
-              />
-            </div>
-          </React.Suspense>
-        )}
-      </div>
+      />
     </div>
   );
 }
@@ -1005,18 +780,19 @@ function SpecPagesPreview({
 }
 
 /**
- * 这张卡该贴图还是走活渲染。
+ * 这张卡贴不贴图。
  *
  * 只有两个条件：是 App Store 卡（有 appId 才有图可取），且后端说它有图。
  * **不区分是哪一路的图**——真截图和参照板走的是同一个接口、同一套画幅，
  * 挑哪张是服务端的事（见 app_store 的 PREVIEW_SOURCE_PRIORITY）。前端多一个
  * 分支只会多一处要跟后端对齐的地方。
  *
- * has_preview 缺失（老后端不返回这个字段）按 false 处理 = 活渲染，也就是
- * 改动前的行为——**新能力缺席时退回旧行为，不是退化成空白**。
+ * ⚠ 2026-08-22 起 false 的去处变了：以前是"回落活渲染"，现在是 EmptyThumb
+ * （用户指定的 antd 暂无图片）。has_preview 缺失（老后端不返回这个字段）仍按
+ * false 处理，只是那一档从"慢但有画面"变成了"快但没画面"。
  *
  * 会话卡（source==="session"）不在此列：它们还没落进 App Store，没有 app_id
- * 也就没有那张图，只能活渲染。
+ * 也就没有那张图。
  */
 export function shouldUseSheetThumb(item: {
   appId?: string | null;
@@ -1588,24 +1364,33 @@ export function AppsWorkbench() {
     // 应用中心与左侧会话列表保持双向同步（E28）
   }, [reloadKey, tab]);
 
+  /**
+   * 卡片详情。
+   *
+   * ⚠ App Store 卡**不再打网络**（2026-08-22）：摘要里已经有指标行要的全部
+   * 数字（页面/角色/AI），封面走贴图，卡片就没有任何理由去拉整包了。
+   * 改动前每张卡一次 `GET /apps/{id}`——首屏 30 张 = 30 次请求、1.9 MB。
+   *
+   * 会话卡还得拉：它们没落进 App Store，状态/进度只在会话档里。
+   * （那是首屏另一笔 2.3 MB，另案。）
+   *
+   * 整包只在**点开只读预览**时按需拉一次，见 ensureFullDetail。
+   */
   const ensureDetail = React.useCallback((gi: GalleryItem) => {
     if (detailsRef.current[gi.key] !== undefined) return;
+    if (gi.source === "app") {
+      // 同步落，不进 inflight——没有异步，也就没有"在飞"这回事。
+      setDetails(prev => ({
+        ...prev,
+        [gi.key]: gi.summary ? deriveDetailFromAppSummary(gi.summary) : null,
+      }));
+      return;
+    }
     if (inflightRef.current.has(gi.key)) return;
     inflightRef.current.add(gi.key);
     void (async () => {
       try {
-        if (gi.source === "app" && gi.appId) {
-          const rec = await getApp(gi.appId);
-          if (!aliveRef.current) return;
-          setDetails(prev => ({
-            ...prev,
-            [gi.key]: rec
-              ? deriveDetailFromAppRecord(rec.model_json, rec.pages_json)
-              : gi.summary
-                ? deriveDetailFromAppSummary(gi.summary)
-                : null,
-          }));
-        } else if (gi.sessionId) {
+        if (gi.sessionId) {
           const res = await fetch(`/api/sliderule/sessions/${encodeURIComponent(gi.sessionId)}`);
           const body = res.ok ? await res.json() : null;
           if (!aliveRef.current) return;
@@ -1616,12 +1401,48 @@ export function AppsWorkbench() {
         }
       } catch {
         if (!aliveRef.current) return;
-        setDetails(prev => ({
-          ...prev,
-          [gi.key]: gi.source === "app" && gi.summary ? deriveDetailFromAppSummary(gi.summary) : null,
-        }));
+        setDetails(prev => ({ ...prev, [gi.key]: null }));
       } finally {
         inflightRef.current.delete(gi.key);
+      }
+    })();
+  }, []);
+
+  /**
+   * 只读预览要的整包（model_json + pages_json）—— **只有点开大图才拉**。
+   *
+   * 卡片详情是从摘要推出来的（model/specPages 都是 null），预览渲染器要的正是
+   * 这两样。拉回来就地把 details[key] 换成完整版；拉不到就保持摘要版，预览里
+   * 显示"这一版没有可预览的页面"，不是白屏。
+   *
+   * 幂等：已经有 model 或 specPages 的不再拉；同一张卡并发点开只拉一次。
+   */
+  // ref 负责同步去重（并发点开只拉一次），state 负责让"加载中"能渲染出来。
+  // 两份必须一起改——只留 ref 的话弹窗永远显示"没有可预览的页面"。
+  const fullInflightRef = React.useRef<Set<string>>(new Set());
+  const [fullInflightKeys, setFullInflightKeys] = React.useState<string[]>([]);
+  const ensureFullDetail = React.useCallback((gi: GalleryItem) => {
+    if (gi.source !== "app" || !gi.appId) return;
+    const have = detailsRef.current[gi.key];
+    if (have?.model || have?.specPages) return;
+    if (fullInflightRef.current.has(gi.key)) return;
+    fullInflightRef.current.add(gi.key);
+    setFullInflightKeys(prev => (prev.includes(gi.key) ? prev : [...prev, gi.key]));
+    void (async () => {
+      try {
+        const rec = await getApp(gi.appId!);
+        if (!aliveRef.current || !rec) return;
+        // 整取整换，不做字段级合并：两份详情是同一份模型的两次投影
+        // （后端数 role_count 用的就是 model.rbac.roles），合并只会多出
+        // 一处"两边不一致时听谁的"的规则。整包更全——真图标、页面名、
+        // 实体名摘要里都没有。
+        setDetails(prev => ({
+          ...prev,
+          [gi.key]: deriveDetailFromAppRecord(rec.model_json, rec.pages_json),
+        }));
+      } finally {
+        fullInflightRef.current.delete(gi.key);
+        setFullInflightKeys(prev => prev.filter(k => k !== gi.key));
       }
     })();
   }, []);
@@ -1919,8 +1740,6 @@ export function AppsWorkbench() {
     const BrandIcon = detail?.identity
       ? BRAND_LUCIDE[detail.identity.icon] ?? Boxes
       : undefined;
-    // 活渲染缩略图的稳定 id：会话卡用 sessionId，App Store 卡无会话时用 appId。
-    const thumbId = item.sessionId || item.appId || item.key;
     // 能不能进会话：**有 id 不等于进得去**。会话按归属隔离，别人的会话
     // GET 回来是 404，跳过去就是白屏。进不去的走只读预览（见 previewModal）。
     //
@@ -1954,56 +1773,35 @@ export function AppsWorkbench() {
         Icon={BrandIcon}
         iconBg={detail?.identity ? themePrimary(detail.identity.theme) : undefined}
         media={(() => {
-          // 回落链：贴图 → 活渲染 → 占位卡。有图就贴 <img>，不要给每张卡
-          // 挂一个 Tailwind iframe（2026-08-20：应用市场同屏几十张活渲染
-          // 把主线程打满；推演收口会 SnapDOM 存一张 shot）。
+          // 封面只有两档：**有图就贴图，没图就空态**（2026-08-22）。
           //
-          // 贴图这一级内部还有两路（真截图优先于参照板），但那是服务端的事：
-          // 同一个 URL、同一套画幅，这里看到的只有"有图/没图"。
+          // 中间那一档（活渲染）删掉了，理由见上面 EmptyThumb 前那段——它每张卡
+          // 挂一个真的应用运行时，同屏十几张就把主线程堵死，而 <img> 的解码在
+          // 合成线程。贴图内部还分真截图/参照板两路，但那是服务端按可信度挑的
+          // （PREVIEW_SOURCE_PRIORITY），同一个 URL、同一套画幅，这里只看"有没有"。
           //
-          // 活渲染那一支带上 captureFor：**没有真截图的应用，在这次昂贵的渲染
-          // 上就地采一张存住**，于是这次活渲染是最后一次
-          // （见 lib/thumb-capture.ts）。已经有真截图的（preview_source==="shot"）
-          // 不再采——那正是这套东西要消灭的重复劳动。
-          const needsShot =
-            Boolean(item.appId) && item.summary?.preview_source !== "shot";
-          const htmlLive = detail?.specPages ? (
-            <HtmlLiveThumb
-              specPages={detail.specPages}
-              model={detail.model}
-              captureFor={needsShot ? item.appId : null}
-              device={item.summary?.device}
-            />
-          ) : null;
-          const blockLive =
-            detail?.status === "runnable" && detail.model ? (
-              <LiveAppThumb
-                sessionId={thumbId}
-                model={detail.model}
-                goal={item.goal}
-                captureFor={needsShot ? item.appId : null}
-                device={item.summary?.device}
-              />
-            ) : (
-              <PendingAppThumb detail={detail} />
-            );
-          const live = htmlLive ?? blockLive;
+          // 图拉不到（记录刚被删、网络抖）→ SheetThumb 的 onError 回落到同一张
+          // 空态，不会出现空白卡。
           if (shouldUseSheetThumb(item)) {
             return (
               <SheetThumb
                 appId={item.appId!}
                 alt={detail?.identity?.productName || item.goal || "应用首页示意"}
-                fallback={live}
+                fallback={<EmptyThumb />}
                 previewTag={item.summary?.preview_tag}
               />
             );
           }
-          if (htmlLive) return htmlLive;
-          // 摘要说有页面、完整记录还没拉到：空一拍等详情，避免先挂错渲染器。
-          if (!detail && item.summary?.has_pages) {
-            return <div className="h-full w-full bg-[#f0f2f5]" data-testid="app-thumb-html-pending" />;
+          // 会话卡（还没落库）说的是"还没生成完"，不是"这个应用没图"——
+          // 把进度照实写进空态的描述里，别让两件事长成一个样。
+          if (item.source === "session") {
+            return (
+              <EmptyThumb
+                description={detail?.blocked ? "待补充信息" : "推演未闭环"}
+              />
+            );
           }
-          return blockLive;
+          return <EmptyThumb />;
         })()}
         metrics={
           detail ? (
@@ -2012,14 +1810,21 @@ export function AppsWorkbench() {
                 <FileText size={11} className="opacity-60" />
                 页面 {detail.pages}
               </span>
-              <span className="inline-flex items-center gap-1" title="角色数">
-                <Users size={11} className="opacity-60" />
-                角色 {detail.roles}
-              </span>
-              <span className="inline-flex items-center gap-1" title="AI 能力数">
-                <GitBranch size={11} className="opacity-60" />
-                AI {detail.aiCaps}
-              </span>
+              {/* null = 数不出来（那份模型里没有 rbac / aigc 这一段）→ 不画这个
+                  徽标。画个 "角色 0" 是在断言"这个应用没有角色"，那是编的。
+                  0 本身是合法计数，照画。 */}
+              {detail.roles !== null && (
+                <span className="inline-flex items-center gap-1" title="角色数">
+                  <Users size={11} className="opacity-60" />
+                  角色 {detail.roles}
+                </span>
+              )}
+              {detail.aiCaps !== null && (
+                <span className="inline-flex items-center gap-1" title="AI 能力数">
+                  <GitBranch size={11} className="opacity-60" />
+                  AI {detail.aiCaps}
+                </span>
+              )}
               {isApp && version > 1 && (
                 <span
                   // 信息条改成压在深色渐变上之后，浅底深字的徽标在这里反了；
@@ -2046,14 +1851,20 @@ export function AppsWorkbench() {
         statusDot={meta?.dot ?? "bg-stone-300"}
         statusLabel={meta?.label ?? "…"}
         // 进不去会话不再是"点了没反应"——那和白屏一样让人以为坏了。
-        // 有模型或有整页 HTML 就开只读预览，两样都没有才真的不响应。
-        onClick={() =>
-          canOpen
-            ? open(item.sessionId!)
-            : detail?.model || detail?.specPages
-              ? setPreviewModal(item)
-              : undefined
-        }
+        //
+        // ⚠ 2026-08-22：判据不能再写成 `detail?.model || detail?.specPages`。
+        // 卡片详情改从摘要推之后这两样**永远是 null**，那条判据会把每一张
+        // App Store 卡都判成"不响应"——闸全绿、点开没反应，正是本仓第三条
+        // 说的那种静默失效。App Store 卡一律可预览（那儿只存闭环应用），
+        // 整包在点开时才拉（ensureFullDetail）。会话卡仍按有没有东西可渲判。
+        onClick={() => {
+          if (canOpen) return open(item.sessionId!);
+          if (isApp) {
+            ensureFullDetail(item);
+            return setPreviewModal(item);
+          }
+          if (detail?.model || detail?.specPages) return setPreviewModal(item);
+        }}
         topRight={
           <>
             <button
@@ -2517,6 +2328,20 @@ export function AppsWorkbench() {
                   specPages={details[previewModal.key]!.specPages!}
                   model={details[previewModal.key]!.model}
                 />
+              ) : !details[previewModal.key]?.model ? (
+                // ⚠ 2026-08-22：整包改成点开才拉（ensureFullDetail），所以这里
+                // **必然**会有"两样都还没到"的一拍。改动前这一支直接
+                // `model={...!.model!}`——非空断言在新取数下会把 null 喂进渲染器。
+                // 拉完还是没有，就是这一版真的没东西可预览（老链路的空记录），
+                // 照实说，不要转圈到天荒地老。
+                <div
+                  className="flex h-full items-center justify-center text-[13px] text-slate-400"
+                  data-testid="app-preview-loading"
+                >
+                  {fullInflightKeys.includes(previewModal.key)
+                    ? "预览加载中…"
+                    : "这一版没有可预览的页面"}
+                </div>
               ) : (
                 <React.Suspense
                   fallback={<div className="p-6 text-[13px] text-slate-400">预览加载中…</div>}
