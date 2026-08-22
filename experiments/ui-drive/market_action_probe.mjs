@@ -18,8 +18,27 @@ import { mkdirSync } from 'fs';
 const OUT = process.argv[2] || '';
 const BASE = (process.env.BASE || 'http://127.0.0.1:3000').replace(/\/$/, '');
 if (OUT) mkdirSync(OUT, { recursive: true });
-const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
-const ctx = await b.newContext({ viewport: { width: 1920, height: 1080 } });
+// ⚠ 打非本机站点时把浏览器接到 HTTPS_PROXY 上。
+//
+//   2026-08-22 实测：**在 Claude Code 的远程沙箱里这条路走不通**——带不带代理，
+//   Chromium 连 https://example.com 都是 ERR_CONNECTION_RESET，浏览器出站是封的
+//   （同一环境下 curl 和 ctx.request 都正常，登录还回 200，看着像「站点好好的、
+//   只有页面打不开」，很容易误判成目标站的问题）。
+//   所以线上验收只能退而求其次：拿 curl 抓已部署的 bundle，在压缩产物里找代码
+//   指纹（例：本条修复的 `Math.min(Math.max(PAGE_SIZE,…),PAGE_SIZE*8)` 压缩后是
+//   `Math.min(Math.max(db,Ce.current),db*8)`）。那只能证明**代码上线了**，
+//   证明不了**行为对**——两者差一档，别混着说。
+//   这段配置留着：换个能出网的环境（本机 / CI）就直接可用。
+const PROXY = process.env.HTTPS_PROXY || process.env.https_proxy || '';
+const REMOTE = !/127\.0\.0\.1|localhost/.test(BASE);
+const b = await chromium.launch({
+  executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+  ...(REMOTE && PROXY ? { proxy: { server: PROXY } } : {}),
+});
+const ctx = await b.newContext({
+  viewport: { width: 1920, height: 1080 },
+  ...(REMOTE ? { ignoreHTTPSErrors: true } : {}),
+});
 const lr = await ctx.request.post(`${BASE}/api/sliderule/account/login`,
   { data: { email: process.env.UI_EMAIL, password: process.env.UI_PASSWORD } });
 console.log('登录', lr.status());
