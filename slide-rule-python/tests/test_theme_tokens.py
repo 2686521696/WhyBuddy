@@ -427,6 +427,15 @@ class Test间距契约只有一处主人:
         assert "margin-left:16rem" not in code, "契约还留在 theme_tokens 里"
         assert "min-width:16rem" not in code, "契约还留在 theme_tokens 里"
 
+    def test_body忘写flex那条也走同一个变量(self):
+        """新加的救场规则不许再写死 16rem——否则又回到「改一个忘一个」。"""
+        from services.page_shell import SHELL_ASIDE_LAYOUT_CSS
+
+        rules = [r for r in SHELL_ASIDE_LAYOUT_CSS.split("}") if "body:not(.flex)" in r]
+        assert len(rules) == 2, [r.split("{")[0] for r in rules]
+        offset = [r for r in rules if "margin-left" in r]
+        assert offset and "var(--shell-aside-width)" in offset[0]
+
     def test_数字只有一个来源(self):
         from services.page_shell import SHELL_ASIDE_LAYOUT_CSS
 
@@ -445,8 +454,14 @@ class Test间距契约只有一处主人:
         from services.page_shell import SHELL_ASIDE_LAYOUT_CSS
 
         rules = [r for r in SHELL_ASIDE_LAYOUT_CSS.split("}") if "{" in r]
-        # 除了 :root 那条变量声明，每一条都得同时认标和留退路
-        body = [r for r in rules if not r.strip().startswith(":root")]
+        # 这份常量里住着**两件事**，判据要分开看：
+        #   ① 宽度 / 让位（3 条）——认 data-shell 标，留 :has(nav a) 存量退路
+        #   ② body 忘写 flex 时把侧栏提成 fixed（2 条）——键在 body:not(.flex)，
+        #     跟「是不是壳」无关，不该要求它认标
+        body = [
+            r for r in rules
+            if not r.strip().startswith(":root") and "body:not(.flex)" not in r
+        ]
         assert len(body) == 3, [r.split("{")[0] for r in rules]
         for rule in body:
             sel = rule.split("{")[0]

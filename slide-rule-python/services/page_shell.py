@@ -547,6 +547,26 @@ SHELL_ASIDE_LAYOUT_CSS = (
     '[data-shell="aside"][class*="fixed"]~*,[data-shell="aside"][class*="absolute"]~*,'
     'aside[class*="fixed"]:has(nav a)~*,aside[class*="absolute"]:has(nav a)~*'
     "{margin-left:var(--shell-aside-width)!important}"
+    # ⚠ 2026-08-22 真机（连锁药房 p2 复核工作台）：模型给 <body> 写了
+    #   ``w-full h-full`` 但**没写 flex**，而 <aside> 在文档流里——侧栏独占
+    #   一整行（256×1080），header 被顶到 y=1080、main 到 y=1144，而 main 自己
+    #   ``overflow:hidden``，**整页内容一点都看不见**。用户看到的就是「左边一条
+    #   菜单，右边一大片空白」。31 份真机桌面页里中 1 份，一中就是整页报废。
+    #   ⚠ 不是这轮改出来的：同一份 HTML 换回 84121aa4 的 CSS，main 顶边一样 1144。
+    #   ⚠ 也不是「没生成内容」：那页 main 里有 200 行、5000 字。判据只能落在
+    #     渲染后的位置上（experiments/ui-drive/offscreen_probe.mjs）。
+    #
+    #   修法：把侧栏提成 fixed，兄弟按同一个变量让位——这本来就是本仓桌面壳的
+    #   形态（「fixed 侧栏靠 ml-64 让位」）。
+    #   ⚠ **不能**改成给 body 加 display:flex：body 下是 aside/header/main 三个
+    #     并列，横排会把 header 挤成一根窄条。横竖不由这一层替它决定。
+    #   ⚠ ``body:not(.flex)`` 是关键的反向闸：真机 30/31 页 body 本来就是 flex，
+    #     碰一下就是把好页面改坏。
+    'body:not(.flex):has(>aside)>aside'
+    "{position:fixed!important;top:0!important;left:0!important;"
+    "height:100%!important;z-index:20}"
+    'body:not(.flex):has(>aside)>aside~*'
+    "{margin-left:var(--shell-aside-width)!important}"
 )
 
 

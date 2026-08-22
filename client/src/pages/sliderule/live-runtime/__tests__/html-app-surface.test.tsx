@@ -777,3 +777,86 @@ describe("data-shell 穿过消毒（应用面这一份）", () => {
     ).not.toContain("data-not-allowed");
   });
 });
+
+/**
+ * body 忘了写 flex，整页主体被顶出视口（2026-08-22 真机·连锁药房 p2）。
+ *
+ * ## 病灶
+ *
+ * 模型给 `<body>` 写了 `w-full h-full` 但**没写 flex**，而 `<aside>` 在文档流里。
+ * 于是侧栏独占一整行（256×1080），`<header>` 被顶到 y=1080、`<main>` 到 y=1144——
+ * 而 main 自己 `overflow:hidden`，**整页内容一点都看不见**。用户看到的就是
+ * 「左边一条菜单，右边一大片空白」，正是「有时候特别差」里最差的那种。
+ *
+ * ⚠ 不是「没生成内容」：那页 main 里有 200 行、5000 字。判据必须落在**渲染后
+ *   的位置**上——量源码字数会说这页很丰满。
+ * ⚠ 不是这轮四步改出来的：同一份 HTML 换回 84121aa4 的 CSS，main 顶边一样是
+ *   y=1144。既有缺陷，真机 31 份桌面页里中 1 份。
+ *
+ * ## 修法与边界
+ *
+ * body 不是 flex 而侧栏在流里 → 把侧栏提成 fixed，兄弟按 `--shell-aside-width`
+ * 让位。这正是本仓一直用的桌面壳形态（「fixed 侧栏靠 ml-64 让位」）。
+ *
+ * ⚠ **不能**改成给 body 加 `display:flex`：body 的子节点是 aside/header/main
+ *   三个并列，横排会把 header 挤成一根窄条。_DESKTOP_FILL_CSS 模块头也写着
+ *   「不许给 body 写 flex-direction:column」——横竖都不能由这一层替它决定。
+ * ⚠ 反向那条是关键：body **已经**是 flex 的页（真机 30/31 都是）绝不许被碰，
+ *   一碰就是把好页面改坏。
+ */
+describe("body 忘了 flex 时把侧栏提成 fixed", () => {
+  const asideRule = () => {
+    const rules = CHROME_CONTRAST_CSS.split("}").map(r => r + "}");
+    const hit = rules.find(r => r.includes("position:fixed") && r.includes("aside"));
+    expect(hit, "找不到「侧栏提成 fixed」那条规则").toBeTruthy();
+    return (hit as string).split("{")[0];
+  };
+  const siblingRule = () => {
+    const rules = CHROME_CONTRAST_CSS.split("}").map(r => r + "}");
+    const hit = rules.find(r => r.includes("body:not(.flex)") && r.includes("~*"));
+    expect(hit, "找不到「兄弟让位」那条规则").toBeTruthy();
+    return (hit as string).split("{")[0];
+  };
+  const build = (bodyClass: string) => {
+    document.body.className = bodyClass;
+    document.body.innerHTML = '<aside class="w-64 h-full flex flex-col"><nav><a href="#">甲</a></nav></aside>'
+      + '<header class="h-16">顶</header><main class="flex-1">正文</main>';
+    return {
+      aside: document.querySelector("aside") as Element,
+      header: document.querySelector("header") as Element,
+      main: document.querySelector("main") as Element,
+    };
+  };
+
+  it("body 没有 flex 时，侧栏被提成 fixed", () => {
+    const { aside } = build("w-full h-full bg-slate-100");
+    expect(aside.matches(asideRule())).toBe(true);
+  });
+
+  it("body 没有 flex 时，header 和 main 都要让位", () => {
+    const { header, main } = build("w-full h-full bg-slate-100");
+    expect(header.matches(siblingRule()), "header 没让位会被 fixed 侧栏压住左边").toBe(true);
+    expect(main.matches(siblingRule())).toBe(true);
+  });
+
+  it("反向：body 已经是 flex 的页一律不许碰", () => {
+    // 真机 31 份桌面页里 30 份是这种，碰一下就是把好页面改坏
+    const { aside, header, main } = build("w-full h-full flex bg-slate-100");
+    expect(aside.matches(asideRule())).toBe(false);
+    expect(header.matches(siblingRule())).toBe(false);
+    expect(main.matches(siblingRule())).toBe(false);
+  });
+
+  it("反向：没有侧栏的页不受影响", () => {
+    document.body.className = "w-full h-full";
+    document.body.innerHTML = '<header class="h-16">顶</header><main>正文</main>';
+    const main = document.querySelector("main") as Element;
+    expect(main.matches(siblingRule())).toBe(false);
+  });
+
+  it("反向：让位量必须走同一个变量，不许再写死 16rem", () => {
+    const rules = CHROME_CONTRAST_CSS.split("}");
+    const hit = rules.find(r => r.includes("body:not(.flex)") && r.includes("~*"));
+    expect(hit).toContain("var(--shell-aside-width)");
+  });
+});

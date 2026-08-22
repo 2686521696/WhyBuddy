@@ -181,6 +181,15 @@ export const CHROME_CONTRAST_CSS =
   '[data-shell="aside"],aside:has(nav a){min-width:var(--shell-aside-width)!important;box-sizing:border-box}' +
   '[data-shell="aside"][class*="fixed"],[data-shell="aside"][class*="absolute"],aside[class*="fixed"]:has(nav a),aside[class*="absolute"]:has(nav a){width:var(--shell-aside-width)!important}' +
   '[data-shell="aside"][class*="fixed"]~*,[data-shell="aside"][class*="absolute"]~*,aside[class*="fixed"]:has(nav a)~*,aside[class*="absolute"]:has(nav a)~*{margin-left:var(--shell-aside-width)!important}' +
+  // ⚠ 2026-08-22 真机（连锁药房 p2）：body 写了 w-full h-full 但没写 flex，
+  //   而 aside 在流里 —— 侧栏独占一整行，header 顶到 y=1080、main 到 1144，
+  //   main 自己 overflow:hidden，整页内容一点看不见。31 份桌面页中 1 份。
+  //   修法：把侧栏提成 fixed，兄弟按同一个变量让位。
+  // ⚠ 不能给 body 加 display:flex：body 下是 aside/header/main 三个并列，
+  //   横排会把 header 挤成窄条。body:not(.flex) 是反向闸——真机 30/31 页
+  //   body 本来就是 flex，碰一下就是把好页面改坏。与 Python 同文。
+  'body:not(.flex):has(>aside)>aside{position:fixed!important;top:0!important;left:0!important;height:100%!important;z-index:20}' +
+  'body:not(.flex):has(>aside)>aside~*{margin-left:var(--shell-aside-width)!important}' +
   'aside [aria-current="page"]{background-color:color-mix(in srgb,var(--primary,currentColor) 16%,var(--chrome,transparent))!important;color:var(--chrome-fg,inherit)!important;font-weight:600}' +
   'header nav[aria-label="Breadcrumb"] [aria-current="page"],header nav[aria-label="breadcrumb"] [aria-current="page"]{background-color:transparent!important;color:var(--chrome-fg,inherit)!important;font-weight:600}';
 
