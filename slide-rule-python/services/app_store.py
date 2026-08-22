@@ -145,6 +145,31 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _int_or_none(value: Any) -> Optional[int]:
+    """能转成整数就转，`None` 保持 `None`。⚠ 不许用 `int(x or 0)` 顶替——
+    那会把「不知道」写成「0 个」，而这两件事在卡片上是不同的话。"""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _count_or_none(section: Any, key: str) -> Optional[int]:
+    """数 `section[key]` 这个数组有多长；这一段缺席或形状不对返回 ``None``。
+
+    ⚠ 缺席返回 ``None`` 而不是 ``0``——见 derive_app_metadata 里那段说明。
+    ⚠ 坏形状（不是 dict、值不是 list）一律 ``None``：宁可少认，不可认错。
+    """
+    if not isinstance(section, dict):
+        return None
+    items = section.get(key)
+    if not isinstance(items, list):
+        return None
+    return len(items)
+
+
 def derive_app_metadata(model: dict[str, Any]) -> dict[str, Any]:
     """从生成模型里抽出可查询的元数据（列表/筛选/血缘展示用），不塞进
     model_json 里，避免列表查询要反序列化整个大模型。"""
@@ -161,6 +186,17 @@ def derive_app_metadata(model: dict[str, Any]) -> dict[str, Any]:
         "landing_page_ref": str(appbundle.get("landingPageRef") or "")[:64],
         "entity_count": len(datamodel.get("entities") or []),
         "page_count": len(pages),
+        # ⚠ 2026-08-22：卡片徽标要「角色 N · AI N」，而摘要里没有，于是前端
+        #   为了这两个数把整包（model_json + pages_json）拉了下来——真机首屏
+        #   ×30 共 1931 KB。数在这里一次，列表直接带走。
+        #
+        # ⚠ `None` 与 `0` 是**两件事**，不许混：
+        #     None = 这份模型里没有这一段，**数不出来**（存量记录也是 None）
+        #     0    = 有这一段，里面确实一个都没有
+        #   前端据此决定「不显示这个徽标」还是「显示 0」。返回 0 顶替 None
+        #   等于替模型编了一句「这个应用没有角色」。
+        "role_count": _count_or_none(model.get("rbac"), "roles"),
+        "ai_count": _count_or_none(model.get("aigc"), "capabilities"),
     }
 
 
@@ -238,7 +274,8 @@ def model_signature(session_id: Optional[str], model: dict[str, Any]) -> str:
 _LIST_COLUMNS: tuple[str, ...] = (
     "id", "root_id", "parent_id", "version", "session_id", "goal",
     "product_name", "theme_id", "theme_label", "device", "landing_page_ref",
-    "entity_count", "page_count", "gate_passed", "dedup_key", "created_at",
+    "entity_count", "page_count", "role_count", "ai_count",
+    "gate_passed", "dedup_key", "created_at",
     "owner_id", "visibility", "is_official", "prior_owner_id",
 )
 
@@ -813,6 +850,11 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
         landing_page_ref = Column(String(64), default="")
         entity_count = Column(Integer, default=0)
         page_count = Column(Integer, default=0)
+        # ⚠ 卡片徽标用（2026-08-22）。**nullable，不给 default**：存量记录读出来
+        #   必须是 None（=数不出来，前端不显示这个徽标），不是 0（=确实没有角色）。
+        #   给了 default=0 就等于替所有老应用编了一句「它没有角色」。
+        role_count = Column(Integer, nullable=True)
+        ai_count = Column(Integer, nullable=True)
         gate_passed = Column(Boolean, default=False)
         dedup_key = Column(String(80), nullable=True, index=True)
         created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
@@ -834,7 +876,9 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 "product_name": self.product_name, "theme_id": self.theme_id,
                 "theme_label": self.theme_label, "device": self.device,
                 "landing_page_ref": self.landing_page_ref, "entity_count": self.entity_count,
-                "page_count": self.page_count, "gate_passed": self.gate_passed,
+                "page_count": self.page_count,
+                "role_count": self.role_count, "ai_count": self.ai_count,
+                "gate_passed": self.gate_passed,
                 "dedup_key": self.dedup_key,
                 "created_at": self.created_at.isoformat() if self.created_at else None,
                 "owner_id": self.owner_id,
@@ -961,6 +1005,9 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 ("is_official", "alter table generated_app add column is_official integer default 0"),
                 ("prior_owner_id", "alter table generated_app add column prior_owner_id varchar(64)"),
                 ("pages_json", _pages_ddl),
+                # 卡片徽标（2026-08-22）。不带 default：存量行保持 NULL =「不知道」。
+                ("role_count", "alter table generated_app add column role_count integer"),
+                ("ai_count", "alter table generated_app add column ai_count integer"),
             ):
                 if _col not in _app_cols:
                     _init_conn.execute(_sql_text(_ddl))
@@ -988,6 +1035,9 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 theme_id=record.get("theme_id") or "", theme_label=record.get("theme_label") or "",
                 device=record.get("device") or "", landing_page_ref=record.get("landing_page_ref") or "",
                 entity_count=int(record.get("entity_count") or 0), page_count=int(record.get("page_count") or 0),
+                # None 原样传，落 NULL —— `or 0` 会把「不知道」写成「0 个」。
+                role_count=_int_or_none(record.get("role_count")),
+                ai_count=_int_or_none(record.get("ai_count")),
                 gate_passed=bool(record.get("gate_passed")), created_at=created,
                 dedup_key=record.get("dedup_key"),
                 owner_id=record.get("owner_id"),
@@ -1387,6 +1437,8 @@ class NeonHttpAppStore(AppStoreBackend):
                 landing_page_ref varchar(64),
                 entity_count integer,
                 page_count integer,
+                role_count integer,
+                ai_count integer,
                 gate_passed boolean,
                 dedup_key varchar(80),
                 created_at timestamptz,
@@ -1449,6 +1501,10 @@ class NeonHttpAppStore(AppStoreBackend):
                 val = int(val or 1)
             elif col in ("entity_count", "page_count"):
                 val = int(val or 0)
+            elif col in ("role_count", "ai_count"):
+                # ⚠ 这里**不能**写 `int(val or 0)`：None 会被写成 0，
+                #   「数不出来」就变成了「确实没有」。
+                val = _int_or_none(val)
             elif col == "gate_passed":
                 val = bool(val)
             elif col == "is_official":

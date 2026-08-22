@@ -1051,3 +1051,75 @@ def test_patch_app_transfers_ownership_on_the_live_path():
     code = ast.unparse(fn)
     assert "transfer_to_official" in code
     assert "transfer_from_official" in code
+
+
+# ── 卡片徽标不该逼前端拉整包（2026-08-22）────────────────────────────────
+#
+# 真机量的：应用中心首屏 53 个请求、约 5 MB，其中
+#     ×30  1931 KB  /api/sliderule/apps/{id}      每张卡拉完整 model_json + pages_json
+# 而卡片上只用到「实体 N · 页面 N · 角色 N · AI N」四个数字。前两个摘要里
+# 早就有了（entity_count / page_count），后两个没有，于是整包被拉了下来。
+#
+# ⚠ 存量记录这两列是**空的**（用户决定不跑生产回填）。所以口径是
+#   `None` = 数不出来，**前端不显示那个徽标**——而不是显示「角色 0」。
+#   显示 0 是说了一句错话，不显示只是少说一句。本仓 demo-seed-semantics
+#   立的规矩：宁可少认，不可认错。
+
+
+def _model_with_rbac_aigc(roles: int = 3, caps: int = 2) -> dict:
+    m = _model("带权限的应用")
+    m["rbac"] = {"roles": [{"id": f"r{i}", "name": f"角色{i}"} for i in range(roles)]}
+    m["aigc"] = {"capabilities": [{"id": f"c{i}"} for i in range(caps)]}
+    return m
+
+
+class Test摘要带角色数与AI数:
+    def test_从模型数出来(self):
+        meta = store.derive_app_metadata(_model_with_rbac_aigc(roles=3, caps=2))
+        assert meta["role_count"] == 3
+        assert meta["ai_count"] == 2
+
+    def test_反向_模型里没有这两段时是_None_不是_0(self):
+        """★ 这条是整组的核心。
+
+        返回 0 等于断言「这个应用没有角色」，而真相是「这份模型里没这一段，
+        数不出来」。两者在卡片上长得一样，但一个是事实、一个是编的。
+        """
+        meta = store.derive_app_metadata(_model("光板应用"))
+        assert meta["role_count"] is None
+        assert meta["ai_count"] is None
+
+    def test_反向_坏形状不许崩也不许编(self):
+        for bad in ({"rbac": "nope"}, {"rbac": {"roles": 42}}, {"aigc": {"capabilities": None}}):
+            m = {**_model("坏形状"), **bad}
+            meta = store.derive_app_metadata(m)
+            assert meta["role_count"] in (None, 0)
+            assert meta["ai_count"] in (None, 0)
+
+    def test_空数组是_0_不是_None(self):
+        """有这一段但里面是空的 —— 那是「确实一个角色都没有」，跟数不出来不同。"""
+        m = _model("空权限")
+        m["rbac"] = {"roles": []}
+        m["aigc"] = {"capabilities": []}
+        meta = store.derive_app_metadata(m)
+        assert meta["role_count"] == 0
+        assert meta["ai_count"] == 0
+
+    def test_列表摘要里带着这两个数_不带整包(self, configured_store):
+        """★ 接线：数出来了没接进列表接口，等于没做。"""
+        store.save_app(_model_with_rbac_aigc(roles=4, caps=1), session_id="s-badge")
+        rows = store.list_apps(limit=10)
+        row = next(r for r in rows if r.get("session_id") == "s-badge")
+        assert row["role_count"] == 4
+        assert row["ai_count"] == 1
+        # 反向：列表仍然不许把大字段带出来（_LIST_COLUMNS 的存在理由）
+        assert "model_json" not in row
+        assert "pages_json" not in row
+
+    def test_存量记录读出来是_None_不是_0(self, configured_store):
+        """老记录没有这两列。读出来必须是 None —— 让前端知道「不知道」。"""
+        store.save_app(_model("老应用"), session_id="s-legacy")
+        rows = store.list_apps(limit=10)
+        row = next(r for r in rows if r.get("session_id") == "s-legacy")
+        assert row.get("role_count") is None
+        assert row.get("ai_count") is None
