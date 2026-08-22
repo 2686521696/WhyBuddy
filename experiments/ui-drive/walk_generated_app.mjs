@@ -39,9 +39,24 @@ if(await nb.count()){ await nb.click(); await p.waitForTimeout(2500); }
 const wantPhone = /^phone:/.test(GOAL);
 const text = GOAL.replace(/^phone:/, '');
 if (wantPhone) {
-  const btn = p.locator('button:has-text("应用"), [role=button]:has-text("应用")').first();
-  if (await btn.count()) { await btn.click(); await p.waitForTimeout(600); console.log('  已点「应用」开关（竖屏）'); }
-  else console.log('  ⚠ 没找到「应用」开关，可能又会出桌面版');
+  // ⚠ 侧边栏里有「应用市场」，`:has-text("应用")` 会命中它。必须限定在输入框
+  //   那一行里，且用**精确文本**。我上一版就是点中了侧边栏，日志还打了
+  //   「已点开关」——然后照样出 1920×1080 桌面版，白烧一轮推演。
+  const composer = p.locator('form, [class*=composer]').filter({ has: p.locator('textarea') }).first();
+  const scope = (await composer.count()) ? composer : p.locator('body');
+  const btn = scope.getByText(/^应用$/).first();
+  if (await btn.count()) { await btn.click(); await p.waitForTimeout(800); }
+
+  // ★ 点了不算数，**必须验证真的切过去了**：选中「应用」后输入框的
+  //   placeholder 会从「描述你想构建的业务系统…」变成「…手机应用…」。
+  //   验不过就退出——白跑一轮推演比报错糟得多。
+  const ph = await p.locator('textarea').first().getAttribute('placeholder');
+  console.log(`  输入框提示：「${ph}」`);
+  if (!/手机/.test(ph || '')) {
+    console.log('  ✗ 「应用」开关没切过去（提示文字未变），不提交，避免白跑一轮');
+    await b.close(); process.exit(1);
+  }
+  console.log('  ✓ 已切到「应用」（竖屏）');
 }
 const box=p.locator('textarea, input[type=text]').first();
 await box.click(); await box.fill(text); await p.waitForTimeout(400);
