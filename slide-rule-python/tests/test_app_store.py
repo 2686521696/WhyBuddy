@@ -1123,3 +1123,113 @@ class Test摘要带角色数与AI数:
         row = next(r for r in rows if r.get("session_id") == "s-legacy")
         assert row.get("role_count") is None
         assert row.get("ai_count") is None
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 两套补列逻辑必须成对（2026-08-22 线上事故）
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _app_store_source_without_comments() -> str:
+    """读 app_store.py 源码，先剥掉 `#` 注释再给判据用。
+
+    CLAUDE.md 第二条踩过的坑：判据 grep 标识符，而那个词同时出现在注释里 →
+    把修复改回去照样绿。这里只剥注释、保留字符串字面量——要找的 SQL 就住在
+    字符串里。
+    """
+    import io
+    import tokenize
+
+    path = os.path.join(os.path.dirname(store.__file__), "app_store.py")
+    with io.open(path, "rb") as fh:
+        toks = [t for t in tokenize.tokenize(fh.readline) if t.type != tokenize.COMMENT]
+    return tokenize.untokenize(toks).decode("utf-8")
+
+
+def _migration_columns(source: str) -> tuple[set[str], set[str]]:
+    """从源码里取出两套 generated_app 的补列清单。
+
+    返回 (SQLAlchemy 那套, Neon/HTTP 那套)。两套写法天生不同——SQLAlchemy 走
+    `inspect` 再 `add column`（SQLite 不支持 `if not exists`，见 _init 的注释），
+    Neon 走 `add column if not exists`——所以只能分开匹配。
+    """
+    import re
+
+    neon = set(
+        re.findall(
+            r"alter\s+table\s+generated_app\s+add\s+column\s+if\s+not\s+exists\s+(\w+)",
+            source,
+            re.I,
+        )
+    )
+    sqla = set(
+        re.findall(
+            r"alter\s+table\s+generated_app\s+add\s+column\s+(?!if\s+not\s+exists)(\w+)",
+            source,
+            re.I,
+        )
+    )
+    return sqla, neon
+
+
+class Test两套补列逻辑必须成对:
+    """★ 2026-08-22 线上事故的判据化。
+
+    那天给列表摘要加 role_count / ai_count，四处都改对了——_LIST_COLUMNS、
+    ORM 列、Neon 的 `create table if not exists` 列定义、SQLAlchemy 的补列
+    清单——**唯独漏了 Neon 的补列清单**。生产的 generated_app 早就存在，那句
+    建表对它什么都不做，列根本没长出来；而列表查询已经在 select 它们 →
+    UndefinedColumn → /db-api 回 500。
+
+    表面症状有三个（应用市场空、"我的应用"筛选项没了、设备类型没了），其实
+    是同一处：列表接口一挂，前端 fail-open 成空数组，所有从列表里推导出来的
+    选项一起消失。
+
+    这是 CLAUDE.md 第四条「只改一半必然静默失效」的第四种成对形态：
+    **SQLAlchemy 补列 / Neon 补列**。
+    """
+
+    def test_两边补的列完全一样(self):
+        sqla, neon = _migration_columns(_app_store_source_without_comments())
+        assert sqla, "SQLAlchemy 那套补列清单一条都没匹配到——判据本身坏了"
+        assert neon, "Neon 那套补列清单一条都没匹配到——判据本身坏了"
+        assert sqla == neon, (
+            "generated_app 的两套补列逻辑不一致，只改一半会在生产上静默缺列：\n"
+            f"  只有 SQLAlchemy 补：{sorted(sqla - neon)}\n"
+            f"  只有 Neon 补      ：{sorted(neon - sqla)}"
+        )
+
+    def test_事故当事的那两列两边都在(self):
+        """★ 变异判据：把 Neon 那两句 add column 删掉，这条必须变红。"""
+        sqla, neon = _migration_columns(_app_store_source_without_comments())
+        for col in ("role_count", "ai_count"):
+            assert col in sqla, f"{col} 不在 SQLAlchemy 补列清单里"
+            assert col in neon, f"{col} 不在 Neon 补列清单里 —— 正是 08-22 那次的形状"
+
+    def test_列表要select的列_要么建表时就有_要么有人补(self):
+        """反向：_LIST_COLUMNS 里出现一个没人负责创建的列，是另一种 500。
+
+        注意建表 DDL 本身并不全 —— owner_id / visibility / is_official /
+        prior_owner_id 从来只靠补列语句长出来（新库建完表随即被补上）。所以
+        判据是"两条路至少走通一条"，不是"建表 DDL 里都得有"。
+        """
+        import re
+
+        source = _app_store_source_without_comments()
+        _, neon = _migration_columns(source)
+        m = re.search(
+            r"create\s+table\s+if\s+not\s+exists\s+generated_app\s*\((.*?)\n\s*\)",
+            source,
+            re.S | re.I,
+        )
+        assert m, "没找到 generated_app 的建表 DDL——判据本身坏了"
+        ddl_cols = {
+            line.strip().split()[0]
+            for line in m.group(1).splitlines()
+            if line.strip() and not line.strip().startswith(("primary", "unique", "constraint"))
+        }
+        assert "role_count" in ddl_cols, "建表 DDL 的解析结果不对——判据本身坏了"
+        missing = [c for c in store._LIST_COLUMNS if c not in ddl_cols and c not in neon]
+        assert not missing, (
+            f"列表在 select 这些列，但既不在建表 DDL 里、也没有补列语句：{missing}"
+        )

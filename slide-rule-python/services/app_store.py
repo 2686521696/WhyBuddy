@@ -1477,6 +1477,21 @@ class NeonHttpAppStore(AppStoreBackend):
         self._q("alter table generated_app add column if not exists pages_json jsonb")
         self._q("alter table generated_app add column if not exists is_official integer default 0")
         self._q("alter table generated_app add column if not exists prior_owner_id varchar(64)")
+        # 卡片徽标（2026-08-22）。不带 default：存量行保持 NULL =「不知道」。
+        #
+        # ⚠ 2026-08-22 线上事故，就是漏了这两句。当天把 role_count / ai_count
+        # 加进了 _LIST_COLUMNS、加进了上面 `create table if not exists` 的列
+        # 定义、也加进了 SQLAlchemy 那边的补列表——唯独漏了这里。生产的
+        # generated_app 早就存在，那句建表对它什么都不做，于是列根本没长出来，
+        # 而列表查询已经在 select 它们 → UndefinedColumn → /db-api 回 500，
+        # 应用市场整个空掉（前端 fail-open 成空数组，连"我的应用"的筛选项和
+        # 设备类型一起消失，看着像三个 bug，其实是这一个）。
+        #
+        # 这就是 CLAUDE.md 第四条「只改一半必然静默失效」的又一种形态：
+        # **SQLAlchemy 补列表 / Neon 补列表是成对的**。
+        # test_app_store.py::Test两套补列逻辑必须成对 盯着这一对。
+        self._q("alter table generated_app add column if not exists role_count integer")
+        self._q("alter table generated_app add column if not exists ai_count integer")
         self._q(
             "create table if not exists generated_app_grant ("
             " app_id varchar(36) not null, user_id varchar(64) not null,"
