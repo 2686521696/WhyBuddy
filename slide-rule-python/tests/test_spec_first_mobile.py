@@ -343,7 +343,11 @@ class Test移动壳统一:
             "min-height:56px!important",
             "padding-bottom:16px!important",
             "padding-top:12px!important",
-            "background:#fff!important",
+            # ⚠ 2026-08-22 改成分层兜底：白底治的是「缺页/透明页透出 iframe 黑底」，
+            #   不是「模型的底色不对」。写成 !important 会把深色页刷成白纸——
+            #   主题锁降级成分层兜底之后，这条立刻接手成新元凶，手机端深浅翻转
+            #   从 4 页涨到 8 页、整屏纯白。同一个病的第二处。
+            "@layer sliderule-fallback{html,body{background-color:#fff}}",
             "white-space:nowrap!important",
         ):
             assert token in _PHONE_FILL_CSS, token
@@ -362,6 +366,14 @@ class Test移动壳统一:
             # 反向：不许写成 [class*="hidden"]——整页容器常带 overflow-hidden，
             # 一盖就把真正该铺满的容器也排掉，退回「应用缩在屏幕正中」。
             assert '[class*="hidden"]' not in css
+        # 反向：白底不许再以 !important 形态出现（换个写法犯同样的病）。
+        for css in (_PHONE_FILL_CSS, ts):
+            assert "background:#fff!important" not in css
+        # ⚠ 分层里绝不许写 !important：!important 声明的层序是**反的**，
+        #   分层的反而压过未分层的普通声明，兜底会变成霸王条款。
+        import re as _re
+        for chunk in _re.findall(r"@layer[^{]*\{((?:[^{}]|\{[^{}]*\})*)\}", _PHONE_FILL_CSS):
+            assert "!important" not in chunk, chunk
         assert 'body>div[class*="items-center"]{' not in _PHONE_FILL_CSS
         assert "main{display:flex" not in _PHONE_FILL_CSS
         assert "main{display:flex" not in ts

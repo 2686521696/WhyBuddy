@@ -82,8 +82,11 @@ export const PHONE_FILL_STYLE_ID = "sliderule-phone-fill";
  */
 export const PHONE_FILL_CSS =
   "html,body{margin:0!important;width:100%!important;height:100%!important;" +
-  "min-height:100%!important;max-width:none!important;overflow:hidden!important;" +
-  "background:#fff!important}" +
+  "min-height:100%!important;max-width:none!important;overflow:hidden!important}" +
+  // ⚠ 白底是**兜底**不是覆盖：写成 !important 会把深色页刷成白纸。
+  //   2026-08-22 主题锁改成分层兜底之后，这条立刻接手成了新元凶——
+  //   手机端深浅翻转从 4 页涨到 8 页、整屏纯白。与 Python 同文。
+  "@layer sliderule-fallback{html,body{background-color:#fff}}" +
   "body{display:flex!important;flex-direction:column!important;" +
   "align-items:stretch!important;justify-content:flex-start!important}" +
   "body>*{width:100%!important;max-width:none!important;" +

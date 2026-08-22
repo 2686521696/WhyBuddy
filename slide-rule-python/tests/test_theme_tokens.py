@@ -183,3 +183,201 @@ class Test接在活路上:
         ):
             assert token in css, token
             assert token in ts, token
+
+
+class Test主题锁只染菜单不刷整页:
+    """主题锁的职责是**统一菜单配色**，作用域就该是菜单（2026-08-22）。
+
+    ## 病灶（真机 53 页量出来的，不是设想）
+
+    它自己的模块头写着当初治的是什么：「Header 有时黑有时白、**侧栏**海军蓝
+    顶栏纯黑、浅色页底部一块 bg-slate-900 的**砖**」——三个症状全是 chrome
+    和砖，**一个都不是「整页底色」**。可它写出来的第一条 CSS 是：
+
+        html,body{background-color:var(--background)!important;
+                  color:var(--foreground)!important}
+
+    这条不在治病范围内，是**范围外扩**。代价：53/53 页的整页底色被改，其中
+    **8 页深浅整个翻转**——模型画的黑底白字被刷成白底，字还是白的，
+    实测 1.09:1。而它真该管的那条 ``nav.fixed`` 在 26/26 手机页命中 **0**，
+    底栏一次都没染到（1.1:1 深板岩字压深绿底，两页都有）。
+
+    ## 修法与为什么是这个修法
+
+    1. 整页那条降级成 **``@layer`` 兜底**，不再 ``!important``。
+       分层的意义正是「给个默认值，作者一写就让位」：实测同一份 HTML，
+       页面自己声明 ``body{background:#14271F}`` 时保住深色，页面什么都
+       没声明时才吃到兜底色（不会透出 iframe 黑底）。
+    2. chrome 那条认 ``data-shell``（第 1 步打的标），旧选择器留着当存量退路。
+
+    ## ⚠ 分层里绝不许写 !important
+
+    实测：``@layer f{html,body{background:#eff7f4!important}}`` **压过**
+    未分层的 ``body{background:#14271F}``——``!important`` 声明的层序是
+    **反的**，分层的反而更强。真写进去等于什么都没改，而判据看着还挺像回事。
+    """
+
+    def _css(self, tone: str = "浅色底") -> str:
+        tokens = derive_theme_tokens({"tone": tone, "primary": "#1e3a2f"})
+        return apply_theme_to_html(DARK_PAGE, tokens).replace("\n", "")
+
+    def test_整页底色只是兜底_不许再_important(self):
+        css = self._css()
+        assert "html,body{background-color:var(--background)!important" not in css
+        assert "color:var(--foreground)!important}" not in css
+        assert "@layer" in css, "整页那条得进分层，否则页面自己的声明赢不了"
+
+    def test_分层里不许出现_important(self):
+        """⚠ 这条不是洁癖：分层 + !important 的层序是反的，会把兜底变成霸王条款。"""
+        css = self._css()
+        for chunk in re.findall(r"@layer[^{]*\{((?:[^{}]|\{[^{}]*\})*)\}", css):
+            assert "!important" not in chunk, f"分层里混进了 !important：{chunk[:120]}"
+
+    def test_chrome_认_data_shell_三种壳(self):
+        css = self._css()
+        for value in ("header", "aside", "nav"):
+            assert f'[data-shell="{value}"]' in css, f"chrome 规则没认 data-shell={value}"
+
+    def test_反向_chrome_不许染_main(self):
+        """染了 main 等于换个写法把整页重刷一遍，正是这次要治的病。"""
+        css = self._css()
+        assert '[data-shell="main"]' not in css
+
+    def test_存量退路还在(self):
+        """老会话没有 data-shell，旧选择器不能一起删——否则存量应用的顶栏侧栏当场失色。"""
+        css = self._css()
+        assert "header,aside,nav.fixed" in css or "header,aside" in css
+
+    def test_chrome_的底色和字色必须一起给(self):
+        """⚠ 只给一样就是这次要治的病：底还是模型的深绿、字被换成浅色主题的
+        深板岩 → 1.1:1。手机底栏两页都中过。"""
+        css = self._css()
+        m = re.search(r'\[data-shell="header"\][^{]*\{([^}]*)\}', css)
+        assert m, f"找不到 chrome 规则：{css[:200]}"
+        body = m.group(1)
+        assert "background-color:var(--chrome)!important" in body
+        assert "color:var(--chrome-fg)!important" in body
+
+
+class Test深浅跟着页面走:
+    """深浅判定不许只读散文，得看页面自己画成什么样（2026-08-22）。
+
+    ## 为什么光收窄作用域不够
+
+    第一版只把主题锁从「刷整页」收成「只刷菜单」。结果真机上出现新形态：
+    页面保住了模型的深色底（分层兜底让位了），**菜单却按浅色主题刷成白条**
+    ——深内容配白顶栏白底栏，比原来"全刷浅色"还刺眼。作用域对了，**极性还错**。
+
+    根因在 ``derive_theme_tokens``：
+
+        dark = is_dark_tone(str(d.get("tone") or ""))
+
+    整个深浅分支押在这一个布尔上，而它只读**设计语言那句散文**里有没有
+    「深色/暗色/dark」。健身打卡那版散文里没写，于是判成浅色，可页面自己
+    写着 ``body{background-color:#14271F}``。
+
+    ## 做法
+
+    加一条「看页面」的证据（``page_tone_evidence``），与散文冲突时**以页面为准**。
+    理由不是页面更权威，是**代价不对称**：主题锁带 !important，判错就是
+    深底深字/浅底浅字，判对的收益只是配色统一。
+
+    阈值 0.42 相对亮度，取自 APCA 的 polarity 分界点（apcacontrast.com）。
+    一个应用一个结论（多页投票），保持「一份 theme 染全身」这个设计不变。
+    """
+
+    DARK_BODY_STYLE = (
+        "<!DOCTYPE html><html><head><style>body{background-color:#14271F;color:#F3F4F6}</style>"
+        "</head><body class='flex flex-col'><header>顶</header><main>正文</main></body></html>"
+    )
+    DARK_BODY_ARBITRARY = (
+        "<!DOCTYPE html><html><head></head>"
+        "<body class='flex flex-col bg-[#12231B] text-gray-100'><main>正文</main></body></html>"
+    )
+    DARK_BODY_BRICK = (
+        "<!DOCTYPE html><html><head></head>"
+        "<body class='bg-slate-900 text-gray-100'><main>正文</main></body></html>"
+    )
+    LIGHT_BODY = (
+        "<!DOCTYPE html><html><head></head>"
+        "<body class='bg-white text-slate-900'><main>正文</main></body></html>"
+    )
+    NO_EVIDENCE = "<!DOCTYPE html><html><head></head><body><main>正文</main></body></html>"
+
+    def test_三种写法都认得出深色(self):
+        from services.theme_tokens import page_tone_evidence
+
+        for name, html in (
+            ("页面自带 style", self.DARK_BODY_STYLE),
+            ("任意值 bg-[#hex]", self.DARK_BODY_ARBITRARY),
+            ("Tailwind 深色砖", self.DARK_BODY_BRICK),
+        ):
+            lum = page_tone_evidence(html)
+            assert lum is not None, f"{name}：没抽出证据"
+            assert lum < 0.42, f"{name}：亮度 {lum} 没判成深色"
+
+    def test_浅色页判成浅(self):
+        from services.theme_tokens import page_tone_evidence
+
+        lum = page_tone_evidence(self.LIGHT_BODY)
+        assert lum is not None and lum >= 0.42
+
+    #: body 有一堆 class，但**没有一个是能认出底色的**。
+    #: ⚠ 这一条比「body 完全没 class」重要：真机绝大多数页面是这形状
+    #:   （bg-gradient / 自定义类 / 什么都不写），走的是最后那条 return None。
+    #:   第一版判据只测了没 class 的早退路径，把最后那条 `return None` 改成
+    #:   `return 0.9` 照样全绿——典型的「判据咬不住」。
+    CLASS_BUT_UNKNOWN = (
+        "<!DOCTYPE html><html><head></head>"
+        '<body class="flex flex-col h-full antialiased font-sans"><main>正文</main></body></html>'
+    )
+
+    def test_反向_没证据就返回_None_不许瞎猜(self):
+        """⚠ 「宁可少认，不可认错」：抽不出来就交回给散文，别自己发明一个默认深浅。"""
+        from services.theme_tokens import page_tone_evidence
+
+        assert page_tone_evidence(self.NO_EVIDENCE) is None
+        assert page_tone_evidence(self.CLASS_BUT_UNKNOWN) is None
+
+    def test_反向_认不出底色的页不参与投票(self):
+        """认不出的页不能被当成「浅色一票」，否则一页深三页认不出就翻盘。"""
+        from services.theme_tokens import pages_tone_evidence
+
+        assert pages_tone_evidence({"p1": self.CLASS_BUT_UNKNOWN}) is None
+        assert pages_tone_evidence(
+            {"p1": self.DARK_BODY_STYLE, "p2": self.CLASS_BUT_UNKNOWN,
+             "p3": self.CLASS_BUT_UNKNOWN, "p4": self.CLASS_BUT_UNKNOWN}
+        ) is True
+
+    def test_散文说浅色但页面是深色_以页面为准(self):
+        """这条正对着真机那 4 页：散文没写深色 → 判浅 → 白顶栏压深内容。"""
+        pages = {"p1": self.DARK_BODY_STYLE, "p2": self.DARK_BODY_ARBITRARY}
+        out = apply_theme_to_pages(pages, {"tone": "浅色底", "primary": "#1e3a2f"})
+        for pid, html in out.items():
+            assert 'data-theme="dark"' in html, f"{pid} 仍按浅色钉"
+
+    def test_反向_散文说深色且页面也深_仍然是深(self):
+        """别把修法写成「永远无视散文」——没证据的页得靠散文。"""
+        out = apply_theme_to_pages(
+            {"p1": self.NO_EVIDENCE}, {"tone": "科技感深色", "primary": "#0ea5e9"}
+        )
+        assert 'data-theme="dark"' in out["p1"]
+
+    def test_反向_页面是浅色时不许被散文里的深色词带偏(self):
+        out = apply_theme_to_pages(
+            {"p1": self.LIGHT_BODY, "p2": self.LIGHT_BODY},
+            {"tone": "科技感深色", "primary": "#0ea5e9"},
+        )
+        assert 'data-theme="light"' in out["p1"]
+
+    def test_多页投票_少数派不翻盘(self):
+        """一个应用一个结论：3 深 1 浅仍然是深，不许每页各判各的。"""
+        pages = {
+            "p1": self.DARK_BODY_STYLE,
+            "p2": self.DARK_BODY_ARBITRARY,
+            "p3": self.DARK_BODY_BRICK,
+            "p4": self.LIGHT_BODY,
+        }
+        out = apply_theme_to_pages(pages, {"tone": "浅色底", "primary": "#1e3a2f"})
+        schemes = {pid: ('dark' if 'data-theme="dark"' in h else 'light') for pid, h in out.items()}
+        assert set(schemes.values()) == {"dark"}, schemes

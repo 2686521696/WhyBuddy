@@ -425,7 +425,11 @@ describe("手机页铺满视口", () => {
     );
     expect(once).toContain("min-height:56px!important");
     expect(once).toContain("padding-bottom:16px!important");
-    expect(once).toContain("background:#fff!important");
+    // ⚠ 2026-08-22 改成分层兜底：白底治的是「缺页/透明页透出 iframe 黑底」，
+    //   不是「模型的底色不对」。写成 !important 会把深色页刷成白纸——主题锁
+    //   降级成分层兜底之后这条立刻接手成新元凶，手机端整屏纯白、深浅翻转 4→8。
+    expect(once).toContain("@layer sliderule-fallback{html,body{background-color:#fff}}");
+    expect(once).not.toContain("background:#fff!important");
     expect(once).not.toContain("nav{display:flex");
     expect(once).not.toContain('body>div[class*="items-center"]{');
     expect(once).not.toContain("main{display:flex");
