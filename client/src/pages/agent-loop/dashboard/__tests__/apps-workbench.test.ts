@@ -18,6 +18,8 @@ import {
   pageLooksFull,
   GALLERY_PAGE_SIZE,
   canOpenGalleryItem,
+  applyAppPatch,
+  shouldBlankGallery,
   sessionIsAlive,
   type SessionListItem,
 } from "../AppsWorkbench";
@@ -572,8 +574,17 @@ describe("卡片墙走 masonic，高度由内容决定", () => {
   });
 });
 
+/**
+ * 剥注释再匹配（CLAUDE.md 第二条：判据不许被文档字符串带偏）。
+ *
+ * ⚠ 2026-08-22 修：**行注释必须先剥**。原来是先剥块注释，而源码里有一句
+ * `// …不打任何 /api/*。App Store 无后端 → 空。` —— 那个 `/api/*` 里的
+ * `/*` 开了个**假块注释**，一路吃到 6800 多字符之外的下一个 `*` + `/`。
+ * 后果不是报错，是这段源码对所有 `expect(src).not.toContain(...)` **隐身**：
+ * 判据看着挺严，其实那一整段里写什么都不会红。典型的「闸全绿但东西没了」。
+ */
 function sourceWithoutComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  return src.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
 }
 
 describe("pageLooksFull", () => {
@@ -595,7 +606,17 @@ describe("应用中心滚动分页接在真链路上", () => {
 
   it("首屏按页拉应用，不一次 listApps 空参把默认上限打满", () => {
     expect(src).not.toMatch(/listApps\(\s*\)/);
-    expect(raw).toContain("listApps({ limit: PAGE_SIZE, offset: 0, scope: tab })");
+    // ⚠ 2026-08-22 从字面量改成盯**用意**。原来钉的是
+    //   `listApps({ limit: PAGE_SIZE, offset: 0, scope: tab })` 这一串字。
+    //   这条判据要挡的是「一次把全表拉下来」，不是「limit 必须写成 PAGE_SIZE」——
+    //   同 tab 重拉要把已滚出来的页一并拉回（否则用户滚到第 9 页做个操作就被
+    //   打回前 12 张），limit 就不再是常量了。改成：首屏那次必须带
+    //   **有上限的 limit** 和 offset:0 和 scope。
+    expect(raw).toMatch(/listApps\(\{\s*limit:\s*\w+,\s*offset:\s*0,\s*scope:\s*tab\s*\}\)/);
+    // 上限必须存在：去掉封顶就是「一次拉全表」，正是这条判据当初要挡的。
+    expect(src).toContain("PAGE_SIZE * 8");
+    // ⚠ 不能写 [^)]*：中间那个 Math.max(...) 自带一个右括号。
+    expect(src).toMatch(/Math\.min\([\s\S]{0,80}?PAGE_SIZE \* 8\)/);
     expect(raw).toContain("listApps({ limit: PAGE_SIZE, offset, scope: tab })");
     expect(raw).toContain("onReachEnd={onWallReachEnd}");
     expect(raw).toContain("items={wallItems}");
@@ -652,7 +673,17 @@ describe("三个货架接在真链路上", () => {
   });
 
   it("列表必须带当前货架，Fork 之后切到我的应用", () => {
-    expect(raw).toContain("listApps({ limit: PAGE_SIZE, offset: 0, scope: tab })");
+    // ⚠ 2026-08-22 从字面量改成盯**用意**。原来钉的是
+    //   `listApps({ limit: PAGE_SIZE, offset: 0, scope: tab })` 这一串字。
+    //   这条判据要挡的是「一次把全表拉下来」，不是「limit 必须写成 PAGE_SIZE」——
+    //   同 tab 重拉要把已滚出来的页一并拉回（否则用户滚到第 9 页做个操作就被
+    //   打回前 12 张），limit 就不再是常量了。改成：首屏那次必须带
+    //   **有上限的 limit** 和 offset:0 和 scope。
+    expect(raw).toMatch(/listApps\(\{\s*limit:\s*\w+,\s*offset:\s*0,\s*scope:\s*tab\s*\}\)/);
+    // 上限必须存在：去掉封顶就是「一次拉全表」，正是这条判据当初要挡的。
+    expect(src).toContain("PAGE_SIZE * 8");
+    // ⚠ 不能写 [^)]*：中间那个 Math.max(...) 自带一个右括号。
+    expect(src).toMatch(/Math\.min\([\s\S]{0,80}?PAGE_SIZE \* 8\)/);
     expect(src).toContain('setTab("mine")');
     expect(src).toContain("patchApp");
     expect(client).toContain('scope=${encodeURIComponent(opts.scope)}');
@@ -685,5 +716,142 @@ describe("三个货架接在真链路上", () => {
     expect(src).toContain("绑定的推演会话也会一并删除");
     expect(client).toContain("function reopenApp");
     expect(client).toContain("/apps/${encodeURIComponent(id)}/reopen");
+  });
+});
+
+
+/**
+ * 「应用市场点一下就整页刷新」（2026-08-22 真机量的）。
+ *
+ * ## 病灶
+ *
+ * 点一次「设为私有」，实测：
+ *
+ *     卡片数 104 → **0** → 120        整片清空过
+ *     列表恢复                         6934ms
+ *     网络请求                         21 个
+ *
+ * 21 个里包括 `/api/health`、`/api/agent-loop/health`、`/api/sliderule/llm-channel`
+ * ——跟「这一个应用改了可见性」**毫无关系**。成因是所有菜单动作都走
+ * `setReloadKey(k => k + 1)`，而那个 effect 的第一句是 `setApps(null)`，
+ * 顺带把 `appsOffsetRef` / `appsIdsRef` / `visibleOrderRef` 全清了——
+ * 滚出来的分页也一起没了。
+ *
+ * ⚠ 代码里**没有** `location.reload()`。判据只能落在「渲染后还剩几张卡」上，
+ *   grep 源码会说这里没有整页刷新。真机探针在
+ *   experiments/ui-drive/market_action_probe.mjs。
+ *
+ * ⚠ 最讽刺的是 `confirmDeleteApp`：它认真做了本地摘卡（注释写着「不整页
+ *   刷新」），紧接着 `notifySessionsUpdated()` 广播，而本组件自己监听这个
+ *   事件并 bump —— 本地那份白做。
+ */
+describe("菜单动作不许把整张列表推倒重来", () => {
+  const APPS = [
+    { id: "a1", visibility: "public", is_official: false, name: "甲" },
+    { id: "a2", visibility: "public", is_official: false, name: "乙" },
+    { id: "a3", visibility: "private", is_official: true, name: "丙" },
+  ];
+
+  describe("applyAppPatch", () => {
+    it("只改中招那一张，其余原样", () => {
+      const out = applyAppPatch(APPS, "a2", { visibility: "private" });
+      expect(out?.map(a => a.visibility)).toEqual(["public", "private", "private"]);
+      expect(out?.map(a => a.name)).toEqual(["甲", "乙", "丙"]);
+    });
+
+    it("服务端回什么就写什么，不许前端自己猜", () => {
+      // patchApp 回的是服务端的真实状态。乐观更新猜错了，界面和后端就分叉。
+      const out = applyAppPatch(APPS, "a1", { visibility: "unlisted", is_official: true });
+      expect(out?.[0]).toMatchObject({ visibility: "unlisted", is_official: true });
+    });
+
+    it("反向：长度不许变——这条动作只改属性，不增不删", () => {
+      expect(applyAppPatch(APPS, "a2", { visibility: "private" })?.length).toBe(3);
+    });
+
+    it("反向：id 对不上时整份原样返回，不许悄悄改别人", () => {
+      const out = applyAppPatch(APPS, "不存在", { visibility: "private" });
+      expect(out).toEqual(APPS);
+    });
+
+    it("反向：null 列表保持 null，不许变成空数组", () => {
+      // null = 还没加载；[] = 加载完但一个都没有。两者在界面上是不同的状态。
+      expect(applyAppPatch(null, "a1", { visibility: "private" })).toBeNull();
+    });
+
+    it("反向：空补丁不许把字段抹成 undefined", () => {
+      const out = applyAppPatch(APPS, "a3", {});
+      expect(out?.[2]).toMatchObject({ visibility: "private", is_official: true });
+    });
+  });
+
+  describe("shouldBlankGallery", () => {
+    it("首次加载要清空（此前没有任何卡）", () => {
+      expect(shouldBlankGallery(null, "mine")).toBe(true);
+    });
+
+    it("切 tab 要清空——上一个 tab 的卡留着会串台", () => {
+      expect(shouldBlankGallery("mine", "official")).toBe(true);
+    });
+
+    it("★ 同一个 tab 里重拉**不许**清空——这条就是「点一下整页刷新」的病灶", () => {
+      expect(shouldBlankGallery("mine", "mine")).toBe(false);
+    });
+  });
+});
+
+
+/**
+ * 接线判据：纯函数写对了 ≠ 它被调用了（2026-08-22）。
+ *
+ * ⚠ 上面那组 applyAppPatch / shouldBlankGallery 的单测**咬不住接线**——
+ * 实测把菜单动作改回 `setReloadKey`、把清空改回无条件，184 条**照样全绿**。
+ * 本仓数到第十次以上的失败形态就是这个。所以这里盯源码形状。
+ *
+ * ⚠ 这些断言依赖 `sourceWithoutComments`，而它同日修过一个 bug：原来先剥块
+ * 注释，源码里 `// …不打任何 /api/*。` 的 `/*` 开了个假块注释，一路吃掉
+ * 5980 字符真源码——那段里写什么都不会红。改成先剥行注释。
+ */
+describe("菜单动作的接线", () => {
+  const raw = readFileSync(new URL("../AppsWorkbench.tsx", import.meta.url), "utf8");
+  const src = sourceWithoutComments(raw);
+
+  it("每个 patchApp 之后都就地改卡，不许再整体重拉", () => {
+    const calls = [...src.matchAll(/await patchApp\(/g)];
+    expect(calls.length, "菜单里应有可见性与官方位两个动作").toBeGreaterThanOrEqual(2);
+    for (const m of calls) {
+      const after = src.slice(m.index!, m.index! + 260);
+      expect(after, `patchApp 之后没有就地改卡：${after.slice(0, 90)}`).toContain(
+        "applyAppPatch"
+      );
+      expect(after, `patchApp 之后又整体重拉了：${after.slice(0, 90)}`).not.toContain(
+        "setReloadKey"
+      );
+    }
+  });
+
+  it("清空列表必须被 shouldBlankGallery 挡着，不许裸 setApps(null)", () => {
+    const blanks = [...src.matchAll(/setApps\(null\)/g)];
+    expect(blanks.length, "只该有一处清空（首屏/切 tab）").toBe(1);
+    const guard = src.lastIndexOf("shouldBlankGallery(", blanks[0].index!);
+    expect(guard, "setApps(null) 前面找不到 shouldBlankGallery").toBeGreaterThan(-1);
+    // 中间只该隔着 `xxx, tab)) {` 这么点东西；隔太远说明不在同一个 if 里
+    expect(blanks[0].index! - guard).toBeLessThan(120);
+  });
+
+  it("本组件自己的广播不许让自己整体重拉", () => {
+    // confirmDeleteApp 里那句本地摘卡（注释写着「不整页刷新」）就是被自己的
+    // 广播打回去的。删掉 notifySidebarOnly，本条必须红。
+    expect(src).toContain("notifySidebarOnly");
+    expect(src).toContain("selfNotifyRef");
+    // 删除/复刻/重开这三处本地已经改好了，只该通知侧栏
+    const deleteBlock = src.slice(src.indexOf("const confirmDeleteApp"), src.indexOf("const continueOnCard"));
+    expect(deleteBlock).toContain("notifySidebarOnly()");
+    expect(deleteBlock).not.toContain("notifySessionsUpdated()");
+  });
+
+  it("滚动加载要同步已加载数，否则重拉时把用户打回第一页", () => {
+    const append = src.slice(src.indexOf("appendUniqueById(prev, list"), src.indexOf("appendUniqueById(prev, list") + 320);
+    expect(append).toContain("loadedCountRef.current");
   });
 });

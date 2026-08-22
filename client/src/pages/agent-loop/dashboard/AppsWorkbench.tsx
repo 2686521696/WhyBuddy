@@ -146,6 +146,51 @@ export interface SpecPagesDetail {
  * **判空必须严**：空壳 {} 判成"有页面"的话，卡片会挂一个空白 iframe——
  * 比老的区块渲染更糟（那至少是真数据）。
  */
+/**
+ * 就地改一张卡的属性（可见性 / 官方位），**不重拉整个画廊**。
+ *
+ * ⚠ 2026-08-22 真机量的：点一次「设为私有」，卡片数 104 → **0** → 120，
+ *   列表空白 6934ms，打了 21 个网络请求——里面还有 `/api/health`、
+ *   `/api/agent-loop/health`、`/api/sliderule/llm-channel`，跟这次操作
+ *   毫无关系。成因是菜单动作一律走 `setReloadKey`，而那个 effect 头一句
+ *   就是 `setApps(null)`，顺带把分页游标全清了，滚出来的页也没了。
+ *
+ * 写进去的是 **patchApp 回的服务端状态**，不是前端猜的下一个值——
+ * 乐观更新猜错了，界面和后端就分叉，而且不会有任何一处报错。
+ *
+ * ⚠ `null` 保持 `null`：null = 还没加载，[] = 加载完但一个都没有，
+ *   界面上是两种状态，混了就会把「加载中」显示成「空空如也」。
+ */
+export function applyAppPatch<T extends { id?: string }>(
+  apps: T[] | null,
+  appId: string,
+  patch: { visibility?: string; is_official?: boolean }
+): T[] | null {
+  if (!apps) return apps;
+  const clean = Object.fromEntries(
+    Object.entries(patch).filter(([, v]) => v !== undefined)
+  );
+  if (!Object.keys(clean).length) return apps;
+  let touched = false;
+  const next = apps.map(a => {
+    if (String(a.id ?? "") !== appId) return a;
+    touched = true;
+    return { ...a, ...clean };
+  });
+  return touched ? next : apps;
+}
+
+/**
+ * 重拉画廊时该不该先清空。
+ *
+ * 只有**首次加载**和**切 tab** 才清——那两种情况下留着旧卡会串台。
+ * 同一个 tab 里的重拉（改了可见性、复刻出新卡、侧栏删了会话）一律不清：
+ * 用户看到的应该是「某张卡变了」，不是「整页白了 7 秒又长回来」。
+ */
+export function shouldBlankGallery(blankedForTab: string | null, tab: string): boolean {
+  return blankedForTab !== tab;
+}
+
 export function extractSpecPages(raw: unknown): SpecPagesDetail | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
@@ -1395,11 +1440,33 @@ export function AppsWorkbench() {
   const inflightRef = React.useRef(new Set<string>());
   // E28：订阅会话库更新事件（侧栏删会话/新话题落盘）→ 重拉画廊
   const [reloadKey, setReloadKey] = React.useState(0);
+  // 上一次「清空重来」是为哪个 tab 做的。同 tab 内重拉不再清空。
+  const blankedForRef = React.useRef<string | null>(null);
+  // 自己广播出去、还没被自己的监听器吃掉的会话更新事件数。
+  const selfNotifyRef = React.useRef(0);
+  // 当前已经加载出来的应用数（滚动分页累计）。同 tab 重拉时按它拉回来。
+  const loadedCountRef = React.useRef(0);
+  /** 广播给侧栏，但不让本组件因此整体重拉——本地已经改好了。 */
+  const notifySidebarOnly = React.useCallback(() => {
+    selfNotifyRef.current += 1;
+    notifySessionsUpdated();
+  }, []);
   // E41 官方示例库（2026-08-14 起货架清空但功能保留；后端上架即恢复展示）
   const [examples, setExamples] = React.useState<BuiltinExample[]>([]);
   const [exampleCat, setExampleCat] = React.useState("全部");
   React.useEffect(() => {
-    const bump = () => setReloadKey(k => k + 1);
+    // ⚠ 2026-08-22：本组件**自己**也会 notifySessionsUpdated()（删应用、
+    //   复刻、从快照重开），广播出去是给侧栏用的。可这个监听器不认发送方，
+    //   于是自己的广播把自己整体重拉了一遍——`confirmDeleteApp` 里那句认真
+    //   写的本地摘卡（注释还写着「不整页刷新」）当场白做。
+    //   自己发出去的那一拍跳过：侧栏照收不误，这边不推倒重来。
+    const bump = () => {
+      if (selfNotifyRef.current > 0) {
+        selfNotifyRef.current -= 1;
+        return;
+      }
+      setReloadKey(k => k + 1);
+    };
     window.addEventListener(SESSIONS_UPDATED_EVENT, bump);
     return () => window.removeEventListener(SESSIONS_UPDATED_EVENT, bump);
   }, []);
@@ -1417,8 +1484,14 @@ export function AppsWorkbench() {
     appsIdsRef.current = new Set();
     inflightRef.current.clear();
     visibleOrderRef.current = [];
-    setApps(null);
-    setAppsHasMore(false);
+    // ★ 只有首次加载和切 tab 才清空（2026-08-22）。同一个 tab 里的重拉——
+    //   复刻出新卡、侧栏删了会话——一律不清：用户该看到「某张卡变了」，
+    //   不是「整页白 7 秒又长回来」。判据 shouldBlankGallery。
+    if (shouldBlankGallery(blankedForRef.current, tab)) {
+      setApps(null);
+      setAppsHasMore(false);
+      blankedForRef.current = tab;
+    }
     if (IS_GITHUB_PAGES) {
       // 静态演示（无后端）：画廊 = 主演示会话 + 画廊示例种子（E18：新引擎
       // 真实推演的闭环终态，懒加载不进主包）。不打任何 /api/*。App Store 无后端 → 空。
@@ -1453,8 +1526,13 @@ export function AppsWorkbench() {
     // 真实态：摘要按页拉（limit=12），会话列表仍是瘦列表。
     // 完整模型禁止在这里扫全表——按卡挂载走 ensureDetail（2026-08-18）。
     // App Store 失败 fail-open 空数组（画廊退化成纯会话卡，零回退）。
+    // ★ 同一个 tab 里重拉时，把**已经滚出来的那些页**一起拉回来
+    //   （2026-08-22）。原来一律 limit=PAGE_SIZE，用户滚到第 9 页做个操作
+    //   就被打回前 12 张——比整页白闪更难受，因为位置也丢了。
+    //   封顶避免一次拉全表：超过就退回一页，用户再滚。
+    const keepLoaded = Math.min(Math.max(PAGE_SIZE, loadedCountRef.current), PAGE_SIZE * 8);
     void Promise.allSettled([
-      listApps({ limit: PAGE_SIZE, offset: 0, scope: tab }),
+      listApps({ limit: keepLoaded, offset: 0, scope: tab }),
       fetch("/api/sliderule/sessions").then(r =>
         r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))
       ),
@@ -1463,6 +1541,7 @@ export function AppsWorkbench() {
       const appList = appsRes.status === "fulfilled" ? appsRes.value : [];
       setApps(appList);
       appsOffsetRef.current = appList.length;
+      loadedCountRef.current = appList.length;
       appsIdsRef.current = new Set(appList.map(a => String(a.id || "")).filter(Boolean));
       setAppsHasMore(pageLooksFull(appList.length, PAGE_SIZE));
       if (sessRes.status === "fulfilled") {
@@ -1561,6 +1640,9 @@ export function AppsWorkbench() {
       setApps(prev => {
         const out = appendUniqueById(prev, list, a => String(a.id || ""));
         appsIdsRef.current = new Set(out.map(a => String(a.id || "")).filter(Boolean));
+        // ★ 同 tab 重拉要按这个数把已滚出来的页一起拉回来，漏了这行的话
+        //   计数永远停在第一页，用户滚了多远都会被打回前 12 张。
+        loadedCountRef.current = out.length;
         return out;
       });
       appsOffsetRef.current = offset + list.length;
@@ -1647,7 +1729,8 @@ export function AppsWorkbench() {
         // E28：与左侧会话列表联动——广播更新事件让侧栏立即摘掉该会话；
         // 删的是当前活跃会话时切到最近剩余会话（一个不剩就开新会话），
         // 避免 active-session-id 悬空指向已删会话
-        notifySessionsUpdated();
+        // ★ 上一行已经本地摘掉了，只通知侧栏，不让自己整体重拉。
+        notifySidebarOnly();
         try {
           if (localStorage.getItem(ACTIVE_SESSION_KEY) === gi.sessionId) {
             // 还有剩的就切过去；一条不剩才向服务端要新的
@@ -1683,7 +1766,8 @@ export function AppsWorkbench() {
       })
     );
     // 绑定会话服务端已删，侧栏必须跟着摘，否则还挂着一条进不去的草稿。
-    notifySessionsUpdated();
+    // ★ 上面已经按血缘本地摘干净了，这里只通知侧栏，不让自己整体重拉。
+    notifySidebarOnly();
     setDeleteModal(null);
     setMenuFor(null);
   };
@@ -1698,7 +1782,8 @@ export function AppsWorkbench() {
       return;
     }
     setPreviewModal(null);
-    notifySessionsUpdated();
+    // ★ 下一行就跳进会话了，重拉画廊纯属白烧一轮请求。
+    notifySidebarOnly();
     open(result.sessionId);
   };
 
@@ -2009,8 +2094,11 @@ export function AppsWorkbench() {
                       const next =
                         item.summary?.visibility === "private" ? "public" : "private";
                       void (async () => {
-                        const ok = await patchApp(item.appId!, { visibility: next });
-                        if (ok) setReloadKey(k => k + 1);
+                        const res = await patchApp(item.appId!, { visibility: next });
+                        // ★ 就地改这一张，**不重拉整个画廊**（2026-08-22）。
+                        //   原来这里是 setReloadKey，实测代价：卡片 104→0→120、
+                        //   空白 6934ms、21 个请求（含 health / llm-channel）。
+                        if (res) setApps(prev => applyAppPatch(prev, item.appId!, res));
                         setMenuFor(null);
                       })();
                     }}
@@ -2029,8 +2117,9 @@ export function AppsWorkbench() {
                     onClick={() => {
                       const next = !item.summary?.is_official;
                       void (async () => {
-                        const ok = await patchApp(item.appId!, { is_official: next });
-                        if (ok) setReloadKey(k => k + 1);
+                        const res = await patchApp(item.appId!, { is_official: next });
+                        // ★ 同「设为私有」：就地改，不重拉。
+                        if (res) setApps(prev => applyAppPatch(prev, item.appId!, res));
                         setMenuFor(null);
                       })();
                     }}
