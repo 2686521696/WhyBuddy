@@ -563,7 +563,10 @@ describe("浅色壳上的白字和高亮", () => {
     expect(once).toContain("aside nav a{box-sizing:border-box;width:100%;");
     expect(CHROME_CONTRAST_CSS).toContain('aside [aria-current="page"]');
     expect(CHROME_CONTRAST_CSS).toContain('nav[aria-label="Breadcrumb"]');
-    expect(CHROME_CONTRAST_CSS).toContain("min-width:16rem");
+    expect(CHROME_CONTRAST_CSS).toContain("min-width:var(--shell-aside-width)");
+    expect(CHROME_CONTRAST_CSS).toContain("--shell-aside-width:16rem");
+    // 数字只有一个来源：宽度和让位共用同一个变量，不会改一个忘一个
+    expect(CHROME_CONTRAST_CSS.split("16rem").length - 1).toBe(1);
     expect(CHROME_CONTRAST_CSS).toContain("bg-zinc-950");
     expect(CHROME_CONTRAST_CSS).toContain("align-items:center");
     expect(applyChromeContrast(once)).toBe(once);
@@ -617,7 +620,7 @@ describe("浅色壳上的白字和高亮", () => {
     expect(doc.querySelectorAll(`#${PREVIEW_CHROME_STYLE_ID}`).length).toBe(1);
     const sheet = doc.getElementById(PREVIEW_CHROME_STYLE_ID);
     expect(sheet?.textContent).toContain('body>[class*="mx-auto"]');
-    expect(sheet?.textContent).toContain("min-width:16rem");
+    expect(sheet?.textContent).toContain("min-width:var(--shell-aside-width)");
     for (let i = 0; i < 6; i++) {
       const late = doc.createElement("style");
       late.id = `tw-late-${i}`;

@@ -507,6 +507,37 @@ class PageShellError(RuntimeError):
 SHELL_MARK_ATTR = "data-shell"
 
 
+#: 「侧栏多宽 / 主体让多少位」——chrome 与 main 之间的空间契约（2026-08-22）。
+#:
+#: ⚠ 这条契约原来住在 ``theme_tokens._chrome_contrast_css`` 里，而手机那半
+#:   （header 静态 / main 吃剩余高度 / nav 贴底）住在本文件的 ``_PHONE_FILL_CSS``。
+#:   同一件事劈在两个文件、两个职责里，正是本仓「改一半必然静默失效」的温床。
+#:   定义搬回壳的主人这边，两半在同一个文件里挨着放。
+#:
+#: ⚠ **注入位置不动**：仍由 theme_tokens 拼进主题层。不能挪进
+#:   ``_DESKTOP_FILL_CSS``——bind 会整页重写吃掉 head，而 spec_first_pipeline
+#:   在 bind 之后**只重钉主题**，铺满层没人补（它只在 unify_shell 里注入一次）。
+#:   挪过去等于在 bind 路径上静默丢契约。
+#:
+#: 数字只留一个来源 ``--shell-aside-width``，照 shadcn/ui Sidebar 的
+#: ``--sidebar-width: 16rem``：宽度和让位读同一个变量，不会改一个忘一个。
+#: 认第 1 步打的 ``data-shell``；旧选择器留着当存量会话的退路。
+#: ⚠ ``[class*="fixed"]`` 这一档**不能**去掉：它问的不是「是不是壳」（那是标
+#:   回答的），而是「这个侧栏占不占位」——只有脱离文档流的侧栏才需要兄弟让位，
+#:   在流里的一让就是中间一道空缝。
+SHELL_ASIDE_LAYOUT_CSS = (
+    ":root{--shell-aside-width:16rem}"
+    '[data-shell="aside"],aside:has(nav a)'
+    "{min-width:var(--shell-aside-width)!important;box-sizing:border-box}"
+    '[data-shell="aside"][class*="fixed"],[data-shell="aside"][class*="absolute"],'
+    'aside[class*="fixed"]:has(nav a),aside[class*="absolute"]:has(nav a)'
+    "{width:var(--shell-aside-width)!important}"
+    '[data-shell="aside"][class*="fixed"]~*,[data-shell="aside"][class*="absolute"]~*,'
+    'aside[class*="fixed"]:has(nav a)~*,aside[class*="absolute"]:has(nav a)~*'
+    "{margin-left:var(--shell-aside-width)!important}"
+)
+
+
 def mark_shell_parts(markup: str, *, device: str = "desktop") -> str:
     """给这一页的壳节点打 ``data-shell`` 标。幂等，注释里的不算。
 

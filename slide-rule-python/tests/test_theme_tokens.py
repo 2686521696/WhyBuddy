@@ -152,7 +152,7 @@ class Test接在活路上:
         assert 'nav[aria-label="Breadcrumb"] [aria-current="page"]' in out
         assert "aside nav a{box-sizing:border-box;width:100%;" in out.replace("\n", "")
         assert 'html[data-theme="light"] header .bg-zinc-950' in out
-        assert "min-width:16rem" in out
+        assert "min-width:var(--shell-aside-width)" in out
         assert "align-items:center" in out
 
     def test_对比层与前端同文(self):
@@ -177,7 +177,9 @@ class Test接在活路上:
             "aside nav a{box-sizing:border-box;width:100%;",
             'aside [aria-current="page"]',
             'nav[aria-label="Breadcrumb"] [aria-current="page"]',
-            "min-width:16rem",
+            "min-width:var(--shell-aside-width)",
+            "--shell-aside-width:16rem",
+            '[data-shell="aside"]',
             "bg-zinc-950",
             "align-items:center",
         ):
@@ -381,3 +383,87 @@ class Test深浅跟着页面走:
         out = apply_theme_to_pages(pages, {"tone": "浅色底", "primary": "#1e3a2f"})
         schemes = {pid: ('dark' if 'data-theme="dark"' in h else 'light') for pid, h in out.items()}
         assert set(schemes.values()) == {"dark"}, schemes
+
+
+class Test间距契约只有一处主人:
+    """「侧栏多宽 / 主体让多少位」这条契约，定义只许有一份（2026-08-22）。
+
+    ## 病灶
+
+    同一件事劈在两个文件里：
+
+        桌面：侧栏 16rem + 主体 margin-left:16rem   → theme_tokens._chrome_contrast_css
+        手机：header 静态 + main 吃剩余 + nav 贴底  → page_shell._PHONE_FILL_CSS
+
+    一半在「配色」里、一半在「铺满」里，正是本仓「改一半必然静默失效」的温床。
+    而且桌面那半靠 ``aside[class*="fixed"]:has(nav a)`` 猜壳——第 1 步已经给
+    壳打了 ``data-shell``，没理由再猜。
+
+    ## 为什么是「定义搬家、注入不动」
+
+    ⚠ **不能**把这几条直接挪进 ``_DESKTOP_FILL_CSS``。bind 会整页重写、吃掉
+    head，而 ``spec_first_pipeline`` 在 bind 之后**只重钉主题**
+    （``apply_theme_to_pages``），铺满层没人补（它只在 ``unify_shell`` 里注入
+    一次）。挪过去等于在 bind 路径上静默丢契约——不报错、不告警。
+
+    所以：**定义**搬到 page_shell（壳的主人），**注入**仍走主题层（耐久的那层）。
+    数字只留一个来源 ``--shell-aside-width``，照 shadcn Sidebar 的
+    ``--sidebar-width: 16rem``。
+    """
+
+    def test_定义在_page_shell_不在_theme_tokens(self):
+        import inspect
+
+        from services import theme_tokens
+        from services.page_shell import SHELL_ASIDE_LAYOUT_CSS
+
+        assert "--shell-aside-width" in SHELL_ASIDE_LAYOUT_CSS
+        src = inspect.getsource(theme_tokens)
+        # 剥注释再匹配：模块头讲的就是这条契约，带着注释比对会误绿/误红。
+        code = "\n".join(
+            line for line in src.splitlines() if not line.lstrip().startswith("#")
+        )
+        code = re.sub(r'"""[\s\S]*?"""', "", code)
+        assert "margin-left:16rem" not in code, "契约还留在 theme_tokens 里"
+        assert "min-width:16rem" not in code, "契约还留在 theme_tokens 里"
+
+    def test_数字只有一个来源(self):
+        from services.page_shell import SHELL_ASIDE_LAYOUT_CSS
+
+        assert SHELL_ASIDE_LAYOUT_CSS.count("16rem") == 1, (
+            "16rem 出现多次——宽度和让位必须共用同一个变量，否则改一个忘一个"
+        )
+        assert SHELL_ASIDE_LAYOUT_CSS.count("var(--shell-aside-width)") >= 3
+
+    def test_认标也留存量退路(self):
+        """⚠ 逐条查，不许拿整串做子串匹配。
+
+        第一版写成 ``'[data-shell="aside"]' in SHELL_ASIDE_LAYOUT_CSS``，
+        把「宽度」那条的标删掉照样绿——因为「让位」那条里还有这个子串。
+        典型的判据咬不住。
+        """
+        from services.page_shell import SHELL_ASIDE_LAYOUT_CSS
+
+        rules = [r for r in SHELL_ASIDE_LAYOUT_CSS.split("}") if "{" in r]
+        # 除了 :root 那条变量声明，每一条都得同时认标和留退路
+        body = [r for r in rules if not r.strip().startswith(":root")]
+        assert len(body) == 3, [r.split("{")[0] for r in rules]
+        for rule in body:
+            sel = rule.split("{")[0]
+            assert '[data-shell="aside"]' in sel, f"这条没认标：{sel}"
+            # 存量退路的标志是老写法 `:has(nav a)`（宽度那条是 aside:has(nav a)，
+            # 另两条是 aside[class*="fixed"]:has(nav a)）。
+            assert ":has(nav a)" in sel, f"这条没留存量退路：{sel}"
+
+    def test_成品页里契约还在_行为不变(self):
+        """★ 定义搬家不许改变成品。删掉 theme 里那次引用，本条必须红。"""
+        src = (
+            "<!DOCTYPE html><html><head></head><body>"
+            '<aside class="fixed w-64"><nav><a href="#">甲</a></nav></aside>'
+            "<main>正文</main></body></html>"
+        )
+        out = apply_theme_to_html(src, derive_theme_tokens({"tone": "浅色底"}))
+        compact = out.replace("\n", "")
+        assert "--shell-aside-width:16rem" in compact
+        assert "margin-left:var(--shell-aside-width)!important" in compact
+        assert "width:var(--shell-aside-width)!important" in compact

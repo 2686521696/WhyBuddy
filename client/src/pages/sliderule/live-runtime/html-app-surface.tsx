@@ -171,9 +171,16 @@ export const CHROME_CONTRAST_CSS =
   "aside nav a{box-sizing:border-box;width:100%;display:flex!important;flex-direction:row!important;align-items:center!important;gap:.5rem}" +
   "aside>:first-child:not(nav):not(:has(nav)){display:flex!important;flex-direction:row!important;align-items:center!important;gap:.5rem}" +
   "aside :is(img,svg){flex-shrink:0}" +
-  "aside:has(nav a){min-width:16rem!important;box-sizing:border-box}" +
-  'aside[class*="fixed"]:has(nav a),aside[class*="absolute"]:has(nav a){width:16rem!important}' +
-  'aside[class*="fixed"]:has(nav a)~*,aside[class*="absolute"]:has(nav a)~*{margin-left:16rem!important}' +
+  // ★「侧栏多宽 / 主体让多少位」这条空间契约归 page_shell.SHELL_ASIDE_LAYOUT_CSS
+  //   定义（它是壳的主人），两侧同文。数字只留一个来源 --shell-aside-width，
+  //   照 shadcn Sidebar 的 --sidebar-width：宽度和让位读同一个变量。
+  //   认 page_shell 打的 data-shell；旧选择器留作存量退路。
+  // ⚠ [class*="fixed"] 这一档不能去掉：它问的不是「是不是壳」（标已回答），
+  //   而是「这个侧栏占不占位」——在流里的侧栏一让位就是中间一道空缝。
+  ":root{--shell-aside-width:16rem}" +
+  '[data-shell="aside"],aside:has(nav a){min-width:var(--shell-aside-width)!important;box-sizing:border-box}' +
+  '[data-shell="aside"][class*="fixed"],[data-shell="aside"][class*="absolute"],aside[class*="fixed"]:has(nav a),aside[class*="absolute"]:has(nav a){width:var(--shell-aside-width)!important}' +
+  '[data-shell="aside"][class*="fixed"]~*,[data-shell="aside"][class*="absolute"]~*,aside[class*="fixed"]:has(nav a)~*,aside[class*="absolute"]:has(nav a)~*{margin-left:var(--shell-aside-width)!important}' +
   'aside [aria-current="page"]{background-color:color-mix(in srgb,var(--primary,currentColor) 16%,var(--chrome,transparent))!important;color:var(--chrome-fg,inherit)!important;font-weight:600}' +
   'header nav[aria-label="Breadcrumb"] [aria-current="page"],header nav[aria-label="breadcrumb"] [aria-current="page"]{background-color:transparent!important;color:var(--chrome-fg,inherit)!important;font-weight:600}';
 

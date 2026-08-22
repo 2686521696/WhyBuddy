@@ -48,6 +48,7 @@ from typing import Any, Dict, Iterable, Optional
 from coloraide import Color
 
 from .design_language import DEFAULT_DESIGN_LANGUAGE, normalize_design_language
+from .page_shell import SHELL_ASIDE_LAYOUT_CSS
 from .palette_guard import repair_colors
 
 THEME_STYLE_ID = "sliderule-theme"
@@ -334,12 +335,11 @@ def _chrome_contrast_css() -> str:
         "display:flex!important;flex-direction:row!important;"
         "align-items:center!important;gap:.5rem}"
         "aside :is(img,svg){flex-shrink:0}"
-        "aside:has(nav a){min-width:16rem!important;box-sizing:border-box}"
-        'aside[class*="fixed"]:has(nav a),aside[class*="absolute"]:has(nav a)'
-        "{width:16rem!important}"
-        'aside[class*="fixed"]:has(nav a)~*,aside[class*="absolute"]:has(nav a)~*'
-        "{margin-left:16rem!important}"
-        'aside [aria-current="page"]{'
+        # ★ 侧栏宽度与主体让位这条**空间契约**归 page_shell 定义（它是壳的
+        #   主人），这里只负责把它注进主题层——主题层是 bind 之后唯一会被
+        #   重钉的那层，铺满层不是。定义搬家、注入不动。
+        + SHELL_ASIDE_LAYOUT_CSS
+        +         'aside [aria-current="page"]{'
         "background-color:color-mix(in srgb,var(--primary,currentColor) 16%,var(--chrome,transparent))!important;"
         "color:var(--chrome-fg,inherit)!important;font-weight:600}"
         'header nav[aria-label="Breadcrumb"] [aria-current="page"],'
