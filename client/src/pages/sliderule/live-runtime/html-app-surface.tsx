@@ -420,6 +420,10 @@ const ALLOWED_ATTR = [
   // 导航切页的锚点（page_shell 打的）。⚠ 漏了它左侧菜单就点不动，
   // 而且不会有任何一处报错——菜单还在，只是点了没反应。
   "data-page-id",
+  // 壳节点自报家门（page_shell.mark_shell_parts 打的）。主题锁与间距契约
+  // 认它、不再拿 class 子串猜壳。⚠ 漏了它手机底栏就永远染不上色，
+  // 而且不会有任何报错——跟 data-page-id 当年一样的坑。
+  "data-shell",
   // 绑定词汇 —— 从解释器 import，不手抄
   ...BINDING_ATTRS,
 ];

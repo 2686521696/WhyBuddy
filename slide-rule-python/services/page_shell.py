@@ -479,6 +479,80 @@ class PageShellError(RuntimeError):
     """统一外壳失败。**不回落**——半套壳比原来那三套还糟。"""
 
 
+#: 壳节点自报家门（2026-08-22）。
+#:
+#: ⚠ 病灶：``unify_shell`` **自己把 header/aside/nav 放进每一页**，它百分之百
+#:   知道哪个节点是壳。可下游两层都不问它，各自拿 CSS 猜：
+#:     · 主题锁 ``header,aside,nav.fixed`` → **26/26 手机页的 <nav> 都不带
+#:       ``.fixed``，命中 0**；同一份 CSS 里 ``html,body{...!important}`` 却把
+#:       53/53 页的整页底色全改了（8 页深浅整个翻转）。该管的漏光，不该管的全中。
+#:     · 间距契约 ``aside[class*="fixed"]:has(nav a)~*`` 同样是猜，而且住在
+#:       theme_tokens.py 里，跟这个文件里的手机那半劈成了两处。
+#:
+#: 做法照 shadcn/ui sidebar：它用 ``data-slot="sidebar"`` / ``data-sidebar=…``
+#: 标功能区，宽度走 ``--sidebar-width`` 变量，主体靠 peer-data 让位——
+#: **没有一处从 class 子串反推语义**。我们更省：标是自己打的，不用求模型配合。
+#:
+#: ⚠ 属性名用 ``data-shell`` 而**不是** ``data-slot``：模型抄 shadcn 代码时
+#:   会带 ``data-slot``，撞上就分不清是我们打的还是它抄来的。
+#: ⚠ 新增 ``data-*`` 必须同时进**两份** DOMPurify 白名单
+#:   （bound-html-surface.tsx / html-app-surface.tsx），漏一份会被静默剥掉——
+#:   跟 ``data-page-id`` 当年一样的坑。
+SHELL_MARK_ATTR = "data-shell"
+
+
+def mark_shell_parts(markup: str, *, device: str = "desktop") -> str:
+    """给这一页的壳节点打 ``data-shell`` 标。幂等，注释里的不算。
+
+    桌面打 aside / header / main；手机打 header / main + **页面级** nav。
+
+    ⚠ 手机的 nav 走 ``_page_nav``，不是裸 ``_NAV``：面包屑 ``<nav
+      aria-label="Breadcrumb">`` 住在 <header> 里，正则先吃到的是它。
+      2026-08-21 素材雷达就是这么把底栏模板写进顶栏的；我自己读菜单时
+      也栽过同一跤（``navs[0]`` 是面包屑，据此报了「菜单跟会话对不上」）。
+    """
+    text = markup or ""
+    if not text:
+        return text
+    blanked = _blank_comments(text)
+    todo: List[Tuple[int, str]] = []
+
+    def _plan(open_start: int, open_end: int, value: str) -> None:
+        """⚠ 标插在开标签**末尾**，不插在标签名后面。
+
+        插前面会把 ``<nav class="bottom-bar">`` 变成
+        ``<nav data-shell="nav" class="bottom-bar">``——本仓大量正则是按
+        ``<tag class="…"`` 抓的（test_spec_first_mobile 那条底栏判据当场
+        就红了）。插末尾对所有「第一个属性是什么」的假设都无害。
+        """
+        if open_end <= open_start or SHELL_MARK_ATTR in text[open_start:open_end]:
+            return
+        todo.append((open_end - 1, value))  # ``>`` 前面那一格
+
+    def mark_tag(tag_name: str, value: str) -> None:
+        m = re.compile(rf"<{tag_name}\b[^>]*>", re.I).search(blanked)
+        if m:
+            _plan(m.start(), m.end(), value)
+
+    if device == "phone":
+        mark_tag("header", "header")
+        mark_tag("main", "main")
+        nav = _page_nav(text)
+        if nav:
+            open_end = text.find(">", nav.start())
+            if open_end > 0:
+                _plan(nav.start(), open_end + 1, "nav")
+    else:
+        mark_tag("aside", "aside")
+        mark_tag("header", "header")
+        mark_tag("main", "main")
+
+    out = text
+    for pos, value in sorted(todo, reverse=True):
+        out = out[:pos] + f' {SHELL_MARK_ATTR}="{value}"' + out[pos:]
+    return out
+
+
 def extract_shell(markup: str) -> Dict[str, str]:
     """抠出一页的壳：`<aside>` 与 `<header>` 两段原文。
 
@@ -1174,6 +1248,8 @@ def _unify_shell_phone(pages_html: Dict[str, str], spec: Dict[str, Any]) -> Dict
                 count=1,
             )
             html = _ensure_phone_nav(html, new_nav)
+        # ★ 打标放在铺满层之前：下游（主题锁、间距契约）认标不认 class。
+        html = mark_shell_parts(html, device="phone")
         out[page_id] = ensure_phone_viewport_fill(ensure_phone_safe_area(html))
 
     return {
@@ -1332,6 +1408,7 @@ def unify_shell(
                 )
         # ★ 整页居中卡片撑满视口（2026-08-20 满电青年）。放在 reconcile
         #   之后：ml-16 已经写对，铺满层才不会去动让位。
+        html = mark_shell_parts(html, device="desktop")
         out[page_id] = ensure_desktop_viewport_fill(html)
 
     return {

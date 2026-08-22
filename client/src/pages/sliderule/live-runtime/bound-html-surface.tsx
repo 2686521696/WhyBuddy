@@ -89,6 +89,8 @@ const ALLOWED_ATTR = [
   "stop-opacity", "gradientUnits", "gradientTransform", "clip-path", "mask",
   "text-anchor", "dominant-baseline", "font-size", "font-weight", "font-family",
   "dx", "dy", "patternUnits",
+  // 壳节点自报家门（page_shell.mark_shell_parts 打的）。⚠ 两份白名单必须同改。
+  "data-shell",
   // 绑定词汇 —— **从解释器 import，不手抄**（见文件头）
   ...BINDING_ATTRS,
 ];

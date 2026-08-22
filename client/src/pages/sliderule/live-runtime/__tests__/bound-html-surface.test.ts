@@ -159,3 +159,32 @@ describe("两件事别混：Shadow DOM 不是安全边界", () => {
     expect(src).toContain("Shadow DOM **不是**安全边界");
   });
 });
+
+/**
+ * `data-shell` 必须活着穿过消毒（2026-08-22）。
+ *
+ * ⚠ 这条链上有**两份**白名单（本文件测 bound-html-surface，另一条在
+ * html-app-surface）。新增 data-* 漏进任何一份都会被**静默剥掉**——
+ * 不报错、不告警，只是下游选择器再也选不中壳。`data-page-id` 当年就是
+ * 这么丢的：菜单还在，点了没反应。
+ */
+describe("data-shell 穿过消毒", () => {
+  it("壳节点上的 data-shell 不许被剥", () => {
+    const out = sanitizeBoundHtml(
+      '<aside data-shell="aside"><nav>菜单</nav></aside>' +
+        '<header data-shell="header">顶</header>' +
+        '<main data-shell="main">正文</main>' +
+        '<nav data-shell="nav">底</nav>',
+    );
+    for (const v of ["aside", "header", "main", "nav"]) {
+      expect(out, `data-shell="${v}" 被剥掉了`).toContain(`data-shell="${v}"`);
+    }
+  });
+
+  it("反向：没在白名单里的 data-* 仍然该被剥（消毒还在干活）", () => {
+    // 判据自己得能证明「不是所有 data-* 都放行」，否则上一条恒真。
+    expect(sanitizeBoundHtml('<div data-not-allowed="x">正文</div>')).not.toContain(
+      "data-not-allowed",
+    );
+  });
+});

@@ -724,3 +724,23 @@ describe("铺满层不许掀开作者标了关的浮层", () => {
     });
   }
 });
+
+/** 另一份白名单同样得放行 data-shell。见 bound-html-surface.test.ts 里那条的说明。 */
+describe("data-shell 穿过消毒（应用面这一份）", () => {
+  it("壳节点上的 data-shell 不许被剥", () => {
+    const out = sanitizeAppHtml(
+      '<!DOCTYPE html><html><body><aside data-shell="aside"><nav>菜单</nav></aside>' +
+        '<header data-shell="header">顶</header><main data-shell="main">正文</main>' +
+        '<nav data-shell="nav">底</nav></body></html>',
+    );
+    for (const v of ["aside", "header", "main", "nav"]) {
+      expect(out, `data-shell="${v}" 被剥掉了`).toContain(`data-shell="${v}"`);
+    }
+  });
+
+  it("反向：没在白名单里的 data-* 仍然该被剥", () => {
+    expect(
+      sanitizeAppHtml('<!DOCTYPE html><html><body><div data-not-allowed="x">正文</div></body></html>'),
+    ).not.toContain("data-not-allowed");
+  });
+});
