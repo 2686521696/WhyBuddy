@@ -1,6 +1,9 @@
 // 量「应用市场点一个菜单动作，代价有多大」。
 //
-// 用法：UI_EMAIL=… UI_PASSWORD=… node market_action_probe.mjs [输出目录]
+// 用法：UI_EMAIL=… UI_PASSWORD=… [BASE=https://miantuan.ai] node market_action_probe.mjs [输出目录]
+//
+// ⚠ 这个探针会**真的改一张应用的可见性**。打生产时它会在量完之后**改回原样**
+//   ——别人的数据不是量具的耗材。恢复失败会显式报出来，不静默。
 //
 // 量三件用户真能感觉到的事：
 //   ① 卡片有没有整片消失（setApps(null) → 列表清空 → 看起来就是整页刷新）
@@ -13,10 +16,11 @@
 import { chromium } from '@playwright/test';
 import { mkdirSync } from 'fs';
 const OUT = process.argv[2] || '';
+const BASE = (process.env.BASE || 'http://127.0.0.1:3000').replace(/\/$/, '');
 if (OUT) mkdirSync(OUT, { recursive: true });
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
 const ctx = await b.newContext({ viewport: { width: 1920, height: 1080 } });
-const lr = await ctx.request.post('http://127.0.0.1:3000/api/sliderule/account/login',
+const lr = await ctx.request.post(`${BASE}/api/sliderule/account/login`,
   { data: { email: process.env.UI_EMAIL, password: process.env.UI_PASSWORD } });
 console.log('登录', lr.status());
 const p = await ctx.newPage();
@@ -24,7 +28,7 @@ const p = await ctx.newPage();
 const reqs = [];
 p.on('request', r => reqs.push({ t: Date.now(), url: r.url() }));
 
-await p.goto('http://127.0.0.1:3000/agent-loop/workbench', { waitUntil: 'domcontentloaded' });
+await p.goto(`${BASE}/agent-loop/workbench`, { waitUntil: 'domcontentloaded' });
 await p.waitForTimeout(6000);
 // 进「我的应用」
 const mine = p.getByText(/^我的应用$/).first();
@@ -75,12 +79,29 @@ for (let i = 0; i < 120; i++) {
 const after = await cardCount();
 if (OUT) await p.screenshot({ path: `${OUT}/01-动作后.png` });
 
+// ★ 把动过的那张改回原样。生产数据不是量具的耗材。
+let restored = 'n/a';
+try {
+  const again = p.locator('[data-testid^="app-visibility-"]').first();
+  // 菜单可能已关，重新打开同一张卡的菜单
+  if (!(await again.count())) {
+    for (let i = 0; i < 5; i++) {
+      try { await menuBtns.nth(i).click({ timeout: 2500 }); await p.waitForTimeout(500); } catch {}
+      if (await p.locator('[data-testid^="app-visibility-"]').first().count()) break;
+    }
+  }
+  const btn = p.locator('[data-testid^="app-visibility-"]').first();
+  if (await btn.count()) { await btn.click(); await p.waitForTimeout(2500); restored = '已改回'; }
+  else restored = '✗ 没找回那张卡，请手动确认可见性';
+} catch (e) { restored = '✗ 恢复失败：' + String(e).slice(0, 60); }
+
 const api = reqs.filter(r => r.url.includes('/api/'));
-console.log(`\n点一次「设为私有」的代价：`);
+console.log(`\n点一次「设为私有」的代价（${BASE}）：`);
 console.log(`  卡片数     ${before} → 最低 ${minCards} → ${after}   ${blanked ? '★ 整片清空过' : '没有清空'}`);
 if (backAt) console.log(`  列表恢复   ${backAt}ms`);
 console.log(`  网络请求   ${api.length} 个：`);
 const byPath = {};
 for (const r of api) { const u = new URL(r.url).pathname; byPath[u] = (byPath[u] || 0) + 1; }
 for (const [u, c] of Object.entries(byPath)) console.log(`     ×${c}  ${u}`);
+console.log(`  数据复原   ${restored}`);
 await b.close();
