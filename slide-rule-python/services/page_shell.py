@@ -116,6 +116,21 @@ _PHONE_FILL_STYLE_ID = "sliderule-phone-fill"
 #: ⚠ 同日晚 猎网卫士：main 一律 padding-top/bottom:0 把 .p-4 的上下
 #: 也盖掉了（左右 1rem 还在、卡片贴着顶栏底栏）。pt-4/pb-4 是内容
 #: 内边距，_MAIN_CHROME_* 本来就不剥。只清给 fixed 壳让位的大档。
+#: ⚠ 2026-08-22 第四趟（健身打卡小程序 / 早餐摊进货，两台设备各中一次）：
+#: 居中容器那条 display:flex!important **把模态背景板掀开了**。
+#: 生成侧是照做的——提示词要求「预留的浮层根节点必须带 hidden」，模型
+#: 写的就是 `class="hidden fixed inset-0 bg-black/80 z-50 flex items-center
+#: justify-center p-4"`。可 `body>div[class*="justify-center"]` 正好选中它，
+#: !important 压过 Tailwind 的 .hidden，**首屏 100% 被浮层盖死**：
+#: 手机那版整屏只有「提交今日训练打卡」，桌面那版整页只剩「快捷入库录入」
+#: 抽屉——底下那张做得很完整的库存看板一点没露出来。
+#: 53 份真机页面里中了 3 份（手机 2 / 桌面 1）。
+#: 修法：两条居中选择器都加 :not([class~="hidden"]):not([hidden])。
+#: ⚠ **必须整词匹配**。写成 [class*="hidden"] 会连 overflow-hidden 一起排掉，
+#: 而整页容器常带它——那就退回「应用缩在屏幕正中」，把第一趟的病治回来。
+#: 判据在 client/.../__tests__/html-app-surface.test.tsx（拿 Element.matches
+#: 直接问「这条规则选不选它」，正反两侧都写了），同文那条在
+#: tests/test_spec_first_mobile.py——只改一侧会红。
 _PHONE_FILL_CSS = (
     "html,body{margin:0!important;width:100%!important;height:100%!important;"
     "min-height:100%!important;max-width:none!important;overflow:hidden!important;"
@@ -124,7 +139,8 @@ _PHONE_FILL_CSS = (
     "align-items:stretch!important;justify-content:flex-start!important}"
     "body>*{width:100%!important;max-width:none!important;"
     "margin-left:0!important;margin-right:0!important;box-sizing:border-box!important}"
-    'body>div[class*="min-h-screen"],body>div[class*="justify-center"]{'
+    'body>div[class*="min-h-screen"]:not([class~="hidden"]):not([hidden]),'
+    'body>div[class*="justify-center"]:not([class~="hidden"]):not([hidden]){'
     "display:flex!important;flex-direction:column!important;"
     "align-items:stretch!important;justify-content:flex-start!important;"
     "min-height:0!important;flex:1 1 auto!important;height:100%!important;width:100%!important;"
@@ -176,7 +192,8 @@ _DESKTOP_FILL_CSS = (
     "max-width:none!important;width:100%!important;height:100%!important;"
     "margin:0!important;box-sizing:border-box!important;"
     "border-radius:0!important;box-shadow:none!important}"
-    'body>div[class*="min-h-screen"],body>div[class*="justify-center"]{'
+    'body>div[class*="min-h-screen"]:not([class~="hidden"]):not([hidden]),'
+    'body>div[class*="justify-center"]:not([class~="hidden"]):not([hidden]){'
     "display:flex!important;align-items:stretch!important;"
     "justify-content:flex-start!important;"
     "width:100%!important;height:100%!important;max-width:none!important;"

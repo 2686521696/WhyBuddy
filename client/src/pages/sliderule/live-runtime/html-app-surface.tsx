@@ -62,6 +62,14 @@ export const PHONE_FILL_STYLE_ID = "sliderule-phone-fill";
  * 屏幕正中——居中层是 `min-h-screen flex items-center justify-center`。
  * 第三趟：`items-center` 单独当选择器会误伤顶栏（flex items-center
  * justify-between），把顶栏拉成整页高。盯 min-h-screen / justify-center。
+ *
+ * ⚠ 2026-08-22 第四趟：盯 justify-center 又误伤了**模态背景板**——它的惯用
+ * 写法正好是 `hidden fixed inset-0 flex items-center justify-center`。
+ * display:flex!important 压过 Tailwind 的 .hidden，浮层在首屏直接敞着，
+ * 而这条链上 <script> 不跑，用户关不掉。真机 53 页中了 3 页。
+ * 修法是 :not([class~="hidden"]):not([hidden])，**整词**匹配——写成
+ * [class*="hidden"] 会把带 overflow-hidden 的整页容器一起排掉。
+ * 与 Python page_shell._PHONE_FILL_CSS / _DESKTOP_FILL_CSS 同文，改一侧会红。
  * 第五趟：网站壳（fixed nav + pb-32 + sticky+pt-16）和 flex 列对打。
  * 改抄 ant-design-mobile TabBar demo2.less：.app 竖排 flex，.top/.bottom
  * flex:0，.body flex:1。TabBar 文档原句不含定位；旧会话的 fixed 用
@@ -80,7 +88,8 @@ export const PHONE_FILL_CSS =
   "align-items:stretch!important;justify-content:flex-start!important}" +
   "body>*{width:100%!important;max-width:none!important;" +
   "margin-left:0!important;margin-right:0!important;box-sizing:border-box!important}" +
-  'body>div[class*="min-h-screen"],body>div[class*="justify-center"]{' +
+  'body>div[class*="min-h-screen"]:not([class~="hidden"]):not([hidden]),' +
+  'body>div[class*="justify-center"]:not([class~="hidden"]):not([hidden]){' +
   "display:flex!important;flex-direction:column!important;" +
   "align-items:stretch!important;justify-content:flex-start!important;" +
   "min-height:0!important;flex:1 1 auto!important;height:100%!important;width:100%!important;" +
@@ -132,7 +141,8 @@ export const DESKTOP_FILL_CSS =
   "max-width:none!important;width:100%!important;height:100%!important;" +
   "margin:0!important;box-sizing:border-box!important;" +
   "border-radius:0!important;box-shadow:none!important}" +
-  'body>div[class*="min-h-screen"],body>div[class*="justify-center"]{' +
+  'body>div[class*="min-h-screen"]:not([class~="hidden"]):not([hidden]),' +
+  'body>div[class*="justify-center"]:not([class~="hidden"]):not([hidden]){' +
   "display:flex!important;align-items:stretch!important;" +
   "justify-content:flex-start!important;" +
   "width:100%!important;height:100%!important;max-width:none!important;" +

@@ -348,6 +348,20 @@ class Test移动壳统一:
         ):
             assert token in _PHONE_FILL_CSS, token
             assert token in ts, token
+        # 第四趟（2026-08-22）：居中容器那条会选中模态背景板——它的惯用写法
+        # 正好是 `hidden fixed inset-0 flex items-center justify-center`。
+        # 两侧都必须带整词排除，只改一侧等于没改（手机端主路径在 TS）。
+        # ⚠ 反向那条只能盯**常量本文**，不能盯整份 .tsx：模块头的事故注释里
+        # 就写着 `[class*="hidden"]`（讲的正是「别这么写」），拿整份文件去
+        # 匹配会误红。CLAUDE.md 第二条记的就是这个坑的正面版本。
+        ts_phone_css = ts.split("export const PHONE_FILL_CSS")[1].split("export const")[0]
+        ts_desktop_css = ts.split("export const DESKTOP_FILL_CSS")[1].split("function injectHeadStyle")[0]
+        for css in (_PHONE_FILL_CSS, ts_phone_css, ts_desktop_css):
+            assert 'body>div[class*="justify-center"]:not([class~="hidden"]):not([hidden])' in css
+            assert 'body>div[class*="min-h-screen"]:not([class~="hidden"]):not([hidden])' in css
+            # 反向：不许写成 [class*="hidden"]——整页容器常带 overflow-hidden，
+            # 一盖就把真正该铺满的容器也排掉，退回「应用缩在屏幕正中」。
+            assert '[class*="hidden"]' not in css
         assert 'body>div[class*="items-center"]{' not in _PHONE_FILL_CSS
         assert "main{display:flex" not in _PHONE_FILL_CSS
         assert "main{display:flex" not in ts

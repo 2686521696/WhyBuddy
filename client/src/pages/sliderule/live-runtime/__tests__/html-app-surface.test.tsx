@@ -36,6 +36,7 @@ import {
   stripFrameNavigatingHrefs,
   markSrcdocGeneration,
   PHONE_FILL_STYLE_ID,
+  PHONE_FILL_CSS,
   DESKTOP_FILL_STYLE_ID,
   DESKTOP_FILL_CSS,
   CHROME_CONTRAST_STYLE_ID,
@@ -646,4 +647,80 @@ describe("浅色壳上的白字和高亮", () => {
     mo.disconnect();
     expect(n).toBeGreaterThan(20);
   });
+});
+
+/**
+ * 铺满层不许把「作者标了关」的浮层掀开。
+ *
+ * ⚠ 2026-08-22 真机（健身打卡小程序 / 早餐摊进货）：生成侧**照做了**——
+ * 模态根节点写的是 `class="hidden fixed inset-0 bg-black/80 z-50 flex
+ * items-center justify-center p-4"`，`hidden` 在里面。但消费侧这条
+ * `body>div[class*="justify-center"]{display:flex!important}` 把它选中了，
+ * `!important` 压过 Tailwind 的 `.hidden`，**首屏 100% 被模态盖死**。
+ * 手机端那一版整屏就是「提交今日训练打卡」，桌面端那一版整页只剩
+ * 「快捷入库录入」抽屉——底下的列表页根本没露出来。
+ *
+ * 这是「居中陷阱」家族的第四趟。前三趟记在 page_shell.py 模块头：
+ * 第二趟盯 `items-center` 误伤顶栏，第三趟收敛到 `justify-center`。
+ * 没人想到 **模态背景板的惯用写法正好就是 `flex items-center justify-center`**。
+ *
+ * 判据落在**选择器语义**上，不落在字符串里有没有某个 token：
+ * 直接拿 jsdom 的 `Element.matches()` 问「这条规则会不会选中它」。
+ *
+ * ⚠ 反向那条同样重要：修法**不许**写成 `:not([class*="hidden"])`——
+ * 整页容器常带 `overflow-hidden`，一盖就把真正该铺满的容器也排除掉，
+ * 于是回到「应用缩在屏幕正中」。必须用 `[class~="hidden"]` 按整词匹配。
+ */
+describe("铺满层不许掀开作者标了关的浮层", () => {
+  /** 取出那条 display:flex!important 的居中容器规则的选择器。 */
+  const centeringSelector = (css: string): string => {
+    const rules = css.split("}").map((r) => r + "}");
+    const hit = rules.find(
+      (r) => r.includes('justify-center"]') && /display:\s*flex!important/.test(r),
+    );
+    expect(hit, `${css.slice(0, 40)}… 里找不到居中容器那条规则`).toBeTruthy();
+    return (hit as string).split("{")[0];
+  };
+
+  const mount = (className: string): Element => {
+    document.body.innerHTML = "";
+    const el = document.createElement("div");
+    el.className = className;
+    document.body.appendChild(el);
+    return el;
+  };
+
+  for (const [name, css] of [
+    ["手机", PHONE_FILL_CSS],
+    ["桌面", DESKTOP_FILL_CSS],
+  ] as const) {
+    const sel = () => centeringSelector(css);
+
+    it(`${name}：class 里带 hidden 的模态背景板不许被选中`, () => {
+      // 真机原文（健身打卡 checkin-modal / 早餐摊 quick-inbound-modal）
+      const modal = mount(
+        "hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4",
+      );
+      expect(modal.matches(sel())).toBe(false);
+    });
+
+    it(`${name}：hidden **属性**标的浮层也不许被选中`, () => {
+      const drawer = mount("fixed inset-y-0 right-0 flex items-center justify-center");
+      drawer.setAttribute("hidden", "");
+      expect(drawer.matches(sel())).toBe(false);
+    });
+
+    it(`${name}：真正的整页容器必须还被选中（正向）`, () => {
+      expect(mount("min-h-screen flex flex-col").matches(sel())).toBe(true);
+      expect(mount("flex items-center justify-center min-h-screen").matches(sel())).toBe(true);
+    });
+
+    it(`${name}：带 overflow-hidden 的整页容器不许被误排除`, () => {
+      // ⚠ 这条专治「修法写成 [class*=\"hidden\"]」——那会连它一起排掉。
+      expect(mount("min-h-screen flex flex-col overflow-hidden").matches(sel())).toBe(true);
+      expect(
+        mount("flex items-center justify-center overflow-hidden min-h-screen").matches(sel()),
+      ).toBe(true);
+    });
+  }
 });
