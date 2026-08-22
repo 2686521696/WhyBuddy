@@ -443,6 +443,25 @@ class AppStoreBackend:
         """同一血缘上所有版本的 id。画廊删卡要一次清干净，不能只 select *。"""
         return [str(v.get("id")) for v in self.versions(root_id) if v.get("id")]
 
+    def max_version(self, root_id: str) -> int:
+        """这条血缘当前最大的 version；一版都没有回 0。
+
+        ⚠ 存在的理由是**迭代热路上不要拖整条血缘过网**（2026-08-22）。
+        `save_version` 只需要一个数（下一版是几），此前却是
+        `versions(root_id)` 再 `max(...)`——而 Neon 那边 versions 是
+        `select *`，把每一版的 model_json + pages_json 全拉回来。
+        实测线上 5 版的血缘：整条 280 KB / 742ms，只取 max(version) 136ms。
+        代价随版本数线性长，删卡那条路已经因为同一句 413 过一次
+        （2026-08-21 修的是 ids_for_root，没动 versions 本身）。
+        撞上 413 的现象是：用户精修完，落库那步 fail-open 被吞掉，
+        **应用没存**，只有日志里有一行 "app store save skipped"。
+
+        默认实现仍走 versions()——JSON / SQLite 后端本来就在内存或本地库里，
+        没有过网这回事；真正需要覆盖的是走网关的那个后端。
+        """
+        rows = self.versions(root_id)
+        return max((int(v.get("version") or 0) for v in rows), default=0)
+
     def export_all(self) -> list[dict[str, Any]]:  # pragma: no cover
         raise NotImplementedError
 
@@ -1143,6 +1162,19 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                 ))
             return [_summary(r.to_record()) for r in rows]
 
+        def max_version(self, root_id: str) -> int:
+            # 跟 Neon 那边同一口径：只要一个数（见基类 max_version 的说明）。
+            # 本地库不过网，但整条血缘反序列化成 ORM 对象同样是白干。
+            from sqlalchemy import func as _sql_func
+
+            with Session(engine) as s:
+                got = s.scalar(
+                    select(_sql_func.max(GeneratedApp.version)).where(
+                        GeneratedApp.root_id == root_id
+                    )
+                )
+            return int(got or 0)
+
         def find_by_dedup_key(self, dedup_key: str) -> Optional[dict[str, Any]]:
             with Session(engine) as s:
                 row = s.scalars(
@@ -1568,10 +1600,25 @@ class NeonHttpAppStore(AppStoreBackend):
         return [_list_summary(r, has_pages=r.get("has_pages")) for r in rows]
 
     def versions(self, root_id: str) -> list[dict[str, Any]]:
+        # ⚠ 不用 `select *`（2026-08-22）：返回值本来就是摘要（_summary 第一件事
+        # 就是把 model_json / pages_json 丢掉），而 `select *` 会把每一版那两份
+        # jsonb 全拉过网关再丢掉。has_pages 交给 SQL 判 null——理由同
+        # list_apps_sql 那段：Postgres 判 NULL 不拆 TOAST，`->` 取值会把整份
+        # HTML 解出来。
+        cols = ", ".join(_LIST_COLUMNS)
         rows = self._q(
-            "select * from generated_app where root_id = $1 order by version", [root_id]
+            f"select {cols}, (pages_json is not null) as has_pages"
+            " from generated_app where root_id = $1 order by version",
+            [root_id],
         )
-        return [_summary(_neon_normalize_row(r)) for r in rows]
+        return [_list_summary(r, has_pages=r.get("has_pages")) for r in rows]
+
+    def max_version(self, root_id: str) -> int:
+        # 迭代热路每轮都走这里（save_version）。一句聚合，不拖血缘。
+        rows = self._q(
+            "select max(version) as v from generated_app where root_id = $1", [root_id]
+        )
+        return int((rows[0].get("v") if rows else 0) or 0)
 
     def find_by_dedup_key(self, dedup_key: str) -> Optional[dict[str, Any]]:
         rows = self._q(
@@ -2302,16 +2349,21 @@ def save_version(
     应用中心对它诚实回落区块渲染。
     """
     backend = get_backend()
-    existing = backend.versions(root_id)
-    next_version = (max((v.get("version") or 0) for v in existing) + 1) if existing else 1
+    # ⚠ 只要一个数，别把整条血缘拉回来（见 AppStoreBackend.max_version 的说明）。
+    next_version = backend.max_version(root_id) + 1
     app_id = _new_id()
     # 改版是同一条血缘上的新版本：归属与可见性跟着走，不重新协商。
     # 从上一版取（parent 优先，取不到就用同 root 里 version 最大的那条）——
     # 漏了这一步的话，每精修一次就产生一条无主+public 的新记录，
     # 私有应用会在改版时悄悄变公开。
-    base = backend.get(parent_id) or (
-        max(existing, key=lambda v: v.get("version") or 0) if existing else None
-    )
+    #
+    # parent 取到就**不再查血缘**：正常精修链路上 parent 一定在
+    # （save_app_or_version 传的就是上一版的 id），那条 versions() 兜底只在
+    # parent 记录被删过的畸形数据上才会走到。
+    base = backend.get(parent_id)
+    if base is None:
+        existing = backend.versions(root_id)
+        base = max(existing, key=lambda v: v.get("version") or 0) if existing else None
     record = _build_record(
         model, goal=goal, session_id=session_id, gate_passed=gate_passed,
         app_id=app_id, root_id=root_id, parent_id=parent_id, version=next_version,
