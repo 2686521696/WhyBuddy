@@ -722,6 +722,32 @@ describe("铺满层不许掀开作者标了关的浮层", () => {
       expect(mount("flex items-center justify-center min-h-screen").matches(sel())).toBe(true);
     });
 
+    it(`${name}：脱离文档流的元素一律不是整页容器`, () => {
+      /**
+       * 2026-08-22 真机 53 页实测：这条居中规则一共只选中 **4 个元素**，
+       * 4 个**全是**脱离文档流的浮层（3 个模态 + 1 个 pointer-events-none 的
+       * 悬浮 CTA），**没有一个是页面容器**。命中率 100% 是误伤。
+       *
+       * ⚠ 这条比 `hidden` 那条更强：它连**可见的**误伤也排掉（那个悬浮 CTA
+       *   没带 hidden，照样被选中并被拉成 92% 屏高）。
+       * ⚠ 判别标准**不能**写成「同时带 max-w- 或 mx-auto 才算病」——模块头记的
+       *   第二趟事故原文是 `body>div.min-h-screen.flex.items-center.justify-center`
+       *   包着一排底栏图标，**没有 max-w**。那么写等于把老病治回来。
+       *   整页容器在文档流里，浮层不在——这才是分界线。
+       */
+      expect(mount("fixed inset-0 z-50 flex items-center justify-center").matches(sel())).toBe(false);
+      expect(mount("absolute inset-0 flex items-center justify-center").matches(sel())).toBe(false);
+      expect(
+        mount("absolute bottom-16 left-0 right-0 px-5 pointer-events-none flex justify-center z-10")
+          .matches(sel()),
+      ).toBe(false);
+    });
+
+    it(`${name}：在流里的居中容器仍然被治（第二趟那种，没有 max-w）`, () => {
+      // 真机原文形态：min-h-screen flex items-center justify-center 包着底栏图标
+      expect(mount("min-h-screen flex items-center justify-center").matches(sel())).toBe(true);
+    });
+
     it(`${name}：带 overflow-hidden 的整页容器不许被误排除`, () => {
       // ⚠ 这条专治「修法写成 [class*=\"hidden\"]」——那会连它一起排掉。
       expect(mount("min-h-screen flex flex-col overflow-hidden").matches(sel())).toBe(true);

@@ -360,9 +360,14 @@ class Test移动壳统一:
         # 匹配会误红。CLAUDE.md 第二条记的就是这个坑的正面版本。
         ts_phone_css = ts.split("export const PHONE_FILL_CSS")[1].split("export const")[0]
         ts_desktop_css = ts.split("export const DESKTOP_FILL_CSS")[1].split("function injectHeadStyle")[0]
+        # ⚠ 完整选择器逐字比对。写成 'body>div[class*="min-h-screen"]' 这种子串的话，
+        #   只改一侧的排除条件照样绿——2026-08-22 加 fixed/absolute 排除时验过：
+        #   只回滚 TS 那侧，TS 自己的 matches 判据红了，而这条同文判据是绿的。
+        _EXCL = (':not([class~="hidden"]):not([hidden])'
+                 ':not([class~="fixed"]):not([class~="absolute"])')
         for css in (_PHONE_FILL_CSS, ts_phone_css, ts_desktop_css):
-            assert 'body>div[class*="justify-center"]:not([class~="hidden"]):not([hidden])' in css
-            assert 'body>div[class*="min-h-screen"]:not([class~="hidden"]):not([hidden])' in css
+            assert f'body>div[class*="justify-center"]{_EXCL}' in css
+            assert f'body>div[class*="min-h-screen"]{_EXCL}' in css
             # 反向：不许写成 [class*="hidden"]——整页容器常带 overflow-hidden，
             # 一盖就把真正该铺满的容器也排掉，退回「应用缩在屏幕正中」。
             assert '[class*="hidden"]' not in css

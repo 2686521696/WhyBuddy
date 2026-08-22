@@ -131,6 +131,18 @@ _PHONE_FILL_STYLE_ID = "sliderule-phone-fill"
 #: 判据在 client/.../__tests__/html-app-surface.test.tsx（拿 Element.matches
 #: 直接问「这条规则选不选它」，正反两侧都写了），同文那条在
 #: tests/test_spec_first_mobile.py——只改一侧会红。
+#: ⚠ 同日续：光排 ``hidden`` 不够。把这条规则拿到 53 页真机上跑
+#:   ``querySelectorAll``，一共只选中 **4 个元素，4 个全是脱离文档流的浮层**
+#:   （3 个模态 + 1 个 ``pointer-events-none`` 的悬浮 CTA），**没有一个是页面
+#:   容器**——命中率 100% 是误伤。那个悬浮 CTA 没带 hidden，被这条拉成了
+#:   **844px 满屏**（自然高 52px），是个看不见但真实的缺陷。
+#:   再加 ``:not([class~="fixed"]):not([class~="absolute"])``，53 页选中 0 个。
+#: ⚠ 判别标准**不能**写成「同时带 max-w- 或 mx-auto 才算病」：上面第二趟记的
+#:   原文是 ``body>div.min-h-screen.flex.items-center.justify-center`` 包着一排
+#:   底栏图标，**没有 max-w**。那么写等于把第二趟的病治回来。
+#:   **整页容器在文档流里，浮层不在**——这才是分界线。
+#: ⚠ 靠 class 认脱流，行内 ``style="position:fixed"`` 会漏。真机 53 页里没有
+#:   这种写法，且 hidden 那条还兜着一层；真出现了再补。
 _PHONE_FILL_CSS = (
     "html,body{margin:0!important;width:100%!important;height:100%!important;"
     "min-height:100%!important;max-width:none!important;overflow:hidden!important}"
@@ -145,8 +157,8 @@ _PHONE_FILL_CSS = (
     "align-items:stretch!important;justify-content:flex-start!important}"
     "body>*{width:100%!important;max-width:none!important;"
     "margin-left:0!important;margin-right:0!important;box-sizing:border-box!important}"
-    'body>div[class*="min-h-screen"]:not([class~="hidden"]):not([hidden]),'
-    'body>div[class*="justify-center"]:not([class~="hidden"]):not([hidden]){'
+    'body>div[class*="min-h-screen"]:not([class~="hidden"]):not([hidden]):not([class~="fixed"]):not([class~="absolute"]),'
+    'body>div[class*="justify-center"]:not([class~="hidden"]):not([hidden]):not([class~="fixed"]):not([class~="absolute"]){'
     "display:flex!important;flex-direction:column!important;"
     "align-items:stretch!important;justify-content:flex-start!important;"
     "min-height:0!important;flex:1 1 auto!important;height:100%!important;width:100%!important;"
@@ -198,8 +210,8 @@ _DESKTOP_FILL_CSS = (
     "max-width:none!important;width:100%!important;height:100%!important;"
     "margin:0!important;box-sizing:border-box!important;"
     "border-radius:0!important;box-shadow:none!important}"
-    'body>div[class*="min-h-screen"]:not([class~="hidden"]):not([hidden]),'
-    'body>div[class*="justify-center"]:not([class~="hidden"]):not([hidden]){'
+    'body>div[class*="min-h-screen"]:not([class~="hidden"]):not([hidden]):not([class~="fixed"]):not([class~="absolute"]),'
+    'body>div[class*="justify-center"]:not([class~="hidden"]):not([hidden]):not([class~="fixed"]):not([class~="absolute"]){'
     "display:flex!important;align-items:stretch!important;"
     "justify-content:flex-start!important;"
     "width:100%!important;height:100%!important;max-width:none!important;"

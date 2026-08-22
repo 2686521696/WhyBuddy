@@ -91,8 +91,8 @@ export const PHONE_FILL_CSS =
   "align-items:stretch!important;justify-content:flex-start!important}" +
   "body>*{width:100%!important;max-width:none!important;" +
   "margin-left:0!important;margin-right:0!important;box-sizing:border-box!important}" +
-  'body>div[class*="min-h-screen"]:not([class~="hidden"]):not([hidden]),' +
-  'body>div[class*="justify-center"]:not([class~="hidden"]):not([hidden]){' +
+  'body>div[class*="min-h-screen"]:not([class~="hidden"]):not([hidden]):not([class~="fixed"]):not([class~="absolute"]),' +
+  'body>div[class*="justify-center"]:not([class~="hidden"]):not([hidden]):not([class~="fixed"]):not([class~="absolute"]){' +
   "display:flex!important;flex-direction:column!important;" +
   "align-items:stretch!important;justify-content:flex-start!important;" +
   "min-height:0!important;flex:1 1 auto!important;height:100%!important;width:100%!important;" +
@@ -144,8 +144,8 @@ export const DESKTOP_FILL_CSS =
   "max-width:none!important;width:100%!important;height:100%!important;" +
   "margin:0!important;box-sizing:border-box!important;" +
   "border-radius:0!important;box-shadow:none!important}" +
-  'body>div[class*="min-h-screen"]:not([class~="hidden"]):not([hidden]),' +
-  'body>div[class*="justify-center"]:not([class~="hidden"]):not([hidden]){' +
+  'body>div[class*="min-h-screen"]:not([class~="hidden"]):not([hidden]):not([class~="fixed"]):not([class~="absolute"]),' +
+  'body>div[class*="justify-center"]:not([class~="hidden"]):not([hidden]):not([class~="fixed"]):not([class~="absolute"]){' +
   "display:flex!important;align-items:stretch!important;" +
   "justify-content:flex-start!important;" +
   "width:100%!important;height:100%!important;max-width:none!important;" +
