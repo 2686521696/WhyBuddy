@@ -32,8 +32,19 @@ await p.waitForTimeout(5000);
 // 新建会话，避免落进已有会话
 const nb=p.locator('text=新建会话').first();
 if(await nb.count()){ await nb.click(); await p.waitForTimeout(2500); }
+// ⚠ **移动端必须点输入框里那个「应用」开关**，不是在话题里写「手机端」。
+//   那个开关走 device_policy._override，**优先级压过话题里的设备词**
+//   （resolve_preferred_device：用户开关 > 话题设备词 > 模型选择 > desktop）。
+//   我第一次没点它，话题里写足了「手机端/小程序」，照样出 1920×1080 桌面版。
+const wantPhone = /^phone:/.test(GOAL);
+const text = GOAL.replace(/^phone:/, '');
+if (wantPhone) {
+  const btn = p.locator('button:has-text("应用"), [role=button]:has-text("应用")').first();
+  if (await btn.count()) { await btn.click(); await p.waitForTimeout(600); console.log('  已点「应用」开关（竖屏）'); }
+  else console.log('  ⚠ 没找到「应用」开关，可能又会出桌面版');
+}
 const box=p.locator('textarea, input[type=text]').first();
-await box.click(); await box.fill(GOAL); await p.waitForTimeout(400);
+await box.click(); await box.fill(text); await p.waitForTimeout(400);
 await p.keyboard.press('Enter');
 console.log('  已提交移动端话题，等闭环…');
 const t0=Date.now();
