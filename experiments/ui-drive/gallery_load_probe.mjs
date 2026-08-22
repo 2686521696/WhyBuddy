@@ -13,6 +13,19 @@ const lr = await ctx.request.post(`${BASE}/api/sliderule/account/login`,
 console.log('登录', lr.status());
 const p = await ctx.newPage();
 
+// ★ 同时在飞的请求数 —— 这才是「并发还是串行」的判据。
+//   DevTools 里一排「待处理」看着像排队，其实同一瞬间全 pending = 全在飞。
+//   串行的话任一时刻只有 1 个 pending。
+let inflight = 0, maxInflight = 0;
+const flight = [];
+p.on('request', r => {
+  if (!r.url().includes('/api/')) return;
+  inflight++; maxInflight = Math.max(maxInflight, inflight);
+  flight.push({ t: Date.now(), n: inflight });
+});
+p.on('requestfinished', r => { if (r.url().includes('/api/')) inflight--; });
+p.on('requestfailed', r => { if (r.url().includes('/api/')) inflight--; });
+
 const reqs = [];
 p.on('response', async r => {
   const u = r.url();
@@ -44,6 +57,7 @@ console.log(`  第一张卡出现  ${firstCardAt === null ? '✗ 没等到' : fi
 console.log(`  4s 后卡片数   ${settled}`);
 const total = reqs.reduce((s, r) => s + r.size, 0);
 console.log(`  首屏 API      ${reqs.length} 个，共 ${(total / 1024).toFixed(0)} KB`);
+console.log(`  最大同时在飞  ${maxInflight} 个  ${maxInflight <= 2 ? '← 串行' : '← 并发'}`);
 const agg = {};
 for (const r of reqs) {
   const k = r.path.replace(/\/apps\/[0-9a-f-]{8,}.*/, '/apps/{id}…');
