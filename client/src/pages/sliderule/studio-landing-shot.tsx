@@ -66,6 +66,23 @@ export function landingPageFromSpec(
 
 const SETTLE_MS = 2000;
 
+/**
+ * 采集链每一步的去向都打一行。
+ *
+ * ⚠ 2026-08-23：这条链原本**全程静默**——查不到 app_id、落地页为空、找不到
+ * 采集节点、回传非 2xx，一律 return / 吞异常，没有任何一处出声。现象就是
+ * "应用好好的，就是没有封面"，没人知道该去哪儿看。同一条纪律见
+ * services/freeform_block.py 的 `no silent caps`：一张都没生的时候必须说清
+ * 是"没配 key"还是"通道不吃图"，否则现象只是"首页长得比较素"。
+ */
+export function capnote(message: string): void {
+  try {
+    console.info(`[landing-shot] ${message}`);
+  } catch {
+    /* 打日志本身不许成为故障源 */
+  }
+}
+
 export function StudioLandingShot({
   sessionId,
   running,
@@ -104,16 +121,30 @@ export function StudioLandingShot({
   React.useEffect(() => {
     if (!pending.current || running || !sessionId) return;
     const landing = landingPageFromSpec(specFirstPages, specPages);
-    if (!landing) return;
+    if (!landing) {
+      // ⚠ 不清 pending：页面可能比 running 晚一拍到，靠 deps 里的
+      // specFirstPages/specPages 变化再进来一次。
+      capnote("落地页还没拿到（specFirstPages/specPages 都是空的），等下一次变化");
+      return;
+    }
     pending.current = false;
     let cancelled = false;
     void (async () => {
       let row = await getGeneratedAppForSession(sessionId);
       if (!row?.id) {
+        capnote(`第 1 次查 app_id 没查到（session=${sessionId}），800ms 后重试`);
         await new Promise(r => setTimeout(r, 800));
         row = await getGeneratedAppForSession(sessionId);
       }
-      if (cancelled || !row?.id) return;
+      if (cancelled) return capnote("组件已卸载，放弃采集");
+      if (!row?.id) {
+        // 这里是本仓最典型的静默失效点：pending 已经清掉，不会再有第三次。
+        return capnote(
+          `两次都没查到 app_id（session=${sessionId}）——本次推演的封面**永久丢弃**，` +
+            `不会再重试。落库比收口慢就会走到这里。`
+        );
+      }
+      capnote(`拿到 app_id=${row.id}，挂离屏画面准备采集`);
       setJob({ appId: row.id, html: landing.html, device: landing.device });
     })();
     return () => {

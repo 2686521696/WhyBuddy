@@ -59,6 +59,15 @@
 
 import { aspectForDevice } from "./justified-rows";
 
+/** 采集链的去向日志（与 studio-landing-shot 同一个前缀，便于一起 grep）。 */
+function capnote(message: string): void {
+  try {
+    console.info(`[landing-shot] ${message}`);
+  } catch {
+    /* 打日志本身不许成为故障源 */
+  }
+}
+
 /** 目标画幅：跟参照板出图、跟卡片比例三者对齐（见 justified-rows 的 DEVICE_ASPECT）。 */
 const SHOT_CANVAS: Record<string, { w: number; h: number }> = {
   desktop: { w: 1280, h: 720 },
@@ -260,11 +269,18 @@ export function captureAndUpload(req: CaptureRequest): Promise<boolean> {
     try {
       await whenIdle();
       const resolved = resolveCaptureNode(container);
-      if (!resolved) return false;
+      if (!resolved) {
+        // iframe 还没编完 / 没内容 / 宽高为 0 都落这里。
+        capnote(`找不到可采的节点（app=${appId}）——画面还没渲染好就来采了`);
+        return false;
+      }
 
       const canvas = await nodeToCanvas(resolved.node);
       const blob = await canvasToBlob(cropToAspect(canvas, device));
-      if (!blob) return false;
+      if (!blob) {
+        capnote(`画布转 blob 失败（app=${appId}）`);
+        return false;
+      }
 
       const res = await fetch(previewUploadUrl(appId, replace), {
         method: "POST",
@@ -272,11 +288,24 @@ export function captureAndUpload(req: CaptureRequest): Promise<boolean> {
         headers: { "Content-Type": blob.type || "image/webp" },
         body: blob,
       });
-      if (!res.ok) return false;
-      const json = (await res.json().catch(() => null)) as { stored?: boolean } | null;
-      return Boolean(json?.stored);
-    } catch {
-      // 采集是增强项：任何异常都只意味着这张卡这次没补上图。
+      if (!res.ok) {
+        // 403 = 内部 key 没注入；404 = 看不见这个应用（私有/未登录）；
+        // 413 = 图太大；415 = 类型不认。每一种的修法都不一样，必须报出来。
+        capnote(`回传被拒 HTTP ${res.status}（app=${appId}, replace=${Boolean(replace)}）`);
+        return false;
+      }
+      const json = (await res.json().catch(() => null)) as
+        | { stored?: boolean; reason?: string }
+        | null;
+      if (!json?.stored) {
+        capnote(`服务端没存（app=${appId}）：${json?.reason || "未说明"}`);
+        return false;
+      }
+      capnote(`已存入（app=${appId}, ${blob.size} 字节 ${blob.type}）`);
+      return true;
+    } catch (err) {
+      // 采集是增强项：任何异常都只意味着这次没补上图——但不许连原因都不说。
+      capnote(`采集抛异常（app=${appId}）：${String(err).slice(0, 200)}`);
       return false;
     }
   });
