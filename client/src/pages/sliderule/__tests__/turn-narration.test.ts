@@ -69,6 +69,27 @@ describe("stampTurnNarration", () => {
     expect(saved.textChars).not.toBe(saved.text.length);
   });
 
+  it("**瘦身跑两遍，textChars 还是真原长**", () => {
+    // 2026-08-23 真机翻车：字段加完、单测全绿，跑新话题一看库里是
+    // `text=1201 textChars=1201`。这条路本来就跑两遍——这里一次，PUT 上去后
+    // Python 的 cap_turn_narrations 再一次，那时 text 已经是 1201 仍然超限，
+    // 不设防就把真原长覆盖成了 1201。只跑一遍的判据抓不到。
+    const once = stampTurnNarration(baseState(), {
+      turnId: "t",
+      steps: [step("s", "长".repeat(5000))],
+    });
+    const first = once.turnNarrations![0].steps[0] as { text: string; textChars?: number };
+    expect(first.textChars).toBe(5000);
+    expect(first.text.length).toBe(1201);
+
+    const twice = stampTurnNarration(baseState(), {
+      turnId: "t",
+      steps: [first as never],
+    });
+    const second = twice.turnNarrations![0].steps[0] as { text: string; textChars?: number };
+    expect(second.textChars).toBe(5000);
+  });
+
   it("没超上限的步骤不加 textChars——它的 text.length 本来就是真的", () => {
     // 反向：不加这条的话，把 textChars 写成"每步都记"也全绿，而那是白占字节
     // （这份投影本来就是为了封顶体积才存在的）。

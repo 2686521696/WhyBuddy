@@ -155,7 +155,17 @@ def _slim_step(step: Dict[str, Any]) -> Dict[str, Any]:
     for key in ("text", "message", "label", "title"):
         value = slim.get(key)
         if isinstance(value, str) and len(value) > MAX_TEXT:
-            if key == "text":
+            # ⚠ **必须幂等**：已经有 textChars 就别再写。
+            #
+            # 这条路会被跑两遍：客户端 slimStep 先截一次（那次记的才是真原长），
+            # PUT 上来之后 cap_turn_narrations 又对同一份数据跑一遍——此时
+            # text 已经是 1201（1200+省略号），仍然 > MAX_TEXT，不设防的话
+            # 就把正确的原长覆盖成 1201，等于这个字段白加。
+            #
+            # 2026-08-23 真机就是这么翻车的：加完字段跑新话题，库里赫然是
+            # `text=1201 textChars=1201`，界面照旧一排 1201。判据当时全绿，
+            # 因为单测只跑了一遍瘦身。见 test_slim_is_idempotent。
+            if key == "text" and "textChars" not in slim:
                 slim["textChars"] = len(value)
             slim[key] = value[:MAX_TEXT] + "…"
     return slim

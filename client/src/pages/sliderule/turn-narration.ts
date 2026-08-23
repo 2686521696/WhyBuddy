@@ -62,7 +62,11 @@ function slimStep(step: TurnStep): TurnStep {
   for (const key of ["text", "message", "label", "title"] as const) {
     const v = slim[key];
     if (typeof v === "string" && v.length > MAX_TEXT) {
-      if (key === "text") slim.textChars = v.length;
+      // ⚠ **必须幂等**：已经有 textChars 就别再写。这条路会被跑两遍——这里
+      //   一次，PUT 上去之后 Python 的 cap_turn_narrations 再一次；那时 text
+      //   已经是 1201（1200+省略号）仍然超限，不设防就会把真原长覆盖成 1201，
+      //   这个字段等于白加。理由与真机翻车记录见 turn_narration.py 的同名注释。
+      if (key === "text" && slim.textChars === undefined) slim.textChars = v.length;
       slim[key] = v.slice(0, MAX_TEXT) + "…";
     }
   }
