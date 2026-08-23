@@ -1031,6 +1031,20 @@ const WALL_COLUMN_WIDTH = 260;
 const WALL_GUTTER = 16;
 
 /**
+ * 卡片总高 = 格宽 ÷ 设备宽高比。
+ *
+ * 信息条浮在画面上、不另占高度（见 CenterCard 的 `style={{ height: mediaHeight }}`，
+ * 内部全是 absolute），所以这就是整张卡的确切高度——**算得出来，不用量**。
+ *
+ * ⚠ 布局与渲染必须共用这一个算式。分成两处写的现象是卡片互相压盖或留缝，
+ *   而且不会报错（布局按 A 算、卡片按 B 画，谁也不知道对方）。
+ *   判据见 apps-workbench.test 的「墙的高度算式只有一处」。
+ */
+export function wallCardHeight(cellWidth: number, device: string | null | undefined): number {
+  return Math.round(cellWidth / aspectForDevice(device));
+}
+
+/**
  * 「我的应用」瀑布流。
  *
  * 滚动源：`<Masonry>` 内部是 `MasonryScroller` → `useScroller()` →
@@ -1126,6 +1140,10 @@ function AppWall({
         // 首屏还没量到真实高度时用它估行数。桌面卡 260/1.78≈146 + 信息区 ≈52，
         // 手机卡 260/0.46≈563 + 52；取中间偏桌面一侧，因为桌面档占多数。
         itemHeightEstimate={240}
+        // 高度算得出来 → 走纯函数落位，整套「隐藏渲染量高度」不再发生。
+        // 这条同时根治了 2026-08-23 那个「只显示第一行 4 张、等多久都不好」的
+        // 死锁（详见 SpanMasonry 的 heightOf 文档）。
+        heightOf={(entry, _i, cellW) => wallCardHeight(cellW, entry.item.summary?.device)}
         itemKey={entry => entry.item.key}
         getSpan={(entry, _i, columnCount) =>
           spanForColumnCount(spanKeys.has(entry.item.key), columnCount)
@@ -1736,7 +1754,7 @@ export function AppsWorkbench() {
     //
     // 信息条改成浮在画面上之后，这个数就是**整张卡的高度**（此前还要再加一段
     // 信息区高度）。所以同一个宽度下卡片比之前矮一截，画面反而显示得更多。
-    const mediaH = Math.round(cellW / aspectForDevice(item.summary?.device));
+    const mediaH = wallCardHeight(cellW, item.summary?.device);
     const meta = detail ? STATUS_META[detail.status] : null;
     const BrandIcon = detail?.identity
       ? BRAND_LUCIDE[detail.identity.icon] ?? Boxes

@@ -586,9 +586,15 @@ describe("卡片墙走 masonic，高度由内容决定", () => {
     expect(scroller).toContain("scroller.clientHeight");
   });
 
-  it("卡片高度不写死：只给画面区高度，信息区交给浏览器量", () => {
-    // 画面区高度 = 列宽 / 设备宽高比（那是图，比例是真信息）。
-    expect(src).toMatch(/const mediaH = Math\.round\(cellW \/ aspectForDevice\(item\.summary\?\.device\)\)/);
+  it("卡片高度来自共用算式（列宽 ÷ 设备宽高比）", () => {
+    // ⚠ 2026-08-23 这条改过落点。原来钉的是那行字面表达式
+    //   `Math.round(cellW / aspectForDevice(...))`；现在算式抽成了 wallCardHeight，
+    //   因为**布局也要用同一个数**（纯函数落位，见 pure-span-layout）。
+    //   两处各写各的现象是卡片互相压盖或留缝，而且不会报错——所以判据改成
+    //   「只有一处算式」，比钉字面量更贴近要防的事。
+    expect(src).toMatch(/const mediaH = wallCardHeight\(cellW, item\.summary\?\.device\)/);
+    expect(src).toMatch(/cellWidth \/ aspectForDevice\(device\)/); // 算式本体
+    expect(src).not.toMatch(/cellW\s*\/\s*aspectForDevice/); // 不许再就地算一遍
     expect(src).toContain("mediaHeight={mediaH}");
     // 外框不能带 height——写死等于把「高度由内容决定」退回去了。
     expect(src).not.toMatch(/style=\{\{ width: cellW, height: cellH \}\}/);

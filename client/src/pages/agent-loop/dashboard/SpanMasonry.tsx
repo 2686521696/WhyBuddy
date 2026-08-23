@@ -36,6 +36,7 @@ import {
   shouldMeasureUnplaced,
 } from "./masonry-paint";
 import { findScrollParent } from "./useScrollerIn";
+import { buildPureSpanLayout } from "./pure-span-layout";
 
 /** masonic `getColumns()` 的同款算法：由容器宽度推列数，再把列宽撑满剩余空间。 */
 export function computeColumns(
@@ -261,6 +262,37 @@ export interface SpanMasonryProps<T> {
   minColumnWidth: number;
   gutter: number;
   maxColumnCount?: number;
+  /**
+   * **高度算得出来时传它——传了就整套不量了。**
+   *
+   * 返回第 index 项在给定格宽下的确切高度（含跨列后的宽度）。传了这个属性：
+   *   · 不再隐藏渲染一遍去量（每张卡从渲染两次变一次）
+   *   · 不挂 ResizeObserver
+   *   · 落位表由 useMemo **纯函数重算**，不再是"挂载时写一次的可变状态"
+   *
+   * ## 为什么值得单开这条路
+   *
+   * 2026-08-23 真机（切 tab 反复试，8 次中 4 次）：整面墙只显示第一行 4 张，
+   * 其余 52 张 `visibility:hidden` 叠在第一格，**等多久都不会好**。
+   * 链条是——数据集换了 → 定位器重建 → `seed` 从头连续命中缓存，第一个就
+   * miss，一条都没喂回来（日志实录 `prev=65 → next=0`）→ 而那些卡的 DOM
+   * 节点还挂着、React 按 key 复用不重挂 → **ref 回调不再触发** → 永远不落位
+   * → 永远留在隐藏批次。死锁。
+   *
+   * 根子在"落位只在挂载那一个时机做"。高度算得出来的墙压根不需要那个时机：
+   * 输入（items × 列宽 × span）一定，输出就一定，每帧重算即可，没有会丢的状态。
+   *
+   * ## 只对高度确定的墙有效
+   *
+   * 应用中心的卡片高度是 `格宽 ÷ 设备宽高比`（信息条浮在画面上、不占高度，
+   * 见 CenterCard 的 `style={{height: mediaHeight}}`），所以算得出来。
+   * 组件库那两面墙的区块是真渲染出来才知道多高的，**不传这个属性**，照旧走测量。
+   *
+   * ⚠ 传进来的高度必须跟卡片**真实渲染高度**一致。不一致的现象是卡片之间
+   *   互相压盖或留空隙，而且不会有任何报错——所以调用方与渲染函数应当共用
+   *   同一个高度算式（见 AppsWorkbench 的 wallCardHeight）。
+   */
+  heightOf?: (item: T, index: number, cellWidth: number, columnCount: number) => number;
   /** 第 index 项占几列。会被钳进 [1, 列数]。 */
   getSpan: (item: T, index: number, columnCount: number) => number;
   itemKey: (item: T, index: number) => React.Key;
@@ -310,6 +342,7 @@ export function SpanMasonry<T>({
   minColumnWidth,
   gutter,
   maxColumnCount,
+  heightOf,
   getSpan,
   itemKey,
   render,
@@ -397,7 +430,7 @@ export function SpanMasonry<T>({
   );
 
   const positionerRef = React.useRef<SpanPositioner | null>(null);
-  const positioner = useSpanPositioner(
+  const measuredPositioner = useSpanPositioner(
     {
       columnCount,
       columnWidth,
@@ -411,12 +444,41 @@ export function SpanMasonry<T>({
     [signature],
     seed
   );
+  /**
+   * 纯函数落位（传了 `heightOf` 才有）。
+   *
+   * 整张表由 useMemo 从 items × 列宽 × span 重算，**不留任何跨渲染的可变状态**。
+   * 重算不会让墙"重新拍一次"：贪心最短列是增量的——先摆 0..n-1 再摆 n，与一次
+   * 摆完 0..n 结果相同，所以追加下一页时已有卡片的位置不动。也正因如此，
+   * 这条路不需要 epoch/append 那套（那是为"落位状态不能丢"服务的）。
+   */
+  const heightOfRef = React.useRef(heightOf);
+  heightOfRef.current = heightOf;
+  const pure = Boolean(heightOf);
+  const purePositioner = React.useMemo(() => {
+    const compute = heightOfRef.current;
+    if (!compute || width <= 0) return null;
+    return buildPureSpanLayout({
+      items: itemsRef.current,
+      columnCount,
+      columnWidth,
+      gutter,
+      spanOf: (item, i, cc) => spanRef.current(item, i, cc),
+      heightOf: (item, i, cellW, cc) => compute(item, i, cellW, cc),
+    });
+    // keysJoined 覆盖"换了哪些卡"，列宽/列数/间距覆盖几何。getSpan/heightOf
+    // 每轮都是新函数，走 ref，不进依赖。
+  }, [pure, keysJoined, columnCount, columnWidth, gutter, width]);
+
+  const positioner = pure && purePositioner ? purePositioner : measuredPositioner;
   positionerRef.current = positioner;
   const { setRef, forceUpdate } = useSpanResizeObserver(
     positionerRef as React.MutableRefObject<SpanPositioner>,
     knownHeight,
     onMeasured
   );
+  // 纯函数路不挂 ref：不量高度，也就不需要 ResizeObserver。
+  const cellRef = pure ? undefined : setRef;
 
   const itemCount = items.length;
   // 「下一批从哪儿开始量」问的是**第一个没落位的下标**，不是"落了几格"。
@@ -456,7 +518,7 @@ export function SpanMasonry<T>({
     children.push(
       <div
         key={itemKey(item, index)}
-        ref={setRef}
+        ref={cellRef}
         role="listitem"
         {...{ [INDEX_ATTR]: index, [KEY_ATTR]: String(itemKey(item, index)) }}
         style={{
@@ -474,7 +536,8 @@ export function SpanMasonry<T>({
 
   // 还没量到高度的：先按各自的真实宽度隐藏渲染一批，量完下一轮才定位。
   // 宽度必须是**跨列后的宽度**，否则跨列卡会按一列宽换行、量出偏高的高度。
-  if (needsFreshBatch) {
+  // 纯函数路没有「待量」这回事：上面 useMemo 已经把每一格都落好位了。
+  if (!pure && needsFreshBatch) {
     const batchSize = nextMeasureBatchSize({
       unplaced: itemCount - measuredCount,
       measureAllUnplaced: retainPlaced,
@@ -519,8 +582,8 @@ export function SpanMasonry<T>({
   // 只盯 needsFreshBatch 的话，它保持 true 时 effect 不再跑，后半页就
   // 停在「已 set、未画」，直到下一次滚动才补上。
   React.useEffect(() => {
-    if (needsFreshBatch) forceUpdate();
-  }, [needsFreshBatch, measuredCount, itemCount, forceUpdate]);
+    if (!pure && needsFreshBatch) forceUpdate();
+  }, [pure, needsFreshBatch, measuredCount, itemCount, forceUpdate]);
 
   // 沉降：全部落位、且高度安静下来之后，用真高度重选一次列。**只一次**，
   // 闸在定位器里（`resettle` 自带 `resettled` 标志），理由见 span-positioner 文件头。
@@ -542,12 +605,12 @@ export function SpanMasonry<T>({
   // 自己接的 onReachEnd），拿滚动位置去反推只会像上面这样被别的原因带偏。
   const revision = positioner.revision();
   React.useEffect(() => {
-    if (!settleLayout || itemCount === 0 || measuredCount < itemCount) return;
+    if (pure || !settleLayout || itemCount === 0 || measuredCount < itemCount) return;
     const timer = window.setTimeout(() => {
       if (positioner.resettle()) forceUpdate();
     }, SETTLE_MS);
     return () => window.clearTimeout(timer);
-  }, [positioner, revision, measuredCount, itemCount, settleLayout, forceUpdate]);
+  }, [pure, positioner, revision, measuredCount, itemCount, settleLayout, forceUpdate]);
 
   // 无限流：滚到只剩不到一屏就喊一次。用 ref 记住上次喊的项数，避免同一批重复喊。
   // 底部哨兵走 IntersectionObserver——不依赖 scrollTop。2026-08-18 首帧
