@@ -92,7 +92,37 @@ def test_caps_three_turns_and_truncates_text(monkeypatch):
     narrs = client.get(f"/api/sliderule/sessions/{sid}").json()["state"]["turnNarrations"]
     assert len(narrs) == 3  # 只留最近 3 轮
     assert narrs[-1]["turnId"] == "turn-5"
-    assert len(narrs[-1]["steps"][0]["text"]) <= 1201  # 1200 + 省略号
+    step = narrs[-1]["steps"][0]
+    assert len(step["text"]) <= 1201  # 1200 + 省略号
+
+    # ⚠ 2026-08-23：截断后的长度**恒等于 1201**，所以前端"数截断后的文本"会让
+    # 每个超长步骤都显示同一个数——用户指着推演步骤列表问"这些字数为啥都一样"
+    # 就是这么来的。原始长度必须另存，且必须是真数、不是那个 1201。
+    assert step["textChars"] == 5000
+    assert step["textChars"] != len(step["text"])
+
+
+def test_short_step_gets_no_textChars(monkeypatch):
+    """没超上限的步骤不加这个键——它的长度本来就是真的。
+
+    反向：少了这条，把 textChars 写成"每步都记"也全绿，而那是白占字节
+    （这份投影本来就是为了封顶体积才存在的）。
+    """
+    client = _fresh_client(monkeypatch)
+    sid = "narr-short"
+    small = _narr("turn-1", 1)
+    small["steps"][0]["text"] = "短文本"
+    state = {
+        "sessionId": sid,
+        "goal": {"text": "x", "status": "clear"},
+        "lastTurnId": "turn-1",
+        "turnNarrations": [small],
+    }
+    assert client.put(f"/api/sliderule/sessions/{sid}", json=state).status_code == 200
+    narrs = client.get(f"/api/sliderule/sessions/{sid}").json()["state"]["turnNarrations"]
+    step = narrs[-1]["steps"][0]
+    assert step["text"] == "短文本"
+    assert "textChars" not in step
 
 
 def test_same_turn_snapshot_still_carries_narrations(monkeypatch):

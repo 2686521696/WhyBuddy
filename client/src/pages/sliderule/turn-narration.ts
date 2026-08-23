@@ -38,11 +38,31 @@ const MAX_TEXT = 1200;
  *  高于此的是客户端 `Date.now()`。老编号差 1 是真轮次，不许当时间戳。 */
 const EPOCH_MS_FLOOR = 1e12;
 
+/**
+ * 落库瘦身。
+ *
+ * ⚠ 2026-08-23：截 `text` 时必须把**原始长度**记进 `textChars`。
+ *
+ * 现象是用户指着推演步骤列表问"这些字数为啥都一样"——12 步里 9 步整整齐齐
+ * 写着「1201 字」。1201 不是字数，是 `1200（上限）+ 1（省略号）`：这里把超
+ * 长文本截成 `slice(0,1200) + "…"`，而回放时 UI 直接数这份**已经截断的**
+ * 文本（LlmLiveOutput 的 `formatCharMeta(text.length)`）。于是所有超过 1200
+ * 字的步骤显示同一个数，看着像"每步输出长度惊人地一致"。
+ *
+ * 这个魔数当时已经被当成正常值抄进了测试夹具（activity-rows.test.ts 里那条
+ * "已产出 1201 字符"），说明写测试的人也是从界面照抄的——没人意识到它是截断
+ * 标记。属于本仓第五条：判据/展示要落在真实的东西上，别让机械指标替真相说话。
+ *
+ * 只记 `text` 的原长：UI 只显示这一个字段的长度（见 LlmLiveOutput）。其余三
+ * 个字段照截不误，但不占额外字节。没被截的步骤也不加这个键——它的
+ * `text.length` 本来就是真的。
+ */
 function slimStep(step: TurnStep): TurnStep {
   const slim: Record<string, unknown> = { ...step };
   for (const key of ["text", "message", "label", "title"] as const) {
     const v = slim[key];
     if (typeof v === "string" && v.length > MAX_TEXT) {
+      if (key === "text") slim.textChars = v.length;
       slim[key] = v.slice(0, MAX_TEXT) + "…";
     }
   }

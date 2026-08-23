@@ -56,6 +56,7 @@ function highlightJson(pretty: string): React.ReactNode[] {
 export function LlmLiveOutput({
   title,
   text,
+  chars,
   formatJson = false,
   done = false,
   className = "",
@@ -63,6 +64,12 @@ export function LlmLiveOutput({
   /** 来源标题（"正在分析风险" / "五系统模型起草中"…） */
   title: string;
   text: string;
+  /**
+   * 真实字数。**留档回放必须传**——`text` 那时是被落库瘦身截过的，
+   * 数它得到的恒是 1201（1200 上限 + 省略号），一排步骤会写着同一个数
+   * （用户 2026-08-23 报的就是这个）。直播时不用传：那时 text 就是全文。
+   */
+  chars?: number;
   /** true = 流式 JSON（五系统起草）：容错解析美化 + 代码块外观 + 高亮 */
   formatJson?: boolean;
   /** true = 归档态（推演结束后的留档）：灰点无光标，默认折叠（Claude
@@ -123,7 +130,7 @@ export function LlmLiveOutput({
       <ActivityToggleRow
         status={done ? "done" : "running"}
         verb={compactVerb(title)}
-        meta={formatCharMeta(text.length)}
+        meta={formatCharMeta(chars ?? text.length)}
         open={!collapsed}
         testId="sliderule-llm-draft-toggle"
         onClick={() => setCollapsed(v => !v)}

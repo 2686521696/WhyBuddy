@@ -135,10 +135,28 @@ def _goal_text(state: Any) -> str:
 
 
 def _slim_step(step: Dict[str, Any]) -> Dict[str, Any]:
+    """落库瘦身。
+
+    ⚠ 2026-08-23：截 ``text`` 时必须把**原始长度**记进 ``textChars``。
+
+    现象是用户指着推演步骤列表问"这些字数为啥都一样"——12 步里 9 步整整齐齐
+    写着「1201 字」。1201 不是字数，是 ``1200（上限）+ 1（省略号）``：这里把
+    超长文本截成 ``value[:1200] + "…"``，而回放时前端直接数这份**已经截断的**
+    文本（client 的 LlmLiveOutput）。于是所有超过 1200 字的步骤显示同一个数。
+
+    只记 ``text`` 的原长——前端只显示这一个字段的长度。其余三个字段照截，但
+    不占额外字节；没被截的步骤也不加这个键，它的长度本来就是真的。
+
+    ⚠ 前端 client/src/pages/sliderule/turn-narration.ts 的 slimStep 是同一件事
+      的另一半实现（两侧都会写这份投影）。**改一处不改另一处的现象是"有的步骤
+      显示真字数、有的还是 1201"**，取决于这轮是谁落的库——不会报错。
+    """
     slim = dict(step)
     for key in ("text", "message", "label", "title"):
         value = slim.get(key)
         if isinstance(value, str) and len(value) > MAX_TEXT:
+            if key == "text":
+                slim["textChars"] = len(value)
             slim[key] = value[:MAX_TEXT] + "…"
     return slim
 

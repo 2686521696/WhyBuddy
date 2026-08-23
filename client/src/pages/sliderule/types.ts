@@ -66,6 +66,15 @@ export type TurnStep =
       /** 人话标题（"LLM 正在分析风险"→"分析风险"归档态） */
       title: string;
       text: string;
+      /**
+       * `text` 被落库瘦身截断**之前**的长度（见 turn-narration.slimStep）。
+       *
+       * 只有截过的步骤才有这个键。没有它 = `text` 就是全文，直接数它。
+       * 存在的理由：截断后的长度恒等于 1201（1200 上限 + 省略号），拿它当
+       * 字数显示，一排步骤会整整齐齐写着同一个数——用户 2026-08-23 报的
+       * 就是这个。
+       */
+      textChars?: number;
       /** true = 五系统 JSON（代码块面板）；false = 纯文字思考流 */
       formatJson: boolean;
     };

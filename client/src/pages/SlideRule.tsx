@@ -576,6 +576,8 @@ function ImAssistantMessage() {
                     key={s.id}
                     title={s.title}
                     text={s.text}
+                    // 留档的 text 可能被落库瘦身截过；真字数在 textChars 里
+                    chars={s.textChars}
                     formatJson={s.formatJson}
                     done
                   />

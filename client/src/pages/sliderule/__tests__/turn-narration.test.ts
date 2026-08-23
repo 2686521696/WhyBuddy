@@ -48,15 +48,37 @@ describe("stampTurnNarration", () => {
     expect(state.turnNarrations).toHaveLength(3);
   });
 
-  it("空步骤不打戳；超长文本截断", () => {
+  it("空步骤不打戳；超长文本截断，**并记下原始长度**", () => {
     const untouched = baseState();
     expect(stampTurnNarration(untouched, { turnId: "t", steps: [] })).toBe(untouched);
     const stamped = stampTurnNarration(untouched, {
       turnId: "t",
       steps: [step("s", "长".repeat(5000))],
     });
-    const text = (stamped.turnNarrations?.[0].steps[0] as { text: string }).text;
-    expect(text.length).toBeLessThanOrEqual(1201);
+    const saved = stamped.turnNarrations?.[0].steps[0] as {
+      text: string;
+      textChars?: number;
+    };
+    expect(saved.text.length).toBeLessThanOrEqual(1201);
+
+    // ⚠ 2026-08-23 这条是本次的重点。截断后的长度**恒等于 1201**
+    // （1200 上限 + 省略号），所以"数截断后的文本"会让每个超长步骤都显示同一
+    // 个数——用户指着推演列表问"这些字数为啥都一样"就是这么来的。
+    // 原始长度必须另存，且必须是真数，不是那个 1201。
+    expect(saved.textChars).toBe(5000);
+    expect(saved.textChars).not.toBe(saved.text.length);
+  });
+
+  it("没超上限的步骤不加 textChars——它的 text.length 本来就是真的", () => {
+    // 反向：不加这条的话，把 textChars 写成"每步都记"也全绿，而那是白占字节
+    // （这份投影本来就是为了封顶体积才存在的）。
+    const stamped = stampTurnNarration(baseState(), {
+      turnId: "t",
+      steps: [step("s", "短文本")],
+    });
+    const saved = stamped.turnNarrations?.[0].steps[0] as Record<string, unknown>;
+    expect(saved.text).toBe("短文本");
+    expect("textChars" in saved).toBe(false);
   });
 });
 
