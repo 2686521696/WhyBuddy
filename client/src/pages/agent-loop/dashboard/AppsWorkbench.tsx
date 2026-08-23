@@ -92,6 +92,7 @@ import {
   type AppStoreSummary,
   type AppShelf,
 } from "./app-store-client";
+import { fetchSessionsList } from "./sessions-list-client";
 
 export { appPreviewUrl };
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
@@ -1309,9 +1310,9 @@ export function AppsWorkbench() {
     const keepLoaded = Math.min(Math.max(PAGE_SIZE, loadedCountRef.current), PAGE_SIZE * 8);
     void Promise.allSettled([
       listApps({ limit: keepLoaded, offset: 0, scope: tab }),
-      fetch("/api/sliderule/sessions").then(r =>
-        r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))
-      ),
+      // 与侧栏共享同一次请求：两边在同一拍挂载，各拉一次等于白打一发
+      // （见 sessions-list-client）。
+      fetchSessionsList(),
     ]).then(([appsRes, sessRes]) => {
       if (!alive) return;
       const appList = appsRes.status === "fulfilled" ? appsRes.value : [];

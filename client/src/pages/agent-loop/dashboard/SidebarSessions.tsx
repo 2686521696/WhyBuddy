@@ -21,6 +21,7 @@ import {
   indexAppsBySession,
   sessionRowTitle,
 } from "./session-thumb";
+import { fetchSessionsList, invalidateSessionsList } from "./sessions-list-client";
 
 export const ACTIVE_SESSION_KEY = "sliderule:active-session-id";
 export const SESSION_CHANGED_EVENT = "sliderule:active-session-changed";
@@ -414,11 +415,11 @@ export function SidebarSessions({
   const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null);
 
   const refresh = React.useCallback(() => {
-    fetch("/api/sliderule/sessions")
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const body = (await res.json()) as { sessions?: SessionMeta[] };
-        setSessions(body.sessions ?? []);
+    // 与应用中心共享同一次请求（见 sessions-list-client 的说明）：两边在同一
+    // 拍挂载，各拉一次等于白打一发。
+    fetchSessionsList()
+      .then((body) => {
+        setSessions((body.sessions ?? []) as SessionMeta[]);
         setError(null);
       })
       .catch((e) => setError(String(e)));
@@ -473,6 +474,9 @@ export function SidebarSessions({
       setError(String(e));
       return;
     }
+    // 列表变了：清掉共享取数的飞行槽，保证下一个调用方一定发新请求，
+    // 不会跟一次"删之前发出的"请求合流拿到旧列表（删了还在列表里）。
+    invalidateSessionsList();
     const remaining = (sessions ?? []).filter((s) => s.sessionId !== id);
     setSessions(remaining);
     notifySessionsUpdated();

@@ -322,6 +322,60 @@ async def patch_me(viewer: CurrentUser, payload: dict[str, Any] = Body(default={
     return {"user": updated.public()}
 
 
+@router.get("/account/avatar/{user_id}")
+async def get_user_avatar(user_id: str, viewer: CurrentUserOptional):
+    """头像图本体。载荷里只放地址，图走这里 + 强缓存（2026-08-23）。
+
+    形状照抄本仓已有的那条：`GET /apps/{id}/preview`（routes/sliderule_full.py）
+    ——按内容报 Content-Type、`immutable` 强缓存、版本位在调用方拼的 `?v=` 上。
+    这里同样不读 v，它的全部作用就是当缓存键：头像一换，identity_store 算出的
+    avatar_tag 就变，URL 跟着变，immutable 才成立。
+
+    ## 门槛：本人或超管，其余一律 404
+
+    现在会显示别人头像的地方只有管理台用户列表（超管）和自己的账号面板，
+    所以门槛就按这两个来。**不给"任何登录用户都能看"**：user_id 会随
+    owner_id 出现在公开应用的摘要里，放开等于拿公开应用就能翻出主人的头像。
+
+    报 404 不报 403，跟 app_access.require 同一条纪律：403 等于确认"这个 id
+    确实存在"，可以被用来枚举。
+
+    缓存标 `private`：这张图是按 viewer 授权的，不能进共享缓存（CDN 把超管
+    取到的图缓存下来发给别人，就是越权）。
+    """
+    import asyncio
+
+    if viewer is None:
+        raise HTTPException(404, "头像不存在")
+    if viewer.id != user_id and not viewer.is_superuser:
+        raise HTTPException(404, "头像不存在")
+
+    def _go() -> Any:
+        return get_identity_store().get_by_id(user_id)
+
+    user = await asyncio.to_thread(_go)
+    if user is None:
+        raise HTTPException(404, "头像不存在")
+
+    matched = _AVATAR_DATA_URL.match(user.raw_avatar())
+    if not matched:
+        # 没有头像、或者库里那份不是能认的 data URL（存量脏数据）。
+        # 都当"没有这份资产"，不是错误态——前端画首字母块。
+        raise HTTPException(404, "头像不存在")
+    try:
+        raw = base64.b64decode(matched.group(2), validate=False)
+    except Exception:  # noqa: BLE001 — 脏数据不该变成 500
+        raise HTTPException(404, "头像不存在")
+    if not raw:
+        raise HTTPException(404, "头像不存在")
+
+    return Response(
+        content=raw,
+        media_type=matched.group(1).lower(),
+        headers={"Cache-Control": "private, max-age=31536000, immutable"},
+    )
+
+
 @router.get("/account/capabilities")
 async def capabilities(viewer: CurrentUserOptional):
     """当前身份能做什么——给前端决定显示哪些按钮。

@@ -1,10 +1,21 @@
+/**
+ * 侧栏会话封面。
+ *
+ * ⚠ 2026-08-23 这份测试整体反转过：原来钉的是"有图贴图、没图**活渲染**"，
+ *   现在钉"有图贴图、没图**首字母**"。活渲染那一档删了，理由与实测数据见
+ *   session-thumb.tsx 的模块头注（它一个人占了那页首屏 2.42 MB 里的 1.4 MB）。
+ *
+ * 下面那条反向判据是本次的重点：**光有"贴图能贴上"是不够的**，把活渲染悄悄
+ * 加回来它照样绿，而那 1.4 MB 就回来了，页面看起来还更"好看"——没人会报。
+ */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import type { AppStoreSummary } from "../app-store-client";
 import { appPreviewUrl } from "../app-store-client";
 import {
-  coverScale,
-  firstLandingPage,
+  SessionThumb,
   indexAppsBySession,
   sessionRowTitle,
   sessionUsesSheet,
@@ -31,7 +42,16 @@ function summary(partial: Partial<AppStoreSummary>): AppStoreSummary {
   };
 }
 
-describe("侧栏封面回落链", () => {
+/** 剥掉注释再看源码——本仓踩过：判据 grep 的词同时出现在文档字符串里，
+ *  改回去照样绿（见 CLAUDE.md 第二条）。这个模块的头注里恰好写着
+ *  `GET /sessions/{id}` 和 getApp，不剥就是假绿。 */
+function sourceWithoutComments(): string {
+  return readFileSync(new URL("../session-thumb.tsx", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^[ \t]*\/\/.*$/gm, "");
+}
+
+describe("侧栏封面：只贴图", () => {
   it("按 session_id 建索引，后到的同会话不覆盖", () => {
     const map = indexAppsBySession([
       summary({ id: "a1", session_id: "s1", product_name: "先" }),
@@ -42,7 +62,7 @@ describe("侧栏封面回落链", () => {
     expect(map.has("")).toBe(false);
   });
 
-  it("有图才贴图，没图 / 无 app 走活渲染", () => {
+  it("有图才贴图", () => {
     expect(sessionUsesSheet(summary({ has_preview: true }))).toBe(true);
     expect(sessionUsesSheet(summary({ has_preview: false }))).toBe(false);
     expect(sessionUsesSheet(summary({}))).toBe(false);
@@ -56,45 +76,45 @@ describe("侧栏封面回落链", () => {
     expect(sessionRowTitle("做一个站", summary({ product_name: "安康随访通" }))).toBe(
       "安康随访通"
     );
-    expect(sessionRowTitle("做一个站", summary({ product_name: "" }))).toBe(
-      "做一个站"
-    );
+    expect(sessionRowTitle("做一个站", summary({ product_name: "" }))).toBe("做一个站");
     expect(sessionRowTitle("", null)).toBe("新会话");
   });
 
-  it("落地页取导航第一项，空壳不算有页面", () => {
-    expect(firstLandingPage({})).toBeNull();
-    expect(firstLandingPage({ pages: {} })).toBeNull();
-    const page = firstLandingPage({
-      device: "phone",
-      navItems: [{ pageId: "p2" }, { pageId: "p1" }],
-      pages: { p1: "<html>一</html>", p2: "<html>二</html>" },
-    });
-    expect(page).toEqual({ html: "<html>二</html>", device: "phone" });
+  it("有图 → 贴 <img>，URL 带版本位", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(SessionThumb, {
+        sessionId: "s1",
+        title: "安康随访通",
+        app: summary({ has_preview: true, preview_tag: "shot.42" }),
+      })
+    );
+    expect(html).toContain('data-testid="sidebar-session-thumb-sheet"');
+    expect(html).toContain("/api/sliderule/apps/app-1/preview?v=shot.42");
   });
 
-  it("方格 cover 取更紧的边，16:9 画进 1:1 不留边", () => {
-    expect(coverScale(48, 48, 1920, 1080)).toBeCloseTo(48 / 1080);
-    expect(coverScale(48, 48, 1920, 1080)).toBeGreaterThan(48 / 1920);
+  it("没图 → 首字母块，**不是**现渲一个应用", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(SessionThumb, {
+        sessionId: "s1",
+        title: "安康随访通",
+        app: summary({ has_preview: false }),
+      })
+    );
+    expect(html).toContain("native-agent-session-thumb-letter");
+    expect(html).toContain("安"); // 取标题首字
+    expect(html).not.toContain("sidebar-session-thumb-sheet");
+    expect(html).not.toContain("iframe");
   });
 
-  it("活路径不引 AppsWorkbench，贴图走 appPreviewUrl", () => {
-    const src = readFileSync(new URL("../session-thumb.tsx", import.meta.url), "utf8")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^[ \t]*\/\/.*$/gm, "");
-    expect(src).toContain("appPreviewUrl");
-    expect(src).toContain("getApp");
-    expect(src).toContain("LazyHtmlAppSurface");
-    expect(src).toContain("sessionUsesSheet");
-    expect(src).toContain("coverScale(");
-    expect(src).not.toContain("AppsWorkbench");
-    expect(src).not.toContain("from \"./AppsWorkbench\"");
-  });
-
-  it("侧栏活渲染手机页必须 fillPhone——剥注释后还在", () => {
-    const src = readFileSync(new URL("../session-thumb.tsx", import.meta.url), "utf8")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^[ \t]*\/\/.*$/gm, "");
-    expect(src).toContain('fillPhone={payload.device === "phone"}');
+  it("**反向：侧栏不许再拉整包**（剥注释后源码里不该有这些）", () => {
+    // 这条钉的是那 1.4 MB。把活渲染加回来时，上面几条正向判据全都照样绿——
+    // 页面甚至更好看，所以没人会报。只有这一条会红。
+    const src = sourceWithoutComments();
+    expect(src).toContain("appPreviewUrl"); // 先确认判据没打空：贴图那条还在
+    expect(src).not.toContain("getApp"); // 整包：model_json + pages_json
+    expect(src).not.toContain("/sessions/${"); // 完整会话状态，单条约 413 KB
+    expect(src).not.toContain("HtmlAppSurface");
+    expect(src).not.toContain("AppRuntimeScreen");
+    expect(src).not.toContain("React.lazy");
   });
 });

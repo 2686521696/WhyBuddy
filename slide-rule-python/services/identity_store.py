@@ -331,17 +331,52 @@ class User(dict):
     def is_verified(self) -> bool:
         return bool(self.get("is_verified"))
 
-    def public(self) -> dict[str, Any]:
-        """对外可见的字段。**password_hash 永远不出现在这里**。"""
+    def raw_avatar(self) -> str:
+        """库里存的那一份（data URL 原文）。**只给取图路由用**，不进任何载荷。"""
         avatar = self.get("avatar_url")
         if avatar is None:
             avatar = self.get("avatarUrl")
-        avatar_text = str(avatar).strip() if avatar else ""
+        return str(avatar).strip() if avatar else ""
+
+    def avatar_tag(self) -> str:
+        """头像的缓存版本位。内容一变它就变，immutable 才敢用。
+
+        取内容哈希而不是时间戳：三个后端存的时刻字段形态不一，而哈希只依赖
+        这一列本身。截断到 12 位十六进制——它只当缓存键，不做完整性校验。
+        """
+        raw = self.raw_avatar()
+        if not raw:
+            return ""
+        import hashlib
+
+        return hashlib.sha256(raw.encode("utf-8", "ignore")).hexdigest()[:12]
+
+    def public(self) -> dict[str, Any]:
+        """对外可见的字段。**password_hash 永远不出现在这里**。
+
+        ⚠ 2026-08-23：`avatarUrl` 从"库里那份 data URL 原文"改成**取图地址**。
+        原来是把整张图内联在这里，实测 `GET /account/me` 一次 169 KB，其中
+        168,972 字节是 avatarUrl，其余所有字段加起来约 130 字节；而 /me 每次
+        进页面都打、还不可强缓存。管理台用户列表更糟——一次列 N 个用户就是
+        N 张整图。
+
+        这跟本仓已经写死的另一条纪律是同一件事，只是当时没管到身份这边：
+        应用摘要**不许带图**（services/app_store 的 _summary，判据见
+        tests/test_app_preview.py::test_preview_never_rides_along_in_listings，
+        理由原文"一张图约 1MB，列 200 个应用就是 200MB 过网"）。
+        现在两边形状对齐：载荷里只给地址 + 版本位，图本体走独立路由 + immutable
+        强缓存（见 routes/account.py 的 get_user_avatar）。
+
+        没有头像仍然是 None——前端据此画首字母块，别给一个会 404 的地址。
+        """
+        tag = self.avatar_tag()
         return {
             "id": self.id,
             "email": self.email,
             "displayName": self.get("display_name") or self.get("displayName"),
-            "avatarUrl": avatar_text or None,
+            "avatarUrl": (
+                f"/api/sliderule/account/avatar/{self.id}?v={tag}" if tag else None
+            ),
             "isSuperuser": self.is_superuser,
             "isVerified": self.is_verified,
             "isActive": self.is_active,
