@@ -586,19 +586,29 @@ describe("卡片墙走 masonic，高度由内容决定", () => {
     expect(scroller).toContain("scroller.clientHeight");
   });
 
-  it("卡片高度来自共用算式（列宽 ÷ 设备宽高比）", () => {
-    // ⚠ 2026-08-23 这条改过落点。原来钉的是那行字面表达式
-    //   `Math.round(cellW / aspectForDevice(...))`；现在算式抽成了 wallCardHeight，
-    //   因为**布局也要用同一个数**（纯函数落位，见 pure-span-layout）。
-    //   两处各写各的现象是卡片互相压盖或留缝，而且不会报错——所以判据改成
-    //   「只有一处算式」，比钉字面量更贴近要防的事。
-    expect(src).toMatch(/const mediaH = wallCardHeight\(cellW, item\.summary\?\.device\)/);
-    expect(src).toMatch(/cellWidth \/ aspectForDevice\(device\)/); // 算式本体
-    expect(src).not.toMatch(/cellW\s*\/\s*aspectForDevice/); // 不许再就地算一遍
+  it("卡片宽高**都由布局给**，卡片不自己算", () => {
+    // ⚠ 2026-08-23 这条改过两次落点，记一下省得下次又看不懂：
+    //   ① 原来钉字面表达式 `Math.round(cellW / aspectForDevice(...))`；
+    //   ② 中途抽成 wallCardHeight，因为纯函数落位要用同一个数；
+    //   ③ 当天换成两端对齐行（JustifiedWall）后，高度是**布局的输出**——
+    //      同行等高、按宽高比分宽。卡片再自己算一遍只会跟布局打架，
+    //      现象是压盖或留缝，且不报错。所以现在钉的是「不许自己算」。
+    // 反向判据必须剥注释再看：下面那句"换 B 方案之前这里是 wallCardHeight"
+    // 是**事故记录**，留着有用，但会让不剥注释的 grep 假红（本仓第二条踩过的
+    // 同一个坑，只是这次方向相反）。
+    const bare = sourceWithoutComments(src);
+    expect(bare).toMatch(/const mediaH = cellH/);
+    expect(bare).not.toMatch(/cellW\s*\/\s*aspectForDevice/);
+    expect(bare).not.toContain("wallCardHeight");
     expect(src).toContain("mediaHeight={mediaH}");
-    // 外框不能带 height——写死等于把「高度由内容决定」退回去了。
+    // 宽高比只喂给布局，不在卡片里换算成高度
+    expect(src).toMatch(/aspectOf=\{entry => aspectForDevice/);
+    // ⚠ 这里原来有两条「外框不能带 height、不许出现 cellH」的禁令，出发点是
+    //   当年那版「高度由内容决定」。两端对齐行之后前提反转了：高度就是布局的
+    //   输出，`cellH` 从禁忌变成了正解，禁令跟着撤销。
+    //   真正要防的事没变——卡片不许**自己另算**一个高度（上面三条钉着）。
+    //   外框仍然不写死尺寸：位置和宽高都由 JustifiedWall 的定位容器给。
     expect(src).not.toMatch(/style=\{\{ width: cellW, height: cellH \}\}/);
-    expect(src).not.toContain("cellH");
   });
 
   it("信息条压在画面上，不另占卡片高度（用户裁决，2026-07-31 改回）", () => {
@@ -608,7 +618,10 @@ describe("卡片墙走 masonic，高度由内容决定", () => {
     // 改回压字之后同样的卡高能多显示一截应用画面。
     expect(src).toMatch(/absolute inset-x-0 bottom-0 bg-gradient-to-t from-black\//);
     // 压在深色渐变上就必须是白字
-    expect(src).toMatch(/text-\[13\.5px\] font-semibold text-white/);
+    // 紧凑态（窄卡）用 12px，常规 13.5px —— 2026-08-23 两端对齐行之后，
+    // 手机档卡片实测只有 110~133px 宽，13.5px 标题一个字都放不下几个。
+    expect(src).toMatch(/compact \? "text-\[12px\]" : "text-\[13\.5px\]"/);
+    expect(src).toMatch(/font-semibold text-white drop-shadow-sm/);
     expect(src).toContain("text-white/75");
     // 画面要铺满整张卡——信息条是浮层，不能再把画面挤成上半截
     expect(src).toContain("absolute inset-0 overflow-hidden");

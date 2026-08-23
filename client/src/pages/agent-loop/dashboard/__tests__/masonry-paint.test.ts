@@ -117,8 +117,16 @@ describe("不卸挂接在真链路上", () => {
       "collectPaintIndices",
     )[0];
     expect(rangeThenPaint).not.toContain("children.push");
-    expect(wall).toMatch(/retainPlaced(?:\s|>|=\{true\})/);
-    expect(wall).not.toMatch(/retainPlaced=\{false\}/);
+    // ⚠ 2026-08-23 落点改过：应用中心换成两端对齐行（JustifiedWall）之后不再
+    //   经过 SpanMasonry，`retainPlaced` 那条随之退场。JustifiedWall 的视口裁切
+    //   是**纯的**（比大小，不存"已渲染过"的状态），所以不需要 retain 那套——
+    //   反过来说，它要是哪天存了状态，就把当初那个死锁请回来了，下面这条钉它。
+    const jw = stripComments(
+      readFileSync(new URL("../JustifiedWall.tsx", import.meta.url), "utf8"),
+    );
+    expect(jw).toMatch(/layout\.boxes\.filter/);
+    expect(jw).not.toContain("useState");
+    expect(wall).not.toContain("retainPlaced");
     expect(masonry).toContain("masonry-end");
     expect(masonry).toContain("IntersectionObserver");
     expect(masonry).toContain("shouldMeasureUnplaced");

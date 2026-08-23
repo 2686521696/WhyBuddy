@@ -26,6 +26,8 @@ export interface SessionsListBody {
 const ENDPOINT = "/api/sliderule/sessions";
 
 let inflight: Promise<SessionsListBody> | null = null;
+/** 当前飞行槽的身份令牌——用来判断 finally 里该不该清槽。 */
+let slot: object | null = null;
 
 /**
  * 拉会话列表。并发调用共享同一个请求。
@@ -34,6 +36,10 @@ let inflight: Promise<SessionsListBody> | null = null;
  */
 export function fetchSessionsList(): Promise<SessionsListBody> {
   if (inflight) return inflight;
+  // 用一个独立令牌判断「飞行槽还是不是这一次的」，而不是在 run 的初始化里引用
+  // run 自己——那样运行时对（finally 跑在 await 之后），但 TS 会判成
+  // "used before being assigned"。
+  const token = {};
   const run = (async () => {
     try {
       const res = await fetch(ENDPOINT);
@@ -46,9 +52,10 @@ export function fetchSessionsList(): Promise<SessionsListBody> {
       //   看见旧的飞行槽，被当成并发合流进去，拿到的是上一次的结果。
       //   第一版就是这么写的，被 sessions-list-client.test 的"不是缓存"那条
       //   当场咬住：明明该发两次，实际只发了一次。
-      if (inflight === run) inflight = null;
+      if (slot === token) inflight = null;
     }
   })();
+  slot = token;
   inflight = run;
   // 失败也要能被下一次重发——这由上面的 finally 保证；这里额外吞一次拒绝，
   // 免得没人 catch 时冒成 unhandledrejection（调用方各自的 catch 照常收到）。
@@ -59,9 +66,11 @@ export function fetchSessionsList(): Promise<SessionsListBody> {
 /** 改过会话（删/建/改名）之后调一下：让下一个调用方一定发新请求。 */
 export function invalidateSessionsList(): void {
   inflight = null;
+  slot = null;
 }
 
 /** 测试用：把飞行槽清回初始。 */
 export function __resetSessionsListForTests(): void {
   inflight = null;
+  slot = null;
 }

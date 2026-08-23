@@ -166,13 +166,16 @@ describe("appendUniqueById", () => {
 });
 
 describe("追加纪律接在真链路上", () => {
-  it("卡片墙用冻结 span，定位器用 epoch，不许退回全表重算", () => {
+  it("追加只冻结序，不退回全表重算", () => {
+    // ⚠ 2026-08-23 落点改过：应用中心那面墙换成两端对齐行（JustifiedWall）之后
+    //   **不再有跨列**——宽度由宽高比决定，`appendStableSpanKeys` 这条随之退场
+    //   （它仍服务组件库那面墙）。冻结「序」的那两条纪律没变，仍钉在这里。
     const wall = readFileSync(new URL("../AppsWorkbench.tsx", import.meta.url), "utf8");
     const masonry = readFileSync(new URL("../SpanMasonry.tsx", import.meta.url), "utf8");
-    expect(wall).toContain("appendStableSpanKeys");
     expect(wall).toContain("appendStableItems");
     expect(wall).toContain("appendUniqueById");
-    expect(wall).not.toMatch(/computeSpanKeys\(items\.map/);
+    expect(wall).not.toContain("appendStableSpanKeys");
+    // SpanMasonry 仍服务组件库那两面墙（区块高度真的要量），纪律照旧。
     expect(masonry).toContain("nextLayoutEpoch");
     expect(masonry).toContain("copyPlacements");
     expect(masonry).not.toMatch(/return `\$\{items\.length\}:/);

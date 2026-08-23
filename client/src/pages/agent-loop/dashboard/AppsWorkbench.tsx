@@ -32,9 +32,8 @@ import { Pagination } from "antd";
 import { useContainerPosition } from "masonic";
 
 import { useScrollerIn } from "./useScrollerIn";
-import { SpanMasonry } from "./SpanMasonry";
+import { JustifiedWall } from "./JustifiedWall";
 import { appendStableItems, appendUniqueById } from "./masonry-append";
-import { appendStableSpanKeys, spanForColumnCount } from "./app-wall-span";
 import { DEVICE_ASPECT, aspectForDevice } from "@/lib/justified-rows";
 import {
   LayoutGrid,
@@ -934,6 +933,7 @@ function CenterCard({
   onClick,
   topRight,
   mediaHeight,
+  compact = false,
 }: {
   testid: string;
   title: string;
@@ -948,6 +948,8 @@ function CenterCard({
   topRight?: React.ReactNode;
   /** 卡片总高（px）。信息条浮在画面上，不再另占高度——见下方那段说明。 */
   mediaHeight?: number | string;
+  /** 紧凑态：卡片太窄时收起指标行，只留标题 + 状态。 */
+  compact?: boolean;
 }) {
   return (
     <div
@@ -984,7 +986,7 @@ function CenterCard({
       {/* 信息条：浮在画面底部，不占卡片高度 */}
       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/60 to-transparent px-3 pb-2 pt-7 opacity-30 backdrop-blur-[1px] transition-opacity group-hover:opacity-100">
         <div className="flex items-center gap-1.5">
-          {Icon && (
+          {Icon && !compact && (
             <span
               className="flex h-[20px] w-[20px] shrink-0 items-center justify-center rounded-[6px] text-white"
               style={{ background: iconBg }}
@@ -992,12 +994,23 @@ function CenterCard({
               <Icon size={12} />
             </span>
           )}
-          <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-white drop-shadow-sm">
+          <span
+            className={`min-w-0 flex-1 truncate font-semibold text-white drop-shadow-sm ${
+              compact ? "text-[12px]" : "text-[13.5px]"
+            }`}
+          >
             {title}
           </span>
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-white/75">
-          {metrics}
+        {/* 窄卡（手机档在 200 行高下约 110~133px 宽）收起指标：三个徽标 + 状态
+            挤在 110px 里会折成三四行，把画面盖掉大半。状态点是最要紧的一条，
+            留着；其余靠点开看。判据见 apps-workbench 的「窄卡收起指标行」。 */}
+        <div
+          className={`mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-white/75 ${
+            compact ? "justify-end" : ""
+          }`}
+        >
+          {compact ? null : metrics}
           <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 font-medium text-white/90">
             <span className={`h-1.5 w-1.5 rounded-full ${statusDot}`} />
             {statusLabel}
@@ -1031,18 +1044,13 @@ const WALL_COLUMN_WIDTH = 260;
 const WALL_GUTTER = 16;
 
 /**
- * 卡片总高 = 格宽 ÷ 设备宽高比。
+ * 两端对齐行的目标行高（用户 2026-08-23 在三档效果图里选定 200）。
  *
- * 信息条浮在画面上、不另占高度（见 CenterCard 的 `style={{ height: mediaHeight }}`，
- * 内部全是 absolute），所以这就是整张卡的确切高度——**算得出来，不用量**。
- *
- * ⚠ 布局与渲染必须共用这一个算式。分成两处写的现象是卡片互相压盖或留缝，
- *   而且不会报错（布局按 A 算、卡片按 B 画，谁也不知道对方）。
- *   判据见 apps-workbench.test 的「墙的高度算式只有一处」。
+ * 算法会为了铺满整行在 ±25% 容差内浮动，实测落在 235~237——所以这是「目标」，
+ * 不是最终行高。真实数据（68 个应用、容器 1594px）下：12 行、总高 2893px、
+ * 桌面卡宽 348~421、手机卡宽 110~133。
  */
-export function wallCardHeight(cellWidth: number, device: string | null | undefined): number {
-  return Math.round(cellWidth / aspectForDevice(device));
-}
+const WALL_TARGET_ROW_HEIGHT = 200;
 
 /**
  * 「我的应用」瀑布流。
@@ -1095,69 +1103,36 @@ function AppWall({
     item: GalleryItem,
     detail: AppCardDetail | null,
     cellW: number,
-    span: number,
+    cellH: number,
   ) => React.ReactNode;
   onReachEnd?: () => void;
   ensureDetail: (gi: GalleryItem) => void;
 }) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
-  const { scrollTop, isScrolling, height } = useScrollerIn(containerRef);
+  const { scrollTop, height } = useScrollerIn(containerRef);
   // width 要跟着容器走（侧栏收起、窗口缩放都会变），deps 给 height 让它重量。
   const { offset: _offset, width } = useContainerPosition(containerRef, [height]);
 
-  // 跨列集合：追加下一页时冻结已落位卡的 span（masonry-append.ts），
-  // 详情回来只换对象、key 不变，也不该重算。
-  const spanMemo = React.useRef<{ keys: string[]; spans: Set<string> }>({
-    keys: [],
-    spans: new Set(),
-  });
-  const itemKeySig = items.map(e => e.item.key).join("\0");
-  const spanKeys = React.useMemo(() => {
-    const nextItems = items.map(e => e.item);
-    const nextKeys = nextItems.map(it => it.key);
-    const spans = appendStableSpanKeys(spanMemo.current.spans, spanMemo.current.keys, nextItems);
-    spanMemo.current = { keys: nextKeys, spans };
-    return spans;
-    // itemKeySig 变了才重算；items 每轮都是新数组，不能当依赖。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itemKeySig]);
-
   return (
     <div data-testid="apps-wall" style={{ display: "contents" }}>
-      <SpanMasonry<WallEntry>
+      <JustifiedWall<WallEntry>
         containerRef={containerRef}
         items={items}
         width={width}
         height={height}
         scrollTop={scrollTop}
-        isScrolling={isScrolling}
-        minColumnWidth={WALL_COLUMN_WIDTH}
-        gutter={WALL_GUTTER}
+        targetRowHeight={WALL_TARGET_ROW_HEIGHT}
+        spacing={WALL_GUTTER}
         overscanBy={2}
-        // 已落位的活缩略图不许随滚动卸挂。overscan 只管还要量谁。
-        // 2026-08-18：overscanBy=2 按窗口裁切，滚出的 iframe 整卡重渲。
-        retainPlaced
-        // 首屏还没量到真实高度时用它估行数。桌面卡 260/1.78≈146 + 信息区 ≈52，
-        // 手机卡 260/0.46≈563 + 52；取中间偏桌面一侧，因为桌面档占多数。
-        itemHeightEstimate={240}
-        // 高度算得出来 → 走纯函数落位，整套「隐藏渲染量高度」不再发生。
-        // 这条同时根治了 2026-08-23 那个「只显示第一行 4 张、等多久都不好」的
-        // 死锁（详见 SpanMasonry 的 heightOf 文档）。
-        heightOf={(entry, _i, cellW) => wallCardHeight(cellW, entry.item.summary?.device)}
+        // 宽高比就是设备档：桌面 1.778、手机 0.5625。错落由它自然产生，
+        // 不再需要「按页面数取前 1/4 跨两列」那条人工规则。
+        aspectOf={entry => aspectForDevice(entry.item.summary?.device)}
         itemKey={entry => entry.item.key}
-        getSpan={(entry, _i, columnCount) =>
-          spanForColumnCount(spanKeys.has(entry.item.key), columnCount)
-        }
         className="mt-5"
         onReachEnd={onReachEnd}
-        render={(entry, _i, cellW, columnCount) => (
+        render={(entry, _i, cellW, cellH) => (
           <GalleryCardGate item={entry.item} ensure={ensureDetail}>
-            {renderCard(
-              entry.item,
-              entry.detail,
-              cellW,
-              spanForColumnCount(spanKeys.has(entry.item.key), columnCount),
-            )}
+            {renderCard(entry.item, entry.detail, cellW, cellH)}
           </GalleryCardGate>
         )}
       />
@@ -1746,15 +1721,18 @@ export function AppsWorkbench() {
     item: GalleryItem,
     detail: AppCardDetail | null,
     cellW: number,
-    span = 1,
+    cellH: number,
   ) => {
-    // 卡片高度 = 本格宽度 / 设备宽高比。cellW 跨列时已经是两列的合并宽度，
-    // 所以这里**不用**为跨列另算——同一个设备比例下，卡宽了画面就等比高，
-    // 应用截图显示得更完整，正是给它两列的意义。
+    // 宽高**都由布局给**（两端对齐行：同行等高、按宽高比分宽），卡片按给的
+    // 尺寸铺满即可——不再自己按列宽反算高度。
     //
-    // 信息条改成浮在画面上之后，这个数就是**整张卡的高度**（此前还要再加一段
-    // 信息区高度）。所以同一个宽度下卡片比之前矮一截，画面反而显示得更多。
-    const mediaH = wallCardHeight(cellW, item.summary?.device);
+    // ⚠ 2026-08-23 换 B 方案之前这里是 `wallCardHeight(cellW, device)`，那是
+    //   等宽变高的瀑布流留下的：列宽固定、高度自己算。现在两个数都是布局的
+    //   输出，卡片再算一遍只会跟布局打架（现象是压盖或留缝，不报错）。
+    const mediaH = cellH;
+    // 窄卡收起指标行。阈值 200：手机档在 200 目标行高下实测 110~133px 宽，
+    // 桌面档 348~421px；取中间偏窄一侧，桌面卡任何行高下都不会误伤。
+    const compact = cellW < 200;
     const meta = detail ? STATUS_META[detail.status] : null;
     const BrandIcon = detail?.identity
       ? BRAND_LUCIDE[detail.identity.icon] ?? Boxes
@@ -1779,13 +1757,14 @@ export function AppsWorkbench() {
       <div
         data-testid={`app-cell-${item.sessionId || item.appId}`}
         data-tier={(item.summary?.device || "desktop").trim() || "desktop"}
-        data-span={span}
+        data-compact={compact ? "1" : "0"}
         // 不写死高度：masonic 的 ResizeObserver 量的就是这个节点，写死等于
         // 把「高度由内容决定」这条又退回去了。宽度也不用给——masonic 的定位
         // 容器已经是 columnWidth，卡片 w-full 铺满即可。
       >
       <CenterCard
         mediaHeight={mediaH}
+        compact={compact}
         testid={`app-card-${item.sessionId || item.appId}`}
         title={detail?.identity?.productName || item.goal || "（未命名话题）"}
         titleAttr={item.goal}

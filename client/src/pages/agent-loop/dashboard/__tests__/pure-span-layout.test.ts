@@ -103,25 +103,23 @@ function stripped(rel: string): string {
     .replace(/^[ \t]*\/\/.*$/gm, "");
 }
 
-describe("接在活路径上", () => {
-  it("**应用中心那面墙必须传 heightOf** —— 不传就静默退回测量路", () => {
-    const src = stripped("../AppsWorkbench.tsx");
-    expect(src).toContain("heightOf={");
-    expect(src).toContain("wallCardHeight");
-  });
-
-  it("布局与渲染共用同一个高度算式，不许各写各的", () => {
-    // 分成两处写的现象是卡片互相压盖或留缝，而且不会报错——布局按 A 算、
-    // 卡片按 B 画，谁也不知道对方。
-    const src = stripped("../AppsWorkbench.tsx");
-    const uses = src.match(/wallCardHeight\(/g) ?? [];
-    expect(uses.length).toBeGreaterThanOrEqual(3); // 定义 + 渲染 + heightOf
-    expect(src).not.toMatch(/cellW\s*\/\s*aspectForDevice/);
-  });
-
-  it("传了 heightOf 就不走隐藏批次", () => {
+describe("目前没有调用方——但纪律仍成立", () => {
+  it("SpanMasonry 的 heightOf 路仍完整（组件库那两面墙将来可以用）", () => {
+    // ⚠ 2026-08-23：应用中心当天先切到这条纯函数路（修死锁），当天晚些又整体
+    //   换成了两端对齐行（JustifiedWall），于是 heightOf **暂时没有调用方**。
+    //   保留是因为它是「高度算得出来的瀑布流」的正解，且上面那组数学判据一直
+    //   在跑；组件库那两面墙的区块高度是真渲染才知道的，用不了它。
     const src = stripped("../SpanMasonry.tsx");
     expect(src).toContain("if (!pure && needsFreshBatch)");
     expect(src).toContain("const cellRef = pure ? undefined : setRef");
+    expect(src).toContain("buildPureSpanLayout");
+  });
+
+  it("**应用中心已经不走测量路了** —— 那条死锁在结构上不成立", () => {
+    // 反向：这面墙要是哪天又接回 SpanMasonry 而不传 heightOf，隐藏批次那套
+    //   （以及 2026-08-23 那个「只显示第一行、等多久都不好」）就回来了。
+    const wall = stripped("../AppsWorkbench.tsx");
+    expect(wall).toContain("JustifiedWall");
+    expect(wall).not.toContain("SpanMasonry");
   });
 });
