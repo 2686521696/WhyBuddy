@@ -325,23 +325,57 @@ def test_preview_tag_changes_when_the_same_source_is_rewritten(configured_store)
     assert after != before, "同来源换图后标签没变，强缓存会钉死在旧图上"
 
 
-def test_new_version_inherits_the_sheet_but_not_the_shot(configured_store):
-    """新版本继承参照板，**但不继承真截图**。
+def test_new_version_inherits_the_shot_too(configured_store):
+    """新版本**两路都继承**，按优先级取最好的那张（shot 优先）。
 
-    继承截图会把自己堵死：一旦继承，"这个应用已经有截图了"就成立，采集端便不会
-    再为它采一张——而新版本恰恰是长得不一样的那个（模型变了才会开新版本），结果
-    是新版永远顶着上一版的实拍图。
+    ⚠ 这条 2026-08-23 反转过。旧版断言的是"继承参照板但不继承真截图"，理由是
+      继承截图会把采集端堵死（app_has_shot 成立 → 不再为它采一张）。那个理由只
+      对**卡片众包补图**成立，而它 2026-08-22 已随卡片活渲染一起删除；现在唯一
+      的采集者是推演收口，一律带 replace=1，堵不住（见
+      test_replace_overwrites_an_inherited_shot）。
 
-    不继承也不会掉回活渲染：参照板继承仍在，卡片始终有图可贴。
+      旧写法留的安全网是"参照板继承仍在，卡片始终有图可贴"。真机打脸：参照板要
+      生图三件套齐全才生得出，线上从没配过——2026-08-23 查线上库 64 个应用，
+      **sheet 数为 0**，20 张图全是 shot。于是每精修/fork 一次就真的掉一次空态。
     """
     v1 = store.save_app_or_version(_model(), goal="g", session_id="e6", preview_png_b64=PNG_A)
     store.save_app_shot(v1, base64.b64decode(PNG_B))
     v2 = store.save_app_or_version(_model(entities=3), goal="g", session_id="e6")
     assert v2 != v1
-    assert store.get_app_preview_png(v2, source="sheet") == base64.b64decode(PNG_A)
-    assert store.get_app_preview_png(v2, source="shot") is None, "新版本不该继承实拍图"
-    # 卡片仍有图可贴，只是暂时是示意图——采集端会据此为它采一张自己的
-    assert store.get_app_preview_png(v2) == base64.b64decode(PNG_A)
+    assert store.get_app_preview_png(v2, source="shot") == base64.b64decode(PNG_B)
+    # 只继承最好的那一张，不把两张都复制过去：每张约 1MB，而"两路并存"是为了
+    # 两条**产图路径**互为退路，继承来的副本不承担那个职责。
+    assert store.get_app_preview_png(v2, source="sheet") is None
+    assert store.get_app_preview_png(v2) == base64.b64decode(PNG_B)
+
+
+def test_fork_inherits_the_shot_when_the_source_has_no_sheet(configured_store):
+    """**线上的真实形态**：源只有实拍图，没有参照板。
+
+    2026-08-23 用户指着一个当天 fork 出来的应用问"这不是今天生成的吗，怎么没
+    图"。真因就在这里：fork 不经过推演收口（没有 running true→false，采集不
+    触发），全指望继承；而旧代码只继承 sheet，线上一个 sheet 都没有，于是继承
+    了个空。
+
+    这条是那次事故的判据——把 _attach_preview 的继承改回"只认 sheet"，它必须变红。
+    """
+    src = store.save_app_or_version(_model(), goal="g", session_id="fk1")
+    store.save_app_shot(src, base64.b64decode(PNG_B))
+    assert store.get_app_preview_png(src, source="sheet") is None, "夹具前提：源没有参照板"
+
+    dup = store.fork_app(src, new_name="园务通 副本")
+    assert dup
+    assert store.get_app_preview_png(dup) == base64.b64decode(PNG_B)
+    assert store.get_app_preview_png(dup, source="shot") == base64.b64decode(PNG_B)
+
+
+def test_fork_without_any_preview_stays_empty(configured_store):
+    """反向：源自己就没图时，别凭空造一张出来——空态是诚实的。"""
+    src = store.save_app_or_version(_model(), goal="g", session_id="fk2")
+    dup = store.fork_app(src, new_name="副本")
+    assert dup and store.get_app_preview_png(dup) is None
+    assert store.get_app_preview_png(dup, source="shot") is None
+    assert store.get_app_preview_png(dup, source="sheet") is None
 
 
 def test_delete_takes_both_sources_with_it(configured_store):
@@ -466,7 +500,8 @@ def test_upload_is_idempotent(api_client):
 
 def test_upload_replace_without_writer_is_rejected(api_client):
     """覆盖要写权限。这条夹具里的应用无主，匿名只有读——replace 必须 401，
-    不能因为测试里没登录就把别人的 shot 换掉。真覆盖见 test_auth_hardening。"""
+    不能因为测试里没登录就把别人的 shot 换掉。
+    真覆盖见 test_replace_overwrites_an_inherited_shot。"""
     app_id = _public_app("u2b", preview_png_b64=PNG_A)
     first = api_client.post(
         f"/api/sliderule/apps/{app_id}/preview",
@@ -482,6 +517,79 @@ def test_upload_replace_without_writer_is_rejected(api_client):
     )
     assert replaced.status_code == 401
     assert store.get_app_preview_png(app_id) == _PNG
+
+
+_OWNER_ID = "owner-7"
+
+
+@pytest.fixture
+def owner_client(configured_store):
+    """带写权限的客户端（覆盖 optional_user 注入这条记录的主人）。
+
+    ⚠ 2026-08-23 补：`?replace=1` 那条分支此前**整个 tests/ 里没有一处走过**
+      （grep replace=1 零命中）。而"继承来的 shot 不会堵死收口采集"这个判断
+      正是押在它身上——押在没被任何判据钉过的行为上，等于没押。下面两条把
+      幂等与覆盖两侧都钉住。
+    """
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from middlewares.current_user import optional_user
+    from routes.sliderule_full import router
+
+    class _Owner:
+        id = _OWNER_ID
+        is_superuser = False
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/sliderule")
+    app.dependency_overrides[optional_user] = lambda: _Owner()
+    return TestClient(app)
+
+
+def test_replace_overwrites_an_inherited_shot(owner_client):
+    """收口采集能换掉继承来的图——这正是"继承不会堵死采集"的判据。
+
+    fork 出来的副本先顶着源那张实拍图；等这个副本自己的推演跑到收口，
+    studio-landing-shot 带 ?replace=1 回传，必须换成它自己的那张。
+    """
+    src = store.save_app(_model(), goal="g", session_id="own1",
+                         owner_id=_OWNER_ID, visibility="public")
+    store.save_app_shot(src, base64.b64decode(PNG_B))
+    dup = store.fork_app(src, owner_id=_OWNER_ID, visibility="public")
+    assert store.get_app_preview_png(dup) == base64.b64decode(PNG_B), "先继承到源那张"
+
+    mine = b"\x89PNG\r\n\x1a\n" + b"Z" * 64
+    res = owner_client.post(
+        f"/api/sliderule/apps/{dup}/preview?replace=1",
+        content=mine,
+        headers={"content-type": "image/png"},
+    )
+    assert res.status_code == 200 and res.json()["stored"] is True
+    assert store.get_app_preview_png(dup) == mine, "继承来的图必须被自己的实拍顶掉"
+
+
+def test_inherited_shot_does_block_a_capture_without_replace(owner_client):
+    """反向：**不带 replace 的采集会被继承来的图挡下**。
+
+    这不是 bug，是继承的已知代价，写在这里是为了让它可见——将来若再加一条
+    "礼让式"采集路径（像 2026-08-22 删掉的卡片众包补图那样先问"有图了吗"），
+    它对 fork/精修出来的应用会一声不吭地什么都不做。要么让它带 replace，
+    要么给继承来的图另立标记。
+    """
+    src = store.save_app(_model(), goal="g", session_id="own2",
+                         owner_id=_OWNER_ID, visibility="public")
+    store.save_app_shot(src, base64.b64decode(PNG_B))
+    dup = store.fork_app(src, owner_id=_OWNER_ID, visibility="public")
+
+    res = owner_client.post(
+        f"/api/sliderule/apps/{dup}/preview",
+        content=b"\x89PNG\r\n\x1a\n" + b"Q" * 64,
+        headers={"content-type": "image/png"},
+    )
+    assert res.status_code == 200 and res.json()["stored"] is False
+    assert res.json()["reason"] == "already_has_shot"
+    assert store.get_app_preview_png(dup) == base64.b64decode(PNG_B)
 
 
 def test_session_generated_app_returns_summary(api_client):

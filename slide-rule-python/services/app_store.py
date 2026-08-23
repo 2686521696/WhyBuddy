@@ -78,7 +78,10 @@ _SQL_INIT_BUDGET_S = 12.0
 # 优先级链，靠前的更可信（完整说明见 AppStoreBackend 的缩略图小节）：
 #   shot  —— 真实渲染的截图，就是这个应用本身
 #   sheet —— 生成时那张首页参照板，是"应该长这样"的示意
-# 都没有 → 前端回落活渲染。
+# 都没有 → **应用中心画空态**（antd Empty「暂无预览图」）。
+# ⚠ 2026-08-22 前这里写的是"回落活渲染"，那一档已经删了：卡片不再挂真运行时
+#   （同屏十几张把主线程堵四秒）。侧栏会话封面**仍有**活渲染那一档，两处不是
+#   同一条链，改这里之前先看 client 的 session-thumb.tsx。
 PREVIEW_SOURCE_SHOT = "shot"
 PREVIEW_SOURCE_SHEET = "sheet"
 
@@ -474,23 +477,31 @@ class AppStoreBackend:
     #   件事要解决的问题相反。单独存就不存在"哪天谁加了个查询忘了排除它"。
     #
     # 三个方法都是**可选能力**：默认实现是"没有缩略图"，后端不实现也不会崩，
-    # 只是应用中心回落到活渲染（老行为）。
+    # 只是应用中心的卡片一律画空态。
     #
     # ## 两个来源，一条优先级链（2026-08-02）
     #
     # 一个应用最多挂两张图，按可信度排：
     #
     #   "shot"  —— 应用真实渲染出来之后截的图。**这就是应用本身**，不是示意；
-    #              排第一。由前端在活渲染那张卡上就地采集后回传（见
-    #              client/src/lib/thumb-capture.ts 与 POST /apps/{id}/preview），
-    #              落库那一刻还没有，等到有人第一次看见这张卡才产生。
+    #              排第一。由前端在推演收口那次渲染上采集后回传（见
+    #              client/src/pages/sliderule/studio-landing-shot.tsx、
+    #              client/src/lib/thumb-capture.ts 与 POST /apps/{id}/preview）。
     #   "sheet" —— 生成时给设计 LLM 排版式用的那张首页参照板。是"应该长这样"
     #              的示意图，跟最终渲染可能有出入；排第二，但落库即有。
     #
-    # 两个都没有 → 前端回落活渲染（第三级，见 AppsWorkbench.SheetThumb）。
+    # 两个都没有 → 应用中心画空态（antd Empty），侧栏会话封面才回落活渲染。
     #
-    # 两张图**并存**而不是后者覆盖前者：采集那条路要浏览器真把应用渲染出来，
-    # 任何一环断了都得有东西可退。覆盖式存储在那天就只剩活渲染了。
+    # ⚠ 2026-08-23 修注释：上面这段原本写的是"落库那一刻还没有，等到有人第一次
+    #   看见这张卡才产生"——那说的是**卡片众包补图**（谁逛市场谁的浏览器顺手采
+    #   一张），2026-08-22 连同卡片活渲染一起删了。现在 shot 只在推演收口产生
+    #   一次；不经过收口的 fork / 精修拿不到，只能靠 _attach_preview 继承。
+    #   照着旧描述排查会得出"再逛一圈市场图就补上了"的错误结论。
+    #
+    # 两张图**并存**而不是后者覆盖前者：两条产图路径的可用性不一样（收口采集要
+    # 浏览器真渲染一遍，参照板要生图三件套齐全），任何一条断了都得有东西可退。
+    # ⚠ 实测提醒：线上从没配过生图三件套，2026-08-23 查库 64 个应用 sheet 数为
+    #   0——**这条"可退"目前只是设计上的，实际全站只有 shot 一路**。
     #
     # 存储形态选的是「一行两列」，不是「(app_id, source) 复合主键两行」：
     # generated_app_preview 在生产 Neon 里已经有数据，改主键要迁移；加一列是
@@ -2155,7 +2166,7 @@ def save_app(
     preview_png_b64 是应用中心的卡片缩略图（生成时那张首页参照板，见
     app_preview）。**没传就保留既有的那张**，不清空——这一路上大部分调用
     根本没生成图（重开夹具、纯精修、fork），若按"没传即无图"处理，一次重存
-    就会把卡片打回活渲染。
+    就会把卡片打回空态。
 
     pages_json 是 spec-first 链路画的整页 HTML（形状同会话侧
     state.specFirstPages）。幂等更新时**没传就保留既有那份**，纪律与
@@ -2205,21 +2216,43 @@ def _attach_preview(
     """给刚落库的这一条挂缩略图。fail-open：挂不上只影响卡片长相，不影响落库。
 
     png_b64 是这一次生成的**参照板**（sheet 来源）。有就用，没有就从
-    inherit_from（上一版 / fork 源）那条继承——新版本是个新 app_id，不继承的话
-    每次精修卡片都会掉回活渲染，而实际上这一版跟上一版长得基本一样，上一版那张
-    图仍然是诚实的示意。
+    inherit_from（上一版 / fork 源）那条继承——副本/新版是个新 app_id，不继承
+    的话卡片就是空的，而实际上它跟源长得基本一样，源那张图仍然是诚实的。
 
-    **截图（shot）这一路不继承**，只继承参照板。理由是继承会把自己堵死：新版本
-    一旦继承了上一版的截图，"这个应用已经有截图了"就成立，采集端便不会再为它采
-    一张——而这一版跟上一版恰恰是长得不一样的（模型变了才会开新版本）。
+    继承**两路都认**（shot / sheet），按 PREVIEW_SOURCE_PRIORITY 取最好的那
+    **一张**——不是把两张都复制过来：每张约 1MB，而"两路并存"是为了两条**产图
+    路径**互为退路，继承来的副本不承担那个职责。来源标签原样保留：继承来的截图
+    仍记为 shot，继承来的参照板仍记为 sheet。形状对标 go-gitea/gitea
+    `services/repository/template.go:133`（`opts.Avatar &&
+    len(templateRepo.Avatar) > 0`——源有图才把封面复制给副本）。
 
-    不继承也不会掉回活渲染：参照板继承仍在，卡片始终有图可贴。代价只是新版本在
-    第一次被人看到之前，显示的是示意图而不是实拍——而那本来就是它该有的样子。
+    ⚠ 2026-08-23：**这里原先明确不继承 shot**，理由是"继承会把自己堵死"——
+    继承来的图让 app_has_shot 成立，采集端便不再为它采一张。那条理由只对
+    **卡片众包补图**成立（那条路不带 replace，会被 already_has_shot 挡下）。
+    2026-08-22 卡片改成只贴图、众包补图整条删掉之后，唯一剩下的采集者是推演
+    收口（client 的 studio-landing-shot.tsx，一律带 ?replace=1，见
+    routes/sliderule_full.py 的 upload_generated_app_shot：replace 直接跳过
+    already_has_shot）——它堵不住。理由消失了，继承就该恢复。
+
+    原设计留的安全网是"参照板继承仍在，卡片始终有图可贴"，而那张网从来不存在：
+    参照板要 IMAGE_API_URL / IMAGE_MODEL / IMAGE_API_KEY 三件套齐全才生得出，
+    线上从没配过。2026-08-23 查线上库：64 个应用里**有 sheet 的 = 0**，20 张
+    图全是 shot。于是 fork / 精修出来的应用继承了个空，众包补图删掉后再也没有
+    第二次机会——用户当天指着一个刚 fork 出来的应用问"这不是今天生成的吗，
+    怎么没图"，就是这个。
+
+    ⚠ 将来若再加一条**不带 replace** 的采集路径，先想清楚这件事：继承来的 shot
+    会让它认为"已经有图了"而跳过。要么让它带 replace，要么给继承来的图另立标记。
     """
     b64 = png_b64
+    source = PREVIEW_SOURCE_SHEET
     if not b64 and inherit_from:
         try:
-            b64 = backend.get_preview(inherit_from, source=PREVIEW_SOURCE_SHEET)
+            for candidate in PREVIEW_SOURCE_PRIORITY:
+                inherited = backend.get_preview(inherit_from, source=candidate)
+                if inherited:
+                    b64, source = inherited, candidate
+                    break
         except Exception as exc:  # noqa: BLE001 — 缩略图是增强项
             print(f"[app_store] 缩略图继承失败（不影响落库）: {str(exc)[:160]}")
             b64 = None
@@ -2231,9 +2264,11 @@ def _attach_preview(
         # 参照板来自生图 API，是 PNG base64（实测 805~857KB）。同样只存派生图。
         # 注意：这里压的**只是留给卡片显示的那一份**——设计 LLM 用的那张参照图
         # 走的是内存里的原始 base64，不经过这里，画质不受影响。
+        # 继承来的截图早就是 WebP，to_webp 认出来原样返回（见其头注），不会二次
+        # 编码掉画质。
         raw = base64.b64decode(b64)
         b64 = base64.b64encode(to_webp(raw)).decode("ascii")
-        backend.save_preview(app_id, b64, source=PREVIEW_SOURCE_SHEET)
+        backend.save_preview(app_id, b64, source=source)
     except Exception as exc:  # noqa: BLE001 — 同上
         print(f"[app_store] 缩略图写入失败（不影响落库）: {str(exc)[:160]}")
 
@@ -2341,7 +2376,12 @@ def save_version(
 
     缩略图：这一版自己生了图就用自己的，没生就继承上一版那张（见
     _attach_preview）——精修通常不重跑生图，不继承的话每精修一次卡片就掉回
-    活渲染一次。
+    空态一次。
+
+    ⚠ 2026-08-23：继承从"只继承 sheet"放宽到"shot / sheet 都继承"。旧写法的
+      安全网（参照板继承仍在）从来是空的——线上没配生图，全站 sheet 数为 0，
+      于是每精修一次就真的掉一次空态。继承来的 shot 不会挡住这一版重新采图：
+      收口采集一律带 replace=1。
 
     pages_json（spec-first 整页 HTML）**不继承上一版**，跟参照板的继承纪律
     相反：开新版本意味着模型变了，上一版的 HTML 是照着旧模型打的孔，挂到
@@ -2434,12 +2474,12 @@ def get_app(app_id: str) -> Optional[dict[str, Any]]:
 
 
 def get_app_preview_png(app_id: str, *, source: Optional[str] = None) -> Optional[bytes]:
-    """应用中心卡片缩略图的 PNG 原始字节；没有就 None（调用方 404，前端回落
-    活渲染）。fail-open：存储层出问题也当成"没有图"，不把一张缩略图变成故障。
+    """应用中心卡片缩略图的 PNG 原始字节；没有就 None（调用方 404，卡片画空态）。
+    fail-open：存储层出问题也当成"没有图"，不把一张缩略图变成故障。
 
     source 不传 = 按优先级取最好的那张（shot 优先，见 PREVIEW_SOURCE_PRIORITY）。
     这就是应用中心走的路径——**优先级判定在服务端**，前端不需要知道有几个来源，
-    它只管"有图就贴、404 就回落活渲染"。
+    它只管"有图就贴、404 就画空态"。
     """
     try:
         b64 = get_backend().get_preview(app_id, source=source)
@@ -2491,16 +2531,17 @@ def get_latest_app_for_session(session_id: str) -> Optional[dict[str, Any]]:
 
 
 def _mark_previews(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """给一批摘要打上缩略图三件套——前端据此决定这张卡贴哪张图、还是活渲染。
+    """给一批摘要打上缩略图三件套——前端据此决定这张卡贴哪张图、还是画空态。
 
-      has_preview    有没有图。false → 前端回落活渲染（第三级）。
+      has_preview    有没有图。false → 应用中心画空态；侧栏会话封面回落活渲染
+                     （两处不同链，见 client 的 AppsWorkbench / session-thumb）。
       preview_source "shot" / "sheet"，当前用的是哪一路。观测用，也让"这张卡
                      到底贴的什么"在列表接口上直接可见，不用去翻库。
       preview_tag    拼进缩略图 URL `?v=` 的缓存版本位（见 preview_sources）。
 
     图本身不进摘要（一张约 1MB，列 200 个就是 200MB）。这里只多做一次索引
-    查询，跟列表长度无关。fail-open：查不到就当全都没图，前端回落活渲染
-    （老行为），不因为一次查询失败让整个列表 500。
+    查询，跟列表长度无关。fail-open：查不到就当全都没图（卡片画空态），
+    不因为一次查询失败让整个列表 500。
     """
     if not rows:
         return rows
