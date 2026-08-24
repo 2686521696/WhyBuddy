@@ -258,7 +258,11 @@ def optional_user(
         revoked_future = _AUTH_POOL.submit(
             store.is_token_revoked, str(payload.get("jti") or "")
         )
-        user = store.get_by_id(user_id)
+        # ⚠ 用 _for_auth 那条（带 5 秒 TTL），不是裸的 get_by_id。
+        #   取舍写在 identity_store.AUTH_CACHE_TTL_S 的注释里：缓存的是"账号还
+        #   在、还活着"和密码戳要用的 password_hash，代价是改密码/停用最长 5 秒
+        #   才生效。登出不受影响——它走 jti 撤销，下面 ④ 每次实查。
+        user = store.get_by_id_for_auth(user_id)
     except Exception as exc:  # noqa: BLE001 — 身份库抖动时按匿名处理，不拖垮只读接口
         # 只读接口 fail-open 成匿名是对的；写接口（推演）随后会 401「请先登录」，
         # 而侧栏还显示着启动时缓存的账号——2026-08-20 真机就是这个形状。

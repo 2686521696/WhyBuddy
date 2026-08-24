@@ -78,6 +78,12 @@ class _Store:
             raise self.get_raises
         return self.user
 
+    # 鉴权路径调的是带 TTL 的那条。这个假库不缓存——并发/判定次序那几条判据
+    # 要的是"每次都真查"，缓存会把它们变成不确定的。缓存本身另有一份判据
+    # （test_auth_identity_cache.py）。
+    def get_by_id_for_auth(self, uid: str):
+        return self.get_by_id(uid)
+
     def is_token_revoked(self, _jti: str) -> bool:
         self.revoke_called.set()
         self._sleep("is_token_revoked")

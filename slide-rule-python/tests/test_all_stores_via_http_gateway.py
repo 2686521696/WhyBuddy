@@ -88,7 +88,11 @@ class TestAllThreeStoresPickTheGateway:
 
     def test_身份库走网关而不是回落本地_SQLite(self, gateway):
         store = identity_store.get_identity_store()
-        assert isinstance(store._x, identity_store._HttpApiExecutor)
+        # ⚠ 2026-08-24 起 _x 外面包了一层 _InvalidatingExecutor（写操作要清鉴权
+        #   缓存，见 identity_store）。这条判据问的是"选了哪个通道"，跟包没包
+        #   一层无关，所以先剥壳再判。getattr 带默认值：没有那层包装时照旧。
+        inner = getattr(store._x, "_inner", store._x)
+        assert isinstance(inner, identity_store._HttpApiExecutor)
         assert store._is_sqlite is False, "回落本地 SQLite 就意味着账号不跨机器"
 
     def test_会话档走网关而不是回落文件(self, gateway):

@@ -43,6 +43,7 @@ import os
 import re
 import secrets
 import threading
+import time
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -385,11 +386,97 @@ class User(dict):
         }
 
 
+#: 鉴权路径上 get_by_id 的缓存存活时间（秒）。**用户 2026-08-24 定的 5 秒。**
+#
+# ## 为什么要缓存
+#
+# 真机（HTTPS SQL 网关）：不鉴权的 /health 4ms，只鉴权什么都不干的
+# /account/me 340ms。拆开是两次串行查库，并发之后仍有 get_by_id 的 180ms，
+# 而**每一个登录请求**都要付它。工作台首屏那十几个请求条条在付。
+#
+# ## 为什么 5 秒不是随便挑的，改它要连同这段一起想
+#
+# 缓存的是 ② 账号还在、还活着 和 ③ 密码戳要用的 password_hash。也就是说：
+#
+#     改密码 / 停用账号 → 最长 5 秒后生效（而不是立刻）
+#
+# 2026-08-04 加 ③ 的全部理由就是"改了密码，旧令牌全灭"，所以这个窗口是
+# **实实在在的让步**，不是免费的。5 秒是用户拍的：人改完密码再点两下也不止
+# 5 秒，视觉上无损；60 秒就不该接受了（登出后一分钟旧标签页还能用）。
+#
+# ⚠ 三条配套设计，缺一条这个让步就不成立：
+#   ① **撤销名单不缓存**。登出走的是 jti 撤销，每次请求实查，所以登出**立刻**
+#      生效——最要紧的那把刀没有钝。
+#   ② **任何一次写都全表失效**（见 _InvalidatingExecutor）。同进程里改密码/
+#      停用是立刻生效的，5 秒只是多进程/多实例下的上界。
+#   ③ 只在**鉴权路径**用（get_by_id_for_auth）。管理台、账号接口照旧走
+#      get_by_id 实查，看到的永远是真值。
+AUTH_CACHE_TTL_S = 5.0
+
+_AUTH_CACHE: dict[str, tuple[float, Any]] = {}
+_AUTH_CACHE_LOCK = threading.Lock()
+#: 缓存条数上限。超了就整个清空——这是个 5 秒窗口的加速器，不是要维护 LRU。
+_AUTH_CACHE_MAX = 4096
+
+
+def invalidate_auth_cache(user_id: Optional[str] = None) -> None:
+    """清掉鉴权缓存。不传 user_id 就全清。"""
+    with _AUTH_CACHE_LOCK:
+        if user_id is None:
+            _AUTH_CACHE.clear()
+        else:
+            _AUTH_CACHE.pop(str(user_id), None)
+
+
+def _auth_cache_size() -> int:
+    """测试用。"""
+    with _AUTH_CACHE_LOCK:
+        return len(_AUTH_CACHE)
+
+
+class _InvalidatingExecutor:
+    """包一层执行器：**任何一次 execute 都把鉴权缓存全清**。
+
+    ## 为什么挂在这儿，而不是在四个写方法里各清一次
+
+    set_password_hash / set_active / set_superuser / update_profile 现在是四个，
+    以后还会有第五个。挂在写方法上就得指望每个新写方法的作者记得加一行——
+    本仓第四条（同一件事两处实现，改一处就静默失效）说的正是这种。所有写都
+    必然经过 executor.execute，挂在这里**漏不掉**。
+
+    多清几次没有代价：over-invalidate 的后果只是下一个请求多查一次库，
+    而 under-invalidate 的后果是停用的账号还能用 5 秒。宁可多清。
+
+    query 不拦——读不改变任何东西。其余属性（ph 等）透传。
+
+    ⚠ 组件预设库复用同一个执行器（component_preset_store 拿的就是 ident._x），
+      所以写预设也会清一次鉴权缓存。预设写得极少，代价是下一个请求多查一次库，
+      不值得为它另开一条通道。
+
+    ⚠ 有判据靠 `isinstance(store._x, _HttpApiExecutor)` 认通道
+      （test_all_stores_via_http_gateway）。包这一层之后要先剥壳再判，那边已经
+      改成 `getattr(store._x, "_inner", store._x)`。
+    """
+
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+
+    def execute(self, sql: str, params: Optional[list[Any]] = None) -> None:
+        try:
+            return self._inner.execute(sql, params)
+        finally:
+            invalidate_auth_cache()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+
 class IdentityStore:
     """身份存储。三种后端共用这一个类，差异只在 `_q` 怎么执行 SQL。"""
 
     def __init__(self, executor: Any, *, is_sqlite: bool) -> None:
-        self._x = executor
+        # 包一层：任何一次写都清鉴权缓存（见 _InvalidatingExecutor 的说明）。
+        self._x = _InvalidatingExecutor(executor)
         self._is_sqlite = is_sqlite
         self._x.execute(_DDL_SQLITE if is_sqlite else _DDL_PG)
         self._x.execute(_CODE_DDL_SQLITE if is_sqlite else _CODE_DDL_PG)
@@ -429,6 +516,37 @@ class IdentityStore:
     def get_by_id(self, user_id: str) -> Optional[User]:
         rows = self._x.query(f"select * from {TABLE} where id = {self._x.ph(1)}", [user_id])
         return User(rows[0]) if rows else None
+
+    def get_by_id_for_auth(self, user_id: str) -> Optional[User]:
+        """鉴权路径专用：带 AUTH_CACHE_TTL_S 秒 TTL 的 get_by_id。
+
+        取舍、为什么是 5 秒、以及那三条配套设计，全写在 AUTH_CACHE_TTL_S 的
+        注释里，改之前先读完。
+
+        ⚠ **只给 optional_user 用**。管理台、账号接口照旧调 get_by_id ——
+          那些地方读到 5 秒前的值就是 bug（改完昵称刷新还是旧的）。
+
+        ⚠ 查库失败**不缓存**：异常照常抛给调用方（那边 fail-closed 成匿名）。
+          把失败缓存 5 秒等于一次网络抖动让人掉线 5 秒。
+        """
+        key = str(user_id or "")
+        if not key:
+            return None
+        now = time.monotonic()
+        with _AUTH_CACHE_LOCK:
+            hit = _AUTH_CACHE.get(key)
+            if hit is not None and now - hit[0] < AUTH_CACHE_TTL_S:
+                cached = hit[1]
+                # 回一份拷贝：缓存里那个对象会被很多请求同时拿到，谁顺手改一下
+                # 就串到别人身上了。User 是个小 dict，拷贝可以忽略不计。
+                return User(cached) if cached is not None else None
+        user = self.get_by_id(key)
+        with _AUTH_CACHE_LOCK:
+            # 满了整个清空——这是 5 秒窗口的加速器，不值得维护 LRU。
+            if len(_AUTH_CACHE) >= _AUTH_CACHE_MAX:
+                _AUTH_CACHE.clear()
+            _AUTH_CACHE[key] = (now, User(user) if user is not None else None)
+        return user
 
     def list_users(self, limit: int = 500) -> list[User]:
         """全量用户，新的在前。给管理台用。
