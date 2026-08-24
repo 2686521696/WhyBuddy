@@ -261,6 +261,44 @@ def _build_record(
     }
 
 
+def pages_payload_differs(existing: Any, incoming: Any) -> bool:
+    """货架上那一版的页面，和这次要落的页面，是不是不一样。
+
+    ## 为什么落库要看页面，而不是只看模型
+
+    `model_signature` 只签模型。而**局部精修的常态是模型六段一字未变、只有页面
+    HTML 变了**（加一列、改个排序——实体角色流程都没动）。签名不变 → dedup 命中
+    → 走幂等更新 → 上一版的 `pages_json` **被就地覆盖**，而且不产生新版本：
+
+        · 卡片上的 v{N} 少数一次改版
+        · 更要命的是**回不去**——旧页面被原地盖掉，血缘里没有那一版，
+          哪儿都没存
+
+    会话那一侧早就是对的：`v5_full_driver.record_model_snapshot` 明写
+    「模型没变但页面变了，照常记版本」。这里补的就是让落库跟它一个口径——
+    不发明第三套规则，采用仓里已经验证过的那一套。
+
+    上游同款口径：turborepo#4572 那条教训（本仓 record_model_snapshot 引的
+    也是它）——**影响输出的输入没进键，就会"改了东西还吃旧结果"**；Bazel /
+    Turborepo 的内容寻址缓存把"每一个影响产物的输入"都算进 key，输入变了就是
+    另一个条目，天然没有失效逻辑可写错。页面就是这里漏掉的那个输入。
+
+    ## 为什么"没带页面"必须判成没变
+
+    这条路上大部分调用**根本不带页面**（重开夹具、纯模型轮、fork、回落老链路）。
+    把"没带"当成"变了"，每一次重存都会凭空长出一版——比原来的覆盖更糟。
+    所以：只有**真的带了非空页面**且与货架上那份不同，才算变了。
+    """
+    if not isinstance(incoming, dict):
+        return False
+    new_pages = incoming.get("pages")
+    if not isinstance(new_pages, dict) or not new_pages:
+        return False  # 空页面包不算"页面变了"，别为它开一版
+    old = existing.get("pages") if isinstance(existing, dict) else None
+    old_pages = old if isinstance(old, dict) else {}
+    return new_pages != old_pages
+
+
 def model_signature(session_id: Optional[str], model: dict[str, Any]) -> str:
     """(会话 + 模型内容) 的稳定签名，用作落库幂等键——同一会话反复落同一个
     模型只更新一条记录，不堆重复；模型真变了（精修改了内容）签名就变、落新记录。"""
@@ -2445,14 +2483,29 @@ def save_app_or_version(
     dedup_key = model_signature(session_id, model)
     backend = get_backend()
     existing_same = backend.find_by_dedup_key(dedup_key)
-    if existing_same is not None:
+    # ⚠ 2026-08-24：dedup 命中**不等于**这次没产出新东西。
+    #
+    #   命中只说明"模型一字未变"，而局部精修的常态恰恰是模型没变、只有页面
+    #   HTML 变了。原来这里直接 return save_app（幂等更新），后果有两条，
+    #   都不报错：上一版的 pages_json 被就地覆盖（**回不去了**）、v{N} 少数
+    #   一次改版。判据补在 pages_payload_differs 的头注里。
+    #
+    #   拿来比的是**货架上当前那一版**（prior），不是 dedup 命中的那一条——
+    #   它可能是血缘里更早的某一版（把页面改回旧样子那种），跟它比会判成
+    #   "没变"，而实际交付的与货架上摆着的并不一样。
+    #
+    #   代价：dedup 命中这条路多一次 find_latest_by_session。这一步前面刚跑完
+    #   几分钟的 LLM、后面紧接着要写 100KB+ 的记录，多一次索引读可以忽略。
+    prior = backend.find_latest_by_session(session_id) if session_id else None
+    if existing_same is not None and not pages_payload_differs(
+        (prior or existing_same).get("pages_json"), pages_json
+    ):
         return save_app(
             model, goal=goal, session_id=session_id,
             gate_passed=gate_passed, dedup_key=dedup_key,
             preview_png_b64=preview_png_b64, owner_id=owner_id,
             pages_json=pages_json,
         )
-    prior = backend.find_latest_by_session(session_id) if session_id else None
     if prior is not None:
         return save_version(
             prior.get("root_id") or prior["id"], prior["id"], model,
