@@ -162,6 +162,8 @@ ${yaml(front)}
 
 ## Overview
 
+${system.reference}
+
 ${system.description}
 
 主色由种子色 \`${system.seed}\` 派生。中性色**跟随主色色相、彩度压到两成**——
@@ -192,6 +194,7 @@ ${system.description}
 - **Don't** 把主色铺满页头或侧栏：主色铺开之后，真正需要被看见的按钮就没有对比度可用了。
 - **Don't** 自己发明新的圆角/间距数值：上面 \`rounded\` / \`spacing\` 两档已经够用，
   多一个数值就多一处对不齐。
+${system.donts.map(d => `- **Don't** ${d}`).join("\n")}
 `;
 }
 

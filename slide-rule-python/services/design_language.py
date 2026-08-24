@@ -425,6 +425,80 @@ def style_for_page(brief: Optional[Dict[str, Any]], page_id: str) -> str:
     return "\n".join(b for b in bits if b)
 
 
+
+# --- 用户选定的设计系统 → 风格段约束（2026-08-24）--------------------------
+
+
+def active_design_system() -> Optional[Dict[str, Any]]:
+    """本轮用户选的那套设计系统。没选返回 None（走原来的"LLM 自己定色"）。"""
+    from .identity_palette_hint import _design_system_override
+
+    return _design_system_override
+
+
+def design_system_constraint(system: Optional[Dict[str, Any]]) -> str:
+    """设计系统 → 塞进风格段提示词的一段约束。**纯函数，零 LLM。**
+
+    ## ⚠ 为什么只给这几行，不把整份 DESIGN.md 倒进去
+
+    2026-08-19 的教训就写在 spec_first_pipeline 第 1420 行上方：接过
+    ui-ux-pro-max 的 CSV 查表，色板被当成整页墙纸、跟桌面契约打架，用户裁决
+    卸掉，并留下「别再把上游 CSV 倒进画页提示词」。整份 DESIGN.md 有 60+ 行
+    token，倒进去是同一个错误的另一种形状。
+
+    所以这里只取**模型猜不出来的那部分**：
+      · reference —— 一个具体参照。DESIGN.md 官方 PHILOSOPHY 的原话是
+        「Adjectives describe a region. A specific reference describes a point.」
+        「低饱和绿、适合养护业务」这种形容词堆让模型落在词义中心，出来的东西
+        必然平庸；「县域农技站的纸质台账搬上屏」直接指向一个点。
+      · 三个色值 + 圆角 —— 已经定死的事实，不是建议。
+      · donts —— 负向约束。官方 PHILOSOPHY：「What you leave out defines
+        the character」。
+
+    ## ⚠ 注入位置
+
+    进的是**风格段那一次应用级调用**（一轮一次），不是逐页画页提示词
+    （一轮 N 次）。画页那层已经有结构契约，再塞一份风格文档只会打架。
+
+    ## ⚠ 措辞必须是"已经定了"，不能是"建议用"
+
+    原提示词让模型自己写「主色 hex、强调色 hex、圆角」。不把这三样明确改成
+    既定事实，模型会照旧发明一套——选择器就又变成装饰了。
+    """
+    if not system:
+        return ""
+    donts = system.get("donts") or []
+    dont_lines = "".join(f"\n- 不要{d.lstrip('不要')}" for d in donts)
+    return (
+        f"\n\n【设计系统：{system.get('label','')}】用户已经为这个应用选定了设计系统，"
+        f"下面这些**是既定事实，不是建议**，你不要再自己发明配色和圆角：\n"
+        f"- 参照：{system.get('reference','')}\n"
+        f"- 主色 {system.get('seed','')}；圆角档 {system.get('radius','md')}；"
+        f"{'深色底' if system.get('dark') else '浅色底'}\n"
+        f"- 你写的 app 基调里，主色 hex 必须原样写成 {system.get('seed','')}，"
+        f"强调色从它派生（同色相的深浅变体），不要引入不搭的新色相。"
+        f"{dont_lines}"
+    )
+
+
+def design_system_override(system: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """设计系统 → design_language 的逐字段覆盖（回落分支用）。
+
+    ⚠ 主路径是 generate_style_brief（2026-08-16 用户裁决改 LLM 现写），
+      回落分支才走 design_language。**两条都要接**：只接主路径的话，风格段
+      生成挂掉那次会静默回到"LLM/缺省自己定色"，用户选的设计系统当场失效，
+      而且不会有任何报错——本仓「只改一半必然静默失效」的标准形状。
+    """
+    if not system:
+        return {}
+    radius_px = {"none": "0px", "sm": "4px", "md": "8px", "lg": "16px"}
+    return {
+        "primary": str(system.get("seed", "")).lower(),
+        "radius": radius_px.get(str(system.get("radius") or "md"), "8px"),
+        "tone": (str(system.get("reference") or system.get("label") or ""))[:60],
+    }
+
+
 def build_style_brief_prompt(
     spec: Dict[str, Any], *, device: str = "desktop"
 ) -> List[Dict[str, str]]:
@@ -483,6 +557,9 @@ def build_style_brief_prompt(
             "用哪些组件、要不要图表、各区怎么分。"
             "**不要提任何 HTML 标签，不要提侧边导航/面包屑这类外壳结构，不要提技术栈**"
             "——那些由另一套约束负责，你写了会打架。只返回 JSON。"
+            # ⚠ 接在 system 段尾：这是一轮一次的应用级调用，不是逐页那 N 次。
+            #   没选设计系统时是空串，行为与改动前逐字相同。
+            + design_system_constraint(active_design_system())
         )},
         {"role": "user", "content": (
             f"应用名：{_clean_str(spec.get('appName'), 40) or '（未命名）'}\n"

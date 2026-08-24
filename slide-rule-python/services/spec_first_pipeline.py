@@ -1205,6 +1205,8 @@ def run_spec_first(
         render_design_language,
     )
     from .design_language import (
+        active_design_system,
+        design_system_override,
         generate_style_brief,
         style_brief_ok,
         style_for_page,
@@ -1424,6 +1426,14 @@ def run_spec_first(
     #   上游 CSV 倒进画页提示词。
     design_language: Optional[Dict[str, Any]] = None
     style_brief: Optional[Dict[str, Any]] = None
+    # ⚠ 用户选的设计系统也要盖进回落分支（2026-08-24）。主路径是
+    #   generate_style_brief（约束写在它的 system 段里），但风格段生成挂掉那次
+    #   会走下面的 design_language——不在这里合一次，那一次就静默回到
+    #   "自己定色"，用户选的皮当场失效且不报错。人显式给的 design_override
+    #   仍然赢（后者盖前者），符合「人写的永远赢」。
+    _ds = active_design_system()
+    if _ds:
+        design_override = {**design_system_override(_ds), **(design_override or {})}
     if (design_system or "").strip():
         pass  # 人直接给了散文，最高优先，连生成带复用一起跳过
     elif reuse_style_brief and style_brief_ok(

@@ -237,7 +237,8 @@ def derive_prompt_palette(
 _design_system_override: Optional[dict] = None
 
 
-def _load_design_systems() -> dict:
+def _read_design_systems() -> dict:
+    """启动时读一次。见下面 _DESIGN_SYSTEMS 的注释，别改回按调用读。"""
     from pathlib import Path
 
     path = Path(__file__).resolve().parent / "data" / "design_systems.json"
@@ -248,6 +249,22 @@ def _load_design_systems() -> dict:
     except Exception as exc:  # pragma: no cover - 部署事故
         print(f"[identity_palette_hint] design_systems.json 读取失败: {str(exc)[:120]}")
         return {"defaultId": "", "systems": []}
+
+
+#: ⚠ 模块级读一次，**不要改成每次调用现读**。
+#:
+#: set_design_system_override 是从 **async 路由处理函数**里直接调的
+#: （routes/sliderule_full.py 的两个入口）。在那里 path.read_text() 就是
+#: 事件循环上的裸阻塞 IO——tests/test_no_blocking_io_on_event_loop.py 正是
+#: 钉这件事的守卫。那条守卫当前因为别的历史原因是红的，但"守卫本来就红"
+#: 不构成照着犯的理由：红的守卫只是抓不住你，不是允许你。
+#:
+#: 这张表跟着代码走（不是运行时数据），启动读一次与 BRAND_SEED 同款。
+_DESIGN_SYSTEMS = _read_design_systems()
+
+
+def _load_design_systems() -> dict:
+    return _DESIGN_SYSTEMS
 
 
 def set_design_system_override(raw: Any) -> None:
