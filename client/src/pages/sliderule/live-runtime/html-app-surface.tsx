@@ -577,8 +577,15 @@ function isMarkedSrcdoc(doc: Document | null, token: string): boolean {
   return Boolean(token) && stamp === token;
 }
 
-/** 注入 Tailwind + 我们读出来的配色。**只有这一段脚本会跑。** */
-function buildDocument(pageHtml: string, fillPhone = false): string {
+/**
+ * 注入 Tailwind + 我们读出来的配色。**只有这一段脚本会跑。**
+ *
+ * 导出给点选编辑舞台（ClickEditStage）复用：编辑画布要跟这份预览
+ * 长一样的样式，存库前再拿 `sanitizeAppHtml`+`stripFrameNavigatingHrefs`
+ * 单独跑一遍原始 HTML，把这里注入的 Tailwind script / chrome CSS 换掉
+ * ——不能把这份"渲染用"的文档整份存回 pages_json。
+ */
+export function buildDocument(pageHtml: string, fillPhone = false): string {
   const clean = stripFrameNavigatingHrefs(sanitizeAppHtml(pageHtml));
   if (!clean) return "";
   let page = applyPreviewChrome(clean, fillPhone);

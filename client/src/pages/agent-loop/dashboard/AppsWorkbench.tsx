@@ -58,6 +58,7 @@ import {
   Wrench,
   Heart,
   BookOpen,
+  PenLine,
 } from "lucide-react";
 // 卡片封面的空态。antd 已经是本仓依赖（admin 后台整套在用），不新引包。
 import { Empty } from "antd";
@@ -67,6 +68,7 @@ import { initRuntimeState } from "@/pages/sliderule/live-runtime/live-runtime";
 import { seedRuntimeState } from "@/pages/sliderule/live-runtime/demo-seed";
 import { navItemId, navItemName } from "@/pages/sliderule/nav-item";
 import { livePagesFromSpec } from "@/pages/sliderule/spec-live-pages";
+import { ClickEditStage } from "./ClickEditStage";
 import {
   mergeFiveSystemModels,
   parseFiveSystemModelFromPerSkillEvidence,
@@ -1310,6 +1312,22 @@ export function AppsWorkbench() {
    * 就是它），所以预览不需要任何新接口，也不碰对方的会话。
    */
   const [previewModal, setPreviewModal] = React.useState<GalleryItem | null>(null);
+  /**
+   * 点选编辑（2026-08-24）：只读预览里切进"点一下改一下"。
+   * editPageId 缺省 = 走 SpecPagesPreview 自己算的落地页（跟只读预览一致）；
+   * 用户点了别的页签才记下来。editDirty 由 ClickEditStage 上报——离开编辑态
+   * 或关弹窗前拿它拦一下，别让人手滑把没保存的改动弄丢了。
+   */
+  const [editMode, setEditMode] = React.useState(false);
+  const [editPageId, setEditPageId] = React.useState<string | null>(null);
+  const [editDirty, setEditDirty] = React.useState(false);
+  // 换了一张预览卡（含"关掉预览"归到 null）就退出编辑态——上一张卡的
+  // 选中/脏标记不该带进下一张卡，那会让保存按钮对着错的 appId 生效。
+  React.useEffect(() => {
+    setEditMode(false);
+    setEditPageId(null);
+    setEditDirty(false);
+  }, [previewModal?.key]);
   const [forkBusy, setForkBusy] = React.useState(false);
   const [forkError, setForkError] = React.useState<string | null>(null);
   const [page, setPage] = React.useState(1);
@@ -1773,6 +1791,13 @@ export function AppsWorkbench() {
     notifySidebarOnly();
     setDeleteModal(null);
     setMenuFor(null);
+  };
+
+  /** 关只读预览的唯一入口。editDirty 时先确认——点选编辑没有自动保存，
+   *  手滑关掉等于白改一场，这跟本仓「东西没了不能是静默的」是同一条纪律。 */
+  const closePreview = () => {
+    if (editDirty && !window.confirm("有未保存的修改，确定要关闭吗？")) return;
+    setPreviewModal(null); // 退出编辑态交给上面那条 useEffect，不在这里重复设
   };
 
   const continueOnCard = async (gi: GalleryItem) => {
@@ -2470,7 +2495,7 @@ export function AppsWorkbench() {
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-8"
           data-testid="app-preview-modal"
-          onClick={() => setPreviewModal(null)}
+          onClick={closePreview}
         >
           <div
             className="flex h-full w-full max-w-[1500px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
@@ -2484,9 +2509,33 @@ export function AppsWorkbench() {
                   "应用预览"}
               </span>
               <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
-                只读预览
+                {editMode ? "点选编辑" : "只读预览"}
               </span>
               <div className="ml-auto flex shrink-0 items-center gap-2">
+                {canWriteApp(previewModal.summary?.owner_id ?? null, authUser) &&
+                previewModal.appId &&
+                details[previewModal.key]?.specPages ? (
+                  // 点选编辑（2026-08-24）：手动改字/改色/删元素，原地覆盖那一页
+                  // （app_store.update_page_html），跟 AI 精修的版本纪律是两条
+                  // 分开的路，见 ClickEditStage 头注。
+                  <button
+                    data-testid="app-click-edit-toggle"
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold transition ${
+                      editMode
+                        ? "bg-slate-800 text-white hover:bg-slate-700"
+                        : "bg-white text-slate-700 ring-1 ring-inset ring-slate-300 hover:bg-slate-50"
+                    }`}
+                    onClick={() => {
+                      if (editMode && editDirty && !window.confirm("有未保存的修改，确定要退出编辑吗？")) {
+                        return;
+                      }
+                      setEditMode(m => !m);
+                      setEditPageId(null);
+                    }}
+                  >
+                    <PenLine size={13} /> {editMode ? "退出编辑" : "点选编辑"}
+                  </button>
+                ) : null}
                 {canWriteApp(previewModal.summary?.owner_id ?? null, authUser) &&
                 previewModal.source === "app" ? (
                   <button
@@ -2503,6 +2552,7 @@ export function AppsWorkbench() {
                     disabled={!capabilities.can.fork || previewModal.source !== "app"}
                     title={capabilities.can.fork ? undefined : "登录后可复刻"}
                     onClick={() => {
+                      if (editDirty && !window.confirm("有未保存的修改，确定要离开吗？")) return;
                       const gi = previewModal;
                       setPreviewModal(null);
                       openForkModal(gi);
@@ -2513,14 +2563,84 @@ export function AppsWorkbench() {
                 )}
                 <button
                   className="rounded-lg px-2.5 py-1.5 text-[12.5px] text-slate-500 transition hover:bg-slate-100"
-                  onClick={() => setPreviewModal(null)}
+                  onClick={closePreview}
                 >
                   关闭
                 </button>
               </div>
             </div>
+            {editMode && details[previewModal.key]?.specPages ? (
+              <div
+                className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-slate-200 px-3 py-1.5"
+                data-testid="click-edit-page-tabs"
+              >
+                {orderedSpecPages(details[previewModal.key]!.specPages!).map(p => {
+                  const active =
+                    (editPageId ?? orderedSpecPages(details[previewModal.key]!.specPages!)[0]?.pageId) ===
+                    p.pageId;
+                  const label =
+                    details[previewModal.key]!.specPages!.navItems.find(n => n.pageId === p.pageId)?.label ||
+                    p.pageId;
+                  return (
+                    <button
+                      key={p.pageId}
+                      className={`shrink-0 rounded-md px-2.5 py-1 text-[12px] transition ${
+                        active
+                          ? "bg-slate-800 text-white"
+                          : "text-slate-500 hover:bg-slate-100"
+                      }`}
+                      onClick={() => {
+                        if (p.pageId === (editPageId ?? p.pageId) && active) return;
+                        if (editDirty && !window.confirm("有未保存的修改，切到别的页面会丢失，确定吗？")) {
+                          return;
+                        }
+                        setEditPageId(p.pageId);
+                        setEditDirty(false);
+                      }}
+                      data-testid={`click-edit-page-tab-${p.pageId}`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
             <div className="min-h-0 flex-1 overflow-hidden bg-[#f0f2f5]">
-              {details[previewModal.key]?.specPages ? (
+              {editMode && details[previewModal.key]?.specPages ? (
+                (() => {
+                  const sp = details[previewModal.key]!.specPages!;
+                  const ordered = orderedSpecPages(sp);
+                  const activeId = editPageId ?? ordered[0]?.pageId ?? null;
+                  const activePage = ordered.find(p => p.pageId === activeId);
+                  if (!activePage) return null;
+                  const appId = previewModal.appId!;
+                  const key = previewModal.key;
+                  return (
+                    <ClickEditStage
+                      key={`${appId}:${activePage.pageId}`}
+                      appId={appId}
+                      pageId={activePage.pageId}
+                      html={activePage.html}
+                      device={sp.device}
+                      className="p-3"
+                      onDirtyChange={setEditDirty}
+                      onSaved={(pageId, html) => {
+                        setDetails(prev => {
+                          const cur = prev[key];
+                          if (!cur?.specPages) return prev;
+                          return {
+                            ...prev,
+                            [key]: {
+                              ...cur,
+                              specPages: { ...cur.specPages, pages: { ...cur.specPages.pages, [pageId]: html } },
+                            },
+                          };
+                        });
+                      }}
+                    />
+                  );
+                })()
+              ) : details[previewModal.key]?.specPages ? (
                 // spec-first 应用：预览的就是交付的那几页 HTML（与推演舞台
                 // 同一个组件、同一份页面），不再拿区块渲染器另画一份。
                 <SpecPagesPreview

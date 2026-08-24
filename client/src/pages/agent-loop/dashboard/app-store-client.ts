@@ -267,6 +267,43 @@ export async function deleteApp(id: string): Promise<boolean> {
   }
 }
 
+/**
+ * 点选编辑器存一页 HTML（2026-08-24）——对应后端 `PATCH /apps/{id}/pages/{pageId}`
+ * （services/app_store.update_page_html）：原地覆盖那一页，不开新版本、不碰模型。
+ *
+ * 跟 `patchApp` 不同，这里失败要把后端的话原样带回去给用户看（"页面超过 1MB
+ * 上限" / "这个应用没有可编辑的页面产物"），不能只回一个 null——点选编辑器
+ * 本来就是给非技术用户用的手动动作，静默失败等于东西丢了都不知道。
+ */
+export async function updateAppPage(
+  id: string,
+  pageId: string,
+  html: string
+): Promise<{ ok: true; bytes: number } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(
+      `${BASE}/apps/${encodeURIComponent(id)}/pages/${encodeURIComponent(pageId)}`,
+      {
+        method: "PATCH",
+        headers: { accept: "application/json", "content-type": "application/json" },
+        body: JSON.stringify({ html }),
+      }
+    );
+    const body = await res.json().catch(() => ({}) as Record<string, unknown>);
+    if (!res.ok) {
+      const msg =
+        (typeof body?.message === "string" && body.message) ||
+        (typeof body?.detail === "string" && body.detail) ||
+        `保存失败（HTTP ${res.status}）`;
+      return { ok: false, error: msg };
+    }
+    const bytes = typeof body?.bytes === "number" ? body.bytes : html.length;
+    return { ok: true, bytes };
+  } catch {
+    return { ok: false, error: "网络请求失败，请检查连接后重试" };
+  }
+}
+
 /** 改可见性 / 官方标记。失败返回 null。 */
 export async function patchApp(
   id: string,
