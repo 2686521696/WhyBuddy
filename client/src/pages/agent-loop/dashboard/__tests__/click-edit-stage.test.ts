@@ -16,6 +16,7 @@ import {
   breadcrumbLabel,
   clampFontSizePx,
   resolveFontSizePx,
+  parseFirstElement,
   MIN_FONT_SIZE_PX,
   MAX_FONT_SIZE_PX,
 } from "../ClickEditStage";
@@ -181,5 +182,34 @@ describe("resolveFontSizePx / clampFontSizePx（字号）", () => {
     expect(clampFontSizePx(MIN_FONT_SIZE_PX - 5)).toBe(MIN_FONT_SIZE_PX);
     expect(clampFontSizePx(MAX_FONT_SIZE_PX + 50)).toBe(MAX_FONT_SIZE_PX);
     expect(clampFontSizePx(20)).toBe(20);
+  });
+});
+
+/**
+ * parseFirstElement——AI 编辑返回的 HTML 片段（已经过 sanitizeHtmlFragment
+ * 消毒）落地成真实 DOM 节点。判据钉住"只取第一个顶层元素"这条：跟后端
+ * 提示词"只输出一个元素"对齐，AI 万一吐出兄弟节点不能被悄悄拼接进页面。
+ */
+describe("parseFirstElement", () => {
+  it("单个元素：原样解析出来", () => {
+    const el = parseFirstElement(document, '<div data-field="x" class="text-lg">你好</div>');
+    expect(el?.tagName).toBe("DIV");
+    expect(el?.getAttribute("data-field")).toBe("x");
+    expect(el?.textContent).toBe("你好");
+  });
+
+  it("反向：多个顶层兄弟节点只取第一个，不悄悄拼接剩下的", () => {
+    const el = parseFirstElement(document, "<p>第一段</p><p>第二段</p>");
+    expect(el?.textContent).toBe("第一段");
+    expect(el?.textContent).not.toContain("第二段");
+    // 调用方（handleAiEditSubmit）拿到 el 之后用 replaceWith 把它单独摘出来
+    // 插进画布——el 这时还挂在函数内部的临时容器上，第二段留在那个容器里
+    // 被整体丢弃，不会跟着 el 一起被搬进文档。这里只钉"el 本身不含第二段"，
+    // 搬运时不泄漏是 Node.replaceWith 的原生语义，不是这个函数要保证的事。
+  });
+
+  it("空字符串 / 纯文本（没有元素）返回 null", () => {
+    expect(parseFirstElement(document, "")).toBeNull();
+    expect(parseFirstElement(document, "只是一段文字，没有标签")).toBeNull();
   });
 });

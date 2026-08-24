@@ -544,6 +544,26 @@ export function sanitizeAppHtml(markup: string): string {
 }
 
 /**
+ * 消毒一段 HTML **片段**（不是整份文档）——同一张白名单，只是不开
+ * `WHOLE_DOCUMENT`。点选编辑器的"✨ AI 编辑"用它：后端回的是 LLM 原始
+ * 输出，没有消毒过，写进画布 DOM 之前必须过这一遍。跟 `sanitizeAppHtml`
+ * 共用 `ALLOWED_TAGS`/`ALLOWED_ATTR`/`FORBID_TAGS`——**这份白名单只许有
+ * 一处定义**，两个函数分叉一次就是两条互不知道对方存在的安全边界。
+ */
+export function sanitizeHtmlFragment(markup: string): string {
+  const purify = DOMPurify as unknown as PurifyLike;
+  if (typeof purify.sanitize !== "function") return "";
+  installHooks(purify);
+  return purify.sanitize(markup || "", {
+    ALLOWED_TAGS,
+    ALLOWED_ATTR,
+    FORBID_TAGS,
+    ALLOW_DATA_ATTR: false,
+    KEEP_CONTENT: true,
+  });
+}
+
+/**
  * 摘掉会把 srcdoc iframe 导航走的 href。
  *
  * ⚠ 2026-08-21 猎网卫士：刷新正常，推演刚结束点底栏就串到面团空态。

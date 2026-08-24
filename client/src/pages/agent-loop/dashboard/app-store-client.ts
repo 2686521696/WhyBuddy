@@ -304,6 +304,48 @@ export async function updateAppPage(
   }
 }
 
+/**
+ * 点选编辑器的"✨ AI 编辑"——把选中元素的 HTML + 一句改法丢给后端 LLM，
+ * 换一份改过的 HTML 回来。**不落库**（对应后端 `POST /apps/{id}/pages/
+ * {pageId}/ai-edit-element`，本身没有副作用），调用方拿到手之后要跟其它
+ * 点选编辑动作一样走"保存修改"才真正写进 pages_json。
+ *
+ * ⚠ 返回的 `html` 是 LLM 原始输出，**没有消毒**——调用方必须先过一遍
+ * `sanitizeHtmlFragment`（html-app-surface）再塞进 DOM，这里不做是因为
+ * 消毒的白名单/DOMPurify 实例只在浏览器端这一份，不在这个纯网络层文件里
+ * 重复引入。
+ */
+export async function aiEditElement(
+  appId: string,
+  pageId: string,
+  elementHtml: string,
+  instruction: string
+): Promise<{ ok: true; html: string } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(
+      `${BASE}/apps/${encodeURIComponent(appId)}/pages/${encodeURIComponent(pageId)}/ai-edit-element`,
+      {
+        method: "POST",
+        headers: { accept: "application/json", "content-type": "application/json" },
+        body: JSON.stringify({ elementHtml, instruction }),
+      }
+    );
+    const body = await res.json().catch(() => ({}) as Record<string, unknown>);
+    if (!res.ok) {
+      const msg =
+        (typeof body?.message === "string" && body.message) ||
+        (typeof body?.detail === "string" && body.detail) ||
+        `AI 编辑失败（HTTP ${res.status}）`;
+      return { ok: false, error: msg };
+    }
+    const html = typeof body?.html === "string" ? body.html : "";
+    if (!html.trim()) return { ok: false, error: "AI 没有返回内容，换个说法再试试" };
+    return { ok: true, html };
+  } catch {
+    return { ok: false, error: "网络请求失败，请检查连接后重试" };
+  }
+}
+
 /** 改可见性 / 官方标记。失败返回 null。 */
 export async function patchApp(
   id: string,

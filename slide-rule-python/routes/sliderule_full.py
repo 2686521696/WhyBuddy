@@ -2238,6 +2238,95 @@ async def patch_generated_app_page(
     }
 
 
+#: 点选编辑器"✨ AI 编辑"的输入上限。选中的是单个元素，不是整页——
+#: 80KB 够装一个很夸张的表格片段了，超过大概率是选错了层级。
+_MAX_AI_EDIT_ELEMENT_HTML_BYTES = 80 * 1024
+_MAX_AI_EDIT_INSTRUCTION_CHARS = 500
+
+
+def _strip_markdown_fence(text: str) -> str:
+    """LLM 有时会不听话地把 HTML 包一层 ```html ... ``` ——剥掉，不当错误处理。"""
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = re.sub(r"^```(?:html)?\s*|\s*```\s*$", "", t, flags=re.IGNORECASE).strip()
+    return t
+
+
+@router.post("/apps/{app_id}/pages/{page_id}/ai-edit-element")
+async def ai_edit_page_element(
+    app_id: str,
+    page_id: str,
+    payload: Dict[str, Any],
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """点选编辑器的"✨ AI 编辑"按钮：选中元素的 HTML + 一句改法 → LLM 换一份
+    改过的 HTML 回来。
+
+    ⚠ **不落库**——这条接口本身没有副作用。跟画布里的"改字/改色/删除"
+    一样，AI 编辑完只是把新 HTML 换进画布，用户点右上角"保存修改"才真的
+    写进 `pages_json`（走的还是 `update_page_html`，见上面 PATCH 那条）。
+    没有这条边界的话，AI 编辑就会绕开"未保存可以撤销/放弃"这条纪律，
+    调用方（前端）在拿到返回值之前**必须**过一遍 `sanitizeHtmlFragment`
+    （html-app-surface 那份 DOMPurify 白名单的片段版）再塞进 DOM——这里
+    回的是 LLM 的原始输出，没有消毒，图省事直接 innerHTML 就是开 XSS 口子。
+    """
+    _auth(x_internal_key)
+    from services import app_store
+
+    record = await asyncio.to_thread(app_store.get_app, app_id)
+    if record is None:
+        raise HTTPException(404, "app not found")
+    app_access.require("revise", record, viewer)
+
+    element_html = payload.get("elementHtml") if isinstance(payload, dict) else None
+    instruction = payload.get("instruction") if isinstance(payload, dict) else None
+    if not isinstance(element_html, str) or not element_html.strip():
+        raise HTTPException(400, "elementHtml 不能为空")
+    if not isinstance(instruction, str) or not instruction.strip():
+        raise HTTPException(400, "请说清楚想怎么改")
+    if len(element_html.encode("utf-8")) > _MAX_AI_EDIT_ELEMENT_HTML_BYTES:
+        raise HTTPException(413, f"选中元素超过 {_MAX_AI_EDIT_ELEMENT_HTML_BYTES} 字节上限，选小一点的范围再试")
+    if len(instruction) > _MAX_AI_EDIT_INSTRUCTION_CHARS:
+        raise HTTPException(400, f"改法说明超过 {_MAX_AI_EDIT_INSTRUCTION_CHARS} 字上限")
+
+    from services.v5_capability_executor import _llm_generate_enabled
+
+    if not _llm_generate_enabled():
+        raise HTTPException(503, "AI 编辑没开（SLIDERULE_LLM_GENERATE_ENABLED 未开启）")
+
+    from sliderule_llm.client import LlmError, call_llm
+    from sliderule_llm.config import default_max_tokens
+
+    system = (
+        "你是网页局部编辑器。用户会给你一个 HTML 元素片段和一句改法要求，"
+        "你只输出改完之后这一个元素的完整 HTML（含它自己的标签），"
+        "不要输出解释、不要用 markdown 代码块包裹、不要输出多个顶层元素。"
+        "尽量保留原有的 class（Tailwind 工具类）风格与体量，"
+        "保留原有的 data-field / data-entity / data-record / data-action 等 data-* 属性"
+        "（除非用户明确要求删掉这个元素代表的数据绑定）——那些属性是这页面接数据用的，"
+        "删了对应的数字/文字会消失。"
+    )
+    user = f"要改的 HTML：\n{element_html}\n\n改法：{instruction.strip()}"
+
+    timeout_ms = int(os.getenv(AIGC_TRYRUN_TIMEOUT_MS_ENV, str(DEFAULT_AIGC_TRYRUN_TIMEOUT_MS)))
+    try:
+        result = await asyncio.to_thread(
+            call_llm,
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            temperature=0.4,
+            max_tokens=default_max_tokens(),
+            timeout_ms=timeout_ms,
+        )
+    except LlmError as exc:
+        raise HTTPException(502, f"AI 编辑失败：{str(exc)[:200]}") from exc
+
+    html = _strip_markdown_fence(result.content)
+    if not html.strip():
+        raise HTTPException(502, "AI 没有返回内容，换个说法再试试")
+    return {"html": html}
+
+
 @router.get("/apps/{app_id}/preview")
 async def get_generated_app_preview(
     app_id: str,

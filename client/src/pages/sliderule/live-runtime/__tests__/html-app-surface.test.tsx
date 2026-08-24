@@ -35,6 +35,7 @@ import {
   rewritePhoneNavLabels,
   stripFrameNavigatingHrefs,
   markSrcdocGeneration,
+  sanitizeHtmlFragment,
   PHONE_FILL_STYLE_ID,
   PHONE_FILL_CSS,
   DESKTOP_FILL_STYLE_ID,
@@ -858,5 +859,45 @@ describe("body 忘了 flex 时把侧栏提成 fixed", () => {
     const rules = CHROME_CONTRAST_CSS.split("}");
     const hit = rules.find(r => r.includes("body:not(.flex)") && r.includes("~*"));
     expect(hit).toContain("var(--shell-aside-width)");
+  });
+});
+
+/**
+ * sanitizeHtmlFragment（2026-08-24）——点选编辑器"✨ AI 编辑"存在的安全前提：
+ * LLM 回的是原始文本，这道消毒是它落进真实 DOM 之前唯一的关卡。跟
+ * sanitizeAppHtml 共用同一张白名单（ALLOWED_TAGS/ALLOWED_ATTR/FORBID_TAGS），
+ * 判据钉住"共用"这条——不是重新抄一遍规则，是同一份规则的片段模式。
+ */
+describe("sanitizeHtmlFragment", () => {
+  it("放行片段：不需要 WHOLE_DOCUMENT 就能处理半份 HTML（没有 html/head/body 包裹）", () => {
+    const out = sanitizeHtmlFragment('<div data-field="title" class="text-lg font-bold">你好</div>');
+    expect(out).toContain("你好");
+    expect(out).toContain('data-field="title"');
+  });
+
+  it("摘掉 <script>——跟 sanitizeAppHtml 同一条安全边界，不是片段模式就松了", () => {
+    const out = sanitizeHtmlFragment('<div>正文<script>alert(1)</script></div>');
+    expect(out).not.toContain("<script");
+    expect(out).not.toContain("alert(1)");
+    expect(out).toContain("正文");
+  });
+
+  it("摘掉 on* 事件处理器（DOMPurify 默认行为，白名单里没放行）", () => {
+    const out = sanitizeHtmlFragment('<button onclick="doEvil()">按钮</button>');
+    expect(out).not.toContain("onclick");
+    expect(out).toContain("按钮");
+  });
+
+  it("反向：白名单外的标签/属性一样被摘，不因为是片段模式就放宽", () => {
+    const out = sanitizeHtmlFragment('<iframe src="https://evil.example"></iframe><div data-not-allowed="x">正文</div>');
+    expect(out).not.toContain("<iframe");
+    expect(out).not.toContain("data-not-allowed");
+    expect(out).toContain("正文");
+  });
+
+  it("语义 data-* 白名单（BINDING_ATTRS）跟 sanitizeAppHtml 是同一份，片段模式下照样放行", () => {
+    for (const attr of BINDING_ATTRS) {
+      expect(sanitizeHtmlFragment(`<div ${attr}="x">格</div>`)).toContain(attr);
+    }
   });
 });

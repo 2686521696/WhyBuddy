@@ -27,13 +27,24 @@ import React from "react";
 import {
   buildDocument,
   sanitizeAppHtml,
+  sanitizeHtmlFragment,
   stripFrameNavigatingHrefs,
   markSrcdocGeneration,
 } from "@/pages/sliderule/live-runtime/html-app-surface";
 import { BINDING_ATTRS } from "@/pages/sliderule/live-runtime/html-binding-runtime";
 import { useScaleToFit, specPageViewport } from "@/pages/sliderule/live-runtime/canvas-scale";
-import { updateAppPage } from "./app-store-client";
-import { Undo2, Save, Trash2, Bold as BoldIcon, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { updateAppPage, aiEditElement } from "./app-store-client";
+import {
+  Undo2,
+  Save,
+  Trash2,
+  Bold as BoldIcon,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Sparkles,
+  Loader2,
+} from "lucide-react";
 
 const BLOCK_TAGS = new Set([
   "BUTTON", "A", "TD", "TH", "LI", "LABEL",
@@ -154,6 +165,18 @@ export function clampFontSizePx(px: number): number {
   return Math.min(MAX_FONT_SIZE_PX, Math.max(MIN_FONT_SIZE_PX, Math.round(px)));
 }
 
+/**
+ * AI 编辑返回的（已消毒过的）HTML 片段 → 真实 DOM 节点。纯函数，接一个
+ * `Document` 是为了单测不用起真的 iframe。只取**第一个**顶层元素——
+ * AI 有时会不听话地吐出多个兄弟节点，这里跟后端提示词的"只输出一个元素"
+ * 对齐，多出来的直接丢，不悄悄拼接（拼接等于给页面塞进一段没人要过的结构）。
+ */
+export function parseFirstElement(doc: Document, html: string): HTMLElement | null {
+  const wrap = doc.createElement("div");
+  wrap.innerHTML = html;
+  return wrap.firstElementChild as HTMLElement | null;
+}
+
 export function resolveFontSizePx(el: HTMLElement, computedFontSize: string): number {
   const inline = el.style.fontSize;
   if (inline && inline.trim().endsWith("px")) {
@@ -213,6 +236,10 @@ export function ClickEditStage({
   const [status, setStatus] = React.useState<
     { kind: "idle" } | { kind: "saving" } | { kind: "ok"; text: string } | { kind: "err"; text: string }
   >({ kind: "idle" });
+  const [aiOpen, setAiOpen] = React.useState(false);
+  const [aiInstruction, setAiInstruction] = React.useState("");
+  const [aiBusy, setAiBusy] = React.useState(false);
+  const [aiError, setAiError] = React.useState<string | null>(null);
 
   const viewport = specPageViewport(device);
   const fillPhone = device === "phone";
@@ -298,6 +325,14 @@ export function ClickEditStage({
     });
   }, []);
 
+  // 换了选中对象（含取消选中）就把 AI 编辑面板收起来——上一个元素的改法
+  // 说明留在输入框里、糊到下一个元素身上，是会让人分不清"AI 到底改的是哪个"。
+  React.useEffect(() => {
+    setAiOpen(false);
+    setAiError(null);
+    setAiInstruction("");
+  }, [selected?.el]);
+
   const selectElement = React.useCallback((el: HTMLElement) => {
     const r = el.getBoundingClientRect();
     setSelected({ el, rect: { left: r.left, top: r.top, width: r.width, height: r.height } });
@@ -366,6 +401,35 @@ export function ClickEditStage({
     selected.el.remove();
     setSelected(null);
     markDirty();
+  };
+
+  /** ✨ AI 编辑：选中元素的 HTML + 一句改法 → 后端 LLM 换一份 HTML 回来，
+   *  消毒之后**整个换掉**选中元素（不是塞进去）。不落库——跟其它编辑动作
+   *  一样，用户还得点右上角"保存修改"才真正写库，这里出错也不影响已有内容。 */
+  const handleAiEditSubmit = async () => {
+    if (!selected || !aiInstruction.trim() || aiBusy) return;
+    setAiBusy(true);
+    setAiError(null);
+    const res = await aiEditElement(appId, pageId, selected.el.outerHTML, aiInstruction.trim());
+    if (!res.ok) {
+      setAiBusy(false);
+      setAiError(res.error);
+      return;
+    }
+    const doc = frameRef.current?.contentDocument;
+    const clean = sanitizeHtmlFragment(res.html);
+    const newEl = doc && clean.trim() ? parseFirstElement(doc, clean) : null;
+    setAiBusy(false);
+    if (!newEl) {
+      setAiError("AI 返回的内容解析不出可用的元素，换个说法再试试");
+      return;
+    }
+    pushUndoSnapshot();
+    selected.el.replaceWith(newEl);
+    selectElement(newEl);
+    markDirty();
+    setAiOpen(false);
+    setAiInstruction("");
   };
 
   const handleUndo = () => {
@@ -499,14 +563,15 @@ export function ClickEditStage({
         )}
         {selected && (
           <div
-            className="absolute z-20 flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2 py-1.5 shadow-lg"
+            className="absolute z-20 flex max-w-[92%] flex-col gap-1.5 rounded-lg border border-stone-200 bg-white px-2 py-1.5 shadow-lg"
             style={{
               left: Math.max(4, selected.rect.left),
-              top: Math.max(4, selected.rect.top - 42),
+              top: Math.max(4, selected.rect.top - (aiOpen ? 82 : 42)),
             }}
             data-testid="click-edit-toolbar"
             onClick={e => e.stopPropagation()}
           >
+          <div className="flex items-center gap-1">
             {/* 面包屑：可编辑祖先链，点哪级就选中哪级；title 兜底显示完整选择器
                 （labelOfEditable），鼠标停久一点还能看到 data-field 这类精确信息。 */}
             <div className="flex max-w-[200px] items-center overflow-hidden" data-testid="click-edit-breadcrumb">
@@ -621,6 +686,18 @@ export function ClickEditStage({
                 data-testid="click-edit-color"
               />
             </label>
+            <span className="mx-0.5 h-4 w-px bg-stone-200" aria-hidden />
+            <button
+              type="button"
+              className={`inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] font-medium transition ${
+                aiOpen ? "bg-violet-100 text-violet-700" : "text-violet-600 hover:bg-violet-50"
+              }`}
+              title="用一句话让 AI 改这个元素"
+              onClick={() => setAiOpen(o => !o)}
+              data-testid="click-edit-ai"
+            >
+              <Sparkles size={13} /> AI 编辑
+            </button>
             <button
               type="button"
               className="rounded p-1 text-red-500 hover:bg-red-50"
@@ -639,6 +716,40 @@ export function ClickEditStage({
             >
               <X size={13} />
             </button>
+          </div>
+          {aiOpen && (
+            <div className="flex items-center gap-1.5" data-testid="click-edit-ai-panel">
+              <input
+                type="text"
+                autoFocus
+                value={aiInstruction}
+                onChange={e => setAiInstruction(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter") void handleAiEditSubmit();
+                  if (e.key === "Escape") setAiOpen(false);
+                }}
+                placeholder="想怎么改？比如：改成更醒目的警示色、加一句副标题"
+                disabled={aiBusy}
+                className="h-7 w-64 flex-1 rounded border border-stone-200 px-2 text-[12px] outline-none focus:border-violet-400 disabled:opacity-60"
+                data-testid="click-edit-ai-input"
+              />
+              <button
+                type="button"
+                className="inline-flex h-7 shrink-0 items-center gap-1 rounded bg-violet-600 px-2.5 text-[12px] font-medium text-white transition hover:bg-violet-500 disabled:opacity-40"
+                disabled={aiBusy || !aiInstruction.trim()}
+                onClick={() => void handleAiEditSubmit()}
+                data-testid="click-edit-ai-submit"
+              >
+                {aiBusy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                {aiBusy ? "生成中…" : "生成"}
+              </button>
+            </div>
+          )}
+          {aiError && (
+            <div className="max-w-[20rem] text-[11px] text-red-600" data-testid="click-edit-ai-error">
+              {aiError}
+            </div>
+          )}
           </div>
         )}
       </div>
