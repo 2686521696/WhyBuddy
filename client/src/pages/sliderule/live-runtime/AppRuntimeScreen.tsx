@@ -19,6 +19,7 @@
 import React from "react";
 import { createPortal } from "react-dom";
 import { ScaleBadge, useScaleToFit, type ScaleFitMode } from "./canvas-scale";
+import { STAGE_FRAME_PAD, STAGE_FRAME_SHADOW } from "./stage-frame-style";
 import {
   Layout,
   Menu,
@@ -625,7 +626,15 @@ export function AppRuntimeScreen({
     rationale: string | null;
   } | null>(null);
   const spec = DEVICE_SPECS[device];
-  const { ref: fitRef, scale } = useScaleToFit(spec.w, spec.h, scaleFit);
+  const { ref: fitRef, scale } = useScaleToFit(
+    spec.w,
+    spec.h,
+    scaleFit,
+    false,
+    // 与 spec-first 舞台同一份余量：不扣的话新的 ring + 分层阴影
+    // 会被画布的 overflow:hidden 切掉（2026-08-24 真机量到 gapTop=0）。
+    STAGE_FRAME_PAD
+  );
   // 弹层（Modal/Select/Drawer）挂进画布，跟随 transform 缩放
   const [canvasEl, setCanvasEl] = React.useState<HTMLDivElement | null>(null);
 
@@ -4128,7 +4137,7 @@ export function AppRuntimeScreen({
               : identityTheme.contentBg,
             borderRadius: isPhone ? 12 : 5,
             overflow: "hidden",
-            boxShadow: "0 8px 32px rgba(60,50,30,0.18)",
+            boxShadow: STAGE_FRAME_SHADOW,
           }}
         >
           <ConfigProvider

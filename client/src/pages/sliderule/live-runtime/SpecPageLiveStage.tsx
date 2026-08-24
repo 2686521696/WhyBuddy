@@ -50,6 +50,11 @@ import React from "react";
 
 import { HtmlAppSurface } from "./html-app-surface";
 import { useScaleToFit, specPageViewport, PHONE_STAGE_MAX_SCALE } from "./canvas-scale";
+import {
+  PHONE_FRAME_SHADOW,
+  STAGE_FRAME_PAD,
+  STAGE_FRAME_SHADOW,
+} from "./stage-frame-style";
 import { deriveBindingSource } from "./derive-binding-source";
 import type { ActionGates, BindingActionEvent } from "./html-binding-runtime";
 import type { RuntimeState } from "./live-runtime";
@@ -165,7 +170,7 @@ export function SpecPageLiveStage({
     viewport.h,
     "contain",
     studioLayout?.resizing ?? false,
-    isPhone ? { x: 36, y: 48 } : { x: 0, y: 0 },
+    isPhone ? { x: 36, y: 48 } : STAGE_FRAME_PAD,
     isPhone ? PHONE_STAGE_MAX_SCALE : undefined
   );
 
@@ -282,7 +287,7 @@ export function SpecPageLiveStage({
                   borderBottomWidth: 20,
                   borderRadius: 40,
                   background: "#1c1c1e",
-                  boxShadow: "0 18px 40px rgba(15,23,42,0.28)",
+                  boxShadow: PHONE_FRAME_SHADOW,
                   position: "relative",
                 }
               : {
@@ -290,7 +295,7 @@ export function SpecPageLiveStage({
                   height: viewport.h * scale,
                   position: "relative",
                   borderRadius: 5,
-                  boxShadow: "0 8px 32px rgba(60,50,30,0.18)",
+                  boxShadow: STAGE_FRAME_SHADOW,
                   overflow: "hidden",
                   background: "#fff",
                 }

@@ -33,6 +33,10 @@ import {
 } from "@/pages/sliderule/live-runtime/html-app-surface";
 import { BINDING_ATTRS } from "@/pages/sliderule/live-runtime/html-binding-runtime";
 import { useScaleToFit, specPageViewport } from "@/pages/sliderule/live-runtime/canvas-scale";
+import {
+  STAGE_FRAME_PAD,
+  STAGE_FRAME_SHADOW,
+} from "@/pages/sliderule/live-runtime/stage-frame-style";
 import { updateAppPage, aiEditElement } from "./app-store-client";
 import {
   Undo2,
@@ -312,7 +316,15 @@ export function ClickEditStage({
 
   const viewport = specPageViewport(device);
   const fillPhone = device === "phone";
-  const { ref: fitRef, scale } = useScaleToFit(viewport.w, viewport.h, "contain");
+  const { ref: fitRef, scale } = useScaleToFit(
+    viewport.w,
+    viewport.h,
+    "contain",
+    false,
+    // 与预览舞台同一份余量：点选编辑用的是同一个画框，不扣余量
+    // 新的 ring 会被容器切掉（2026-08-24）。
+    STAGE_FRAME_PAD
+  );
   /** 缩放后的画框本体。量它跟容器的差值就是"居中留白"，不靠公式推。 */
   const frameBoxRef = React.useRef<HTMLDivElement | null>(null);
   const toolbarRef = React.useRef<HTMLDivElement | null>(null);
@@ -653,7 +665,7 @@ export function ClickEditStage({
             position: "relative",
             overflow: "hidden",
             borderRadius: 5,
-            boxShadow: "0 8px 32px rgba(60,50,30,0.18)",
+            boxShadow: STAGE_FRAME_SHADOW,
             background: "#fff",
           }}
         >
