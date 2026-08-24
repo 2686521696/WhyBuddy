@@ -187,6 +187,73 @@ export function resolveFontSizePx(el: HTMLElement, computedFontSize: string): nu
   return Number.isNaN(n) ? 16 : n;
 }
 
+export interface Box {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * iframe 内元素坐标 → 画布容器坐标。**这是 2026-08-24 那个"点选之后高亮框和
+ * 工具条飘到别处去"的病根**，用户截图报的。
+ *
+ * `getBoundingClientRect()` 量出来的是 **iframe 自己视口**里的坐标——
+ * 1920×1080 设计分辨率、**未缩放**。而高亮框/工具条是画布容器的 `absolute`
+ * 子元素。两个坐标系之间隔着两层，第一版一层都没换算：
+ *
+ *   ① `transform: scale(scale)` —— 画布按容器大小等比缩放（真机 47%~59%）；
+ *   ② 居中留白 —— 缩放后的画框在容器里 `items-center justify-center`，
+ *      左上角**不在** (0,0)。
+ *
+ * 少乘一个 scale 是**乘法误差**：元素越靠下越靠右偏得越狠。真机对过账——
+ * 缩放 59%、画框起点屏幕 (810,270)，导航项在屏幕 (884,411) 即 iframe 坐标
+ * (125,239)，漏换算直接把 (125,239) 当容器坐标用，工具条落在 y≈297，
+ * 跟用户截图里那条一模一样。
+ *
+ * ⚠ frameOffset 必须由调用方拿**两个真实 DOM 矩形**量出来（画框 vs 容器），
+ *   别在这里按 `(容器宽 - 画框宽)/2` 推算居中量：容器有 padding、圆角、
+ *   将来加个工具栏都会让推算值和真实值分叉，而分叉了不会报错，只会又偏一次。
+ */
+export function toCanvasRect(frameRect: Box, scale: number, frameOffset: { left: number; top: number }): Box {
+  return {
+    left: frameOffset.left + frameRect.left * scale,
+    top: frameOffset.top + frameRect.top * scale,
+    width: frameRect.width * scale,
+    height: frameRect.height * scale,
+  };
+}
+
+/** 工具条贴着选中框放，放不下就翻面/贴边。纯函数，单测钉着。
+ *
+ *  规则照 floating-ui 的 flip + shift（Tiptap BubbleMenu 用的就是它，
+ *  这个仓的面包屑/字号也是照 Tiptap 抄的，行为保持一路）：
+ *    - 默认放在选中框**上方**；上方顶到容器边就翻到**下方**；
+ *    - 左右超出容器就贴边推回来，不让工具条跑到画布外面去。
+ *
+ *  ⚠ 坐标修好之前这条没意义（工具条本来就不在元素旁边，谈不上溢出）；
+ *    修好之后它才真的会贴着右边的元素跑出画布，所以两件事是一起的。
+ */
+export function placeToolbar(
+  rect: Box,
+  toolbar: { width: number; height: number },
+  container: { width: number; height: number },
+  gap = 8,
+  edge = 4
+): { left: number; top: number } {
+  const h = toolbar.height || 0;
+  const w = toolbar.width || 0;
+  let top = rect.top - h - gap;
+  if (top < edge) {
+    // 上方放不下 → 翻到下方；下方也放不下就贴容器底，总之不出界。
+    const below = rect.top + rect.height + gap;
+    top = container.height > 0 ? Math.min(below, Math.max(edge, container.height - h - edge)) : below;
+  }
+  let left = rect.left;
+  if (w > 0 && container.width > 0) left = Math.min(left, container.width - w - edge);
+  return { left: Math.max(edge, left), top: Math.max(edge, top) };
+}
+
 /**
  * 存库前把编辑过的 body 换回干净壳。纯函数，单测钉着。
  * 找不到 `<body>` 就返回 null——**不许**编一份出来，宁可保存失败让用户重试。
@@ -199,7 +266,9 @@ export function spliceEditedBody(originalHtml: string, editedBodyOuterHtml: stri
 
 interface Selection {
   el: HTMLElement;
-  rect: { left: number; top: number; width: number; height: number };
+  /** ⚠ **画布容器坐标系**（已经过 toCanvasRect 换算），不是 iframe 里量到的
+   *  原始矩形。存进来之前必须换算——存原始矩形就是 2026-08-24 那个偏移 bug。 */
+  rect: Box;
 }
 
 export interface ClickEditStageProps {
@@ -244,6 +313,60 @@ export function ClickEditStage({
   const viewport = specPageViewport(device);
   const fillPhone = device === "phone";
   const { ref: fitRef, scale } = useScaleToFit(viewport.w, viewport.h, "contain");
+  /** 缩放后的画框本体。量它跟容器的差值就是"居中留白"，不靠公式推。 */
+  const frameBoxRef = React.useRef<HTMLDivElement | null>(null);
+  const toolbarRef = React.useRef<HTMLDivElement | null>(null);
+  const [toolbarSize, setToolbarSize] = React.useState({ width: 0, height: 0 });
+  const [containerSize, setContainerSize] = React.useState({ width: 0, height: 0 });
+  /**
+   * 工具条和容器的实测尺寸——placeToolbar 要拿它们判"放不放得下"。
+   *
+   * ⚠ 不写依赖数组（每次渲染都量）：工具条高度会随 AI 编辑面板展开/收起变，
+   *   面包屑长短也影响宽度，列依赖必漏。setState 前先比一遍**并按整像素比**，
+   *   不然亚像素抖动会来回 setState 把渲染钉死。首帧量到 0 也没关系——
+   *   placeToolbar 对 0 尺寸退化成"就贴着选中框放"，下一帧量准了再归位。
+   */
+  React.useLayoutEffect(() => {
+    const t = toolbarRef.current?.getBoundingClientRect();
+    const c = fitRef.current?.getBoundingClientRect();
+    if (t) {
+      setToolbarSize(prev =>
+        Math.round(prev.width) === Math.round(t.width) && Math.round(prev.height) === Math.round(t.height)
+          ? prev
+          : { width: t.width, height: t.height }
+      );
+    }
+    if (c) {
+      setContainerSize(prev =>
+        Math.round(prev.width) === Math.round(c.width) && Math.round(prev.height) === Math.round(c.height)
+          ? prev
+          : { width: c.width, height: c.height }
+      );
+    }
+  });
+
+  /**
+   * 量一个 iframe 内元素在**画布容器坐标系**里的位置。整个组件里
+   * `getBoundingClientRect` 只该经过这一处——散在四处各量各的，就是当初
+   * 四个入口三种写法、修一处漏三处的由来。
+   */
+  const measureInCanvas = React.useCallback(
+    (el: HTMLElement): Box => {
+      const r = el.getBoundingClientRect();
+      const box = frameBoxRef.current?.getBoundingClientRect();
+      const container = fitRef.current?.getBoundingClientRect();
+      const offset =
+        box && container
+          ? { left: box.left - container.left, top: box.top - container.top }
+          : { left: 0, top: 0 };
+      return toCanvasRect({ left: r.left, top: r.top, width: r.width, height: r.height }, scale, offset);
+    },
+    [scale, fitRef]
+  );
+  // iframe 里的监听只挂一次（见下面那个 effect），拿不到后续渲染的新闭包——
+  // 用 ref 转发最新的那一份，别把 scale 冻结在第一帧（冻结了缩放一变就又偏）。
+  const measureRef = React.useRef(measureInCanvas);
+  measureRef.current = measureInCanvas;
 
   const markDirty = React.useCallback(() => {
     setDirty(true);
@@ -291,11 +414,15 @@ export function ClickEditStage({
             setSelected(null);
             return;
           }
-          const r = found.getBoundingClientRect();
-          setSelected({ el: found, rect: { left: r.left, top: r.top, width: r.width, height: r.height } });
+          setSelected({ el: found, rect: measureRef.current(found) });
         },
         true
       );
+
+      // 页面内部会滚（壳给 main 打了 overflow-y:auto）。选中之后一滚，
+      // 元素动了而高亮框不动 —— 表现跟这次修的偏移是同一类"框和东西对不上"。
+      // 捕获阶段挂在 document 上：内层滚动容器的 scroll 不冒泡，不捕获就收不到。
+      d.addEventListener("scroll", () => remeasureRef.current(), true);
     };
     frame.addEventListener("load", onLoad);
     frame.srcdoc = doc;
@@ -307,23 +434,19 @@ export function ClickEditStage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // 只挂一次——切页靠外层换 key 重新挂载整个组件，见上面的类头注释
 
-  // 选中框跟着缩放系数走（scale 变了但没重新点选时，浮层位置要跟上）。
+  /** 重新量当前选中元素（缩放变了、页面滚了、内容改了尺寸都要重量）。 */
+  const reselect = React.useCallback(() => {
+    setSelected(prev => (prev ? { ...prev, rect: measureInCanvas(prev.el) } : prev));
+  }, [measureInCanvas]);
+  const remeasureRef = React.useRef(reselect);
+  remeasureRef.current = reselect;
+
+  // 缩放系数变了（拖分栏、窗口 resize）：画框大小和居中留白同时变，两样都在
+  // measureInCanvas 里重新量，这里只管触发。
   React.useEffect(() => {
-    if (!selected) return;
-    const r = selected.el.getBoundingClientRect();
-    setSelected(prev =>
-      prev ? { ...prev, rect: { left: r.left, top: r.top, width: r.width, height: r.height } } : prev
-    );
+    reselect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scale]);
-
-  const reselect = React.useCallback(() => {
-    setSelected(prev => {
-      if (!prev) return prev;
-      const r = prev.el.getBoundingClientRect();
-      return { ...prev, rect: { left: r.left, top: r.top, width: r.width, height: r.height } };
-    });
-  }, []);
 
   // 换了选中对象（含取消选中）就把 AI 编辑面板收起来——上一个元素的改法
   // 说明留在输入框里、糊到下一个元素身上，是会让人分不清"AI 到底改的是哪个"。
@@ -333,10 +456,12 @@ export function ClickEditStage({
     setAiInstruction("");
   }, [selected?.el]);
 
-  const selectElement = React.useCallback((el: HTMLElement) => {
-    const r = el.getBoundingClientRect();
-    setSelected({ el, rect: { left: r.left, top: r.top, width: r.width, height: r.height } });
-  }, []);
+  const selectElement = React.useCallback(
+    (el: HTMLElement) => {
+      setSelected({ el, rect: measureInCanvas(el) });
+    },
+    [measureInCanvas]
+  );
 
   /** 面包屑箭头：往上选父级 / 往下选子级——GrapesJS ComponentExit 的"爬到
    *  第一个够格祖先"反过来配一个"下钻到第一个够格后代"，两个方向对称。 */
@@ -521,6 +646,7 @@ export function ClickEditStage({
         }}
       >
         <div
+          ref={frameBoxRef}
           style={{
             width: viewport.w * scale,
             height: viewport.h * scale,
@@ -563,11 +689,9 @@ export function ClickEditStage({
         )}
         {selected && (
           <div
+            ref={toolbarRef}
             className="absolute z-20 flex max-w-[92%] flex-col gap-1.5 rounded-lg border border-stone-200 bg-white px-2 py-1.5 shadow-lg"
-            style={{
-              left: Math.max(4, selected.rect.left),
-              top: Math.max(4, selected.rect.top - (aiOpen ? 82 : 42)),
-            }}
+            style={placeToolbar(selected.rect, toolbarSize, containerSize)}
             data-testid="click-edit-toolbar"
             onClick={e => e.stopPropagation()}
           >

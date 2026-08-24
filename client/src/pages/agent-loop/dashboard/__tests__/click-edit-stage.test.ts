@@ -17,6 +17,8 @@ import {
   clampFontSizePx,
   resolveFontSizePx,
   parseFirstElement,
+  toCanvasRect,
+  placeToolbar,
   MIN_FONT_SIZE_PX,
   MAX_FONT_SIZE_PX,
 } from "../ClickEditStage";
@@ -211,5 +213,92 @@ describe("parseFirstElement", () => {
   it("空字符串 / 纯文本（没有元素）返回 null", () => {
     expect(parseFirstElement(document, "")).toBeNull();
     expect(parseFirstElement(document, "只是一段文字，没有标签")).toBeNull();
+  });
+});
+
+/**
+ * toCanvasRect —— 2026-08-24 用户截图报的"点选之后高亮框和工具条飘到别处"的
+ * 病根判据。iframe 里量到的是 1920×1080 未缩放坐标，高亮框却是画布容器的
+ * absolute 子元素，中间隔着 ①transform:scale ②居中留白 两层。
+ *
+ * 这组用**真机对过账的那笔数**当基准（缩放 59%、画框起点相对容器 (20,170)、
+ * 导航项 iframe 坐标 (125,239)），并且反向钉住"少乘 scale"和"少加偏移"
+ * 这两种漏法各自会偏多少——只写正向的话，把 scale 写死成 1 照样绿。
+ */
+describe("toCanvasRect（点选坐标换算）", () => {
+  const OFFSET = { left: 20, top: 170 };
+  const SCALE = 0.59;
+  const NAV = { left: 125, top: 239, width: 130, height: 34 };
+
+  it("真机那笔数：iframe (125,239) @59% + 居中留白 (20,170) → 容器 (93.75, 311.01)", () => {
+    const out = toCanvasRect(NAV, SCALE, OFFSET);
+    expect(out.left).toBeCloseTo(20 + 125 * 0.59, 5);
+    expect(out.top).toBeCloseTo(170 + 239 * 0.59, 5);
+    expect(out.width).toBeCloseTo(130 * 0.59, 5);
+    expect(out.height).toBeCloseTo(34 * 0.59, 5);
+  });
+
+  it("反向：漏乘 scale 会把元素画到明显更靠下的地方（这正是 bug 的形状）", () => {
+    const correct = toCanvasRect(NAV, SCALE, OFFSET);
+    const buggy = { left: OFFSET.left + NAV.left, top: OFFSET.top + NAV.top };
+    // 漏乘 scale 的话 top 会多出 239*(1-0.59)≈98px——不是"差一点"，是差一屏的量级
+    expect(buggy.top - correct.top).toBeGreaterThan(90);
+  });
+
+  it("反向：漏加居中留白，左上角就锚在容器 (0,0) 上，跟画框对不齐", () => {
+    const correct = toCanvasRect(NAV, SCALE, OFFSET);
+    const buggy = toCanvasRect(NAV, SCALE, { left: 0, top: 0 });
+    expect(correct.left - buggy.left).toBeCloseTo(OFFSET.left, 5);
+    expect(correct.top - buggy.top).toBeCloseTo(OFFSET.top, 5);
+  });
+
+  it("越靠下的元素偏得越狠——漏乘 scale 是乘法误差，不是常量偏移", () => {
+    const near = toCanvasRect({ ...NAV, top: 100 }, SCALE, OFFSET);
+    const far = toCanvasRect({ ...NAV, top: 900 }, SCALE, OFFSET);
+    const driftNear = OFFSET.top + 100 - near.top;
+    const driftFar = OFFSET.top + 900 - far.top;
+    expect(driftFar).toBeGreaterThan(driftNear * 5);
+  });
+
+  it("scale=1 且无留白时是恒等变换（退化情形不该额外动坐标）", () => {
+    expect(toCanvasRect(NAV, 1, { left: 0, top: 0 })).toEqual(NAV);
+  });
+});
+
+/**
+ * placeToolbar —— 坐标修对之后工具条才真的贴着元素，于是才**真的会**溢出。
+ * 规则照 floating-ui 的 flip + shift（Tiptap BubbleMenu 同款）。
+ */
+describe("placeToolbar（工具条翻面与贴边）", () => {
+  const TOOLBAR = { width: 300, height: 40 };
+  const CONTAINER = { width: 1000, height: 600 };
+
+  it("默认放在选中框上方", () => {
+    const p = placeToolbar({ left: 100, top: 300, width: 200, height: 30 }, TOOLBAR, CONTAINER);
+    expect(p.top).toBe(300 - 40 - 8);
+    expect(p.left).toBe(100);
+  });
+
+  it("上方顶到容器边就翻到下方（flip），不是硬夹在顶上盖住元素", () => {
+    const rect = { left: 100, top: 10, width: 200, height: 30 };
+    const p = placeToolbar(rect, TOOLBAR, CONTAINER);
+    expect(p.top).toBe(rect.top + rect.height + 8);
+  });
+
+  it("反向：选中框贴着右边时工具条要被推回容器内（shift），不许跑出画布", () => {
+    const p = placeToolbar({ left: 950, top: 300, width: 40, height: 30 }, TOOLBAR, CONTAINER);
+    expect(p.left).toBe(CONTAINER.width - TOOLBAR.width - 4);
+    expect(p.left + TOOLBAR.width).toBeLessThanOrEqual(CONTAINER.width);
+  });
+
+  it("反向：左边也不许出界", () => {
+    const p = placeToolbar({ left: -50, top: 300, width: 40, height: 30 }, TOOLBAR, CONTAINER);
+    expect(p.left).toBe(4);
+  });
+
+  it("工具条尺寸还没量到（首帧 0×0）时退化成贴着选中框放，不崩也不乱跳", () => {
+    const p = placeToolbar({ left: 100, top: 300, width: 200, height: 30 }, { width: 0, height: 0 }, CONTAINER);
+    expect(p.left).toBe(100);
+    expect(p.top).toBe(300 - 8);
   });
 });
