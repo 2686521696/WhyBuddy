@@ -50,6 +50,7 @@ Cookie 也不只信 FastAPI 的 `Cookie()` 注入：带 JSON body 的 POST 上�
 
 from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor
 import hmac
 from datetime import datetime, timezone
 from typing import Annotated, Optional
@@ -133,6 +134,33 @@ def _pick_access_token(
 RENEW_AFTER_S = DEFAULT_TTL_S // 2
 
 
+#: 鉴权里那条并发查询用的线程池。
+#
+# 每个登录请求只借一个线程（撤销名单那条），身份查询仍在请求自己的线程上跑，
+# 所以并发度 = 同时在鉴权的请求数。给 32：与 app.py 的事件循环执行器
+# （默认放大到 64）同量级，池满了就退化成排队——也就是改动前的串行行为，
+# 不会更糟。
+#
+# ⚠ 模块级复用，不要改成每次请求 new 一个：这是**每个登录请求**都走的热路，
+#   建池/销毁池的开销要摊在每一发上。
+_AUTH_POOL = ThreadPoolExecutor(max_workers=32, thread_name_prefix="auth")
+
+
+def _drain(future: Optional[Future]) -> None:
+    """把一个已经发出去、但这条路上用不到了的查询收掉。
+
+    并发化之后新增的失败形状：判定提前 return，撤销查询的异常没人 result()，
+    只在日志里留一行 "exception was never retrieved"——既不影响功能也没人看得
+    见。收一下就好，结果和异常都丢弃（这条路已经判定为匿名了）。
+    """
+    if future is None:
+        return
+    try:
+        future.result()
+    except Exception:  # noqa: BLE001 — 这条路已经不看它的结论了
+        pass
+
+
 def _maybe_renew(
     response: Optional[Response],
     payload: dict,
@@ -204,17 +232,46 @@ def optional_user(
     user_id = str(payload.get("sub") or "")
     if not user_id:
         return None
+    # ⚠ 两次查库**并发**发（2026-08-24）。
+    #
+    #   真机实测（HTTPS SQL 网关）：get_by_id 180ms + is_token_revoked 133ms，
+    #   串行 313ms，而这是**每一个登录请求**都要付的——不鉴权的 /health 只要
+    #   4ms，带鉴权的 /account/me（业务上什么都不干）340ms，工作台首屏那十几个
+    #   请求条条在付。并发之后只剩一次往返。
+    #
+    #   ## 为什么在这儿才发，不更早
+    #
+    #   上面 ① 签名与过期是**纯内存**的，伪造/过期的令牌在这一行之前就 return
+    #   了，一次库都不查。这条性质必须保住：原来把撤销查询放在最后，头注写着
+    #   "没必要为一张签名就不对的令牌白查一次"——那个理由针对的正是这类令牌，
+    #   而它们根本走不到这里。走到这里的令牌都是我们自己签发过的真令牌，两条
+    #   查询本来就都要跑。
+    #
+    #   ## 判定顺序没变
+    #
+    #   并发的是**发出查询**，不是判定。下面仍然按 ②③④ 的次序看结果：账号
+    #   还在 → 密码戳 → 撤销名单。任何一道不过就 return None，跟改动前逐字
+    #   一致。撤销查询的结果在 ④ 才取。
+    revoked_future = None
     try:
         store = get_identity_store()
+        revoked_future = _AUTH_POOL.submit(
+            store.is_token_revoked, str(payload.get("jti") or "")
+        )
         user = store.get_by_id(user_id)
     except Exception as exc:  # noqa: BLE001 — 身份库抖动时按匿名处理，不拖垮只读接口
         # 只读接口 fail-open 成匿名是对的；写接口（推演）随后会 401「请先登录」，
         # 而侧栏还显示着启动时缓存的账号——2026-08-20 真机就是这个形状。
         # 这里至少把原因打出来，避免再当成"用户没登录"。
         print(f"[auth] identity lookup failed path={request.url.path}: {type(exc).__name__}: {exc}")
+        # 已经发出去的撤销查询要收掉，否则它的异常没人 result()，
+        # 只在日志里留一行 "exception was never retrieved"——不影响功能、
+        # 也没人看得见，正是最难查的那一类。
+        _drain(revoked_future)
         return None
     # 停用的账号等同未登录：令牌还没过期但人已经被停了，不能继续按登录态放行。
     if user is None or not user.is_active:
+        _drain(revoked_future)
         return None
 
     # ③ 密码戳。**缺 pv 的令牌一律拒绝**——这是 2026-08-04 之前签发的存量令牌，
@@ -224,12 +281,13 @@ def optional_user(
     stamp = str(payload.get("pv") or "")
     expected = password_stamp(str(user.get("password_hash") or ""))
     if not stamp or not hmac.compare_digest(stamp, expected):
+        _drain(revoked_future)
         return None
 
     # ④ 撤销名单。放在最后：前面几道都是纯内存计算，这一道要查库，
     #    没必要为一张签名就不对的令牌白查一次。
     try:
-        if store.is_token_revoked(str(payload.get("jti") or "")):
+        if revoked_future is not None and revoked_future.result():
             return None
     except Exception:  # noqa: BLE001 — 撤销表查不动时**放行**
         # 这一处是 fail-open，与上面几道相反，理由：撤销表是"额外收紧"的机制，

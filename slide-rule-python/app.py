@@ -234,7 +234,8 @@ def _warm_storage_backends() -> None:
 
         建 session 存储后端   1525 ms
         建 app_store 后端     2409 ms
-        建完之后每次查询       ~140 ms
+        建身份库后端          1629 ms
+        建完之后每次查询       ~140~180 ms
 
     也就是说重启后**第一个访问工作台的人要付 3.9 秒**，而这 3.9 秒跟他要查的
     数据一点关系都没有——全是建连接和建表。实测 GET /sessions 冷启动 4.7s、
@@ -265,6 +266,12 @@ def _warm_storage_backends() -> None:
             ("app store", lambda: __import__(
                 "services.app_store", fromlist=["get_backend"]
             ).get_backend()),
+            # ⚠ 2026-08-24 补上：身份库是**第三个**懒加载后端，上一版预热漏了。
+            #   它更该预热——会话/应用那两个只有列表接口用，身份库是**每一个
+            #   登录请求**都要过的（optional_user），建后端实测 1629ms。
+            ("identity store", lambda: __import__(
+                "services.identity_store", fromlist=["get_identity_store"]
+            ).get_identity_store()),
         ):
             started = time.time()
             try:
