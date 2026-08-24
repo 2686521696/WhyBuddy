@@ -33,6 +33,7 @@ import hashlib
 import json
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -2678,18 +2679,34 @@ def session_covers() -> dict[str, dict[str, Any]]:
     fail-open：缩略图是增强项。索引查不到就返回空表，会话照常列出来，卡片画空
     态。**不能**因为它把 `GET /sessions` 拖成 500——侧栏和应用中心都靠那条路。
     """
-    try:
-        index = get_backend().session_app_index()
-    except Exception as exc:  # noqa: BLE001 — 增强项，自己炸了不许拖垮主链路
-        print(f"[app_store] 会话→应用索引读取失败，本次按「会话无绑定应用」处理: {str(exc)[:160]}")
-        return {}
+    # ⚠ 两条查询**并发**发，不要串行（2026-08-24）。
+    #
+    #   它们互不依赖，各自是一次 HTTPS 网关往返 ~140ms。串起来 277ms，并发
+    #   145ms —— 真机实测，见下面那条判据。GET /sessions 是侧栏和应用中心共用
+    #   的首屏接口，这 130ms 是每次开工作台都要付的。
+    #
+    #   为什么不合成一条 SQL join：preview_sources 还服务着 /apps 列表
+    #   （_mark_previews），合并就要再加一个后端方法 × 四个实现——本仓第四条
+    #   说的"同一件事两处实现"，为省一次往返不值得。并发是零新增接口的省法。
+    backend = get_backend()
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="session-covers") as pool:
+        index_future = pool.submit(backend.session_app_index)
+        tags_future = pool.submit(backend.preview_sources)
+        try:
+            index = index_future.result()
+        except Exception as exc:  # noqa: BLE001 — 增强项，自己炸了不许拖垮主链路
+            print(f"[app_store] 会话→应用索引读取失败，本次按「会话无绑定应用」处理: {str(exc)[:160]}")
+            index = None
+        try:
+            tags = tags_future.result()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[app_store] 缩略图索引读取失败，本次会话摘要按「无图」处理: {str(exc)[:160]}")
+            tags = {}
+    # ⚠ 绑定索引没了就整个放弃（返回空），但**两个 future 都得先 result()**——
+    #   提前 return 会让另一条查询变成没人收的异常，日志里只剩一行
+    #   "exception was never retrieved"。所以判空放在 with 之后。
     if not index:
         return {}
-    try:
-        tags = get_backend().preview_sources()
-    except Exception as exc:  # noqa: BLE001
-        print(f"[app_store] 缩略图索引读取失败，本次会话摘要按「无图」处理: {str(exc)[:160]}")
-        tags = {}
     out: dict[str, dict[str, Any]] = {}
     for sid, info in index.items():
         app_id = str(info.get("app_id") or "")

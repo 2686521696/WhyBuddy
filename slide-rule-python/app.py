@@ -28,6 +28,7 @@ from stdio_utf8 import configure_stdio_utf8
 configure_stdio_utf8()
 
 import os
+import threading
 import re
 from contextlib import asynccontextmanager
 
@@ -224,6 +225,58 @@ def configure_event_loop_executor() -> int:
     return n
 
 
+def _warm_storage_backends() -> None:
+    """后台把两个存储后端建起来（连上 HTTPS 网关 + create table if not exists）。
+
+    ## 为什么需要它
+
+    两个后端都是**懒加载单例**，第一次用到才建。真机实测（2026-08-24）：
+
+        建 session 存储后端   1525 ms
+        建 app_store 后端     2409 ms
+        建完之后每次查询       ~140 ms
+
+    也就是说重启后**第一个访问工作台的人要付 3.9 秒**，而这 3.9 秒跟他要查的
+    数据一点关系都没有——全是建连接和建表。实测 GET /sessions 冷启动 4.7s、
+    稳态 843ms，差的就是这一块。
+
+    ## 为什么是后台线程，不是在这儿 await
+
+    2026-08-19 有过一次相反方向的教训（见上面那条注释）：启动时 `load_all()`
+    把每条会话 blob 拉进进程，`dev:all` 卡在 "Application startup complete"
+    起不来。**启动不许被 IO 拖住**这条不能破。
+
+    所以这里只是"提前触发懒加载"，不 await、不取数据：
+      · 建不起来 → 照旧退回原来的懒加载，第一个请求自己建（行为无回退）；
+      · 真有请求赶在预热之前到 → get_backend 自己有锁，最坏情况等预热跑完，
+        跟今天一模一样，不会更糟。
+
+    ⚠ 只建后端，**不要**在这儿顺手查数据。查一次就得回答"查什么、多久算新"，
+      那是缓存，不是预热——而这条路上的数据（会话列表）是删了要立刻消失的。
+    """
+
+    def _warm() -> None:
+        import time
+
+        for label, build in (
+            ("session store", lambda: __import__(
+                "services.persistence", fromlist=["_blob_store"]
+            )._blob_store(None)),
+            ("app store", lambda: __import__(
+                "services.app_store", fromlist=["get_backend"]
+            ).get_backend()),
+        ):
+            started = time.time()
+            try:
+                build()
+            except Exception as exc:  # noqa: BLE001 — 预热失败退回懒加载即可
+                print(f"[startup] 预热 {label} 失败（退回懒加载）: {str(exc)[:160]}")
+                continue
+            print(f"[startup] 预热 {label} 就绪 {int((time.time() - started) * 1000)}ms")
+
+    threading.Thread(target=_warm, name="warm-storage", daemon=True).start()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("[startup] SlideRule V5 Python Backend starting...")
@@ -255,6 +308,7 @@ async def lifespan(app: FastAPI):
     # `--reload` 下 worker 再来一次。dev:all 卡在 Application startup complete
     # 就是在等这个。payload 改到第一次 GET /sessions 再拉。
     print("[startup] session archive: payloads deferred until first request")
+    _warm_storage_backends()
     # skill.invoke / mcp.call production runtimes (node-bridge strangler; see
     # services/node_bridge_runtime.py). Without this the executor degrades.
     from services.node_bridge_runtime import configure_node_bridge_runtimes

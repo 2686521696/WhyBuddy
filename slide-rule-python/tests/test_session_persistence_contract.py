@@ -1,4 +1,6 @@
 import json
+import threading
+
 import pytest
 
 from conftest import TEST_USER_ID
@@ -1309,3 +1311,157 @@ def test_sessions_list_survives_a_broken_cover_index(monkeypatch):
     )
     assert resp.status_code == 200, "封面挂了不许把会话列表拖成 500"
     assert [r["sessionId"] for r in resp.json()["sessions"]] == ["s-solo"]
+
+
+def test_sessions_list_fetches_summaries_and_covers_concurrently(monkeypatch):
+    """摘要和封面索引必须并发发，不许串行。
+
+    真机（2026-08-24，HTTPS SQL 网关）：摘要 140ms、封面 145ms。串行 ~420ms、
+    并发 ~145ms。GET /sessions 是侧栏和应用中心共用的首屏接口，改回串行不报错
+    不变红，只是每个人每次开工作台多等 280ms。
+
+    用真的阻塞时间判，不 grep 源码——写法可以变，"别串行"不变。
+    """
+    try:
+        from fastapi.testclient import TestClient
+        from app import app
+    except Exception as e:
+        pytest.skip(f"app import failed: {e}")
+
+    import time
+    import services.app_store as store
+    import services.persistence as persistence
+
+    DELAY = 0.25
+
+    def slow_summaries():
+        time.sleep(DELAY)
+        return [{"sessionId": "s1", "goal": "g", "artifactCount": 0, "ownerId": TEST_USER_ID}]
+
+    def slow_covers():
+        time.sleep(DELAY)
+        return {}
+
+    monkeypatch.setattr(persistence, "list_session_summaries", slow_summaries)
+    monkeypatch.setattr(store, "session_covers", slow_covers)
+
+    client = TestClient(app)
+    started = time.time()
+    resp = client.get(
+        "/api/sliderule/sessions", headers={"X-Internal-Key": "dev-slide-rule-internal"}
+    )
+    elapsed = time.time() - started
+
+    assert resp.status_code == 200
+    assert [r["sessionId"] for r in resp.json()["sessions"]] == ["s1"]
+    assert elapsed < DELAY * 1.6, (
+        f"摘要与封面看起来是串行取的：{elapsed:.2f}s ≥ {DELAY * 1.6:.2f}s"
+    )
+
+
+def test_sessions_list_still_fails_closed_when_summaries_break(monkeypatch):
+    """摘要那条**不许** fail-open —— 它是这个接口的正事。
+
+    增强类 fail-open、主链路 fail-closed，两者不能混（本仓第七条）。封面拿不到
+    就画空态没关系；会话摘要拿不到却假装"你没有会话"，是端出一份**假的空列表**，
+    比报错严重得多。并发化之后特别容易顺手把它一起包进 try 里，这条钉住它。
+    """
+    try:
+        from fastapi.testclient import TestClient
+        from app import app
+    except Exception as e:
+        pytest.skip(f"app import failed: {e}")
+
+    import services.persistence as persistence
+
+    def boom():
+        raise RuntimeError("摘要查询挂了")
+
+    monkeypatch.setattr(persistence, "list_session_summaries", boom)
+
+    with pytest.raises(RuntimeError):
+        TestClient(app).get(
+            "/api/sliderule/sessions",
+            headers={"X-Internal-Key": "dev-slide-rule-internal"},
+        )
+
+
+def test_startup_warms_storage_backends_in_the_background(monkeypatch):
+    """启动时**后台**把两个存储后端建起来，而且不许阻塞启动。
+
+    ## 钉的是什么
+
+    两个后端都是懒加载单例，第一次用到才建。真机 2026-08-24：建 session 后端
+    1525ms、建 app_store 后端 2409ms，建完之后每次查询 ~140ms —— 也就是重启后
+    第一个开工作台的人要付 3.9 秒，全花在建连接和建表上，跟他要的数据无关
+    （GET /sessions 冷启动 4.7s vs 稳态 843ms）。
+
+    ⚠ 反向同样重要：**不许在启动里 await 它**。2026-08-19 有过相反方向的教训
+      （启动 load_all 把每条会话 blob 拉进进程，dev:all 卡在 "Application
+      startup complete" 起不来）。所以下面既验"确实被触发了"，也验"启动函数
+      自己没被拖住"。
+    """
+    try:
+        import app as app_module
+    except Exception as e:
+        pytest.skip(f"app import failed: {e}")
+
+    import time
+
+    built: list[str] = []
+    gate = threading.Event()
+
+    def slow_blob_store(_store_file=None):
+        gate.wait(2.0)
+        built.append("session store")
+        return None
+
+    def slow_get_backend():
+        gate.wait(2.0)
+        built.append("app store")
+        return None
+
+    import services.persistence as persistence
+    import services.app_store as store
+
+    monkeypatch.setattr(persistence, "_blob_store", slow_blob_store)
+    monkeypatch.setattr(store, "get_backend", slow_get_backend)
+
+    started = time.time()
+    app_module._warm_storage_backends()
+    returned_in = time.time() - started
+
+    # ① 立刻返回 —— 预热在后台，启动不被 IO 拖住
+    assert returned_in < 0.5, f"预热阻塞了启动 {returned_in:.2f}s"
+    assert built == [], "还没放行就建完了？那说明它是同步跑的"
+
+    # ② 放行之后两个后端都真的被建了（正向：不是只写了个函数没人调）
+    gate.set()
+    deadline = time.time() + 5
+    while len(built) < 2 and time.time() < deadline:
+        time.sleep(0.02)
+    assert sorted(built) == ["app store", "session store"]
+
+
+def test_warm_up_failure_falls_back_to_lazy_loading(monkeypatch):
+    """预热建不起来 → 打一行日志走人，绝不把启动带崩。
+
+    预热纯属提速：失败就退回原来的懒加载，第一个请求自己建，行为零回退。
+    """
+    try:
+        import app as app_module
+    except Exception as e:
+        pytest.skip(f"app import failed: {e}")
+
+    import time
+    import services.persistence as persistence
+    import services.app_store as store
+
+    def boom(*_a, **_kw):
+        raise RuntimeError("网关连不上")
+
+    monkeypatch.setattr(persistence, "_blob_store", boom)
+    monkeypatch.setattr(store, "get_backend", boom)
+
+    app_module._warm_storage_backends()  # 不抛就是通过
+    time.sleep(0.3)

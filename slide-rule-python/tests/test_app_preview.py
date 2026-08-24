@@ -730,3 +730,80 @@ def test_session_covers_is_fail_open(configured_store, monkeypatch):
     covers = store.session_covers()
     assert covers["sess-half"]["app_id"]
     assert covers["sess-half"]["has_preview"] is False
+
+
+def test_session_covers_runs_its_two_queries_concurrently(configured_store):
+    """两条索引查询必须并发，不许串行。
+
+    ## 为什么要钉住
+
+    它们互不依赖，各自是一次 HTTPS 网关往返 ~140ms（真机 2026-08-24）。串行
+    277ms、并发 145ms —— GET /sessions 是侧栏和应用中心共用的首屏接口，这是每次
+    开工作台都要付的。改回串行不会报错、不会变红，只是每个人每次都慢 130ms，
+    正是本仓最爱悄悄失效的那一类。
+
+    用真的阻塞时间来判，不 grep 源码：写法可以变（线程池/协程/合并 SQL 都行），
+    "别串行"这件事不变。
+    """
+    import time
+
+    backend = store.get_backend()
+    real_index = backend.session_app_index
+    real_tags = backend.preview_sources
+    DELAY = 0.25
+
+    def slow_index():
+        time.sleep(DELAY)
+        return real_index()
+
+    def slow_tags():
+        time.sleep(DELAY)
+        return real_tags()
+
+    store.save_app_or_version(
+        _model(), goal="g", session_id="sess-timing", preview_png_b64=PNG_A
+    )
+    backend.session_app_index = slow_index  # type: ignore[method-assign]
+    backend.preview_sources = slow_tags  # type: ignore[method-assign]
+    try:
+        started = time.time()
+        covers = store.session_covers()
+        elapsed = time.time() - started
+    finally:
+        backend.session_app_index = real_index  # type: ignore[method-assign]
+        backend.preview_sources = real_tags  # type: ignore[method-assign]
+
+    assert covers["sess-timing"]["has_preview"] is True, "并发不能把结果弄丢"
+    # 串行 ≥ 2×DELAY，并发 ≈ 1×DELAY。取 1.6× 当闸，留足调度抖动。
+    assert elapsed < DELAY * 1.6, (
+        f"两条索引查询看起来是串行的：{elapsed:.2f}s ≥ {DELAY * 1.6:.2f}s"
+    )
+
+
+def test_session_covers_drains_both_futures_even_when_one_fails(configured_store):
+    """一条挂了也要把另一条的结果取走。
+
+    并发化之后新增的一种失败形状：绑定索引挂了就提前 return，另一条查询的异常
+    没人 result()，只在日志里留一行 "exception was never retrieved"——既不影响
+    功能也没人看得见，直到某天它变成真问题。
+    """
+    backend = store.get_backend()
+    real_tags = backend.preview_sources
+    seen = {"tags_called": False}
+
+    def boom_index():
+        raise RuntimeError("绑定索引挂了")
+
+    def counting_tags():
+        seen["tags_called"] = True
+        return real_tags()
+
+    backend.session_app_index = boom_index  # type: ignore[method-assign]
+    backend.preview_sources = counting_tags  # type: ignore[method-assign]
+    try:
+        assert store.session_covers() == {}
+    finally:
+        del backend.session_app_index  # type: ignore[attr-defined]
+        backend.preview_sources = real_tags  # type: ignore[method-assign]
+
+    assert seen["tags_called"], "另一条查询也该被发出去（并发），而不是被短路掉"

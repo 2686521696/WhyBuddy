@@ -58,6 +58,22 @@ def _call_names(src: str) -> set[str]:
     return names
 
 
+def _referenced_names(src: str) -> set[str]:
+    """源码里**提到过**的每个名字——调用、传参、赋值都算。
+
+    ⚠ 2026-08-24 加的，因为只看 `ast.Call` 会被"改成引用"绕过去：
+      `list_session_summaries()` 改成 `pool.submit(list_session_summaries)`
+      之后，函数照样在跑，判据却判它不见了（假红）。反过来同样成立——真要有人
+      把瘦列表换回 load_all 再丢进线程池，只看 Call 的判据就是**假绿**，那才是
+      这条判据存在的理由。所以正反两边都改用它。
+    """
+    return {
+        node.id if isinstance(node, ast.Name) else node.attr
+        for node in ast.walk(ast.parse(textwrap.dedent(src)))
+        if isinstance(node, (ast.Name, ast.Attribute))
+    }
+
+
 def test_list_summary_sql_does_not_select_payload_column():
     """正：列表 SQL 只扫投影列。反：把 payload 写回这条查询必须红。"""
     pg = " ".join(session_blob_store._LIST_SUMMARY_SQL_PG.split()).lower()
@@ -69,10 +85,16 @@ def test_list_summary_sql_does_not_select_payload_column():
 
 
 def test_list_sess_does_not_call_load_all():
-    """正：列表走 list_session_summaries。反：路由里再调 load_all 必须红。"""
+    """正：列表走 list_session_summaries。反：路由里再提到 load_all 必须红。
+
+    ⚠ 用 _referenced_names 而不是 _call_names：2026-08-24 把这两条查询改成并发
+      （`pool.submit(list_session_summaries)`）之后，函数还是那个函数，只是不再
+      以"调用"的形态出现，只看 ast.Call 的旧判据当场假红。真正要防的事没变——
+      这条路上不许出现 load_all，且必须用瘦列表。
+    """
     from routes.sliderule_full import list_sess
 
-    names = _call_names(inspect.getsource(list_sess))
+    names = _referenced_names(inspect.getsource(list_sess))
     assert "load_all" not in names
     assert "list_session_summaries" in names
 

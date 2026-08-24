@@ -9,6 +9,7 @@ See audit / FINAL_MIGRATION_STATUS.md for exact coverage vs. "all historical cap
 """
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import base64
 import binascii
 import os
@@ -309,21 +310,31 @@ def list_sess(
     from services.app_access import session_access, Access
     from services.persistence import list_session_summaries
 
-    # 会话 → 它绑定的那版应用（含缩略图三件套）。一次全表小列索引，跟会话
-    # 条数无关；拿不到就按"没绑定应用"走。
+    # 会话摘要 与 会话→应用封面索引：**并发发**，它们互不依赖。
     #
-    # ⚠ 这里**必须**再兜一层，哪怕 session_covers 自己已经 fail-open：那层兜的
-    #   是"后端查询挂了"，兜不住它自己有 bug（形状变了、TypeError）。缩略图是
-    #   增强类（本仓第七条），而 GET /sessions 是侧栏和应用中心共用的那条路——
-    #   把它拖成 500 等于整个工作台白屏，比没有封面严重得多。
-    try:
-        covers = app_store.session_covers()
-    except Exception as exc:  # noqa: BLE001 — 增强项，不许拖垮主链路
-        print(f"[sessions] 封面索引不可用，本次按「会话无绑定应用」列出: {str(exc)[:160]}")
-        covers = {}
+    # 真机实测（2026-08-24，HTTPS SQL 网关）：摘要 140ms、封面 145ms（它内部
+    # 那两条也已经并发）。串行 ~420ms，并发 ~145ms。GET /sessions 是侧栏和应用
+    # 中心共用的首屏接口，这一下省的是每次开工作台都要付的时间。
+    #
+    # ⚠ 封面这条**必须**再兜一层，哪怕 session_covers 自己已经 fail-open：那层
+    #   兜的是"后端查询挂了"，兜不住它自己有 bug（形状变了、TypeError）。缩略图
+    #   是增强类（本仓第七条），而把 GET /sessions 拖成 500 等于整个工作台白屏，
+    #   比没有封面严重得多。
+    #
+    # ⚠ 摘要那条**不兜**：它是这个接口的正事，拿不到就该如实报错，不能假装
+    #   "你没有会话"。增强类 fail-open、主链路 fail-closed，别混（第七条）。
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="sessions-list") as pool:
+        summaries_future = pool.submit(list_session_summaries)
+        covers_future = pool.submit(app_store.session_covers)
+        try:
+            covers = covers_future.result()
+        except Exception as exc:  # noqa: BLE001 — 增强项，不许拖垮主链路
+            print(f"[sessions] 封面索引不可用，本次按「会话无绑定应用」列出: {str(exc)[:160]}")
+            covers = {}
+        summaries = summaries_future.result()
 
     items = []
-    for summary in list_session_summaries():
+    for summary in summaries:
         if session_access(
             {"sessionId": summary.get("sessionId"), "ownerId": summary.get("ownerId")},
             viewer,
