@@ -33,7 +33,7 @@ import {
 import { BINDING_ATTRS } from "@/pages/sliderule/live-runtime/html-binding-runtime";
 import { useScaleToFit, specPageViewport } from "@/pages/sliderule/live-runtime/canvas-scale";
 import { updateAppPage } from "./app-store-client";
-import { Undo2, Save, Trash2, Bold as BoldIcon, X } from "lucide-react";
+import { Undo2, Save, Trash2, Bold as BoldIcon, X, ChevronLeft, ChevronRight } from "lucide-react";
 
 const BLOCK_TAGS = new Set([
   "BUTTON", "A", "TD", "TH", "LI", "LABEL",
@@ -57,12 +57,111 @@ function closestEditable(start: Element | null): HTMLElement | null {
   return null;
 }
 
+/**
+ * 面包屑/上一级导航用的祖先判据，比点选用的 `closestEditable` 宽一档：
+ * 多认 NAV/HEADER/ASIDE/MAIN/FOOTER/FORM 这几个结构地标。
+ *
+ * ⚠ 故意不合并进 `closestEditable`：点选点在 nav 的空白处应该穿透选中
+ * 里面具体那条菜单项（真机 E2E 验的就是这个），把地标标签塞进点选判据
+ * 会让"点哪都选中最外层导航"，体验倒退。面包屑/上一级要的是相反的东西——
+ * 允许一路"跳出"到这几个结构容器，两处判据故意不同，别为了"复用一份"
+ * 合并成一份，那会两头都不对。
+ */
+const LANDMARK_TAGS = new Set(["NAV", "HEADER", "ASIDE", "MAIN", "FOOTER", "FORM"]);
+
+function closestBreadcrumbAncestor(start: Element | null): HTMLElement | null {
+  let cur: Element | null = start;
+  while (cur && cur.tagName !== "BODY" && cur.tagName !== "HTML") {
+    for (const attr of BINDING_ATTRS) {
+      if (cur.hasAttribute(attr)) return cur as HTMLElement;
+    }
+    if (LANDMARK_TAGS.has(cur.tagName) || BLOCK_TAGS.has(cur.tagName)) return cur as HTMLElement;
+    cur = cur.parentElement;
+  }
+  return null;
+}
+
+/**
+ * 找"下一层"可编辑元素——`closestEditable` 的反方向。参照 GrapesJS
+ * `ComponentExit`（`core:component-exit`/`select-parent`：沿 parent() 链
+ * 一路爬到第一个 `selectable` 的祖先）反过来写：不爬祖先，改成沿子树
+ * document order 找第一个够格的后代。两轮判据跟 `closestEditable` 对齐
+ * （语义属性优先，退化到块级标签），保证"选中判据"只有一份，不会两边分叉。
+ */
+export function firstEditableDescendant(root: Element): HTMLElement | null {
+  const all = Array.from(root.querySelectorAll<HTMLElement>("*"));
+  for (const el of all) {
+    for (const attr of BINDING_ATTRS) {
+      if (el.hasAttribute(attr)) return el;
+    }
+  }
+  for (const el of all) {
+    if (BLOCK_TAGS.has(el.tagName)) return el;
+  }
+  return null;
+}
+
+/**
+ * 面包屑：从选中元素往上收可编辑祖先（含自己），最多 max 级。
+ * 同样是 GrapesJS ComponentExit 那条"爬到第一个够格祖先"的判据，
+ * 只是这里要收集整条链而不是只找一个——面包屑要能一路点上去。
+ */
+export function editableAncestorChain(el: HTMLElement, max = 4): HTMLElement[] {
+  const chain: HTMLElement[] = [el];
+  let cur: HTMLElement = el;
+  while (chain.length < max) {
+    const found = closestBreadcrumbAncestor(cur.parentElement);
+    if (!found) break;
+    chain.unshift(found);
+    cur = found;
+  }
+  return chain;
+}
+
+const STRUCTURAL_BREADCRUMB_LABELS: Record<string, string> = {
+  NAV: "导航", HEADER: "顶栏", ASIDE: "侧栏", MAIN: "主体", FOOTER: "底部", FORM: "表单",
+};
+
+/** 面包屑每一节的短标签：结构容器给中文名，其余走语义属性值，再退化成文字摘要。 */
+export function breadcrumbLabel(el: HTMLElement): string {
+  const structural = STRUCTURAL_BREADCRUMB_LABELS[el.tagName];
+  if (structural) return structural;
+  for (const attr of BINDING_ATTRS) {
+    if (el.hasAttribute(attr)) return el.getAttribute(attr) || el.tagName.toLowerCase();
+  }
+  const text = (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 10);
+  return text || el.tagName.toLowerCase();
+}
+
 export function labelOfEditable(el: HTMLElement): string {
   for (const attr of BINDING_ATTRS) {
     if (el.hasAttribute(attr)) return `${attr}="${el.getAttribute(attr)}"`;
   }
   const text = (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 18);
   return text ? `<${el.tagName.toLowerCase()}> ${text}` : `<${el.tagName.toLowerCase()}>`;
+}
+
+/**
+ * 字号：跟 Tiptap `extension-text-style/font-size` 同一条纪律——**读的时候
+ * 优先信行内 `style.fontSize`**（用户改过的值），只有从没改过才退回
+ * `getComputedStyle`。全用 px 存，跟 Tiptap 存 `style="font-size: Xpx"`
+ * 一样直白，不引入 rem/em 的相对换算。
+ */
+export const MIN_FONT_SIZE_PX = 8;
+export const MAX_FONT_SIZE_PX = 96;
+
+export function clampFontSizePx(px: number): number {
+  return Math.min(MAX_FONT_SIZE_PX, Math.max(MIN_FONT_SIZE_PX, Math.round(px)));
+}
+
+export function resolveFontSizePx(el: HTMLElement, computedFontSize: string): number {
+  const inline = el.style.fontSize;
+  if (inline && inline.trim().endsWith("px")) {
+    const n = parseFloat(inline);
+    if (!Number.isNaN(n)) return n;
+  }
+  const n = parseFloat(computedFontSize);
+  return Number.isNaN(n) ? 16 : n;
 }
 
 /**
@@ -199,6 +298,25 @@ export function ClickEditStage({
     });
   }, []);
 
+  const selectElement = React.useCallback((el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    setSelected({ el, rect: { left: r.left, top: r.top, width: r.width, height: r.height } });
+  }, []);
+
+  /** 面包屑箭头：往上选父级 / 往下选子级——GrapesJS ComponentExit 的"爬到
+   *  第一个够格祖先"反过来配一个"下钻到第一个够格后代"，两个方向对称。 */
+  const handleSelectParent = () => {
+    if (!selected) return;
+    const found = closestBreadcrumbAncestor(selected.el.parentElement);
+    if (found) selectElement(found);
+  };
+
+  const handleSelectChild = () => {
+    if (!selected) return;
+    const found = firstEditableDescendant(selected.el);
+    if (found) selectElement(found);
+  };
+
   const handleEditText = () => {
     if (!selected) return;
     pushUndoSnapshot();
@@ -229,6 +347,17 @@ export function ClickEditStage({
     pushUndoSnapshot();
     selected.el.style.color = value;
     markDirty();
+  };
+
+  const handleFontSizeStep = (delta: number) => {
+    if (!selected) return;
+    pushUndoSnapshot();
+    const el = selected.el;
+    const computed = frameRef.current?.contentWindow?.getComputedStyle(el).fontSize ?? "16px";
+    const next = clampFontSizePx(resolveFontSizePx(el, computed) + delta);
+    el.style.fontSize = `${next}px`;
+    markDirty();
+    reselect(); // 字号变了，选中框跟着元素新尺寸走
   };
 
   const handleDelete = () => {
@@ -378,9 +507,94 @@ export function ClickEditStage({
             data-testid="click-edit-toolbar"
             onClick={e => e.stopPropagation()}
           >
-            <span className="max-w-[220px] truncate px-1 text-[11px] text-stone-400">
-              {labelOfEditable(selected.el)}
+            {/* 面包屑：可编辑祖先链，点哪级就选中哪级；title 兜底显示完整选择器
+                （labelOfEditable），鼠标停久一点还能看到 data-field 这类精确信息。 */}
+            <div className="flex max-w-[200px] items-center overflow-hidden" data-testid="click-edit-breadcrumb">
+              {editableAncestorChain(selected.el).map((el, i, arr) => (
+                <React.Fragment key={i}>
+                  {i > 0 && <span className="px-0.5 text-stone-300">·</span>}
+                  <button
+                    type="button"
+                    title={labelOfEditable(el)}
+                    className={`shrink-0 truncate rounded px-1 text-[11px] hover:bg-stone-100 ${
+                      i === arr.length - 1 ? "font-semibold text-stone-700" : "text-stone-400"
+                    }`}
+                    style={i === arr.length - 1 ? undefined : { maxWidth: 56 }}
+                    onClick={() => selectElement(el)}
+                    data-testid={`click-edit-crumb-${i}`}
+                  >
+                    {breadcrumbLabel(el)}
+                  </button>
+                </React.Fragment>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="rounded p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-30"
+              title="选中上一级"
+              disabled={!closestBreadcrumbAncestor(selected.el.parentElement)}
+              onClick={handleSelectParent}
+              data-testid="click-edit-select-parent"
+            >
+              <ChevronLeft size={13} />
+            </button>
+            <button
+              type="button"
+              className="rounded p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-30"
+              title="选中下一级"
+              disabled={!firstEditableDescendant(selected.el)}
+              onClick={handleSelectChild}
+              data-testid="click-edit-select-child"
+            >
+              <ChevronRight size={13} />
+            </button>
+            <span className="mx-0.5 h-4 w-px bg-stone-200" aria-hidden />
+            <button
+              type="button"
+              className="rounded px-1.5 py-0.5 text-[12px] font-semibold text-stone-600 hover:bg-stone-100 disabled:opacity-30"
+              title="缩小字号"
+              onClick={() => handleFontSizeStep(-1)}
+              disabled={
+                clampFontSizePx(
+                  resolveFontSizePx(
+                    selected.el,
+                    frameRef.current?.contentWindow?.getComputedStyle(selected.el).fontSize ?? "16px"
+                  )
+                ) <= MIN_FONT_SIZE_PX
+              }
+              data-testid="click-edit-font-minus"
+            >
+              A-
+            </button>
+            <span
+              className="w-6 shrink-0 text-center font-mono text-[11px] tabular-nums text-stone-500"
+              data-testid="click-edit-font-size"
+            >
+              {clampFontSizePx(
+                resolveFontSizePx(
+                  selected.el,
+                  frameRef.current?.contentWindow?.getComputedStyle(selected.el).fontSize ?? "16px"
+                )
+              )}
             </span>
+            <button
+              type="button"
+              className="rounded px-1.5 py-0.5 text-[14px] font-semibold text-stone-600 hover:bg-stone-100 disabled:opacity-30"
+              title="放大字号"
+              onClick={() => handleFontSizeStep(1)}
+              disabled={
+                clampFontSizePx(
+                  resolveFontSizePx(
+                    selected.el,
+                    frameRef.current?.contentWindow?.getComputedStyle(selected.el).fontSize ?? "16px"
+                  )
+                ) >= MAX_FONT_SIZE_PX
+              }
+              data-testid="click-edit-font-plus"
+            >
+              A+
+            </button>
+            <span className="mx-0.5 h-4 w-px bg-stone-200" aria-hidden />
             <button
               type="button"
               className="rounded p-1 text-stone-600 hover:bg-stone-100"

@@ -8,7 +8,17 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { spliceEditedBody, labelOfEditable } from "../ClickEditStage";
+import {
+  spliceEditedBody,
+  labelOfEditable,
+  firstEditableDescendant,
+  editableAncestorChain,
+  breadcrumbLabel,
+  clampFontSizePx,
+  resolveFontSizePx,
+  MIN_FONT_SIZE_PX,
+  MAX_FONT_SIZE_PX,
+} from "../ClickEditStage";
 
 const PAGE = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>档案页</title></head><body><h1 data-field="title">原标题</h1><button data-action="save">保存</button></body></html>`;
 
@@ -76,5 +86,100 @@ describe("labelOfEditable", () => {
   it("空文字元素只给标签名", () => {
     const el = document.createElement("div");
     expect(labelOfEditable(el)).toBe("<div>");
+  });
+});
+
+/**
+ * 面包屑导航（editableAncestorChain / firstEditableDescendant）——参照
+ * GrapesJS ComponentExit「沿 parent() 链爬到第一个够格祖先」写的一对
+ * 互逆函数。判据钉两头：能往上找到该找的那级、也能往下钻到该钻的那级，
+ * 而且中间那些不够格的容器（纯 div）不能被误当成一级。
+ */
+describe("editableAncestorChain / firstEditableDescendant（面包屑导航）", () => {
+  function buildFixture() {
+    document.body.innerHTML = `
+      <nav data-shell="aside">
+        <div class="wrap">
+          <ul>
+            <li data-field="nav_item_1">面试日程日历</li>
+          </ul>
+        </div>
+      </nav>`;
+    const li = document.querySelector('[data-field="nav_item_1"]') as HTMLElement;
+    const nav = document.querySelector("nav") as HTMLElement;
+    return { li, nav };
+  }
+
+  it("从叶子节点往上收链：语义/结构节点各占一级，中间纯 div 不占位", () => {
+    const { li, nav } = buildFixture();
+    const chain = editableAncestorChain(li);
+    expect(chain[chain.length - 1]).toBe(li);
+    expect(chain[0]).toBe(nav);
+    // wrap 那层纯 div 没有语义属性也不在 BLOCK_TAGS 里，不该单独占一级
+    expect(chain.some(el => el.className === "wrap")).toBe(false);
+  });
+
+  it("反向：链条不超过 max 参数指定的级数", () => {
+    document.body.innerHTML = `
+      <nav><header><section><article><li data-field="deep">深</li></article></section></header></nav>`;
+    const li = document.querySelector('[data-field="deep"]') as HTMLElement;
+    const chain = editableAncestorChain(li, 2);
+    expect(chain.length).toBe(2);
+    expect(chain[chain.length - 1]).toBe(li);
+  });
+
+  it("从容器往下钻：找到第一个语义/块级后代", () => {
+    const { nav, li } = buildFixture();
+    const found = firstEditableDescendant(nav);
+    expect(found).toBe(li);
+  });
+
+  it("反向：叶子节点自己没有可下钻的后代时返回 null", () => {
+    const { li } = buildFixture();
+    expect(firstEditableDescendant(li)).toBeNull();
+  });
+
+  it("结构标签（nav/header/aside/main/footer）在面包屑里显示中文名，不是原始标签", () => {
+    const nav = document.createElement("nav");
+    expect(breadcrumbLabel(nav)).toBe("导航");
+    const aside = document.createElement("aside");
+    expect(breadcrumbLabel(aside)).toBe("侧栏");
+  });
+
+  it("语义元素在面包屑里显示属性值，不是「属性名=值」的完整形式（跟 labelOfEditable 不同）", () => {
+    const el = document.createElement("li");
+    el.setAttribute("data-field", "nav_item_1");
+    expect(breadcrumbLabel(el)).toBe("nav_item_1");
+  });
+});
+
+/**
+ * 字号：跟 Tiptap font-size 扩展同一条读值优先级——先信行内 style，
+ * 没改过才退回 computed。判据钉住这个优先级顺序（反向：改过之后不能被
+ * computed 值盖回去），以及夹紧范围不越界。
+ */
+describe("resolveFontSizePx / clampFontSizePx（字号）", () => {
+  it("没改过时用 computed 值", () => {
+    const el = document.createElement("span");
+    expect(resolveFontSizePx(el, "20px")).toBe(20);
+  });
+
+  it("反向：改过一次之后必须信行内 style，不能被 computed 盖回去", () => {
+    const el = document.createElement("span");
+    el.style.fontSize = "24px";
+    // 即便 computed 传进来的还是旧值（真机里 computed 有一帧延迟很常见），
+    // 结果也必须是行内那个 24，不是 computed 的 16。
+    expect(resolveFontSizePx(el, "16px")).toBe(24);
+  });
+
+  it("computed 解析不出数字时兜底 16", () => {
+    const el = document.createElement("span");
+    expect(resolveFontSizePx(el, "")).toBe(16);
+  });
+
+  it("夹紧：不允许缩到下限以下、放大到上限以上", () => {
+    expect(clampFontSizePx(MIN_FONT_SIZE_PX - 5)).toBe(MIN_FONT_SIZE_PX);
+    expect(clampFontSizePx(MAX_FONT_SIZE_PX + 50)).toBe(MAX_FONT_SIZE_PX);
+    expect(clampFontSizePx(20)).toBe(20);
   });
 });
