@@ -2829,6 +2829,35 @@ def patch_app(
     return rec
 
 
+def update_page_html(app_id: str, page_id: str, html: str) -> Optional[dict[str, Any]]:
+    """点选编辑器把单页 HTML 存回去——手动编辑，原地更新，不开新版本。
+
+    ⚠ 别套用 save_app_or_version 那条版本纪律。那条修的是"AI 精修产出了新东西，
+    却因为签名没变被判成没变"——自动化链路的静默失效。这里正相反：用户在
+    画布里点了保存，是**明确的、单次的手动动作**，不是又推演了一轮，不该在
+    版本历史里占一格（这是主动的覆盖，不是把用户没同意的改动悄悄吞掉）。
+    只改 pages_json.pages[page_id] 这一个键，model_json、其余页面原样不动。
+
+    只能改**已经存在**的页面 id——这条路径不负责凭空造出一个新页面（没有
+    model.page.pages 那一侧的对应条目，会立刻破坏「页面包的键 == 模型页面 id」
+    那条不变式，见 page_id_freeze.pages_match_model）。要新增页面得走真正的
+    推演，不是手动拼一个 pages_json 键。
+    """
+    backend = get_backend()
+    rec = backend.get(app_id)
+    if rec is None:
+        return None
+    pages_json = rec.get("pages_json")
+    if not isinstance(pages_json, dict) or not isinstance(pages_json.get("pages"), dict):
+        raise ValueError("no_pages")
+    if page_id not in pages_json["pages"]:
+        raise ValueError("page_not_found")
+    pages_json = {**pages_json, "pages": {**pages_json["pages"], page_id: html}}
+    rec = {**rec, "pages_json": pages_json}
+    backend.save(rec)
+    return rec
+
+
 def list_versions(root_id: str) -> list[dict[str, Any]]:
     return _mark_previews(get_backend().versions(root_id))
 

@@ -2182,6 +2182,62 @@ async def patch_generated_app(
     }
 
 
+#: 点选编辑器手动存页面 HTML 的体积上限。真实页面实测 30~50KB，留够几倍
+#: 余量给手改；跟 _MAX_SHOT_BYTES 同一条纪律——这是手动调用的窄接口，不该
+#: 因为漏了上限被拿去当任意大小 blob 存储用。
+_MAX_PAGE_HTML_BYTES = 1024 * 1024
+
+
+@router.patch("/apps/{app_id}/pages/{page_id}")
+async def patch_generated_app_page(
+    app_id: str,
+    page_id: str,
+    payload: Dict[str, Any],
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """点选编辑器：把画布里改好的单页 HTML 存回 pages_json。
+
+    ⚠ 这是**手动、单次**的覆盖，不走 save_app_or_version 那套"要不要开新版本"
+    的判定——那套是给 AI 精修用的（判的是"AI 这轮产出的东西跟上一版比变没
+    变"）。这里用户已经在画布里明确点了保存，语义上更接近"编辑并存档"，不是
+    "又跑了一轮推演"，原地覆盖当前版本即可。真要给手动编辑也留版本历史，
+    那是另一个决定，不在这次的范围里。
+    """
+    _auth(x_internal_key)
+    from services import app_store
+
+    record = await asyncio.to_thread(app_store.get_app, app_id)
+    if record is None:
+        raise HTTPException(404, "app not found")
+    app_access.require("revise", record, viewer)
+
+    html = payload.get("html") if isinstance(payload, dict) else None
+    if not isinstance(html, str) or not html.strip():
+        raise HTTPException(400, "html 不能为空")
+    if len(html.encode("utf-8")) > _MAX_PAGE_HTML_BYTES:
+        raise HTTPException(413, f"页面 HTML 超过 {_MAX_PAGE_HTML_BYTES} 字节上限")
+
+    try:
+        updated = await asyncio.to_thread(
+            app_store.update_page_html, app_id, page_id, html
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "no_pages":
+            raise HTTPException(400, "这个应用没有可编辑的页面产物") from exc
+        if code == "page_not_found":
+            raise HTTPException(404, f"页面 '{page_id}' 不存在于这个应用里") from exc
+        raise HTTPException(400, "保存失败") from exc
+    if updated is None:
+        raise HTTPException(404, "app not found")
+    return {
+        "id": updated.get("id"),
+        "pageId": page_id,
+        "bytes": len(html.encode("utf-8")),
+    }
+
+
 @router.get("/apps/{app_id}/preview")
 async def get_generated_app_preview(
     app_id: str,
