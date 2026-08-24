@@ -66,7 +66,9 @@ import {
   htmlBindingToXrayTarget,
   type XrayTarget,
 } from "./XrayPanel";
-import { ChevronDown, Crosshair, X } from "lucide-react";
+import { ChevronDown, Crosshair, MousePointerClick, X } from "lucide-react";
+import { ClickEditStage } from "@/pages/agent-loop/dashboard/ClickEditStage";
+import { getGeneratedAppForSession } from "@/pages/agent-loop/dashboard/app-store-client";
 import { StudioSplit } from "./StudioSplit";
 import { useStudioLayout } from "./StudioLayoutContext";
 import { isStagePageShown } from "./studio-layout";
@@ -242,6 +244,59 @@ export function SlideRuleStudio({
   const stageDevice =
     livePages.find(p => p.device)?.device ?? specFirstPages?.device;
   const isPhoneStage = stageDevice === "phone";
+
+  /**
+   * 点选编辑（2026-08-24）——用户原话纠偏："编辑要挂在会话这一个入口，不是
+   * 首页"。首页应用中心的只读预览就该是只读的（此前那版接错地方了，已经
+   * 撤掉），能手动点选编辑的只有这里：会话自己的舞台，编辑的就是这一轮
+   * 正在看的这份页面。
+   *
+   * appId 不是 props 传的——会话不一定已经落库成应用（推演没跑完/还没存），
+   * 这里自己按 sessionId 去问一次 `GET /sessions/:id/generated-app`（跟
+   * 应用中心拉"会话背后的应用"同一条接口）。isRunning 进依赖：一轮推演跑完
+   * 很可能是第一次落库或又存了新版，那一刻重新问一次，编辑按钮才会从灰
+   * 变亮，不用刷新页面。
+   */
+  const [boundAppId, setBoundAppId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!sessionId) {
+      setBoundAppId(null);
+      return;
+    }
+    let alive = true;
+    getGeneratedAppForSession(sessionId).then(summary => {
+      if (alive) setBoundAppId(summary?.id ?? null);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [sessionId, isRunning]);
+
+  const [editMode, setEditMode] = useState(false);
+  const [editDirty, setEditDirty] = useState(false);
+  // 点选编辑存成功之后的页面覆盖层，叠在 livePages 上面显示——不这样做的话
+  // 退出编辑态会看着"改动消失了"（其实是存库了，只是这份内存态没跟上，
+  // 要等下一次 SSE/落库刷新才会看见），那是本仓最忌的"闸绿但东西看着没了"。
+  //
+  // ⚠ 2026-08-24 真机验证时踩到、但确认不是 bug 的一点：这层覆盖对**打过孔
+  // 的字段**（`data-field`/`data-record` 这类 BINDING_ATTRS）不生效——退出
+  // 编辑态之后 HtmlAppSurface 的 applyBindings 会用真实数据把内容重新填一遍，
+  // 盖掉刚编辑的模板文字。这是数据绑定本该有的行为（活渲染舞台看的就是
+  // "真数据"，不是"页面原文"），不是覆盖层的缺陷——覆盖层本身对**没打孔的
+  // 静态内容**（导航文案、标题这类）是生效的，真机测过。编辑打过孔字段的
+  // 落库内容不会丢，只是活渲染那一眼看不出来，这个反差要留着别当成 bug 修。
+  const [pageOverrides, setPageOverrides] = useState<Record<string, string>>({});
+  useEffect(() => {
+    setPageOverrides({});
+    setEditMode(false);
+  }, [sessionId]);
+  const displayPages = useMemo<SpecPageLive[]>(
+    () =>
+      livePages.map(p =>
+        pageOverrides[p.pageId] ? { ...p, html: pageOverrides[p.pageId] } : p
+      ),
+    [livePages, pageOverrides]
+  );
 
   // HTML 应用面的运行时数据。**跟老区块渲染共用同一份**（同一个 sessionId 的
   // RuntimeState）——各读各的等于同一个应用有两份互不相干的数据，用户在
@@ -488,6 +543,8 @@ export function SlideRuleStudio({
     );
   }
 
+  const activeEditPage = displayPages.find(p => p.pageId === activeSpecPageId) ?? null;
+
   const roleControl =
     roleOptions.length > 0 ? (
       /* 角色切换（2026-08-14 晚）：权限那只手的开关。放在说明行右侧，
@@ -612,6 +669,34 @@ export function SlideRuleStudio({
                   <Crosshair className="h-3.5 w-3.5" />
                   {isPhoneStage ? null : "透视"}
                 </button>
+                {stageView === "page" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (editMode && editDirty && !window.confirm("有未保存的修改，确定要退出编辑吗？")) {
+                        return;
+                      }
+                      setEditMode(m => !m);
+                    }}
+                    disabled={!editMode && (!boundAppId || !activeEditPage)}
+                    data-testid="sliderule-click-edit-toggle"
+                    aria-label="点选编辑"
+                    aria-pressed={editMode}
+                    className={`flex h-7 items-center rounded-md border text-[12px] font-medium transition ${
+                      editMode
+                        ? "border-transparent bg-[#1677ff] text-white shadow-sm"
+                        : "border-[#e5e7eb] bg-white text-stone-600 hover:border-[#d3d8e0] hover:bg-[#f8f9fb]"
+                    } ${isPhoneStage ? "w-7 justify-center" : "gap-1.5 px-2.5"} disabled:cursor-not-allowed disabled:opacity-40`}
+                    title={
+                      boundAppId
+                        ? "点页面里的文字/按钮直接改——改字、改色、删元素，改完点保存"
+                        : "这一轮还没存库，落库之后才能点选编辑"
+                    }
+                  >
+                    <MousePointerClick className="h-3.5 w-3.5" />
+                    {isPhoneStage ? null : editMode ? "退出编辑" : "点选编辑"}
+                  </button>
+                )}
                 {chromeSlot}
                 </div>
               </div>
@@ -635,10 +720,27 @@ export function SlideRuleStudio({
                     className="min-h-0 flex-1"
                   />
                 </div>
+              ) : editMode && stageView === "page" && boundAppId && activeEditPage ? (
+                /* 点选编辑：换掉活渲染舞台，不叠在它上面——填数运行时和点选编辑
+                   两套事件各管各的，叠在一起点击语义会打架（点了到底是选中
+                   要改，还是触发了应用自己的按钮动作）。退出编辑态才把活渲染
+                   接回来。 */
+                <ClickEditStage
+                  key={`${boundAppId}:${activeEditPage.pageId}`}
+                  appId={boundAppId}
+                  pageId={activeEditPage.pageId}
+                  html={activeEditPage.html}
+                  device={stageDevice}
+                  onDirtyChange={setEditDirty}
+                  onSaved={(pageId, html) =>
+                    setPageOverrides(prev => ({ ...prev, [pageId]: html }))
+                  }
+                  className="min-h-0 min-w-0 flex-1"
+                />
               ) : (
                 <>
               <SpecPageLiveStage
-                pages={livePages}
+                pages={displayPages}
                 statusLabel={isRunning ? liveActionLabel : null}
                 running={isRunning}
                 model={fiveSystemModel}
