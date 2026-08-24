@@ -337,15 +337,78 @@ def merge_held_structure(
     return validated
 
 
+def _as_dm_entity(entity: Dict[str, Any]) -> Dict[str, Any]:
+    fields = []
+    for field in entity.get("fields") or []:
+        if not isinstance(field, dict) or not field.get("id"):
+            continue
+        item = {
+            k: field[k]
+            for k in ("id", "name", "type", "refEntity")
+            if field.get(k) is not None
+        }
+        fields.append(item)
+    return {
+        "id": str(entity.get("id")),
+        "name": str(entity.get("name") or entity.get("id")),
+        "fields": fields,
+    }
+
+
+def _merge_entity_into(old_entity: Dict[str, Any], fresh_entity: Dict[str, Any]) -> Dict[str, Any]:
+    """已存在的实体：把这一页新看到的字段**并进去**，不是整个换成这一页看到的。
+
+    ⚠ 2026-08-24：这条是"整个换成"改成"并进去"的分界线。
+
+    页面-only 精修只送**这一次重画的那一页** HTML 去反推结构（第 4 步
+    `_redrawn_html`，照搬页不送）。而一个实体的字段常常**散在好几个页面上**
+    ——真机图书馆那趟：「读者」的姓名/电话在档案页，借书证状态在借还台页。
+    只重画档案页时，反推结构只看得到档案页那几个字段，看不到借还台页
+    用的那些。
+
+    旧写法是`old_ents[id] = 这一页反推出来的实体`——**整个换掉**，不是补充。
+    档案页反推出来的「读者」只有它自己看得到的那几个字段，借还台页用的
+    「借书证状态」不在这次反推的输出里，于是从 datamodel 上**凭空消失**
+    ——不是被删了，是"这一页没提到，重新认的时候把它认丢了"。借还台页的
+    HTML 里那个 data-field="reader.card_status" 绑定还在，指向的字段却
+    从模型里没了：静默的悬空引用，不报错、不告警。
+
+    修法：按字段 id 做**并集**。这一页反推出来的字段（不管是真的新增，
+    还是原有字段被重新描述了一遍）覆盖同 id 的旧字段；**这一页没提到的
+    旧字段原样保留**，不因为"这次没看见"就当它不存在。这才是这个函数
+    自己文档说的"只把结构步新读到的实体并进 datamodel"——"并"是并集，
+    不是替换。
+    """
+    old_fields = {
+        str(f.get("id")): f
+        for f in old_entity.get("fields") or []
+        if isinstance(f, dict) and f.get("id")
+    }
+    for f in fresh_entity.get("fields") or []:
+        fid = str(f.get("id"))
+        if fid:
+            old_fields[fid] = f  # 这一页看到的（新增或刷新）覆盖同 id 旧字段；
+            # 字典对已存在的 key 赋值不改变其插入位置——顺序稳定，
+            # 只有真正新增的字段 id 会被追加到末尾。
+    return {
+        "id": old_entity.get("id"),
+        "name": fresh_entity.get("name") or old_entity.get("name"),
+        "fields": list(old_fields.values()),
+    }
+
+
 def overlay_page_only_model(
     reuse_model: Optional[Dict[str, Any]],
     structure: Any = None,
 ) -> Optional[Dict[str, Any]]:
-    """page-only：上一版六段原样留下，只把结构步新读到的实体并进 datamodel。
+    """page-only：上一版六段原样留下，只把结构步新读到的实体**并**进 datamodel。
 
     不调 assemble LLM。page / rbac / workflow / aigc / appbundle 整段按住。
     重画页的 HTML 已经在第 3 步改过；绑定沿用上一版——加按钮这种改动
     不该先编一套权限再盖回去。
+
+    ⚠ "并"不是"换"：已存在的实体走字段级合并（见 `_merge_entity_into`），
+      只有 id 在 old_ents 里从没出现过的实体才整个当新的收进来。
     """
     if not isinstance(reuse_model, dict):
         return None
@@ -360,30 +423,18 @@ def overlay_page_only_model(
     if not new_entities:
         return model
 
-    def _as_dm_entity(entity: Dict[str, Any]) -> Dict[str, Any]:
-        fields = []
-        for field in entity.get("fields") or []:
-            if not isinstance(field, dict) or not field.get("id"):
-                continue
-            item = {
-                k: field[k]
-                for k in ("id", "name", "type", "refEntity")
-                if field.get(k) is not None
-            }
-            fields.append(item)
-        return {
-            "id": str(entity.get("id")),
-            "name": str(entity.get("name") or entity.get("id")),
-            "fields": fields,
-        }
-
     old_ents = {
         str(e.get("id")): e
         for e in ((model.get("datamodel") or {}).get("entities") or [])
         if isinstance(e, dict) and e.get("id")
     }
     for entity in new_entities:
-        old_ents[str(entity["id"])] = _as_dm_entity(entity)
+        eid = str(entity["id"])
+        fresh_entity = _as_dm_entity(entity)
+        if eid in old_ents:
+            old_ents[eid] = _merge_entity_into(old_ents[eid], fresh_entity)
+        else:
+            old_ents[eid] = fresh_entity  # 真正的新实体，原样收进来
     model["datamodel"] = {"entities": list(old_ents.values())}
     refs = [e["id"] for e in model["datamodel"]["entities"] if e.get("id")]
     bundle = model.get("appbundle")
