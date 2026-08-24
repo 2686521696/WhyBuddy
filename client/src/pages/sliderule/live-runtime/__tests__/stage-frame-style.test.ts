@@ -70,7 +70,8 @@ describe("舞台预览框外观（stage-frame-style）", () => {
       STAGE_FRAME_SHADOW,
       STAGE_FRAME_PAD,
       PHONE_FRAME_SHADOW,
-      PHONE_FRAME_PAD,
+      PHONE_FRAME_SHADOW_PAD,
+      phoneFramePad,
       shadowExtent,
     } = await import("../stage-frame-style");
 
@@ -80,9 +81,17 @@ describe("舞台预览框外观（stage-frame-style）", () => {
     expect(desktop.right).toBeLessThanOrEqual(STAGE_FRAME_PAD.x / 2);
     expect(desktop.left).toBeLessThanOrEqual(STAGE_FRAME_PAD.x / 2);
 
+    // 手机/平板：机身那部分不归阴影用，所以只能拿 PHONE_FRAME_SHADOW_PAD 卡，
+    // 不能拿 phoneFramePad() 的总数——总数里含机身，用它会宽松到失去意义。
     const phone = shadowExtent(PHONE_FRAME_SHADOW);
-    expect(phone.bottom).toBeLessThanOrEqual(PHONE_FRAME_PAD.y / 2);
-    expect(phone.right).toBeLessThanOrEqual(PHONE_FRAME_PAD.x / 2);
+    // 按 /2 卡：机身之外的空隙居中均分，每边只拿一半。改动前把机身和阴影余量
+    // 加在一个 48 里，等于每边只剩 8px 去装 20px 的阴影——切了很久没人发现。
+    expect(phone.bottom).toBeLessThanOrEqual(PHONE_FRAME_SHADOW_PAD.y / 2);
+    expect(phone.right).toBeLessThanOrEqual(PHONE_FRAME_SHADOW_PAD.x / 2);
+
+    // 机身随机型变，余量不变：平板边框更薄、下巴更短，总 pad 自然不同
+    expect(phoneFramePad({ bezel: 12, bezelBottom: 20 })).toEqual({ x: 40, y: 76 });
+    expect(phoneFramePad({ bezel: 14, bezelBottom: 18 })).toEqual({ x: 44, y: 76 });
 
     // 底边是朝下偏的那边，必须是最吃余量的方向——否则说明阴影根本没有方向感
     expect(desktop.bottom).toBeGreaterThan(desktop.top);

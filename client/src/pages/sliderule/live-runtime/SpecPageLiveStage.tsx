@@ -49,13 +49,23 @@
 import React from "react";
 
 import { HtmlAppSurface } from "./html-app-surface";
-import { useScaleToFit, specPageViewport, PHONE_STAGE_MAX_SCALE } from "./canvas-scale";
 import {
-  PHONE_FRAME_PAD,
+  useScaleToFit,
+  specPageViewport,
+  PHONE_STAGE_MAX_SCALE,
+} from "./canvas-scale";
+import {
   PHONE_FRAME_SHADOW,
   STAGE_FRAME_PAD,
   STAGE_FRAME_SHADOW,
+  phoneFramePad,
 } from "./stage-frame-style";
+import {
+  DEVICE_PRESETS,
+  findDevicePreset,
+  loadDevicePresetId,
+  saveDevicePresetId,
+} from "./device-presets";
 import { deriveBindingSource } from "./derive-binding-source";
 import type { ActionGates, BindingActionEvent } from "./html-binding-runtime";
 import type { RuntimeState } from "./live-runtime";
@@ -94,7 +104,9 @@ export interface SpecPageLiveStageProps {
   /** 说明行右侧（角色切换）。Primer description 的 trailing visual。 */
   metaTrailing?: React.ReactNode;
   /** 游标：鼠标停在带绑定的元素上 */
-  onHoverBinding?: (info: { attr: string; value: string; el: Element } | null) => void;
+  onHoverBinding?: (
+    info: { attr: string; value: string; el: Element } | null
+  ) => void;
   /** 初始选中的页。不传 = 跟最新到达的一页（推演场景，页面在陆续到达）；
    *  应用中心只读预览传落地页——那儿页面是一次到齐的，"最新"没有意义，
    *  开屏看到的应该是导航第一项，跟真用户进应用的第一眼一致。 */
@@ -127,7 +139,11 @@ export function resolveActivePageId(
     if (land && arrived.some(p => p.pageId === land)) return land;
     return arrived[0]?.pageId ?? pages[0]?.pageId ?? null;
   }
-  return arrived[arrived.length - 1]?.pageId ?? pages[pages.length - 1]?.pageId ?? null;
+  return (
+    arrived[arrived.length - 1]?.pageId ??
+    pages[pages.length - 1]?.pageId ??
+    null
+  );
 }
 
 export function SpecPageLiveStage({
@@ -150,15 +166,35 @@ export function SpecPageLiveStage({
   const [picked, setPicked] = React.useState<string | null>(defaultPageId);
   // 填数报告：填了几个孔、哪些孔填不上。**如实展示**——填不上是模型的问题
   // （引用了不存在的实体/字段），拿假数据盖住等于把问题藏起来。
-  const [report, setReport] = React.useState<{ filled: number; problems: string[] } | null>(null);
+  const [report, setReport] = React.useState<{
+    filled: number;
+    problems: string[];
+  } | null>(null);
 
-  const source = React.useMemo(() => deriveBindingSource(model, runtime), [model, runtime]);
+  const source = React.useMemo(
+    () => deriveBindingSource(model, runtime),
+    [model, runtime]
+  );
 
-  // 视口按设备选：desktop 1920×1080 / phone 390×844（Playwright iPhone 14）。
-  // 一轮里所有页面同一设备（管道开头认一次），取第一个带 device 的页面即可。
+  // 视口按设备选：desktop 1920×1080 / 移动端按用户选的机型（默认 iPhone 12/13/14
+  // 390×844，与改动前同一台）。一轮里所有页面同一设备（管道开头认一次），
+  // 取第一个带 device 的页面即可。
+  //
+  // ⚠ 后端那个 device（desktop/phone）决定**生成什么**，是产物属性；下面这个
+  //   presetId 只决定**用多大画布看**，是观看态。别把两者接到一起——那会变成
+  //   "换个机型预览就触发重新生成"。
   const device = pages.find(p => p.device)?.device;
   const isPhone = device === "phone";
-  const viewport = specPageViewport(device);
+  const [presetId, setPresetId] = React.useState(loadDevicePresetId);
+  const preset = findDevicePreset(presetId);
+  const viewport = isPhone
+    ? { w: preset.width, h: preset.height }
+    : specPageViewport(device);
+  const frame = preset.frame;
+  const changeDevicePreset = React.useCallback((id: string) => {
+    setPresetId(id);
+    saveDevicePresetId(id);
+  }, []);
 
   // 拖分栏时冻结缩放（2026-08-20）：见 useScaleToFit / StudioSplit 头注。
   // 没有 Provider（单测、应用中心）时不暂停——那边没有这条缝。
@@ -171,7 +207,7 @@ export function SpecPageLiveStage({
     viewport.h,
     "contain",
     studioLayout?.resizing ?? false,
-    isPhone ? PHONE_FRAME_PAD : STAGE_FRAME_PAD,
+    isPhone ? phoneFramePad(frame) : STAGE_FRAME_PAD,
     isPhone ? PHONE_STAGE_MAX_SCALE : undefined
   );
 
@@ -193,23 +229,25 @@ export function SpecPageLiveStage({
   const boundLabel = active.missing
     ? "本页未通过校验"
     : report
-    ? report.filled > 0
-      ? `已接数据 · 填了 ${report.filled} 处${
-          report.problems.length ? ` · ${report.problems.length} 处填不上` : ""
-        }`
+      ? report.filled > 0
+        ? `已接数据 · 填了 ${report.filled} 处${
+            report.problems.length
+              ? ` · ${report.problems.length} 处填不上`
+              : ""
+          }`
+        : active.bound
+          ? "打过孔但没填上数据"
+          : "尚未接数据"
       : active.bound
-        ? "打过孔但没填上数据"
-        : "尚未接数据"
-    : active.bound
-      ? "已接数据"
-      : "尚未接数据";
+        ? "已接数据"
+        : "尚未接数据";
   const boundTitle = active.missing
     ? "导航有这一项，生成时没有交出成品 HTML"
     : report?.problems.length
-    ? `填不上的孔：\n${report.problems.slice(0, 6).join("\n")}`
-    : active.bound
-      ? "已接上数据（第 6.5 步打过 data-* 孔）"
-      : "第 3 步的页面：还没接数据，孔要等实体字段定死之后才打";
+      ? `填不上的孔：\n${report.problems.slice(0, 6).join("\n")}`
+      : active.bound
+        ? "已接上数据（第 6.5 步打过 data-* 孔）"
+        : "第 3 步的页面：还没接数据，孔要等实体字段定死之后才打";
 
   return (
     <div
@@ -224,17 +262,42 @@ export function SpecPageLiveStage({
         data-testid="sliderule-stage-meta"
       >
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          {/* 机型切换（2026-08-24）。位置对齐 Chrome DevTools 设备模式 / 微信
+              开发者工具：都把机型下拉放在预览画布正上方那条信息行的最左，
+              紧挨着分辨率读数——选完立刻能在右边看到尺寸变化。
+              只在移动端档出现：桌面档是固定 1920×1080，没有"换台机器"的语义。 */}
+          {isPhone && (
+            <select
+              value={preset.id}
+              onChange={e => changeDevicePreset(e.target.value)}
+              data-testid="sliderule-device-preset"
+              aria-label="预览机型"
+              title="换一台机器看：只改预览画布尺寸，不会重新生成页面"
+              className="h-5 max-w-[10rem] cursor-pointer rounded border border-[#e5e7eb] bg-white px-1 text-[11px] text-stone-600 outline-none transition hover:border-[#d3d8e0] hover:bg-[#f8f9fb]"
+            >
+              {DEVICE_PRESETS.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          )}
           <span
             className="font-mono tabular-nums"
             data-testid="sliderule-spec-page-scale"
             title={`固定 ${viewport.w}×${viewport.h} 设计分辨率，按容器等比缩放显示${
-              isPhone ? `，手机默认不超过 ${Math.round(PHONE_STAGE_MAX_SCALE * 100)}%` : ""
+              isPhone
+                ? `，手机默认不超过 ${Math.round(PHONE_STAGE_MAX_SCALE * 100)}%`
+                : ""
             }`}
           >
             {viewport.w}×{viewport.h} · {Math.round(scale * 100)}%
           </span>
           {running && (
-            <span className="flex items-center gap-1" title={statusLabel ?? undefined}>
+            <span
+              className="flex items-center gap-1"
+              title={statusLabel ?? undefined}
+            >
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#69b1ff]" />
               界面生成中 {delivered.length}/{total || delivered.length}
             </span>
@@ -245,7 +308,10 @@ export function SpecPageLiveStage({
           </span>
         </div>
         {metaTrailing ? (
-          <div className="ml-auto shrink-0" data-testid="sliderule-stage-meta-trailing">
+          <div
+            className="ml-auto shrink-0"
+            data-testid="sliderule-stage-meta-trailing"
+          >
             {metaTrailing}
           </div>
         ) : null}
@@ -262,95 +328,100 @@ export function SpecPageLiveStage({
           </pre>
         </div>
       ) : (
-      <>
-      {/* 缩放画布：页面照固定视口画，就得在那个视口里看。手机框的描边算进
+        <>
+          {/* 缩放画布：页面照固定视口画，就得在那个视口里看。手机框的描边算进
           layout（padding），不再用会溢出被切掉的 box-shadow。
           ⚠ 2026-08-20 午前满电青年：16:9 + items-center 曾让 Header 像掉下来，
           改成顶对齐。同日晚 City Walk：用户要垂直居中；正方形 1920×1920
           试过又改回 16:9，居中留下。改回 items-start，本条必须红。 */}
-      <div
-        ref={fitRef}
-        className="flex min-h-0 flex-1 items-center justify-center overflow-hidden"
-        data-testid="sliderule-spec-page-canvas"
-      >
-        <div
-          data-testid={isPhone ? "sliderule-phone-frame" : undefined}
-          style={
-            isPhone
-              ? {
-                  // Flowbite device-mockups：边框就是机身（border-[14px]
-                  // rounded-[2.5rem]），内屏 rounded + overflow-hidden。
-                  // 第一版用 box-shadow 描边，overflow:hidden 把顶切掉；
-                  // 第二版用 padding + 内屏白底，圆角缝里露出白边。
-                  boxSizing: "border-box",
-                  width: viewport.w * scale + 24,
-                  border: "12px solid #1c1c1e",
-                  borderBottomWidth: 20,
-                  borderRadius: 40,
-                  background: "#1c1c1e",
-                  boxShadow: PHONE_FRAME_SHADOW,
-                  position: "relative",
-                }
-              : {
+          <div
+            ref={fitRef}
+            className="flex min-h-0 flex-1 items-center justify-center overflow-hidden"
+            data-testid="sliderule-spec-page-canvas"
+          >
+            <div
+              data-testid={isPhone ? "sliderule-phone-frame" : undefined}
+              style={
+                isPhone
+                  ? {
+                      // Flowbite device-mockups：边框就是机身（border-[14px]
+                      // rounded-[2.5rem]），内屏 rounded + overflow-hidden。
+                      // 第一版用 box-shadow 描边，overflow:hidden 把顶切掉；
+                      // 第二版用 padding + 内屏白底，圆角缝里露出白边。
+                      boxSizing: "border-box",
+                      // 机身量级随机型走（DevicePreset.frame）：平板边框更薄、圆角更小。
+                      // 写死 12/20/40 的话，选到 iPad 会得到一台"圆角 40 的巨型手机"。
+                      width: viewport.w * scale + frame.bezel * 2,
+                      border: `${frame.bezel}px solid #1c1c1e`,
+                      borderBottomWidth: frame.bezelBottom,
+                      borderRadius: frame.radius,
+                      background: "#1c1c1e",
+                      boxShadow: PHONE_FRAME_SHADOW,
+                      position: "relative",
+                    }
+                  : {
+                      width: viewport.w * scale,
+                      height: viewport.h * scale,
+                      position: "relative",
+                      borderRadius: 5,
+                      boxShadow: STAGE_FRAME_SHADOW,
+                      overflow: "hidden",
+                      background: "#fff",
+                    }
+              }
+            >
+              <div
+                style={{
                   width: viewport.w * scale,
                   height: viewport.h * scale,
                   position: "relative",
-                  borderRadius: 5,
-                  boxShadow: STAGE_FRAME_SHADOW,
                   overflow: "hidden",
+                  borderRadius: isPhone ? frame.innerRadius : 5,
                   background: "#fff",
-                }
-          }
-        >
-          <div
-            style={{
-              width: viewport.w * scale,
-              height: viewport.h * scale,
-              position: "relative",
-              overflow: "hidden",
-              borderRadius: isPhone ? 28 : 5,
-              background: "#fff",
-            }}
-          >
-            <div
-              style={{
-                width: viewport.w,
-                height: viewport.h,
-                transform: `scale(${scale})`,
-                transformOrigin: "top left",
-                overflow: "hidden",
-                background: "#fff",
-              }}
-            >
-              <HtmlAppSurface
-                key={active.pageId}
-                html={active.html}
-                fillPhone={isPhone}
-                className="bg-white"
-                source={source}
-                gates={gates}
-                onAction={onAction}
-                onNavigate={setPicked}
-                onHoverBinding={onHoverBinding}
-                onReport={r =>
-                  setReport({
-                    filled: Object.values(r.filled).reduce((a, b) => a + b, 0),
-                    problems: r.problems,
-                  })
-                }
-              />
+                }}
+              >
+                <div
+                  style={{
+                    width: viewport.w,
+                    height: viewport.h,
+                    transform: `scale(${scale})`,
+                    transformOrigin: "top left",
+                    overflow: "hidden",
+                    background: "#fff",
+                  }}
+                >
+                  <HtmlAppSurface
+                    key={active.pageId}
+                    html={active.html}
+                    fillPhone={isPhone}
+                    className="bg-white"
+                    source={source}
+                    gates={gates}
+                    onAction={onAction}
+                    onNavigate={setPicked}
+                    onHoverBinding={onHoverBinding}
+                    onReport={r =>
+                      setReport({
+                        filled: Object.values(r.filled).reduce(
+                          (a, b) => a + b,
+                          0
+                        ),
+                        problems: r.problems,
+                      })
+                    }
+                  />
+                </div>
+              </div>
+              {isPhone ? (
+                <div
+                  aria-hidden
+                  className="pointer-events-none mx-auto mt-1.5 h-1 w-28 rounded-full bg-white/30"
+                  data-testid="sliderule-phone-home-indicator"
+                />
+              ) : null}
             </div>
           </div>
-          {isPhone ? (
-            <div
-              aria-hidden
-              className="pointer-events-none mx-auto mt-1.5 h-1 w-28 rounded-full bg-white/30"
-              data-testid="sliderule-phone-home-indicator"
-            />
-          ) : null}
-        </div>
-      </div>
-      </>
+        </>
       )}
     </div>
   );

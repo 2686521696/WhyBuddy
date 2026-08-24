@@ -82,8 +82,42 @@ export const PHONE_FRAME_SHADOW =
  */
 export const STAGE_FRAME_PAD = { x: 40, y: 48 } as const;
 
-/** 手机档余量。机身黑边（12px 边框 + 20px 下巴）也从这里扣，见 SpecPageLiveStage。 */
-export const PHONE_FRAME_PAD = { x: 36, y: 48 } as const;
+/**
+ * 手机档里**不属于机身**的那部分余量：阴影外扩 + 一点呼吸。
+ *
+ * 拆开的原因（2026-08-24 加设备切换）：原来是一个写死的 {36,48}，注释说"机框描边、
+ * 下巴也从这里扣"——也就是它把两件性质不同的东西加在了一起：机身尺寸（随机型变，
+ * 平板 14px 边、手机 12px 边）和阴影余量（随阴影常量变）。机型可切之后，写死的
+ * 那个数对平板就是错的，而且错了不会报错，只会让平板的阴影被切一点。
+ *
+ * 现在 phoneFramePad() 按 `机身 + 这份余量` 现算。
+ *
+ * ⚠ 拆开的第一件收获：**手机档的阴影原本就在被切，谁都没量过。**
+ *   元素尺寸 = 屏 × scale + 机身，机身算在元素**里面**；阴影投在元素**外面**，
+ *   要的是容器减掉元素之后剩下的空隙。这轴贴满时那个空隙 = pad − 机身，居中均分
+ *   后每边只有一半：
+ *       旧值 y=48，机身吃掉 12+20=32，剩 16，每边 8px，
+ *       而手机阴影向下要 20px  →  一直切着 12px。
+ *   旧写法把机身和阴影余量加在一个数里，正是这个错误看不出来的原因——48 这个数
+ *   同时"解释"了两件事，谁也没法验证其中任何一件。
+ *   所以这份余量只管阴影，判据按 /2（居中均分）卡。
+ */
+export const PHONE_FRAME_SHADOW_PAD = { x: 16, y: 44 } as const;
+
+/** 机身量级：左右上边框、下巴。与 DevicePreset.frame 同形。 */
+export type PhoneFrameMetrics = { bezel: number; bezelBottom: number };
+
+/**
+ * 手机/平板档要从画布扣掉的总余量 = 机身 + 阴影余量。
+ *
+ * x：左右各一条边框 → bezel × 2；y：上边框 + 下巴 → bezel + bezelBottom。
+ */
+export function phoneFramePad(frame: PhoneFrameMetrics): { x: number; y: number } {
+  return {
+    x: frame.bezel * 2 + PHONE_FRAME_SHADOW_PAD.x,
+    y: frame.bezel + frame.bezelBottom + PHONE_FRAME_SHADOW_PAD.y,
+  };
+}
 
 /**
  * 一组 box-shadow 各方向真正需要的外扩量：|offset| + blur/2 + spread。

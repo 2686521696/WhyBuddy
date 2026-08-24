@@ -32,11 +32,18 @@ import {
   markSrcdocGeneration,
 } from "@/pages/sliderule/live-runtime/html-app-surface";
 import { BINDING_ATTRS } from "@/pages/sliderule/live-runtime/html-binding-runtime";
-import { useScaleToFit, specPageViewport } from "@/pages/sliderule/live-runtime/canvas-scale";
+import {
+  useScaleToFit,
+  specPageViewport,
+} from "@/pages/sliderule/live-runtime/canvas-scale";
 import {
   STAGE_FRAME_PAD,
   STAGE_FRAME_SHADOW,
 } from "@/pages/sliderule/live-runtime/stage-frame-style";
+import {
+  findDevicePreset,
+  loadDevicePresetId,
+} from "@/pages/sliderule/live-runtime/device-presets";
 import { updateAppPage, aiEditElement } from "./app-store-client";
 import {
   Undo2,
@@ -51,8 +58,20 @@ import {
 } from "lucide-react";
 
 const BLOCK_TAGS = new Set([
-  "BUTTON", "A", "TD", "TH", "LI", "LABEL",
-  "H1", "H2", "H3", "H4", "H5", "H6", "SPAN", "P",
+  "BUTTON",
+  "A",
+  "TD",
+  "TH",
+  "LI",
+  "LABEL",
+  "H1",
+  "H2",
+  "H3",
+  "H4",
+  "H5",
+  "H6",
+  "SPAN",
+  "P",
 ]);
 
 /** 选中策略跟 click-edit.html 一致：语义 data-* 优先，退化到块级标签。 */
@@ -82,7 +101,14 @@ function closestEditable(start: Element | null): HTMLElement | null {
  * 允许一路"跳出"到这几个结构容器，两处判据故意不同，别为了"复用一份"
  * 合并成一份，那会两头都不对。
  */
-const LANDMARK_TAGS = new Set(["NAV", "HEADER", "ASIDE", "MAIN", "FOOTER", "FORM"]);
+const LANDMARK_TAGS = new Set([
+  "NAV",
+  "HEADER",
+  "ASIDE",
+  "MAIN",
+  "FOOTER",
+  "FORM",
+]);
 
 function closestBreadcrumbAncestor(start: Element | null): HTMLElement | null {
   let cur: Element | null = start;
@@ -90,7 +116,8 @@ function closestBreadcrumbAncestor(start: Element | null): HTMLElement | null {
     for (const attr of BINDING_ATTRS) {
       if (cur.hasAttribute(attr)) return cur as HTMLElement;
     }
-    if (LANDMARK_TAGS.has(cur.tagName) || BLOCK_TAGS.has(cur.tagName)) return cur as HTMLElement;
+    if (LANDMARK_TAGS.has(cur.tagName) || BLOCK_TAGS.has(cur.tagName))
+      return cur as HTMLElement;
     cur = cur.parentElement;
   }
   return null;
@@ -134,7 +161,12 @@ export function editableAncestorChain(el: HTMLElement, max = 4): HTMLElement[] {
 }
 
 const STRUCTURAL_BREADCRUMB_LABELS: Record<string, string> = {
-  NAV: "导航", HEADER: "顶栏", ASIDE: "侧栏", MAIN: "主体", FOOTER: "底部", FORM: "表单",
+  NAV: "导航",
+  HEADER: "顶栏",
+  ASIDE: "侧栏",
+  MAIN: "主体",
+  FOOTER: "底部",
+  FORM: "表单",
 };
 
 /** 面包屑每一节的短标签：结构容器给中文名，其余走语义属性值，再退化成文字摘要。 */
@@ -142,7 +174,8 @@ export function breadcrumbLabel(el: HTMLElement): string {
   const structural = STRUCTURAL_BREADCRUMB_LABELS[el.tagName];
   if (structural) return structural;
   for (const attr of BINDING_ATTRS) {
-    if (el.hasAttribute(attr)) return el.getAttribute(attr) || el.tagName.toLowerCase();
+    if (el.hasAttribute(attr))
+      return el.getAttribute(attr) || el.tagName.toLowerCase();
   }
   const text = (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 10);
   return text || el.tagName.toLowerCase();
@@ -153,7 +186,9 @@ export function labelOfEditable(el: HTMLElement): string {
     if (el.hasAttribute(attr)) return `${attr}="${el.getAttribute(attr)}"`;
   }
   const text = (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 18);
-  return text ? `<${el.tagName.toLowerCase()}> ${text}` : `<${el.tagName.toLowerCase()}>`;
+  return text
+    ? `<${el.tagName.toLowerCase()}> ${text}`
+    : `<${el.tagName.toLowerCase()}>`;
 }
 
 /**
@@ -175,13 +210,19 @@ export function clampFontSizePx(px: number): number {
  * AI 有时会不听话地吐出多个兄弟节点，这里跟后端提示词的"只输出一个元素"
  * 对齐，多出来的直接丢，不悄悄拼接（拼接等于给页面塞进一段没人要过的结构）。
  */
-export function parseFirstElement(doc: Document, html: string): HTMLElement | null {
+export function parseFirstElement(
+  doc: Document,
+  html: string
+): HTMLElement | null {
   const wrap = doc.createElement("div");
   wrap.innerHTML = html;
   return wrap.firstElementChild as HTMLElement | null;
 }
 
-export function resolveFontSizePx(el: HTMLElement, computedFontSize: string): number {
+export function resolveFontSizePx(
+  el: HTMLElement,
+  computedFontSize: string
+): number {
   const inline = el.style.fontSize;
   if (inline && inline.trim().endsWith("px")) {
     const n = parseFloat(inline);
@@ -219,7 +260,11 @@ export interface Box {
  *   别在这里按 `(容器宽 - 画框宽)/2` 推算居中量：容器有 padding、圆角、
  *   将来加个工具栏都会让推算值和真实值分叉，而分叉了不会报错，只会又偏一次。
  */
-export function toCanvasRect(frameRect: Box, scale: number, frameOffset: { left: number; top: number }): Box {
+export function toCanvasRect(
+  frameRect: Box,
+  scale: number,
+  frameOffset: { left: number; top: number }
+): Box {
   return {
     left: frameOffset.left + frameRect.left * scale,
     top: frameOffset.top + frameRect.top * scale,
@@ -251,10 +296,14 @@ export function placeToolbar(
   if (top < edge) {
     // 上方放不下 → 翻到下方；下方也放不下就贴容器底，总之不出界。
     const below = rect.top + rect.height + gap;
-    top = container.height > 0 ? Math.min(below, Math.max(edge, container.height - h - edge)) : below;
+    top =
+      container.height > 0
+        ? Math.min(below, Math.max(edge, container.height - h - edge))
+        : below;
   }
   let left = rect.left;
-  if (w > 0 && container.width > 0) left = Math.min(left, container.width - w - edge);
+  if (w > 0 && container.width > 0)
+    left = Math.min(left, container.width - w - edge);
   return { left: Math.max(edge, left), top: Math.max(edge, top) };
 }
 
@@ -262,10 +311,16 @@ export function placeToolbar(
  * 存库前把编辑过的 body 换回干净壳。纯函数，单测钉着。
  * 找不到 `<body>` 就返回 null——**不许**编一份出来，宁可保存失败让用户重试。
  */
-export function spliceEditedBody(originalHtml: string, editedBodyOuterHtml: string): string | null {
+export function spliceEditedBody(
+  originalHtml: string,
+  editedBodyOuterHtml: string
+): string | null {
   const clean = stripFrameNavigatingHrefs(sanitizeAppHtml(originalHtml));
   if (!clean || !/<body[^>]*>[\s\S]*<\/body>/i.test(clean)) return null;
-  return clean.replace(/<body[^>]*>[\s\S]*<\/body>/i, () => editedBodyOuterHtml);
+  return clean.replace(
+    /<body[^>]*>[\s\S]*<\/body>/i,
+    () => editedBodyOuterHtml
+  );
 }
 
 interface Selection {
@@ -307,15 +362,26 @@ export function ClickEditStage({
   const [dirty, setDirty] = React.useState(false);
   const [canUndo, setCanUndo] = React.useState(false);
   const [status, setStatus] = React.useState<
-    { kind: "idle" } | { kind: "saving" } | { kind: "ok"; text: string } | { kind: "err"; text: string }
+    | { kind: "idle" }
+    | { kind: "saving" }
+    | { kind: "ok"; text: string }
+    | { kind: "err"; text: string }
   >({ kind: "idle" });
   const [aiOpen, setAiOpen] = React.useState(false);
   const [aiInstruction, setAiInstruction] = React.useState("");
   const [aiBusy, setAiBusy] = React.useState(false);
   const [aiError, setAiError] = React.useState<string | null>(null);
 
-  const viewport = specPageViewport(device);
   const fillPhone = device === "phone";
+  // ⚠ 跟预览舞台读同一份机型偏好。点选编辑改的就是舞台上那份页面——两边画布
+  // 尺寸不一致的话，用户在 iPhone SE 下看到的换行位置，进编辑态会变回 390 宽的
+  // 排版，"所见即所改"当场失效，且不会有任何报错。
+  // 这里只读不写：切机型的入口只有舞台那一个下拉，编辑态跟随即可。
+  const viewport = fillPhone
+    ? (p => ({ w: p.width, h: p.height }))(
+        findDevicePreset(loadDevicePresetId())
+      )
+    : specPageViewport(device);
   const { ref: fitRef, scale } = useScaleToFit(
     viewport.w,
     viewport.h,
@@ -329,7 +395,10 @@ export function ClickEditStage({
   const frameBoxRef = React.useRef<HTMLDivElement | null>(null);
   const toolbarRef = React.useRef<HTMLDivElement | null>(null);
   const [toolbarSize, setToolbarSize] = React.useState({ width: 0, height: 0 });
-  const [containerSize, setContainerSize] = React.useState({ width: 0, height: 0 });
+  const [containerSize, setContainerSize] = React.useState({
+    width: 0,
+    height: 0,
+  });
   /**
    * 工具条和容器的实测尺寸——placeToolbar 要拿它们判"放不放得下"。
    *
@@ -343,14 +412,16 @@ export function ClickEditStage({
     const c = fitRef.current?.getBoundingClientRect();
     if (t) {
       setToolbarSize(prev =>
-        Math.round(prev.width) === Math.round(t.width) && Math.round(prev.height) === Math.round(t.height)
+        Math.round(prev.width) === Math.round(t.width) &&
+        Math.round(prev.height) === Math.round(t.height)
           ? prev
           : { width: t.width, height: t.height }
       );
     }
     if (c) {
       setContainerSize(prev =>
-        Math.round(prev.width) === Math.round(c.width) && Math.round(prev.height) === Math.round(c.height)
+        Math.round(prev.width) === Math.round(c.width) &&
+        Math.round(prev.height) === Math.round(c.height)
           ? prev
           : { width: c.width, height: c.height }
       );
@@ -371,7 +442,11 @@ export function ClickEditStage({
         box && container
           ? { left: box.left - container.left, top: box.top - container.top }
           : { left: 0, top: 0 };
-      return toCanvasRect({ left: r.left, top: r.top, width: r.width, height: r.height }, scale, offset);
+      return toCanvasRect(
+        { left: r.left, top: r.top, width: r.width, height: r.height },
+        scale,
+        offset
+      );
     },
     [scale, fitRef]
   );
@@ -448,7 +523,9 @@ export function ClickEditStage({
 
   /** 重新量当前选中元素（缩放变了、页面滚了、内容改了尺寸都要重量）。 */
   const reselect = React.useCallback(() => {
-    setSelected(prev => (prev ? { ...prev, rect: measureInCanvas(prev.el) } : prev));
+    setSelected(prev =>
+      prev ? { ...prev, rect: measureInCanvas(prev.el) } : prev
+    );
   }, [measureInCanvas]);
   const remeasureRef = React.useRef(reselect);
   remeasureRef.current = reselect;
@@ -508,7 +585,8 @@ export function ClickEditStage({
     if (!selected) return;
     pushUndoSnapshot();
     const el = selected.el;
-    const cur = frameRef.current?.contentWindow?.getComputedStyle(el).fontWeight ?? "400";
+    const cur =
+      frameRef.current?.contentWindow?.getComputedStyle(el).fontWeight ?? "400";
     const isBold = parseInt(cur, 10) >= 600;
     el.style.fontWeight = isBold ? "400" : "700";
     markDirty();
@@ -525,7 +603,8 @@ export function ClickEditStage({
     if (!selected) return;
     pushUndoSnapshot();
     const el = selected.el;
-    const computed = frameRef.current?.contentWindow?.getComputedStyle(el).fontSize ?? "16px";
+    const computed =
+      frameRef.current?.contentWindow?.getComputedStyle(el).fontSize ?? "16px";
     const next = clampFontSizePx(resolveFontSizePx(el, computed) + delta);
     el.style.fontSize = `${next}px`;
     markDirty();
@@ -547,7 +626,12 @@ export function ClickEditStage({
     if (!selected || !aiInstruction.trim() || aiBusy) return;
     setAiBusy(true);
     setAiError(null);
-    const res = await aiEditElement(appId, pageId, selected.el.outerHTML, aiInstruction.trim());
+    const res = await aiEditElement(
+      appId,
+      pageId,
+      selected.el.outerHTML,
+      aiInstruction.trim()
+    );
     if (!res.ok) {
       setAiBusy(false);
       setAiError(res.error);
@@ -589,7 +673,10 @@ export function ClickEditStage({
     setStatus({ kind: "saving" });
     const finalHtml = spliceEditedBody(rawBaseRef.current, body.outerHTML);
     if (!finalHtml) {
-      setStatus({ kind: "err", text: "生成保存内容失败（页面结构异常），请重试或联系维护者" });
+      setStatus({
+        kind: "err",
+        text: "生成保存内容失败（页面结构异常），请重试或联系维护者",
+      });
       return;
     }
     const res = await updateAppPage(appId, pageId, finalHtml);
@@ -600,21 +687,32 @@ export function ClickEditStage({
     rawBaseRef.current = finalHtml;
     setDirty(false);
     onDirtyChange?.(false);
-    setStatus({ kind: "ok", text: `已保存 · ${res.bytes.toLocaleString("zh-CN")} 字节` });
+    setStatus({
+      kind: "ok",
+      text: `已保存 · ${res.bytes.toLocaleString("zh-CN")} 字节`,
+    });
     onSaved?.(pageId, finalHtml);
   };
 
   return (
-    <div className={`flex min-h-0 flex-1 flex-col gap-2 ${className}`} data-testid="click-edit-stage">
+    <div
+      className={`flex min-h-0 flex-1 flex-col gap-2 ${className}`}
+      data-testid="click-edit-stage"
+    >
       <div className="flex shrink-0 items-center gap-2 px-0.5 text-[11px] leading-4 text-stone-500">
         <span className="font-mono tabular-nums">
           {viewport.w}×{viewport.h} · {Math.round(scale * 100)}%
         </span>
         <span aria-hidden>·</span>
-        <span data-testid="click-edit-hint">点页面里的文字或按钮就能改；改完记得点右侧保存</span>
+        <span data-testid="click-edit-hint">
+          点页面里的文字或按钮就能改；改完记得点右侧保存
+        </span>
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {status.kind === "ok" && (
-            <span className="text-emerald-600" data-testid="click-edit-status-ok">
+            <span
+              className="text-emerald-600"
+              data-testid="click-edit-status-ok"
+            >
               {status.text}
             </span>
           )}
@@ -624,7 +722,10 @@ export function ClickEditStage({
             </span>
           )}
           {dirty && status.kind !== "err" && (
-            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-700" data-testid="click-edit-dirty">
+            <span
+              className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-700"
+              data-testid="click-edit-dirty"
+            >
               有未保存的修改
             </span>
           )}
@@ -644,7 +745,8 @@ export function ClickEditStage({
             onClick={() => void handleSave()}
             data-testid="click-edit-save"
           >
-            <Save size={13} /> {status.kind === "saving" ? "保存中…" : "保存修改"}
+            <Save size={13} />{" "}
+            {status.kind === "saving" ? "保存中…" : "保存修改"}
           </button>
         </div>
       </div>
@@ -681,7 +783,12 @@ export function ClickEditStage({
               ref={frameRef}
               title="点选编辑画布"
               referrerPolicy="no-referrer"
-              style={{ width: viewport.w, height: viewport.h, border: 0, background: "#fff" }}
+              style={{
+                width: viewport.w,
+                height: viewport.h,
+                border: 0,
+                background: "#fff",
+              }}
               data-testid="click-edit-frame"
             />
           </div>
@@ -707,185 +814,213 @@ export function ClickEditStage({
             data-testid="click-edit-toolbar"
             onClick={e => e.stopPropagation()}
           >
-          <div className="flex items-center gap-1">
-            {/* 面包屑：可编辑祖先链，点哪级就选中哪级；title 兜底显示完整选择器
+            <div className="flex items-center gap-1">
+              {/* 面包屑：可编辑祖先链，点哪级就选中哪级；title 兜底显示完整选择器
                 （labelOfEditable），鼠标停久一点还能看到 data-field 这类精确信息。 */}
-            <div className="flex max-w-[200px] items-center overflow-hidden" data-testid="click-edit-breadcrumb">
-              {editableAncestorChain(selected.el).map((el, i, arr) => (
-                <React.Fragment key={i}>
-                  {i > 0 && <span className="px-0.5 text-stone-300">·</span>}
-                  <button
-                    type="button"
-                    title={labelOfEditable(el)}
-                    className={`shrink-0 truncate rounded px-1 text-[11px] hover:bg-stone-100 ${
-                      i === arr.length - 1 ? "font-semibold text-stone-700" : "text-stone-400"
-                    }`}
-                    style={i === arr.length - 1 ? undefined : { maxWidth: 56 }}
-                    onClick={() => selectElement(el)}
-                    data-testid={`click-edit-crumb-${i}`}
-                  >
-                    {breadcrumbLabel(el)}
-                  </button>
-                </React.Fragment>
-              ))}
-            </div>
-            <button
-              type="button"
-              className="rounded p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-30"
-              title="选中上一级"
-              disabled={!closestBreadcrumbAncestor(selected.el.parentElement)}
-              onClick={handleSelectParent}
-              data-testid="click-edit-select-parent"
-            >
-              <ChevronLeft size={13} />
-            </button>
-            <button
-              type="button"
-              className="rounded p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-30"
-              title="选中下一级"
-              disabled={!firstEditableDescendant(selected.el)}
-              onClick={handleSelectChild}
-              data-testid="click-edit-select-child"
-            >
-              <ChevronRight size={13} />
-            </button>
-            <span className="mx-0.5 h-4 w-px bg-stone-200" aria-hidden />
-            <button
-              type="button"
-              className="rounded px-1.5 py-0.5 text-[12px] font-semibold text-stone-600 hover:bg-stone-100 disabled:opacity-30"
-              title="缩小字号"
-              onClick={() => handleFontSizeStep(-1)}
-              disabled={
-                clampFontSizePx(
-                  resolveFontSizePx(
-                    selected.el,
-                    frameRef.current?.contentWindow?.getComputedStyle(selected.el).fontSize ?? "16px"
-                  )
-                ) <= MIN_FONT_SIZE_PX
-              }
-              data-testid="click-edit-font-minus"
-            >
-              A-
-            </button>
-            <span
-              className="w-6 shrink-0 text-center font-mono text-[11px] tabular-nums text-stone-500"
-              data-testid="click-edit-font-size"
-            >
-              {clampFontSizePx(
-                resolveFontSizePx(
-                  selected.el,
-                  frameRef.current?.contentWindow?.getComputedStyle(selected.el).fontSize ?? "16px"
-                )
-              )}
-            </span>
-            <button
-              type="button"
-              className="rounded px-1.5 py-0.5 text-[14px] font-semibold text-stone-600 hover:bg-stone-100 disabled:opacity-30"
-              title="放大字号"
-              onClick={() => handleFontSizeStep(1)}
-              disabled={
-                clampFontSizePx(
-                  resolveFontSizePx(
-                    selected.el,
-                    frameRef.current?.contentWindow?.getComputedStyle(selected.el).fontSize ?? "16px"
-                  )
-                ) >= MAX_FONT_SIZE_PX
-              }
-              data-testid="click-edit-font-plus"
-            >
-              A+
-            </button>
-            <span className="mx-0.5 h-4 w-px bg-stone-200" aria-hidden />
-            <button
-              type="button"
-              className="rounded p-1 text-stone-600 hover:bg-stone-100"
-              title="改文字"
-              onClick={handleEditText}
-              data-testid="click-edit-text"
-            >
-              文字
-            </button>
-            <button
-              type="button"
-              className="rounded p-1 text-stone-600 hover:bg-stone-100"
-              title="加粗/取消加粗"
-              onClick={handleBold}
-              data-testid="click-edit-bold"
-            >
-              <BoldIcon size={13} />
-            </button>
-            <label className="rounded p-1 text-stone-600 hover:bg-stone-100" title="文字颜色">
-              <input
-                type="color"
-                className="h-3.5 w-3.5 cursor-pointer align-middle"
-                onChange={e => handleColor(e.target.value)}
-                data-testid="click-edit-color"
-              />
-            </label>
-            <span className="mx-0.5 h-4 w-px bg-stone-200" aria-hidden />
-            <button
-              type="button"
-              className={`inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] font-medium transition ${
-                aiOpen ? "bg-violet-100 text-violet-700" : "text-violet-600 hover:bg-violet-50"
-              }`}
-              title="用一句话让 AI 改这个元素"
-              onClick={() => setAiOpen(o => !o)}
-              data-testid="click-edit-ai"
-            >
-              <Sparkles size={13} /> AI 编辑
-            </button>
-            <button
-              type="button"
-              className="rounded p-1 text-red-500 hover:bg-red-50"
-              title="删除这个元素"
-              onClick={handleDelete}
-              data-testid="click-edit-delete"
-            >
-              <Trash2 size={13} />
-            </button>
-            <button
-              type="button"
-              className="rounded p-1 text-stone-400 hover:bg-stone-100"
-              title="取消选中"
-              onClick={() => setSelected(null)}
-              data-testid="click-edit-deselect"
-            >
-              <X size={13} />
-            </button>
-          </div>
-          {aiOpen && (
-            <div className="flex items-center gap-1.5" data-testid="click-edit-ai-panel">
-              <input
-                type="text"
-                autoFocus
-                value={aiInstruction}
-                onChange={e => setAiInstruction(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === "Enter") void handleAiEditSubmit();
-                  if (e.key === "Escape") setAiOpen(false);
-                }}
-                placeholder="想怎么改？比如：改成更醒目的警示色、加一句副标题"
-                disabled={aiBusy}
-                className="h-7 w-64 flex-1 rounded border border-stone-200 px-2 text-[12px] outline-none focus:border-violet-400 disabled:opacity-60"
-                data-testid="click-edit-ai-input"
-              />
+              <div
+                className="flex max-w-[200px] items-center overflow-hidden"
+                data-testid="click-edit-breadcrumb"
+              >
+                {editableAncestorChain(selected.el).map((el, i, arr) => (
+                  <React.Fragment key={i}>
+                    {i > 0 && <span className="px-0.5 text-stone-300">·</span>}
+                    <button
+                      type="button"
+                      title={labelOfEditable(el)}
+                      className={`shrink-0 truncate rounded px-1 text-[11px] hover:bg-stone-100 ${
+                        i === arr.length - 1
+                          ? "font-semibold text-stone-700"
+                          : "text-stone-400"
+                      }`}
+                      style={
+                        i === arr.length - 1 ? undefined : { maxWidth: 56 }
+                      }
+                      onClick={() => selectElement(el)}
+                      data-testid={`click-edit-crumb-${i}`}
+                    >
+                      {breadcrumbLabel(el)}
+                    </button>
+                  </React.Fragment>
+                ))}
+              </div>
               <button
                 type="button"
-                className="inline-flex h-7 shrink-0 items-center gap-1 rounded bg-violet-600 px-2.5 text-[12px] font-medium text-white transition hover:bg-violet-500 disabled:opacity-40"
-                disabled={aiBusy || !aiInstruction.trim()}
-                onClick={() => void handleAiEditSubmit()}
-                data-testid="click-edit-ai-submit"
+                className="rounded p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-30"
+                title="选中上一级"
+                disabled={!closestBreadcrumbAncestor(selected.el.parentElement)}
+                onClick={handleSelectParent}
+                data-testid="click-edit-select-parent"
               >
-                {aiBusy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                {aiBusy ? "生成中…" : "生成"}
+                <ChevronLeft size={13} />
+              </button>
+              <button
+                type="button"
+                className="rounded p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-30"
+                title="选中下一级"
+                disabled={!firstEditableDescendant(selected.el)}
+                onClick={handleSelectChild}
+                data-testid="click-edit-select-child"
+              >
+                <ChevronRight size={13} />
+              </button>
+              <span className="mx-0.5 h-4 w-px bg-stone-200" aria-hidden />
+              <button
+                type="button"
+                className="rounded px-1.5 py-0.5 text-[12px] font-semibold text-stone-600 hover:bg-stone-100 disabled:opacity-30"
+                title="缩小字号"
+                onClick={() => handleFontSizeStep(-1)}
+                disabled={
+                  clampFontSizePx(
+                    resolveFontSizePx(
+                      selected.el,
+                      frameRef.current?.contentWindow?.getComputedStyle(
+                        selected.el
+                      ).fontSize ?? "16px"
+                    )
+                  ) <= MIN_FONT_SIZE_PX
+                }
+                data-testid="click-edit-font-minus"
+              >
+                A-
+              </button>
+              <span
+                className="w-6 shrink-0 text-center font-mono text-[11px] tabular-nums text-stone-500"
+                data-testid="click-edit-font-size"
+              >
+                {clampFontSizePx(
+                  resolveFontSizePx(
+                    selected.el,
+                    frameRef.current?.contentWindow?.getComputedStyle(
+                      selected.el
+                    ).fontSize ?? "16px"
+                  )
+                )}
+              </span>
+              <button
+                type="button"
+                className="rounded px-1.5 py-0.5 text-[14px] font-semibold text-stone-600 hover:bg-stone-100 disabled:opacity-30"
+                title="放大字号"
+                onClick={() => handleFontSizeStep(1)}
+                disabled={
+                  clampFontSizePx(
+                    resolveFontSizePx(
+                      selected.el,
+                      frameRef.current?.contentWindow?.getComputedStyle(
+                        selected.el
+                      ).fontSize ?? "16px"
+                    )
+                  ) >= MAX_FONT_SIZE_PX
+                }
+                data-testid="click-edit-font-plus"
+              >
+                A+
+              </button>
+              <span className="mx-0.5 h-4 w-px bg-stone-200" aria-hidden />
+              <button
+                type="button"
+                className="rounded p-1 text-stone-600 hover:bg-stone-100"
+                title="改文字"
+                onClick={handleEditText}
+                data-testid="click-edit-text"
+              >
+                文字
+              </button>
+              <button
+                type="button"
+                className="rounded p-1 text-stone-600 hover:bg-stone-100"
+                title="加粗/取消加粗"
+                onClick={handleBold}
+                data-testid="click-edit-bold"
+              >
+                <BoldIcon size={13} />
+              </button>
+              <label
+                className="rounded p-1 text-stone-600 hover:bg-stone-100"
+                title="文字颜色"
+              >
+                <input
+                  type="color"
+                  className="h-3.5 w-3.5 cursor-pointer align-middle"
+                  onChange={e => handleColor(e.target.value)}
+                  data-testid="click-edit-color"
+                />
+              </label>
+              <span className="mx-0.5 h-4 w-px bg-stone-200" aria-hidden />
+              <button
+                type="button"
+                className={`inline-flex items-center gap-1 rounded px-1.5 py-1 text-[11px] font-medium transition ${
+                  aiOpen
+                    ? "bg-violet-100 text-violet-700"
+                    : "text-violet-600 hover:bg-violet-50"
+                }`}
+                title="用一句话让 AI 改这个元素"
+                onClick={() => setAiOpen(o => !o)}
+                data-testid="click-edit-ai"
+              >
+                <Sparkles size={13} /> AI 编辑
+              </button>
+              <button
+                type="button"
+                className="rounded p-1 text-red-500 hover:bg-red-50"
+                title="删除这个元素"
+                onClick={handleDelete}
+                data-testid="click-edit-delete"
+              >
+                <Trash2 size={13} />
+              </button>
+              <button
+                type="button"
+                className="rounded p-1 text-stone-400 hover:bg-stone-100"
+                title="取消选中"
+                onClick={() => setSelected(null)}
+                data-testid="click-edit-deselect"
+              >
+                <X size={13} />
               </button>
             </div>
-          )}
-          {aiError && (
-            <div className="max-w-[20rem] text-[11px] text-red-600" data-testid="click-edit-ai-error">
-              {aiError}
-            </div>
-          )}
+            {aiOpen && (
+              <div
+                className="flex items-center gap-1.5"
+                data-testid="click-edit-ai-panel"
+              >
+                <input
+                  type="text"
+                  autoFocus
+                  value={aiInstruction}
+                  onChange={e => setAiInstruction(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") void handleAiEditSubmit();
+                    if (e.key === "Escape") setAiOpen(false);
+                  }}
+                  placeholder="想怎么改？比如：改成更醒目的警示色、加一句副标题"
+                  disabled={aiBusy}
+                  className="h-7 w-64 flex-1 rounded border border-stone-200 px-2 text-[12px] outline-none focus:border-violet-400 disabled:opacity-60"
+                  data-testid="click-edit-ai-input"
+                />
+                <button
+                  type="button"
+                  className="inline-flex h-7 shrink-0 items-center gap-1 rounded bg-violet-600 px-2.5 text-[12px] font-medium text-white transition hover:bg-violet-500 disabled:opacity-40"
+                  disabled={aiBusy || !aiInstruction.trim()}
+                  onClick={() => void handleAiEditSubmit()}
+                  data-testid="click-edit-ai-submit"
+                >
+                  {aiBusy ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <Sparkles size={13} />
+                  )}
+                  {aiBusy ? "生成中…" : "生成"}
+                </button>
+              </div>
+            )}
+            {aiError && (
+              <div
+                className="max-w-[20rem] text-[11px] text-red-600"
+                data-testid="click-edit-ai-error"
+              >
+                {aiError}
+              </div>
+            )}
           </div>
         )}
       </div>
