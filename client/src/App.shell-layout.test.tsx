@@ -233,16 +233,38 @@ vi.mock("./pages/NotFound", () => ({
   default: () => <main data-testid="not-found-page" />,
 }));
 
+const SUSPENSE_FALLBACK = "加载中…";
+/** 等懒加载 resolve 的重试上限。见下方注释：不是越小越快，是越小越容易假红。 */
+const LAZY_RESOLVE_ATTEMPTS = 60;
+
 /**
  * 路由组件改为 React.lazy 之后，同步的 renderToStaticMarkup 首轮只能渲染出
  * Suspense fallback（"加载中…"）。这里首轮渲染触发懒加载工厂（mock 的动态
  * import 在 microtask 内 resolve），随后重渲拿到真实路由内容。
+ *
+ * ⚠ 2026-08-24：上限原本是 5，全量跑（597 个文件 · --maxWorkers=2）时会间歇性
+ * 断在 fallback 上——4 次全量挂 2 次，单独跑这个文件却永远绿。5 个宏任务在空载
+ * 下够、在满载下不够，而且**它和被测代码完全无关**：往依赖图里加一个新模块
+ * （这次是 stage-frame-style）就足以把时序推过那条线。
+ *
+ * 提高上限不削弱判据——真实内容必须出现，断言一条没改；只是不再在 mock 还没
+ * resolve 时提前放弃。上限调回 5 这条会重新变成间歇红，别改小。
  */
 async function renderShellMarkup() {
   let markup = renderToStaticMarkup(<AppShell />);
-  for (let attempt = 0; attempt < 5 && markup.includes("加载中…"); attempt++) {
+  for (
+    let attempt = 0;
+    attempt < LAZY_RESOLVE_ATTEMPTS && markup.includes(SUSPENSE_FALLBACK);
+    attempt++
+  ) {
     await new Promise(resolve => setTimeout(resolve, 0));
     markup = renderToStaticMarkup(<AppShell />);
+  }
+  if (markup.includes(SUSPENSE_FALLBACK)) {
+    throw new Error(
+      `懒加载路由在 ${LAZY_RESOLVE_ATTEMPTS} 次重渲后仍停在 Suspense fallback——` +
+        `这不是抖动，去查路由 mock 的动态 import 是不是真的 resolve 了。`
+    );
   }
   return markup;
 }

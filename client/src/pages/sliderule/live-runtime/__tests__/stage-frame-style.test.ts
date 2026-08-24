@@ -55,6 +55,56 @@ describe("舞台预览框外观（stage-frame-style）", () => {
     }
   );
 
+  it("阴影外扩量必须装得进预留余量（第一轮就是栽在这条上）", async () => {
+    /**
+     * ⚠ 2026-08-24 第二轮。第一轮补了 pad 却没验证够不够，真机底边照切 14px，
+     * 用户第二次反馈"被外层截断、看着很锋利"。
+     *
+     * 关键在 pad 是**居中均分**的：contain 模式必有一轴刚好贴满，那轴每边只拿到
+     * pad/2。所以只能按 pad/2 卡，不能按容器实际剩余空间卡——后者在另一轴上很宽松，
+     * 拿它当判据就会假绿。
+     *
+     * 把阴影调大而不同步加 pad（或反过来把 pad 调小），这条必红。
+     */
+    const {
+      STAGE_FRAME_SHADOW,
+      STAGE_FRAME_PAD,
+      PHONE_FRAME_SHADOW,
+      PHONE_FRAME_PAD,
+      shadowExtent,
+    } = await import("../stage-frame-style");
+
+    const desktop = shadowExtent(STAGE_FRAME_SHADOW);
+    expect(desktop.bottom).toBeLessThanOrEqual(STAGE_FRAME_PAD.y / 2);
+    expect(desktop.top).toBeLessThanOrEqual(STAGE_FRAME_PAD.y / 2);
+    expect(desktop.right).toBeLessThanOrEqual(STAGE_FRAME_PAD.x / 2);
+    expect(desktop.left).toBeLessThanOrEqual(STAGE_FRAME_PAD.x / 2);
+
+    const phone = shadowExtent(PHONE_FRAME_SHADOW);
+    expect(phone.bottom).toBeLessThanOrEqual(PHONE_FRAME_PAD.y / 2);
+    expect(phone.right).toBeLessThanOrEqual(PHONE_FRAME_PAD.x / 2);
+
+    // 底边是朝下偏的那边，必须是最吃余量的方向——否则说明阴影根本没有方向感
+    expect(desktop.bottom).toBeGreaterThan(desktop.top);
+  });
+
+  it("shadowExtent 按 |offset| + blur/2 + spread 算，不是照着 blur 猜", async () => {
+    const { shadowExtent } = await import("../stage-frame-style");
+    // 第一轮翻车的那组值：看着像 48px，向下其实是 24 + 24 - 16 = 32
+    const e = shadowExtent("0 24px 48px -16px rgba(15,23,42,0.14)");
+    expect(e.bottom).toBe(32);
+    expect(e.top).toBe(0); // -24 + 8 < 0，够不到顶边
+    expect(e.left).toBe(8);
+    expect(e.right).toBe(8);
+    // ring 四边等距
+    expect(shadowExtent("0 0 0 1px rgba(0,0,0,0.06)")).toEqual({
+      top: 1,
+      right: 1,
+      bottom: 1,
+      left: 1,
+    });
+  });
+
   it("桌面档是 ring + 分层，不是单层大模糊", async () => {
     const { STAGE_FRAME_SHADOW, STAGE_FRAME_PAD, PHONE_FRAME_SHADOW } =
       await import("../stage-frame-style");
@@ -69,8 +119,7 @@ describe("舞台预览框外观（stage-frame-style）", () => {
     expect(STAGE_FRAME_SHADOW).not.toContain("rgba(60,50,30");
     // 手机档机身自带边界，不该再加 ring
     expect(PHONE_FRAME_SHADOW).not.toContain("0 0 0 1px");
-    // 余量要够放下最远那层的外扩（48px 模糊 -16px 收缩 ≈ 16px）+ 24px 下偏
-    expect(STAGE_FRAME_PAD.x).toBeGreaterThanOrEqual(24);
-    expect(STAGE_FRAME_PAD.y).toBeGreaterThanOrEqual(STAGE_FRAME_PAD.x);
+    // y 比 x 大：阴影朝下偏，底边才是吃余量的那一边
+    expect(STAGE_FRAME_PAD.y).toBeGreaterThan(STAGE_FRAME_PAD.x);
   });
 });

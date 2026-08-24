@@ -51,6 +51,7 @@ import React from "react";
 import { HtmlAppSurface } from "./html-app-surface";
 import { useScaleToFit, specPageViewport, PHONE_STAGE_MAX_SCALE } from "./canvas-scale";
 import {
+  PHONE_FRAME_PAD,
   PHONE_FRAME_SHADOW,
   STAGE_FRAME_PAD,
   STAGE_FRAME_SHADOW,
@@ -170,7 +171,7 @@ export function SpecPageLiveStage({
     viewport.h,
     "contain",
     studioLayout?.resizing ?? false,
-    isPhone ? { x: 36, y: 48 } : STAGE_FRAME_PAD,
+    isPhone ? PHONE_FRAME_PAD : STAGE_FRAME_PAD,
     isPhone ? PHONE_STAGE_MAX_SCALE : undefined
   );
 
