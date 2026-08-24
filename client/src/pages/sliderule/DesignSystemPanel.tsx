@@ -75,7 +75,7 @@ export function DesignSystemPanel({
       /* 不再自己定位：它是 DesignSystemRail 那个 flex 行的第二列，
          位置由清单决定（清单在左、它在右）。自己再挂 fixed 会脱离那一行，
          又回到"面板离清单半个屏幕"的老样子。 */
-      className="pointer-events-auto flex h-full w-[300px] shrink-0 flex-col overflow-hidden rounded-[12px] border border-[#e5e7eb] bg-white shadow-[0_24px_64px_rgb(15_23_42/0.18)]"
+      className="pointer-events-auto flex max-h-[var(--ds-max-h,60vh)] w-[300px] shrink-0 flex-col overflow-hidden rounded-[12px] border border-[#e5e7eb] bg-white shadow-[0_24px_64px_rgb(15_23_42/0.18)]"
     >
       <div className="flex shrink-0 items-center gap-2 border-b border-[#eef0f4] px-3 py-2.5">
         <DesignSystemSwatch seed={sys.seed} size={18} />

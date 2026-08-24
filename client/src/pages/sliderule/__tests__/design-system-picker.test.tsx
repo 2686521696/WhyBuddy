@@ -86,6 +86,42 @@ describe("③ 新建开右侧面板，不是抽屉", () => {
     expect(src).not.toMatch(/absolute bottom-full/);
   });
 
+  it("清单不许随面板开合上下飘：底对齐 + 每列各自钳高", () => {
+    /**
+     * ⚠ 2026-08-25 真机（用户原话"位置飘了"）：整行是 bottom 锚定的，面板 557
+     * 比清单 312 高，用 items-stretch / 给整行设 maxHeight 的话，行高一变大就
+     * 往上长，**清单跟着上移 152px**。
+     * 底对齐之后清单下沿钉死在行底，面板只往上长。改回 items-stretch 必红。
+     */
+    const src = rail();
+    expect(src).toContain("items-end");
+    expect(src).not.toContain("items-stretch");
+    // 高度限制走 CSS 变量下发给两列，不设在行上（设在行上又会撑起行高）
+    expect(src).toContain("--ds-max-h");
+    expect(src).not.toMatch(/maxHeight: pos\.maxH/);
+    const panel = stripComments(
+      readFileSync(new URL("../DesignSystemPanel.tsx", import.meta.url), "utf8")
+    );
+    expect(panel).toContain("var(--ds-max-h");
+  });
+
+  it("外点 / Esc 都要能关（不能只剩再点一次按钮这一条路）", () => {
+    /**
+     * ⚠ 2026-08-25 真机（用户原话"打开之后关不掉了"）：清单搬出 ComposerDock 时，
+     * 那边原有的 mousedown 外点关闭一并删掉了，而 Rail 里没补——点空白、按 Esc
+     * 全都没反应。
+     *
+     * ⚠ 而且必须排除 anchor：触发按钮在 Rail 外面，不排除的话点按钮会先被外点
+     * 关掉、再被按钮自己 toggle 打开，净效果是**永远关不掉**，比原来还糟。
+     */
+    const src = rail();
+    expect(src).toContain('addEventListener("mousedown"');
+    expect(src).toContain('addEventListener("keydown"');
+    expect(src).toContain('e.key === "Escape"');
+    expect(src).toContain("anchorRef.current?.contains(t)");
+    expect(src).toContain("railRef.current?.contains(t)");
+  });
+
   it("放不下时整体左移、高度按可用空间钳住，不许出屏", () => {
     const src = rail();
     // 右边放不下 → 左移贴边
@@ -150,9 +186,16 @@ describe("④ 点预设不消失，点应用一起消失", () => {
      * 过程中每点一下都改掉下一轮真正会用的那套，等于没有"预览"这回事。
      * 落库归「应用」。清单里出现 apply/saveDesignSystemId 必红。
      */
-    expect(src).not.toContain("panel.apply(");
-    expect(src).not.toContain("saveDesignSystemId");
-    expect(src).not.toContain("closeAll");
+    /**
+     * ⚠ 判据收在**预设按钮那段 onClick 里**，不是整份文件。
+     * 原文写的是 `not.toContain("closeAll")` —— 外点/Esc 关闭合法地也要用
+     * closeAll，整份文件级的禁令会把正当用法一起判红（2026-08-25 撞到）。
+     */
+    const at = src.indexOf("panel.openView(sys.id)");
+    const onClick = src.slice(Math.max(0, at - 260), at + 120);
+    expect(onClick).not.toContain("panel.apply(");
+    expect(onClick).not.toContain("saveDesignSystemId");
+    expect(onClick).not.toContain("closeAll");
   });
 
   it("点预设不关清单：openView 反而把 menuOpen 顶成 true", () => {

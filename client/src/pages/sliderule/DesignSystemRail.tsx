@@ -54,6 +54,7 @@ export function DesignSystemRail({
   // 每次展开现读：新建保存完不用刷新页面就能在清单里看到。
   const list = React.useMemo(() => (open ? allDesignSystems() : []), [open]);
 
+  const railRef = React.useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = React.useState<{
     left: number;
     bottom: number;
@@ -85,25 +86,65 @@ export function DesignSystemRail({
     };
   }, [open, hasPanel, anchorRef]);
 
+  /**
+   * ⚠ 外点 / Esc 关闭。2026-08-25 真机：清单搬出 ComposerDock 时，那边原来的
+   * mousedown 外点关闭一并删掉了，而 Rail 里没补——结果**只有再点一次触发按钮
+   * 才关得掉**，点空白、按 Esc 都没反应（用户原话"打开之后关不掉了"）。
+   *
+   * ⚠ 触发按钮在 Rail **外面**（作曲家里），所以必须把 anchor 一起排除：
+   * 不排除的话点按钮会先被这里当外点关掉、再被按钮自己 toggle 打开，净效果
+   * 是永远关不掉——比现在还糟。
+   */
+  React.useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (railRef.current?.contains(t)) return;
+      if (anchorRef.current?.contains(t)) return;
+      panel?.closeAll();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") panel?.closeAll();
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, panel, anchorRef]);
+
   if (!panel) return null;
   if (typeof document === "undefined") return null;
 
   return createPortal(
     <div
+      ref={railRef}
       data-testid="sliderule-design-rail"
+      /**
+       * ⚠ items-end + 每列各自钳高，**不能**用 items-stretch / 给整行设 maxHeight。
+       * 2026-08-25 真机：整行是 bottom 锚定的，面板(557) 比清单(312) 高，
+       * 行高一变大就往上长——清单跟着上移 152px，看着像"位置飘了"。
+       * 底对齐之后清单的下沿钉死在行底，面板只往上长，清单一动不动。
+       * 高度限制走 CSS 变量下发给两列，不设在行上（设在行上又会撑起行高）。
+       */
       style={
         pos
-          ? { left: pos.left, bottom: pos.bottom, maxHeight: pos.maxH }
+          ? ({
+              left: pos.left,
+              bottom: pos.bottom,
+              ["--ds-max-h" as string]: `${pos.maxH}px`,
+            } as React.CSSProperties)
           : { left: -9999, bottom: 0 }
       }
-      className={`fixed z-[75] flex items-stretch gap-2 transition-opacity duration-150 ${
+      className={`fixed z-[75] flex items-end gap-2 transition-opacity duration-150 ${
         open ? "opacity-100" : "pointer-events-none opacity-0"
       }`}
     >
       <div
         role="menu"
         data-testid="sliderule-design-system-menu"
-        className="flex h-full w-[272px] shrink-0 flex-col overflow-hidden rounded-[12px] border border-[#e5e7eb] bg-white shadow-[0_24px_64px_rgb(15_23_42/0.18)]"
+        className="flex max-h-[var(--ds-max-h,60vh)] w-[272px] shrink-0 flex-col overflow-hidden rounded-[12px] border border-[#e5e7eb] bg-white shadow-[0_24px_64px_rgb(15_23_42/0.18)]"
       >
         <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
           <button
