@@ -81,21 +81,37 @@ export function studioStageDefaultPercent(splitWidthPx: number): number {
 }
 
 /**
- * 手机预览列默认宽 = 左侧菜单 ×2，且不可拖。
+ * 手机预览列默认宽 = 左侧菜单 ×3，且不可拖。
  *
  * 桌面把「菜单×2」给对话栏、舞台吃剩余。手机机框只有 390 CSS 像素，
  * 舞台再吃 70% 会把 contain 拉到 110%，对话被挤成一条。对调：预览列
- * 锁在菜单×2（504px），对话吃剩余。
+ * 锁死一个像素宽，对话吃剩余。
  *
  * ⚠ 2026-08-20：用户原话「手机端视图默认给个宽度，菜单那块的两倍，不可拖拽」。
  * 改回跟桌面同一套 38/62、或仍让手机舞台可拖，这条必须红。
+ *
+ * ⚠ 2026-08-24：用户改口要 ×3（原话「目前移动端是左侧菜单的两倍宽度，改成3倍吧」）。
+ * **这里原先是 `return studioChatDefaultPx()`——直接复用对话栏那份**，看着省事，
+ * 实则把两条独立的用户裁决焊死在一个数上：桌面对话栏的 ×2 是 2026-08-20 另一次
+ * 拍板（「默认要菜单宽度的二倍」），手机列要 ×3 不该动它。所以这次先解耦成自己的
+ * 倍数常量，再改数。想省一行改回复用对话栏的，下次只要有一边要动就会连坐。
  */
+export const STUDIO_PHONE_STAGE_SIDEBAR_MULTIPLIER = 3;
+
+/** 量不到容器时的回落：756 / (1920−252) ≈ 45%，与 ×3 同步算出来的，别单独调。 */
+export const STUDIO_PHONE_STAGE_FALLBACK_PERCENT = 45;
+
 export function studioPhoneStageDefaultPx(): number {
-  return studioChatDefaultPx();
+  return SHELL_SIDEBAR_WIDTH_PX * STUDIO_PHONE_STAGE_SIDEBAR_MULTIPLIER;
 }
 
 export function studioPhoneStageDefaultPercent(splitWidthPx: number): number {
-  return studioChatDefaultPercent(splitWidthPx);
+  if (!(splitWidthPx > 0)) return STUDIO_PHONE_STAGE_FALLBACK_PERCENT;
+  const pct = (studioPhoneStageDefaultPx() / splitWidthPx) * 100;
+  return Math.min(
+    STUDIO_CHAT_MAX_PERCENT,
+    Math.max(STUDIO_CHAT_MIN_PERCENT, pct)
+  );
 }
 
 export function studioPhoneChatDefaultPercent(splitWidthPx: number): number {

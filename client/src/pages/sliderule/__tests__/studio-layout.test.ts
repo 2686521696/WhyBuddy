@@ -24,18 +24,10 @@ import { SHELL_SIDEBAR_WIDTH_PX } from "../shell-sidebar-layout";
 
 describe("studio-layout（VS Code 分栏对照）", () => {
   it("两侧不能同时折没：折一个时另一个不许再折", () => {
-    expect(
-      canCollapsePart("chat", { chat: false, stage: false })
-    ).toBe(true);
-    expect(
-      canCollapsePart("stage", { chat: false, stage: false })
-    ).toBe(true);
-    expect(
-      canCollapsePart("chat", { chat: false, stage: true })
-    ).toBe(false);
-    expect(
-      canCollapsePart("stage", { chat: true, stage: false })
-    ).toBe(false);
+    expect(canCollapsePart("chat", { chat: false, stage: false })).toBe(true);
+    expect(canCollapsePart("stage", { chat: false, stage: false })).toBe(true);
+    expect(canCollapsePart("chat", { chat: false, stage: true })).toBe(false);
+    expect(canCollapsePart("stage", { chat: true, stage: false })).toBe(false);
   });
 
   it("最大化 = 只留舞台；舞台已经没了则不能最大化", () => {
@@ -98,21 +90,40 @@ describe("对话栏默认 = 左侧菜单 ×2", () => {
   });
 });
 
-describe("手机预览列默认 = 左侧菜单 ×2", () => {
-  it("跟桌面对话栏同一像素，只是换到舞台列", () => {
+describe("手机预览列默认 = 左侧菜单 ×3", () => {
+  it("是菜单×3，且**不再**跟桌面对话栏共用同一个数", () => {
     /**
      * ⚠ 2026-08-20：用户要手机视图宽 = 菜单两倍且不可拖。
-     * 跟桌面对话栏用同一个 504，对调面板；改回 38/62 或倍数改成 1 必须红。
+     * ⚠ 2026-08-24：用户改口要三倍（「目前移动端是左侧菜单的两倍宽度，改成3倍吧」）。
+     *
+     * 这条测试的重点不是那个 756，是**下面那条 not.toBe**：原实现是
+     * `studioPhoneStageDefaultPx() { return studioChatDefaultPx() }`，两条独立的
+     * 用户裁决焊在一个数上。谁要是图省事再把它接回对话栏，756 照样对、这条也照样绿
+     * ——直到有人改对话栏倍数，手机列跟着连坐。所以正反两条一起钉：
+     *   正：手机列 = 菜单 ×3
+     *   反：它和对话栏不是同一个数（对话栏仍是 ×2，没被这次改动波及）
      */
     const split = 1920 - SHELL_SIDEBAR_WIDTH_PX;
-    expect(studioPhoneStageDefaultPx()).toBe(studioChatDefaultPx());
-    expect(studioPhoneStageDefaultPx()).toBe(504);
+    expect(studioPhoneStageDefaultPx()).toBe(SHELL_SIDEBAR_WIDTH_PX * 3);
+    expect(studioPhoneStageDefaultPx()).toBe(756);
+
+    // 反向：桌面对话栏没被连坐，仍是菜单 ×2
+    expect(studioChatDefaultPx()).toBe(504);
+    expect(studioPhoneStageDefaultPx()).not.toBe(studioChatDefaultPx());
+
+    // 百分比要跟着像素算，不是照抄对话栏的
     expect(studioPhoneStageDefaultPercent(split)).toBeCloseTo(
+      (756 / split) * 100
+    );
+    expect(studioPhoneStageDefaultPercent(split)).toBeGreaterThan(
       studioChatDefaultPercent(split)
     );
-    expect(studioPhoneChatDefaultPercent(split)).toBeCloseTo(
-      studioStageDefaultPercent(split)
-    );
+    // 两列互补，加起来是满的
+    expect(
+      studioPhoneStageDefaultPercent(split) +
+        studioPhoneChatDefaultPercent(split)
+    ).toBeCloseTo(100);
+
     expect(isPhoneStudioDevice("phone")).toBe(true);
     expect(isPhoneStudioDevice("desktop")).toBe(false);
     expect(isPhoneStudioDevice(undefined)).toBe(false);
