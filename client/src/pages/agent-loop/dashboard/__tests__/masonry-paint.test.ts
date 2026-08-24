@@ -117,15 +117,17 @@ describe("不卸挂接在真链路上", () => {
       "collectPaintIndices",
     )[0];
     expect(rangeThenPaint).not.toContain("children.push");
-    // ⚠ 2026-08-23 落点改过：应用中心换成两端对齐行（JustifiedWall）之后不再
-    //   经过 SpanMasonry，`retainPlaced` 那条随之退场。JustifiedWall 的视口裁切
-    //   是**纯的**（比大小，不存"已渲染过"的状态），所以不需要 retain 那套——
-    //   反过来说，它要是哪天存了状态，就把当初那个死锁请回来了，下面这条钉它。
-    const jw = stripComments(
-      readFileSync(new URL("../JustifiedWall.tsx", import.meta.url), "utf8"),
+    // ⚠ 2026-08-23 落点改过两次：应用中心先换两端对齐行（JustifiedWall）、
+    //   当天晚些又换等宽瀑布流（ColumnsWall，因为"字挪到画面外"要求宽度由列
+    //   决定）。两版都**不经过 SpanMasonry**，`retainPlaced` 那条随之退场。
+    //   两版的视口裁切也都是**纯的**（比大小/查区间树，不存"已渲染过"的状态），
+    //   所以不需要 retain 那套——反过来说，它要是哪天存了状态，就把当初那个
+    //   死锁请回来了，下面这条钉它。
+    const cw = stripComments(
+      readFileSync(new URL("../ColumnsWall.tsx", import.meta.url), "utf8"),
     );
-    expect(jw).toMatch(/layout\.boxes\.filter/);
-    expect(jw).not.toContain("useState");
+    expect(cw).toMatch(/positioner\.range\(lo, hi/);
+    expect(cw).not.toContain("useState");
     expect(wall).not.toContain("retainPlaced");
     expect(masonry).toContain("masonry-end");
     expect(masonry).toContain("IntersectionObserver");

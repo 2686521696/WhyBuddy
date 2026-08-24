@@ -32,7 +32,7 @@ import { Pagination } from "antd";
 import { useContainerPosition } from "masonic";
 
 import { useScrollerIn } from "./useScrollerIn";
-import { JustifiedWall } from "./JustifiedWall";
+import { ColumnsWall } from "./ColumnsWall";
 import { appendStableItems, appendUniqueById } from "./masonry-append";
 import { DEVICE_ASPECT, aspectForDevice } from "@/lib/justified-rows";
 import {
@@ -946,76 +946,71 @@ function CenterCard({
   statusLabel: string;
   onClick: () => void;
   topRight?: React.ReactNode;
-  /** 卡片总高（px）。信息条浮在画面上，不再另占高度——见下方那段说明。 */
+  /** **画面**高（px），不含图外那条信息行——信息行由布局的 captionHeight 定。 */
   mediaHeight?: number | string;
-  /** 紧凑态：卡片太窄时收起指标行，只留标题 + 状态。 */
+  /** 紧凑态：格子窄到放不下品牌图标时收起它，标题让位。 */
   compact?: boolean;
 }) {
   return (
     <div
       data-testid={testid}
       title={titleAttr}
-      // 2026-07-31：宽高比不再由卡片自己定死 16:9，改由**父容器**给。
+      // 2026-08-23 下午：信息层从**压在画面上**改成**排在画面外**。
       //
-      // 2026-07-31 之二：信息层压在图上 → 排到图下 → **又改回压在图上**（用户裁决）。
-      // 来回一趟不是反复，两次的约束不一样，记下来免得下次又绕：
+      // 这条来回过两趟，两次的前提都变了，别当成反复（完整经过见 ColumnsWall
+      // 文件头）：
+      //   7-31  压图上 → 排图下 → 又压回图上（用户裁决）。当时改回来的理由是
+      //         "压在图上没有文字宽度下限"，而那个理由成立的前提是**当时是等宽
+      //         瀑布流、最窄列 260px**。
+      //   8-23 上午 换成等高变宽（两端对齐行），手机卡掉到 110~133px 宽——7-31
+      //         那个"122px 放不下标题"的场景原样回来了，只是当时没人发现，
+      //         因为字还压在图上、被 opacity-30 糊着看不出来。
+      //   8-23 下午 用户对着花瓣的墙提"层次结构有差距"。真机出了三档效果图：
+      //         只把字挪出去（保持等高变宽）→ 窄卡标题只剩「构建面…」，废；
+      //         等宽 + 字挪出去 → 成。于是两条一起改。
       //
-      //   挪到图下的理由是"压在图上时卡片有文字宽度下限"——手机档在 justified
-      //   排法下只有 122px 宽，那排「页面 5 / 角色 4 / AI 3 / 状态」挤成两行。
-      //   **但 justified 排法已经不在了**：现在是瀑布流，最窄列宽 260px、实测
-      //   落到 308px，跨列卡 632px，122px 那个场景不会再出现，理由随之失效。
+      // 所以画面上现在**默认一个字都不压**。原来那条渐变黑带（默认 opacity-30、
+      // 悬停 100）整条退场——它当初存在的唯一理由是"字必须压在图上"。
       //
-      //   改回来的收益是实的：信息条不再另占一段高度，同样的卡片高度里画面能
-      //   多显示一截应用——卡片墙的意义就是"一眼看出这个系统长什么样"。
-      //
-      // 压字必须保证在**任意应用截图**上都读得清：生成的应用有浅色仪表盘也有
-      // 深色监控盘，所以用从下往上的黑色渐变（底部 85% 到顶部全透明）而不是
-      // 一整块半透明——整块会在浅色截图上糊掉一条，渐变只压住文字那一带，
-      // 上面的画面照常看得见。再叠一层 backdrop-blur 兜住高频花纹的底。
-      //
-      // 2026-08-20：整层默认 opacity-30，悬停再拉满。用户要先看清截图，
-      // 字和渐变一起淡——只淡字、渐变仍 85% 的话，底还是一条黑带。
-      // hover 仍走 85% 底，任意深浅截图都能读。漏掉 group-hover 就永远 30%。
-      className="group relative h-full w-full cursor-pointer overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm transition hover:border-[#1677ff]/60 hover:shadow-lg"
-      style={{ height: mediaHeight }}
+      // 指标（页面/角色/AI/时间）不进图外那行：那行只放标题和状态，多一样就
+      // 会跟标题抢宽度，等宽也救不回来。指标改成**悬停时**才浮在画面底部，
+      // 静态时画面是干净的——卡片墙的意义是"一眼看出这个系统长什么样"。
+      className="group flex h-full w-full cursor-pointer flex-col"
       onClick={onClick}
     >
-      {/* 画面区：铺满整张卡 */}
-      <div className="absolute inset-0 overflow-hidden">{media}</div>
-      {topRight}
-      {/* 信息条：浮在画面底部，不占卡片高度 */}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/60 to-transparent px-3 pb-2 pt-7 opacity-30 backdrop-blur-[1px] transition-opacity group-hover:opacity-100">
-        <div className="flex items-center gap-1.5">
-          {Icon && !compact && (
-            <span
-              className="flex h-[20px] w-[20px] shrink-0 items-center justify-center rounded-[6px] text-white"
-              style={{ background: iconBg }}
-            >
-              <Icon size={12} />
-            </span>
-          )}
+      {/* 画面区：这张卡的主体。不给边框和阴影——参考站的墙上，图就是卡本身，
+          外框只会在密排时叠成一片网格线。极淡的 ring 只为了压住纯白截图的边，
+          悬停才升成品牌色。 */}
+      <div
+        className="relative w-full shrink-0 overflow-hidden rounded-[10px] bg-[#f0f2f5] ring-1 ring-black/[0.04] transition group-hover:ring-2 group-hover:ring-[#1677ff]/50"
+        style={{ height: mediaHeight }}
+      >
+        <div className="absolute inset-0 overflow-hidden">{media}</div>
+        {topRight}
+        {/* 指标：静态不在，悬停才浮出来。渐变只压住文字那一带，深浅截图都读得清。 */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/45 to-transparent px-2.5 pb-1.5 pt-7 opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-white/85">
+            {metrics}
+          </div>
+        </div>
+      </div>
+      {/* 信息行：在画面**外**，页面底色上。黑字白底，任何截图都盖不住它。 */}
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 px-0.5 pt-[7px]">
+        {Icon && !compact && (
           <span
-            className={`min-w-0 flex-1 truncate font-semibold text-white drop-shadow-sm ${
-              compact ? "text-[12px]" : "text-[13.5px]"
-            }`}
+            className="flex h-[16px] w-[16px] shrink-0 items-center justify-center rounded-[5px] text-white"
+            style={{ background: iconBg }}
           >
-            {title}
+            <Icon size={10} />
           </span>
-        </div>
-        {/* 窄卡（手机档在 200 行高下约 110~133px 宽）收起指标：三个徽标 + 状态
-            挤在 110px 里会折成三四行，把画面盖掉大半。状态点是最要紧的一条，
-            留着；其余靠点开看。判据见 apps-workbench 的「窄卡收起指标行」。 */}
-        <div
-          className={`mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-white/75 ${
-            compact ? "justify-end" : ""
-          }`}
-        >
-          {compact ? null : metrics}
-          <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 font-medium text-white/90">
-            <span className={`h-1.5 w-1.5 rounded-full ${statusDot}`} />
-            {statusLabel}
-          </span>
-        </div>
+        )}
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-stone-800">
+          {title}
+        </span>
+        <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-stone-400">
+          <span className={`h-1.5 w-1.5 rounded-full ${statusDot}`} />
+          {statusLabel}
+        </span>
       </div>
     </div>
   );
@@ -1028,29 +1023,39 @@ interface WallEntry {
 }
 
 /**
- * 卡片墙的列宽下限与间距。列数由 masonic 按容器宽度自己算，算完还会把列宽
- * **撑满**剩余空间（use-positioner.ts: columnWidth = (width - gutter*(n-1)) / n），
- * 所以这个值是「最窄能到多少」，不是最终列宽。
+ * 卡片墙的列宽下限与间距。列数由 `computeColumns`（masonic getColumns() 的移植）
+ * 按容器宽度算，算完还会把列宽**撑满**剩余空间
+ * （columnWidth = (width - gutter*(n-1)) / n），所以这个值是「最窄能到多少」，
+ * 不是最终列宽。
  *
- * 260 是量出来的下限，卡在信息区那排指标的换行点上：1600px 视口下可用宽
- * ~1300 → 4 列 × 309px，「页面 n · 角色 n · AI n · 时间 · 状态」正好一行。
- * 试过 240（5 列 × 244px），**每张卡**的状态都被挤到第二行，卡片凭空高一截，
- * 带 v4 徽标的那张更是折成三行——比 4 列难看。列数不是越多越好，宽度下限由
- * 信息区内容定。
+ * ## 为什么从 260 降到 240
  *
- * 屏幕再宽会自动加列（1920px → 5 列 × 308px），不用改这里。
+ * 260 那个下限**是被信息区顶出来的**：当时「页面 n · 角色 n · AI n · 时间 ·
+ * 状态」这一整排要在卡片里排成一行，240（5 列 × 244px）会把状态挤到第二行。
+ *
+ * 2026-08-23 下午信息区改了：图外那行**只放标题和状态**，指标挪到悬停浮层
+ * （见 CenterCard）。顶出 260 的那排东西不在了，下限随之由「标题读不读得
+ * 出来」定 —— 240 下 1600px 视口可用宽 ~1340 → 5 列 × 255px，标题能露约
+ * 16 个汉字，够认出是哪个应用。
+ *
+ * ⚠ 改这个数之前先确认信息行还是不是只有标题+状态。这两个数是**绑在一起**的，
+ *   往回加东西却不抬下限，现象是标题被截成「构建面…」——不报错，只是没用。
+ *
+ * 屏幕再宽会自动加列（容器 2400px → 9 列），不用改这里。
  */
-const WALL_COLUMN_WIDTH = 260;
+const WALL_MIN_COLUMN_WIDTH = 240;
 const WALL_GUTTER = 16;
 
 /**
- * 两端对齐行的目标行高（用户 2026-08-23 在三档效果图里选定 200）。
+ * 图外那条信息行的高度（px）。
  *
- * 算法会为了铺满整行在 ±25% 容差内浮动，实测落在 235~237——所以这是「目标」，
- * 不是最终行高。真实数据（68 个应用、容器 1594px）下：12 行、总高 2893px、
- * 桌面卡宽 348~421、手机卡宽 110~133。
+ * 它由**布局**持有、传给 ColumnsWall，再由 ColumnsWall 从格高里减掉之后把
+ * 「画面高」交给卡片。卡片自己不许再算一遍——两处真值改一处就压盖或留缝，
+ * 而且不报错（同 renderAppCard 里那条 ⚠）。
+ *
+ * 32 = 7px 上边距 + 13px 字号那行的行高，实测刚好不挤。
  */
-const WALL_TARGET_ROW_HEIGHT = 200;
+const WALL_CAPTION_HEIGHT = 32;
 
 /**
  * 「我的应用」瀑布流。
@@ -1103,7 +1108,8 @@ function AppWall({
     item: GalleryItem,
     detail: AppCardDetail | null,
     cellW: number,
-    cellH: number,
+    /** **画面**高，不含图外那条信息行。 */
+    mediaH: number,
   ) => React.ReactNode;
   onReachEnd?: () => void;
   ensureDetail: (gi: GalleryItem) => void;
@@ -1115,24 +1121,26 @@ function AppWall({
 
   return (
     <div data-testid="apps-wall" style={{ display: "contents" }}>
-      <JustifiedWall<WallEntry>
+      <ColumnsWall<WallEntry>
         containerRef={containerRef}
         items={items}
         width={width}
         height={height}
         scrollTop={scrollTop}
-        targetRowHeight={WALL_TARGET_ROW_HEIGHT}
+        minColumnWidth={WALL_MIN_COLUMN_WIDTH}
+        captionHeight={WALL_CAPTION_HEIGHT}
         spacing={WALL_GUTTER}
         overscanBy={2}
-        // 宽高比就是设备档：桌面 1.778、手机 0.5625。错落由它自然产生，
+        // 宽高比就是设备档：桌面 1.6、手机 0.5625。等宽之下，错落全部来自它，
         // 不再需要「按页面数取前 1/4 跨两列」那条人工规则。
         aspectOf={entry => aspectForDevice(entry.item.summary?.device)}
         itemKey={entry => entry.item.key}
         className="mt-5"
         onReachEnd={onReachEnd}
-        render={(entry, _i, cellW, cellH) => (
+        // ⚠ 第四个参数是**画面高**，不是格高（格高 = 画面高 + captionHeight）。
+        render={(entry, _i, cellW, mediaH) => (
           <GalleryCardGate item={entry.item} ensure={ensureDetail}>
-            {renderCard(entry.item, entry.detail, cellW, cellH)}
+            {renderCard(entry.item, entry.detail, cellW, mediaH)}
           </GalleryCardGate>
         )}
       />
@@ -1721,17 +1729,18 @@ export function AppsWorkbench() {
     item: GalleryItem,
     detail: AppCardDetail | null,
     cellW: number,
-    cellH: number,
+    mediaH: number,
   ) => {
-    // 宽高**都由布局给**（两端对齐行：同行等高、按宽高比分宽），卡片按给的
-    // 尺寸铺满即可——不再自己按列宽反算高度。
+    // 格宽和**画面高**都由布局给（等宽瀑布流：列宽固定，画面高 = 列宽 ÷ 宽高比），
+    // 卡片按给的尺寸铺满即可——不自己算。
     //
-    // ⚠ 2026-08-23 换 B 方案之前这里是 `wallCardHeight(cellW, device)`，那是
-    //   等宽变高的瀑布流留下的：列宽固定、高度自己算。现在两个数都是布局的
-    //   输出，卡片再算一遍只会跟布局打架（现象是压盖或留缝，不报错）。
-    const mediaH = cellH;
-    // 窄卡收起指标行。阈值 200：手机档在 200 目标行高下实测 110~133px 宽，
-    // 桌面档 348~421px；取中间偏窄一侧，桌面卡任何行高下都不会误伤。
+    // ⚠ 这里踩过两次，都是"卡片自己再算一遍"：
+    //   · 8-23 换两端对齐行之前是 `wallCardHeight(cellW, device)`（等宽变高的
+    //     瀑布流留下的），布局换了它没换，跟布局打架。
+    //   · 第四个参数从"格高"变成"画面高"（8-23 下午信息行挪到图外）。名字不改
+    //     成 mediaH 的话，下一个人照旧当格高用，画面会高出一条信息行——现象是
+    //     卡片互相压盖，**不报错**。
+    //   两次都不报错，所以名字必须自带含义。
     const compact = cellW < 200;
     const meta = detail ? STATUS_META[detail.status] : null;
     const BrandIcon = detail?.identity

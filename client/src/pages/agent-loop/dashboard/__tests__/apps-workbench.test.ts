@@ -587,57 +587,60 @@ describe("卡片墙走 masonic，高度由内容决定", () => {
   });
 
   it("卡片宽高**都由布局给**，卡片不自己算", () => {
-    // ⚠ 2026-08-23 这条改过两次落点，记一下省得下次又看不懂：
+    // ⚠ 2026-08-23 这条改过三次落点，记一下省得下次又看不懂：
     //   ① 原来钉字面表达式 `Math.round(cellW / aspectForDevice(...))`；
     //   ② 中途抽成 wallCardHeight，因为纯函数落位要用同一个数；
-    //   ③ 当天换成两端对齐行（JustifiedWall）后，高度是**布局的输出**——
-    //      同行等高、按宽高比分宽。卡片再自己算一遍只会跟布局打架，
-    //      现象是压盖或留缝，且不报错。所以现在钉的是「不许自己算」。
-    // 反向判据必须剥注释再看：下面那句"换 B 方案之前这里是 wallCardHeight"
+    //   ③ 换成两端对齐行（JustifiedWall）后，高度是**布局的输出**，钉「不许
+    //      自己算」，第四个参数叫 cellH；
+    //   ④ 当天晚些信息行挪到画面外（等宽瀑布流 ColumnsWall），第四个参数从
+    //      「格高」变成「**画面高**」——两者差一条信息行。名字不跟着改的话，
+    //      下一个人照旧当格高用，画面高出一条，卡片互相压盖且**不报错**。
+    // 反向判据必须剥注释再看：源码里那段"换 B 方案之前这里是 wallCardHeight"
     // 是**事故记录**，留着有用，但会让不剥注释的 grep 假红（本仓第二条踩过的
     // 同一个坑，只是这次方向相反）。
     const bare = sourceWithoutComments(src);
-    expect(bare).toMatch(/const mediaH = cellH/);
     expect(bare).not.toMatch(/cellW\s*\/\s*aspectForDevice/);
     expect(bare).not.toContain("wallCardHeight");
+    // 参数名自带含义：拿到的是画面高，不是格高
+    expect(bare).toMatch(/mediaH: number/);
     expect(src).toContain("mediaHeight={mediaH}");
+    // 反向：卡片不许把信息行高再减一遍——那就成了两处真值
+    expect(bare).not.toMatch(/mediaH\s*=\s*\w+\s*-\s*WALL_CAPTION_HEIGHT/);
     // 宽高比只喂给布局，不在卡片里换算成高度
     expect(src).toMatch(/aspectOf=\{entry => aspectForDevice/);
-    // ⚠ 这里原来有两条「外框不能带 height、不许出现 cellH」的禁令，出发点是
-    //   当年那版「高度由内容决定」。两端对齐行之后前提反转了：高度就是布局的
-    //   输出，`cellH` 从禁忌变成了正解，禁令跟着撤销。
-    //   真正要防的事没变——卡片不许**自己另算**一个高度（上面三条钉着）。
-    //   外框仍然不写死尺寸：位置和宽高都由 JustifiedWall 的定位容器给。
+    // 外框仍然不写死尺寸：位置和宽高都由 ColumnsWall 的定位容器给。
     expect(src).not.toMatch(/style=\{\{ width: cellW, height: cellH \}\}/);
   });
 
-  it("信息条压在画面上，不另占卡片高度（用户裁决，2026-07-31 改回）", () => {
-    // 曾经因为"压在图上有文字宽度下限"（手机档 122px 宽时那排指标挤成两行）
-    // 把信息区挪到了图下。那个下限来自 justified 排法，而 justified 已经换成
-    // 瀑布流：最窄列宽 260、实测 308，跨列 632，122px 的场景不会再出现。
-    // 改回压字之后同样的卡高能多显示一截应用画面。
-    expect(src).toMatch(/absolute inset-x-0 bottom-0 bg-gradient-to-t from-black\//);
-    // 压在深色渐变上就必须是白字
-    // 紧凑态（窄卡）用 12px，常规 13.5px —— 2026-08-23 两端对齐行之后，
-    // 手机档卡片实测只有 110~133px 宽，13.5px 标题一个字都放不下几个。
-    expect(src).toMatch(/compact \? "text-\[12px\]" : "text-\[13\.5px\]"/);
-    expect(src).toMatch(/font-semibold text-white drop-shadow-sm/);
-    expect(src).toContain("text-white/75");
-    // 画面要铺满整张卡——信息条是浮层，不能再把画面挤成上半截
+  it("信息行排在画面**外**（2026-08-23 下午，用户对着花瓣的墙裁决）", () => {
+    // 这条来回过两趟，两次前提都变了，别当成反复：
+    //   7-31  压图上 → 排图下 → 又压回图上（用户裁决）。改回来的理由是"压在
+    //         图上没有文字宽度下限"，前提是**当时是等宽瀑布流、最窄列 260px**。
+    //   8-23 上午 换成等高变宽，手机卡掉到 110~133px 宽——7-31 那个"122px 放
+    //         不下标题"的场景原样回来了，只是字压在图上又被 opacity-30 糊着，
+    //         没人看得出来。
+    //   8-23 下午 用户提"层次结构跟参考站有差距"。真机三档效果图：只把字挪出
+    //         去（保持等高变宽）→ 窄卡标题只剩「构建面…」，废；等宽 + 字挪出
+    //         去 → 成。于是两条一起改。
+    // 正向：图外那行是深色字，白底上永远读得清
+    expect(src).toMatch(/truncate text-\[13px\] font-medium text-stone-800/);
+    // 画面仍然铺满它那一块（信息行在画面之外，不是把画面挤成上半截）
     expect(src).toContain("absolute inset-0 overflow-hidden");
   });
 
-  it("信息条默认 30% 透明，悬停才拉满（2026-08-20）", () => {
-    // 用户原话：渐变和上面的字默认透明度 30%，鼠标移上去再显示。
-    // 钉在**同一条**浮层上——只淡字、渐变仍 85%，底还是一条黑带。
-    // 右上角菜单是另一套 opacity-0 / group-hover，不能拿它冒充这条。
-    const overlay = src.match(/className="absolute inset-x-0 bottom-0 [^"]+"/)?.[0];
+  it("**画面上没有常驻压字层** —— 反向，这条才是那个层次差距的根", () => {
+    // 原来那条渐变黑带默认 opacity-30、悬停 100。它一旦回来，图又被盖一截、
+    // 字又读不清（真机效果图 01 就是那个样子）。
+    const bare = sourceWithoutComments(src);
+    expect(bare).not.toMatch(/from-black\/85/);
+    expect(bare).not.toMatch(/compact \? "text-\[12px\]" : "text-\[13\.5px\]"/);
+    // 悬停浮层可以有——指标放在那儿——但静态必须是 opacity-0
+    const overlay = bare.match(/className="pointer-events-none absolute inset-x-0 bottom-0 [^"]+"/)?.[0];
     expect(overlay).toBeTruthy();
-    expect(overlay).toContain("opacity-30");
+    expect(overlay).toContain("opacity-0");
     expect(overlay).toContain("group-hover:opacity-100");
-    expect(overlay.replace("group-hover:opacity-100", "")).not.toMatch(/opacity-100/);
     // group-hover 挂在卡片壳上；壳丢了 group，悬停永远不亮。
-    expect(src).toMatch(/className="group relative h-full w-full cursor-pointer/);
+    expect(bare).toMatch(/className="group flex h-full w-full cursor-pointer flex-col"/);
   });
 
   it("压在渐变上的元素不能留浅底深字", () => {

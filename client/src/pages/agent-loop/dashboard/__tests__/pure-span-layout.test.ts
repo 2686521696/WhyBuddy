@@ -103,23 +103,38 @@ function stripped(rel: string): string {
     .replace(/^[ \t]*\/\/.*$/gm, "");
 }
 
-describe("目前没有调用方——但纪律仍成立", () => {
+describe("调用方就在 ColumnsWall——纪律与链路都要钉住", () => {
   it("SpanMasonry 的 heightOf 路仍完整（组件库那两面墙将来可以用）", () => {
-    // ⚠ 2026-08-23：应用中心当天先切到这条纯函数路（修死锁），当天晚些又整体
-    //   换成了两端对齐行（JustifiedWall），于是 heightOf **暂时没有调用方**。
-    //   保留是因为它是「高度算得出来的瀑布流」的正解，且上面那组数学判据一直
-    //   在跑；组件库那两面墙的区块高度是真渲染才知道的，用不了它。
+    // 这条跟应用中心无关：组件库那两面墙的区块高度是真渲染才知道的，用不了
+    // 纯函数路，所以 SpanMasonry 的测量路必须继续完整。
     const src = stripped("../SpanMasonry.tsx");
     expect(src).toContain("if (!pure && needsFreshBatch)");
     expect(src).toContain("const cellRef = pure ? undefined : setRef");
     expect(src).toContain("buildPureSpanLayout");
   });
 
+  it("**这个引擎真的被用上了** —— 不是写对了就算数，要接在通电的插座上", () => {
+    // ⚠ 本仓最贵的一条纪律（CLAUDE.md 第一条）的具象化。
+    //
+    //   8-23 上午 这个引擎为 A 方案写成，当天下午整体换成两端对齐行
+    //             （JustifiedWall），它**没有调用方**了——这条判据当时写的是
+    //             「目前没有调用方」，如实记着。
+    //   8-23 晚   卡片改成"字在图外"，等高变宽下窄卡标题只剩「构建面…」，
+    //             于是换回等宽（ColumnsWall），这个引擎接了回来。
+    //
+    // 正向：ColumnsWall 必须真的调它——只 import 不调用，墙照样能编译过。
+    const wall = stripped("../ColumnsWall.tsx");
+    expect(wall).toContain("buildPureSpanLayout({");
+    // 等宽是这面墙的立身之本：谁都不许跨列，否则宽度又不由列决定，
+    // "字在图外"的前提就没了。
+    expect(wall).toContain("spanOf: () => 1");
+  });
+
   it("**应用中心已经不走测量路了** —— 那条死锁在结构上不成立", () => {
     // 反向：这面墙要是哪天又接回 SpanMasonry 而不传 heightOf，隐藏批次那套
     //   （以及 2026-08-23 那个「只显示第一行、等多久都不好」）就回来了。
     const wall = stripped("../AppsWorkbench.tsx");
-    expect(wall).toContain("JustifiedWall");
+    expect(wall).toContain("ColumnsWall");
     expect(wall).not.toContain("SpanMasonry");
   });
 });
