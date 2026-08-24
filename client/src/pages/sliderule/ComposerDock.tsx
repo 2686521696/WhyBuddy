@@ -42,6 +42,7 @@ import {
 } from "./design-system";
 import { DesignSystemSwatch } from "./DesignSystemSwatch";
 import { useDesignSystemPanel } from "./DesignSystemContext";
+import { DesignSystemRail } from "./DesignSystemRail";
 import { useIntakeJudge } from "./use-intake-judge";
 import { IntakeHintBar, INTAKE_JUDGING_LABEL } from "./IntakeHintBar";
 import {
@@ -350,6 +351,7 @@ export function ComposerDock({
     string | null
   >(loadDesignSystemId);
   const designPanel = useDesignSystemPanel();
+  const designAnchorRef = React.useRef<HTMLDivElement | null>(null);
   // 有 Provider 就以它为准（面板保存后作曲家立刻跟着变）；没有则用本地态，
   // 这样单测/应用中心那边不挂 Provider 也能正常渲染。
   const designSystemId = designPanel
@@ -1120,6 +1122,7 @@ export function ComposerDock({
               ⚠ 与设备切换不同，这个在**首页和会话内都要有**（用户两张截图都圈了）：
               首页决定新推演用哪套皮，会话内改完下一轮生效。所以不能写 hero &&。 */}
               <div
+                ref={designAnchorRef}
                 className={`relative shrink-0 ${hero ? "col-start-3 row-start-2 justify-self-start" : ""}`}
               >
                 <button
@@ -1154,6 +1157,10 @@ export function ComposerDock({
                     }`}
                   />
                 </button>
+                {/* 清单 + 色板面板锚在这颗按钮正上方（见 DesignSystemRail 头注）。
+                    必须在这个 relative 容器**内部**——挂页面根的话 absolute 会
+                    一路找到 body，跑去左上角。 */}
+                <DesignSystemRail anchorRef={designAnchorRef} />
               </div>
 
               <div

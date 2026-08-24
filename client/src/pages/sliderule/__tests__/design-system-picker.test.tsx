@@ -63,18 +63,36 @@ describe("① 未选是图标，② 选了是多色色块", () => {
 });
 
 describe("③ 新建开右侧面板，不是抽屉", () => {
-  it("清单在右侧栏里，不再挂在作曲家的 DOM 上", () => {
-    /**
-     * ⚠ 2026-08-25 第二轮用户原话「显示在右侧」。上一版清单是作曲家里的下拉，
-     * 跟着作曲家浮在**对话栏上方**，跟最右的面板隔半个屏幕。判据两面都钉：
-     * 清单在 Rail 里（正向）、作曲家里不再有清单（反向）。搬回去必红。
-     */
+  it("清单渲染在 Rail 里，作曲家只留触发按钮", () => {
     expect(rail()).toContain("sliderule-design-system-menu");
     expect(rail()).toContain("sliderule-design-system-new");
     expect(rail()).toContain("panel.openNew()");
     const src = dock();
     expect(src).not.toContain("sliderule-design-system-menu");
-    expect(src).not.toContain("designList.map");
+  });
+
+  it("走 portal + fixed，不能用 absolute 锚在按钮上", () => {
+    /**
+     * ⚠ 2026-08-25 第三轮真机量到：作曲家坐在 `max-w-[720px] overflow-y-auto`
+     * 的对话滚动容器里（右边界 1321），清单 272 + 面板 300 要到 1378 ——
+     * 面板被那一列**裁掉 57px**，种子色输入框/角半径/应用按钮全部截断。
+     * absolute 锚在按钮上就逃不出这个列宽，所以必须 portal 出去。
+     * 改回 absolute 必红。
+     */
+    const src = rail();
+    expect(src).toContain("createPortal");
+    expect(src).toContain("document.body");
+    expect(src).toContain("getBoundingClientRect");
+    expect(src).not.toMatch(/absolute bottom-full/);
+  });
+
+  it("放不下时整体左移、高度按可用空间钳住，不许出屏", () => {
+    const src = rail();
+    // 右边放不下 → 左移贴边
+    expect(src).toContain("window.innerWidth - width - 8");
+    // 上方空间不够 → 钳高度（真机 900 高时量到 top=-28，标题和 × 跑出屏幕）
+    expect(src).toContain("maxH");
+    expect(src).toContain("r.top - GAP - 12");
   });
 
   it("面板是浮层不是抽屉：fixed 定位、没有全屏遮罩", () => {
@@ -82,11 +100,14 @@ describe("③ 新建开右侧面板，不是抽屉", () => {
       readFileSync(new URL("../DesignSystemPanel.tsx", import.meta.url), "utf8")
     );
     expect(panel).toContain("sliderule-design-panel");
-    expect(panel).toContain("fixed right-[300px]");
     /**
      * ⚠ 用户原话「不是抽屉那种」。抽屉的特征是**整屏遮罩 + 贴边全高**——
      * 那会把正在跑的应用整个盖住，而用户改配色时正要看着它。
-     * 加回 inset-0 遮罩或 h-full 贴边，这两条必红。
+     * 加回 inset-0 遮罩或贴边全高，下面必红。
+     *
+     * ⚠ 位置断言删了：它写死过 `fixed right-4` → `fixed right-[300px]`，
+     *   两轮各红一次。面板的位置现在由 Rail 那一行决定（见上一条用例），
+     *   在这里再钉一遍具体坐标，只会在每次挪位置时假红。
      */
     expect(panel).not.toContain("inset-0");
     expect(panel).not.toMatch(/right-0[^"]*h-full/);
@@ -95,25 +116,28 @@ describe("③ 新建开右侧面板，不是抽屉", () => {
     expect(panel).toContain("sliderule-design-panel-apply");
   });
 
-  it("右侧栏挂在页面根，不是舞台里（首页没有舞台）", () => {
+  it("Provider 在页面根，Rail 由作曲家挂（要拿按钮的 rect 定位）", () => {
     const page = stripComments(
       readFileSync(new URL("../../SlideRule.tsx", import.meta.url), "utf8")
     );
     expect(page).toContain("<DesignSystemPanelProvider>");
-    expect(page).toContain("<DesignSystemRail />");
-    // 反向：不许被塞进 chromeSlot（那条槽只在有舞台时渲染）
-    const at = page.indexOf("<DesignSystemRail />");
-    expect(page.slice(at - 400, at)).not.toContain("chromeSlot");
+    const src = dock();
+    expect(src).toContain("<DesignSystemRail anchorRef={designAnchorRef} />");
+    expect(src).toContain("ref={designAnchorRef}");
   });
 
-  it("面板在清单左边，两块不重叠", () => {
+  it("面板是 Rail 那一行的第二列，自己不再定位", () => {
     const panel = stripComments(
       readFileSync(new URL("../DesignSystemPanel.tsx", import.meta.url), "utf8")
     );
-    // 清单 right-4 宽 272 → 面板右边界必须让开它
-    expect(rail()).toContain("right-4");
     expect(rail()).toContain("w-[272px]");
-    expect(panel).toContain("right-[300px]");
+    expect(panel).toContain("w-[300px]");
+    /**
+     * ⚠ 面板自己再挂 fixed / absolute 就会脱离那一行，又回到"面板离清单半个
+     * 屏幕"的老样子（2026-08-25 第二轮就是这么错的）。位置只能由 Rail 决定。
+     */
+    expect(panel).not.toMatch(/\bfixed\b/);
+    expect(panel).not.toMatch(/\babsolute\b/);
   });
 });
 

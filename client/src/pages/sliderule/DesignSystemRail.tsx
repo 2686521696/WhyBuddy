@@ -10,12 +10,27 @@
  *
  * ## 布局
  *
- *     [ 色板面板 ][ 清单 ]  ← 清单钉在右边缘，面板从它左边"弹出"
+ *     [ 清单 ][ 色板面板 ]  ← 清单钉在作曲家按钮正上方，面板从它**右边**弹出
  *
- * 清单位置固定（右边缘），面板出现时向左展开。反过来（面板钉右、清单左移）
- * 会让清单在点第一个预设时整条横跳，看着像点错了。
+ * ⚠ 2026-08-25 第三轮修正。上一版把清单也推到了屏幕最右边缘——那是我把用户
+ *   截图里"从面板指向清单的箭头"读反了：那支箭头的意思是**把面板挪到清单旁边**，
+ *   不是把清单挪去右边。结果两块都跑到了离作曲家半个屏幕远的地方，点开的东西
+ *   不在手指落点附近。
+ *
+ *   现在整块锚在作曲家那颗按钮上（absolute bottom-full left-0），面板作为第二列
+ *   向右展开。清单位置因此不随面板开合移动——点第一个预设时清单不会横跳。
+ *
+ * ⚠ 但**不能**用 absolute 锚在按钮上。真机量到：作曲家坐在
+ *   `max-w-[720px] overflow-y-auto` 的对话滚动容器里，右边界 1321，而
+ *   清单 272 + 面板 300 要到 1378 —— 面板被那一列**裁掉 57px**（种子色输入框、
+ *   角半径、应用按钮全部截断）。锚在按钮上就逃不出这个列宽。
+ *
+ *   所以走 portal + fixed：位置由按钮的 getBoundingClientRect 现算，视觉上仍
+ *   贴着按钮，但脱离所有 overflow:hidden 的祖先。右边放不下时整体左移，
+ *   不让面板出屏。
  */
 import React from "react";
+import { createPortal } from "react-dom";
 import { Check, Palette, Plus } from "lucide-react";
 
 import { DesignSystemSwatch } from "./DesignSystemSwatch";
@@ -23,26 +38,72 @@ import { DesignSystemPanel } from "./DesignSystemPanel";
 import { useDesignSystemPanel } from "./DesignSystemContext";
 import { allDesignSystems, isCustomDesignSystem } from "./design-system";
 
-export function DesignSystemRail() {
+const MENU_W = 272;
+const PANEL_W = 300;
+const GAP = 8;
+
+export function DesignSystemRail({
+  anchorRef,
+}: {
+  /** 触发按钮所在的容器。位置从它的 rect 现算。 */
+  anchorRef: React.RefObject<HTMLElement | null>;
+}) {
   const panel = useDesignSystemPanel();
   const open = !!panel?.menuOpen;
+  const hasPanel = !!panel?.editing;
   // 每次展开现读：新建保存完不用刷新页面就能在清单里看到。
   const list = React.useMemo(() => (open ? allDesignSystems() : []), [open]);
+
+  const [pos, setPos] = React.useState<{
+    left: number;
+    bottom: number;
+    maxH: number;
+  } | null>(null);
+  React.useEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const el = anchorRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const width = MENU_W + (hasPanel ? GAP + PANEL_W : 0);
+      // 右边放不下就整体左移贴边，别让面板出屏（真机 1680 宽时会差 57px）。
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+      // ⚠ 高度也要钳：按钮上方能用的就那么多。真机 900 高时面板 480 会顶出
+      //   视口，标题和关闭按钮跑到屏幕上面去（量到 top=-28）。
+      setPos({
+        left,
+        bottom: window.innerHeight - r.top + GAP,
+        maxH: Math.max(200, r.top - GAP - 12),
+      });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, hasPanel, anchorRef]);
+
   if (!panel) return null;
+  if (typeof document === "undefined") return null;
 
-  return (
-    <>
-      {/* 面板在清单左边。清单收起时面板也不该单独留着（closeAll / toggleMenu 已保证）。 */}
-      <DesignSystemPanel />
-
+  return createPortal(
+    <div
+      data-testid="sliderule-design-rail"
+      style={
+        pos
+          ? { left: pos.left, bottom: pos.bottom, maxHeight: pos.maxH }
+          : { left: -9999, bottom: 0 }
+      }
+      className={`fixed z-[75] flex items-stretch gap-2 transition-opacity duration-150 ${
+        open ? "opacity-100" : "pointer-events-none opacity-0"
+      }`}
+    >
       <div
         role="menu"
         data-testid="sliderule-design-system-menu"
-        className={`fixed right-4 top-16 z-[75] flex max-h-[calc(100vh-96px)] w-[272px] flex-col overflow-hidden rounded-[12px] border border-[#e5e7eb] bg-white shadow-[0_24px_64px_rgb(15_23_42/0.18)] transition-all duration-150 ${
-          open
-            ? "translate-x-0 opacity-100"
-            : "pointer-events-none translate-x-3 opacity-0"
-        }`}
+        className="flex h-full w-[272px] shrink-0 flex-col overflow-hidden rounded-[12px] border border-[#e5e7eb] bg-white shadow-[0_24px_64px_rgb(15_23_42/0.18)]"
       >
         <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
           <button
@@ -107,6 +168,11 @@ export function DesignSystemRail() {
           })}
         </div>
       </div>
-    </>
+
+      {/* 面板是第二列，从清单右边展开。清单收起时它也不该单独留着
+          （closeAll / toggleMenu 已保证）。 */}
+      <DesignSystemPanel />
+    </div>,
+    document.body
   );
 }
