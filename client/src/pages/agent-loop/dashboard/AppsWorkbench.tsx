@@ -515,6 +515,46 @@ export function mergeGalleryItems(
 }
 
 /**
+ * 这张卡背后的 App Store 记录——**判据是「有没有记录」，不是「source 是不是 app」**。
+ *
+ * ⚠ 2026-08-24：菜单里「复刻 / 设为私有 / 移交官方」原来一律用
+ *   `item.source === "app"` 把门，于是**会话卡永远只剩「删除应用」**——用户
+ *   在「我的应用」里看到一张写着「已闭环」的卡，点开菜单只有一条删除。
+ *
+ *   而 `mergeGalleryItems` 那边**早就承认了另一种卡**：应用列表一页只拉 12 条
+ *   （PAGE_SIZE），会话列表却是全量，绑定的应用还没翻到那一页时，这张闭环应用
+ *   就以 session 源摆出来（那条测试的样例名就叫「应用还没翻到那一页」）。它不是
+ *   草稿，只是这一刻还没跟自己的记录会合。按 source 判就是把它当草稿。
+ *
+ *   同一件事两处判定、改一处就静默失效——本仓第四条。封面三件套 8-24 已经在
+ *   合并处归一了（device / hasPreview / previewTag），菜单是漏掉的那一半。
+ *
+ * 两种卡都可能有记录：
+ *   app 源     —— 摘要跟着列表一起来，天然有。
+ *   session 源 —— 展开菜单时反查一次（见 ensureBoundApp）。**回来之前 bound 是
+ *                 undefined，这里返回 null**：菜单先只有删除，记录到了再补上
+ *                 那三条。宁可晚一拍，也不摆一组点了会 404 的按钮。
+ *
+ * 拿到记录就整张换成 app 视图（source/appId/rootId/version/summary 一起换），
+ * 下游只认这一份——别在每个动作里各判一次 `source === "app" || bound?.id`。
+ */
+export function storeRecordFor(
+  item: GalleryItem,
+  bound: AppStoreSummary | null | undefined
+): GalleryItem | null {
+  if (item.summary) return item;
+  if (!bound) return null;
+  return {
+    ...item,
+    source: "app",
+    appId: bound.id,
+    rootId: bound.root_id,
+    version: bound.version,
+    summary: bound,
+  };
+}
+
+/**
  * 会话还在不在。列表还没拉回来时当「在」——免得首屏闪一帧只读预览。
  * 对照 GitHub：点仓库时 Codespace 没了，不会假装还能进那台机器。
  */
@@ -962,7 +1002,7 @@ function StatChip({
  * 以底部渐变浮层压在图上——我的应用与官方示例库共用同一张壳，
  * 只有 media / 指标 / 状态注入不同。
  */
-function CenterCard({
+export function CenterCard({
   testid,
   title,
   titleAttr,
@@ -1017,7 +1057,9 @@ function CenterCard({
       // 指标（页面/角色/AI/时间）不进图外那行：那行只放标题和状态，多一样就
       // 会跟标题抢宽度，等宽也救不回来。指标改成**悬停时**才浮在画面底部，
       // 静态时画面是干净的——卡片墙的意义是"一眼看出这个系统长什么样"。
-      className="group flex h-full w-full cursor-pointer flex-col"
+      // relative：卡片菜单（topRight）挂在**这一层**，不在画面里。
+      // 见下面 topRight 那段注释——画面是 overflow-hidden 的。
+      className="group relative flex h-full w-full cursor-pointer flex-col"
       onClick={onClick}
     >
       {/* 画面区：这张卡的主体。不给边框和阴影——参考站的墙上，图就是卡本身，
@@ -1028,7 +1070,6 @@ function CenterCard({
         style={{ height: mediaHeight }}
       >
         <div className="absolute inset-0 overflow-hidden">{media}</div>
-        {topRight}
         {/* 指标：静态不在，悬停才浮出来。渐变只压住文字那一带，深浅截图都读得清。 */}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/45 to-transparent px-2.5 pb-1.5 pt-7 opacity-0 transition-opacity group-hover:opacity-100">
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-white/85">
@@ -1036,6 +1077,25 @@ function CenterCard({
           </div>
         </div>
       </div>
+      {/*
+        卡片菜单（「…」按钮 + 下拉层）。
+
+        ⚠ 2026-08-24：这一坨原来放在**画面 div 里面**，而画面为了裁剪截图带着
+        `overflow-hidden`（上面那个 rounded-[10px] 的容器）。四条菜单项一共
+        ~124px，从 top-8 铺下去正好越过画面下沿——真机现象是「删除应用」被齐
+        齐切掉半行，用户看见的是一个缺了底的弹层。菜单本身没错，错在它长在一个
+        会裁剪的盒子里。
+
+        挂到卡片根节点（relative，无 overflow）上，位置一模一样：根节点的顶边
+        就是画面的顶边，right-2/top-2 与原来同一个点。
+
+        为什么 z-10 就够、不用往上堆：墙里每一格是 ColumnsWall 的
+        `position:absolute` 无 z-index 节点（**没有 transform**），不构成层叠
+        上下文，所以这个 z-10 是拿到画廊容器那一层去比的，压得住后面画的兄弟卡。
+        哪天格子加了 transform / z-index，这条就会静默失效——菜单会被后面的卡
+        盖住，不报错。
+      */}
+      {topRight}
       {/* 信息行：在画面**外**，页面底色上。黑字白底，任何截图都盖不住它。 */}
       <div className="flex min-w-0 flex-1 items-center gap-1.5 px-0.5 pt-[7px]">
         {Icon && !compact && (
@@ -1261,6 +1321,25 @@ export function AppsWorkbench() {
   const aliveRef = React.useRef(true);
   const detailsRef = React.useRef<Record<string, AppCardDetail | null>>({});
   const inflightRef = React.useRef(new Set<string>());
+  /**
+   * 会话卡背后那条 App Store 记录（key → 摘要 / null=确认没有）。
+   *
+   * ⚠ 2026-08-24：菜单里「复刻 / 设为私有 / 移交官方」原来一律用
+   *   `source === "app"` 把门，于是**会话卡永远只剩「删除应用」**。可
+   *   `mergeGalleryItems` 那边早就承认了另一种卡：应用分页一次只拉 12 条，
+   *   会话列表却是全量，绑定的应用还没翻到那一页时这张卡就以 session 源
+   *   摆出来（那条测试的样例名就叫「应用还没翻到那一页」）。它是闭环应用，
+   *   只是这一刻还没跟自己的记录会合——按 source 判等于把它当草稿。
+   *   本仓第四条：同一件事两处判定，改一处就静默失效。封面三件套 8-24 已经
+   *   在合并处归一了，菜单是漏掉的那一半。
+   *
+   *   反查沿用 `removeCard` 已经在用的那条路（GET /sessions/{id}/generated-app，
+   *   列表分页反查会漏，所以有这条接口）。只在**真的展开菜单**时打一次，
+   *   不给整墙每张卡预热。
+   */
+  const boundAppsRef = React.useRef<Record<string, AppStoreSummary | null>>({});
+  const [boundApps, setBoundApps] = React.useState<Record<string, AppStoreSummary | null>>({});
+  const boundInflightRef = React.useRef(new Set<string>());
   // E28：订阅会话库更新事件（侧栏删会话/新话题落盘）→ 重拉画廊
   const [reloadKey, setReloadKey] = React.useState(0);
   // 上一次「清空重来」是为哪个 tab 做的。同 tab 内重拉不再清空。
@@ -1294,6 +1373,7 @@ export function AppsWorkbench() {
     return () => window.removeEventListener(SESSIONS_UPDATED_EVENT, bump);
   }, []);
   detailsRef.current = details;
+  boundAppsRef.current = boundApps;
   // 筛选口径变化 → 回第一页（分页器与滚动分页都回到开头）
   React.useEffect(() => {
     setPage(1);
@@ -1493,6 +1573,61 @@ export function AppsWorkbench() {
       }
     })();
   }, []);
+
+  /**
+   * 会话卡 → 它绑定的 App Store 记录。**只在展开菜单时打这一次**。
+   *
+   * 幂等：查过的（含查出来是 null 的）不再查；同一张卡连点只飞一次。
+   * fail-open：查不到就当「这张卡真的没落库」，菜单退回只有删除——那正是
+   * 草稿卡应有的样子，不是伪造一组点了会 404 的按钮。
+   */
+  const ensureBoundApp = React.useCallback((gi: GalleryItem) => {
+    if (gi.source !== "session" || !gi.sessionId) return;
+    if (boundAppsRef.current[gi.key] !== undefined) return;
+    if (boundInflightRef.current.has(gi.key)) return;
+    boundInflightRef.current.add(gi.key);
+    void (async () => {
+      try {
+        const rec = await getGeneratedAppForSession(gi.sessionId!);
+        if (!aliveRef.current) return;
+        setBoundApps(prev => ({ ...prev, [gi.key]: rec }));
+      } finally {
+        boundInflightRef.current.delete(gi.key);
+      }
+    })();
+  }, []);
+
+  /**
+   * 改完可见性/官方归属之后就地更新，**两份缓存都要改**。
+   *
+   * ⚠ 记录有两个落脚点：列表里的 `apps`（app 源）和反查缓存 `boundApps`
+   *   （会话卡）。会话卡的记录不在 `apps` 里，只调 applyAppPatch 会**一声不吭
+   *   地什么都没改**——菜单文案不翻（点了"设为私有"下次打开还写着"设为私有"），
+   *   而且不报错。本仓第四条的标准形状。
+   */
+  const applyPatchedApp = React.useCallback(
+    (gi: GalleryItem, appId: string, res: { visibility?: string; is_official?: boolean }) => {
+      setApps(prev => applyAppPatch(prev, appId, res));
+      setBoundApps(prev => {
+        const cur = prev[gi.key];
+        if (!cur || cur.id !== appId) return prev;
+        // patchApp 的返回类型是宽的 `string`，摘要里 visibility 是三选一的联合。
+        // 认不出的值保持原样——菜单文案就是照它渲染的，塞个非法字面量进去
+        // 只会让下一次点击算出相反的 next。
+        const visibility =
+          res.visibility === "public" ||
+          res.visibility === "unlisted" ||
+          res.visibility === "private"
+            ? res.visibility
+            : cur.visibility;
+        return {
+          ...prev,
+          [gi.key]: { ...cur, visibility, is_official: res.is_official ?? cur.is_official },
+        };
+      });
+    },
+    []
+  );
 
   const loadMoreApps = React.useCallback(async () => {
     if (loadingMoreRef.current) return;
@@ -1803,7 +1938,10 @@ export function AppsWorkbench() {
     // 能不能复刻/删除。无主的存量应用除超管外谁都不能删——判成"谁都能删"
     // 等于权限一上线就把历史数据敞开（与后端 app_access 同一套规则）。
     const canFork = capabilities.can.fork;
-    const canWrite = canWriteApp(item.summary?.owner_id ?? null, authUser);
+    const storeItem = storeRecordFor(item, boundApps[item.key]);
+    // 归属判定跟着记录走。没记录（真草稿）时仍是 null——与改动前同义，
+    // 「无主的存量应用除超管外谁都不能删」那条规则原样保留。
+    const canWrite = canWriteApp(storeItem?.summary?.owner_id ?? null, authUser);
     const isApp = item.source === "app";
     const version = item.version ?? 1;
     const rel = formatRelativeTime(item.lastActive ?? item.createdAt);
@@ -1924,7 +2062,12 @@ export function AppsWorkbench() {
               className="absolute right-2 top-2 rounded bg-white/85 p-1 text-stone-400 opacity-0 shadow-sm transition hover:text-stone-600 group-hover:opacity-100"
               onClick={e => {
                 e.stopPropagation();
-                setMenuFor(prev => (prev === item.key ? null : item.key));
+                // 展开这一刻才去反查绑定应用（ensureBoundApp 自己幂等）。
+                // ⚠ 别塞进 setMenuFor 的 updater 里：那个函数 StrictMode 下
+                //   会被调两次，副作用要放在外面。
+                const opening = menuFor !== item.key;
+                setMenuFor(opening ? item.key : null);
+                if (opening) ensureBoundApp(item);
               }}
             >
               <MoreHorizontal size={14} />
@@ -1938,57 +2081,61 @@ export function AppsWorkbench() {
                     ⚠️ 这只是**不显示注定失败的按钮**，不是权限判定——真正的判定
                     在后端每个写接口里（Python 侧 app_access.require）。审查那套
                     RBAC 后台时它的字段权限就是只藏了前端、后端照样全返回。*/}
-                {isApp && (
+                {/* ⚠ 这三条的门是 `storeItem`（有没有 App Store 记录），
+                    **不是 `isApp`**（source 是不是 app）。理由见 storeItem
+                    那段：闭环应用在自己的记录翻到之前是以 session 源摆出来的，
+                    按 source 判会让它只剩「删除应用」。 */}
+                {storeItem && (
                   <button
-                    data-testid={`app-fork-${item.appId}`}
+                    data-testid={`app-fork-${storeItem.appId}`}
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50 disabled:opacity-40"
                     disabled={!canFork}
                     title={canFork ? undefined : "登录后可复刻"}
-                    onClick={() => openForkModal(item)}
+                    onClick={() => openForkModal(storeItem)}
                   >
                     <GitBranch size={13} /> 复刻到我的应用
                   </button>
                 )}
-                {isApp && canWrite && (
+                {storeItem && canWrite && (
                   <button
-                    data-testid={`app-visibility-${item.appId}`}
+                    data-testid={`app-visibility-${storeItem.appId}`}
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50"
                     onClick={() => {
                       const next =
-                        item.summary?.visibility === "private" ? "public" : "private";
+                        storeItem.summary?.visibility === "private" ? "public" : "private";
                       void (async () => {
-                        const res = await patchApp(item.appId!, { visibility: next });
+                        const res = await patchApp(storeItem.appId!, { visibility: next });
                         // ★ 就地改这一张，**不重拉整个画廊**（2026-08-22）。
                         //   原来这里是 setReloadKey，实测代价：卡片 104→0→120、
                         //   空白 6934ms、21 个请求（含 health / llm-channel）。
-                        if (res) setApps(prev => applyAppPatch(prev, item.appId!, res));
+                        if (res) applyPatchedApp(item, storeItem.appId!, res);
                         setMenuFor(null);
                       })();
                     }}
                   >
-                    {item.summary?.visibility === "private" ? (
+                    {storeItem.summary?.visibility === "private" ? (
                       <><Globe size={13} /> 设为公开</>
                     ) : (
                       <><Lock size={13} /> 设为私有</>
                     )}
                   </button>
                 )}
-                {isApp && authUser?.isSuperuser && (
+                {storeItem && authUser?.isSuperuser && (
                   <button
-                    data-testid={`app-official-${item.appId}`}
+                    data-testid={`app-official-${storeItem.appId}`}
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-50"
                     onClick={() => {
-                      const next = !item.summary?.is_official;
+                      const next = !storeItem.summary?.is_official;
                       void (async () => {
-                        const res = await patchApp(item.appId!, { is_official: next });
+                        const res = await patchApp(storeItem.appId!, { is_official: next });
                         // ★ 同「设为私有」：就地改，不重拉。
-                        if (res) setApps(prev => applyAppPatch(prev, item.appId!, res));
+                        if (res) applyPatchedApp(item, storeItem.appId!, res);
                         setMenuFor(null);
                       })();
                     }}
                   >
                     <Sparkles size={13} />
-                    {item.summary?.is_official ? "从官方交还" : "移交到官方应用"}
+                    {storeItem.summary?.is_official ? "从官方交还" : "移交到官方应用"}
                   </button>
                 )}
                 {canWrite && (

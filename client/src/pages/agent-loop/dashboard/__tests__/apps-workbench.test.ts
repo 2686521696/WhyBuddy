@@ -20,6 +20,7 @@ import {
   GALLERY_PAGE_SIZE,
   canOpenGalleryItem,
   applyAppPatch,
+  storeRecordFor,
   shouldBlankGallery,
   sessionIsAlive,
   type SessionListItem,
@@ -449,6 +450,61 @@ describe("mergeGalleryItems", () => {
   });
 });
 
+/**
+ * 「为啥有的卡只有『删除应用』」（2026-08-24 用户在真机上问的）。
+ *
+ * ## 病灶
+ *
+ * 菜单里「复刻 / 设为私有 / 移交官方」三条的门写的是
+ * `item.source === "app"`。而上面 `mergeGalleryItems` 那条测试**早就承认了**
+ * 另一种卡：应用列表一页 12 条、会话列表是全量，绑定的应用还没翻到那一页时，
+ * 这张已闭环的应用就以 session 源摆在墙上（那条用例的样例名就叫「应用还没翻
+ * 到那一页」）。按 source 判 = 把它当草稿，菜单只剩一条删除。
+ *
+ * 封面三件套 8-24 已经在合并处归一了，菜单是**漏掉的那一半**——本仓第四条。
+ *
+ * 判据落在「有没有 App Store 记录」上，两个方向都写：有记录要认，
+ * 没记录（真草稿 / 反查还没回来）不许凭空造出三条点了会 404 的按钮。
+ */
+describe("storeRecordFor：卡片背后有没有 App Store 记录", () => {
+  const sessionCard = {
+    key: "session:s2",
+    source: "session" as const,
+    goal: "应用还没翻到那一页",
+    sessionId: "s2",
+    appId: "app2",
+  };
+
+  it("app 源自带记录 → 原样返回，不绕反查", () => {
+    const card = { key: "app:app1", source: "app" as const, goal: "咖啡店", summary: summary() };
+    expect(storeRecordFor(card, undefined)).toBe(card);
+  });
+
+  it("★ 会话卡反查到记录 → 整张换成 app 视图，菜单三条才亮得起来", () => {
+    const bound = summary({ id: "app2", root_id: "r2", version: 3, visibility: "private" });
+    const got = storeRecordFor(sessionCard, bound)!;
+    expect(got.source).toBe("app");
+    expect(got.appId).toBe("app2");
+    expect(got.rootId).toBe("r2");
+    expect(got.version).toBe(3);
+    // 摘要必须换上记录里那份：菜单文案（设为公开/私有、从官方交还）就是照它渲染的。
+    expect(got.summary?.visibility).toBe("private");
+    // key 不变——details / boundApps 都按它索引，换了就全查不到。
+    expect(got.key).toBe("session:s2");
+  });
+
+  it("★ 反向：反查还没回来（undefined）就是 null，不许先把按钮摆出来", () => {
+    // 摘要里带着 appId 也不算数——那只够贴封面，不够渲染「设为公开/私有」。
+    // 提前放行的现象是：菜单闪出三条，点下去 patchApp 拿 undefined 去请求。
+    expect(sessionCard.appId).toBe("app2");
+    expect(storeRecordFor(sessionCard, undefined)).toBeNull();
+  });
+
+  it("★ 反向：确认没有绑定应用（null）→ 仍是 null，草稿卡就该只有删除", () => {
+    expect(storeRecordFor({ ...sessionCard, appId: undefined }, null)).toBeNull();
+  });
+});
+
 describe("点卡：会话在就进，没了就看快照", () => {
   const me = { id: "u1", email: "a@b.c", isSuperuser: false, isVerified: true };
   const own = {
@@ -692,7 +748,15 @@ describe("卡片墙走 masonic，高度由内容决定", () => {
     expect(overlay).toContain("opacity-0");
     expect(overlay).toContain("group-hover:opacity-100");
     // group-hover 挂在卡片壳上；壳丢了 group，悬停永远不亮。
-    expect(bare).toMatch(/className="group flex h-full w-full cursor-pointer flex-col"/);
+    //
+    // ⚠ 2026-08-24 从整串 className 字面量改成盯**壳上有没有 group**。
+    //   原来钉死的是 `"group flex h-full w-full cursor-pointer flex-col"`
+    //   一整串；卡片菜单从画面里挪到壳上时壳要加 `relative`（见 CenterCard
+    //   里 topRight 那段），这条判据当场变红——而它要挡的东西一点没变。
+    //   本仓第二条：盯语义，别盯某句话的字面。
+    const shell = bare.match(/className="group [^"]*cursor-pointer[^"]*"/)?.[0];
+    expect(shell, "卡片壳丢了 group / cursor-pointer").toBeTruthy();
+    expect(shell).toContain("flex-col");
   });
 
   it("压在渐变上的元素不能留浅底深字", () => {
@@ -985,13 +1049,59 @@ describe("菜单动作的接线", () => {
     expect(calls.length, "菜单里应有可见性与官方位两个动作").toBeGreaterThanOrEqual(2);
     for (const m of calls) {
       const after = src.slice(m.index!, m.index! + 260);
-      expect(after, `patchApp 之后没有就地改卡：${after.slice(0, 90)}`).toContain(
-        "applyAppPatch"
+      // ⚠ 2026-08-24 从盯 `applyAppPatch` 这一个名字改成盯**就地改卡**这件事。
+      //   会话卡的记录不在 `apps` 列表里（它是反查来的，见 applyPatchedApp），
+      //   只调 applyAppPatch 会一声不吭地什么都没改——所以两处缓存收口到了
+      //   applyPatchedApp。只认旧名字的判据会把正确的收口判成红。
+      expect(after, `patchApp 之后没有就地改卡：${after.slice(0, 90)}`).toMatch(
+        /applyAppPatch|applyPatchedApp/
       );
       expect(after, `patchApp 之后又整体重拉了：${after.slice(0, 90)}`).not.toContain(
         "setReloadKey"
       );
     }
+  });
+
+  /**
+   * 反向：收口函数**自己**必须两处缓存都改。
+   *
+   * 上面那条只保证「patchApp 之后调了 applyPatchedApp」。把 applyPatchedApp
+   * 里那句 setBoundApps 删掉，上面照样全绿，而真机现象是：会话卡上点「设为
+   * 私有」，接口成功了、菜单文案不翻——下次打开还写着「设为私有」。
+   * 正向判据齐全、反向判据缺失，本仓第三条。
+   */
+  it("applyPatchedApp 必须同时改 apps 和 boundApps——只改一处就是静默失效", () => {
+    const body = src.slice(src.indexOf("const applyPatchedApp"));
+    const fn = body.slice(0, body.indexOf("const loadMoreApps"));
+    expect(fn, "列表缓存没改").toContain("applyAppPatch(prev, appId, res)");
+    expect(fn, "反查缓存没改：会话卡的记录不在 apps 里").toContain("setBoundApps");
+  });
+
+  it("三条应用动作的门是「有没有记录」，不是「source 是不是 app」", () => {
+    // 病灶（2026-08-24）：门写成 `isApp &&`，于是绑定应用还没翻到那一页的
+    // 闭环卡只剩「删除应用」。判据盯**门本身**，不盯菜单文案——文案在
+    // 「三个货架接在真链路上」那条里已经钉过，两条一起绿才算这件事做完。
+    for (const testid of ["app-fork-", "app-visibility-", "app-official-"]) {
+      const at = src.indexOf(testid);
+      expect(at, `${testid} 不见了`).toBeGreaterThan(-1);
+      // 往回看这个按钮的显隐条件（testid 上一行就是 `{... && (`）
+      const guard = src.slice(Math.max(0, at - 200), at);
+      expect(guard, `${testid} 的门还写着 isApp`).not.toMatch(/\{isApp &&/);
+      expect(guard, `${testid} 没有按 storeItem 把门`).toContain("storeItem");
+    }
+    // 删除是唯一一条不需要 App Store 记录的动作（草稿会话直接 DELETE），
+    // 它的门必须仍然只有 canWrite——跟着改成 storeItem 会让草稿卡删不掉。
+    expect(src).toContain("{canWrite && (");
+  });
+
+  it("反查只在展开菜单时打，不给整墙预热", () => {
+    // ensureBoundApp 挂在「…」按钮的 onClick 上，且只在**展开**那一拍打。
+    const at = src.indexOf("ensureBoundApp(item)");
+    expect(at, "菜单没接上反查——会话卡永远只剩删除").toBeGreaterThan(-1);
+    expect(src.slice(Math.max(0, at - 240), at)).toContain("setMenuFor");
+    // 反向：别挂到卡片挂载/悬停上——那是每张卡一次请求。
+    expect(src).not.toMatch(/onMouseEnter=\{[^}]*ensureBoundApp/);
+    expect(src).not.toMatch(/ensureBoundApp\(entry\.item\)/);
   });
 
   it("清空列表必须被 shouldBlankGallery 挡着，不许裸 setApps(null)", () => {
