@@ -1177,7 +1177,10 @@ function AppWall({
         // 不再需要「按页面数取前 1/4 跨两列」那条人工规则。
         aspectOf={entry => aspectForDevice(entry.item.device)}
         itemKey={entry => entry.item.key}
-        className="mt-5"
+        // ⚠ 不给 className：这里原来是 mt-5（20px 上边距）。2026-08-24 用户指着
+        //   DevTools 里那条橙带让去掉——筛选条那一行自己已经有下边距，再加一段
+        //   就是首屏白白空一块。定位容器的 top 是从这个节点算的，加边距只会把
+        //   整面墙往下推，不会让卡片之间更松（那是 spacing 的事）。
         onReachEnd={onReachEnd}
         // ⚠ 第四个参数是**画面高**，不是格高（格高 = 画面高 + captionHeight）。
         render={(entry, _i, cellW, mediaH) => (
