@@ -54,11 +54,16 @@ describe("选择器接线：UI 动了，生成也要跟着动", () => {
     const src = read("../ComposerDock.tsx");
     expect(src).toContain("sliderule-composer-design-system");
     expect(src).toContain("saveDesignSystemId");
-    // ⚠ 2026-08-25：原文写死 `DESIGN_SYSTEMS.map`。菜单改成渲染"自建 + 预设"
-    //   的合并清单（allDesignSystems）之后这条会假红——它盯的是某个标识符的
-    //   字面，不是"菜单把清单铺出来了"这个语义。改成盯语义。
-    expect(src).toContain("allDesignSystems");
-    expect(src).toMatch(/designList\.map/);
+    // ⚠ 2026-08-25 两轮都改到这条：
+    //   一轮：原文写死 `DESIGN_SYSTEMS.map`，菜单改成渲染"自建+预设"合并清单后假红；
+    //   二轮：清单整块搬去右侧栏（DesignSystemRail），作曲家里只剩触发按钮。
+    //   它反复假红的根因是**盯的是清单渲染在哪个文件里**，而这条用例真正要钉的
+    //   是"作曲家上有触发入口、且首页和会话内都渲染"。所以只留后者。
+    const railSrc = stripComments(
+      readFileSync(new URL("../DesignSystemRail.tsx", import.meta.url), "utf8")
+    );
+    expect(railSrc).toContain("allDesignSystems");
+    expect(railSrc).toMatch(/list\.map/);
     /**
      * ⚠ 反向：设备切换是 `hero ? (...) : null`，设计系统**不是**。
      * 用户两张截图分别圈了首页和会话内的指令框，两处都要有。

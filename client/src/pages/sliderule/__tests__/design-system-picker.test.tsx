@@ -21,6 +21,10 @@ const dock = () =>
   stripComments(
     readFileSync(new URL("../ComposerDock.tsx", import.meta.url), "utf8")
   );
+const rail = () =>
+  stripComments(
+    readFileSync(new URL("../DesignSystemRail.tsx", import.meta.url), "utf8")
+  );
 
 describe("① 未选是图标，② 选了是多色色块", () => {
   it("按钮两态分岔：null 走 Palette 图标，有值走色块", () => {
@@ -59,10 +63,18 @@ describe("① 未选是图标，② 选了是多色色块", () => {
 });
 
 describe("③ 新建开右侧面板，不是抽屉", () => {
-  it("菜单里有新建，且它开的是面板不是别的", () => {
+  it("清单在右侧栏里，不再挂在作曲家的 DOM 上", () => {
+    /**
+     * ⚠ 2026-08-25 第二轮用户原话「显示在右侧」。上一版清单是作曲家里的下拉，
+     * 跟着作曲家浮在**对话栏上方**，跟最右的面板隔半个屏幕。判据两面都钉：
+     * 清单在 Rail 里（正向）、作曲家里不再有清单（反向）。搬回去必红。
+     */
+    expect(rail()).toContain("sliderule-design-system-menu");
+    expect(rail()).toContain("sliderule-design-system-new");
+    expect(rail()).toContain("panel.openNew()");
     const src = dock();
-    expect(src).toContain("sliderule-design-system-new");
-    expect(src).toContain("designPanel?.openNew()");
+    expect(src).not.toContain("sliderule-design-system-menu");
+    expect(src).not.toContain("designList.map");
   });
 
   it("面板是浮层不是抽屉：fixed 定位、没有全屏遮罩", () => {
@@ -70,7 +82,7 @@ describe("③ 新建开右侧面板，不是抽屉", () => {
       readFileSync(new URL("../DesignSystemPanel.tsx", import.meta.url), "utf8")
     );
     expect(panel).toContain("sliderule-design-panel");
-    expect(panel).toContain("fixed right-4");
+    expect(panel).toContain("fixed right-[300px]");
     /**
      * ⚠ 用户原话「不是抽屉那种」。抽屉的特征是**整屏遮罩 + 贴边全高**——
      * 那会把正在跑的应用整个盖住，而用户改配色时正要看着它。
@@ -83,26 +95,63 @@ describe("③ 新建开右侧面板，不是抽屉", () => {
     expect(panel).toContain("sliderule-design-panel-apply");
   });
 
-  it("面板挂在页面根，不是舞台里（首页没有舞台）", () => {
+  it("右侧栏挂在页面根，不是舞台里（首页没有舞台）", () => {
     const page = stripComments(
       readFileSync(new URL("../../SlideRule.tsx", import.meta.url), "utf8")
     );
     expect(page).toContain("<DesignSystemPanelProvider>");
-    expect(page).toContain("<DesignSystemPanel />");
-    // 反向：面板不许被塞进 chromeSlot（那条槽只在有舞台时渲染）
-    const at = page.indexOf("<DesignSystemPanel />");
+    expect(page).toContain("<DesignSystemRail />");
+    // 反向：不许被塞进 chromeSlot（那条槽只在有舞台时渲染）
+    const at = page.indexOf("<DesignSystemRail />");
     expect(page.slice(at - 400, at)).not.toContain("chromeSlot");
+  });
+
+  it("面板在清单左边，两块不重叠", () => {
+    const panel = stripComments(
+      readFileSync(new URL("../DesignSystemPanel.tsx", import.meta.url), "utf8")
+    );
+    // 清单 right-4 宽 272 → 面板右边界必须让开它
+    expect(rail()).toContain("right-4");
+    expect(rail()).toContain("w-[272px]");
+    expect(panel).toContain("right-[300px]");
   });
 });
 
-describe("④ 选了预设，右侧出面板", () => {
-  it("选中即 openView，不是只关菜单", () => {
-    const src = dock();
-    expect(src).toContain("designPanel?.openView(sys.id)");
-    const at = src.indexOf("designPanel?.openView(sys.id)");
-    // 同一个 onClick 里既要落选中态、又要开面板
-    const around = src.slice(Math.max(0, at - 400), at);
-    expect(around).toContain("saveDesignSystemId(sys.id)");
+describe("④ 点预设不消失，点应用一起消失", () => {
+  it("点预设只开面板：不关清单、也不落选中态", () => {
+    const src = rail();
+    expect(src).toContain("panel.openView(sys.id)");
+    /**
+     * ⚠ 用户第 2 条「点击预设不消失」。而且**不能顺手落库**：点着看几套的
+     * 过程中每点一下都改掉下一轮真正会用的那套，等于没有"预览"这回事。
+     * 落库归「应用」。清单里出现 apply/saveDesignSystemId 必红。
+     */
+    expect(src).not.toContain("panel.apply(");
+    expect(src).not.toContain("saveDesignSystemId");
+    expect(src).not.toContain("closeAll");
+  });
+
+  it("点预设不关清单：openView 反而把 menuOpen 顶成 true", () => {
+    const ctx = stripComments(
+      readFileSync(
+        new URL("../DesignSystemContext.tsx", import.meta.url),
+        "utf8"
+      )
+    );
+    const at = ctx.indexOf("const openView");
+    expect(ctx.slice(at, at + 320)).toContain("setMenuOpen(true)");
+  });
+
+  it("「应用」清单和面板一起收，不是只收面板", () => {
+    const panel = stripComments(
+      readFileSync(new URL("../DesignSystemPanel.tsx", import.meta.url), "utf8")
+    );
+    const at = panel.indexOf("const apply =");
+    const body = panel.slice(at, at + 420);
+    expect(body).toContain("panel.apply(sys.id)");
+    expect(body).toContain("panel.closeAll()");
+    // 反向：只 close() 会留下开着的清单，看着像没生效
+    expect(body).not.toMatch(/panel\.close\(\)/);
   });
 
   it("选中态放在 context，面板保存后作曲家会跟着变", () => {

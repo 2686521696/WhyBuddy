@@ -64,7 +64,9 @@ export function DesignSystemPanel({
     if (panel.mode === "create") saveCustomDesignSystem(sys);
     panel.apply(sys.id);
     onApplied?.(sys.id);
-    panel.close();
+    // ⚠ 用户第 4 条「点击应用一起消失」：清单和面板同时收。
+    //   只 close() 的话面板没了、清单还开着，看着像没生效。
+    panel.closeAll();
   };
 
   return (
@@ -72,7 +74,7 @@ export function DesignSystemPanel({
       data-testid="sliderule-design-panel"
       /* fixed 而不是 absolute：首页没有舞台容器，absolute 会找不到定位父级
          而贴到文档左上。fixed 让它在首页和会话内都稳定浮在右侧。 */
-      className="pointer-events-auto fixed right-4 top-16 z-[70] flex max-h-[calc(100vh-96px)] w-[300px] flex-col overflow-hidden rounded-[12px] border border-[#e5e7eb] bg-white shadow-[0_24px_64px_rgb(15_23_42/0.18)]"
+      className="pointer-events-auto fixed right-[300px] top-16 z-[70] flex max-h-[calc(100vh-96px)] w-[300px] flex-col overflow-hidden rounded-[12px] border border-[#e5e7eb] bg-white shadow-[0_24px_64px_rgb(15_23_42/0.18)]"
     >
       <div className="flex shrink-0 items-center gap-2 border-b border-[#eef0f4] px-3 py-2.5">
         <DesignSystemSwatch seed={sys.seed} size={18} />

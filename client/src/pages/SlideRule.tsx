@@ -81,7 +81,7 @@ import {
 import { DeliverablesPanel } from "./sliderule/DeliverablesPanel";
 import { ComposerDock } from "./sliderule/ComposerDock";
 import { DesignSystemPanelProvider } from "./sliderule/DesignSystemContext";
-import { DesignSystemPanel } from "./sliderule/DesignSystemPanel";
+import { DesignSystemRail } from "./sliderule/DesignSystemRail";
 import { HomeInspiration } from "./sliderule/home-inspiration";
 import { composerEnterHintLabel } from "./sliderule/user-prefs";
 import { EXAMPLE_INTENT_TEXTS } from "./sliderule/example-intents";
@@ -1100,9 +1100,9 @@ function SlideRuleUnified({
   return (
     <StudioLayoutProvider available={showStudioChrome}>
       <DesignSystemPanelProvider>
-        {/* 设计系统面板：浮在右侧，不是抽屉。挂在页面根而不是舞台里——
+        {/* 设计系统右侧栏（清单 + 色板面板）。挂在页面根而不是舞台里——
         首页没有舞台，挂进去的话空态点「新建」什么都不会出现。 */}
-        <DesignSystemPanel />
+        <DesignSystemRail />
         <div className={`${autopilotTheme.immersionPage} flex flex-col`}>
           {/* 还没推演：顶栏整条不挂（交付物/重置也占一条底边，空态看着像少了一截）。 */}
           {showStudioChrome &&
