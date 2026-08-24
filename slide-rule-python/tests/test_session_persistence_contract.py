@@ -1185,3 +1185,127 @@ def test_drive_reasoning_turn_nonempty_selected_writes_gated_artifacts_capruns_a
     # cleanup
     pers.delete_session_record(sid, store_file=store_file)
     sess_mod._sessions.pop(sid, None)
+
+
+def test_sessions_list_carries_the_bound_app_and_its_cover(monkeypatch):
+    """GET /sessions 的每条会话要带上它绑定那版应用的 appId + 缩略图三件套。
+
+    ## 这条判据钉的是什么
+
+    应用中心把「全部会话」和「**一页**应用」合并去重（前端 mergeGalleryItems
+    按 session_id 认领）。会话列表一次拉全、应用是 limit=14 的一页——认不到自己
+    应用的那些会话各摆一张没有封面的空卡。真机 2026-08-24：66 张卡只有 14 张
+    有图，而库里 67 张图都在。
+
+    ⚠ 正反两条一起写（本仓第三条）：名单里有字段 ≠ 值真的接上了，
+      没绑应用的会话也**不许**凭空长出 appId。
+    """
+    try:
+        from fastapi.testclient import TestClient
+        from app import app
+    except Exception as e:
+        pytest.skip(f"app import failed: {e}")
+
+    client = TestClient(app)
+    headers = {"X-Internal-Key": "dev-slide-rule-internal"}
+
+    import services.persistence as persistence
+
+    # ⚠ 路由是**在函数体里** `from services.persistence import ...`，所以补丁要打
+    #   在 persistence 模块上，打在 routes.sliderule_full 上不生效。
+    # ⚠ 归属必须给：会话恒为 private（连无主的也是，见 app_access.session_record
+    #   那段 2026-08-06 的裁决），不带 ownerId 的假数据会被列表过滤器全部滤掉，
+    #   现象是 KeyError 而不是断言失败。
+    monkeypatch.setattr(
+        persistence,
+        "list_session_summaries",
+        lambda: [
+            {
+                "sessionId": "s-bound",
+                "goal": "有绑定应用",
+                "artifactCount": 1,
+                "ownerId": TEST_USER_ID,
+            },
+            {
+                "sessionId": "s-loose",
+                "goal": "没绑定应用",
+                "artifactCount": 0,
+                "ownerId": TEST_USER_ID,
+            },
+        ],
+    )
+    import services.app_store as store
+
+    monkeypatch.setattr(
+        store,
+        "session_covers",
+        lambda: {
+            "s-bound": {
+                "app_id": "app-abc",
+                "version": 2,
+                "device": "phone",
+                "has_preview": True,
+                "preview_source": "shot",
+                "preview_tag": "shot.123",
+            }
+        },
+    )
+
+    body = client.get("/api/sliderule/sessions", headers=headers).json()
+    rows = {r["sessionId"]: r for r in body["sessions"]}
+
+    bound = rows["s-bound"]
+    assert bound["appId"] == "app-abc"
+    assert bound["version"] == 2
+    assert bound["device"] == "phone"
+    assert bound["has_preview"] is True
+    assert bound["preview_tag"] == "shot.123"
+    # 字段名必须与应用摘要（_mark_previews）一致——前端那条 shouldUseSheetThumb
+    # 不该分两套判定。
+    assert "preview_source" in bound
+
+    # 反向：没绑应用的会话不许凭空长出这些字段
+    loose = rows["s-loose"]
+    assert "appId" not in loose
+    assert "has_preview" not in loose
+    assert loose["goal"] == "没绑定应用"
+
+
+def test_sessions_list_survives_a_broken_cover_index(monkeypatch):
+    """封面索引炸了，会话列表照常给（fail-open，本仓第七条）。
+
+    缩略图是增强类。GET /sessions 是侧栏和应用中心共用的那条路，把它拖成 500
+    等于整个工作台白屏——比没有封面严重得多。
+    """
+    try:
+        from fastapi.testclient import TestClient
+        from app import app
+    except Exception as e:
+        pytest.skip(f"app import failed: {e}")
+
+    import services.app_store as store
+    import services.persistence as persistence
+
+    monkeypatch.setattr(
+        persistence,
+        "list_session_summaries",
+        lambda: [
+            {
+                "sessionId": "s-solo",
+                "goal": "只要列得出来",
+                "artifactCount": 0,
+                "ownerId": TEST_USER_ID,
+            }
+        ],
+    )
+
+    def boom():
+        raise RuntimeError("索引挂了")
+
+    monkeypatch.setattr(store, "session_covers", boom)
+
+    resp = TestClient(app).get(
+        "/api/sliderule/sessions", headers={"X-Internal-Key": "dev-slide-rule-internal"}
+    )
+    assert resp.status_code == 200, "封面挂了不许把会话列表拖成 500"
+    assert [r["sessionId"] for r in resp.json()["sessions"]] == ["s-solo"]

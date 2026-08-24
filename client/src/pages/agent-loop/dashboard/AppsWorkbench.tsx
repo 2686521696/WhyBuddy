@@ -113,6 +113,23 @@ export interface SessionListItem {
   lastActive?: string | null;
   artifactCount?: number;
   phase?: string | null;
+  /**
+   * 这个会话绑定的那版应用 + 封面三件套（2026-08-24 后端补的，见
+   * app_store.session_covers）。没绑定应用的会话就没有这几个字段。
+   *
+   * 为什么会话摘要要带应用的东西：应用中心把「全部会话」和「**一页**应用」
+   * 合并去重，会话是一次拉全的，应用是 limit=14 的一页——认不到自己应用的
+   * 那些会话各摆一张没封面的空卡（真机 66 张卡只有 14 张有图）。
+   *
+   * ⚠ 字段名与应用摘要（AppStoreSummary）保持一致，好在 mergeGalleryItems
+   *   里归一成同一组字段。要改名两边一起改。
+   */
+  appId?: string;
+  version?: number;
+  device?: string;
+  has_preview?: boolean;
+  preview_source?: string;
+  preview_tag?: string;
 }
 
 export type AppCardStatus = "runnable" | "awaiting" | "draft";
@@ -433,6 +450,18 @@ export interface GalleryItem {
   /** app 源必有：列表摘要（模型加载前即时渲染卡片） */
   summary?: AppStoreSummary;
   phase?: string | null;
+  /**
+   * 封面三件套，**在 mergeGalleryItems 里归一**：app 源来自 AppStoreSummary，
+   * session 源来自会话摘要（2026-08-24 后端补的 appId + 预览字段）。
+   *
+   * ⚠ 下游只许读这三个字段，别再回去分别读 `summary?.device` /
+   *   `summary?.has_preview`——那样 session 源永远取不到，现象是卡片静默不贴图
+   *   （既不报错也不空态，就是一直画空占位）。本仓第三条：同一件事两处判定，
+   *   改一处就静默失效。
+   */
+  device?: string;
+  hasPreview?: boolean;
+  previewTag?: string;
 }
 
 /**
@@ -457,6 +486,9 @@ export function mergeGalleryItems(
     parentId: a.parent_id,
     version: a.version,
     summary: a,
+    device: a.device,
+    hasPreview: Boolean(a.has_preview),
+    previewTag: a.preview_tag,
   }));
   const claimed = new Set(
     apps.map(a => a.session_id).filter((x): x is string => Boolean(x))
@@ -471,6 +503,13 @@ export function mergeGalleryItems(
       lastActive: s.lastActive,
       sessionId: s.sessionId,
       phase: s.phase,
+      // 会话摘要带回来的绑定应用：认不到应用那一页的会话也能贴自己的封面。
+      // appId 一给，这张卡就能走 SheetThumb（判据同 app 源，见 GalleryItem）。
+      appId: s.appId,
+      version: s.version,
+      device: s.device,
+      hasPreview: Boolean(s.has_preview),
+      previewTag: s.preview_tag,
     }));
   return [...appItems, ...sessionItems];
 }
@@ -796,9 +835,12 @@ function SpecPagesPreview({
  */
 export function shouldUseSheetThumb(item: {
   appId?: string | null;
-  summary?: { has_preview?: boolean } | null;
+  hasPreview?: boolean;
 }): boolean {
-  return Boolean(item.appId && item.summary?.has_preview);
+  // ⚠ 2026-08-24 从 `item.summary?.has_preview` 改成归一后的 `hasPreview`。
+  //   读 summary 只有 app 源有值，会话卡永远判 false——哪怕它明明绑着一个
+  //   有图的应用。归一在 mergeGalleryItems 做，这里只问一个问题。
+  return Boolean(item.appId && item.hasPreview);
 }
 
 /**
@@ -1133,7 +1175,7 @@ function AppWall({
         overscanBy={2}
         // 宽高比就是设备档：桌面 1.6、手机 0.5625。等宽之下，错落全部来自它，
         // 不再需要「按页面数取前 1/4 跨两列」那条人工规则。
-        aspectOf={entry => aspectForDevice(entry.item.summary?.device)}
+        aspectOf={entry => aspectForDevice(entry.item.device)}
         itemKey={entry => entry.item.key}
         className="mt-5"
         onReachEnd={onReachEnd}
@@ -1765,7 +1807,7 @@ export function AppsWorkbench() {
     return (
       <div
         data-testid={`app-cell-${item.sessionId || item.appId}`}
-        data-tier={(item.summary?.device || "desktop").trim() || "desktop"}
+        data-tier={(item.device || "desktop").trim() || "desktop"}
         data-compact={compact ? "1" : "0"}
         // 不写死高度：masonic 的 ResizeObserver 量的就是这个节点，写死等于
         // 把「高度由内容决定」这条又退回去了。宽度也不用给——masonic 的定位
@@ -1795,7 +1837,7 @@ export function AppsWorkbench() {
                 appId={item.appId!}
                 alt={detail?.identity?.productName || item.goal || "应用首页示意"}
                 fallback={<EmptyThumb />}
-                previewTag={item.summary?.preview_tag}
+                previewTag={item.previewTag}
               />
             );
           }

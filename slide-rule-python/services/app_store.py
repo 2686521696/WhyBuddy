@@ -541,6 +541,32 @@ class AppStoreBackend:
         """
         return {}
 
+    def session_app_index(self) -> dict[str, dict[str, Any]]:  # pragma: no cover
+        """session_id → 该会话**最新**那版应用的 {app_id, version, device}。
+
+        跟 preview_sources 同一个形状与同一个理由：一次全表索引查询，只取几个
+        小列，跟列表长度无关。两者合起来才够回答"这个会话的卡该贴哪张图"。
+
+        ## 为什么需要它（2026-08-24）
+
+        应用中心把「全部会话」和「**一页**应用」合并去重（mergeGalleryItems 按
+        session_id 认领）。会话列表是一次拉全的 65 条，应用却是 limit=14 的一页
+        ——于是 51 个会话认不到自己的应用，各自摆一张**没有封面**的卡，滚到下
+        一页才被真应用卡换掉。真机现象：66 张卡只有 14 张有图，其余全是空占位，
+        而库里 68 个应用有 67 张图。
+
+        补上这个索引，会话摘要就能自带 appId + 缩略图三件套，卡片不必等应用那
+        一页到货。
+
+        ⚠ 只取 id/version/device 这几个小列，**不取 jsonb**。这张表的
+          model_json / pages_json 单行就能到 MB 级，`select *` 过网是本仓
+          栽过的老坑（见 list_apps_sql 里 2026-08-18 那段）。
+
+        默认返回空 = 老后端不提供，调用方按「会话没有绑定应用」处理（fail-open：
+        缩略图是增强项，不能因为它拿不到就让侧栏和应用中心列不出会话）。
+        """
+        return {}
+
 
 # ────────────────────────── JSON 文件后端（兜底）──────────────────────────
 
@@ -618,6 +644,30 @@ class JsonFileAppStore(AppStoreBackend):
             return None
         rows.sort(key=lambda r: (r.get("version") or 0, r.get("created_at") or ""), reverse=True)
         return rows[0]
+
+    def session_app_index(self) -> dict[str, dict[str, Any]]:
+        with self._lock:
+            rows = self._read()
+        best: dict[str, dict[str, Any]] = {}
+        for r in rows:
+            sid = str(r.get("session_id") or "")
+            if not sid:
+                continue
+            key = (int(r.get("version") or 0), str(r.get("created_at") or ""))
+            prev = best.get(sid)
+            # 同一会话可能有多版；挑最新那版，口径与 find_latest_by_session 一致
+            # （version 优先、created_at 决胜）——两处漂移的现象是列表里的封面
+            # 跟点进去看到的版本对不上。
+            if prev is None or key > prev["_key"]:
+                best[sid] = {
+                    "_key": key,
+                    "app_id": str(r.get("id") or ""),
+                    "version": int(r.get("version") or 1),
+                    "device": str(r.get("device") or ""),
+                }
+        for v in best.values():
+            v.pop("_key", None)
+        return best
 
     def versions(self, root_id: str) -> list[dict[str, Any]]:
         with self._lock:
@@ -1253,6 +1303,37 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
                     return val
             return None
 
+        def session_app_index(self) -> dict[str, dict[str, Any]]:
+            # 只 select 四个小列。`select(GeneratedApp)` 会把 model_json /
+            # pages_json 整表拉回来——单行就能到 MB 级。
+            with Session(engine) as s:
+                rows = s.execute(
+                    select(
+                        GeneratedApp.session_id,
+                        GeneratedApp.id,
+                        GeneratedApp.version,
+                        GeneratedApp.device,
+                        GeneratedApp.created_at,
+                    ).where(GeneratedApp.session_id.isnot(None))
+                ).all()
+            best: dict[str, dict[str, Any]] = {}
+            for sid, app_id, version, device, created in rows:
+                key = (int(version or 0), str(created or ""))
+                sid = str(sid or "")
+                if not sid:
+                    continue
+                prev = best.get(sid)
+                if prev is None or key > prev["_key"]:
+                    best[sid] = {
+                        "_key": key,
+                        "app_id": str(app_id or ""),
+                        "version": int(version or 1),
+                        "device": str(device or ""),
+                    }
+            for v in best.values():
+                v.pop("_key", None)
+            return best
+
         def preview_sources(self) -> dict[str, str]:
             # 不 select 图本体——`select(GeneratedAppPreview)` 会把每行两列
             # base64 一起拉出来，那正是这张表拆出去要避免的事。这里只取
@@ -1699,6 +1780,32 @@ class NeonHttpAppStore(AppStoreBackend):
             if isinstance(b64, str) and b64:
                 return b64
         return None
+
+    def session_app_index(self) -> dict[str, dict[str, Any]]:
+        # ⚠ 列必须逐个写出来，**不许 `select *`**：这张表带 model_json /
+        #   pages_json 两列 jsonb，整表过 /db-api 网关是本仓栽过的老坑
+        #   （list_apps_sql 里 2026-08-18 那段就是修它）。
+        rows = self._q(
+            "select session_id, id, version, device, created_at"
+            " from generated_app where session_id is not null"
+        )
+        best: dict[str, dict[str, Any]] = {}
+        for r in rows:
+            sid = str(r.get("session_id") or "")
+            if not sid:
+                continue
+            key = (int(r.get("version") or 0), str(r.get("created_at") or ""))
+            prev = best.get(sid)
+            if prev is None or key > prev["_key"]:
+                best[sid] = {
+                    "_key": key,
+                    "app_id": str(r.get("id") or ""),
+                    "version": int(r.get("version") or 1),
+                    "device": str(r.get("device") or ""),
+                }
+        for v in best.values():
+            v.pop("_key", None)
+        return best
 
     def preview_sources(self) -> dict[str, str]:
         # 不 select 图本体：`select *` 会把每行两列共约 2MB 的 base64 一起过网，
@@ -2556,6 +2663,48 @@ def _mark_previews(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         r["preview_source"] = preview_source_of(tag) if tag else ""
         r["preview_tag"] = tag or ""
     return rows
+
+
+def session_covers() -> dict[str, dict[str, Any]]:
+    """session_id → 该会话最新那版应用的 `{app_id, version, device}` + 缩略图三件套。
+
+    给 `GET /sessions` 用，让会话摘要自带封面信息。字段名与 `_mark_previews`
+    给应用摘要打的**完全一致**（has_preview / preview_source / preview_tag），
+    前端 `shouldUseSheetThumb` 那一条判定因此不用分两套。
+
+    ⚠ 两套判定漂移是本仓反复踩的形状（列表与单条、生成侧与消费侧）。要改字段名
+      就两边一起改，别只改一头——现象是卡片静默不贴图，不报错。
+
+    fail-open：缩略图是增强项。索引查不到就返回空表，会话照常列出来，卡片画空
+    态。**不能**因为它把 `GET /sessions` 拖成 500——侧栏和应用中心都靠那条路。
+    """
+    try:
+        index = get_backend().session_app_index()
+    except Exception as exc:  # noqa: BLE001 — 增强项，自己炸了不许拖垮主链路
+        print(f"[app_store] 会话→应用索引读取失败，本次按「会话无绑定应用」处理: {str(exc)[:160]}")
+        return {}
+    if not index:
+        return {}
+    try:
+        tags = get_backend().preview_sources()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[app_store] 缩略图索引读取失败，本次会话摘要按「无图」处理: {str(exc)[:160]}")
+        tags = {}
+    out: dict[str, dict[str, Any]] = {}
+    for sid, info in index.items():
+        app_id = str(info.get("app_id") or "")
+        if not app_id:
+            continue
+        tag = tags.get(app_id)
+        out[sid] = {
+            "app_id": app_id,
+            "version": int(info.get("version") or 1),
+            "device": str(info.get("device") or ""),
+            "has_preview": bool(tag),
+            "preview_source": preview_source_of(tag) if tag else "",
+            "preview_tag": tag or "",
+        }
+    return out
 
 
 def list_apps(

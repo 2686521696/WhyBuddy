@@ -638,3 +638,95 @@ def test_upload_rejects_empty_body(api_client):
     res = api_client.post(f"/api/sliderule/apps/{app_id}/preview", content=b"",
                           headers={"content-type": "image/png"})
     assert res.status_code == 400
+
+
+# ────────────────────── ⑥ 会话摘要自带封面（2026-08-24）──────────────────────
+
+
+def test_session_covers_maps_sessions_to_their_latest_app(configured_store):
+    """session_id → 它最新那版应用 + 缩略图三件套。
+
+    ## 为什么要有这张索引
+
+    应用中心把「全部会话」和「**一页**应用」合并去重（前端 mergeGalleryItems
+    按 session_id 认领）。会话列表是一次拉全的，应用却是 limit=14 的一页——
+    认不到自己应用的那些会话各摆一张**没有封面**的空卡，滚到下一页才被真应用
+    卡换掉。真机（2026-08-24）：66 张卡只有 14 张有图，而库里 67 张图都在。
+
+    字段名与 _mark_previews 给应用摘要打的完全一致，前端那条 shouldUseSheetThumb
+    因此不用分两套判定。
+    """
+    app_id = store.save_app_or_version(
+        _model(), goal="带图的", session_id="sess-with-cover", preview_png_b64=PNG_A
+    )
+    store.save_app(_model("无图应用"), goal="没图的", session_id="sess-no-cover")
+
+    covers = store.session_covers()
+
+    hit = covers["sess-with-cover"]
+    assert hit["app_id"] == app_id
+    assert hit["has_preview"] is True
+    assert hit["preview_source"] == store.PREVIEW_SOURCE_SHEET
+    assert hit["preview_tag"], "缓存版本位不能是空串，否则前端拼不出 ?v="
+
+    # 反向①：有应用但没图 —— 如实报 false，别让卡片去拉一张不存在的图
+    miss = covers["sess-no-cover"]
+    assert miss["app_id"]
+    assert miss["has_preview"] is False
+    assert miss["preview_tag"] == ""
+
+    # 反向②：没绑应用的会话压根不在表里
+    assert "sess-never-closed" not in covers
+
+    # 反向③：**图本体不许进来**。这张索引跟列表摘要同一条纪律：图一张约 1MB。
+    assert PNG_A not in repr(covers)
+
+
+def test_session_covers_follows_the_latest_version(configured_store):
+    """同一会话多版时取最新那版——口径与 find_latest_by_session 一致。
+
+    两处漂移的现象是：列表里的封面跟点进去看到的版本对不上，而且不报错。
+    """
+    v1 = store.save_app_or_version(
+        _model(), goal="g", session_id="sess-multi", preview_png_b64=PNG_A
+    )
+    v2 = store.save_app_or_version(_model(entities=3), goal="g", session_id="sess-multi")
+    assert v2 != v1
+
+    covers = store.session_covers()
+    assert covers["sess-multi"]["app_id"] == v2
+    assert covers["sess-multi"]["version"] == 2
+    latest = store.get_latest_app_for_session("sess-multi")
+    assert covers["sess-multi"]["app_id"] == latest["id"], "跟单条查询必须同口径"
+
+
+def test_session_covers_is_fail_open(configured_store, monkeypatch):
+    """索引查不到 → 空表，会话照常列得出来。
+
+    缩略图是**增强类**（本仓第七条）：自己炸了不许拖垮主链路。GET /sessions
+    是侧栏和应用中心共用的那条路，把它拖成 500 等于整个工作台白屏。
+    """
+    backend = store.get_backend()
+    real_index = backend.session_app_index
+
+    def boom():
+        raise RuntimeError("索引查询挂了")
+
+    store.save_app_or_version(
+        _model(), goal="g", session_id="sess-half", preview_png_b64=PNG_A
+    )
+
+    # ① 绑定索引整个挂了 → 空表（而不是抛出去把 GET /sessions 变成 500）
+    monkeypatch.setattr(backend, "session_app_index", boom)
+    assert store.session_covers() == {}
+
+    # ② 只有缩略图那半边挂了 → 绑定关系仍要给出来，只是当作没图
+    #
+    # ⚠ 这里**不能**用 monkeypatch.undo()：它会把 configured_store 这个 fixture
+    #   自己打的补丁一起撤掉，后端当场换成另一个空库，现象是 sess-half 凭空消失
+    #   （第一版就是这么写的，KeyError 才发现）。显式还原那一个属性就够了。
+    monkeypatch.setattr(backend, "session_app_index", real_index)
+    monkeypatch.setattr(backend, "preview_sources", boom)
+    covers = store.session_covers()
+    assert covers["sess-half"]["app_id"]
+    assert covers["sess-half"]["has_preview"] is False

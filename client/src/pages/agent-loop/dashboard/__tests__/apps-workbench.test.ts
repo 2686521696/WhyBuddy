@@ -12,6 +12,7 @@ import {
   extractSpecPages,
   orderedSpecPages,
   mergeGalleryItems,
+  shouldUseSheetThumb,
   filterCards,
   formatUpdatedAt,
   formatRelativeTime,
@@ -394,6 +395,57 @@ describe("mergeGalleryItems", () => {
     const items = mergeGalleryItems([], [sess("s1", "a"), sess("s2", "b")]);
     expect(items).toHaveLength(2);
     expect(items.every(i => i.source === "session")).toBe(true);
+  });
+
+  it("**封面三件套在这里归一** —— 两个来源，一组字段", () => {
+    // 2026-08-24：会话摘要开始带 appId + 预览字段（后端 session_covers）。
+    // 归一必须发生在合并处，下游只读 device/hasPreview/previewTag 一组。
+    const items = mergeGalleryItems(
+      [summary({ id: "app1", session_id: "s1", device: "phone", has_preview: true, preview_tag: "shot.1" })],
+      [
+        sess("s1", "已被应用卡承载"),
+        {
+          sessionId: "s2",
+          goal: "应用还没翻到那一页",
+          appId: "app2",
+          version: 3,
+          device: "desktop",
+          has_preview: true,
+          preview_tag: "shot.2",
+        },
+        sess("s3", "真的没绑应用"),
+      ]
+    );
+    const byKey = Object.fromEntries(items.map(i => [i.key, i]));
+    expect(byKey["app:app1"].device).toBe("phone");
+    expect(byKey["app:app1"].hasPreview).toBe(true);
+    expect(byKey["app:app1"].previewTag).toBe("shot.1");
+    // ★ 会话卡也要有：认不到应用那一页的会话，靠自己的摘要贴图
+    expect(byKey["session:s2"].appId).toBe("app2");
+    expect(byKey["session:s2"].version).toBe(3);
+    expect(byKey["session:s2"].device).toBe("desktop");
+    expect(byKey["session:s2"].hasPreview).toBe(true);
+    expect(byKey["session:s2"].previewTag).toBe("shot.2");
+    expect(shouldUseSheetThumb(byKey["session:s2"])).toBe(true);
+    // 反向：真的没绑应用的会话不许凭空长出封面
+    expect(byKey["session:s3"].appId).toBeUndefined();
+    expect(byKey["session:s3"].hasPreview).toBe(false);
+    expect(shouldUseSheetThumb(byKey["session:s3"])).toBe(false);
+  });
+
+  it("**下游不许再回去读 summary 上的封面字段** —— 那样会话卡永远不贴图", () => {
+    // 本仓第三条（同一件事两处判定，改一处就静默失效）的具象化。读
+    // summary?.has_preview / summary?.device 只有 app 源有值，现象是会话卡
+    // 一直画空占位，既不报错也没告警——2026-08-24 那天 66 张卡只有 14 张有图。
+    const bare = sourceWithoutComments(
+      readFileSync(new URL("../AppsWorkbench.tsx", import.meta.url), "utf8")
+    );
+    expect(bare).not.toContain("summary?.has_preview");
+    expect(bare).not.toContain("summary?.preview_tag");
+    expect(bare).not.toMatch(/aspectForDevice\(entry\.item\.summary/);
+    // 正向：读的是归一之后那组
+    expect(bare).toMatch(/aspectOf=\{entry => aspectForDevice\(entry\.item\.device\)\}/);
+    expect(bare).toMatch(/previewTag=\{item\.previewTag\}/);
   });
 });
 

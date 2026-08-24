@@ -34,33 +34,43 @@ import { DEVICE_ASPECT } from "@/lib/justified-rows";
 import { EmptyThumb, SheetThumb, appPreviewUrl, shouldUseSheetThumb } from "../AppsWorkbench";
 
 describe("shouldUseSheetThumb", () => {
-  it("App Store 卡且后端说有图 → 贴图", () => {
-    expect(shouldUseSheetThumb({ appId: "a1", summary: { has_preview: true } })).toBe(true);
+  // ⚠ 2026-08-24 判据的入参换了：从 `summary.has_preview` 换成归一后的
+  //   `hasPreview`。归一在 mergeGalleryItems 做——app 源来自 AppStoreSummary，
+  //   session 源来自会话摘要（后端 session_covers 补的）。
+  //   读 summary 的老写法只有 app 源有值，会话卡永远判 false，哪怕它明明绑着
+  //   一个有图的应用。下面「会话卡绑了有图的应用」那条就是钉这个的。
+
+  it("卡上有 appId 且后端说有图 → 贴图", () => {
+    expect(shouldUseSheetThumb({ appId: "a1", hasPreview: true })).toBe(true);
   });
 
   it("后端说没图 → 空态（老记录就是这一档）", () => {
-    expect(shouldUseSheetThumb({ appId: "a1", summary: { has_preview: false } })).toBe(false);
+    expect(shouldUseSheetThumb({ appId: "a1", hasPreview: false })).toBe(false);
   });
 
-  it("has_preview 字段缺席 → 空态（老后端就是这一档）", () => {
-    // 老 Python 后端不返回这个字段，缺失一律按"没图"。
+  it("hasPreview 字段缺席 → 空态（老后端就是这一档）", () => {
+    // 老 Python 后端不返回预览字段，缺失一律按"没图"。
     // ⚠ 2026-08-22 之前这一档回落活渲染，所以当时的说法是"新能力缺席退回旧
     //   行为"；现在这一档是 antd Empty。判据本身没变，变的是 false 的去处。
-    expect(shouldUseSheetThumb({ appId: "a1", summary: {} })).toBe(false);
-    expect(shouldUseSheetThumb({ appId: "a1", summary: null })).toBe(false);
     expect(shouldUseSheetThumb({ appId: "a1" })).toBe(false);
   });
 
-  it("会话卡没有 app_id → 无图可取，空态", () => {
-    // 还没落进 App Store 的会话卡：就算摘要里莫名带了 has_preview，
+  it("没有 app_id → 无图可取，空态", () => {
+    // 还没落进 App Store 的会话卡：就算摘要里莫名带了 hasPreview，
     // 也没有能取图的 id。
-    expect(shouldUseSheetThumb({ appId: null, summary: { has_preview: true } })).toBe(false);
-    expect(shouldUseSheetThumb({ appId: "", summary: { has_preview: true } })).toBe(false);
+    expect(shouldUseSheetThumb({ appId: null, hasPreview: true })).toBe(false);
+    expect(shouldUseSheetThumb({ appId: "", hasPreview: true })).toBe(false);
+  });
+
+  it("**会话卡绑了有图的应用也要贴图** —— 2026-08-24 那次「66 张卡只有 14 张有图」", () => {
+    // 会话摘要现在带 appId + hasPreview（后端 session_covers）。这一档要是
+    // 判 false，应用中心就回到那天的样子：会话认不到应用那一页，全画空占位。
+    expect(shouldUseSheetThumb({ appId: "app-from-session", hasPreview: true })).toBe(true);
   });
 
   it("spec-first 有图也贴图——不因为它是整页 HTML 就另开一路", () => {
-    // 判据本身不看 has_pages：有 appId + has_preview 就贴。
-    expect(shouldUseSheetThumb({ appId: "spec-1", summary: { has_preview: true } })).toBe(true);
+    // 判据本身不看 has_pages：有 appId + hasPreview 就贴。
+    expect(shouldUseSheetThumb({ appId: "spec-1", hasPreview: true })).toBe(true);
   });
 });
 

@@ -305,8 +305,22 @@ def list_sess(
     （34 条 5.2 MB / 2.3s）。完整 blob 只在 GET /sessions/{sid}。
     """
     _auth(x_internal_key)
+    from services import app_store
     from services.app_access import session_access, Access
     from services.persistence import list_session_summaries
+
+    # 会话 → 它绑定的那版应用（含缩略图三件套）。一次全表小列索引，跟会话
+    # 条数无关；拿不到就按"没绑定应用"走。
+    #
+    # ⚠ 这里**必须**再兜一层，哪怕 session_covers 自己已经 fail-open：那层兜的
+    #   是"后端查询挂了"，兜不住它自己有 bug（形状变了、TypeError）。缩略图是
+    #   增强类（本仓第七条），而 GET /sessions 是侧栏和应用中心共用的那条路——
+    #   把它拖成 500 等于整个工作台白屏，比没有封面严重得多。
+    try:
+        covers = app_store.session_covers()
+    except Exception as exc:  # noqa: BLE001 — 增强项，不许拖垮主链路
+        print(f"[sessions] 封面索引不可用，本次按「会话无绑定应用」列出: {str(exc)[:160]}")
+        covers = {}
 
     items = []
     for summary in list_session_summaries():
@@ -315,14 +329,36 @@ def list_sess(
             viewer,
         ) < Access.READ:
             continue
-        items.append({
-            "sessionId": summary.get("sessionId") or "",
+        sid = summary.get("sessionId") or ""
+        item = {
+            "sessionId": sid,
             "goal": summary.get("goal") or "",
             "createdAt": summary.get("createdAt"),
             "lastActive": summary.get("lastActive"),
             "artifactCount": int(summary.get("artifactCount") or 0),
             "phase": summary.get("phase"),
-        })
+        }
+        # ⚠ 2026-08-24：会话摘要带上 appId + 缩略图三件套。
+        #
+        # 应用中心把「全部会话」和「**一页**应用」合并去重（mergeGalleryItems 按
+        # session_id 认领）。会话是一次拉全的 65 条，应用却是 limit=14 的一页，
+        # 于是 51 个会话认不到自己的应用，各摆一张没封面的空卡，滚到下一页才被
+        # 真应用卡换掉。真机：66 张卡只有 14 张有图，而库里 67 张图都在。
+        #
+        # 字段名与应用摘要（_mark_previews）**一模一样**，前端那条
+        # shouldUseSheetThumb 不用分两套判定——两套判定漂移是本仓反复踩的形状。
+        #
+        # ⚠ 归属不用另判：这条会话已经过了上面 session_access >= READ，
+        #   而这里给的是**它自己那版应用**的封面，不是别人的货架。
+        cover = covers.get(sid)
+        if cover:
+            item["appId"] = cover["app_id"]
+            item["version"] = cover["version"]
+            item["device"] = cover["device"]
+            item["has_preview"] = cover["has_preview"]
+            item["preview_source"] = cover["preview_source"]
+            item["preview_tag"] = cover["preview_tag"]
+        items.append(item)
     return {"sessions": items}
 
 def _session_payload(state: Any) -> Dict[str, Any]:
