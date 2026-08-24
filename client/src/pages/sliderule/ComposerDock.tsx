@@ -34,11 +34,14 @@ import {
   type ComposerDevice,
 } from "./composer-device";
 import {
-  DESIGN_SYSTEMS,
+  allDesignSystems,
   findDesignSystem,
+  isCustomDesignSystem,
   loadDesignSystemId,
   saveDesignSystemId,
 } from "./design-system";
+import { DesignSystemSwatch } from "./DesignSystemSwatch";
+import { useDesignSystemPanel } from "./DesignSystemContext";
 import { useIntakeJudge } from "./use-intake-judge";
 import { IntakeHintBar, INTAKE_JUDGING_LABEL } from "./IntakeHintBar";
 import {
@@ -343,11 +346,28 @@ export function ComposerDock({
     React.useState<ComposerDevice>(loadPreferredDevice);
   // 设计系统（2026-08-24）。Stitch / TRAE 都把它做成画布右侧面板，但我们不是
   // 画布模式——按用户裁决合并进指令框，和「应用 / Web」并排。
-  const [designSystemId, setDesignSystemId] =
-    React.useState<string>(loadDesignSystemId);
+  const [localDesignSystemId, setLocalDesignSystemId] = React.useState<
+    string | null
+  >(loadDesignSystemId);
   const [designMenuOpen, setDesignMenuOpen] = React.useState(false);
   const designMenuRef = React.useRef<HTMLDivElement | null>(null);
-  const designSystem = findDesignSystem(designSystemId);
+  const designPanel = useDesignSystemPanel();
+  // 有 Provider 就以它为准（面板保存后作曲家立刻跟着变）；没有则用本地态，
+  // 这样单测/应用中心那边不挂 Provider 也能正常渲染。
+  const designSystemId = designPanel
+    ? designPanel.appliedId
+    : localDesignSystemId;
+  const setDesignSystemId = (id: string) => {
+    if (designPanel) designPanel.apply(id);
+    else setLocalDesignSystemId(id);
+  };
+  // 自建的在前、预设在后。每次开菜单现读，新建完不用刷新页面。
+  const designList = React.useMemo(
+    () => (designMenuOpen ? allDesignSystems() : []),
+    [designMenuOpen]
+  );
+  // null = 用户还没选：按钮显示图标而不是色块（2026-08-25 用户裁决）。
+  const designSystem = designSystemId ? findDesignSystem(designSystemId) : null;
   const menuRef = React.useRef<HTMLDivElement | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
@@ -1122,16 +1142,26 @@ export function ComposerDock({
                   aria-haspopup="menu"
                   aria-expanded={designMenuOpen}
                   disabled={isRunning}
-                  title={`设计系统：${designSystem.label} · ${designSystem.description}`}
+                  title={
+                    designSystem
+                      ? `设计系统：${designSystem.label} · ${designSystem.description}`
+                      : "选一套设计系统（不选则用全站默认配色）"
+                  }
                   onClick={() => setDesignMenuOpen(v => !v)}
                   className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[#f4f4f5] px-2 text-[12px] text-[#5e5e5e] transition hover:text-[#171717] disabled:opacity-45"
                 >
-                  <span
-                    aria-hidden
-                    className="h-3.5 w-3.5 shrink-0 rounded-full ring-1 ring-black/10"
-                    style={{ background: designSystem.seed }}
-                  />
-                  {hero ? designSystem.label : null}
+                  {/* ⚠ 2026-08-25 用户裁决：没选是**图标**，选了是**多色色块**。
+                      单色圆点两态长得太像，分不出"我选过没有"。 */}
+                  {designSystem ? (
+                    <DesignSystemSwatch seed={designSystem.seed} size={14} />
+                  ) : (
+                    <Palette className="h-3.5 w-3.5 shrink-0" />
+                  )}
+                  {hero
+                    ? designSystem
+                      ? designSystem.label
+                      : "设计系统"
+                    : null}
                   <ChevronRight
                     className={`h-3 w-3 transition ${designMenuOpen ? "-rotate-90" : "rotate-90"}`}
                   />
@@ -1145,45 +1175,72 @@ export function ComposerDock({
                       : "pointer-events-none translate-y-2 scale-95 opacity-0"
                   }`}
                 >
-                  <div className="flex items-center gap-1.5 px-2.5 pb-1 pt-1 text-[11px] text-stone-400">
-                    <Palette className="h-3 w-3" />
-                    设计系统
-                  </div>
-                  {DESIGN_SYSTEMS.map(sys => {
-                    const on = sys.id === designSystem.id;
+                  {/* 新建：开右侧面板（不是抽屉），可改可存。 */}
+                  <button
+                    type="button"
+                    data-testid="sliderule-design-system-new"
+                    onClick={() => {
+                      designPanel?.openNew();
+                      setDesignMenuOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left text-[12px] text-stone-700 transition hover:bg-[#eef0f4]"
+                  >
+                    <Plus className="h-3.5 w-3.5 shrink-0 text-stone-400" />
+                    新建设计系统
+                  </button>
+
+                  {designList.map((sys, i) => {
+                    const on = sys.id === designSystem?.id;
+                    const mine = isCustomDesignSystem(sys.id);
+                    // 分组标题：自建那批在前，预设在后。只在交界处插一行。
+                    const header =
+                      i === 0 && mine
+                        ? "我的设计体系"
+                        : (i === 0 && !mine) ||
+                            (i > 0 &&
+                              isCustomDesignSystem(designList[i - 1].id) &&
+                              !mine)
+                          ? "预设"
+                          : null;
                     return (
-                      <button
-                        key={sys.id}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={on}
-                        data-testid={`sliderule-design-system-${sys.id}`}
-                        onClick={() => {
-                          setDesignSystemId(sys.id);
-                          saveDesignSystemId(sys.id);
-                          setDesignMenuOpen(false);
-                        }}
-                        className={`flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4] ${
-                          on ? "bg-[#eef0f4]" : ""
-                        }`}
-                      >
-                        <span
-                          aria-hidden
-                          className="h-5 w-5 shrink-0 rounded-full ring-1 ring-black/10"
-                          style={{ background: sys.seed }}
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-xs font-semibold text-stone-800">
-                            {sys.label}
-                          </span>
-                          <span className="block truncate text-[10px] text-stone-500">
-                            {sys.description}
-                          </span>
-                        </span>
-                        {on && (
-                          <Check className="h-3.5 w-3.5 shrink-0 text-[#1677ff]" />
+                      <React.Fragment key={sys.id}>
+                        {header && (
+                          <div className="flex items-center gap-1.5 px-2.5 pb-1 pt-2 text-[11px] text-stone-400">
+                            <Palette className="h-3 w-3" />
+                            {header}
+                          </div>
                         )}
-                      </button>
+                        <button
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={on}
+                          data-testid={`sliderule-design-system-${sys.id}`}
+                          onClick={() => {
+                            setDesignSystemId(sys.id);
+                            saveDesignSystemId(sys.id);
+                            setDesignMenuOpen(false);
+                            // ⚠ 选了之后右侧出面板（2026-08-25 用户第 4 条）：
+                            //   选中即可见这套体系长什么样，也能顺手改。
+                            designPanel?.openView(sys.id);
+                          }}
+                          className={`flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4] ${
+                            on ? "bg-[#eef0f4]" : ""
+                          }`}
+                        >
+                          <DesignSystemSwatch seed={sys.seed} size={20} />
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-xs font-semibold text-stone-800">
+                              {sys.label}
+                            </span>
+                            <span className="block truncate text-[10px] text-stone-500">
+                              {sys.description}
+                            </span>
+                          </span>
+                          {on && (
+                            <Check className="h-3.5 w-3.5 shrink-0 text-[#1677ff]" />
+                          )}
+                        </button>
+                      </React.Fragment>
                     );
                   })}
                 </div>

@@ -1002,7 +1002,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               // 设计系统跟 preferredDevice 走同一条路：作曲家写 localStorage，
               // 发起推演时在这里读。加一条 props 传参链没有额外好处，反而多一处
               // 会忘记接的地方。
-              designSystemId: loadDesignSystemId(),
+              designSystemId: loadDesignSystemId() ?? undefined,
               ...(mode === "repair" ? { mode } : {}),
               onRunId: (runId: string) => {
                 sawRunId = true;

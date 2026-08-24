@@ -41,6 +41,10 @@ export type DesignSystem = {
   bodyFont: string;
   radius: DesignSystemRadius;
   dark: boolean;
+  /** 具体参照（DESIGN.md 官方 PHILOSOPHY：具体参照 > 形容词堆）。 */
+  reference?: string;
+  /** 负向约束。官方 PHILOSOPHY：What you leave out defines the character。 */
+  donts?: string[];
 };
 
 const TABLE = table as { defaultId: string; systems: DesignSystem[] };
@@ -51,17 +55,33 @@ export const DEFAULT_DESIGN_SYSTEM_ID = TABLE.defaultId;
 const DESIGN_SYSTEM_KEY = "sliderule:design-system";
 
 export function findDesignSystem(id: string | null | undefined): DesignSystem {
-  const hit = DESIGN_SYSTEMS.find(s => s.id === id);
+  // 自建的排在前面：同 id 时自建赢（用户改过的那份才是他要的）
+  const hit = allDesignSystems().find(s => s.id === id);
   // 认不出就回落默认，不抛错：清单收窄之后老 localStorage 里的 id 会读不到，
   // 那时该静默换回默认色，不该让作曲家整个炸掉。
   return hit ?? DESIGN_SYSTEMS.find(s => s.id === DEFAULT_DESIGN_SYSTEM_ID)!;
 }
 
-export function loadDesignSystemId(): string {
+/**
+ * ⚠ 三态，不是两态（2026-08-25 用户裁决）：
+ *
+ *     null   用户还没选     → 作曲家上显示一个调色板**图标**
+ *     "xxx"  用户选了某一套 → 显示那套的**多色色块**
+ *
+ * 「没选」和「选了默认那套」必须能分开。改动前只有两态（读不到就当选了默认），
+ * 图标态压根表达不出来。也因此 loadDesignSystemId 返回 `string | null` 而不是
+ * 兜底成默认 id —— 兜底会把"没选"永远变成"选了"。
+ *
+ * 未选时推演侧照旧走全站 brandSeed（后端 override 传 null 即回落），所以这个
+ * 三态只影响 UI 表达，不改变没选用户的生成结果。
+ */
+export function loadDesignSystemId(): string | null {
   try {
-    return findDesignSystem(localStorage.getItem(DESIGN_SYSTEM_KEY)).id;
+    const raw = localStorage.getItem(DESIGN_SYSTEM_KEY);
+    if (!raw) return null;
+    return allDesignSystems().some(s => s.id === raw) ? raw : null;
   } catch {
-    return DEFAULT_DESIGN_SYSTEM_ID;
+    return null;
   }
 }
 
@@ -71,4 +91,71 @@ export function saveDesignSystemId(id: string): void {
   } catch {
     /* 存储不可用 → 本次会话内仍按内存态生效 */
   }
+}
+
+// --- 自建设计系统（2026-08-25）------------------------------------------------
+
+const CUSTOM_KEY = "sliderule:design-systems-custom";
+
+/**
+ * 用户自建的设计系统。存 localStorage：跟 preferred-device / 机型偏好同一套
+ * `sliderule:` 前缀，不进后端。
+ *
+ * ⚠ 自建的排在预设**前面**（Stitch 的「我的设计体系」也在「Stitch 预设」上方）：
+ * 自己建的那套才是常用的，埋在十几个预设下面等于没建。
+ */
+export function loadCustomDesignSystems(): DesignSystem[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CUSTOM_KEY) || "[]");
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(
+      (s): s is DesignSystem =>
+        !!s &&
+        typeof s.id === "string" &&
+        /^#[0-9a-fA-F]{6}$/.test(s.seed || "")
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function saveCustomDesignSystem(sys: DesignSystem): void {
+  try {
+    const list = loadCustomDesignSystems().filter(s => s.id !== sys.id);
+    localStorage.setItem(CUSTOM_KEY, JSON.stringify([sys, ...list]));
+  } catch {
+    /* 存储不可用 → 本次会话内仍按内存态生效 */
+  }
+}
+
+export function deleteCustomDesignSystem(id: string): void {
+  try {
+    localStorage.setItem(
+      CUSTOM_KEY,
+      JSON.stringify(loadCustomDesignSystems().filter(s => s.id !== id))
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+/** 自建在前、预设在后。查找与列表都走它，别在别处各拼各的。 */
+export function allDesignSystems(): DesignSystem[] {
+  return [...loadCustomDesignSystems(), ...DESIGN_SYSTEMS];
+}
+
+export function isCustomDesignSystem(id: string): boolean {
+  return loadCustomDesignSystems().some(s => s.id === id);
+}
+
+export function newCustomDesignSystem(): DesignSystem {
+  const base = findDesignSystem(DEFAULT_DESIGN_SYSTEM_ID);
+  return {
+    ...base,
+    id: `custom-${Date.now().toString(36)}`,
+    label: "我的设计体系",
+    description: "自建设计系统",
+    reference: base.reference,
+    donts: [...(base.donts ?? [])],
+  };
 }

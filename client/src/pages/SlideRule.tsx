@@ -67,7 +67,10 @@ import { deriveSettledFiveSystemModel } from "./sliderule/system-screens/five-sy
 import { assistantTextForTurn } from "./sliderule/assistant-text-for-turn";
 import { ensureReadableChatMarkdown } from "./sliderule/readable-chat-markdown";
 import { SlideRuleStatusBar } from "./sliderule/SlideRuleStatusBar";
-import { SlideRuleResetSessionButton, SlideRuleTopHud } from "./sliderule/SlideRuleTopHud";
+import {
+  SlideRuleResetSessionButton,
+  SlideRuleTopHud,
+} from "./sliderule/SlideRuleTopHud";
 import { StudioLayoutProvider } from "./sliderule/StudioLayoutContext";
 import { isStudioChromeShown } from "./sliderule/studio-layout";
 import { SESSION_CHANGED_EVENT } from "./agent-loop/dashboard/SidebarSessions";
@@ -77,6 +80,8 @@ import {
 } from "./sliderule/ClarificationCard";
 import { DeliverablesPanel } from "./sliderule/DeliverablesPanel";
 import { ComposerDock } from "./sliderule/ComposerDock";
+import { DesignSystemPanelProvider } from "./sliderule/DesignSystemContext";
+import { DesignSystemPanel } from "./sliderule/DesignSystemPanel";
 import { HomeInspiration } from "./sliderule/home-inspiration";
 import { composerEnterHintLabel } from "./sliderule/user-prefs";
 import { EXAMPLE_INTENT_TEXTS } from "./sliderule/example-intents";
@@ -94,7 +99,10 @@ import {
   graphNodeIdForArtifact,
 } from "./sliderule/derive-lineage-highlight";
 
-import { downloadSlideRuleDeliveryMd, serializeSlideRuleDeliveryMd } from "./sliderule/serialize-sliderule-delivery-md";
+import {
+  downloadSlideRuleDeliveryMd,
+  serializeSlideRuleDeliveryMd,
+} from "./sliderule/serialize-sliderule-delivery-md";
 import { downloadSlideRuleDeliveryHtml } from "./sliderule/serialize-sliderule-delivery-html";
 import {
   deriveLatestTurnFromState,
@@ -139,7 +147,10 @@ function LiveActionIndicator({ liveAction }: { liveAction: LiveAction }) {
       }
     >
       {!liveAction.external && (
-        <span className="mr-2 inline-flex items-end gap-1 align-middle" aria-hidden>
+        <span
+          className="mr-2 inline-flex items-end gap-1 align-middle"
+          aria-hidden
+        >
           <span className="sr-dot size-1.5 rounded-full bg-stone-400" />
           <span className="sr-dot size-1.5 rounded-full bg-stone-400" />
           <span className="sr-dot size-1.5 rounded-full bg-stone-400" />
@@ -239,7 +250,8 @@ function TurnPhaseTimeline({
 }) {
   const streaming = turn.status === "streaming";
   const extraTexts: string[] = [];
-  if (llmDraft) extraTexts.push(`最新定义：起草中 · 已产出 ${llmDraft.length} 字符`);
+  if (llmDraft)
+    extraTexts.push(`最新定义：起草中 · 已产出 ${llmDraft.length} 字符`);
   if (publishClosure && !streaming) {
     extraTexts.push(
       publishClosure.blocked
@@ -586,7 +598,8 @@ function ImAssistantMessage() {
             </div>
           )}
           {/* E16 降级视觉词汇：中断/失败半成品带琥珀标记，不和正常回答长一个样 */}
-          {turn.assistantSource === "fallback" && answer.startsWith("推演中断") ? (
+          {turn.assistantSource === "fallback" &&
+          answer.startsWith("推演中断") ? (
             <div className="rounded-lg border-l-2 border-amber-400 bg-amber-50 px-3 py-2 text-[13px] leading-relaxed text-amber-800">
               {answer}
             </div>
@@ -759,32 +772,32 @@ export function ClaudeChatSurface({
             {/* E16 智能滚动补件：用户上滚回看时出「回到底部」胶囊
                 （Viewport 本身已带贴底跟随；贴底时该按钮自动 disabled → 隐藏） */}
             <div className="relative flex min-h-0 flex-1 flex-col">
-            <ThreadPrimitive.ScrollToBottom
-              data-testid="sliderule-scroll-to-bottom"
-              className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-[12px] font-medium text-stone-600 shadow-md transition hover:bg-stone-50 disabled:hidden"
-            >
-              <ArrowDown className="h-3 w-3" />
-              回到底部
-            </ThreadPrimitive.ScrollToBottom>
-            <ThreadPrimitive.Viewport className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col overflow-y-auto px-4 pb-1 pt-3 [scrollbar-gutter:stable] sm:px-5">
-              <ThreadPrimitive.Empty>
-                {/* 空态：问候 + 输入 + chips + 底栏一句。chips 走 fill-prompt，
+              <ThreadPrimitive.ScrollToBottom
+                data-testid="sliderule-scroll-to-bottom"
+                className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-[12px] font-medium text-stone-600 shadow-md transition hover:bg-stone-50 disabled:hidden"
+              >
+                <ArrowDown className="h-3 w-3" />
+                回到底部
+              </ThreadPrimitive.ScrollToBottom>
+              <ThreadPrimitive.Viewport className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col overflow-y-auto px-4 pb-1 pt-3 [scrollbar-gutter:stable] sm:px-5">
+                <ThreadPrimitive.Empty>
+                  {/* 空态：问候 + 输入 + chips + 底栏一句。chips 走 fill-prompt，
                     灵感句只导去应用中心，不造假功能入口。 */}
-                <HomeEmptyState
-                  isRunning={isRunning}
-                  composerSlot={isEmptyThread ? composerSlot : undefined}
-                  clarifySlot={isEmptyThread ? clarifySlot : undefined}
-                />
-              </ThreadPrimitive.Empty>
-              <div className="py-0">
-                <ThreadPrimitive.Messages
-                  components={{
-                    UserMessage: ImUserMessage,
-                    AssistantMessage: ImAssistantMessage,
-                  }}
-                />
-              </div>
-            </ThreadPrimitive.Viewport>
+                  <HomeEmptyState
+                    isRunning={isRunning}
+                    composerSlot={isEmptyThread ? composerSlot : undefined}
+                    clarifySlot={isEmptyThread ? clarifySlot : undefined}
+                  />
+                </ThreadPrimitive.Empty>
+                <div className="py-0">
+                  <ThreadPrimitive.Messages
+                    components={{
+                      UserMessage: ImUserMessage,
+                      AssistantMessage: ImAssistantMessage,
+                    }}
+                  />
+                </div>
+              </ThreadPrimitive.Viewport>
             </div>
             {!isEmptyThread && (composerSlot || clarifySlot) ? (
               <div
@@ -1052,8 +1065,7 @@ function SlideRuleUnified({
     () => (uiTurns.length === 0 ? deriveTurnsFromState(sessionState) : []),
     [uiTurns.length, sessionState]
   );
-  const conversationTurns =
-    uiTurns.length > 0 ? uiTurns : restoredTurns;
+  const conversationTurns = uiTurns.length > 0 ? uiTurns : restoredTurns;
 
   // 空态（无轮次且未在跑）时 ComposerDock 渲染在首页
   // hero 里；否则贴在左栏会话流底部。二选一，永远只有一个输入条实例。
@@ -1067,7 +1079,10 @@ function SlideRuleUnified({
   // 一句其实是首轮真需求的话。
   const settledModel = useMemo(
     () =>
-      deriveSettledFiveSystemModel(skillContents, publishClosure?.perSkillEvidence),
+      deriveSettledFiveSystemModel(
+        skillContents,
+        publishClosure?.perSkillEvidence
+      ),
     [skillContents, publishClosure?.perSkillEvidence]
   );
   const hasApp = !!settledModel;
@@ -1084,154 +1099,178 @@ function SlideRuleUnified({
 
   return (
     <StudioLayoutProvider available={showStudioChrome}>
-    <div className={`${autopilotTheme.immersionPage} flex flex-col`}>
-      {/* 还没推演：顶栏整条不挂（交付物/重置也占一条底边，空态看着像少了一截）。 */}
-      {showStudioChrome && !IS_GITHUB_PAGES && (pythonApiError || pythonStatusMsg) ? (
-        <div
-          className="mb-2 inline-flex rounded border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-800 shadow-sm"
-          title={pythonStatusMsg}
-        >
-          Python backend: {pythonStatusMsg || "degraded/timeout"} ·
-          <button
-            type="button"
-            onClick={retryPythonBackend}
-            className="ml-2 underline"
-          >
-            Retry
-          </button>
-          {getLegacyFallbackReason(pythonApiError) && (
-            <span className="ml-2 text-amber-600">fallback active</span>
-          )}
-          {isDegradedApiError(pythonApiError) && (
-            <span className="ml-1">(degraded envelope)</span>
-          )}
-        </div>
-      ) : null}
-      {showStudioChrome ? (
-        <DriveFullStatusBanner
-          status={driveFullStatus}
-          className="mb-2 inline-flex"
-        />
-      ) : null}
+      <DesignSystemPanelProvider>
+        {/* 设计系统面板：浮在右侧，不是抽屉。挂在页面根而不是舞台里——
+        首页没有舞台，挂进去的话空态点「新建」什么都不会出现。 */}
+        <DesignSystemPanel />
+        <div className={`${autopilotTheme.immersionPage} flex flex-col`}>
+          {/* 还没推演：顶栏整条不挂（交付物/重置也占一条底边，空态看着像少了一截）。 */}
+          {showStudioChrome &&
+          !IS_GITHUB_PAGES &&
+          (pythonApiError || pythonStatusMsg) ? (
+            <div
+              className="mb-2 inline-flex rounded border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-800 shadow-sm"
+              title={pythonStatusMsg}
+            >
+              Python backend: {pythonStatusMsg || "degraded/timeout"} ·
+              <button
+                type="button"
+                onClick={retryPythonBackend}
+                className="ml-2 underline"
+              >
+                Retry
+              </button>
+              {getLegacyFallbackReason(pythonApiError) && (
+                <span className="ml-2 text-amber-600">fallback active</span>
+              )}
+              {isDegradedApiError(pythonApiError) && (
+                <span className="ml-1">(degraded envelope)</span>
+              )}
+            </div>
+          ) : null}
+          {showStudioChrome ? (
+            <DriveFullStatusBanner
+              status={driveFullStatus}
+              className="mb-2 inline-flex"
+            />
+          ) : null}
 
-      {/* Studio body — 图标簇在舞台头条右侧，不再独占整页顶栏。 */}
-      {
-        <div className="relative z-0 min-h-0 flex-1">
-          <SlideRuleStudio
-            chatSlot={
-              <ClaudeChatSurface
-                uiTurns={conversationTurns}
-                isRunning={isRunning}
-                goalText={goal}
-                liveAction={liveAction}
-                latestTurn={latestTurn}
-                publishClosure={publishClosure}
-                llmDraft={isRunning ? llmDraft : ""}
-                llmStreams={isRunning ? llmStreams : []}
-                llmDraftLabel={llmDraftLabel}
-                onChallenge={challengeTurn}
-                composerSlot={
-                  <ComposerDock
-                    input={input}
-                    setInput={setInput}
-                    sendMessage={sendMessage}
+          {/* Studio body — 图标簇在舞台头条右侧，不再独占整页顶栏。 */}
+          {
+            <div className="relative z-0 min-h-0 flex-1">
+              <SlideRuleStudio
+                chatSlot={
+                  <ClaudeChatSurface
+                    uiTurns={conversationTurns}
                     isRunning={isRunning}
-                    goal={goal}
-                    hasApp={hasApp}
-                    appSummary={appSummary}
-                    hintChips={composerHints}
-                    statusPill={
-                      publishClosure
-                        ? formatComposerClosurePill(publishClosure)
-                        : null
+                    goalText={goal}
+                    liveAction={liveAction}
+                    latestTurn={latestTurn}
+                    publishClosure={publishClosure}
+                    llmDraft={isRunning ? llmDraft : ""}
+                    llmStreams={isRunning ? llmStreams : []}
+                    llmDraftLabel={llmDraftLabel}
+                    onChallenge={challengeTurn}
+                    composerSlot={
+                      <ComposerDock
+                        input={input}
+                        setInput={setInput}
+                        sendMessage={sendMessage}
+                        isRunning={isRunning}
+                        goal={goal}
+                        hasApp={hasApp}
+                        appSummary={appSummary}
+                        hintChips={composerHints}
+                        statusPill={
+                          publishClosure
+                            ? formatComposerClosurePill(publishClosure)
+                            : null
+                        }
+                        stop={stop}
+                        hero={isHomeEmpty}
+                      />
                     }
-                    stop={stop}
-                    hero={isHomeEmpty}
+                    clarifySlot={
+                      showClarify ? (
+                        <ClarificationCard
+                          questions={clarifications}
+                          onSubmit={answers => answerClarifications?.(answers)}
+                          onClose={() => setClarifyHidden(true)}
+                        />
+                      ) : null
+                    }
                   />
                 }
-                clarifySlot={
-                  showClarify ? (
-                    <ClarificationCard
-                      questions={clarifications}
-                      onSubmit={answers => answerClarifications?.(answers)}
-                      onClose={() => setClarifyHidden(true)}
+                activeSkillId={activeSkillId}
+                publishClosure={publishClosure}
+                latestMermaid={latestMermaid}
+                skillContents={skillContents}
+                skillRuntimeGraph={
+                  (
+                    sessionState as {
+                      skillRuntimeGraph?:
+                        | import("./sliderule/system-screens/five-system-model").SkillRuntimeGraphLike
+                        | null;
+                    }
+                  ).skillRuntimeGraph ?? null
+                }
+                sessionId={sessionId}
+                appTitle={goal ? goal.slice(0, 24) : undefined}
+                // 用户还没输入时不显示右侧舞台：欢迎页独占全宽，首条消息后舞台登场
+                stageVisible={conversationTurns.length > 0 || isRunning}
+                // 推演中右侧实时渲染：部分五系统模型 → 应用实时长出来；没成形前只报"推演中"
+                isRunning={isRunning}
+                llmDraft={isRunning ? llmDraft : ""}
+                llmDraftLabel={llmDraftLabel}
+                liveActionLabel={isRunning ? (liveAction?.label ?? null) : null}
+                // spec-first 第 3 步的页面：一页好了就上屏。恒传（不按 isRunning
+                // 掐）——掐掉的话闭环那一瞬间页面会先消失、再由应用舞台接管，
+                // 中间闪一下空白。舞台判定在 Studio 里一处做完。
+                specPages={specPages}
+                // 落库的那份：刷新之后右侧还能是新链路的页面，而不是掉回区块页
+                specFirstPages={
+                  (
+                    sessionState as {
+                      specFirstPages?: {
+                        pages?: Record<string, string>;
+                      } | null;
+                    }
+                  ).specFirstPages ?? null
+                }
+                modelVersions={
+                  (
+                    sessionState as {
+                      modelVersions?: Array<{
+                        id: string;
+                        instruction?: string;
+                      }>;
+                    }
+                  ).modelVersions ?? []
+                }
+                currentModelVersionId={
+                  (sessionState as { currentModelVersionId?: string | null })
+                    .currentModelVersionId ?? null
+                }
+                onRestoreVersion={restoreModelVersion}
+                isRestoringVersion={isRestoringVersion}
+                chromeSlot={
+                  showStudioChrome ? (
+                    <SlideRuleTopHud
+                      isRunning={isRunning}
+                      onOpenDeliverables={openDeliverables}
                     />
                   ) : null
                 }
-              />
-            }
-            activeSkillId={activeSkillId}
-            publishClosure={publishClosure}
-            latestMermaid={latestMermaid}
-            skillContents={skillContents}
-            skillRuntimeGraph={
-              (
-                sessionState as {
-                  skillRuntimeGraph?:
-                    | import("./sliderule/system-screens/five-system-model").SkillRuntimeGraphLike
-                    | null;
-                }
-              ).skillRuntimeGraph ?? null
-            }
-            sessionId={sessionId}
-            appTitle={goal ? goal.slice(0, 24) : undefined}
-            // 用户还没输入时不显示右侧舞台：欢迎页独占全宽，首条消息后舞台登场
-            stageVisible={conversationTurns.length > 0 || isRunning}
-            // 推演中右侧实时渲染：部分五系统模型 → 应用实时长出来；没成形前只报"推演中"
-            isRunning={isRunning}
-            llmDraft={isRunning ? llmDraft : ""}
-            llmDraftLabel={llmDraftLabel}
-            liveActionLabel={isRunning ? (liveAction?.label ?? null) : null}
-            // spec-first 第 3 步的页面：一页好了就上屏。恒传（不按 isRunning
-            // 掐）——掐掉的话闭环那一瞬间页面会先消失、再由应用舞台接管，
-            // 中间闪一下空白。舞台判定在 Studio 里一处做完。
-            specPages={specPages}
-            // 落库的那份：刷新之后右侧还能是新链路的页面，而不是掉回区块页
-            specFirstPages={
-              (sessionState as { specFirstPages?: { pages?: Record<string, string> } | null })
-                .specFirstPages ?? null
-            }
-            modelVersions={(sessionState as { modelVersions?: Array<{ id: string; instruction?: string }> }).modelVersions ?? []}
-            currentModelVersionId={(sessionState as { currentModelVersionId?: string | null }).currentModelVersionId ?? null}
-            onRestoreVersion={restoreModelVersion}
-            isRestoringVersion={isRestoringVersion}
-            chromeSlot={
-              showStudioChrome ? (
-                <SlideRuleTopHud
-                  isRunning={isRunning}
-                  onOpenDeliverables={openDeliverables}
-                />
-              ) : null
-            }
-            /* 重置会话不再走 chromeSlot：那条槽落在舞台头条**右侧**图标簇里。
+                /* 重置会话不再走 chromeSlot：那条槽落在舞台头条**右侧**图标簇里。
                2026-08-24 用户反馈要它在标题左边、更大、更蓝，所以单独一条槽。 */
-            resetSlot={
-              showStudioChrome ? (
-                <SlideRuleResetSessionButton
-                  isRunning={isRunning}
-                  onResetSession={resetSession}
-                />
-              ) : null
-            }
-            className="h-full"
-          />
-          {/* 右栏「推演过程」标签页已移除：左栏对话流本身就是实时推演过程
+                resetSlot={
+                  showStudioChrome ? (
+                    <SlideRuleResetSessionButton
+                      isRunning={isRunning}
+                      onResetSession={resetSession}
+                    />
+                  ) : null
+                }
+                className="h-full"
+              />
+              {/* 右栏「推演过程」标签页已移除：左栏对话流本身就是实时推演过程
             （步骤流 + LLM 实时草稿），右栏只保留系统画面（用户反馈去重）。 */}
-        </div>
-      }
+            </div>
+          }
 
-      {/* 设置弹窗已收敛到侧栏「设置」整页（SettingsPage），HUD 不再挂设置入口 */}
-      <DeliverablesPanel
-        open={deliverablesOpen}
-        onClose={() => setDeliverablesOpen(false)}
-        sessionState={sessionState}
-        isRunning={isRunning}
-        onGenerate={() => generateDeliverables()}
-        onExportMd={() => onExportDeliverables()}
-        onEvidenceRefClick={onEvidenceRefClick}
-        publishClosure={publishClosure}
-      />
-    </div>
+          {/* 设置弹窗已收敛到侧栏「设置」整页（SettingsPage），HUD 不再挂设置入口 */}
+          <DeliverablesPanel
+            open={deliverablesOpen}
+            onClose={() => setDeliverablesOpen(false)}
+            sessionState={sessionState}
+            isRunning={isRunning}
+            onGenerate={() => generateDeliverables()}
+            onExportMd={() => onExportDeliverables()}
+            onEvidenceRefClick={onEvidenceRefClick}
+            publishClosure={publishClosure}
+          />
+        </div>
+      </DesignSystemPanelProvider>
     </StudioLayoutProvider>
   );
 }
@@ -1783,8 +1822,8 @@ function SlideRuleSessionBody({
   const latestTurn =
     uiTurns.length > 0
       ? uiTurns[uiTurns.length - 1]
-      : restoredTurns[restoredTurns.length - 1] ??
-        deriveLatestTurnFromState(sessionState);
+      : (restoredTurns[restoredTurns.length - 1] ??
+        deriveLatestTurnFromState(sessionState));
   const latestTurnId = latestTurn?.id ?? null;
 
   const [projectionDensity, setProjectionDensity] = useState<ProjectionDensity>(
