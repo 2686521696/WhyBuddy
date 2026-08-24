@@ -344,7 +344,7 @@ describe("SlideRuleStudio 三态舞台", () => {
     expect(html).not.toContain('data-testid="sliderule-xray-toggle"');
   });
 
-  it("成品面顶栏：页面/代码/沙盘 + 透视开关都在场", () => {
+  it("成品面顶栏：页面/代码 + 透视开关在场，沙盘片已撤", () => {
     const html = renderToStaticMarkup(
       <SlideRuleStudio
         chatSlot={<div />}
@@ -365,7 +365,6 @@ describe("SlideRuleStudio 三态舞台", () => {
     expect(html).toContain('data-testid="sliderule-stage-gears"');
     expect(html).toContain('data-testid="sliderule-stage-view-page"');
     expect(html).toContain('data-testid="sliderule-stage-view-code"');
-    expect(html).toContain('data-testid="sliderule-stage-view-board"');
     expect(html).toContain('data-testid="sliderule-xray-toggle"');
     const pageBtn = html.slice(
       html.indexOf('data-testid="sliderule-stage-view-page"'),
@@ -374,9 +373,50 @@ describe("SlideRuleStudio 三态舞台", () => {
     expect(pageBtn).toContain("页面");
     expect(pageBtn).not.toContain("桌面");
     expect(html).toContain("代码");
-    expect(html).toContain("沙盘");
     expect(html).toContain("透视");
     expect(html).not.toContain(">游标<");
+    // ⚠ 2026-08-24 用户反馈：顶栏「沙盘」片和「透视」里的入口重复，撤掉。
+    // 把那片 tab 加回去，这两条必红。
+    expect(html).not.toContain('data-testid="sliderule-stage-view-board"');
+    expect(html).not.toContain(">沙盘<");
+  });
+
+  it("重置会话落在标题**左侧**，不在右侧图标簇里（量渲染后的顺序，不量源码）", () => {
+    /**
+     * ⚠ 2026-08-24 用户反馈：重置会话原是右侧灰图标簇最后那个 ⟳，跟「重置布局」
+     * 的 ◫ 挨着，分不出也看不见。搬到标题左边。
+     *
+     * 判据盯的是**渲染后 HTML 里的先后顺序**，不是"源码里有没有 resetSlot"——
+     * 后者把槽渲染到右边照样绿（本仓踩过第十次以上的形态）。把 {resetSlot}
+     * 挪到 {chromeSlot} 旁边，下面 indexOf 比较必红。
+     */
+    const html = renderToStaticMarkup(
+      <SlideRuleStudio
+        chatSlot={<div />}
+        activeSkillId={null}
+        appTitle="为求职者打造全生命周期管理工具"
+        resetSlot={<button data-testid="sliderule-reset-session">reset</button>}
+        chromeSlot={<div data-testid="sliderule-status-bar">chrome</div>}
+        specPages={[
+          {
+            pageId: "p1",
+            html: "<!doctype html><html><body>x</body></html>",
+            current: 1,
+            total: 1,
+            bound: false,
+          },
+        ]}
+      />
+    );
+    const resetAt = html.indexOf('data-testid="sliderule-reset-session"');
+    const titleAt = html.indexOf("为求职者打造全生命周期管理工具");
+    const gearsAt = html.indexOf('data-testid="sliderule-stage-gears"');
+    expect(resetAt).toBeGreaterThan(-1);
+    expect(titleAt).toBeGreaterThan(-1);
+    // 左于标题
+    expect(resetAt).toBeLessThan(titleAt);
+    // 且不在右侧图标簇里
+    expect(resetAt).toBeLessThan(gearsAt);
   });
 
   it("工作台图标簇落在透视右侧，跟标题同一行", () => {

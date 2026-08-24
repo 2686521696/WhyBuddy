@@ -172,8 +172,17 @@ interface SlideRuleStudioProps {
   } | null;
 
   className?: string;
-  /** 舞台头条右侧：隐藏页面 / 最大化 / 交付物 / 重置。不另占整页顶栏。 */
+  /** 舞台头条右侧：隐藏页面 / 最大化 / 交付物。不另占整页顶栏。 */
   chromeSlot?: React.ReactNode;
+  /**
+   * 舞台头条**标题左侧**：重置会话那颗蓝钮。
+   *
+   * ⚠ 2026-08-24：单开一个槽而不是塞进 chromeSlot，就是为了让它落在标题**前面**。
+   * 合回 chromeSlot 会把它冲回右侧图标簇——那正是用户这次反馈"看不见/分不清"的原因。
+   * 舞台没起来的那几支（空会话 / 推演中 / 沙盘面）没有标题行可挂，仍与 chromeSlot
+   * 同排渲染，保证任何一屏都够得着重置。
+   */
+  resetSlot?: React.ReactNode;
 }
 
 export function SlideRuleStudio({
@@ -198,6 +207,7 @@ export function SlideRuleStudio({
   onRestoreVersion,
   isRestoringVersion = false,
   chromeSlot,
+  resetSlot,
 }: SlideRuleStudioProps) {
   const layout = useStudioLayout();
   // 顶栏「隐藏页面」必须卸掉右侧舞台，不是把宽度收成 0。
@@ -532,8 +542,9 @@ export function SlideRuleStudio({
     return (
       <StudioChrome className={className}>
         <div className="relative flex h-full w-full flex-col">
-          {chromeSlot ? (
-            <div className="flex shrink-0 justify-end px-3 py-1">
+          {chromeSlot || resetSlot ? (
+            <div className="flex shrink-0 items-center justify-end gap-1 px-3 py-1">
+              {resetSlot}
               {chromeSlot}
             </div>
           ) : null}
@@ -594,6 +605,10 @@ export function SlideRuleStudio({
               data-header-pattern="primer-page-header"
             >
               <div className="flex min-w-0 flex-1 items-center gap-2">
+                {/* 重置会话钉在标题**左边**（2026-08-24 用户反馈）：它以前是右侧
+                    灰图标簇的最后一个 ⟳，跟「重置布局」的 ◫ 挨着，两个都叫"重置"
+                    也都是灰的，真机上分不出来。 */}
+                {resetSlot}
                 <span className="min-w-0 truncate text-[12px] font-semibold text-stone-600">
                   {appTitle || "推演应用"}
                 </span>
@@ -622,11 +637,15 @@ export function SlideRuleStudio({
                     2026-08-20 满电青年：这里曾经 bg-[#1f2328] text-white，
                     浅色舞台头条上像一块开关。 */}
                 <div className="flex h-7 items-center rounded-md bg-[#f4f4f5] p-0.5">
+                  {/* ⚠ 2026-08-24：这里曾经还有第三片 ["board", "沙盘"]，撤了——
+                      「透视」侧栏顶上的「打开沙盘」走的是同一个 setStageView("board")
+                      （见下面 XrayPanel 的 onOpenSandbox），顶栏再挂一片纯属重复占位。
+                      注意撤的只是**这颗按钮**：stageView === "board" 那支渲染和
+                      XrayPanel 的入口都还在，删它们会让沙盘真的没法打开。 */}
                   {(
                     [
                       ["page", "页面"],
                       ["code", "代码"],
-                      ["board", "沙盘"],
                     ] as const
                   ).map(([v, label]) => (
                     <button
@@ -774,8 +793,11 @@ export function SlideRuleStudio({
             className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-3"
             data-testid="sliderule-live-stage"
           >
-            {chromeSlot ? (
-              <div className="absolute right-0 top-0">{chromeSlot}</div>
+            {chromeSlot || resetSlot ? (
+              <div className="absolute right-0 top-0 flex items-center gap-1">
+                {resetSlot}
+                {chromeSlot}
+              </div>
             ) : null}
             <span className="inline-flex items-end gap-1.5" aria-hidden>
               <span className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]" />
@@ -798,7 +820,14 @@ export function SlideRuleStudio({
             onInspect={setDrawerSkill}
             focusSkill={activeSkillId}
             versionToolbar={versionToolbar}
-            trailing={chromeSlot}
+            trailing={
+              chromeSlot || resetSlot ? (
+                <div className="flex items-center gap-1">
+                  {resetSlot}
+                  {chromeSlot}
+                </div>
+              ) : null
+            }
             className="min-h-0 flex-1"
           />
         )}

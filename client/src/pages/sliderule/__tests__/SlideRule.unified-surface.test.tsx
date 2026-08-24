@@ -264,7 +264,13 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).toContain('data-testid="sliderule-layout-stage"');
     expect(html).toContain('aria-label="隐藏页面"');
     expect(html).toContain('data-testid="sliderule-layout-maximize"');
-    expect(html).toContain('data-testid="sliderule-layout-reset"');
+    // ⚠ 2026-08-24：「重置布局」按钮撤了（用户："按钮一多看不懂啥意思"），
+    // 双击分栏缝仍走同一条 resetLayout。加回按钮这条必红。
+    expect(html).not.toContain('data-testid="sliderule-layout-reset"');
+    // 反向：撤了布局钮，**重置会话**那颗蓝钮必须还在这一屏够得着——
+    // 推演中这支没有标题行可挂，它与图标簇同排渲染。
+    expect(html).toContain('data-testid="sliderule-reset-session"');
+    expect(html).toContain('aria-label="重置会话"');
     expect(html).not.toContain('data-testid="sliderule-layout-sidebar"');
     expect(html).not.toContain('data-testid="sliderule-layout-chat"');
     expect(html).not.toContain("折叠舞台");

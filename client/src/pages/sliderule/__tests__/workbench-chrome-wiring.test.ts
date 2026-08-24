@@ -44,9 +44,14 @@ describe("workbench chrome live-path wiring", () => {
     expect(src).toContain("studio?.toggleStagePage");
     expect(src).toContain("隐藏页面");
     expect(src).toContain("sliderule-layout-maximize");
-    expect(src).toContain("sliderule-layout-reset");
-    expect(src).toContain("studio?.resetLayout");
-    expect(src).toContain("重置布局");
+    // ⚠ 2026-08-24：重置布局按钮撤了（用户："按钮一多看不懂啥意思"）。
+    // 判据翻面前先剥注释——SlideRuleTopHud 的模块头正好把"重置布局"
+    // 和 resetLayout 写进了事故记录里，不剥的话下面三条 not 永远假红。
+    expect(src).not.toContain("sliderule-layout-reset");
+    expect(src).not.toContain("studio?.resetLayout");
+    expect(src).not.toContain("重置布局");
+    // 重置会话也不在这个簇里了，它是 SlideRuleResetSessionButton
+    expect(src).toContain("SlideRuleResetSessionButton");
     expect(src).not.toContain("useShellSidebar");
     expect(src).not.toContain("sliderule-layout-sidebar");
     expect(src).not.toContain("sliderule-layout-chat");
@@ -158,10 +163,14 @@ describe("workbench chrome live-path wiring", () => {
     expect(scale).toContain("requestAnimationFrame");
   });
 
-  it("对话栏默认走侧栏×2，重置布局接在顶栏和双击上", () => {
+  it("对话栏默认走侧栏×2，重置布局只剩缝上双击这一条路", () => {
     /**
      * ⚠ 2026-08-20：只改 helper 不接线会假绿。把 defaultSize 写回 38、
-     * 顶栏不调 resetLayout，这条必须红。
+     * 缝上不调 resetLayout，这条必须红。
+     *
+     * ⚠ 2026-08-24：顶栏那颗「重置布局」按钮已撤。撤按钮**不等于**撤功能——
+     * 双击这条路是它唯一的入口了，所以下面 onDoubleClick 那条判据从
+     * "顺带钉一下"升级成"最后一道闸"：它红了就是功能真的没了。
      */
     const split = stripComments(
       readFileSync(new URL("../StudioSplit.tsx", import.meta.url), "utf8")
@@ -270,6 +279,8 @@ describe("workbench chrome live-path wiring", () => {
     expect(gears).toContain("flex shrink-0 items-center gap-1");
     expect(gears).toContain("透视");
     expect(gears.indexOf("透视")).toBeLessThan(gears.indexOf("{chromeSlot}"));
+    // ⚠ 2026-08-24：重置会话搬到标题左侧了，右侧这排不许再有它。
+    expect(gears).not.toContain("resetSlot");
     expect(gears).not.toContain("sliderule-stage-role");
     expect(studio).toContain("metaTrailing={roleControl}");
 
@@ -279,13 +290,24 @@ describe("workbench chrome live-path wiring", () => {
     expect(boardTab).not.toContain("trailing=");
   });
 
-  it("成品页顶栏有沙盘档，透视栏打开沙盘不走 Checks 抽屉", () => {
+  it("顶栏沙盘档已撤，但沙盘本身没死：透视栏「打开沙盘」仍是活入口", () => {
+    /**
+     * ⚠ 2026-08-24：这条是"闸全绿但东西没了"的正脸。用户要撤的是顶栏那片
+     * 重复 tab，**不是**沙盘功能。只 grep `not.toContain('["board", "沙盘"]')`
+     * 会假绿——把 stageView === "board" 那支渲染或 XrayPanel 的
+     * onOpenSandbox 一并删掉，判据照样全绿，而沙盘再也打不开。
+     * 所以撤的那条配一条"它还接在别的入口上"。
+     */
     const studio = stripComments(
       readFileSync(new URL("../SlideRuleStudio.tsx", import.meta.url), "utf8")
     );
-    expect(studio).toContain('["board", "沙盘"]');
+    // 撤掉的：顶栏那片 tab
+    expect(studio).not.toContain('["board", "沙盘"]');
+    expect(studio).not.toContain("sliderule-stage-view-board");
+    // 没撤的：沙盘那支渲染 + 透视栏入口，且入口真的指向 board
     expect(studio).toContain('stageView === "board"');
     expect(studio).toContain("onOpenSandbox");
+    expect(studio).toContain('onOpenSandbox={() => setStageView("board")}');
     expect(studio).toContain("透视");
     expect(studio).not.toContain(">游标<");
 

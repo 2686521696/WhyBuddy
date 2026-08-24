@@ -67,7 +67,7 @@ import { deriveSettledFiveSystemModel } from "./sliderule/system-screens/five-sy
 import { assistantTextForTurn } from "./sliderule/assistant-text-for-turn";
 import { ensureReadableChatMarkdown } from "./sliderule/readable-chat-markdown";
 import { SlideRuleStatusBar } from "./sliderule/SlideRuleStatusBar";
-import { SlideRuleTopHud } from "./sliderule/SlideRuleTopHud";
+import { SlideRuleResetSessionButton, SlideRuleTopHud } from "./sliderule/SlideRuleTopHud";
 import { StudioLayoutProvider } from "./sliderule/StudioLayoutContext";
 import { isStudioChromeShown } from "./sliderule/studio-layout";
 import { SESSION_CHANGED_EVENT } from "./agent-loop/dashboard/SidebarSessions";
@@ -1199,8 +1199,17 @@ function SlideRuleUnified({
               showStudioChrome ? (
                 <SlideRuleTopHud
                   isRunning={isRunning}
-                  onResetSession={resetSession}
                   onOpenDeliverables={openDeliverables}
+                />
+              ) : null
+            }
+            /* 重置会话不再走 chromeSlot：那条槽落在舞台头条**右侧**图标簇里。
+               2026-08-24 用户反馈要它在标题左边、更大、更蓝，所以单独一条槽。 */
+            resetSlot={
+              showStudioChrome ? (
+                <SlideRuleResetSessionButton
+                  isRunning={isRunning}
+                  onResetSession={resetSession}
                 />
               ) : null
             }
