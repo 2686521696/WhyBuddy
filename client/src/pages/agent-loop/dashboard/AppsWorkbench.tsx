@@ -2196,7 +2196,7 @@ export function AppsWorkbench() {
         · z-30 高于卡片菜单(z-10)与健康浮层(z-20)：健康浮层本身在这块里面，
           跟着一起吸顶，不会被卡片盖住。
       */}
-      <div className="sticky top-0 z-30 -mx-6 -mt-5 bg-[var(--sr-shell-bg,#f4f4f6)] px-6 pt-5 pb-3 md:-mx-8 md:-mt-6 md:px-8 md:pt-6">
+      <div className="sticky top-0 z-30 -mx-6 -mt-5 bg-[var(--sr-shell-bg,#f4f4f6)] px-6 pt-5 pb-4 md:-mx-8 md:-mt-6 md:px-8 md:pt-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="flex min-w-0 shrink-0 items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg text-[#5b6cff]">
