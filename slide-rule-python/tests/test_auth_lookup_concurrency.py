@@ -84,6 +84,10 @@ class _Store:
     def get_by_id_for_auth(self, uid: str):
         return self.get_by_id(uid)
 
+    # 鉴权路径调的是带 TTL 的那条；这个假库不缓存，理由同 get_by_id_for_auth。
+    def is_token_revoked_for_auth(self, jti: str) -> bool:
+        return self.is_token_revoked(jti)
+
     def is_token_revoked(self, _jti: str) -> bool:
         self.revoke_called.set()
         self._sleep("is_token_revoked")

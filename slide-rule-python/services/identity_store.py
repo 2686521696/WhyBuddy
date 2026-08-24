@@ -414,24 +414,44 @@ class User(dict):
 AUTH_CACHE_TTL_S = 5.0
 
 _AUTH_CACHE: dict[str, tuple[float, Any]] = {}
+#: 撤销名单的缓存（2026-08-24 第二步，用户定的同样 5 秒）。
+#
+# is_token_revoked 的头注早就写着"真成为瓶颈时该加的是缓存（撤销是低频写、
+# 判定是高频读，很适合缓存），而不是把这道检查去掉"——这就是那一步。
+#
+# ⚠ 加它之前，身份缓存那套让步之所以成立，靠的正是"登出走 jti 撤销、每次实查、
+#   **立刻**生效"。现在这条也缓存了，那个理由换成了下面这条：
+#
+#     同进程登出仍然**当场**生效（revoke_token 走 executor.execute → 全清），
+#     5 秒只是多进程/多实例下的上界。
+#
+#   两个缓存共用一次失效，所以这个性质对两者同时成立。要是哪天把失效从
+#   executor 挪回写方法，塌的是**两条**，不是一条。
+_REVOKE_CACHE: dict[str, tuple[float, bool]] = {}
 _AUTH_CACHE_LOCK = threading.Lock()
 #: 缓存条数上限。超了就整个清空——这是个 5 秒窗口的加速器，不是要维护 LRU。
 _AUTH_CACHE_MAX = 4096
 
 
 def invalidate_auth_cache(user_id: Optional[str] = None) -> None:
-    """清掉鉴权缓存。不传 user_id 就全清。"""
+    """清掉鉴权缓存（身份 + 撤销名单）。不传 user_id 就全清。
+
+    ⚠ 传了 user_id 也**照样全清撤销名单**：撤销记录是按 jti 存的，从 user_id
+      推不出他有哪些 jti。宁可多清——over-invalidate 只是下次多查一次库，
+      under-invalidate 是登出的人还能用 5 秒。
+    """
     with _AUTH_CACHE_LOCK:
         if user_id is None:
             _AUTH_CACHE.clear()
         else:
             _AUTH_CACHE.pop(str(user_id), None)
+        _REVOKE_CACHE.clear()
 
 
 def _auth_cache_size() -> int:
     """测试用。"""
     with _AUTH_CACHE_LOCK:
-        return len(_AUTH_CACHE)
+        return len(_AUTH_CACHE) + len(_REVOKE_CACHE)
 
 
 class _InvalidatingExecutor:
@@ -739,6 +759,33 @@ class IdentityStore:
             f"select jti from {_REVOKE_TABLE} where jti = {self._x.ph(1)}", [jti]
         )
         return bool(rows)
+
+    def is_token_revoked_for_auth(self, jti: str) -> bool:
+        """鉴权路径专用：带 AUTH_CACHE_TTL_S 秒 TTL 的 is_token_revoked。
+
+        与 get_by_id_for_auth 同一套设计、同一个 TTL、同一次失效，取舍写在
+        AUTH_CACHE_TTL_S 和 _REVOKE_CACHE 的注释里，改之前先读完。
+
+        ⚠ **只给 optional_user 用**。裸的 is_token_revoked 保持每次实查——
+          判据、管理台、清理任务读到 5 秒前的值就是 bug。
+
+        ⚠ 查库失败**不缓存**：异常照常抛给调用方（那边 fail-open 成放行）。
+          把失败缓存 5 秒，等于一次抖动让撤销检查停摆 5 秒。
+        """
+        key = (jti or "").strip()
+        if not key:
+            return False
+        now = time.monotonic()
+        with _AUTH_CACHE_LOCK:
+            hit = _REVOKE_CACHE.get(key)
+            if hit is not None and now - hit[0] < AUTH_CACHE_TTL_S:
+                return hit[1]
+        revoked = self.is_token_revoked(key)
+        with _AUTH_CACHE_LOCK:
+            if len(_REVOKE_CACHE) >= _AUTH_CACHE_MAX:
+                _REVOKE_CACHE.clear()
+            _REVOKE_CACHE[key] = (now, revoked)
+        return revoked
 
     def purge_revoked(self) -> int:
         """清掉已经自然过期的撤销记录。

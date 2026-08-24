@@ -160,16 +160,70 @@ def test_缓存回的是拷贝_调用方改不脏缓存(store):
     assert again["display_name"] == "A", "缓存被上一个调用方改脏了"
 
 
-def test_撤销名单不进缓存_登出立刻生效(store, monkeypatch):
-    """① 最要紧的那把刀不能钝。
+def test_撤销名单也缓存5秒_但登出当场生效(store, monkeypatch):
+    """① 换了保法，性质没换。
 
-    登出走 jti 撤销，每次鉴权实查。这条要是被"顺手也缓存一下"，登出之后
-    旧标签页还能用满 5 秒。
+    ⚠ 这条判据 2026-08-24 当天改过一次落点，记一下省得下次看不懂：
+        上午加身份缓存时，撤销**不缓存**——那时"登出立刻生效"靠的是每次实查。
+        下午用户让撤销也上同样的 5 秒（is_token_revoked 头注本来就写着"真成为
+        瓶颈时该加的是缓存"）。于是"立刻生效"换了个靠山：**登出是一次写，会
+        把两个鉴权缓存一起清掉**，同进程当场生效，5 秒只是多实例下的上界。
+
+    所以下面正反两条一起验：缓存确实生效了（省了查询），撤销之后立刻改判。
     """
+    ident.invalidate_auth_cache()
     seen = _count_queries(store, monkeypatch)
     for _ in range(3):
-        store.is_token_revoked("jti-abc")
-    assert seen["n"] == 3, "撤销名单被缓存了 —— 登出会延迟生效"
+        assert store.is_token_revoked_for_auth("jti-abc") is False
+    assert seen["n"] == 1, f"3 次鉴权查了 {seen['n']} 次库，撤销缓存没生效"
+
+    # ★ 撤销之后必须**当场**改判，不许等 5 秒
+    store.revoke_token("jti-abc", user_id="u-1")
+    assert store.is_token_revoked_for_auth("jti-abc") is True, (
+        "撤销了还在读缓存 —— 登出会延迟生效，这是整个取舍的底线"
+    )
+
+
+def test_裸的is_token_revoked永远实查(store, monkeypatch):
+    """判据、管理台、清理任务读到 5 秒前的值就是 bug。
+
+    与 get_by_id / get_by_id_for_auth 同一条分工：带缓存的那条只给鉴权。
+    """
+    store.is_token_revoked_for_auth("jti-x")  # 焐热
+    seen = _count_queries(store, monkeypatch)
+    store.is_token_revoked("jti-x")
+    store.is_token_revoked("jti-x")
+    assert seen["n"] == 2, "is_token_revoked 也吃上缓存了"
+
+
+def test_撤销缓存过了TTL要重新查(store, monkeypatch):
+    """上界得是真的：TTL 到期必须回库。"""
+    monkeypatch.setattr(ident, "AUTH_CACHE_TTL_S", 0.15)
+    ident.invalidate_auth_cache()
+    seen = _count_queries(store, monkeypatch)
+    store.is_token_revoked_for_auth("jti-y")
+    store.is_token_revoked_for_auth("jti-y")
+    assert seen["n"] == 1
+    time.sleep(0.2)
+    store.is_token_revoked_for_auth("jti-y")
+    assert seen["n"] == 2, "TTL 过了还在吃缓存"
+
+
+def test_撤销查库失败不进缓存(store, monkeypatch):
+    """把失败缓存 5 秒 = 一次抖动让撤销检查停摆 5 秒。"""
+    real = store._x.query
+
+    def boom(sql, params=None):
+        raise RuntimeError("库抖了")
+
+    monkeypatch.setattr(store._x, "query", boom)
+    with pytest.raises(RuntimeError):
+        store.is_token_revoked_for_auth("jti-z")
+
+    monkeypatch.setattr(store._x, "query", real)
+    seen = _count_queries(store, monkeypatch)
+    store.is_token_revoked_for_auth("jti-z")
+    assert seen["n"] == 1, "上一次的失败被缓存了"
 
 
 def test_只有鉴权那条走缓存_裸的get_by_id永远实查(store, monkeypatch):
@@ -199,7 +253,7 @@ def test_鉴权那条路真的走缓存(monkeypatch):
     from starlette.requests import Request
     from starlette.responses import Response
 
-    calls = {"plain": 0, "cached": 0}
+    calls = {"plain": 0, "cached": 0, "revoke_plain": 0, "revoke_cached": 0}
 
     class _U(dict):
         def __getattr__(self, k):
@@ -217,6 +271,11 @@ def test_鉴权那条路真的走缓存(monkeypatch):
             return user
 
         def is_token_revoked(self, _jti):
+            calls["revoke_plain"] += 1
+            return False
+
+        def is_token_revoked_for_auth(self, _jti):
+            calls["revoke_cached"] += 1
             return False
 
     token = create_access_token("u-1", password_hash="h")
@@ -239,3 +298,5 @@ def test_鉴权那条路真的走缓存(monkeypatch):
     assert cu.optional_user(req, Response(), None, token) is not None
     assert calls["cached"] == 1, "鉴权没走带缓存的那条"
     assert calls["plain"] == 0, "鉴权还在走裸 get_by_id —— 缓存等于没接上"
+    assert calls["revoke_cached"] == 1, "撤销检查没走带缓存的那条"
+    assert calls["revoke_plain"] == 0, "撤销检查还在走裸 is_token_revoked"
