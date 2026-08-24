@@ -1221,10 +1221,15 @@ def run_spec_first(
     from .spec_semantics import derive_semantics, to_model_sections  # noqa: F401
     from .spec_tree import generate_spec_tree
     from .page_id_freeze import (
+        canonical_page_id_map,
         freeze_pages_in_model,
         freeze_spec_pages,
         log_freeze,
+        pages_match_model,
         refine_id_freeze_enabled,
+        rekey_page_ids,
+        rekey_page_map,
+        rekey_page_refs,
     )
     from .run_cancel import raise_if_cancelled
 
@@ -1692,6 +1697,42 @@ def run_spec_first(
             )
             log_freeze(_struct_freeze, where="第4步 structure")
             st["pages"] = len(structure.get("pages") or [])
+        # ── 第 4.5 步：页面包改键，对齐模型铸出来的页面 id（2026-08-24）──
+        #
+        # 上面那句注释说「HTML 键已经是拨回后的 id」——**那只在精修轮成立**
+        # （第 2 步 freeze 把 SPEC 拨到了上一版模型的 id 上）。首轮没有上一版，
+        # SPEC 铸的是 p1..p4，而模型的页面 id 取自这一步 LLM 起的语义名，
+        # 两套 id 从此各说各话，且**全仓没有一处校验过它们相等**。
+        # 后果（真机三轮实测）与做法，整段写在 page_id_freeze 那半个文件里。
+        #
+        # ⚠ 必须在第 6.5 步 bind **之前**：bind 的
+        #   `this_page_bound = page_id in wf_bound_pages` join 的就是这两套 id，
+        #   晚一步就仍旧恒 False。
+        #
+        # ⚠ 凡是**以页面 id 作键或存页面 id** 的东西都要一起改，漏一个就是
+        #   半新半旧。所以下面把它们列在同一处、一次改完；改完还有
+        #   `pages_match_model` 那条反向不变式兜底（见交付前那一段）——
+        #   将来谁新增一个按页面 id 索引的载体、忘了加进来，那条会喊。
+        _canon = canonical_page_id_map(structure)
+        if _canon:
+            pages = rekey_page_map(pages, _canon)
+            failed = rekey_page_map(failed, _canon)
+            _reuse_now = rekey_page_map(_reuse_now, _canon)
+            spec = rekey_page_refs(spec, _canon)
+            spec_pages_declared = rekey_page_ids(spec_pages_declared, _canon)
+            spec_pages_declared_objs = rekey_page_refs(spec_pages_declared_objs, _canon)
+            missing_pages = rekey_page_ids(missing_pages, _canon)
+            shell = {**shell, "navItems": rekey_page_refs(shell.get("navItems") or [], _canon)}
+            if isinstance(style_brief, dict) and isinstance(style_brief.get("pages"), dict):
+                style_brief = {
+                    **style_brief,
+                    "pages": rekey_page_map(style_brief["pages"], _canon),
+                }
+            st["pageIdCanonicalized"] = len(_canon)
+            print(
+                "[spec_first_pipeline] 首轮页面包改键（草稿 id → 模型 id）："
+                + "、".join(f"{o}→{n}" for o, n in list(_canon.items())[:6])
+            )
     stages["structure"] = dict(st)
 
     # ── 第 5 / 6 步：page-only 时权限流程直接沿用，不先做再盖 ───────
@@ -1920,6 +1961,30 @@ def run_spec_first(
             model["designLanguage"] = design_language
         if style_brief:
             model["styleBrief"] = style_brief
+
+    # ── 交付前对账：页面包的键 == 模型的页面 id（2026-08-24）─────────
+    #
+    # 这条不变式是**下游一切按页面 id 取东西的前提**，而在这次修复之前全仓
+    # 没有一处校验它，首轮也一直不成立。坏起来全是静默的：下一轮照搬集为空
+    # （全量重写）、bind 的流程判定恒 False、按 landingPageRef 取页取不到——
+    # 没有一处报错，判据全绿。
+    #
+    # 只报不拦（纪律七）：错位时端出去仍好过整轮作废——前者是"下一轮多花
+    # 40 秒重画"，后者是"这一轮白跑"。但**必须吵**，否则下一个漏改载体的人
+    # 还得靠三轮真机对照才查得出来。
+    _pm_ok, _pm_only_pages, _pm_only_model = pages_match_model(pages, model)
+    stages["pageIdMatch"] = {
+        "ok": _pm_ok,
+        "onlyPages": _pm_only_pages[:6],
+        "onlyModel": _pm_only_model[:6],
+    }
+    if not _pm_ok:
+        _safe_print(
+            "[spec_first_pipeline] ⚠ 页面包的键与模型页面 id 对不上——"
+            f"只有页面包有 {_pm_only_pages[:6]}，只有模型有 {_pm_only_model[:6]}。"
+            "下一轮的照搬会落空（全量重写）、bind 的流程判定会恒 False。"
+            "多半是新增了一个按页面 id 索引的载体、忘了跟第 4.5 步一起改键。"
+        )
 
     _redrawn_ids = [pid for pid in pages if pid not in _reuse_now]
     _refine_reuse_note = format_refine_reuse_note(

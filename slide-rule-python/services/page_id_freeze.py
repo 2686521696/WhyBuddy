@@ -242,3 +242,129 @@ def log_freeze(report: Dict[str, Any], *, where: str) -> None:
     if restored:
         bits.append("补回 " + "、".join(restored))
     print(f"[page_id_freeze] {where}：{'；'.join(bits)}")
+
+
+# ── 首轮：草稿 id → 模型 id（2026-08-24）─────────────────────────────────
+#
+# 上面那半个文件解决的是**精修轮**的漂移（新一轮铸的 id 拨回上一版）。
+# 下面这半个解决的是**首轮**的错位，两者方向相反、成因也不同：
+#
+#     第 2 步  SPEC 铸草稿 id            p1 p2 p3 p4
+#     第 3 步  按草稿 id 画页            pages = {p1: html, ...}
+#     第 4 步  从 HTML 反推结构，LLM 给每页起**语义 id**
+#              borrow_return_desk / reader_archive_center …
+#              （DerivedPage.sourcePageId 记着它是从哪张草稿来的）
+#     第 6 步  模型的 page.pages[].id 取自结构 = 语义 id
+#
+# 于是首轮交付的那一份里，**页面包的键是 p1..p4，模型的页面 id 是语义 id**，
+# 交集为空。第 4 步那句注释写着「HTML 键已经是拨回后的 id」——那句话在精修轮
+# 成立（第 2 步 freeze 已经把 SPEC 拨到上一版模型的 id 上了），**首轮不成立，
+# 而没有任何一处校验它**。
+#
+# ## 真机后果（2026-08-24，图书馆借阅那趟，三轮对照）
+#
+# ① 第一次迭代必然全量重写。`split_pages_for_refine` 的照搬条件是
+#    `pid in declared`——pid 来自上一版页面包（p1..p4），declared 是本轮 SPEC
+#    的页面 id（已被 freeze 拨成语义 id），交集恒空：
+#
+#        第一次迭代   重画 1 页 / 照搬 0 页 → 实际改了 4/4 页
+#                     画页 50.1s、bind 34.2s（bound=4 bindSkipped=0）
+#        第二次迭代   重画 1 页 / 照搬 3 页 → 实际改了 1/4 页
+#                     画页 4.7s、bind 30.3s（bound=1 bindSkipped=3）
+#
+#    量的是渲染后的 DOM（纪律五）：第一次迭代里用户没点名的三页，整张表消失、
+#    表头 12 列变 7 列、列名全换；连点名那一页的 data 绑定都从 49 掉到 28。
+#    第二次迭代那三页 nodes/th/bind/text **四项逐一相等**。
+#
+# ② 首轮的页面拿不到工作流动作。`html_bindings.build_prompt` 里
+#    `this_page_bound = page_id in wf_bound_pages`——page_id 是页面包的键、
+#    wf_bound_pages 来自 model.appbundle.pageBindings[].pageRef，首轮恒不相等，
+#    于是每一页都被告知「这一页没有绑定流程，不要用那三种转移动作」。
+#    真机对照：首轮交付页的 data-* 里没有 data-action / data-entity，
+#    第二轮补齐了。
+#
+# ## 做法
+#
+# 不是新发明一套对照，**第 4 步的产物里本来就带着这条映射**：
+# `DerivedPage.sourcePageId`（"这一页由哪份 HTML 推出来的，不是模型编的"），
+# 而且 `html_structure.check_page_coverage` 已经把它钉成双向全覆盖——
+# 喂进去的每一页都必须有条目、不许凭空多一个。也就是说
+# `sourcePageId → id` 是一条**已经被校验过的双射**，拿来即用。
+#
+# 口径同 Terraform 的 `moved` 块：改名不是让下游各自去猜，而是把「旧地址→新
+# 地址」显式声明在一个地方、在下游动手之前应用掉，并且在 plan 阶段就校验。
+# 这里对应的是 `assert_pages_match_model` 那条不变式。
+#
+# ⚠ 精修轮这条映射恒为空（第 2 步 freeze 已经让 SPEC id == 上一版模型 id，
+#   第 4 步的 freeze 又把结构拨了回去，于是 sourcePageId == id）。也就是说
+#   这一整段在精修轮是 no-op——它只治首轮。
+
+
+def canonical_page_id_map(structure: Any) -> Dict[str, str]:
+    """草稿 id → 模型 id。取自第 4 步 `DerivedPage.sourcePageId → id`。
+
+    只收**真的改了名**的那些；一个都没改就返回空表（精修轮的常态）。
+    同一个 sourcePageId 出现两次（结构畸形）时整条放弃——宁可维持现状，
+    也不要按一半的映射改键，那会把页面包改成半新半旧。
+    """
+    pages = []
+    if isinstance(structure, dict):
+        pages = [p for p in (structure.get("pages") or []) if isinstance(p, dict)]
+    if not pages:
+        return {}
+    mapping: Dict[str, str] = {}
+    for page in pages:
+        src = str(page.get("sourcePageId") or "").strip()
+        new = str(page.get("id") or "").strip()
+        if not src or not new or src == new:
+            continue
+        if src in mapping:
+            return {}  # 一对多 = 结构畸形，不动
+        mapping[src] = new
+    if len(set(mapping.values())) != len(mapping):
+        return {}  # 多对一，同上
+    return mapping
+
+
+def rekey_page_map(value: Any, mapping: Dict[str, str]) -> Any:
+    """把 `{pageId: X}` 这种**以页面 id 作键**的表换成新键。非 dict 原样返回。"""
+    if not mapping or not isinstance(value, dict):
+        return value
+    return {mapping.get(str(k), k): v for k, v in value.items()}
+
+
+def rekey_page_ids(value: Any, mapping: Dict[str, str]) -> Any:
+    """把一串页面 id 换成新 id。非 list 原样返回。"""
+    if not mapping or not isinstance(value, list):
+        return value
+    return [mapping.get(str(v), v) if isinstance(v, str) else v for v in value]
+
+
+def rekey_page_refs(value: Any, mapping: Dict[str, str]) -> Any:
+    """把嵌套结构里 id/pageRef/pageId 这类**引用**换成新 id（navItems / spec）。"""
+    if not mapping:
+        return value
+    return _rewrite_refs(value, mapping)
+
+
+def pages_match_model(pages: Any, model: Any) -> Tuple[bool, List[str], List[str]]:
+    """页面包的键与模型的页面 id 对得上吗。返回 (对得上, 只有页面包有, 只有模型有)。
+
+    ⚠ 这条不变式全仓**从来没有人校验过**，而它一旦不成立，坏的东西全是静默的：
+      照搬集为空（全量重写）、bind 的流程判定恒 False、按 landingPageRef 取页
+      取不到。没有一处会报错，判据也全绿。所以补这一条，宁可吵。
+
+    只报不拦（纪律七）：交付链路上发现错位时，端出去仍然好过整轮作废——
+    错位的表现是"下一轮多花 40 秒重画"，作废的表现是"这一轮白跑"。
+    """
+    keys = set((pages or {}).keys()) if isinstance(pages, dict) else set()
+    mids = set()
+    if isinstance(model, dict):
+        mids = {
+            str(p.get("id"))
+            for p in ((model.get("page") or {}).get("pages") or [])
+            if isinstance(p, dict) and p.get("id")
+        }
+    if not keys or not mids:
+        return True, [], []  # 没得比就不报——空页面包另有闸管
+    return keys == mids, sorted(keys - mids), sorted(mids - keys)
