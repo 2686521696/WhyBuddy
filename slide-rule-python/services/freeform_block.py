@@ -40,7 +40,12 @@ from sliderule_llm.config import default_max_tokens
 
 from .app_preview import OverviewPreviewSink
 from .enrich_timing import remaining_run_budget_seconds, stage as _enrich_stage
-from .identity_palette_hint import BRAND_LABEL, BRAND_SEED, derive_prompt_palette
+from .identity_palette_hint import (
+    BRAND_LABEL,
+    BRAND_SEED,
+    active_brand_seed,
+    derive_prompt_palette,
+)
 from .sheet_palette import usable_chart_palette
 from .palette_guard import extract_hex_colors, palette_report, repair_colors
 from .schema_legal import (
@@ -413,7 +418,12 @@ def _theme_palette(
     chart_colors: Optional[list[str]] = None,
     chart_variant_key: str = "",
 ) -> dict[str, Any]:
-    """**外壳一个颜色**（2026-08-03，用户裁决）：永远是 BRAND_SEED 派生的色板。
+    """**外壳一个颜色**（2026-08-03，用户裁决）：色板由**当轮种子色**派生。
+
+    ⚠️ 2026-08-24：这句原文是"永远是 BRAND_SEED 派生的色板"，现在不再"永远"——
+    作曲家上有了设计系统选择器，种子色按轮取（active_brand_seed）。08-03 那条裁决
+    没被推翻：它砍的是「LLM 为每个应用自动选色」（要先花 74s 生参照图再取色），
+    不是「用户显式挑一套」。仍然是一轮一套、全局统一，只是这一套由用户定。
 
     ⚠️ 2026-08-04 起**图表色是例外**：那一组改成从这个应用自己的参照图上读
     （chart_colors，来源见 services/sheet_palette）。外壳统一、图表跟着应用走
@@ -436,7 +446,10 @@ def _theme_palette(
     HCT 派生），只用于这里的 prompt 拼接和下面 palette_guard 的色相参照——
     见 identity_palette_hint.py 顶部说明，为什么这里不需要跟前端数值一致。"""
     del theme_id, generated_theme
-    palette = derive_prompt_palette(BRAND_SEED, id_="brand", label=BRAND_LABEL)
+    # ⚠ 按轮取，不用模块常量：用户可能在作曲家里选了别的设计系统。
+    #   写成 BRAND_SEED 的话选择器会变成纯装饰——UI 动了、生成的颜色没动。
+    _seed, _label = active_brand_seed()
+    palette = derive_prompt_palette(_seed, id_="brand", label=_label)
     # 2026-08-04：图表色改成从这个应用的参照图上读（services/sheet_palette）。
     # 传进来了就覆盖——**这一步是为了消掉"提示词说的"和"画出来的"分叉**：
     # 前端真实渲染已经优先用 chartColors 了（identity-palette.chartsFor），
@@ -454,7 +467,10 @@ def _theme_palette(
         palette = {**palette, "charts": usable}
     elif chart_variant_key:
         palette = derive_prompt_palette(
-            BRAND_SEED, id_="brand", label=BRAND_LABEL, chart_variant_key=chart_variant_key
+            active_brand_seed()[0],
+            id_="brand",
+            label=active_brand_seed()[1],
+            chart_variant_key=chart_variant_key,
         )
     return palette
 

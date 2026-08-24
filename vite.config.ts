@@ -227,13 +227,29 @@ export default defineConfig(() => {
         "@": path.resolve(import.meta.dirname, "client", "src"),
         "@shared": path.resolve(import.meta.dirname, "shared"),
         // E40.1 合法域单一真相源：客户端与 python 门/修复器/生成契约同读一份账本
-        "@legal": path.resolve(import.meta.dirname, "slide-rule-python/services/data/five_system_legal.json"),
+        "@legal": path.resolve(
+          import.meta.dirname,
+          "slide-rule-python/services/data/five_system_legal.json"
+        ),
         // 体验区块目录：Gate/Repair/Prompt/前端 Registry 共用，不在 TS 手抄区块清单
-        "@experience-blocks": path.resolve(import.meta.dirname, "slide-rule-python/services/data/experience_block_catalog.json"),
+        "@experience-blocks": path.resolve(
+          import.meta.dirname,
+          "slide-rule-python/services/data/experience_block_catalog.json"
+        ),
         // 意图词表：与 services/block_narrowing.py 共用同一份（见该 JSON 的 _note）
-        "@block-intent-lexicon": path.resolve(import.meta.dirname, "slide-rule-python/services/data/block_intent_lexicon.json"),
+        "@block-intent-lexicon": path.resolve(
+          import.meta.dirname,
+          "slide-rule-python/services/data/block_intent_lexicon.json"
+        ),
         // 身份主题预设 + 生成主题契约：前端 THEMES 与 Python 色板提示/使用判定同读一份
-        "@identity-themes": path.resolve(import.meta.dirname, "slide-rule-python/services/data/identity_theme_presets.json"),
+        "@identity-themes": path.resolve(
+          import.meta.dirname,
+          "slide-rule-python/services/data/identity_theme_presets.json"
+        ),
+        "@design-systems": path.resolve(
+          import.meta.dirname,
+          "slide-rule-python/services/data/design_systems.json"
+        ),
         "@assets": path.resolve(import.meta.dirname, "attached_assets"),
       },
     },

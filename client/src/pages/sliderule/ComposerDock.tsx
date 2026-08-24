@@ -15,6 +15,7 @@ import {
   Sparkles,
   Square,
   Monitor,
+  Palette,
   Smartphone,
   X,
 } from "lucide-react";
@@ -32,6 +33,12 @@ import {
   composerHeroPlaceholder,
   type ComposerDevice,
 } from "./composer-device";
+import {
+  DESIGN_SYSTEMS,
+  findDesignSystem,
+  loadDesignSystemId,
+  saveDesignSystemId,
+} from "./design-system";
 import { useIntakeJudge } from "./use-intake-judge";
 import { IntakeHintBar, INTAKE_JUDGING_LABEL } from "./IntakeHintBar";
 import {
@@ -162,7 +169,9 @@ export async function extractAttachmentRemote(
 /** 读文本类附件 + 服务端提取结果拼成注入块；失败/超限附件如实标注"仅文件名"。 */
 async function buildAttachmentContext(
   attachments: ComposerAttachment[],
-  extractionOf: (att: ComposerAttachment) => Promise<AttachmentExtractOutcome> | null
+  extractionOf: (
+    att: ComposerAttachment
+  ) => Promise<AttachmentExtractOutcome> | null
 ): Promise<string> {
   const parts: string[] = [];
   let budget = MAX_TOTAL_ATTACHMENT_CHARS;
@@ -330,7 +339,15 @@ export function ComposerDock({
   const [attachmentHint, setAttachmentHint] = React.useState<string | null>(
     null
   );
-  const [device, setDevice] = React.useState<ComposerDevice>(loadPreferredDevice);
+  const [device, setDevice] =
+    React.useState<ComposerDevice>(loadPreferredDevice);
+  // 设计系统（2026-08-24）。Stitch / TRAE 都把它做成画布右侧面板，但我们不是
+  // 画布模式——按用户裁决合并进指令框，和「应用 / Web」并排。
+  const [designSystemId, setDesignSystemId] =
+    React.useState<string>(loadDesignSystemId);
+  const [designMenuOpen, setDesignMenuOpen] = React.useState(false);
+  const designMenuRef = React.useRef<HTMLDivElement | null>(null);
+  const designSystem = findDesignSystem(designSystemId);
   const menuRef = React.useRef<HTMLDivElement | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
@@ -341,6 +358,12 @@ export function ComposerDock({
       if (refEl && !refEl.contains(event.target as Node)) {
         setIsMenuOpen(false);
         setMenuView("actions");
+      }
+      // 设计系统菜单挂在同一个 mousedown 上：两个 effect 各监听一次的话，
+      // 点开其中一个不会关掉另一个，两张浮层会叠着。
+      const designEl = designMenuRef.current;
+      if (designEl && !designEl.contains(event.target as Node)) {
+        setDesignMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -544,8 +567,9 @@ export function ComposerDock({
       extractPromises.current = new Map();
       void (async () => {
         const names = snapshot.map(a => a.name).join(", ");
-        const context = await buildAttachmentContext(snapshot, att =>
-          promiseMap.get(att.id) ?? null
+        const context = await buildAttachmentContext(
+          snapshot,
+          att => promiseMap.get(att.id) ?? null
         );
         const head = text ? `${text}\n[附件: ${names}]` : `[附件: ${names}]`;
         sendMessage(context ? `${head}\n\n${context}` : head);
@@ -553,7 +577,15 @@ export function ComposerDock({
     } else {
       sendMessage();
     }
-  }, [isRunning, input, attachments, sendMessage, isJudging, isRefining, device]);
+  }, [
+    isRunning,
+    input,
+    attachments,
+    sendMessage,
+    isJudging,
+    isRefining,
+    device,
+  ]);
 
   // 已安装技能（+ 菜单就地勾选哪些注入推演）；打开 skills 视图时重读
   const [installedSkills, setInstalledSkills] = React.useState<
@@ -611,8 +643,7 @@ export function ComposerDock({
   }, [isRefining, setInput]);
 
   const placeholderText =
-    placeholder ||
-    (hero ? composerHeroPlaceholder(device) : "畅所欲问");
+    placeholder || (hero ? composerHeroPlaceholder(device) : "畅所欲问");
 
   const extractPending = isAttachmentExtractPending(attachments);
   const sendBusy = extractPending || isJudging || isRefining;
@@ -632,51 +663,51 @@ export function ComposerDock({
   const surfaceLabel = hasApp ? "成品" : "推演";
 
   const refineButton = (
-          <button
-            type="button"
-            className="hidden h-7 shrink-0 items-center gap-1 rounded-full px-1.5 text-[12px] text-[#5e5e5e] transition hover:bg-[#f4f4f5] disabled:opacity-45 sm:flex"
-            title="优化提示词：把意图改写得更完整（实体/流程/角色/页面/AI）"
-            data-testid="sliderule-prompt-refine"
-            onClick={refinePrompt}
-            disabled={isRunning || isRefining || isJudging || !input.trim()}
-          >
-            {isRefining ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="h-3.5 w-3.5" />
-            )}
-            <span>优化</span>
-          </button>
+    <button
+      type="button"
+      className="hidden h-7 shrink-0 items-center gap-1 rounded-full px-1.5 text-[12px] text-[#5e5e5e] transition hover:bg-[#f4f4f5] disabled:opacity-45 sm:flex"
+      title="优化提示词：把意图改写得更完整（实体/流程/角色/页面/AI）"
+      data-testid="sliderule-prompt-refine"
+      onClick={refinePrompt}
+      disabled={isRunning || isRefining || isJudging || !input.trim()}
+    >
+      {isRefining ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <Sparkles className="h-3.5 w-3.5" />
+      )}
+      <span>优化</span>
+    </button>
   );
 
   const sendButton = (
-          <button
-            type="button"
-            onClick={isRunning ? stop || (() => {}) : doSend}
-            disabled={sendBlocked}
-            data-testid="sliderule-composer-send"
-            aria-busy={sendBusy}
-            className="pointer-events-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#171717] text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-[#ececef] disabled:text-[#b0b0b5]"
-            title={
-              isRunning
-                ? "停止"
-                : extractPending
-                  ? "附件解析中，请稍候"
-                  : isRefining
-                    ? "正在优化提示词"
-                    : isJudging
-                      ? INTAKE_JUDGING_LABEL
-                      : "发送"
-            }
-          >
-            {isRunning ? (
-              <Square className="h-3.5 w-3.5 fill-current" />
-            ) : sendBusy ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <ArrowUp className="h-4 w-4" />
-            )}
-          </button>
+    <button
+      type="button"
+      onClick={isRunning ? stop || (() => {}) : doSend}
+      disabled={sendBlocked}
+      data-testid="sliderule-composer-send"
+      aria-busy={sendBusy}
+      className="pointer-events-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#171717] text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-[#ececef] disabled:text-[#b0b0b5]"
+      title={
+        isRunning
+          ? "停止"
+          : extractPending
+            ? "附件解析中，请稍候"
+            : isRefining
+              ? "正在优化提示词"
+              : isJudging
+                ? INTAKE_JUDGING_LABEL
+                : "发送"
+      }
+    >
+      {isRunning ? (
+        <Square className="h-3.5 w-3.5 fill-current" />
+      ) : sendBusy ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <ArrowUp className="h-4 w-4" />
+      )}
+    </button>
   );
 
   return (
@@ -799,330 +830,420 @@ export function ComposerDock({
       ) : null}
       {/* 开聊后：发送圆跟胶囊同一中线。空态：Continue InputToolbar 把发送放进卡片底栏。 */}
       <div className={hero ? "w-full" : "flex w-full items-center gap-2"}>
-      <div className="relative min-w-0 flex-1">
-      <div
-        className={`pointer-events-auto relative z-20 w-full border bg-white transition-colors ${
-          hero
-            ? "rounded-[12px] px-3 pb-2 pt-3 shadow-[0_2px_8px_rgba(31,35,40,0.06)]"
-            : "rounded-[24px] px-2 py-1.5"
-        } ${
-          isDragOver
-            ? "border-[#1677ff] bg-[#e6f4ff]/40"
-            : "border-[#e5e7eb]"
-        }`}
-        data-testid="sliderule-composer-dock"
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-      >
-        {isDragOver && (
-          <div className={`pointer-events-none absolute inset-0 flex items-center justify-center bg-[#e6f4ff]/60 ${hero ? "rounded-[12px]" : "rounded-[24px]"}`}>
-            <div className="flex items-center gap-2 text-sm font-medium text-[#0958d9]">
-              <FileText className="h-4 w-4" />
-              拖拽文件到这里
-            </div>
-          </div>
-        )}
-        {/* 空态：Cursor / Continue 卡片（字在上；底栏 + / 应用Web 在左，优化贴发送左边）。
-            开聊后：单行胶囊，发送在胶囊外。 */}
-        <div
-          className={
-            hero
-              ? "grid grid-cols-[auto_auto_1fr_auto] items-center gap-x-1.5 gap-y-2"
-              : "flex items-center gap-1.5"
-          }
-        >
+        <div className="relative min-w-0 flex-1">
           <div
-            className={`relative shrink-0 ${hero ? "col-start-1 row-start-2" : ""}`}
-            ref={menuRef}
+            className={`pointer-events-auto relative z-20 w-full border bg-white transition-colors ${
+              hero
+                ? "rounded-[12px] px-3 pb-2 pt-3 shadow-[0_2px_8px_rgba(31,35,40,0.06)]"
+                : "rounded-[24px] px-2 py-1.5"
+            } ${
+              isDragOver
+                ? "border-[#1677ff] bg-[#e6f4ff]/40"
+                : "border-[#e5e7eb]"
+            }`}
+            data-testid="sliderule-composer-dock"
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
           >
-            <button
-              type="button"
-              onClick={() => {
-                setIsMenuOpen(open => !open);
-                setMenuView("actions");
-              }}
-              disabled={isRunning}
-              className="flex h-7 w-7 items-center justify-center rounded-full bg-[#f4f4f5] text-[#5e5e5e] transition hover:bg-[#ececef] disabled:opacity-45"
-              title="更多动作"
-              data-testid="sliderule-composer-plus"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-            {/* 隐藏文件选择器：与拖拽同一行为（addAttachments 出预览卡） */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              data-testid="sliderule-composer-file-input"
-              onChange={e => {
-                addAttachments(Array.from(e.target.files ?? []));
-                e.target.value = "";
-                setIsMenuOpen(false);
-              }}
-            />
-
+            {isDragOver && (
+              <div
+                className={`pointer-events-none absolute inset-0 flex items-center justify-center bg-[#e6f4ff]/60 ${hero ? "rounded-[12px]" : "rounded-[24px]"}`}
+              >
+                <div className="flex items-center gap-2 text-sm font-medium text-[#0958d9]">
+                  <FileText className="h-4 w-4" />
+                  拖拽文件到这里
+                </div>
+              </div>
+            )}
+            {/* 空态：Cursor / Continue 卡片（字在上；底栏 + / 应用Web 在左，优化贴发送左边）。
+            开聊后：单行胶囊，发送在胶囊外。 */}
             <div
-              data-testid="sliderule-actions-menu"
-              className={`absolute bottom-full left-0 z-[80] mb-2 w-[300px] origin-bottom-left rounded-[9px] border border-[#e5e7eb] bg-white p-1.5 shadow-[0_18px_48px_rgb(15_23_42/0.16)] transition-all duration-150 ${
-                isMenuOpen
-                  ? "translate-y-0 scale-100 opacity-100"
-                  : "pointer-events-none translate-y-2 scale-95 opacity-0"
-              }`}
+              className={
+                hero
+                  ? "grid grid-cols-[auto_auto_1fr_auto] items-center gap-x-1.5 gap-y-2"
+                  : "flex items-center gap-1.5"
+              }
             >
-              {menuView === "actions" ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    data-testid="sliderule-action-file"
-                    className="flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4]"
-                  >
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#e9edf2] text-stone-700">
-                      <ImagePlus className="h-3.5 w-3.5" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-xs font-semibold text-stone-800">
-                        添加文件或图片
-                      </span>
-                      <span className="block truncate text-[10px] text-stone-500">
-                        预览卡进输入条，文本类附件内容随消息注入
-                      </span>
-                    </span>
-                  </button>
+              <div
+                className={`relative shrink-0 ${hero ? "col-start-1 row-start-2" : ""}`}
+                ref={menuRef}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMenuOpen(open => !open);
+                    setMenuView("actions");
+                  }}
+                  disabled={isRunning}
+                  className="flex h-7 w-7 items-center justify-center rounded-full bg-[#f4f4f5] text-[#5e5e5e] transition hover:bg-[#ececef] disabled:opacity-45"
+                  title="更多动作"
+                  data-testid="sliderule-composer-plus"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+                {/* 隐藏文件选择器：与拖拽同一行为（addAttachments 出预览卡） */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  data-testid="sliderule-composer-file-input"
+                  onChange={e => {
+                    addAttachments(Array.from(e.target.files ?? []));
+                    e.target.value = "";
+                    setIsMenuOpen(false);
+                  }}
+                />
 
-                  <button
-                    type="button"
-                    onClick={() => setMenuView("examples")}
-                    data-testid="sliderule-action-example"
-                    className="mt-1 flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4]"
-                  >
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#FDF6F1] text-[#C05621]">
-                      <Lightbulb className="h-3.5 w-3.5" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-xs font-semibold text-stone-800">
-                        填入示例意图
-                      </span>
-                      <span className="block truncate text-[10px] text-stone-500">
-                        三条示例应用，填进输入框可再编辑
-                      </span>
-                    </span>
-                  </button>
+                <div
+                  data-testid="sliderule-actions-menu"
+                  className={`absolute bottom-full left-0 z-[80] mb-2 w-[300px] origin-bottom-left rounded-[9px] border border-[#e5e7eb] bg-white p-1.5 shadow-[0_18px_48px_rgb(15_23_42/0.16)] transition-all duration-150 ${
+                    isMenuOpen
+                      ? "translate-y-0 scale-100 opacity-100"
+                      : "pointer-events-none translate-y-2 scale-95 opacity-0"
+                  }`}
+                >
+                  {menuView === "actions" ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        data-testid="sliderule-action-file"
+                        className="flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4]"
+                      >
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#e9edf2] text-stone-700">
+                          <ImagePlus className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-xs font-semibold text-stone-800">
+                            添加文件或图片
+                          </span>
+                          <span className="block truncate text-[10px] text-stone-500">
+                            预览卡进输入条，文本类附件内容随消息注入
+                          </span>
+                        </span>
+                      </button>
 
-                  {/* 就地勾选（用户反馈：跳走了看不到选择）——二级视图列已安装技能 */}
-                  <button
-                    type="button"
-                    onClick={openSkillsView}
-                    data-testid="sliderule-action-skills"
-                    className="mt-1 flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4]"
-                  >
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#e6f4ff] text-[#0958d9]">
-                      <Blocks className="h-3.5 w-3.5" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-xs font-semibold text-stone-800">
-                        选择注入的技能
-                      </span>
-                      <span className="block truncate text-[10px] text-stone-500">
-                        勾选的已安装技能随推演注入
-                      </span>
-                    </span>
-                    <ChevronRight className="h-3.5 w-3.5 text-stone-300" />
-                  </button>
-                </>
-              ) : menuView === "skills" ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setMenuView("actions")}
-                    className="flex w-full items-center gap-1.5 rounded-[7px] px-2.5 py-1.5 text-left text-[11px] text-stone-500 transition hover:bg-[#eef0f4]"
-                  >
-                    <ChevronLeft className="h-3 w-3" />
-                    返回
-                  </button>
-                  {installedSkills.length === 0 ? (
-                    <div className="px-2.5 py-3 text-center text-[11px] text-stone-400">
-                      还没有安装技能
-                    </div>
-                  ) : (
-                    <div className="max-h-[260px] overflow-y-auto">
-                      {installedSkills.map(skill => {
-                        const key = installKeyOf(skill);
-                        const enabled = !injectDisabled.includes(key);
-                        return (
-                          <button
-                            key={key}
-                            type="button"
-                            onClick={() =>
-                              setInjectDisabled(toggleInjectDisabled(key))
-                            }
-                            data-testid="sliderule-skill-toggle"
-                            title={enabled ? "点击取消注入" : "点击恢复注入"}
-                            className="mt-1 flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4]"
-                          >
-                            <span
-                              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition ${
-                                enabled
-                                  ? "border-[#1677ff] bg-[#1677ff] text-white"
-                                  : "border-[#d3d8e0] bg-white"
-                              }`}
-                            >
-                              {enabled && <Check className="h-3 w-3" />}
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span
-                                className={`block truncate text-xs font-medium ${
-                                  enabled ? "text-stone-800" : "text-stone-400"
-                                }`}
+                      <button
+                        type="button"
+                        onClick={() => setMenuView("examples")}
+                        data-testid="sliderule-action-example"
+                        className="mt-1 flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4]"
+                      >
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#FDF6F1] text-[#C05621]">
+                          <Lightbulb className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-xs font-semibold text-stone-800">
+                            填入示例意图
+                          </span>
+                          <span className="block truncate text-[10px] text-stone-500">
+                            三条示例应用，填进输入框可再编辑
+                          </span>
+                        </span>
+                      </button>
+
+                      {/* 就地勾选（用户反馈：跳走了看不到选择）——二级视图列已安装技能 */}
+                      <button
+                        type="button"
+                        onClick={openSkillsView}
+                        data-testid="sliderule-action-skills"
+                        className="mt-1 flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4]"
+                      >
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#e6f4ff] text-[#0958d9]">
+                          <Blocks className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-xs font-semibold text-stone-800">
+                            选择注入的技能
+                          </span>
+                          <span className="block truncate text-[10px] text-stone-500">
+                            勾选的已安装技能随推演注入
+                          </span>
+                        </span>
+                        <ChevronRight className="h-3.5 w-3.5 text-stone-300" />
+                      </button>
+                    </>
+                  ) : menuView === "skills" ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setMenuView("actions")}
+                        className="flex w-full items-center gap-1.5 rounded-[7px] px-2.5 py-1.5 text-left text-[11px] text-stone-500 transition hover:bg-[#eef0f4]"
+                      >
+                        <ChevronLeft className="h-3 w-3" />
+                        返回
+                      </button>
+                      {installedSkills.length === 0 ? (
+                        <div className="px-2.5 py-3 text-center text-[11px] text-stone-400">
+                          还没有安装技能
+                        </div>
+                      ) : (
+                        <div className="max-h-[260px] overflow-y-auto">
+                          {installedSkills.map(skill => {
+                            const key = installKeyOf(skill);
+                            const enabled = !injectDisabled.includes(key);
+                            return (
+                              <button
+                                key={key}
+                                type="button"
+                                onClick={() =>
+                                  setInjectDisabled(toggleInjectDisabled(key))
+                                }
+                                data-testid="sliderule-skill-toggle"
+                                title={
+                                  enabled ? "点击取消注入" : "点击恢复注入"
+                                }
+                                className="mt-1 flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4]"
                               >
-                                {skill.name}
-                              </span>
-                              <span className="block truncate text-[10px] text-stone-400">
-                                {skill.description || skill.repo}
-                              </span>
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                                <span
+                                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition ${
+                                    enabled
+                                      ? "border-[#1677ff] bg-[#1677ff] text-white"
+                                      : "border-[#d3d8e0] bg-white"
+                                  }`}
+                                >
+                                  {enabled && <Check className="h-3 w-3" />}
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <span
+                                    className={`block truncate text-xs font-medium ${
+                                      enabled
+                                        ? "text-stone-800"
+                                        : "text-stone-400"
+                                    }`}
+                                  >
+                                    {skill.name}
+                                  </span>
+                                  <span className="block truncate text-[10px] text-stone-400">
+                                    {skill.description || skill.repo}
+                                  </span>
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsMenuOpen(false);
+                          setMenuView("actions");
+                          navigate("/agent-loop/skills");
+                        }}
+                        data-testid="sliderule-skills-manage"
+                        className="mt-1 flex w-full items-center justify-center gap-1 rounded-[7px] border-t border-[#f0f0f0] px-2.5 py-2 text-[11px] text-[#1677ff] transition hover:bg-[#eef0f4]"
+                      >
+                        管理技能库（安装 / 卸载）
+                        <ChevronRight className="h-3 w-3" />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setMenuView("actions")}
+                        className="flex w-full items-center gap-1.5 rounded-[7px] px-2.5 py-1.5 text-left text-[11px] text-stone-500 transition hover:bg-[#eef0f4]"
+                      >
+                        <ChevronLeft className="h-3 w-3" />
+                        返回
+                      </button>
+                      {EXAMPLE_INTENT_TEXTS.map(text => (
+                        <button
+                          key={text}
+                          type="button"
+                          onClick={() => fillExample(text)}
+                          data-testid="sliderule-example-intent"
+                          className="mt-1 block w-full rounded-[7px] px-2.5 py-2 text-left text-xs leading-5 text-stone-700 transition hover:bg-[#eef0f4]"
+                        >
+                          {text}
+                        </button>
+                      ))}
+                    </>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsMenuOpen(false);
-                      setMenuView("actions");
-                      navigate("/agent-loop/skills");
-                    }}
-                    data-testid="sliderule-skills-manage"
-                    className="mt-1 flex w-full items-center justify-center gap-1 rounded-[7px] border-t border-[#f0f0f0] px-2.5 py-2 text-[11px] text-[#1677ff] transition hover:bg-[#eef0f4]"
-                  >
-                    管理技能库（安装 / 卸载）
-                    <ChevronRight className="h-3 w-3" />
-                  </button>
-                </>
+                </div>
+              </div>
+
+              {hero ? (
+                <div
+                  role="group"
+                  aria-label="目标形态"
+                  data-testid="sliderule-composer-device"
+                  className="col-start-2 row-start-2 flex h-7 shrink-0 items-center rounded-full bg-[#f4f4f5] p-0.5"
+                >
+                  {COMPOSER_DEVICE_OPTIONS.map(opt => {
+                    const on = device === opt.id;
+                    const Icon = opt.id === "phone" ? Smartphone : Monitor;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        aria-pressed={on}
+                        data-testid={`sliderule-composer-device-${opt.id}`}
+                        disabled={isRunning}
+                        title={
+                          opt.id === "phone"
+                            ? "按手机应用推演（竖屏、底栏）"
+                            : "按网页应用推演（横屏、侧栏）"
+                        }
+                        onClick={() => {
+                          setDevice(opt.id);
+                          setPreferredDevice(opt.id);
+                        }}
+                        className={`inline-flex h-6 items-center gap-1 rounded-full px-2 text-[12px] transition ${
+                          on
+                            ? "bg-white font-medium text-[#171717] shadow-sm"
+                            : "text-[#5e5e5e] hover:text-[#171717]"
+                        } disabled:opacity-45`}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              {/* 设计系统选择器（2026-08-24 用户裁决）。
+              Stitch 和 TRAE 都把它做成画布右侧的常驻面板——那是因为它们**是画布
+              模式**，右侧本来就有一整条空间。我们不是：舞台右边是正在跑的应用，
+              再插一条面板就得跟它抢地方。所以合并进指令框，跟「应用 / Web」并排。
+
+              ⚠ 与设备切换不同，这个在**首页和会话内都要有**（用户两张截图都圈了）：
+              首页决定新推演用哪套皮，会话内改完下一轮生效。所以不能写 hero &&。 */}
+              <div
+                className={`relative shrink-0 ${hero ? "col-start-3 row-start-2 justify-self-start" : ""}`}
+                ref={designMenuRef}
+              >
+                <button
+                  type="button"
+                  data-testid="sliderule-composer-design-system"
+                  aria-haspopup="menu"
+                  aria-expanded={designMenuOpen}
+                  disabled={isRunning}
+                  title={`设计系统：${designSystem.label} · ${designSystem.description}`}
+                  onClick={() => setDesignMenuOpen(v => !v)}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[#f4f4f5] px-2 text-[12px] text-[#5e5e5e] transition hover:text-[#171717] disabled:opacity-45"
+                >
+                  <span
+                    aria-hidden
+                    className="h-3.5 w-3.5 shrink-0 rounded-full ring-1 ring-black/10"
+                    style={{ background: designSystem.seed }}
+                  />
+                  {hero ? designSystem.label : null}
+                  <ChevronRight
+                    className={`h-3 w-3 transition ${designMenuOpen ? "-rotate-90" : "rotate-90"}`}
+                  />
+                </button>
+                <div
+                  role="menu"
+                  data-testid="sliderule-design-system-menu"
+                  className={`absolute bottom-full left-0 z-[80] mb-2 w-[268px] origin-bottom-left rounded-[9px] border border-[#e5e7eb] bg-white p-1.5 shadow-[0_18px_48px_rgb(15_23_42/0.16)] transition-all duration-150 ${
+                    designMenuOpen
+                      ? "translate-y-0 scale-100 opacity-100"
+                      : "pointer-events-none translate-y-2 scale-95 opacity-0"
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 px-2.5 pb-1 pt-1 text-[11px] text-stone-400">
+                    <Palette className="h-3 w-3" />
+                    设计系统
+                  </div>
+                  {DESIGN_SYSTEMS.map(sys => {
+                    const on = sys.id === designSystem.id;
+                    return (
+                      <button
+                        key={sys.id}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={on}
+                        data-testid={`sliderule-design-system-${sys.id}`}
+                        onClick={() => {
+                          setDesignSystemId(sys.id);
+                          saveDesignSystemId(sys.id);
+                          setDesignMenuOpen(false);
+                        }}
+                        className={`flex w-full items-center gap-2 rounded-[7px] px-2.5 py-2 text-left transition hover:bg-[#eef0f4] ${
+                          on ? "bg-[#eef0f4]" : ""
+                        }`}
+                      >
+                        <span
+                          aria-hidden
+                          className="h-5 w-5 shrink-0 rounded-full ring-1 ring-black/10"
+                          style={{ background: sys.seed }}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-xs font-semibold text-stone-800">
+                            {sys.label}
+                          </span>
+                          <span className="block truncate text-[10px] text-stone-500">
+                            {sys.description}
+                          </span>
+                        </span>
+                        {on && (
+                          <Check className="h-3.5 w-3.5 shrink-0 text-[#1677ff]" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div
+                className={`min-w-0 ${hero ? "col-span-4 row-start-1" : "flex-1"}`}
+              >
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={event => {
+                    setInput(event.target.value);
+                    requestAnimationFrame(adjustTextareaHeight);
+                  }}
+                  onKeyDown={event => {
+                    // Enter 行为偏好（设置页可切 Enter/Ctrl+Enter 发送）
+                    if (shouldSendOnKey(event)) {
+                      event.preventDefault();
+                      // LibreChat #2078：只禁发送键挡不住 Enter，这里同样闸住
+                      if (!sendBlocked) doSend();
+                    }
+                  }}
+                  onPaste={handlePaste}
+                  placeholder={placeholderText}
+                  aria-label={placeholderText}
+                  rows={1}
+                  disabled={isRunning}
+                  className={`block max-h-40 w-full resize-none bg-transparent py-0 text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60 ${
+                    hero
+                      ? "min-h-[72px] px-0.5 text-[15px] leading-6"
+                      : "min-h-7 px-1 text-[14px] leading-7"
+                  }`}
+                  data-testid="sliderule-composer-input"
+                />
+              </div>
+
+              {/* 优化贴发送左边。空态跟发送同一簇靠右；开聊后仍在字右边、发送圆左边。 */}
+              {hero ? (
+                <div className="col-start-4 row-start-2 flex items-center gap-1 justify-self-end">
+                  {refineButton}
+                  {sendButton}
+                </div>
               ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setMenuView("actions")}
-                    className="flex w-full items-center gap-1.5 rounded-[7px] px-2.5 py-1.5 text-left text-[11px] text-stone-500 transition hover:bg-[#eef0f4]"
-                  >
-                    <ChevronLeft className="h-3 w-3" />
-                    返回
-                  </button>
-                  {EXAMPLE_INTENT_TEXTS.map(text => (
-                    <button
-                      key={text}
-                      type="button"
-                      onClick={() => fillExample(text)}
-                      data-testid="sliderule-example-intent"
-                      className="mt-1 block w-full rounded-[7px] px-2.5 py-2 text-left text-xs leading-5 text-stone-700 transition hover:bg-[#eef0f4]"
-                    >
-                      {text}
-                    </button>
-                  ))}
-                </>
+                refineButton
               )}
             </div>
           </div>
-
-          {hero ? (
-            <div
-              role="group"
-              aria-label="目标形态"
-              data-testid="sliderule-composer-device"
-              className="col-start-2 row-start-2 flex h-7 shrink-0 items-center rounded-full bg-[#f4f4f5] p-0.5"
-            >
-              {COMPOSER_DEVICE_OPTIONS.map(opt => {
-                const on = device === opt.id;
-                const Icon = opt.id === "phone" ? Smartphone : Monitor;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    aria-pressed={on}
-                    data-testid={`sliderule-composer-device-${opt.id}`}
-                    disabled={isRunning}
-                    title={
-                      opt.id === "phone"
-                        ? "按手机应用推演（竖屏、底栏）"
-                        : "按网页应用推演（横屏、侧栏）"
-                    }
-                    onClick={() => {
-                      setDevice(opt.id);
-                      setPreferredDevice(opt.id);
-                    }}
-                    className={`inline-flex h-6 items-center gap-1 rounded-full px-2 text-[12px] transition ${
-                      on
-                        ? "bg-white font-medium text-[#171717] shadow-sm"
-                        : "text-[#5e5e5e] hover:text-[#171717]"
-                    } disabled:opacity-45`}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-
-          <div
-            className={`min-w-0 ${hero ? "col-span-4 row-start-1" : "flex-1"}`}
-          >
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={event => {
-                setInput(event.target.value);
-                requestAnimationFrame(adjustTextareaHeight);
-              }}
-              onKeyDown={event => {
-                // Enter 行为偏好（设置页可切 Enter/Ctrl+Enter 发送）
-                if (shouldSendOnKey(event)) {
-                  event.preventDefault();
-                  // LibreChat #2078：只禁发送键挡不住 Enter，这里同样闸住
-                  if (!sendBlocked) doSend();
-                }
-              }}
-              onPaste={handlePaste}
-              placeholder={placeholderText}
-              aria-label={placeholderText}
-              rows={1}
-              disabled={isRunning}
-              className={`block max-h-40 w-full resize-none bg-transparent py-0 text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60 ${
-                hero
-                  ? "min-h-[72px] px-0.5 text-[15px] leading-6"
-                  : "min-h-7 px-1 text-[14px] leading-7"
-              }`}
-              data-testid="sliderule-composer-input"
-            />
-          </div>
-
-          {/* 优化贴发送左边。空态跟发送同一簇靠右；开聊后仍在字右边、发送圆左边。 */}
-          {hero ? (
-            <div className="col-start-4 row-start-2 flex items-center gap-1 justify-self-end">
-              {refineButton}
-              {sendButton}
-            </div>
-          ) : (
-            refineButton
-          )}
+          {/* 审查卡叠在输入框上方，不进外层 flex——进流会把输入顶走。 */}
+          <IntakeHintBar
+            judgement={judgement}
+            isJudging={isJudging}
+            onRewrite={text => {
+              setInput(text);
+              requestAnimationFrame(adjustTextareaHeight);
+              textareaRef.current?.focus();
+            }}
+          />
         </div>
-      </div>
-      {/* 审查卡叠在输入框上方，不进外层 flex——进流会把输入顶走。 */}
-      <IntakeHintBar
-        judgement={judgement}
-        isJudging={isJudging}
-        onRewrite={text => {
-          setInput(text);
-          requestAnimationFrame(adjustTextareaHeight);
-          textareaRef.current?.focus();
-        }}
-      />
-      </div>
-          {hero ? null : sendButton}
+        {hero ? null : sendButton}
       </div>
       {!hero ? (
         <div

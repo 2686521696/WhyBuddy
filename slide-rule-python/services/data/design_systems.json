@@ -1,0 +1,57 @@
+{
+  "$comment": "设计系统清单：前后端同读这一处。前端用 seed 派生真正渲染的 12 个字段（identity-palette.ts / MCU HCT），Python 用同一个 seed 拼进生成提示词并产出 DESIGN.md。两边各写一份的话，提示词说的颜色和实际渲染的颜色会悄悄分叉——identity_theme_presets.json 的 brandSeed 注释里已经把这个坑写过一遍了，别再踩。改这个文件之后跑 pnpm designmd:generate。",
+  "version": 1,
+  "defaultId": "miantuan",
+  "systems": [
+    {
+      "id": "miantuan",
+      "label": "面团 · 品牌",
+      "description": "默认设计系统。种子色取自面团标识渐变的中段，与 identity_theme_presets.json 的 brandSeed 同值——换掉它等于换掉全站默认配色。",
+      "seed": "#3B82F6",
+      "headlineFont": "Inter",
+      "bodyFont": "Inter",
+      "radius": "md",
+      "dark": false
+    },
+    {
+      "id": "forest",
+      "label": "森野",
+      "description": "低饱和绿。适合养护、农业、环保、医疗这类需要「稳」的业务。",
+      "seed": "#2F855A",
+      "headlineFont": "Inter",
+      "bodyFont": "Inter",
+      "radius": "md",
+      "dark": false
+    },
+    {
+      "id": "ember",
+      "label": "炉火",
+      "description": "暖橙。适合零售、餐饮、活动这类要推动用户下一步动作的业务。",
+      "seed": "#DD6B20",
+      "headlineFont": "Inter",
+      "bodyFont": "Inter",
+      "radius": "lg",
+      "dark": false
+    },
+    {
+      "id": "ink",
+      "label": "墨线",
+      "description": "近中性的深蓝灰，主色克制。适合审批、合规、审计这类不该有情绪的业务。",
+      "seed": "#3D4A5C",
+      "headlineFont": "Inter",
+      "bodyFont": "Inter",
+      "radius": "sm",
+      "dark": false
+    },
+    {
+      "id": "violet",
+      "label": "夜航",
+      "description": "紫。深色底，适合数据看板、监控台这类长时间盯屏的场景。",
+      "seed": "#7C3AED",
+      "headlineFont": "Inter",
+      "bodyFont": "Inter",
+      "radius": "md",
+      "dark": true
+    }
+  ]
+}

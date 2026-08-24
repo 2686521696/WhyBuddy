@@ -1109,11 +1109,17 @@ def drive_full(
     set_preferred_device_override(
         payload.get("preferredDevice") or payload.get("preferred_device")
     )
+    from services.identity_palette_hint import set_design_system_override
+
+    set_design_system_override(
+        payload.get("designSystemId") or payload.get("design_system_id")
+    )
     try:
         new_state = drive_full_v5_session(state, max_loops=max_loops, user_instruction=user_text)
     finally:
         set_installed_skills(None)
         set_preferred_device_override(None)
+        set_design_system_override(None)
     # Compat (task 119-04): capability results may be Pydantic models (model_dump) or plain dicts.
     # Normalize them to plain dicts BEFORE sanitize/derive/persist so json persistence and the
     # response envelope never see a non-serializable result object.
@@ -1275,6 +1281,11 @@ async def drive_full_stream(
         set_preferred_device_override(
             payload.get("preferredDevice") or payload.get("preferred_device")
         )
+        from services.identity_palette_hint import set_design_system_override
+
+        set_design_system_override(
+            payload.get("designSystemId") or payload.get("design_system_id")
+        )
         try:
             async for event in drive_full_v5_session_stream(
                 state, max_loops=max_loops, user_instruction=user_text, repair=repair
@@ -1297,6 +1308,7 @@ async def drive_full_stream(
         finally:
             set_installed_skills(None)
             set_preferred_device_override(None)
+            set_design_system_override(None)
 
     async def on_complete(event: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(event.get("state"), dict):

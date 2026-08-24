@@ -159,6 +159,8 @@ export async function driveFullViaPython(
     maxLoops?: number;
     turnId?: string;
     preferredDevice?: "desktop" | "phone";
+    /** 设计系统 id。后端据此取种子色拼提示词 / 选 DESIGN.md。 */
+    designSystemId?: string;
   } = {}
 ): Promise<{ finalState: V5SessionState; stopReason?: string; loops?: any[]; publishClosure?: any } | null> {
   if (typeof fetch !== "function") return null;
@@ -175,6 +177,7 @@ export async function driveFullViaPython(
         turnId: opts.turnId,
         installedSkills: installedSkillsDrivePayload(),
         preferredDevice: opts.preferredDevice ?? "desktop",
+        designSystemId: opts.designSystemId,
       }),
     });
     await throwIfAuthRequired(res);
@@ -266,6 +269,8 @@ export interface DriveFullStreamOpts {
   onRunSettled?: (reason: "complete" | "cancelled" | "error") => void;
   /** 空态作曲家「应用 / Web」。desktop 横屏 / phone 竖屏，跟 device_policy 同词表。 */
   preferredDevice?: "desktop" | "phone";
+  /** 设计系统 id。后端据此取种子色拼提示词 / 选 DESIGN.md。 */
+  designSystemId?: string;
 }
 
 /**
@@ -296,6 +301,7 @@ export async function driveFullViaPythonStream(
         installedSkills: installedSkillsDrivePayload(),
         ...(opts.mode ? { mode: opts.mode } : {}),
         preferredDevice: opts.preferredDevice ?? "desktop",
+        designSystemId: opts.designSystemId,
       }),
     });
     await throwIfAuthRequired(res);

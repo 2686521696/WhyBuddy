@@ -29,6 +29,7 @@ import {
 } from "./ui-capability-executor";
 import { mergePublishClosureForPersistedTurn } from "./derive-persisted-turn";
 import { notifyDriveComplete, loadPreferredDevice } from "./user-prefs";
+import { loadDesignSystemId } from "./design-system";
 import { createHttpSlideRuleSessionStore } from "@/lib/sliderule-http-store";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { loadByokPool, validateByokPool } from "@/lib/sliderule-byok-config";
@@ -998,6 +999,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               stopSignal: controller.signal,
               turnId,
               preferredDevice: loadPreferredDevice(),
+              // 设计系统跟 preferredDevice 走同一条路：作曲家写 localStorage，
+              // 发起推演时在这里读。加一条 props 传参链没有额外好处，反而多一处
+              // 会忘记接的地方。
+              designSystemId: loadDesignSystemId(),
               ...(mode === "repair" ? { mode } : {}),
               onRunId: (runId: string) => {
                 sawRunId = true;

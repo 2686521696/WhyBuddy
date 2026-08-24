@@ -37,7 +37,14 @@ from typing import Any, Optional
 
 from coloraide import Color
 
-__all__ = ["BRAND_SEED", "BRAND_LABEL", "FALLBACK_SEED", "derive_prompt_palette"]
+__all__ = [
+    "BRAND_SEED",
+    "BRAND_LABEL",
+    "FALLBACK_SEED",
+    "derive_prompt_palette",
+    "set_design_system_override",
+    "active_brand_seed",
+]
 
 #: 读不出账本时的最后兜底（JSON 缺失/损坏，属于部署事故）。
 FALLBACK_SEED = "#5b6b7c"
@@ -213,3 +220,55 @@ def derive_prompt_palette(
         "sidebarBg": _to_hex(_TONE["sidebarBg"], neutral_chroma, hue),
         "sidebarText": _to_hex(_TONE["sidebarText"], neutral_chroma, hue),
     }
+
+
+# --- 本轮设计系统覆盖（2026-08-24）-------------------------------------------
+#
+# 用户在作曲家里挑的那套设计系统。模式照抄 device_policy.set_preferred_device_override：
+# 进程内单值，路由入口设、finally 清。
+#
+# ⚠ 为什么不是把 seed 当参数一路传下去：freeform_block 里读色板的地方有三处，
+#   而且都在深层调用栈里。加三条传参链就是三处将来会忘记接的地方——本仓
+#   「只改一半必然静默失效」那条纪律的标准形状。
+#
+# ⚠ finally 必须清。不清的话下一轮会脏读上一轮的选择，而且不会报错，
+#   只是颜色莫名其妙变了——这种问题只有肉眼比对才看得出来。
+
+_design_system_override: Optional[dict] = None
+
+
+def _load_design_systems() -> dict:
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent / "data" / "design_systems.json"
+    try:
+        import json
+
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:  # pragma: no cover - 部署事故
+        print(f"[identity_palette_hint] design_systems.json 读取失败: {str(exc)[:120]}")
+        return {"defaultId": "", "systems": []}
+
+
+def set_design_system_override(raw: Any) -> None:
+    """本轮推演用哪套设计系统。认不出的 id / None = 回落默认（全站品牌色）。"""
+    global _design_system_override
+    if not raw:
+        _design_system_override = None
+        return
+    table = _load_design_systems()
+    hit = next((s for s in table.get("systems") or [] if s.get("id") == raw), None)
+    if hit and _HEX_RE.match(str(hit.get("seed") or "")):
+        _design_system_override = hit
+    else:
+        _design_system_override = None
+
+
+def active_brand_seed() -> tuple[str, str]:
+    """本轮的种子色与标签。没选就是全站品牌色（与改动前逐位相同）。"""
+    if _design_system_override:
+        return (
+            str(_design_system_override["seed"]),
+            str(_design_system_override.get("label") or BRAND_LABEL),
+        )
+    return BRAND_SEED, BRAND_LABEL

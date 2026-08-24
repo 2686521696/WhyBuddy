@@ -70,14 +70,27 @@ describe("ComposerDock Cursor 三行形态", () => {
     expect(heroSend.indexOf("{refineButton}")).toBeLessThan(
       heroSend.indexOf("{sendButton}")
     );
-    expect(dock).not.toContain("col-start-3 row-start-2");
+    /**
+     * ⚠ 2026-08-24：这两条原本写作 `not.toContain("col-start-3 row-start-2")`，
+     * 意图是"优化按钮不许塞回 + 右侧的 col3"。但它盯的是**字面的类名**，不是那个
+     * 语义——设计系统选择器合法占用 col3 之后，这条就误报了（本仓纪律二：判据要
+     * 盯语义，别盯某句话的字面）。
+     * 改成直接钉"优化/发送那一簇在 col4"，并确认 col3 的占用者是设计系统而不是
+     * 优化按钮。把 refineButton 挪回 col3，下面两条仍必红。
+     */
+    const col3 = dock.slice(
+      dock.indexOf("col-start-3 row-start-2"),
+      dock.indexOf("col-start-3 row-start-2") + 400
+    );
+    expect(col3).toContain("sliderule-composer-design-system");
+    expect(col3).not.toContain("{refineButton}");
     expect(dock).not.toContain("col-start-5 row-start-2");
     expect(dock).toContain("sliderule-composer-device");
     expect(dock).toContain("COMPOSER_DEVICE_OPTIONS");
     expect(dock).toContain("{hero ? null : sendButton}");
     expect(dock).not.toContain("sliderule-hero-glow");
     expect(dock).not.toContain("rgba(167,139,250");
-    expect(dock).not.toContain("filter: \"blur(10px)\"");
+    expect(dock).not.toContain('filter: "blur(10px)"');
     expect(dock).not.toContain("This PC");
     expect(dock).not.toContain("Microphone");
   });
@@ -137,7 +150,10 @@ describe("对话列接到输入条，不要横切分隔线", () => {
 
   it("应用/Web 开关接到 drive-full-stream 请求体，不是只画在输入条上", () => {
     const session = stripComments(
-      readFileSync(new URL("../useSlideRuleSession.ts", import.meta.url), "utf8")
+      readFileSync(
+        new URL("../useSlideRuleSession.ts", import.meta.url),
+        "utf8"
+      )
     );
     expect(session).toContain("preferredDevice: loadPreferredDevice()");
     const dock = stripComments(
@@ -157,7 +173,9 @@ describe("对话列接到输入条，不要横切分隔线", () => {
         "utf8"
       )
     );
-    expect(driver).toContain('preferredDevice: opts.preferredDevice ?? "desktop"');
+    expect(driver).toContain(
+      'preferredDevice: opts.preferredDevice ?? "desktop"'
+    );
     expect(driver).toContain("/drive-full-stream");
     expect(driver).not.toContain("...(opts.preferredDevice");
   });
