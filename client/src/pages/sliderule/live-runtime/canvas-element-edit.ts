@@ -56,12 +56,20 @@ export function frameRectToNodeRect(
   };
 }
 
-/** 一次元素编辑。`remove` 之外都作用在元素自身。 */
+/**
+ * 一次元素编辑。
+ *
+ * ⚠ 样式统一走 `style` 这一种 op（一次可以带多条声明），**不是**每加一个控件
+ *   就加一个 op 类型。面板有十几个控件，按控件建 op 的话这个联合类型会长到
+ *   没法维护，而且每加一个都要动纯函数 + 判据 + 面板三处。
+ *
+ * ⚠ 值为空字符串 = **清掉这条声明**（回到样式表的值）。这是"恢复默认"的唯一
+ *   做法——写一个 `font-weight: 400` 去盖住原来的粗体是错的：那不是恢复默认，
+ *   是又压了一层。
+ */
 export type ElementOp =
   | { kind: "text"; value: string }
-  | { kind: "fontSize"; px: number }
-  | { kind: "bold"; on: boolean }
-  | { kind: "color"; value: string }
+  | { kind: "style"; decls: Record<string, string> }
   | { kind: "remove" };
 
 export const MIN_FONT_PX = 8;
@@ -104,15 +112,19 @@ export function applyElementOp(
       el.textContent = op.value;
       break;
     }
-    case "fontSize":
-      el.style.fontSize = `${clampFontPx(op.px)}px`;
+    case "style": {
+      for (const [prop, value] of Object.entries(op.decls)) {
+        if (value === "") {
+          el.style.removeProperty(prop);
+        } else {
+          /* ⚠ 用 setProperty 而不是拼字符串：CSSOM 本身会把非法值挡掉
+             （`color: red; } body{...}` 这种直接设不进去），这就是这里
+             不需要另写一套值校验的原因——校验交给浏览器，别自己写正则。 */
+          el.style.setProperty(prop, value);
+        }
+      }
       break;
-    case "bold":
-      el.style.fontWeight = op.on ? "700" : "";
-      break;
-    case "color":
-      el.style.color = op.value;
-      break;
+    }
     case "remove": {
       const parent = el.parentElement;
       if (!parent) return { html: source, ok: false };
@@ -141,4 +153,110 @@ export function elementTitle(tag: string, text: string, attrs: string): string {
   if (attrs) return attrs;
   const t = (text || "").trim().replace(/\s+/g, " ").slice(0, 16);
   return t ? `<${tag}> ${t}` : `<${tag}>`;
+}
+
+/**
+ * 面板要显示的那些 CSS 属性。
+ *
+ * ⚠ 选中时从画布 iframe 里**读计算样式**存一份快照，面板显示时
+ *   `行内值 ?? 快照值`：
+ *     · 只读行内值 → 元素没写过行内样式时面板一片"默认"，等于什么都看不到；
+ *     · 只读计算值 → 刚改完的值要等画板重渲才反映，面板会"跳"一下。
+ *   两者叠着用，显示的既是真实的样子，改完也立刻对得上。
+ */
+export const PANEL_CSS_PROPS = [
+  "display",
+  "flex-direction",
+  "width",
+  "height",
+  "padding-top",
+  "padding-right",
+  "padding-bottom",
+  "padding-left",
+  "margin-top",
+  "margin-right",
+  "margin-bottom",
+  "margin-left",
+  "border-radius",
+  "opacity",
+  "background-color",
+  "border-width",
+  "border-style",
+  "border-color",
+  "box-shadow",
+  "font-size",
+  "font-weight",
+  "color",
+  "text-align",
+] as const;
+
+/** 从一个**已渲染**的元素上取快照。只读，不改任何东西。 */
+export function snapshotComputed(
+  el: Element,
+  view: Window | null
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  const cs = view?.getComputedStyle?.(el);
+  if (!cs) return out;
+  for (const prop of PANEL_CSS_PROPS) {
+    const v = cs.getPropertyValue(prop);
+    if (v) out[prop] = v.trim();
+  }
+  return out;
+}
+
+/** 从源 HTML 里读这个元素**写过的行内样式**（面板据此知道哪些是用户改过的）。 */
+export function readInlineStyles(
+  html: string,
+  path: readonly PathStep[]
+): { inline: Record<string, string>; text: string } | null {
+  let doc: Document;
+  try {
+    doc = new DOMParser().parseFromString(String(html || ""), "text/html");
+  } catch {
+    return null;
+  }
+  if (!doc?.body) return null;
+  const el = resolveElementPath(doc.body, path) as HTMLElement | null;
+  if (!el) return null;
+  const inline: Record<string, string> = {};
+  for (let i = 0; i < el.style.length; i += 1) {
+    const prop = el.style.item(i);
+    inline[prop] = el.style.getPropertyValue(prop).trim();
+  }
+  return {
+    inline,
+    text: (el.textContent || "").replace(/\s+/g, " ").trim(),
+  };
+}
+
+/** 面板显示用的值：用户写过的行内值优先，否则用选中时的计算值。 */
+export function displayValue(
+  prop: string,
+  inline: Record<string, string>,
+  computed: Record<string, string>
+): string {
+  return inline[prop] ?? computed[prop] ?? "";
+}
+
+/** "12px" → 12。取不到数就回 null（面板据此显示"默认"，不编一个 0 出来）。 */
+export function pxNumber(value: string): number | null {
+  const n = parseFloat(String(value || ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * 计算样式里的颜色是 `rgb(a)` 形式，`<input type=color>` 只认 `#rrggbb`。
+ * 转不了（transparent / 渐变）就回 null，调用方显示一个中性色，别硬塞。
+ */
+export function toHexColor(value: string): string | null {
+  const s = String(value || "").trim();
+  if (/^#[0-9a-f]{6}$/i.test(s)) return s.toLowerCase();
+  const m = s.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
+  if (!m) return null;
+  const hex = (n: string) =>
+    Math.max(0, Math.min(255, Math.round(parseFloat(n))))
+      .toString(16)
+      .padStart(2, "0");
+  return `#${hex(m[1]!)}${hex(m[2]!)}${hex(m[3]!)}`;
 }

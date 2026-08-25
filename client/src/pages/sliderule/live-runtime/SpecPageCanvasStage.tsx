@@ -97,6 +97,7 @@ import { elementPath, type PathStep } from "./element-path";
 import {
   frameRectToNodeRect,
   elementTitle,
+  snapshotComputed,
   type Rect,
 } from "./canvas-element-edit";
 import { closestEditable } from "../../agent-loop/dashboard/ClickEditStage";
@@ -296,6 +297,8 @@ export interface PickedElement {
   rect: Rect;
   tag: string;
   title: string;
+  /** 选中那一刻元素**真实**的样子（计算样式）。面板拿它当显示底值。 */
+  computed: Record<string, string>;
 }
 
 /**
@@ -363,6 +366,7 @@ function pickElementAtPoint(
     pageId,
     path,
     rect,
+    computed: snapshotComputed(el, doc.defaultView),
     tag: el.tagName.toLowerCase(),
     title: elementTitle(
       el.tagName.toLowerCase(),

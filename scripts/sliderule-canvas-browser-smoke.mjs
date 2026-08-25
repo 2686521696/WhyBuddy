@@ -47,6 +47,8 @@
  *   AB 按住 Ctrl 滑过只高亮（不选中、不弹面板）
  *   AC Ctrl+单击 → 选中 + 右侧编辑器，且没跳去页面档
  *   AD **框逐像素落在元素上**  ← AC 只证明"有框"，框飘到别处照样绿
+ *   AE 面板排成 容器/文字/外观/内容 四段
+ *   AF **面板上的数是元素真实的值**  ← 控件排满一屏但全是"默认"也叫丰富
  *
  * ⚠ J 与 I 必须一起看，理由同 B/C 与 E：把手 opacity 是 1（I 绿）不代表它
  *   收得到事件。2026-08-25 真机就是 I 绿 J 红——手势层 `absolute inset-0`
@@ -394,6 +396,54 @@ async function main() {
         `框=${JSON.stringify(picked.rect)} 元素=${JSON.stringify(pickTarget.screen)}`
       );
       await page.screenshot({ path: `${SHOT_DIR}/element-pick.png` });
+
+      /*
+       * ⚠ 面板"看着丰富"和"面板上的数是真的"是两件事。第一版只读行内样式，
+       *   元素没写过行内样式时每一格都是"默认"——控件排满一屏，一个数都没有。
+       *   所以这条判据不看有几个控件，看**读数等不等于元素真实的计算值**。
+       */
+      const panelTruth = await page.evaluate(() => {
+        const board = document.querySelector(
+          '[data-testid="sliderule-canvas-artboard"]'
+        );
+        const f = board?.querySelector("iframe");
+        const d = f?.contentDocument;
+        const q = id => document.querySelector(`[data-testid="${id}"]`);
+        const val = id => q(id)?.value ?? null;
+        const sections = [
+          ...document.querySelectorAll(
+            '[data-testid="sliderule-canvas-element-panel"] h4'
+          ),
+        ].map(h => h.textContent);
+        return {
+          sections,
+          hasSpacing: !!q("sliderule-canvas-el-spacing"),
+          read: {
+            width: val("sliderule-canvas-el-width"),
+            padTop: val("sliderule-canvas-el-padding-top"),
+            radius: val("sliderule-canvas-el-radius"),
+            fontsize: val("sliderule-canvas-el-fontsize"),
+          },
+          docReady: !!d?.body,
+        };
+      });
+      check(
+        "AE 面板排成 容器/文字/外观/内容 四段，含内外边距九宫格",
+        ["容器", "文字", "外观", "内容"].every(t =>
+          panelTruth.sections.includes(t)
+        ) && panelTruth.hasSpacing,
+        JSON.stringify(panelTruth.sections)
+      );
+      /* 读数不能全是空——全空说明它又退回"只读行内样式"那版了 */
+      const filled = Object.values(panelTruth.read).filter(
+        v => v !== null && v !== ""
+      ).length;
+      check(
+        "AF 面板显示的是元素**真实**的值（不是一片默认）",
+        filled >= 3,
+        `有值的格子 ${filled}/4 · ${JSON.stringify(panelTruth.read)}`
+      );
+
       await page.keyboard.press("Escape");
       await page.waitForTimeout(400);
     } else {

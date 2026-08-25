@@ -74,35 +74,47 @@ describe("元素编辑作用在源 HTML 上", () => {
     expect(h1.textContent).toBe("<img src=x onerror=alert(1)>");
   });
 
-  it("字号/加粗/颜色写成行内样式", () => {
-    let html = PAGE;
-    html = applyElementOp(html, pathTo("p", html), {
-      kind: "fontSize",
-      px: 20,
-    }).html;
-    html = applyElementOp(html, pathTo("p", html), {
-      kind: "bold",
-      on: true,
-    }).html;
-    html = applyElementOp(html, pathTo("p", html), {
-      kind: "color",
-      value: "#ff0000",
-    }).html;
-    expect(html).toMatch(/font-size:\s*20px/);
-    expect(html).toMatch(/font-weight:\s*700/);
-    expect(html).toMatch(/color:\s*(#ff0000|rgb\(255, 0, 0\))/);
+  it("一次 style op 可以带多条声明", () => {
+    const r = applyElementOp(PAGE, pathTo("p"), {
+      kind: "style",
+      decls: {
+        "font-size": "20px",
+        "font-weight": "700",
+        color: "#ff0000",
+        "border-radius": "8px",
+      },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.html).toMatch(/font-size:\s*20px/);
+    expect(r.html).toMatch(/font-weight:\s*700/);
+    expect(r.html).toMatch(/color:\s*(#ff0000|rgb\(255, 0, 0\))/);
+    expect(r.html).toMatch(/border-radius:\s*8px/);
   });
 
-  it("取消加粗要把行内值清掉，不是写成 400 盖住原样式", () => {
+  it("空值 = 清掉这条声明，不是写个默认值盖上去", () => {
+    /*
+     * ⚠ 写 `font-weight: 400` 去盖住粗体是错的：那不是"恢复默认"，是又压了
+     *   一层——元素原本从样式表拿到的值（比如 h1 的 700）会被这一层永久钉死。
+     */
     let html = applyElementOp(PAGE, pathTo("p"), {
-      kind: "bold",
-      on: true,
+      kind: "style",
+      decls: { "font-weight": "700" },
     }).html;
     html = applyElementOp(html, pathTo("p", html), {
-      kind: "bold",
-      on: false,
+      kind: "style",
+      decls: { "font-weight": "" },
     }).html;
-    expect(html).not.toMatch(/font-weight:\s*[1-9]/);
+    expect(html).not.toMatch(/font-weight/);
+  });
+
+  it("非法值设不进去（CSSOM 自己挡，不用另写正则）", () => {
+    const r = applyElementOp(PAGE, pathTo("p"), {
+      kind: "style",
+      decls: { color: "red; } body { display: none" },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.html).not.toContain("display: none");
+    expect(r.html).not.toContain("body {");
   });
 
   it("删除元素", () => {
