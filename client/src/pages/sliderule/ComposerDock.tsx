@@ -65,6 +65,7 @@ import { listConnectors, type ConnectorSpec } from "./connectors-client";
 import {
   loadTurnCapabilities,
   saveTurnCapabilities,
+  takePendingOpener,
 } from "./turn-capabilities";
 
 /** E31 图片/PDF 提取结果（后端 /attachments/extract 的诚实回执）。 */
@@ -649,6 +650,19 @@ export function ComposerDock({
       alive = false;
     };
   }, []);
+
+  /* 从「技能 · 连接器 · 伙伴」页点「用这个伙伴」过来的起手意图。
+     ⚠ take 语义：取一次就清掉（见 turn-capabilities.takePendingOpener）。
+       不清的话用户以后不管从哪进推演，输入框都会自己填上上次那句话。 */
+  React.useEffect(() => {
+    const opener = takePendingOpener();
+    if (!opener) return;
+    setInput(opener);
+    requestAnimationFrame(() => {
+      adjustTextareaHeight();
+      textareaRef.current?.focus();
+    });
+  }, [setInput, adjustTextareaHeight]);
 
   /** 可选能力池：已安装技能 + 后端报上来的连接器。伙伴见「技能·连接器·伙伴」页。 */
   const slashPool = React.useMemo<SlashItem[]>(() => {

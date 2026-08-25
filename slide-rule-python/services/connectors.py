@@ -54,7 +54,12 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import quote
 
-_TIMEOUT_S = 15.0
+#: **单次 HTTP 调用**的超时。跟总预算是两个数，别合成一个——见 fetch_rows。
+_TIMEOUT_S = 12.0
+
+#: 建连超时单独压短。2026-08-25 实测：卡住的那些几乎都卡在建连，
+#: 读数据本身很快。连不上就早点认输，把时间留给重试。
+_CONNECT_TIMEOUT_S = 8.0
 
 #: 单条链路试几次。
 #:
@@ -64,7 +69,7 @@ _TIMEOUT_S = 15.0
 #:   业务失败重试一百次也还是认不出，重试它只是让用户多等。
 _ATTEMPTS = 2
 
-#: 取数总预算（含重试）。超了就如实说超时——不是等到天荒地老，也不是补个假的。
+#: 取数**总**预算（含重试）。超了就如实说超时——不是等到天荒地老，也不是补个假的。
 _BUDGET_S = 40.0
 
 
@@ -222,10 +227,16 @@ WEATHER = ConnectorSpec(
 _FORECAST_DAYS = 7
 
 
+def _timeout(timeout_s: float) -> Any:
+    import httpx
+
+    return httpx.Timeout(timeout_s, connect=min(_CONNECT_TIMEOUT_S, timeout_s))
+
+
 def _http_get(url: str, timeout_s: float) -> Any:
     import httpx
 
-    r = httpx.get(url, timeout=timeout_s, follow_redirects=True)
+    r = httpx.get(url, timeout=_timeout(timeout_s), follow_redirects=True)
     r.raise_for_status()
     return r.json()
 
@@ -240,7 +251,7 @@ def _http_get_text(url: str, timeout_s: float, encoding: str = "utf-8") -> str:
 
     r = httpx.get(
         url,
-        timeout=timeout_s,
+        timeout=_timeout(timeout_s),
         follow_redirects=True,
         headers={"User-Agent": "Mozilla/5.0 (compatible; SlideRuleConnector/1.0)"},
     )
@@ -540,6 +551,7 @@ def fetch_rows(
     fetch_fn: Optional[Callable[[str, float], Any]] = None,
     text_fn: Optional[Callable[..., str]] = None,
     timeout_s: Optional[float] = None,
+    budget_s: Optional[float] = None,
     now_fn: Optional[Callable[[], str]] = None,
 ) -> ConnectorFetch:
     """取一次真数据。
@@ -547,6 +559,12 @@ def fetch_rows(
     ⚠ **任何失败路径都返回 ok=False，绝不返回编出来的行。** 这个函数是
       "假数据不许进系统"这条产品判断在代码里的落点；把它改成"失败时给点
       兜底数据"，整条链路就白做了——页面照样好看，数字重新变成假的。
+
+    ⚠ `timeout_s` 是**单次 HTTP 调用**的上限，`budget_s` 是**这一整次取数**
+      （含重试）的上限。**两者必须分开**——2026-08-25 真机咬出来的：路由把
+      45 秒的总预算当 timeout_s 传进来，于是单次调用可以卡满 45 秒，重试
+      根本轮不上，一次抖动就是 46 秒白等。并发 6 条能稳定复现 2 条卡满。
+      分开之后：单次 12 秒封顶，卡住的那次 12 秒认输，第二次通常 1.5 秒就回来。
     """
     spec = get_connector(connector_id)
     if not spec:
@@ -558,7 +576,8 @@ def fetch_rows(
 
     fetch = fetch_fn or _http_get
     text = text_fn or _http_get_text
-    budget = float(timeout_s if timeout_s is not None else _TIMEOUT_S)
+    per_call = float(timeout_s if timeout_s is not None else _TIMEOUT_S)
+    budget = float(budget_s if budget_s is not None else _BUDGET_S)
     now = now_fn or _iso_now
     handler = _FETCHERS.get(spec.id)
     if not handler:
@@ -577,7 +596,10 @@ def fetch_rows(
     label, rows = "", []
     for attempt in range(_ATTEMPTS):
         try:
-            label, rows = handler(*call_args, fetch, budget, text)
+            # 剩余预算不够跑满一次调用时，把这次的超时压到剩余值——
+            # 不然最后一次尝试会把总预算撑破一大截。
+            left = budget - (time.monotonic() - started)
+            label, rows = handler(*call_args, fetch, min(per_call, max(1.0, left)), text)
             last = None
             break
         except ConnectorError as exc:
@@ -585,11 +607,11 @@ def fetch_rows(
             return ConnectorFetch(False, spec.id, spec.entity_id, error=exc.reason)
         except Exception as exc:  # noqa: BLE001 — 外网什么都可能抛，如实转成人话
             last = f"{spec.name}取数失败：{type(exc).__name__}"
-            if time.monotonic() - started > _BUDGET_S:
+            if time.monotonic() - started > budget:
                 break
     if last:
         return ConnectorFetch(False, spec.id, spec.entity_id, error=last)
-    if time.monotonic() - started > _BUDGET_S:
+    if time.monotonic() - started > budget:
         return ConnectorFetch(False, spec.id, spec.entity_id, error=f"{spec.name}取数超时")
 
     source = f"{spec.source} · {label}" if label else spec.source

@@ -365,3 +365,67 @@ def test_清单里两个连接器都在_字段名与实体声明一致():
     )
     declared = {f["id"] for f in C.STOCK.entity_declaration()["fields"]}
     assert set(r.rows[0]["values"].keys()) == declared
+
+
+# ════════════════════════════════ 超时预算：单次上限 ≠ 总预算
+
+
+def test_单次调用的超时不会被总预算撑破():
+    """⚠ 2026-08-25 真机咬出来的设计 bug。
+
+    路由把 45 秒的**总预算**当 timeout_s 传了进来，于是单次 HTTP 调用可以
+    卡满 45 秒，重试根本轮不上——一次网络抖动就是 46 秒白等，而同一个请求
+    单条跑只要 1.5 秒（并发 6 条能稳定复现 2 条卡满）。
+
+    判据钉的是"**传给 fetch 的那个超时值**"，不是耗时——耗时判据要真的等，
+    既慢又不稳。
+    """
+    seen = []
+
+    def spy(url, timeout_s, encoding="utf-8"):
+        seen.append(timeout_s)
+        return TX_ICBC
+
+    C.fetch_rows(
+        "stock",
+        {"symbols": "601398"},
+        fetch_fn=fake_fetch(),
+        text_fn=spy,
+        timeout_s=12.0,
+        budget_s=45.0,
+    )
+    assert seen, "根本没调到"
+    assert max(seen) <= 12.0, f"单次超时被总预算撑破了：{seen}"
+
+
+def test_预算快用完时最后一次尝试跟着缩短():
+    """剩余预算不够跑满一次调用时，这次的超时压到剩余值——
+    否则最后一次尝试会把总预算撑破一大截。"""
+    seen = []
+
+    def spy(url, timeout_s, encoding="utf-8"):
+        seen.append(timeout_s)
+        return TX_ICBC
+
+    C.fetch_rows(
+        "stock",
+        {"symbols": "601398"},
+        fetch_fn=fake_fetch(),
+        text_fn=spy,
+        timeout_s=30.0,
+        budget_s=5.0,
+    )
+    assert max(seen) <= 5.0, f"预算 5 秒却放了 {max(seen)} 秒的调用出去"
+
+
+def test_两个数缺省时各用各的默认值():
+    seen = []
+
+    def spy(url, timeout_s, encoding="utf-8"):
+        seen.append(timeout_s)
+        return TX_ICBC
+
+    C.fetch_rows("stock", {"symbols": "601398"}, fetch_fn=fake_fetch(), text_fn=spy)
+    # 单次默认 _TIMEOUT_S，而不是总预算 _BUDGET_S
+    assert max(seen) <= C._TIMEOUT_S
+    assert C._TIMEOUT_S < C._BUDGET_S, "单次上限必须小于总预算，否则重试没有意义"

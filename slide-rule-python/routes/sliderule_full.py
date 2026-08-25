@@ -2389,10 +2389,13 @@ async def search_stock_images_for_replacement(
     }
 
 
-#: 一个连接器取一次数最多等多久（含重试，见 services/connectors._BUDGET_S）。
-#: 用户是点了「预览数据」在等，比自动链路那条 3s 宽松；但也不能无上限——
-#: 生成期会串起来跑，一个卡死会拖垮整轮推演。
-_CONNECTOR_FETCH_TIMEOUT_S = 45.0
+#: 单次 HTTP 调用的上限 / 这一整次取数的上限。
+#:
+#: ⚠ **两个数，不是一个。** 2026-08-25 真机咬出来的：这里原本只有一个 45 秒
+#:   并且当成 timeout_s 传下去，结果单次调用可以卡满 45 秒，重试根本轮不上，
+#:   一次抖动就是 46 秒白等（并发 6 条稳定复现 2 条卡满，单条只要 1.5 秒）。
+_CONNECTOR_CALL_TIMEOUT_S = 12.0
+_CONNECTOR_BUDGET_S = 40.0
 
 
 @router.get("/connectors")
@@ -2435,7 +2438,8 @@ async def fetch_connector_rows(
         fetch_rows,
         connector_id,
         args if isinstance(args, dict) else {},
-        timeout_s=_CONNECTOR_FETCH_TIMEOUT_S,
+        timeout_s=_CONNECTOR_CALL_TIMEOUT_S,
+        budget_s=_CONNECTOR_BUDGET_S,
     )
     out = result.to_public()
     if not out["ok"]:

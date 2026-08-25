@@ -94,3 +94,33 @@ export function turnCapabilitiesPayload(
 export function pickedConnectorIds(items: readonly SlashItem[]): string[] {
   return items.filter(i => i.kind === "connector").map(i => i.key);
 }
+
+
+/* ───────────────────────────── 「起手意图」跨页交接（伙伴 → 输入框） */
+
+const OPENER_KEY = "sliderule:pending-opener";
+
+/**
+ * 从「技能 · 连接器 · 伙伴」页点了「用这个伙伴」之后，把起手意图交给输入框。
+ *
+ * ⚠ **取一次就清掉**（take 语义，不是 load）。留着的话，用户下次不管从哪里
+ *   进推演，输入框都会莫名其妙自己填上半个月前那句话——而且他会以为是
+ *   自己没删干净。交接用的一次性信道，必须是一次性的。
+ */
+export function setPendingOpener(text: string): void {
+  try {
+    window.localStorage.setItem(OPENER_KEY, String(text || ""));
+  } catch {
+    /* 存储满：起手意图丢了，用户自己打字，不影响能力已经挂上 */
+  }
+}
+
+export function takePendingOpener(): string {
+  try {
+    const raw = window.localStorage.getItem(OPENER_KEY);
+    if (raw) window.localStorage.removeItem(OPENER_KEY);
+    return raw || "";
+  } catch {
+    return "";
+  }
+}

@@ -7,6 +7,7 @@ import {
   AppstoreOutlined,
   LeftOutlined,
   PlayCircleFilled,
+  ApiOutlined,
   BlockOutlined,
   ReloadOutlined,
   RightOutlined,
@@ -71,8 +72,11 @@ export type ViewKey =
   | "admin";
 
 // 技能库（索引 JSON 打在页面 chunk 里）：点开才加载，不占主包
+/* 2026-08-25：技能库升级成「技能 · 连接器 · 伙伴」一页三层（用户裁决，
+   参照豆包工作台）。view key 仍叫 skills——换 key 会让已有的深链和
+   AccountPanel 里那个入口一起失效，而这次改的是页面内容不是导航语义。 */
 const LazySkillsLibraryPage = React.lazy(
-  () => import("@/pages/sliderule/SkillsLibraryPage")
+  () => import("@/pages/sliderule/CapabilityLibraryPage")
 );
 
 // 组件库：清单读自 experience_block_catalog.json，每个区块用真实渲染器现渲，
@@ -1188,6 +1192,7 @@ function AgentLoopSidebar({
   }> = [
     { key: "workbench", label: "应用市场", icon: <AppstoreOutlined /> },
     { key: "components", label: "组件库", icon: <BlockOutlined /> },
+    { key: "skills", label: "技能 · 连接器 · 伙伴", icon: <ApiOutlined /> },
     { key: "settings", label: "设置", icon: <SettingOutlined /> },
     ...(isStaff
       ? [
@@ -1858,7 +1863,7 @@ function DashboardAppInner({
               <React.Suspense
                 fallback={
                   <div style={{ padding: 24, fontSize: 12, color: "#999" }}>
-                    技能库加载中…
+                    技能 · 连接器 · 伙伴 加载中…
                   </div>
                 }
               >

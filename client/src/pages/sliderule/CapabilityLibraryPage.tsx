@@ -1,0 +1,177 @@
+/**
+ * CapabilityLibraryPage — 「技能 · 连接器 · 伙伴」一页三层。
+ *
+ * 2026-08-25 用户裁决（参照豆包工作台）：这三样是同一件事的三种粒度，
+ * 不该散在三个入口里——
+ *   技能   一段流程（进提示词，影响怎么生成）
+ *   连接器 一个真实数据源（进运行时，影响页面上显示什么）
+ *   伙伴   前两者的装配 + 一句起手意图
+ *
+ * ⚠ 技能那一层直接复用 SkillsLibraryPage，**不复制一份**。复制出来的第二份
+ *   会跟原件慢慢分叉（仓里第四条：同一件事两处实现，改一处不报错、只有一半
+ *   不生效）。这里只加壳。
+ */
+
+import React from "react";
+import { message } from "antd";
+import { ApiOutlined, BlockOutlined, TeamOutlined } from "@ant-design/icons";
+import { navigate } from "wouter/use-browser-location";
+
+import SkillsLibraryPage from "./SkillsLibraryPage";
+import { ConnectorsPanel } from "./ConnectorsPanel";
+import { PartnersPanel } from "./PartnersPanel";
+import { listConnectors, type ConnectorSpec } from "./connectors-client";
+import { installKeyOf, loadInstalledSkills } from "./installed-skills";
+import {
+  BUILTIN_PARTNERS,
+  loadPartners,
+  partnerCapabilities,
+  savePartners,
+  type Partner,
+} from "./partners";
+import {
+  loadTurnCapabilities,
+  saveTurnCapabilities,
+  setPendingOpener,
+} from "./turn-capabilities";
+import type { SlashItem } from "./composer-slash";
+
+type Layer = "skills" | "connectors" | "partners";
+
+const TABS: Array<{ key: Layer; label: string; icon: React.ReactNode }> = [
+  { key: "skills", label: "技能", icon: <BlockOutlined /> },
+  { key: "connectors", label: "连接器", icon: <ApiOutlined /> },
+  { key: "partners", label: "伙伴", icon: <TeamOutlined /> },
+];
+
+export function CapabilityLibraryPage({
+  initialLayer = "skills",
+}: {
+  initialLayer?: Layer;
+} = {}) {
+  const [layer, setLayer] = React.useState<Layer>(initialLayer);
+  const [connectors, setConnectors] = React.useState<ConnectorSpec[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [custom, setCustom] = React.useState<Partner[]>(() => loadPartners());
+
+  React.useEffect(() => {
+    let alive = true;
+    void listConnectors().then(list => {
+      if (!alive) return;
+      setConnectors(list);
+      setLoading(false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const skillKeys = React.useMemo(
+    () => loadInstalledSkills().map(installKeyOf),
+    // 切到伙伴层时重读——用户可能刚在技能层装了一个
+    [layer]
+  );
+  const connectorIds = React.useMemo(
+    () => connectors.filter(c => c.available).map(c => c.id),
+    [connectors]
+  );
+
+  /** 挂到这一轮：跟输入框里 `/` 选中同一条路径（同一个存档键）。 */
+  const attach = React.useCallback((items: SlashItem[], opener?: string) => {
+    if (items.length === 0) return;
+    const prev = loadTurnCapabilities();
+    const merged = [...prev];
+    for (const item of items) {
+      if (!merged.some(p => p.kind === item.kind && p.key === item.key))
+        merged.push(item);
+    }
+    saveTurnCapabilities(merged);
+    if (opener) setPendingOpener(opener);
+    message.success(
+      `已挂到这一轮：${items.map(i => i.name).join("、")}${opener ? "，起手意图已填进输入框" : ""}`
+    );
+    navigate("/agent-loop/sliderule");
+  }, []);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex items-center gap-1 border-b border-[#eceff3] px-4 pt-3">
+        {TABS.map(t => (
+          <button
+            key={t.key}
+            type="button"
+            data-testid="capability-tab"
+            data-layer={t.key}
+            data-active={layer === t.key ? "1" : "0"}
+            onClick={() => setLayer(t.key)}
+            className={`flex items-center gap-1.5 rounded-t-md px-3 py-1.5 text-[13px] transition ${
+              layer === t.key
+                ? "border-b-2 border-[#1677ff] font-medium text-[#1677ff]"
+                : "border-b-2 border-transparent text-stone-500 hover:text-stone-800"
+            }`}
+          >
+            {t.icon}
+            {t.label}
+            {t.key === "connectors" && connectors.length > 0 ? (
+              <span className="text-[11px] text-stone-400">
+                {connectors.length}
+              </span>
+            ) : null}
+            {t.key === "partners" ? (
+              <span className="text-[11px] text-stone-400">
+                {BUILTIN_PARTNERS.length + custom.length}
+              </span>
+            ) : null}
+          </button>
+        ))}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* ⚠ 技能层用复用而不是复制，见文件头注 */}
+        {layer === "skills" ? <SkillsLibraryPage /> : null}
+        {layer === "connectors" ? (
+          <div className="p-4">
+            <ConnectorsPanel
+              connectors={connectors}
+              loading={loading}
+              onUse={spec =>
+                attach([
+                  {
+                    key: spec.id,
+                    kind: "connector",
+                    name: spec.name,
+                    description: spec.description,
+                  },
+                ])
+              }
+            />
+          </div>
+        ) : null}
+        {layer === "partners" ? (
+          <div className="p-4">
+            <PartnersPanel
+              custom={custom}
+              connectorIds={connectorIds}
+              skillKeys={skillKeys}
+              onUse={p =>
+                attach(
+                  partnerCapabilities(p, { connectorIds, skillKeys }),
+                  p.opener
+                )
+              }
+              onDelete={id =>
+                setCustom(prev => {
+                  const next = prev.filter(x => x.id !== id);
+                  savePartners(next);
+                  return next;
+                })
+              }
+            />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export default CapabilityLibraryPage;
