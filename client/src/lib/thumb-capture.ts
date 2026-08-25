@@ -237,6 +237,19 @@ export function resolveCaptureNode(container: HTMLElement): {
   return { kind: "dom", node };
 }
 
+/**
+ * 节点 → canvas。**导出给画布档的「导出 PNG」复用**（2026-08-25）。
+ *
+ * ⚠ 别在画布那边另写一份 snapdom 调用：dpr / embedFonts / backgroundColor /
+ *   fast 这四个参数是这个仓踩出来的（见本文件头注里 iframe 那条），
+ *   抄一份过去就是同一件事两套写法，改一处忘一处。要改一起改。
+ */
+export async function captureNodeToCanvas(
+  node: HTMLElement
+): Promise<HTMLCanvasElement> {
+  return nodeToCanvas(node);
+}
+
 async function nodeToCanvas(node: HTMLElement): Promise<HTMLCanvasElement> {
   const { snapdom } = await import("@zumer/snapdom");
   const iframe = node.tagName === "IFRAME";

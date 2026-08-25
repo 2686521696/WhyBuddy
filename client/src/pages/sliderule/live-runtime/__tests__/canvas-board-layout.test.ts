@@ -19,7 +19,9 @@ import {
   containScale,
   gridAspect,
   labelCounterScale,
+  labelMaxCssWidth,
   layoutArtboards,
+  pickLinkSides,
   shouldMountBoard,
 } from "../canvas-board-layout";
 
@@ -216,5 +218,76 @@ describe("画板标题的两条来源（第四条纪律：别只补一条）", (
         html: '<title lang="zh">\n  复盘看板\n</title>',
       })
     ).toBe("复盘看板");
+  });
+});
+
+describe("反缩放标签的宽度上限（2026-08-25 素材卡标签糊成一坨那次）", () => {
+  it("屏幕上的标签宽度不超过它所属卡片的屏幕宽度", () => {
+    // 推导见 labelMaxCssWidth 的注释：cssWidth × labelScale ≤ boxW。
+    for (const zoom of [0.05, 0.18, 0.5, 1, 2]) {
+      for (const boxW of [420, 1920]) {
+        const css = labelMaxCssWidth(boxW, zoom);
+        expect(css * labelCounterScale(zoom)).toBeLessThanOrEqual(boxW + 1e-9);
+      }
+    }
+  });
+
+  it("窄卡片在低缩放下算出来的上限确实很小——紧凑态必须存在", () => {
+    // 真机：素材卡 420 画布 px、18% 缩放 → 上限 ≈ 76 CSS px，
+    // 放不下 "placehold.co/120x120 [占位图] 1 页" 整行。组件据此切紧凑态。
+    expect(labelMaxCssWidth(420, 0.18)).toBeLessThan(100);
+    // 同样缩放下画板（1920）宽裕得多——同一个 bug 只在窄的东西上先现形。
+    expect(labelMaxCssWidth(1920, 0.18)).toBeGreaterThan(300);
+  });
+
+  it("尺寸为 0 / 缩放为 0 时返回 0，不返回 Infinity", () => {
+    expect(labelMaxCssWidth(0, 1)).toBe(0);
+    expect(labelMaxCssWidth(420, 0)).toBeGreaterThan(0); // zoom=0 时 scale 兜底为 1
+    expect(Number.isFinite(labelMaxCssWidth(420, 0))).toBe(true);
+  });
+});
+
+describe("连线接在哪条边（网格里别绕路）", () => {
+  const at = (x: number, y: number) => ({ x, y, w: 1920, h: 1080 });
+
+  it("正下方的画板走上下，得到一条笔直竖线", () => {
+    // ⚠ 第一版把 source 写死在右、target 写死在左，这条线要绕过整块画板
+    //   再兜回来——截图上就是一条不知从哪来到哪去的线。
+    expect(pickLinkSides(at(0, 0), at(0, 1312))).toEqual({
+      source: "b",
+      target: "t",
+    });
+  });
+
+  it("正上方走上下（反向）", () => {
+    expect(pickLinkSides(at(0, 1312), at(0, 0))).toEqual({
+      source: "t",
+      target: "b",
+    });
+  });
+
+  it("同排右侧走左右", () => {
+    expect(pickLinkSides(at(0, 0), at(2088, 0))).toEqual({
+      source: "r",
+      target: "l",
+    });
+  });
+
+  it("同排左侧走左右（反向）", () => {
+    expect(pickLinkSides(at(2088, 0), at(0, 0))).toEqual({
+      source: "l",
+      target: "r",
+    });
+  });
+
+  it("斜着的按位移大的那条轴走", () => {
+    // 右下但水平位移更大 → 走左右
+    expect(pickLinkSides(at(0, 0), at(4000, 1200)).source).toBe("r");
+    // 右下但垂直位移更大 → 走上下
+    expect(pickLinkSides(at(0, 0), at(600, 4000)).source).toBe("b");
+  });
+
+  it("位移相等时稳定走水平，不在横竖之间跳", () => {
+    expect(pickLinkSides(at(0, 0), at(1000, 1000)).source).toBe("r");
   });
 });

@@ -239,6 +239,28 @@ export function labelCounterScale(zoom: number): number {
 }
 
 /**
+ * 反缩放标签的**宽度上限**（CSS px），让它不超过所属画板/素材卡的宽度。
+ *
+ * ⚠ 2026-08-25 真机踩到：素材卡是 260 画布 px，适应画布时 19% 缩放 = 屏幕
+ *   49px；而标签被反缩放成恒定屏幕尺寸（"placehold.co/120x120" ≈ 150px），
+ *   于是**三张素材卡的标签横着压成一坨**，谁也读不出来。截图上就是一行糊字。
+ *
+ *   画板没露出这个问题只是因为它宽（1920 画布 px），不是因为写法不同——
+ *   同一个 bug 在窄一点的东西上才现形。所以上限对两者一起加。
+ *
+ * 推导：标签在画布坐标系里挂着 `scale(labelScale)`，屏幕宽度 =
+ * cssWidth × labelScale × zoom；要它 ≤ 卡片屏幕宽度（boxW × zoom），
+ * 两边约掉 zoom 得 cssWidth ≤ boxW / labelScale。
+ *
+ * 配合 `overflow:hidden` + `text-overflow:ellipsis` 用，光有上限不截断没意义。
+ */
+export function labelMaxCssWidth(boxW: number, zoom: number): number {
+  const scale = labelCounterScale(zoom);
+  if (!(boxW > 0) || !(scale > 0)) return 0;
+  return boxW / scale;
+}
+
+/**
  * 画板标题：导航名 > HTML 里的 <title> > pageId。
  *
  * ⚠ 走 SSE 逐页到达的那条路（sliderule-marathon-driver 的 spec_page 事件）
@@ -279,4 +301,37 @@ export function containScale(
   const usableW = size.width * (1 - padding * 2);
   const usableH = size.height * (1 - padding * 2);
   return Math.min(usableW / b.w, usableH / b.h);
+}
+
+/* --------------------------------------------------- 连线接在哪条边上 */
+
+/** 画板四条边的把手 id。跟 ArtboardNode 里 <Handle id> 一一对应。 */
+export type BoardSide = "t" | "r" | "b" | "l";
+
+/**
+ * 一条连线该从哪条边出、进哪条边。
+ *
+ * ⚠ 2026-08-25 真机：第一版把 source 写死在右、target 写死在左（React Flow
+ *   最常见的写法）。那套是给**从左往右的流程图**用的，而这里是**网格**——
+ *   p1 在左上、p3 在它正下方，右出左进的线要绕过整块画板再兜回来，
+ *   截图上看就是一条不知道从哪来到哪去的线。
+ *
+ * 规则很简单：谁的位移大就走谁那条轴。水平位移大就左右出入，垂直位移大就
+ * 上下出入。正下方的画板得到一条笔直的竖线，同排的得到一条笔直的横线。
+ *
+ * ⚠ 相等时走水平：网格里同排相邻是最常见的情形，让它稳定落在横线上，
+ *   而不是随浮点误差在横竖之间跳。
+ */
+export function pickLinkSides(
+  from: { x: number; y: number; w: number; h: number },
+  to: { x: number; y: number; w: number; h: number }
+): { source: BoardSide; target: BoardSide } {
+  const dx = to.x + to.w / 2 - (from.x + from.w / 2);
+  const dy = to.y + to.h / 2 - (from.y + from.h / 2);
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return dx >= 0
+      ? { source: "r", target: "l" }
+      : { source: "l", target: "r" };
+  }
+  return dy >= 0 ? { source: "b", target: "t" } : { source: "t", target: "b" };
 }

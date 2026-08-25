@@ -134,3 +134,126 @@ describe("画板标题的数据真的送到了（不是只在类型里加了个�
     expect(missing?.name).toBe("订单核销页");
   });
 });
+
+/**
+ * 第二轮（连线 / 属性面板 / 右键菜单 / 素材图）的链路判据。
+ *
+ * 同样是**剥注释后查源码**：这四件事的实现文件里到处写着自己的名字，
+ * 不剥注释的话把 JSX 整段删了判据照样绿。
+ */
+const CANVAS = stripComments(
+  readFileSync(
+    resolve(__dirname, "../live-runtime/SpecPageCanvasStage.tsx"),
+    "utf8"
+  )
+);
+
+describe("四件新东西真的挂在画布上（不是各写了个组件）", () => {
+  it("属性面板与右键菜单都被画布渲染", () => {
+    expect(CANVAS).toContain("<CanvasInspector");
+    expect(CANVAS).toContain("<CanvasBoardMenu");
+  });
+
+  it("边真的喂给了 ReactFlow —— 不是算出来放着不用", () => {
+    // ⚠ 只算不喂是本仓最经典的形状。判据要落在 `edges={edges}` 这个挂载点上。
+    expect(CANVAS).toContain("edges={edges}");
+    expect(CANVAS).toContain("deriveDataflowLinks(");
+    expect(CANVAS).toContain("onConnect=");
+  });
+
+  it("素材节点真的进了 nodes（同上）", () => {
+    expect(CANVAS).toContain("extractPageAssets(");
+    expect(CANVAS).toContain("layoutAssets(");
+    expect(CANVAS).toMatch(/nodeTypes\s*=\s*\{\s*artboard:[^}]*asset:/);
+  });
+
+  it("连线把手常挂，不是「连线态才渲染」", () => {
+    /**
+     * ⚠ 反向判据。把手不在时 React Flow 算不出边的起终点，已有的边直接
+     *   画不出来（控制台 #008）。写成 `{linkMode && <Handle …>}` 会让
+     *   "关掉连线态之后连线全部消失"——而且不报错。
+     */
+    expect(CANVAS).toContain("isConnectable={ctx?.linkMode ?? false}");
+    expect(CANVAS).not.toMatch(/linkMode\s*&&\s*<Handle/);
+  });
+
+  it("把手的 zIndex 在（不是样式，是功能）", () => {
+    // 手势层 absolute inset-0 排在把手后面，不提 zIndex 的话把手看得见
+    // 却按不下去——真机 L2「拖出一条连线」就是这么失败的。
+    const handleBlock = CANVAS.slice(
+      CANVAS.indexOf("isConnectable={ctx?.linkMode ?? false}"),
+      CANVAS.indexOf("isConnectable={ctx?.linkMode ?? false}") + 400
+    );
+    expect(handleBlock).toContain("zIndex: 10");
+  });
+
+  it("四条边的把手都在，且边按几何挑边（不是写死右出左进）", () => {
+    expect(CANVAS).toContain("pickLinkSides(");
+    expect(CANVAS).toContain("sourceHandle: sides.source");
+    expect(CANVAS).toContain("targetHandle: sides.target");
+    expect(CANVAS).not.toContain('sourceHandle: "s"');
+  });
+
+  it("「重新生成」与「写进页面」走的是已有的 fill-prompt 事件，且**只填不发**", () => {
+    /**
+     * ⚠ 这条同时钉两件事：
+     *   1. 复用既有链路（不新造 prop），
+     *   2. **不许自动开跑**——一轮推演是几分钟 + 真金白银的 token。
+     *      出现任何直接提交的调用（submit/send/run）都该让这条红。
+     */
+    expect(CANVAS).toContain('"sliderule:fill-prompt"');
+    expect(CANVAS).toContain("linkToRefineInstruction(");
+    const filler = CANVAS.slice(
+      CANVAS.indexOf("function fillComposer"),
+      CANVAS.indexOf("function fillComposer") + 300
+    );
+    expect(filler).not.toMatch(/submit|sendMessage|runTurn|drive/i);
+  });
+
+  it("手画连线按会话存档（宿主传了 sessionId）", () => {
+    expect(CANVAS).toContain("manualLinksStorageKey(sessionId)");
+    expect(STUDIO).toContain("sessionId={sessionId}");
+  });
+
+  it("导出两种都在，且 PNG 复用仓里那条采集链路", () => {
+    expect(CANVAS).toContain("exportBoardPng(");
+    expect(CANVAS).toContain("exportBoardHtml(");
+    const exportSrc = stripComments(
+      readFileSync(
+        resolve(__dirname, "../live-runtime/canvas-board-export.ts"),
+        "utf8"
+      )
+    );
+    // ⚠ 别在这儿另写一份 snapdom 调用：dpr/embedFonts/backgroundColor/fast
+    //   四个参数是 thumb-capture 踩出来的。
+    expect(exportSrc).toContain("captureNodeToCanvas");
+    expect(exportSrc).not.toContain("snapdom");
+  });
+
+  it("导出失败要说话——fail-open 不等于静静地什么都不发生", () => {
+    const exportBlock = CANVAS.slice(
+      CANVAS.indexOf("const doExportPng"),
+      CANVAS.indexOf("const doExportPng") + 600
+    );
+    expect(exportBlock).toContain("setToast");
+    expect(exportBlock).toMatch(/ok \?/);
+  });
+
+  it("右键菜单**没有**「删除」——画板不是用户放上去的图元", () => {
+    /**
+     * ⚠ 参考工具的菜单第四项是「删除」。这里有意不做：在画布上"删掉"一页，
+     *   删的到底是画布上的显示（假的，刷新就回来）还是 pages_json 里那一页
+     *   （破坏性动作，不该藏在右键菜单第四项）？宁可没有。
+     *   哪天真要加，先想清楚删的是哪一个，再回来改这条判据。
+     */
+    const menu = stripComments(
+      readFileSync(
+        resolve(__dirname, "../live-runtime/CanvasBoardMenu.tsx"),
+        "utf8"
+      )
+    );
+    expect(menu).not.toContain('label="删除"');
+    expect(menu).toContain('label="导出 PNG"');
+    expect(menu).toContain('label="重新生成这一页…"');
+  });
+});

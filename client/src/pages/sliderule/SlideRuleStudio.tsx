@@ -813,6 +813,9 @@ export function SlideRuleStudio({
                     onHoverBinding={handleHoverBinding}
                     activePageId={activeSpecPageId}
                     onActivePageChange={setActiveSpecPageId}
+                    /* 手画连线按会话存档。⚠ 不传的话所有会话共用一个 key，
+                       换个应用会看到上一个应用的连线。 */
+                    sessionId={sessionId}
                     onOpenInPageView={pageId => {
                       setActiveSpecPageId(pageId);
                       setStageView("page");

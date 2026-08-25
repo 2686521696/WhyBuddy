@@ -25,6 +25,19 @@
  *   G 点缩放读数 = 适应画布
  *   H 「在页面档打开」真的切回单页舞台，且带着选中的那一页
  *
+ * 第二轮（连线 / 属性面板 / 右键菜单 / 素材图）再钉 6 条：
+ *
+ *   I 连线态下四条边的把手可见
+ *   J 从把手拖到另一块画板真的连出一条线    ← 把手有没有被手势层压住的唯一证据
+ *   K 连线存了档，刷新之后还在
+ *   L 属性面板列出这一页的真实事实（绑定/权限/连线/素材）
+ *   M 「写进页面」把页面作用域指令填进输入框，且**没有自动发出去**
+ *   N 右键菜单七项齐、且没有「删除」
+ *
+ * ⚠ J 与 I 必须一起看，理由同 B/C 与 E：把手 opacity 是 1（I 绿）不代表它
+ *   收得到事件。2026-08-25 真机就是 I 绿 J 红——手势层 `absolute inset-0`
+ *   在 DOM 里排在把手后面，同层后来居上，把手看得见按不下去。
+ *
  * ⚠ B/C 曾经"通过"过一次，但那是假的：当时 elementsSelectable={false} 让
  *   React Flow 给节点挂了 pointer-events:none，事件直接落到 pane——
  *   **手势层一个事件都没收到，平移缩放却是好的**。所以 E 那条
@@ -354,6 +367,189 @@ async function main() {
     } else {
       check("H 在页面档打开并带着选中页", false, "按钮不在（选中态没建立？）");
     }
+    /* ---------------- 第二轮：连线 / 属性面板 / 右键菜单 / 素材图 ------- */
+
+    // ⚠ H 刚把舞台切到了**页面档**，画布整个不在了。第二轮的每一条都要先
+    //   切回画布——不切的话下面第一条就超时，而报错长得像"画布坏了"，
+    //   实际是判据自己站错了地方。
+    await page.click('[data-testid="sliderule-stage-view-canvas"]');
+    await page.waitForSelector('[data-testid="sliderule-canvas-stage"]', {
+      timeout: NAV_TIMEOUT,
+    });
+    await page.waitForTimeout(4000);
+
+    const linkCount = () =>
+      page.evaluate(() =>
+        Number(
+          document
+            .querySelector('[data-testid="sliderule-canvas-stage"]')
+            ?.getAttribute("data-link-count") || 0
+        )
+      );
+
+    await page.click('[data-testid="sliderule-canvas-zoom-readout"]');
+    await page.waitForTimeout(900);
+    const linksBefore = await linkCount();
+
+    // I. 开连线态，四条边的把手都该看得见。
+    await page.click('[data-testid="sliderule-canvas-link-toggle"]');
+    await page.waitForTimeout(500);
+    const handles = await page.evaluate(() => {
+      const out = [];
+      for (const n of document.querySelectorAll(
+        '[data-testid="sliderule-canvas-artboard"]'
+      )) {
+        const pid = n.getAttribute("data-page-id");
+        const sides = ["top", "right", "bottom", "left"].map(sd => {
+          const h = n.querySelector(`.react-flow__handle-${sd}`);
+          const r = h?.getBoundingClientRect();
+          return {
+            sd,
+            opacity: h ? getComputedStyle(h).opacity : "0",
+            pt: r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null,
+          };
+        });
+        out.push({ pid, sides });
+      }
+      return out;
+    });
+    check(
+      "I 连线态下四条边把手可见",
+      handles.length > 0 &&
+        handles.every(h => h.sides.every(s => s.opacity === "1")),
+      `${handles.length} 块画板 × 4 边`
+    );
+
+    // J. 从第一块画板的下把手拖到第二块的上把手。
+    const src = handles[0]?.sides.find(s => s.sd === "bottom")?.pt;
+    const dst = handles[1]?.sides.find(s => s.sd === "top")?.pt;
+    if (src && dst) {
+      await page.mouse.move(src.x, src.y);
+      await page.mouse.down();
+      await page.mouse.move((src.x + dst.x) / 2, (src.y + dst.y) / 2, {
+        steps: 10,
+      });
+      await page.mouse.move(dst.x, dst.y, { steps: 10 });
+      await page.mouse.up();
+      await page.waitForTimeout(1200);
+    }
+    const linksAfter = await linkCount();
+    check(
+      "J 从把手拖出一条连线",
+      linksAfter === linksBefore + 1,
+      `links ${linksBefore} -> ${linksAfter}`
+    );
+
+    // K. 存档 + 刷新后还在。
+    const stored = await page.evaluate(
+      sid => localStorage.getItem(`sliderule:canvas-links:${sid}`),
+      sid
+    );
+    await page.reload({ waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT });
+    await page.waitForSelector('[data-testid="sliderule-canvas-stage"]', {
+      timeout: NAV_TIMEOUT,
+    });
+    await page.waitForTimeout(6000);
+    check(
+      "K 连线存档且刷新后还在",
+      Boolean(stored) && (await linkCount()) === linksAfter,
+      `stored=${stored} 刷新后=${await linkCount()}`
+    );
+
+    // L. 属性面板列出这一页的真实事实。
+    await page.click('[data-testid="sliderule-canvas-inspector-toggle"]');
+    await page.waitForTimeout(500);
+    const p2 = await pointOnBoard();
+    await page.mouse.click(p2.x, p2.y);
+    await page.waitForTimeout(900);
+    const insp = await page.evaluate(() => {
+      const el = document.querySelector(
+        '[data-testid="sliderule-canvas-inspector"]'
+      );
+      return {
+        pageId: el?.getAttribute("data-page-id"),
+        status: document
+          .querySelector('[data-testid="sliderule-canvas-inspector-status"]')
+          ?.textContent?.trim(),
+        text: el?.textContent?.replace(/\s+/g, " ") ?? "",
+      };
+    });
+    check(
+      "L 属性面板列出真实事实",
+      Boolean(insp.pageId) &&
+        Boolean(insp.status) &&
+        insp.text.includes("数据绑定") &&
+        insp.text.includes("权限") &&
+        insp.text.includes("连线"),
+      `${insp.pageId} · ${insp.status}`
+    );
+
+    // M. 「写进页面」只填不发。
+    const applyBtn = await page.$(
+      '[data-testid="sliderule-canvas-link-apply"]'
+    );
+    if (applyBtn) {
+      await applyBtn.click();
+      await page.waitForTimeout(900);
+      const composed = await page.evaluate(
+        () => document.querySelector("textarea")?.value ?? ""
+      );
+      check(
+        "M 连线落回输入框（页面作用域，只填不发）",
+        composed.includes("这一页") && /其余|其他/.test(composed),
+        composed.slice(0, 70)
+      );
+    } else {
+      check(
+        "M 连线落回输入框（页面作用域，只填不发）",
+        false,
+        "没找到「写进页面」按钮"
+      );
+    }
+
+    // N. 右键菜单。
+    const p3 = await pointOnBoard();
+    await page.mouse.click(p3.x, p3.y, { button: "right" });
+    await page.waitForTimeout(700);
+    const menuItems = await page.evaluate(() => {
+      const m = document.querySelector(
+        '[data-testid="sliderule-canvas-board-menu"]'
+      );
+      return m
+        ? [...m.querySelectorAll("[role=menuitem]")].map(x =>
+            x.textContent.trim()
+          )
+        : [];
+    });
+    check(
+      "N 右键菜单齐且没有「删除」",
+      menuItems.length === 7 && !menuItems.some(t => t.includes("删除")),
+      menuItems.join(" / ")
+    );
+    await page.screenshot({ path: `${SHOT_DIR}/menu.png` });
+    await page.keyboard.press("Escape");
+
+    // 素材：如实报数（有就该有节点，没有就该没有开关）。
+    const assetInfo = await page.evaluate(() => {
+      const st = document.querySelector(
+        '[data-testid="sliderule-canvas-stage"]'
+      );
+      return {
+        declared: Number(st?.getAttribute("data-asset-count") || 0),
+        nodes: document.querySelectorAll(
+          '[data-testid="sliderule-canvas-asset"]'
+        ).length,
+        toggle: !!document.querySelector(
+          '[data-testid="sliderule-canvas-assets-toggle"]'
+        ),
+      };
+    });
+    check(
+      "O 素材图数量与节点数一致",
+      assetInfo.declared === assetInfo.nodes &&
+        (assetInfo.declared === 0 || assetInfo.toggle),
+      JSON.stringify(assetInfo)
+    );
   } finally {
     await browser.close();
   }
