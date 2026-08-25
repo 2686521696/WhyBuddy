@@ -63,8 +63,6 @@
 
 import React from "react";
 import {
-  Background,
-  BackgroundVariant,
   Handle,
   MarkerType,
   MiniMap,
@@ -94,7 +92,7 @@ import {
 import { HtmlAppSurface } from "./html-app-surface";
 import { specPageViewport } from "./canvas-scale";
 import { findDevicePreset, loadDevicePresetId } from "./device-presets";
-import { STAGE_FRAME_SHADOW } from "./stage-frame-style";
+import { STAGE_FRAME_FLAT } from "./stage-frame-style";
 import { deriveBindingSource } from "./derive-binding-source";
 import {
   MAX_ZOOM,
@@ -398,7 +396,7 @@ function ArtboardNode({ data }: NodeProps<Node<ArtboardData>>) {
         className="absolute inset-0 overflow-hidden bg-white"
         style={{
           borderRadius: 6,
-          boxShadow: STAGE_FRAME_SHADOW,
+          boxShadow: STAGE_FRAME_FLAT,
           outline,
           outlineOffset: 2,
         }}
@@ -546,7 +544,7 @@ function AssetNode({ data }: NodeProps<Node<AssetData>>) {
 
       <div
         className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-md border border-[#e9edf2] bg-white"
-        style={{ boxShadow: STAGE_FRAME_SHADOW }}
+        style={{ boxShadow: STAGE_FRAME_FLAT }}
         title={asset.url}
         onClick={e => {
           e.stopPropagation();
@@ -1230,7 +1228,17 @@ function CanvasInner({
       <div className="flex min-h-0 min-w-0 flex-1 gap-2">
         <div
           ref={flowHostRef}
-          className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-md border border-[#e2e6eb] bg-[#e8eaef]"
+          className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-md border border-[#e2e6eb]"
+          style={{
+            backgroundColor: "#eef0f4",
+            /* ⚠ 点阵画在台面上、不交给 React Flow 的 <Background>：那个跟着
+               viewport 缩放走，画布常用的 25%~57% 下 1.4px 的点缩到不足一个
+               像素，直接消失（2026-08-25 真机量的，截图上看像"点阵没生效"）。
+               这层是台面质感不是工作网格，尺寸恒定才对得上参考图。 */
+            backgroundImage:
+              "radial-gradient(rgba(15,23,42,0.14) 1px, transparent 1px)",
+            backgroundSize: "18px 18px",
+          }}
         >
           <CanvasContext.Provider value={ctx}>
             <ReactFlow
@@ -1292,12 +1300,6 @@ function CanvasInner({
               }}
               className="bg-transparent"
             >
-              <Background
-                variant={BackgroundVariant.Dots}
-                gap={28}
-                size={1.4}
-                color="#c7cfda"
-              />
               <MiniMap
                 pannable
                 zoomable

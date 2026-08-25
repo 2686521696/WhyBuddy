@@ -432,3 +432,21 @@ describe("画布档锁死最大化：掰开它的五个口子都堵上了吗", (
     );
   });
 });
+
+describe("画布台面：浅灰点阵 + 画板不带投影", () => {
+  it("画板/素材卡用平框，不带模糊投影", () => {
+    // ⚠ 页面档那份 STAGE_FRAME_SHADOW 是三层投影，跟 STAGE_FRAME_PAD 是一组
+    //   联立不等式（见 stage-frame-style 头注），画布**不共用**它：一排画板
+    //   平铺时每块都带三层投影，缩到 25% 会糊成一片灰边。
+    expect(STAGE).toContain("STAGE_FRAME_FLAT");
+    expect(STAGE).not.toContain("STAGE_FRAME_SHADOW");
+  });
+
+  it("点阵画在台面上，不跟缩放走", () => {
+    // ⚠ React Flow 的 <Background> 跟 viewport 缩放走：画布常用 25%~57%，
+    //   1.4px 的点缩到不足一个像素直接消失（真机量过，看着像"点阵没生效"）。
+    expect(STAGE).toContain("backgroundSize:");
+    expect(STAGE).not.toContain("<Background");
+    expect(STAGE).not.toContain("BackgroundVariant");
+  });
+});

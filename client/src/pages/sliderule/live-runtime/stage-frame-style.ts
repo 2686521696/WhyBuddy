@@ -65,6 +65,21 @@ export const STAGE_FRAME_SHADOW =
   "0 12px 24px -8px rgba(15,23,42,0.13)";
 
 /**
+ * 画布档的画板/素材卡：**只有 1px 描边，没有投影**（2026-08-25 用户裁决，
+ * 附了参考图："后面阴影也不要"）。
+ *
+ * ⚠ 为什么画布跟页面档不共用 STAGE_FRAME_SHADOW：
+ *   页面档是**一块**预览框浮在台面上，投影给的是"这是一台设备"的层次感，
+ *   而且它那组数字跟 STAGE_FRAME_PAD 是一组联立不等式（见上面），动不得。
+ *   画布是**一排画板平铺**，每块都带三层投影时，缩到 25% 全糊成一片灰边，
+ *   反而把台面弄脏。平铺的东西靠描边定边界就够——参考图里也是这么做的。
+ *
+ * ⚠ 描边不能省。去掉投影之后它是画板**唯一**的边界；台面是浅灰、画板是纯白，
+ *   没有这条线的话白画板边缘会跟台面糊在一起（低缩放下尤其明显）。
+ */
+export const STAGE_FRAME_FLAT = "0 0 0 1px rgba(15,23,42,0.08)";
+
+/**
  * 手机档：机身黑边本身就是边界，不需要 ring，只把单层换成分层。
  * 原值 `0 18px 40px rgba(15,23,42,0.28)` —— 色相已经是对的，只是没分层。
  */
@@ -112,7 +127,10 @@ export type PhoneFrameMetrics = { bezel: number; bezelBottom: number };
  *
  * x：左右各一条边框 → bezel × 2；y：上边框 + 下巴 → bezel + bezelBottom。
  */
-export function phoneFramePad(frame: PhoneFrameMetrics): { x: number; y: number } {
+export function phoneFramePad(frame: PhoneFrameMetrics): {
+  x: number;
+  y: number;
+} {
   return {
     x: frame.bezel * 2 + PHONE_FRAME_SHADOW_PAD.x,
     y: frame.bezel + frame.bezelBottom + PHONE_FRAME_SHADOW_PAD.y,
