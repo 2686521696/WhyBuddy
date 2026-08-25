@@ -1,0 +1,141 @@
+/**
+ * connector-rows — 连接器取回来的真数据落进运行时状态。
+ *
+ * 这是"假数据不许进系统"那条产品判断在**前端**的落点。后端
+ * （services/connectors.py）保证取不到就不给行；这里保证给了行之后
+ * 页面上标得清楚、而且**不会被演示种子污染**。
+ *
+ * ## 一条硬约束，比这个文件里其它所有代码都重要
+ *
+ * **绑了连接器的实体永远不许铺演示种子。**
+ *
+ * 这是本模块最容易被后人无声破坏的地方：种子铺上去不报错、页面还更好看，
+ * 只有数字是假的。所以凭据记在 state 上（connectorEntities），
+ * seedRuntimeState 每次都问一遍；判据也写了正反两条——
+ * "连接器实体有真行"和"把连接器行删空之后**也不许**长出种子"。
+ *
+ * ## 重复取数怎么合
+ *
+ * 按行 id 覆盖，不叠加（后端的行 id 是 (连接器, 主体, 日期) 派生的稳定值）。
+ * 用户自己写进这张表的行**保留**——他写的东西不是我们的取数结果，
+ * 没有权力替他删。
+ */
+
+import type { RuntimeRow, RuntimeState } from "./live-runtime";
+
+export interface ConnectorMeta {
+  connector: string;
+  source: string;
+  fetchedAt: string;
+}
+
+export interface IncomingRow {
+  id: string;
+  values: Record<string, unknown>;
+}
+
+export function isLiveRow(row: RuntimeRow | null | undefined): boolean {
+  return !!row?.live;
+}
+
+/** 这张表现在展示的是连接器取来的真数据吗。零行返回 false（零行是诚实空态）。 */
+export function entityShowsLive(
+  state: RuntimeState | null | undefined,
+  entityId: string | null | undefined
+): boolean {
+  if (!state || !entityId) return false;
+  const rows = state.entities[entityId];
+  return Array.isArray(rows) && rows.some(isLiveRow);
+}
+
+/** 这张表的数据来历（给徽标用）。没绑连接器返回 null。 */
+export function liveMeta(
+  state: RuntimeState | null | undefined,
+  entityId: string | null | undefined
+): ConnectorMeta | null {
+  if (!state || !entityId) return null;
+  return state.connectorEntities?.[entityId] ?? null;
+}
+
+/** 绑了连接器的实体不许铺种子——seedRuntimeState 每次都问这一句。 */
+export function isConnectorBound(
+  state: RuntimeState | null | undefined,
+  entityId: string | null | undefined
+): boolean {
+  return !!(entityId && state?.connectorEntities?.[entityId]);
+}
+
+/**
+ * 把一次取数的结果落进状态。
+ *
+ * ⚠ **即使 rows 是空的也要记下绑定关系。** 取数失败时（后端保证 rows 为空）
+ *   这张表要停在诚实空态，而不是"因为没绑上所以铺了 12 行种子"——
+ *   那正好是这条链路要消灭的东西。所以绑定登记在前、写行在后，
+ *   两者不共享一个 if。
+ */
+export function applyConnectorRows(
+  state: RuntimeState,
+  entityId: string,
+  rows: readonly IncomingRow[],
+  meta: ConnectorMeta
+): RuntimeState {
+  if (!entityId) return state;
+
+  const bound = { ...(state.connectorEntities ?? {}), [entityId]: { ...meta } };
+
+  const existing = state.entities[entityId] ?? [];
+  /*
+   * 留下什么、扔掉什么：
+   *   - 用户自己写的行 → 留着。他写的不是我们的取数结果，没权力替他删。
+   *   - 上一轮同一个连接器的行 → 整批换掉（下面按 id 覆盖）。
+   *   - **演示种子 → 整批清掉。** demo-seed 自己的纪律就是"种子和真实数据
+   *     绝不混在同一张表里，否则用户分不清哪条是自己写的"；真数据来了之后
+   *     种子更没有理由留着。⚠ 第一版漏了这条：先铺过种子的表绑上连接器
+   *     之后，12 行编的 + 7 行真的混在一张表里，而"取到了 7 行"那种判据
+   *     还全绿。（跟 dropSeedRowsFor 同一个语义，只是触发点不同。）
+   */
+  const kept = existing.filter(
+    r => !r.seed && (!r.live || r.live.connector !== meta.connector)
+  );
+  const incoming: RuntimeRow[] = rows.map(r => ({
+    id: r.id,
+    values: { ...r.values },
+    createdAt: meta.fetchedAt,
+    live: { ...meta },
+  }));
+  const byId = new Map<string, RuntimeRow>();
+  for (const row of [...kept, ...incoming]) byId.set(row.id, row);
+
+  return {
+    ...state,
+    entities: { ...state.entities, [entityId]: [...byId.values()] },
+    connectorEntities: bound,
+    /*
+     * ⚠ **不要顺手往 seededEntities 里也记一笔。** 写过一版，理由是"让两本账
+     *   保持一致"——结果它把真正的守卫掩护掉了：seedRuntimeState 先看
+     *   seededEntities 就跳过了，`isConnectorBound` 那行变成死代码，
+     *   **拆掉它判据照样全绿**（2026-08-25 变异测出来的，同一天第二次踩）。
+     *   "这张表绑了连接器，不许铺种子"只留 connectorEntities 一个判定点。
+     */
+  };
+}
+
+/** 解除绑定（用户在这一轮摘掉了这个连接器）。行留着——已经取到的是真的。 */
+export function unbindConnector(
+  state: RuntimeState,
+  entityId: string | null | undefined
+): RuntimeState {
+  if (!entityId || !state.connectorEntities?.[entityId]) return state;
+  const next = { ...state.connectorEntities };
+  delete next[entityId];
+  return { ...state, connectorEntities: next };
+}
+
+/** 「实时 · Open-Meteo · 北京 · 21:26 取」——徽标文案。 */
+export function liveBadgeText(meta: ConnectorMeta | null): string {
+  if (!meta) return "";
+  const t = String(meta.fetchedAt || "");
+  const m = /T(\d{2}:\d{2})/.exec(t);
+  const when = m ? `${m[1]} 取` : "";
+  return ["实时", meta.source, when].filter(Boolean).join(" · ");
+}

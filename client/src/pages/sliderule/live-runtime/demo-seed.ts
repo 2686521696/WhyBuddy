@@ -47,6 +47,7 @@ import {
 import { fieldRandom, type SeededRandom } from "./demo-seed-random";
 import { semanticOf } from "./demo-seed-semantics";
 import { normalizeFieldFormat, normalizeFieldOptions } from "./field-display";
+import { isConnectorBound } from "./connector-rows";
 import type { RuntimeRow, RuntimeState } from "./live-runtime";
 
 /** 每个空实体铺几行。12：够触发表格分页（>10）、够排行取前 5、够趋势图有形状。 */
@@ -422,6 +423,18 @@ export function seedRuntimeState(
     if (seen[entity.id]) continue; // 这个实体已经做过决定了
     seen[entity.id] = true;
     changed = true;
+    /*
+     * ⚠ 绑了连接器的实体**永远不铺**（2026-08-25，见 connector-rows.ts）。
+     *
+     *   种子的存在前提是"零行 = 一片空壳，展会上不好看"。那对普通实体成立；
+     *   对连接器实体不成立——用户接连接器就是为了不要假数据，种子在这里正好
+     *   是它要消灭的东西。取数失败时这张表必须停在**诚实空态**，页面自己会
+     *   出「数据源没接上」，而不是铺 12 行编出来的漂亮数字。
+     *
+     *   这一条最容易被无声破坏：删掉这两行不报错、页面还更好看，只有数字是
+     *   假的。判据 connector-rows.test.ts 里有正反两条钉着它。
+     */
+    if (isConnectorBound(state, entity.id)) continue;
     const existing = next[entity.id];
     if (Array.isArray(existing) && existing.length > 0) continue; // 已有真实数据 → 永不铺
     next[entity.id] = buildSeedRows(entity, nowMs);

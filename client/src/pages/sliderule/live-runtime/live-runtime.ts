@@ -32,6 +32,14 @@ export type RuntimeRow = {
    * 渲染层据此出「示例数据」徽标，用户写第一条真实数据时按它整批清掉。
    */
   seed?: true;
+  /**
+   * 连接器取回来的真实行（见 connector-rows.ts）。
+   *
+   * 跟 `seed` 是**互斥**的两个标记，哲学也是一对的：种子标出来是因为
+   * "伪造得越像越该标出来"，真实行标出来是因为"真实得越像也越该标出来源"。
+   * 渲染层据此出「实时 · 来源 · 几点取的」，用户一眼分得清这页数字算不算数。
+   */
+  live?: { connector: string; source: string; fetchedAt: string };
 };
 
 export interface WorkflowInstanceLog {
@@ -67,6 +75,18 @@ export interface RuntimeState {
    * 删空之后示例数据会自己长回来。老状态没有这个字段，按空处理即可。
    */
   seededEntities?: Record<string, true>;
+  /**
+   * 绑到连接器上的实体 → 这份数据的来历。
+   *
+   * ⚠ 它同时是**"这张表不许铺演示种子"的凭据**（见 demo-seed.seedRuntimeState）。
+   *   种子的存在前提是"零行 = 一片空壳，展会上不好看"，那对普通实体成立；
+   *   对连接器实体不成立——种子在这里正好是它要消灭的东西。数据源没接上时
+   *   必须是**诚实空态 + 一句为什么**，不是 12 行编出来的漂亮数字。
+   */
+  connectorEntities?: Record<
+    string,
+    { connector: string; source: string; fetchedAt: string }
+  >;
 }
 
 // ---------------------------------------------------------------------------
