@@ -34,7 +34,8 @@ import {
   type ComposerDevice,
 } from "./composer-device";
 import {
-  allDesignSystems,
+  FREE_STYLE_HINT,
+  FREE_STYLE_LABEL,
   findDesignSystem,
   isCustomDesignSystem,
   loadDesignSystemId,
@@ -1134,7 +1135,7 @@ export function ComposerDock({
                   title={
                     designSystem
                       ? `设计系统：${designSystem.label} · ${designSystem.description}`
-                      : "选一套设计系统（不选则用全站默认配色）"
+                      : `${FREE_STYLE_LABEL}：${FREE_STYLE_HINT}`
                   }
                   onClick={() => designPanel?.toggleMenu()}
                   className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[#f4f4f5] px-2 text-[12px] text-[#5e5e5e] transition hover:text-[#171717] disabled:opacity-45"
@@ -1146,11 +1147,10 @@ export function ComposerDock({
                   ) : (
                     <Palette className="h-3.5 w-3.5 shrink-0" />
                   )}
-                  {hero
-                    ? designSystem
-                      ? designSystem.label
-                      : "设计系统"
-                    : null}
+                  {/* ⚠ 自由风格（默认档）只显示图标、不带字（2026-08-25 用户裁决
+                      「底部直接显示这个图标」）。挂个「设计系统」的字在那儿，会让人
+                      以为已经选了某套；光一个图标才读作"还没钉死，交给 AI"。 */}
+                  {hero && designSystem ? designSystem.label : null}
                   <ChevronRight
                     className={`h-3 w-3 transition ${
                       designPanel?.menuOpen ? "-rotate-90" : "rotate-90"

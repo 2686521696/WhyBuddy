@@ -54,6 +54,18 @@ export const DEFAULT_DESIGN_SYSTEM_ID = TABLE.defaultId;
 
 const DESIGN_SYSTEM_KEY = "sliderule:design-system";
 
+/**
+ * 自由风格 = **不指定设计系统**，由模型按题意自己定。
+ *
+ * ⚠ 它不是清单里的一条数据，而是 `appliedId === null` 这个状态的名字。
+ *   做成一条假数据的话，"没选"和"选了自由风格"又会变成两个状态，
+ *   而它们本来就是同一件事（后端不下发 designSystemId → 模型自己写风格段）。
+ *
+ * 参照 TRAE 的「自由探索」：默认档就是它，用户想钉死某套皮才去选预设。
+ */
+export const FREE_STYLE_LABEL = "自由风格";
+export const FREE_STYLE_HINT = "由 AI 按你的需求自己定风格";
+
 export function findDesignSystem(id: string | null | undefined): DesignSystem {
   // 自建的排在前面：同 id 时自建赢（用户改过的那份才是他要的）
   const hit = allDesignSystems().find(s => s.id === id);
@@ -112,7 +124,12 @@ export function loadCustomDesignSystems(): DesignSystem[] {
       (s): s is DesignSystem =>
         !!s &&
         typeof s.id === "string" &&
-        /^#[0-9a-fA-F]{6}$/.test(s.seed || "")
+        /^#[0-9a-fA-F]{6}$/.test(s.seed || "") &&
+        // ⚠ 滤掉撞预设 id 的脏数据（2026-08-25 那个 bug 的残留）。
+        //   光在 allDesignSystems 去重不够：那条脏数据仍会让
+        //   isCustomDesignSystem("miantuan") 返回 true，于是「面团·品牌」
+        //   被归到「我的设计体系」组里——真机上就是这么显示的。
+        !DESIGN_SYSTEMS.some(p => p.id === s.id)
     );
   } catch {
     return [];

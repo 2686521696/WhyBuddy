@@ -40,6 +40,8 @@ export type DesignSystemPanelApi = {
    */
   appliedId: string | null;
   apply: (id: string) => void;
+  /** 切回自由风格（不指定设计系统，模型自己定）。 */
+  applyFree: () => void;
   /** 面板里正在看/编的那一套；null = 面板关着。 */
   editing: DesignSystem | null;
   /** 是新建（可保存）还是看预设（只读 + 可另存）。 */
@@ -73,6 +75,19 @@ export function DesignSystemPanelProvider({
   const apply = React.useCallback((id: string) => {
     saveDesignSystemId(id);
     setAppliedId(id);
+  }, []);
+
+  const applyFree = React.useCallback(() => {
+    // 自由风格就是"没选"。清掉 localStorage 里的选择，后端也就不会收到
+    // designSystemId —— 风格段回到模型自己写。
+    try {
+      localStorage.removeItem("sliderule:design-system");
+    } catch {
+      /* 存储不可用 → 内存态仍生效 */
+    }
+    setAppliedId(null);
+    setEditing(null);
+    setMenuOpen(false);
   }, []);
 
   const toggleMenu = React.useCallback(() => {
@@ -116,6 +131,7 @@ export function DesignSystemPanelProvider({
     () => ({
       appliedId,
       apply,
+      applyFree,
       editing,
       mode,
       openNew,
@@ -129,6 +145,7 @@ export function DesignSystemPanelProvider({
     [
       appliedId,
       apply,
+      applyFree,
       editing,
       mode,
       openNew,

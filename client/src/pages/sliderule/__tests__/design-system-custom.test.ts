@@ -18,11 +18,58 @@ import {
   DESIGN_SYSTEMS,
   allDesignSystems,
   deriveCustomFrom,
+  isCustomDesignSystem,
   loadCustomDesignSystems,
   saveCustomDesignSystem,
 } from "../design-system";
 
 beforeEach(() => localStorage.clear());
+
+describe("自由风格 = 默认档", () => {
+  it("默认没有选择：loadDesignSystemId 返回 null", async () => {
+    const { loadDesignSystemId } = await import("../design-system");
+    expect(loadDesignSystemId()).toBeNull();
+  });
+
+  it("自由风格不是清单里的一条数据", async () => {
+    const { allDesignSystems } = await import("../design-system");
+    /**
+     * ⚠ 它是 `appliedId === null` 这个状态的名字，不是一条假数据。
+     * 做成假数据的话，"没选"和"选了自由风格"又会变成两个状态，而它们本来
+     * 就是同一件事（后端收不到 designSystemId → 模型自己写风格段）。
+     */
+    expect(allDesignSystems().some(s => s.id === "free")).toBe(false);
+  });
+
+  it("切回自由风格要清掉 localStorage，否则下一轮还带着旧的皮", () => {
+    const ctx = readFileSync(
+      resolve(
+        process.cwd(),
+        "client/src/pages/sliderule/DesignSystemContext.tsx"
+      ),
+      "utf8"
+    );
+    expect(ctx).toContain("const applyFree");
+    expect(ctx).toContain('localStorage.removeItem("sliderule:design-system")');
+    expect(ctx).toContain("setAppliedId(null)");
+  });
+
+  it("作曲家上自由风格只显示图标，不带字", () => {
+    const dock = readFileSync(
+      resolve(process.cwd(), "client/src/pages/sliderule/ComposerDock.tsx"),
+      "utf8"
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    /**
+     * ⚠ 用户原话「底部直接显示这个图标」。挂个「设计系统」的字在那儿会让人以为
+     * 已经选了某套；光一个图标才读作"还没钉死，交给 AI"。
+     * 把那段文案加回来必红。
+     */
+    expect(dock).toContain("hero && designSystem ? designSystem.label : null");
+    expect(dock).not.toMatch(/:\s*"设计系统"/);
+  });
+});
 
 describe("自建设计系统不许和预设撞 id", () => {
   it("以预设为基础另存 → 必须换一个新 id", () => {
@@ -44,18 +91,19 @@ describe("自建设计系统不许和预设撞 id", () => {
     expect(loadCustomDesignSystems()).toHaveLength(1);
   });
 
-  it("清单里同一个 id 只出现一次（自建赢）", () => {
-    const preset = DESIGN_SYSTEMS[0];
-    // 直接塞一条撞 id 的脏数据（模拟老版本存下来的）
-    localStorage.setItem(
-      "sliderule:design-systems-custom",
-      JSON.stringify([{ ...preset, label: "我改过的" }])
-    );
+  it("清单里同一个 id 只出现一次", () => {
+    /**
+     * ⚠ 这条原本写的是"撞预设 id 时自建赢"——那是**上一版较弱的行为**（只去重）。
+     * 现在撞预设 id 的自建数据在读取时就被滤掉了（见下面那条用例），所以这里
+     * 只钉"不重复"这件事，用一个真正的自建 id 来验。
+     */
+    const mine = deriveCustomFrom(DESIGN_SYSTEMS[0]);
+    saveCustomDesignSystem(mine);
+    saveCustomDesignSystem({ ...mine, label: "改过一次" });
     const list = allDesignSystems();
     const ids = list.map(s => s.id);
     expect(new Set(ids).size).toBe(ids.length);
-    // 自建那份赢
-    expect(list.find(s => s.id === preset.id)?.label).toBe("我改过的");
+    expect(list.find(s => s.id === mine.id)?.label).toBe("改过一次");
   });
 
   it("面板的「应用」必须过 deriveCustomFrom，不能直接存 sys", () => {
@@ -77,6 +125,26 @@ describe("自建设计系统不许和预设撞 id", () => {
       .replace(/\/\/.*$/gm, "");
     expect(panel).toContain("deriveCustomFrom(sys)");
     expect(panel).not.toMatch(/saveCustomDesignSystem\(sys\)/);
+  });
+
+  it("⚠ 撞预设 id 的脏数据要被滤掉，不能只靠 allDesignSystems 去重", () => {
+    /**
+     * 2026-08-25 真机：旧 bug 存下的那条 id=miantuan 的自建数据，去重之后清单里
+     * 只剩一条没错，但 isCustomDesignSystem("miantuan") 仍返回 true，
+     * 于是「面团·品牌」被归到「我的设计体系」组里 —— 用户截图就是这么显示的。
+     * 所以读的时候就要滤掉。
+     */
+    const preset = DESIGN_SYSTEMS[0];
+    localStorage.setItem(
+      "sliderule:design-systems-custom",
+      JSON.stringify([{ ...preset, label: "脏数据" }])
+    );
+    expect(loadCustomDesignSystems()).toHaveLength(0);
+    expect(isCustomDesignSystem(preset.id)).toBe(false);
+    // 清单里那条仍是预设本身（不是脏数据的 label）
+    expect(allDesignSystems().find(s => s.id === preset.id)?.label).toBe(
+      preset.label
+    );
   });
 
   it("预设本身永远不进自建表", () => {
