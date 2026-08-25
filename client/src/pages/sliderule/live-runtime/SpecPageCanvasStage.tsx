@@ -93,6 +93,7 @@ import { HtmlAppSurface } from "./html-app-surface";
 import { specPageViewport } from "./canvas-scale";
 import { findDevicePreset, loadDevicePresetId } from "./device-presets";
 import { STAGE_FRAME_FLAT } from "./stage-frame-style";
+import { elementPath, type PathStep } from "./element-path";
 import { deriveBindingSource } from "./derive-binding-source";
 import {
   MAX_ZOOM,
@@ -162,6 +163,13 @@ export interface SpecPageCanvasStageProps {
   /** 换图落库成功后把新 HTML 交回宿主（宿主用它更新 pageOverrides，
    *  否则画布上还是旧图：存了但看着没变，本仓最忌的那种）。 */
   onPagesReplaced?: (patch: Record<string, string>) => void;
+  /**
+   * Ctrl/⌘+Click 画板里的某个元素 → 宿主切到点选编辑，带上这一页和这个元素。
+   *
+   * ⚠ path 可能是 null：点在空白处、或点到的是**运行时克隆出来的**表格行
+   *   （源 HTML 里没有对应元素）。宿主要如实说"定位不到"，别静默选别的。
+   */
+  onEditElement?: (pageId: string, path: PathStep[] | null) => void;
   /** 说明行右侧（角色切换）。跟页面档同一个位置。 */
   metaTrailing?: React.ReactNode;
   className?: string;
@@ -195,6 +203,40 @@ interface AssetData extends Record<string, unknown> {
   h: number;
 }
 
+/**
+ * 从画布上的一次点击，取出 iframe 里被点到的那个元素的结构路径。
+ *
+ * ⚠ 取不到就回 null，**不猜**。调用方据此如实告诉用户"这个位置定位不到"，
+ *   而不是退而求其次选个别的元素——选错了用户改完保存才发现，代价是内容被
+ *   改坏。iframe 是 srcdoc 同源，contentDocument 拿得到；拿不到（还没加载完 /
+ *   被浏览器策略挡了）也是回 null。
+ */
+function elementPathAtPoint(e: React.MouseEvent): PathStep[] | null {
+  const shield = e.currentTarget as HTMLElement;
+  const frame = shield.parentElement?.querySelector("iframe");
+  if (!frame) return null;
+  let doc: Document | null = null;
+  try {
+    doc = frame.contentDocument;
+  } catch {
+    return null; // 跨源，理论上不会走到（srcdoc 同源）
+  }
+  if (!doc?.body) return null;
+  const box = frame.getBoundingClientRect();
+  if (!(box.width > 0) || !(box.height > 0)) return null;
+  /* 画布是缩放过的：iframe 按 1920×1080 画，再用 transform 缩到画布上。
+     换算要用 iframe 的**内部**尺寸比外框尺寸，不能直接拿 clientX 减 box.left。 */
+  const sx = (doc.documentElement.clientWidth || frame.clientWidth) / box.width;
+  const sy =
+    (doc.documentElement.clientHeight || frame.clientHeight) / box.height;
+  const el = doc.elementFromPoint(
+    (e.clientX - box.left) * sx,
+    (e.clientY - box.top) * sy
+  );
+  if (!el || el === doc.body || el === doc.documentElement) return null;
+  return elementPath(el, doc.body);
+}
+
 /** 进板之后 iframe 才拿回点击权；没进板时手势层挡着。 */
 interface CanvasCtx {
   enteredPageId: string | null;
@@ -208,6 +250,9 @@ interface CanvasCtx {
   onNavigate: (pageId: string) => void;
   onOpenInPageView?: (pageId: string) => void;
   onBoardMenu: (pageId: string, x: number, y: number) => void;
+  /** Ctrl/⌘+Click 画板里的某个元素 → 进那个元素的点选编辑。
+   *  null = 宿主没给 appId（这一轮还没落库），那就不接这条手势。 */
+  onEditElement: ((pageId: string, path: PathStep[] | null) => void) | null;
   /** 连线态：等着点第二块画板 */
   linkFrom: string | null;
   /** 连线态开着（画板边缘露出连线把手） */
@@ -437,13 +482,32 @@ function ArtboardNode({ data }: NodeProps<Node<ArtboardData>>) {
           data-testid="sliderule-canvas-gesture-shield"
           onClick={e => {
             e.stopPropagation();
+            /*
+             * Ctrl/⌘ + 单击 = 进这个元素的点选编辑（2026-08-25 用户要求，
+             * 参照 TRAE 的 "Ctrl + Click 快捷选中"）。
+             *
+             * ⚠ 手势层盖在 iframe 上面，点击落不到页面元素上——所以这里
+             *   **透过手势层去问 iframe**：把落点换算成 iframe 内坐标，
+             *   用 elementFromPoint 取真正被点到的那个元素。
+             *   让手势层在按住 Ctrl 时 pointer-events:none 也能做到，但那样
+             *   平移/缩放/右键会在按键期间一起失灵，得不偿失。
+             */
+            if (ctx?.onEditElement && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              ctx.onEditElement(page.pageId, elementPathAtPoint(e));
+              return;
+            }
             ctx?.onSelect(page.pageId);
           }}
           onDoubleClick={e => {
             e.stopPropagation();
             ctx?.onEnter(page.pageId);
           }}
-          title="单击选中 · 双击进入交互 · 右键更多"
+          title={
+            ctx?.onEditElement
+              ? "单击选中 · 双击进入交互 · Ctrl/⌘+单击改这个元素 · 右键更多"
+              : "单击选中 · 双击进入交互 · 右键更多"
+          }
           onContextMenu={e => {
             e.preventDefault();
             e.stopPropagation();
@@ -626,6 +690,7 @@ function CanvasInner({
   sessionId,
   appId,
   onPagesReplaced,
+  onEditElement,
   metaTrailing = null,
 }: SpecPageCanvasStageProps): React.ReactElement {
   const flow = useReactFlow();
@@ -1028,6 +1093,7 @@ function CanvasInner({
       },
       onSelectAsset: (a: CanvasAsset) => setFocusedAsset(a.url),
       onReplaceAsset: appId ? (a: CanvasAsset) => setReplacingUrl(a.url) : null,
+      onEditElement: appId && onEditElement ? onEditElement : null,
       linkFrom,
       linkMode,
       registerBoardEl,
@@ -1046,6 +1112,7 @@ function CanvasInner({
       onOpenInPageView,
       onActivePageChange,
       appId,
+      onEditElement,
       linkFrom,
       linkMode,
       registerBoardEl,

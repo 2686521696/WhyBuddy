@@ -33,6 +33,10 @@ import {
 } from "@/pages/sliderule/live-runtime/html-app-surface";
 import { BINDING_ATTRS } from "@/pages/sliderule/live-runtime/html-binding-runtime";
 import {
+  resolveElementPath,
+  type PathStep,
+} from "@/pages/sliderule/live-runtime/element-path";
+import {
   useScaleToFit,
   specPageViewport,
 } from "@/pages/sliderule/live-runtime/canvas-scale";
@@ -339,6 +343,16 @@ export interface ClickEditStageProps {
   onSaved?: (pageId: string, html: string) => void;
   /** 有没有未保存的改动——宿主切页/关弹窗前拿它决定要不要拦一下。 */
   onDirtyChange?: (dirty: boolean) => void;
+  /**
+   * 挂载后直接选中这个元素（画布档 Ctrl+Click 进来的）。
+   *
+   * ⚠ 定位不到时**什么都不选**，并回一声给宿主去说明。绝不"就近选一个"——
+   *   画布里的 DOM 是打过孔、跑过绑定运行时的，表格行是 cloneNode 克隆出来的，
+   *   源 HTML 里没有对应元素。随便选一个的话，用户改完保存才发现改错了地方。
+   */
+  preselectPath?: readonly PathStep[] | null;
+  /** 预选中的结果：true = 选上了，false = 定位不到。只在有 preselectPath 时回。 */
+  onPreselectResult?: (ok: boolean) => void;
   className?: string;
 }
 
@@ -353,12 +367,22 @@ export function ClickEditStage({
   device,
   onSaved,
   onDirtyChange,
+  preselectPath,
+  onPreselectResult,
   className = "",
 }: ClickEditStageProps): React.ReactElement {
   const frameRef = React.useRef<HTMLIFrameElement | null>(null);
   const rawBaseRef = React.useRef(html); // 最近一次落库成功的原始 HTML（存库时的换壳底）
   const undoStackRef = React.useRef<string[]>([]); // body outerHTML 快照
   const [selected, setSelected] = React.useState<Selection | null>(null);
+  /** 预选中只做一次：iframe 会因为 srcdoc 变化重新 load，重复选会把用户
+   *  自己后来点的元素抢回去。 */
+  const preselectRef = React.useRef(preselectPath ?? null);
+  const preselectDoneRef = React.useRef(false);
+  const preselectResultRef = React.useRef(onPreselectResult);
+  React.useEffect(() => {
+    preselectResultRef.current = onPreselectResult;
+  }, [onPreselectResult]);
   const [dirty, setDirty] = React.useState(false);
   const [canUndo, setCanUndo] = React.useState(false);
   const [status, setStatus] = React.useState<
@@ -510,6 +534,26 @@ export function ClickEditStage({
       // 元素动了而高亮框不动 —— 表现跟这次修的偏移是同一类"框和东西对不上"。
       // 捕获阶段挂在 document 上：内层滚动容器的 scroll 不冒泡，不捕获就收不到。
       d.addEventListener("scroll", () => remeasureRef.current(), true);
+
+      /*
+       * 画布档 Ctrl+Click 进来时带着一个元素路径——挂载后直接选中它。
+       *
+       * ⚠ 定位不到就**什么都不选**，并把 false 回给宿主去提示。绝不"就近选
+       *   一个"：画布里的 DOM 跑过绑定运行时，表格行是 cloneNode 克隆的，
+       *   源 HTML 里没有对应元素。随便选一个的话，用户改完保存才发现改错
+       *   了地方——本仓最忌的"闸全绿、东西错了"。
+       */
+      const wanted = preselectRef.current;
+      if (wanted && wanted.length && !preselectDoneRef.current) {
+        preselectDoneRef.current = true;
+        const hit = resolveElementPath(d.body, wanted) as HTMLElement | null;
+        const editable = hit ? closestEditable(hit) || hit : null;
+        if (editable) {
+          editable.scrollIntoView({ block: "center", behavior: "auto" });
+          setSelected({ el: editable, rect: measureRef.current(editable) });
+        }
+        preselectResultRef.current?.(!!editable);
+      }
     };
     frame.addEventListener("load", onLoad);
     frame.srcdoc = doc;

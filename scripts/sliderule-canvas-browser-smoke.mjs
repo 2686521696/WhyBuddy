@@ -42,6 +42,11 @@
  *   X 切到页面档：锁解开、对话栏回来
  *   Y 切回画布档：重新锁上
  *
+ * 第六轮（Ctrl+Click 进元素编辑）再钉 2 条：
+ *
+ *   AB Ctrl+Click 画板元素 → 切到点选编辑并进编辑态
+ *   AC **选中的就是刚点的那个**  ← AB 只证明进了编辑态，一个都没选中也绿
+ *
  * ⚠ J 与 I 必须一起看，理由同 B/C 与 E：把手 opacity 是 1（I 绿）不代表它
  *   收得到事件。2026-08-25 真机就是 I 绿 J 红——手势层 `absolute inset-0`
  *   在 DOM 里排在把手后面，同层后来居上，把手看得见按不下去。
@@ -208,7 +213,8 @@ async function main() {
       return {
         found: !!btn,
         disabled: btn ? btn.disabled === true : null,
-        title: btn?.getAttribute("title") || btn?.getAttribute("aria-label") || "",
+        title:
+          btn?.getAttribute("title") || btn?.getAttribute("aria-label") || "",
       };
     });
     const wCanvas = await chatWidth();
@@ -227,7 +233,9 @@ async function main() {
 
     // 强行点它（绕过 disabled）——对话栏不许弹回来
     await page.evaluate(() => {
-      document.querySelector('[data-testid="sliderule-layout-maximize"]')?.click();
+      document
+        .querySelector('[data-testid="sliderule-layout-maximize"]')
+        ?.click();
       document
         .querySelector('[data-testid="sliderule-studio-split-toggle-chat"]')
         ?.click();
@@ -261,11 +269,88 @@ async function main() {
     });
     await page.waitForTimeout(800);
     const wBack = await chatWidth();
-    check(
-      "Y 切回画布档：重新锁上",
-      wBack === 0,
-      `chat=${wBack}px`
-    );
+    check("Y 切回画布档：重新锁上", wBack === 0, `chat=${wBack}px`);
+
+    /* ------------------------------ Ctrl+Click 进元素编辑（第六轮） */
+
+    /*
+     * ⚠ 单测只能证明"写了 ctrlKey 判断、写了 elementFromPoint"。真正要钉的是
+     *   **选中的是不是同一个元素**——手势层盖在 iframe 上、画布是缩放过的，
+     *   坐标换算错一点就选中隔壁那个，源码 grep 一样绿。
+     */
+    const ctrlTarget = await page.evaluate(() => {
+      const board = document.querySelector(
+        '[data-testid="sliderule-canvas-artboard"]'
+      );
+      const f = board?.querySelector("iframe");
+      const d = f?.contentDocument;
+      if (!d?.body) return null;
+      const cand = [...d.querySelectorAll("button,a,h1,h2,h3,p,span")].filter(
+        e =>
+          (e.textContent || "").trim().length > 2 &&
+          e.getBoundingClientRect().width > 20
+      );
+      if (!cand.length) return null;
+      const el = cand[Math.min(3, cand.length - 1)];
+      const r = el.getBoundingClientRect();
+      const fb = f.getBoundingClientRect();
+      const sx = fb.width / (d.documentElement.clientWidth || f.clientWidth);
+      const sy = fb.height / (d.documentElement.clientHeight || f.clientHeight);
+      return {
+        text: (el.textContent || "").trim().slice(0, 20),
+        x: fb.left + (r.left + r.width / 2) * sx,
+        y: fb.top + (r.top + r.height / 2) * sy,
+      };
+    });
+
+    if (ctrlTarget) {
+      await page.keyboard.down("Control");
+      await page.mouse.click(ctrlTarget.x, ctrlTarget.y);
+      await page.keyboard.up("Control");
+      await page
+        .waitForFunction(() => /退出编辑/.test(document.body.innerText), {
+          timeout: 20000,
+        })
+        .catch(() => {});
+      await page.waitForTimeout(2500);
+      const edited = await page.evaluate(() => ({
+        inEdit:
+          document
+            .querySelector('[data-testid="sliderule-click-edit-toggle"]')
+            ?.getAttribute("aria-pressed") === "true",
+        canvasGone: !document.querySelector(
+          '[data-testid="sliderule-canvas-stage"]'
+        ),
+        text: document.body.innerText,
+      }));
+      check(
+        "AB Ctrl+Click 画板元素 → 切到点选编辑并进编辑态",
+        edited.inEdit && edited.canvasGone,
+        `inEdit=${edited.inEdit} canvasGone=${edited.canvasGone}`
+      );
+      /* ⚠ AB 不够：进了编辑态但一个元素都没选中，AB 照样绿。
+         AC 钉的是**选中的就是刚点的那个**——工具条/面包屑上会出现它的文字。 */
+      check(
+        "AC 预选中的就是刚点的那个元素（不是随便选了一个）",
+        edited.text.includes(ctrlTarget.text),
+        `想选「${ctrlTarget.text}」`
+      );
+      await page.screenshot({ path: `${SHOT_DIR}/ctrl-click-edit.png` });
+      // 退回画布档，别影响后面的判据
+      await page.evaluate(() => {
+        document
+          .querySelector('[data-testid="sliderule-click-edit-toggle"]')
+          ?.click();
+      });
+      await page.waitForTimeout(400);
+      await page.click('[data-testid="sliderule-stage-view-canvas"]');
+      await page.waitForSelector('[data-testid="sliderule-canvas-stage"]', {
+        timeout: NAV_TIMEOUT,
+      });
+      await page.waitForTimeout(1200);
+    } else {
+      log("画板里取不到可点元素，跳过 AB/AC");
+    }
 
     // 等画板挂上真渲染再动手：没挂载的画板是占位块，手势层还在但内容没到，
     // 那时候量 B/C 量的是另一件事。

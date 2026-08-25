@@ -464,3 +464,40 @@ describe("画布台面：浅灰点阵 + 画板不带投影", () => {
     expect(STAGE).not.toContain("BackgroundVariant");
   });
 });
+
+describe("画布 Ctrl+Click 进元素编辑：链路接上了吗", () => {
+  it("手势层认 Ctrl/⌘ 并透过 iframe 取元素（不是只加了个按键判断）", () => {
+    expect(STAGE).toContain("e.ctrlKey || e.metaKey");
+    // ⚠ 手势层盖在 iframe 上，点击落不到页面元素——必须透过去问 iframe。
+    //   少了 elementFromPoint 这一步，拿到的永远是手势层自己。
+    expect(STAGE).toContain("elementFromPoint");
+    expect(STAGE).toContain("elementPath(el, doc.body)");
+  });
+
+  it("Studio 真的把画布指认的元素交给了点选编辑", () => {
+    const call = STUDIO.slice(
+      STUDIO.indexOf("<SpecPageCanvasStage"),
+      STUDIO.indexOf("<SpecPageCanvasStage") + 2600
+    );
+    expect(call).toContain("onEditElement=");
+    expect(call).toContain('setStageView("page")');
+    expect(call).toContain("setEditMode(true)");
+    expect(STUDIO).toContain("preselectPath={pendingEditPath}");
+  });
+
+  it("不许在画布上再造一套元素编辑器（同一件事两处实现）", () => {
+    // 用户原话："和页面档的点选编辑其实都能对这块进行编辑，只是形式不一样"。
+    // 画布只负责**指认哪个元素**，编辑走已经通电的 ClickEditStage。
+    expect(STAGE).not.toContain("ClickEditStage");
+    expect(STAGE).not.toContain("contentEditable");
+  });
+
+  it("定位不到要说话，不许静默什么都不发生", () => {
+    expect(STUDIO).toContain("onPreselectResult");
+    const cb = STUDIO.slice(
+      STUDIO.indexOf("onPreselectResult"),
+      STUDIO.indexOf("onPreselectResult") + 500
+    );
+    expect(cb).toContain("message.info");
+  });
+});

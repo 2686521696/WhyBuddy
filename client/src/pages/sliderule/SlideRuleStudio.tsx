@@ -79,6 +79,7 @@ import { ClickEditStage } from "@/pages/agent-loop/dashboard/ClickEditStage";
 import { getGeneratedAppForSession } from "@/pages/agent-loop/dashboard/app-store-client";
 import { StudioSplit } from "./StudioSplit";
 import { useStudioLayout } from "./StudioLayoutContext";
+import type { PathStep } from "./live-runtime/element-path";
 import { isStagePageShown } from "./studio-layout";
 import { StudioLandingShot } from "./studio-landing-shot";
 import { StudioShareToggle } from "./StudioShareToggle";
@@ -313,6 +314,18 @@ export function SlideRuleStudio({
     };
   }, [sessionId, isRunning]);
 
+  /**
+   * 画布档 Ctrl+Click 带过来的元素路径（2026-08-25 用户要求，参照 TRAE 的
+   * "Ctrl + Click 快捷选中"）。
+   *
+   * ⚠ 为什么是切到点选编辑、而不是在画布上再做一套元素编辑器：
+   *   用户原话"和页面档的点选编辑其实都能对这块进行编辑，只是形式不一样"。
+   *   既然是同一件事就不该有两套实现（本仓第四条纪律）——画布负责**指认哪个
+   *   元素**，编辑仍旧走已经通电的 ClickEditStage。
+   */
+  const [pendingEditPath, setPendingEditPath] = useState<PathStep[] | null>(
+    null
+  );
   const [editMode, setEditMode] = useState(false);
   const [editDirty, setEditDirty] = useState(false);
   // 点选编辑存成功之后的页面覆盖层，叠在 livePages 上面显示——不这样做的话
@@ -846,6 +859,17 @@ export function SlideRuleStudio({
                 onSaved={(pageId, html) =>
                   setPageOverrides(prev => ({ ...prev, [pageId]: html }))
                 }
+                preselectPath={pendingEditPath}
+                onPreselectResult={ok => {
+                  setPendingEditPath(null);
+                  if (!ok) {
+                    // ⚠ 定位不到要说话。静默不选中的话用户以为 Ctrl+Click
+                    //   没生效，会反复去点。
+                    message.info(
+                      "这个元素在编辑态里定位不到（多半是运行时生成的表格行），点页面里的元素选中"
+                    );
+                  }
+                }}
                 className="min-h-0 min-w-0 flex-1"
               />
             ) : stageView === "canvas" ? (
@@ -881,6 +905,21 @@ export function SlideRuleStudio({
                   onPagesReplaced={patch =>
                     setPageOverrides(prev => ({ ...prev, ...patch }))
                   }
+                  /* Ctrl/⌘+Click 画板里的元素 → 切到点选编辑并选中它。
+                     ⚠ path 为 null（点在空白处 / 点到运行时克隆出来的表格行）
+                       照样进编辑态，只是不预选中——如实说定位不到，比
+                       "什么都不发生"强。 */
+                  onEditElement={(pageId, path) => {
+                    setActiveSpecPageId(pageId);
+                    setPendingEditPath(path);
+                    setStageView("page");
+                    setEditMode(true);
+                    if (!path) {
+                      message.info(
+                        "这个位置没有可编辑的元素，点页面里的元素选中"
+                      );
+                    }
+                  }}
                   onOpenInPageView={pageId => {
                     setActiveSpecPageId(pageId);
                     setStageView("page");
