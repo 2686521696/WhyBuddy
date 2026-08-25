@@ -190,3 +190,178 @@ def test_连接器清单对外只暴露公开信息():
     assert w["entityId"] == "weather_daily"
     assert [f["id"] for f in w["fields"]][:2] == ["date", "city"]
     assert w["available"] is True
+
+
+# ════════════════════════════════════════════════ 股票行情（腾讯，免 key）
+
+#: 真响应，**原样落盘**（2026-08-25 从 qt.gtimg.cn 抓的三行）。
+#:
+#: ⚠ 第一版是手搓的"差不多的"字符串，结果判据废了一半：手搓那份里
+#:   流通市值和总市值恰好写成了同一个数，**把下标 45 改成 44 判据照样全绿**。
+#:   自己拼的假响应只能证明解析器解析得了它自己。这里挑了工商银行——
+#:   流通 21299.36 / 总市值 28156.09 差得开，下标错一位当场露馅。
+#:
+#: ⚠ 别"整理"这三行（换行、删中间的买卖五档、改数字）。整理过就不是实测了，
+#:   而这个模块的字段下标只有真响应能对得住。
+TX_ICBC = 'v_sh601398="1~工商银行~601398~7.90~7.89~7.92~2918582~1413006~1505576~7.89~5942~7.88~43364~7.87~20013~7.86~18013~7.85~16222~7.90~1581~7.91~32847~7.92~17455~7.93~14445~7.94~8524~~20260825161431~0.01~0.13~7.97~7.87~7.90/2918582/2307681767~2918582~230768~0.11~7.58~~7.97~7.87~1.27~21299.36~28156.09~0.73~8.68~7.10~0.79~28702~7.91~8.10~7.64~~~-0.24~230768.1767~134.3000~1700~   A~GP-A~1.79~3.00~3.93~8.58~0.67~8.16~6.68~3.95~-0.88~8.22~269612212539~356406257089~16.09~0.64~269612212539~~~8.52~0.13~~CNY~0~___D__F__N~7.99~-40823~";'
+TX_PINGAN = 'v_sz000001="51~平安银行~000001~11.59~11.56~11.57~994881~541768~453114~11.58~21~11.57~694~11.56~1350~11.55~3902~11.54~2411~11.59~1900~11.60~8729~11.61~10004~11.62~5643~11.63~11038~~20260825161418~0.03~0.26~11.64~11.53~11.59/994881/1152242457~994881~115224~0.51~5.18~~11.64~11.53~0.95~2249.12~2249.15~0.48~12.72~10.40~0.91~-28936~11.58~4.38~5.28~~~0.21~115224.2457~42.6512~368~   A~GP-A~4.89~4.89~5.14~7.93~0.72~11.90~9.99~2.93~3.48~9.03~19405684991~19405918198~-63.33~2.11~19405684991~~~-2.23~0.26~~CNY~0~~11.65~-27661~";'
+TX_INDEX = 'v_sh000001="1~上证指数~000001~3889.44~3882.01~3863.37~464117264~0~0~0.00~0~0.00~0~0.00~0~0.00~0~0.00~0~0.00~0~0.00~0~0.00~0~0.00~0~0.00~0~~20260825161402~7.43~0.19~3896.21~3850.86~3889.44/464117264/858874228922~464117264~85887423~0.96~17.71~~3896.21~3850.86~1.17~608388.09~688868.33~0.00~-1~-1~0.92~0~3875.73~~~~~~85887422.8922~0.0000~0~ ~ZS~-2.00~-2.53~~~~4258.86~3732.84~-1.13~2.00~-4.15~4847563574053~~-10.85~0.37~4847563574053~~~0.15~0.04~~CNY~0~~0.00~0~";'
+
+def fake_text(body="", *, search='v_hint="sh~601398~工商银行~gsyh~GP-A"', calls=None):
+    def _t(url, timeout_s, encoding="utf-8"):
+        if calls is not None:
+            calls.append(url)
+        if "smartbox" in url:
+            if isinstance(search, Exception):
+                raise search
+            return search
+        if isinstance(body, Exception):
+            raise body
+        return body
+
+    return _t
+
+
+def test_股票行情按实测下标取值_不是随手对位():
+    r = C.fetch_rows(
+        "stock", {"symbols": "601398"}, fetch_fn=fake_fetch(), text_fn=fake_text(TX_ICBC)
+    )
+    assert r.ok, r.error
+    v = r.rows[0]["values"]
+    assert (v["name"], v["code"]) == ("工商银行", "601398")
+    assert v["price"] == 7.90 and v["prev_close"] == 7.89 and v["open"] == 7.92
+    assert v["change"] == 0.01 and v["change_pct"] == 0.13
+    assert v["high"] == 7.97 and v["low"] == 7.87
+    assert v["amplitude"] == 1.27
+    assert v["turnover"] == 230768
+    assert v["pe"] == 7.58 and v["pb"] == 0.73
+    # ⚠ 这一条专治"下标错一位"：同一行里 [44] 流通市值是 21299.36、
+    #   [45] 总市值是 28156.09。挑工商银行就是为了让这两个数差得开。
+    assert v["market_cap"] == 28156.09
+    assert v["quote_time"] == "2026-08-25 16:14:31"
+
+
+def test_沪深两个_000001_不会撞成同一行():
+    """真数据跑第一轮当场撞上的：**平安银行 sz000001、上证指数 sh000001**。
+
+    ⚠ 按六位代码做行 id 的话，两条在 RuntimeState 里是同一行，后取的把先取的
+      盖掉——表格少一行、不报错，而"取到了 2 只"这种判据还全绿。这一条要钉的
+      就是那个全绿：**行数对不够，id 必须也不重**。
+    """
+    r = C.fetch_rows(
+        "stock",
+        {"symbols": "000001,000001"},
+        fetch_fn=fake_fetch(),
+        text_fn=fake_text(TX_PINGAN + "\n" + TX_INDEX),
+    )
+    assert r.ok, r.error
+    ids = [row["id"] for row in r.rows]
+    assert len(ids) == 2
+    assert len(set(ids)) == 2, f"两只不同标的撞成同一个 id：{ids}"
+    assert {row["values"]["name"] for row in r.rows} == {"平安银行", "上证指数"}
+
+
+def test_不适用的字段是空值_不是数字零():
+    """⚠ 「市净率 0.00」的指数页每个像素都像真的，只有那一格是编的。"""
+    r = C.fetch_rows(
+        "stock",
+        {"symbols": "上证指数"},
+        fetch_fn=fake_fetch(),
+        # ⚠ 名称走搜索才拿得到 sh 前缀；直接填 000001 会被推成 sz（深市），
+        #   跟这份沪市指数响应对不上——判据自己先要对得上题。
+        text_fn=fake_text(TX_INDEX, search='v_hint="sh~000001~上证指数~szzs~ZS"'),
+    )
+    assert r.ok, r.error
+    assert r.rows[0]["values"]["pb"] is None
+    # 反面：真有值的字段不许被这条规则误伤
+    assert r.rows[0]["values"]["pe"] == 17.71
+
+
+def test_六位代码自己推交易所_不用多打一次搜索():
+    calls = []
+    C.fetch_rows(
+        "stock",
+        {"symbols": "601398"},
+        fetch_fn=fake_fetch(),
+        text_fn=fake_text(TX_ICBC, calls=calls),
+    )
+    assert not any("smartbox" in u for u in calls), "6 位代码不该再去搜一次"
+    assert any("qt.gtimg.cn/q=sh601398" in u for u in calls)
+
+
+def test_名称走搜索_解析出带市场的代码():
+    calls = []
+    r = C.fetch_rows(
+        "stock",
+        {"symbols": "工行"},
+        fetch_fn=fake_fetch(),
+        text_fn=fake_text(TX_ICBC, calls=calls),
+    )
+    assert r.ok, r.error
+    assert any("smartbox" in u for u in calls)
+    assert any("q=sh601398" in u for u in calls)
+
+
+def test_认不出的标的整轮判失败_不是悄悄跳过():
+    """⚠ 用户要了三只回来两只，表格看着完全正常——"少了一行"比"错了一格"
+    更难发现。所以这里 fail-closed，并且**把认不出的那个词说出来**。"""
+    r = C.fetch_rows(
+        "stock",
+        {"symbols": "601398,压根不存在xyz"},
+        fetch_fn=fake_fetch(),
+        text_fn=fake_text(TX_ICBC, search='v_hint="";'),
+    )
+    assert r.ok is False
+    assert r.rows == ()
+    assert "压根不存在xyz" in r.error
+
+
+def test_行情回了但少了标的_也判失败():
+    """搜索都认得出、行情却只回了一只：同样是"少一行"，同样不许当成功。"""
+    r = C.fetch_rows(
+        "stock",
+        {"symbols": "601398,000001"},
+        fetch_fn=fake_fetch(),
+        text_fn=fake_text(TX_ICBC),  # 只回茅台
+    )
+    assert r.ok is False and r.rows == ()
+    assert "sz000001" in r.error
+
+
+def test_股票也守着那条总纪律_取不到不许有行():
+    for body in (RuntimeError("boom"), "", 'v_sh601398="";'):
+        r = C.fetch_rows(
+            "stock", {"symbols": "601398"}, fetch_fn=fake_fetch(), text_fn=fake_text(body)
+        )
+        assert r.ok is False and r.rows == () and r.error
+
+
+def test_一次最多二十只_挡住把接口当批量下载用():
+    r = C.fetch_rows(
+        "stock",
+        {"symbols": ",".join(["601398"] * 21)},
+        fetch_fn=fake_fetch(),
+        text_fn=fake_text(TX_ICBC),
+    )
+    assert r.ok is False and "20" in r.error
+
+
+def test_中文逗号也认():
+    r = C.fetch_rows(
+        "stock",
+        {"symbols": "601398，000001"},
+        fetch_fn=fake_fetch(),
+        text_fn=fake_text(TX_ICBC + "\n" + TX_PINGAN),
+    )
+    assert r.ok, r.error
+    assert len(r.rows) == 2
+
+
+def test_清单里两个连接器都在_字段名与实体声明一致():
+    ids = {c["id"] for c in C.list_connectors()}
+    assert ids == {"weather", "stock"}
+    r = C.fetch_rows(
+        "stock", {"symbols": "601398"}, fetch_fn=fake_fetch(), text_fn=fake_text(TX_ICBC)
+    )
+    declared = {f["id"] for f in C.STOCK.entity_declaration()["fields"]}
+    assert set(r.rows[0]["values"].keys()) == declared

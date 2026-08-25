@@ -230,6 +230,25 @@ def _http_get(url: str, timeout_s: float) -> Any:
     return r.json()
 
 
+#: 有些行情接口回的是 GBK 文本而不是 JSON。
+#:
+#: ⚠ 别指望 httpx 的字符集自动探测：它对短响应经常猜成 ISO-8859-1，
+#:   于是「贵州茅台」变成一串问号——不报错、不告警，只是名字全错。
+#:   编码要显式写死在调用点上。
+def _http_get_text(url: str, timeout_s: float, encoding: str = "utf-8") -> str:
+    import httpx
+
+    r = httpx.get(
+        url,
+        timeout=timeout_s,
+        follow_redirects=True,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; SlideRuleConnector/1.0)"},
+    )
+    r.raise_for_status()
+    r.encoding = encoding
+    return r.text
+
+
 def _geocode(city: str, fetch: Callable[[str, float], Any], timeout_s: float) -> Dict[str, Any]:
     url = (
         "https://geocoding-api.open-meteo.com/v1/search"
@@ -265,7 +284,12 @@ def _forecast(place: Dict[str, Any], fetch: Callable[[str, float], Any], timeout
     return daily
 
 
-def _weather_rows(city: str, fetch: Callable[[str, float], Any], timeout_s: float) -> Tuple[str, List[Dict[str, Any]]]:
+def _weather_rows(
+    city: str,
+    fetch: Callable[[str, float], Any],
+    timeout_s: float,
+    text: Callable[..., str],
+) -> Tuple[str, List[Dict[str, Any]]]:
     place = _geocode(city, fetch, timeout_s)
     daily = _forecast(place, fetch, timeout_s)
     days = daily.get("time") or []
@@ -301,13 +325,200 @@ def _weather_rows(city: str, fetch: Callable[[str, float], Any], timeout_s: floa
     return str(place["name"]), rows
 
 
+# ────────────────────────────────────────────── 股票行情（腾讯，免 key）
+
+#: 腾讯行情 `v_sh600519="..."` 那串 `~` 分隔字段里，我们要的那几位。
+#:
+#: ⚠ 这张表是 **2026-08-25 拿真响应逐位数出来的**，不是从记忆或博客抄的
+#:   （实测 88 段）。改之前先重新打一次真响应对位——这类接口没有文档、没有
+#:   版本号，字段错位不会报错，只会让「市盈率」那一列显示成换手率。
+#:   对位方法：`httpx.get("https://qt.gtimg.cn/q=sh600519")`，按 `~` 切开
+#:   打印下标，认得出的值（名称/代码/价格）先钉住，再往两边推。
+_TX_IDX = {
+    "name": 1,
+    "code": 2,
+    "price": 3,
+    "prev_close": 4,
+    "open": 5,
+    "quote_time": 30,
+    "change": 31,
+    "change_pct": 32,
+    "high": 33,
+    "low": 34,
+    "turnover": 37,   # 成交额（万元）
+    "pe": 39,
+    "amplitude": 43,  # 振幅 %
+    "market_cap": 45, # 总市值（亿元）
+    "pb": 46,
+}
+
+#: 腾讯用 -1 / 空串表示"这一项对这个标的不适用"（指数没有涨跌停价、
+#: 没有市净率）。
+#:
+#: ⚠ **绝不能把它当成数字 0 落进去。** 一个显示「市净率 0.00」的指数页，
+#:   每个像素都像真的，只有那一格是编的——正是这条链路要消灭的东西。
+#:   不适用就是 None，页面自己会出「—」。
+_TX_NOT_APPLICABLE = {"-1", "-1.00", "", "0.00"}
+
+_STOCK = ConnectorSpec(
+    id="stock",
+    name="股票行情",
+    description="按代码或名称取 A 股 / 指数的实时行情（腾讯行情，免密钥）",
+    entity_id="stock_quote",
+    entity_name="股票行情",
+    fields=(
+        ConnectorField("code", "代码", "text"),
+        ConnectorField("name", "名称", "text"),
+        ConnectorField("price", "最新价", "number", "money"),
+        ConnectorField("change", "涨跌额", "number", "money"),
+        ConnectorField("change_pct", "涨跌幅", "number", "percent"),
+        ConnectorField("open", "今开", "number", "money"),
+        ConnectorField("prev_close", "昨收", "number", "money"),
+        ConnectorField("high", "最高", "number", "money"),
+        ConnectorField("low", "最低", "number", "money"),
+        ConnectorField("amplitude", "振幅", "number", "percent"),
+        ConnectorField("turnover", "成交额万元", "number", "number"),
+        ConnectorField("pe", "市盈率", "number", "number"),
+        ConnectorField("pb", "市净率", "number", "number"),
+        ConnectorField("market_cap", "总市值亿元", "number", "number"),
+        ConnectorField("quote_time", "行情时间", "text"),
+    ),
+    args=(
+        ConnectorArg(
+            "symbols",
+            "股票",
+            placeholder="600519,平安银行,上证指数",
+            default="600519,000001,000858",
+        ),
+    ),
+    source="腾讯行情",
+)
+
+_MAX_SYMBOLS = 20
+
+
+def _tx_market(code: str) -> Optional[str]:
+    """6 位数字代码 → 交易所前缀。认不出返回 None（交给搜索兜）。"""
+    if not (len(code) == 6 and code.isdigit()):
+        return None
+    if code[0] == "6" or code[0] == "9":
+        return "sh"
+    if code[0] in "03":
+        return "sz"
+    if code[0] in "48":
+        return "bj"
+    return None
+
+
+def _tx_search(token: str, text: Callable[..., str], timeout_s: float) -> str:
+    """名称 → `sh600519` 这样的带市场代码。
+
+    腾讯 smartbox 回的是 `v_hint="sh~600519~贵州茅台~gzmt~GP-A^..."`，
+    多条用 `^` 分隔。⚠ 响应里的中文是 unicode 转义序列而不是 GBK 汉字，
+    所以这一条按 utf-8 读；行情那条才是 GBK。两条读法不同，别顺手统一。
+    """
+    url = f"https://smartbox.gtimg.cn/s3/?q={quote(token)}&t=all"
+    raw = text(url, timeout_s, "utf-8") or ""
+    _, _, body = raw.partition("=")
+    body = body.strip().strip(";").strip('"')
+    for hint in body.split("^"):
+        parts = hint.split("~")
+        if len(parts) >= 2 and parts[0] and parts[1]:
+            return f"{parts[0]}{parts[1]}"
+    raise ConnectorError(f"没有找到「{token}」，换成 6 位代码或标准简称再试（如 600519、贵州茅台）")
+
+
+def _tx_num(raw: Any) -> Optional[float]:
+    """行情字段 → 数字。不适用/空 → None，**不是 0**。"""
+    s = str(raw or "").strip()
+    if s in _TX_NOT_APPLICABLE:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _tx_time(raw: Any) -> str:
+    """`20260825161438` → `2026-08-25 16:14:38`。认不出就原样返回。"""
+    s = str(raw or "").strip()
+    if len(s) != 14 or not s.isdigit():
+        return s
+    return f"{s[0:4]}-{s[4:6]}-{s[6:8]} {s[8:10]}:{s[10:12]}:{s[12:14]}"
+
+
+def _stock_rows(
+    symbols: str,
+    fetch: Callable[[str, float], Any],
+    timeout_s: float,
+    text: Callable[..., str],
+) -> Tuple[str, List[Dict[str, Any]]]:
+    tokens = [t.strip() for t in str(symbols or "").replace("，", ",").split(",") if t.strip()]
+    if not tokens:
+        raise ConnectorError("没有填股票代码或名称")
+    if len(tokens) > _MAX_SYMBOLS:
+        raise ConnectorError(f"一次最多 {_MAX_SYMBOLS} 只，现在填了 {len(tokens)} 只")
+
+    # ⚠ 认不出的标的**整轮判失败**，不是悄悄跳过。用户要了三只回来两只，
+    #   表格看着完全正常——"少了一行"比"错了一格"更难发现。
+    codes: List[str] = []
+    for token in tokens:
+        market = _tx_market(token)
+        codes.append(f"{market}{token}" if market else _tx_search(token, text, timeout_s))
+
+    raw = text(f"https://qt.gtimg.cn/q={','.join(codes)}", timeout_s, "gbk") or ""
+    rows: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        # ⚠ 行 id 必须带交易所前缀。2026-08-25 用真数据跑第一轮当场撞上：
+        #   **平安银行是 sz000001、上证指数是 sh000001**，六位代码一模一样。
+        #   按六位代码做 id 的话，两条行在 RuntimeState 里是同一行，后取的
+        #   把先取的盖掉——表格少一行、不报错、判据（"取到了 N 只"）还全绿。
+        #   前缀取自响应自己的键（`v_sh600519`），比我们解析出来的更权威。
+        full = key.strip()[2:] if key.strip().startswith("v_") else key.strip()
+        parts = value.strip().strip(";").strip('"').split("~")
+        # 88 段是实测值；短于我们要读的最大下标就说明这一行不是行情
+        # （腾讯对无效代码会回一个空串），跳过而不是读出一堆 None。
+        if len(parts) <= max(_TX_IDX.values()):
+            continue
+        name = parts[_TX_IDX["name"]].strip()
+        code = parts[_TX_IDX["code"]].strip()
+        if not name or not code:
+            continue
+        values: Dict[str, Any] = {"code": code, "name": name}
+        for field, idx in _TX_IDX.items():
+            if field in ("name", "code"):
+                continue
+            if field == "quote_time":
+                values[field] = _tx_time(parts[idx])
+            else:
+                values[field] = _tx_num(parts[idx])
+        rows.append({"id": f"stock-{full or code}", "values": values})
+        seen.add(full or code)
+
+    if not rows:
+        raise ConnectorError("行情服务没有返回任何一只标的的数据，稍后再试")
+    missing = [c for c in codes if c not in seen]
+    if missing:
+        raise ConnectorError(f"这些标的取不到行情：{'、'.join(missing)}")
+    label = rows[0]["values"]["name"] if len(rows) == 1 else f"{len(rows)} 只"
+    return label, rows
+
+
 # ─────────────────────────────────────────────────────────── 注册表 / 取数
 
-_REGISTRY: Dict[str, ConnectorSpec] = {WEATHER.id: WEATHER}
+_REGISTRY: Dict[str, ConnectorSpec] = {WEATHER.id: WEATHER, _STOCK.id: _STOCK}
 
 _FETCHERS: Dict[str, Callable[..., Tuple[str, List[Dict[str, Any]]]]] = {
     WEATHER.id: _weather_rows,
+    _STOCK.id: _stock_rows,
 }
+
+STOCK = _STOCK
 
 
 def list_connectors() -> List[Dict[str, Any]]:
@@ -327,6 +538,7 @@ def fetch_rows(
     args: Optional[Dict[str, Any]] = None,
     *,
     fetch_fn: Optional[Callable[[str, float], Any]] = None,
+    text_fn: Optional[Callable[..., str]] = None,
     timeout_s: Optional[float] = None,
     now_fn: Optional[Callable[[], str]] = None,
 ) -> ConnectorFetch:
@@ -345,6 +557,7 @@ def fetch_rows(
         )
 
     fetch = fetch_fn or _http_get
+    text = text_fn or _http_get_text
     budget = float(timeout_s if timeout_s is not None else _TIMEOUT_S)
     now = now_fn or _iso_now
     handler = _FETCHERS.get(spec.id)
@@ -364,7 +577,7 @@ def fetch_rows(
     label, rows = "", []
     for attempt in range(_ATTEMPTS):
         try:
-            label, rows = handler(*call_args, fetch, budget)
+            label, rows = handler(*call_args, fetch, budget, text)
             last = None
             break
         except ConnectorError as exc:
