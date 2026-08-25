@@ -42,6 +42,8 @@ URL 注进画页提示词——模型四处粘贴，卡片 alt 是充电桩、sr
 from __future__ import annotations
 
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor
 from html import unescape
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse
@@ -52,6 +54,16 @@ _TIMEOUT_S = 3.0
 _MAX_QUERIES = 3
 _MAX_HITS = 6
 _MAX_FILL_QUERIES = 8
+
+#: 自动换图一页的墙钟预算。搜图是**增强**，超了就把剩下的留成占位图，
+#: 绝不把画页拖成"等图"——这条链路 fail-open 的全部意义就在这里。
+#: 12s 是按实测定的：一页最多 8 格、4 并发、单格中位 2.1s，正常在 5s 内跑完，
+#: 12s 只在网络异常时才咬得到。
+_FILL_BUDGET_S = 12.0
+
+#: 同时打图库的请求数。实测 4 并发 8 条查询 5.0s → 2.2s，且没被限流。
+#: 再往上收益递减（单条延迟本身有抖动），而且对免 key 的公共接口不礼貌。
+_FILL_WORKERS = 4
 
 # 闸与提示词共用。不在这里的主机，搜到了也不注入——否则模型抄了仍会被拦。
 STOCK_IMAGE_HOSTS = (
@@ -503,26 +515,60 @@ def _resolve_query(
     fetch_fn: Optional[Callable[[str], Any]],
     aspect: Optional[str],
     cache: Dict[str, Optional[str]],
+    deadline: Optional[float] = None,
 ) -> Optional[str]:
+    """一格图找一个地址。**逐级退让**：整句搜不到就删词再搜。
+
+    ⚠ 2026-08-25：这里以前只搜整句，搜不到就留占位图——那是线上
+      **77%(49/64) 的图至今还是 placehold.co 的根因**。不是网断、也不是图库
+      没图，是那句话问得太长：Openverse 的 q 偏 AND。同一天在生产库量到——
+
+          ancient book page manuscript   → 0 条     ancient book     → 20 条
+          orange tabby rescue cat(方图)  → 0 条     orange tabby cat → 20 条
+
+      16 条真机 alt 只搜整句命中 0～1；接上阶梯命中 15/16。
+
+    ⚠ 放宽只在**同一句话里删词**，绝不换话题。2026-08-20 那次「电动车话题
+      回落到生鲜、卡片上出现枇杷」（见模块头）是**换话题**造成的，不是删词。
+      删词保住主体（_LADDER_TRIM 只删说明性尾词），跑题闸 _keep_hit 每一级
+      照跑。"错图比没图更糟"那条仍然成立，这里没有违反它。
+
+    ⚠ 超预算时**不写缓存**：写了 None 会让后面的页以为"这词搜过、没有"，
+      把一次超时放大成整轮不搜图。
+    """
     key = f"{query}|{aspect or ''}"
     if key in cache:
         return cache[key]
     url: Optional[str] = None
-    try:
-        if fetch_fn is None:
-            batch = _fetch_openverse(
-                query, lambda q, a=aspect: _default_fetch(q, aspect=a)
-            )
-        else:
-            batch = _fetch_openverse(query, fetch_fn)
-        url = batch[0]["url"] if batch else None
-    except Exception as exc:  # noqa: BLE001 — 搜图是增强
-        print(f"[stock_images] ⚠ 按格查询失败（{query}）：{str(exc)[:160]}")
-        url = None
+    hit_query = query
+    for level, (q, asp) in enumerate(build_query_ladder(query, aspect), 1):
+        if deadline is not None and time.monotonic() >= deadline:
+            print(f"[stock_images] ⚠ 换图超预算，这格留占位图（{query[:40]}）")
+            return None
+        try:
+            if fetch_fn is None:
+                batch = _fetch_openverse(
+                    q, lambda qq, a=asp: _default_fetch(qq, aspect=a)
+                )
+            else:
+                batch = _fetch_openverse(q, fetch_fn)
+        except Exception as exc:  # noqa: BLE001 — 单级挂了退下一级，不整个放弃
+            print(f"[stock_images] ⚠ 按格查询失败（{q}）：{str(exc)[:160]}")
+            continue
+        if batch:
+            url = batch[0]["url"]
+            hit_query = q
+            if level > 1:
+                # 退让过就把落到的那一级打出来。哪天真机上又出现错图，
+                # 这行是判断"是不是放宽放过头了"的唯一证据。
+                print(
+                    f"[stock_images] fill 退让{level}级 {query[:40]!r} -> {q!r}"
+                )
+            break
     cache[key] = url
     if url:
         host = urlparse(url).hostname or ""
-        print(f"[stock_images] fill q={query!r} host={host}")
+        print(f"[stock_images] fill q={hit_query!r} host={host}")
     return url
 
 
@@ -586,8 +632,45 @@ def fill_stock_placeholders(
         jobs.append((match, tag, query, aspect))
     if not jobs:
         return _neutralize_placehold_text(markup)
+
+    # ⚠ 并发解析，不是优化是必需的（2026-08-25）：这个函数挂在
+    #   spec_first_pipeline 的 `_sink_stock` 上，跑在**页面流式推给前端的回调
+    #   里**——在这儿阻塞多久，用户就多等多久才看得见那一页。
+    #   接上阶梯之后单格中位 2.1s（实测 16 张真机 alt），一页 8 格串行 ≈17s；
+    #   4 并发实测 5.0s → 2.2s，且图库不限流。
+    #
+    # ⚠ 同一个 key 只解析一次：jobs 里一个 key 可能对应多张 <img>，
+    #   重复解析等于白打图库，还会把预算烧在同一个词上。
+    deadline = time.monotonic() + _FILL_BUDGET_S
+    todo: List[tuple[str, Optional[str]]] = []
+    seen_key: set[str] = set()
     for _match, _tag, query, aspect in jobs:
-        _resolve_query(query, fetch_fn=fetch_fn, aspect=aspect, cache=store)
+        key = f"{query}|{aspect or ''}"
+        if key in seen_key or key in store:
+            continue
+        seen_key.add(key)
+        todo.append((query, aspect))
+    if todo:
+        def _one(item: tuple[str, Optional[str]]) -> None:
+            q, asp = item
+            try:
+                _resolve_query(
+                    q,
+                    fetch_fn=fetch_fn,
+                    aspect=asp,
+                    cache=store,
+                    deadline=deadline,
+                )
+            except Exception as exc:  # noqa: BLE001 — 搜图是增强，单格挂了不拦
+                print(f"[stock_images] ⚠ 解析失败（{q}）：{str(exc)[:120]}")
+
+        if len(todo) == 1:
+            _one(todo[0])
+        else:
+            with ThreadPoolExecutor(
+                max_workers=min(_FILL_WORKERS, len(todo))
+            ) as pool:
+                list(pool.map(_one, todo))
     out = markup
     for match, tag, query, aspect in reversed(jobs):
         url = store.get(f"{query}|{aspect or ''}")
@@ -650,9 +733,15 @@ def fill_stock_in_pages(
 #   而不是把 aspect 一路带到底。
 
 #: 检索词里没有信息量的虚词。
+#: ⚠ **不含 and / or**——那两个是短语的分界，要在那里**切断**而不是删掉。
+#:   第一版把它们当虚词删了，'advanced mathematics textbook and pet book'
+#:   会粘成一句，截出 'textbook pet book' 这种跨短语的碎片。
 _LADDER_STOP = frozenset(
-    {"a", "an", "the", "of", "for", "and", "with", "in", "on", "at", "to", "or"}
+    {"a", "an", "the", "of", "for", "with", "in", "on", "at", "to"}
 )
+
+#: 短语分界。取**第一个**短语——"猫爬架和休息区"这种并列，画面主体是前一个。
+_LADDER_SPLIT = frozenset({"and", "or", "plus"})
 
 #: 说明性尾词——删掉不改主体（"ancient book page manuscript" → "ancient book"）。
 #: ⚠ 这些词单独拿去搜会把结果引到完全无关的方向（"badge" 搜出警徽、
@@ -673,7 +762,19 @@ _REPLACEMENT_CANDIDATES = 6
 
 
 def _ladder_words(alt: str) -> List[str]:
-    return [w for w in _WORD_RE.findall(alt or "") if w.lower() not in _LADDER_STOP]
+    """切到第一个短语，再去掉虚词。"""
+    out: List[str] = []
+    for raw in _WORD_RE.findall(alt or ""):
+        low = raw.lower()
+        if low in _LADDER_SPLIT:
+            # 已经攒够一个短语就到此为止；还没攒够（开头就是 and）就当虚词跳过
+            if len(out) >= 2:
+                break
+            continue
+        if low in _LADDER_STOP:
+            continue
+        out.append(raw)
+    return out
 
 
 def build_query_ladder(
@@ -687,7 +788,12 @@ def build_query_ladder(
     words = _ladder_words(alt)
     if not words:
         return []
-    core = [w for w in words if w.lower() not in _LADDER_TRIM] or words
+    core = [w for w in words if w.lower() not in _LADDER_TRIM]
+    # ⚠ 尾词删到只剩一个词就别删了：'Admin avatar portrait' 去掉 avatar/portrait
+    #   只剩 'Admin'，搜出来是管理面板截图、admin 标志，什么都可能——主体没了。
+    #   真机 2026-08-25 A/B 里就是这一条把图搜歪的。宁可保留说明词。
+    if len(core) < 2:
+        core = list(words)
     out: List[tuple[str, Optional[str]]] = []
 
     def add(ws: List[str], asp: Optional[str]) -> None:
@@ -699,8 +805,18 @@ def build_query_ladder(
     add(words, None)
     add(core, aspect)
     add(core, None)
-    add(core[:3], None)
-    add(core[:2], None)
+    # ⚠ 截**尾巴**不截开头：英语名词短语的主体在最后
+    #   （fresh organic red 【apples basket】）。第一版截前缀，真机 A/B 里
+    #   'fresh organic red apples basket' 退成 'fresh organic red'、
+    #   'customer picking up groceries order verification' 退成
+    #   'customer picking up'——两条都把主体扔了，搜回来的图跟画面无关。
+    #   "错图比没图更糟"（见模块头 2026-08-20 那次），所以这里必须留主体。
+    add(core[-3:], None)
+    add(core[-2:], None)
+    # ⚠ 这里试过再加一级「首词 + 尾巴」（想同时保住领域词 Pet/Animal 和对象词
+    #   cage/qualification）。真机 A/B 上**一次都没改变结果**——命中只是从第 5
+    #   级挪到第 7 级，35/36 一张不多一张不少，还多花 2.4s。想法讲得通、数据
+    #   不认，删掉了。哪天想再加，先拿真页面量一遍，别照着直觉加层。
     return out
 
 
