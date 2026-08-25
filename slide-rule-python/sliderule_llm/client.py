@@ -147,12 +147,44 @@ def should_try_next_provider(error: LlmError) -> bool:
     return any(pattern in message for pattern in patterns) or error.transient
 
 
+# 网关用鉴权码表达"容量满了"——状态码撒谎时以响应体为准。
+#
+# ⚠ 2026-08-25 真机（健身房那趟）连挂四轮，每轮都停在同一处：
+#     [llm-retry] 第 1/3 次失败（HTTP 401 不可重试）
+#     [v5_capability_executor] spec 生成失败（重问 2 次后）
+#   `第 1/3` 是关键——链路给了 3 次重试预算，分类器判"不可重试"，烧掉 1 次
+#   就弃权，预算全程没用上。抓响应体一看：
+#     {"error":{"message":"All available accounts exhausted","type":"server_error"}}
+#   **type 是 server_error**，账号池耗尽披了个 401 的壳，不是 key 错了。
+#   实测该网关稳定 ~20% 抛这个，一轮推演十几次调用，全程躲开概率约 10%，
+#   于是"改一行代码 → 跑真机验证"这条路被整个堵死。
+#   同一天量过：换 gemini-3-flash 也一样（25 次里 5 次），抖动在账号池层，
+#   不在模型层——所以换模型不是解法，别再试了。
+#
+# 这不是新规矩：下面 429 分支早就认了"403 + quota/billing 关键词按限流处理"，
+# 这里只是把同一条规矩扩到 401 的容量耗尽。判据盯**语义**（上游容量/账号池
+# 满了，跟本地凭据无关），不盯某家网关的某句话。
+# 真鉴权失败的 401 仍然 transient=False——重试一万次也没用，别退化成 fail-open。
+_CAPACITY_BEHIND_AUTH_STATUS = re.compile(
+    r"quota|billing|rate.?limit|insufficient_quota"
+    r"|accounts?\s+exhausted|no\s+available\s+accounts?|capacity"
+    r'|"?type"?\s*[:=]\s*"?server_error',
+    re.IGNORECASE,
+)
+
+
 def _normalize_error(status: int, body: str) -> LlmError:
     """Port of normalizeLLMError status mapping."""
     snippet = (body or "")[:200]
     lower = snippet.lower()
-    if status == 429 or (status == 403 and re.search(r"quota|billing|rate.?limit|insufficient_quota", lower)):
-        return LlmError("429: rate limited or out of quota", status=status, transient=True)
+    if status == 429 or (status in (401, 403) and _CAPACITY_BEHIND_AUTH_STATUS.search(lower)):
+        # 文案说实话：日志里写"鉴权失败"会把人送去查 key，查一晚上查不出东西。
+        detail = f"upstream capacity exhausted ({status}, not an auth failure): {snippet}"
+        return LlmError(
+            "429: rate limited or out of quota" if status == 429 else detail,
+            status=status,
+            transient=True,
+        )
     if status in (401, 403):
         return LlmError(f"auth failed ({status}): check API key", status=status, transient=False)
     if status == 404:
