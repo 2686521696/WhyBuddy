@@ -139,3 +139,53 @@ export function liveBadgeText(meta: ConnectorMeta | null): string {
   const when = m ? `${m[1]} 取` : "";
   return ["实时", meta.source, when].filter(Boolean).join(" · ");
 }
+
+
+/* ─────────────────────────────────────────────── 徽标：从状态自己推出来 */
+
+export interface LiveStatus {
+  entityId: string;
+  connector: string;
+  source: string;
+  fetchedAt: string;
+  rows: number;
+  /** 绑了连接器却一行都没有 = 取数没成 → 页面上必须说出来 */
+  empty: boolean;
+}
+
+/**
+ * 这个应用现在接着哪些真实数据源。
+ *
+ * ⚠ **从 state 里推，不从"刚才那次取数的返回值"推。** 返回值只活在那一次
+ *   渲染里，刷新一次就没了，而数据还在——那样用户会看到"有真数据但没有
+ *   来源标注"，比没有标注更糟（他会以为这是编的）。state 是持久化的，
+ *   徽标跟着数据走。
+ */
+export function liveStatuses(
+  state: RuntimeState | null | undefined
+): LiveStatus[] {
+  const bound = state?.connectorEntities;
+  if (!bound) return [];
+  return Object.entries(bound).map(([entityId, meta]) => {
+    const rows = (state?.entities?.[entityId] ?? []).filter(isLiveRow).length;
+    return {
+      entityId,
+      connector: meta.connector,
+      source: meta.source,
+      fetchedAt: meta.fetchedAt,
+      rows,
+      empty: rows === 0,
+    };
+  });
+}
+
+/** 一行人话。取到了说来源和行数；没取到**明说没接上**，不含糊。 */
+export function liveStatusText(list: readonly LiveStatus[]): string {
+  return list
+    .map(s =>
+      s.empty
+        ? `${s.connector} 数据源没接上`
+        : `${liveBadgeText(s)} · ${s.rows} 行`
+    )
+    .join(" · ");
+}

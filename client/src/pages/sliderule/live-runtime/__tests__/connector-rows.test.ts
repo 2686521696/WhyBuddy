@@ -204,3 +204,46 @@ describe("行 id 撞车", () => {
     expect(hit[0]!.values.city).toBe("北京");
   });
 });
+
+describe("徽标从状态自己推出来（不靠战报）", () => {
+  it("取到了：说清来源、几点取的、几行", async () => {
+    const { liveStatuses, liveStatusText } = await import("../connector-rows");
+    const s = applyConnectorRows(initRuntimeState(MODEL), "weather_daily", ROWS, META);
+    const list = liveStatuses(s);
+    expect(list).toHaveLength(1);
+    expect(list[0]!.rows).toBe(2);
+    expect(list[0]!.empty).toBe(false);
+    expect(liveStatusText(list)).toBe("实时 · Open-Meteo · 北京 · 21:26 取 · 2 行");
+  });
+
+  it("绑了但一行都没有 = 没接上，**必须说出来**", async () => {
+    /*
+     * ⚠ 这是"取不到就空着并说明原因"在页面上的落点。只标「实时 · 0 行」
+     *   用户读不出发生了什么；空着什么都不标，他会以为应用本来就没数据。
+     */
+    const { liveStatuses, liveStatusText } = await import("../connector-rows");
+    const s = applyConnectorRows(initRuntimeState(MODEL), "weather_daily", [], META);
+    expect(liveStatuses(s)[0]!.empty).toBe(true);
+    expect(liveStatusText(liveStatuses(s))).toContain("没接上");
+  });
+
+  it("没绑连接器就没有徽标（不是显示一个空徽标）", async () => {
+    const { liveStatuses, liveStatusText } = await import("../connector-rows");
+    expect(liveStatuses(initRuntimeState(MODEL))).toEqual([]);
+    expect(liveStatuses(null)).toEqual([]);
+    expect(liveStatusText([])).toBe("");
+  });
+
+  it("用户手写的行不算进「实时几行」", async () => {
+    const { liveStatuses } = await import("../connector-rows");
+    let s = applyConnectorRows(initRuntimeState(MODEL), "weather_daily", ROWS, META);
+    s = {
+      ...s,
+      entities: {
+        ...s.entities,
+        weather_daily: [...s.entities.weather_daily!, { id: "mine", values: {} }],
+      },
+    };
+    expect(liveStatuses(s)[0]!.rows).toBe(2);
+  });
+});

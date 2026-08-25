@@ -54,6 +54,15 @@ import { deriveHtmlActionGates } from "./live-runtime/rbac-preview";
 import { isWorkflowActionKind } from "./live-runtime/html-binding-runtime";
 import { seedRuntimeState } from "./live-runtime/demo-seed";
 import {
+  hydrateConnectors,
+  hydrateSummary,
+} from "./live-runtime/hydrate-connectors";
+import { fetchConnectorRows, listConnectors } from "./connectors-client";
+import {
+  loadTurnCapabilities,
+  pickedConnectorIds,
+} from "./turn-capabilities";
+import {
   loadRuntimeState,
   saveRuntimeState,
   notifyRuntimeChanged,
@@ -351,12 +360,50 @@ export function SlideRuleStudio({
   const [htmlRuntime, setHtmlRuntime] = useState<RuntimeState | null>(null);
   useEffect(() => {
     if (!fiveSystemModel) return;
-    setHtmlRuntime(
-      seedRuntimeState(
-        loadRuntimeState(runtimeSessionId) ?? initRuntimeState(fiveSystemModel),
-        fiveSystemModel
-      )
-    );
+    let alive = true;
+    const base =
+      loadRuntimeState(runtimeSessionId) ?? initRuntimeState(fiveSystemModel);
+
+    /*
+     * 连接器取数**只在这里做一次**，取完落存档。
+     *
+     * ⚠ seedRuntimeState 全仓有 6 个调用点（这里 / 应用运行屏 / 实体面板 /
+     *   工作流面板 / 落地页截图 / 应用市场卡）。要是取数也在每处接一遍，
+     *   那就是仓里第四条最坏的形状——漏改任何一处都不报错，只有那个入口看到
+     *   的是假数据。这里取完 saveRuntimeState，其余 5 处读的就是同一份。
+     *
+     * ⚠ 顺序不能反：**先取数（绑表），再铺种子**。反过来的话种子先铺上，
+     *   连接器那张表就已经装满编出来的数字了。
+     */
+    void (async () => {
+      const ids = pickedConnectorIds(loadTurnCapabilities());
+      let next = base;
+      if (ids.length > 0) {
+        const specs = await listConnectors();
+        const res = await hydrateConnectors({
+          state: base,
+          model: fiveSystemModel,
+          connectorIds: ids,
+          specs,
+          fetchRows: fetchConnectorRows,
+        });
+        next = res.state;
+        /* ⚠ 战报只写控制台。页面上的徽标**从持久化的 state 推**
+           （liveStatuses）：战报只活在这一次渲染里，刷新就没了，而数据还在
+           ——那样用户会看到"有真数据但没有来源标注"，比没标注更糟，
+           他会以为这是编的。 */
+        if (typeof console !== "undefined")
+          console.info("[连接器]", hydrateSummary(res.outcome));
+      }
+      const seeded = seedRuntimeState(next, fiveSystemModel);
+      if (!alive) return;
+      if (ids.length > 0) saveRuntimeState(runtimeSessionId, seeded);
+      setHtmlRuntime(seeded);
+    })();
+
+    return () => {
+      alive = false;
+    };
   }, [fiveSystemModel, runtimeSessionId]);
 
   // 当前角色（2026-08-14 晚：权限那只手伸进 HTML 页）。

@@ -67,6 +67,7 @@ import {
   saveDevicePresetId,
 } from "./device-presets";
 import { deriveBindingSource } from "./derive-binding-source";
+import { liveStatuses, liveStatusText } from "./connector-rows";
 import type { ActionGates, BindingActionEvent } from "./html-binding-runtime";
 import type { RuntimeState } from "./live-runtime";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
@@ -268,6 +269,24 @@ export function SpecPageLiveStage({
         className="flex shrink-0 items-center gap-2 px-0.5 text-[11px] leading-4 text-stone-400"
         data-testid="sliderule-stage-meta"
       >
+        {/* 真实数据源徽标。⚠ 从 runtime 自己推（liveStatuses），不靠外面传
+            战报进来——战报刷新一次就没了，而数据还在。 */}
+        {liveStatuses(runtime).length > 0 ? (
+          <span
+            data-testid="sliderule-live-source"
+            data-empty={
+              liveStatuses(runtime).some(s => s.empty) ? "1" : "0"
+            }
+            title="这张表的数据来自真实外部数据源；取不到时这里会明说没接上"
+            className={`shrink-0 rounded px-1.5 py-0.5 ${
+              liveStatuses(runtime).some(s => s.empty)
+                ? "bg-[#fff7e6] text-[#d46b08]"
+                : "bg-[#f6ffed] text-[#389e0d]"
+            }`}
+          >
+            {liveStatusText(liveStatuses(runtime))}
+          </span>
+        ) : null}
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           {/* 机型切换（2026-08-24）。位置对齐 Chrome DevTools 设备模式 / 微信
               开发者工具：都把机型下拉放在预览画布正上方那条信息行的最左，
