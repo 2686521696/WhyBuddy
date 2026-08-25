@@ -77,6 +77,8 @@ import {
   ThunderboltOutlined,
   ToolOutlined,
 } from "@ant-design/icons";
+import { markConnectorEntities } from "./connector-rows";
+import { connectorEntityIds } from "../connectors-client";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
 import { resolveEntityRef } from "../system-screens/five-system-model";
 import {
@@ -546,6 +548,32 @@ export function AppRuntimeScreen({
     [sessionId, model]
   );
   const [state, setState] = React.useState<RuntimeState>(hydrate);
+
+  /*
+   * ⚠ 连接器供数的表，**在这里也不许铺演示种子**（2026-08-25）。
+   *
+   *   上面的 hydrate 里 `loadRuntimeState(sessionId) ?? init...` 看着够了——
+   *   推演机上 SlideRuleStudio 已经把 connectorEntities 存进去了，读回来就有。
+   *   但**换一台机器打开分享出去的应用时存档是空的**，于是 init 出一份干净
+   *   状态，seedRuntimeState 照铺不误：作者自己看是真天气，别人看到的是 12 行
+   *   编的，而且两边都不报错。这正是这条链路要消灭的东西。
+   *
+   *   所以从注册表问一次"哪些实体是连接器供的"，标记上（只标记、不取数——
+   *   取数只有一个写入点），再让 seed 自然跳过。
+   */
+  React.useEffect(() => {
+    let alive = true;
+    void connectorEntityIds().then(ids => {
+      if (!alive || ids.length === 0) return;
+      setState(prev => {
+        const marked = markConnectorEntities(prev, ids, "实时数据源 · 本机还没取过数");
+        return marked === prev ? prev : seedRuntimeState(marked, model);
+      });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [model]);
   const [activePageId, setActivePageId] = React.useState<string>(
     () => schema?.landingPageId ?? "home"
   );

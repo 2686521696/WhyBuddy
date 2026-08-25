@@ -690,6 +690,14 @@ def set_active_connectors(connectors: "Optional[List[Dict[str, Any]]]") -> None:
         if len(cleaned) >= _MAX_CONNECTORS:
             break
     _connectors_var.set(cleaned)
+    # 真机自证：仓里的老办法（"想验证这条还通电，在这行打一句 log"）。
+    # 一轮推演要跑十几分钟，事后翻日志比重新加探针便宜得多。
+    if cleaned:
+        print(
+            "[connectors] 本轮挂上 "
+            + "、".join(f"{c['id']}→{c['entity']['id']}" for c in cleaned),
+            flush=True,
+        )
 
 
 def active_connectors() -> List[Dict[str, Any]]:

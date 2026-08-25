@@ -124,3 +124,18 @@ export async function fetchConnectorRows(
     return fail(`取数失败：${(err as Error)?.message || "网络异常"}`);
   }
 }
+
+
+/**
+ * 连接器会落成哪些实体 id。
+ *
+ * ⚠ 给**只读预览**用（应用市场卡片、落地页截图）：那些入口按设计不联网、
+ *   不留痕，自己不知道哪张表是连接器供数的，于是会把演示种子铺上去——
+ *   挂了天气的应用在市场卡片里显示 12 行编出来的温度。
+ *   这一条让它们从注册表里问一次，不用把 entityId 硬编在前端
+ *   （硬编就是第四条：注册表加一个连接器，这里忘了同步，静默失效）。
+ */
+export async function connectorEntityIds(): Promise<string[]> {
+  const specs = await listConnectors();
+  return specs.map(s => s.entityId).filter(Boolean);
+}

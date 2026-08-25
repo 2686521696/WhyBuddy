@@ -247,3 +247,55 @@ describe("徽标从状态自己推出来（不靠战报）", () => {
     expect(liveStatuses(s)[0]!.rows).toBe(2);
   });
 });
+
+describe("只读预览：标记但不取数", () => {
+  it("标记过的实体不铺种子，并显示「预览不取数」而不是「没接上」", async () => {
+    /*
+     * ⚠ 挂了天气的应用在应用市场卡片里显示 12 行编出来的温度，是这条链路
+     *   最丢人的失败形态：用户在自己机器上看是真的，分享出去别人看到的是
+     *   假的，两边都不报错。
+     *
+     * ⚠ 同时钉住**说辞要对**：预览没取数 ≠ 数据源坏了。都写成"没接上"
+     *   会让人以为线上应用挂了。
+     */
+    const { markConnectorEntities, liveStatuses, liveStatusText } = await import(
+      "../connector-rows"
+    );
+    let s = markConnectorEntities(
+      initRuntimeState(MODEL),
+      ["weather_daily"],
+      "预览里不取实时数据"
+    );
+    s = seedRuntimeState(s, MODEL, Date.UTC(2026, 7, 25));
+    expect(s.entities.weather_daily).toEqual([]);
+    expect(entityShowsSeed(s, "weather_daily")).toBe(false);
+    // 反面的反面：不许误伤普通实体
+    expect(entityShowsSeed(s, "note")).toBe(true);
+    expect(liveStatusText(liveStatuses(s))).toBe("预览里不取实时数据");
+  });
+
+  it("已经有真数据的实体，标记不会把它清空", async () => {
+    const { markConnectorEntities } = await import("../connector-rows");
+    let s = applyConnectorRows(initRuntimeState(MODEL), "weather_daily", ROWS, META);
+    s = markConnectorEntities(s, ["weather_daily"], "预览里不取实时数据");
+    expect(s.entities.weather_daily).toHaveLength(2);
+    expect(liveMeta(s, "weather_daily")?.source).toBe("Open-Meteo · 北京");
+  });
+
+  it("这个应用没有的表**不标**——不然待办应用会凭空挂上一枚天气徽标", async () => {
+    /*
+     * ⚠ 传进来的是"注册表里所有连接器的实体 id"，跟连接器八竿子打不着的
+     *   应用也会收到这份清单。不筛的话，一个待办应用会显示
+     *   「预览里不取实时数据」，指着一张它根本没有的表。
+     *   第一版就是这么写的，而且判据还把这个错的行为钉住了——判据自己
+     *   先要对得起题。
+     */
+    const { markConnectorEntities, liveStatuses } = await import("../connector-rows");
+    const s = markConnectorEntities(
+      initRuntimeState(MODEL),
+      ["", "unknown", "weather_daily"],
+      "x"
+    );
+    expect(liveStatuses(s).map(x => x.entityId)).toEqual(["weather_daily"]);
+  });
+});

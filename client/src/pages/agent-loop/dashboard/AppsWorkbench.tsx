@@ -65,6 +65,8 @@ import { resolveIdentityTheme } from "@/pages/sliderule/live-runtime/identity-th
 // 只读预览的运行时种子（卡片不再活渲染，但点开大图仍是真渲染）。
 import { initRuntimeState } from "@/pages/sliderule/live-runtime/live-runtime";
 import { seedRuntimeState } from "@/pages/sliderule/live-runtime/demo-seed";
+import { markConnectorEntities } from "@/pages/sliderule/live-runtime/connector-rows";
+import { connectorEntityIds } from "@/pages/sliderule/connectors-client";
 import { navItemId, navItemName } from "@/pages/sliderule/nav-item";
 import { livePagesFromSpec } from "@/pages/sliderule/spec-live-pages";
 import {
@@ -836,9 +838,42 @@ function SpecPagesPreview({
   specPages: SpecPagesDetail;
   model: FiveSystemModel | null;
 }) {
+  /*
+   * ⚠ 只读预览也**不许**给连接器供数的表铺演示种子（2026-08-25）。
+   *
+   *   这个入口按设计不联网、不留痕（内存种子、不传 onAction），所以它自己
+   *   不知道哪张表是连接器供的——挂了天气的应用在市场卡片里就会显示 12 行
+   *   编出来的温度。那是这条链路最丢人的失败形态：用户在自己机器上看是真的，
+   *   分享出去别人看到的是假的，两边都不报错。
+   *
+   *   做法是**先标记后铺种子**：标记只写"这张表是连接器供的"，不取数
+   *   （取数只有一个写入点，在 SlideRuleStudio）。标记之后 seedRuntimeState
+   *   自然跳过它，页面上显示「预览里不取实时数据」——说辞也要对：
+   *   预览没取数 ≠ 数据源坏了。
+   */
+  const [connectorEntities, setConnectorEntities] = React.useState<string[]>([]);
+  React.useEffect(() => {
+    let alive = true;
+    void connectorEntityIds().then(ids => {
+      if (alive) setConnectorEntities(ids);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   const runtime = React.useMemo(
-    () => (model ? seedRuntimeState(initRuntimeState(model), model) : null),
-    [model]
+    () =>
+      model
+        ? seedRuntimeState(
+            markConnectorEntities(
+              initRuntimeState(model),
+              connectorEntities,
+              "预览里不取实时数据"
+            ),
+            model
+          )
+        : null,
+    [model, connectorEntities]
   );
   const pages = React.useMemo(() => livePagesFromSpec(specPages), [specPages]);
   const landingId = pages.find(p => !p.missing)?.pageId ?? pages[0]?.pageId ?? null;

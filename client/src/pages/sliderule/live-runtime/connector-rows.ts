@@ -27,6 +27,15 @@ export interface ConnectorMeta {
   connector: string;
   source: string;
   fetchedAt: string;
+  /**
+   * 零行时的说明（可选）。
+   *
+   * ⚠ "这张表为什么空着"有**两种**完全不同的答案，用户需要分得清：
+   *   - 取数失败（默认）→「数据源没接上」，这是个问题
+   *   - 只读预览根本没取 →「预览里不取实时数据」，这不是问题
+   *   两种都显示成前者，会让人以为线上应用坏了。
+   */
+  note?: string;
 }
 
 export interface IncomingRow {
@@ -149,8 +158,9 @@ export interface LiveStatus {
   source: string;
   fetchedAt: string;
   rows: number;
-  /** 绑了连接器却一行都没有 = 取数没成 → 页面上必须说出来 */
+  /** 绑了连接器却一行都没有 → 页面上必须说出来（说什么看 note） */
   empty: boolean;
+  note?: string;
 }
 
 /**
@@ -175,6 +185,7 @@ export function liveStatuses(
       fetchedAt: meta.fetchedAt,
       rows,
       empty: rows === 0,
+      ...(meta.note ? { note: meta.note } : {}),
     };
   });
 }
@@ -184,8 +195,45 @@ export function liveStatusText(list: readonly LiveStatus[]): string {
   return list
     .map(s =>
       s.empty
-        ? `${s.connector} 数据源没接上`
+        ? s.note || `${s.connector} 数据源没接上`
         : `${liveBadgeText(s)} · ${s.rows} 行`
     )
     .join(" · ");
+}
+
+
+/**
+ * 把"这些实体是连接器供数的"标记上，但**不取数**（零行 + 一句说明）。
+ *
+ * 给只读预览用（应用市场卡片、落地页截图那类）：它们按设计不联网、不留痕，
+ * 但**更不能铺演示种子**——挂了天气的应用在市场卡片里显示 12 行编出来的
+ * 温度，是这条链路最丢人的失败形态：用户在自己机器上看是真的，分享出去
+ * 别人看到的是假的，而两边都不报错。
+ *
+ * ⚠ 只标记，不写行。取数是 hydrate-connectors 的事，那里只有一个写入点。
+ *
+ * ⚠ **只标这个应用真有的表。** 传进来的是"注册表里所有连接器的实体 id"，
+ *   跟连接器八竿子打不着的应用也会收到这份清单——不筛的话，一个待办应用
+ *   会凭空挂上一枚「预览里不取实时数据」的徽标，指着一张它根本没有的表。
+ *   （第一版就是这么写的，判据还把这个错的行为钉住了。）
+ *   `state.entities` 的键就是模型声明的实体集（initRuntimeState 建的），
+ *   拿它当筛子最直接。
+ */
+export function markConnectorEntities(
+  state: RuntimeState,
+  entityIds: readonly string[],
+  note: string
+): RuntimeState {
+  let next = state;
+  for (const id of entityIds) {
+    if (!id || next.connectorEntities?.[id]) continue;
+    if (!(id in (next.entities ?? {}))) continue;
+    next = applyConnectorRows(next, id, [], {
+      connector: id,
+      source: "",
+      fetchedAt: "",
+      note,
+    });
+  }
+  return next;
 }
