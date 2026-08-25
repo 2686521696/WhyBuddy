@@ -63,6 +63,8 @@
 
 import React from "react";
 import {
+  Background,
+  BackgroundVariant,
   Handle,
   MarkerType,
   MiniMap,
@@ -97,8 +99,6 @@ import { deriveBindingSource } from "./derive-binding-source";
 import {
   MAX_ZOOM,
   MIN_ZOOM,
-  SPOTLIGHT_REST,
-  spotlightAnchor,
   artboardLabel,
   boardsBounds,
   labelCounterScale,
@@ -239,43 +239,9 @@ const EMPTY_SOURCE = deriveBindingSource(null, null);
 const FIT_PADDING = 0.08;
 
 /** 连线的两种来源用两种画法：派生=灰实线，手画=蓝虚线。 */
-/**
- * 画布台面的配色（2026-08-25 用户裁决："白色背景可以去掉，后面带聚光灯的
- * 点状效果更 AI 范"）。
- *
- * ⚠ 深底不是换个 className 就完事的。画布**平面上**的前景全是按浅底配的：
- *   画板页名、序号、徽章、素材卡标签、连线、缩略图、空态文案。只改背景
- *   就是本仓最忌的那种半吊子——"背景好看了，字看不见了"。所以这里把台面
- *   相关的颜色收成一处，改底色时对着这张表一起改。
- *
- * ⚠ 浮动药丸（缩放条、右键菜单、素材卡本身）**不在这张表里**：它们是白卡片，
- *   叠在深底上本来就成立，动它们反而会跟页面档不一致。
- *
- * ⚠ 导出不受影响：canvas-board-export 交给 snapdom 的是 **iframe 元素本身**，
- *   不是画布区域，深底不会漏进导出的 PNG。
- */
-const SURFACE = {
-  /** 台面底色。冷调近黑，不是纯黑——纯黑上白画板边缘会有廉价的硬切感。 */
-  base: "#0b0e14",
-  /**
-   * 点阵。太亮会跟画板抢视线，太暗等于没有。
-   *
-   * ⚠ 2026-08-25 真机：第一版用 React Flow 的 `<Background variant=Dots>`，
-   *   它**跟着缩放走**——画布常用缩放是 18%~57%，1.4px 的点缩到 0.25px，
-   *   亚像素直接消失。截图上看是"点阵没生效"，其实是画了但小于一个像素。
-   *   这层是**装饰质感不是工作网格**，所以改成画在台面上的 CSS 纹理：
-   *   尺寸恒定、任何缩放下都看得见，也不会在平移时起摩尔纹。
-   */
-  dot: "#232d3d",
-  /** 点阵间距（屏幕像素，不随缩放变）。 */
-  dotGap: 22,
-  /** 容器描边。深底上不能再用浅灰描边（会描出一圈亮框）。 */
-  border: "#1b2230",
-} as const;
-
 const EDGE_STYLE = {
-  dataflow: { stroke: "#9fb0c7", strokeWidth: 2 },
-  manual: { stroke: "#4d8dff", strokeWidth: 2, strokeDasharray: "8 6" },
+  dataflow: { stroke: "#94a3b8", strokeWidth: 2 },
+  manual: { stroke: "#1677ff", strokeWidth: 2, strokeDasharray: "8 6" },
 } as const;
 
 /**
@@ -394,24 +360,24 @@ function ArtboardNode({ data }: NodeProps<Node<ArtboardData>>) {
       >
         <span
           className={`min-w-0 truncate text-[13px] font-medium ${
-            isActive ? "text-[#7aa2ff]" : "text-slate-300"
+            isActive ? "text-[#1677ff]" : "text-stone-500"
           }`}
           data-testid="sliderule-canvas-artboard-label"
         >
           {label}
         </span>
-        <span className="font-mono text-[11px] tabular-nums text-slate-500">
+        <span className="font-mono text-[11px] tabular-nums text-stone-400">
           {index + 1}
         </span>
         {page.missing ? (
           <span
-            className="rounded bg-[#3a2416] px-1.5 py-px text-[10px] font-medium text-[#f0a868]"
+            className="rounded bg-[#FDF6F1] px-1.5 py-px text-[10px] font-medium text-[#C05621]"
             data-testid="sliderule-canvas-artboard-missing"
           >
             未通过校验
           </span>
         ) : page.bound ? null : (
-          <span className="rounded bg-white/10 px-1.5 py-px text-[10px] text-slate-300">
+          <span className="rounded bg-[#f4f4f5] px-1.5 py-px text-[10px] text-stone-400">
             尚未接数据
           </span>
         )}
@@ -545,7 +511,7 @@ function AssetNode({ data }: NodeProps<Node<AssetData>>) {
           />
         ) : null}
         <span
-          className="min-w-0 truncate text-[12px] font-medium text-slate-300"
+          className="min-w-0 truncate text-[12px] font-medium text-stone-500"
           data-testid="sliderule-canvas-asset-label"
         >
           {asset.label}
@@ -554,7 +520,7 @@ function AssetNode({ data }: NodeProps<Node<AssetData>>) {
           <>
             {dims ? (
               <span
-                className="shrink-0 font-mono text-[11px] tabular-nums text-slate-500"
+                className="shrink-0 font-mono text-[11px] tabular-nums text-stone-400"
                 data-testid="sliderule-canvas-asset-dims"
                 title="这张图的真实像素尺寸"
               >
@@ -565,13 +531,13 @@ function AssetNode({ data }: NodeProps<Node<AssetData>>) {
               /* 占位图是**如实告警**：交付前这些图得换掉。真机团购那趟
                  3 张去重后的图全是占位图，一页一页翻根本看不出来。 */
               <span
-                className="shrink-0 rounded bg-[#3a2416] px-1.5 py-px text-[10px] font-medium text-[#f0a868]"
+                className="shrink-0 rounded bg-[#FDF6F1] px-1.5 py-px text-[10px] font-medium text-[#C05621]"
                 data-testid="sliderule-canvas-asset-placeholder-badge"
               >
                 占位图
               </span>
             ) : null}
-            <span className="shrink-0 text-[11px] text-slate-500">
+            <span className="shrink-0 text-[11px] text-stone-400">
               {asset.pageIds.length} 页
             </span>
           </>
@@ -694,42 +660,6 @@ function CanvasInner({
    *   收成两列、宽舞台上摊成三列，才看得最大。
    */
   const flowHostRef = React.useRef<HTMLDivElement | null>(null);
-
-  /**
-   * 聚光灯跟指针。**直接写 DOM 样式，不进 React state**。
-   *
-   * ⚠ 画布上挂着 4 个 iframe 的实时渲染，mousemove 每次触发一轮 re-render
-   *   会把平移拖成一卡一卡——本仓在"拖分栏缝时 iframe 重算缩放"上已经踩过
-   *   同一个坑（见 StudioLayoutContext.resizing 那段注释）。
-   *   这里用 rAF 合帧 + 写 CSS 变量，React 一次都不重渲。
-   *
-   * ⚠ 落点的夹取算在 canvas-board-layout.spotlightAnchor（纯函数，判据咬得住），
-   *   这里只负责读 rect 和写变量，不重写夹取逻辑。
-   */
-  const spotlightRef = React.useRef<HTMLDivElement | null>(null);
-  const spotlightFrame = React.useRef(0);
-  const onSpotlightMove = React.useCallback((e: React.PointerEvent) => {
-    const host = flowHostRef.current;
-    const lamp = spotlightRef.current;
-    if (!host || !lamp) return;
-    const { clientX, clientY } = e;
-    if (spotlightFrame.current) return; // 这一帧已经排过了
-    spotlightFrame.current = requestAnimationFrame(() => {
-      spotlightFrame.current = 0;
-      const el = spotlightRef.current;
-      const box = flowHostRef.current?.getBoundingClientRect();
-      if (!el || !box) return;
-      const at = spotlightAnchor(box, clientX, clientY);
-      el.style.setProperty("--spot-x", `${at.x}%`);
-      el.style.setProperty("--spot-y", `${at.y}%`);
-    });
-  }, []);
-  React.useEffect(
-    () => () => {
-      if (spotlightFrame.current) cancelAnimationFrame(spotlightFrame.current);
-    },
-    []
-  );
   const [hostAspect, setHostAspect] = React.useState(0);
   React.useEffect(() => {
     const el = flowHostRef.current;
@@ -953,9 +883,9 @@ function CanvasInner({
           label: l.label,
           labelBgPadding: [6, 3] as [number, number],
           labelBgBorderRadius: 4,
-          labelBgStyle: { fill: "#161d2b", fillOpacity: 0.94 },
+          labelBgStyle: { fill: "#ffffff", fillOpacity: 0.92 },
           labelStyle: {
-            fill: l.kind === "manual" ? "#8fb4ff" : "#9fb0c7",
+            fill: l.kind === "manual" ? "#1677ff" : "#64748b",
             fontSize: 26,
             fontWeight: 500,
           },
@@ -1300,52 +1230,8 @@ function CanvasInner({
       <div className="flex min-h-0 min-w-0 flex-1 gap-2">
         <div
           ref={flowHostRef}
-          data-testid="sliderule-canvas-surface"
-          className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-md border"
-          style={{
-            borderColor: SURFACE.border,
-            backgroundColor: SURFACE.base,
-            backgroundImage: `radial-gradient(${SURFACE.dot} 1px, transparent 1px)`,
-            backgroundSize: `${SURFACE.dotGap}px ${SURFACE.dotGap}px`,
-          }}
-          onPointerMove={onSpotlightMove}
+          className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-md border border-[#e2e6eb] bg-[#e8eaef]"
         >
-          {/*
-            聚光灯。两层叠出来：
-              · 跟着指针走的冷光晕（--spot-x/y 由 onPointerMove 直接写样式，
-                不走 React state——画布上有 4 个 iframe，每次 mousemove 触发
-                一轮 re-render 会把平移拖成一卡一卡）
-              · 一层静态暗角，把四边压下去，光才聚得起来
-
-            ⚠ 关于 pointer-events-none，说句真话（2026-08-25 真机变异验过）：
-              这层排在 <ReactFlow> **前面**，同层后来居上，所以它本来就在下面——
-              把这行删掉，B/C/D 那几条手势判据**照样全过**。我第一版注释写的是
-              "漏了它手势全被吃掉"，那是猜的，真机不认。
-              留着它是让"不吃手势"这件事**不依赖 DOM 顺序**（哪天有人把这层挪到
-              ReactFlow 后面就真吃了）。也就是说：它的回归由 Z 那条判据兜着，
-              别指望手势判据能替你发现。
-          */}
-          <div
-            ref={spotlightRef}
-            aria-hidden
-            data-testid="sliderule-canvas-spotlight"
-            className="pointer-events-none absolute inset-0"
-            style={
-              {
-                "--spot-x": `${SPOTLIGHT_REST.x}%`,
-                "--spot-y": `${SPOTLIGHT_REST.y}%`,
-                backgroundImage: [
-                  // 亮核：让光"有个来处"。只有一层大晕的话看着像整体调亮了，
-                  // 不像有盏灯。
-                  "radial-gradient(260px circle at var(--spot-x) var(--spot-y), rgba(150,180,255,0.13), transparent 70%)",
-                  // 大晕
-                  "radial-gradient(620px circle at var(--spot-x) var(--spot-y), rgba(99,140,255,0.20), rgba(99,140,255,0.06) 45%, transparent 74%)",
-                  // 静态暗角：四边压下去，光才聚得起来
-                  "radial-gradient(120% 110% at 50% 0%, transparent 34%, rgba(0,0,0,0.46) 100%)",
-                ].join(","),
-              } as React.CSSProperties
-            }
-          />
           <CanvasContext.Provider value={ctx}>
             <ReactFlow
               nodes={nodes}
@@ -1406,19 +1292,25 @@ function CanvasInner({
               }}
               className="bg-transparent"
             >
+              <Background
+                variant={BackgroundVariant.Dots}
+                gap={28}
+                size={1.4}
+                color="#c7cfda"
+              />
               <MiniMap
                 pannable
                 zoomable
                 ariaLabel="画布缩略图"
-                maskColor="rgba(6,9,14,0.66)"
+                maskColor="rgba(244,244,246,0.72)"
                 nodeColor={n =>
                   n.type === "asset"
-                    ? "#33405a"
+                    ? "#e2e8f0"
                     : n.id === activePageId
-                      ? "#4d8dff"
-                      : "#4a5a75"
+                      ? "#1677ff"
+                      : "#cbd5e1"
                 }
-                className="!bottom-3 !right-3 !h-[92px] !w-[148px] overflow-hidden rounded-md border border-[#232c3c] !bg-[#0f1420]"
+                className="!bottom-3 !right-3 !h-[92px] !w-[148px] overflow-hidden rounded-md border border-[#e9edf2] !bg-white"
               />
             </ReactFlow>
           </CanvasContext.Provider>
@@ -1541,7 +1433,7 @@ function CanvasInner({
               点了导出却什么都没下载，比报个错更让人以为是自己点错了。 */}
           {toast ? (
             <div
-              className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-md bg-[#1e2635]/95 px-3 py-1.5 text-[11px] text-slate-100 shadow-lg ring-1 ring-white/10"
+              className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-md bg-stone-800/90 px-3 py-1.5 text-[11px] text-white shadow-lg"
               data-testid="sliderule-canvas-toast"
             >
               {toast}
@@ -1551,7 +1443,7 @@ function CanvasInner({
           {/* 空态：一页都还没到。⚠ 不画假画板占位——本仓不允许"看起来有东西"。 */}
           {pages.length === 0 ? (
             <div
-              className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400"
+              className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 text-stone-400"
               data-testid="sliderule-canvas-empty"
             >
               <MousePointerClick className="h-5 w-5" />
