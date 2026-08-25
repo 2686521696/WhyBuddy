@@ -53,6 +53,19 @@ import {
   toggleInjectDisabled,
   type InstalledSkill,
 } from "./installed-skills";
+import {
+  applySlashPick,
+  filterSlashItems,
+  moveHighlight,
+  slashQueryAt,
+  type SlashItem,
+} from "./composer-slash";
+import { CapabilityChip, ComposerSlashMenu } from "./ComposerSlashMenu";
+import { listConnectors, type ConnectorSpec } from "./connectors-client";
+import {
+  loadTurnCapabilities,
+  saveTurnCapabilities,
+} from "./turn-capabilities";
 
 /** E31 图片/PDF 提取结果（后端 /attachments/extract 的诚实回执）。 */
 interface AttachmentExtractOutcome {
@@ -608,6 +621,102 @@ export function ComposerDock({
     setMenuView("skills");
   }, []);
 
+  /* ─────────────────────────── `/` 能力选择器（技能 · 连接器 · 伙伴）
+   *
+   * 判定层在 composer-slash.ts（纯函数、逐条做过变异）；这里只接线。
+   *
+   * ⚠ 光标位置不能只在 onChange 里读：用方向键把光标挪进/挪出斜杠段时
+   *   value 没变，onChange 不触发，面板会挂在那儿吃掉回车。所以 onSelect
+   *   也重算一遍（它在光标移动时触发）。
+   */
+  const [connectors, setConnectors] = React.useState<ConnectorSpec[]>([]);
+  const [picked, setPicked] = React.useState<SlashItem[]>(() =>
+    loadTurnCapabilities()
+  );
+  const [slash, setSlash] = React.useState<{
+    start: number;
+    end: number;
+    query: string;
+  } | null>(null);
+  const [slashIndex, setSlashIndex] = React.useState(0);
+
+  React.useEffect(() => {
+    let alive = true;
+    void listConnectors().then(list => {
+      if (alive) setConnectors(list);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /** 可选能力池：已安装技能 + 后端报上来的连接器。伙伴见「技能·连接器·伙伴」页。 */
+  const slashPool = React.useMemo<SlashItem[]>(() => {
+    const skills: SlashItem[] = loadInstalledSkills().map(sk => ({
+      key: installKeyOf(sk),
+      kind: "skill" as const,
+      name: sk.name,
+      description: sk.description || "",
+    }));
+    const conns: SlashItem[] = connectors.map(c => ({
+      key: c.id,
+      kind: "connector" as const,
+      name: c.name,
+      description: c.description,
+      // 不可用的照样列出来并说明缺什么（后端 /connectors 也是这个判断）
+      unavailable: c.available ? undefined : `${c.name}还没配置凭据`,
+    }));
+    return [...conns, ...skills];
+  }, [connectors]);
+
+  const slashItems = React.useMemo(
+    () => (slash ? filterSlashItems(slashPool, slash.query) : []),
+    [slash, slashPool]
+  );
+
+  const syncSlash = React.useCallback(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const next = slashQueryAt(ta.value, ta.selectionStart ?? 0);
+    setSlash(next);
+    setSlashIndex(0);
+  }, []);
+
+  const pickCapability = React.useCallback(
+    (item: SlashItem) => {
+      const ta = textareaRef.current;
+      if (ta && slash) {
+        const applied = applySlashPick(ta.value, slash);
+        setInput(applied.text);
+        requestAnimationFrame(() => {
+          const el = textareaRef.current;
+          if (!el) return;
+          el.focus();
+          el.setSelectionRange(applied.caret, applied.caret);
+          adjustTextareaHeight();
+        });
+      }
+      setPicked(prev => {
+        // 重复选同一个不叠加（用户连着敲两次 / 手滑）
+        if (prev.some(p => p.kind === item.kind && p.key === item.key)) return prev;
+        const next = [...prev, item];
+        saveTurnCapabilities(next);
+        return next;
+      });
+      setSlash(null);
+      setSlashIndex(0);
+    },
+    [slash, setInput, adjustTextareaHeight]
+  );
+
+  const removeCapability = React.useCallback((item: SlashItem) => {
+    setPicked(prev => {
+      const next = prev.filter(p => !(p.kind === item.kind && p.key === item.key));
+      saveTurnCapabilities(next);
+      return next;
+    });
+  }, []);
+
   const fillExample = React.useCallback(
     (text: string) => {
       setInput(text);
@@ -668,6 +777,10 @@ export function ComposerDock({
   const actionHints = hintChips.slice(0, statusPill ? 1 : 2);
   const showActionRow =
     attachments.length > 0 ||
+    // ⚠ 能力芯片要**跨 hero**：用户第一条需求就是在空态大输入框里发的，
+    //   而 hero 分支原本把整行藏起来了——勾了能力却看不见芯片，用户会以为
+    //   没生效。（写这行的时候差点漏掉，正是"只改一半"的形状。）
+    picked.length > 0 ||
     (!hero && (actionHints.length > 0 || !!statusPill));
   const topicLabel = goal.trim() || "新话题";
   const surfaceLabel = hasApp ? "成品" : "推演";
@@ -750,6 +863,15 @@ export function ComposerDock({
               {statusPill.label}
             </span>
           ) : null}
+          {/* 这一轮挂着的能力。⚠ 放在**发送之前看得见的地方**：勾了什么却
+              看不见，用户会以为没生效，或者忘了摘掉上一轮的。 */}
+          {picked.map(item => (
+            <CapabilityChip
+              key={`${item.kind}:${item.key}`}
+              item={item}
+              onRemove={() => removeCapability(item)}
+            />
+          ))}
           {actionHints.map(text => (
             <button
               key={text}
@@ -1172,8 +1294,41 @@ export function ComposerDock({
                   onChange={event => {
                     setInput(event.target.value);
                     requestAnimationFrame(adjustTextareaHeight);
+                    requestAnimationFrame(syncSlash);
                   }}
+                  onSelect={syncSlash}
+                  onBlur={() => setSlash(null)}
                   onKeyDown={event => {
+                    /* ⚠ 能力面板开着时，方向键/回车/Tab 归它，**必须在发送
+                       判定之前拦**。放到后面的话 Enter 会把消息发出去，
+                       而用户以为自己只是在选一个技能。 */
+                    if (slash) {
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        setSlash(null);
+                        return;
+                      }
+                      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                        event.preventDefault();
+                        setSlashIndex(cur =>
+                          moveHighlight(
+                            slashItems.length,
+                            cur,
+                            event.key === "ArrowDown" ? 1 : -1
+                          )
+                        );
+                        return;
+                      }
+                      if (
+                        (event.key === "Enter" || event.key === "Tab") &&
+                        slashItems.length > 0 &&
+                        !event.nativeEvent.isComposing
+                      ) {
+                        event.preventDefault();
+                        pickCapability(slashItems[slashIndex] ?? slashItems[0]!);
+                        return;
+                      }
+                    }
                     // Enter 行为偏好（设置页可切 Enter/Ctrl+Enter 发送）
                     if (shouldSendOnKey(event)) {
                       event.preventDefault();
@@ -1206,6 +1361,17 @@ export function ComposerDock({
               )}
             </div>
           </div>
+          {/* ⚠ 能力面板必须画在这个 relative 容器**内部**——挂 body 的话
+              absolute 会一路找到 body，跑去屏幕左上角（色板那条踩过）。 */}
+          {slash ? (
+            <ComposerSlashMenu
+              items={slashItems}
+              highlight={slashIndex}
+              query={slash.query}
+              onPick={pickCapability}
+              onHover={setSlashIndex}
+            />
+          ) : null}
           {/* 审查卡叠在输入框上方，不进外层 flex——进流会把输入顶走。 */}
           <IntakeHintBar
             judgement={judgement}
