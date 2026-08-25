@@ -19,7 +19,10 @@
  *   A 档位偏好记得住（下次开门直接回画布）
  *   B 滚轮停在**画板上**能平移        ← 手势层通电的证据
  *   C ctrl+滚轮停在画板上能缩放        ← 同上
- *   D 画板上按住拖拽 = 平移画布，且画板本身不被拖走
+ *   D  画板上拖拽 = 重排画板（改动前它不动）
+ *   D2 空格+拖拽 = 平移画布（画板不动）   ← 跟 D 是一对，只看一条会漏
+ *   D3 输入框里空格照常打得出（全局空格监听最容易打坏的一件事）
+ *   D4 按着空格切走窗口，回来不卡在平移态 ← 变异测出来的缺口，D/D2/D3 都漏
  *   E 双击进板：只撤掉**那一块**的手势层，其余照旧挡着
  *   F Esc 退出，手势层全部回来
  *   G 点缩放读数 = 适应画布
@@ -529,7 +532,17 @@ async function main() {
     const z1 = await zoomText();
     check("C 画板上 ctrl+滚轮缩放", z0 !== z1, `${z0} -> ${z1}`);
 
-    // D. 画板上拖拽 = 平移画布，画板本身不动（nodesDraggable=false 的意义）。
+    /*
+     * D / D2：画板重排与空格平移是**一对**，必须一起看。
+     *
+     * ⚠ 这两条替换了原来的「D 画板上拖拽=平移画布且画板不被拖走」——那条钉的是
+     *   2026-08-25 早先"为保住平移而放弃重排"的取舍，用户后来推翻了它，改用
+     *   Figma / excalidraw 那套：空格给平移留一条任何位置都走得通的路，
+     *   于是普通拖拽可以让给重排。判据跟着取舍走，不是把旧判据删掉了事。
+     *
+     * ⚠ 只看 D 会漏掉"空格根本没生效"（那时 D 仍绿：画板照样能拖）；
+     *   只看 D2 会漏掉"画板压根拖不动"（那时 D2 仍绿：画布照样能平移）。
+     */
     const v2 = await viewport();
     const node0 = await page.$eval(".react-flow__node", n => n.style.transform);
     const bb2 = await pointOnBoard();
@@ -540,10 +553,112 @@ async function main() {
     await page.waitForTimeout(600);
     const v3 = await viewport();
     const node1 = await page.$eval(".react-flow__node", n => n.style.transform);
+    /*
+     * ⚠ 这里**只钉"画板动了"**，不钉"画布没平移"。第一版把后者也写进来，
+     *   真机当场红：拖到视口边缘时 React Flow 的 autoPanOnNodeDrag 会跟着
+     *   平移一段（把画板挪到远处正需要它）。那条是把**旧取舍的反面**当成了
+     *   契约——旧取舍是"画板不可拖、拖即平移"，它的反面并不自动成立。
+     *   改动前后的真正差别就是这一条：以前拖画板它**不动**。
+     */
     check(
-      "D 画板上拖拽=平移画布且画板不被拖走",
-      v2 !== v3 && node0 === node1,
-      `viewport ${v2 !== v3 ? "变了" : "没变"} / node ${node0 === node1 ? "没动" : "被拖走了"}`
+      "D 画板上拖拽=重排画板（改动前它不动）",
+      node0 !== node1,
+      `node ${node0 !== node1 ? "动了" : "没动"} / viewport ${v2 === v3 ? "没变" : "跟着自动平移了一段"}`
+    );
+
+    const vSpace0 = await viewport();
+    const nodeSpace0 = await page.$eval(
+      ".react-flow__node",
+      n => n.style.transform
+    );
+    const bbSpace = await pointOnBoard();
+    await page.keyboard.down("Space");
+    await page.waitForTimeout(200);
+    const spaceOn = await page.evaluate(
+      () =>
+        document
+          .querySelector("[data-space-pan]")
+          ?.getAttribute("data-space-pan") === "1"
+    );
+    await page.mouse.move(bbSpace.x, bbSpace.y);
+    await page.mouse.down();
+    await page.mouse.move(bbSpace.x + 130, bbSpace.y + 80, { steps: 12 });
+    await page.mouse.up();
+    await page.keyboard.up("Space");
+    await page.waitForTimeout(600);
+    const vSpace1 = await viewport();
+    const nodeSpace1 = await page.$eval(
+      ".react-flow__node",
+      n => n.style.transform
+    );
+    check(
+      "D2 空格+画板上拖拽=平移画布，画板不动",
+      spaceOn && vSpace0 !== vSpace1 && nodeSpace0 === nodeSpace1,
+      `space=${spaceOn} viewport ${vSpace0 !== vSpace1 ? "变了" : "没变"} / node ${nodeSpace0 === nodeSpace1 ? "没动" : "被拖走了"}`
+    );
+
+    /* ⚠ 加了全局空格监听最容易静默打坏的一件事：输入框里敲不出空格。
+       excalidraw 没有这层判断（它的文本编辑是自己那套 wysiwyg），我们有真实
+       input/textarea，所以这条判据是我们特有的、也是必须的。 */
+    await page.evaluate(() => {
+      const i = document.createElement("input");
+      i.type = "text";
+      i.id = "__space-probe";
+      i.style.cssText = "position:fixed;left:8px;top:8px;z-index:99999";
+      document.body.appendChild(i);
+      i.focus();
+    });
+    await page.keyboard.type("ab");
+    await page.keyboard.press("Space");
+    await page.keyboard.type("cd");
+    await page.waitForTimeout(250);
+    const probe = await page.evaluate(() => {
+      const el = document.getElementById("__space-probe");
+      const v = el?.value ?? "";
+      el?.remove();
+      return {
+        v,
+        pan:
+          document
+            .querySelector("[data-space-pan]")
+            ?.getAttribute("data-space-pan") ?? "0",
+      };
+    });
+    check(
+      "D3 输入框里空格照常打得出，且不误进平移态",
+      probe.v === "ab cd" && probe.pan !== "1",
+      `打出 ${JSON.stringify(probe.v)} · space-pan=${probe.pan}`
+    );
+
+    /*
+     * ⚠ D4 是 2026-08-25 变异测出来的缺口：把"窗口失焦清空格态"那行拆掉，
+     *   D/D2/D3 **全绿**——没有任何判据发现。而这正是 excalidraw 专门处理过的
+     *   那个 bug（App.tsx 的 onBlur 里 `isHoldingSpace = false`）：按着空格
+     *   Alt+Tab 走掉，keyup 永远不来，切回来就卡在平移态，画板全拖不动，
+     *   而且用户完全不知道为什么。
+     */
+    await page.keyboard.down("Space");
+    await page.waitForTimeout(150);
+    const heldBefore = await page.evaluate(
+      () =>
+        document
+          .querySelector("[data-space-pan]")
+          ?.getAttribute("data-space-pan") === "1"
+    );
+    await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await page.waitForTimeout(250);
+    const heldAfter = await page.evaluate(
+      () =>
+        document
+          .querySelector("[data-space-pan]")
+          ?.getAttribute("data-space-pan") === "1"
+    );
+    await page.keyboard.up("Space");
+    await page.waitForTimeout(150);
+    check(
+      "D4 按着空格切走窗口，回来不会卡在平移态",
+      heldBefore && !heldAfter,
+      `失焦前 ${heldBefore} → 失焦后 ${heldAfter}`
     );
 
     // 先适应画布，把画板放回可视区——否则下面按坐标双击会点在画布空白处。

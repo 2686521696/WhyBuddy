@@ -66,6 +66,7 @@ import {
   Handle,
   MarkerType,
   MiniMap,
+  type NodeChange,
   Position,
   ConnectionMode,
   ReactFlow,
@@ -85,6 +86,7 @@ import {
   MousePointerClick,
   PanelRight,
   Plus,
+  LayoutGrid,
   RefreshCw,
   Scan,
 } from "lucide-react";
@@ -104,6 +106,11 @@ import { closestEditable } from "../../agent-loop/dashboard/ClickEditStage";
 import { BINDING_ATTRS as BINDING_ATTR_LIST } from "./html-binding-runtime";
 import { deriveBindingSource } from "./derive-binding-source";
 import {
+  boardPositionsStorageKey,
+  isTypingTarget,
+  readBoardPositions,
+  writeBoardPositions,
+  type BoardPosition,
   MAX_ZOOM,
   MIN_ZOOM,
   artboardLabel,
@@ -658,8 +665,8 @@ function ArtboardNode({ data }: NodeProps<Node<ArtboardData>>) {
           }}
           title={
             ctx?.onPickElement
-              ? "单击选中 · 双击进入交互 · 按住 Ctrl/⌘ 滑过高亮、单击改它 · 右键更多"
-              : "单击选中 · 双击进入交互 · 右键更多"
+              ? "单击选中 · 拖动重排 · 空格+拖动平移 · 双击进入交互 · Ctrl/⌘ 滑过高亮、单击改它 · 右键更多"
+              : "单击选中 · 拖动重排 · 空格+拖动平移 · 双击进入交互 · 右键更多"
           }
           onContextMenu={e => {
             e.preventDefault();
@@ -1027,6 +1034,107 @@ function CanvasInner({
   // 换页面清单 / 换会话 → 之前选中的元素多半已经不在了，别留着一个悬空的框。
   React.useEffect(() => setPicked(null), [sessionId, pages.length]);
 
+  /* ------------------------------------------------- 空格平移 / 画板重排 */
+
+  /**
+   * 按住空格 = 平移画布（Figma / excalidraw 那套）。
+   *
+   * 为什么需要它：画布上最高频的手势是"按住拖着看"，而画板可拖之后，
+   * 在画板上按下就被 React Flow 的节点拖拽接管了，平移够不着。空格给平移
+   * 留一条任何位置都走得通的路。
+   *
+   * ⚠ 四条都是从 excalidraw 抄的，缺一条都会出问题（App.tsx 里 isHoldingSpace
+   *   那几处）：
+   *     1. 只在**没有指针按下**时进入空格态——不在手势中途切模式；
+   *     2. `preventDefault()`——否则空格把页面滚下去了；
+   *     3. **窗口失焦要强制清掉**——Alt+Tab 走了 keyup 永远不来，
+   *        回来就卡在平移态，这是这类实现最常见的 bug；
+   *     4. 页面隐藏（切标签页）同样要清。
+   *
+   * ⚠ 第五条是我们特有的：excalidraw 把监听挂 document 上且没有输入框判断，
+   *   因为它的文本编辑是自己那套 wysiwyg。我们页面里有真实 input/textarea
+   *   （对话框、元素面板、搜索框），少了 isTypingTarget 这层，用户在输入框里
+   *   **敲不出空格**。
+   */
+  const [spaceHeld, setSpaceHeld] = React.useState(false);
+  /* 当前有没有按着指针。KeyboardEvent 上没有 buttons，excalidraw 用的是它自己
+     维护的 gesture.pointers.size —— 这里同样自己记一个。 */
+  const pointerDownRef = React.useRef(false);
+  React.useEffect(() => {
+    const onDown = () => {
+      pointerDownRef.current = true;
+    };
+    const onUp = () => {
+      pointerDownRef.current = false;
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("pointerup", onUp, true);
+    window.addEventListener("pointercancel", onUp, true);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("pointerup", onUp, true);
+      window.removeEventListener("pointercancel", onUp, true);
+    };
+  }, []);
+  React.useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.code !== "Space" && e.key !== " ") return;
+      if (e.repeat) return;
+      if (isTypingTarget(document.activeElement)) return;
+      if (pointerDownRef.current) return; // 手势进行中，不切模式
+      e.preventDefault();
+      setSpaceHeld(true);
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.code === "Space" || e.key === " ") setSpaceHeld(false);
+    };
+    const clear = () => setSpaceHeld(false);
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", clear);
+    document.addEventListener("visibilitychange", clear);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", clear);
+      document.removeEventListener("visibilitychange", clear);
+    };
+  }, []);
+
+  /**
+   * 手动挪过的画板位置。没挪过的页用自动排布算出来的位置。
+   *
+   * ⚠ 存档按会话分键并按当前页面清单过滤（readBoardPositions 里做）——
+   *   重新推演之后 pageId 会变，留着旧 id 会让自动排布在某些页上莫名不生效。
+   */
+  const posKey = boardPositionsStorageKey(sessionId);
+  const [boardPos, setBoardPos] = React.useState<Record<string, BoardPosition>>(
+    {}
+  );
+  React.useEffect(() => {
+    try {
+      setBoardPos(
+        readBoardPositions(
+          window.localStorage.getItem(posKey),
+          pages.map(p => p.pageId)
+        )
+      );
+    } catch {
+      setBoardPos({});
+    }
+  }, [posKey, pages]);
+  const persistPos = React.useCallback(
+    (next: Record<string, BoardPosition>) => {
+      setBoardPos(next);
+      try {
+        window.localStorage.setItem(posKey, writeBoardPositions(next));
+      } catch {
+        /* 存档失败不拦交互——挪动本身已经生效了，只是下次打开回到自动排布 */
+      }
+    },
+    [posKey]
+  );
+
   const [replacingUrl, setReplacingUrl] = React.useState<string | null>(null);
   const replacingAsset = React.useMemo(
     () => assets.find(a => a.url === replacingUrl) ?? null,
@@ -1109,11 +1217,41 @@ function CanvasInner({
     [model, runtime]
   );
 
+  /**
+   * 画板被拖动 → 记下新位置。
+   *
+   * ⚠ 只认 **artboard 节点**的位置变更：素材卡是自动排在画板下方的，
+   *   让它也能挪等于多一套要存的位置，而且素材本来就按引用数排序。
+   *
+   * ⚠ 只在**拖完**（dragging === false）才落存档。拖动中每一帧都写
+   *   localStorage 是几百次同步写，会把拖拽拖成一卡一卡。
+   */
+  const onNodesChange = React.useCallback(
+    (changes: NodeChange[]) => {
+      let next: Record<string, BoardPosition> | null = null;
+      for (const c of changes) {
+        if (c.type !== "position" || !c.position) continue;
+        if (c.id.startsWith("asset:")) continue;
+        next = { ...(next ?? boardPos), [c.id]: { ...c.position } };
+        if (c.dragging) {
+          // 拖动中：只更新内存，画板跟手；不写存档。
+          setBoardPos(next);
+          next = null;
+        }
+      }
+      if (next) persistPos(next);
+    },
+    [boardPos, persistPos]
+  );
+
   const nodes = React.useMemo<Node[]>(() => {
     const boards: Node<ArtboardData>[] = boxes.map((box, i) => ({
       id: box.pageId,
       type: "artboard",
-      position: { x: box.x, y: box.y },
+      /* 手动挪过的用存档位置，没挪过的用自动排布算出来的。
+         ⚠ 存档里只会有当前页面清单里的 id（readBoardPositions 过滤过），
+           所以新生成的页自然落在自动排布的位置上，不会挤在 (0,0)。 */
+      position: boardPos[box.pageId] ?? { x: box.x, y: box.y },
       // React Flow 要显式尺寸才能算 fitView 与 minimap；不给的话它得等
       // ResizeObserver 量一遍，首帧 fitView 会算在 0×0 上（全屏一团糊）。
       width: box.w,
@@ -1138,7 +1276,16 @@ function CanvasInner({
       data: { asset: assets[i]!, w: b.w, h: b.h },
     }));
     return [...boards, ...assetNodes];
-  }, [boxes, pages, isPhone, activePageId, assetBoxes, assets, assetsShown]);
+  }, [
+    boxes,
+    pages,
+    isPhone,
+    activePageId,
+    assetBoxes,
+    assets,
+    assetsShown,
+    boardPos,
+  ]);
 
   const boxById = React.useMemo(
     () => new Map(boxes.map(b => [b.pageId, b])),
@@ -1532,7 +1679,12 @@ function CanvasInner({
            *   结论：这块地方**不该有自己的背景**。要改画布观感就去改外壳那层
            *   （--sr-shell-bg），别在这里再糊一层。
            */
-          className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-md"
+          data-space-pan={spaceHeld ? "1" : "0"}
+          /* 光标反馈跟 excalidraw 一致：按住空格是 grab，真拖起来是 grabbing。
+             没有这层反馈，用户按了空格也不知道模式已经变了。 */
+          className={`relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-md ${
+            spaceHeld ? "cursor-grab active:cursor-grabbing" : ""
+          }`}
         >
           <CanvasContext.Provider value={ctx}>
             <ReactFlow
@@ -1578,7 +1730,15 @@ function CanvasInner({
                  d3-zoom（dragHandle 只决定"从哪儿开始拖"，不决定"要不要拦"）。
                  而画布上最高频的手势就是按住拖着看——为了一个"能重排画板"
                  （列数本来就按容器长宽比自动算了）去牺牲它，不划算。 */
-              nodesDraggable={false}
+              /*
+               * 空格按着时**画板不可拖**——只要节点 draggable，React Flow 就在
+               * 节点上接管 mousedown，事件到不了 d3-zoom，平移就够不着画板
+               * 底下那片区域（2026-08-25 第一版给标题条挂 dragHandle 失败的
+               * 就是这条：dragHandle 只决定"从哪儿开始拖"，不决定"要不要拦"）。
+               * 关掉 draggable，事件冒到缩放层，空格+拖就能在画板上平移。
+               */
+              nodesDraggable={!spaceHeld}
+              onNodesChange={onNodesChange}
               proOptions={{ hideAttribution: true }}
               onPaneClick={() => {
                 setEntered(null);
@@ -1653,6 +1813,27 @@ function CanvasInner({
             >
               <Scan className="h-3.5 w-3.5" />
             </button>
+            {/*
+              恢复自动排布。⚠ 只在**真挪过**的时候出现——没挪过还摆一颗按钮，
+              用户会以为当前就是"手动排的"。挪乱了必须有退路，否则重排是
+              单向操作（这块画布没有撤销栈）。
+            */}
+            {Object.keys(boardPos).length > 0 ? (
+              <button
+                type="button"
+                data-testid="sliderule-canvas-reset-layout"
+                onClick={() => {
+                  persistPos({});
+                  window.setTimeout(fitAll, 60);
+                  setToast("已恢复自动排布");
+                }}
+                className="flex h-6 items-center gap-1 rounded px-1.5 text-[11px] text-stone-500 transition hover:bg-[#f4f4f5] hover:text-stone-800"
+                title="把画板放回自动排布的位置"
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+                复位
+              </button>
+            ) : null}
             <span className="mx-0.5 h-4 w-px bg-[#e9edf2]" aria-hidden />
             <button
               type="button"

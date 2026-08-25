@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * 画布档的几何判据。
  *
@@ -23,6 +24,10 @@ import {
   layoutArtboards,
   pickLinkSides,
   shouldMountBoard,
+  boardPositionsStorageKey,
+  readBoardPositions,
+  writeBoardPositions,
+  isTypingTarget,
 } from "../canvas-board-layout";
 
 const DESKTOP = { w: 1920, h: 1080 };
@@ -289,5 +294,69 @@ describe("连线接在哪条边（网格里别绕路）", () => {
 
   it("位移相等时稳定走水平，不在横竖之间跳", () => {
     expect(pickLinkSides(at(0, 0), at(1000, 1000)).source).toBe("r");
+  });
+});
+
+describe("画板重排：位置存档", () => {
+  it("按会话分键，换会话不串味", () => {
+    expect(boardPositionsStorageKey("sr-1")).not.toBe(
+      boardPositionsStorageKey("sr-2")
+    );
+    expect(boardPositionsStorageKey(null)).toContain("anon");
+  });
+
+  it("存下来能原样读回来", () => {
+    const pos = { p1: { x: 10, y: 20 }, p2: { x: -5, y: 0 } };
+    expect(readBoardPositions(writeBoardPositions(pos), ["p1", "p2"])).toEqual(
+      pos
+    );
+  });
+
+  it("**按当前页面清单过滤**——重新推演后 pageId 会变", () => {
+    // ⚠ 留着旧 id 不会报错，只会让自动排布在某些页上莫名不生效
+    //   （手画连线那条踩过同一个坑）。
+    const raw = writeBoardPositions({
+      old: { x: 1, y: 2 },
+      p1: { x: 3, y: 4 },
+    });
+    expect(readBoardPositions(raw, ["p1"])).toEqual({ p1: { x: 3, y: 4 } });
+  });
+
+  it("坐标不是有限数就丢掉，别让画板飞到无穷远", () => {
+    const raw = JSON.stringify({
+      a: { x: NaN, y: 1 },
+      b: { x: 1, y: null },
+      c: { x: "3", y: 4 },
+      d: { x: 5, y: 6 },
+    });
+    expect(readBoardPositions(raw, ["a", "b", "c", "d"])).toEqual({
+      d: { x: 5, y: 6 },
+    });
+  });
+
+  it("坏存档不炸", () => {
+    expect(readBoardPositions(null, ["p1"])).toEqual({});
+    expect(readBoardPositions("{", ["p1"])).toEqual({});
+    expect(readBoardPositions("[]", ["p1"])).toEqual({});
+    expect(readBoardPositions('"x"', ["p1"])).toEqual({});
+  });
+});
+
+describe("空格平移要让开能打字的地方", () => {
+  it("input / textarea / select / contenteditable 都算", () => {
+    const mk = (tag: string) => document.createElement(tag);
+    expect(isTypingTarget(mk("input"))).toBe(true);
+    expect(isTypingTarget(mk("textarea"))).toBe(true);
+    expect(isTypingTarget(mk("select"))).toBe(true);
+    const ce = mk("div") as HTMLElement;
+    Object.defineProperty(ce, "isContentEditable", { value: true });
+    expect(isTypingTarget(ce)).toBe(true);
+  });
+
+  it("普通元素和 null 不算", () => {
+    // ⚠ 少了这层判断，用户在对话框里敲空格会变成"打不出空格"。
+    expect(isTypingTarget(document.createElement("div"))).toBe(false);
+    expect(isTypingTarget(document.createElement("button"))).toBe(false);
+    expect(isTypingTarget(null)).toBe(false);
   });
 });

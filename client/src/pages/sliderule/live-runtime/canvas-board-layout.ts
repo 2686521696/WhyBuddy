@@ -335,3 +335,81 @@ export function pickLinkSides(
   }
   return dy >= 0 ? { source: "b", target: "t" } : { source: "t", target: "b" };
 }
+
+/* ------------------------------------------------- 画板重排：位置存档 */
+
+/**
+ * 手动挪过的画板位置，按会话存。
+ *
+ * ⚠ 跟手画连线同一套写法（manualLinksStorageKey）：换会话就换一份，
+ *   否则上一个应用的位置会串到这个应用的画板上。
+ */
+export function boardPositionsStorageKey(
+  sessionId: string | null | undefined
+): string {
+  return `sliderule:canvas-boards:${sessionId || "anon"}`;
+}
+
+export interface BoardPosition {
+  x: number;
+  y: number;
+}
+
+/**
+ * 读存档。
+ *
+ * ⚠ **必须按当前页面清单过滤**：重新推演之后 pageId 会变（或某页没生成出来），
+ *   留着旧 id 的位置不会报错，只会让"自动排布"在某些页上莫名其妙不生效——
+ *   跟手画连线那条踩过的是同一个坑。
+ *
+ * ⚠ 坐标要逐个验有限数：存档被手改过、或者哪天写入端出 bug 存了 NaN，
+ *   直接喂给 React Flow 会让那块画板消失在无穷远处，而且屏幕上只是"少了一块"，
+ *   很难归因。
+ */
+export function readBoardPositions(
+  raw: string | null,
+  knownPageIds: readonly string[]
+): Record<string, BoardPosition> {
+  if (!raw) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  const known = new Set(knownPageIds);
+  const out: Record<string, BoardPosition> = {};
+  for (const [pageId, value] of Object.entries(
+    parsed as Record<string, unknown>
+  )) {
+    if (!known.has(pageId)) continue;
+    if (!value || typeof value !== "object") continue;
+    const { x, y } = value as { x?: unknown; y?: unknown };
+    if (typeof x !== "number" || !Number.isFinite(x)) continue;
+    if (typeof y !== "number" || !Number.isFinite(y)) continue;
+    out[pageId] = { x, y };
+  }
+  return out;
+}
+
+export function writeBoardPositions(
+  positions: Record<string, BoardPosition>
+): string {
+  return JSON.stringify(positions);
+}
+
+/**
+ * 焦点在能打字的地方吗。空格平移必须让开这些地方——
+ * 在输入框里敲空格是打空格，不是平移画布。
+ *
+ * ⚠ excalidraw 把键盘监听挂在 document 上、且没有这层判断，是因为它的文本
+ *   编辑是自己那套 wysiwyg；我们页面里有真实的 input/textarea（对话框、
+ *   元素面板、搜索框），少了这层会变成"在输入框里打不出空格"。
+ */
+export function isTypingTarget(el: Element | null): boolean {
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  return (el as HTMLElement).isContentEditable === true;
+}
