@@ -465,39 +465,88 @@ describe("画布台面：浅灰点阵 + 画板不带投影", () => {
   });
 });
 
-describe("画布 Ctrl+Click 进元素编辑：链路接上了吗", () => {
-  it("手势层认 Ctrl/⌘ 并透过 iframe 取元素（不是只加了个按键判断）", () => {
+const PANEL_EL = stripComments(
+  readFileSync(
+    resolve(__dirname, "../live-runtime/CanvasElementPanel.tsx"),
+    "utf8"
+  )
+);
+
+describe("画布点选元素直接改：链路接上了吗", () => {
+  it("悬停高亮和选中是**两个独立的** spot", () => {
+    // 用户原话："鼠标没有按下去的时候选不中，只是纯高亮"。
+    // GrapesJS 也是把 hover / select 做成两个 canvas spot，不是一个状态两种样式。
+    expect(STAGE).toContain("data-testid={`sliderule-canvas-element-${kind}`}");
+    expect(STAGE).toContain('kind="hover"');
+    expect(STAGE).toContain('kind="select"');
+    expect(STAGE).toContain("onMouseMove");
+  });
+
+  it("Ctrl 才生效，且透过手势层去问 iframe 要元素", () => {
     expect(STAGE).toContain("e.ctrlKey || e.metaKey");
-    // ⚠ 手势层盖在 iframe 上，点击落不到页面元素——必须透过去问 iframe。
-    //   少了 elementFromPoint 这一步，拿到的永远是手势层自己。
+    // ⚠ 手势层盖在 iframe 上，事件落不到页面元素——少了 elementFromPoint
+    //   拿到的永远是手势层自己。
     expect(STAGE).toContain("elementFromPoint");
-    expect(STAGE).toContain("elementPath(el, doc.body)");
+    expect(STAGE).toContain("frameRectToNodeRect(");
   });
 
-  it("Studio 真的把画布指认的元素交给了点选编辑", () => {
-    const call = STUDIO.slice(
-      STUDIO.indexOf("<SpecPageCanvasStage"),
-      STUDIO.indexOf("<SpecPageCanvasStage") + 2600
+  it("高亮框不许吃掉画布手势", () => {
+    // 这两个框盖在手势层上面，漏了 pointer-events-none 会把 mousemove/click
+    // 全吃掉——高亮会闪、点不中。
+    const spot = STAGE.slice(
+      STAGE.indexOf("function ElementSpot"),
+      STAGE.indexOf("function ElementSpot") + 1200
     );
-    expect(call).toContain("onEditElement=");
-    expect(call).toContain('setStageView("page")');
-    expect(call).toContain("setEditMode(true)");
-    expect(STUDIO).toContain("preselectPath={pendingEditPath}");
+    expect(spot).toContain("pointer-events-none");
+    // 描边要反缩放：25% 下 1px 的框只有 0.25px，亚像素看不见（点阵那次栽过）。
+    expect(spot).toContain("1 / zoom");
   });
 
-  it("不许在画布上再造一套元素编辑器（同一件事两处实现）", () => {
+  it("编辑留在画布上，**不跳页面档**", () => {
+    // 用户裁决："而不是跳到页面里面，走那个业内编辑的那个方式"。
+    expect(STAGE).toContain("<CanvasElementPanel");
+    expect(STAGE).not.toContain('setStageView("page")');
+    /*
+     * ⚠ 钉的是"不**挂载**第二个编辑器"，不是"不引用那个文件"——画布确实要从
+     *   ClickEditStage 里拿 closestEditable（可编辑判定共用一份，见下面那条）。
+     *   第一版写成 not.toContain("ClickEditStage") 把共用也一起禁了，
+     *   红的是判据自己。
+     */
+    expect(STAGE).not.toContain("<ClickEditStage");
+  });
+
+  it("编辑落在**源 HTML** 上，不是改画布那份渲染文档", () => {
+    /*
+     * ⚠ 画布里的 iframe 注入过 Tailwind、跑过绑定运行时（表格行是 cloneNode
+     *   克隆的）。改那份等于改"给人看的那一版"，存回 pages_json 会把注入的
+     *   东西一起存进去——ClickEditStage 头注把这条约束写得很清楚。
+     */
+    expect(PANEL_EL).toContain("applyElementOp(html, picked.path, op)");
+    expect(PANEL_EL).not.toContain("contentDocument");
+    expect(PANEL_EL).not.toContain("innerHTML =");
+  });
+
+  it("落库走既有写回路径，且成功后要把新 HTML 交回宿主", () => {
+    expect(STAGE).toContain("updateAppPage(appId, pageId, nextHtml)");
+    // 少了这一步：库里改了、画板还是旧的（"存了但看着没变"）。
+    expect(STAGE).toContain("onPagesReplaced?.({ [pageId]: nextHtml })");
+    // 反向：不许自己另起一条 PATCH
+    expect(STAGE).not.toMatch(/method:\s*["']PATCH["']/);
+  });
+
+  it("两套 UI，一套语义：可编辑判定与编辑语义都不许各写一份", () => {
     // 用户原话："和页面档的点选编辑其实都能对这块进行编辑，只是形式不一样"。
-    // 画布只负责**指认哪个元素**，编辑走已经通电的 ClickEditStage。
-    expect(STAGE).not.toContain("ClickEditStage");
-    expect(STAGE).not.toContain("contentEditable");
+    expect(STAGE).toContain("closestEditable");
+    expect(PANEL_EL).toContain("applyElementOp");
+    expect(PANEL_EL).not.toContain("BLOCK_TAGS");
   });
 
-  it("定位不到要说话，不许静默什么都不发生", () => {
-    expect(STUDIO).toContain("onPreselectResult");
-    const cb = STUDIO.slice(
-      STUDIO.indexOf("onPreselectResult"),
-      STUDIO.indexOf("onPreselectResult") + 500
+  it("源码里找不到那个元素要说清是哪一类，不是只丢一句出错了", () => {
+    expect(PANEL_EL).toContain(
+      'data-testid="sliderule-canvas-element-missing"'
     );
-    expect(cb).toContain("message.info");
+    expect(PANEL_EL).toContain("运行时按数据生成");
+    // 定位不到 = 失败，不许把原样 HTML 拿去落库当成功
+    expect(PANEL_EL).toContain("if (!res.ok)");
   });
 });

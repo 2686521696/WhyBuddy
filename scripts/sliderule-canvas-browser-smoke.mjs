@@ -44,8 +44,9 @@
  *
  * 第六轮（Ctrl+Click 进元素编辑）再钉 2 条：
  *
- *   AB Ctrl+Click 画板元素 → 切到点选编辑并进编辑态
- *   AC **选中的就是刚点的那个**  ← AB 只证明进了编辑态，一个都没选中也绿
+ *   AB 按住 Ctrl 滑过只高亮（不选中、不弹面板）
+ *   AC Ctrl+单击 → 选中 + 右侧编辑器，且没跳去页面档
+ *   AD **框逐像素落在元素上**  ← AC 只证明"有框"，框飘到别处照样绿
  *
  * ⚠ J 与 I 必须一起看，理由同 B/C 与 E：把手 opacity 是 1（I 绿）不代表它
  *   收得到事件。2026-08-25 真机就是 I 绿 J 红——手势层 `absolute inset-0`
@@ -271,14 +272,15 @@ async function main() {
     const wBack = await chatWidth();
     check("Y 切回画布档：重新锁上", wBack === 0, `chat=${wBack}px`);
 
-    /* ------------------------------ Ctrl+Click 进元素编辑（第六轮） */
+    /* ------------------ Ctrl 悬停高亮 / 点选元素直接改（第六轮） */
 
     /*
-     * ⚠ 单测只能证明"写了 ctrlKey 判断、写了 elementFromPoint"。真正要钉的是
-     *   **选中的是不是同一个元素**——手势层盖在 iframe 上、画布是缩放过的，
-     *   坐标换算错一点就选中隔壁那个，源码 grep 一样绿。
+     * ⚠ 单测只能证明"写了 ctrlKey、写了 elementFromPoint"。真正要钉的是
+     *   **框画在不在元素上**——画布是缩放过的、高亮层画在 React Flow 节点里，
+     *   坐标算错一层框就飘走，源码 grep 一样绿（2026-08-25 真机就是这么抓到
+     *   "缩两次"那个 bug 的：元素屏幕 14×5，框画成 4×1）。
      */
-    const ctrlTarget = await page.evaluate(() => {
+    const pickTarget = await page.evaluate(() => {
       const board = document.querySelector(
         '[data-testid="sliderule-canvas-artboard"]'
       );
@@ -300,56 +302,102 @@ async function main() {
         text: (el.textContent || "").trim().slice(0, 20),
         x: fb.left + (r.left + r.width / 2) * sx,
         y: fb.top + (r.top + r.height / 2) * sy,
+        screen: {
+          left: Math.round(fb.left + r.left * sx),
+          top: Math.round(fb.top + r.top * sy),
+          w: Math.round(r.width * sx),
+          h: Math.round(r.height * sy),
+        },
       };
     });
 
-    if (ctrlTarget) {
+    if (pickTarget) {
+      // 不按 Ctrl 滑过 —— 一个高亮都不该有
+      await page.mouse.move(pickTarget.x, pickTarget.y);
+      await page.waitForTimeout(400);
+      const idle = await page.evaluate(
+        () =>
+          document.querySelectorAll(
+            '[data-testid="sliderule-canvas-element-hover"]'
+          ).length
+      );
+
+      // 按住 Ctrl 滑过 —— 只高亮，不选中、不弹面板
       await page.keyboard.down("Control");
-      await page.mouse.click(ctrlTarget.x, ctrlTarget.y);
-      await page.keyboard.up("Control");
-      await page
-        .waitForFunction(() => /退出编辑/.test(document.body.innerText), {
-          timeout: 20000,
-        })
-        .catch(() => {});
-      await page.waitForTimeout(2500);
-      const edited = await page.evaluate(() => ({
-        inEdit:
-          document
-            .querySelector('[data-testid="sliderule-click-edit-toggle"]')
-            ?.getAttribute("aria-pressed") === "true",
-        canvasGone: !document.querySelector(
-          '[data-testid="sliderule-canvas-stage"]'
+      await page.mouse.move(pickTarget.x - 40, pickTarget.y);
+      await page.waitForTimeout(150);
+      await page.mouse.move(pickTarget.x, pickTarget.y);
+      await page.waitForTimeout(600);
+      const hovering = await page.evaluate(() => ({
+        hover: !!document.querySelector(
+          '[data-testid="sliderule-canvas-element-hover"]'
         ),
-        text: document.body.innerText,
+        select: !!document.querySelector(
+          '[data-testid="sliderule-canvas-element-select"]'
+        ),
+        panel: !!document.querySelector(
+          '[data-testid="sliderule-canvas-element-panel"]'
+        ),
       }));
       check(
-        "AB Ctrl+Click 画板元素 → 切到点选编辑并进编辑态",
-        edited.inEdit && edited.canvasGone,
-        `inEdit=${edited.inEdit} canvasGone=${edited.canvasGone}`
+        "AB 按住 Ctrl 滑过只高亮：不选中、不弹面板；不按 Ctrl 一点高亮都没有",
+        idle === 0 && hovering.hover && !hovering.select && !hovering.panel,
+        `不按Ctrl=${idle} ${JSON.stringify(hovering)}`
       );
-      /* ⚠ AB 不够：进了编辑态但一个元素都没选中，AB 照样绿。
-         AC 钉的是**选中的就是刚点的那个**——工具条/面包屑上会出现它的文字。 */
+
+      // 按下 —— 选中 + 右侧面板，且**留在画布上**
+      await page.mouse.click(pickTarget.x, pickTarget.y);
+      await page.keyboard.up("Control");
+      await page.waitForTimeout(900);
+      const picked = await page.evaluate(() => {
+        const spot = document.querySelector(
+          '[data-testid="sliderule-canvas-element-select"]'
+        );
+        const r = spot?.getBoundingClientRect();
+        return {
+          select: !!spot,
+          panel: !!document.querySelector(
+            '[data-testid="sliderule-canvas-element-panel"]'
+          ),
+          stillOnCanvas: !!document.querySelector(
+            '[data-testid="sliderule-canvas-stage"]'
+          ),
+          text: document.body.innerText,
+          rect: r
+            ? {
+                left: Math.round(r.left),
+                top: Math.round(r.top),
+                w: Math.round(r.width),
+                h: Math.round(r.height),
+              }
+            : null,
+        };
+      });
       check(
-        "AC 预选中的就是刚点的那个元素（不是随便选了一个）",
-        edited.text.includes(ctrlTarget.text),
-        `想选「${ctrlTarget.text}」`
+        "AC Ctrl+单击 → 选中 + 右侧编辑器，且**没有跳去页面档**",
+        picked.select &&
+          picked.panel &&
+          picked.stillOnCanvas &&
+          picked.text.includes(pickTarget.text),
+        `select=${picked.select} panel=${picked.panel} onCanvas=${picked.stillOnCanvas}`
       );
-      await page.screenshot({ path: `${SHOT_DIR}/ctrl-click-edit.png` });
-      // 退回画布档，别影响后面的判据
-      await page.evaluate(() => {
-        document
-          .querySelector('[data-testid="sliderule-click-edit-toggle"]')
-          ?.click();
-      });
+      /* ⚠ AC 不够：框画到别处去了，AC 照样绿（有框、有面板、在画布）。
+         AD 才是"框在不在元素上"那条闸——允许 1px 取整误差。 */
+      const near = (a, b) => Math.abs(a - b) <= 1;
+      check(
+        "AD 高亮框逐像素落在元素上（不是飘在别处）",
+        !!picked.rect &&
+          near(picked.rect.left, pickTarget.screen.left) &&
+          near(picked.rect.top, pickTarget.screen.top) &&
+          near(picked.rect.w, pickTarget.screen.w) &&
+          near(picked.rect.h, pickTarget.screen.h),
+        `框=${JSON.stringify(picked.rect)} 元素=${JSON.stringify(pickTarget.screen)}`
+      );
+      await page.screenshot({ path: `${SHOT_DIR}/element-pick.png` });
+      await page.keyboard.press("Escape");
       await page.waitForTimeout(400);
-      await page.click('[data-testid="sliderule-stage-view-canvas"]');
-      await page.waitForSelector('[data-testid="sliderule-canvas-stage"]', {
-        timeout: NAV_TIMEOUT,
-      });
-      await page.waitForTimeout(1200);
     } else {
-      log("画板里取不到可点元素，跳过 AB/AC");
+      log("画板里取不到可点元素，跳过 AB/AC/AD");
     }
 
     // 等画板挂上真渲染再动手：没挂载的画板是占位块，手势层还在但内容没到，

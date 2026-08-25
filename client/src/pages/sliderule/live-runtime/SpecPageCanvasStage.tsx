@@ -94,6 +94,13 @@ import { specPageViewport } from "./canvas-scale";
 import { findDevicePreset, loadDevicePresetId } from "./device-presets";
 import { STAGE_FRAME_FLAT } from "./stage-frame-style";
 import { elementPath, type PathStep } from "./element-path";
+import {
+  frameRectToNodeRect,
+  elementTitle,
+  type Rect,
+} from "./canvas-element-edit";
+import { closestEditable } from "../../agent-loop/dashboard/ClickEditStage";
+import { BINDING_ATTRS as BINDING_ATTR_LIST } from "./html-binding-runtime";
 import { deriveBindingSource } from "./derive-binding-source";
 import {
   MAX_ZOOM,
@@ -128,6 +135,7 @@ import {
 import { exportBoardHtml, exportBoardPng } from "./canvas-board-export";
 import { CanvasInspector } from "./CanvasInspector";
 import { AssetReplacePanel } from "./AssetReplacePanel";
+import { CanvasElementPanel } from "./CanvasElementPanel";
 import { updateAppPage } from "../../agent-loop/dashboard/app-store-client";
 import { CanvasBoardMenu } from "./CanvasBoardMenu";
 import type { SpecPageLive } from "./SpecPageLiveStage";
@@ -169,7 +177,6 @@ export interface SpecPageCanvasStageProps {
    * ⚠ path 可能是 null：点在空白处、或点到的是**运行时克隆出来的**表格行
    *   （源 HTML 里没有对应元素）。宿主要如实说"定位不到"，别静默选别的。
    */
-  onEditElement?: (pageId: string, path: PathStep[] | null) => void;
   /** 说明行右侧（角色切换）。跟页面档同一个位置。 */
   metaTrailing?: React.ReactNode;
   className?: string;
@@ -211,9 +218,106 @@ interface AssetData extends Record<string, unknown> {
  *   改坏。iframe 是 srcdoc 同源，contentDocument 拿得到；拿不到（还没加载完 /
  *   被浏览器策略挡了）也是回 null。
  */
-function elementPathAtPoint(e: React.MouseEvent): PathStep[] | null {
+/**
+ * 一个高亮框。hover 是细虚线，select 是实线 + 元素名标签——两种状态一眼能分开
+ * （GrapesJS/Figma 都是这个区分法：悬停轻、选中重）。
+ *
+ * ⚠ 描边宽度和标签要**反缩放**：画布缩到 25% 时 1px 的框只有 0.25px，
+ *   亚像素直接看不见——本仓在点阵那次已经栽过同一个坑。
+ */
+function ElementSpot({
+  rect,
+  kind,
+  label,
+}: {
+  rect: Rect;
+  kind: "hover" | "select";
+  label?: string;
+}): React.ReactElement {
+  const zoom = useStore(s => s.transform[2]);
+  const inv = zoom > 0 ? 1 / zoom : 1;
+  const color = kind === "select" ? "#1677ff" : "#7aa2ff";
+  return (
+    <div
+      className="pointer-events-none absolute"
+      data-testid={`sliderule-canvas-element-${kind}`}
+      style={{
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+        outline: `${(kind === "select" ? 2 : 1.5) * inv}px ${
+          kind === "select" ? "solid" : "dashed"
+        } ${color}`,
+        outlineOffset: 0,
+        background:
+          kind === "select" ? "rgba(22,119,255,0.06)" : "rgba(22,119,255,0.04)",
+        borderRadius: 2 * inv,
+      }}
+    >
+      {label ? (
+        <span
+          className="absolute whitespace-nowrap rounded px-1 py-px text-white"
+          style={{
+            left: 0,
+            top: 0,
+            transform: `scale(${inv}) translateY(-100%)`,
+            transformOrigin: "top left",
+            background: color,
+            fontSize: 11,
+            marginTop: -2 * inv,
+          }}
+        >
+          {label}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/** 两次拾取是不是同一个元素（同页同路径）。悬停时用它收敛重渲。 */
+export function samePick(
+  a: PickedElement | null,
+  b: PickedElement | null
+): boolean {
+  if (!a || !b) return a === b;
+  if (a.pageId !== b.pageId) return false;
+  if (a.path.length !== b.path.length) return false;
+  return a.path.every(
+    (s, i) => s.tag === b.path[i]!.tag && s.index === b.path[i]!.index
+  );
+}
+
+/** 画布上选中/悬停到的那个元素——路径 + 在画板节点内的矩形 + 一点显示信息。 */
+export interface PickedElement {
+  pageId: string;
+  path: PathStep[];
+  /** 画板节点内坐标（React Flow 的平移缩放由节点自己带走） */
+  rect: Rect;
+  tag: string;
+  title: string;
+}
+
+/**
+ * 从画布上的一次鼠标事件，取出 iframe 里那个元素。
+ *
+ * ⚠ 手势层盖在 iframe 上，事件落不到页面元素——所以**透过手势层去问 iframe**：
+ *   把落点换算成 iframe 内坐标，用 elementFromPoint 取真正被指到的那个。
+ *   让手势层在按住 Ctrl 时 pointer-events:none 也能做到，但那样平移/缩放/
+ *   右键会在按键期间一起失灵。
+ *
+ * ⚠ 取不到就回 null，**不猜**。调用方据此不画高亮，而不是画一个位置存疑的框。
+ *
+ * ⚠ "什么算一个可编辑元素"用的是点选编辑那份 closestEditable——同一条规则，
+ *   不在这里另写一套（各写一套的话两边选中的东西会不一样，还不报错）。
+ */
+function pickElementAtPoint(
+  e: React.MouseEvent,
+  pageId: string
+): PickedElement | null {
   const shield = e.currentTarget as HTMLElement;
-  const frame = shield.parentElement?.querySelector("iframe");
+  const host = shield.parentElement;
+  const frame = host?.querySelector("iframe");
   if (!frame) return null;
   let doc: Document | null = null;
   try {
@@ -224,17 +328,48 @@ function elementPathAtPoint(e: React.MouseEvent): PathStep[] | null {
   if (!doc?.body) return null;
   const box = frame.getBoundingClientRect();
   if (!(box.width > 0) || !(box.height > 0)) return null;
-  /* 画布是缩放过的：iframe 按 1920×1080 画，再用 transform 缩到画布上。
-     换算要用 iframe 的**内部**尺寸比外框尺寸，不能直接拿 clientX 减 box.left。 */
-  const sx = (doc.documentElement.clientWidth || frame.clientWidth) / box.width;
-  const sy =
-    (doc.documentElement.clientHeight || frame.clientHeight) / box.height;
-  const el = doc.elementFromPoint(
-    (e.clientX - box.left) * sx,
-    (e.clientY - box.top) * sy
+  const docW = doc.documentElement.clientWidth || frame.clientWidth;
+  const docH = doc.documentElement.clientHeight || frame.clientHeight;
+  if (!(docW > 0) || !(docH > 0)) return null;
+  const hit = doc.elementFromPoint(
+    ((e.clientX - box.left) / box.width) * docW,
+    ((e.clientY - box.top) / box.height) * docH
   );
-  if (!el || el === doc.body || el === doc.documentElement) return null;
-  return elementPath(el, doc.body);
+  if (!hit || hit === doc.body || hit === doc.documentElement) return null;
+  const el = closestEditable(hit) ?? (hit as HTMLElement);
+  const path = elementPath(el, doc.body);
+  if (!path) return null;
+  const r = el.getBoundingClientRect();
+  /*
+   * ⚠ 节点尺寸要用 **offsetWidth/offsetHeight（布局尺寸）**，不能用
+   *   getBoundingClientRect（屏幕尺寸）。2026-08-25 真机踩到：
+   *
+   *     iframe 布局 1920×1080，屏幕 488×274，比值 0.254 = React Flow 的 zoom
+   *
+   *   高亮框画在 React Flow 的节点里，React Flow 已经会乘一次 zoom；这里再拿
+   *   屏幕尺寸算比例等于**又除了一次**，框被缩两次。真机对过账：元素屏幕
+   *   14×5，框画成 4×1（14×0.254≈3.5），正是这个平方误差。
+   */
+  const rect = frameRectToNodeRect(
+    { left: r.left, top: r.top, width: r.width, height: r.height },
+    { width: docW, height: docH },
+    { width: frame.offsetWidth, height: frame.offsetHeight }
+  );
+  if (!rect) return null;
+  const attrs = BINDING_ATTR_LIST.map(a =>
+    el.hasAttribute(a) ? `${a}="${el.getAttribute(a)}"` : ""
+  ).find(Boolean);
+  return {
+    pageId,
+    path,
+    rect,
+    tag: el.tagName.toLowerCase(),
+    title: elementTitle(
+      el.tagName.toLowerCase(),
+      el.textContent || "",
+      attrs || ""
+    ),
+  };
 }
 
 /** 进板之后 iframe 才拿回点击权；没进板时手势层挡着。 */
@@ -250,9 +385,11 @@ interface CanvasCtx {
   onNavigate: (pageId: string) => void;
   onOpenInPageView?: (pageId: string) => void;
   onBoardMenu: (pageId: string, x: number, y: number) => void;
-  /** Ctrl/⌘+Click 画板里的某个元素 → 进那个元素的点选编辑。
+  /** Ctrl/⌘+Click 选中画板里的某个元素（右侧面板变成它的编辑器）。
    *  null = 宿主没给 appId（这一轮还没落库），那就不接这条手势。 */
-  onEditElement: ((pageId: string, path: PathStep[] | null) => void) | null;
+  onPickElement: ((picked: PickedElement | null) => void) | null;
+  /** 当前选中的元素——画板据此画选中框（只画自己那一页的）。 */
+  picked: PickedElement | null;
   /** 连线态：等着点第二块画板 */
   linkFrom: string | null;
   /** 连线态开着（画板边缘露出连线把手） */
@@ -295,6 +432,8 @@ const EDGE_STYLE = {
  *   （见 canvas-board-layout 头注的"三套坐标"）。
  */
 function ArtboardNode({ data }: NodeProps<Node<ArtboardData>>) {
+  /** 按住 Ctrl 滑过时高亮的那个元素（只高亮，不选中）。 */
+  const [hover, setHover] = React.useState<PickedElement | null>(null);
   const ctx = React.useContext(CanvasContext);
   const { page, box, index, label, fillPhone } = data;
 
@@ -482,30 +621,40 @@ function ArtboardNode({ data }: NodeProps<Node<ArtboardData>>) {
           data-testid="sliderule-canvas-gesture-shield"
           onClick={e => {
             e.stopPropagation();
-            /*
-             * Ctrl/⌘ + 单击 = 进这个元素的点选编辑（2026-08-25 用户要求，
-             * 参照 TRAE 的 "Ctrl + Click 快捷选中"）。
-             *
-             * ⚠ 手势层盖在 iframe 上面，点击落不到页面元素上——所以这里
-             *   **透过手势层去问 iframe**：把落点换算成 iframe 内坐标，
-             *   用 elementFromPoint 取真正被点到的那个元素。
-             *   让手势层在按住 Ctrl 时 pointer-events:none 也能做到，但那样
-             *   平移/缩放/右键会在按键期间一起失灵，得不偿失。
-             */
-            if (ctx?.onEditElement && (e.ctrlKey || e.metaKey)) {
+            /* Ctrl/⌘ + 单击 = **选中**这个元素，右侧面板变成它的编辑器。
+               留在画布上，不跳去页面档（2026-08-25 用户裁决，参照 TRAE）。 */
+            if (ctx?.onPickElement && (e.ctrlKey || e.metaKey)) {
               e.preventDefault();
-              ctx.onEditElement(page.pageId, elementPathAtPoint(e));
+              ctx.onPickElement(pickElementAtPoint(e, page.pageId));
               return;
             }
             ctx?.onSelect(page.pageId);
           }}
+          /*
+           * 按住 Ctrl 滑过 = **只高亮不选中**（用户原话："鼠标没有按下去的
+           * 时候选不中，只是纯高亮"）。GrapesJS 把 hover 和 select 做成两个
+           * 独立的 canvas spot，就是这个道理——两种状态不能合成一个。
+           *
+           * ⚠ 同一个元素不重复 setState（samePick 收敛），否则一路滑过去
+           *   会刷出几百次重渲，画布上还挂着 iframe。
+           */
+          onMouseMove={e => {
+            if (!ctx?.onPickElement) return;
+            if (!(e.ctrlKey || e.metaKey)) {
+              setHover(prev => (prev ? null : prev));
+              return;
+            }
+            const found = pickElementAtPoint(e, page.pageId);
+            setHover(prev => (samePick(prev, found) ? prev : found));
+          }}
+          onMouseLeave={() => setHover(prev => (prev ? null : prev))}
           onDoubleClick={e => {
             e.stopPropagation();
             ctx?.onEnter(page.pageId);
           }}
           title={
-            ctx?.onEditElement
-              ? "单击选中 · 双击进入交互 · Ctrl/⌘+单击改这个元素 · 右键更多"
+            ctx?.onPickElement
+              ? "单击选中 · 双击进入交互 · 按住 Ctrl/⌘ 滑过高亮、单击改它 · 右键更多"
               : "单击选中 · 双击进入交互 · 右键更多"
           }
           onContextMenu={e => {
@@ -515,6 +664,28 @@ function ArtboardNode({ data }: NodeProps<Node<ArtboardData>>) {
           }}
         />
       )}
+
+      {/*
+        高亮层（GrapesJS 的 canvas spots 同款：hover 和 select 是两个独立的
+        spot，不是一个状态的两种样式）。
+
+        ⚠ 画在**节点里**：画布的平移/缩放由 React Flow 的 transform 自动带走，
+          这里只剩画板自身的缩放要算（frameRectToNodeRect）。GrapesJS 要算
+          四项是因为它的 spots 容器挂在画布外面。
+
+        ⚠ pointer-events-none 是**功能**：这两个框盖在手势层上面，漏了它
+          鼠标一移上去就把 mousemove/click 全吃掉——高亮会闪、点不中。
+      */}
+      {hover && !samePick(hover, ctx?.picked ?? null) ? (
+        <ElementSpot rect={hover.rect} kind="hover" />
+      ) : null}
+      {ctx?.picked && ctx.picked.pageId === page.pageId ? (
+        <ElementSpot
+          rect={ctx.picked.rect}
+          kind="select"
+          label={ctx.picked.title}
+        />
+      ) : null}
     </div>
   );
 }
@@ -690,7 +861,6 @@ function CanvasInner({
   sessionId,
   appId,
   onPagesReplaced,
-  onEditElement,
   metaTrailing = null,
 }: SpecPageCanvasStageProps): React.ReactElement {
   const flow = useReactFlow();
@@ -827,6 +997,16 @@ function CanvasInner({
 
   /** 正在换的那张图（null = 面板关着）。存 URL 不存对象：pages 一变
    *  assets 会重算，存对象会拿着一份过期快照。 */
+  /**
+   * 画布上选中的那个元素（右侧面板据此变成它的编辑器）。
+   *
+   * ⚠ 存在这一层而不是画板节点里：右侧面板要读它，画板要据它画选中框，
+   *   两处共用一份。存进节点的话面板读不到，就会各存一份、迟早分叉。
+   */
+  const [picked, setPicked] = React.useState<PickedElement | null>(null);
+  // 换页面清单 / 换会话 → 之前选中的元素多半已经不在了，别留着一个悬空的框。
+  React.useEffect(() => setPicked(null), [sessionId, pages.length]);
+
   const [replacingUrl, setReplacingUrl] = React.useState<string | null>(null);
   const replacingAsset = React.useMemo(
     () => assets.find(a => a.url === replacingUrl) ?? null,
@@ -842,6 +1022,25 @@ function CanvasInner({
    *   2. 有一页写失败就整体报错，不吞——半换成功比没换更难排查。
    *   3. 落库成功必须 `onPagesReplaced`，否则画布还显示旧图：存了但看着没变。
    */
+  /**
+   * 元素编辑落库。跟换图**同一条写回路径**（PATCH /apps/{id}/pages/{pageId}），
+   * 不另造。
+   *
+   * ⚠ 落库成功必须 onPagesReplaced：画板是按 pages 渲染的，不把新 HTML 交回
+   *   宿主的话，库里改了、画布上还是旧的——"存了但看着没变"跟"没存上"在屏幕上
+   *   长得一模一样。
+   */
+  const applyElementEdit = React.useCallback(
+    async (pageId: string, nextHtml: string) => {
+      if (!appId) throw new Error("这个会话还没存成应用，先跑完一轮推演");
+      const res = await updateAppPage(appId, pageId, nextHtml);
+      if (!res.ok) throw new Error(res.error);
+      onPagesReplaced?.({ [pageId]: nextHtml });
+      setToast("已改好并存进这一页");
+    },
+    [appId, onPagesReplaced]
+  );
+
   const replaceAsset = React.useCallback(
     async (group: AssetUseGroup, nextUrl: string): Promise<number> => {
       if (!appId) throw new Error("这个会话还没存成应用，先跑完一轮推演");
@@ -1093,7 +1292,10 @@ function CanvasInner({
       },
       onSelectAsset: (a: CanvasAsset) => setFocusedAsset(a.url),
       onReplaceAsset: appId ? (a: CanvasAsset) => setReplacingUrl(a.url) : null,
-      onEditElement: appId && onEditElement ? onEditElement : null,
+      /* 选中→编辑整条收在画布内部（跟换图一样）。宿主只在落库后
+         收一次新 HTML（onPagesReplaced），不用把选中态穿来穿去。 */
+      onPickElement: appId ? setPicked : null,
+      picked,
       linkFrom,
       linkMode,
       registerBoardEl,
@@ -1112,7 +1314,7 @@ function CanvasInner({
       onOpenInPageView,
       onActivePageChange,
       appId,
-      onEditElement,
+      picked,
       linkFrom,
       linkMode,
       registerBoardEl,
@@ -1123,15 +1325,17 @@ function CanvasInner({
   // Esc：先退连线态，再退进板态。⚠ 只在有态可退时挂监听——常挂会把
   // Studio 里其它 Esc 语义（系统屏抽屉）抢掉。
   React.useEffect(() => {
-    if (!entered && !linkFrom) return;
+    if (!entered && !linkFrom && !picked) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (linkFrom) setLinkFrom(null);
+      // 退的顺序：先撤选中的元素，再退连线态，最后退进板态。
+      if (picked) setPicked(null);
+      else if (linkFrom) setLinkFrom(null);
       else setEntered(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [entered, linkFrom]);
+  }, [entered, linkFrom, picked]);
 
   // 提示条自己消失。⚠ 用 key 重置计时：连着点两次导出，第二次的提示
   // 不该被第一次的计时器提前掐掉。
@@ -1527,6 +1731,16 @@ function CanvasInner({
             </div>
           ) : null}
         </div>
+
+        {picked ? (
+          <CanvasElementPanel
+            picked={picked}
+            html={pages.find(p => p.pageId === picked.pageId)?.html ?? ""}
+            pageName={nameOf(picked.pageId)}
+            onApply={applyElementEdit}
+            onClose={() => setPicked(null)}
+          />
+        ) : null}
 
         {replacingAsset ? (
           <AssetReplacePanel
