@@ -15,6 +15,10 @@ import { buildStructuredReport } from "@shared/blueprint/sliderule-report-builde
 import { buildCapabilityPrompt } from "@shared/blueprint/sliderule-capability-prompts";
 // 技能库六期"推演注入"：已安装技能随 drive-full 请求进生成契约（纯本地读取，无环）
 import { installedSkillsDrivePayload } from "@/pages/sliderule/installed-skills";
+import {
+  loadTurnCapabilities,
+  pickedConnectorIds,
+} from "@/pages/sliderule/turn-capabilities";
 
 export type MarathonStopReason =
   | "user_interrupted" // M1
@@ -176,6 +180,9 @@ export async function driveFullViaPython(
         max_loops: opts.maxLoops ?? 10,
         turnId: opts.turnId,
         installedSkills: installedSkillsDrivePayload(),
+        /* 这一轮挂着的连接器（输入框 `/` 或伙伴挂上的）。
+           ⚠ 同步和流式两处都要带——流式才是前端主路径，只改一处等于没改。 */
+        activeConnectors: pickedConnectorIds(loadTurnCapabilities()),
         preferredDevice: opts.preferredDevice ?? "desktop",
         designSystemId: opts.designSystemId,
       }),
@@ -299,6 +306,9 @@ export async function driveFullViaPythonStream(
         max_loops: opts.maxLoops ?? 10,
         turnId: opts.turnId,
         installedSkills: installedSkillsDrivePayload(),
+        /* 这一轮挂着的连接器（输入框 `/` 或伙伴挂上的）。
+           ⚠ 同步和流式两处都要带——流式才是前端主路径，只改一处等于没改。 */
+        activeConnectors: pickedConnectorIds(loadTurnCapabilities()),
         ...(opts.mode ? { mode: opts.mode } : {}),
         preferredDevice: opts.preferredDevice ?? "desktop",
         designSystemId: opts.designSystemId,

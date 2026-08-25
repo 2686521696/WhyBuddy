@@ -637,6 +637,96 @@ def _clean_binding(raw: Any) -> str:
     return f"{' + '.join(ins)} -> {out}"
 
 
+# 本轮挂着的连接器（2026-08-25）。跟 _installed_skills 同一请求域模式：
+# /drive-full(-stream) 进来时设置、结束必清空。
+#
+# ⚠ 它跟技能注入**不是同一件事**，别合并：
+#   技能给的是"这一页该怎么设计"（影响生成），
+#   连接器给的是"这张表的数据从哪来、有哪些字段"（影响运行时填什么）。
+#   所以连接器进 prompt 的是一份**逐字段的实体声明**，要求模型原样收录——
+#   字段 id 差一个字，生成期取回来的真数据就填不进页面上的孔
+#   （derive-binding-source 会老老实实每格填「—」，而 problems 是空的）。
+_connectors_var: ContextVar[Optional[List[Dict[str, Any]]]] = ContextVar(
+    "sliderule_active_connectors", default=None
+)
+
+#: 一轮最多挂几个连接器。跟技能的 6 条同源：prompt 里塞太多，模型会开始
+#: 挑着做，而"挑着做"在这里等于悄悄少一张表。
+_MAX_CONNECTORS = 4
+
+
+def set_active_connectors(connectors: "Optional[List[Dict[str, Any]]]") -> None:
+    """设置本轮挂着的连接器（清洗后进 prompt）。传 None / 空即清空。
+
+    ⚠ 只收**后端注册表认识**的连接器 id。前端传什么都照单全收的话，
+      模型会为一个根本不存在的数据源建一张表，生成期取不到数，页面上多出
+      一张永远空着的表——不报错、不告警。
+    """
+    cleaned: List[Dict[str, Any]] = []
+    try:
+        from .connectors import get_connector
+    except Exception:
+        _connectors_var.set([])
+        return
+    for raw in connectors or []:
+        cid = ""
+        if isinstance(raw, str):
+            cid = raw.strip()
+        elif isinstance(raw, dict):
+            cid = str(raw.get("id") or raw.get("key") or "").strip()
+        spec = get_connector(cid) if cid else None
+        if not spec or not spec.available():
+            continue
+        if any(c["id"] == spec.id for c in cleaned):
+            continue
+        cleaned.append(
+            {
+                "id": spec.id,
+                "name": spec.name,
+                "source": spec.source,
+                "entity": spec.entity_declaration(),
+            }
+        )
+        if len(cleaned) >= _MAX_CONNECTORS:
+            break
+    _connectors_var.set(cleaned)
+
+
+def active_connectors() -> List[Dict[str, Any]]:
+    return list(_connectors_var.get() or [])
+
+
+def connector_prompt_block() -> str:
+    """挂着的连接器 → 一段"这些实体必须原样收录"的硬要求。
+
+    ⚠ 字段 id 必须**逐字**给出来并要求一字不差。给个"大概有日期和温度"的
+      描述，模型会自己起 `temperature` / `maxTemp` 这种名字，取回来的真数据
+      （`temp_max`）就对不上孔——页面每格填「—」，而且不报错。
+    """
+    conns = active_connectors()
+    if not conns:
+        return ""
+    lines = [
+        "Live data connectors attached to THIS run. Each one supplies REAL data at "
+        "runtime. You MUST include each entity below in datamodel.entities EXACTLY "
+        "as declared — same entity id, same field ids, same types. Do NOT rename, "
+        "merge, translate or drop any field id: the runtime fills these tables by "
+        "field id, and a renamed id silently yields an empty column. You may add "
+        "extra fields and extra entities of your own, and you SHOULD build pages "
+        "that display these entities."
+    ]
+    for conn in conns:
+        entity = conn["entity"]
+        fields = ", ".join(
+            f"{f['id']}:{f.get('type', 'text')}" for f in entity.get("fields") or []
+        )
+        lines.append(
+            f"- connector `{conn['id']}` ({conn['name']}, source: {conn['source']}) "
+            f"→ entity id `{entity['id']}` (name: {entity['name']}) fields: {fields}"
+        )
+    return "\n".join(lines)
+
+
 def set_installed_skills(skills: "Optional[List[Dict[str, Any]]]") -> None:
     """设置本轮推演要注入的已安装技能（清洗：上限 6 条，name/description 截断）。
 
@@ -773,6 +863,11 @@ def _build_user_content(
             shape = f" [field shape: {skill['binding']}]" if skill.get("binding") else ""
             lines.append(f"- {skill['name']}{desc}{shape}")
         parts.append("\n".join(lines))
+    # ①a 本轮挂着的连接器（硬要求）：实体声明必须原样收录，见
+    # connector_prompt_block 的注释——字段 id 差一个字，真数据就填不进孔。
+    conn_block = connector_prompt_block()
+    if conn_block:
+        parts.append(conn_block)
     # ①b 未验证绑定的已安装技能（软参考）：明确写"不要为它硬造能力卡"。
     # 从前它们跟上面混在一条 REQUIRED 里，模型只能二选一——要么编一个绑不上
     # 的能力被门禁拦，要么硬塞进无关实体。两种都比不提要求更糟。

@@ -1101,9 +1101,13 @@ def drive_full(
     max_loops = int(payload.get("max_loops", 10))
     user_text = sanitize_session_dict({"text": payload.get("userText", "") or payload.get("user_text", "")})[0].get("text", "")
     # 技能库六期"推演注入"：已安装技能进生成契约（setter 内清洗；结束必清空）
-    from services.v5_llm_generate import set_installed_skills
+    from services.v5_llm_generate import set_active_connectors, set_installed_skills
 
     set_installed_skills(payload.get("installedSkills"))
+    # ⚠ 连接器跟技能是**成对**的两条注入，而同步/流式两条驱动也是一对。
+    #   仓里第四条：改一条不改另一条不会报错，只会有一半不生效——而流式
+    #   才是前端主路径（身份透传、精修模式都在这上面踩过）。
+    set_active_connectors(payload.get("activeConnectors"))
     from services.device_policy import set_preferred_device_override
 
     set_preferred_device_override(
@@ -1118,6 +1122,7 @@ def drive_full(
         new_state = drive_full_v5_session(state, max_loops=max_loops, user_instruction=user_text)
     finally:
         set_installed_skills(None)
+        set_active_connectors(None)
         set_preferred_device_override(None)
         set_design_system_override(None)
     # Compat (task 119-04): capability results may be Pydantic models (model_dump) or plain dicts.
@@ -1265,7 +1270,7 @@ async def drive_full_stream(
     repair = str(payload.get("mode") or "").strip().lower() == "repair"
 
     # 技能库六期"推演注入"：已安装技能进生成契约（生成器全程生效，结束必清空）
-    from services.v5_llm_generate import set_installed_skills
+    from services.v5_llm_generate import set_active_connectors, set_installed_skills
 
     installed_skills = payload.get("installedSkills")
     from services import run_registry
@@ -1276,6 +1281,7 @@ async def drive_full_stream(
     # 跑完也要落库）。同会话已有活跃 run 时附着既有 run（防重复发起）。
     async def stream_factory():
         set_installed_skills(installed_skills)
+        set_active_connectors(payload.get("activeConnectors"))
         from services.device_policy import set_preferred_device_override
 
         set_preferred_device_override(
@@ -1307,6 +1313,7 @@ async def drive_full_stream(
                 yield event
         finally:
             set_installed_skills(None)
+            set_active_connectors(None)
             set_preferred_device_override(None)
             set_design_system_override(None)
 
