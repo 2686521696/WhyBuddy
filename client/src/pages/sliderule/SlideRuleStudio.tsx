@@ -482,6 +482,20 @@ export function SlideRuleStudio({
     if (stageView === "canvas" || stageView === "page")
       saveStageViewPref(stageView);
   }, [stageView]);
+  /**
+   * 画布档把舞台钉死在最大化（2026-08-25 用户指着顶栏那颗钮说"锁死"）。
+   *
+   * 画布是"把一轮产出摊开看全套"的视角——旁边留半屏对话，四块画板就被挤成
+   * 一条缝，这一档的全部意义就没了。所以进画布强制最大化，离开还原成用户
+   * 自己的选择（本来就最大化着的人不会被强行展开对话栏）。
+   *
+   * ⚠ 锁在 StudioLayoutContext 里统一兜底，不在这儿逐个去堵那五个口子
+   *   （顶栏钮 / 分隔条折钮 / 拖分隔条 / 双击还原 / 隐藏页面再显示）。
+   *   只堵一处就是半个锁——本仓第四条纪律最经典的形状。
+   */
+  useEffect(() => {
+    layout?.setMaximizeLocked(stageView === "canvas");
+  }, [layout, stageView]);
   const [activeSpecPageId, setActiveSpecPageId] = useState<string>("home");
   // 游标开关（计算尺游标 hairline 的品牌梗；偏好持久化，键跟老舞台同一个
   // ——用户在老链路开过游标，这里就该记得）

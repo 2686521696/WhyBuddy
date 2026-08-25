@@ -33,11 +33,45 @@ export function isStageMaximized(collapsed: StudioCollapsed): boolean {
   return collapsed.chat && !collapsed.stage;
 }
 
-export type MaximizeIntent = "maximize" | "restore" | "noop";
+export type MaximizeIntent = "maximize" | "restore" | "noop" | "locked";
 
-export function maximizeIntent(collapsed: StudioCollapsed): MaximizeIntent {
+/**
+ * 按一下最大化钮会发生什么。
+ *
+ * `locked` = 画布档把舞台钉死在最大化（2026-08-25 用户指着这颗钮说"锁死"）。
+ * 画布是"把一轮产出摊开看全套"的视角，旁边留半屏对话等于把画布挤成一条缝——
+ * 那一档就不该有"还原分栏"这个选项。
+ *
+ * ⚠ 锁住时返回 "locked" 而不是直接不给按钮：**按了没反应是本仓最忌的形状**。
+ *   钮要留在原位、置灰、并说清为什么（顶栏 title 写"画布档固定最大化"）。
+ */
+export function maximizeIntent(
+  collapsed: StudioCollapsed,
+  locked = false
+): MaximizeIntent {
   if (collapsed.stage) return "noop";
+  if (locked) return "locked";
   return collapsed.chat ? "restore" : "maximize";
+}
+
+/**
+ * 锁住时当前布局还需不需要纠正。
+ *
+ * ⚠ 掰开最大化的口子有五个，只堵顶栏那颗钮等于没锁（第四条纪律的经典形状）：
+ *     1) 顶栏最大化钮   2) 分隔条上的折叠对话钮   3) 拖分隔条
+ *     4) 双击分隔条还原  5) 隐藏页面再显示（那条会把 chatCollapsed 重置成 false）
+ *   所以判定放在这个纯函数里，由 context 的 effect 统一兜底，谁把它掰开都会被扳回来。
+ *
+ * 舞台被整个折掉（collapsed.stage）时不纠正：那时压根没有舞台可最大化，
+ * 硬扳只会跟"隐藏页面"打架。
+ */
+export function needsMaximizeLockFix(
+  collapsed: StudioCollapsed,
+  locked: boolean
+): boolean {
+  if (!locked) return false;
+  if (collapsed.stage) return false;
+  return !collapsed.chat;
 }
 
 /**

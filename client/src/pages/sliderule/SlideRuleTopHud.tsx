@@ -66,7 +66,14 @@ function SidebarRightGlyph({ filled }: { filled: boolean }) {
       />
       <path d="M10.4 3.2v9.6" stroke="currentColor" strokeWidth="1.2" />
       {filled ? (
-        <rect x="10.8" y="3.3" width="2.9" height="9.4" fill="currentColor" opacity="0.28" />
+        <rect
+          x="10.8"
+          y="3.3"
+          width="2.9"
+          height="9.4"
+          fill="currentColor"
+          opacity="0.28"
+        />
       ) : null}
     </svg>
   );
@@ -88,7 +95,9 @@ export function SlideRuleTopHud({
   const pageHidden = !!studio?.stagePageHidden;
   const collapsed = studio?.collapsed ?? { chat: false, stage: false };
   const maximized = !pageHidden && isStageMaximized(collapsed);
-  const maxIntent = pageHidden ? "noop" : maximizeIntent(collapsed);
+  const maxIntent = pageHidden
+    ? "noop"
+    : maximizeIntent(collapsed, !!studio?.maximizeLocked);
 
   return (
     <div
@@ -112,14 +121,18 @@ export function SlideRuleTopHud({
             <LayoutBtn
               testId="sliderule-layout-maximize"
               label={
-                maxIntent === "restore"
-                  ? "还原分栏"
-                  : maxIntent === "noop"
-                    ? "舞台已折叠，无法最大化"
-                    : "最大化舞台"
+                maxIntent === "locked"
+                  ? "画布档固定最大化（切到「页面」档可还原分栏）"
+                  : maxIntent === "restore"
+                    ? "还原分栏"
+                    : maxIntent === "noop"
+                      ? "舞台已折叠，无法最大化"
+                      : "最大化舞台"
               }
               pressed={maximized}
-              disabled={maxIntent === "noop"}
+              /* ⚠ 置灰而不是藏起来：按钮凭空消失比按不动更让人以为坏了，
+                 而且档位来回切时顶栏会跳。置灰 + title 说清原因。 */
+              disabled={maxIntent === "noop" || maxIntent === "locked"}
               onClick={studio?.toggleMaximize}
             >
               {maximized ? (

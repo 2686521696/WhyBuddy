@@ -8,6 +8,7 @@ import {
   isStagePageShown,
   isStudioChromeShown,
   maximizeIntent,
+  needsMaximizeLockFix,
   nextStagePageHidden,
   STUDIO_CHAT_FALLBACK_PERCENT,
   STUDIO_CHAT_MAX_PERCENT,
@@ -127,5 +128,54 @@ describe("手机预览列默认 = 左侧菜单 ×3", () => {
     expect(isPhoneStudioDevice("phone")).toBe(true);
     expect(isPhoneStudioDevice("desktop")).toBe(false);
     expect(isPhoneStudioDevice(undefined)).toBe(false);
+  });
+});
+
+describe("画布档锁死最大化", () => {
+  it("锁住时按最大化钮不是 restore，而是 locked", () => {
+    // ⚠ 不锁的时候语义一个都不许变（下面三条是回归护栏）
+    expect(maximizeIntent({ chat: false, stage: false }, false)).toBe(
+      "maximize"
+    );
+    expect(maximizeIntent({ chat: true, stage: false }, false)).toBe("restore");
+    expect(maximizeIntent({ chat: false, stage: true }, false)).toBe("noop");
+    // 锁住：已经最大化了也不给"还原分栏"
+    expect(maximizeIntent({ chat: true, stage: false }, true)).toBe("locked");
+    expect(maximizeIntent({ chat: false, stage: false }, true)).toBe("locked");
+  });
+
+  it("locked 参数不传时行为跟以前一模一样（老调用点不受影响）", () => {
+    expect(maximizeIntent({ chat: false, stage: false })).toBe("maximize");
+    expect(maximizeIntent({ chat: true, stage: false })).toBe("restore");
+  });
+
+  it("舞台整个折掉时 noop 优先于 locked", () => {
+    // 没有舞台可最大化，这时说"锁住了"会跟"隐藏页面"打架
+    expect(maximizeIntent({ chat: false, stage: true }, true)).toBe("noop");
+  });
+
+  it("对话栏被掰开就要纠正，已经折着就不动", () => {
+    expect(needsMaximizeLockFix({ chat: false, stage: false }, true)).toBe(
+      true
+    );
+    // 反向：已经是最大化的不许反复纠正（会跟 react-resizable-panels 打架）
+    expect(needsMaximizeLockFix({ chat: true, stage: false }, true)).toBe(
+      false
+    );
+  });
+
+  it("没上锁时永远不纠正", () => {
+    expect(needsMaximizeLockFix({ chat: false, stage: false }, false)).toBe(
+      false
+    );
+    expect(needsMaximizeLockFix({ chat: true, stage: false }, false)).toBe(
+      false
+    );
+  });
+
+  it("舞台折掉时不纠正——那时没有舞台可最大化", () => {
+    expect(needsMaximizeLockFix({ chat: false, stage: true }, true)).toBe(
+      false
+    );
   });
 });

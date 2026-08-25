@@ -32,11 +32,7 @@
  * 松手再量一次。onDragging 是 v3 公开的口。
  */
 import React from "react";
-import {
-  Panel,
-  PanelGroup,
-  PanelResizeHandle,
-} from "react-resizable-panels";
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useStudioLayout } from "./StudioLayoutContext";
 import {
@@ -50,6 +46,7 @@ import {
   studioPhoneStageDefaultPercent,
   studioPhoneStageDefaultPx,
   studioStageDefaultPercent,
+  needsMaximizeLockFix,
 } from "./studio-layout";
 
 function splitDefaults(device?: "desktop" | "phone") {
@@ -90,7 +87,9 @@ function SplitFallback({
       <div className="w-px shrink-0 bg-[#d1d9e0b3]" aria-hidden />
       <div
         className="min-h-0 min-w-0"
-        style={{ flex: phone ? `0 0 ${studioPhoneStageDefaultPx()}px` : "1 1 0" }}
+        style={{
+          flex: phone ? `0 0 ${studioPhoneStageDefaultPx()}px` : "1 1 0",
+        }}
       >
         {stage}
       </div>
@@ -108,9 +107,15 @@ export function StudioSplit({
   device?: "desktop" | "phone";
 }) {
   const layout = useStudioLayout();
-  if (!layout) return <SplitFallback chat={chat} stage={stage} device={device} />;
+  if (!layout)
+    return <SplitFallback chat={chat} stage={stage} device={device} />;
   return (
-    <StudioSplitLive layout={layout} chat={chat} stage={stage} device={device} />
+    <StudioSplitLive
+      layout={layout}
+      chat={chat}
+      stage={stage}
+      device={device}
+    />
   );
 }
 
@@ -165,6 +170,29 @@ function StudioSplitLive({
     applyDefaults();
   }, [layoutGeneration, applyDefaults]);
 
+  /**
+   * 画布档锁死最大化的**执行点**。
+   *
+   * ⚠ 必须在这里，不能在 StudioLayoutContext 里（2026-08-25 真机踩过，
+   *   见那边的注释）：Provider 的 effect 首屏是在分栏挂载**之前**跑的，
+   *   chatRef 还是 null，collapse 静静地没执行，而依赖不再变就没有第二次。
+   *   这个组件自己的 effect 跑时 Panel 必然已挂上，ref 一定有值。
+   *
+   * ⚠ 判定用 needsMaximizeLockFix，别在这儿重写条件——同一件事两处实现，
+   *   改一处忘一处就是半个锁。
+   */
+  React.useEffect(() => {
+    if (layout.stagePageHidden) return; // 页面都藏了，没有舞台可最大化
+    if (!needsMaximizeLockFix(collapsed, layout.maximizeLocked)) return;
+    chatRef.current?.collapse();
+  }, [
+    layout.maximizeLocked,
+    layout.stagePageHidden,
+    collapsed.chat,
+    collapsed.stage,
+    chatRef,
+  ]);
+
   return (
     <div ref={splitElRef} className="h-full w-full min-h-0 min-w-0">
       <PanelGroup
@@ -193,7 +221,8 @@ function StudioSplitLive({
 
         <PanelResizeHandle
           data-testid="sliderule-studio-split-handle"
-          disabled={phone}
+          /* 画布档锁死最大化时连拖都不许——第 3 个掰开它的口子。 */
+          disabled={phone || layout.maximizeLocked}
           className={`group relative z-20 flex w-px shrink-0 items-center justify-center bg-[#d1d9e0b3] outline-none after:absolute after:inset-y-0 after:-left-1 after:w-2.5 after:content-[''] ${
             phone
               ? "cursor-default"
@@ -215,7 +244,7 @@ function StudioSplitLive({
               type="button"
               data-testid="sliderule-studio-split-toggle-chat"
               aria-label={collapsed.chat ? "展开对话" : "折叠对话"}
-              disabled={collapsed.stage}
+              disabled={collapsed.stage || layout.maximizeLocked}
               onClick={toggleChat}
               className="flex h-5 w-5 items-center justify-center rounded-[4px] text-[#52525b] hover:bg-[#f4f4f5] disabled:opacity-30"
             >

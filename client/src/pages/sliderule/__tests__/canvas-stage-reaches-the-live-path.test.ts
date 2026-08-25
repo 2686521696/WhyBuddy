@@ -342,3 +342,93 @@ describe("换图：纯函数之外，链路真的接上了吗", () => {
     expect(STAGE).toContain("ctx?.onReplaceAsset ?");
   });
 });
+
+/* ============================================ 画布档锁死最大化：五个口子 */
+
+const LAYOUT_CTX = stripComments(
+  readFileSync(resolve(__dirname, "../StudioLayoutContext.tsx"), "utf8")
+);
+const SPLIT = stripComments(
+  readFileSync(resolve(__dirname, "../StudioSplit.tsx"), "utf8")
+);
+const HUD = stripComments(
+  readFileSync(resolve(__dirname, "../SlideRuleTopHud.tsx"), "utf8")
+);
+
+describe("画布档锁死最大化：掰开它的五个口子都堵上了吗", () => {
+  it("Studio 真的在画布档上锁（不是只写了个 setter）", () => {
+    expect(STUDIO).toContain('setMaximizeLocked(stageView === "canvas")');
+  });
+
+  it("口子1 顶栏最大化钮：置灰而不是按了没反应", () => {
+    expect(HUD).toContain('maxIntent === "locked"');
+    expect(HUD).toMatch(/disabled=\{[^}]*maxIntent === "locked"/);
+    // 反向：锁的判定要从 context 来，不许顶栏自己按 stageView 猜一遍
+    expect(HUD).toContain("studio?.maximizeLocked");
+    expect(HUD).not.toContain('stageView === "canvas"');
+  });
+
+  it("口子2 分隔条上的折叠对话钮：锁住时置灰", () => {
+    expect(SPLIT).toMatch(
+      /disabled=\{collapsed\.stage \|\| layout\.maximizeLocked\}/
+    );
+  });
+
+  it("口子3 拖分隔条：锁住时整条 handle 不许拖", () => {
+    expect(SPLIT).toMatch(/disabled=\{phone \|\| layout\.maximizeLocked\}/);
+  });
+
+  it("口子4 双击还原：锁住时不展开对话栏", () => {
+    const reset = LAYOUT_CTX.match(
+      /const resetLayout[\s\S]*?},\s*\[[^\]]*\]\s*\)/
+    )?.[0];
+    expect(reset).toBeTruthy();
+    expect(reset).toContain("if (!maximizeLocked) setChatCollapsed(false)");
+  });
+
+  it("口子5 隐藏页面再显示：锁住时不展开对话栏", () => {
+    const toggle = LAYOUT_CTX.match(
+      /const toggleStagePage[\s\S]*?},\s*\[[^\]]*\]\s*\)/
+    )?.[0];
+    expect(toggle).toBeTruthy();
+    expect(toggle).toContain("if (!maximizeLocked) setChatCollapsed(false)");
+  });
+
+  it("两个 toggle 在锁住时直接 return，不靠 effect 事后扳回来", () => {
+    // 靠 effect 兜底会先闪一下再弹回去，用户看到的是"抖了一下"。
+    const chat = LAYOUT_CTX.match(
+      /const toggleChat[\s\S]*?},\s*\[[^\]]*\]\s*\)/
+    )?.[0];
+    expect(chat).toContain("if (maximizeLocked) return");
+    // toggleMaximize 要把锁**传进** maximizeIntent，而不是自己判一遍。
+    // ⚠ 钉语义不钉换行：prettier 一跑格式就变，写死缩进的判据会假红。
+    const max = LAYOUT_CTX.match(
+      /const toggleMaximize[\s\S]*?},\s*\[[^\]]*\]\s*\)/
+    )?.[0];
+    expect(max).toBeTruthy();
+    expect(max).toMatch(/maximizeIntent\([\s\S]*maximizeLocked[\s\S]*\)/);
+  });
+
+  it("兜底 effect 在**拥有 ref 的组件**里，且判定用纯函数", () => {
+    /*
+     * ⚠ 2026-08-25 真机：第一版把这个 effect 放在 StudioLayoutContext 上，
+     *   首屏**一次都没执行**——Provider 的 effect 以 locked=true 跑时
+     *   StudioSplit 还没挂载（画布要等页面数据），chatRef 是 null，
+     *   之后依赖不再变就没有第二次。钮已置灰、对话栏还占半屏。
+     *   所以这条判据钉的是"执行点在 StudioSplit"，不只是"有这么一段代码"。
+     */
+    expect(SPLIT).toContain(
+      "needsMaximizeLockFix(collapsed, layout.maximizeLocked)"
+    );
+    expect(SPLIT).toContain("chatRef.current?.collapse()");
+    // 反向：Provider 里不许再留一份（同一件事两处实现 = 半个锁）
+    expect(LAYOUT_CTX).not.toContain("needsMaximizeLockFix");
+  });
+
+  it("解锁要还原成用户上锁前的选择，不是一律展开", () => {
+    expect(LAYOUT_CTX).toContain("beforeLockRef");
+    expect(LAYOUT_CTX).toContain(
+      "if (before === false) chatRef.current?.expand()"
+    );
+  });
+});

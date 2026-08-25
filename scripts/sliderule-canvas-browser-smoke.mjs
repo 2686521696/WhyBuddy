@@ -34,6 +34,14 @@
  *   M 「写进页面」把页面作用域指令填进输入框，且**没有自动发出去**
  *   N 右键菜单七项齐、且没有「删除」
  *
+ * 第四轮（画布档锁死最大化）再钉 5 条：
+ *
+ *   U 一进画布档对话栏就是折的      ← 首屏真的锁上了的唯一证据
+ *   V 最大化钮置灰且说清原因
+ *   W 硬点钮 / 分隔条折钮都掰不开
+ *   X 切到页面档：锁解开、对话栏回来
+ *   Y 切回画布档：重新锁上
+ *
  * ⚠ J 与 I 必须一起看，理由同 B/C 与 E：把手 opacity 是 1（I 绿）不代表它
  *   收得到事件。2026-08-25 真机就是 I 绿 J 红——手势层 `absolute inset-0`
  *   在 DOM 里排在把手后面，同层后来居上，把手看得见按不下去。
@@ -170,6 +178,94 @@ async function main() {
       "aria-pressed"
     );
     check("A 档位偏好记得住", pressed === "true", `aria-pressed=${pressed}`);
+
+    /* ------------------------------------ 画布档锁死最大化（第四轮） */
+
+    /*
+     * ⚠ 为什么必须真机：单测那 11 条是**剥注释查源码**，只能证明"接线写了"。
+     *   锁是不是真的锁得住——按了钮之后对话栏有没有弹回来、切档来回之后
+     *   状态对不对——是 react-resizable-panels 的命令式 collapse/expand
+     *   跟 React effect 打交道的结果，只有真浏览器算得出来。
+     *
+     * ⚠ **V 和 U 必须一起看**（跟 I/J、S/T 同一条纪律）。2026-08-25 真机
+     *   第一版就是 V 绿 U 红：钮已经置灰（锁的状态是对的）、对话栏却还占着
+     *   半屏——兜底 effect 挂在 Provider 上，首屏跑的时候 StudioSplit 还没
+     *   挂载、chatRef 是 null，collapse 静静地没执行，之后依赖不再变就没有
+     *   第二次。只看 V 会以为功能好了。
+     *   把 StudioSplit 里那句 `chatRef.current?.collapse()` 删掉即可复现：
+     *   U/W/Y 三条红、V 照样绿。
+     */
+    const chatWidth = () =>
+      page.evaluate(() => {
+        const el = document.querySelector('[data-panel-id="sliderule-chat"]');
+        return el ? Math.round(el.getBoundingClientRect().width) : -1;
+      });
+
+    const lockedState = await page.evaluate(() => {
+      const btn = document.querySelector(
+        '[data-testid="sliderule-layout-maximize"]'
+      );
+      return {
+        found: !!btn,
+        disabled: btn ? btn.disabled === true : null,
+        title: btn?.getAttribute("title") || btn?.getAttribute("aria-label") || "",
+      };
+    });
+    const wCanvas = await chatWidth();
+    check(
+      "U 画布档一进来对话栏就是折的（舞台最大化）",
+      wCanvas === 0,
+      `chat=${wCanvas}px`
+    );
+    check(
+      "V 最大化钮置灰且说清原因（不是按了没反应）",
+      lockedState.found &&
+        lockedState.disabled === true &&
+        lockedState.title.includes("画布档"),
+      JSON.stringify(lockedState)
+    );
+
+    // 强行点它（绕过 disabled）——对话栏不许弹回来
+    await page.evaluate(() => {
+      document.querySelector('[data-testid="sliderule-layout-maximize"]')?.click();
+      document
+        .querySelector('[data-testid="sliderule-studio-split-toggle-chat"]')
+        ?.click();
+    });
+    await page.waitForTimeout(600);
+    const wAfterPoke = await chatWidth();
+    check(
+      "W 硬点最大化钮 / 分隔条折钮，对话栏仍然不出来",
+      wAfterPoke === 0,
+      `chat=${wAfterPoke}px`
+    );
+
+    // 切到页面档 → 锁解开、对话栏回来；再切回画布 → 重新锁上
+    await page.click('[data-testid="sliderule-stage-view-page"]');
+    await page.waitForTimeout(800);
+    const wPage = await chatWidth();
+    const pageBtn = await page.evaluate(
+      () =>
+        document.querySelector('[data-testid="sliderule-layout-maximize"]')
+          ?.disabled === true
+    );
+    check(
+      "X 切到页面档：锁解开、对话栏回来、钮可用",
+      wPage > 0 && pageBtn === false,
+      `chat=${wPage}px disabled=${pageBtn}`
+    );
+
+    await page.click('[data-testid="sliderule-stage-view-canvas"]');
+    await page.waitForSelector('[data-testid="sliderule-canvas-stage"]', {
+      timeout: NAV_TIMEOUT,
+    });
+    await page.waitForTimeout(800);
+    const wBack = await chatWidth();
+    check(
+      "Y 切回画布档：重新锁上",
+      wBack === 0,
+      `chat=${wBack}px`
+    );
 
     // 等画板挂上真渲染再动手：没挂载的画板是占位块，手势层还在但内容没到，
     // 那时候量 B/C 量的是另一件事。

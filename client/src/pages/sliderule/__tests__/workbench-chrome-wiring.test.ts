@@ -25,10 +25,7 @@ describe("workbench chrome live-path wiring", () => {
   it("DashboardApp 外壳带 ShellSidebarProvider 和 data-sidebar-collapsed", () => {
     const src = stripComments(
       readFileSync(
-        new URL(
-          "../../agent-loop/dashboard/DashboardApp.tsx",
-          import.meta.url
-        ),
+        new URL("../../agent-loop/dashboard/DashboardApp.tsx", import.meta.url),
         "utf8"
       )
     );
@@ -75,8 +72,11 @@ describe("workbench chrome live-path wiring", () => {
         "utf8"
       )
     );
+    // ⚠ 依赖数组不再恒为 []（画布档锁住最大化后它依赖 maximizeLocked），
+    //   正则要放开这一段，否则切片取不到、判据变成"expected undefined"，
+    //   看着像功能坏了其实是判据自己僵在旧写法上。
     const pageToggle = ctx.match(
-      /const toggleStagePage[\s\S]*?},\s*\[\]\s*\)/
+      /const toggleStagePage[\s\S]*?},\s*\[[^\]]*\]\s*\)/
     )?.[0];
     expect(pageToggle).toBeTruthy();
     expect(pageToggle).toContain("nextStagePageHidden");
@@ -98,15 +98,16 @@ describe("workbench chrome live-path wiring", () => {
     expect(handle).not.toContain("linear-gradient");
     expect(handle).not.toContain("bg-[#e5e7eb]");
     expect(handle).not.toContain("w-1.5");
-    expect(src).toContain("onDragging={phone ? undefined : layout.setResizing}");
-    expect(src).toContain('data-studio-resizing={layout.resizing ? "true" : undefined}');
+    expect(src).toContain(
+      "onDragging={phone ? undefined : layout.setResizing}"
+    );
+    expect(src).toContain(
+      'data-studio-resizing={layout.resizing ? "true" : undefined}'
+    );
 
     const css = stripComments(
       readFileSync(
-        new URL(
-          "../../agent-loop/dashboard/dashboard.css",
-          import.meta.url
-        ),
+        new URL("../../agent-loop/dashboard/dashboard.css", import.meta.url),
         "utf8"
       )
     );
@@ -141,7 +142,9 @@ describe("workbench chrome live-path wiring", () => {
     const split = stripComments(
       readFileSync(new URL("../StudioSplit.tsx", import.meta.url), "utf8")
     );
-    expect(split).toContain("onDragging={phone ? undefined : layout.setResizing}");
+    expect(split).toContain(
+      "onDragging={phone ? undefined : layout.setResizing}"
+    );
 
     const stage = stripComments(
       readFileSync(
@@ -178,7 +181,10 @@ describe("workbench chrome live-path wiring", () => {
     expect(split).toContain("studioChatDefaultPercent");
     expect(split).toContain("studioChatDefaultPx");
     expect(split).toContain("studioPhoneStageDefaultPercent");
-    expect(split).toContain("disabled={phone}");
+    // 手机档不许拖分栏。⚠ 钉**语义**不钉整串：画布档锁死最大化之后这里是
+    //   `disabled={phone || layout.maximizeLocked}`，写死整串会在加第二个
+    //   条件时假红（本仓踩过：判据盯字面、实现换了说法就打空）。
+    expect(split).toMatch(/disabled=\{phone\b/);
     expect(split).toContain("onDoubleClick={phone ? undefined : resetLayout}");
     expect(split).toContain("sliderule-studio-split-v2");
     expect(split).toContain("layoutGeneration");
