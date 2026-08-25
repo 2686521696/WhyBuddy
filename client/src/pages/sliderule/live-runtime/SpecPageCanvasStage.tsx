@@ -1599,19 +1599,47 @@ function CanvasInner({
    * 想验证这条还通电：在下面 fitView 那行打一句 log，切到画布档看它有没有
    * 打出来。判据 canvas-board-layout.test.ts 钉的是纯函数那一半。
    */
+  /*
+   * ⚠ 2026-08-25 第三次栽在这儿，用户报的是"一拖动远一点，连接线就没了"。
+   *
+   *   指纹里的列数原来是数**store 里 y===0 的画板**。手动把一块拖走之后
+   *   它的 y 不再是 0 —— 指纹从 "4:4" 变成 "4:3"，这条 effect 就当成
+   *   "排版变了"，在**拖动过程中**调了一次 fitView。视口当场跳走，而拖拽
+   *   是按指针在 flow 空间的位移算的，视口一换算，画板跟着甩到很远的地方，
+   *   连着它的线自然跑出屏幕——看起来就是"拖远一点线就没了"。
+   *   （真机复现：缩放 21% 时拖一下，松手后读数自己变回 52%，画板落到
+   *   视口外。）
+   *
+   *   这条 effect 要盯的是**自动排版**变了没有（页数/列数），那是我们自己
+   *   算出来的，跟用户手动挪画板无关。所以列数改从 boxes 里数。
+   *
+   *   但也不能就此不问 store —— 前两次栽的就是"拿自己的状态去问它的问题"
+   *   （见上面）。守卫改成**直接问 store 追上没有**：每块画板都量到了尺寸，
+   *   且位置跟我们给的 placedBoxes 对得上。没追上就返回空串，effect 早退，
+   *   didFit 不动；追上之后指纹跟拖动前一样，也就不会再 fit 一次。
+   */
+  const autoCols = React.useMemo(
+    () => boxes.reduce((n, b) => n + (b.y === 0 ? 1 : 0), 0),
+    [boxes]
+  );
   const flowLayoutKey = useStore(s => {
     let boards = 0;
-    let firstRow = 0;
-    let measured = 0;
+    let ready = 0;
     for (const n of s.nodeLookup.values()) {
       if (n.type !== "artboard") continue;
       boards++;
-      if (n.position.y === 0) firstRow++;
-      if ((n.measured?.width ?? 0) > 0 && (n.measured?.height ?? 0) > 0)
-        measured++;
+      const want = boxById.get(n.id);
+      if (
+        (n.measured?.width ?? 0) > 0 &&
+        (n.measured?.height ?? 0) > 0 &&
+        want &&
+        n.position.x === want.x &&
+        n.position.y === want.y
+      )
+        ready++;
     }
-    if (boards === 0 || measured < boards) return "";
-    return `${boards}:${firstRow}`;
+    if (boards === 0 || ready < boards) return "";
+    return `${boards}:${autoCols}`;
   });
   const didFit = React.useRef("");
   React.useEffect(() => {

@@ -25,6 +25,9 @@
  *   D4 按着空格切走窗口，回来不卡在平移态 ← 变异测出来的缺口，D/D2/D3 都漏
  *   D5 拖走之后连线从朝着目标那一侧出发   ← 用户报的"连线一拖动就没了"
  *   D6 刚拖过的画板叠在最上层             ← 同一趟的另一半："页面就没了"
+ *   D7 双击进板把镜头对到画板现在的位置   ← 跟 D5 同一处根因
+ *   D8 拖画板不触发自动适应画布           ← "拖远一点线就没了"的真根因
+ *   D9 但排版真变了还是会重新适应         ← D8 的反面，少了它 effect 拆了也绿
  *   E 双击进板：只撤掉**那一块**的手势层，其余照旧挡着
  *   F Esc 退出，手势层全部回来
  *   G 点缩放读数 = 适应画布
@@ -630,6 +633,26 @@ async function main() {
     await page.mouse.up();
     await page.waitForTimeout(700);
 
+    /*
+     * D8：拖画板不许触发"重新适应画布"。
+     *
+     * ⚠ 用户第二次报的是"一拖动远一点，连接线就没了"。根因不在连线：
+     *   自动 fit 的排版指纹里，列数是数 store 里 y===0 的画板——手动拖走一块
+     *   它的 y 就不再是 0，指纹一变，effect 在**拖动过程中**调了 fitView。
+     *   视口当场跳走，而拖拽按指针在 flow 空间的位移算，视口一换算，画板被
+     *   甩到很远的地方，连着它的线跑出屏幕。真机复现：21% 缩放下拖一下，
+     *   松手读数自己变回 52%。
+     *
+     * ⚠ 只钉**缩放读数不变**，不钉整个 viewport transform：拖到视口边缘时
+     *   autoPanOnNodeDrag 会平移一段，那是该有的（跟 D 那条同一个坑）。
+     */
+    const zoomAfterDrag = await zoomText();
+    check(
+      "D8 拖画板不会触发自动适应画布（改动前视口会在拖动中途自己跳走）",
+      !!zoomFar && zoomAfterDrag === zoomFar,
+      `拖动前 ${zoomFar} → 拖动后 ${zoomAfterDrag}`
+    );
+
     const routing = await page.evaluate(() => {
       const centre = id => {
         const n = id
@@ -772,6 +795,55 @@ async function main() {
      */
     await page.click('[data-testid="sliderule-canvas-reset-layout"]');
     await page.waitForTimeout(800);
+
+    /*
+     * D9：D8 的**反面**。D8 说"拖画板不许重新适应画布"——只有这一条的话，
+     *     把整个 effect 拆了它照样绿，而排版真变了（多一页、列数变了）时
+     *     画布就再也不会重新适应，全是"闸全绿但东西没了"。
+     *
+     * ⚠ 改窗口宽度 → hostAspect 变 → 列数从 4 变 3，这是"排版真的变了"。
+     *   这时必须重新 fit：缩放跟着变，且所有画板仍然落在视口内。
+     *   （真机：1600 宽 4 列 52%，1100 宽 3 列 31%，两次都全在视口内。）
+     */
+    const colsOf = () =>
+      page.evaluate(
+        () =>
+          [...document.querySelectorAll(".react-flow__node-artboard")].filter(
+            n => /translate\([-\d.]+px, 0px\)/.test(n.style.transform)
+          ).length
+      );
+    const outsideCount = () =>
+      page.evaluate(() => {
+        const host = document
+          .querySelector('[data-testid="sliderule-canvas-stage"] .react-flow')
+          ?.getBoundingClientRect();
+        if (!host) return -1;
+        return [...document.querySelectorAll(".react-flow__node-artboard")].filter(
+          n => {
+            const r = n.getBoundingClientRect();
+            return (
+              r.left < host.left - 2 ||
+              r.right > host.right + 2 ||
+              r.top < host.top - 2 ||
+              r.bottom > host.bottom + 2
+            );
+          }
+        ).length;
+      });
+    const cols0 = await colsOf();
+    const zoom0 = await zoomText();
+    await page.setViewportSize({ width: 1100, height: 950 });
+    await page.waitForTimeout(2000);
+    const cols1 = await colsOf();
+    const zoom1 = await zoomText();
+    const out1 = await outsideCount();
+    check(
+      "D9 排版真变了（列数变）还是会重新适应画布——D8 别把这条一起关掉",
+      cols1 !== cols0 && zoom1 !== zoom0 && out1 === 0,
+      `列数 ${cols0} → ${cols1} · 缩放 ${zoom0} → ${zoom1} · 跑到视口外的画板 ${out1} 块`
+    );
+    await page.setViewportSize({ width: 1600, height: 950 });
+    await page.waitForTimeout(1800);
 
     const vSpace0 = await viewport();
     const nodeSpace0 = await page.$eval(
