@@ -304,7 +304,9 @@ def _keep_hit(query: str, row: Dict[str, Any]) -> bool:
     return True
 
 
-def _fetch_openverse(query: str, fetch_fn: Callable[..., Any]) -> List[Dict[str, str]]:
+def _fetch_openverse(
+    query: str, fetch_fn: Callable[..., Any], limit: int = 2
+) -> List[Dict[str, str]]:
     payload = fetch_fn(query)
     rows = (payload or {}).get("results") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
@@ -333,15 +335,19 @@ def _fetch_openverse(query: str, fetch_fn: Callable[..., Any]) -> List[Dict[str,
             picked.append(item)
         else:
             rest.append(item)
-        if len(picked) >= 2:
+        if len(picked) >= limit:
             break
     # 薄语料时退到带署名的图，总比只有色块强。
-    while len(picked) < 2 and rest:
+    while len(picked) < limit and rest:
         picked.append(rest.pop(0))
     return picked
 
 
-def _default_fetch(query: str, aspect: Optional[str] = None) -> Dict[str, Any]:
+def _default_fetch(
+    query: str,
+    aspect: Optional[str] = None,
+    timeout_s: Optional[float] = None,
+) -> Dict[str, Any]:
     import httpx
 
     params: Dict[str, Any] = {
@@ -358,7 +364,7 @@ def _default_fetch(query: str, aspect: Optional[str] = None) -> Dict[str, Any]:
         _OPENVERSE,
         params=params,
         headers={"User-Agent": _UA, "Accept": "application/json"},
-        timeout=_TIMEOUT_S,
+        timeout=_TIMEOUT_S if timeout_s is None else timeout_s,
     )
     response.raise_for_status()
     data = response.json()
@@ -619,3 +625,122 @@ def fill_stock_in_pages(
             print(f"[stock_images] ⚠ 页 {page_id} 换图失败（不拦）：{str(exc)[:160]}")
             out[page_id] = html
     return out
+
+
+# ------------------------------------------------------------------ 交互式换图
+#
+# 画布「素材」档的手动换图（2026-08-25）。跟上面 fill_stock_placeholders 那条
+# **自动**链路共用检索口和主机白名单，但走的是不同的取舍：自动那条 fail-open
+# （搜不到就留占位图，绝不拖垮画页），这条是用户点了「换图」在等结果，搜不到
+# 必须**如实说搜不到**，不许静默回落成占位图假装成功。
+#
+# ⚠ 为什么要加"逐级退让"（2026-08-25 真机量的）：
+#   Openverse 的 q 偏 AND，整句 alt 几乎必然落空。同一天在生产库 24 个应用上
+#   量到的对照——
+#       ancient book page manuscript   → 0 条        ancient book  → 20 条
+#       orange tabby rescue cat        → 0 条(square) orange tabby cat → 20 条
+#       Tencent tech company corporate badge → 0 条（CC 图库本来就没有企业 logo）
+#   直接拿整句 alt 搜，12 条真实 alt 命中 0；按下面的阶梯退让，命中 11/12。
+#   **这也是线上 77%(49/64) 的图至今还是 placehold.co 的根因**——自动那条
+#   用的就是整句 alt。这里先不动自动链路（那条有自己的标定和真机基线，
+#   要连着一起重跑），只让手动这条用上阶梯。
+#
+# ⚠ aspect_ratio 是第二把刀：`orange tabby rescue cat` 不带 aspect 有 4 条，
+#   带 square 直接 0。所以阶梯里每一级都先带 aspect 试、再不带试，
+#   而不是把 aspect 一路带到底。
+
+#: 检索词里没有信息量的虚词。
+_LADDER_STOP = frozenset(
+    {"a", "an", "the", "of", "for", "and", "with", "in", "on", "at", "to", "or"}
+)
+
+#: 说明性尾词——删掉不改主体（"ancient book page manuscript" → "ancient book"）。
+#: ⚠ 这些词单独拿去搜会把结果引到完全无关的方向（"badge" 搜出警徽、
+#:   "card" 搜出扑克牌），所以它们只做**减法**，绝不单独成词。
+_LADDER_TRIM = frozenset(
+    {
+        "preview", "closeup", "photo", "picture", "image", "thumbnail",
+        "badge", "logo", "icon", "avatar", "banner", "background", "view",
+        "shot", "setup", "area", "zone", "room", "facility", "environment",
+        "document", "certificate", "card", "update", "viewfinder", "portrait",
+    }
+)
+
+_WORD_RE = re.compile(r"[A-Za-z][A-Za-z'-]*")
+
+#: 手动换图给几个候选。自动链路仍是 2（那条只取第一条，多搜没意义）。
+_REPLACEMENT_CANDIDATES = 6
+
+
+def _ladder_words(alt: str) -> List[str]:
+    return [w for w in _WORD_RE.findall(alt or "") if w.lower() not in _LADDER_STOP]
+
+
+def build_query_ladder(
+    alt: str, aspect: Optional[str] = None
+) -> List[tuple[str, Optional[str]]]:
+    """(查询词, aspect) 从最贴题到最宽泛。**纯函数**，不发请求。
+
+    顺序刻意是「整句带比例 → 整句不带 → 去掉说明性尾词带比例 → 不带 →
+    前三词 → 前两词」：先尽量保住用户 alt 的原意，实在搜不到才放宽。
+    """
+    words = _ladder_words(alt)
+    if not words:
+        return []
+    core = [w for w in words if w.lower() not in _LADDER_TRIM] or words
+    out: List[tuple[str, Optional[str]]] = []
+
+    def add(ws: List[str], asp: Optional[str]) -> None:
+        query = " ".join(ws).strip()
+        if query and (query, asp) not in out:
+            out.append((query, asp))
+
+    add(words, aspect)
+    add(words, None)
+    add(core, aspect)
+    add(core, None)
+    add(core[:3], None)
+    add(core[:2], None)
+    return out
+
+
+def search_replacement_images(
+    alt: str,
+    src: str = "",
+    *,
+    fetch_fn: Optional[Callable[..., Any]] = None,
+    timeout_s: Optional[float] = None,
+) -> Dict[str, Any]:
+    """按 alt 找可换的真图。返回 {query, aspect, candidates, tried}。
+
+    候选只来自 STOCK_IMAGE_HOSTS——那几家**已经在 spec_page_html._ALLOWED_HOSTS
+    里**，换进页面之后再跑精修不会被「未授权外链」判失败。这条是这个功能能
+    不能用的前提，不是风格问题（真机踩过：Unsplash 写进 HTML 整页校验失败）。
+    """
+    aspect = _aspect_of(src)
+    tried: List[str] = []
+    ladder = build_query_ladder(alt, aspect)
+    for query, asp in ladder:
+        tried.append(query if asp is None else f"{query}[{asp}]")
+        try:
+            if fetch_fn is None:
+                batch = _fetch_openverse(
+                    query,
+                    lambda q, a=asp: _default_fetch(q, aspect=a, timeout_s=timeout_s),
+                    limit=_REPLACEMENT_CANDIDATES,
+                )
+            else:
+                batch = _fetch_openverse(
+                    query, fetch_fn, limit=_REPLACEMENT_CANDIDATES
+                )
+        except Exception as exc:  # noqa: BLE001 — 单级挂了就退下一级
+            print(f"[stock_images] ⚠ 换图查询失败（{query}）：{str(exc)[:120]}")
+            continue
+        if batch:
+            return {
+                "query": query,
+                "aspect": asp,
+                "candidates": batch,
+                "tried": tried,
+            }
+    return {"query": "", "aspect": aspect, "candidates": [], "tried": tried}

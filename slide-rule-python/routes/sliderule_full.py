@@ -2339,6 +2339,56 @@ async def ai_edit_page_element(
     return {"html": html}
 
 
+#: 手动换图搜一次最多等多久。自动画页那条是 3s（fail-open，超时就留占位图，
+#: 不能拖慢整轮推演）；这条是用户点了按钮在等，宁可多等两秒也别空手而归——
+#: 2026-08-25 实测这条链路上 3s 频繁 ReadTimeout。
+_STOCK_SEARCH_TIMEOUT_S = 8.0
+_MAX_STOCK_ALT_CHARS = 200
+
+
+@router.post("/stock-images/search")
+async def search_stock_images_for_replacement(
+    payload: Dict[str, Any],
+    x_internal_key: Optional[str] = Header(None),
+):
+    """画布「换图」：按这张图的 alt 找可以替换的真实图片。
+
+    只读——**不碰 pages_json**。用户从候选里挑一张之后，前端走既有的
+    `PATCH /apps/{id}/pages/{pageId}` 落库，跟点选编辑同一条写回路径。
+
+    ⚠ 不是通用取图代理：外呼地址写死 Openverse，用户能控的只有查询词，
+      所以没有 SSRF 面。候选也只回 STOCK_IMAGE_HOSTS 里的主机——那几家
+      已经在 spec_page_html._ALLOWED_HOSTS 里，换进页面之后再跑精修不会被
+      「未授权外链」判失败（真机踩过：Unsplash 写进 HTML 整页校验失败）。
+
+    ⚠ 搜不到就如实回空 candidates，**不回落成 placehold.co**。自动画页那条
+      回落是对的（不能拖垮推演），这条不行：用户是点了「换图」在等结果，
+      给他一张占位图当"成功"就是伪造绿灯。
+    """
+    _auth(x_internal_key)
+    from services.stock_images import search_replacement_images
+
+    alt = payload.get("alt") if isinstance(payload, dict) else None
+    src = payload.get("src") if isinstance(payload, dict) else None
+    if not isinstance(alt, str) or not alt.strip():
+        raise HTTPException(400, "这张图没有 alt 描述，没法按语义搜——请直接粘贴图片地址")
+    if len(alt) > _MAX_STOCK_ALT_CHARS:
+        raise HTTPException(400, f"alt 超过 {_MAX_STOCK_ALT_CHARS} 字上限")
+
+    result = await asyncio.to_thread(
+        search_replacement_images,
+        alt.strip(),
+        src if isinstance(src, str) else "",
+        timeout_s=_STOCK_SEARCH_TIMEOUT_S,
+    )
+    return {
+        "query": result.get("query") or "",
+        "aspect": result.get("aspect"),
+        "tried": result.get("tried") or [],
+        "candidates": result.get("candidates") or [],
+    }
+
+
 @router.get("/apps/{app_id}/preview")
 async def get_generated_app_preview(
     app_id: str,

@@ -273,6 +273,24 @@ export interface CanvasAsset {
   placeholder: boolean;
   /** 画布上显示的短名 */
   label: string;
+  /**
+   * 这张图的每一处**用途**（同一个 URL 在不同地方可能是完全不同的东西）。
+   *
+   * ⚠ 这条是 2026-08-25 量真机数据量出来的，不是设计洁癖。生产库 24 个应用里，
+   *   被多处引用的图有 18 组，其中 **10 组的 alt 互不相同**——最狠的一条是
+   *   `placehold.co/40x40/e2e8f0/cbd5e1` 在同一个应用里用了 5 处，alt 分别是
+   *   蚂蚁集团 / 比亚迪 / 字节 / 腾讯 / 小红书的 logo。按 URL 一键全换 =
+   *   五家公司挂同一个 logo，比留着灰块更糟。
+   *   所以卡片仍按 URL（屏幕上它确实就是同一张灰图），但**替换按 use 走**。
+   */
+  uses: AssetUse[];
+}
+
+/** 一处用途 = 一个 <img>。alt 既是"这是什么"的说明，也是搜替换图的检索词。 */
+export interface AssetUse {
+  pageId: string;
+  /** 解码后的 alt（空字符串表示这张图没写 alt） */
+  alt: string;
 }
 
 const PLACEHOLDER_HOSTS = [
@@ -310,7 +328,38 @@ export function assetLabel(url: string): string {
 }
 
 /**
- * 把各页 HTML 里的 `<img src>` 扒出来去重。
+ * 整个 `<img>` 标签。
+ *
+ * ⚠ 提取和替换**必须共用这一条**。上一版提取只匹配 `src=`、不看标签边界，
+ *   要配 alt 就得另写一条正则——两条正则对"什么算一个 img"迟早给出不同结论，
+ *   结果就是画布上扒得出来、按它去换却换不掉（本仓最忌的静默半失效）。
+ */
+const IMG_TAG_RE = /<img\b[^>]*>/gi;
+
+/** 从一个标签里取属性值。跟 python 侧 stock_images._attr 同款语义。 */
+function tagAttr(tag: string, name: string): string {
+  const m = new RegExp(`\\b${name}\\s*=\\s*("([^"]*)"|'([^']*)')`, "i").exec(
+    tag
+  );
+  return m ? decodeEntities(m[2] ?? m[3] ?? "") : "";
+}
+
+/**
+ * 最小实体解码。**不建 DOM**——这个文件要能在 jsdom 之外（判据、node 脚本）跑，
+ * 而且提取和匹配走同一个函数才保证两边对同一段 alt 得出同一个字符串。
+ */
+export function decodeEntities(text: string): string {
+  return String(text || "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0*39;|&apos;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&");
+}
+
+/**
+ * 把各页 HTML 里的 `<img>` 扒出来，按 src 去重、按 (src, alt) 记用途。
  *
  * ⚠ 用正则而不是 DOMParser：这个函数要能在 jsdom 之外（判据、node 脚本）跑，
  *   而且这里只取属性、不建 DOM、不执行任何东西——没有把模型写的 HTML 挂进
@@ -326,21 +375,24 @@ export function extractPageAssets(
   const byUrl = new Map<string, CanvasAsset>();
   for (const page of pages) {
     const html = page.html ?? "";
-    // <img ... src="..."> —— src 可能在任意属性位置，单双引号都认
-    const re = /<img\b[^>]*?\bsrc\s*=\s*("([^"]*)"|'([^']*)')/gi;
+    IMG_TAG_RE.lastIndex = 0;
     let m: RegExpExecArray | null;
-    while ((m = re.exec(html))) {
-      const url = (m[2] ?? m[3] ?? "").trim();
+    while ((m = IMG_TAG_RE.exec(html))) {
+      const tag = m[0];
+      const url = tagAttr(tag, "src").trim();
       if (!url) continue;
+      const alt = tagAttr(tag, "alt").trim();
       const hit = byUrl.get(url);
       if (hit) {
         if (!hit.pageIds.includes(page.pageId)) hit.pageIds.push(page.pageId);
+        hit.uses.push({ pageId: page.pageId, alt });
       } else {
         byUrl.set(url, {
           url,
           pageIds: [page.pageId],
           placeholder: isPlaceholderAsset(url),
           label: assetLabel(url),
+          uses: [{ pageId: page.pageId, alt }],
         });
       }
     }
@@ -349,6 +401,108 @@ export function extractPageAssets(
   return [...byUrl.values()].sort(
     (a, b) => b.pageIds.length - a.pageIds.length
   );
+}
+
+/** 一组"同一个意思"的用途：同 URL 同 alt，换图可以一起换。 */
+export interface AssetUseGroup {
+  url: string;
+  alt: string;
+  pageIds: string[];
+  count: number;
+}
+
+/**
+ * 把一张图的用途按 alt 归组——**这就是「换图」的操作单位**。
+ *
+ * 归组之后：alt 一致的多处会收成一组（点一次换掉全部，正是用户要的
+ * "换掉所有引用它的页面"），alt 不同的会分开列（避免五家公司同一个 logo）。
+ */
+export function assetUseGroups(asset: CanvasAsset): AssetUseGroup[] {
+  const byAlt = new Map<string, AssetUseGroup>();
+  for (const use of asset.uses) {
+    const hit = byAlt.get(use.alt);
+    if (hit) {
+      hit.count += 1;
+      if (!hit.pageIds.includes(use.pageId)) hit.pageIds.push(use.pageId);
+    } else {
+      byAlt.set(use.alt, {
+        url: asset.url,
+        alt: use.alt,
+        pageIds: [use.pageId],
+        count: 1,
+      });
+    }
+  }
+  return [...byAlt.values()].sort((a, b) => b.count - a.count);
+}
+
+/**
+ * 把一页 HTML 里 (src === url 且 alt === alt) 的那些 `<img>` 换成新地址。
+ * 返回换过的 HTML 和换掉几处。**纯函数**，不碰 DOM、不发请求。
+ *
+ * ⚠ src 和 alt **两个都要对上**才换。只按 src 换会把同一个占位图的其它
+ *   用途一起改掉（真机上那是 5 家公司的 logo）；只按 alt 换会跨到别的图上。
+ */
+export function replaceAssetUseInHtml(
+  html: string,
+  target: { url: string; alt: string },
+  nextUrl: string
+): { html: string; replaced: number } {
+  const source = String(html || "");
+  const next = String(nextUrl || "").trim();
+  if (!next) return { html: source, replaced: 0 };
+  let replaced = 0;
+  const out = source.replace(IMG_TAG_RE, tag => {
+    if (tagAttr(tag, "src").trim() !== target.url) return tag;
+    if (tagAttr(tag, "alt").trim() !== target.alt) return tag;
+    replaced += 1;
+    // 只换 src 这一个属性，标签里其余东西（alt/class/loading/data-*）原样留着。
+    return tag.replace(
+      /\bsrc\s*=\s*("([^"]*)"|'([^']*)')/i,
+      (_all, _q, dq) =>
+        `src=${dq === undefined ? "'" : '"'}${escapeAttr(next)}${dq === undefined ? "'" : '"'}`
+    );
+  });
+  return { html: out, replaced };
+}
+
+/** 写进属性值之前把引号和 & 转义掉——URL 里带 & 的很常见（?a=1&b=2）。 */
+function escapeAttr(value: string): string {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** 一次换图要落库的改动。空数组 = 一处都没换到（调用方必须当失败处理）。 */
+export interface AssetReplacementPatch {
+  pageId: string;
+  html: string;
+  replaced: number;
+}
+
+/**
+ * 算出换一张图要改哪几页、各自的新 HTML。**纯函数**——真正落库是调用方的事。
+ *
+ * ⚠ 返回空数组是有意义的信号：说明画布上看到的那张图跟页面 HTML 已经对不上了
+ *   （比如别处刚改过）。调用方**不许**把它当成"换成功了但没什么要改的"，
+ *   那正是本仓最忌的"闸全绿但东西没了"。
+ */
+export function planAssetReplacement(
+  pages: ReadonlyArray<{ pageId: string; html?: string }>,
+  target: { url: string; alt: string; pageIds?: readonly string[] },
+  nextUrl: string
+): AssetReplacementPatch[] {
+  const scope = target.pageIds && target.pageIds.length ? target.pageIds : null;
+  const out: AssetReplacementPatch[] = [];
+  for (const page of pages) {
+    if (scope && !scope.includes(page.pageId)) continue;
+    const res = replaceAssetUseInHtml(page.html ?? "", target, nextUrl);
+    if (res.replaced > 0) {
+      out.push({ pageId: page.pageId, html: res.html, replaced: res.replaced });
+    }
+  }
+  return out;
 }
 
 /* ------------------------------------------------- 素材在画布上的排布 */

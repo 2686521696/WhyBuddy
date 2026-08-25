@@ -22,6 +22,10 @@ import {
   readManualLinks,
   removeLink,
   writeManualLinks,
+  assetUseGroups,
+  decodeEntities,
+  planAssetReplacement,
+  replaceAssetUseInHtml,
   type BoardLink,
 } from "../canvas-board-graph";
 import type { FiveSystemModel } from "../../system-screens/five-system-model";
@@ -446,5 +450,185 @@ describe("属性面板的事实（只汇总，不推断）", () => {
     expect(f.bindings).toEqual([]);
     expect(f.actions).toEqual([]);
     expect(f.kind).toBe("");
+  });
+});
+
+/* ============================================================ 换图（use 级） */
+
+/**
+ * 真机切片 eb9af6d8a0（2026-08-25 从生产库扒的）：**同一个占位图 URL 在同一个
+ * 应用里当了 5 家公司的 logo**。这组数据是"换图不能按 URL 换"的全部理由——
+ * 没有它，按 URL 全换的实现看起来完全合理。
+ */
+const 五家公司 = [
+  {
+    pageId: "p1",
+    html:
+      `<img src="https://placehold.co/40x40/e2e8f0/cbd5e1" alt="Tencent tech company corporate badge" class="rounded">` +
+      `<img src="https://placehold.co/40x40/e2e8f0/cbd5e1" alt="BYD company tech automotive logo badge">`,
+  },
+  {
+    pageId: "p2",
+    html:
+      `<img src="https://placehold.co/40x40/e2e8f0/cbd5e1" alt="Ant Group fintech corporate badge">` +
+      `<img src="https://placehold.co/600x400" alt="hero">`,
+  },
+];
+
+/** 真机切片 1674f484：同一个头像图在 5 页，alt 全一样——这种才该一键全换。 */
+const 同一头像 = [
+  {
+    pageId: "p1",
+    html: `<img src="https://placehold.co/40x40" alt="administrator avatar portrait">`,
+  },
+  {
+    pageId: "p2",
+    html: `<img src="https://placehold.co/40x40" alt="administrator avatar portrait">`,
+  },
+  {
+    pageId: "p3",
+    html: `<img src="https://placehold.co/32x32" alt="site logo">`,
+  },
+];
+
+describe("素材：用途（use）与换图", () => {
+  it("同一个 URL 的每一处 <img> 都记成一条 use，alt 跟着走", () => {
+    const [asset] = extractPageAssets(五家公司);
+    expect(asset!.url).toBe("https://placehold.co/40x40/e2e8f0/cbd5e1");
+    expect(asset!.uses).toHaveLength(3);
+    expect(asset!.uses.map(u => u.alt)).toEqual([
+      "Tencent tech company corporate badge",
+      "BYD company tech automotive logo badge",
+      "Ant Group fintech corporate badge",
+    ]);
+    // 卡片仍按 URL 去重（屏幕上它确实就是同一张灰图）
+    expect(asset!.pageIds).toEqual(["p1", "p2"]);
+  });
+
+  it("alt 不同 → 分成不同的用途组（这就是不能按 URL 全换的那条）", () => {
+    const [asset] = extractPageAssets(五家公司);
+    const groups = assetUseGroups(asset!);
+    expect(groups).toHaveLength(3);
+    expect(groups.every(g => g.count === 1)).toBe(true);
+  });
+
+  it("alt 相同 → 收成一组，一次换掉所有页（用户要的「全换」在这里）", () => {
+    const [asset] = extractPageAssets(同一头像);
+    const groups = assetUseGroups(asset!);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.count).toBe(2);
+    expect(groups[0]!.pageIds).toEqual(["p1", "p2"]);
+  });
+
+  it("换图只动 (src, alt) 都对上的那一处", () => {
+    const r = replaceAssetUseInHtml(
+      五家公司[0]!.html,
+      {
+        url: "https://placehold.co/40x40/e2e8f0/cbd5e1",
+        alt: "Tencent tech company corporate badge",
+      },
+      "https://live.staticflickr.com/1/tencent.jpg"
+    );
+    expect(r.replaced).toBe(1);
+    expect(r.html).toContain("https://live.staticflickr.com/1/tencent.jpg");
+    // ⚠ 反向判据：比亚迪那张**必须原样留着**。没有这条，"按 src 全换"
+    //   的实现照样让上面那条正向判据变绿。
+    expect(r.html).toContain(
+      `src="https://placehold.co/40x40/e2e8f0/cbd5e1" alt="BYD company tech automotive logo badge"`
+    );
+  });
+
+  it("只换 src，标签里其它属性原样留着", () => {
+    const r = replaceAssetUseInHtml(
+      `<img class="rounded" src="a.png" alt="x" loading="lazy" data-field="u.avatar">`,
+      { url: "a.png", alt: "x" },
+      "b.png"
+    );
+    expect(r.html).toContain(`class="rounded"`);
+    expect(r.html).toContain(`loading="lazy"`);
+    // data-* 掉了会被 DOMPurify 白名单那条纪律反咬——绑定就是靠它
+    expect(r.html).toContain(`data-field="u.avatar"`);
+    expect(r.html).toContain(`src="b.png"`);
+  });
+
+  it("alt 对不上就不换（只按 src 换会换错）", () => {
+    const r = replaceAssetUseInHtml(
+      `<img src="a.png" alt="猫">`,
+      { url: "a.png", alt: "狗" },
+      "b.png"
+    );
+    expect(r.replaced).toBe(0);
+    expect(r.html).toBe(`<img src="a.png" alt="猫">`);
+  });
+
+  it("新地址里的 & 要转义（Openverse 回的地址常带 query）", () => {
+    const r = replaceAssetUseInHtml(
+      `<img src="a.png" alt="x">`,
+      { url: "a.png", alt: "x" },
+      "https://images.rawpixel.com/i?w=800&h=600"
+    );
+    expect(r.html).toContain("w=800&amp;h=600");
+    expect(r.html).not.toContain("w=800&h=600");
+  });
+
+  it("单引号写法也认，并且换完仍是单引号", () => {
+    const r = replaceAssetUseInHtml(
+      `<img src='a.png' alt='x'>`,
+      { url: "a.png", alt: "x" },
+      "b.png"
+    );
+    expect(r.replaced).toBe(1);
+    expect(r.html).toContain(`src='b.png'`);
+  });
+
+  it("alt 里的 HTML 实体解码后再比（&amp; 和 & 是同一个 alt）", () => {
+    expect(decodeEntities("A &amp; B")).toBe("A & B");
+    const [asset] = extractPageAssets([
+      { pageId: "p", html: `<img src="a.png" alt="A &amp; B">` },
+    ]);
+    expect(asset!.uses[0]!.alt).toBe("A & B");
+    const r = replaceAssetUseInHtml(
+      `<img src="a.png" alt="A &amp; B">`,
+      { url: "a.png", alt: "A & B" },
+      "b.png"
+    );
+    expect(r.replaced).toBe(1);
+  });
+
+  it("planAssetReplacement 只回真的改过的页", () => {
+    const patches = planAssetReplacement(
+      同一头像,
+      {
+        url: "https://placehold.co/40x40",
+        alt: "administrator avatar portrait",
+      },
+      "https://live.staticflickr.com/1/a.jpg"
+    );
+    expect(patches.map(p => p.pageId)).toEqual(["p1", "p2"]);
+    // 反向：没引这张图的 p3 不该出现在补丁里（否则等于白写一次库）
+    expect(patches.some(p => p.pageId === "p3")).toBe(false);
+    expect(patches.every(p => p.replaced === 1)).toBe(true);
+  });
+
+  it("一处都没换到时回空数组——调用方必须当失败处理，不许当成功", () => {
+    const patches = planAssetReplacement(
+      同一头像,
+      { url: "https://placehold.co/40x40", alt: "对不上的 alt" },
+      "https://live.staticflickr.com/1/a.jpg"
+    );
+    expect(patches).toEqual([]);
+  });
+
+  it("提取和替换共用同一条标签正则：扒得出来的每一处都换得掉", () => {
+    // ⚠ 这条钉的是纪律四（同一件事两处实现）。上一版提取只匹配 src=，
+    //   要配 alt 就得另写一条正则——两条正则迟早分叉，症状是画布上列得出
+    //   这张图、点换图却"换了 0 处"。
+    const pages = [...五家公司, ...同一头像];
+    for (const asset of extractPageAssets(pages)) {
+      for (const group of assetUseGroups(asset)) {
+        const patches = planAssetReplacement(pages, group, "https://x/new.jpg");
+        expect(patches.reduce((n, p) => n + p.replaced, 0)).toBe(group.count);
+      }
+    }
   });
 });

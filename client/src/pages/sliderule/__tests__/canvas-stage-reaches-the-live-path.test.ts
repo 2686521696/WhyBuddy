@@ -257,3 +257,88 @@ describe("四件新东西真的挂在画布上（不是各写了个组件）", (
     expect(menu).toContain('label="重新生成这一页…"');
   });
 });
+
+/* ================================================== 换图接在通电的链路上吗 */
+
+const STAGE = stripComments(
+  readFileSync(
+    resolve(__dirname, "../live-runtime/SpecPageCanvasStage.tsx"),
+    "utf8"
+  )
+);
+const PANEL = stripComments(
+  readFileSync(
+    resolve(__dirname, "../live-runtime/AssetReplacePanel.tsx"),
+    "utf8"
+  )
+);
+const ROUTES = readFileSync(
+  resolve(
+    __dirname,
+    "../../../../../slide-rule-python/routes/sliderule_full.py"
+  ),
+  "utf8"
+).replace(/"""[\s\S]*?"""/g, "");
+
+describe("换图：纯函数之外，链路真的接上了吗", () => {
+  it("画布真的挂了换图面板（不是只写了个组件）", () => {
+    expect(STAGE).toContain("<AssetReplacePanel");
+  });
+
+  it("换图**真的写回库**——调用点在，且走既有的 updateAppPage", () => {
+    // ⚠ 这条钉的是本仓最贵的那条纪律。planAssetReplacement 算得再对，
+    //   不落库就只是把画布上的图换了个样子，刷新即打回原形。
+    expect(STAGE).toContain("planAssetReplacement(");
+    expect(STAGE).toContain("updateAppPage(");
+    // 反向：不许自己另起一条 PATCH（那就是同一件事两处实现）
+    expect(STAGE).not.toMatch(/method:\s*["']PATCH["']/);
+  });
+
+  it("落库成功**真的**回调宿主刷新覆盖层", () => {
+    // 少了这一步：库里换了，画布还显示旧图 —— "存了但看着没变"
+    // 跟"根本没存上"在屏幕上长得一模一样。
+    expect(STAGE).toContain("onPagesReplaced?.(saved)");
+  });
+
+  it("Studio 真的把 appId 和覆盖层回调传下去了", () => {
+    const call = STUDIO.slice(
+      STUDIO.indexOf("<SpecPageCanvasStage"),
+      STUDIO.indexOf("<SpecPageCanvasStage") + 1600
+    );
+    expect(call).toContain("appId={boundAppId}");
+    expect(call).toContain("onPagesReplaced=");
+    // 反向：回调必须真的写进 pageOverrides，不是个空函数
+    expect(call).toContain("setPageOverrides");
+  });
+
+  it("面板真的调搜图接口（不是摆个搜索框不发请求）", () => {
+    expect(PANEL).toContain("searchStockImages(");
+    expect(PANEL).toContain("assetUseGroups(");
+  });
+
+  it("换图**不走 LLM**——不许偷偷接成一轮精修", () => {
+    // 换 src 是纯字符串替换。接成精修 = 几分钟 + 真金白银的 token，
+    // 还可能顺手把整页重写了。
+    expect(STAGE).not.toContain("fillComposer(`把这张图");
+    expect(PANEL).not.toContain("fill-prompt");
+    expect(PANEL).not.toContain("ai-edit-element");
+  });
+
+  it("搜图路由真的调了服务函数，且只读不落库", () => {
+    expect(ROUTES).toContain("search_replacement_images");
+    const route = ROUTES.slice(
+      ROUTES.indexOf('@router.post("/stock-images/search")'),
+      ROUTES.indexOf('@router.post("/stock-images/search")') + 2000
+    );
+    expect(route).toContain("_auth(x_internal_key)");
+    // 反向：搜图这条**不许**碰 pages_json（写回是 PATCH 那条的事）
+    expect(route).not.toContain("update_page_html");
+  });
+
+  it("没有 appId 时不摆那颗按钮（而不是摆一颗点了报错的）", () => {
+    expect(STAGE).toContain(
+      "appId ? (a: CanvasAsset) => setReplacingUrl(a.url) : null"
+    );
+    expect(STAGE).toContain("ctx?.onReplaceAsset ?");
+  });
+});

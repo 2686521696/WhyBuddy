@@ -87,6 +87,7 @@ import {
   MousePointerClick,
   PanelRight,
   Plus,
+  RefreshCw,
   Scan,
 } from "lucide-react";
 
@@ -112,18 +113,23 @@ import {
   addManualLink,
   boardFacts,
   deriveDataflowLinks,
+  assetUseGroups,
   extractPageAssets,
   layoutAssets,
+  planAssetReplacement,
   linkToRefineInstruction,
   manualLinksStorageKey,
   readManualLinks,
   removeLink,
   writeManualLinks,
   type BoardLink,
+  type AssetUseGroup,
   type CanvasAsset,
 } from "./canvas-board-graph";
 import { exportBoardHtml, exportBoardPng } from "./canvas-board-export";
 import { CanvasInspector } from "./CanvasInspector";
+import { AssetReplacePanel } from "./AssetReplacePanel";
+import { updateAppPage } from "../../agent-loop/dashboard/app-store-client";
 import { CanvasBoardMenu } from "./CanvasBoardMenu";
 import type { SpecPageLive } from "./SpecPageLiveStage";
 import type { ActionGates, BindingActionEvent } from "./html-binding-runtime";
@@ -148,6 +154,16 @@ export interface SpecPageCanvasStageProps {
   onOpenInPageView?: (pageId: string) => void;
   /** 手画连线按会话存档；不传的话存在 anon 键下（换会话会串味，宿主务必传）。 */
   sessionId?: string;
+  /**
+   * 这个会话背后已落库的应用 id。换图要写回 `pages_json`，没有它就换不了。
+   *
+   * ⚠ 会话不一定已经落库（推演没跑完/还没存），所以这里是可空的，
+   *   而且**不能拿它当"功能坏了"处理**——要如实说"还没存成应用，先跑完一轮"。
+   */
+  appId?: string | null;
+  /** 换图落库成功后把新 HTML 交回宿主（宿主用它更新 pageOverrides，
+   *  否则画布上还是旧图：存了但看着没变，本仓最忌的那种）。 */
+  onPagesReplaced?: (patch: Record<string, string>) => void;
   /** 说明行右侧（角色切换）。跟页面档同一个位置。 */
   metaTrailing?: React.ReactNode;
   className?: string;
@@ -204,6 +220,8 @@ interface CanvasCtx {
   highlightPageIds: readonly string[];
   /** 点了素材卡：记下来给画板描边（"这张图哪几页在用"） */
   onSelectAsset: (asset: CanvasAsset) => void;
+  /** 打开换图面板。null = 宿主没给 appId，卡片上就不摆这颗按钮。 */
+  onReplaceAsset: ((asset: CanvasAsset) => void) | null;
 }
 
 const CanvasContext = React.createContext<CanvasCtx | null>(null);
@@ -566,6 +584,29 @@ function AssetNode({ data }: NodeProps<Node<AssetData>>) {
             onError={() => setFailed(true)}
           />
         )}
+
+        {/* 「换图」——反缩放，让它在任何缩放下都是可点的大小。
+            ⚠ 没有 appId 时**不摆这颗按钮**，而不是摆一颗点了报错的：
+              会话还没落库是正常状态（推演没跑完），不是错误。 */}
+        {ctx?.onReplaceAsset ? (
+          <button
+            type="button"
+            data-testid="sliderule-canvas-asset-replace-btn"
+            title="换掉这张图"
+            onClick={e => {
+              e.stopPropagation();
+              ctx.onReplaceAsset?.(asset);
+            }}
+            style={{
+              transform: `scale(${labelScale})`,
+              transformOrigin: "top right",
+            }}
+            className="absolute right-2 top-2 flex items-center gap-1 rounded bg-white/95 px-2 py-1 text-[11px] text-stone-600 shadow-sm ring-1 ring-stone-200 transition hover:text-[#1677ff] hover:ring-[#1677ff]"
+          >
+            <RefreshCw className="h-3 w-3" />
+            换图
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -585,6 +626,8 @@ function CanvasInner({
   onActivePageChange,
   onOpenInPageView,
   sessionId,
+  appId,
+  onPagesReplaced,
   metaTrailing = null,
 }: SpecPageCanvasStageProps): React.ReactElement {
   const flow = useReactFlow();
@@ -718,6 +761,52 @@ function CanvasInner({
   /* --------------------------------------------------------- 素材 */
 
   const assets = React.useMemo(() => extractPageAssets(pages), [pages]);
+
+  /** 正在换的那张图（null = 面板关着）。存 URL 不存对象：pages 一变
+   *  assets 会重算，存对象会拿着一份过期快照。 */
+  const [replacingUrl, setReplacingUrl] = React.useState<string | null>(null);
+  const replacingAsset = React.useMemo(
+    () => assets.find(a => a.url === replacingUrl) ?? null,
+    [assets, replacingUrl]
+  );
+
+  /**
+   * 换图：纯字符串替换 → 既有 PATCH 落库 → 把新 HTML 交回宿主。**零 LLM**。
+   *
+   * ⚠ 三条边界，每条都对应一次真实的失败形态：
+   *   1. `planAssetReplacement` 回空 = 画布上看到的图跟页面 HTML 已经对不上，
+   *      **必须抛错**。悄悄"成功"就是本仓最忌的"闸全绿但东西没了"。
+   *   2. 有一页写失败就整体报错，不吞——半换成功比没换更难排查。
+   *   3. 落库成功必须 `onPagesReplaced`，否则画布还显示旧图：存了但看着没变。
+   */
+  const replaceAsset = React.useCallback(
+    async (group: AssetUseGroup, nextUrl: string): Promise<number> => {
+      if (!appId) throw new Error("这个会话还没存成应用，先跑完一轮推演");
+      const patches = planAssetReplacement(pages, group, nextUrl);
+      if (patches.length === 0) {
+        throw new Error("页面里没找到这张图（可能刚被别处改过）——刷新一下再试");
+      }
+      const saved: Record<string, string> = {};
+      for (const patch of patches) {
+        const res = await updateAppPage(appId, patch.pageId, patch.html);
+        if (!res.ok) {
+          throw new Error(
+            `「${nameOf(patch.pageId)}」保存失败：${res.error}` +
+              (Object.keys(saved).length
+                ? `（前 ${Object.keys(saved).length} 页已改）`
+                : "")
+          );
+        }
+        saved[patch.pageId] = patch.html;
+      }
+      onPagesReplaced?.(saved);
+      const n = patches.reduce((acc, x) => acc + x.replaced, 0);
+      setToast(`已换掉 ${n} 处，共 ${patches.length} 页`);
+      return n;
+    },
+    [appId, pages, nameOf, onPagesReplaced]
+  );
+
   const assetBoxes = React.useMemo(
     () => layoutAssets(assets, boardsBounds(boxes), ASSET_TILE),
     [assets, boxes]
@@ -940,6 +1029,7 @@ function CanvasInner({
         setMenu({ pageId, x, y });
       },
       onSelectAsset: (a: CanvasAsset) => setFocusedAsset(a.url),
+      onReplaceAsset: appId ? (a: CanvasAsset) => setReplacingUrl(a.url) : null,
       linkFrom,
       linkMode,
       registerBoardEl,
@@ -957,6 +1047,7 @@ function CanvasInner({
       navigate,
       onOpenInPageView,
       onActivePageChange,
+      appId,
       linkFrom,
       linkMode,
       registerBoardEl,
@@ -1364,6 +1455,20 @@ function CanvasInner({
             </div>
           ) : null}
         </div>
+
+        {replacingAsset ? (
+          <AssetReplacePanel
+            asset={replacingAsset}
+            nameOf={nameOf}
+            onReplace={replaceAsset}
+            onClose={() => setReplacingUrl(null)}
+            disabledReason={
+              appId
+                ? null
+                : "这个会话还没存成应用（推演跑完才会落库），现在还改不了页面。"
+            }
+          />
+        ) : null}
 
         {inspectorOpen ? (
           <CanvasInspector

@@ -21,7 +21,13 @@
  *   AppRuntimeScreen 本身没删，应用中心仍可能用它；会话页舞台不再走它。
  */
 
-import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import React, {
+  useState,
+  useCallback,
+  useMemo,
+  useEffect,
+  useRef,
+} from "react";
 import type { SkillId } from "@/lib/sliderule-marathon-driver";
 import type { PublishClosureSummary } from "./derive-cross-runtime-summary";
 import { ArchitectureStage } from "./ArchitectureStage";
@@ -96,7 +102,9 @@ function StudioChrome({
       className={`relative h-full w-full overflow-hidden bg-[var(--sr-shell-bg,#f4f4f6)] ${className}`}
     >
       <HomeHoverDots />
-      <div className="relative z-10 h-full w-full overflow-hidden">{children}</div>
+      <div className="relative z-10 h-full w-full overflow-hidden">
+        {children}
+      </div>
     </div>
   );
 }
@@ -132,7 +140,11 @@ const SKILL_LABELS: Record<SkillId, string> = {
 
 interface SlideRuleStudioProps {
   /** E29 模型版本史（前进/回退按钮数据源） */
-  modelVersions?: Array<{ id: string; instruction?: string; createdAt?: string }>;
+  modelVersions?: Array<{
+    id: string;
+    instruction?: string;
+    createdAt?: string;
+  }>;
   currentModelVersionId?: string | null;
   onRestoreVersion?: (versionId: string) => void;
   /** 版本切换请求在飞：两个按钮都置灰。缺省 false（老调用点行为不变）。 */
@@ -314,7 +326,9 @@ export function SlideRuleStudio({
   // "真数据"，不是"页面原文"），不是覆盖层的缺陷——覆盖层本身对**没打孔的
   // 静态内容**（导航文案、标题这类）是生效的，真机测过。编辑打过孔字段的
   // 落库内容不会丢，只是活渲染那一眼看不出来，这个反差要留着别当成 bug 修。
-  const [pageOverrides, setPageOverrides] = useState<Record<string, string>>({});
+  const [pageOverrides, setPageOverrides] = useState<Record<string, string>>(
+    {}
+  );
   useEffect(() => {
     setPageOverrides({});
     setEditMode(false);
@@ -459,13 +473,14 @@ export function SlideRuleStudio({
   //   live-runtime/SpecPageCanvasStage.tsx）。
   //   ⚠ 加档位要同时看三处，漏一处就是"闸绿了东西没了"：
   //     1) 下面这个联合类型  2) 顶栏 ToggleGroup 的数组  3) 舞台渲染分支。
-  const [stageView, setStageView] = useState<"canvas" | "page" | "code" | "board">(
-    () => (loadStageViewPref() === "canvas" ? "canvas" : "page")
-  );
+  const [stageView, setStageView] = useState<
+    "canvas" | "page" | "code" | "board"
+  >(() => (loadStageViewPref() === "canvas" ? "canvas" : "page"));
   // 档位偏好只记 画布/页面 两档（"代码"是临时查看，记住它等于下次开门先给
   // 用户一屏 HTML 源码）。跟游标开关同一套 localStorage 兜底写法。
   useEffect(() => {
-    if (stageView === "canvas" || stageView === "page") saveStageViewPref(stageView);
+    if (stageView === "canvas" || stageView === "page")
+      saveStageViewPref(stageView);
   }, [stageView]);
   const [activeSpecPageId, setActiveSpecPageId] = useState<string>("home");
   // 游标开关（计算尺游标 hairline 的品牌梗；偏好持久化，键跟老舞台同一个
@@ -511,7 +526,9 @@ export function SlideRuleStudio({
     (info: { attr: string; value: string; el: Element } | null) => {
       if (!xrayOnRef.current) return;
       setXrayTarget(
-        info ? htmlBindingToXrayTarget(info, activeSpecPageId, actionGates) : null
+        info
+          ? htmlBindingToXrayTarget(info, activeSpecPageId, actionGates)
+          : null
       );
     },
     [activeSpecPageId, actionGates]
@@ -528,46 +545,61 @@ export function SlideRuleStudio({
     return () => window.removeEventListener("keydown", onKey);
   }, [drawerSkill]);
 
-
   // E29 版本前进/回退工具栏（成品面顶栏与沙盘 Checks 行共用）
-  const versionToolbar = modelVersions.length > 1 ? (() => {
-    const i = modelVersions.findIndex(v => v.id === currentModelVersionId);
-    const idx = i >= 0 ? i : modelVersions.length - 1;
-    const prev = modelVersions[idx - 1];
-    const next = modelVersions[idx + 1];
-    return (
-      <div
-        className="ml-auto flex shrink-0 items-center gap-1 rounded-full bg-white/80 px-1.5 py-0.5 ring-1 ring-[#e5e7eb]"
-        data-testid="sliderule-version-toolbar"
-      >
-        <button
-          type="button"
-          data-testid="sliderule-version-back"
-          // ⚠ 边界禁用不够（2026-08-16 实测）：原来只有 !prev，于是请求在飞
-          //   的时候按钮照样能点，用户连点几下、三个并发 POST 全被后端接受。
-          disabled={!prev || isRestoringVersion}
-          onClick={() => prev && onRestoreVersion?.(prev.id)}
-          className="rounded-full px-1.5 py-0.5 text-[11px] text-stone-500 transition hover:bg-[#e9edf2] hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-30"
-          title={prev ? `回退到 v${idx}${prev.instruction ? `（${prev.instruction.slice(0, 24)}）` : ""}` : "已是最早版本"}
-        >
-          ◀
-        </button>
-        <span className="text-[10px] font-medium text-stone-500" title={modelVersions[idx]?.instruction || ""}>
-          v{idx + 1}/{modelVersions.length}
-        </span>
-        <button
-          type="button"
-          data-testid="sliderule-version-forward"
-          disabled={!next || isRestoringVersion}
-          onClick={() => next && onRestoreVersion?.(next.id)}
-          className="rounded-full px-1.5 py-0.5 text-[11px] text-stone-500 transition hover:bg-[#e9edf2] hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-30"
-          title={next ? `前进到 v${idx + 2}${next.instruction ? `（${next.instruction.slice(0, 24)}）` : ""}` : "已是最新版本"}
-        >
-          ▶
-        </button>
-      </div>
-    );
-  })() : null;
+  const versionToolbar =
+    modelVersions.length > 1
+      ? (() => {
+          const i = modelVersions.findIndex(
+            v => v.id === currentModelVersionId
+          );
+          const idx = i >= 0 ? i : modelVersions.length - 1;
+          const prev = modelVersions[idx - 1];
+          const next = modelVersions[idx + 1];
+          return (
+            <div
+              className="ml-auto flex shrink-0 items-center gap-1 rounded-full bg-white/80 px-1.5 py-0.5 ring-1 ring-[#e5e7eb]"
+              data-testid="sliderule-version-toolbar"
+            >
+              <button
+                type="button"
+                data-testid="sliderule-version-back"
+                // ⚠ 边界禁用不够（2026-08-16 实测）：原来只有 !prev，于是请求在飞
+                //   的时候按钮照样能点，用户连点几下、三个并发 POST 全被后端接受。
+                disabled={!prev || isRestoringVersion}
+                onClick={() => prev && onRestoreVersion?.(prev.id)}
+                className="rounded-full px-1.5 py-0.5 text-[11px] text-stone-500 transition hover:bg-[#e9edf2] hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-30"
+                title={
+                  prev
+                    ? `回退到 v${idx}${prev.instruction ? `（${prev.instruction.slice(0, 24)}）` : ""}`
+                    : "已是最早版本"
+                }
+              >
+                ◀
+              </button>
+              <span
+                className="text-[10px] font-medium text-stone-500"
+                title={modelVersions[idx]?.instruction || ""}
+              >
+                v{idx + 1}/{modelVersions.length}
+              </span>
+              <button
+                type="button"
+                data-testid="sliderule-version-forward"
+                disabled={!next || isRestoringVersion}
+                onClick={() => next && onRestoreVersion?.(next.id)}
+                className="rounded-full px-1.5 py-0.5 text-[11px] text-stone-500 transition hover:bg-[#e9edf2] hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-30"
+                title={
+                  next
+                    ? `前进到 v${idx + 2}${next.instruction ? `（${next.instruction.slice(0, 24)}）` : ""}`
+                    : "已是最新版本"
+                }
+              >
+                ▶
+              </button>
+            </div>
+          );
+        })()
+      : null;
 
   // 空会话或用户点了「隐藏页面」：对话独占全宽。右侧舞台不渲染。
   if (!showStage) {
@@ -586,7 +618,8 @@ export function SlideRuleStudio({
     );
   }
 
-  const activeEditPage = displayPages.find(p => p.pageId === activeSpecPageId) ?? null;
+  const activeEditPage =
+    displayPages.find(p => p.pageId === activeSpecPageId) ?? null;
 
   const roleControl =
     roleOptions.length > 0 ? (
@@ -617,54 +650,54 @@ export function SlideRuleStudio({
     ) : null;
 
   const stagePanel = (
-      /* 主舞台。底色在 StudioChrome；这里透底才能看见点阵，画布本身不透。
+    /* 主舞台。底色在 StudioChrome；这里透底才能看见点阵，画布本身不透。
           2026-08-07：不再写死 #f7f8fa，改读外壳 --sr-shell-bg。 */
-      <div className="relative flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden bg-transparent p-4">
-        {(stage === "live" && livePages.length > 0) || stage === "pages" ? (
-          /* 新链路已经交出页面：直接渲染，不再摆三个点。
+    <div className="relative flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden bg-transparent p-4">
+      {(stage === "live" && livePages.length > 0) || stage === "pages" ? (
+        /* 新链路已经交出页面：直接渲染，不再摆三个点。
              判据是"手上有没有能看的东西"，不是阶段名——没有页面时下面那支
              原样保留（老链路今天还在跑，它整轮都没有可看的中间产物）。 */
-          <>
-            {/* Primer PageHeader（分栏用 subtitle 档）：标题在左、操作在右，
+        <>
+          {/* Primer PageHeader（分栏用 subtitle 档）：标题在左、操作在右，
                 同一行。窄视口（手机预览列）把带字的操作收成图标，不要再
                 叠第二行工具条——那是 2026-08-20 为了防挤改的，桌面左对齐
                 像孤儿工具条。指南：
                 https://primer.style/product/components/page-header/guidelines/
                 Trailing action：窄视口用 overflow / 图标，不换行。 */}
-            <div
-              className="flex min-w-0 shrink-0 items-center gap-2 border-b border-[#d1d9e0b3] pb-2"
-              data-testid="sliderule-app-stage-bar"
-              data-header-pattern="primer-page-header"
-            >
-              <div className="flex min-w-0 flex-1 items-center gap-2">
-                {/* 重置会话钉在标题**左边**（2026-08-24 用户反馈）：它以前是右侧
+          <div
+            className="flex min-w-0 shrink-0 items-center gap-2 border-b border-[#d1d9e0b3] pb-2"
+            data-testid="sliderule-app-stage-bar"
+            data-header-pattern="primer-page-header"
+          >
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              {/* 重置会话钉在标题**左边**（2026-08-24 用户反馈）：它以前是右侧
                     灰图标簇的最后一个 ⟳，跟「重置布局」的 ◫ 挨着，两个都叫"重置"
                     也都是灰的，真机上分不出来。 */}
-                {resetSlot}
-                <span className="min-w-0 truncate text-[12px] font-semibold text-stone-600">
-                  {appTitle || "推演应用"}
-                </span>
-                {modelIsDraft ? (
-                  /* 默认态不打「运行中」——成品预览本来就是在跑。
+              {resetSlot}
+              <span className="min-w-0 truncate text-[12px] font-semibold text-stone-600">
+                {appTitle || "推演应用"}
+              </span>
+              {modelIsDraft ? (
+                /* 默认态不打「运行中」——成品预览本来就是在跑。
                      2026-08-20 手机 504 列：绿徽章跟标题抢宽，名字被截成
                      「构建古籍数…」。Primer Label：只标非默认态。 */
-                  <span
-                    className="shrink-0 rounded-full bg-[#FDF6F1] px-2 py-0.5 text-[10px] font-medium text-[#C05621]"
-                    data-testid="sliderule-stage-model-draft"
-                  >
-                    起草中
-                  </span>
-                ) : null}
-                {versionToolbar}
-              </div>
-              <div
-                className="ml-auto flex min-w-0 flex-1 items-center overflow-x-auto [scrollbar-width:thin]"
-                data-testid="sliderule-stage-gears"
-              >
-                {/* 2026-08-20 1440：外层 overflow-hidden + 这一排 shrink-0，
+                <span
+                  className="shrink-0 rounded-full bg-[#FDF6F1] px-2 py-0.5 text-[10px] font-medium text-[#C05621]"
+                  data-testid="sliderule-stage-model-draft"
+                >
+                  起草中
+                </span>
+              ) : null}
+              {versionToolbar}
+            </div>
+            <div
+              className="ml-auto flex min-w-0 flex-1 items-center overflow-x-auto [scrollbar-width:thin]"
+              data-testid="sliderule-stage-gears"
+            >
+              {/* 2026-08-20 1440：外层 overflow-hidden + 这一排 shrink-0，
                     右侧图标被裁掉；overflow-x-auto 写在不能收缩的盒子上等于
                     没写。内层 shrink-0 保住按钮固有宽，外层才是真正的滑槽。 */}
-                <div className="ml-auto flex shrink-0 items-center gap-1">
+              <div className="ml-auto flex shrink-0 items-center gap-1">
                 {/* Primer / shadcn ToggleGroup：浅底轨 + 白片选中，不要黑底白字。
                     2026-08-20 满电青年：这里曾经 bg-[#1f2328] text-white，
                     浅色舞台头条上像一块开关。 */}
@@ -730,7 +763,11 @@ export function SlideRuleStudio({
                   <button
                     type="button"
                     onClick={() => {
-                      if (editMode && editDirty && !window.confirm("有未保存的修改，确定要退出编辑吗？")) {
+                      if (
+                        editMode &&
+                        editDirty &&
+                        !window.confirm("有未保存的修改，确定要退出编辑吗？")
+                      ) {
                         return;
                       }
                       setEditMode(m => !m);
@@ -755,208 +792,222 @@ export function SlideRuleStudio({
                   </button>
                 )}
                 {chromeSlot}
-                </div>
               </div>
             </div>
-            <div className="flex min-h-0 flex-1 gap-3">
-              {stageView === "board" ? (
-                <div className="flex min-h-0 flex-1 flex-col gap-2">
-                  {roleControl ? (
-                    <div
-                      className="flex shrink-0 justify-end"
-                      data-testid="sliderule-stage-meta-trailing"
-                    >
-                      {roleControl}
-                    </div>
-                  ) : null}
-                  <ArchitectureStage
-                    model={fiveSystemModel}
-                    publishClosure={publishClosure}
-                    onInspect={setDrawerSkill}
-                    focusSkill={activeSkillId}
-                    className="min-h-0 flex-1"
-                  />
-                </div>
-              ) : editMode && stageView === "page" && boundAppId && activeEditPage ? (
-                /* 点选编辑：换掉活渲染舞台，不叠在它上面——填数运行时和点选编辑
+          </div>
+          <div className="flex min-h-0 flex-1 gap-3">
+            {stageView === "board" ? (
+              <div className="flex min-h-0 flex-1 flex-col gap-2">
+                {roleControl ? (
+                  <div
+                    className="flex shrink-0 justify-end"
+                    data-testid="sliderule-stage-meta-trailing"
+                  >
+                    {roleControl}
+                  </div>
+                ) : null}
+                <ArchitectureStage
+                  model={fiveSystemModel}
+                  publishClosure={publishClosure}
+                  onInspect={setDrawerSkill}
+                  focusSkill={activeSkillId}
+                  className="min-h-0 flex-1"
+                />
+              </div>
+            ) : editMode &&
+              stageView === "page" &&
+              boundAppId &&
+              activeEditPage ? (
+              /* 点选编辑：换掉活渲染舞台，不叠在它上面——填数运行时和点选编辑
                    两套事件各管各的，叠在一起点击语义会打架（点了到底是选中
                    要改，还是触发了应用自己的按钮动作）。退出编辑态才把活渲染
                    接回来。 */
-                <ClickEditStage
-                  key={`${boundAppId}:${activeEditPage.pageId}`}
-                  appId={boundAppId}
-                  pageId={activeEditPage.pageId}
-                  html={activeEditPage.html}
-                  device={stageDevice}
-                  onDirtyChange={setEditDirty}
-                  onSaved={(pageId, html) =>
-                    setPageOverrides(prev => ({ ...prev, [pageId]: html }))
-                  }
-                  className="min-h-0 min-w-0 flex-1"
-                />
-              ) : stageView === "canvas" ? (
-                /* 画布档：同一份 displayPages，摊开成多画板。
+              <ClickEditStage
+                key={`${boundAppId}:${activeEditPage.pageId}`}
+                appId={boundAppId}
+                pageId={activeEditPage.pageId}
+                html={activeEditPage.html}
+                device={stageDevice}
+                onDirtyChange={setEditDirty}
+                onSaved={(pageId, html) =>
+                  setPageOverrides(prev => ({ ...prev, [pageId]: html }))
+                }
+                className="min-h-0 min-w-0 flex-1"
+              />
+            ) : stageView === "canvas" ? (
+              /* 画布档：同一份 displayPages，摊开成多画板。
                    ⚠ 喂的**必须**是 displayPages 而不是 livePages——点选编辑
                      存过的页在 pageOverrides 里，喂 livePages 会让画布上显示
                      的是改之前那份，而页面档显示改之后那份。同一个产物两个
                      档位两种内容，正是本仓第四条纪律的形状。
                    fail-open：画布是增强类，炸了收进降级卡，不拖垮主链路，
                    也**不自动切回页面档**（换脸比报错更难解释）。 */
-                <AppStageErrorBoundary resetKeys={[sessionId, displayPages.length]}>
-                  <SpecPageCanvasStage
-                    pages={displayPages}
-                    running={isRunning}
-                    model={fiveSystemModel}
-                    runtime={htmlRuntime}
-                    gates={actionGates}
-                    onAction={handleHtmlAction}
-                    onHoverBinding={handleHoverBinding}
-                    activePageId={activeSpecPageId}
-                    onActivePageChange={setActiveSpecPageId}
-                    /* 手画连线按会话存档。⚠ 不传的话所有会话共用一个 key，
-                       换个应用会看到上一个应用的连线。 */
-                    sessionId={sessionId}
-                    onOpenInPageView={pageId => {
-                      setActiveSpecPageId(pageId);
-                      setStageView("page");
-                    }}
-                    metaTrailing={roleControl}
-                    className="min-h-0 min-w-0 flex-1"
-                  />
-                </AppStageErrorBoundary>
-              ) : (
-                <>
-              <SpecPageLiveStage
-                pages={displayPages}
-                statusLabel={isRunning ? liveActionLabel : null}
-                running={isRunning}
-                model={fiveSystemModel}
-                runtime={htmlRuntime}
-                gates={actionGates}
-                onAction={handleHtmlAction}
-                onHoverBinding={handleHoverBinding}
-                onActivePageChange={setActiveSpecPageId}
-                view={stageView}
-                metaTrailing={roleControl}
-                className="min-h-0 min-w-0 flex-1"
-              />
-              {xrayOn && fiveSystemModel && appSchema && (
-                <XrayPanel
+              <AppStageErrorBoundary
+                resetKeys={[sessionId, displayPages.length]}
+              >
+                <SpecPageCanvasStage
+                  pages={displayPages}
+                  running={isRunning}
                   model={fiveSystemModel}
-                  schema={appSchema}
+                  runtime={htmlRuntime}
+                  gates={actionGates}
+                  onAction={handleHtmlAction}
+                  onHoverBinding={handleHoverBinding}
                   activePageId={activeSpecPageId}
-                  target={xrayTarget}
-                  onOpenSystem={setDrawerSkill}
-                  onOpenSandbox={() => setStageView("board")}
+                  onActivePageChange={setActiveSpecPageId}
+                  /* 手画连线按会话存档。⚠ 不传的话所有会话共用一个 key，
+                       换个应用会看到上一个应用的连线。 */
+                  sessionId={sessionId}
+                  /* 换图要写回 pages_json，靠这个 id。会话没落库时它是 null，
+                       画布会如实说"还没存成应用"，而不是给一颗点了报错的按钮。 */
+                  appId={boundAppId}
+                  /* ⚠ 落库成功必须同步这层内存覆盖，否则画布上还是旧图——
+                       "存了但看着没变"跟"没存上"在屏幕上长得一模一样。
+                       跟点选编辑的 onSaved 走同一个 pageOverrides。 */
+                  onPagesReplaced={patch =>
+                    setPageOverrides(prev => ({ ...prev, ...patch }))
+                  }
+                  onOpenInPageView={pageId => {
+                    setActiveSpecPageId(pageId);
+                    setStageView("page");
+                  }}
+                  metaTrailing={roleControl}
+                  className="min-h-0 min-w-0 flex-1"
                 />
-              )}
-                </>
-              )}
-            </div>
-          </>
-        ) : stage === "live" ? (
-          /* 模型还没成形（轮内步骤 / 起草早期）：右侧只报"推演中"——实时想法
+              </AppStageErrorBoundary>
+            ) : (
+              <>
+                <SpecPageLiveStage
+                  pages={displayPages}
+                  statusLabel={isRunning ? liveActionLabel : null}
+                  running={isRunning}
+                  model={fiveSystemModel}
+                  runtime={htmlRuntime}
+                  gates={actionGates}
+                  onAction={handleHtmlAction}
+                  onHoverBinding={handleHoverBinding}
+                  onActivePageChange={setActiveSpecPageId}
+                  view={stageView}
+                  metaTrailing={roleControl}
+                  className="min-h-0 min-w-0 flex-1"
+                />
+                {xrayOn && fiveSystemModel && appSchema && (
+                  <XrayPanel
+                    model={fiveSystemModel}
+                    schema={appSchema}
+                    activePageId={activeSpecPageId}
+                    target={xrayTarget}
+                    onOpenSystem={setDrawerSkill}
+                    onOpenSandbox={() => setStageView("board")}
+                  />
+                )}
+              </>
+            )}
+          </div>
+        </>
+      ) : stage === "live" ? (
+        /* 模型还没成形（轮内步骤 / 起草早期）：右侧只报"推演中"——实时想法
              已在左栏流出（用户反馈：右侧别重复直播内容），应用成形后接管舞台。 */
-          <div
-            className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-3"
-            data-testid="sliderule-live-stage"
-          >
-            {chromeSlot || resetSlot ? (
-              <div className="absolute right-0 top-0 flex items-center gap-1">
+        <div
+          className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-3"
+          data-testid="sliderule-live-stage"
+        >
+          {chromeSlot || resetSlot ? (
+            <div className="absolute right-0 top-0 flex items-center gap-1">
+              {resetSlot}
+              {chromeSlot}
+            </div>
+          ) : null}
+          <span className="inline-flex items-end gap-1.5" aria-hidden>
+            <span className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]" />
+            <span className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]" />
+            <span className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]" />
+          </span>
+          <div className="text-[13px] font-medium text-stone-500">推演中</div>
+          {/* 一行步骤锚点即可（用户反馈：字太多）——文案翻滚过渡 */}
+          {liveActionLabel && (
+            <RollingText
+              text={liveActionLabel}
+              className="max-w-[320px] text-[12px] text-stone-400"
+            />
+          )}
+        </div>
+      ) : (
+        <ArchitectureStage
+          model={fiveSystemModel}
+          publishClosure={publishClosure}
+          onInspect={setDrawerSkill}
+          focusSkill={activeSkillId}
+          versionToolbar={versionToolbar}
+          trailing={
+            chromeSlot || resetSlot ? (
+              <div className="flex items-center gap-1">
                 {resetSlot}
                 {chromeSlot}
               </div>
-            ) : null}
-            <span className="inline-flex items-end gap-1.5" aria-hidden>
-              <span className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]" />
-              <span className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]" />
-              <span className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]" />
+            ) : null
+          }
+          className="min-h-0 flex-1"
+        />
+      )}
+
+      {/* 系统屏抽屉：单类别全幅呈现——点哪类看哪类（用户反馈：去六系统切换条、去白卡嵌套、占满区域） */}
+      {drawerSkill && (
+        <div
+          className="absolute inset-0 z-40 flex flex-col bg-[var(--sr-shell-bg,#f4f4f6)]"
+          data-testid="sliderule-system-drawer"
+        >
+          <div className="flex shrink-0 items-center gap-2 px-4 pb-1 pt-3">
+            <span className="text-[13px] font-semibold text-stone-800">
+              {SKILL_LABELS[drawerSkill]}
             </span>
-            <div className="text-[13px] font-medium text-stone-500">推演中</div>
-            {/* 一行步骤锚点即可（用户反馈：字太多）——文案翻滚过渡 */}
-            {liveActionLabel && (
-              <RollingText
-                text={liveActionLabel}
-                className="max-w-[320px] text-[12px] text-stone-400"
-              />
-            )}
+            <span className="text-[11px] text-stone-400">
+              透视 · 应用背后的声明
+            </span>
+            <button
+              type="button"
+              onClick={() => setDrawerSkill(null)}
+              data-testid="sliderule-system-drawer-close"
+              className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-stone-400 transition hover:bg-[#e9edf2] hover:text-stone-700"
+              title="关闭（Esc）"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
-        ) : (
-          <ArchitectureStage
-            model={fiveSystemModel}
+          <ActiveSystemScreen
+            activeSkillId={drawerSkill}
+            running={isRunning}
             publishClosure={publishClosure}
-            onInspect={setDrawerSkill}
-            focusSkill={activeSkillId}
-            versionToolbar={versionToolbar}
-            trailing={
-              chromeSlot || resetSlot ? (
-                <div className="flex items-center gap-1">
-                  {resetSlot}
-                  {chromeSlot}
-                </div>
-              ) : null
-            }
+            latestMermaid={latestMermaid}
+            skillContents={skillContents}
+            skillRuntimeGraph={skillRuntimeGraph}
+            sessionId={sessionId}
+            appTitle={appTitle}
+            model={fiveSystemModel}
+            fill
             className="min-h-0 flex-1"
           />
-        )}
+        </div>
+      )}
 
-        {/* 系统屏抽屉：单类别全幅呈现——点哪类看哪类（用户反馈：去六系统切换条、去白卡嵌套、占满区域） */}
-        {drawerSkill && (
-          <div
-            className="absolute inset-0 z-40 flex flex-col bg-[var(--sr-shell-bg,#f4f4f6)]"
-            data-testid="sliderule-system-drawer"
-          >
-            <div className="flex shrink-0 items-center gap-2 px-4 pb-1 pt-3">
-              <span className="text-[13px] font-semibold text-stone-800">
-                {SKILL_LABELS[drawerSkill]}
-              </span>
-              <span className="text-[11px] text-stone-400">
-                透视 · 应用背后的声明
-              </span>
-              <button
-                type="button"
-                onClick={() => setDrawerSkill(null)}
-                data-testid="sliderule-system-drawer-close"
-                className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-stone-400 transition hover:bg-[#e9edf2] hover:text-stone-700"
-                title="关闭（Esc）"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <ActiveSystemScreen
-              activeSkillId={drawerSkill}
-              running={isRunning}
-              publishClosure={publishClosure}
-              latestMermaid={latestMermaid}
-              skillContents={skillContents}
-              skillRuntimeGraph={skillRuntimeGraph}
-              sessionId={sessionId}
-              appTitle={appTitle}
-              model={fiveSystemModel}
-              fill
-              className="min-h-0 flex-1"
-            />
-          </div>
-        )}
-
-        {/* HTML 页面动作的表单面：详情/编辑/新建三态，写回运行态后 data-* 孔
+      {/* HTML 页面动作的表单面：详情/编辑/新建三态，写回运行态后 data-* 孔
             随 htmlRuntime 变化立刻重填——写数据闭环的可见反馈就是页面本身。 */}
-        <StudioLandingShot
-          sessionId={sessionId}
-          running={isRunning}
-          specFirstPages={specFirstPages}
-          specPages={specPages}
-          model={fiveSystemModel}
-          runtime={htmlRuntime}
-        />
-        <RecordFormDrawer
-          model={fiveSystemModel}
-          state={htmlRuntime}
-          request={recordAction}
-          onClose={() => setRecordAction(null)}
-          onApply={applyRuntime}
-        />
-      </div>
+      <StudioLandingShot
+        sessionId={sessionId}
+        running={isRunning}
+        specFirstPages={specFirstPages}
+        specPages={specPages}
+        model={fiveSystemModel}
+        runtime={htmlRuntime}
+      />
+      <RecordFormDrawer
+        model={fiveSystemModel}
+        state={htmlRuntime}
+        request={recordAction}
+        onClose={() => setRecordAction(null)}
+        onApply={applyRuntime}
+      />
+    </div>
   );
 
   return (

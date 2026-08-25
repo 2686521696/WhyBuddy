@@ -550,6 +550,190 @@ async function main() {
         (assetInfo.declared === 0 || assetInfo.toggle),
       JSON.stringify(assetInfo)
     );
+
+    /* ---------------------------------------------------- 换图（第三轮） */
+
+    /*
+     * P/Q/R/S 钉的是"换图"这条链在真浏览器里到底通不通。
+     *
+     * ⚠ 为什么必须是真机：搜图那一跳要真的打后端（CSP 把 api.openverse.org
+     *   挡在 connect-src 之外，所以它必须走 /api/sliderule/stock-images/search
+     *   —— 这件事 jsdom 里测不出来，jsdom 根本不执行 CSP）。
+     *
+     * ⚠ S **只验到候选出现为止，不点下去**——点下去就是真的改用户的应用。
+     *   写回那一段由 e2e 脚本在真库上验过（改完立刻还原），不在 smoke 里做
+     *   破坏性动作。
+     */
+    if (assetInfo.declared > 0) {
+      const openedPanel = await page.evaluate(() => {
+        const btn = document.querySelector(
+          '[data-testid="sliderule-canvas-asset-replace-btn"]'
+        );
+        if (!btn) return "no-button";
+        btn.click();
+        return "clicked";
+      });
+      await page.waitForTimeout(500);
+      const panel = await page.evaluate(() => {
+        const el = document.querySelector(
+          '[data-testid="sliderule-asset-replace"]'
+        );
+        if (!el) return null;
+        return {
+          groups: Number(el.getAttribute("data-use-groups") || 0),
+          url: el.getAttribute("data-asset-url") || "",
+          disabled: !!el.querySelector(
+            '[data-testid="sliderule-asset-replace-disabled"]'
+          ),
+          hasSearch: !!el.querySelector(
+            '[data-testid="sliderule-asset-search"]'
+          ),
+          hasPaste: !!el.querySelector('[data-testid="sliderule-asset-paste"]'),
+        };
+      });
+      check(
+        "P 素材卡上的「换图」打开了面板",
+        openedPanel === "clicked" && !!panel,
+        `${openedPanel} ${JSON.stringify(panel)}`
+      );
+      check(
+        "Q 面板同时给了搜图和粘地址两条路",
+        !!panel && panel.hasSearch && panel.hasPaste,
+        JSON.stringify(panel)
+      );
+
+      // 粘一个白名单外的域名 → 必须出现那行黄字警告（不是拦下来，是说清后果）
+      const warned = await page.evaluate(() => {
+        const input = document.querySelector(
+          '[data-testid="sliderule-asset-paste"]'
+        );
+        if (!input) return "no-input";
+        const setter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          "value"
+        ).set;
+        setter.call(input, "https://evil.example.com/a.png");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        return "typed";
+      });
+      await page.waitForTimeout(300);
+      const warnVisible = await page.evaluate(
+        () =>
+          !!document.querySelector(
+            '[data-testid="sliderule-asset-host-warning"]'
+          )
+      );
+      check(
+        "R 粘白名单外的域名会警告「下一轮精修会被判未授权外链」",
+        warned === "typed" && warnVisible,
+        `${warned} warn=${warnVisible}`
+      );
+
+      // 搜图真的打后端并回结果（或如实说搜不到）——两者都算通，
+      // 空手而归**必须**有那块"没搜到"的说明，不许静静地什么都不显示。
+      await page.evaluate(() => {
+        const input = document.querySelector(
+          '[data-testid="sliderule-asset-paste"]'
+        );
+        if (input) {
+          const setter = Object.getOwnPropertyDescriptor(
+            window.HTMLInputElement.prototype,
+            "value"
+          ).set;
+          setter.call(input, "");
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        document
+          .querySelector('[data-testid="sliderule-asset-search"]')
+          ?.click();
+      });
+      /*
+       * ⚠ 不用定长 sleep：搜图本身要走"逐级退让"，慢的时候接近 10s，
+       *   定长等于把判据压在一个随网络漂移的时刻上（第一版就是这么红的，
+       *   红的是判据不是功能）。这里轮询到"每个候选格子都有结论"为止，
+       *   超时再取一次现场——那时的红才是真的红。
+       */
+      await page
+        .waitForFunction(
+          () => {
+            const box = document.querySelector(
+              '[data-testid="sliderule-asset-candidates"]'
+            );
+            const empty = document.querySelector(
+              '[data-testid="sliderule-asset-search-empty"]'
+            );
+            const err = document.querySelector(
+              '[data-testid="sliderule-asset-replace-error"]'
+            );
+            if (empty || err) return true;
+            if (!box) return false;
+            const tiles = [...box.querySelectorAll("li")];
+            if (!tiles.length) return false;
+            return tiles.every(
+              li =>
+                li.textContent.includes("加载不出来") ||
+                [...li.querySelectorAll("img")].some(i => i.naturalWidth > 0)
+            );
+          },
+          { timeout: 60000 }
+        )
+        .catch(() => {});
+      const searched = await page.evaluate(() => ({
+        candidates: document.querySelectorAll(
+          '[data-testid="sliderule-asset-candidates"] img'
+        ).length,
+        // 真的渲染出像素的有几张（naturalWidth>0）。灰方块在这里会露馅。
+        rendered: [
+          ...document.querySelectorAll(
+            '[data-testid="sliderule-asset-candidates"] img'
+          ),
+        ].filter(i => i.naturalWidth > 0).length,
+        // 明确显示"加载不出来"的格子数
+        brokenShown: [
+          ...document.querySelectorAll(
+            '[data-testid="sliderule-asset-candidates"] li'
+          ),
+        ].filter(li => li.textContent.includes("加载不出来")).length,
+        tiles: document.querySelectorAll(
+          '[data-testid="sliderule-asset-candidates"] li'
+        ).length,
+        empty: !!document.querySelector(
+          '[data-testid="sliderule-asset-search-empty"]'
+        ),
+        error: (
+          document.querySelector(
+            '[data-testid="sliderule-asset-replace-error"]'
+          )?.textContent || ""
+        ).trim(),
+      }));
+      check(
+        "S 搜图有结果，或如实说没搜到（不许静静地空着）",
+        searched.tiles > 0 || searched.empty,
+        JSON.stringify(searched)
+      );
+      /*
+       * T 是 S 的防伪标记：S 只证明"有候选格子"，一排灰方块照样让它变绿。
+       * 候选是拿来**看着挑**的，看不见就等于没有。
+       *
+       * 判据钉的是"每个格子都有结论"——要么真渲染出像素，要么明说加载不出来。
+       * 两条都不满足 = 灰方块挂着，那才是坏的。
+       *
+       * ⚠ 这个开发容器里浏览器**出不去外网**（live.staticflickr.com 与
+       *   fonts.googleapis.com 一样 ERR_CONNECTION_RESET；curl 能出去是因为
+       *   它信任容器的 CA，Chromium 不信）。所以这里走的通常是"加载不出来"
+       *   那条——那正是降级该有的样子，不是判据放水。真实用户机器上走的是
+       *   rendered 那条。
+       */
+      check(
+        "T 每个候选格子都有结论（渲染出来 或 明说加载不出来）",
+        searched.tiles === 0 ||
+          searched.rendered + searched.brokenShown === searched.tiles,
+        JSON.stringify(searched)
+      );
+      await page.screenshot({ path: `${SHOT_DIR}/asset-replace.png` });
+    } else {
+      log("素材 0 张，跳过 P/Q/R/S（这个会话的应用没有 <img>）");
+    }
   } finally {
     await browser.close();
   }
