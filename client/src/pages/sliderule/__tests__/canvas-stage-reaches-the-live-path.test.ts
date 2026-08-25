@@ -442,10 +442,24 @@ describe("画布台面：浅灰点阵 + 画板不带投影", () => {
     expect(STAGE).not.toContain("STAGE_FRAME_SHADOW");
   });
 
-  it("点阵画在台面上，不跟缩放走", () => {
-    // ⚠ React Flow 的 <Background> 跟 viewport 缩放走：画布常用 25%~57%，
-    //   1.4px 的点缩到不足一个像素直接消失（真机量过，看着像"点阵没生效"）。
-    expect(STAGE).toContain("backgroundSize:");
+  it("台面完全透明——画布不许有自己的背景", () => {
+    /*
+     * ⚠ 2026-08-25 用户裁决："完全透明就行，现在就是有两层点阵背景了"。
+     *   画布容器一旦自带底色/点阵，就会跟外壳那层叠成两层背景。
+     *   要改画布观感去改外壳（--sr-shell-bg），别在这儿再糊一层。
+     *
+     * 判据落在**容器那一段**上，不是整份源码：素材卡、药丸、画板自己
+     * 该有的白底不在此列。
+     */
+    const host = STAGE.slice(
+      STAGE.indexOf("ref={flowHostRef}"),
+      STAGE.indexOf("ref={flowHostRef}") + 700
+    );
+    expect(host).toBeTruthy();
+    expect(host).not.toMatch(/bg-\[#/);
+    expect(host).not.toContain("backgroundColor");
+    expect(host).not.toContain("backgroundImage");
+    // React Flow 自己那层点阵也不许回来（它还会跟着缩放消失）
     expect(STAGE).not.toContain("<Background");
     expect(STAGE).not.toContain("BackgroundVariant");
   });

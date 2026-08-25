@@ -1228,17 +1228,20 @@ function CanvasInner({
       <div className="flex min-h-0 min-w-0 flex-1 gap-2">
         <div
           ref={flowHostRef}
-          className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-md border border-[#e2e6eb]"
-          style={{
-            backgroundColor: "#eef0f4",
-            /* ⚠ 点阵画在台面上、不交给 React Flow 的 <Background>：那个跟着
-               viewport 缩放走，画布常用的 25%~57% 下 1.4px 的点缩到不足一个
-               像素，直接消失（2026-08-25 真机量的，截图上看像"点阵没生效"）。
-               这层是台面质感不是工作网格，尺寸恒定才对得上参考图。 */
-            backgroundImage:
-              "radial-gradient(rgba(15,23,42,0.14) 1px, transparent 1px)",
-            backgroundSize: "18px 18px",
-          }}
+          /*
+           * 台面**完全透明**（2026-08-25 用户裁决："完全透明就行，现在就是有
+           * 两层点阵背景了"）。不画底色、不画点阵、不描边——画布直接露出外壳
+           * 那一层，只有一个背景。
+           *
+           * ⚠ 这一路走了三版才落到这儿，把过程记下来免得下一个人再走一遍：
+           *   1) 深底 + 跟指针的聚光灯 + 全套前景改色 —— 做过头了，撤了。
+           *   2) 浅灰台面 —— 顺带量到：字面意义上"去掉背景"是**看不见的**，
+           *      台面原来 #fbfbfc，去掉后露出外壳 #f4f4f6，差一个色阶。
+           *   3) 浅灰 + 自画点阵 —— 于是变成两层背景叠着。
+           *   结论：这块地方**不该有自己的背景**。要改画布观感就去改外壳那层
+           *   （--sr-shell-bg），别在这里再糊一层。
+           */
+          className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-md"
         >
           <CanvasContext.Provider value={ctx}>
             <ReactFlow
