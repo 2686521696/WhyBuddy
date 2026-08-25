@@ -2389,6 +2389,60 @@ async def search_stock_images_for_replacement(
     }
 
 
+#: 一个连接器取一次数最多等多久（含重试，见 services/connectors._BUDGET_S）。
+#: 用户是点了「预览数据」在等，比自动链路那条 3s 宽松；但也不能无上限——
+#: 生成期会串起来跑，一个卡死会拖垮整轮推演。
+_CONNECTOR_FETCH_TIMEOUT_S = 45.0
+
+
+@router.get("/connectors")
+async def list_available_connectors(x_internal_key: Optional[str] = Header(None)):
+    """有哪些连接器可用（输入框里 `/` 选择器的数据源）。
+
+    只回**公开信息**：id / 人话名 / 它会落成哪个实体、哪些字段 / 要不要凭据。
+    不回任何 key。`available=false` 的也照样列出来并说明缺什么——列表里
+    干脆不出现的话，用户只会以为"这个产品没有天气"，而不是"我还没配".
+    """
+    _auth(x_internal_key)
+    from services.connectors import list_connectors
+
+    return {"connectors": list_connectors()}
+
+
+@router.post("/connectors/{connector_id}/rows")
+async def fetch_connector_rows(
+    connector_id: str,
+    payload: Dict[str, Any],
+    x_internal_key: Optional[str] = Header(None),
+):
+    """取一次真数据，落成实体行。
+
+    ⚠ **失败一律 200 + ok:false，不抛 HTTPException。** 这里是故意的：
+      前端拿到 502 只能显示"出错了"，而用户需要知道的是"城市认不出"还是
+      "数据源超时"——两者的下一步动作完全不同。错误语义要走数据面，
+      不是走状态码。
+
+    ⚠ 取不到就是取不到：rows 一定是空数组，**不许**回落成占位行。
+      这条跟换图那条同源——用户点了按钮在等，给他假的当"成功"就是伪造绿灯。
+      连接器模块自己也守着这一条（services/connectors.fetch_rows），
+      这里再守一次是因为**两边都可能被后人改**（仓里第四条：成对的东西）。
+    """
+    _auth(x_internal_key)
+    from services.connectors import fetch_rows
+
+    args = payload.get("args") if isinstance(payload, dict) else None
+    result = await asyncio.to_thread(
+        fetch_rows,
+        connector_id,
+        args if isinstance(args, dict) else {},
+        timeout_s=_CONNECTOR_FETCH_TIMEOUT_S,
+    )
+    out = result.to_public()
+    if not out["ok"]:
+        out["rows"] = []
+    return out
+
+
 @router.get("/apps/{app_id}/preview")
 async def get_generated_app_preview(
     app_id: str,
