@@ -84,6 +84,13 @@ export interface SpecPageLive {
   /** 导航有这一项、落库却没有成品 HTML。点进来要停在失败页，
    *  不能回落最新页假装没点。缺席 = 成品页。 */
   missing?: boolean;
+  /** 导航里这一页的人话名（"团长工作台"）。画布档的画板标题要它——
+   *  一屏五块画板全叫 p1…p5 等于没标。
+   *  ⚠ **只有落库那条来源带得出**（livePagesFromSpec 从 navItems 取）；
+   *    推演中走 SSE 的 spec_page 事件没有这个字段，那条路由
+   *    canvas-board-layout.artboardLabel 从 HTML 的 <title> 兜底。
+   *    两条来源必须给出同一个结果，别只补一条。 */
+  name?: string;
 }
 
 export interface SpecPageLiveStageProps {

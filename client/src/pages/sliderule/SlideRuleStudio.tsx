@@ -36,6 +36,8 @@ import {
   SpecPageLiveStage,
   type SpecPageLive,
 } from "./live-runtime/SpecPageLiveStage";
+import { SpecPageCanvasStage } from "./live-runtime/SpecPageCanvasStage";
+import { AppStageErrorBoundary } from "./live-runtime/AppStageErrorBoundary";
 import { livePagesFromSpec } from "./spec-live-pages";
 import {
   applyHtmlWorkflowAction,
@@ -100,6 +102,23 @@ function StudioChrome({
 }
 
 const XRAY_PREF_KEY = "sliderule:xray-on";
+const STAGE_VIEW_PREF_KEY = "sliderule:stage-view";
+
+/** 档位偏好读写。隐私模式下存不了不影响开关本身工作（跟游标同一写法）。 */
+function loadStageViewPref(): string {
+  try {
+    return localStorage.getItem(STAGE_VIEW_PREF_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+function saveStageViewPref(v: string): void {
+  try {
+    localStorage.setItem(STAGE_VIEW_PREF_KEY, v);
+  } catch {
+    /* 隐私模式：不记就不记 */
+  }
+}
 
 /** 抽屉标题：系统的中文名（游标语境下不再用英文胶囊） */
 const SKILL_LABELS: Record<SkillId, string> = {
@@ -434,7 +453,20 @@ export function SlideRuleStudio({
   //   · 页面/代码档：页面 = 渲染页；代码 = 当前页交付的 HTML 原文
   //   · 游标：XrayPanel 原样复用（它只吃模型 + schema，纯派生），中间缺的
   //     那层「{attr,value,el} → XrayTarget」翻译落在 htmlBindingToXrayTarget
-  const [stageView, setStageView] = useState<"page" | "code" | "board">("page");
+  //
+  // ⚑ 2026-08-25 加 "canvas"：一轮交五页，页面档一次只看得见一页，
+  //   "这套应用长什么样"是个整体问题。画布把所有页面并排摊开（见
+  //   live-runtime/SpecPageCanvasStage.tsx）。
+  //   ⚠ 加档位要同时看三处，漏一处就是"闸绿了东西没了"：
+  //     1) 下面这个联合类型  2) 顶栏 ToggleGroup 的数组  3) 舞台渲染分支。
+  const [stageView, setStageView] = useState<"canvas" | "page" | "code" | "board">(
+    () => (loadStageViewPref() === "canvas" ? "canvas" : "page")
+  );
+  // 档位偏好只记 画布/页面 两档（"代码"是临时查看，记住它等于下次开门先给
+  // 用户一屏 HTML 源码）。跟游标开关同一套 localStorage 兜底写法。
+  useEffect(() => {
+    if (stageView === "canvas" || stageView === "page") saveStageViewPref(stageView);
+  }, [stageView]);
   const [activeSpecPageId, setActiveSpecPageId] = useState<string>("home");
   // 游标开关（计算尺游标 hairline 的品牌梗；偏好持久化，键跟老舞台同一个
   // ——用户在老链路开过游标，这里就该记得）
@@ -642,8 +674,14 @@ export function SlideRuleStudio({
                       （见下面 XrayPanel 的 onOpenSandbox），顶栏再挂一片纯属重复占位。
                       注意撤的只是**这颗按钮**：stageView === "board" 那支渲染和
                       XrayPanel 的入口都还在，删它们会让沙盘真的没法打开。 */}
+                  {/* ⚑ 2026-08-25：「画布」加在**页面左边**（用户在截图上
+                      箭头标的就是这个位置）。次序是有讲究的，不是随手排的：
+                      画布=看全套 → 页面=看一页 → 代码=看这一页的源码，
+                      从粗到细，跟 Figma（画布→图层）/ Stitch 同向。
+                      把它塞在代码后面会变成"三个并列的东西"，粒度关系就没了。 */}
                   {(
                     [
+                      ["canvas", "画布"],
                       ["page", "页面"],
                       ["code", "代码"],
                     ] as const
@@ -756,6 +794,33 @@ export function SlideRuleStudio({
                   }
                   className="min-h-0 min-w-0 flex-1"
                 />
+              ) : stageView === "canvas" ? (
+                /* 画布档：同一份 displayPages，摊开成多画板。
+                   ⚠ 喂的**必须**是 displayPages 而不是 livePages——点选编辑
+                     存过的页在 pageOverrides 里，喂 livePages 会让画布上显示
+                     的是改之前那份，而页面档显示改之后那份。同一个产物两个
+                     档位两种内容，正是本仓第四条纪律的形状。
+                   fail-open：画布是增强类，炸了收进降级卡，不拖垮主链路，
+                   也**不自动切回页面档**（换脸比报错更难解释）。 */
+                <AppStageErrorBoundary resetKeys={[sessionId, displayPages.length]}>
+                  <SpecPageCanvasStage
+                    pages={displayPages}
+                    running={isRunning}
+                    model={fiveSystemModel}
+                    runtime={htmlRuntime}
+                    gates={actionGates}
+                    onAction={handleHtmlAction}
+                    onHoverBinding={handleHoverBinding}
+                    activePageId={activeSpecPageId}
+                    onActivePageChange={setActiveSpecPageId}
+                    onOpenInPageView={pageId => {
+                      setActiveSpecPageId(pageId);
+                      setStageView("page");
+                    }}
+                    metaTrailing={roleControl}
+                    className="min-h-0 min-w-0 flex-1"
+                  />
+                </AppStageErrorBoundary>
               ) : (
                 <>
               <SpecPageLiveStage

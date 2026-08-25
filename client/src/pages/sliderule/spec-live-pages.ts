@@ -122,6 +122,9 @@ export function livePagesFromSpec(
     const reason = String(specFirstPages?.failedPages?.[id] ?? "");
     return {
       pageId: id,
+      // 人话名往下带（画布档的画板标题）。这里本来就算出来了，此前只喂给
+      // missingPageHtml 就丢掉——画布上五块画板全叫 p1…p5 就是丢在这儿。
+      name,
       html: missing ? missingPageHtml({ pageId: id, name, reason, nav: nav.length ? nav : ids.map(pid => ({ pageId: pid, name: pid })), device: specFirstPages?.device }) : html,
       current: i + 1,
       total: realCount,
