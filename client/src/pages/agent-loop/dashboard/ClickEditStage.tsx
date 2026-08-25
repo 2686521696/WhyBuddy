@@ -514,8 +514,43 @@ export function ClickEditStage({
     frame.addEventListener("load", onLoad);
     frame.srcdoc = doc;
     onLoad();
+
+    /* ⚠ 2026-08-25 真机（健身房那趟）：点选编辑整个选不中，而且**一声不响**——
+       进得去编辑态、iframe 画得出页面、控制台零报错，只是点谁都没反应。
+       静态判据全绿：组件在、iframe 在、元素也在（量到 122 个可点元素）。
+
+       第一版排查还被自己的判据骗了一次：拿"点完出现『保存修改』"当选中成功的
+       依据，而那颗按钮是编辑态常驻的（见下面 :749 一带），跟选没选中无关，
+       于是报了假绿。换成 selected 门控下的 click-edit-toolbar / -outline 才
+       露出来。**这就是"每写一条应该有 X，配一条 X 真的被用到了"的原型。**
+
+       真因在这行下面：挂点击监听器只发生在 onLoad 里，而 `frame.srcdoc = doc`
+       之后 **load 事件不来**。浏览器打桩量到的时序：
+
+         20019ms 挂 load 监听器
+         20027ms   ↳ load 回调进入：token=∅ bodyKids=0     ← about:blank 那次
+         20036ms 挂 load 监听器 + set srcdoc token=ce...
+         （此后 4 秒静默，load 再没触发，document 上的 click 一次都没挂上）
+
+       srcdoc 是写进那个**初始 about:blank 文档**的，浏览器按"替换初始空文档"
+       处理，不再补第二次 load；而那唯一一次 load 早于我们挂监听器。同步补调的
+       `onLoad()` 也救不了：那一刻 contentDocument 还是空的，token 对不上，
+       正好被 guard 挡掉。
+
+       所以别把挂载时机绑死在一个不保证会来的事件上：srcdoc 写完就开始轮询，
+       文档带上我们的 token 就立刻接管。token 判据一个字不动——它挡的是"接管
+       到上一份文档上去"，那才是这段代码真正要防的东西。 */
+    const poll = window.setInterval(() => {
+      onLoad();
+      if (disposed || wired) window.clearInterval(poll);
+    }, 50);
+    // 兜底停表：这是增强类逻辑，自己卡住也不许拖着一个永动定时器（fail-open）。
+    const pollStop = window.setTimeout(() => window.clearInterval(poll), 10000);
+
     return () => {
       disposed = true;
+      window.clearInterval(poll);
+      window.clearTimeout(pollStop);
       frame.removeEventListener("load", onLoad);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
