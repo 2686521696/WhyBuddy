@@ -723,7 +723,23 @@ function AssetNode({ data }: NodeProps<Node<AssetData>>) {
   return (
     <div
       className="relative"
-      style={{ width: w, height: h }}
+      /*
+       * ⚠ 2026-08-25 用户报"换图点了没反应"，真机查出来的根因：
+       *   素材节点建的时候写了 `selectable: false`，React Flow 据此给整个
+       *   `react-flow__node-asset` 挂 **pointer-events:none**（它按"这个节点
+       *   可不可交互"逐个决定；画板节点没写 selectable:false，所以是 all）。
+       *   于是这张卡**整个点不动**——换图按钮点不了，点卡片高亮引用页也点不了。
+       *   按钮画得好好的、位置也对，`elementFromPoint` 拿到的却是
+       *   react-flow__pane。
+       *
+       *   这里显式把命中打开：子元素的 pointer-events:auto 能盖过父层的 none。
+       *   不去掉 `selectable: false` —— 那会把 React Flow 的选中语义
+       *   （选中框、Delete 键删节点）一并带进来，不是我们要的。
+       *
+       * ⚠ 判据教训：smoke 里那几条用的是 `btn.click()`（DOM 调用），**绕过命中
+       *   测试**，所以一直是绿的。这类"点得到吗"的判据必须走真实鼠标坐标。
+       */
+      style={{ width: w, height: h, pointerEvents: "auto" }}
       data-testid="sliderule-canvas-asset"
       data-asset-url={asset.url}
       data-placeholder={asset.placeholder ? "1" : "0"}

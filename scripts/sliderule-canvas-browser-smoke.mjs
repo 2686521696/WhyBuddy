@@ -844,15 +844,44 @@ async function main() {
      *   破坏性动作。
      */
     if (assetInfo.declared > 0) {
-      const openedPanel = await page.evaluate(() => {
-        const btn = document.querySelector(
-          '[data-testid="sliderule-canvas-asset-replace-btn"]'
+      /*
+       * ⚠ 2026-08-25 真机事故，这段是修复后的写法，别改回去：
+       *   这里原本是 `btn.click()`（DOM 调用）——**绕过命中测试**，所以哪怕
+       *   按钮整个点不动它也一直绿。真实故障是：素材节点建的时候写了
+       *   `selectable: false`，React Flow 据此给整个 node 挂 pointer-events:none，
+       *   用户点换图**从来没有过反应**，而这条判据从来没红过。
+       *   "点得到吗"这类判据必须走**真实鼠标坐标**。
+       */
+      const btnBox = await page
+        .locator('[data-testid="sliderule-canvas-asset-replace-btn"]')
+        .first()
+        .boundingBox()
+        .catch(() => null);
+      // 先钉命中：按钮中心点上最顶层的元素必须是按钮自己
+      const topAtBtn = btnBox
+        ? await page.evaluate(
+            ([x, y]) =>
+              document
+                .elementFromPoint(x, y)
+                ?.closest("[data-testid]")
+                ?.getAttribute("data-testid") || "(none)",
+            [btnBox.x + btnBox.width / 2, btnBox.y + btnBox.height / 2]
+          )
+        : "(no-button)";
+      check(
+        "P0 换图按钮真的点得到（不是被 pointer-events:none 挡着）",
+        topAtBtn === "sliderule-canvas-asset-replace-btn",
+        `按钮中心点上是 ${topAtBtn}`
+      );
+      let openedPanel = "no-button";
+      if (btnBox) {
+        await page.mouse.click(
+          btnBox.x + btnBox.width / 2,
+          btnBox.y + btnBox.height / 2
         );
-        if (!btn) return "no-button";
-        btn.click();
-        return "clicked";
-      });
-      await page.waitForTimeout(500);
+        openedPanel = "clicked";
+      }
+      await page.waitForTimeout(700);
       const panel = await page.evaluate(() => {
         const el = document.querySelector(
           '[data-testid="sliderule-asset-replace"]'
