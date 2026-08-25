@@ -17,6 +17,7 @@ import { DesignSystemSwatch } from "./DesignSystemSwatch";
 import { useDesignSystemPanel } from "./DesignSystemContext";
 import {
   deleteCustomDesignSystem,
+  deriveCustomFrom,
   isCustomDesignSystem,
   saveCustomDesignSystem,
   type DesignSystemRadius,
@@ -61,9 +62,12 @@ export function DesignSystemPanel({
 
   const apply = () => {
     // 预设看着不改直接应用 → 不落自建；改过或新建 → 存成自己的一套。
-    if (panel.mode === "create") saveCustomDesignSystem(sys);
-    panel.apply(sys.id);
-    onApplied?.(sys.id);
+    // ⚠ 必须过 deriveCustomFrom：直接存 sys 会沿用预设 id，清单里就出现两条
+    //   同名同 id 的条目、还都打勾（2026-08-25 真机 bug）。
+    const saved = panel.mode === "create" ? deriveCustomFrom(sys) : sys;
+    if (panel.mode === "create") saveCustomDesignSystem(saved);
+    panel.apply(saved.id);
+    onApplied?.(saved.id);
     // ⚠ 用户第 4 条「点击应用一起消失」：清单和面板同时收。
     //   只 close() 的话面板没了、清单还开着，看着像没生效。
     panel.closeAll();

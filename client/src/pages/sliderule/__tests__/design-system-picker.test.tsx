@@ -215,7 +215,9 @@ describe("④ 点预设不消失，点应用一起消失", () => {
     );
     const at = panel.indexOf("const apply =");
     const body = panel.slice(at, at + 420);
-    expect(body).toContain("panel.apply(sys.id)");
+    // ⚠ 盯语义不盯字面：实参从 sys.id 改成 saved.id（另存要换新 id）之后，
+    //   写死 `panel.apply(sys.id)` 会假红。这条用例要钉的是"应用之后两块一起收"。
+    expect(body).toMatch(/panel\.apply\(/);
     expect(body).toContain("panel.closeAll()");
     // 反向：只 close() 会留下开着的清单，看着像没生效
     expect(body).not.toMatch(/panel\.close\(\)/);

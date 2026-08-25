@@ -119,7 +119,32 @@ export function loadCustomDesignSystems(): DesignSystem[] {
   }
 }
 
+/**
+ * 把一份设计系统变成"我的"。
+ *
+ * ⚠ 2026-08-25 真机 bug 的根因就在这一步。此前面板的「应用」直接
+ *   `saveCustomDesignSystem(sys)`，而 sys.id 还是**预设自己的 id**
+ *   （比如 `miantuan`）。于是自建表和预设表各有一条同 id，清单把两份都铺出来
+ *   ——列表里出现两条「面团·品牌」，而且 `on = sys.id === appliedId` 让两条
+ *   同时打勾。
+ *
+ *   规矩：**以预设为基础另存必须换新 id**；已经是自建的再存则保持 id
+ *   （否则每存一次就克隆一份，存三次出三条）。
+ */
+export function deriveCustomFrom(sys: DesignSystem): DesignSystem {
+  if (isCustomDesignSystem(sys.id)) return sys;
+  const isPreset = DESIGN_SYSTEMS.some(s => s.id === sys.id);
+  if (!isPreset) return sys;
+  return {
+    ...sys,
+    id: `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    label: `${sys.label} 副本`,
+  };
+}
+
 export function saveCustomDesignSystem(sys: DesignSystem): void {
+  // 预设永远不进自建表：撞 id 的那条脏数据就是这么来的。
+  if (DESIGN_SYSTEMS.some(s => s.id === sys.id)) return;
   try {
     const list = loadCustomDesignSystems().filter(s => s.id !== sys.id);
     localStorage.setItem(CUSTOM_KEY, JSON.stringify([sys, ...list]));
@@ -139,9 +164,22 @@ export function deleteCustomDesignSystem(id: string): void {
   }
 }
 
-/** 自建在前、预设在后。查找与列表都走它，别在别处各拼各的。 */
+/**
+ * 自建在前、预设在后。查找与列表都走它，别在别处各拼各的。
+ *
+ * ⚠ 按 id 去重（自建赢）：这是兜底。根因在 deriveCustomFrom 已经堵住，
+ *   但老版本存下来的脏数据仍会带着预设 id 躺在 localStorage 里——不去重的话
+ *   那些用户升级上来照样看到两条。
+ */
 export function allDesignSystems(): DesignSystem[] {
-  return [...loadCustomDesignSystems(), ...DESIGN_SYSTEMS];
+  const out: DesignSystem[] = [];
+  const seen = new Set<string>();
+  for (const s of [...loadCustomDesignSystems(), ...DESIGN_SYSTEMS]) {
+    if (seen.has(s.id)) continue;
+    seen.add(s.id);
+    out.push(s);
+  }
+  return out;
 }
 
 export function isCustomDesignSystem(id: string): boolean {
