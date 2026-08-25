@@ -23,6 +23,8 @@
  *   D2 空格+拖拽 = 平移画布（画板不动）   ← 跟 D 是一对，只看一条会漏
  *   D3 输入框里空格照常打得出（全局空格监听最容易打坏的一件事）
  *   D4 按着空格切走窗口，回来不卡在平移态 ← 变异测出来的缺口，D/D2/D3 都漏
+ *   D5 拖走之后连线从朝着目标那一侧出发   ← 用户报的"连线一拖动就没了"
+ *   D6 刚拖过的画板叠在最上层             ← 同一趟的另一半："页面就没了"
  *   E 双击进板：只撤掉**那一块**的手势层，其余照旧挡着
  *   F Esc 退出，手势层全部回来
  *   G 点缩放读数 = 适应画布
@@ -565,6 +567,211 @@ async function main() {
       node0 !== node1,
       `node ${node0 !== node1 ? "动了" : "没动"} / viewport ${v2 === v3 ? "没变" : "跟着自动平移了一段"}`
     );
+
+    /*
+     * D5 / D6：把画板拖到"跟自动排布完全不同的相对位置"上，看连线和层叠
+     *          跟不跟得上。
+     *
+     * ⚠ 2026-08-25 用户报的原话是"连线一拖动页面就没了"。真机量下来边数
+     *   没少、路径也不是 NaN——**边还在，只是画歪了**：从哪一侧出、进哪一侧
+     *   是 pickLinkSides 按画板位置挑的，而它一直吃**自动排布的 boxes**，
+     *   拖走之后不更新。于是线从画板右侧出发再绕回目标左侧，画出一个跟谁
+     *   都不挨着的方框，肉眼就是"线没了"。
+     *   同一趟还看到第二件事：被拖的那块**滑到别人底下**（selected 只跟
+     *   activePageId 走，拖动不选中，elevateNodesOnSelect 抬不起它），
+     *   那是"页面就没了"字面上的另一半。
+     *
+     * ⚠ 拖**第二块**，不是第一块：这时 activePageId 还是第一块，D6 才分得清
+     *   "抬起来的是刚拖的那块"还是"抬起来的只是选中的那块"。拖第一块的话
+     *   两件事撞在一起，把 zIndex 那行删掉 D6 **照样绿**（选中本身就 +1000）。
+     */
+    const boardPoint = async i => {
+      const pt = await page.evaluate(n => {
+        const b = document
+          .querySelectorAll('[data-testid="sliderule-canvas-artboard"]')
+          [n]?.getBoundingClientRect();
+        const host = document
+          .querySelector('[data-testid="sliderule-canvas-stage"] .react-flow')
+          ?.getBoundingClientRect();
+        if (!b || !host) return null;
+        const left = Math.max(b.left, host.left);
+        const right = Math.min(b.right, host.right);
+        const top = Math.max(b.top, host.top);
+        const bottom = Math.min(b.bottom, host.bottom);
+        if (!(right > left && bottom > top)) return null;
+        return { x: (left + right) / 2, y: top + (bottom - top) * 0.25 };
+      }, i);
+      if (!pt) throw new Error(`第 ${i} 块画板不在可视区里`);
+      return pt;
+    };
+
+    /*
+     * ⚠ 先缩小再拖：**拖多远决定这条判据有没有用**。第一版在 75% 缩放下拖
+     *   (+260,+300) 屏幕像素，折合 flow 里才 (+350,+400)，而邻板间距本来就
+     *   有 494——选边压根没翻，把修复改回去 D5 照样绿。缩到 20% 上下，同样
+     *   的手势折合 flow 里 1500+，画板真的落到邻板正下方，选边才会从
+     *   "右→左"翻成"下→上"。
+     */
+    const bbZoom = await pointOnBoard();
+    await page.keyboard.down("Control");
+    for (let i = 0; i < 3; i += 1) {
+      await page.mouse.move(bbZoom.x, bbZoom.y);
+      await page.mouse.wheel(0, 240);
+      await page.waitForTimeout(180);
+    }
+    await page.keyboard.up("Control");
+    await page.waitForTimeout(400);
+    const zoomFar = await zoomText();
+
+    const bbFar = await boardPoint(1);
+    await page.mouse.move(bbFar.x, bbFar.y);
+    await page.mouse.down();
+    await page.mouse.move(bbFar.x + 30, bbFar.y + 320, { steps: 16 });
+    await page.mouse.up();
+    await page.waitForTimeout(700);
+
+    const routing = await page.evaluate(() => {
+      const centre = id => {
+        const n = id
+          ? document.querySelector(
+              `.react-flow__node[data-id="${CSS.escape(id)}"]`
+            )
+          : null;
+        if (!n) return null;
+        const r = n.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      };
+      const ends = g => {
+        // React Flow 不往 <g> 上写 data-source/data-target，它写的是
+        // aria-label="Edge from A to B"；自动连线的 id 也是 "df:A->B"。
+        // 两条都试，都读不出来就记 null——判据会红，不会静静放过。
+        const m = /^Edge from (.+) to (.+)$/.exec(
+          g.getAttribute("aria-label") || ""
+        );
+        if (m) return [m[1], m[2]];
+        const id = g.getAttribute("data-id") || "";
+        const k = id.indexOf("->");
+        if (k < 0) return [null, null];
+        return [id.slice(id.indexOf(":") + 1, k), id.slice(k + 2)];
+      };
+      const side = (dx, dy) =>
+        Math.abs(dx) >= Math.abs(dy)
+          ? dx >= 0
+            ? "r"
+            : "l"
+          : dy >= 0
+            ? "b"
+            : "t";
+      const out = [];
+      for (const g of document.querySelectorAll(".react-flow__edge")) {
+        const d =
+          g.querySelector(".react-flow__edge-path")?.getAttribute("d") || "";
+        const nums = (d.match(/-?\d+(?:\.\d+)?/g) || []).slice(0, 4).map(Number);
+        const [sid, tid] = ends(g);
+        const from = centre(sid);
+        const to = centre(tid);
+        if (nums.length < 4 || !from || !to) {
+          out.push({ id: g.getAttribute("data-id"), got: null, want: null });
+          continue;
+        }
+        /*
+         * ⚠ 判据钉的是**从哪一侧出发**，不是"大方向对不对"。第一版只比了
+         *   点积的正负，真机上假绿了一轮：画板被拖到邻板正下方时，选边该从
+         *   "右"翻成"下"，可 dx 依旧是正的，点积照样 > 0。**翻的是轴，不是
+         *   符号**，所以这里把轴和符号一起比。
+         *
+         * 出发方向取自 path（flow 坐标），中心连线取自节点矩形（屏幕坐标）；
+         * 两个空间只差一个正缩放加平移，轴和符号都不受影响。
+         */
+        const got = side(nums[2] - nums[0], nums[3] - nums[1]);
+        const want = side(to.x - from.x, to.y - from.y);
+        out.push({ id: g.getAttribute("data-id"), got, want });
+      }
+      return out;
+    });
+    const badRouting = routing.filter(r => r.got !== r.want || !r.got);
+    const posFar = await page.evaluate(() =>
+      [...document.querySelectorAll(".react-flow__node-artboard")]
+        .map(
+          n =>
+            `${n.getAttribute("data-id")}${n.style.transform.replace("translate", "")}`
+        )
+        .join(" ")
+    );
+    check(
+      "D5 拖走画板后连线从朝着目标的那一侧出发（改动前它还按自动排布选边）",
+      routing.length > 0 && badRouting.length === 0,
+      routing.length === 0
+        ? "这个会话没有连线，D5 没判到东西——换一个有连线的会话再跑"
+        : `缩放 ${zoomFar} · ${routing.length} 条边，选错边 ${badRouting.length} 条 ${JSON.stringify(badRouting).slice(0, 200)} · 画板 ${posFar}`
+    );
+
+    const stacking = await page.evaluate(() =>
+      [...document.querySelectorAll(".react-flow__node-artboard")].map(n => ({
+        id: n.getAttribute("data-id"),
+        z: Number(getComputedStyle(n).zIndex) || 0,
+        selected: n.classList.contains("selected"),
+      }))
+    );
+    const draggedId = await page.evaluate(
+      () =>
+        document
+          .querySelectorAll('[data-testid="sliderule-canvas-artboard"]')[1]
+          ?.closest(".react-flow__node")
+          ?.getAttribute("data-id") ?? null
+    );
+    const front = stacking.find(b => b.id === draggedId);
+    const others = stacking.filter(b => b.id !== draggedId);
+    check(
+      "D6 刚拖过的画板叠在最上层（改动前它会滑到别人底下）",
+      !!front &&
+        !front.selected &&
+        others.length > 0 &&
+        others.some(o => o.selected) &&
+        others.every(o => o.z < front.z),
+      `拖的是 ${draggedId} z=${front?.z}（selected=${front?.selected}） / 其它 ${JSON.stringify(
+        others.map(o => `${o.z}${o.selected ? "*选中" : ""}`)
+      )}`
+    );
+
+    /*
+     * D7：定位（双击进板 → fitBounds）也得看**当前**位置。
+     *
+     * ⚠ 跟 D5 是同一处根因的另一半：zoomToBoard 原来也是从自动排布的 boxes
+     *   里找坐标，画板拖走之后它会把镜头对到一块空地上——"改一半必然静默
+     *   失效"。D5 只钉连线，钉不到这条。
+     */
+    const bbEnter = await boardPoint(1);
+    await page.mouse.dblclick(bbEnter.x, bbEnter.y);
+    await page.waitForTimeout(900);
+    const framed = await page.evaluate(() => {
+      const b = document
+        .querySelectorAll('[data-testid="sliderule-canvas-artboard"]')
+        [1]?.getBoundingClientRect();
+      const host = document
+        .querySelector('[data-testid="sliderule-canvas-stage"] .react-flow')
+        ?.getBoundingClientRect();
+      if (!b || !host || !(b.width > 0)) return null;
+      const ix = Math.max(0, Math.min(b.right, host.right) - Math.max(b.left, host.left));
+      const iy = Math.max(0, Math.min(b.bottom, host.bottom) - Math.max(b.top, host.top));
+      return Math.round(((ix * iy) / (b.width * b.height)) * 100);
+    });
+    check(
+      "D7 双击进板把镜头对到画板**现在**的位置（改动前对到自动排布的老坐标）",
+      framed !== null && framed >= 90,
+      `画板落在视口内 ${framed}%`
+    );
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(400);
+
+    /*
+     * ⚠ D5 为了让选边真的翻，把画板拖到了很远、缩放也缩到了 20% 上下。
+     *   不收拾干净，后面 G（适应画布）会把镜头拉到能装下那块远板的比例上，
+     *   I/J/K 的边把手小到点不中——第一版就这么连红了 5 条。
+     *   点「复位」回自动排布（它自带一次 fitAll），把场地还给后面的判据。
+     */
+    await page.click('[data-testid="sliderule-canvas-reset-layout"]');
+    await page.waitForTimeout(800);
 
     const vSpace0 = await viewport();
     const nodeSpace0 = await page.$eval(

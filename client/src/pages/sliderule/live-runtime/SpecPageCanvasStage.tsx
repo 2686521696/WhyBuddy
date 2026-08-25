@@ -1226,12 +1226,23 @@ function CanvasInner({
    * ⚠ 只在**拖完**（dragging === false）才落存档。拖动中每一帧都写
    *   localStorage 是几百次同步写，会把拖拽拖成一卡一卡。
    */
+  /**
+   * 最近挪过的那块画板，画在最上层。
+   *
+   * ⚠ 2026-08-25 真机同一趟：把一块拖到另一块身上，它整块**滑到人家底下**
+   *   （React Flow 按数组顺序叠，我们的 selected 只跟 activePageId 走，拖动
+   *   不会选中，所以 elevateNodesOnSelect 抬不起来）。用户看到的就是"页面
+   *   没了"。Figma / TRAE 都是"谁刚被拖谁在最上面"，这里照抄。
+   */
+  const [frontId, setFrontId] = React.useState<string | null>(null);
+
   const onNodesChange = React.useCallback(
     (changes: NodeChange[]) => {
       let next: Record<string, BoardPosition> | null = null;
       for (const c of changes) {
         if (c.type !== "position" || !c.position) continue;
         if (c.id.startsWith("asset:")) continue;
+        setFrontId(c.id);
         next = { ...(next ?? boardPos), [c.id]: { ...c.position } };
         if (c.dragging) {
           // 拖动中：只更新内存，画板跟手；不写存档。
@@ -1244,18 +1255,43 @@ function CanvasInner({
     [boardPos, persistPos]
   );
 
+  /**
+   * 画板的**当前**位置：手动挪过的用存档，没挪过的用自动排布算出来的。
+   *
+   * ⚠ 存档里只会有当前页面清单里的 id（readBoardPositions 过滤过），
+   *   所以新生成的页自然落在自动排布的位置上，不会挤在 (0,0)。
+   *
+   * ⚠ 2026-08-25 真机（校园二手书那趟，用户报"连线一拖动页面就没了"）：
+   *   节点位置早就按 boardPos 画了，**连线的出入方向却还在按自动排布的
+   *   boxes 挑**（pickLinkSides 吃的是 boxById，boxById 只依赖 boxes）。
+   *   把第一块拖到右下角之后，线仍然从它的右边出发再绕回目标的左边，画出
+   *   一个跟谁都不挨着的方框——不报错、边数不变、路径也不是 NaN，看起来
+   *   就是"线没了"。典型的"只改一半必然静默失效"。
+   *   **位置只留这一份**：节点、连线选边、定位都从 placedBoxes 取。
+   *   没挪过的画板原样返回同一个对象，别让整排节点每拖一次就换身份。
+   */
+  const placedBoxes = React.useMemo(
+    () =>
+      boxes.map(box => {
+        const p = boardPos[box.pageId];
+        return p ? { ...box, x: p.x, y: p.y } : box;
+      }),
+    [boxes, boardPos]
+  );
+
   const nodes = React.useMemo<Node[]>(() => {
-    const boards: Node<ArtboardData>[] = boxes.map((box, i) => ({
+    const boards: Node<ArtboardData>[] = placedBoxes.map((box, i) => ({
       id: box.pageId,
       type: "artboard",
-      /* 手动挪过的用存档位置，没挪过的用自动排布算出来的。
-         ⚠ 存档里只会有当前页面清单里的 id（readBoardPositions 过滤过），
-           所以新生成的页自然落在自动排布的位置上，不会挤在 (0,0)。 */
-      position: boardPos[box.pageId] ?? { x: box.x, y: box.y },
+      position: { x: box.x, y: box.y },
       // React Flow 要显式尺寸才能算 fitView 与 minimap；不给的话它得等
       // ResizeObserver 量一遍，首帧 fitView 会算在 0×0 上（全屏一团糊）。
       width: box.w,
       height: box.h,
+      /* ⚠ 1001 不是 1：React Flow 的 elevateNodesOnSelect 给**选中**的节点
+         加 1000，写 1 的话"刚拖过的那块"照样压在选中的那块底下——而这两件
+         事经常不是同一块（选中跟着 activePageId 走，拖动不改选中）。 */
+      zIndex: box.pageId === frontId ? 1001 : 0,
       selected: pages[i]?.pageId === activePageId,
       data: {
         page: pages[i]!,
@@ -1277,19 +1313,19 @@ function CanvasInner({
     }));
     return [...boards, ...assetNodes];
   }, [
-    boxes,
+    placedBoxes,
     pages,
     isPhone,
     activePageId,
     assetBoxes,
     assets,
     assetsShown,
-    boardPos,
+    frontId,
   ]);
 
   const boxById = React.useMemo(
-    () => new Map(boxes.map(b => [b.pageId, b])),
-    [boxes]
+    () => new Map(placedBoxes.map(b => [b.pageId, b])),
+    [placedBoxes]
   );
   const edges = React.useMemo<Edge[]>(
     () =>
@@ -1344,7 +1380,9 @@ function CanvasInner({
 
   const zoomToBoard = React.useCallback(
     (pageId: string) => {
-      const box = boxes.find(b => b.pageId === pageId);
+      // ⚠ 必须用 placedBoxes：拖走之后 boxes 里还是自动排布的老坐标，
+      //   用它 fitBounds 会把镜头对到一块空地上。
+      const box = placedBoxes.find(b => b.pageId === pageId);
       if (!box) return;
       // fitBounds 用 React Flow 自己的容器尺寸算，比我们手算稳（它知道
       // padding 与当前 transform）。自己再算一遍等于两份缩放，必然分叉。
@@ -1353,7 +1391,7 @@ function CanvasInner({
         { padding: 0.12, duration: 260 }
       );
     },
-    [boxes, flow]
+    [placedBoxes, flow]
   );
 
   const select = React.useCallback(
