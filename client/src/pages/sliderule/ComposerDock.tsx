@@ -60,6 +60,12 @@ import {
   slashQueryAt,
   type SlashItem,
 } from "./composer-slash";
+import {
+  BUILTIN_PARTNERS,
+  loadPartners,
+  partnerCapabilities,
+  type Partner,
+} from "./partners";
 import { CapabilityChip, ComposerSlashMenu } from "./ComposerSlashMenu";
 import { listConnectors, type ConnectorSpec } from "./connectors-client";
 import {
@@ -680,7 +686,37 @@ export function ComposerDock({
       // 不可用的照样列出来并说明缺什么（后端 /connectors 也是这个判断）
       unavailable: c.available ? undefined : `${c.name}还没配置凭据`,
     }));
-    return [...conns, ...skills];
+    /* 伙伴也进 `/`：它就是"一次挂好几个 + 一句起手意图"，在输入框里一步到位
+       比先跳去库页再跳回来顺手得多。⚠ 依赖不齐的照样列出来并说明缺什么。 */
+    const available = {
+      connectorIds: connectors.filter(c => c.available).map(c => c.id),
+      skillKeys: loadInstalledSkills().map(installKeyOf),
+    };
+    const partners: SlashItem[] = [...BUILTIN_PARTNERS, ...loadPartners()].map(
+      pt => {
+        const missing = pt.needs.filter(n =>
+          n.kind === "connector"
+            ? !available.connectorIds.includes(n.key)
+            : !available.skillKeys.includes(n.key)
+        );
+        return {
+          key: pt.id,
+          kind: "partner" as const,
+          name: pt.name,
+          description: pt.description,
+          unavailable: missing.length
+            ? `还缺：${missing.map(m => m.name).join("、")}`
+            : undefined,
+        };
+      }
+    );
+    return [...conns, ...skills, ...partners];
+  }, [connectors]);
+
+  const partnerById = React.useMemo(() => {
+    const map = new Map<string, Partner>();
+    for (const pt of [...BUILTIN_PARTNERS, ...loadPartners()]) map.set(pt.id, pt);
+    return map;
   }, [connectors]);
 
   const slashItems = React.useMemo(
@@ -710,17 +746,45 @@ export function ComposerDock({
           adjustTextareaHeight();
         });
       }
+      /*
+       * 选中伙伴 = **把它要的能力挂上**，而不是挂一枚"伙伴"芯片。
+       * 芯片要能一个个摘掉，用户才控制得住这一轮到底带了什么；挂个伙伴
+       * 芯片的话，他看不见里面是哪几样，摘也只能整包摘。
+       */
+      const partner = item.kind === "partner" ? partnerById.get(item.key) : null;
+      const incoming: SlashItem[] = partner
+        ? partnerCapabilities(partner, {
+            connectorIds: connectors.filter(c => c.available).map(c => c.id),
+            skillKeys: loadInstalledSkills().map(installKeyOf),
+          })
+        : [item];
       setPicked(prev => {
         // 重复选同一个不叠加（用户连着敲两次 / 手滑）
-        if (prev.some(p => p.kind === item.kind && p.key === item.key)) return prev;
-        const next = [...prev, item];
+        const next = [...prev];
+        for (const one of incoming) {
+          if (next.some(p => p.kind === one.kind && p.key === one.key)) continue;
+          next.push(one);
+        }
+        if (next.length === prev.length) return prev;
         saveTurnCapabilities(next);
         return next;
       });
+      /* ⚠ 起手意图只在输入框**空着**的时候填。用户正写到一半时把他的话
+         盖掉，是这类"贴心"功能最招人烦的形状。 */
+      if (partner?.opener) {
+        const rest = ta && slash ? applySlashPick(ta.value, slash).text.trim() : "";
+        if (!rest) {
+          setInput(partner.opener);
+          requestAnimationFrame(() => {
+            adjustTextareaHeight();
+            textareaRef.current?.focus();
+          });
+        }
+      }
       setSlash(null);
       setSlashIndex(0);
     },
-    [slash, setInput, adjustTextareaHeight]
+    [slash, setInput, adjustTextareaHeight, partnerById, connectors]
   );
 
   const removeCapability = React.useCallback((item: SlashItem) => {
