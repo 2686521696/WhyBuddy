@@ -61,6 +61,29 @@ export interface WorkflowInstance {
   log: WorkflowInstanceLog[];
 }
 
+/**
+ * 一张表的数据来历（连接器供数时）。
+ *
+ * ⚠ **这个形状只准有这一份。** 第一版在 connector-rows.ts 里另写了一个同名
+ *   interface，这里用的是行内的匿名对象——加 `note?` 时只改了那一份，
+ *   `tsc` 当场红（"Property 'note' does not exist"）。这次运气好是编译期
+ *   报的；仓里第四条那些"只改一半"的坑，大多数没这么好运，只会静默半失效。
+ */
+export interface ConnectorMeta {
+  connector: string;
+  source: string;
+  fetchedAt: string;
+  /**
+   * 零行时的说明（可选）。
+   *
+   * "这张表为什么空着"有**两种**完全不同的答案，用户需要分得清：
+   *   - 取数失败（默认）→「数据源没接上」，这是个问题
+   *   - 只读预览根本没取 →「预览里不取实时数据」，这不是问题
+   * 都显示成前者会让人以为线上应用挂了。
+   */
+  note?: string;
+}
+
 export interface RuntimeState {
   /** entityId → rows */
   entities: Record<string, RuntimeRow[]>;
@@ -83,10 +106,7 @@ export interface RuntimeState {
    *   对连接器实体不成立——种子在这里正好是它要消灭的东西。数据源没接上时
    *   必须是**诚实空态 + 一句为什么**，不是 12 行编出来的漂亮数字。
    */
-  connectorEntities?: Record<
-    string,
-    { connector: string; source: string; fetchedAt: string }
-  >;
+  connectorEntities?: Record<string, ConnectorMeta>;
 }
 
 // ---------------------------------------------------------------------------
