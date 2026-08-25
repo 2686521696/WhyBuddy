@@ -42,6 +42,11 @@
  *   X 切到页面档：锁解开、对话栏回来
  *   Y 切回画布档：重新锁上
  *
+ * 第五轮（深底 + 点阵 + 聚光灯）再钉 2 条：
+ *
+ *   Z  台面真的是深底、点阵在、灯不吃手势
+ *   AA 聚光灯真的跟着指针走          ← 挂了 handler ≠ 灯真的动
+ *
  * ⚠ J 与 I 必须一起看，理由同 B/C 与 E：把手 opacity 是 1（I 绿）不代表它
  *   收得到事件。2026-08-25 真机就是 I 绿 J 红——手势层 `absolute inset-0`
  *   在 DOM 里排在把手后面，同层后来居上，把手看得见按不下去。
@@ -208,7 +213,8 @@ async function main() {
       return {
         found: !!btn,
         disabled: btn ? btn.disabled === true : null,
-        title: btn?.getAttribute("title") || btn?.getAttribute("aria-label") || "",
+        title:
+          btn?.getAttribute("title") || btn?.getAttribute("aria-label") || "",
       };
     });
     const wCanvas = await chatWidth();
@@ -227,7 +233,9 @@ async function main() {
 
     // 强行点它（绕过 disabled）——对话栏不许弹回来
     await page.evaluate(() => {
-      document.querySelector('[data-testid="sliderule-layout-maximize"]')?.click();
+      document
+        .querySelector('[data-testid="sliderule-layout-maximize"]')
+        ?.click();
       document
         .querySelector('[data-testid="sliderule-studio-split-toggle-chat"]')
         ?.click();
@@ -261,10 +269,68 @@ async function main() {
     });
     await page.waitForTimeout(800);
     const wBack = await chatWidth();
+    check("Y 切回画布档：重新锁上", wBack === 0, `chat=${wBack}px`);
+
+    /* ------------------------------------ 台面：深底 + 点阵 + 聚光灯（第五轮） */
+
+    /*
+     * ⚠ 单测只能证明"写了 onPointerMove、写了 setProperty"。灯**真的跟着走**
+     *   要看两个不同落点下 CSS 变量确实不同——写了 handler 但 rAF 没提交、
+     *   或者 ref 挂错元素，源码 grep 一样绿。
+     */
+    const surfaceLook = await page.evaluate(() => {
+      const host = document.querySelector(
+        '[data-testid="sliderule-canvas-surface"]'
+      );
+      const lamp = document.querySelector(
+        '[data-testid="sliderule-canvas-spotlight"]'
+      );
+      const cs = host ? getComputedStyle(host) : null;
+      return {
+        bg: cs?.backgroundColor || "",
+        // 点阵画在台面上，任何缩放下都该在
+        hasDots: (cs?.backgroundImage || "").includes("radial-gradient"),
+        lampPointerEvents: lamp ? getComputedStyle(lamp).pointerEvents : "",
+      };
+    });
+    const rgb = surfaceLook.bg.match(/\d+/g)?.map(Number) || [255, 255, 255];
+    const luma = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
     check(
-      "Y 切回画布档：重新锁上",
-      wBack === 0,
-      `chat=${wBack}px`
+      "Z 台面是深底（白底真的去掉了），点阵在，灯不吃手势",
+      luma < 60 &&
+        surfaceLook.hasDots &&
+        surfaceLook.lampPointerEvents === "none",
+      `${surfaceLook.bg} luma=${luma.toFixed(0)} dots=${surfaceLook.hasDots} pe=${surfaceLook.lampPointerEvents}`
+    );
+
+    const spotAt = async (fx, fy) => {
+      const box = await page
+        .locator('[data-testid="sliderule-canvas-surface"]')
+        .boundingBox();
+      await page.mouse.move(box.x + box.width * fx, box.y + box.height * fy);
+      await page.waitForTimeout(350);
+      return page.evaluate(() => {
+        const el = document.querySelector(
+          '[data-testid="sliderule-canvas-spotlight"]'
+        );
+        return el
+          ? {
+              x: el.style.getPropertyValue("--spot-x"),
+              y: el.style.getPropertyValue("--spot-y"),
+            }
+          : null;
+      });
+    };
+    const spotA = await spotAt(0.25, 0.3);
+    const spotB = await spotAt(0.75, 0.7);
+    check(
+      "AA 聚光灯真的跟着指针走（两个落点的 CSS 变量不同）",
+      !!spotA &&
+        !!spotB &&
+        spotA.x !== spotB.x &&
+        spotA.y !== spotB.y &&
+        parseFloat(spotA.x) < parseFloat(spotB.x),
+      `${JSON.stringify(spotA)} -> ${JSON.stringify(spotB)}`
     );
 
     // 等画板挂上真渲染再动手：没挂载的画板是占位块，手势层还在但内容没到，

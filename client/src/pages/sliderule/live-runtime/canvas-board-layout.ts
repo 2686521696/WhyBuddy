@@ -335,3 +335,32 @@ export function pickLinkSides(
   }
   return dy >= 0 ? { source: "b", target: "t" } : { source: "t", target: "b" };
 }
+
+/* ------------------------------------------------------------ 聚光灯 */
+
+/**
+ * 聚光灯落点（相对容器左上角的百分比）。
+ *
+ * ⚠ 纯函数：真正的 DOM 读写在 SpecPageCanvasStage 里，那边**不许**再算一遍
+ *   夹取逻辑（同一件事两处实现）。
+ *
+ * ⚠ 指针出了容器要**夹回边缘**而不是让灯跑出去：画布右边紧挨着属性面板，
+ *   鼠标划过去时灯若跟着跑出画布，视觉上是"光突然灭了"。夹住的话是
+ *   "光停在边上"，那才是聚光灯该有的样子。
+ */
+export function spotlightAnchor(
+  rect: { left: number; top: number; width: number; height: number },
+  clientX: number,
+  clientY: number
+): { x: number; y: number } {
+  const w = rect.width > 0 ? rect.width : 1;
+  const h = rect.height > 0 ? rect.height : 1;
+  const clamp = (v: number) => Math.min(100, Math.max(0, v));
+  return {
+    x: clamp(((clientX - rect.left) / w) * 100),
+    y: clamp(((clientY - rect.top) / h) * 100),
+  };
+}
+
+/** 还没动过鼠标时灯落在哪：偏上居中，正好照在第一排画板上。 */
+export const SPOTLIGHT_REST = { x: 50, y: 34 } as const;

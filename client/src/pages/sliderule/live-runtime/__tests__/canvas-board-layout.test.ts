@@ -23,6 +23,8 @@ import {
   layoutArtboards,
   pickLinkSides,
   shouldMountBoard,
+  SPOTLIGHT_REST,
+  spotlightAnchor,
 } from "../canvas-board-layout";
 
 const DESKTOP = { w: 1920, h: 1080 };
@@ -289,5 +291,39 @@ describe("连线接在哪条边（网格里别绕路）", () => {
 
   it("位移相等时稳定走水平，不在横竖之间跳", () => {
     expect(pickLinkSides(at(0, 0), at(1000, 1000)).source).toBe("r");
+  });
+});
+
+describe("聚光灯落点", () => {
+  const rect = { left: 100, top: 50, width: 400, height: 200 };
+
+  it("容器正中 = 50% / 50%", () => {
+    expect(spotlightAnchor(rect, 300, 150)).toEqual({ x: 50, y: 50 });
+  });
+
+  it("按容器左上角换算，不是按视口", () => {
+    // ⚠ 少减 rect.left/top 的话，画布越靠右灯偏得越离谱——
+    //   属性面板一开画布左边界就右移 300px，那时候才发现就晚了。
+    expect(spotlightAnchor(rect, 100, 50)).toEqual({ x: 0, y: 0 });
+    expect(spotlightAnchor(rect, 500, 250)).toEqual({ x: 100, y: 100 });
+  });
+
+  it("指针出了容器要夹回边缘，不许让灯跑出去", () => {
+    // 画布右边紧挨着属性面板，鼠标划过去时灯跟着跑出画布 = "光突然灭了"；
+    // 夹住才是"光停在边上"。
+    expect(spotlightAnchor(rect, 9999, 9999)).toEqual({ x: 100, y: 100 });
+    expect(spotlightAnchor(rect, -9999, -9999)).toEqual({ x: 0, y: 0 });
+  });
+
+  it("容器还没量到尺寸时不炸（除零）", () => {
+    const zero = { left: 0, top: 0, width: 0, height: 0 };
+    const at = spotlightAnchor(zero, 10, 10);
+    expect(Number.isFinite(at.x)).toBe(true);
+    expect(Number.isFinite(at.y)).toBe(true);
+  });
+
+  it("静止时的落点偏上居中——正好照在第一排画板上", () => {
+    expect(SPOTLIGHT_REST.x).toBe(50);
+    expect(SPOTLIGHT_REST.y).toBeLessThan(50);
   });
 });
