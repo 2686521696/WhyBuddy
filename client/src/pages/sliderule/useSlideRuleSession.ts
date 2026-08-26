@@ -53,6 +53,11 @@ import {
   createGithubPagesSlideRuleSessionStore,
   loadOrSeedGithubPagesDemoSession,
 } from "./github-pages-sliderule-demo";
+import {
+  CHALLENGE_PREFILL_EVENT,
+  dispatchChallengePrefill,
+  isChallengeComposerText,
+} from "./ComposerDock";
 
 // 105 Python full-path: product /agent-loop/sliderule + /sliderule use this hook + http store.
 // Sessions: Node thin-compat proxy. Turns/evidence/report: delegated to slide-rule-python (python-rag provenance).
@@ -107,6 +112,30 @@ function preservePythonEvidenceProjection(
 async function persistSession(state: V5SessionState): Promise<V5SessionState> {
   const toSave = preservePythonEvidenceProjection(state);
   return SlideRuleRuntime.saveSessionState(toSave);
+}
+
+/**
+ * Persist-as-authority gate before igniting `/drive-full-stream`.
+ *
+ * ⚠ 2026-08 M5/PR-1：旧实现 `catch { 仍继续驱动 }` 让质疑在落盘失败后
+ * 照样 POST。Python `drive_full_stream` 以已持久化会话为权威起点，质疑
+ * 静默丢失、证据链假装跑过——闭环类必须 fail-closed。
+ *
+ * 非挑战意图保持 fail-open（请求体兜底）：一次落盘抖动不许拖垮整轮推演。
+ */
+export async function persistPreparedStateForDrive(opts: {
+  persist: () => Promise<unknown>;
+  intent?: UserIntervention["intent"] | null;
+}): Promise<{ ok: true } | { ok: false; error: unknown }> {
+  try {
+    await opts.persist();
+    return { ok: true };
+  } catch (error) {
+    if (opts.intent === "challenge") {
+      return { ok: false, error };
+    }
+    return { ok: true };
+  }
 }
 
 async function prepareVisibleResetSessionState(
@@ -340,6 +369,23 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
 
   // M1: per-turn abort controller for graceful stop.
   const abortControllerRef = useRef<AbortController | null>(null);
+  // 质疑按钮只预填作曲家；发送时才带 intent: "challenge" 整轮 runTurn。
+  const pendingChallengeRef = useRef<{ artifactId: string } | null>(null);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ artifactId?: string; text?: string }>)
+        .detail;
+      if (detail?.artifactId) {
+        pendingChallengeRef.current = { artifactId: detail.artifactId };
+      }
+      if (typeof detail?.text === "string") {
+        setInput(detail.text);
+      }
+    };
+    window.addEventListener(CHALLENGE_PREFILL_EVENT, handler);
+    return () => window.removeEventListener(CHALLENGE_PREFILL_EVENT, handler);
+  }, []);
 
   const goal = useMemo(() => {
     const fromState = sessionState.goal?.text?.trim();
@@ -860,14 +906,49 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           // 见 routes/sliderule_full.py drive_full_stream）。intake 后的 goal 必须先
           // 落盘，否则 Python 侧以旧的空 goal 推演，闭环 fail-closed 成 0/6。
           if (!resumeRun) {
+            const persisted = await persistPreparedStateForDrive({
+              persist: () => persistSession(preparedState),
+              intent: intervention?.intent,
+            });
+            if (!persisted.ok) {
+              const errMsg =
+                persisted.error instanceof Error
+                  ? persisted.error.message
+                  : String(persisted.error ?? "persist failed");
+              appendStep({
+                id: `${turnId}-persist-fail`,
+                kind: "capability_fail",
+                capabilityId: "intent.parse" as any,
+                roleId: "system",
+                loopTurnId: turnId,
+                capabilityRunId: `${turnId}-persist-fail`,
+                runIndex: 0,
+                message: `质疑未生效：会话未能保存，未启动推演（${errMsg.slice(0, 120)}）`,
+              });
+              setUiTurns(prev =>
+                prev.map(t =>
+                  t.id === turnId
+                    ? {
+                        ...t,
+                        status: "complete",
+                        durationMs: Date.now() - turnStartMs,
+                        assistant: "质疑未生效：会话未能保存，未启动推演",
+                        assistantSource: "fallback",
+                      }
+                    : t
+                )
+              );
+              applyPersistedState(workingState);
+              setDriveFullStatus("idle");
+              return;
+            }
             try {
-              await persistSession(preparedState);
               // 话题刚落盘：通知侧栏重拉列表，标题从"新会话"实时变成话题
               const { notifySessionsUpdated } =
                 await import("@/pages/agent-loop/dashboard/SidebarSessions");
               notifySessionsUpdated();
             } catch {
-              // 持久化失败时仍继续驱动：请求体里的 state 会作为无持久化会话的兜底。
+              // 侧栏刷新失败不挡已经落盘的推演
             }
           }
           // Claude 式左栏实时叙事：把 SSE 事件翻成人话喂进本轮 steps
@@ -1649,6 +1730,17 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     ).trim();
     if (!text) return;
     setInput("");
+    const pending = pendingChallengeRef.current;
+    if (pending || isChallengeComposerText(text)) {
+      const artifactId = pending?.artifactId;
+      pendingChallengeRef.current = null;
+      await runTurn(text, {
+        targetArtifactId: artifactId,
+        intent: "challenge",
+        text,
+      });
+      return;
+    }
     await runTurn(text);
   };
 
@@ -1879,15 +1971,16 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     [isRunning, uiTurns, sessionState.sessionId, sessionId, applyPersistedState]
   );
 
-  // If a reason is provided, re-run directly; otherwise ask for a challenge prompt.
+  // 无理由：只预填作曲家（产品面禁止 window.prompt）。有理由：整轮
+  // runTurn + intent challenge，不是局部重跑。
   const challengeTurn = async (artifactId: string, reason?: string) => {
-    const text =
-      (reason && reason.trim()) ||
-      window.prompt(
-        "你想如何质疑这轮结论？",
-        "这个结论的依据不够充分，请重新推演。"
-      ) ||
-      "这个结论的依据不够充分，请重新推演。";
+    const text = (reason && reason.trim()) || "";
+    if (!text) {
+      pendingChallengeRef.current = { artifactId };
+      dispatchChallengePrefill({ artifactId });
+      return;
+    }
+    pendingChallengeRef.current = null;
     await runTurn(text, {
       targetArtifactId: artifactId,
       intent: "challenge",
@@ -2015,4 +2108,5 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
 export const __sessionEvidenceTestHelpers = {
   preservePythonEvidenceProjection,
   prepareVisibleResetSessionState,
+  persistPreparedStateForDrive,
 };

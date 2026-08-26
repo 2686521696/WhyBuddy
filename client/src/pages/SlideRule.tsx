@@ -79,7 +79,10 @@ import {
   type ClarificationItem,
 } from "./sliderule/ClarificationCard";
 import { DeliverablesPanel } from "./sliderule/DeliverablesPanel";
-import { ComposerDock } from "./sliderule/ComposerDock";
+import {
+  ComposerDock,
+  dispatchChallengePrefill,
+} from "./sliderule/ComposerDock";
 import { DesignSystemPanelProvider } from "./sliderule/DesignSystemContext";
 import { HomeInspiration } from "./sliderule/home-inspiration";
 import { composerEnterHintLabel } from "./sliderule/user-prefs";
@@ -186,6 +189,7 @@ function TurnFootnote({
       <button
         key="challenge"
         type="button"
+        data-testid="sliderule-challenge-turn"
         onClick={() => onChallenge(turn.main!.artifactId)}
         className="text-stone-500 hover:text-stone-700 hover:underline"
       >
@@ -644,6 +648,7 @@ function ImAssistantMessage() {
               {turn.main && (
                 <button
                   type="button"
+                  data-testid="sliderule-challenge-turn"
                   onClick={() => onChallenge(turn.main!.artifactId)}
                   className="rounded-md px-1.5 py-0.5 hover:bg-[#f3f4f6] hover:text-stone-600"
                 >
@@ -951,7 +956,7 @@ function SlideRuleUnified({
   liveAction,
   sessionState,
   sendMessage,
-  challengeTurn,
+  challengeTurn: _challengeTurn,
   restoreModelVersion,
   isRestoringVersion,
   resetSession,
@@ -1146,7 +1151,9 @@ function SlideRuleUnified({
                     llmDraft={isRunning ? llmDraft : ""}
                     llmStreams={isRunning ? llmStreams : []}
                     llmDraftLabel={llmDraftLabel}
-                    onChallenge={challengeTurn}
+                    onChallenge={id =>
+                      dispatchChallengePrefill({ artifactId: id })
+                    }
                     composerSlot={
                       <ComposerDock
                         input={input}
@@ -1280,7 +1287,7 @@ function SlideRuleSplitEngineering({
   liveAction,
   sessionState,
   sendMessage,
-  challengeTurn,
+  challengeTurn: _challengeTurn,
   resetSession,
   toggleRouteExpanded,
   retryCapability,
@@ -1570,7 +1577,9 @@ function SlideRuleSplitEngineering({
                         sessionId={
                           sessionState.sessionId || "sliderule-v51-product"
                         }
-                        onChallenge={challengeTurn}
+                        onChallenge={id =>
+                          dispatchChallengePrefill({ artifactId: id })
+                        }
                       />
                     )}
                   </div>

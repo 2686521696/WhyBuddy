@@ -115,6 +115,7 @@ export default function SlideRuleDev() {
   const availableCapabilities = useMemo(() => ALL_V5_CAPABILITIES, []);
 
   // Knife 8: decision challenge handler (single door, re-uses existing intake/orch/markAwait flow)
+  // legacy：Dev 页保留 window.prompt；产品面质疑必须走作曲家（M5 / PR-1）。
   const challengeDecision = async (decId: string) => {
     const text = window.prompt('质疑这条调度决策的原因？', '质疑这条调度决策，请重新考虑') || '质疑这条调度决策，请重新考虑';
     const turnId = `turn-ch-${Date.now()}`;

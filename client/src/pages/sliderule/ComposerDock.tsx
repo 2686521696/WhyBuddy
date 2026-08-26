@@ -75,6 +75,51 @@ import {
   takePendingOpener,
 } from "./turn-capabilities";
 
+/** 质疑预填前缀。点「质疑」只打开作曲家，不弹 window.prompt、不立刻点火。 */
+export const CHALLENGE_COMPOSER_PREFIX = "质疑：";
+export const DEFAULT_CHALLENGE_BODY =
+  "这个结论的依据不够充分，请重新推演。";
+export const CHALLENGE_PREFILL_EVENT = "sliderule:challenge-prefill";
+
+export function composeChallengePrefill(
+  targetLabel?: string | null
+): string {
+  const body =
+    (targetLabel && String(targetLabel).trim()) || DEFAULT_CHALLENGE_BODY;
+  if (body.startsWith(CHALLENGE_COMPOSER_PREFIX)) return body;
+  return `${CHALLENGE_COMPOSER_PREFIX}${body}`;
+}
+
+export function isChallengeComposerText(text: string): boolean {
+  return text.trim().startsWith(CHALLENGE_COMPOSER_PREFIX);
+}
+
+export function applyChallengePrefillToComposer(
+  setInput: (text: string) => void,
+  detail?: { text?: string; targetLabel?: string | null }
+): string {
+  const next =
+    (detail?.text && detail.text.trim()) ||
+    composeChallengePrefill(detail?.targetLabel);
+  setInput(next);
+  return next;
+}
+
+export function dispatchChallengePrefill(detail: {
+  artifactId: string;
+  text?: string;
+  targetLabel?: string | null;
+}): void {
+  const text =
+    (detail.text && detail.text.trim()) ||
+    composeChallengePrefill(detail.targetLabel);
+  window.dispatchEvent(
+    new CustomEvent(CHALLENGE_PREFILL_EVENT, {
+      detail: { artifactId: detail.artifactId, text },
+    })
+  );
+}
+
 /** E31 图片/PDF 提取结果（后端 /attachments/extract 的诚实回执）。 */
 interface AttachmentExtractOutcome {
   ok: boolean;
@@ -433,6 +478,19 @@ export function ComposerDock({
     };
     window.addEventListener("sliderule:fill-prompt", handler);
     return () => window.removeEventListener("sliderule:fill-prompt", handler);
+  }, [setInput]);
+
+  // M5/PR-1：质疑按钮预填作曲家并聚焦，不弹 window.prompt、不立刻点火。
+  React.useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (
+        e as CustomEvent<{ text?: string; targetLabel?: string | null }>
+      ).detail;
+      applyChallengePrefillToComposer(setInput, detail);
+      setTimeout(() => textareaRef.current?.focus(), 50);
+    };
+    window.addEventListener(CHALLENGE_PREFILL_EVENT, handler);
+    return () => window.removeEventListener(CHALLENGE_PREFILL_EVENT, handler);
   }, [setInput]);
 
   // E34 快速开始「从需求文档开始」：空态卡片直接拉起附件选择器
