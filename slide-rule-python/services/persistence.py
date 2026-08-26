@@ -700,28 +700,16 @@ def _resolve_write_state(
         # pendingRuns 是服务端 crash-recovery 台账。客户端 PUT 不带这个字段
         # （模型默认 None）或带空 {} 时不许把已落盘的 pending 抹掉——抹掉 =
         # 崩溃恢复又整轮重跑，前几个 LLM 白烧。驱动器写入会带上非空 dict。
-        # 同批 completed 只增不减：陈旧 GET 快照不得把 A/B 缩回只剩 A。
+        # ⚠ 2026-08-27：第一版对「同 selected、completed 变少」也 restore。
+        # skip helper 整批完成后故意 reset completed=[] 再开新台账；下一笔
+        # persist（completed=[] 或 [A]，selected 不变）被当成 shrink，旧的
+        # all-done 台账写回盘。第二趟崩在 A 之后恢复重烧 A——本 PR 就是为
+        # 了停这个。Issue 2 的 PUT 闸是 pop+exclude，不靠这条 restore。
         # 复制失败就抛——fail-closed，不许 except pass 假装保住了。
         prior_pending = getattr(prior, "pendingRuns", None) if prior is not None else None
         if prior_pending is not None:
             inc_pending = getattr(merged_logs_state, "pendingRuns", None)
-            keep_prior = _pending_ledger_blank(inc_pending)
-            if not keep_prior and isinstance(inc_pending, dict) and isinstance(prior_pending, dict):
-                prior_sel = {c for c in (prior_pending.get("selected") or []) if c}
-                inc_sel = {c for c in (inc_pending.get("selected") or []) if c}
-                if prior_sel and inc_sel == prior_sel:
-                    prior_done = {
-                        c.get("capabilityId")
-                        for c in (prior_pending.get("completed") or [])
-                        if isinstance(c, dict) and c.get("capabilityId")
-                    }
-                    inc_done = {
-                        c.get("capabilityId")
-                        for c in (inc_pending.get("completed") or [])
-                        if isinstance(c, dict) and c.get("capabilityId")
-                    }
-                    keep_prior = bool(inc_done < prior_done)
-            if keep_prior:
+            if _pending_ledger_blank(inc_pending):
                 merged_logs_state = merged_logs_state.model_copy(
                     update={"pendingRuns": prior_pending}
                 )

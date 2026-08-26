@@ -467,21 +467,146 @@ def test_save_session_record_keeps_prior_pending_when_incoming_blank(tmp_path):
     ids = _completed_ids(rec["session"])
     assert CAP_A in ids and CAP_B in ids, ids
 
-    s_shrink = V5SessionState(
-        sessionId="s-keep-pending",
-        goal={"text": "g4"},
+
+def _pending_abc_all_done():
+    return {
+        "loop": 0,
+        "selected": [CAP_A, CAP_B, CAP_C],
+        "completed": [
+            {"capabilityId": CAP_A, "status": "ok"},
+            {"capabilityId": CAP_B, "status": "ok"},
+            {"capabilityId": CAP_C, "status": "ok"},
+        ],
+    }
+
+
+def test_all_done_reset_persist_does_not_restore_old_ledger(driver, monkeypatch):
+    """整批完成后 skip helper reset completed=[]。同 selected 的缩减必须留下。
+
+    变异：_resolve_write_state 对 inc_done < prior_done 做 restore → 盘上又是
+    [A,B,C] → 第二趟崩在 A 之后恢复重烧 A。本条必须红。
+    """
+    driver_mod, store = driver
+
+    def _assert_empty_ledger(rec, label):
+        ids = _completed_ids(rec["session"])
+        pending = getattr(rec["session"], "pendingRuns", None) or {}
+        assert ids == [], f"{label}: completed must stay empty, got {ids}"
+        assert set(pending.get("selected") or []) == {CAP_A, CAP_B, CAP_C}, pending
+
+    # 同 lastTurnId + conversation 增长（同轮守卫会放行）
+    s1 = V5SessionState(
+        sessionId="s-alldone-reset-same",
+        goal={"text": "g1"},
         artifacts=[],
-        lastTurnId="turn-4",
+        lastTurnId="turn-1",
+        pendingRuns=_pending_abc_all_done(),
+        conversation=[],
+    )
+    assert persistence.save_session_record(s1, store)["ok"]
+    s_empty_same = V5SessionState(
+        sessionId="s-alldone-reset-same",
+        goal={"text": "g1"},
+        artifacts=[],
+        lastTurnId="turn-1",
+        conversation=[{"role": "user", "content": "same pick again"}],
         pendingRuns={
-            "loop": 0,
-            "selected": [CAP_A, CAP_B],
+            "loop": 1,
+            "selected": [CAP_A, CAP_B, CAP_C],
+            "completed": [],
+        },
+    )
+    assert persistence.save_session_record(s_empty_same, store)["ok"]
+    rec = persistence.load_session_record("s-alldone-reset-same", store)
+    _assert_empty_ledger(rec, "same-turn completed=[]")
+
+    s_a_same = V5SessionState(
+        sessionId="s-alldone-reset-same",
+        goal={"text": "g1"},
+        artifacts=[{"id": "art-a"}],
+        lastTurnId="turn-1",
+        conversation=[
+            {"role": "user", "content": "same pick again"},
+            {"role": "assistant", "content": "A done"},
+        ],
+        pendingRuns={
+            "loop": 1,
+            "selected": [CAP_A, CAP_B, CAP_C],
             "completed": [{"capabilityId": CAP_A, "status": "ok"}],
         },
     )
-    assert persistence.save_session_record(s_shrink, store)["ok"]
-    rec = persistence.load_session_record("s-keep-pending", store)
+    assert persistence.save_session_record(s_a_same, store)["ok"]
+    rec = persistence.load_session_record("s-alldone-reset-same", store)
     ids = _completed_ids(rec["session"])
-    assert CAP_A in ids and CAP_B in ids, ids
+    assert CAP_A in ids and CAP_B not in ids and CAP_C not in ids, ids
+
+    # 新 lastTurnId（用户重发同一句）
+    s2 = V5SessionState(
+        sessionId="s-alldone-reset-new",
+        goal={"text": "g1"},
+        artifacts=[],
+        lastTurnId="turn-1",
+        pendingRuns=_pending_abc_all_done(),
+    )
+    assert persistence.save_session_record(s2, store)["ok"]
+    s_empty_new = V5SessionState(
+        sessionId="s-alldone-reset-new",
+        goal={"text": "g2"},
+        artifacts=[],
+        lastTurnId="turn-2",
+        pendingRuns={
+            "loop": 1,
+            "selected": [CAP_A, CAP_B, CAP_C],
+            "completed": [],
+        },
+    )
+    assert persistence.save_session_record(s_empty_new, store)["ok"]
+    rec = persistence.load_session_record("s-alldone-reset-new", store)
+    _assert_empty_ledger(rec, "new-turn completed=[]")
+
+    # 活路径：all-done 在盘上，第二趟跑 A 后崩，恢复必须跳过 A 而不是重烧。
+    calls = []
+
+    def execute(cap, state, input_ids, role, turn_id):
+        calls.append(cap)
+        return {
+            "title": cap,
+            "summary": f"{cap} done",
+            "content": f"executed {cap}",
+            "provenance": "python-rag",
+            "sources": [],
+        }
+
+    _stub_drive_loop(driver_mod, monkeypatch, execute)
+    live = _seeded_state("sr-pending-alldone-reset")
+    live.lastTurnId = "turn-1"
+    live.pendingRuns = _pending_abc_all_done()
+    assert persistence.save_session_record(live, store)["ok"]
+
+    real_persist = driver_mod.persist_pending_capability
+
+    def crash_after_a(state, capability_id, loop=0, selected=None, status="ok", run_id=None):
+        out = real_persist(state, capability_id, loop, selected, status, run_id)
+        if capability_id == CAP_A:
+            raise _CrashAfterB("simulated crash after A of second pass")
+        return out
+
+    monkeypatch.setattr(driver_mod, "persist_pending_capability", crash_after_a)
+    rec = load_session_record("sr-pending-alldone-reset")
+    _run_stream(driver_mod, rec["session"])
+    assert calls == [CAP_A], f"第二趟崩前只该跑 A，实际 {calls}"
+
+    rec = load_session_record("sr-pending-alldone-reset")
+    ids = _completed_ids(rec["session"])
+    assert CAP_A in ids and CAP_B not in ids and CAP_C not in ids, (
+        f"all-done restore clobbered second-pass ledger: {ids}"
+    )
+
+    calls.clear()
+    monkeypatch.setattr(driver_mod, "persist_pending_capability", real_persist)
+    _run_stream(driver_mod, rec["session"])
+    assert CAP_A not in calls, f"第二趟恢复重烧了 A: {calls}"
+    assert CAP_B in calls and CAP_C in calls, f"恢复必须跑 B/C，实际 {calls}"
 
 
 def test_put_route_excludes_pending_runs_and_save_session_raises():
