@@ -55,6 +55,7 @@ from services.slide_rule_interactive_gates import (
     apply_user_intervention_invalidation,
 )
 from services.slide_rule_session import load_session, save_session
+from services.v5_full_driver import _truthy_scope_flag
 from sliderule_llm.control_client import ControlLlmResult, call_control_llm
 
 CANNED_FAILURE = (
@@ -277,23 +278,32 @@ def _write_confirmed_goal(state: V5SessionState, restatement: str) -> None:
 def _copy_scope_opt_in_into_goal(state: V5SessionState) -> None:
     """把范围卡勾选写进 goal，供 persist-as-authority 工厂短清单读取。
 
-    缺字段 = 没勾。不把 HTTP factoryProfile 当勾选通道。
+    ⚠ 2026-08-27 评审：第一版「两旗都假就 return」。上一张卡勾过的
+    wantFeasibilityReport 留在 goal 上，下一张没勾的卡确认时 copy 空转，
+    短清单仍注入 critique/risk/report——缺字段本应 fail-closed。每次都
+    按最后一张 scope_card 同步 True 和 False（没勾就删键）。
+    bool("false") 是 True，读旗必须走生成器同一份 _truthy_scope_flag。
+    不把 HTTP factoryProfile 当勾选通道。
     """
     want_evidence = False
     want_report = False
     for row in reversed(list(getattr(state, "controlTranscript", None) or [])):
         if not isinstance(row, dict) or row.get("kind") != "scope_card":
             continue
-        want_evidence = bool(row.get("wantEvidence"))
-        want_report = bool(row.get("wantFeasibilityReport"))
+        want_evidence = _truthy_scope_flag(row.get("wantEvidence"))
+        want_report = _truthy_scope_flag(row.get("wantFeasibilityReport"))
         break
-    if not want_evidence and not want_report:
-        return
     goal = dict(state.goal) if isinstance(state.goal, dict) else {}
     if want_evidence:
         goal["wantEvidence"] = True
+    else:
+        goal.pop("wantEvidence", None)
+        goal.pop("includeEvidence", None)
     if want_report:
         goal["wantFeasibilityReport"] = True
+    else:
+        goal.pop("wantFeasibilityReport", None)
+        goal.pop("includeFeasibilityReport", None)
     state.goal = goal
 
 
@@ -449,8 +459,8 @@ async def _park_scope(
             "text": restatement,
             "device": device,
             "variant": variant,
-            "wantEvidence": bool(want_evidence),
-            "wantFeasibilityReport": bool(want_feasibility_report),
+            "wantEvidence": _truthy_scope_flag(want_evidence),
+            "wantFeasibilityReport": _truthy_scope_flag(want_feasibility_report),
         },
     )
     _persist(state)
@@ -954,8 +964,8 @@ async def _dispatch_tool(
             device=str(args.get("device") or preferred_device or "unspecified"),
             variant=str(args.get("variant") or ("thin" if original_goal else "full")),
             user_text=user_text,
-            want_evidence=bool(args.get("wantEvidence")),
-            want_feasibility_report=bool(args.get("wantFeasibilityReport")),
+            want_evidence=_truthy_scope_flag(args.get("wantEvidence")),
+            want_feasibility_report=_truthy_scope_flag(args.get("wantFeasibilityReport")),
         ):
             yield event
         return

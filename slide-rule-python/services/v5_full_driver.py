@@ -1861,22 +1861,21 @@ def _truthy_scope_flag(value: Any) -> bool:
 def _scope_opted_in(state: "V5SessionState", *keys: str) -> bool:
     """范围卡勾了取证 / 可行性报告才把散文能力加回短清单。
 
-    读 goal 与 controlTranscript 最后一张 scope_card。缺字段 = 没勾 = 跳过。
+    最后一张 scope_card 说了算。goal 只在还没有范围卡时回落（测试直
+    接 seed、或 copy 写进 persist-as-authority 之后卡被清掉的情况）。
+    ⚠ 2026-08-27 评审：第一版把 scope_confirmed 当旗标行并 break——
+    确认行不带勾选，transcript 回落全死，goal 残留 True 还能压过
+    新卡缺字段。缺字段 = 没勾 = 跳过。
     """
+    for row in reversed(list(getattr(state, "controlTranscript", None) or [])):
+        if not isinstance(row, dict) or row.get("kind") != "scope_card":
+            continue
+        return any(_truthy_scope_flag(row.get(key)) for key in keys)
     goal = getattr(state, "goal", None) or {}
     if isinstance(goal, dict):
         for key in keys:
             if _truthy_scope_flag(goal.get(key)):
                 return True
-    for row in reversed(list(getattr(state, "controlTranscript", None) or [])):
-        if not isinstance(row, dict):
-            continue
-        if row.get("kind") not in ("scope_card", "scope_confirmed"):
-            continue
-        for key in keys:
-            if _truthy_scope_flag(row.get(key)):
-                return True
-        break
     return False
 
 

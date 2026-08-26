@@ -274,6 +274,173 @@ def test_http_routes_must_not_grow_factory_profile_flag():
     assert 'profile="full"' in stream
 
 
+def _parked_scope_card(**flags):
+    row = {
+        "role": "assistant",
+        "kind": "scope_card",
+        "text": "请假系统",
+        "device": "desktop",
+        "variant": "full",
+    }
+    row.update(flags)
+    return row
+
+
+def test_rehearse_persist_copies_scope_opt_in_onto_loaded_goal(monkeypatch):
+    """persist-as-authority：范围卡勾选必须写进 load_session 后的 goal。
+
+    只 seed goal 再直调生成器，删掉 copy 调用点照样绿。
+    """
+    pytest.importorskip("fastapi")
+    from control_turn_support import (  # noqa: E402
+        ControlHarness,
+        new_sid,
+        seed_session,
+        six_fields,
+    )
+    from services.slide_rule_session import load_session  # noqa: E402
+    from services.v5_full_driver import (  # noqa: E402
+        _app_profile_short_picks,
+        _truthy_scope_flag,
+    )
+
+    harness = ControlHarness(monkeypatch)
+    sid = new_sid("opt-in-persist")
+    seed_session(
+        sid,
+        goal={"text": "请假系统", "status": "clear"},
+        awaitReason="control_scope",
+        awaitDetail="请假系统",
+        controlTranscript=[_parked_scope_card(wantFeasibilityReport=True)],
+    )
+    _, _events = harness.post(
+        six_fields(sid, "将做成：请假系统", forcedTool="rehearse")
+    )
+    assert harness.helper_calls, "rehearse 没打到信封，copy 之后的 persist 没通电"
+    loaded = load_session(sid)
+    assert loaded is not None
+    goal = loaded.goal if isinstance(loaded.goal, dict) else {}
+    assert _truthy_scope_flag(goal.get("wantFeasibilityReport")), (
+        "删掉 _confirm_rehearse_and_handoff 里的 _copy_scope_opt_in_into_goal，"
+        "工厂 load_session 看到的 goal 就没有勾选。"
+    )
+    ids = {p["capabilityId"] for p in _app_profile_short_picks(loaded)}
+    assert ids & set(ESSAY_CAPS), "勾选写进 goal 之后短清单仍没有作文能力"
+
+
+def test_rehearse_persist_clears_leftover_opt_in_when_card_omits_flags(monkeypatch):
+    """新卡没勾必须清掉 goal 残留 True，否则下一轮 rehearse fail-open。"""
+    pytest.importorskip("fastapi")
+    from control_turn_support import (  # noqa: E402
+        ControlHarness,
+        new_sid,
+        seed_session,
+        six_fields,
+    )
+    from services.slide_rule_session import load_session  # noqa: E402
+    from services.v5_full_driver import (  # noqa: E402
+        _app_profile_short_picks,
+        _truthy_scope_flag,
+    )
+
+    harness = ControlHarness(monkeypatch)
+    sid = new_sid("opt-in-clear")
+    seed_session(
+        sid,
+        goal={
+            "text": "请假系统",
+            "status": "clear",
+            "wantFeasibilityReport": True,
+            "wantEvidence": True,
+            "includeFeasibilityReport": True,
+        },
+        awaitReason="control_scope",
+        awaitDetail="请假系统",
+        controlTranscript=[_parked_scope_card()],
+    )
+    _, _events = harness.post(
+        six_fields(sid, "将做成：请假系统", forcedTool="rehearse")
+    )
+    assert harness.helper_calls, "rehearse 没打到信封"
+    loaded = load_session(sid)
+    assert loaded is not None
+    goal = loaded.goal if isinstance(loaded.goal, dict) else {}
+    assert not _truthy_scope_flag(goal.get("wantFeasibilityReport")), (
+        "copy 在两旗都假时 return，goal 残留 True 会在没勾的卡上 fail-open。"
+    )
+    assert not _truthy_scope_flag(goal.get("wantEvidence"))
+    assert not _truthy_scope_flag(goal.get("includeFeasibilityReport"))
+    ids = {p["capabilityId"] for p in _app_profile_short_picks(loaded)}
+    assert not (ids & set(ESSAY_CAPS)), (
+        "新卡没勾，短清单仍注入了作文能力。"
+        "scope_confirmed 被当成旗标行、或残留 True 压过新卡，都会红在这里。"
+    )
+
+
+def test_copy_scope_opt_in_call_sites_live_and_always_sync():
+    from services.rehearsal_control import (
+        _confirm_rehearse_and_handoff,
+        _copy_scope_opt_in_into_goal,
+        _dispatch_tool,
+    )
+
+    confirm = _code(_confirm_rehearse_and_handoff)
+    dispatch = _code(_dispatch_tool)
+    helper = _code(_copy_scope_opt_in_into_goal)
+    assert "_copy_scope_opt_in_into_goal" in confirm, (
+        "删掉确认路径的 copy 调用点，persist-as-authority 测试必须一起红。"
+    )
+    assert "_copy_scope_opt_in_into_goal" in dispatch
+    assert "if not want_evidence and not want_report" not in helper
+    assert "_truthy_scope_flag" in helper
+    assert 'pop("wantFeasibilityReport"' in helper
+    assert "bool(" not in helper.replace("_truthy_scope_flag", "")
+
+
+def test_scope_opted_in_reads_last_scope_card_not_scope_confirmed():
+    from models.v5_state import V5SessionState
+    from services.v5_full_driver import _scope_opted_in
+
+    code = _code(_scope_opted_in)
+    assert "scope_confirmed" not in code, (
+        "scope_confirmed 不带勾选。当成旗标行会 break，transcript 回落全死。"
+    )
+    assert "scope_card" in code
+
+    leftover = V5SessionState(
+        sessionId="card-beats-goal",
+        goal={"text": GOAL, "wantFeasibilityReport": True},
+        artifacts=[],
+        controlTranscript=[
+            {"kind": "scope_card", "text": "请假系统"},
+            {"kind": "scope_confirmed", "text": "请假系统"},
+        ],
+    )
+    assert not _scope_opted_in(leftover, "wantFeasibilityReport"), (
+        "新卡没勾，goal 残留 True 仍压过了最后一张 scope_card。"
+    )
+    opted = V5SessionState(
+        sessionId="card-opt-in",
+        goal={"text": GOAL},
+        artifacts=[],
+        controlTranscript=[
+            {"kind": "scope_card", "text": "请假系统", "wantFeasibilityReport": True},
+            {"kind": "scope_confirmed", "text": "请假系统"},
+        ],
+    )
+    assert _scope_opted_in(opted, "wantFeasibilityReport")
+
+
+def test_truthy_scope_flag_rejects_false_strings():
+    from services.v5_full_driver import _truthy_scope_flag
+
+    assert _truthy_scope_flag(True) is True
+    assert _truthy_scope_flag("true") is True
+    assert _truthy_scope_flag("false") is False
+    assert _truthy_scope_flag("False") is False
+    assert bool("false") is True
+
+
 def test_product_rehearse_ignores_http_factory_profile(monkeypatch):
     pytest.importorskip("fastapi")
     from control_turn_support import ControlHarness, new_sid, seed_session, six_fields
