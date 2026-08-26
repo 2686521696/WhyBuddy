@@ -1236,9 +1236,11 @@ const NAV_ITEM_TESTID: Partial<Record<ViewKey, string>> = {
   admin: "agent-nav-admin",
 };
 
-/** 书签仍可达、导航已摘掉的旧面。页顶标明不再维护，不 404。 */
+/** 书签仍可达、导航已摘掉的旧面。页顶标明不再维护，不 404。
+ *  ⚠ 不要把 live `workbench`（应用市场 / AppsWorkbench）算进来——
+ *  那一项还在 NAV_GROUPS 里。2026-08-27 第一版把 gallery 也盖了
+ *  「legacy，不维护」，侧栏还在卖、点进去却说死了。 */
 export const LEGACY_UNMAINTAINED_VIEWS: readonly ViewKey[] = [
-  "workbench",
   "workbench-legacy",
   "settings-legacy",
 ];

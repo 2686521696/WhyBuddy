@@ -483,21 +483,32 @@ describe("AppShell fixed sidebar layout", () => {
     expect(markup).toContain('data-testid="tasks-page"');
     expect(markup).toContain('data-testid="legacy-unmaintained-banner"');
     expect(markup).toContain("legacy，不维护");
+    expect(markup).toContain('data-testid="legacy-unmaintained-route"');
+    expect(markup).toContain("flex h-screen min-h-0 flex-col");
+    expect(markup).toContain("min-h-0 flex-1 overflow-auto");
 
     locationState.current = "/autopilot";
     markup = await renderShellMarkup();
     expect(markup).toContain('data-testid="autopilot-route-page"');
     expect(markup).toContain('data-testid="legacy-unmaintained-banner"');
+    expect(markup).toContain('data-testid="legacy-unmaintained-route"');
 
     locationState.current = "/projects";
     markup = await renderShellMarkup();
+    expect(markup).toContain('data-testid="home-page"');
     expect(markup).toContain('data-testid="legacy-unmaintained-banner"');
     expect(markup).toContain("legacy，不维护");
+
+    locationState.current = "/projects/project-1/tasks";
+    markup = await renderShellMarkup();
+    expect(markup).toContain('data-testid="tasks-page"');
+    expect(markup).toContain('data-testid="legacy-unmaintained-banner"');
 
     locationState.current = "/agent-loop/sliderule";
     markup = await renderShellMarkup();
     expect(markup).toContain('data-testid="agent-loop-page"');
     expect(markup).not.toContain('data-testid="legacy-unmaintained-banner"');
+    expect(markup).not.toContain('data-testid="legacy-unmaintained-route"');
   });
 
   it("keeps authenticated project workspace access in place", async () => {

@@ -189,6 +189,8 @@ describe("AgentLoopPage", () => {
     expect(NAV_GROUPS[0]?.items[0]?.label).toBe("推演");
     expect(NAV_GROUPS[0]?.items[0]?.children).toBeUndefined();
     const navKeys = NAV_GROUPS.flatMap(group => group.items.map(item => item.key));
+    expect(navKeys).toContain("sliderule");
+    expect(navKeys).toContain("workbench");
     expect(navKeys).not.toContain("workbench-legacy");
     expect(navKeys).not.toContain("settings-legacy");
 
@@ -234,14 +236,14 @@ describe("AgentLoopPage", () => {
   });
 
   it("keeps bookmarkable legacy AgentLoop views and marks them unmaintained", () => {
-    expect(shouldShowLegacyUnmaintainedBanner("workbench")).toBe(true);
+    expect(shouldShowLegacyUnmaintainedBanner("workbench")).toBe(false);
     expect(shouldShowLegacyUnmaintainedBanner("workbench-legacy")).toBe(true);
     expect(shouldShowLegacyUnmaintainedBanner("settings-legacy")).toBe(true);
     expect(shouldShowLegacyUnmaintainedBanner("sliderule")).toBe(false);
     expect(shouldShowLegacyUnmaintainedBanner("settings")).toBe(false);
     expect(shouldShowLegacyUnmaintainedBanner("skills")).toBe(false);
 
-    for (const view of ["workbench", "workbench-legacy", "settings-legacy"] as const) {
+    for (const view of ["workbench-legacy", "settings-legacy"] as const) {
       const html = renderToStaticMarkup(
         <DashboardApp
           payload={{ tasks: [], counts: {} }}
@@ -252,6 +254,16 @@ describe("AgentLoopPage", () => {
       expect(html).toContain('data-testid="legacy-unmaintained-banner"');
       expect(html).toContain("legacy，不维护");
     }
+
+    const liveGalleryHtml = renderToStaticMarkup(
+      <DashboardApp
+        payload={{ tasks: [], counts: {} }}
+        view="workbench"
+        onViewChange={vi.fn()}
+      />,
+    );
+    expect(liveGalleryHtml).not.toContain('data-testid="legacy-unmaintained-banner"');
+    expect(liveGalleryHtml).not.toContain("legacy，不维护");
 
     const productHtml = renderToStaticMarkup(
       <DashboardApp

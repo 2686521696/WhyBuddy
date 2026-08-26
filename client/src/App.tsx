@@ -80,13 +80,19 @@ const routerBase =
     : import.meta.env.BASE_URL.replace(/\/$/, "");
 const AGENT_LOOP_PATH = "/agent-loop";
 
-/** 书签仍可达的旧路由：页顶标明不再维护，不 404。 */
+/** 书签仍可达的旧路由：页顶标明不再维护，不 404。
+ *  ⚠ 不能用裸 fragment 包 `h-screen` 子页（Autopilot / Tasks 驾驶舱）。
+ *  条在上面、子页自己 100vh，底栏会被顶到折页下面——跟当初不包
+ *  AgentLoopPage 是同一类裁切，只是换了套壳。 */
 function LegacyUnmaintainedRoute({ children }: { children: ReactNode }) {
   return (
-    <>
+    <div
+      data-testid="legacy-unmaintained-route"
+      className="flex h-screen min-h-0 flex-col"
+    >
       <LegacyUnmaintainedBanner />
-      {children}
-    </>
+      <div className="min-h-0 flex-1 overflow-auto">{children}</div>
+    </div>
   );
 }
 

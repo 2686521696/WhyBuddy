@@ -9,7 +9,7 @@ export function LegacyUnmaintainedBanner() {
     <div
       role="status"
       data-testid="legacy-unmaintained-banner"
-      className="legacy-unmaintained-banner border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-950"
+      className="legacy-unmaintained-banner shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-950"
     >
       legacy，不维护
     </div>
