@@ -168,7 +168,7 @@ describe("M8 产品六步钟映射表", () => {
     expect(mapInternalEventToProductStep("specfirst.spec")).toBe(2);
     expect(mapInternalEventToProductStep("specfirst.pages")).toBe(3);
     expect(mapInternalEventToProductStep("spec_page")).toBe(3);
-    expect(mapInternalEventToProductStep("page")).toBe(3);
+    expect(mapInternalEventToProductStep("page")).toBe(6);
     expect(mapInternalEventToProductStep("dataModel")).toBe(6);
     expect(mapInternalEventToProductStep("specfirst.structure")).toBe(4);
     expect(mapInternalEventToProductStep("specfirst.semantics")).toBe(5);
@@ -270,6 +270,23 @@ describe("M8 产品六步钟映射表", () => {
     expect(view.steps[4].status).not.toBe("done");
     expect(view.steps[2].status).toBe("skipped");
     expect(view.steps[5].status).toBe("current");
+  });
+
+  it("闭环五系统 walk 的 page 不许点亮每页 HTML（page→3 必红）", () => {
+    // ⚠ 活路径是 dataModel→rbac→workflow→page→…，不是单独一条 dataModel。
+    // SkillId page ≠ SSE spec_page。把别名改回 3，这一格会变 done。
+    let cursor = startRehearsalCursor();
+    for (const id of ["dataModel", "rbac", "workflow", "page", "aigc", "appBundle"]) {
+      cursor = advanceRehearsalCursor(cursor, id);
+    }
+    const view = buildRehearsalClockView(cursor, { isRunning: true });
+    expect(view.steps[2].status).not.toBe("done");
+    expect(view.steps[3].status).not.toBe("done");
+    expect(view.steps[4].status).not.toBe("done");
+    expect(view.steps[2].status).toBe("skipped");
+    expect(view.steps[5].status).toBe("current");
+    expect(mapInternalEventToProductStep("page")).toBe(6);
+    expect(mapInternalEventToProductStep("spec_page")).toBe(3);
   });
 });
 

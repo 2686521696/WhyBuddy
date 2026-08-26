@@ -44,6 +44,17 @@ describe("M8 映射表落在 derive-status-bar（不是文档）", () => {
     expect(table).toMatch(/evaluate_coverage_gate:\s*6/);
   });
 
+  it("别名 SkillId page 是 6 不是 3（跟 SSE spec_page 不是一回事）", () => {
+    const src = load("../derive-status-bar.ts");
+    const aliases = src.slice(
+      src.indexOf("const REHEARSAL_EVENT_ALIASES"),
+      src.indexOf("export type RehearsalClockCursor")
+    );
+    expect(aliases).toMatch(/(?:^|\n)\s*page:\s*6\b/);
+    expect(aliases).not.toMatch(/(?:^|\n)\s*page:\s*3\b/);
+    expect(aliases).toMatch(/(?:^|\n)\s*spec_page:\s*3\b/);
+  });
+
   it("第 1 步 skippable: true 写在步骤表里", () => {
     const src = load("../derive-status-bar.ts");
     const steps = src.slice(

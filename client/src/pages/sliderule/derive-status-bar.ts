@@ -76,7 +76,10 @@ const REHEARSAL_EVENT_ALIASES: Record<string, RehearsalProductStepId> = {
   "specfirst.semantics": 5,
   "specfirst.assemble": 6,
   "specfirst.bind": 6,
-  page: 3,
+  // ⚠ SkillId `page` 是五系统 page 能力（闭环走步 6），不是 SSE spec_page。
+  // 2026-08-27 第一版写成 3：精修/复用没跑 spec-first 时，closure walk
+  // dataModel→rbac→workflow→page 把「每页 HTML」涂成 done。真机钟撒谎。
+  page: 6,
   dataModel: 6,
   workflow: 6,
   rbac: 6,
