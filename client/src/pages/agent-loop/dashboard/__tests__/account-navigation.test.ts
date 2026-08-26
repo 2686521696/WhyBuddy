@@ -51,6 +51,16 @@ describe("侧栏账号导航", () => {
     expect(accountPanelSource).not.toContain('data-testid="account-admin"');
     expect(accountPanelSource).not.toContain('onClick={go("/admin")}');
   });
+
+  it("扩展中心整行都能开合，不是只有箭头才能收", () => {
+    const src = stripComments(dashboardSource);
+    const at = src.indexOf("if (item.children)");
+    expect(at).toBeGreaterThan(-1);
+    const around = src.slice(at, at + 220);
+    expect(around).toContain("prev === item.key ? null : item.key");
+    expect(around).not.toMatch(/if \(item\.children\) setOpenKey\(item\.key\)/);
+    expect(src).toContain("agent-nav-expand");
+  });
 });
 
 describe("侧栏底栏 · Cursor 尺度", () => {

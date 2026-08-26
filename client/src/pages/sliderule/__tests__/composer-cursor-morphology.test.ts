@@ -117,6 +117,20 @@ describe("ComposerDock Cursor 三行形态", () => {
     expect(dock).not.toContain("Changes +");
   });
 
+  it("数据框内部常驻 / 提醒，空框才画、开了面板或打了字就收", () => {
+    const dock = stripComments(
+      readFileSync(new URL("../ComposerDock.tsx", import.meta.url), "utf8")
+    );
+    expect(dock).toContain("sliderule-composer-slash-hint");
+    expect(dock).toContain("COMPOSER_SLASH_HINT");
+    const at = dock.indexOf("sliderule-composer-slash-hint");
+    expect(at).toBeGreaterThan(dock.indexOf("sliderule-composer-input"));
+    expect(at).toBeLessThan(dock.indexOf("sliderule-composer-context"));
+    const around = dock.slice(Math.max(0, at - 280), at);
+    expect(around).toContain("slash || input.trim() || picked.length > 0");
+    expect(around).not.toMatch(/hero\s*&&/);
+  });
+
   it("底行是话题 + 成品/推演，不是 git 分支", () => {
     const dock = stripComments(
       readFileSync(new URL("../ComposerDock.tsx", import.meta.url), "utf8")

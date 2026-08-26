@@ -21,6 +21,14 @@
  * 一条"这种情况不许弹"。
  */
 
+/**
+ * 输入框里的常驻提醒。`/` 是发需求那一刻选能力的入口——不写出来用户不会去按。
+ *
+ * ⚠ 文案盯三类能力本身（技能 / 连接器 / 伙伴），别写成"去扩展中心"：
+ *   那是库页的事，提醒的是**输入框里就能选**。
+ */
+export const COMPOSER_SLASH_HINT = "输入 / 即可选择技能、连接器或伙伴";
+
 export type SlashKind = "skill" | "connector" | "partner";
 
 export interface SlashItem {

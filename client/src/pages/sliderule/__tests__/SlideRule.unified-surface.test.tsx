@@ -192,6 +192,16 @@ describe("unified /sliderule surface (single mental model)", () => {
     );
     expect(phoneChip).toContain("应用");
     expect(html).toContain("描述你想构建的业务系统");
+    expect(html).toContain('data-testid="sliderule-composer-slash-hint"');
+    expect(html).toContain("输入 / 即可选择技能、连接器或伙伴");
+    const dockHtml = html.slice(
+      html.indexOf('data-testid="sliderule-composer-dock"'),
+      html.indexOf('data-testid="sliderule-inspiration"')
+    );
+    expect(dockHtml).toContain('data-testid="sliderule-composer-slash-hint"');
+    expect(dockHtml.indexOf("sliderule-composer-input")).toBeLessThan(
+      dockHtml.indexOf("sliderule-composer-slash-hint")
+    );
     // 静态营销网点仍禁；鼠标点阵空态和工作台都有。
     expect(html).not.toContain('data-testid="sliderule-empty-dot-field"');
     expect(html).toContain('data-testid="sliderule-home-hover-dots"');

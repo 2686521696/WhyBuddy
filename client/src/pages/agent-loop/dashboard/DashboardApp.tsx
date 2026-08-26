@@ -1294,7 +1294,11 @@ function AgentLoopSidebar({
                     onClick={event => {
                       if (getViewPath?.(item.key)) event.preventDefault();
                       onViewChange(item.key);
-                      if (item.children) setOpenKey(item.key);
+                      /* ⚠ 整行都要能开合。上一版 `setOpenKey(item.key)` 只会展开，
+                         展开后再点标签等于没点——只能去点那颗 18px 箭头才收得起来。 */
+                      if (item.children) {
+                        setOpenKey(prev => (prev === item.key ? null : item.key));
+                      }
                     }}
                   >
                     {item.icon}

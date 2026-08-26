@@ -55,6 +55,7 @@ import {
 } from "./installed-skills";
 import {
   applySlashPick,
+  COMPOSER_SLASH_HINT,
   filterSlashItems,
   moveHighlight,
   seedSlash,
@@ -1632,6 +1633,21 @@ export function ComposerDock({
                   }`}
                   data-testid="sliderule-composer-input"
                 />
+                {/*
+                  `/` 选择器已经接上了，但空框里不写出来用户不会去按。
+                  ⚠ 只在框空着、面板没开时画——打了字或 `/` 面板已开，这条就抢视线。
+                  ⚠ 必须画在输入框那个容器里（数据框内部），不是卡片外的底栏。
+                */}
+                {slash || input.trim() || picked.length > 0 ? null : (
+                  <p
+                    data-testid="sliderule-composer-slash-hint"
+                    className={`pointer-events-none select-none text-[11px] leading-4 text-[#a1a1aa] ${
+                      hero ? "mt-1 px-0.5" : "mt-0.5 px-1"
+                    }`}
+                  >
+                    {COMPOSER_SLASH_HINT}
+                  </p>
+                )}
               </div>
 
               {/* 优化贴发送左边。空态跟发送同一簇靠右；开聊后仍在字右边、发送圆左边。 */}

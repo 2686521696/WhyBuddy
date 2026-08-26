@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   applySlashPick,
+  COMPOSER_SLASH_HINT,
   filterSlashItems,
   moveHighlight,
   pickedPayload,
@@ -198,5 +199,15 @@ describe("seedSlash：提示钮替用户打的那个斜杠", () => {
     expect(seedSlash("abc", 999).caret).toBe(5);
     expect(seedSlash("abc", -3).text).toBe("/abc");
     expect(seedSlash(undefined as unknown as string, 0).text).toBe("/");
+  });
+});
+
+describe("输入框提醒", () => {
+  it("点名三类能力，且说的是输入框里按 /，不是去扩展中心", () => {
+    expect(COMPOSER_SLASH_HINT).toContain("/");
+    expect(COMPOSER_SLASH_HINT).toContain("技能");
+    expect(COMPOSER_SLASH_HINT).toContain("连接器");
+    expect(COMPOSER_SLASH_HINT).toContain("伙伴");
+    expect(COMPOSER_SLASH_HINT).not.toContain("扩展中心");
   });
 });
