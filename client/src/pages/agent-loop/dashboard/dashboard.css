@@ -110,6 +110,28 @@
   gap: 2px;
 }
 
+/* --- 分组（2026-08-26 用户给的样式：创作资源 / 系统） --- */
+.native-agent-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.native-agent-nav-group + .native-agent-nav-group {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.native-agent-nav-group-label {
+  color: #9aa3b0;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 16px;
+  padding: 2px 10px 4px;
+}
+
 .native-agent-nav-item {
   align-items: center;
   background: transparent;
@@ -150,7 +172,9 @@
 }
 
 /* 标签太长时截断，不要把侧栏撑宽 —— 「技能 · 连接器 · 伙伴」正好在边界上 */
-.native-agent-nav-item > :last-child {
+/* ⚠ 认 span 不认 :last-child：有折叠箭头的那一项，:last-child 是 button，
+   截断规则会落到箭头上、而标签反而撑宽侧栏。 */
+.native-agent-nav-item > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -165,9 +189,73 @@
 .native-agent-nav-item-active {
   /* ⚠ 2026-08-20：白底胶囊 + #1d4ed8 在灰侧栏上像一张白卡
      （用户截图红箭头指「设置」）。会话行已经是同色压深；菜单要对齐
-     Cursor：选中压一层黑 6%，字保持近黑，不要反白。 */
+     Cursor：选中压一层黑 6%，字保持近黑，不要反白。
+
+     ⚠ 2026-08-26 用户又强调了一次：**选中项左边不要竖条**
+     （他给的样式截图里有，同一句话里直接否掉了："菜单项左侧的 border
+     不要"）。所以这里没有 border-left / ::before，也别加回来。 */
   background: rgba(15, 23, 42, 0.07);
   box-shadow: none;
+  color: #171717;
+  font-weight: 500;
+}
+
+/* 折叠箭头。⚠ 只画在**真的有下级**的项上（见 DashboardApp 的 NAV_GROUPS
+   注释）：挂一个展不开的箭头就是"看着能点、点了没反应"。 */
+.native-agent-nav-caret {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: #b6bec9;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 18px;
+  height: 18px;
+  justify-content: center;
+  margin-left: auto;
+  padding: 0;
+  transition: background 0.12s ease, color 0.12s ease;
+  width: 18px;
+}
+
+.native-agent-nav-caret:hover {
+  background: rgba(15, 23, 42, 0.07);
+  color: #475569;
+}
+
+.native-agent-nav-caret .anticon {
+  font-size: 10px;
+  transition: transform 0.14s ease;
+}
+
+.native-agent-nav-caret .anticon.is-open {
+  transform: rotate(180deg);
+}
+
+/* 子项：缩进对齐父项的**文字**（不是图标），一眼看出层级归属 */
+.native-agent-nav-subitem {
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: #64748b;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  height: 30px;
+  padding: 0 10px 0 36px;
+  text-align: left;
+  transition: background 0.12s ease, color 0.12s ease;
+  width: 100%;
+}
+
+.native-agent-nav-subitem:hover {
+  background: rgba(15, 23, 42, 0.045);
+  color: #171717;
+}
+
+.native-agent-nav-subitem-active {
+  background: rgba(15, 23, 42, 0.055);
   color: #171717;
   font-weight: 500;
 }

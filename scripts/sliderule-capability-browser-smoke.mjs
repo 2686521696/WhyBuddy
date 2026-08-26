@@ -10,6 +10,7 @@
  *   B  打字能筛，回车选中后正文里不留 `/词`（能力是芯片不是正文）
  *   B2 `/` 选伙伴只挂标签，不往正文灌起手意图 ← 跟 G 是一对，说清区别
  *   C  标签能一个个摘掉；C2 正文空着时退格摘最后一枚
+ *   H  侧栏分组 + 选中项没有左竖条；H2 假箭头不许有；H3 子项真的切得动页面
  *   D  「技能 · 连接器 · 伙伴」页三层都在
  *   E  连接器页「试取真数据」拿回的是**真值**，不是示例
  *   E2 认不出的城市如实报错，且**一行都不显示**  ← 跟 E 是一对
@@ -216,8 +217,85 @@ async function main() {
     );
     check("C 标签能一个个摘掉", chipsAfter.length === 0, JSON.stringify(chipsAfter));
 
-    /* ── D：一页三层 ─────────────────────────────────────────────── */
+    /* ── H：侧栏导航（2026-08-26 用户给了样式截图并当场否掉左竖条）───
+     *
+     * ⚠ 先切到一个**在导航里的**视图再判"选中态"。推演视图不在导航列表里
+     *   （靠点品牌 logo 进），停在那儿时 .native-agent-nav-item-active
+     *   压根不存在——第一版就这么写的，判据以「选中项左边 null」红掉，
+     *   而它想钉的东西根本没被看到。
+     */
     await page.getByText("技能 · 连接器 · 伙伴").first().click();
+    await page.waitForSelector('[data-testid="capability-tab"]', { timeout: 30000 });
+    await page.waitForTimeout(1500);
+
+    const navGroups = await page.$$eval(".native-agent-nav-group-label", els =>
+      els.map(e => e.textContent?.trim())
+    );
+    const activeBar = await page.evaluate(() => {
+      const el = document.querySelector(".native-agent-nav-item-active");
+      if (!el) return null;
+      const cs = getComputedStyle(el);
+      const before = getComputedStyle(el, "::before");
+      return {
+        borderLeft: parseFloat(cs.borderLeftWidth) || 0,
+        // ⚠ 竖条也可能是 ::before 画的，光看 border 抓不住
+        pseudo: before.content !== "none" ? parseFloat(before.width) || 0 : 0,
+      };
+    });
+    check(
+      "H 侧栏按创作资源/系统分组，且选中项**没有左竖条**（用户当场否掉的）",
+      navGroups.length >= 2 &&
+        navGroups.includes("创作资源") &&
+        navGroups.includes("系统") &&
+        !!activeBar &&
+        activeBar.borderLeft === 0 &&
+        activeBar.pseudo === 0,
+      `分组 ${JSON.stringify(navGroups)} · 选中项左边 ${JSON.stringify(activeBar)}`
+    );
+
+    /*
+     * H2：折叠箭头**只画在真的有下级的项上**。
+     *
+     * ⚠ 用户给的截图里每一项右边都有箭头。给「设置」「管理台」挂一个展不开的
+     *   箭头，就是"看着能点、点了没反应"——这个仓刚为它连修两轮。
+     */
+    const carets = await page.$$eval(
+      '[data-testid="agent-nav-expand"]',
+      els => els.length
+    );
+    check(
+      "H2 只有真的有下级的项才有折叠箭头（不许挂展不开的假箭头）",
+      carets === 1,
+      `带箭头的项 ${carets} 个`
+    );
+
+    /* H3：展开之后子项真的切得动页面（不是画着好看）。
+       点导航项本身就会展开，所以只在没展开时才去点箭头。 */
+    if ((await page.locator('[data-testid="agent-nav-subitem"]').count()) === 0) {
+      await page.click('[data-testid="agent-nav-expand"]');
+      await page.waitForTimeout(500);
+    }
+    const subs = await page.$$eval('[data-testid="agent-nav-subitem"]', els =>
+      els.map(e => e.getAttribute("data-layer"))
+    );
+    await page
+      .locator('[data-testid="agent-nav-subitem"][data-layer="connectors"]')
+      .click();
+    await page.waitForSelector('[data-testid="capability-tab"]', { timeout: 30000 });
+    await page.waitForTimeout(1800);
+    const landed = await page.$$eval('[data-testid="capability-tab"]', els =>
+      els
+        .filter(e => e.getAttribute("data-active") === "1")
+        .map(e => e.getAttribute("data-layer"))
+    );
+    check(
+      "H3 侧栏子项「连接器」直接把页面切到连接器层",
+      JSON.stringify(subs) === JSON.stringify(["skills", "connectors", "partners"]) &&
+        JSON.stringify(landed) === JSON.stringify(["connectors"]),
+      `子项 ${JSON.stringify(subs)} · 落在 ${JSON.stringify(landed)}`
+    );
+
+    /* ── D：一页三层 ─────────────────────────────────────────────── */
     await page.waitForSelector('[data-testid="capability-tab"]', { timeout: 30000 });
     await page.waitForTimeout(2000);
     const layers = await page.$$eval('[data-testid="capability-tab"]', els =>

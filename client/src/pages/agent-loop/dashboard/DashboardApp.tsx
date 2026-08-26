@@ -9,9 +9,9 @@ import {
   PlayCircleFilled,
   BlockOutlined,
   DeploymentUnitOutlined,
+  DownOutlined,
   ReloadOutlined,
   RightOutlined,
-  DownOutlined,
   RobotOutlined,
   SettingOutlined,
   SafetyCertificateOutlined,
@@ -59,6 +59,9 @@ import React, {
   useRef,
   useState,
 } from "react";
+
+/** 「技能 · 连接器 · 伙伴」页的三层（跟 CapabilityLibraryPage 的 tab 一一对应）。 */
+export type CapabilityLayer = "skills" | "connectors" | "partners";
 
 export type ViewKey =
   | "sliderule"
@@ -1178,38 +1181,74 @@ function AgentLoopSidebar({
   view,
   onViewChange,
   getViewPath,
+  capabilityLayer,
+  onCapabilityLayer,
 }: {
   view: ViewKey;
   onViewChange: (next: ViewKey) => void;
   getViewPath?: (next: ViewKey) => string | undefined;
+  capabilityLayer?: CapabilityLayer;
+  onCapabilityLayer?: (layer: CapabilityLayer) => void;
 }) {
   // 「推演」不再单列菜单项：点品牌 logo / 点会话 / 新建会话都通向推演视图
   const isStaff = useAuth().user?.isSuperuser === true;
-  const navItems: Array<{
+  interface NavItem {
     key: ViewKey;
     label: string;
     icon: React.ReactNode;
-  }> = [
-    { key: "workbench", label: "应用市场", icon: <AppstoreOutlined /> },
-    { key: "components", label: "组件库", icon: <BlockOutlined /> },
+    /** 有下级时才给折叠箭头。⚠ 见下面 NAV_GROUPS 的注释：不许挂假箭头。 */
+    children?: Array<{ id: CapabilityLayer; label: string }>;
+  }
+
+  /*
+   * 分组导航（2026-08-26 用户给了样式截图）。
+   *
+   * ⚠ 用户同一句话里明确否掉了截图里那条**选中项左侧的竖条**
+   *   （"菜单项左侧的 border 不要"）。CSS 里也写了一行别加回去——
+   *   选中态就是压一层黑，跟 2026-08-20 那次裁决一致。
+   *
+   * ⚠ 截图里每一项右边都有折叠箭头，**这里只给真的有下级的那一项**。
+   *   给「设置」「管理台」挂一个展不开的箭头，就是那种"看着能点、点了没
+   *   反应"的东西——这个仓刚因为它连着修了两轮（`/` 面板那次）。
+   */
+  const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
     {
-      key: "skills",
-      label: "技能 · 连接器 · 伙伴",
-      /* ⚠ 用连通节点而不是插头（ApiOutlined）：这一项是三样东西的集合，
-         插头只说得清"连接器"那一样，另外两样看着不搭。 */
-      icon: <DeploymentUnitOutlined />,
+      label: "创作资源",
+      items: [
+        { key: "workbench", label: "应用市场", icon: <AppstoreOutlined /> },
+        { key: "components", label: "组件库", icon: <BlockOutlined /> },
+        {
+          key: "skills",
+          label: "技能 · 连接器 · 伙伴",
+          /* ⚠ 用连通节点而不是插头（ApiOutlined）：这一项是三样东西的集合，
+             插头只说得清"连接器"那一样，另外两样看着不搭。 */
+          icon: <DeploymentUnitOutlined />,
+          // 这三条是页面上真实存在的三层（CapabilityLibraryPage 的 tab）
+          children: [
+            { id: "skills", label: "技能" },
+            { id: "connectors", label: "连接器" },
+            { id: "partners", label: "伙伴" },
+          ],
+        },
+      ],
     },
-    { key: "settings", label: "设置", icon: <SettingOutlined /> },
-    ...(isStaff
-      ? [
-          {
-            key: "admin" as const,
-            label: "管理台",
-            icon: <SafetyCertificateOutlined />,
-          },
-        ]
-      : []),
+    {
+      label: "系统",
+      items: [
+        { key: "settings", label: "设置", icon: <SettingOutlined /> },
+        ...(isStaff
+          ? [
+              {
+                key: "admin" as const,
+                label: "管理台",
+                icon: <SafetyCertificateOutlined />,
+              },
+            ]
+          : []),
+      ],
+    },
   ];
+  const [openKey, setOpenKey] = React.useState<ViewKey | null>(null);
 
   return (
     <aside className="native-agent-sidebar">
@@ -1234,26 +1273,79 @@ function AgentLoopSidebar({
         />
       </a>
       <nav className="native-agent-nav" aria-label={BRAND_NAME_FULL}>
-        {navItems.map(item => (
-          <a
-            href={getViewPath?.(item.key)}
-            className={`native-agent-nav-item${view === item.key ? " native-agent-nav-item-active" : ""}`}
-            data-testid={
-              item.key === "settings"
-                ? "agent-nav-settings"
-                : item.key === "admin"
-                  ? "agent-nav-admin"
-                  : undefined
-            }
-            onClick={event => {
-              if (getViewPath?.(item.key)) event.preventDefault();
-              onViewChange(item.key);
-            }}
-            key={item.key}
-          >
-            {item.icon}
-            <span>{item.label}</span>
-          </a>
+        {NAV_GROUPS.filter(g => g.items.length > 0).map(group => (
+          <div className="native-agent-nav-group" key={group.label}>
+            <div className="native-agent-nav-group-label">{group.label}</div>
+            {group.items.map(item => {
+              const active = view === item.key;
+              const expanded = openKey === item.key;
+              return (
+                <React.Fragment key={item.key}>
+                  <a
+                    href={getViewPath?.(item.key)}
+                    className={`native-agent-nav-item${active ? " native-agent-nav-item-active" : ""}`}
+                    data-testid={
+                      item.key === "settings"
+                        ? "agent-nav-settings"
+                        : item.key === "admin"
+                          ? "agent-nav-admin"
+                          : undefined
+                    }
+                    onClick={event => {
+                      if (getViewPath?.(item.key)) event.preventDefault();
+                      onViewChange(item.key);
+                      if (item.children) setOpenKey(item.key);
+                    }}
+                  >
+                    {item.icon}
+                    <span>{item.label}</span>
+                    {item.children ? (
+                      <button
+                        type="button"
+                        aria-label={expanded ? "收起" : "展开"}
+                        aria-expanded={expanded}
+                        data-testid="agent-nav-expand"
+                        className="native-agent-nav-caret"
+                        onClick={event => {
+                          // 箭头只管展开/收起，不跟着跳页
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setOpenKey(prev =>
+                            prev === item.key ? null : item.key
+                          );
+                        }}
+                      >
+                        <DownOutlined
+                          className={expanded ? "is-open" : undefined}
+                        />
+                      </button>
+                    ) : null}
+                  </a>
+                  {item.children && expanded
+                    ? item.children.map(sub => (
+                        <button
+                          type="button"
+                          key={sub.id}
+                          data-testid="agent-nav-subitem"
+                          data-layer={sub.id}
+                          className={`native-agent-nav-subitem${
+                            active && capabilityLayer === sub.id
+                              ? " native-agent-nav-subitem-active"
+                              : ""
+                          }`}
+                          onClick={() => {
+                            onCapabilityLayer?.(sub.id);
+                            onViewChange(item.key);
+                          }}
+                        >
+                          {sub.label}
+                        </button>
+                      ))
+                    : null}
+                </React.Fragment>
+              );
+            })}
+          </div>
         ))}
       </nav>
       {/* 会话区。Pages 纯浏览器演示是单会话（无后端会话库），提供本地
@@ -1695,6 +1787,13 @@ function DashboardAppInner({
     postCommand("selectProfile", { name });
   };
 
+  /* 「技能 · 连接器 · 伙伴」当前停在哪一层。侧栏展开的三条子项直接切它。
+     ⚠ 状态放在这里而不是页面里：侧栏和页面是两个组件，页面自己存的话
+       侧栏点了没反应（页面已经挂着，initialLayer 只在首次渲染生效）。
+       所以下面渲染时还带了 key={capabilityLayer} 强制重挂。 */
+  const [capabilityLayer, setCapabilityLayer] =
+    React.useState<CapabilityLayer>("skills");
+
   const handleViewChange = (next: ViewKey) => {
     if (controlledView === undefined) {
       setInternalView(next);
@@ -1839,6 +1938,8 @@ function DashboardAppInner({
           view={view}
           onViewChange={handleViewChange}
           getViewPath={getViewPath}
+          capabilityLayer={capabilityLayer}
+          onCapabilityLayer={setCapabilityLayer}
         />
         <Layout className="native-main native-agent-main">
           {/* 顶栏/面包屑整段移除（用户裁决）：应用中心等页自带标题，推演页有 HUD；
@@ -1873,7 +1974,10 @@ function DashboardAppInner({
                   </div>
                 }
               >
-                <LazySkillsLibraryPage />
+                <LazySkillsLibraryPage
+                  key={capabilityLayer}
+                  initialLayer={capabilityLayer}
+                />
               </React.Suspense>
             ) : view === "components" ? (
               <React.Suspense
