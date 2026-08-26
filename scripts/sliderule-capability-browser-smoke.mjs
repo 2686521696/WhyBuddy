@@ -13,6 +13,7 @@
  *   H  侧栏分组 + 选中项没有左竖条；H2 假箭头不许有；H3 子项真的切得动页面
  *   D  「扩展中心」页三层都在
  *   E0 卡片墙只列后端真有的连接器；E1 每张卡有自己那张真图稿
+ *   E2b 一行四个 + 长文案省略号可悬浮看全文；E2c 短文案不弹
  *   E3 「+/已添加」真的挂到这一轮
  *   E  连接器页「试取真数据」拿回的是**真值**，不是示例
  *   E2 认不出的城市如实报错，且**一行都不显示**  ← 跟 E 是一对
@@ -367,6 +368,84 @@ async function main() {
         new Set(arts.map(a => a.art)).size === arts.length,
       JSON.stringify(arts)
     );
+
+    /*
+     * E2b：一行四个 + 放不下就省略号 + **只在真截断时**弹 tooltip。
+     *
+     * ⚠ tooltip 的 class 前缀是项目配的 `agent-ant-*`，不是 antd 默认的
+     *   `ant-*`。第一版判据按默认前缀找，找不到节点、报"没有 tooltip"——
+     *   而功能完全正常。选择器用 [class*="ant-tooltip-inner"] 兜住两种前缀。
+     *
+     * ⚠ 反面那条（短文案不弹）是这条判据的价值所在：无条件挂 tooltip 也能让
+     *   正面全绿，但一屏几十张卡扫过去满屏乱弹，比不做还烦。
+     */
+    const cols = await page.evaluate(() => {
+      const g = document.querySelector('[data-testid="connectors-list"] .grid');
+      return g
+        ? getComputedStyle(g).gridTemplateColumns.split(" ").filter(Boolean).length
+        : 0;
+    });
+    // 窄到每张卡 ~240px：还是四列，但长文案一定放不下
+    await page.setViewportSize({ width: 1300, height: 940 });
+    await page.waitForTimeout(1200);
+    const clipState = await page.$$eval('[data-testid="connector-card"]', els =>
+      els.map(e => ({
+        id: e.getAttribute("data-connector"),
+        meta: e
+          .querySelector('[data-testid="connector-meta"]')
+          ?.getAttribute("data-clipped"),
+      }))
+    );
+    const clipped = page
+      .locator('[data-testid="connector-meta"][data-clipped="1"]')
+      .first();
+    let tipText = [];
+    if (await clipped.count()) {
+      const bb = await clipped.boundingBox();
+      await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2);
+      await page.waitForTimeout(1400);
+      tipText = await page.$$eval('[class*="ant-tooltip-inner"]', els =>
+        els
+          .filter(e => e.offsetParent !== null)
+          .map(e => (e.textContent || "").slice(0, 60))
+      );
+    }
+    check(
+      "E2b 一行四个；放不下的行出省略号，悬浮能看到全文",
+      cols === 4 &&
+        clipState.every(c => c.meta === "1") &&
+        tipText.some(t => t.includes("落成实体")),
+      `列数 ${cols} · 截断 ${JSON.stringify(clipState)} · tooltip ${JSON.stringify(tipText)}`
+    );
+
+    /* 反面：没截断的短文案**不许**弹 tooltip */
+    await page.mouse.move(4, 4);
+    await page.waitForTimeout(900);
+    const shortOne = page
+      .locator('[data-testid="connector-name"][data-clipped="0"]')
+      .first();
+    let shortTip = [];
+    if (await shortOne.count()) {
+      const bb = await shortOne.boundingBox();
+      await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2);
+      await page.waitForTimeout(1400);
+      const name = (await shortOne.textContent())?.trim();
+      shortTip = await page.$$eval(
+        '[class*="ant-tooltip-inner"]',
+        els =>
+          els
+            .filter(e => e.offsetParent !== null)
+            .map(e => (e.textContent || "").trim())
+      );
+      shortTip = shortTip.filter(t => t === name);
+    }
+    check(
+      "E2c 没截断的短文案不弹 tooltip（无条件挂会让一屏卡片扫过去满屏乱弹）",
+      shortTip.length === 0,
+      `弹出来的重复浮层 ${JSON.stringify(shortTip)}`
+    );
+    await page.setViewportSize({ width: 1500, height: 940 });
+    await page.waitForTimeout(900);
 
     /* E3：卡片上的「+ / ✓ 已添加」= 挂不挂在这一轮，跟 `/` 同一条路径。
        ⚠ 顺带钉住"点 + 不跳页"：用户在挑连接器，跳走了就看不到状态变化、

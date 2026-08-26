@@ -18,6 +18,7 @@ import {
   partnerReadiness,
   type Partner,
 } from "./partners";
+import { TruncatedText } from "./TruncatedText";
 
 export function PartnersPanel({
   custom,
@@ -59,7 +60,8 @@ export function PartnersPanel({
             <div className="text-xs font-medium text-stone-500">
               {g.label} · {g.list.length}
             </div>
-            <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 2xl:grid-cols-3">
+            {/* 一行四个，跟连接器那面墙一致（用户 2026-08-26 指定） */}
+            <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {g.list.map(p => {
                 const { ready, missing } = partnerReadiness(p, {
                   connectorIds,
@@ -78,12 +80,17 @@ export function PartnersPanel({
                         <TeamOutlined />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-[13px] font-semibold text-stone-800">
-                          {p.name}
-                        </div>
-                        <div className="mt-0.5 text-[12px] text-stone-500">
-                          {p.description}
-                        </div>
+                        <TruncatedText
+                          as="div"
+                          text={p.name}
+                          className="text-[13px] font-semibold text-stone-800"
+                        />
+                        <TruncatedText
+                          as="div"
+                          lines={2}
+                          text={p.description}
+                          className="mt-0.5 text-[12px] text-stone-500"
+                        />
                       </div>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1">
@@ -97,17 +104,20 @@ export function PartnersPanel({
                         </Tag>
                       ))}
                     </div>
-                    <div className="mt-2 line-clamp-2 rounded bg-[#fafafa] px-2 py-1 text-[11px] text-stone-500">
-                      {p.opener || "（没有起手意图）"}
-                    </div>
+                    <TruncatedText
+                      as="div"
+                      lines={2}
+                      text={p.opener || "（没有起手意图）"}
+                      className="mt-2 rounded bg-[#fafafa] px-2 py-1 text-[11px] leading-[18px] text-stone-500"
+                    />
                     {/* ⚠ 缺什么就明说缺什么，别只给一个灰按钮 */}
                     {ready ? null : (
-                      <div
+                      <TruncatedText
+                        as="div"
                         data-testid="partner-missing"
+                        text={`还缺：${missing.map(m => m.name).join("、")}`}
                         className="mt-1.5 text-[11px] text-[#d46b08]"
-                      >
-                        还缺：{missing.map(m => m.name).join("、")}
-                      </div>
+                      />
                     )}
                     <div className="mt-2 flex items-center gap-2">
                       <Tooltip title={ready ? "" : "依赖还没齐"}>

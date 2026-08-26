@@ -34,6 +34,7 @@ import { Alert, Button, Empty, Input, Table, Tag } from "antd";
 import { Check, Plus, RefreshCw, Search } from "lucide-react";
 
 import { ConnectorIcon } from "./connector-art/connector-icons";
+import { TruncatedText } from "./TruncatedText";
 
 import {
   fetchConnectorRows,
@@ -89,29 +90,48 @@ function ConnectorCard({
           className="min-w-0 flex-1 pt-0.5 text-left"
           title="展开：填参数、试取真数据"
         >
+          {/* ⚠ 一行四个之后每张卡只有 ~280px，三行文字都会挤。
+              放不下就省略号 + 悬浮看全文（TruncatedText 只在**真的截断时**
+              才挂 tooltip，短文案不弹）。 */}
           <span className="flex items-center gap-1.5">
-            <span className="truncate text-[15px] font-semibold text-stone-800">
-              {spec.name}
-            </span>
+            <TruncatedText
+              text={spec.name}
+              data-testid="connector-name"
+              className="min-w-0 flex-1 text-[15px] font-semibold text-stone-800"
+            />
             <Tag
               color="green"
-              style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: "16px" }}
+              style={{
+                marginInlineEnd: 0,
+                fontSize: 11,
+                lineHeight: "16px",
+                flexShrink: 0,
+              }}
             >
               连接器
             </Tag>
             {spec.available ? null : (
-              <Tag color="warning" style={{ marginInlineEnd: 0, fontSize: 11 }}>
+              <Tag
+                color="warning"
+                style={{ marginInlineEnd: 0, fontSize: 11, flexShrink: 0 }}
+              >
                 未配置凭据
               </Tag>
             )}
           </span>
-          <span className="mt-1.5 block text-[13px] leading-[22px] text-stone-500">
-            {spec.description}
-          </span>
-          <span className="mt-1.5 block text-[11px] text-stone-400">
-            落成实体「{spec.entityName}」· {spec.fields.length} 个字段 · 来源{" "}
-            {spec.source}
-          </span>
+          <TruncatedText
+            as="span"
+            lines={2}
+            text={spec.description}
+            data-testid="connector-desc"
+            className="mt-1.5 block text-[13px] leading-[22px] text-stone-500"
+          />
+          <TruncatedText
+            as="span"
+            text={`落成实体「${spec.entityName}」· ${spec.fields.length} 个字段 · 来源 ${spec.source}`}
+            data-testid="connector-meta"
+            className="mt-1.5 block text-[11px] text-stone-400"
+          />
         </button>
         {/* 「+ / ✓ 已添加」= 挂不挂在这一轮，跟输入框 `/` 同一条路径。
             照效果图做成圆钮 + 底下一行小字。 */}
@@ -363,7 +383,9 @@ export function ConnectorsPanel({
           }
         />
       ) : (
-        <div className="mt-5 grid grid-cols-1 gap-3.5 md:grid-cols-2 2xl:grid-cols-3">
+        /* 一行四个（用户 2026-08-26 指定）。窄屏逐级降到 3 / 2 / 1——
+           1200px 以下硬塞四个的话每张只有 200 出头，标题都放不下一行。 */
+        <div className="mt-5 grid grid-cols-1 gap-3.5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {shown.map(c => {
             const attached = attachedIds.includes(c.id);
             return (
