@@ -5,14 +5,21 @@
  * forcedTool:"rehearse" + 复述句当 userText）。
  *
  * 时间口径只许「大约数分钟，第一页会先出现」。未标定分钟数不许进 DOM。
+ *
+ * ⚠ 2026-08-27：宪章五栏曾经是空 input。用户对着「行业 / 术语 / 角色」
+ * 不知道填什么，澄清变成写作文。改成闭集点选；写入的仍是 ProductCharter
+ * 字符串，后端 normalize 不用动。禁止再摆 placeholder 输入框。
  */
 import React, { useState } from "react";
 
 import {
+  CHARTER_FIELD_CHOICES,
   loadCharterReuseNext,
   loadProductCharter,
+  parseCharterSelections,
   saveProductCharter,
   setCharterReuseNext,
+  toggleCharterChoice,
   type ProductCharter,
 } from "./product-charter";
 import {
@@ -59,8 +66,18 @@ export function ScopeCard({
 
   const patchCharter = (key: keyof ProductCharter, value: string) => {
     const next = { ...charter, [key]: value };
+    if (!value.trim()) delete next[key];
     setCharter(next);
     saveProductCharter(next);
+  };
+
+  const pickCharter = (
+    key: keyof ProductCharter,
+    option: string,
+    multiple: boolean,
+    options: readonly string[]
+  ) => {
+    patchCharter(key, toggleCharterChoice(charter[key], option, multiple, options));
   };
 
   const toggleReuse = (checked: boolean) => {
@@ -70,7 +87,7 @@ export function ScopeCard({
 
   return (
     <div
-      className={`${OVERLAY_CLASS} max-h-[min(360px,50vh)] overflow-y-auto`}
+      className={`${OVERLAY_CLASS} max-h-[min(520px,70vh)] overflow-y-auto`}
       data-testid="sliderule-scope-card"
       data-variant={pending.variant}
       role="dialog"
@@ -142,25 +159,48 @@ export function ScopeCard({
         宪章是约束，不是证据。不勾选不会带进下一场，也不会把上一场模型当先验。
       </p>
       {thin ? null : (
-        <div className="mt-2 grid gap-1.5" data-testid="sliderule-scope-charter-fields">
-          {(
-            [
-              ["industry", "行业"],
-              ["terms", "术语"],
-              ["defaultRoles", "默认角色"],
-              ["hardCompliance", "硬性合规"],
-              ["brandConstraints", "品牌约束"],
-            ] as Array<[keyof ProductCharter, string]>
-          ).map(([key, label]) => (
-            <input
-              key={key}
-              data-testid={`sliderule-scope-charter-${key}`}
-              value={charter[key] || ""}
-              onChange={e => patchCharter(key, e.target.value)}
-              placeholder={label}
-              className="h-7 rounded-[8px] border border-[#e5e7eb] bg-[#fafafa] px-2 text-[12px] text-[#171717] outline-none placeholder:text-[#a1a1aa]"
-            />
-          ))}
+        <div className="mt-2 grid gap-2" data-testid="sliderule-scope-charter-fields">
+          {CHARTER_FIELD_CHOICES.map(row => {
+            const selected = parseCharterSelections(
+              charter[row.key],
+              row.options,
+              row.multiple
+            );
+            const catalog = new Set<string>(row.options);
+            const extras = selected.filter(item => !catalog.has(item));
+            const chips = [...row.options, ...extras];
+            return (
+              <div
+                key={row.key}
+                data-testid={`sliderule-scope-charter-${row.key}`}
+              >
+                <p className="text-[11px] leading-4 text-[#71717a]">{row.label}</p>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {chips.map(option => {
+                    const on = selected.includes(option);
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        data-testid={`sliderule-scope-charter-${row.key}-${option}`}
+                        aria-pressed={on}
+                        onClick={() =>
+                          pickCharter(row.key, option, row.multiple, row.options)
+                        }
+                        className={`rounded-[8px] border px-2 py-1 text-[12px] leading-4 transition ${
+                          on
+                            ? "border-[#171717] bg-[#171717] text-white"
+                            : "border-[#e5e7eb] bg-[#fafafa] text-[#171717] hover:border-[#d4d4d8] hover:bg-white"
+                        }`}
+                      >
+                        {option}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

@@ -18,6 +18,132 @@ export type ProductCharter = {
   brandConstraints?: string;
 };
 
+/** 范围卡上的闭集选项。点选写入上面的字符串字段，禁止再摆空输入框。 */
+export type CharterFieldChoice = {
+  key: keyof ProductCharter;
+  label: string;
+  multiple: boolean;
+  options: readonly string[];
+};
+
+export const CHARTER_FIELD_CHOICES: readonly CharterFieldChoice[] = [
+  {
+    key: "industry",
+    label: "行业",
+    multiple: false,
+    options: [
+      "电商",
+      "零售连锁",
+      "医疗健康",
+      "教育培训",
+      "制造",
+      "能源电力",
+      "金融",
+      "政务",
+      "物流仓储",
+      "餐饮",
+      "企业服务",
+    ],
+  },
+  {
+    key: "terms",
+    label: "术语",
+    multiple: true,
+    options: ["工单", "审批", "台账", "档案", "门店", "SKU", "预约", "库存"],
+  },
+  {
+    key: "defaultRoles",
+    label: "默认角色",
+    multiple: true,
+    options: [
+      "管理员",
+      "店长",
+      "员工",
+      "客服",
+      "客户",
+      "审批人",
+      "财务",
+      "运营",
+      "调度员",
+    ],
+  },
+  {
+    key: "hardCompliance",
+    label: "硬性合规",
+    multiple: true,
+    options: ["个人信息保护", "等级保护", "财务审计", "安全生产", "行业许可"],
+  },
+  {
+    key: "brandConstraints",
+    label: "品牌约束",
+    multiple: true,
+    options: ["简洁克制", "专业稳重", "消费互联网风格", "政企风格"],
+  },
+] as const;
+
+const CHOICE_SPLIT = /[、，,;；/|]+/;
+
+function choiceCatalog(key: keyof ProductCharter): CharterFieldChoice | undefined {
+  return CHARTER_FIELD_CHOICES.find(row => row.key === key);
+}
+
+/**
+ * 把已存字符串拆成选中项。旧的手填值（「电商行业」「管理员，客服」）
+ * 尽量贴到闭集；贴不上的保留成可点掉的自定义项，不再变成输入框。
+ */
+export function parseCharterSelections(
+  value: string | undefined,
+  options: readonly string[],
+  multiple: boolean
+): string[] {
+  const raw = String(value || "").trim();
+  if (!raw) return [];
+  if (!multiple) {
+    const hit = options.find(option => raw === option || raw.includes(option));
+    return [hit || raw];
+  }
+  const out: string[] = [];
+  for (const part of raw.split(CHOICE_SPLIT).map(piece => piece.trim()).filter(Boolean)) {
+    const hit =
+      options.find(option => part === option) ||
+      options.find(option => part.includes(option) || (part.length >= 2 && option.includes(part)));
+    const token = hit || part;
+    if (!out.includes(token)) out.push(token);
+  }
+  return out;
+}
+
+export function serializeCharterSelections(selected: readonly string[]): string {
+  return selected.map(item => item.trim()).filter(Boolean).join("、");
+}
+
+export function toggleCharterChoice(
+  current: string | undefined,
+  option: string,
+  multiple: boolean,
+  options: readonly string[]
+): string {
+  const picked = option.trim();
+  if (!picked) return String(current || "").trim();
+  const selected = parseCharterSelections(current, options, multiple);
+  if (!multiple) {
+    return selected.length === 1 && selected[0] === picked ? "" : picked;
+  }
+  const next = selected.includes(picked)
+    ? selected.filter(item => item !== picked)
+    : [...selected, picked];
+  return serializeCharterSelections(next);
+}
+
+export function charterSelectionsFor(
+  charter: ProductCharter,
+  key: keyof ProductCharter
+): string[] {
+  const row = choiceCatalog(key);
+  if (!row) return [];
+  return parseCharterSelections(charter[key], row.options, row.multiple);
+}
+
 const REUSE_KEY = "sliderule.charterReuseNext";
 const CHARTER_KEY = "sliderule.productCharter";
 

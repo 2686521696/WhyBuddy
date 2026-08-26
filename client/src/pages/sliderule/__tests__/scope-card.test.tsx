@@ -100,6 +100,15 @@ describe("范围卡 DOM", () => {
     expect(html).toContain("下一场沿用");
     expect(html).toContain('data-testid="sliderule-scope-charter-reuse"');
     expect(html).toContain("宪章是约束，不是证据");
+    expect(html).toContain('data-testid="sliderule-scope-charter-fields"');
+    expect(html).toContain('data-testid="sliderule-scope-charter-industry"');
+    expect(html).toContain('data-testid="sliderule-scope-charter-industry-电商"');
+    expect(html).toContain('data-testid="sliderule-scope-charter-defaultRoles-客服"');
+    expect(html).not.toContain('placeholder="行业"');
+    expect(html).not.toContain('placeholder="术语"');
+    expect(html).not.toContain('placeholder="默认角色"');
+    expect(html).not.toContain('placeholder="硬性合规"');
+    expect(html).not.toContain('placeholder="品牌约束"');
   });
 
   it("迭代是薄卡：一句话 + 开始推演，仍无假分钟数", () => {
@@ -195,6 +204,9 @@ describe("同一 send 禁止 hint 条和范围卡同时出现", () => {
     expect(CARD_SRC).toContain("pending.charterReuseNext");
     expect(SESSION).not.toContain("from \"./ScopeCard\"");
     expect(SESSION).not.toContain("from \"./SlideRuleStudio\"");
+    expect(CARD_SRC).toContain("toggleCharterChoice");
+    expect(CARD_SRC).not.toContain("placeholder={label}");
+    expect(CARD_SRC).not.toContain("onChange={e => patchCharter");
   });
 });
 
