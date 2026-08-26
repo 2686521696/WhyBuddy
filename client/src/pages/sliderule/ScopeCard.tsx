@@ -1,8 +1,8 @@
 /**
  * 推演前范围卡（PR-3 UI 壳）。
  *
- * 控制面到来前的 mock：发送 / 重新推演先出这张卡，点「开始推演」才走今天的
- * runTurn 信封。PR-4 会删掉确认 → runTurn → /drive-full-stream 旁路。
+ * 控制面范围卡：点「开始推演」POST /control-turn-stream（六字段 +
+ * forcedTool:"rehearse" + 复述句当 userText）。
  *
  * 时间口径只许「大约数分钟，第一页会先出现」。未标定分钟数不许进 DOM。
  */

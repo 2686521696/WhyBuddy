@@ -7,7 +7,7 @@ All capabilities now produce real evidence via RAG, no templates, no degraded, n
 
 import os
 import time
-from typing import Dict, Any, AsyncGenerator, List, Optional
+from typing import Dict, Any, AsyncGenerator, List, Literal, Optional
 from datetime import datetime, timezone
 from models.v5_state import V5SessionState, ProducedBy, SchedulingDecision
 from .slide_rule_orchestrator import orchestrate_plan
@@ -1855,6 +1855,7 @@ async def drive_full_v5_session_stream(
     max_loops: int = 10,
     user_instruction: str = "",
     repair: bool = False,
+    profile: Literal["full", "app"] = "full",
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """Async generator mirroring drive_full_v5_session but yielding SSE dicts.
 
@@ -1870,7 +1871,11 @@ async def drive_full_v5_session_stream(
     覆盖门标红的能力（开放缺口/合约缺失/接地不足），已 PASS 的产物与五系统
     模型原样复用（闭环重建本就先匹配既有产物，非 blocked 闭环直接返回）。
     agentic pick 不参与（修什么以门说了算），轮数收紧到 2。
+
+    profile 由信封 helper 透传（rehearse 可传 "app"）。本 PR 不把
+    factoryProfile 做成 HTTP 旗标；PR-5 才消费短名单。
     """
+    _ = profile
     import asyncio
     import queue as _queue
     import time as _time

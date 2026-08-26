@@ -5,8 +5,9 @@
  * 只拦 doSend 的话，sliderule:resend-prompt → sendMessage 仍会直 POST
  * /drive-full-stream——2026-08 交互流程把这件事写成失败 PR。
  *
- * 这不是永久前端调度器。确认后的 drive 旁路叫 confirmScopeCardAndDriveFull，
- * PR-4 落地必须删掉（改 POST /control-turn-stream forcedTool:rehearse）。
+ * PR-4：确认走 confirmControlScope → POST /control-turn-stream
+ * forcedTool:rehearse。本文件的 intercept 只留给 skip 语义单测，产品新烧
+ * 一律 POST，未确认由服务端 park。
  *
  * 时间口径只许 SCOPE_CARD_TIME_COPY。未标定的分钟数不许进产品 DOM。
  */
@@ -55,9 +56,6 @@ export const SCOPE_CARD_STEPS_FROM_SPEC = [
 
 export const SCOPE_CARD_CONFIRM_LABEL = "开始推演";
 export const SCOPE_CARD_REVISE_LABEL = "先改范围";
-
-/** 确认旁路的活标记。PR-4 删 confirmScopeCardAndDriveFull 时连这条一起撕掉。 */
-export const SCOPE_CARD_DRIVE_FULL_BYPASS = "PR-4-delete";
 
 export function scopeCardSteps(includeEvidence: boolean): string[] {
   return includeEvidence

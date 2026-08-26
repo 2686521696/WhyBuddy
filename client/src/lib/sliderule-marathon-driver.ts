@@ -283,6 +283,21 @@ export interface DriveFullStreamOpts {
   preferredDevice?: "desktop" | "phone";
   /** 设计系统 id。后端据此取种子色拼提示词 / 选 DESIGN.md。 */
   designSystemId?: string;
+  /** M1 控制面昂贵按钮：rehearse/refine/repair/challenge。/推演 不得带 rehearse。 */
+  forcedTool?: string;
+  onControlText?: (text: string) => void;
+  onControlAskUser?: (event: {
+    question: string;
+    options?: string[];
+  }) => void;
+  onControlScopeCard?: (event: {
+    restatement: string;
+    device?: string;
+    variant?: string;
+    userText?: string;
+  }) => void;
+  onControlToolStart?: (tool: string) => void;
+  onControlToolResult?: (event: Record<string, unknown>) => void;
 }
 
 /**
@@ -354,6 +369,109 @@ export async function resumeDriveFullStream(
   }
 }
 
+type FactoryStreamAcc = {
+  finalState: V5SessionState | null;
+  publishClosure: any;
+  stopReason: string;
+};
+
+/**
+ * 工厂 SSE 词表。POST 发起、GET 续播、控制面 handoff 之后共用——
+ * 禁止复制一份 switch（复制必然漏 case）。
+ */
+function applyFactoryStreamEvent(
+  event: any,
+  opts: DriveFullStreamOpts,
+  acc: FactoryStreamAcc
+): "continue" | "complete" | "abort" {
+  switch (event.type) {
+    case "reasoning_step":
+      opts.onReasoningStep?.(
+        (typeof event.stage === "string" && event.stage) ||
+          (event.label as string),
+        event.loop as number | undefined
+      );
+      return "continue";
+    case "llm_delta":
+      opts.onLlmDelta?.(event.text as string, event.label as string | undefined);
+      return "continue";
+    case "spec_page":
+      if (typeof event.html === "string" && event.html) {
+        opts.onSpecPage?.({
+          pageId: String(event.pageId || ""),
+          html: event.html as string,
+          current: Number(event.current) || 0,
+          total: Number(event.total) || 0,
+          bound: event.bound === true,
+          device: event.device === "phone" ? "phone" : "desktop",
+        });
+      }
+      return "continue";
+    case "skill_start":
+      opts.onSkillActivated?.(event.skill as SkillId, event.label as string);
+      return "continue";
+    case "progress_heartbeat":
+      opts.onProgressHeartbeat?.(
+        typeof event.stage === "string" ? event.stage : undefined,
+        typeof event.label === "string" ? event.label : undefined
+      );
+      return "continue";
+    case "skill_result":
+      opts.onSkillCompleted?.(event.skill as SkillId, Boolean(event.error), {
+        mermaid: (event.mermaid as string | null) ?? null,
+        evidencePresent: event.evidencePresent as boolean | undefined,
+        evidenceRef: (event.evidenceRef as string | null) ?? null,
+        artifactId: (event.artifactId as string | null) ?? null,
+        digest: (event.digest as string | null) ?? null,
+        edges: (event.edges as Array<Record<string, any>> | null) ?? null,
+        modelSection: (event.modelSection as Record<string, any> | null) ?? null,
+      });
+      return "continue";
+    case "publish_closure":
+      acc.publishClosure = event.data;
+      return "continue";
+    case "complete":
+      if (event.state) {
+        acc.finalState = event.state as V5SessionState;
+        if (acc.publishClosure !== undefined) {
+          (acc.finalState as any).publishClosure = acc.publishClosure;
+        }
+      }
+      opts.onRunSettled?.("complete");
+      return "complete";
+    case "run_cancelled":
+      opts.onRunSettled?.("cancelled");
+      return "abort";
+    case "error":
+      opts.onRunSettled?.("error");
+      return "abort";
+    default:
+      return "continue";
+  }
+}
+
+function finishDriveStream(
+  acc: FactoryStreamAcc,
+  opts: DriveFullStreamOpts
+): { finalState: V5SessionState; stopReason?: string; loops?: any[]; publishClosure?: any } | null {
+  if (!acc.finalState) return null;
+  return {
+    finalState: acc.finalState,
+    stopReason: acc.stopReason,
+    publishClosure: acc.publishClosure,
+    loops: opts.turnId
+      ? [
+          {
+            loopTurnId: opts.turnId,
+            plan: { selected: [], reason: "python_drive_full_stream", expectedArtifacts: [] },
+            committedArtifactIds: [],
+            stopSignal: "drive_full_stream",
+          },
+        ]
+      : [],
+  };
+}
+
 /** POST 发起与 GET 续播共用的 SSE 消费循环（同一事件词表 → 同一 UI）。 */
 async function consumeDriveStreamResponse(
   res: Response,
@@ -365,18 +483,19 @@ async function consumeDriveStreamResponse(
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
-    let finalState: V5SessionState | null = null;
-    let publishClosure: any = undefined;
-    let stopReason = "completed";
+    const acc: FactoryStreamAcc = {
+      finalState: null,
+      publishClosure: undefined,
+      stopReason: "completed",
+    };
 
     outer: while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buf += decoder.decode(value, { stream: true });
 
-      // SSE lines: "data: {...}\n\n"
       const lines = buf.split("\n");
-      buf = lines.pop() ?? "";  // keep incomplete last line
+      buf = lines.pop() ?? "";
 
       for (const line of lines) {
         const trimmed = line.trim();
@@ -387,102 +506,151 @@ async function consumeDriveStreamResponse(
         let event: any;
         try { event = JSON.parse(jsonStr); } catch { continue; }
 
-        // E25：事件携带后端 run id——首见即回调（客户端记续播书签）
         if (!runIdSeen && typeof event.runId === "string" && event.runId) {
           runIdSeen = true;
           opts.onRunId?.(event.runId);
         }
 
-        switch (event.type) {
-          case "reasoning_step":
-            // enrich 阶段 SSE 的 label 是人话、stage 是机器 id
-            // （GitHub Actions name vs id）。有 stage 就传 id，左栏自己翻人话；
-            // 只把人话往下传时，humanReasoningStepLabel 会原样留下。
-            opts.onReasoningStep?.(
-              (typeof event.stage === "string" && event.stage) ||
-                (event.label as string),
-              event.loop as number | undefined
-            );
-            break;
-          case "llm_delta":
-            // LLM 实时内容增量（后端 150ms 批量聚合，带来源标签）。
-            opts.onLlmDelta?.(event.text as string, event.label as string | undefined);
-            break;
-          case "spec_page":
-            // spec-first 第 3 步落地的一页。⚠ html 缺席时不回调——
-            // 少一页比渲染一份空文档强（空文档在右侧是一整块白，
-            // 看起来像"生成坏了"，而实际只是这条事件没带内容）。
-            if (typeof event.html === "string" && event.html) {
-              opts.onSpecPage?.({
-                pageId: String(event.pageId || ""),
-                html: event.html as string,
-                current: Number(event.current) || 0,
-                total: Number(event.total) || 0,
-                bound: event.bound === true,
-                // 老后端不带 device——按桌面兜底，行为与从前逐字一致
-                device: event.device === "phone" ? "phone" : "desktop",
-              });
-            }
-            break;
-          case "skill_start":
-            opts.onSkillActivated?.(event.skill as SkillId, event.label as string);
-            break;
-          case "progress_heartbeat":
-            opts.onProgressHeartbeat?.(
-              typeof event.stage === "string" ? event.stage : undefined,
-              typeof event.label === "string" ? event.label : undefined
-            );
-            break;
-          case "skill_result":
-            opts.onSkillCompleted?.(event.skill as SkillId, Boolean(event.error), {
-              mermaid: (event.mermaid as string | null) ?? null,
-              evidencePresent: event.evidencePresent as boolean | undefined,
-              evidenceRef: (event.evidenceRef as string | null) ?? null,
-              artifactId: (event.artifactId as string | null) ?? null,
-              digest: (event.digest as string | null) ?? null,
-              edges: (event.edges as Array<Record<string, any>> | null) ?? null,
-              modelSection: (event.modelSection as Record<string, any> | null) ?? null,
-            });
-            break;
-          case "publish_closure":
-            publishClosure = event.data;
-            break;
-          case "complete":
-            if (event.state) {
-              finalState = event.state as V5SessionState;
-              if (publishClosure !== undefined) {
-                (finalState as any).publishClosure = publishClosure;
-              }
-            }
-            opts.onRunSettled?.("complete");
-            break outer;
-          case "run_cancelled":
-            // 显式取消（停止按钮 / 孤儿看门狗）——如实按中断收尾
-            opts.onRunSettled?.("cancelled");
-            return null;
-          case "error":
-            opts.onRunSettled?.("error");
-            return null;
-        }
+        const verdict = applyFactoryStreamEvent(event, opts, acc);
+        if (verdict === "complete") break outer;
+        if (verdict === "abort") return null;
       }
     }
 
-    if (!finalState) return null;
-    return {
-      finalState,
-      stopReason,
-      publishClosure,
-      loops: opts.turnId
-        ? [
-            {
-              loopTurnId: opts.turnId,
-              plan: { selected: [], reason: "python_drive_full_stream", expectedArtifacts: [] },
-              committedArtifactIds: [],
-              stopSignal: "drive_full_stream",
-            },
-          ]
-        : [],
+    return finishDriveStream(acc, opts);
+  } catch (err) {
+    if (err instanceof DriveAuthRequiredError) throw err;
+    return null;
+  }
+}
+
+/**
+ * 产品新烧：POST /api/sliderule/control-turn-stream。
+ * 六字段必须带上（installedSkillsDrivePayload / pickedConnectorIds）。
+ * 续播不走这里——续播是 GET /runs/{id}/stream。
+ */
+export async function postControlTurnStream(
+  state: V5SessionState,
+  userText: string,
+  opts: DriveFullStreamOpts = {}
+): Promise<{ finalState: V5SessionState; stopReason?: string; loops?: any[]; publishClosure?: any } | null> {
+  if (typeof fetch !== "function") return null;
+  try {
+    const res = await fetch("/api/sliderule/control-turn-stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      signal: opts.stopSignal,
+      body: JSON.stringify({
+        sessionId: state.sessionId,
+        userText,
+        installedSkills: installedSkillsDrivePayload(),
+        activeConnectors: pickedConnectorIds(loadTurnCapabilities()),
+        preferredDevice: opts.preferredDevice ?? "desktop",
+        designSystemId: opts.designSystemId ?? null,
+        ...(opts.forcedTool ? { forcedTool: opts.forcedTool } : {}),
+        ...(opts.mode ? { mode: opts.mode } : {}),
+      }),
+    });
+    await throwIfAuthRequired(res);
+    if (!res.ok || !res.body) return null;
+    return await consumeControlStreamResponse(res, opts);
+  } catch (err) {
+    if (err instanceof DriveAuthRequiredError) throw err;
+    return null;
+  }
+}
+
+/** 控制面 SSE：先处理 control_*；handoff 之后把剩余事件交给同一份工厂 case。 */
+export async function consumeControlStreamResponse(
+  res: Response,
+  opts: DriveFullStreamOpts
+): Promise<{ finalState: V5SessionState; stopReason?: string; loops?: any[]; publishClosure?: any } | null> {
+  try {
+    if (!res.body) return null;
+    let runIdSeen = false;
+    let handedOff = false;
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    const acc: FactoryStreamAcc = {
+      finalState: null,
+      publishClosure: undefined,
+      stopReason: "completed",
     };
+
+    outer: while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const jsonStr = trimmed.slice(5).trim();
+        if (!jsonStr) continue;
+        let event: any;
+        try { event = JSON.parse(jsonStr); } catch { continue; }
+
+        if (!runIdSeen && typeof event.runId === "string" && event.runId) {
+          runIdSeen = true;
+          opts.onRunId?.(event.runId);
+        }
+
+        if (!handedOff) {
+          switch (event.type) {
+            case "control_text":
+              opts.onControlText?.(String(event.text || ""));
+              continue;
+            case "control_tool_start":
+              opts.onControlToolStart?.(String(event.tool || ""));
+              continue;
+            case "control_tool_result":
+              opts.onControlToolResult?.(event);
+              continue;
+            case "control_ask_user":
+              opts.onControlAskUser?.({
+                question: String(event.question || ""),
+                options: Array.isArray(event.options)
+                  ? event.options.map((x: unknown) => String(x))
+                  : [],
+              });
+              continue;
+            case "control_scope_card":
+              opts.onControlScopeCard?.({
+                restatement: String(event.restatement || ""),
+                device: event.device,
+                variant: event.variant,
+                userText: event.userText,
+              });
+              continue;
+            case "control_handoff_factory":
+              handedOff = true;
+              if (typeof event.runId === "string" && event.runId) {
+                runIdSeen = true;
+                opts.onRunId?.(event.runId);
+              }
+              continue;
+            case "complete":
+              if (event.state) {
+                acc.finalState = event.state as V5SessionState;
+              }
+              opts.onRunSettled?.("complete");
+              break outer;
+            default:
+              break;
+          }
+        }
+
+        const verdict = applyFactoryStreamEvent(event, opts, acc);
+        if (verdict === "complete") break outer;
+        if (verdict === "abort") return null;
+      }
+    }
+
+    return finishDriveStream(acc, opts);
   } catch (err) {
     if (err instanceof DriveAuthRequiredError) throw err;
     return null;

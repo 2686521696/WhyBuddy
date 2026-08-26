@@ -156,9 +156,10 @@ export function isComposerSendBlocked(opts: {
   isRefining?: boolean;
   /** 范围卡停泊时发送只能走确认/先改范围，Enter 不得另 park 一发。 */
   scopeCardOpen?: boolean;
+  askOpen?: boolean;
 }): boolean {
   if (opts.isRunning) return false;
-  if (opts.scopeCardOpen) return true;
+  if (opts.scopeCardOpen || opts.askOpen) return true;
   if (opts.isJudging || opts.isRefining) return true;
   if (isAttachmentExtractPending(opts.attachments)) return true;
   return !opts.input.trim() && opts.attachments.length === 0;
@@ -338,8 +339,11 @@ export function ComposerDock({
   hintChips = [],
   statusPill = null,
   pendingScope = null,
+  pendingAsk = null,
   onConfirmScope,
   onReviseScope,
+  onAnswerAsk,
+  onDismissAsk,
 }: {
   input: string;
   setInput: (v: string) => void;
@@ -347,10 +351,13 @@ export function ComposerDock({
   sendMessage: (textOverride?: string) => void;
   isRunning: boolean;
   goal: string;
-  /** PR-3 范围卡。确认走 confirmScopeCardAndDriveFull（PR-4-delete）。 */
+  /** 控制面范围卡。确认走 confirmControlScope → forcedTool rehearse。 */
   pendingScope?: ScopeCardPending | null;
+  pendingAsk?: { question: string; options?: string[] } | null;
   onConfirmScope?: (opts: { includeEvidence: boolean }) => void;
   onReviseScope?: () => void;
+  onAnswerAsk?: (text: string) => void;
+  onDismissAsk?: () => void;
 
   /** 会话里是否已经有一个成形的应用（由五系统模型判定，见 SlideRule.tsx）。
    *  入站判定按这个切规则域：没应用时首轮描述算 real，有应用时算 iteration。 */
@@ -612,6 +619,7 @@ export function ComposerDock({
         isJudging,
         isRefining,
         scopeCardOpen: Boolean(pendingScope),
+        askOpen: Boolean(pendingAsk),
       })
     )
       return;
@@ -647,6 +655,7 @@ export function ComposerDock({
     isRefining,
     device,
     pendingScope,
+    pendingAsk,
   ]);
 
   // 已安装技能（+ 菜单就地勾选哪些注入推演）；打开 skills 视图时重读
@@ -1021,6 +1030,7 @@ export function ComposerDock({
     isJudging,
     isRefining,
     scopeCardOpen: Boolean(pendingScope),
+    askOpen: Boolean(pendingAsk),
   });
 
   const actionHints = hintChips.slice(0, statusPill ? 1 : 2);
@@ -1658,7 +1668,7 @@ export function ComposerDock({
                     picked.length > 0 ? "输入你的任务" : placeholderText
                   }
                   rows={1}
-                  disabled={isRunning || Boolean(pendingScope)}
+                  disabled={isRunning || Boolean(pendingScope) || Boolean(pendingAsk)}
                   className={`block max-h-40 w-full resize-none bg-transparent py-0 text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60 ${
                     hero
                       ? "min-h-[72px] px-0.5 text-[15px] leading-6"
@@ -1711,6 +1721,40 @@ export function ComposerDock({
               onConfirm={onConfirmScope}
               onRevise={onReviseScope}
             />
+          ) : pendingAsk ? (
+            <div
+              className="pointer-events-auto absolute bottom-full left-0 right-0 z-10 mb-2 origin-bottom sr-composer-pop rounded-[12px] border border-[#e5e7eb] bg-white px-3.5 py-3 text-[13px] leading-5 text-[#171717] shadow-[0_12px_32px_rgb(15_23_42/0.12)]"
+              data-testid="sliderule-control-ask"
+              role="dialog"
+              aria-label="控制面提问"
+            >
+              <p data-testid="sliderule-control-ask-question">
+                {pendingAsk.question}
+              </p>
+              {(pendingAsk.options || []).length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {pendingAsk.options!.map(option => (
+                    <button
+                      key={option}
+                      type="button"
+                      className="rounded-[8px] border border-[#e5e7eb] bg-[#fafafa] px-3 py-1.5 text-[13px] leading-5 text-[#171717] transition hover:bg-white"
+                      onClick={() => onAnswerAsk?.(option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {onDismissAsk ? (
+                <button
+                  type="button"
+                  className="mt-2 text-[12px] leading-4 text-[#71717a]"
+                  onClick={onDismissAsk}
+                >
+                  稍后再说
+                </button>
+              ) : null}
+            </div>
           ) : intakeHintYieldsToScopeCard(Boolean(pendingScope)) ? (
             <IntakeHintBar
               judgement={judgement}

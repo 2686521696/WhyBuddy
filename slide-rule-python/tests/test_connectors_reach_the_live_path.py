@@ -112,22 +112,30 @@ def _src(rel: str) -> str:
 
 
 def test_同步和流式两条驱动都设置了也都清空了():
-    """⚠ 仓里第四条。流式才是前端主路径，只改同步等于没改。"""
-    src = _src("slide-rule-python/routes/sliderule_full.py")
-    assert src.count("set_active_connectors(payload.get(\"activeConnectors\"))") == 2, (
-        "两条驱动里没有各设置一次"
+    """⚠ 仓里第四条。流式才是前端主路径，只改同步等于没改。
+
+    流式信封抽到 drive_full_factory：同步入口仍在 sliderule_full 设/清，
+    流式入口在 helper 用命名字段设/清。删 helper 调用点这条必须红。
+    """
+    routes = _src("slide-rule-python/routes/sliderule_full.py")
+    helper = _src("slide-rule-python/services/drive_full_factory.py")
+    assert 'set_active_connectors(payload.get("activeConnectors"))' in routes, (
+        "同步入口没设连接器"
     )
-    assert src.count("set_active_connectors(None)") == 2, "两条驱动里没有各清空一次"
-    # 反面：设置和清空的次数必须跟技能那条一致——技能那条是已经证明通电的
-    assert src.count("set_installed_skills(None)") == src.count(
+    assert "set_active_connectors(active_connectors)" in helper, "信封 helper 没设连接器"
+    assert routes.count("set_active_connectors(None)") >= 1
+    assert helper.count("set_active_connectors(None)") >= 1
+    assert "start_drive_full_factory_run" in routes
+    assert helper.count("set_installed_skills(None)") == helper.count(
         "set_active_connectors(None)"
     )
 
 
 def test_前端两处载荷都带上了连接器():
     src = _src("client/src/lib/sliderule-marathon-driver.ts")
-    assert src.count("activeConnectors:") == 2, "同步/流式两处载荷没都带上"
-    assert src.count("installedSkills: installedSkillsDrivePayload()") == 2
+    assert src.count("installedSkills: installedSkillsDrivePayload()") >= 2
+    assert src.count("pickedConnectorIds(loadTurnCapabilities())") >= 2
+    assert "postControlTurnStream" in src
 
 
 def test_载荷带的是_id_不是整份描述():

@@ -94,13 +94,14 @@ def test_认不出的_id_回落默认_不抛错():
 
 def test_路由两个入口都设了也都清了():
     """同步驱动 / 流式驱动是本仓的经典成对物——流式是前端主路径，
-    只改同步等于没改。这里直接数源码里的调用点。"""
+    只改同步等于没改。流式信封在 helper 里设/清。"""
     from pathlib import Path
 
-    src = Path(__file__).resolve().parents[1] / "routes" / "sliderule_full.py"
-    text = src.read_text(encoding="utf-8")
-    assert text.count("set_design_system_override(\n") >= 2 or text.count(
-        "set_design_system_override("
-    ) >= 4
-    # 设了必须清：清空调用点数量要和设置点对得上
-    assert text.count("set_design_system_override(None)") == 2
+    root = Path(__file__).resolve().parents[1]
+    routes = (root / "routes" / "sliderule_full.py").read_text(encoding="utf-8")
+    helper = (root / "services" / "drive_full_factory.py").read_text(encoding="utf-8")
+    assert "set_design_system_override(" in routes
+    assert routes.count("set_design_system_override(None)") >= 1
+    assert "set_design_system_override(design_system_id)" in helper
+    assert helper.count("set_design_system_override(None)") >= 1
+    assert "start_drive_full_factory_run" in routes

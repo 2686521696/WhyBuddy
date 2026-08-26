@@ -31,16 +31,19 @@ def test_spec_first_is_still_the_live_generator():
 
 def test_sync_and_stream_routes_both_bind_the_override():
     from routes import sliderule_full as r
+    from services import drive_full_factory as f
 
     code = _code(r)
+    helper = _code(f)
     sync_at = code.index("def drive_full(")
     stream_at = code.index("def drive_full_stream(")
     sync = code[sync_at:stream_at]
     stream = code[stream_at : stream_at + 3500]
     assert "set_preferred_device_override" in sync
-    assert "set_preferred_device_override" in stream
+    assert "start_drive_full_factory_run" in stream
+    assert "set_preferred_device_override" in helper
+    assert "preferred_device" in helper
     assert "preferredDevice" in sync
-    assert "preferredDevice" in stream
 
 
 def test_override_reaches_spec_first_device_resolution(monkeypatch):

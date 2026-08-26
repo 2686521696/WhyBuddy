@@ -66,11 +66,25 @@ import {
   resolveChallengeSend,
 } from "./challenge-composer";
 import {
-  interceptRehearsalRequest,
-  SCOPE_CARD_DRIVE_FULL_BYPASS,
   type ScopeCardDevice,
   type ScopeCardPending,
 } from "./scope-card-gate";
+
+/** 昂贵按钮的 forcedTool。/推演 不得在客户端带 rehearse——未确认卡由服务端 park。 */
+export function inferForcedTool(
+  userText: string,
+  intervention?: UserIntervention,
+  mode?: "repair",
+  explicit?: string
+): string | undefined {
+  if (explicit) return explicit;
+  if (mode === "repair") return "repair";
+  if (intervention?.intent === "challenge") return "challenge";
+  const t = (userText || "").trim();
+  if (t.startsWith("/精修")) return "refine";
+  if (t.startsWith("/质疑")) return "challenge";
+  return undefined;
+}
 
 // 105 Python full-path: product /agent-loop/sliderule + /sliderule use this hook + http store.
 // Sessions: Node thin-compat proxy. Turns/evidence/report: delegated to slide-rule-python (python-rag provenance).
@@ -320,6 +334,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   );
   const pendingScopeRef = useRef<ScopeCardPending | null>(null);
   pendingScopeRef.current = pendingScope;
+  const [pendingAsk, setPendingAsk] = useState<{
+    question: string;
+    options?: string[];
+  } | null>(null);
 
   const clearPendingScope = () => {
     pendingScopeRef.current = null;
@@ -561,6 +579,20 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         // 不在这里灌回去，左栏就只剩首轮结论（2026-08-18 烘焙店真机）。
         const restored = deriveTurnsFromState(hydrated);
         if (restored.length > 0) setUiTurns(restored);
+        if (hydrated.awaitReason === "control_scope" && hydrated.awaitDetail) {
+          const parked: ScopeCardPending = {
+            userText: hydrated.awaitDetail,
+            restatement: hydrated.awaitDetail,
+            variant: hydrated.goal?.text?.trim() ? "thin" : "full",
+            device: (loadPreferredDevice() as ScopeCardDevice) || "unspecified",
+            includeEvidence: false,
+          };
+          pendingScopeRef.current = parked;
+          setPendingScope(parked);
+        }
+        if (hydrated.awaitReason === "control_ask" && hydrated.awaitDetail) {
+          setPendingAsk({ question: hydrated.awaitDetail });
+        }
         // 演示预填：空会话（未推演过）时输入框直接放好项目意图，
         // 访客只需点「发送」即可看全程推演（模板回放）。
         if (
@@ -607,7 +639,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     // E25 续播：附着到既有后台 run（刷新/断线后自动接回），不重新发起推演
     resumeRun?: { runId: string },
     // E26 缺口修复轮：只重跑覆盖门标红的能力，已 PASS 产物原样复用
-    mode?: "repair"
+    mode?: "repair",
+    forcedTool?: string
   ) => {
     if (!userText.trim()) return;
 
@@ -708,15 +741,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       const goalStatusBefore = workingState.goal?.status;
       const staleArtifactIdsBefore = [...(workingState.staleArtifactIds || [])];
 
-      // E25 续播：不重复 intake——该轮 intake 已在原发起时完成并落库，
-      // 以持久化状态原样为起点，事件补播负责重建本轮 UI。
-      const preparedState = resumeRun
-        ? workingState
-        : SlideRuleRuntime.intakeMessage(workingState, {
-            turnId,
-            userText: userText.trim(),
-            intervention,
-          }).preparedState;
+      // M1：cheap 回合禁止把问候/inspect/search 写进 conversation。
+      // 控制面 POST 以已持久化会话为权威起点；质疑失效在 Python 做。
+      // 续播同样不 intake。
+      const preparedState = workingState;
 
       const activeGoalText =
         preparedState.goal?.text?.trim() || userText.trim();
@@ -914,7 +942,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           };
           usedMarathonDriver = true;
         } else {
-          const { classifyDriveFullStatus, driveFullViaPythonStream } =
+          const { classifyDriveFullStatus, postControlTurnStream } =
             await import("@/lib/sliderule-marathon-driver");
           setDriveFullStatus("loading");
           // PYTHON_AUTHORITY: /drive-full-stream 以已持久化会话为权威起点（防伪造，
@@ -1069,7 +1097,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           const driveStream = IS_GITHUB_PAGES
             ? (await import("./github-pages-demo-playback"))
                 .driveGithubPagesDemoPlayback
-            : driveFullViaPythonStream;
+            : postControlTurnStream;
           // E25：发起与续播共用同一组回调——同一事件词表喂同一 UI
           const resolvedSid =
             preparedState.sessionId || sessionState.sessionId || sessionId;
@@ -1226,12 +1254,47 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               onProgressHeartbeat: (stage) => {
                 if (stage) applyRehearsalEvent(stage);
               },
+              onControlText: text => {
+                if (!text.trim()) return;
+                appendStreamStep(text);
+              },
+              onControlAskUser: event => {
+                setPendingAsk({
+                  question: event.question,
+                  options: event.options,
+                });
+              },
+              onControlScopeCard: event => {
+                const next: ScopeCardPending = {
+                  userText: String(event.userText || userText.trim()),
+                  restatement: String(event.restatement || userText.trim()),
+                  variant: event.variant === "thin" ? "thin" : "full",
+                  device:
+                    event.device === "phone"
+                      ? "phone"
+                      : event.device === "desktop"
+                        ? "desktop"
+                        : "unspecified",
+                  includeEvidence: false,
+                };
+                pendingScopeRef.current = next;
+                setPendingScope(next);
+              },
           } satisfies import("@/lib/sliderule-marathon-driver").DriveFullStreamOpts;
+          // 续播只 GET /runs/{id}/stream，禁止 POST control-turn-stream。
           const pythonDrive = resumeRun
             ? await (
                 await import("@/lib/sliderule-marathon-driver")
               ).resumeDriveFullStream(resumeRun.runId, streamOpts)
-            : await driveStream(preparedState, userText.trim(), streamOpts);
+            : await driveStream(preparedState, userText.trim(), {
+                ...streamOpts,
+                forcedTool: inferForcedTool(
+                  userText,
+                  intervention,
+                  mode,
+                  forcedTool
+                ),
+              });
           // 流断了但 run 未终局（网络抖动/代理超时，非本地停止）：
           // 绝不能落进本地引擎兜底——那会把整轮在前端重跑一遍，与后台
           // run 双开。如实报中断，书签还在，刷新可再次自动接回。
@@ -1279,17 +1342,17 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             });
           }
           setDriveFullStatus(classifyDriveFullStatus(pythonDrive));
-          drive = pythonDrive
-            ? {
-                finalState: pythonDrive.finalState,
-                stopReason: pythonDrive.stopReason || "completed",
-                loops: pythonDrive.loops || [],
-                publishClosure: pythonDrive.publishClosure,
-              }
-            : await SlideRuleRuntime.driveReasoningSession(
-                preparedState,
-                driveOpts as any
-              );
+          if (!pythonDrive) {
+            throw new Error(
+              controller.signal.aborted ? "已停止" : "控制面未返回结果"
+            );
+          }
+          drive = {
+            finalState: pythonDrive.finalState,
+            stopReason: pythonDrive.stopReason || "completed",
+            loops: pythonDrive.loops || [],
+            publishClosure: pythonDrive.publishClosure,
+          };
           usedMarathonDriver = false;
         }
       } catch (driveErr: any) {
@@ -1691,7 +1754,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   /**
    * 点火闸。所有产品入口（sendMessage / resend / repair / challenge /
    * 澄清答卡 / 续播）都走这里，而不是 ComposerDock.doSend。
-   * 需要卡的意图 park pendingScope 后 return——确认前零 POST。
+   * 新烧一律 POST /control-turn-stream；未确认范围由服务端 park。
    */
   const requestRehearsal = async (
     userText: string,
@@ -1699,34 +1762,18 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     resumeRun?: { runId: string },
     mode?: "repair"
   ) => {
-    const call = { userText, intervention, resumeRun, mode };
-    const device = loadPreferredDevice() as ScopeCardDevice;
-    await interceptRehearsalRequest(
-      call,
-      { hasExistingGoal: Boolean(goal), device },
-      async () => {
-        // skip 驱动也必须撕掉未确认的卡，不能让它叠在 repair/challenge 上。
-        clearPendingScope();
-        await runTurn(userText, intervention, resumeRun, mode);
-      },
-      next => {
-        // 整份替换：上一张未确认的卡不能劫持后一句意图。
-        pendingScopeRef.current = next;
-        setPendingScope(next);
-      }
-    );
+    clearPendingScope();
+    setPendingAsk(null);
+    await runTurn(userText, intervention, resumeRun, mode);
   };
 
   /**
-   * ⚠ PR-4-delete: confirmScopeCardAndDriveFull
-   * 范围卡确认后走今天的 runTurn → POST /drive-full-stream 信封。
-   * PR-4 落地必须删掉这个旁路（或藏进默认关的测试 flag），改 POST
-   * /control-turn-stream + forcedTool: "rehearse"。
+   * 「开始推演」：六字段 + forcedTool rehearse + 复述句当 userText。
+   * includeEvidence 停在 snapshot 上；不得 POST factoryProfile。
    */
-  const confirmScopeCardAndDriveFull = async (opts?: {
+  const confirmControlScope = async (opts?: {
     includeEvidence: boolean;
   }) => {
-    void SCOPE_CARD_DRIVE_FULL_BYPASS;
     const pending = pendingScopeRef.current;
     if (!pending || isRunning) return;
     const snapshot: ScopeCardPending = {
@@ -1734,13 +1781,13 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       includeEvidence: opts?.includeEvidence ?? pending.includeEvidence,
     };
     clearPendingScope();
-    // includeEvidence 停在 snapshot 上给 PR-4 读；本 PR 不得 POST factoryProfile。
     void snapshot.includeEvidence;
     await runTurn(
-      snapshot.userText,
+      snapshot.restatement || snapshot.userText,
       snapshot.intervention as UserIntervention | undefined,
       undefined,
-      snapshot.mode
+      snapshot.mode,
+      "rehearse"
     );
   };
 
@@ -2194,8 +2241,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     runTurn: requestRehearsal,
     requestRehearsal,
     pendingScope,
-    confirmScopeCardAndDriveFull,
+    pendingAsk,
+    confirmControlScope,
     dismissScopeCard,
+    dismissAsk: () => setPendingAsk(null),
     challengeTurn,
     resetSession,
     toggleRouteExpanded,

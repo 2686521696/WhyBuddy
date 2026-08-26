@@ -28,7 +28,9 @@ export type AwaitReason =
   | "max_repeat_guard"
   | "no_progress"
   | "closure_blocked"
-  | "closure_missing";
+  | "closure_missing"
+  | "control_ask"
+  | "control_scope";
 
 export interface Artifact {
   id: string;
@@ -129,6 +131,15 @@ export interface V5SessionState {
   graph: BrainstormReasoningGraph; // capability invocation graph (strict)
   artifacts: Artifact[];
   conversation: Array<{ id: string; role: string; text: string; timestamp?: string }>;
+  /** M1 控制面停泊记录。cheap 回合只写这里。老会话缺字段读成 []。 */
+  controlTranscript?: Array<{
+    id?: string;
+    role: string;
+    text?: string;
+    kind?: string;
+    timestamp?: string;
+    [key: string]: unknown;
+  }>;
   openQuestions: Array<{ id: string; text: string }>;
   evidence: any[];
   decisions: any[];

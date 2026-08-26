@@ -990,8 +990,10 @@ function SlideRuleUnified({
   sessionState,
   sendMessage,
   pendingScope = null,
-  confirmScopeCardAndDriveFull,
+  pendingAsk = null,
+  confirmControlScope,
   dismissScopeCard,
+  dismissAsk,
   challengeTurn: _challengeTurn,
   restoreModelVersion,
   isRestoringVersion,
@@ -1034,10 +1036,12 @@ function SlideRuleUnified({
   isRunning: boolean;
   liveAction: LiveAction | null;
   sessionState: ReturnType<typeof useSlideRuleSession>["sessionState"];
-  sendMessage: () => void;
+  sendMessage: (textOverride?: string) => void;
   pendingScope?: import("./sliderule/scope-card-gate").ScopeCardPending | null;
-  confirmScopeCardAndDriveFull?: (opts?: { includeEvidence: boolean }) => void;
+  pendingAsk?: { question: string; options?: string[] } | null;
+  confirmControlScope?: (opts?: { includeEvidence: boolean }) => void;
   dismissScopeCard?: () => void;
+  dismissAsk?: () => void;
   challengeTurn: (id: string) => void;
   restoreModelVersion: (versionId: string) => void;
   isRestoringVersion: boolean;
@@ -1234,8 +1238,11 @@ function SlideRuleUnified({
                         stop={stop}
                         hero={isHomeEmpty}
                         pendingScope={pendingScope}
-                        onConfirmScope={confirmScopeCardAndDriveFull}
+                        pendingAsk={pendingAsk}
+                        onConfirmScope={confirmControlScope}
                         onReviseScope={dismissScopeCard}
+                        onDismissAsk={dismissAsk}
+                        onAnswerAsk={text => sendMessage(text)}
                       />
                     }
                     clarifySlot={
@@ -1775,8 +1782,10 @@ function SlideRuleSessionBody({
     executorMode,
     sendMessage,
     pendingScope,
-    confirmScopeCardAndDriveFull,
+    pendingAsk,
+    confirmControlScope,
     dismissScopeCard,
+    dismissAsk,
     repairGaps,
     restoreModelVersion,
     isRestoringVersion,
@@ -2224,8 +2233,10 @@ function SlideRuleSessionBody({
     sessionState,
     sendMessage,
     pendingScope,
-    confirmScopeCardAndDriveFull,
+    pendingAsk,
+    confirmControlScope,
     dismissScopeCard,
+    dismissAsk,
     restoreModelVersion,
     isRestoringVersion,
     challengeTurn,

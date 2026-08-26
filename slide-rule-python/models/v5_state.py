@@ -21,6 +21,8 @@ AwaitReason = Literal[
     "no_progress",
     "closure_blocked",
     "closure_missing",
+    "control_ask",
+    "control_scope",
 ]
 
 
@@ -346,6 +348,9 @@ class V5SessionState(BaseModel):
     staleArtifactIds: List[str] = []
     supersededArtifactIds: List[str] = Field(default_factory=list)
     conversation: List[Dict[str, Any]] = []
+    # M1 控制面停泊记录。cheap 回合只写这里，禁止把问候/inspect/search 追加进
+    # conversation。老会话缺这个字段时读成 []。FORBIDDEN 复用 ready / user_input / confirm。
+    controlTranscript: List[Dict[str, Any]] = Field(default_factory=list)
     # TS core fields for this task (PYTHON_AUTHORITY):
     openQuestions: List[Dict[str, Any]] = Field(default_factory=list)
     evidence: List[Dict[str, Any]] = Field(default_factory=list)

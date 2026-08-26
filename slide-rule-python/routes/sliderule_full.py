@@ -26,7 +26,7 @@ from services import app_access
 from services.slide_rule_session import create_session, delete_session, load_session, save_session, drive_reasoning_turn, pick_next_capabilities
 from services.persistence import PersistClosedError, load_all
 from services.slide_rule_marathon import drive_marathon
-from services.v5_full_driver import drive_full_v5_session, drive_full_v5_session_stream, transient_blocked_signal, _result_to_dict
+from services.v5_full_driver import drive_full_v5_session, _result_to_dict
 from services.v5_publish_closure_response import derive_publish_closure_response
 from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
 from services.sliderule_session_sanitizer import sanitize_session_dict, sanitize_session_state
@@ -1260,20 +1260,8 @@ async def drive_full_stream(
     _auth(x_internal_key)
 
     raw_state, _ = sanitize_session_dict(payload.get("state") or {})
-    # PYTHON_AUTHORITY: 同 /drive-full——已持久化会话为权威起点（防伪造清洗会剥掉
-    # 客户端 state 的 trust/producedBy/台账，以其起步会清零全部可信进度）。
+    # PYTHON_AUTHORITY persist-as-authority 在信封 helper 里 load_session。
     sid = str(raw_state.get("sessionId") or payload.get("sessionId") or "")
-    persisted = await asyncio.to_thread(load_session, sid) if sid else None
-    if persisted is not None:
-        state = persisted
-    else:
-        try:
-            state = _adopt_owner(V5SessionState(**raw_state), viewer)
-        except (ValidationError, TypeError, ValueError) as e:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "invalid_state", "message": str(e).splitlines()[0]},
-            )
 
     max_loops = int(payload.get("max_loops", 10))
     user_text = sanitize_session_dict(
@@ -1283,69 +1271,55 @@ async def drive_full_stream(
     # pick_repair_capabilities），已 PASS 产物与五系统模型原样复用。
     repair = str(payload.get("mode") or "").strip().lower() == "repair"
 
-    # 技能库六期"推演注入"：已安装技能进生成契约（生成器全程生效，结束必清空）
-    from services.v5_llm_generate import set_active_connectors, set_installed_skills
+    # 脚本方言：同一份信封 helper（命名字段，不再在这里解析两套 payload）。
+    # 产品新烧走 POST /control-turn-stream；本路由保留给脚本/测试。
+    from services.drive_full_factory import start_drive_full_factory_run
 
-    installed_skills = payload.get("installedSkills")
-    from services import run_registry
-
-    # E25 推演断线重生：引擎跑在后台 run 里（与本连接解耦），事件进带
-    # 序号的日志；本响应只是 run 的一个订阅者——断连不再杀推演，刷新后
-    # 经 GET /runs/{id}/stream 续播。落库在 run 任务内完成（无人观看时
-    # 跑完也要落库）。同会话已有活跃 run 时附着既有 run（防重复发起）。
-    async def stream_factory():
-        set_installed_skills(installed_skills)
-        set_active_connectors(payload.get("activeConnectors"))
-        from services.device_policy import set_preferred_device_override
-
-        set_preferred_device_override(
-            payload.get("preferredDevice") or payload.get("preferred_device")
-        )
-        from services.identity_palette_hint import set_design_system_override
-
-        set_design_system_override(
-            payload.get("designSystemId") or payload.get("design_system_id")
-        )
-        try:
-            async for event in drive_full_v5_session_stream(
-                state, max_loops=max_loops, user_instruction=user_text, repair=repair
-            ):
-                # E26 自动补救恰好一次：全量轮闭环被「瞬时故障」（超时/连接类）
-                # 拦截时，扣下 complete、同一条流上追加一个修复轮，修完再落定。
-                # 结果不相关等非瞬时拦截不自动重试——如实 blocked，把「补齐
-                # 缺口」按钮留给用户（有界，不烧钱）。
-                if (
-                    event.get("type") == "complete"
-                    and not repair
-                    and transient_blocked_signal(state)
-                ):
-                    async for repair_event in drive_full_v5_session_stream(
-                        state, max_loops=2, user_instruction=user_text, repair=True
-                    ):
-                        yield repair_event
-                    return
-                yield event
-        finally:
-            set_installed_skills(None)
-            set_active_connectors(None)
-            set_preferred_device_override(None)
-            set_design_system_override(None)
-
-    async def on_complete(event: Dict[str, Any]) -> Dict[str, Any]:
-        if isinstance(event.get("state"), dict):
-            final_state = V5SessionState.server_load(event["state"])
-            final_state, _ = sanitize_session_state(final_state)
-            final_state = await asyncio.to_thread(save_session, final_state)
-            return {**event, "state": final_state.model_dump()}
-        return event
-
-    run = await run_registry.start_run(
-        sid or f"anon-{id(state)}",
-        stream_factory,
-        on_complete,
-        user_text=user_text,
+    run = await start_drive_full_factory_run(
+        sid,
+        user_text,
+        payload.get("installedSkills"),
+        payload.get("activeConnectors"),
+        payload.get("preferredDevice") or payload.get("preferred_device"),
+        payload.get("designSystemId") or payload.get("design_system_id"),
+        repair=repair,
+        profile="full",
+        max_loops=max_loops,
+        require_session_id=False,
+        fallback_state=raw_state,
+        viewer=viewer,
     )
     return _run_sse_response(run, since=0)
+
+
+@router.post("/control-turn-stream")
+async def control_turn_stream(
+    payload: Dict[str, Any],
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """M1 薄控制面。产品新烧唯一点火 HTTP。无 Node twin（catch-all 转发）。"""
+    import json
+
+    _auth(x_internal_key)
+    _require_login(viewer)
+    from services.rehearsal_control import run_control_turn, validate_control_turn_body
+
+    validate_control_turn_body(payload)
+
+    async def event_generator():
+        async for event in run_control_turn(payload):
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 def _run_sse_response(run, since: int) -> StreamingResponse:
