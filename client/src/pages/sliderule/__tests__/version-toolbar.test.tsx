@@ -99,7 +99,11 @@ describe("版本条变体语言", () => {
       session.indexOf("const forkVariant = async"),
       session.indexOf("const notifyRestoreFailure")
     );
+    expect(forkFn).toContain("postControlTurnStream");
     expect(forkFn).toContain('forcedTool: "fork_variant"');
+    expect(forkFn).toContain("onControlToolResult");
+    expect(forkFn).toContain("notifyRestoreFailure");
+    expect(forkFn).toMatch(/versionId|finalState|modelVersions/);
     expect(forkFn).not.toContain("Fork 应用");
   });
 });

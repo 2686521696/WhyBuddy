@@ -147,6 +147,19 @@ def test_prompt_块真的进了_build_user_content():
     assert "temp_max" in content
 
 
+def test_fx_进_spec_first_prompt():
+    """spec-first 才是默认生成器。只接 GEN5 _build_user_content 等于没接。"""
+    from services.spec_tree import build_spec_prompt
+
+    set_active_connectors(["fx"])
+    user = build_spec_prompt("做一个汇率看板")[-1]["content"]
+    assert "fx_rate" in user
+    spec = _src("slide-rule-python/services/spec_tree.py")
+    build = spec[spec.index("def build_spec_prompt") : spec.index("def generate_spec_tree")]
+    assert "connector_prompt_block()" in build
+    assert "parts.append(connectors)" in build
+
+
 def test_清空之后_prompt_里不许还留着上一轮的连接器():
     """请求域隔离：A 挂了天气，B 没挂，B 的 prompt 里不许出现天气。"""
     set_active_connectors(["weather"])

@@ -42,9 +42,12 @@ set_refine_context）；FORBIDDEN 把 v5_capability_executor 当入口 import。
 
 from __future__ import annotations
 
+import copy
 import json
 import time
 import uuid
+from contextvars import ContextVar
+from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from fastapi import HTTPException
@@ -70,6 +73,13 @@ CONTROL_SIX_FIELDS = (
     "activeConnectors",
     "preferredDevice",
     "designSystemId",
+)
+
+# 控制面本回合信封。_handoff_factory 在 persist-as-authority 之后再读，
+# 把 reuse_charter / product_charter 交给工厂命名字段——asyncio.create_task
+# 复制 ContextVar 救不了「脚本直打 /drive-full-stream」那条。
+_CONTROL_PAYLOAD: ContextVar[Dict[str, Any]] = ContextVar(
+    "sliderule_control_payload", default={}
 )
 
 CLOSED_TOOLS = (
@@ -510,6 +520,8 @@ async def _park_scope(
         "device": device,
         "variant": variant,
         "userText": user_text or restatement,
+        # 前端 localStorage 未写时用账户/会话旗hydrate「下一场沿用」。
+        "charterReuseNext": bool(getattr(state, "charterReuseNext", False)),
     }
     yield _complete(state)
 
@@ -574,7 +586,9 @@ async def _handoff_factory(
 ) -> AsyncIterator[Dict[str, Any]]:
     """唯一点火插座。rehearse/refine/repair 必须走这里，禁止裸生成器。"""
     from services import run_registry
+    from services.product_charter import factory_charter_kwargs
 
+    charter_kw = factory_charter_kwargs(_CONTROL_PAYLOAD.get())
     run = await start_drive_full_factory_run(
         state.sessionId,
         user_text,
@@ -586,6 +600,7 @@ async def _handoff_factory(
         profile=profile,  # type: ignore[arg-type]
         max_loops=max_loops,
         require_session_id=True,
+        **charter_kw,
     )
     yield {
         "type": "control_handoff_factory",
@@ -696,26 +711,57 @@ async def _tool_restore(state: V5SessionState, version_id: str) -> Dict[str, Any
 
 
 async def _tool_fork(state: V5SessionState, new_name: str) -> Dict[str, Any]:
-    try:
-        from services import app_store
+    """在本会话 modelVersions 时间线上分一条变体。
 
-        source_id = None
-        identity = None
-        closure = getattr(state, "publishClosure", None) or {}
-        if isinstance(closure, dict):
-            identity = (closure.get("appIdentity") or {}).get("appId")
-        source_id = identity or getattr(state, "sessionId", None)
-        new_id = app_store.fork_app(
-            str(source_id or ""),
-            new_name=new_name or None,
-            session_id=state.sessionId,
-        )
+    ⚠ 不能调 fork_app(..., session_id=state.sessionId)：画廊副本会粘在源
+    会话上——点开副本却进了源会话。版本条坐在 modelVersions 上，用户要
+    看到的是 变体 n+1，不是画廊里多一张同会话卡片。失败必须 ok:false。
+    """
+    try:
+        versions = [
+            item
+            for item in (getattr(state, "modelVersions", None) or [])
+            if isinstance(item, dict)
+        ]
+        current_id = str(getattr(state, "currentModelVersionId", "") or "")
+        source = None
+        if current_id:
+            for item in versions:
+                if str(item.get("id") or "") == current_id:
+                    source = item
+                    break
+        if source is None and versions:
+            source = versions[-1]
+        if not isinstance(source, dict) or not source:
+            return {"ok": False, "error": "没有可分的模型版本"}
+        max_seq = 0
+        for item in versions:
+            vid = str(item.get("id") or "")
+            if vid.startswith("mv-"):
+                try:
+                    max_seq = max(max_seq, int(vid[3:]))
+                except ValueError:
+                    pass
+        new_id = f"mv-{max_seq + 1}"
+        clone = copy.deepcopy(source)
+        clone["id"] = new_id
+        clone["instruction"] = str(new_name or "变体")[:300]
+        clone["createdAt"] = datetime.now(timezone.utc).isoformat()
+        clone["turnId"] = str(getattr(state, "lastTurnId", "") or "")
+        versions.append(clone)
+        state.modelVersions = versions[-20:]
+        state.currentModelVersionId = new_id
         _append_transcript(
             state,
-            {"role": "tool", "kind": "fork_variant", "text": new_name, "appId": new_id},
+            {
+                "role": "tool",
+                "kind": "fork_variant",
+                "text": clone["instruction"],
+                "versionId": new_id,
+            },
         )
-        return {"ok": bool(new_id), "appId": new_id}
-    except Exception as exc:  # noqa: BLE001
+        return {"ok": True, "versionId": new_id}
+    except Exception as exc:  # noqa: BLE001 — 增强类 fail-open
         return {"ok": False, "error": str(exc)[:200]}
 
 
@@ -772,12 +818,14 @@ async def run_control_turn(
 
     from services.product_charter import activate_charter_for_run, clear_charter_for_run
 
+    token = _CONTROL_PAYLOAD.set(payload if isinstance(payload, dict) else {})
     activate_charter_for_run(state, payload)
     try:
         async for event in _run_control_turn_body(payload, state):
             yield event
     finally:
         clear_charter_for_run()
+        _CONTROL_PAYLOAD.reset(token)
 
 
 async def _run_control_turn_body(
@@ -1129,9 +1177,11 @@ async def _dispatch_tool(
         return
     if name == "fork_variant":
         yield {"type": "control_tool_start", "tool": "fork_variant"}
-        result = await _tool_fork(state, str(args.get("newName") or "变体"))
+        result = await _tool_fork(state, str(args.get("newName") or user_text or "变体"))
         _persist(state)
         yield {"type": "control_tool_result", "tool": "fork_variant", **result}
+        # 客户端靠 complete.finalState 看见新 versionId；不 yield 等于点了没反应。
+        yield _complete(state)
         return
     yield {"type": "control_text", "text": CANNED_FAILURE}
     yield _complete(state)

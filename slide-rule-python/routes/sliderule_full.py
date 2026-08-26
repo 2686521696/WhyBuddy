@@ -1278,6 +1278,7 @@ async def drive_full_stream(
     # 脚本方言：同一份信封 helper（命名字段，不再在这里解析两套 payload）。
     # 产品新烧走 POST /control-turn-stream；本路由保留给脚本/测试。
     from services.drive_full_factory import start_drive_full_factory_run
+    from services.product_charter import factory_charter_kwargs
 
     run = await start_drive_full_factory_run(
         sid,
@@ -1292,6 +1293,7 @@ async def drive_full_stream(
         require_session_id=False,
         fallback_state=raw_state,
         viewer=viewer,
+        **factory_charter_kwargs(payload),
     )
     return _run_sse_response(run, since=0)
 

@@ -99,6 +99,13 @@ describe("产品客户端不得再 POST 工厂流", () => {
     expect(postFn).toContain("/api/sliderule/control-turn-stream");
     expect(postFn).toContain("reuseCharter");
     expect(postFn).toContain("productCharter");
+    expect(postFn).toContain("opts.reuseCharter !== undefined");
+    const runTurn = SESSION.slice(
+      SESSION.indexOf("const runTurn = async"),
+      SESSION.indexOf("const requestRehearsal = async")
+    );
+    expect(runTurn).toContain("reuseCharter: loadCharterReuseNext()");
+    expect(runTurn).toContain("!== null");
   });
 });
 

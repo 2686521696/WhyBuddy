@@ -657,10 +657,14 @@ def build_spec_prompt(
     # 逐字节一致（test_refine缺席时_prompt与从前逐字一致）。删这一行，
     # test_product_charter_opt_in 的活路径判据必须红。
     from services.product_charter import charter_prompt_block
+    from services.v5_llm_generate import connector_prompt_block
 
     charter = charter_prompt_block()
     if charter:
         parts.append(charter)
+    connectors = connector_prompt_block()
+    if connectors:
+        parts.append(connectors)
     if clarified.strip():
         parts.append(f"澄清与假设（第 1 步产物）：\n{clarified.strip()}")
     if evidence.strip():

@@ -56,6 +56,8 @@ async def start_drive_full_factory_run(
     require_session_id: bool = True,
     fallback_state: Optional[Dict[str, Any]] = None,
     viewer: Any = None,
+    reuse_charter: Any = None,
+    product_charter: Any = None,
 ):
     """启动（或附着）一条工厂 run。调用方传入已经拆好的命名字段。"""
     from services import run_registry
@@ -92,7 +94,14 @@ async def start_drive_full_factory_run(
         set_active_connectors(active_connectors)
         set_preferred_device_override(preferred_device)
         set_design_system_override(design_system_id)
-        activate_charter_for_run(state, None)
+        # 命名字段跟技能/连接器同一形状。传 None 的键等于「信封没带」，
+        # 走 state / 账户 reuse_next，不许编成显式 false。
+        charter_payload: Dict[str, Any] = {}
+        if reuse_charter is not None:
+            charter_payload["reuseCharter"] = reuse_charter
+        if product_charter is not None:
+            charter_payload["productCharter"] = product_charter
+        activate_charter_for_run(state, charter_payload)
         try:
             async for event in drive_full_v5_session_stream(
                 state,

@@ -33,6 +33,13 @@ function deviceLabel(device: ScopeCardDevice): string {
   return "未指定（两档都生成）";
 }
 
+function initialReuseNext(pending: ScopeCardPending): boolean {
+  const stored = loadCharterReuseNext();
+  if (stored !== null) return stored;
+  if (typeof pending.charterReuseNext === "boolean") return pending.charterReuseNext;
+  return false;
+}
+
 export function ScopeCard({
   pending,
   onConfirm,
@@ -47,7 +54,7 @@ export function ScopeCard({
 }) {
   const steps = scopeCardSteps(false);
   const thin = pending.variant === "thin";
-  const [reuseNext, setReuseNext] = useState(loadCharterReuseNext);
+  const [reuseNext, setReuseNext] = useState(() => initialReuseNext(pending));
   const [charter, setCharter] = useState<ProductCharter>(loadProductCharter);
 
   const patchCharter = (key: keyof ProductCharter, value: string) => {
@@ -134,26 +141,28 @@ export function ScopeCard({
       <p className="mt-1 text-[11px] leading-4 text-[#71717a]">
         宪章是约束，不是证据。不勾选不会带进下一场，也不会把上一场模型当先验。
       </p>
-      <div className="mt-2 grid gap-1.5" data-testid="sliderule-scope-charter-fields">
-        {(
-          [
-            ["industry", "行业"],
-            ["terms", "术语"],
-            ["defaultRoles", "默认角色"],
-            ["hardCompliance", "硬性合规"],
-            ["brandConstraints", "品牌约束"],
-          ] as Array<[keyof ProductCharter, string]>
-        ).map(([key, label]) => (
-          <input
-            key={key}
-            data-testid={`sliderule-scope-charter-${key}`}
-            value={charter[key] || ""}
-            onChange={e => patchCharter(key, e.target.value)}
-            placeholder={label}
-            className="h-7 rounded-[8px] border border-[#e5e7eb] bg-[#fafafa] px-2 text-[12px] text-[#171717] outline-none placeholder:text-[#a1a1aa]"
-          />
-        ))}
-      </div>
+      {thin ? null : (
+        <div className="mt-2 grid gap-1.5" data-testid="sliderule-scope-charter-fields">
+          {(
+            [
+              ["industry", "行业"],
+              ["terms", "术语"],
+              ["defaultRoles", "默认角色"],
+              ["hardCompliance", "硬性合规"],
+              ["brandConstraints", "品牌约束"],
+            ] as Array<[keyof ProductCharter, string]>
+          ).map(([key, label]) => (
+            <input
+              key={key}
+              data-testid={`sliderule-scope-charter-${key}`}
+              value={charter[key] || ""}
+              onChange={e => patchCharter(key, e.target.value)}
+              placeholder={label}
+              className="h-7 rounded-[8px] border border-[#e5e7eb] bg-[#fafafa] px-2 text-[12px] text-[#171717] outline-none placeholder:text-[#a1a1aa]"
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

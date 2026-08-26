@@ -309,6 +309,7 @@ export interface DriveFullStreamOpts {
     device?: string;
     variant?: string;
     userText?: string;
+    charterReuseNext?: boolean;
   }) => void;
   onControlToolStart?: (tool: string) => void;
   onControlToolResult?: (event: Record<string, unknown>) => void;
@@ -649,6 +650,10 @@ export async function consumeControlStreamResponse(
                 device: event.device,
                 variant: event.variant,
                 userText: event.userText,
+                charterReuseNext:
+                  typeof event.charterReuseNext === "boolean"
+                    ? event.charterReuseNext
+                    : undefined,
               });
               continue;
             case "control_handoff_factory":

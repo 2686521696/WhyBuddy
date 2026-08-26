@@ -19,6 +19,11 @@ describe("认得出的图稿", () => {
     expect(c).toContain("<svg");
     // 两张图稿必须真的不一样——同一张图配两个名字等于没配
     expect(w).not.toBe(c);
+    const fx = renderToStaticMarkup(<ConnectorIcon icon="fx" />);
+    expect(fx).toContain('data-art="fx"');
+    expect(fx).toContain("<svg");
+    expect(fx).not.toBe(w);
+    expect(fx).not.toBe(c);
   });
 
   it("图稿是多色的（有渐变），不是单色字形", () => {

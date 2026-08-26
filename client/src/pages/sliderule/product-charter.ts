@@ -45,8 +45,11 @@ function writeStorage(key: string, value: string): void {
   }
 }
 
-export function loadCharterReuseNext(): boolean {
-  return readStorage(REUSE_KEY) === "1";
+export function loadCharterReuseNext(): boolean | null {
+  const raw = readStorage(REUSE_KEY);
+  if (raw === "1") return true;
+  if (raw === "0") return false;
+  return null;
 }
 
 export function setCharterReuseNext(value: boolean): void {

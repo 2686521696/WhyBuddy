@@ -122,6 +122,9 @@ describe("范围卡 DOM", () => {
     expect(html).not.toContain('data-testid="sliderule-scope-steps"');
     expect(html).not.toContain("8 分钟");
     expect(html).not.toContain("约 2 分钟");
+    expect(html).toContain("下一场沿用");
+    expect(html).toContain('data-testid="sliderule-scope-charter-reuse"');
+    expect(html).not.toContain('data-testid="sliderule-scope-charter-fields"');
   });
 
   it("scopeCardSteps 仍是未接线 helper；产品卡不得再露取证勾选", () => {
@@ -186,7 +189,10 @@ describe("同一 send 禁止 hint 条和范围卡同时出现", () => {
     expect(runTurnBody).toContain("loadCharterReuseNext");
     expect(runTurnBody).toContain("loadProductCharter");
     expect(runTurnBody).toContain("reuseCharter");
+    expect(runTurnBody).toContain("!== null");
     expect(runTurnBody).toContain('"rehearse"');
+    expect(CARD_SRC).toContain("initialReuseNext");
+    expect(CARD_SRC).toContain("pending.charterReuseNext");
     expect(SESSION).not.toContain("from \"./ScopeCard\"");
     expect(SESSION).not.toContain("from \"./SlideRuleStudio\"");
   });

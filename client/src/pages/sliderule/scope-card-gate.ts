@@ -36,6 +36,8 @@ export type ScopeCardPending = {
   device: ScopeCardDevice;
   intervention?: RehearsalIntervention;
   mode?: "repair";
+  /** 账户/会话「下一场沿用」。localStorage 未写时用来 hydrate 勾选。 */
+  charterReuseNext?: boolean;
 };
 
 /** 墙上钟 v1。禁止把未标定分钟数写进产品 UI。 */

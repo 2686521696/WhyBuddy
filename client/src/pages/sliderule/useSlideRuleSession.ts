@@ -66,6 +66,7 @@ import {
   resolveChallengeSend,
 } from "./challenge-composer";
 import {
+  charterHasContent,
   loadCharterReuseNext,
   loadProductCharter,
 } from "./product-charter";
@@ -1349,6 +1350,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                       : event.device === "desktop"
                         ? "desktop"
                         : "unspecified",
+                  charterReuseNext: event.charterReuseNext,
                 };
                 pendingScopeRef.current = next;
                 setPendingScope(next);
@@ -1383,8 +1385,14 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 ...(restoreId ? { versionId: restoreId } : {}),
                 ...(inferredTool === "rehearse"
                   ? {
-                      reuseCharter: loadCharterReuseNext(),
-                      productCharter: loadProductCharter(),
+                      // 未写过 localStorage 就不要带 reuseCharter。缺键走账户
+                      // reuse_next；带 false 会被当成显式关旗，把「下一场沿用」清掉。
+                      ...(loadCharterReuseNext() !== null
+                        ? { reuseCharter: loadCharterReuseNext() as boolean }
+                        : {}),
+                      ...(charterHasContent(loadProductCharter())
+                        ? { productCharter: loadProductCharter() }
+                        : {}),
                     }
                   : {}),
               });
@@ -2086,6 +2094,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       const { postControlTurnStream } = await import(
         "@/lib/sliderule-marathon-driver"
       );
+      let forkFailed = "";
       const out = await postControlTurnStream(
         sessionState,
         "从这里分一个变体",
@@ -2094,13 +2103,19 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           preferredDevice:
             (loadPreferredDevice() as "desktop" | "phone") || "desktop",
           designSystemId: loadDesignSystemId() || undefined,
+          onControlToolResult: event => {
+            if (event.tool === "fork_variant" && event.ok === false) {
+              forkFailed = String(event.error || "分变体未生效");
+            }
+          },
         }
       );
       if (out?.finalState) {
         setSessionState(preservePythonEvidenceProjection(out.finalState));
       }
+      if (forkFailed) notifyRestoreFailure(forkFailed);
     } catch {
-      // 分变体是增强类：失败不得锁死舞台。后端 fork_variant 已在闭环工具集。
+      notifyRestoreFailure("分变体未生效");
     }
   };
 

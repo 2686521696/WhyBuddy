@@ -123,9 +123,12 @@ def normalize_charter(raw: Any) -> Dict[str, str]:
     """只留白名单字段。五系统模型键、建造者文档路径一律丢掉。"""
     if not isinstance(raw, dict):
         return {}
+    # 显式扫一遍五系统键再走白名单。删掉 `_FIVE_SYSTEM_KEYS` 这里会
+    # NameError——比「定义了不用」更能被变异咬住。
+    stripped = {k: v for k, v in raw.items() if k not in _FIVE_SYSTEM_KEYS}
     out: Dict[str, str] = {}
     for key in CHARTER_FIELDS:
-        value = str(raw.get(key) or "").strip()
+        value = str(stripped.get(key) or "").strip()
         if not value:
             continue
         # 挡住有人把 Claude.md 正文贴进某一栏
@@ -133,6 +136,25 @@ def normalize_charter(raw: Any) -> Dict[str, str]:
         if "claude.md" in lowered or "agents.md" in lowered:
             continue
         out[key] = value[:_MAX_FIELD]
+    return out
+
+
+def factory_charter_kwargs(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """HTTP / 控制面信封 → 工厂命名字段。
+
+    缺键就不要带 `reuse_charter`。带了 `False` 会被当成显式关旗，
+    把账户「下一场沿用」清掉——正是 opt-in 这条要消灭的。
+    """
+    payload = payload if isinstance(payload, dict) else {}
+    out: Dict[str, Any] = {}
+    if "reuseCharter" in payload or "reuse_charter" in payload:
+        flag = payload.get("reuseCharter")
+        if flag is None:
+            flag = payload.get("reuse_charter")
+        out["reuse_charter"] = flag
+    charter = payload.get("productCharter") or payload.get("product_charter")
+    if charter:
+        out["product_charter"] = charter
     return out
 
 
