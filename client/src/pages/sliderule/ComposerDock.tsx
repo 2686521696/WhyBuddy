@@ -769,18 +769,15 @@ export function ComposerDock({
         saveTurnCapabilities(next);
         return next;
       });
-      /* ⚠ 起手意图只在输入框**空着**的时候填。用户正写到一半时把他的话
-         盖掉，是这类"贴心"功能最招人烦的形状。 */
-      if (partner?.opener) {
-        const rest = ta && slash ? applySlashPick(ta.value, slash).text.trim() : "";
-        if (!rest) {
-          setInput(partner.opener);
-          requestAnimationFrame(() => {
-            adjustTextareaHeight();
-            textareaRef.current?.focus();
-          });
-        }
-      }
+      /*
+       * ⚠ **不往输入框灌起手意图。** 2026-08-26 用户指着 TRAE 的截图纠正：
+       *   `/` 选完之后，输入框里应该只多出一枚能力标签，"然后后面再跟提示词
+       *   指令"——那句指令是用户自己写的。我们原来是把伙伴那段几十字的起手
+       *   意图整段灌进去，用户一进来就要先删掉别人替他写的话。
+       *
+       *   库页上那颗「用这个伙伴」按钮**保留**灌起手意图：那是"照这个模板
+       *   开一局"的显式动作，跟"我正在打字，顺手挂个能力"是两回事。
+       */
       setSlash(null);
       setSlashIndex(0);
     },
@@ -853,12 +850,11 @@ export function ComposerDock({
   });
 
   const actionHints = hintChips.slice(0, statusPill ? 1 : 2);
+  /* ⚠ 能力标签**不在这一行**了（2026-08-26 挪进了输入框，见下面的
+     sliderule-composer-tags）。所以这里不能再拿 picked 当显示条件——
+     那会在没有附件/提示芯片时留下一条空行。 */
   const showActionRow =
     attachments.length > 0 ||
-    // ⚠ 能力芯片要**跨 hero**：用户第一条需求就是在空态大输入框里发的，
-    //   而 hero 分支原本把整行藏起来了——勾了能力却看不见芯片，用户会以为
-    //   没生效。（写这行的时候差点漏掉，正是"只改一半"的形状。）
-    picked.length > 0 ||
     (!hero && (actionHints.length > 0 || !!statusPill));
   const topicLabel = goal.trim() || "新话题";
   const surfaceLabel = hasApp ? "成品" : "推演";
@@ -941,15 +937,6 @@ export function ComposerDock({
               {statusPill.label}
             </span>
           ) : null}
-          {/* 这一轮挂着的能力。⚠ 放在**发送之前看得见的地方**：勾了什么却
-              看不见，用户会以为没生效，或者忘了摘掉上一轮的。 */}
-          {picked.map(item => (
-            <CapabilityChip
-              key={`${item.kind}:${item.key}`}
-              item={item}
-              onRemove={() => removeCapability(item)}
-            />
-          ))}
           {actionHints.map(text => (
             <button
               key={text}
@@ -1366,6 +1353,27 @@ export function ComposerDock({
               <div
                 className={`min-w-0 ${hero ? "col-span-4 row-start-1" : "flex-1"}`}
               >
+                {/*
+                  挂上的能力是**输入框里的前缀标签**，不是上面另起一行的芯片。
+                  用户 2026-08-26 指着 TRAE 的截图说的：选完之后能力就待在
+                  输入框里，"然后后面再跟提示词指令"。
+                  ⚠ 标签跟正文在同一个盒子里换行（flex-wrap），所以挂三个也不会
+                    把输入框挤没；标签自己 shrink-0，被挤扁的只能是正文。
+                */}
+                {picked.length > 0 ? (
+                  <div
+                    className="mb-1 flex flex-wrap items-center gap-1"
+                    data-testid="sliderule-composer-tags"
+                  >
+                    {picked.map(item => (
+                      <CapabilityChip
+                        key={`${item.kind}:${item.key}`}
+                        item={item}
+                        onRemove={() => removeCapability(item)}
+                      />
+                    ))}
+                  </div>
+                ) : null}
                 <textarea
                   ref={textareaRef}
                   value={input}
@@ -1407,6 +1415,20 @@ export function ComposerDock({
                         return;
                       }
                     }
+                    /* 正文空着时按退格摘掉最后一枚标签——标签输入框的通行
+                       手势（GitHub/Linear/邮件收件人框都是这样）。
+                       ⚠ 必须判 selectionStart===0 且正文为空：光标在字中间时
+                         退格当然是删字，抢过来会让人删不动东西。 */
+                    if (
+                      event.key === "Backspace" &&
+                      picked.length > 0 &&
+                      event.currentTarget.value === "" &&
+                      (event.currentTarget.selectionStart ?? 0) === 0
+                    ) {
+                      event.preventDefault();
+                      removeCapability(picked[picked.length - 1]!);
+                      return;
+                    }
                     // Enter 行为偏好（设置页可切 Enter/Ctrl+Enter 发送）
                     if (shouldSendOnKey(event)) {
                       event.preventDefault();
@@ -1415,8 +1437,12 @@ export function ComposerDock({
                     }
                   }}
                   onPaste={handlePaste}
-                  placeholder={placeholderText}
-                  aria-label={placeholderText}
+                  placeholder={
+                    picked.length > 0 ? "输入你的任务…" : placeholderText
+                  }
+                  aria-label={
+                    picked.length > 0 ? "输入你的任务" : placeholderText
+                  }
                   rows={1}
                   disabled={isRunning}
                   className={`block max-h-40 w-full resize-none bg-transparent py-0 text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60 ${

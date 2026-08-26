@@ -7,7 +7,8 @@
  *   A  输入框打 `/` 弹出能力面板，连接器/技能/伙伴都在
  *   A2 网址里的斜杠**不弹**            ← 跟 A 是一对，错弹会吃掉方向键和回车
  *   B  打字能筛，回车选中后正文里不留 `/词`（能力是芯片不是正文）
- *   C  芯片能一个个摘掉
+ *   B2 `/` 选伙伴只挂标签，不往正文灌起手意图 ← 跟 G 是一对，说清区别
+ *   C  标签能一个个摘掉；C2 正文空着时退格摘最后一枚
  *   D  「技能 · 连接器 · 伙伴」页三层都在
  *   E  连接器页「试取真数据」拿回的是**真值**，不是示例
  *   E2 认不出的城市如实报错，且**一行都不显示**  ← 跟 E 是一对
@@ -118,13 +119,52 @@ async function main() {
       `筛出 ${JSON.stringify(filtered)} · 芯片 ${JSON.stringify(chips)} · 正文 ${JSON.stringify(textAfter)}`
     );
 
+    /*
+     * B2：`/` 选完之后，输入框里只多一枚**标签**，正文该是空的。
+     *
+     * ⚠ 2026-08-26 用户指着 TRAE 的截图纠正过一次：我们原来给伙伴灌了几十字
+     *   的起手意图进正文，用户一进来先得删掉别人替他写的话。`/` 的语义是
+     *   "给我正要写的这句话挂个能力"，不是"替我写"。
+     *   库页上那颗「用这个伙伴」是另一回事（见 G），那里灌是对的——
+     *   两条判据放在一起，才说得清这个区别不是漏改。
+     */
+    await page.fill(TA, "");
+    await page.type(TA, "/晨会", { delay: 60 });
+    await page.waitForTimeout(600);
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(700);
+    const afterPartner = await page.inputValue(TA);
+    const inTagRow = await page.$$eval(
+      '[data-testid="sliderule-composer-tags"] [data-testid="sliderule-capability-chip"]',
+      els => els.map(e => e.getAttribute("data-key"))
+    );
+    check(
+      "B2 `/` 选伙伴只挂标签，**不往正文灌起手意图**（标签就在输入框里）",
+      afterPartner.trim() === "" && inTagRow.length > 0,
+      `正文 ${JSON.stringify(afterPartner.slice(0, 40))} · 输入框里的标签 ${JSON.stringify(inTagRow)}`
+    );
+
+    /* C：正文空着时退格摘掉最后一枚——标签输入框的通行手势 */
+    await page.click(TA);
+    await page.keyboard.press("Backspace");
+    await page.waitForTimeout(400);
+    const afterBack = await page.$$eval(
+      '[data-testid="sliderule-capability-chip"]',
+      els => els.length
+    );
+    check(
+      "C2 正文空着时退格摘掉最后一枚标签",
+      afterBack === inTagRow.length - 1,
+      `${inTagRow.length} → ${afterBack}`
+    );
+
     await page.click('[data-testid="sliderule-capability-chip"] button');
     await page.waitForTimeout(500);
     const chipsAfter = await page.$$eval(
       '[data-testid="sliderule-capability-chip"]',
       els => els.map(e => e.getAttribute("data-key"))
     );
-    check("C 芯片能摘掉", chipsAfter.length === 0, JSON.stringify(chipsAfter));
+    check("C 标签能一个个摘掉", chipsAfter.length === 0, JSON.stringify(chipsAfter));
 
     /* ── D：一页三层 ─────────────────────────────────────────────── */
     await page.getByText("技能 · 连接器 · 伙伴").first().click();
