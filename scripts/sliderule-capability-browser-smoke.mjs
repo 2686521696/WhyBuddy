@@ -12,6 +12,7 @@
  *   C  标签能一个个摘掉；C2 正文空着时退格摘最后一枚
  *   H  侧栏分组 + 选中项没有左竖条；H2 假箭头不许有；H3 子项真的切得动页面
  *   D  「技能 · 连接器 · 伙伴」页三层都在
+ *   E0 卡片墙只列后端真有的连接器；E3 「+/已添加」真的挂到这一轮
  *   E  连接器页「试取真数据」拿回的是**真值**，不是示例
  *   E2 认不出的城市如实报错，且**一行都不显示**  ← 跟 E 是一对
  *   F  伙伴依赖齐时可用、缺依赖时按钮禁用并说明缺什么
@@ -310,7 +311,77 @@ async function main() {
     /* ── E / E2：试取真数据，成功与失败是一对 ─────────────────────── */
     await page.click('[data-testid="capability-tab"][data-layer="connectors"]');
     await page.waitForTimeout(1200);
+    /*
+     * E0：卡片墙**只列真的能用的**。
+     *
+     * ⚠ 2026-08-26 用户给的效果图上有 24 个连接器（钉钉、飞书、Notion、
+     *   高德地图…），我们只有 2 个。摆上去点不通，就是这整条链路存在的理由
+     *   要杀掉的东西——比"没有这个连接器"更糟，因为用户会以为接得上。
+     *   判据钉的是**卡片数 === 后端清单长度**，顺带钉住页面上那个数字也是
+     *   数出来的、不是写死的。
+     */
+    const backendIds = await page.evaluate(async () => {
+      const r = await fetch("/api/sliderule/connectors");
+      if (!r.ok) return [];
+      const j = await r.json();
+      return (j.connectors || []).map(c => c.id);
+    });
+    const cardIds = await page.$$eval('[data-testid="connector-card"]', els =>
+      els.map(e => e.getAttribute("data-connector"))
+    );
+    const countText = (
+      await page.textContent('[data-testid="connector-count"]')
+    )?.trim();
+    check(
+      "E0 卡片墙只列后端真有的连接器，数量照实数（效果图上那 22 个假的不许摆）",
+      backendIds.length > 0 &&
+        JSON.stringify([...cardIds].sort()) ===
+          JSON.stringify([...backendIds].sort()) &&
+        countText === `${backendIds.length} 个`,
+      `后端 ${JSON.stringify(backendIds)} · 卡片 ${JSON.stringify(cardIds)} · 页面写 ${countText}`
+    );
+
+    /* E3：卡片上的「+ / ✓ 已添加」= 挂不挂在这一轮，跟 `/` 同一条路径。
+       ⚠ 顺带钉住"点 + 不跳页"：用户在挑连接器，跳走了就看不到状态变化、
+         也没法接着挑第二个。 */
+    const urlBefore = page.url();
+    await page.click(
+      '[data-testid="connector-card"][data-connector="stock"] [data-testid="connector-attach"]'
+    );
+    await page.waitForTimeout(800);
+    const attachedNow = await page.getAttribute(
+      '[data-testid="connector-card"][data-connector="stock"]',
+      "data-attached"
+    );
+    const stayed = page.url() === urlBefore;
+    await page.click('[data-testid="connector-mine"]');
+    await page.waitForTimeout(600);
+    const mine = await page.$$eval('[data-testid="connector-card"]', els =>
+      els.map(e => e.getAttribute("data-connector"))
+    );
+    await page.click('[data-testid="connector-mine"]');
+    await page.waitForTimeout(400);
+    await page.click(
+      '[data-testid="connector-card"][data-connector="stock"] [data-testid="connector-attach"]'
+    );
+    await page.waitForTimeout(600);
+    const detached = await page.getAttribute(
+      '[data-testid="connector-card"][data-connector="stock"]',
+      "data-attached"
+    );
+    check(
+      "E3 「+ / 已添加」真的挂到这一轮、「我的连接器」筛得出、再点摘掉，且不跳页",
+      attachedNow === "1" &&
+        stayed &&
+        JSON.stringify(mine) === JSON.stringify(["stock"]) &&
+        detached === "0",
+      `挂上=${attachedNow} 留在原页=${stayed} 我的=${JSON.stringify(mine)} 摘掉后=${detached}`
+    );
+
     const card = page.locator('[data-testid="connector-card"][data-connector="weather"]');
+    // 试取藏在卡片展开里（效果图的卡片是紧凑的），先展开
+    await card.locator('[data-testid="connector-expand"]').click();
+    await page.waitForTimeout(400);
     await card.locator('[data-testid="connector-preview"]').click();
     await card
       .locator('[data-testid="connector-preview-result"], [data-testid="connector-error"]')

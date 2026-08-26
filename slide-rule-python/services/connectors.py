@@ -119,6 +119,13 @@ class ConnectorSpec:
     source: str = ""
     #: 需要哪个环境变量才能用；空 = 不需要凭据
     needs_env: str = ""
+    #: 分类（连接器页的筛选条）。⚠ 跟着连接器走，不在前端另维护一张表——
+    #: 前端一张、后端一张的话，加连接器时漏改前端那张不会报错，只会让它
+    #: 掉进"未分类"里再也筛不出来（仓里第四条）。
+    category: str = "其它"
+    #: 图标名（前端映射成一个图案；认不出就用默认的插头）。
+    #: 同上：名字跟着连接器走，前端只做"名字 → 图案"的映射并且有兜底。
+    icon: str = "plug"
 
     def available(self) -> bool:
         return not self.needs_env or bool(os.getenv(self.needs_env))
@@ -139,6 +146,8 @@ class ConnectorSpec:
             "entityId": self.entity_id,
             "entityName": self.entity_name,
             "source": self.source,
+            "category": self.category,
+            "icon": self.icon,
             "available": self.available(),
             "args": [
                 {
@@ -221,6 +230,8 @@ WEATHER = ConnectorSpec(
     ),
     args=(ConnectorArg("city", "城市", placeholder="北京", default="北京"),),
     source="Open-Meteo",
+    category="出行生活",
+    icon="weather",
 )
 
 
@@ -403,6 +414,8 @@ _STOCK = ConnectorSpec(
         ),
     ),
     source="腾讯行情",
+    category="金融",
+    icon="chart",
 )
 
 _MAX_SYMBOLS = 20

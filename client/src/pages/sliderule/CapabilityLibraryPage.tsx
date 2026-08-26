@@ -31,6 +31,7 @@ import {
 } from "./partners";
 import {
   loadTurnCapabilities,
+  pickedConnectorIds,
   saveTurnCapabilities,
   setPendingOpener,
 } from "./turn-capabilities";
@@ -76,22 +77,53 @@ export function CapabilityLibraryPage({
     [connectors]
   );
 
-  /** 挂到这一轮：跟输入框里 `/` 选中同一条路径（同一个存档键）。 */
-  const attach = React.useCallback((items: SlashItem[], opener?: string) => {
-    if (items.length === 0) return;
-    const prev = loadTurnCapabilities();
-    const merged = [...prev];
-    for (const item of items) {
-      if (!merged.some(p => p.kind === item.kind && p.key === item.key))
-        merged.push(item);
-    }
-    saveTurnCapabilities(merged);
-    if (opener) setPendingOpener(opener);
-    message.success(
-      `已挂到这一轮：${items.map(i => i.name).join("、")}${opener ? "，起手意图已填进输入框" : ""}`
-    );
-    navigate("/agent-loop/sliderule");
+  /*
+   * 这一轮挂着的能力。
+   *
+   * ⚠ 页面自己也要留一份 state：连接器卡上的「+ / ✓ 已添加」得**当场**变，
+   *   而 turn-capabilities 是 localStorage，写完不会通知任何人重渲染。
+   *   只写存档不更 state 的话，用户点了 +，图标纹丝不动——又一个"点了没反应"。
+   */
+  const [turnCaps, setTurnCaps] = React.useState<SlashItem[]>(() =>
+    loadTurnCapabilities()
+  );
+  const attachedConnectorIds = React.useMemo(
+    () => pickedConnectorIds(turnCaps),
+    [turnCaps]
+  );
+
+  const detach = React.useCallback((kind: SlashItem["kind"], key: string) => {
+    setTurnCaps(prev => {
+      const next = prev.filter(p => !(p.kind === kind && p.key === key));
+      saveTurnCapabilities(next);
+      return next;
+    });
   }, []);
+
+  /** 挂到这一轮：跟输入框里 `/` 选中同一条路径（同一个存档键）。 */
+  const attach = React.useCallback(
+    (items: SlashItem[], opts?: { opener?: string; goto?: boolean }) => {
+      if (items.length === 0) return;
+      setTurnCaps(prev => {
+        const merged = [...prev];
+        for (const item of items) {
+          if (!merged.some(p => p.kind === item.kind && p.key === item.key))
+            merged.push(item);
+        }
+        saveTurnCapabilities(merged);
+        return merged;
+      });
+      if (opts?.opener) setPendingOpener(opts.opener);
+      message.success(
+        `已挂到这一轮：${items.map(i => i.name).join("、")}${opts?.opener ? "，起手意图已填进输入框" : ""}`
+      );
+      /* ⚠ 连接器卡上点「+」**不跳页**：用户是在挑连接器，跳走了他就看不到
+         「已添加」变过来，也没法接着挑第二个。伙伴那颗「用这个伙伴」才跳
+         ——那是"照这个模板开一局"的显式动作。 */
+      if (opts?.goto !== false) navigate("/agent-loop/sliderule");
+    },
+    []
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -134,16 +166,21 @@ export function CapabilityLibraryPage({
             <ConnectorsPanel
               connectors={connectors}
               loading={loading}
+              attachedIds={attachedConnectorIds}
               onUse={spec =>
-                attach([
-                  {
-                    key: spec.id,
-                    kind: "connector",
-                    name: spec.name,
-                    description: spec.description,
-                  },
-                ])
+                attach(
+                  [
+                    {
+                      key: spec.id,
+                      kind: "connector",
+                      name: spec.name,
+                      description: spec.description,
+                    },
+                  ],
+                  { goto: false }
+                )
               }
+              onDetach={spec => detach("connector", spec.id)}
             />
           </div>
         ) : null}
@@ -154,10 +191,9 @@ export function CapabilityLibraryPage({
               connectorIds={connectorIds}
               skillKeys={skillKeys}
               onUse={p =>
-                attach(
-                  partnerCapabilities(p, { connectorIds, skillKeys }),
-                  p.opener
-                )
+                attach(partnerCapabilities(p, { connectorIds, skillKeys }), {
+                  opener: p.opener,
+                })
               }
               onDelete={id =>
                 setCustom(prev => {

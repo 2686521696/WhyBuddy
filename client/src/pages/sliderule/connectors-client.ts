@@ -39,6 +39,10 @@ export interface ConnectorSpec {
   entityId: string;
   entityName: string;
   source: string;
+  /** 分类（筛选条用）。⚠ 跟着后端注册表走，前端不另维护一张表。 */
+  category: string;
+  /** 图标名（前端映射成图案，认不出用默认插头）。同上。 */
+  icon: string;
   available: boolean;
   args: ConnectorArgSpec[];
   fields: ConnectorFieldSpec[];
