@@ -251,13 +251,22 @@ describe("审查卡挂在输入框的 relative 壳上", () => {
     const dock = readFileSync(new URL("../ComposerDock.tsx", import.meta.url), "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, " ")
       .replace(/\/\/[^\n]*/g, " ");
+    /*
+     * ⚠ 锚点用 data-testid，不用 className 字面量（2026-08-26）。
+     *   原来钉的是 "relative min-w-0 flex-1"，给那层加了个 z-30 之后
+     *   indexOf 返回 -1，slice(start, -1) 切出一段莫名其妙的窗口，判据
+     *   **以一句读不懂的报错红掉**——而被改的东西跟这条判据毫无关系。
+     *   判据的锚点要挑不会被样式改动碰到的东西。
+     */
+    const shell = 'data-testid="sliderule-composer-shell"';
+    expect(dock).toContain(shell);
     const head = dock.slice(
       dock.indexOf("pointer-events-none flex w-full flex-col"),
-      dock.indexOf("relative min-w-0 flex-1")
+      dock.indexOf(shell)
     );
     expect(head).not.toContain("<IntakeHintBar");
     const around = dock.slice(
-      dock.indexOf("relative min-w-0 flex-1"),
+      dock.indexOf(shell),
       dock.indexOf("{hero ? null : sendButton}")
     );
     expect(around).toContain("<IntakeHintBar");

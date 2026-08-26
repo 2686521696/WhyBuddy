@@ -6,6 +6,7 @@
  *
  *   A  输入框打 `/` 弹出能力面板，连接器/技能/伙伴都在
  *   A2 网址里的斜杠**不弹**            ← 跟 A 是一对，错弹会吃掉方向键和回车
+ *   A3 真鼠标点得中条目               ← 键盘不做命中测试，这条才照得出 pointer-events
  *   B  打字能筛，回车选中后正文里不留 `/词`（能力是芯片不是正文）
  *   B2 `/` 选伙伴只挂标签，不往正文灌起手意图 ← 跟 G 是一对，说清区别
  *   C  标签能一个个摘掉；C2 正文空着时退格摘最后一枚
@@ -98,6 +99,55 @@ async function main() {
     check("A2 网址里的斜杠不弹面板", !urlOpened, `弹了吗=${urlOpened}`);
 
     /* ── B / C：筛、选、摘 ───────────────────────────────────────── */
+    /*
+     * A3：**用真鼠标点一条**。
+     *
+     * ⚠ 2026-08-26 用户报"选了之后框里啥也没有"，根因是面板落在
+     *   ComposerDock 最外层的 `pointer-events-none` 里、从没 opt-in 回来：
+     *   面板画得好好的、看得见，elementsFromPoint 在它正中却拿不到它，
+     *   鼠标点穿过去落在消息气泡上。而**当时所有判据都是键盘选的**，
+     *   键盘不做命中测试，于是全绿。
+     *   这一条专治那个盲区——它跟画布「换图」那次是同一个形状。
+     */
+    await page.fill(TA, "");
+    await page.type(TA, "/", { delay: 60 });
+    await page.waitForTimeout(700);
+    const row = page.locator('[data-testid="sliderule-slash-item"]').first();
+    const rb = await row.boundingBox();
+    const hit = rb
+      ? await page.evaluate(
+          ([x, y]) =>
+            document
+              .elementFromPoint(x, y)
+              ?.closest('[data-testid="sliderule-slash-item"]')
+              ?.getAttribute("data-key") ?? null,
+          [rb.x + rb.width / 2, rb.y + rb.height / 2]
+        )
+      : null;
+    if (rb) {
+      await page.mouse.move(rb.x + rb.width / 2, rb.y + rb.height / 2);
+      await page.mouse.down();
+      await page.waitForTimeout(50);
+      await page.mouse.up();
+      await page.waitForTimeout(700);
+    }
+    const mouseTags = await page.$$eval(
+      '[data-testid="sliderule-capability-chip"]',
+      els => els.map(e => e.getAttribute("data-key"))
+    );
+    check(
+      "A3 真鼠标点得中面板条目（不是只有键盘选得中）",
+      !!hit && mouseTags.length > 0,
+      `条目中心点上是 ${hit ?? "别的东西——面板被 pointer-events 吃了"} · 挂上 ${JSON.stringify(mouseTags)}`
+    );
+    for (const k of mouseTags) {
+      await page
+        .locator(`[data-testid="sliderule-capability-chip"][data-key="${k}"] button`)
+        .click()
+        .catch(() => {});
+    }
+    await page.waitForTimeout(300);
+
     await page.fill(TA, "");
     await page.type(TA, "/股", { delay: 60 });
     await page.waitForTimeout(600);

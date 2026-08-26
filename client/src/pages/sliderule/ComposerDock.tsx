@@ -637,6 +637,21 @@ export function ComposerDock({
    *   也重算一遍（它在光标移动时触发）。
    */
   const [connectors, setConnectors] = React.useState<ConnectorSpec[]>([]);
+  /*
+   * 清单取到了没有。
+   *
+   * ⚠ 2026-08-26 用户报"选了之后框里啥也没有"，根因就在这里：
+   *   listConnectors() 失败时按设计返回空数组（它挂在输入框上，不能让一次
+   *   后端抖动把打字也拦住）。可我**只在挂载时取一次**——那一次赶上后端在
+   *   重启，这个页面就一辈子认为"这台机器上没有连接器"。
+   *   然后伙伴全被标成「还缺: 天气」，点下去 partnerCapabilities 过滤完是空
+   *   数组，什么也挂不上，**静默无反应**。
+   *
+   *   「没问到」和「真的没有」是两回事，把前者显示成后者就是在撒谎。
+   */
+  const [connectorLoad, setConnectorLoad] = React.useState<
+    "loading" | "ready" | "failed"
+  >("loading");
   const [picked, setPicked] = React.useState<SlashItem[]>(() =>
     loadTurnCapabilities()
   );
@@ -647,15 +662,18 @@ export function ComposerDock({
   } | null>(null);
   const [slashIndex, setSlashIndex] = React.useState(0);
 
-  React.useEffect(() => {
-    let alive = true;
-    void listConnectors().then(list => {
-      if (alive) setConnectors(list);
-    });
-    return () => {
-      alive = false;
-    };
+  const refreshConnectors = React.useCallback(async () => {
+    setConnectorLoad(prev => (prev === "ready" ? prev : "loading"));
+    const list = await listConnectors();
+    setConnectors(list);
+    // 空清单**不算取到**：后端好好的时候至少有内置那两个，空只可能是没问到。
+    setConnectorLoad(list.length > 0 ? "ready" : "failed");
+    return list;
   }, []);
+
+  React.useEffect(() => {
+    void refreshConnectors();
+  }, [refreshConnectors]);
 
   /* 从「技能 · 连接器 · 伙伴」页点「用这个伙伴」过来的起手意图。
      ⚠ take 语义：取一次就清掉（见 turn-capabilities.takePendingOpener）。
@@ -699,19 +717,25 @@ export function ComposerDock({
             ? !available.connectorIds.includes(n.key)
             : !available.skillKeys.includes(n.key)
         );
+        /* ⚠ 清单还没问到时**不许**说"还缺 X"——那是把"我不知道"说成
+           "你没有"。用户看到的会是一排莫名其妙的缺件提示，而其实什么都不缺。 */
+        const unavailable =
+          connectorLoad !== "ready" && pt.needs.some(n => n.kind === "connector")
+            ? "连接器清单没取到 — 后端可能没起来，点一下重试"
+            : missing.length
+              ? `还缺：${missing.map(m => m.name).join("、")}`
+              : undefined;
         return {
           key: pt.id,
           kind: "partner" as const,
           name: pt.name,
           description: pt.description,
-          unavailable: missing.length
-            ? `还缺：${missing.map(m => m.name).join("、")}`
-            : undefined,
+          unavailable,
         };
       }
     );
     return [...conns, ...skills, ...partners];
-  }, [connectors]);
+  }, [connectors, connectorLoad]);
 
   const partnerById = React.useMemo(() => {
     const map = new Map<string, Partner>();
@@ -728,12 +752,58 @@ export function ComposerDock({
     const ta = textareaRef.current;
     if (!ta) return;
     const next = slashQueryAt(ta.value, ta.selectionStart ?? 0);
-    setSlash(next);
+    setSlash(prev => {
+      /* 面板刚被唤起、而清单上次没取到 → 顺手补一次。
+         ⚠ 这是唯一一个"用户明确要看这份清单"的时刻，重试放这儿最省事也最
+           准；挂载时那一次赶上后端重启就永远错过了。 */
+      if (next && !prev && connectorLoad === "failed") void refreshConnectors();
+      return next;
+    });
     setSlashIndex(0);
-  }, []);
+  }, [connectorLoad, refreshConnectors]);
+
+  /** 挂不上时给出的人话原因（画在面板底部）。挂上了就清空。 */
+  const [slashNote, setSlashNote] = React.useState("");
+  /*
+   * 鼠标正按在面板里。
+   *
+   * ⚠ 面板的按钮用的是 onMouseDown + preventDefault（本意是"别让 textarea
+   *   失焦，否则面板先关、点击落空"）。真机上**兜不住**：点一个挂不上的条目
+   *   时，textarea 照样 blur，onBlur 把面板和刚设好的提示一起清掉——用户看到
+   *   的还是"点了没反应"，跟没修一样。
+   *   所以另加一道显式守卫：面板里按下鼠标时置位，onBlur 见到它就不关。
+   *   （preventDefault 那行留着——它在正常路径上确实省掉一次焦点抖动。）
+   */
+  const slashPointerRef = React.useRef(false);
 
   const pickCapability = React.useCallback(
     (item: SlashItem) => {
+      /*
+       * ⚠ **挂不上任何东西时不许静默关掉面板。**
+       *
+       *   2026-08-26 用户报的原话是"为啥选择了之后，框里面啥也没有"。
+       *   当时三个伙伴的依赖全都没就位（连接器清单没取到），
+       *   partnerCapabilities 过滤完返回空数组，于是：面板关了、正文空着、
+       *   标签一个没有——用户完全看不出发生了什么，只知道点了没反应。
+       *
+       *   一个看着能选、选了没反应的条目，比这个条目干脆不存在更糟。
+       */
+      if (item.unavailable) {
+        const preview =
+          item.kind === "partner" ? partnerById.get(item.key) : null;
+        const usable = preview
+          ? partnerCapabilities(preview, {
+              connectorIds: connectors.filter(c => c.available).map(c => c.id),
+              skillKeys: loadInstalledSkills().map(installKeyOf),
+            })
+          : [];
+        if (usable.length === 0) {
+          setSlashNote(`「${item.name}」现在挂不上：${item.unavailable}`);
+          if (connectorLoad === "failed") void refreshConnectors();
+          return; // 面板留着，让用户看见原因
+        }
+      }
+      setSlashNote("");
       const ta = textareaRef.current;
       if (ta && slash) {
         const applied = applySlashPick(ta.value, slash);
@@ -781,7 +851,15 @@ export function ComposerDock({
       setSlash(null);
       setSlashIndex(0);
     },
-    [slash, setInput, adjustTextareaHeight, partnerById, connectors]
+    [
+      slash,
+      setInput,
+      adjustTextareaHeight,
+      partnerById,
+      connectors,
+      connectorLoad,
+      refreshConnectors,
+    ]
   );
 
   const removeCapability = React.useCallback((item: SlashItem) => {
@@ -1027,7 +1105,18 @@ export function ComposerDock({
       ) : null}
       {/* 开聊后：发送圆跟胶囊同一中线。空态：Continue InputToolbar 把发送放进卡片底栏。 */}
       <div className={hero ? "w-full" : "flex w-full items-center gap-2"}>
-        <div className="relative min-w-0 flex-1">
+        {/*
+          ⚠ **z-30 不能少。** 2026-08-26 用户报"选了之后框里啥也没有"，一半根因
+            在这儿：`/` 面板是这一层的 absolute 子元素，而消息区那一层挂着
+            `relative z-10`。z-index 只在同一个层叠上下文里比大小——面板自己写
+            z-30 没用，它整条链被压在消息区下面。肉眼看得见（面板是不透明的、
+            画在上面），**鼠标点不到**：elementFromPoint 在面板正中拿到的是
+            sliderule-user-bubble。键盘选得中、鼠标选不中，正是这种形状。
+        */}
+        <div
+          data-testid="sliderule-composer-shell"
+          className="relative z-30 min-w-0 flex-1"
+        >
           <div
             className={`pointer-events-auto relative z-20 w-full border bg-white transition-colors ${
               hero
@@ -1383,7 +1472,11 @@ export function ComposerDock({
                     requestAnimationFrame(syncSlash);
                   }}
                   onSelect={syncSlash}
-                  onBlur={() => setSlash(null)}
+                  onBlur={() => {
+                    if (slashPointerRef.current) return; // 点的是面板自己
+                    setSlash(null);
+                    setSlashNote("");
+                  }}
                   onKeyDown={event => {
                     /* ⚠ 能力面板开着时，方向键/回车/Tab 归它，**必须在发送
                        判定之前拦**。放到后面的话 Enter 会把消息发出去，
@@ -1392,6 +1485,7 @@ export function ComposerDock({
                       if (event.key === "Escape") {
                         event.preventDefault();
                         setSlash(null);
+                        setSlashNote("");
                         return;
                       }
                       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -1472,8 +1566,21 @@ export function ComposerDock({
               items={slashItems}
               highlight={slashIndex}
               query={slash.query}
+              note={slashNote}
+              onPointerDownInside={() => {
+                slashPointerRef.current = true;
+                // 这一拍之后焦点已经稳定，放开守卫
+                window.setTimeout(() => {
+                  slashPointerRef.current = false;
+                }, 0);
+              }}
               onPick={pickCapability}
               onHover={setSlashIndex}
+              onManage={() => {
+                setSlash(null);
+                setSlashNote("");
+                navigate("/agent-loop/skills");
+              }}
             />
           ) : null}
           {/* 审查卡叠在输入框上方，不进外层 flex——进流会把输入顶走。 */}

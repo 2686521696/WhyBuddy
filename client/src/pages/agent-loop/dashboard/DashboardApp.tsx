@@ -7,8 +7,8 @@ import {
   AppstoreOutlined,
   LeftOutlined,
   PlayCircleFilled,
-  ApiOutlined,
   BlockOutlined,
+  DeploymentUnitOutlined,
   ReloadOutlined,
   RightOutlined,
   DownOutlined,
@@ -1192,7 +1192,13 @@ function AgentLoopSidebar({
   }> = [
     { key: "workbench", label: "应用市场", icon: <AppstoreOutlined /> },
     { key: "components", label: "组件库", icon: <BlockOutlined /> },
-    { key: "skills", label: "技能 · 连接器 · 伙伴", icon: <ApiOutlined /> },
+    {
+      key: "skills",
+      label: "技能 · 连接器 · 伙伴",
+      /* ⚠ 用连通节点而不是插头（ApiOutlined）：这一项是三样东西的集合，
+         插头只说得清"连接器"那一样，另外两样看着不搭。 */
+      icon: <DeploymentUnitOutlined />,
+    },
     { key: "settings", label: "设置", icon: <SettingOutlined /> },
     ...(isStaff
       ? [
