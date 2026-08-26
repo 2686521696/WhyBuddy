@@ -16,6 +16,7 @@ import {
   judgeIntake,
   parseJudgement,
   MIN_JUDGE_CHARS,
+  intakeHintYieldsToScopeCard,
   type IntakeJudgement,
 } from "../use-intake-judge";
 
@@ -193,6 +194,16 @@ describe("IntakeHintBar", () => {
       expect(shouldShowIntakeHint(j)).toBe(false);
       expect(renderToStaticMarkup(<IntakeHintBar judgement={j} onRewrite={() => {}} />)).toBe("");
     }
+  });
+
+  it("范围卡开着时 hint 条必须让路（同一 send 禁止两张卡）", () => {
+    expect(intakeHintYieldsToScopeCard(true)).toBe(false);
+    expect(shouldShowIntakeHint(HINT, true)).toBe(false);
+    expect(
+      renderToStaticMarkup(
+        <IntakeHintBar judgement={HINT} scopeCardOpen onRewrite={() => {}} />
+      )
+    ).toBe("");
   });
 
   it("没有改写建议时不渲染空的建议区", () => {

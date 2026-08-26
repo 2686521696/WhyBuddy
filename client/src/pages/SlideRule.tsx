@@ -989,6 +989,9 @@ function SlideRuleUnified({
   liveAction,
   sessionState,
   sendMessage,
+  pendingScope = null,
+  confirmScopeCardAndDriveFull,
+  dismissScopeCard,
   challengeTurn: _challengeTurn,
   restoreModelVersion,
   isRestoringVersion,
@@ -1032,6 +1035,9 @@ function SlideRuleUnified({
   liveAction: LiveAction | null;
   sessionState: ReturnType<typeof useSlideRuleSession>["sessionState"];
   sendMessage: () => void;
+  pendingScope?: import("./sliderule/scope-card-gate").ScopeCardPending | null;
+  confirmScopeCardAndDriveFull?: () => void;
+  dismissScopeCard?: () => void;
   challengeTurn: (id: string) => void;
   restoreModelVersion: (versionId: string) => void;
   isRestoringVersion: boolean;
@@ -1227,6 +1233,9 @@ function SlideRuleUnified({
                         }
                         stop={stop}
                         hero={isHomeEmpty}
+                        pendingScope={pendingScope}
+                        onConfirmScope={confirmScopeCardAndDriveFull}
+                        onReviseScope={dismissScopeCard}
                       />
                     }
                     clarifySlot={
@@ -1765,6 +1774,9 @@ function SlideRuleSessionBody({
     sessionState,
     executorMode,
     sendMessage,
+    pendingScope,
+    confirmScopeCardAndDriveFull,
+    dismissScopeCard,
     repairGaps,
     restoreModelVersion,
     isRestoringVersion,
@@ -2211,6 +2223,9 @@ function SlideRuleSessionBody({
     liveAction,
     sessionState,
     sendMessage,
+    pendingScope,
+    confirmScopeCardAndDriveFull,
+    dismissScopeCard,
     restoreModelVersion,
     isRestoringVersion,
     challengeTurn,

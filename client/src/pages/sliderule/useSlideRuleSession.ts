@@ -65,6 +65,12 @@ import {
   latestMainArtifactIdFromTurns,
   resolveChallengeSend,
 } from "./challenge-composer";
+import {
+  interceptRehearsalRequest,
+  SCOPE_CARD_DRIVE_FULL_BYPASS,
+  type ScopeCardDevice,
+  type ScopeCardPending,
+} from "./scope-card-gate";
 
 // 105 Python full-path: product /agent-loop/sliderule + /sliderule use this hook + http store.
 // Sessions: Node thin-compat proxy. Turns/evidence/report: delegated to slide-rule-python (python-rag provenance).
@@ -303,6 +309,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     | "python_unavailable"
     | "fallback"
   >("idle");
+  /**
+   * PR-3 范围卡停泊。pending 被后一次 requestRehearsal 整份替换，
+   * 不许拿上一句意图劫持后面无关的发送（确认永远读 ref 里的当前卡）。
+   */
+  const [pendingScope, setPendingScope] = useState<ScopeCardPending | null>(
+    null
+  );
+  const pendingScopeRef = useRef<ScopeCardPending | null>(null);
+  pendingScopeRef.current = pendingScope;
 
   // SSE-driven: which of the 6 skill systems is currently executing on Python side.
   // null = none active (before run starts or after completion).
@@ -666,13 +681,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         )
       );
 
-      // 已闭环话题 + 新应用意图（非干预轮）→ 自动开新话题。
-      // intake 的 new_goal 只认空会话；若新意图落进已闭环的旧话题，服务端权威
-      // 会话 gate 已通过 → 秒回 closed 6/6（零推演、旧证据），用户必然误读。
-      // 语义与右上角"重置会话"一致（同 sessionId、清空服务端会话），但保留
-      // 本地聊天流，并用可见 chip 明示切换。
+      // PR-3：禁用已闭环会话上 looksLikeNewAppIntent 自动重置。
+      // 静默清会话会让范围卡上点「开始推演」同意的是一份已经不在的旧话题。
+      // M7 控制面会显式问「新应用还是变体？」再决定是否重置。
+      // 闭环后追问仍明示，避免秒回 closed 6/6 被读成假装推演。
       let workingState = loadedState;
-      let autoNewTopic = false;
       let closedTopicFollowUp = false;
       if (
         !IS_GITHUB_PAGES &&
@@ -682,21 +695,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         mode !== "repair" &&
         isClosedSessionState(loadedState)
       ) {
-        if (
-          looksLikeNewAppIntent(userText) &&
-          userText.trim() !== (loadedState.goal?.text || "").trim()
-        ) {
-          workingState = await prepareVisibleResetSessionState(
-            loadedState.sessionId || sessionState.sessionId || sessionId,
-            SlideRuleRuntime.deleteSlideRuleSession,
-            persistSession
-          );
-          autoNewTopic = true;
-        } else {
-          // 识别不出新意图 → 留在旧话题，但必须明示，否则秒回 closed 6/6
-          // 会被读成"假装推演"。
-          closedTopicFollowUp = true;
-        }
+        closedTopicFollowUp = true;
       }
 
       const goalStatusBefore = workingState.goal?.status;
@@ -769,18 +768,6 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       );
 
       // Immediate reaction so user sees something right after pressing send (before any network)
-      if (autoNewTopic) {
-        appendStep({
-          id: `${turnId}-new-topic`,
-          kind: "chip",
-          capabilityId: "intent.parse" as any,
-          roleId: "system",
-          label: "上一话题已闭环 · 检测到新意图，已自动开启新话题",
-          realLlm: false,
-          loopTurnId: turnId,
-          progressType: "thinking",
-        });
-      }
       if (closedTopicFollowUp) {
         appendStep({
           id: `${turnId}-closed-followup`,
@@ -1518,7 +1505,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             drive.stopReason === "coverage_sufficient") &&
           !usedMarathonDriver
         ) {
-          // schedule after current ui paint; isRunning will be re-set inside runTurn
+          // 已点过「开始推演」的续跑，不是点火。走内层 runTurn，别再出范围卡。
           setTimeout(() => {
             runTurn(marathonAutoSeed!).catch(() => {});
           }, 80);
@@ -1694,6 +1681,60 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     }
   };
 
+  /**
+   * 点火闸。所有产品入口（sendMessage / resend / repair / challenge /
+   * 澄清答卡 / 续播）都走这里，而不是 ComposerDock.doSend。
+   * 需要卡的意图 park pendingScope 后 return——确认前零 POST。
+   */
+  const requestRehearsal = async (
+    userText: string,
+    intervention?: UserIntervention,
+    resumeRun?: { runId: string },
+    mode?: "repair"
+  ) => {
+    const call = { userText, intervention, resumeRun, mode };
+    const device = loadPreferredDevice() as ScopeCardDevice;
+    await interceptRehearsalRequest(
+      call,
+      { hasExistingGoal: Boolean(goal), device },
+      async () => {
+        await runTurn(userText, intervention, resumeRun, mode);
+      },
+      next => {
+        // 整份替换：上一张未确认的卡不能劫持后一句意图。
+        pendingScopeRef.current = next;
+        setPendingScope(next);
+      }
+    );
+  };
+
+  /**
+   * ⚠ PR-4-delete: confirmScopeCardAndDriveFull
+   * 范围卡确认后走今天的 runTurn → POST /drive-full-stream 信封。
+   * PR-4 落地必须删掉这个旁路（或藏进默认关的测试 flag），改 POST
+   * /control-turn-stream + forcedTool: "rehearse"。
+   */
+  const confirmScopeCardAndDriveFull = async () => {
+    void SCOPE_CARD_DRIVE_FULL_BYPASS;
+    const pending = pendingScopeRef.current;
+    if (!pending || isRunning) return;
+    setPendingScope(null);
+    pendingScopeRef.current = null;
+    await runTurn(
+      pending.userText,
+      pending.intervention as UserIntervention | undefined,
+      undefined,
+      pending.mode
+    );
+  };
+
+  const dismissScopeCard = () => {
+    const pending = pendingScopeRef.current;
+    setPendingScope(null);
+    pendingScopeRef.current = null;
+    if (pending?.userText) setInput(pending.userText);
+  };
+
   const stop = useCallback(() => {
     // E25：停止 = 杀服务端 run + 断本地流（否则后台照跑白烧 LLM）
     cancelActiveRunOnServer();
@@ -1721,7 +1762,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         const body = res.ok ? await res.json() : null;
         const active = body?.active;
         if (active && active.status === "running" && active.runId) {
-          await runTurn(record?.userText || "（续播上一轮推演）", undefined, {
+          await requestRehearsal(record?.userText || "（续播上一轮推演）", undefined, {
             runId: String(active.runId),
           });
         } else {
@@ -1735,17 +1776,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionHydrated]);
 
-  const resolveInteractiveGate = useCallback(
-    (gateNodeId: string, choice: string | null) => {
-      // Pragmatic bridge to existing text-driven G_CONFIRM logic in intakeMessage.
-      // "选择方案 ..." triggers userPicksRoute (clears await_confirm, proceeds with choice).
-      // Reject text triggers userRejectsRouteSelection (stales route_options, re-compare).
-      const text = choice ? "选择方案 A" : "都不行，重新对比路线";
+  const resolveInteractiveGate = (gateNodeId: string, choice: string | null) => {
+    // Pragmatic bridge to existing text-driven G_CONFIRM logic in intakeMessage.
+    // "选择方案 ..." triggers userPicksRoute (clears await_confirm, proceeds with choice).
+    // Reject text triggers userRejectsRouteSelection (stales route_options, re-compare).
+    const text = choice ? "选择方案 A" : "都不行，重新对比路线";
 
-      runTurn(text);
-    },
-    [runTurn]
-  );
+    // G_CONFIRM 路线点选不是点火闸（本 PR ClarificationCard / 答卡也不当闸）。
+    void runTurn(text);
+  };
 
   // textOverride：迭代环（重新推演/编辑重跑）程序化重发用。typeof 守卫是刻意的——
   // 既有调用点 onClick={sendMessage} 会把 MouseEvent 当第一参传进来，不能误当文本。
@@ -1769,21 +1808,21 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       latestMainArtifactId: latestMainArtifactIdFromTurns(uiTurns),
     });
     if (resolved.intent === "challenge") {
-      await runTurn(text, {
+      await requestRehearsal(text, {
         targetArtifactId: resolved.targetArtifactId,
         intent: "challenge",
         text,
       });
       return;
     }
-    await runTurn(text);
+    await requestRehearsal(text);
   };
 
   // E26 缺口修复轮：闭环被拦截后「哪里缺补哪里」——服务端只重跑覆盖门
   // 标红的能力（evidence.search 等），已 PASS 的产物与五系统模型原样复用。
   const repairGaps = async () => {
     if (isRunning) return;
-    await runTurn("补齐证据缺口", undefined, undefined, "repair");
+    await requestRehearsal("补齐证据缺口", undefined, undefined, "repair");
   };
 
   // E29 版本前进/回退：服务端移动版本指针并重建闭环（追加式历史，不改史），
@@ -2016,7 +2055,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       return;
     }
     pendingChallengeRef.current = null;
-    await runTurn(text, {
+    await requestRehearsal(text, {
       targetArtifactId: artifactId,
       intent: "challenge",
       text,
@@ -2070,14 +2109,14 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   // Generate deliverables by sending one intent through the existing S19 pipeline.
   const generateDeliverables = useCallback(() => {
     if (isRunning) return;
-    void runTurn(
+    void requestRehearsal(
       "打包交付：生成 spec 树、规格文档、提示词包、架构图与工程交接包",
       {
         intent: "generate_plan",
         text: "打包交付：生成 spec 树、规格文档、提示词包、架构图与工程交接包",
       }
     );
-  }, [isRunning, runTurn]);
+  }, [isRunning, requestRehearsal]);
 
   const answerClarifications = useCallback(
     (answers: Array<{ gapId: string; answer: string }>) => {
@@ -2088,13 +2127,13 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       const supplement = answers
         .map(a => `「${byId.get(a.gapId) || a.gapId}」答：${a.answer}`)
         .join("\n");
-      void runTurn(supplement, {
+      void requestRehearsal(supplement, {
         intent: "clarify",
         text: supplement,
         answeredGapIds: answers.map(a => a.gapId),
       });
     },
-    [sessionState.coverageGaps, runTurn]
+    [sessionState.coverageGaps, requestRehearsal]
   );
 
   return {
@@ -2136,7 +2175,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     sendMessage,
     repairGaps,
     restoreModelVersion,
-    runTurn,
+    runTurn: requestRehearsal,
+    requestRehearsal,
+    pendingScope,
+    confirmScopeCardAndDriveFull,
+    dismissScopeCard,
     challengeTurn,
     resetSession,
     toggleRouteExpanded,

@@ -69,6 +69,14 @@ const VALID_VERDICTS: ReadonlySet<string> = new Set([
 export const MIN_JUDGE_CHARS = 6;
 export const JUDGE_DEBOUNCE_MS = 500;
 
+/**
+ * 同一 send 禁止 hint 条和范围卡同时占位。范围卡是点火闸，hint 让路。
+ * 变异：ComposerDock 同时渲染两者，intake-hint 与 scope-card 同屏必红。
+ */
+export function intakeHintYieldsToScopeCard(scopeCardOpen: boolean): boolean {
+  return !scopeCardOpen;
+}
+
 /** 严格解析：字段缺失或 verdict 不在闭集内 → null（当作没判过，fail-open）。 */
 export function parseJudgement(body: unknown): IntakeJudgement | null {
   if (!body || typeof body !== "object") return null;

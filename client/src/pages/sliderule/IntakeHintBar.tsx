@@ -21,15 +21,20 @@
  */
 import React from "react";
 
-import type { IntakeJudgement } from "./use-intake-judge";
+import {
+  intakeHintYieldsToScopeCard,
+  type IntakeJudgement,
+} from "./use-intake-judge";
 
 /** 入站审查在途。澄清留给发送之后那一步，见模块头。 */
 export const INTAKE_JUDGING_LABEL = "正在审查需求";
 
 /** 该不该展示：只有 action=hint 且真有引导话术时才占用户的视线。 */
 export function shouldShowIntakeHint(
-  judgement: IntakeJudgement | null | undefined
+  judgement: IntakeJudgement | null | undefined,
+  scopeCardOpen = false
 ): boolean {
+  if (!intakeHintYieldsToScopeCard(scopeCardOpen)) return false;
   return !!judgement && judgement.action === "hint" && !!judgement.guidance.trim();
 }
 
@@ -37,15 +42,20 @@ export function IntakeHintBar({
   judgement,
   onRewrite,
   isJudging = false,
+  scopeCardOpen = false,
 }: {
   judgement: IntakeJudgement | null | undefined;
   /** 点改写建议 → 回填输入框。 */
   onRewrite: (text: string) => void;
   /** 判定请求在途：先占位，不把上一句的黄条留在新输入上。 */
   isJudging?: boolean;
+  /** 范围卡开着时 hint 条必须让路——同一 send 禁止两张卡。 */
+  scopeCardOpen?: boolean;
 }) {
   const overlayClass =
     "pointer-events-auto absolute bottom-full left-0 right-0 z-10 mb-2 origin-bottom sr-composer-pop rounded-[12px] border border-[#e5e7eb] bg-white px-3.5 py-3 text-[13px] leading-5 shadow-[0_12px_32px_rgb(15_23_42/0.12)]";
+
+  if (!intakeHintYieldsToScopeCard(scopeCardOpen)) return null;
 
   if (isJudging) {
     return (

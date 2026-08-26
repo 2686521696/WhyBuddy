@@ -44,8 +44,10 @@ import {
 import { DesignSystemSwatch } from "./DesignSystemSwatch";
 import { useDesignSystemPanel } from "./DesignSystemContext";
 import { DesignSystemRail } from "./DesignSystemRail";
-import { useIntakeJudge } from "./use-intake-judge";
+import { intakeHintYieldsToScopeCard, useIntakeJudge } from "./use-intake-judge";
 import { IntakeHintBar, INTAKE_JUDGING_LABEL } from "./IntakeHintBar";
+import { ScopeCard } from "./ScopeCard";
+import type { ScopeCardPending } from "./scope-card-gate";
 import {
   installKeyOf,
   loadInjectDisabledKeys,
@@ -332,6 +334,9 @@ export function ComposerDock({
   appSummary = "",
   hintChips = [],
   statusPill = null,
+  pendingScope = null,
+  onConfirmScope,
+  onReviseScope,
 }: {
   input: string;
   setInput: (v: string) => void;
@@ -339,6 +344,10 @@ export function ComposerDock({
   sendMessage: (textOverride?: string) => void;
   isRunning: boolean;
   goal: string;
+  /** PR-3 范围卡。确认走 confirmScopeCardAndDriveFull（PR-4-delete）。 */
+  pendingScope?: ScopeCardPending | null;
+  onConfirmScope?: () => void;
+  onReviseScope?: () => void;
 
   /** 会话里是否已经有一个成形的应用（由五系统模型判定，见 SlideRule.tsx）。
    *  入站判定按这个切规则域：没应用时首轮描述算 real，有应用时算 iteration。 */
@@ -1685,16 +1694,26 @@ export function ComposerDock({
               }}
             />
           ) : null}
-          {/* 审查卡叠在输入框上方，不进外层 flex——进流会把输入顶走。 */}
-          <IntakeHintBar
-            judgement={judgement}
-            isJudging={isJudging}
-            onRewrite={text => {
-              setInput(text);
-              requestAnimationFrame(adjustTextareaHeight);
-              textareaRef.current?.focus();
-            }}
-          />
+          {/* 审查卡叠在输入框上方，不进外层 flex——进流会把输入顶走。
+              范围卡开着时 hint 必须让路：同一 send 禁止两张卡。 */}
+          {pendingScope && onConfirmScope && onReviseScope ? (
+            <ScopeCard
+              pending={pendingScope}
+              onConfirm={() => onConfirmScope()}
+              onRevise={onReviseScope}
+            />
+          ) : intakeHintYieldsToScopeCard(Boolean(pendingScope)) ? (
+            <IntakeHintBar
+              judgement={judgement}
+              isJudging={isJudging}
+              scopeCardOpen={Boolean(pendingScope)}
+              onRewrite={text => {
+                setInput(text);
+                requestAnimationFrame(adjustTextareaHeight);
+                textareaRef.current?.focus();
+              }}
+            />
+          ) : null}
         </div>
         {hero ? null : sendButton}
       </div>
