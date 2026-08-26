@@ -249,6 +249,81 @@ def test_new_batch_including_completed_cap_is_not_skipped_forever(driver, monkey
     assert CAP_B not in calls and CAP_C not in calls
 
 
+def test_new_goal_with_the_same_selection_reruns_everything(driver, monkeypatch):
+    """换了目标就得重跑 —— 哪怕这一轮挑的能力跟上一轮一模一样。
+
+    2026-08-27 评审逮到的：`same_batch` 只看 selected 集合，而 spec-first
+    那批选材在相邻两轮经常一模一样。于是「停掉一轮 → 换个需求再发」时，
+    上一轮**为旧目标**完成的能力被当成本轮已完成跳掉——新需求的推演里混着
+    上一单的产物，没有任何报错。
+
+    ⚠ 反向条在下一个用例（同一个目标恢复时**不许**重跑）。少了那条，
+      "永远重跑"照样绿，崩溃恢复就白做了。
+    """
+    driver_mod, _store = driver
+    calls = []
+
+    def execute(cap, state, input_ids, role, turn_id):
+        calls.append(cap)
+        return {
+            "title": cap,
+            "summary": f"{cap} done",
+            "content": f"executed {cap}",
+            "provenance": "python-rag",
+            "sources": [],
+        }
+
+    _stub_drive_loop(driver_mod, monkeypatch, execute)
+
+    state = _seeded_state("sr-pending-new-goal")
+    # 上一轮为**旧目标**干到一半：A 完成，B/C 没跑
+    state.pendingRuns = {
+        "turnId": "turn-1",
+        "goal": "做一个完全不相干的旧需求：宠物寄养排班",
+        "loop": 0,
+        "selected": [CAP_A, CAP_B, CAP_C],
+        "completed": [{"capabilityId": CAP_A, "status": "ok"}],
+    }
+    _run_stream(driver_mod, state)
+    assert CAP_A in calls, (
+        f"换了目标却复用了上一单为旧需求跑出来的 {CAP_A}，实际跑了 {calls}"
+    )
+
+
+def test_same_goal_resume_still_skips_completed(driver, monkeypatch):
+    """反向：目标没变（崩溃恢复）就**不许**重跑已完成的。
+
+    跟上一条是一对。只钉"换目标要重跑"的话，把 same_batch 直接写死 False
+    照样绿，而那等于把崩溃恢复关掉、前面烧掉的 LLM 全白烧。
+    """
+    driver_mod, _store = driver
+    calls = []
+
+    def execute(cap, state, input_ids, role, turn_id):
+        calls.append(cap)
+        return {
+            "title": cap,
+            "summary": f"{cap} done",
+            "content": f"executed {cap}",
+            "provenance": "python-rag",
+            "sources": [],
+        }
+
+    _stub_drive_loop(driver_mod, monkeypatch, execute)
+
+    state = _seeded_state("sr-pending-same-goal")
+    state.pendingRuns = {
+        "turnId": "turn-1",
+        "goal": GOAL,
+        "loop": 0,
+        "selected": [CAP_A, CAP_B, CAP_C],
+        "completed": [{"capabilityId": CAP_A, "status": "ok"}],
+    }
+    _run_stream(driver_mod, state)
+    assert CAP_A not in calls, f"同一个目标恢复却重烧了 {CAP_A}：{calls}"
+    assert CAP_B in calls and CAP_C in calls, calls
+
+
 def test_parallel_commit_path_crash_resume_skips_committed(driver, monkeypatch):
     """默认并行：LLM 在 gather 里花掉，pending 走 _commit_executed_outcome。
 

@@ -25,7 +25,12 @@ def _has_pending_delivery_picks(state, user_instruction: str) -> bool:
     except Exception:
         return False
 from .v5_capability_executor import execute_v5_capability
-from .persistence import PersistClosedError, persist_state, record_pending_run
+from .persistence import (
+    PersistClosedError,
+    pending_goal_key,
+    persist_state,
+    record_pending_run,
+)
 from .slide_rule_coverage import (
     evaluate_coverage_gate,
     reconcile_coverage,
@@ -399,20 +404,43 @@ def _apply_pending_run_skips(
     白烧。pendingRuns 是工厂循环内部的 crash-recovery 台账，不是挑战级
     局部重跑 UI，也不是 GET /runs/{id}/stream 那种 HTTP 续播。
 
-    同一批（selected 集合相同且尚未全部完成）才跳过；整批完成后或选材
-    变了就开新台账，免得下一轮正当重跑被误跳。
+    同一批（**同一个目标** + selected 集合相同 + 尚未全部完成）才跳过；
+    换目标、整批完成后或选材变了就开新台账，免得下一轮正当重跑被误跳。
+
+    ⚠ 2026-08-27 评审：原来只看 selected 集合。spec-first 那批选材在相邻
+      两轮经常一模一样，于是：停掉一轮 → 换个目标再发 → 选材相同 →
+      上一轮**为旧目标**完成的能力被当成本轮已完成跳掉。用户看到的是新
+      需求的推演里混着上一单的产物，而且没有任何报错。
+
+    ⚠ **不能拿 turnId 当这个键**（第一版就是这么写的，被
+      `test_crash_after_b_resume_skips_completed_caps` 当场咬红）：崩溃恢复
+      是一次**新的 drive**，`_advance_turn_version` 一进来就把 lastTurnId
+      步进一格，所以恢复那趟的 turnId 必然对不上写台账那趟的——按 turnId
+      判等于把崩溃恢复整个关掉，前面烧掉的 LLM 全部白烧。
+      跨轮流通、且"同一件活"必然相同的只有**目标文本**，所以键取它。
+
+    ⚠ 老存档没有 `goal` 键：`None != goal_text` → 当成新批，整批重跑一次。
+      多烧一轮，但不会把旧目标的产物错认成新目标的——这一类要 fail 向
+      "重做"，不是 fail 向"复用"（第七条）。
     """
     ids = [s.get("capabilityId") for s in selected if s.get("capabilityId")]
     pending = getattr(state, "pendingRuns", None)
     if not isinstance(pending, dict):
         pending = {}
+    goal_text = pending_goal_key(state)
     prev_selected = [c for c in (pending.get("selected") or []) if c]
     prev_completed = [c for c in (pending.get("completed") or []) if isinstance(c, dict)]
     done_ids = {c.get("capabilityId") for c in prev_completed if c.get("capabilityId")}
-    same_batch = set(prev_selected) == set(ids) and bool(done_ids) and not done_ids >= set(ids)
+    same_batch = (
+        pending.get("goal") == goal_text
+        and set(prev_selected) == set(ids)
+        and bool(done_ids)
+        and not done_ids >= set(ids)
+    )
     if not same_batch:
         state.pendingRuns = {
             "turnId": getattr(state, "lastTurnId", None),
+            "goal": goal_text,
             "loop": loop,
             "selected": ids,
             "completed": [],

@@ -1075,6 +1075,19 @@ def _pending_selected_ids(selected: Optional[List[Any]]) -> List[str]:
     return ids
 
 
+def pending_goal_key(state: Any) -> str:
+    """pendingRuns 这批活是为**哪个目标**干的。
+
+    崩溃恢复要靠它判"还是同一件活"。不能用 lastTurnId：恢复是一次新的
+    drive，`_advance_turn_version` 一进来就把它步进一格，按 turnId 判等于
+    把崩溃恢复整个关掉（`_apply_pending_run_skips` 的头注里有这段）。
+    """
+    goal = getattr(state, "goal", None) or {}
+    if isinstance(goal, dict):
+        return str(goal.get("text") or "").strip()
+    return str(getattr(goal, "text", "") or "").strip()
+
+
 def record_pending_run(
     state: V5SessionState,
     capability_id: str,
@@ -1100,6 +1113,15 @@ def record_pending_run(
         selected_ids = _pending_selected_ids(selected)
     pending = {
         "turnId": getattr(state, "lastTurnId", None),
+        # ⚠ **goal 必须原样带下去。** 这段是把 pendingRuns 整个**重建**，
+        #   不认识的键会被静默丢掉——2026-08-27 给台账加"这批活是为哪个目标
+        #   干的"时就栽在这里：`_apply_pending_run_skips` 写上了，第一个能力
+        #   一完成这里重建一次就没了，于是恢复那趟永远对不上，崩溃恢复整个
+        #   失效（前面烧掉的 LLM 全白烧）。
+        #   本仓第四条：同一件事两处实现，改一处不报错、只有一半生效。
+        "goal": pending.get("goal")
+        if pending.get("goal") is not None
+        else pending_goal_key(state),
         "loop": loop if pending.get("loop") is None else pending.get("loop"),
         "selected": selected_ids,
         "completed": completed,
