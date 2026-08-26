@@ -66,7 +66,17 @@ import { resolveImSurfaceMode } from "./sliderule/im-surface-mode";
 import { deriveSettledFiveSystemModel } from "./sliderule/system-screens/five-system-model";
 import { assistantTextForTurn } from "./sliderule/assistant-text-for-turn";
 import { ensureReadableChatMarkdown } from "./sliderule/readable-chat-markdown";
-import { SlideRuleStatusBar } from "./sliderule/SlideRuleStatusBar";
+import {
+  RehearsalClockHud,
+  SlideRuleStatusBar,
+} from "./sliderule/SlideRuleStatusBar";
+import {
+  deriveStatusBarFacts,
+  idleRehearsalCursor,
+  type ContextHudFacts,
+  type RehearsalClockCursor,
+  type RehearsalClockView,
+} from "./sliderule/derive-status-bar";
 import {
   SlideRuleResetSessionButton,
   SlideRuleTopHud,
@@ -462,7 +472,7 @@ const ImSurfaceContext = React.createContext<{
   llmDraft: string;
   llmDraftLabel: string | null;
   /** E16.1 多流分窗：并行 LLM 子调用各占一个稳定窗口（修"打架来回切换"） */
-  llmStreams: Array<{ label: string; text: string }>;
+  llmStreams: Array<{ label: string; text: string; collapsed?: boolean }>;
   goalText?: string;
   thinkingText: string;
   isRunning: boolean;
@@ -562,10 +572,8 @@ function ImAssistantMessage() {
             llmDraft={llmDraft}
             publishClosure={publishClosure}
           />
-          {/* LLM 实时想法：每一步真 LLM 调用（risk.analyze / report.write /
-              五系统起草…）期间实时流出。E16.1：后端并行子调用交错到达时
-              按 label 分窗——每条流一个稳定窗口（key 固定，平滑泵前缀
-              延续不断），不再共抢一个槽位来回切换 */}
+          {/* LLM 实时想法默认折叠（PR-2）：点开才见 risk.analyze 原文。
+              现在在哪一步看上面的六步钟，不靠散文。 */}
           {llmStreams.map(stream => (
             <LlmLiveOutput
               key={stream.label}
@@ -694,6 +702,8 @@ export function ClaudeChatSurface({
   onChallenge,
   composerSlot,
   clarifySlot,
+  rehearsalClock = null,
+  hud = null,
 }: {
   uiTurns: UiTurn[];
   isRunning: boolean;
@@ -705,7 +715,9 @@ export function ClaudeChatSurface({
   /** 当前草稿来源：能力 id 或 "five-system-model"（决定实时块标题）。 */
   llmDraftLabel?: string | null;
   /** E16.1 多流分窗：活跃 LLM 子调用流（按首现顺序，运行中展示）。 */
-  llmStreams?: Array<{ label: string; text: string }>;
+  llmStreams?: Array<{ label: string; text: string; collapsed?: boolean }>;
+  rehearsalClock?: RehearsalClockView | null;
+  hud?: ContextHudFacts | null;
   /** 会话话题（恢复的轮次没有 turn.user，总结用它兜底） */
   goalText?: string;
   onChallenge: (id: string) => void;
@@ -763,6 +775,12 @@ export function ClaudeChatSurface({
     ]
   );
 
+  const showRehearsalHud = Boolean(
+    rehearsalClock &&
+      hud &&
+      (isRunning || rehearsalClock.currentStep != null)
+  );
+
   return (
     <div className="relative z-0 flex h-full flex-col overflow-hidden bg-transparent text-[#1f2329]">
       {/* 点阵改挂 SlideRuleStudio 外壳（空态+开聊同一张网）。这里铺实心底
@@ -771,6 +789,11 @@ export function ClaudeChatSurface({
       <AssistantRuntimeProvider runtime={runtime}>
         <ImSurfaceContext.Provider value={ctxValue}>
           <ThreadPrimitive.Root className="relative z-10 flex min-h-0 flex-1 flex-col">
+            {showRehearsalHud && rehearsalClock && hud ? (
+              <div className="mx-auto w-full max-w-[720px] shrink-0 px-4 pb-1 pt-2 sm:px-5">
+                <RehearsalClockHud clock={rehearsalClock} hud={hud} show />
+              </div>
+            ) : null}
             {/* E16 智能滚动补件：用户上滚回看时出「回到底部」胶囊
                 （Viewport 本身已带贴底跟随；贴底时该按钮自动 disabled → 隐藏） */}
             <div className="relative flex min-h-0 flex-1 flex-col">
@@ -987,6 +1010,7 @@ function SlideRuleUnified({
   llmDraft = "",
   llmDraftLabel = null,
   llmStreams = [],
+  rehearsalCursor,
 }: {
   goal: string;
   uiTurns: UiTurn[];
@@ -1041,7 +1065,8 @@ function SlideRuleUnified({
   /** LLM 实时草稿（llm_delta 累积）+ 当前来源标签。 */
   llmDraft?: string;
   llmDraftLabel?: string | null;
-  llmStreams?: Array<{ label: string; text: string }>;
+  llmStreams?: Array<{ label: string; text: string; collapsed?: boolean }>;
+  rehearsalCursor?: RehearsalClockCursor;
 }) {
   const sessionId = sessionState.sessionId || "sliderule-v51-product";
   const composerHints = useMemo(
@@ -1068,6 +1093,25 @@ function SlideRuleUnified({
     [uiTurns.length, sessionState]
   );
   const conversationTurns = uiTurns.length > 0 ? uiTurns : restoredTurns;
+
+  const rehearsalFacts = useMemo(
+    () =>
+      deriveStatusBarFacts(sessionState, {
+        turnCount: conversationTurns.length,
+        isRunning,
+        publishClosure,
+        rehearsalCursor: rehearsalCursor ?? idleRehearsalCursor(),
+        executorMode,
+      }),
+    [
+      sessionState,
+      conversationTurns.length,
+      isRunning,
+      publishClosure,
+      rehearsalCursor,
+      executorMode,
+    ]
+  );
 
   // 空态（无轮次且未在跑）时 ComposerDock 渲染在首页
   // hero 里；否则贴在左栏会话流底部。二选一，永远只有一个输入条实例。
@@ -1149,6 +1193,8 @@ function SlideRuleUnified({
                     llmDraft={isRunning ? llmDraft : ""}
                     llmStreams={isRunning ? llmStreams : []}
                     llmDraftLabel={llmDraftLabel}
+                    rehearsalClock={rehearsalFacts.rehearsalClock}
+                    hud={rehearsalFacts.hud}
                     onChallenge={id =>
                       dispatchChallengePrefill({ artifactId: id })
                     }
@@ -1315,6 +1361,7 @@ function SlideRuleSplitEngineering({
   openDeliverables,
   publishClosure,
   driveFullStatus,
+  rehearsalCursor,
 }: {
   goal: string;
   uiTurns: UiTurn[];
@@ -1363,6 +1410,7 @@ function SlideRuleSplitEngineering({
     | "timeout"
     | "python_unavailable"
     | "fallback";
+  rehearsalCursor?: RehearsalClockCursor;
 }) {
   const imScrollRef = useRef<HTMLElement>(null);
   const imBottomRef = useRef<HTMLDivElement>(null);
@@ -1470,6 +1518,7 @@ function SlideRuleSplitEngineering({
         closureReason={latestTurn?.routeFacts.closureReason ?? null}
         executorMode={executorMode}
         publishClosure={publishClosure}
+        rehearsalCursor={rehearsalCursor}
       />
 
       <div className={autopilotTheme.split}>
@@ -1728,6 +1777,7 @@ function SlideRuleSessionBody({
     llmDraft,
     llmDraftLabel,
     llmStreams,
+    rehearsalCursor,
     sessionHydrated,
   } = useSlideRuleSession({
     // E18：Pages 下 activeSessionId 也可能是画廊示例（pages-demo-*，
@@ -2197,6 +2247,7 @@ function SlideRuleSessionBody({
     llmDraft,
     llmDraftLabel,
     llmStreams,
+    rehearsalCursor,
   };
 
   if (isImmersion) {

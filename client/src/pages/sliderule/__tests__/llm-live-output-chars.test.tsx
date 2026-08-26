@@ -51,6 +51,19 @@ describe("留档步骤的字数", () => {
     expect(html).toContain("5 字");
   });
 
+  it("轨迹默认折叠：摘要在、risk.analyze 原文不在 DOM", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(LlmLiveOutput, {
+        title: "正在分析风险",
+        text: "这是 risk.analyze 不该默认露出的原文",
+      })
+    );
+    expect(html).toContain('data-testid="sliderule-llm-draft-toggle"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain('data-testid="sliderule-llm-draft-body"');
+    expect(html).not.toContain("这是 risk.analyze 不该默认露出的原文");
+  });
+
   it("chars 为 0 时不被当成缺省吞掉", () => {
     // `chars || text.length` 会在 0 上回落到 text.length——用 ?? 才对。
     const html = renderToStaticMarkup(

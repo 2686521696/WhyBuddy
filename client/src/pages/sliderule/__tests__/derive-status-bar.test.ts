@@ -1,6 +1,18 @@
 import { describe, it, expect, vi } from "vitest";
 import { createInitialSessionState, intakeMessage, orchestrateReasoningTurn } from "@/lib/sliderule-runtime";
-import { deriveStatusBarFacts } from "../derive-status-bar";
+import {
+  REHEARSAL_MODULE_TO_STEP,
+  REHEARSAL_PRODUCT_STEPS,
+  REHEARSAL_WALL_CLOCK_COPY,
+  advanceRehearsalCursor,
+  buildRehearsalClockView,
+  deriveContextHudFacts,
+  deriveStatusBarFacts,
+  idleRehearsalCursor,
+  mapInternalEventToProductStep,
+  startRehearsalCursor,
+} from "../derive-status-bar";
+import type { CapabilityCostRecord } from "@shared/blueprint/v5-reasoning-state";
 
 describe("deriveStatusBarFacts", () => {
   it("surfaces gap count and park hint when awaiting with open gaps", () => {
@@ -133,6 +145,145 @@ describe("deriveStatusBarFacts", () => {
 });
 
 /** M7 收尾 + 保全：默认 UI 不得出现内部机制词汇（lint 黑名单）。翻译 + derive 负责用户语言化。 */
+describe("M8 产品六步钟映射表", () => {
+  it("钉死内部模块 → 产品步（改 spec_tree 到 1 必须红）", () => {
+    // ⚠ 变异：把 REHEARSAL_MODULE_TO_STEP.spec_tree 改成 1，下面必红。
+    // 默认 rehearse 从起草 SPEC 起跳；映射成第 1 步等于把钟的起点挪到取证。
+    expect(REHEARSAL_MODULE_TO_STEP.spec_tree).toBe(2);
+    expect(mapInternalEventToProductStep("spec_tree")).toBe(2);
+    expect(mapInternalEventToProductStep("spec_page_html")).toBe(3);
+    expect(mapInternalEventToProductStep("page_shell")).toBe(3);
+    expect(mapInternalEventToProductStep("html_structure")).toBe(4);
+    expect(mapInternalEventToProductStep("spec_semantics")).toBe(5);
+    expect(mapInternalEventToProductStep("model_assembly")).toBe(6);
+    expect(mapInternalEventToProductStep("html_bindings")).toBe(6);
+    expect(mapInternalEventToProductStep("v5_model_gate")).toBe(6);
+    expect(mapInternalEventToProductStep("evaluate_coverage_gate")).toBe(6);
+    expect(mapInternalEventToProductStep("intent.clarify")).toBe(1);
+    expect(mapInternalEventToProductStep("gap.ask")).toBe(1);
+    expect(mapInternalEventToProductStep("evidence.search")).toBe(1);
+  });
+
+  it("活 SSE 别名落到同一张钟，不另开进度 API", () => {
+    expect(mapInternalEventToProductStep("specfirst.spec")).toBe(2);
+    expect(mapInternalEventToProductStep("specfirst.pages")).toBe(3);
+    expect(mapInternalEventToProductStep("spec_page")).toBe(3);
+    expect(mapInternalEventToProductStep("specfirst.structure")).toBe(4);
+    expect(mapInternalEventToProductStep("specfirst.semantics")).toBe(5);
+    expect(mapInternalEventToProductStep("specfirst.assemble")).toBe(6);
+    expect(mapInternalEventToProductStep("specfirst.bind")).toBe(6);
+    expect(mapInternalEventToProductStep("risk.analyze")).toBeNull();
+    expect(mapInternalEventToProductStep("monitor.design")).toBeNull();
+  });
+
+  it("第 1 步默认 skippable；2–6 不可跳", () => {
+    expect(REHEARSAL_PRODUCT_STEPS).toHaveLength(6);
+    expect(REHEARSAL_PRODUCT_STEPS[0]).toMatchObject({
+      id: 1,
+      label: "澄清与取证",
+      skippable: true,
+    });
+    expect(REHEARSAL_PRODUCT_STEPS.slice(1).every((s) => s.skippable === false)).toBe(
+      true
+    );
+  });
+
+  it("默认 rehearse 从第 2 步起跳，第 1 格是 skipped 不是 current", () => {
+    const view = buildRehearsalClockView(startRehearsalCursor(), {
+      isRunning: true,
+    });
+    expect(view.currentStep).toBe(2);
+    expect(view.currentLabel).toBe("起草 SPEC");
+    expect(view.steps[0].status).toBe("skipped");
+    expect(view.steps[0].skippable).toBe(true);
+    expect(view.steps[1].status).toBe("current");
+    expect(view.wallClockCopy).toBe(REHEARSAL_WALL_CLOCK_COPY);
+    expect(view.wallClockCopy).toBe("大约数分钟，第一页会先出现");
+  });
+
+  it("spec_tree 事件把钟钉在第 2 步（从表读，不写死）", () => {
+    const next = advanceRehearsalCursor(idleRehearsalCursor(), "spec_tree");
+    expect(next.currentStep).toBe(REHEARSAL_MODULE_TO_STEP.spec_tree);
+    expect(next.currentStep).toBe(2);
+    expect(next.receivedMappedEvent).toBe(true);
+    expect(next.sawStep1).toBe(false);
+  });
+
+  it("evidence.search 先到才亮第 1 步；之后 spec_tree 把第 1 步收成 done", () => {
+    const afterEvidence = advanceRehearsalCursor(
+      startRehearsalCursor(),
+      "evidence.search"
+    );
+    expect(afterEvidence.currentStep).toBe(1);
+    expect(afterEvidence.sawStep1).toBe(true);
+    const afterSpec = advanceRehearsalCursor(afterEvidence, "spec_tree");
+    expect(afterSpec.currentStep).toBe(2);
+    const view = buildRehearsalClockView(afterSpec, { isRunning: true });
+    expect(view.steps[0].status).toBe("done");
+    expect(view.steps[1].status).toBe("current");
+  });
+
+  it("未映射事件不推进钟（heartbeat 噪音不许冒充进度）", () => {
+    const start = startRehearsalCursor();
+    const next = advanceRehearsalCursor(start, "monitor.design");
+    expect(next).toEqual(start);
+  });
+});
+
+describe("context HUD：证据 fail-closed / token 只认 server", () => {
+  function ledgerRow(
+    over: Partial<CapabilityCostRecord> & Pick<CapabilityCostRecord, "source">
+  ): CapabilityCostRecord {
+    return {
+      id: over.id || "c1",
+      turnId: "t1",
+      capabilityRunId: "r1",
+      capabilityId: over.capabilityId || "risk.analyze",
+      estimatedTokens: over.estimatedTokens ?? 0,
+      source: over.source,
+      createdAt: "2026-08-27T00:00:00.000Z",
+    };
+  }
+
+  it("缺 publishClosure 时证据列是 0，不拿 evidence.search 冒充", () => {
+    const state = createInitialSessionState("hud", "hud-closed");
+    state.capabilityRuns = [
+      {
+        id: "r-ev",
+        capabilityId: "evidence.search",
+        turnId: "t1",
+        inputs: [],
+        outputs: [],
+        gateResults: [],
+      } as never,
+    ];
+    const hud = deriveContextHudFacts(state, null);
+    expect(hud.gatedEvidenceCount).toBe(0);
+    expect(hud.narrativeTokens).toBe(0);
+  });
+
+  it("token 列只累加 source=server；estimated / manual 不进事实", () => {
+    const state = createInitialSessionState("hud", "hud-tokens");
+    state.costLedger = [
+      ledgerRow({ id: "s", source: "server", estimatedTokens: 40 }),
+      ledgerRow({ id: "e", source: "estimated", estimatedTokens: 999 }),
+      ledgerRow({ id: "m", source: "manual", estimatedTokens: 50 }),
+    ];
+    const hud = deriveContextHudFacts(state, {
+      blocked: false,
+      evidencePresentCount: 2,
+      skillCount: 6,
+      versionPinsChecked: true,
+      topBlockers: [],
+      tierCounts: { hard_blocker: 0, warning: 0, info: 0 },
+    });
+    expect(hud.gatedEvidenceCount).toBe(2);
+    expect(hud.narrativeTokens).toBe(40);
+    expect(hud.narrativeTokens).not.toBe(999);
+    expect(hud.narrativeTokens).not.toBe(1089);
+  });
+});
+
 it("M7: deriveStatusBarFacts default labels avoid internal mechanism tokens (lint blacklist)", () => {
   const forbidden = [
     "T_GATE", "G-GROUND", "gated_pass", "pilot-template",

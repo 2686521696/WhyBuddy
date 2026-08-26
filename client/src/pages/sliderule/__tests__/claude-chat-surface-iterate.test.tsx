@@ -15,6 +15,10 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ClaudeChatSurface } from "../../SlideRule";
 import type { UiTurn } from "../types";
+import {
+  buildRehearsalClockView,
+  startRehearsalCursor,
+} from "../derive-status-bar";
 
 const completeTurn = (over: Partial<UiTurn> = {}): UiTurn => ({
   id: "t1",
@@ -103,5 +107,39 @@ describe("对话区 / 输入条 Cursor 尺度（装在真链路上）", () => {
     expect(dock).toContain("hero ? 72 : 28");
     expect(dock).not.toContain("hero ? 88 : 32");
     expect(dock).not.toContain("min-w-0 flex-1 pb-0.5");
+  });
+});
+
+describe("产品对话列的六步钟（不打开轨迹也能看见）", () => {
+  it("运行中直接画出 6 步，第 1 步 skippable，无假 ETA", () => {
+    const clock = buildRehearsalClockView(startRehearsalCursor(), {
+      isRunning: true,
+    });
+    const html = renderToStaticMarkup(
+      <ClaudeChatSurface
+        uiTurns={[]}
+        isRunning
+        liveAction={null}
+        latestTurn={null}
+        onChallenge={() => {}}
+        rehearsalClock={clock}
+        hud={{ gatedEvidenceCount: 0, narrativeTokens: 0 }}
+      />
+    );
+    expect(html).toContain('data-testid="sliderule-rehearsal-clock"');
+    expect(html).toContain('data-step="1"');
+    expect(html).toContain('data-skippable="true"');
+    expect(html).toContain('data-status="skipped"');
+    expect(html).toContain("起草 SPEC");
+    expect(html).toContain("大约数分钟，第一页会先出现");
+    expect(html).not.toContain("8–9");
+    expect(html).not.toContain("8 分钟");
+    expect(html).not.toContain("约 2 分钟");
+    expect(html).not.toContain("20 分钟");
+  });
+
+  it("不传钟就不渲染 HUD（删掉 ClaudeChatSurface 的 rehearsalClock 必红）", () => {
+    const html = surface([], true);
+    expect(html).not.toContain('data-testid="sliderule-rehearsal-clock"');
   });
 });

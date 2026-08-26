@@ -125,6 +125,27 @@ describe("spec_page 事件落到 onSpecPage", () => {
     ]);
   });
 
+  it("progress_heartbeat 落到 onProgressHeartbeat，不另开进度 API", async () => {
+    const stages: Array<{ stage?: string; label?: string }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        sseStream([
+          {
+            type: "progress_heartbeat",
+            stage: "specfirst.spec",
+            label: "起草规格",
+          },
+          { type: "complete", state: STATE },
+        ])
+      )
+    );
+    await driveFullViaPythonStream(STATE, "做一个工单系统", {
+      onProgressHeartbeat: (stage, label) => stages.push({ stage, label }),
+    } as never);
+    expect(stages).toEqual([{ stage: "specfirst.spec", label: "起草规格" }]);
+  });
+
   it("没接这个回调的调用方照常跑完 —— 不炸", async () => {
     vi.stubGlobal(
       "fetch",

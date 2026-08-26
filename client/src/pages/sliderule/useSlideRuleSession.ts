@@ -49,6 +49,12 @@ import type {
 import type { SkillId } from "@/lib/sliderule-marathon-driver";
 import * as Marathon from "@/lib/sliderule-marathon-driver";
 import {
+  advanceRehearsalCursor,
+  idleRehearsalCursor,
+  startRehearsalCursor,
+  type RehearsalClockCursor,
+} from "./derive-status-bar";
+import {
   createGithubPagesSlideRuleSeedSession,
   createGithubPagesSlideRuleSessionStore,
   loadOrSeedGithubPagesDemoSession,
@@ -335,8 +341,18 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   // E16.1 多流分窗：后端并行 LLM 子调用交错到达时，单槽展示会来回切换
   // （用户实测"打架"）——按 label 保序分窗，各流独立生长
   const [llmStreams, setLlmStreams] = useState<
-    Array<{ label: string; text: string }>
+    Array<{ label: string; text: string; collapsed?: boolean }>
   >([]);
+  // 产品六步钟：SSE 投影，不另开进度 API。ref 同步推进，避免心跳闭包读到旧 cursor。
+  const rehearsalCursorRef = useRef<RehearsalClockCursor>(idleRehearsalCursor());
+  const [rehearsalCursor, setRehearsalCursor] = useState<RehearsalClockCursor>(
+    idleRehearsalCursor()
+  );
+  const applyRehearsalEvent = (event: string | null | undefined) => {
+    const next = advanceRehearsalCursor(rehearsalCursorRef.current, event);
+    rehearsalCursorRef.current = next;
+    setRehearsalCursor(next);
+  };
 
   // 产品面恒 single（用户裁决 2026-07-10：模式选择器已删——drive-full-stream
   // 一条消息推到闭环，马拉松是浏览器端遗留且丢实时流）。初始化不再读
@@ -1003,6 +1019,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           setLlmDraft("");
           setLlmDraftLabel(null);
           setLlmStreams([]);
+          rehearsalCursorRef.current = startRehearsalCursor();
+          setRehearsalCursor(startRehearsalCursor());
           // ⚠ 新一轮清空：不清的话右侧会先亮上一轮的页面，而用户刚说的是
           //   "改成 XXX"——看着像改完了，其实一个字都还没动。
           setSpecPages([]);
@@ -1126,10 +1144,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   Array.from(llmDraftBuffers, ([label, text]) => ({
                     label,
                     text,
+                    collapsed: true,
                   }))
                 );
               },
               onSpecPage: page => {
+                applyRehearsalEvent("spec_page_html");
                 setSpecPages(prev => {
                   const i = prev.findIndex(p => p.pageId === page.pageId);
                   if (i < 0) return [...prev, page];
@@ -1143,6 +1163,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 );
               },
               onReasoningStep: (capabilityId, loop) => {
+                applyRehearsalEvent(capabilityId);
                 const human = humanReasoningStepLabel(capabilityId);
                 const label =
                   typeof loop === "number"
@@ -1154,6 +1175,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 setLiveAction({ label: human, external: false });
               },
               onSkillActivated: (skillId, _label) => {
+                applyRehearsalEvent(skillId);
                 setActiveSkillId(skillId);
                 const name = SKILL_STREAM_LABELS[skillId] || skillId;
                 appendStreamStep(`⚙ ${name} 系统画面生成中...`);
@@ -1203,6 +1225,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 if (mermaid) {
                   setLatestMermaid(mermaid);
                 }
+              },
+              onProgressHeartbeat: (stage) => {
+                if (stage) applyRehearsalEvent(stage);
               },
           } satisfies import("@/lib/sliderule-marathon-driver").DriveFullStreamOpts;
           const pythonDrive = resumeRun
@@ -2018,6 +2043,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     setLiveAction(null);
     setNextGateShouldFail(false);
     setDriveFullStatus("idle");
+    rehearsalCursorRef.current = idleRehearsalCursor();
+    setRehearsalCursor(idleRehearsalCursor());
+    setLlmStreams([]);
   }, [isRunning, sessionState.sessionId, sessionId, options.initialGoal]);
 
   // G_READY clarification cards: unanswered open_question gaps with V4-style structured options.
@@ -2101,6 +2129,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     llmDraft,
     llmDraftLabel,
     llmStreams,
+    rehearsalCursor,
     sendMessage,
     repairGaps,
     restoreModelVersion,

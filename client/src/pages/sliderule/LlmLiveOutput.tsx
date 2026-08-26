@@ -78,8 +78,10 @@ export function LlmLiveOutput({
   className?: string;
 }) {
   const looksJson = formatJson || /^\s*[{[]/.test(text);
-  // JSON / 归档默认收成一行。流式纯文字仍展开（正在想），但行头跟步骤同款。
-  const [collapsed, setCollapsed] = React.useState(done || looksJson);
+  // 2026-08-27 PR-2：轨迹默认折叠。点开才见 risk.analyze 原文——
+  // 进度看推演钟，不靠散文。此前流式纯文字默认展开，用户要读完想法
+  // 才知道「现在在哪一步」。
+  const [collapsed, setCollapsed] = React.useState(true);
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   // 贴底跟随：用户在底部才跟随；往上滚即接管（followRef 存意图，state 控胶囊）
   const followRef = React.useRef(true);
@@ -135,9 +137,7 @@ export function LlmLiveOutput({
         testId="sliderule-llm-draft-toggle"
         onClick={() => setCollapsed(v => !v)}
       />
-      {/* 纯文字思考流：自由流动，不装窗不折叠（Claude 的正文行为；
-          滚动与贴底跟随由外层聊天列统一负责）。E16：streamdown 渲染
-          markdown（未闭合语法容错 + 按块记忆化，选区不被打断） */}
+      {/* 点开后的纯文字思考流。默认折叠（PR-2）；滚动由外层聊天列负责。 */}
       {!collapsed && !treatAsJson && (
         <div
           data-testid="sliderule-llm-draft-body"

@@ -1,6 +1,9 @@
 /**
  * V5.1 STATUS 状态条 — 借鉴 Autopilot 右栏指标 + Dev 驾驶舱常驻条。
  * 纯派生，只读 sessionState（架构图 STATUS 节点）。
+ *
+ * 2026-08-27 PR-2：产品六步钟也从这里投影。内部模块 → 步的映射必须落在
+ * 本文件（M8），否则 SSE 只是能力 id 和页 sink，钟是假的。
  */
 
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
@@ -13,6 +16,200 @@ import {
 import type { SlideRuleExecutorMode } from "./types";
 import { projectConclusionBadge } from "./conclusion-badge";
 import type { PublishClosureSummary } from "./derive-cross-runtime-summary";
+
+/** 墙上钟 v1。8–9 / 2 / 20 不是标定集，禁止写进产品 DOM（KD4）。 */
+export const REHEARSAL_WALL_CLOCK_COPY = "大约数分钟，第一页会先出现";
+
+export type RehearsalProductStepId = 1 | 2 | 3 | 4 | 5 | 6;
+
+export type RehearsalProductStepDef = {
+  id: RehearsalProductStepId;
+  label: string;
+  skippable: boolean;
+};
+
+/**
+ * 产品口径六步。第 1 步默认 skippable：PR-5 短清单从起草 SPEC 起跳，
+ * 若不标可跳过，第一格会空转（M8）。
+ */
+export const REHEARSAL_PRODUCT_STEPS: readonly RehearsalProductStepDef[] = [
+  { id: 1, label: "澄清与取证", skippable: true },
+  { id: 2, label: "起草 SPEC", skippable: false },
+  { id: 3, label: "每页 HTML", skippable: false },
+  { id: 4, label: "结构反推", skippable: false },
+  { id: 5, label: "权限/工作流/不变式", skippable: false },
+  { id: 6, label: "汇合过闸", skippable: false },
+];
+
+/**
+ * M8 映射表（内部模块 → 产品步）。键是模块名，不是人话。
+ *
+ * ⚠ 改 `spec_tree` 的步号等于把默认起点挪走——测试按字面钉 2。
+ */
+export const REHEARSAL_MODULE_TO_STEP = {
+  "intent.clarify": 1,
+  "gap.ask": 1,
+  "evidence.search": 1,
+  spec_tree: 2,
+  spec_page_html: 3,
+  page_shell: 3,
+  html_structure: 4,
+  spec_semantics: 5,
+  model_assembly: 6,
+  html_bindings: 6,
+  v5_model_gate: 6,
+  evaluate_coverage_gate: 6,
+} as const satisfies Record<string, RehearsalProductStepId>;
+
+/**
+ * 活 SSE 上的别名。spec-first 阶段 id / 页 sink / 五系统 skill_start
+ * 与上表同一套产品步，不另开进度 API。
+ */
+const REHEARSAL_EVENT_ALIASES: Record<string, RehearsalProductStepId> = {
+  "specfirst.spec": 2,
+  "specfirst.design": 2,
+  spec_page: 3,
+  "specfirst.pages": 3,
+  "specfirst.pagescope": 3,
+  "specfirst.graphscope": 3,
+  "specfirst.structure": 4,
+  "specfirst.semantics": 5,
+  "specfirst.assemble": 6,
+  "specfirst.bind": 6,
+  dataModel: 6,
+  workflow: 6,
+  rbac: 6,
+  aigc: 6,
+  appBundle: 6,
+};
+
+export type RehearsalClockCursor = {
+  currentStep: RehearsalProductStepId | null;
+  sawStep1: boolean;
+  receivedMappedEvent: boolean;
+};
+
+export type RehearsalStepStatus = "pending" | "current" | "done" | "skipped";
+
+export type RehearsalClockStepView = RehearsalProductStepDef & {
+  status: RehearsalStepStatus;
+};
+
+export type RehearsalClockView = {
+  currentStep: RehearsalProductStepId | null;
+  currentLabel: string | null;
+  steps: RehearsalClockStepView[];
+  wallClockCopy: string;
+};
+
+export type ContextHudFacts = {
+  /** 闸过的证据条数。缺 publishClosure / 缺字段 = 0（fail-closed）。 */
+  gatedEvidenceCount: number;
+  /** 只累加 costLedger source="server"。估数 / manual 不进事实列（fail-open）。 */
+  narrativeTokens: number;
+};
+
+export function idleRehearsalCursor(): RehearsalClockCursor {
+  return { currentStep: null, sawStep1: false, receivedMappedEvent: false };
+}
+
+/** 默认 rehearse 从第 2 步起跳，第 1 步不亮成 current。 */
+export function startRehearsalCursor(): RehearsalClockCursor {
+  return { currentStep: 2, sawStep1: false, receivedMappedEvent: false };
+}
+
+export function mapInternalEventToProductStep(
+  event: string | null | undefined
+): RehearsalProductStepId | null {
+  const raw = String(event || "").trim();
+  if (!raw) return null;
+  const canonical =
+    REHEARSAL_MODULE_TO_STEP[raw as keyof typeof REHEARSAL_MODULE_TO_STEP];
+  if (canonical) return canonical;
+  const alias = REHEARSAL_EVENT_ALIASES[raw];
+  if (alias) return alias;
+  return null;
+}
+
+export function advanceRehearsalCursor(
+  cursor: RehearsalClockCursor,
+  event: string | null | undefined
+): RehearsalClockCursor {
+  const step = mapInternalEventToProductStep(event);
+  if (!step) return cursor;
+  if (step === 1) {
+    const keepHigher =
+      cursor.receivedMappedEvent &&
+      cursor.currentStep != null &&
+      cursor.currentStep > 1;
+    return {
+      currentStep: keepHigher ? cursor.currentStep : 1,
+      sawStep1: true,
+      receivedMappedEvent: true,
+    };
+  }
+  const current: RehearsalProductStepId =
+    cursor.currentStep == null
+      ? step
+      : ((Math.max(cursor.currentStep, step) as RehearsalProductStepId));
+  return {
+    currentStep: current,
+    sawStep1: cursor.sawStep1,
+    receivedMappedEvent: true,
+  };
+}
+
+export function buildRehearsalClockView(
+  cursor: RehearsalClockCursor,
+  opts: { isRunning: boolean; publishClosed?: boolean }
+): RehearsalClockView {
+  const current = cursor.currentStep;
+  const steps: RehearsalClockStepView[] = REHEARSAL_PRODUCT_STEPS.map((def) => {
+    let status: RehearsalStepStatus = "pending";
+    if (def.id === 1) {
+      if (cursor.sawStep1) {
+        status = current === 1 ? "current" : "done";
+      } else if (opts.isRunning && current != null && current >= 2) {
+        // 默认 rehearse 跳过取证：第一格 skippable，不许空转。
+        status = "skipped";
+      } else if (!opts.isRunning && opts.publishClosed) {
+        status = "skipped";
+      } else {
+        status = "pending";
+      }
+    } else if (current === def.id) {
+      status = "current";
+    } else if (current != null && current > def.id) {
+      status = "done";
+    } else if (!opts.isRunning && opts.publishClosed) {
+      status = "done";
+    }
+    return { ...def, status };
+  });
+  const currentDef =
+    steps.find((s) => s.status === "current") ||
+    (current ? steps[current - 1] : null);
+  return {
+    currentStep: current,
+    currentLabel: currentDef?.label ?? null,
+    steps,
+    wallClockCopy: opts.isRunning ? REHEARSAL_WALL_CLOCK_COPY : "",
+  };
+}
+
+export function deriveContextHudFacts(
+  state: V5SessionState,
+  publishClosure?: PublishClosureSummary | null
+): ContextHudFacts {
+  // 证据列 fail-closed：没有闭环摘要就当 0。控制面 search_evidence 不在这里。
+  const gatedEvidenceCount = Number(publishClosure?.evidencePresentCount ?? 0);
+  const ledger = state.costLedger || [];
+  const narrativeTokens = ledger.reduce((sum, row) => {
+    if (row.source !== "server") return sum;
+    return sum + Number(row.estimatedTokens ?? 0);
+  }, 0);
+  return { gatedEvidenceCount, narrativeTokens };
+}
 
 export type StatusBarFacts = {
   goalSnippet: string;
@@ -42,6 +239,8 @@ export type StatusBarFacts = {
   publishClosureClassName?: string;
   publishClosureHint?: string;
   publishClosureFailClosed?: boolean;
+  rehearsalClock: RehearsalClockView;
+  hud: ContextHudFacts;
 };
 
 export function deriveStatusBarFacts(
@@ -58,6 +257,7 @@ export function deriveStatusBarFacts(
     planDegraded?: boolean;
     planError?: string | null;
     publishClosure?: PublishClosureSummary | null;
+    rehearsalCursor?: RehearsalClockCursor;
   }
 ): StatusBarFacts {
   const badge = projectConclusionBadge(state);
@@ -237,6 +437,12 @@ export function deriveStatusBarFacts(
     (!Array.isArray(publishClosure.topBlockers) || publishClosure.topBlockers.length === 0)
   );
 
+  const rehearsalClock = buildRehearsalClockView(
+    opts.rehearsalCursor ?? idleRehearsalCursor(),
+    { isRunning: opts.isRunning, publishClosed: publishClosureClosed }
+  );
+  const hud = deriveContextHudFacts(state, opts.publishClosure);
+
   return {
     goalSnippet,
     conclusionLabel: publishClosureClosed ? "已闭环" : badge.label,
@@ -265,6 +471,8 @@ export function deriveStatusBarFacts(
     // surfaced for Python planner_* degraded visibility (see useSlideRuleSession + orchestrator pass-through)
     planDegraded: !!opts.planDegraded,
     planError: opts.planError ?? null,
+    rehearsalClock,
+    hud,
   };
 }
 

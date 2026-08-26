@@ -247,6 +247,11 @@ export interface DriveFullStreamOpts {
   ) => void;
   /** Called for each reasoning-engine step (evidence.search, risk.analyze ...). */
   onReasoningStep?: (label: string, loop?: number) => void;
+  /**
+   * 已有 SSE `progress_heartbeat` 的投影点。不另开进度 API。
+   * 只推进产品六步钟，不要往左栏再塞一条 chip（心跳会连发）。
+   */
+  onProgressHeartbeat?: (stage?: string, label?: string) => void;
   /** LLM 实时内容增量。label 标注来源：能力 id（risk.analyze / report.write…）
    *  或 "five-system-model"（五系统起草）。旧后端不带 label 时为 undefined。 */
   onLlmDelta?: (text: string, label?: string) => void;
@@ -421,6 +426,12 @@ async function consumeDriveStreamResponse(
             break;
           case "skill_start":
             opts.onSkillActivated?.(event.skill as SkillId, event.label as string);
+            break;
+          case "progress_heartbeat":
+            opts.onProgressHeartbeat?.(
+              typeof event.stage === "string" ? event.stage : undefined,
+              typeof event.label === "string" ? event.label : undefined
+            );
             break;
           case "skill_result":
             opts.onSkillCompleted?.(event.skill as SkillId, Boolean(event.error), {
