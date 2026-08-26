@@ -1383,6 +1383,17 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 ...streamOpts,
                 forcedTool: inferredTool,
                 ...(restoreId ? { versionId: restoreId } : {}),
+                /* ⚠ 质疑指向哪件产物、澄清卡答掉了哪几个缺口，**必须跟着
+                   POST 走**。2026-08-27 评审：这两样在客户端都算好了，
+                   `intervention` 也一路传到这儿，就是没进 body——于是
+                   服务端拿不到 target，失效级联整段跳过，而流里照样说
+                   「已按质疑失效」；澄清卡同理，答完一个缺口都不关。 */
+                ...(intervention?.targetArtifactId
+                  ? { targetArtifactId: intervention.targetArtifactId }
+                  : {}),
+                ...(intervention?.answeredGapIds?.length
+                  ? { answeredGapIds: intervention.answeredGapIds }
+                  : {}),
                 ...(inferredTool === "rehearse"
                   ? {
                       // 未写过 localStorage 就不要带 reuseCharter。缺键走账户

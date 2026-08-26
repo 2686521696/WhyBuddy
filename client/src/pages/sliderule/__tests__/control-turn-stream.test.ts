@@ -43,6 +43,39 @@ function countNeedle(src: string, needle: string): number {
   return n;
 }
 
+describe("干预字段一路带到 POST（三段都得接上）", () => {
+  /*
+   * ⚠ 这条钉的是**中间那一段**：runTurn 把 intervention 上的
+   *   targetArtifactId / answeredGapIds 交给 driveStream。
+   *   两头各有自己的判据——
+   *     客户端出口：control-post-carries-intervention.test.ts（真 fetch body）
+   *     服务端入口：test_challenge_and_gaps_reach_state.py（真 HTTP + 真状态）
+   *   ——唯独中间这一段只存在于 hook 里，测不动，所以在源码上钉。
+   *   2026-08-27 断的正是这一段：两头都写好了，中间没接。
+   */
+  const runTurn = SESSION.slice(
+    SESSION.indexOf("const runTurn = async"),
+    SESSION.indexOf("const requestRehearsal = async")
+  );
+
+  it("runTurn 把 targetArtifactId / answeredGapIds 交给 driveStream", () => {
+    expect(runTurn).toContain("intervention?.targetArtifactId");
+    expect(runTurn).toContain("intervention?.answeredGapIds");
+    const opts = runTurn.slice(runTurn.indexOf("driveStream(preparedState"));
+    expect(opts).toContain("targetArtifactId:");
+    expect(opts).toContain("answeredGapIds:");
+  });
+
+  it("反向：这两样只能挂在**新烧**那一支，续播不许带", () => {
+    const resume = runTurn.slice(
+      runTurn.indexOf("resumeDriveFullStream"),
+      runTurn.indexOf("driveStream(preparedState")
+    );
+    expect(resume).not.toContain("targetArtifactId");
+    expect(resume).not.toContain("answeredGapIds");
+  });
+});
+
 describe("产品客户端不得再 POST 工厂流", () => {
   it("useSlideRuleSession 剥注释后 POST /drive-full-stream 与 /drive-full 都是 0", () => {
     expect(countNeedle(SESSION, "/drive-full-stream")).toBe(0);

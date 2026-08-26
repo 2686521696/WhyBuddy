@@ -290,6 +290,23 @@ export interface DriveFullStreamOpts {
    * 必须把上一版 id 带上；服务端缺省也会再默认上一版。
    */
   versionId?: string;
+  /**
+   * 质疑指向的产物 id。
+   *
+   * ⚠ **不带这条，质疑就等于没质疑。** 服务端拿它构造 UserIntervention，
+   *   三个 target 全空时失效级联整段跳过（staleArtifactIds 一个不加），
+   *   而流里照样说「已按质疑失效」。2026-08-27 评审逮到的断链：客户端
+   *   `challenge-composer` 解析好了、`runTurn` 收到了，就是没进 POST body。
+   */
+  targetArtifactId?: string;
+  /**
+   * 澄清卡这次答掉了哪几个缺口。
+   *
+   * ⚠ 同上一条是一对。旧 TS `intakeMessage` 里的 `resolveReadinessGapsByIds`
+   *   随控制面改造一起删了，而拼 answeredGapIds 的代码还在——答完卡片
+   *   一个缺口都不会关。
+   */
+  answeredGapIds?: string[];
   /** 产品宪章 opt-in。只在确认推演时带，缺省不送，免得问候把账户旗清掉。 */
   reuseCharter?: boolean;
   productCharter?: {
@@ -565,6 +582,12 @@ export async function postControlTurnStream(
         designSystemId: opts.designSystemId ?? null,
         ...(opts.forcedTool ? { forcedTool: opts.forcedTool } : {}),
         ...(opts.versionId ? { versionId: opts.versionId } : {}),
+        ...(opts.targetArtifactId
+          ? { targetArtifactId: opts.targetArtifactId }
+          : {}),
+        ...(opts.answeredGapIds?.length
+          ? { answeredGapIds: opts.answeredGapIds }
+          : {}),
         ...(opts.mode ? { mode: opts.mode } : {}),
         ...(opts.reuseCharter !== undefined
           ? { reuseCharter: opts.reuseCharter }

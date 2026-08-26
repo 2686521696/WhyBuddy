@@ -51,11 +51,13 @@ from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from fastapi import HTTPException
+from starlette.concurrency import run_in_threadpool
 
 from models.v5_state import UserIntervention, V5SessionState
 from services.drive_full_factory import start_drive_full_factory_run
 from services.slide_rule_interactive_gates import (
     apply_user_intervention_invalidation,
+    resolve_readiness_gaps_by_ids,
 )
 from services.slide_rule_session import load_session, save_session
 from services.v5_full_driver import _truthy_scope_flag
@@ -94,6 +96,18 @@ CLOSED_TOOLS = (
     "restore_version",
     "fork_variant",
 )
+
+# 客户端认得的**终局事件**。少了它们，`consumeControlStreamResponse` 的
+# `acc.finalState` 一直是 null → `postControlTurnStream` 返回 null →
+# `runTurn` 抛「控制面未返回结果」，然后 catch 里把**这一轮开始前的快照**
+# PUT 回去。
+#
+# ⚠ 2026-08-27 评审逮到 `restore_version` 就是这样：服务端明明回退成功并
+#   `_persist` 了，客户端一个错误路径把它盖回去——比"点了没反应"更糟。
+#   紧挨着的 `fork_variant` 有 `yield _complete(state)`，注释还写着
+#   「不 yield 等于点了没反应」，只有它漏了。
+#   所以不再指望每个分支各自记得：**在 forced 这条总出口上兜一次**。
+_TERMINAL_EVENTS = ("complete", "control_handoff_factory")
 
 MAX_TOOL_ROUNDS = 8
 MAX_CHEAP_TOKENS = 8000
@@ -359,6 +373,46 @@ def _persist(state: V5SessionState) -> V5SessionState:
     return save_session(state)
 
 
+async def _apersist(state: V5SessionState) -> V5SessionState:
+    """落盘挪出事件循环。
+
+    ⚠ 2026-08-27 评审：`save_session` 是**同步**的，而这台机器上的会话后端
+      是「自定义 HTTPS SQL 网关」——一次落盘就是一次同步 HTTP。直接在
+      async 生成器里调，整个事件循环停在那里：单人开发看不出来，**两个人
+      同时推演就互相卡**（对方的 SSE 一个字都不出）。
+
+    ⚠ 走 starlette 的 `run_in_threadpool`（FastAPI 跑同步 endpoint 用的就是
+      它），不是自己 new 线程池：它跟着请求上下文走、有并发上限、
+      contextvars 会被带进工作线程（`_CONTROL_PAYLOAD` 靠这个）。
+
+    ⚠ 包一层而不是把 `_persist` 直接改成 async：漏改一处的话，
+      `_persist(...)` 会变成"造了个协程没人 await"——**不报错、也不落盘**，
+      是最难查的那种。现在漏改一处只是那处仍然阻塞，行为不变。
+    """
+    return await run_in_threadpool(_persist, state)
+
+
+async def _settled(
+    state: V5SessionState, events: AsyncIterator[Dict[str, Any]]
+) -> AsyncIterator[Dict[str, Any]]:
+    """昂贵按钮这条出口**一定**以终局事件收尾。
+
+    见 `_TERMINAL_EVENTS` 的注释：漏一个 `complete`，客户端不是"没反应"，
+    而是报「推演中断」并把这一轮开始前的快照 PUT 回去，把服务端已经做成的
+    事（比如版本回退）原地抹掉。
+
+    ⚠ 兜底只在**没出过**终局事件时补一个，不是无脑追加：多发一个 complete
+      会让客户端把中途状态当最终状态（handoff 之后工厂还要继续发）。
+    """
+    settled = False
+    async for event in events:
+        if str(event.get("type") or "") in _TERMINAL_EVENTS:
+            settled = True
+        yield event
+    if not settled:
+        yield _complete(state)
+
+
 _SLASH_VERBS = ("/推演", "/精修", "/质疑", "/范围", "/回退")
 
 
@@ -479,7 +533,7 @@ async def _park_ask(
             "options": list(options or []),
         },
     )
-    _persist(state)
+    await _apersist(state)
     yield {
         "type": "control_ask_user",
         "question": question,
@@ -513,7 +567,7 @@ async def _park_scope(
             "wantFeasibilityReport": _truthy_scope_flag(want_feasibility_report),
         },
     )
-    _persist(state)
+    await _apersist(state)
     yield {
         "type": "control_scope_card",
         "restatement": restatement,
@@ -536,7 +590,7 @@ async def _dismiss_scope(state: V5SessionState) -> AsyncIterator[Dict[str, Any]]
         state,
         {"role": "system", "kind": "scope_dismissed", "text": "先改范围"},
     )
-    _persist(state)
+    await _apersist(state)
     yield _complete(state)
 
 
@@ -558,7 +612,7 @@ async def _confirm_rehearse_and_handoff(
     )
     state.awaitReason = None
     state.awaitDetail = None
-    _persist(state)
+    await _apersist(state)
     async for event in _handoff_factory(
         state,
         user_text,
@@ -610,24 +664,78 @@ async def _handoff_factory(
         yield event
 
 
+def _challenge_target(state: V5SessionState) -> Optional[str]:
+    """这次质疑指向哪件产物。
+
+    ⚠ **必须来自本回合的 POST。** 2026-08-27 评审逮到的断链：
+      `_tool_challenge` 只拿 intent + text 造 UserIntervention，
+      `invalidate_for_intervention` 三个 target 全空 → `initial_art_targets`
+      空 → 级联整段跳过 → `staleArtifactIds` 一个都不加，而流里照样说
+      「已按质疑失效相关产物」。三段（客户端解析 → POST → 服务端失效）各自
+      都写了，接起来是空的——本仓第七条最坏的形态：**绿灯是假的**。
+
+    ⚠ 客户端给的 id **要跟 artifacts 对一遍**。对不上就当没指到：
+      往 staleArtifactIds 里塞一个不存在的 id 不会报错，只会让那份名单
+      越长越脏，而且看着像"失效过了"。
+
+    走 ContextVar 而不是加参数，跟 `_handoff_factory` 读 charter 是同一个
+    机制（本回合信封），也逼着判据打在真 HTTP 上而不是直调函数。
+    """
+    payload = _CONTROL_PAYLOAD.get() or {}
+    raw = str(
+        payload.get("targetArtifactId") or payload.get("target_artifact_id") or ""
+    ).strip()
+    if not raw:
+        return None
+    for art in getattr(state, "artifacts", None) or []:
+        aid = art.get("id") if isinstance(art, dict) else getattr(art, "id", None)
+        if aid and str(aid) == raw:
+            return raw
+    return None
+
+
 async def _tool_challenge(state: V5SessionState, user_text: str) -> AsyncIterator[Dict[str, Any]]:
     yield {"type": "control_tool_start", "tool": "challenge"}
+    target = _challenge_target(state)
+    before = set(getattr(state, "staleArtifactIds", None) or [])
     intervention = UserIntervention(
         intent="challenge",
         text=(user_text or "质疑").strip() or "质疑",
+        targetArtifactId=target,
     )
     apply_user_intervention_invalidation(state, intervention)
-    _append_transcript(state, {"role": "assistant", "kind": "challenge", "text": user_text})
-    _persist(state)
+    after = set(getattr(state, "staleArtifactIds", None) or [])
+    newly = sorted(after - before)
+    _append_transcript(
+        state,
+        {
+            "role": "assistant",
+            "kind": "challenge",
+            "text": user_text,
+            "targetArtifactId": target,
+            "staleArtifactIds": newly,
+        },
+    )
+    await _apersist(state)
     yield {
         "type": "control_tool_result",
         "tool": "challenge",
         "ok": True,
-        "detail": "invalidated",
+        # ⚠ detail 说的是**这次真的发生了什么**，不是"这个分支跑过了"。
+        "detail": "invalidated" if newly else "no_target",
+        "targetArtifactId": target,
+        "staleArtifactIds": newly,
     }
     yield {
         "type": "control_text",
-        "text": "已按质疑失效相关产物。需要的话再说一次要改什么。",
+        # ⚠ 一件都没失效时**不许说已失效**（第七条）。说了就是假绿灯：
+        #   用户以为那份产物已经作废，下一轮照样拿它当依据。
+        "text": (
+            f"已按质疑失效 {len(newly)} 件产物。需要的话再说一次要改什么。"
+            if newly
+            else "记下了这条质疑，但没有指到具体产物——没有任何产物被失效。"
+            "点某张卡片上的「质疑」，或者说清是哪一份。"
+        ),
     }
     yield _complete(state)
 
@@ -637,7 +745,10 @@ async def _tool_search(state: V5SessionState, query: str) -> Dict[str, Any]:
     try:
         from services.rag_service import retrieve_evidence
 
-        raw = retrieve_evidence(query or "", top_k=6) or []
+        # 同上：RAG 检索是同步的（可能带网络/向量库），一样不许坐在事件循环上
+        raw = await run_in_threadpool(
+            lambda: retrieve_evidence(query or "", top_k=6) or []
+        )
         for item in raw[:6]:
             if not isinstance(item, dict):
                 continue
@@ -688,7 +799,10 @@ async def _tool_restore(state: V5SessionState, version_id: str) -> Dict[str, Any
         from fastapi.responses import JSONResponse
         from routes.sliderule_full import _restore_model_version_locked
 
-        result = _restore_model_version_locked(state.sessionId, vid)
+        # 回退要重建闭环证据（可能走 LLM），是这条链上最重的一次同步调用
+        result = await run_in_threadpool(
+            _restore_model_version_locked, state.sessionId, vid
+        )
         if isinstance(result, JSONResponse):
             return {"ok": False, "error": "restore_failed", "versionId": vid}
         if isinstance(result, dict) and isinstance(result.get("state"), dict):
@@ -801,7 +915,7 @@ def _usage_tokens(usage: Any) -> int:
 
 async def _canned(state: V5SessionState, text: str) -> AsyncIterator[Dict[str, Any]]:
     _append_transcript(state, {"role": "assistant", "kind": "canned", "text": text})
-    _persist(state)
+    await _apersist(state)
     yield {"type": "control_text", "text": text}
     yield _complete(state)
 
@@ -812,7 +926,7 @@ async def run_control_turn(
     """产品控制面主循环。cheap 请求内结束；点火才调信封 helper。"""
     validate_control_turn_body(payload)
     session_id = str(payload["sessionId"]).strip()
-    state = load_session(session_id)
+    state = await run_in_threadpool(load_session, session_id)
     if state is None:
         raise HTTPException(status_code=400, detail="session_id required")
 
@@ -826,6 +940,46 @@ async def run_control_turn(
     finally:
         clear_charter_for_run()
         _CONTROL_PAYLOAD.reset(token)
+
+
+def _open_question_gaps(state: V5SessionState) -> List[str]:
+    out: List[str] = []
+    for gap in getattr(state, "coverageGaps", None) or []:
+        get = gap.get if isinstance(gap, dict) else lambda k, _g=gap: getattr(_g, k, None)
+        if get("status") == "open" and get("kind") == "open_question":
+            gid = get("id")
+            if gid:
+                out.append(str(gid))
+    return out
+
+
+async def _resolve_answered_gaps(
+    state: V5SessionState, payload: Dict[str, Any]
+) -> List[str]:
+    """澄清卡答完，按 id 精确关掉这几个缺口。返回真的被关掉的那些。
+
+    ⚠ **`resolve_readiness_gaps_by_ids` 一直就在**（slide_rule_interactive_gates
+      :182），逐条写对、还有单测——**只是产品链路上没有任何调用点**。
+      本仓第三条的原话：函数写对了 ≠ 它被调用了。控制面改造把 TS 那侧的
+      `intakeMessage`（唯一的 resolveReadinessGapsByIds 调用点）删了，
+      客户端仍在拼 answeredGapIds，于是答完卡片一个缺口都不关，闸还是红的，
+      而用户以为自己已经答过了。
+
+    ⚠ 只关**这次点名的**：整批关掉等于把没答的问题也当答了，覆盖门就成了
+      摆设（第七条：闭环类 fail-closed，不许伪造绿灯）。
+    """
+    raw = payload.get("answeredGapIds") or payload.get("answered_gap_ids")
+    if not isinstance(raw, list):
+        return []
+    ids = [str(x).strip() for x in raw if str(x or "").strip()]
+    if not ids:
+        return []
+    before = set(_open_question_gaps(state))
+    resolve_readiness_gaps_by_ids(state, ids)
+    closed = sorted(before - set(_open_question_gaps(state)))
+    if closed:
+        await _apersist(state)
+    return closed
 
 
 async def _run_control_turn_body(
@@ -842,6 +996,7 @@ async def _run_control_turn_body(
     original_goal = _goal_text(state)
 
     _append_transcript(state, {"role": "user", "kind": "turn", "text": user_text})
+    await _resolve_answered_gaps(state, payload)
 
     raw_forced = str(
         payload.get("forcedTool") or payload.get("forced_tool") or ""
@@ -897,7 +1052,7 @@ async def _run_control_turn_body(
         goal = dict(state.goal) if isinstance(state.goal, dict) else {}
         goal["text"] = original_goal
         state.goal = goal
-        _persist(state)
+        await _apersist(state)
         async for event in _handoff_factory(
             state,
             user_text,
@@ -927,7 +1082,7 @@ async def _run_control_turn_body(
         return
 
     if forced == "challenge":
-        async for event in _tool_challenge(state, user_text):
+        async for event in _settled(state, _tool_challenge(state, user_text)):
             yield event
         return
 
@@ -940,16 +1095,19 @@ async def _run_control_turn_body(
             ).strip()
             if vid:
                 tool_args["versionId"] = vid
-        async for event in _dispatch_tool(
-            forced,
-            tool_args,
+        async for event in _settled(
             state,
-            user_text,
-            installed_skills,
-            active_connectors,
-            preferred_device,
-            design_system_id,
-            original_goal,
+            _dispatch_tool(
+                forced,
+                tool_args,
+                state,
+                user_text,
+                installed_skills,
+                active_connectors,
+                preferred_device,
+                design_system_id,
+                original_goal,
+            ),
         ):
             yield event
         return
@@ -965,7 +1123,11 @@ async def _run_control_turn_body(
                 async for event in _canned(state, OVER_CAP_TEXT):
                     yield event
                 return
-            result = call_control_llm(messages, tools=CONTROL_TOOLS)
+            # ⚠ 同步 httpx（超时最长 45s）。不挪出事件循环的话，一个人的
+            #   控制面轮次会把所有并发的 SSE 流一起冻住——见 _apersist 的头注。
+            result = await run_in_threadpool(
+                lambda: call_control_llm(messages, tools=CONTROL_TOOLS)
+            )
             cheap_tokens += _usage_tokens(getattr(result, "usage", None))
             if await _maybe_over_cap():
                 async for event in _canned(state, OVER_CAP_TEXT):
@@ -982,7 +1144,7 @@ async def _run_control_turn_body(
                 _append_transcript(
                     state, {"role": "assistant", "kind": "control_text", "text": text}
                 )
-                _persist(state)
+                await _apersist(state)
                 yield {"type": "control_text", "text": text}
                 yield _complete(state)
                 return
@@ -1108,7 +1270,7 @@ async def _dispatch_tool(
         restatement = _confirmed_restatement(state, user_text)
         _write_confirmed_goal(state, restatement)
         _copy_scope_opt_in_into_goal(state)
-        _persist(state)
+        await _apersist(state)
         async for event in _handoff_factory(
             state,
             user_text,
@@ -1124,7 +1286,7 @@ async def _dispatch_tool(
         goal = dict(state.goal) if isinstance(state.goal, dict) else {}
         goal["text"] = original_goal
         state.goal = goal
-        _persist(state)
+        await _apersist(state)
         async for event in _handoff_factory(
             state,
             user_text,
@@ -1157,13 +1319,13 @@ async def _dispatch_tool(
     if name == "search_evidence":
         yield {"type": "control_tool_start", "tool": "search_evidence"}
         result = await _tool_search(state, str(args.get("query") or user_text))
-        _persist(state)
+        await _apersist(state)
         yield {"type": "control_tool_result", "tool": "search_evidence", **result}
         return
     if name == "inspect_model":
         yield {"type": "control_tool_start", "tool": "inspect_model"}
         result = await _tool_inspect(state)
-        _persist(state)
+        await _apersist(state)
         yield {"type": "control_tool_result", "tool": "inspect_model", **result}
         return
     if name == "restore_version":
@@ -1172,13 +1334,13 @@ async def _dispatch_tool(
             version_id = _previous_model_version_id(state)
         yield {"type": "control_tool_start", "tool": "restore_version"}
         result = await _tool_restore(state, version_id)
-        _persist(state)
+        await _apersist(state)
         yield {"type": "control_tool_result", "tool": "restore_version", **result}
         return
     if name == "fork_variant":
         yield {"type": "control_tool_start", "tool": "fork_variant"}
         result = await _tool_fork(state, str(args.get("newName") or user_text or "变体"))
-        _persist(state)
+        await _apersist(state)
         yield {"type": "control_tool_result", "tool": "fork_variant", **result}
         # 客户端靠 complete.finalState 看见新 versionId；不 yield 等于点了没反应。
         yield _complete(state)
