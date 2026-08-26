@@ -262,6 +262,52 @@ export function forcedToolForRehearsalVerb(
   return undefined;
 }
 
+/** `/范围 请假系统` → `请假系统`；裸 `/范围` → 空串。不是斜杠动词则原文。 */
+export function rehearsalSlashRemainder(text: string): string {
+  const t = String(text || "").trim();
+  for (const { cmd } of REHEARSAL_VERBS) {
+    if (t === cmd) return "";
+    if (
+      t.startsWith(`${cmd} `) ||
+      t.startsWith(`${cmd}\n`) ||
+      t.startsWith(cmd)
+    ) {
+      return t.slice(cmd.length).trim();
+    }
+  }
+  return t;
+}
+
+/**
+ * `/范围` 的 POST userText：余量，否则当前 goal。
+ * `/推演` 必须留前缀，服务端 `_is_slash_rehearse` 靠它 park。
+ */
+export function controlUserTextForSlash(
+  userText: string,
+  currentGoal: string
+): string {
+  const raw = String(userText || "").trim();
+  if (parseRehearsalSlash(raw) !== "scope") return raw;
+  return rehearsalSlashRemainder(raw) || String(currentGoal || "").trim();
+}
+
+/**
+ * 范围卡标题。服务端若仍把 `/范围` 当 restatement，客户端不得照画。
+ */
+export function scopeCardRestatement(
+  eventRestatement: string,
+  userText: string,
+  currentGoal: string
+): string {
+  const raw = String(eventRestatement || "").trim();
+  const remainder = rehearsalSlashRemainder(userText);
+  const goal = String(currentGoal || "").trim();
+  if (raw && parseRehearsalSlash(raw) === null && !raw.startsWith("/")) {
+    return raw;
+  }
+  return remainder || goal;
+}
+
 /** 选中推演动词：把 `/查询串` 补成完整命令，不摘成芯片。 */
 export function applyRehearsalSlashPick(
   text: string,

@@ -330,6 +330,10 @@ def resolve_forced_tool(payload: Dict[str, Any], user_text: str) -> Optional[str
         return "refine"
     if text.startswith("/质疑"):
         return "challenge"
+    if text.startswith("/范围"):
+        return "scope_card"
+    if text.startswith("/回退"):
+        return "restore_version"
     return None
 
 
@@ -345,7 +349,15 @@ def _persist(state: V5SessionState) -> V5SessionState:
     return save_session(state)
 
 
+_SLASH_VERBS = ("/推演", "/精修", "/质疑", "/范围", "/回退")
+
+
 def _restate(user_text: str) -> str:
+    """复述句。斜杠动词剥掉；剥空返回空串，让调用方落到 original_goal。
+
+    ⚠ 2026-08-27：第一版只剥 `/推演`，且 `stripped or text` 把裸 `/范围`
+    填回去——卡标题变成「将做成：/范围」，goal 再没用上。
+    """
     import re
 
     text = (user_text or "").strip()
@@ -356,9 +368,37 @@ def _restate(user_text: str) -> str:
         flags=re.IGNORECASE,
     )
     stripped = re.sub(r"[。！？.!?]+$", "", stripped).strip()
-    if stripped.startswith("/推演"):
-        stripped = stripped[len("/推演") :].strip()
-    return stripped or text or "未命名应用"
+    for cmd in _SLASH_VERBS:
+        if stripped == cmd or stripped.startswith(cmd):
+            stripped = stripped[len(cmd) :].strip()
+            break
+    if not stripped or stripped.startswith("/"):
+        return ""
+    return stripped
+
+
+def _previous_model_version_id(state: V5SessionState) -> str:
+    """当前指针的上一版。对不上 / 已经是第一版 → 空（fail-closed）。"""
+    versions = list(getattr(state, "modelVersions", None) or [])
+    ids: List[str] = []
+    for row in versions:
+        vid = ""
+        if isinstance(row, dict):
+            vid = str(row.get("id") or "").strip()
+        else:
+            vid = str(getattr(row, "id", "") or "").strip()
+        if vid:
+            ids.append(vid)
+    if not ids:
+        return ""
+    current = str(getattr(state, "currentModelVersionId", None) or "").strip()
+    if current and current in ids:
+        idx = ids.index(current)
+    else:
+        idx = len(ids) - 1
+    if idx > 0:
+        return ids[idx - 1]
+    return ""
 
 
 def _inspect_digest(state: V5SessionState) -> tuple[str, str]:
@@ -625,20 +665,32 @@ async def _tool_inspect(state: V5SessionState) -> Dict[str, Any]:
 
 
 async def _tool_restore(state: V5SessionState, version_id: str) -> Dict[str, Any]:
+    """空 versionId 是静默 no-op（锁里找不到 id==""）。缺 id 必须 fail-closed。"""
+    vid = (version_id or "").strip()
+    if not vid:
+        return {"ok": False, "error": "version_id required"}
     try:
+        from fastapi.responses import JSONResponse
         from routes.sliderule_full import _restore_model_version_locked
 
-        result = _restore_model_version_locked(state.sessionId, version_id)
+        result = _restore_model_version_locked(state.sessionId, vid)
+        if isinstance(result, JSONResponse):
+            return {"ok": False, "error": "restore_failed", "versionId": vid}
         if isinstance(result, dict) and isinstance(result.get("state"), dict):
             restored = V5SessionState.server_load(result["state"])
             state.modelVersions = restored.modelVersions
             state.currentModelVersionId = restored.currentModelVersionId
             state.publishClosure = restored.publishClosure
             state.specFirstPages = restored.specFirstPages
-        _append_transcript(
-            state, {"role": "tool", "kind": "restore_version", "text": version_id}
-        )
-        return {"ok": True, "versionId": version_id}
+            _append_transcript(
+                state, {"role": "tool", "kind": "restore_version", "text": vid}
+            )
+            return {
+                "ok": True,
+                "versionId": vid,
+                "restored": result.get("restored", True),
+            }
+        return {"ok": False, "error": "restore_failed", "versionId": vid}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc)[:200]}
 
@@ -816,9 +868,16 @@ async def run_control_turn(
 
     if forced in CLOSED_TOOLS:
         # 其余 forced 工具仍跳过 LLM，走一圈执行器。
+        tool_args: Dict[str, Any] = {}
+        if forced == "restore_version":
+            vid = str(
+                payload.get("versionId") or payload.get("version_id") or ""
+            ).strip()
+            if vid:
+                tool_args["versionId"] = vid
         async for event in _dispatch_tool(
             forced,
-            {},
+            tool_args,
             state,
             user_text,
             installed_skills,
@@ -1043,8 +1102,11 @@ async def _dispatch_tool(
         yield {"type": "control_tool_result", "tool": "inspect_model", **result}
         return
     if name == "restore_version":
+        version_id = str(args.get("versionId") or args.get("version_id") or "").strip()
+        if not version_id:
+            version_id = _previous_model_version_id(state)
         yield {"type": "control_tool_start", "tool": "restore_version"}
-        result = await _tool_restore(state, str(args.get("versionId") or ""))
+        result = await _tool_restore(state, version_id)
         _persist(state)
         yield {"type": "control_tool_result", "tool": "restore_version", **result}
         return

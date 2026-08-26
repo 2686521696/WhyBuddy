@@ -1753,6 +1753,7 @@ export function ComposerDock({
               pending={pendingScope}
               onConfirm={onConfirmScope}
               onRevise={onReviseScope}
+              confirmDisabled={isRunning}
             />
           ) : pendingAsk ? (
             <div

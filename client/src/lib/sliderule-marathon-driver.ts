@@ -285,6 +285,11 @@ export interface DriveFullStreamOpts {
   designSystemId?: string;
   /** M1 控制面昂贵按钮：rehearse/refine/repair/challenge。/推演 不得带 rehearse。 */
   forcedTool?: string;
+  /**
+   * `/回退` 的目标版本。空 versionId 在服务端 restore_version 是静默 no-op，
+   * 必须把上一版 id 带上；服务端缺省也会再默认上一版。
+   */
+  versionId?: string;
   onControlText?: (text: string) => void;
   onControlAskUser?: (event: {
     question: string;
@@ -549,6 +554,7 @@ export async function postControlTurnStream(
         preferredDevice: opts.preferredDevice ?? "desktop",
         designSystemId: opts.designSystemId ?? null,
         ...(opts.forcedTool ? { forcedTool: opts.forcedTool } : {}),
+        ...(opts.versionId ? { versionId: opts.versionId } : {}),
         ...(opts.mode ? { mode: opts.mode } : {}),
       }),
     });

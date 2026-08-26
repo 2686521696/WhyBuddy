@@ -70,8 +70,10 @@ import {
   type ScopeCardPending,
 } from "./scope-card-gate";
 import {
+  controlUserTextForSlash,
   forcedToolForRehearsalVerb,
   parseRehearsalSlash,
+  scopeCardRestatement,
 } from "./composer-slash";
 
 /** 昂贵按钮的 forcedTool。/推演 不得在客户端带 rehearse——未确认卡由服务端 park。 */
@@ -85,6 +87,22 @@ export function inferForcedTool(
   if (mode === "repair") return "repair";
   if (intervention?.intent === "challenge") return "challenge";
   return forcedToolForRehearsalVerb(parseRehearsalSlash(userText));
+}
+
+/** `/回退` 默认上一版。空 versionId 在服务端是静默 no-op。 */
+export function previousModelVersionId(state: {
+  modelVersions?: Array<{ id?: string } | null> | null;
+  currentModelVersionId?: string | null;
+}): string | undefined {
+  const versions = Array.isArray(state.modelVersions) ? state.modelVersions : [];
+  const ids = versions
+    .map(v => (v && typeof v.id === "string" ? v.id : ""))
+    .filter(Boolean);
+  if (!ids.length) return undefined;
+  const current = String(state.currentModelVersionId || "");
+  const idx = current ? ids.indexOf(current) : ids.length - 1;
+  if (idx > 0) return ids[idx - 1];
+  return undefined;
 }
 
 // 105 Python full-path: product /agent-loop/sliderule + /sliderule use this hook + http store.
@@ -314,11 +332,6 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const requestRehearsalRef = useRef<
     (userText: string) => Promise<void>
   >(async () => {});
-  const flushQueuedControlTurn = () => {
-    const text = queuedTurnRef.current;
-    queuedTurnRef.current = null;
-    if (text) void requestRehearsalRef.current(text);
-  };
   /**
    * 版本回退/前进是否有请求在飞（2026-08-16 线上实测）。
    *
@@ -362,6 +375,24 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     question: string;
     options?: string[];
   } | null>(null);
+  const pendingAskRef = useRef(pendingAsk);
+  pendingAskRef.current = pendingAsk;
+
+  /**
+   * 停泊卡 / 提问还在时不许 flush。
+   *
+   * ⚠ 2026-08-27：第一版 finally 无条件 requestRehearsal，而 requestRehearsal
+   * 开头就 clearPendingScope——/推演 刚 park 的卡被排队文本清掉，确认没了。
+   * 队列留着（一格、仍 latest-wins），确认/先改范围/关掉提问之后再发。
+   */
+  const overlayBlocksQueueFlush = () =>
+    Boolean(pendingScopeRef.current || pendingAskRef.current);
+  const flushQueuedControlTurn = () => {
+    if (overlayBlocksQueueFlush()) return;
+    const text = queuedTurnRef.current;
+    queuedTurnRef.current = null;
+    if (text) void requestRehearsalRef.current(text);
+  };
 
   const clearPendingScope = () => {
     pendingScopeRef.current = null;
@@ -1288,15 +1319,25 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 appendStreamStep(text);
               },
               onControlAskUser: event => {
-                setPendingAsk({
+                const next = {
                   question: event.question,
                   options: event.options,
-                });
+                };
+                pendingAskRef.current = next;
+                setPendingAsk(next);
               },
               onControlScopeCard: event => {
+                const goalText =
+                  (preparedState as { goal?: { text?: string } }).goal?.text ||
+                  "";
+                const restatement = scopeCardRestatement(
+                  String(event.restatement || ""),
+                  userText,
+                  String(goalText || "")
+                );
                 const next: ScopeCardPending = {
                   userText: String(event.userText || userText.trim()),
-                  restatement: String(event.restatement || userText.trim()),
+                  restatement: restatement || "未命名应用",
                   variant: event.variant === "thin" ? "thin" : "full",
                   device:
                     event.device === "phone"
@@ -1310,18 +1351,32 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               },
           } satisfies import("@/lib/sliderule-marathon-driver").DriveFullStreamOpts;
           // 续播只 GET /runs/{id}/stream，禁止 POST control-turn-stream。
+          const inferredTool = inferForcedTool(
+            userText,
+            intervention,
+            mode,
+            forcedTool
+          );
+          const postedText =
+            controlUserTextForSlash(
+              userText,
+              String(
+                (preparedState as { goal?: { text?: string } }).goal?.text ||
+                  ""
+              )
+            ) || userText.trim();
+          const restoreId =
+            inferredTool === "restore_version"
+              ? previousModelVersionId(preparedState)
+              : undefined;
           const pythonDrive = resumeRun
             ? await (
                 await import("@/lib/sliderule-marathon-driver")
               ).resumeDriveFullStream(resumeRun.runId, streamOpts)
-            : await driveStream(preparedState, userText.trim(), {
+            : await driveStream(preparedState, postedText, {
                 ...streamOpts,
-                forcedTool: inferForcedTool(
-                  userText,
-                  intervention,
-                  mode,
-                  forcedTool
-                ),
+                forcedTool: inferredTool,
+                ...(restoreId ? { versionId: restoreId } : {}),
               });
           // 流断了但 run 未终局（网络抖动/代理超时，非本地停止）：
           // 绝不能落进本地引擎兜底——那会把整轮在前端重跑一遍，与后台
@@ -1793,6 +1848,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     mode?: "repair"
   ) => {
     clearPendingScope();
+    pendingAskRef.current = null;
     setPendingAsk(null);
     await runTurn(userText, intervention, resumeRun, mode);
   };
@@ -1806,7 +1862,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
    */
   const confirmControlScope = async () => {
     const pending = pendingScopeRef.current;
-    if (!pending || isRunning) return;
+    // ⚠ 2026-08-27：stop() 立刻把 isRunning 画面松开，isRunningRef 要等
+    // finally。用 state 闸会在这个窗口里 clearPendingScope 再 runTurn 空转，
+    // 卡没了、rehearse 也没 POST。闸在 ref；ref 仍真时连卡都不要清。
+    if (!pending || isRunningRef.current) return;
     const snapshot: ScopeCardPending = { ...pending };
     clearPendingScope();
     await runTurn(
@@ -1822,7 +1881,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     const pending = pendingScopeRef.current;
     clearPendingScope();
     if (pending?.userText) setInput(pending.userText);
-    if (IS_GITHUB_PAGES) return;
+    if (IS_GITHUB_PAGES) {
+      flushQueuedControlTurn();
+      return;
+    }
     void (async () => {
       try {
         const { postControlTurnStream } = await import(
@@ -1843,8 +1905,16 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         }
       } catch {
         // 先改范围是增强类：客户端已解锁；服务端清停泊失败不得锁死作曲家。
+      } finally {
+        flushQueuedControlTurn();
       }
     })();
+  };
+
+  const dismissAsk = () => {
+    pendingAskRef.current = null;
+    setPendingAsk(null);
+    flushQueuedControlTurn();
   };
 
   const stop = useCallback(() => {
@@ -2302,7 +2372,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     pendingAsk,
     confirmControlScope,
     dismissScopeCard,
-    dismissAsk: () => setPendingAsk(null),
+    dismissAsk,
     challengeTurn,
     resetSession,
     toggleRouteExpanded,

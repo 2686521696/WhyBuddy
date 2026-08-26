@@ -12,10 +12,15 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  controlUserTextForSlash,
   forcedToolForRehearsalVerb,
   parseRehearsalSlash,
+  scopeCardRestatement,
 } from "../composer-slash";
-import { inferForcedTool } from "../useSlideRuleSession";
+import {
+  inferForcedTool,
+  previousModelVersionId,
+} from "../useSlideRuleSession";
 
 function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
@@ -24,8 +29,17 @@ function stripComments(src: string): string {
 const SESSION = stripComments(
   readFileSync(new URL("../useSlideRuleSession.ts", import.meta.url), "utf8")
 );
+const DRIVER = stripComments(
+  readFileSync(
+    new URL("../../../lib/sliderule-marathon-driver.ts", import.meta.url),
+    "utf8"
+  )
+);
 const DOCK = stripComments(
   readFileSync(new URL("../ComposerDock.tsx", import.meta.url), "utf8")
+);
+const CARD = stripComments(
+  readFileSync(new URL("../ScopeCard.tsx", import.meta.url), "utf8")
 );
 const MENU = stripComments(
   readFileSync(new URL("../ComposerSlashMenu.tsx", import.meta.url), "utf8")
@@ -185,7 +199,8 @@ describe("发送键不是停止；停止是独立方块", () => {
 
 describe("斜杠动词走控制面，客户端 /推演 不得 yolo", () => {
   it("inferForcedTool 是 runTurn 真正传给控制面的那一处", () => {
-    expect(runTurn).toContain("forcedTool: inferForcedTool(");
+    expect(runTurn).toContain("inferForcedTool(");
+    expect(runTurn).toContain("forcedTool: inferredTool");
     expect(inferForcedTool("/推演")).toBeUndefined();
     expect(inferForcedTool("/推演 请假系统")).toBeUndefined();
     expect(inferForcedTool("/精修")).toBe("refine");
@@ -226,6 +241,112 @@ describe("斜杠动词走控制面，客户端 /推演 不得 yolo", () => {
     expect(pick).toContain("applyRehearsalSlashPick");
     expect(MENU).toContain('rehearsal: "推演"');
     expect(MENU).toContain('["rehearsal", "partner", "connector", "skill"]');
+  });
+});
+
+describe("停泊 overlay 时 flush 不得清卡", () => {
+  it("flushQueuedControlTurn 在 pendingScopeRef/pendingAskRef 时 return，队列留下", () => {
+    const flushFn = SESSION.slice(
+      SESSION.indexOf("const overlayBlocksQueueFlush"),
+      SESSION.indexOf("const clearPendingScope")
+    );
+    expect(flushFn).toContain("pendingScopeRef.current");
+    expect(flushFn).toContain("pendingAskRef.current");
+    expect(flushFn).toContain("if (overlayBlocksQueueFlush()) return");
+    expect(flushFn.indexOf("overlayBlocksQueueFlush()")).toBeGreaterThanOrEqual(
+      0
+    );
+    expect(flushFn.indexOf("overlayBlocksQueueFlush()")).toBeLessThan(
+      flushFn.indexOf("queuedTurnRef.current = null")
+    );
+    expect(flushFn.indexOf("overlayBlocksQueueFlush()")).toBeLessThan(
+      flushFn.indexOf("requestRehearsalRef.current")
+    );
+    // 反向：删掉 skip-when-parked，finally 会 requestRehearsal → clearPendingScope。
+    expect(SESSION).toContain("clearPendingScope()");
+    const requestFn = SESSION.slice(
+      SESSION.indexOf("const requestRehearsal = async"),
+      SESSION.indexOf("requestRehearsalRef.current = async")
+    );
+    expect(requestFn).toContain("clearPendingScope()");
+  });
+
+  it("确认/先改范围/关掉提问之后才 flush，确认前不得清卡", () => {
+    const dismissFn = SESSION.slice(
+      SESSION.indexOf("const dismissScopeCard"),
+      SESSION.indexOf("const dismissAsk")
+    );
+    expect(dismissFn.indexOf("clearPendingScope()")).toBeLessThan(
+      dismissFn.indexOf("flushQueuedControlTurn()")
+    );
+    const dismissAskFn = SESSION.slice(
+      SESSION.indexOf("const dismissAsk"),
+      SESSION.indexOf("const stop =")
+    );
+    expect(dismissAskFn).toContain("pendingAskRef.current = null");
+    expect(dismissAskFn.indexOf("pendingAskRef.current = null")).toBeLessThan(
+      dismissAskFn.indexOf("flushQueuedControlTurn()")
+    );
+  });
+});
+
+describe("开始推演闸在 isRunningRef，ref 真时不清卡", () => {
+  it("confirmControlScope 用 isRunningRef；state-only 闸这条必红", () => {
+    const confirmFn = SESSION.slice(
+      SESSION.indexOf("const confirmControlScope"),
+      SESSION.indexOf("const dismissScopeCard")
+    );
+    expect(confirmFn).toMatch(
+      /if\s*\(\s*!pending\s*\|\|\s*isRunningRef\.current\s*\)\s*return/
+    );
+    expect(confirmFn).not.toMatch(
+      /if\s*\(\s*!pending\s*\|\|\s*isRunning\s*\)\s*return/
+    );
+    expect(confirmFn.indexOf("isRunningRef.current")).toBeLessThan(
+      confirmFn.indexOf("clearPendingScope()")
+    );
+    expect(confirmFn.indexOf("return")).toBeLessThan(
+      confirmFn.indexOf("clearPendingScope()")
+    );
+    expect(CARD).toContain("disabled={confirmDisabled}");
+    expect(DOCK).toContain("confirmDisabled={isRunning}");
+  });
+});
+
+describe("/回退 带上一版 versionId；/范围 复述不是斜杠令牌", () => {
+  it("runTurn 把 previousModelVersionId 写进 POST versionId", () => {
+    expect(runTurn).toContain("previousModelVersionId");
+    expect(runTurn).toContain("versionId: restoreId");
+    expect(runTurn).toContain("controlUserTextForSlash");
+    expect(runTurn).toContain("scopeCardRestatement");
+    const postFn = DRIVER.slice(
+      DRIVER.indexOf("export async function postControlTurnStream"),
+      DRIVER.indexOf("export async function consumeControlStreamResponse")
+    );
+    expect(postFn).toContain("opts.versionId");
+    expect(postFn).toContain("versionId: opts.versionId");
+    expect(
+      previousModelVersionId({
+        modelVersions: [{ id: "v1" }, { id: "v2" }],
+        currentModelVersionId: "v2",
+      })
+    ).toBe("v1");
+    expect(
+      previousModelVersionId({
+        modelVersions: [{ id: "v1" }],
+        currentModelVersionId: "v1",
+      })
+    ).toBeUndefined();
+    expect(previousModelVersionId({ modelVersions: [] })).toBeUndefined();
+  });
+
+  it("活路径 /范围 发给控制面的不是斜杠令牌", () => {
+    expect(controlUserTextForSlash("/范围", "请假系统")).toBe("请假系统");
+    expect(scopeCardRestatement("/范围", "/范围", "请假系统")).not.toBe(
+      "/范围"
+    );
+    expect(inferForcedTool("/范围")).toBe("scope_card");
+    expect(inferForcedTool("/回退")).toBe("restore_version");
   });
 });
 

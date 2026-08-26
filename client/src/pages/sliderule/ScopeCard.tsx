@@ -30,10 +30,13 @@ export function ScopeCard({
   pending,
   onConfirm,
   onRevise,
+  confirmDisabled = false,
 }: {
   pending: ScopeCardPending;
   onConfirm: () => void;
   onRevise: () => void;
+  /** 本轮 isRunning 时禁止确认：stop 已松画面闸，isRunningRef 仍真。 */
+  confirmDisabled?: boolean;
 }) {
   const steps = scopeCardSteps(false);
   const thin = pending.variant === "thin";
@@ -78,8 +81,12 @@ export function ScopeCard({
         <button
           type="button"
           data-testid="sliderule-scope-confirm"
-          onClick={() => onConfirm()}
-          className="rounded-[8px] bg-[#171717] px-3 py-1.5 text-[13px] leading-5 text-white transition hover:bg-black"
+          disabled={confirmDisabled}
+          onClick={() => {
+            if (confirmDisabled) return;
+            onConfirm();
+          }}
+          className="rounded-[8px] bg-[#171717] px-3 py-1.5 text-[13px] leading-5 text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
         >
           {SCOPE_CARD_CONFIRM_LABEL}
         </button>

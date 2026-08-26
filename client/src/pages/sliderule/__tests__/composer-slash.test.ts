@@ -9,12 +9,15 @@ import { describe, expect, it } from "vitest";
 import {
   applyRehearsalSlashPick,
   applySlashPick,
+  controlUserTextForSlash,
   filterSlashItems,
   forcedToolForRehearsalVerb,
   moveHighlight,
   parseRehearsalSlash,
   pickedPayload,
   REHEARSAL_SLASH_ITEMS,
+  rehearsalSlashRemainder,
+  scopeCardRestatement,
   seedSlash,
   slashQueryAt,
   type SlashItem,
@@ -270,6 +273,28 @@ describe("推演动词", () => {
     expect(r.text.startsWith("/")).toBe(true);
     const stripped = applySlashPick(text, q);
     expect(stripped.text).not.toContain("精修");
+  });
+
+  it("/范围 POST 余量或当前 goal，卡标题不得等于斜杠令牌", () => {
+    expect(rehearsalSlashRemainder("/范围")).toBe("");
+    expect(rehearsalSlashRemainder("/范围 考勤系统")).toBe("考勤系统");
+    expect(controlUserTextForSlash("/范围", "请假系统")).toBe("请假系统");
+    expect(controlUserTextForSlash("/范围 考勤系统", "请假系统")).toBe(
+      "考勤系统"
+    );
+    expect(controlUserTextForSlash("/推演", "请假系统")).toBe("/推演");
+    expect(scopeCardRestatement("/范围", "/范围", "请假系统")).toBe(
+      "请假系统"
+    );
+    expect(scopeCardRestatement("将做成请假", "/范围", "请假系统")).toBe(
+      "将做成请假"
+    );
+    expect(scopeCardRestatement("/范围", "/范围", "请假系统")).not.toBe(
+      "/范围"
+    );
+    expect(scopeCardRestatement("/范围", "/范围", "请假系统")).not.toBe(
+      "将做成：/范围"
+    );
   });
 
   it("不是 Claude 那套 /plan /compact /run /yolo", () => {
