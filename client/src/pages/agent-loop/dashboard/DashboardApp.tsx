@@ -1223,7 +1223,7 @@ function AgentLoopSidebar({
           /* ⚠ 用连通节点而不是插头（ApiOutlined）：这一项是三样东西的集合，
              插头只说得清"连接器"那一样，另外两样看着不搭。 */
           icon: <DeploymentUnitOutlined />,
-          // 这三条是页面上真实存在的三层（CapabilityLibraryPage 的 tab）
+          // 这三条是页面上真实存在的三层（侧栏切 capabilityLayer，不再画页内二次菜单）
           children: [
             { id: "skills", label: "技能" },
             { id: "connectors", label: "连接器" },
@@ -1248,7 +1248,15 @@ function AgentLoopSidebar({
       ],
     },
   ];
-  const [openKey, setOpenKey] = React.useState<ViewKey | null>(null);
+  /* 进扩展中心时默认展开三条子项。从 URL 直达 /agent-loop/skills 时
+     openKey 若仍是 null，选中了「扩展中心」却看不见技能/连接器/伙伴——
+     应用市场、组件库没有这一层，只有这里像少了半截菜单。 */
+  const [openKey, setOpenKey] = React.useState<ViewKey | null>(
+    view === "skills" ? "skills" : null
+  );
+  React.useEffect(() => {
+    setOpenKey(view === "skills" ? "skills" : null);
+  }, [view]);
 
   return (
     <aside className="native-agent-sidebar">

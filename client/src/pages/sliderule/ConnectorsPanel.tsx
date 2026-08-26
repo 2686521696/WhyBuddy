@@ -1,8 +1,8 @@
 /**
  * ConnectorsPanel — 「扩展中心」页里的连接器层。
  *
- * 2026-08-26 按用户给的效果图重做：顶部标题 + 搜索 + 分类筛选，下面四列卡片墙，
- * 每张卡右上是「+ / ✓ 已添加」。
+ * 2026-08-26 第二次：四列卡片墙换成跟技能层同一套 Cursor 列表（见
+ * marketplace-chrome.tsx）。「+ / ✓ 已添加」的语义没变。
  *
  * ## 跟效果图**故意不一样**的两处
  *
@@ -30,11 +30,20 @@
  */
 
 import React from "react";
-import { Alert, Button, Empty, Input, Table, Tag } from "antd";
-import { Check, Plus, RefreshCw, Search } from "lucide-react";
+import { Alert, Button, Input, Table } from "antd";
+import { Cable, RefreshCw } from "lucide-react";
 
 import { ConnectorIcon } from "./connector-art/connector-icons";
 import { TruncatedText } from "./TruncatedText";
+import {
+  MarketAddButton,
+  MarketChip,
+  MarketEmpty,
+  MarketPage,
+  MarketRow,
+  MarketSearch,
+  MarketViewTab,
+} from "./marketplace-chrome";
 
 import {
   fetchConnectorRows,
@@ -70,102 +79,61 @@ function ConnectorCard({
   };
 
   return (
-    <div
-      className={`rounded-2xl border bg-white transition ${
-        open
-          ? "border-[#d6e4ff] shadow-[0_8px_24px_rgba(15,23,42,0.07)]"
-          : "border-[#eef1f5] hover:border-[#dbe2ea] hover:shadow-[0_4px_14px_rgba(15,23,42,0.05)]"
-      }`}
-      data-testid="connector-card"
-      data-connector={spec.id}
-      data-attached={attached ? "1" : "0"}
-    >
-      <div className="flex items-start gap-3.5 p-4">
-        {/* 真图稿（多色 SVG），不是字体图标 —— 见 connector-art 的头注 */}
-        <ConnectorIcon icon={spec.icon} className="h-12 w-12" />
+    <MarketRow
+      testid="connector-card"
+      attr={{
+        "data-connector": spec.id,
+        "data-attached": attached ? "1" : "0",
+      }}
+      open={open}
+      icon={<ConnectorIcon icon={spec.icon} className="h-9 w-9" />}
+      name={
         <button
           type="button"
           data-testid="connector-expand"
           onClick={() => setOpen(v => !v)}
-          className="min-w-0 flex-1 pt-0.5 text-left"
+          className="flex min-w-0 items-center gap-1.5 text-left"
           title="展开：填参数、试取真数据"
         >
-          {/* ⚠ 一行四个之后每张卡只有 ~280px，三行文字都会挤。
-              放不下就省略号 + 悬浮看全文（TruncatedText 只在**真的截断时**
-              才挂 tooltip，短文案不弹）。 */}
-          <span className="flex items-center gap-1.5">
-            <TruncatedText
-              text={spec.name}
-              data-testid="connector-name"
-              className="min-w-0 flex-1 text-[15px] font-semibold text-stone-800"
-            />
-            <Tag
-              color="green"
-              style={{
-                marginInlineEnd: 0,
-                fontSize: 11,
-                lineHeight: "16px",
-                flexShrink: 0,
-              }}
-            >
-              连接器
-            </Tag>
-            {spec.available ? null : (
-              <Tag
-                color="warning"
-                style={{ marginInlineEnd: 0, fontSize: 11, flexShrink: 0 }}
-              >
-                未配置凭据
-              </Tag>
-            )}
-          </span>
           <TruncatedText
-            as="span"
-            lines={2}
-            text={spec.description}
-            data-testid="connector-desc"
-            className="mt-1.5 block text-[13px] leading-[22px] text-stone-500"
+            text={spec.name}
+            data-testid="connector-name"
+            className="min-w-0"
           />
-          <TruncatedText
-            as="span"
-            text={`落成实体「${spec.entityName}」· ${spec.fields.length} 个字段 · 来源 ${spec.source}`}
-            data-testid="connector-meta"
-            className="mt-1.5 block text-[11px] text-stone-400"
-          />
+          {spec.available ? null : (
+            <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] leading-4 text-amber-700">
+              未配置凭据
+            </span>
+          )}
         </button>
-        {/* 「+ / ✓ 已添加」= 挂不挂在这一轮，跟输入框 `/` 同一条路径。
-            照效果图做成圆钮 + 底下一行小字。 */}
-        <button
-          type="button"
-          data-testid="connector-attach"
-          aria-pressed={attached}
-          onClick={onToggle}
+      }
+      description={
+        <TruncatedText
+          text={spec.description}
+          data-testid="connector-desc"
+          className="min-w-0"
+        />
+      }
+      meta={
+        <TruncatedText
+          text={`落成实体「${spec.entityName}」· ${spec.fields.length} 个字段 · 来源 ${spec.source}`}
+          data-testid="connector-meta"
+          className="min-w-0"
+        />
+      }
+      action={
+        <MarketAddButton
+          testid="connector-attach"
+          on={attached}
+          offLabel="添加"
+          onLabel="已添加"
           title={attached ? "已挂在这一轮，点一下摘掉" : "挂到这一轮推演上"}
-          className="flex shrink-0 flex-col items-center gap-1 pt-1"
-        >
-          <span
-            className={`flex h-8 w-8 items-center justify-center rounded-full border transition ${
-              attached
-                ? "border-[#bfe6cd] bg-[#eef9f2] text-[#0a8f52]"
-                : "border-[#e5e7eb] text-stone-400 hover:border-[#b9c6d6] hover:bg-[#f7f9fc] hover:text-stone-700"
-            }`}
-          >
-            {attached ? (
-              <Check className="h-4 w-4" />
-            ) : (
-              <Plus className="h-4 w-4" />
-            )}
-          </span>
-          <span
-            className={`text-[11px] leading-4 ${attached ? "text-stone-400" : "text-transparent"}`}
-          >
-            已添加
-          </span>
-        </button>
-      </div>
-
+          onClick={onToggle}
+        />
+      }
+    >
       {open ? (
-        <div className="border-t border-[#f1f3f6] px-3.5 py-3">
+        <div className="border-t border-slate-100 px-3 pb-3 pt-2">
           <div className="flex flex-wrap items-end gap-2">
             {spec.args.map(a => (
               <label key={a.id} className="text-[11px] text-stone-500">
@@ -212,10 +180,7 @@ function ConnectorCard({
                 {result.fetchedAt.replace("T", " ").slice(0, 16)} 取
               </div>
               {result.rows.length === 0 ? (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description="这次没有取到行"
-                />
+                <div className="py-3 text-[12px] text-slate-400">这次没有取到行</div>
               ) : (
                 <Table
                   size="small"
@@ -242,7 +207,7 @@ function ConnectorCard({
           ) : null}
         </div>
       ) : null}
-    </div>
+    </MarketRow>
   );
 }
 
@@ -252,6 +217,7 @@ export function ConnectorsPanel({
   attachedIds,
   onUse,
   onDetach,
+  initialMine = false,
 }: {
   connectors: ConnectorSpec[];
   loading: boolean;
@@ -259,10 +225,12 @@ export function ConnectorsPanel({
   attachedIds: string[];
   onUse: (spec: ConnectorSpec) => void;
   onDetach: (spec: ConnectorSpec) => void;
+  /** 初始是否只看「已添加」（测试用；产品默认看全部） */
+  initialMine?: boolean;
 }) {
   const [query, setQuery] = React.useState("");
   const [category, setCategory] = React.useState(FEATURED);
-  const [mineOnly, setMineOnly] = React.useState(false);
+  const [mineOnly, setMineOnly] = React.useState(initialMine);
 
   /* 分类条：从连接器自己声明的 category 汇出来。
      ⚠ 只有一种分类时不画这条——一个永远只能选它自己的筛选条，占着一行
@@ -272,7 +240,8 @@ export function ConnectorsPanel({
     for (const c of connectors) {
       if (c.category && !seen.includes(c.category)) seen.push(c.category);
     }
-    return seen.length > 1 ? [FEATURED, ...seen] : [];
+    /* 「全部」已经是左边那颗 view tab，不再铺一颗「精选」当同类入口。 */
+    return seen.length > 1 ? seen : [];
   }, [connectors]);
 
   const shown = React.useMemo(() => {
@@ -292,100 +261,118 @@ export function ConnectorsPanel({
 
   if (loading) {
     return (
-      <div className="px-1 py-8 text-center text-[12px] text-stone-400">
-        连接器清单加载中…
-      </div>
+      <MarketPage
+        testid="connectors-list"
+        title="连接器"
+        icon={<Cable size={18} strokeWidth={2.2} />}
+        search={
+          <MarketSearch
+            value=""
+            onChange={() => undefined}
+            placeholder="搜索连接器"
+            testid="connector-search"
+          />
+        }
+      >
+        <MarketEmpty>连接器清单加载中…</MarketEmpty>
+      </MarketPage>
     );
   }
   if (connectors.length === 0) {
     return (
-      <Empty
-        image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description="没有取到连接器清单——Python 服务没起来，或者这台机器上还没配连接器"
-      />
+      <MarketPage
+        testid="connectors-list"
+        title="连接器"
+        icon={<Cable size={18} strokeWidth={2.2} />}
+        search={
+          <MarketSearch
+            value=""
+            onChange={() => undefined}
+            placeholder="搜索连接器"
+            testid="connector-search"
+          />
+        }
+      >
+        <MarketEmpty>
+          没有取到连接器清单——Python 服务没起来，或者这台机器上还没配连接器
+        </MarketEmpty>
+      </MarketPage>
     );
   }
 
   return (
-    <div data-testid="connectors-list">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-baseline gap-2">
-            <h2 className="m-0 text-[20px] font-semibold text-stone-800">
-              连接器
-            </h2>
-            {/* ⚠ 照实数，不写死。效果图上的 24 我们没有。 */}
-            <span
-              className="text-[13px] text-stone-400"
-              data-testid="connector-count"
-            >
-              {connectors.length} 个
-            </span>
-          </div>
-          <p className="mb-0 mt-1 text-[12.5px] text-stone-500">
-            连接外部服务，让生成的应用获得<b>真实</b>数据——取不到就空着并说明
-            原因，不会用编的数据顶上
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Input
-            allowClear
-            size="middle"
-            style={{ width: 220 }}
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="搜索连接器"
-            data-testid="connector-search"
-            prefix={<Search className="h-3.5 w-3.5 text-stone-400" />}
-          />
-          <Button
-            type={mineOnly ? "primary" : "default"}
-            ghost={mineOnly}
-            data-testid="connector-mine"
-            onClick={() => setMineOnly(v => !v)}
-          >
-            我的连接器
-            {attachedIds.length > 0 ? ` ${attachedIds.length}` : ""}
-          </Button>
-        </div>
-      </div>
-
-      {categories.length > 0 ? (
-        <div className="mt-3.5 flex flex-wrap gap-2" data-testid="connector-cats">
-          {categories.map(cat => (
-            <button
-              key={cat}
-              type="button"
-              data-testid="connector-cat"
-              data-cat={cat}
-              data-active={category === cat ? "1" : "0"}
-              onClick={() => setCategory(cat)}
-              className={`rounded-lg px-3 py-1.5 text-[13px] transition ${
-                category === cat
-                  ? "bg-[#eef4ff] font-medium text-[#1677ff]"
-                  : "bg-[#f5f6f8] text-stone-600 hover:bg-[#eceff3]"
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      {shown.length === 0 ? (
-        <Empty
-          className="mt-8"
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={
-            mineOnly
-              ? "这一轮还没挂任何连接器"
-              : `没有匹配「${query || category}」的连接器`
-          }
+    <MarketPage
+      testid="connectors-list"
+      title="连接器"
+      icon={<Cable size={18} strokeWidth={2.2} />}
+      extra={
+        <span className="text-[13px] text-slate-400" data-testid="connector-count">
+          {connectors.length} 个
+        </span>
+      }
+      search={
+        <MarketSearch
+          value={query}
+          onChange={setQuery}
+          placeholder="搜索连接器"
+          testid="connector-search"
         />
+      }
+      tabs={
+        <>
+          <MarketViewTab
+            testid="connector-view-all"
+            label="全部"
+            count={connectors.length}
+            active={!mineOnly && category === FEATURED}
+            onClick={() => {
+              setMineOnly(false);
+              setCategory(FEATURED);
+            }}
+          />
+          <MarketViewTab
+            testid="connector-mine"
+            label="已添加"
+            count={attachedIds.length}
+            active={mineOnly}
+            onClick={() => setMineOnly(true)}
+          />
+        </>
+      }
+      chips={
+        categories.length > 0 ? (
+          <div className="contents" data-testid="connector-cats">
+            {categories.map(cat => (
+              <MarketChip
+                key={cat}
+                testid="connector-cat"
+                label={cat}
+                active={!mineOnly && category === cat}
+                onClick={() => {
+                  setMineOnly(false);
+                  setCategory(cat);
+                }}
+                attr={{
+                  "data-cat": cat,
+                  "data-active": !mineOnly && category === cat ? "1" : "0",
+                }}
+              />
+            ))}
+          </div>
+        ) : null
+      }
+    >
+      {shown.length === 0 ? (
+        <MarketEmpty>
+          {mineOnly
+            ? "这一轮还没挂任何连接器"
+            : `没有匹配「${query || category}」的连接器`}
+        </MarketEmpty>
       ) : (
-        /* 一行四个（用户 2026-08-26 指定）。窄屏逐级降到 3 / 2 / 1——
-           1200px 以下硬塞四个的话每张只有 200 出头，标题都放不下一行。 */
-        <div className="mt-5 grid grid-cols-1 gap-3.5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div
+          data-testid="connectors-featured-list"
+          className="divide-y divide-slate-200/60"
+        >
           {shown.map(c => {
             const attached = attachedIds.includes(c.id);
             return (
@@ -399,6 +386,6 @@ export function ConnectorsPanel({
           })}
         </div>
       )}
-    </div>
+    </MarketPage>
   );
 }

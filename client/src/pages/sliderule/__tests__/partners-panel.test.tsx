@@ -52,15 +52,16 @@ function render(over: Partial<React.ComponentProps<typeof PartnersPanel>> = {}) 
 }
 
 describe("伙伴墙", () => {
-  it("一行四个；内置的三个都在，计数照实数", () => {
+  it("是列表不是四列墙；内置的三个都在，计数照实数", () => {
     const h = render();
-    expect(h).toContain("xl:grid-cols-4");
+    expect(h).not.toContain("xl:grid-cols-4");
     for (const p of BUILTIN_PARTNERS) {
       expect(h).toContain(`data-partner="${p.id}"`);
     }
     expect(h).toContain(`${BUILTIN_PARTNERS.length} 个`);
     expect(h).toContain('data-testid="partner-search"');
     expect(h).toContain('data-testid="partner-mine"');
+    expect(h).toContain('data-testid="partner-view-all"');
   });
 
   it("反向：效果图上那几十个我们没有的伙伴，一个都不许摆", () => {
@@ -113,7 +114,14 @@ describe("伙伴墙", () => {
   it("分类条从连接器自己声明的 category 汇出来；只有一种时不画", () => {
     const h = render();
     const cats = [...h.matchAll(/data-cat="([^"]+)"/g)].map(m => m[1]);
-    expect(cats).toEqual(["全部", "出行生活", "金融"]);
+    expect(cats).toEqual(["出行生活", "金融"]);
+    expect(cats).not.toContain("全部");
+    expect(h).toContain('data-testid="partner-view-all"');
+    const allPos = h.indexOf('data-testid="partner-view-all"');
+    const minePos = h.indexOf('data-testid="partner-mine"');
+    const catsPos = h.indexOf('data-testid="partner-cats"');
+    expect(minePos).toBeGreaterThan(allPos);
+    expect(catsPos).toBeGreaterThan(minePos);
     // 效果图上的分类我们一个伙伴都对不上，不许摆
     for (const fake of ["办公提效", "产品研发", "电商运营", "人力资源"]) {
       expect(h).not.toContain(`data-cat="${fake}"`);
@@ -126,15 +134,19 @@ describe("伙伴墙", () => {
 
 describe("存成我的伙伴（把半截活接上）", () => {
   it("这一轮没挂能力 → 按不动；挂了 → 能按", () => {
-    const empty = render();
-    expect(empty).toMatch(/data-testid="partner-save-open"[^>]*?disabled=""/);
+    /* ⚠ 钉的是开标签上的 disabled 属性，不是 class 里的 disabled:cursor。
+       属性顺序不保证：antd Button 把 data-testid 放前面，原生 button 把
+       disabled 放前面——按「testid 在前」写正则，换标签就假红。 */
+    const saveOpen = (h: string) =>
+      h.match(/<button\b[^>]*data-testid="partner-save-open"[^>]*>/)?.[0] ?? "";
+    expect(saveOpen(render())).toMatch(/\bdisabled=/);
 
     const withCaps = render({
       turnCaps: [
         { key: "weather", kind: "connector", name: "天气", description: "" },
       ],
     });
-    expect(withCaps).not.toMatch(/data-testid="partner-save-open"[^>]*?disabled=""/);
+    expect(saveOpen(withCaps)).not.toMatch(/\bdisabled=/);
   });
 
   it("空态那句话有对应的入口 —— 它曾经教了一条走不通的路", async () => {
@@ -167,20 +179,14 @@ describe("存成我的伙伴（把半截活接上）", () => {
   });
 
   it("「我的伙伴」只看自己攒的：内置那段整段收起", () => {
-    const h = renderToStaticMarkup(
-      <PartnersPanel
-        custom={[]}
-        connectors={[WEATHER, STOCK]}
-        skillKeys={[]}
-        attachedKeys={[]}
-        turnCaps={[]}
-        onUse={noop}
-        onSave={noop}
-        onDelete={noop}
-      />
-    );
-    // 默认：内置那段在
-    expect(h).toContain('data-testid="partners-builtin"');
+    const all = render();
+    expect(all).toContain('data-testid="partners-builtin"');
+    expect(all).toContain('data-testid="partner-view-all"');
+    // 互斥 tab：切到「我的」内置那段整段不在，不是再点一次「我的」就切回去
+    const mine = render({ initialMine: true });
+    expect(mine).not.toContain('data-testid="partners-builtin"');
+    expect(mine).toContain("还没攒过伙伴");
+    expect(mine).not.toContain('data-partner="weather-desk"');
   });
 });
 

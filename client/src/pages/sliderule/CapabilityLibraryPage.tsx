@@ -10,11 +10,15 @@
  * ⚠ 技能那一层直接复用 SkillsLibraryPage，**不复制一份**。复制出来的第二份
  *   会跟原件慢慢分叉（仓里第四条：同一件事两处实现，改一处不报错、只有一半
  *   不生效）。这里只加壳。
+ *
+ * ⚠ 2026-08-26：页内不再画「技能 / 连接器 / 伙伴」二次菜单。侧栏扩展中心
+ *   已经有这三条子项（DashboardApp 的 capabilityLayer），再画一遍就是
+ *   应用市场/组件库没有、只有这一页有的第二套导航——看着像进了另一个产品。
+ *   切层只走侧栏；`data-layer` 留在根上给烟测认现在停在哪一层。
  */
 
 import React from "react";
 import { message } from "antd";
-import { ApiOutlined, BlockOutlined, TeamOutlined } from "@ant-design/icons";
 import { navigate } from "wouter/use-browser-location";
 
 import SkillsLibraryPage from "./SkillsLibraryPage";
@@ -23,7 +27,6 @@ import { PartnersPanel } from "./PartnersPanel";
 import { listConnectors, type ConnectorSpec } from "./connectors-client";
 import { installKeyOf, loadInstalledSkills } from "./installed-skills";
 import {
-  BUILTIN_PARTNERS,
   loadPartners,
   partnerCapabilities,
   savePartners,
@@ -39,18 +42,14 @@ import type { SlashItem } from "./composer-slash";
 
 type Layer = "skills" | "connectors" | "partners";
 
-const TABS: Array<{ key: Layer; label: string; icon: React.ReactNode }> = [
-  { key: "skills", label: "技能", icon: <BlockOutlined /> },
-  { key: "connectors", label: "连接器", icon: <ApiOutlined /> },
-  { key: "partners", label: "伙伴", icon: <TeamOutlined /> },
-];
-
 export function CapabilityLibraryPage({
   initialLayer = "skills",
 }: {
   initialLayer?: Layer;
 } = {}) {
-  const [layer, setLayer] = React.useState<Layer>(initialLayer);
+  /* 层由侧栏 capabilityLayer 决定。父级带了 key={capabilityLayer}，
+     切层会整页重挂，所以这里读 props 就够，不必再备一份会跟侧栏分叉的 state。 */
+  const layer = initialLayer;
   const [connectors, setConnectors] = React.useState<ConnectorSpec[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [custom, setCustom] = React.useState<Partner[]>(() => loadPartners());
@@ -126,99 +125,66 @@ export function CapabilityLibraryPage({
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-1 border-b border-[#eceff3] px-4 pt-3">
-        {TABS.map(t => (
-          <button
-            key={t.key}
-            type="button"
-            data-testid="capability-tab"
-            data-layer={t.key}
-            data-active={layer === t.key ? "1" : "0"}
-            onClick={() => setLayer(t.key)}
-            className={`flex items-center gap-1.5 rounded-t-md px-3 py-1.5 text-[13px] transition ${
-              layer === t.key
-                ? "border-b-2 border-[#1677ff] font-medium text-[#1677ff]"
-                : "border-b-2 border-transparent text-stone-500 hover:text-stone-800"
-            }`}
-          >
-            {t.icon}
-            {t.label}
-            {t.key === "connectors" && connectors.length > 0 ? (
-              <span className="text-[11px] text-stone-400">
-                {connectors.length}
-              </span>
-            ) : null}
-            {t.key === "partners" ? (
-              <span className="text-[11px] text-stone-400">
-                {BUILTIN_PARTNERS.length + custom.length}
-              </span>
-            ) : null}
-          </button>
-        ))}
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {/* ⚠ 技能层用复用而不是复制，见文件头注 */}
-        {layer === "skills" ? <SkillsLibraryPage /> : null}
-        {layer === "connectors" ? (
-          <div className="p-4">
-            <ConnectorsPanel
-              connectors={connectors}
-              loading={loading}
-              attachedIds={attachedConnectorIds}
-              onUse={spec =>
-                attach(
-                  [
-                    {
-                      key: spec.id,
-                      kind: "connector",
-                      name: spec.name,
-                      description: spec.description,
-                    },
-                  ],
-                  { goto: false }
-                )
-              }
-              onDetach={spec => detach("connector", spec.id)}
-            />
-          </div>
-        ) : null}
-        {layer === "partners" ? (
-          <div className="p-4">
-            <PartnersPanel
-              custom={custom}
-              /* ⚠ 传整份 spec 而不是 id 列表：伙伴层要拿连接器自己声明的
-                 category（分类条）和 icon（头像）。只传 id 的话这两样只能
-                 在前端另编一套词表，编出来的迟早跟后端对不上。 */
-              connectors={connectors}
-              skillKeys={skillKeys}
-              attachedKeys={turnCaps.map(c => `${c.kind}:${c.key}`)}
-              turnCaps={turnCaps}
-              onUse={p =>
-                attach(partnerCapabilities(p, { connectorIds, skillKeys }), {
-                  opener: p.opener,
-                })
-              }
-              onSave={p =>
-                setCustom(prev => {
-                  const next = [p, ...prev.filter(x => x.id !== p.id)];
-                  savePartners(next);
-                  message.success(`已存成伙伴「${p.name}」`);
-                  return next;
-                })
-              }
-              onDelete={id =>
-                setCustom(prev => {
-                  const next = prev.filter(x => x.id !== id);
-                  savePartners(next);
-                  return next;
-                })
-              }
-            />
-          </div>
-        ) : null}
-      </div>
+    <div
+      className="h-full min-h-0"
+      data-testid="capability-library"
+      data-layer={layer}
+    >
+      {/* ⚠ 技能层用复用而不是复制，见文件头注 */}
+      {layer === "skills" ? <SkillsLibraryPage /> : null}
+      {layer === "connectors" ? (
+        <ConnectorsPanel
+          connectors={connectors}
+          loading={loading}
+          attachedIds={attachedConnectorIds}
+          onUse={spec =>
+            attach(
+              [
+                {
+                  key: spec.id,
+                  kind: "connector",
+                  name: spec.name,
+                  description: spec.description,
+                },
+              ],
+              { goto: false }
+            )
+          }
+          onDetach={spec => detach("connector", spec.id)}
+        />
+      ) : null}
+      {layer === "partners" ? (
+        <PartnersPanel
+          custom={custom}
+          /* ⚠ 传整份 spec 而不是 id 列表：伙伴层要拿连接器自己声明的
+             category（分类条）和 icon（头像）。只传 id 的话这两样只能
+             在前端另编一套词表，编出来的迟早跟后端对不上。 */
+          connectors={connectors}
+          skillKeys={skillKeys}
+          attachedKeys={turnCaps.map(c => `${c.kind}:${c.key}`)}
+          turnCaps={turnCaps}
+          onUse={p =>
+            attach(partnerCapabilities(p, { connectorIds, skillKeys }), {
+              opener: p.opener,
+            })
+          }
+          onSave={p =>
+            setCustom(prev => {
+              const next = [p, ...prev.filter(x => x.id !== p.id)];
+              savePartners(next);
+              message.success(`已存成伙伴「${p.name}」`);
+              return next;
+            })
+          }
+          onDelete={id =>
+            setCustom(prev => {
+              const next = prev.filter(x => x.id !== id);
+              savePartners(next);
+              return next;
+            })
+          }
+        />
+      ) : null}
     </div>
   );
 }

@@ -3,11 +3,11 @@
  *
  * 每条"该弹"都配了一条"不该弹"——错弹比不弹烦人得多，它会吃掉方向键和回车。
  */
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
   applySlashPick,
-  COMPOSER_SLASH_HINT,
   filterSlashItems,
   moveHighlight,
   pickedPayload,
@@ -203,11 +203,12 @@ describe("seedSlash：提示钮替用户打的那个斜杠", () => {
 });
 
 describe("输入框提醒", () => {
-  it("点名三类能力，且说的是输入框里按 /，不是去扩展中心", () => {
-    expect(COMPOSER_SLASH_HINT).toContain("/");
-    expect(COMPOSER_SLASH_HINT).toContain("技能");
-    expect(COMPOSER_SLASH_HINT).toContain("连接器");
-    expect(COMPOSER_SLASH_HINT).toContain("伙伴");
-    expect(COMPOSER_SLASH_HINT).not.toContain("扩展中心");
+  it("判定层不再夹一份 UI 文案——提醒只在工具条那颗钮上", () => {
+    const src = readFileSync(
+      new URL("../composer-slash.ts", import.meta.url),
+      "utf8"
+    );
+    expect(src).not.toContain("COMPOSER_SLASH_HINT");
+    expect(src).not.toContain("即可选择技能、连接器或伙伴");
   });
 });

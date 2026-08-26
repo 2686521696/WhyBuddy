@@ -12,17 +12,17 @@
  *   B2 `/` 选伙伴只挂标签，不往正文灌起手意图 ← 跟 G 是一对，说清区别
  *   C  标签能一个个摘掉；C2 正文空着时退格摘最后一枚
  *   H  侧栏分组 + 选中项没有左竖条；H2 假箭头不许有；H3 子项真的切得动页面
- *   D  「扩展中心」页三层都在
- *   I1 技能墙一行四个 + 每个分类各画各的图稿；I2 长文案省略号可悬浮
- *   I3 圆钮装上/卸掉都落到「已安装」段；I4 分类条真的在筛
- *   E0 卡片墙只列后端真有的连接器；E1 每张卡有自己那张真图稿
- *   E2b 一行四个 + 长文案省略号可悬浮看全文；E2c 短文案不弹
- *   E3 「+/已添加」真的挂到这一轮
+ *   D  「扩展中心」三层都在侧栏子项上（页内不再画二次菜单）
+ *   I1 技能是列表不是四列墙 + 每个分类各画各的图稿；I2 长文案省略号可悬浮
+ *   I3 「添加」装上后，「已安装」tab 真的多出这张卡；I4 分类条真的在筛
+ *   E0 列表只列后端真有的连接器；E1 每张卡有自己那张真图稿
+ *   E2b 列表不是四列墙 + 长文案省略号可悬浮看全文；E2c 短文案不弹
+ *   E3 「添加/已添加」真的挂到这一轮（全部/已添加是互斥 tab）
  *   E  连接器页「试取真数据」拿回的是**真值**，不是示例
  *   E2 认不出的城市如实报错，且**一行都不显示**  ← 跟 E 是一对
- *   J1 伙伴墙一行四个 + 头像由依赖拼出来；J1b 起手意图不漏字
+ *   J1 伙伴是列表不是四列墙 + 头像由依赖拼出来；J1b 起手意图只露一行
  *   J2 「存成伙伴」存/刷新/删
- *   J3 「我的伙伴」只看自己攒的
+ *   J3 「我的伙伴」只看自己攒的（关掉要点「全部」，不是再点一次「我的」）
  *   F  伙伴依赖齐时可用、缺依赖时按钮禁用并说明缺什么
  *   G  「用这个伙伴」把能力挂上并跳回推演、起手意图填进输入框
  *
@@ -52,6 +52,30 @@ function launchOptions() {
 }
 
 const TA = '[data-testid="sliderule-composer-input"]';
+
+/**
+ * 切扩展中心的一层。页内「技能/连接器/伙伴」二次菜单已经撤了，
+ * 切层只走侧栏 `agent-nav-subitem`。
+ *
+ * ⚠ 2026-08-26 把 capability-tab 换成侧栏之后，烟测还在等页内那三个钮，
+ *   整段 I/E/J 全红——不是功能坏了，是判据钉在已经断电的插座上。
+ */
+async function gotoLayer(page, layer) {
+  await page.waitForSelector('[data-testid="agent-nav-expand"]', { timeout: 30000 });
+  if ((await page.locator('[data-testid="agent-nav-subitem"]').count()) === 0) {
+    await page.click('[data-testid="agent-nav-expand"]');
+    await page.waitForSelector('[data-testid="agent-nav-subitem"]', { timeout: 10000 });
+    await page.waitForTimeout(300);
+  }
+  await page
+    .locator(`[data-testid="agent-nav-subitem"][data-layer="${layer}"]`)
+    .click();
+  await page.waitForSelector(
+    `[data-testid="capability-library"][data-layer="${layer}"]`,
+    { timeout: 30000 }
+  );
+  await page.waitForTimeout(600);
+}
 
 async function main() {
   const browser = await chromium.launch(launchOptions());
@@ -292,7 +316,7 @@ async function main() {
      *   而它想钉的东西根本没被看到。
      */
     await page.getByText("扩展中心").first().click();
-    await page.waitForSelector('[data-testid="capability-tab"]', { timeout: 30000 });
+    await page.waitForSelector('[data-testid="capability-library"]', { timeout: 30000 });
     await page.waitForTimeout(1500);
 
     const navGroups = await page.$$eval(".native-agent-nav-group-label", els =>
@@ -348,54 +372,67 @@ async function main() {
     await page
       .locator('[data-testid="agent-nav-subitem"][data-layer="connectors"]')
       .click();
-    await page.waitForSelector('[data-testid="capability-tab"]', { timeout: 30000 });
+    await page.waitForSelector(
+      '[data-testid="capability-library"][data-layer="connectors"]',
+      { timeout: 30000 }
+    );
     await page.waitForTimeout(1800);
-    const landed = await page.$$eval('[data-testid="capability-tab"]', els =>
-      els
-        .filter(e => e.getAttribute("data-active") === "1")
-        .map(e => e.getAttribute("data-layer"))
+    const landed = await page.getAttribute(
+      '[data-testid="capability-library"]',
+      "data-layer"
     );
     check(
       "H3 侧栏子项「连接器」直接把页面切到连接器层",
       JSON.stringify(subs) === JSON.stringify(["skills", "connectors", "partners"]) &&
-        JSON.stringify(landed) === JSON.stringify(["connectors"]),
+        landed === "connectors",
       `子项 ${JSON.stringify(subs)} · 落在 ${JSON.stringify(landed)}`
     );
 
-    /* ── D：一页三层 ─────────────────────────────────────────────── */
-    await page.waitForSelector('[data-testid="capability-tab"]', { timeout: 30000 });
-    await page.waitForTimeout(2000);
-    const layers = await page.$$eval('[data-testid="capability-tab"]', els =>
+    /* ── D：三层在侧栏，不在页内二次菜单 ───────────────────────── */
+    const layers = await page.$$eval('[data-testid="agent-nav-subitem"]', els =>
       els.map(e => e.getAttribute("data-layer"))
     );
+    const innerTabs = await page.locator('[data-testid="capability-tab"]').count();
     check(
-      "D 一页三层：技能 / 连接器 / 伙伴",
-      JSON.stringify(layers) === JSON.stringify(["skills", "connectors", "partners"]),
-      JSON.stringify(layers)
+      "D 一页三层：技能 / 连接器 / 伙伴（切层只走侧栏，页内不再画一套）",
+      JSON.stringify(layers) === JSON.stringify(["skills", "connectors", "partners"]) &&
+        innerTabs === 0,
+      `子项 ${JSON.stringify(layers)} · 页内二次菜单 ${innerTabs}`
     );
 
-    /* ── I：技能层（2026-08-26 按效果图重做版式）────────────────── */
-    await page.click('[data-testid="capability-tab"][data-layer="skills"]');
-    await page.waitForSelector('[data-testid="skills-featured-grid"]', {
+    /* ── I：技能层（2026-08-26 Cursor 列表市场）────────────────── */
+    await gotoLayer(page, "skills");
+    await page.waitForSelector('[data-testid="skills-featured-list"]', {
       timeout: 20000,
     });
 
     /*
-     * I1：一行四个 + 每张卡是**它自己那张**图稿。
+     * I1：列表市场（不是四列墙）+ 每张卡是**它自己那张**图稿。
      *
      * ⚠ 跟 E1 同一个道理：全都回落成星星一样有图标、一样不报错，只是一屏
      *   一模一样的灰星——"配了等于没配"。所以判据钉的是"分类各画各的"，
      *   不是"有没有图标"。79 条技能落在 10 个分类里，所以 art 的**种类数**
      *   要等于这一屏出现过的分类数，且没有一个是 fallback。
+     *
+     * ⚠ 2026-08-26 第二次：四列墙换成 Cursor 那种一行一条。列数 === 4
+     *   这条反过来钉——再铺回去会红。
      */
-    const skillCols = await page.evaluate(() => {
-      const g = document.querySelector('[data-testid="skills-featured-grid"]');
-      return g
-        ? getComputedStyle(g).gridTemplateColumns.split(" ").filter(Boolean).length
-        : 0;
+    const skillLayout = await page.evaluate(() => {
+      const g = document.querySelector('[data-testid="skills-featured-list"]');
+      if (!g) return { ok: false, display: null, cols: 0 };
+      const cs = getComputedStyle(g);
+      const cols =
+        cs.gridTemplateColumns === "none"
+          ? 0
+          : cs.gridTemplateColumns.split(" ").filter(Boolean).length;
+      return {
+        ok: cs.display !== "grid" && cols !== 4,
+        display: cs.display,
+        cols,
+      };
     });
     const skillArts = await page.$$eval(
-      '[data-testid="skills-featured-grid"] > div',
+      '[data-testid="skills-featured-list"] [data-testid^="featured-skill-"]',
       els =>
         els.map(e => ({
           art:
@@ -406,12 +443,12 @@ async function main() {
     );
     const artKinds = new Set(skillArts.map(a => a.art));
     check(
-      "I1 技能墙一行四个；每个分类画自己那张图稿（不是一屏回落的灰星）",
-      skillCols === 4 &&
+      "I1 技能是列表不是四列墙；每个分类画自己那张图稿（不是一屏回落的灰星）",
+      skillLayout.ok &&
         skillArts.length > 20 &&
         skillArts.every(a => a.svg && a.art && a.art !== "fallback") &&
         artKinds.size >= 5,
-      `列数 ${skillCols} · 卡 ${skillArts.length} · 图稿种类 ${artKinds.size}`
+      `display ${skillLayout.display} 列 ${skillLayout.cols} · 卡 ${skillArts.length} · 图稿种类 ${artKinds.size}`
     );
 
     /*
@@ -451,12 +488,15 @@ async function main() {
     await page.waitForTimeout(900);
 
     /*
-     * I3：圆钮**真的**装上/卸掉。
+     * I3：「添加」**真的**装上/卸掉。
      *
-     * ⚠ 这条是本仓第一条纪律的形态：卡上翻不翻绿是一回事，"已安装"那一段
-     *   有没有真的多出一张卡是另一回事。只钉前者的话，把 installSkill 换成
-     *   一个只改 state 的空实现照样绿。所以一次点击要同时看三处：卡的
-     *   data-installed、已安装段在不在、段里那张卡的 testid。
+     * ⚠ 这条是本仓第一条纪律的形态：行上翻不翻绿是一回事，"已安装" tab
+     *   里有没有真的多出一张卡是另一回事。只钉前者的话，把 installSkill
+     *   换成一个只改 state 的空实现照样绿。
+     *
+     * ⚠ Cursor 那种 All / Installed 是互斥 tab：装完之后「全部」里只把钮
+     *   翻成「已安装」，已安装段要切到「已安装」tab 才看得到。再点一次
+     *   「已安装」不会切回去——那是上一版 toggle。要卸得先回到「全部」。
      */
     const firstCard = page.locator('[data-testid^="featured-skill-"]').first();
     const firstId = (await firstCard.getAttribute("data-testid")).replace(
@@ -466,25 +506,41 @@ async function main() {
     const wasInstalled = await firstCard.getAttribute("data-installed");
     await firstCard.locator('[data-testid="skill-install"]').click();
     await page.waitForTimeout(700);
+    const afterInstallFlag = await firstCard.getAttribute("data-installed");
+    const stillOnAll = await page.locator('[data-testid="skills-featured-list"]').count();
+    await page.click('[data-testid="skills-mine"]');
+    await page.waitForTimeout(600);
     const afterInstall = {
-      flag: await firstCard.getAttribute("data-installed"),
+      flag: afterInstallFlag,
+      stillOnAll,
       section: await page.locator('[data-testid="skills-installed"]').count(),
       card: await page
         .locator(`[data-testid="installed-skill-trae-market/${firstId}"]`)
         .count(),
     };
-    await firstCard.locator('[data-testid="skill-install"]').click();
+    await page.click('[data-testid="skills-view-all"]');
+    await page.waitForTimeout(600);
+    await page
+      .locator(`[data-testid="featured-skill-${firstId}"] [data-testid="skill-install"]`)
+      .click();
     await page.waitForTimeout(700);
     const afterUninstall = {
-      flag: await firstCard.getAttribute("data-installed"),
-      card: await page
-        .locator(`[data-testid="installed-skill-trae-market/${firstId}"]`)
-        .count(),
+      flag: await page
+        .locator(`[data-testid="featured-skill-${firstId}"]`)
+        .getAttribute("data-installed"),
     };
+    await page.click('[data-testid="skills-mine"]');
+    await page.waitForTimeout(500);
+    afterUninstall.card = await page
+      .locator(`[data-testid="installed-skill-trae-market/${firstId}"]`)
+      .count();
+    await page.click('[data-testid="skills-view-all"]');
+    await page.waitForTimeout(400);
     check(
-      "I3 圆钮装上：卡翻绿 + 已安装段真的多出这张卡；再点一下卸干净",
+      "I3 「添加」装上：行翻成已安装 + 已安装 tab 真的多出这张卡；回到全部分再卸干净",
       wasInstalled === "0" &&
         afterInstall.flag === "1" &&
+        afterInstall.stillOnAll === 1 &&
         afterInstall.section === 1 &&
         afterInstall.card === 1 &&
         afterUninstall.flag === "0" &&
@@ -499,28 +555,32 @@ async function main() {
      *   看得见的东西，并且互相咬——chip 写死一个数会红，筛选没接上（卡数
      *   还是 79）也会红。
      */
-    const secondCat = page.locator('[data-testid="skills-cat"]').nth(1);
-    const catName = await secondCat.getAttribute("data-cat");
+    const firstCat = page.locator('[data-testid="skills-cat"]').first();
+    const catName = await firstCat.getAttribute("data-cat");
     const catCount = Number(
-      ((await secondCat.textContent()) || "").replace(catName, "").trim()
+      ((await firstCat.textContent()) || "").replace(catName, "").trim()
     );
     const allCards = await page.locator('[data-testid^="featured-skill-"]').count();
-    await secondCat.click();
+    await firstCat.click();
     await page.waitForTimeout(600);
     const catFiltered = await page
       .locator('[data-testid^="featured-skill-"]')
       .count();
-    await page.locator('[data-testid="skills-cat"]').first().click();
+    /* 分类条不再有第二颗「全部」，清筛选要点左边那颗 view tab。 */
+    await page.click('[data-testid="skills-view-all"]');
     await page.waitForTimeout(400);
+    const backAll = await page.locator('[data-testid^="featured-skill-"]').count();
     check(
-      `I4 分类「${catName}」筛出来的卡数 === chip 上写的数`,
-      catCount > 0 && catFiltered === catCount && catFiltered < allCards,
-      `chip ${catCount} · 筛后 ${catFiltered} · 全量 ${allCards}`
+      `I4 分类「${catName}」筛出来的卡数 === chip 上写的数；点「全部」能回来`,
+      catCount > 0 &&
+        catFiltered === catCount &&
+        catFiltered < allCards &&
+        backAll === allCards,
+      `chip ${catCount} · 筛后 ${catFiltered} · 全量 ${allCards} · 回来 ${backAll}`
     );
 
     /* ── E / E2：试取真数据，成功与失败是一对 ─────────────────────── */
-    await page.click('[data-testid="capability-tab"][data-layer="connectors"]');
-    await page.waitForTimeout(1200);
+    await gotoLayer(page, "connectors");
     /*
      * E0：卡片墙**只列真的能用的**。
      *
@@ -578,7 +638,7 @@ async function main() {
     );
 
     /*
-     * E2b：一行四个 + 放不下就省略号 + **只在真截断时**弹 tooltip。
+     * E2b：列表不是四列墙 + 放不下就省略号 + **只在真截断时**弹 tooltip。
      *
      * ⚠ tooltip 的 class 前缀是项目配的 `agent-ant-*`，不是 antd 默认的
      *   `ant-*`。第一版判据按默认前缀找，找不到节点、报"没有 tooltip"——
@@ -587,13 +647,21 @@ async function main() {
      * ⚠ 反面那条（短文案不弹）是这条判据的价值所在：无条件挂 tooltip 也能让
      *   正面全绿，但一屏几十张卡扫过去满屏乱弹，比不做还烦。
      */
-    const cols = await page.evaluate(() => {
-      const g = document.querySelector('[data-testid="connectors-list"] .grid');
-      return g
-        ? getComputedStyle(g).gridTemplateColumns.split(" ").filter(Boolean).length
-        : 0;
+    const connectorLayout = await page.evaluate(() => {
+      const g = document.querySelector('[data-testid="connectors-featured-list"]');
+      if (!g) return { ok: false, display: null, cols: 0 };
+      const cs = getComputedStyle(g);
+      const cols =
+        cs.gridTemplateColumns === "none"
+          ? 0
+          : cs.gridTemplateColumns.split(" ").filter(Boolean).length;
+      return {
+        ok: cs.display !== "grid" && cols !== 4,
+        display: cs.display,
+        cols,
+      };
     });
-    // 窄到每张卡 ~240px：还是四列，但长文案一定放不下
+    // 窄一点：右侧 meta 列更挤，长文案一定放不下
     await page.setViewportSize({ width: 1300, height: 940 });
     await page.waitForTimeout(1200);
     const clipState = await page.$$eval('[data-testid="connector-card"]', els =>
@@ -619,11 +687,11 @@ async function main() {
       );
     }
     check(
-      "E2b 一行四个；放不下的行出省略号，悬浮能看到全文",
-      cols === 4 &&
+      "E2b 连接器是列表不是四列墙；放不下的行出省略号，悬浮能看到全文",
+      connectorLayout.ok &&
         clipState.every(c => c.meta === "1") &&
         tipText.some(t => t.includes("落成实体")),
-      `列数 ${cols} · 截断 ${JSON.stringify(clipState)} · tooltip ${JSON.stringify(tipText)}`
+      `display ${connectorLayout.display} 列 ${connectorLayout.cols} · 截断 ${JSON.stringify(clipState)} · tooltip ${JSON.stringify(tipText)}`
     );
 
     /* 反面：没截断的短文案**不许**弹 tooltip */
@@ -673,7 +741,8 @@ async function main() {
     const mine = await page.$$eval('[data-testid="connector-card"]', els =>
       els.map(e => e.getAttribute("data-connector"))
     );
-    await page.click('[data-testid="connector-mine"]');
+    /* 全部 / 已添加是互斥 tab，再点一次「已添加」不会切回去。 */
+    await page.click('[data-testid="connector-view-all"]');
     await page.waitForTimeout(400);
     await page.click(
       '[data-testid="connector-card"][data-connector="stock"] [data-testid="connector-attach"]'
@@ -743,23 +812,31 @@ async function main() {
       '[data-testid="connector-card"][data-connector="weather"] [data-testid="connector-attach"]'
     );
     await page.waitForTimeout(600);
-    await page.click('[data-testid="capability-tab"][data-layer="partners"]');
+    await gotoLayer(page, "partners");
     await page.waitForSelector('[data-testid="partners-list"]', { timeout: 20000 });
     await page.waitForTimeout(800);
 
     /*
-     * J1：一行四个 + 头像**由它接的连接器拼出来**。
+     * J1：列表市场 + 头像**由它接的连接器拼出来**。
      *
      * ⚠ 判据钉的是"三个伙伴的头像各不相同、且跟它的依赖对得上"，不是
      *   "有没有头像"。全都回落成中性小人一样有头像、一样不报错——那就是
      *   效果图上那种"看着丰满、其实什么也不接"。晨会看板接了两样，
      *   它的头像必须是 weather+chart。
      */
-    const pCols = await page.evaluate(() => {
-      const g = document.querySelector('[data-testid="partners-builtin"] .grid');
-      return g
-        ? getComputedStyle(g).gridTemplateColumns.split(" ").filter(Boolean).length
-        : 0;
+    const pLayout = await page.evaluate(() => {
+      const g = document.querySelector('[data-testid="partners-builtin"]');
+      if (!g) return { ok: false, display: null, cols: 0 };
+      const cs = getComputedStyle(g);
+      const cols =
+        cs.gridTemplateColumns === "none"
+          ? 0
+          : cs.gridTemplateColumns.split(" ").filter(Boolean).length;
+      return {
+        ok: cs.display !== "grid" && cols !== 4,
+        display: cs.display,
+        cols,
+      };
     });
     const pAvatars = await page.$$eval('[data-testid="partner-card"]', els =>
       els.map(e => ({
@@ -771,13 +848,13 @@ async function main() {
     );
     const iconOf = id => pAvatars.find(a => a.id === id)?.icons;
     check(
-      "J1 伙伴墙一行四个；头像由它接的连接器拼出来（接两样的出双图）",
-      pCols === 4 &&
+      "J1 伙伴是列表不是四列墙；头像由它接的连接器拼出来（接两样的出双图）",
+      pLayout.ok &&
         pAvatars.length === 3 &&
         iconOf("weather-desk") === "weather" &&
         iconOf("market-desk") === "chart" &&
         iconOf("weather-market") === "weather+chart",
-      `列数 ${pCols} · ${JSON.stringify(pAvatars)}`
+      `display ${pLayout.display} 列 ${pLayout.cols} · ${JSON.stringify(pAvatars)}`
     );
 
     /*
@@ -811,8 +888,8 @@ async function main() {
       })
     );
     check(
-      "J1b 起手意图只露出夹断的那两行（内边距和夹断分两层）",
-      openerLines.length === 3 && openerLines.every(n => n > 0 && n <= 2),
+      "J1b 起手意图只露出夹断的那一行（列表行不再用两行夹断填高度）",
+      openerLines.length === 3 && openerLines.every(n => n > 0 && n <= 1),
       `每张卡看得见的行数 ${JSON.stringify(openerLines)}`
     );
 
@@ -842,9 +919,7 @@ async function main() {
     /* 刷新：存档是不是真落盘（只改 state 不写 localStorage 的话这里就没了） */
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForTimeout(1500);
-    await page.getByText("扩展中心").first().click();
-    await page.waitForSelector('[data-testid="capability-tab"]', { timeout: 30000 });
-    await page.click('[data-testid="capability-tab"][data-layer="partners"]');
+    await gotoLayer(page, "partners");
     await page.waitForSelector('[data-testid="partners-list"]', { timeout: 20000 });
     await page.waitForTimeout(800);
     const afterReload = await page.locator('[data-testid="partners-mine"]').textContent().catch(() => "");
@@ -873,7 +948,8 @@ async function main() {
       builtin: await page.locator('[data-testid="partners-builtin"]').count(),
       cards: await page.locator('[data-testid="partner-card"]').count(),
     };
-    await page.click('[data-testid="partner-mine"]');
+    /* 全部 / 我的是互斥 tab，再点一次「我的」不会切回去。 */
+    await page.click('[data-testid="partner-view-all"]');
     await page.waitForTimeout(500);
     const backAll = {
       builtin: await page.locator('[data-testid="partners-builtin"]').count(),
@@ -889,16 +965,14 @@ async function main() {
     );
 
     /* 把这一轮挂着的天气摘掉，别影响后面的判据 */
-    await page.click('[data-testid="capability-tab"][data-layer="connectors"]');
-    await page.waitForTimeout(600);
+    await gotoLayer(page, "connectors");
     await page.click(
       '[data-testid="connector-card"][data-connector="weather"] [data-testid="connector-attach"]'
     );
     await page.waitForTimeout(500);
 
     /* ── F / G：伙伴 ─────────────────────────────────────────────── */
-    await page.click('[data-testid="capability-tab"][data-layer="partners"]');
-    await page.waitForTimeout(1000);
+    await gotoLayer(page, "partners");
     const cards = await page.$$eval('[data-testid="partner-card"]', els =>
       els.map(e => ({
         id: e.getAttribute("data-partner"),

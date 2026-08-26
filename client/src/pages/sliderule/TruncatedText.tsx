@@ -23,7 +23,7 @@
  *   不算溢出），只有真机截图上看得见。
  *   做法：外层 div 管留白和底色，这个组件只管夹断。
  *   判据见 sliderule-capability-browser-smoke 的 J1b——它数的是"裁剪线以上
- *   有几行行盒"，不是量溢出。
+ *   有几行行盒"，不是量溢出。列表市场默认夹 1 行（不再用两行填卡片高度）。
  */
 
 import React from "react";
@@ -81,7 +81,15 @@ export function TruncatedText({
           WebkitLineClamp: lines,
           overflow: "hidden",
         }
-      : { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+      : {
+          /* ⚠ 省略号在 inline span 上不生效（overflow 对非 replaced inline
+             会被忽略），连接器右侧 meta 就会顶到「添加」钮上。 */
+          display: "block",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          minWidth: 0,
+        };
 
   const node = (
     <Tag

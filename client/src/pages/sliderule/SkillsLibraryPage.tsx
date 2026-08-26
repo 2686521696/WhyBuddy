@@ -13,39 +13,46 @@
  *
  * ---
  *
- * 2026-08-26 按用户给的效果图重做版式，与连接器层拉齐：顶部标题 + 搜索 +
- * 「我的技能」，下面分类条，再下面**一行四个**的卡片墙，卡上一颗圆钮装/卸。
+ * 2026-08-26 第二次重做：四列卡片墙换成 Cursor Skills 那种**列表市场**。
+ * 壳与行的来源见 marketplace-chrome.tsx。跟上一版故意不一样的三处还在：
  *
- * ## 跟效果图**故意不一样**的三处
+ * 1. **没有「+ 新建技能」/「Add Skill」。** 自建链路不存在。Cursor 那颗
+ *    能打开创建向导；我们放一颗打不开任何东西的按钮，跟连接器层砍掉的
+ *    那颗是同一个毛病。做出来那天再加。
  *
- * 1. **没有「+ 新建技能」。** 自建技能这条链路没有——技能目录是仓里那份
- *    featured-skills.json，没有创建入口、没有存储、没有审校。放一颗打不开
- *    任何东西的按钮，跟连接器层砍掉的那颗是同一个毛病（见 ConnectorsPanel
- *    头注第 2 条）。做出来那天再加。
+ * 2. **分类照数据里的来。** 效果图上是「金融/法律/办公协作/设计开发」，
+ *    我们数据里是界面设计/内容创作/交互体验… 摆一个点进去永远是空的
+ *    分类，跟摆一个连不上的连接器一样。
  *
- * 2. **分类照数据里的来，不照效果图。** 效果图上是「金融/法律/办公协作/
- *    设计开发」，我们数据里的 10 个分类是界面设计/内容创作/交互体验…
- *    摆一个点进去永远是空的分类，跟摆一个连不上的连接器一样。
+ * 3. **没有 Popular。** 79 条里分不出哪些更热门，真要分只能瞎标一批。
+ *    「全部 / 已安装」是真的。装了的技能在「全部」里只把钮翻成「已安装」，
+ *    不再在同一页上面再铺一段——Cursor 也是这样，重复铺是上一版卡片墙
+ *    的气味。
  *
- * 3. **两段是「已安装」+「全部技能」，不是「精选」+「全部」。** 79 条里
- *    分不出哪些更"精选"——真要分只能瞎标一批。而"装没装"是真的、是用户
- *    自己造成的、也正是他回到这一页最想先看到的。
- *
- * ## 装/卸那颗圆钮是什么
+ * ## 「添加 / 已安装」是什么
  *
  * 「安装」= 把技能语义档案落进本地已安装列表（localStorage），下次推演会
- * 注入（最多前 6 个）。跟连接器那颗「+」**不是**一回事：连接器挂的是"这一轮"，
- * 技能装的是"以后每一轮"。所以文案一个叫「已添加」、一个叫「已安装」，
- * 别对齐成同一个词。
+ * 注入（最多前 6 个）。跟连接器那颗「添加」**不是**一回事：连接器挂的是
+ * "这一轮"，技能装的是"以后每一轮"。所以文案一个叫「已添加」、一个叫
+ * 「已安装」，别对齐成同一个词。
  */
 
 import React from "react";
-import { Button, Empty, Input, message, Tag, Tooltip } from "antd";
-import { Check, Play, Plus, Search, Trash2 } from "lucide-react";
+import { Button, Input, message, Tooltip } from "antd";
+import { Play, Sparkles } from "lucide-react";
 import featuredSkills from "@/data/featured-skills.json";
 
 import { SkillIcon } from "./skill-art/skill-icons";
 import { TruncatedText } from "./TruncatedText";
+import {
+  MarketAddButton,
+  MarketChip,
+  MarketEmpty,
+  MarketPage,
+  MarketRow,
+  MarketSearch,
+  MarketViewTab,
+} from "./marketplace-chrome";
 import {
   channelOf,
   installKeyOf,
@@ -102,131 +109,28 @@ const CHANNEL_META: Record<
 
 function ChannelTag({ skill }: { skill: { channel?: SkillChannel } }) {
   const meta = CHANNEL_META[channelOf(skill)];
+  const tone =
+    meta.color === "green"
+      ? "bg-emerald-50 text-emerald-700"
+      : meta.color === "blue"
+        ? "bg-sky-50 text-sky-700"
+        : "bg-slate-100 text-slate-500";
   return (
     <Tooltip title={meta.title}>
-      <Tag
-        color={meta.color}
-        style={{ fontSize: 10, marginInlineEnd: 0, lineHeight: "16px" }}
+      <span
+        className={`inline-flex shrink-0 rounded px-1.5 py-0.5 text-[10px] leading-4 ${tone}`}
         data-testid={`skill-channel-${channelOf(skill)}`}
       >
         {meta.label}
-      </Tag>
+      </span>
     </Tooltip>
   );
 }
 
 const ALL = "全部";
 
-/**
- * 卡片外壳：图稿 + 名字 + 圆钮一行，描述与底行**通栏**。
- *
- * ⚠ 2026-08-26 真机量出来的：一行四个之后每张卡 ~270px，去掉内边距只剩
- *   248px；再让描述和底行跟图稿、圆钮挤同一列，可用宽度只有 ~144px——
- *   底行 79 张卡**全部**出省略号（"界面设计 · by A…"），等于每张卡都在
- *   藏作者。描述和底行挪到图稿下方通栏之后，同一批文案一条都不截断。
- *   名字那行没得选（必须跟圆钮同排），所以它保留省略号 + 悬浮看全文。
- */
-function CardShell({
-  category,
-  name,
-  description,
-  footer,
-  action,
-  testid,
-  attr,
-  open,
-  children,
-}: {
-  category?: string;
-  name: string;
-  description: string;
-  footer: React.ReactNode;
-  action: React.ReactNode;
-  testid?: string;
-  attr?: Record<string, string>;
-  open?: boolean;
-  children?: React.ReactNode;
-}) {
-  return (
-    <div
-      className={`rounded-2xl border bg-white transition ${
-        open
-          ? "border-[#d6e4ff] shadow-[0_8px_24px_rgba(15,23,42,0.07)]"
-          : "border-[#eef1f5] hover:border-[#dbe2ea] hover:shadow-[0_4px_14px_rgba(15,23,42,0.05)]"
-      }`}
-      data-testid={testid}
-      {...attr}
-    >
-      <div className="p-4">
-        <div className="flex items-center gap-3">
-          {/* 真图稿（多色 SVG），不是字母头像 —— 见 skill-art 的头注 */}
-          <SkillIcon category={category} className="h-10 w-10" />
-          <TruncatedText
-            text={name}
-            data-testid="skill-name"
-            className="min-w-0 flex-1 text-[14.5px] font-semibold text-stone-800"
-          />
-          {action}
-        </div>
-        <TruncatedText
-          as="div"
-          lines={2}
-          text={description || "（无摘要）"}
-          data-testid="skill-desc"
-          className="mt-2.5 text-[12.5px] leading-[20px] text-stone-500"
-        />
-        <div className="mt-2 flex items-center gap-1.5 text-[11px] text-stone-400">
-          {footer}
-        </div>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-/** 圆钮：装 / 已装（照效果图做成圆钮 + 底下一行小字）。 */
-function RoundToggle({
-  on,
-  onLabel,
-  title,
-  onClick,
-  testid,
-}: {
-  on: boolean;
-  onLabel: string;
-  title: string;
-  onClick: () => void;
-  testid: string;
-}) {
-  return (
-    <button
-      type="button"
-      data-testid={testid}
-      aria-pressed={on}
-      title={title}
-      onClick={onClick}
-      className="flex shrink-0 flex-col items-center gap-1 pt-1"
-    >
-      <span
-        className={`flex h-8 w-8 items-center justify-center rounded-full border transition ${
-          on
-            ? "border-[#bfe6cd] bg-[#eef9f2] text-[#0a8f52]"
-            : "border-[#e5e7eb] text-stone-400 hover:border-[#b9c6d6] hover:bg-[#f7f9fc] hover:text-stone-700"
-        }`}
-      >
-        {on ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-      </span>
-      <span
-        className={`text-[11px] leading-4 ${on ? "text-stone-400" : "text-transparent"}`}
-      >
-        {onLabel}
-      </span>
-    </button>
-  );
-}
-
-/** 目录卡（未装/已装同一张，右侧圆钮切换）。 */
-function FeaturedCard({
+/** 目录行（未装/已装同一行，右侧「添加 / 已安装」切换）。 */
+function FeaturedRow({
   skill,
   installed,
   onToggle,
@@ -236,29 +140,39 @@ function FeaturedCard({
   onToggle: () => void;
 }) {
   return (
-    <CardShell
+    <MarketRow
       testid={`featured-skill-${skill.id}`}
       attr={{ "data-installed": installed ? "1" : "0" }}
-      category={skill.category}
-      name={skill.name}
-      description={skill.description}
-      /* ⚠ 分类**不摆在名字那一行**（效果图上是摆的）：名字那行要跟圆钮挤，
-         只剩 ~150px，再塞一枚分类标就轮到名字全员省略号。效果图上的名字是
-         四个汉字，我们这批是最长 29 个字符的英文 id。分类挪到通栏底行。 */
-      footer={
-        <>
+      icon={<SkillIcon category={skill.category} className="h-9 w-9" />}
+      name={
+        <TruncatedText
+          text={skill.name}
+          data-testid="skill-name"
+          className="min-w-0"
+        />
+      }
+      description={
+        <TruncatedText
+          text={skill.description || "（无摘要）"}
+          data-testid="skill-desc"
+          className="min-w-0"
+        />
+      }
+      meta={
+        <div className="flex items-center justify-end gap-1.5">
           <ChannelTag skill={skill} />
           <TruncatedText
-            text={`${skill.category} · by ${skill.author}`}
+            text={`${skill.category} · ${skill.author}`}
             data-testid="skill-meta"
-            className="min-w-0 flex-1"
+            className="min-w-0"
           />
-        </>
+        </div>
       }
       action={
-        <RoundToggle
+        <MarketAddButton
           testid="skill-install"
           on={installed}
+          offLabel="添加"
           onLabel="已安装"
           title={installed ? "已安装，点一下卸载" : "安装（以后每轮推演都注入）"}
           onClick={onToggle}
@@ -333,143 +247,105 @@ function InstalledSkillCard({
   };
 
   return (
-    <CardShell
+    <MarketRow
       testid={`installed-skill-${skill.repo}`}
       open={open}
-      category={BY_REPO.get(skill.repo)?.category}
-      name={skill.name}
-      description={skill.description}
-      footer={
-        <>
+      icon={
+        <SkillIcon
+          category={BY_REPO.get(skill.repo)?.category}
+          className="h-9 w-9"
+        />
+      }
+      name={
+        <TruncatedText
+          text={skill.name}
+          data-testid="skill-name"
+          className="min-w-0"
+        />
+      }
+      description={
+        <TruncatedText
+          text={skill.description}
+          data-testid="skill-desc"
+          className="min-w-0"
+        />
+      }
+      meta={
+        <div className="flex items-center justify-end gap-1.5">
           <ChannelTag skill={skill} />
-          <Tooltip
-            title={
-              skill.kind === "package"
-                ? "试跑时原作者的完整 SKILL.md 指令作为 system prompt 执行"
-                : "按语义档案（名称/描述）驱动执行"
-            }
-          >
-            <Tag
-              color={skill.kind === "package" ? "green" : "default"}
-              style={{
-                marginInlineEnd: 0,
-                fontSize: 11,
-                lineHeight: "16px",
-                flexShrink: 0,
-              }}
-            >
-              {skill.kind === "package" ? "原版 SKILL.md" : "语义档案"}
-            </Tag>
-          </Tooltip>
-          {skill.url ? (
-            <a
-              href={skill.url}
-              target="_blank"
-              rel="noreferrer"
-              className="min-w-0 flex-1 truncate font-mono hover:text-blue-600"
-            >
-              {skill.repo}
-            </a>
-          ) : (
-            <TruncatedText
-              text={skill.license}
-              className="min-w-0 flex-1 font-mono"
-            />
-          )}
+          <TruncatedText
+            text={skill.kind === "package" ? "原版 SKILL.md" : "语义档案"}
+            className="min-w-0"
+          />
+        </div>
+      }
+      action={
+        <>
           <button
             type="button"
             data-testid="installed-skill-toggle"
             onClick={() => setOpen(v => !v)}
             title="试跑：真 LLM，走服务端通道"
-            className="shrink-0 rounded p-1 text-stone-400 transition hover:bg-[#f1f5fb] hover:text-[#1677ff]"
+            className="rounded-md p-1.5 text-slate-400 transition hover:bg-white hover:text-[#5b6cff]"
           >
             <Play className="h-3.5 w-3.5" />
           </button>
+          <MarketAddButton
+            testid="skill-uninstall"
+            on
+            offLabel="添加"
+            onLabel="卸载"
+            title="卸载（只移除本地安装，不影响原仓库）"
+            onClick={() => onUninstall(installKeyOf(skill))}
+          />
         </>
       }
-      action={
-        <RoundToggle
-          testid="skill-uninstall"
-          on
-          onLabel="卸载"
-          title="卸载（只移除本地安装，不影响原仓库）"
-          onClick={() => onUninstall(installKeyOf(skill))}
-        />
-      }
     >
-      {open ? (
-        <div className="border-t border-[#f1f3f6] px-4 py-3">
-          {skill.ioHints.length > 0 && (
-            <div className="mb-1.5 space-y-0.5">
-              {skill.ioHints.slice(0, 3).map(h => (
-                <div key={h} className="font-mono text-[10px] text-stone-400">
-                  {h}
-                </div>
-              ))}
-            </div>
-          )}
-          {/* ⚠ 一行四个之后卡只有 ~280px，输入框和按钮**竖着**排。
-              横排的话按钮会被挤成两个字宽，或者把输入框压到放不下一个词。 */}
-          <Input.TextArea
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            placeholder="给这个技能输入内容，立即试跑（真 LLM，走服务端通道）"
-            autoSize={{ minRows: 2, maxRows: 4 }}
-          />
-          <Button
-            className="mt-2 w-full"
-            size="small"
-            type="primary"
-            icon={<Play className="h-3 w-3" />}
-            loading={running}
-            disabled={!input.trim()}
-            onClick={run}
-            data-testid="installed-skill-run"
-          >
-            试跑
-          </Button>
-          {output !== null && (
-            <div className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap rounded bg-stone-50 p-2.5 text-xs leading-5 text-stone-700 ring-1 ring-stone-200">
-              {output}
-            </div>
-          )}
-          {error !== null && (
-            <div className="mt-2 rounded bg-red-50 px-2.5 py-1.5 text-[11px] text-red-600 ring-1 ring-red-200">
-              试跑失败：{error}
-            </div>
-          )}
-        </div>
-      ) : null}
-    </CardShell>
+      <div className="border-t border-slate-100 px-3 pb-3 pt-2">
+        {skill.ioHints.length > 0 && (
+          <div className="mb-1.5 space-y-0.5">
+            {skill.ioHints.slice(0, 3).map(h => (
+              <div key={h} className="font-mono text-[10px] text-slate-400">
+                {h}
+              </div>
+            ))}
+          </div>
+        )}
+        <Input.TextArea
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          placeholder="给这个技能输入内容，立即试跑（真 LLM，走服务端通道）"
+          autoSize={{ minRows: 2, maxRows: 4 }}
+        />
+        <Button
+          className="mt-2"
+          size="small"
+          type="primary"
+          icon={<Play className="h-3 w-3" />}
+          loading={running}
+          disabled={!input.trim()}
+          onClick={run}
+          data-testid="installed-skill-run"
+        >
+          试跑
+        </Button>
+        {output !== null && (
+          <div className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap rounded bg-slate-50 p-2.5 text-xs leading-5 text-slate-700 ring-1 ring-slate-200">
+            {output}
+          </div>
+        )}
+        {error !== null && (
+          <div className="mt-2 rounded bg-red-50 px-2.5 py-1.5 text-[11px] text-red-600 ring-1 ring-red-200">
+            试跑失败：{error}
+          </div>
+        )}
+      </div>
+    </MarketRow>
   );
 }
-
-/** 段标题：「已安装 · 3」这种。 */
-function SectionTitle({
-  title,
-  count,
-  hint,
-  testid,
-}: {
-  title: string;
-  count: number;
-  hint?: string;
-  testid: string;
-}) {
-  return (
-    <div className="mb-3 flex items-baseline gap-2" data-testid={testid}>
-      <h3 className="m-0 text-[15px] font-semibold text-stone-800">{title}</h3>
-      <span className="text-[12.5px] text-stone-400">{count}</span>
-      {hint ? <span className="text-[11.5px] text-stone-400">{hint}</span> : null}
-    </div>
-  );
-}
-
-const GRID =
-  "grid grid-cols-1 gap-3.5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4";
 
 export function SkillsLibraryPage({
-  /** 初始是否只看「我的技能」（测试用；产品默认看全部） */
+  /** 初始是否只看「已安装」（测试用；产品默认看全部） */
   initialMine = false,
 }: {
   initialMine?: boolean;
@@ -537,99 +413,83 @@ export function SkillsLibraryPage({
   const categories = React.useMemo(() => {
     const seen: string[] = [];
     for (const f of FEATURED) if (!seen.includes(f.category)) seen.push(f.category);
-    return [ALL, ...seen];
+    /* 「全部」已经是左边那颗 view tab，分类条不再铺一颗同名的。 */
+    return seen;
   }, []);
 
-  const countOf = (cat: string) =>
-    cat === ALL ? FEATURED.length : FEATURED.filter(f => f.category === cat).length;
+  const countOf = (cat: string) => FEATURED.filter(f => f.category === cat).length;
 
   return (
-    <div
-      // 壳：顶栏固定 + 列表单独滚动（彻底告别 sticky/padding 露缝）
-      className="flex h-full flex-col overflow-hidden bg-white"
-      data-testid="skills-library"
-    >
-      <div className="shrink-0 px-5 pt-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-baseline gap-2">
-              <h2 className="m-0 text-[20px] font-semibold text-stone-800">
-                技能库
-              </h2>
-              <span
-                className="text-[13px] text-stone-400"
-                data-testid="skills-count"
-              >
-                {FEATURED.length} 项
-              </span>
-            </div>
-            <p className="mb-0 mt-1 text-[12.5px] text-stone-500">
-              技能是一段做事的方法，装上之后会注入到<b>之后每一轮</b>推演里
-              （最多前 6 个）——影响生成的应用怎么设计、怎么写
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Input
-              allowClear
-              size="middle"
-              style={{ width: 220 }}
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="搜索技能 / 作者"
-              data-testid="skills-search"
-              prefix={<Search className="h-3.5 w-3.5 text-stone-400" />}
-            />
-            <Button
-              type={mineOnly ? "primary" : "default"}
-              ghost={mineOnly}
-              data-testid="skills-mine"
-              onClick={() => setMineOnly(v => !v)}
-            >
-              我的技能
-              {installed.length > 0 ? ` ${installed.length}` : ""}
-            </Button>
-          </div>
-        </div>
-
-        <div className="mt-3.5 flex flex-wrap gap-2" data-testid="skills-cats">
+    <MarketPage
+      testid="skills-library"
+      title="技能"
+      icon={<Sparkles size={18} strokeWidth={2.2} />}
+      extra={
+        <span className="text-[13px] text-slate-400" data-testid="skills-count">
+          {FEATURED.length} 项
+        </span>
+      }
+      search={
+        <MarketSearch
+          value={query}
+          onChange={setQuery}
+          placeholder="搜索技能 / 作者"
+          testid="skills-search"
+        />
+      }
+      tabs={
+        <>
+          <MarketViewTab
+            testid="skills-view-all"
+            label="全部"
+            count={FEATURED.length}
+            active={!mineOnly && category === ALL}
+            onClick={() => {
+              setMineOnly(false);
+              setCategory(ALL);
+            }}
+          />
+          <MarketViewTab
+            testid="skills-mine"
+            label="已安装"
+            count={installed.length}
+            active={mineOnly}
+            onClick={() => setMineOnly(true)}
+          />
+        </>
+      }
+      chips={
+        <div className="contents" data-testid="skills-cats">
           {categories.map(cat => (
-            <button
+            <MarketChip
               key={cat}
-              type="button"
-              data-testid="skills-cat"
-              data-cat={cat}
-              data-active={category === cat ? "1" : "0"}
-              onClick={() => setCategory(cat)}
-              className={`rounded-lg px-3 py-1.5 text-[13px] transition ${
-                category === cat
-                  ? "bg-[#eef4ff] font-medium text-[#1677ff]"
-                  : "bg-[#f5f6f8] text-stone-600 hover:bg-[#eceff3]"
-              }`}
-            >
-              {cat}
-              <span
-                className={`ml-1 tabular-nums text-[11px] ${
-                  category === cat ? "text-[#1677ff]/70" : "text-stone-400"
-                }`}
-              >
-                {countOf(cat)}
-              </span>
-            </button>
+              testid="skills-cat"
+              label={cat}
+              count={countOf(cat)}
+              active={!mineOnly && category === cat}
+              onClick={() => {
+                setMineOnly(false);
+                setCategory(cat);
+              }}
+              attr={{
+                "data-cat": cat,
+                "data-active": !mineOnly && category === cat ? "1" : "0",
+              }}
+            />
           ))}
         </div>
-      </div>
-
-      {/* 仅列表区滚动 */}
-      <div className="min-h-0 flex-1 space-y-6 overflow-auto px-5 pb-6 pt-4">
-        {installedItems.length > 0 ? (
-          <section data-testid="skills-installed">
-            <SectionTitle
-              testid="skills-section-installed"
-              title="已安装"
-              count={installedItems.length}
-              hint="会注入之后每一轮推演（最多前 6 个）；字段绑定仍过门禁硬校验"
-            />
-            <div className={GRID}>
+      }
+    >
+      {mineOnly ? (
+        <section data-testid="skills-installed">
+          {installedItems.length === 0 ? (
+            <MarketEmpty>
+              {installed.length === 0
+                ? "还没安装技能 — 切到「全部」挑一个，装完可以试跑"
+                : `已安装的技能里没有匹配「${query || category}」的`}
+            </MarketEmpty>
+          ) : (
+            <div data-testid="skills-installed-list" className="divide-y divide-slate-200/60">
               {installedItems.map(s => (
                 <InstalledSkillCard
                   key={installKeyOf(s)}
@@ -640,51 +500,25 @@ export function SkillsLibraryPage({
                 />
               ))}
             </div>
-          </section>
-        ) : null}
-
-        {mineOnly ? (
-          installedItems.length === 0 ? (
-            <Empty
-              className="mt-10"
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={
-                installed.length === 0
-                  ? "还没安装技能 — 关掉「我的技能」挑一个，装完立即可试跑"
-                  : `已安装的技能里没有匹配「${query || category}」的`
-              }
-            />
-          ) : null
-        ) : (
-          <section data-testid="skills-featured">
-            <SectionTitle
-              testid="skills-section-featured"
-              title="全部技能"
-              count={featuredItems.length}
-            />
-            {featuredItems.length === 0 ? (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={`没有匹配「${query || category}」的技能`}
+          )}
+        </section>
+      ) : featuredItems.length === 0 ? (
+        <MarketEmpty>{`没有匹配「${query || category}」的技能`}</MarketEmpty>
+      ) : (
+        <section data-testid="skills-featured">
+          <div data-testid="skills-featured-list" className="divide-y divide-slate-200/60">
+            {featuredItems.map(f => (
+              <FeaturedRow
+                key={f.id}
+                skill={f}
+                installed={isInstalled(installed, REPO_OF(f.id))}
+                onToggle={() => toggleInstall(f)}
               />
-            ) : (
-              /* 一行四个（用户 2026-08-26 指定）。窄屏逐级降到 3 / 2 / 1——
-                 1200px 以下硬塞四个的话每张只有 200 出头，标题都放不下一行。 */
-              <div className={GRID} data-testid="skills-featured-grid">
-                {featuredItems.map(f => (
-                  <FeaturedCard
-                    key={f.id}
-                    skill={f}
-                    installed={isInstalled(installed, REPO_OF(f.id))}
-                    onToggle={() => toggleInstall(f)}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-      </div>
-    </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </MarketPage>
   );
 }
 
