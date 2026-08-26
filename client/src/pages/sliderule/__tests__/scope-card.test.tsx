@@ -474,13 +474,18 @@ describe("范围卡停泊时发送只能走确认/先改范围", () => {
       })
     ).toBe(false);
     expect(DOCK).toContain("scopeCardOpen: Boolean(pendingScope)");
+    /* ⚠ 2026-08-27：只钉「范围卡锁输入框」这半句。整句字面里另半句
+       （提问）已经改成 askBlocksTyping —— 开放式提问要能打字回答，
+       否则那张卡是死胡同。盯语义别盯字面（本仓第二条）。 */
     expect(DOCK).toContain(
-      "disabled={Boolean(pendingScope) || Boolean(pendingAsk)}"
+      "disabled={Boolean(pendingScope) || askBlocksTyping(pendingAsk)}"
     );
     expect(DOCK).not.toContain(
       "disabled={isRunning || Boolean(pendingScope) || Boolean(pendingAsk)}"
     );
-    expect(DOCK).toContain("askOpen: Boolean(pendingAsk)");
+    /* 同上：提问那半边改由 askBlocksTyping 判定（开放式提问要能打字回答）。
+       这条只保证发送闸**确实收到了提问状态**，不再钉具体表达式。 */
+    expect(DOCK).toContain("askOpen: askBlocksTyping(pendingAsk)");
     expect(DOCK).toContain("key={pendingScope.userText}");
     expect(DOCK).toContain("onConfirm={onConfirmScope}");
     expect(

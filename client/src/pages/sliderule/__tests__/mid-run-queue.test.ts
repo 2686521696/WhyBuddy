@@ -192,7 +192,16 @@ describe("发送键不是停止；停止是独立方块", () => {
   it("输入框推演中仍可打字（停泊卡才锁）", () => {
     const inputAt = DOCK.indexOf('data-testid="sliderule-composer-input"');
     const ta = DOCK.slice(DOCK.lastIndexOf("disabled={", inputAt), inputAt);
-    expect(ta).toContain("disabled={Boolean(pendingScope) || Boolean(pendingAsk)}");
+    /*
+     * ⚠ 2026-08-27：这条原来钉的是**整句字面**
+     *   `disabled={Boolean(pendingScope) || Boolean(pendingAsk)}`。
+     *   放开"开放式提问可以打字回答"时那句合法地变了，判据就红了——而它
+     *   想说的两件事一件没变。本仓第二条：盯语义，别盯某句话的字面。
+     *   现在钉语义：范围卡照锁、推演中不锁；提问那半边由
+     *   `askBlocksTyping`（open-ask-is-answerable.test.ts）说了算。
+     */
+    expect(ta).toContain("pendingScope");
+    expect(ta).toContain("askBlocksTyping(pendingAsk)");
     expect(ta).not.toContain("isRunning");
   });
 });

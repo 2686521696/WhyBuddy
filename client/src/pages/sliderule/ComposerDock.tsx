@@ -151,6 +151,23 @@ export function isAttachmentExtractPending(
  * 入站审查 / 优化提示词在飞 → 灰（2026-08-20：生成审查卡时发送仍亮，
  * 半成品意图会被直接推演；优化同理，改写还没回填就能把原文发出去）。
  */
+/**
+ * 控制面提问是否应该**挡住打字**。
+ *
+ * ⚠ 只有给了选项时才挡。2026-08-27 评审逮到的死胡同：`ask_user` 允许不带
+ *   options（模型不给就是 `[]`，开放式提问本来就没有选项），而输入框被
+ *   `Boolean(pendingAsk)` 一律禁掉、卡片上又只有一句问题——**没有任何回答
+ *   入口**，只能点「稍后再说」跑掉。
+ *
+ * ⚠ 有选项时维持原样（挡住）：那时候 Enter 另发一条会把这次停泊冲掉，
+ *   跟范围卡那条是同一个理由。这条只放开"没有选项"这一种。
+ */
+export function askBlocksTyping(
+  ask?: { options?: string[] } | null
+): boolean {
+  return Boolean(ask) && (ask?.options?.length ?? 0) > 0;
+}
+
 export function isComposerSendBlocked(opts: {
   isRunning: boolean;
   input: string;
@@ -621,7 +638,7 @@ export function ComposerDock({
         isJudging,
         isRefining,
         scopeCardOpen: Boolean(pendingScope),
-        askOpen: Boolean(pendingAsk),
+        askOpen: askBlocksTyping(pendingAsk),
       })
     )
       return;
@@ -1050,7 +1067,7 @@ export function ComposerDock({
     isJudging,
     isRefining,
     scopeCardOpen: Boolean(pendingScope),
-    askOpen: Boolean(pendingAsk),
+    askOpen: askBlocksTyping(pendingAsk),
   });
 
   const actionHints = hintChips.slice(0, statusPill ? 1 : 2);
@@ -1700,7 +1717,7 @@ export function ComposerDock({
                     picked.length > 0 ? "输入你的任务" : placeholderText
                   }
                   rows={1}
-                  disabled={Boolean(pendingScope) || Boolean(pendingAsk)}
+                  disabled={Boolean(pendingScope) || askBlocksTyping(pendingAsk)}
                   className={`block max-h-40 w-full resize-none bg-transparent py-0 text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60 ${
                     hero
                       ? "min-h-[72px] px-0.5 text-[15px] leading-6"
@@ -1765,6 +1782,15 @@ export function ComposerDock({
               <p data-testid="sliderule-control-ask-question">
                 {pendingAsk.question}
               </p>
+              {(pendingAsk.options || []).length === 0 ? (
+                /* 没有选项 = 开放式提问。明说怎么答，别让人对着一句问话发呆。 */
+                <p
+                  className="mt-1.5 text-[12px] leading-4 text-[#71717a]"
+                  data-testid="sliderule-control-ask-typehint"
+                >
+                  直接在下面的输入框里回答
+                </p>
+              ) : null}
               {(pendingAsk.options || []).length > 0 ? (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {pendingAsk.options!.map(option => (
