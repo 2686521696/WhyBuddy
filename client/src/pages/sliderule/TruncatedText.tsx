@@ -14,6 +14,16 @@
  *
  * ⚠ jsdom 里没有 ResizeObserver 也没有真实布局，这里要能安静地退化成
  *   "不截断、不挂 tooltip"，别让静态渲染测试炸掉。
+ *
+ * ⚠ **别把内边距跟这个组件的多行夹断放在同一个元素上。**
+ *   2026-08-26 伙伴卡踩到：起手意图那块写成
+ *   `<TruncatedText lines={2} className="px-2.5 py-1.5 bg-…">`，
+ *   结果第三行从**底部内边距里**露出小半截字。没有报错、没有告警，
+ *   `scrollHeight - clientHeight` 也照样是 0（那半截字在 padding box 之内，
+ *   不算溢出），只有真机截图上看得见。
+ *   做法：外层 div 管留白和底色，这个组件只管夹断。
+ *   判据见 sliderule-capability-browser-smoke 的 J1b——它数的是"裁剪线以上
+ *   有几行行盒"，不是量溢出。
  */
 
 import React from "react";

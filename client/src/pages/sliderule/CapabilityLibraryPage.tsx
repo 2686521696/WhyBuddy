@@ -188,11 +188,24 @@ export function CapabilityLibraryPage({
           <div className="p-4">
             <PartnersPanel
               custom={custom}
-              connectorIds={connectorIds}
+              /* ⚠ 传整份 spec 而不是 id 列表：伙伴层要拿连接器自己声明的
+                 category（分类条）和 icon（头像）。只传 id 的话这两样只能
+                 在前端另编一套词表，编出来的迟早跟后端对不上。 */
+              connectors={connectors}
               skillKeys={skillKeys}
+              attachedKeys={turnCaps.map(c => `${c.kind}:${c.key}`)}
+              turnCaps={turnCaps}
               onUse={p =>
                 attach(partnerCapabilities(p, { connectorIds, skillKeys }), {
                   opener: p.opener,
+                })
+              }
+              onSave={p =>
+                setCustom(prev => {
+                  const next = [p, ...prev.filter(x => x.id !== p.id)];
+                  savePartners(next);
+                  message.success(`已存成伙伴「${p.name}」`);
+                  return next;
                 })
               }
               onDelete={id =>

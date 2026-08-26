@@ -19,6 +19,9 @@
  *   E3 「+/已添加」真的挂到这一轮
  *   E  连接器页「试取真数据」拿回的是**真值**，不是示例
  *   E2 认不出的城市如实报错，且**一行都不显示**  ← 跟 E 是一对
+ *   J1 伙伴墙一行四个 + 头像由依赖拼出来；J1b 起手意图不漏字
+ *   J2 「存成伙伴」存/刷新/删
+ *   J3 「我的伙伴」只看自己攒的
  *   F  伙伴依赖齐时可用、缺依赖时按钮禁用并说明缺什么
  *   G  「用这个伙伴」把能力挂上并跳回推演、起手意图填进输入框
  *
@@ -674,6 +677,165 @@ async function main() {
       /zzz/.test(errText) && rowsShown === 0,
       `错误=${(errText || "（没有）").slice(0, 60)} · 还在显示行=${rowsShown}`
     );
+
+    /* ── J：伙伴层（2026-08-26 按效果图重做版式 + 把「存成伙伴」接上）── */
+    /* 先在连接器层挂一个天气——J2 要拿它存成伙伴 */
+    await page.click(
+      '[data-testid="connector-card"][data-connector="weather"] [data-testid="connector-attach"]'
+    );
+    await page.waitForTimeout(600);
+    await page.click('[data-testid="capability-tab"][data-layer="partners"]');
+    await page.waitForSelector('[data-testid="partners-list"]', { timeout: 20000 });
+    await page.waitForTimeout(800);
+
+    /*
+     * J1：一行四个 + 头像**由它接的连接器拼出来**。
+     *
+     * ⚠ 判据钉的是"三个伙伴的头像各不相同、且跟它的依赖对得上"，不是
+     *   "有没有头像"。全都回落成中性小人一样有头像、一样不报错——那就是
+     *   效果图上那种"看着丰满、其实什么也不接"。晨会看板接了两样，
+     *   它的头像必须是 weather+chart。
+     */
+    const pCols = await page.evaluate(() => {
+      const g = document.querySelector('[data-testid="partners-builtin"] .grid');
+      return g
+        ? getComputedStyle(g).gridTemplateColumns.split(" ").filter(Boolean).length
+        : 0;
+    });
+    const pAvatars = await page.$$eval('[data-testid="partner-card"]', els =>
+      els.map(e => ({
+        id: e.getAttribute("data-partner"),
+        icons:
+          e.querySelector('[data-testid="partner-avatar"]')?.getAttribute("data-icons") ??
+          null,
+      }))
+    );
+    const iconOf = id => pAvatars.find(a => a.id === id)?.icons;
+    check(
+      "J1 伙伴墙一行四个；头像由它接的连接器拼出来（接两样的出双图）",
+      pCols === 4 &&
+        pAvatars.length === 3 &&
+        iconOf("weather-desk") === "weather" &&
+        iconOf("market-desk") === "chart" &&
+        iconOf("weather-market") === "weather+chart",
+      `列数 ${pCols} · ${JSON.stringify(pAvatars)}`
+    );
+
+    /*
+     * J1b：起手意图那块**不许漏字**。
+     *
+     * ⚠ 这条只有量渲染后的 DOM 才抓得到（仓里第五条）。第一版把内边距和
+     *   `-webkit-line-clamp:2` 放在同一个元素上，第三行会从**底部内边距里**
+     *   露出小半截（真机截图上是"和每天的降水概率"被拦腰切开的一条）。
+     *
+     * ⚠ **第一版判据在这上面打空过。** 当时量的是 `scrollHeight - clientHeight`：
+     *   好的坏的都是 0——因为那半截字是渲染在 padding 区里的，属于 padding box
+     *   之内，根本不算溢出。把修复改回去、截图上毛病明明白白回来了，判据却
+     *   照样绿。这正是仓里第二条说的"没红就是判据没用"。
+     *
+     *   换成量**行**：拿 Range 数出每一行的行盒，看有几行的顶边落在裁剪线
+     *   （clientHeight）以上——也就是"能被看见的行"。夹两行就只许看见两行。
+     *   坏的那版第三行顶边在裁剪线上方 3px，这里数出 3，红。
+     */
+    const openerLines = await page.$$eval('[data-testid="partner-opener"]', els =>
+      els.map(el => {
+        const r = document.createRange();
+        r.selectNodeContents(el);
+        const box = el.getBoundingClientRect();
+        // 同一行可能有多个行盒（内联被拆开），按顶边去重才是"行数"
+        const tops = new Set(
+          [...r.getClientRects()]
+            .map(x => Math.round(x.top - box.top))
+            .filter(top => top < el.clientHeight)
+        );
+        return tops.size;
+      })
+    );
+    check(
+      "J1b 起手意图只露出夹断的那两行（内边距和夹断分两层）",
+      openerLines.length === 3 && openerLines.every(n => n > 0 && n <= 2),
+      `每张卡看得见的行数 ${JSON.stringify(openerLines)}`
+    );
+
+    /*
+     * J2：「存成伙伴」端到端 —— 这条是这次改动的**主证据**。
+     *
+     * ⚠ 这一页的空态一直写着"挂几个能力再回这里存成小队"，而存的入口
+     *   压根不存在（partnerFromCurrent 写好了没人调）。判据必须走完
+     *   存 → 出现在「我攒的」→ **刷新后还在**（真落了 localStorage）→ 删掉，
+     *   而不是只看弹窗弹没弹：弹窗弹出来但存不下去，正是原来那种半截活。
+     */
+    const mineName = `烟测小队${Date.now().toString(36).slice(-4)}`;
+    await page.click('[data-testid="partner-save-open"]');
+    await page.waitForSelector('[data-testid="partner-save-name"]', { timeout: 10000 });
+    await page.fill('[data-testid="partner-save-name"]', mineName);
+    await page.fill(
+      '[data-testid="partner-save-opener"]',
+      "做一个城市天气页，把今天和未来三天摆出来。"
+    );
+    await page.click(".ant-modal-footer .ant-btn-primary, [class*=ant-modal-footer] [class*=ant-btn-primary]");
+    await page.waitForTimeout(900);
+    const savedNow = await page.locator('[data-testid="partners-mine"]').count();
+    const savedCardText = savedNow
+      ? await page.locator('[data-testid="partners-mine"]').textContent()
+      : "";
+
+    /* 刷新：存档是不是真落盘（只改 state 不写 localStorage 的话这里就没了） */
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(1500);
+    await page.getByText("扩展中心").first().click();
+    await page.waitForSelector('[data-testid="capability-tab"]', { timeout: 30000 });
+    await page.click('[data-testid="capability-tab"][data-layer="partners"]');
+    await page.waitForSelector('[data-testid="partners-list"]', { timeout: 20000 });
+    await page.waitForTimeout(800);
+    const afterReload = await page.locator('[data-testid="partners-mine"]').textContent().catch(() => "");
+
+    /* 删掉，别把测试账号的存档留脏；顺带验删钮真的删得掉 */
+    await page.click('[data-testid="partners-mine"] [data-testid="partner-delete"]');
+    await page.waitForTimeout(700);
+    const afterDelete = await page.locator('[data-testid="partners-mine"]').count();
+    check(
+      "J2 「存成伙伴」存得下来、刷新后还在、删得掉（空态那句话终于成立）",
+      savedNow === 1 &&
+        savedCardText.includes(mineName) &&
+        (afterReload || "").includes(mineName) &&
+        afterDelete === 0,
+      `存后=${savedNow} · 刷新后${(afterReload || "").includes(mineName) ? "还在" : "没了"} · 删后段数=${afterDelete}`
+    );
+
+    /*
+     * J3：「我的伙伴」只看自己攒的。
+     * ⚠ 正反一对：开着的时候内置那段整段收起；关掉要能回来。只判"能点"的话，
+     *   一个什么也不筛的按钮照样绿。
+     */
+    await page.click('[data-testid="partner-mine"]');
+    await page.waitForTimeout(500);
+    const onlyMine = {
+      builtin: await page.locator('[data-testid="partners-builtin"]').count(),
+      cards: await page.locator('[data-testid="partner-card"]').count(),
+    };
+    await page.click('[data-testid="partner-mine"]');
+    await page.waitForTimeout(500);
+    const backAll = {
+      builtin: await page.locator('[data-testid="partners-builtin"]').count(),
+      cards: await page.locator('[data-testid="partner-card"]').count(),
+    };
+    check(
+      "J3 「我的伙伴」把内置那段整段收起，关掉能回来",
+      onlyMine.builtin === 0 &&
+        onlyMine.cards === 0 &&
+        backAll.builtin === 1 &&
+        backAll.cards === 3,
+      `只看我的 ${JSON.stringify(onlyMine)} · 关掉 ${JSON.stringify(backAll)}`
+    );
+
+    /* 把这一轮挂着的天气摘掉，别影响后面的判据 */
+    await page.click('[data-testid="capability-tab"][data-layer="connectors"]');
+    await page.waitForTimeout(600);
+    await page.click(
+      '[data-testid="connector-card"][data-connector="weather"] [data-testid="connector-attach"]'
+    );
+    await page.waitForTimeout(500);
 
     /* ── F / G：伙伴 ─────────────────────────────────────────────── */
     await page.click('[data-testid="capability-tab"][data-layer="partners"]');
