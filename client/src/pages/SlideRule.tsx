@@ -1039,7 +1039,7 @@ function SlideRuleUnified({
   sendMessage: (textOverride?: string) => void;
   pendingScope?: import("./sliderule/scope-card-gate").ScopeCardPending | null;
   pendingAsk?: { question: string; options?: string[] } | null;
-  confirmControlScope?: (opts?: { includeEvidence: boolean }) => void;
+  confirmControlScope?: () => void;
   dismissScopeCard?: () => void;
   dismissAsk?: () => void;
   challengeTurn: (id: string) => void;

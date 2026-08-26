@@ -609,6 +609,12 @@ export async function consumeControlStreamResponse(
               continue;
             case "control_tool_result":
               opts.onControlToolResult?.(event);
+              {
+                const human = String(
+                  event.human || event.summary || ""
+                ).trim();
+                if (human) opts.onControlText?.(human);
+              }
               continue;
             case "control_ask_user":
               opts.onControlAskUser?.({

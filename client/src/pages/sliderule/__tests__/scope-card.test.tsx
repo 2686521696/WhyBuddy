@@ -62,7 +62,6 @@ const FULL_PENDING: ScopeCardPending = {
   restatement: "连锁宠物医院管理系统",
   variant: "full",
   device: "desktop",
-  includeEvidence: false,
 };
 
 function factoryPosts() {
@@ -91,7 +90,8 @@ describe("范围卡 DOM", () => {
     expect(html).toContain(SCOPE_CARD_TIME_COPY);
     expect(html).toContain(SCOPE_CARD_CONFIRM_LABEL);
     expect(html).toContain(SCOPE_CARD_REVISE_LABEL);
-    expect(html).toContain("取证（web.search，默认关）");
+    expect(html).not.toContain("取证（web.search，默认关）");
+    expect(html).not.toContain('data-testid="sliderule-scope-evidence"');
     expect(html).not.toContain("澄清与取证");
     expect(html).not.toMatch(/8\s*[–-]\s*9/);
     expect(html).not.toContain("8 分钟");
@@ -121,11 +121,12 @@ describe("范围卡 DOM", () => {
     expect(html).not.toContain("约 2 分钟");
   });
 
-  it("勾了取证才把澄清与取证放进步骤，默认从起草 SPEC 起", () => {
+  it("scopeCardSteps 仍是未接线 helper；产品卡不得再露取证勾选", () => {
     expect(scopeCardSteps(false)[0]).toBe("起草 SPEC");
     expect(scopeCardSteps(false)).not.toContain("澄清与取证");
-    expect(scopeCardSteps(true)[0]).toBe("澄清与取证");
-    expect(scopeCardSteps(true)[1]).toBe("起草 SPEC");
+    expect(CARD_SRC).not.toContain("取证（web.search，默认关）");
+    expect(CARD_SRC).not.toContain("sliderule-scope-evidence");
+    expect(SESSION).not.toContain("includeEvidence");
   });
 
   it("产品源码本身也不许写未标定分钟数", () => {
@@ -235,7 +236,7 @@ describe("拦截点是 requestRehearsal，不是 doSend", () => {
     expect(SESSION).toContain("runTurn: requestRehearsal");
   });
 
-  it("repair / challenge 跳卡并立刻 drive；只拦 doSend 咬不住这两条", async () => {
+  it("interceptRehearsalRequest 是未接线 helper 单测；活路径 skip 在 POST mode=repair", async () => {
     const repair = factoryPosts();
     const repairParked: unknown[] = [];
     expect(
@@ -357,6 +358,7 @@ describe("拦截点是 requestRehearsal，不是 doSend", () => {
       SESSION.indexOf("const pendingClarifications")
     );
     expect(resetFn).toContain("clearPendingScope()");
+    expect(resetFn).toContain("setPendingAsk(null)");
 
     const repairFn = SESSION.slice(
       SESSION.indexOf("const repairGaps"),

@@ -60,3 +60,21 @@ def test_start_rehearse_skips_ask_user_fixture_and_forwards_slash_connector(harn
     assert "control_ask_user" not in types
     assert "control_handoff_factory" in types
     assert types.count("control_ask_user") == 0
+
+
+def test_mode_repair_skips_llm_and_hits_helper_repair_true(harness):
+    """活路径：mode=repair → helper(..., repair=True)，零控制面 LLM。"""
+    sid = new_sid("repair-live")
+    seed_session(
+        sid,
+        goal={"text": "请假系统", "status": "clear"},
+        modelVersions=[{"id": "v1", "model": {"pages": []}}],
+    )
+    harness.llm_impl = lambda messages, **kw: llm_tool(
+        "ask_user", {"question": "不该问"}
+    )
+    _, events = harness.post(six_fields(sid, "补齐证据缺口", mode="repair"))
+    assert harness.llm_calls == []
+    assert len(harness.helper_calls) == 1
+    assert harness.helper_calls[0].get("repair") is True
+    assert "control_handoff_factory" in event_types(events)

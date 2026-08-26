@@ -1306,6 +1306,11 @@ async def control_turn_stream(
     from services.rehearsal_control import run_control_turn, validate_control_turn_body
 
     validate_control_turn_body(payload)
+    # load_session None 必须在 StreamingResponse 之前变成 400。SSE 开了之后
+    # 再 raise HTTPException，客户端看到的是 200 流中断，不是 400。
+    sid = str(payload.get("sessionId") or "").strip()
+    if load_session(sid) is None:
+        raise HTTPException(status_code=400, detail="session_id required")
 
     async def event_generator():
         async for event in run_control_turn(payload):

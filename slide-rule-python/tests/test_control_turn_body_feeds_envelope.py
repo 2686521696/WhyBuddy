@@ -76,7 +76,21 @@ def test_missing_session_id_is_400_no_anon_fallback(harness):
     assert harness.helper_calls == []
 
 
-def test_refine_does_not_overwrite_session_goal(harness):
+def test_unknown_session_id_is_400_before_sse(harness):
+    """未落盘的 sessionId 必须在 SSE 之前 400，helper=0。"""
+    sid = new_sid("never-saved")
+    response = client.post(
+        CONTROL_URL,
+        json=six_fields(sid, "做一个请假系统", forcedTool="rehearse"),
+        headers=KEY,
+    )
+    assert response.status_code == 400
+    assert harness.helper_calls == []
+
+
+def test_refine_does_not_overwrite_session_goal(monkeypatch):
+    """必须咬工厂 load 到的 state。假 helper 回声 seed 不算。"""
+    harness = ControlHarness(monkeypatch, live_factory=True)
     sid = new_sid("refine-goal")
     seed_session(
         sid,
@@ -86,7 +100,13 @@ def test_refine_does_not_overwrite_session_goal(harness):
     _, _events = harness.post(
         six_fields(sid, "把提交按钮改成红色", forcedTool="refine")
     )
+    assert harness.llm_calls == []
     assert len(harness.helper_calls) == 1
     assert harness.helper_calls[0]["user_text"] == "把提交按钮改成红色"
+    assert harness.goals_at_handoff == ["请假系统"]
+    assert harness.driver_goals == ["请假系统"]
+    assert harness.generator_calls[0]["kwargs"].get("user_instruction") == (
+        "把提交按钮改成红色"
+    )
     loaded = load_session(sid)
     assert goal_text(loaded) == "请假系统"

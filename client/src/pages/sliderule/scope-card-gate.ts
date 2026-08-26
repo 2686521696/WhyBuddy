@@ -34,7 +34,6 @@ export type ScopeCardPending = {
   restatement: string;
   variant: ScopeCardVariant;
   device: ScopeCardDevice;
-  includeEvidence: boolean;
   intervention?: RehearsalIntervention;
   mode?: "repair";
 };
@@ -113,7 +112,6 @@ export function decideScopeCardGate(
       restatement: restateAppGoal(userText),
       variant: ctx.hasExistingGoal ? "thin" : "full",
       device: ctx.device ?? "unspecified",
-      includeEvidence: false,
       intervention: call.intervention,
       mode: call.mode,
     },

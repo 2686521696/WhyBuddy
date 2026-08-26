@@ -354,7 +354,7 @@ export function ComposerDock({
   /** 控制面范围卡。确认走 confirmControlScope → forcedTool rehearse。 */
   pendingScope?: ScopeCardPending | null;
   pendingAsk?: { question: string; options?: string[] } | null;
-  onConfirmScope?: (opts: { includeEvidence: boolean }) => void;
+  onConfirmScope?: () => void;
   onReviseScope?: () => void;
   onAnswerAsk?: (text: string) => void;
   onDismissAsk?: () => void;

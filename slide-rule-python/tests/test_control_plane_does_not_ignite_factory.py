@@ -6,6 +6,8 @@ helper_calls > 0 and this file goes red.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from control_turn_support import (
@@ -53,6 +55,43 @@ def test_greeting_does_not_call_helper(harness):
     assert loaded is not None
     assert len(loaded.conversation or []) == 1
     assert (loaded.conversation or [])[0]["text"] == "already-here"
+    transcript = loaded.controlTranscript or []
+    assert len(transcript) >= 2
+    kinds = [
+        row.get("kind") for row in transcript if isinstance(row, dict)
+    ]
+    assert "control_text" in kinds
+    reloaded = load_session(sid)
+    assert reloaded is not None
+    assert len(reloaded.controlTranscript or []) >= 2
+
+
+def test_inspect_tool_message_contains_digest(harness):
+    """第二轮 call_control_llm 的 tool 消息必须带 digest。剥掉 → 红。"""
+    sid = new_sid("inspect-digest")
+    needle = "DIGEST-NEEDLE-请假审批"
+    seed_session(
+        sid,
+        goal={"text": "请假系统", "status": "clear"},
+        modelVersions=[
+            {"id": "v1", "model": {"appName": needle, "pages": []}}
+        ],
+    )
+    rounds = {"n": 0}
+
+    def impl(messages, **kw):
+        rounds["n"] += 1
+        if rounds["n"] == 1:
+            return llm_tool("inspect_model", {}, call_id="insp-1")
+        return llm_text("已看到模型摘要。")
+
+    harness.llm_impl = impl
+    harness.post(six_fields(sid, "现在有哪些角色？"))
+    assert harness.helper_calls == []
+    assert len(harness.llm_calls) == 2
+    second = harness.llm_calls[1]["messages"]
+    blob = json.dumps(second, ensure_ascii=False)
+    assert needle in blob, "删掉 tool 消息里的 digest，这条必须红。"
 
 
 def test_inspect_does_not_call_helper(harness):

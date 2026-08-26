@@ -585,13 +585,20 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             restatement: hydrated.awaitDetail,
             variant: hydrated.goal?.text?.trim() ? "thin" : "full",
             device: (loadPreferredDevice() as ScopeCardDevice) || "unspecified",
-            includeEvidence: false,
           };
           pendingScopeRef.current = parked;
           setPendingScope(parked);
         }
         if (hydrated.awaitReason === "control_ask" && hydrated.awaitDetail) {
-          setPendingAsk({ question: hydrated.awaitDetail });
+          const rows = hydrated.controlTranscript || [];
+          const lastAsk = [...rows]
+            .reverse()
+            .find(row => row && row.kind === "ask_user");
+          const rawOptions = lastAsk?.options;
+          const options = Array.isArray(rawOptions)
+            ? rawOptions.map(item => String(item))
+            : undefined;
+          setPendingAsk({ question: hydrated.awaitDetail, options });
         }
         // 演示预填：空会话（未推演过）时输入框直接放好项目意图，
         // 访客只需点「发送」即可看全程推演（模板回放）。
@@ -1258,6 +1265,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 if (!text.trim()) return;
                 appendStreamStep(text);
               },
+              onControlToolResult: event => {
+                const human = String(
+                  event.human || event.summary || ""
+                ).trim();
+                if (human) appendStreamStep(human);
+              },
               onControlAskUser: event => {
                 setPendingAsk({
                   question: event.question,
@@ -1275,7 +1288,6 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                       : event.device === "desktop"
                         ? "desktop"
                         : "unspecified",
-                  includeEvidence: false,
                 };
                 pendingScopeRef.current = next;
                 setPendingScope(next);
@@ -1769,19 +1781,13 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
 
   /**
    * 「开始推演」：六字段 + forcedTool rehearse + 复述句当 userText。
-   * includeEvidence 停在 snapshot 上；不得 POST factoryProfile。
+   * 不得 POST factoryProfile。
    */
-  const confirmControlScope = async (opts?: {
-    includeEvidence: boolean;
-  }) => {
+  const confirmControlScope = async () => {
     const pending = pendingScopeRef.current;
     if (!pending || isRunning) return;
-    const snapshot: ScopeCardPending = {
-      ...pending,
-      includeEvidence: opts?.includeEvidence ?? pending.includeEvidence,
-    };
+    const snapshot: ScopeCardPending = { ...pending };
     clearPendingScope();
-    void snapshot.includeEvidence;
     await runTurn(
       snapshot.restatement || snapshot.userText,
       snapshot.intervention as UserIntervention | undefined,
@@ -1795,6 +1801,29 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     const pending = pendingScopeRef.current;
     clearPendingScope();
     if (pending?.userText) setInput(pending.userText);
+    if (IS_GITHUB_PAGES) return;
+    void (async () => {
+      try {
+        const { postControlTurnStream } = await import(
+          "@/lib/sliderule-marathon-driver"
+        );
+        const out = await postControlTurnStream(
+          sessionState,
+          pending?.userText || "",
+          {
+            forcedTool: "dismiss_scope",
+            preferredDevice:
+              (loadPreferredDevice() as "desktop" | "phone") || "desktop",
+            designSystemId: loadDesignSystemId() || undefined,
+          }
+        );
+        if (out?.finalState) {
+          setSessionState(preservePythonEvidenceProjection(out.finalState));
+        }
+      } catch {
+        // 先改范围是增强类：客户端已解锁；服务端清停泊失败不得锁死作曲家。
+      }
+    })();
   };
 
   const stop = useCallback(() => {
@@ -2151,6 +2180,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     setRehearsalCursor(idleRehearsalCursor());
     setLlmStreams([]);
     clearPendingScope();
+    setPendingAsk(null);
   }, [isRunning, sessionState.sessionId, sessionId, options.initialGoal]);
 
   // G_READY clarification cards: unanswered open_question gaps with V4-style structured options.

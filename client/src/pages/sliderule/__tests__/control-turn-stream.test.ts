@@ -117,6 +117,22 @@ describe("开始推演 / 质疑 / /推演", () => {
     expect(CARD).toContain("onConfirm");
     expect(DOCK).toContain('data-testid="sliderule-control-ask"');
   });
+
+  it("先改范围 POST dismiss_scope；reload 从 transcript 恢复 ask options", () => {
+    const dismissFn = SESSION.slice(
+      SESSION.indexOf("const dismissScopeCard"),
+      SESSION.indexOf("const stop =")
+    );
+    expect(dismissFn).toContain("dismiss_scope");
+    expect(dismissFn).toContain("postControlTurnStream");
+    const hydrate = SESSION.slice(
+      SESSION.indexOf('hydrated.awaitReason === "control_ask"'),
+      SESSION.indexOf("options.initialGoal")
+    );
+    expect(hydrate).toContain("ask_user");
+    expect(hydrate).toContain("options");
+    expect(SESSION).toContain("onControlToolResult");
+  });
 });
 
 describe("consumeControlStreamResponse 与工厂 case 共用", () => {

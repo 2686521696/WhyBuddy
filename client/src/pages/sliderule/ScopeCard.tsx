@@ -32,13 +32,10 @@ export function ScopeCard({
   onRevise,
 }: {
   pending: ScopeCardPending;
-  onConfirm: (opts: { includeEvidence: boolean }) => void;
+  onConfirm: () => void;
   onRevise: () => void;
 }) {
-  const [includeEvidence, setIncludeEvidence] = React.useState(
-    pending.includeEvidence
-  );
-  const steps = scopeCardSteps(includeEvidence);
+  const steps = scopeCardSteps(false);
   const thin = pending.variant === "thin";
 
   return (
@@ -75,24 +72,13 @@ export function ScopeCard({
           >
             {SCOPE_CARD_TIME_COPY}
           </p>
-          <label
-            className="mt-2.5 flex items-center gap-2 text-[12px] leading-4 text-[#3f3f46]"
-            data-testid="sliderule-scope-evidence"
-          >
-            <input
-              type="checkbox"
-              checked={includeEvidence}
-              onChange={event => setIncludeEvidence(event.target.checked)}
-            />
-            取证（web.search，默认关）
-          </label>
         </>
       )}
       <div className="mt-3 flex items-center gap-2">
         <button
           type="button"
           data-testid="sliderule-scope-confirm"
-          onClick={() => onConfirm({ includeEvidence })}
+          onClick={() => onConfirm()}
           className="rounded-[8px] bg-[#171717] px-3 py-1.5 text-[13px] leading-5 text-white transition hover:bg-black"
         >
           {SCOPE_CARD_CONFIRM_LABEL}

@@ -242,9 +242,13 @@ def _goal_text(state: V5SessionState) -> str:
 
 
 def _scope_confirmed(state: V5SessionState) -> bool:
-    """开始推演确认 / 已有模型 / 本请求正在回答停泊的范围卡。"""
+    """已确认范围：有模型版本，或 transcript 里有 scope_confirmed。
+
+    ⚠ 2026-08-27 评审：awaitReason==control_scope 是「等确认」，不是已确认。
+    第一版把停泊当成已确认，先改范围后 /推演 或模型 rehearse 会跳卡点火。
+    """
     if getattr(state, "awaitReason", None) == "control_scope":
-        return True
+        return False
     versions = getattr(state, "modelVersions", None) or []
     if versions:
         return True
@@ -252,6 +256,27 @@ def _scope_confirmed(state: V5SessionState) -> bool:
         if isinstance(row, dict) and row.get("kind") == "scope_confirmed":
             return True
     return False
+
+
+def _write_confirmed_goal(state: V5SessionState, restatement: str) -> None:
+    """确认 rehearse 才写 goal；空 goal 用复述句。精修不得走这里。"""
+    if _goal_text(state):
+        return
+    text = (restatement or "").strip()
+    if not text:
+        return
+    goal = dict(state.goal) if isinstance(state.goal, dict) else {}
+    goal["text"] = text
+    if not goal.get("status"):
+        goal["status"] = "clear"
+    state.goal = goal
+
+
+def _confirmed_restatement(state: V5SessionState, user_text: str) -> str:
+    parked = str(getattr(state, "awaitDetail", None) or "").strip()
+    if parked:
+        return parked
+    return _restate(user_text)
 
 
 def _is_slash_rehearse(user_text: str) -> bool:
@@ -408,6 +433,51 @@ async def _park_scope(
         "userText": user_text or restatement,
     }
     yield _complete(state)
+
+
+async def _dismiss_scope(state: V5SessionState) -> AsyncIterator[Dict[str, Any]]:
+    """先改范围：持久化清掉 control_scope 停泊，不点火。"""
+    state.awaitReason = None
+    state.awaitDetail = None
+    if getattr(state, "runtimePhase", None) == "awaiting":
+        state.runtimePhase = "idle"
+    _append_transcript(
+        state,
+        {"role": "system", "kind": "scope_dismissed", "text": "先改范围"},
+    )
+    _persist(state)
+    yield _complete(state)
+
+
+async def _confirm_rehearse_and_handoff(
+    state: V5SessionState,
+    user_text: str,
+    installed_skills: Any,
+    active_connectors: Any,
+    preferred_device: Any,
+    design_system_id: Any,
+) -> AsyncIterator[Dict[str, Any]]:
+    """确认 rehearse：空 goal 写入复述句、persist，再交给 persist-as-authority 信封。"""
+    restatement = _confirmed_restatement(state, user_text)
+    _write_confirmed_goal(state, restatement)
+    _append_transcript(
+        state,
+        {"role": "system", "kind": "scope_confirmed", "text": restatement},
+    )
+    state.awaitReason = None
+    state.awaitDetail = None
+    _persist(state)
+    async for event in _handoff_factory(
+        state,
+        user_text,
+        installed_skills,
+        active_connectors,
+        preferred_device,
+        design_system_id,
+        repair=False,
+        profile="app",
+    ):
+        yield event
 
 
 async def _handoff_factory(
@@ -616,6 +686,14 @@ async def run_control_turn(
 
     _append_transcript(state, {"role": "user", "kind": "turn", "text": user_text})
 
+    raw_forced = str(
+        payload.get("forcedTool") or payload.get("forced_tool") or ""
+    ).strip()
+    if raw_forced == "dismiss_scope":
+        async for event in _dismiss_scope(state):
+            yield event
+        return
+
     forced = resolve_forced_tool(payload, user_text)
 
     async def _maybe_over_cap() -> bool:
@@ -625,9 +703,17 @@ async def run_control_turn(
         )
 
     # 昂贵按钮：跳过控制面 LLM。
+    # 停泊中只有「开始推演」(forcedTool=rehearse) 才点火；/推演 与模型
+    # rehearse 必须再 park。确认时把复述句写入 goal 并 persist，再 handoff。
+    parked_unconfirmed = getattr(state, "awaitReason", None) == "control_scope"
     if forced == "rehearse" or (forced is None and _is_slash_rehearse(user_text)):
-        if not _scope_confirmed(state):
-            restatement = _restate(user_text) or _restate(original_goal)
+        may_ignite = _scope_confirmed(state) or (
+            forced == "rehearse" and parked_unconfirmed
+        )
+        if not may_ignite:
+            restatement = _confirmed_restatement(state, user_text) or _restate(
+                original_goal
+            )
             async for event in _park_scope(
                 state,
                 restatement,
@@ -637,30 +723,24 @@ async def run_control_turn(
             ):
                 yield event
             return
-        _append_transcript(
-            state, {"role": "system", "kind": "scope_confirmed", "text": user_text}
-        )
-        state.awaitReason = None
-        state.awaitDetail = None
-        _persist(state)
-        async for event in _handoff_factory(
+        async for event in _confirm_rehearse_and_handoff(
             state,
             user_text,
             installed_skills,
             active_connectors,
             preferred_device,
             design_system_id,
-            repair=False,
-            profile="app",
         ):
             yield event
         return
 
     if forced == "refine":
-        # 精修：userText 是增量指令，禁止覆盖 session goal。
-        if _goal_text(state) != original_goal:
-            state.goal = dict(state.goal or {})
-            state.goal["text"] = original_goal
+        # 精修：userText 是增量指令，禁止覆盖 session goal。persist 后再
+        # handoff，否则 persist-as-authority 工厂加载看不到这道闸。
+        goal = dict(state.goal) if isinstance(state.goal, dict) else {}
+        goal["text"] = original_goal
+        state.goal = goal
+        _persist(state)
         async for event in _handoff_factory(
             state,
             user_text,
@@ -767,6 +847,7 @@ async def run_control_turn(
             for call in calls:
                 name = str(call.get("name") or "")
                 args = call.get("arguments") if isinstance(call.get("arguments"), dict) else {}
+                tool_body: Optional[Dict[str, Any]] = None
                 async for event in _dispatch_tool(
                     name,
                     args,
@@ -779,6 +860,10 @@ async def run_control_turn(
                     original_goal,
                 ):
                     yield event
+                    if event.get("type") == "control_tool_result":
+                        tool_body = {
+                            k: v for k, v in event.items() if k != "type"
+                        }
                     if event.get("type") in {
                         "control_ask_user",
                         "control_scope_card",
@@ -798,7 +883,10 @@ async def run_control_turn(
                         "role": "tool",
                         "tool_call_id": call.get("id") or "",
                         "content": json.dumps(
-                            {"ok": True, "tool": name}, ensure_ascii=False
+                            tool_body
+                            if tool_body is not None
+                            else {"ok": True, "tool": name},
+                            ensure_ascii=False,
                         ),
                     }
                 )
@@ -840,16 +928,20 @@ async def _dispatch_tool(
             yield event
         return
     if name == "rehearse":
+        # 模型 rehearse 不是确认按钮。停泊 / 未确认必须再 park。
         if not _scope_confirmed(state):
             async for event in _park_scope(
                 state,
-                _restate(user_text) or _restate(original_goal),
+                _confirmed_restatement(state, user_text) or _restate(original_goal),
                 device=str(preferred_device or "unspecified"),
                 variant="thin" if original_goal else "full",
                 user_text=user_text,
             ):
                 yield event
             return
+        restatement = _confirmed_restatement(state, user_text)
+        _write_confirmed_goal(state, restatement)
+        _persist(state)
         async for event in _handoff_factory(
             state,
             user_text,
@@ -862,6 +954,10 @@ async def _dispatch_tool(
             yield event
         return
     if name == "refine":
+        goal = dict(state.goal) if isinstance(state.goal, dict) else {}
+        goal["text"] = original_goal
+        state.goal = goal
+        _persist(state)
         async for event in _handoff_factory(
             state,
             user_text,

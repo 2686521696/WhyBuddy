@@ -102,6 +102,7 @@ def llm_tool(
     name: str,
     arguments: Optional[Dict[str, Any]] = None,
     call_id: str = "call-1",
+    usage: Optional[Dict[str, Any]] = None,
 ) -> ControlLlmResult:
     return ControlLlmResult(
         content="",
@@ -112,7 +113,7 @@ def llm_tool(
                 "arguments": arguments or {},
             }
         ],
-        usage={"total_tokens": 12},
+        usage=usage if usage is not None else {"total_tokens": 12},
         finish_reason="tool_calls",
         model="ctrl-test",
         latency_ms=1,
@@ -143,19 +144,27 @@ def read_repo(*parts: str) -> str:
 
 
 class ControlHarness:
-    """Patch the live dispatcher imports, then POST the real route."""
+    """Patch the live dispatcher imports, then POST the real route.
 
-    def __init__(self, monkeypatch: Any) -> None:
+    live_factory=True：只把 helper 包一层（load_session 记 goal）再调真
+    start_drive_full_factory_run；生成器换成记录 driver 入参 goal 的短流。
+    删掉确认路径的 persist，goals_at_handoff / driver_goals 会空。
+    """
+
+    def __init__(self, monkeypatch: Any, *, live_factory: bool = False) -> None:
         self.helper_calls: List[Dict[str, Any]] = []
         self.llm_calls: List[Dict[str, Any]] = []
         self.invalidate_calls: List[Any] = []
         self.generator_calls: List[Any] = []
+        self.goals_at_handoff: List[str] = []
+        self.driver_goals: List[str] = []
         self.llm_impl: Callable[..., ControlLlmResult] = (
             lambda messages, **kw: llm_text("ok")
         )
-        self._install(monkeypatch)
+        self._install(monkeypatch, live_factory=live_factory)
 
-    def _install(self, monkeypatch: Any) -> None:
+    def _install(self, monkeypatch: Any, *, live_factory: bool) -> None:
+        import services.drive_full_factory as factory
         import services.rehearsal_control as rc
         from services import run_registry
         from services import v5_full_driver
@@ -169,6 +178,8 @@ class ControlHarness:
             design_system_id: Any,
             **kwargs: Any,
         ):
+            loaded = load_session(session_id)
+            self.goals_at_handoff.append(goal_text(loaded))
             self.helper_calls.append(
                 {
                     "session_id": session_id,
@@ -180,10 +191,9 @@ class ControlHarness:
                     **kwargs,
                 }
             )
-            state = load_session(session_id)
             dump = (
-                state.model_dump()
-                if state is not None
+                loaded.model_dump()
+                if loaded is not None
                 else {"sessionId": session_id}
             )
 
@@ -204,6 +214,45 @@ class ControlHarness:
             self.invalidate_calls.append(intervention)
             return real_inv(state, intervention)
 
+        real_helper = rc.start_drive_full_factory_run
+
+        async def wrapping_helper(
+            session_id: str,
+            user_text: str,
+            installed_skills: Any,
+            active_connectors: Any,
+            preferred_device: Any,
+            design_system_id: Any,
+            **kwargs: Any,
+        ):
+            loaded = load_session(session_id)
+            self.goals_at_handoff.append(goal_text(loaded))
+            self.helper_calls.append(
+                {
+                    "session_id": session_id,
+                    "user_text": user_text,
+                    "installed_skills": installed_skills,
+                    "active_connectors": active_connectors,
+                    "preferred_device": preferred_device,
+                    "design_system_id": design_system_id,
+                    **kwargs,
+                }
+            )
+            return await real_helper(
+                session_id,
+                user_text,
+                installed_skills,
+                active_connectors,
+                preferred_device,
+                design_system_id,
+                **kwargs,
+            )
+
+        async def stub_factory_stream(state, *args, **kwargs):
+            self.driver_goals.append(goal_text(state))
+            self.generator_calls.append({"args": args, "kwargs": kwargs})
+            yield {"type": "complete", "state": state.model_dump()}
+
         real_gen = v5_full_driver.drive_full_v5_session_stream
 
         async def spy_gen(*args, **kwargs):
@@ -211,12 +260,18 @@ class ControlHarness:
             async for event in real_gen(*args, **kwargs):
                 yield event
 
-        monkeypatch.setattr(rc, "start_drive_full_factory_run", fake_helper)
         monkeypatch.setattr(rc, "call_control_llm", fake_llm)
         monkeypatch.setattr(rc, "apply_user_intervention_invalidation", spy_inv)
-        monkeypatch.setattr(
-            v5_full_driver, "drive_full_v5_session_stream", spy_gen
-        )
+        if live_factory:
+            monkeypatch.setattr(rc, "start_drive_full_factory_run", wrapping_helper)
+            monkeypatch.setattr(
+                factory, "drive_full_v5_session_stream", stub_factory_stream
+            )
+        else:
+            monkeypatch.setattr(rc, "start_drive_full_factory_run", fake_helper)
+            monkeypatch.setattr(
+                v5_full_driver, "drive_full_v5_session_stream", spy_gen
+            )
 
     def post(
         self, body: Dict[str, Any], expect_status: int = 200
