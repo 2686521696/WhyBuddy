@@ -154,8 +154,11 @@ export function isComposerSendBlocked(opts: {
   attachments: Array<{ extractStatus?: "pending" | "ready" | "failed" }>;
   isJudging?: boolean;
   isRefining?: boolean;
+  /** 范围卡停泊时发送只能走确认/先改范围，Enter 不得另 park 一发。 */
+  scopeCardOpen?: boolean;
 }): boolean {
   if (opts.isRunning) return false;
+  if (opts.scopeCardOpen) return true;
   if (opts.isJudging || opts.isRefining) return true;
   if (isAttachmentExtractPending(opts.attachments)) return true;
   return !opts.input.trim() && opts.attachments.length === 0;
@@ -346,7 +349,7 @@ export function ComposerDock({
   goal: string;
   /** PR-3 范围卡。确认走 confirmScopeCardAndDriveFull（PR-4-delete）。 */
   pendingScope?: ScopeCardPending | null;
-  onConfirmScope?: () => void;
+  onConfirmScope?: (opts: { includeEvidence: boolean }) => void;
   onReviseScope?: () => void;
 
   /** 会话里是否已经有一个成形的应用（由五系统模型判定，见 SlideRule.tsx）。
@@ -608,6 +611,7 @@ export function ComposerDock({
         attachments,
         isJudging,
         isRefining,
+        scopeCardOpen: Boolean(pendingScope),
       })
     )
       return;
@@ -642,6 +646,7 @@ export function ComposerDock({
     isJudging,
     isRefining,
     device,
+    pendingScope,
   ]);
 
   // 已安装技能（+ 菜单就地勾选哪些注入推演）；打开 skills 视图时重读
@@ -1015,6 +1020,7 @@ export function ComposerDock({
     attachments,
     isJudging,
     isRefining,
+    scopeCardOpen: Boolean(pendingScope),
   });
 
   const actionHints = hintChips.slice(0, statusPill ? 1 : 2);
@@ -1056,13 +1062,15 @@ export function ComposerDock({
       title={
         isRunning
           ? "停止"
-          : extractPending
-            ? "附件解析中，请稍候"
-            : isRefining
-              ? "正在优化提示词"
-              : isJudging
-                ? INTAKE_JUDGING_LABEL
-                : "发送"
+          : pendingScope
+            ? "先确认范围或改范围"
+            : extractPending
+              ? "附件解析中，请稍候"
+              : isRefining
+                ? "正在优化提示词"
+                : isJudging
+                  ? INTAKE_JUDGING_LABEL
+                  : "发送"
       }
     >
       {isRunning ? (
@@ -1650,7 +1658,7 @@ export function ComposerDock({
                     picked.length > 0 ? "输入你的任务" : placeholderText
                   }
                   rows={1}
-                  disabled={isRunning}
+                  disabled={isRunning || Boolean(pendingScope)}
                   className={`block max-h-40 w-full resize-none bg-transparent py-0 text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60 ${
                     hero
                       ? "min-h-[72px] px-0.5 text-[15px] leading-6"
@@ -1698,8 +1706,9 @@ export function ComposerDock({
               范围卡开着时 hint 必须让路：同一 send 禁止两张卡。 */}
           {pendingScope && onConfirmScope && onReviseScope ? (
             <ScopeCard
+              key={pendingScope.userText}
               pending={pendingScope}
-              onConfirm={() => onConfirmScope()}
+              onConfirm={onConfirmScope}
               onRevise={onReviseScope}
             />
           ) : intakeHintYieldsToScopeCard(Boolean(pendingScope)) ? (

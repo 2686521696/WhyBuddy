@@ -312,12 +312,19 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   /**
    * PR-3 范围卡停泊。pending 被后一次 requestRehearsal 整份替换，
    * 不许拿上一句意图劫持后面无关的发送（确认永远读 ref 里的当前卡）。
+   * skip 驱动（repair/challenge/clarify/resume）和重置必须清掉——
+   * 否则卡叠在跑着的 skip 轮上，确认会把停泊意图当第二发（PR-1 pendingChallengeRef 同类）。
    */
   const [pendingScope, setPendingScope] = useState<ScopeCardPending | null>(
     null
   );
   const pendingScopeRef = useRef<ScopeCardPending | null>(null);
   pendingScopeRef.current = pendingScope;
+
+  const clearPendingScope = () => {
+    pendingScopeRef.current = null;
+    setPendingScope(null);
+  };
 
   // SSE-driven: which of the 6 skill systems is currently executing on Python side.
   // null = none active (before run starts or after completion).
@@ -775,7 +782,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           capabilityId: "intent.parse" as any,
           roleId: "system",
           label:
-            "本话题已闭环，此轮按旧话题追问处理 · 要开始新应用请说「做一个××系统」或点右上角重置会话",
+            "本话题已闭环，此轮按旧话题追问处理 · 要开始新应用请点右上角重置会话",
           realLlm: false,
           loopTurnId: turnId,
           progressType: "thinking",
@@ -1698,6 +1705,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       call,
       { hasExistingGoal: Boolean(goal), device },
       async () => {
+        // skip 驱动也必须撕掉未确认的卡，不能让它叠在 repair/challenge 上。
+        clearPendingScope();
         await runTurn(userText, intervention, resumeRun, mode);
       },
       next => {
@@ -1714,24 +1723,30 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
    * PR-4 落地必须删掉这个旁路（或藏进默认关的测试 flag），改 POST
    * /control-turn-stream + forcedTool: "rehearse"。
    */
-  const confirmScopeCardAndDriveFull = async () => {
+  const confirmScopeCardAndDriveFull = async (opts?: {
+    includeEvidence: boolean;
+  }) => {
     void SCOPE_CARD_DRIVE_FULL_BYPASS;
     const pending = pendingScopeRef.current;
     if (!pending || isRunning) return;
-    setPendingScope(null);
-    pendingScopeRef.current = null;
+    const snapshot: ScopeCardPending = {
+      ...pending,
+      includeEvidence: opts?.includeEvidence ?? pending.includeEvidence,
+    };
+    clearPendingScope();
+    // includeEvidence 停在 snapshot 上给 PR-4 读；本 PR 不得 POST factoryProfile。
+    void snapshot.includeEvidence;
     await runTurn(
-      pending.userText,
-      pending.intervention as UserIntervention | undefined,
+      snapshot.userText,
+      snapshot.intervention as UserIntervention | undefined,
       undefined,
-      pending.mode
+      snapshot.mode
     );
   };
 
   const dismissScopeCard = () => {
     const pending = pendingScopeRef.current;
-    setPendingScope(null);
-    pendingScopeRef.current = null;
+    clearPendingScope();
     if (pending?.userText) setInput(pending.userText);
   };
 
@@ -2088,6 +2103,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     rehearsalCursorRef.current = idleRehearsalCursor();
     setRehearsalCursor(idleRehearsalCursor());
     setLlmStreams([]);
+    clearPendingScope();
   }, [isRunning, sessionState.sessionId, sessionId, options.initialGoal]);
 
   // G_READY clarification cards: unanswered open_question gaps with V4-style structured options.

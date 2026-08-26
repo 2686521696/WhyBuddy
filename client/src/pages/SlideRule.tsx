@@ -1036,7 +1036,7 @@ function SlideRuleUnified({
   sessionState: ReturnType<typeof useSlideRuleSession>["sessionState"];
   sendMessage: () => void;
   pendingScope?: import("./sliderule/scope-card-gate").ScopeCardPending | null;
-  confirmScopeCardAndDriveFull?: () => void;
+  confirmScopeCardAndDriveFull?: (opts?: { includeEvidence: boolean }) => void;
   dismissScopeCard?: () => void;
   challengeTurn: (id: string) => void;
   restoreModelVersion: (versionId: string) => void;

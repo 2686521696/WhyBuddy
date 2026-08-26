@@ -11,6 +11,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import { isComposerSendBlocked } from "../ComposerDock";
 import { IntakeHintBar, shouldShowIntakeHint } from "../IntakeHintBar";
 import { ScopeCard } from "../ScopeCard";
 import {
@@ -160,11 +161,14 @@ describe("同一 send 禁止 hint 条和范围卡同时出现", () => {
       DOCK.indexOf("{hero ? null : sendButton}")
     );
     expect(overlay).toContain("<ScopeCard");
+    expect(overlay).toContain("key={pendingScope.userText}");
+    expect(overlay).toContain("onConfirm={onConfirmScope}");
     expect(overlay).toContain("<IntakeHintBar");
     expect(overlay).toContain("intakeHintYieldsToScopeCard");
     // 变异：两个都无条件渲染 → 不再是三元/让路
     expect(overlay).toMatch(/pendingScope[\s\S]*<ScopeCard[\s\S]*IntakeHintBar/);
     expect(overlay).not.toMatch(/<ScopeCard[\s\S]*\/>\s*<IntakeHintBar/);
+    expect(overlay).not.toContain("onConfirm={() => onConfirmScope()}");
   });
 });
 
@@ -214,7 +218,8 @@ describe("拦截点是 requestRehearsal，不是 doSend", () => {
     );
     expect(doSend).toContain("sendMessage");
     expect(doSend).not.toContain("requestRehearsal");
-    expect(doSend).not.toContain("pendingScope");
+    expect(doSend).not.toContain("runTurn");
+    expect(doSend).toContain("scopeCardOpen: Boolean(pendingScope)");
   });
 
   it("sliderule:resend-prompt 确认前不得 POST /drive-full-stream，也不得 POST control-turn-stream rehearse", async () => {
@@ -267,7 +272,9 @@ describe("拦截点是 requestRehearsal，不是 doSend", () => {
     );
     expect(confirmFn).toContain("SCOPE_CARD_DRIVE_FULL_BYPASS");
     expect(confirmFn).toContain("await runTurn(");
+    expect(confirmFn).toContain("opts?.includeEvidence");
     expect(confirmFn).not.toContain("control-turn-stream");
+    expect(confirmFn).not.toContain("factoryProfile");
     expect(SESSION).toContain("runTurn: requestRehearsal");
   });
 
@@ -340,6 +347,66 @@ describe("拦截点是 requestRehearsal，不是 doSend", () => {
         resumeRun: { runId: "run-1" },
       })
     ).toBe(true);
+
+    // 活路径：续播 hydrate 必须带 runId，否则会 park 卡、确认前不 GET stream。
+    const resumeFx = SESSION.slice(
+      SESSION.indexOf("resumeAttemptedRef"),
+      SESSION.indexOf("const resolveInteractiveGate")
+    );
+    expect(resumeFx).toContain("requestRehearsal(");
+    const resumeCall = resumeFx.slice(
+      resumeFx.indexOf("requestRehearsal("),
+      resumeFx.indexOf("requestRehearsal(") + 240
+    );
+    expect(resumeCall).toContain("runId:");
+    expect(resumeCall).not.toMatch(/requestRehearsal\([^,)]+\)/);
+
+    const clarifyFn = SESSION.slice(
+      SESSION.indexOf("const answerClarifications"),
+      SESSION.indexOf("runTurn: requestRehearsal")
+    );
+    expect(clarifyFn).toContain("requestRehearsal(");
+    expect(clarifyFn).toContain('intent: "clarify"');
+    expect(clarifyFn).not.toContain("runTurn(");
+
+    const genFn = SESSION.slice(
+      SESSION.indexOf("const generateDeliverables"),
+      SESSION.indexOf("const answerClarifications")
+    );
+    expect(genFn).toContain("requestRehearsal(");
+    expect(genFn).toContain('intent: "generate_plan"');
+    expect(genFn).not.toContain("runTurn(");
+  });
+
+  it("skip 驱动和重置必须清 pendingScope，删掉 clear 必须红", () => {
+    const clearFn = SESSION.slice(
+      SESSION.indexOf("const clearPendingScope"),
+      SESSION.indexOf("const clearPendingScope") + 160
+    );
+    expect(clearFn).toContain("pendingScopeRef.current = null");
+    expect(clearFn).toContain("setPendingScope(null)");
+
+    const requestFn = SESSION.slice(
+      SESSION.indexOf("const requestRehearsal = async"),
+      SESSION.indexOf("const confirmScopeCardAndDriveFull")
+    );
+    expect(requestFn).toContain("clearPendingScope()");
+    expect(requestFn.indexOf("clearPendingScope()")).toBeLessThan(
+      requestFn.lastIndexOf("await runTurn")
+    );
+
+    const resetFn = SESSION.slice(
+      SESSION.indexOf("const resetSession"),
+      SESSION.indexOf("const pendingClarifications")
+    );
+    expect(resetFn).toContain("clearPendingScope()");
+
+    const repairFn = SESSION.slice(
+      SESSION.indexOf("const repairGaps"),
+      SESSION.indexOf("const restoreModelVersion")
+    );
+    expect(repairFn).toContain("requestRehearsal(");
+    expect(repairFn).not.toContain("runTurn(");
   });
 
   it("ComposerDock 挂上了 pendingScope，SlideRule 真的把确认旁路传进去", () => {
@@ -363,6 +430,9 @@ describe("looksLikeNewAppIntent 自动重置已关", () => {
     expect(runTurnBody).not.toContain("autoNewTopic = true");
     expect(runTurnBody).not.toContain("prepareVisibleResetSessionState");
     expect(runTurnBody).toContain("closedTopicFollowUp = true");
+    expect(runTurnBody).toContain("要开始新应用请点右上角重置会话");
+    expect(runTurnBody).not.toContain("做一个××系统");
+    expect(runTurnBody).not.toContain("请说「");
   });
 });
 
@@ -390,5 +460,30 @@ describe("复述与 pending 整份替换", () => {
     );
     expect(confirmFn).toContain("pendingScopeRef.current");
     expect(confirmFn).not.toContain("pendingScope.");
+  });
+});
+
+describe("范围卡停泊时发送只能走确认/先改范围", () => {
+  it("pendingScope 锁 composer send，Enter 不得另 park", () => {
+    expect(
+      isComposerSendBlocked({
+        isRunning: false,
+        input: "做一个宠物医院预约系统",
+        attachments: [],
+        scopeCardOpen: true,
+      })
+    ).toBe(true);
+    expect(
+      isComposerSendBlocked({
+        isRunning: false,
+        input: "做一个宠物医院预约系统",
+        attachments: [],
+        scopeCardOpen: false,
+      })
+    ).toBe(false);
+    expect(DOCK).toContain("scopeCardOpen: Boolean(pendingScope)");
+    expect(DOCK).toContain("disabled={isRunning || Boolean(pendingScope)}");
+    expect(DOCK).toContain("key={pendingScope.userText}");
+    expect(DOCK).toContain("onConfirm={onConfirmScope}");
   });
 });
