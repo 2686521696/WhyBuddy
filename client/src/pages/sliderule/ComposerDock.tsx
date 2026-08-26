@@ -628,7 +628,7 @@ export function ComposerDock({
     setMenuView("skills");
   }, []);
 
-  /* ─────────────────────────── `/` 能力选择器（技能 · 连接器 · 伙伴）
+  /* ─────────────────────────── `/` 能力选择器（扩展中心）
    *
    * 判定层在 composer-slash.ts（纯函数、逐条做过变异）；这里只接线。
    *
@@ -675,7 +675,7 @@ export function ComposerDock({
     void refreshConnectors();
   }, [refreshConnectors]);
 
-  /* 从「技能 · 连接器 · 伙伴」页点「用这个伙伴」过来的起手意图。
+  /* 从「扩展中心」页点「用这个伙伴」过来的起手意图。
      ⚠ take 语义：取一次就清掉（见 turn-capabilities.takePendingOpener）。
        不清的话用户以后不管从哪进推演，输入框都会自己填上上次那句话。 */
   React.useEffect(() => {
@@ -1321,7 +1321,7 @@ export function ComposerDock({
                         data-testid="sliderule-skills-manage"
                         className="mt-1 flex w-full items-center justify-center gap-1 rounded-[7px] border-t border-[#f0f0f0] px-2.5 py-2 text-[11px] text-[#1677ff] transition hover:bg-[#eef0f4]"
                       >
-                        管理技能库（安装 / 卸载）
+                        去扩展中心（安装 / 卸载技能）
                         <ChevronRight className="h-3 w-3" />
                       </button>
                     </>

@@ -168,7 +168,7 @@ export function ComposerSlashMenu({
   onPointerDownInside?: () => void;
   onPick: (item: SlashItem) => void;
   onHover: (index: number) => void;
-  /** 「管理」快捷项：去「技能 · 连接器 · 伙伴」页 */
+  /** 「管理」快捷项：去「扩展中心」页 */
   onManage?: () => void;
 }) {
   /*
@@ -277,7 +277,7 @@ export function ComposerSlashMenu({
               <Settings2 className="h-3.5 w-3.5" />
             </span>
             <span className="w-[104px] shrink-0 text-[13px] font-medium text-stone-800">
-              管理能力
+              扩展中心
             </span>
             <span className="min-w-0 flex-1 truncate text-[12px] text-stone-500">
               安装技能、连接数据源、攒自己的小队

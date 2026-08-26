@@ -60,7 +60,7 @@ import React, {
   useState,
 } from "react";
 
-/** 「技能 · 连接器 · 伙伴」页的三层（跟 CapabilityLibraryPage 的 tab 一一对应）。 */
+/** 「扩展中心」页的三层（跟 CapabilityLibraryPage 的 tab 一一对应）。 */
 export type CapabilityLayer = "skills" | "connectors" | "partners";
 
 export type ViewKey =
@@ -75,7 +75,7 @@ export type ViewKey =
   | "admin";
 
 // 技能库（索引 JSON 打在页面 chunk 里）：点开才加载，不占主包
-/* 2026-08-25：技能库升级成「技能 · 连接器 · 伙伴」一页三层（用户裁决，
+/* 2026-08-25：技能库升级成「扩展中心」一页三层（用户裁决，
    参照豆包工作台）。view key 仍叫 skills——换 key 会让已有的深链和
    AccountPanel 里那个入口一起失效，而这次改的是页面内容不是导航语义。 */
 const LazySkillsLibraryPage = React.lazy(
@@ -1219,7 +1219,7 @@ function AgentLoopSidebar({
         { key: "components", label: "组件库", icon: <BlockOutlined /> },
         {
           key: "skills",
-          label: "技能 · 连接器 · 伙伴",
+          label: "扩展中心",
           /* ⚠ 用连通节点而不是插头（ApiOutlined）：这一项是三样东西的集合，
              插头只说得清"连接器"那一样，另外两样看着不搭。 */
           icon: <DeploymentUnitOutlined />,
@@ -1787,7 +1787,7 @@ function DashboardAppInner({
     postCommand("selectProfile", { name });
   };
 
-  /* 「技能 · 连接器 · 伙伴」当前停在哪一层。侧栏展开的三条子项直接切它。
+  /* 「扩展中心」当前停在哪一层。侧栏展开的三条子项直接切它。
      ⚠ 状态放在这里而不是页面里：侧栏和页面是两个组件，页面自己存的话
        侧栏点了没反应（页面已经挂着，initialLayer 只在首次渲染生效）。
        所以下面渲染时还带了 key={capabilityLayer} 强制重挂。 */
@@ -1970,7 +1970,7 @@ function DashboardAppInner({
               <React.Suspense
                 fallback={
                   <div style={{ padding: 24, fontSize: 12, color: "#999" }}>
-                    技能 · 连接器 · 伙伴 加载中…
+                    扩展中心 加载中…
                   </div>
                 }
               >

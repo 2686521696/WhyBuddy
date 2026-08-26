@@ -184,7 +184,7 @@ export function AccountPanel() {
               onClick={go("/agent-loop/skills")}
             >
               <ReadOutlined />
-              <span>技能库</span>
+              <span>扩展中心</span>
             </button>
           </div>
 

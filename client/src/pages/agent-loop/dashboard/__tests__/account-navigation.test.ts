@@ -28,12 +28,26 @@ function cssBlocks(src: string, selector: string): string[] {
 }
 
 describe("侧栏账号导航", () => {
-  it("把技能库从主导航移到账号菜单，并移除管理后台入口", () => {
-    expect(dashboardSource).not.toContain(
-      '{ key: "skills", label: "技能库"'
-    );
+  /*
+   * ⚠ 这条判据 2026-08-26 重写过一次，因为它**靠字符串对不上碰巧通过**。
+   *
+   *   原来写的是 `dashboardSource 不含 '{ key: "skills", label: "技能库"'`，
+   *   题面是"把技能库从主导航移到账号菜单"。而 2026-08-25 用户要求把它放回
+   *   主导航（先叫「技能 · 连接器 · 伙伴」，08-26 改名「扩展中心」）——
+   *   条目**已经回到主导航了**，判据却因为 label 字面量变了而继续绿。
+   *   一条按错误理由通过的判据比没有更糟：它让人以为主导航还是干净的。
+   *
+   *   现在钉的是今天的事实：主导航有它、账号菜单也有一个快捷入口，
+   *   两处指向同一个 view；管理后台仍然不进账号菜单。
+   */
+  it("扩展中心在主导航里，账号菜单里也有快捷入口，两处指向同一个 view", () => {
+    expect(dashboardSource).toContain('key: "skills"');
+    expect(dashboardSource).toContain('label: "扩展中心"');
     expect(accountPanelSource).toContain('data-testid="account-skills"');
     expect(accountPanelSource).toContain('onClick={go("/agent-loop/skills")}');
+  });
+
+  it("管理后台不进账号菜单", () => {
     expect(accountPanelSource).not.toContain('data-testid="account-admin"');
     expect(accountPanelSource).not.toContain('onClick={go("/admin")}');
   });

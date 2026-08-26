@@ -101,7 +101,7 @@ export function pickedConnectorIds(items: readonly SlashItem[]): string[] {
 const OPENER_KEY = "sliderule:pending-opener";
 
 /**
- * 从「技能 · 连接器 · 伙伴」页点了「用这个伙伴」之后，把起手意图交给输入框。
+ * 从「扩展中心」页点了「用这个伙伴」之后，把起手意图交给输入框。
  *
  * ⚠ **取一次就清掉**（take 语义，不是 load）。留着的话，用户下次不管从哪里
  *   进推演，输入框都会莫名其妙自己填上半个月前那句话——而且他会以为是
