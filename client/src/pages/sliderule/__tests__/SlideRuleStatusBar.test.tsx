@@ -145,7 +145,70 @@ describe("推演钟 + 证据 HUD（产品 DOM）", () => {
     expect(tokenAt).toBeGreaterThan(-1);
     const tokenSlice = html.slice(tokenAt, tokenAt + 280);
     expect(tokenSlice).toContain("41");
+    expect(tokenSlice).toContain('data-token-known="true"');
     expect(tokenSlice).not.toContain("8888");
     expect(html).not.toContain("8888");
+  });
+
+  it("停跑后第 2 步是 done 不是 current；第 1 步仍 skipped", () => {
+    const html = renderToStaticMarkup(
+      <SlideRuleStatusBar
+        state={state()}
+        turnCount={1}
+        isRunning={false}
+        rehearsalCursor={startRehearsalCursor()}
+      />
+    );
+    expect(html).toContain('data-testid="sliderule-rehearsal-step-2"');
+    const step2 = html.slice(
+      html.indexOf('data-testid="sliderule-rehearsal-step-2"'),
+      html.indexOf('data-testid="sliderule-rehearsal-step-3"')
+    );
+    expect(step2).toContain('data-status="done"');
+    expect(step2).not.toContain("aria-current");
+    const step1 = html.slice(
+      html.indexOf('data-testid="sliderule-rehearsal-step-1"'),
+      html.indexOf('data-testid="sliderule-rehearsal-step-2"')
+    );
+    expect(step1).toContain('data-status="skipped"');
+    expect(html).not.toContain('aria-current="step"');
+  });
+
+  it("没有 server 账时 token 列是 — 不是 0", () => {
+    const html = renderToStaticMarkup(
+      <SlideRuleStatusBar
+        state={state()}
+        turnCount={1}
+        isRunning
+        rehearsalCursor={startRehearsalCursor()}
+      />
+    );
+    const tokenAt = html.indexOf('data-testid="sliderule-hud-tokens"');
+    const tokenSlice = html.slice(tokenAt, tokenAt + 280);
+    expect(tokenSlice).toContain('data-token-known="false"');
+    expect(tokenSlice).toContain("—");
+    expect(tokenSlice).not.toContain(">0<");
+  });
+
+  it("刷新后无 cursor 仍画出闭环证据行", () => {
+    const html = renderToStaticMarkup(
+      <SlideRuleStatusBar
+        state={state()}
+        turnCount={1}
+        isRunning={false}
+        publishClosure={{
+          blocked: true,
+          blockerCount: 1,
+          evidencePresentCount: 0,
+          skillCount: 6,
+          versionPinsChecked: false,
+          tierCounts: { hard_blocker: 1, warning: 0, info: 0 },
+          topBlockers: [],
+        }}
+      />
+    );
+    expect(html).toContain('data-testid="sliderule-context-hud"');
+    expect(html).toContain('data-testid="sliderule-hud-evidence"');
+    expect(html).not.toContain('data-testid="sliderule-rehearsal-clock"');
   });
 });

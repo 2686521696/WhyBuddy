@@ -168,6 +168,8 @@ describe("M8 产品六步钟映射表", () => {
     expect(mapInternalEventToProductStep("specfirst.spec")).toBe(2);
     expect(mapInternalEventToProductStep("specfirst.pages")).toBe(3);
     expect(mapInternalEventToProductStep("spec_page")).toBe(3);
+    expect(mapInternalEventToProductStep("page")).toBe(3);
+    expect(mapInternalEventToProductStep("dataModel")).toBe(6);
     expect(mapInternalEventToProductStep("specfirst.structure")).toBe(4);
     expect(mapInternalEventToProductStep("specfirst.semantics")).toBe(5);
     expect(mapInternalEventToProductStep("specfirst.assemble")).toBe(6);
@@ -228,6 +230,47 @@ describe("M8 产品六步钟映射表", () => {
     const next = advanceRehearsalCursor(start, "monitor.design");
     expect(next).toEqual(start);
   });
+
+  it("停跑后没有 current：默认起点第 2 步是 done，第 1 步仍 skipped", () => {
+    const view = buildRehearsalClockView(startRehearsalCursor(), {
+      isRunning: false,
+    });
+    expect(view.steps[0].status).toBe("skipped");
+    expect(view.steps[1].status).toBe("done");
+    expect(view.steps.some((s) => s.status === "current")).toBe(false);
+    expect(view.currentLabel).toBeNull();
+    expect(view.wallClockCopy).toBe("");
+    expect(view.steps.slice(2).every((s) => s.status === "pending")).toBe(true);
+  });
+
+  it("闭环落定也不许把没跑到的格涂成 done", () => {
+    const diedOnPages = advanceRehearsalCursor(
+      startRehearsalCursor(),
+      "spec_page_html"
+    );
+    const view = buildRehearsalClockView(diedOnPages, {
+      isRunning: false,
+      publishClosed: true,
+    });
+    expect(view.steps[2].status).toBe("done");
+    expect(view.steps[2].status).not.toBe("current");
+    expect(view.steps[3].status).toBe("pending");
+    expect(view.steps[4].status).toBe("pending");
+    expect(view.steps[5].status).toBe("pending");
+    expect(view.steps.some((s) => s.status === "current")).toBe(false);
+  });
+
+  it("dataModel skill_start 不许把 3–5 涂成 done（没跑 spec-first 的洞）", () => {
+    const jumped = advanceRehearsalCursor(startRehearsalCursor(), "dataModel");
+    expect(mapInternalEventToProductStep("dataModel")).toBe(6);
+    const view = buildRehearsalClockView(jumped, { isRunning: true });
+    expect(view.currentStep).toBe(6);
+    expect(view.steps[2].status).not.toBe("done");
+    expect(view.steps[3].status).not.toBe("done");
+    expect(view.steps[4].status).not.toBe("done");
+    expect(view.steps[2].status).toBe("skipped");
+    expect(view.steps[5].status).toBe("current");
+  });
 });
 
 describe("context HUD：证据 fail-closed / token 只认 server", () => {
@@ -260,6 +303,7 @@ describe("context HUD：证据 fail-closed / token 只认 server", () => {
     const hud = deriveContextHudFacts(state, null);
     expect(hud.gatedEvidenceCount).toBe(0);
     expect(hud.narrativeTokens).toBe(0);
+    expect(hud.hasServerTokenFacts).toBe(false);
   });
 
   it("token 列只累加 source=server；estimated / manual 不进事实", () => {
@@ -279,6 +323,7 @@ describe("context HUD：证据 fail-closed / token 只认 server", () => {
     });
     expect(hud.gatedEvidenceCount).toBe(2);
     expect(hud.narrativeTokens).toBe(40);
+    expect(hud.hasServerTokenFacts).toBe(true);
     expect(hud.narrativeTokens).not.toBe(999);
     expect(hud.narrativeTokens).not.toBe(1089);
   });

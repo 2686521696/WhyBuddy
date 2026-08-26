@@ -472,7 +472,7 @@ const ImSurfaceContext = React.createContext<{
   llmDraft: string;
   llmDraftLabel: string | null;
   /** E16.1 多流分窗：并行 LLM 子调用各占一个稳定窗口（修"打架来回切换"） */
-  llmStreams: Array<{ label: string; text: string; collapsed?: boolean }>;
+  llmStreams: Array<{ label: string; text: string }>;
   goalText?: string;
   thinkingText: string;
   isRunning: boolean;
@@ -715,7 +715,7 @@ export function ClaudeChatSurface({
   /** 当前草稿来源：能力 id 或 "five-system-model"（决定实时块标题）。 */
   llmDraftLabel?: string | null;
   /** E16.1 多流分窗：活跃 LLM 子调用流（按首现顺序，运行中展示）。 */
-  llmStreams?: Array<{ label: string; text: string; collapsed?: boolean }>;
+  llmStreams?: Array<{ label: string; text: string }>;
   rehearsalClock?: RehearsalClockView | null;
   hud?: ContextHudFacts | null;
   /** 会话话题（恢复的轮次没有 turn.user，总结用它兜底） */
@@ -775,10 +775,17 @@ export function ClaudeChatSurface({
     ]
   );
 
+  const hasClockProgress = Boolean(
+    rehearsalClock?.steps.some(s => s.status !== "pending")
+  );
   const showRehearsalHud = Boolean(
     rehearsalClock &&
       hud &&
-      (isRunning || rehearsalClock.currentStep != null)
+      (isRunning ||
+        hasClockProgress ||
+        publishClosure ||
+        hud.gatedEvidenceCount > 0 ||
+        hud.hasServerTokenFacts)
   );
 
   return (
@@ -791,7 +798,12 @@ export function ClaudeChatSurface({
           <ThreadPrimitive.Root className="relative z-10 flex min-h-0 flex-1 flex-col">
             {showRehearsalHud && rehearsalClock && hud ? (
               <div className="mx-auto w-full max-w-[720px] shrink-0 px-4 pb-1 pt-2 sm:px-5">
-                <RehearsalClockHud clock={rehearsalClock} hud={hud} show />
+                <RehearsalClockHud
+                  clock={rehearsalClock}
+                  hud={hud}
+                  show
+                  showSteps={isRunning || hasClockProgress}
+                />
               </div>
             ) : null}
             {/* E16 智能滚动补件：用户上滚回看时出「回到底部」胶囊
@@ -1065,7 +1077,7 @@ function SlideRuleUnified({
   /** LLM 实时草稿（llm_delta 累积）+ 当前来源标签。 */
   llmDraft?: string;
   llmDraftLabel?: string | null;
-  llmStreams?: Array<{ label: string; text: string; collapsed?: boolean }>;
+  llmStreams?: Array<{ label: string; text: string }>;
   rehearsalCursor?: RehearsalClockCursor;
 }) {
   const sessionId = sessionState.sessionId || "sliderule-v51-product";

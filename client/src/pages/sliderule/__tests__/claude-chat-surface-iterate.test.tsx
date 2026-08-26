@@ -17,6 +17,7 @@ import { ClaudeChatSurface } from "../../SlideRule";
 import type { UiTurn } from "../types";
 import {
   buildRehearsalClockView,
+  idleRehearsalCursor,
   startRehearsalCursor,
 } from "../derive-status-bar";
 
@@ -123,7 +124,11 @@ describe("产品对话列的六步钟（不打开轨迹也能看见）", () => {
         latestTurn={null}
         onChallenge={() => {}}
         rehearsalClock={clock}
-        hud={{ gatedEvidenceCount: 0, narrativeTokens: 0 }}
+        hud={{
+          gatedEvidenceCount: 0,
+          narrativeTokens: 0,
+          hasServerTokenFacts: false,
+        }}
       />
     );
     expect(html).toContain('data-testid="sliderule-rehearsal-clock"');
@@ -141,5 +146,38 @@ describe("产品对话列的六步钟（不打开轨迹也能看见）", () => {
   it("不传钟就不渲染 HUD（删掉 ClaudeChatSurface 的 rehearsalClock 必红）", () => {
     const html = surface([], true);
     expect(html).not.toContain('data-testid="sliderule-rehearsal-clock"');
+  });
+
+  it("刷新后无进度格仍保留证据/token 行", () => {
+    const idleClock = buildRehearsalClockView(idleRehearsalCursor(), {
+      isRunning: false,
+    });
+    const html = renderToStaticMarkup(
+      <ClaudeChatSurface
+        uiTurns={[]}
+        isRunning={false}
+        liveAction={null}
+        latestTurn={null}
+        onChallenge={() => {}}
+        rehearsalClock={idleClock}
+        hud={{
+          gatedEvidenceCount: 0,
+          narrativeTokens: 0,
+          hasServerTokenFacts: false,
+        }}
+        publishClosure={{
+          blocked: true,
+          evidencePresentCount: 0,
+          skillCount: 6,
+          versionPinsChecked: false,
+          topBlockers: [],
+          tierCounts: { hard_blocker: 1, warning: 0, info: 0 },
+        }}
+      />
+    );
+    expect(html).toContain('data-testid="sliderule-context-hud"');
+    expect(html).not.toContain('data-testid="sliderule-rehearsal-clock"');
+    expect(html).toContain('data-token-known="false"');
+    expect(html).toContain("—");
   });
 });

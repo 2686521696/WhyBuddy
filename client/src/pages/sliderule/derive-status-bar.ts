@@ -76,6 +76,7 @@ const REHEARSAL_EVENT_ALIASES: Record<string, RehearsalProductStepId> = {
   "specfirst.semantics": 5,
   "specfirst.assemble": 6,
   "specfirst.bind": 6,
+  page: 3,
   dataModel: 6,
   workflow: 6,
   rbac: 6,
@@ -87,6 +88,8 @@ export type RehearsalClockCursor = {
   currentStep: RehearsalProductStepId | null;
   sawStep1: boolean;
   receivedMappedEvent: boolean;
+  /** 真正接到过映射事件的步。Math.max 跳步时，没在这里的格只能是 skipped。 */
+  seenSteps: readonly RehearsalProductStepId[];
 };
 
 export type RehearsalStepStatus = "pending" | "current" | "done" | "skipped";
@@ -107,15 +110,35 @@ export type ContextHudFacts = {
   gatedEvidenceCount: number;
   /** 只累加 costLedger source="server"。估数 / manual 不进事实列（fail-open）。 */
   narrativeTokens: number;
+  /** 没有 server 行时 token 列画「—」，不许把缺账报成 0。 */
+  hasServerTokenFacts: boolean;
 };
 
 export function idleRehearsalCursor(): RehearsalClockCursor {
-  return { currentStep: null, sawStep1: false, receivedMappedEvent: false };
+  return {
+    currentStep: null,
+    sawStep1: false,
+    receivedMappedEvent: false,
+    seenSteps: [],
+  };
 }
 
 /** 默认 rehearse 从第 2 步起跳，第 1 步不亮成 current。 */
 export function startRehearsalCursor(): RehearsalClockCursor {
-  return { currentStep: 2, sawStep1: false, receivedMappedEvent: false };
+  return {
+    currentStep: 2,
+    sawStep1: false,
+    receivedMappedEvent: false,
+    seenSteps: [],
+  };
+}
+
+function rememberSeen(
+  seen: readonly RehearsalProductStepId[] | undefined,
+  step: RehearsalProductStepId
+): RehearsalProductStepId[] {
+  if (seen && seen.includes(step)) return seen as RehearsalProductStepId[];
+  return [...(seen || []), step];
 }
 
 export function mapInternalEventToProductStep(
@@ -137,6 +160,7 @@ export function advanceRehearsalCursor(
 ): RehearsalClockCursor {
   const step = mapInternalEventToProductStep(event);
   if (!step) return cursor;
+  const seenSteps = rememberSeen(cursor.seenSteps, step);
   if (step === 1) {
     const keepHigher =
       cursor.receivedMappedEvent &&
@@ -146,6 +170,7 @@ export function advanceRehearsalCursor(
       currentStep: keepHigher ? cursor.currentStep : 1,
       sawStep1: true,
       receivedMappedEvent: true,
+      seenSteps,
     };
   }
   const current: RehearsalProductStepId =
@@ -156,6 +181,7 @@ export function advanceRehearsalCursor(
     currentStep: current,
     sawStep1: cursor.sawStep1,
     receivedMappedEvent: true,
+    seenSteps,
   };
 }
 
@@ -164,34 +190,35 @@ export function buildRehearsalClockView(
   opts: { isRunning: boolean; publishClosed?: boolean }
 ): RehearsalClockView {
   const current = cursor.currentStep;
+  const seen = new Set(cursor.seenSteps || []);
   const steps: RehearsalClockStepView[] = REHEARSAL_PRODUCT_STEPS.map((def) => {
     let status: RehearsalStepStatus = "pending";
     if (def.id === 1) {
       if (cursor.sawStep1) {
-        status = current === 1 ? "current" : "done";
-      } else if (opts.isRunning && current != null && current >= 2) {
-        // 默认 rehearse 跳过取证：第一格 skippable，不许空转。
-        status = "skipped";
-      } else if (!opts.isRunning && opts.publishClosed) {
+        status = opts.isRunning && current === 1 ? "current" : "done";
+      } else if (current != null && current >= 2) {
+        // 默认 skippable：停跑后也保持 skipped。不许 isRunning 一翻 false
+        // 第一格又变 pending（用户点停止，取证格「活过来」）。
         status = "skipped";
       } else {
         status = "pending";
       }
-    } else if (current === def.id) {
+    } else if (opts.isRunning && current === def.id) {
       status = "current";
+    } else if (seen.has(def.id) || (!opts.isRunning && current === def.id)) {
+      // 停跑后没有 current。默认起点（current=2 还没事件）也算到过。
+      status = "done";
     } else if (current != null && current > def.id) {
-      status = "done";
-    } else if (!opts.isRunning && opts.publishClosed) {
-      status = "done";
+      // ⚠ 不能凭 Math.max 把中间格涂成 done。闭环末尾的 dataModel
+      // skill_start 映射到第 6 步；精修/复用没跑 spec-first 时 3–5 没发生。
+      status = "skipped";
     }
     return { ...def, status };
   });
-  const currentDef =
-    steps.find((s) => s.status === "current") ||
-    (current ? steps[current - 1] : null);
+  const live = steps.find((s) => s.status === "current");
   return {
     currentStep: current,
-    currentLabel: currentDef?.label ?? null,
+    currentLabel: live?.label ?? null,
     steps,
     wallClockCopy: opts.isRunning ? REHEARSAL_WALL_CLOCK_COPY : "",
   };
@@ -204,11 +231,13 @@ export function deriveContextHudFacts(
   // 证据列 fail-closed：没有闭环摘要就当 0。控制面 search_evidence 不在这里。
   const gatedEvidenceCount = Number(publishClosure?.evidencePresentCount ?? 0);
   const ledger = state.costLedger || [];
+  let hasServerTokenFacts = false;
   const narrativeTokens = ledger.reduce((sum, row) => {
     if (row.source !== "server") return sum;
+    hasServerTokenFacts = true;
     return sum + Number(row.estimatedTokens ?? 0);
   }, 0);
-  return { gatedEvidenceCount, narrativeTokens };
+  return { gatedEvidenceCount, narrativeTokens, hasServerTokenFacts };
 }
 
 export type StatusBarFacts = {

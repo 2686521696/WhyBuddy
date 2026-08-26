@@ -11,7 +11,9 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+  // ⚠ 必须剥行尾注释。只剥整行 // 的话，把调用改成
+  // `onReasoningStep: () => { // applyRehearsalEvent(capabilityId)` 仍绿。
+  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 }
 
 function load(rel: string): string {
@@ -68,6 +70,7 @@ describe("M8 映射表落在 derive-status-bar（不是文档）", () => {
     );
     expect(fn).toMatch(/row\.source\s*(?:!==|===)\s*"server"/);
     expect(fn).toContain("publishClosure?.evidencePresentCount ?? 0");
+    expect(fn).toContain("hasServerTokenFacts");
     expect(fn).not.toContain("search_evidence");
   });
 });
@@ -89,21 +92,47 @@ describe("SSE 投影接在 useSlideRuleSession（删调用点必红）", () => {
     );
   });
 
-  it("llmStreams 默认 collapsed: true", () => {
+  it("runTurn 里 setIsRunning(true) 同一拍就 startRehearsalCursor", () => {
     const src = load("../useSlideRuleSession.ts");
-    const at = src.indexOf("onLlmDelta:");
-    expect(at).toBeGreaterThan(-1);
-    const handler = src.slice(at, at + 1600);
-    expect(handler).toContain("collapsed: true");
-    expect(handler).not.toContain("collapsed: false");
-  });
-
-  it("开流时用 startRehearsalCursor，不另开进度 API", () => {
-    const src = load("../useSlideRuleSession.ts");
-    expect(src).toContain("startRehearsalCursor()");
+    const runAt = src.indexOf("const runTurn = async");
+    expect(runAt, "runTurn 不见了").toBeGreaterThan(-1);
+    const runningAt = src.indexOf("setIsRunning(true)", runAt);
+    expect(runningAt, "runTurn 的 setIsRunning(true) 不见了").toBeGreaterThan(runAt);
+    const cursorAt = src.indexOf("startRehearsalCursor()", runningAt);
+    expect(cursorAt, "startRehearsalCursor 必须在 setIsRunning(true) 之后").toBeGreaterThan(
+      runningAt
+    );
+    const between = src.slice(runningAt, cursorAt);
+    expect(
+      between.length,
+      "startRehearsalCursor 被挪到 persist/intake 之后了"
+    ).toBeLessThan(400);
+    expect(between).not.toContain("await ");
     expect(src).not.toContain("/rehearsal-progress");
     expect(src).not.toContain("/progress-clock");
     expect(src).not.toContain("POST /api/sliderule/progress");
+  });
+});
+
+describe("轨迹折叠接在 LlmLiveOutput（不是死字段）", () => {
+  it("collapsed 钉 useState(true)；改回 done||looksJson 必红", () => {
+    const src = load("../LlmLiveOutput.tsx");
+    // ⚠ 必须钉 collapsed 这一行。只 grep useState(true) 会命中 following
+    // 的初值，把 collapsed 改回 done||looksJson 仍绿。
+    expect(src).toMatch(
+      /\[\s*collapsed\s*,\s*setCollapsed\s*\]\s*=\s*React\.useState\(\s*true\s*\)/
+    );
+    expect(src).not.toMatch(/useState\(\s*done/);
+    expect(src).not.toMatch(/useState\(\s*looksJson/);
+  });
+
+  it("session 不再往 llmStreams 塞 collapsed（折叠不靠死字段）", () => {
+    const src = load("../useSlideRuleSession.ts");
+    const at = src.indexOf("setLlmStreams(");
+    expect(at, "setLlmStreams 不见了").toBeGreaterThan(-1);
+    // 取「从首次 setLlmStreams 到 onSpecPage」这一段：里面是按 label 攒流。
+    const slice = src.slice(at, src.indexOf("onSpecPage"));
+    expect(slice).not.toMatch(/collapsed\s*:/);
   });
 });
 

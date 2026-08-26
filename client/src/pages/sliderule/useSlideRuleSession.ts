@@ -341,7 +341,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   // E16.1 多流分窗：后端并行 LLM 子调用交错到达时，单槽展示会来回切换
   // （用户实测"打架"）——按 label 保序分窗，各流独立生长
   const [llmStreams, setLlmStreams] = useState<
-    Array<{ label: string; text: string; collapsed?: boolean }>
+    Array<{ label: string; text: string }>
   >([]);
   // 产品六步钟：SSE 投影，不另开进度 API。ref 同步推进，避免心跳闭包读到旧 cursor。
   const rehearsalCursorRef = useRef<RehearsalClockCursor>(idleRehearsalCursor());
@@ -602,6 +602,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     const controller = new AbortController();
     abortControllerRef.current = controller;
     setIsRunning(true);
+    // ⚠ 必须跟 setIsRunning(true) 同一拍。放在 persist/intake 之后的话，
+    // 迭代会先继续亮着上一轮「汇合过闸」，跟右侧旧页面同一类谎。
+    rehearsalCursorRef.current = startRehearsalCursor();
+    setRehearsalCursor(startRehearsalCursor());
 
     // E13：直播步骤同步攒进本地数组——轮次落定时随 PUT 写进
     // state.turnNarrations（刷新后回放时间线；setUiTurns 是异步状态，
@@ -1144,7 +1148,6 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   Array.from(llmDraftBuffers, ([label, text]) => ({
                     label,
                     text,
-                    collapsed: true,
                   }))
                 );
               },
