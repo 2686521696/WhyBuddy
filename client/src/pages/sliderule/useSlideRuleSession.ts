@@ -1265,12 +1265,6 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 if (!text.trim()) return;
                 appendStreamStep(text);
               },
-              onControlToolResult: event => {
-                const human = String(
-                  event.human || event.summary || ""
-                ).trim();
-                if (human) appendStreamStep(human);
-              },
               onControlAskUser: event => {
                 setPendingAsk({
                   question: event.question,

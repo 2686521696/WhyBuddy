@@ -131,7 +131,6 @@ describe("开始推演 / 质疑 / /推演", () => {
     );
     expect(hydrate).toContain("ask_user");
     expect(hydrate).toContain("options");
-    expect(SESSION).toContain("onControlToolResult");
   });
 });
 
@@ -174,5 +173,47 @@ describe("consumeControlStreamResponse 与工厂 case 共用", () => {
     expect(asked).toEqual([{ question: "你想做什么应用？" }]);
     expect(skills).toEqual([]);
     expect(out?.finalState?.awaitReason).toBe("control_ask");
+  });
+
+  it("control_tool_result 人话只进 onControlText 一次，不得双写", async () => {
+    const texts: string[] = [];
+    const tools: unknown[] = [];
+    const events = [
+      {
+        type: "control_tool_result",
+        tool: "inspect_model",
+        ok: true,
+        digest: "appName: 请假审批",
+        human: "当前模型摘要（有界，不是原始五系统 JSON）。",
+      },
+      {
+        type: "complete",
+        state: {
+          sessionId: "s1",
+          goal: { text: "请假系统", status: "clear" },
+        },
+      },
+    ];
+    const body = events.map(e => `data: ${JSON.stringify(e)}\n\n`).join("");
+    const res = new Response(body, {
+      headers: { "Content-Type": "text/event-stream" },
+    });
+    await consumeControlStreamResponse(res, {
+      onControlText: text => texts.push(text),
+      onControlToolResult: event => tools.push(event),
+    });
+    expect(tools).toHaveLength(1);
+    expect(texts).toEqual(["当前模型摘要（有界，不是原始五系统 JSON）。"]);
+    const consume = DRIVER.slice(
+      DRIVER.indexOf("export async function consumeControlStreamResponse"),
+      DRIVER.indexOf("export interface FrontierProposal")
+    );
+    expect(consume).toContain("onControlToolResult");
+    expect(consume).toContain("onControlText");
+    const streamOpts = SESSION.slice(
+      SESSION.indexOf("onControlText:"),
+      SESSION.indexOf("onControlAskUser:")
+    );
+    expect(streamOpts).not.toContain("onControlToolResult");
   });
 });
