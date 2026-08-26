@@ -1,5 +1,16 @@
 # SlideRule V6.1 控制面
 
+V6.1 拆成六张短图，一张一个事实。V6.0 是历史实验室笔记，见 `docs/SlideRule V6.0 架构图.md` 头注。禁止再往 V6.0 打新 ⚑。
+
+| 图 | 文件 |
+|---|---|
+| 1. 控制面 | 本文件 |
+| 2. 工厂 spec-first | `docs/SlideRule V6.1 工厂.md` |
+| 3. 闸与闭环 | `docs/SlideRule V6.1 闸与闭环.md` |
+| 4. 活 UI 路由 | `docs/SlideRule V6.1 活UI路由.md` |
+| 5. 扩展 | `docs/SlideRule V6.1 扩展.md` |
+| 6. 已知缺口 | `docs/SlideRule V6.1 已知缺口.md` |
+
 一张一个事实：用户消息进入薄控制面；只有 `rehearse` / `refine` / `repair` 才进工厂信封。
 源：`docs/欠缺模块清单-对照Claude与Grok-build.md` §7。本图不画能力池散文，不把 GEN5 画成脊柱。
 

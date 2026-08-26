@@ -34,7 +34,6 @@ from services.slide_rule_orchestrator import orchestrate_plan
 from services.v5_capability_executor import execute_v5_capability
 from services.slide_rule_coverage import author_coverage_contract, evaluate_coverage_gate, reconcile_coverage
 from services.capability_maps import execute_mapped_capability
-from services.v5_session_driver import drive_v5_full_path
 from config.settings import settings
 from sliderule_llm.capabilities import execute_capability, is_python_native_capability
 from sliderule_llm.client import LlmError
@@ -1277,6 +1276,8 @@ async def drive_full_stream(
 
     # 脚本方言：同一份信封 helper（命名字段，不再在这里解析两套 payload）。
     # 产品新烧走 POST /control-turn-stream；本路由保留给脚本/测试。
+    # ⚠ 2026-08-27：drive_v5_full_path 定义在 v5_session_driver，产品路由
+    # 调用点为零。禁止再 import 当驱动器——那是不通电的插座。
     from services.drive_full_factory import start_drive_full_factory_run
     from services.product_charter import factory_charter_kwargs
 

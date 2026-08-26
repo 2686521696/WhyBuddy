@@ -1,3 +1,13 @@
+%% ⚠ 2026-08-27：V6.0 是历史实验室笔记，不再作为施工图。禁止再打新 ⚑。
+%% 现行图是 V6.1 六张短图：
+%%   docs/SlideRule V6.1 控制面.md
+%%   docs/SlideRule V6.1 工厂.md
+%%   docs/SlideRule V6.1 闸与闭环.md
+%%   docs/SlideRule V6.1 活UI路由.md
+%%   docs/SlideRule V6.1 扩展.md
+%%   docs/SlideRule V6.1 已知缺口.md
+%% 图码不符见 docs/欠缺模块清单-对照Claude与Grok-build.md §4.2。
+%%
 %% 面团 AI（原 SlideRule）V6.0 架构图（推演引擎规格 · 继承 V5.9 全图 + ⚑ 08-13 晚 V6.0 修正）
 %% ⚑ 2026-08-13（晚）V6.0：**这一轮没有新功能，是一次「图码对照」后的修正**。
 %%   性质跟 08-13 白天那次标红不同——那次是把现状的形状问题画上来；这次是
