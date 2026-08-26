@@ -495,13 +495,29 @@ _PHONE_SPEC_IA = """设备：手机 App（竖屏）。不是 PC 后台。
 - 页面本身就是手机 App，不要在页面里再套一层手机外框或把整页收成居中卡片。"""
 
 
-def _format_skeleton_prior(skeleton: Optional[dict]) -> str:
-    """把骨架压成「页清单 + 区块槽」先验段。绑定不进这段。
+#: 桌面骨架先验的 IA 硬要求。手机路径禁止进 prompt——跟 `_PHONE_SPEC_IA`
+#: 并排放是 2026-08-20「壳是手机、内容是 PC」的再现：种子全是 workbench /
+#: kanban 宽屏页型，escape hatch 说的是「题装不进骨架」，不是「形态是手机」。
+_SKELETON_IA_HARD = (
+    "硬要求：先按这套页清单展开结构，再按本道题收窄（改名、增删页、改 purpose "
+    "都可以，但不要抛开骨架自己另起一套信息架构，除非这道题明显装不进去）。"
+    "页面 id 可以按本产品重起。不要把骨架里的页型/区块当成绑定或实体。"
+)
+
+
+def _format_skeleton_prior(skeleton: Optional[dict], *, device: str = "desktop") -> str:
+    """把骨架压成先验段。绑定不进这段。
 
     ⚠ 2026-08-27：`app_template.match_app_template` 此前对工厂是死的（契约、
     种子、单测都在，生产调用点为零）。先验只回答「这个行业的应用长什么样」，
     实体 / 字段 / 绑定每次按本题生成。骨架一旦带绑定，整段丢（fail-open）——
     混进去会被结构闸当悬挂引用咬，正是旧模板库的病。
+
+    ⚠ 2026-08-20 / 2026-08-27：device 只传到画页时 SPEC 仍按 PC 切页，壳是
+    手机、内容是 PC。求自觉已经失败过。骨架种子全是桌面 workbench/kanban，
+    跟 `_PHONE_SPEC_IA`「一屏一件主任务」是两套硬要求。不许把「不要抛开骨架」
+    和「切页硬要求」一起丢给模型让它选。手机只留用途 / 角色形态当软提示，
+    页型、区块槽、`_SKELETON_IA_HARD` 整段不进。
 
     工厂路径是 `run_spec_first`。`capability_maps.execute_structure` 也调
     `generate_spec_tree`，那是旧能力图的结构步，不是工厂主轴；不在那里偷偷
@@ -525,14 +541,37 @@ def _format_skeleton_prior(skeleton: Optional[dict]) -> str:
     name = str(skeleton.get("name") or "").strip()
     industry = str(skeleton.get("industry") or "").strip()
     when = str(skeleton.get("when") or "").strip()
-    heading = "行业骨架先验（结构建议，不是成品；绑定/实体/字段不在这里，也不许从这里发明绑定）"
     title = " / ".join(part for part in (name, industry) if part)
+    roles = [str(r).strip() for r in (skeleton.get("roleShape") or []) if str(r or "").strip()]
+    purposes = [
+        str(page.get("purpose") or "").strip()
+        for page in pages
+        if isinstance(page, dict) and str(page.get("purpose") or "").strip()
+    ]
+
+    if device == "phone":
+        # 机械和解，不求模型自觉：手机 IA 是硬的，骨架只剩业务用途。
+        lines.append(
+            "行业骨架提示（业务用途，不是信息架构；切页服从下面的手机约束，"
+            "不要按桌面页型或区块槽展开）："
+        )
+        if title:
+            lines.append(f"骨架：{title}")
+        if when:
+            lines.append(f"适用：{when}")
+        if roles:
+            lines.append("角色形态：" + "、".join(roles))
+        if purposes:
+            lines.append("这些页在做的事（用途提示，页型与切页按手机重做）：")
+            lines.extend(f"- {purpose}" for purpose in purposes)
+        return "\n".join(lines)
+
+    heading = "行业骨架先验（结构建议，不是成品；绑定/实体/字段不在这里，也不许从这里发明绑定）"
     lines.append(f"{heading}：")
     if title:
         lines.append(f"骨架：{title}")
     if when:
         lines.append(f"适用：{when}")
-    roles = [str(r).strip() for r in (skeleton.get("roleShape") or []) if str(r or "").strip()]
     if roles:
         lines.append("角色形态：" + "、".join(roles))
     workflow = skeleton.get("workflowShape")
@@ -566,11 +605,7 @@ def _format_skeleton_prior(skeleton: Optional[dict]) -> str:
             slot_bits.append(f"{btype}@{region}" if region else btype)
         slot = f"  区块：{'、'.join(slot_bits)}" if slot_bits else ""
         lines.append(f"- {pid}  {kind}  {purpose}{slot}".rstrip())
-    lines.append(
-        "硬要求：先按这套页清单展开结构，再按本道题收窄（改名、增删页、改 purpose "
-        "都可以，但不要抛开骨架自己另起一套信息架构，除非这道题明显装不进去）。"
-        "页面 id 可以按本产品重起。不要把骨架里的页型/区块当成绑定或实体。"
-    )
+    lines.append(_SKELETON_IA_HARD)
     return "\n".join(lines)
 
 
@@ -592,6 +627,9 @@ def build_spec_prompt(
     skeleton（2026-08-27 加）：`match_app_template` 命中的应用骨架，作为
     **页清单 / 区块槽先验**。不传则提示词**逐字不变**。精修轮由调用方决定
     不传——上一版结构已经在 refine 段里，骨架再压上去会打架。
+    device=phone 时先验降成用途 / 角色软提示，不进页型硬要求——跟
+    `_PHONE_SPEC_IA` 并排「不要抛开骨架」会把 2026-08-20 那次（壳是手机、
+    内容是 PC）再演一遍。
 
     ## refine（2026-08-14 晚加）：增量迭代不是从零造
 
@@ -619,7 +657,7 @@ def build_spec_prompt(
         parts.append(f"澄清与假设（第 1 步产物）：\n{clarified.strip()}")
     if evidence.strip():
         parts.append(f"外部证据（第 1 步检索到的）：\n{evidence.strip()}")
-    skeleton_block = _format_skeleton_prior(skeleton)
+    skeleton_block = _format_skeleton_prior(skeleton, device=device)
     if skeleton_block:
         parts.append(skeleton_block)
     if refine and (str(refine.get("instruction") or "").strip()):

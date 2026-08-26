@@ -24,6 +24,8 @@ import pytest  # noqa: E402
 
 from services import spec_first_pipeline as sfp  # noqa: E402
 from services.spec_tree import (  # noqa: E402
+    _PHONE_SPEC_IA,
+    _SKELETON_IA_HARD,
     SpecGenerationError,
     build_spec_prompt,
     generate_spec_tree,
@@ -76,6 +78,14 @@ def test_generate_spec_tree_forwards_skeleton_into_the_prompt_builder():
     stripped = _code(generate_spec_tree)
     assert "skeleton=skeleton" in stripped
     assert "build_spec_prompt(" in stripped
+
+
+def test_skeleton_formatter_receives_device_from_the_live_prompt_builder():
+    """漏传 device，手机题会静默套上桌面页型硬要求——2026-08-20 同型。"""
+    stripped = _code(build_spec_prompt)
+    at = stripped.index("_format_skeleton_prior(")
+    window = stripped[at : at + 80]
+    assert "device=device" in window, "骨架先验没拿到 device，手机/桌面无法机械和解"
 
 
 def test_matching_goal_passes_the_template_into_spec_tree(monkeypatch):
@@ -292,3 +302,83 @@ def test_skeleton_with_bindings_is_dropped_from_the_prompt():
     assert "不该出现的用途" not in user
     assert "entityRef" not in user
     assert "行业骨架先验" not in user
+
+
+def test_phone_plus_skeleton_does_not_fight_phone_ia():
+    """骨架硬要求 vs 手机切页硬要求必须机械和解，不求模型自觉。
+
+    2026-08-20：壳是手机、内容是 PC。请假审批手机 App 会命中 leave_approval
+    种子（workbench/kanban），再叠「不要抛开骨架」= 把宽屏 IA 锁进竖屏。
+    反向：把 device 从 _format_skeleton_prior 拿掉，本条必红。
+    """
+    user = build_spec_prompt("请假审批", device="phone", skeleton=SKELETON)[-1]["content"]
+    assert _SKELETON_IA_HARD not in user
+    assert "不要抛开骨架" not in user
+    assert "切页硬要求" in user
+    assert "一屏一件主任务" in user
+    assert "不是 PC 后台" in user
+    for mark in ("一屏一件主任务", "不要左右分栏", "手机 App"):
+        assert mark in _PHONE_SPEC_IA
+        assert mark in user
+    assert user.count("硬要求") == 1, "两套硬要求并排放——模型会选错那套"
+    assert "我的请假单" in user
+    assert "主管审批" in user
+    assert "workbench" not in user
+    assert "kanban" not in user
+    assert "DataTable" not in user
+    assert "页清单" not in user
+
+    desk = build_spec_prompt("请假审批", device="desktop", skeleton=SKELETON)[-1]["content"]
+    assert _SKELETON_IA_HARD in desk
+    assert "页清单" in desk
+    assert "my_leave_workbench" in desk
+    assert "DataTable@main" in desk
+    assert "一屏一件主任务" not in desk
+
+
+def test_generate_spec_tree_phone_skeleton_keeps_phone_ia():
+    """直接测 build_spec_prompt 绿了也不够——generate_spec_tree 漏传 device
+    会静默回桌面硬要求。"""
+    seen: dict = {}
+
+    def fake_llm(messages):
+        seen["user"] = messages[-1]["content"]
+        return None
+
+    with pytest.raises(SpecGenerationError):
+        generate_spec_tree(
+            "请假审批",
+            device="phone",
+            skeleton=SKELETON,
+            llm_json_fn=fake_llm,
+            max_reask=0,
+        )
+    user = seen.get("user") or ""
+    assert "不要抛开骨架" not in user
+    assert "一屏一件主任务" in user
+    assert "我的请假单" in user
+
+
+def test_phone_device_still_passes_skeleton_as_soft_prior(monkeypatch):
+    """选的是 (b) 不是 (a)：手机仍匹配、仍把骨架递进 spec_tree，
+    和解发生在 prompt 层。跳过匹配会丢掉用途/角色提示。"""
+    seen: dict = {}
+
+    def fake_match(goal, templates):
+        seen["matched"] = True
+        return HIT
+
+    def fake_spec(*_a, **kw):
+        seen["device"] = kw.get("device")
+        seen["skeleton"] = kw.get("skeleton")
+        raise sfp.SpecFirstError("捕获即止")
+
+    monkeypatch.setattr("services.app_template.match_app_template", fake_match)
+    monkeypatch.setattr("services.spec_tree.generate_spec_tree", fake_spec)
+
+    with pytest.raises(sfp.SpecFirstError, match="捕获即止"):
+        sfp.run_spec_first("做一个员工请假审批系统", preferred_device="phone")
+
+    assert seen.get("matched"), "手机路径把匹配跳过了——用途提示没了"
+    assert seen.get("device") == "phone"
+    assert seen.get("skeleton") is SKELETON
