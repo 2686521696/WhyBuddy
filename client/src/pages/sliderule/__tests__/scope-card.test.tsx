@@ -217,7 +217,8 @@ describe("拦截点是 requestRehearsal，不是 doSend", () => {
     );
     expect(inferFn).toContain('mode === "repair"');
     expect(inferFn).toContain('intent === "challenge"');
-    expect(inferFn).toContain('t.startsWith("/精修")');
+    expect(inferFn).toContain("parseRehearsalSlash");
+    expect(inferFn).toContain("forcedToolForRehearsalVerb");
     expect(inferFn).not.toContain('"/推演"');
     expect(inferFn).not.toContain('"rehearse"');
   });
@@ -437,6 +438,9 @@ describe("范围卡停泊时发送只能走确认/先改范围", () => {
     ).toBe(false);
     expect(DOCK).toContain("scopeCardOpen: Boolean(pendingScope)");
     expect(DOCK).toContain(
+      "disabled={Boolean(pendingScope) || Boolean(pendingAsk)}"
+    );
+    expect(DOCK).not.toContain(
       "disabled={isRunning || Boolean(pendingScope) || Boolean(pendingAsk)}"
     );
     expect(DOCK).toContain("askOpen: Boolean(pendingAsk)");

@@ -47,7 +47,7 @@ describe("isAttachmentExtractPending / isComposerSendBlocked", () => {
     expect(isAttachmentExtractPending([])).toBe(false);
   });
 
-  it("解析中锁发送；失败/已解析不锁；推演中是停止键不锁", () => {
+  it("解析中锁发送；失败/已解析不锁；推演中空输入仍灰", () => {
     const pending = [{ extractStatus: "pending" as const }];
     expect(
       isComposerSendBlocked({
@@ -86,10 +86,17 @@ describe("isAttachmentExtractPending / isComposerSendBlocked", () => {
         input: "",
         attachments: pending,
       })
+    ).toBe(true);
+    expect(
+      isComposerSendBlocked({
+        isRunning: true,
+        input: "转向请假",
+        attachments: [],
+      })
     ).toBe(false);
   });
 
-  it("审查/优化在飞锁发送；打完字、卡片已出不锁；推演中仍是停止键", () => {
+  it("审查/优化在飞锁发送；打完字、卡片已出不锁；推演中有字可排队", () => {
     expect(
       isComposerSendBlocked({
         isRunning: false,
@@ -122,6 +129,15 @@ describe("isAttachmentExtractPending / isComposerSendBlocked", () => {
         attachments: [],
         isJudging: true,
         isRefining: true,
+      })
+    ).toBe(true);
+    expect(
+      isComposerSendBlocked({
+        isRunning: true,
+        input: "给社区做随访",
+        attachments: [],
+        isJudging: false,
+        isRefining: false,
       })
     ).toBe(false);
   });

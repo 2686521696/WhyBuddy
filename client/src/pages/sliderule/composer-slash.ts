@@ -21,7 +21,15 @@
  * 一条"这种情况不许弹"。
  */
 
-export type SlashKind = "skill" | "connector" | "partner";
+export type SlashKind = "skill" | "connector" | "partner" | "rehearsal";
+
+/** 斜杠推演动词。不是 Claude 的 /plan /compact /mcp /commit /loop /yolo。 */
+export type RehearsalSlashVerb =
+  | "rehearse"
+  | "refine"
+  | "challenge"
+  | "scope"
+  | "restore";
 
 export interface SlashItem {
   /** 唯一键（技能用安装键、连接器用 id、伙伴用 id） */
@@ -38,6 +46,39 @@ export interface SlashItem {
    */
   unavailable?: string;
 }
+
+export const REHEARSAL_SLASH_ITEMS: SlashItem[] = [
+  {
+    key: "rehearse",
+    kind: "rehearsal",
+    name: "推演",
+    description: "出范围卡；未确认不得点火",
+  },
+  {
+    key: "refine",
+    kind: "rehearsal",
+    name: "精修",
+    description: "在现有模型上改，不另起炉灶",
+  },
+  {
+    key: "challenge",
+    kind: "rehearsal",
+    name: "质疑",
+    description: "失效一次结论，不把挑选交给模型",
+  },
+  {
+    key: "scope",
+    kind: "rehearsal",
+    name: "范围",
+    description: "只出范围卡，不点火",
+  },
+  {
+    key: "restore",
+    kind: "rehearsal",
+    name: "回退",
+    description: "恢复上一版模型",
+  },
+];
 
 export interface SlashQuery {
   /** `/` 所在下标 */
@@ -175,4 +216,59 @@ export function pickedPayload(
   picked: readonly SlashItem[]
 ): Array<{ kind: SlashKind; key: string }> {
   return picked.map(p => ({ kind: p.kind, key: p.key }));
+}
+
+const REHEARSAL_VERBS: ReadonlyArray<{
+  cmd: string;
+  verb: RehearsalSlashVerb;
+}> = [
+  { cmd: "/推演", verb: "rehearse" },
+  { cmd: "/精修", verb: "refine" },
+  { cmd: "/质疑", verb: "challenge" },
+  { cmd: "/范围", verb: "scope" },
+  { cmd: "/回退", verb: "restore" },
+];
+
+/**
+ * 正文是不是一条推演动词。只认整句开头的 `/推演` 等。
+ * `https://`、`2026/08/25`、`and/or` 都不是。
+ */
+export function parseRehearsalSlash(text: string): RehearsalSlashVerb | null {
+  const t = String(text || "").trim();
+  if (!t.startsWith("/")) return null;
+  for (const { cmd, verb } of REHEARSAL_VERBS) {
+    if (t === cmd || t.startsWith(`${cmd} `) || t.startsWith(`${cmd}\n`)) {
+      return verb;
+    }
+    // 与服务端 `_is_slash_rehearse` 同形：`/推演请假` 也算推演。
+    if (t.startsWith(cmd)) return verb;
+  }
+  return null;
+}
+
+/**
+ * 斜杠动词 → 控制面 forcedTool。
+ *
+ * ⚠ `/推演` 不得返回 rehearse。空会话带 rehearse 会跳过停泊、直接点火
+ * （2026-08-27 合同：未确认卡由服务端 park，客户端不许 yolo）。
+ */
+export function forcedToolForRehearsalVerb(
+  verb: RehearsalSlashVerb | null
+): string | undefined {
+  if (verb === "refine") return "refine";
+  if (verb === "challenge") return "challenge";
+  if (verb === "restore") return "restore_version";
+  if (verb === "scope") return "scope_card";
+  return undefined;
+}
+
+/** 选中推演动词：把 `/查询串` 补成完整命令，不摘成芯片。 */
+export function applyRehearsalSlashPick(
+  text: string,
+  q: SlashQuery,
+  item: SlashItem
+): { text: string; caret: number } {
+  const command = `/${item.name}`;
+  const next = `${text.slice(0, q.start)}${command}${text.slice(q.end)}`;
+  return { text: next, caret: q.start + command.length };
 }

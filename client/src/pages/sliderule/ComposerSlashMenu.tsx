@@ -20,37 +20,41 @@
  */
 
 import React from "react";
-import { Blocks, Plug, Search, Settings2, Users } from "lucide-react";
+import { Blocks, Play, Plug, Search, Settings2, Users } from "lucide-react";
 
 import type { SlashItem, SlashKind } from "./composer-slash";
 
 const KIND_LABEL: Record<SlashKind, string> = {
+  rehearsal: "推演",
   skill: "技能",
   connector: "连接器",
   partner: "伙伴",
 };
 
 const KIND_ICON: Record<SlashKind, React.ComponentType<{ className?: string }>> = {
+  rehearsal: Play,
   skill: Blocks,
   connector: Plug,
   partner: Users,
 };
 
-/** 图标底色。⚠ 三类各一个色相：面板里靠颜色一眼分类，不靠读那两个字。 */
+/** 图标底色。⚠ 各类各一个色相：面板里靠颜色一眼分类，不靠读那两个字。 */
 const KIND_TONE: Record<SlashKind, string> = {
+  rehearsal: "bg-[#f4f4f5] text-[#171717]",
   skill: "bg-[#eef2ff] text-[#4f46e5]",
   connector: "bg-[#ecfdf5] text-[#059669]",
   partner: "bg-[#fff7ed] text-[#ea580c]",
 };
 
 const CHIP_TONE: Record<SlashKind, string> = {
+  rehearsal: "border-[#e5e7eb] bg-[#fafafa] text-[#171717]",
   skill: "border-[#dfe3ff] bg-[#f5f6ff] text-[#4f46e5]",
   connector: "border-[#d3f0e0] bg-[#f2fbf6] text-[#0f8a5f]",
   partner: "border-[#ffe4cc] bg-[#fff8f1] text-[#c2570b]",
 };
 
-/** 分组顺序：伙伴在最前——它是"一次装好几个"的入口，最常用。 */
-const KIND_ORDER: SlashKind[] = ["partner", "connector", "skill"];
+/** 分组顺序：推演动词在最前，再是伙伴 / 连接器 / 技能。 */
+const KIND_ORDER: SlashKind[] = ["rehearsal", "partner", "connector", "skill"];
 
 export function CapabilityChip({
   item,

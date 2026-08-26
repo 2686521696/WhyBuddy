@@ -69,6 +69,10 @@ import {
   type ScopeCardDevice,
   type ScopeCardPending,
 } from "./scope-card-gate";
+import {
+  forcedToolForRehearsalVerb,
+  parseRehearsalSlash,
+} from "./composer-slash";
 
 /** 昂贵按钮的 forcedTool。/推演 不得在客户端带 rehearse——未确认卡由服务端 park。 */
 export function inferForcedTool(
@@ -80,10 +84,7 @@ export function inferForcedTool(
   if (explicit) return explicit;
   if (mode === "repair") return "repair";
   if (intervention?.intent === "challenge") return "challenge";
-  const t = (userText || "").trim();
-  if (t.startsWith("/精修")) return "refine";
-  if (t.startsWith("/质疑")) return "challenge";
-  return undefined;
+  return forcedToolForRehearsalVerb(parseRehearsalSlash(userText));
 }
 
 // 105 Python full-path: product /agent-loop/sliderule + /sliderule use this hook + http store.
@@ -295,6 +296,29 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const [uiTurns, setUiTurns] = useState<UiTurn[]>([]);
   const [input, setInput] = useState("");
   const [isRunning, setIsRunning] = useState(false);
+  /**
+   * 运行闸用 ref。stop() 立刻把 isRunning 画面松开，但本轮 finally 还没到；
+   * 只读 state 会在那窗口里再开一发，和还没卸完的工厂叠在一起。
+   */
+  const isRunningRef = useRef(false);
+  /**
+   * 运行中发送排队到下一轮控制面。
+   *
+   * ⚠ 2026-08-27：上一版 send 在 isRunning 时直接 stop()——发送键变成停止，
+   * 用户打了「转向请假」再回车，工厂被杀掉。队列 fail-closed：等本轮
+   * finally 再 POST 一发控制面，不许假装改了飞行中的 spec。
+   * Stop 不清队列（用户先打新方向再停旧跑，那句就是下一发）。
+   * resetSession 必须清掉——否则遗留队列会劫持后来无关的发送。
+   */
+  const queuedTurnRef = useRef<string | null>(null);
+  const requestRehearsalRef = useRef<
+    (userText: string) => Promise<void>
+  >(async () => {});
+  const flushQueuedControlTurn = () => {
+    const text = queuedTurnRef.current;
+    queuedTurnRef.current = null;
+    if (text) void requestRehearsalRef.current(text);
+  };
   /**
    * 版本回退/前进是否有请求在飞（2026-08-16 线上实测）。
    *
@@ -651,11 +675,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   ) => {
     if (!userText.trim()) return;
 
-    if (isRunning) {
-      // M1: stop instead of send when running（E25：停止=真正杀掉服务端 run）
-      cancelActiveRunOnServer();
-      abortControllerRef.current?.abort();
-      setIsRunning(false);
+    if (isRunningRef.current) {
+      // 运行中再入是排队层的事，这里 fail-closed 拒第二发，不杀工厂。
       return;
     }
 
@@ -663,6 +684,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     const turnStartMs = Date.now(); // E16 收口句：本轮真实计时
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    isRunningRef.current = true;
     setIsRunning(true);
     // ⚠ 必须跟 setIsRunning(true) 同一拍。放在 persist/intake 之后的话，
     // 迭代会先继续亮着上一轮「汇合过闸」，跟右侧旧页面同一类谎。
@@ -1751,9 +1773,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       } // end of else (success path for live drive updates)
       setNextGateShouldFail(false);
     } finally {
+      isRunningRef.current = false;
       setIsRunning(false);
       setLiveAction(null);
       setActiveSkillId(null); // clear highlighted skill thumbnail after run ends
+      flushQueuedControlTurn();
     }
   };
 
@@ -1771,6 +1795,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     clearPendingScope();
     setPendingAsk(null);
     await runTurn(userText, intervention, resumeRun, mode);
+  };
+  requestRehearsalRef.current = async (userText: string) => {
+    await requestRehearsal(userText);
   };
 
   /**
@@ -1822,6 +1849,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
 
   const stop = useCallback(() => {
     // E25：停止 = 杀服务端 run + 断本地流（否则后台照跑白烧 LLM）
+    // ⚠ 不清 queuedTurnRef：用户打了新方向再停旧跑，那句是下一发控制面。
     cancelActiveRunOnServer();
     abortControllerRef.current?.abort();
     setIsRunning(false);
@@ -1874,14 +1902,16 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   // textOverride：迭代环（重新推演/编辑重跑）程序化重发用。typeof 守卫是刻意的——
   // 既有调用点 onClick={sendMessage} 会把 MouseEvent 当第一参传进来，不能误当文本。
   const sendMessage = async (textOverride?: unknown) => {
-    if (isRunning) {
-      stop();
-      return;
-    }
     const text = (
       typeof textOverride === "string" ? textOverride : input
     ).trim();
     if (!text) return;
+    // 运行中发送排队，不许 stop()。sliderule:resend-prompt 也走这里。
+    if (isRunningRef.current) {
+      queuedTurnRef.current = text;
+      setInput("");
+      return;
+    }
     setInput("");
     // ⚠ 意图只看文本。pending 不能短接到 challenge：质疑后改写作曲家 /
     // 编辑重跑 / 重新推演 / 重置会话都会留下 leftover ref。
@@ -2009,11 +2039,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         runIndex: number;
       }
     ) => {
-      if (isRunning) return;
+      if (isRunningRef.current) return;
 
       const turn = uiTurns.find(t => t.id === turnId);
       if (!turn) return;
 
+      isRunningRef.current = true;
       setIsRunning(true);
 
       const stripFailSteps = (steps: TurnStep[]) =>
@@ -2123,11 +2154,13 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           })
         );
       } finally {
+        isRunningRef.current = false;
         setIsRunning(false);
         setLiveAction(null);
+        flushQueuedControlTurn();
       }
     },
-    [isRunning, uiTurns, sessionState.sessionId, sessionId, applyPersistedState]
+    [uiTurns, sessionState.sessionId, sessionId, applyPersistedState]
   );
 
   // 无理由：只预填作曲家（产品面禁止 window.prompt）。有理由：整轮
@@ -2173,6 +2206,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     rehearsalCursorRef.current = idleRehearsalCursor();
     setRehearsalCursor(idleRehearsalCursor());
     setLlmStreams([]);
+    queuedTurnRef.current = null;
     clearPendingScope();
     setPendingAsk(null);
   }, [isRunning, sessionState.sessionId, sessionId, options.initialGoal]);

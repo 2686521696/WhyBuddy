@@ -56,9 +56,11 @@ import {
   type InstalledSkill,
 } from "./installed-skills";
 import {
+  applyRehearsalSlashPick,
   applySlashPick,
   filterSlashItems,
   moveHighlight,
+  REHEARSAL_SLASH_ITEMS,
   seedSlash,
   slashQueryAt,
   type SlashItem,
@@ -143,7 +145,8 @@ export function isAttachmentExtractPending(
 }
 
 /**
- * 发送键该不该灰。推演中按钮是「停止」，永远不锁。
+ * 发送键该不该灰。推演中发送仍是发送（排队到下一轮），空输入仍灰。
+ * 停止是另一颗方块按钮，不把发送变成停止。
  * 空输入且无附件 → 灰；任一附件解析中 → 灰。
  * 入站审查 / 优化提示词在飞 → 灰（2026-08-20：生成审查卡时发送仍亮，
  * 半成品意图会被直接推演；优化同理，改写还没回填就能把原文发出去）。
@@ -158,7 +161,6 @@ export function isComposerSendBlocked(opts: {
   scopeCardOpen?: boolean;
   askOpen?: boolean;
 }): boolean {
-  if (opts.isRunning) return false;
   if (opts.scopeCardOpen || opts.askOpen) return true;
   if (opts.isJudging || opts.isRefining) return true;
   if (isAttachmentExtractPending(opts.attachments)) return true;
@@ -610,10 +612,10 @@ export function ComposerDock({
     // 开关在 React 态里，发送却读 localStorage。点了「应用」如果没写进
     // 存储（隐私模式 / 只改了画面），推演仍按 desktop 出 PC 端。
     setPreferredDevice(device);
-    if (isRunning) return;
+    // 运行中也走 sendMessage：那边排队，这里不许改成 stop。
     if (
       isComposerSendBlocked({
-        isRunning: false,
+        isRunning,
         input,
         attachments,
         isJudging,
@@ -775,7 +777,7 @@ export function ComposerDock({
         };
       }
     );
-    return [...conns, ...skills, ...partners];
+    return [...REHEARSAL_SLASH_ITEMS, ...conns, ...skills, ...partners];
   }, [connectors, connectorLoad]);
 
   const partnerById = React.useMemo(() => {
@@ -906,6 +908,24 @@ export function ComposerDock({
       }
       setSlashNote("");
       const ta = textareaRef.current;
+      if (item.kind === "rehearsal") {
+        const applied =
+          ta && slash
+            ? applyRehearsalSlashPick(ta.value, slash, item)
+            : { text: `/${item.name}`, caret: item.name.length + 1 };
+        setInput(applied.text);
+        slashSeedRef.current = false;
+        setSlash(null);
+        setSlashIndex(0);
+        requestAnimationFrame(() => {
+          const el = textareaRef.current;
+          if (!el) return;
+          el.focus();
+          el.setSelectionRange(applied.caret, applied.caret);
+          adjustTextareaHeight();
+        });
+        return;
+      }
       if (ta && slash) {
         const applied = applySlashPick(ta.value, slash);
         setInput(applied.text);
@@ -1061,17 +1081,31 @@ export function ComposerDock({
     </button>
   );
 
+  const stopButton = isRunning ? (
+    <button
+      type="button"
+      onClick={() => stop?.()}
+      data-testid="sliderule-composer-stop"
+      aria-label="停止"
+      title="停止"
+      className="pointer-events-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[#e5e7eb] bg-white text-[#171717] transition hover:bg-[#f4f4f5]"
+    >
+      <Square className="h-3.5 w-3.5 fill-current" />
+    </button>
+  ) : null;
+
   const sendButton = (
     <button
       type="button"
-      onClick={isRunning ? stop || (() => {}) : doSend}
+      onClick={doSend}
       disabled={sendBlocked}
       data-testid="sliderule-composer-send"
+      aria-label={isRunning ? "排队" : "发送"}
       aria-busy={sendBusy}
       className="pointer-events-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#171717] text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-[#ececef] disabled:text-[#b0b0b5]"
       title={
         isRunning
-          ? "停止"
+          ? "排队"
           : pendingScope
             ? "先确认范围或改范围"
             : extractPending
@@ -1083,9 +1117,7 @@ export function ComposerDock({
                   : "发送"
       }
     >
-      {isRunning ? (
-        <Square className="h-3.5 w-3.5 fill-current" />
-      ) : sendBusy ? (
+      {sendBusy ? (
         <Loader2 className="h-4 w-4 animate-spin" />
       ) : (
         <ArrowUp className="h-4 w-4" />
@@ -1668,7 +1700,7 @@ export function ComposerDock({
                     picked.length > 0 ? "输入你的任务" : placeholderText
                   }
                   rows={1}
-                  disabled={isRunning || Boolean(pendingScope) || Boolean(pendingAsk)}
+                  disabled={Boolean(pendingScope) || Boolean(pendingAsk)}
                   className={`block max-h-40 w-full resize-none bg-transparent py-0 text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60 ${
                     hero
                       ? "min-h-[72px] px-0.5 text-[15px] leading-6"
@@ -1682,6 +1714,7 @@ export function ComposerDock({
               {hero ? (
                 <div className="col-start-4 row-start-2 flex items-center gap-1 justify-self-end">
                   {refineButton}
+                  {stopButton}
                   {sendButton}
                 </div>
               ) : (
@@ -1768,6 +1801,7 @@ export function ComposerDock({
             />
           ) : null}
         </div>
+        {hero ? null : stopButton}
         {hero ? null : sendButton}
       </div>
       {!hero ? (

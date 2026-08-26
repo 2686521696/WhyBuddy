@@ -7,10 +7,14 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  applyRehearsalSlashPick,
   applySlashPick,
   filterSlashItems,
+  forcedToolForRehearsalVerb,
   moveHighlight,
+  parseRehearsalSlash,
   pickedPayload,
+  REHEARSAL_SLASH_ITEMS,
   seedSlash,
   slashQueryAt,
   type SlashItem,
@@ -210,5 +214,71 @@ describe("输入框提醒", () => {
     );
     expect(src).not.toContain("COMPOSER_SLASH_HINT");
     expect(src).not.toContain("即可选择技能、连接器或伙伴");
+  });
+});
+
+describe("推演动词", () => {
+  it("/推演 /精修 /质疑 /范围 /回退 都是 rehearsal，网址日期仍不是", () => {
+    expect(parseRehearsalSlash("/推演")).toBe("rehearse");
+    expect(parseRehearsalSlash("/推演 请假系统")).toBe("rehearse");
+    expect(parseRehearsalSlash("/精修")).toBe("refine");
+    expect(parseRehearsalSlash("/精修 把按钮改红")).toBe("refine");
+    expect(parseRehearsalSlash("/质疑")).toBe("challenge");
+    expect(parseRehearsalSlash("/范围")).toBe("scope");
+    expect(parseRehearsalSlash("/回退")).toBe("restore");
+    expect(slashQueryAt("/推演", 3)?.query).toBe("推演");
+    expect(filterSlashItems(REHEARSAL_SLASH_ITEMS, "精")[0]?.key).toBe("refine");
+    // 反向：https / 日期 / and/or 既不弹面板，也不是推演动词
+    expect(parseRehearsalSlash("https://miantuan.ai")).toBeNull();
+    expect(parseRehearsalSlash("2026/08/25")).toBeNull();
+    expect(parseRehearsalSlash("and/or")).toBeNull();
+    expect(slashQueryAt("https://miantuan.ai", 9)).toBeNull();
+    expect(slashQueryAt("2026/08/25", 7)).toBeNull();
+    expect(slashQueryAt("and/or", 6)).toBeNull();
+    expect(REHEARSAL_SLASH_ITEMS.every(i => i.kind === "rehearsal")).toBe(true);
+    expect(REHEARSAL_SLASH_ITEMS.map(i => i.name)).toEqual([
+      "推演",
+      "精修",
+      "质疑",
+      "范围",
+      "回退",
+    ]);
+    expect(REHEARSAL_SLASH_ITEMS.map(i => i.key)).not.toContain("plan");
+    expect(REHEARSAL_SLASH_ITEMS.map(i => i.key)).not.toContain("compact");
+    expect(REHEARSAL_SLASH_ITEMS.map(i => i.key)).not.toContain("yolo");
+  });
+
+  it("/推演 不得映射成 forcedTool rehearse；精修/质疑/范围/回退各走自己的闸", () => {
+    expect(forcedToolForRehearsalVerb("rehearse")).toBeUndefined();
+    expect(forcedToolForRehearsalVerb("refine")).toBe("refine");
+    expect(forcedToolForRehearsalVerb("challenge")).toBe("challenge");
+    expect(forcedToolForRehearsalVerb("scope")).toBe("scope_card");
+    expect(forcedToolForRehearsalVerb("restore")).toBe("restore_version");
+    expect(forcedToolForRehearsalVerb(null)).toBeUndefined();
+    // 反向：把 rehearse 映射回去，这条必红（空会话会 yolo 点火）
+    expect(forcedToolForRehearsalVerb(parseRehearsalSlash("/推演"))).not.toBe(
+      "rehearse"
+    );
+  });
+
+  it("选中推演动词是补全命令，不是摘成芯片名", () => {
+    const text = "/精";
+    const q = slashQueryAt(text, text.length)!;
+    const item = REHEARSAL_SLASH_ITEMS.find(i => i.key === "refine")!;
+    const r = applyRehearsalSlashPick(text, q, item);
+    expect(r.text).toBe("/精修");
+    expect(r.text.startsWith("/")).toBe(true);
+    const stripped = applySlashPick(text, q);
+    expect(stripped.text).not.toContain("精修");
+  });
+
+  it("不是 Claude 那套 /plan /compact /run /yolo", () => {
+    expect(parseRehearsalSlash("/plan")).toBeNull();
+    expect(parseRehearsalSlash("/compact")).toBeNull();
+    expect(parseRehearsalSlash("/run")).toBeNull();
+    expect(parseRehearsalSlash("/yolo")).toBeNull();
+    expect(parseRehearsalSlash("/mcp")).toBeNull();
+    expect(parseRehearsalSlash("/commit")).toBeNull();
+    expect(parseRehearsalSlash("/loop")).toBeNull();
   });
 });
