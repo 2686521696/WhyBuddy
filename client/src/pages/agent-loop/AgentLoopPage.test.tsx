@@ -14,7 +14,7 @@ import AgentLoopPage, {
   shouldLoadAgentLoopOverview,
   shouldPollAgentLoopOverview,
 } from "./AgentLoopPage";
-import { DashboardApp, CliConfigForm, QueueDefaultsView, ProfileCrudView, SettingsView, shouldRequestSettingsForView } from "./dashboard/DashboardApp";
+import { DashboardApp, CliConfigForm, QueueDefaultsView, ProfileCrudView, SettingsView, shouldRequestSettingsForView, NAV_GROUPS, shouldShowLegacyUnmaintainedBanner } from "./dashboard/DashboardApp";
 import { LlmKeyForm } from "./dashboard/settings/LlmKeysPanel";
 import { DiagnosticsView } from "./dashboard/settings/DiagnosticsPanel";
 
@@ -183,7 +183,15 @@ describe("AgentLoopPage", () => {
     expect(legacyHtml).toContain("native-settings-content");
   });
 
-  it("renders a first-class SlideRule navigation entry inside the AgentLoop shell", () => {
+  it("restores 推演 as the first sidebar nav item, distinct from the brand logo", () => {
+    // 数据源：删掉 NAV_GROUPS 里的 sliderule 项、只留 logo，这条必须红。
+    expect(NAV_GROUPS[0]?.items[0]?.key).toBe("sliderule");
+    expect(NAV_GROUPS[0]?.items[0]?.label).toBe("推演");
+    expect(NAV_GROUPS[0]?.items[0]?.children).toBeUndefined();
+    const navKeys = NAV_GROUPS.flatMap(group => group.items.map(item => item.key));
+    expect(navKeys).not.toContain("workbench-legacy");
+    expect(navKeys).not.toContain("settings-legacy");
+
     const html = renderToStaticMarkup(
       <DashboardApp
         payload={{ tasks: [], counts: {} }}
@@ -193,8 +201,67 @@ describe("AgentLoopPage", () => {
       />,
     );
 
-    expect(html).toContain('href="/agent-loop/sliderule"');
-    expect(html).toContain("推演");
+    // ⚠ 2026-08-27：禁止 `html.toContain("推演")`——logo 的 title="回到推演"
+    // 就能让那条绿。剥注释和 title 之后，品牌区也不是唯一的 sliderule href。
+    const stripped = html
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/\s(?:title|aria-label)="[^"]*"/gi, "")
+      .replace(/\s(?:title|aria-label)='[^']*'/gi, "");
+    const withoutBrand = stripped.replace(
+      /<a\b[^>]*data-testid="agent-brand"[^>]*>[\s\S]*?<\/a>/i,
+      "",
+    );
+    expect(withoutBrand).toMatch(/href="\/agent-loop\/sliderule"/);
+    expect(withoutBrand).toContain('data-testid="agent-nav-sliderule"');
+    expect(withoutBrand).not.toContain('data-testid="agent-brand"');
+    expect((html.match(/href="\/agent-loop\/sliderule"/g) || []).length).toBeGreaterThanOrEqual(2);
+
+    const firstGroup = stripped.match(
+      /<div class="native-agent-nav-group">[\s\S]*?(?=<div class="native-agent-nav-group">|<\/nav>)/,
+    )?.[0] ?? "";
+    const firstItem = firstGroup.match(
+      /<a\b[^>]*class="[^"]*native-agent-nav-item[^"]*"[^>]*>[\s\S]*?<\/a>/,
+    )?.[0] ?? "";
+    expect(firstItem).toContain('data-testid="agent-nav-sliderule"');
+    expect(firstItem).toContain('href="/agent-loop/sliderule"');
+    expect(firstItem).toMatch(/<span>推演<\/span>/);
+    expect(firstItem).not.toContain('data-testid="agent-brand"');
+    // 无下级：不许挂假折叠箭头（2026-08-26）
+    expect(firstItem).not.toContain("native-agent-nav-caret");
+    expect(firstItem).not.toContain("agent-nav-expand");
+    // 有下级的扩展中心仍有真箭头——别把那次裁决一并拆掉
+    expect(stripped).toContain('data-testid="agent-nav-expand"');
+  });
+
+  it("keeps bookmarkable legacy AgentLoop views and marks them unmaintained", () => {
+    expect(shouldShowLegacyUnmaintainedBanner("workbench")).toBe(true);
+    expect(shouldShowLegacyUnmaintainedBanner("workbench-legacy")).toBe(true);
+    expect(shouldShowLegacyUnmaintainedBanner("settings-legacy")).toBe(true);
+    expect(shouldShowLegacyUnmaintainedBanner("sliderule")).toBe(false);
+    expect(shouldShowLegacyUnmaintainedBanner("settings")).toBe(false);
+    expect(shouldShowLegacyUnmaintainedBanner("skills")).toBe(false);
+
+    for (const view of ["workbench", "workbench-legacy", "settings-legacy"] as const) {
+      const html = renderToStaticMarkup(
+        <DashboardApp
+          payload={{ tasks: [], counts: {} }}
+          view={view}
+          onViewChange={vi.fn()}
+        />,
+      );
+      expect(html).toContain('data-testid="legacy-unmaintained-banner"');
+      expect(html).toContain("legacy，不维护");
+    }
+
+    const productHtml = renderToStaticMarkup(
+      <DashboardApp
+        payload={{ tasks: [], counts: {} }}
+        view="sliderule"
+        onViewChange={vi.fn()}
+      />,
+    );
+    expect(productHtml).not.toContain('data-testid="legacy-unmaintained-banner"');
+    expect(productHtml).not.toContain("legacy，不维护");
   });
 
   it("renders SlideRule inside the AgentLoop workbench shell instead of fullscreen", () => {

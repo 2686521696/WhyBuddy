@@ -3107,3 +3107,13 @@
   opacity: 0.55;
 }
 
+/* 书签仍可达的旧路由：页顶标明不再维护，不 404。 */
+.legacy-unmaintained-banner {
+  background: #fff7ed;
+  border-bottom: 1px solid #fed7aa;
+  color: #7c2d12;
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 8px 16px;
+}
+

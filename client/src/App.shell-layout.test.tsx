@@ -175,6 +175,10 @@ vi.mock("./pages/Home", () => ({
   default: () => <main data-testid="home-page" />,
 }));
 
+vi.mock("./pages/ProjectCockpitHome", () => ({
+  default: () => <main data-testid="home-page" />,
+}));
+
 vi.mock("./pages/auth/MianTuanAuthPage", () => ({
   default: () => <main data-testid="auth-page" />,
 }));
@@ -467,6 +471,33 @@ describe("AppShell fixed sidebar layout", () => {
 
     expect(markup).toContain('data-testid="workbench-fixture-page"');
     expect(markup).not.toContain('data-testid="debug-page"');
+  });
+
+  it("keeps legacy product URLs reachable and marks them unmaintained", async () => {
+    signInForShell();
+    viewportState.isMobile = false;
+    viewportState.isTablet = false;
+
+    locationState.current = "/tasks";
+    let markup = await renderShellMarkup();
+    expect(markup).toContain('data-testid="tasks-page"');
+    expect(markup).toContain('data-testid="legacy-unmaintained-banner"');
+    expect(markup).toContain("legacy，不维护");
+
+    locationState.current = "/autopilot";
+    markup = await renderShellMarkup();
+    expect(markup).toContain('data-testid="autopilot-route-page"');
+    expect(markup).toContain('data-testid="legacy-unmaintained-banner"');
+
+    locationState.current = "/projects";
+    markup = await renderShellMarkup();
+    expect(markup).toContain('data-testid="legacy-unmaintained-banner"');
+    expect(markup).toContain("legacy，不维护");
+
+    locationState.current = "/agent-loop/sliderule";
+    markup = await renderShellMarkup();
+    expect(markup).toContain('data-testid="agent-loop-page"');
+    expect(markup).not.toContain('data-testid="legacy-unmaintained-banner"');
   });
 
   it("keeps authenticated project workspace access in place", async () => {

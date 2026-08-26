@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Router as WouterRouter, Switch, useLocation } from "wouter";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 
 import {
   AUTOPILOT_PATH,
@@ -12,6 +12,7 @@ import {
   REPLAY_PATH_PREFIX,
   SLIDERULE_PATH,
 } from "@/components/navigation-config";
+import { LegacyUnmaintainedBanner } from "@/components/LegacyUnmaintainedBanner";
 import AgentLoopPage, {
   getAgentLoopSliderulePath,
   getAgentLoopWorkbenchPath,
@@ -79,6 +80,16 @@ const routerBase =
     : import.meta.env.BASE_URL.replace(/\/$/, "");
 const AGENT_LOOP_PATH = "/agent-loop";
 
+/** 书签仍可达的旧路由：页顶标明不再维护，不 404。 */
+function LegacyUnmaintainedRoute({ children }: { children: ReactNode }) {
+  return (
+    <>
+      <LegacyUnmaintainedBanner />
+      {children}
+    </>
+  );
+}
+
 function Router() {
   return (
     <Switch>
@@ -87,18 +98,36 @@ function Router() {
           <RedirectRoute to={getAgentLoopSliderulePath()} />
         )}
       </Route>
-      <Route path={PROJECTS_PATH}>{() => <ProjectCockpitHome />}</Route>
-      <Route path={AUTOPILOT_PATH} component={AutopilotRoutePage} />
+      <Route path={PROJECTS_PATH}>
+        {() => (
+          <LegacyUnmaintainedRoute>
+            <ProjectCockpitHome />
+          </LegacyUnmaintainedRoute>
+        )}
+      </Route>
+      <Route path={AUTOPILOT_PATH}>
+        {() => (
+          <LegacyUnmaintainedRoute>
+            <AutopilotRoutePage />
+          </LegacyUnmaintainedRoute>
+        )}
+      </Route>
       <Route path={`${PROJECTS_PATH}/:projectId/tasks/:taskId`}>
         {params => (
-          <ProjectTaskRoute
-            projectId={params.projectId}
-            taskId={params.taskId || null}
-          />
+          <LegacyUnmaintainedRoute>
+            <ProjectTaskRoute
+              projectId={params.projectId}
+              taskId={params.taskId || null}
+            />
+          </LegacyUnmaintainedRoute>
         )}
       </Route>
       <Route path={`${PROJECTS_PATH}/:projectId/tasks`}>
-        {params => <ProjectTasksRoute projectId={params.projectId} />}
+        {params => (
+          <LegacyUnmaintainedRoute>
+            <ProjectTasksRoute projectId={params.projectId} />
+          </LegacyUnmaintainedRoute>
+        )}
       </Route>
       <Route path={`${PROJECTS_PATH}/:projectId`}>
         {params => <ProjectAutopilotRedirect projectId={params.projectId} />}
@@ -137,10 +166,20 @@ function Router() {
       <Route path={"/admin"}>
         {() => <RedirectRoute to="/agent-loop/admin" />}
       </Route>
-      <Route path={"/tasks"}>{() => <TasksPage />}</Route>
+      <Route path={"/tasks"}>
+        {() => (
+          <LegacyUnmaintainedRoute>
+            <TasksPage />
+          </LegacyUnmaintainedRoute>
+        )}
+      </Route>
       <Route path={"/specs"} component={SpecCenterPage} />
       <Route path={"/tasks/:taskId"}>
-        {params => <TaskDetailRoute taskId={params.taskId} />}
+        {params => (
+          <LegacyUnmaintainedRoute>
+            <TaskDetailRoute taskId={params.taskId} />
+          </LegacyUnmaintainedRoute>
+        )}
       </Route>
       <Route path={`${REPLAY_PATH_PREFIX}/:missionId`}>
         {params => <ReplayPage missionId={params.missionId || ""} />}

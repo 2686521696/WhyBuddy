@@ -128,6 +128,7 @@ import {
   isPythonBackendFailure,
   isDegradedApiError,
 } from "@/lib/api-client";
+import { LegacyUnmaintainedBanner } from "@/components/LegacyUnmaintainedBanner";
 
 const { Header, Content } = Layout;
 const { Text, Title } = Typography;
@@ -1177,6 +1178,75 @@ function TaskInspector({
   );
 }
 
+export interface NavItem {
+  key: ViewKey;
+  label: string;
+  icon: React.ReactNode;
+  /** 有下级时才给折叠箭头。⚠ 见下面 NAV_GROUPS 的注释：不许挂假箭头。 */
+  children?: Array<{ id: CapabilityLayer; label: string }>;
+}
+
+/*
+ * 分组导航（2026-08-26 用户给了样式截图）。
+ *
+ * ⚠ 用户同一句话里明确否掉了截图里那条**选中项左侧的竖条**
+ *   （"菜单项左侧的 border 不要"）。CSS 里也写了一行别加回去——
+ *   选中态就是压一层黑，跟 2026-08-20 那次裁决一致。
+ *
+ * ⚠ 截图里每一项右边都有折叠箭头，**这里只给真的有下级的那一项**。
+ *   给「设置」「管理台」挂一个展不开的箭头，就是那种"看着能点、点了没
+ *   反应"的东西——这个仓刚因为它连着修了两轮（`/` 面板那次）。
+ *
+ * ⚠ 2026-08-27 Q3 已关闭：2026-08-26 曾写「推演不再单列」，只留品牌 logo
+ *   `title="回到推演"`。`html.toContain("推演")` 对着 title 假绿，新用户
+ *   侧栏里找不到产品。第一组第一项改回 `{ key: "sliderule", label: "推演" }`，
+ *   logo 仍可点，但不再是唯一入口。
+ */
+export const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
+  {
+    label: "创作资源",
+    items: [
+      { key: "sliderule", label: "推演", icon: <PlayCircleFilled /> },
+      { key: "workbench", label: "应用市场", icon: <AppstoreOutlined /> },
+      { key: "components", label: "组件库", icon: <BlockOutlined /> },
+      {
+        key: "skills",
+        label: "扩展中心",
+        /* ⚠ 用连通节点而不是插头（ApiOutlined）：这一项是三样东西的集合，
+           插头只说得清"连接器"那一样，另外两样看着不搭。 */
+        icon: <DeploymentUnitOutlined />,
+        // 这三条是页面上真实存在的三层（侧栏切 capabilityLayer，不再画页内二次菜单）
+        children: [
+          { id: "skills", label: "技能" },
+          { id: "connectors", label: "连接器" },
+          { id: "partners", label: "伙伴" },
+        ],
+      },
+    ],
+  },
+  {
+    label: "系统",
+    items: [{ key: "settings", label: "设置", icon: <SettingOutlined /> }],
+  },
+];
+
+const NAV_ITEM_TESTID: Partial<Record<ViewKey, string>> = {
+  sliderule: "agent-nav-sliderule",
+  settings: "agent-nav-settings",
+  admin: "agent-nav-admin",
+};
+
+/** 书签仍可达、导航已摘掉的旧面。页顶标明不再维护，不 404。 */
+export const LEGACY_UNMAINTAINED_VIEWS: readonly ViewKey[] = [
+  "workbench",
+  "workbench-legacy",
+  "settings-legacy",
+];
+
+export function shouldShowLegacyUnmaintainedBanner(view: ViewKey): boolean {
+  return (LEGACY_UNMAINTAINED_VIEWS as readonly string[]).includes(view);
+}
+
 function AgentLoopSidebar({
   view,
   onViewChange,
@@ -1190,64 +1260,16 @@ function AgentLoopSidebar({
   capabilityLayer?: CapabilityLayer;
   onCapabilityLayer?: (layer: CapabilityLayer) => void;
 }) {
-  // 「推演」不再单列菜单项：点品牌 logo / 点会话 / 新建会话都通向推演视图
   const isStaff = useAuth().user?.isSuperuser === true;
-  interface NavItem {
-    key: ViewKey;
-    label: string;
-    icon: React.ReactNode;
-    /** 有下级时才给折叠箭头。⚠ 见下面 NAV_GROUPS 的注释：不许挂假箭头。 */
-    children?: Array<{ id: CapabilityLayer; label: string }>;
-  }
-
-  /*
-   * 分组导航（2026-08-26 用户给了样式截图）。
-   *
-   * ⚠ 用户同一句话里明确否掉了截图里那条**选中项左侧的竖条**
-   *   （"菜单项左侧的 border 不要"）。CSS 里也写了一行别加回去——
-   *   选中态就是压一层黑，跟 2026-08-20 那次裁决一致。
-   *
-   * ⚠ 截图里每一项右边都有折叠箭头，**这里只给真的有下级的那一项**。
-   *   给「设置」「管理台」挂一个展不开的箭头，就是那种"看着能点、点了没
-   *   反应"的东西——这个仓刚因为它连着修了两轮（`/` 面板那次）。
-   */
-  const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
-    {
-      label: "创作资源",
-      items: [
-        { key: "workbench", label: "应用市场", icon: <AppstoreOutlined /> },
-        { key: "components", label: "组件库", icon: <BlockOutlined /> },
-        {
-          key: "skills",
-          label: "扩展中心",
-          /* ⚠ 用连通节点而不是插头（ApiOutlined）：这一项是三样东西的集合，
-             插头只说得清"连接器"那一样，另外两样看着不搭。 */
-          icon: <DeploymentUnitOutlined />,
-          // 这三条是页面上真实存在的三层（侧栏切 capabilityLayer，不再画页内二次菜单）
-          children: [
-            { id: "skills", label: "技能" },
-            { id: "connectors", label: "连接器" },
-            { id: "partners", label: "伙伴" },
-          ],
-        },
-      ],
-    },
-    {
-      label: "系统",
-      items: [
-        { key: "settings", label: "设置", icon: <SettingOutlined /> },
-        ...(isStaff
-          ? [
-              {
-                key: "admin" as const,
-                label: "管理台",
-                icon: <SafetyCertificateOutlined />,
-              },
-            ]
-          : []),
-      ],
-    },
-  ];
+  const navGroups = NAV_GROUPS.map(group => {
+    if (group.label !== "系统" || !isStaff) return group;
+    const adminItem: NavItem = {
+      key: "admin",
+      label: "管理台",
+      icon: <SafetyCertificateOutlined />,
+    };
+    return { ...group, items: [...group.items, adminItem] };
+  });
   /* 进扩展中心时默认展开三条子项。从 URL 直达 /agent-loop/skills 时
      openKey 若仍是 null，选中了「扩展中心」却看不见技能/连接器/伙伴——
      应用市场、组件库没有这一层，只有这里像少了半截菜单。 */
@@ -1281,7 +1303,7 @@ function AgentLoopSidebar({
         />
       </a>
       <nav className="native-agent-nav" aria-label={BRAND_NAME_FULL}>
-        {NAV_GROUPS.filter(g => g.items.length > 0).map(group => (
+        {navGroups.filter(g => g.items.length > 0).map(group => (
           <div className="native-agent-nav-group" key={group.label}>
             <div className="native-agent-nav-group-label">{group.label}</div>
             {group.items.map(item => {
@@ -1292,13 +1314,7 @@ function AgentLoopSidebar({
                   <a
                     href={getViewPath?.(item.key)}
                     className={`native-agent-nav-item${active ? " native-agent-nav-item-active" : ""}`}
-                    data-testid={
-                      item.key === "settings"
-                        ? "agent-nav-settings"
-                        : item.key === "admin"
-                          ? "agent-nav-admin"
-                          : undefined
-                    }
+                    data-testid={NAV_ITEM_TESTID[item.key]}
                     onClick={event => {
                       if (getViewPath?.(item.key)) event.preventDefault();
                       onViewChange(item.key);
@@ -1957,6 +1973,9 @@ function DashboardAppInner({
           {/* 顶栏/面包屑整段移除（用户裁决）：应用中心等页自带标题，推演页有 HUD；
               legacy 任务队列若仍需「运行队列」等操作，走页面内按钮而非全局 header。 */}
           <Content className={contentClassName}>
+            {shouldShowLegacyUnmaintainedBanner(view) ? (
+              <LegacyUnmaintainedBanner />
+            ) : null}
             {view === "workbench" ? (
               <AppsWorkbench />
             ) : view === "workbench-legacy" ? (
