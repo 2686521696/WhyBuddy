@@ -249,6 +249,24 @@ def _is_same_turn_progress(prior: V5SessionState, incoming: V5SessionState) -> b
         return True
     if _id_set(getattr(incoming, "sessionReplayLog", None)) - _id_set(getattr(prior, "sessionReplayLog", None)):
         return True
+    # pendingRuns.completed 增长也是同轮真进展（能力结束落 pending 的那一笔）。
+    # 不认的话，artifacts 已在上一笔 persist 进盘、这一笔只加 pending，会被
+    # 同轮守卫当成陈旧快照挡掉——崩溃恢复又整轮重跑。
+    prior_pending = getattr(prior, "pendingRuns", None) or {}
+    inc_pending = getattr(incoming, "pendingRuns", None) or {}
+    if isinstance(prior_pending, dict) and isinstance(inc_pending, dict):
+        prior_done = {
+            c.get("capabilityId")
+            for c in (prior_pending.get("completed") or [])
+            if isinstance(c, dict) and c.get("capabilityId")
+        }
+        inc_done = {
+            c.get("capabilityId")
+            for c in (inc_pending.get("completed") or [])
+            if isinstance(c, dict) and c.get("capabilityId")
+        }
+        if inc_done - prior_done:
+            return True
     return False
 
 
@@ -512,6 +530,92 @@ def save_all(sessions: Dict[str, V5SessionState], store_file: Optional[StorePath
     return _write_store(sessions, store_file)
 
 
+class PersistClosedError(Exception):
+    """pending / checkpoint 写失败。证据链不许假装存了。"""
+
+    def __init__(self, reason: str, message: str = ""):
+        self.reason = reason
+        self.message = message
+        super().__init__(f"{reason}: {message}" if message else reason)
+
+
+def _checkpoint_dir(store_file: Optional[StorePath] = None) -> Path:
+    return _resolve_store_file(store_file).parent / "checkpoints"
+
+
+def _safe_ckpt_token(value: str, limit: int = 160) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", str(value or ""))[:limit] or "unknown"
+
+
+def _atomic_write_json(path: Path, payload: Any) -> None:
+    """temp + os.replace，与 _write_store 同一套原子落盘。OSError 原样抛给调用方。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _write_turn_checkpoint(state: V5SessionState, store_file: Optional[StorePath] = None) -> Optional[StoreError]:
+    """轮级存档 + 父链。抄 LangGraph checkpoint 图纸，不搬框架。
+
+    同一 lastTurnId 覆写同一份文件（一轮内多次 save 只留该轮最新快照）；
+    lastTurnId 前进时 parent_id 指向上一轮。写失败返回错误——checkpoint
+    是证据链，不许假装存了。
+    """
+    sid = str(getattr(state, "sessionId", None) or "")
+    if not sid:
+        return None
+    from datetime import datetime, timezone
+
+    turn_id = str(getattr(state, "lastTurnId", None) or "turn-0")
+    safe_sid = _safe_ckpt_token(sid)
+    safe_turn = _safe_ckpt_token(turn_id, 80)
+    ckpt_id = f"ckpt-{safe_sid}-{safe_turn}"
+    session_dir = _checkpoint_dir(store_file) / safe_sid
+    index_path = session_dir / "index.json"
+    parent_id = None
+    try:
+        if index_path.exists():
+            try:
+                idx = json.loads(index_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                idx = None
+            if isinstance(idx, dict):
+                latest = idx.get("latest_id")
+                latest_turn = idx.get("turnId")
+                if latest and latest_turn != turn_id:
+                    parent_id = latest
+                elif latest and latest_turn == turn_id:
+                    parent_id = idx.get("parent_id")
+        payload = {
+            "id": ckpt_id,
+            "parent_id": parent_id,
+            "sessionId": sid,
+            "turnId": turn_id,
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "state": state.model_dump(),
+        }
+        _atomic_write_json(session_dir / f"{ckpt_id}.json", payload)
+        _atomic_write_json(
+            index_path,
+            {
+                "latest_id": ckpt_id,
+                "turnId": turn_id,
+                "parent_id": parent_id,
+                "sessionId": sid,
+            },
+        )
+    except OSError as error:
+        return {
+            "ok": False,
+            "error": "persist_failed",
+            "reason": "checkpoint_write_failed",
+            "message": str(error),
+            "sessionId": sid,
+        }
+    return None
+
+
 def save_session_record(state: V5SessionState, store_file: Optional[StorePath] = None) -> StoreError:
     # Use lock to serialize the entire read-prior + replay-merge + monotonic compare + write.
     # This ensures that on concurrent saves, each entrant re-reads the *latest* committed
@@ -523,7 +627,13 @@ def save_session_record(state: V5SessionState, store_file: Optional[StorePath] =
     # Serialized lock provides timestamp-equivalent ordering for same lastTurnId.
     store = _blob_store(store_file)
     if store is not None:
-        return _save_session_record_db(store, state)
+        result = _save_session_record_db(store, state)
+        if result.get("ok"):
+            ckpt_state = result.get("state") if isinstance(result.get("state"), V5SessionState) else state
+            ckpt_err = _write_turn_checkpoint(ckpt_state, store_file)
+            if ckpt_err:
+                return ckpt_err
+        return result
     with _save_lock:
         sessions, error = _read_store_file(store_file)
         if error:
@@ -535,6 +645,9 @@ def save_session_record(state: V5SessionState, store_file: Optional[StorePath] =
         result = _write_store(sessions, store_file)
         if not result.get("ok"):
             return result
+        ckpt_err = _write_turn_checkpoint(write_state, store_file)
+        if ckpt_err:
+            return ckpt_err
         _stamp_session_meta(write_state.sessionId, store_file)
         return {"ok": True, "sessionId": write_state.sessionId}
 
@@ -583,6 +696,17 @@ def _resolve_write_state(
             except Exception:
                 pass
             merged_logs_state = state
+
+        # pendingRuns 是服务端 crash-recovery 台账。客户端 PUT 不带这个字段
+        # （模型默认 None）时不许把已落盘的 pending 抹掉——抹掉 = 崩溃恢复
+        # 又整轮重跑，前几个 LLM 白烧。驱动器写入会带上非 None 的 dict。
+        if prior is not None and getattr(merged_logs_state, "pendingRuns", None) is None:
+            prior_pending = getattr(prior, "pendingRuns", None)
+            if prior_pending is not None:
+                try:
+                    merged_logs_state = merged_logs_state.model_copy(update={"pendingRuns": prior_pending})
+                except Exception:
+                    pass
 
         # Version/timestamp-equivalent guard (sliderule-python-v52-session-concurrency-guard-105):
         # lastTurnId ONLY decides core clobber (goal/conversation/artifacts/ledgers/...).
@@ -927,3 +1051,48 @@ def persist_state(state: V5SessionState):
                 file=sys.stderr,
                 flush=True,
             )
+
+
+def _pending_selected_ids(selected: Optional[List[Any]]) -> List[str]:
+    ids: List[str] = []
+    for item in selected or []:
+        cap = item if isinstance(item, str) else (item.get("capabilityId") if isinstance(item, dict) else None)
+        if cap:
+            ids.append(str(cap))
+    return ids
+
+
+def record_pending_run(
+    state: V5SessionState,
+    capability_id: str,
+    loop: int = 0,
+    selected: Optional[List[Any]] = None,
+    status: str = "ok",
+    run_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """把刚完成的能力记进 state.pendingRuns（内存）。同一能力不重复记。"""
+    pending = getattr(state, "pendingRuns", None)
+    if not isinstance(pending, dict):
+        pending = {}
+    completed = [c for c in (pending.get("completed") or []) if isinstance(c, dict)]
+    if not any(c.get("capabilityId") == capability_id for c in completed):
+        completed.append({
+            "capabilityId": capability_id,
+            "runId": run_id or f"run-{loop}-{capability_id}",
+            "status": status,
+            "loop": loop,
+        })
+    selected_ids = list(pending.get("selected") or []) or _pending_selected_ids(selected)
+    if not selected_ids:
+        selected_ids = _pending_selected_ids(selected)
+    pending = {
+        "turnId": getattr(state, "lastTurnId", None),
+        "loop": loop if pending.get("loop") is None else pending.get("loop"),
+        "selected": selected_ids,
+        "completed": completed,
+    }
+    state.pendingRuns = pending
+    return pending
+
+
+

@@ -422,6 +422,12 @@ class V5SessionState(BaseModel):
     # 结构照 Kubernetes metav1.Condition：{type,status,reason,message,lastTransitionTime}。
     # 存在降级条目时闭环不许判 closed——降级轮的产出不可信，详见该模块头。
     runConditions: List[Dict[str, Any]] = Field(default_factory=list)
+    # 能力粒度 pendingWrites（PR-8 / M14，抄 LangGraph 图纸不搬框架）。
+    #
+    # ⚠ 2026-07-15 OSS 就写了「一轮 5 能力挂在第 4 个 = 整轮重跑，前 3 个
+    # LLM 白烧」；到 2026-08-27 代码里仍只有一份最新快照。crash recovery
+    # 读这份台账跳过已完成能力。不是挑战级局部重跑 UI——只是持久化地基。
+    pendingRuns: Optional[Dict[str, Any]] = None
     # ... (add more fields as migrated from TS)
 
     @classmethod

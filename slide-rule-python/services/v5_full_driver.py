@@ -25,7 +25,7 @@ def _has_pending_delivery_picks(state, user_instruction: str) -> bool:
     except Exception:
         return False
 from .v5_capability_executor import execute_v5_capability
-from .persistence import persist_state
+from .persistence import PersistClosedError, persist_state, record_pending_run
 from .slide_rule_coverage import (
     evaluate_coverage_gate,
     reconcile_coverage,
@@ -33,6 +33,29 @@ from .slide_rule_coverage import (
 )
 from .v5_publish_closure_response import derive_publish_closure_response
 from .v5_skill_runtime_graph import derive_skill_runtime_graph_response
+
+
+def persist_pending_capability(
+    state: V5SessionState,
+    capability_id: str,
+    loop: int = 0,
+    selected=None,
+    status: str = "ok",
+    run_id: Optional[str] = None,
+):
+    """能力结束落 pendingRuns 并落盘。走本模块 persist_state，测试才能 mock。
+
+    ⚠ 写失败抛 PersistClosedError，调用方不许接着跑下一个能力——
+    假装存了 = 崩溃后重跑已完成的 LLM，白烧钱。
+    """
+    record_pending_run(state, capability_id, loop, selected, status, run_id)
+    result = persist_state(state)
+    if isinstance(result, dict) and not result.get("ok"):
+        raise PersistClosedError(
+            str(result.get("reason") or "pending_write_failed"),
+            str(result.get("message") or ""),
+        )
+    return result if result is not None else {"ok": True}
 
 
 def _result_to_dict(result: Any) -> Dict[str, Any]:
@@ -359,6 +382,37 @@ def _emit_batch_capability_starts(state: V5SessionState, selected: List[Dict[str
     persist_state(state)
 
 
+def _apply_pending_run_skips(
+    state: V5SessionState, selected: List[Dict[str, Any]], loop: int
+) -> List[Dict[str, Any]]:
+    """崩溃恢复：跳过 pendingRuns 里已经完成的能力，避免重烧 LLM。
+
+    ⚠ 2026-08-27：一轮 5 能力挂在第 4 个时，旧路径整轮重跑，前 3 个 LLM
+    白烧。pendingRuns 是工厂循环内部的 crash-recovery 台账，不是挑战级
+    局部重跑 UI，也不是 GET /runs/{id}/stream 那种 HTTP 续播。
+
+    同一批（selected 集合相同且尚未全部完成）才跳过；整批完成后或选材
+    变了就开新台账，免得下一轮正当重跑被误跳。
+    """
+    ids = [s.get("capabilityId") for s in selected if s.get("capabilityId")]
+    pending = getattr(state, "pendingRuns", None)
+    if not isinstance(pending, dict):
+        pending = {}
+    prev_selected = [c for c in (pending.get("selected") or []) if c]
+    prev_completed = [c for c in (pending.get("completed") or []) if isinstance(c, dict)]
+    done_ids = {c.get("capabilityId") for c in prev_completed if c.get("capabilityId")}
+    same_batch = set(prev_selected) == set(ids) and bool(done_ids) and not done_ids >= set(ids)
+    if not same_batch:
+        state.pendingRuns = {
+            "turnId": getattr(state, "lastTurnId", None),
+            "loop": loop,
+            "selected": ids,
+            "completed": [],
+        }
+        return list(selected)
+    return [s for s in selected if s.get("capabilityId") not in done_ids]
+
+
 def _commit_executed_outcome(
     state: V5SessionState,
     *,
@@ -393,7 +447,9 @@ def _commit_executed_outcome(
             state, turnId=turn_id, capabilityRunId=run_id, capabilityId=cap, kind="capability_complete",
             text=f"capability_completed: {cap}", roleId=role, order=2,
         )
-        persist_state(state)
+        persist_pending_capability(
+            state, cap, loop, [sel], "ok", run_id,
+        )
     else:
         from .slide_rule_session import record_capability_run_error
 
@@ -410,7 +466,9 @@ def _commit_executed_outcome(
             state, turnId=turn_id, capabilityRunId=run_id, capabilityId=cap, kind="capability_complete",
             text=f"capability_completed: {cap} (error)", roleId=role, order=2,
         )
-        persist_state(state)
+        persist_pending_capability(
+            state, cap, loop, [sel], "error", run_id,
+        )
         state.awaitDetail = (getattr(state, "awaitDetail", None) or "") + f"; degraded cap {cap}"
 
 
@@ -1412,11 +1470,12 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
             # SLIDERULE_PARALLEL_CAPS (default ON): overlap the independent per-cap
             # provider calls; commits stay sequential in selection order. Explicit
             # false (or a single-cap batch) takes the serial reference path below.
-            if _parallel_caps_enabled() and len(selected) > 1:
-                _run_selected_batch_parallel(state, selected, loop)
+            to_run = _apply_pending_run_skips(state, selected, loop)
+            if _parallel_caps_enabled() and len(to_run) > 1:
+                _run_selected_batch_parallel(state, to_run, loop)
                 serial_selected = []
             else:
-                serial_selected = selected
+                serial_selected = to_run
             for sel in serial_selected:
                 cap = sel["capabilityId"]
                 role = sel.get("roleId", "agent")
@@ -1467,10 +1526,10 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                         state, turnId=turn_id, capabilityRunId=run_id, capabilityId=cap, kind="capability_complete",
                         text=f"capability_completed: {cap}", roleId=role, order=2
                     )
-                    # Persist complete mid so pollers see finish before next cap/loop end
-                    persist_state(state)
+                    cap_status = "ok"
                 except Exception as cap_exc:
                     # Record capability error without whole drive fail or state corruption
+                    cap_status = "error"
                     dur = int((_time.time() - t0) * 1000)
                     err = {"code": "capability_execution_failed", "message": str(cap_exc)[:200], "capabilityId": cap}
                     # import here to keep top minimal; use the record from session (PYTHON slice)
@@ -1487,10 +1546,10 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                         state, turnId=turn_id, capabilityRunId=run_id, capabilityId=cap, kind="capability_complete",
                         text=f"capability_completed: {cap} (error)", roleId=role, order=2
                     )
-                    # Persist error complete for visibility
-                    persist_state(state)
                     state.awaitDetail = (getattr(state, "awaitDetail", None) or "") + f"; degraded cap {cap}"
                     # continue to next cap or stop decision; error run is auditable record
+                # ⚠ 写失败不许接着跑下一个——假装存了 = 崩溃后重烧已完成的 LLM。
+                persist_pending_capability(state, cap, loop, selected, cap_status, run_id)
             executed_loops += 1
             # 同步驱动同款写回——理由见流式驱动那处的长注释。
             # 两条路径都得改：这个 bug 在提示词层，跟走哪条驱动无关。
@@ -2130,14 +2189,15 @@ async def drive_full_v5_session_stream(
             # order and emit reasoning_step_result per cap as commits land — so
             # step-event pairing stays coherent for stream watchers. Explicit
             # false (or single-cap batch) takes the serial reference path below.
-            batch_parallel = _parallel_caps_enabled() and len(selected) > 1
+            to_run = _apply_pending_run_skips(state, selected, loop)
+            batch_parallel = _parallel_caps_enabled() and len(to_run) > 1
             if batch_parallel:
                 t_loop = _time.time()
                 turn_id = f"loop-{loop}"
-                await asyncio.to_thread(_emit_batch_capability_starts, state, selected, loop)
-                for sel in selected:
+                await asyncio.to_thread(_emit_batch_capability_starts, state, to_run, loop)
+                for sel in to_run:
                     yield {"type": "reasoning_step", "label": sel["capabilityId"], "loop": loop}
-                for group in _split_parallel_segments(selected):
+                for group in _split_parallel_segments(to_run):
                     batch_task = asyncio.ensure_future(asyncio.gather(*[
                         asyncio.to_thread(
                             _timed_execute, sel["capabilityId"], state, sel.get("roleId", "agent"), turn_id
@@ -2159,9 +2219,9 @@ async def drive_full_v5_session_stream(
                             "error": not outcome["ok"],
                             "summary": (outcome["result_data"] or {}).get("summary") if outcome["ok"] else None,
                         }
-                _append_loop_timing_event(state, loop, len(selected), int((_time.time() - t_loop) * 1000))
+                _append_loop_timing_event(state, loop, len(to_run), int((_time.time() - t_loop) * 1000))
                 await asyncio.to_thread(persist_state, state)
-            for sel in ([] if batch_parallel else selected):
+            for sel in ([] if batch_parallel else to_run):
                 cap = sel["capabilityId"]
                 role = sel.get("roleId", "agent")
                 turn_id = f"loop-{loop}"
@@ -2221,7 +2281,6 @@ async def drive_full_v5_session_stream(
                         state, turnId=turn_id, capabilityRunId=run_id, capabilityId=cap,
                         kind="capability_complete", text=f"capability_completed: {cap}", roleId=role, order=2,
                     )
-                    await asyncio.to_thread(persist_state, state)
 
                 except Exception as cap_exc:
                     cap_error = True
@@ -2236,8 +2295,19 @@ async def drive_full_v5_session_stream(
                         state, turnId=turn_id, capabilityRunId=run_id, capabilityId=cap,
                         kind="capability_complete", text=f"capability_completed: {cap} (error)", roleId=role, order=2,
                     )
-                    await asyncio.to_thread(persist_state, state)
                     state.awaitDetail = (getattr(state, "awaitDetail", None) or "") + f"; degraded cap {cap}"
+
+                # ⚠ 写失败不许接着跑下一个。必须在 per-cap except 外面：
+                # PersistClosedError 若被当成能力失败吞掉，C 仍会开跑。
+                await asyncio.to_thread(
+                    persist_pending_capability,
+                    state,
+                    cap,
+                    loop,
+                    selected,
+                    "error" if cap_error else "ok",
+                    run_id,
+                )
 
                 yield {
                     "type": "reasoning_step_result",
