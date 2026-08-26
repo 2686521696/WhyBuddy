@@ -996,6 +996,7 @@ function SlideRuleUnified({
   dismissAsk,
   challengeTurn: _challengeTurn,
   restoreModelVersion,
+  forkVariant,
   isRestoringVersion,
   resetSession,
   retryCapability,
@@ -1044,6 +1045,7 @@ function SlideRuleUnified({
   dismissAsk?: () => void;
   challengeTurn: (id: string) => void;
   restoreModelVersion: (versionId: string) => void;
+  forkVariant?: () => void;
   isRestoringVersion: boolean;
   resetSession: () => void;
   retryCapability: ReturnType<typeof useSlideRuleSession>["retryCapability"];
@@ -1307,6 +1309,7 @@ function SlideRuleUnified({
                     .currentModelVersionId ?? null
                 }
                 onRestoreVersion={restoreModelVersion}
+                onForkVariant={forkVariant}
                 isRestoringVersion={isRestoringVersion}
                 chromeSlot={
                   showStudioChrome ? (
@@ -1788,6 +1791,7 @@ function SlideRuleSessionBody({
     dismissAsk,
     repairGaps,
     restoreModelVersion,
+    forkVariant,
     isRestoringVersion,
     challengeTurn,
     resetSession,
@@ -2238,6 +2242,7 @@ function SlideRuleSessionBody({
     dismissScopeCard,
     dismissAsk,
     restoreModelVersion,
+    forkVariant,
     isRestoringVersion,
     challengeTurn,
     resetSession,

@@ -6,8 +6,15 @@
  *
  * 时间口径只许「大约数分钟，第一页会先出现」。未标定分钟数不许进 DOM。
  */
-import React from "react";
+import React, { useState } from "react";
 
+import {
+  loadCharterReuseNext,
+  loadProductCharter,
+  saveProductCharter,
+  setCharterReuseNext,
+  type ProductCharter,
+} from "./product-charter";
 import {
   SCOPE_CARD_CONFIRM_LABEL,
   SCOPE_CARD_REVISE_LABEL,
@@ -40,6 +47,19 @@ export function ScopeCard({
 }) {
   const steps = scopeCardSteps(false);
   const thin = pending.variant === "thin";
+  const [reuseNext, setReuseNext] = useState(loadCharterReuseNext);
+  const [charter, setCharter] = useState<ProductCharter>(loadProductCharter);
+
+  const patchCharter = (key: keyof ProductCharter, value: string) => {
+    const next = { ...charter, [key]: value };
+    setCharter(next);
+    saveProductCharter(next);
+  };
+
+  const toggleReuse = (checked: boolean) => {
+    setReuseNext(checked);
+    setCharterReuseNext(checked);
+  };
 
   return (
     <div
@@ -98,6 +118,41 @@ export function ScopeCard({
         >
           {SCOPE_CARD_REVISE_LABEL}
         </button>
+      </div>
+      <label
+        className="mt-3 flex cursor-pointer items-center gap-2 text-[12px] leading-4 text-[#3f3f46]"
+        data-testid="sliderule-scope-charter-reuse"
+      >
+        <input
+          type="checkbox"
+          checked={reuseNext}
+          onChange={e => toggleReuse(e.target.checked)}
+          className="h-3.5 w-3.5 accent-[#171717]"
+        />
+        下一场沿用
+      </label>
+      <p className="mt-1 text-[11px] leading-4 text-[#71717a]">
+        宪章是约束，不是证据。不勾选不会带进下一场，也不会把上一场模型当先验。
+      </p>
+      <div className="mt-2 grid gap-1.5" data-testid="sliderule-scope-charter-fields">
+        {(
+          [
+            ["industry", "行业"],
+            ["terms", "术语"],
+            ["defaultRoles", "默认角色"],
+            ["hardCompliance", "硬性合规"],
+            ["brandConstraints", "品牌约束"],
+          ] as Array<[keyof ProductCharter, string]>
+        ).map(([key, label]) => (
+          <input
+            key={key}
+            data-testid={`sliderule-scope-charter-${key}`}
+            value={charter[key] || ""}
+            onChange={e => patchCharter(key, e.target.value)}
+            placeholder={label}
+            className="h-7 rounded-[8px] border border-[#e5e7eb] bg-[#fafafa] px-2 text-[12px] text-[#171717] outline-none placeholder:text-[#a1a1aa]"
+          />
+        ))}
       </div>
     </div>
   );

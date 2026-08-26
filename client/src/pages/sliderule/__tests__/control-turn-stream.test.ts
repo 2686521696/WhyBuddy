@@ -97,6 +97,8 @@ describe("产品客户端不得再 POST 工厂流", () => {
     expect(postFn).toContain("preferredDevice");
     expect(postFn).toContain("designSystemId");
     expect(postFn).toContain("/api/sliderule/control-turn-stream");
+    expect(postFn).toContain("reuseCharter");
+    expect(postFn).toContain("productCharter");
   });
 });
 

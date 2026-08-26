@@ -722,13 +722,17 @@ async def _tool_fork(state: V5SessionState, new_name: str) -> Dict[str, Any]:
 def _system_prompt(state: V5SessionState) -> str:
     goal = _goal_text(state) or "（尚无确认的应用目标）"
     parked = getattr(state, "awaitReason", None) or "none"
-    return (
+    from services.product_charter import charter_prompt_block
+
+    extra = charter_prompt_block()
+    base = (
         "你是面团的薄控制面。只能调用给定工具，不能发明工具。"
         "禁止开放闲聊。问候用 ask_user 或一句短回复；"
         "要做应用先 scope_card；未确认不得 rehearse。"
         "search_evidence 不计入闭环。inspect_model 只看摘要。"
         f"当前目标：{goal[:200]}。停泊：{parked}。"
     )
+    return f"{base}\n{extra}" if extra else base
 
 
 def _usage_tokens(usage: Any) -> int:
@@ -762,16 +766,29 @@ async def run_control_turn(
     """产品控制面主循环。cheap 请求内结束；点火才调信封 helper。"""
     validate_control_turn_body(payload)
     session_id = str(payload["sessionId"]).strip()
+    state = load_session(session_id)
+    if state is None:
+        raise HTTPException(status_code=400, detail="session_id required")
+
+    from services.product_charter import activate_charter_for_run, clear_charter_for_run
+
+    activate_charter_for_run(state, payload)
+    try:
+        async for event in _run_control_turn_body(payload, state):
+            yield event
+    finally:
+        clear_charter_for_run()
+
+
+async def _run_control_turn_body(
+    payload: Dict[str, Any],
+    state: V5SessionState,
+) -> AsyncIterator[Dict[str, Any]]:
     user_text = str(payload.get("userText") or "")
     installed_skills = payload.get("installedSkills")
     active_connectors = payload.get("activeConnectors")
     preferred_device = payload.get("preferredDevice")
     design_system_id = payload.get("designSystemId")
-
-    state = load_session(session_id)
-    if state is None:
-        raise HTTPException(status_code=400, detail="session_id required")
-
     started = time.monotonic()
     cheap_tokens = 0
     original_goal = _goal_text(state)

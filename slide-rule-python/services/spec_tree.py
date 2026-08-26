@@ -653,6 +653,14 @@ def build_spec_prompt(
       没有这句，所以漂的恰恰是它铸的 id。
     """
     parts = [f"产品意图：\n{goal.strip()}"]
+    # 产品宪章：opt-in 关着时 charter_prompt_block() 是空串，parts 跟从前
+    # 逐字节一致（test_refine缺席时_prompt与从前逐字一致）。删这一行，
+    # test_product_charter_opt_in 的活路径判据必须红。
+    from services.product_charter import charter_prompt_block
+
+    charter = charter_prompt_block()
+    if charter:
+        parts.append(charter)
     if clarified.strip():
         parts.append(f"澄清与假设（第 1 步产物）：\n{clarified.strip()}")
     if evidence.strip():

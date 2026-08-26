@@ -97,6 +97,9 @@ describe("范围卡 DOM", () => {
     expect(html).not.toContain("8 分钟");
     expect(html).not.toContain("约 2 分钟");
     expect(html).not.toContain("20 分钟");
+    expect(html).toContain("下一场沿用");
+    expect(html).toContain('data-testid="sliderule-scope-charter-reuse"');
+    expect(html).toContain("宪章是约束，不是证据");
   });
 
   it("迭代是薄卡：一句话 + 开始推演，仍无假分钟数", () => {
@@ -170,6 +173,22 @@ describe("同一 send 禁止 hint 条和范围卡同时出现", () => {
     expect(overlay).toMatch(/pendingScope[\s\S]*<ScopeCard[\s\S]*IntakeHintBar/);
     expect(overlay).not.toMatch(/<ScopeCard[\s\S]*\/>\s*<IntakeHintBar/);
     expect(overlay).not.toContain("onConfirm={() => onConfirmScope()}");
+  });
+
+  it("确认推演把宪章 opt-in 送进 control-turn，不是包一层 onConfirm", () => {
+    expect(CARD_SRC).toContain("下一场沿用");
+    expect(CARD_SRC).toContain("setCharterReuseNext");
+    expect(CARD_SRC).toContain("saveProductCharter");
+    const runTurnBody = SESSION.slice(
+      SESSION.indexOf("const runTurn = async"),
+      SESSION.indexOf("const requestRehearsal = async")
+    );
+    expect(runTurnBody).toContain("loadCharterReuseNext");
+    expect(runTurnBody).toContain("loadProductCharter");
+    expect(runTurnBody).toContain("reuseCharter");
+    expect(runTurnBody).toContain('"rehearse"');
+    expect(SESSION).not.toContain("from \"./ScopeCard\"");
+    expect(SESSION).not.toContain("from \"./SlideRuleStudio\"");
   });
 });
 

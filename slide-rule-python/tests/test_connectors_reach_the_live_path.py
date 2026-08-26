@@ -41,9 +41,11 @@ def _clean():
 def test_只收后端注册表里真有的连接器():
     """⚠ 前端传什么都照单全收的话，模型会为一个根本不存在的数据源建一张表，
     生成期取不到数，页面上多出一张永远空着的表——不报错、不告警。"""
-    set_active_connectors(["weather", "压根不存在", {"id": "stock"}, {"key": "weather"}])
+    set_active_connectors(
+        ["weather", "压根不存在", {"id": "stock"}, {"key": "weather"}, "fx"]
+    )
     ids = [c["id"] for c in active_connectors()]
-    assert ids == ["weather", "stock"], "认了不存在的，或者没去重"
+    assert ids == ["weather", "stock", "fx"], "认了不存在的，或者没去重"
 
 
 def test_传空就是空_跟没挂过一模一样():
@@ -81,6 +83,55 @@ def test_挂两个就出两条_各带各的实体():
     block = connector_prompt_block()
     assert "weather_daily" in block and "stock_quote" in block
     assert block.count("→ entity id") == 2
+
+
+def test_fx_字段_id_逐字进_prompt():
+    """新连接器跟天气同一条纪律：字段 id 差一个字，真数据就填不进孔。"""
+    set_active_connectors(["fx"])
+    block = connector_prompt_block()
+    for fid in ("date", "base", "quote", "rate"):
+        assert fid in block, f"字段 id {fid} 没进 prompt"
+    assert "fx_rate" in block, "实体 id 没进 prompt"
+
+
+def test_fx_在工厂真正读的注册表里():
+    """⚠ 只写在注释/文档字符串里的 id 必须红。判据走运行时注册表 + 取数，
+    不 grep 源码里的 'fx' 字样（那个词注释里也会出现）。"""
+    from services.connectors import (
+        FX,
+        _FETCHERS,
+        _REGISTRY,
+        fetch_rows,
+        get_connector,
+        list_connectors,
+    )
+
+    ids = {c["id"] for c in list_connectors()}
+    assert "fx" in ids
+    spec = get_connector("fx")
+    assert spec is not None
+    assert spec is _REGISTRY["fx"]
+    assert spec.entity_id == "fx_rate"
+    assert spec.needs_env == ""
+    assert "fx" in _FETCHERS
+    assert spec is FX
+
+    def _ok(url, timeout_s):
+        assert "api.frankfurter.app" in url
+        return {
+            "amount": 1.0,
+            "base": "EUR",
+            "date": "2026-08-26",
+            "rates": {"USD": 1.17, "CNY": 8.4},
+        }
+
+    r = fetch_rows("fx", {"base": "EUR", "quotes": "USD,CNY"}, fetch_fn=_ok)
+    assert r.ok is True
+    assert r.rows
+    assert r.source.startswith("Frankfurter")
+    assert r.fetched_at
+    declared = {f["id"] for f in spec.entity_declaration()["fields"]}
+    assert set(r.rows[0]["values"].keys()) == declared
 
 
 # ── 这才是这个文件的重点：它接在链上吗 ──────────────────────────────

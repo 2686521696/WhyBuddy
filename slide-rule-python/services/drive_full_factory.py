@@ -83,10 +83,16 @@ async def start_drive_full_factory_run(
             ) from exc
 
     async def stream_factory():
+        from services.product_charter import (
+            activate_charter_for_run,
+            clear_charter_for_run,
+        )
+
         set_installed_skills(installed_skills)
         set_active_connectors(active_connectors)
         set_preferred_device_override(preferred_device)
         set_design_system_override(design_system_id)
+        activate_charter_for_run(state, None)
         try:
             async for event in drive_full_v5_session_stream(
                 state,
@@ -115,6 +121,7 @@ async def start_drive_full_factory_run(
             set_active_connectors(None)
             set_preferred_device_override(None)
             set_design_system_override(None)
+            clear_charter_for_run()
 
     async def on_complete(event: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(event.get("state"), dict):

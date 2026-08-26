@@ -66,6 +66,10 @@ import {
   resolveChallengeSend,
 } from "./challenge-composer";
 import {
+  loadCharterReuseNext,
+  loadProductCharter,
+} from "./product-charter";
+import {
   type ScopeCardDevice,
   type ScopeCardPending,
 } from "./scope-card-gate";
@@ -1377,6 +1381,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 ...streamOpts,
                 forcedTool: inferredTool,
                 ...(restoreId ? { versionId: restoreId } : {}),
+                ...(inferredTool === "rehearse"
+                  ? {
+                      reuseCharter: loadCharterReuseNext(),
+                      productCharter: loadProductCharter(),
+                    }
+                  : {}),
               });
           // 流断了但 run 未终局（网络抖动/代理超时，非本地停止）：
           // 绝不能落进本地引擎兜底——那会把整轮在前端重跑一遍，与后台
@@ -2070,6 +2080,30 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     }
   };
 
+  const forkVariant = async () => {
+    if (isRunning || IS_GITHUB_PAGES) return;
+    try {
+      const { postControlTurnStream } = await import(
+        "@/lib/sliderule-marathon-driver"
+      );
+      const out = await postControlTurnStream(
+        sessionState,
+        "从这里分一个变体",
+        {
+          forcedTool: "fork_variant",
+          preferredDevice:
+            (loadPreferredDevice() as "desktop" | "phone") || "desktop",
+          designSystemId: loadDesignSystemId() || undefined,
+        }
+      );
+      if (out?.finalState) {
+        setSessionState(preservePythonEvidenceProjection(out.finalState));
+      }
+    } catch {
+      // 分变体是增强类：失败不得锁死舞台。后端 fork_variant 已在闭环工具集。
+    }
+  };
+
   /** 版本切换失败的可见反馈：在对话流末尾追加一条系统提示 turn。 */
   const notifyRestoreFailure = (reason: string) => {
     const noticeId = `restore-fail-${Date.now()}`;
@@ -2366,6 +2400,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     sendMessage,
     repairGaps,
     restoreModelVersion,
+    forkVariant,
     runTurn: requestRehearsal,
     requestRehearsal,
     pendingScope,

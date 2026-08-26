@@ -86,6 +86,31 @@ function Chart() {
   );
 }
 
+function FxArt() {
+  return (
+    <svg viewBox="0 0 48 48" role="img" aria-label="外汇">
+      <defs>
+        <linearGradient id="sr-c-fx" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#fbbf24" />
+          <stop offset="1" stopColor="#d97706" />
+        </linearGradient>
+      </defs>
+      <rect width="48" height="48" rx="14" fill="url(#sr-c-fx)" />
+      <text
+        x="24"
+        y="31"
+        textAnchor="middle"
+        fill="#ffffff"
+        fontSize="22"
+        fontWeight="700"
+        fontFamily="ui-sans-serif, system-ui, sans-serif"
+      >
+        ¥$
+      </text>
+    </svg>
+  );
+}
+
 function PlugArt() {
   return (
     <svg viewBox="0 0 48 48" role="img" aria-label="连接器">
@@ -114,6 +139,7 @@ function PlugArt() {
 const ART: Record<string, () => React.ReactElement> = {
   weather: Weather,
   chart: Chart,
+  fx: FxArt,
   plug: PlugArt,
 };
 

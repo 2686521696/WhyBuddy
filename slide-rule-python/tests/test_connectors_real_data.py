@@ -359,12 +359,70 @@ def test_中文逗号也认():
 
 def test_清单里两个连接器都在_字段名与实体声明一致():
     ids = {c["id"] for c in C.list_connectors()}
-    assert ids == {"weather", "stock"}
+    assert ids == {"weather", "stock", "fx"}
     r = C.fetch_rows(
         "stock", {"symbols": "601398"}, fetch_fn=fake_fetch(), text_fn=fake_text(TX_ICBC)
     )
     declared = {f["id"] for f in C.STOCK.entity_declaration()["fields"]}
     assert set(r.rows[0]["values"].keys()) == declared
+
+
+# ════════════════════════════════ 外汇（Frankfurter）：同样不许编行
+
+
+FX_OK = {
+    "amount": 1.0,
+    "base": "EUR",
+    "date": "2026-08-26",
+    "rates": {"USD": 1.17, "CNY": 8.41, "JPY": 162.3},
+}
+
+
+def fake_fx(body=FX_OK):
+    def _f(url, timeout_s):
+        if isinstance(body, Exception):
+            raise body
+        return body
+
+    return _f
+
+
+def test_fx_取到的行用的就是实体声明里的字段名():
+    r = C.fetch_rows("fx", {"base": "EUR", "quotes": "USD,CNY"}, fetch_fn=fake_fx())
+    assert r.ok, r.error
+    declared = {f["id"] for f in C.FX.entity_declaration()["fields"]}
+    for row in r.rows:
+        assert set(row["values"].keys()) == declared
+    assert r.source.startswith("Frankfurter")
+    assert r.fetched_at
+    quotes = {row["values"]["quote"] for row in r.rows}
+    assert quotes == {"USD", "CNY"}
+
+
+def test_fx_缺报价整轮失败_不许补_1_点_0():
+    """EUR/EUR 编 1.0、少回一只悄悄跳过，都是假数据。"""
+    r = C.fetch_rows(
+        "fx",
+        {"base": "EUR", "quotes": "USD,GBP"},
+        fetch_fn=fake_fx({"amount": 1.0, "base": "EUR", "date": "2026-08-26", "rates": {"USD": 1.17}}),
+    )
+    assert r.ok is False
+    assert r.rows == ()
+    assert "GBP" in r.error
+
+
+def test_fx_传输失败不许有行():
+    r = C.fetch_rows("fx", {"base": "EUR", "quotes": "USD"}, fetch_fn=fake_fx(RuntimeError("boom")))
+    assert r.ok is False and r.rows == () and r.error
+
+
+def test_fx_空行情不许编():
+    r = C.fetch_rows(
+        "fx",
+        {"base": "EUR", "quotes": "USD"},
+        fetch_fn=fake_fx({"base": "EUR", "date": "2026-08-26", "rates": {}}),
+    )
+    assert r.ok is False and r.rows == ()
 
 
 # ════════════════════════════════ 超时预算：单次上限 ≠ 总预算

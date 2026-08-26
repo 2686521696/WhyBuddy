@@ -156,6 +156,11 @@ interface SlideRuleStudioProps {
   }>;
   currentModelVersionId?: string | null;
   onRestoreVersion?: (versionId: string) => void;
+  /**
+   * 从当前模型分一条变体。走控制面已有的 fork_variant，不另开存储。
+   * 父级没传就隐藏按钮——不要为了露出控件去发明第二套 API。
+   */
+  onForkVariant?: () => void;
   /** 版本切换请求在飞：两个按钮都置灰。缺省 false（老调用点行为不变）。 */
   isRestoringVersion?: boolean;
   // --- Chat panel (left) ---
@@ -245,6 +250,7 @@ export function SlideRuleStudio({
   modelVersions = [],
   currentModelVersionId = null,
   onRestoreVersion,
+  onForkVariant,
   isRestoringVersion = false,
   chromeSlot,
   resetSlot,
@@ -631,8 +637,8 @@ export function SlideRuleStudio({
                 className="rounded-full px-1.5 py-0.5 text-[11px] text-stone-500 transition hover:bg-[#e9edf2] hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-30"
                 title={
                   prev
-                    ? `回退到 v${idx}${prev.instruction ? `（${prev.instruction.slice(0, 24)}）` : ""}`
-                    : "已是最早版本"
+                    ? `回到上一变体${prev.instruction ? `（${prev.instruction.slice(0, 24)}）` : ""}`
+                    : "已是最早变体"
                 }
               >
                 ◀
@@ -641,7 +647,7 @@ export function SlideRuleStudio({
                 className="text-[10px] font-medium text-stone-500"
                 title={modelVersions[idx]?.instruction || ""}
               >
-                v{idx + 1}/{modelVersions.length}
+                变体 {idx + 1}/{modelVersions.length}
               </span>
               <button
                 type="button"
@@ -651,12 +657,24 @@ export function SlideRuleStudio({
                 className="rounded-full px-1.5 py-0.5 text-[11px] text-stone-500 transition hover:bg-[#e9edf2] hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-30"
                 title={
                   next
-                    ? `前进到 v${idx + 2}${next.instruction ? `（${next.instruction.slice(0, 24)}）` : ""}`
-                    : "已是最新版本"
+                    ? `前进到下一变体${next.instruction ? `（${next.instruction.slice(0, 24)}）` : ""}`
+                    : "已是最新变体"
                 }
               >
                 ▶
               </button>
+              {onForkVariant ? (
+                <button
+                  type="button"
+                  data-testid="sliderule-version-fork"
+                  disabled={isRestoringVersion || isRunning}
+                  onClick={() => onForkVariant()}
+                  className="rounded-full px-1.5 py-0.5 text-[11px] text-stone-500 transition hover:bg-[#e9edf2] hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-30"
+                  title="从这里分一个变体"
+                >
+                  分一变体
+                </button>
+              ) : null}
             </div>
           );
         })()

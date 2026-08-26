@@ -1132,6 +1132,9 @@ def drive_full(
     set_design_system_override(
         payload.get("designSystemId") or payload.get("design_system_id")
     )
+    from services.product_charter import activate_charter_for_run, clear_charter_for_run
+
+    activate_charter_for_run(state, payload)
     try:
         new_state = drive_full_v5_session(state, max_loops=max_loops, user_instruction=user_text)
     finally:
@@ -1139,6 +1142,7 @@ def drive_full(
         set_active_connectors(None)
         set_preferred_device_override(None)
         set_design_system_override(None)
+        clear_charter_for_run()
     # Compat (task 119-04): capability results may be Pydantic models (model_dump) or plain dicts.
     # Normalize them to plain dicts BEFORE sanitize/derive/persist so json persistence and the
     # response envelope never see a non-serializable result object.

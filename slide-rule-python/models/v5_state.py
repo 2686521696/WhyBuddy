@@ -423,6 +423,11 @@ class V5SessionState(BaseModel):
     # 位置照 skillRuntimeGraph 的先例（它的注释写得很清楚：durable 是为了
     # 刷新之后还能重放）。只走 SSE 的话，关掉页面再进来就什么都没有了。
     specFirstPages: Optional[Dict[str, Any]] = None
+    # 产品宪章（2026-08-27）：行业/术语/角色/合规/品牌。约束不是证据。
+    # 只在 charterReuseNext / payload.reuseCharter 为真时注入 spec-first。
+    # 缺省 None/False：老会话 roundtrip 行为不变，也不会自动沿用上一场模型。
+    productCharter: Optional[Dict[str, Any]] = None
+    charterReuseNext: bool = False
     # 本轮运行的降级状况（services/run_degradation.py 写、闭环判定读）。
     # 结构照 Kubernetes metav1.Condition：{type,status,reason,message,lastTransitionTime}。
     # 存在降级条目时闭环不许判 closed——降级轮的产出不可信，详见该模块头。

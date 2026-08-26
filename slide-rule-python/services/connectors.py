@@ -533,16 +533,113 @@ def _stock_rows(
     return label, rows
 
 
+# ────────────────────────────────────────────── 外汇汇率（Frankfurter，免 key）
+
+#: Frankfurter（https://api.frankfurter.app）是欧洲央行汇率的公开镜像，不要 key。
+#:
+#: ⚠ 基准货币对自身的汇率不是 1.0 可以编出来的。接口不回 EUR/EUR；缺报价
+#:   就整轮失败，不许补 1.0 撑行——那正是硬约束 1 要消灭的假数据。
+_FX = ConnectorSpec(
+    id="fx",
+    name="外汇汇率",
+    description="按基准货币取真实汇率（Frankfurter / 欧洲央行，免密钥）",
+    entity_id="fx_rate",
+    entity_name="外汇汇率",
+    fields=(
+        ConnectorField("date", "日期", "date"),
+        ConnectorField("base", "基准货币", "text"),
+        ConnectorField("quote", "报价货币", "text"),
+        ConnectorField("rate", "汇率", "number"),
+    ),
+    args=(
+        ConnectorArg("base", "基准货币", placeholder="EUR", default="EUR"),
+        ConnectorArg(
+            "quotes",
+            "报价货币",
+            placeholder="USD,CNY,JPY",
+            default="USD,CNY,JPY",
+        ),
+    ),
+    source="Frankfurter",
+    category="金融",
+    icon="fx",
+)
+
+
+def _fx_rows(
+    base: str,
+    quotes: str,
+    fetch: Callable[[str, float], Any],
+    timeout_s: float,
+    text: Callable[..., str],
+) -> Tuple[str, List[Dict[str, Any]]]:
+    del text  # JSON 接口，签名跟天气/股票一致，取数走 fetch。
+    base_ccy = str(base or "EUR").strip().upper() or "EUR"
+    tokens = [
+        t.strip().upper()
+        for t in str(quotes or "").replace("，", ",").split(",")
+        if t.strip()
+    ]
+    if not tokens:
+        raise ConnectorError("没有填报价货币")
+    wanted = [t for t in tokens if t != base_ccy]
+    if not wanted:
+        raise ConnectorError("报价货币不能和基准货币相同，换 USD / CNY 再试")
+    url = (
+        "https://api.frankfurter.app/latest"
+        f"?from={quote(base_ccy)}&to={quote(','.join(wanted))}"
+    )
+    data = fetch(url, timeout_s) or {}
+    rates = data.get("rates") if isinstance(data, dict) else None
+    if not isinstance(rates, dict) or not rates:
+        raise ConnectorError("汇率服务返回了空行情，稍后再试")
+    got_base = str(data.get("base") or base_ccy).upper()
+    day = str(data.get("date") or "").strip()
+    if not day:
+        raise ConnectorError("汇率服务没有返回日期")
+    missing = [t for t in wanted if t not in rates]
+    if missing:
+        raise ConnectorError(f"这些货币取不到汇率：{'、'.join(missing)}")
+    rows: List[Dict[str, Any]] = []
+    for q in wanted:
+        raw = rates.get(q)
+        try:
+            rate_n = float(raw)
+        except (TypeError, ValueError):
+            raise ConnectorError(f"{got_base}/{q} 不是数字")
+        rows.append(
+            {
+                "id": f"fx-{got_base}-{q}-{day}",
+                "values": {
+                    "date": day,
+                    "base": got_base,
+                    "quote": q,
+                    "rate": rate_n,
+                },
+            }
+        )
+    if not rows:
+        raise ConnectorError("汇率服务没有返回任何一对报价")
+    label = f"{got_base} → {','.join(r['values']['quote'] for r in rows)}"
+    return label, rows
+
+
 # ─────────────────────────────────────────────────────────── 注册表 / 取数
 
-_REGISTRY: Dict[str, ConnectorSpec] = {WEATHER.id: WEATHER, _STOCK.id: _STOCK}
+_REGISTRY: Dict[str, ConnectorSpec] = {
+    WEATHER.id: WEATHER,
+    _STOCK.id: _STOCK,
+    _FX.id: _FX,
+}
 
 _FETCHERS: Dict[str, Callable[..., Tuple[str, List[Dict[str, Any]]]]] = {
     WEATHER.id: _weather_rows,
     _STOCK.id: _stock_rows,
+    _FX.id: _fx_rows,
 }
 
 STOCK = _STOCK
+FX = _FX
 
 
 def list_connectors() -> List[Dict[str, Any]]:

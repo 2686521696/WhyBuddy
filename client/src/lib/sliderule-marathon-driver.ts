@@ -290,6 +290,15 @@ export interface DriveFullStreamOpts {
    * 必须把上一版 id 带上；服务端缺省也会再默认上一版。
    */
   versionId?: string;
+  /** 产品宪章 opt-in。只在确认推演时带，缺省不送，免得问候把账户旗清掉。 */
+  reuseCharter?: boolean;
+  productCharter?: {
+    industry?: string;
+    terms?: string;
+    defaultRoles?: string;
+    hardCompliance?: string;
+    brandConstraints?: string;
+  };
   onControlText?: (text: string) => void;
   onControlAskUser?: (event: {
     question: string;
@@ -556,6 +565,10 @@ export async function postControlTurnStream(
         ...(opts.forcedTool ? { forcedTool: opts.forcedTool } : {}),
         ...(opts.versionId ? { versionId: opts.versionId } : {}),
         ...(opts.mode ? { mode: opts.mode } : {}),
+        ...(opts.reuseCharter !== undefined
+          ? { reuseCharter: opts.reuseCharter }
+          : {}),
+        ...(opts.productCharter ? { productCharter: opts.productCharter } : {}),
       }),
     });
     await throwIfAuthRequired(res);
