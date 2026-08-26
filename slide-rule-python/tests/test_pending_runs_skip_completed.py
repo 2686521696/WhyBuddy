@@ -65,8 +65,12 @@ class _CrashAfterB(Exception):
     """模拟进程在 cap C 之前挂掉。必须在 per-cap except 外面抛，否则 C 仍会开跑。"""
 
 
-def _stub_drive_loop(driver, monkeypatch, execute):
-    monkeypatch.setenv("SLIDERULE_PARALLEL_CAPS", "false")
+def _stub_drive_loop(driver, monkeypatch, execute, *, parallel=False):
+    if parallel:
+        # 默认 ON：测 commit helper 路径。unset 走 settings 默认 True。
+        monkeypatch.delenv("SLIDERULE_PARALLEL_CAPS", raising=False)
+    else:
+        monkeypatch.setenv("SLIDERULE_PARALLEL_CAPS", "false")
     monkeypatch.setenv("SLIDERULE_AGENTIC_PICK", "off")
     monkeypatch.setenv("SLIDERULE_LLM_ROUND_CAPS", "0")
     monkeypatch.delenv("LLM_API_KEY", raising=False)
@@ -126,6 +130,8 @@ def test_live_stream_driver_references_pending_persist_and_skip():
     assert re.search(r"persist_pending_capability\s*[,(]", sync)
     assert "_apply_pending_run_skips(" in sync
     assert re.search(r"persist_pending_capability\s*[,(]", commit)
+    # 并行 commit 必须把整批 selected 交给 persist，不能只传 [sel]
+    assert re.search(r"persist_pending_capability\(\s*state,\s*cap,\s*loop,\s*batch", commit)
     assert "record_pending_run(" in helper
     # 反面：不是只在注释/docstring 里出现
     assert "langgraph" not in stream.lower()
@@ -204,6 +210,100 @@ def test_crash_after_b_resume_skips_completed_caps(driver, monkeypatch):
         f"恢复重跑了已完成能力（白烧 LLM）: {calls}; 崩溃前={first_calls}"
     )
     assert CAP_C in calls, f"恢复必须跑未完成的 C，实际 {calls}"
+
+
+def test_new_batch_including_completed_cap_is_not_skipped_forever(driver, monkeypatch):
+    """选材变了必须重跑。A 曾经完成 ≠ 下一轮挑 A 就永远跳过。
+
+    变异：skip 忽略 selected 集合、只按 completed 过滤 → A 不跑 → 本条红。
+    """
+    driver_mod, _store = driver
+    calls = []
+
+    def execute(cap, state, input_ids, role, turn_id):
+        calls.append(cap)
+        return {
+            "title": cap,
+            "summary": f"{cap} done",
+            "content": f"executed {cap}",
+            "provenance": "python-rag",
+            "sources": [],
+        }
+
+    _stub_drive_loop(driver_mod, monkeypatch, execute)
+    only_a = [{"capabilityId": CAP_A, "roleId": "agent"}]
+    monkeypatch.setattr(driver_mod, "pick_next_capabilities", lambda state, ui="": [dict(p) for p in only_a])
+    monkeypatch.setattr(driver_mod, "pick_repair_capabilities", lambda state: [dict(p) for p in only_a])
+
+    state = _seeded_state("sr-pending-new-batch")
+    state.pendingRuns = {
+        "loop": 0,
+        "selected": [CAP_A, CAP_B, CAP_C],
+        "completed": [
+            {"capabilityId": CAP_A, "status": "ok"},
+            {"capabilityId": CAP_B, "status": "ok"},
+        ],
+    }
+    _run_stream(driver_mod, state)
+    assert CAP_A in calls, f"新选材含已完成的 A，必须重跑，实际 {calls}"
+    assert CAP_B not in calls and CAP_C not in calls
+
+
+def test_parallel_commit_path_crash_resume_skips_committed(driver, monkeypatch):
+    """默认并行：LLM 在 gather 里花掉，pending 走 _commit_executed_outcome。
+
+    report.write 是屏障段，所以 A/B 并发、C 在 A/B commit 之后。崩在 B 的
+    persist 之后，C 还没开跑。恢复仍跳过已落盘的 A/B。
+    变异：commit persist 只传 [sel] → pending.selected 缩成单能力 → 恢复
+    不认同一批，A/B 重烧。
+    """
+    driver_mod, store = driver
+    calls = []
+    selected_seen = []
+
+    def execute(cap, state, input_ids, role, turn_id):
+        calls.append(cap)
+        return {
+            "title": cap,
+            "summary": f"{cap} done",
+            "content": f"executed {cap}",
+            "provenance": "python-rag",
+            "sources": [],
+        }
+
+    _stub_drive_loop(driver_mod, monkeypatch, execute, parallel=True)
+    real_persist = driver_mod.persist_pending_capability
+
+    def crash_after_b(state, capability_id, loop=0, selected=None, status="ok", run_id=None):
+        ids = []
+        for item in selected or []:
+            cap = item if isinstance(item, str) else (item.get("capabilityId") if isinstance(item, dict) else None)
+            if cap:
+                ids.append(cap)
+        selected_seen.append((capability_id, ids))
+        out = real_persist(state, capability_id, loop, selected, status, run_id)
+        if capability_id == CAP_B:
+            raise _CrashAfterB("simulated crash after parallel commit of B")
+        return out
+
+    monkeypatch.setattr(driver_mod, "persist_pending_capability", crash_after_b)
+    _run_stream(driver_mod, _seeded_state("sr-pending-parallel"))
+
+    assert CAP_A in calls and CAP_B in calls
+    assert CAP_C not in calls
+    assert any(CAP_A in ids and CAP_B in ids and CAP_C in ids for _, ids in selected_seen), selected_seen
+
+    rec = load_session_record("sr-pending-parallel")
+    assert rec.get("ok"), rec
+    loaded = rec["session"]
+    pending_ids = _completed_ids(loaded)
+    assert CAP_A in pending_ids and CAP_B in pending_ids
+
+    calls.clear()
+    monkeypatch.setattr(driver_mod, "persist_pending_capability", real_persist)
+    _run_stream(driver_mod, loaded)
+    assert CAP_A not in calls and CAP_B not in calls, f"并行路径恢复重烧了 {calls}"
+    assert CAP_C in calls
 
 
 def test_pending_write_failure_does_not_run_next_cap(driver, monkeypatch):
@@ -293,3 +393,161 @@ def test_checkpoint_write_failure_is_fail_closed(tmp_path, monkeypatch):
     assert result.get("reason") == "checkpoint_write_failed"
     # 反面：不能因为会话正文写进去了就当成功
     assert store.exists()
+
+
+def _pending_ab():
+    return {
+        "loop": 0,
+        "selected": [CAP_A, CAP_B],
+        "completed": [
+            {"capabilityId": CAP_A, "status": "ok"},
+            {"capabilityId": CAP_B, "status": "ok"},
+        ],
+    }
+
+
+def test_save_session_checkpoint_failure_does_not_pretend_success(tmp_path, monkeypatch):
+    """live service save_session 必须 fail-closed。只测 save_session_record 会假绿。"""
+    monkeypatch.setenv("SLIDERULE_SESSIONS_FILE", str(tmp_path / "sessions.json"))
+    monkeypatch.setattr(persistence, "_blob_store", lambda store_file=None: None)
+    from services import slide_rule_session as sess
+
+    monkeypatch.setattr(
+        persistence,
+        "_atomic_write_json",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")),
+    )
+    with pytest.raises(PersistClosedError) as ei:
+        sess.save_session(
+            V5SessionState(
+                sessionId="s-sess-ckpt-fail",
+                goal={"text": "g"},
+                artifacts=[],
+                lastTurnId="turn-1",
+            )
+        )
+    assert ei.value.reason == "checkpoint_write_failed"
+    rec = load_session_record("s-sess-ckpt-fail")
+    assert rec.get("ok"), "正文可能已经落了——那也不能把 save_session 当成功"
+
+
+def test_save_session_record_keeps_prior_pending_when_incoming_blank(tmp_path):
+    """incoming pendingRuns=None / {} 不许抹台账。删掉 restore 这条就红。"""
+    store = tmp_path / "sessions.json"
+    s1 = V5SessionState(
+        sessionId="s-keep-pending",
+        goal={"text": "g1"},
+        artifacts=[],
+        lastTurnId="turn-1",
+        pendingRuns=_pending_ab(),
+    )
+    assert persistence.save_session_record(s1, store)["ok"]
+
+    s_none = V5SessionState(
+        sessionId="s-keep-pending",
+        goal={"text": "g2"},
+        artifacts=[],
+        lastTurnId="turn-2",
+    )
+    assert s_none.pendingRuns is None
+    assert persistence.save_session_record(s_none, store)["ok"]
+    rec = persistence.load_session_record("s-keep-pending", store)
+    ids = _completed_ids(rec["session"])
+    assert CAP_A in ids and CAP_B in ids, ids
+
+    s_empty = V5SessionState(
+        sessionId="s-keep-pending",
+        goal={"text": "g3"},
+        artifacts=[],
+        lastTurnId="turn-3",
+        pendingRuns={},
+    )
+    assert persistence.save_session_record(s_empty, store)["ok"]
+    rec = persistence.load_session_record("s-keep-pending", store)
+    ids = _completed_ids(rec["session"])
+    assert CAP_A in ids and CAP_B in ids, ids
+
+    s_shrink = V5SessionState(
+        sessionId="s-keep-pending",
+        goal={"text": "g4"},
+        artifacts=[],
+        lastTurnId="turn-4",
+        pendingRuns={
+            "loop": 0,
+            "selected": [CAP_A, CAP_B],
+            "completed": [{"capabilityId": CAP_A, "status": "ok"}],
+        },
+    )
+    assert persistence.save_session_record(s_shrink, store)["ok"]
+    rec = persistence.load_session_record("s-keep-pending", store)
+    ids = _completed_ids(rec["session"])
+    assert CAP_A in ids and CAP_B in ids, ids
+
+
+def test_put_route_excludes_pending_runs_and_save_session_raises():
+    """剥注释：PUT 必须 pop/exclude pendingRuns；save_session 必须对 checkpoint 抛错。"""
+    from routes import sliderule_full as routes
+    from services import slide_rule_session as sess
+
+    put_src = _strip_comments(inspect.getsource(routes.save_sess))
+    save_src = _strip_comments(inspect.getsource(sess.save_session))
+    assert 'pop("pendingRuns"' in put_src
+    assert '"pendingRuns"' in put_src
+    assert "checkpoint_write_failed" in save_src
+    assert "PersistClosedError" in save_src
+    # 反面：不是只在注释里写了 pendingRuns
+    assert "langgraph" not in put_src.lower()
+
+
+def test_put_without_pending_runs_does_not_wipe_cache(tmp_path, monkeypatch):
+    """PUT 不带 pendingRuns / 带 {}：缓存不得被 setattr 成空台账。
+
+    模拟库削页 memory-ahead：save 回读磁盘（restore 保住台账）之后仍可能
+    把内存里那份抹掉的对象塞回 _sessions。pop+exclude 是这一闸。
+    """
+    monkeypatch.setenv("SLIDERULE_SESSIONS_FILE", str(tmp_path / "sessions.json"))
+    monkeypatch.setattr(persistence, "_blob_store", lambda store_file=None: None)
+    from services import slide_rule_session as sess
+    from conftest import TEST_USER_ID
+
+    sid = "sr-put-keep-pending"
+    seeded = V5SessionState(
+        sessionId=sid,
+        goal={"text": GOAL},
+        artifacts=[],
+        lastTurnId="turn-1",
+        pendingRuns=_pending_ab(),
+        ownerId=TEST_USER_ID,
+    )
+    sess.save_session(seeded)
+    monkeypatch.setattr(sess, "_memory_ahead_of_store", lambda mem, disk: True)
+
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from app import app
+
+    client = TestClient(app)
+    key = {"x-internal-key": "dev-slide-rule-internal"}
+    body = {"sessionId": sid, "goal": {"text": GOAL}, "lastTurnId": "turn-2"}
+    resp = client.put(f"/api/sliderule/sessions/{sid}", json=body, headers=key)
+    assert resp.status_code == 200, resp.text
+    loaded = sess.load_session(sid)
+    ids = _completed_ids(loaded)
+    assert CAP_A in ids and CAP_B in ids, ids
+
+    resp_empty = client.put(
+        f"/api/sliderule/sessions/{sid}",
+        json={**body, "pendingRuns": {}, "lastTurnId": "turn-3"},
+        headers=key,
+    )
+    assert resp_empty.status_code == 200, resp_empty.text
+    loaded = sess.load_session(sid)
+    ids = _completed_ids(loaded)
+    assert CAP_A in ids and CAP_B in ids, ids
+
+
+def test_persist_pending_none_result_is_fail_closed(driver, monkeypatch):
+    driver_mod, _store = driver
+    monkeypatch.setattr(driver_mod, "persist_state", lambda state: None)
+    with pytest.raises(PersistClosedError):
+        driver_mod.persist_pending_capability(_seeded_state("sr-none-persist"), CAP_A)

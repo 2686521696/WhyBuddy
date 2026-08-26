@@ -10,7 +10,7 @@ from models.v5_state import Artifact, CapabilityRun, ProducedBy, V5SessionState,
 from datetime import datetime, timezone
 from .slide_rule_orchestrator import orchestrate_plan
 from .slide_rule_executor import execute_capability
-from .persistence import delete_session_record, load_all, load_session_record, save_session_record
+from .persistence import PersistClosedError, delete_session_record, load_all, load_session_record, save_session_record
 from .slide_rule_coverage import evaluate_coverage_gate
 from .slide_rule_interactive_gates import (
     open_human_question_gap_count,
@@ -220,6 +220,14 @@ def save_session(state: V5SessionState) -> V5SessionState:
     # load_session will see only the guard-protected newer state; fixes review finding 1.
     # Python service save path now respects the persistence guard final result.
     saved = save_session_record(state)
+    # checkpoint 是证据链。save_session_record 可能已经把会话正文落了，
+    # 再 load 成功并不能当存档成功——PUT 200 会让客户端以为能回退到这一轮。
+    # ⚠ 2026-08-27：只在 save_session_record 判 fail-closed、save_session
+    # 回读正文当成功，HTTP 永远 200。
+    if isinstance(saved, dict) and saved.get("ok") is False:
+        reason = str(saved.get("reason") or "persist_failed")
+        if reason == "checkpoint_write_failed":
+            raise PersistClosedError(reason, str(saved.get("message") or ""))
     # 库后端会把刚写下去的权威状态一并带回来（persistence 里手上就有），
     # 直接用它对账，省掉一趟全量回读——那趟在 HTTP 通道上要驮 ~300KB。
     # 文件后端不带这个字段，照旧走下面的 load 对账。

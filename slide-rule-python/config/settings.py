@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     # them (execute concurrently, commit sequentially in selection order).
     # Explicit false selects the serial reference path unchanged. Env var of the
     # same name wins at runtime (checked dynamically by _parallel_caps_enabled).
+    #
+    # persist-before-next-LLM（一轮里 A 落盘再跑 B，崩溃不重烧 A）要求串行：
+    # SLIDERULE_PARALLEL_CAPS=false。默认 ON 先把整组 LLM 花完再顺序 commit。
     SLIDERULE_PARALLEL_CAPS: bool = True
 
     # Durable task (mission) store for the /api/tasks surface (routes/tasks.py).

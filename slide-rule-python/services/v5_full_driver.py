@@ -50,12 +50,16 @@ def persist_pending_capability(
     """
     record_pending_run(state, capability_id, loop, selected, status, run_id)
     result = persist_state(state)
-    if isinstance(result, dict) and not result.get("ok"):
-        raise PersistClosedError(
-            str(result.get("reason") or "pending_write_failed"),
-            str(result.get("message") or ""),
-        )
-    return result if result is not None else {"ok": True}
+    # 非 dict / None 也是没写成。假装 ok 是 fail-open：mock 或以后改返回值
+    # 会让调用方接着跑下一个能力，崩溃后再烧一遍 LLM。
+    if not isinstance(result, dict) or not result.get("ok"):
+        reason = "pending_write_failed"
+        message = "persist_state returned no result"
+        if isinstance(result, dict):
+            reason = str(result.get("reason") or reason)
+            message = str(result.get("message") or "")
+        raise PersistClosedError(reason, message)
+    return result
 
 
 def _result_to_dict(result: Any) -> Dict[str, Any]:
@@ -151,6 +155,10 @@ def _commit_capability_result(
 #
 # The serial code path below stays intact (reference semantics) and is chosen
 # whenever the flag is explicitly false (or a single capability is selected).
+#
+# ⚠ persist-before-next-LLM（A/B 跑完再挂、恢复不重烧 A/B）要串行：
+# SLIDERULE_PARALLEL_CAPS=false。默认 ON 先把整组 LLM 花掉再顺序 commit；
+# gather 中途崩会整组重烧，commit 之间崩只跳过已经落 pending 的。
 # ---------------------------------------------------------------------------
 
 def _parallel_caps_enabled() -> bool:
@@ -420,17 +428,22 @@ def _commit_executed_outcome(
     loop: int,
     outcome: Dict[str, Any],
     parallel: bool = True,
+    selected: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
     """Phase C: apply one capability's state mutations (sequential, selection order).
 
     Success: commit_artifact + run result/timing + capability_complete (same as serial).
     Error: record_capability_run_error + degraded awaitDetail (same as serial) — an
     errored capability never prevents the other caps' commits.
+
+    `selected` is the full batch (not `[sel]`). pending.selected 必须记下整组，
+    崩溃恢复才认同一批；只传当前这一条会把台账缩成单能力。
     """
     cap = sel["capabilityId"]
     role = sel.get("roleId", "agent")
     turn_id = f"loop-{loop}"
     run_id = f"run-{loop}-{cap}"
+    batch = selected if selected else [sel]
     if outcome["ok"]:
         _commit_capability_result(
             state,
@@ -448,7 +461,7 @@ def _commit_executed_outcome(
             text=f"capability_completed: {cap}", roleId=role, order=2,
         )
         persist_pending_capability(
-            state, cap, loop, [sel], "ok", run_id,
+            state, cap, loop, batch, "ok", run_id,
         )
     else:
         from .slide_rule_session import record_capability_run_error
@@ -467,7 +480,7 @@ def _commit_executed_outcome(
             text=f"capability_completed: {cap} (error)", roleId=role, order=2,
         )
         persist_pending_capability(
-            state, cap, loop, [sel], "error", run_id,
+            state, cap, loop, batch, "error", run_id,
         )
         state.awaitDetail = (getattr(state, "awaitDetail", None) or "") + f"; degraded cap {cap}"
 
@@ -490,7 +503,9 @@ def _run_selected_batch_parallel(state: V5SessionState, selected: List[Dict[str,
     for group in _split_parallel_segments(selected):
         outcomes = _execute_group_parallel(state, group, turn_id)
         for sel, outcome in zip(group, outcomes):
-            _commit_executed_outcome(state, sel=sel, loop=loop, outcome=outcome, parallel=True)
+            _commit_executed_outcome(
+                state, sel=sel, loop=loop, outcome=outcome, parallel=True, selected=selected,
+            )
     _append_loop_timing_event(state, loop, len(selected), int((time.time() - t_loop) * 1000))
     persist_state(state)
 
@@ -2211,7 +2226,13 @@ async def drive_full_v5_session_stream(
                     outcomes = batch_task.result()
                     for sel, outcome in zip(group, outcomes):
                         await asyncio.to_thread(
-                            _commit_executed_outcome, state, sel=sel, loop=loop, outcome=outcome, parallel=True
+                            _commit_executed_outcome,
+                            state,
+                            sel=sel,
+                            loop=loop,
+                            outcome=outcome,
+                            parallel=True,
+                            selected=to_run,
                         )
                         yield {
                             "type": "reasoning_step_result",

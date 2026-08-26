@@ -24,7 +24,7 @@ from models.v5_state import CapabilityRun, V5SessionState
 from middlewares.current_user import CurrentUserOptional
 from services import app_access
 from services.slide_rule_session import create_session, delete_session, load_session, save_session, drive_reasoning_turn, pick_next_capabilities
-from services.persistence import load_all
+from services.persistence import PersistClosedError, load_all
 from services.slide_rule_marathon import drive_marathon
 from services.v5_full_driver import drive_full_v5_session, drive_full_v5_session_stream, transient_blocked_signal, _result_to_dict
 from services.v5_publish_closure_response import derive_publish_closure_response
@@ -703,7 +703,11 @@ def get_sess(
         # core state for equal lastTurnId (stale-clobber protection), so the write may be a
         # no-op — the GET response must still return the repaired state, not the guard's
         # prior (mojibake) snapshot. Do not reassign from save_session here.
-        save_session(state)
+        try:
+            save_session(state)
+        except PersistClosedError:
+            # sanitize 落盘是增强：存档失败不该把 GET 打成 500。
+            pass
     return {"state": state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
 
 def _cap_turn_narrations(state: V5SessionState) -> None:
@@ -755,6 +759,10 @@ def save_sess(
     # 之后这条会话谁都读不到（无主 = private = 只有超管可见）。
     # 实测：POST 建好（owner=u-test-default）→ PUT 一次 → DELETE 返回 404。
     client_input.pop("ownerId", None)
+    # pendingRuns 是服务端 crash-recovery 台账，跟 ownerId 同一类事故：
+    # 前端 PUT 全量 state 默认 None / {}，merge setattr 会把已完成的 A/B
+    # 抹掉，崩溃恢复再烧一遍 LLM。pop + 下面 exclude，persist restore 是第二闸。
+    client_input.pop("pendingRuns", None)
     # publishClosure is client-side derived evidence projection (from python /drive-full); safe for client contrib roundtrip.
     # Do not pop; allow in V5SessionState parse + updates merge for frontend session store persistence (119).
     # Legacy sessions load with default None (see model).
@@ -799,7 +807,7 @@ def save_sess(
             # lastTurnId / specFirstPages 也是服务端的：过夜实测前端 PUT 带
             # 新 lastTurnId、旧页面/无版本史，落库失败后把旧指针钉死。
             # 409 守卫仍看 client lastTurnId（更旧的请求照样拒），只是合并时不吃。
-            updates = client_contrib.model_dump(exclude={"sessionId", "ownerId", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents", "modelVersions", "currentModelVersionId", "lastTurnId", "specFirstPages"})
+            updates = client_contrib.model_dump(exclude={"sessionId", "ownerId", "pendingRuns", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents", "modelVersions", "currentModelVersionId", "lastTurnId", "specFirstPages"})
             for k, v in updates.items():
                 if hasattr(merged, k):
                     setattr(merged, k, v)
@@ -834,7 +842,13 @@ def save_sess(
     # Fixes review finding 2.
     _cap_turn_narrations(state)
     state, _ = sanitize_session_state(state)
-    authoritative = save_session(state)
+    try:
+        authoritative = save_session(state)
+    except PersistClosedError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={"ok": False, "reason": exc.reason, "message": exc.message},
+        )
     authoritative, _ = sanitize_session_state(authoritative)
     _sessions[sid] = authoritative
     return {"ok": True, "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_FULLPATH, "backend": PYTHON_BACKEND}
