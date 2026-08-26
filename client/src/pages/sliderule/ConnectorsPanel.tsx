@@ -31,35 +31,15 @@
 
 import React from "react";
 import { Alert, Button, Empty, Input, Table, Tag } from "antd";
-import {
-  BarChart3,
-  Check,
-  CloudSun,
-  Plug,
-  Plus,
-  RefreshCw,
-  Search,
-} from "lucide-react";
+import { Check, Plus, RefreshCw, Search } from "lucide-react";
+
+import { ConnectorIcon } from "./connector-art/connector-icons";
 
 import {
   fetchConnectorRows,
   type ConnectorFetchResult,
   type ConnectorSpec,
 } from "./connectors-client";
-
-/** 图标名 → 图案。⚠ 认不出一律回落成插头，不抛也不留空。 */
-const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
-  weather: CloudSun,
-  chart: BarChart3,
-  plug: Plug,
-};
-
-/** 图标底色，跟着图标名走（同一个连接器每次进来颜色一样）。 */
-const ICON_TONE: Record<string, string> = {
-  weather: "bg-[#e8f2ff] text-[#2b7fff]",
-  chart: "bg-[#e9f9f0] text-[#0f9d58]",
-  plug: "bg-[#f1f5f9] text-[#64748b]",
-};
 
 const FEATURED = "精选";
 
@@ -79,9 +59,6 @@ function ConnectorCard({
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState<ConnectorFetchResult | null>(null);
 
-  const Icon = ICONS[spec.icon] ?? ICONS.plug!;
-  const tone = ICON_TONE[spec.icon] ?? ICON_TONE.plug!;
-
   const preview = async () => {
     setBusy(true);
     try {
@@ -93,28 +70,27 @@ function ConnectorCard({
 
   return (
     <div
-      className={`rounded-xl border bg-white transition ${
-        open ? "border-[#d6e4ff] shadow-[0_6px_18px_rgba(15,23,42,0.06)]" : "border-[#eceff3] hover:border-[#dbe2ea]"
+      className={`rounded-2xl border bg-white transition ${
+        open
+          ? "border-[#d6e4ff] shadow-[0_8px_24px_rgba(15,23,42,0.07)]"
+          : "border-[#eef1f5] hover:border-[#dbe2ea] hover:shadow-[0_4px_14px_rgba(15,23,42,0.05)]"
       }`}
       data-testid="connector-card"
       data-connector={spec.id}
       data-attached={attached ? "1" : "0"}
     >
-      <div className="flex items-start gap-3 p-3.5">
-        <span
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${tone}`}
-        >
-          <Icon className="h-5 w-5" />
-        </span>
+      <div className="flex items-start gap-3.5 p-4">
+        {/* 真图稿（多色 SVG），不是字体图标 —— 见 connector-art 的头注 */}
+        <ConnectorIcon icon={spec.icon} className="h-12 w-12" />
         <button
           type="button"
           data-testid="connector-expand"
           onClick={() => setOpen(v => !v)}
-          className="min-w-0 flex-1 text-left"
+          className="min-w-0 flex-1 pt-0.5 text-left"
           title="展开：填参数、试取真数据"
         >
           <span className="flex items-center gap-1.5">
-            <span className="truncate text-[14px] font-semibold text-stone-800">
+            <span className="truncate text-[15px] font-semibold text-stone-800">
               {spec.name}
             </span>
             <Tag
@@ -129,35 +105,42 @@ function ConnectorCard({
               </Tag>
             )}
           </span>
-          <span className="mt-1 block text-[12.5px] leading-5 text-stone-500">
+          <span className="mt-1.5 block text-[13px] leading-[22px] text-stone-500">
             {spec.description}
           </span>
-          <span className="mt-1 block text-[11px] text-stone-400">
+          <span className="mt-1.5 block text-[11px] text-stone-400">
             落成实体「{spec.entityName}」· {spec.fields.length} 个字段 · 来源{" "}
             {spec.source}
           </span>
         </button>
-        {/* 「+ / ✓ 已添加」= 挂不挂在这一轮，跟输入框 `/` 同一条路径 */}
+        {/* 「+ / ✓ 已添加」= 挂不挂在这一轮，跟输入框 `/` 同一条路径。
+            照效果图做成圆钮 + 底下一行小字。 */}
         <button
           type="button"
           data-testid="connector-attach"
           aria-pressed={attached}
           onClick={onToggle}
           title={attached ? "已挂在这一轮，点一下摘掉" : "挂到这一轮推演上"}
-          className={`flex h-7 shrink-0 items-center gap-1 rounded-full px-2 text-[12px] transition ${
-            attached
-              ? "bg-[#f0f9f2] text-[#0f9d58]"
-              : "border border-[#e5e7eb] text-stone-400 hover:border-[#c7d2e0] hover:text-stone-700"
-          }`}
+          className="flex shrink-0 flex-col items-center gap-1 pt-1"
         >
-          {attached ? (
-            <>
-              <Check className="h-3.5 w-3.5" />
-              已添加
-            </>
-          ) : (
-            <Plus className="h-4 w-4" />
-          )}
+          <span
+            className={`flex h-8 w-8 items-center justify-center rounded-full border transition ${
+              attached
+                ? "border-[#bfe6cd] bg-[#eef9f2] text-[#0a8f52]"
+                : "border-[#e5e7eb] text-stone-400 hover:border-[#b9c6d6] hover:bg-[#f7f9fc] hover:text-stone-700"
+            }`}
+          >
+            {attached ? (
+              <Check className="h-4 w-4" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
+          </span>
+          <span
+            className={`text-[11px] leading-4 ${attached ? "text-stone-400" : "text-transparent"}`}
+          >
+            已添加
+          </span>
         </button>
       </div>
 
@@ -380,7 +363,7 @@ export function ConnectorsPanel({
           }
         />
       ) : (
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
+        <div className="mt-5 grid grid-cols-1 gap-3.5 md:grid-cols-2 2xl:grid-cols-3">
           {shown.map(c => {
             const attached = attachedIds.includes(c.id);
             return (

@@ -12,7 +12,8 @@
  *   C  标签能一个个摘掉；C2 正文空着时退格摘最后一枚
  *   H  侧栏分组 + 选中项没有左竖条；H2 假箭头不许有；H3 子项真的切得动页面
  *   D  「扩展中心」页三层都在
- *   E0 卡片墙只列后端真有的连接器；E3 「+/已添加」真的挂到这一轮
+ *   E0 卡片墙只列后端真有的连接器；E1 每张卡有自己那张真图稿
+ *   E3 「+/已添加」真的挂到这一轮
  *   E  连接器页「试取真数据」拿回的是**真值**，不是示例
  *   E2 认不出的城市如实报错，且**一行都不显示**  ← 跟 E 是一对
  *   F  伙伴依赖齐时可用、缺依赖时按钮禁用并说明缺什么
@@ -339,6 +340,32 @@ async function main() {
           JSON.stringify([...backendIds].sort()) &&
         countText === `${backendIds.length} 个`,
       `后端 ${JSON.stringify(backendIds)} · 卡片 ${JSON.stringify(cardIds)} · 页面写 ${countText}`
+    );
+
+    /*
+     * E1：卡片上是**真图稿**，而且每个连接器画的是它自己那张。
+     *
+     * ⚠ 判据要盯"画的是不是它自己那张"，不是"有没有图标"。全都回落成插头
+     *   一样有图标、一样不报错，只是一排一模一样的灰插头——那是"配了等于
+     *   没配"，而这正是这类映射表最容易烂掉的方式（后端加连接器、前端忘了
+     *   加图稿）。
+     */
+    const arts = await page.$$eval('[data-testid="connector-card"]', els =>
+      els.map(e => ({
+        id: e.getAttribute("data-connector"),
+        art:
+          e
+            .querySelector('[data-testid="connector-icon"]')
+            ?.getAttribute("data-art") ?? null,
+        svg: !!e.querySelector('[data-testid="connector-icon"] svg'),
+      }))
+    );
+    check(
+      "E1 每张卡都有自己那张真图稿（不是一排回落的灰插头）",
+      arts.length > 0 &&
+        arts.every(a => a.svg && a.art && a.art !== "plug") &&
+        new Set(arts.map(a => a.art)).size === arts.length,
+      JSON.stringify(arts)
     );
 
     /* E3：卡片上的「+ / ✓ 已添加」= 挂不挂在这一轮，跟 `/` 同一条路径。
