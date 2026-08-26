@@ -140,6 +140,8 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
                     "restatement": {"type": "string"},
                     "device": {"type": "string"},
                     "variant": {"type": "string"},
+                    "wantEvidence": {"type": "boolean"},
+                    "wantFeasibilityReport": {"type": "boolean"},
                 },
             },
         },
@@ -269,6 +271,29 @@ def _write_confirmed_goal(state: V5SessionState, restatement: str) -> None:
     goal["text"] = text
     if not goal.get("status"):
         goal["status"] = "clear"
+    state.goal = goal
+
+
+def _copy_scope_opt_in_into_goal(state: V5SessionState) -> None:
+    """把范围卡勾选写进 goal，供 persist-as-authority 工厂短清单读取。
+
+    缺字段 = 没勾。不把 HTTP factoryProfile 当勾选通道。
+    """
+    want_evidence = False
+    want_report = False
+    for row in reversed(list(getattr(state, "controlTranscript", None) or [])):
+        if not isinstance(row, dict) or row.get("kind") != "scope_card":
+            continue
+        want_evidence = bool(row.get("wantEvidence"))
+        want_report = bool(row.get("wantFeasibilityReport"))
+        break
+    if not want_evidence and not want_report:
+        return
+    goal = dict(state.goal) if isinstance(state.goal, dict) else {}
+    if want_evidence:
+        goal["wantEvidence"] = True
+    if want_report:
+        goal["wantFeasibilityReport"] = True
     state.goal = goal
 
 
@@ -410,6 +435,8 @@ async def _park_scope(
     device: str = "unspecified",
     variant: str = "full",
     user_text: str = "",
+    want_evidence: bool = False,
+    want_feasibility_report: bool = False,
 ) -> AsyncIterator[Dict[str, Any]]:
     state.runtimePhase = "awaiting"
     state.awaitReason = "control_scope"
@@ -422,6 +449,8 @@ async def _park_scope(
             "text": restatement,
             "device": device,
             "variant": variant,
+            "wantEvidence": bool(want_evidence),
+            "wantFeasibilityReport": bool(want_feasibility_report),
         },
     )
     _persist(state)
@@ -460,6 +489,7 @@ async def _confirm_rehearse_and_handoff(
     """确认 rehearse：空 goal 写入复述句、persist，再交给 persist-as-authority 信封。"""
     restatement = _confirmed_restatement(state, user_text)
     _write_confirmed_goal(state, restatement)
+    _copy_scope_opt_in_into_goal(state)
     _append_transcript(
         state,
         {"role": "system", "kind": "scope_confirmed", "text": restatement},
@@ -924,6 +954,8 @@ async def _dispatch_tool(
             device=str(args.get("device") or preferred_device or "unspecified"),
             variant=str(args.get("variant") or ("thin" if original_goal else "full")),
             user_text=user_text,
+            want_evidence=bool(args.get("wantEvidence")),
+            want_feasibility_report=bool(args.get("wantFeasibilityReport")),
         ):
             yield event
         return
@@ -941,6 +973,7 @@ async def _dispatch_tool(
             return
         restatement = _confirmed_restatement(state, user_text)
         _write_confirmed_goal(state, restatement)
+        _copy_scope_opt_in_into_goal(state)
         _persist(state)
         async for event in _handoff_factory(
             state,

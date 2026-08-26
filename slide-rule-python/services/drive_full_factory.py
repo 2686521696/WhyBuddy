@@ -12,6 +12,7 @@ on_complete save_session。
 脚本方言 /drive-full-stream 可 require_session_id=False + fallback_state。
 
 内部 async-for drive_full_v5_session_stream(..., profile=)。
+profile="app" 由 rehearse 传入；生成器消费短清单。禁止 HTTP factoryProfile。
 控制面 rehearsal_control 只许调本 helper，不许直接调生成器。
 """
 

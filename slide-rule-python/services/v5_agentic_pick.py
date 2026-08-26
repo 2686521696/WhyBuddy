@@ -449,6 +449,18 @@ def _validate_proposal(
     return picks or None
 
 
+def should_run_agentic_pick(profile: str = "full", *, repair: bool = False) -> bool:
+    """Agentic pick 是作文能力工厂前段。产品 rehearse（profile=app）必须跳过。
+
+    ⚠ 2026-08-27 M18：只关规则 pick 不关这里 = 一半不生效（Claude.md §4）。
+    生成器在同一轮同时跳过 pick_next_capabilities。repair 修什么以门说了算，
+    从不走 LLM 选材。本函数不改词表，只给调用点一个开关。
+    """
+    if repair:
+        return False
+    return str(profile or "full") != "app"
+
+
 def agentic_pick_next_capabilities(
     state: V5SessionState,
     user_text: str,
@@ -457,7 +469,12 @@ def agentic_pick_next_capabilities(
     max_loops: int = 6,
 ) -> Optional[dict]:
     """LLM 看全局提案下一批能力。返回 {"picks": [...], "rationale": str}；
-    停用/失败/提案全被门剔除 → None（调用方回落规则版）。"""
+    停用/失败/提案全被门剔除 → None（调用方回落规则版）。
+
+    Factory profile="app" 在 drive_full_v5_session_stream 调用点跳过本函数
+    （should_run_agentic_pick）。不要在这里加一个静默 no-op 的 profile 参数
+    ——那样规则 pick 仍会跑，短清单等于没通电。
+    """
     if not agentic_pick_enabled():
         return None
     import sys as _sys

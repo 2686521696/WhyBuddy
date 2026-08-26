@@ -1850,6 +1850,58 @@ def _progress_heartbeat_event(active: Dict[str, Any], *, elapsed_ms: int) -> Dic
     }
 
 
+def _truthy_scope_flag(value: Any) -> bool:
+    if value is True:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return False
+
+
+def _scope_opted_in(state: "V5SessionState", *keys: str) -> bool:
+    """范围卡勾了取证 / 可行性报告才把散文能力加回短清单。
+
+    读 goal 与 controlTranscript 最后一张 scope_card。缺字段 = 没勾 = 跳过。
+    """
+    goal = getattr(state, "goal", None) or {}
+    if isinstance(goal, dict):
+        for key in keys:
+            if _truthy_scope_flag(goal.get(key)):
+                return True
+    for row in reversed(list(getattr(state, "controlTranscript", None) or [])):
+        if not isinstance(row, dict):
+            continue
+        if row.get("kind") not in ("scope_card", "scope_confirmed"):
+            continue
+        for key in keys:
+            if _truthy_scope_flag(row.get(key)):
+                return True
+        break
+    return False
+
+
+def _app_profile_short_picks(state: "V5SessionState") -> list:
+    """产品 rehearse 短清单：可选取证 → spec-first 收口。
+
+    ⚠ 2026-08-27 M18：工厂点火前不再跑 critique/risk/report 散文。
+    只改规则 pick 不改 agentic pick = 一半不生效；短清单在生成器循环里
+    替换那两处调用点，不改 pick_next_capabilities 词表。
+    """
+    picks: list = []
+    if _scope_opted_in(state, "wantEvidence", "includeEvidence"):
+        picks.append({"capabilityId": "evidence.search", "roleId": "接地"})
+    if _scope_opted_in(state, "wantFeasibilityReport", "includeFeasibilityReport"):
+        picks.extend(
+            [
+                {"capabilityId": "risk.analyze", "roleId": "安全"},
+                {"capabilityId": "critique.generate", "roleId": "挑刺"},
+                {"capabilityId": "report.write", "roleId": "综合"},
+            ]
+        )
+    picks.append({"capabilityId": "appbundle.runtimeClosure", "roleId": "综合"})
+    return picks
+
+
 async def drive_full_v5_session_stream(
     initial_state: "V5SessionState",
     max_loops: int = 10,
@@ -1872,10 +1924,10 @@ async def drive_full_v5_session_stream(
     模型原样复用（闭环重建本就先匹配既有产物，非 blocked 闭环直接返回）。
     agentic pick 不参与（修什么以门说了算），轮数收紧到 2。
 
-    profile 由信封 helper 透传（rehearse 可传 "app"）。本 PR 不把
-    factoryProfile 做成 HTTP 旗标；PR-5 才消费短名单。
+    profile 由信封 helper 透传（rehearse 传 "app"）。禁止把 factoryProfile
+    做成 HTTP 旗标。profile=="app" 时跳过 orchestrate_plan + 规则 pick +
+    agentic pick，改走短清单；repair 仍走 pick_repair_capabilities。
     """
-    _ = profile
     import asyncio
     import queue as _queue
     import time as _time
@@ -2095,16 +2147,25 @@ async def drive_full_v5_session_stream(
             # 所以现在从进入这一轮就报，一直报到真开始干活。
             yield {"type": "reasoning_step", "label": "planning", "loop": loop}
             _planning_ok = True
-            await asyncio.to_thread(orchestrate_plan, state, f"loop-{loop}", ui)
-            picks = await asyncio.to_thread(
-                (lambda st, _ui: pick_repair_capabilities(st)) if repair else pick_next_capabilities,
-                state, ui,
+            # ⚠ 2026-08-27 M18：产品 rehearse 短清单。规则 pick 和 agentic pick
+            # 必须在同一分支跳过——只改一条等于一半不生效（Claude.md §4）。
+            # repair 仍走门标红项，禁止短路到 app 短清单。
+            if repair:
+                await asyncio.to_thread(orchestrate_plan, state, f"loop-{loop}", ui)
+                picks = await asyncio.to_thread(
+                    lambda st, _ui: pick_repair_capabilities(st),
+                    state, ui,
+                )
+            elif profile == "app":
+                picks = _app_profile_short_picks(state)
+            else:
+                await asyncio.to_thread(orchestrate_plan, state, f"loop-{loop}", ui)
+                picks = await asyncio.to_thread(pick_next_capabilities, state, ui)
+            from .v5_agentic_pick import (
+                agentic_pick_next_capabilities,
+                should_run_agentic_pick,
             )
-            # E32 agentic pick（默认 on）：与同步驱动同一语义（LLM 提案替换非空
-            # 规则选材，收敛权归规则，台账 source="llm"，失败回落）。
-            # 修复轮不参与——修什么以覆盖门说了算，不给 LLM 扩范围的机会。
-            if picks and not repair:
-                from .v5_agentic_pick import agentic_pick_next_capabilities
+            if picks and should_run_agentic_pick(profile, repair=repair):
                 _proposal = await asyncio.to_thread(
                     agentic_pick_next_capabilities, state, ui, loop_index=loop, max_loops=max_loops
                 )
@@ -2430,7 +2491,10 @@ async def drive_full_v5_session_stream(
             if gate.get("passed"):
                 state.goal["status"] = "clear"
                 # 交付意图：门通过但交付清单未出全时继续循环（同步驱动同款逻辑）。
-                if await asyncio.to_thread(_has_pending_delivery_picks, state, user_instruction):
+                # app 短清单不走作文交付链，继续循环只会把 runtimeclosure 再跑一遍。
+                if profile != "app" and await asyncio.to_thread(
+                    _has_pending_delivery_picks, state, user_instruction
+                ):
                     loop += 1
                     await asyncio.to_thread(persist_state, state)
                     continue
