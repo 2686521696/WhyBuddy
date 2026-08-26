@@ -7,6 +7,7 @@
  *   A  输入框打 `/` 弹出能力面板，连接器/技能/伙伴都在
  *   A2 网址里的斜杠**不弹**            ← 跟 A 是一对，错弹会吃掉方向键和回车
  *   A3 真鼠标点得中条目               ← 键盘不做命中测试，这条才照得出 pointer-events
+ *   A4 输入框里的「/ 技能·连接器」钮弹同一个面板；A5 反悔时收回那个斜杠
  *   B  打字能筛，回车选中后正文里不留 `/词`（能力是芯片不是正文）
  *   B2 `/` 选伙伴只挂标签，不往正文灌起手意图 ← 跟 G 是一对，说清区别
  *   C  标签能一个个摘掉；C2 正文空着时退格摘最后一枚
@@ -224,6 +225,64 @@ async function main() {
       els => els.map(e => e.getAttribute("data-key"))
     );
     check("C 标签能一个个摘掉", chipsAfter.length === 0, JSON.stringify(chipsAfter));
+
+    /* ── A4 / A5：输入框里的「/ 技能·连接器」提示钮 ─────────────────
+       2026-08-26 用户："输入框中应该加入提醒，比如输入 / 之后，可以选择
+       技能或者连接器"。钮点下去走的是**同一条**路径（真往正文插一个 `/`）。 */
+    await page.click(TA);
+    await page.fill(TA, "做个天气页");
+    await page.waitForTimeout(300);
+    await page.click('[data-testid="sliderule-slash-hint"]');
+    await page.waitForTimeout(600);
+    const hintOpened = await page.$$eval(
+      '[data-testid="sliderule-slash-item"]',
+      els => els.length
+    );
+    /* 选一个，验它跟手打斜杠走的是同一条路：芯片挂上、正文里**不留斜杠** */
+    await page.click('[data-testid="sliderule-slash-item"]');
+    await page.waitForTimeout(700);
+    const afterPick = {
+      chips: await page.$$eval('[data-testid="sliderule-capability-chip"]', els =>
+        els.map(e => e.getAttribute("data-key"))
+      ),
+      text: await page.inputValue(TA),
+    };
+    check(
+      "A4 输入框里的「/ 技能·连接器」钮弹出同一个面板，选中后芯片挂上且正文不留斜杠",
+      hintOpened > 0 &&
+        afterPick.chips.length === 1 &&
+        !afterPick.text.includes("/") &&
+        afterPick.text.trim() === "做个天气页",
+      `弹出 ${hintOpened} 项 · 芯片 ${JSON.stringify(afterPick.chips)} · 正文 ${JSON.stringify(afterPick.text)}`
+    );
+
+    /*
+     * A5：点了钮又反悔（Esc）——**那个替用户打的斜杠要收回去**。
+     *
+     * ⚠ 跟 A4 是一对。只判"能弹出来"的话，插进去的斜杠留在正文里也照样绿，
+     *   然后它会跟着正文一起发出去，模型把 "做个天气页 /" 当成用户的措辞。
+     */
+    const beforeSeed = await page.inputValue(TA);
+    await page.click('[data-testid="sliderule-slash-hint"]');
+    await page.waitForTimeout(500);
+    const seeded = await page.inputValue(TA);
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(500);
+    const reverted = await page.inputValue(TA);
+    check(
+      "A5 点了提示钮又按 Esc：替你打的那个斜杠收回去，正文回到原样",
+      seeded.includes("/") && reverted === beforeSeed,
+      `插之前 ${JSON.stringify(beforeSeed)} · 插之后 ${JSON.stringify(seeded)} · Esc 之后 ${JSON.stringify(reverted)}`
+    );
+
+    /* 清干净，别影响后面的判据 */
+    await page.fill(TA, "");
+    for (const _ of [0, 1, 2]) {
+      const chip = page.locator('[data-testid="sliderule-capability-chip"] button').first();
+      if (!(await chip.count())) break;
+      await chip.click();
+      await page.waitForTimeout(300);
+    }
 
     /* ── H：侧栏导航（2026-08-26 用户给了样式截图并当场否掉左竖条）───
      *

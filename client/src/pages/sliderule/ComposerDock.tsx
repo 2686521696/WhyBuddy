@@ -57,6 +57,7 @@ import {
   applySlashPick,
   filterSlashItems,
   moveHighlight,
+  seedSlash,
   slashQueryAt,
   type SlashItem,
 } from "./composer-slash";
@@ -762,6 +763,42 @@ export function ComposerDock({
     setSlashIndex(0);
   }, [connectorLoad, refreshConnectors]);
 
+  /*
+   * 「/ 技能·连接器」那颗提示钮**替用户打这个斜杠**。
+   *
+   * 2026-08-26 用户反馈：输入框里没有任何东西告诉人可以打 `/`。斜杠唤起是
+   * 学来的手势，不写出来就等于没有——这条链路（技能/连接器挂到这一轮）
+   * 最主要的入口一直藏着。
+   *
+   * ⚠ 点它是**真的往正文插一个 `/`**，不是另开一个假面板。理由是别让同一件
+   *   事有两套状态：面板的开关、筛选、回车选中全都吊在 `slashQueryAt(正文)`
+   *   上（见 composer-slash.ts）。绕过正文另设一个 open 标志，等于把判定
+   *   摊成两处，改一处不报错、只有一半生效——仓里第四条。
+   *
+   * ⚠ 插之前要看前一个字符：`slashQueryAt` 只认行首或空白后面的斜杠
+   *   （`https://`、`2026/08/25` 不该弹）。紧挨着字打进去面板不会弹，
+   *   用户看到的就是"点了没反应"。所以必要时先补一个空格。
+   */
+  const slashSeedRef = React.useRef(false);
+
+  const openSlashPicker = React.useCallback(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.focus();
+    const seeded = seedSlash(ta.value, ta.selectionStart ?? ta.value.length);
+    const caret = seeded.caret;
+    slashSeedRef.current = true;
+    setInput(seeded.text);
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(caret, caret);
+      adjustTextareaHeight();
+      syncSlash();
+    });
+  }, [setInput, adjustTextareaHeight, syncSlash]);
+
   /** 挂不上时给出的人话原因（画在面板底部）。挂上了就清空。 */
   const [slashNote, setSlashNote] = React.useState("");
   /*
@@ -775,6 +812,30 @@ export function ComposerDock({
    *   （preventDefault 那行留着——它在正常路径上确实省掉一次焦点抖动。）
    */
   const slashPointerRef = React.useRef(false);
+
+  /**
+   * 关掉面板。
+   *
+   * ⚠ **提示钮插进去的那个 `/` 要一起收走。** 不收的话：点了提示钮、又按 Esc
+   *   或点到别处，输入框里就白白多出一个斜杠（还可能带着刚打的半个词），
+   *   下一步直接发出去，那个 `/天` 会跟着进提示词被模型当成用户的措辞。
+   *   用户自己手打的斜杠**不动**——那是他正在写的字。
+   */
+  const dismissSlash = React.useCallback(() => {
+    if (slashSeedRef.current && slash) {
+      const applied = applySlashPick(input, slash);
+      setInput(applied.text);
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.setSelectionRange(applied.caret, applied.caret);
+        adjustTextareaHeight();
+      });
+    }
+    slashSeedRef.current = false;
+    setSlash(null);
+    setSlashNote("");
+  }, [slash, input, setInput, adjustTextareaHeight]);
 
   const pickCapability = React.useCallback(
     (item: SlashItem) => {
@@ -848,6 +909,9 @@ export function ComposerDock({
        *   库页上那颗「用这个伙伴」按钮**保留**灌起手意图：那是"照这个模板
        *   开一局"的显式动作，跟"我正在打字，顺手挂个能力"是两回事。
        */
+      /* ⚠ 选中成功时**不能**走 dismissSlash：applySlashPick 上面已经把
+         `/查询串` 摘掉了，再摘一次会啃掉正文里紧挨着的字。这里只清标记。 */
+      slashSeedRef.current = false;
       setSlash(null);
       setSlashIndex(0);
     },
@@ -1398,9 +1462,32 @@ export function ComposerDock({
 
               ⚠ 与设备切换不同，这个在**首页和会话内都要有**（用户两张截图都圈了）：
               首页决定新推演用哪套皮，会话内改完下一轮生效。所以不能写 hero &&。 */}
+              {/*
+                「/ 技能·连接器」提示钮 + 设计系统按钮同占第三格。
+                ⚠ hero 是四列栅格（grid-cols-[auto_auto_1fr_auto]），两个元素
+                  分到同一格会**叠在一起**，所以这里包一层 flex 再放进去。
+              */}
+              <div
+                className={
+                  hero
+                    ? "col-start-3 row-start-2 flex min-w-0 items-center gap-1.5 justify-self-start"
+                    : "flex min-w-0 items-center gap-1.5"
+                }
+              >
+                <button
+                  type="button"
+                  data-testid="sliderule-slash-hint"
+                disabled={isRunning}
+                onClick={openSlashPicker}
+                title="挂一个技能或连接器到这一轮（等同于在输入框里打 /）"
+                className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full bg-[#f4f4f5] px-2 text-[12px] text-[#5e5e5e] transition hover:bg-[#ececef] hover:text-[#171717] disabled:opacity-45"
+              >
+                <span className="font-mono text-[13px] leading-none">/</span>
+                技能 · 连接器
+              </button>
               <div
                 ref={designAnchorRef}
-                className={`relative shrink-0 ${hero ? "col-start-3 row-start-2 justify-self-start" : ""}`}
+                className="relative shrink-0"
               >
                 <button
                   type="button"
@@ -1438,6 +1525,7 @@ export function ComposerDock({
                     一路找到 body，跑去左上角。 */}
                 <DesignSystemRail anchorRef={designAnchorRef} />
               </div>
+              </div>
 
               <div
                 className={`min-w-0 ${hero ? "col-span-4 row-start-1" : "flex-1"}`}
@@ -1474,8 +1562,7 @@ export function ComposerDock({
                   onSelect={syncSlash}
                   onBlur={() => {
                     if (slashPointerRef.current) return; // 点的是面板自己
-                    setSlash(null);
-                    setSlashNote("");
+                    dismissSlash();
                   }}
                   onKeyDown={event => {
                     /* ⚠ 能力面板开着时，方向键/回车/Tab 归它，**必须在发送
@@ -1484,8 +1571,7 @@ export function ComposerDock({
                     if (slash) {
                       if (event.key === "Escape") {
                         event.preventDefault();
-                        setSlash(null);
-                        setSlashNote("");
+                        dismissSlash();
                         return;
                       }
                       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -1577,8 +1663,7 @@ export function ComposerDock({
               onPick={pickCapability}
               onHover={setSlashIndex}
               onManage={() => {
-                setSlash(null);
-                setSlashNote("");
+                dismissSlash();
                 navigate("/agent-loop/skills");
               }}
             />

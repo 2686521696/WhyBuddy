@@ -84,6 +84,34 @@ export function slashQueryAt(
   return null;
 }
 
+/**
+ * 「/ 技能·连接器」提示钮替用户打的那个斜杠：在光标处插一个 `/`。
+ *
+ * 2026-08-26 用户反馈"输入框中应该加入提醒"——斜杠唤起是学来的手势，
+ * 界面上不写出来等于没有。提示钮点下去走的是**同一条**路径：真的往正文
+ * 插一个 `/`，再由 `slashQueryAt` 判定弹不弹（别给同一件事另设一套状态）。
+ *
+ * ⚠ 前一个字符不是空白时要**先补一个空格**。`slashQueryAt` 只认行首或空白
+ *   后面的斜杠（`https://`、`2026/08/25`、`and/or` 都不许弹），紧挨着字插
+ *   进去面板不会弹——用户看到的就是"点了没反应"。
+ *   判据 `composer-slash.test.ts` 里那条直接拿 `slashQueryAt` 验插完的结果，
+ *   而不是数空格：两条规则钉在一起，改坏哪一条都红。
+ */
+export function seedSlash(
+  text: string,
+  caret: number
+): { text: string; caret: number } {
+  const src = typeof text === "string" ? text : "";
+  const at = Math.max(0, Math.min(Number(caret) || 0, src.length));
+  const before = src.slice(0, at);
+  const after = src.slice(at);
+  const glue = before && !/\s$/.test(before) ? " " : "";
+  return {
+    text: `${before}${glue}/${after}`,
+    caret: before.length + glue.length + 1,
+  };
+}
+
 function score(item: SlashItem, q: string): number {
   if (!q) return 0;
   const name = item.name.toLowerCase();

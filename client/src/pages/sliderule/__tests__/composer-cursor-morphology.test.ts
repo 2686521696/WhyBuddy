@@ -78,11 +78,20 @@ describe("ComposerDock Cursor 三行形态", () => {
      * 改成直接钉"优化/发送那一簇在 col4"，并确认 col3 的占用者是设计系统而不是
      * 优化按钮。把 refineButton 挪回 col3，下面两条仍必红。
      */
+    /*
+     * ⚠ 2026-08-26：窗口从"往后数 400 字符"改成"数到 col4 为止"。
+     *   col3 里多了一颗「/ 技能·连接器」提示钮之后，设计系统的埋点被挤到
+     *   400 字符之外，这条就红了——而 col3 的**占用者**根本没变。
+     *   数字窗口会随着这一格里多放任何东西而误报；钉到下一格的起点就不会。
+     */
     const col3 = dock.slice(
       dock.indexOf("col-start-3 row-start-2"),
-      dock.indexOf("col-start-3 row-start-2") + 400
+      dock.indexOf("col-start-4 row-start-2")
     );
     expect(col3).toContain("sliderule-composer-design-system");
+    // 提示钮跟设计系统同占 col3（2026-08-26 用户："输入框中应该加入提醒"）
+    // ⚠ 连引号一起钉：只写裸串的话改名成 `...-hint-GONE` 照样是子串，变异咬不住
+    expect(col3).toContain('data-testid="sliderule-slash-hint"');
     expect(col3).not.toContain("{refineButton}");
     expect(dock).not.toContain("col-start-5 row-start-2");
     expect(dock).toContain("sliderule-composer-device");

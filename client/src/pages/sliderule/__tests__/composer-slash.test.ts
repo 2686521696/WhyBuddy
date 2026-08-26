@@ -10,6 +10,7 @@ import {
   filterSlashItems,
   moveHighlight,
   pickedPayload,
+  seedSlash,
   slashQueryAt,
   type SlashItem,
 } from "../composer-slash";
@@ -152,5 +153,50 @@ describe("载荷", () => {
       { kind: "skill", key: "frontend-design" },
     ]);
     expect(JSON.stringify(payload)).not.toContain("按城市取");
+  });
+});
+
+describe("seedSlash：提示钮替用户打的那个斜杠", () => {
+  /*
+   * ⚠ 这一组判据**不数空格**，一律拿 slashQueryAt 验插完的结果——
+   *   插斜杠和"什么时候算斜杠"是同一件事的两半，钉在一起改坏哪半都红。
+   *   只断言 `text === "做个天气页 /"` 的话，把 opensHere 改坏照样绿。
+   */
+  const opens = (text: string, caret: number) => slashQueryAt(text, caret);
+
+  it("空输入框：插出来就是一个斜杠，面板认得出", () => {
+    const r = seedSlash("", 0);
+    expect(r.text).toBe("/");
+    expect(r.caret).toBe(1);
+    expect(opens(r.text, r.caret)).toEqual({ start: 0, end: 1, query: "" });
+  });
+
+  it("正文末尾紧挨着字：补一个空格，面板照样认得出", () => {
+    const r = seedSlash("做个天气页", 5);
+    expect(opens(r.text, r.caret)).not.toBeNull();
+    expect(opens(r.text, r.caret)!.query).toBe("");
+    // 反向：不补空格的话面板压根不弹（这正是"点了没反应"）
+    expect(opens("做个天气页/", 6)).toBeNull();
+  });
+
+  it("光标前已经是空白：不再补第二个空格", () => {
+    const r = seedSlash("做个天气页 ", 6);
+    expect(r.text).toBe("做个天气页 /");
+    expect(opens(r.text, r.caret)).not.toBeNull();
+  });
+
+  it("插在正文中间：后面的字原样留着，光标停在斜杠后面", () => {
+    const r = seedSlash("前面 后面", 3);
+    expect(r.text).toBe("前面 /后面");
+    expect(r.text.slice(r.caret)).toBe("后面");
+    expect(opens(r.text, r.caret)).not.toBeNull();
+    // 光标前是空白，所以不补第二个空格；补了的话正文里会多出个空格
+    expect(r.text).not.toContain("  ");
+  });
+
+  it("越界/脏光标一律夹回来，不抛", () => {
+    expect(seedSlash("abc", 999).caret).toBe(5);
+    expect(seedSlash("abc", -3).text).toBe("/abc");
+    expect(seedSlash(undefined as unknown as string, 0).text).toBe("/");
   });
 });
