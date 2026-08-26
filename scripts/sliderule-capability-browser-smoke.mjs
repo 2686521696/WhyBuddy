@@ -12,6 +12,8 @@
  *   C  标签能一个个摘掉；C2 正文空着时退格摘最后一枚
  *   H  侧栏分组 + 选中项没有左竖条；H2 假箭头不许有；H3 子项真的切得动页面
  *   D  「扩展中心」页三层都在
+ *   I1 技能墙一行四个 + 每个分类各画各的图稿；I2 长文案省略号可悬浮
+ *   I3 圆钮装上/卸掉都落到「已安装」段；I4 分类条真的在筛
  *   E0 卡片墙只列后端真有的连接器；E1 每张卡有自己那张真图稿
  *   E2b 一行四个 + 长文案省略号可悬浮看全文；E2c 短文案不弹
  *   E3 「+/已添加」真的挂到这一轮
@@ -308,6 +310,150 @@ async function main() {
       "D 一页三层：技能 / 连接器 / 伙伴",
       JSON.stringify(layers) === JSON.stringify(["skills", "connectors", "partners"]),
       JSON.stringify(layers)
+    );
+
+    /* ── I：技能层（2026-08-26 按效果图重做版式）────────────────── */
+    await page.click('[data-testid="capability-tab"][data-layer="skills"]');
+    await page.waitForSelector('[data-testid="skills-featured-grid"]', {
+      timeout: 20000,
+    });
+
+    /*
+     * I1：一行四个 + 每张卡是**它自己那张**图稿。
+     *
+     * ⚠ 跟 E1 同一个道理：全都回落成星星一样有图标、一样不报错，只是一屏
+     *   一模一样的灰星——"配了等于没配"。所以判据钉的是"分类各画各的"，
+     *   不是"有没有图标"。79 条技能落在 10 个分类里，所以 art 的**种类数**
+     *   要等于这一屏出现过的分类数，且没有一个是 fallback。
+     */
+    const skillCols = await page.evaluate(() => {
+      const g = document.querySelector('[data-testid="skills-featured-grid"]');
+      return g
+        ? getComputedStyle(g).gridTemplateColumns.split(" ").filter(Boolean).length
+        : 0;
+    });
+    const skillArts = await page.$$eval(
+      '[data-testid="skills-featured-grid"] > div',
+      els =>
+        els.map(e => ({
+          art:
+            e.querySelector('[data-testid="skill-icon"]')?.getAttribute("data-art") ??
+            null,
+          svg: !!e.querySelector('[data-testid="skill-icon"] svg'),
+        }))
+    );
+    const artKinds = new Set(skillArts.map(a => a.art));
+    check(
+      "I1 技能墙一行四个；每个分类画自己那张图稿（不是一屏回落的灰星）",
+      skillCols === 4 &&
+        skillArts.length > 20 &&
+        skillArts.every(a => a.svg && a.art && a.art !== "fallback") &&
+        artKinds.size >= 5,
+      `列数 ${skillCols} · 卡 ${skillArts.length} · 图稿种类 ${artKinds.size}`
+    );
+
+    /*
+     * I2：放不下就省略号 + 悬浮看全文，且弹出来的是**这张卡自己**的全文。
+     *
+     * ⚠ 反面在同一条里：名字那行短，必须 data-clipped="0"。只钉"有截断"的话，
+     *   把 TruncatedText 改成无条件截断也照样绿。
+     */
+    await page.setViewportSize({ width: 1300, height: 940 });
+    await page.waitForTimeout(1200);
+    const clippedDesc = page
+      .locator('[data-testid="skill-desc"][data-clipped="1"]')
+      .first();
+    let skillTip = [];
+    let descFull = "";
+    if (await clippedDesc.count()) {
+      descFull = ((await clippedDesc.textContent()) || "").trim();
+      const bb = await clippedDesc.boundingBox();
+      await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2);
+      await page.waitForTimeout(1400);
+      skillTip = await page.$$eval('[class*="ant-tooltip-inner"]', els =>
+        els.filter(e => e.offsetParent !== null).map(e => (e.textContent || "").trim())
+      );
+    }
+    const shortNames = await page.$$eval('[data-testid="skill-name"]', els =>
+      els.map(e => e.getAttribute("data-clipped"))
+    );
+    check(
+      "I2 放不下的描述出省略号、悬浮看全文；放得下的名字不挂 tooltip",
+      descFull.length > 0 &&
+        skillTip.some(t => t === descFull) &&
+        shortNames.some(c => c === "0"),
+      `全文「${descFull.slice(0, 24)}…」· 浮层 ${JSON.stringify(skillTip.slice(0, 2))} · 名字未截断 ${shortNames.filter(c => c === "0").length}/${shortNames.length}`
+    );
+    await page.mouse.move(4, 4);
+    await page.setViewportSize({ width: 1500, height: 940 });
+    await page.waitForTimeout(900);
+
+    /*
+     * I3：圆钮**真的**装上/卸掉。
+     *
+     * ⚠ 这条是本仓第一条纪律的形态：卡上翻不翻绿是一回事，"已安装"那一段
+     *   有没有真的多出一张卡是另一回事。只钉前者的话，把 installSkill 换成
+     *   一个只改 state 的空实现照样绿。所以一次点击要同时看三处：卡的
+     *   data-installed、已安装段在不在、段里那张卡的 testid。
+     */
+    const firstCard = page.locator('[data-testid^="featured-skill-"]').first();
+    const firstId = (await firstCard.getAttribute("data-testid")).replace(
+      "featured-skill-",
+      ""
+    );
+    const wasInstalled = await firstCard.getAttribute("data-installed");
+    await firstCard.locator('[data-testid="skill-install"]').click();
+    await page.waitForTimeout(700);
+    const afterInstall = {
+      flag: await firstCard.getAttribute("data-installed"),
+      section: await page.locator('[data-testid="skills-installed"]').count(),
+      card: await page
+        .locator(`[data-testid="installed-skill-trae-market/${firstId}"]`)
+        .count(),
+    };
+    await firstCard.locator('[data-testid="skill-install"]').click();
+    await page.waitForTimeout(700);
+    const afterUninstall = {
+      flag: await firstCard.getAttribute("data-installed"),
+      card: await page
+        .locator(`[data-testid="installed-skill-trae-market/${firstId}"]`)
+        .count(),
+    };
+    check(
+      "I3 圆钮装上：卡翻绿 + 已安装段真的多出这张卡；再点一下卸干净",
+      wasInstalled === "0" &&
+        afterInstall.flag === "1" &&
+        afterInstall.section === 1 &&
+        afterInstall.card === 1 &&
+        afterUninstall.flag === "0" &&
+        afterUninstall.card === 0,
+      `装前 ${wasInstalled} · 装后 ${JSON.stringify(afterInstall)} · 卸后 ${JSON.stringify(afterUninstall)}`
+    );
+
+    /*
+     * I4：分类条**真的在筛**。
+     *
+     * ⚠ 判据是"筛完的卡数 === 这个分类 chip 上写的那个数"，两边都是页面上
+     *   看得见的东西，并且互相咬——chip 写死一个数会红，筛选没接上（卡数
+     *   还是 79）也会红。
+     */
+    const secondCat = page.locator('[data-testid="skills-cat"]').nth(1);
+    const catName = await secondCat.getAttribute("data-cat");
+    const catCount = Number(
+      ((await secondCat.textContent()) || "").replace(catName, "").trim()
+    );
+    const allCards = await page.locator('[data-testid^="featured-skill-"]').count();
+    await secondCat.click();
+    await page.waitForTimeout(600);
+    const catFiltered = await page
+      .locator('[data-testid^="featured-skill-"]')
+      .count();
+    await page.locator('[data-testid="skills-cat"]').first().click();
+    await page.waitForTimeout(400);
+    check(
+      `I4 分类「${catName}」筛出来的卡数 === chip 上写的数`,
+      catCount > 0 && catFiltered === catCount && catFiltered < allCards,
+      `chip ${catCount} · 筛后 ${catFiltered} · 全量 ${allCards}`
     );
 
     /* ── E / E2：试取真数据，成功与失败是一对 ─────────────────────── */
