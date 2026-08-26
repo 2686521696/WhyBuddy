@@ -56,8 +56,9 @@ import {
 import {
   CHALLENGE_PREFILL_EVENT,
   dispatchChallengePrefill,
-  isChallengeComposerText,
-} from "./ComposerDock";
+  latestMainArtifactIdFromTurns,
+  resolveChallengeSend,
+} from "./challenge-composer";
 
 // 105 Python full-path: product /agent-loop/sliderule + /sliderule use this hook + http store.
 // Sessions: Node thin-compat proxy. Turns/evidence/report: delegated to slide-rule-python (python-rag provenance).
@@ -1730,12 +1731,18 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     ).trim();
     if (!text) return;
     setInput("");
+    // ⚠ 意图只看文本。pending 不能短接到 challenge：质疑后改写作曲家 /
+    // 编辑重跑 / 重新推演 / 重置会话都会留下 leftover ref。
     const pending = pendingChallengeRef.current;
-    if (pending || isChallengeComposerText(text)) {
-      const artifactId = pending?.artifactId;
-      pendingChallengeRef.current = null;
+    pendingChallengeRef.current = null;
+    const resolved = resolveChallengeSend({
+      text,
+      pendingArtifactId: pending?.artifactId,
+      latestMainArtifactId: latestMainArtifactIdFromTurns(uiTurns),
+    });
+    if (resolved.intent === "challenge") {
       await runTurn(text, {
-        targetArtifactId: artifactId,
+        targetArtifactId: resolved.targetArtifactId,
         intent: "challenge",
         text,
       });
@@ -1990,6 +1997,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
 
   const resetSession = useCallback(async () => {
     if (isRunning) return;
+    pendingChallengeRef.current = null;
     const sid = sessionState.sessionId || sessionId;
     if (IS_GITHUB_PAGES) {
       const store = SlideRuleRuntime.getSlideRuleSessionStore();

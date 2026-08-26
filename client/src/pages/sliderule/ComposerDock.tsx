@@ -74,51 +74,10 @@ import {
   saveTurnCapabilities,
   takePendingOpener,
 } from "./turn-capabilities";
-
-/** 质疑预填前缀。点「质疑」只打开作曲家，不弹 window.prompt、不立刻点火。 */
-export const CHALLENGE_COMPOSER_PREFIX = "质疑：";
-export const DEFAULT_CHALLENGE_BODY =
-  "这个结论的依据不够充分，请重新推演。";
-export const CHALLENGE_PREFILL_EVENT = "sliderule:challenge-prefill";
-
-export function composeChallengePrefill(
-  targetLabel?: string | null
-): string {
-  const body =
-    (targetLabel && String(targetLabel).trim()) || DEFAULT_CHALLENGE_BODY;
-  if (body.startsWith(CHALLENGE_COMPOSER_PREFIX)) return body;
-  return `${CHALLENGE_COMPOSER_PREFIX}${body}`;
-}
-
-export function isChallengeComposerText(text: string): boolean {
-  return text.trim().startsWith(CHALLENGE_COMPOSER_PREFIX);
-}
-
-export function applyChallengePrefillToComposer(
-  setInput: (text: string) => void,
-  detail?: { text?: string; targetLabel?: string | null }
-): string {
-  const next =
-    (detail?.text && detail.text.trim()) ||
-    composeChallengePrefill(detail?.targetLabel);
-  setInput(next);
-  return next;
-}
-
-export function dispatchChallengePrefill(detail: {
-  artifactId: string;
-  text?: string;
-  targetLabel?: string | null;
-}): void {
-  const text =
-    (detail.text && detail.text.trim()) ||
-    composeChallengePrefill(detail.targetLabel);
-  window.dispatchEvent(
-    new CustomEvent(CHALLENGE_PREFILL_EVENT, {
-      detail: { artifactId: detail.artifactId, text },
-    })
-  );
-}
+import {
+  applyChallengePrefillToComposer,
+  CHALLENGE_PREFILL_EVENT,
+} from "./challenge-composer";
 
 /** E31 图片/PDF 提取结果（后端 /attachments/extract 的诚实回执）。 */
 interface AttachmentExtractOutcome {

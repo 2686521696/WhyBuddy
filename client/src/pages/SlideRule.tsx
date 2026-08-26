@@ -79,10 +79,8 @@ import {
   type ClarificationItem,
 } from "./sliderule/ClarificationCard";
 import { DeliverablesPanel } from "./sliderule/DeliverablesPanel";
-import {
-  ComposerDock,
-  dispatchChallengePrefill,
-} from "./sliderule/ComposerDock";
+import { ComposerDock } from "./sliderule/ComposerDock";
+import { dispatchChallengePrefill } from "./sliderule/challenge-composer";
 import { DesignSystemPanelProvider } from "./sliderule/DesignSystemContext";
 import { HomeInspiration } from "./sliderule/home-inspiration";
 import { composerEnterHintLabel } from "./sliderule/user-prefs";
@@ -2053,16 +2051,21 @@ function SlideRuleSessionBody({
     []
   );
 
-  // Inline node edit confirmation triggers a rerun with user input.
+  // ?im=dev 仍是 /sliderule 产品页可达面（同一路由 + query），不是独立
+  // Dev 页。节点编辑走作曲家预填，不立刻点火；persist fail-closed 在
+  // sendMessage → runTurn 的 challenge 闸上（与质疑本轮同一条）。
   const handleNodeEditSubmit = useCallback(
     (node: BrainstormReasoningNode, text: string) => {
       const producedArtifactId = (node as { producedArtifactId?: string })
         .producedArtifactId;
       if (producedArtifactId && text.trim()) {
-        challengeTurn(producedArtifactId, text.trim());
+        dispatchChallengePrefill({
+          artifactId: producedArtifactId,
+          targetLabel: text.trim(),
+        });
       }
     },
-    [challengeTurn]
+    []
   );
 
   const handleResolveInteractiveGate = useCallback(
