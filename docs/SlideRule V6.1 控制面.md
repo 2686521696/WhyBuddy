@@ -20,22 +20,20 @@ flowchart TB
 
   CP -->|ask_user / inspect_model / search_evidence / scope_card| CHEAP[便宜轮<br/>秒级 · 不落五系统写]
   CP -->|rehearse / refine / repair| FACTORY
-  CP -->|challenge| INV[失效级联]
+  CP -->|challenge| INV[失效级联<br/>不调信封]
   CP -->|restore_version / fork_variant| VER[modelVersions / fork_app]
-
-  INV --> FACTORY
 
   subgraph FACTORY["昂贵工厂 · 信封 + 现有 live path"]
     direction TB
     ENV[start_drive_full_factory_run<br/>persist / skills / E25 / E26 / save]
     ENV --> D[drive_full_v5_session_stream]
-    D --> P[短清单：取证? → runtimeclosure]
-    P --> SF[spec-first 七步]
+    D --> SF[spec-first 七步]
     SF --> G[v5_model_gate + repair]
     G --> C6[publish closure 6/6]
   end
 
   CHEAP --> HUD[活预览 + 推演钟 + 证据 HUD]
+  INV --> HUD
   C6 --> HUD
   VER --> HUD
   HUD --> U
