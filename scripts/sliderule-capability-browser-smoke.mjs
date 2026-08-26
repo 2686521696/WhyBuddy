@@ -146,7 +146,20 @@ async function main() {
     await page.fill(TA, "");
     await page.type(TA, "/", { delay: 60 });
     await page.waitForTimeout(700);
-    const row = page.locator('[data-testid="sliderule-slash-item"]').first();
+    /*
+     * ⚠ 2026-08-27：不能再点 `.first()`。面板加了推演动词（/推演 /精修 …）
+     *   之后第一条是 `rehearse`，点下去只往正文插一个动词、不挂芯片，
+     *   于是这条判据红了——**面板本身是好的，鼠标也点中了**。
+     *   这条要验的是"鼠标能不能命中"，所以挑一条**能力**（连接器/技能/伙伴）
+     *   来点，别让面板里多了什么就把它带红。
+     */
+    const row = page
+      .locator(
+        '[data-testid="sliderule-slash-item"][data-kind="connector"], ' +
+          '[data-testid="sliderule-slash-item"][data-kind="partner"], ' +
+          '[data-testid="sliderule-slash-item"][data-kind="skill"]'
+      )
+      .first();
     const rb = await row.boundingBox();
     const hit = rb
       ? await page.evaluate(
@@ -262,8 +275,13 @@ async function main() {
       '[data-testid="sliderule-slash-item"]',
       els => els.length
     );
-    /* 选一个，验它跟手打斜杠走的是同一条路：芯片挂上、正文里**不留斜杠** */
-    await page.click('[data-testid="sliderule-slash-item"]');
+    /* 选一个，验它跟手打斜杠走的是同一条路：芯片挂上、正文里**不留斜杠**。
+       ⚠ 跟 A3 同一个理由：面板第一条现在是推演动词，必须挑一条**能力**。 */
+    await page.click(
+      '[data-testid="sliderule-slash-item"][data-kind="connector"], ' +
+        '[data-testid="sliderule-slash-item"][data-kind="partner"], ' +
+        '[data-testid="sliderule-slash-item"][data-kind="skill"]'
+    );
     await page.waitForTimeout(700);
     const afterPick = {
       chips: await page.$$eval('[data-testid="sliderule-capability-chip"]', els =>
@@ -466,6 +484,14 @@ async function main() {
     let descFull = "";
     if (await clippedDesc.count()) {
       descFull = ((await clippedDesc.textContent()) || "").trim();
+      /*
+       * ⚠ **先滚进视口再悬浮。** 2026-08-27：改成列表之后，第一条被截断的
+       *   描述落在首屏之下（实测 y=1065，视口高 940），鼠标移过去落在页面
+       *   外面，`elementsFromPoint` 返回空、tooltip 当然不弹——判据红了，
+       *   而功能是好的。判据自己要负责把要量的东西摆到看得见的地方。
+       */
+      await clippedDesc.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(400);
       const bb = await clippedDesc.boundingBox();
       await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2);
       await page.waitForTimeout(1400);
@@ -951,7 +977,10 @@ async function main() {
     /* 全部 / 我的是互斥 tab，再点一次「我的」不会切回去。 */
     await page.click('[data-testid="partner-view-all"]');
     await page.waitForTimeout(500);
-    const backAll = {
+    /* ⚠ 名字不能再叫 backAll —— 技能层那条判据（I4）已经在同一个函数作用域里
+       声明过它了。重名会让整个脚本**语法错误、一条判据都跑不了**（真机闸
+       从 b4c6080 起就是哑的，直到 2026-08-27 才被发现）。 */
+    const partnersBackAll = {
       builtin: await page.locator('[data-testid="partners-builtin"]').count(),
       cards: await page.locator('[data-testid="partner-card"]').count(),
     };
@@ -959,9 +988,9 @@ async function main() {
       "J3 「我的伙伴」把内置那段整段收起，关掉能回来",
       onlyMine.builtin === 0 &&
         onlyMine.cards === 0 &&
-        backAll.builtin === 1 &&
-        backAll.cards === 3,
-      `只看我的 ${JSON.stringify(onlyMine)} · 关掉 ${JSON.stringify(backAll)}`
+        partnersBackAll.builtin === 1 &&
+        partnersBackAll.cards === 3,
+      `只看我的 ${JSON.stringify(onlyMine)} · 关掉 ${JSON.stringify(partnersBackAll)}`
     );
 
     /* 把这一轮挂着的天气摘掉，别影响后面的判据 */
