@@ -64,6 +64,13 @@
 所以 `match_app_template` 要求 `applicable and passed` 同时成立，判不了就
 老老实实生成。演示域时代只有 4 个域，误判影响有限；模板攒到几百条还这么默认，
 就是天天套错。
+
+## 接线（2026-08-27）
+
+此前本模块对工厂是死的：契约、种子、单测都在，`match_app_template` 的非测试
+引用为零。现在接在 `spec_first_pipeline.run_spec_first` →
+`spec_tree.generate_spec_tree` 的骨架先验槽上（页清单 / 区块槽，不是绑定）。
+匹配失败 fail-open（无骨架继续），不许 fail-closed 拦推演。
 """
 
 from __future__ import annotations
@@ -245,6 +252,10 @@ def match_app_template(
     返回 `{"template": …, "verdict": …}`——verdict 是 `goal_coverage` 那套
     自解释结果（score / threshold / passed / matched / missing / reason），
     留着是为了让"为什么选了它"能被打出来，而不是只给一个模板 id。
+
+    调用方：`spec_first_pipeline.run_spec_first`（2026-08-27 接线）。匹配失败
+    返回 None，调用方 fail-open 继续无骨架生成。本函数自己不拿来拦推演；
+    调用方也必须 catch——匹配是增强类结构先验，不是证据闸。
     """
     best: Optional[Dict[str, Any]] = None
     for template in templates:

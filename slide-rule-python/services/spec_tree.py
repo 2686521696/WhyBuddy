@@ -495,6 +495,85 @@ _PHONE_SPEC_IA = """设备：手机 App（竖屏）。不是 PC 后台。
 - 页面本身就是手机 App，不要在页面里再套一层手机外框或把整页收成居中卡片。"""
 
 
+def _format_skeleton_prior(skeleton: Optional[dict]) -> str:
+    """把骨架压成「页清单 + 区块槽」先验段。绑定不进这段。
+
+    ⚠ 2026-08-27：`app_template.match_app_template` 此前对工厂是死的（契约、
+    种子、单测都在，生产调用点为零）。先验只回答「这个行业的应用长什么样」，
+    实体 / 字段 / 绑定每次按本题生成。骨架一旦带绑定，整段丢（fail-open）——
+    混进去会被结构闸当悬挂引用咬，正是旧模板库的病。
+
+    工厂路径是 `run_spec_first`。`capability_maps.execute_structure` 也调
+    `generate_spec_tree`，那是旧能力图的结构步，不是工厂主轴；不在那里偷偷
+    喂骨架——装错插座是本仓付过三次账的形态。`generate_spec_tree` 没有流式
+    孪生；drive-full 与 drive-full-stream 都进同一条 `run_spec_first`。
+    """
+    if not isinstance(skeleton, dict):
+        return ""
+    from .app_template import _assert_no_bindings
+
+    problems: list[str] = []
+    _assert_no_bindings(skeleton, "skeleton", problems)
+    if problems:
+        print(f"[spec_tree] 骨架带绑定，丢弃先验（fail-open）：{problems[0]}")
+        return ""
+    pages = skeleton.get("pages")
+    if not isinstance(pages, list) or not pages:
+        return ""
+
+    lines: list[str] = []
+    name = str(skeleton.get("name") or "").strip()
+    industry = str(skeleton.get("industry") or "").strip()
+    when = str(skeleton.get("when") or "").strip()
+    heading = "行业骨架先验（结构建议，不是成品；绑定/实体/字段不在这里，也不许从这里发明绑定）"
+    title = " / ".join(part for part in (name, industry) if part)
+    lines.append(f"{heading}：")
+    if title:
+        lines.append(f"骨架：{title}")
+    if when:
+        lines.append(f"适用：{when}")
+    roles = [str(r).strip() for r in (skeleton.get("roleShape") or []) if str(r or "").strip()]
+    if roles:
+        lines.append("角色形态：" + "、".join(roles))
+    workflow = skeleton.get("workflowShape")
+    if isinstance(workflow, dict):
+        bits: list[str] = []
+        steps = workflow.get("steps")
+        if isinstance(steps, int) and steps >= 1:
+            bits.append(f"{steps} 步")
+        if workflow.get("hasApproval"):
+            bits.append("含审批")
+        phases = [str(p).strip() for p in (workflow.get("phases") or []) if str(p or "").strip()]
+        if phases:
+            bits.append("阶段：" + "、".join(phases))
+        if bits:
+            lines.append("流程形态：" + "，".join(bits))
+    lines.append("建议页面（页清单 + 区块槽）：")
+    for page in pages:
+        if not isinstance(page, dict):
+            continue
+        pid = str(page.get("id") or "").strip() or "?"
+        kind = str(page.get("kind") or "").strip()
+        purpose = str(page.get("purpose") or "").strip()
+        slot_bits: list[str] = []
+        for block in page.get("blocks") or []:
+            if not isinstance(block, dict):
+                continue
+            btype = str(block.get("type") or "").strip()
+            region = str(block.get("region") or "").strip()
+            if not btype:
+                continue
+            slot_bits.append(f"{btype}@{region}" if region else btype)
+        slot = f"  区块：{'、'.join(slot_bits)}" if slot_bits else ""
+        lines.append(f"- {pid}  {kind}  {purpose}{slot}".rstrip())
+    lines.append(
+        "硬要求：先按这套页清单展开结构，再按本道题收窄（改名、增删页、改 purpose "
+        "都可以，但不要抛开骨架自己另起一套信息架构，除非这道题明显装不进去）。"
+        "页面 id 可以按本产品重起。不要把骨架里的页型/区块当成绑定或实体。"
+    )
+    return "\n".join(lines)
+
+
 def build_spec_prompt(
     goal: str,
     *,
@@ -503,11 +582,16 @@ def build_spec_prompt(
     refine: Optional[dict] = None,
     prev_pages: Optional[list] = None,
     device: str = "desktop",
+    skeleton: Optional[dict] = None,
 ) -> list[dict[str, str]]:
     """装配 spec 生成的对话。
 
     输入刻意**不是原始那一句话**，而是第 1 步的产物（澄清后的需求 + 外部证据）。
     直接吃原句等于把「从一句话发明」原样往前挪一格，什么也没改善。
+
+    skeleton（2026-08-27 加）：`match_app_template` 命中的应用骨架，作为
+    **页清单 / 区块槽先验**。不传则提示词**逐字不变**。精修轮由调用方决定
+    不传——上一版结构已经在 refine 段里，骨架再压上去会打架。
 
     ## refine（2026-08-14 晚加）：增量迭代不是从零造
 
@@ -535,6 +619,9 @@ def build_spec_prompt(
         parts.append(f"澄清与假设（第 1 步产物）：\n{clarified.strip()}")
     if evidence.strip():
         parts.append(f"外部证据（第 1 步检索到的）：\n{evidence.strip()}")
+    skeleton_block = _format_skeleton_prior(skeleton)
+    if skeleton_block:
+        parts.append(skeleton_block)
     if refine and (str(refine.get("instruction") or "").strip()):
         digest = str(refine.get("modelDigest") or "").strip()
         if digest:
@@ -730,6 +817,7 @@ def generate_spec_tree(
     refine: Optional[dict] = None,
     prev_pages: Optional[list] = None,
     device: str = "desktop",
+    skeleton: Optional[dict] = None,
     llm_json_fn: Optional[Any] = None,
     max_reask: int = 2,
 ) -> SpecTree:
@@ -753,6 +841,7 @@ def generate_spec_tree(
         refine=refine,
         prev_pages=prev_pages,
         device=device,
+        skeleton=skeleton,
     )
     last_err = "未调用"
     # 精修轮的冻结页 id：coversNodes 校验对它们放宽（豁免理由与真机事故见

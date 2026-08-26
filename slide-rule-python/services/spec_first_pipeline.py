@@ -1221,6 +1221,7 @@ def run_spec_first(
     )
     from .spec_page_html import generate_pages_parallel
     from .spec_semantics import derive_semantics, to_model_sections  # noqa: F401
+    from .app_template import all_app_templates, match_app_template
     from .spec_tree import generate_spec_tree
     from .page_id_freeze import (
         canonical_page_id_map,
@@ -1355,6 +1356,26 @@ def run_spec_first(
             )
 
     if not _held_spec:
+        # 骨架先验（2026-08-27）：match_app_template 此前对工厂是死的。命中则
+        # 把页清单 / 区块槽喂给 spec_tree，不是喂 GEN5。匹配失败或匹配器自己
+        # 炸了都 fail-open——骨架是增强类结构建议，不是证据闸，不许拦推演。
+        # 精修轮不套：上一版结构已经在 refine 段里，骨架再压上去会打架。
+        skeleton = None
+        if not refine:
+            try:
+                _hit = match_app_template(goal, all_app_templates())
+                if isinstance(_hit, dict) and isinstance(_hit.get("template"), dict):
+                    skeleton = _hit["template"]
+                    _verdict = _hit.get("verdict") or {}
+                    print(
+                        f"[spec_first_pipeline] 骨架先验：{skeleton.get('id') or '?'} "
+                        f"（score={_verdict.get('score')}）"
+                    )
+            except Exception as exc:
+                _safe_print(
+                    f"[spec_first_pipeline] 骨架匹配异常（fail-open，不拦推演）：{exc}"
+                )
+                skeleton = None
         with _stage("specfirst.spec") as st:
             # prev_pages：页面 id 冻结的词表（只在精修轮非空）。页面 id 在**这一步**
             # 铸出来，所以冻结必须在这里下——第 4/5 步那两针冻不到它。真机第二轮
@@ -1364,7 +1385,10 @@ def run_spec_first(
                 goal, evidence=evidence, refine=refine,
                 prev_pages=(_prev_ids.get("pages") or None),
                 device=device,
+                skeleton=skeleton,
             )
+            if skeleton:
+                st["appTemplate"] = str(skeleton.get("id") or "")
             spec = spec_model.model_dump(mode="json") if hasattr(spec_model, "model_dump") else spec_model
             # ★ 结构拨回（2026-08-18 过夜）：提示词冻结求不动。必须在
             #   spec_pages_declared 取值之前——图判、照搬、画页、风格复用
