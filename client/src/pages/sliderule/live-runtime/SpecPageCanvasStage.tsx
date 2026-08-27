@@ -107,6 +107,12 @@ import {
 } from "./block-node-layout";
 import { fitBlockNodes, type BlockNodeCandidate } from "./block-node-fit";
 import {
+  buildImpactEdges,
+  isRealLinkage,
+  scanBlockBindings,
+  type ImpactEdgeKind,
+} from "./block-impact";
+import {
   frameRectToNodeRect,
   elementTitle,
   snapshotComputed,
@@ -528,6 +534,32 @@ const EDGE_STYLE = {
   dataflow: { stroke: "#94a3b8", strokeWidth: 2 },
   manual: { stroke: "#1677ff", strokeWidth: 2, strokeDasharray: "8 6" },
 } as const;
+
+/**
+ * 刀 4 的影响线配色。**分色分虚实是功能，不是审美。**
+ *
+ * ⚠ 真联动（跳转/动作/素材）是"改了运行时那边真的跟着变"；仅同源（读同一个
+ *   实体.字段）是"改数据模型会一起变，但改这一块的文案另一块不会跟着变"。
+ *   画成一样的线，用户会以为改一处自动同步了 —— 这是风险台账 #03。
+ *
+ * 真联动用实线暖色（醒目、可信），仅同源用细虚线冷色（提示、别当真）。
+ */
+const IMPACT_STYLE: Record<
+  ImpactEdgeKind,
+  { stroke: string; strokeWidth: number; strokeDasharray?: string }
+> = {
+  nav: { stroke: "#0891b2", strokeWidth: 2 },
+  action: { stroke: "#c2410c", strokeWidth: 2 },
+  asset: { stroke: "#7c3aed", strokeWidth: 2 },
+  field: { stroke: "#cbd5e1", strokeWidth: 1, strokeDasharray: "2 6" },
+};
+
+const IMPACT_LABEL: Record<ImpactEdgeKind, string> = {
+  nav: "跳转",
+  action: "同一动作",
+  asset: "共用素材",
+  field: "同源字段",
+};
 
 /**
  * 画板本体。
@@ -1583,6 +1615,18 @@ function CanvasInner({
     [boxes, boardPos]
   );
 
+  /*
+   * 刀 4：影响面。**从源 HTML 扫**，不看 iframe。
+   *
+   * ⚠ 依赖只有 pages —— 绑定关系跟视口、缩放、画板位置统统无关。这正是刀 1
+   *   里两条世代号要分开的理由：跟着几何世代号走的话，每次平移都要重扫一遍
+   *   五页 HTML，纯白烧。
+   */
+  const impactEdges = React.useMemo(() => {
+    const all = pages.flatMap(pg => scanBlockBindings(pg.pageId, pg.html));
+    return buildImpactEdges(all);
+  }, [pages]);
+
   /* 刀 2：块条带的盒子。位置从 placedBoxes 算——画板拖到哪，块跟到哪。 */
   const blockBoxes = React.useMemo<BlockNodeBox[]>(() => {
     if (!blocksShown) return [];
@@ -1652,6 +1696,11 @@ function CanvasInner({
     }
     return pages[0]?.pageId ?? null;
   }, [entered, activePageId, pages]);
+
+  const blockNodeIds = React.useMemo(
+    () => new Set(blockBoxes.map(b => `block:${b.key}`)),
+    [blockBoxes]
+  );
 
   const blockFit = React.useMemo(() => {
     const candidates: BlockNodeCandidate[] = blockBoxes.map(b => ({
@@ -1797,9 +1846,41 @@ function CanvasInner({
           data: { kind: l.kind },
         };
       });
-      return [...ownership, ...linkEdges];
+      /*
+       * 影响线。用户 2026-08-27 裁决**两类都常驻画**（我原本建议同源字段
+       * 只在选中时点亮）。按裁决实现。
+       *
+       * ⚠ 只在块条带开着时画：块节点不存在时这些边两端都落空，React Flow
+       *   会静默丢掉（不报错），但计算白做。
+       */
+      const impact: Edge[] = blocksShown
+        ? impactEdges
+            .filter(e => {
+              /* 两端都得有节点。nav 的 to 是页面 id（画板节点）。 */
+              const fromOk = blockNodeIds.has(`block:${e.from}`);
+              const toOk =
+                e.kind === "nav"
+                  ? boxById.has(e.to)
+                  : blockNodeIds.has(`block:${e.to}`);
+              return fromOk && toOk;
+            })
+            .map(e => ({
+              id: e.id,
+              source: `block:${e.from}`,
+              target: e.kind === "nav" ? e.to : `block:${e.to}`,
+              sourceHandle: "l",
+              targetHandle: e.kind === "nav" ? "r" : "l",
+              type: "bezier",
+              selectable: false,
+              focusable: false,
+              zIndex: isRealLinkage(e.kind) ? 2 : 1,
+              style: IMPACT_STYLE[e.kind],
+              data: { impactKind: e.kind, shared: e.shared },
+            }))
+        : [];
+      return [...ownership, ...linkEdges, ...impact];
     },
-    [links, boxById, blockBoxes]
+    [links, boxById, blockBoxes, impactEdges, blocksShown, blockNodeIds]
   );
 
   /* --------------------------------------------------------- 交互 */
