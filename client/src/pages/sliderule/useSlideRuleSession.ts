@@ -1201,6 +1201,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           // 实测踩到过：2026-08-10 一趟推演的 POST 流在第 2 分钟被对端 reset，
           // 而服务端一路跑到 seq 1812 正常收尾。前端在那一刻会把整轮重跑一遍。
           let sawRunId = false;
+          // 这条流见过终局事件吗。消费者读到 done 却没收到 complete /
+          // run_cancelled / error 就是协议违规（见 driver 的
+          // STREAM_NO_TERMINAL 头注），不能跟"正常收尾"走同一条出口。
+          let sawTerminal = true;
           const streamOpts = {
               stopSignal: controller.signal,
               turnId,
@@ -1218,6 +1222,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   userText: userText.trim(),
                   startedAt: new Date().toISOString(),
                 });
+              },
+              onStreamNoTerminal: () => {
+                // 断流：书签**不清**——后端 run 多半还在跑，书签是刷新后
+                // 自动接回的唯一线索（跟 onRunSettled 相反，那里才清）。
+                sawTerminal = false;
               },
               onRunSettled: (
                 reason: "complete" | "cancelled" | "error"
@@ -1441,6 +1450,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             gotResult: Boolean(pythonDrive),
             settledReason: runSettledReason,
             locallyAborted: controller.signal.aborted,
+            sawTerminal,
           });
           if (streamVerdict === "report_interrupted") {
             throw new Error(
