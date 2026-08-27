@@ -48,6 +48,17 @@ def set_capability_delta_sink(sink: Callable[[str, str], None] | None) -> None:
     _delta_sink_var.set(sink)
 
 
+def capability_delta_sink_scope(sink: Callable[[str, str], None] | None):
+    """装了自带卸的写法（抄 grok 的 SinkGuard，见 sliderule_llm/scoped.py）。
+
+    调用方优先用这个，别用上面那个裸 setter——裸 setter 要人肉记得去别处补
+    一行卸载，而且卸成 None 而不是还原成原来那个。
+    """
+    from .scoped import sink_scope
+
+    return sink_scope(_delta_sink_var, sink)
+
+
 def _delta_emitter(capability_id: str) -> Callable[[str], None] | None:
     if _delta_sink_var.get() is None:
         return None

@@ -116,6 +116,17 @@ def set_page_sink(sink: Optional[Callable[..., None]]) -> None:
     _page_sink_var.set(sink)
 
 
+def page_sink_scope(sink):
+    """装了自带卸的写法（抄 grok 的 SinkGuard，见 sliderule_llm/scoped.py）。
+
+    调用方优先用这个，别用上面那个裸 setter——裸 setter 要人肉记得去别处
+    补一行卸载，而且卸成 None 而不是还原成原来那个。
+    """
+    from sliderule_llm.scoped import sink_scope
+
+    return sink_scope(_page_sink_var, sink)
+
+
 #: 假设出口（伴随式澄清，2026-08-27）。第 2 步刚起草完 spec 就把
 #: 「我替你定了什么」推出去，**不等整轮跑完**。
 #:
@@ -136,6 +147,17 @@ _assumption_sink_var: ContextVar[Optional[Callable[..., None]]] = ContextVar(
 def set_assumption_sink(sink: Optional[Callable[..., None]]) -> None:
     """装/卸假设出口。驱动器在流开始时装、finally 里卸。"""
     _assumption_sink_var.set(sink)
+
+
+def assumption_sink_scope(sink):
+    """装了自带卸的写法（抄 grok 的 SinkGuard，见 sliderule_llm/scoped.py）。
+
+    调用方优先用这个，别用上面那个裸 setter——裸 setter 要人肉记得去别处
+    补一行卸载，而且卸成 None 而不是还原成原来那个。
+    """
+    from sliderule_llm.scoped import sink_scope
+
+    return sink_scope(_assumption_sink_var, sink)
 
 
 def _emit_assumptions(spec: Any) -> None:

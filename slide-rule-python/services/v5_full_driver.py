@@ -1957,6 +1957,7 @@ async def drive_full_v5_session_stream(
     """
     import asyncio
     import queue as _queue
+    import contextlib as _contextlib
     import time as _time
 
     from sliderule_llm import capabilities as _caps
@@ -1964,13 +1965,39 @@ async def drive_full_v5_session_stream(
     from . import enrich_timing as _enrich_timing
     from . import v5_llm_generate as _gen
 
+    # 本轮装上去的所有 sink 都进这个栈：**装的那一行自带卸的动作**，栈在
+    # finally 里一次性关掉，顺序自动倒着来。
+    #
+    # 抄的标准答案：grok-build `xai-grok-pager/src/memory_trace.rs::SinkGuard`
+    #     /// Returns a guard restoring the previous sink on drop.
+    # 口径与两条要害见 sliderule_llm/scoped.py 头注。
+    #
+    # ⚠ 上一版是「第 1972 行装、第 2610 行卸」，中间隔着六百行和整轮推演。
+    #   功能上 finally 兜住了，但谁加第六根 sink 都得记得跑到六百行外补一行，
+    #   忘了不报错、只是那根 sink 漏着不卸。现在忘不掉：enter_context 那一下
+    #   就把卸的动作交给栈了。
+    _sinks = _contextlib.ExitStack()
+
     # 全程共享的带标签 LLM 增量队列（label, chunk）：轮内能力（risk.analyze /
     # counter.argue / report.write…）与五系统起草的实时输出都汇到这里，由各
-    # 执行点旁边的排水循环冲成 SSE llm_delta 事件。sink 是模块级单例——本次
-    # 流注册、finally 注销；并发多会话时增量会交织（本地单人 dev 可接受）。
+    # 执行点旁边的排水循环冲成 SSE llm_delta 事件。
+    #
+    # ⚠ 这里原来写着「sink 是模块级单例……并发多会话时增量会交织（本地单人
+    #   dev 可接受）」——**那句话早就过期了**。2026-08-06 这几个 sink 全部从
+    #   模块级全局改成了请求域 ContextVar，起因正是真机实测「用户 A 生成的
+    #   内容实时出现在用户 B 的页面上」（见 sliderule_llm/capabilities.py 头
+    #   注）。注释没跟着改，读的人会以为并发串台仍然是已知可接受的现状。
     _delta_q: "_queue.Queue[tuple[str, str]]" = _queue.Queue()
-    _caps.set_capability_delta_sink(lambda cap_id, chunk: _delta_q.put((cap_id, chunk)))
-    _gen.set_generate_delta_sink(lambda chunk: _delta_q.put(("five-system-model", chunk)))
+    _sinks.enter_context(
+        _caps.capability_delta_sink_scope(
+            lambda cap_id, chunk: _delta_q.put((cap_id, chunk))
+        )
+    )
+    _sinks.enter_context(
+        _gen.generate_delta_sink_scope(
+            lambda chunk: _delta_q.put(("five-system-model", chunk))
+        )
+    )
 
     # 体验层（ENRICH）阶段事件（2026-08-04）。
     #
@@ -1982,8 +2009,10 @@ async def drive_full_v5_session_stream(
     # 它是画完一次性返回。这类操作能做的只有报告"在做什么 + 大概多久"：
     # 用户能判断"这是正常的"还是"卡了"，比一个转圈图标强得多。
     _stage_q: "_queue.Queue[tuple[str, str, dict]]" = _queue.Queue()
-    _enrich_timing.set_stage_sink(
-        lambda phase, name, fields: _stage_q.put((phase, name, dict(fields)))
+    _sinks.enter_context(
+        _enrich_timing.stage_sink_scope(
+            lambda phase, name, fields: _stage_q.put((phase, name, dict(fields)))
+        )
     )
 
     # spec-first 第 3 步的页面（2026-08-14）。
@@ -1999,15 +2028,17 @@ async def drive_full_v5_session_stream(
     # 第 6 位 device（2026-08-14 竖屏加）：管道在开头认一次设备并注进每次
     # sink 调用（spec_first_pipeline._with_device），前端拿它选画布视口。
     _page_q: "_queue.Queue[tuple[str, str, int, int, bool, str]]" = _queue.Queue()
-    _spec_first_sink = None
+    _spec_first_scope = None
     try:
-        from .spec_first_pipeline import set_page_sink as _spec_first_sink
+        from .spec_first_pipeline import page_sink_scope as _spec_first_scope
     except Exception:  # noqa: BLE001 — 新模块缺失不该打死整条流
         pass
-    if _spec_first_sink is not None:
-        _spec_first_sink(
-            lambda pid, html, done, total, bound=False, device="desktop": _page_q.put(
-                (pid, html, done, total, bool(bound), str(device))
+    if _spec_first_scope is not None:
+        _sinks.enter_context(
+            _spec_first_scope(
+                lambda pid, html, done, total, bound=False, device="desktop": _page_q.put(
+                    (pid, html, done, total, bool(bound), str(device))
+                )
             )
         )
     # 伴随式澄清（2026-08-27）：spec-first 第 2 步替用户定下的事。
@@ -2019,13 +2050,15 @@ async def drive_full_v5_session_stream(
     # ⚠ 这是**增强**（本仓第七条）：模块缺失、sink 没装、里头炸了，都不许
     #   拖垮一条已经跑了两分钟的推演。所以 import 和 emit 两侧都吞异常。
     _assumption_q: "_queue.Queue[list]" = _queue.Queue()
-    _spec_assumption_sink = None
+    _spec_assumption_scope = None
     try:
-        from .spec_first_pipeline import set_assumption_sink as _spec_assumption_sink
+        from .spec_first_pipeline import assumption_sink_scope as _spec_assumption_scope
     except Exception:  # noqa: BLE001 — 新模块缺失不该打死整条流
         pass
-    if _spec_assumption_sink is not None:
-        _spec_assumption_sink(lambda rows: _assumption_q.put(list(rows or [])))
+    if _spec_assumption_scope is not None:
+        _sinks.enter_context(
+            _spec_assumption_scope(lambda rows: _assumption_q.put(list(rows or [])))
+        )
     _budget_token = _enrich_timing.begin_run_budget()
     # 与同步入口同一件事：让能力执行看得见本轮用户说了什么。
     # 流式是主路径（前端走 SSE），两条都要接，否则只有回退路径改好了——
@@ -2606,14 +2639,11 @@ async def drive_full_v5_session_stream(
         await asyncio.to_thread(persist_state, state)
         yield {"type": "phase_change", "phase": "failed", "detail": state.awaitDetail}
     finally:
-        # 注销模块级 sink：本次流之后的 LLM 调用不再往（已废弃的）队列里灌。
-        _caps.set_capability_delta_sink(None)
-        _gen.set_generate_delta_sink(None)
-        _enrich_timing.set_stage_sink(None)
-        if _spec_first_sink is not None:
-            _spec_first_sink(None)
-        if _spec_assumption_sink is not None:
-            _spec_assumption_sink(None)
+        # 注销本轮装上去的所有 sink：本次流之后的 LLM 调用不再往（已废弃的）
+        # 队列里灌。这里只剩一行——每根 sink 的卸载动作在**装它的那一行**就
+        # 交给栈了（抄 grok 的 SinkGuard，见 sliderule_llm/scoped.py）。
+        # 加第六根 sink 不需要回来改这里。
+        _sinks.close()
         _enrich_timing.reset_run_budget(_budget_token)
         _turn_token.__exit__(None, None, None)
         _cost_cm.__exit__(None, None, None)

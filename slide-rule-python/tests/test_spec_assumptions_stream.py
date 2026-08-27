@@ -35,6 +35,7 @@ A/B 两轮治好了前半句（问题从这句需求里长出来、答案真进�
 只查源码的话，三段各自"看着都对"、拼起来不通的情况一次都拦不住。
 """
 
+import contextlib
 import asyncio
 import os
 import sys
@@ -346,22 +347,29 @@ def test_流开始时装_结束时卸(driver, monkeypatch):
       变异（把 finally 里那两行删掉）**照样绿**——因为 ContextVar 是
       请求域的：驱动器在自己那份 context 拷贝里 set，测试这边从头到尾
       读到的都是 None，断言恒真。本仓第三条说的"判据打空"就是这个形状。
-      改成记录 set_assumption_sink 的调用序列：装了什么、卸了没有，
-      两头都咬得住。
+      改成记录调用序列：装了什么、卸了没有，两头都咬得住。
+
+    ⚠ 2026-08-27 改：驱动器不再调裸的 `set_assumption_sink`，改成进
+      `assumption_sink_scope`（装的那一行自带卸，抄 grok 的 SinkGuard）。
+      所以这里记的是**作用域的进和出**——语义没变，还是"装了没有 / 卸了
+      没有"，只是从两次函数调用变成一次 with 的两端。
     """
-    calls: list = []
-    real = sfp.set_assumption_sink
+    marks: list = []
+    real_scope = sfp.assumption_sink_scope
 
+    @contextlib.contextmanager
     def recording(sink):
-        calls.append(sink)
-        real(sink)
+        marks.append(("装", sink))
+        with real_scope(sink):
+            yield
+        marks.append(("卸", None))
 
-    monkeypatch.setattr(sfp, "set_assumption_sink", recording)
+    monkeypatch.setattr(sfp, "assumption_sink_scope", recording)
     _drive(driver, _seeded_state("sa-4"), lambda: None)
 
-    assert calls, "驱动器一次都没装 sink"
-    assert callable(calls[0]), "装上去的不是个能叫的东西"
-    assert calls[-1] is None, "流结束了 sink 还挂着——下一轮会往没人排水的队列里灌"
+    assert marks, "驱动器一次都没装 sink"
+    assert marks[0][0] == "装" and callable(marks[0][1]), "装上去的不是个能叫的东西"
+    assert marks[-1][0] == "卸", "流结束了 sink 还挂着——下一轮会往没人排水的队列里灌"
 
 
 def test_出口炸了不许拖垮推演():

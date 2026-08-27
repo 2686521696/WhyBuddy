@@ -583,6 +583,17 @@ def set_generate_delta_sink(sink: "Optional[Callable[[str], None]]") -> None:
     _delta_sink_var.set(sink)
 
 
+def generate_delta_sink_scope(sink):
+    """装了自带卸的写法（抄 grok 的 SinkGuard，见 sliderule_llm/scoped.py）。
+
+    调用方优先用这个，别用上面那个裸 setter——裸 setter 要人肉记得去别处
+    补一行卸载，而且卸成 None 而不是还原成原来那个。
+    """
+    from sliderule_llm.scoped import sink_scope
+
+    return sink_scope(_delta_sink_var, sink)
+
+
 def get_generate_diagnostic() -> Dict[str, Any]:
     """本请求最近一次生成的诊断。
 
