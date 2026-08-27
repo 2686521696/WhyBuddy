@@ -46,7 +46,9 @@ import copy
 import json
 import time
 import uuid
+from contextlib import contextmanager
 from contextvars import ContextVar
+from enum import Enum
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Dict, List, Optional
 
@@ -84,6 +86,31 @@ _CONTROL_PAYLOAD: ContextVar[Dict[str, Any]] = ContextVar(
     "sliderule_control_payload", default={}
 )
 
+class ToolScope(str, Enum):
+    """工具在「能不能造一份新五系统模型」这条轴上的权限。
+
+    抄的标准答案：grok-build `xai-tool-protocol/src/capabilities.rs`
+
+        pub enum ToolScope { Read, Write }
+        /// Tools that mutate external state must declare `Write` so the
+        /// computer hub routes them to the leader agent only.
+        /// Absence is treated as `Read`.
+
+    要点是**缺省 Read**：以后加的新工具默认进不了工厂，想写得显式声明。
+    本仓 KD3 说的是同一件事，但一直只是文档里的一段话——而这个仓自己
+    第三条写着「函数写对了 ≠ 它被调用了」，同理：纪律写对了 ≠ 它被强制了。
+
+    ⚠ 这里的 WRITE 精确指**生成新五系统模型**（进 `_handoff_factory`），
+      不是"落不落盘"。challenge 写 staleArtifactIds、restore_version /
+      fork_variant 移指针，都会 persist，但在这条轴上是 READ。
+      别看见 READ 就以为它们不碰会话；也别为了"看着一致"把它们提成
+      WRITE——提上去这道闸就没有意义了。
+    """
+
+    READ = "read"
+    WRITE = "write"
+
+
 CLOSED_TOOLS = (
     "ask_user",
     "clarify",
@@ -97,6 +124,61 @@ CLOSED_TOOLS = (
     "restore_version",
     "fork_variant",
 )
+
+# 写权限声明表。**只列 WRITE**——缺省即 READ（grok 的 "Absence is
+# treated as Read"）。这三个动词是 KD3 点名可以生成新五系统模型的：
+# 它们各自都最终走 `_handoff_factory`（rehearse 经
+# `_confirm_rehearse_and_handoff`）。
+#
+# ⚠ 往这张表里加名字之前先问：这个工具真的要**造一份新模型**吗？
+#   落盘不等于写模型（见 ToolScope 头注）。加错一个，工厂就多一个入口。
+TOOL_SCOPE: Dict[str, ToolScope] = {
+    "rehearse": ToolScope.WRITE,
+    "refine": ToolScope.WRITE,
+    "repair": ToolScope.WRITE,
+}
+
+
+class ToolScopeViolation(RuntimeError):
+    """READ 权限的工具试图进工厂信封。fail-closed：抛，不降级放行。"""
+
+
+# 本回合正在分发的工具名。走 ContextVar 而不是给 `_handoff_factory` 加参数：
+# 跟本文件里 `_CONTROL_PAYLOAD` / 读 charter 同一套机制（本回合信封），
+# 也逼着判据打在真分发上而不是直调函数。
+#
+# 缺省空串 → resolve_tool_scope 给 READ → 没进过分发就直调工厂会被拦。
+_ACTIVE_TOOL: ContextVar[str] = ContextVar("sliderule_active_tool", default="")
+
+
+def resolve_tool_scope(name: Any) -> ToolScope:
+    """查权限。没声明的一律 READ（含拼错的、以后新加的）。"""
+    return TOOL_SCOPE.get(str(name or "").strip(), ToolScope.READ)
+
+
+@contextmanager
+def tool_scope_scope(name: str):
+    """标记本回合正在分发哪个工具。两条分发路径都要用（成对，少一条 = 半个闸）。"""
+    token = _ACTIVE_TOOL.set(str(name or ""))
+    try:
+        yield
+    finally:
+        _ACTIVE_TOOL.reset(token)
+
+
+def assert_may_write_model() -> None:
+    """工厂信封入口闸。READ 工具到这里就是**违约**，抛出来，别静静放行。
+
+    对照 grok：写工具由 computer hub 路由给 leader agent，缺省 Read 的
+    根本到不了那条路。这里没有多 agent 路由，等价物就是这道断言。
+    """
+    name = _ACTIVE_TOOL.get()
+    if resolve_tool_scope(name) is not ToolScope.WRITE:
+        raise ToolScopeViolation(
+            f"工具 {name or '(未声明)'} 是 READ 权限，不能进工厂信封生成新五系统模型。"
+            "要写请在 TOOL_SCOPE 里显式声明 WRITE——缺省只读是故意的。"
+        )
+
 
 # 客户端认得的**终局事件**。少了它们，`consumeControlStreamResponse` 的
 # `acc.finalState` 一直是 null → `postControlTurnStream` 返回 null →
@@ -887,6 +969,10 @@ async def _handoff_factory(
     max_loops: int = 10,
 ) -> AsyncIterator[Dict[str, Any]]:
     """唯一点火插座。rehearse/refine/repair 必须走这里，禁止裸生成器。"""
+    # 写权限闸（抄 grok 的 ToolScope）：只有声明了 WRITE 的工具能造新模型。
+    # 缺省 READ ⇒ 新工具、拼错的名字、绕过分发直调，统统在这里被拦。
+    assert_may_write_model()
+
     from services import run_registry
     from services.product_charter import factory_charter_kwargs
 
@@ -1323,15 +1409,17 @@ async def _run_control_turn_body(
             ):
                 yield event
             return
-        async for event in _confirm_rehearse_and_handoff(
-            state,
-            user_text,
-            installed_skills,
-            active_connectors,
-            preferred_device,
-            design_system_id,
-        ):
-            yield event
+        # 写权限：forcedTool 绕过 _dispatch_tool 直接进工厂，scope 要在这里设。
+        with tool_scope_scope("rehearse"):
+            async for event in _confirm_rehearse_and_handoff(
+                state,
+                user_text,
+                installed_skills,
+                active_connectors,
+                preferred_device,
+                design_system_id,
+            ):
+                yield event
         return
 
     if forced == "refine":
@@ -1341,32 +1429,36 @@ async def _run_control_turn_body(
         goal["text"] = original_goal
         state.goal = goal
         await _apersist(state)
-        async for event in _handoff_factory(
-            state,
-            user_text,
-            installed_skills,
-            active_connectors,
-            preferred_device,
-            design_system_id,
-            repair=False,
-            profile="full",
-        ):
-            yield event
+        # 写权限：forcedTool 绕过 _dispatch_tool 直接进工厂，scope 要在这里设。
+        with tool_scope_scope("refine"):
+            async for event in _handoff_factory(
+                state,
+                user_text,
+                installed_skills,
+                active_connectors,
+                preferred_device,
+                design_system_id,
+                repair=False,
+                profile="full",
+            ):
+                yield event
         return
 
     if forced == "repair":
-        async for event in _handoff_factory(
-            state,
-            user_text,
-            installed_skills,
-            active_connectors,
-            preferred_device,
-            design_system_id,
-            repair=True,
-            profile="full",
-            max_loops=2,
-        ):
-            yield event
+        # 写权限：forcedTool 绕过 _dispatch_tool 直接进工厂，scope 要在这里设。
+        with tool_scope_scope("repair"):
+            async for event in _handoff_factory(
+                state,
+                user_text,
+                installed_skills,
+                active_connectors,
+                preferred_device,
+                design_system_id,
+                repair=True,
+                profile="full",
+                max_loops=2,
+            ):
+                yield event
         return
 
     if forced == "challenge":
@@ -1462,34 +1554,37 @@ async def _run_control_turn_body(
                 name = str(call.get("name") or "")
                 args = call.get("arguments") if isinstance(call.get("arguments"), dict) else {}
                 tool_body: Optional[Dict[str, Any]] = None
-                async for event in _dispatch_tool(
-                    name,
-                    args,
-                    state,
-                    user_text,
-                    installed_skills,
-                    active_connectors,
-                    preferred_device,
-                    design_system_id,
-                    original_goal,
-                ):
-                    yield event
-                    if event.get("type") == "control_tool_result":
-                        tool_body = {
-                            k: v for k, v in event.items() if k != "type"
-                        }
-                    if event.get("type") in {
-                        "control_ask_user",
-                        "control_scope_card",
-                        "control_handoff_factory",
-                        "complete",
-                    }:
-                        parked = event.get("type") in {
+                # 写权限：本回合分发的是 name 这个工具。缺省 READ，
+                # 只有 TOOL_SCOPE 里声明 WRITE 的才进得了工厂信封。
+                with tool_scope_scope(name):
+                    async for event in _dispatch_tool(
+                        name,
+                        args,
+                        state,
+                        user_text,
+                        installed_skills,
+                        active_connectors,
+                        preferred_device,
+                        design_system_id,
+                        original_goal,
+                    ):
+                        yield event
+                        if event.get("type") == "control_tool_result":
+                            tool_body = {
+                                k: v for k, v in event.items() if k != "type"
+                            }
+                        if event.get("type") in {
                             "control_ask_user",
                             "control_scope_card",
+                            "control_handoff_factory",
                             "complete",
-                        }
-                        handed = event.get("type") == "control_handoff_factory"
+                        }:
+                            parked = event.get("type") in {
+                                "control_ask_user",
+                                "control_scope_card",
+                                "complete",
+                            }
+                            handed = event.get("type") == "control_handoff_factory"
                 if parked or handed:
                     return
                 messages.append(
