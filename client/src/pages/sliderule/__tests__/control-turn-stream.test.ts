@@ -218,6 +218,64 @@ describe("consumeControlStreamResponse 与工厂 case 共用", () => {
     expect(out?.finalState?.awaitReason).toBe("control_ask");
   });
 
+  it("为什么停：结构化字段一路带到回调，四种停法在前端分得开", async () => {
+    /* ⚠ 服务端 2026-08-27 起把停止原因当数据发（抄 grok 的
+       StopCancelledReason + CancelledBy + turn_hook 的 cancellation_context）。
+       只加服务端字段、消费侧照旧 `String(event.text)`，就是本仓第四条：
+       生成侧改了、消费侧没改，四种停法在前端**仍然长得一模一样**。
+       变异：把 driver 里 control_text 那支的第二个参数删掉 → 本条红。 */
+    const seen: Array<[string, unknown]> = [];
+    const events = [
+      {
+        type: "control_text",
+        text: "来回想了好几轮还没定下来",
+        stopReason: "tool_rounds",
+        stoppedBy: "runtime",
+        limit: 8,
+        used: 8,
+      },
+      { type: "complete", state: { sessionId: "s1" } },
+    ];
+    const body = events.map(e => `data: ${JSON.stringify(e)}\n\n`).join("");
+    const res = new Response(body, {
+      headers: { "Content-Type": "text/event-stream" },
+    });
+    await consumeControlStreamResponse(res, {
+      onControlText: (t, stop) => seen.push([t, stop]),
+    });
+    expect(seen).toHaveLength(1);
+    const [, stop] = seen[0] as [string, Record<string, unknown>];
+    expect(stop).toEqual({
+      stopReason: "tool_rounds",
+      stoppedBy: "runtime",
+      limit: 8,
+      used: 8,
+    });
+  });
+
+  it("反向：正常的一句话不许凭空长出 stop 字段", async () => {
+    /* 没有这条，把 stop 写成恒 `{stopReason:"unknown"}` 也能让上一条绿——
+       那样每一句普通回复都变成"停了"（CLAUDE.md §3）。 */
+    const seen: Array<unknown> = [];
+    const body =
+      `data: ${JSON.stringify({ type: "control_text", text: "你好" })}\n\n` +
+      `data: ${JSON.stringify({ type: "complete", state: { sessionId: "s1" } })}\n\n`;
+    const res = new Response(body, {
+      headers: { "Content-Type": "text/event-stream" },
+    });
+    await consumeControlStreamResponse(res, {
+      onControlText: (_t, stop) => seen.push(stop),
+    });
+    expect(seen).toEqual([undefined]);
+  });
+
+  it("hook 把 stop 接住了——不接就是只改了生成侧", () => {
+    /* 变异：把 useSlideRuleSession 里 `if (stop) lastControlStopRef...` 删掉
+       → 本条红。 */
+    expect(SESSION).toContain("onControlText: (text, stop) =>");
+    expect(SESSION).toContain("lastControlStopRef.current = stop");
+  });
+
   it("control_tool_result 人话只进 onControlText 一次，不得双写", async () => {
     const texts: string[] = [];
     const tools: unknown[] = [];

@@ -70,7 +70,118 @@ from sliderule_llm.control_client import ControlLlmResult, call_control_llm
 CANNED_FAILURE = (
     "我是面团的推演引擎。说一个要做的应用，或问当前应用里已经推出来的角色/页面。"
 )
-OVER_CAP_TEXT = "停在控制面，未点火"
+
+# ── 控制面为什么停下来：是数据，不是一句话 ────────────────────────────────
+#
+# 抄的标准答案：grok-build `xai-grok-hooks/src/event.rs`
+#
+#     pub enum StopCancelledReason {
+#         UserInterrupt, PermissionRejected, PermissionCancelled,
+#         MaxTurns, NoProgress,
+#         /// A cancel the runtime could not classify. New causes land here
+#         /// until they get a name.
+#         Unknown,
+#     }
+#
+#     /// Derived from `reason` and shipped anyway, so hosts do not re-derive
+#     /// it as reasons are added.
+#     pub enum CancelledBy { User, Runtime, Unknown }
+#
+# 以及 `xai-tool-protocol/src/turn_hook.rs`：停的时候把**限额本身**一起带上
+#
+#     /// Opaque JSON mirror … (e.g. `{ "reason": "max_turns_reached", "limit": 50 }`)
+#     pub cancellation_context: Option<serde_json::Value>,
+#
+# ⚠ 2026-08-27 复审逮到：本仓四个不同的终止点塌成**同一句话**——
+#     45 秒墙钟到了           → "停在控制面，未火"
+#     8k token 烧完了         → 同一句
+#     8 轮工具还没收敛        → 同一句
+#     控制面 LLM 挂了/我们自己抛异常 → 另一句罐头
+#   而事件里 `{"type": "control_text", "text": …}` 一个结构化字段都没有
+#   （探针实测：stopReason / stoppedBy 在全文件出现 0 次）。
+#
+#   后果跟 closure_block_reason 治的那个是同一个病，只是搬到了控制面：
+#   前端看到的是一条普通助手消息，分不清「模型在绕圈」（产品 bug，该查提示词）
+#   和「网关挂了」（运维问题，该看日志）。用户看到的也是同一句，不知道再点
+#   一次有没有用——墙钟/额度到了再点一次可能就过了，绕圈再点一百次还是绕圈。
+
+
+class ControlStopReason(str, Enum):
+    """控制面这一回合为什么没跑完。可穷举、每个都对应一句能据以行动的话。"""
+
+    #: 点火前墙钟到顶（MAX_WALL_SECONDS）。
+    WALL_CLOCK = "wall_clock"
+    #: 便宜轮 token 预算烧完（MAX_CHEAP_TOKENS）。
+    TOKEN_BUDGET = "token_budget"
+    #: 工具轮次到顶还没收敛（MAX_TOOL_ROUNDS）。抄 grok 的 MaxTurns。
+    TOOL_ROUNDS = "tool_rounds"
+    #: 控制面模型/网关不可用，或分发器自己抛了。
+    LLM_UNAVAILABLE = "llm_unavailable"
+    #: 归不了类的。**新原因先落这儿，直到有人给它起名字**——抄 grok 的
+    #: Unknown 那句注释。绝不构造成上面任何一种。
+    UNKNOWN = "unknown"
+
+
+class StoppedBy(str, Enum):
+    """谁把它停下来的。由 reason 推导，但**照样上线**——抄 CancelledBy 那句
+    "shipped anyway, so hosts do not re-derive it as reasons are added"：
+    前端不该自己维护一份 reason → 归属的映射，新增原因时那份必然漂。"""
+
+    #: 我们自己的闸（墙钟/额度/轮次）。再点一次可能有用。
+    RUNTIME = "runtime"
+    #: 模型或网关。跟用户说的话不一样——不是他做错了什么。
+    PROVIDER = "provider"
+    UNKNOWN = "unknown"
+
+
+#: reason → (谁停的, 给用户的那句话)。**唯一渲染处**（同 closure_block_reason
+#: 那条纪律）。想在别处再拼一句"停在控制面"，先回来看这张表。
+_STOP_TABLE: Dict[ControlStopReason, tuple] = {
+    ControlStopReason.WALL_CLOCK: (
+        StoppedBy.RUNTIME,
+        "这一轮想得太久，先停在控制面没点火。再说一次或者直接点「开始推演」。",
+    ),
+    ControlStopReason.TOKEN_BUDGET: (
+        StoppedBy.RUNTIME,
+        "这一轮的思考额度用完了，先停在控制面没点火。再说一次或者直接点「开始推演」。",
+    ),
+    ControlStopReason.TOOL_ROUNDS: (
+        StoppedBy.RUNTIME,
+        "来回想了好几轮还没定下来，先停在控制面没点火。把需求说具体一点，"
+        "或者直接点「开始推演」。",
+    ),
+    ControlStopReason.LLM_UNAVAILABLE: (StoppedBy.PROVIDER, CANNED_FAILURE),
+    ControlStopReason.UNKNOWN: (
+        StoppedBy.UNKNOWN,
+        "这一轮没跑完，先停在控制面没点火。再说一次试试。",
+    ),
+}
+
+
+def stop_wire(
+    reason: ControlStopReason,
+    *,
+    limit: Any = None,
+    used: Any = None,
+) -> Dict[str, Any]:
+    """停下来这件事的**结构化部分**，挂在 control_text 事件上。
+
+    带 limit / used 是抄 turn_hook 的 cancellation_context
+    （`{"reason": "max_turns_reached", "limit": 50}`）：光说"到顶了"没法行动，
+    说"8 轮到顶"才知道是不是该调这个数。
+    """
+    stopped_by, _text = _STOP_TABLE[reason]
+    out: Dict[str, Any] = {"stopReason": reason.value, "stoppedBy": stopped_by.value}
+    if limit is not None:
+        out["limit"] = limit
+    if used is not None:
+        out["used"] = used
+    return out
+
+
+def stop_text(reason: ControlStopReason) -> str:
+    """**唯一**把停止原因变成人话的地方。"""
+    return _STOP_TABLE[reason][1]
 
 CONTROL_SIX_FIELDS = (
     "sessionId",
@@ -357,6 +468,33 @@ MAX_CHEAP_TOKENS = 8000
 MAX_WALL_SECONDS = 45.0
 INSPECT_MAX_ITEMS = 40
 INSPECT_MAX_CHARS = 4000
+
+#: 单个工具结果回喂给模型时的上限。
+#:
+#: 抄的标准答案：grok-build `xai-grok-compaction/src/intra_compaction/fit.rs`
+#: 的第 2 级台阶
+#:
+#:     //! 2. ToolTruncated  only if still over: prefix-clip tool results
+#:     //!                   that alone exceed budget (grok-build style:
+#:     //!                   max_bytes = max_tokens * 4, no binary search)
+#:
+#: 以及 `xai-tool-types/src/task.rs` 的三件套：
+#:
+#:     pub truncated: bool,
+#:     /// Pre-resolved hint text for truncated output.
+#:     pub truncation_hint: String,
+#:     /// Raw output byte count before any truncation or soft-wrapping.
+#:     pub raw_output_bytes: usize,
+#:
+#: ⚠ 2026-08-27 复审逮到：本仓把工具结果**原样 json.dumps 回喂**，一个长度
+#:   约束都没有。而 `search_evidence` 的 hits 来自公网——一次胖搜索就能把下一
+#:   次控制面请求的提示词顶穿。8k 的 cheap 预算是**调用之后**才对账的，拦不住
+#:   已经发出去的那一发；真顶穿了是网关 4xx，走 except → 罐头，用户看到的是
+#:   "控制面挂了"，而真因是我们自己把上下文塞爆了。
+#:
+#: 取 4000 字符 ≈ 1000 token（grok 的 4 字节/token 口径），八轮正好落在
+#: MAX_CHEAP_TOKENS 上。跟 INSPECT_MAX_CHARS 同一个数量级，是同一族常量。
+CONTROL_TOOL_RESULT_MAX_CHARS = 4000
 
 CONTROL_TOOLS: List[Dict[str, Any]] = [
     {
@@ -1631,10 +1769,54 @@ def _usage_tokens(usage: Any) -> int:
         return 0
 
 
-async def _canned(state: V5SessionState, text: str) -> AsyncIterator[Dict[str, Any]]:
+def bound_tool_result(body: Any) -> str:
+    """工具结果 → 回喂给模型的字符串，超限就裁并**说自己裁了**。
+
+    抄 grok 三件套（见 CONTROL_TOOL_RESULT_MAX_CHARS 头注）：
+      truncated       —— 明说裁过。不说的话模型会以为世界就这么大：搜出来
+                         二十条只喂进去三条，它会当成"只找到三条"。
+      truncationHint  —— 预先写好的一句人话，模型据此决定要不要换个查询词。
+      rawChars        —— **裁之前**的真实大小。裁完的字符串长度是恒定的，
+                         真实规模只能靠这个字段活下来（grok 那边留它是给
+                         doom-loop 检测用的，同一个理由）。
+
+    裁法是**前缀裁**，不做二分（grok 明写 "no binary search"）——省下来的
+    那点精度不值一次额外的 token 计数。
+    """
+    text = json.dumps(
+        body if body is not None else {"ok": True}, ensure_ascii=False
+    )
+    if len(text) <= CONTROL_TOOL_RESULT_MAX_CHARS:
+        return text
+    return json.dumps(
+        {
+            "truncated": True,
+            "rawChars": len(text),
+            "truncationHint": (
+                f"结果太长，只喂了前 {CONTROL_TOOL_RESULT_MAX_CHARS} 字"
+                f"（原文 {len(text)} 字）。需要更多就换个更窄的查询词再来一次。"
+            ),
+            "preview": text[:CONTROL_TOOL_RESULT_MAX_CHARS],
+        },
+        ensure_ascii=False,
+    )
+
+
+async def _canned(
+    state: V5SessionState,
+    text: str,
+    *,
+    stop: Optional[Dict[str, Any]] = None,
+) -> AsyncIterator[Dict[str, Any]]:
+    """罐头回复。`stop` 是结构化的「为什么停」，挂在同一个事件上。
+
+    ⚠ 挂在 control_text 而不是新开一个事件类型，是为了让老客户端照旧渲染
+      text、新客户端多读两个字段——加新事件类型会让 consumeControlStreamResponse
+      的 switch 静默丢掉它（那个 switch 没有 default，2026-08-27 已记过一次）。
+    """
     _append_transcript(state, {"role": "assistant", "kind": "canned", "text": text})
     await _apersist(state)
-    yield {"type": "control_text", "text": text}
+    yield {"type": "control_text", "text": text, **(stop or {})}
     yield _complete(state)
 
 
@@ -1751,11 +1933,26 @@ async def _run_control_turn_body(
 
     forced = resolve_forced_tool(payload, user_text)
 
-    async def _maybe_over_cap() -> bool:
-        return (
-            time.monotonic() - started > MAX_WALL_SECONDS
-            or cheap_tokens > MAX_CHEAP_TOKENS
-        )
+    async def _maybe_over_cap() -> Optional[Dict[str, Any]]:
+        """到顶了就返回结构化的停止信息，没到顶返回 None。
+
+        ⚠ 原来返回 bool，两条不同的闸（墙钟 / 额度）塌成同一句话。前端分不清
+          "想太久"和"额度烧完"，用户也不知道再点一次有没有用。
+        """
+        elapsed = time.monotonic() - started
+        if elapsed > MAX_WALL_SECONDS:
+            return stop_wire(
+                ControlStopReason.WALL_CLOCK,
+                limit=MAX_WALL_SECONDS,
+                used=round(elapsed, 1),
+            )
+        if cheap_tokens > MAX_CHEAP_TOKENS:
+            return stop_wire(
+                ControlStopReason.TOKEN_BUDGET,
+                limit=MAX_CHEAP_TOKENS,
+                used=cheap_tokens,
+            )
+        return None
 
     # 昂贵按钮：跳过控制面 LLM。
     # 停泊中只有「开始推演」(forcedTool=rehearse) 才点火；/推演 与模型
@@ -1874,14 +2071,20 @@ async def _run_control_turn_body(
 
     try:
         for _round in range(MAX_TOOL_ROUNDS):
-            if await _maybe_over_cap():
-                async for event in _canned(state, OVER_CAP_TEXT):
+            capped = await _maybe_over_cap()
+            if capped:
+                async for event in _canned(
+                    state, stop_text(ControlStopReason(capped["stopReason"])), stop=capped
+                ):
                     yield event
                 return
             result = await _invoke_control_llm(messages, tools=list_control_tools(state))
             cheap_tokens += _usage_tokens(getattr(result, "usage", None))
-            if await _maybe_over_cap():
-                async for event in _canned(state, OVER_CAP_TEXT):
+            capped = await _maybe_over_cap()
+            if capped:
+                async for event in _canned(
+                    state, stop_text(ControlStopReason(capped["stopReason"])), stop=capped
+                ):
                     yield event
                 return
             calls = [
@@ -1962,20 +2165,33 @@ async def _run_control_turn_body(
                     {
                         "role": "tool",
                         "tool_call_id": call.get("id") or "",
-                        "content": json.dumps(
+                        # ⚠ 必须走 bound_tool_result，不许裸 json.dumps：
+                        #   search_evidence 的 hits 来自公网，一次胖搜索能把
+                        #   下一发请求的提示词顶穿（见该函数头注）。
+                        "content": bound_tool_result(
                             tool_body
                             if tool_body is not None
-                            else {"ok": True, "tool": name},
-                            ensure_ascii=False,
+                            else {"ok": True, "tool": name}
                         ),
                     }
                 )
-        async for event in _canned(state, OVER_CAP_TEXT):
+        # 走到这儿 = 八轮工具跑满还没收敛。抄 grok 的 MaxTurns：这跟墙钟、
+        # 额度是**三件不同的事**，别再塌成同一句话。
+        rounds_stop = stop_wire(
+            ControlStopReason.TOOL_ROUNDS, limit=MAX_TOOL_ROUNDS, used=MAX_TOOL_ROUNDS
+        )
+        async for event in _canned(
+            state, stop_text(ControlStopReason.TOOL_ROUNDS), stop=rounds_stop
+        ):
             yield event
     except HTTPException:
         raise
     except Exception:  # noqa: BLE001 — 失败合同：罐头回复，禁止点火
-        async for event in _canned(state, CANNED_FAILURE):
+        async for event in _canned(
+            state,
+            stop_text(ControlStopReason.LLM_UNAVAILABLE),
+            stop=stop_wire(ControlStopReason.LLM_UNAVAILABLE),
+        ):
             yield event
 
 

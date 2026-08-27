@@ -363,6 +363,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
    *   一旦哪天有人给它加上"必须处理完才能继续"，伴随式就退回成了拦路的问答，
    *   而闸的 fail-closed 语义会当场跟着炸（见 spec-assumptions.ts 头注）。
    */
+  /**
+   * 控制面这一回合最后一次「为什么停」。null = 正常收尾。
+   *
+   * ⚠ 存下来不是为了现在就画：是为了让"服务端发了 → 客户端收到了"这条链
+   *   可断言。只加事件字段不接消费侧，就是生成侧改了一半（CLAUDE.md §4）。
+   */
+  const lastControlStopRef = useRef<import("@/lib/sliderule-marathon-driver").ControlStop | null>(
+    null
+  );
   const specAssumptionsRef = useRef<SpecAssumption[]>([]);
   const [specAssumptions, setSpecAssumptions] = useState<SpecAssumption[]>([]);
   /**
@@ -1432,7 +1441,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               onProgressHeartbeat: (stage) => {
                 if (stage) applyRehearsalEvent(stage);
               },
-              onControlText: text => {
+              onControlText: (text, stop) => {
+                // 结构化的「为什么停」先落下来再渲染文字：拿它区分"我们的闸拦的"
+                // （再试可能有用）和"网关挂了"（再试一百次也一样）。
+                // 服务端已经把 stoppedBy 推导好了，这里不许再推一遍（§4）。
+                if (stop) lastControlStopRef.current = stop;
                 if (!text.trim()) return;
                 appendStreamStep(text);
               },

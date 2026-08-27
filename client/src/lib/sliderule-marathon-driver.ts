@@ -21,6 +21,23 @@ import {
   pickedConnectorIds,
 } from "@/pages/sliderule/turn-capabilities";
 
+/**
+ * 控制面为什么停下来（服务端 ControlStopReason / StoppedBy 的线上形状）。
+ *
+ * `stoppedBy` 是服务端**推导好再发过来**的，客户端不许自己按 stopReason 再
+ * 推一遍——抄 grok 的 CancelledBy："shipped anyway, so hosts do not re-derive
+ * it as reasons are added"。自己推的那份，新增原因时必然漂。
+ */
+export type ControlStop = {
+  /** wall_clock | token_budget | tool_rounds | llm_unavailable | unknown */
+  stopReason: string;
+  /** runtime（我们的闸，再试可能有用）| provider（模型/网关）| unknown */
+  stoppedBy: string;
+  /** 到顶的那个限额本身（抄 turn_hook 的 cancellation_context）。 */
+  limit?: number;
+  used?: number;
+};
+
 export type MarathonStopReason =
   | "user_interrupted" // M1
   | "session_budget_exhausted" // M5
@@ -343,7 +360,15 @@ export interface DriveFullStreamOpts {
     hardCompliance?: string;
     brandConstraints?: string;
   };
-  onControlText?: (text: string) => void;
+  /**
+   * 控制面的一句话。第二个参数是**为什么停**的结构化部分（只有终止那一条带）。
+   *
+   * ⚠ 服务端 2026-08-27 起把停止原因当数据发（stopReason / stoppedBy / limit /
+   *   used，抄 grok 的 StopCancelledReason + CancelledBy，见
+   *   services/rehearsal_control.py 那段头注）。生成侧发了、消费侧丢掉，就是
+   *   本仓第四条的经典形态——四种停法在前端仍然长得一模一样。
+   */
+  onControlText?: (text: string, stop?: ControlStop) => void;
   onControlAskUser?: (event: {
     question: string;
     options?: string[];
@@ -739,7 +764,21 @@ export async function consumeControlStreamResponse(
         if (!handedOff) {
           switch (event.type) {
             case "control_text":
-              opts.onControlText?.(String(event.text || ""));
+              opts.onControlText?.(
+                String(event.text || ""),
+                typeof event.stopReason === "string"
+                  ? {
+                      stopReason: event.stopReason,
+                      stoppedBy: String(event.stoppedBy || "unknown"),
+                      ...(typeof event.limit === "number"
+                        ? { limit: event.limit }
+                        : {}),
+                      ...(typeof event.used === "number"
+                        ? { used: event.used }
+                        : {}),
+                    }
+                  : undefined
+              );
               continue;
             case "control_tool_start":
               opts.onControlToolStart?.(String(event.tool || ""));
