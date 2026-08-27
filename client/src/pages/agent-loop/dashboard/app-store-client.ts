@@ -363,3 +363,57 @@ export async function patchApp(
     return null;
   }
 }
+
+/**
+ * 刀 3 的「重写这一块」——把**整页 HTML + 块名 + 一句改法**丢给后端，
+ * 后端切出那一块交给 LLM，过三道闸之后原样拼回，回一份新的整页。
+ *
+ * 跟 `aiEditElement` 是一对：那条改"选中的一个元素"，这条改"画布上摊开的
+ * 那一块"。粒度不同，**边界完全一样**——不落库，用户点"保存修改"才写进
+ * pages_json。
+ *
+ * ⚠ 整页由调用方传上去（不是后端从库里读）：连改两块时，第二次要带着第一次
+ *   的改动。后端自己读库的话，第一块的改动会被悄悄丢掉——不报错，只是白改。
+ *
+ * ⚠ 回来的 `html` 是拼接结果，里面含 LLM 原始输出，**没有消毒**。塞进 DOM
+ *   之前必须过 `sanitizeHtmlFragment`（同 aiEditElement 那条）。
+ */
+export async function aiEditBlock(
+  appId: string,
+  pageId: string,
+  pageHtml: string,
+  blockName: string,
+  instruction: string
+): Promise<
+  | { ok: true; html: string; blockHtml: string }
+  | { ok: false; error: string }
+> {
+  try {
+    const res = await fetch(
+      `${BASE}/apps/${encodeURIComponent(appId)}/pages/${encodeURIComponent(pageId)}/ai-edit-block`,
+      {
+        method: "POST",
+        headers: { accept: "application/json", "content-type": "application/json" },
+        body: JSON.stringify({ pageHtml, blockName, instruction }),
+      }
+    );
+    const body = await res.json().catch(() => ({}) as Record<string, unknown>);
+    if (!res.ok) {
+      /* ⚠ 422 是**闸打回**（AI 改出来的东西会劫走块边界/标签不平衡），
+         不是网络错。原样把后端那句话给用户看——它说得比"改块失败"具体，
+         而这一步 fail-closed 的意义就在于让人看见为什么被拦。 */
+      const msg =
+        (typeof body?.message === "string" && body.message) ||
+        (typeof body?.detail === "string" && body.detail) ||
+        `改块失败（HTTP ${res.status}）`;
+      return { ok: false, error: msg };
+    }
+    const html = typeof body?.html === "string" ? body.html : "";
+    const blockHtml = typeof body?.blockHtml === "string" ? body.blockHtml : "";
+    if (!html.trim()) return { ok: false, error: "AI 没有返回内容，换个说法再试试" };
+    return { ok: true, html, blockHtml };
+  } catch {
+    return { ok: false, error: "网络请求失败，请检查连接后重试" };
+  }
+}
+

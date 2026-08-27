@@ -160,7 +160,8 @@ import { exportBoardHtml, exportBoardPng } from "./canvas-board-export";
 import { CanvasInspector } from "./CanvasInspector";
 import { AssetReplacePanel } from "./AssetReplacePanel";
 import { CanvasElementPanel } from "./CanvasElementPanel";
-import { updateAppPage } from "../../agent-loop/dashboard/app-store-client";
+import { CanvasBlockPanel } from "./CanvasBlockPanel";
+import { aiEditBlock, updateAppPage } from "../../agent-loop/dashboard/app-store-client";
 import { CanvasBoardMenu } from "./CanvasBoardMenu";
 import type { SpecPageLive } from "./SpecPageLiveStage";
 import type { ActionGates, BindingActionEvent } from "./html-binding-runtime";
@@ -509,6 +510,10 @@ interface CanvasCtx {
   onBlockRects: (pageId: string, snap: BlockRectSnapshot) => void;
   /** 块条带开着（块节点摊在画板右侧） */
   blocksShown: boolean;
+  /** 刀 3：点中一块 → 右侧面板变成「这一块」。 */
+  onPickBlock: (pageId: string, name: string) => void;
+  /** 当前选中的那一块（跨页唯一的 key）。 */
+  pickedBlockKey: string | null;
   /** 点了素材卡：记下来给画板描边（"这张图哪几页在用"） */
   onSelectAsset: (asset: CanvasAsset) => void;
   /** 打开换图面板。null = 宿主没给 appId，卡片上就不摆这颗按钮。 */
@@ -891,18 +896,31 @@ function BlockNode({ data }: NodeProps<Node<BlockNodeData>>) {
   const zoom = useStore(s => s.transform[2]);
   const inv = zoom > 0 ? 1 / zoom : 1;
   const { box, page, board, live, kindLabel } = data;
-  const selected = ctx?.picked?.block?.name === box.name &&
-    ctx?.picked?.pageId === box.pageId;
+  /* ⚠ 选中态以**块面板**的选择为准，不看元素选择：这两件事经常不是同一块
+     （Ctrl+点某个单元格选中的是元素，块面板选中的是整块）。 */
+  const selected = ctx?.pickedBlockKey === box.key;
 
   return (
     <div
       className="nodrag relative"
-      style={{ width: box.w, height: box.h }}
+      /* ⚠ `pointerEvents: "all"` 是**功能不是样式**：React Flow 对
+         既不可选也不可拖的节点整体加 `pointer-events: none`，于是下面那个
+         onPointerDown 一次都收不到——真机上表现为"点块没反应、面板不出来"，
+         而节点渲染完全正常、控制台一声不吭。 */
+      style={{ width: box.w, height: box.h, pointerEvents: "all" }}
       data-testid="sliderule-canvas-block-node"
       data-block-name={box.name}
       data-block-page={box.pageId}
       data-block-live={live ? "1" : "0"}
       data-block-truncated={box.truncated ? "1" : "0"}
+      data-block-selected={selected ? "1" : "0"}
+      /* ⚠ 块节点 `selectable:false`（不进 React Flow 的选择集，避免它跟画板
+         抢选中态），所以点选自己接。onPointerDown 而不是 onClick——
+         React Flow 会在 pointerdown 阶段吃掉一部分事件。 */
+      onPointerDown={e => {
+        e.stopPropagation();
+        ctx?.onPickBlock(box.pageId, box.name);
+      }}
     >
       {/* 归属线的落点。⚠ **必须常挂**，不能"要连线才挂"——React Flow 靠
           把手的位置算边的起终点，把手不在时这条边直接画不出来（控制台 #008，
@@ -1367,8 +1385,18 @@ function CanvasInner({
    *   两处共用一份。存进节点的话面板读不到，就会各存一份、迟早分叉。
    */
   const [picked, setPicked] = React.useState<PickedElement | null>(null);
+  /* 刀 3：选中的那一块。⚠ 跟 `picked`（元素）是两件事，不能合并——
+     Ctrl+点单元格选中的是元素，点块节点选中的是整块。 */
+  const [pickedBlock, setPickedBlock] = React.useState<{
+    pageId: string;
+    name: string;
+  } | null>(null);
+  const onPickBlock = React.useCallback((pageId: string, name: string) => {
+    setPickedBlock({ pageId, name });
+  }, []);
   // 换页面清单 / 换会话 → 之前选中的元素多半已经不在了，别留着一个悬空的框。
   React.useEffect(() => setPicked(null), [sessionId, pages.length]);
+  React.useEffect(() => setPickedBlock(null), [sessionId, pages.length]);
 
   /* ------------------------------------------------- 空格平移 / 画板重排 */
 
@@ -1505,6 +1533,26 @@ function CanvasInner({
     [appId, onPagesReplaced]
   );
 
+  /**
+   * 刀 3：只重写这一块。
+   *
+   * ⚠ **不落库**。后端那条接口本身没有副作用，这里拿到新页面只交给调用方
+   *   预览；用户在面板上点「保存这一页」才走 applyElementEdit（那条会存）。
+   *   没有这条边界，AI 改块就绕开了"未保存可以放弃"——而重写一整块恰恰是
+   *   最需要能反悔的操作。
+   */
+  const rewriteBlock = React.useCallback(
+    async (pageId: string, blockName: string, instruction: string) => {
+      if (!appId) throw new Error("这个会话还没存成应用，先跑完一轮推演");
+      const html = pages.find(p => p.pageId === pageId)?.html ?? "";
+      if (!html) throw new Error("这一页还没有内容");
+      const res = await aiEditBlock(appId, pageId, html, blockName, instruction);
+      if (!res.ok) throw new Error(res.error);
+      return res.html;
+    },
+    [appId, pages]
+  );
+
   const replaceAsset = React.useCallback(
     async (group: AssetUseGroup, nextUrl: string): Promise<number> => {
       if (!appId) throw new Error("这个会话还没存成应用，先跑完一轮推演");
@@ -1622,10 +1670,26 @@ function CanvasInner({
    *   里两条世代号要分开的理由：跟着几何世代号走的话，每次平移都要重扫一遍
    *   五页 HTML，纯白烧。
    */
-  const impactEdges = React.useMemo(() => {
-    const all = pages.flatMap(pg => scanBlockBindings(pg.pageId, pg.html));
-    return buildImpactEdges(all);
-  }, [pages]);
+  const blockBindings = React.useMemo(
+    () => pages.flatMap(pg => scanBlockBindings(pg.pageId, pg.html)),
+    [pages]
+  );
+  const impactEdges = React.useMemo(
+    () => buildImpactEdges(blockBindings),
+    [blockBindings]
+  );
+
+  /** 块 key → 给人看的名字（跨页时带上页名，否则重名分不清）。 */
+  const labelOfBlockKey = React.useCallback(
+    (key: string) => {
+      const b = blockBindings.find(x => x.key === key);
+      if (!b) return key;
+      return b.pageId === pickedBlock?.pageId
+        ? b.name
+        : `${nameOf(b.pageId)}·${b.name}`;
+    },
+    [blockBindings, pickedBlock, nameOf]
+  );
 
   /* 刀 2：块条带的盒子。位置从 placedBoxes 算——画板拖到哪，块跟到哪。 */
   const blockBoxes = React.useMemo<BlockNodeBox[]>(() => {
@@ -2023,6 +2087,10 @@ function CanvasInner({
       highlightPageIds,
       onBlockRects,
       blocksShown,
+      onPickBlock,
+      pickedBlockKey: pickedBlock
+        ? blockKey(pickedBlock.pageId, pickedBlock.name)
+        : null,
     }),
     [
       entered,
@@ -2044,6 +2112,8 @@ function CanvasInner({
       highlightPageIds,
       onBlockRects,
       blocksShown,
+      onPickBlock,
+      pickedBlock,
     ]
   );
 
@@ -2568,6 +2638,45 @@ function CanvasInner({
             pageName={nameOf(picked.pageId)}
             onApply={applyElementEdit}
             onClose={() => setPicked(null)}
+          />
+        ) : null}
+
+        {pickedBlock && !picked ? (
+          /* ⚠ 元素面板优先：两个面板同时出现会挤在一起，而用户此刻关心的是
+             他刚 Ctrl+点的那个元素。块面板等元素面板关掉再回来。 */
+          <CanvasBlockPanel
+            pageId={pickedBlock.pageId}
+            pageName={nameOf(pickedBlock.pageId)}
+            blockName={pickedBlock.name}
+            kindLabel={
+              blockRects[pickedBlock.pageId]?.rects.find(
+                r => r.name === pickedBlock.name
+              )?.kindLabel ?? "块"
+            }
+            indexInPage={(() => {
+              const i =
+                blockRects[pickedBlock.pageId]?.rects.findIndex(
+                  r => r.name === pickedBlock.name
+                ) ?? -1;
+              return i >= 0 ? i + 1 : null;
+            })()}
+            live={blockFit.live.has(
+              blockKey(pickedBlock.pageId, pickedBlock.name)
+            )}
+            bindings={
+              blockBindings.find(
+                b => b.key === blockKey(pickedBlock.pageId, pickedBlock.name)
+              ) ?? null
+            }
+            impactEdges={impactEdges}
+            labelOfKey={labelOfBlockKey}
+            canEdit={!!appId}
+            onRewrite={ins =>
+              rewriteBlock(pickedBlock.pageId, pickedBlock.name, ins)
+            }
+            onPreview={html => onPagesReplaced?.({ [pickedBlock.pageId]: html })}
+            onSave={html => applyElementEdit(pickedBlock.pageId, html)}
+            onClose={() => setPickedBlock(null)}
           />
         ) : null}
 

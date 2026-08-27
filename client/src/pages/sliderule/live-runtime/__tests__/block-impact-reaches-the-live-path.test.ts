@@ -31,14 +31,27 @@ describe("影响线真的挂上了画布", () => {
     expect(STAGE).toMatch(/return\s*\[\s*\.\.\.ownership,\s*\.\.\.linkEdges,\s*\.\.\.impact/);
   });
 
-  it("影响面只依赖 pages —— **不跟几何世代号走**", () => {
+  it("影响面的依赖链只到 pages —— **不跟几何世代号走**", () => {
     // 刀 1 分两条世代号的全部理由：绑定关系跟视口/缩放/画板位置无关。
     // 跟着几何走的话每次平移都要重扫五页 HTML。
-    const m = STAGE.match(
-      /const impactEdges = React\.useMemo\([\s\S]{0,400}?\}, \[([^\]]*)\]\)/
+    // 链路是 pages → blockBindings → impactEdges，两段都不许混进几何量。
+    const scan = STAGE.match(
+      /const blockBindings = React\.useMemo\([\s\S]{0,300}?\[([^\]]*)\]\s*\)/
     );
-    expect(m).not.toBeNull();
-    expect(m![1].trim()).toBe("pages");
+    expect(scan).not.toBeNull();
+    expect(scan![1].trim()).toBe("pages");
+
+    const edges = STAGE.match(
+      /const impactEdges = React\.useMemo\([\s\S]{0,300}?\[([^\]]*)\]\s*\)/
+    );
+    expect(edges).not.toBeNull();
+    expect(edges![1].trim()).toBe("blockBindings");
+
+    // 反向：两段都不许出现几何量（vp / blockFit / placedBoxes）
+    for (const m of [scan![0], edges![0]]) {
+      expect(m).not.toContain("vp");
+      expect(m).not.toContain("placedBoxes");
+    }
   });
 });
 

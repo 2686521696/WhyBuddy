@@ -2357,6 +2357,136 @@ async def ai_edit_page_element(
     return {"html": html}
 
 
+@router.post("/apps/{app_id}/pages/{page_id}/ai-edit-block")
+async def ai_edit_page_block(
+    app_id: str,
+    page_id: str,
+    payload: Dict[str, Any],
+    viewer: CurrentUserOptional,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """刀 3：只重写**一块**（2026-08-27）。
+
+    跟上面 ai-edit-element 是一对：那条改的是"选中的一个元素"，这条改的是
+    "画布上摊开的那一块"。粒度不同，边界一样——**都不落库**，用户在画布里
+    点保存才走 PATCH。
+
+    ## 为什么整页 HTML 由前端传上来
+
+    照 ai-edit-element 的口径：这条接口无状态。好处是画布里还没保存的改动
+    也能接着改（用户改了 A 块再改 B 块，第二次的 pageHtml 是含 A 改动的那份）。
+    从库里读的话，第二次会把 A 的改动悄悄丢掉——不报错，只是白改一遍。
+
+    ## 三道闸，全部 fail-closed
+
+    1. ``slice_block`` —— 这一页没有这块 / 块名重复，直接失败（重名时改哪一块
+       都是猜，抄 grok managed_text 的 ``duplicate requested item``）
+    2. ``validate_block_body`` —— 新 body 含 ``data-block`` / 标签不平衡 / 带
+       ``<script>``，一律打回。**不许**"尽力修一下再落"：标签不平衡会把外层
+       的块提前关掉，那一页后半段全被吸进这一块里，闸全绿而页面塌了。
+    3. ``replace_block`` —— 只换 body，``before``/``after``（grok 的
+       unmanaged_text）一个字节不动
+
+    ⚠ 闭环/证据类 fail-closed，这条属于前者（纪律七）：改块改坏了宁可报错，
+      不能端出一份"看着像改过"的页面。
+
+    ⚠ 返回的是 LLM 原始输出拼出来的整页，**没有消毒**。前端塞进 DOM 之前
+      必须过 DOMPurify（同 ai-edit-element 那条注释）。
+    """
+    _auth(x_internal_key)
+    from services import app_store
+
+    record = await asyncio.to_thread(app_store.get_app, app_id)
+    if record is None:
+        raise HTTPException(404, "app not found")
+    app_access.require("revise", record, viewer)
+
+    page_html = payload.get("pageHtml") if isinstance(payload, dict) else None
+    block_name = payload.get("blockName") if isinstance(payload, dict) else None
+    instruction = payload.get("instruction") if isinstance(payload, dict) else None
+    if not isinstance(page_html, str) or not page_html.strip():
+        raise HTTPException(400, "pageHtml 不能为空")
+    if not isinstance(block_name, str) or not block_name.strip():
+        raise HTTPException(400, "blockName 不能为空")
+    if not isinstance(instruction, str) or not instruction.strip():
+        raise HTTPException(400, "请说清楚这一块想怎么改")
+    if len(page_html.encode("utf-8")) > _MAX_PAGE_HTML_BYTES:
+        raise HTTPException(413, f"页面 HTML 超过 {_MAX_PAGE_HTML_BYTES} 字节上限")
+    if len(instruction) > _MAX_AI_EDIT_INSTRUCTION_CHARS:
+        raise HTTPException(400, f"改法说明超过 {_MAX_AI_EDIT_INSTRUCTION_CHARS} 字上限")
+
+    from services.page_blocks import (
+        BlockEditError,
+        replace_block,
+        slice_block,
+        validate_block_body,
+    )
+
+    try:
+        cut = slice_block(page_html, block_name)
+    except BlockEditError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    from services.v5_capability_executor import _llm_generate_enabled
+
+    if not _llm_generate_enabled():
+        raise HTTPException(503, "AI 编辑没开（SLIDERULE_LLM_GENERATE_ENABLED 未开启）")
+
+    from sliderule_llm.client import LlmError, call_llm
+    from sliderule_llm.config import default_max_tokens
+
+    system = (
+        "你是网页区块编辑器。用户给你一个区块的**内部** HTML 和一句改法要求，"
+        "你只输出改完之后这个区块的内部 HTML。\n"
+        "硬性要求：\n"
+        "1. 只输出 HTML 本身，不要解释、不要 markdown 代码块。\n"
+        "2. **不要输出区块自己的外层标签**——只要里面的内容。\n"
+        "3. **绝对不要写 data-block 属性**，写了会把区块边界劫走，整页会塌。\n"
+        "4. 标签必须自平衡：每个开标签都要有对应的闭合标签。\n"
+        "5. 保留原有的 data-field / data-entity / data-record / data-rows / "
+        "data-action 等 data-* 属性——那些是这页面接数据用的，删了对应的"
+        "数字和文字会整片消失。\n"
+        "6. 尽量沿用原有的 class（Tailwind 工具类）风格与体量。"
+    )
+    user = (
+        f"区块名：{cut['name']}（类型：{cut['kind']}）\n"
+        f"区块内部 HTML：\n{cut['body']}\n\n"
+        f"改法：{instruction.strip()}"
+    )
+
+    timeout_ms = int(os.getenv(AIGC_TRYRUN_TIMEOUT_MS_ENV, str(DEFAULT_AIGC_TRYRUN_TIMEOUT_MS)))
+    try:
+        result = await asyncio.to_thread(
+            call_llm,
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            temperature=0.4,
+            max_tokens=default_max_tokens(),
+            timeout_ms=timeout_ms,
+        )
+    except LlmError as exc:
+        raise HTTPException(502, f"AI 改块失败：{str(exc)[:200]}") from exc
+
+    new_body = _strip_markdown_fence(result.content)
+    if not new_body.strip():
+        raise HTTPException(502, "AI 没有返回内容，换个说法再试试")
+
+    try:
+        validate_block_body(new_body, name=block_name)
+        merged = replace_block(page_html, block_name, new_body)
+    except BlockEditError as exc:
+        # fail-closed：宁可报错，不端一份"看着像改过"的页面
+        raise HTTPException(422, f"AI 改出来的内容过不了闸：{exc}") from exc
+
+    return {
+        "pageId": page_id,
+        "blockName": cut["name"],
+        "blockHtml": new_body,
+        "html": merged,
+        # 给判据用：改完只有这一块变，两侧 unmanaged_text 一个字节没动
+        "unchangedBytes": len(cut["before"]) + len(cut["after"]),
+    }
+
+
 #: 手动换图搜一次最多等多久。自动画页那条是 3s（fail-open，超时就留占位图，
 #: 不能拖慢整轮推演）；这条是用户点了按钮在等，宁可多等两秒也别空手而归——
 #: 2026-08-25 实测这条链路上 3s 频繁 ReadTimeout。
