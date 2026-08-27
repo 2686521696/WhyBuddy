@@ -213,6 +213,50 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
 }
 
 
+# 「这个工具要不要用户显式批准才能执行」。**只列要批准的**——缺省不需要
+# （grok 的 `ToolDef.requires_permission` 默认 false）。
+#
+# 抄的标准答案：grok-build `xai-grok-workspace-types/src/types/tools.rs`
+#     pub struct ToolDef { ...
+#         /// Whether invocations require explicit user permission.
+#         pub requires_permission: bool, }
+#     pub enum ToolProgress {
+#         /// Tool started (after permission was granted, before execution).
+#         Started { call_id: ToolCallId }, ... }
+#
+# 值放的是「已获批准吗」的谓词：本仓的批准动作就是范围卡上那次
+# 「开始推演」，落在 transcript 的 scope_confirmed 上。
+#
+# ⚠ 原来这两条检查散在各自的 if 分支里。散着写的代价刚付过：refine 那段
+#   是 2026-08-27 才补的，补之前空会话上模型挑 refine 零范围卡就点火
+#   （实测信封调用 1 次）。**新加一个贵动词很容易忘写那一段，而忘了不会
+#   报错，只会绕过范围卡。** 所以收到一处声明 + 一道统一闸。
+#
+# ⚠ 声明**不进 provider 线上 payload**：CONTROL_TOOLS 是 OpenAI 风格的
+#   function 定义，塞非标准键有被拒的风险。grok 的 ToolDef 是他们自己的
+#   内部类型，对应物就是这张表。
+TOOL_PERMISSION: Dict[str, Any] = {
+    # 范围卡上的「开始推演」就是这道批准。停泊 ≠ 已批准（见 _scope_confirmed）。
+    "rehearse": lambda st: _scope_confirmed(st),
+    # 空会话没模型可精修 → 先开卡。有模型时是否也出薄卡是产品决定
+    # （M2 Q2），本次不扩大范围。
+    "refine": lambda st: _has_model(st),
+}
+
+
+def tool_requires_permission(name: Any) -> bool:
+    """这个工具要不要显式批准。没声明的一律不需要。"""
+    return str(name or "").strip() in TOOL_PERMISSION
+
+
+def tool_permission_granted(name: Any, state: V5SessionState) -> bool:
+    """已获批准吗。不需要批准的恒为真。"""
+    pred = TOOL_PERMISSION.get(str(name or "").strip())
+    if pred is None:
+        return True
+    return bool(pred(state))
+
+
 def should_list_tool(name: Any, state: V5SessionState) -> bool:
     """这一轮要不要把这个工具摆给模型看。没声明谓词的一律列出。"""
     pred = TOOL_LIST_WHEN.get(str(name or "").strip())
@@ -1457,6 +1501,12 @@ async def _run_control_turn_body(
     # rehearse 必须再 park。确认时把复述句写入 goal 并 persist，再 handoff。
     parked_unconfirmed = getattr(state, "awaitReason", None) == "control_scope"
     if forced == "rehearse" or (forced is None and _is_slash_rehearse(user_text)):
+        # ⚠ 这里不是"又查一遍" TOOL_PERMISSION，**这一支就是那次授予**：
+        #   停泊态 + forcedTool=rehearse = 用户点了范围卡上的「开始推演」。
+        #   对照 grok：`NeedPermission{req_id}` 是请求，用户回的
+        #   `Permission{req_id, decision}` 是授予——这个按钮就是那个 decision。
+        #   `_scope_confirmed` 对停泊态返回 False（停泊 ≠ 已确认），所以
+        #   少了下面这个 or 子句，按钮永远点不着。别把它"统一"掉。
         may_ignite = _scope_confirmed(state) or (
             forced == "rehearse" and parked_unconfirmed
         )
@@ -1683,6 +1733,22 @@ async def _dispatch_tool(
     design_system_id: Any,
     original_goal: str,
 ) -> AsyncIterator[Dict[str, Any]]:
+    # 批准闸（抄 grok 的 ToolDef.requires_permission）。声明在 TOOL_PERMISSION
+    # 一处，强制在这一处——不再让每个贵动词各写一段（漏写不报错，只会绕过
+    # 范围卡：refine 就这么漏过一次）。
+    #
+    # grok 把 `Started` 的语义钉成「批准之后、执行之前」，所以这道闸必须在
+    # 任何 control_tool_start / handoff 之前。
+    if not tool_permission_granted(name, state):
+        async for event in _park_scope(
+            state,
+            _confirmed_restatement(state, user_text) or _restate(original_goal),
+            device=str(preferred_device or "unspecified"),
+            variant="thin" if original_goal else "full",
+            user_text=user_text,
+        ):
+            yield event
+        return
     if name == "ask_user":
         question = str(args.get("question") or "你想做什么应用？")
         options = args.get("options") if isinstance(args.get("options"), list) else []
@@ -1732,17 +1798,8 @@ async def _dispatch_tool(
             yield event
         return
     if name == "rehearse":
-        # 模型 rehearse 不是确认按钮。停泊 / 未确认必须再 park。
-        if not _scope_confirmed(state):
-            async for event in _park_scope(
-                state,
-                _confirmed_restatement(state, user_text) or _restate(original_goal),
-                device=str(preferred_device or "unspecified"),
-                variant="thin" if original_goal else "full",
-                user_text=user_text,
-            ):
-                yield event
-            return
+        # 「模型 rehearse 不是确认按钮」这道闸已收进函数开头的统一批准闸
+        # （TOOL_PERMISSION["rehearse"] = _scope_confirmed）。
         restatement = _confirmed_restatement(state, user_text)
         _write_confirmed_goal(state, restatement)
         _copy_scope_opt_in_into_goal(state)
@@ -1759,20 +1816,9 @@ async def _dispatch_tool(
             yield event
         return
     if name == "refine":
-        # ⚠ 空会话没东西可精修。裁清单只是省一次往返，挡不住硬调/幻觉调用；
-        #   实测（探针）夹具让模型在空 goal 会话上挑 refine，工厂信封被调
-        #   1 次、零范围卡就点了火——违反验收 A「确认前 drive_full_* = 0」
-        #   与 KD4。rehearse 一直有 _scope_confirmed 兜底，refine 漏了。
-        if not _has_model(state):
-            async for event in _park_scope(
-                state,
-                _restate(user_text) or _restate(original_goal),
-                device=str(preferred_device or "unspecified"),
-                variant="thin" if original_goal else "full",
-                user_text=user_text,
-            ):
-                yield event
-            return
+        # 空会话没东西可精修这道闸已收进统一批准闸
+        # （TOOL_PERMISSION["refine"] = _has_model）。实测过的洞：补之前
+        # 模型在空 goal 会话上挑 refine，信封被调 1 次、零范围卡就点了火。
         goal = dict(state.goal) if isinstance(state.goal, dict) else {}
         goal["text"] = original_goal
         state.goal = goal
