@@ -30,7 +30,11 @@ export type AwaitReason =
   | "closure_blocked"
   | "closure_missing"
   | "control_ask"
-  | "control_scope";
+  | "control_scope"
+  /** 控制面澄清停靠。缺它会让停在澄清的会话读不回来，见 models/v5_state.py 同名注释。 */
+  | "control_clarify"
+  /** 马拉松内层驱动失败停靠（slide_rule_marathon.py）。同上，缺它会连失败取证一起丢。 */
+  | "error";
 
 export interface Artifact {
   id: string;
