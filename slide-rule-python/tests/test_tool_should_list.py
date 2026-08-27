@@ -53,11 +53,27 @@ def _scoped() -> V5SessionState:
     )
 
 
+def _with_model() -> V5SessionState:
+    """已经落过一版模型的会话。"""
+    return V5SessionState(
+        sessionId="lst-model",
+        goal={"text": "请假系统", "status": "clear"},
+        modelVersions=[{"id": "v1", "model": {"systems": []}}],
+        currentModelVersionId="v1",
+    )
+
+
 def test_default_is_list_absence_means_visible():
-    """没声明谓词的工具一律列出（grok 的 `should_list` 默认 true）。"""
+    """没声明谓词的工具一律列出（grok 的 `should_list` 默认 true）。
+
+    ⚠ 这条原本拿 inspect_model 当例子，后来 inspect_model 也声明了谓词
+      （见 test_inspect_model_hidden_without_anything_to_inspect），例子就得换。
+      别再把它加回来：加回来这条就成了"断言一个有谓词的工具没被裁"，
+      测的不是缺省行为。
+    """
     assert should_list_tool("search_evidence", _fresh()) is True
-    assert should_list_tool("inspect_model", _fresh()) is True
     assert should_list_tool("ask_user", _fresh()) is True
+    assert should_list_tool("scope_card", _fresh()) is True
     assert should_list_tool("一个还没声明谓词的新工具", _fresh()) is True
 
 
@@ -100,6 +116,40 @@ def test_refine_and_fork_hidden_without_a_model():
     """
     assert "refine" not in _names(_fresh())
     assert "fork_variant" not in _names(_fresh())
+
+
+def test_inspect_model_hidden_without_anything_to_inspect():
+    """没有模型也没有闭环产物时，别让模型看见 inspect_model。
+
+    ⚠ 2026-08-27 真机压测逮到的洞（refine/fork 补 _has_model 时漏掉的第三个）：
+      同一句「中小学课后托管的报名、排班与考勤系统」连跑三遍，
+          #1 scope_card → 范围卡 41s
+          #3 scope_card → 范围卡 41s
+          #2 inspect_model → 套话收尾 → **范围卡再没出现**，136s 打空
+      真机会话 sr-20260827073836-C3VJV41PV5 的 controlTranscript 明写着
+      `turn → clarify → turn → inspect_model → canned`。零模型的会话上
+      `_inspect_digest` 只能回「当前还没有五系统模型可查看」，模型拿到这句
+      就没有下一步了——不是它选错，是本来就不该让它看见这个选项。
+
+    口径盯**能不能查到东西**，不盯 modelVersions 一个字段：`_inspect_digest`
+    先读 publishClosure、再退 modelVersions，判据跟着它走（下面第二段）。
+    """
+    assert "inspect_model" not in _names(_fresh())
+    assert "inspect_model" in _names(_with_model())
+
+
+def test_inspect_model_visible_on_closure_only_sessions():
+    """反向：有闭环产物、还没落版本的会话**必须**还能查看。
+
+    这一条是上一条的对照。少了它，把谓词写成 `_has_model` 也全绿——
+    而那样会在真机上把「跑完一轮、模型版本还没落库」的会话的查看入口
+    裁没（CLAUDE.md §3：每写一条"不该有"，配一条"该有的还在"）。
+    """
+    state = _fresh()
+    state.sessionId = "lst-closure-only"
+    state.publishClosure = {"five_system_model": {"systems": []}}
+    assert not (getattr(state, "modelVersions", None) or []), "前提：没有模型版本"
+    assert "inspect_model" in _names(state)
 
 
 def test_manifest_is_never_empty():

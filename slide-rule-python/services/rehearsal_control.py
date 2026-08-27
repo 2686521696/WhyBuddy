@@ -185,6 +185,19 @@ def _has_model(state: V5SessionState) -> bool:
     return bool(getattr(state, "modelVersions", None) or [])
 
 
+def _has_inspectable(state: V5SessionState) -> bool:
+    """有没有东西可给 inspect_model 看。
+
+    ⚠ 口径**照抄 `_inspect_digest` 自己读的两个来源**（publishClosure 优先、
+      再退到 modelVersions），不写成 `_has_model`。写成 _has_model 会在
+      「有闭环产物、还没落版本」的会话上把 inspect_model 裁掉——那正是
+      CLAUDE.md §4 说的「同一件事两处实现，口径一歪就半边不生效」。
+    """
+    if getattr(state, "publishClosure", None):
+        return True
+    return _has_model(state)
+
+
 # 按轮的清单谓词。**只列需要裁的**——没声明的一律列出
 # （grok 的 `should_list` 默认 true）。
 #
@@ -210,6 +223,14 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
     #   （违反验收 A / KD4）。裁清单 + 分发兜底两处一起补。
     "refine": lambda st: _has_model(st),
     "fork_variant": lambda st: _has_model(st),
+    # ⚠ 2026-08-27 压测逮到的第三个同形态：同一句「中小学课后托管」跑三遍，
+    #   两遍模型挑 scope_card（41s 出范围卡），一遍在**零模型**的会话上挑了
+    #   inspect_model —— `_inspect_digest` 老实回「当前还没有五系统模型可
+    #   查看」，模型接着甩了句套话就收尾，范围卡再没出现，136s 打空
+    #   （真机 sr-20260827073836-C3VJV41PV5，controlTranscript 里明写着
+    #    turn → clarify → turn → inspect_model → canned）。
+    #   refine / fork_variant 当时补了 _has_model，inspect_model 漏了一个。
+    "inspect_model": lambda st: _has_inspectable(st),
 }
 
 
