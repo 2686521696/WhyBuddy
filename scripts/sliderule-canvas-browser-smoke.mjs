@@ -58,6 +58,12 @@
  *   AE 面板排成 容器/文字/外观/内容 四段
  *   AF **面板上的数是元素真实的值**  ← 控件排满一屏但全是"默认"也叫丰富
  *
+ * 第七轮（刀 1：块矩形）再钉 3 条：
+ *
+ *   AG 选中的画板画出块框，没选中的一个都没有
+ *   AH **块框逐像素落在块上**       ← AG 只证明"有框"，框飘了照样绿
+ *   AI **表格块的框高度证明量在绑定之后** ← 单测钉不死的那条
+ *
  * ⚠ J 与 I 必须一起看，理由同 B/C 与 E：把手 opacity 是 1（I 绿）不代表它
  *   收得到事件。2026-08-25 真机就是 I 绿 J 红——手势层 `absolute inset-0`
  *   在 DOM 里排在把手后面，同层后来居上，把手看得见按不下去。
@@ -456,6 +462,167 @@ async function main() {
       await page.waitForTimeout(400);
     } else {
       log("画板里取不到可点元素，跳过 AB/AC/AD");
+    }
+
+    /*
+     * ── 第七轮（刀 1：块矩形）────────────────────────────────────
+     *
+     * AG 选中的画板上画出块框，且**没选中的画板上一个都没有**
+     * AH **块框逐像素落在块上**   ← AG 只证明"有框"，框飘到别处照样绿
+     * AI **表格块的框高度证明量在 applyBindings 之后**
+     *
+     * AI 是这一刀最贵的一条，也是单测钉不死的一条：绑定前 tbody 只有模板行，
+     * 量早了框只有真实高度的几分之一——不报错、不告警、源码 grep 全绿。
+     * 只有真机上量"表格块的框比一行高多少"才咬得住。
+     */
+    await page.evaluate(() => {
+      const b = document.querySelector(
+        '[data-testid="sliderule-canvas-artboard"]'
+      );
+      b?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await page.waitForTimeout(700);
+
+    const blockTruth = await page.evaluate(() => {
+      const boards = [
+        ...document.querySelectorAll('[data-testid="sliderule-canvas-artboard"]'),
+      ];
+      const active = boards[0];
+      const f = active?.querySelector("iframe");
+      const d = f?.contentDocument;
+      if (!d?.body || !f) return null;
+
+      const spots = [
+        ...active.querySelectorAll('[data-testid="sliderule-canvas-block-spot"]'),
+      ];
+      /* 别的画板上不该有框（只在选中/进板的那块画） */
+      const elsewhere = boards
+        .slice(1)
+        .reduce(
+          (n, b) =>
+            n +
+            b.querySelectorAll('[data-testid="sliderule-canvas-block-spot"]')
+              .length,
+          0
+        );
+
+      /* 页面里**真实**的顶层块（不数嵌套的） */
+      const domBlocks = [...d.querySelectorAll("[data-block]")].filter(el => {
+        let p = el.parentElement;
+        while (p) {
+          if (p.hasAttribute?.("data-block")) return false;
+          p = p.parentElement;
+        }
+        /* ⚠ 期望集要跟实现**同一条规则**算：顶层、且矩形不为 0。
+           塌成 0 的块（折叠面板 / display:none 的 tab）实现里是主动丢掉的
+           （measureBlockRects 那条注释），期望集不照做的话 AG 会长期偏差 1，
+           而那不是 bug，是判据自己算错了期望。 */
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      });
+
+      const fb = f.getBoundingClientRect();
+      const sx = fb.width / (d.documentElement.clientWidth || f.clientWidth);
+      const sy = fb.height / (d.documentElement.clientHeight || f.clientHeight);
+
+      /* 逐块比：框的屏幕位置 vs 块的屏幕位置 */
+      const pairs = [];
+      for (const el of domBlocks) {
+        const name = el.getAttribute("data-block");
+        const spot = spots.find(s => s.getAttribute("data-block-name") === name);
+        if (!spot) {
+          pairs.push({ name, missing: true });
+          continue;
+        }
+        const r = el.getBoundingClientRect();
+        const sr = spot.getBoundingClientRect();
+        pairs.push({
+          name,
+          want: {
+            left: Math.round(fb.left + r.left * sx),
+            top: Math.round(fb.top + r.top * sy),
+            w: Math.round(r.width * sx),
+            h: Math.round(r.height * sy),
+          },
+          got: {
+            left: Math.round(sr.left),
+            top: Math.round(sr.top),
+            w: Math.round(sr.width),
+            h: Math.round(sr.height),
+          },
+        });
+      }
+
+      /* AI：表格块的真实高度 vs 单行高度。绑定跑过 = 行是克隆出来的 = 远高于一行。 */
+      const tables = domBlocks
+        .filter(el => el.getAttribute("data-block-kind") === "table")
+        .map(el => {
+          const rows = [...el.querySelectorAll("tbody tr")];
+          const rowH = rows.length
+            ? rows[0].getBoundingClientRect().height
+            : 0;
+          const spot = spots.find(
+            s => s.getAttribute("data-block-name") === el.getAttribute("data-block")
+          );
+          /* ⚠ 两套坐标别混：块的高是 **iframe 坐标**，框的高是**屏幕坐标**，
+             差一个 sy。第一版直接把 537 和 95 并排打出来，看着像不匹配，
+             其实只是我打印错了单位。这里统一折回 iframe 坐标再比。 */
+          return {
+            name: el.getAttribute("data-block"),
+            rows: rows.length,
+            rowH: Math.round(rowH),
+            blockH: Math.round(el.getBoundingClientRect().height),
+            spotHInDoc: spot
+              ? Math.round(spot.getBoundingClientRect().height / sy)
+              : null,
+          };
+        });
+
+      return { spots: spots.length, elsewhere, domCount: domBlocks.length, pairs, tables };
+    });
+
+    if (!blockTruth) {
+      log("取不到画板文档，跳过 AG/AH/AI");
+    } else {
+      check(
+        "AG 选中的画板画出块框，条数等于页面里的顶层块数；没选中的画板一个都没有",
+        blockTruth.spots === blockTruth.domCount &&
+          blockTruth.domCount > 0 &&
+          blockTruth.elsewhere === 0,
+        `框=${blockTruth.spots} 块=${blockTruth.domCount} 别处=${blockTruth.elsewhere}`
+      );
+
+      /* ⚠ AG 不够：框全画在 (0,0) 也是"条数对得上"。AH 才是那条闸。
+         允许 2px 取整误差（框有 outline，且画布缩放后取整两次）。 */
+      const near = (a, b) => Math.abs(a - b) <= 2;
+      const bad = blockTruth.pairs.filter(
+        p =>
+          p.missing ||
+          !near(p.got.left, p.want.left) ||
+          !near(p.got.top, p.want.top) ||
+          !near(p.got.w, p.want.w) ||
+          !near(p.got.h, p.want.h)
+      );
+      check(
+        "AH 块框逐像素落在块上（不是飘在别处、也不是全挤在原点）",
+        blockTruth.pairs.length > 0 && bad.length === 0,
+        bad.length ? `对不上的 ${bad.length}/${blockTruth.pairs.length}: ${JSON.stringify(bad.slice(0, 2))}` : `${blockTruth.pairs.length} 块全中`
+      );
+
+      /* AI：量早了这件事的真机判据。表格块必须明显高于一行。 */
+      const multiRow = blockTruth.tables.filter(t => t.rows >= 3);
+      check(
+        "AI 表格块的框高度证明量在 applyBindings **之后**（不是模板行的高度）",
+        multiRow.length === 0 ||
+          multiRow.every(
+            t => t.spotHInDoc !== null && t.spotHInDoc > t.rowH * 2.5
+          ),
+        multiRow.length
+          ? JSON.stringify(multiRow)
+          : "这一页没有多行表格块，跳过（不算通过也不算失败）"
+      );
+      await page.screenshot({ path: `${SHOT_DIR}/block-spots.png` });
+      log(`块框真机：${JSON.stringify(blockTruth.tables)}`);
     }
 
     // 等画板挂上真渲染再动手：没挂载的画板是占位块，手势层还在但内容没到，

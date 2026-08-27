@@ -236,6 +236,50 @@ export function measureBlockRects(
 }
 
 /**
+ * 刚量到的这份要不要顶掉上一份。
+ *
+ * ## ⚠ 这条是 2026-08-27 真机抓出来的，别改回去
+ *
+ * 第一版直接拿 `isBlockRectsStale(prev, next.geometryGeneration)` 当采纳判据
+ * ——世代号一样就不采纳。抄 `VisibleLinkMap` 抄过头了：那边 `rebuild` 是在
+ * **渲染帧里**调的，那一刻布局已经定了，同一世代号下不可能量出两种结果。
+ * 我们这边不是——`onReport` 之后 iframe 的内容还会再落一次，于是：
+ *
+ *     第一次量（同一世代号）  blocks in body 0  → rects 0，采纳
+ *     第二次量（同一世代号）  blocks in body 6  → rects 6，**被守卫丢掉**
+ *
+ * 表现：画布上一个块框都没有，`data-block-rects` 恒为 0，而单测 13 条全绿、
+ * 控制台无报错、HTML 里 `data-block` 一个不少。正是本仓最贵的那种坏法。
+ *
+ * 根因是**把守卫用错了地方**：世代号该决定"要不要去量"（effect 的依赖），
+ * 不该决定"量完了要不要采纳"。已经量出来的就是此刻的事实，无条件比旧的新。
+ *
+ * 所以这里只做一件事：**内容真的一样就别换对象**（省掉一次无谓重渲染），
+ * 除此之外一律采纳。
+ */
+export function shouldAdoptSnapshot(
+  prev: BlockRectSnapshot,
+  next: BlockRectSnapshot
+): boolean {
+  if (prev.geometryGeneration !== next.geometryGeneration) return true;
+  if (prev.rects.length !== next.rects.length) return true;
+  for (let i = 0; i < next.rects.length; i += 1) {
+    const a = prev.rects[i];
+    const b = next.rects[i];
+    if (
+      a.name !== b.name ||
+      a.rect.left !== b.rect.left ||
+      a.rect.top !== b.rect.top ||
+      a.rect.width !== b.rect.width ||
+      a.rect.height !== b.rect.height
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * 画板节点坐标 (x, y) 落在哪一块里。没有就是 null。
  *
  * 抄 `VisibleLinkMap::link_at`。**倒着找**：块互不嵌套，但真机上出现过

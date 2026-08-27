@@ -558,7 +558,7 @@ function ArtboardNode({ data }: NodeProps<Node<ArtboardData>>) {
      ⚠ `mounted` 传进去当 enabled：没进过视口的画板里根本没有 iframe，
        量了也是空——更要紧的是别给它装 ResizeObserver。 */
   const hostRef = React.useRef<HTMLDivElement | null>(null);
-  const blocks = useBlockRects(hostRef, page.html, { width: box.w, height: box.h }, mounted);
+  const blocks = useBlockRects(hostRef, page.pageId, page.html, { width: box.w, height: box.h }, mounted);
   const isLinkSource = ctx?.linkFrom === page.pageId;
   const highlighted = ctx?.highlightPageIds.includes(page.pageId) ?? false;
   const labelScale = labelCounterScale(zoom);
@@ -581,6 +581,11 @@ function ArtboardNode({ data }: NodeProps<Node<ArtboardData>>) {
       data-page-id={page.pageId}
       data-entered={entered ? "1" : undefined}
       data-mounted={mounted ? "1" : "0"}
+      /* 刀 1 的可观测点（照 data-mounted 的先例）：量到几块、这块画板是不是
+         当前选中。真机判据靠它区分"没量到"和"量到了但没画"——这两种在
+         截图上长得一模一样。 */
+      data-block-rects={blocks.snapshot.rects.length}
+      data-board-active={isActive || entered ? "1" : "0"}
       ref={el => {
         /* ⚠ 两个消费者共用这一个 ref：导出要拿画板 DOM，刀 1 要从这儿往下
            找 iframe。写成两个 ref 属性后一个会覆盖前一个（React 的既定行为），

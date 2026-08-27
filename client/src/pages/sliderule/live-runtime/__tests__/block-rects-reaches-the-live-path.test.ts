@@ -83,7 +83,45 @@ describe("反向判据", () => {
     expect(HOOK).not.toContain("throw new");
   });
 
-  it("ResizeObserver 缺席时不炸（老环境 / jsdom）", () => {
-    expect(HOOK).toContain('typeof ResizeObserver === "undefined"');
+  it("ResizeObserver / MutationObserver 缺席时不炸（老环境 / jsdom）", () => {
+    expect(HOOK).toContain('typeof ResizeObserver !== "undefined"');
+    expect(HOOK).toContain('typeof MutationObserver !== "undefined"');
+  });
+});
+
+describe("⚠ 2026-08-27 真机抓出来的三个坑，各钉一条", () => {
+  /*
+   * 这三条都是"单测全绿而画布上一个块框都没有"的形态，且都只在**第一块
+   * 画板**上发作（另外四块正常）——这正是本仓最贵的那类 bug。
+   * 修完必须留判据，否则下一次重构会原样退回去。
+   */
+
+  it("坑一：量测不只挂宿主的 onReport（它是一次性的，可能发在布局之前）", () => {
+    // html-app-surface 里 `wired` 闭包标志成功一次就不再响应后续 load。
+    // 只靠 onReport 的话，抢跑那一块永远停在空快照。
+    expect(HOOK).toContain('addEventListener("load"');
+  });
+
+  it("坑二：接不上要有界重试（子 effect 先于父跑，那次 load 已经错过了）", () => {
+    // React 的 effect 是子先于父。HtmlAppSurface 早就赋完 srcdoc 了，
+    // 父组件这时候挂监听等不到那一发；一 return 就再没有第二次机会。
+    expect(HOOK).toContain("tryAttach");
+    // 反向：重试必须**有界**，不许无限空转
+    expect(HOOK).toMatch(/tries\s*>\s*\d+/);
+  });
+
+  it("坑三：判「接上了」的条件是 body **有内容**，不是 body 存在", () => {
+    // about:blank 的空 body 也是 body。挂上去之后文档被整体替换，
+    // 观察的那棵树成了孤儿，applyBindings 克隆多少行都不会回调。
+    expect(HOOK).toContain("doc?.body?.childNodes.length");
+    // 反向：不许退回"只判 body 在不在"
+    expect(HOOK).not.toMatch(/if\s*\(\s*!doc\?\.body\s*\)\s*return false/);
+  });
+
+  it("坑四（同源）：采纳用 shouldAdoptSnapshot，不是 isBlockRectsStale", () => {
+    // 世代号该决定"要不要去量"，不该决定"量完了要不要采纳"。
+    // 用错的话，同一世代号下第二次量到的正确结果会被丢掉。
+    expect(HOOK).toContain("shouldAdoptSnapshot(prev, next)");
+    expect(HOOK).not.toContain("isBlockRectsStale(prev,");
   });
 });

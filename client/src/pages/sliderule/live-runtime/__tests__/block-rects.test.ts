@@ -17,6 +17,7 @@ import {
   BLOCK_MARK_ATTR,
   listBlocks,
 } from "../page-blocks";
+import type { BlockRectSnapshot } from "../block-rects";
 import {
   EMPTY_BLOCK_RECTS,
   blockKey,
@@ -24,6 +25,7 @@ import {
   deriveGenerations,
   isBlockRectsStale,
   measureBlockRects,
+  shouldAdoptSnapshot,
 } from "../block-rects";
 
 /** jsdom 不做布局，`getBoundingClientRect` 恒回 0。按元素挂一份假矩形。 */
@@ -252,5 +254,63 @@ describe("命中与跨页键", () => {
     // 变异：把 blockKey 改成只回 name，这条红。
     // 抄自 link_map.rs 的合并规则："Same id alone is not enough"。
     expect(blockKey("p1", "统计概览")).not.toBe(blockKey("p2", "统计概览"));
+  });
+});
+
+describe("⚠ 采纳判据：同一世代号下的第二次量测不许被丢掉", () => {
+  /*
+   * 这一组是 2026-08-27 真机抓出来的缺口补的。当时 13 条判据全绿，而画布上
+   * 一个块框都没有——因为 hook 拿"世代号一样"当了不采纳的理由，把 iframe
+   * 内容落定后量到的那份正确结果丢了。
+   *
+   * 单测测不到"iframe 内容什么时候落定"，但**采纳规则本身**是纯的，能测。
+   */
+  const snap = (gen: number, names: string[], h = 100): BlockRectSnapshot => ({
+    geometryGeneration: gen,
+    rects: names.map((name, i) => ({
+      name,
+      kind: "card" as const,
+      label: name,
+      kindLabel: "卡片",
+      rect: { left: 0, top: i * h, width: 200, height: h },
+    })),
+  });
+
+  it("同一世代号，从 0 块变成 6 块 → **必须**采纳", () => {
+    // 变异：把 shouldAdoptSnapshot 换回 isBlockRectsStale，这条立刻红。
+    // 真机表现是 data-block-rects 恒为 0、画布上一个框都没有。
+    const prev = snap(777, []);
+    const next = snap(777, ["a", "b", "c", "d", "e", "f"]);
+    expect(shouldAdoptSnapshot(prev, next)).toBe(true);
+  });
+
+  it("同一世代号，块数一样但位置动了 → 采纳（响应式回流）", () => {
+    const prev = snap(777, ["a", "b"], 100);
+    const next = snap(777, ["a", "b"], 140);
+    expect(shouldAdoptSnapshot(prev, next)).toBe(true);
+  });
+
+  it("同一世代号，块换了人（改了一块之后名字变了）→ 采纳", () => {
+    expect(shouldAdoptSnapshot(snap(777, ["a"]), snap(777, ["b"]))).toBe(true);
+  });
+
+  it("世代号变了 → 一律采纳", () => {
+    expect(shouldAdoptSnapshot(snap(1, ["a"]), snap(2, ["a"]))).toBe(true);
+  });
+
+  it("反向：逐字节一样 → 不采纳（省掉无谓重渲染）", () => {
+    // 少了这条，每次 onReport 都换一个新对象，画布上挂着十几个 iframe 时
+    // 会一路重渲。它是这个函数存在的另一半理由。
+    expect(shouldAdoptSnapshot(snap(9, ["a", "b"]), snap(9, ["a", "b"]))).toBe(
+      false
+    );
+  });
+
+  it("反向：空 → 空 也不采纳", () => {
+    expect(shouldAdoptSnapshot(snap(9, []), snap(9, []))).toBe(false);
+  });
+
+  it("从空快照起步一定采纳（第一次必量）", () => {
+    expect(shouldAdoptSnapshot(EMPTY_BLOCK_RECTS, snap(0, []))).toBe(true);
   });
 });
