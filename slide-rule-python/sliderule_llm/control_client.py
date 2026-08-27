@@ -96,7 +96,7 @@ def _extract_control(data: dict[str, Any]) -> tuple[str, list[dict[str, Any]], d
     return content, tool_calls, data.get("usage"), choice.get("finish_reason")
 
 
-def call_control_llm(
+async def call_control_llm(
     messages: list[dict[str, Any]],
     *,
     tools: list[dict[str, Any]] | None = None,
@@ -105,7 +105,41 @@ def call_control_llm(
     max_tokens: int | None = None,
     timeout_ms: int | None = None,
 ) -> ControlLlmResult:
-    """控制面专用。失败 raise LlmError；空正文但有 tool_calls 算成功。"""
+    """控制面专用。失败 raise LlmError；空正文但有 tool_calls 算成功。
+
+    ⚠ **必须是 async 且用 AsyncClient**——这不是风格问题，是取消能不能穿透
+      到 socket 的问题。2026-08-27 真机实测（社区养老/连锁餐饮两趟）：
+
+          272.290  发起
+          273.131  LLM 调用开始
+          275.319  ← 客户端断开（用户点了停 / 关了页面）
+          278.427  LLM 调用才返回     ← 客户端走后又跑了 3.1 秒
+
+      老写法是同步 httpx 塞进 `run_in_threadpool`。Starlette 在客户端断开时
+      **确实**把生成器协程取消掉了（实测：不进第 2 轮、不 yield、不落盘），
+      但 `Task.cancel()` 打不断已经在线程里阻塞的 socket 读——线程照跑到底，
+      钱照烧，线程池的槽照占（池子 64 槽，一组流式推演占 5 槽）。
+      这跟 services/run_cancel.py 头注记的是同一个病。
+
+      试过的死路，别再试一遍：从外部调 `client.close()` **打不断**在飞的
+      同步请求（实测：慢 10s 的服务端，1s 时 close，线程仍跑满 10.00s 才
+      拿到 ReadError）。同步 httpx 没有可中断的口子。
+
+      抄的标准答案：grok-build `xai-grok-sampler/src/actor/request_task.rs`
+
+          tokio::select! {
+              biased;
+              _ = cancel_token.cancelled() => return AttemptOutcome::Cancelled,
+              next = l2.next() => ...
+          }
+
+      要点不是那个 `supports_cancel` 字段（那东西在 grok 自己代码里只声明、
+      零消费者，照抄等于抄了个摆设），而是**取消赢了 race 之后请求的 future
+      被 drop，tokio/reqwest 会真的关掉 socket**。Python 里的等价物只有一个：
+      让请求本身跑在事件循环上，靠 asyncio 取消传导下去。
+      实测 AsyncClient 这条真的通——取消 1.00s 生效，服务端写回时收到
+      BrokenPipe，证明 socket 确实被关了。
+    """
     cfg = get_llm_config()
     if not cfg.api_key or not cfg.base_url:
         raise LlmError("LLM not configured (no api_key)", transient=False)
@@ -123,8 +157,13 @@ def call_control_llm(
     )
     started = time.time()
     try:
-        with httpx.Client(timeout=_http_timeout(timeout_s)) as client:
-            response = client.post(url, headers=_headers(cfg.api_key), json=payload)
+        # ⚠ AsyncClient + await：取消要靠 asyncio 传导到 socket（见函数头注）。
+        #   换回 httpx.Client 不会报错、测试也不一定红——只会让"停止"重新
+        #   变成"看起来停了"。别改。
+        async with httpx.AsyncClient(timeout=_http_timeout(timeout_s)) as client:
+            response = await client.post(
+                url, headers=_headers(cfg.api_key), json=payload
+            )
     except httpx.TimeoutException as exc:
         raise LlmError(
             _describe_timeout(exc, timeout_s, time.time() - started), transient=True

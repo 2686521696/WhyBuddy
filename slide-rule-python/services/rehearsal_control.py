@@ -43,6 +43,7 @@ set_refine_context）；FORBIDDEN 把 v5_capability_executor 当入口 import。
 from __future__ import annotations
 
 import copy
+import inspect
 import json
 import time
 import uuid
@@ -307,6 +308,35 @@ def list_control_tools(state: V5SessionState) -> List[Dict[str, Any]]:
     return [
         t for t in CONTROL_TOOLS if ((t.get("function") or {}).get("name")) in floor
     ]
+
+
+async def _invoke_control_llm(
+    messages: List[Dict[str, Any]], *, tools: List[Dict[str, Any]]
+) -> Any:
+    """问一次控制面模型。**真协程直接 await，同步实现才下线程池。**
+
+    为什么要分这一下（两条判据各钉住一半，缺一条就静默失效）：
+
+    · 生产实现 `call_control_llm` 是 async + httpx.AsyncClient。必须**直接
+      await 在事件循环上**——只有这样客户端断开时 asyncio 的取消才传导得到
+      socket，请求才是真停了而不是"账面停了、线程还在烧"。塞进
+      run_in_threadpool 会把这条链斩断（那正是 2026-08-27 实测到的
+      「客户端走后 LLM 又跑 3.1 秒」）。
+      钉这一半的是 tests/test_control_llm_cancel_really_aborts.py。
+
+    · 测试替身（42 个文件共用的 ControlHarness）传的是**同步**函数，其中
+      test_control_stream_does_not_block_the_loop 的夹具还故意用 time.sleep
+      阻塞——那条判据要的就是"阻塞实现不许冻住别人的流"。同步实现直接
+      await 会真把事件循环焊死，那条测试立刻红。所以同步的照旧下线程池。
+      钉这一半的是那条并发测试本身。
+
+    ⚠ 分派看的是**函数**不是返回值：同步阻塞实现一旦被调用就已经把循环占住了，
+      拿到返回值再判断已经晚了。
+    """
+    fn = call_control_llm
+    if inspect.iscoroutinefunction(fn):
+        return await fn(messages, tools=tools)
+    return await run_in_threadpool(lambda: fn(messages, tools=tools))
 
 
 # 客户端认得的**终局事件**。少了它们，`consumeControlStreamResponse` 的
@@ -1638,11 +1668,7 @@ async def _run_control_turn_body(
                 async for event in _canned(state, OVER_CAP_TEXT):
                     yield event
                 return
-            # ⚠ 同步 httpx（超时最长 45s）。不挪出事件循环的话，一个人的
-            #   控制面轮次会把所有并发的 SSE 流一起冻住——见 _apersist 的头注。
-            result = await run_in_threadpool(
-                lambda: call_control_llm(messages, tools=list_control_tools(state))
-            )
+            result = await _invoke_control_llm(messages, tools=list_control_tools(state))
             cheap_tokens += _usage_tokens(getattr(result, "usage", None))
             if await _maybe_over_cap():
                 async for event in _canned(state, OVER_CAP_TEXT):
