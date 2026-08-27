@@ -590,6 +590,66 @@ describe("unified /sliderule surface (single mental model)", () => {
     );
     expect(hero).toContain("sliderule-clarification-card");
   });
+
+  /*
+   * KD19：作曲家只留**一张**「要不要烧」的决策面。
+   *
+   * ⚠ 2026-08-27 真机截图：范围卡直接压在 ClarificationCard 上——背后还能
+   *   看到那张卡的 × 和输入行。两张决策面同屏，用户不知道该答哪张；更糟的是
+   *   背后那张问的还是上一轮的 goal。
+   *
+   * 成因：`showClarify` 只看 clarifications/clarifyHidden/answerClarifications，
+   *   完全没看 pendingScope / pendingAsk。
+   *
+   * 判据落在渲染出来的 HTML 上（两个 testid 不许同时出现），不是落在
+   * showClarify 的源码写法上。
+   */
+  it("KD19：范围卡停泊时不许同时画澄清卡", () => {
+    const html = renderPage({
+      pendingClarifications: [
+        { id: "gap-1", prompt: "这个诊所系统首期主要服务哪几类核心角色？", type: "free_text" },
+      ],
+      answerClarifications: () => {},
+      pendingScope: {
+        userText: "做一个连锁宠物医院管理系统",
+        restatement: "连锁宠物医院管理系统",
+        device: "desktop",
+      },
+      onConfirmScope: () => {},
+      onReviseScope: () => {},
+    });
+
+    expect(html).toContain("sliderule-scope-card");
+    expect(
+      html.includes("sliderule-clarification-card"),
+      "范围卡和澄清卡同屏：两张决策面叠在一起（KD19）"
+    ).toBe(false);
+  });
+
+  it("KD19：ask 停泊时同样不许画澄清卡", () => {
+    const html = renderPage({
+      pendingClarifications: [
+        { id: "gap-1", prompt: "上一轮的问题", type: "free_text" },
+      ],
+      answerClarifications: () => {},
+      pendingAsk: { question: "这是新应用，还是这一版的变体？", options: ["新应用", "变体"] },
+    });
+
+    expect(
+      html.includes("sliderule-clarification-card"),
+      "ask 停泊时还画着澄清卡"
+    ).toBe(false);
+  });
+
+  it("反向：没有任何停泊时，澄清卡照旧出现（别把它整个关掉）", () => {
+    const html = renderPage({
+      pendingClarifications: [
+        { id: "gap-1", prompt: "这个审批流需要几级审批？", type: "free_text" },
+      ],
+      answerClarifications: () => {},
+    });
+    expect(html).toContain("sliderule-clarification-card");
+  });
 });
 
 describe("buildImItems（消息 id 对账——重复 id 会让 assistant-ui 整页崩）", () => {

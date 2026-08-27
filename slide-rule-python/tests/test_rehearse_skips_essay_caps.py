@@ -63,7 +63,11 @@ def driver(monkeypatch, tmp_path):
     import services.v5_agentic_pick as agentic_mod
     import services.v5_full_driver as driver_mod
 
-    monkeypatch.setattr(driver_mod, "persist_state", lambda s: s)
+    # ⚠ 2026-08-27：PR-8(M14) 之后 persist_state 必须返回 {"ok": True} 的 dict，
+    #   否则能力结束落 pendingRuns 时判为写失败并 fail-closed 中止本轮
+    #   （见 v5_full_driver 的 pending_write_failed）。`lambda s: s` 会让驱动器
+    #   跑完第一个能力就退出——判据看到的"只执行了一个能力"是夹具造成的。
+    monkeypatch.setattr(driver_mod, "persist_state", lambda s: {"ok": True})
     monkeypatch.setattr(
         driver_mod, "_ensure_runtime_closure_evidence", lambda state, *a, **k: state
     )
@@ -209,6 +213,57 @@ def test_repair_with_app_profile_still_uses_repair_picks_not_short_list(
     assert agentic_calls == []
     assert not _essay_in(started) or "evidence.search" in executed
     _ = events
+
+
+def test_repair_picks_come_from_the_gate_not_the_short_list(driver, monkeypatch):
+    """repair 的选材源必须是门标红项，不是 app 短清单——盯**调用了谁**。
+
+    ⚠ 2026-08-27：上面那条同题判据点名 `evidence.search` 必须出现在 executed
+      里。那是盯字面：真正要钉的是"选材走 pick_repair_capabilities"，而具体
+      跑到第几项取决于 max_loops / 夹具中止时机。夹具一变（PR-8 把
+      persist_state 契约改成必须返回 {"ok": True}，旧 stub 让驱动器跑完第一个
+      能力就 fail-closed 中止），那条就报"repair 被短路到短清单了"——而 repair
+      分支根本没被短路。
+
+    本条盯语义：repair=True 时 pick_repair_capabilities 被调用、
+    _app_profile_short_picks 一次都不被调用。反向：把 v5_full_driver 里
+    `if repair:` 那一支删掉让它落到 `elif profile == "app"`，本条必须红。
+    """
+    driver_mod, agentic_mod = driver
+    _install_traps(driver_mod, agentic_mod, monkeypatch)
+
+    repair_calls: list = []
+    short_calls: list = []
+    real_repair = driver_mod.pick_repair_capabilities
+    real_short = driver_mod._app_profile_short_picks
+
+    def spy_repair(state, *a, **k):
+        repair_calls.append(state)
+        return real_repair(state, *a, **k)
+
+    def spy_short(state, *a, **k):
+        short_calls.append(state)
+        return real_short(state, *a, **k)
+
+    monkeypatch.setattr(driver_mod, "pick_repair_capabilities", spy_repair)
+    monkeypatch.setattr(driver_mod, "_app_profile_short_picks", spy_short)
+
+    _collect(
+        driver_mod,
+        _seeded("app-repair-source"),
+        max_loops=1,
+        user_instruction=GOAL,
+        profile="app",
+        repair=True,
+    )
+
+    assert repair_calls, (
+        "repair=True 没有走 pick_repair_capabilities——修什么必须以门说了算"
+    )
+    assert short_calls == [], (
+        "repair=True 落到了 app 短清单分支：门标红的缺口会被短清单顶掉，"
+        "E26 补救等于失效"
+    )
 
 
 def test_scope_opt_in_feasibility_report_brings_essay_caps_back(driver, monkeypatch):

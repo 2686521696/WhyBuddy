@@ -47,6 +47,7 @@ import {
   studioPhoneStageDefaultPx,
   studioStageDefaultPercent,
   needsMaximizeLockFix,
+  needsEmptySessionRestore,
 } from "./studio-layout";
 
 function splitDefaults(device?: "desktop" | "phone") {
@@ -101,10 +102,13 @@ export function StudioSplit({
   chat,
   stage,
   device,
+  sessionEmpty = false,
 }: {
   chat: React.ReactNode;
   stage: React.ReactNode;
   device?: "desktop" | "phone";
+  /** 会话里还没有任何轮次。空会话的舞台没东西可看，不许把作曲家折着。 */
+  sessionEmpty?: boolean;
 }) {
   const layout = useStudioLayout();
   if (!layout)
@@ -115,6 +119,7 @@ export function StudioSplit({
       chat={chat}
       stage={stage}
       device={device}
+      sessionEmpty={sessionEmpty}
     />
   );
 }
@@ -124,11 +129,13 @@ function StudioSplitLive({
   chat,
   stage,
   device,
+  sessionEmpty = false,
 }: {
   layout: NonNullable<ReturnType<typeof useStudioLayout>>;
   chat: React.ReactNode;
   stage: React.ReactNode;
   device?: "desktop" | "phone";
+  sessionEmpty?: boolean;
 }) {
   const {
     chatRef,
@@ -192,6 +199,26 @@ function StudioSplitLive({
     collapsed.stage,
     chatRef,
   ]);
+
+  /*
+   * 空会话把对话栏还原开。
+   *
+   * ⚠ 2026-08-27 用户报的死角：舞台最大化后 layout=[0,100]，对话栏塌成 0%，
+   *   作曲家只剩 18px。这个比例经 autoSaveId 存进 localStorage，点「新建会话」
+   *   照样继承——新会话右侧只有一句「推演完成后这里是五系统接线沙盘」，
+   *   左边又打不了字，刷新也回不来。真机复现（1500×950）：
+   *     最大化后   composer w=18 input w=8
+   *     新建会话后 composer w=18 input w=8   ← 继承了
+   *
+   * ⚠ 跟上面那条锁一样，执行必须在**拥有 chatRef 的组件**里：Provider 的
+   *   effect 首屏跑在分栏挂载之前，ref 还是 null（2026-08-25 已经踩过一次）。
+   *   判定用 needsEmptySessionRestore，别在这儿重写条件。
+   */
+  React.useEffect(() => {
+    if (!needsEmptySessionRestore(collapsed, sessionEmpty, layout.maximizeLocked))
+      return;
+    chatRef.current?.expand();
+  }, [sessionEmpty, collapsed.chat, layout.maximizeLocked, chatRef]);
 
   return (
     <div ref={splitElRef} className="h-full w-full min-h-0 min-w-0">

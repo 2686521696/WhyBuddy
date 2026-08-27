@@ -44,6 +44,21 @@ const CHALLENGE_SRC = stripComments(readRel("../challenge-composer.ts"));
 const PAGE_SRC = stripComments(readRel("../../SlideRule.tsx"));
 const DEV_SRC = readRel("../../SlideRuleDev.tsx");
 
+/** 取 `from` 之后第一个 `{` 到它配对 `}` 之间的整块源码（判据只在块内找证据）。 */
+function blockAfter(src: string, from: number): string {
+  const open = src.indexOf("{", from);
+  expect(open, "找不到 persist 失败分支的块起点").toBeGreaterThan(-1);
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") {
+      depth--;
+      if (depth === 0) return src.slice(open, i + 1);
+    }
+  }
+  throw new Error("persist 失败分支的花括号没配平");
+}
+
 function persistGateWindow(): string {
   const loadingAt = SESSION_SRC.indexOf('setDriveFullStatus("loading")');
   expect(loadingAt, "找不到 drive-full 点火前的 loading 闸").toBeGreaterThan(-1);
@@ -54,19 +69,75 @@ function persistGateWindow(): string {
   ).toBeGreaterThan(loadingAt);
   const failAt = SESSION_SRC.indexOf("!persisted.ok", persistAt);
   expect(failAt, "persist 闸没有 !persisted.ok").toBeGreaterThan(persistAt);
-  const afterFail = SESSION_SRC.slice(failAt);
-  const returnRel = afterFail.search(/\breturn\b/);
-  expect(returnRel, "persist 失败分支没有 return —— 删掉就会继续点火").toBeGreaterThan(
-    -1
-  );
-  const returnAt = failAt + returnRel;
-  const driveAt = SESSION_SRC.indexOf("driveFullViaPythonStream", returnAt);
+
+  // ⚠ 2026-08-27 变异检查逮到：原判据是「`!persisted.ok` 之后**随便哪里**
+  //   有 return」。把守卫那句 return 删掉，判据照样绿——因为它认领了后面
+  //   别的 return（本文件头注早写过"吞进去会假绿"，却没防住）。
+  //   现在把范围锁死在 `if (!persisted.ok) { … }` 这一个块里。
+  const failBlock = blockAfter(SESSION_SRC, failAt);
+  const returnRel = failBlock.search(/\breturn\b/);
   expect(
-    driveAt,
-    "找不到 persist 失败 return 之后的 driveFullViaPythonStream"
+    returnRel,
+    "persist 失败分支**块内**没有 return —— 删掉它就会继续点火"
+  ).toBeGreaterThan(-1);
+  const returnAt = SESSION_SRC.indexOf(failBlock, failAt) + returnRel;
+  const drive = firstIndexOfAny(SESSION_SRC, IGNITION_MARKERS, returnAt);
+  expect(
+    drive.at,
+    `persist 失败 return 之后找不到任何点火标记（找过 ${IGNITION_MARKERS.join(" / ")}）——` +
+      "要么点火被挪走了，要么又换了个名字：换名字就把新名字加进 IGNITION_MARKERS"
   ).toBeGreaterThan(returnAt);
   // 只取 persist 调用到失败 return：后面 onLlmDelta 里也有 return，吞进去会假绿。
   return SESSION_SRC.slice(persistAt, returnAt + "return".length);
+}
+
+/**
+ * 「点火」标记集合。
+ *
+ * ⚠ 2026-08-27 审查：本文件原先把点火函数名写死成 `driveFullViaPythonStream`，
+ *   而 PR-4 已把产品面新烧换成 `postControlTurnStream`（KD16）。于是四条判据
+ *   一起变红——**红的是判据，不是功能**：同一文件里两条语义判据
+ *   （persist 失败不点火 / 零 POST）当时全绿。这正是本仓第二条：
+ *   盯语义，别盯某句话的字面。
+ *
+ * 现在盯的是语义：闸窗内不许出现**任何**点火标记；闸之后必须至少出现一个。
+ * 再改名也只会让「闸之后找不到点火」这条大声红，不会假绿。
+ */
+const IGNITION_MARKERS = [
+  "postControlTurnStream",
+  "driveFullViaPythonStream",
+  "driveFullViaPython",
+  "driveMarathon",
+  "/drive-full-stream",
+  "/drive-full",
+] as const;
+
+/** KD16：产品面新烧只许经由控制面。旧插座剥注释后必须一个都不剩。 */
+const LEGACY_IGNITION_MARKERS = [
+  "driveFullViaPythonStream",
+  "driveFullViaPython",
+  "/drive-full-stream",
+  "/drive-full",
+] as const;
+
+/** 整轮驱动入口：挑战走它（整轮 rehearse/refine），不是局部重跑。 */
+const DRIVE_ENTRY_MARKERS = ["requestRehearsal", "runTurn"] as const;
+
+function firstIndexOfAny(
+  src: string,
+  markers: readonly string[],
+  from: number
+): { at: number; marker: string } {
+  let best = { at: -1, marker: "" };
+  for (const m of markers) {
+    const at = src.indexOf(m, from);
+    if (at > -1 && (best.at === -1 || at < best.at)) best = { at, marker: m };
+  }
+  return best;
+}
+
+function containsAny(src: string, markers: readonly string[]): string[] {
+  return markers.filter(m => src.includes(m));
 }
 
 function fnBody(src: string, needle: string, endNeedle: string): string {
@@ -127,15 +198,15 @@ describe("挑战 persist 失败夹具：零 POST /drive-full-stream", () => {
     expect(posts).toEqual(["/drive-full-stream"]);
   });
 
-  it("通电：runTurn 在 driveFullViaPythonStream 之前消费 persist 闸，失败则 return", () => {
+  it("通电：runTurn 在点火之前消费 persist 闸，失败则 return", () => {
     const loadingAt = SESSION_SRC.indexOf('setDriveFullStatus("loading")');
     const persistAt = SESSION_SRC.indexOf(
       "persistPreparedStateForDrive",
       loadingAt
     );
-    const driveAt = SESSION_SRC.indexOf("driveFullViaPythonStream", persistAt + 1);
+    const drive = firstIndexOfAny(SESSION_SRC, IGNITION_MARKERS, persistAt + 1);
     expect(persistAt).toBeGreaterThan(loadingAt);
-    expect(driveAt).toBeGreaterThan(persistAt);
+    expect(drive.at, "persist 闸之后没有任何点火标记").toBeGreaterThan(persistAt);
 
     const block = persistGateWindow();
     expect(block).toContain("persist: () => persistSession(preparedState)");
@@ -143,11 +214,13 @@ describe("挑战 persist 失败夹具：零 POST /drive-full-stream", () => {
     expect(block).toMatch(/!persisted\.ok/);
     expect(block).toMatch(/\breturn\b/);
     expect(block).toContain("质疑未生效");
-    // 反向：闸窗里不许已经点着 stream（失败 return 必须在点火前）
-    expect(block).not.toContain("driveFullViaPythonStream");
-    expect(block).not.toContain("/drive-full-stream");
+    // 反向：闸窗里不许已经点着火（失败 return 必须在点火前）。
+    // 盯整个标记集合——换个点火函数名不该让这条静静失效。
+    expect(
+      containsAny(block, IGNITION_MARKERS),
+      "persist 闸窗内出现了点火标记：失败 return 挡不住它"
+    ).toEqual([]);
     expect(block).not.toMatch(/fetch\s*\(/);
-    expect(block).not.toContain("driveMarathon");
   });
 
   it("persist 闸 callback 必须是 persistSession(preparedState)，且 persistSession 走 saveSessionState", () => {
@@ -188,6 +261,23 @@ describe("挑战 persist 失败夹具：零 POST /drive-full-stream", () => {
 
   it("反向：挑战路径不得发明 pendingRuns / 能力级重跑", () => {
     expect(SESSION_SRC).not.toContain("pendingRuns");
+  });
+
+  /**
+   * KD16 / 验收 H —— 这条是 2026-08-27 那次判据腐烂换来的额外覆盖。
+   *
+   * 原判据把点火函数名写死，PR-4 改名后它变红，而**真正该被钉住的事**
+   * （产品面新烧只走控制面、旧插座一个不剩）当时根本没有判据。补上。
+   */
+  it("KD16：产品面 session hook 剥注释后不得留任何旧点火插座", () => {
+    expect(
+      containsAny(SESSION_SRC, LEGACY_IGNITION_MARKERS),
+      "useSlideRuleSession 里还留着旧点火插座——新烧必须只经由 control-turn-stream"
+    ).toEqual([]);
+    // 正向：控制面插座真的在（不是靠"全都没有"混过去）
+    expect(SESSION_SRC).toContain("postControlTurnStream");
+    // 续播不是点火：GET /runs/{id}/stream 必须还在
+    expect(SESSION_SRC).toContain("resumeDriveFullStream");
   });
 });
 
@@ -289,7 +379,10 @@ describe("persist 成功后仍是整轮 runTurn + intent challenge", () => {
       "const challengeTurn = async",
       "const resetSession"
     );
-    expect(body).toContain("runTurn");
+    expect(
+      containsAny(body, DRIVE_ENTRY_MARKERS),
+      "challengeTurn 没走整轮驱动入口——局部重跑要等 M14/PR-8，这里不许提前发明"
+    ).not.toEqual([]);
     expect(body).toContain('intent: "challenge"');
     expect(body).toContain("dispatchChallengePrefill");
     expect(body).not.toContain("pendingRuns");
@@ -306,7 +399,10 @@ describe("persist 成功后仍是整轮 runTurn + intent challenge", () => {
     expect(body).toContain("resolveChallengeSend");
     expect(body).toContain("latestMainArtifactIdFromTurns");
     expect(body).toContain('intent: "challenge"');
-    expect(body).toContain("runTurn");
+    expect(
+      containsAny(body, DRIVE_ENTRY_MARKERS),
+      "sendMessage 没走整轮驱动入口"
+    ).not.toEqual([]);
     expect(body).toContain("pendingChallengeRef.current = null");
     expect(body).not.toMatch(/pending\s*\|\|/);
   });

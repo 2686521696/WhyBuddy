@@ -1119,8 +1119,16 @@ function SlideRuleUnified({
   useEffect(() => {
     setClarifyHidden(false);
   }, [clarifyKey]);
+  // KD19：作曲家只留**一张**「要不要烧」的决策面。范围卡 / ask 停泊时
+  // 澄清卡让位——2026-08-27 真机截图里两张卡叠在一起，背后那张问的还是
+  // 上一轮的 goal（服务端那半在 rehearsal_control._retire_stale_control_questions）。
+  // 只是让位不是关掉：没有停泊时它照旧出现（见同名测试的反向判据）。
+  const parkedDecisionSurface = Boolean(pendingScope) || Boolean(pendingAsk);
   const showClarify =
-    clarifications.length > 0 && !clarifyHidden && !!answerClarifications;
+    clarifications.length > 0 &&
+    !clarifyHidden &&
+    !parkedDecisionSurface &&
+    !!answerClarifications;
 
   // Conversation column: live turns during/after a run. After reload uiTurns is
   // empty — rebuild the **whole** thread from persisted versions/narrations.
@@ -1219,6 +1227,7 @@ function SlideRuleUnified({
           {
             <div className="relative z-0 min-h-0 flex-1">
               <SlideRuleStudio
+                sessionEmpty={isHomeEmpty}
                 chatSlot={
                   <ClaudeChatSurface
                     uiTurns={conversationTurns}

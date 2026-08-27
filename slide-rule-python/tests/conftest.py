@@ -117,6 +117,51 @@ class _TestUser:
         return {"id": self.id, "email": self.email, "isSuperuser": False}
 
 
+# ── 历史欠账：钉住的红用 strict xfail，修好了必须摘牌 ──────────────────────
+#
+# 抄 grok-build 的 xfail 契约（scroll_matrix/runner.rs）：
+#     Precedence: any `Fail` (non-xfail violation) fails the cell; else any
+#     `XPass` fails it (fixed/rotted xfail must be promoted, not absorbed);
+#     else any `XFail` marks the expected failure; else `Pass`.
+# 关键在第二句——修好了却还挂在名单上，同样算失败。pytest 的
+# `xfail(strict=True)` 就是这个语义，不用自己造。
+#
+# 名单和每条的"红在哪"在 tests/known_failures.py。
+
+
+def _ledger_key(nodeid: str) -> str:
+    """pytest 的 nodeid → 台账里的键。
+
+    ⚠ 同一条用例的 nodeid 随**在哪儿起跑**而变：
+
+        在 slide-rule-python/ 里跑   tests/test_x.py::test_y
+        在仓根跑（CLAUDE.md 写的那条命令）
+                                     slide-rule-python/tests/test_x.py::test_y
+
+    台账按后半截存。写死任一种前缀，另一种调用方式下整张名单**静默失效**
+    ——不报错，只是 10 条红原样红回来，看起来像"台账没生效"。所以这里
+    统一裁到最后一个 `tests/` 之后。
+    """
+    marker = "tests/"
+    idx = nodeid.rfind(marker)
+    return nodeid[idx + len(marker) :] if idx >= 0 else nodeid
+
+
+def pytest_collection_modifyitems(config, items):  # noqa: ARG001
+    from known_failures import KNOWN_FAILURES
+
+    for item in items:
+        why = KNOWN_FAILURES.get(_ledger_key(item.nodeid))
+        if why is None:
+            continue
+        item.add_marker(
+            pytest.mark.xfail(
+                strict=True,
+                reason=f"历史欠账（tests/known_failures.py）：{why}",
+            )
+        )
+
+
 # ⚠️ 套件里有测试会 `importlib.reload(app)`（test_drive_persists_goal.py:92），
 # 那会**重建整个 FastAPI app 对象**。而别的模块在收集期就把旧对象绑进了
 # 模块级 TestClient。只往"当前那个 app"装覆盖的话，请求走的是旧对象、拿不到

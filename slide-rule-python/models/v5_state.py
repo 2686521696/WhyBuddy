@@ -23,6 +23,20 @@ AwaitReason = Literal[
     "closure_missing",
     "control_ask",
     "control_scope",
+    # ⚠ 2026-08-27 压测挖出来的静默数据丢失：控制面澄清停靠写的是
+    #   `state.awaitReason = "control_clarify"`（rehearsal_control.py:906），
+    #   而这个名单里从来没有它。pydantic v2 默认**不校验赋值**，所以写的时候
+    #   一声不响；等到从库里读回来走 server_load，整条会话直接
+    #   `invalid_session` → `_coerce_many` 把它**跳过**（persistence.py:370）。
+    #   症状是「停在澄清那一步的会话，重启后从侧栏里消失了」——没有报错、
+    #   没有告警、schema 对齐测试照样绿（两边都缺，所以"两边一致"成立）。
+    #   同一形态上一次是 coverageContract，看 persistence.py:177 那段注释。
+    "control_clarify",
+    # 同一形态的第二处：马拉松内层驱动炸掉时写
+    #   `working.awaitReason = "error"`（slide_rule_marathon.py:170）。
+    #   讽刺的是这条**恰恰是失败取证路径**——它把异常写进 decisionLedger 好让
+    #   人事后查，结果整条会话因为这个未申报的值读不回来，取证记录一起没了。
+    "error",
 ]
 
 

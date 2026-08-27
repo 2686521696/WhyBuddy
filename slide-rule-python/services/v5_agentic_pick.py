@@ -188,9 +188,17 @@ def _closure_line(state: V5SessionState) -> str:
     total = pc.get("skillCount")
     tally = f"{present}/{total}" if present is not None and total else "—"
     if blocked:
+        # ⚠ 以前这里写死"补齐缺的那几项"——只有证据缺口那一种情形对。产出跟题
+        #   对不上（CLOSURE_GOAL_RELEVANCE_FAILED）时，"补齐"是错误指引：该做的
+        #   是重画，不是补证据。模型拿着这句话只会朝错方向使劲。
+        #   理由从 closure_block_reason.user_report 来（唯一渲染处）。
+        from .closure_block_reason import user_report as _block_report
+
+        reason = _block_report(pc)
+        why = f"拦截原因：{reason}。" if reason else ""
         return (
             f"【闭环状态】收过一次但被拦下（blocked，证据 {tally}）。"
-            "补齐缺的那几项之后可以再收一次。"
+            f"{why}对着这条原因处理完之后可以再收一次。"
         )
     return (
         f"【闭环状态】**已成功收口**（closed，证据 {tally}），应用已经产出。"

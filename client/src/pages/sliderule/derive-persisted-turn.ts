@@ -2,6 +2,7 @@ import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import { deriveTurnRoute, type TurnRouteFacts } from "@shared/blueprint/sliderule-turn-route";
 import type { UiTurn } from "./types";
 import { dedupeTurnNarrations, narrationStepsFor } from "./turn-narration";
+import { mainFromRuns } from "./turn-main-artifact";
 
 type ModelVersionSnap = {
   id?: string;
@@ -58,7 +59,15 @@ export function deriveLatestTurnFromState(
     runs[runs.length - 1]?.turnId ||
     ledger[ledger.length - 1]?.turnId ||
     "restored-turn";
-  return buildRestoredTurn(state, String(turnId), undefined);
+  const turn = buildRestoredTurn(state, String(turnId), undefined);
+  // M5 兜底：真机上 `lastTurnId` 和 run 的 `turnId` 本来就常对不上
+  // （实测 lastTurnId=turn-17-drive-full，而 runs 里是 loop-1-closure），
+  // 严格按轮筛会全落空 → 质疑按钮照旧不渲染。这里是"最近一轮"的单轮视图，
+  // 会话级产物就是它的产物，回落到全部 runs 是安全的。
+  if (!turn.main) {
+    turn.main = mainFromRuns(state, (state.capabilityRuns || []) as Array<{ outputs?: unknown }>);
+  }
+  return turn;
 }
 
 /** 时间戳级 turnId（毫秒 epoch）才启用「差 ≤2ms 视为同轮」：客户端造
@@ -185,7 +194,19 @@ export function deriveTurnsFromState(
     seen.add(e.turn.id);
     out.push(e.turn);
   }
-  if (out.length > 0) return out;
+  if (out.length > 0) {
+    // M5：一轮都没认到 main（本轮 runs 对不上 turnId 是常态，见
+    // deriveLatestTurnFromState 里的同款说明）→ 只给**最后一轮**补一次
+    // 会话级 main。绝不铺给所有轮：那样历史轮的"质疑本轮"会全部打到
+    // 最新那份产物上，比没有按钮更坏。
+    if (!out.some(t => Boolean(t.main))) {
+      out[out.length - 1].main = mainFromRuns(
+        state,
+        (state.capabilityRuns || []) as Array<{ outputs?: unknown }>
+      );
+    }
+    return out;
+  }
 
   const latest = deriveLatestTurnFromState(state);
   if (!latest) return [];
@@ -205,6 +226,7 @@ function buildRestoredTurn(
     capabilityId?: string;
     roleId?: string;
     turnId?: string;
+    outputs?: unknown;
     gateResults?: Array<{ status?: string }>;
   }>;
   const ledger = (state.decisionLedger || []) as Array<{
@@ -290,6 +312,13 @@ function buildRestoredTurn(
 
   const user = (userOverride ?? narration?.user ?? "").trim();
 
+  // M5：质疑按钮的守卫。**只认本轮自己的 runs**——effectiveRuns 在本轮没有
+  // run 时会回落成"全部 runs"（那是 routeFacts 的单轮合并视图口径），拿它
+  // 挑 main 会让每一条历史轮都认领最新那份产物，质疑打到别人身上。
+  // 本轮真的没产物就老实给 null（见 deriveTurnsFromState 末尾的兜底：
+  // 只给最后一轮补一次会话级 main，不铺给所有轮）。
+  const main = mainFromRuns(state, turnRuns);
+
   return {
     id: base,
     user,
@@ -301,7 +330,7 @@ function buildRestoredTurn(
     routeLitCount: deriveTurnRoute(routeFacts).length,
     assistant: "",
     assistantSource: "llm",
-    main: null,
+    main,
     actions: [],
   } as UiTurn;
 }

@@ -88,6 +88,38 @@ export async function createSessionId(): Promise<string> {
   return sid;
 }
 
+/**
+ * 「这条会话可以直接拿来当新会话用吗」。
+ *
+ * ⚠ 2026-08-27 用户报「点新建会话右侧显示有问题」，追下去是两条：布局那条
+ *   在 studio-layout.needsEmptySessionRestore；这条是**新建会话根本没新建**。
+ *
+ *   E28 防双开原来的判据是 `!meta.goal`。PR-4 控制面上线后，便宜轮
+ *   （问候 / 搜索 / ask_user）**刻意不写 goal**——goal 只在确认 rehearse 时
+ *   由 _write_confirmed_goal 写入（KD17）。于是一条装满控制面对话的会话
+ *   仍被判为"空"，点新建会话直接复用了它：用户看到的是上一轮的内容，
+ *   叠上舞台最大化就成了那张"中间全空、打不了字"的死角图。
+ *
+ *   又是「只改一半」：控制面改了 goal 的写入时机，这条空判据没跟着改。
+ *
+ * 判据加 phase：真正全新的会话 runtimePhase 是 `idle`；控制面一停泊
+ * （control_ask / control_scope）或工厂一跑就变 `awaiting`/`done`/`failed`。
+ * 真机实测（同一账号、同一时刻）：
+ *   全新           goal='' phase='idle'    createdAt == lastActive
+ *   问候+搜索之后  goal='' phase='awaiting' lastActive 比 createdAt 晚 56 分钟
+ *
+ * 用 phase 而不是时间戳差：时间戳会被"只是打开看了一眼"的落盘顶掉，
+ * phase 说的是这条会话有没有真的跑过东西。
+ */
+export function isBlankSessionMeta(
+  meta: { goal?: string | null; phase?: string | null } | null | undefined
+): boolean {
+  if (!meta) return true; // 不在列表里 = 刚建未落盘
+  if (meta.goal) return false;
+  const phase = String(meta.phase || "").trim().toLowerCase();
+  return phase === "" || phase === "idle";
+}
+
 export type SessionSort = "active" | "created";
 export type SessionPhaseFilter = "all" | "running" | "done" | "failed";
 
@@ -579,14 +611,17 @@ export function SidebarSessions({
           // 这条复用逻辑在"id 改由服务端生成"（2026-08-06）之后更重要了：
           // 铸新 id 现在等于**真的在库里建一条**，不再是懒创建。有它挡着，
           // 连点不会在库里堆出一串空会话。
+          // ⚠ 空判据走 isBlankSessionMeta，别在这儿退回裸 `!s.goal`：
+          //   PR-4 之后便宜轮（问候/搜索/ask_user）不写 goal，只看 goal
+          //   会把用户丢回上一条有内容的会话（2026-08-27 真机：点完新建
+          //   DOM 里还有 3 个轮次）。
           const list = sessions ?? [];
           const activeMeta = list.find((s) => s.sessionId === activeId);
-          const activeIsBlank = activeMeta ? !activeMeta.goal : true;
-          if (activeIsBlank) {
+          if (isBlankSessionMeta(activeMeta)) {
             pick(activeId);
             return;
           }
-          const blank = list.find((s) => !s.goal);
+          const blank = list.find((s) => isBlankSessionMeta(s));
           if (blank) {
             pick(blank.sessionId);
             return;

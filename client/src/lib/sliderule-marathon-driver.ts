@@ -295,6 +295,8 @@ export interface DriveFullStreamOpts {
    *  事件到达）时回调一次。纯连接断开（刷新/跳页/网络抖动）不触发——
    *  run 仍在后台跑，续播书签必须保留。 */
   onRunSettled?: (reason: "complete" | "cancelled" | "error") => void;
+  /** 流读到 done 却没见终局（协议违规）。见 STREAM_NO_TERMINAL 头注。 */
+  onStreamNoTerminal?: (code: string) => void;
   /** 空态作曲家「应用 / Web」。desktop 横屏 / phone 竖屏，跟 device_policy 同词表。 */
   preferredDevice?: "desktop" | "phone";
   /** 设计系统 id。后端据此取种子色拼提示词 / 选 DESIGN.md。 */
@@ -527,10 +529,44 @@ function applyFactoryStreamEvent(
   }
 }
 
+/**
+ * 流的收尾契约：任意多个中间事件，**必须**以恰好一个终局收尾。
+ * 终局集合（见 applyFactoryStreamEvent）：
+ *   · `complete`                → 成功收尾，返回结果
+ *   · `run_cancelled` / `error` → abort，返回 null（本来就是诚实的）
+ * 读到 `done` 却一个终局都没见过 = **实现方违约**，不是一种正常结束。
+ *
+ * 抄的标准答案：grok-build `xai-tool-runtime/src/dispatch.rs`
+ *   /// A stream that ends without a `Terminal` is a protocol violation by
+ *   /// the implementation; the default surfaces this as
+ *   /// `ToolError::Custom { code: "stream_no_terminal", ... }`
+ * 那边 `call_terminal` 遇到无终局的流返回 Err，而不是把攒到一半的东西
+ * 当结果交出去。
+ *
+ * ⚠ 2026-08-27 审查逮到本仓的形状：两个消费者里 `if (done) break;` 和
+ *   `if (verdict === "complete") break outer;` **走同一个出口**
+ *   `finishDriveStream(acc, opts)`。断掉的流只要之前某个事件带过 state，
+ *   就会被包成一个看着正常的结果；而 classifyStreamFallback 第一行是
+ *   `if (input.gotResult) return "settled"` —— 断流于是在**已有的两道
+ *   双开守卫上游**被判成"已收尾"，守卫根本没机会生效。
+ *
+ *   这跟 2026-08-10 那次（POST 流第 2 分钟被 reset、服务端一路跑到
+ *   seq 1812 正常收尾、前端把整轮重跑）是同一条根：消费者分不清
+ *   "收尾了"和"断了"。那次修的是下游症状，这次把区分放回消费者并命名。
+ */
+export const STREAM_NO_TERMINAL = "stream_no_terminal";
+
 function finishDriveStream(
   acc: FactoryStreamAcc,
-  opts: DriveFullStreamOpts
+  opts: DriveFullStreamOpts,
+  sawTerminal: boolean
 ): { finalState: V5SessionState; stopReason?: string; loops?: any[]; publishClosure?: any } | null {
+  // 没见终局：报出名字再返回 null。攒到一半的 finalState 不许当本轮终态——
+  // 那正是把"断了"讲成"完成"的那一步。
+  if (!sawTerminal) {
+    opts.onStreamNoTerminal?.(STREAM_NO_TERMINAL);
+    return null;
+  }
   if (!acc.finalState) return null;
   return {
     finalState: acc.finalState,
@@ -550,13 +586,14 @@ function finishDriveStream(
 }
 
 /** POST 发起与 GET 续播共用的 SSE 消费循环（同一事件词表 → 同一 UI）。 */
-async function consumeDriveStreamResponse(
+export async function consumeDriveStreamResponse(
   res: Response,
   opts: DriveFullStreamOpts
 ): Promise<{ finalState: V5SessionState; stopReason?: string; loops?: any[]; publishClosure?: any } | null> {
   try {
     if (!res.body) return null;
     let runIdSeen = false;
+    let sawTerminal = false;
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
@@ -589,12 +626,17 @@ async function consumeDriveStreamResponse(
         }
 
         const verdict = applyFactoryStreamEvent(event, opts, acc);
-        if (verdict === "complete") break outer;
+        if (verdict === "complete") {
+          sawTerminal = true;
+          break outer;
+        }
+        // abort（run_cancelled / error）本来就是终局，返回 null 是诚实的：
+        // 不是"断了"，是服务端明确宣布过结局。
         if (verdict === "abort") return null;
       }
     }
 
-    return finishDriveStream(acc, opts);
+    return finishDriveStream(acc, opts, sawTerminal);
   } catch (err) {
     if (err instanceof DriveAuthRequiredError) throw err;
     return null;
@@ -661,6 +703,7 @@ export async function consumeControlStreamResponse(
     if (!res.body) return null;
     let runIdSeen = false;
     let handedOff = false;
+    let sawTerminal = false;
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
@@ -739,6 +782,7 @@ export async function consumeControlStreamResponse(
                 acc.finalState = event.state as V5SessionState;
               }
               opts.onRunSettled?.("complete");
+              sawTerminal = true;
               break outer;
             default:
               break;
@@ -746,12 +790,15 @@ export async function consumeControlStreamResponse(
         }
 
         const verdict = applyFactoryStreamEvent(event, opts, acc);
-        if (verdict === "complete") break outer;
+        if (verdict === "complete") {
+          sawTerminal = true;
+          break outer;
+        }
         if (verdict === "abort") return null;
       }
     }
 
-    return finishDriveStream(acc, opts);
+    return finishDriveStream(acc, opts, sawTerminal);
   } catch (err) {
     if (err instanceof DriveAuthRequiredError) throw err;
     return null;
@@ -1030,8 +1077,22 @@ export function classifyStreamFallback(input: {
   settledReason: "complete" | "cancelled" | "error" | null;
   /** 本地主动中止（用户点了停止）。 */
   locallyAborted: boolean;
+  /**
+   * 这条流见过终局事件吗。
+   *
+   * ⚠ 2026-08-27：原来第一行是 `if (input.gotResult) return "settled"`。
+   *   而消费者只要 acc.finalState 被填过就返回非空——断掉的流攒着半截
+   *   state 也算 gotResult，于是在**下面那两道双开守卫的上游**就被判成
+   *   "已收尾"，守卫（sawRunId / settledReason）根本没机会看一眼。
+   *   现在把"有没有终局"补进来：拿到结果**且**见过终局才算收尾。
+   *
+   * 省略时按 true 处理：老调用点（以及只关心其它分支的测试）语义不变，
+   * 不悄悄变严——变严要显式传 false。
+   */
+  sawTerminal?: boolean;
 }): StreamFallbackVerdict {
-  if (input.gotResult) return "settled";
+  const sawTerminal = input.sawTerminal ?? true;
+  if (input.gotResult && sawTerminal) return "settled";
   if (input.locallyAborted || input.settledReason !== null) return "settled";
   return input.resuming || input.sawRunId ? "report_interrupted" : "local_fallback";
 }

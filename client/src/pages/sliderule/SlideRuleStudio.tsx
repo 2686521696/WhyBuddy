@@ -228,6 +228,8 @@ interface SlideRuleStudioProps {
    * 同排渲染，保证任何一屏都够得着重置。
    */
   resetSlot?: React.ReactNode;
+  /** 会话里还没有任何轮次：空会话的舞台没东西可看，不许把作曲家折着。 */
+  sessionEmpty?: boolean;
 }
 
 export function SlideRuleStudio({
@@ -254,6 +256,7 @@ export function SlideRuleStudio({
   isRestoringVersion = false,
   chromeSlot,
   resetSlot,
+  sessionEmpty = false,
 }: SlideRuleStudioProps) {
   const layout = useStudioLayout();
   // 顶栏「隐藏页面」必须卸掉右侧舞台，不是把宽度收成 0。
@@ -1093,6 +1096,7 @@ export function SlideRuleStudio({
     <StudioChrome className={className}>
       <StudioSplit
         device={stageDevice}
+        sessionEmpty={sessionEmpty}
         chat={
           <div className="flex h-full min-h-0 flex-col bg-transparent">
             {chatSlot}

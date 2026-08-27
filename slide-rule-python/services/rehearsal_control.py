@@ -43,10 +43,14 @@ set_refine_context）；FORBIDDEN 把 v5_capability_executor 当入口 import。
 from __future__ import annotations
 
 import copy
+import asyncio
+import inspect
 import json
 import time
 import uuid
+from contextlib import contextmanager
 from contextvars import ContextVar
+from enum import Enum
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Dict, List, Optional
 
@@ -84,6 +88,31 @@ _CONTROL_PAYLOAD: ContextVar[Dict[str, Any]] = ContextVar(
     "sliderule_control_payload", default={}
 )
 
+class ToolScope(str, Enum):
+    """工具在「能不能造一份新五系统模型」这条轴上的权限。
+
+    抄的标准答案：grok-build `xai-tool-protocol/src/capabilities.rs`
+
+        pub enum ToolScope { Read, Write }
+        /// Tools that mutate external state must declare `Write` so the
+        /// computer hub routes them to the leader agent only.
+        /// Absence is treated as `Read`.
+
+    要点是**缺省 Read**：以后加的新工具默认进不了工厂，想写得显式声明。
+    本仓 KD3 说的是同一件事，但一直只是文档里的一段话——而这个仓自己
+    第三条写着「函数写对了 ≠ 它被调用了」，同理：纪律写对了 ≠ 它被强制了。
+
+    ⚠ 这里的 WRITE 精确指**生成新五系统模型**（进 `_handoff_factory`），
+      不是"落不落盘"。challenge 写 staleArtifactIds、restore_version /
+      fork_variant 移指针，都会 persist，但在这条轴上是 READ。
+      别看见 READ 就以为它们不碰会话；也别为了"看着一致"把它们提成
+      WRITE——提上去这道闸就没有意义了。
+    """
+
+    READ = "read"
+    WRITE = "write"
+
+
 CLOSED_TOOLS = (
     "ask_user",
     "clarify",
@@ -97,6 +126,219 @@ CLOSED_TOOLS = (
     "restore_version",
     "fork_variant",
 )
+
+# 写权限声明表。**只列 WRITE**——缺省即 READ（grok 的 "Absence is
+# treated as Read"）。这三个动词是 KD3 点名可以生成新五系统模型的：
+# 它们各自都最终走 `_handoff_factory`（rehearse 经
+# `_confirm_rehearse_and_handoff`）。
+#
+# ⚠ 往这张表里加名字之前先问：这个工具真的要**造一份新模型**吗？
+#   落盘不等于写模型（见 ToolScope 头注）。加错一个，工厂就多一个入口。
+TOOL_SCOPE: Dict[str, ToolScope] = {
+    "rehearse": ToolScope.WRITE,
+    "refine": ToolScope.WRITE,
+    "repair": ToolScope.WRITE,
+}
+
+
+class ToolScopeViolation(RuntimeError):
+    """READ 权限的工具试图进工厂信封。fail-closed：抛，不降级放行。"""
+
+
+# 本回合正在分发的工具名。走 ContextVar 而不是给 `_handoff_factory` 加参数：
+# 跟本文件里 `_CONTROL_PAYLOAD` / 读 charter 同一套机制（本回合信封），
+# 也逼着判据打在真分发上而不是直调函数。
+#
+# 缺省空串 → resolve_tool_scope 给 READ → 没进过分发就直调工厂会被拦。
+_ACTIVE_TOOL: ContextVar[str] = ContextVar("sliderule_active_tool", default="")
+
+
+def resolve_tool_scope(name: Any) -> ToolScope:
+    """查权限。没声明的一律 READ（含拼错的、以后新加的）。"""
+    return TOOL_SCOPE.get(str(name or "").strip(), ToolScope.READ)
+
+
+@contextmanager
+def tool_scope_scope(name: str):
+    """标记本回合正在分发哪个工具。两条分发路径都要用（成对，少一条 = 半个闸）。"""
+    token = _ACTIVE_TOOL.set(str(name or ""))
+    try:
+        yield
+    finally:
+        _ACTIVE_TOOL.reset(token)
+
+
+def assert_may_write_model() -> None:
+    """工厂信封入口闸。READ 工具到这里就是**违约**，抛出来，别静静放行。
+
+    对照 grok：写工具由 computer hub 路由给 leader agent，缺省 Read 的
+    根本到不了那条路。这里没有多 agent 路由，等价物就是这道断言。
+    """
+    name = _ACTIVE_TOOL.get()
+    if resolve_tool_scope(name) is not ToolScope.WRITE:
+        raise ToolScopeViolation(
+            f"工具 {name or '(未声明)'} 是 READ 权限，不能进工厂信封生成新五系统模型。"
+            "要写请在 TOOL_SCOPE 里显式声明 WRITE——缺省只读是故意的。"
+        )
+
+
+def _has_model(state: V5SessionState) -> bool:
+    """这个会话里已经有一份可精修 / 可分叉 / 可回退的模型吗。"""
+    return bool(getattr(state, "modelVersions", None) or [])
+
+
+def _has_inspectable(state: V5SessionState) -> bool:
+    """有没有东西可给 inspect_model 看。
+
+    ⚠ 口径**照抄 `_inspect_digest` 自己读的两个来源**（publishClosure 优先、
+      再退到 modelVersions），不写成 `_has_model`。写成 _has_model 会在
+      「有闭环产物、还没落版本」的会话上把 inspect_model 裁掉——那正是
+      CLAUDE.md §4 说的「同一件事两处实现，口径一歪就半边不生效」。
+    """
+    if getattr(state, "publishClosure", None):
+        return True
+    return _has_model(state)
+
+
+# 按轮的清单谓词。**只列需要裁的**——没声明的一律列出
+# （grok 的 `should_list` 默认 true）。
+#
+# 抄的标准答案：grok-build `xai-tool-runtime/src/tool.rs`
+#     /// Per-turn listing predicate. Return `false` to exclude this tool
+#     /// from the model-facing manifest for a given turn.
+#     fn should_list(&self, _ctx: &ListToolsContext) -> bool { true }
+#
+# 比「闭集 + 分发时拒绝」强一档：模型**看不见**的工具不用写规则拒绝。
+# 下面每条都对应分发器里一段现成的防御性重定向——那正是"本来就不该被
+# 列出"的证据：不裁的话每次都要先让模型挑一次、再被服务端纠正一次。
+TOOL_LIST_WHEN: Dict[str, Any] = {
+    # 未确认范围时 rehearse 会被 re-park（见 _dispatch_tool 的 rehearse 分支）。
+    # 「开始推演」按钮走 forcedTool 绕过 LLM（KD21），裁掉不影响用户点火。
+    "rehearse": lambda st: _scope_confirmed(st),
+    # 问过一轮再问就改开范围卡（见 clarify 分支）。
+    "clarify": lambda st: _clarify_rounds_done(st) < 1,
+    # 没有上一版可回（_previous_model_version_id fail-closed 返回 ""）。
+    "restore_version": lambda st: bool(_previous_model_version_id(st)),
+    # ⚠ refine / fork_variant 在空会话上无事可做，而 refine 的分发分支
+    #   **没有** rehearse 那样的 _scope_confirmed 兜底：实测夹具让模型在
+    #   空 goal 会话上挑 refine，工厂信封被调 1 次、零范围卡就点了火
+    #   （违反验收 A / KD4）。裁清单 + 分发兜底两处一起补。
+    "refine": lambda st: _has_model(st),
+    "fork_variant": lambda st: _has_model(st),
+    # ⚠ 2026-08-27 压测逮到的第三个同形态：同一句「中小学课后托管」跑三遍，
+    #   两遍模型挑 scope_card（41s 出范围卡），一遍在**零模型**的会话上挑了
+    #   inspect_model —— `_inspect_digest` 老实回「当前还没有五系统模型可
+    #   查看」，模型接着甩了句套话就收尾，范围卡再没出现，136s 打空
+    #   （真机 sr-20260827073836-C3VJV41PV5，controlTranscript 里明写着
+    #    turn → clarify → turn → inspect_model → canned）。
+    #   refine / fork_variant 当时补了 _has_model，inspect_model 漏了一个。
+    "inspect_model": lambda st: _has_inspectable(st),
+}
+
+
+# 「这个工具要不要用户显式批准才能执行」。**只列要批准的**——缺省不需要
+# （grok 的 `ToolDef.requires_permission` 默认 false）。
+#
+# 抄的标准答案：grok-build `xai-grok-workspace-types/src/types/tools.rs`
+#     pub struct ToolDef { ...
+#         /// Whether invocations require explicit user permission.
+#         pub requires_permission: bool, }
+#     pub enum ToolProgress {
+#         /// Tool started (after permission was granted, before execution).
+#         Started { call_id: ToolCallId }, ... }
+#
+# 值放的是「已获批准吗」的谓词：本仓的批准动作就是范围卡上那次
+# 「开始推演」，落在 transcript 的 scope_confirmed 上。
+#
+# ⚠ 原来这两条检查散在各自的 if 分支里。散着写的代价刚付过：refine 那段
+#   是 2026-08-27 才补的，补之前空会话上模型挑 refine 零范围卡就点火
+#   （实测信封调用 1 次）。**新加一个贵动词很容易忘写那一段，而忘了不会
+#   报错，只会绕过范围卡。** 所以收到一处声明 + 一道统一闸。
+#
+# ⚠ 声明**不进 provider 线上 payload**：CONTROL_TOOLS 是 OpenAI 风格的
+#   function 定义，塞非标准键有被拒的风险。grok 的 ToolDef 是他们自己的
+#   内部类型，对应物就是这张表。
+TOOL_PERMISSION: Dict[str, Any] = {
+    # 范围卡上的「开始推演」就是这道批准。停泊 ≠ 已批准（见 _scope_confirmed）。
+    "rehearse": lambda st: _scope_confirmed(st),
+    # 空会话没模型可精修 → 先开卡。有模型时是否也出薄卡是产品决定
+    # （M2 Q2），本次不扩大范围。
+    "refine": lambda st: _has_model(st),
+}
+
+
+def tool_requires_permission(name: Any) -> bool:
+    """这个工具要不要显式批准。没声明的一律不需要。"""
+    return str(name or "").strip() in TOOL_PERMISSION
+
+
+def tool_permission_granted(name: Any, state: V5SessionState) -> bool:
+    """已获批准吗。不需要批准的恒为真。"""
+    pred = TOOL_PERMISSION.get(str(name or "").strip())
+    if pred is None:
+        return True
+    return bool(pred(state))
+
+
+def should_list_tool(name: Any, state: V5SessionState) -> bool:
+    """这一轮要不要把这个工具摆给模型看。没声明谓词的一律列出。"""
+    pred = TOOL_LIST_WHEN.get(str(name or "").strip())
+    if pred is None:
+        return True
+    try:
+        return bool(pred(state))
+    except Exception:
+        # 谓词自己炸了不许把工具吞掉：清单是增强，不是闸（闸在 ToolScope）。
+        return True
+
+
+def list_control_tools(state: V5SessionState) -> List[Dict[str, Any]]:
+    """本回合摆给模型的工具清单。原样透传定义，只做裁剪。
+
+    ⚠ 永不为空：全裁光了模型无事可做，比多列一个更糟。兜底留下
+      ask_user / scope_card——"问一句"和"开范围卡"在任何状态都做得成。
+    """
+    listed = [
+        t
+        for t in CONTROL_TOOLS
+        if should_list_tool(((t.get("function") or {}).get("name")), state)
+    ]
+    if listed:
+        return listed
+    floor = {"ask_user", "scope_card"}
+    return [
+        t for t in CONTROL_TOOLS if ((t.get("function") or {}).get("name")) in floor
+    ]
+
+
+async def _invoke_control_llm(
+    messages: List[Dict[str, Any]], *, tools: List[Dict[str, Any]]
+) -> Any:
+    """问一次控制面模型。**真协程直接 await，同步实现才下线程池。**
+
+    为什么要分这一下（两条判据各钉住一半，缺一条就静默失效）：
+
+    · 生产实现 `call_control_llm` 是 async + httpx.AsyncClient。必须**直接
+      await 在事件循环上**——只有这样客户端断开时 asyncio 的取消才传导得到
+      socket，请求才是真停了而不是"账面停了、线程还在烧"。塞进
+      run_in_threadpool 会把这条链斩断（那正是 2026-08-27 实测到的
+      「客户端走后 LLM 又跑 3.1 秒」）。
+      钉这一半的是 tests/test_control_llm_cancel_really_aborts.py。
+
+    · 测试替身（42 个文件共用的 ControlHarness）传的是**同步**函数，其中
+      test_control_stream_does_not_block_the_loop 的夹具还故意用 time.sleep
+      阻塞——那条判据要的就是"阻塞实现不许冻住别人的流"。同步实现直接
+      await 会真把事件循环焊死，那条测试立刻红。所以同步的照旧下线程池。
+      钉这一半的是那条并发测试本身。
+
+    ⚠ 分派看的是**函数**不是返回值：同步阻塞实现一旦被调用就已经把循环占住了，
+      拿到返回值再判断已经晚了。
+    """
+    fn = call_control_llm
+    if inspect.iscoroutinefunction(fn):
+        return await fn(messages, tools=tools)
+    return await run_in_threadpool(lambda: fn(messages, tools=tools))
+
 
 # 客户端认得的**终局事件**。少了它们，`consumeControlStreamResponse` 的
 # `acc.finalState` 一直是 null → `postControlTurnStream` 返回 null →
@@ -794,6 +1036,50 @@ async def _dismiss_scope(state: V5SessionState) -> AsyncIterator[Dict[str, Any]]
     yield _complete(state)
 
 
+def _retire_stale_control_questions(state: V5SessionState) -> None:
+    """确认新范围时，把上一轮范围下的控制面提问置为 superseded。
+
+    ⚠ 2026-08-27 真机：会话 goal 已经是「连锁宠物医院管理系统」，作曲家还在
+      弹上一轮的「这个**诊所系统**首期主要服务哪几类核心角色？」。三条
+      `gap-q-…` 全是 status=open / reason=control_plane_clarify，而 gap 上
+      既没有 turnId 也没有 goal 引用——客户端判定不了归属，只能在这里收口。
+
+    状态用 `waived`（既有闭集 Literal 的"免除/作废"档），不新造
+    `superseded`：CoverageGap.status 是 open/resolved/waived 的闭集，
+    Python 与 TS 两边都声明了——新造值要双边同步改，那是 KD22 已经付过
+    学费的形状。作废是安全的：控制面从不往 contract.blockingGapIds 里加
+    自己的提问，所以 waive 它们碰不到覆盖闸（见同名测试的反向判据）。
+
+    只碰 `kind == "open_question"` 且 `reason == "control_plane_clarify"` 的：
+    · 证据缺口 / 能力缺口是**门说了算**的，fail-closed，顺手关掉就是伪造
+      绿灯（Claude.md §7）；
+    · 工厂内 G_READY 出的澄清（reason 不是 control_plane_clarify）也不归
+      控制面管。
+
+    作废而不是删除：证据链要留痕，删了就没法解释这张卡去哪了。
+    """
+    gaps = list(getattr(state, "coverageGaps", None) or [])
+    if not gaps:
+        return
+    now = _now_iso()
+    changed = False
+    out: List[Any] = []
+    for g in gaps:
+        row = g if isinstance(g, dict) else g.model_dump()
+        if (
+            row.get("kind") == "open_question"
+            and row.get("reason") == "control_plane_clarify"
+            and row.get("status") == "open"
+        ):
+            row = {**row, "status": "waived", "updatedAt": now}
+            changed = True
+            out.append(CoverageGap(**row))
+        else:
+            out.append(g)
+    if changed:
+        state.coverageGaps = out
+
+
 async def _confirm_rehearse_and_handoff(
     state: V5SessionState,
     user_text: str,
@@ -806,6 +1092,10 @@ async def _confirm_rehearse_and_handoff(
     restatement = _confirmed_restatement(state, user_text)
     _write_confirmed_goal(state, restatement)
     _copy_scope_opt_in_into_goal(state)
+    # 新范围一确认，上一轮范围下的控制面提问就作废：否则作曲家会继续弹
+    # 问上一个 goal 的澄清卡（2026-08-27 真机：goal 已是宠物医院，卡还在
+    # 问诊所系统）。只碰控制面自己出的提问，证据/能力缺口不许动。
+    _retire_stale_control_questions(state)
     _append_transcript(
         state,
         {"role": "system", "kind": "scope_confirmed", "text": restatement},
@@ -839,6 +1129,10 @@ async def _handoff_factory(
     max_loops: int = 10,
 ) -> AsyncIterator[Dict[str, Any]]:
     """唯一点火插座。rehearse/refine/repair 必须走这里，禁止裸生成器。"""
+    # 写权限闸（抄 grok 的 ToolScope）：只有声明了 WRITE 的工具能造新模型。
+    # 缺省 READ ⇒ 新工具、拼错的名字、绕过分发直调，统统在这里被拦。
+    assert_may_write_model()
+
     from services import run_registry
     from services.product_charter import factory_charter_kwargs
 
@@ -940,14 +1234,49 @@ async def _tool_challenge(state: V5SessionState, user_text: str) -> AsyncIterato
     yield _complete(state)
 
 
+#: 证据检索的整体死线。供应商链是 12s × 最多 3 家
+#: （services/mcp_tools._TIMEOUT_S），向量库那条真机上还可能更久——不封顶
+#: 的话一次控制面轮次能被它拖住半分钟，而用户那头只看见一个转圈。
+_SEARCH_DEADLINE_S = 20.0
+
+
 async def _tool_search(state: V5SessionState, query: str) -> Dict[str, Any]:
+    """查外部证据。**「查过了没有」和「没查成」必须分得开。**
+
+    ⚠ 2026-08-27 修的就是这条：老版本任何失败都走
+      `except Exception: hits = []`，然后照样返回 `ok=True` +
+      「没有检索到可用片段。」+ 一条 provenance=control-search 的空证据行。
+      Tavily 挂了、网断了、超时了——对模型和用户来说**跟"网上确实没有"
+      长得一模一样**。这就是 CLAUDE.md §7 说的伪造绿灯：流程可以 fail-open
+      （不该因为搜不到就打死整轮），但**结论不许 fail-open**。
+
+    抄的标准答案：grok-build `xai-grok-session-search/src/bootstrap.rs`
+
+        Err(_) => {
+            // The abandoned spawn_blocking task runs to completion.
+            log_bootstrap_timeout(&session_id, per_session_timeout.as_secs());
+            progress.skipped.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+
+    三件事一件不少：**限时**（per_session_timeout）、**放弃**、**记成
+    skipped 而不是 indexed**。整轮继续跑，但那一份被如实记成"没做成"。
+
+    ⚠ 这里**不**学上面 call_control_llm 改 async：`retrieve_evidence` 有 28 个
+      同步调用方（整条工厂流水线），改 async 得把整条链一起改。而 grok 自己
+      对这种天生阻塞的活也不是"想办法中断"，就是上面那段——**被放弃的线程
+      会跑到底**（实测：wait_for 1.00s 返回，孤儿线程跑满 5.00s），这是
+      已知且接受的代价，不假装它停了。
+    """
     hits: List[Dict[str, Any]] = []
+    outcome = "searched"
     try:
         from services.rag_service import retrieve_evidence
 
         # 同上：RAG 检索是同步的（可能带网络/向量库），一样不许坐在事件循环上
-        raw = await run_in_threadpool(
-            lambda: retrieve_evidence(query or "", top_k=6) or []
+        raw = await asyncio.wait_for(
+            run_in_threadpool(lambda: retrieve_evidence(query or "", top_k=6) or []),
+            timeout=_SEARCH_DEADLINE_S,
         )
         for item in raw[:6]:
             if not isinstance(item, dict):
@@ -959,14 +1288,29 @@ async def _tool_search(state: V5SessionState, query: str) -> Dict[str, Any]:
                     "provenance": "control-search",
                 }
             )
-    except Exception:  # noqa: BLE001 — 增强类 fail-open
-        hits = []
-    summary = (
-        "；".join(
-            str(h.get("title") or h.get("content") or "")[:80] for h in hits if h
+    except asyncio.TimeoutError:
+        # 超过死线：孤儿线程还在跑（见头注），但这一轮不再等它。
+        hits, outcome = [], "abandoned"
+    except Exception:  # noqa: BLE001 — 流程 fail-open，结论 fail-closed（见头注）
+        hits, outcome = [], "failed"
+
+    if outcome == "abandoned":
+        summary = (
+            f"证据检索超过 {int(_SEARCH_DEADLINE_S)} 秒未返回，已放弃。"
+            "这一轮**没有**外部证据——不是「查过了、没有」，是没查成。"
         )
-        or "没有检索到可用片段。"
-    )
+    elif outcome == "failed":
+        summary = (
+            "证据检索失败（外部检索不可用）。"
+            "这一轮**没有**外部证据——不是「查过了、没有」，是没查成。"
+        )
+    else:
+        summary = (
+            "；".join(
+                str(h.get("title") or h.get("content") or "")[:80] for h in hits if h
+            )
+            or "查过了，没有检索到可用片段。"
+        )
     _append_transcript(
         state,
         {
@@ -974,11 +1318,20 @@ async def _tool_search(state: V5SessionState, query: str) -> Dict[str, Any]:
             "kind": "search_evidence",
             "text": query,
             "provenance": "control-search",
+            # ⚠ outcome 必须进存档：会话读回来时，空 hits 到底是"查过没有"
+            #   还是"没查成"，只有这个字段分得开。
+            "outcome": outcome,
             "hits": hits,
         },
     )
     # 故意不碰 conversation / publishClosure / commit_artifact
-    return {"ok": True, "summary": summary, "hits": hits, "provenance": "control-search"}
+    return {
+        "ok": outcome == "searched",
+        "outcome": outcome,
+        "summary": summary,
+        "hits": hits,
+        "provenance": "control-search",
+    }
 
 
 async def _tool_inspect(state: V5SessionState) -> Dict[str, Any]:
@@ -1259,6 +1612,12 @@ async def _run_control_turn_body(
     # rehearse 必须再 park。确认时把复述句写入 goal 并 persist，再 handoff。
     parked_unconfirmed = getattr(state, "awaitReason", None) == "control_scope"
     if forced == "rehearse" or (forced is None and _is_slash_rehearse(user_text)):
+        # ⚠ 这里不是"又查一遍" TOOL_PERMISSION，**这一支就是那次授予**：
+        #   停泊态 + forcedTool=rehearse = 用户点了范围卡上的「开始推演」。
+        #   对照 grok：`NeedPermission{req_id}` 是请求，用户回的
+        #   `Permission{req_id, decision}` 是授予——这个按钮就是那个 decision。
+        #   `_scope_confirmed` 对停泊态返回 False（停泊 ≠ 已确认），所以
+        #   少了下面这个 or 子句，按钮永远点不着。别把它"统一"掉。
         may_ignite = _scope_confirmed(state) or (
             forced == "rehearse" and parked_unconfirmed
         )
@@ -1275,15 +1634,17 @@ async def _run_control_turn_body(
             ):
                 yield event
             return
-        async for event in _confirm_rehearse_and_handoff(
-            state,
-            user_text,
-            installed_skills,
-            active_connectors,
-            preferred_device,
-            design_system_id,
-        ):
-            yield event
+        # 写权限：forcedTool 绕过 _dispatch_tool 直接进工厂，scope 要在这里设。
+        with tool_scope_scope("rehearse"):
+            async for event in _confirm_rehearse_and_handoff(
+                state,
+                user_text,
+                installed_skills,
+                active_connectors,
+                preferred_device,
+                design_system_id,
+            ):
+                yield event
         return
 
     if forced == "refine":
@@ -1293,32 +1654,36 @@ async def _run_control_turn_body(
         goal["text"] = original_goal
         state.goal = goal
         await _apersist(state)
-        async for event in _handoff_factory(
-            state,
-            user_text,
-            installed_skills,
-            active_connectors,
-            preferred_device,
-            design_system_id,
-            repair=False,
-            profile="full",
-        ):
-            yield event
+        # 写权限：forcedTool 绕过 _dispatch_tool 直接进工厂，scope 要在这里设。
+        with tool_scope_scope("refine"):
+            async for event in _handoff_factory(
+                state,
+                user_text,
+                installed_skills,
+                active_connectors,
+                preferred_device,
+                design_system_id,
+                repair=False,
+                profile="full",
+            ):
+                yield event
         return
 
     if forced == "repair":
-        async for event in _handoff_factory(
-            state,
-            user_text,
-            installed_skills,
-            active_connectors,
-            preferred_device,
-            design_system_id,
-            repair=True,
-            profile="full",
-            max_loops=2,
-        ):
-            yield event
+        # 写权限：forcedTool 绕过 _dispatch_tool 直接进工厂，scope 要在这里设。
+        with tool_scope_scope("repair"):
+            async for event in _handoff_factory(
+                state,
+                user_text,
+                installed_skills,
+                active_connectors,
+                preferred_device,
+                design_system_id,
+                repair=True,
+                profile="full",
+                max_loops=2,
+            ):
+                yield event
         return
 
     if forced == "challenge":
@@ -1363,11 +1728,7 @@ async def _run_control_turn_body(
                 async for event in _canned(state, OVER_CAP_TEXT):
                     yield event
                 return
-            # ⚠ 同步 httpx（超时最长 45s）。不挪出事件循环的话，一个人的
-            #   控制面轮次会把所有并发的 SSE 流一起冻住——见 _apersist 的头注。
-            result = await run_in_threadpool(
-                lambda: call_control_llm(messages, tools=CONTROL_TOOLS)
-            )
+            result = await _invoke_control_llm(messages, tools=list_control_tools(state))
             cheap_tokens += _usage_tokens(getattr(result, "usage", None))
             if await _maybe_over_cap():
                 async for event in _canned(state, OVER_CAP_TEXT):
@@ -1414,34 +1775,37 @@ async def _run_control_turn_body(
                 name = str(call.get("name") or "")
                 args = call.get("arguments") if isinstance(call.get("arguments"), dict) else {}
                 tool_body: Optional[Dict[str, Any]] = None
-                async for event in _dispatch_tool(
-                    name,
-                    args,
-                    state,
-                    user_text,
-                    installed_skills,
-                    active_connectors,
-                    preferred_device,
-                    design_system_id,
-                    original_goal,
-                ):
-                    yield event
-                    if event.get("type") == "control_tool_result":
-                        tool_body = {
-                            k: v for k, v in event.items() if k != "type"
-                        }
-                    if event.get("type") in {
-                        "control_ask_user",
-                        "control_scope_card",
-                        "control_handoff_factory",
-                        "complete",
-                    }:
-                        parked = event.get("type") in {
+                # 写权限：本回合分发的是 name 这个工具。缺省 READ，
+                # 只有 TOOL_SCOPE 里声明 WRITE 的才进得了工厂信封。
+                with tool_scope_scope(name):
+                    async for event in _dispatch_tool(
+                        name,
+                        args,
+                        state,
+                        user_text,
+                        installed_skills,
+                        active_connectors,
+                        preferred_device,
+                        design_system_id,
+                        original_goal,
+                    ):
+                        yield event
+                        if event.get("type") == "control_tool_result":
+                            tool_body = {
+                                k: v for k, v in event.items() if k != "type"
+                            }
+                        if event.get("type") in {
                             "control_ask_user",
                             "control_scope_card",
+                            "control_handoff_factory",
                             "complete",
-                        }
-                        handed = event.get("type") == "control_handoff_factory"
+                        }:
+                            parked = event.get("type") in {
+                                "control_ask_user",
+                                "control_scope_card",
+                                "complete",
+                            }
+                            handed = event.get("type") == "control_handoff_factory"
                 if parked or handed:
                     return
                 messages.append(
@@ -1476,6 +1840,22 @@ async def _dispatch_tool(
     design_system_id: Any,
     original_goal: str,
 ) -> AsyncIterator[Dict[str, Any]]:
+    # 批准闸（抄 grok 的 ToolDef.requires_permission）。声明在 TOOL_PERMISSION
+    # 一处，强制在这一处——不再让每个贵动词各写一段（漏写不报错，只会绕过
+    # 范围卡：refine 就这么漏过一次）。
+    #
+    # grok 把 `Started` 的语义钉成「批准之后、执行之前」，所以这道闸必须在
+    # 任何 control_tool_start / handoff 之前。
+    if not tool_permission_granted(name, state):
+        async for event in _park_scope(
+            state,
+            _confirmed_restatement(state, user_text) or _restate(original_goal),
+            device=str(preferred_device or "unspecified"),
+            variant="thin" if original_goal else "full",
+            user_text=user_text,
+        ):
+            yield event
+        return
     if name == "ask_user":
         question = str(args.get("question") or "你想做什么应用？")
         options = args.get("options") if isinstance(args.get("options"), list) else []
@@ -1525,17 +1905,8 @@ async def _dispatch_tool(
             yield event
         return
     if name == "rehearse":
-        # 模型 rehearse 不是确认按钮。停泊 / 未确认必须再 park。
-        if not _scope_confirmed(state):
-            async for event in _park_scope(
-                state,
-                _confirmed_restatement(state, user_text) or _restate(original_goal),
-                device=str(preferred_device or "unspecified"),
-                variant="thin" if original_goal else "full",
-                user_text=user_text,
-            ):
-                yield event
-            return
+        # 「模型 rehearse 不是确认按钮」这道闸已收进函数开头的统一批准闸
+        # （TOOL_PERMISSION["rehearse"] = _scope_confirmed）。
         restatement = _confirmed_restatement(state, user_text)
         _write_confirmed_goal(state, restatement)
         _copy_scope_opt_in_into_goal(state)
@@ -1552,6 +1923,9 @@ async def _dispatch_tool(
             yield event
         return
     if name == "refine":
+        # 空会话没东西可精修这道闸已收进统一批准闸
+        # （TOOL_PERMISSION["refine"] = _has_model）。实测过的洞：补之前
+        # 模型在空 goal 会话上挑 refine，信封被调 1 次、零范围卡就点了火。
         goal = dict(state.goal) if isinstance(state.goal, dict) else {}
         goal["text"] = original_goal
         state.goal = goal

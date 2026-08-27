@@ -37,7 +37,10 @@ def driver(monkeypatch, tmp_path):
     monkeypatch.delenv("SLIDERULE_LLM_ROUND_CAPS", raising=False)
     import services.v5_full_driver as driver_mod
 
-    monkeypatch.setattr(driver_mod, "persist_state", lambda s: s)
+    # ⚠ 2026-08-27：PR-8(M14) 起 persist_state 必须返回 {"ok": True} 的 dict，
+    #   否则能力结束落 pendingRuns 判为写失败并 fail-closed 中止本轮。
+    #   `lambda s: s` 会让驱动器跑完第一个能力就退出。
+    monkeypatch.setattr(driver_mod, "persist_state", lambda s: {"ok": True})
     return driver_mod
 
 

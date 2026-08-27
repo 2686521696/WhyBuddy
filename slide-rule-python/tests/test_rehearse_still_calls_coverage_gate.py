@@ -49,7 +49,15 @@ def driver(monkeypatch, tmp_path):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     import services.v5_full_driver as driver_mod
 
-    monkeypatch.setattr(driver_mod, "persist_state", lambda s: s)
+    # ⚠ 2026-08-27：这里原来是 `lambda s: s`。PR-8(M14) 之后 persist_state 的
+    #   契约变成"返回 save_session_record 的 dict"，能力结束落 pendingRuns 时
+    #   `not isinstance(result, dict) or not result.get("ok")` 就是**写失败**，
+    #   fail-closed 抛 PersistClosedError（正确行为：假装存了 = 崩溃后重烧 LLM）。
+    #   于是本夹具让驱动器在第一个能力后就 `phase_changed: failed` 退出，
+    #   走不到循环后那条无条件的 evaluate_coverage_gate——判据 **打空**，
+    #   报"闸被删了"，而真实路径上闸调用了 2 次。
+    #   契约改了要同步夹具，否则腐烂的是判据不是功能（Claude.md §2/§4）。
+    monkeypatch.setattr(driver_mod, "persist_state", lambda s: {"ok": True})
     monkeypatch.setattr(
         driver_mod, "_ensure_runtime_closure_evidence", lambda state, *a, **k: state
     )

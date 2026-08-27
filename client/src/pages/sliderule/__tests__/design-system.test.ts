@@ -78,11 +78,40 @@ describe("选择器接线：UI 动了，生成也要跟着动", () => {
     const session = read("../useSlideRuleSession.ts");
     expect(session).toContain("designSystemId: loadDesignSystemId()");
 
-    // 两个驱动入口（同步 / 流式）都要带上——本仓"只改一半"的经典位置：
-    // 流式是前端主路径，只改同步等于没改。
+    /*
+     * 每一个点火 payload 都要带上——本仓"只改一半"的经典位置：
+     * 流式是前端主路径，只改同步等于没改。
+     *
+     * ⚠ 2026-08-27 审查：原判据写死 `expect(sites.length).toBe(2)`。PR-4 加了
+     *   控制面第三条点火路径（postControlTurnStream，且它也正确带上了
+     *   designSystemId）——功能是**更全了**，判据却因为数字对不上而变红。
+     *   写死计数就是盯字面：加一条带的会假红，加一条不带的（3→3）会假绿。
+     *
+     * 现在自动发现：`installedSkills` 是点火 payload 的天然标记
+     * （marathon 那条 body 没有它，契约本来就不同）。每一个带
+     * installedSkills 的 body 都必须同时带 designSystemId。
+     * 新增点火路径会自动进入本判据，忘了带就红。
+     */
     const driver = read("../../../lib/sliderule-marathon-driver.ts");
-    const sites = driver.match(/designSystemId: opts\.designSystemId/g) ?? [];
-    expect(sites.length).toBe(2);
+    const bodies = driver
+      .split("body: JSON.stringify({")
+      .slice(1)
+      .map(chunk => chunk.slice(0, 900));
+    const ignitionBodies = bodies.filter(b => b.includes("installedSkills"));
+    expect(
+      ignitionBodies.length,
+      "一个点火 payload 都没找到——driver 的请求体写法变了，判据要跟着改"
+    ).toBeGreaterThanOrEqual(2);
+    const missing = ignitionBodies.filter(b => !b.includes("designSystemId"));
+    expect(
+      missing.length,
+      `有 ${missing.length} 个点火 payload 没带 designSystemId —— 选择器只存 localStorage 不发出去 = 纯装饰`
+    ).toBe(0);
+    // 正向：控制面那条（今天产品唯一的新烧插座）必须在里面
+    expect(
+      ignitionBodies.some(b => b.includes("forcedTool")),
+      "控制面点火 payload 不在检查范围内"
+    ).toBe(true);
   });
 
   it("后端按轮取种子色，不是读模块常量", () => {

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import {
@@ -20,6 +21,7 @@ import {
   studioPhoneStageDefaultPercent,
   studioPhoneStageDefaultPx,
   studioStageDefaultPercent,
+  needsEmptySessionRestore,
 } from "../studio-layout";
 import { SHELL_SIDEBAR_WIDTH_PX } from "../shell-sidebar-layout";
 
@@ -177,5 +179,68 @@ describe("画布档锁死最大化", () => {
     expect(needsMaximizeLockFix({ chat: false, stage: true }, true)).toBe(
       false
     );
+  });
+});
+
+/**
+ * 2026-08-27 用户报的死角：舞台最大化 → 对话栏塌成 0% → 存进 localStorage →
+ * 点「新建会话」继承它 → 新会话右侧只有一句占位、左侧作曲家 18px，无路可走。
+ *
+ * 真机复现（1500×950）：
+ *   最大化后   layout=[0,100]  composer w=18  input w=8
+ *   新建会话后 layout=[0,100]  composer w=18  input w=8   ← 继承了
+ *
+ * 判据落在判定函数上（执行侧的通电判据见 StudioSplit 那条）。
+ * 变异：把 `return collapsed.chat` 改成 `return false`，本组必须红。
+ */
+describe("needsEmptySessionRestore（空会话不许把对话栏折着）", () => {
+  const folded = { chat: true, stage: false };
+  const open = { chat: false, stage: false };
+
+  it("空会话 + 对话栏折着 → 还原", () => {
+    expect(needsEmptySessionRestore(folded, true, false)).toBe(true);
+  });
+
+  it("反向：会话有内容时不替用户做主（看成品时最大化是合理的）", () => {
+    expect(needsEmptySessionRestore(folded, false, false)).toBe(false);
+  });
+
+  it("反向：对话栏本来就开着就别动它（免得跟拖动/折叠打架）", () => {
+    expect(needsEmptySessionRestore(open, true, false)).toBe(false);
+  });
+
+  it("反向：画布档的最大化锁优先，不跟它抢", () => {
+    expect(needsEmptySessionRestore(folded, true, true)).toBe(false);
+  });
+});
+
+/**
+ * 通电：光有判定函数不算数——它得真的接在 chatRef 上，且 isHomeEmpty 要
+ * 一路串到 StudioSplit。本仓第一条和第三条：装在不通电的插座上 /
+ * 名单里有名字 ≠ 埋点在。
+ *
+ * 剥注释后匹配（判据 grep 标识符而那个词同时出现在注释里 = 变异后照样绿，
+ * 本仓已经踩过）。
+ */
+describe("通电：空会话还原真的接在活路径上", () => {
+  const strip = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+  const read = (rel: string) =>
+    strip(readFileSync(new URL(rel, import.meta.url), "utf8"));
+
+  it("StudioSplit 用判定函数并调 chatRef.expand（不是自己重写条件）", () => {
+    const src = read("../StudioSplit.tsx");
+    expect(src).toContain("needsEmptySessionRestore");
+    const at = src.indexOf("needsEmptySessionRestore(collapsed");
+    expect(at, "判定没用在 effect 里").toBeGreaterThan(-1);
+    expect(src.slice(at, at + 260)).toContain("chatRef.current?.expand()");
+  });
+
+  it("isHomeEmpty 一路串到 StudioSplit（少一段就是半条线）", () => {
+    expect(read("../../SlideRule.tsx")).toContain("sessionEmpty={isHomeEmpty}");
+    const studio = read("../SlideRuleStudio.tsx");
+    expect(studio).toContain("sessionEmpty={sessionEmpty}");
+    const split = read("../StudioSplit.tsx");
+    expect(split).toContain("sessionEmpty?: boolean;");
   });
 });
