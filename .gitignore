@@ -161,6 +161,10 @@ data/agents/*/HEARTBEAT.md
 data/audit/
 
 # SlideRule V5 durable pilot runtime artifacts (explicitly ignored; smoke intentionally creates them)
+# 每轮推演的崩溃恢复检查点（services/checkpoint_store 写的，一次真机烟测就多几个目录）。
+# 跟上面那几条同一类：跑出来的运行时状态，不是源码。2026-08-27 补——它一直没进
+# 名单，于是每跑一次真实话题 E2E 就多一批 untracked 文件挂在那儿。
+data/checkpoints/
 data/sliderule-sessions.json
 data/sliderule-sessions.json.tmp
 data/slide_rule_sessions.json
