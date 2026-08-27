@@ -97,6 +97,8 @@ import { findDevicePreset, loadDevicePresetId } from "./device-presets";
 import { STAGE_FRAME_FLAT } from "./stage-frame-style";
 import { elementPath, type PathStep } from "./element-path";
 import { blockIdentity, type BlockIdentity } from "./page-blocks";
+import { useBlockRects } from "./use-block-rects";
+import type { BlockRect } from "./block-rects";
 import {
   frameRectToNodeRect,
   elementTitle,
@@ -280,6 +282,60 @@ function ElementSpot({
           {label}
         </span>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * 块框：刀 1 量出来的那个方框，画在画板上。
+ *
+ * ⚠ 跟 `ElementSpot` 是**两回事**，别合并：元素框是"你正指着/选中的那一个
+ *   元素"，块框是"这一页由哪几块拼成"的常驻底图。两者会同时出现——
+ *   Ctrl 滑过表格里某个单元格时，元素框在单元格上，块框在整块表格上。
+ *
+ * ⚠ 描边同样要**反缩放**（`inv`），理由见 ElementSpot 头注：缩到 25% 时
+ *   1px 的线只有 0.25px，亚像素直接看不见。
+ */
+function BlockSpot({
+  block,
+  active,
+}: {
+  block: BlockRect;
+  active: boolean;
+}): React.ReactElement {
+  const zoom = useStore(s => s.transform[2]);
+  const inv = zoom > 0 ? 1 / zoom : 1;
+  const color = active ? "#7c3aed" : "#c4b5fd";
+  return (
+    <div
+      className="pointer-events-none absolute"
+      data-testid="sliderule-canvas-block-spot"
+      data-block-name={block.name}
+      style={{
+        left: block.rect.left,
+        top: block.rect.top,
+        width: block.rect.width,
+        height: block.rect.height,
+        outline: `${(active ? 2 : 1) * inv}px ${active ? "solid" : "dashed"} ${color}`,
+        outlineOffset: 0,
+        borderRadius: 3 * inv,
+        background: active ? "rgba(124,58,237,0.06)" : "transparent",
+      }}
+    >
+      <span
+        className="absolute whitespace-nowrap rounded px-1 py-px text-white"
+        style={{
+          left: 0,
+          top: 0,
+          transform: `scale(${inv}) translateY(-100%)`,
+          transformOrigin: "top left",
+          background: color,
+          fontSize: 10,
+          marginTop: -2 * inv,
+        }}
+      >
+        {block.kindLabel}·{block.label}
+      </span>
     </div>
   );
 }
@@ -497,6 +553,12 @@ function ArtboardNode({ data }: NodeProps<Node<ArtboardData>>) {
 
   const entered = ctx?.enteredPageId === page.pageId;
   const isActive = ctx?.activePageId === page.pageId;
+
+  /* 刀 1：量这一块画板上每一块的方框。
+     ⚠ `mounted` 传进去当 enabled：没进过视口的画板里根本没有 iframe，
+       量了也是空——更要紧的是别给它装 ResizeObserver。 */
+  const hostRef = React.useRef<HTMLDivElement | null>(null);
+  const blocks = useBlockRects(hostRef, page.html, { width: box.w, height: box.h }, mounted);
   const isLinkSource = ctx?.linkFrom === page.pageId;
   const highlighted = ctx?.highlightPageIds.includes(page.pageId) ?? false;
   const labelScale = labelCounterScale(zoom);
@@ -519,7 +581,13 @@ function ArtboardNode({ data }: NodeProps<Node<ArtboardData>>) {
       data-page-id={page.pageId}
       data-entered={entered ? "1" : undefined}
       data-mounted={mounted ? "1" : "0"}
-      ref={el => ctx?.registerBoardEl(page.pageId, el)}
+      ref={el => {
+        /* ⚠ 两个消费者共用这一个 ref：导出要拿画板 DOM，刀 1 要从这儿往下
+           找 iframe。写成两个 ref 属性后一个会覆盖前一个（React 的既定行为），
+           表现是导出正常而块框一个都不出现——静默。 */
+        hostRef.current = el;
+        ctx?.registerBoardEl(page.pageId, el);
+      }}
     >
       {/* 连线把手（四条边各一个）。
           ⚠ **永远渲染**，不能"连线态才挂"——React Flow 要靠 handle 的位置
@@ -634,6 +702,9 @@ function ArtboardNode({ data }: NodeProps<Node<ArtboardData>>) {
             onAction={ctx?.onAction}
             onNavigate={pid => ctx?.onNavigate(pid)}
             onHoverBinding={entered ? ctx?.onHoverBinding : undefined}
+            /* 刀 1 的量测时机：applyBindings 的下一行。⚠ 别挪到 onLoad——
+               那时候表格里只有模板行（见 use-block-rects 头注）。 */
+            onReport={blocks.onSurfaceReport}
           />
         ) : (
           /* 还没进视口：**画轮廓，不留白**。剔除是性能手段，不是可见性判定
@@ -714,6 +785,14 @@ function ArtboardNode({ data }: NodeProps<Node<ArtboardData>>) {
         ⚠ pointer-events-none 是**功能**：这两个框盖在手势层上面，漏了它
           鼠标一移上去就把 mousemove/click 全吃掉——高亮会闪、点不中。
       */}
+      {/* 块框（刀 1）。⚠ 只在这块画板被选中/进板时画：六页十几块全画满
+          虚线会糊成一片，而"这一页由哪几块拼成"本来就是看某一页时才问的问题。
+          刀 4 的影响面点亮走另一条路（跨页常驻），不走这里。 */}
+      {isActive || entered
+        ? blocks.snapshot.rects.map(b => (
+            <BlockSpot key={b.name} block={b} active={entered} />
+          ))
+        : null}
       {hover && !samePick(hover, ctx?.picked ?? null) ? (
         <ElementSpot rect={hover.rect} kind="hover" label={blockTag(hover)} />
       ) : null}

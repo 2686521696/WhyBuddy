@@ -73,7 +73,13 @@ function normalizeKind(raw: string | null): BlockKind {
     : "card";
 }
 
-function identityOf(el: Element): BlockIdentity | null {
+/**
+ * 从块的宿主元素读出身份。没有 `data-block` 就不是块，回 null。
+ *
+ * ⚠ 导出是给 `block-rects.ts` 用的（刀 1 量矩形时要 元素 + 身份 成对拿）。
+ *   它**不许**自己再从属性拼一份身份——拼两份就会在 kind 归一化上分叉。
+ */
+export function identityOf(el: Element): BlockIdentity | null {
   const name = el.getAttribute(BLOCK_MARK_ATTR);
   if (!name) return null;
   const kind = normalizeKind(el.getAttribute(BLOCK_KIND_ATTR));
@@ -103,23 +109,42 @@ export function blockIdentity(el: Element | null): BlockIdentity | null {
 }
 
 /**
- * 一页上的所有块，文档顺序。
+ * 一页上所有块的**宿主元素**，文档顺序。认块的规则只有这一处。
  *
  * ⚠ 嵌套的块直接跳过：Python 那边保证块互不嵌套，真出现了说明这份 HTML
  *   被人手改过（或者消毒把外层剥了），这时候宁可少列一块，也不能把同一段
  *   内容算成两块——数出来的块数会跟后端对不上。
+ *
+ * ⚠ 重名的只取第一个：`name` 是**页内唯一的地址**，重名说明这份 HTML 有问题。
+ *   两个都收下的话，刀 1 会给同一个地址量出两个矩形，画布上一块套一块。
  */
-export function listBlocks(root: ParentNode | null): BlockIdentity[] {
+export function listBlockElements(root: ParentNode | null): HTMLElement[] {
   if (!root) return [];
   const nodes = Array.from(root.querySelectorAll<HTMLElement>(`[${BLOCK_MARK_ATTR}]`));
-  const out: BlockIdentity[] = [];
+  const out: HTMLElement[] = [];
   const seen = new Set<string>();
   for (const el of nodes) {
     if (el.parentElement && closestBlock(el.parentElement)) continue;
+    const name = el.getAttribute(BLOCK_MARK_ATTR);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    out.push(el);
+  }
+  return out;
+}
+
+/**
+ * 一页上的所有块，文档顺序。
+ *
+ * ⚠ 这是 `listBlockElements` 的一层薄映射，**不重写筛选规则**：块清单（检视器）
+ *   和块矩形（刀 1）必须数出同样多的块。各写一份的话，某天嵌套/重名的处理
+ *   一边改了另一边没改，表现是画布上的框比清单多一个或少一个，而且不报错。
+ */
+export function listBlocks(root: ParentNode | null): BlockIdentity[] {
+  const out: BlockIdentity[] = [];
+  for (const el of listBlockElements(root)) {
     const id = identityOf(el);
-    if (!id || seen.has(id.name)) continue;
-    seen.add(id.name);
-    out.push(id);
+    if (id) out.push(id);
   }
   return out;
 }
