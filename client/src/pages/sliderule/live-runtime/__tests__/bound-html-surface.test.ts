@@ -199,10 +199,10 @@ describe("data-block 穿过消毒", () => {
   it("块标与块类型都不许被剥", () => {
     const out = sanitizeBoundHtml(
       '<main data-shell="main">' +
-        '<div data-block="表格:待指派工单" data-block-kind="table"><table></table></div>' +
+        '<div data-block="待指派工单" data-block-kind="table"><table></table></div>' +
         "</main>",
     );
-    expect(out, "data-block 被剥掉了").toContain('data-block="表格:待指派工单"');
+    expect(out, "data-block 被剥掉了").toContain('data-block="待指派工单"');
     expect(out, "data-block-kind 被剥掉了").toContain('data-block-kind="table"');
   });
 

@@ -53,10 +53,16 @@ export const KIND_LABEL_CN: Record<BlockKind, string> = {
 };
 
 export interface BlockIdentity {
-  /** 页内唯一的可寻址名字，形如 `表格:待指派工单`。后端按它切块改写。 */
+  /**
+   * 页内唯一的可寻址名字（`待指派工单`）。后端按它切块改写。
+   *
+   * ⚠ 这是**地址**，不是显示文本。后端每一遍打标都原样保留它，
+   *   而 `kind` 会随 HTML 重算——所以显示要用 `kindLabel`+`label`，
+   *   不要拿名字去猜类型。
+   */
   name: string;
   kind: BlockKind;
-  /** 名字里冒号后面那半，给人看的。 */
+  /** 给人看的那半。当前跟 name 相同，留一个字段是为了以后换名字方案时不动调用方。 */
   label: string;
   kindLabel: string;
 }
@@ -71,13 +77,7 @@ function identityOf(el: Element): BlockIdentity | null {
   const name = el.getAttribute(BLOCK_MARK_ATTR);
   if (!name) return null;
   const kind = normalizeKind(el.getAttribute(BLOCK_KIND_ATTR));
-  const colon = name.indexOf(":");
-  return {
-    name,
-    kind,
-    label: colon >= 0 ? name.slice(colon + 1) : name,
-    kindLabel: KIND_LABEL_CN[kind],
-  };
+  return { name, kind, label: name, kindLabel: KIND_LABEL_CN[kind] };
 }
 
 /**
@@ -122,4 +122,24 @@ export function listBlocks(root: ParentNode | null): BlockIdentity[] {
     out.push(id);
   }
   return out;
+}
+
+/**
+ * 从一页的**源 HTML** 里读出块清单。
+ *
+ * ⚠ 走 `DOMParser` + 上面那份 `listBlocks`，**不另写一套正则**：同一份 HTML
+ *   两套解析必然分叉（本仓 `scan_bindings` 用标签栈、JS 用 querySelectorAll
+ *   那口井）。这里只负责把字符串变成一棵树，认块的规则只有一份。
+ *
+ * ⚠ 没有 DOMParser 的环境（node 侧工具、老浏览器）回空数组，不抛——
+ *   块清单是检视器上的一行，缺了就少一行，不许拖垮面板（纪律七 fail-open）。
+ */
+export function parseBlocksFromHtml(html: string | null | undefined): BlockIdentity[] {
+  const text = html || "";
+  if (!text || typeof DOMParser === "undefined") return [];
+  try {
+    return listBlocks(new DOMParser().parseFromString(text, "text/html"));
+  } catch {
+    return [];
+  }
 }

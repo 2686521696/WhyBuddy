@@ -28,6 +28,7 @@ import {
   ImageOff,
   Images,
   KeyRound,
+  LayoutGrid,
   MousePointerClick,
   RefreshCw,
   X,
@@ -166,6 +167,36 @@ export function CanvasInspector({
                 </dd>
               </div>
             </dl>
+          </Row>
+
+          {/*
+            这一页是由哪几块拼起来的（2026-08-27）。用户原话：「我们在双击其中
+            一个页面，进入他的模式，所有这种零散元素现在拼成了我们的一个页面」
+            ——那就先把「哪几块」如实列出来。名字和类型都是后端划的
+            （services/page_blocks.py），这里一行都不推断。
+          */}
+          <Row
+            icon={<LayoutGrid className="h-3 w-3" />}
+            title={`拼成这一页的块 ${facts.blocks.length}`}
+          >
+            {facts.blocks.length === 0 ? (
+              <p className="text-[11px] leading-4 text-stone-400">
+                这一页还没打块标（这一轮之前跑的应用没有）
+              </p>
+            ) : (
+              <ul className="space-y-1" data-testid="sliderule-canvas-inspector-blocks">
+                {facts.blocks.map(b => (
+                  <li key={b.name} className="flex items-center gap-1.5">
+                    <span className="shrink-0 rounded bg-[#eef4ff] px-1.5 py-px text-[10px] text-[#1677ff]">
+                      {b.kindLabel}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[11px] text-stone-600">
+                      {b.label}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Row>
 
           <Row

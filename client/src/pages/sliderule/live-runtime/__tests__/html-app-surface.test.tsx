@@ -784,10 +784,10 @@ describe("data-block 穿过消毒（应用面这一份）", () => {
   it("块标与块类型都不许被剥", () => {
     const out = sanitizeAppHtml(
       '<!DOCTYPE html><html><body><main data-shell="main">' +
-        '<div data-block="指标:本月营业收入" data-block-kind="metric">1,284</div>' +
+        '<div data-block="本月营业收入" data-block-kind="metric">1,284</div>' +
         "</main></body></html>",
     );
-    expect(out, "data-block 被剥掉了").toContain('data-block="指标:本月营业收入"');
+    expect(out, "data-block 被剥掉了").toContain('data-block="本月营业收入"');
     expect(out, "data-block-kind 被剥掉了").toContain('data-block-kind="metric"');
   });
 

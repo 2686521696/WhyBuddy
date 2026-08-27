@@ -49,6 +49,7 @@
  */
 
 import type { FiveSystemModel } from "../system-screens/five-system-model";
+import { parseBlocksFromHtml, type BlockIdentity } from "./page-blocks";
 
 /* ------------------------------------------------------------------ 连线 */
 
@@ -575,6 +576,14 @@ export interface BoardFacts {
   placeholderAssets: number;
   /** HTML 字节数——"这页有多重"最直白的读数 */
   htmlBytes: number;
+  /**
+   * 这一页是由哪几块拼起来的（`data-block`，Python 那边划的）。
+   *
+   * ⚠ 跟这个面板上其余每一行一样：**读出来的，不是算出来的**。块的划分和
+   *   起名都在后端，前端只负责把标读回来——两边各判一套就会分叉，而分叉的
+   *   那天不会有任何报错。
+   */
+  blocks: BlockIdentity[];
 }
 
 /**
@@ -631,5 +640,6 @@ export function boardFacts(
     assets: mine,
     placeholderAssets: mine.filter(a => a.placeholder).length,
     htmlBytes: new TextEncoder().encode(page.html ?? "").length,
+    blocks: parseBlocksFromHtml(page.html),
   };
 }

@@ -6,7 +6,7 @@
 改的时候只换那几段的 body，其余原文（它叫 `unmanaged_text`）一个字节不动。
 四条纪律照抄：
 
-    1. 标记即身份     `# >>> name >>>` … `# <<< name <<<`  →  本仓：`data-block="卡片:库存概览"`
+    1. 标记即身份     `# >>> name >>>` … `# <<< name <<<`  →  本仓：`data-block="库存概览"`
     2. 名字必须唯一   `duplicate requested item {}`          →  本仓：同页重名加 `#2`，读回时重名判失败
     3. body 不许含标记 `item {} contains marker-like content` →  本仓：新 body 里出现 data-block 就拒（边界劫持）
     4. 换完要过校验器  `SyntaxValidator`                      →  本仓：scan_bindings + 标签栈平衡
@@ -20,6 +20,13 @@ HTML 比行注释配置好办一件事：**闭合标签天然存在**，不需�
 块的划分完全能从 HTML 结构**确定性地**推出来（零 LLM、零成本、可单测），
 那就没有理由花模型的钱去换一个不保证的结果。同一条理由让 3.5 步外壳统一
 也是零 LLM 的。
+
+## 名字是地址，类型是元信息
+
+`data-block` 是**地址**：一旦定下来，后面每一遍打标都原样保留——名字一变，
+用户在画布上选中的那一块就换人了。`data-block-kind` 不是地址，每一遍都按
+当前 HTML 重算：第 3.5 步那会儿 `data-*` 孔还没打，看板的四列看不出是逐行
+容器；第 6.5 步打完孔再算才算得准。
 
 ## ⚠ 打两遍，不是一遍（照 apply_theme_to_pages 的先例）
 
@@ -242,9 +249,28 @@ def _block_kind(inner: str) -> str:
         return "metric"
     if "<ul" in low or "<ol" in low:
         return "list"
-    if "<img" in low:
+    if _is_media_block(inner, low):
         return "media"
     return "card"
+
+
+#: 图文块的门槛：图**是主角**，不是配角。
+#:
+#: ⚠ 2026-08-27 真机（协作空间那趟，20 块）：第一版只要块里有 `<img>` 就判
+#:   图文，于是看板的四列（待办/进行中/审核中/已完成，每列一堆任务卡、卡上
+#:   带头像）全被判成「图文:待办」，20 块里错了 6 块。头像不是这一块的主角。
+#:   门槛落在**文字量**上：图文块的字本来就少（一张图 + 一句说明）。
+MEDIA_MAX_TEXT_CHARS = 30
+
+
+def _is_media_block(inner: str, low: str) -> bool:
+    if "<figure" in low:
+        return True
+    if "<img" not in low:
+        return False
+    if "<table" in low or "<form" in low:
+        return False
+    return len(_plain_text(inner)) <= MEDIA_MAX_TEXT_CHARS
 
 
 #: 紧贴块**前面**那条 HTML 注释。模型画页时几乎每块前面都写一条
@@ -363,21 +389,38 @@ def mark_page_blocks(markup: str) -> str:
 
     # 已有的名字先占位：重打时不改已有块的名字（幂等的关键）。
     used = {n for n in re.findall(rf'{BLOCK_MARK_ATTR}="([^"]*)"', text)}
-    inserts: List[Tuple[int, str]] = []
+    # (start, end, 替换文本)。end == start 表示纯插入。
+    edits: List[Tuple[int, int, str]] = []
     for el in picked:
-        if _attr(el.body, BLOCK_MARK_ATTR) is not None:
-            continue
         inner = text[el.open_end : el.inner_end or el.open_end]
         kind = _block_kind(inner)
+        existing = _attr(el.body, BLOCK_MARK_ATTR)
+        if existing is not None:
+            # ★ 名字是**地址**，一个字都不许改（改了 = 用户选中的那一块换了人）。
+            #   类型只是元信息，每一遍都按当前 HTML 重新算：第 3.5 步那会儿
+            #   data-* 孔还没打，看板那四列看不出是逐行容器；第 6.5 步打完孔
+            #   再算才算得准（2026-08-27 真机：图文→表格、卡片→指标各修正了几块）。
+            # ⚠ 在**整段开标签原文**里搜，不在 el.body 里搜：body 是标签名
+            #   之后那一截，拿它的偏移去加 open_start 会差 `1+len(tag)` 个字符，
+            #   替换落到标签名中间，HTML 当场写坏——而且第一遍看不出来，
+            #   是第三遍打标跟第二遍不一致才露的馅（2026-08-27 真机自查）。
+            tag_text = text[el.open_start : el.open_end]
+            m = re.search(rf'{BLOCK_KIND_ATTR}="([^"]*)"', tag_text)
+            if m and m.group(1) != kind:
+                at = el.open_start + m.start(1)
+                edits.append((at, at + len(m.group(1)), kind))
+            elif not m:
+                edits.append((el.open_end - 1, el.open_end - 1, f' {BLOCK_KIND_ATTR}="{kind}"'))
+            continue
         label = _block_label(inner, kind, before=text[max(0, el.open_start - 400) : el.open_start])
-        name = _unique(f"{KIND_LABEL_CN.get(kind, kind)}:{label}", used)
-        inserts.append(
-            (el.open_end - 1, f' {BLOCK_MARK_ATTR}="{name}" {BLOCK_KIND_ATTR}="{kind}"')
+        name = _unique(label, used)
+        edits.append(
+            (el.open_end - 1, el.open_end - 1, f' {BLOCK_MARK_ATTR}="{name}" {BLOCK_KIND_ATTR}="{kind}"')
         )
 
     out = text
-    for pos, frag in sorted(inserts, reverse=True):
-        out = out[:pos] + frag + out[pos:]
+    for start, end, frag in sorted(edits, key=lambda e: e[0], reverse=True):
+        out = out[:start] + frag + out[end:]
     return out
 
 
@@ -412,7 +455,7 @@ def scan_blocks(markup: str) -> List[Dict[str, Any]]:
             {
                 "name": name,
                 "kind": kind if kind in BLOCK_KINDS else "card",
-                "label": name.split(":", 1)[1] if ":" in name else name,
+                "label": name,
                 "tag": el.tag,
                 "start": el.open_start,
                 "bodyStart": el.open_end,
