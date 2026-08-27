@@ -297,6 +297,31 @@ describe("推演动词", () => {
     );
   });
 
+  it("服务端复述句为空时，不许把用户那句空确认当成卡标题", () => {
+    // ⚠ 2026-08-27 与 Python 侧同一天修的那个病的 TS 孪生：
+    //   用户回「就按上面这个推演」，卡叫「将做成：就按上面这个推演」。
+    //   `rehearsalSlashRemainder` 对不带斜杠动词的句子原样返回，兜底
+    //   `remainder || goal` 就把原文回声排在了 goal 前面。
+    expect(
+      scopeCardRestatement("", "就按上面这个推演", "智能工单系统")
+    ).toBe("智能工单系统");
+    expect(
+      scopeCardRestatement("", "好的", "宠物医院预约系统")
+    ).toBe("宠物医院预约系统");
+  });
+
+  it("反向：真带了斜杠动词时，用户新给的范围仍然盖过旧 goal", () => {
+    // 少了这条，把兜底写成"永远用 goal"也全绿——那样 `/范围 新东西`
+    // 就再也改不动范围了（CLAUDE.md §3）。
+    expect(
+      scopeCardRestatement("", "/范围 排班考勤系统", "旧的请假系统")
+    ).toBe("排班考勤系统");
+  });
+
+  it("什么都没有时退回用户原话，而不是空标题", () => {
+    expect(scopeCardRestatement("", "随便写点什么", "")).toBe("随便写点什么");
+  });
+
   it("不是 Claude 那套 /plan /compact /run /yolo", () => {
     expect(parseRehearsalSlash("/plan")).toBeNull();
     expect(parseRehearsalSlash("/compact")).toBeNull();

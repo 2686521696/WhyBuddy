@@ -633,7 +633,9 @@ def _confirmed_restatement(state: V5SessionState, user_text: str) -> str:
     parked = str(getattr(state, "awaitDetail", None) or "").strip()
     if parked:
         return parked
-    return _restate(user_text)
+    # user_text 是纯确认时 _restate 返回空串，这里接着往下要——否则
+    # _write_confirmed_goal 拿到空串直接 return，goal 一直是空的。
+    return _restate(user_text) or _restate(_session_topic(state))
 
 
 def _is_slash_rehearse(user_text: str) -> bool:
@@ -736,7 +738,32 @@ def _restate(user_text: str) -> str:
             break
     if not stripped or stripped.startswith("/"):
         return ""
+    # ⚠ 纯确认不能当复述句。剥空返回空串，让调用方顺着兜底链往下走
+    #   （照 grok 的 `normalize_title(primary).or_else(|| normalize_title(fallback))`）。
+    #   守卫放在**这一份**里，不放在四个调用点上——放调用点就是同一件事五处
+    #   实现，改一处等于四处静默地还是老样子（CLAUDE.md §4）。
+    if _is_content_free_reply(stripped):
+        return ""
     return stripped
+
+
+def _restatement_chain(
+    state: V5SessionState, user_text: str, original_goal: str
+) -> str:
+    """本轮复述句的兜底链。
+
+    照 grok `xai-grok-foreign-sessions/src/codex/mod.rs`：
+        fn title(primary: &str, fallback: &str) -> Option<String> {
+            normalize_title(primary).or_else(|| normalize_title(fallback))
+        }
+    一处链条，四个 park 点共用。第三段是这次补的：用户第一句实话——
+    没有它，「空会话 + 问过澄清 + 用户回一句确认」这条真机路径上前两段都是空。
+    """
+    return (
+        _restate(user_text)
+        or _restate(original_goal)
+        or _restate(first_substantive_user_text(state))
+    )
 
 
 def _previous_model_version_id(state: V5SessionState) -> str:
@@ -867,6 +894,119 @@ def _missing_dimensions(goal_text: str) -> List[str]:
         if not _re.search(pattern, text, _re.IGNORECASE):
             out.append(label)
     return out
+
+
+# ── 「这句用户话里有没有新信息」──────────────────────────────────────────
+#
+# 抄的标准答案：grok-build `xai-chat-state/src/compaction_utils.rs`
+#
+#     /// Return `true` when the *extracted* query text represents a synthetic
+#     /// session-internal turn rather than a real human-authored prompt.
+#     pub fn is_synthetic_extracted_query(text: &str) -> bool { … }
+#
+#     /// This is the single source of truth for "real user" classification
+#     /// in the compaction pipeline.
+#     pub fn is_real_user_turn(item: &ConversationItem) -> bool { … }
+#
+# 以及取数口拆成两个、各写明给谁用：
+#     get_first_user_text()        会话身份（注释里写 "e.g. for memory context search"）
+#     get_last_user_query_text()   本轮动作（且先剥掉元数据标签）
+#
+# ⚠ 抄不动的那一半：grok 的"不算真用户话"只包括**系统自己塞进去的**文本
+#   （auto-continue、bootstrap reminder）。本仓的空确认是**人说的**——
+#   「就按上面这个推演」。全库扫过 ok/yes/sure/继续 这些词，两家都没有这个
+#   概念，所以下面这份判定是自己定的，不是抄来的。
+#
+# ⚠ 为什么需要它（2026-08-27 真机 + 探针）：控制面喂给模型的 messages 只有
+#   两条——system 一条 + **当前这句** user。探针实测：
+#
+#       [system] …当前目标：（尚无确认的应用目标）。停泊：none。
+#                已经问过一轮澄清，不要再问，直接 scope_card。
+#       [user]   就按上面这个推演
+#       原话题出现在 messages 里？ -> False
+#
+#   模型被要求"直接开范围卡"，而它对世界的全部认知就是那七个字。它只能编，
+#   于是库里一排会话叫「按当前设定的应用范围进行推演」「基于已确认的需求开展
+#   方案推演与可行性分析」——四个不同项目，四个一样的名字。
+#
+#   代价不止是标题难看：goal 变成一句一个业务点的场面话之后，
+#   closure_relevance 判「样本不足以判定相关性（业务点 1 个 < 3），跳过」——
+#   「产出对不对得上题」那道闸**整个失效**。2026-08-27 真机复现过一次。
+
+#: 纯确认 / 指代 / 元词。剥光了就说明这句话没带新信息。
+#: 盯**语素**不盯整句（CLAUDE.md §2）：整句白名单只能挡住写过的那几种说法。
+_FILLER_TOKENS = (
+    "就按上面这个", "就按上面", "按上面的", "照上面的", "上面这个", "上面那个",
+    "刚才那个", "刚说的", "如上", "同上",
+    "就这样", "就这么办", "就它了", "可以了", "没问题", "没毛病",
+    "开始吧", "开始", "继续", "确认", "同意", "行吧", "好的", "好了",
+    "麻烦了", "谢谢", "辛苦",
+    "推演", "跑吧", "跑一下", "来吧", "走起",
+    "ok", "okay", "yes", "yep", "yeah", "sure", "go", "go ahead", "confirm",
+)
+#: 单字确认。只在**整句就是它**时算数——"好用的排班系统"里的"好"不能算。
+_FILLER_ALONE = ("好", "行", "嗯", "是", "对", "可", "中", "y", "ye")
+
+
+def _is_content_free_reply(text: str) -> bool:
+    """这句用户话是不是纯确认——没带任何新信息。
+
+    判据落在**剥完还剩什么**上，不落在"是不是长得像某句话"上：
+        就按上面这个推演          → 剥光 → True
+        好                        → 整句是单字确认 → True
+        继续做刚才那个排班的      → 剩「做那的排班」→ 有实词 → False
+        大赛积分软件              → 一个语素都不沾 → False
+    """
+    import re as _re
+
+    raw = (text or "").strip()
+    if not raw:
+        return True
+    low = raw.lower()
+    low = _re.sub(r"[\s，,。.！!？?、~～;；:：'\"“”‘’()（）]+", "", low)
+    if not low:
+        return True
+    if low in _FILLER_ALONE:
+        return True
+    for token in sorted(_FILLER_TOKENS, key=len, reverse=True):
+        low = low.replace(token, "")
+    # 剩下的还有没有实词。中文 2 字起、拉丁 3 字起——低于这个长度的残渣
+    # （"的"、"了"、"a"）不算信息。
+    leftover = _re.sub(r"[的了吧呀啊呢嘛麽么把将给帮请下一个再又还都也就那这它他她我你们]+", "", low)
+    leftover = _re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", leftover)
+    cjk = len(_re.findall(r"[\u4e00-\u9fff]", leftover))
+    latin = len(_re.findall(r"[0-9a-z]", leftover))
+    return cjk < 2 and latin < 3
+
+
+def first_substantive_user_text(state: V5SessionState) -> str:
+    """会话里用户说的**第一句有内容的话**。
+
+    照 grok 的 `get_first_user_text`：会话身份取第一句，不取最后一句。
+    本轮该干什么仍然看 user_text——两个取数口分开，别再合成一个含混的
+    「用户那句话」让所有人各取所需（那正是这次的病根）。
+    """
+    for row in getattr(state, "controlTranscript", None) or []:
+        if not isinstance(row, dict):
+            continue
+        if row.get("role") != "user" or row.get("kind") != "turn":
+            continue
+        text = str(row.get("text") or "").strip()
+        if text and not _is_content_free_reply(text):
+            return text
+    return ""
+
+
+def _session_topic(state: V5SessionState) -> str:
+    """这个会话到底在做什么。
+
+    照 grok 的兜底链写法：
+        fn title(primary: &str, fallback: &str) -> Option<String> {
+            normalize_title(primary).or_else(|| normalize_title(fallback))
+        }
+    确认过的目标优先；还没确认就回到用户最初说的那句实话。
+    """
+    return _goal_text(state) or first_substantive_user_text(state)
 
 
 def _clarify_rounds_done(state: V5SessionState) -> int:
@@ -1433,12 +1573,22 @@ async def _tool_fork(state: V5SessionState, new_name: str) -> Dict[str, Any]:
 
 
 def _system_prompt(state: V5SessionState) -> str:
-    goal = _goal_text(state) or "（尚无确认的应用目标）"
+    # ⚠ 这里以前只读 _goal_text。范围没确认时它是空的，于是模型这一轮看到的
+    #   全部世界就是 system 里一句"（尚无确认的应用目标）"加当前那句用户话。
+    #   用户回「就按上面这个推演」时，「上面这个」在 messages 里**没有指代**
+    #   （探针实测：原话题出现在 messages 里 -> False），模型只能编一个复述，
+    #   于是库里一排「按当前设定的应用范围进行推演」。
+    #   改成 _session_topic：确认过的目标优先，没确认就回到用户最初说的那句
+    #   实话（照 grok 的 `title(primary, fallback)` 兜底链）。
+    topic = _session_topic(state)
+    goal = topic or "（尚无确认的应用目标）"
     parked = getattr(state, "awaitReason", None) or "none"
     from services.product_charter import charter_prompt_block
 
     extra = charter_prompt_block()
-    missing = _missing_dimensions(_goal_text(state) or "")
+    # 缺哪些维度也照着真话题判。喂空串的那一版在"还没确认"的每一轮都报
+    # 「全都没读到」，模型据此问一堆本来说清了的模板题。
+    missing = _missing_dimensions(topic)
     asked = _clarify_rounds_done(state)
     # ⚠ 规则只报告"这句话里我没读到什么"，**问不问、问几条由模型定**。
     #   参考 dzhng/deep-research 的 generateFeedback：最多 N 条、本来清楚就少问。
@@ -1868,7 +2018,7 @@ async def _dispatch_tool(
         if _clarify_rounds_done(state) >= 1:
             async for event in _park_scope(
                 state,
-                _restate(user_text) or _restate(original_goal),
+                _restatement_chain(state, user_text, original_goal),
                 device=str(preferred_device or "unspecified"),
                 variant="thin" if original_goal else "full",
                 user_text=user_text,
@@ -1884,7 +2034,7 @@ async def _dispatch_tool(
         # 模型自己判断"已经够清楚"（给了空列表）→ 不 park，接着开范围卡
         async for event in _park_scope(
             state,
-            _restate(user_text) or _restate(original_goal),
+            _restatement_chain(state, user_text, original_goal),
             device=str(preferred_device or "unspecified"),
             variant="thin" if original_goal else "full",
             user_text=user_text,
@@ -1892,7 +2042,7 @@ async def _dispatch_tool(
             yield event
         return
     if name == "scope_card":
-        restatement = str(args.get("restatement") or _restate(user_text) or _restate(original_goal))
+        restatement = str(args.get("restatement") or _restatement_chain(state, user_text, original_goal))
         async for event in _park_scope(
             state,
             restatement,

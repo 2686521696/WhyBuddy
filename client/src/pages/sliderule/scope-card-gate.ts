@@ -64,6 +64,20 @@ export function scopeCardSteps(includeEvidence: boolean): string[] {
     : [...SCOPE_CARD_STEPS_FROM_SPEC];
 }
 
+/**
+ * ⚠ **未接线**，只有单测在用（见 `scope-card.test.tsx`：
+ *   「interceptRehearsalRequest 是未接线 helper 单测；活路径 skip 在 POST
+ *   mode=repair」，同文件还有一条断言 requestFn 里**不含**
+ *   interceptRehearsalRequest）。活路径上的范围卡是服务端 `control_scope_card`
+ *   事件送来的。
+ *
+ * 复述句的唯一权威在 `slide-rule-python/services/rehearsal_control.py`
+ * （`_restatement_chain` / `_restate`）。那边 2026-08-27 补了「纯确认不算
+ * 复述句」的守卫——用户回一句「就按上面这个推演」时不许拿它当标题。
+ * 这一份**故意不跟着补**：补了就多出一对要同步的实现，正是 CLAUDE.md §4
+ * 要防的事。谁要把它重新接上活路径，先去读那边的守卫，别照着这份的
+ * `stripped || t` 抄回来。
+ */
 export function restateAppGoal(userText: string): string {
   const t = (userText || "").trim();
   const stripped = t
