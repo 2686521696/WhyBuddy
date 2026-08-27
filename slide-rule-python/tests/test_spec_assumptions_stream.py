@@ -244,7 +244,12 @@ def test_脏假设不许把一份好spec拖去重问():
     tree = generate_spec_tree(GOAL, llm_json_fn=fake_llm)
     assert calls["n"] == 1, "为了一个附带字段转了重问——那一转是整份 spec 重来"
     assert [a.topic for a in (tree.assumptions or [])] == ["审批几级"]
-    assert tree.assumptions[0].alternatives == []
+    # ⚠ 2026-08-27 改判：这一行原来断言的是 `== []`，也就是把裸字符串**丢掉**。
+    #   那不是"洗干净"，是把模型给的那条备选静静扔了——卡退化成一句"知会
+    #   一声"，用户想改都没得点。改抄 grok-build `serde_lenient.rs`：裸字符串
+    #   → 单元素列表（口径与判据见 test_lenient_string_list.py）。
+    #   逐字符那口仍然堵着：str 走的是"单元素"分支，不是 for 循环。
+    assert tree.assumptions[0].alternatives == ["本该是数组"]
 
 
 def test_一条都没剩就把键删掉_不留空壳():

@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 
 import { AssumptionStrip } from "../AssumptionStrip";
 import {
+  lenientStringList,
   mergeAssumptions,
   revisePhrase,
   settleAssumption,
@@ -69,6 +70,55 @@ describe("mergeAssumptions", () => {
     const out = mergeAssumptions(src, [APPROVE]);
     expect(src).toHaveLength(1);
     expect(out).not.toBe(src);
+  });
+});
+
+describe("处理过的卡不许自己回来（续播恒从 since=0 全量补播）", () => {
+  it("点掉之后再补播一遍，面板上不许再出现", () => {
+    // ⚠ 2026-08-27 审查探针实测的真实形状：
+    //     settleAssumption([LOGIN],"a1") → 0 张
+    //     mergeAssumptions(那 0 张, [LOGIN]) → 1 张   ← 又回来了
+    //   刷新页面 / 切走再回来 / 网络抖动重连都会走到这一步。
+    const settled = new Set<string>(["a1"]);
+    const list = settleAssumption([LOGIN], "a1");
+    expect(list).toHaveLength(0);
+    expect(mergeAssumptions(list, [LOGIN], settled)).toHaveLength(0);
+  });
+
+  it("反向：没处理过的照常进来——别把整条链去重成哑巴", () => {
+    const settled = new Set<string>(["a1"]);
+    expect(mergeAssumptions([], [LOGIN, APPROVE], settled)).toEqual([APPROVE]);
+  });
+
+  it("不传集合时行为跟以前一模一样（老调用点不许被这次改动改掉语义）", () => {
+    expect(mergeAssumptions([], [LOGIN])).toEqual([LOGIN]);
+  });
+});
+
+describe("lenientStringList：模型把清单写歪的那几种形状", () => {
+  // 抄 grok-build serde_lenient.rs 的口径表，逐行对齐。
+  it("数组里的字符串/数字都收，数字转成字符串", () => {
+    expect(lenientStringList(["工号", 228])).toEqual(["工号", "228"]);
+  });
+
+  it("**裸字符串 → 单元素数组**，不是丢掉（这一条是要害）", () => {
+    // 上一版写的是 `Array.isArray(x) ? x : []`，模型给的这条备选被静静扔了，
+    // 卡退化成"知会一声"，用户想改都没得点。
+    expect(lenientStringList("工号或扫码")).toEqual(["工号或扫码"]);
+    expect(lenientStringList(228)).toEqual(["228"]);
+  });
+
+  it("null / undefined → 空数组", () => {
+    expect(lenientStringList(null)).toEqual([]);
+    expect(lenientStringList(undefined)).toEqual([]);
+  });
+
+  it("反向：bool / 对象 / 嵌套数组认不出来，返回 null 让调用方决定", () => {
+    // 宽容不等于什么都收。true 混进去会变成"true"摆在用户面前。
+    expect(lenientStringList(true)).toBeNull();
+    expect(lenientStringList({ a: 1 })).toBeNull();
+    expect(lenientStringList([["x"]])).toBeNull();
+    expect(lenientStringList(["工号", true])).toBeNull();
   });
 });
 
@@ -168,10 +218,29 @@ describe("接线（四段都得接上）", () => {
   });
 
   it("hook：并进去（不是覆盖也不是追加），并且导出去", () => {
-    expect(SESSION).toContain("mergeAssumptions(specAssumptionsRef.current, items)");
+    expect(SESSION).toContain("mergeAssumptions(");
+    expect(SESSION).toContain("specAssumptionsRef.current,");
     expect(SESSION).toContain("specAssumptions,");
     expect(SESSION).toContain("settleSpecAssumption,");
     expect(SESSION).toContain("reviseSpecAssumption,");
+  });
+
+  it("hook：并的时候必须把「已处理」集合传进去——否则点掉的卡续播会回来", () => {
+    /* ⚠ 这一条是纯逻辑层那两条（"处理过的卡不许自己回来"）的通电判据：
+       mergeAssumptions 支持第三个参数不算数，调用点**真的传了**才算。
+       变异：把 settledAssumptionIdsRef 那一行删掉 → 本条红。 */
+    const call = SESSION.slice(
+      SESSION.indexOf("mergeAssumptions("),
+      SESSION.indexOf("mergeAssumptions(") + 220
+    );
+    expect(call).toContain("settledAssumptionIdsRef.current");
+  });
+
+  it("hook：撤卡之前先把 id 记进「已处理」——两个入口都要", () => {
+    /* 「就这样」和「改成 X」都得记。少记一个，那个入口点掉的卡照样会回来，
+       而另一个入口是好的——半边生效最难查（CLAUDE.md §4）。 */
+    const marks = SESSION.match(/settledAssumptionIdsRef\.current\.add\(id\)/g);
+    expect(marks?.length).toBe(2);
   });
 
   it("hook：点「改成 X」真的进中途排队——否则点了个寂寞", () => {
@@ -182,7 +251,20 @@ describe("接线（四段都得接上）", () => {
   });
 
   it("新一轮 / 重置会话都要清空（否则对着过期的决定点改）", () => {
-    expect(SESSION.match(/applySpecAssumptions\(\[\]\)/g)?.length).toBe(2);
+    expect(SESSION.match(/resetSpecAssumptions\(\)/g)?.length).toBe(2);
+  });
+
+  it("清空必须**连「已处理」集合一起**清——否则下一轮的新假设被当回声吞掉", () => {
+    /* ⚠ id 兜底是 `f"a{i+1}"`，所以下一轮的 a1 跟这一轮的 a1 是两件不同的事。
+       只清列表不清集合，下一轮那条真·新假设会被 mergeAssumptions 当成
+       "处理过的回声"丢掉——面板永远少一张卡，而且不报错。
+       变异：把 resetSpecAssumptions 里那行 `new Set()` 删掉 → 本条红。 */
+    const reset = SESSION.slice(
+      SESSION.indexOf("const resetSpecAssumptions"),
+      SESSION.indexOf("const resetSpecAssumptions") + 260
+    );
+    expect(reset).toContain("settledAssumptionIdsRef.current = new Set()");
+    expect(reset).toContain("setSpecAssumptions([])");
   });
 
   it("输入条：画出来，两个动作都在", () => {

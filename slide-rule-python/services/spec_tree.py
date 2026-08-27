@@ -44,6 +44,8 @@ import json
 import re
 from typing import Any, Literal, Optional
 
+from sliderule_llm.structured import lenient_string_list
+
 from pydantic import (
     BaseModel,
     Field,
@@ -935,12 +937,16 @@ def _sanitize_assumptions(payload: Any) -> None:
         #   是真会发生的，而字符串**是可迭代的**——不判就逐字符拆成
         #   ["工","号","或","扫","码"] 摆到用户面前，一个字一个选项。
         #   判据 test_脏假设不许把一份好spec拖去重问 当场咬到了这一口。
-        raw_alts = row.get("alternatives")
-        alts = [
-            str(a).strip()[:60]
-            for a in (raw_alts if isinstance(raw_alts, list) else [])
-            if isinstance(a, (str, int, float)) and str(a).strip()
-        ]
+        #
+        # ⚠ 2026-08-27 审查补：上一版判完 list 就**丢掉**裸字符串那一支
+        #   （`if isinstance(raw_alts, list) else []`），于是模型给的那条备选
+        #   静静没了——卡退化成一句"知会一声"，用户想改都没得点。
+        #   改抄 grok-build `serde_lenient.rs` 的口径：裸字符串/数字 →
+        #   **单元素列表**，不是空列表。逐字符那口仍然堵着（str 不是 list，
+        #   走的是单元素分支）。认不出的形状（bool/dict/嵌套数组）返回 None，
+        #   这里按"没写"处理——增强类不许因此把整份 spec 拖去重问。
+        alts_raw = lenient_string_list(row.get("alternatives")) or []
+        alts = [str(a).strip()[:60] for a in alts_raw if str(a).strip()]
         # 「另一种做法」跟已定的那个一模一样 = 点了等于没改
         alts = [a for a in alts if a != decision][:4]
         cleaned.append(

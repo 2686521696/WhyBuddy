@@ -35,6 +35,48 @@ export type SpecAssumption = {
 };
 
 /**
+ * 模型给的「字符串清单」→ string[]；形状真的不认识才返回 null。
+ *
+ * 抄的标准答案：grok-build `xai-tool-types/src/serde_lenient.rs`
+ *
+ *     //! Lenient deserializers for tool arguments whose wire shape models get
+ *     //! wrong in predictable ways.
+ *     /// - array of strings/numbers → each element as a string (`228` → `"228"`),
+ *     /// - bare string or number → one-element list,
+ *     /// - `null` → empty list.
+ *     /// Booleans, objects, and nested arrays are rejected (`None`).
+ *
+ * ⚠ 跟 Python 侧 `sliderule_llm.structured.lenient_string_list` 是**同一张表**
+ *   （CLAUDE.md §4）。两边都要有，是因为服务端洗过之后这条流还接老后端和
+ *   续播缓存；两边口径必须一致，否则同一份数据在两处渲染出两个结果。
+ *   改任一边都得回来改另一边——判据 `alternatives 的宽容口径两边一致` 盯着。
+ *
+ * 要害是**裸字符串 → 单元素数组**，不是空数组。上一版两边都写的是
+ * `Array.isArray(x) ? x : []`，模型把 alternatives 写成 "工号或扫码" 时那条
+ * 备选被静静扔掉，卡退化成"知会一声"，用户想改都没得点。
+ */
+export function lenientStringList(value: unknown): string[] | null {
+  const one = (v: unknown): string | null => {
+    if (typeof v === "boolean") return null;
+    if (typeof v === "string") return v;
+    if (typeof v === "number" && Number.isFinite(v)) return String(v);
+    return null;
+  };
+  if (value === null || value === undefined) return [];
+  if (Array.isArray(value)) {
+    const out: string[] = [];
+    for (const item of value) {
+      const text = one(item);
+      if (text === null) return null;
+      out.push(text);
+    }
+    return out;
+  }
+  const text = one(value);
+  return text === null ? null : [text];
+}
+
+/**
  * 新到的假设并进已有的。
  *
  * ⚠ **按 id 去重，这条不是可选的**：run_registry 的 subscribe 会把整段事件
@@ -47,11 +89,13 @@ export type SpecAssumption = {
  */
 export function mergeAssumptions(
   prev: readonly SpecAssumption[],
-  incoming: readonly SpecAssumption[]
+  incoming: readonly SpecAssumption[],
+  settledIds?: ReadonlySet<string>
 ): SpecAssumption[] {
   const next = prev.slice();
   for (const row of incoming) {
     if (!row || !row.id) continue;
+    if (settledIds?.has(row.id)) continue;
     const i = next.findIndex(p => p.id === row.id);
     if (i < 0) next.push(row);
     else next[i] = row;
@@ -77,7 +121,25 @@ export function revisePhrase(row: SpecAssumption, alternative: string): string {
   return `${head}不要${decision}，改成${alt}`;
 }
 
-/** 用户处理完（改了 / 就这样）→ 从面板上撤掉。找不到就原样返回，不抛。 */
+/**
+ * 用户处理完（改了 / 就这样）→ 从面板上撤掉。找不到就原样返回，不抛。
+ *
+ * ⚠ 光从列表里删**不够**，调用方必须同时把这个 id 记进「已处理」集合，
+ *   再把集合传给 mergeAssumptions（见上面那个参数）。理由是同一条：
+ *   续播恒从 since=0 全量补播（sliderule-marathon-driver：「恒从 since=0
+ *   全量补播」），所以刷新页面 / 切走再回来 / 网络抖动重连之后，
+ *   **用户刚处理掉的那张卡会原样回来**。2026-08-27 审查探针实测：
+ *       settleAssumption([row],"a1") → 0 张
+ *       mergeAssumptions(那 0 张, [row]) → 1 张   ← 又回来了
+ *   点过「改成工号」的用户再点一次，同一句补充就排进队列两遍。
+ *
+ * 抄的标准答案：grok-build `xai-grok-pager/src/app/dispatch/interject.rs`
+ *     /// Our own broadcast echoes back carrying the same id; the id is
+ *     /// recorded in `self_interjection_ids` so `handle_interjection` drops
+ *     /// the echo instead of rendering a duplicate.
+ *     /// (Optimistic-echo + reconcile-by-id, mirroring the shared prompt queue.)
+ *   —— 自己处理过的事，按 id 记下来，回声照着 id 丢掉。
+ */
 export function settleAssumption(
   list: readonly SpecAssumption[],
   id: string

@@ -372,13 +372,35 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
    *   updater 必须是纯函数，StrictMode 下 React 会**故意调用两次**来暴露副作用——
    *   那一次就是往队列里排了两句一模一样的补充。
    */
+  /**
+   * 已经处理过的假设 id。
+   *
+   * ⚠ 不是可有可无的去重表，是**唯一挡得住"卡自己回来"的东西**：续播恒从
+   *   since=0 全量补播（sliderule-marathon-driver 里那句「恒从 since=0
+   *   全量补播」），所以刷新页面 / 切走再回来 / 网络抖动重连之后，用户刚
+   *   点掉的那张卡会原封不动再送一遍。理由与出处见
+   *   spec-assumptions.settleAssumption 的头注（抄 grok 的
+   *   `self_interjection_ids`：自己处理过的事按 id 记下来，回声照 id 丢掉）。
+   *
+   * ⚠ 必须跟列表**一起**清空——`_sanitize_assumptions` 的 id 兜底是
+   *   `f"a{i+1}"`，所以下一轮的 a1 跟这一轮的 a1 是**两件不同的事**。
+   *   只清列表不清集合，下一轮那条真·新假设会被当成回声吞掉。
+   *   两处重置都走 resetSpecAssumptions，别再单独调 applySpecAssumptions([])。
+   */
+  const settledAssumptionIdsRef = useRef<Set<string>>(new Set());
   const applySpecAssumptions = useCallback((next: SpecAssumption[]) => {
     specAssumptionsRef.current = next;
     setSpecAssumptions(next);
   }, []);
+  const resetSpecAssumptions = useCallback(() => {
+    settledAssumptionIdsRef.current = new Set();
+    specAssumptionsRef.current = [];
+    setSpecAssumptions([]);
+  }, []);
   /** 「就这样」：知道了，不改。只是把卡收走，不发任何东西给后端。 */
   const settleSpecAssumption = useCallback(
     (id: string) => {
+      settledAssumptionIdsRef.current.add(id);
       applySpecAssumptions(settleAssumption(specAssumptionsRef.current, id));
     },
     [applySpecAssumptions]
@@ -391,6 +413,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       const phrase = revisePhrase(row, alternative);
       if (!phrase) return;
       pushQueuedTurn(phrase);
+      // 先记 id 再撤卡：不记的话续播会把这张卡送回来，用户再点一次，
+      // 同一句补充就进队列两遍（模型会被同一件事说两遍）。
+      settledAssumptionIdsRef.current.add(id);
       applySpecAssumptions(settleAssumption(specAssumptionsRef.current, id));
     },
     [applySpecAssumptions]
@@ -1182,7 +1207,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           // 伴随式澄清同理：上一轮"我替你定了手机号"是对上一份 spec 说的，
           // 这一轮重新起草会重新定一遍。不清的话用户会对着一张过期的卡
           // 点「改成工号」，而那句话排进的是**下一轮**——改的是已经不存在的决定。
-          applySpecAssumptions([]);
+          resetSpecAssumptions();
           // 每一步 LLM 想法各自缓冲：并行批里不同能力的增量交织到达，
           // 按标签分开累积，展示最近更新的那条（不互相覆盖内容）。
           const llmDraftBuffers = new Map<string, string>();
@@ -1319,7 +1344,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 // 按 id 并（不是追加）：续播会把同一条再送一遍，
                 // 理由见 spec-assumptions.mergeAssumptions 头注。
                 applySpecAssumptions(
-                  mergeAssumptions(specAssumptionsRef.current, items)
+                  mergeAssumptions(
+                    specAssumptionsRef.current,
+                    items,
+                    settledAssumptionIdsRef.current
+                  )
                 );
               },
               onSpecPage: page => {
@@ -2429,10 +2458,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     setQueuedTurns([]);
     /* 假设面板同理：上一个会话的「我替你定了手机号」留在屏幕上，
        用户在新会话里点「改成工号」，那句话会排进一个跟它毫不相干的应用 */
-    applySpecAssumptions([]);
+    resetSpecAssumptions();
     clearPendingScope();
     setPendingAsk(null);
-  }, [isRunning, sessionState.sessionId, sessionId, options.initialGoal, applySpecAssumptions]);
+  }, [isRunning, sessionState.sessionId, sessionId, options.initialGoal, resetSpecAssumptions]);
 
   // G_READY clarification cards: unanswered open_question gaps with V4-style structured options.
   const pendingClarifications = useMemo<ClarificationItem[]>(() => {

@@ -15,6 +15,7 @@ import { buildStructuredReport } from "@shared/blueprint/sliderule-report-builde
 import { buildCapabilityPrompt } from "@shared/blueprint/sliderule-capability-prompts";
 // 技能库六期"推演注入"：已安装技能随 drive-full 请求进生成契约（纯本地读取，无环）
 import { installedSkillsDrivePayload } from "@/pages/sliderule/installed-skills";
+import { lenientStringList } from "@/pages/sliderule/spec-assumptions";
 import {
   loadTurnCapabilities,
   pickedConnectorIds,
@@ -477,8 +478,10 @@ function applyFactoryStreamEvent(
           id: String(r.id || `a${i + 1}`),
           topic: String(r.topic || "").trim(),
           decision: String(r.decision || "").trim(),
-          alternatives: (Array.isArray(r.alternatives) ? r.alternatives : [])
-            .map((a: unknown) => String(a || "").trim())
+          // ⚠ 裸字符串要变成**单元素数组**，不是被丢掉——口径见
+          //   spec-assumptions.lenientStringList（跟 Python 侧同一张表）。
+          alternatives: (lenientStringList(r.alternatives) ?? [])
+            .map((a: string) => a.trim())
             .filter(Boolean),
           why: String(r.why || "").trim(),
         }))
