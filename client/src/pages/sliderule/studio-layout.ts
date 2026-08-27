@@ -75,6 +75,36 @@ export function needsMaximizeLockFix(
 }
 
 /**
+ * 空会话不许把对话栏折着。
+ *
+ * ⚠ 2026-08-27 用户报的死角：舞台最大化后 `layout` 是 `[0, 100]`，对话栏
+ *   塌成 0%——作曲家只剩 18px 宽（输入框 8px），点不动也打不了字。这个比例
+ *   经 autoSaveId 存进 localStorage，**点「新建会话」也继承它**：新会话右侧
+ *   本来就没东西，只显示一句「推演完成后这里是五系统接线沙盘」，左边又没有
+ *   输入口——整个界面无路可走，刷新也回不来。
+ *
+ *   最大化本身没错（看成品应用时正需要），错在**空会话没有可看的舞台**，
+ *   却仍把唯一的入口折着。
+ *
+ * 只在三个条件同时成立时还原，不替用户做主：
+ *   · 会话是空的（有内容时用户可能就是想专心看舞台）；
+ *   · 对话栏确实折着；
+ *   · 没上画布档的最大化锁（那是另一条规则，不跟它抢）。
+ *
+ * 判定放这里、执行放 StudioSplit——跟 needsMaximizeLockFix 同一条纪律：
+ * Provider 的 effect 首屏跑在分栏挂载之前，ref 还是 null。
+ */
+export function needsEmptySessionRestore(
+  collapsed: StudioCollapsed,
+  sessionEmpty: boolean,
+  locked: boolean
+): boolean {
+  if (!sessionEmpty) return false;
+  if (locked) return false;
+  return collapsed.chat;
+}
+
+/**
  * 舞台页是显隐，不是宽度。
  *
  * 2026-08-18 真机：顶栏右侧栏图标走了 `panel.collapse()`，那是改 flex

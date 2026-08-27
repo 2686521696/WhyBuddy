@@ -1219,6 +1219,7 @@ function SlideRuleUnified({
           {
             <div className="relative z-0 min-h-0 flex-1">
               <SlideRuleStudio
+                sessionEmpty={isHomeEmpty}
                 chatSlot={
                   <ClaudeChatSurface
                     uiTurns={conversationTurns}
