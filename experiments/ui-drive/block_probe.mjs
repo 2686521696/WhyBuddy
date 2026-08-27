@@ -42,16 +42,21 @@ let hit = null;
 for (const a of apps.slice(0, 12)) {
   if (WANT && !String(a.session_id || '').includes(WANT) && !String(a.goal || '').includes(WANT)) continue;
   const rec = await (await ctx.request.get(`${API}/apps/${a.id || a.appId}`)).json();
-  const pages = rec.pages_json || rec.pagesJson || rec.pages || {};
+  // ⚠ 页在 `pages_json.pages` 里，不是 `pages_json` 本身：那一层还并排放着
+  //   device / navItems / boundPages 等等。直接遍历外层会一页都读不到，而且
+  //   报的是"功能没接上链路"——2026-08-27 我自己先踩了一次，量的是错的地方。
+  const bundle = rec.pages_json || rec.pagesJson || {};
+  const pages = bundle.pages || bundle;
   const list = Array.isArray(pages) ? pages : Object.entries(pages).map(([id, html]) => ({ id, html }));
-  const total = list.reduce((n, p) => n + (String(p.html || p.htmlSource || '').match(/data-block="/g) || []).length, 0);
+  const total = list.reduce(
+    (n, p) => n + (typeof p.html === 'string' ? (p.html.match(/data-block="/g) || []).length : 0), 0);
   if (total > 0) { hit = { app: a, rec, list, total }; break; }
 }
 if (!hit) { log('✗ 最近 12 个应用里没有一个带块标——功能没接上链路，或者这一轮还没跑完'); await b.close(); process.exit(1); }
 
 log(`\n应用「${hit.app.name || hit.app.id}」  ${hit.list.length} 页 / ${hit.total} 块`);
-const perPage = hit.list.map(p => {
-  const html = String(p.html || p.htmlSource || '');
+const perPage = hit.list.filter(p => typeof p.html === 'string').map(p => {
+  const html = p.html;
   const names = [...html.matchAll(/data-block="([^"]*)"[^>]*data-block-kind="([^"]*)"/g)].map(m => `${m[2]}|${m[1]}`);
   return { id: p.id || p.pageId, names };
 });
@@ -138,6 +143,27 @@ await p.screenshot({ path: `${OUT}/02-选中进面板.png` });
 const panelBlock = await p.evaluate(() =>
   document.querySelector('[data-testid="sliderule-canvas-panel-block"]')?.innerText || '');
 check('3b 右侧面板抬头也报这一块', panelBlock.includes(wantLabel), `徽章「${panelBlock}」`);
+
+/* ── 4) 画板检视器：这一页由哪几块拼成 ─────────────────────── */
+await p.keyboard.press('Escape');
+await p.waitForTimeout(600);
+// ⚠ 检视器不是"点画板就开"：它是顶栏那颗开关
+//   （sliderule-canvas-inspector-toggle，跟 canvas-browser-smoke 的 L 条同一颗）。
+//   只点画板只会选中它，面板不出来——第一版就这么量出"列了 0 条"，
+//   而块清单其实是好的。量错了地方跟功能坏了长得一模一样。
+const board = p.locator('[data-testid="sliderule-canvas-artboard"]').first();
+await board.click({ position: { x: 20, y: 20 } });
+await p.waitForTimeout(500);
+await p.click('[data-testid="sliderule-canvas-inspector-toggle"]');
+await p.waitForTimeout(1200);
+const listed = await p.evaluate(() =>
+  [...(document.querySelector('[data-testid="sliderule-canvas-inspector-blocks"]')?.children || [])]
+    .map(li => li.innerText.replace(/\s+/g, ' ').trim()));
+await p.screenshot({ path: `${OUT}/03-检视器块清单.png` });
+log(`  检视器列出：${listed.join(' / ') || '（空）'}`);
+check('4 检视器列出这一页由哪几块拼成',
+  listed.length === (domBlocks[0]?.length ?? 0) && listed.length > 0,
+  `列了 ${listed.length} 条，第一块画板实际 ${domBlocks[0]?.length ?? 0} 块`);
 
 log(`\n${bad ? `✗ ${bad} 条不过` : '✓ 全过'}`);
 await b.close();
