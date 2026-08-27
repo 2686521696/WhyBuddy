@@ -96,6 +96,7 @@ import { specPageViewport } from "./canvas-scale";
 import { findDevicePreset, loadDevicePresetId } from "./device-presets";
 import { STAGE_FRAME_FLAT } from "./stage-frame-style";
 import { elementPath, type PathStep } from "./element-path";
+import { blockIdentity, type BlockIdentity } from "./page-blocks";
 import {
   frameRectToNodeRect,
   elementTitle,
@@ -283,6 +284,25 @@ function ElementSpot({
   );
 }
 
+/**
+ * 高亮框上那行字。
+ *
+ * 悬停只报**块**（「表格·待指派工单」），选中报「块 › 元素」。
+ *
+ * ⚠ 不在任何块里的元素（壳里的菜单、面包屑）报空，让 ElementSpot 不画标签
+ *   ——不是报「未知块」。没有块身份和"块叫未知"是两回事。
+ */
+export function blockTag(p: PickedElement | null): string | undefined {
+  if (!p?.block) return undefined;
+  return `${p.block.kindLabel}·${p.block.label}`;
+}
+
+/** 选中态的标签：有块就「块 › 元素」，没块就只报元素。 */
+export function pickTitle(p: PickedElement): string {
+  const b = blockTag(p);
+  return b ? `${b} › ${p.title}` : p.title;
+}
+
 /** 两次拾取是不是同一个元素（同页同路径）。悬停时用它收敛重渲。 */
 export function samePick(
   a: PickedElement | null,
@@ -304,6 +324,12 @@ export interface PickedElement {
   rect: Rect;
   tag: string;
   title: string;
+  /**
+   * 这个元素属于**哪一块**（`data-block`，Python 那边划的）。不在任何块里
+   * （壳里的菜单、面包屑）就是 null——**不就近兜底**，那会让用户以为自己
+   * 选中了正文里的某一块。
+   */
+  block: BlockIdentity | null;
   /** 选中那一刻元素**真实**的样子（计算样式）。面板拿它当显示底值。 */
   computed: Record<string, string>;
 }
@@ -374,6 +400,7 @@ function pickElementAtPoint(
     path,
     rect,
     computed: snapshotComputed(el, doc.defaultView),
+    block: blockIdentity(el),
     tag: el.tagName.toLowerCase(),
     title: elementTitle(
       el.tagName.toLowerCase(),
@@ -688,13 +715,13 @@ function ArtboardNode({ data }: NodeProps<Node<ArtboardData>>) {
           鼠标一移上去就把 mousemove/click 全吃掉——高亮会闪、点不中。
       */}
       {hover && !samePick(hover, ctx?.picked ?? null) ? (
-        <ElementSpot rect={hover.rect} kind="hover" />
+        <ElementSpot rect={hover.rect} kind="hover" label={blockTag(hover)} />
       ) : null}
       {ctx?.picked && ctx.picked.pageId === page.pageId ? (
         <ElementSpot
           rect={ctx.picked.rect}
           kind="select"
-          label={ctx.picked.title}
+          label={pickTitle(ctx.picked)}
         />
       ) : null}
     </div>

@@ -188,3 +188,27 @@ describe("data-shell 穿过消毒", () => {
     );
   });
 });
+
+/**
+ * `data-block` / `data-block-kind` 必须活着穿过消毒（2026-08-27）。
+ *
+ * 跟 `data-shell` 同一口井：**两份**白名单，漏进任何一份都是静默剥掉。
+ * 剥掉之后画布上一块都认不出来，而 HTML 看着完全正常——不报错、不告警。
+ */
+describe("data-block 穿过消毒", () => {
+  it("块标与块类型都不许被剥", () => {
+    const out = sanitizeBoundHtml(
+      '<main data-shell="main">' +
+        '<div data-block="表格:待指派工单" data-block-kind="table"><table></table></div>' +
+        "</main>",
+    );
+    expect(out, "data-block 被剥掉了").toContain('data-block="表格:待指派工单"');
+    expect(out, "data-block-kind 被剥掉了").toContain('data-block-kind="table"');
+  });
+
+  it("反向：白名单外的块状 data-* 仍然被剥（判据不恒真）", () => {
+    expect(sanitizeBoundHtml('<div data-block-secret="x">正文</div>')).not.toContain(
+      "data-block-secret",
+    );
+  });
+});

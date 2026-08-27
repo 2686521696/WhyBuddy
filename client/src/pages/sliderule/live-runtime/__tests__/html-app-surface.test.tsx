@@ -779,6 +779,25 @@ describe("data-shell 穿过消毒（应用面这一份）", () => {
   });
 });
 
+/** 另一份白名单同样得放行块身份。见 bound-html-surface.test.ts 里那条的说明。 */
+describe("data-block 穿过消毒（应用面这一份）", () => {
+  it("块标与块类型都不许被剥", () => {
+    const out = sanitizeAppHtml(
+      '<!DOCTYPE html><html><body><main data-shell="main">' +
+        '<div data-block="指标:本月营业收入" data-block-kind="metric">1,284</div>' +
+        "</main></body></html>",
+    );
+    expect(out, "data-block 被剥掉了").toContain('data-block="指标:本月营业收入"');
+    expect(out, "data-block-kind 被剥掉了").toContain('data-block-kind="metric"');
+  });
+
+  it("反向：白名单外的块状 data-* 仍然被剥", () => {
+    expect(
+      sanitizeAppHtml('<!DOCTYPE html><html><body><div data-block-secret="x">正文</div></body></html>'),
+    ).not.toContain("data-block-secret");
+  });
+});
+
 /**
  * body 忘了写 flex，整页主体被顶出视口（2026-08-22 真机·连锁药房 p2）。
  *

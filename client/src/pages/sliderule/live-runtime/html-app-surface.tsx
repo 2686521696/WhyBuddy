@@ -46,6 +46,7 @@ import {
   type BindingSource,
 } from "./html-binding-runtime";
 import { wireOverlays } from "./html-overlay";
+import { BLOCK_ATTRS } from "./page-blocks";
 
 export const HTML_APP_SURFACE_VERSION = "html-app-surface-v1";
 
@@ -443,6 +444,10 @@ const ALLOWED_ATTR = [
   // 认它、不再拿 class 子串猜壳。⚠ 漏了它手机底栏就永远染不上色，
   // 而且不会有任何报错——跟 data-page-id 当年一样的坑。
   "data-shell",
+  // 块身份（page_blocks.mark_page_blocks 打的）。画布靠它认出「这一页是
+  // 哪几块拼的」、以及「双击进去改的是哪一块」。⚠ 两份白名单必须同改；
+  // 漏了不会报错——块标被静默剥掉，画布一块都认不出，HTML 看着还正常。
+  ...BLOCK_ATTRS,
   // 绑定词汇 —— 从解释器 import，不手抄
   ...BINDING_ATTRS,
 ];

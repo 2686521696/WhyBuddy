@@ -39,6 +39,7 @@
 
 import React from "react";
 import DOMPurify from "dompurify";
+import { BLOCK_ATTRS } from "./page-blocks";
 
 import {
   applyBindings,
@@ -91,6 +92,10 @@ const ALLOWED_ATTR = [
   "dx", "dy", "patternUnits",
   // 壳节点自报家门（page_shell.mark_shell_parts 打的）。⚠ 两份白名单必须同改。
   "data-shell",
+  // 块身份（page_blocks.mark_page_blocks 打的）。画布靠它认出「这一页是
+  // 哪几块拼的」、以及「双击进去改的是哪一块」。⚠ 两份白名单必须同改；
+  // 漏了不会报错——块标被静默剥掉，画布一块都认不出，HTML 看着还正常。
+  ...BLOCK_ATTRS,
   // 绑定词汇 —— **从解释器 import，不手抄**（见文件头）
   ...BINDING_ATTRS,
 ];

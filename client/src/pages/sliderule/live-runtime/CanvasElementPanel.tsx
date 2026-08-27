@@ -44,6 +44,8 @@ export interface CanvasElementPanelProps {
     path: PathStep[];
     tag: string;
     title: string;
+    /** 这个元素属于哪一块（`data-block`）。不在任何块里就是 null。 */
+    block?: { name: string; kind: string; label: string; kindLabel: string } | null;
     computed: Record<string, string>;
   };
   /** 这一页的**源** HTML */
@@ -278,7 +280,21 @@ export function CanvasElementPanel({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <p className="px-3 pt-2 text-[11px] leading-4 text-stone-400">
-          在「{pageName}」这一页 · &lt;{picked.tag}&gt;
+          在「{pageName}」这一页
+          {picked.block ? (
+            /* 块身份（2026-08-27）：一页是若干块拼出来的，先告诉用户
+               「你在改哪一块」，再说这一块里的哪个元素。 */
+            <>
+              {" · "}
+              <span
+                data-testid="sliderule-canvas-panel-block"
+                className="rounded bg-[#eef4ff] px-1 py-px text-[#1677ff]"
+              >
+                {picked.block.kindLabel}·{picked.block.label}
+              </span>
+            </>
+          ) : null}
+          {" · "}&lt;{picked.tag}&gt;
         </p>
 
         <Section title="容器">

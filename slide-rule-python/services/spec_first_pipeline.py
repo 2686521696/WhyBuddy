@@ -1726,6 +1726,20 @@ def run_spec_first(
                 f"[spec_first_pipeline] ⚠ 主题锁定失败（不拦画页）：{str(exc)[:200]}"
             )
             _theme_lang = None
+        # ★ 2026-08-27：壳统一之后给正文打**块身份**（零 LLM，抄 grok-build
+        #   managed_text 的 item 寻址）。打在这儿是为了让直播舞台从第 3.5 步
+        #   起就能按块看；bind 之后还要再打一次（它整页重写会把标吃掉），
+        #   两处都调同一个幂等函数——跟主题色钉两次同一个道理。
+        # ⚠ fail-open（纪律七）：打标是增强，炸了照样交付页面。
+        try:
+            from .page_blocks import mark_pages_blocks, scan_blocks
+
+            pages = mark_pages_blocks(pages)
+            st["blocks"] = sum(len(scan_blocks(h)) for h in pages.values())
+            _safe_print(f"[spec_first_pipeline] 块身份（壳后）：{st['blocks']} 块 / {len(pages)} 页")
+        except Exception as exc:  # noqa: BLE001 — 打块标是增强，不许拦画页
+            _safe_print(f"[spec_first_pipeline] ⚠ 块身份打标失败（不拦画页）：{str(exc)[:200]}")
+
         shell_problems = check_shell_consistency(pages, spec)
         st["problems"] = len(shell_problems)
         for p in shell_problems[:3]:
@@ -2016,6 +2030,20 @@ def run_spec_first(
                 pid: html if pid in _skip_bind else _fill_html(html)
                 for pid, html in pages.items()
             }
+            # ★ 块身份重打（2026-08-27）：bind 常整页重写，3.5 步打的
+            #   data-block 会跟主题色一起被吃掉。函数幂等——标还在的页面
+            #   一个字节都不动，名字也不会换人（换了等于用户选中的块换了人）。
+            try:
+                from .page_blocks import mark_pages_blocks, scan_blocks
+
+                pages = mark_pages_blocks(pages)
+                st["blocks"] = sum(len(scan_blocks(h)) for h in pages.values())
+                _safe_print(
+                    f"[spec_first_pipeline] 块身份（打孔后）：{st['blocks']} 块 / {len(pages)} 页"
+                )
+            except Exception as exc:  # noqa: BLE001 — 同上，fail-open
+                _safe_print(f"[spec_first_pipeline] ⚠ 块身份重打失败（不拦）：{str(exc)[:200]}")
+
             # 还原之后再量一次：剩下的才是还原不了的（比如两页壳本来就不同源）。
             drift = check_shell_consistency(pages, spec)
             st["shellProblems"] = len(drift)
