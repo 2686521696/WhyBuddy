@@ -49,6 +49,42 @@ def test_stale_put_cannot_erase_scope_confirmation():
     assert _scope_confirmed(saved) is True
 
 
+def test_stale_put_cannot_erase_clarify_questions():
+    """陈旧 PUT 也不许抹掉控制面刚问出来的澄清问题。
+
+    跟上面那条同一个坑：推演出错时客户端 catch 里 persistSession(轮前快照)，
+    那份快照里根本没有这组缺口 → 卡片凭空消失，用户以为自己看花了眼。
+    """
+    sid = new_sid("stale-put-gaps")
+    seed_session(
+        sid,
+        goal={"text": "诊所系统", "status": "clear"},
+        coverageGaps=[
+            {
+                "id": "gap-q-1",
+                "kind": "open_question",
+                "label": "主要给谁用？",
+                "status": "open",
+                "createdAt": "2026-08-27T00:00:00Z",
+                "clarifyType": "multi_choice",
+                "options": ["医生", "护士"],
+            }
+        ],
+    )
+    res = client.put(
+        PUT.format(sid=sid),
+        json={"sessionId": sid, "goal": {"text": "诊所系统", "status": "clear"}},
+        headers=KEY,
+    )
+    assert res.status_code == 200, res.text[:400]
+    saved = load_session(sid)
+    labels = []
+    for g in saved.coverageGaps or []:
+        get = g.get if isinstance(g, dict) else lambda k, _g=g: getattr(_g, k, None)
+        labels.append(get("label"))
+    assert "主要给谁用？" in labels, "陈旧 PUT 把澄清问题抹掉了"
+
+
 def test_client_still_writes_the_fields_it_owns():
     """反向：exclude 只挡服务端字段，客户端该写的还得写得进去。
 

@@ -63,7 +63,12 @@ async def start_drive_full_factory_run(
     from services import run_registry
     from services.device_policy import set_preferred_device_override
     from services.identity_palette_hint import set_design_system_override
-    from services.v5_llm_generate import set_active_connectors, set_installed_skills
+    from services.v5_llm_generate import (
+        clarifications_from_state,
+        set_active_connectors,
+        set_clarifications,
+        set_installed_skills,
+    )
 
     sid = str(session_id or "").strip()
     if require_session_id and not sid:
@@ -92,6 +97,10 @@ async def start_drive_full_factory_run(
 
         set_installed_skills(installed_skills)
         set_active_connectors(active_connectors)
+        # 开工前用户答过的澄清 → 生成提示词的硬约束。**从持久化状态里取**，
+        # 不从 HTTP 载荷取：答案是控制面写在 coverageGaps 上的，客户端再传一遍
+        # 就是同一件事两处来源（本仓第四条），迟早对不上。
+        set_clarifications(clarifications_from_state(state))
         set_preferred_device_override(preferred_device)
         set_design_system_override(design_system_id)
         # 命名字段跟技能/连接器同一形状。传 None 的键等于「信封没带」，
@@ -128,6 +137,7 @@ async def start_drive_full_factory_run(
         finally:
             set_installed_skills(None)
             set_active_connectors(None)
+            set_clarifications(None)
             set_preferred_device_override(None)
             set_design_system_override(None)
             clear_charter_for_run()

@@ -61,6 +61,7 @@ describe("干预字段一路带到 POST（三段都得接上）", () => {
   it("runTurn 把 targetArtifactId / answeredGapIds 交给 driveStream", () => {
     expect(runTurn).toContain("intervention?.targetArtifactId");
     expect(runTurn).toContain("intervention?.answeredGapIds");
+    expect(runTurn).toContain("intervention?.answeredGaps");
     const opts = runTurn.slice(runTurn.indexOf("driveStream(preparedState"));
     expect(opts).toContain("targetArtifactId:");
     expect(opts).toContain("answeredGapIds:");

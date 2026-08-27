@@ -307,6 +307,14 @@ export interface DriveFullStreamOpts {
    *   一个缺口都不会关。
    */
   answeredGapIds?: string[];
+  /**
+   * 澄清卡答完的**问答对**。
+   *
+   * ⚠ 只发 id 不发答案的话，服务端只能把缺口置 resolved——闸绿了，而生成侧
+   *   一个字都没多知道（`clarification_prompt_block` 靠 gap.answer 取料）。
+   *   澄清这条链 2026-08-27 之前就断在这儿：问了等于没问。
+   */
+  answeredGaps?: Array<{ gapId: string; answer: string }>;
   /** 产品宪章 opt-in。只在确认推演时带，缺省不送，免得问候把账户旗清掉。 */
   reuseCharter?: boolean;
   productCharter?: {
@@ -587,6 +595,9 @@ export async function postControlTurnStream(
           : {}),
         ...(opts.answeredGapIds?.length
           ? { answeredGapIds: opts.answeredGapIds }
+          : {}),
+        ...(opts.answeredGaps?.length
+          ? { answeredGaps: opts.answeredGaps }
           : {}),
         ...(opts.mode ? { mode: opts.mode } : {}),
         ...(opts.reuseCharter !== undefined

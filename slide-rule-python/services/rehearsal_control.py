@@ -53,7 +53,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 from fastapi import HTTPException
 from starlette.concurrency import run_in_threadpool
 
-from models.v5_state import UserIntervention, V5SessionState
+from models.v5_state import CoverageGap, UserIntervention, V5SessionState
 from services.drive_full_factory import start_drive_full_factory_run
 from services.slide_rule_interactive_gates import (
     apply_user_intervention_invalidation,
@@ -86,6 +86,7 @@ _CONTROL_PAYLOAD: ContextVar[Dict[str, Any]] = ContextVar(
 
 CLOSED_TOOLS = (
     "ask_user",
+    "clarify",
     "search_evidence",
     "inspect_model",
     "scope_card",
@@ -116,6 +117,61 @@ INSPECT_MAX_ITEMS = 40
 INSPECT_MAX_CHARS = 4000
 
 CONTROL_TOOLS: List[Dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "clarify",
+            "description": (
+                "开工前把这句需求里**没说清的**问出来，最多 3 条。"
+                "只问缺的：用户已经说清的不许再问一遍。"
+                "已经够清楚就别调这个工具，直接 scope_card——问废话比不问更烦人。"
+                "选项要用**这门生意自己的词**（诊所就写 医生/护士/前台/患者，"
+                "不要写 个人C端/企业内部 这种通用词）。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "questions": {
+                        "type": "array",
+                        "maxItems": 3,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "prompt": {
+                                    "type": "string",
+                                    "description": "问题本身，一句话，用用户的词",
+                                },
+                                "type": {
+                                    "type": "string",
+                                    "enum": [
+                                        "single_choice",
+                                        "multi_choice",
+                                        "free_text",
+                                    ],
+                                },
+                                "options": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "选项（single/multi 必填，3-5 个，本行业的词）",
+                                },
+                                "defaultAnswer": {"type": "string"},
+                                "context": {
+                                    "type": "string",
+                                    "description": "为什么要问这条：它会影响推演里的什么",
+                                },
+                                "kind": {
+                                    "type": "string",
+                                    "description": "维度：users / platform / scenario / scope / rules",
+                                },
+                            },
+                            "required": ["prompt", "type"],
+                        },
+                    }
+                },
+                "required": ["questions"],
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -542,6 +598,150 @@ async def _park_ask(
     yield _complete(state)
 
 
+# 这句需求里通常会漏掉的四个维度。**只当提示，不当闸。**
+#
+# ⚠ 旧的 TS 那套（shared/blueprint/sliderule-readiness-chain.ts 的
+#   SPEC_DIMENSIONS + isUnderSpecifiedGoal）把它做成了硬判定：命中 <2 才问、
+#   目标 ≥80 字直接算"已充分规约、一个问题都不问"。结果是一句 100 字的
+#   废话不问，一句 30 字的好需求反倒被问四条模板题。
+#   参考成熟做法（dzhng/deep-research 的 generateFeedback）：**问几条交给模型**
+#   ——"最多 N 条，本来就清楚就少问或不问"，规则只负责告诉它"这句话里我没读到
+#   用户/平台/场景/边界"，问不问、问什么由模型看着办。
+_SPEC_DIMENSIONS: List[tuple] = [
+    ("users", "谁用（角色）", r"用户|面向|客户|员工|老师|学生|医生|护士|患者|商家|管理员|团队|to ?[cb]"),
+    ("platform", "在哪用（平台）", r"平台|web|网页|ios|android|安卓|小程序|桌面|客户端|pc|手机|大屏"),
+    ("scenario", "核心流程与验收", r"流程|场景|用于|目标是|核心|kpi|指标|验收|成功标准|解决|审批|下单|结算"),
+    ("scope", "本期边界", r"范围|不做|边界|mvp|仅|只做|首期|第一期|优先|暂不"),
+]
+
+
+def _missing_dimensions(goal_text: str) -> List[str]:
+    """这句需求里**没读到**的维度（人话标签）。只用于提示模型。"""
+    import re as _re
+
+    text = (goal_text or "").strip()
+    out: List[str] = []
+    for _key, label, pattern in _SPEC_DIMENSIONS:
+        if not _re.search(pattern, text, _re.IGNORECASE):
+            out.append(label)
+    return out
+
+
+def _clarify_rounds_done(state: V5SessionState) -> int:
+    """已经问过几轮澄清。用来防止模型没完没了地问。"""
+    return sum(
+        1
+        for row in getattr(state, "controlTranscript", None) or []
+        if isinstance(row, dict) and row.get("kind") == "clarify"
+    )
+
+
+async def _park_clarify(
+    state: V5SessionState, raw_questions: Any
+) -> AsyncIterator[Dict[str, Any]]:
+    """把澄清问题落成 coverageGaps，让现成的澄清卡去渲染。
+
+    ⚠ **不是新做一张卡。** `ClarificationCard.tsx` 早就做好了：多步分页、
+      单选/多选/自由文本、默认值、context、「其他」。前端
+      `pendingClarifications` 也早就在读 coverageGaps 里的 open_question。
+      缺的从来只是——**产品路径上没有任何东西往里写问题**
+      （profile=app 的短清单里没有 gap.ask，TS 那套模拟问题在旧本地引擎上）。
+      所以这里只补"写"，一行渲染代码都不加。
+
+    ⚠ 空问题列表 = 模型判断"已经够清楚"。那就**不要 park**，让它接着去开
+      范围卡；硬 park 一张空卡片就是为了问而问。
+    """
+    questions: List[Dict[str, Any]] = []
+    for i, raw in enumerate(raw_questions if isinstance(raw_questions, list) else []):
+        if not isinstance(raw, dict):
+            continue
+        prompt = str(raw.get("prompt") or "").strip()
+        if not prompt:
+            continue
+        options = [
+            str(o).strip()
+            for o in (raw.get("options") or [])
+            if str(o or "").strip()
+        ]
+        qtype = str(raw.get("type") or "").strip()
+        if qtype not in ("single_choice", "multi_choice", "free_text"):
+            qtype = "single_choice" if options else "free_text"
+        # ⚠ 说是选择题却没给选项 → 退成填空，别端出一张点不动的卡
+        if qtype in ("single_choice", "multi_choice") and not options:
+            qtype = "free_text"
+        questions.append(
+            {
+                "prompt": prompt[:240],
+                "type": qtype,
+                "options": options or None,
+                "defaultAnswer": (str(raw.get("defaultAnswer") or "").strip() or None),
+                "context": (str(raw.get("context") or "").strip() or None),
+                "kind": (str(raw.get("kind") or "").strip() or None),
+            }
+        )
+        if len(questions) >= 3:
+            break
+
+    if not questions:
+        return
+
+    now = _now_iso()
+    turn = str(getattr(state, "lastTurnId", None) or "ctl")
+    gaps = list(getattr(state, "coverageGaps", None) or [])
+    made: List[Dict[str, Any]] = []
+    for i, q in enumerate(questions):
+        gid = f"gap-q-{turn}-{uuid.uuid4().hex[:6]}-{i}"
+        made.append(
+            {
+                "id": gid,
+                "kind": "open_question",
+                "label": q["prompt"],
+                "status": "open",
+                "createdAt": now,
+                "reason": "control_plane_clarify",
+                "clarifyType": q["type"],
+                "options": q["options"],
+                "defaultAnswer": q["defaultAnswer"],
+                "context": q["context"],
+                "clarifyKind": q["kind"],
+                "questionId": gid,
+            }
+        )
+    # ⚠ 往 `List[CoverageGap]` 里塞裸 dict 能跑，但 pydantic 会在序列化时
+    #   报 PydanticSerializationUnexpectedValue——模型头注里那段"代码是靠
+    #   状态没被校验才正常工作的"说的就是这个。这里直接建模型对象：
+    #   哪天校验真的生效，缺口不会无声无息地少几个字段。
+    state.coverageGaps = gaps + [CoverageGap(**row) for row in made]
+    state.runtimePhase = "awaiting"
+    state.awaitReason = "control_clarify"
+    state.awaitDetail = questions[0]["prompt"]
+    _append_transcript(
+        state,
+        {
+            "role": "assistant",
+            "kind": "clarify",
+            "text": "；".join(q["prompt"] for q in questions),
+            "questionIds": [g["id"] for g in made],
+        },
+    )
+    await _apersist(state)
+    yield {
+        "type": "control_clarify",
+        "questions": [
+            {
+                "id": g["id"],
+                "prompt": g["label"],
+                "type": g["clarifyType"],
+                "options": g["options"],
+                "defaultAnswer": g["defaultAnswer"],
+                "context": g["context"],
+            }
+            for g in made
+        ],
+    }
+    yield _complete(state)
+
+
 async def _park_scope(
     state: V5SessionState,
     restatement: str,
@@ -885,12 +1085,27 @@ def _system_prompt(state: V5SessionState) -> str:
     from services.product_charter import charter_prompt_block
 
     extra = charter_prompt_block()
+    missing = _missing_dimensions(_goal_text(state) or "")
+    asked = _clarify_rounds_done(state)
+    # ⚠ 规则只报告"这句话里我没读到什么"，**问不问、问几条由模型定**。
+    #   参考 dzhng/deep-research 的 generateFeedback：最多 N 条、本来清楚就少问。
+    #   做成硬闸的那一版（TS isUnderSpecifiedGoal：≥80 字就算说清）会一边放过
+    #   一百字的废话，一边对着一句好需求问四条模板题。
+    clarify_hint = (
+        (
+            f"这句需求里还没读到：{'、'.join(missing)}。"
+            "开范围卡之前先用 clarify 把其中真正影响推演的问出来（最多 3 条，"
+            "已经清楚的别问）。"
+        )
+        if missing and asked == 0
+        else ("已经问过一轮澄清，不要再问，直接 scope_card。" if asked else "")
+    )
     base = (
         "你是面团的薄控制面。只能调用给定工具，不能发明工具。"
         "禁止开放闲聊。问候用 ask_user 或一句短回复；"
-        "要做应用先 scope_card；未确认不得 rehearse。"
+        "要做应用先 clarify（需求含糊时）再 scope_card；未确认不得 rehearse。"
         "search_evidence 不计入闭环。inspect_model 只看摘要。"
-        f"当前目标：{goal[:200]}。停泊：{parked}。"
+        f"当前目标：{goal[:200]}。停泊：{parked}。{clarify_hint}"
     )
     return f"{base}\n{extra}" if extra else base
 
@@ -968,13 +1183,38 @@ async def _resolve_answered_gaps(
     ⚠ 只关**这次点名的**：整批关掉等于把没答的问题也当答了，覆盖门就成了
       摆设（第七条：闭环类 fail-closed，不许伪造绿灯）。
     """
-    raw = payload.get("answeredGapIds") or payload.get("answered_gap_ids")
-    if not isinstance(raw, list):
-        return []
-    ids = [str(x).strip() for x in raw if str(x or "").strip()]
+    answers: Dict[str, str] = {}
+    # 结构化形态：[{gapId, answer}]。**答案要留下来**——只把缺口置 resolved
+    # 而不记答案，等于闸绿了、生成侧什么也没多知道，澄清白问（见
+    # v5_llm_generate.clarification_prompt_block）。
+    for row in payload.get("answeredGaps") or payload.get("answered_gaps") or []:
+        if not isinstance(row, dict):
+            continue
+        gid = str(row.get("gapId") or row.get("id") or "").strip()
+        if gid:
+            answers[gid] = str(row.get("answer") or "").strip()
+    # 只有 id 的老形态照旧收（早前的调用方还在发它）
+    for x in payload.get("answeredGapIds") or payload.get("answered_gap_ids") or []:
+        gid = str(x or "").strip()
+        if gid:
+            answers.setdefault(gid, "")
+    ids = [gid for gid in answers if gid]
     if not ids:
         return []
     before = set(_open_question_gaps(state))
+    # 先把答案写在缺口上，再 resolve —— 反过来写的话 resolve 那步会
+    # model_copy 出新对象，答案落在被丢掉的旧对象上。
+    for gap in getattr(state, "coverageGaps", None) or []:
+        gid = gap.get("id") if isinstance(gap, dict) else getattr(gap, "id", None)
+        if not gid or gid not in answers or not answers[gid]:
+            continue
+        if isinstance(gap, dict):
+            gap["answer"] = answers[gid]
+        else:
+            try:
+                gap.answer = answers[gid]
+            except (ValueError, AttributeError):
+                pass
     resolve_readiness_gaps_by_ids(state, ids)
     closed = sorted(before - set(_open_question_gaps(state)))
     if closed:
@@ -1240,6 +1480,35 @@ async def _dispatch_tool(
         question = str(args.get("question") or "你想做什么应用？")
         options = args.get("options") if isinstance(args.get("options"), list) else []
         async for event in _park_ask(state, question, [str(x) for x in options]):
+            yield event
+        return
+    if name == "clarify":
+        # ⚠ 已经问过一轮就不许再问：模型很容易越问越细，把用户困在问答里。
+        #   问过了还想问 → 直接去开范围卡（不清楚的部分让用户在卡上改）。
+        if _clarify_rounds_done(state) >= 1:
+            async for event in _park_scope(
+                state,
+                _restate(user_text) or _restate(original_goal),
+                device=str(preferred_device or "unspecified"),
+                variant="thin" if original_goal else "full",
+                user_text=user_text,
+            ):
+                yield event
+            return
+        yielded = False
+        async for event in _park_clarify(state, args.get("questions")):
+            yielded = True
+            yield event
+        if yielded:
+            return
+        # 模型自己判断"已经够清楚"（给了空列表）→ 不 park，接着开范围卡
+        async for event in _park_scope(
+            state,
+            _restate(user_text) or _restate(original_goal),
+            device=str(preferred_device or "unspecified"),
+            variant="thin" if original_goal else "full",
+            user_text=user_text,
+        ):
             yield event
         return
     if name == "scope_card":

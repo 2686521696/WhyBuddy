@@ -22,6 +22,43 @@ export type ClarificationAnswer = { gapId: string; answer: string };
 
 const OTHER = "__other__";
 
+/**
+ * 维度键 → 人话标签。
+ *
+ * ⚠ 2026-08-27 真机截图逮到的：卡片把 `kind` **原样**印在问题旁边，用户看到的
+ *   是一个孤零零的 `users`，底下按钮还写着「批量 users」。这是内部词表，
+ *   不是给人看的。认不出的键**不显示**——宁可少一个标签，也不要在用户脸上
+ *   糊一串英文。
+ */
+const KIND_LABELS: Record<string, string> = {
+  users: "谁用",
+  audience: "谁用",
+  platform: "在哪用",
+  scenario: "核心流程",
+  "success-criteria": "核心流程",
+  scope: "本期边界",
+  rules: "规则",
+};
+
+export function kindLabel(kind?: string): string {
+  if (!kind) return "";
+  const key = kind.trim().toLowerCase();
+  if (KIND_LABELS[key]) return KIND_LABELS[key];
+  for (const [k, label] of Object.entries(KIND_LABELS)) {
+    if (key.includes(k)) return label;
+  }
+  return "";
+}
+
+function kindTone(kind?: string): string {
+  const label = kindLabel(kind);
+  if (label === "谁用") return "bg-blue-50 text-blue-700";
+  if (label === "在哪用") return "bg-green-50 text-green-700";
+  if (label === "本期边界") return "bg-amber-50 text-amber-700";
+  if (label === "核心流程") return "bg-purple-50 text-purple-700";
+  return "bg-stone-100 text-stone-600";
+}
+
 export function ClarificationCard({
   questions,
   onSubmit,
@@ -125,14 +162,13 @@ export function ClarificationCard({
       <div className="px-4 py-3">
         <div className="flex items-baseline gap-2">
           <p className="text-sm font-semibold text-stone-800">{q.prompt}</p>
-          {q.kind && (
-            <span className={`rounded px-1 py-0 text-[9px] font-mono ${
-              q.kind.includes("audience") || q.kind.includes("users") ? "bg-blue-100 text-blue-700" :
-              q.kind.includes("platform") ? "bg-green-100 text-green-700" :
-              q.kind.includes("scope") ? "bg-amber-100 text-amber-700" :
-              q.kind.includes("success") || q.kind.includes("scenario") ? "bg-purple-100 text-purple-700" :
-              "bg-[#F3DCD0] text-[#1677ff]"
-            }`}>{q.kind}</span>
+          {kindLabel(q.kind) && (
+            <span
+              data-testid="sliderule-clarification-kind"
+              className={`shrink-0 rounded px-1.5 py-0 text-[10px] ${kindTone(q.kind)}`}
+            >
+              {kindLabel(q.kind)}
+            </span>
           )}
         </div>
         {q.context && <p className="mt-1 text-[11px] leading-relaxed text-stone-400">{q.context}</p>}
@@ -262,9 +298,9 @@ export function ClarificationCard({
                 if (answers.length > 0) onSubmit(answers);
               }}
               className="rounded border border-[#e5e7eb] bg-white px-2 py-1 text-[11px] text-stone-600 hover:bg-[#eef0f4]"
-              title={`批量提交同 kind (${q.kind})`}
+              title={`把这一类问题一起提交（${kindLabel(q.kind) || "同类"}）`}
             >
-              批量 {q.kind}
+              批量{kindLabel(q.kind) ? ` ${kindLabel(q.kind)}` : ""}
             </button>
           )}
         </div>

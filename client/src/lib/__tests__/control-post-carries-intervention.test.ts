@@ -85,10 +85,25 @@ describe("控制面 POST 带上干预字段", () => {
     expect(Object.keys(stub.body())).not.toContain("answeredGapIds");
   });
 
+  it("澄清卡：answeredGaps 带着答案原文一起发", async () => {
+    /* ⚠ 只发 id 的话服务端只能把缺口置 resolved——闸绿了，而生成侧一个字
+       都没多知道（clarification_prompt_block 靠 gap.answer 取料）。
+       澄清这条链 2026-08-27 之前就断在这儿：问了等于没问。 */
+    const stub = stubStreamFetch();
+    await postControlTurnStream(STATE, "答完了", {
+      answeredGapIds: ["g1"],
+      answeredGaps: [{ gapId: "g1", answer: "要，挂号即缴费" }],
+    });
+    expect(stub.body().answeredGaps).toEqual([
+      { gapId: "g1", answer: "要，挂号即缴费" },
+    ]);
+  });
+
   it("反向：空数组也不算答过（不许发一个空的 answeredGapIds）", async () => {
     const stub = stubStreamFetch();
     await postControlTurnStream(STATE, "随便聊一句", { answeredGapIds: [] });
     expect(Object.keys(stub.body())).not.toContain("answeredGapIds");
+    expect(Object.keys(stub.body())).not.toContain("answeredGaps");
   });
 
   it("六字段照旧齐全（加字段不许挤掉原有的）", async () => {

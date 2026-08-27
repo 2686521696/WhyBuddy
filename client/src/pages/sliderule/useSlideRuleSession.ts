@@ -1394,6 +1394,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 ...(intervention?.answeredGapIds?.length
                   ? { answeredGapIds: intervention.answeredGapIds }
                   : {}),
+                ...(intervention?.answeredGaps?.length
+                  ? { answeredGaps: intervention.answeredGaps }
+                  : {}),
                 ...(inferredTool === "rehearse"
                   ? {
                       // 未写过 localStorage 就不要带 reuseCharter。缺键走账户
@@ -2382,6 +2385,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         intent: "clarify",
         text: supplement,
         answeredGapIds: answers.map(a => a.gapId),
+        /* ⚠ 答案本身也要发过去：服务端把它写在缺口上，开工时原样进生成
+           提示词。只发 id 的话缺口是关了，模型什么都没多知道——澄清白问。 */
+        answeredGaps: answers.map(a => ({ gapId: a.gapId, answer: a.answer })),
       });
     },
     [sessionState.coverageGaps, requestRehearsal]

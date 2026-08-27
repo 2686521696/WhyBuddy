@@ -230,6 +230,14 @@ export interface UserIntervention {
   text: string;
   /** 澄清卡片回答：精确标记本次回答了哪些 open_question gap（按 gap id 精确 resolve，支持部分回答）。 */
   answeredGapIds?: string[];
+  /**
+   * 澄清卡片回答的**问答对**。
+   *
+   * ⚠ 跟上面那条是一件事的两半：id 用来关缺口，答案用来进生成提示词
+   *   （services/v5_llm_generate.clarification_prompt_block 靠 gap.answer 取料）。
+   *   只发 id 的话闸绿了而模型什么也没多知道——澄清白问。
+   */
+  answeredGaps?: Array<{ gapId: string; answer: string }>;
 }
 
 /**
@@ -332,6 +340,14 @@ export interface CoverageGap {
   questionId?: string;
   /** V4 alignment for clarification kind (e.g. "audience", "blueprint-question-xxx"); does not override the gap's 'kind' discriminant. */
   clarifyKind?: string;
+  /**
+   * 用户答的原话。
+   *
+   * ⚠ 只把缺口置 resolved、不留答案的话，澄清就是白问的：闸绿了，
+   *   生成侧什么也没多知道。答案要原样进提示词
+   *   （services/v5_llm_generate.clarification_prompt_block）。
+   */
+  answer?: string;
 }
 
 /** S13/S14 · G_SCHEMA / G_INV results persisted for structure.decompose (edges 88–89). */

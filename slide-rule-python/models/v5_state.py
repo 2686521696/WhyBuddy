@@ -196,6 +196,28 @@ class CoverageGap(BaseModel):
     # 不是新增契约。
     resolvedByArtifactId: Optional[str] = None
     updatedAt: Optional[str] = None
+    # 澄清卡片（G_READY）用的结构化字段。**词汇跟 TS 契约逐字对齐**
+    # （shared/blueprint/v5-reasoning-state.ts:311-335），不是新发明。
+    #
+    # ⚠ 2026-08-27 补：跟上面 updatedAt 那两条是同一个坑的第二次发作——
+    #   前端 ClarificationCard 早就会渲染选项/单选多选/默认值/说明，
+    #   `pendingClarifications` 也早就在读这些字段，**Python 侧一个都没声明**。
+    #   pydantic v2 对未声明字段的 setattr 直接抛，被上游 except 吞掉之后
+    #   表现是：控制面写了带选项的问题，落盘只剩一句 label，卡片退化成
+    #   一个纯文本框。不报错、不告警，看着就是"AI 只会问一句大白话"。
+    reason: Optional[str] = None
+    waivedBy: Optional[str] = None
+    waivedReason: Optional[str] = None
+    clarifyType: Optional[Literal["free_text", "single_choice", "multi_choice"]] = None
+    options: Optional[List[str]] = None
+    defaultAnswer: Optional[str] = None
+    context: Optional[str] = None
+    questionId: Optional[str] = None
+    clarifyKind: Optional[str] = None
+    # 用户答的原话。resolve 时写在缺口上，生成侧照原样带进提示词
+    # （见 v5_llm_generate.clarification_prompt_block）——只关不留答案的话，
+    # 澄清就白问了：闸是绿了，模型什么也没多知道。
+    answer: Optional[str] = None
 
 class CoverageContract(BaseModel):
     id: str

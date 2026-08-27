@@ -704,6 +704,66 @@ def active_connectors() -> List[Dict[str, Any]]:
     return list(_connectors_var.get() or [])
 
 
+_clarifications_var: ContextVar[Optional[List[Dict[str, str]]]] = ContextVar(
+    "sliderule_clarifications", default=None
+)
+
+
+def set_clarifications(pairs: "Optional[List[Dict[str, str]]]") -> None:
+    """本轮开工前用户答过的澄清问答。传 None / 空即清空。"""
+    cleaned: List[Dict[str, str]] = []
+    for row in pairs or []:
+        if not isinstance(row, dict):
+            continue
+        q = str(row.get("q") or "").strip()
+        a = str(row.get("a") or "").strip()
+        if q and a:
+            cleaned.append({"q": q[:240], "a": a[:400]})
+    _clarifications_var.set(cleaned or None)
+
+
+def clarifications_from_state(state: Any) -> List[Dict[str, str]]:
+    """从状态里捡出**答过的**澄清问答（resolved 且留了答案的 open_question）。
+
+    ⚠ 只认留了答案的。光把缺口置 resolved 不记答案，等于闸绿了而模型什么也
+      没多知道——那正是 2026-08-27 之前澄清"问了等于没问"的形态。
+    """
+    out: List[Dict[str, str]] = []
+    for gap in getattr(state, "coverageGaps", None) or []:
+        get = gap.get if isinstance(gap, dict) else lambda k, _g=gap: getattr(_g, k, None)
+        if get("kind") != "open_question" or get("status") != "resolved":
+            continue
+        q = str(get("label") or "").strip()
+        a = str(get("answer") or "").strip()
+        if q and a:
+            out.append({"q": q, "a": a})
+    return out
+
+
+def clarification_prompt_block() -> str:
+    """开工前问清楚的那几条 → 一段"用户已经答过，按这个来"的硬约束。
+
+    ⚠ **原样带上问题和答案**，不要压缩成一句概括。压缩之后模型只知道
+      "用户提过审批"，不知道用户选的是"主管审批"还是"HR 审批"——而这两个
+      在权限与工作流里是完全不同的两张图。
+
+    ⚠ 这块是澄清这条链的**最后一环**。少了它，前面问得再漂亮也只是让用户
+      多点了几下：卡片答完、缺口关掉、闸变绿，而生成侧一个字都没多看到。
+    """
+    pairs = _clarifications_var.get() or []
+    if not pairs:
+        return ""
+    lines = [
+        "The user already answered these clarifying questions before this run "
+        "started. Treat every answer as a HARD requirement of this app — do not "
+        "contradict it, do not re-decide it, and reflect it in the systems it "
+        "touches (roles, workflow, pages, fields):"
+    ]
+    for row in pairs:
+        lines.append(f"- Q: {row['q']}\n  A: {row['a']}")
+    return "\n".join(lines)
+
+
 def connector_prompt_block() -> str:
     """挂着的连接器 → 一段"这些实体必须原样收录"的硬要求。
 
@@ -876,6 +936,11 @@ def _build_user_content(
     conn_block = connector_prompt_block()
     if conn_block:
         parts.append(conn_block)
+    # ①a2 开工前用户答过的澄清（硬约束）：问过就得算数，见
+    # clarification_prompt_block 的注释——不带这块，澄清就只是让用户多点几下。
+    clarify_block = clarification_prompt_block()
+    if clarify_block:
+        parts.append(clarify_block)
     # ①b 未验证绑定的已安装技能（软参考）：明确写"不要为它硬造能力卡"。
     # 从前它们跟上面混在一条 REQUIRED 里，模型只能二选一——要么编一个绑不上
     # 的能力被门禁拦，要么硬塞进无关实体。两种都比不提要求更糟。

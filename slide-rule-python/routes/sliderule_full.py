@@ -806,13 +806,18 @@ def save_sess(
             # lastTurnId / specFirstPages 也是服务端的：过夜实测前端 PUT 带
             # 新 lastTurnId、旧页面/无版本史，落库失败后把旧指针钉死。
             # 409 守卫仍看 client lastTurnId（更旧的请求照样拒），只是合并时不吃。
+            # coverageGaps 同理（2026-08-27）：澄清问题由控制面写、答案由控制面
+            # 落在缺口上，客户端只读着渲染卡片。不排除的话，推演出错那条
+            # catch 里的 persistSession(轮前快照) 会把刚问出来的问题整组抹掉——
+            # 卡片凭空消失，用户以为自己看花了眼。跟下面 controlTranscript
+            # 是同一个坑的第二次发作。
             # controlTranscript 同样是服务端的（_append_transcript 写，客户端只读）。
             # ⚠ 2026-08-27 评审：不排除的话，一次**陈旧** PUT（比如推演出错那条
             #   catch 里 persistSession(轮前快照)）会把这一轮新写的行整段抹掉，
             #   其中就有 `scope_confirmed`——而 _scope_confirmed 正是靠它判定
             #   范围确认过没有。表现是"刚确认完范围、这轮又失败了，下次 /推演
             #   还弹卡"，而且只在第一场推演之前复现（之后 modelVersions 兜底）。
-            updates = client_contrib.model_dump(exclude={"sessionId", "ownerId", "pendingRuns", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents", "modelVersions", "currentModelVersionId", "lastTurnId", "specFirstPages", "controlTranscript"})
+            updates = client_contrib.model_dump(exclude={"sessionId", "ownerId", "pendingRuns", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents", "modelVersions", "currentModelVersionId", "lastTurnId", "specFirstPages", "controlTranscript", "coverageGaps"})
             for k, v in updates.items():
                 if hasattr(merged, k):
                     setattr(merged, k, v)
