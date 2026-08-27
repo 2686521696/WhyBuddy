@@ -191,6 +191,38 @@ describe("接线（四段都得接上）", () => {
     expect(DOCK).toContain("onReviseAssumption");
   });
 
+  it("浮层不许待在输入框那一行里", () => {
+    /* ⚠ 2026-08-27 真机咬出来的。第一版把假设条和排队条放在输入框正文
+       上方那个 `min-w-0 flex-1` 盒子里——**首页看着完全正常**（hero 是四列
+       栅格，那个盒子 col-span-4，占满整行），一进会话就废了：非 hero 分支是
+       `flex items-center gap-1.5` 的**一行**，工具条、优化、发送都是同一行的
+       兄弟，剩给它 ~100px。真机截图上「整改流转层级：门店内部指定专人整改…」
+       被压成每行三个字的竖条，能读但没法用。
+
+       同一个文件里审查卡的注释早就写着答案：「不进外层 flex——进流会把输入
+       顶走」。这条判据把那句话变成闸：两条浮层必须在 absolute 那一层里。
+
+       ⚠ 判据只能查源码形状——本仓没有 jsdom，量不到真实布局（这也是它当初
+         能溜过去的原因：19 条判据全绿，错的是没人量过会话内的那一版）。
+         所以钉的是**位置关系**：浮层容器带 absolute bottom-full，两条都在它
+         **里面**（出现在它之后、在它闭合之前的能力标签之前）。 */
+    const at = DOCK.indexOf('data-testid="sliderule-composer-overlay"');
+    expect(at).toBeGreaterThan(-1);
+    // 浮层容器自己带 absolute bottom-full（跟审查卡同一层）
+    expect(DOCK.slice(Math.max(0, at - 400), at)).toContain("absolute bottom-full");
+    // 两条都在它里面
+    const body = DOCK.slice(at, at + 3000);
+    expect(body).toContain("<AssumptionStrip");
+    expect(body).toContain('data-testid="sliderule-queued-turns"');
+    // 反向：不许再出现在能力标签那一段（那就是被挤扁的老位置）
+    const inputRow = DOCK.indexOf('data-testid="sliderule-composer-tags"');
+    expect(inputRow).toBeGreaterThan(-1);
+    expect(DOCK.slice(0, inputRow)).not.toContain("<AssumptionStrip");
+    expect(DOCK.slice(0, inputRow)).not.toContain(
+      'data-testid="sliderule-queued-turns"'
+    );
+  });
+
   it("页面：真的把假设传给了输入条（不传 = 组件永远收到空数组）", () => {
     expect(PAGE).toContain("specAssumptions={specAssumptions}");
     expect(PAGE).toContain("onSettleAssumption={settleSpecAssumption}");

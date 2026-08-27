@@ -1644,58 +1644,6 @@ export function ComposerDock({
                   ⚠ 标签跟正文在同一个盒子里换行（flex-wrap），所以挂三个也不会
                     把输入框挤没；标签自己 shrink-0，被挤扁的只能是正文。
                 */}
-                {/*
-                  推演中补的话：**必须看得见**。
-                  ⚠ 2026-08-27 真机实测的老形态：点发送 → 输入框清空、整页
-                    搜不到这句话、几分钟后它自己发出去。机制通、人是懵的
-                    （见 midrun-queue.ts 头注）。所以这条要摆在正文上方，
-                    并且每条都能撤——用户改主意的成本不该是"等它发出去再说"。
-                */}
-                {/*
-                  ⚠ 摆在排队条**上方**：点「改成工号」之后，那句话就出现在
-                    紧挨着的下面一格里。两个盒子挨着，用户一眼看得出
-                    "我刚点的那下变成了什么"——这是这条链唯一的反馈。
-                */}
-                {onSettleAssumption && onReviseAssumption ? (
-                  <AssumptionStrip
-                    items={specAssumptions}
-                    onSettle={onSettleAssumption}
-                    onRevise={onReviseAssumption}
-                  />
-                ) : null}
-                {queuedTurns.length > 0 ? (
-                  <div
-                    className="mb-1.5 rounded-lg bg-[#f6f7f9] px-2 py-1.5"
-                    data-testid="sliderule-queued-turns"
-                  >
-                    <div className="mb-1 text-[11px] leading-4 text-[#71717a]">
-                      本轮结束后发出（{queuedTurns.length}）
-                    </div>
-                    {queuedTurns.map((line, i) => (
-                      <div
-                        key={`${i}-${line}`}
-                        data-testid="sliderule-queued-turn"
-                        className="flex items-start gap-1.5 py-0.5"
-                      >
-                        <span className="min-w-0 flex-1 truncate text-[12px] leading-5 text-[#171717]">
-                          {line}
-                        </span>
-                        {onRemoveQueued ? (
-                          <button
-                            type="button"
-                            data-testid="sliderule-queued-remove"
-                            title="撤掉这条"
-                            aria-label="撤掉这条"
-                            onClick={() => onRemoveQueued(i)}
-                            className="shrink-0 rounded p-0.5 text-[#a1a1aa] transition hover:bg-white hover:text-[#171717]"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
                 {picked.length > 0 ? (
                   <div
                     className="mb-1 flex flex-wrap items-center gap-1"
@@ -1827,6 +1775,82 @@ export function ComposerDock({
                 navigate("/agent-loop/skills");
               }}
             />
+          ) : null}
+          {/*
+            推演中的两条浮层：**AI 替你定了什么** 和 **你补的那句话**。
+
+            ⚠ 2026-08-27 真机咬出来的位置错误。第一版把它们放在输入框正文
+              上方的那个 `min-w-0 flex-1` 盒子里——**首页看着没问题**（hero 是
+              四列栅格，那个盒子 col-span-4，整行宽），一进会话就废了：
+              非 hero 分支是 `flex items-center gap-1.5` 的**一行**，工具条、
+              优化、发送都是同一行的兄弟，剩给它的只有 ~100px。真机截图上
+              「整改流转层级：门店内部指定专人整改…」被压成每行三个字的竖条。
+              下面那条审查卡的注释早就写着答案了——「不进外层 flex，进流会把
+              输入顶走」。同一个坑，同一个修法：挂到 absolute 那一层去。
+
+            ⚠ 范围卡 / 控制面提问在场时让路：同一处只许有一张卡（跟
+              intakeHintYieldsToScopeCard 同一条纪律）。推演中本来也不会
+              同时出现这三样。
+          */}
+          {!pendingScope &&
+          !pendingAsk &&
+          (specAssumptions.length > 0 || queuedTurns.length > 0) ? (
+            <div
+              className="pointer-events-auto absolute bottom-full left-0 right-0 z-10 mb-2 origin-bottom sr-composer-pop rounded-[12px] border border-[#e5e7eb] bg-white p-1.5 shadow-[0_12px_32px_rgb(15_23_42/0.12)]"
+              data-testid="sliderule-composer-overlay"
+            >
+              {/*
+                「我替你定了这个」在上，「本轮结束后发出」在下：点了「改成 X」
+                之后那句话就落在紧挨着的下一格里——这是这条链唯一的反馈。
+              */}
+              {onSettleAssumption && onReviseAssumption ? (
+                <AssumptionStrip
+                  items={specAssumptions}
+                  onSettle={onSettleAssumption}
+                  onRevise={onReviseAssumption}
+                />
+              ) : null}
+              {/*
+                推演中补的话：**必须看得见**。
+                ⚠ 2026-08-27 真机实测的老形态：点发送 → 输入框清空、整页
+                  搜不到这句话、几分钟后它自己发出去。机制通、人是懵的
+                  （见 midrun-queue.ts 头注）。所以每条都能撤——用户改主意的
+                  成本不该是"等它发出去再说"。
+              */}
+              {queuedTurns.length > 0 ? (
+                <div
+                  className="rounded-lg bg-[#f6f7f9] px-2 py-1.5"
+                  data-testid="sliderule-queued-turns"
+                >
+                  <div className="mb-1 text-[11px] leading-4 text-[#71717a]">
+                    本轮结束后发出（{queuedTurns.length}）
+                  </div>
+                  {queuedTurns.map((line, i) => (
+                    <div
+                      key={`${i}-${line}`}
+                      data-testid="sliderule-queued-turn"
+                      className="flex items-start gap-1.5 py-0.5"
+                    >
+                      <span className="min-w-0 flex-1 truncate text-[12px] leading-5 text-[#171717]">
+                        {line}
+                      </span>
+                      {onRemoveQueued ? (
+                        <button
+                          type="button"
+                          data-testid="sliderule-queued-remove"
+                          title="撤掉这条"
+                          aria-label="撤掉这条"
+                          onClick={() => onRemoveQueued(i)}
+                          className="shrink-0 rounded p-0.5 text-[#a1a1aa] transition hover:bg-white hover:text-[#171717]"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           ) : null}
           {/* 审查卡叠在输入框上方，不进外层 flex——进流会把输入顶走。
               范围卡开着时 hint 必须让路：同一 send 禁止两张卡。 */}

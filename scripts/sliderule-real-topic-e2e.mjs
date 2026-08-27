@@ -75,10 +75,30 @@ try {
     await fresh.click();
     await page.waitForTimeout(2500);
   }
+  /* ⚠ 上一趟留在屏幕上的卡会**把输入框锁死**：ComposerDock 的
+     `disabled={Boolean(pendingScope) || Boolean(pendingAsk)}`。页面恢复
+     上一个会话时这些卡会跟着回来，于是脚本卡在「element is not enabled」
+     等到超时——看着像输入框坏了，其实是上一轮还压着。先把它们打发走。 */
+  for (const sel of [
+    '[data-testid="sliderule-scope-revise"]',
+    '[data-testid="sliderule-clarification-close"]',
+  ]) {
+    const leftover = page.locator(sel);
+    if (await leftover.count()) {
+      log("清掉上一轮留下的卡:", sel);
+      await leftover.first().click().catch(() => {});
+      await page.waitForTimeout(800);
+    }
+  }
   await page.waitForSelector('[data-testid="sliderule-composer-input"]', { timeout: 60000 });
   await shot(page, "空态");
 
   const TA = '[data-testid="sliderule-composer-input"]';
+  /* ⚠ 等它**可用**，不只是"在页面上"。上一轮的 run 还没落幕、或会话还在
+     hydrate 时，输入框是 disabled 的——waitForSelector 照样能解析到它，
+     然后 click 干等 30 秒超时，报的是「element is not enabled」，
+     看着像脚本坏了，其实只是开早了。 */
+  await page.waitForSelector(`${TA}:not([disabled])`, { timeout: 90000 });
   await page.click(TA);
   await page.fill(TA, TOPIC);
   await page.waitForTimeout(400);
@@ -100,8 +120,14 @@ try {
     '[data-testid="sliderule-scope-card"], [data-testid="sliderule-clarification-card"]',
     { timeout: 120000 }
   );
-  if (await page.locator('[data-testid="sliderule-clarification-card"]').count()) {
-    log("先出的是澄清卡（控制面按这句需求生成的问题），逐题作答…");
+  /* ⚠ 澄清可能不止一轮：控制面答完一轮后**还可以再问一轮**（服务端上限 3）。
+     只处理一轮的话，第二轮的卡挂在那儿，脚本对着 scope-card 干等 120 秒
+     超时——2026-08-27 就是这么挂的，看着像"答完没反应"。所以 while，
+     直到范围卡出来或者澄清卡不再出现。 */
+  for (let round = 0; round < 3; round += 1) {
+    if (await page.locator('[data-testid="sliderule-scope-card"]').count()) break;
+    if (!(await page.locator('[data-testid="sliderule-clarification-card"]').count())) break;
+    log(`先出的是澄清卡（第 ${round + 1} 轮，控制面按这句需求生成的问题），逐题作答…`);
     await shot(page, "澄清卡");
     for (let step = 0; step < 4; step += 1) {
       const other = page.locator('[data-testid="sliderule-clarification-other"]');
@@ -123,9 +149,16 @@ try {
       await page.click('[data-testid="sliderule-clarification-submit"]');
       break;
     }
-    log("澄清已提交，等范围卡…");
-    await page.waitForSelector('[data-testid="sliderule-scope-card"]', { timeout: 120000 });
+    log("澄清已提交，等下一张卡…");
+    await page
+      .waitForSelector(
+        '[data-testid="sliderule-scope-card"], [data-testid="sliderule-clarification-card"]',
+        { timeout: 120000 }
+      )
+      .catch(() => {});
+    await page.waitForTimeout(1500);
   }
+  await page.waitForSelector('[data-testid="sliderule-scope-card"]', { timeout: 120000 });
   await page.waitForTimeout(1200);
   const restate = await page
     .locator('[data-testid="sliderule-scope-restatement"]')
