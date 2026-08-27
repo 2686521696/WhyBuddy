@@ -794,6 +794,50 @@ async def _dismiss_scope(state: V5SessionState) -> AsyncIterator[Dict[str, Any]]
     yield _complete(state)
 
 
+def _retire_stale_control_questions(state: V5SessionState) -> None:
+    """确认新范围时，把上一轮范围下的控制面提问置为 superseded。
+
+    ⚠ 2026-08-27 真机：会话 goal 已经是「连锁宠物医院管理系统」，作曲家还在
+      弹上一轮的「这个**诊所系统**首期主要服务哪几类核心角色？」。三条
+      `gap-q-…` 全是 status=open / reason=control_plane_clarify，而 gap 上
+      既没有 turnId 也没有 goal 引用——客户端判定不了归属，只能在这里收口。
+
+    状态用 `waived`（既有闭集 Literal 的"免除/作废"档），不新造
+    `superseded`：CoverageGap.status 是 open/resolved/waived 的闭集，
+    Python 与 TS 两边都声明了——新造值要双边同步改，那是 KD22 已经付过
+    学费的形状。作废是安全的：控制面从不往 contract.blockingGapIds 里加
+    自己的提问，所以 waive 它们碰不到覆盖闸（见同名测试的反向判据）。
+
+    只碰 `kind == "open_question"` 且 `reason == "control_plane_clarify"` 的：
+    · 证据缺口 / 能力缺口是**门说了算**的，fail-closed，顺手关掉就是伪造
+      绿灯（Claude.md §7）；
+    · 工厂内 G_READY 出的澄清（reason 不是 control_plane_clarify）也不归
+      控制面管。
+
+    作废而不是删除：证据链要留痕，删了就没法解释这张卡去哪了。
+    """
+    gaps = list(getattr(state, "coverageGaps", None) or [])
+    if not gaps:
+        return
+    now = _now_iso()
+    changed = False
+    out: List[Any] = []
+    for g in gaps:
+        row = g if isinstance(g, dict) else g.model_dump()
+        if (
+            row.get("kind") == "open_question"
+            and row.get("reason") == "control_plane_clarify"
+            and row.get("status") == "open"
+        ):
+            row = {**row, "status": "waived", "updatedAt": now}
+            changed = True
+            out.append(CoverageGap(**row))
+        else:
+            out.append(g)
+    if changed:
+        state.coverageGaps = out
+
+
 async def _confirm_rehearse_and_handoff(
     state: V5SessionState,
     user_text: str,
@@ -806,6 +850,10 @@ async def _confirm_rehearse_and_handoff(
     restatement = _confirmed_restatement(state, user_text)
     _write_confirmed_goal(state, restatement)
     _copy_scope_opt_in_into_goal(state)
+    # 新范围一确认，上一轮范围下的控制面提问就作废：否则作曲家会继续弹
+    # 问上一个 goal 的澄清卡（2026-08-27 真机：goal 已是宠物医院，卡还在
+    # 问诊所系统）。只碰控制面自己出的提问，证据/能力缺口不许动。
+    _retire_stale_control_questions(state)
     _append_transcript(
         state,
         {"role": "system", "kind": "scope_confirmed", "text": restatement},
