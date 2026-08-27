@@ -136,16 +136,26 @@ export function boardColumns(
 export function layoutArtboards(
   pages: ReadonlyArray<{ pageId: string }>,
   design: { w: number; h: number },
-  containerAspect?: number
+  containerAspect?: number,
+  /**
+   * 每列额外多留的横向间距（刀 2 的块条带占的宽度）。
+   *
+   * ⚠ 只加在**列间距**上，不改列数：列数是按容器长宽比配过的
+   *   （见 boardColumns），跟着条带一起变会让开关块条带时整个排版跳一次。
+   * ⚠ 不留的话条带会盖住右边那列画板——而缩到 13% 的全景下这只是
+   *   "看着有点挤"，不报错、不告警。
+   */
+  extraGapX = 0
 ): ArtboardBox[] {
   const cols = boardColumns(pages.length, design, containerAspect);
   const gap = design.w >= design.h ? BOARD_GAP.desktop : BOARD_GAP.phone;
+  const stepX = design.w + gap.x + Math.max(0, extraGapX);
   return pages.map((p, i) => {
     const col = i % cols;
     const row = Math.floor(i / cols);
     return {
       pageId: p.pageId,
-      x: col * (design.w + gap.x),
+      x: col * stepX,
       y: row * (design.h + gap.y),
       w: design.w,
       h: design.h,

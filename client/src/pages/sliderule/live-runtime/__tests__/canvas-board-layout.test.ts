@@ -360,3 +360,41 @@ describe("空格平移要让开能打字的地方", () => {
     expect(isTypingTarget(null)).toBe(false);
   });
 });
+
+describe("刀 2：块条带要的额外列间距", () => {
+  const pages = [{ pageId: "p1" }, { pageId: "p2" }, { pageId: "p3" }, { pageId: "p4" }];
+  const design = { w: 1920, h: 1080 };
+
+  it("传了 extraGapX，列间距变宽而列数不变", () => {
+    // ⚠ 列数不许跟着变：列数是按容器长宽比配过的，跟着条带一起变会让
+    //   开关块条带时整个排版跳一次。
+    const a = layoutArtboards(pages, design, 1.6);
+    const b = layoutArtboards(pages, design, 1.6, 592);
+    const colsA = new Set(a.map(x => x.x)).size;
+    const colsB = new Set(b.map(x => x.x)).size;
+    expect(colsB).toBe(colsA);
+    const stepA = [...new Set(a.map(x => x.x))].sort((m, n) => m - n);
+    const stepB = [...new Set(b.map(x => x.x))].sort((m, n) => m - n);
+    if (stepA.length > 1) {
+      expect(stepB[1] - stepB[0]).toBe(stepA[1] - stepA[0] + 592);
+    }
+  });
+
+  it("反向：不传就跟原来逐字节一样（默认 0，不许悄悄改既有排版）", () => {
+    expect(layoutArtboards(pages, design, 1.6)).toEqual(
+      layoutArtboards(pages, design, 1.6, 0)
+    );
+  });
+
+  it("行间距不受影响（条带是横向的）", () => {
+    const a = layoutArtboards(pages, design, 1.6);
+    const b = layoutArtboards(pages, design, 1.6, 592);
+    expect(b.map(x => x.y)).toEqual(a.map(x => x.y));
+  });
+
+  it("负数当 0（别把画板叠到一起）", () => {
+    expect(layoutArtboards(pages, design, 1.6, -500)).toEqual(
+      layoutArtboards(pages, design, 1.6, 0)
+    );
+  });
+});

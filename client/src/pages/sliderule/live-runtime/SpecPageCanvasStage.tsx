@@ -98,7 +98,14 @@ import { STAGE_FRAME_FLAT } from "./stage-frame-style";
 import { elementPath, type PathStep } from "./element-path";
 import { blockIdentity, type BlockIdentity } from "./page-blocks";
 import { useBlockRects } from "./use-block-rects";
-import type { BlockRect } from "./block-rects";
+import { blockKey, type BlockRect, type BlockRectSnapshot } from "./block-rects";
+import {
+  BLOCK_STRIP,
+  BLOCK_STRIP_EXTRA_GAP_X,
+  layoutBlockNodes,
+  type BlockNodeBox,
+} from "./block-node-layout";
+import { fitBlockNodes, type BlockNodeCandidate } from "./block-node-fit";
 import {
   frameRectToNodeRect,
   elementTitle,
@@ -492,6 +499,10 @@ interface CanvasCtx {
   registerBoardEl: (pageId: string, el: HTMLDivElement | null) => void;
   /** 素材高亮：点了素材卡，用到它的页面描边 */
   highlightPageIds: readonly string[];
+  /** 刀 2：画板把量到的块矩形报上来，舞台据此造块节点。 */
+  onBlockRects: (pageId: string, snap: BlockRectSnapshot) => void;
+  /** 块条带开着（块节点摊在画板右侧） */
+  blocksShown: boolean;
   /** 点了素材卡：记下来给画板描边（"这张图哪几页在用"） */
   onSelectAsset: (asset: CanvasAsset) => void;
   /** 打开换图面板。null = 宿主没给 appId，卡片上就不摆这颗按钮。 */
@@ -559,6 +570,15 @@ function ArtboardNode({ data }: NodeProps<Node<ArtboardData>>) {
        量了也是空——更要紧的是别给它装 ResizeObserver。 */
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const blocks = useBlockRects(hostRef, page.pageId, page.html, { width: box.w, height: box.h }, mounted);
+
+  /* 把快照报给舞台（刀 2 要在画板外面造块节点，那里够不到 iframe）。
+     ⚠ 进 effect 而不是渲染期直接调：渲染期 setState 别人的组件会触发
+       React 的 "Cannot update a component while rendering" 告警，
+       而且真机上会多刷一帧。 */
+  const reportBlocks = ctx?.onBlockRects;
+  React.useEffect(() => {
+    reportBlocks?.(page.pageId, blocks.snapshot);
+  }, [reportBlocks, page.pageId, blocks.snapshot]);
   const isLinkSource = ctx?.linkFrom === page.pageId;
   const highlighted = ctx?.highlightPageIds.includes(page.pageId) ?? false;
   const labelScale = labelCounterScale(zoom);
@@ -812,6 +832,155 @@ function ArtboardNode({ data }: NodeProps<Node<ArtboardData>>) {
   );
 }
 
+/** 块节点的数据。 */
+interface BlockNodeData extends Record<string, unknown> {
+  box: BlockNodeBox;
+  page: SpecPageLive;
+  /** 画板尺寸（整页原尺寸）——裁剪要按它铺整页。 */
+  board: { w: number; h: number };
+  /** 真渲染还是静态卡（由 block-node-fit 那道阶梯定）。 */
+  live: boolean;
+  kindLabel: string;
+}
+
+/**
+ * 一个块节点：**整页真渲染，裁到那一块**。
+ *
+ * ⚠ 为什么不单独渲染那一块的 HTML：块的 Tailwind 类来自页面注入的样式表，
+ *   布局还依赖父级 flex/grid。抠出来单渲会变形——变形之后它仍然"是一张卡片"，
+ *   没有任何报错，只是长得跟页面里不一样。所以只能整页渲染 + 开一个洞。
+ *
+ * ⚠ 不可拖（用户裁决「页组框能拖、块不能拖」）。块没有自己的位置，它的位置
+ *   是画板位置推出来的——可拖就得存档、就得处理"画板挪了块没挪"的漂移。
+ *   `draggable: false` 写在节点上，这里再挂一层 nodrag 兜住内部元素。
+ */
+function BlockNode({ data }: NodeProps<Node<BlockNodeData>>) {
+  const ctx = React.useContext(CanvasContext);
+  const zoom = useStore(s => s.transform[2]);
+  const inv = zoom > 0 ? 1 / zoom : 1;
+  const { box, page, board, live, kindLabel } = data;
+  const selected = ctx?.picked?.block?.name === box.name &&
+    ctx?.picked?.pageId === box.pageId;
+
+  return (
+    <div
+      className="nodrag relative"
+      style={{ width: box.w, height: box.h }}
+      data-testid="sliderule-canvas-block-node"
+      data-block-name={box.name}
+      data-block-page={box.pageId}
+      data-block-live={live ? "1" : "0"}
+      data-block-truncated={box.truncated ? "1" : "0"}
+    >
+      {/* 归属线的落点。⚠ **必须常挂**，不能"要连线才挂"——React Flow 靠
+          把手的位置算边的起终点，把手不在时这条边直接画不出来（控制台 #008，
+          画板那边头注记过同一个坑）。这里不给用户连，所以 isConnectable=false，
+          但元素本身要在 DOM 里。 */}
+      <Handle
+        id="l"
+        type="source"
+        position={Position.Left}
+        isConnectable={false}
+        style={{
+          width: 1,
+          height: 1,
+          minWidth: 1,
+          minHeight: 1,
+          background: "transparent",
+          border: "none",
+          opacity: 0,
+        }}
+      />
+      {/* 标签：类型·名字。⚠ 反缩放，理由同 ElementSpot（25% 下 1px 看不见）。 */}
+      <span
+        className="absolute whitespace-nowrap rounded px-1 py-px text-white"
+        style={{
+          left: 0,
+          top: 0,
+          transform: `scale(${inv}) translateY(-100%)`,
+          transformOrigin: "top left",
+          background: selected ? "#7c3aed" : "#94a3b8",
+          fontSize: 11,
+          marginTop: -3 * inv,
+        }}
+      >
+        {kindLabel}·{box.name}
+        {box.truncated ? " ·只显示上半截" : ""}
+      </span>
+
+      <div
+        className="h-full w-full overflow-hidden bg-white"
+        style={{
+          borderRadius: 4,
+          outline: `${(selected ? 2 : 1) * inv}px solid ${selected ? "#7c3aed" : "#e2e8f0"}`,
+          boxShadow: STAGE_FRAME_FLAT,
+        }}
+      >
+        {live ? (
+          /*
+           * 整页铺进来，再往左上挪，那一块正好落在洞口。
+           *
+           * ⚠ 内层盒子必须是**页面原尺寸**（1920×1080），缩放只走 transform。
+           *   2026-08-27 真机踩过：第一版写成 `board.w * scale`，等于改
+           *   iframe 的尺寸 —— 文档宽度一变，页面就**按新宽度重新响应式布局**，
+           *   块在新布局里的位置跟量测那一刻完全不同，裁出来的是别处的内容
+           *   （标着「表格·物资台账出入库实时流水」的节点里显示的是壳里的
+           *   用户下拉）。块框位置还是对的，所以两件事各自都"看着正常"。
+           *
+           *   这跟 canvas-board-layout 头注那条是同一条纪律：画板在画布坐标
+           *   里就是原尺寸，缩放整个交给 transform。
+           *
+           * ⚠ transform 的顺序不能反：`scale(s) translate(-left,-top)`，
+           *   CSS 右结合 —— 先 translate（设计坐标）再 scale，最终位移正好
+           *   是 -left*s。写成 translate 在前会少乘一次 scale。
+           */
+          <div
+            style={{
+              width: board.w,
+              height: board.h,
+              transform: `scale(${box.crop.scale}) translate(${-box.crop.left}px, ${-box.crop.top}px)`,
+              transformOrigin: "top left",
+              pointerEvents: "none",
+            }}
+          >
+            <HtmlAppSurface
+              key={`${box.pageId}:blocknode`}
+              html={page.html}
+              source={ctx?.source ?? EMPTY_SOURCE}
+              gates={ctx?.gates}
+              className="bg-white"
+            />
+          </div>
+        ) : (
+          /* 降级：如实说"这一块没在真渲染"，不摆一个假的灰块冒充内容。
+             ⚠ 没有内容和"内容是灰的"是两回事（同 AssetNode 那条纪律）。 */
+          /*
+           * ⚠ 卡片**里面**的字不反缩放（外面那行标签才反缩放）。
+           *   2026-08-27 真机：这里原本写了 `fontSize: 12 * inv`，17% 全景下
+           *   等于 70 画布单位，而矮块的节点只有三四十单位高——字直接溢出去
+           *   压住下一块。节点内容本来就该跟画布一起缩，这跟画板里的 iframe
+           *   一个道理。
+           */
+          <div
+            className="flex h-full w-full flex-col items-center justify-center gap-1 overflow-hidden bg-[#fafafa]"
+            data-testid="sliderule-canvas-block-node-static"
+          >
+            <span style={{ fontSize: 28 }} className="text-stone-400">
+              {kindLabel}
+            </span>
+            <span
+              style={{ fontSize: 20 }}
+              className="px-2 text-center leading-tight text-stone-300"
+            >
+              块太多，这一块暂未实时渲染
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /**
  * 素材卡：这套应用引用到的一张图。
  *
@@ -983,7 +1152,7 @@ function AssetNode({ data }: NodeProps<Node<AssetData>>) {
   );
 }
 
-const nodeTypes = { artboard: ArtboardNode, asset: AssetNode };
+const nodeTypes = { artboard: ArtboardNode, asset: AssetNode, block: BlockNode };
 
 function CanvasInner({
   pages,
@@ -1047,9 +1216,33 @@ function CanvasInner({
     return () => ro.disconnect();
   }, []);
 
+  /* 刀 2：块条带。默认**关**——一进画布先看整页，要拆开再点。
+     ⚠ 声明必须在 `boxes` 那个 memo **之前**：boxes 要读 blocksShown 决定
+       多留不多留列间距，放后面是 TDZ（"used before its declaration"）。 */
+  const [blocksShown, setBlocksShown] = React.useState(false);
+  /* 每页量到的块矩形，由 ArtboardNode 经 ctx.onBlockRects 报上来。 */
+  const [blockRects, setBlockRects] = React.useState<
+    Record<string, BlockRectSnapshot>
+  >({});
+  const onBlockRects = React.useCallback(
+    (pageId: string, snap: BlockRectSnapshot) => {
+      setBlockRects(prev =>
+        prev[pageId] === snap ? prev : { ...prev, [pageId]: snap }
+      );
+    },
+    []
+  );
+
   const boxes = React.useMemo(
-    () => layoutArtboards(pages, design, hostAspect || undefined),
-    [pages, design.w, design.h, hostAspect]
+    () =>
+      layoutArtboards(
+        pages,
+        design,
+        hostAspect || undefined,
+        /* 开着块条带时给每列多留一条带的宽度，否则条带盖住右边那列画板。 */
+        blocksShown ? BLOCK_STRIP_EXTRA_GAP_X : 0
+      ),
+    [pages, design.w, design.h, hostAspect, blocksShown]
   );
 
   const pageIds = React.useMemo(() => pages.map(p => p.pageId), [pages]);
@@ -1390,7 +1583,92 @@ function CanvasInner({
     [boxes, boardPos]
   );
 
-  const nodes = React.useMemo<Node[]>(() => {
+  /* 刀 2：块条带的盒子。位置从 placedBoxes 算——画板拖到哪，块跟到哪。 */
+  const blockBoxes = React.useMemo<BlockNodeBox[]>(() => {
+    if (!blocksShown) return [];
+    const out: BlockNodeBox[] = [];
+    for (const box of placedBoxes) {
+      const snap = blockRects[box.pageId];
+      if (!snap) continue;
+      out.push(...layoutBlockNodes(box, snap.rects));
+    }
+    return out;
+  }, [blocksShown, placedBoxes, blockRects]);
+
+  /*
+   * 谁真渲染、谁退静态卡。阶梯在 block-node-fit（抄 fit.rs 的 ordered ladder）。
+   * ⚠ 视口判定复用 shouldMountBoard —— **不另写一套**：画板和块节点用两套
+   *   可见性规则的话，缩放到某个档位会出现"画板挂着而它的块全静态"这种
+   *   自相矛盾的画面，而且不报错。
+   */
+  /*
+   * 视口，**量化过**的。
+   *
+   * ⚠ 不量化会真机上卡：阶梯的结果进 `nodes` 的 useMemo，视口每帧变一次
+   *   就等于整份节点数组每帧换一次身份，React Flow 每帧重 diff 所有节点。
+   *   MOUNT_MARGIN 是 600，所以 128 的抖动窗口完全在安全余量里——
+   *   代价只是"块节点最晚会在你多平移 128 画布单位之后才挂上"。
+   */
+  const vp = useStore(
+    React.useCallback(
+      (st: { transform: [number, number, number]; width: number; height: number }) => ({
+        x: st.transform[0],
+        y: st.transform[1],
+        zoom: st.transform[2],
+        width: st.width,
+        height: st.height,
+      }),
+      []
+    ),
+    (a, b) =>
+      Math.abs(a.x - b.x) < 128 &&
+      Math.abs(a.y - b.y) < 128 &&
+      Math.abs(a.zoom - b.zoom) < 0.01 &&
+      a.width === b.width &&
+      a.height === b.height
+  );
+
+  /*
+   * 阶梯第 2 档里的"当前页"。
+   *
+   * ⚠ 不能直接用 `activePageId`：它默认是 null（没点过任何画板时），于是
+   *   第 2 档筛出 0 块——真机上量到过，开了块条带 24 个节点全是静态卡，
+   *   档位显示 inactive_pages_collapsed。功能没坏，但用户看到的就是"点了
+   *   没反应"。没选中时取第一页，跟画布首屏对着的那一页一致。
+   */
+  const focusPageId = React.useMemo(() => {
+    /*
+     * ⚠ 宿主传来的 `activePageId` **可能指向一个这套应用里不存在的页**。
+     *   真机上量到过：它是 "home"，而这份应用的五页叫
+     *   material_requisition_hall 等等。拿它去筛第 2 档，筛出 0 块——
+     *   表现是开了块条带 24 个节点全是静态卡，档位显示
+     *   inactive_pages_collapsed，看着像阶梯写坏了，其实是筛选键对不上。
+     *
+     *   所以必须**校验它在页清单里**，不在就退回第一页（画布首屏对着的那页）。
+     */
+    const known = new Set(pages.map(p => p.pageId));
+    for (const id of [entered, activePageId]) {
+      if (id && known.has(id)) return id;
+    }
+    return pages[0]?.pageId ?? null;
+  }, [entered, activePageId, pages]);
+
+  const blockFit = React.useMemo(() => {
+    const candidates: BlockNodeCandidate[] = blockBoxes.map(b => ({
+      key: b.key,
+      inViewport: shouldMountBoard(
+        { pageId: b.pageId, x: b.x, y: b.y, w: b.w, h: b.h },
+        { x: vp.x, y: vp.y, zoom: vp.zoom },
+        { width: vp.width, height: vp.height }
+      ),
+      onActivePage: b.pageId === focusPageId,
+      isSelected:
+        picked?.pageId === b.pageId && picked?.block?.name === b.name,
+    }));
+    return fitBlockNodes(candidates);
+  }, [blockBoxes, vp, focusPageId, picked]);
+
+  const nodes = React.useMemo<Node[]>((): Node[] => {
     const boards: Node<ArtboardData>[] = placedBoxes.map((box, i) => ({
       id: box.pageId,
       type: "artboard",
@@ -1412,7 +1690,31 @@ function CanvasInner({
         fillPhone: isPhone,
       },
     }));
-    if (!assetsShown) return boards;
+    const blockNodes: Node<BlockNodeData>[] = blockBoxes.map(b => {
+      const page = pages.find(p => p.pageId === b.pageId)!;
+      const snap = blockRects[b.pageId];
+      const rect = snap?.rects.find(r => r.name === b.name);
+      return {
+        id: `block:${b.key}`,
+        type: "block",
+        position: { x: b.x, y: b.y },
+        width: b.w,
+        height: b.h,
+        /* 用户裁决：页组框能拖、**块不能拖**。块没有自己的位置，
+           它的位置是画板位置推出来的。 */
+        draggable: false,
+        selectable: false,
+        zIndex: 0,
+        data: {
+          box: b,
+          page,
+          board: { w: design.w, h: design.h },
+          live: blockFit.live.has(b.key),
+          kindLabel: rect?.kindLabel ?? "块",
+        },
+      };
+    });
+    if (!assetsShown) return [...boards, ...blockNodes];
     const assetNodes: Node<AssetData>[] = assetBoxes.map((b, i) => ({
       id: `asset:${b.url}`,
       type: "asset",
@@ -1422,7 +1724,7 @@ function CanvasInner({
       selectable: false,
       data: { asset: assets[i]!, w: b.w, h: b.h },
     }));
-    return [...boards, ...assetNodes];
+    return [...boards, ...blockNodes, ...assetNodes];
   }, [
     placedBoxes,
     pages,
@@ -1432,6 +1734,11 @@ function CanvasInner({
     assets,
     assetsShown,
     frontId,
+    blockBoxes,
+    blockFit,
+    blockRects,
+    design.w,
+    design.h,
   ]);
 
   const boxById = React.useMemo(
@@ -1439,8 +1746,23 @@ function CanvasInner({
     [placedBoxes]
   );
   const edges = React.useMemo<Edge[]>(
-    () =>
-      links.map(l => {
+    () => {
+      /* 归属线：每个块 → 它所属的那张整页画板。
+         ⚠ 这是**常驻**线，跟刀 4 的影响线不是一回事：它答的是"这一块是哪
+           一页的"，不是"改了它谁跟着变"。两种线混成一种，用户会把归属
+           当成联动。所以颜色/虚实都跟 EDGE_STYLE 那两种分开。 */
+      const ownership: Edge[] = blockBoxes.map(b => ({
+        id: `own:${b.key}`,
+        source: `block:${b.key}`,
+        target: b.pageId,
+        sourceHandle: "l",
+        targetHandle: "r",
+        type: "straight",
+        selectable: false,
+        focusable: false,
+        style: { stroke: "#cbd5e1", strokeWidth: 1.5, strokeDasharray: "3 5" },
+      }));
+      const linkEdges = links.map(l => {
         const a = boxById.get(l.from);
         const b = boxById.get(l.to);
         // 两端都在才挑得出边；缺一端时退回右→左（React Flow 至少画得出来）。
@@ -1474,8 +1796,10 @@ function CanvasInner({
           },
           data: { kind: l.kind },
         };
-      }),
-    [links, boxById]
+      });
+      return [...ownership, ...linkEdges];
+    },
+    [links, boxById, blockBoxes]
   );
 
   /* --------------------------------------------------------- 交互 */
@@ -1616,6 +1940,8 @@ function CanvasInner({
       linkMode,
       registerBoardEl,
       highlightPageIds,
+      onBlockRects,
+      blocksShown,
     }),
     [
       entered,
@@ -1635,6 +1961,8 @@ function CanvasInner({
       linkMode,
       registerBoardEl,
       highlightPageIds,
+      onBlockRects,
+      blocksShown,
     ]
   );
 
@@ -1784,6 +2112,14 @@ function CanvasInner({
       data-page-count={pages.length}
       data-entered={entered ?? undefined}
       data-link-mode={linkMode ? "1" : "0"}
+      /* 刀 2 的真机观测点。⚠ `rung` 不是装饰：截图上"全量真渲染"和"已经
+         降到全静态"长得差不多（都是一排卡片），只有档位读得出区别。
+         这就是 fit.rs 里 FitPlan::rung 的用意。 */
+      data-block-fit-rung={blockFit.rung}
+      data-block-fit-live={blockFit.liveCount}
+      data-block-fit-total={blockBoxes.length}
+      data-viewport-size={`${Math.round(vp.width)}x${Math.round(vp.height)}`}
+      data-block-focus-page={focusPageId ?? ""}
       data-link-count={links.length}
       data-asset-count={assets.length}
     >
@@ -2051,6 +2387,40 @@ function CanvasInner({
                 <span className="font-mono tabular-nums">{assets.length}</span>
               </button>
             ) : null}
+            {/* 刀 2：块条带开关。⚠ 计数用**量到的块矩形**条数，不是"应该有
+                几块"——量不到就该显示 0，而不是拿源码里的块数冒充。 */}
+            <button
+              type="button"
+              onClick={() => {
+                const next = !blocksShown;
+                setBlocksShown(next);
+                /* ⚠ 切开关必须重新适应画布：条带排在画板右侧，开了之后整个
+                   排版宽出一大截。不重适应的话，用户点了「块」屏幕上什么都
+                   不变（新节点全在视口外），而且降级阶梯会如实把它们全判成
+                   视口外 → 全静态。真机上量到过：24 个块节点、0 个真渲染。
+                   延一帧是等 boxes/blockBoxes 按新排版重算完。 */
+                requestAnimationFrame(() =>
+                  flow.fitView({ padding: FIT_PADDING, duration: 240, maxZoom: 1 })
+                );
+              }}
+              aria-pressed={blocksShown}
+              data-testid="sliderule-canvas-blocks-toggle"
+              className={`flex h-6 items-center gap-1 rounded px-1.5 text-[11px] transition ${
+                blocksShown
+                  ? "text-stone-800"
+                  : "text-stone-400 hover:bg-[#f4f4f5]"
+              }`}
+              title="把每一页拆成一块块，摊在画板右侧"
+            >
+              <LayoutGrid className="h-3 w-3" />
+              块
+              <span className="font-mono tabular-nums">
+                {Object.values(blockRects).reduce(
+                  (n, snap) => n + snap.rects.length,
+                  0
+                )}
+              </span>
+            </button>
             <button
               type="button"
               onClick={() => setInspectorOpen(v => !v)}
