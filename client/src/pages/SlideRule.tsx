@@ -991,6 +991,8 @@ function SlideRuleUnified({
   sendMessage,
   pendingScope = null,
   pendingAsk = null,
+  queuedTurns = [],
+  removeQueuedTurn,
   confirmControlScope,
   dismissScopeCard,
   dismissAsk,
@@ -1055,6 +1057,9 @@ function SlideRuleUnified({
   executorMode: ReturnType<typeof useSlideRuleSession>["executorMode"];
   driveMode?: "single" | "marathon";
   setDriveMode?: (m: "single" | "marathon") => void;
+  /** 推演中补的话（排队到下一轮）。看得见、撤得掉——见 midrun-queue 头注。 */
+  queuedTurns?: string[];
+  removeQueuedTurn?: (index: number) => void;
   pendingClarifications?: ClarificationItem[];
   answerClarifications?: (
     answers: Array<{ gapId: string; answer: string }>
@@ -1245,6 +1250,8 @@ function SlideRuleUnified({
                         onReviseScope={dismissScopeCard}
                         onDismissAsk={dismissAsk}
                         onAnswerAsk={text => sendMessage(text)}
+                        queuedTurns={queuedTurns}
+                        onRemoveQueued={removeQueuedTurn}
                       />
                     }
                     clarifySlot={
@@ -1786,6 +1793,8 @@ function SlideRuleSessionBody({
     sendMessage,
     pendingScope,
     pendingAsk,
+    queuedTurns,
+    removeQueuedTurn,
     confirmControlScope,
     dismissScopeCard,
     dismissAsk,
@@ -2238,6 +2247,8 @@ function SlideRuleSessionBody({
     sendMessage,
     pendingScope,
     pendingAsk,
+    queuedTurns,
+    removeQueuedTurn,
     confirmControlScope,
     dismissScopeCard,
     dismissAsk,

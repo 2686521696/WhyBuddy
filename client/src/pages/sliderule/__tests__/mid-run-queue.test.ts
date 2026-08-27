@@ -96,7 +96,11 @@ const stopBtn = DOCK.slice(
 describe("sendMessage 运行中排队，不许 stop", () => {
   it("活路径 sendMessage 在 isRunningRef 时入队并 return，不调用 stop", () => {
     expect(sendMessageFn).toContain("isRunningRef.current");
-    expect(sendMessageFn).toContain("queuedTurnRef.current = text");
+    /* ⚠ 2026-08-27：这里原来钉的是**字面** `queuedTurnRef.current = text`。
+       队列从"一个看不见的 ref、后来居上覆盖"改成"可见、可撤、会累积"之后
+       那句合法地变了，判据就红了——而它想说的（运行中入队、不 stop）
+       一件没变。本仓第二条：盯语义，别盯某句话的字面。 */
+    expect(sendMessageFn).toContain("pushQueuedTurn(text)");
     expect(sendMessageFn).toContain("requestRehearsal");
     // 反向：把 stop() 加回 sendMessage（只改 doSend 不够）这条必红。
     expect(sendMessageFn).not.toContain("stop()");
@@ -105,7 +109,7 @@ describe("sendMessage 运行中排队，不许 stop", () => {
       sendMessageFn.indexOf("if (isRunningRef.current)"),
       sendMessageFn.indexOf("await requestRehearsal")
     );
-    expect(queueArm).toContain("queuedTurnRef.current = text");
+    expect(queueArm).toContain("pushQueuedTurn(text)");
     expect(queueArm).not.toContain("requestRehearsal");
     expect(queueArm).toContain("return");
   });
@@ -158,8 +162,9 @@ describe("本轮 finally 才 flush 一发控制面", () => {
 
   it("Stop 保留队列；resetSession 必须清掉", () => {
     expect(stopFn).toContain("cancelActiveRunOnServer");
-    expect(stopFn).not.toContain("queuedTurnRef.current = null");
-    expect(resetFn).toContain("queuedTurnRef.current = null");
+    // 同上：清队列现在写成 `= []`（队列是数组了），语义不变
+    expect(stopFn).not.toContain("queuedTurnRef.current = []");
+    expect(resetFn).toContain("queuedTurnRef.current = []");
   });
 });
 
@@ -266,7 +271,7 @@ describe("停泊 overlay 时 flush 不得清卡", () => {
       0
     );
     expect(flushFn.indexOf("overlayBlocksQueueFlush()")).toBeLessThan(
-      flushFn.indexOf("queuedTurnRef.current = null")
+      flushFn.indexOf("queuedTurnRef.current = []")
     );
     expect(flushFn.indexOf("overlayBlocksQueueFlush()")).toBeLessThan(
       flushFn.indexOf("requestRehearsalRef.current")

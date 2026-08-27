@@ -359,6 +359,8 @@ export function ComposerDock({
   statusPill = null,
   pendingScope = null,
   pendingAsk = null,
+  queuedTurns = [],
+  onRemoveQueued,
   onConfirmScope,
   onReviseScope,
   onAnswerAsk,
@@ -373,6 +375,9 @@ export function ComposerDock({
   /** 控制面范围卡。确认走 confirmControlScope → forcedTool rehearse。 */
   pendingScope?: ScopeCardPending | null;
   pendingAsk?: { question: string; options?: string[] } | null;
+  /** 推演中补的话（排队到下一轮）。看得见、撤得掉——见 midrun-queue 头注。 */
+  queuedTurns?: string[];
+  onRemoveQueued?: (index: number) => void;
   onConfirmScope?: () => void;
   onReviseScope?: () => void;
   onAnswerAsk?: (text: string) => void;
@@ -1630,6 +1635,46 @@ export function ComposerDock({
                   ⚠ 标签跟正文在同一个盒子里换行（flex-wrap），所以挂三个也不会
                     把输入框挤没；标签自己 shrink-0，被挤扁的只能是正文。
                 */}
+                {/*
+                  推演中补的话：**必须看得见**。
+                  ⚠ 2026-08-27 真机实测的老形态：点发送 → 输入框清空、整页
+                    搜不到这句话、几分钟后它自己发出去。机制通、人是懵的
+                    （见 midrun-queue.ts 头注）。所以这条要摆在正文上方，
+                    并且每条都能撤——用户改主意的成本不该是"等它发出去再说"。
+                */}
+                {queuedTurns.length > 0 ? (
+                  <div
+                    className="mb-1.5 rounded-lg bg-[#f6f7f9] px-2 py-1.5"
+                    data-testid="sliderule-queued-turns"
+                  >
+                    <div className="mb-1 text-[11px] leading-4 text-[#71717a]">
+                      本轮结束后发出（{queuedTurns.length}）
+                    </div>
+                    {queuedTurns.map((line, i) => (
+                      <div
+                        key={`${i}-${line}`}
+                        data-testid="sliderule-queued-turn"
+                        className="flex items-start gap-1.5 py-0.5"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-[12px] leading-5 text-[#171717]">
+                          {line}
+                        </span>
+                        {onRemoveQueued ? (
+                          <button
+                            type="button"
+                            data-testid="sliderule-queued-remove"
+                            title="撤掉这条"
+                            aria-label="撤掉这条"
+                            onClick={() => onRemoveQueued(i)}
+                            className="shrink-0 rounded p-0.5 text-[#a1a1aa] transition hover:bg-white hover:text-[#171717]"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 {picked.length > 0 ? (
                   <div
                     className="mb-1 flex flex-wrap items-center gap-1"

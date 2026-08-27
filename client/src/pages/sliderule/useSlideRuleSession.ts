@@ -80,6 +80,11 @@ import {
   parseRehearsalSlash,
   scopeCardRestatement,
 } from "./composer-slash";
+import {
+  enqueueTurn,
+  mergeQueuedTurns,
+  removeQueued,
+} from "./midrun-queue";
 
 /** 昂贵按钮的 forcedTool。/推演 不得在客户端带 rehearse——未确认卡由服务端 park。 */
 export function inferForcedTool(
@@ -333,7 +338,25 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
    * Stop 不清队列（用户先打新方向再停旧跑，那句就是下一发）。
    * resetSession 必须清掉——否则遗留队列会劫持后来无关的发送。
    */
-  const queuedTurnRef = useRef<string | null>(null);
+  /*
+   * ⚠ 2026-08-27：从「一个看不见的 ref、后来居上覆盖」改成「一条可见的队列」。
+   *   老形态真机实测：推演中点发送，输入框清空、**整页搜不到这句话**、
+   *   几分钟后它自己发出去；连补两句第一句还会被悄悄顶掉。
+   *   机制通、人是懵的——ref 同步判定照旧留着（setState 异步，连点会漏），
+   *   另加 state 只为了让它**看得见、撤得掉**。
+   */
+  const queuedTurnRef = useRef<string[]>([]);
+  const [queuedTurns, setQueuedTurns] = useState<string[]>([]);
+  const pushQueuedTurn = (text: string) => {
+    const next = enqueueTurn(queuedTurnRef.current, text);
+    queuedTurnRef.current = next;
+    setQueuedTurns(next);
+  };
+  const removeQueuedTurn = useCallback((index: number) => {
+    const next = removeQueued(queuedTurnRef.current, index);
+    queuedTurnRef.current = next;
+    setQueuedTurns(next);
+  }, []);
   const requestRehearsalRef = useRef<
     (userText: string) => Promise<void>
   >(async () => {});
@@ -394,8 +417,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     Boolean(pendingScopeRef.current || pendingAskRef.current);
   const flushQueuedControlTurn = () => {
     if (overlayBlocksQueueFlush()) return;
-    const text = queuedTurnRef.current;
-    queuedTurnRef.current = null;
+    /* ⚠ 合成**一条**再发：三句补充发三轮 = 烧三次工厂，而且前两轮的产物
+       立刻被后一轮推翻。用户补的是同一件事的三个细节。 */
+    const text = mergeQueuedTurns(queuedTurnRef.current);
+    queuedTurnRef.current = [];
+    setQueuedTurns([]);
     if (text) void requestRehearsalRef.current(text);
   };
 
@@ -2010,7 +2036,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     if (!text) return;
     // 运行中发送排队，不许 stop()。sliderule:resend-prompt 也走这里。
     if (isRunningRef.current) {
-      queuedTurnRef.current = text;
+      pushQueuedTurn(text);
       setInput("");
       return;
     }
@@ -2339,7 +2365,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     rehearsalCursorRef.current = idleRehearsalCursor();
     setRehearsalCursor(idleRehearsalCursor());
     setLlmStreams([]);
-    queuedTurnRef.current = null;
+    /* 重置会话必须清队列——遗留的补充会劫持后来无关的一发 */
+    queuedTurnRef.current = [];
+    setQueuedTurns([]);
     clearPendingScope();
     setPendingAsk(null);
   }, [isRunning, sessionState.sessionId, sessionId, options.initialGoal]);
@@ -2401,6 +2429,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     setInput,
     pendingClarifications,
     answerClarifications,
+    /** 推演中补的话（排队到下一轮）。看得见、撤得掉——见 midrun-queue 头注。 */
+    queuedTurns,
+    removeQueuedTurn,
     generateDeliverables,
     isRunning,
     /** 版本切换请求在飞。名字带 Version 是给消费方看的——那边同名 prop 直传按钮。 */
