@@ -112,21 +112,45 @@ try {
         .map(e => (e.textContent || "").trim())
         .filter(Boolean);
       return {
-        hud: pick('[data-testid="sliderule-rehearsal-clock"]') || pick('[data-testid="sliderule-status-bar"]'),
+        step: (() => {
+          const cur = document.querySelector(
+            '[data-testid^="sliderule-rehearsal-step-"][data-status="current"]'
+          );
+          return cur ? cur.textContent.trim() : "";
+        })(),
+        badge: pick('[data-testid="sliderule-publish-closure-badge"]'),
         last: steps.length ? steps[steps.length - 1].slice(0, 120) : "",
         pages: document.querySelectorAll('[data-testid^="sliderule-artboard"], iframe').length,
         closure: pick('[data-testid="sliderule-publish-closure"]').slice(0, 80),
         interrupted: document.body.innerText.includes("推演中断"),
       };
     });
-    const line = `${secs}s · 页面框 ${state.pages} · ${state.hud.slice(0, 60)} · ${state.last}`;
+    const line = `${secs}s · 页面框 ${state.pages} · 当前步 ${state.step || "—"} · 闭环 ${state.badge || "—"}`;
     if (line !== lastText) { log(line); lastText = line; }
     if (secs % 60 < 21) await shot(page, `推演-${secs}s`);
     if (state.interrupted) { log("!! 出现「推演中断」"); await shot(page, `中断-${secs}s`); break; }
-    const finished = await page.evaluate(() =>
-      /闭环|6\s*\/\s*6|已完成|交付/.test(document.body.innerText) &&
-      document.querySelectorAll("iframe").length > 0
-    );
+    /*
+     * ⚠ 完成判定**只看六步钟和闭环徽标**，不许 grep 整页文字。
+     *
+     *   2026-08-27 第一版写的是
+     *   `/闭环|6\/6|已完成|交付/.test(document.body.innerText)`，
+     *   结果 60s 就报「闭环出现」——匹配到的是**左侧会话列表里旧话题的标题**
+     *   （「…全流程闭环系统」「…完整业务闭环」）。那会儿服务端才刚跑到
+     *   structure，第 4 步。本仓第二条的原话：判据 grep 的词同时出现在别处，
+     *   变异后照样绿；这里是连变异都不用，一开跑就是假绿灯。
+     */
+    const finished = await page.evaluate(() => {
+      const step6 = document.querySelector(
+        '[data-testid="sliderule-rehearsal-step-6"]'
+      );
+      const badge = document.querySelector(
+        '[data-testid="sliderule-publish-closure-badge"]'
+      );
+      return (
+        (step6?.getAttribute("data-status") === "done" || !!badge) &&
+        document.querySelectorAll("iframe").length > 0
+      );
+    });
     if (finished) { done = true; log(`闭环出现，用时 ${secs}s`); break; }
   }
   await page.waitForTimeout(2000);
