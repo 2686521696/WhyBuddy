@@ -43,6 +43,7 @@ set_refine_context）；FORBIDDEN 把 v5_capability_executor 当入口 import。
 from __future__ import annotations
 
 import copy
+import asyncio
 import inspect
 import json
 import time
@@ -1233,14 +1234,49 @@ async def _tool_challenge(state: V5SessionState, user_text: str) -> AsyncIterato
     yield _complete(state)
 
 
+#: 证据检索的整体死线。供应商链是 12s × 最多 3 家
+#: （services/mcp_tools._TIMEOUT_S），向量库那条真机上还可能更久——不封顶
+#: 的话一次控制面轮次能被它拖住半分钟，而用户那头只看见一个转圈。
+_SEARCH_DEADLINE_S = 20.0
+
+
 async def _tool_search(state: V5SessionState, query: str) -> Dict[str, Any]:
+    """查外部证据。**「查过了没有」和「没查成」必须分得开。**
+
+    ⚠ 2026-08-27 修的就是这条：老版本任何失败都走
+      `except Exception: hits = []`，然后照样返回 `ok=True` +
+      「没有检索到可用片段。」+ 一条 provenance=control-search 的空证据行。
+      Tavily 挂了、网断了、超时了——对模型和用户来说**跟"网上确实没有"
+      长得一模一样**。这就是 CLAUDE.md §7 说的伪造绿灯：流程可以 fail-open
+      （不该因为搜不到就打死整轮），但**结论不许 fail-open**。
+
+    抄的标准答案：grok-build `xai-grok-session-search/src/bootstrap.rs`
+
+        Err(_) => {
+            // The abandoned spawn_blocking task runs to completion.
+            log_bootstrap_timeout(&session_id, per_session_timeout.as_secs());
+            progress.skipped.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+
+    三件事一件不少：**限时**（per_session_timeout）、**放弃**、**记成
+    skipped 而不是 indexed**。整轮继续跑，但那一份被如实记成"没做成"。
+
+    ⚠ 这里**不**学上面 call_control_llm 改 async：`retrieve_evidence` 有 28 个
+      同步调用方（整条工厂流水线），改 async 得把整条链一起改。而 grok 自己
+      对这种天生阻塞的活也不是"想办法中断"，就是上面那段——**被放弃的线程
+      会跑到底**（实测：wait_for 1.00s 返回，孤儿线程跑满 5.00s），这是
+      已知且接受的代价，不假装它停了。
+    """
     hits: List[Dict[str, Any]] = []
+    outcome = "searched"
     try:
         from services.rag_service import retrieve_evidence
 
         # 同上：RAG 检索是同步的（可能带网络/向量库），一样不许坐在事件循环上
-        raw = await run_in_threadpool(
-            lambda: retrieve_evidence(query or "", top_k=6) or []
+        raw = await asyncio.wait_for(
+            run_in_threadpool(lambda: retrieve_evidence(query or "", top_k=6) or []),
+            timeout=_SEARCH_DEADLINE_S,
         )
         for item in raw[:6]:
             if not isinstance(item, dict):
@@ -1252,14 +1288,29 @@ async def _tool_search(state: V5SessionState, query: str) -> Dict[str, Any]:
                     "provenance": "control-search",
                 }
             )
-    except Exception:  # noqa: BLE001 — 增强类 fail-open
-        hits = []
-    summary = (
-        "；".join(
-            str(h.get("title") or h.get("content") or "")[:80] for h in hits if h
+    except asyncio.TimeoutError:
+        # 超过死线：孤儿线程还在跑（见头注），但这一轮不再等它。
+        hits, outcome = [], "abandoned"
+    except Exception:  # noqa: BLE001 — 流程 fail-open，结论 fail-closed（见头注）
+        hits, outcome = [], "failed"
+
+    if outcome == "abandoned":
+        summary = (
+            f"证据检索超过 {int(_SEARCH_DEADLINE_S)} 秒未返回，已放弃。"
+            "这一轮**没有**外部证据——不是「查过了、没有」，是没查成。"
         )
-        or "没有检索到可用片段。"
-    )
+    elif outcome == "failed":
+        summary = (
+            "证据检索失败（外部检索不可用）。"
+            "这一轮**没有**外部证据——不是「查过了、没有」，是没查成。"
+        )
+    else:
+        summary = (
+            "；".join(
+                str(h.get("title") or h.get("content") or "")[:80] for h in hits if h
+            )
+            or "查过了，没有检索到可用片段。"
+        )
     _append_transcript(
         state,
         {
@@ -1267,11 +1318,20 @@ async def _tool_search(state: V5SessionState, query: str) -> Dict[str, Any]:
             "kind": "search_evidence",
             "text": query,
             "provenance": "control-search",
+            # ⚠ outcome 必须进存档：会话读回来时，空 hits 到底是"查过没有"
+            #   还是"没查成"，只有这个字段分得开。
+            "outcome": outcome,
             "hits": hits,
         },
     )
     # 故意不碰 conversation / publishClosure / commit_artifact
-    return {"ok": True, "summary": summary, "hits": hits, "provenance": "control-search"}
+    return {
+        "ok": outcome == "searched",
+        "outcome": outcome,
+        "summary": summary,
+        "hits": hits,
+        "provenance": "control-search",
+    }
 
 
 async def _tool_inspect(state: V5SessionState) -> Dict[str, Any]:
