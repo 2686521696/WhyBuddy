@@ -2010,6 +2010,22 @@ async def drive_full_v5_session_stream(
                 (pid, html, done, total, bool(bound), str(device))
             )
         )
+    # 伴随式澄清（2026-08-27）：spec-first 第 2 步替用户定下的事。
+    #
+    # 跟上面那条页面流同一个模子、同一个泵、同一处装卸——理由也一样：
+    # 它们发生在同一段时间里，分开泵只会让"第 2 步在报进度"和"第 2 步说
+    # 它把登录定成了手机号"在前端的先后不可预期。
+    #
+    # ⚠ 这是**增强**（本仓第七条）：模块缺失、sink 没装、里头炸了，都不许
+    #   拖垮一条已经跑了两分钟的推演。所以 import 和 emit 两侧都吞异常。
+    _assumption_q: "_queue.Queue[list]" = _queue.Queue()
+    _spec_assumption_sink = None
+    try:
+        from .spec_first_pipeline import set_assumption_sink as _spec_assumption_sink
+    except Exception:  # noqa: BLE001 — 新模块缺失不该打死整条流
+        pass
+    if _spec_assumption_sink is not None:
+        _spec_assumption_sink(lambda rows: _assumption_q.put(list(rows or [])))
     _budget_token = _enrich_timing.begin_run_budget()
     # 与同步入口同一件事：让能力执行看得见本轮用户说了什么。
     # 流式是主路径（前端走 SSE），两条都要接，否则只有回退路径改好了——
@@ -2081,6 +2097,14 @@ async def drive_full_v5_session_stream(
                         # desktop 横屏 / phone 竖屏——前端选画布视口用
                         "device": _device,
                     }
+            except _queue.Empty:
+                pass
+            # 伴随式澄清：第 2 步替用户定下的事，跟上面三条走同一个泵。
+            try:
+                while True:
+                    _rows = _assumption_q.get_nowait()
+                    if _rows:
+                        yield {"type": "spec_assumption", "items": _rows}
             except _queue.Empty:
                 pass
             now = _time.perf_counter()
@@ -2588,6 +2612,8 @@ async def drive_full_v5_session_stream(
         _enrich_timing.set_stage_sink(None)
         if _spec_first_sink is not None:
             _spec_first_sink(None)
+        if _spec_assumption_sink is not None:
+            _spec_assumption_sink(None)
         _enrich_timing.reset_run_budget(_budget_token)
         _turn_token.__exit__(None, None, None)
         _cost_cm.__exit__(None, None, None)

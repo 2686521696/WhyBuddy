@@ -47,6 +47,8 @@ import { DesignSystemRail } from "./DesignSystemRail";
 import { intakeHintYieldsToScopeCard, useIntakeJudge } from "./use-intake-judge";
 import { IntakeHintBar, INTAKE_JUDGING_LABEL } from "./IntakeHintBar";
 import { ScopeCard } from "./ScopeCard";
+import { AssumptionStrip } from "./AssumptionStrip";
+import type { SpecAssumption } from "./spec-assumptions";
 import type { ScopeCardPending } from "./scope-card-gate";
 import {
   installKeyOf,
@@ -360,6 +362,9 @@ export function ComposerDock({
   pendingScope = null,
   pendingAsk = null,
   queuedTurns = [],
+  specAssumptions = [],
+  onSettleAssumption,
+  onReviseAssumption,
   onRemoveQueued,
   onConfirmScope,
   onReviseScope,
@@ -377,6 +382,10 @@ export function ComposerDock({
   pendingAsk?: { question: string; options?: string[] } | null;
   /** 推演中补的话（排队到下一轮）。看得见、撤得掉——见 midrun-queue 头注。 */
   queuedTurns?: string[];
+  /** 伴随式澄清：推演中模型替用户定下的事。见 AssumptionStrip 头注。 */
+  specAssumptions?: SpecAssumption[];
+  onSettleAssumption?: (id: string) => void;
+  onReviseAssumption?: (id: string, alternative: string) => void;
   onRemoveQueued?: (index: number) => void;
   onConfirmScope?: () => void;
   onReviseScope?: () => void;
@@ -1642,6 +1651,18 @@ export function ComposerDock({
                     （见 midrun-queue.ts 头注）。所以这条要摆在正文上方，
                     并且每条都能撤——用户改主意的成本不该是"等它发出去再说"。
                 */}
+                {/*
+                  ⚠ 摆在排队条**上方**：点「改成工号」之后，那句话就出现在
+                    紧挨着的下面一格里。两个盒子挨着，用户一眼看得出
+                    "我刚点的那下变成了什么"——这是这条链唯一的反馈。
+                */}
+                {onSettleAssumption && onReviseAssumption ? (
+                  <AssumptionStrip
+                    items={specAssumptions}
+                    onSettle={onSettleAssumption}
+                    onRevise={onReviseAssumption}
+                  />
+                ) : null}
                 {queuedTurns.length > 0 ? (
                   <div
                     className="mb-1.5 rounded-lg bg-[#f6f7f9] px-2 py-1.5"

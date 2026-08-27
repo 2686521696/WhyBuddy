@@ -120,6 +120,45 @@ class SuccessCriterion(BaseModel):
         return v.strip()
 
 
+class SpecAssumption(BaseModel):
+    """起草这份 spec 时，需求里没说、模型**替用户定了**的一件事。
+
+    ⚠ 这不是"再问一轮"，跟控制面的 clarify 是两件事，别合并：
+
+      clarify 跑在点火**之前**，拦在用户和工厂中间，它能问的只有
+      「这句话里读不出来的维度」（谁用/在哪用/核心流程/本期边界，
+      见 rehearsal_control._SPEC_DIMENSIONS）——因为那时候还没人开始画，
+      更细的分叉根本还不存在。
+
+      而真正会让产品长得不一样的分叉——员工登录用手机号还是工号、审批一级
+      还是两级、库存扣减在下单时还是发货时——是**画到这一步才浮出来的**。
+      它们此前一直是静默的：模型自己定了，一个字都不说，用户十分钟后打开
+      成品才发现做错了，然后从头精修一轮。
+
+      这个字段就是那句没说出口的话。**它不拦**：模型该怎么定还怎么定，
+      spec 照常往下走，只是把定的内容如实报出来，前端非阻塞地摆在旁边，
+      用户想改就接进中途排队（本轮结束自动发出）。
+      "报出来"是增强，坏了不许拖垮主链路 → 见 _sanitize_assumptions。
+    """
+
+    id: str
+    #: 这件事是什么。人话短语，「员工怎么登录」不是「认证方案」。
+    topic: str
+    #: 你定成了什么。「手机号 + 短信验证码」。
+    decision: str
+    #: 这个行业里真的会有人选的其他做法。前端把它们摆成可点的选项。
+    alternatives: list[str] = Field(default_factory=list)
+    #: 为什么这么定。一句话。
+    why: str = ""
+
+    @field_validator("id", "topic", "decision")
+    @classmethod
+    def not_blank(cls, v: str) -> str:
+        if not (v or "").strip():
+            raise ValueError("假设的 id / topic / decision 都不能为空")
+        return v.strip()
+
+
 class SpecNode(BaseModel):
     """规格树的一个节点。四种类型各有自己的必填字段——空壳节点不算数。"""
 
@@ -215,6 +254,17 @@ class SpecTree(BaseModel):
     #: None 与 [] 语义不同，别混：None = 模型没声明（老 spec、非精修、或它没答），
     #: 按"不知道"处理，一段都不敢沿用；[] = 模型明确说"一段都没碰"，全部沿用。
     refineScope: list[str] | None = None
+    #: 起草这一份时**替用户定了**的事（伴随式澄清，2026-08-27 加）。
+    #:
+    #: 跟 refineScope 同一个模子：**声明，不是执行**。它不改变 spec 本身，
+    #: 也不拦任何一步；只是让"我替你定了什么"这件事从静默变成看得见。
+    #: 真正的消费在 spec_first_pipeline 的假设出口（assumption sink）→ SSE →
+    #: 前端非阻塞面板 → 用户改哪条就进中途排队。
+    #:
+    #: ⚠ 校验**故意宽松**（整个字段可缺、可空）。它属于增强类，
+    #:   一份好 spec 不许因为附带的假设写歪了就整轮失败（本仓第七条）。
+    #:   脏数据在 _sanitize_assumptions 里进模型**之前**就被剥掉了。
+    assumptions: list[SpecAssumption] | None = None
 
     @field_validator("appName")
     @classmethod
@@ -609,6 +659,45 @@ def _format_skeleton_prior(skeleton: Optional[dict], *, device: str = "desktop")
     return "\n".join(lines)
 
 
+#: 让 SPEC 步顺带把「我替用户定了什么」说出来（伴随式澄清，2026-08-27）。
+#:
+#: ⚠ 为什么挂在这一次调用上，而不是另起一次 LLM 去"找找有什么该问的"：
+#:   替用户做决定的**就是这一步**。让做决定的人当场说出他定了什么，
+#:   跟事后让另一个模型去猜"刚才那份 spec 里哪些是拍的"，可靠性差一个量级，
+#:   而且后者还要多花一次调用、多等十几秒——这一步本来就要 60~90 秒。
+#:   同样的判断在 refineScope 上已经做过一次（见 SpecTree.refineScope 头注）。
+#:
+#: ⚠ 措辞盯的是「**改了产品会长得不一样**」，不是「不确定」。第一版写的是
+#:   「凡是你不确定的都列出来」，模型会老老实实列出配色、字号、分页条数——
+#:   那些下游自己会定，摆到用户面前只是噪音。
+_ASSUMPTIONS_ASK = """最后，请在 JSON 顶层再加一个 assumptions 字段：
+
+{
+  "assumptions": [
+    {"id": "a1",
+     "topic": "员工怎么登录",
+     "decision": "手机号 + 短信验证码",
+     "alternatives": ["工号 + 密码", "企业微信扫码"],
+     "why": "需求里没说员工身份从哪来，按最通用的做法定的"}
+  ]
+}
+
+它记的是：**这句需求没说、而你必须定下来才画得下去、并且换一个定法这个产品
+就会长得不一样**的事。判断标准就一条——「改成另一个选项，界面/流程/角色要跟着改吗」：
+
+- 算：登录与身份从哪来、角色怎么划分、核心流程有几步（审批一级还是两级）、
+  关键数据什么时候变（库存下单扣还是发货扣）、钱和权限的口径。
+- 不算：配色、字号、分页每页几条、按钮文案、图标选哪个。这些下游自己会定，
+  列出来只是噪音。
+- 也不算：需求里**已经说清楚**的事。用户说了「给护士用」就不要再假设使用者是谁。
+
+alternatives 写这个行业里**真的会有人选**的另一两种做法，不要为了凑数编。
+最多 3 条，宁可少写。一条都没有（需求足够清楚，你没替谁定过什么）就给 []。
+
+⚠ 这不是在问问题，也不会打断你——你该怎么定还怎么定，spec 照常写完整。
+   这个字段只是把你已经做的决定如实说出来。"""
+
+
 def build_spec_prompt(
     goal: str,
     *,
@@ -798,10 +887,77 @@ def build_spec_prompt(
             '"name": "列表（底栏短名，2~4字，不要带页）"',
         )
         parts.append(_PHONE_SPEC_IA)
+    # ⚠ 伴随式澄清这一段**必须挂在最后**，不能跟着 JSON 形状那块一起 append。
+    #   上面手机分支改的是 `parts[-1]`——一个**按位置**认人的写法。第一版把这
+    #   段接在 JSON 块后面，`parts[-1]` 当场变成了它，于是「每一页的侧栏上 →
+    #   顶栏上」和页面短名那两针**全打在这段假设说明上**，手机 SPEC 提示词
+    #   静静地退回桌面措辞：不报错、不告警，只有 test_spec_tree 的两条设备判据
+    #   会红。（本仓第一条：动手之前先确认哪条链真的在跑，位置也是一种链。）
+    parts.append(_ASSUMPTIONS_ASK)
     return [
         {"role": "system", "content": _SYSTEM},
         {"role": "user", "content": "\n\n".join(parts)},
     ]
+
+
+def _sanitize_assumptions(payload: Any) -> None:
+    """把 assumptions 洗干净（原地改），洗不出东西就整个键删掉。
+
+    ⚠ **在校验之前**跑，这是它存在的全部理由。assumptions 属于增强类
+      （本仓第七条）：一份 pages / nodes / 判据全对的 spec，不许因为顺带
+      报出来的假设少写了一个 decision 就整轮失败、白烧 90 秒重问。
+      让 SpecAssumption 保持严格 + 在这里先剥脏行，比把模型字段放宽好——
+      放宽等于允许空壳假设一路流到用户面前（「我替你定了：」后面什么都没有）。
+
+    ⚠ 不重问。模型把 assumptions 写歪了就当它没写，别为一个附带字段
+      去转 reask——那一转是整份 spec 重来。
+    """
+    if not isinstance(payload, dict):
+        return
+    raw = payload.get("assumptions")
+    if raw is None:
+        return
+    cleaned: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for i, row in enumerate(raw if isinstance(raw, list) else []):
+        if not isinstance(row, dict):
+            continue
+        topic = str(row.get("topic") or "").strip()
+        decision = str(row.get("decision") or "").strip()
+        if not topic or not decision:
+            continue
+        # 同一个 topic 报两遍 = 同一件事说两次，面板上是两张一样的卡
+        key = topic.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        # ⚠ 必须先判 list。模型把 alternatives 写成一个字符串（"工号或扫码"）
+        #   是真会发生的，而字符串**是可迭代的**——不判就逐字符拆成
+        #   ["工","号","或","扫","码"] 摆到用户面前，一个字一个选项。
+        #   判据 test_脏假设不许把一份好spec拖去重问 当场咬到了这一口。
+        raw_alts = row.get("alternatives")
+        alts = [
+            str(a).strip()[:60]
+            for a in (raw_alts if isinstance(raw_alts, list) else [])
+            if isinstance(a, (str, int, float)) and str(a).strip()
+        ]
+        # 「另一种做法」跟已定的那个一模一样 = 点了等于没改
+        alts = [a for a in alts if a != decision][:4]
+        cleaned.append(
+            {
+                "id": str(row.get("id") or "").strip() or f"a{i + 1}",
+                "topic": topic[:40],
+                "decision": decision[:120],
+                "alternatives": alts,
+                "why": str(row.get("why") or "").strip()[:160],
+            }
+        )
+        if len(cleaned) >= 3:
+            break
+    if cleaned:
+        payload["assumptions"] = cleaned
+    else:
+        payload.pop("assumptions", None)
 
 
 def _sanitize_phone_page_names(payload: Any) -> None:
@@ -912,6 +1068,7 @@ def generate_spec_tree(
             if outcome.transport:
                 break
         else:
+            _sanitize_assumptions(payload)
             if device == "phone":
                 _sanitize_phone_page_names(payload)
             if frozen_ids:

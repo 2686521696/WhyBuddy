@@ -17,7 +17,7 @@
 import { chromium } from "playwright";
 import fs from "node:fs";
 
-const BASE = "http://localhost:3000";
+const BASE = process.env.E2E_BASE || "http://localhost:3000";
 const OUT = process.env.E2E_SHOT_DIR || ".manus-logs/e2e-shots";
 const TOPIC =
   process.env.E2E_TOPIC ||
@@ -87,8 +87,45 @@ try {
   await page.click('[data-testid="sliderule-composer-send"]');
   log("已发送，等范围卡…");
 
-  // 控制面：无范围卡不点火 —— 先出卡
-  await page.waitForSelector('[data-testid="sliderule-scope-card"]', { timeout: 90000 });
+  /*
+   * 控制面：无范围卡不点火 —— 先出卡。
+   *
+   * ⚠ 2026-08-27：先出的**不一定**是范围卡。控制面现在会先问一轮澄清
+   *   （A/B：问题从这句需求里长出来），真机上这一趟出的是
+   *   「连锁药店的巡检项通常是怎么来的？」。旧脚本只等 scope-card，
+   *   90 秒超时退出——看起来像"控制面那条链断了"，其实是它**正常工作**
+   *   走了另一支。等两张卡里的任意一张，是澄清就答完再等范围卡。
+   */
+  await page.waitForSelector(
+    '[data-testid="sliderule-scope-card"], [data-testid="sliderule-clarification-card"]',
+    { timeout: 120000 }
+  );
+  if (await page.locator('[data-testid="sliderule-clarification-card"]').count()) {
+    log("先出的是澄清卡（控制面按这句需求生成的问题），逐题作答…");
+    await shot(page, "澄清卡");
+    for (let step = 0; step < 4; step += 1) {
+      const other = page.locator('[data-testid="sliderule-clarification-other"]');
+      const free = page.locator('[data-testid="sliderule-clarification-text"]');
+      const q = await page
+        .locator('[data-testid="sliderule-clarification-card"] h3, [data-testid="sliderule-clarification-card"]')
+        .first()
+        .textContent()
+        .catch(() => "");
+      log("  澄清题:", (q || "").trim().slice(0, 60).replace(/\s+/g, " "));
+      if (await other.count()) await other.fill("总部统一配发标准清单，门店按清单逐项打勾");
+      else if (await free.count()) await free.fill("总部统一配发标准清单，门店按清单逐项打勾");
+      const next = page.locator('[data-testid="sliderule-clarification-next"]');
+      if (await next.count()) {
+        await next.click();
+        await page.waitForTimeout(500);
+        continue;
+      }
+      await page.click('[data-testid="sliderule-clarification-submit"]');
+      break;
+    }
+    log("澄清已提交，等范围卡…");
+    await page.waitForSelector('[data-testid="sliderule-scope-card"]', { timeout: 120000 });
+  }
   await page.waitForTimeout(1200);
   const restate = await page
     .locator('[data-testid="sliderule-scope-restatement"]')
@@ -103,6 +140,14 @@ try {
 
   let lastText = "";
   let done = false;
+  /*
+   * 伴随式澄清（2026-08-27）：spec-first 第 2 步会把「我替你定了什么」
+   * 推上流。它**不拦**推演，所以这里只观察 + 点一下，不改变主流程节奏。
+   *
+   * ⚠ 判据落在人眼看得见的东西上：面板出没出、点了「改成 X」之后那句话
+   *   有没有真的出现在**排队条**里。不查内部状态——本仓第五条。
+   */
+  let sawAssumptions = false;
   while (Date.now() - started < DEADLINE_MS) {
     await page.waitForTimeout(20000);
     const secs = Math.round((Date.now() - started) / 1000);
@@ -129,6 +174,35 @@ try {
     if (line !== lastText) { log(line); lastText = line; }
     if (secs % 60 < 21) await shot(page, `推演-${secs}s`);
     if (state.interrupted) { log("!! 出现「推演中断」"); await shot(page, `中断-${secs}s`); break; }
+
+    if (!sawAssumptions && (await page.locator('[data-testid="sliderule-assumptions"]').count())) {
+      sawAssumptions = true;
+      const rows = await page.evaluate(() =>
+        [...document.querySelectorAll('[data-testid="sliderule-assumption"]')].map(
+          e => (e.textContent || "").trim().slice(0, 90)
+        )
+      );
+      log(`伴随式澄清出现（${secs}s，第 2 步之后）：`);
+      for (const r of rows) log("   ·", r);
+      await shot(page, `假设面板-${secs}s`);
+
+      const revise = page.locator('[data-testid="sliderule-assumption-revise"]').first();
+      if (await revise.count()) {
+        const label = (await revise.textContent()) || "";
+        await revise.click();
+        await page.waitForTimeout(800);
+        const queued = await page.evaluate(() =>
+          [...document.querySelectorAll('[data-testid="sliderule-queued-turn"]')].map(
+            e => (e.textContent || "").trim()
+          )
+        );
+        log(`点了「${label.trim()}」→ 排队条现在有 ${queued.length} 条：`, queued);
+        await shot(page, `改一条进排队-${secs}s`);
+        if (queued.length === 0) log("!! 点了个寂寞——那句话没进排队条");
+      } else {
+        log("这一轮的假设没有备选做法（模型只是知会一声），跳过点击");
+      }
+    }
     /*
      * ⚠ 完成判定**只看六步钟和闭环徽标**，不许 grep 整页文字。
      *
@@ -157,6 +231,7 @@ try {
   await shot(page, done ? "完成" : "收尾");
   const body = await page.evaluate(() => document.body.innerText.slice(0, 1200));
   fs.writeFileSync(`${OUT}/final-text.txt`, body, "utf8");
+  log("伴随式澄清面板:", sawAssumptions ? "出现过" : "整轮没出现");
   log("页面错误:", errors.length ? errors.slice(0, 3) : "无");
 } finally {
   await b.close();

@@ -116,6 +116,47 @@ def set_page_sink(sink: Optional[Callable[..., None]]) -> None:
     _page_sink_var.set(sink)
 
 
+#: 假设出口（伴随式澄清，2026-08-27）。第 2 步刚起草完 spec 就把
+#: 「我替你定了什么」推出去，**不等整轮跑完**。
+#:
+#: ⚠ 为什么必须是这条实时通道，而不是从 run_spec_first 的返回值里读：
+#:   返回值要等**整条管道**跑完——真机实测第 3 步画页 3~4 分钟、第 6 步
+#:   打孔 4~10 分钟，加起来十分钟开外。而这些假设是第 2 步（第 1~2 分钟）
+#:   就已经定死的，后面每一页都建在它们上面。等十分钟再告诉用户
+#:   「刚才我把登录定成手机号了」，那不叫伴随式澄清，那叫事后通知——
+#:   用户唯一能做的就是整轮重来。
+#:
+#: 跟 _page_sink_var 同一个模子（ContextVar 不是模块属性，多租户串台的
+#: 理由见那一条头注），装卸也在同一处。
+_assumption_sink_var: ContextVar[Optional[Callable[..., None]]] = ContextVar(
+    "sliderule_spec_first_assumption_sink", default=None
+)
+
+
+def set_assumption_sink(sink: Optional[Callable[..., None]]) -> None:
+    """装/卸假设出口。驱动器在流开始时装、finally 里卸。"""
+    _assumption_sink_var.set(sink)
+
+
+def _emit_assumptions(spec: Any) -> None:
+    """把这一份 spec 里的假设推给出口。**整条 fail-open**。
+
+    ⚠ 本仓第七条：这是增强类。出口没装（脚本方言、测试、老调用方）、
+      推的时候炸了、spec 里根本没有 assumptions——三种情况都必须让
+      推演照常往下跑。一次"顺路说一声"不许有能力打死一条已经跑了两分钟的链。
+    """
+    sink = _assumption_sink_var.get()
+    if sink is None:
+        return
+    try:
+        rows = (spec or {}).get("assumptions") if isinstance(spec, dict) else None
+        if not rows:
+            return
+        sink(list(rows))
+    except Exception as exc:  # noqa: BLE001 — 见 docstring
+        _safe_print(f"[spec_first_pipeline] 假设出口异常（fail-open，不拦推演）：{exc}")
+
+
 #: 本轮跑出来的整页 HTML，供**调用方落库**用。
 #:
 #: 为什么要这么一个暂存而不是从返回值里拿：主轴那一处
@@ -1341,6 +1382,12 @@ def run_spec_first(
         if spec is not None:
             _held_spec = True
             with _stage("specfirst.spec") as st:
+                # ⚠ 这一支**故意不发假设**（伴随式澄清，2026-08-27）。别照着
+                #   下面那支补上去：这里的 spec 是**从上一版沿用**来的，本轮
+                #   没有任何模型替用户重新定过什么。沿用的那份里带着上一轮的
+                #   assumptions，再发一遍就是每轮精修都弹同一张
+                #   「我替你定了登录方式」——用户上一轮已经看过并且默认了。
+                #   没有新决定 = 没有新假设。
                 st["held"] = 1
                 st["patched"] = 1
                 st["pages"] = len(spec.get("pages") or [])
@@ -1390,6 +1437,9 @@ def run_spec_first(
             if skeleton:
                 st["appTemplate"] = str(skeleton.get("id") or "")
             spec = spec_model.model_dump(mode="json") if hasattr(spec_model, "model_dump") else spec_model
+            # 伴随式澄清：这一步刚替用户定下的事，**当场**推给前端，
+            # 不等后面 8 分钟的画页和打孔（理由见 _assumption_sink_var 头注）。
+            _emit_assumptions(spec)
             # ★ 结构拨回（2026-08-18 过夜）：提示词冻结求不动。必须在
             #   spec_pages_declared 取值之前——图判、照搬、画页、风格复用
             #   全都拿那份清单当键。拨完再取，键才对得上上一版。

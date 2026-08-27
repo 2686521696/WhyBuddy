@@ -85,6 +85,12 @@ import {
   mergeQueuedTurns,
   removeQueued,
 } from "./midrun-queue";
+import {
+  mergeAssumptions,
+  revisePhrase,
+  settleAssumption,
+  type SpecAssumption,
+} from "./spec-assumptions";
 
 /** 昂贵按钮的 forcedTool。/推演 不得在客户端带 rehearse——未确认卡由服务端 park。 */
 export function inferForcedTool(
@@ -357,6 +363,49 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     queuedTurnRef.current = next;
     setQueuedTurns(next);
   }, []);
+  /**
+   * 伴随式澄清：推演中模型**替用户定下的事**（2026-08-27）。
+   *
+   * 跟上面那条队列是同一件事的两个方向：队列是「用户 → AI」（我补一句），
+   * 这个是「AI → 用户」（我替你定了这个）。所以放在一起，改一个必看另一个。
+   *
+   * ⚠ 它**不产生等待**。没有 pending、没有 blocking，用户可以从头到尾
+   *   什么都不点——不点就是按模型定的做，那是个合法结局。
+   *   一旦哪天有人给它加上"必须处理完才能继续"，伴随式就退回成了拦路的问答，
+   *   而闸的 fail-closed 语义会当场跟着炸（见 spec-assumptions.ts 头注）。
+   */
+  const specAssumptionsRef = useRef<SpecAssumption[]>([]);
+  const [specAssumptions, setSpecAssumptions] = useState<SpecAssumption[]>([]);
+  /**
+   * ref + state 一起写，跟上面那条队列同一个模子：ref 同步、state 只负责渲染。
+   *
+   * ⚠ 别把 pushQueuedTurn 写进 setState 的 updater 里（第一版就是）。
+   *   updater 必须是纯函数，StrictMode 下 React 会**故意调用两次**来暴露副作用——
+   *   那一次就是往队列里排了两句一模一样的补充。
+   */
+  const applySpecAssumptions = useCallback((next: SpecAssumption[]) => {
+    specAssumptionsRef.current = next;
+    setSpecAssumptions(next);
+  }, []);
+  /** 「就这样」：知道了，不改。只是把卡收走，不发任何东西给后端。 */
+  const settleSpecAssumption = useCallback(
+    (id: string) => {
+      applySpecAssumptions(settleAssumption(specAssumptionsRef.current, id));
+    },
+    [applySpecAssumptions]
+  );
+  /** 「改成 X」：把这条改动排进中途排队（本轮结束自动发出），并收走卡。 */
+  const reviseSpecAssumption = useCallback(
+    (id: string, alternative: string) => {
+      const row = specAssumptionsRef.current.find(r => r.id === id);
+      if (!row) return;
+      const phrase = revisePhrase(row, alternative);
+      if (!phrase) return;
+      pushQueuedTurn(phrase);
+      applySpecAssumptions(settleAssumption(specAssumptionsRef.current, id));
+    },
+    [applySpecAssumptions]
+  );
   const requestRehearsalRef = useRef<
     (userText: string) => Promise<void>
   >(async () => {});
@@ -1141,6 +1190,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           // ⚠ 新一轮清空：不清的话右侧会先亮上一轮的页面，而用户刚说的是
           //   "改成 XXX"——看着像改完了，其实一个字都还没动。
           setSpecPages([]);
+          // 伴随式澄清同理：上一轮"我替你定了手机号"是对上一份 spec 说的，
+          // 这一轮重新起草会重新定一遍。不清的话用户会对着一张过期的卡
+          // 点「改成工号」，而那句话排进的是**下一轮**——改的是已经不存在的决定。
+          applySpecAssumptions([]);
           // 每一步 LLM 想法各自缓冲：并行批里不同能力的增量交织到达，
           // 按标签分开累积，展示最近更新的那条（不互相覆盖内容）。
           const llmDraftBuffers = new Map<string, string>();
@@ -1262,6 +1315,13 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                     label,
                     text,
                   }))
+                );
+              },
+              onSpecAssumptions: items => {
+                // 按 id 并（不是追加）：续播会把同一条再送一遍，
+                // 理由见 spec-assumptions.mergeAssumptions 头注。
+                applySpecAssumptions(
+                  mergeAssumptions(specAssumptionsRef.current, items)
                 );
               },
               onSpecPage: page => {
@@ -2368,9 +2428,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     /* 重置会话必须清队列——遗留的补充会劫持后来无关的一发 */
     queuedTurnRef.current = [];
     setQueuedTurns([]);
+    /* 假设面板同理：上一个会话的「我替你定了手机号」留在屏幕上，
+       用户在新会话里点「改成工号」，那句话会排进一个跟它毫不相干的应用 */
+    applySpecAssumptions([]);
     clearPendingScope();
     setPendingAsk(null);
-  }, [isRunning, sessionState.sessionId, sessionId, options.initialGoal]);
+  }, [isRunning, sessionState.sessionId, sessionId, options.initialGoal, applySpecAssumptions]);
 
   // G_READY clarification cards: unanswered open_question gaps with V4-style structured options.
   const pendingClarifications = useMemo<ClarificationItem[]>(() => {
@@ -2432,6 +2495,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     /** 推演中补的话（排队到下一轮）。看得见、撤得掉——见 midrun-queue 头注。 */
     queuedTurns,
     removeQueuedTurn,
+    specAssumptions,
+    settleSpecAssumption,
+    reviseSpecAssumption,
     generateDeliverables,
     isRunning,
     /** 版本切换请求在飞。名字带 Version 是给消费方看的——那边同名 prop 直传按钮。 */

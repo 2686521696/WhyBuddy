@@ -273,6 +273,22 @@ export interface DriveFullStreamOpts {
     /** desktop 横屏 1920×1080 / phone 竖屏 390×844 CSS 像素——画布视口据此选。 */
     device: "desktop" | "phone";
   }) => void;
+  /** 伴随式澄清：spec-first 第 2 步**替用户定下的事**（2026-08-27）。
+   *
+   *  它不是提问，不阻塞，也不需要回答。推演照常往下跑，这些只是把模型
+   *  已经做的决定摊开——「员工登录我定成了手机号，也可以是工号」。
+   *  用户改哪条，就把那条改动接进中途排队（本轮结束自动发出），
+   *  走的是已经验证过的「用户 → AI」那条路，不新开通道。
+   *
+   *  ⚠ 第 2 步在整轮的第 1~2 分钟，而整轮 8~10 分钟。这个回调存在的全部
+   *  理由就是别等到最后——那时候用户唯一能做的只剩整轮重来。 */
+  onSpecAssumptions?: (items: Array<{
+    id: string;
+    topic: string;
+    decision: string;
+    alternatives: string[];
+    why: string;
+  }>) => void;
   /** E25：后端 run id（事件里首见即回调一次）——客户端记书签供刷新后续播。 */
   onRunId?: (runId: string) => void;
   /** E25：仅当服务端亲口宣布 run 终局（complete / run_cancelled / error
@@ -447,6 +463,27 @@ function applyFactoryStreamEvent(
         });
       }
       return "continue";
+    case "spec_assumption": {
+      // 服务端已经洗过一遍（spec_tree._sanitize_assumptions）。这里再洗一次
+      // 不是不信任它，是这条流也接老后端 / 续播缓存——形状不对宁可少渲染
+      // 一张卡，不许把 undefined 摊到面板上。
+      const rows: unknown[] = Array.isArray(event.items) ? event.items : [];
+      const items = (rows.filter(
+        (r) => !!r && typeof r === "object",
+      ) as Array<Record<string, unknown>>)
+        .map((r: Record<string, unknown>, i: number) => ({
+          id: String(r.id || `a${i + 1}`),
+          topic: String(r.topic || "").trim(),
+          decision: String(r.decision || "").trim(),
+          alternatives: (Array.isArray(r.alternatives) ? r.alternatives : [])
+            .map((a: unknown) => String(a || "").trim())
+            .filter(Boolean),
+          why: String(r.why || "").trim(),
+        }))
+        .filter((r: { topic: string; decision: string }) => r.topic && r.decision);
+      if (items.length > 0) opts.onSpecAssumptions?.(items);
+      return "continue";
+    }
     case "skill_start":
       opts.onSkillActivated?.(event.skill as SkillId, event.label as string);
       return "continue";

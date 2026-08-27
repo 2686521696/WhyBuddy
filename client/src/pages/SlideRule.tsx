@@ -90,6 +90,7 @@ import {
 } from "./sliderule/ClarificationCard";
 import { DeliverablesPanel } from "./sliderule/DeliverablesPanel";
 import { ComposerDock } from "./sliderule/ComposerDock";
+import type { SpecAssumption } from "./sliderule/spec-assumptions";
 import { dispatchChallengePrefill } from "./sliderule/challenge-composer";
 import { DesignSystemPanelProvider } from "./sliderule/DesignSystemContext";
 import { HomeInspiration } from "./sliderule/home-inspiration";
@@ -993,6 +994,9 @@ function SlideRuleUnified({
   pendingAsk = null,
   queuedTurns = [],
   removeQueuedTurn,
+  specAssumptions = [],
+  settleSpecAssumption,
+  reviseSpecAssumption,
   confirmControlScope,
   dismissScopeCard,
   dismissAsk,
@@ -1060,6 +1064,10 @@ function SlideRuleUnified({
   /** 推演中补的话（排队到下一轮）。看得见、撤得掉——见 midrun-queue 头注。 */
   queuedTurns?: string[];
   removeQueuedTurn?: (index: number) => void;
+  /** 伴随式澄清：推演中模型替用户定下的事。不拦、不等——见 AssumptionStrip 头注。 */
+  specAssumptions?: SpecAssumption[];
+  settleSpecAssumption?: (id: string) => void;
+  reviseSpecAssumption?: (id: string, alternative: string) => void;
   pendingClarifications?: ClarificationItem[];
   answerClarifications?: (
     answers: Array<{ gapId: string; answer: string }>
@@ -1252,6 +1260,9 @@ function SlideRuleUnified({
                         onAnswerAsk={text => sendMessage(text)}
                         queuedTurns={queuedTurns}
                         onRemoveQueued={removeQueuedTurn}
+                        specAssumptions={specAssumptions}
+                        onSettleAssumption={settleSpecAssumption}
+                        onReviseAssumption={reviseSpecAssumption}
                       />
                     }
                     clarifySlot={
@@ -1795,6 +1806,9 @@ function SlideRuleSessionBody({
     pendingAsk,
     queuedTurns,
     removeQueuedTurn,
+    specAssumptions,
+    settleSpecAssumption,
+    reviseSpecAssumption,
     confirmControlScope,
     dismissScopeCard,
     dismissAsk,
@@ -2249,6 +2263,9 @@ function SlideRuleSessionBody({
     pendingAsk,
     queuedTurns,
     removeQueuedTurn,
+    specAssumptions,
+    settleSpecAssumption,
+    reviseSpecAssumption,
     confirmControlScope,
     dismissScopeCard,
     dismissAsk,
