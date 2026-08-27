@@ -180,6 +180,70 @@ def assert_may_write_model() -> None:
         )
 
 
+def _has_model(state: V5SessionState) -> bool:
+    """这个会话里已经有一份可精修 / 可分叉 / 可回退的模型吗。"""
+    return bool(getattr(state, "modelVersions", None) or [])
+
+
+# 按轮的清单谓词。**只列需要裁的**——没声明的一律列出
+# （grok 的 `should_list` 默认 true）。
+#
+# 抄的标准答案：grok-build `xai-tool-runtime/src/tool.rs`
+#     /// Per-turn listing predicate. Return `false` to exclude this tool
+#     /// from the model-facing manifest for a given turn.
+#     fn should_list(&self, _ctx: &ListToolsContext) -> bool { true }
+#
+# 比「闭集 + 分发时拒绝」强一档：模型**看不见**的工具不用写规则拒绝。
+# 下面每条都对应分发器里一段现成的防御性重定向——那正是"本来就不该被
+# 列出"的证据：不裁的话每次都要先让模型挑一次、再被服务端纠正一次。
+TOOL_LIST_WHEN: Dict[str, Any] = {
+    # 未确认范围时 rehearse 会被 re-park（见 _dispatch_tool 的 rehearse 分支）。
+    # 「开始推演」按钮走 forcedTool 绕过 LLM（KD21），裁掉不影响用户点火。
+    "rehearse": lambda st: _scope_confirmed(st),
+    # 问过一轮再问就改开范围卡（见 clarify 分支）。
+    "clarify": lambda st: _clarify_rounds_done(st) < 1,
+    # 没有上一版可回（_previous_model_version_id fail-closed 返回 ""）。
+    "restore_version": lambda st: bool(_previous_model_version_id(st)),
+    # ⚠ refine / fork_variant 在空会话上无事可做，而 refine 的分发分支
+    #   **没有** rehearse 那样的 _scope_confirmed 兜底：实测夹具让模型在
+    #   空 goal 会话上挑 refine，工厂信封被调 1 次、零范围卡就点了火
+    #   （违反验收 A / KD4）。裁清单 + 分发兜底两处一起补。
+    "refine": lambda st: _has_model(st),
+    "fork_variant": lambda st: _has_model(st),
+}
+
+
+def should_list_tool(name: Any, state: V5SessionState) -> bool:
+    """这一轮要不要把这个工具摆给模型看。没声明谓词的一律列出。"""
+    pred = TOOL_LIST_WHEN.get(str(name or "").strip())
+    if pred is None:
+        return True
+    try:
+        return bool(pred(state))
+    except Exception:
+        # 谓词自己炸了不许把工具吞掉：清单是增强，不是闸（闸在 ToolScope）。
+        return True
+
+
+def list_control_tools(state: V5SessionState) -> List[Dict[str, Any]]:
+    """本回合摆给模型的工具清单。原样透传定义，只做裁剪。
+
+    ⚠ 永不为空：全裁光了模型无事可做，比多列一个更糟。兜底留下
+      ask_user / scope_card——"问一句"和"开范围卡"在任何状态都做得成。
+    """
+    listed = [
+        t
+        for t in CONTROL_TOOLS
+        if should_list_tool(((t.get("function") or {}).get("name")), state)
+    ]
+    if listed:
+        return listed
+    floor = {"ask_user", "scope_card"}
+    return [
+        t for t in CONTROL_TOOLS if ((t.get("function") or {}).get("name")) in floor
+    ]
+
+
 # 客户端认得的**终局事件**。少了它们，`consumeControlStreamResponse` 的
 # `acc.finalState` 一直是 null → `postControlTurnStream` 返回 null →
 # `runTurn` 抛「控制面未返回结果」，然后 catch 里把**这一轮开始前的快照**
@@ -1506,7 +1570,7 @@ async def _run_control_turn_body(
             # ⚠ 同步 httpx（超时最长 45s）。不挪出事件循环的话，一个人的
             #   控制面轮次会把所有并发的 SSE 流一起冻住——见 _apersist 的头注。
             result = await run_in_threadpool(
-                lambda: call_control_llm(messages, tools=CONTROL_TOOLS)
+                lambda: call_control_llm(messages, tools=list_control_tools(state))
             )
             cheap_tokens += _usage_tokens(getattr(result, "usage", None))
             if await _maybe_over_cap():
@@ -1695,6 +1759,20 @@ async def _dispatch_tool(
             yield event
         return
     if name == "refine":
+        # ⚠ 空会话没东西可精修。裁清单只是省一次往返，挡不住硬调/幻觉调用；
+        #   实测（探针）夹具让模型在空 goal 会话上挑 refine，工厂信封被调
+        #   1 次、零范围卡就点了火——违反验收 A「确认前 drive_full_* = 0」
+        #   与 KD4。rehearse 一直有 _scope_confirmed 兜底，refine 漏了。
+        if not _has_model(state):
+            async for event in _park_scope(
+                state,
+                _restate(user_text) or _restate(original_goal),
+                device=str(preferred_device or "unspecified"),
+                variant="thin" if original_goal else "full",
+                user_text=user_text,
+            ):
+                yield event
+            return
         goal = dict(state.goal) if isinstance(state.goal, dict) else {}
         goal["text"] = original_goal
         state.goal = goal
