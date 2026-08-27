@@ -5,7 +5,7 @@ import type {
 } from "@shared/blueprint/capability-process-labels";
 import * as SlideRuleRuntime from "@/lib/sliderule-runtime";
 import { fetchNarration } from "@/lib/sliderule-narrator";
-import { pickMainArtifactByKind } from "@shared/blueprint/sliderule-main-artifact";
+import { pickMainArtifact } from "./turn-main-artifact";
 import type {
   UserIntervention,
   V5SessionState,
@@ -300,17 +300,6 @@ function latestDledgerForTurn(
   return null;
 }
 
-function pickMainArtifact(committed: WhyArtifact[]): UiTurn["main"] {
-  const art = pickMainArtifactByKind(committed);
-  if (art) {
-    return {
-      artifactId: art.id,
-      kind: art.kind,
-      realLlm: Boolean(art.realLlm),
-    };
-  }
-  return null;
-}
 
 export type UseSlideRuleSessionOptions = {
   sessionId?: string;
