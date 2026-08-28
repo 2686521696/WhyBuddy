@@ -87,7 +87,7 @@ describe("反向判据", () => {
   });
 
   it("裁剪位移是设计坐标——布局侧不许先乘一遍 scale", () => {
-    expect(LAYOUT).toMatch(/left:\s*b\.rect\.left,/);
+    expect(LAYOUT).toMatch(/left:\s*it\.rect\.rect\.left,/);
     expect(LAYOUT).not.toContain("* scale,");
   });
 
@@ -97,12 +97,15 @@ describe("反向判据", () => {
     expect(STAGE).toMatch(/inViewport:\s*shouldMountBoard\(/);
   });
 
-  it("开块网格时画板多留列间距，且按**列数最多那页**算", () => {
-    // 按平均值留的话，列多的那页照样盖住右边那列画板；
+  it("开块网格时画板多留间距，且按**最宽那页的网格宽**算", () => {
+    // 按平均值留的话，宽的那页照样盖住右边那列画板；
     // 而"盖住了"在缩到 13% 的全景下只是"有点挤"，不报错。
-    expect(STAGE).toContain("blockGridExtraGapX(maxBlockCols)");
-    // ⚠ 留间距和摆网格必须用**同一条**规则算列数，各算各的会对不上
-    expect(STAGE).toContain("chooseBlockGridColumns(snap.rects, design.h)");
+    expect(STAGE).toContain("blockGridExtraGapX(maxBlockSpan)");
+    // ⚠ 留间距和摆网格必须走**同一个 plan**（blockGridSpan 内部就是
+    //   planBlockGrid），各算各的会对不上。
+    expect(STAGE).toContain("blockGridSpan(snap.rects, design.h)");
+    // 反向：不许再拿"列数 × 常数格宽"算——列宽现在各列各的，乘常数会留少
+    expect(STAGE).not.toContain("blockGridExtraGapX(maxBlockCols)");
   });
 
   it("⚠ 列数按「装得进画板高度」选，不是拍 √n", () => {
@@ -129,7 +132,20 @@ describe("反向判据", () => {
     // ⚠ 复用画板那套 pickLinkSides，**不另写一套**（第四条纪律）。
     expect(STAGE).toContain("pickLinkSides(fromBox, toBox)");
     expect(STAGE).toContain("pickLinkSides(b, board)");
-    expect(STAGE).not.toMatch(/sourceHandle:\s*"l",\s*\n\s*targetHandle:\s*"l"/);
+    expect(STAGE).not.toMatch(
+      /sourceHandle:\s*"l",\s*\n\s*targetHandle:\s*"l"/
+    );
+  });
+
+  it("⚠ 块宽按内容算，摆位和渲染共用同一份尺寸", () => {
+    // 2026-08-28 用户："太规矩了"。上一版所有块一律 440 宽，
+    // 通栏指标条和小卡在画布上一样宽。
+    expect(LAYOUT).toContain("export function computeBlockSize(");
+    expect(LAYOUT).toContain("titleBarWidth(blockTitleText(rect))");
+    // 反向：格宽常数没了（还留着就说明有人在读老的那份）
+    expect(LAYOUT).not.toMatch(/BLOCK_CELL[\s\S]{0,400}\n\s*width:\s*\d+,/);
+    // 反向：列偏移必须是前缀和，不许 i × 常数
+    expect(LAYOUT).toContain("cumulativeOffsets(colWidths, 0, BLOCK_CELL.gap)");
   });
 
   it("⚠ LOD 只管**标签**，线和块都不受它管", () => {
@@ -145,7 +161,9 @@ describe("反向判据", () => {
     expect(STAGE).not.toContain("blockDetailVisible");
     expect(STAGE).not.toContain("shouldDrawBlockDetail(vp.zoom)");
     // 反向：块节点的挂载也不许跟着 LOD 走
-    expect(STAGE).not.toMatch(/shouldDrawBlockDetail[\s\S]{0,80}blockBoxes\.map/);
+    expect(STAGE).not.toMatch(
+      /shouldDrawBlockDetail[\s\S]{0,80}blockBoxes\.map/
+    );
   });
 
   it("⚠ 连线走自定义曲线，不是 React Flow 自带的 bezier", () => {
@@ -156,14 +174,24 @@ describe("反向判据", () => {
     expect(STAGE).toContain("edgeTypes={edgeTypes}");
     expect(STAGE).toContain("buildCurvePath({");
     // 反向：块相关的边一条都不许再用自带的 bezier / straight
-    expect(STAGE).not.toMatch(/targetHandle: sides\.target,\s*\n\s*type: "bezier"/);
-    expect(STAGE).not.toMatch(/targetHandle: sides\.target,\s*\n\s*type: "straight"/);
+    expect(STAGE).not.toMatch(
+      /targetHandle: sides\.target,\s*\n\s*type: "bezier"/
+    );
+    expect(STAGE).not.toMatch(
+      /targetHandle: sides\.target,\s*\n\s*type: "straight"/
+    );
   });
 
   it("⚠ 归属线和影响线是**同一种**画法（同一张图别有两套手感）", () => {
-    const own = STAGE.slice(STAGE.indexOf("id: `own:"), STAGE.indexOf("id: `own:") + 400);
+    const own = STAGE.slice(
+      STAGE.indexOf("id: `own:"),
+      STAGE.indexOf("id: `own:") + 400
+    );
     expect(own).toContain('type: "blockCurve"');
-    const impact = STAGE.slice(STAGE.indexOf("id: e.id,"), STAGE.indexOf("id: e.id,") + 400);
+    const impact = STAGE.slice(
+      STAGE.indexOf("id: e.id,"),
+      STAGE.indexOf("id: e.id,") + 400
+    );
     expect(impact).toContain('type: "blockCurve"');
   });
 
@@ -189,7 +217,9 @@ describe("反向判据", () => {
     expect(m, "ALL_EDGE_STROKES 不见了——撞色判据失去依据").not.toBeNull();
 
     // 顺着这张表把颜色取出来（值是对别处常量的引用，所以在源码里解引用）
-    const kinds = [...m![1].matchAll(/(\w+):\s*([A-Z_]+|\w+)\.(\w+)(?:\.(\w+))?/g)];
+    const kinds = [
+      ...m![1].matchAll(/(\w+):\s*([A-Z_]+|\w+)\.(\w+)(?:\.(\w+))?/g),
+    ];
     expect(kinds.length).toBeGreaterThanOrEqual(7);
 
     const strokes = [...STAGE.matchAll(/stroke:\s*"(#[0-9a-fA-F]{3,8})"/g)].map(
@@ -197,9 +227,10 @@ describe("反向判据", () => {
     );
     expect(strokes.length).toBeGreaterThanOrEqual(7);
     const dup = strokes.filter((c, i) => strokes.indexOf(c) !== i);
-    expect(dup, `这些颜色被多种线共用：${[...new Set(dup)].join("、")}`).toEqual(
-      []
-    );
+    expect(
+      dup,
+      `这些颜色被多种线共用：${[...new Set(dup)].join("、")}`
+    ).toEqual([]);
   });
 
   it("⚠ 每种线都要在浅底上看得见——不许再调回淡色", () => {
@@ -228,8 +259,7 @@ describe("反向判据", () => {
       return 0.2126 * to(0) + 0.7152 * to(2) + 0.0722 * to(4);
     };
     const CANVAS_BG = lum("#f4f4f6");
-    const contrast = (c: string) =>
-      (CANVAS_BG + 0.05) / (lum(c) + 0.05);
+    const contrast = (c: string) => (CANVAS_BG + 0.05) / (lum(c) + 0.05);
 
     const strokes = [
       ...new Set(
@@ -256,9 +286,7 @@ describe("反向判据", () => {
 
   it("⚠ 归属线比所有影响线都更轻（不许跟影响线抢注意力）", () => {
     // 块本来就摆在它那张画板旁边，归属靠位置已经读得出来，线只是确认。
-    const own = STAGE.match(
-      /const OWNERSHIP_STYLE = \{([\s\S]*?)\} as const/
-    );
+    const own = STAGE.match(/const OWNERSHIP_STYLE = \{([\s\S]*?)\} as const/);
     expect(own).not.toBeNull();
     // ⚠ 更轻 = 比影响线细 + 虚线，**不是**细到看不见（2026-08-28 用户报
     //   "灰色都看不出来"，上一版是 1px #e2e8f0）。
@@ -282,6 +310,67 @@ describe("反向判据", () => {
     // 真机量到过：宿主传 "home"，这套应用里没有这一页，
     // 第 2 档筛出 0 块 —— 24 个节点全静态，看着像阶梯坏了。
     expect(STAGE).toContain("known.has(id)");
+  });
+
+  it("⚠ 标题条**永远画**，只有里面的字跟 LOD 收", () => {
+    /*
+     * 2026-08-28 用户："太平了"。上一版把整个标签挂在 LOD 上，而那条阈值
+     * 又算错了（见 blockDetailZoomThreshold 头注），结果**一次都没显示过**
+     * —— 画布上就是一排没有标题的白方块。
+     *
+     * ComfyUI 的 low_quality 丢的是文字/圆角/阴影，**形状和颜色照画**
+     * （LGraphCanvas.ts 那段 `shape == BOX || low_quality` 仍走填色 rect）。
+     */
+    const card = STAGE.indexOf('data-testid="sliderule-canvas-block-card"');
+    const title = STAGE.indexOf('data-testid="sliderule-canvas-block-title"');
+    expect(card).toBeGreaterThan(-1);
+    expect(title).toBeGreaterThan(card);
+    // 反向：卡片到标题条之间**不许**有 showDetail —— 有就说明色条也被收了
+    expect(STAGE.slice(card, title)).not.toContain("showDetail");
+    // 正向：标题条**里面**才是 showDetail 管的那半
+    expect(STAGE.slice(title, title + 900)).toContain("showDetail ? (");
+  });
+
+  it("⚠ 标题字号是画布单位，不反缩放（LOD 阈值才成立）", () => {
+    // 上一版 `fontSize: 11` + `scale(1/zoom)`，字号跟缩放无关，
+    // 而阈值公式里的 NODE_TEXT_SIZE 指的是图坐标字号 —— 阈值永远够不着。
+    const title = STAGE.indexOf('data-testid="sliderule-canvas-block-title"');
+    const seg = STAGE.slice(title, title + 1400);
+    expect(seg).toContain("fontSize: BLOCK_CHROME.titleFont");
+    expect(seg).not.toMatch(/fontSize:\s*\d+\s*,/);
+    /* 反向：浮在节点外面那个小色片没了（translateY(-100%) 是它的标志）。
+       ⚠ 只在 BlockNode 这一段里找——ElementSpot / AssetNode 的标签仍然是
+         那种浮层，全文件搜会把它们误判成没删干净。 */
+    const body = STAGE.slice(
+      STAGE.indexOf("function BlockNode("),
+      STAGE.indexOf("function AssetNode(")
+    );
+    expect(body.length).toBeGreaterThan(500);
+    expect(body).not.toContain("translateY(-100%)");
+  });
+
+  it("⚠ 标题条的高度和排布用的是**同一个**常数", () => {
+    // 渲染按 A 画、排布按 B 留位，标题条会压住上一块的内容 —— 不报错。
+    expect(STAGE).toContain("top: -BLOCK_CELL.labelBand");
+    expect(STAGE).toContain("height: BLOCK_CELL.labelBand + box.h");
+    expect(STAGE).toContain("height: BLOCK_CELL.labelBand,");
+  });
+
+  it("节点外观照 CARD 那套：圆角 + 分层投影 + 分隔线", () => {
+    expect(STAGE).toContain("borderRadius: BLOCK_CHROME.radius");
+    expect(STAGE).toContain("boxShadow: BLOCK_CHROME.shadow");
+    expect(STAGE).toContain("BLOCK_CHROME.separator");
+    // 反向：老的那条 4px 圆角 + 平投影不许还在块节点上
+    expect(STAGE).not.toMatch(
+      /sliderule-canvas-block-card[\s\S]{0,600}borderRadius:\s*4,/
+    );
+  });
+
+  it("⚠ 截断提示单独画，不是往标题后面追字", () => {
+    // 标题宽是按 blockTitleText 算出来的（computeSize 的 title_width），
+    // 往后面追字只会被 truncate 吃掉 —— "只显示上半截"这条提示自己被截断。
+    expect(STAGE).toContain('data-testid="sliderule-canvas-block-truncated"');
+    expect(STAGE).not.toContain('" ·只显示上半截"');
   });
 
   it("静态卡里的字**不反缩放**（外面那行标签才反缩放）", () => {

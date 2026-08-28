@@ -4,28 +4,41 @@
  * 最要紧的一条是**块的左上角对到节点原点**——裁剪参数一改块就飘，而飘了
  * 之后画布上仍然是"一排卡片"，看着完全正常。这是刀 2 最该被变异咬住的地方。
  *
- * 2026-08-28 改成 √n 网格（抄 ComfyUI_frontend useArrangeNodes 的 arrangeGrid，
- * 本地 clone commit 5d24e4e），判据跟着它的三条要害走：
- *   · 列数 = ceil(sqrt(n))，不是一长条
- *   · 逐行取**最大视觉高**，视觉高含标签带
- *   · 摆完把标签带加回去换成内容坐标
+ * 2026-08-28 第一轮改成瀑布流摆位（用户要"自由散布"的观感）。
+ *
+ * 2026-08-28 第二轮（用户："太规矩了，太平了"）把**格宽从常数改成按内容算**，
+ * 抄 ComfyUI `LGraphNode.computeSize()` 与 `useArrangeNodes.arrangeGrid`
+ * （本地 clone commit 5d24e4e）。判据跟着它的四条要害走：
+ *
+ *   · 宽度随内容变，不是一个常数     ← "太规矩"就是这条丢了
+ *   · 有下限（minWidth），没上限（上限只是量测溢出的护栏）
+ *   · **标题宽也参与取最大**（title_width 那一项）
+ *   · 每列各宽各的（colWidths + cumulativeOffsets），不是 i × 常数格宽
  */
 import { describe, expect, it } from "vitest";
 
 import {
   BLOCK_CELL,
+  BLOCK_CHROME,
+  BLOCK_SIZE,
   chooseBlockGridColumns,
+  computeBlockSize,
   MAX_BLOCK_COLS,
   blockGridExtraGapX,
   blockGridHeight,
-  blockGridWidth,
+  blockGridSpan,
+  blockTitleText,
   blockDetailZoomThreshold,
   layoutBlockNodes,
+  planBlockGrid,
   shouldDrawBlockDetail,
+  titleBarWidth,
+  titleTextWidth,
   BLOCK_LABEL_FONT_PX,
   MIN_READABLE_FONT_PX,
   BLOCK_KIND_TINT,
   blockKindTint,
+  colorChroma,
 } from "../block-node-layout";
 import { BLOCK_KINDS } from "../page-blocks";
 import type { BlockRect } from "../block-rects";
@@ -48,6 +61,169 @@ function rect(
   };
 }
 
+/** 排布用的宽度，跟被测代码同源取——判据不许自己另算一份格宽。 */
+const widthOf = (r: BlockRect, boardH = BOARD.h) =>
+  computeBlockSize(r, boardH).w;
+
+/**
+ * 真机量到的那 25 块的设计尺寸，**按页分组**（2026-08-28，
+ * 会话 sr-20260827212138）。标定用的原始数据，不是编的——见
+ * block-node-layout 里 BLOCK_SIZE 的头注。
+ *
+ * ⚠ 必须按页分组：网格是**逐页**排的，把 25 块当成一页会排出真机上不存在
+ *   的宽度，据此定的阈值也就跟真机对不上。
+ */
+const REAL_PAGES: [string, [string, number, number][]][] = [
+  [
+    "material_requisition_hall",
+    [
+      ["通栏指标条", 1616, 110],
+      ["全部物资", 1616, 107],
+      ["在库充足二", 1200, 307],
+      ["在库充足", 289, 307],
+      ["显示第", 1200, 48],
+      ["待提报申领清单", 400, 537],
+    ],
+  ],
+  [
+    "requisition_approval_center",
+    [
+      ["待我审批", 396, 103],
+      ["流转中单据", 396, 103],
+      ["本月已领结单", 396, 103],
+      ["已驳回单据", 396, 103],
+      ["领用单据列表", 1045, 818],
+      ["单据明细与审批决策", 563, 818],
+    ],
+  ],
+  [
+    "stock_in_out_verification",
+    [
+      ["今日待出库核销", 1632, 110],
+      ["扫码枪极速出库核验台", 1632, 606],
+      ["物资台账出入库实时流水", 1632, 585],
+    ],
+  ],
+  [
+    "material_ledger_management",
+    [
+      ["全公司在库总数", 1624, 109],
+      ["快速视图", 1624, 103],
+      ["全公司物资在库实时主台账", 1624, 679],
+    ],
+  ],
+  [
+    "dept_monthly_consumption_dashboard",
+    [
+      ["当月核销消耗总额", 394, 133],
+      ["最高领用频次部门", 394, 133],
+      ["高耗物资品类", 394, 133],
+      ["全员人均月消耗", 394, 133],
+      ["各部门月度领用金额对比", 941, 390],
+      ["物资分类消耗金额占比", 667, 390],
+      ["部门月度消耗聚合台账", 1624, 1242],
+    ],
+  ],
+];
+const realPageRects = REAL_PAGES.map(([, list]) =>
+  list.map(([n, w, h]) => rect(n, 0, 0, w, h))
+);
+const REAL: [string, number, number][] = REAL_PAGES.flatMap(([, l]) => l);
+const realRects = REAL.map(([n, w, h]) => rect(n, 0, 0, w, h));
+
+describe("⚠ 块宽按内容算（computeSize 口径）——这是「太规矩」那条", () => {
+  it("宽的块在画布上就是更宽：通栏条 ≠ 小卡", () => {
+    /*
+     * 上一版所有块一律 440，真机上 1616×110 的通栏指标条和 289×307 的小卡
+     * 在画布上一样宽——"这是通栏的、那是一小张"整个信息丢了。
+     * 变异：computeBlockSize 回一个常数，这条红。
+     */
+    const wide = widthOf(rect("通栏", 0, 0, 1616, 110));
+    const narrow = widthOf(rect("小卡", 0, 0, 289, 307));
+    expect(wide).toBeGreaterThan(narrow);
+    // 差得看得出来，不是差几个像素
+    expect(wide / narrow).toBeGreaterThan(2);
+  });
+
+  it("自然宽 = 设计宽 × designScale（在下限之上时严格成立）", () => {
+    const r = rect("甲", 0, 0, 1200, 300);
+    expect(widthOf(r)).toBeCloseTo(1200 * BLOCK_SIZE.designScale, 6);
+  });
+
+  it("⚠ 有下限：小块夹到 minWidth，不许缩成看不清的小色块", () => {
+    // 抄 `LiteGraph.NODE_WIDTH * (widgets ? 1.5 : 1)` 那条"有下限没上限"。
+    // 变异：去掉 minWidth 那一项，这条红——396 的指标卡会只有 198。
+    const tiny = rect("小", 0, 0, 200, 200);
+    expect(widthOf(tiny)).toBe(BLOCK_SIZE.minWidth);
+    expect(BLOCK_SIZE.minWidth).toBeGreaterThan(0);
+  });
+
+  it("⚠ 有上限护栏：量测溢出的超宽块不许把整张图撕开", () => {
+    // overflow 的表格能量出 3000+ 设计宽；折算后 1500+，比画板还宽。
+    const huge = rect("溢出表", 0, 0, 3600, 400);
+    expect(widthOf(huge)).toBe(BLOCK_SIZE.maxWidth);
+  });
+
+  it("⚠ 标题宽参与取最大（computeSize 的 title_width 那一项）", () => {
+    /*
+     * 名字长的块自己变宽，标题才不会被截断。
+     * 变异：把 titleBarWidth 那一项从 Math.max 里删掉，这条红——
+     *   删掉之后这块就是 minWidth（320），而它的标题要 500+。
+     */
+    const longName = rect(
+      "这是一个名字非常非常长的块用来撑宽标题条",
+      0,
+      0,
+      200,
+      200
+    );
+    const w = widthOf(longName);
+    expect(w).toBeGreaterThan(BLOCK_SIZE.minWidth);
+    expect(w).toBeGreaterThanOrEqual(titleBarWidth(blockTitleText(longName)));
+  });
+
+  it("⚠ 中文按全角量，不按 ComfyUI 那条 length×0.6", () => {
+    /*
+     * ComfyUI 没有 canvas 量测器时的兜底是 `font_size * text.length * 0.6`。
+     * 那条对中文短四成——照抄的话标题照样被截断，而这一层的目的恰恰是
+     * "让节点宽到装得下标题"。
+     * 变异：改成 text.length * 0.6 * fontPx，这条红。
+     */
+    const cjk = "物资台账出入库实时流水"; // 11 个全角
+    expect(titleTextWidth(cjk, 10)).toBeCloseTo(11 * 10, 6);
+    expect(titleTextWidth(cjk, 10)).toBeGreaterThan(cjk.length * 0.6 * 10);
+    // 西文仍按窄字算，别一刀切成全角
+    expect(titleTextWidth("abcdefghijk", 10)).toBeLessThan(
+      titleTextWidth(cjk, 10)
+    );
+  });
+
+  it("标题条留出左边那个点的位置（padLeft = 一个标题条高）", () => {
+    // computeSize 里 padLeft = NODE_TITLE_HEIGHT、padRight = padLeft*0.33。
+    expect(titleBarWidth("")).toBeCloseTo(BLOCK_CELL.labelBand * 1.33, 6);
+  });
+
+  it("⚠ 各块的缩放差被收窄（上一版差 4.1 倍，字号跟着差 4 倍）", () => {
+    /*
+     * 统一 440 宽时：289→440 是 1.52×，1632→440 是 0.27×，差 5.6 倍；
+     * 于是同一张图上小卡的字巨大、宽表的字看不见。
+     * 按内容算之后小块被放大、大块按 designScale，差应当明显收窄。
+     * 变异：回到统一格宽，这条红。
+     */
+    const scales = realRects.map(r => computeBlockSize(r, BOARD.h).scale);
+    const spread = Math.max(...scales) / Math.min(...scales);
+    expect(spread).toBeLessThan(2.5);
+    // 反向：也不许收成 1（那就是"所有块同一个缩放"，小块又看不清了）
+    expect(spread).toBeGreaterThan(1.2);
+  });
+
+  it("真机那 25 块：宽度不是一个数（至少五档）", () => {
+    // 这条是"太规矩"的直接反向判据：全压成一个数就红。
+    const widths = new Set(realRects.map(r => widthOf(r)));
+    expect(widths.size).toBeGreaterThanOrEqual(5);
+  });
+});
+
 describe("网格摆位", () => {
   it("⚠ 列数选到**装得进画板高度**为止，不是拍 √n", () => {
     /*
@@ -58,10 +234,12 @@ describe("网格摆位", () => {
      * 被撑开，放大到工作档位看到的就是大片空白里几条线穿过。
      * 变异：改回 ceil(sqrt(n))，这条红。
      */
-    const tall = Array.from({ length: 6 }, (_, i) =>
-      rect(`b${i}`, 0, 0, 520, 520)
+    /* ⚠ 这组数是**挑过的**：8 块 → √n = 3 列时 3 块一叠正好超过 1080，
+       4 列时 2 块一叠装得下。数字随便写的话两条规则给同一个答案，
+       这条判据就废了（变异也咬不住）。 */
+    const tall = Array.from({ length: 8 }, (_, i) =>
+      rect(`b${i}`, 0, 0, 520, 700)
     );
-    // 6 块 × (520+56) = 3456 > 1080，√6 = 3 列仍然 1152+ 高，得再加一列
     const cols = chooseBlockGridColumns(tall, 1080);
     const boxes = layoutBlockNodes({ ...BOARD, h: 1080 }, tall);
     const top = Math.min(...boxes.map(b => b.y - BLOCK_CELL.labelBand));
@@ -87,12 +265,13 @@ describe("网格摆位", () => {
     expect(chooseBlockGridColumns([], 1080)).toBe(1);
   });
 
-  it("排在画板右侧，第一格与画板顶对齐（顶上留出标签带）", () => {
-    const [a] = layoutBlockNodes(BOARD, [rect("甲", 0, 0, 520, 260)]);
+  it("排在画板右侧，第一格与画板顶对齐（顶上留出标题条）", () => {
+    const r = rect("甲", 0, 0, 520, 260);
+    const [a] = layoutBlockNodes(BOARD, [r]);
     expect(a.x).toBe(BOARD.x + BOARD.w + BLOCK_CELL.stripGap);
-    // ⚠ 内容顶 = 视觉顶 + 标签带；视觉顶就是画板顶
+    // ⚠ 内容顶 = 视觉顶 + 标题条；视觉顶就是画板顶
     expect(a.y).toBe(BOARD.y);
-    expect(a.w).toBe(BLOCK_CELL.width);
+    expect(a.w).toBe(widthOf(r));
   });
 
   it("跟着画板**现在**的位置走（拖过之后块也跟着走）", () => {
@@ -102,42 +281,48 @@ describe("网格摆位", () => {
     expect(a.y).toBe(7000);
   });
 
-  it("列与列之间横向间距是 gap", () => {
-    /* ⚠ 得用**高到一列装不下**的块，才逼得出第二列——列数现在是按
-       "装得进画板高度"选的，两块矮的会老老实实叠成一列。 */
+  it("⚠ 每列各宽各的（arrangeGrid 的 colWidths + cumulativeOffsets）", () => {
+    /*
+     * 抄 `colWidths[col] = max(visualWidth)` ＋ `cumulativeOffsets`。
+     * 变异：写成 `x = col * (某个常数格宽 + gap)`，这条红——
+     *   窄列后面会白留一大段空，宽列会盖住右边那列。
+     */
     const boxes = layoutBlockNodes({ ...BOARD, h: 1080 }, [
-      rect("甲", 0, 0, 440, 900),
-      rect("乙", 0, 0, 440, 900),
+      rect("宽块", 0, 0, 1600, 1400), // 自己占满一列
+      rect("窄块", 0, 0, 300, 1400),
     ]);
-    expect(boxes[1].x - boxes[0].x).toBe(BLOCK_CELL.width + BLOCK_CELL.gap);
-    expect(boxes[0].y).toBe(boxes[1].y);
+    const [wide, narrow] = boxes;
+    expect(wide.w).toBeGreaterThan(narrow.w);
+    // 第二列的左缘 = 第一列宽 + gap，**用第一列自己的宽**，不是某个常数
+    expect(narrow.x - wide.x).toBe(wide.w + BLOCK_CELL.gap);
   });
 
   it("⚠ 瀑布流：每块落进当前最矮的那一列（不是按行填）", () => {
     // 2026-08-28 用户要"自由散布"的观感。严格网格会让所有块顶边对齐成一条
     // 直线，那是"电子表格感"的来源。
     // 变异：改回按行填（col = i % cols），这条红。
+    /* ⚠ 用**宽块**：块高有高宽比上限，窄块再长也顶不高，一列就装下了，
+       逼不出第二列（改成按内容算宽度之后第一版判据就栽在这上面）。 */
     const boxes = layoutBlockNodes(BOARD, [
-      rect("高", 0, 0, 520, 800), // 第 1 列，很高
-      rect("矮", 0, 0, 520, 100), // 第 2 列
-      rect("第三块", 0, 0, 520, 100),
+      rect("高", 0, 0, 1600, 2000), // 第 1 列，很高
+      rect("矮", 0, 0, 1600, 150), // 第 2 列
+      rect("第三块", 0, 0, 1600, 150),
     ]);
     // 3 块 → 2 列。第 3 块该落进**矮的那一列**（第 2 列），不是回到第 1 列
     expect(boxes[2].x).toBe(boxes[1].x);
     expect(boxes[2].x).not.toBe(boxes[0].x);
   });
 
-  it("⚠ 同一列里，下一块的**视觉顶**接在上一块底下（含标签带）", () => {
+  it("⚠ 同一列里，下一块的**视觉顶**接在上一块底下（含标题条）", () => {
     // 抄 ComfyUI `visualHeight = size + titleHeight` 的那条。
-    // 变异：列高只累加内容高（去掉 labelBand），下一块的标签会叠在
+    // 变异：列高只累加内容高（去掉 labelBand），下一块的标题会叠在
     // 上一块的内容上——不报错，只是看着糊。
     const boxes = layoutBlockNodes(BOARD, [
-      rect("甲", 0, 0, 520, 200),
-      rect("乙", 0, 0, 520, 200),
-      rect("丙", 0, 0, 520, 200),
-      rect("丁", 0, 0, 520, 200),
+      rect("甲", 0, 0, 520, 700),
+      rect("乙", 0, 0, 520, 700),
+      rect("丙", 0, 0, 520, 700),
+      rect("丁", 0, 0, 520, 700),
     ]);
-    // 4 块 → 2 列，同列的是 [甲, 丙] 和 [乙, 丁]
     const sameCol = boxes.filter(b => b.x === boxes[0].x);
     expect(sameCol.length).toBeGreaterThanOrEqual(2);
     const gapBetween = sameCol[1].y - (sameCol[0].y + sameCol[0].h);
@@ -148,34 +333,48 @@ describe("网格摆位", () => {
     const boxes = layoutBlockNodes(
       BOARD,
       Array.from({ length: 9 }, (_, i) =>
-        rect(`b${i}`, 0, 0, 520, 100 + i * 90)
+        rect(`b${i}`, 0, 0, 300 + i * 140, 100 + i * 90)
       )
     );
     for (let i = 0; i < boxes.length; i += 1) {
       for (let j = i + 1; j < boxes.length; j += 1) {
         const a = boxes[i];
         const b = boxes[j];
-        /* 视觉盒（含标签带）都不许相交 */
+        /* 视觉盒（含标题条）都不许相交 */
         const aTop = a.y - BLOCK_CELL.labelBand;
         const bTop = b.y - BLOCK_CELL.labelBand;
         const overlapX = a.x < b.x + b.w && b.x < a.x + a.w;
-        const overlapY = aTop < bTop + b.h + BLOCK_CELL.labelBand &&
+        const overlapY =
+          aTop < bTop + b.h + BLOCK_CELL.labelBand &&
           bTop < aTop + a.h + BLOCK_CELL.labelBand;
-        expect(
-          overlapX && overlapY,
-          `${a.name} 和 ${b.name} 叠了`
-        ).toBe(false);
+        expect(overlapX && overlapY, `${a.name} 和 ${b.name} 叠了`).toBe(false);
+      }
+    }
+  });
+
+  it("反向：真机那 25 块摆出来也不许重叠（宽度不齐最容易漏）", () => {
+    // 上一条用的是构造数据；这条用真机的形状分布再过一遍。
+    const boxes = layoutBlockNodes(BOARD, realRects);
+    expect(boxes.length).toBe(realRects.length);
+    for (let i = 0; i < boxes.length; i += 1) {
+      for (let j = i + 1; j < boxes.length; j += 1) {
+        const a = boxes[i];
+        const b = boxes[j];
+        const aTop = a.y - BLOCK_CELL.labelBand;
+        const bTop = b.y - BLOCK_CELL.labelBand;
+        const overlapX = a.x < b.x + b.w && b.x < a.x + a.w;
+        const overlapY =
+          aTop < bTop + b.h + BLOCK_CELL.labelBand &&
+          bTop < aTop + a.h + BLOCK_CELL.labelBand;
+        expect(overlapX && overlapY, `${a.name} 和 ${b.name} 叠了`).toBe(false);
       }
     }
   });
 
   it("确定性：同一份输入永远同一个结果（块不许在画布上跳）", () => {
     // 变异：用随机抖动做"自由散布"，这条红。
-    const input = Array.from({ length: 7 }, (_, i) =>
-      rect(`b${i}`, 0, 0, 520, 120 + i * 60)
-    );
-    const a = layoutBlockNodes(BOARD, input);
-    const b = layoutBlockNodes(BOARD, input);
+    const a = layoutBlockNodes(BOARD, realRects);
+    const b = layoutBlockNodes(BOARD, realRects);
     expect(a).toEqual(b);
   });
 
@@ -189,10 +388,11 @@ describe("网格摆位", () => {
 });
 
 describe("⚠ 裁剪：块的左上角必须对到节点原点", () => {
-  it("按宽度铺满条带，缩放比 = 条带宽 / 块宽", () => {
-    const [a] = layoutBlockNodes(BOARD, [rect("甲", 260, 130, 1040, 520)]);
-    expect(a.crop.scale).toBeCloseTo(BLOCK_CELL.width / 1040, 6);
-    expect(a.h).toBeCloseTo(520 * (BLOCK_CELL.width / 1040), 6);
+  it("按自己的宽度铺满，缩放比 = 节点宽 / 块宽", () => {
+    const r = rect("甲", 260, 130, 1040, 520);
+    const [a] = layoutBlockNodes(BOARD, [r]);
+    expect(a.crop.scale).toBeCloseTo(widthOf(r) / 1040, 6);
+    expect(a.h).toBeCloseTo(520 * (widthOf(r) / 1040), 6);
   });
 
   it("位移是**设计坐标**（CSS 的 scale 会替我们乘，这里不许先乘一遍）", () => {
@@ -224,32 +424,38 @@ describe("⚠ 裁剪：块的左上角必须对到节点原点", () => {
     expect(r.rect.width * scale).toBeCloseTo(a.w, 6);
     expect(r.rect.height * scale).toBeCloseTo(a.h, 6);
   });
+
+  it("⚠ 真机那 25 块逐块对账：每块的裁剪都对到自己的节点原点", () => {
+    // 宽度不再统一之后，crop.scale 必须**逐块**跟着自己的宽度走。
+    // 变异：scale 用某个全局常数，这条红。
+    const boxes = layoutBlockNodes(BOARD, realRects);
+    boxes.forEach((b, i) => {
+      const r = realRects[i];
+      expect(r.rect.width * b.crop.scale, r.name).toBeCloseTo(b.w, 6);
+    });
+  });
 });
 
 describe("长块截断", () => {
   it("超过高宽比上限就截断，并如实标记", () => {
     // 原始 6:1 的长表格。画板给足够高，让高宽比那条成为生效的上限。
-    const [a] = layoutBlockNodes(
-      { ...BOARD, h: 4000 },
-      [rect("长表", 0, 0, 400, 2400)]
-    );
+    const r = rect("长表", 0, 0, 400, 2400);
+    const [a] = layoutBlockNodes({ ...BOARD, h: 4000 }, [r]);
     expect(a.truncated).toBe(true);
-    expect(a.h).toBe(BLOCK_CELL.width * BLOCK_CELL.maxAspect);
+    expect(a.h).toBeCloseTo(widthOf(r, 4000) * BLOCK_CELL.maxAspect, 6);
   });
 
   it("⚠ 单块高度也按**画板高度**封顶（否则永远装不进画板）", () => {
     /*
-     * 2026-08-28 真机：一个长表格块自己就 440×2.4 = 1056 高，加标签带
-     * 1112 > 画板 1080——那一页无论分几列都装不下，"列数选到装得下为止"
-     * 这条规则永远达不成，网格照样溢出到下一排（量到 1832，越过 520）。
+     * 2026-08-28 真机：一个长表格块自己就比画板还高，加标题条更超——
+     * 那一页无论分几列都装不下，"列数选到装得下为止"这条规则永远达不成，
+     * 网格照样溢出到下一排（量到 1832，越过 520）。
      * 变异：把这条上限去掉，只留高宽比，这条红。
      */
-    const [a] = layoutBlockNodes(
-      { ...BOARD, h: 1080 },
-      [rect("长表", 0, 0, 400, 2400)]
-    );
+    const r = rect("长表", 0, 0, 1200, 6000);
+    const [a] = layoutBlockNodes({ ...BOARD, h: 1080 }, [r]);
     expect(a.h).toBe(1080 - BLOCK_CELL.labelBand);
-    expect(a.h).toBeLessThan(BLOCK_CELL.width * BLOCK_CELL.maxAspect);
+    expect(a.h).toBeLessThan(widthOf(r) * BLOCK_CELL.maxAspect);
     expect(a.truncated).toBe(true);
   });
 
@@ -261,7 +467,6 @@ describe("长块截断", () => {
     const cols = chooseBlockGridColumns(tall, 1080);
     const top = Math.min(...boxes.map(b => b.y - BLOCK_CELL.labelBand));
     const bottom = Math.max(...boxes.map(b => b.y + b.h));
-    // 5 块每块都顶满一列 → 需要 5 列，但封顶 4 列，如实溢出一点
     expect(cols).toBe(MAX_BLOCK_COLS);
     expect(bottom - top).toBeGreaterThan(0);
     // 每一块自己都不许超过画板高度
@@ -275,9 +480,17 @@ describe("长块截断", () => {
     expect(a.truncated).toBe(false);
   });
 
+  it("反向：真机那 25 块一个都不该被截断（截断是异常，不是常态）", () => {
+    // 最长的那块 1624×1242 折算后 812×621，离画板高度还远。
+    // 变异：把高度上限调到常态就会咬到的档，这条红。
+    const boxes = layoutBlockNodes(BOARD, realRects);
+    expect(boxes.filter(b => b.truncated).map(b => b.name)).toEqual([]);
+  });
+
   it("截断**不压扁**：缩放比仍按宽度算，字不变形", () => {
-    const [a] = layoutBlockNodes(BOARD, [rect("长表", 0, 0, 400, 2400)]);
-    expect(a.crop.scale).toBeCloseTo(BLOCK_CELL.width / 400, 6);
+    const r = rect("长表", 0, 0, 400, 2400);
+    const [a] = layoutBlockNodes(BOARD, [r]);
+    expect(a.crop.scale).toBeCloseTo(widthOf(r) / 400, 6);
   });
 });
 
@@ -291,17 +504,17 @@ describe("反向判据", () => {
   });
 
   it("画板尺寸为 0 时回空数组，不抛也不算出 NaN", () => {
-    expect(layoutBlockNodes({ ...BOARD, w: 0 }, [rect("甲", 0, 0, 1, 1)])).toEqual(
-      []
-    );
+    expect(
+      layoutBlockNodes({ ...BOARD, w: 0 }, [rect("甲", 0, 0, 1, 1)])
+    ).toEqual([]);
   });
 
-  it("空块清单 → 网格高 0（不是一个标签带）", () => {
+  it("空块清单 → 网格高 0（不是一个标题条）", () => {
     // 多算一行会让外接盒每页虚高一截，「适应画布」跟着偏。
     expect(blockGridHeight([])).toBe(0);
   });
 
-  it("网格高从**视觉顶**（首行标签上沿）量到末行底", () => {
+  it("网格高从**视觉顶**（首行标题条上沿）量到末行底", () => {
     const boxes = layoutBlockNodes(BOARD, [
       rect("甲", 0, 0, 520, 260),
       rect("乙", 0, 0, 520, 520),
@@ -311,28 +524,83 @@ describe("反向判据", () => {
     expect(blockGridHeight(boxes)).toBe(bottom - top);
   });
 
-  it("画板要多留的横向间距 = 间隙 + **块最多那页**的网格宽", () => {
+  it("⚠ 网格宽 = 摆出来真实占的宽（不是列数 × 常数格宽）", () => {
+    /*
+     * 这条是"留的间距和实际网格宽对不上"的防伪标记：把 span 跟**摆出来的
+     * 盒子右缘**对账。变异：blockGridSpan 回 cols × minWidth，这条红。
+     */
+    const boxes = layoutBlockNodes(BOARD, realRects);
+    const originX = BOARD.x + BOARD.w + BLOCK_CELL.stripGap;
+    const right = Math.max(...boxes.map(b => b.x + b.w));
+    expect(blockGridSpan(realRects, BOARD.h)).toBeCloseTo(right - originX, 6);
+  });
+
+  it("网格宽 = 各列宽之和 + 列间距（列宽各算各的）", () => {
+    const plan = planBlockGrid(realRects, BOARD.h);
+    const used = plan.colWidths.filter(w => w > 0);
+    expect(plan.width).toBeCloseTo(
+      used.reduce((a, b) => a + b, 0) + (used.length - 1) * BLOCK_CELL.gap,
+      6
+    );
+    // 反向：列宽真的不齐（齐了说明又退回常数格宽）
+    expect(new Set(used).size).toBeGreaterThan(1);
+  });
+
+  it("空清单 → 网格宽 0，不留一份空格宽", () => {
+    expect(blockGridSpan([], BOARD.h)).toBe(0);
+    expect(planBlockGrid([], BOARD.h).items).toEqual([]);
+  });
+
+  it("画板要多留的横向间距 = 间隙 + **最宽那页**的网格宽", () => {
     // 少留的话网格会盖住右边那列画板，而全景下只是"看着有点挤"，不报错。
-    // 变异：按平均块数留，块多的那页照样盖住邻居。
-    expect(blockGridExtraGapX(3)).toBe(BLOCK_CELL.stripGap + blockGridWidth(3));
-    expect(blockGridExtraGapX(3)).toBeGreaterThan(blockGridExtraGapX(2));
+    const span = blockGridSpan(realRects, BOARD.h);
+    expect(blockGridExtraGapX(span)).toBe(BLOCK_CELL.stripGap + span);
+    expect(blockGridExtraGapX(span)).toBeGreaterThan(
+      blockGridExtraGapX(span / 2)
+    );
     expect(blockGridExtraGapX(0)).toBe(0);
   });
 
-  it("网格宽 = 列数 × 格宽 + 列间距", () => {
-    expect(blockGridWidth(2)).toBe(2 * BLOCK_CELL.width + BLOCK_CELL.gap);
-    expect(blockGridWidth(1)).toBe(BLOCK_CELL.width);
-    expect(blockGridWidth(0)).toBe(0);
+  it("⚠ 真机每一页的网格都不许比画板还宽（横向拉开＝适应画布掉档）", () => {
+    /*
+     * 上一版 4×520 = 2248 那次的教训：整张图横向拉开，「适应画布」
+     * 从 16% 掉到 12%，反而更看不清。
+     *
+     * ⚠ 这条钉的是**标定的那一档**：designScale 调到 0.5 时消耗看板那页
+     *   会从 3 列变 4 列、网格宽 2200 —— 这条红。见 BLOCK_SIZE 的扫描表。
+     */
+    for (const [i, rects] of realPageRects.entries()) {
+      const span = blockGridSpan(rects, BOARD.h);
+      expect(span, REAL_PAGES[i][0]).toBeLessThanOrEqual(BOARD.w);
+    }
   });
 });
 
 describe("LOD：缩放太低就不画细节（抄 ComfyUI 的可读性反推）", () => {
   it("阈值是从字号反推的，不是拍的魔数", () => {
-    // threshold = 最小可读字号 / (标签字号 * sqrt(DPR))
+    // threshold = 最小可读字号 / (标题字号 * sqrt(DPR))
     expect(blockDetailZoomThreshold(1)).toBeCloseTo(
       MIN_READABLE_FONT_PX / BLOCK_LABEL_FONT_PX,
       6
     );
+  });
+
+  it("⚠ 反推用的字号必须是**画布单位**那一个", () => {
+    /*
+     * 2026-08-28：上一版这条阈值从来没成立过——标题是反缩放画的
+     * （11px 恒定），而公式里的 NODE_TEXT_SIZE 指图坐标字号。代 11 进去
+     * 得 0.545，于是画布常态 17%~25% 全在阈值之下，**标签一次没显示过**，
+     * 用户看到的就是一排没有标题的白方块（"太平了"的一半）。
+     * 变异：BLOCK_LABEL_FONT_PX 改回 11，这条和下面那条一起红。
+     */
+    expect(BLOCK_LABEL_FONT_PX).toBe(BLOCK_CHROME.titleFont);
+  });
+
+  it("真机那三档：21% 全景不画字，40%／100% 画", () => {
+    // 变异：字号回 11（阈值 0.545），40% 那条红——那正是踩过的坑。
+    expect(shouldDrawBlockDetail(0.21, 1)).toBe(false);
+    expect(shouldDrawBlockDetail(0.4, 1)).toBe(true);
+    expect(shouldDrawBlockDetail(1, 1)).toBe(true);
   });
 
   it("高 DPR 屏阈值更低（同样的缩放下字更清楚）", () => {
@@ -346,12 +614,6 @@ describe("LOD：缩放太低就不画细节（抄 ComfyUI 的可读性反推）"
     );
   });
 
-  it("真机那两档：21% 全景不画细节，100% 画", () => {
-    // 21% 时标签只有 11*0.21 ≈ 2.3px，糊成一片。
-    expect(shouldDrawBlockDetail(0.21, 1)).toBe(false);
-    expect(shouldDrawBlockDetail(1, 1)).toBe(true);
-  });
-
   it("反向：阈值本身必须是个正数且小于 1（不然要么全关要么全开）", () => {
     const t = blockDetailZoomThreshold(1);
     expect(t).toBeGreaterThan(0);
@@ -361,6 +623,46 @@ describe("LOD：缩放太低就不画细节（抄 ComfyUI 的可读性反推）"
   it("DPR 传 0 / 负数不炸（当 1 处理）", () => {
     expect(blockDetailZoomThreshold(0)).toBe(blockDetailZoomThreshold(1));
     expect(blockDetailZoomThreshold(-3)).toBe(blockDetailZoomThreshold(1));
+  });
+});
+
+describe("节点外观的尺寸（抄 RenderShape.CARD 的比例）", () => {
+  it("标题条里装得下那个点，还留得出两边的空", () => {
+    // 变异：titleDot 调到 ≥ labelBand，点会顶满整条，看着像个色块。
+    expect(BLOCK_CHROME.titleDot).toBeGreaterThan(0);
+    expect(BLOCK_CHROME.titleDot).toBeLessThan(BLOCK_CELL.labelBand);
+  });
+
+  it("圆角、字号、分隔线都是正数，且圆角不超过标题条一半", () => {
+    // 圆角比标题条一半还大的话，上圆角会把标题条啃掉一块。
+    expect(BLOCK_CHROME.radius).toBeGreaterThan(0);
+    expect(BLOCK_CHROME.radius).toBeLessThanOrEqual(BLOCK_CELL.labelBand / 2);
+    expect(BLOCK_CHROME.titleFont).toBeGreaterThan(0);
+    expect(BLOCK_CHROME.separator).toBeGreaterThan(0);
+  });
+
+  it("标题字号装得进标题条（字比条还高就露不全）", () => {
+    expect(BLOCK_CHROME.titleFont).toBeLessThan(BLOCK_CELL.labelBand);
+  });
+
+  it("投影是**分层**的，不是单层大模糊", () => {
+    // 分层的道理见 stage-frame-style 头注：单层只是糊，分层才像光照。
+    expect(BLOCK_CHROME.shadow.split("rgba").length - 1).toBeGreaterThanOrEqual(
+      2
+    );
+  });
+
+  it("⚠ 投影不照抄 ComfyUI 那个 alpha 0.5（浅底上是一圈脏）", () => {
+    for (const m of BLOCK_CHROME.shadow.matchAll(/rgba\([^)]*?([\d.]+)\)/g)) {
+      expect(Number(m[1])).toBeLessThan(0.5);
+    }
+  });
+
+  it("标题文字排版和渲染取的是同一个函数", () => {
+    // 两边各拼一次的话，宽度按 A 算、显示是 B，标题会被截断而没人知道。
+    expect(blockTitleText({ kindLabel: "表格", name: "台账" })).toBe(
+      "表格·台账"
+    );
   });
 });
 
@@ -381,5 +683,50 @@ describe("块类型底色（抄 ComfyUI 低质量档「保形状保颜色、只�
   it("反向：不同类型的底色互不相同（同色等于没分类）", () => {
     const fills = BLOCK_KINDS.map(k => BLOCK_KIND_TINT[k].fill);
     expect(new Set(fills).size).toBe(fills.length);
+  });
+
+  it("每一种类型都有标题条颜色，且互不相同", () => {
+    const bars = BLOCK_KINDS.map(k => BLOCK_KIND_TINT[k].bar);
+    for (const b of bars) expect(b).toMatch(/^#[0-9a-f]{6}$/);
+    expect(new Set(bars).size).toBe(bars.length);
+  });
+
+  it("⚠ 标题条的色度必须压得住——面积大的颜色不许被读成状态色", () => {
+    /*
+     * 2026-08-28：标签从小色片改成整条标题条之后，指标那档的 #b91c1c
+     * 从"一枚红色小标"变成"一条通栏红带"，真机截图上看着像告警——
+     * 而这套颜色的约定是"只分类、不表示状态"。
+     *
+     * ComfyUI 的 node_colors 全是近中性暗色（`red: '#322'` 色度 0.067）。
+     * 变异：bar 改回 ink 那一套（#b91c1c 色度 0.616），这条红。
+     */
+    for (const k of BLOCK_KINDS) {
+      expect(colorChroma(BLOCK_KIND_TINT[k].bar), k).toBeLessThanOrEqual(0.25);
+    }
+    // 反向：也不许全压成灰（那就读不出分类了）
+    const chromas = BLOCK_KINDS.map(k => colorChroma(BLOCK_KIND_TINT[k].bar));
+    expect(Math.max(...chromas)).toBeGreaterThan(0.12);
+  });
+
+  it("⚠ 标题条上是白字：每一档都得撑得住白字的对比度（WCAG AA 4.5）", () => {
+    // 变异：把任意一档调亮到浅色，这条红——白字会糊在上面看不见。
+    const lum = (hex: string) => {
+      const h = hex.replace("#", "");
+      const c = [0, 2, 4]
+        .map(i => Number.parseInt(h.slice(i, i + 2), 16) / 255)
+        .map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    };
+    for (const k of BLOCK_KINDS) {
+      const ratio = 1.05 / (lum(BLOCK_KIND_TINT[k].bar) + 0.05);
+      expect(ratio, k).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("色度函数本身对得上（判据自己也得能被咬）", () => {
+    expect(colorChroma("#ffffff")).toBe(0);
+    expect(colorChroma("#ff0000")).toBe(1);
+    // ComfyUI 那档 red 的色度
+    expect(colorChroma("#332222")).toBeCloseTo(17 / 255, 6);
   });
 });

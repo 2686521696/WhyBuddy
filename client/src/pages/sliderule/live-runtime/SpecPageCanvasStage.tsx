@@ -102,9 +102,11 @@ import { useBlockRects } from "./use-block-rects";
 import { blockKey, type BlockRect, type BlockRectSnapshot } from "./block-rects";
 import {
   BLOCK_CELL,
+  BLOCK_CHROME,
   blockGridExtraGapX,
-  chooseBlockGridColumns,
+  blockGridSpan,
   blockKindTint,
+  blockTitleText,
   layoutBlockNodes,
   shouldDrawBlockDetail,
   type BlockNodeBox,
@@ -1019,39 +1021,90 @@ function BlockNode({ data }: NodeProps<Node<BlockNodeData>>) {
           }}
         />
       ))}
-      {/* 标签：类型·名字。
-          ⚠ 反缩放，理由同 ElementSpot（25% 下 1px 看不见）。
-          ⚠ 缩放低到字读不出来时**收起来**（LOD，抄 ComfyUI 的可读性反推阈值）。
-            真机 21% 全景下 24 个标签挤成一片糊字，那一档用户要看的是
-            "有几页、大致长什么样"，不是"哪一块叫什么"。
-            收的是标签，**块本身照画**——同 shouldMountBoard 那条
-            "剔除是性能手段，不是可见性判定"。 */}
-      {showDetail ? (
-      <span
-        className="absolute whitespace-nowrap rounded px-1 py-px text-white"
+      {/*
+        ## 整张卡：标题条 + 分隔线 + 主体（抄 ComfyUI 的 RenderShape.CARD）
+
+        2026-08-28 用户说"太平了"。上一版这里是**一个白方块 + 一条细边**，
+        标签是浮在外面的一个小色片。ComfyUI 的节点是
+        `drawNodeShape` 里那套：上圆角的标题条 → `rgba(0,0,0,0.2)` 分隔线 →
+        主体，整体一层投影（`render_shadows`）。
+
+        ⚠ 标题条和主体套在**同一个** overflow:hidden 的盒子里，投影和圆角
+          只画一次。分两个盒子各画各的，接缝处会露出两条投影叠在一起的暗线——
+          那种错不报错，只是看着脏。
+
+        ⚠ 盒子从 `-labelBand` 起算，高 `labelBand + h`：标题条画在节点盒子
+          **外面**，而排布早就把它算进视觉盒了（block-node-layout 的 toBox
+          口径）。这里的负偏移和那边的 `+labelBand` 是同一件事的两半，
+          改一边不改另一边＝标题条压住上一块的内容。
+      */}
+      <div
+        className="absolute flex flex-col overflow-hidden"
+        data-testid="sliderule-canvas-block-card"
         style={{
           left: 0,
-          top: 0,
-          transform: `scale(${inv}) translateY(-100%)`,
-          transformOrigin: "top left",
-          background: selected ? "#7c3aed" : tint.ink,
-          fontSize: 11,
-          marginTop: -3 * inv,
+          top: -BLOCK_CELL.labelBand,
+          width: box.w,
+          height: BLOCK_CELL.labelBand + box.h,
+          borderRadius: BLOCK_CHROME.radius,
+          boxShadow: BLOCK_CHROME.shadow,
+          background: "#fff",
+          /* ⚠ 选中框**反缩放**：它是交互反馈不是节点外观，画布单位的 2px
+             在 17% 全景下只有 0.34 屏幕像素，等于没有。同 ElementSpot。 */
+          outline: selected ? `${2 * inv}px solid #7c3aed` : "none",
+          outlineOffset: `${1 * inv}px`,
         }}
       >
-        {kindLabel}·{box.name}
-        {box.truncated ? " ·只显示上半截" : ""}
-      </span>
-      ) : null}
+        {/* 标题条。
+            ⚠ 色条**永远画**，只有里面的字跟着 LOD 收（同 ComfyUI 的
+              low_quality：丢的是文字圆角阴影，形状和颜色照画）。全景那一档
+              这排色条正是"这页由几张表几个指标拼成"的读法——上一版把整个
+              标签收掉，剩下一排白方块，那才是"太平了"的来源。
+            ⚠ 分隔线用 inset 阴影，不用 borderBottom：border 会把标题条撑高
+              2 个单位，而排布那边按 labelBand 整数算，撑高就对不上了。 */}
+        <div
+          className="flex shrink-0 items-center overflow-hidden"
+          data-testid="sliderule-canvas-block-title"
+          style={{
+            height: BLOCK_CELL.labelBand,
+            /* ⚠ 用 `bar` 不是 `ink`：标题条面积大，ink 那档的饱和度在这个
+               面积上会被读成状态色（真机上 metric 的 #b91c1c 成了一条通栏
+               红带，看着像告警）。见 BLOCK_KIND_TINT 头注。 */
+            background: selected ? "#7c3aed" : tint.bar,
+            boxShadow: `inset 0 -${BLOCK_CHROME.separator}px 0 rgba(0,0,0,0.2)`,
+          }}
+        >
+          {/* 标题前那个点（ComfyUI 的 title box，box_size=10 于 30 高的条上）。
+              居中占满第一个 labelBand 见方的格子——正是 computeSize 里
+              `padLeft = NODE_TITLE_HEIGHT` 那一项留出来的位置。 */}
+          <span
+            className="shrink-0 rounded-full"
+            style={{
+              width: BLOCK_CHROME.titleDot,
+              height: BLOCK_CHROME.titleDot,
+              marginLeft: (BLOCK_CELL.labelBand - BLOCK_CHROME.titleDot) / 2,
+              background: "rgba(255,255,255,0.8)",
+            }}
+          />
+          {showDetail ? (
+            <span
+              className="truncate text-white"
+              style={{
+                marginLeft: (BLOCK_CELL.labelBand - BLOCK_CHROME.titleDot) / 2,
+                marginRight: BLOCK_CELL.labelBand * 0.33,
+                /* ⚠ 画布单位，**不反缩放**。上一版写死 11px + scale(1/zoom)，
+                   于是 LOD 阈值 6/11=0.545 永远够不着，标签一次没显示过。
+                   见 block-node-layout 里 blockDetailZoomThreshold 的头注。 */
+                fontSize: BLOCK_CHROME.titleFont,
+                lineHeight: 1,
+              }}
+            >
+              {blockTitleText({ kindLabel, name: box.name })}
+            </span>
+          ) : null}
+        </div>
 
-      <div
-        className="h-full w-full overflow-hidden bg-white"
-        style={{
-          borderRadius: 4,
-          outline: `${(selected ? 2 : 1) * inv}px solid ${selected ? "#7c3aed" : "#e2e8f0"}`,
-          boxShadow: STAGE_FRAME_FLAT,
-        }}
-      >
+        <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
         {live ? (
           /*
            * 整页铺进来，再往左上挪，那一块正好落在洞口。
@@ -1117,6 +1170,28 @@ function BlockNode({ data }: NodeProps<Node<BlockNodeData>>) {
             </span>
           </div>
         )}
+        </div>
+
+        {/* ⚠ 截断要**如实说**，而且不能塞进标题条：标题宽度是按
+            blockTitleText 算出来的（computeSize 的 title_width 那一项），
+            往后面追字只会被 truncate 吃掉——那就成了"只显示上半截"这条
+            提示自己被截断，正是本仓最烦的那种静默失效。 */}
+        {box.truncated && showDetail ? (
+          <span
+            className="pointer-events-none absolute rounded text-white"
+            data-testid="sliderule-canvas-block-truncated"
+            style={{
+              right: BLOCK_CHROME.radius,
+              bottom: BLOCK_CHROME.radius,
+              padding: `${BLOCK_CHROME.titleFont * 0.15}px ${BLOCK_CHROME.titleFont * 0.4}px`,
+              fontSize: BLOCK_CHROME.titleFont * 0.8,
+              lineHeight: 1,
+              background: "rgba(15,23,42,0.72)",
+            }}
+          >
+            只显示上半截
+          </span>
+        ) : null}
       </div>
     </div>
   );
@@ -1468,13 +1543,16 @@ function CanvasInner({
     []
   );
 
-  /* 列数最多的那一页占几列——决定画板之间要多留多宽。
-     ⚠ 必须跟 layoutBlockNodes **用同一条规则**算列数（chooseBlockGridColumns），
-       各算各的话留的间距和实际网格宽对不上，网格会盖住右边那列画板。 */
-  const maxBlockCols = React.useMemo(
+  /* 网格最宽的那一页有多宽——决定画板之间要多留多宽。
+     ⚠ 必须跟 layoutBlockNodes **走同一个 plan**（blockGridSpan 内部就是
+       planBlockGrid），各算各的话留的间距和实际网格宽对不上，网格会盖住
+       右边那列画板。
+     ⚠ 2026-08-28 从"列数 × 常数格宽"改成量真实网格宽：列宽现在各列各算
+       （computeSize 口径），乘常数会留少。 */
+  const maxBlockSpan = React.useMemo(
     () =>
       Object.values(blockRects).reduce(
-        (n, snap) => Math.max(n, chooseBlockGridColumns(snap.rects, design.h)),
+        (n, snap) => Math.max(n, blockGridSpan(snap.rects, design.h)),
         0
       ),
     [blockRects, design.h]
@@ -1488,9 +1566,9 @@ function CanvasInner({
         hostAspect || undefined,
         /* 开着块网格时给每列多留一份网格宽，否则网格盖住右边那列画板。
            ⚠ 按**块最多的那一页**算：按平均值留，块多的那页照样盖住邻居。 */
-        blocksShown ? blockGridExtraGapX(maxBlockCols) : 0
+        blocksShown ? blockGridExtraGapX(maxBlockSpan) : 0
       ),
-    [pages, design.w, design.h, hostAspect, blocksShown, maxBlockCols]
+    [pages, design.w, design.h, hostAspect, blocksShown, maxBlockSpan]
   );
 
   const pageIds = React.useMemo(() => pages.map(p => p.pageId), [pages]);

@@ -23,6 +23,30 @@
  * 把那一块挪到洞口。`crop` 里给的就是这个洞的参数。
  *
  * 代价是 iframe 数量——那是 `block-node-fit.ts` 那道阶梯管的事。
+ *
+ * ## ⚠ 2026-08-28：块宽不再是一个常数（用户："太规矩了，太平了"）
+ *
+ * 上一版所有块**一律 440 宽**。真机上量到的设计宽度是 289 → 1632（5.6 倍
+ * 跨度，见 `BLOCK_SIZE` 的标定表），全压成同一个数的后果有两条：
+ *
+ *   · 一条通栏指标条（1616×110）和一张小卡（289×307）在画布上一样宽，
+ *     "这是通栏的、那是一小张"这个信息**整个丢了** —— 就是"太规矩"。
+ *   · 每块各自的缩放差 4 倍（289→440 是 1.5×，1632→440 是 0.27×），
+ *     于是节点里的字号也差 4 倍：小卡的字巨大、宽表的字看不见。
+ *
+ * 改成照 ComfyUI `LGraphNode.computeSize()` 的口径——**从内容算，带下限**：
+ *
+ *     size[0] = Math.max(slotsWidth, widgetWidth, title_width, minWidth)
+ *
+ * 三件事一起抄（缺一件就还是规矩的）：
+ *
+ *   1. 宽度从内容来（我们的"内容"＝这块在页面里的设计宽 × 统一缩放）
+ *   2. **标题宽也参与取最大**（`title_width` 那一项）——名字长的块自己变宽，
+ *      顺带保证标题不会被截断
+ *   3. 有下限没上限（`minWidth`；上限只是量测溢出的兜底护栏）
+ *
+ * 列宽也跟着变：抄 `useArrangeNodes.arrangeGrid` 的 `colWidths[col] = max(...)`
+ * ＋ `cumulativeOffsets` —— **每列各宽各的**，不是一个全局格宽。
  */
 
 import type { ArtboardBox } from "./canvas-board-layout";
@@ -31,31 +55,19 @@ import { blockKey } from "./block-rects";
 
 /**
  * 条带几何，画布坐标。
- *
- * ⚠ `width` 要够宽到能看清块里的字（画布常态缩放 13%~25%，520 画布单位在
- *   25% 下约 130 屏幕像素）。太窄就成了一排看不懂的小色块，那还不如不摊开。
  */
 export const BLOCK_CELL = {
   /** 画板右缘到块网格左缘 */
   stripGap: 72,
-  /**
-   * 单元格宽度。
-   *
-   * ⚠ 440 不是随手写的：列数封顶 4 时网格总宽 4×440+3×56 = 1928，
-   *   跟画板本身（1920）差不多——一页的"成品 + 零件"合起来约两个画板宽。
-   *   上一版是 520，4 列就 2248，比画板还宽一大截，整张图被横向拉开，
-   *   真机上「适应画布」的缩放从 16% 掉到 12%，反而更看不清。
-   */
-  width: 440,
   /**
    * 单元格之间的间距，**横竖同一个数**——横竖不一样的话看着就不是网格，
    * 是"一列一列硬凑的"。
    */
   gap: 56,
   /**
-   * 标签占的高度（画布坐标）。
+   * 标题条的高度（画布坐标）。
    *
-   * ⚠ 标签画在节点**上方**（节点盒子外面），但排布必须**把它算进视觉盒**。
+   * ⚠ 标题条画在节点**上方**（节点盒子外面），但排布必须**把它算进视觉盒**。
    *   这是抄 ComfyUI_frontend `src/composables/graph/useArrangeNodes.ts`
    *   （本地 clone，commit 5d24e4e）的 `toBox`：
    *
@@ -85,35 +97,204 @@ export const BLOCK_CELL = {
 /**
  * 列数上限。
  *
- * ⚠ 4 是跟格宽配套定的：4×440+3×56 = 1928 ≈ 画板宽（1920）。再多就把
- *   右边那一页推得太远，整张图横向拉开，「适应画布」的缩放跟着掉。
+ * ⚠ 列宽现在各列各算（见头注），所以这个数不再直接等于"网格有多宽"。
+ *   留着是防止块特别多的页排出十几列把右边那一页推到天边。
  */
 export const MAX_BLOCK_COLS = 4;
+
+/**
+ * 块尺寸的标定。
+ *
+ * ## 真机量到的分布（2026-08-28，会话 sr-20260827212138，5 页 25 块）
+ *
+ *     设计宽   min 289 · p25 396 · p50 941 · p75 1624 · max 1632
+ *     高宽比   min 0.04 · p50 0.34 · max 1.45
+ *
+ * 三档形态各自的样子：通栏指标条 1616×110、四联指标卡 396×103、
+ * 主表 1624×1242。
+ *
+ * ## ⚠ 为什么是 0.40 —— 这一档是扫出来的，不是挑好看的
+ *
+ * 缩放越大，块占的面积越大 → 为了装进画板高度要开更多列 → 网格越宽 →
+ * 整张图横向拉开 →「适应画布」的缩放跟着掉。这条链是**二次的**，
+ * 差一档就掉一大截。拿真机那 5 页各自跑一遍（判据 sweep 见 git 历史）：
+ *
+ *     designScale   最宽那页的网格   各块缩放的极差   「适应画布」估算
+ *        0.32            1459            2.81            14.5%
+ *        0.40            1589            2.25            14.0%
+ *        0.44            1654            2.04            13.8%
+ *        0.50            2200            1.80            12.1%   ← 断崖
+ *
+ * 0.50 那一档断崖式变宽，是因为消耗看板那页从 3 列变成 4 列——正是上一版
+ * 4×520 踩过的同一个坑（整张图横向拉开，「适应画布」从 16% 掉到 12%，
+ * 反而更看不清）。0.40 是"块够大、极差够小、还没触发多开一列"的那一档。
+ *
+ * ## 为什么下限是 260
+ *
+ * 抄 `LiteGraph.NODE_WIDTH * (widgets ? 1.5 : 1)` 那条"有下限没上限"。
+ *
+ * ⚠ 真正撑住小块的其实是**标题宽**（`title_width` 那一项）：名字八个字的
+ *   指标卡光标题就要 348，比这个下限还宽。所以 260 是"名字很短的块"的兜底，
+ *   不是主力。把它调高只会让更多块挤到同一个数上——**「太规矩」就是这么来的**：
+ *   扫下来 260 比 320 多出两档不同的宽度，而网格宽一点没变。
+ *
+ * ⚠ 上限 960 是**护栏不是设计参数**：块不可能比它所在的页（1920）还宽，
+ *   量到更宽的只能是量测溢出（overflow 的表格能量出 3000+），
+ *   不夹住会把整张图横向撕开。
+ */
+export const BLOCK_SIZE = {
+  /** 设计尺寸 → 画布尺寸的统一缩放。 */
+  designScale: 0.4,
+  minWidth: 260,
+  maxWidth: 960,
+} as const;
+
+/**
+ * 节点外观的尺寸，**画布坐标**。
+ *
+ * ## 为什么这些数要写在这一层
+ *
+ * 用户 2026-08-28 的第二句话是"太平了"。真机截图上块就是一排白方块加一条
+ * 细边——因为：
+ *
+ *   1. 没有标题条。标签是浮在节点外面的一个小色片，而且（见下）几乎从不显示。
+ *   2. 没有层次。只有 `borderRadius: 4` + 1px 描边 + 一个几乎看不见的投影。
+ *
+ * ComfyUI 的节点是 `RenderShape.CARD`：**标题条（上圆角）+ 分隔线 + 主体**，
+ * 外加 `render_shadows` 那层投影。抄它的比例（`src/lib/litegraph/src/`
+ * `LiteGraphGlobal.ts`，本地 clone commit 5d24e4e）：
+ *
+ *     NODE_TITLE_HEIGHT = 30   ROUND_RADIUS = 8   NODE_TEXT_SIZE = 14
+ *     DEFAULT_SHADOW_COLOR = 'rgba(0,0,0,0.5)'   offset (2,2) blur 3
+ *
+ * 我们的标题条是 56（labelBand），所以按 **标题条高**等比折算：
+ *
+ *     radius     = 56 × (8/30)  ≈ 15  → 取 14
+ *     titleFont  = 56 × (14/30) ≈ 26
+ *     titleDot   = 56 × (10/30) ≈ 18   （drawTitleBox 的 box_size = 10）
+ *
+ * ⚠ 投影的 alpha **不照抄 0.5**：ComfyUI 画在深色画布上，我们的画布是浅色，
+ *   0.5 的黑投影在浅底上是一圈脏。取 0.22/0.16 两层（分层的道理见
+ *   stage-frame-style 头注：单层大模糊只是糊，分层才像光照）。
+ *
+ * ⚠ 这些数都是**画布单位**，不反缩放——节点本来就该跟画布一起缩，
+ *   同 BlockNode 里 iframe 那条纪律。
+ */
+export const BLOCK_CHROME = {
+  /**
+   * 圆角。
+   *
+   * ComfyUI 是分两次画的（标题条 `[R,R,0,0]`、主体 `[R,R,0,0]`）；我们改成
+   * **整张卡一个圆角 + overflow:hidden**，看起来一样，但投影只画一次。
+   * 分两个盒子各画各的，接缝处会露出两条投影叠在一起的暗线。
+   */
+  radius: 14,
+  /** 标题文字，画布单位。LOD 阈值就是从它反推的，见 blockDetailZoomThreshold。 */
+  titleFont: 26,
+  /** 标题前那个小圆点（ComfyUI 的 title box）。 */
+  titleDot: 18,
+  /** 标题条与主体之间那条分隔线，同 `ctx.fillRect(0, -1, w, 2)`。 */
+  separator: 2,
+  /** 投影，画布单位（ComfyUI 的 shadow 也是图坐标，随缩放一起变）。 */
+  shadow: "0 6px 14px -4px rgba(0,0,0,0.22), 0 2px 4px rgba(0,0,0,0.16)",
+} as const;
+
+/**
+ * 东亚宽字符（占一个全角宽）。范围取 Unicode 的 East Asian Wide/Fullwidth
+ * 那几段，够用即可——判据钉的是"中文按 1.0 折算"，不是逐码位精确。
+ */
+const WIDE_CHAR =
+  /[\u1100-\u115F\u2E80-\uA4CF\uA960-\uA97F\uAC00-\uD7A3\uF900-\uFAFF\uFE10-\uFE19\uFE30-\uFE6F\uFF00-\uFF60\uFFE0-\uFFE6]/;
+
+/**
+ * 标题文字有多宽（画布单位）。
+ *
+ * ComfyUI 没有 canvas 量测器时的兜底是 `font_size * text.length * 0.6`
+ * （`compute_text_size` 里那一行）。**那条对中文是错的**：中文一个字就是
+ * 一个全角宽，按 0.6 折算会短掉四成——标题照样被截断，而这一层的目的
+ * 恰恰是"让节点宽到装得下标题"。所以中日韩按 1.0、其余按 0.55 分开算。
+ */
+export function titleTextWidth(text: string, fontPx: number): number {
+  let units = 0;
+  for (const ch of text) units += WIDE_CHAR.test(ch) ? 1 : 0.55;
+  return units * fontPx;
+}
+
+/**
+ * 标题条要求节点至少多宽。
+ *
+ * 抄 `computeSize` 里的 `title_width`：
+ *
+ *     padLeft  = NODE_TITLE_HEIGHT
+ *     padRight = padLeft * 0.33
+ *     title_width = padLeft + textWidth + padRight
+ *
+ * padLeft 之所以是整整一个标题条高，是因为标题左边有那个小圆点。
+ */
+export function titleBarWidth(text: string): number {
+  const padLeft = BLOCK_CELL.labelBand;
+  const padRight = padLeft * 0.33;
+  return padLeft + titleTextWidth(text, BLOCK_CHROME.titleFont) + padRight;
+}
+
+/** 节点标题条上显示的那行字。**排版和渲染必须用同一个函数**取。 */
+export function blockTitleText(rect: {
+  kindLabel: string;
+  name: string;
+}): string {
+  return `${rect.kindLabel}·${rect.name}`;
+}
+
+/**
+ * 一块的画布尺寸——照 `computeSize` 的口径：**取最大值，带下限**。
+ *
+ * ⚠ 返回的 `scale` 是**这一块自己的**缩放（内容宽 → 节点宽），
+ *   裁剪那一侧直接用它。上一版是全局同一个 440/w，各块的 scale 差 4 倍。
+ */
+export function computeBlockSize(
+  rect: BlockRect,
+  boardHeight: number
+): { w: number; h: number; scale: number; truncated: boolean } {
+  const natural = rect.rect.width * BLOCK_SIZE.designScale;
+  const wanted = Math.max(
+    natural,
+    titleBarWidth(blockTitleText(rect)),
+    BLOCK_SIZE.minWidth
+  );
+  const w = Math.min(wanted, BLOCK_SIZE.maxWidth);
+  const scale = w / rect.rect.width;
+  const wantedH = rect.rect.height * scale;
+  const maxH = cellMaxHeight(w, boardHeight);
+  return {
+    w,
+    h: Math.min(wantedH, maxH),
+    scale,
+    truncated: wantedH > maxH,
+  };
+}
 
 /**
  * 单块内容的高度上限。
  *
  * ⚠ 两条一起卡：高宽比上限，**以及画板高度**。
- *   只卡高宽比的话，一个特别长的表格块自己就有 440×2.4 = 1056 高，
- *   加上标签带 1112 > 画板 1080——那一页无论分几列都装不进画板高度，
+ *   只卡高宽比的话，一个特别长的表格块自己就有 960×2.4 = 2304 高，
+ *   加上标签带远超画板 1080——那一页无论分几列都装不进画板高度，
  *   "列数选到装得下为止"这条规则就永远达不成。真机上量到过：
  *   远程审方页的网格 1832 高，越过下一排画板 520。
  */
-function cellMaxHeight(boardHeight: number): number {
+function cellMaxHeight(width: number, boardHeight: number): number {
   return Math.min(
-    BLOCK_CELL.width * BLOCK_CELL.maxAspect,
+    width * BLOCK_CELL.maxAspect,
     Math.max(BLOCK_CELL.labelBand, boardHeight - BLOCK_CELL.labelBand)
   );
 }
 
-/** 一块按格宽铺满之后占多高（含标签带）。 */
+/** 一块按自己的宽度铺开之后占多高（含标题条）。 */
 function cellVisualHeight(rect: BlockRect, boardHeight: number): number {
-  const scale = BLOCK_CELL.width / rect.rect.width;
-  const wanted = rect.rect.height * scale;
-  return Math.min(wanted, cellMaxHeight(boardHeight)) + BLOCK_CELL.labelBand;
+  return computeBlockSize(rect, boardHeight).h + BLOCK_CELL.labelBand;
 }
 
-/** 瀑布流按 cols 列packing 之后的总高。 */
+/** 瀑布流按 cols 列 packing 之后的总高。 */
 function masonryHeight(heights: readonly number[], cols: number): number {
   const bottoms = new Array<number>(cols).fill(0);
   for (const h of heights) {
@@ -150,7 +331,7 @@ export function chooseBlockGridColumns(
   rects: readonly BlockRect[],
   boardHeight: number
 ): number {
-  const usable = rects.filter(b => b.rect.width > 0 && b.rect.height > 0);
+  const usable = usableRects(rects);
   if (usable.length === 0) return 1;
   const heights = usable.map(r => cellVisualHeight(r, boardHeight));
   for (let cols = 1; cols <= MAX_BLOCK_COLS; cols += 1) {
@@ -159,10 +340,9 @@ export function chooseBlockGridColumns(
   return MAX_BLOCK_COLS;
 }
 
-/** 一页的块网格总宽（画布坐标）。给画板之间要多留多少间距用。 */
-export function blockGridWidth(cols: number): number {
-  if (cols <= 0) return 0;
-  return cols * BLOCK_CELL.width + (cols - 1) * BLOCK_CELL.gap;
+/** 塌成 0 的块不进网格——跟量测那一侧同一条规则。 */
+function usableRects(rects: readonly BlockRect[]): BlockRect[] {
+  return rects.filter(b => b.rect.width > 0 && b.rect.height > 0);
 }
 
 /** 一个块节点的盒子（画布坐标）+ 它那个"洞"的参数。 */
@@ -203,6 +383,122 @@ export interface BlockNodeBox {
   truncated: boolean;
 }
 
+/** 一页块网格的排布结果（**相对网格左上角**，还没加画板位置）。 */
+export interface BlockGridPlan {
+  cols: number;
+  /** 每列各宽各的（arrangeGrid 的 colWidths）。 */
+  colWidths: number[];
+  /** 每列左缘相对网格左缘的偏移（arrangeGrid 的 cumulativeOffsets）。 */
+  colX: number[];
+  /** 网格总宽。**给"画板之间要多留多宽"用**，不是 cols × 某个常数。 */
+  width: number;
+  items: {
+    rect: BlockRect;
+    col: number;
+    /** 视觉顶（标题条上沿）相对网格视觉顶的偏移。 */
+    visualTop: number;
+    w: number;
+    h: number;
+    scale: number;
+    truncated: boolean;
+  }[];
+}
+
+/**
+ * 抄 `cumulativeOffsets(sizes, origin, gap)`：前缀和 + 间距。
+ *
+ * ⚠ 不能写成 `i * (width + gap)` —— 那是"每列一样宽"才成立的式子，
+ *   正是这次要改掉的东西。
+ */
+function cumulativeOffsets(
+  sizes: readonly number[],
+  origin: number,
+  gap: number
+): number[] {
+  const out: number[] = [origin];
+  for (let i = 1; i < sizes.length; i += 1) {
+    out.push(out[i - 1] + sizes[i - 1] + gap);
+  }
+  return out;
+}
+
+/**
+ * 一页的块怎么排（不含画板位置）。
+ *
+ * 两遍：先瀑布流定"哪块落哪列"，再按落进去的块算**每列的宽**。
+ * 这个顺序是对的——列归属只看高度（最矮的那列），跟宽度无关，
+ * 所以不存在"宽度定不下来"的循环。
+ */
+export function planBlockGrid(
+  rects: readonly BlockRect[],
+  boardHeight: number
+): BlockGridPlan {
+  const usable = usableRects(rects);
+  if (usable.length === 0) {
+    return { cols: 0, colWidths: [], colX: [], width: 0, items: [] };
+  }
+  const cols = chooseBlockGridColumns(usable, boardHeight);
+
+  /*
+   * ## 瀑布流：每块落进**当前最矮的那一列**
+   *
+   * 2026-08-28 用户要"节点自由散布"的观感。更早那版是严格网格（逐行取最大高、
+   * 行行对齐），块高低差很大时（指标卡矮、表格高）会：
+   *   · 每行被最高那块撑开，矮块下面留一大片空 —— 看着像表格，不像图
+   *   · 所有块的顶边对齐成一条直线 —— "电子表格感"的来源
+   *
+   * ⚠ 用瀑布流而**不是随机抖动**：抖动是乱，不是自由，而且每次渲染位置都
+   *   得稳定（否则块会在画布上跳）。瀑布流是确定性的，同一份输入永远同一个
+   *   结果，还顺带把空隙填掉了。
+   *
+   * ⚠ 列高累加的是**视觉高**（含标题条），理由同上一版：标题条画在节点外面，
+   *   不算进去的话下一块的标题会压住上一块的内容。
+   */
+  const colVisualBottom = new Array<number>(cols).fill(0);
+  const colWidths = new Array<number>(cols).fill(0);
+  const items: BlockGridPlan["items"] = [];
+
+  for (const b of usable) {
+    const size = computeBlockSize(b, boardHeight);
+
+    /* 最矮的那一列；并列时取最左的（确定性，且从左往右填看着自然）。 */
+    let col = 0;
+    for (let c = 1; c < cols; c += 1) {
+      if (colVisualBottom[c] < colVisualBottom[col] - 0.5) col = c;
+    }
+
+    const visualTop = colVisualBottom[col];
+    items.push({ rect: b, col, visualTop, ...size });
+    colVisualBottom[col] =
+      visualTop + BLOCK_CELL.labelBand + size.h + BLOCK_CELL.gap;
+    if (size.w > colWidths[col]) colWidths[col] = size.w;
+  }
+
+  const colX = cumulativeOffsets(colWidths, 0, BLOCK_CELL.gap);
+  /* ⚠ 空列（块少于列数时会有）宽 0，不能让它白占一份 gap 变成末尾一段空白。 */
+  const used = colWidths.filter(w => w > 0);
+  const width =
+    used.length === 0
+      ? 0
+      : used.reduce((a, b) => a + b, 0) + (used.length - 1) * BLOCK_CELL.gap;
+
+  return { cols, colWidths, colX, width, items };
+}
+
+/**
+ * 这一页的块网格有多宽（画布坐标）。给"画板之间要多留多少间距"用。
+ *
+ * ⚠ 必须跟 `layoutBlockNodes` 走**同一个 plan**——各算各的话留的间距
+ *   和实际网格宽对不上，网格会盖住右边那列画板，而在 13% 全景下
+ *   "盖住了"看起来只是"有点挤"，不会有任何报错。
+ */
+export function blockGridSpan(
+  rects: readonly BlockRect[],
+  boardHeight: number
+): number {
+  return planBlockGrid(rects, boardHeight).width;
+}
+
 /**
  * 把一页的块摆成画板右侧的一条竖带。
  *
@@ -213,72 +509,34 @@ export function layoutBlockNodes(
   board: ArtboardBox,
   rects: readonly BlockRect[]
 ): BlockNodeBox[] {
-  const out: BlockNodeBox[] = [];
-  if (!(board.w > 0) || !(board.h > 0)) return out;
+  if (!(board.w > 0) || !(board.h > 0)) return [];
 
-  /* 塌成 0 的块不进网格——跟量测那一侧同一条规则。 */
-  const usable = rects.filter(b => b.rect.width > 0 && b.rect.height > 0);
-  if (usable.length === 0) return out;
+  const plan = planBlockGrid(rects, board.h);
+  if (plan.items.length === 0) return [];
 
-  const cols = chooseBlockGridColumns(usable, board.h);
   const originX = board.x + board.w + BLOCK_CELL.stripGap;
-  /* ⚠ 顶端是**视觉顶**（第一块标签的上沿），加回 labelBand 才是内容顶。
+  /* ⚠ 顶端是**视觉顶**（第一块标题条的上沿），加回 labelBand 才是内容顶。
      同 arrangeGrid 的 `anchor.posY - anchor.titleHeight` → `visualTop + titleHeight`。 */
   const originVisualTop = board.y - BLOCK_CELL.labelBand;
 
-  /*
-   * ## 瀑布流：每块落进**当前最矮的那一列**
-   *
-   * 2026-08-28 用户要"节点自由散布"的观感。上一版是严格网格（逐行取最大高、
-   * 行行对齐），块高低差很大时（指标卡矮、表格高）会：
-   *   · 每行被最高那块撑开，矮块下面留一大片空 —— 看着像表格，不像图
-   *   · 所有块的顶边对齐成一条直线 —— "电子表格感"的来源
-   *
-   * ⚠ 用瀑布流而**不是随机抖动**：抖动是乱，不是自由，而且每次渲染位置都
-   *   得稳定（否则块会在画布上跳）。瀑布流是确定性的，同一份输入永远同一个
-   *   结果，还顺带把空隙填掉了。
-   *
-   * ⚠ 列高累加的是**视觉高**（含标签带），理由同上一版：标签画在节点外面，
-   *   不算进去的话下一块的标签会压住上一块的内容。
-   */
-  const colVisualBottom = new Array<number>(cols).fill(originVisualTop);
-
-  for (const b of usable) {
-    const scale = BLOCK_CELL.width / b.rect.width;
-    const wanted = b.rect.height * scale;
-    /* ⚠ 跟 chooseBlockGridColumns 用**同一条**上限函数——各算各的话，
-       选列数时以为装得下、实际摆出来又溢出。 */
-    const maxH = cellMaxHeight(board.h);
-    const h = Math.min(wanted, maxH);
-
-    /* 最矮的那一列；并列时取最左的（确定性，且从左往右填看着自然）。 */
-    let col = 0;
-    for (let c = 1; c < cols; c += 1) {
-      if (colVisualBottom[c] < colVisualBottom[col] - 0.5) col = c;
-    }
-
-    const visualTop = colVisualBottom[col];
-    out.push({
-      key: blockKey(board.pageId, b.name),
-      pageId: board.pageId,
-      name: b.name,
-      x: originX + col * (BLOCK_CELL.width + BLOCK_CELL.gap),
-      /* 视觉顶 + 标签带 = 内容顶。 */
-      y: visualTop + BLOCK_CELL.labelBand,
-      w: BLOCK_CELL.width,
-      h,
-      crop: {
-        /* 设计坐标，**不乘 scale**——消费侧是 scale(s) translate(-left,-top)，
-           CSS 会替我们乘。这里先乘一遍等于乘两次。 */
-        left: b.rect.left,
-        top: b.rect.top,
-        scale,
-      },
-      truncated: wanted > maxH,
-    });
-    colVisualBottom[col] = visualTop + BLOCK_CELL.labelBand + h + BLOCK_CELL.gap;
-  }
-  return out;
+  return plan.items.map(it => ({
+    key: blockKey(board.pageId, it.rect.name),
+    pageId: board.pageId,
+    name: it.rect.name,
+    x: originX + plan.colX[it.col],
+    /* 视觉顶 + 标题条 = 内容顶。 */
+    y: originVisualTop + it.visualTop + BLOCK_CELL.labelBand,
+    w: it.w,
+    h: it.h,
+    crop: {
+      /* 设计坐标，**不乘 scale**——消费侧是 scale(s) translate(-left,-top)，
+         CSS 会替我们乘。这里先乘一遍等于乘两次。 */
+      left: it.rect.rect.left,
+      top: it.rect.rect.top,
+      scale: it.scale,
+    },
+    truncated: it.truncated,
+  }));
 }
 
 /**
@@ -286,19 +544,20 @@ export function layoutBlockNodes(
  *
  * ⚠ 不留的话网格会盖住右边那一列画板——而"盖住了"在缩到 13% 的全景下
  *   看起来只是"有点挤"，不会有任何报错。
- * ⚠ 宽度跟**列数最多的那一页**走：按平均值留会让列多的那页照样盖住邻居。
- *   （列数现在是按"装得进画板高度"选的，见 chooseBlockGridColumns。）
+ * ⚠ 参数是**最宽的那一页的网格宽**（`blockGridSpan` 取 max），不是列数：
+ *   列数乘一个常数格宽的老算法在"每列各宽各的"之后就不成立了，
+ *   按它留会留少，网格照样盖住邻居。
  */
-export function blockGridExtraGapX(maxCols: number): number {
-  if (maxCols <= 0) return 0;
-  return BLOCK_CELL.stripGap + blockGridWidth(maxCols);
+export function blockGridExtraGapX(maxSpan: number): number {
+  if (maxSpan <= 0) return 0;
+  return BLOCK_CELL.stripGap + maxSpan;
 }
 
 /**
- * 一页块网格的总高（含标签带与行距）。给"这一页的块摆不摆得下"用。
+ * 一页块网格的总高（含标题条与行距）。给"这一页的块摆不摆得下"用。
  *
  * ⚠ 空数组回 0——多算一行会让外接盒每页都虚高一截，「适应画布」跟着偏。
- * ⚠ 从**视觉顶**（首行标签的上沿）量到末行底，跟排布用的是同一套盒子。
+ * ⚠ 从**视觉顶**（首行标题条的上沿）量到末行底，跟排布用的是同一套盒子。
  */
 export function blockGridHeight(boxes: readonly BlockNodeBox[]): number {
   if (boxes.length === 0) return 0;
@@ -325,17 +584,22 @@ export function blockGridHeight(boxes: readonly BlockNodeBox[]): number {
  * 用 sqrt(DPR) 是它注释里的原话：高 DPR 屏对可读性的提升不是线性的，
  * DPR=2 大约提升 40%，用 sqrt 近似。
  *
- * ## 为什么我们需要它
+ * ## ⚠ 2026-08-28：上一版这条阈值**从来没成立过**
  *
- * 真机 5 页 24 块、94 条影响线，缩到 21% 看全景时：块标签挤成一片糊字，
- * 影响线横七竖八——那一档用户要看的是"有几页、大致长什么样"，
- * 不是"哪一块叫什么名字"。ComfyUI 在这一档直接把圆角、阴影、文字全关掉。
+ * 公式没错，代进去的数错了：当时标签是**反缩放**画的（`fontSize: 11` 配
+ * `transform: scale(1/zoom)`），屏幕上永远是 11px，跟缩放无关。而公式里的
+ * NODE_TEXT_SIZE 指的是**图坐标字号**。拿 11 代进去得到 6/11 = 0.545——
+ * 于是画布常态的 17%~25% 全部低于阈值，**块标签一次都没显示过**。
+ * 用户说的"太平了"，一半就是这个：一排没有标题的白方块。
  *
- * ⚠ 关掉的是**细节**，不是内容：块节点本身照画（同 shouldMountBoard 那条
- *   "剔除是性能手段，不是可见性判定"）。缩到看全景时正是最需要看见每块在哪
- *   的时候。
+ * 现在标题字号改成画布单位（BLOCK_CHROME.titleFont = 26，跟着缩放一起变），
+ * 公式才真的成立：6/26 ≈ 0.23 —— 全景（17%）不画字，稍微放大就出来。
+ *
+ * ⚠ 关掉的是**文字**，不是标题条本身：色条照画（同 ComfyUI 的 low_quality
+ *   仍然填色画形状）。全景那一档色条正是"这页由几张表几个指标拼成"的读法。
  */
-export const BLOCK_LABEL_FONT_PX = 11;
+/** 标题字号（画布单位）。LOD 阈值从它反推——两者必须是同一个数。 */
+export const BLOCK_LABEL_FONT_PX = BLOCK_CHROME.titleFont;
 /** 低于这个字号就认为读不出来了（同 ComfyUI 的 min_font_size_for_lod 默认档）。 */
 export const MIN_READABLE_FONT_PX = 6;
 
@@ -348,7 +612,7 @@ export function blockDetailZoomThreshold(
   return MIN_READABLE_FONT_PX / (BLOCK_LABEL_FONT_PX * dpr);
 }
 
-/** 这个缩放档位该不该画块的细节（标签、影响线）。 */
+/** 这个缩放档位该不该画块的细节（标题文字、影响线标签）。 */
 export function shouldDrawBlockDetail(
   zoom: number,
   devicePixelRatio?: number
@@ -357,7 +621,7 @@ export function shouldDrawBlockDetail(
 }
 
 /**
- * 按块类型给底色。
+ * 按块类型给颜色：`fill`/`ink` 给降级静态卡，`bar` 给标题条。
  *
  * ## 为什么需要
  *
@@ -365,24 +629,54 @@ export function shouldDrawBlockDetail(
  * 但**照画节点的形状和颜色**（LGraphCanvas.ts:5901 那段 `shape == BOX ||
  * low_quality` 走的仍是填色的 rect）。
  *
- * 我们这边上一版在 LOD 档把标签收起来之后，降级的静态卡就成了**一片空白
+ * 我们这边更早那版在 LOD 档把标签收起来之后，降级的静态卡就成了**一片空白
  * 方块**——真机 24 块里 19 块是静态的，全景看过去就是一堆白格子，
  * 比不画还糟（看着像加载坏了）。给它按类型上色，全景下至少读得出
  * "这一页由几张表、几个指标、一个图表拼成"。
  *
- * ⚠ 颜色只用来**分类**，不表示状态（好/坏/告警）。真机上块的类型是
- *   `data-block-kind`，跟 Python 的 BLOCK_KINDS 一字不差。
+ * ## ⚠ 2026-08-28：标题条**另开一套颜色**，因为面积变了
+ *
+ * 把标签从一个小色片改成整条标题条之后，同一个 `#b91c1c`（指标那档的 ink）
+ * 从"一枚红色小标"变成"一条通栏红带"。真机截图上五页顶部各一条大红带——
+ * **看着像告警**，而这一档的注释自己写着"颜色只用来分类，不表示状态"。
+ * 改的是渲染，读出来的意思却跟着变了，这种错不报错。
+ *
+ * ComfyUI 的 `LGraphCanvas.node_colors` 正是为这件事准备的：
+ *
+ *     red: { color: '#322' }   green: { color: '#232' }   cyan: { color: '#233' }
+ *
+ * 全是**近中性的暗色，只带一点点色相**（`#322` 的色度只有 0.067）。
+ * 面积大的地方色度就得低——底下那套 `bar` 照这条重来：色相分得开，
+ * 色度压在 0.25 以下，没有哪一档能被读成"红灯"。
+ *
+ * ⚠ `ink`/`fill` **不跟着改**：它们用在静态卡的图标和底色上，面积小、
+ *   要的就是辨识度。同一件事在不同面积下该用不同的色，别图省事合成一套。
  */
-export const BLOCK_KIND_TINT: Record<string, { fill: string; ink: string }> = {
-  chart: { fill: "#eef2ff", ink: "#4f46e5" },
-  table: { fill: "#ecfeff", ink: "#0e7490" },
-  form: { fill: "#f0fdf4", ink: "#15803d" },
-  detail: { fill: "#fefce8", ink: "#a16207" },
-  metric: { fill: "#fef2f2", ink: "#b91c1c" },
-  list: { fill: "#f5f3ff", ink: "#6d28d9" },
-  media: { fill: "#fff7ed", ink: "#c2410c" },
-  card: { fill: "#f8fafc", ink: "#475569" },
+export const BLOCK_KIND_TINT: Record<
+  string,
+  { fill: string; ink: string; bar: string }
+> = {
+  chart: { fill: "#eef2ff", ink: "#4f46e5", bar: "#4d5182" },
+  table: { fill: "#ecfeff", ink: "#0e7490", bar: "#33606a" },
+  form: { fill: "#f0fdf4", ink: "#15803d", bar: "#3d6b4a" },
+  detail: { fill: "#fefce8", ink: "#a16207", bar: "#6e6042" },
+  metric: { fill: "#fef2f2", ink: "#b91c1c", bar: "#7a4a52" },
+  list: { fill: "#f5f3ff", ink: "#6d28d9", bar: "#5b4a80" },
+  media: { fill: "#fff7ed", ink: "#c2410c", bar: "#75593f" },
+  card: { fill: "#f8fafc", ink: "#475569", bar: "#4b5563" },
 };
+
+/**
+ * 一个颜色的**色度**（最大通道 − 最小通道，归一到 0..1）。
+ *
+ * 判据用它卡"面积大的颜色不许太艳"。ComfyUI 的 `node_colors` 全在 0.07
+ * 上下；上一版误用的 `#b91c1c` 是 0.616。
+ */
+export function colorChroma(hex: string): number {
+  const h = hex.replace("#", "");
+  const ch = [0, 2, 4].map(i => Number.parseInt(h.slice(i, i + 2), 16));
+  return (Math.max(...ch) - Math.min(...ch)) / 255;
+}
 
 /**
  * 取某一类块的底色。
@@ -390,6 +684,10 @@ export const BLOCK_KIND_TINT: Record<string, { fill: string; ink: string }> = {
  * ⚠ 认不出的类型回 `card` 那档，**不回透明**：透明就是那片白方块，
  *   而"认不出类型"和"没有内容"是两回事。
  */
-export function blockKindTint(kind: string): { fill: string; ink: string } {
+export function blockKindTint(kind: string): {
+  fill: string;
+  ink: string;
+  bar: string;
+} {
   return BLOCK_KIND_TINT[kind] ?? BLOCK_KIND_TINT.card;
 }
