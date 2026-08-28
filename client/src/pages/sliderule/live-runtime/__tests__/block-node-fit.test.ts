@@ -197,6 +197,28 @@ describe("反向判据", () => {
     expect(fitBlockNodes(many(3)).rung).toBe("verbatim");
   });
 
+  it("⚠ 默认预算装得下真机常见规模——「区块要是真实的区块」", () => {
+    /*
+     * 2026-08-28 用户裁决：降级卡片不算真实区块。
+     * 预算 32 是量出来的（见 DEFAULT_BLOCK_IFRAME_BUDGET 头注的两档实测），
+     * 覆盖 4~7 页 × 3~7 块的真实会话。
+     * 变异：调回 12，真机那份 5 页 24 块的会话立刻只剩 5 块真渲染，这条红。
+     */
+    expect(DEFAULT_BLOCK_IFRAME_BUDGET).toBeGreaterThanOrEqual(28);
+    // 真机基线：5 页 24 块，必须全量真渲染
+    expect(fitBlockNodes(many(24, 24, 24)).rung).toBe("verbatim");
+    expect(fitBlockNodes(many(24, 24, 24)).liveCount).toBe(24);
+  });
+
+  it("反向：阶梯没被删——病态输入仍然降级，不许把标签页拖垮", () => {
+    // 几十页上百块时宁可降级，而且降级是看得见的（data-block-fit-rung）。
+    const huge = many(200, 200, 200);
+    expect(fitBlockNodes(huge).liveCount).toBeLessThanOrEqual(
+      DEFAULT_BLOCK_IFRAME_BUDGET
+    );
+    expect(fitBlockNodes(huge).rung).not.toBe("verbatim");
+  });
+
   it("不做二分：同一输入结果稳定，不随调用次数变", () => {
     const cands = many(30, 30, 5);
     const a = fitBlockNodes(cands, 12);

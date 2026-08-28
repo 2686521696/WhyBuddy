@@ -132,14 +132,20 @@ describe("反向判据", () => {
     expect(STAGE).not.toMatch(/sourceHandle:\s*"l",\s*\n\s*targetHandle:\s*"l"/);
   });
 
-  it("⚠ LOD：缩放低于可读阈值时收起标签与影响线，但**块本身照画**", () => {
-    // 抄 ComfyUI 的 updateLowQualityThreshold（从字号反推阈值，不是拍魔数）。
-    // 真机 21% 全景下 24 个标签糊成一片、94 条线横七竖八。
-    expect(STAGE).toContain("shouldDrawBlockDetail(zoom)");
-    expect(STAGE).toContain("shouldDrawBlockDetail(vp.zoom)");
-    expect(STAGE).toContain("blocksShown && blockDetailVisible");
-    // 反向：收的是细节，不是块——块节点的挂载不许跟着 LOD 走
-    expect(STAGE).not.toMatch(/blockDetailVisible[\s\S]{0,80}blockBoxes\.map/);
+  it("⚠ LOD 只管**标签**，线和块都不受它管", () => {
+    /*
+     * 2026-08-28 用户裁决 + 我抄错的地方掰回来：
+     * ComfyUI 的低质量档丢的是文字、阴影、圆角、以及线的**描边**
+     * （pathRenderer.ts:119 `borderWidth && !lowQuality`），**线本身照画**。
+     * 线承载结构，多小都读得出走向；文字小到一定程度就只是糊。
+     * 两者不该同一个开关。
+     */
+    expect(STAGE).toContain("shouldDrawBlockDetail(zoom)"); // 标签还受它管
+    // 反向：线不许再挂在 LOD 上
+    expect(STAGE).not.toContain("blockDetailVisible");
+    expect(STAGE).not.toContain("shouldDrawBlockDetail(vp.zoom)");
+    // 反向：块节点的挂载也不许跟着 LOD 走
+    expect(STAGE).not.toMatch(/shouldDrawBlockDetail[\s\S]{0,80}blockBoxes\.map/);
   });
 
   it("⚠ 连线走自定义曲线，不是 React Flow 自带的 bezier", () => {

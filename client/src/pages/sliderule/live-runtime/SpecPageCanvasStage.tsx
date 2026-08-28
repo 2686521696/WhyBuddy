@@ -1906,10 +1906,6 @@ function CanvasInner({
     return pages[0]?.pageId ?? null;
   }, [entered, activePageId, pages]);
 
-  /* LOD：缩放低于可读阈值时不画影响线（同 BlockNode 里的标签）。
-     ⚠ 真机 94 条线在 21% 全景下横七竖八，那一档它们只是噪声。 */
-  const blockDetailVisible = shouldDrawBlockDetail(vp.zoom);
-
   const blockBoxById = React.useMemo(
     () => new Map(blockBoxes.map(b => [b.key, b])),
     [blockBoxes]
@@ -2083,7 +2079,7 @@ function CanvasInner({
        * ⚠ 只在块条带开着时画：块节点不存在时这些边两端都落空，React Flow
        *   会静默丢掉（不报错），但计算白做。
        */
-      const impact: Edge[] = blocksShown && blockDetailVisible
+      const impact: Edge[] = blocksShown
         ? impactEdges
             .filter(e => {
               /* 两端都得有节点。nav 的 to 是页面 id（画板节点）。 */
@@ -2130,7 +2126,6 @@ function CanvasInner({
       impactEdges,
       blocksShown,
       blockNodeIds,
-      blockDetailVisible,
     ]
   );
 
