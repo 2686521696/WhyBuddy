@@ -561,7 +561,51 @@ const IMPACT_STYLE: Record<
   nav: { stroke: "#0891b2", strokeWidth: 2 },
   action: { stroke: "#c2410c", strokeWidth: 2 },
   asset: { stroke: "#7c3aed", strokeWidth: 2 },
-  field: { stroke: "#cbd5e1", strokeWidth: 1, strokeDasharray: "2 6" },
+  /*
+   * ⚠ 同源字段单独一个色相（靛蓝），**不许再用灰**（2026-08-28）。
+   *
+   *   上一版它是 #cbd5e1，跟**归属线**一模一样。真机上量到 86 条同源线和
+   *   24 条归属线是同一个 rgb(203,213,225)，只差 0.5px 线宽和虚线节奏——
+   *   肉眼分不出。用户直接问"这种淡淡的线是啥，连接啥的"。
+   *
+   *   讽刺的是 block-impact.ts 头注里写着"两类关系不能混成一条线"，
+   *   我防住了"真联动 vs 同源"，却没防住"同源 vs 归属"。
+   *   判据补在下面 ALL_EDGE_STROKES 那条：任何两种线不许同色。
+   *
+   *   靛蓝而不是别的：nav 青、action 橙、asset 紫已经占了三个色相，
+   *   靛蓝跟它们分得开，又比它们淡（1px + 稀虚线），符合"仅同源，别当真"。
+   */
+  field: { stroke: "#a5b4fc", strokeWidth: 1, strokeDasharray: "2 6" },
+};
+
+/**
+ * 归属线（块 → 它所属的整页）的画法。
+ *
+ * ⚠ 比所有影响线都**更轻**：块本来就摆在它那张画板旁边，归属靠位置已经
+ *   读得出来，这条线只是确认。做重了会跟真正要看的影响线抢注意力。
+ */
+const OWNERSHIP_STYLE = {
+  stroke: "#e2e8f0",
+  strokeWidth: 1,
+  strokeDasharray: "1 6",
+} as const;
+
+/**
+ * 画布上**所有**线的描边色，集中一处。
+ *
+ * ⚠ 存在的唯一理由是那条反向判据：**任何两种线不许同色**。
+ *   2026-08-28 就是栽在这儿——归属线和同源字段各自定义在两个地方，
+ *   都写了 #cbd5e1，没有任何一处能看出它们撞了。
+ *   加线的种类时把颜色加进这里，判据会替你挡住撞色。
+ */
+export const ALL_EDGE_STROKES: Record<string, string> = {
+  boardDataflow: EDGE_STYLE.dataflow.stroke,
+  boardManual: EDGE_STYLE.manual.stroke,
+  ownership: OWNERSHIP_STYLE.stroke,
+  impactNav: IMPACT_STYLE.nav.stroke,
+  impactAction: IMPACT_STYLE.action.stroke,
+  impactAsset: IMPACT_STYLE.asset.stroke,
+  impactField: IMPACT_STYLE.field.stroke,
 };
 
 const IMPACT_LABEL: Record<ImpactEdgeKind, string> = {
@@ -2034,7 +2078,7 @@ function CanvasInner({
         type: "blockCurve",
         selectable: false,
         focusable: false,
-        style: { stroke: "#cbd5e1", strokeWidth: 1.5, strokeDasharray: "3 5" },
+        style: OWNERSHIP_STYLE,
         };
       });
       const linkEdges = links.map(l => {

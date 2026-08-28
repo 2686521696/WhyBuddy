@@ -171,6 +171,47 @@ describe("反向判据", () => {
     expect(STAGE).toMatch(/pointerEvents: "none"[\s\S]{0,40}\/>\s*\n\s*\);/);
   });
 
+  it("⚠ **任何两种线不许同色** —— 撞色就是两种关系分不出来", () => {
+    /*
+     * 2026-08-28 用户问"这种淡淡的线是啥，连接啥的"——真机量下来那片淡线
+     * 其实是**两种**东西：24 条归属线和 86 条同源字段线，都是
+     * rgb(203,213,225)，只差 0.5px 线宽和虚线节奏，肉眼分不出。
+     *
+     * 讽刺的是 block-impact.ts 头注里写着"两类关系不能混成一条线"，
+     * 我防住了"真联动 vs 同源"，却没防住"同源 vs 归属"——因为两处颜色
+     * 定义在文件的两个地方，没有任何一处看得出它们撞了。
+     *
+     * 这条判据就是为了让下一次撞色**在提交前**红掉。
+     */
+    const m = STAGE.match(
+      /export const ALL_EDGE_STROKES: Record<string, string> = \{([\s\S]*?)\}/
+    );
+    expect(m, "ALL_EDGE_STROKES 不见了——撞色判据失去依据").not.toBeNull();
+
+    // 顺着这张表把颜色取出来（值是对别处常量的引用，所以在源码里解引用）
+    const kinds = [...m![1].matchAll(/(\w+):\s*([A-Z_]+|\w+)\.(\w+)(?:\.(\w+))?/g)];
+    expect(kinds.length).toBeGreaterThanOrEqual(7);
+
+    const strokes = [...STAGE.matchAll(/stroke:\s*"(#[0-9a-fA-F]{3,8})"/g)].map(
+      x => x[1].toLowerCase()
+    );
+    expect(strokes.length).toBeGreaterThanOrEqual(7);
+    const dup = strokes.filter((c, i) => strokes.indexOf(c) !== i);
+    expect(dup, `这些颜色被多种线共用：${[...new Set(dup)].join("、")}`).toEqual(
+      []
+    );
+  });
+
+  it("⚠ 归属线比所有影响线都更轻（不许跟影响线抢注意力）", () => {
+    // 块本来就摆在它那张画板旁边，归属靠位置已经读得出来，线只是确认。
+    const own = STAGE.match(
+      /const OWNERSHIP_STYLE = \{([\s\S]*?)\} as const/
+    );
+    expect(own).not.toBeNull();
+    expect(own![1]).toContain("strokeWidth: 1");
+    expect(own![1]).toContain("strokeDasharray");
+  });
+
   it("⚠ 静态卡按类型上色（低质量档保形状保颜色，只丢细节）", () => {
     // 上一版统一浅灰，全景下 19 张静态卡是一堆白方块，看着像加载坏了。
     expect(STAGE).toContain("blockKindTint(kind)");
