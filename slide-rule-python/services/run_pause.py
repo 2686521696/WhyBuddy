@@ -1,142 +1,358 @@
-"""协作式暂停：让跑在线程里的引擎**在安全点上停下来等人**（2026-08-28 验证件）。
+"""协作式暂停：在安全点上停下来等人（2026-08-28 验证件，第二版）。
 
-⚠ **这是一个验证件（spike），还没接进流水线。** 它证明"停在半路"这件事
-  机制上成立，不代表产品已经决定要拦。接线之前先读下面「为什么需要它」和
-  「还没解决的」两段。
+⚠ **这仍是验证件（spike），没接进流水线。** 它证明"停在半路"机制上成立，
+  不代表产品已经决定要拦。接线之前先读「还没解决的」那一段。
 
 ## 为什么需要它
 
-伴随式澄清目前**不拦路**，那是 spec-assumptions 模块头写死的有意设计：
-「工厂中途停下来等回答会撞上闭环的 fail-closed 语义」。
+伴随式澄清目前不拦路，理由写在 spec-assumptions 模块头：「工厂中途停下来
+等回答会撞上闭环的 fail-closed 语义」。2026-08-28 把这句话拆开实测：
 
-2026-08-28 实测把这句话拆开了，结论跟原来的猜测不一样：
+  ① 闭环判据（v5_publish_closure_response）**纯看状态、时间无关**。拿真会话
+     sr-20260827191954 把 capabilityRuns 逐条截断实测：截到 8 条
+     blocked=False，截到 7 条及以下一律 fail-closed。判据只认最后那条
+     ``appbundle.runtimeClosure`` 有没有产出报告，前七条零贡献。
 
-  ① 闭环判据（v5_publish_closure_response）是**纯看状态、时间无关**的。
-     拿真会话（sr-20260827191954）把 capabilityRuns 逐条截断实测：
+  ② 真机把一轮跑到 75 秒掐掉：runtimePhase=awaiting / awaitReason=no_progress，
+     前 7 条有产出，第 8 条 execution 闸 failed、result 为空，
+     publishClosure=null，modelVersions=0。
 
-         截到 8 条 → blocked=False skillCount=6   ← 唯一的绿
-         截到 7 条及以下 → 一律 fail-closed
+所以"中途停 = 白烧一轮"是真的，但病根是**今天唯一的停法是终止性取消**，
+不是"停"本身。只要这一轮最后还走得到 runtimeClosure，闸就认。
 
-     判据只取决于最后那条 ``appbundle.runtimeClosure`` 有没有产出报告，
-     前七条对结论零贡献。**它不知道也不在乎中间停过多久。**
+## 第二版改了什么（照 grok-build 的 AskUserQuestion 重写）
 
-  ② 真机把一轮跑到 75 秒掐掉，量到的现场：
+第一版是**线程里 `threading.Event.wait()` 干等**，于是自带一个约束：
+暂停期间占住 event-loop executor 的一个槽（启动日志：64 个，一组流式推演
+占 5 槽）。那个约束是**第一版自己造出来的**，不是问题固有的。
 
-         runtimePhase=awaiting / awaitReason=no_progress   ← 停进等待态，不炸
-         前 7 条能力有产出，第 8 条 execution 闸 failed、result 为空
-         publishClosure=null                               ← fail-closed
-         modelVersions=0                                   ← 下一轮复用不了
+grok 的做法（`xai-grok-tools/.../ask_user_question/mod.rs:458`）：
 
-所以"中途停 = 白烧一轮"是真的，**但病根不是"停"，是今天唯一的停法
-（run_cancel）是终止性的**——取消让最后一步失败，于是交不出报告。
+    let outcome = match wait {
+        Some(dur) => tokio::time::timeout(dur, result_rx).await,
+        None      => Ok(result_rx.await),
+    };
 
-换句话说：只要这一轮最后**还能走到** ``appbundle.runtimeClosure``，闸就认。
-这就是本模块存在的理由——在同一批安全点上"等"，而不是"抛"。
+**异步 await 一个通道，一个工作线程都不占。**
 
-## 为什么跟 run_cancel 同形
+对应到这里：安全点提到**异步那一层**——引擎每一步是
+``await asyncio.to_thread(...)``，暂停放在**两次 to_thread 之间**的协程里等。
+这跟 run_cancel 头注那句「安全点放在步与步之间，别放进循环内层」本来就是
+同一句话，只是那时没意识到它同时解决了占槽。
 
-同一个约束：``Task.cancel()`` 打不断已经在线程里跑的同步代码（见 run_cancel
-模块头，那里有实测数字）。所以暂停也只能靠**在安全点主动查一下**，用
-ContextVar 装一个可变对象（Event），线程读到的是同一个引用。
+⚠ 代价与取消一样：一步有多大，暂停就最多迟到多久（真机单步量到过 918 秒）。
+  这是协作式模型的固有取舍，run_cancel 头注已经论证过，不在这里重复权衡。
 
-形状照 .NET / Go / Temporal 那套协作式模型，不引库——一个 Event 加一个
-等待函数就是全部。
+## 超时**不是失败**——这条是要害
 
-## ⚠ 暂停必须是可取消的，否则是死锁
+grok 的模块头：
 
-最危险的失败形态不是"停不住"，是**停住了就再也出不来**：用户走开了、
-标签页关了、看门狗喊了取消，而线程还在 ``Event.wait()`` 上干等到天荒地老，
-占着 64 个执行槽里的一个。
+    Default max time to wait for the user to answer: 30 minutes.
+    On expiry the tool returns the same skipped/cancel text as a user
+    dismiss, **not a tool failure**.
 
-所以 ``wait_here_if_paused`` **不是**裸 ``wait()``：它带超时轮询，每一轮
-醒来先查取消令牌，被取消就照 run_cancel 的语义抛 RunCancelled。判据
-``暂停中被取消不会死锁`` 钉着这条——那是这个模块唯一不许错的地方。
+所以"关掉页面 600 秒后被看门狗收掉"那个约束，正解不是"把 600 秒调大"，
+而是**超时按「用户跳过」处理**：推演继续往下跑，走到最后一步，闭环照样绿。
 
-## 安全点放在哪
+这跟本仓现成的语义严丝合缝——spec-assumptions 头注写着「不点 = 就按模型
+定的做，**这是个合法结局**」。等的就是同一件事，超时就按那个合法结局走。
 
-跟 raise_if_cancelled 同一批位置（步与步之间），理由也同一条：这一层的
-意义是"别再开始下一件大活儿"，不是"把当前这件切成碎片"。切太碎既救不了
-已经发出去的 LLM 请求，又给每一步都加一处可能抛异常的地方。
+三个细节一并照抄：
+  · ``enabled=False`` = 永远等；**``seconds=0`` 明确不表示"永远等"**，
+    那是另一个开关的活（grok 对 0 专门打警告并回落默认预算）。
+  · 一次问一批共用**一个**计时器，不是每题一个。
+  · ``non_interactive``：**没人在场**（页面关了 / 无头跑）时报的是
+    "没有操作员"，不是"用户拒绝"。两者对下游是不同的事实，别揉成一个。
 
-## 还没解决的（接线之前必须先想清楚）
+## 没人答怎么办：照 claw-code 的恢复配方
 
-  - **占线程**：暂停期间占着 event-loop executor 的一个槽（启动日志：64 个，
-    流式推演一组占 5 槽）。同时暂停的人多了会挤掉别人的并发。接线时要么
-    限制同时暂停数，要么把安全点改成异步等待。
-  - **孤儿看门狗**：run_registry 按「订阅者为 0 超过 600 秒」收掉。页面开着
-    就有订阅者、不会被收；关掉页面则 600 秒后被收——那时暂停就变成了取消，
-    退回 fail-closed。接线时要么调大宽限，要么在暂停时明确告诉用户别关页面。
-  - **产品判断**：哪些澄清值得拦。照 grok-build 的分档，只有"改了就得整个
-    重画"的那种才该升格成拦路的；按钮文案那种改了不影响大局，继续摊开就行。
+claw-code 把「问了人没人答」列成**六个已知故障场景之一**
+（`runtime/src/recovery_recipes.rs` 的 ``TrustPromptUnresolved``）：
+
+    RecoveryRecipe {
+        steps: vec![RecoveryStep::AcceptTrustPrompt],   // 先自动按默认走一次
+        max_attempts: 1,                                 // 只自动一次
+        escalation_policy: EscalationPolicy::AlertHuman, // 再不行才喊人
+    }
+
+要害是**「没人答」是要预先设计的正常场景，不是异常**：自动按默认继续一次，
+只走一次，还不行才升级喊人，每次尝试都留一条结构化事件。见
+`unresolved_recovery` 与 `RecoveryLedger`。
+
+## 还没解决的（接线之前）
+
+  - **接线本身**：安全点要插进驱动器的异步循环；卡片要长出"拦路"的形态；
+    答案要有一条送回正在跑的那一轮的路。这三样都还没有。
+  - **产品判断**：哪些澄清值得拦。2026-08-28 复查发现 `_ASSUMPTIONS_ASK`
+    的入选门槛本来就是「改了产品会长得不一样」，能上卡的**本来就全是结构
+    性的**，再分一档收益很小。倾向于不做，等人拍板。
 """
 
 from __future__ import annotations
 
-import threading
-from contextvars import ContextVar
-from typing import Optional
+import asyncio
+import time
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, Optional, Tuple
 
-from .run_cancel import raise_if_cancelled
+from .run_cancel import RunCancelled, is_cancelled
 
-#: 当前 run 的暂停闸。**未暂停时是 set() 状态**（绿灯放行），
-#: 请求暂停时 clear()（红灯）。方向跟取消令牌相反，是因为
-#: "常态放行"才能让没暂停的那条路零成本——见 wait_here_if_paused。
-_GATE: ContextVar[Optional[threading.Event]] = ContextVar(
-    "sliderule_run_pause", default=None
-)
-
-#: 醒来查一次取消的间隔。短了空转、长了取消响应迟钝；
-#: 取消的硬宽限是 5 秒（run_registry._cancel_hard_grace_seconds），
-#: 所以这里必须**明显小于它**，否则硬取消会先于协作式退出发生。
+#: 醒来查一次取消的间隔。异步等待没有线程成本，所以这个值只影响取消的
+#: 响应快慢：必须**明显小于** run_registry 的 5 秒硬取消宽限，否则硬取消
+#: 会先于协作式退出发生，退回"停没停不知道"。
 _POLL_SECONDS = 0.25
 
-
-def new_gate() -> threading.Event:
-    """造一个暂停闸。**出厂即放行**——绑上它不改变任何行为。"""
-    gate = threading.Event()
-    gate.set()
-    return gate
+#: 默认等多久。照 grok 的 30 分钟——它是"人去倒杯咖啡回来还来得及"的量级，
+#: 而不是"网络超时"的量级。等人跟等机器不是一回事。
+DEFAULT_WAIT_SECONDS = 30 * 60.0
 
 
-def bind(gate: Optional[threading.Event]) -> None:
-    """绑到当前上下文。**必须在起跑前调用**，之后才会被复制进线程。"""
-    _GATE.set(gate)
+class PauseOutcome(str, Enum):
+    """一次「停下来问人」的结局。**四种都是如实的事实，没有一种是异常。**
 
-
-def request_pause(gate: threading.Event) -> None:
-    """请求暂停。异步侧调用；线程侧下一个安全点会停住。"""
-    gate.clear()
-
-
-def resume(gate: threading.Event) -> None:
-    """放行。线程侧最多 _POLL_SECONDS 之后继续往下走。"""
-    gate.set()
-
-
-def is_paused() -> bool:
-    gate = _GATE.get()
-    return gate is not None and not gate.is_set()
-
-
-def wait_here_if_paused(where: str) -> None:
-    """安全点：暂停中就停在这儿等，等的过程里持续查取消。
-
-    ⚠ 三条不许改的性质，各有判据钉着：
-
-      1. 没暂停时**零阻塞**：常态是 set()，`is_set()` 一次就走人，不进循环。
-         这条决定了能不能把安全点撒在每一步之间而不给正常路径加延迟。
-      2. 暂停中**仍然可取消**：每 _POLL_SECONDS 醒来查一次取消令牌，
-         被取消就抛 RunCancelled（跟 raise_if_cancelled 同一个异常、
-         同一个语义）。不这样写就是死锁——用户关了页面、看门狗喊了取消，
-         而线程永远醒不过来，占着执行槽。
-      3. 放行后**接着往下跑**，不是从头再来。这条是闭环能变绿的全部理由：
-         闸只要最后那条 appbundle.runtimeClosure 交得出报告。
+    ⚠ 别把 SKIPPED 和 NO_OPERATOR 揉成一个。前者是"人在，看了，没选"，
+      后者是"根本没人在场"——对下游是不同的事实（要不要在收口句里提这件事、
+      要不要下一轮再问一遍，两种答案不一样）。grok 为此专门有
+      `non_interactive` 一档，报的是 NO_OPERATOR_TEXT 而不是用户拒绝。
     """
-    # 先查取消：暂停期间被取消，语义上取消赢——跟安全点原本的顺序一致。
-    raise_if_cancelled(where)
-    gate = _GATE.get()
-    if gate is None or gate.is_set():
-        return
-    while not gate.wait(_POLL_SECONDS):
-        raise_if_cancelled(where)
-    raise_if_cancelled(where)
+
+    #: 人答了
+    ANSWERED = "answered"
+    #: 超时，或人明确跳过 —— 按模型定的做，**合法结局**，不是失败
+    SKIPPED = "skipped"
+    #: 没人在场（页面关了 / 无头跑）
+    NO_OPERATOR = "no_operator"
+    #: 整轮被取消（取消赢过暂停）
+    CANCELLED = "cancelled"
+
+
+@dataclass(frozen=True)
+class PauseBudget:
+    """等多久、以及场上有没有人。
+
+    ⚠ ``seconds=0`` **不表示"永远等"**——那是 ``enabled=False`` 的活。
+      0 一律回落默认预算并留一行告警（照 grok：「0 must never mean
+      'wait forever' — that is timeout_enabled's job」）。把"不限时"和
+      "限时 0 秒"塞进同一个字段，读的人分不出来，写的人迟早写错。
+    """
+
+    enabled: bool = True
+    seconds: float = DEFAULT_WAIT_SECONDS
+    #: 没有操作员在场（页面关了 / 无头跑）。结局报 NO_OPERATOR。
+    non_interactive: bool = False
+
+    def wait_budget(self) -> Optional[float]:
+        """None = 永远等；否则是秒数。"""
+        if not self.enabled:
+            return None
+        if self.seconds and self.seconds > 0:
+            return float(self.seconds)
+        return DEFAULT_WAIT_SECONDS
+
+
+@dataclass(frozen=True)
+class PauseResult:
+    outcome: PauseOutcome
+    where: str
+    waited_seconds: float
+    #: 人答了什么。只有 ANSWERED 时有值。
+    answer: Optional[Any] = None
+
+    @property
+    def answered(self) -> bool:
+        return self.outcome is PauseOutcome.ANSWERED
+
+    @property
+    def proceed_with_default(self) -> bool:
+        """该按模型自己定的往下走吗。
+
+        SKIPPED / NO_OPERATOR 都是——**这两种都不许把这一轮判死**。
+        """
+        return self.outcome in (PauseOutcome.SKIPPED, PauseOutcome.NO_OPERATOR)
+
+
+class PauseGate:
+    """一次「停下来问人」。**异步等，不占执行槽。**
+
+    用法（在驱动器的协程里，两次 to_thread 之间）::
+
+        gate = PauseGate(PauseBudget(non_interactive=no_subscribers))
+        ...把问题推给前端，前端答完调 gate.answer(...)...
+        result = await gate.wait("第4.5步 改键前")
+        if result.answered:
+            ...按人选的走...
+        # 其余一律往下跑：超时/没人在场都是合法结局，不许拦死这一轮
+    """
+
+    def __init__(self, budget: Optional[PauseBudget] = None) -> None:
+        self._budget = budget or PauseBudget()
+        self._event = asyncio.Event()
+        self._answer: Optional[Any] = None
+        self._skipped = False
+
+    # —— 外部（前端回调 / 控制面）调的三个 ——
+    def answer(self, payload: Any) -> None:
+        """人答了。"""
+        self._answer = payload
+        self._event.set()
+
+    def skip(self) -> None:
+        """人明确说"就这样"。跟超时同一个结局。"""
+        self._skipped = True
+        self._event.set()
+
+    @property
+    def budget(self) -> PauseBudget:
+        return self._budget
+
+    async def wait(self, where: str) -> PauseResult:
+        """停在这儿等。**不抛异常**——四种结局都由返回值如实说出来。
+
+        ⚠ 只有一种情况抛：整轮被取消。那时候语义上取消赢，且必须跟
+          `raise_if_cancelled` 同一个异常类型，否则沿途 `except Exception`
+          的 fail-open 兜底层会把它当成"这一步失败了"接住（见 RunCancelled
+          的头注：特意不继承 CancelledError 就是为了能被接住，这里要的是
+          同一套行为）。
+        """
+        started = time.monotonic()
+        budget = self._budget.wait_budget()
+        deadline = None if budget is None else started + budget
+
+        while True:
+            if is_cancelled():
+                raise RunCancelled(f"已请求取消，停在 {where} 的暂停闸上")
+            if self._event.is_set():
+                break
+            now = time.monotonic()
+            if deadline is not None and now >= deadline:
+                return self._settle(PauseOutcome.SKIPPED, where, started)
+            slice_s = _POLL_SECONDS
+            if deadline is not None:
+                slice_s = min(slice_s, max(deadline - now, 0.0))
+            try:
+                await asyncio.wait_for(self._event.wait(), timeout=slice_s or _POLL_SECONDS)
+            except asyncio.TimeoutError:
+                continue  # 醒来查一次取消/截止，再接着等
+
+        if self._skipped or self._answer is None:
+            return self._settle(PauseOutcome.SKIPPED, where, started)
+        return self._settle(PauseOutcome.ANSWERED, where, started, self._answer)
+
+    def _settle(
+        self,
+        outcome: PauseOutcome,
+        where: str,
+        started: float,
+        answer: Any = None,
+    ) -> PauseResult:
+        # 没人在场时，"没答"报的是 NO_OPERATOR 而不是"用户跳过"——
+        # 那不是用户的选择，是压根没有用户（照 grok 的 non_interactive）。
+        if outcome is PauseOutcome.SKIPPED and self._budget.non_interactive:
+            outcome = PauseOutcome.NO_OPERATOR
+        return PauseResult(
+            outcome=outcome,
+            where=where,
+            waited_seconds=round(time.monotonic() - started, 3),
+            answer=answer,
+        )
+
+
+# ── 没人答怎么办：照 claw-code 的恢复配方 ────────────────────────────
+
+
+@dataclass(frozen=True)
+class RecoveryRecipe:
+    """一个已知故障场景的自动恢复配方。
+
+    照 claw-code `runtime/src/recovery_recipes.rs`：**「问了人没人答」是六个
+    已知故障场景之一，不是异常**。自动按默认走一次，只走一次，还不行才升级
+    喊人，每次尝试留一条结构化事件。
+    """
+
+    scenario: str
+    steps: Tuple[str, ...]
+    max_attempts: int
+    escalation: str
+
+
+#: 「停下来问了，但没人答」的配方。
+#: steps 只有一步："按模型自己定的往下走"——那正是 spec-assumptions 头注
+#: 认定的合法结局，所以自动执行它不需要额外授权。
+UNRESOLVED_RECOVERY = RecoveryRecipe(
+    scenario="pause_unresolved",
+    steps=("按模型自己定的往下走",),
+    max_attempts=1,
+    escalation="alert_human",
+)
+
+
+@dataclass
+class RecoveryAttempt:
+    scenario: str
+    attempted: bool
+    attempts_remaining: int
+    escalate: bool
+    reason: str
+    #: 结构化事件：留痕用，一次尝试一条（claw-code 的 recovery event）
+    event: Dict[str, Any] = field(default_factory=dict)
+
+
+class RecoveryLedger:
+    """记每个场景自动恢复过几次。超了配方的次数就升级，不再默默重试。
+
+    ⚠ 「只自动一次」是配方的一部分，不是可调的旋钮：自动重试第二次意味着
+      同一个没人理的问题会把这一轮拖两遍，而人还是没来。第二次该做的是
+      喊人，不是再试。
+    """
+
+    def __init__(self) -> None:
+        self._used: Dict[str, int] = {}
+
+    def attempt(
+        self, recipe: RecoveryRecipe = UNRESOLVED_RECOVERY, *, detail: str = ""
+    ) -> RecoveryAttempt:
+        used = self._used.get(recipe.scenario, 0)
+        remaining = max(recipe.max_attempts - used, 0)
+        if remaining <= 0:
+            return RecoveryAttempt(
+                scenario=recipe.scenario,
+                attempted=False,
+                attempts_remaining=0,
+                escalate=True,
+                reason=f"自动恢复已用满 {recipe.max_attempts} 次，升级：{recipe.escalation}",
+                event={
+                    "kind": "recovery_escalated",
+                    "scenario": recipe.scenario,
+                    "policy": recipe.escalation,
+                    "detail": detail,
+                },
+            )
+        self._used[recipe.scenario] = used + 1
+        return RecoveryAttempt(
+            scenario=recipe.scenario,
+            attempted=True,
+            attempts_remaining=remaining - 1,
+            escalate=False,
+            reason=f"自动恢复：{'、'.join(recipe.steps)}",
+            event={
+                "kind": "recovery_attempted",
+                "scenario": recipe.scenario,
+                "steps": list(recipe.steps),
+                "attempt": used + 1,
+                "detail": detail,
+            },
+        )
+
+
+def recover_from(
+    result: PauseResult, ledger: RecoveryLedger
+) -> Optional[RecoveryAttempt]:
+    """人答了就不需要恢复；没答就按配方走一次。
+
+    ⚠ 返回 None 只表示"这次不需要恢复"，**不表示出错**。调用方拿到
+      `attempted=True` 就照默认往下跑，拿到 `escalate=True` 才喊人。
+    """
+    if result.answered:
+        return None
+    return ledger.attempt(detail=f"{result.outcome.value}@{result.where}")

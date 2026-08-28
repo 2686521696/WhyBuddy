@@ -1,257 +1,241 @@
-"""能不能"停在半路"——验证件的判据（2026-08-28）。
+"""能不能"停在半路"——验证件的判据（2026-08-28，第二版）。
 
-## 这个文件在回答什么问题
+## 这个文件在回答什么
 
-伴随式澄清目前不拦路，理由写在 spec-assumptions 模块头：「工厂中途停下来
-等回答会撞上闭环的 fail-closed 语义」。2026-08-28 把这句话拆开实测：
+伴随式澄清不拦路，理由写在 spec-assumptions 模块头：「工厂中途停下来等回答
+会撞上闭环的 fail-closed 语义」。2026-08-28 把这句话拆开实测：
 
-  ① 闭环判据是**纯看状态、时间无关**的。真会话 sr-20260827191954 的
-     capabilityRuns 逐条截断实测：截到 8 条 blocked=False，截到 7 条及以下
-     一律 fail-closed。判据只认最后那条 appbundle.runtimeClosure 有没有
-     产出报告，**不知道也不在乎中间停过多久**。
+  ① 闭环判据纯看状态、时间无关。真会话 sr-20260827191954 逐条截断实测：
+     截到 8 条 blocked=False，截到 7 条及以下一律 fail-closed。判据只认最后
+     那条 appbundle.runtimeClosure 有没有产出报告。
+  ② 真机跑到 75 秒掐掉：publishClosure=null、modelVersions=0，白烧一轮。
 
-  ② 真机把一轮跑到 75 秒掐掉：runtimePhase=awaiting、前 7 条有产出、
-     第 8 条 execution 闸 failed、publishClosure=null、modelVersions=0。
+所以病根是**今天唯一的停法是终止性取消**，不是"停"本身。
 
-所以"中途停 = 白烧一轮"是真的，但病根是**今天唯一的停法是终止性取消**，
-不是"停"本身。剩下的问题就一个：机制上能不能"停住再接着跑"。这个文件
-就是那个问题的判据。
+## 第二版改了什么
 
-## 为什么判据长这样
+第一版在**线程里** `threading.Event.wait()` 干等，自带"占住 64 个执行槽之一"
+的约束——那个约束是第一版自己造的。照 grok-build 的 AskUserQuestion
+（`tokio::time::timeout(dur, result_rx).await`）改成**异步等**，一个线程都不占。
 
-照 test_run_cooperative_cancel.py 的形制：起一个假 worker，让它按步走，
-在步与步之间过安全点。**不烧 LLM**——要验的是机制，不是模型。
+超时也照它改：**超时不是失败**，返回跟"用户跳过"一模一样的结局，推演继续
+往下跑到最后一步，闭环照样绿。「没人在场」单独一档（grok 的 non_interactive）。
 
-⚠ 判据必须能被变异咬住。四条各钉一件事，把实现改回去任一条都会红：
-  停不住 / 放行后不接着跑 / 暂停中取消不了（死锁）/ 常态被加了延迟。
+没人答之后怎么办，照 claw-code 的 `TrustPromptUnresolved` 配方：自动按默认
+走一次，只走一次，还不行才升级喊人。
+
+## ⚠ 判据自己踩过的两个坑
+
+  1. 第一版用裸 `threading.Thread` 起 worker，红灯挂着却跑完 20 步——裸线程
+     不继承 ContextVar。**实现是对的、判据起法不对。** 第二版整体挪进协程，
+     这个坑消失了，同源的纪律留在 run_cancel 那边。
+  2. 两种坏实现会让判据**挂死**而不是判红（CI 卡到被杀）。所以每条等待都
+     有上界，且断言"没等满预算"。
 """
 
 import asyncio
 import os
 import sys
-import threading
-import time
 
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services import run_cancel, run_pause  # noqa: E402
+from services.run_pause import (  # noqa: E402
+    PauseBudget,
+    PauseGate,
+    PauseOutcome,
+    RecoveryLedger,
+    recover_from,
+)
 
 
 @pytest.fixture(autouse=True)
 def _reset():
     run_cancel.bind(None)
-    run_pause.bind(None)
     yield
     run_cancel.bind(None)
-    run_pause.bind(None)
 
 
-def _worker(steps, done, *, sink):
-    """假引擎：按步走，步与步之间过安全点。跑到哪一步如实记下来。
-
-    ⚠ **必须经 asyncio.to_thread 起**，不能用裸 threading.Thread。
-      理由见 Test机制赖以成立的前提 那一条——第一版判据就是栽在这儿。
-    """
-    try:
-        for i in range(steps):
-            run_pause.wait_here_if_paused(f"第{i}步")
-            sink.append(i)
-            time.sleep(0.01)
-        done.append("跑完了")
-    except run_cancel.RunCancelled as exc:
-        done.append(f"停了：{exc}")
+def _run(coro):
+    return asyncio.run(coro)
 
 
-def _spawn(steps, done, sink):
-    """跟引擎同款的起法：asyncio.to_thread 会把当前 Context 复制进线程。"""
-    return asyncio.ensure_future(asyncio.to_thread(_worker, steps, done, sink=sink))
+class Test异步等_不占执行槽:
+    def test_等的时候线程池照样跑得动别的活(self):
+        """⚠ 这条是第二版存在的理由。
 
+        第一版在线程里干等，暂停期间占住 event-loop executor 的一个槽
+        （启动日志：64 个，一组流式推演占 5 槽）。照 grok 改成 await 之后，
+        等待期间**一个工作线程都不该被占用**。
 
-class _Watchdog:
-    """判据自己的保险丝。
-
-    ⚠ 2026-08-28 变异验证发现的问题：实现写坏成裸 `gate.wait()`（暂停中
-      取消不掉）或者闸出厂即红时，判据**不是判红，是整个挂死**——CI 会卡到
-      超时被杀，没人知道红在哪一条。会挂死的判据不合格。
-
-      所以每条依赖闸的用例都挂一根保险丝：到点强行放行并留痕，用例结尾断言
-      "保险丝没烧"。坏实现于是在几秒内**判红并说清原因**，而不是卡住。
-    """
-
-    def __init__(self, gate, seconds=2.0):
-        self.fired = False
-        self._gate = gate
-        self._t = threading.Timer(seconds, self._blow)
-        self._t.daemon = True
-
-    def _blow(self):
-        self.fired = True
-        self._gate.set()
-
-    def __enter__(self):
-        self._t.start()
-        return self
-
-    def __exit__(self, *exc):
-        self._t.cancel()
-        return False
-
-
-class Test机制赖以成立的前提:
-    def test_裸线程收不到闸_必须走asyncio_to_thread(self):
-        """⚠ 这条不测我们的代码，测的是**接线时最容易栽的那一脚**。
-
-        ContextVar 只有经 `asyncio.to_thread`（内部走
-        `contextvars.copy_context().run`）才会被复制进线程；裸
-        `threading.Thread` 起的线程拿到的是一个**全新的空 Context**，
-        `_GATE.get()` 返回 None，安全点当场放行——闸像不存在一样。
-
-        2026-08-28 第一版判据就是栽在这儿：红灯挂着，worker 把 20 步
-        一步不落跑完了。**实现是对的，判据的起法不对。**
-        引擎沿途走的正是 `await asyncio.to_thread(...)`（见 run_cancel
-        模块头），所以生产是通的；但谁哪天在别处新起一个裸线程跑同一段，
-        暂停会静默失效、没有任何报错。所以把前提钉在这儿。
+        判据盯的是"等着的同时别人还能不能干活"——直接数线程数会受解释器
+        实现影响，数这个才是用户真正在意的。
         """
-        gate = run_pause.new_gate()
-        run_pause.bind(gate)
-        run_cancel.bind(run_cancel.new_token())
-        run_pause.request_pause(gate)  # 红灯
 
-        sink, done = [], []
-        t = threading.Thread(target=_worker, args=(5, done), kwargs={"sink": sink})
-        t.start()
-        t.join(timeout=3)
-        assert done == ["跑完了"], done
-        assert len(sink) == 5, "前提变了：裸线程现在也能继承 ContextVar 了——"
-        "那本模块和 run_cancel 的 ContextVar 写法都可以简化，去看一眼"
+        async def scenario():
+            gate = PauseGate(PauseBudget(seconds=5))
+            done = []
+
+            async def other_work():
+                for i in range(8):
+                    await asyncio.to_thread(lambda: None)
+                    done.append(i)
+                gate.answer("放行")
+
+            waited, _ = await asyncio.gather(gate.wait("第1步"), other_work())
+            assert done == list(range(8)), "暂停期间线程池被占住了，别的活跑不动"
+            assert waited.answered
+
+        _run(scenario())
+
+    def test_人答了就把答案带回来(self):
+        async def scenario():
+            gate = PauseGate(PauseBudget(seconds=5))
+            asyncio.get_running_loop().call_later(0.05, gate.answer, {"选了": "工号"})
+            got = await gate.wait("第2步")
+            assert got.outcome is PauseOutcome.ANSWERED
+            assert got.answer == {"选了": "工号"}
+            assert got.where == "第2步"
+
+        _run(scenario())
 
 
-class Test停得住并且接着跑:
-    def test_暂停之后真的不往下走(self):
-        """⚠ 判据要盯"它没往前走"，不是"函数被调用了"。
+class Test超时不是失败:
+    def test_超时按用户跳过处理_不抛异常(self):
+        """⚠ 要害不是"把等待时间调大"，是**超时不算失败**。
 
-        本仓数过太多次的形状：正向判据齐全、反向判据缺失。这里的反向判据
-        就是"过了半秒，步数一步没涨"。
+        照 grok：`On expiry the tool returns the same skipped/cancel text as a
+        user dismiss, not a tool failure.` 对应本仓 spec-assumptions 头注那句
+        「不点 = 就按模型定的做，**这是个合法结局**」。
         """
+
         async def scenario():
-            gate = run_pause.new_gate()
-            run_pause.bind(gate)
-            run_cancel.bind(run_cancel.new_token())
-            sink, done = [], []
-            run_pause.request_pause(gate)  # 起跑前就红灯
-            fut = _spawn(20, done, sink)
-            try:
-                await asyncio.sleep(0.5)
-                assert len(sink) == 0, f"暂停中还走了 {len(sink)} 步——根本没停住"
-                assert done == [], "暂停中就已经收场了"
+            gate = PauseGate(PauseBudget(seconds=0.3))
+            got = await gate.wait("第3步")
+            assert got.outcome is PauseOutcome.SKIPPED
+            assert got.proceed_with_default is True
+            assert got.waited_seconds < 3, "等超了预算——上界失效，CI 会被拖死"
 
-                run_pause.resume(gate)
-                await asyncio.wait_for(fut, timeout=5)
-                assert done == ["跑完了"], f"放行之后没接着跑完：{done}"
-                assert len(sink) == 20
-            finally:
-                # ⚠ 断言失败时也要放行：否则线程停在红灯上，asyncio.run 关不掉
-                #   执行器，判据变成挂死而不是判红。
-                run_pause.resume(gate)
+        _run(scenario())
 
-        asyncio.run(scenario())
-
-    def test_停在半路放行后从断点继续_不是从头再来(self):
-        """闭环能变绿的全部理由：剩下的步骤跑得完，最后一步到得了。"""
+    def test_人明确跳过_跟超时同一个结局(self):
         async def scenario():
-            gate = run_pause.new_gate()
-            run_pause.bind(gate)
-            run_cancel.bind(run_cancel.new_token())
-            sink, done = [], []
-            fut = _spawn(40, done, sink)
-            try:
-                await asyncio.sleep(0.05)
-                run_pause.request_pause(gate)
-                await asyncio.sleep(0.4)
-                at = len(sink)
-                assert 0 < at < 40, f"没停在半路（停在 {at}/40），这条判据没验到该验的"
-                await asyncio.sleep(0.3)
-                assert len(sink) == at, f"暂停期间还在往前走：{at} → {len(sink)}"
+            gate = PauseGate(PauseBudget(seconds=5))
+            asyncio.get_running_loop().call_later(0.05, gate.skip)
+            got = await gate.wait("第4步")
+            assert got.outcome is PauseOutcome.SKIPPED
 
-                run_pause.resume(gate)
-                await asyncio.wait_for(fut, timeout=10)
-                assert done == ["跑完了"], done
-                # 从断点续，不是从头重来：每一步恰好走过一次，且是连号
-                assert sink == list(range(40)), f"步数不连续或重复了：{sink[:12]}..."
-            finally:
-                run_pause.resume(gate)  # 理由同上：判据不许挂死
+        _run(scenario())
 
-        asyncio.run(scenario())
+    def test_没人在场时报的是没有操作员_不是用户跳过(self):
+        """⚠ 别把两者揉成一个：一个是"人在、看了、没选"，一个是"根本没人"。
+
+        对下游是不同的事实（收口句要不要提、下一轮要不要再问一遍，两种答案
+        不一样）。grok 为此专门有 non_interactive 一档。
+        """
+
+        async def scenario():
+            gate = PauseGate(PauseBudget(seconds=0.2, non_interactive=True))
+            got = await gate.wait("第5步")
+            assert got.outcome is PauseOutcome.NO_OPERATOR
+            assert got.proceed_with_default is True, "没人在场也必须往下跑，不许判死这一轮"
+
+        _run(scenario())
+
+
+class Test预算的口径:
+    def test_关掉计时就永远等_不是等0秒(self):
+        async def scenario():
+            gate = PauseGate(PauseBudget(enabled=False))
+            assert gate.budget.wait_budget() is None
+            asyncio.get_running_loop().call_later(0.1, gate.answer, "来了")
+            got = await gate.wait("第6步")
+            assert got.answered, "关掉计时之后应当一直等到有人答"
+
+        _run(scenario())
+
+    def test_秒数写0不表示永远等(self):
+        """⚠ 0 一律回落默认预算。把"不限时"和"限时 0 秒"塞进同一个字段，
+        读的人分不出来，写的人迟早写错（grok 对 0 专门打警告并回落默认）。
+        """
+        assert PauseBudget(seconds=0).wait_budget() == run_pause.DEFAULT_WAIT_SECONDS
+        assert PauseBudget(seconds=-5).wait_budget() == run_pause.DEFAULT_WAIT_SECONDS
+        assert PauseBudget(enabled=False, seconds=0).wait_budget() is None
+
+    def test_默认预算是等人的量级不是等机器的量级(self):
+        """30 分钟：人去倒杯咖啡回来还来得及。几十秒是网络超时的量级。"""
+        assert run_pause.DEFAULT_WAIT_SECONDS >= 10 * 60
 
 
 class Test暂停中必须还能取消:
-    def test_暂停中被取消不会死锁(self):
-        """⚠ **这个模块唯一不许错的地方。**
+    def test_暂停中被取消_抛的是RunCancelled(self):
+        """⚠ 必须跟 raise_if_cancelled 同一个异常类型。
 
-        最危险的失败形态不是"停不住"，是"停住了出不来"：用户关了页面、
-        看门狗喊了取消，而线程还在 wait() 上干等，占着 64 个执行槽里的一个。
-        裸 `gate.wait()` 就是这个下场——判据把它钉死。
+        RunCancelled 特意不继承 CancelledError（见它的头注），就是为了能被
+        沿途的 `except Exception` fail-open 兜底层接住；换成别的类型就破了
+        那套行为。
         """
+
         async def scenario():
-            gate = run_pause.new_gate()
             token = run_cancel.new_token()
-            run_pause.bind(gate)
             run_cancel.bind(token)
-            sink, done = [], []
-            run_pause.request_pause(gate)
-            fut = _spawn(50, done, sink)
+            gate = PauseGate(PauseBudget(enabled=False))  # 永远等，只能靠取消出来
+            asyncio.get_running_loop().call_later(0.1, token.set)
+            with pytest.raises(run_cancel.RunCancelled) as err:
+                await asyncio.wait_for(gate.wait("第7步"), timeout=5)
+            assert "第7步" in str(err.value), "停在哪一步要留痕"
 
-            await asyncio.sleep(0.3)
-            assert done == [], "还没取消就收场了"
+        _run(scenario())
 
-            token.set()  # 暂停中喊取消，闸**不**放行
-            with _Watchdog(gate) as fuse:
-                try:
-                    await asyncio.wait_for(fut, timeout=6)
-                finally:
-                    run_pause.resume(gate)  # 理由同上：判据不许挂死
-            assert not fuse.fired, (
-                "暂停中取消不掉——线程卡死在闸上，是保险丝把它放出来的。"
-                "这就是死锁：裸 gate.wait() 的下场。"
-            )
-            assert len(done) == 1 and done[0].startswith("停了："), done
-            # 停在哪一步要留痕：排查时最想知道的第一件事
-            assert "第0步" in done[0], done[0]
-
-        asyncio.run(scenario())
-
-    def test_取消响应必须快过硬取消的宽限(self):
-        """轮询间隔要明显小于 run_registry 的 5 秒硬宽限。
-
-        大于它的话，硬取消会先于协作式退出发生——退回"停没停不知道"，
-        协作式那一整套就白做了。
-        """
+    def test_取消响应快过硬取消的宽限(self):
         assert run_pause._POLL_SECONDS <= 1.0
 
 
-class Test没暂停时不许有代价:
-    def test_常态零阻塞(self):
-        """安全点要撒在每一步之间，所以正常路径上必须近乎免费。
+class Test没人答之后的恢复配方:
+    def test_人答了就不需要恢复(self):
+        async def scenario():
+            gate = PauseGate(PauseBudget(seconds=5))
+            asyncio.get_running_loop().call_later(0.05, gate.answer, "选了")
+            got = await gate.wait("第8步")
+            assert recover_from(got, RecoveryLedger()) is None
 
-        ⚠ 没有这条，实现很容易写成"每步都 wait 一个超时"——功能是对的，
-          而每一步凭空多出几百毫秒，几十步就是十几秒，没人会发现。
+        _run(scenario())
+
+    def test_没人答就自动按默认走一次(self):
+        async def scenario():
+            gate = PauseGate(PauseBudget(seconds=0.2))
+            got = await gate.wait("第9步")
+            act = recover_from(got, RecoveryLedger())
+            assert act is not None
+            assert act.attempted is True
+            assert act.escalate is False
+            assert act.event["kind"] == "recovery_attempted"
+
+        _run(scenario())
+
+    def test_只自动一次_第二次升级喊人(self):
+        """⚠ 「只自动一次」是配方的一部分，不是可调的旋钮。
+
+        自动重试第二次意味着同一个没人理的问题把这一轮拖两遍，而人还是没来。
+        第二次该做的是喊人，不是再试（claw-code 的 max_attempts=1 +
+        EscalationPolicy::AlertHuman）。
         """
-        gate = run_pause.new_gate()  # 出厂即放行
-        run_pause.bind(gate)
-        run_cancel.bind(run_cancel.new_token())
-        t0 = time.monotonic()
-        with _Watchdog(gate) as fuse:
-            for i in range(2000):
-                run_pause.wait_here_if_paused(f"第{i}步")
-        spent = time.monotonic() - t0
-        assert not fuse.fired, "闸出厂不是放行态——常态路径被挡住了，靠保险丝才走完"
-        assert spent < 0.5, f"2000 个安全点花了 {spent:.3f}s——常态被加了延迟"
+        ledger = RecoveryLedger()
+        first = ledger.attempt()
+        second = ledger.attempt()
+        assert first.attempted is True and first.escalate is False
+        assert second.attempted is False, "自动恢复重试了第二次"
+        assert second.escalate is True
+        assert second.event["kind"] == "recovery_escalated"
+        assert second.event["policy"] == "alert_human"
 
-    def test_没绑闸时原样放行(self):
-        """老调用点（没绑过闸）行为必须一模一样，不能因为多了这个模块变慢或变红。"""
-        run_pause.bind(None)
-        run_cancel.bind(run_cancel.new_token())
-        run_pause.wait_here_if_paused("第0步")  # 不抛、不阻塞
-        assert run_pause.is_paused() is False
+    def test_每次尝试都留一条结构化事件(self):
+        """留痕是配方的一部分：没有事件就没人知道这一轮是替谁做的决定。"""
+        ledger = RecoveryLedger()
+        act = ledger.attempt(detail="skipped@第9步")
+        assert act.event["scenario"] == "pause_unresolved"
+        assert act.event["detail"] == "skipped@第9步"
+        assert act.event["attempt"] == 1
+        assert act.event["steps"] == list(run_pause.UNRESOLVED_RECOVERY.steps)
