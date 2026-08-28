@@ -183,16 +183,25 @@ describe("AgentLoopPage", () => {
     expect(legacyHtml).toContain("native-settings-content");
   });
 
-  it("restores 推演 as the first sidebar nav item, distinct from the brand logo", () => {
-    // 数据源：删掉 NAV_GROUPS 里的 sliderule 项、只留 logo，这条必须红。
-    expect(NAV_GROUPS[0]?.items[0]?.key).toBe("sliderule");
-    expect(NAV_GROUPS[0]?.items[0]?.label).toBe("推演");
-    expect(NAV_GROUPS[0]?.items[0]?.children).toBeUndefined();
-    const navKeys = NAV_GROUPS.flatMap(group => group.items.map(item => item.key));
-    expect(navKeys).toContain("sliderule");
+  it("⚠ 「推演」不再单列，但入口没消失：会话区顶上去了", () => {
+    /*
+     * 2026-08-28 用户裁决：「顶部的"推演"菜单不要，有底部新建会话与最近的
+     * 入口就够了」。
+     *
+     * ⚠ 这一项 2026-08-26 撤过一次、2026-08-27 又加回来，加回来的原因是
+     *   **判据假绿**：当时写 `html.toContain("推演")`，对着 logo 的
+     *   `title="回到推演"` 就能绿，而新用户在侧栏里找不到产品。
+     *
+     * 所以这条**正反一起钉**，光写 not.toContain 就是把那个假绿翻了个面：
+     *   正向 —— 替代入口真的在（新建会话按钮 + 最近列表 + 品牌 logo）
+     *   反向 —— NAV_GROUPS 里确实没有 sliderule 这一项了
+     */
+    const navKeys = NAV_GROUPS.flatMap(g => g.items.map(i => i.key));
+    expect(navKeys).not.toContain("sliderule");
     expect(navKeys).toContain("workbench");
     expect(navKeys).not.toContain("workbench-legacy");
     expect(navKeys).not.toContain("settings-legacy");
+    expect(NAV_GROUPS[0]?.items[0]?.key).toBe("workbench");
 
     const html = renderToStaticMarkup(
       <DashboardApp
@@ -203,34 +212,21 @@ describe("AgentLoopPage", () => {
       />,
     );
 
-    // ⚠ 2026-08-27：禁止 `html.toContain("推演")`——logo 的 title="回到推演"
-    // 就能让那条绿。剥注释和 title 之后，品牌区也不是唯一的 sliderule href。
+    // ⚠ 剥掉 title/aria-label 再查——这正是上次假绿的入口。
     const stripped = html
       .replace(/<!--[\s\S]*?-->/g, "")
       .replace(/\s(?:title|aria-label)="[^"]*"/gi, "")
       .replace(/\s(?:title|aria-label)='[^']*'/gi, "");
-    const withoutBrand = stripped.replace(
-      /<a\b[^>]*data-testid="agent-brand"[^>]*>[\s\S]*?<\/a>/i,
-      "",
-    );
-    expect(withoutBrand).toMatch(/href="\/agent-loop\/sliderule"/);
-    expect(withoutBrand).toContain('data-testid="agent-nav-sliderule"');
-    expect(withoutBrand).not.toContain('data-testid="agent-brand"');
-    expect((html.match(/href="\/agent-loop\/sliderule"/g) || []).length).toBeGreaterThanOrEqual(2);
 
-    const firstGroup = stripped.match(
-      /<div class="native-agent-nav-group">[\s\S]*?(?=<div class="native-agent-nav-group">|<\/nav>)/,
-    )?.[0] ?? "";
-    const firstItem = firstGroup.match(
-      /<a\b[^>]*class="[^"]*native-agent-nav-item[^"]*"[^>]*>[\s\S]*?<\/a>/,
-    )?.[0] ?? "";
-    expect(firstItem).toContain('data-testid="agent-nav-sliderule"');
-    expect(firstItem).toContain('href="/agent-loop/sliderule"');
-    expect(firstItem).toMatch(/<span>推演<\/span>/);
-    expect(firstItem).not.toContain('data-testid="agent-brand"');
-    // 无下级：不许挂假折叠箭头（2026-08-26）
-    expect(firstItem).not.toContain("native-agent-nav-caret");
-    expect(firstItem).not.toContain("agent-nav-expand");
+    // 反向：导航里不再有那一项（连 testid 都不该剩）
+    expect(stripped).not.toContain('data-testid="agent-nav-sliderule"');
+
+    // 正向：会话区那两个真入口在场
+    expect(stripped).toContain('data-testid="sidebar-sessions"');
+    expect(stripped).toMatch(/data-testid="sidebar-session-(new|list)"/);
+    // 正向：品牌 logo 仍然指向推演（它不是唯一入口，但不许一起掉）
+    expect(stripped).toContain('href="/agent-loop/sliderule"');
+
     // 有下级的扩展中心仍有真箭头——别把那次裁决一并拆掉
     expect(stripped).toContain('data-testid="agent-nav-expand"');
   });

@@ -2566,7 +2566,11 @@ function CanvasInner({
           data-space-pan={spaceHeld ? "1" : "0"}
           /* 光标反馈跟 excalidraw 一致：按住空格是 grab，真拖起来是 grabbing。
              没有这层反馈，用户按了空格也不知道模式已经变了。 */
-          className={`relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-md ${
+          /* ⚠ 台面**不圆角**：浮层贴边之后（2026-08-28 用户裁决
+             「悬浮元素贴边，不要给往里的位移」），宿主的 rounded-md 配
+             overflow-hidden 会把四个角上的浮层各啃掉一块——那种错不报错，
+             只是看着像没画完。 */
+          className={`relative min-h-0 min-w-0 flex-1 overflow-hidden ${
             spaceHeld ? "cursor-grab active:cursor-grabbing" : ""
           }`}
         >
@@ -2651,7 +2655,7 @@ function CanvasInner({
                       ? "#1677ff"
                       : "#cbd5e1"
                 }
-                className="!bottom-3 !right-3 !h-[92px] !w-[148px] overflow-hidden rounded-md border border-[#e9edf2] !bg-white"
+                className="!bottom-0 !right-0 !h-[92px] !w-[148px] overflow-hidden rounded-tl-lg border border-b-0 border-r-0 border-[#e9edf2] !bg-white"
               />
             </ReactFlow>
           </CanvasContext.Provider>
@@ -2680,7 +2684,7 @@ function CanvasInner({
               两处显示同一个数，改了一处忘了另一处就会自相矛盾。
           */}
           <div
-            className="pointer-events-none absolute bottom-[3.25rem] left-3 flex flex-col gap-0.5 rounded-lg border border-[#e9edf2] bg-white/85 px-2 py-1 font-mono text-[10px] leading-[1.35] tabular-nums text-stone-400 backdrop-blur"
+            className="pointer-events-none absolute bottom-[2.75rem] left-0 flex flex-col gap-0.5 rounded-r-lg border border-l-0 border-[#e9edf2] bg-white/85 px-2 py-1 font-mono text-[10px] leading-[1.35] tabular-nums text-stone-400 backdrop-blur"
             data-testid="sliderule-canvas-meta"
           >
             <span>
@@ -2722,7 +2726,7 @@ function CanvasInner({
               ⚠ 外层不能 pointer-events-none：这是要点的控件，不是读数。 */}
           {metaTrailing ? (
             <div
-              className="absolute right-3 top-3 z-10"
+              className="absolute right-0 top-0 z-10"
               data-testid="sliderule-canvas-meta-trailing"
             >
               {metaTrailing}
@@ -2731,7 +2735,7 @@ function CanvasInner({
 
           {/* 缩放药丸：位置对齐 Figma/Stitch（画布左下角），读数可点=适应画布。 */}
           <div
-            className="absolute bottom-3 left-3 flex items-center gap-0.5 rounded-lg border border-[#e9edf2] bg-white/95 p-1 shadow-sm backdrop-blur"
+            className="absolute bottom-0 left-0 flex items-center gap-0.5 rounded-tr-lg border border-b-0 border-l-0 border-[#e9edf2] bg-white/95 p-1 shadow-sm backdrop-blur"
             data-testid="sliderule-canvas-zoom"
           >
             <button
@@ -2902,7 +2906,7 @@ function CanvasInner({
               点了导出却什么都没下载，比报个错更让人以为是自己点错了。 */}
           {toast ? (
             <div
-              className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-md bg-stone-800/90 px-3 py-1.5 text-[11px] text-white shadow-lg"
+              className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 rounded-b-md bg-stone-800/90 px-3 py-1.5 text-[11px] text-white shadow-lg"
               data-testid="sliderule-canvas-toast"
             >
               {toast}

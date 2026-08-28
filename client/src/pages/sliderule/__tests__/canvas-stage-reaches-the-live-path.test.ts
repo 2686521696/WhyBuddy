@@ -588,7 +588,10 @@ describe("⚠ 画布档的顶部不占高度：读数在左下，权限切换悬
     // 正向：绝对定位、贴左下、压在画布上不吃事件
     const box = STAGE.slice(meta - 400, meta);
     expect(box).toContain("absolute");
-    expect(box).toContain("left-3");
+    /* ⚠ 2026-08-28 用户裁决：「悬浮元素贴边，不要给往里的位移」。
+       变异：改回 left-3，这条红。 */
+    expect(box).toContain("left-0");
+    expect(box).not.toMatch(/\bleft-[1-9]/);
     expect(box).toContain("bottom-");
     expect(box).toContain("pointer-events-none");
     // 反向：它必须在**画布宿主里面**（flowHostRef 那一层）而不是外层容器
@@ -616,7 +619,8 @@ describe("⚠ 画布档的顶部不占高度：读数在左下，权限切换悬
     const at = STAGE.indexOf('data-testid="sliderule-canvas-meta-trailing"');
     expect(at).toBeGreaterThan(-1);
     const box = STAGE.slice(at - 300, at);
-    expect(box).toContain("absolute right-3 top-3");
+    // ⚠ 贴边，没有往里的位移（2026-08-28 用户裁决）。
+    expect(box).toContain("absolute right-0 top-0");
     expect(box).not.toContain("pointer-events-none");
     expect(at).toBeGreaterThan(STAGE.indexOf("ref={flowHostRef}"));
   });
@@ -631,5 +635,111 @@ describe("⚠ 画布档的顶部不占高度：读数在左下，权限切换悬
       expect(STAGE, id).toContain(id);
     }
     expect(STAGE).toContain("双击画板进入交互 · 右键更多");
+  });
+});
+
+describe("⚠ 换会话回到默认档：偏好必须带着它属于谁（2026-08-28）", () => {
+  const STUDIO_SRC = stripComments(
+    readFileSync(new URL("../SlideRuleStudio.tsx", import.meta.url), "utf8")
+  );
+
+  it("存档带归属：写进去的是 {sessionId, view}，不是光秃秃一个字符串", () => {
+    /*
+     * 用户报的是「新建会话／点击会话进入应用，还原默认设置」。根因是这个键
+     * 原来存的是裸字符串，跟会话没有绑定关系 —— 它于是变成一份环境变量式的
+     * 全局状态，在 A 开了画布，进 B、甚至新建会话都被它接管。
+     *
+     * 抄 claw-code 的会话卫生（session_control.rs 的 validate_loaded_session）：
+     * 存档带 workspace_root，归属对不上就 WorkspaceMismatch，不是照用。
+     *
+     * 变异：把 saveStageViewPref 改回 `localStorage.setItem(KEY, v)`，这条红。
+     */
+    expect(STUDIO_SRC).toContain("JSON.stringify({ sessionId, view }");
+    expect(STUDIO_SRC).toContain("pref.sessionId !== sessionId");
+  });
+
+  it("⚠ 归属对不上就当没有（回 null → 落默认档），不是照用", () => {
+    // 这是 WorkspaceMismatch 那一半。回 "canvas" 兜底就等于没改。
+    const fn = STUDIO_SRC.slice(
+      STUDIO_SRC.indexOf("function loadStageViewPref("),
+      STUDIO_SRC.indexOf("function saveStageViewPref(")
+    );
+    expect(fn.length).toBeGreaterThan(100);
+    expect(fn).toContain("if (!pref || pref.sessionId !== sessionId) return null;");
+    // 反向：没有会话 id 时也不许照用
+    expect(fn).toContain("if (!sessionId) return null;");
+  });
+
+  it("⚠ 老格式（裸字符串）一律不认——认它等于留一条后门", () => {
+    // 它没有归属信息，证明不了属于当前会话。同 claw-code 对 unbound 的处置。
+    expect(STUDIO_SRC).toContain("JSON.parse(raw)");
+    expect(STUDIO_SRC).not.toContain('localStorage.getItem(STAGE_VIEW_PREF_KEY) || ""');
+  });
+
+  it("⚠ 换会话时组件不重挂，所以还得**主动**还原一次", () => {
+    /*
+     * 只改存档那一半会假绿：推演壳换会话时 SlideRuleStudio 是原地更新 props 的，
+     * 上一个会话的档位/选中页/编辑态原样留在屏幕上，一声不吭。
+     * 变异：把这个 effect 删掉，这条红。
+     */
+    const eff = STUDIO_SRC.slice(
+      STUDIO_SRC.indexOf("const lastSessionRef"),
+      STUDIO_SRC.indexOf("const toggleXray")
+    );
+    expect(eff).toContain('setStageView(loadStageViewPref(sessionId) ?? "page")');
+    expect(eff).toContain('setActiveSpecPageId("home")');
+    expect(eff).toContain("setEditMode(false)");
+    expect(eff).toContain("setXrayTarget(null)");
+  });
+
+  it("⚠ 用 ref 判断是不是真的换了会话，不是每次 effect 都还原", () => {
+    // 首挂时 effect 也会跑；直接 set 会把 useState 初值里刚读出来的归属档位
+    // 覆盖掉，刷新当前会话就再也留不住位置了。
+    expect(STUDIO_SRC).toContain("if (lastSessionRef.current === sessionId) return;");
+  });
+
+  it("初值也走同一条读法（两处各写一套必然分叉）", () => {
+    expect(STUDIO_SRC).toContain('>(() => loadStageViewPref(sessionId) ?? "page")');
+  });
+});
+
+describe("⚠ 台面上的浮层一律贴边（2026-08-28 用户裁决）", () => {
+  const STAGE = stripComments(
+    readFileSync(
+      new URL("../live-runtime/SpecPageCanvasStage.tsx", import.meta.url),
+      "utf8"
+    )
+  );
+
+  it("四个角上的浮层都没有往里的位移", () => {
+    /*
+     * 用户原话：「悬浮元素贴边，不要给往里的位移」。四个都要，漏一个就是
+     * 三个贴边一个悬着——截图上一眼看得出，判据里却最容易只写一个。
+     */
+    const cases: [string, RegExp][] = [
+      ["读数", /absolute bottom-\[[^\]]+\] left-0/],
+      ["缩放药丸", /absolute bottom-0 left-0/],
+      ["小地图", /!bottom-0 !right-0/],
+      ["权限切换", /absolute right-0 top-0/],
+    ];
+    for (const [name, re] of cases) expect(STAGE, name).toMatch(re);
+  });
+
+  it("反向：不许再有 bottom-3 / left-3 / right-3 / top-3 这类内缩", () => {
+    // 变异：任意一个改回去，这条红。
+    const overlays = STAGE.slice(STAGE.indexOf("ref={flowHostRef}"));
+    expect(overlays).not.toMatch(/absolute[^"]*\b(?:bottom|left|right|top)-3\b/);
+    expect(overlays).not.toContain("!bottom-3");
+    expect(overlays).not.toContain("!right-3");
+  });
+
+  it("⚠ 台面自己也不许再圆角（不然四个角把浮层各啃掉一块）", () => {
+    // overflow-hidden + rounded-md 会把贴边的浮层切角，那种错不报错。
+    const host = STAGE.slice(
+      STAGE.indexOf("ref={flowHostRef}"),
+      STAGE.indexOf("ref={flowHostRef}") + 1200
+    );
+    expect(host).toContain("overflow-hidden");
+    expect(host).not.toContain("rounded-md");
   });
 });

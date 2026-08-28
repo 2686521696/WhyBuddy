@@ -127,17 +127,68 @@ function StudioChrome({
 const XRAY_PREF_KEY = "sliderule:xray-on";
 const STAGE_VIEW_PREF_KEY = "sliderule:stage-view";
 
-/** 档位偏好读写。隐私模式下存不了不影响开关本身工作（跟游标同一写法）。 */
-function loadStageViewPref(): string {
+/**
+ * 档位偏好读写。
+ *
+ * ## ⚠ 2026-08-28：这份偏好**必须带上它属于谁**
+ *
+ * 用户报的是：「新建会话，点击会话进入应用，还原默认设置，比如就是页面模式」。
+ * 根因是这个键原来存的是一个**光秃秃的字符串**（`"canvas"`），跟会话没有
+ * 任何绑定关系——于是它变成了一份**环境变量式的全局状态**：在 A 会话开了
+ * 画布，进 B 会话、甚至新建一个会话，都被这份"上一次的偏好"接管。
+ *
+ * 抄 claw-code 的会话卫生那一套（本地 clone，`rust/crates/runtime/src/`
+ * `session_control.rs` 的 `validate_loaded_session`）：
+ *
+ *     let Some(actual) = session.workspace_root() else {
+ *         // 没有归属信息的老数据：只在极窄的条件下才接受
+ *         ...
+ *     };
+ *     if workspace_roots_match(actual, &self.workspace_root) { return Ok(()); }
+ *     Err(SessionControlError::WorkspaceMismatch { expected, actual })
+ *
+ * 口径就两条，这里逐条对上：
+ *
+ *   1. **存档带着归属**（它存 `workspace_root`，我们存 `sessionId`）
+ *   2. **归属对不上就当没有，不是照用**（它抛 WorkspaceMismatch，
+ *      我们回 null → 落到默认档）
+ *
+ * 于是三种情形自然分开，不用各写一套 if：
+ *
+ *     新建会话      归属不可能对上   → 默认档（页面）
+ *     点进另一个会话 归属对不上       → 默认档（页面）
+ *     刷新当前会话   归属对得上       → 留在你刚才那一档
+ *
+ * ⚠ 老格式（光秃秃的字符串）**一律不认**。它没有归属信息，没法证明属于
+ *   当前这个会话——同 claw-code 对"unbound 且不在本 workspace 内"的处置。
+ *   认它等于把刚修掉的那个 bug 留一条后门。
+ */
+interface StageViewPref {
+  sessionId: string;
+  view: "canvas" | "page";
+}
+
+function loadStageViewPref(sessionId: string | undefined): "canvas" | "page" | null {
+  if (!sessionId) return null;
   try {
-    return localStorage.getItem(STAGE_VIEW_PREF_KEY) || "";
+    const raw = localStorage.getItem(STAGE_VIEW_PREF_KEY);
+    if (!raw) return null;
+    /* ⚠ 老格式是裸字符串，JSON.parse 会抛；抛了就是"没有归属"，回 null。 */
+    const pref = JSON.parse(raw) as Partial<StageViewPref> | null;
+    if (!pref || pref.sessionId !== sessionId) return null;
+    return pref.view === "canvas" ? "canvas" : pref.view === "page" ? "page" : null;
   } catch {
-    return "";
+    return null;
   }
 }
-function saveStageViewPref(v: string): void {
+
+function saveStageViewPref(sessionId: string | undefined, view: "canvas" | "page"): void {
+  if (!sessionId) return;
   try {
-    localStorage.setItem(STAGE_VIEW_PREF_KEY, v);
+    localStorage.setItem(
+      STAGE_VIEW_PREF_KEY,
+      JSON.stringify({ sessionId, view } satisfies StageViewPref)
+    );
   } catch {
     /* 隐私模式：不记就不记 */
   }
@@ -537,13 +588,13 @@ export function SlideRuleStudio({
   //     1) 下面这个联合类型  2) 顶栏 ToggleGroup 的数组  3) 舞台渲染分支。
   const [stageView, setStageView] = useState<
     "canvas" | "page" | "code" | "board"
-  >(() => (loadStageViewPref() === "canvas" ? "canvas" : "page"));
+  >(() => loadStageViewPref(sessionId) ?? "page");
   // 档位偏好只记 画布/页面 两档（"代码"是临时查看，记住它等于下次开门先给
   // 用户一屏 HTML 源码）。跟游标开关同一套 localStorage 兜底写法。
   useEffect(() => {
     if (stageView === "canvas" || stageView === "page")
-      saveStageViewPref(stageView);
-  }, [stageView]);
+      saveStageViewPref(sessionId, stageView);
+  }, [sessionId, stageView]);
   /**
    * 画布档把舞台钉死在最大化（2026-08-25 用户指着顶栏那颗钮说"锁死"）。
    *
@@ -569,6 +620,30 @@ export function SlideRuleStudio({
     }
   });
   const [xrayTarget, setXrayTarget] = useState<XrayTarget | null>(null);
+
+  /**
+   * ⚠ 换会话 = 一次新的进入，**把临时视图状态还原成默认**（2026-08-28
+   * 用户裁决：「新建会话，点击会话进入应用，还原默认设置，比如就是页面模式」）。
+   *
+   * 光把偏好改成带归属还不够：那只挡住了"读到别人的档位"，挡不住**这个组件
+   * 不重挂**的情况——推演壳换会话时 SlideRuleStudio 是原地更新 props 的，
+   * 上一个会话的档位、选中页、编辑态会原样留在屏幕上。第一版只改了存档那一半，
+   * 真机上表现为"点了另一个会话，画布还开着、还停在上一页"，一声不吭。
+   *
+   * ⚠ 用 ref 记上一次的会话 id，**不能**只写 `[sessionId]` 依赖直接 set：
+   *   首挂时它也会跑一遍，会把 useState 初值里刚读出来的归属档位覆盖掉——
+   *   刷新当前会话就再也留不住位置了（而这正是这份偏好唯一还有用的场景）。
+   */
+  const lastSessionRef = React.useRef(sessionId);
+  useEffect(() => {
+    if (lastSessionRef.current === sessionId) return;
+    lastSessionRef.current = sessionId;
+    setStageView(loadStageViewPref(sessionId) ?? "page");
+    setActiveSpecPageId("home");
+    setEditMode(false);
+    setEditDirty(false);
+    setXrayTarget(null);
+  }, [sessionId]);
   const toggleXray = useCallback(() => {
     setXrayOn(v => {
       try {

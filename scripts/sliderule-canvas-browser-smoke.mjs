@@ -16,7 +16,8 @@
  *
  * ## 它钉住的 8 件事
  *
- *   A 档位偏好记得住（下次开门直接回画布）
+ *   A1 同一个会话的档位偏好记得住（刷新不丢位置）
+ *   A2 **别的会话**的偏好接管不了这一个  ← 2026-08-28 用户报的那个
  *   B 滚轮停在**画板上**能平移        ← 手势层通电的证据
  *   C ctrl+滚轮停在画板上能缩放        ← 同上
  *   D  画板上拖拽 = 重排画板（改动前它不动）
@@ -183,24 +184,68 @@ async function main() {
       );
     log(`session = ${sid}`);
 
+    /*
+     * ## ⚠ A 的口径 2026-08-28 变了：偏好现在**属于某一个会话**
+     *
+     * 用户报的是「新建会话、点击会话进入应用，还原默认设置」。根因是这个键
+     * 原来存的是裸字符串，跟会话没有绑定，于是变成一份环境变量式的全局状态：
+     * 在 A 会话开了画布，进 B 会话、甚至新建会话都被它接管。
+     *
+     * 现在存的是 `{sessionId, view}`，归属对不上就当没有（抄 claw-code 的
+     * `validate_loaded_session`）。所以这里要**两条一起量**，只留任一条都
+     * 是假绿：
+     *
+     *   A1 归属对得上 → 留在画布档（刷新不丢位置，这份偏好唯一还有用的场景）
+     *   A2 归属对不上 → 回默认的页面档（正是用户报的那个）
+     *
+     * ⚠ 先量 A2：它要求进来时是页面档，而 A1 会把状态写成画布。顺序反了
+     *   A2 就永远绿——它量的是自己刚写进去的东西。
+     */
+    const landedOnCanvas = async () =>
+      (await page.getAttribute(
+        '[data-testid="sliderule-stage-view-canvas"]',
+        "aria-pressed"
+      )) === "true";
+
+    // A2. 存档属于**别的会话**：不许拿来接管这一个。
     await page.evaluate(sid => {
       localStorage.setItem("sliderule:active-session-id", sid);
-      localStorage.setItem("sliderule:stage-view", "canvas");
+      localStorage.setItem(
+        "sliderule:stage-view",
+        JSON.stringify({ sessionId: "sr-someone-else", view: "canvas" })
+      );
     }, sid);
     await page.goto(`${BASE}/agent-loop/sliderule`, {
       waitUntil: "domcontentloaded",
       timeout: NAV_TIMEOUT,
     });
+    await page.waitForSelector('[data-testid="sliderule-app-stage-bar"]', {
+      timeout: NAV_TIMEOUT,
+    });
+    const foreign = await landedOnCanvas();
+    check(
+      "A2 别的会话的档位偏好接管不了这一个（进来落在页面档）",
+      foreign === false,
+      `aria-pressed=${foreign}`
+    );
 
-    // A. 档位偏好记得住：不点按钮就该直接落在画布档。
+    // A1. 归属对得上：刷新之后还留在画布档。
+    await page.evaluate(sid => {
+      localStorage.setItem("sliderule:active-session-id", sid);
+      localStorage.setItem(
+        "sliderule:stage-view",
+        JSON.stringify({ sessionId: sid, view: "canvas" })
+      );
+    }, sid);
+    await page.goto(`${BASE}/agent-loop/sliderule`, {
+      waitUntil: "domcontentloaded",
+      timeout: NAV_TIMEOUT,
+    });
     await page.waitForSelector('[data-testid="sliderule-canvas-stage"]', {
       timeout: NAV_TIMEOUT,
     });
-    const pressed = await page.getAttribute(
-      '[data-testid="sliderule-stage-view-canvas"]',
-      "aria-pressed"
-    );
-    check("A 档位偏好记得住", pressed === "true", `aria-pressed=${pressed}`);
+    const mine = await landedOnCanvas();
+    check("A1 同一个会话的档位偏好记得住", mine === true, `aria-pressed=${mine}`);
 
     /* ------------------------------------ 画布档锁死最大化（第四轮） */
 

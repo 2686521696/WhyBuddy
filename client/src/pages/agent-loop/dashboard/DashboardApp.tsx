@@ -1197,16 +1197,25 @@ export interface NavItem {
  *   给「设置」「管理台」挂一个展不开的箭头，就是那种"看着能点、点了没
  *   反应"的东西——这个仓刚因为它连着修了两轮（`/` 面板那次）。
  *
- * ⚠ 2026-08-27 Q3 已关闭：2026-08-26 曾写「推演不再单列」，只留品牌 logo
- *   `title="回到推演"`。`html.toContain("推演")` 对着 title 假绿，新用户
- *   侧栏里找不到产品。第一组第一项改回 `{ key: "sliderule", label: "推演" }`，
- *   logo 仍可点，但不再是唯一入口。
+ * ## ⚠ 「推演」这一项进出过两次，把两次的理由都记下来
+ *
+ * 2026-08-26 撤过一次，当时只留品牌 logo `title="回到推演"`——**那次是错的**：
+ * 判据写的是 `html.toContain("推演")`，对着 logo 的 title 属性假绿，而新用户
+ * 在侧栏里根本找不到产品。2026-08-27 加了回来。
+ *
+ * 2026-08-28 再撤，用户原话：「顶部的"推演"菜单不要，有底部新建会话与最近的
+ * 入口就够了」。**这次跟上次不是同一件事**：那时底下什么都没有，现在
+ * `SidebarSessions` 常驻，「新建会话」是一颗实体按钮、「最近」是真的会话列表，
+ * 两个都直接进推演。入口从"一条菜单"变成了"一个会话区"，不是消失。
+ *
+ * ⚠ 所以判据也得跟着换位置：不许再去数 NAV_GROUPS 里有没有 sliderule，
+ *   要盯**那个替代入口真的在**（sidebar-session-new / sidebar-session-list）。
+ *   只写 `not.toContain("推演")` 就是把上次那个假绿翻了个面——两边都得钉。
  */
 export const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   {
     label: "创作资源",
     items: [
-      { key: "sliderule", label: "推演", icon: <PlayCircleFilled /> },
       { key: "workbench", label: "应用市场", icon: <AppstoreOutlined /> },
       { key: "components", label: "组件库", icon: <BlockOutlined /> },
       {
