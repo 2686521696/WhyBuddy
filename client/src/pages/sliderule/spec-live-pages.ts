@@ -6,6 +6,7 @@
  * 页——点击像没发生。缺页必须仍能切过去，且不能冒充成品。
  */
 import { navItemId, navItemName } from "./nav-item";
+import { aliasIdsFor } from "./page-id-alias";
 import { pageIsBoundFromSpec } from "./spec-page-bound";
 import type { SpecPageLive } from "./live-runtime/SpecPageLiveStage";
 
@@ -16,6 +17,9 @@ export type SpecFirstPagesBlob = {
   boundPages?: number;
   failedPages?: Record<string, unknown> | null;
   pageBindStatus?: Record<string, unknown> | null;
+  /** 页面 id 别名表（旧 id → 新 id），第 4.5 步改键时记的。
+   *  见 canonicalPageId 的头注：菜单孔烧的是改名前的 id。 */
+  pageIdAliases?: Record<string, string> | null;
 } | null;
 
 function escapeHtml(text: string): string {
@@ -131,6 +135,9 @@ export function livePagesFromSpec(
       bound: missing ? false : pageIsBoundFromSpec(id, specFirstPages),
       device: specFirstPages?.device,
       missing,
+      // 这一页背过的旧 id（菜单孔里烧的多半是其中之一）。挂在页面对象上
+      // 而不是另立一份平行清单——照 friendly_id 的 has_many :slugs。
+      aliasIds: aliasIdsFor(id, specFirstPages?.pageIdAliases),
     };
   });
 }

@@ -1032,6 +1032,22 @@ def _cache_spec_first_pages(state: "V5SessionState") -> None:
         got = take_last_pages()
         if not got or not (got.get("pages") or {}):
             return
+        # 页面 id 别名表要**跨轮累积**（2026-08-28）。
+        #
+        # 第 4.5 步的 canonical_page_id_map「一个都没改就返回空表」，而那正是
+        # 精修轮的常态——于是精修一次，本轮 pageIdAliases 是 {}，直接盖上去
+        # 就把首轮记下的 p1→remote_rx_audit 抹掉，菜单第二天又点不动了。
+        # 老页面是被 reuse_pages 照搬回来的，孔里烧的还是首轮那批 id。
+        #
+        # 合并放在这里而不是流水线里：流水线拿不到 state（旧值只在这一行之前
+        # 还活着），往里穿参数要改十几处签名——跟 take_last_pages 头注同一个
+        # 权衡。冲突时**本轮赢**，对应 friendly_id `order(id: :desc)`：
+        # 同一个旧 id 被指到两个新 id 时，最近那次改名才是有效的。
+        prev = getattr(state, "specFirstPages", None)
+        prev_aliases = (prev or {}).get("pageIdAliases") if isinstance(prev, dict) else None
+        if isinstance(prev_aliases, dict) and prev_aliases:
+            merged = {**prev_aliases, **(got.get("pageIdAliases") or {})}
+            got = {**got, "pageIdAliases": merged}
         state.specFirstPages = got
         print(f"[v5_capability_executor] spec-first 页面落库：{len(got['pages'])} 份")
     except Exception as exc:  # noqa: BLE001 — 顺路的事不许打死主路

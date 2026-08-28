@@ -67,6 +67,7 @@ import {
   saveDevicePresetId,
 } from "./device-presets";
 import { deriveBindingSource } from "./derive-binding-source";
+import { canonicalPageId } from "../page-id-alias";
 import { liveStatuses, liveStatusText } from "./connector-rows";
 import type { ActionGates, BindingActionEvent } from "./html-binding-runtime";
 import type { RuntimeState } from "./live-runtime";
@@ -92,6 +93,12 @@ export interface SpecPageLive {
    *    canvas-board-layout.artboardLabel 从 HTML 的 <title> 兜底。
    *    两条来源必须给出同一个结果，别只补一条。 */
   name?: string;
+  /** 这一页背过的旧 id。页面 HTML 里的 `data-page-id` 是改名**之前**烧进去
+   *  的，点菜单拿到的往往是这里的某一个——照 friendly_id 的 has_many :slugs，
+   *  历史跟着记录本身走，不另立平行清单。解析走 canonicalPageId。
+   *  ⚠ 只有落库那条来源带得出（livePagesFromSpec 从 pageIdAliases 反转）；
+   *    推演中走 SSE 的页孔与页键同源，本来就对得上，缺席是常态。 */
+  aliasIds?: readonly string[];
 }
 
 export interface SpecPageLiveStageProps {
@@ -135,10 +142,16 @@ export interface SpecPageLiveStageProps {
  */
 export function resolveActivePageId(
   picked: string | null,
-  pages: readonly Pick<SpecPageLive, "pageId" | "missing">[],
+  pages: readonly Pick<SpecPageLive, "pageId" | "missing" | "aliasIds">[],
   opts?: { running?: boolean; landingPageId?: string | null }
 ): string | null {
-  if (picked && pages.some(p => p.pageId === picked)) return picked;
+  // 先按当前 id、再按别名（canonicalPageId 里是 friendly_id 的 `super ||`
+  // 那个顺序）。⚠ 判定必须在这条纯函数里也认别名，不能只在 onNavigate 归一化：
+  // jsdom 跑不了 srcdoc，框内菜单点击组件层测不到，这里是唯一测得着的接缝。
+  if (picked) {
+    const canon = canonicalPageId(picked, pages);
+    if (canon) return canon;
+  }
   const arrived = pages.filter(p => !p.missing);
   // 推演中跟最新到达的页。跑完若还跟最后一页，用户会停在 p3 打开态抽屉
   // （2026-08-20 巡检），而应用中心预览早已落导航第一项。
@@ -424,7 +437,14 @@ export function SpecPageLiveStage({
                     source={source}
                     gates={gates}
                     onAction={onAction}
-                    onNavigate={setPicked}
+                    // 归一化再存：拿到的可能是改名前的旧 id（菜单孔里烧的
+                    // 就是它）。照 friendly_id 文档那条——解析到老 id 之后
+                    // 要把地址换成当前的，别一直揣着老号跑，否则别名表就从
+                    // 过渡坡道变成永久拐杖。解析不出来就不动（不冒充切页）。
+                    onNavigate={pid => {
+                      const canon = canonicalPageId(pid, pages);
+                      if (canon) setPicked(canon);
+                    }}
                     onHoverBinding={onHoverBinding}
                     onReport={r =>
                       setReport({

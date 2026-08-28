@@ -127,6 +127,7 @@ import {
 import { closestEditable } from "../../agent-loop/dashboard/ClickEditStage";
 import { BINDING_ATTRS as BINDING_ATTR_LIST } from "./html-binding-runtime";
 import { deriveBindingSource } from "./derive-binding-source";
+import { canonicalPageId } from "../page-id-alias";
 import {
   boardPositionsStorageKey,
   isTypingTarget,
@@ -2268,12 +2269,17 @@ function CanvasInner({
   /** 页面自己的左侧菜单点了某一项：画布上滚到那块画板，而不是原地换内容。 */
   const navigate = React.useCallback(
     (pageId: string) => {
-      if (!boxes.some(b => b.pageId === pageId)) return;
-      onActivePageChange?.(pageId);
-      setEntered(pageId);
-      zoomToBoard(pageId);
+      // ⚠ 收到的可能是改名前的旧 id：页面 HTML 里的 data-page-id 是第 3.5 步
+      //   按草稿 id 烧的，第 4.5 步改键改不到正文（见 page-id-alias 头注）。
+      //   此前这里直接 `if (!boxes.some(...)) return` ——画布档的菜单跟直播档
+      //   一样点了没反应，且同样一声不吭。两处必须同改（纪律四）。
+      const canon = canonicalPageId(pageId, pages);
+      if (!canon || !boxes.some(b => b.pageId === canon)) return;
+      onActivePageChange?.(canon);
+      setEntered(canon);
+      zoomToBoard(canon);
     },
-    [boxes, onActivePageChange, zoomToBoard]
+    [boxes, pages, onActivePageChange, zoomToBoard]
   );
 
   const jumpTo = React.useCallback(

@@ -1300,6 +1300,10 @@ def run_spec_first(
     from .run_cancel import raise_if_cancelled
 
     stages: Dict[str, Any] = {}
+    #: 页面 id 别名表（旧 id → 新 id）。第 4.5 步改键时**当场**记下来，
+    #: 交付时随页面载体一起落库，宿主点菜单解析不到时按它回退。
+    #: 空表是常态（没改过名的轮次），不是缺失。
+    _page_id_aliases: Dict[str, str] = {}
     # 显式开关压过话题词表：点了「应用」再写「做个库存系统」必须出竖屏。
     # 不传则走 resolve（模块 override > 句子里的设备词 > desktop）。
     if preferred_device in ("desktop", "phone"):
@@ -1848,6 +1852,24 @@ def run_spec_first(
                     **style_brief,
                     "pages": rekey_page_map(style_brief["pages"], _canon),
                 }
+            # ⚠ 2026-08-28：上面这串把「以页面 id 作键或存页面 id」的载体都改了，
+            #   **唯独改不到已经烧进页面 HTML 正文的 `data-page-id`**——那是第
+            #   3.5 步 unify_shell 按当时的草稿 id 打的孔，`rekey_page_map` 只换
+            #   dict 的键、不碰 value 那串 HTML。
+            #
+            #   真机后果（sr-20260827191954 药房、sr-20260827201847 巡检）：页键
+            #   成了 remote_rx_audit…，孔还是 p1..p4，宿主 resolveActivePageId
+            #   查不到就静默回落当前页——**四个菜单项全点不动，且没有任何一处
+            #   报错**。8-22 那场页键本身还是 p1/p2，孔对得上，菜单是好的，所以
+            #   这是第 4.5 步引入的回归，不是一直就坏。
+            #   而 `pages_match_model` 那条兜底够不着：它比的是页键 vs 模型 id，
+            #   两边都被改过键，恒等恒绿。
+            #
+            #   修法照 friendly_id 的 History（`has_many :slugs` + 先查当前再查
+            #   历史）：**改名的这一刻**把映射记下来随页面落库，宿主解析不到时
+            #   按它回退。选它而不是重写 HTML，是因为存量应用的 HTML 已经发出去
+            #   了——回退查表连它们一起救，重写只救新生成的。
+            _page_id_aliases = {**_page_id_aliases, **_canon}
             st["pageIdCanonicalized"] = len(_canon)
             print(
                 "[spec_first_pipeline] 首轮页面包改键（草稿 id → 模型 id）："
@@ -2150,6 +2172,8 @@ def run_spec_first(
         # 空 = 对过账、一页不缺；缺键 = 老产物，没对过账。所以恒给出来。
         "missingPages": missing_pages,
         "declaredPages": spec_pages_declared,
+        # 页面 id 别名表（旧 → 新）。见第 4.5 步那段事故记录。
+        "pageIdAliases": dict(_page_id_aliases),
         "designLanguage": design_language,
         "stages": stages,
         "device": device,
@@ -2176,6 +2200,10 @@ def run_spec_first(
         # 只留在日志里等于只有当场看着的人知道，第二天打开应用中心的人不知道。
         "missingPages": list(missing_pages),
         "declaredPages": list(spec_pages_declared),
+        # 页面 id 别名表随页面载体落库——**必须走这条**，不能只放 result 里：
+        # 宿主刷新之后唯一的来源就是 state.specFirstPages（跟 styleBrief 同一条
+        # 教训，那次只挂在 model 上，精修回流被剥成六段，接线从出生起没通电）。
+        "pageIdAliases": dict(_page_id_aliases),
         # 前端（直播舞台/应用中心）拿它选画布视口：desktop 横屏 / phone 竖屏
         "device": device,
         # 左栏收口句。执行器只取 result["model"]，这句话走页面载体，
