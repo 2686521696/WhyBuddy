@@ -2134,7 +2134,30 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     const text = (
       typeof textOverride === "string" ? textOverride : input
     ).trim();
-    if (!text) return;
+    if (!text) {
+      /**
+       * 空输入 + 队列里还压着东西 + 没在跑 → 把队列发出去。
+       *
+       * ⚠ 2026-08-28 真机（截图那场）：推演跑完之后点伴随式澄清的「改成 X」，
+       *   那句话 pushQueuedTurn 进队列，而 flushQueuedControlTurn 的五个调用点
+       *   全是「某件事结束时」（推演 finally ×2、关范围卡、先改范围、关提问）
+       *   ——**没有一处对应"空闲时排进来"**。于是它挂在「本轮结束后发出」下面
+       *   永远等下去，因为"本轮"早就结束了。用户看到的是点了没反应。
+       *
+       *   抄 grok-build：提问/请求是张欠条，submit / cancel / 被顶掉三条出路
+       *   每条都得把它兑现，没有哪条路能让它悬着
+       *   （acp_handler/interactions.rs 的 response_tx 纪律）。队列同理——
+       *   空闲时那条出路就是这颗发送键。
+       *
+       * ⚠ 走 flushQueuedControlTurn 而不是自己拼：它带着停泊卡的门禁
+       *   （overlayBlocksQueueFlush）和"合成一条再发"的纪律，绕开就会
+       *   三句补充烧三次工厂。
+       */
+      if (!isRunningRef.current && queuedTurnRef.current.length > 0) {
+        flushQueuedControlTurn();
+      }
+      return;
+    }
     // 运行中发送排队，不许 stop()。sliderule:resend-prompt 也走这里。
     if (isRunningRef.current) {
       pushQueuedTurn(text);

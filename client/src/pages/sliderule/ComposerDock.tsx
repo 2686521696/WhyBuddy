@@ -179,11 +179,47 @@ export function isComposerSendBlocked(opts: {
   /** 范围卡停泊时发送只能走确认/先改范围，Enter 不得另 park 一发。 */
   scopeCardOpen?: boolean;
   askOpen?: boolean;
+  /**
+   * 中途排队里还压着几条（2026-08-28）。
+   *
+   * ⚠ 队列的发出时机只有「一轮结束」那一处（flushQueuedControlTurn 的五个
+   *   调用点：推演 finally ×2、关范围卡、先改范围、关提问）。**没有一处对应
+   *   "空闲时排进来"**——真机截图那条「本轮结束后发出（1）」就是推演跑完之后
+   *   点「改成 X」排进去的，而"本轮"早已结束，它永远等不到自己的发出时机。
+   *
+   *   抄的标准答案：grok-build `acp_handler/interactions.rs`
+   *       /// The pager does NOT respond immediately — the response is sent
+   *       /// later when the user submits, cancels, or is replaced by another
+   *       /// question.
+   *     ——提问是张欠条，提交 / 取消 / 被顶掉三条出路**每条都得把它兑现**，
+   *       没有哪条路能让它悬着。队列同理：承诺了会发出去，就必须有一条路
+   *       真的走得到。空闲时那条路就是这颗发送键。
+   *
+   * ⚠ 只在**没在跑**的时候放行：推演中队列本来就有出口（这一轮结束），
+   *   那时候空输入点发送没有意义。
+   */
+  queuedCount?: number;
 }): boolean {
   if (opts.scopeCardOpen || opts.askOpen) return true;
   if (opts.isJudging || opts.isRefining) return true;
   if (isAttachmentExtractPending(opts.attachments)) return true;
-  return !opts.input.trim() && opts.attachments.length === 0;
+  if (!opts.input.trim() && opts.attachments.length === 0) {
+    return opts.isRunning || (opts.queuedCount ?? 0) === 0;
+  }
+  return false;
+}
+
+/**
+ * 排队条的抬头：**说这一刻真会发生的事**。
+ *
+ * ⚠ 推演中和推演完，同一句「本轮结束后发出」意思完全不同：跑完之后"本轮"
+ *   已经没有了，那句话是在骗人——用户会一直等一件不会自己发生的事。
+ *   真机截图上那条就那么挂着。
+ */
+export function queuedTurnsHeading(count: number, isRunning: boolean): string {
+  return isRunning
+    ? `本轮结束后发出（${count}）`
+    : `待发出（${count}）· 点发送开始新一轮`;
 }
 
 /** 视觉 LLM 实测可到 100s+；超时必须 fail-open，否则发送键永远灰着。 */
@@ -653,6 +689,7 @@ export function ComposerDock({
         isRefining,
         scopeCardOpen: Boolean(pendingScope),
         askOpen: askBlocksTyping(pendingAsk),
+        queuedCount: queuedTurns.length,
       })
     )
       return;
@@ -1082,6 +1119,9 @@ export function ComposerDock({
     isRefining,
     scopeCardOpen: Boolean(pendingScope),
     askOpen: askBlocksTyping(pendingAsk),
+    // ⚠ 两个调用点必须给同一组参数：doSend 那处放行了、这处没放行的话，
+    //   键是灰的但 Enter 能发——半新半旧（CLAUDE.md §4）。
+    queuedCount: queuedTurns.length,
   });
 
   const actionHints = hintChips.slice(0, statusPill ? 1 : 2);
@@ -1806,6 +1846,7 @@ export function ComposerDock({
               {onSettleAssumption && onReviseAssumption ? (
                 <AssumptionStrip
                   items={specAssumptions}
+                  isRunning={isRunning}
                   onSettle={onSettleAssumption}
                   onRevise={onReviseAssumption}
                 />
@@ -1823,7 +1864,7 @@ export function ComposerDock({
                   data-testid="sliderule-queued-turns"
                 >
                   <div className="mb-1 text-[11px] leading-4 text-[#71717a]">
-                    本轮结束后发出（{queuedTurns.length}）
+                    {queuedTurnsHeading(queuedTurns.length, isRunning)}
                   </div>
                   {queuedTurns.map((line, i) => (
                     <div

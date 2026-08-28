@@ -1,5 +1,5 @@
 import { Check } from "lucide-react";
-import type { SpecAssumption } from "./spec-assumptions";
+import { assumptionsHeading, type SpecAssumption } from "./spec-assumptions";
 
 /**
  * 伴随式澄清：推演中「我替你定了什么」。
@@ -19,10 +19,13 @@ import type { SpecAssumption } from "./spec-assumptions";
  */
 export function AssumptionStrip({
   items,
+  isRunning = true,
   onSettle,
   onRevise,
 }: {
   items: SpecAssumption[];
+  /** 这一轮还在跑吗。见 assumptionsHeading：跑完之后同一张卡意思变了。 */
+  isRunning?: boolean;
   onSettle: (id: string) => void;
   onRevise: (id: string, alternative: string) => void;
 }) {
@@ -33,7 +36,7 @@ export function AssumptionStrip({
       data-testid="sliderule-assumptions"
     >
       <div className="mb-1 text-[11px] leading-4 text-[#71717a]">
-        推演中我替你定了这几件事（{items.length}）· 不改就按这个做
+        {assumptionsHeading(items.length, isRunning)}
       </div>
       {items.map(row => (
         <div

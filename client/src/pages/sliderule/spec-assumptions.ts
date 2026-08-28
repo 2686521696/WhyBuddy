@@ -146,3 +146,33 @@ export function settleAssumption(
 ): SpecAssumption[] {
   return list.filter(row => row.id !== id);
 }
+
+/**
+ * 面板抬头：**说这一刻真会发生的事**（2026-08-28）。
+ *
+ * ## 事故
+ *
+ * 卡不随推演结束而消失，是这个模块**有意**的设计（AssumptionStrip 头注：
+ * 「它就该一直待在输入框上方，直到用户处理掉」，resetSpecAssumptions 只在
+ * 开新一轮和切会话时调用）。这条不改。
+ *
+ * 问题在于**同一张卡在两个时刻意思完全不同，外观却一模一样**：
+ *
+ *     推演中   「我正打算这么做，你现在改还来得及」→ 改动进中途排队，本轮结束发出
+ *     推演完   「这一轮已经这么做了」            → 改动是开新一轮的事
+ *
+ * 而抬头一直写着「推演中我替你定了这几件事」。真机（截图那场）推演早已
+ * closed，抬头照旧说"推演中"——用户以为还在改眼前这一轮。
+ *
+ * ⚠ 修的是**这张卡说什么**，不是让它消失。让它消失会撞上面那条有意设计；
+ *   而继续说"推演中"是在骗人。两者之间的正解是改口。
+ *
+ * 抄的标准答案还是 grok-build：它给不同种类的交互配不同的收场话术与可关性
+ * （`PromptBlocked` 那类按 Esc 关不掉，会 toast「choose Edit, Resend, or
+ * Discard」——把"你现在能做什么"直说出来），而不是同一张卡从头到尾一句话。
+ */
+export function assumptionsHeading(count: number, isRunning: boolean): string {
+  return isRunning
+    ? `推演中我替你定了这几件事（${count}）· 不改就按这个做`
+    : `这一轮已按这几条做了（${count}）· 改动会排进新一轮`;
+}
