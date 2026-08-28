@@ -38,8 +38,15 @@ import { blockKey } from "./block-rects";
 export const BLOCK_CELL = {
   /** 画板右缘到块网格左缘 */
   stripGap: 72,
-  /** 单元格宽度 */
-  width: 520,
+  /**
+   * 单元格宽度。
+   *
+   * ⚠ 440 不是随手写的：列数封顶 4 时网格总宽 4×440+3×56 = 1928，
+   *   跟画板本身（1920）差不多——一页的"成品 + 零件"合起来约两个画板宽。
+   *   上一版是 520，4 列就 2248，比画板还宽一大截，整张图被横向拉开，
+   *   真机上「适应画布」的缩放从 16% 掉到 12%，反而更看不清。
+   */
+  width: 440,
   /**
    * 单元格之间的间距，**横竖同一个数**——横竖不一样的话看着就不是网格，
    * 是"一列一列硬凑的"。
@@ -76,25 +83,85 @@ export const BLOCK_CELL = {
 } as const;
 
 /**
- * 块网格的列数：`ceil(sqrt(n))`。
+ * 列数上限。
  *
- * 抄 ComfyUI_frontend `useArrangeNodes.ts` 的 `arrangeGrid`：
- *
- *     const cols = Math.ceil(Math.sqrt(sorted.length))
- *
- * ⚠ 上一版是**一长条**（永远 1 列）。真机 5 页 24 块的样子是每页拖出一条
- *   几千单位长的竖带，缩到 21% 看全景时那是一串挤在一起的小色块，
- *   而画板本身才 1080 高——比例完全不对，用户的原话是"看着不够自然"。
- *   √n 让 5 块摆成 3×2、9 块摆成 3×3，跟画板的比例接近得多。
+ * ⚠ 4 是跟格宽配套定的：4×440+3×56 = 1928 ≈ 画板宽（1920）。再多就把
+ *   右边那一页推得太远，整张图横向拉开，「适应画布」的缩放跟着掉。
  */
-export function blockGridColumns(count: number): number {
-  return Math.max(1, Math.ceil(Math.sqrt(Math.max(0, count))));
+export const MAX_BLOCK_COLS = 4;
+
+/**
+ * 单块内容的高度上限。
+ *
+ * ⚠ 两条一起卡：高宽比上限，**以及画板高度**。
+ *   只卡高宽比的话，一个特别长的表格块自己就有 440×2.4 = 1056 高，
+ *   加上标签带 1112 > 画板 1080——那一页无论分几列都装不进画板高度，
+ *   "列数选到装得下为止"这条规则就永远达不成。真机上量到过：
+ *   远程审方页的网格 1832 高，越过下一排画板 520。
+ */
+function cellMaxHeight(boardHeight: number): number {
+  return Math.min(
+    BLOCK_CELL.width * BLOCK_CELL.maxAspect,
+    Math.max(BLOCK_CELL.labelBand, boardHeight - BLOCK_CELL.labelBand)
+  );
+}
+
+/** 一块按格宽铺满之后占多高（含标签带）。 */
+function cellVisualHeight(rect: BlockRect, boardHeight: number): number {
+  const scale = BLOCK_CELL.width / rect.rect.width;
+  const wanted = rect.rect.height * scale;
+  return Math.min(wanted, cellMaxHeight(boardHeight)) + BLOCK_CELL.labelBand;
+}
+
+/** 瀑布流按 cols 列packing 之后的总高。 */
+function masonryHeight(heights: readonly number[], cols: number): number {
+  const bottoms = new Array<number>(cols).fill(0);
+  for (const h of heights) {
+    let col = 0;
+    for (let c = 1; c < cols; c += 1) {
+      if (bottoms[c] < bottoms[col] - 0.5) col = c;
+    }
+    bottoms[col] += h + BLOCK_CELL.gap;
+  }
+  /* 末尾那个 gap 不算进总高 */
+  return Math.max(0, Math.max(...bottoms) - BLOCK_CELL.gap);
+}
+
+/**
+ * 这一页的块该摆几列。
+ *
+ * ## ⚠ 2026-08-28：从 `ceil(sqrt(n))` 改成「**装得进画板高度**为止」
+ *
+ * √n 只管形状方不方，不管**跟画板比起来多高**。真机上量到（4 页 15 块）：
+ *
+ *     画板行距            1312（1080 高 + 232 间距）
+ *     远程审方页的块网格   y 0 → 1832 —— 越过下一排画板 520
+ *
+ * 后果就是用户报的那个：缩小时看着还行，一放大就是大片空白里几条线穿过——
+ * 因为网格把整张图在垂直方向撑开了，画板之间被拉出很远的空隙。
+ *
+ * 改成从 1 列开始试，直到瀑布流的总高装得进画板高度。这样块簇始终跟它的
+ * 画板齐平，整张图横成一条带，放大到任何一档看到的都是"一页 + 它的块"。
+ *
+ * ⚠ 有上限（MAX_BLOCK_COLS）：块特别多的页装不进去也不许无限加列，
+ *   否则会把右边那一页推到天边。装不下就如实溢出一点，不假装。
+ */
+export function chooseBlockGridColumns(
+  rects: readonly BlockRect[],
+  boardHeight: number
+): number {
+  const usable = rects.filter(b => b.rect.width > 0 && b.rect.height > 0);
+  if (usable.length === 0) return 1;
+  const heights = usable.map(r => cellVisualHeight(r, boardHeight));
+  for (let cols = 1; cols <= MAX_BLOCK_COLS; cols += 1) {
+    if (masonryHeight(heights, cols) <= boardHeight) return cols;
+  }
+  return MAX_BLOCK_COLS;
 }
 
 /** 一页的块网格总宽（画布坐标）。给画板之间要多留多少间距用。 */
-export function blockGridWidth(count: number): number {
-  if (count <= 0) return 0;
-  const cols = blockGridColumns(count);
+export function blockGridWidth(cols: number): number {
+  if (cols <= 0) return 0;
   return cols * BLOCK_CELL.width + (cols - 1) * BLOCK_CELL.gap;
 }
 
@@ -153,7 +220,7 @@ export function layoutBlockNodes(
   const usable = rects.filter(b => b.rect.width > 0 && b.rect.height > 0);
   if (usable.length === 0) return out;
 
-  const cols = blockGridColumns(usable.length);
+  const cols = chooseBlockGridColumns(usable, board.h);
   const originX = board.x + board.w + BLOCK_CELL.stripGap;
   /* ⚠ 顶端是**视觉顶**（第一块标签的上沿），加回 labelBand 才是内容顶。
      同 arrangeGrid 的 `anchor.posY - anchor.titleHeight` → `visualTop + titleHeight`。 */
@@ -179,7 +246,9 @@ export function layoutBlockNodes(
   for (const b of usable) {
     const scale = BLOCK_CELL.width / b.rect.width;
     const wanted = b.rect.height * scale;
-    const maxH = BLOCK_CELL.width * BLOCK_CELL.maxAspect;
+    /* ⚠ 跟 chooseBlockGridColumns 用**同一条**上限函数——各算各的话，
+       选列数时以为装得下、实际摆出来又溢出。 */
+    const maxH = cellMaxHeight(board.h);
     const h = Math.min(wanted, maxH);
 
     /* 最矮的那一列；并列时取最左的（确定性，且从左往右填看着自然）。 */
@@ -217,11 +286,12 @@ export function layoutBlockNodes(
  *
  * ⚠ 不留的话网格会盖住右边那一列画板——而"盖住了"在缩到 13% 的全景下
  *   看起来只是"有点挤"，不会有任何报错。
- * ⚠ 宽度跟**块最多的那一页**走：按平均值留会让块多的那页照样盖住邻居。
+ * ⚠ 宽度跟**列数最多的那一页**走：按平均值留会让列多的那页照样盖住邻居。
+ *   （列数现在是按"装得进画板高度"选的，见 chooseBlockGridColumns。）
  */
-export function blockGridExtraGapX(maxBlocksPerPage: number): number {
-  if (maxBlocksPerPage <= 0) return 0;
-  return BLOCK_CELL.stripGap + blockGridWidth(maxBlocksPerPage);
+export function blockGridExtraGapX(maxCols: number): number {
+  if (maxCols <= 0) return 0;
+  return BLOCK_CELL.stripGap + blockGridWidth(maxCols);
 }
 
 /**

@@ -14,7 +14,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   BLOCK_CELL,
-  blockGridColumns,
+  chooseBlockGridColumns,
+  MAX_BLOCK_COLS,
   blockGridExtraGapX,
   blockGridHeight,
   blockGridWidth,
@@ -48,14 +49,42 @@ function rect(
 }
 
 describe("网格摆位", () => {
-  it("列数是 ceil(sqrt(n))，不是一长条", () => {
-    // 变异：改回 cols=1（上一版的竖带），这条红。
-    // 真机 5 页 24 块时竖带会拖出几千单位长，缩到 21% 全是挤在一起的小色块。
-    expect(blockGridColumns(1)).toBe(1);
-    expect(blockGridColumns(4)).toBe(2);
-    expect(blockGridColumns(5)).toBe(3);
-    expect(blockGridColumns(9)).toBe(3);
-    expect(blockGridColumns(10)).toBe(4);
+  it("⚠ 列数选到**装得进画板高度**为止，不是拍 √n", () => {
+    /*
+     * 2026-08-28 真机（4 页 15 块）量到的：
+     *     画板行距          1312（1080 高 + 232 间距）
+     *     远程审方页的网格   y 0 → 1832 —— 越过下一排画板 520
+     * √n 只管形状方不方，不管跟画板比起来多高。溢出之后整张图在垂直方向
+     * 被撑开，放大到工作档位看到的就是大片空白里几条线穿过。
+     * 变异：改回 ceil(sqrt(n))，这条红。
+     */
+    const tall = Array.from({ length: 6 }, (_, i) =>
+      rect(`b${i}`, 0, 0, 520, 520)
+    );
+    // 6 块 × (520+56) = 3456 > 1080，√6 = 3 列仍然 1152+ 高，得再加一列
+    const cols = chooseBlockGridColumns(tall, 1080);
+    const boxes = layoutBlockNodes({ ...BOARD, h: 1080 }, tall);
+    const top = Math.min(...boxes.map(b => b.y - BLOCK_CELL.labelBand));
+    const bottom = Math.max(...boxes.map(b => b.y + b.h));
+    expect(bottom - top).toBeLessThanOrEqual(1080);
+    expect(cols).toBeGreaterThan(Math.ceil(Math.sqrt(tall.length)) - 1);
+  });
+
+  it("块少且矮时就一列——不为了方而硬加列", () => {
+    const few = [rect("甲", 0, 0, 520, 200)];
+    expect(chooseBlockGridColumns(few, 1080)).toBe(1);
+  });
+
+  it("⚠ 列数有上限：块特别多也不许把右边那页推到天边", () => {
+    // 装不下就如实溢出一点，不假装。
+    const many = Array.from({ length: 60 }, (_, i) =>
+      rect(`b${i}`, 0, 0, 520, 1200)
+    );
+    expect(chooseBlockGridColumns(many, 1080)).toBe(MAX_BLOCK_COLS);
+  });
+
+  it("空清单回 1 列，不炸也不回 0", () => {
+    expect(chooseBlockGridColumns([], 1080)).toBe(1);
   });
 
   it("排在画板右侧，第一格与画板顶对齐（顶上留出标签带）", () => {
@@ -74,11 +103,12 @@ describe("网格摆位", () => {
   });
 
   it("列与列之间横向间距是 gap", () => {
-    const boxes = layoutBlockNodes(BOARD, [
-      rect("甲", 0, 0, 520, 260),
-      rect("乙", 0, 0, 520, 260),
+    /* ⚠ 得用**高到一列装不下**的块，才逼得出第二列——列数现在是按
+       "装得进画板高度"选的，两块矮的会老老实实叠成一列。 */
+    const boxes = layoutBlockNodes({ ...BOARD, h: 1080 }, [
+      rect("甲", 0, 0, 440, 900),
+      rect("乙", 0, 0, 440, 900),
     ]);
-    // 2 块 → 2 列（两列等高，第二块落进第 2 列）
     expect(boxes[1].x - boxes[0].x).toBe(BLOCK_CELL.width + BLOCK_CELL.gap);
     expect(boxes[0].y).toBe(boxes[1].y);
   });
@@ -198,10 +228,44 @@ describe("⚠ 裁剪：块的左上角必须对到节点原点", () => {
 
 describe("长块截断", () => {
   it("超过高宽比上限就截断，并如实标记", () => {
-    // 原始 6:1 的长表格
-    const [a] = layoutBlockNodes(BOARD, [rect("长表", 0, 0, 400, 2400)]);
+    // 原始 6:1 的长表格。画板给足够高，让高宽比那条成为生效的上限。
+    const [a] = layoutBlockNodes(
+      { ...BOARD, h: 4000 },
+      [rect("长表", 0, 0, 400, 2400)]
+    );
     expect(a.truncated).toBe(true);
     expect(a.h).toBe(BLOCK_CELL.width * BLOCK_CELL.maxAspect);
+  });
+
+  it("⚠ 单块高度也按**画板高度**封顶（否则永远装不进画板）", () => {
+    /*
+     * 2026-08-28 真机：一个长表格块自己就 440×2.4 = 1056 高，加标签带
+     * 1112 > 画板 1080——那一页无论分几列都装不下，"列数选到装得下为止"
+     * 这条规则永远达不成，网格照样溢出到下一排（量到 1832，越过 520）。
+     * 变异：把这条上限去掉，只留高宽比，这条红。
+     */
+    const [a] = layoutBlockNodes(
+      { ...BOARD, h: 1080 },
+      [rect("长表", 0, 0, 400, 2400)]
+    );
+    expect(a.h).toBe(1080 - BLOCK_CELL.labelBand);
+    expect(a.h).toBeLessThan(BLOCK_CELL.width * BLOCK_CELL.maxAspect);
+    expect(a.truncated).toBe(true);
+  });
+
+  it("⚠ 选列数和摆位用**同一条**高度上限（不然选的时候以为装得下）", () => {
+    const tall = Array.from({ length: 5 }, (_, i) =>
+      rect(`b${i}`, 0, 0, 400, 2400)
+    );
+    const boxes = layoutBlockNodes({ ...BOARD, h: 1080 }, tall);
+    const cols = chooseBlockGridColumns(tall, 1080);
+    const top = Math.min(...boxes.map(b => b.y - BLOCK_CELL.labelBand));
+    const bottom = Math.max(...boxes.map(b => b.y + b.h));
+    // 5 块每块都顶满一列 → 需要 5 列，但封顶 4 列，如实溢出一点
+    expect(cols).toBe(MAX_BLOCK_COLS);
+    expect(bottom - top).toBeGreaterThan(0);
+    // 每一块自己都不许超过画板高度
+    for (const b of boxes) expect(b.h).toBeLessThanOrEqual(1080);
   });
 
   it("反向：没超的不许被标成截断", () => {
@@ -250,14 +314,15 @@ describe("反向判据", () => {
   it("画板要多留的横向间距 = 间隙 + **块最多那页**的网格宽", () => {
     // 少留的话网格会盖住右边那列画板，而全景下只是"看着有点挤"，不报错。
     // 变异：按平均块数留，块多的那页照样盖住邻居。
-    expect(blockGridExtraGapX(9)).toBe(BLOCK_CELL.stripGap + blockGridWidth(9));
-    expect(blockGridExtraGapX(9)).toBeGreaterThan(blockGridExtraGapX(4));
+    expect(blockGridExtraGapX(3)).toBe(BLOCK_CELL.stripGap + blockGridWidth(3));
+    expect(blockGridExtraGapX(3)).toBeGreaterThan(blockGridExtraGapX(2));
     expect(blockGridExtraGapX(0)).toBe(0);
   });
 
   it("网格宽 = 列数 × 格宽 + 列间距", () => {
-    expect(blockGridWidth(4)).toBe(2 * BLOCK_CELL.width + BLOCK_CELL.gap);
+    expect(blockGridWidth(2)).toBe(2 * BLOCK_CELL.width + BLOCK_CELL.gap);
     expect(blockGridWidth(1)).toBe(BLOCK_CELL.width);
+    expect(blockGridWidth(0)).toBe(0);
   });
 });
 

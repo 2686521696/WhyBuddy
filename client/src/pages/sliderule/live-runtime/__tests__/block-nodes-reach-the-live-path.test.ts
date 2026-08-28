@@ -97,10 +97,21 @@ describe("反向判据", () => {
     expect(STAGE).toMatch(/inViewport:\s*shouldMountBoard\(/);
   });
 
-  it("开块网格时画板多留列间距，且按**块最多那页**算", () => {
-    // 按平均块数留的话，块多的那页照样盖住右边那列画板；
+  it("开块网格时画板多留列间距，且按**列数最多那页**算", () => {
+    // 按平均值留的话，列多的那页照样盖住右边那列画板；
     // 而"盖住了"在缩到 13% 的全景下只是"有点挤"，不报错。
-    expect(STAGE).toContain("blockGridExtraGapX(maxBlocksPerPage)");
+    expect(STAGE).toContain("blockGridExtraGapX(maxBlockCols)");
+    // ⚠ 留间距和摆网格必须用**同一条**规则算列数，各算各的会对不上
+    expect(STAGE).toContain("chooseBlockGridColumns(snap.rects, design.h)");
+  });
+
+  it("⚠ 列数按「装得进画板高度」选，不是拍 √n", () => {
+    // 2026-08-28 真机：√n 只管形状方不方，不管跟画板比多高。
+    // 量到远程审方页的网格 1832 高、越过下一排画板 520 —— 整张图被垂直
+    // 撑开，放大到工作档位看到的就是大片空白里几条线穿过（用户报的那个）。
+    expect(LAYOUT).toContain("chooseBlockGridColumns");
+    expect(LAYOUT).toContain("masonryHeight(heights, cols) <= boardHeight");
+    expect(LAYOUT).not.toContain("Math.ceil(Math.sqrt(");
   });
 
   it("⚠ 块用瀑布流摆位（自由散布），不是严格网格", () => {

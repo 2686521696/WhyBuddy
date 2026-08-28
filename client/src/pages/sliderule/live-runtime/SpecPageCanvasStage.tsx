@@ -103,6 +103,7 @@ import { blockKey, type BlockRect, type BlockRectSnapshot } from "./block-rects"
 import {
   BLOCK_CELL,
   blockGridExtraGapX,
+  chooseBlockGridColumns,
   blockKindTint,
   layoutBlockNodes,
   shouldDrawBlockDetail,
@@ -1414,14 +1415,16 @@ function CanvasInner({
     []
   );
 
-  /* 块最多的那一页有几块——决定画板之间要多留多宽。 */
-  const maxBlocksPerPage = React.useMemo(
+  /* 列数最多的那一页占几列——决定画板之间要多留多宽。
+     ⚠ 必须跟 layoutBlockNodes **用同一条规则**算列数（chooseBlockGridColumns），
+       各算各的话留的间距和实际网格宽对不上，网格会盖住右边那列画板。 */
+  const maxBlockCols = React.useMemo(
     () =>
       Object.values(blockRects).reduce(
-        (n, snap) => Math.max(n, snap.rects.length),
+        (n, snap) => Math.max(n, chooseBlockGridColumns(snap.rects, design.h)),
         0
       ),
-    [blockRects]
+    [blockRects, design.h]
   );
 
   const boxes = React.useMemo(
@@ -1432,9 +1435,9 @@ function CanvasInner({
         hostAspect || undefined,
         /* 开着块网格时给每列多留一份网格宽，否则网格盖住右边那列画板。
            ⚠ 按**块最多的那一页**算：按平均值留，块多的那页照样盖住邻居。 */
-        blocksShown ? blockGridExtraGapX(maxBlocksPerPage) : 0
+        blocksShown ? blockGridExtraGapX(maxBlockCols) : 0
       ),
-    [pages, design.w, design.h, hostAspect, blocksShown, maxBlocksPerPage]
+    [pages, design.w, design.h, hostAspect, blocksShown, maxBlockCols]
   );
 
   const pageIds = React.useMemo(() => pages.map(p => p.pageId), [pages]);
