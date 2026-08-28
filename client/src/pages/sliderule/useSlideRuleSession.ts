@@ -396,6 +396,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
    *   只清列表不清集合，下一轮那条真·新假设会被当成回声吞掉。
    *   两处重置都走 resetSpecAssumptions，别再单独调 applySpecAssumptions([])。
    */
+  /**
+   * 当前这一轮的 runId + 有没有停住（2026-08-28 接线）。
+   *
+   * ⚠ runId 存 ref 不存 state：按「先别往下跑」时要立刻拿到它发请求，
+   *   而 setState 是异步的——存 state 会出现"按下去那一刻还是上一轮的 id"。
+   *   停住与否要上屏，所以那个存 state。
+   */
+  const activeRunIdRef = useRef<string | null>(null);
+  const [runPaused, setRunPaused] = useState(false);
   const settledAssumptionIdsRef = useRef<Set<string>>(new Set());
   const applySpecAssumptions = useCallback((next: SpecAssumption[]) => {
     specAssumptionsRef.current = next;
@@ -406,13 +415,71 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     specAssumptionsRef.current = [];
     setSpecAssumptions([]);
   }, []);
+  /**
+   * 「先别往下跑」：让服务端在下一个安全点停住这一轮（2026-08-28 接线）。
+   *
+   * ⚠ 跟停止按钮**不是同一件事**：停止是取消，这一轮判死、白烧（真机实测
+   *   publishClosure=null、modelVersions=0）；这个是停住等人，答完/超时/
+   *   没人在场都会接着跑到最后一步，闭环照样绿。
+   *
+   * ⚠ 停住的位置是**能力与能力之间**，所以生效可能迟到一步（真机单步量到
+   *   过 918 秒）。这是协作式模型的固有取舍，跟取消同一条。
+   *   同一个后果：假设是 spec-first 内部第 2 步报出来的，等循环回到协程层
+   *   时页面已经画完——**这一轮停住了，但改动仍然只作用于下一轮**。要让
+   *   改动落到当前这一轮，得把安全点再往流水线里插一层，那是另一摊。
+   */
+  const holdRun = useCallback(async () => {
+    const rid = activeRunIdRef.current;
+    if (!rid || !isRunningRef.current) return false;
+    try {
+      const res = await fetch(
+        `/api/sliderule/runs/${encodeURIComponent(rid)}/hold`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nonInteractive: false }),
+        }
+      );
+      const body = await res.json().catch(() => ({}));
+      return Boolean(body?.held);
+    } catch {
+      // 暂停是增强：按不动就当没按，绝不能把正在跑的推演带崩
+      return false;
+    }
+  }, []);
+
+  /** 放行：人答了（answer）或明确「就这样」（skip）。闸不在时静默返回。 */
+  const releaseRun = useCallback(
+    async (opts: { answer?: unknown; skip?: boolean }) => {
+      const rid = activeRunIdRef.current;
+      if (!rid) return false;
+      try {
+        const res = await fetch(
+          `/api/sliderule/runs/${encodeURIComponent(rid)}/release`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(opts),
+          }
+        );
+        const body = await res.json().catch(() => ({}));
+        return Boolean(body?.released);
+      } catch {
+        return false;
+      }
+    },
+    []
+  );
+
   /** 「就这样」：知道了，不改。只是把卡收走，不发任何东西给后端。 */
   const settleSpecAssumption = useCallback(
     (id: string) => {
       settledAssumptionIdsRef.current.add(id);
       applySpecAssumptions(settleAssumption(specAssumptionsRef.current, id));
+      // 停住的时候点「就这样」= 人已经表态了，没必要再让它等满预算
+      if (runPaused) void releaseRun({ skip: true });
     },
-    [applySpecAssumptions]
+    [applySpecAssumptions, runPaused, releaseRun]
   );
   /** 「改成 X」：把这条改动排进中途排队（本轮结束自动发出），并收走卡。 */
   const reviseSpecAssumption = useCallback(
@@ -426,8 +493,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       // 同一句补充就进队列两遍（模型会被同一件事说两遍）。
       settledAssumptionIdsRef.current.add(id);
       applySpecAssumptions(settleAssumption(specAssumptionsRef.current, id));
+      // 停住的时候点「改成 X」：带着答案放行，让这一轮继续。
+      // ⚠ 那句话仍旧排进中途排队、作用于**下一轮**——安全点在能力之间，
+      //   等它生效时这一轮的页面已经画完了。见 holdRun 头注。
+      if (runPaused) void releaseRun({ answer: { assumptionId: id, phrase } });
     },
-    [applySpecAssumptions]
+    [applySpecAssumptions, runPaused, releaseRun]
   );
   const requestRehearsalRef = useRef<
     (userText: string) => Promise<void>
@@ -1303,6 +1374,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               ...(mode === "repair" ? { mode } : {}),
               onRunId: (runId: string) => {
                 sawRunId = true;
+                activeRunIdRef.current = runId;
                 // 后端 run 书签：刷新/跳页回来据此续播接回
                 saveActiveRun(resolvedSid, {
                   runId,
@@ -1348,6 +1420,16 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                     text,
                   }))
                 );
+              },
+              onRunPause: (phase, info) => {
+                // ⚠ 只管上屏。三种结局都会接着跑，这里不做任何"判死"的动作
+                //   ——那是取消干的事（见 run_pause 模块头的实测）。
+                setRunPaused(phase === "started");
+                if (phase === "ended") {
+                  console.info(
+                    `[sliderule] 这一轮在 ${info.where} 停了 ${info.waitedSeconds ?? "?"}s，结局 ${info.outcome}`
+                  );
+                }
               },
               onSpecAssumptions: items => {
                 // 按 id 并（不是追加）：续播会把同一条再送一遍，
@@ -2562,6 +2644,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     specAssumptions,
     settleSpecAssumption,
     reviseSpecAssumption,
+    // 「先别往下跑」：见 holdRun 头注（跟停止不是同一件事）
+    holdRun,
+    runPaused,
     generateDeliverables,
     isRunning,
     /** 版本切换请求在飞。名字带 Version 是给消费方看的——那边同名 prop 直传按钮。 */

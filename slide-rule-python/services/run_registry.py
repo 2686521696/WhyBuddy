@@ -46,7 +46,7 @@ import time
 import uuid
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional
 
-from . import run_cancel
+from . import run_cancel, run_pause
 
 
 def _orphan_grace_seconds() -> float:
@@ -79,6 +79,11 @@ class Run:
         #: 协作式取消令牌（见 services/run_cancel 头注）。Task.cancel() 打不断
         #: 线程里的同步代码，所以真正让引擎停下来的是这个。
         self.cancel_token = run_cancel.new_token()
+        #: 协作式暂停位（见 services/run_pause 头注）。用户按「先别往下跑」时
+        #: 路由把闸放进来，驱动器在步与步之间取走并等在那儿。
+        #: ⚠ 绑的是**位子**不是闸：闸是按下那一刻才造的，而绑定必须发生在
+        #:   起跑之前（Context 是那一刻复制的），所以绑一个可变的位子。
+        self.pause_slot = run_pause.new_slot()
         self.events: List[Dict[str, Any]] = []
         self.cond = asyncio.Condition()
         self.task: Optional[asyncio.Task] = None
@@ -190,6 +195,7 @@ async def start_run(
         # ⚠ 必须在起跑前绑：asyncio.to_thread 复制的是**这一刻**的 Context，
         #   绑晚了线程里读到的就是 None（等于整条协作式取消线路静默失效）。
         run_cancel.bind(run.cancel_token)
+        run_pause.bind(run.pause_slot)
         await _append(
             run,
             {"type": "run_started", "sessionId": session_id, "userText": user_text},
@@ -330,3 +336,42 @@ def cancel_run(run_id: str) -> bool:
 def _reset_for_tests() -> None:
     _runs.clear()
     _active_by_session.clear()
+
+
+def hold_run(run_id: str, *, non_interactive: bool = False) -> bool:
+    """用户按「先别往下跑」：在下一个安全点停住这一轮。
+
+    ⚠ 跟 cancel_run 的关系：取消是**终止**（这一轮判死、白烧，见
+      run_pause 头注里的实测），暂停是**停住等人**，答完/超时都会接着跑到
+      最后一步，闭环照样绿。两者不是同一件事的两个力度，别合并。
+
+    重复按返回 True 但不开第二道闸（request_hold 幂等）。
+    """
+    run = _runs.get(run_id)
+    if run is None or not is_live(run):
+        return False
+    return run_pause.request_hold(
+        run.pause_slot,
+        run_pause.PauseBudget(non_interactive=non_interactive),
+    ) is not None
+
+
+def release_run(run_id: str, *, answer: Any = None, skip: bool = False) -> bool:
+    """人答了（或明确说"就这样"）：放行，接着往下跑。
+
+    ⚠ 找不到闸时返回 False 而不是抛：真机上「答案到得比暂停生效还早」是
+      正常竞态（用户手快 / 上一步还没跑完），那不是错误。
+    """
+    run = _runs.get(run_id)
+    if run is None:
+        return False
+    # 两格都认：安全点还没到时闸在 pending，正在等时在 active。
+    # 用户手快、或上一步还没跑完 → 答案先到，那是正常竞态不是错误。
+    gate = run.pause_slot.active or run.pause_slot.pending
+    if gate is None:
+        return False
+    if skip or answer is None:
+        gate.skip()
+    else:
+        gate.answer(answer)
+    return True

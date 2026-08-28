@@ -997,6 +997,8 @@ function SlideRuleUnified({
   specAssumptions = [],
   settleSpecAssumption,
   reviseSpecAssumption,
+  holdRun,
+  runPaused,
   confirmControlScope,
   dismissScopeCard,
   dismissAsk,
@@ -1068,6 +1070,11 @@ function SlideRuleUnified({
   specAssumptions?: SpecAssumption[];
   settleSpecAssumption?: (id: string) => void;
   reviseSpecAssumption?: (id: string, alternative: string) => void;
+  /** 「先别往下跑」：在下一个安全点停住这一轮。**不是停止**——见
+   *  useSlideRuleSession.holdRun 头注（停止是取消，这一轮判死）。 */
+  holdRun?: () => void;
+  /** 这一轮已经停住了。 */
+  runPaused?: boolean;
   pendingClarifications?: ClarificationItem[];
   answerClarifications?: (
     answers: Array<{ gapId: string; answer: string }>
@@ -1271,6 +1278,8 @@ function SlideRuleUnified({
                         onRemoveQueued={removeQueuedTurn}
                         specAssumptions={specAssumptions}
                         onSettleAssumption={settleSpecAssumption}
+                        onHoldRun={holdRun}
+                        runPaused={runPaused}
                         onReviseAssumption={reviseSpecAssumption}
                       />
                     }
@@ -1817,6 +1826,8 @@ function SlideRuleSessionBody({
     removeQueuedTurn,
     specAssumptions,
     settleSpecAssumption,
+    holdRun,
+    runPaused,
     reviseSpecAssumption,
     confirmControlScope,
     dismissScopeCard,

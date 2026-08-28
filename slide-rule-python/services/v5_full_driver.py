@@ -2194,8 +2194,65 @@ async def drive_full_v5_session_stream(
             )
 
         prev_resolved = _count_resolved(state)
+        # 整轮共用一个恢复账本：「只自动一次」是按**这一轮**算的，每次进
+        # 循环新建一个等于每轮都能再自动一次，那条上限就形同虚设。
+        try:
+            from .run_pause import RecoveryLedger as _RL
+
+            _pause_ledger = _RL()
+        except Exception:  # noqa: BLE001
+            _pause_ledger = None
 
         while loop < max_loops:
+            # ── 安全点：用户按过「先别往下跑」就停在这儿等（2026-08-28）──
+            #
+            # ⚠ 只装在**流式**这一条循环上（同步那条在 1386 行）。流式是前端
+            #   主路径，两条都改才叫改完；这次只接流式，同步那条保持原样——
+            #   它是脚本/测试入口，没有前端按暂停这回事。
+            #
+            # 位置照 run_cancel 同一条纪律：步与步之间、最贵的活开始之前。
+            # 这一层的意义是"别再开始下一件大活儿"，不是把当前这件切碎。
+            #
+            # ⚠ 正常路径零成本：没人按暂停时 pause_here 一次字典读取就返回。
+            # ⚠ 三种结局都往下跑，**没有一种把这一轮判死**：
+            #     人答了    → 接着跑
+            #     超时/跳过  → 按模型自己定的做（spec-assumptions 认定的合法结局）
+            #     没人在场   → 同上，只是如实报 no_operator 而不是"用户跳过"
+            #   会抛的只有取消，那时取消赢（RunCancelled 一路上抛）。
+            # ⚠ take_hold + wait 分两步，不用 pause_here 那个合体版：
+            #   前端要在**开始等之前**就知道"停住了"才能把卡片变成拦路形态，
+            #   而合体版把取闸和等待包在一起，中间没有 yield 的缝。
+            _pause_res = None
+            try:
+                from .run_pause import finish_hold, recover_from, take_hold
+
+                _pause_gate = take_hold()
+            except Exception as _pause_exc:  # noqa: BLE001
+                # 暂停是增强（第七条）：它自己炸了不许拖垮跑了两分钟的推演
+                print(
+                    f"[v5_full_driver] ⚠ 暂停闸异常，按不暂停继续："
+                    f"{str(_pause_exc)[:160]}"
+                )
+                _pause_gate = None
+            if _pause_gate is not None:
+                yield {"type": "run_pause_started", "where": f"loop-{loop}"}
+                try:
+                    _pause_res = await _pause_gate.wait(f"loop-{loop}")
+                finally:
+                    # 等完就把"正在等"清掉，否则下一轮的 release 会打到一个
+                    # 已经结束的闸上，返回 released=true 却什么也没发生。
+                    finish_hold()
+            if _pause_res is not None:
+                yield {
+                    "type": "run_pause_ended",
+                    "where": _pause_res.where,
+                    "outcome": _pause_res.outcome.value,
+                    "waitedSeconds": _pause_res.waited_seconds,
+                }
+                if not _pause_res.answered and _pause_ledger is not None:
+                    _act = recover_from(_pause_res, _pause_ledger)
+                    if _act is not None:
+                        yield {"type": "recovery", **_act.event}
             ui = user_instruction or ""
             if skip_planning_loop_for_refine(repair=repair):
                 record_refine_skip_planning(state, ui)

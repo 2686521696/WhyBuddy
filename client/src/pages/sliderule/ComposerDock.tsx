@@ -400,6 +400,8 @@ export function ComposerDock({
   queuedTurns = [],
   specAssumptions = [],
   onSettleAssumption,
+  onHoldRun,
+  runPaused = false,
   onReviseAssumption,
   onRemoveQueued,
   onConfirmScope,
@@ -421,6 +423,9 @@ export function ComposerDock({
   /** 伴随式澄清：推演中模型替用户定下的事。见 AssumptionStrip 头注。 */
   specAssumptions?: SpecAssumption[];
   onSettleAssumption?: (id: string) => void;
+  /** 「先别往下跑」与「已经停住了」。见 AssumptionStrip.onHold 头注。 */
+  onHoldRun?: () => void;
+  runPaused?: boolean;
   onReviseAssumption?: (id: string, alternative: string) => void;
   onRemoveQueued?: (index: number) => void;
   onConfirmScope?: () => void;
@@ -1847,6 +1852,8 @@ export function ComposerDock({
                 <AssumptionStrip
                   items={specAssumptions}
                   isRunning={isRunning}
+                  paused={runPaused}
+                  onHold={onHoldRun}
                   onSettle={onSettleAssumption}
                   onRevise={onReviseAssumption}
                 />

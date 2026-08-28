@@ -313,6 +313,19 @@ export interface DriveFullStreamOpts {
    *  事件到达）时回调一次。纯连接断开（刷新/跳页/网络抖动）不触发——
    *  run 仍在后台跑，续播书签必须保留。 */
   onRunSettled?: (reason: "complete" | "cancelled" | "error") => void;
+  /**
+   * 这一轮停住了 / 又跑起来了（用户按了「先别往下跑」）。
+   *
+   * ⚠ started 在**开始等之前**就到，ended 带着结局：
+   *     answered     人答了
+   *     skipped      超时或明确跳过 —— 按模型定的做，合法结局
+   *     no_operator  没人在场（页面关了）
+   *   三种都会接着跑到最后一步，**没有一种把这一轮判死**（那是取消干的事）。
+   */
+  onRunPause?: (
+    phase: "started" | "ended",
+    info: { where: string; outcome?: string; waitedSeconds?: number }
+  ) => void;
   /** 流读到 done 却没见终局（协议违规）。见 STREAM_NO_TERMINAL 头注。 */
   onStreamNoTerminal?: (code: string) => void;
   /** 空态作曲家「应用 / Web」。desktop 横屏 / phone 竖屏，跟 device_policy 同词表。 */
@@ -514,6 +527,17 @@ function applyFactoryStreamEvent(
       if (items.length > 0) opts.onSpecAssumptions?.(items);
       return "continue";
     }
+    case "run_pause_started":
+      opts.onRunPause?.("started", { where: String(event.where || "") });
+      return "continue";
+    case "run_pause_ended":
+      opts.onRunPause?.("ended", {
+        where: String(event.where || ""),
+        outcome: typeof event.outcome === "string" ? event.outcome : undefined,
+        waitedSeconds:
+          typeof event.waitedSeconds === "number" ? event.waitedSeconds : undefined,
+      });
+      return "continue";
     case "skill_start":
       opts.onSkillActivated?.(event.skill as SkillId, event.label as string);
       return "continue";

@@ -1517,6 +1517,54 @@ async def run_cancel(
     return {"cancelled": run_registry.cancel_run(run_id)}
 
 
+@router.post("/runs/{run_id}/hold")
+async def run_hold(
+    run_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """「先别往下跑」：在下一个安全点停住这一轮，等人拿主意。
+
+    ⚠ 跟 DELETE /runs/{id}（取消）不是同一件事的两个力度：
+      取消 = 这一轮判死、白烧（真机实测 publishClosure=null、modelVersions=0）；
+      暂停 = 停住等人，答完/超时/没人在场都会接着跑到最后一步，闭环照样绿。
+
+    `nonInteractive` 由调用方给：页面已经关了 / 无头跑的时候传 true，
+    超时报的就是"没有操作员"而不是"用户跳过"——那是两个不同的事实。
+    """
+    _auth(x_internal_key)
+    from services import run_registry
+
+    body = payload or {}
+    held = run_registry.hold_run(
+        run_id, non_interactive=bool(body.get("nonInteractive"))
+    )
+    return {"held": held}
+
+
+@router.post("/runs/{run_id}/release")
+async def run_release(
+    run_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    x_internal_key: Optional[str] = Header(None),
+):
+    """放行：人答了（answer）或明确说"就这样"（skip）。
+
+    ⚠ 闸不在时返回 released=false 而**不是报错**：真机上「答案到得比暂停
+      生效还早」是正常竞态（用户手快、或上一步还没跑完），那不是错误。
+    """
+    _auth(x_internal_key)
+    from services import run_registry
+
+    body = payload or {}
+    released = run_registry.release_run(
+        run_id,
+        answer=body.get("answer"),
+        skip=bool(body.get("skip")),
+    )
+    return {"released": released}
+
+
 # ---------------------------------------------------------------------------
 # AIGC 能力试跑（浏览器运行时 M2）：拿模型里声明的一项 AI 能力真跑一次 LLM。
 # 语义与五系统生成同一诚实边界：flag 关/无 key → fail-closed 结构化诊断，

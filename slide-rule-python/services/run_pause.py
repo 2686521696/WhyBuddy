@@ -94,6 +94,7 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 from enum import Enum
+from contextvars import ContextVar
 from typing import Any, Dict, Optional, Tuple
 
 from .run_cancel import RunCancelled, is_cancelled
@@ -356,3 +357,115 @@ def recover_from(
     if result.answered:
         return None
     return ledger.attempt(detail=f"{result.outcome.value}@{result.where}")
+
+
+# ── 接线：一个 run 的暂停位 ──────────────────────────────────────────
+#
+# 形状照 run_cancel：run_registry 起跑前把位子绑进 ContextVar，驱动器在安全点
+# 读它，路由通过 run_id 找到同一个位子往里放 gate。
+#
+# ⚠ 为什么绑「位子」而不是绑 gate：gate 是**用户按下暂停那一刻**才造出来的，
+#   而绑定必须发生在**起跑之前**（asyncio.to_thread 复制的是那一刻的 Context，
+#   绑晚了读到的就是 None——run_cancel 头注为此专门写过一段）。所以绑一个
+#   可变的位子，事后往里放东西。
+
+
+@dataclass
+class PauseSlot:
+    """一个 run 的暂停位。
+
+    ⚠ 两格，不是一格（2026-08-28 真机咬出来的）。第一版只有一格、
+      `take_hold` 把闸**取走**——于是驱动器一开始等，路由按 run_id 就再也
+      找不到那个闸，`release` 恒返回 released=false，这一轮永远停在那儿。
+      真机实测：按暂停 → 停住 ✅ → 放行 → `{"released":false}`、15 秒零新
+      事件。而单测全绿，因为它直接拿着 gate 对象调 answer，**绕过了位子
+      查找**——正向判据齐全、反向判据缺失（CLAUDE.md §3）。
+
+    pending 是"按了还没到安全点"，active 是"正在等"。放行两格都认：用户
+    可能在安全点到达之前就答了，那时闸还在 pending 里（路由头注说的那个
+    正常竞态）。
+    """
+
+    pending: Optional["PauseGate"] = None
+    active: Optional["PauseGate"] = None
+
+
+_SLOT: ContextVar[Optional[PauseSlot]] = ContextVar(
+    "sliderule_run_pause_slot", default=None
+)
+
+
+def _slot_var() -> ContextVar:
+    return _SLOT
+
+
+def new_slot() -> PauseSlot:
+    return PauseSlot()
+
+
+def bind(slot: Optional[PauseSlot]) -> None:
+    """绑到当前上下文。**必须在起跑前调用**（理由同 run_cancel.bind）。"""
+    _slot_var().set(slot)
+
+
+def pause_enabled() -> bool:
+    """`SLIDERULE_RUN_PAUSE_ENABLED=0` 关掉整条暂停线路。默认开。
+
+    ⚠ 默认开是安全的：**不按暂停就一个字都不变**——安全点只多一次字典读取，
+      没有任何人放 gate 进来时立刻返回。关掉的开关留着，是因为它能停住一条
+      跑了两分钟的推演，出事时要有一根总闸。
+    """
+    import os
+
+    raw = str(os.environ.get("SLIDERULE_RUN_PAUSE_ENABLED", "1")).strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def request_hold(slot: Optional[PauseSlot], budget: Optional[PauseBudget] = None) -> Optional[PauseGate]:
+    """用户按了「先别往下跑」。下一个安全点会停住。
+
+    已经有一个在等就返回原来那个——重复按不该开出第二道闸。
+    """
+    if slot is None or not pause_enabled():
+        return None
+    existing = slot.active or slot.pending
+    if existing is not None:
+        return existing
+    slot.pending = PauseGate(budget)
+    return slot.pending
+
+
+def take_hold() -> Optional[PauseGate]:
+    """驱动器在安全点调：有人按过暂停就把闸转成"正在等"，没有就 None（零成本）。
+
+    ⚠ **转成 active，不是取走**。取走的话路由就找不到它了——见 PauseSlot
+      头注里那次真机。
+    """
+    slot = _slot_var().get()
+    if slot is None or slot.pending is None:
+        return None
+    gate = slot.pending
+    slot.pending = None
+    slot.active = gate
+    return gate
+
+
+def finish_hold() -> None:
+    """等完了：把"正在等"清掉。不清的话下一轮的 release 会打到一个已经
+    结束的闸上，返回 released=true 却什么也没发生。"""
+    slot = _slot_var().get()
+    if slot is not None:
+        slot.active = None
+
+
+async def pause_here(where: str) -> Optional[PauseResult]:
+    """安全点。没人按暂停就立刻返回 None——**正常路径上就是一次字典读取**。
+
+    ⚠ 放在**步与步之间**（驱动器循环的开头），不要放进循环内层：这一层的
+      意义是"别再开始下一件大活儿"，跟 run_cancel.raise_if_cancelled 同一条
+      纪律、同一批位置。
+    """
+    gate = take_hold()
+    if gate is None:
+        return None
+    return await gate.wait(where)
