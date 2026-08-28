@@ -1641,7 +1641,25 @@ async def _tool_restore(state: V5SessionState, version_id: str) -> Dict[str, Any
             state.modelVersions = restored.modelVersions
             state.currentModelVersionId = restored.currentModelVersionId
             state.publishClosure = restored.publishClosure
+            # ⚠ 2026-08-28：整份替换会把页面 id 别名表冲掉。旧快照里那张表
+            #   可能是空的（修复之前的存量版本；或某个没改过名的精修轮——
+            #   canonical_page_id_map 一个都没改就返回空表，那正是精修轮的
+            #   常态）。冲掉 = 菜单又点不动，而且照例一声不吭。
+            #   别名是**历史**，模型版本可以回退，"p1 曾经是 remote_rx_audit"
+            #   这件事永远为真。规则见 page_id_freeze.merge_page_id_aliases
+            #   （抄 friendly_id：slug 历史只增，回退内容不删老 slug）。
+            from services.page_id_freeze import merge_page_id_aliases
+
+            _live = getattr(state, "specFirstPages", None)
+            _live_aliases = _live.get("pageIdAliases") if isinstance(_live, dict) else None
             state.specFirstPages = restored.specFirstPages
+            _restored = state.specFirstPages
+            if isinstance(_restored, dict):
+                _merged = merge_page_id_aliases(
+                    _live_aliases, _restored.get("pageIdAliases")
+                )
+                if _merged:
+                    state.specFirstPages = {**_restored, "pageIdAliases": _merged}
             _append_transcript(
                 state, {"role": "tool", "kind": "restore_version", "text": vid}
             )

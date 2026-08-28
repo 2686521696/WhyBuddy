@@ -1043,10 +1043,12 @@ def _cache_spec_first_pages(state: "V5SessionState") -> None:
         # 还活着），往里穿参数要改十几处签名——跟 take_last_pages 头注同一个
         # 权衡。冲突时**本轮赢**，对应 friendly_id `order(id: :desc)`：
         # 同一个旧 id 被指到两个新 id 时，最近那次改名才是有效的。
+        from .page_id_freeze import merge_page_id_aliases
+
         prev = getattr(state, "specFirstPages", None)
         prev_aliases = (prev or {}).get("pageIdAliases") if isinstance(prev, dict) else None
-        if isinstance(prev_aliases, dict) and prev_aliases:
-            merged = {**prev_aliases, **(got.get("pageIdAliases") or {})}
+        merged = merge_page_id_aliases(prev_aliases, got.get("pageIdAliases"))
+        if merged:
             got = {**got, "pageIdAliases": merged}
         state.specFirstPages = got
         print(f"[v5_capability_executor] spec-first 页面落库：{len(got['pages'])} 份")

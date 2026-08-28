@@ -128,3 +128,59 @@ class Test流水线把别名交出来:
             "result 与 _last_pages_var 两条载体必须都带 pageIdAliases，"
             "只写一条 = 刷新之后别名就没了"
         )
+
+
+class Test别名是历史_不跟着版本回退:
+    """⚠ 2026-08-28 审计出来的洞，补在原修复之后。
+
+    页面 id 别名表有三个写入/读取点：落库、版本快照、版本回退。回退那处是
+    `state.specFirstPages = restored.specFirstPages` ——**整份替换**，而旧
+    快照里的别名表可能是空的（修复之前的存量版本；或某个没改过名的精修轮，
+    canonical_page_id_map 一个都没改就返回空表，那正是精修轮的常态）。
+
+    冲掉 = 菜单又点不动，而且照例一声不吭。别名是历史，模型版本可以回退，
+    「p1 曾经是 remote_rx_audit」这件事永远为真——照 friendly_id：slug 历史
+    只增，回退文章内容不会把老 slug 从历史表里删掉，否则老链接当场 404。
+    """
+
+    def test_合并规则_新的赢(self):
+        from services.page_id_freeze import merge_page_id_aliases
+
+        assert merge_page_id_aliases({"p1": "old"}, {"p1": "new"}) == {"p1": "new"}
+        assert merge_page_id_aliases({"p1": "a"}, {"p2": "b"}) == {"p1": "a", "p2": "b"}
+
+    def test_合并规则_空表不许抹掉已有的(self):
+        """这条就是回退那个洞的形状：新的一边是空表。"""
+        from services.page_id_freeze import merge_page_id_aliases
+
+        assert merge_page_id_aliases({"p1": "remote_rx_audit"}, {}) == {
+            "p1": "remote_rx_audit"
+        }
+        assert merge_page_id_aliases({"p1": "remote_rx_audit"}, None) == {
+            "p1": "remote_rx_audit"
+        }
+
+    def test_合并规则_自指与脏数据剔掉(self):
+        from services.page_id_freeze import merge_page_id_aliases
+
+        assert merge_page_id_aliases({"p1": "p1"}, {}) == {}
+        assert merge_page_id_aliases({"": "x", "y": ""}, {}) == {}
+        assert merge_page_id_aliases("不是表", 42) == {}
+
+    def test_回退那一处真的接上了合并(self):
+        """⚠ 反向判据：函数写对了 ≠ 它被调用了。
+
+        整份替换那一行还在的话，上面三条照样全绿——而线上回退一次别名就没了。
+        """
+        import services.rehearsal_control as rc
+
+        with open(rc.__file__, encoding="utf-8") as fh:
+            body = fh.read()
+        code = "\n".join(
+            line for line in body.splitlines() if not line.lstrip().startswith("#")
+        )
+        at = code.index("state.specFirstPages = restored.specFirstPages")
+        window = code[at - 400 : at + 500]
+        assert "merge_page_id_aliases" in window, (
+            "版本回退整份替换了 specFirstPages 却没合并别名表——回退一次菜单就废"
+        )

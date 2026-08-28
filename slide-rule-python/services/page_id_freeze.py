@@ -368,3 +368,39 @@ def pages_match_model(pages: Any, model: Any) -> Tuple[bool, List[str], List[str
     if not keys or not mids:
         return True, [], []  # 没得比就不报——空页面包另有闸管
     return keys == mids, sorted(keys - mids), sorted(mids - keys)
+
+
+def merge_page_id_aliases(prev: Any, incoming: Any) -> Dict[str, str]:
+    """合并页面 id 别名表（旧 id → 新 id）。**新的赢。**
+
+    ## 为什么合并规则要收成一处
+
+    别名表有三个写入/读取点，规则必须一致，否则就是半新半旧：
+
+        1. 落库    v5_capability_executor._cache_spec_first_pages
+        2. 版本快照 v5_full_driver.record_model_snapshot（随 specFirstPages 整份带走）
+        3. 版本回退 rehearsal_control 的 restore_version
+
+    ## ⚠ 别名是历史，历史不许回退
+
+    第 3 点是 2026-08-28 审计出来的洞：回退把 `state.specFirstPages` 整份
+    换成旧快照，而旧快照里的别名表可能是空的（修复之前的存量版本，或者
+    某个没改过名的精修轮——`canonical_page_id_map` 一个都没改就返回空表，
+    那正是精修轮的常态）。整份替换 = 别名没了 = 菜单又点不动，而且照例
+    一声不吭。
+
+    做法照 friendly_id 的 History：slug 历史是**只增的**，回退文章内容不会
+    把老 slug 从历史表里删掉——否则老链接当场 404。这里同理：模型版本可以
+    回退，"p1 曾经是 remote_rx_audit" 这件事**永远为真**，不该跟着回退。
+
+    冲突时新的赢，对应它的 `order(id: :desc)`：同一个旧 id 被指到两个新 id
+    时，最近那次改名才是有效的。
+    """
+    out: Dict[str, str] = {}
+    for source in (prev, incoming):
+        if isinstance(source, dict):
+            for old, new in source.items():
+                old_s, new_s = str(old).strip(), str(new).strip()
+                if old_s and new_s and old_s != new_s:
+                    out[old_s] = new_s
+    return out
