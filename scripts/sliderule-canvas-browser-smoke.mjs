@@ -28,6 +28,7 @@
  *   D7 双击进板把镜头对到画板现在的位置   ← 跟 D5 同一处根因
  *   D8 拖画板不触发自动适应画布           ← "拖远一点线就没了"的真根因
  *   D9 但排版真变了还是会重新适应         ← D8 的反面，少了它 effect 拆了也绿
+ *   D10 容器变了但列数没变也不许有画板跑出视口 ← D9 的另一半（2026-08-28）
  *   E 双击进板：只撤掉**那一块**的手势层，其余照旧挡着
  *   F Esc 退出，手势层全部回来
  *   G 点缩放读数 = 适应画布
@@ -584,13 +585,30 @@ async function main() {
     if (!blockTruth) {
       log("取不到画板文档，跳过 AG/AH/AI");
     } else {
-      check(
-        "AG 选中的画板画出块框，条数等于页面里的顶层块数；没选中的画板一个都没有",
-        blockTruth.spots === blockTruth.domCount &&
-          blockTruth.domCount > 0 &&
-          blockTruth.elsewhere === 0,
-        `框=${blockTruth.spots} 块=${blockTruth.domCount} 别处=${blockTruth.elsewhere}`
-      );
+      /*
+       * ⚠ 这一页一个块标都没有时**如实跳过**（照 AI 那条的先例），
+       *   2026-08-28 补。块身份是 2026-08-27 才落地的，在那之前生成的会话
+       *   HTML 里一个 `data-block` 都没有——拿它们跑，AG/AH 会红在
+       *   "块=0"，而那不是 bug，是这份数据没法验这件事。
+       *
+       * ⚠ 跳过的条件只能是 `domCount === 0`（页面里真的没有块），
+       *   **不能**顺手把 `spots === 0` 也算进去——那样"块在、框没画出来"
+       *   这个真 bug 就被跳过去了，正是本仓最忌的假绿。
+       *   打标本身有 Python 侧 test_page_blocks 钉着，这边跳过不留缺口。
+       */
+      if (blockTruth.domCount === 0) {
+        check(
+          "AG 选中的画板画出块框，条数等于页面里的顶层块数；没选中的画板一个都没有",
+          blockTruth.spots === 0,
+          "这一页没有任何 data-block（会话早于块身份落地），无从验证——如实跳过"
+        );
+      } else {
+        check(
+          "AG 选中的画板画出块框，条数等于页面里的顶层块数；没选中的画板一个都没有",
+          blockTruth.spots === blockTruth.domCount && blockTruth.elsewhere === 0,
+          `框=${blockTruth.spots} 块=${blockTruth.domCount} 别处=${blockTruth.elsewhere}`
+        );
+      }
 
       /* ⚠ AG 不够：框全画在 (0,0) 也是"条数对得上"。AH 才是那条闸。
          允许 2px 取整误差（框有 outline，且画布缩放后取整两次）。 */
@@ -605,8 +623,13 @@ async function main() {
       );
       check(
         "AH 块框逐像素落在块上（不是飘在别处、也不是全挤在原点）",
-        blockTruth.pairs.length > 0 && bad.length === 0,
-        bad.length ? `对不上的 ${bad.length}/${blockTruth.pairs.length}: ${JSON.stringify(bad.slice(0, 2))}` : `${blockTruth.pairs.length} 块全中`
+        /* 同 AG：这一页没有块时如实跳过，有块就必须逐个对得上。 */
+        blockTruth.domCount === 0 || (blockTruth.pairs.length > 0 && bad.length === 0),
+        blockTruth.domCount === 0
+          ? "这一页没有任何 data-block，无从验证——如实跳过"
+          : bad.length
+            ? `对不上的 ${bad.length}/${blockTruth.pairs.length}: ${JSON.stringify(bad.slice(0, 2))}`
+            : `${blockTruth.pairs.length} 块全中`
       );
 
       /* AI：量早了这件事的真机判据。表格块必须明显高于一行。 */
@@ -668,21 +691,36 @@ async function main() {
      */
     const pointOnBoard = async () => {
       const pt = await page.evaluate(() => {
-        const b = document
-          .querySelector('[data-testid="sliderule-canvas-artboard"]')
-          ?.getBoundingClientRect();
+        /*
+         * ⚠ 2026-08-28：原来只看**第一块**画板（querySelector）。前面的 D
+         *   把第一块拖走之后它整个出了可视区，这里就抛"没有交集"，整份 smoke
+         *   当场崩在 D8 之前——5 页那种排得开的会话必崩，4 页的碰巧不崩。
+         *
+         *   判据要的只是"一个落在某块画板上的点"（让手势落到手势层而不是
+         *   .react-flow__pane），**哪一块无所谓**。所以改成扫所有画板，取第
+         *   一块有足够交集的。
+         *
+         *   ⚠ 仍然一块都没有时照旧抛错，不许兜底回画布中心——那样手势会落在
+         *     pane 上，B/C/D 全都测的是另一件事，而且还是绿的。
+         */
         const host = document
           .querySelector('[data-testid="sliderule-canvas-stage"] .react-flow')
           ?.getBoundingClientRect();
-        if (!b || !host) return null;
-        const left = Math.max(b.left, host.left);
-        const right = Math.min(b.right, host.right);
-        const top = Math.max(b.top, host.top);
-        const bottom = Math.min(b.bottom, host.bottom);
-        if (right - left < 8 || bottom - top < 8) return null;
-        return { x: (left + right) / 2, y: (top + bottom) / 2 };
+        if (!host) return null;
+        for (const el of document.querySelectorAll(
+          '[data-testid="sliderule-canvas-artboard"]'
+        )) {
+          const b = el.getBoundingClientRect();
+          const left = Math.max(b.left, host.left);
+          const right = Math.min(b.right, host.right);
+          const top = Math.max(b.top, host.top);
+          const bottom = Math.min(b.bottom, host.bottom);
+          if (right - left < 8 || bottom - top < 8) continue;
+          return { x: (left + right) / 2, y: (top + bottom) / 2 };
+        }
+        return null;
       });
-      if (!pt) throw new Error("画板与画布可视区没有交集——判据取不到落点");
+      if (!pt) throw new Error("没有任何画板与画布可视区有交集——判据取不到落点");
       return pt;
     };
 
@@ -997,18 +1035,95 @@ async function main() {
           }
         ).length;
       });
-    const cols0 = await colsOf();
-    const zoom0 = await zoomText();
+    /*
+     * ⚠ 2026-08-28 这条改了三处，都是**判据自己站错了位置**：
+     *
+     *   一、宽度写死，而列数变不变**取决于会话有几页**。原来是 1600 → 1100，
+     *       注释里记的"4 列 → 3 列"是另一份会话量的。真机上舞台被左侧栏挤掉
+     *       ~295px：5 页时容器 1305（2 列）→ 805（2 列）列数根本没变；
+     *       4 页时**任何**宽度都是 2 列，这条对它永远无从验证。
+     *       于是它一直红在 "cols 2 → 2"，看着像产品坏了。
+     *       改成**先探测**：扫几档宽度，找一对真能让列数变的；找不到就照 AI
+     *       那条的先例如实跳过——不假装验过。
+     *
+     *   二、拿"缩放变了"当"重新适应过了"的证据。实测这两档的 fit 都受**高度**
+     *       约束：容器 1305 和 805 算出来都是 17.7%，缩放一个数都不动，
+     *       而画布确实重新适应过（平移变了）。真正该钉的是
+     *       **所有画板都还在视口内**——那才是这条判据要保住的东西。
+     *
+     *   三、原来跑完不还原窗口宽度就往下走，后面几条在窄窗口下量，白白多一
+     *       份噪声。现在探测和验证都在这一段里收干净。
+     */
+    const colsAtWidth = async w => {
+      await page.setViewportSize({ width: w, height: 950 });
+      await page.waitForTimeout(1400);
+      return colsOf();
+    };
+    /** 扫几档宽度，找一对列数不同的。找不到回 null。 */
+    const findColumnPair = async () => {
+      const seen = [];
+      for (const w of [2000, 1700, 1400, 1100]) {
+        seen.push({ w, cols: await colsAtWidth(w) });
+      }
+      for (const a of seen) {
+        for (const b of seen) {
+          if (a.cols !== b.cols) return { wide: a, narrow: b, seen };
+        }
+      }
+      return { wide: null, narrow: null, seen };
+    };
+    const pair = await findColumnPair();
+    if (!pair.wide) {
+      check(
+        "D9 排版真变了（列数变）还是会重新适应画布——D8 别把这条一起关掉",
+        true,
+        `这个会话在各档宽度下列数都不变（${pair.seen
+          .map(x => `${x.w}→${x.cols}列`)
+          .join(" ")}），无从验证——如实跳过，不算通过也不算失败`
+      );
+    } else {
+      await page.setViewportSize({ width: pair.wide.w, height: 950 });
+      await page.waitForTimeout(2000);
+      const cols0 = await colsOf();
+      const zoom0 = await zoomText();
+      const out0 = await outsideCount();
+      await page.setViewportSize({ width: pair.narrow.w, height: 950 });
+      await page.waitForTimeout(2000);
+      const cols1 = await colsOf();
+      const zoom1 = await zoomText();
+      const out1 = await outsideCount();
+      check(
+        "D9 排版真变了（列数变）还是会重新适应画布——D8 别把这条一起关掉",
+        cols1 !== cols0 && out0 === 0 && out1 === 0,
+        `${pair.wide.w}→${pair.narrow.w} · 列数 ${cols0} → ${cols1} · 缩放 ${zoom0} → ${zoom1} · 视口外画板 ${out0} → ${out1} 块`
+      );
+    }
+
+    /*
+     * D10：D9 的**另一半**，2026-08-28 补。
+     *
+     * D9 只覆盖"列数变了"。而排版指纹原来只有 `节点数:列数`，于是
+     * **容器变了但列数没变**时画布一次都不重新适应——真机上把窗口从 1600
+     * 缩到 1100（容器 1305 → 805，两次都是 2 列），**两块画板留在视口外**。
+     * 用户看到的就是"窗口一窄，两页没了"，没有任何报错。
+     *
+     * 修法是把量化过的容器尺寸也放进指纹（见 SpecPageCanvasStage 的
+     * hostSizeKey）。这条钉住它：**列数没变也要保住"全在视口内"**。
+     * 少了它，把 hostSizeKey 从指纹里删掉，D9 照样绿。
+     */
+    await page.setViewportSize({ width: 1600, height: 950 });
+    await page.waitForTimeout(2000);
+    const colsWide = await colsOf();
     await page.setViewportSize({ width: 1100, height: 950 });
     await page.waitForTimeout(2000);
-    const cols1 = await colsOf();
-    const zoom1 = await zoomText();
-    const out1 = await outsideCount();
+    const colsNarrow = await colsOf();
+    const outNarrow = await outsideCount();
     check(
-      "D9 排版真变了（列数变）还是会重新适应画布——D8 别把这条一起关掉",
-      cols1 !== cols0 && zoom1 !== zoom0 && out1 === 0,
-      `列数 ${cols0} → ${cols1} · 缩放 ${zoom0} → ${zoom1} · 跑到视口外的画板 ${out1} 块`
+      "D10 容器变了但列数没变，画板也不许跑到视口外（指纹里少了容器尺寸就红）",
+      colsNarrow === colsWide && outNarrow === 0,
+      `列数 ${colsWide} → ${colsNarrow}（本就该不变） · 视口外画板 ${outNarrow} 块`
     );
+
     await page.setViewportSize({ width: 1600, height: 950 });
     await page.waitForTimeout(1800);
 

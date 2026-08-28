@@ -1251,6 +1251,23 @@ function CanvasInner({
    */
   const flowHostRef = React.useRef<HTMLDivElement | null>(null);
   const [hostAspect, setHostAspect] = React.useState(0);
+  /**
+   * 量化过的容器尺寸，只给"要不要重新适应画布"当依据。
+   *
+   * ⚠ 2026-08-28 修 D9 时补的。排版指纹原来只有 `节点数:列数`，于是
+   *   **容器变了而列数没变**时画布不重新适应——真机上把窗口从 1600 缩到
+   *   1100（容器 1305→1000，两次都是 2 列），fitView 一次都不跑，
+   *   **两块画板留在视口外**。用户看到的就是"窗口一窄，两页没了"，
+   *   而没有任何报错。
+   *
+   *   fitView 的结果完全依赖容器尺寸，所以容器尺寸本来就该在指纹里。
+   *
+   * ⚠ 量化到 32px 一档：拖窗口边框时每帧一个新尺寸会让 fitView 每帧跑一次
+   *   （它自带 240ms 动画），画面会一路抽搐。32px 一档既跟得上真实的
+   *   尺寸变化，又不会被拖动过程中的连续帧点着。
+   * ⚠ 拖画板**不改容器尺寸**，所以这条不会把 D8 那条弄红。
+   */
+  const [hostSizeKey, setHostSizeKey] = React.useState("");
   React.useEffect(() => {
     const el = flowHostRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -1261,6 +1278,40 @@ function CanvasInner({
       // 每帧重算一次，节点位置抖动。列数本来就是离散的，这里跟着离散。
       const next = Math.round((r.width / r.height) * 50) / 50;
       setHostAspect(prev => (prev === next ? prev : next));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  /**
+   * 重新适应画布的触发源：**外层那一行**的尺寸（不是画布本身的）。
+   *
+   * ⚠ 观察哪个元素是这条的**全部**要害，2026-08-28 真机换过来的：
+   *
+   *   观察 `.react-flow` 本身的话，右侧面板（元素编辑 / 块面板 / 属性面板）
+   *   一开就把它挤窄 → 指纹变 → fitView → **整个画布在用户点元素的那一刻
+   *   平移一下**。判据 AD（高亮框逐像素落在元素上）当场红：框和元素只差在
+   *   left 上、正好 128px——那不是框画错了，是画布在两次测量之间挪了。
+   *
+   *   面板是这一行里的**兄弟节点**：它一开只让画布变窄，**这一行的宽度不变**。
+   *   所以观察这一行天然把"窗口/分栏真的变了"和"只是开了个面板"分开，
+   *   而且不需要任何状态或时序判断。
+   *
+   * ⚠ 列数仍然跟着 `.react-flow` 的长宽比走（上面那个 observer）——列数该按
+   *   **真实可用的画布区域**排，那是另一件事，别合并。
+   *
+   * ⚠ 量化到 32px 一档：拖窗口边框时每帧一个新尺寸会让 fitView（自带 240ms
+   *   动画）每帧跑一次，画面一路抽搐。
+   */
+  const stageRowRef = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    const el = stageRowRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(entries => {
+      const r = entries[0]?.contentRect;
+      if (!r || !(r.width > 0) || !(r.height > 0)) return;
+      const sizeKey = `${Math.round(r.width / 32)}x${Math.round(r.height / 32)}`;
+      setHostSizeKey(prev => (prev === sizeKey ? prev : sizeKey));
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -2229,7 +2280,9 @@ function CanvasInner({
         ready++;
     }
     if (boards === 0 || ready < boards) return "";
-    return `${boards}:${autoCols}`;
+    /* ⚠ 容器尺寸也在指纹里（2026-08-28 修 D9）：fitView 的结果依赖它，
+       容器变了而不重新适应 = 画板留在视口外。见 hostSizeKey 的头注。 */
+    return `${boards}:${autoCols}:${hostSizeKey}`;
   });
   const didFit = React.useRef("");
   React.useEffect(() => {
@@ -2327,7 +2380,7 @@ function CanvasInner({
         ) : null}
       </div>
 
-      <div className="flex min-h-0 min-w-0 flex-1 gap-2">
+      <div ref={stageRowRef} className="flex min-h-0 min-w-0 flex-1 gap-2">
         <div
           ref={flowHostRef}
           /*
