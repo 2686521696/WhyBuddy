@@ -3,15 +3,30 @@
  *
  * 最要紧的一条是**块的左上角对到节点原点**——裁剪参数一改块就飘，而飘了
  * 之后画布上仍然是"一排卡片"，看着完全正常。这是刀 2 最该被变异咬住的地方。
+ *
+ * 2026-08-28 改成 √n 网格（抄 ComfyUI_frontend useArrangeNodes 的 arrangeGrid，
+ * 本地 clone commit 5d24e4e），判据跟着它的三条要害走：
+ *   · 列数 = ceil(sqrt(n))，不是一长条
+ *   · 逐行取**最大视觉高**，视觉高含标签带
+ *   · 摆完把标签带加回去换成内容坐标
  */
 import { describe, expect, it } from "vitest";
 
 import {
-  BLOCK_STRIP,
-  BLOCK_STRIP_EXTRA_GAP_X,
-  blockStripHeight,
+  BLOCK_CELL,
+  blockGridColumns,
+  blockGridExtraGapX,
+  blockGridHeight,
+  blockGridWidth,
+  blockDetailZoomThreshold,
   layoutBlockNodes,
+  shouldDrawBlockDetail,
+  BLOCK_LABEL_FONT_PX,
+  MIN_READABLE_FONT_PX,
+  BLOCK_KIND_TINT,
+  blockKindTint,
 } from "../block-node-layout";
+import { BLOCK_KINDS } from "../page-blocks";
 import type { BlockRect } from "../block-rects";
 
 const BOARD = { pageId: "p1", x: 100, y: 200, w: 1920, h: 1080 };
@@ -32,47 +47,73 @@ function rect(
   };
 }
 
-describe("条带摆位", () => {
-  it("排在画板右侧，第一块与画板顶对齐", () => {
+describe("网格摆位", () => {
+  it("列数是 ceil(sqrt(n))，不是一长条", () => {
+    // 变异：改回 cols=1（上一版的竖带），这条红。
+    // 真机 5 页 24 块时竖带会拖出几千单位长，缩到 21% 全是挤在一起的小色块。
+    expect(blockGridColumns(1)).toBe(1);
+    expect(blockGridColumns(4)).toBe(2);
+    expect(blockGridColumns(5)).toBe(3);
+    expect(blockGridColumns(9)).toBe(3);
+    expect(blockGridColumns(10)).toBe(4);
+  });
+
+  it("排在画板右侧，第一格与画板顶对齐（顶上留出标签带）", () => {
     const [a] = layoutBlockNodes(BOARD, [rect("甲", 0, 0, 520, 260)]);
-    expect(a.x).toBe(BOARD.x + BOARD.w + BLOCK_STRIP.gap);
+    expect(a.x).toBe(BOARD.x + BOARD.w + BLOCK_CELL.stripGap);
+    // ⚠ 内容顶 = 视觉顶 + 标签带；视觉顶就是画板顶
     expect(a.y).toBe(BOARD.y);
-    expect(a.w).toBe(BLOCK_STRIP.width);
+    expect(a.w).toBe(BLOCK_CELL.width);
   });
 
   it("跟着画板**现在**的位置走（拖过之后块也跟着走）", () => {
-    // 变异：改成从原始网格算，这条红。真机表现是拖走画板，块留在原地。
     const moved = { ...BOARD, x: 5000, y: 7000 };
     const [a] = layoutBlockNodes(moved, [rect("甲", 0, 0, 520, 260)]);
-    expect(a.x).toBe(5000 + BOARD.w + BLOCK_STRIP.gap);
+    expect(a.x).toBe(5000 + BOARD.w + BLOCK_CELL.stripGap);
     expect(a.y).toBe(7000);
   });
 
-  it("依次往下摞，块之间留 vGap", () => {
+  it("同一行的块并排，横向间距是 gap", () => {
     const boxes = layoutBlockNodes(BOARD, [
-      rect("甲", 0, 0, 520, 520),
-      rect("乙", 0, 300, 520, 520),
+      rect("甲", 0, 0, 520, 260),
+      rect("乙", 0, 0, 520, 260),
+      rect("丙", 0, 0, 520, 260),
+      rect("丁", 0, 0, 520, 260),
     ]);
-    expect(boxes[1].y).toBe(boxes[0].y + boxes[0].h + BLOCK_STRIP.vGap);
+    // 4 块 → 2 列
+    expect(boxes[1].x - boxes[0].x).toBe(BLOCK_CELL.width + BLOCK_CELL.gap);
+    expect(boxes[0].y).toBe(boxes[1].y);
+    // 第三块换行
+    expect(boxes[2].x).toBe(boxes[0].x);
+    expect(boxes[2].y).toBeGreaterThan(boxes[0].y);
   });
 
-  it("矮块按 minRow 兜底步距——标签是反缩放的，会互相压住", () => {
-    // 真机（17% 全景）量到过：矮块步距只有 15 屏幕像素，一列标签糊成一片，
-    // 而每个节点各自渲染正常、无报错。
+  it("⚠ 行高按**这一行最高的那块**算，且含标签带", () => {
+    // 抄 arrangeGrid 的 rowHeights。变异：改成按每块自己的高度累加，
+    // 高低不齐时下一行会被上一行最高那块压住——真机上看着就是块叠在一起。
     const boxes = layoutBlockNodes(BOARD, [
-      rect("矮", 0, 0, 5200, 200), // 缩放后只有 20 高
-      rect("乙", 0, 0, 520, 520),
+      rect("矮", 0, 0, 520, 100), // 缩放后 100
+      rect("高", 0, 0, 520, 400), // 缩放后 400
+      rect("下一行", 0, 0, 520, 100),
     ]);
-    expect(boxes[0].h).toBeLessThan(BLOCK_STRIP.minRow);
-    expect(boxes[1].y - boxes[0].y).toBe(BLOCK_STRIP.minRow + BLOCK_STRIP.vGap);
+    // 3 块 → 2 列：[矮, 高] 一行，[下一行] 第二行
+    const rowStep = boxes[2].y - boxes[0].y;
+    expect(rowStep).toBe(400 + BLOCK_CELL.labelBand + BLOCK_CELL.gap);
   });
 
-  it("反向：兜底撑的是**间距**，节点高度不许被抬高", () => {
-    // 变异：把 h 直接抬到 minRow，矮块的裁剪窗口会比块本身大，
-    // 露出下面那块的半截内容——用户会以为块划错了，比标签重叠更糟。
-    const [a] = layoutBlockNodes(BOARD, [rect("矮", 0, 0, 5200, 200)]);
-    expect(a.h).toBeCloseTo(200 * (BLOCK_STRIP.width / 5200), 6);
-    expect(a.h).not.toBe(BLOCK_STRIP.minRow);
+  it("⚠ 标签带算进视觉盒——矮块的标签不许被上一行压住", () => {
+    // 这是抄 ComfyUI `visualHeight = size + titleHeight` 的那一条。
+    // 变异：行高只算内容高（去掉 labelBand），行距会正好少一个标签带，
+    // 下一行的标签就叠在上一行的内容上——不报错，只是看着糊。
+    const boxes = layoutBlockNodes(BOARD, [
+      rect("甲", 0, 0, 520, 200),
+      rect("乙", 0, 0, 520, 200),
+      rect("丙", 0, 0, 520, 200),
+      rect("丁", 0, 0, 520, 200),
+    ]);
+    const gapBetweenRows = boxes[2].y - (boxes[0].y + boxes[0].h);
+    expect(gapBetweenRows).toBe(BLOCK_CELL.gap + BLOCK_CELL.labelBand);
+    expect(gapBetweenRows).toBeGreaterThan(BLOCK_CELL.gap);
   });
 
   it("键是跨页唯一的（含 pageId）", () => {
@@ -87,8 +128,8 @@ describe("条带摆位", () => {
 describe("⚠ 裁剪：块的左上角必须对到节点原点", () => {
   it("按宽度铺满条带，缩放比 = 条带宽 / 块宽", () => {
     const [a] = layoutBlockNodes(BOARD, [rect("甲", 260, 130, 1040, 520)]);
-    expect(a.crop.scale).toBeCloseTo(BLOCK_STRIP.width / 1040, 6);
-    expect(a.h).toBeCloseTo(520 * (BLOCK_STRIP.width / 1040), 6);
+    expect(a.crop.scale).toBeCloseTo(BLOCK_CELL.width / 1040, 6);
+    expect(a.h).toBeCloseTo(520 * (BLOCK_CELL.width / 1040), 6);
   });
 
   it("位移是**设计坐标**（CSS 的 scale 会替我们乘，这里不许先乘一遍）", () => {
@@ -127,7 +168,7 @@ describe("长块截断", () => {
     // 原始 6:1 的长表格
     const [a] = layoutBlockNodes(BOARD, [rect("长表", 0, 0, 400, 2400)]);
     expect(a.truncated).toBe(true);
-    expect(a.h).toBe(BLOCK_STRIP.width * BLOCK_STRIP.maxAspect);
+    expect(a.h).toBe(BLOCK_CELL.width * BLOCK_CELL.maxAspect);
   });
 
   it("反向：没超的不许被标成截断", () => {
@@ -139,7 +180,7 @@ describe("长块截断", () => {
 
   it("截断**不压扁**：缩放比仍按宽度算，字不变形", () => {
     const [a] = layoutBlockNodes(BOARD, [rect("长表", 0, 0, 400, 2400)]);
-    expect(a.crop.scale).toBeCloseTo(BLOCK_STRIP.width / 400, 6);
+    expect(a.crop.scale).toBeCloseTo(BLOCK_CELL.width / 400, 6);
   });
 });
 
@@ -158,23 +199,89 @@ describe("反向判据", () => {
     );
   });
 
-  it("空块清单 → 条带高 0（不是一个 vGap）", () => {
-    // 多算一个间距会让外接盒每页虚高一截，「适应画布」跟着偏。
-    expect(blockStripHeight([])).toBe(0);
+  it("空块清单 → 网格高 0（不是一个标签带）", () => {
+    // 多算一行会让外接盒每页虚高一截，「适应画布」跟着偏。
+    expect(blockGridHeight([])).toBe(0);
   });
 
-  it("条带高 = 首块顶到末块底", () => {
+  it("网格高从**视觉顶**（首行标签上沿）量到末行底", () => {
     const boxes = layoutBlockNodes(BOARD, [
       rect("甲", 0, 0, 520, 260),
       rect("乙", 0, 0, 520, 520),
     ]);
-    expect(blockStripHeight(boxes)).toBe(
-      boxes[1].y + boxes[1].h - boxes[0].y
+    const top = Math.min(...boxes.map(b => b.y - BLOCK_CELL.labelBand));
+    const bottom = Math.max(...boxes.map(b => b.y + b.h));
+    expect(blockGridHeight(boxes)).toBe(bottom - top);
+  });
+
+  it("画板要多留的横向间距 = 间隙 + **块最多那页**的网格宽", () => {
+    // 少留的话网格会盖住右边那列画板，而全景下只是"看着有点挤"，不报错。
+    // 变异：按平均块数留，块多的那页照样盖住邻居。
+    expect(blockGridExtraGapX(9)).toBe(BLOCK_CELL.stripGap + blockGridWidth(9));
+    expect(blockGridExtraGapX(9)).toBeGreaterThan(blockGridExtraGapX(4));
+    expect(blockGridExtraGapX(0)).toBe(0);
+  });
+
+  it("网格宽 = 列数 × 格宽 + 列间距", () => {
+    expect(blockGridWidth(4)).toBe(2 * BLOCK_CELL.width + BLOCK_CELL.gap);
+    expect(blockGridWidth(1)).toBe(BLOCK_CELL.width);
+  });
+});
+
+describe("LOD：缩放太低就不画细节（抄 ComfyUI 的可读性反推）", () => {
+  it("阈值是从字号反推的，不是拍的魔数", () => {
+    // threshold = 最小可读字号 / (标签字号 * sqrt(DPR))
+    expect(blockDetailZoomThreshold(1)).toBeCloseTo(
+      MIN_READABLE_FONT_PX / BLOCK_LABEL_FONT_PX,
+      6
     );
   });
 
-  it("开条带时画板要多留的横向间距 = 间隙 + 条带宽", () => {
-    // 少留的话条带会盖住右边那列画板，而全景下只是"看着有点挤"，不报错。
-    expect(BLOCK_STRIP_EXTRA_GAP_X).toBe(BLOCK_STRIP.gap + BLOCK_STRIP.width);
+  it("高 DPR 屏阈值更低（同样的缩放下字更清楚）", () => {
+    // ComfyUI 注释里的原话：高 DPR 对可读性的提升不是线性的，用 sqrt 近似。
+    expect(blockDetailZoomThreshold(2)).toBeLessThan(
+      blockDetailZoomThreshold(1)
+    );
+    expect(blockDetailZoomThreshold(2)).toBeCloseTo(
+      blockDetailZoomThreshold(1) / Math.SQRT2,
+      6
+    );
+  });
+
+  it("真机那两档：21% 全景不画细节，100% 画", () => {
+    // 21% 时标签只有 11*0.21 ≈ 2.3px，糊成一片。
+    expect(shouldDrawBlockDetail(0.21, 1)).toBe(false);
+    expect(shouldDrawBlockDetail(1, 1)).toBe(true);
+  });
+
+  it("反向：阈值本身必须是个正数且小于 1（不然要么全关要么全开）", () => {
+    const t = blockDetailZoomThreshold(1);
+    expect(t).toBeGreaterThan(0);
+    expect(t).toBeLessThan(1);
+  });
+
+  it("DPR 传 0 / 负数不炸（当 1 处理）", () => {
+    expect(blockDetailZoomThreshold(0)).toBe(blockDetailZoomThreshold(1));
+    expect(blockDetailZoomThreshold(-3)).toBe(blockDetailZoomThreshold(1));
+  });
+});
+
+describe("块类型底色（抄 ComfyUI 低质量档「保形状保颜色、只丢细节」）", () => {
+  it("每一种块类型都有底色——不许有类型落到「没颜色」", () => {
+    // 变异：删掉任意一档，这条红。缺色的那类在全景下会变回白方块。
+    for (const k of BLOCK_KINDS) {
+      expect(BLOCK_KIND_TINT[k], `缺 ${k} 的底色`).toBeDefined();
+    }
+  });
+
+  it("认不出的类型回 card 那档，不回透明", () => {
+    // "认不出类型"和"没有内容"是两回事；透明就是那片白方块。
+    expect(blockKindTint("不存在的类型")).toEqual(BLOCK_KIND_TINT.card);
+    expect(blockKindTint("")).toEqual(BLOCK_KIND_TINT.card);
+  });
+
+  it("反向：不同类型的底色互不相同（同色等于没分类）", () => {
+    const fills = BLOCK_KINDS.map(k => BLOCK_KIND_TINT[k].fill);
+    expect(new Set(fills).size).toBe(fills.length);
   });
 });

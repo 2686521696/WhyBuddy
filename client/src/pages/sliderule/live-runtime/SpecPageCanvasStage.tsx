@@ -100,9 +100,11 @@ import { blockIdentity, type BlockIdentity } from "./page-blocks";
 import { useBlockRects } from "./use-block-rects";
 import { blockKey, type BlockRect, type BlockRectSnapshot } from "./block-rects";
 import {
-  BLOCK_STRIP,
-  BLOCK_STRIP_EXTRA_GAP_X,
+  BLOCK_CELL,
+  blockGridExtraGapX,
+  blockKindTint,
   layoutBlockNodes,
+  shouldDrawBlockDetail,
   type BlockNodeBox,
 } from "./block-node-layout";
 import { fitBlockNodes, type BlockNodeCandidate } from "./block-node-fit";
@@ -878,6 +880,8 @@ interface BlockNodeData extends Record<string, unknown> {
   /** 真渲染还是静态卡（由 block-node-fit 那道阶梯定）。 */
   live: boolean;
   kindLabel: string;
+  /** `data-block-kind`，给底色用（跟 Python 的 BLOCK_KINDS 一字不差）。 */
+  kind: string;
 }
 
 /**
@@ -895,7 +899,9 @@ function BlockNode({ data }: NodeProps<Node<BlockNodeData>>) {
   const ctx = React.useContext(CanvasContext);
   const zoom = useStore(s => s.transform[2]);
   const inv = zoom > 0 ? 1 / zoom : 1;
-  const { box, page, board, live, kindLabel } = data;
+  const { box, page, board, live, kindLabel, kind } = data;
+  const tint = blockKindTint(kind);
+  const showDetail = shouldDrawBlockDetail(zoom);
   /* ⚠ 选中态以**块面板**的选择为准，不看元素选择：这两件事经常不是同一块
      （Ctrl+点某个单元格选中的是元素，块面板选中的是整块）。 */
   const selected = ctx?.pickedBlockKey === box.key;
@@ -922,26 +928,49 @@ function BlockNode({ data }: NodeProps<Node<BlockNodeData>>) {
         ctx?.onPickBlock(box.pageId, box.name);
       }}
     >
-      {/* 归属线的落点。⚠ **必须常挂**，不能"要连线才挂"——React Flow 靠
-          把手的位置算边的起终点，把手不在时这条边直接画不出来（控制台 #008，
-          画板那边头注记过同一个坑）。这里不给用户连，所以 isConnectable=false，
-          但元素本身要在 DOM 里。 */}
-      <Handle
-        id="l"
-        type="source"
-        position={Position.Left}
-        isConnectable={false}
-        style={{
-          width: 1,
-          height: 1,
-          minWidth: 1,
-          minHeight: 1,
-          background: "transparent",
-          border: "none",
-          opacity: 0,
-        }}
-      />
-      {/* 标签：类型·名字。⚠ 反缩放，理由同 ElementSpot（25% 下 1px 看不见）。 */}
+      {/* 四条边各一个落点。
+          ⚠ **必须常挂**，不能"要连线才挂"——React Flow 靠把手的位置算边的
+            起终点，把手不在时这条边直接画不出来（控制台 #008，画板那边
+            头注记过同一个坑）。这里不给用户连，所以 isConnectable=false。
+          ⚠ **四条边都要**，不能只留左边（2026-08-28 改）：只有左把手时，
+            块↔块的影响线两端都从左侧出入，贝塞尔的两个控制点都朝左，
+            线就往左兜一个大圈——真机截图上就是几十条横扫全场的长弧。
+            ComfyUI 的 pathRenderer.calculateControlPoints 是按**出入方向**
+            给控制点偏移的（getDirectionOffset），方向对了曲线才自然。
+            边由 pickLinkSides 按相对位置挑，跟画板连线同一套规则。 */}
+      {(
+        [
+          ["t", Position.Top],
+          ["r", Position.Right],
+          ["b", Position.Bottom],
+          ["l", Position.Left],
+        ] as const
+      ).map(([id, pos]) => (
+        <Handle
+          key={id}
+          id={id}
+          type="source"
+          position={pos}
+          isConnectable={false}
+          style={{
+            width: 1,
+            height: 1,
+            minWidth: 1,
+            minHeight: 1,
+            background: "transparent",
+            border: "none",
+            opacity: 0,
+          }}
+        />
+      ))}
+      {/* 标签：类型·名字。
+          ⚠ 反缩放，理由同 ElementSpot（25% 下 1px 看不见）。
+          ⚠ 缩放低到字读不出来时**收起来**（LOD，抄 ComfyUI 的可读性反推阈值）。
+            真机 21% 全景下 24 个标签挤成一片糊字，那一档用户要看的是
+            "有几页、大致长什么样"，不是"哪一块叫什么"。
+            收的是标签，**块本身照画**——同 shouldMountBoard 那条
+            "剔除是性能手段，不是可见性判定"。 */}
+      {showDetail ? (
       <span
         className="absolute whitespace-nowrap rounded px-1 py-px text-white"
         style={{
@@ -949,7 +978,7 @@ function BlockNode({ data }: NodeProps<Node<BlockNodeData>>) {
           top: 0,
           transform: `scale(${inv}) translateY(-100%)`,
           transformOrigin: "top left",
-          background: selected ? "#7c3aed" : "#94a3b8",
+          background: selected ? "#7c3aed" : tint.ink,
           fontSize: 11,
           marginTop: -3 * inv,
         }}
@@ -957,6 +986,7 @@ function BlockNode({ data }: NodeProps<Node<BlockNodeData>>) {
         {kindLabel}·{box.name}
         {box.truncated ? " ·只显示上半截" : ""}
       </span>
+      ) : null}
 
       <div
         className="h-full w-full overflow-hidden bg-white"
@@ -1012,15 +1042,20 @@ function BlockNode({ data }: NodeProps<Node<BlockNodeData>>) {
            *   一个道理。
            */
           <div
-            className="flex h-full w-full flex-col items-center justify-center gap-1 overflow-hidden bg-[#fafafa]"
+            className="flex h-full w-full flex-col items-center justify-center gap-1 overflow-hidden"
             data-testid="sliderule-canvas-block-node-static"
+            /* ⚠ 按类型上色（抄 ComfyUI 低质量档"保形状保颜色、只丢细节"）。
+               上一版是统一的浅灰，全景下 19 张静态卡就是一堆白方块，
+               看着像加载坏了。上色之后至少读得出"这一页由几张表、
+               几个指标、一个图表拼成"。 */
+            style={{ background: tint.fill }}
           >
-            <span style={{ fontSize: 28 }} className="text-stone-400">
+            <span style={{ fontSize: 28, color: tint.ink, opacity: 0.75 }}>
               {kindLabel}
             </span>
             <span
-              style={{ fontSize: 20 }}
-              className="px-2 text-center leading-tight text-stone-300"
+              style={{ fontSize: 20, color: tint.ink, opacity: 0.45 }}
+              className="px-2 text-center leading-tight"
             >
               块太多，这一块暂未实时渲染
             </span>
@@ -1334,16 +1369,27 @@ function CanvasInner({
     []
   );
 
+  /* 块最多的那一页有几块——决定画板之间要多留多宽。 */
+  const maxBlocksPerPage = React.useMemo(
+    () =>
+      Object.values(blockRects).reduce(
+        (n, snap) => Math.max(n, snap.rects.length),
+        0
+      ),
+    [blockRects]
+  );
+
   const boxes = React.useMemo(
     () =>
       layoutArtboards(
         pages,
         design,
         hostAspect || undefined,
-        /* 开着块条带时给每列多留一条带的宽度，否则条带盖住右边那列画板。 */
-        blocksShown ? BLOCK_STRIP_EXTRA_GAP_X : 0
+        /* 开着块网格时给每列多留一份网格宽，否则网格盖住右边那列画板。
+           ⚠ 按**块最多的那一页**算：按平均值留，块多的那页照样盖住邻居。 */
+        blocksShown ? blockGridExtraGapX(maxBlocksPerPage) : 0
       ),
-    [pages, design.w, design.h, hostAspect, blocksShown]
+    [pages, design.w, design.h, hostAspect, blocksShown, maxBlocksPerPage]
   );
 
   const pageIds = React.useMemo(() => pages.map(p => p.pageId), [pages]);
@@ -1812,6 +1858,15 @@ function CanvasInner({
     return pages[0]?.pageId ?? null;
   }, [entered, activePageId, pages]);
 
+  /* LOD：缩放低于可读阈值时不画影响线（同 BlockNode 里的标签）。
+     ⚠ 真机 94 条线在 21% 全景下横七竖八，那一档它们只是噪声。 */
+  const blockDetailVisible = shouldDrawBlockDetail(vp.zoom);
+
+  const blockBoxById = React.useMemo(
+    () => new Map(blockBoxes.map(b => [b.key, b])),
+    [blockBoxes]
+  );
+
   const blockNodeIds = React.useMemo(
     () => new Set(blockBoxes.map(b => `block:${b.key}`)),
     [blockBoxes]
@@ -1875,6 +1930,7 @@ function CanvasInner({
           board: { w: design.w, h: design.h },
           live: blockFit.live.has(b.key),
           kindLabel: rect?.kindLabel ?? "块",
+          kind: rect?.kind ?? "card",
         },
       };
     });
@@ -1915,17 +1971,26 @@ function CanvasInner({
          ⚠ 这是**常驻**线，跟刀 4 的影响线不是一回事：它答的是"这一块是哪
            一页的"，不是"改了它谁跟着变"。两种线混成一种，用户会把归属
            当成联动。所以颜色/虚实都跟 EDGE_STYLE 那两种分开。 */
-      const ownership: Edge[] = blockBoxes.map(b => ({
+      const ownership: Edge[] = blockBoxes.map(b => {
+        const board = boxById.get(b.pageId);
+        /* ⚠ 按相对位置选边，跟画板连线同一套 pickLinkSides——**不另写一套**。
+           块网格在画板右侧，多数时候会挑出"左出右进"，但块摆到画板下方那几行
+           时挑的是"上出下进"，那才是短且直的走法。 */
+        const sides = board
+          ? pickLinkSides(b, board)
+          : { source: "l" as const, target: "r" as const };
+        return {
         id: `own:${b.key}`,
         source: `block:${b.key}`,
         target: b.pageId,
-        sourceHandle: "l",
-        targetHandle: "r",
+        sourceHandle: sides.source,
+        targetHandle: sides.target,
         type: "straight",
         selectable: false,
         focusable: false,
         style: { stroke: "#cbd5e1", strokeWidth: 1.5, strokeDasharray: "3 5" },
-      }));
+        };
+      });
       const linkEdges = links.map(l => {
         const a = boxById.get(l.from);
         const b = boxById.get(l.to);
@@ -1968,7 +2033,7 @@ function CanvasInner({
        * ⚠ 只在块条带开着时画：块节点不存在时这些边两端都落空，React Flow
        *   会静默丢掉（不报错），但计算白做。
        */
-      const impact: Edge[] = blocksShown
+      const impact: Edge[] = blocksShown && blockDetailVisible
         ? impactEdges
             .filter(e => {
               /* 两端都得有节点。nav 的 to 是页面 id（画板节点）。 */
@@ -1979,23 +2044,44 @@ function CanvasInner({
                   : blockNodeIds.has(`block:${e.to}`);
               return fromOk && toOk;
             })
-            .map(e => ({
+            .map(e => {
+              /* ⚠ 两端都写死同一侧的话（上一版 l→l），贝塞尔的两个控制点
+                 都朝同一个方向，线会兜一个大圈——真机上就是横扫全场的长弧。
+                 按相对位置挑边，短、直、看得懂。 */
+              const fromBox = blockBoxById.get(e.from);
+              const toBox =
+                e.kind === "nav" ? boxById.get(e.to) : blockBoxById.get(e.to);
+              const sides =
+                fromBox && toBox
+                  ? pickLinkSides(fromBox, toBox)
+                  : { source: "r" as const, target: "l" as const };
+              return {
               id: e.id,
               source: `block:${e.from}`,
               target: e.kind === "nav" ? e.to : `block:${e.to}`,
-              sourceHandle: "l",
-              targetHandle: e.kind === "nav" ? "r" : "l",
+              sourceHandle: sides.source,
+              targetHandle: sides.target,
               type: "bezier",
               selectable: false,
               focusable: false,
               zIndex: isRealLinkage(e.kind) ? 2 : 1,
               style: IMPACT_STYLE[e.kind],
               data: { impactKind: e.kind, shared: e.shared },
-            }))
+              };
+            })
         : [];
       return [...ownership, ...linkEdges, ...impact];
     },
-    [links, boxById, blockBoxes, impactEdges, blocksShown, blockNodeIds]
+    [
+      links,
+      boxById,
+      blockBoxes,
+      blockBoxById,
+      impactEdges,
+      blocksShown,
+      blockNodeIds,
+      blockDetailVisible,
+    ]
   );
 
   /* --------------------------------------------------------- 交互 */

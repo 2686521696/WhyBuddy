@@ -44,9 +44,15 @@ describe("块节点真的挂上了画布", () => {
     expect(STAGE).toContain("source: `block:${b.key}`");
   });
 
-  it("块节点带常挂的 Handle（没有把手 React Flow 画不出这条边）", () => {
-    // 画板那边头注记过同一个坑（控制台 #008）。
-    expect(STAGE).toMatch(/<Handle[\s\S]{0,200}position=\{Position\.Left\}/);
+  it("块节点**四条边**都常挂 Handle（少一条线就得绕远路）", () => {
+    // 画板那边头注记过"把手不在时边直接画不出来"（控制台 #008）。
+    // ⚠ 2026-08-28 从一条边改成四条：只有左把手时，块↔块的影响线两端都从
+    //   左侧出入，贝塞尔两个控制点同向，线往左兜一个大圈——真机截图上就是
+    //   几十条横扫全场的长弧。
+    for (const pos of ["Top", "Right", "Bottom", "Left"]) {
+      expect(STAGE).toContain(`Position.${pos}`);
+    }
+    expect(STAGE).toMatch(/\["t", Position\.Top\]/);
   });
 });
 
@@ -81,8 +87,8 @@ describe("反向判据", () => {
   });
 
   it("裁剪位移是设计坐标——布局侧不许先乘一遍 scale", () => {
-    expect(LAYOUT).toMatch(/left:\s*b\.rect\.left,/);
-    expect(LAYOUT).not.toContain("left: b.rect.left * scale");
+    expect(LAYOUT).toMatch(/left:\s*c\.b\.rect\.left,/);
+    expect(LAYOUT).not.toContain("* scale,");
   });
 
   it("视口判定复用 shouldMountBoard，不另写一套", () => {
@@ -91,8 +97,36 @@ describe("反向判据", () => {
     expect(STAGE).toMatch(/inViewport:\s*shouldMountBoard\(/);
   });
 
-  it("开条带时画板多留列间距（否则条带盖住右边那列）", () => {
-    expect(STAGE).toContain("BLOCK_STRIP_EXTRA_GAP_X");
+  it("开块网格时画板多留列间距，且按**块最多那页**算", () => {
+    // 按平均块数留的话，块多的那页照样盖住右边那列画板；
+    // 而"盖住了"在缩到 13% 的全景下只是"有点挤"，不报错。
+    expect(STAGE).toContain("blockGridExtraGapX(maxBlocksPerPage)");
+  });
+
+  it("⚠ 影响线按**相对位置**选边，复用 pickLinkSides", () => {
+    // 2026-08-28：上一版两端写死 l→l，贝塞尔控制点同向，线兜大圈。
+    // ComfyUI 的 pathRenderer.calculateControlPoints 是按出入方向给偏移的
+    // （getDirectionOffset），方向对了曲线才自然。
+    // ⚠ 复用画板那套 pickLinkSides，**不另写一套**（第四条纪律）。
+    expect(STAGE).toContain("pickLinkSides(fromBox, toBox)");
+    expect(STAGE).toContain("pickLinkSides(b, board)");
+    expect(STAGE).not.toMatch(/sourceHandle:\s*"l",\s*\n\s*targetHandle:\s*"l"/);
+  });
+
+  it("⚠ LOD：缩放低于可读阈值时收起标签与影响线，但**块本身照画**", () => {
+    // 抄 ComfyUI 的 updateLowQualityThreshold（从字号反推阈值，不是拍魔数）。
+    // 真机 21% 全景下 24 个标签糊成一片、94 条线横七竖八。
+    expect(STAGE).toContain("shouldDrawBlockDetail(zoom)");
+    expect(STAGE).toContain("shouldDrawBlockDetail(vp.zoom)");
+    expect(STAGE).toContain("blocksShown && blockDetailVisible");
+    // 反向：收的是细节，不是块——块节点的挂载不许跟着 LOD 走
+    expect(STAGE).not.toMatch(/blockDetailVisible[\s\S]{0,80}blockBoxes\.map/);
+  });
+
+  it("⚠ 静态卡按类型上色（低质量档保形状保颜色，只丢细节）", () => {
+    // 上一版统一浅灰，全景下 19 张静态卡是一堆白方块，看着像加载坏了。
+    expect(STAGE).toContain("blockKindTint(kind)");
+    expect(STAGE).toContain("background: tint.fill");
   });
 
   it("阶梯档位暴露成可读事实（rung 不是装饰）", () => {
