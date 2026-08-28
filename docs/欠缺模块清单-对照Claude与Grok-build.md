@@ -1394,3 +1394,67 @@ flowchart TB
 7. PR-3 的前端分流器在 PR-4 合入时必须消失（删或默认关的测试 flag）。
 8. 续播继续 `GET /runs/{id}/stream`。`forcedTool` 贵按钮不得再跑 LLM。`AwaitReason` / `controlTranscript` 必须双边 schema 落地。
 9. 每个产品 POST 必须带齐 KD23 六个字段；`installedSkillsDrivePayload` / `pickedConnectorIds` 不得随 `driveFullViaPythonStream` 一起消失。空会话 `/推演` 不得调信封。质疑必须 `forcedTool: "challenge"`。
+
+
+---
+
+## 13. 工程纪律层对照（2026-08-28 补）
+
+> §1–§12 比的是**产品/架构层**：缺哪些模块。这一节比的是**模块内部**：
+> 同一件事，grok-build 怎么写才不会静默失效。两层不重叠，都要。
+>
+> 来源：为修「菜单点不动」「排队的话卡死」两个真机 bug 通读了 grok-build
+> 十来个文件（`managed_text/transaction.rs`、`ask_user_question/mod.rs`、
+> `acp_handler/interactions.rs`、`agent_view/interactions.rs` 等），以及
+> claw-code 的 `policy_engine.rs` / `recovery_recipes.rs` / `approval_tokens.rs`。
+
+### 13.1 四条可搬的纪律（已抄，含出处）
+
+| 纪律 | grok/claw 出处 | 本仓落点 |
+|---|---|---|
+| **每条出路都要兑现承诺** | `interactions.rs:85`「submit, cancel, or is replaced by another question」——三条出路各 send 一次 | 中途排队补上「空闲时点发送」这条出路（`6aebebf`）；`run_pause` 四种结局各有名字 |
+| **超时不是失败** | `ask_user_question/mod.rs`「returns the same skipped text as a user dismiss, **not a tool failure**」 | `PauseOutcome.SKIPPED` 按「模型自己定的」继续，闭环照样绿（`a52316b`） |
+| **看起来一样的状态要分开命名** | `timeout_enabled` vs `timeout_secs=0`；`non_interactive` 单独一档 | `PauseBudget.enabled` / `seconds=0` 回落默认；`NO_OPERATOR` 不并进 `SKIPPED` |
+| **没人答是正常场景，不是异常** | claw-code `TrustPromptUnresolved`：自动一次 → 只一次 → 再不行喊人 | `UNRESOLVED_RECOVERY` / `RecoveryLedger` |
+
+### 13.2 审出来的真缺口（已修）
+
+**① 事件发进虚空。** 前端事件 switch 收尾是 `default: return "continue"`
+——不认识的类型**静默丢弃，连日志都没有**。全量对账：Python 发 29 种、
+前端认 19 种。其中 `recovery` 是「我替你做了个决定」的结构化事件，而没人听。
+修法是**去掉那条没人听的通道**（并进 `run_pause_ended`），不是再加个监听。
+判据：`sse-event-vocab-agrees.test.ts`（白名单式，逼人对每个新事件做一次决定）。
+
+**② 执行器事件词表没有跨语言闸。** `executor_event_projection.py` 的注释
+写着「Contract constants (shared/executor/contracts.ts)」——注释说了，没有
+任何东西保证。本仓给 `BLOCK_KINDS`、`RECORD/WORKFLOW_ACTION_KINDS` 都上过
+闸（Python 判据直接读 TS 文件），唯独这份漏了。判据：
+`test_executor_vocab_matches_ts.py`。
+
+**③ 状态封闭词没有「先申报再写」的闸。** `AwaitReason` 头上记着**两次同形状
+的事故**（`control_clarify` / `error` 写了没申报 → 会话从库里读回来被整条
+跳过 → 「停在那一步的会话重启后从侧栏消失」）。两次都是人手修的，没留下闸。
+⚠ 要害：**Python/TS 两边互比挡不住这一类**——两边都缺时「一致」照样成立。
+闸必须比「申报的词表 vs 代码里真写过的值」。判据：
+`test_state_enum_values_are_declared.py`，两条变异就是重演那两次事故。
+
+### 13.3 审出来是健康的（记一笔，免得下次重审）
+
+- **fail-open / fail-closed 分类（纪律七）**：闭环/证据类模块没有吞异常伪造
+  绿灯（`v5_publish_closure_response` 那处 `except` 是 `_as_dict` 的类型兜底，
+  判决本身仍是 `return None`）；增强类模块也没有会炸主链路的 `raise`。
+- **写后校验**：落库路径有 `PersistClosedError` fail-closed；前端 5 处 fetch
+  全都看 `ok` 或读 body，没有「发出去就当成功」的。
+- **awaitReason / runtimePhase 当前口径**：写过的值全部已申报，Python/TS 两份
+  一字不差（15 / 15）。
+
+### 13.4 还没动的
+
+- **死代码**：全仓扫出 736 个零 import 的模块（`server/core/workflow-runtime-engine.ts`
+  3974 行居首）。判据太粗——动态注册的路由是误报——且这是 §12 PR-10「死代码与
+  双路径收口」的范围，不在本次。
+- **`ACTIONS` 重名**：`spec_semantics.py` 的权限动词与 `shared/permission/contracts.ts`
+  的连接器动作同名不同义。不是漂移，是重名；读的人容易串。
+- **判据自己打空**：本次写判据时踩到一次（路径少一层 + `catch { continue }`
+  把「文件没读到」吞了 → 扫描集为空 → 判据绿灯空过）。已在两处新判据里各加
+  一条「先钉住它真的量到了东西」的前置断言。这个形状值得全仓再扫一遍。
