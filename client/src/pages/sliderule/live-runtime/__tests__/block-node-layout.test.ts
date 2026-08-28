@@ -73,47 +73,80 @@ describe("网格摆位", () => {
     expect(a.y).toBe(7000);
   });
 
-  it("同一行的块并排，横向间距是 gap", () => {
+  it("列与列之间横向间距是 gap", () => {
     const boxes = layoutBlockNodes(BOARD, [
       rect("甲", 0, 0, 520, 260),
       rect("乙", 0, 0, 520, 260),
-      rect("丙", 0, 0, 520, 260),
-      rect("丁", 0, 0, 520, 260),
     ]);
-    // 4 块 → 2 列
+    // 2 块 → 2 列（两列等高，第二块落进第 2 列）
     expect(boxes[1].x - boxes[0].x).toBe(BLOCK_CELL.width + BLOCK_CELL.gap);
     expect(boxes[0].y).toBe(boxes[1].y);
-    // 第三块换行
-    expect(boxes[2].x).toBe(boxes[0].x);
-    expect(boxes[2].y).toBeGreaterThan(boxes[0].y);
   });
 
-  it("⚠ 行高按**这一行最高的那块**算，且含标签带", () => {
-    // 抄 arrangeGrid 的 rowHeights。变异：改成按每块自己的高度累加，
-    // 高低不齐时下一行会被上一行最高那块压住——真机上看着就是块叠在一起。
+  it("⚠ 瀑布流：每块落进当前最矮的那一列（不是按行填）", () => {
+    // 2026-08-28 用户要"自由散布"的观感。严格网格会让所有块顶边对齐成一条
+    // 直线，那是"电子表格感"的来源。
+    // 变异：改回按行填（col = i % cols），这条红。
     const boxes = layoutBlockNodes(BOARD, [
-      rect("矮", 0, 0, 520, 100), // 缩放后 100
-      rect("高", 0, 0, 520, 400), // 缩放后 400
-      rect("下一行", 0, 0, 520, 100),
+      rect("高", 0, 0, 520, 800), // 第 1 列，很高
+      rect("矮", 0, 0, 520, 100), // 第 2 列
+      rect("第三块", 0, 0, 520, 100),
     ]);
-    // 3 块 → 2 列：[矮, 高] 一行，[下一行] 第二行
-    const rowStep = boxes[2].y - boxes[0].y;
-    expect(rowStep).toBe(400 + BLOCK_CELL.labelBand + BLOCK_CELL.gap);
+    // 3 块 → 2 列。第 3 块该落进**矮的那一列**（第 2 列），不是回到第 1 列
+    expect(boxes[2].x).toBe(boxes[1].x);
+    expect(boxes[2].x).not.toBe(boxes[0].x);
   });
 
-  it("⚠ 标签带算进视觉盒——矮块的标签不许被上一行压住", () => {
-    // 这是抄 ComfyUI `visualHeight = size + titleHeight` 的那一条。
-    // 变异：行高只算内容高（去掉 labelBand），行距会正好少一个标签带，
-    // 下一行的标签就叠在上一行的内容上——不报错，只是看着糊。
+  it("⚠ 同一列里，下一块的**视觉顶**接在上一块底下（含标签带）", () => {
+    // 抄 ComfyUI `visualHeight = size + titleHeight` 的那条。
+    // 变异：列高只累加内容高（去掉 labelBand），下一块的标签会叠在
+    // 上一块的内容上——不报错，只是看着糊。
     const boxes = layoutBlockNodes(BOARD, [
       rect("甲", 0, 0, 520, 200),
       rect("乙", 0, 0, 520, 200),
       rect("丙", 0, 0, 520, 200),
       rect("丁", 0, 0, 520, 200),
     ]);
-    const gapBetweenRows = boxes[2].y - (boxes[0].y + boxes[0].h);
-    expect(gapBetweenRows).toBe(BLOCK_CELL.gap + BLOCK_CELL.labelBand);
-    expect(gapBetweenRows).toBeGreaterThan(BLOCK_CELL.gap);
+    // 4 块 → 2 列，同列的是 [甲, 丙] 和 [乙, 丁]
+    const sameCol = boxes.filter(b => b.x === boxes[0].x);
+    expect(sameCol.length).toBeGreaterThanOrEqual(2);
+    const gapBetween = sameCol[1].y - (sameCol[0].y + sameCol[0].h);
+    expect(gapBetween).toBe(BLOCK_CELL.gap + BLOCK_CELL.labelBand);
+  });
+
+  it("反向：块之间不许重叠（瀑布流最容易写坏的地方）", () => {
+    const boxes = layoutBlockNodes(
+      BOARD,
+      Array.from({ length: 9 }, (_, i) =>
+        rect(`b${i}`, 0, 0, 520, 100 + i * 90)
+      )
+    );
+    for (let i = 0; i < boxes.length; i += 1) {
+      for (let j = i + 1; j < boxes.length; j += 1) {
+        const a = boxes[i];
+        const b = boxes[j];
+        /* 视觉盒（含标签带）都不许相交 */
+        const aTop = a.y - BLOCK_CELL.labelBand;
+        const bTop = b.y - BLOCK_CELL.labelBand;
+        const overlapX = a.x < b.x + b.w && b.x < a.x + a.w;
+        const overlapY = aTop < bTop + b.h + BLOCK_CELL.labelBand &&
+          bTop < aTop + a.h + BLOCK_CELL.labelBand;
+        expect(
+          overlapX && overlapY,
+          `${a.name} 和 ${b.name} 叠了`
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("确定性：同一份输入永远同一个结果（块不许在画布上跳）", () => {
+    // 变异：用随机抖动做"自由散布"，这条红。
+    const input = Array.from({ length: 7 }, (_, i) =>
+      rect(`b${i}`, 0, 0, 520, 120 + i * 60)
+    );
+    const a = layoutBlockNodes(BOARD, input);
+    const b = layoutBlockNodes(BOARD, input);
+    expect(a).toEqual(b);
   });
 
   it("键是跨页唯一的（含 pageId）", () => {

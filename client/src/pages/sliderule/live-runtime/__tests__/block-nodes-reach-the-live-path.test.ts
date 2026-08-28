@@ -87,7 +87,7 @@ describe("反向判据", () => {
   });
 
   it("裁剪位移是设计坐标——布局侧不许先乘一遍 scale", () => {
-    expect(LAYOUT).toMatch(/left:\s*c\.b\.rect\.left,/);
+    expect(LAYOUT).toMatch(/left:\s*b\.rect\.left,/);
     expect(LAYOUT).not.toContain("* scale,");
   });
 
@@ -101,6 +101,14 @@ describe("反向判据", () => {
     // 按平均块数留的话，块多的那页照样盖住右边那列画板；
     // 而"盖住了"在缩到 13% 的全景下只是"有点挤"，不报错。
     expect(STAGE).toContain("blockGridExtraGapX(maxBlocksPerPage)");
+  });
+
+  it("⚠ 块用瀑布流摆位（自由散布），不是严格网格", () => {
+    // 用户 2026-08-28 要"节点自由散布"的观感。严格网格会让所有块顶边
+    // 对齐成一条直线，那是"电子表格感"的来源。
+    // ⚠ 用瀑布流而不是随机抖动：抖动是乱不是自由，且位置要稳定。
+    expect(LAYOUT).toContain("colVisualBottom");
+    expect(LAYOUT).not.toContain("Math.random");
   });
 
   it("⚠ 影响线按**相对位置**选边，复用 pickLinkSides", () => {
@@ -121,6 +129,29 @@ describe("反向判据", () => {
     expect(STAGE).toContain("blocksShown && blockDetailVisible");
     // 反向：收的是细节，不是块——块节点的挂载不许跟着 LOD 走
     expect(STAGE).not.toMatch(/blockDetailVisible[\s\S]{0,80}blockBoxes\.map/);
+  });
+
+  it("⚠ 连线走自定义曲线，不是 React Flow 自带的 bezier", () => {
+    // React Flow 顺向时把控制点摆在**半程**（0.5 * distance，写死的），
+    // 长线上是又宽又平的懒弧；它的 curvature 参数只作用于逆向那一支，
+    // 调不动这里。ComfyUI 是 max(30, 欧氏距离 * 0.25)。
+    expect(STAGE).toContain("const edgeTypes = { blockCurve: BlockCurveEdge }");
+    expect(STAGE).toContain("edgeTypes={edgeTypes}");
+    expect(STAGE).toContain("buildCurvePath({");
+    // 反向：块相关的边一条都不许再用自带的 bezier / straight
+    expect(STAGE).not.toMatch(/targetHandle: sides\.target,\s*\n\s*type: "bezier"/);
+    expect(STAGE).not.toMatch(/targetHandle: sides\.target,\s*\n\s*type: "straight"/);
+  });
+
+  it("⚠ 归属线和影响线是**同一种**画法（同一张图别有两套手感）", () => {
+    const own = STAGE.slice(STAGE.indexOf("id: `own:"), STAGE.indexOf("id: `own:") + 400);
+    expect(own).toContain('type: "blockCurve"');
+    const impact = STAGE.slice(STAGE.indexOf("id: e.id,"), STAGE.indexOf("id: e.id,") + 400);
+    expect(impact).toContain('type: "blockCurve"');
+  });
+
+  it("⚠ 曲线边不吃鼠标（漏了 pointer-events 会盖住块，点不中）", () => {
+    expect(STAGE).toMatch(/pointerEvents: "none"[\s\S]{0,40}\/>\s*\n\s*\);/);
   });
 
   it("⚠ 静态卡按类型上色（低质量档保形状保颜色，只丢细节）", () => {

@@ -76,6 +76,7 @@ import {
   type Edge,
   type Node,
   type NodeProps,
+  type EdgeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
@@ -107,6 +108,7 @@ import {
   shouldDrawBlockDetail,
   type BlockNodeBox,
 } from "./block-node-layout";
+import { buildCurvePath } from "./canvas-curve";
 import { fitBlockNodes, type BlockNodeCandidate } from "./block-node-fit";
 import {
   buildImpactEdges,
@@ -1237,6 +1239,49 @@ function AssetNode({ data }: NodeProps<Node<AssetData>>) {
   );
 }
 
+/**
+ * 块相关的连线：走 ComfyUI 那套控制点（见 canvas-curve.ts 头注）。
+ *
+ * ⚠ 为什么不用 React Flow 自带的 `bezier`：它顺向时把控制点摆在**半程**
+ *   （`0.5 * distance`，写死的），长线上就是又宽又平的懒弧；而它暴露的
+ *   `curvature` 参数**只作用于逆向那一支**，调不动我们想调的地方。
+ *   ComfyUI 是 `max(30, 欧氏距离 * 0.25)`，曲线贴着两点之间那条直线走，
+ *   短、有方向感——那才是"节点图"的手感。
+ *
+ * ⚠ `pointer-events: none`：这些线不接受交互（用户连的线是另一条路径，
+ *   走 React Flow 自带的边）。漏了它，线会盖住底下的块节点，点不中。
+ */
+function BlockCurveEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  style,
+}: EdgeProps): React.ReactElement {
+  const { path } = buildCurvePath({
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+  });
+  return (
+    <path
+      id={id}
+      d={path}
+      fill="none"
+      className="react-flow__edge-path"
+      style={{ ...style, pointerEvents: "none" }}
+    />
+  );
+}
+
+const edgeTypes = { blockCurve: BlockCurveEdge };
+
 const nodeTypes = { artboard: ArtboardNode, asset: AssetNode, block: BlockNode };
 
 function CanvasInner({
@@ -1985,7 +2030,9 @@ function CanvasInner({
         target: b.pageId,
         sourceHandle: sides.source,
         targetHandle: sides.target,
-        type: "straight",
+        /* ⚠ 归属线也走曲线（2026-08-28）：上一版是直线，和影响线的曲线混在
+           一起时像两套画法拼起来的。同一张图上的线该是同一种手感。 */
+        type: "blockCurve",
         selectable: false,
         focusable: false,
         style: { stroke: "#cbd5e1", strokeWidth: 1.5, strokeDasharray: "3 5" },
@@ -2061,7 +2108,7 @@ function CanvasInner({
               target: e.kind === "nav" ? e.to : `block:${e.to}`,
               sourceHandle: sides.source,
               targetHandle: sides.target,
-              type: "bezier",
+              type: "blockCurve",
               selectable: false,
               focusable: false,
               zIndex: isRealLinkage(e.kind) ? 2 : 1,
@@ -2494,6 +2541,7 @@ function CanvasInner({
               nodes={nodes}
               edges={edges}
               nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
               fitView
               fitViewOptions={{ padding: FIT_PADDING, maxZoom: 1 }}
               minZoom={MIN_ZOOM}

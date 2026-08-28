@@ -154,63 +154,61 @@ export function layoutBlockNodes(
   if (usable.length === 0) return out;
 
   const cols = blockGridColumns(usable.length);
-  const rows = Math.ceil(usable.length / cols);
+  const originX = board.x + board.w + BLOCK_CELL.stripGap;
+  /* ⚠ 顶端是**视觉顶**（第一块标签的上沿），加回 labelBand 才是内容顶。
+     同 arrangeGrid 的 `anchor.posY - anchor.titleHeight` → `visualTop + titleHeight`。 */
+  const originVisualTop = board.y - BLOCK_CELL.labelBand;
 
-  /* 每块自己的尺寸（按宽度铺满一格）。 */
-  const cells = usable.map(b => {
+  /*
+   * ## 瀑布流：每块落进**当前最矮的那一列**
+   *
+   * 2026-08-28 用户要"节点自由散布"的观感。上一版是严格网格（逐行取最大高、
+   * 行行对齐），块高低差很大时（指标卡矮、表格高）会：
+   *   · 每行被最高那块撑开，矮块下面留一大片空 —— 看着像表格，不像图
+   *   · 所有块的顶边对齐成一条直线 —— "电子表格感"的来源
+   *
+   * ⚠ 用瀑布流而**不是随机抖动**：抖动是乱，不是自由，而且每次渲染位置都
+   *   得稳定（否则块会在画布上跳）。瀑布流是确定性的，同一份输入永远同一个
+   *   结果，还顺带把空隙填掉了。
+   *
+   * ⚠ 列高累加的是**视觉高**（含标签带），理由同上一版：标签画在节点外面，
+   *   不算进去的话下一块的标签会压住上一块的内容。
+   */
+  const colVisualBottom = new Array<number>(cols).fill(originVisualTop);
+
+  for (const b of usable) {
     const scale = BLOCK_CELL.width / b.rect.width;
     const wanted = b.rect.height * scale;
     const maxH = BLOCK_CELL.width * BLOCK_CELL.maxAspect;
     const h = Math.min(wanted, maxH);
-    return { b, scale, h, truncated: wanted > maxH };
-  });
 
-  /*
-   * 逐行取**最大视觉高**（抄 arrangeGrid 的 rowHeights）。
-   * ⚠ 视觉高 = 内容高 + 标签带。标签画在节点外面，但排布必须算它，
-   *   否则矮块的标签会被上一行的内容压住。
-   */
-  const rowHeights = new Array<number>(rows).fill(0);
-  cells.forEach((c, i) => {
-    const row = Math.floor(i / cols);
-    const visual = c.h + BLOCK_CELL.labelBand;
-    if (visual > rowHeights[row]) rowHeights[row] = visual;
-  });
+    /* 最矮的那一列；并列时取最左的（确定性，且从左往右填看着自然）。 */
+    let col = 0;
+    for (let c = 1; c < cols; c += 1) {
+      if (colVisualBottom[c] < colVisualBottom[col] - 0.5) col = c;
+    }
 
-  const originX = board.x + board.w + BLOCK_CELL.stripGap;
-  /* ⚠ 顶端要给第一行的标签留出位置：`board.y - labelBand` 是**视觉顶**，
-     加回 labelBand 才是内容顶。同 arrangeGrid 的
-     `anchor.posY - anchor.titleHeight` → `visualTop + titleHeight`。 */
-  const originVisualTop = board.y - BLOCK_CELL.labelBand;
-
-  /** 累积偏移（抄 cumulativeOffsets）：起点 + 前面各项的尺寸与间距。 */
-  const rowVisualTop: number[] = [originVisualTop];
-  for (let i = 1; i < rows; i += 1) {
-    rowVisualTop.push(rowVisualTop[i - 1] + rowHeights[i - 1] + BLOCK_CELL.gap);
-  }
-
-  cells.forEach((c, i) => {
-    const col = i % cols;
-    const row = Math.floor(i / cols);
+    const visualTop = colVisualBottom[col];
     out.push({
-      key: blockKey(board.pageId, c.b.name),
+      key: blockKey(board.pageId, b.name),
       pageId: board.pageId,
-      name: c.b.name,
+      name: b.name,
       x: originX + col * (BLOCK_CELL.width + BLOCK_CELL.gap),
       /* 视觉顶 + 标签带 = 内容顶。 */
-      y: rowVisualTop[row] + BLOCK_CELL.labelBand,
+      y: visualTop + BLOCK_CELL.labelBand,
       w: BLOCK_CELL.width,
-      h: c.h,
+      h,
       crop: {
         /* 设计坐标，**不乘 scale**——消费侧是 scale(s) translate(-left,-top)，
            CSS 会替我们乘。这里先乘一遍等于乘两次。 */
-        left: c.b.rect.left,
-        top: c.b.rect.top,
-        scale: c.scale,
+        left: b.rect.left,
+        top: b.rect.top,
+        scale,
       },
-      truncated: c.truncated,
+      truncated: wanted > maxH,
     });
-  });
+    colVisualBottom[col] = visualTop + BLOCK_CELL.labelBand + h + BLOCK_CELL.gap;
+  }
   return out;
 }
 
