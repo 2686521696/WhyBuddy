@@ -2243,16 +2243,24 @@ async def drive_full_v5_session_stream(
                     # 已经结束的闸上，返回 released=true 却什么也没发生。
                     finish_hold()
             if _pause_res is not None:
+                # ⚠ 恢复信息**并进这一条**，不另发一个 `recovery` 事件
+                #   （2026-08-28 事件对账查出来的）：前端的 switch 对不认识的
+                #   类型是 `default: return "continue"`——**静默丢弃、连日志都
+                #   没有**。第一版就那么发了一条没人听的 recovery，等于
+                #   "我替你做了个决定"这件事发进了虚空，而 claw-code 那条配方的
+                #   全部意义就是让人知道。一条通道、一处处理，比再加个监听好。
+                _recovered = None
+                if not _pause_res.answered and _pause_ledger is not None:
+                    _act = recover_from(_pause_res, _pause_ledger)
+                    if _act is not None:
+                        _recovered = _act.event
                 yield {
                     "type": "run_pause_ended",
                     "where": _pause_res.where,
                     "outcome": _pause_res.outcome.value,
                     "waitedSeconds": _pause_res.waited_seconds,
+                    "recovery": _recovered,
                 }
-                if not _pause_res.answered and _pause_ledger is not None:
-                    _act = recover_from(_pause_res, _pause_ledger)
-                    if _act is not None:
-                        yield {"type": "recovery", **_act.event}
             ui = user_instruction or ""
             if skip_planning_loop_for_refine(repair=repair):
                 record_refine_skip_planning(state, ui)
