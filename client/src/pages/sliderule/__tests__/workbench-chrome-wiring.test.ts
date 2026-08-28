@@ -283,8 +283,12 @@ describe("workbench chrome live-path wiring", () => {
     const stageBodyAt = studio.indexOf("flex min-h-0 flex-1 gap-3", gearsAt);
     const gears = studio.slice(gearsAt, stageBodyAt);
     expect(gears).toContain("flex shrink-0 items-center gap-1");
-    expect(gears).toContain("透视");
-    expect(gears.indexOf("透视")).toBeLessThan(gears.indexOf("{chromeSlot}"));
+    // ⚠ 2026-08-28 用户裁决：「透视」改叫「关联」，「画布」从分段控件里
+    //   拿出来变成独立的「打开画布」。顺序：私有 → 关联 → 打开画布 → 点选编辑。
+    expect(gears).toContain("关联");
+    expect(gears).toContain("打开画布");
+    expect(gears.indexOf("关联")).toBeLessThan(gears.indexOf("打开画布"));
+    expect(gears.indexOf("打开画布")).toBeLessThan(gears.indexOf("{chromeSlot}"));
     // ⚠ 2026-08-24：重置会话搬到标题左侧了，右侧这排不许再有它。
     expect(gears).not.toContain("resetSlot");
     expect(gears).not.toContain("sliderule-stage-role");
@@ -314,7 +318,7 @@ describe("workbench chrome live-path wiring", () => {
     expect(studio).toContain('stageView === "board"');
     expect(studio).toContain("onOpenSandbox");
     expect(studio).toContain('onOpenSandbox={() => setStageView("board")}');
-    expect(studio).toContain("透视");
+    expect(studio).toContain("关联");
     expect(studio).not.toContain(">游标<");
 
     const panel = stripComments(

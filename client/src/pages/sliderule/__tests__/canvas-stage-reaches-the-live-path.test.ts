@@ -40,20 +40,36 @@ describe("画布档接在 SlideRuleStudio 上（而不是只写了个组件）",
     expect(STUDIO).toContain("<SpecPageCanvasStage");
   });
 
-  it("顶栏档位组里有「画布」这一片，且排在「页面」左边", () => {
-    const group = STUDIO.slice(
-      STUDIO.indexOf('["canvas"'),
+  it("⚠ 画布是**独立的一颗按钮**，不再是分段控件里的一片", () => {
+    /*
+     * 2026-08-28 用户裁决：「画布作为独立功能」。
+     *
+     * 2026-08-25 曾把它加进分段控件（理由是"画布→页面→代码，从粗到细"）。
+     * 那个理由本身没错，错在它跟另外两片不是一类东西：页面/代码是同一页的
+     * 两种看法，画布是另一种工作方式。并排放会让人以为可以随便来回切。
+     *
+     * ⚠ 正反一起，这是「沙盘」那次记下的形状：只查"分段里没有画布"会假绿——
+     *   把那颗独立按钮一并删掉，判据照样全绿，而画布再也打不开。
+     */
+    expect(STUDIO).not.toContain('["canvas", "画布"]');
+    const seg = STUDIO.slice(
+      STUDIO.indexOf('["page", "页面"]'),
       STUDIO.indexOf('["code", "代码"]') + 20
     );
-    expect(group).toContain('["canvas", "画布"]');
-    expect(group.indexOf('["canvas"')).toBeLessThan(group.indexOf('["page"'));
+    expect(seg).not.toContain('"canvas"');
+    // 独立那颗还在，且真的接在同一个档位值上
+    expect(STUDIO).toContain('data-testid="sliderule-stage-view-canvas"');
+    expect(STUDIO).toContain("打开画布");
+    expect(STUDIO).toContain(
+      'setStageView(stageView === "canvas" ? "page" : "canvas")'
+    );
   });
 
   it("按钮的档位值与舞台的渲染分支用的是同一个字面量", () => {
     // 只加按钮不加分支 → 点了没反应；只加分支不加按钮 → 永远进不去。
     // 两边都要在，且都得是 "canvas"。
-    expect(STUDIO).toContain('["canvas", "画布"]');
-    expect(STUDIO).toContain('stageView === "canvas"');
+    expect(STUDIO).toContain('aria-pressed={stageView === "canvas"}');
+    expect(STUDIO).toContain('stageView === "canvas" ? (');
   });
 
   it("stageView 的联合类型里有 canvas（否则 TS 之外的分支是死代码）", () => {
@@ -548,5 +564,72 @@ describe("画布点选元素直接改：链路接上了吗", () => {
     expect(PANEL_EL).toContain("运行时按数据生成");
     // 定位不到 = 失败，不许把原样 HTML 拿去落库当成功
     expect(PANEL_EL).toContain("if (!res.ok)");
+  });
+});
+
+describe("⚠ 画布档的顶部不占高度：读数在左下，权限切换悬浮（2026-08-28）", () => {
+  const STAGE = stripComments(
+    readFileSync(
+      new URL("../live-runtime/SpecPageCanvasStage.tsx", import.meta.url),
+      "utf8"
+    )
+  );
+
+  it("说明行**不在顶部**了，画在台面左下角（抄 ComfyUI 左下那组读数）", () => {
+    /*
+     * 用户原话：「画布模式下顶部信息显示在左下角，可以参考 comfyui 这种方式」
+     * ＋「顶部这块不要给高度」。
+     *
+     * ⚠ 正反一起：只查"左下角有这块"会假绿——顶上那条原样留着照样绿，
+     *   而"不占高度"这半根本没做到。
+     */
+    const meta = STAGE.indexOf('data-testid="sliderule-canvas-meta"');
+    expect(meta).toBeGreaterThan(-1);
+    // 正向：绝对定位、贴左下、压在画布上不吃事件
+    const box = STAGE.slice(meta - 400, meta);
+    expect(box).toContain("absolute");
+    expect(box).toContain("left-3");
+    expect(box).toContain("bottom-");
+    expect(box).toContain("pointer-events-none");
+    // 反向：它必须在**画布宿主里面**（flowHostRef 那一层）而不是外层容器
+    expect(meta).toBeGreaterThan(STAGE.indexOf("ref={flowHostRef}"));
+  });
+
+  it("外层容器不再为它留一行（shrink-0 的说明行和 gap 都没了）", () => {
+    // 变异：把 `flex-col gap-2` 改回去，或把说明行搬回外层，这条红。
+    const rootAt = STAGE.indexOf('data-testid="sliderule-canvas-stage"');
+    const rootTag = STAGE.slice(rootAt - 400, rootAt);
+    expect(rootTag).toContain("flex min-h-0 min-w-0 flex-1 flex-col");
+    expect(rootTag).not.toContain("flex-col gap-2");
+  });
+
+  it("⚠ 缩放百分比不在读数里重复（正下方的药丸就是它，还能点）", () => {
+    // 两处显示同一个数，改一处忘一处就会自相矛盾，而且不报错。
+    const meta = STAGE.indexOf('data-testid="sliderule-canvas-meta"');
+    const zoomPill = STAGE.indexOf('data-testid="sliderule-canvas-zoom"');
+    expect(zoomPill).toBeGreaterThan(meta);
+    expect(STAGE.slice(meta, zoomPill)).not.toContain("Math.round(zoom * 100)");
+  });
+
+  it("权限切换悬浮在台面右上角，且**不是** pointer-events-none", () => {
+    // ⚠ 它是要点的控件，不是读数。跟左下那块读数不能共用一套样式。
+    const at = STAGE.indexOf('data-testid="sliderule-canvas-meta-trailing"');
+    expect(at).toBeGreaterThan(-1);
+    const box = STAGE.slice(at - 300, at);
+    expect(box).toContain("absolute right-3 top-3");
+    expect(box).not.toContain("pointer-events-none");
+    expect(at).toBeGreaterThan(STAGE.indexOf("ref={flowHostRef}"));
+  });
+
+  it("反向：读数里那几项一个都不许丢（搬家最容易顺手丢内容）", () => {
+    // 「闸全绿但东西没了」：位置对了、内容少一半，截图上完全看不出。
+    for (const id of [
+      "sliderule-canvas-page-count",
+      "sliderule-canvas-asset-summary",
+      "sliderule-canvas-hint",
+    ]) {
+      expect(STAGE, id).toContain(id);
+    }
+    expect(STAGE).toContain("双击画板进入交互 · 右键更多");
   });
 });

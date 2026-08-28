@@ -364,7 +364,9 @@ export function XrayPanel({
       data-testid="sliderule-xray-panel"
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3">
-        <div className="text-[11px] text-stone-400">透视</div>
+        {/* ⚠ 2026-08-28 用户裁决：顶栏那颗按钮改叫「关联」，这里跟着改。
+            按钮叫 A 而它打开的面板顶着 B，是同一件事只改一半。 */}
+        <div className="text-[11px] text-stone-400">关联</div>
         <div className="mt-0.5 truncate text-[13px] font-semibold text-stone-800" data-testid="xray-page-title">
           {xray.pageTitle}
         </div>

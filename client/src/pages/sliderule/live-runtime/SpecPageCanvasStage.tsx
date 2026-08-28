@@ -2526,7 +2526,12 @@ function CanvasInner({
 
   return (
     <div
-      className="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
+      /* ⚠ 2026-08-28 用户裁决：「画布模式下顶部这块不要给高度」。
+         说明行原来是画板上方一条 shrink-0 的行，白占约 20px 高，而画布本来
+         就该是"整块台面"。它现在画在台面**左下角**（抄 ComfyUI 左下那组
+         T/I/N/V/FPS：压在画布上、不占布局），角色切换浮在右上角。
+         所以这里既不留行、也不留 gap。 */
+      className="flex min-h-0 min-w-0 flex-1 flex-col"
       data-testid="sliderule-canvas-stage"
       data-page-count={pages.length}
       data-entered={entered ?? undefined}
@@ -2542,59 +2547,6 @@ function CanvasInner({
       data-link-count={links.length}
       data-asset-count={assets.length}
     >
-      {/* 说明行：跟页面档同一形制（Primer PageHeader 的 description）。 */}
-      <div
-        className="flex shrink-0 items-center gap-2 px-0.5 text-[11px] leading-4 text-stone-400"
-        data-testid="sliderule-canvas-meta"
-      >
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <span className="font-mono tabular-nums">
-            {design.w}×{design.h} · {Math.round(zoom * 100)}%
-          </span>
-          <span aria-hidden>·</span>
-          <span data-testid="sliderule-canvas-page-count">
-            {running ? `界面生成中 ${delivered} 页` : `共 ${delivered} 页`}
-          </span>
-          {assets.length > 0 ? (
-            <>
-              <span aria-hidden>·</span>
-              <span data-testid="sliderule-canvas-asset-summary">
-                {assets.length} 张图
-                {placeholderCount > 0 ? (
-                  <span className="ml-1 text-[#C05621]">
-                    （{placeholderCount} 张占位图）
-                  </span>
-                ) : null}
-              </span>
-            </>
-          ) : null}
-          <span aria-hidden>·</span>
-          <span data-testid="sliderule-canvas-hint">
-            {linkFrom
-              ? "点另一块画板连上，Esc 取消"
-              : entered
-                ? "已进入画板，Esc 退出"
-                : linkMode
-                  ? /* ⚠ 派生边真机上经常是 0 条（三个会话量到 1/0/0，见
-                       canvas-board-graph 头注）。开了连线态却一条线都没有时
-                       必须**说出为什么**——静静地什么都不画，用户只会以为
-                       功能坏了。这条是那份头注里写下的要求，不是文案润色。 */
-                    dataflowLinks.length === 0
-                    ? "模型里没有页面间的数据流可派生 · 从画板边缘的圆点拖到另一块画板即可自己连"
-                    : "从画板边缘的圆点拖到另一块画板即可连线"
-                  : "双击画板进入交互 · 右键更多"}
-          </span>
-        </div>
-        {metaTrailing ? (
-          <div
-            className="ml-auto shrink-0"
-            data-testid="sliderule-canvas-meta-trailing"
-          >
-            {metaTrailing}
-          </div>
-        ) : null}
-      </div>
-
       <div ref={stageRowRef} className="flex min-h-0 min-w-0 flex-1 gap-2">
         <div
           ref={flowHostRef}
@@ -2703,6 +2655,79 @@ function CanvasInner({
               />
             </ReactFlow>
           </CanvasContext.Provider>
+
+          {/*
+            ## 台面读数：左下角，压在画布上（2026-08-28 用户裁决）
+
+            原来这些字是画板**上方**一条 shrink-0 的说明行。用户的话是
+            「画布模式下顶部信息显示在左下角，可以参考 comfyui 这种方式」。
+
+            ComfyUI 的做法（LGraphCanvas 的 `renderInfo`，画在左下角）：
+            一小块等宽数字，一行一项，压在画布上、不占任何布局高度。
+            它跟缩放药丸叠在一起，读数在上、控件在下。
+
+            ⚠ `pointer-events-none` 是**功能不是样式**：这块浮在画布上，
+              漏了它鼠标划过就把平移/框选的事件吃掉一片，而画面上完全看不出
+              这里有个透明盒子。同 ElementSpot 那条。
+
+            ⚠ 有一层浅底，**这一处跟 ComfyUI 不一样，是故意的**：它的画布是
+              深色且空的，裸字永远读得出；我们的台面上铺的是白色的页面卡片，
+              2026-08-28 真机 50% 那张截图上，这几行灰字正好压在一张表格上，
+              糊成一片。底色跟缩放药丸/小地图/toast 同一套（白 + 描边 +
+              backdrop-blur），画布上的浮层就该是同一种东西。
+
+            ⚠ 缩放百分比**不在这里重复**：正下方的药丸就是读数（还能点）。
+              两处显示同一个数，改了一处忘了另一处就会自相矛盾。
+          */}
+          <div
+            className="pointer-events-none absolute bottom-[3.25rem] left-3 flex flex-col gap-0.5 rounded-lg border border-[#e9edf2] bg-white/85 px-2 py-1 font-mono text-[10px] leading-[1.35] tabular-nums text-stone-400 backdrop-blur"
+            data-testid="sliderule-canvas-meta"
+          >
+            <span>
+              {design.w}×{design.h}
+            </span>
+            <span data-testid="sliderule-canvas-page-count">
+              {running ? `界面生成中 ${delivered} 页` : `共 ${delivered} 页`}
+            </span>
+            {assets.length > 0 ? (
+              <span data-testid="sliderule-canvas-asset-summary">
+                {assets.length} 张图
+                {placeholderCount > 0 ? (
+                  <span className="ml-1 text-[#C05621]">
+                    （{placeholderCount} 张占位图）
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
+            <span data-testid="sliderule-canvas-hint">
+              {linkFrom
+                ? "点另一块画板连上，Esc 取消"
+                : entered
+                  ? "已进入画板，Esc 退出"
+                  : linkMode
+                    ? /* ⚠ 派生边真机上经常是 0 条（三个会话量到 1/0/0，见
+                         canvas-board-graph 头注）。开了连线态却一条线都没有时
+                         必须**说出为什么**——静静地什么都不画，用户只会以为
+                         功能坏了。这条是那份头注里写下的要求，不是文案润色。 */
+                      dataflowLinks.length === 0
+                      ? "模型里没有可派生的页面间数据流 · 从画板边缘的圆点拖到另一块画板即可自己连"
+                      : "从画板边缘的圆点拖到另一块画板即可连线"
+                    : "双击画板进入交互 · 右键更多"}
+            </span>
+          </div>
+
+          {/* 角色切换：浮在台面**右上角**（2026-08-28 用户裁决
+              「右上角的权限切换改为悬浮显示」）。它原来钉在说明行右端，
+              那一行整条撤掉之后它得自己找位置。
+              ⚠ 外层不能 pointer-events-none：这是要点的控件，不是读数。 */}
+          {metaTrailing ? (
+            <div
+              className="absolute right-3 top-3 z-10"
+              data-testid="sliderule-canvas-meta-trailing"
+            >
+              {metaTrailing}
+            </div>
+          ) : null}
 
           {/* 缩放药丸：位置对齐 Figma/Stitch（画布左下角），读数可点=适应画布。 */}
           <div

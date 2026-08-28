@@ -83,7 +83,13 @@ import {
   htmlBindingToXrayTarget,
   type XrayTarget,
 } from "./XrayPanel";
-import { ChevronDown, Crosshair, MousePointerClick, X } from "lucide-react";
+import {
+  ChevronDown,
+  Crosshair,
+  LayoutGrid,
+  MousePointerClick,
+  X,
+} from "lucide-react";
 import { ClickEditStage } from "@/pages/agent-loop/dashboard/ClickEditStage";
 import { getGeneratedAppForSession } from "@/pages/agent-loop/dashboard/app-store-client";
 import { StudioSplit } from "./StudioSplit";
@@ -789,14 +795,21 @@ export function SlideRuleStudio({
                       （见下面 XrayPanel 的 onOpenSandbox），顶栏再挂一片纯属重复占位。
                       注意撤的只是**这颗按钮**：stageView === "board" 那支渲染和
                       XrayPanel 的入口都还在，删它们会让沙盘真的没法打开。 */}
-                  {/* ⚑ 2026-08-25：「画布」加在**页面左边**（用户在截图上
-                      箭头标的就是这个位置）。次序是有讲究的，不是随手排的：
-                      画布=看全套 → 页面=看一页 → 代码=看这一页的源码，
-                      从粗到细，跟 Figma（画布→图层）/ Stitch 同向。
-                      把它塞在代码后面会变成"三个并列的东西"，粒度关系就没了。 */}
+                  {/* ⚠ 2026-08-28 用户裁决：「画布作为独立功能」。
+                      「画布」那一片从这个分段控件里**拿出去**了，改成右边
+                      那颗独立的「打开画布」。
+
+                      2026-08-25 曾把它加在这里，理由是"画布→页面→代码，
+                      从粗到细"。那个理由本身没错，错在**它跟另外两片不是
+                      一类东西**：页面/代码是同一页的两种看法，画布是另一种
+                      工作方式（另一套手势、另一套工具、另一个信息层）。
+                      并排放会让人以为它们可以随便来回切。
+
+                      ⚠ 拿走的只是**这一片**：stageView === "canvas" 那支渲染
+                      和 testid 都原样留着（见下面那颗按钮），删它们画布就
+                      真的打不开了——这正是「沙盘」那次记下的形状。 */}
                   {(
                     [
-                      ["canvas", "画布"],
                       ["page", "页面"],
                       ["code", "代码"],
                     ] as const
@@ -829,7 +842,12 @@ export function SlideRuleStudio({
                     if (stageView === "page" || !xrayOn) toggleXray();
                   }}
                   data-testid="sliderule-xray-toggle"
-                  aria-label="透视"
+                  /* ⚠ 2026-08-28 用户裁决：文字从「透视」改成「关联」。
+                     面板里那一整套讲的就是"这个元素背后连着哪些数据、流程、
+                     权限"，「关联」说的是它做什么，「透视」说的是它长什么样。
+                     ⚠ 侧栏标题一起改了——按钮叫「关联」而打开的面板顶着
+                       「透视」，是同一件事只改一半。 */
+                  aria-label="关联"
                   aria-pressed={xrayOn && stageView === "page"}
                   className={`flex h-7 items-center rounded-md border text-[12px] font-medium transition ${
                     xrayOn && stageView === "page"
@@ -839,7 +857,29 @@ export function SlideRuleStudio({
                   title="对准页面上的元素，看它背后的数据、流程和权限"
                 >
                   <Crosshair className="h-3.5 w-3.5" />
-                  {isPhoneStage ? null : "透视"}
+                  {isPhoneStage ? null : "关联"}
+                </button>
+                {/* 「打开画布」：独立功能，不是分段控件里的一片（2026-08-28
+                    用户裁决）。testid 沿用 `sliderule-stage-view-canvas`——
+                    它还是同一个控件，改的是外形不是身份；换掉会把真机 smoke
+                    里三处入口一起打断。 */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setStageView(stageView === "canvas" ? "page" : "canvas")
+                  }
+                  data-testid="sliderule-stage-view-canvas"
+                  aria-label="打开画布"
+                  aria-pressed={stageView === "canvas"}
+                  className={`flex h-7 items-center rounded-md border text-[12px] font-medium transition ${
+                    stageView === "canvas"
+                      ? "border-transparent bg-[#1677ff] text-white shadow-sm"
+                      : "border-[#e5e7eb] bg-white text-stone-600 hover:border-[#d3d8e0] hover:bg-[#f8f9fb]"
+                  } ${isPhoneStage ? "w-7 justify-center" : "gap-1.5 px-2.5"}`}
+                  title="把所有页面摊开成画板，看它们之间怎么连"
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                  {isPhoneStage ? null : "打开画布"}
                 </button>
                 {stageView === "page" && (
                   <button
@@ -1044,7 +1084,7 @@ export function SlideRuleStudio({
               {SKILL_LABELS[drawerSkill]}
             </span>
             <span className="text-[11px] text-stone-400">
-              透视 · 应用背后的声明
+              关联 · 应用背后的声明
             </span>
             <button
               type="button"

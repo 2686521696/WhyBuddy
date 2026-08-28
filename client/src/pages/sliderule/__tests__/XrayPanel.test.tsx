@@ -122,7 +122,9 @@ describe("derivePageXray", () => {
     expect(html).toContain('data-testid="xray-section-appBundle"');
     expect(html).toContain("宠物档案页");
     expect(html).toContain("打开沙盘");
-    expect(html).toContain("透视");
+    // ⚠ 2026-08-28 用户裁决：这个面板的名字从「透视」改成「关联」。
+    expect(html).toContain("关联");
+    expect(html).not.toContain("透视");
     expect(html).toContain('data-testid="xray-hover-hint"');
     expect(html).not.toContain("游标 · 页面背后");
     expect(html).not.toContain("五系统联动总图");
@@ -344,7 +346,7 @@ describe("SlideRuleStudio 三态舞台", () => {
     expect(html).not.toContain('data-testid="sliderule-xray-toggle"');
   });
 
-  it("成品面顶栏：页面/代码 + 透视开关在场，沙盘片已撤", () => {
+  it("成品面顶栏：页面/代码 + 关联 + 打开画布在场，沙盘片已撤", () => {
     const html = renderToStaticMarkup(
       <SlideRuleStudio
         chatSlot={<div />}
@@ -373,12 +375,62 @@ describe("SlideRuleStudio 三态舞台", () => {
     expect(pageBtn).toContain("页面");
     expect(pageBtn).not.toContain("桌面");
     expect(html).toContain("代码");
-    expect(html).toContain("透视");
+    // ⚠ 2026-08-28 用户裁决：文字从「透视」改成「关联」。
+    expect(html).toContain("关联");
+    expect(html).not.toContain(">透视<");
     expect(html).not.toContain(">游标<");
     // ⚠ 2026-08-24 用户反馈：顶栏「沙盘」片和「透视」里的入口重复，撤掉。
     // 把那片 tab 加回去，这两条必红。
     expect(html).not.toContain('data-testid="sliderule-stage-view-board"');
     expect(html).not.toContain(">沙盘<");
+
+    /*
+     * ⚠ 2026-08-28 用户裁决：「画布作为独立功能」。它从分段控件里拿出来，
+     *   变成一颗独立的「打开画布」。
+     *
+     * ⚠ 这条必须**正反一起**（「沙盘」那次记下的形状）：只查"分段里没有画布"
+     *   会假绿——把那颗独立按钮也删掉，判据照样全绿，而画布再也打不开。
+     */
+    expect(html).toContain("打开画布");
+    expect(html).toContain('data-testid="sliderule-stage-view-canvas"');
+    // 反向：它不再是分段控件里的一片（分段里只剩页面/代码两片）
+    const seg = html.slice(
+      html.indexOf('data-testid="sliderule-stage-view-page"') - 600,
+      html.indexOf('data-testid="sliderule-stage-view-code"')
+    );
+    expect(seg).not.toContain('data-testid="sliderule-stage-view-canvas"');
+  });
+
+  it("顶栏那排的顺序：私有 → 关联 → 打开画布 → 点选编辑", () => {
+    /*
+     * 用户 2026-08-28 给的就是这个顺序。判据盯**渲染后 HTML 里的先后**，
+     * 不是源码里出现的次序——后者把按钮渲染到别处照样绿（本仓踩过十次以上
+     * 的形态，见"重置会话落在标题左侧"那条）。
+     */
+    const html = renderToStaticMarkup(
+      <SlideRuleStudio
+        chatSlot={<div />}
+        activeSkillId={null}
+        /* ⚠ 必须给 sessionId：StudioShareToggle 没有它直接 `return null`，
+           不给的话「私有」根本不渲染，这条判据会退化成"只查了后三个"。 */
+        sessionId="sr-test"
+        specPages={[
+          {
+            pageId: "p1",
+            html: "<!doctype html><html><body>x</body></html>",
+            current: 1,
+            total: 1,
+            bound: false,
+          },
+        ]}
+      />
+    );
+    const share = html.indexOf('data-testid="sliderule-share-toggle"');
+    const xray = html.indexOf('data-testid="sliderule-xray-toggle"');
+    const canvas = html.indexOf('data-testid="sliderule-stage-view-canvas"');
+    expect(share).toBeGreaterThan(-1);
+    expect(xray).toBeGreaterThan(share);
+    expect(canvas).toBeGreaterThan(xray);
   });
 
   it("重置会话落在标题**左侧**，不在右侧图标簇里（量渲染后的顺序，不量源码）", () => {
@@ -419,7 +471,7 @@ describe("SlideRuleStudio 三态舞台", () => {
     expect(resetAt).toBeLessThan(gearsAt);
   });
 
-  it("工作台图标簇落在透视右侧，跟标题同一行", () => {
+  it("工作台图标簇落在关联右侧，跟标题同一行", () => {
     const html = renderToStaticMarkup(
       <SlideRuleStudio
         chatSlot={<div />}
