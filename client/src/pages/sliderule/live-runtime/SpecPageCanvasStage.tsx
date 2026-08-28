@@ -541,41 +541,47 @@ const FIT_PADDING = 0.08;
 
 /** 连线的两种来源用两种画法：派生=灰实线，手画=蓝虚线。 */
 const EDGE_STYLE = {
-  dataflow: { stroke: "#94a3b8", strokeWidth: 2 },
-  manual: { stroke: "#1677ff", strokeWidth: 2, strokeDasharray: "8 6" },
+  /* ⚠ 线宽跟影响线统一到 3（ComfyUI 的 connections_width）：同一张画布上
+     两套粗细会让人以为是两种东西。2026-08-28 随配色一起调的。 */
+  dataflow: { stroke: "#94a3b8", strokeWidth: 3 },
+  manual: { stroke: "#1677ff", strokeWidth: 3, strokeDasharray: "8 6" },
 } as const;
 
 /**
- * 刀 4 的影响线配色。**分色分虚实是功能，不是审美。**
+ * 刀 4 的影响线配色与粗细。**分色分虚实是功能，不是审美。**
  *
  * ⚠ 真联动（跳转/动作/素材）是"改了运行时那边真的跟着变"；仅同源（读同一个
  *   实体.字段）是"改数据模型会一起变，但改这一块的文案另一块不会跟着变"。
  *   画成一样的线，用户会以为改一处自动同步了 —— 这是风险台账 #03。
  *
- * 真联动用实线暖色（醒目、可信），仅同源用细虚线冷色（提示、别当真）。
+ * ## 色值抄的是谁（2026-08-28 第二轮）
+ *
+ * ComfyUI_frontend `src/assets/palettes/light.json` 的 `node_slot`
+ * （本地 clone，commit 5d24e4e）。⚠ 抄的是它的**浅色主题**那一份，不是
+ * 截图里那套深色的——我们画布是浅底，深色主题的色值搬过来会偏暗发脏。
+ *
+ *     CLIP #FFA726  CONDITIONING #EF5350  IMAGE #42A5F5
+ *     LATENT #AB47BC  MODEL #7E57C2  VAE #FF7043  NOISE #B0B0B0
+ *
+ * 它们全是 **Material 400 档**：饱和、中明度，浅底深底都读得出。
+ * 上一版我用的是 200~300 档的淡色（#a5b4fc / #e2e8f0），白底上直接看不见
+ * ——用户原话"太淡了，灰色都看不出来了，颜色也有些丑"。
+ *
+ * 粗细同样照它：`LGraphCanvas.connections_width = 3`。上一版真联动 2px、
+ * 同源 1px，1px 在缩放后就是一条断续的灰点。
+ *
+ * ⚠ 但**不照抄它的"全部同宽同实线"**：ComfyUI 的每条线都是平级的数据流，
+ *   我们这儿有"真联动 vs 仅同源"的分级，虚实仍然要留着当区分。
+ *   同源那档给 6/6 的长虚线而不是 2/6 的点——点在缩放后会碎成灰尘。
  */
 const IMPACT_STYLE: Record<
   ImpactEdgeKind,
   { stroke: string; strokeWidth: number; strokeDasharray?: string }
 > = {
-  nav: { stroke: "#0891b2", strokeWidth: 2 },
-  action: { stroke: "#c2410c", strokeWidth: 2 },
-  asset: { stroke: "#7c3aed", strokeWidth: 2 },
-  /*
-   * ⚠ 同源字段单独一个色相（靛蓝），**不许再用灰**（2026-08-28）。
-   *
-   *   上一版它是 #cbd5e1，跟**归属线**一模一样。真机上量到 86 条同源线和
-   *   24 条归属线是同一个 rgb(203,213,225)，只差 0.5px 线宽和虚线节奏——
-   *   肉眼分不出。用户直接问"这种淡淡的线是啥，连接啥的"。
-   *
-   *   讽刺的是 block-impact.ts 头注里写着"两类关系不能混成一条线"，
-   *   我防住了"真联动 vs 同源"，却没防住"同源 vs 归属"。
-   *   判据补在下面 ALL_EDGE_STROKES 那条：任何两种线不许同色。
-   *
-   *   靛蓝而不是别的：nav 青、action 橙、asset 紫已经占了三个色相，
-   *   靛蓝跟它们分得开，又比它们淡（1px + 稀虚线），符合"仅同源，别当真"。
-   */
-  field: { stroke: "#a5b4fc", strokeWidth: 1, strokeDasharray: "2 6" },
+  nav: { stroke: "#42A5F5", strokeWidth: 3 },
+  action: { stroke: "#FF7043", strokeWidth: 3 },
+  asset: { stroke: "#AB47BC", strokeWidth: 3 },
+  field: { stroke: "#5C6BC0", strokeWidth: 2, strokeDasharray: "6 6" },
 };
 
 /**
@@ -583,11 +589,14 @@ const IMPACT_STYLE: Record<
  *
  * ⚠ 比所有影响线都**更轻**：块本来就摆在它那张画板旁边，归属靠位置已经
  *   读得出来，这条线只是确认。做重了会跟真正要看的影响线抢注意力。
+ * ⚠ 但"更轻"不等于"看不见"（2026-08-28 修）：上一版 #e2e8f0 在白底上
+ *   就是没有。改用 ComfyUI 浅色主题里那个中性灰 #B0B0B0（它给 NOISE 用的），
+ *   轻但确实在。
  */
 const OWNERSHIP_STYLE = {
-  stroke: "#e2e8f0",
-  strokeWidth: 1,
-  strokeDasharray: "1 6",
+  stroke: "#B0B0B0",
+  strokeWidth: 2,
+  strokeDasharray: "2 6",
 } as const;
 
 /**

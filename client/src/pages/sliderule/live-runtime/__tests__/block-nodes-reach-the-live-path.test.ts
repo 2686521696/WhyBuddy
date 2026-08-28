@@ -202,13 +202,67 @@ describe("反向判据", () => {
     );
   });
 
+  it("⚠ 每种线都要在浅底上看得见——不许再调回淡色", () => {
+    /*
+     * 2026-08-28 用户报："太淡了，灰色都看不出来了，颜色也有些丑"。
+     * 照 ComfyUI_frontend 的**浅色主题**调色板（src/assets/palettes/light.json
+     * 的 node_slot，全是 Material 400 档）换了一轮。
+     *
+     * ⚠ 判据按**跟画布底色的对比度**算，不靠肉眼、也不靠单看亮度。
+     *   画布底色 #f4f4f6 是仓里记过的（canvas 那层"去掉背景后露出外壳"）。
+     *
+     * ⚠ 阈值 1.9 是**标定出来的**，不是拍的。四个标定点：
+     *       #e2e8f0  1.14   用户说"看不出来"的归属线（旧）
+     *       #cbd5e1  1.37   撞色那一版的两种线（旧）
+     *       #a5b4fc  1.83   我上一轮的"修复"，用户仍然说太淡
+     *       #B0B0B0  1.98   现在最淡的一个（ComfyUI 浅色主题的 NOISE）
+     *   取 1.9 正好把前三个挡在外面、把现在这套放进来。
+     *   ⚠ 余量只有 0.08，要动这些颜色**连同这条阈值一起重标**，别只改颜色。
+     */
+    const lum = (hex: string) => {
+      const n = hex.replace("#", "");
+      const to = (i: number) => {
+        const c = parseInt(n.slice(i, i + 2), 16) / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * to(0) + 0.7152 * to(2) + 0.0722 * to(4);
+    };
+    const CANVAS_BG = lum("#f4f4f6");
+    const contrast = (c: string) =>
+      (CANVAS_BG + 0.05) / (lum(c) + 0.05);
+
+    const strokes = [
+      ...new Set(
+        [...STAGE.matchAll(/stroke:\s*"(#[0-9a-fA-F]{6})"/g)].map(x => x[1])
+      ),
+    ];
+    expect(strokes.length).toBeGreaterThanOrEqual(7);
+    const tooPale = strokes.filter(c => contrast(c) < 1.9);
+    expect(
+      tooPale,
+      `这些颜色在 #f4f4f6 底上太淡（对比度 < 1.9）：${tooPale
+        .map(c => `${c}=${contrast(c).toFixed(2)}`)
+        .join("、")}`
+    ).toEqual([]);
+  });
+
+  it("⚠ 线宽照 ComfyUI 的 connections_width = 3（1px 缩放后是断续的点）", () => {
+    // 上一版真联动 2px、同源 1px。1px 在 17% 全景下就是一串灰尘。
+    for (const k of ["nav", "action", "asset"]) {
+      expect(STAGE).toMatch(new RegExp(`${k}: \\{[^}]*strokeWidth: 3`));
+    }
+    expect(STAGE).toMatch(/field: \{[^}]*strokeWidth: 2/);
+  });
+
   it("⚠ 归属线比所有影响线都更轻（不许跟影响线抢注意力）", () => {
     // 块本来就摆在它那张画板旁边，归属靠位置已经读得出来，线只是确认。
     const own = STAGE.match(
       /const OWNERSHIP_STYLE = \{([\s\S]*?)\} as const/
     );
     expect(own).not.toBeNull();
-    expect(own![1]).toContain("strokeWidth: 1");
+    // ⚠ 更轻 = 比影响线细 + 虚线，**不是**细到看不见（2026-08-28 用户报
+    //   "灰色都看不出来"，上一版是 1px #e2e8f0）。
+    expect(own![1]).toContain("strokeWidth: 2");
     expect(own![1]).toContain("strokeDasharray");
   });
 
