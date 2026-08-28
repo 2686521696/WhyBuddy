@@ -106,7 +106,6 @@ import {
   blockGridExtraGapX,
   blockGridSpan,
   blockKindTint,
-  blockTitleText,
   layoutBlockNodes,
   shouldDrawBlockDetail,
   type BlockNodeBox,
@@ -973,6 +972,9 @@ function BlockNode({ data }: NodeProps<Node<BlockNodeData>>) {
          而节点渲染完全正常、控制台一声不吭。 */
       style={{ width: box.w, height: box.h, pointerEvents: "all" }}
       data-testid="sliderule-canvas-block-node"
+      /* ⚠ 标题条砍掉之后，名字在画面上没有落脚点了。原生 title 是零重量的
+         补偿：悬停一下认得出是哪一块，不占一个像素。全名在右侧面板里。 */
+      title={`${kindLabel}·${box.name}`}
       data-block-name={box.name}
       data-block-page={box.pageId}
       data-block-live={live ? "1" : "0"}
@@ -1022,30 +1024,34 @@ function BlockNode({ data }: NodeProps<Node<BlockNodeData>>) {
         />
       ))}
       {/*
-        ## 整张卡：标题条 + 分隔线 + 主体（抄 ComfyUI 的 RenderShape.CARD）
+        ## 卡片：圆角 + 分层投影，**没有标题条**
 
-        2026-08-28 用户说"太平了"。上一版这里是**一个白方块 + 一条细边**，
-        标签是浮在外面的一个小色片。ComfyUI 的节点是
-        `drawNodeShape` 里那套：上圆角的标题条 → `rgba(0,0,0,0.2)` 分隔线 →
-        主体，整体一层投影（`render_shadows`）。
+        2026-08-28 走了三步才到这儿，每一步都是用户看完真机说的：
 
-        ⚠ 标题条和主体套在**同一个** overflow:hidden 的盒子里，投影和圆角
-          只画一次。分两个盒子各画各的，接缝处会露出两条投影叠在一起的暗线——
-          那种错不报错，只是看着脏。
+          一、"太平了"     → 照 ComfyUI 的 RenderShape.CARD 补了
+                             标题条 + 分隔线 + 主体 + 投影
+          二、"我们是区块，不是属性面板"
+                           → 按类型分色的标题条读起来是分类目录，改成中性色
+          三、"直接去掉标题条"
 
-        ⚠ 盒子从 `-labelBand` 起算，高 `labelBand + h`：标题条画在节点盒子
-          **外面**，而排布早就把它算进视觉盒了（block-node-layout 的 toBox
-          口径）。这里的负偏移和那边的 `+labelBand` 是同一件事的两半，
-          改一边不改另一边＝标题条压住上一块的内容。
+        ⚠ 砍标题条**不是**回到最早那个白方块。"太平"是两件事叠出来的：
+          没有层次，以及标签因为 LOD 阈值算错从来没显示过（见
+          blockDetailZoomThreshold 头注）。层次这半是圆角 + 分层投影给的，
+          跟标题条无关，所以留着。
+
+        ⚠ 块可以没有标题，是因为它跟 ComfyUI 的节点不是一回事：它画的是
+          **抽象算子**，不写名字就认不出；我们这儿是**页面那一块的真渲染**，
+          内容自己就是名字。名字要用的时候在右侧面板里。
+          这里只挂一个原生 title——鼠标停一下能看到全名，画面上零重量。
+
+        ⚠ 排布那边跟着删了 labelBand（block-node-layout）。这两处是同一件事
+          的两半：只删一边，整条块带会整体错开 56 个单位，而画面上看着只是
+          "跟画板没对齐"，不报错。
       */}
       <div
-        className="absolute flex flex-col overflow-hidden"
+        className="absolute inset-0 overflow-hidden"
         data-testid="sliderule-canvas-block-card"
         style={{
-          left: 0,
-          top: -BLOCK_CELL.labelBand,
-          width: box.w,
-          height: BLOCK_CELL.labelBand + box.h,
           borderRadius: BLOCK_CHROME.radius,
           boxShadow: BLOCK_CHROME.shadow,
           background: "#fff",
@@ -1055,58 +1061,6 @@ function BlockNode({ data }: NodeProps<Node<BlockNodeData>>) {
           outlineOffset: `${1 * inv}px`,
         }}
       >
-        {/* 标题条。
-            ⚠ 色条**永远画**，只有里面的字跟着 LOD 收（同 ComfyUI 的
-              low_quality：丢的是文字圆角阴影，形状和颜色照画）。全景那一档
-              这排色条正是"这页由几张表几个指标拼成"的读法——上一版把整个
-              标签收掉，剩下一排白方块，那才是"太平了"的来源。
-            ⚠ 分隔线用 inset 阴影，不用 borderBottom：border 会把标题条撑高
-              2 个单位，而排布那边按 labelBand 整数算，撑高就对不上了。 */}
-        <div
-          className="flex shrink-0 items-center overflow-hidden"
-          data-testid="sliderule-canvas-block-title"
-          style={{
-            height: BLOCK_CELL.labelBand,
-            /* ⚠ **全部块共用一个中性色**，不按类型分。用户 2026-08-28
-               裁决：「我们是区块，不是属性面板」——一排按类型上色的色带
-               读起来是分类目录，而这些是页面的零件，关系靠线不靠色卡。
-               ComfyUI 本身也是这样：默认标题色只有一个，node_colors 那张表
-               是用户手动给某个节点挑的，不是按类型自动分的。 */
-            background: selected ? "#7c3aed" : BLOCK_CHROME.titleBar,
-            boxShadow: `inset 0 -${BLOCK_CHROME.separator}px 0 rgba(0,0,0,0.2)`,
-          }}
-        >
-          {/* 标题前那个点（ComfyUI 的 title box，box_size=10 于 30 高的条上）。
-              居中占满第一个 labelBand 见方的格子——正是 computeSize 里
-              `padLeft = NODE_TITLE_HEIGHT` 那一项留出来的位置。 */}
-          <span
-            className="shrink-0 rounded-full"
-            style={{
-              width: BLOCK_CHROME.titleDot,
-              height: BLOCK_CHROME.titleDot,
-              marginLeft: (BLOCK_CELL.labelBand - BLOCK_CHROME.titleDot) / 2,
-              background: "rgba(255,255,255,0.8)",
-            }}
-          />
-          {showDetail ? (
-            <span
-              className="truncate text-white"
-              style={{
-                marginLeft: (BLOCK_CELL.labelBand - BLOCK_CHROME.titleDot) / 2,
-                marginRight: BLOCK_CELL.labelBand * 0.33,
-                /* ⚠ 画布单位，**不反缩放**。上一版写死 11px + scale(1/zoom)，
-                   于是 LOD 阈值 6/11=0.545 永远够不着，标签一次没显示过。
-                   见 block-node-layout 里 blockDetailZoomThreshold 的头注。 */
-                fontSize: BLOCK_CHROME.titleFont,
-                lineHeight: 1,
-              }}
-            >
-              {blockTitleText({ kindLabel, name: box.name })}
-            </span>
-          ) : null}
-        </div>
-
-        <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
         {live ? (
           /*
            * 整页铺进来，再往左上挪，那一块正好落在洞口。
@@ -1172,12 +1126,9 @@ function BlockNode({ data }: NodeProps<Node<BlockNodeData>>) {
             </span>
           </div>
         )}
-        </div>
 
-        {/* ⚠ 截断要**如实说**，而且不能塞进标题条：标题宽度是按
-            blockTitleText 算出来的（computeSize 的 title_width 那一项），
-            往后面追字只会被 truncate 吃掉——那就成了"只显示上半截"这条
-            提示自己被截断，正是本仓最烦的那种静默失效。 */}
+        {/* ⚠ 截断要**如实说**。这是节点上**仅剩的一处文字**，LOD 阈值就是
+            从它的字号反推的（见 blockDetailZoomThreshold）。 */}
         {box.truncated && showDetail ? (
           <span
             className="pointer-events-none absolute rounded text-white"
@@ -1185,8 +1136,8 @@ function BlockNode({ data }: NodeProps<Node<BlockNodeData>>) {
             style={{
               right: BLOCK_CHROME.radius,
               bottom: BLOCK_CHROME.radius,
-              padding: `${BLOCK_CHROME.titleFont * 0.15}px ${BLOCK_CHROME.titleFont * 0.4}px`,
-              fontSize: BLOCK_CHROME.titleFont * 0.8,
+              padding: `${BLOCK_CHROME.hintFont * 0.15}px ${BLOCK_CHROME.hintFont * 0.4}px`,
+              fontSize: BLOCK_CHROME.hintFont,
               lineHeight: 1,
               background: "rgba(15,23,42,0.72)",
             }}

@@ -23,6 +23,14 @@ function read(rel: string): string {
 const STAGE = read("../SpecPageCanvasStage.tsx");
 const LAYOUT = read("../block-node-layout.ts");
 
+/** BlockNode 那一段源码。⚠ 画板节点自己有标题条，全文件搜会误判。 */
+function blockNodeBody(): string {
+  const a = STAGE.indexOf("function BlockNode(");
+  const b = STAGE.indexOf("function AssetNode(");
+  if (a < 0 || b < a) throw new Error("找不到 BlockNode 那一段");
+  return STAGE.slice(a, b);
+}
+
 describe("块节点真的挂上了画布", () => {
   it("注册了 block 这个节点类型（不注册的话 React Flow 静默不渲染）", () => {
     expect(STAGE).toMatch(/nodeTypes\s*=\s*\{[^}]*block:\s*BlockNode/s);
@@ -141,7 +149,10 @@ describe("反向判据", () => {
     // 2026-08-28 用户："太规矩了"。上一版所有块一律 440 宽，
     // 通栏指标条和小卡在画布上一样宽。
     expect(LAYOUT).toContain("export function computeBlockSize(");
-    expect(LAYOUT).toContain("titleBarWidth(blockTitleText(rect))");
+    expect(LAYOUT).toContain("rect.rect.width * BLOCK_SIZE.designScale");
+    /* ⚠ 反向：标题条砍掉之后 `title_width` 那一项必须一起删——留着就是
+       在为一个不画的东西留宽度，而它撑出来的宽度看着还挺"自然"。 */
+    expect(LAYOUT).not.toContain("titleBarWidth");
     // 反向：格宽常数没了（还留着就说明有人在读老的那份）
     expect(LAYOUT).not.toMatch(/BLOCK_CELL[\s\S]{0,400}\n\s*width:\s*\d+,/);
     // 反向：列偏移必须是前缀和，不许 i × 常数
@@ -312,80 +323,57 @@ describe("反向判据", () => {
     expect(STAGE).toContain("known.has(id)");
   });
 
-  it("⚠ 标题条**永远画**，只有里面的字跟 LOD 收", () => {
+  it("⚠ 节点上**没有标题条**（用户三轮裁决的终点）", () => {
     /*
-     * 2026-08-28 用户："太平了"。上一版把整个标签挂在 LOD 上，而那条阈值
-     * 又算错了（见 blockDetailZoomThreshold 头注），结果**一次都没显示过**
-     * —— 画布上就是一排没有标题的白方块。
+     * 2026-08-28：「太平了」→ 补 CARD 那套 → 「我们是区块，不是属性面板」
+     * → 中性色 → 「直接去掉标题条」。
      *
-     * ComfyUI 的 low_quality 丢的是文字/圆角/阴影，**形状和颜色照画**
-     * （LGraphCanvas.ts 那段 `shape == BOX || low_quality` 仍走填色 rect）。
+     * ⚠ 只在 BlockNode 这一段里找——画板节点自己是有标题条的，全文件搜
+     *   会把它误判成没删干净。
+     * 变异：把标题条那个 div 加回来，这条红。
      */
-    const card = STAGE.indexOf('data-testid="sliderule-canvas-block-card"');
-    const title = STAGE.indexOf('data-testid="sliderule-canvas-block-title"');
-    expect(card).toBeGreaterThan(-1);
-    expect(title).toBeGreaterThan(card);
-    // 反向：卡片到标题条之间**不许**有 showDetail —— 有就说明色条也被收了
-    expect(STAGE.slice(card, title)).not.toContain("showDetail");
-    // 正向：标题条**里面**才是 showDetail 管的那半
-    expect(STAGE.slice(title, title + 900)).toContain("showDetail ? (");
-  });
-
-  it("⚠ 标题字号是画布单位，不反缩放（LOD 阈值才成立）", () => {
-    // 上一版 `fontSize: 11` + `scale(1/zoom)`，字号跟缩放无关，
-    // 而阈值公式里的 NODE_TEXT_SIZE 指的是图坐标字号 —— 阈值永远够不着。
-    const title = STAGE.indexOf('data-testid="sliderule-canvas-block-title"');
-    const seg = STAGE.slice(title, title + 1400);
-    expect(seg).toContain("fontSize: BLOCK_CHROME.titleFont");
-    expect(seg).not.toMatch(/fontSize:\s*\d+\s*,/);
-    /* 反向：浮在节点外面那个小色片没了（translateY(-100%) 是它的标志）。
-       ⚠ 只在 BlockNode 这一段里找——ElementSpot / AssetNode 的标签仍然是
-         那种浮层，全文件搜会把它们误判成没删干净。 */
-    const body = STAGE.slice(
-      STAGE.indexOf("function BlockNode("),
-      STAGE.indexOf("function AssetNode(")
-    );
-    expect(body.length).toBeGreaterThan(500);
-    expect(body).not.toContain("translateY(-100%)");
-  });
-
-  it("⚠ 标题条的高度和排布用的是**同一个**常数", () => {
-    // 渲染按 A 画、排布按 B 留位，标题条会压住上一块的内容 —— 不报错。
-    expect(STAGE).toContain("top: -BLOCK_CELL.labelBand");
-    expect(STAGE).toContain("height: BLOCK_CELL.labelBand + box.h");
-    expect(STAGE).toContain("height: BLOCK_CELL.labelBand,");
-  });
-
-  it("⚠ 标题条读的是那个中性色，不是块类型的色", () => {
-    // 用户 2026-08-28：「我们是区块，不是属性面板」。
-    // 变异：改回 tint.bar / tint.ink，这条红。
-    const title = STAGE.indexOf('data-testid="sliderule-canvas-block-title"');
-    const seg = STAGE.slice(title, title + 900);
-    expect(seg).toContain("BLOCK_CHROME.titleBar");
-    expect(seg).not.toContain("tint.");
+    const body = blockNodeBody();
+    expect(body).not.toContain("sliderule-canvas-block-title");
+    expect(body).not.toContain("BLOCK_CHROME.titleBar");
+    expect(body).not.toContain("BLOCK_CHROME.titleFont");
+    expect(body).not.toContain("blockTitleText");
     // 反向：类型色只许出现在降级静态卡那一段
-    const staticAt = STAGE.indexOf(
-      'data-testid="sliderule-canvas-block-node-static"'
-    );
-    expect(staticAt).toBeGreaterThan(title);
-    expect(STAGE.slice(title, staticAt)).not.toContain("tint.");
+    const staticAt = body.indexOf('data-testid="sliderule-canvas-block-node-static"');
+    expect(staticAt).toBeGreaterThan(-1);
+    expect(body.slice(0, staticAt)).not.toContain("tint.");
   });
 
-  it("节点外观照 CARD 那套：圆角 + 分层投影 + 分隔线", () => {
+  it("⚠ 砍标题条不等于回到白方块：圆角和分层投影得留着", () => {
+    // "太平了"是没有层次 + 标签从没显示过两件事叠出来的；层次这半跟
+    // 标题条无关。变异：把 radius/shadow 也删掉，这条红。
     expect(STAGE).toContain("borderRadius: BLOCK_CHROME.radius");
     expect(STAGE).toContain("boxShadow: BLOCK_CHROME.shadow");
-    expect(STAGE).toContain("BLOCK_CHROME.separator");
-    // 反向：老的那条 4px 圆角 + 平投影不许还在块节点上
     expect(STAGE).not.toMatch(
       /sliderule-canvas-block-card[\s\S]{0,600}borderRadius:\s*4,/
     );
   });
 
-  it("⚠ 截断提示单独画，不是往标题后面追字", () => {
-    // 标题宽是按 blockTitleText 算出来的（computeSize 的 title_width），
-    // 往后面追字只会被 truncate 吃掉 —— "只显示上半截"这条提示自己被截断。
+  it("⚠ 名字没了落脚点，改挂原生 title（不是干脆不给）", () => {
+    // 悬停认得出是哪一块，画面上零重量；全名在右侧面板里。
+    expect(blockNodeBody()).toContain(
+      "title={`${kindLabel}·${box.name}`}"
+    );
+  });
+
+  it("⚠ 排布那边的 labelBand 也删干净了（成对的东西只删一半必然错位）", () => {
+    // 只删一边，整条块带会整体错开 56 个单位，而画面上看着只是
+    // "跟画板没对齐"，不报错。
+    expect(LAYOUT).not.toContain("labelBand:");
+    expect(LAYOUT).not.toContain("BLOCK_CELL.labelBand");
+    expect(blockNodeBody()).not.toContain("BLOCK_CELL.labelBand");
+  });
+
+  it("⚠ 截断如实说，且 LOD 阈值盯的就是它的字号", () => {
+    // 它是节点上**仅剩的一处文字**。阈值还挂在一个不再存在的标题字号上，
+    // 就是上一版那个"公式看着还对、数已经没意义"的错。
     expect(STAGE).toContain('data-testid="sliderule-canvas-block-truncated"');
-    expect(STAGE).not.toContain('" ·只显示上半截"');
+    expect(STAGE).toContain("fontSize: BLOCK_CHROME.hintFont");
+    expect(LAYOUT).toContain("BLOCK_HINT_FONT_PX = BLOCK_CHROME.hintFont");
   });
 
   it("静态卡里的字**不反缩放**（外面那行标签才反缩放）", () => {

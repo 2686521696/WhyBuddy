@@ -65,26 +65,6 @@ export const BLOCK_CELL = {
    */
   gap: 56,
   /**
-   * 标题条的高度（画布坐标）。
-   *
-   * ⚠ 标题条画在节点**上方**（节点盒子外面），但排布必须**把它算进视觉盒**。
-   *   这是抄 ComfyUI_frontend `src/composables/graph/useArrangeNodes.ts`
-   *   （本地 clone，commit 5d24e4e）的 `toBox`：
-   *
-   *       visualHeight: node.size[1] + titleHeight
-   *       position:     { y: visualTop + box.titleHeight }
-   *
-   *   排布全程按**视觉盒**算，摆完再把标题高度加回去换成内容坐标。
-   *
-   *   上一版没这么做——排布按内容高度算，标签在盒子外面白占地方，于是矮块
-   *   的标签互相压住。当时是加了个 `minRow` 兜底步距硬撑开的，那是在治症状。
-   *   现在按 ComfyUI 的口径把标签算进盒子，minRow 就不需要了，已删。
-   *
-   *   跟 canvas-board-layout 的 `LABEL_BAND`（画板标题条）是同一件事，
-   *   只是尺度不同。
-   */
-  labelBand: 56,
-  /**
    * 单个块节点的高宽比上限。
    *
    * ⚠ 真机上有"长表格"这种块，原始高宽比能到 6:1，按宽度等比放大后会拖出
@@ -152,26 +132,30 @@ export const BLOCK_SIZE = {
 /**
  * 节点外观的尺寸，**画布坐标**。
  *
- * ## 为什么这些数要写在这一层
+ * ## 为什么还剩这两条
  *
- * 用户 2026-08-28 的第二句话是"太平了"。真机截图上块就是一排白方块加一条
- * 细边——因为：
+ * 用户 2026-08-28 的原话是"太平了"。第一版按 ComfyUI 的 `RenderShape.CARD`
+ * 补了一整套：标题条（含 title box 那个点）+ 分隔线 + 主体 + 投影。
+ * 随后两轮裁决把标题条那半整个砍掉了：
  *
- *   1. 没有标题条。标签是浮在节点外面的一个小色片，而且（见下）几乎从不显示。
- *   2. 没有层次。只有 `borderRadius: 4` + 1px 描边 + 一个几乎看不见的投影。
+ *   一、"我们是区块，不是属性面板" —— 按类型分色的色带读起来是分类目录
+ *   二、"直接去掉标题条"
  *
- * ComfyUI 的节点是 `RenderShape.CARD`：**标题条（上圆角）+ 分隔线 + 主体**，
- * 外加 `render_shadows` 那层投影。抄它的比例（`src/lib/litegraph/src/`
- * `LiteGraphGlobal.ts`，本地 clone commit 5d24e4e）：
+ * ⚠ 砍掉标题条**不等于回到上一版的白方块**。"太平"是两件事叠出来的：
+ *   没有层次，以及（更要命的）标签因为 LOD 阈值算错从来没显示过。
+ *   层次这半靠圆角 + 分层投影，跟标题条无关，所以留着。
  *
- *     NODE_TITLE_HEIGHT = 30   ROUND_RADIUS = 8   NODE_TEXT_SIZE = 14
+ * ## 为什么块可以没有标题
+ *
+ * ComfyUI 的节点必须有标题：它画的是**抽象算子**，不写名字就认不出。
+ * 我们的块是**页面上那一块的真渲染**——内容自己就是它的名字。
+ * 名字要用的时候（选中改写、反查影响面）在右侧面板里，那儿有地方写全。
+ *
+ * 比例仍照 ComfyUI 折算（`src/lib/litegraph/src/LiteGraphGlobal.ts`，
+ * 本地 clone commit 5d24e4e）：
+ *
+ *     ROUND_RADIUS = 8   NODE_TITLE_HEIGHT = 30   NODE_TEXT_SIZE = 14
  *     DEFAULT_SHADOW_COLOR = 'rgba(0,0,0,0.5)'   offset (2,2) blur 3
- *
- * 我们的标题条是 56（labelBand），所以按 **标题条高**等比折算：
- *
- *     radius     = 56 × (8/30)  ≈ 15  → 取 14
- *     titleFont  = 56 × (14/30) ≈ 26
- *     titleDot   = 56 × (10/30) ≈ 18   （drawTitleBox 的 box_size = 10）
  *
  * ⚠ 投影的 alpha **不照抄 0.5**：ComfyUI 画在深色画布上，我们的画布是浅色，
  *   0.5 的黑投影在浅底上是一圈脏。取 0.22/0.16 两层（分层的道理见
@@ -181,90 +165,19 @@ export const BLOCK_SIZE = {
  *   同 BlockNode 里 iframe 那条纪律。
  */
 export const BLOCK_CHROME = {
-  /**
-   * 圆角。
-   *
-   * ComfyUI 是分两次画的（标题条 `[R,R,0,0]`、主体 `[R,R,0,0]`）；我们改成
-   * **整张卡一个圆角 + overflow:hidden**，看起来一样，但投影只画一次。
-   * 分两个盒子各画各的，接缝处会露出两条投影叠在一起的暗线。
-   */
+  /** 圆角。整张卡一个圆角 + overflow:hidden，投影只画一次。 */
   radius: 14,
-  /** 标题文字，画布单位。LOD 阈值就是从它反推的，见 blockDetailZoomThreshold。 */
-  titleFont: 26,
-  /** 标题前那个小圆点（ComfyUI 的 title box）。 */
-  titleDot: 18,
-  /** 标题条与主体之间那条分隔线，同 `ctx.fillRect(0, -1, w, 2)`。 */
-  separator: 2,
+  /**
+   * 「只显示上半截」那枚提示的字号，画布单位。
+   *
+   * ⚠ LOD 阈值就是从它反推的（见 blockDetailZoomThreshold）。它是节点上
+   *   **仅剩的一处文字**——标题条砍掉之后，阈值该盯的就是它。
+   *   留着一个不再对应任何文字的字号去算阈值，是最典型的"改了一半"。
+   */
+  hintFont: 26,
   /** 投影，画布单位（ComfyUI 的 shadow 也是图坐标，随缩放一起变）。 */
   shadow: "0 6px 14px -4px rgba(0,0,0,0.22), 0 2px 4px rgba(0,0,0,0.16)",
-  /**
-   * 标题条的底色，**全部块共用一个**。
-   *
-   * ## ⚠ 不按块类型上色（2026-08-28 用户裁决）
-   *
-   * 我第一版给八种块各配了一条标题条颜色。用户一句话打回：
-   * **"我们是区块，不是属性面板"**——一排按类型上色的色带读起来是
-   * 「分类目录」，而画布上这些是**页面的零件**，它们之间的关系靠线，
-   * 不靠色卡。
-   *
-   * 这条也**更接近 ComfyUI 本身**：它的默认标题色只有一个
-   * （`NODE_DEFAULT_COLOR = '#333'`，全部节点共用）；`node_colors`
-   * 那张表是**用户手动给某个节点挑的**，不是按类型自动分的。
-   * 我上一版把 opt-in 的东西做成了自动分类，抄错了一层。
-   *
-   * 取值照它的口径：近中性的暗色，色度 0.051（`red: '#322'` 是 0.067）。
-   *
-   * ⚠ 类型色**没有全删**：`fill`/`ink` 还在降级静态卡上用着。那是"没有
-   *   内容可显示时至少说清这是什么"，跟"给每个块贴分类标签"是两件事。
-   */
-  titleBar: "#3a3f47",
 } as const;
-
-/**
- * 东亚宽字符（占一个全角宽）。范围取 Unicode 的 East Asian Wide/Fullwidth
- * 那几段，够用即可——判据钉的是"中文按 1.0 折算"，不是逐码位精确。
- */
-const WIDE_CHAR =
-  /[\u1100-\u115F\u2E80-\uA4CF\uA960-\uA97F\uAC00-\uD7A3\uF900-\uFAFF\uFE10-\uFE19\uFE30-\uFE6F\uFF00-\uFF60\uFFE0-\uFFE6]/;
-
-/**
- * 标题文字有多宽（画布单位）。
- *
- * ComfyUI 没有 canvas 量测器时的兜底是 `font_size * text.length * 0.6`
- * （`compute_text_size` 里那一行）。**那条对中文是错的**：中文一个字就是
- * 一个全角宽，按 0.6 折算会短掉四成——标题照样被截断，而这一层的目的
- * 恰恰是"让节点宽到装得下标题"。所以中日韩按 1.0、其余按 0.55 分开算。
- */
-export function titleTextWidth(text: string, fontPx: number): number {
-  let units = 0;
-  for (const ch of text) units += WIDE_CHAR.test(ch) ? 1 : 0.55;
-  return units * fontPx;
-}
-
-/**
- * 标题条要求节点至少多宽。
- *
- * 抄 `computeSize` 里的 `title_width`：
- *
- *     padLeft  = NODE_TITLE_HEIGHT
- *     padRight = padLeft * 0.33
- *     title_width = padLeft + textWidth + padRight
- *
- * padLeft 之所以是整整一个标题条高，是因为标题左边有那个小圆点。
- */
-export function titleBarWidth(text: string): number {
-  const padLeft = BLOCK_CELL.labelBand;
-  const padRight = padLeft * 0.33;
-  return padLeft + titleTextWidth(text, BLOCK_CHROME.titleFont) + padRight;
-}
-
-/** 节点标题条上显示的那行字。**排版和渲染必须用同一个函数**取。 */
-export function blockTitleText(rect: {
-  kindLabel: string;
-  name: string;
-}): string {
-  return `${rect.kindLabel}·${rect.name}`;
-}
 
 /**
  * 一块的画布尺寸——照 `computeSize` 的口径：**取最大值，带下限**。
@@ -277,11 +190,11 @@ export function computeBlockSize(
   boardHeight: number
 ): { w: number; h: number; scale: number; truncated: boolean } {
   const natural = rect.rect.width * BLOCK_SIZE.designScale;
-  const wanted = Math.max(
-    natural,
-    titleBarWidth(blockTitleText(rect)),
-    BLOCK_SIZE.minWidth
-  );
+  /* ⚠ 上一版这里还有一项 `title_width`（ComfyUI computeSize 的第三项），
+     用来保证节点宽到装得下标题条。标题条 2026-08-28 被砍掉之后那一项
+     **必须一起删**——否则就是在为一个不画的东西留宽度，而且它撑出来的
+     那几档宽度看着还挺"自然"，谁也不会发现多算了。 */
+  const wanted = Math.max(natural, BLOCK_SIZE.minWidth);
   const w = Math.min(wanted, BLOCK_SIZE.maxWidth);
   const scale = w / rect.rect.width;
   const wantedH = rect.rect.height * scale;
@@ -304,15 +217,17 @@ export function computeBlockSize(
  *   远程审方页的网格 1832 高，越过下一排画板 520。
  */
 function cellMaxHeight(width: number, boardHeight: number): number {
-  return Math.min(
-    width * BLOCK_CELL.maxAspect,
-    Math.max(BLOCK_CELL.labelBand, boardHeight - BLOCK_CELL.labelBand)
-  );
+  return Math.min(width * BLOCK_CELL.maxAspect, Math.max(0, boardHeight));
 }
 
-/** 一块按自己的宽度铺开之后占多高（含标题条）。 */
+/**
+ * 一块按自己的宽度铺开之后占多高。
+ *
+ * ⚠ 标题条砍掉之后"视觉高"就等于内容高了，这个函数只剩一层转发。留着是因为
+ *   排布那两处（选列数、摆位）必须**同一个口径**——各写各的迟早分叉。
+ */
 function cellVisualHeight(rect: BlockRect, boardHeight: number): number {
-  return computeBlockSize(rect, boardHeight).h + BLOCK_CELL.labelBand;
+  return computeBlockSize(rect, boardHeight).h;
 }
 
 /** 瀑布流按 cols 列 packing 之后的总高。 */
@@ -490,8 +405,7 @@ export function planBlockGrid(
 
     const visualTop = colVisualBottom[col];
     items.push({ rect: b, col, visualTop, ...size });
-    colVisualBottom[col] =
-      visualTop + BLOCK_CELL.labelBand + size.h + BLOCK_CELL.gap;
+    colVisualBottom[col] = visualTop + size.h + BLOCK_CELL.gap;
     if (size.w > colWidths[col]) colWidths[col] = size.w;
   }
 
@@ -536,17 +450,20 @@ export function layoutBlockNodes(
   if (plan.items.length === 0) return [];
 
   const originX = board.x + board.w + BLOCK_CELL.stripGap;
-  /* ⚠ 顶端是**视觉顶**（第一块标题条的上沿），加回 labelBand 才是内容顶。
-     同 arrangeGrid 的 `anchor.posY - anchor.titleHeight` → `visualTop + titleHeight`。 */
-  const originVisualTop = board.y - BLOCK_CELL.labelBand;
+  /* 顶端跟画板顶齐平。
+     ⚠ 上一版这里是 `board.y - labelBand`，配合下面的 `+ labelBand`——那是
+       抄 arrangeGrid 的 `anchor.posY - anchor.titleHeight` → `visualTop +
+       titleHeight`，为的是把画在盒子外面的标题条算进视觉盒。标题条没了，
+       这两个偏移**必须成对删掉**：只删一处，整条块带会整体上移或下移
+       56 个单位，而画面上看着只是"跟画板没对齐"，不报错。 */
+  const originTop = board.y;
 
   return plan.items.map(it => ({
     key: blockKey(board.pageId, it.rect.name),
     pageId: board.pageId,
     name: it.rect.name,
     x: originX + plan.colX[it.col],
-    /* 视觉顶 + 标题条 = 内容顶。 */
-    y: originVisualTop + it.visualTop + BLOCK_CELL.labelBand,
+    y: originTop + it.visualTop,
     w: it.w,
     h: it.h,
     crop: {
@@ -575,17 +492,16 @@ export function blockGridExtraGapX(maxSpan: number): number {
 }
 
 /**
- * 一页块网格的总高（含标题条与行距）。给"这一页的块摆不摆得下"用。
+ * 一页块网格的总高（含行距）。给"这一页的块摆不摆得下"用。
  *
  * ⚠ 空数组回 0——多算一行会让外接盒每页都虚高一截，「适应画布」跟着偏。
- * ⚠ 从**视觉顶**（首行标题条的上沿）量到末行底，跟排布用的是同一套盒子。
  */
 export function blockGridHeight(boxes: readonly BlockNodeBox[]): number {
   if (boxes.length === 0) return 0;
   let top = Infinity;
   let bottom = -Infinity;
   for (const b of boxes) {
-    top = Math.min(top, b.y - BLOCK_CELL.labelBand);
+    top = Math.min(top, b.y);
     bottom = Math.max(bottom, b.y + b.h);
   }
   return bottom - top;
@@ -605,22 +521,24 @@ export function blockGridHeight(boxes: readonly BlockNodeBox[]): number {
  * 用 sqrt(DPR) 是它注释里的原话：高 DPR 屏对可读性的提升不是线性的，
  * DPR=2 大约提升 40%，用 sqrt 近似。
  *
- * ## ⚠ 2026-08-28：上一版这条阈值**从来没成立过**
+ * ## ⚠ 2026-08-28：这条阈值曾经**从来没成立过**
  *
- * 公式没错，代进去的数错了：当时标签是**反缩放**画的（`fontSize: 11` 配
- * `transform: scale(1/zoom)`），屏幕上永远是 11px，跟缩放无关。而公式里的
- * NODE_TEXT_SIZE 指的是**图坐标字号**。拿 11 代进去得到 6/11 = 0.545——
+ * 公式没错，代进去的数错了：当时块标签是**反缩放**画的（`fontSize: 11`
+ * 配 `transform: scale(1/zoom)`），屏幕上永远是 11px，跟缩放无关。而公式里
+ * 的 NODE_TEXT_SIZE 指的是**图坐标字号**。拿 11 代进去得到 6/11 = 0.545——
  * 于是画布常态的 17%~25% 全部低于阈值，**块标签一次都没显示过**。
  * 用户说的"太平了"，一半就是这个：一排没有标题的白方块。
  *
- * 现在标题字号改成画布单位（BLOCK_CHROME.titleFont = 26，跟着缩放一起变），
- * 公式才真的成立：6/26 ≈ 0.23 —— 全景（17%）不画字，稍微放大就出来。
+ * ## 现在它管的是什么
  *
- * ⚠ 关掉的是**文字**，不是标题条本身：色条照画（同 ComfyUI 的 low_quality
- *   仍然填色画形状）。全景那一档色条正是"这页由几张表几个指标拼成"的读法。
+ * 标题条后来被砍掉了（见 BLOCK_CHROME 头注），节点上**仅剩的文字**是
+ * 「只显示上半截」那枚提示。阈值就从它的字号反推：6/26 ≈ 0.23。
+ *
+ * ⚠ 字号换了就得换这里。留着一个不再对应任何文字的字号去算阈值，
+ *   跟上一版那个错是同一种错——公式看着还对，数已经没有意义了。
  */
-/** 标题字号（画布单位）。LOD 阈值从它反推——两者必须是同一个数。 */
-export const BLOCK_LABEL_FONT_PX = BLOCK_CHROME.titleFont;
+/** 节点上仅剩那处文字的字号（画布单位）。阈值从它反推——两者必须是同一个数。 */
+export const BLOCK_HINT_FONT_PX = BLOCK_CHROME.hintFont;
 /** 低于这个字号就认为读不出来了（同 ComfyUI 的 min_font_size_for_lod 默认档）。 */
 export const MIN_READABLE_FONT_PX = 6;
 
@@ -630,10 +548,16 @@ export function blockDetailZoomThreshold(
     : 1
 ): number {
   const dpr = Math.sqrt(devicePixelRatio > 0 ? devicePixelRatio : 1);
-  return MIN_READABLE_FONT_PX / (BLOCK_LABEL_FONT_PX * dpr);
+  return MIN_READABLE_FONT_PX / (BLOCK_HINT_FONT_PX * dpr);
 }
 
-/** 这个缩放档位该不该画块的细节（标题文字、影响线标签）。 */
+/**
+ * 这个缩放档位该不该画块上的文字。
+ *
+ * ⚠ 收的是**文字**，不是块：块节点本身照画（同 shouldMountBoard 那条
+ *   "剔除是性能手段，不是可见性判定"）。缩到看全景时正是最需要看见
+ *   每块在哪的时候。
+ */
 export function shouldDrawBlockDetail(
   zoom: number,
   devicePixelRatio?: number
@@ -655,14 +579,13 @@ export function shouldDrawBlockDetail(
  * 比不画还糟（看着像加载坏了）。给它按类型上色，全景下至少读得出
  * "这一页由几张表、几个指标、一个图表拼成"。
  *
- * ## ⚠ 标题条**不**用这套颜色
+ * ## ⚠ 只给静态卡，真渲染的块一点类型色都不上
  *
- * 2026-08-28 我一度给标题条也按类型配了色，用户打回：**"我们是区块，
- * 不是属性面板"**。标题条一律用 `BLOCK_CHROME.titleBar` 那一个中性色，
- * 理由写在那条常量的头注里。
+ * 2026-08-28 我一度给每个块配了一条按类型上色的标题条，用户两轮打回：
+ * **"我们是区块，不是属性面板"**，然后 **"直接去掉标题条"**。
  *
- * 两者的分界是**这块有没有内容可看**：静态卡什么都没有，颜色是它唯一
- * 说得出口的信息；真渲染的块内容自己就在那儿，再糊一层分类色只是噪音。
+ * 分界是**这块有没有内容可看**：静态卡什么都没有，颜色是它唯一说得出口的
+ * 信息；真渲染的块内容自己就在那儿，再糊一层分类色只是噪音。
  *
  * ⚠ 颜色只用来**分类**，不表示状态（好/坏/告警）。真机上块的类型是
  *   `data-block-kind`，跟 Python 的 BLOCK_KINDS 一字不差。

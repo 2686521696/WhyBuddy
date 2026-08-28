@@ -27,14 +27,11 @@ import {
   blockGridExtraGapX,
   blockGridHeight,
   blockGridSpan,
-  blockTitleText,
   blockDetailZoomThreshold,
   layoutBlockNodes,
   planBlockGrid,
   shouldDrawBlockDetail,
-  titleBarWidth,
-  titleTextWidth,
-  BLOCK_LABEL_FONT_PX,
+  BLOCK_HINT_FONT_PX,
   MIN_READABLE_FONT_PX,
   BLOCK_KIND_TINT,
   blockKindTint,
@@ -164,45 +161,6 @@ describe("⚠ 块宽按内容算（computeSize 口径）——这是「太规矩
     expect(widthOf(huge)).toBe(BLOCK_SIZE.maxWidth);
   });
 
-  it("⚠ 标题宽参与取最大（computeSize 的 title_width 那一项）", () => {
-    /*
-     * 名字长的块自己变宽，标题才不会被截断。
-     * 变异：把 titleBarWidth 那一项从 Math.max 里删掉，这条红——
-     *   删掉之后这块就是 minWidth（320），而它的标题要 500+。
-     */
-    const longName = rect(
-      "这是一个名字非常非常长的块用来撑宽标题条",
-      0,
-      0,
-      200,
-      200
-    );
-    const w = widthOf(longName);
-    expect(w).toBeGreaterThan(BLOCK_SIZE.minWidth);
-    expect(w).toBeGreaterThanOrEqual(titleBarWidth(blockTitleText(longName)));
-  });
-
-  it("⚠ 中文按全角量，不按 ComfyUI 那条 length×0.6", () => {
-    /*
-     * ComfyUI 没有 canvas 量测器时的兜底是 `font_size * text.length * 0.6`。
-     * 那条对中文短四成——照抄的话标题照样被截断，而这一层的目的恰恰是
-     * "让节点宽到装得下标题"。
-     * 变异：改成 text.length * 0.6 * fontPx，这条红。
-     */
-    const cjk = "物资台账出入库实时流水"; // 11 个全角
-    expect(titleTextWidth(cjk, 10)).toBeCloseTo(11 * 10, 6);
-    expect(titleTextWidth(cjk, 10)).toBeGreaterThan(cjk.length * 0.6 * 10);
-    // 西文仍按窄字算，别一刀切成全角
-    expect(titleTextWidth("abcdefghijk", 10)).toBeLessThan(
-      titleTextWidth(cjk, 10)
-    );
-  });
-
-  it("标题条留出左边那个点的位置（padLeft = 一个标题条高）", () => {
-    // computeSize 里 padLeft = NODE_TITLE_HEIGHT、padRight = padLeft*0.33。
-    expect(titleBarWidth("")).toBeCloseTo(BLOCK_CELL.labelBand * 1.33, 6);
-  });
-
   it("⚠ 各块的缩放差被收窄（上一版差 4.1 倍，字号跟着差 4 倍）", () => {
     /*
      * 统一 440 宽时：289→440 是 1.52×，1632→440 是 0.27×，差 5.6 倍；
@@ -218,7 +176,13 @@ describe("⚠ 块宽按内容算（computeSize 口径）——这是「太规矩
   });
 
   it("真机那 25 块：宽度不是一个数（至少五档）", () => {
-    // 这条是"太规矩"的直接反向判据：全压成一个数就红。
+    /*
+     * 这条是"太规矩"的直接反向判据：全压成一个数就红。
+     *
+     * ⚠ 2026-08-28 标题条砍掉、`title_width` 那一项跟着删掉之后，档数从
+     *   13 掉到 8——名字长的块不再自己撑宽了。8 档仍然够读出"这是通栏的、
+     *   那是一小张"，所以门槛留在 5 不动；真要退回一个常数照样红。
+     */
     const widths = new Set(realRects.map(r => widthOf(r)));
     expect(widths.size).toBeGreaterThanOrEqual(5);
   });
@@ -242,7 +206,7 @@ describe("网格摆位", () => {
     );
     const cols = chooseBlockGridColumns(tall, 1080);
     const boxes = layoutBlockNodes({ ...BOARD, h: 1080 }, tall);
-    const top = Math.min(...boxes.map(b => b.y - BLOCK_CELL.labelBand));
+    const top = Math.min(...boxes.map(b => b.y));
     const bottom = Math.max(...boxes.map(b => b.y + b.h));
     expect(bottom - top).toBeLessThanOrEqual(1080);
     expect(cols).toBeGreaterThan(Math.ceil(Math.sqrt(tall.length)) - 1);
@@ -269,7 +233,7 @@ describe("网格摆位", () => {
     const r = rect("甲", 0, 0, 520, 260);
     const [a] = layoutBlockNodes(BOARD, [r]);
     expect(a.x).toBe(BOARD.x + BOARD.w + BLOCK_CELL.stripGap);
-    // ⚠ 内容顶 = 视觉顶 + 标题条；视觉顶就是画板顶
+    // ⚠ 顶端跟画板顶齐平。标题条砍掉之后这里不再有 ±labelBand 的成对偏移
     expect(a.y).toBe(BOARD.y);
     expect(a.w).toBe(widthOf(r));
   });
@@ -304,7 +268,7 @@ describe("网格摆位", () => {
     /* ⚠ 用**宽块**：块高有高宽比上限，窄块再长也顶不高，一列就装下了，
        逼不出第二列（改成按内容算宽度之后第一版判据就栽在这上面）。 */
     const boxes = layoutBlockNodes(BOARD, [
-      rect("高", 0, 0, 1600, 2000), // 第 1 列，很高
+      rect("高", 0, 0, 1600, 2700), // 第 1 列，自己顶满一列
       rect("矮", 0, 0, 1600, 150), // 第 2 列
       rect("第三块", 0, 0, 1600, 150),
     ]);
@@ -315,8 +279,7 @@ describe("网格摆位", () => {
 
   it("⚠ 同一列里，下一块的**视觉顶**接在上一块底下（含标题条）", () => {
     // 抄 ComfyUI `visualHeight = size + titleHeight` 的那条。
-    // 变异：列高只累加内容高（去掉 labelBand），下一块的标题会叠在
-    // 上一块的内容上——不报错，只是看着糊。
+    // 变异：列高忘了加内容高或漏掉 gap，块会叠在一起——不报错，只是看着糊。
     const boxes = layoutBlockNodes(BOARD, [
       rect("甲", 0, 0, 520, 700),
       rect("乙", 0, 0, 520, 700),
@@ -326,7 +289,7 @@ describe("网格摆位", () => {
     const sameCol = boxes.filter(b => b.x === boxes[0].x);
     expect(sameCol.length).toBeGreaterThanOrEqual(2);
     const gapBetween = sameCol[1].y - (sameCol[0].y + sameCol[0].h);
-    expect(gapBetween).toBe(BLOCK_CELL.gap + BLOCK_CELL.labelBand);
+    expect(gapBetween).toBe(BLOCK_CELL.gap);
   });
 
   it("反向：块之间不许重叠（瀑布流最容易写坏的地方）", () => {
@@ -341,12 +304,8 @@ describe("网格摆位", () => {
         const a = boxes[i];
         const b = boxes[j];
         /* 视觉盒（含标题条）都不许相交 */
-        const aTop = a.y - BLOCK_CELL.labelBand;
-        const bTop = b.y - BLOCK_CELL.labelBand;
         const overlapX = a.x < b.x + b.w && b.x < a.x + a.w;
-        const overlapY =
-          aTop < bTop + b.h + BLOCK_CELL.labelBand &&
-          bTop < aTop + a.h + BLOCK_CELL.labelBand;
+        const overlapY = a.y < b.y + b.h && b.y < a.y + a.h;
         expect(overlapX && overlapY, `${a.name} 和 ${b.name} 叠了`).toBe(false);
       }
     }
@@ -360,12 +319,8 @@ describe("网格摆位", () => {
       for (let j = i + 1; j < boxes.length; j += 1) {
         const a = boxes[i];
         const b = boxes[j];
-        const aTop = a.y - BLOCK_CELL.labelBand;
-        const bTop = b.y - BLOCK_CELL.labelBand;
         const overlapX = a.x < b.x + b.w && b.x < a.x + a.w;
-        const overlapY =
-          aTop < bTop + b.h + BLOCK_CELL.labelBand &&
-          bTop < aTop + a.h + BLOCK_CELL.labelBand;
+        const overlapY = a.y < b.y + b.h && b.y < a.y + a.h;
         expect(overlapX && overlapY, `${a.name} 和 ${b.name} 叠了`).toBe(false);
       }
     }
@@ -454,7 +409,7 @@ describe("长块截断", () => {
      */
     const r = rect("长表", 0, 0, 1200, 6000);
     const [a] = layoutBlockNodes({ ...BOARD, h: 1080 }, [r]);
-    expect(a.h).toBe(1080 - BLOCK_CELL.labelBand);
+    expect(a.h).toBe(1080);
     expect(a.h).toBeLessThan(widthOf(r) * BLOCK_CELL.maxAspect);
     expect(a.truncated).toBe(true);
   });
@@ -465,7 +420,7 @@ describe("长块截断", () => {
     );
     const boxes = layoutBlockNodes({ ...BOARD, h: 1080 }, tall);
     const cols = chooseBlockGridColumns(tall, 1080);
-    const top = Math.min(...boxes.map(b => b.y - BLOCK_CELL.labelBand));
+    const top = Math.min(...boxes.map(b => b.y));
     const bottom = Math.max(...boxes.map(b => b.y + b.h));
     expect(cols).toBe(MAX_BLOCK_COLS);
     expect(bottom - top).toBeGreaterThan(0);
@@ -509,17 +464,17 @@ describe("反向判据", () => {
     ).toEqual([]);
   });
 
-  it("空块清单 → 网格高 0（不是一个标题条）", () => {
+  it("空块清单 → 网格高 0（不是一行）", () => {
     // 多算一行会让外接盒每页虚高一截，「适应画布」跟着偏。
     expect(blockGridHeight([])).toBe(0);
   });
 
-  it("网格高从**视觉顶**（首行标题条上沿）量到末行底", () => {
+  it("网格高从首行顶量到末行底", () => {
     const boxes = layoutBlockNodes(BOARD, [
       rect("甲", 0, 0, 520, 260),
       rect("乙", 0, 0, 520, 520),
     ]);
-    const top = Math.min(...boxes.map(b => b.y - BLOCK_CELL.labelBand));
+    const top = Math.min(...boxes.map(b => b.y));
     const bottom = Math.max(...boxes.map(b => b.y + b.h));
     expect(blockGridHeight(boxes)).toBe(bottom - top);
   });
@@ -580,7 +535,7 @@ describe("LOD：缩放太低就不画细节（抄 ComfyUI 的可读性反推）"
   it("阈值是从字号反推的，不是拍的魔数", () => {
     // threshold = 最小可读字号 / (标题字号 * sqrt(DPR))
     expect(blockDetailZoomThreshold(1)).toBeCloseTo(
-      MIN_READABLE_FONT_PX / BLOCK_LABEL_FONT_PX,
+      MIN_READABLE_FONT_PX / BLOCK_HINT_FONT_PX,
       6
     );
   });
@@ -591,9 +546,9 @@ describe("LOD：缩放太低就不画细节（抄 ComfyUI 的可读性反推）"
      * （11px 恒定），而公式里的 NODE_TEXT_SIZE 指图坐标字号。代 11 进去
      * 得 0.545，于是画布常态 17%~25% 全在阈值之下，**标签一次没显示过**，
      * 用户看到的就是一排没有标题的白方块（"太平了"的一半）。
-     * 变异：BLOCK_LABEL_FONT_PX 改回 11，这条和下面那条一起红。
+     * 变异：BLOCK_HINT_FONT_PX 改回 11，这条和下面那条一起红。
      */
-    expect(BLOCK_LABEL_FONT_PX).toBe(BLOCK_CHROME.titleFont);
+    expect(BLOCK_HINT_FONT_PX).toBe(BLOCK_CHROME.hintFont);
   });
 
   it("真机那三档：21% 全景不画字，40%／100% 画", () => {
@@ -626,23 +581,31 @@ describe("LOD：缩放太低就不画细节（抄 ComfyUI 的可读性反推）"
   });
 });
 
-describe("节点外观的尺寸（抄 RenderShape.CARD 的比例）", () => {
-  it("标题条里装得下那个点，还留得出两边的空", () => {
-    // 变异：titleDot 调到 ≥ labelBand，点会顶满整条，看着像个色块。
-    expect(BLOCK_CHROME.titleDot).toBeGreaterThan(0);
-    expect(BLOCK_CHROME.titleDot).toBeLessThan(BLOCK_CELL.labelBand);
+describe("⚠ 节点外观：有卡片的层次，**没有标题条**", () => {
+  it("标题条那一套常量全删干净了（留着＝改了一半）", () => {
+    /*
+     * 2026-08-28 用户三轮裁决的终点：「直接去掉标题条」。
+     *
+     * ⚠ 这条钉的是"删干净"。留一个 titleFont 在那儿不画任何字、留一个
+     *   labelBand 在排布里白占 56 个单位——两样都不报错，只是永远对不上。
+     * 变异：把任意一条加回来，这条红。
+     */
+    const chrome = BLOCK_CHROME as Record<string, unknown>;
+    for (const dead of ["titleFont", "titleDot", "separator", "titleBar"]) {
+      expect(chrome[dead], dead).toBeUndefined();
+    }
+    const cell = BLOCK_CELL as Record<string, unknown>;
+    expect(cell.labelBand).toBeUndefined();
   });
 
-  it("圆角、字号、分隔线都是正数，且圆角不超过标题条一半", () => {
-    // 圆角比标题条一半还大的话，上圆角会把标题条啃掉一块。
+  it("⚠ 砍标题条不等于回到白方块：圆角和投影得留着", () => {
+    /*
+     * "太平了"是两件事叠出来的：没有层次，以及标签因为 LOD 阈值算错
+     * 从来没显示过。层次这半跟标题条无关。
+     * 变异：把 radius/shadow 也一起删掉，这条红。
+     */
     expect(BLOCK_CHROME.radius).toBeGreaterThan(0);
-    expect(BLOCK_CHROME.radius).toBeLessThanOrEqual(BLOCK_CELL.labelBand / 2);
-    expect(BLOCK_CHROME.titleFont).toBeGreaterThan(0);
-    expect(BLOCK_CHROME.separator).toBeGreaterThan(0);
-  });
-
-  it("标题字号装得进标题条（字比条还高就露不全）", () => {
-    expect(BLOCK_CHROME.titleFont).toBeLessThan(BLOCK_CELL.labelBand);
+    expect(BLOCK_CHROME.shadow).toContain("rgba");
   });
 
   it("投影是**分层**的，不是单层大模糊", () => {
@@ -658,11 +621,8 @@ describe("节点外观的尺寸（抄 RenderShape.CARD 的比例）", () => {
     }
   });
 
-  it("标题文字排版和渲染取的是同一个函数", () => {
-    // 两边各拼一次的话，宽度按 A 算、显示是 B，标题会被截断而没人知道。
-    expect(blockTitleText({ kindLabel: "表格", name: "台账" })).toBe(
-      "表格·台账"
-    );
+  it("提示字号是正数（LOD 阈值从它反推，为 0 会把阈值打成无穷）", () => {
+    expect(BLOCK_CHROME.hintFont).toBeGreaterThan(0);
   });
 });
 
@@ -685,41 +645,15 @@ describe("块类型底色（抄 ComfyUI 低质量档「保形状保颜色、只�
     expect(new Set(fills).size).toBe(fills.length);
   });
 
-  it("⚠ 标题条**不按类型分色**——是区块，不是属性面板", () => {
+  it("⚠ 只有 fill/ink 两档——不许再冒出按类型分色的第三种用法", () => {
     /*
-     * 2026-08-28 用户裁决：我第一版给八种块各配了一条标题条颜色，
-     * 被一句话打回——「我们是区块，不是属性面板」。一排按类型上色的色带
-     * 读起来是分类目录，而画布上这些是页面的零件，关系靠线不靠色卡。
-     *
-     * 这条也更接近 ComfyUI：它的默认标题色只有一个（NODE_DEFAULT_COLOR），
-     * node_colors 那张表是用户手动给某个节点挑的，不是按类型自动分的。
-     *
-     * 变异：给 BLOCK_KIND_TINT 加回 bar 字段并让标题条读它，这条红。
+     * 2026-08-28 用户两轮打回：「我们是区块，不是属性面板」→
+     * 「直接去掉标题条」。类型色现在**只给降级静态卡**。
+     * 变异：加回一个 bar 字段，这条红。
      */
     for (const k of BLOCK_KINDS) {
       expect(Object.keys(BLOCK_KIND_TINT[k]).sort(), k).toEqual(["fill", "ink"]);
     }
-    expect(BLOCK_CHROME.titleBar).toMatch(/^#[0-9a-f]{6}$/);
-  });
-
-  it("⚠ 标题条那个中性色的色度得压得住（面积大的颜色不许太艳）", () => {
-    /*
-     * 标题条铺满整块的宽度。色度一高就会被读成状态色——第一版给指标块配的
-     * #b91c1c 是 0.616，真机截图上每页顶部一条通栏红带，看着像告警。
-     * ComfyUI 的 node_colors 全在 0.07 上下（`red: '#322'` 是 0.067）。
-     * 变异：titleBar 换成任何一个饱和色，这条红。
-     */
-    expect(colorChroma(BLOCK_CHROME.titleBar)).toBeLessThanOrEqual(0.1);
-  });
-
-  it("⚠ 标题条上是白字：对比度得撑得住（WCAG AA 4.5）", () => {
-    // 变异：把 titleBar 调亮成浅色，这条红——白字会糊在上面看不见。
-    const h = BLOCK_CHROME.titleBar.replace("#", "");
-    const c = [0, 2, 4]
-      .map(i => Number.parseInt(h.slice(i, i + 2), 16) / 255)
-      .map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
-    const lum = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-    expect(1.05 / (lum + 0.05)).toBeGreaterThanOrEqual(4.5);
   });
 
   it("色度函数本身对得上（判据自己也得能被咬）", () => {
