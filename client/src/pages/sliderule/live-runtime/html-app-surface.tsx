@@ -420,7 +420,7 @@ const ALLOWED_TAGS = [
   "feGaussianBlur", "feOffset", "feBlend", "feColorMatrix",
 ];
 
-const ALLOWED_ATTR = [
+export const ALLOWED_ATTR = [
   "class", "style", "id", "title", "colspan", "rowspan", "scope", "lang", "dir",
   "role", "tabindex", "datetime", "open", "charset", "content", "http-equiv", "name",
   "aria-label", "aria-hidden", "aria-describedby", "aria-current", "aria-expanded",

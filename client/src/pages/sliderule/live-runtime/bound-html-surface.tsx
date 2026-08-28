@@ -71,7 +71,7 @@ const ALLOWED_TAGS = [
   "feGaussianBlur", "feOffset", "feBlend", "feColorMatrix",
 ];
 
-const ALLOWED_ATTR = [
+export const ALLOWED_ATTR = [
   "class", "style", "id", "title", "colspan", "rowspan", "scope", "lang", "dir",
   "role", "tabindex", "datetime", "open",
   "aria-label", "aria-hidden", "aria-describedby", "aria-current", "aria-expanded",
@@ -90,6 +90,15 @@ const ALLOWED_ATTR = [
   "stop-opacity", "gradientUnits", "gradientTransform", "clip-path", "mask",
   "text-anchor", "dominant-baseline", "font-size", "font-weight", "font-family",
   "dx", "dy", "patternUnits",
+  // 导航切页的锚点（page_shell 打的）。⚠ 漏了它左侧菜单就点不动，而且不会有
+  // 任何一处报错——菜单还在，只是点了没反应。
+  //
+  // ⚠ 2026-08-28 补：这个词在 html-app-surface 那份里一直有，**这份一直漏着**。
+  //   今天没炸只是因为这个模块**当前零引用**（真正在跑的是 html-app-surface，
+  //   见文件头）。谁哪天把它接上去，菜单会被 DOMPurify 静默剥掉——ALLOW_DATA_ATTR
+  //   是 false，没列进来的 data-* 一律删，不报错。
+  //   两份白名单必须同改这条现在有判据钉着（dompurify-allowlists-agree）。
+  "data-page-id",
   // 壳节点自报家门（page_shell.mark_shell_parts 打的）。⚠ 两份白名单必须同改。
   "data-shell",
   // 块身份（page_blocks.mark_page_blocks 打的）。画布靠它认出「这一页是
