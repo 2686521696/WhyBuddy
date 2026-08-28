@@ -404,3 +404,163 @@ def merge_page_id_aliases(prev: Any, incoming: Any) -> Dict[str, str]:
                 if old_s and new_s and old_s != new_s:
                     out[old_s] = new_s
     return out
+
+
+#: 交付 HTML 里的菜单锚点：``<a data-page-id="p1">…标签…</a>``。
+_NAV_ANCHOR = re.compile(
+    r'<a\b[^>]*data-page-id="([^"]*)"[^>]*>(.*?)</a>', re.S | re.I
+)
+
+
+#: 生产侧 `page_shell._set_label` 写的就是 ``{icon}<span>{label}</span>``——
+#: 标签**永远在最后一个 span 里**。照这个结构取，别把整段文字揉在一起：
+#: 图标是 `<svg>` 时揉了也对（标签被剥空），是**文字/emoji** 时就会在标签
+#: 前面粘上一个字符，跟 navItems 的名字永远对不上。2026-08-28 判据当场咬到。
+_LAST_SPAN = re.compile(r"<span\b[^>]*>((?:(?!</span>).)*)</span>(?![\s\S]*<span\b)", re.S | re.I)
+
+
+def _label_text(markup: str) -> str:
+    """从菜单锚点里取出标签文字：优先最后一个 span，没有 span 才退回整段。"""
+    raw = markup or ""
+    m = _LAST_SPAN.search(raw)
+    if m:
+        raw = m.group(1)
+    return re.sub(r"\s+", "", re.sub(r"<[^>]+>", "", raw))
+
+
+def infer_page_id_aliases(
+    pages_html: Any, nav_items: Any, existing: Any = None
+) -> Dict[str, str]:
+    """给**存量**产物反推页面 id 别名表（旧 id → 新 id）。
+
+    ## 为什么需要它
+
+    别名表是 2026-08-28 才加的。此前生成的应用，HTML 里的孔烧的是草稿 id
+    （p1..pN），页键早已被第 4.5 步改成语义 id，而那张映射**当时没人记**。
+    宿主查不到就静默回落，表现是四个菜单项全点不动（真机
+    sr-20260827191954 / sr-20260827201847）。
+
+    ## ⚠ 按名字锚，**不按顺序**
+
+    `page_id_freeze` 模块头写死了这条：「顺序不当锚（SPEC 注释写过：顺序会变，
+    名字不会）」。2026-08-28 真机新跑一轮把这条坐实了——那一场的映射是
+
+        p1→service_desk  p2→book_list  p3→borrow_center
+        p4→overdue_penalty_ledger      p5→reader_archive
+
+    而 pages 字典的第一个键是 `book_list`。**按顺序反推会把 p1 判给
+    book_list，全盘错位。**
+
+    锚点是每个孔**同一个 `<a>` 里的标签文字**——`build_nav_items` 写它的时候，
+    标签和 `data-page-id` 就是一起打上去的，天然同源。
+
+    ## 对不上的宁可不填
+
+    - 标签在 navItems 里找不到 → 不填
+    - 同一个标签对应多个页（重名）→ 整个标签作废，不填
+    - 同一个孔在不同页里指向不同标签（产物本身就不自洽）→ 那个孔作废
+    - 孔本身就是交付页的 id（本来就好的）→ 不需要别名
+
+    留一个点不动的菜单项，好过把用户送到错的那一页。
+
+    ## existing 赢
+
+    已有的别名是**改名当时记下来的**，是事实；这里推出来的是重建。两者冲突
+    以事实为准（合并规则见 merge_page_id_aliases）。
+    """
+    pages = pages_html if isinstance(pages_html, dict) else {}
+    delivered = set(pages.keys())
+
+    # ⚠ 比之前先过一遍**生产那一侧同一个函数**（page_shell.nav_tab_label）。
+    #   它写标签时会剥掉「某某页」的「页」和产品名前后缀，而 navItems 存的是
+    #   spec 里的原名——两边不同源就对不上。
+    #   真机 sr-20260827072032：HTML 标签「闭环验真报告」，navItems
+    #   「闭环验真报告页」，第一版匹配器就在这一条上少补了一个孔。
+    #   两个形态都登记（原名 + 剥过的），别在这里另写一套剥法（CLAUDE.md §4）。
+    try:
+        from .page_shell import nav_tab_label as _tab_label
+    except Exception:  # noqa: BLE001 —— 反推是增强，import 不到就只按原名对
+        _tab_label = None
+
+    def _forms(name: str) -> List[str]:
+        out = [_label_text(name)]
+        if _tab_label is not None:
+            try:
+                out.append(_label_text(_tab_label(name)))
+            except Exception:  # noqa: BLE001
+                pass
+        return [f for f in dict.fromkeys(out) if f]
+
+    # 标签 → 页面 id。重名的标签整个作废——宁可不填也不猜。
+    by_label: Dict[str, str] = {}
+    dupe_labels: set = set()
+    for item in nav_items if isinstance(nav_items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        pid = str(item.get("id") or "").strip()
+        if not pid:
+            continue
+        for label in _forms(str(item.get("name") or "")):
+            if label in by_label and by_label[label] != pid:
+                dupe_labels.add(label)
+            by_label[label] = pid
+    for label in dupe_labels:
+        by_label.pop(label, None)
+
+    inferred: Dict[str, str] = {}
+    conflicted: set = set()
+    for html in pages.values():
+        if not isinstance(html, str):
+            continue
+        for hole, inner in _NAV_ANCHOR.findall(html):
+            hole = str(hole).strip()
+            if not hole or hole in delivered:
+                continue  # 本来就指得到页，不需要别名
+            target = by_label.get(_label_text(inner))
+            if not target or target not in delivered:
+                continue
+            if hole in inferred and inferred[hole] != target:
+                conflicted.add(hole)  # 同一个孔在不同页里指向不同标签
+                continue
+            inferred[hole] = target
+    for hole in conflicted:
+        inferred.pop(hole, None)
+
+    return merge_page_id_aliases(inferred, existing)
+
+
+def dangling_nav_holes(
+    pages_html: Any, aliases: Any = None, nav_items: Any = None
+) -> List[str]:
+    """这份产物里，点了会**真的没反应**的菜单孔。空 = 菜单是好的。
+
+    ⚠ 全集不是 `pages` 的键，是**前端会渲染出来的那批页**（2026-08-28 写这条
+      判定时第一版就错在这儿，把 13 个好会话报成了坏的）。
+
+      `spec-live-pages.specLivePageIds` 先放 navItems 的全部 id，再补
+      pages 里多出来的键。所以「导航里有、成品却缺」的那一页**仍然在清单里**，
+      只是 html 换成了 missingPageHtml 的骨架——点进去看到的是「这一页没有
+      成品界面」，那是**如实降级，不是点了没反应**（2026-08-20 Foclip 那次
+      专门修的就是这个）。
+
+      真正点不动的只有一种：孔既不是交付页、也不在导航清单里，别名也接不上。
+    """
+    pages = pages_html if isinstance(pages_html, dict) else {}
+    delivered = set(pages.keys())
+    for item in nav_items if isinstance(nav_items, list) else []:
+        if isinstance(item, dict) and str(item.get("id") or "").strip():
+            delivered.add(str(item["id"]).strip())
+    table = aliases if isinstance(aliases, dict) else {}
+    holes: set = set()
+    for html in pages.values():
+        if isinstance(html, str):
+            holes.update(h for h, _ in _NAV_ANCHOR.findall(html))
+    bad: List[str] = []
+    for hole in sorted(holes):
+        cur, seen = hole, set()
+        while cur not in delivered and cur in table and cur not in seen:
+            seen.add(cur)
+            cur = table[cur]
+        if cur not in delivered:
+            bad.append(hole)
+    return bad
