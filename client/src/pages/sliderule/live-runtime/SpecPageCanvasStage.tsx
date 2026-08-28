@@ -1067,10 +1067,12 @@ function BlockNode({ data }: NodeProps<Node<BlockNodeData>>) {
           data-testid="sliderule-canvas-block-title"
           style={{
             height: BLOCK_CELL.labelBand,
-            /* ⚠ 用 `bar` 不是 `ink`：标题条面积大，ink 那档的饱和度在这个
-               面积上会被读成状态色（真机上 metric 的 #b91c1c 成了一条通栏
-               红带，看着像告警）。见 BLOCK_KIND_TINT 头注。 */
-            background: selected ? "#7c3aed" : tint.bar,
+            /* ⚠ **全部块共用一个中性色**，不按类型分。用户 2026-08-28
+               裁决：「我们是区块，不是属性面板」——一排按类型上色的色带
+               读起来是分类目录，而这些是页面的零件，关系靠线不靠色卡。
+               ComfyUI 本身也是这样：默认标题色只有一个，node_colors 那张表
+               是用户手动给某个节点挑的，不是按类型自动分的。 */
+            background: selected ? "#7c3aed" : BLOCK_CHROME.titleBar,
             boxShadow: `inset 0 -${BLOCK_CHROME.separator}px 0 rgba(0,0,0,0.2)`,
           }}
         >

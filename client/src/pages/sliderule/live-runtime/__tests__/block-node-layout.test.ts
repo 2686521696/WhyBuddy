@@ -685,42 +685,41 @@ describe("块类型底色（抄 ComfyUI 低质量档「保形状保颜色、只�
     expect(new Set(fills).size).toBe(fills.length);
   });
 
-  it("每一种类型都有标题条颜色，且互不相同", () => {
-    const bars = BLOCK_KINDS.map(k => BLOCK_KIND_TINT[k].bar);
-    for (const b of bars) expect(b).toMatch(/^#[0-9a-f]{6}$/);
-    expect(new Set(bars).size).toBe(bars.length);
-  });
-
-  it("⚠ 标题条的色度必须压得住——面积大的颜色不许被读成状态色", () => {
+  it("⚠ 标题条**不按类型分色**——是区块，不是属性面板", () => {
     /*
-     * 2026-08-28：标签从小色片改成整条标题条之后，指标那档的 #b91c1c
-     * 从"一枚红色小标"变成"一条通栏红带"，真机截图上看着像告警——
-     * 而这套颜色的约定是"只分类、不表示状态"。
+     * 2026-08-28 用户裁决：我第一版给八种块各配了一条标题条颜色，
+     * 被一句话打回——「我们是区块，不是属性面板」。一排按类型上色的色带
+     * 读起来是分类目录，而画布上这些是页面的零件，关系靠线不靠色卡。
      *
-     * ComfyUI 的 node_colors 全是近中性暗色（`red: '#322'` 色度 0.067）。
-     * 变异：bar 改回 ink 那一套（#b91c1c 色度 0.616），这条红。
+     * 这条也更接近 ComfyUI：它的默认标题色只有一个（NODE_DEFAULT_COLOR），
+     * node_colors 那张表是用户手动给某个节点挑的，不是按类型自动分的。
+     *
+     * 变异：给 BLOCK_KIND_TINT 加回 bar 字段并让标题条读它，这条红。
      */
     for (const k of BLOCK_KINDS) {
-      expect(colorChroma(BLOCK_KIND_TINT[k].bar), k).toBeLessThanOrEqual(0.25);
+      expect(Object.keys(BLOCK_KIND_TINT[k]).sort(), k).toEqual(["fill", "ink"]);
     }
-    // 反向：也不许全压成灰（那就读不出分类了）
-    const chromas = BLOCK_KINDS.map(k => colorChroma(BLOCK_KIND_TINT[k].bar));
-    expect(Math.max(...chromas)).toBeGreaterThan(0.12);
+    expect(BLOCK_CHROME.titleBar).toMatch(/^#[0-9a-f]{6}$/);
   });
 
-  it("⚠ 标题条上是白字：每一档都得撑得住白字的对比度（WCAG AA 4.5）", () => {
-    // 变异：把任意一档调亮到浅色，这条红——白字会糊在上面看不见。
-    const lum = (hex: string) => {
-      const h = hex.replace("#", "");
-      const c = [0, 2, 4]
-        .map(i => Number.parseInt(h.slice(i, i + 2), 16) / 255)
-        .map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
-      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-    };
-    for (const k of BLOCK_KINDS) {
-      const ratio = 1.05 / (lum(BLOCK_KIND_TINT[k].bar) + 0.05);
-      expect(ratio, k).toBeGreaterThanOrEqual(4.5);
-    }
+  it("⚠ 标题条那个中性色的色度得压得住（面积大的颜色不许太艳）", () => {
+    /*
+     * 标题条铺满整块的宽度。色度一高就会被读成状态色——第一版给指标块配的
+     * #b91c1c 是 0.616，真机截图上每页顶部一条通栏红带，看着像告警。
+     * ComfyUI 的 node_colors 全在 0.07 上下（`red: '#322'` 是 0.067）。
+     * 变异：titleBar 换成任何一个饱和色，这条红。
+     */
+    expect(colorChroma(BLOCK_CHROME.titleBar)).toBeLessThanOrEqual(0.1);
+  });
+
+  it("⚠ 标题条上是白字：对比度得撑得住（WCAG AA 4.5）", () => {
+    // 变异：把 titleBar 调亮成浅色，这条红——白字会糊在上面看不见。
+    const h = BLOCK_CHROME.titleBar.replace("#", "");
+    const c = [0, 2, 4]
+      .map(i => Number.parseInt(h.slice(i, i + 2), 16) / 255)
+      .map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    const lum = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    expect(1.05 / (lum + 0.05)).toBeGreaterThanOrEqual(4.5);
   });
 
   it("色度函数本身对得上（判据自己也得能被咬）", () => {

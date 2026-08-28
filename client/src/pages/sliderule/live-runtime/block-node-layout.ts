@@ -197,6 +197,27 @@ export const BLOCK_CHROME = {
   separator: 2,
   /** 投影，画布单位（ComfyUI 的 shadow 也是图坐标，随缩放一起变）。 */
   shadow: "0 6px 14px -4px rgba(0,0,0,0.22), 0 2px 4px rgba(0,0,0,0.16)",
+  /**
+   * 标题条的底色，**全部块共用一个**。
+   *
+   * ## ⚠ 不按块类型上色（2026-08-28 用户裁决）
+   *
+   * 我第一版给八种块各配了一条标题条颜色。用户一句话打回：
+   * **"我们是区块，不是属性面板"**——一排按类型上色的色带读起来是
+   * 「分类目录」，而画布上这些是**页面的零件**，它们之间的关系靠线，
+   * 不靠色卡。
+   *
+   * 这条也**更接近 ComfyUI 本身**：它的默认标题色只有一个
+   * （`NODE_DEFAULT_COLOR = '#333'`，全部节点共用）；`node_colors`
+   * 那张表是**用户手动给某个节点挑的**，不是按类型自动分的。
+   * 我上一版把 opt-in 的东西做成了自动分类，抄错了一层。
+   *
+   * 取值照它的口径：近中性的暗色，色度 0.051（`red: '#322'` 是 0.067）。
+   *
+   * ⚠ 类型色**没有全删**：`fill`/`ink` 还在降级静态卡上用着。那是"没有
+   *   内容可显示时至少说清这是什么"，跟"给每个块贴分类标签"是两件事。
+   */
+  titleBar: "#3a3f47",
 } as const;
 
 /**
@@ -621,7 +642,7 @@ export function shouldDrawBlockDetail(
 }
 
 /**
- * 按块类型给颜色：`fill`/`ink` 给降级静态卡，`bar` 给标题条。
+ * 按块类型给底色，**只给降级的静态卡用**。
  *
  * ## 为什么需要
  *
@@ -634,43 +655,35 @@ export function shouldDrawBlockDetail(
  * 比不画还糟（看着像加载坏了）。给它按类型上色，全景下至少读得出
  * "这一页由几张表、几个指标、一个图表拼成"。
  *
- * ## ⚠ 2026-08-28：标题条**另开一套颜色**，因为面积变了
+ * ## ⚠ 标题条**不**用这套颜色
  *
- * 把标签从一个小色片改成整条标题条之后，同一个 `#b91c1c`（指标那档的 ink）
- * 从"一枚红色小标"变成"一条通栏红带"。真机截图上五页顶部各一条大红带——
- * **看着像告警**，而这一档的注释自己写着"颜色只用来分类，不表示状态"。
- * 改的是渲染，读出来的意思却跟着变了，这种错不报错。
+ * 2026-08-28 我一度给标题条也按类型配了色，用户打回：**"我们是区块，
+ * 不是属性面板"**。标题条一律用 `BLOCK_CHROME.titleBar` 那一个中性色，
+ * 理由写在那条常量的头注里。
  *
- * ComfyUI 的 `LGraphCanvas.node_colors` 正是为这件事准备的：
+ * 两者的分界是**这块有没有内容可看**：静态卡什么都没有，颜色是它唯一
+ * 说得出口的信息；真渲染的块内容自己就在那儿，再糊一层分类色只是噪音。
  *
- *     red: { color: '#322' }   green: { color: '#232' }   cyan: { color: '#233' }
- *
- * 全是**近中性的暗色，只带一点点色相**（`#322` 的色度只有 0.067）。
- * 面积大的地方色度就得低——底下那套 `bar` 照这条重来：色相分得开，
- * 色度压在 0.25 以下，没有哪一档能被读成"红灯"。
- *
- * ⚠ `ink`/`fill` **不跟着改**：它们用在静态卡的图标和底色上，面积小、
- *   要的就是辨识度。同一件事在不同面积下该用不同的色，别图省事合成一套。
+ * ⚠ 颜色只用来**分类**，不表示状态（好/坏/告警）。真机上块的类型是
+ *   `data-block-kind`，跟 Python 的 BLOCK_KINDS 一字不差。
  */
-export const BLOCK_KIND_TINT: Record<
-  string,
-  { fill: string; ink: string; bar: string }
-> = {
-  chart: { fill: "#eef2ff", ink: "#4f46e5", bar: "#4d5182" },
-  table: { fill: "#ecfeff", ink: "#0e7490", bar: "#33606a" },
-  form: { fill: "#f0fdf4", ink: "#15803d", bar: "#3d6b4a" },
-  detail: { fill: "#fefce8", ink: "#a16207", bar: "#6e6042" },
-  metric: { fill: "#fef2f2", ink: "#b91c1c", bar: "#7a4a52" },
-  list: { fill: "#f5f3ff", ink: "#6d28d9", bar: "#5b4a80" },
-  media: { fill: "#fff7ed", ink: "#c2410c", bar: "#75593f" },
-  card: { fill: "#f8fafc", ink: "#475569", bar: "#4b5563" },
+export const BLOCK_KIND_TINT: Record<string, { fill: string; ink: string }> = {
+  chart: { fill: "#eef2ff", ink: "#4f46e5" },
+  table: { fill: "#ecfeff", ink: "#0e7490" },
+  form: { fill: "#f0fdf4", ink: "#15803d" },
+  detail: { fill: "#fefce8", ink: "#a16207" },
+  metric: { fill: "#fef2f2", ink: "#b91c1c" },
+  list: { fill: "#f5f3ff", ink: "#6d28d9" },
+  media: { fill: "#fff7ed", ink: "#c2410c" },
+  card: { fill: "#f8fafc", ink: "#475569" },
 };
 
 /**
  * 一个颜色的**色度**（最大通道 − 最小通道，归一到 0..1）。
  *
- * 判据用它卡"面积大的颜色不许太艳"。ComfyUI 的 `node_colors` 全在 0.07
- * 上下；上一版误用的 `#b91c1c` 是 0.616。
+ * 判据用它卡"面积大的颜色不许太艳"：标题条铺满整块的宽度，色度一高就会被
+ * 读成状态色（我第一版给指标块配的 `#b91c1c` 是 0.616，真机上就是一条
+ * 通栏红带）。ComfyUI 的 `node_colors` 全在 0.07 上下。
  */
 export function colorChroma(hex: string): number {
   const h = hex.replace("#", "");
@@ -684,10 +697,6 @@ export function colorChroma(hex: string): number {
  * ⚠ 认不出的类型回 `card` 那档，**不回透明**：透明就是那片白方块，
  *   而"认不出类型"和"没有内容"是两回事。
  */
-export function blockKindTint(kind: string): {
-  fill: string;
-  ink: string;
-  bar: string;
-} {
+export function blockKindTint(kind: string): { fill: string; ink: string } {
   return BLOCK_KIND_TINT[kind] ?? BLOCK_KIND_TINT.card;
 }

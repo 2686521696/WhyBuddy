@@ -356,6 +356,21 @@ describe("反向判据", () => {
     expect(STAGE).toContain("height: BLOCK_CELL.labelBand,");
   });
 
+  it("⚠ 标题条读的是那个中性色，不是块类型的色", () => {
+    // 用户 2026-08-28：「我们是区块，不是属性面板」。
+    // 变异：改回 tint.bar / tint.ink，这条红。
+    const title = STAGE.indexOf('data-testid="sliderule-canvas-block-title"');
+    const seg = STAGE.slice(title, title + 900);
+    expect(seg).toContain("BLOCK_CHROME.titleBar");
+    expect(seg).not.toContain("tint.");
+    // 反向：类型色只许出现在降级静态卡那一段
+    const staticAt = STAGE.indexOf(
+      'data-testid="sliderule-canvas-block-node-static"'
+    );
+    expect(staticAt).toBeGreaterThan(title);
+    expect(STAGE.slice(title, staticAt)).not.toContain("tint.");
+  });
+
   it("节点外观照 CARD 那套：圆角 + 分层投影 + 分隔线", () => {
     expect(STAGE).toContain("borderRadius: BLOCK_CHROME.radius");
     expect(STAGE).toContain("boxShadow: BLOCK_CHROME.shadow");
