@@ -810,6 +810,99 @@ patterns = [
 ]
 
 
+# ── 孤儿的归类 ──────────────────────────────────────────────────────────────
+#
+# `[baseline].orphans` 只记「有多少」，不记「为什么」。这一节补的是后者。
+#
+# ⚠ 为什么必须记：§26 说这 54 个"挨个看了，绝大多数各有理由"，§30 订正说
+#   "挨个看了是假的，只读了 3 个就外推了 54 个"，并留下 19 个"❓没说清归谁"。
+#   2026-08-29 夜真的逐个读了模块头，**又翻出第三种可能**：接线在，只是在另一
+#   门语言里（见 cross_language_entry）。一张没有归类的名单，下一个人只能重新
+#   读一遍——而前两次重读都得出了不同的、且都不完整的结论。
+#
+# 五类，含义各不相同，**别混着用**：
+#
+#   cross_language_entry  Node 在子进程里按**拼出来的字符串** __import__ 它。
+#                         依赖图两侧都看不见这条边。**是产线代码，不许删。**
+#                         由 tests/test_cross_language_entrypoints.py 两头钉住。
+#
+#   migration_ledger      迁移记账：产出的是「哪块归 Python、哪块留 Node」的报告，
+#                         消费者只有判据。不在产品链上，**这是设计如此**，
+#                         不是欠账。占 25 个，是这份名单的主体。
+#
+#   contract_mirror       Node 拥有运行时，Python 只锁信封形状（模块头自己写着
+#                         "remain Node-owned" / "side-effect free fake runtime"）。
+#
+#   superseded            明说被取代或未挂载。**这批是真的可以删**，但删之前
+#                         要确认没有判据靠它的存在（routes.sliderule 未挂载，
+#                         app.py 只 include sliderule_full）。
+#
+#   unwired               ⚠ **这批才是该问的**：Python 自己拥有运行时（模块头
+#                         明写 Python-owned + 真实现，不是契约壳），却没有任何
+#                         接线，也不是跨语言入口。只有 3 个，见下。
+#                         每一个都要回答"这块运行时到底该不该被 wire 起来"——
+#                         那是产品判断，不是架构活，所以这里只记账不处理。
+#
+# ⚠ 判据（Test孤儿都要有归类）钉两头：孤儿必须有归类（正），
+#   归类不许指向已经不是孤儿的模块（反）。只钉一头，名单会慢慢变成一份过期的历史。
+[orphan_reasons]
+
+"routes.sliderule" = "superseded"
+"services.a2a_core_route_cutover" = "migration_ledger"
+"services.a2a_runtime" = "unwired"
+"services.a2a_session_stream_runtime_slice" = "contract_mirror"
+"services.agent_loop_python_worker" = "contract_mirror"
+"services.blueprint_event_bus_runtime_takeover" = "migration_ledger"
+"services.blueprint_job_store_runtime_takeover" = "migration_ledger"
+"services.blueprint_job_store_scope_decision" = "migration_ledger"
+"services.blueprint_ledger_runtime_takeover" = "migration_ledger"
+"services.blueprint_main_runtime_closure" = "migration_ledger"
+"services.blueprint_preview_state_runtime_takeover" = "migration_ledger"
+"services.blueprint_production_denominator_reconciliation" = "migration_ledger"
+"services.blueprint_production_ownership_closure" = "migration_ledger"
+"services.blueprint_prompt_package_runtime_takeover" = "migration_ledger"
+"services.blueprint_replan_runtime_takeover" = "migration_ledger"
+"services.blueprint_shell_state_cutover" = "migration_ledger"
+"services.blueprint_stage_edit" = "contract_mirror"
+"services.external_provider_cutover" = "migration_ledger"
+"services.final_provider_a2a_scope_reconciliation" = "migration_ledger"
+"services.full_migration_note" = "superseded"
+"services.knowledge_admin_runtime" = "contract_mirror"
+"services.nl_command_runtime" = "contract_mirror"
+"services.rag_ingestion" = "unwired"
+"services.role_runtime" = "contract_mirror"
+"services.slide_rule_full_executor" = "superseded"
+"services.task_durable_mission_store_takeover" = "migration_ledger"
+"services.task_event_persistence_takeover" = "migration_ledger"
+"services.task_executor_runtime" = "contract_mirror"
+"services.task_lifecycle_durable_ownership_closure" = "migration_ledger"
+"services.task_lifecycle_production_closure" = "migration_ledger"
+"services.task_mission_store_runtime_slice" = "contract_mirror"
+"services.task_production_denominator_reconciliation" = "migration_ledger"
+"services.task_project_auth_runtime_takeover" = "migration_ledger"
+"services.task_scheduler_runtime_takeover" = "migration_ledger"
+"services.task_store_auth_scheduler_cutover" = "migration_ledger"
+"services.telemetry" = "contract_mirror"
+"services.telemetry_runtime" = "contract_mirror"
+"services.v5_session_driver" = "superseded"
+"services.web_aigc_ai_ppt_adapter" = "contract_mirror"
+"services.web_aigc_device_location_adapter" = "cross_language_entry"
+"services.web_aigc_dynamic_chart_adapter" = "contract_mirror"
+"services.web_aigc_external_provider_ownership_closure" = "migration_ledger"
+"services.web_aigc_file_adapter" = "contract_mirror"
+"services.web_aigc_ocr_static_adapter" = "contract_mirror"
+"services.web_aigc_open_adapter" = "cross_language_entry"
+"services.web_aigc_orchestration_adapter" = "cross_language_entry"
+"services.web_aigc_provider_closure" = "migration_ledger"
+"services.web_aigc_real_provider_readiness" = "migration_ledger"
+"services.web_aigc_search_adapter" = "contract_mirror"
+"services.web_aigc_transaction_flow_adapter" = "contract_mirror"
+"services.web_aigc_vision_audio_adapter" = "contract_mirror"
+"services.web_aigc_web_qa_adapter" = "cross_language_entry"
+"services.workflow_runtime" = "contract_mirror"
+"sliderule_llm.pool" = "unwired"
+
+
 # ── 棘轮基线 ────────────────────────────────────────────────────────────────
 #
 # 存量违规与环冻在这里，判据只比「有没有变多」。**这份清单只许变短。**

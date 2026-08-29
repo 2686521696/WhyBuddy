@@ -2999,3 +2999,137 @@ TS 侧现在停在 Python 侧 §19 那个位置，后面的路是一样的。
                 模块级环 94（棘轮）· 组间环 35（棘轮）· 孤儿 211（棘轮）
     覆盖率      2184 / 2184 = **100%**（原 13%）
     判据        Python 40 条 + TS 23 条，两侧都变异验过
+
+---
+
+## 33. 第三次读那 54 个孤儿，翻出了前两次都没有的第三种可能（2026-08-29 夜）
+
+### 33.1 前情：同一份名单读过三次，三个结论
+
+| 轮次 | 做法 | 结论 |
+|---|---|---|
+| §26 | 读了 3 个模块头，外推 54 个 | "绝大多数是 Node 边界镜像" |
+| §30 | 关键词分类器扫 54 个前 1200 字 | Node 镜像只占 30%；18 个是"Python 拥有却没人 import"；19 个"❓没说清" |
+| **§33** | **逐个读模块头 + 追消费者 + 真跑一遍** | **见下，前两次都漏了一整类** |
+
+§30 已经承认「挨个看了」是假的。这次是真的逐个读了 54 个模块头。
+
+### 33.2 翻出来的第三种可能：接线在，只是在另一门语言里
+
+`server/index.ts:1221` 的 `createPythonWebAigcAdapter` 起一个 Python 子进程，
+在里面按**拼出来的字符串**加载模块：
+
+    mod_name = "services.web_aigc_" + adapter.replace("-", "_") + "_adapter"
+    mod = __import__(mod_name, fromlist=["*"])
+    fn = getattr(mod, "execute_" + adapter.replace("-","_") + "_runtime_bridge", None)
+
+Node 侧接了四个：`open` / `orchestration` / `web_qa` / `device_location`。
+
+**这条边两侧的静态分析都看不见**——模块名在 TypeScript 里拼出来，在另一个进程里
+`__import__`。于是 Python 依赖图里这四个入度为 0，看着像"可能死了"。
+
+照着 Node 那段代码原样跑了一遍（不是读代码推断，是真跑）：
+
+    open               ✅ 模块在，桥函数 = execute_open_runtime_bridge
+    orchestration      ✅ 模块在，桥函数 = execute_orchestration_runtime_bridge
+    web_qa             ✅ 模块在，桥函数 = execute_web_qa_runtime_bridge
+    device_location    ✅ 模块在，桥函数 = execute_device_location_runtime_bridge
+
+**它们是产线代码。** §26 的"Node 边界镜像"和 §30 的"接线漏了 / 确实死了"
+两个框都装不下它——两次都漏了「接线在，在另一门语言里」这一格。
+
+⚠ 而且这批是**最不能删的一类**：删掉或改名，两侧判据全绿，线上表现是
+`{"ok": false, "code": "py_bridge"}`——一个降级信封，不是崩溃，没有告警。
+
+新增 `tests/test_cross_language_entrypoints.py`，**两头都钉**：Python 侧模块与
+桥函数真的在（正），Node 侧仍然按这个规则拼名字、名单没少也没多（反）。
+只钉一头等于没钉——Node 那边改个拼法，Python 这边四个模块照样在、判据照样绿。
+
+变异验过三刀：改 Python 侧桥函数名 → 红；Node 侧下线一个 adapter → 红；
+Node 侧改模块名拼法 → 红。
+
+### 33.3 54 个的真实构成
+
+|  数 | 类 | 含义 |
+|---:|---|---|
+| 25 | `migration_ledger` | **主体**。产出「哪块归 Python、哪块留 Node」的报告，消费者只有判据。不在产品链上是**设计如此**，不是欠账。名字形态整齐：`*_cutover` / `*_takeover` / `*_closure` / `*_reconciliation` / `*_scope_decision` |
+| 18 | `contract_mirror` | Node 拥有运行时，Python 只锁信封形状（模块头自己写着 remain Node-owned / side-effect-free fake runtime） |
+|  4 | `cross_language_entry` | §33.2 那批。**产线代码，不许删** |
+|  4 | `superseded` | 明说被取代或未挂载。`routes.sliderule` 未挂载（app.py 只 include `sliderule_full`）、`v5_session_driver` 模块头明写"禁止再 import"、`full_migration_note` 与 `slide_rule_full_executor` 连测试都没有 |
+|  3 | `unwired` | ⚠ **这批才是该问的** |
+
+另一个量出来的事实：**52 / 54 有测试直接 import 它们**，只有 `full_migration_note`
+和 `slide_rule_full_executor` 连测试都没有。这正是 §30 说的那个形状——
+"有测试、有契约、看着像存在"。区别是现在知道了：对 25 个 `migration_ledger` 来说，
+"只有判据在用"就是它的全部用途。
+
+### 33.4 剩下的 3 个 `unwired`，留给产品判断
+
+模块头明写 Python 拥有运行时、且有真实现（不是契约壳），却没有任何接线，
+也不是跨语言入口：
+
+    services.a2a_runtime    1117 行  Python-owned A2A registry/session runtime + stream/cancel
+                                     transport，file-backed stores。产线消费者：0
+    services.rag_ingestion   853 行  Python-owned RAG ingestion + 向量生产存储边界，
+                                     Qdrant-shaped provider 走真实路径
+    sliderule_llm.pool       442 行  多 key 池（parallel/sequential）。开关
+                                     SLIDERULE_CAPABILITY_POOL_ENABLED 默认 False
+
+⚠ **`rag_ingestion` 这条查实了：是两份实现，但不是"真的 vs 假的"。**
+
+先说方法——§29 的教训是「拿 grep 数出来的相似度当依据」，所以这里比的是
+AST（签名、私有 helper 集合、实际调用），不是名字：
+
+| | `rag_service.run_…`（活） | `rag_ingestion.project_…`（零入度） |
+|---|---|---|
+| 签名 | `(payload, *, storage)` | `(payload, *, storage)` **相同** |
+| 行数 | 88 | 131 |
+| 私有 helper | `_build_rag_ingestion_base` / `_build_rag_ingestion_chunks` / `_read_rag_ingestion_operation` / `_rag_ingestion_collection` | `_build_base` / `_build_chunks` / `_read_operation` / `_collection_name` **一一对应** |
+| 向量来源 | `_fake_rag_ingestion_embedding` | `_get_rag_vector_provider(payload)` → 真 provider 对象（`prov.get_config()` / `prov.delete(...)`） |
+| 向量值 | 假 | **也是占位** `[0.1] * dim` |
+
+**同一个边界的两份实现，私有 helper 成对镜像**——正是这仓踩过三次的形状。
+
+但差别不是"一份真一份假"：活着那份**根本没有 provider**，零入度那份**接了真
+provider 却仍然写占位向量** `[0.1]*dim`。**两份都不是完整的真 ingestion 路径。**
+（配套事实：`.env` 里 `RAG_VECTOR_ENABLED=false`。）
+
+所以「该不该把 `rag_ingestion` 接上」这个问题问错了——真正该问的是
+**这两份要留哪一份、真向量从哪来**。那是产品判断，不替你做。
+
+这三个每一个都要回答"这块运行时到底该不该被 wire 起来"，那是产品判断。
+**没有人在场的时候不替你做这个决定**，所以只把证据摆齐。
+
+### 33.5 立的闸：名单必须有归类
+
+`architecture.toml` 新增 `[orphan_reasons]`，54 个逐一归类，
+`arch_graph.orphan_reason_gaps()` + 四条判据钉住：
+
+    孤儿必须有归类                        （正）
+    归类不许指向已经不是孤儿的模块          （反，同 baseline 只许变短）
+    类别名必须在词表里                     （挡拼错——拼错不报错，只静静地不算数）
+    cross_language_entry 必须同时被跨语言判据钉住
+
+最后一条是前三条的**意义**所在：标签挡不住 `git rm`，真正护住那四个模块的是
+`ADAPTERS` 名单。两处对不上，就等于有模块顶着"产线代码不许删"的标签却没有闸。
+
+变异验过三刀：删一条归类 → 红；类别名拼错 → 红；标成 cross_language_entry
+但跨语言判据没钉 → 红。
+
+### 33.6 这是第六次「错的测量」，也是第一次它让我**差点删错东西**
+
+前五次（§29.4 / §30.2 / §31.4）错的方向都是**少做事或说大话**。这次不同：
+如果照着 §30 的"18 个可能是死代码"去清理，会删掉四个产线模块，
+而且**删完两侧判据全绿、线上只是静静降级**。
+
+共同形状还是那个：**零入度是一个测量结果，"没人用"是一个结论，中间隔着
+"我的扫描器能不能看见所有调用方"这个前提。** 前两次都跳过了这个前提。
+
+### 33.7 账
+
+    Python 侧   模块 274 · 边 782 · 未声明 0 · 模块级环 0 · 组间环 0
+                孤儿 54，**全部有归类**（原 19 个"❓没说清"→ 0）
+                其中待产品判断的只剩 3 个
+    TS 侧       模块 1910 · 边 5910 · 包级环 0（硬闸）· 其余进棘轮
+    覆盖率      100%（原 13%）
+    新增判据    跨语言入口 14 条 + 孤儿归类 4 条，都变异验过

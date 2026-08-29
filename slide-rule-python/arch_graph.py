@@ -870,3 +870,37 @@ def services_violations(g: "Graph", manifest: dict) -> List[str]:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+#: 孤儿归类的合法取值。新增一类要同时在 `architecture.toml` 的 `[orphan_reasons]`
+#: 注释里写清含义——一个没有定义的类别名等于没归类。
+ORPHAN_CATEGORIES = frozenset({
+    "cross_language_entry",
+    "migration_ledger",
+    "contract_mirror",
+    "superseded",
+    "unwired",
+})
+
+
+def orphan_reason_gaps(g: "Graph", manifest: dict) -> Tuple[List[str], List[str], List[str]]:
+    """孤儿归类的三种病，一次算清。
+
+    ⚠ 为什么要三个而不是一个：这三种病的**修法完全不同**，合成一条错误信息
+      会逼下一个人自己去分辨。
+
+        missing  孤儿没归类           → 读它的模块头，归一类
+        stale    归类指向的不是孤儿了  → 它被接上了（好事），从这节删掉
+        unknown  归类名不在词表里      → 拼错了，或者新立了一类却没写定义
+
+      第三条挡的是本仓踩过的形状：环境开关手抄 28 份，其中两份的默认与词表对不上
+      （§14.6）。**一个拼错的类别名不会报错，只会静静地把这条记录变成不算数的。**
+    """
+    reasons = manifest.get("orphan_reasons", {}) or {}
+    now = set(orphans(g, manifest))
+    missing = sorted(now - set(reasons))
+    stale = sorted(set(reasons) - now)
+    unknown = sorted(
+        f"{m} = {c}" for m, c in reasons.items() if c not in ORPHAN_CATEGORIES
+    )
+    return missing, stale, unknown

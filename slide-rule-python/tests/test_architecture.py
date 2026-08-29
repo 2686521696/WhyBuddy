@@ -32,6 +32,7 @@
 """
 
 import os
+import pathlib
 import subprocess
 import sys
 
@@ -671,4 +672,67 @@ class Test显式例外不是后门:
         g2.edges = [_edge("a", "a"), _edge("b", "b")]
         assert "zzsrc -> zzdst" in arch_graph.layer_violations(g2, man), (
             "同一对包上多出一条没被接受的边，却没报违规——例外放行得太宽"
+        )
+
+
+class Test孤儿都要有归类:
+    """⚠ 一张没有归类的名单，下一个人只能重新读一遍——而前两次重读
+    （§26 与 §30）得出了不同的、且都不完整的结论。
+
+    2026-08-29 夜第三次读，翻出了前两次都没有的第三种可能：
+    **接线在，只是在另一门语言里**（Node 在子进程里按拼出来的字符串 __import__）。
+    零入度不等于没人用。归类就是为了让这个结论留得住。
+    """
+
+    def test_每个孤儿都归了类(self):
+        missing, _, _ = arch_graph.orphan_reason_gaps(_G, _M)
+        assert not missing, (
+            f"这些没人 import 的模块没有归类：{missing}\n"
+            f"读它的模块头，在 architecture.toml 的 [orphan_reasons] 里归一类。"
+            f"⚠ 别猜——§26 和 §30 各猜过一次，两次都不完整。"
+        )
+
+    def test_归类不许指向已经不是孤儿的模块(self):
+        """⚠ 反向判据。它被接上了是好事，但记录留着就变成一份过期的历史，
+        下一个人会以为那笔账还在（同 baseline 只许变短）。"""
+        _, stale, _ = arch_graph.orphan_reason_gaps(_G, _M)
+        assert not stale, (
+            f"这些已经不是孤儿了（有人 import 了），从 [orphan_reasons] 里删掉：{stale}"
+        )
+
+    def test_类别名必须在词表里(self):
+        """⚠ 拼错的类别名不会报错，只会静静地把这条记录变成不算数的——
+        同 §14.6 那 28 份手抄环境开关里对不上的那两份。"""
+        _, _, unknown = arch_graph.orphan_reason_gaps(_G, _M)
+        assert not unknown, (
+            f"这些归类名不在词表 {sorted(arch_graph.ORPHAN_CATEGORIES)} 里：{unknown}"
+        )
+
+    def test_跨语言入口那批必须同时被跨语言判据钉住(self):
+        """⚠ 这条是上面三条的**意义**所在。
+
+        `cross_language_entry` 是唯一一类「零入度但绝不许删」的模块。
+        光在清单里标一行不够——标签挡不住 `git rm`。真正挡住它的是
+        `tests/test_cross_language_entrypoints.py` 里那份 ADAPTERS 名单。
+        两边对不上，就等于这一类只有说法没有闸。
+        """
+        import re
+
+        tagged = {
+            m for m, c in (_M.get("orphan_reasons") or {}).items()
+            if c == "cross_language_entry"
+        }
+        src = (
+            pathlib.Path(__file__).resolve().parent / "test_cross_language_entrypoints.py"
+        ).read_text(encoding="utf-8")
+        adapters = re.search(r"^ADAPTERS = \(([^)]*)\)", src, re.M)
+        assert adapters, "test_cross_language_entrypoints.py 里找不到 ADAPTERS 名单"
+        pinned = {
+            f"services.web_aigc_{a}_adapter"
+            for a in re.findall(r'"([^"]+)"', adapters.group(1))
+        }
+        assert tagged == pinned, (
+            f"清单里标成 cross_language_entry 的：{sorted(tagged)}\n"
+            f"跨语言判据实际钉住的：        {sorted(pinned)}\n"
+            f"对不上就意味着有模块顶着「产线代码不许删」的标签，却没有任何判据护着它。"
         )

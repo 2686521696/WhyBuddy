@@ -146,6 +146,17 @@ TS 侧额外一条硬闸（无基线）：**包级不许成环**。client / serv
 `slide-rule-python/architecture.toml`，新增跨包依赖必须先在 `may_depend_on` 里
 声明（并写清为什么），新增循环依赖直接红。
 
+⚠ **「零入度」不等于「没人用」。** 2026-08-29 逐个读那 54 个无人 import 的模块时
+翻出来：`server/index.ts` 会起 Python 子进程、按**拼出来的字符串**
+`__import__("services.web_aigc_" + adapter + "_adapter")` 加载四个 adapter。
+这条边**两侧的静态分析都看不见**——照 §30 的判断去清理会删掉产线代码，
+而且删完两侧判据全绿、线上只是静静返回一个降级信封。
+
+所以 `architecture.toml` 里每个孤儿都必须在 `[orphan_reasons]` 归类
+（`cross_language_entry` / `migration_ledger` / `contract_mirror` / `superseded` /
+`unwired`），判据钉着。**动那批模块之前先看归类**——
+`cross_language_entry` 那四个由 `tests/test_cross_language_entrypoints.py` 两头护着。
+
 ⚠ 存量违规/环冻在 `[baseline]` 里，**只许变短**：修好了要从基线里删掉，
 否则下一个人以为那笔欠账还在。往基线里加东西 = 有意接受一笔新欠账，
 不该出现在日常流程里。
