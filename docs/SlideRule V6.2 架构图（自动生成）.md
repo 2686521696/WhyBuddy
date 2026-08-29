@@ -14,17 +14,17 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **267** 个，模块 **267** 个
-- 内部依赖边 **763** 条，其中 **463** 条写在函数体里（60%）
+- 扫描文件 **268** 个，模块 **268** 个
+- 内部依赖边 **765** 条，其中 **463** 条写在函数体里（60%）
 - 未声明的跨包依赖 **3** 条（基线 3 条）
-- 模块级循环依赖 **4** 个（基线 4 个）
-- services 内部越层依赖 **1** 条（基线 1 条）
+- 模块级循环依赖 **3** 个（基线 3 个）
+- services 内部越层依赖 **0** 条（基线 0 条）
 
 ### services 内部分层（抄 grok 的叶子 crate）
 
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
-| `util` | 117 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `util` | 118 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
 | `core` | 52 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 27 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
@@ -38,7 +38,7 @@ flowchart TB
   models["models<br/>3 个模块<br/>数据形状"]
   sliderule_llm["sliderule_llm<br/>13 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>196 个模块<br/>业务"]
+  services["services<br/>197 个模块<br/>业务"]
   routes["routes<br/>12 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   scripts["scripts<br/>36 个模块<br/>运维脚本"]
@@ -70,7 +70,6 @@ flowchart TB
 Rust 里这一类根本编译不出来；Python 得自己数。**只许变少。**
 
 - `services.capability_maps -> services.slide_rule_executor -> services.capability_maps`
-- `services.page_shell -> services.spec_tree -> services.page_shell`
 - `services.persistence -> services.slide_rule_session -> services.persistence`
 - `services.v5_capability_executor -> services.v5_full_driver -> services.v5_capability_executor`
 
@@ -84,4 +83,4 @@ Rust 里这一类根本编译不出来；Python 得自己数。**只许变少。
 
 叶子碰了上层，或 core 碰了 flow。**只许变少。**
 
-- `core -> flow :: services.page_shell -> services.spec_tree`
+（当前没有）

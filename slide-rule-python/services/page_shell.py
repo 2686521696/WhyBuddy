@@ -935,7 +935,7 @@ def _is_generic_crumb_root(text: str) -> bool:
         return True
     if "通用" in t and ("后台" in t or "系统" in t):
         return True
-    from services.spec_tree import is_host_brand_name
+    from services.page_naming import is_host_brand_name
 
     return is_host_brand_name(t)
 
@@ -995,39 +995,11 @@ def _set_label(link: str, icon: str, label: str) -> str:
     return re.sub(r"(<a\b[^>]*>)[\s\S]*(</a>)", lambda m: m.group(1) + inner + m.group(2), link, count=1)
 
 
-def _strip_page_suffix(text: str) -> str:
-    """底栏不要「某某页」的「页」。
-
-    ⚠ 2026-08-20 芸编智管：spec.pages.name 全是「古籍列表页」，五项 × 390px，
-    「页」单独折成第三行。对照 iOS Tab Bar：标签是短名。「首页」本身就是短名；
-    剥完只剩一个字也留着。
-    """
-    if text.endswith("页") and not text.endswith("首页"):
-        stripped = text[:-1].rstrip()
-        if len(stripped) >= 2:
-            return stripped
-    return text
-
-
-def nav_tab_label(name: str, app_name: str = "") -> str:
-    """底栏标签只要短名。精修后 spec.pages.name 常被写成「产品名 - 某页」。
-
-    ⚠ 不能见到 `` - `` 就 rsplit 取后半：真机有过「订单详情 - 团长帮」，
-    一刀切会把标签变成产品名。只剥**前缀或后缀等于产品名**的那一截。
-    """
-    text = str(name or "").strip()
-    brand = str(app_name or "").strip()
-    if brand:
-        if text.startswith(brand):
-            rest = text[len(brand) :].lstrip(" -·|/")
-            if rest:
-                text = rest
-        for sep in (" - ", " · ", " | "):
-            suffix = f"{sep}{brand}"
-            if text.endswith(suffix) and len(text) > len(suffix):
-                text = text[: -len(suffix)].strip()
-                break
-    return _strip_page_suffix(text)
+#: ⚠ 2026-08-29：`_strip_page_suffix` / `nav_tab_label` 搬到了叶子
+#:   services/page_naming——见那个文件的模块头（page_shell ⇄ spec_tree 的环，
+#:   全部原因就是这两个小函数）。同名转出保留：`page_id_freeze` 复用的正是
+#:   `page_shell.nav_tab_label` 这个名字，判据也钉在它上面。
+from services.page_naming import _strip_page_suffix, nav_tab_label  # noqa: F401
 
 
 def build_nav_items(
@@ -1219,7 +1191,7 @@ def _usable_app_name(spec_name: str, detected: str) -> str:
     校验闸会拦新生成的；已经落库的坏 spec 仍会走进 unify——这里是第二道。
     spec 没给名字时返回空：统一是本模块的职责，起名不是。
     """
-    from services.spec_tree import is_host_brand_name
+    from services.page_naming import is_host_brand_name
 
     name = (spec_name or "").strip()
     if not name:
@@ -2192,7 +2164,7 @@ def check_shell_consistency(
             })
 
     app_name = str(spec.get("appName") or "").strip()
-    from services.spec_tree import is_host_brand_name
+    from services.page_naming import is_host_brand_name
 
     if app_name and not is_host_brand_name(app_name):
         for pid, s in shells.items():

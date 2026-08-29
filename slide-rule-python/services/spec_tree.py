@@ -69,18 +69,13 @@ _GENERIC_APP_NAMES = {"系统", "平台", "管理系统", "管理平台", "应�
 
 #: 生成方自己的名字。模型常把宿主品牌写成 appName，unify 之后每一页顶栏
 #: / 面包屑都变成「面团AI系统」（2026-08-21 素材雷达）。
-_HOST_BRAND_RE = re.compile(r"(面团\s*AI|SlideRule|MianTuan|miantuan)", re.I)
-_HOST_BRAND_EXACT = frozenset({"面团", "面团AI", "面团 AI", "面团AI系统", "面团 AI 系统"})
-
-
-def is_host_brand_name(name: str) -> bool:
-    """产品名是不是生成方（面团 AI / SlideRule）自己的牌子。"""
-    text = (name or "").strip()
-    if not text:
-        return False
-    if text in _HOST_BRAND_EXACT:
-        return True
-    return bool(_HOST_BRAND_RE.search(text))
+#: ⚠ 2026-08-29：牌子判定与它的两张表搬到了叶子 services/page_naming。
+#:   原因是 page_shell 也要用它，而 spec_tree 又要用 page_shell.nav_tab_label——
+#:   两边互相 import，是个真的循环依赖，只好各自把 import 藏进函数体。
+#:   共用件下沉成叶子之后方向就顺了（抄 grok 的叶子 crate，见 page_naming 模块头）。
+#:   这里保留同名转出：`from services.spec_tree import is_host_brand_name`
+#:   这类既有写法照常有效——搬家只该改依赖方向，不该把别人的调用点弄红。
+from services.page_naming import is_host_brand_name  # noqa: F401
 
 
 class Persona(BaseModel):
@@ -973,7 +968,7 @@ def _sanitize_phone_page_names(payload: Any) -> None:
     """
     if not isinstance(payload, dict):
         return
-    from services.page_shell import nav_tab_label
+    from services.page_naming import nav_tab_label
 
     app = str(payload.get("appName") or "").strip()
     for page in payload.get("pages") or []:

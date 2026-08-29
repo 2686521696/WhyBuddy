@@ -80,6 +80,7 @@ what = "纯工具：不依赖 services 里任何其它模块"
 # 深度 0 实测 117 个：不依赖 services 内任何模块。对应 grok 的叶子 crate。
 may_depend_on = []
 modules = [
+  "services.page_naming",
   "services.a2a_core_route_cutover",
   "services.a2a_production_transport_ownership_closure",
   "services.a2a_runtime",
@@ -314,11 +315,9 @@ violations = [
   "sliderule_llm -> services",
 ]
 services_violations = [
-  "core -> flow :: services.page_shell -> services.spec_tree",
 ]
 cycles = [
   "services.capability_maps -> services.slide_rule_executor -> services.capability_maps",
-  "services.page_shell -> services.spec_tree -> services.page_shell",
   "services.persistence -> services.slide_rule_session -> services.persistence",
   "services.v5_capability_executor -> services.v5_full_driver -> services.v5_capability_executor",
 ]
