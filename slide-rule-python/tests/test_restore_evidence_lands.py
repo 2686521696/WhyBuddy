@@ -135,10 +135,12 @@ class Test回退路由真的给了命名空间:
     def test_路由把tag传下去了(self):
         import pathlib
 
+        # ⚠ 2026-08-29：业务核从 routes 下沉到 services/model_version_restore。
+        #   这条判据钉的是「调用方真的把 tag 传下去了」，跟它住哪儿无关——
+        #   跟着搬即可，别把判据删掉。
         src = (pathlib.Path(__file__).resolve().parents[1]
-               / "routes/sliderule_full.py").read_text(encoding="utf-8")
-        block = src[src.index("def _restore_model_version_locked"):]
-        block = block[: block.index("\n@router")] if "\n@router" in block else block
+               / "services/model_version_restore.py").read_text(encoding="utf-8")
+        block = src[src.index("def restore_model_version_locked"):]
         code = "\n".join(
             line for line in block.splitlines() if not line.lstrip().startswith("#")
         )

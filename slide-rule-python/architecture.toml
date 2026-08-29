@@ -266,6 +266,7 @@ what = "编排：驱动器 / 流水线 / 控制面 / 会话"
 # 但**不许被下面两层反过来依赖**。
 may_depend_on = ["util", "core"]
 modules = [
+  "services.model_version_restore",
   "services.agent_loop_bridge",
   "services.agent_loop_runs",
   "services.app_graph",
@@ -310,14 +311,12 @@ modules = [
 violations = [
   "middlewares -> services",
   "services -> app",
-  "services -> routes",
   "sliderule_llm -> services",
 ]
 services_violations = [
   "core -> flow :: services.page_shell -> services.spec_tree",
 ]
 cycles = [
-  "routes.sliderule_full -> services.rehearsal_control -> routes.sliderule_full",
   "services.capability_maps -> services.slide_rule_executor -> services.capability_maps",
   "services.page_shell -> services.spec_tree -> services.page_shell",
   "services.persistence -> services.slide_rule_session -> services.persistence",

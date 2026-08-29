@@ -316,10 +316,12 @@ class Test页面跟着版本一起回退:
         """
         import pathlib
 
+        # ⚠ 2026-08-29：业务核从 routes 下沉到 services/model_version_restore
+        #   （原来业务层反向 import 路由层，是个真的循环依赖）。这条判据钉的是
+        #   **次序**（换页必须在 D8 判决之后），跟它住哪儿无关，跟着搬即可。
         src = (pathlib.Path(__file__).resolve().parents[1]
-               / "routes/sliderule_full.py").read_text(encoding="utf-8")
-        block = src[src.index("def restore_model_version"):]
-        block = block[: block.index("\n@router")] if "\n@router" in block else block
+               / "services/model_version_restore.py").read_text(encoding="utf-8")
+        block = src[src.index("def restore_model_version_locked"):]
         # 剥注释再找：本仓踩过"grep 到的词其实在注释里"。
         code = "\n".join(
             line for line in block.splitlines() if not line.lstrip().startswith("#")

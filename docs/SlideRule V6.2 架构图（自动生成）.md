@@ -14,10 +14,10 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **266** 个，模块 **266** 个
-- 内部依赖边 **761** 条，其中 **463** 条写在函数体里（60%）
-- 未声明的跨包依赖 **4** 条（基线 4 条）
-- 模块级循环依赖 **5** 个（基线 5 个）
+- 扫描文件 **267** 个，模块 **267** 个
+- 内部依赖边 **763** 条，其中 **463** 条写在函数体里（60%）
+- 未声明的跨包依赖 **3** 条（基线 3 条）
+- 模块级循环依赖 **4** 个（基线 4 个）
 - services 内部越层依赖 **1** 条（基线 1 条）
 
 ### services 内部分层（抄 grok 的叶子 crate）
@@ -26,7 +26,7 @@
 |---|---|---|---|
 | `util` | 117 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
 | `core` | 52 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
-| `flow` | 26 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
+| `flow` | 27 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
 叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import 的全部理由，也是 `import` 不必躲进函数体的前提。
 
@@ -38,7 +38,7 @@ flowchart TB
   models["models<br/>3 个模块<br/>数据形状"]
   sliderule_llm["sliderule_llm<br/>13 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>195 个模块<br/>业务"]
+  services["services<br/>196 个模块<br/>业务"]
   routes["routes<br/>12 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   scripts["scripts<br/>36 个模块<br/>运维脚本"]
@@ -51,7 +51,7 @@ flowchart TB
   routes -->|9| config
   routes -->|5| middlewares
   routes -->|3| models
-  routes -->|137 · 其中 90 条在函数体里| services
+  routes -->|130 · 其中 82 条在函数体里| services
   routes -->|15 · 其中 8 条在函数体里| sliderule_llm
   scripts -->|3| app
   scripts -->|2 · 其中 2 条在函数体里| config
@@ -61,7 +61,6 @@ flowchart TB
   services -.->|1 · 其中 1 条在函数体里| app
   services -->|12 · 其中 6 条在函数体里| config
   services -->|28 · 其中 1 条在函数体里| models
-  services -.->|1 · 其中 1 条在函数体里| routes
   services -->|60 · 其中 47 条在函数体里| sliderule_llm
   sliderule_llm -.->|2 · 其中 2 条在函数体里| services
 ```
@@ -70,7 +69,6 @@ flowchart TB
 
 Rust 里这一类根本编译不出来；Python 得自己数。**只许变少。**
 
-- `routes.sliderule_full -> services.rehearsal_control -> routes.sliderule_full`
 - `services.capability_maps -> services.slide_rule_executor -> services.capability_maps`
 - `services.page_shell -> services.spec_tree -> services.page_shell`
 - `services.persistence -> services.slide_rule_session -> services.persistence`
@@ -80,7 +78,6 @@ Rust 里这一类根本编译不出来；Python 得自己数。**只许变少。
 
 - `middlewares -> services`
 - `services -> app`
-- `services -> routes`
 - `sliderule_llm -> services`
 
 ## services 内部越层依赖

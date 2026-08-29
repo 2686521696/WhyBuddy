@@ -207,7 +207,10 @@ class Test回退的HTTP路也保住别名:
 
     @staticmethod
     def _restore(monkeypatch, live_pages, target_pages, mismatch=False, rebuilt=None):
-        import routes.sliderule_full as srf
+        # ⚠ 2026-08-29：业务核下沉到 services/model_version_restore。
+        #   `load_session` / `save_session` 要 patch 在**核所在的模块**上——
+        #   patch 到路由模块上不会报错，只会静静地去打真库。
+        from services import model_version_restore as srf
         from services import v5_full_driver as drv
         from services import v5_llm_generate as gen
         from services import v5_publish_closure_response as pcr
@@ -247,7 +250,7 @@ class Test回退的HTTP路也保住别名:
         monkeypatch.setattr(gen, "set_model_override", lambda m: None)
         monkeypatch.setattr(gen, "set_refine_context", lambda *a, **k: None)
 
-        out = srf._restore_model_version_locked("sr-test-restore", "mv-1")
+        out = srf.restore_model_version_locked("sr-test-restore", "mv-1")
         if mismatch:
             assert getattr(out, "status_code", None) == 409, out
         else:

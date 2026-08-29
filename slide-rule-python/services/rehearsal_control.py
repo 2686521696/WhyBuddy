@@ -1628,11 +1628,15 @@ async def _tool_restore(state: V5SessionState, version_id: str) -> Dict[str, Any
         return {"ok": False, "error": "version_id required"}
     try:
         from fastapi.responses import JSONResponse
-        from routes.sliderule_full import _restore_model_version_locked
 
+        from services.model_version_restore import restore_model_version_locked
+
+        # ⚠ 2026-08-29：这里原来 import 的是 `routes.sliderule_full`——业务层反过来
+        #   依赖路由层，方向是反的，还成了一个真的循环依赖。业务核已经下沉到
+        #   services/model_version_restore，方向顺了（判据：架构闸的 baseline 少两条）。
         # 回退要重建闭环证据（可能走 LLM），是这条链上最重的一次同步调用
         result = await run_in_threadpool(
-            _restore_model_version_locked, state.sessionId, vid
+            restore_model_version_locked, state.sessionId, vid
         )
         if isinstance(result, JSONResponse):
             return {"ok": False, "error": "restore_failed", "versionId": vid}
