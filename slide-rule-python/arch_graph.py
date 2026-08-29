@@ -289,6 +289,56 @@ def component_violations(g: "Graph", manifest: dict) -> List[str]:
     return sorted(bad)
 
 
+_COMPONENT_OF_CACHE: dict = {}
+
+
+def _comp_map(manifest: dict) -> Dict[str, str]:
+    key = id(manifest)
+    if key not in _COMPONENT_OF_CACHE:
+        _COMPONENT_OF_CACHE[key] = component_of(manifest)
+    return _COMPONENT_OF_CACHE[key]
+
+
+def satellite_components(g: Graph, manifest: dict) -> List[str]:
+    """**唯一的消费者正是它自己依赖的那个组** —— 那不是两个 crate，是一个。
+
+    ## 为什么要有这条（2026-08-29 我自己栽进去了）
+
+    `refine` 组三个模块（精修的范围计算器），唯一 import 它们的是
+    `spec_first_pipeline`，而它们又回读 spec-first 自己的校验器
+    （html_structure / spec_tree / app_graph）——`refine ⇄ spec_first` 这个组间环
+    的全部内容。
+
+    我在 §22.3 拒绝过合并，理由写的是「refine_page_scope 有 8 个消费者，散在三个组，
+    不是流水线的私有卫星」。**那个 8 是裸 grep 数出来的**——命中的是注释和文档字符串。
+    依赖图里真正的 import 方只有 1 个。
+
+    也就是说：我拿一个错的测量去论证「不该做这件事」。⚠ **用 grep 数依赖，错的方向
+    刚好是「看起来更耦合」，于是它会替你把该做的事挡下来**，而且看着像审慎。
+
+    按 grok 的口径，同一个 crate 内部的模块互指是合法的（xai-grok-tools 8 对、
+    xai-grok-shell 15 对，含 `implementations ⇄ registry`）。这种形状的正解是
+    **合并**，不是给环开例外。
+
+    这条判据把「数消费者」从人手里拿走：条件是
+    「被且只被一个组依赖 ∧ 那个组正是它 may_depend_on 里的」。
+    """
+    users: Dict[str, Set[str]] = {}
+    comp = _comp_map(manifest)
+    for e in g.edges:
+        a, b = comp.get(e.src), comp.get(e.dst)
+        if a and b and a != b:
+            users.setdefault(b, set()).add(a)
+    out = []
+    for name, spec in sorted((manifest.get("component") or {}).items()):
+        seen = users.get(name) or set()
+        if len(seen) == 1:
+            only = next(iter(seen))
+            if only in (spec.get("may_depend_on") or []):
+                out.append(f"{name} 只被 {only} 依赖，而它自己又依赖 {only}")
+    return out
+
+
 def orphans(g: Graph, manifest: dict) -> List[str]:
     """**没有任何模块 import 它**的模块，扣掉声明过的入口。
 
@@ -674,6 +724,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     cv = component_violations(g, manifest)
     cc = component_cycles(manifest, g)
     orph = orphans(g, manifest)
+    sat = satellite_components(g, manifest)
     base = manifest.get("baseline", {})
 
     if args.emit:
@@ -709,6 +760,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"   {x}")
         print(f"没人 import 的模块 {len(orph)}（基线 {len(base.get('orphans', []))}）"
               f" —— ⚠ 不是待删清单，见 orphans() 文档")
+        print(f"卫星组（唯一消费者正是它依赖的那个组）{len(sat)}")
+        for x in sat:
+            print(f"   {x}")
         if not args.check:
             return 0
 
@@ -718,7 +772,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     new_cv = sorted(set(cv) - set(base.get("component_violations", [])))
     new_cc = sorted(set(cc) - set(base.get("component_cycles", [])))
     new_o = sorted(set(orph) - set(base.get("orphans", [])))
-    if new_v or new_c or new_s or new_cv or new_cc or new_o:
+    if new_v or new_c or new_s or new_cv or new_cc or new_o or sat:
         for x in new_v:
             print(f"❌ 新增未声明依赖：{x}")
         for x in new_c:
@@ -729,6 +783,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"❌ 新增未声明的组间依赖：{x}")
         for x in new_cc:
             print(f"❌ 新增组间循环依赖：{x}")
+        for x in sat:
+            print(f"❌ 卫星组：{x} —— 那不是两个 crate，是一个。合并掉，"
+                  f"或者说清为什么它该独立（见 satellite_components 文档）")
         for x in new_o:
             print(f"❌ 新增没人 import 的模块：{x}"
                   f"（接上它，或在 architecture.toml 的 [entrypoints] 里说清为什么）")

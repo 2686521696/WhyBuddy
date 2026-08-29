@@ -85,7 +85,7 @@ Rust 里这一类根本编译不出来；Python 得自己数。**只许变少。
 ## crate 级：component 依赖图
 
 抄 grok 的 Cargo.toml——他们 90 个 crate、347 条**声明过**的边由编译器焊死。
-我们 24 个 component、86 条边，由 `architecture.toml` 声明、判据强制。
+我们 23 个 component、82 条边，由 `architecture.toml` 声明、判据强制。
 **红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。
 
 ```mermaid
@@ -97,21 +97,20 @@ flowchart LR
   blueprint["blueprint<br/>19"]
   capability_engine["capability_engine<br/>2"]
   diagnostics["diagnostics<br/>6"]
-  drive["drive<br/>9"]
+  drive["drive<br/>10"]
   entrypoint["entrypoint<br/>1"]
   evidence["evidence<br/>11"]
   http_routes["http_routes<br/>8"]
   identity["identity<br/>7"]
   llm_gateway["llm_gateway<br/>16"]
-  model_core["model_core<br/>26"]
+  model_core["model_core<br/>25"]
   observability["observability<br/>5"]
   ops_scripts["ops_scripts<br/>37"]
   permission["permission<br/>8"]
   persist["persist<br/>2"]
   platform["platform<br/>16"]
-  refine["refine<br/>3"]
   run_control["run_control<br/>4"]
-  spec_first["spec_first<br/>31"]
+  spec_first["spec_first<br/>34"]
   task_exec["task_exec<br/>19"]
   web_aigc["web_aigc<br/>16"]
   agent_loop -->|1| identity
@@ -132,12 +131,12 @@ flowchart LR
   drive -->|2| evidence
   drive -->|1| identity
   drive -->|1| llm_gateway
-  drive -.->|19| model_core
+  drive -.->|25| model_core
   drive -->|2| observability
   drive -->|4| persist
   drive -->|10| platform
   drive -->|1| run_control
-  drive -->|2| spec_first
+  drive -->|3| spec_first
   entrypoint -->|2| agent_loop
   entrypoint -->|2| drive
   entrypoint -->|7| http_routes
@@ -153,11 +152,11 @@ flowchart LR
   http_routes -->|1| blueprint
   http_routes -->|2| capability_engine
   http_routes -->|1| diagnostics
-  http_routes -->|19| drive
+  http_routes -->|20| drive
   http_routes -->|5| evidence
   http_routes -->|12| identity
   http_routes -->|22| llm_gateway
-  http_routes -->|19| model_core
+  http_routes -->|18| model_core
   http_routes -->|2| observability
   http_routes -->|3| persist
   http_routes -->|12| platform
@@ -166,14 +165,14 @@ flowchart LR
   identity -->|10| platform
   llm_gateway -->|2| platform
   model_core -->|2| app_store
-  model_core -.->|7| drive
+  model_core -.->|6| drive
   model_core -->|5| evidence
   model_core -->|18| llm_gateway
   model_core -->|6| observability
   model_core -->|2| persist
   model_core -->|38| platform
   model_core -->|11| run_control
-  model_core -->|16| spec_first
+  model_core -->|15| spec_first
   observability -->|2| llm_gateway
   observability -->|1| persist
   observability -->|3| platform
@@ -188,15 +187,11 @@ flowchart LR
   permission -->|1| identity
   permission -->|1| platform
   persist -->|10| platform
-  refine -->|2| llm_gateway
-  refine -->|4| platform
-  refine -.->|4| spec_first
   run_control -->|1| platform
   spec_first -->|3| app_store
-  spec_first -->|33| llm_gateway
+  spec_first -->|35| llm_gateway
   spec_first -->|3| observability
-  spec_first -->|29| platform
-  spec_first -.->|5| refine
+  spec_first -->|33| platform
   spec_first -->|1| run_control
   task_exec -->|2| evidence
   task_exec -->|4| platform

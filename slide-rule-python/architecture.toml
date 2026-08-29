@@ -454,6 +454,7 @@ modules = [
   "services.drive_full_factory",
   "services.nl_command_runtime",
   "services.product_charter",
+  "services.model_version_restore",
   "services.rehearsal_control",
   "services.run_registry",
   "services.slide_rule_marathon",
@@ -542,7 +543,6 @@ may_depend_on = ["app_store", "drive", "evidence", "llm_gateway", "observability
 modules = [
   "services.closure_block_reason",
   "services.merge_patch",
-  "services.model_version_restore",
   "services.model_versions",
   "services.role_runtime",
   "services.slide_rule_coverage",
@@ -670,15 +670,6 @@ modules = [
   "stdio_utf8",
 ]
 
-[component.refine]
-why = """精修环：段级沿用、页级短路、图判范围。已闭环应用的第二条入口。"""
-may_depend_on = ["llm_gateway", "platform", "spec_first"]
-modules = [
-  "services.refine_graph_scope",
-  "services.refine_page_scope",
-  "services.refine_short_circuit",
-]
-
 [component.run_control]
 why = """本轮运行的控制面标记：该不该停（取消/暂停）、降级过没有、同一步连着跑了几次。
 四个都是零依赖叶子，被引擎、驱动、spec-first 和路由共用。
@@ -698,8 +689,13 @@ modules = [
 ]
 
 [component.spec_first]
-why = """spec-first 七步与页面产出：spec 树、逐页 HTML、外壳、绑定、配色、区块目录。"""
-may_depend_on = ["app_store", "llm_gateway", "observability", "platform", "refine", "run_control"]
+why = """spec-first 七步与页面产出：spec 树、逐页 HTML、外壳、绑定、配色、区块目录。
+精修那三个范围计算器（refine_graph_scope / refine_page_scope / refine_short_circuit）也在这里：
+它们**唯一的 import 方是 spec_first_pipeline**，同时又回读这条流水线自己的校验器
+（html_structure / spec_tree / app_graph）——按 grok 的口径这是同一个 crate 内部的模块互指，
+不是两个 crate。⚠ 2026-08-29 之前把它们单列一组，理由是"refine_page_scope 有 8 个消费者散在三个组"，
+那个数字是**裸 grep 数出来的**（命中的是注释和文档字符串），依赖图里只有 1 个消费者。"""
+may_depend_on = ["app_store", "llm_gateway", "observability", "platform", "run_control"]
 modules = [
   "services.app_graph",
   "services.app_template",
@@ -723,6 +719,9 @@ modules = [
   "services.page_reconstruction",
   "services.page_shell",
   "services.palette_guard",
+  "services.refine_graph_scope",
+  "services.refine_page_scope",
+  "services.refine_short_circuit",
   "services.sheet_palette",
   "services.spec_first_pipeline",
   "services.spec_page_html",
@@ -835,12 +834,16 @@ component_violations = [
 #     5  → 2 （请求域上下文切成叶子 turn_context：宪章 / 连接器 / 技能三块
 #             prompt 上下文原本长在 drive 和 model_core 里，谁要拼就得反过来
 #             import 上层，一条边连着三个环）
+#     2  → 1 （refine 并进 spec_first：它三个模块的唯一 import 方就是
+#             spec_first_pipeline，同时又回读这条流水线自己的校验器——
+#             按 grok 的口径这是同一个 crate 内部的模块互指，不是两个 crate。
+#             ⚠ 我先前拒绝过这次合并，理由是"有 8 个消费者散在三个组"，
+#             那个数字是裸 grep 数出来的，依赖图里只有 1 个。见 §29）
 #   模块级的环早已清零，组级还剩这两个——不矛盾：**粒度不同看到的东西不同**。
 #   **只许变少。** 剩下这两个都不是"挪个文件"能了的，见
 #   docs/欠缺模块清单-对照Claude与Grok-build.md §23。
 component_cycles = [
   "drive -> model_core -> drive",
-  "refine -> spec_first -> refine",
 ]
 cycles = [
 ]

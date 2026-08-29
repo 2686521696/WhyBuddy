@@ -457,6 +457,45 @@ class Test同一个crate内部允许互指:
             )
 
 
+class Test卫星组不许存在:
+    """⚠ 2026-08-29：这条判据是我自己栽了一跤之后加的。
+
+    `refine` 三个模块唯一的 import 方是 `spec_first_pipeline`，而它们又回读
+    spec-first 自己的校验器——`refine ⇄ spec_first` 这个组间环的全部内容。
+    我在 §22.3 拒绝过合并，理由是「refine_page_scope 有 8 个消费者散在三个组」。
+    **那个 8 是裸 grep 数出来的**，命中的是注释和文档字符串；依赖图里只有 1 个。
+
+    用 grep 数依赖，错的方向刚好是「看起来更耦合」——于是它替我把该做的事挡下来了，
+    而且看着像审慎。这条判据把「数消费者」从人手里拿走。
+    """
+
+    def test_没有卫星组(self):
+        sat = arch_graph.satellite_components(_G, _M)
+        assert not sat, (
+            f"{sat}\n那不是两个 crate，是一个（grok 允许同 crate 内模块互指）。"
+            f"合并掉，或者在 why 里说清为什么它该独立。"
+        )
+
+    def test_判据自己不是空转(self):
+        """⚠ 上面那条恒绿的话，跟没有是一样的。这里造一份必然命中的 manifest，
+        证明探测器真的会报。"""
+        import copy
+
+        man = copy.deepcopy(_M)
+        man["component"] = {
+            "zz_host": {"why": "样本", "may_depend_on": [], "modules": ["zzh.a"]},
+            "zz_sat": {"why": "样本", "may_depend_on": ["zz_host"], "modules": ["zzs.a"]},
+        }
+        g2 = copy.copy(_G)
+        g2.edges = [
+            arch_graph.Edge(src="zzh.a", dst="zzs.a", src_pkg="zzh", dst_pkg="zzs",
+                            deferred=False, line=1),
+            arch_graph.Edge(src="zzs.a", dst="zzh.a", src_pkg="zzs", dst_pkg="zzh",
+                            deferred=False, line=1),
+        ]
+        assert arch_graph.satellite_components(g2, man), "探测器报不出必然命中的样本"
+
+
 class Test一件事不许拆在两个组:
     """⚠ 2026-08-29 抓到的自打脸归组，也是 `drive ⇄ model_core` 里 14 条边的来源。
 

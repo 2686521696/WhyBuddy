@@ -2143,6 +2143,8 @@ crate 粒度下的缠绕以前根本没人量过。由七组两两互指衍生�
                                      一个它不属于的组，没做
     model_core ⇄ spec_first (16/2)   见上，卡在两个 ContextVar getter
     refine ⇄ spec_first     (8/5)    精修的范围计算器被流水线调用
+                                     ⚠ 2026-08-29 已合并消掉（§29）：当时"否掉合并"
+                                       的理由是裸 grep 数错的
 
 ### 22.4 账
 
@@ -2266,6 +2268,9 @@ PAGE_KINDS:  tuple[str, ...] = tuple(_LEGAL["pageKinds"])
 ### 23.5 剩下 2 组，为什么停在这
 
     drive ⇄ model_core   (19/21)  工作区重开要整套引擎。真耦合，不是归组问题。
+                                  ⚠ 这句也下早了（§28）：真去数边，21 条里 15 条是
+                                    归组画歪（run_control 被拆两组、model_version_restore
+                                    按前缀归错），现在剩 6 条。
     refine ⇄ spec_first  (4/5)    精修的三个范围计算器被流水线调用，同时又回用
                                   流水线的校验器（validate_spec_tree / HtmlStructure /
                                   app_graph）。
@@ -2273,6 +2278,12 @@ PAGE_KINDS:  tuple[str, ...] = tuple(_LEGAL["pageKinds"])
 `refine` 一度看着像"应该并进 spec_first"，量了消费者之后**否掉了**：
 `refine_page_scope` 有 8 个消费者，散在 spec_first / drive / model_core 三个组，
 不是流水线的私有卫星。
+
+> ⚠ **这一段是错的，同一天就被推翻了（见 §29）。** 那个 8 是
+> `grep -rn refine_page_scope` 数出来的，命中的是注释和文档字符串；依赖图里真正的
+> `import` 只有 1 个（`spec_first_pipeline`）。原文不删——「拿错测量替自己挡下
+> 该做的事」这个形状比结论本身更值得记，而且它比做错事更难被发现：
+> 没人会去复查一个"我们仔细考虑过，决定不做"的结论。
 
 grok 那边的对应答案是：**同一个 crate 内部的模块互指是合法的**（`xai-grok-tools`
 8 对、`xai-grok-shell` 15 对，含 `implementations ⇄ registry`）。这两组要么是
@@ -2451,6 +2462,10 @@ grok 90 个 crate 全在 workspace 里，**被依赖数为 0 的只有装配根*
 
 ### ⚠ 但这 54 个**不是待删清单**
 
+> ⚠ **下面这张表被 §30 订正了。**「挨个看了」是假的——我只读了 3 个模块头就外推了 54 个。
+> 全量扫下来「Node 边界镜像」只占 30%（16 个），另有 18 个是**模块头明写 Python-owned、
+> 却没有任何人 import**，19 个模块头没说清。原文不删，留作「样本小 + 写成陈述句」这个形状的记录。
+
 挨个看了，绝大多数不是"忘了删"，是三类各有各的理由：
 
 | 类 | 例子 | 为什么在 |
@@ -2591,3 +2606,196 @@ spec-first 八步里 `installed_skills` 出现 0 次——**前提塌了，整�
 不带澄清时**几乎不可能出现**的答案（比如一个自造的术语或 id），
 而不是"日元"这种题材里本来就会飘出来的词。第五条的老账：判据要落在
 只有被测的那件事才能造成的差别上。
+
+---
+
+## 28. `drive ⇄ model_core` 从 21 条边量到 6 条，剩下的是一句话（2026-08-29）
+
+§23.5 里我把这个环写成「真耦合，工作区重开要整套引擎」就搁下了。**那个判断下早了**——
+真去数了一遍边，21 条里有 15 条根本不是耦合，是归组画歪。
+
+### 28.1 21 → 7：本轮运行控制面被拆在两个组
+
+    run_cancel        协作式取消        在 platform
+    run_pause         协作式暂停        在 drive
+    run_degradation   本轮降级标记      在 drive
+    repeat_policy     同一步连着跑几次   在 drive
+
+同一件事——「本轮该不该继续、怎么继续」——一个在叶子层、三个在编排组。于是引擎
+（model_core）为了读一个降级标记，就得反过来依赖驱动组：**21 条边里 14 条是这么来的**。
+
+四个都是零依赖叶子，被引擎 / 驱动 / spec-first / 路由共用——正是 grok 的小叶子 crate。
+单独成 `run_control` 组。顺带把 `request_context` / `turn_narration` 两个零依赖叶子
+从 drive 挪进 platform。
+
+### 28.2 差一点立错一条规则
+
+本来想顺势立一条：**「零依赖的 util 叶子不许住在非叶子组」**。先量了一遍：
+
+    全仓 121 个 util 叶子
+      └─ 39 个长在别的组，且被跨组依赖
+
+而这 39 个**是对的**：`connectors` 属 evidence、`auth_tokens` 属 identity、
+`audit_sink` 属 audit、`spec_llm_call` 属 llm_gateway。叶子被多个组用是 grok 叶子
+crate 的**常态**，只有**成环**时才是问题。那条规则会把 39 个模块推平进 platform，
+把 crate 语义整个毁掉。
+
+已写进 platform 的 why：**别拿零依赖当搬家理由**。
+这是这一夜第二次"量完之后否掉自己的方案"（第一次是 refine 该不该并进 spec_first）。
+
+### 28.3 7 → 6：第五次栽在名字前缀上
+
+`model_version_restore` 干的是「读会话 → 重建闭环 → D8 裁决 → 提交」——是**编排**，
+不是模型核心。它在 model_core 只因为名字以 `model_` 开头。挪进 drive。
+
+前四次：`models.v5_state` 被 `v5_` 抓走、`scripts.block_*` 被 `block_` 抓走、
+`app_working_session` 被 `app_` 抓走、`spec_llm_call` 被 `spec_` 抓走。
+
+### 28.4 剩下的 6 条是同一句话，**没接着拆，理由在这**
+
+    v5_full_driver -> slide_rule_session   ×6
+
+引擎要用 7 个长在 `slide_rule_session.py` 里的**回合机制函数**——
+不是 `load_session` / `save_session`（那叫「引擎用会话存储」，天经地义），
+是排程和记账：
+
+    pick_next_capabilities      213 行   排程主路径
+    pick_repair_capabilities     44 行
+    commit_artifact              80 行
+    record_capability_run_error  38 行
+    append_reasoning_event       32 行
+    append_replay_event          28 行
+    _is_delivery_intent           6 行
+    ─────────────────────────  441 行
+
+**这是引擎自己的东西被寄放在会话文件里**，所以才算债。
+
+没接着拆的实测理由：这 7 个函数又用到同文件里**另外 13 个模块级 helper**
+（`_pick_readiness_chain` / `_resolve_role_mode` / `_should_degrade_brainstorm` …）。
+要动的是 1101 行里的 700 多行——**那不是搬家，是把这个文件劈成两半**，
+而劈出来那一半该叫什么、归谁，是职责边界的判断。凌晨在没人看着的时候改
+`pick_next_capabilities` 这条排程主路径，不是勇敢是鲁莽。
+
+所以立的是**边界判据**而不是修复：`tests/test_engine_session_boundary.py`
+把「引擎从会话文件拿哪 7 个名字」钉死，多拿一个就红；名单只许变短；
+再加一条钉住"没拆的理由"——哪天那 13 个 helper 的缠绕松了，判据会红，
+提醒下一个人：**代价变小了，回头看看该不该动手**。
+
+### 28.5 账
+
+    组间环 2（drive ⇄ model_core 的边 21 → 6；refine ⇄ spec_first 未动）
+    模块级：未声明依赖 0 · 环 0 · services 越层 0 · 显式例外 0
+    成员：  没人 import 的模块 54（棘轮）
+    测试：  5251 passed
+
+---
+
+## 29. 组间环 2 → 1：我拿一个错的测量，替自己挡下了该做的事（2026-08-29）
+
+### 29.1 先说结论
+
+`refine` 那三个模块，**唯一 import 它们的是 `spec_first_pipeline`**：
+
+    spec_first_pipeline:1124  from .refine_page_scope import split_pages_for_refine
+    spec_first_pipeline:1136  from .refine_graph_scope import ...
+    spec_first_pipeline:1355  from .refine_page_scope import split_pages_for_refine
+    spec_first_pipeline:1356  from .refine_short_circuit import ...
+    spec_first_pipeline:1619  from .refine_page_scope import decide_pages_to_regenerate
+
+而它们又回读这条流水线自己的校验器（`html_structure` / `spec_tree` / `app_graph`）。
+按 grok 的口径，这是**同一个 crate 内部的模块互指**（xai-grok-tools 8 对、
+xai-grok-shell 15 对，含 `implementations ⇄ registry`），不是两个 crate。合并掉，
+`refine ⇄ spec_first` 这个环随之消失。
+
+### 29.2 我先前是怎么把它挡下来的
+
+§22.3 里我写：
+
+> `refine` 一度看着像"应该并进 spec_first"，量了消费者之后**否掉了**：
+> `refine_page_scope` 有 8 个消费者，散在 spec_first / drive / model_core 三个组，
+> 不是流水线的私有卫星。
+
+**那个 8 是 `grep -rn refine_page_scope` 数出来的。** 命中的是注释、文档字符串、
+模块头里提到这个名字的地方。真正的 `import` 只有 1 个。
+
+CLAUDE.md 第二条讲的就是这件事（「判据 grep 源码里的标识符，而那个词同时出现在
+文档字符串里」）——我在**同一个仓、同一天、写着那条纪律的文件里**，又踩了一次。
+
+⚠ 而且这次的形状更坏一层：**用 grep 数依赖，错的方向刚好是「看起来更耦合」**。
+它不会让你做错事，它会让你**不做该做的事**，而且看着像审慎。
+「量过了，是真耦合」这句话，比「没量」更难被质疑。
+
+### 29.3 所以判据不是"以后小心点"
+
+把「数消费者」从人手里拿走：`arch_graph.satellite_components()` —— 条件是
+**被且只被一个组依赖 ∧ 那个组正是它 `may_depend_on` 里的**。
+命中就是硬红（不是棘轮），信息里直说：那不是两个 crate，是一个。
+
+今天全仓 0 个卫星组。判据自带一条**防空转**：拿自造的两组样本证明探测器真的会报——
+仓里 0 个的时候，「探测器坏了」和「确实没有」长得一模一样
+（本仓旧账：一个报 0 的扫描器和一条全绿的判据是同一种东西）。
+
+变异实测：把 refine 拆回去 → 红；探测器改成永远返回空 → 防空转那条红。
+
+### 29.4 这一夜第三次"量完之后推翻自己"
+
+    ① util 叶子           想立「零依赖叶子不许住非叶子组」→ 量出 39 个合理反例 → 规则作废
+    ② drive ⇄ model_core  §23.5 写"真耦合"→ 数完边发现 21 条里 15 条是归组画歪
+    ③ refine ⇄ spec_first 拿 grep 数出的 8 个消费者拒绝合并 → 依赖图里只有 1 个
+
+三次里有两次，**错的测量让我少做了事**。这比做错事更难发现——没人会去复查一个
+"我们仔细考虑过，决定不做"的结论。
+
+### 29.5 账
+
+    组间环 **1**（17 → 13 → 8 → 6 → 5 → 2 → 1），只剩 drive ⇄ model_core，
+                 而它的边已经从 21 条量到 6 条，全部是同一句话（§28.4）
+    卫星组 0（新立硬闸）
+    模块级：未声明依赖 0 · 环 0 · services 越层 0 · 显式例外 0
+    成员：  没人 import 的模块 54（棘轮）
+
+---
+
+## 30. 订正 §26：那 54 个孤儿里，"Node 边界镜像"只占三成（2026-08-29）
+
+§26 里我写「挨个看了，绝大多数不是"忘了删"，是三类各有各的理由」，然后给了一张
+以 Node 边界镜像为主的表。**"挨个看了"是假的——我只读了 3 个模块头就外推了 54 个。**
+
+拿它们自己的文档字符串跑一遍分类（关键词：`Node-owned` / `Node owns` /
+`remain Node` vs `Python-owned` / `Python owns` vs「不在产品链」「禁止再 import」「验证件」）：
+
+| 数 | 类 | 说明 |
+|---:|---|---|
+| 16 | Node 拥有运行时，Python 只镜像契约 | §26 说的那一类，**只占 30%** |
+| 18 | ⚠ **Python 自己拥有，却没人 import** | 模块头明写 "Python-owned"，而依赖图里入度为 0 |
+| 19 | ❓ 模块头没说清归谁 | 分类器认不出来，得人读 |
+|  1 | 明说不在产品链上 | `v5_session_driver`（"禁止再 import 进来当驱动器"） |
+
+⚠ 分类器是关键词匹配前 1200 字，粗糙——**别把这张表当结论，它只是把"我读了 3 个"
+换成"我扫了 54 个"**。两个方向都别overclaim。
+
+### 30.1 中间那 18 个才是该问的
+
+「Python 自己拥有这块运行时」+「没有任何模块 import 它」= 两种可能，而且**都不是
+"就该这样"**：
+
+    a) 接线漏了 —— 功能其实不存在，而它有测试、有契约、看着像存在
+    b) 确实死了 —— 那就该删，留着是假的记录
+
+这跟今晚 §24（连接器块接在不通电的插座上）、§27（六块上下文落在老生成器上）
+是**同一个形状的第三次发作**：东西写好了、测试全绿、就是没人调它。
+
+区别在于：那两次我能自己判断（连接器有确定的正确行为、澄清是明显的断线），
+这 18 个每一个都要回答"这块运行时到底该不该被 wire 起来"——那是产品判断。
+
+### 30.2 我在这一夜里第四次被自己的测量绊倒
+
+    ① util 叶子           想立规则 → 量出 39 个合理反例 → 规则作废
+    ② drive ⇄ model_core  写"真耦合" → 数完边发现 15/21 是归组画歪
+    ③ refine ⇄ spec_first 拿 grep 数的 8 个消费者拒绝合并 → 图里只有 1 个
+    ④ 54 个孤儿           说"绝大多数是 Node 镜像" → 扫完只有 30%
+
+四次里三次，**错的测量让我少做事或说大话**，而不是做错事。共同点是：
+样本小、用 grep、然后**把结论写成陈述句**。
+
+下次写「挨个看了」之前，先问一句：真的挨个了吗，还是看了三个？
