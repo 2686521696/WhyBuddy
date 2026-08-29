@@ -1198,9 +1198,16 @@ def _default_llm_json_fn(goal: str, gate_feedback: Optional[str] = None) -> Opti
 
 
 def _refine_merge_patch_enabled() -> bool:
-    """默认开。留开关是因为它改的是生成契约本身，线上出事要能一条环境变量退回。"""
-    raw = (os.environ.get("SLIDERULE_REFINE_MERGE_PATCH") or "1").strip().lower()
-    return raw in ("1", "true", "yes", "on")
+    """默认开。留开关是因为它改的是生成契约本身，线上出事要能一条环境变量退回。
+
+    ⚠ 2026-08-29：原来这里是 `默认 "1"` 配 `in ("1","true","yes","on")` ——
+      **默认开，却拿"开"的词表解析**。拼错一个字母（`ture` / `enable`）落到
+      else，这根应急闸就**把自己静静地扳掉了**，不报错不打日志。
+      收进 env_flags.flag 之后：认不出来的值回落到声明的默认（True），并喊一声。
+    """
+    from .env_flags import flag
+
+    return flag("SLIDERULE_REFINE_MERGE_PATCH", default=True)
 
 
 def _apply_refine_patch(model: "Optional[Dict[str, Any]]") -> "Optional[Dict[str, Any]]":

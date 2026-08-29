@@ -2153,7 +2153,9 @@ def prefer_neon_http() -> bool:
 
     默认不开，行为与之前逐字节一致。受这个坑的部署把它打开即可，不用改代码。
     """
-    return (os.getenv(_PREFER_HTTP_ENV) or "").strip().lower() in ("1", "true", "yes", "on")
+    from .env_flags import flag
+
+    return flag(_PREFER_HTTP_ENV, default=False)
 
 
 def _current_signature() -> str:

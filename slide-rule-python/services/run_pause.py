@@ -417,8 +417,9 @@ def pause_enabled() -> bool:
     """
     import os
 
-    raw = str(os.environ.get("SLIDERULE_RUN_PAUSE_ENABLED", "1")).strip().lower()
-    return raw not in ("0", "false", "no", "off")
+    from .env_flags import flag
+
+    return flag("SLIDERULE_RUN_PAUSE_ENABLED", default=True)
 
 
 def request_hold(slot: Optional[PauseSlot], budget: Optional[PauseBudget] = None) -> Optional[PauseGate]:

@@ -72,6 +72,7 @@ import time
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from typing import Any, Iterator
+from . import env_flags as _env_flags
 
 _LOG_PREFIX = "[enrich-timing]"
 
@@ -139,7 +140,7 @@ def remaining_run_budget_seconds() -> float | None:
 
 def timing_enabled() -> bool:
     raw = (os.getenv(_ENABLED_ENV) or "").strip().lower()
-    if raw in ("0", "false", "no", "off"):
+    if raw in _env_flags.OFF:
         return False
     return True
 

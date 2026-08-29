@@ -53,8 +53,9 @@ _state: dict[str, Any] = {
 
 
 def gateway_circuit_enabled() -> bool:
-    raw = str(os.environ.get("SLIDERULE_GATEWAY_CIRCUIT", "1")).strip().lower()
-    return raw not in ("0", "false", "no", "off")
+    from services.env_flags import flag
+
+    return flag("SLIDERULE_GATEWAY_CIRCUIT", default=True)
 
 
 def reset_gateway_circuit() -> None:

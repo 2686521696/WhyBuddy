@@ -93,8 +93,9 @@ EXPAND_HUB_KINDS = frozenset({"role", "perm", "page"})
 
 def hub_barrier_enabled() -> bool:
     """`SLIDERULE_GRAPH_SCOPE_HUB_BARRIER=0` 退回「沿角色扫全图」。默认开。"""
-    raw = str(os.environ.get("SLIDERULE_GRAPH_SCOPE_HUB_BARRIER", "1")).strip().lower()
-    return raw not in ("0", "false", "no", "off")
+    from .env_flags import flag
+
+    return flag("SLIDERULE_GRAPH_SCOPE_HUB_BARRIER", default=True)
 
 
 def narrow_page_seeds(

@@ -38,6 +38,7 @@ from .slide_rule_coverage import (
 )
 from .v5_publish_closure_response import derive_publish_closure_response
 from .v5_skill_runtime_graph import derive_skill_runtime_graph_response
+from . import env_flags as _env_flags
 
 
 def persist_pending_capability(
@@ -173,7 +174,7 @@ def _parallel_caps_enabled() -> bool:
     """
     env = os.getenv("SLIDERULE_PARALLEL_CAPS")
     if env is not None and str(env).strip() != "":
-        return str(env).strip().lower() not in ("0", "false", "no", "off")
+        return str(env).strip().lower() not in _env_flags.OFF
     try:
         from config.settings import settings as _settings
         return bool(getattr(_settings, "SLIDERULE_PARALLEL_CAPS", True))
@@ -253,7 +254,7 @@ def _llm_round_caps_enabled() -> bool:
     LLM 通道"——配置了就真调（每一步的想法可流式观测），没配置走确定性 RAG。"""
     env = os.getenv("SLIDERULE_LLM_ROUND_CAPS")
     if env is not None and str(env).strip() != "":
-        return str(env).strip().lower() not in ("0", "false", "no", "off")
+        return str(env).strip().lower() not in _env_flags.OFF
     try:
         from sliderule_llm.config import get_llm_config
 
@@ -1927,7 +1928,7 @@ def _truthy_scope_flag(value: Any) -> bool:
     if value is True:
         return True
     if isinstance(value, str):
-        return value.strip().lower() in ("1", "true", "yes", "on")
+        return value.strip().lower() in _env_flags.ON
     return False
 
 

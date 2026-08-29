@@ -30,9 +30,13 @@ def _int(v: str | None, default: int) -> int:
 
 
 def _bool(v: str | None, default: bool = False) -> bool:
-    if v is None or v == "":
-        return default
-    return str(v).strip().lower() in ("1", "true", "yes", "on")
+    """⚠ 2026-08-29：原来是 `in ("1","true","yes","on")` 配一个**可传的** default。
+    今天所有调用点都传 False，所以还没出事；但签名允许 default=True，而那一刻
+    拼错一个字母就会静静地关掉一个默认开的功能——仓里另外两处正是这么坏的
+    （见 services/env_flags 模块头）。改成回落到声明的默认。"""
+    from services.env_flags import parse
+
+    return parse(v, default=default)
 
 
 def _csv(v: str | None) -> tuple[str, ...]:

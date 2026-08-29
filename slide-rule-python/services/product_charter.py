@@ -38,6 +38,7 @@ import threading
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
+from . import env_flags as _env_flags
 
 CHARTER_MARKER = "产品宪章（约束，不是证据）"
 
@@ -169,9 +170,11 @@ def _as_bool(raw: Any) -> Optional[bool]:
         return bool(raw)
     if isinstance(raw, str):
         s = raw.strip().lower()
-        if s in ("1", "true", "yes", "on"):
+        # ⚠ 这里是**三态**（None = 没表态），跟 env_flags.parse 的两态不同，
+        #   所以只共用词表、不共用函数。
+        if s in _env_flags.ON:
             return True
-        if s in ("0", "false", "no", "off"):
+        if s in _env_flags.OFF:
             return False
     return None
 

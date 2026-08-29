@@ -48,6 +48,7 @@ import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
+from . import env_flags as _env_flags
 
 #: 已经喊过的告警，喊一次就够——这条路每次生成都会走，不去刷屏。
 _WARNED: set = set()
@@ -190,7 +191,7 @@ def narrowing_enabled() -> bool:
     要临时关掉（排查、或对照复跑）：`SLIDERULE_BLOCK_CATALOG_NARROWING=0`。
     """
     raw = str(os.getenv("SLIDERULE_BLOCK_CATALOG_NARROWING", "")).strip().lower()
-    if raw in ("0", "false", "no", "off"):
+    if raw in _env_flags.OFF:
         return False
     return True
 

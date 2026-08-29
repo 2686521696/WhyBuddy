@@ -26,7 +26,9 @@ from .run_degradation import (
 def _llm_generate_enabled() -> bool:
     """T3 gate flag. Off by default so deterministic domains + fail-closed stay the
     baseline; opt-in via env for LLM generation of novel intents."""
-    return str(os.getenv("SLIDERULE_LLM_GENERATE_ENABLED", "")).strip().lower() in ("1", "true", "yes", "on")
+    from .env_flags import flag
+
+    return flag("SLIDERULE_LLM_GENERATE_ENABLED", default=False)
 
 
 def _demo_fixture_enabled() -> bool:
@@ -46,7 +48,9 @@ def _demo_fixture_enabled() -> bool:
 
     夹具没删也没坏：演示模式/回归测试把这个开关打开，行为与之前完全一致。
     """
-    return str(os.getenv("SLIDERULE_DEMO_FIXTURE_ENABLED", "")).strip().lower() in ("1", "true", "yes", "on")
+    from .env_flags import flag
+
+    return flag("SLIDERULE_DEMO_FIXTURE_ENABLED", default=False)
 
 
 # 最近一次五系统 LLM 生成路径的诊断。仅用于 publish closure 的 blocker 面向
@@ -450,8 +454,9 @@ def spec_first_no_gen5_on_transport() -> bool:
     开关名留 transport，是历史名字。2026-08-18 起同一根杆也管结构闸臆造：
     两件事的用户症状都是「版本涨了页还是旧的」，退路也该同一根。
     """
-    raw = str(os.environ.get("SLIDERULE_SPEC_FIRST_NO_GEN5_ON_TRANSPORT", "1")).strip().lower()
-    return raw not in ("0", "false", "no", "off")
+    from .env_flags import flag
+
+    return flag("SLIDERULE_SPEC_FIRST_NO_GEN5_ON_TRANSPORT", default=True)
 
 
 def _spec_first_exc_text(exc: BaseException) -> str:

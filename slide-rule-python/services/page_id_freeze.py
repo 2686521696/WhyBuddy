@@ -42,8 +42,9 @@ def refine_id_freeze_enabled() -> bool:
 
     线上回退杆和对照臂同一根：量"是不是它起的作用"必须同模型同话题跑 A/B。
     """
-    raw = str(os.environ.get("SLIDERULE_REFINE_ID_FREEZE", "1")).strip().lower()
-    return raw not in ("0", "false", "no", "off")
+    from .env_flags import flag
+
+    return flag("SLIDERULE_REFINE_ID_FREEZE", default=True)
 
 # 过夜实测漂法：p1 → p1_page → p1_page_workbench。剥的是装饰后缀，不是
 # 业务词干（reservation 不会被剥成空）。

@@ -71,6 +71,8 @@ import sys
 from contextvars import ContextVar
 from typing import Any, Callable, Dict, List, Optional
 
+from . import env_flags as _env_flags
+
 SPEC_FIRST_VERSION = "spec-first-pipeline-v1"
 
 
@@ -271,7 +273,8 @@ _ENABLE_ENV = "SLIDERULE_SPEC_FIRST"
 #: **默认开，显式关才关**（2026-08-14）。词表照仓里另外六处同款开关逐字一致
 #: （enrich_timing / block_narrowing / intake_judge / v5_parallel_generate /
 #: mailer / v5_full_driver 两处）——开关口径分叉的代价是"我明明关了它还在跑"。
-_OFF_VALUES = frozenset({"0", "false", "no", "off"})
+#: 同 refine_short_circuit._OFF：词表只有一份，在 services/env_flags。
+_OFF_VALUES = _env_flags.OFF
 
 #: 七步各自的模块名。**探针与 import 共用这一份**，不手抄两遍——
 #: 手抄两份必然漂移（本仓在「区块 uses 声明」「前端手抄区域词汇」上踩过两次）。
@@ -501,8 +504,9 @@ def refine_reuse_enabled() -> bool:
     留开关是因为这是本轮唯一会**改变落库内容**的改动，线上出问题要能一键退回
     「全量重生成」的老行为，不用回滚部署。
     """
-    raw = str(os.environ.get("SLIDERULE_REFINE_REUSE_SEGMENTS", "1")).strip().lower()
-    return raw not in ("0", "false", "no", "off")
+    from .env_flags import flag
+
+    return flag("SLIDERULE_REFINE_REUSE_SEGMENTS", default=True)
 
 
 def refine_reuse_1maximal_enabled() -> bool:
@@ -518,8 +522,9 @@ def refine_reuse_1maximal_enabled() -> bool:
     这两个开关也是 A/B 对照臂的实现方式（experiments/refine-fingerprint/），
     跟 SLIDERULE_REFINE_ID_FREEZE 那次一样：**线上回退杆和对照臂两用**。
     """
-    raw = str(os.environ.get("SLIDERULE_REFINE_REUSE_1MAXIMAL", "1")).strip().lower()
-    return raw not in ("0", "false", "no", "off")
+    from .env_flags import flag
+
+    return flag("SLIDERULE_REFINE_REUSE_1MAXIMAL", default=True)
 
 
 def refine_rbac_merge_enabled() -> bool:
@@ -528,8 +533,9 @@ def refine_rbac_merge_enabled() -> bool:
     这是本轮**唯一会改动沿用回来的那一段内容**的地方——沿用 rbac 却往它的
     permissions 里加了东西。风险面比纯粹的"照搬/不照搬"大，所以单独留杆。
     """
-    raw = str(os.environ.get("SLIDERULE_REFINE_RBAC_MERGE", "1")).strip().lower()
-    return raw not in ("0", "false", "no", "off")
+    from .env_flags import flag
+
+    return flag("SLIDERULE_REFINE_RBAC_MERGE", default=True)
 
 
 def refine_ref_align_enabled() -> bool:
@@ -538,8 +544,9 @@ def refine_ref_align_enabled() -> bool:
     跟权限合并同一类：会改动沿用回来的内容（字段/流程引用），单独留杆。
     关掉退回「对不上就整段扔」的过夜行为。
     """
-    raw = str(os.environ.get("SLIDERULE_REFINE_REF_ALIGN", "1")).strip().lower()
-    return raw not in ("0", "false", "no", "off")
+    from .env_flags import flag
+
+    return flag("SLIDERULE_REFINE_REF_ALIGN", default=True)
 
 
 def _permission_id(perm: Any) -> str:
@@ -1367,10 +1374,10 @@ def run_spec_first(
     _held_structure = False
     _shadow_on = str(
         os.environ.get("SLIDERULE_GRAPH_SCOPE_SHADOW", "1")
-    ).strip().lower() not in ("0", "false", "no", "off")
+    ).strip().lower() not in _env_flags.OFF
     _graph_drive_on = str(
         os.environ.get("SLIDERULE_GRAPH_SCOPE_DRIVE", "1")
-    ).strip().lower() not in ("0", "false", "no", "off")
+    ).strip().lower() not in _env_flags.OFF
     if refine and reuse_model and _shadow_on:
         raise_if_cancelled("第2.85步 图判作用域")
         with _stage("specfirst.graphscope") as gst:
@@ -1997,7 +2004,7 @@ def run_spec_first(
             #   不会。真机验证时要看照搬页渲染后的 DOM，不看源码（纪律五）。
             _partial_on = str(
                 os.environ.get("SLIDERULE_REFINE_PARTIAL_BIND", "1")
-            ).strip().lower() not in ("0", "false", "no", "off")
+            ).strip().lower() not in _env_flags.OFF
             _skip_bind = (
                 set(_reuse_now.keys()) & set(pages.keys())
                 if (_partial_on and refine)

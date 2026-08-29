@@ -71,14 +71,16 @@ _BLOCKING_ENV = "SLIDERULE_INTAKE_JUDGE_BLOCKING"
 def judge_enabled() -> bool:
     """默认开（判定本身不阻断，开着只多一次 1~2s 的调用换到诊断数据）。
     显式 0/false/no/off 关掉。"""
-    raw = (os.getenv(_ENABLED_ENV) or "").strip().lower()
-    return raw not in ("0", "false", "no", "off")
+    from .env_flags import flag
+
+    return flag(_ENABLED_ENV, default=True)
 
 
 def blocking_enabled() -> bool:
     """第一版默认关：判定只提示不拦。误判率收敛后再显式打开。"""
-    raw = (os.getenv(_BLOCKING_ENV) or "").strip().lower()
-    return raw in ("1", "true", "yes", "on")
+    from .env_flags import flag
+
+    return flag(_BLOCKING_ENV, default=False)
 
 
 # ── 第 0 层：确定性预判（零成本零延迟，只挡闭眼都知道的）────────────

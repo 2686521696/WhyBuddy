@@ -75,9 +75,14 @@ def parallel_generation_enabled() -> bool:
 
     这两件做完、有实测数据支撑之后，把默认改回 on 即可——
     `SLIDERULE_PARALLEL_MODEL_GENERATION=1` 现在就能单独打开来调试。
+
+    ⚠ 2026-08-29：原来是 `默认 "off"` 配 `not in {"0","false","no","off"}` ——
+      **默认关，却拿"关"的词表解析**。拼错一个字母（`onn` / `enable`）就落到
+      "不在关词表里"，并行**静静地打开**，而上面整段正说着它为什么必须关着。
     """
-    raw = str(os.getenv("SLIDERULE_PARALLEL_MODEL_GENERATION", "off")).strip().lower()
-    return raw not in {"0", "false", "no", "off"}
+    from .env_flags import flag
+
+    return flag("SLIDERULE_PARALLEL_MODEL_GENERATION", default=False)
 
 
 def _max_workers() -> int:

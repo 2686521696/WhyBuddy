@@ -56,14 +56,12 @@ def _env(name: str, default: str = "") -> str:
 
 
 def _env_bool(name: str, default: bool) -> bool:
-    raw = _env(name).lower()
-    if not raw:
-        return default
-    if raw in ("1", "true", "yes", "on"):
-        return True
-    if raw in ("0", "false", "no", "off"):
-        return False
-    return default
+    """⚠ 这一处的三分支（认识的开 / 认识的关 / 其余回落默认）本来就是对的，
+    收进 env_flags 只是为了**词表只剩一份**——2026-08-29 对账时全仓手抄了 28 份，
+    其中两份的默认与词表对不上（见 env_flags 模块头）。"""
+    from services.env_flags import parse
+
+    return parse(_env(name), default=default, name=name)
 
 
 def delivery_mode() -> str:

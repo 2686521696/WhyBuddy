@@ -52,8 +52,11 @@ from __future__ import annotations
 
 import os
 from typing import Any, Dict, Iterable, List, Optional
+from . import env_flags as _env_flags
 
-_OFF = frozenset({"0", "false", "no", "off"})
+#: 词表只有一份，在 services/env_flags。这里保留别名是因为下面按值判断，
+#: 不是按开关名读环境变量。
+_OFF = _env_flags.OFF
 PAGE_SEGMENT = "page"
 
 

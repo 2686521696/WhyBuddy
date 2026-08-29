@@ -323,7 +323,9 @@ _LOCAL_IMPORT_ENV = "SLIDERULE_SESSION_LOCAL_IMPORT"
 
 
 def _local_import_enabled() -> bool:
-    return (os.getenv(_LOCAL_IMPORT_ENV) or "").strip().lower() in {"1", "true", "yes", "on"}
+    from .env_flags import flag
+
+    return flag(_LOCAL_IMPORT_ENV, default=False)
 
 
 def _import_local_once(store) -> None:
