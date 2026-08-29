@@ -1725,6 +1725,37 @@ V6.0 是一张大图（19 个子图 / 183 个节点），V6.1 是一组短图。
                       services.persistence ⇄ services.slide_rule_session
                       services.v5_capability_executor ⇄ services.v5_full_driver
 
-建议先还第一个环：`rehearsal_control` 反过来 import 了
-`routes.sliderule_full._restore_model_version_locked`（services 依赖 routes，
-方向是反的）。把那个函数下沉成 service，环和 `services→routes` 那条违规一起清掉。
+### 16.6 建议先还哪一笔，以及它的手术清单
+
+第一个环最值得还：`rehearsal_control` 反过来 import 了
+`routes.sliderule_full._restore_model_version_locked`——**services 依赖 routes，
+方向是反的**。把那个函数下沉成 service，这个环和 `services→routes` 那条违规
+一起清掉，一刀还两笔。
+
+⚠ 但它是一次典型的「只改一半会静默失效」（CLAUDE.md 第四条）。动手前先看全下面
+六处，2026-08-29 已经数过：
+
+    产线两处
+      routes/sliderule_full.py        定义在这里，HTTP 路由 + 每会话回退锁调它
+      services/rehearsal_control.py   `_tool_restore` 在**函数体内** import 它
+
+    测试四处（都钉在「它在 routes 里」这个事实上，函数一搬全部失效）
+      test_forced_restore_previous_version.py:50/91/111
+                                      monkeypatch "routes.sliderule_full._restore_model_version_locked"
+                                      走的是控制面路径，靠 rehearsal_control 的函数内
+                                      import 命中这个 patch——改成从 service import 之后
+                                      **patch 不再拦得住，会去打真库**
+      test_restore_serialized.py:47/77 patch 同一个属性，验的是每会话回退锁串行化
+      test_page_id_aliases_survive_refine.py:250
+                                      直接调它，且 patch 的是 `srf.load_session` /
+                                      `srf.save_session`——函数搬走后它会用 service 模块的
+                                      那两个名字，patch 落空
+      test_restore_evidence_lands.py:140
+                                      grep `routes/sliderule_full.py` 源码里的
+                                      `def _restore_model_version_locked`
+
+    另外：控制面那条路**不走每会话回退锁**（`_tool_restore` 直接调 locked 版），
+    这是既有的并发缺口，下沉时顺手收口比较自然，但那是另一件事，别混着做。
+
+搬之前先把这六处列成清单逐个划掉；只改产线两处、测试不动的话，
+四个测试会以各自不同的方式失效——其中两个是**打到真库**，不是干脆报错。
