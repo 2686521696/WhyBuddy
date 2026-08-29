@@ -114,6 +114,12 @@ def test_typescript_union_lists_every_python_await_reason():
     # 那一刻「删掉成员、注释还在」就会让这条变异咬不动（CLAUDE.md §2）。
     union = re.sub(r"/\*.*?\*/", " ", union, flags=re.S)
     union = re.sub(r"//[^\n]*", " ", union)
-    members = set(re.findall(r'"([a-z_]+)"', union))
+    # ⚠ 字符集要能认下带数字/驼峰的成员（2026-08-29 架构对账）。
+    # 这一条与 test_state_enum_values_are_declared 的方向相反、后果也相反：
+    # 那边窄字符集是**漏报**（未申报的 `controlScope` 扫不到，闸绿着放行）；
+    # 这边窄了是**误报**（TS 里明明有 `controlScope`，正则看不见 → 判成 TS 少了
+    # → 红）。误报比漏报安全，但一样得修：一条会无故变红的闸，下一个人会把它
+    # 注释掉，那时漏报就来了。
+    members = set(re.findall(r'"([A-Za-z0-9_]+)"', union))
     missing = sorted(set(get_args(AwaitReason)) - members)
     assert not missing, f"TS AwaitReason 少了：{missing}（{ts_src}）"
