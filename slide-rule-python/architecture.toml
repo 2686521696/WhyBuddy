@@ -448,22 +448,17 @@ modules = [
 
 [component.drive]
 why = """编排：驱动器信封、控制面、会话、run 注册表、暂停/取消、轮次叙述。"""
-may_depend_on = ["capability_engine", "evidence", "identity", "llm_gateway", "model_core", "observability", "persist", "platform", "spec_first"]
+may_depend_on = ["capability_engine", "evidence", "identity", "llm_gateway", "model_core", "observability", "persist", "platform", "run_control", "spec_first"]
 modules = [
   "services.app_working_session",
   "services.drive_full_factory",
   "services.nl_command_runtime",
   "services.product_charter",
   "services.rehearsal_control",
-  "services.repeat_policy",
-  "services.request_context",
-  "services.run_degradation",
-  "services.run_pause",
   "services.run_registry",
   "services.slide_rule_marathon",
   "services.slide_rule_session",
   "services.sliderule_session_sanitizer",
-  "services.turn_narration",
 ]
 
 [component.entrypoint]
@@ -543,7 +538,7 @@ modules = [
 
 [component.model_core]
 why = """五系统模型：生成、结构闸、修复、闭环证据、覆盖门、信任。产品的心脏。"""
-may_depend_on = ["app_store", "drive", "evidence", "llm_gateway", "observability", "persist", "platform", "spec_first"]
+may_depend_on = ["app_store", "drive", "evidence", "llm_gateway", "observability", "persist", "platform", "run_control", "spec_first"]
 modules = [
   "services.closure_block_reason",
   "services.merge_patch",
@@ -650,7 +645,11 @@ modules = [
 ]
 
 [component.platform]
-why = """最底下的叶子：配置与数据形状。谁都能依赖它，它谁都不依赖。"""
+why = """最底下的共用叶子：配置、数据形状、请求域上下文、零依赖的契约与工具。
+判定标准是**性质不是题材**——它谁都不依赖，所以谁都能安全 import 它。
+⚠ 但「零依赖的叶子」≠「该放这里」：全仓 121 个 util 叶子里有 39 个长在别的组且被跨组
+依赖，那是**对的**（connectors 属 evidence、auth_tokens 属 identity、audit_sink 属 audit）。
+叶子被多个组用是 grok 叶子 crate 的常态，只有**成环**时才是问题。别拿零依赖当搬家理由。"""
 may_depend_on = []
 modules = [
   "config.env_flags",
@@ -663,10 +662,11 @@ modules = [
   "services.device_policy",
   "services.env_flags",
   "services.rbac_roles",
-  "services.run_cancel",
+  "services.request_context",
   "services.schema_legal",
   "services.sql_gateway",
   "services.turn_context",
+  "services.turn_narration",
   "stdio_utf8",
 ]
 
@@ -679,9 +679,27 @@ modules = [
   "services.refine_short_circuit",
 ]
 
+[component.run_control]
+why = """本轮运行的控制面标记：该不该停（取消/暂停）、降级过没有、同一步连着跑了几次。
+四个都是零依赖叶子，被引擎、驱动、spec-first 和路由共用。
+
+⚠ 单独成组是**订正一处自打脸的归组**：`run_cancel` 一直在 platform，而它的三个亲兄弟
+`run_pause` / `run_degradation` / `repeat_policy` 在 drive——同一件事被拆在两个组，
+于是引擎（model_core）为了读一个降级标记，就得反过来依赖驱动组，
+`model_core ⇄ drive` 那 21 条边里有 14 条是这么来的。
+
+抄 grok 的小叶子 crate：一件事一个 crate，谁都能依赖它，它谁都不依赖。"""
+may_depend_on = ["platform"]
+modules = [
+  "services.repeat_policy",
+  "services.run_cancel",
+  "services.run_degradation",
+  "services.run_pause",
+]
+
 [component.spec_first]
 why = """spec-first 七步与页面产出：spec 树、逐页 HTML、外壳、绑定、配色、区块目录。"""
-may_depend_on = ["app_store", "llm_gateway", "observability", "platform", "refine"]
+may_depend_on = ["app_store", "llm_gateway", "observability", "platform", "refine", "run_control"]
 modules = [
   "services.app_graph",
   "services.app_template",

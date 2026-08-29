@@ -457,6 +457,47 @@ class Test同一个crate内部允许互指:
             )
 
 
+class Test一件事不许拆在两个组:
+    """⚠ 2026-08-29 抓到的自打脸归组，也是 `drive ⇄ model_core` 里 14 条边的来源。
+
+    `run_cancel`（协作式取消）一直在 platform，而它的三个亲兄弟
+    `run_pause`（协作式暂停）/ `run_degradation`（本轮降级标记）/
+    `repeat_policy`（同一步连着跑几次）在 drive。同一件事——「本轮该不该继续、
+    怎么继续」——被拆在两个组，于是引擎为了读一个降级标记就得反过来依赖驱动组。
+
+    **归组是判据的输入。** 这一条把那个输入本身钉住。
+    """
+
+    def test_运行控制面四个模块在同一个组(self):
+        want = {
+            "services.run_cancel",
+            "services.run_pause",
+            "services.run_degradation",
+            "services.repeat_policy",
+        }
+        got = {m: _COMP.get(m) for m in sorted(want)}
+        assert len(set(got.values())) == 1, (
+            f"「本轮该不该继续」这件事又被拆开了：{got}。"
+            f"拆开的代价是引擎为了读一个标记去依赖驱动组（2026-08-29 实测 14 条边）"
+        )
+
+    def test_运行控制面是叶子(self):
+        """⚠ 它能被引擎/驱动/spec-first/路由同时依赖的全部理由。
+        一旦它开始依赖上层，`model_core ⇄ drive` 会原样长回来。"""
+        comp = _COMP.get("services.run_cancel")
+        spec = (_M.get("component") or {}).get(comp) or {}
+        assert set(spec.get("may_depend_on") or []) <= {"platform"}, (
+            f"{comp} 开始依赖 platform 以外的组了——它就不再是谁都能安全依赖的叶子"
+        )
+        members = set(spec.get("modules") or [])
+        bad = sorted(
+            f"{e.src} -> {e.dst}"
+            for e in _G.edges
+            if e.src in members and _COMP.get(e.dst) not in (comp, "platform", None)
+        )
+        assert not bad, f"运行控制面反过来依赖上层了：{bad}"
+
+
 class Test没人import的模块只许变少:
     """抄 grok 的 workspace 成员关系：他们 90 个 crate 里被依赖数为 0 的只有装配根
     （因为它是 binary）。入口天然没上游，其余模块没上游就得解释。
