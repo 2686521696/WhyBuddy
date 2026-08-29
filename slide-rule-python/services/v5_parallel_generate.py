@@ -14,6 +14,8 @@ deterministically from validated outputs.
 """
 
 from __future__ import annotations
+from .archetype_legal import default_device as _default_device
+from .archetype_legal import supported_devices as _supported_devices
 
 import copy
 import json
@@ -296,7 +298,7 @@ def _contract_problems(payload: Any) -> list[str]:
         problems.append("contract.pageBindings must be an array")
     if not isinstance(contract.get("invariants"), list) or not contract.get("invariants"):
         problems.append("contract.invariants must be a non-empty array")
-    if contract.get("preferredDevice") not in {"desktop", "phone"}:
+    if contract.get("preferredDevice") not in set(_supported_devices()):
         problems.append("contract.preferredDevice must be desktop or phone")
 
     entities = [item for item in contract.get("entities", []) if isinstance(item, dict)]
@@ -547,8 +549,8 @@ def assemble_appbundle(
     if landing not in page_ids:
         landing = page_ids[0] if page_ids else ""
     device = str(meta.get("preferredDevice") or "").strip()
-    if device not in {"desktop", "phone"}:
-        device = "desktop"
+    if device not in set(_supported_devices()):
+        device = _default_device()
 
     bindings = []
     declared_bindings = meta.get("pageBindings")

@@ -15,7 +15,7 @@
 ## 此刻的事实（由代码算出，不是手写）
 
 - 扫描文件 **275** 个，模块 **275** 个
-- 内部依赖边 **789** 条，其中 **463** 条写在函数体里（58%）
+- 内部依赖边 **797** 条，其中 **463** 条写在函数体里（58%）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
@@ -25,8 +25,8 @@
 
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
-| `util` | 120 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
-| `core` | 55 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
+| `util` | 119 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `core` | 56 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 28 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
 叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import 的全部理由，也是 `import` 不必躲进函数体的前提。
@@ -146,7 +146,7 @@ flowchart LR
   entrypoint -->|3| spec_first
   entrypoint -->|3| task_exec
   evidence -->|7| llm_gateway
-  evidence -->|5| platform
+  evidence -->|7| platform
   http_routes -->|25| app_store
   http_routes -->|3| audit
   http_routes -->|1| blueprint
@@ -169,7 +169,7 @@ flowchart LR
   model_core -->|18| llm_gateway
   model_core -->|6| observability
   model_core -->|2| persist
-  model_core -->|43| platform
+  model_core -->|45| platform
   model_core -->|11| run_control
   model_core -->|15| spec_first
   observability -->|2| llm_gateway
@@ -190,7 +190,7 @@ flowchart LR
   spec_first -->|3| app_store
   spec_first -->|35| llm_gateway
   spec_first -->|3| observability
-  spec_first -->|34| platform
+  spec_first -->|36| platform
   spec_first -->|1| run_control
   task_exec -->|2| evidence
   task_exec -->|4| platform

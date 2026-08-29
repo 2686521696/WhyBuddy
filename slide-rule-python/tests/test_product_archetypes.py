@@ -205,3 +205,153 @@ class Test这道闸咬得动:
     def test_探测器真的会报重复证据键(self):
         ks = ["X", "X"]
         assert len(ks) != len(set(ks)), "构造的重复键没被认出来"
+
+
+class Test设备形态账本:
+    """⚠ 三处手抄、形态各异（元组 / 集合＋哨兵 / 散文），所以"搜同一串字面量"
+    根本对不上——加一个 watch 必然漏一处，而漏的后果是**生成出来了但闸不认**，
+    静默失效（第四条）。"""
+
+    #: 改造前 `_DEVICE_RUBRIC` 的完整原文。**故意逐字重抄一份**：
+    #: 这是一段调过的提示词，改它 = 改判定结果。任何人动账本里的 posture，
+    #: 这条当场红，逼他说清是有意改提示词还是手滑。
+    HISTORICAL_RUBRIC = (
+        "顺带判一件事：这个系统主要该在**哪种设备**上用。判据是**使用姿态**"
+        "（人在什么状态下操作），不是句子里出现了什么词。\n"
+        "  · phone —— 站着、走动、单手、在现场、即时上报：扫码/拍照/打卡/签字/"
+        "随手记一笔，或者使用者是个人在日常生活里用（记账、日程、情绪、预约、下单）。\n"
+        "  · desktop —— 坐着、长时段、多列对照、批量操作、审批与配置：看板/中台/"
+        "后台/分析/汇总/对账/排产/关系图/权限分级，使用者是在工位上处理一批事的人。\n"
+        "  · unspecified —— **没有姿态信号就必须选这个**。别硬猜。\n"
+        "两个方向的坑（这两组最容易判错，判的是谁在什么状态下用，不是词）：\n"
+        "  「外卖骑手运力调度看板」有「骑手」，但用的人是调度员坐在后台 → desktop\n"
+        "  「员工打卡的月度汇总与补卡审批」有「打卡」，但汇总审批是 HR 坐着做 → desktop\n"
+        "  「巡检工单，工人到现场拍照上传当场提交」有「工单」，但人站着走动 → phone\n"
+        "  「仓库盘点，扫码逐箱核对」有「仓库」，但扫码逐箱是走动作业 → phone\n"
+        "用户明说了「App」「手机端」「小程序」「PC 端」「网页版」「电脑上用」就直接照办，"
+        "不用再推姿态。\n"
+        "拿不准、或者一句话里几个角色姿态不同（提交侧像手机、审批侧像桌面）→ "
+        "unspecified。**判 unspecified 不丢人，硬猜错了下游会按错的档去设计版式。**"
+    )
+
+    def test_rubric_逐字不变(self):
+        """⚠ 整个设备改造的验收：提示词一个字节都不许变。"""
+        from services.intake_judge import _DEVICE_RUBRIC
+
+        assert _DEVICE_RUBRIC == self.HISTORICAL_RUBRIC
+
+    def test_闸的合法域与历史一致(self):
+        assert set(A.supported_devices()) == {"desktop", "phone"}
+
+    def test_判定输出域与历史一致(self):
+        from services.intake_judge import _VALID_DEVICES
+
+        assert _VALID_DEVICES == {"desktop", "phone", "unspecified"}
+
+    def test_哨兵不是设备(self):
+        """⚠ unspecified 是「没有姿态信号」的判定结果，不是一种设备。
+        混进闸的合法域 = 允许交付一个"设备未定"的应用。"""
+        assert A.JUDGE_UNSPECIFIED not in A.supported_devices()
+        assert A.JUDGE_UNSPECIFIED in A.valid_judge_devices()
+
+    def test_未接通的设备不进合法域也不进提示词(self):
+        """⚠ tablet / watch 是契约声明、版式侧未接。进了提示词 = 判定会输出
+        一个闸不认的值，用户看到的是"生成失败"而不是"暂不支持"。"""
+        for d in ("tablet", "watch"):
+            assert d not in A.supported_devices()
+            assert d not in A.device_rubric_bullets()
+
+    def test_接通的设备必须都进提示词(self):
+        """⚠ 反向判据。加了设备、闸认了、提示词没提 = 判定永远不会选它，
+        等于白加——本仓"写好了但没接上"那类事故的又一形态。"""
+        for d in A.supported_devices():
+            assert f"· {d} ——" in A.device_rubric_bullets(), f"{d} 没进提示词"
+
+    def test_运行时判断不许再写死设备枚举(self):
+        """⚠ 反向判据，但**只管运行时**。
+
+        Python 的 `Literal[...]` 只吃字面量，不能写成 `Literal[tuple(...)]`——
+        那四处类型标注物理上没法派生，见下一条用 parity 锁钉住它们。
+        这条管的是 `in {...}` / `in (...)` 这类**运行时**判断：它们能派生，
+        没派生就是又一份手抄。
+        """
+        import ast
+
+        pairs = {frozenset({"desktop", "phone"}), frozenset({"desktop", "phone", "unspecified"})}
+        offenders = []
+        for path in (ROOT / "services").rglob("*.py"):
+            if path.name == "archetype_legal.py":
+                continue
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+                    continue
+                # `Literal["desktop","phone"]` 的下标不算——它是类型，不是运行时判断
+                parent_is_literal = any(
+                    isinstance(anc, ast.Subscript)
+                    and isinstance(anc.value, ast.Name)
+                    and anc.value.id == "Literal"
+                    and anc.slice is node
+                    for anc in ast.walk(tree)
+                )
+                if parent_is_literal:
+                    continue
+                vals = frozenset(
+                    e.value for e in node.elts
+                    if isinstance(e, ast.Constant) and isinstance(e.value, str)
+                )
+                if vals in pairs:
+                    offenders.append(f"{path.name}:{node.lineno}")
+        assert not offenders, (
+            f"这些**运行时**判断又把设备枚举写死了：{offenders}\n"
+            f"改成 archetype_legal.supported_devices() / valid_judge_devices()。"
+        )
+
+    def test_Literal标注与账本一致(self):
+        """⚠ parity 锁。`Literal` 派生不了，所以改成"允许手写、但必须对得上"。
+
+        账本加一个 wired 设备而这几处 Literal 没跟上 → 当场红。
+        这跟 TS 侧那份 archetype-parity 是同一条纪律：
+        **拦不住的地方，就钉住它。**
+        """
+        import ast
+
+        expected = set(A.supported_devices())
+        expected_with_sentinel = expected | {A.JUDGE_UNSPECIFIED}
+        checked = 0
+        for path in (ROOT / "services").rglob("*.py"):
+            try:
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if not (
+                    isinstance(node, ast.Subscript)
+                    and isinstance(node.value, ast.Name)
+                    and node.value.id == "Literal"
+                ):
+                    continue
+                elts = getattr(node.slice, "elts", None)
+                if not elts:
+                    continue
+                vals = {
+                    e.value for e in elts
+                    if isinstance(e, ast.Constant) and isinstance(e.value, str)
+                }
+                # 只挑"看起来是设备域"的那些：含 desktop 或 phone
+                if not (vals & {"desktop", "phone"}):
+                    continue
+                checked += 1
+                assert vals in (expected, expected_with_sentinel), (
+                    f"{path.name}:{node.lineno} 的 Literal 是 {sorted(vals)}，"
+                    f"账本是 {sorted(expected)}（判定域再加 {A.JUDGE_UNSPECIFIED}）。"
+                    f"账本加了设备就要同步这里——Literal 派生不了，只能靠这条锁。"
+                )
+        assert checked >= 4, f"只找到 {checked} 处设备 Literal，判据可能在空转"
+
+    def test_兜底档必须是接通的设备(self):
+        """⚠ 兜底档要是个未接通的设备，判不出姿态时会直接产出闸不认的东西。"""
+        assert A.default_device() in A.supported_devices()

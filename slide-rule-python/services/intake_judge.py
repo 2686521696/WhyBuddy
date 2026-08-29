@@ -48,6 +48,8 @@
 """
 
 from __future__ import annotations
+from .archetype_legal import device_rubric_bullets as _device_rubric_bullets
+from .archetype_legal import valid_judge_devices as _valid_judge_devices
 
 import os
 import re
@@ -233,11 +235,10 @@ def _out_of_scope_block() -> str:
 _DEVICE_RUBRIC = (
     "顺带判一件事：这个系统主要该在**哪种设备**上用。判据是**使用姿态**"
     "（人在什么状态下操作），不是句子里出现了什么词。\n"
-    "  · phone —— 站着、走动、单手、在现场、即时上报：扫码/拍照/打卡/签字/"
-    "随手记一笔，或者使用者是个人在日常生活里用（记账、日程、情绪、预约、下单）。\n"
-    "  · desktop —— 坐着、长时段、多列对照、批量操作、审批与配置：看板/中台/"
-    "后台/分析/汇总/对账/排产/关系图/权限分级，使用者是在工位上处理一批事的人。\n"
-    "  · unspecified —— **没有姿态信号就必须选这个**。别硬猜。\n"
+    # ⚠ 设备条目由账本生成（加设备只改 JSON，提示词自动跟上）。
+    #   下面五行「容易判错的例子」是**标定过的**，手写保留——
+    #   生成它等于把标定丢给模板。判据 test_rubric_逐字不变 钉住整串。
+    + _device_rubric_bullets() + "\n"
     "两个方向的坑（这两组最容易判错，判的是谁在什么状态下用，不是词）：\n"
     "  「外卖骑手运力调度看板」有「骑手」，但用的人是调度员坐在后台 → desktop\n"
     "  「员工打卡的月度汇总与补卡审批」有「打卡」，但汇总审批是 HR 坐着做 → desktop\n"
@@ -422,7 +423,8 @@ def build_messages(text: str, *, has_app: bool, app_summary: str = "") -> list[d
 
 
 _VALID_VERDICTS = {"real", "iteration", "vague", "off_topic", "meta", "out_of_scope"}
-_VALID_DEVICES = {"desktop", "phone", "unspecified"}
+#: ⚠ 判定输出域 = 闸的合法域 + unspecified 哨兵。同源于账本（第四条）。
+_VALID_DEVICES = _valid_judge_devices()
 
 
 def _coerce(payload: dict[str, Any], *, has_app: bool) -> Judgement:

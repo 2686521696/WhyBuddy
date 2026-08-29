@@ -1,18 +1,22 @@
 {
   "$comment": "产品原型账本——「什么算闭环」的单一真相源（2026-08-30）。此前六系统（datamodel/rbac/workflow/page/aigc/appbundle）写死成全局常量，跨两门语言手抄 10 处，等于把『后台管理系统的闭环定义』当成了全局真理。后果不是难看，是结构性封顶：小游戏没有 datamodel/rbac/workflow，按旧闸永远不可能 gate_passed=true——不是生成得不好，是不允许它存在。同一套路参考 five_system_legal.json（E40.1 四本账收一本）。加原型 = 只改这份 JSON；哪一方没消费到，parity 判据当场红。",
   "version": 1,
-
   "$comment_default": "defaultArchetype 是没有显式声明时的兜底。它必须是 wired=true 的，判据 test_默认原型必须是接通的 钉住——否则今天的产品链路会整条 fail-closed。",
   "defaultArchetype": "business_app",
-
   "$comment_wired": "wired=false 表示『契约声明了，但生成侧还产不出这些段』。这类原型**不许被选中**，选中即 fail-closed 并说清原因（第七条：闭环类缺证据就是缺，不许伪造绿灯）。它们留在这里是为了让下一个人知道靶子在哪，不是为了让人以为已经能用了——本仓踩过太多次『写好了、有测试、就是没人调它』。",
-
   "archetypes": {
     "business_app": {
       "label": "业务 / 后台应用",
       "wired": true,
       "$comment": "今天唯一在跑的原型。requiredEvidence 与 closureEdges 逐字等于 2026-08-29 之前写死在 v5_capability_executor 里的那两个常量——这次改造对它必须是零行为变化，由 test_默认原型与历史常量逐字一致 钉住。",
-      "requiredEvidence": ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"],
+      "requiredEvidence": [
+        "datamodel",
+        "rbac",
+        "workflow",
+        "page",
+        "aigc",
+        "appbundle"
+      ],
       "closureEdges": [
         {
           "sourceSkill": "datamodel",
@@ -52,12 +56,17 @@
         }
       ]
     },
-
     "casual_game": {
       "label": "小游戏 / 互动玩法",
       "wired": false,
       "$comment": "⚠ 契约先立，生成侧未接。小游戏没有实体表、没有角色权限、没有审批流——六系统那套一样也套不上，硬套的结果是三个空段顶着『已闭环』。这里的闭环判据换成玩法自己的：有没有主循环、输入响应、胜负/结束条件、渲染面。**闸一条都没放松**，只是换了该问的问题。接通它要做的事：生成侧产出这五段 _model_section + 结构闸认识这些段。",
-      "requiredEvidence": ["gameloop", "input", "outcome", "render", "appbundle"],
+      "requiredEvidence": [
+        "gameloop",
+        "input",
+        "outcome",
+        "render",
+        "appbundle"
+      ],
       "closureEdges": [
         {
           "sourceSkill": "gameloop",
@@ -85,12 +94,16 @@
         }
       ]
     },
-
     "glance_app": {
       "label": "手表 / 一瞥式应用",
       "wired": false,
       "$comment": "⚠ 契约先立，生成侧未接。手表表盘的闭环不是『页面之间关联对不对』，是『一瞥能不能读完』：数据源、瞥读面、复杂功能位（complication）。页面导航壳在这里是负资产——glance 面不该有面包屑。接通它要做的事同上。",
-      "requiredEvidence": ["datasource", "glance", "complication", "appbundle"],
+      "requiredEvidence": [
+        "datasource",
+        "glance",
+        "complication",
+        "appbundle"
+      ],
       "closureEdges": [
         {
           "sourceSkill": "datasource",
@@ -112,5 +125,42 @@
         }
       ]
     }
+  },
+  "$comment_devices": "设备形态账本。此前手抄三处、形态各异：v5_model_gate 的 supported_devices（闸的合法域）、intake_judge 的 _VALID_DEVICES（判定输出域，多一个 unspecified 哨兵）、_DEVICE_RUBRIC（提示词里的姿态描述）。加一个 watch 要找齐三处，漏一处 = 生成出来了但闸不认，静默失效（第四条）。posture 是喂给判定 LLM 的姿态描述，rubric 的设备条目由它生成——加设备只改这份 JSON，提示词自动跟上。⚠ rubric 里那五行「容易判错的例子」是**标定过的**，不由账本生成，手写保留在 intake_judge。",
+  "deviceForms": {
+    "$order": [
+      "phone",
+      "desktop"
+    ],
+    "$comment_order": "⚠ 提示词里的条目顺序。改顺序 = 改提示词 = 可能改判定结果，判据 test_rubric 逐字不变 会红。",
+    "judgeSentinel": "unspecified",
+    "$comment_sentinel": "判定专用哨兵：『没有姿态信号』。它不是设备，所以不在 forms 里，闸也不接受它。",
+    "sentinelPosture": "**没有姿态信号就必须选这个**。别硬猜。",
+    "forms": {
+      "phone": {
+        "label": "手机",
+        "wired": true,
+        "posture": "站着、走动、单手、在现场、即时上报：扫码/拍照/打卡/签字/随手记一笔，或者使用者是个人在日常生活里用（记账、日程、情绪、预约、下单）。"
+      },
+      "desktop": {
+        "label": "桌面 / PC",
+        "wired": true,
+        "posture": "坐着、长时段、多列对照、批量操作、审批与配置：看板/中台/后台/分析/汇总/对账/排产/关系图/权限分级，使用者是在工位上处理一批事的人。"
+      },
+      "tablet": {
+        "label": "平板",
+        "wired": false,
+        "posture": "手持或支起、单手点按为主但视野接近桌面：现场演示、点单、查房、巡店，坐站切换。",
+        "$comment": "⚠ 契约先立，版式侧未接。接通要做的：生成侧认识这个档的版式规则 + 闸放进合法域。"
+      },
+      "watch": {
+        "label": "手表 / 一瞥式",
+        "wired": false,
+        "posture": "抬腕两秒读完、几乎不输入：只看一个数、一个状态、一条提醒。",
+        "$comment": "⚠ 同上。它多半要配 glance_app 原型一起用——页面导航壳在手表上是负资产。"
+      }
+    },
+    "defaultDevice": "desktop",
+    "$comment_default": "⚠ 判不出姿态时的兜底档。散落在 device_policy 与 v5_parallel_generate 两处过，一并收进来。"
   }
 }

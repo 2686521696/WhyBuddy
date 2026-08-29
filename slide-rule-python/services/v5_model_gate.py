@@ -32,6 +32,7 @@ All checks are pure + deterministic. No LLM, no IO.
 """
 
 from __future__ import annotations
+from .archetype_legal import supported_devices as _supported_devices
 from .archetype_legal import required_evidence as _required_evidence
 
 from typing import Any, Dict, List
@@ -1207,7 +1208,9 @@ def validate_five_system_model(
 
     # Step 8: preferredDevice 合法域
     pref_device = str(appbundle.get("preferredDevice") or "").strip()
-    supported_devices = ("desktop", "phone")
+    # ⚠ 2026-08-30：曾是写死的元组。加 watch/tablet 要同时改 intake_judge 的
+    #   两处，漏一处 = 生成出来了但闸不认（第四条）。现在同源于账本。
+    supported_devices = _supported_devices()
     if require_preferred_device and pref_device not in supported_devices:
         findings.append(_finding(
             DANGLING, "appbundle.preferredDevice",

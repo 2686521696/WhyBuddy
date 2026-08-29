@@ -65,6 +65,7 @@ n=3 的一轮 A/B（experiments/visual-first/ab_spec_first.py），同一个话�
 """
 
 from __future__ import annotations
+from .archetype_legal import supported_devices as _supported_devices
 
 import os
 import sys
@@ -1313,7 +1314,7 @@ def run_spec_first(
     _page_id_aliases: Dict[str, str] = {}
     # 显式开关压过话题词表：点了「应用」再写「做个库存系统」必须出竖屏。
     # 不传则走 resolve（模块 override > 句子里的设备词 > desktop）。
-    if preferred_device in ("desktop", "phone"):
+    if preferred_device in _supported_devices():
         device = preferred_device
     else:
         device = resolve_preferred_device(goal, None)

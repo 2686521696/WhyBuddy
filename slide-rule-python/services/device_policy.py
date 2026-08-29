@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+from .archetype_legal import default_device as _default_device
+from .archetype_legal import supported_devices as _supported_devices
 import re
 from typing import Any, Literal, MutableMapping, Optional
 
 
+#: ⚠ `Literal` 只吃字面量，**不能**写成 `Literal[tuple(...)]`——这是 Python 的
+#: 限制，不是偷懒。所以这一处必须手写，由判据 `test_Literal标注与账本一致`
+#: 钉在账本上：账本加设备而这里没跟上，当场红。
+#: 下面所有**运行时**判断则一律同源于账本。
 Device = Literal["desktop", "phone"]
 DEVICE_AUTHORITY = "single-v1"
 
@@ -27,7 +33,7 @@ _override: Optional[Device] = None
 def set_preferred_device_override(raw: Any) -> None:
     """本轮推演的用户显式选择。非法值 / None = 不清、走话题推断。"""
     global _override
-    _override = raw if raw in ("desktop", "phone") else None
+    _override = raw if raw in _supported_devices() else None
 
 
 def preferred_device_override() -> Optional[Device]:
@@ -40,7 +46,7 @@ def resolve_preferred_device(goal: str, model_choice: Any) -> Device:
     开关要压过「网站/App」用词：空态点了「应用」再写「做个库存系统」，
     必须出竖屏，不能等用户把「手机」写进句子才认。
     """
-    if _override in ("desktop", "phone"):
+    if _override in _supported_devices():
         return _override
 
     text = str(goal or "")
@@ -49,9 +55,9 @@ def resolve_preferred_device(goal: str, model_choice: Any) -> Device:
 
     if asks_desktop != asks_phone:
         return "desktop" if asks_desktop else "phone"
-    if model_choice in ("desktop", "phone"):
+    if model_choice in _supported_devices():
         return model_choice
-    return "desktop"
+    return _default_device()
 
 
 def normalize_model_preferred_device(
