@@ -444,7 +444,7 @@ modules = [
 
 [component.evidence]
 why = """外部证据：检索、连接器、MCP、技能包、入站判定。全部 fail-closed，不许编数据。"""
-may_depend_on = ["llm_gateway", "platform", "spec_first"]
+may_depend_on = ["llm_gateway", "platform"]
 modules = [
   "services.attachment_extract",
   "services.connectors",
@@ -512,12 +512,9 @@ why = """五系统模型：生成、结构闸、修复、闭环证据、覆盖�
 may_depend_on = ["app_store", "drive", "evidence", "llm_gateway", "observability", "persist", "platform", "spec_first"]
 modules = [
   "services.closure_block_reason",
-  "services.closure_relevance",
   "services.merge_patch",
-  "services.model_assembly",
   "services.model_version_restore",
   "services.model_versions",
-  "services.rbac_roles",
   "services.role_runtime",
   "services.slide_rule_coverage",
   "services.slide_rule_full_executor",
@@ -534,8 +531,6 @@ modules = [
   "services.v5_full_driver",
   "services.v5_llm_generate",
   "services.v5_llm_judge",
-  "services.v5_model_gate",
-  "services.v5_model_repair",
   "services.v5_parallel_generate",
   "services.v5_publish_closure_response",
   "services.v5_session_driver",
@@ -629,9 +624,12 @@ modules = [
   "models.agent_loop",
   "models.blueprint_state",
   "models.v5_state",
+  "services.closure_relevance",
   "services.device_policy",
   "services.env_flags",
+  "services.rbac_roles",
   "services.run_cancel",
+  "services.schema_legal",
   "services.sql_gateway",
   "stdio_utf8",
 ]
@@ -661,6 +659,7 @@ modules = [
   "services.html_structure",
   "services.identity_palette_hint",
   "services.identity_theme_gen",
+  "services.model_assembly",
   "services.page_archetypes",
   "services.page_assembler",
   "services.page_blocks",
@@ -670,7 +669,6 @@ modules = [
   "services.page_reconstruction",
   "services.page_shell",
   "services.palette_guard",
-  "services.schema_legal",
   "services.sheet_palette",
   "services.spec_first_pipeline",
   "services.spec_llm_call",
@@ -679,6 +677,8 @@ modules = [
   "services.spec_tree",
   "services.stock_images",
   "services.theme_tokens",
+  "services.v5_model_gate",
+  "services.v5_model_repair",
 ]
 
 [component.task_exec]
@@ -770,11 +770,9 @@ component_violations = [
 #   refine⇄spec_first、model_core⇄observability。
 #   **只许变少。** 这是下一轮该还的债。
 component_cycles = [
-  "capability_engine -> evidence -> spec_first -> drive -> capability_engine",
+  "capability_engine -> spec_first -> drive -> capability_engine",
   "diagnostics -> entrypoint -> http_routes -> diagnostics",
-  "drive -> evidence -> spec_first -> drive",
   "drive -> model_core -> drive",
-  "drive -> model_core -> evidence -> spec_first -> drive",
   "drive -> model_core -> spec_first -> drive",
   "drive -> spec_first -> drive",
   "refine -> spec_first -> refine",

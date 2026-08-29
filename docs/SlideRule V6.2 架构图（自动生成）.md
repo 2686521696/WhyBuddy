@@ -78,7 +78,7 @@ Rust 里这一类根本编译不出来；Python 得自己数。**只许变少。
 ## crate 级：component 依赖图
 
 抄 grok 的 Cargo.toml——他们 90 个 crate、347 条**声明过**的边由编译器焊死。
-我们 23 个 component、85 条边，由 `architecture.toml` 声明、判据强制。
+我们 23 个 component、84 条边，由 `architecture.toml` 声明、判据强制。
 **红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。
 
 ```mermaid
@@ -96,14 +96,14 @@ flowchart LR
   http_routes["http_routes<br/>8"]
   identity["identity<br/>7"]
   llm_gateway["llm_gateway<br/>15"]
-  model_core["model_core<br/>31"]
+  model_core["model_core<br/>26"]
   observability["observability<br/>5"]
   ops_scripts["ops_scripts<br/>37"]
   permission["permission<br/>8"]
   persist["persist<br/>2"]
-  platform["platform<br/>10"]
+  platform["platform<br/>13"]
   refine["refine<br/>3"]
-  spec_first["spec_first<br/>30"]
+  spec_first["spec_first<br/>32"]
   task_exec["task_exec<br/>19"]
   web_aigc["web_aigc<br/>16"]
   agent_loop -->|1| identity
@@ -111,10 +111,10 @@ flowchart LR
   app_store -->|6| identity
   app_store -->|2| platform
   blueprint -->|2| platform
-  capability_engine -.->|5| evidence
+  capability_engine -->|5| evidence
   capability_engine -->|1| llm_gateway
   capability_engine -->|2| platform
-  capability_engine -->|1| spec_first
+  capability_engine -.->|1| spec_first
   diagnostics -->|1| a2a
   diagnostics -.->|1| entrypoint
   diagnostics -->|1| evidence
@@ -122,7 +122,7 @@ flowchart LR
   diagnostics -->|2| platform
   diagnostics -->|1| web_aigc
   drive -.->|2| capability_engine
-  drive -.->|2| evidence
+  drive -->|2| evidence
   drive -->|1| identity
   drive -->|1| llm_gateway
   drive -.->|19| model_core
@@ -139,8 +139,7 @@ flowchart LR
   entrypoint -->|3| spec_first
   entrypoint -->|3| task_exec
   evidence -->|7| llm_gateway
-  evidence -->|4| platform
-  evidence -.->|1| spec_first
+  evidence -->|5| platform
   http_routes -->|25| app_store
   http_routes -->|3| audit
   http_routes -->|1| blueprint
@@ -160,12 +159,12 @@ flowchart LR
   llm_gateway -->|2| platform
   model_core -->|2| app_store
   model_core -.->|21| drive
-  model_core -.->|5| evidence
+  model_core -->|5| evidence
   model_core -->|18| llm_gateway
   model_core -->|6| observability
   model_core -->|2| persist
-  model_core -->|22| platform
-  model_core -.->|33| spec_first
+  model_core -->|34| platform
+  model_core -.->|16| spec_first
   observability -->|2| llm_gateway
   observability -->|1| persist
   observability -->|3| platform
@@ -174,9 +173,9 @@ flowchart LR
   ops_scripts -->|3| evidence
   ops_scripts -->|1| identity
   ops_scripts -->|8| llm_gateway
-  ops_scripts -->|22| model_core
-  ops_scripts -->|4| platform
-  ops_scripts -->|21| spec_first
+  ops_scripts -->|16| model_core
+  ops_scripts -->|7| platform
+  ops_scripts -->|24| spec_first
   permission -->|1| identity
   permission -->|1| platform
   persist -->|10| platform
@@ -185,9 +184,9 @@ flowchart LR
   spec_first -->|3| app_store
   spec_first -.->|1| drive
   spec_first -->|29| llm_gateway
-  spec_first -->|9| model_core
+  spec_first -->|2| model_core
   spec_first -->|3| observability
-  spec_first -->|10| platform
+  spec_first -->|25| platform
   spec_first -.->|5| refine
   task_exec -->|2| evidence
   task_exec -->|4| platform

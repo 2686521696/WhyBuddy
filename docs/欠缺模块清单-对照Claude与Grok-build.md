@@ -2097,3 +2097,54 @@ crate 粒度下的缠绕以前根本没人量过。由七组两两互指衍生�
 
     模块级：未声明依赖 0 · 环 0 · services 越层 0
     组  级：未声明组间依赖 0 · 组间环 8（原 13，再原 17）
+
+---
+
+## 22. 组级环 8 → 6：把"契约"和"闸"放回该在的位置（2026-08-29）
+
+### 22.1 这轮的归错：把**契约**当成了某一层的私产
+
+| 归错的 | 我原来放在 | 实际是什么 | 证据 |
+|---|---|---|---|
+| `schema_legal` | spec_first | **五系统模型合法域的单一真相源**，零内部依赖，13 个模块在用 | 模块头自己写着「此前记在四处」，就是为了收成一份才有这个文件 |
+| `rbac_roles` | model_core | 角色两种写法归一，零依赖 | 4 处在用，跨组 |
+| `closure_relevance` | model_core | 标定过的相关性判据，零依赖 | 4 处在用，跨组 |
+| `model_assembly` | model_core | **spec-first 七步的第 6 步** | 依赖全在 spec_first；流水线文档写着「spec_semantics → model_assembly → html_bindings」 |
+| `v5_model_gate` / `v5_model_repair` | model_core | 流水线**出口的闸** | 13 个消费者里 7 个在 spec_first；V6.1 图上画的就是「SF → 闸 → 模型」 |
+
+**共同的形状**：零依赖、被多组使用的东西是**契约**，契约属于底层；
+而「闸」属于它守着的那条链，不属于被它检查的那个东西。
+
+`model_core ⇄ spec_first` 因此从 33/9 一路降到 **16/2**。
+
+### 22.2 最后 2 条我没动，理由写在这里
+
+`spec_first → model_core` 只剩两条：
+
+    spec_tree:746          → v5_llm_generate.connector_prompt_block
+    identity_theme_gen:86  → v5_llm_generate.installed_skills_for_channel
+
+两条都**不是"调 LLM"**，是提示词上下文块（列出本轮装了哪些连接器/技能）。
+它们该在一个 `turn_context` 叶子里，跟 `v5_llm_generate` 无关。
+
+**但没搬。** 因为这两个函数读的是 `_installed_skills_var` / `_active_connectors_var`
+两个 **ContextVar**——搬 getter 就得连 ContextVar 和它的 setter 一起搬，而
+**ContextVar 搬错的失败方式是静默的**：这边 `set`、那边 `get` 到的永远是空，
+不报错、不告警。本仓在 `set_refine_context` 上正踩过这一口
+（「两个调用点谁后跑谁覆盖，漏传的那次把 pages 抹成 None」）。
+
+这类改动我不在单方面的情况下做。它是下一轮最值得做的一件，且**必须配一条
+「set 与 get 落在同一个 ContextVar 上」的判据**。
+
+### 22.3 剩下 3 组
+
+    drive ⇄ model_core      (19/21)  工作区重开要整套引擎
+    drive ⇄ spec_first      (2/1)    见 §21.2：能断，但要把 product_charter 挪进
+                                     一个它不属于的组，没做
+    model_core ⇄ spec_first (16/2)   见上，卡在两个 ContextVar getter
+    refine ⇄ spec_first     (8/5)    精修的范围计算器被流水线调用
+
+### 22.4 账
+
+    模块级：未声明依赖 0 · 环 0 · services 越层 0
+    组  级：未声明组间依赖 0 · 组间环 **6**（17 → 13 → 8 → 6）
