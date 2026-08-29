@@ -602,11 +602,33 @@ def _ensure_runtime_closure_evidence(
                     state, existing_closure,
                     goal_text or "初始版本",
                 )
-            set_refine_context(
-                refine_model_of(state, current_model), instruction,
-                pages=refine_pages_of(state),
-            )
-            _refine_set = True
+            # ⚠ 2026-08-29 真机：**调用方已经摆好模型时，这里不许再盖一遍。**
+            #
+            #   版本回退（routes/sliderule_full._restore_model_version_locked）
+            #   进来之前会先 set_model_override(目标版本模型) +
+            #   set_refine_context(目标版本模型, "回退到版本 mv-1")。而这一行
+            #   紧接着按 **current_model**（当前闭环承载的那个，也就是要被回退
+            #   掉的那一版）重设精修上下文，把调用方的意图整个盖掉：
+            #
+            #       重建出来的还是当前模型
+            #         → D8 判 extract_model_from_closure(closure) != target.model
+            #         → 409 closure_rebuild_mismatch，回退**永远失败**
+            #
+            #   真机 sr-it-C-073213（mv-1≠mv-2）：409。sr-it-B-072108 之所以
+            #   "成功"，只是因为那一轮精修产出的四个核心段与 mv-1 逐字节相同，
+            #   D8 比什么都相等——那是假绿，不是回退真的生效了。
+            #
+            #   这就是 CLAUDE.md 第一条：插座是通的，插头被下一行拔了。
+            #   model_override 非空 = 调用方在做直供，它自己会在 finally 里清，
+            #   所以这里也**不置 _refine_set**（谁设的谁清）。
+            from .v5_llm_generate import get_model_override
+
+            if get_model_override() is None:
+                set_refine_context(
+                    refine_model_of(state, current_model), instruction,
+                    pages=refine_pages_of(state),
+                )
+                _refine_set = True
         elif not blocked:
             return state
         # blocked 的闭环允许在新一轮重建（例如 LLM 瞬时失败导致 0/6）：
