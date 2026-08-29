@@ -544,6 +544,7 @@ def _ensure_runtime_closure_evidence(
     loop: int,
     repair: bool = False,
     closure_attempted: bool = False,
+    evidence_tag: Optional[str] = None,
 ) -> V5SessionState:
     """Append Python-owned AppBundle closure evidence for replay when a real command ran.
 
@@ -638,8 +639,30 @@ def _ensure_runtime_closure_evidence(
 
     capability_id = "appbundle.runtimeClosure"
     role_id = "appbundle"
-    turn_id = f"loop-{loop}-closure"
-    run_id = f"run-{loop}-{capability_id}"
+    # ⚠ 2026-08-29：**id 命名空间决定这轮证据能不能落库。**
+    #
+    #   commit_artifact 是无条件 append（允许重名 id），而单调守卫的同轮进展
+    #   判据 _is_same_turn_progress 数的是 **id 集合的大小**。于是一轮重建
+    #   如果把 id 撞在已有那批上——run / artifact / reasoningEvent 全撞——
+    #   集合一个都没变大，守卫判「没进展」，把整个核心退回旧值：
+    #   这一轮的证据**连同结果一起被丢掉**。
+    #
+    #   版本回退正是这么翻的车：路由固定传 loop=0，于是 ids 与首轮那次闭环
+    #   逐字相同。结果是 publishClosure（在豁免名单里）活了下来、
+    #   capabilityRuns（不在）被退回——两个来源从此各说各话：
+    #
+    #       落库的 state.publishClosure          → 承载 mv-1（回退目标）
+    #       derive_publish_closure_response(runs) → 承载 mv-2（回退掉的那版）
+    #
+    #   而 derive 那份才是权威（模块头：fail-closed，闭环判决只认它）。真机
+    #   sr-it-D-074734：回退到 mv-1 之后紧接着精修一次，产出的 mv-3 的 rbac
+    #   段与 **mv-2** 相同、与 mv-1 不同——**回退被下一轮精修静默撤销了**。
+    #
+    #   所以需要重建证据的调用方（回退、重开工作区）必须给一个独立的命名空间。
+    #   不传 = 与从前逐字一致（主循环各轮的 loop 天然不同，不受影响）。
+    _ns = f"{loop}-{evidence_tag}" if evidence_tag else f"{loop}"
+    turn_id = f"loop-{_ns}-closure"
+    run_id = f"run-{_ns}-{capability_id}"
     append_reasoning_event(
         state,
         turnId=turn_id,
@@ -662,7 +685,7 @@ def _ensure_runtime_closure_evidence(
             role_id=role_id,
             turn_id=turn_id,
             run_id=run_id,
-            artifact_id=f"art-{loop}-{capability_id}",
+            artifact_id=f"art-{_ns}-{capability_id}",
             result_data=result_data,
             duration_ms=int((_time.time() - t0) * 1000),
         )

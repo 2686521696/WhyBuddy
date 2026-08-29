@@ -1481,7 +1481,18 @@ def _restore_model_version_locked(sid: str, version_id: str):
         from services.v5_llm_generate import set_refine_context
 
         set_refine_context(target["model"], f"回退到版本 {version_id}")
-        state = _ensure_runtime_closure_evidence(state, f"restore:{version_id}", 0)
+        # ⚠ 独立的证据命名空间，别跟首轮那次闭环撞 id（见
+        #   _ensure_runtime_closure_evidence 里 _ns 那段注释）：撞了的话单调
+        #   守卫判「没进展」，这一轮的 capabilityRuns 被整个退回，只剩豁免名单
+        #   里的 publishClosure 活着——于是闭环的权威来源（按 runs 推导那份）
+        #   仍然承载着刚被回退掉的那一版，下一轮精修就把回退撤销了。
+        #   带上已有运行数，连点 ◀▶ 也不会撞在一起。
+        _evidence_tag = (
+            f"restore-{version_id}-{len(getattr(state, 'capabilityRuns', None) or [])}"
+        )
+        state = _ensure_runtime_closure_evidence(
+            state, f"restore:{version_id}", 0, evidence_tag=_evidence_tag
+        )
     finally:
         set_model_override(None)
         from services.v5_llm_generate import set_refine_context as _clear
