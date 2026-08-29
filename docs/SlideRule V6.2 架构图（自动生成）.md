@@ -14,8 +14,8 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **271** 个，模块 **271** 个
-- 内部依赖边 **770** 条，其中 **462** 条写在函数体里（60%）
+- 扫描文件 **273** 个，模块 **273** 个
+- 内部依赖边 **773** 条，其中 **461** 条写在函数体里（59%）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
@@ -24,7 +24,7 @@
 
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
-| `util` | 119 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `util` | 121 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
 | `core` | 52 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 28 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
@@ -38,14 +38,14 @@ flowchart TB
   models["models<br/>3 个模块<br/>数据形状"]
   sliderule_llm["sliderule_llm<br/>13 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>199 个模块<br/>业务"]
+  services["services<br/>201 个模块<br/>业务"]
   routes["routes<br/>12 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   scripts["scripts<br/>36 个模块<br/>运维脚本"]
   app -->|1| config
   app -->|1| models
   app -->|12| routes
-  app -->|10 · 其中 3 条在函数体里| services
+  app -->|11 · 其中 3 条在函数体里| services
   middlewares -->|1| config
   middlewares -->|2| services
   routes -->|9| config
@@ -58,7 +58,6 @@ flowchart TB
   scripts -->|1 · 其中 1 条在函数体里| models
   scripts -->|58 · 其中 41 条在函数体里| services
   scripts -->|8 · 其中 5 条在函数体里| sliderule_llm
-  services -->|1 · 其中 1 条在函数体里| app
   services -->|15 · 其中 7 条在函数体里| config
   services -->|29 · 其中 1 条在函数体里| models
   services -->|60 · 其中 47 条在函数体里| sliderule_llm
@@ -78,7 +77,7 @@ Rust 里这一类根本编译不出来；Python 得自己数。**只许变少。
 ## crate 级：component 依赖图
 
 抄 grok 的 Cargo.toml——他们 90 个 crate、347 条**声明过**的边由编译器焊死。
-我们 23 个 component、84 条边，由 `architecture.toml` 声明、判据强制。
+我们 23 个 component、82 条边，由 `architecture.toml` 声明、判据强制。
 **红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。
 
 ```mermaid
@@ -95,15 +94,15 @@ flowchart LR
   evidence["evidence<br/>11"]
   http_routes["http_routes<br/>8"]
   identity["identity<br/>7"]
-  llm_gateway["llm_gateway<br/>15"]
+  llm_gateway["llm_gateway<br/>16"]
   model_core["model_core<br/>26"]
   observability["observability<br/>5"]
   ops_scripts["ops_scripts<br/>37"]
   permission["permission<br/>8"]
   persist["persist<br/>2"]
-  platform["platform<br/>13"]
+  platform["platform<br/>15"]
   refine["refine<br/>3"]
-  spec_first["spec_first<br/>32"]
+  spec_first["spec_first<br/>31"]
   task_exec["task_exec<br/>19"]
   web_aigc["web_aigc<br/>16"]
   agent_loop -->|1| identity
@@ -114,28 +113,27 @@ flowchart LR
   capability_engine -->|5| evidence
   capability_engine -->|1| llm_gateway
   capability_engine -->|2| platform
-  capability_engine -.->|1| spec_first
+  capability_engine -->|1| spec_first
   diagnostics -->|1| a2a
-  diagnostics -.->|1| entrypoint
   diagnostics -->|1| evidence
   diagnostics -->|2| model_core
-  diagnostics -->|2| platform
+  diagnostics -->|3| platform
   diagnostics -->|1| web_aigc
-  drive -.->|2| capability_engine
+  drive -->|2| capability_engine
   drive -->|2| evidence
   drive -->|1| identity
   drive -->|1| llm_gateway
   drive -.->|19| model_core
   drive -->|2| observability
   drive -->|4| persist
-  drive -->|11| platform
-  drive -.->|2| spec_first
+  drive -->|12| platform
+  drive -->|2| spec_first
   entrypoint -->|2| agent_loop
   entrypoint -->|2| drive
-  entrypoint -.->|7| http_routes
+  entrypoint -->|7| http_routes
   entrypoint -->|4| model_core
   entrypoint -->|1| permission
-  entrypoint -->|2| platform
+  entrypoint -->|3| platform
   entrypoint -->|3| spec_first
   entrypoint -->|3| task_exec
   evidence -->|7| llm_gateway
@@ -144,7 +142,7 @@ flowchart LR
   http_routes -->|3| audit
   http_routes -->|1| blueprint
   http_routes -->|2| capability_engine
-  http_routes -.->|1| diagnostics
+  http_routes -->|1| diagnostics
   http_routes -->|22| drive
   http_routes -->|5| evidence
   http_routes -->|12| identity
@@ -163,8 +161,8 @@ flowchart LR
   model_core -->|18| llm_gateway
   model_core -->|6| observability
   model_core -->|2| persist
-  model_core -->|34| platform
-  model_core -.->|16| spec_first
+  model_core -->|35| platform
+  model_core -->|16| spec_first
   observability -->|2| llm_gateway
   observability -->|1| persist
   observability -->|3| platform
@@ -179,14 +177,13 @@ flowchart LR
   permission -->|1| identity
   permission -->|1| platform
   persist -->|10| platform
-  refine -->|2| platform
-  refine -.->|8| spec_first
+  refine -->|2| llm_gateway
+  refine -->|4| platform
+  refine -.->|4| spec_first
   spec_first -->|3| app_store
-  spec_first -.->|1| drive
-  spec_first -->|29| llm_gateway
-  spec_first -->|2| model_core
+  spec_first -->|33| llm_gateway
   spec_first -->|3| observability
-  spec_first -->|25| platform
+  spec_first -->|28| platform
   spec_first -.->|5| refine
   task_exec -->|2| evidence
   task_exec -->|4| platform

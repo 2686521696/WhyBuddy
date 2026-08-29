@@ -660,6 +660,15 @@ if _spa_static.exists():
     async def _spa_root():
         return _serve_spa_index()
 
+
+# 装配完成，钉一个标记。⚠ 必须留在模块顶层：上面那一大段 SPA 兜底是包在
+# `if _spa_static.exists():` 里的，跟着它缩进就会在没打前端包的机器上静默不执行。
+# 探针（services/external_provider_cutover）读的就是它——那里原来反过来
+# `import app`，方向反且永远红不了，见 services/composition_root_state.py 模块头。
+from services.composition_root_state import mark_composition_root_ready as _mark_root
+
+_mark_root(routers=len(getattr(app, "routes", []) or []), title=str(getattr(app, "title", "") or ""))
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=settings.PORT)

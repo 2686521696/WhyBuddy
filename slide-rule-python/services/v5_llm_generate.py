@@ -610,19 +610,25 @@ def set_generate_diagnostic(diag: Optional[Dict[str, Any]]) -> None:
     _diagnostic_var.set(diag)
 
 
-# 已安装技能（技能库六期"推演注入"）：/drive-full(-stream) 在请求进入时设置、
-# 结束后清空。请求域隔离，见本段顶部。
-_installed_skills_var: ContextVar[Optional[List[Dict[str, str]]]] = ContextVar(
-    "sliderule_installed_skills", default=None
+# 已安装技能 / 连接器的**请求域存储与读侧**已搬到叶子 services.turn_context
+# （2026-08-29）。这里只留带注册表的清洗——搬清洗过去会让叶子不再是叶子。
+#
+# ⚠ 别在这个文件里再补一个同名 ContextVar：setter 写 A、getter 读 B 是
+#   **静默失效**（技能注入不生效 / 连接器实体没进 prompt，页面每格填「—」，
+#   不报错不告警）。判据见 tests/test_turn_context_leaf.py。
+from .turn_context import (  # noqa: F401  （下游按老路径 import，保持可用）
+    DEFAULT_SKILL_CHANNEL as _DEFAULT_SKILL_CHANNEL,
+    MAX_CONNECTORS as _MAX_CONNECTORS,
+    MAX_INSTALLED_SKILLS as _MAX_INSTALLED_SKILLS,
+    SKILL_CHANNELS as _SKILL_CHANNELS,
+    _connectors_var,
+    _installed_skills_var,
+    active_connectors,
+    connector_prompt_block,
+    installed_skills_for_channel,
+    set_active_connectors_cleaned as _store_connectors,
+    set_installed_skills_cleaned as _store_installed_skills,
 )
-
-
-# 消费通道（2026-07-27）。此前所有已安装技能走同一条硬要求："必须落成一条
-# aigc.capabilities，字段绑定到真实实体"。对设计指导类技能这是必然的门禁
-# 失败——它们产出的是"这一页该长什么样"，不是某个实体字段的值。128 条技能
-# 逐条判定的结果见 docs/skills-triage.jsonl。
-_SKILL_CHANNELS = ("aigc", "experience", "unbound")
-_DEFAULT_SKILL_CHANNEL = "unbound"
 
 
 def _clean_binding(raw: Any) -> str:
@@ -657,13 +663,7 @@ def _clean_binding(raw: Any) -> str:
 #   所以连接器进 prompt 的是一份**逐字段的实体声明**，要求模型原样收录——
 #   字段 id 差一个字，生成期取回来的真数据就填不进页面上的孔
 #   （derive-binding-source 会老老实实每格填「—」，而 problems 是空的）。
-_connectors_var: ContextVar[Optional[List[Dict[str, Any]]]] = ContextVar(
-    "sliderule_active_connectors", default=None
-)
-
-#: 一轮最多挂几个连接器。跟技能的 6 条同源：prompt 里塞太多，模型会开始
-#: 挑着做，而"挑着做"在这里等于悄悄少一张表。
-_MAX_CONNECTORS = 4
+#（`_connectors_var` / `_MAX_CONNECTORS` 在 services.turn_context，见上面那段注释）
 
 
 def set_active_connectors(connectors: "Optional[List[Dict[str, Any]]]") -> None:
@@ -677,7 +677,7 @@ def set_active_connectors(connectors: "Optional[List[Dict[str, Any]]]") -> None:
     try:
         from .connectors import get_connector
     except Exception:
-        _connectors_var.set([])
+        _store_connectors([])
         return
     for raw in connectors or []:
         cid = ""
@@ -700,7 +700,7 @@ def set_active_connectors(connectors: "Optional[List[Dict[str, Any]]]") -> None:
         )
         if len(cleaned) >= _MAX_CONNECTORS:
             break
-    _connectors_var.set(cleaned)
+    _store_connectors(cleaned)
     # 真机自证：仓里的老办法（"想验证这条还通电，在这行打一句 log"）。
     # 一轮推演要跑十几分钟，事后翻日志比重新加探针便宜得多。
     if cleaned:
@@ -709,10 +709,6 @@ def set_active_connectors(connectors: "Optional[List[Dict[str, Any]]]") -> None:
             + "、".join(f"{c['id']}→{c['entity']['id']}" for c in cleaned),
             flush=True,
         )
-
-
-def active_connectors() -> List[Dict[str, Any]]:
-    return list(_connectors_var.get() or [])
 
 
 _clarifications_var: ContextVar[Optional[List[Dict[str, str]]]] = ContextVar(
@@ -775,37 +771,6 @@ def clarification_prompt_block() -> str:
     return "\n".join(lines)
 
 
-def connector_prompt_block() -> str:
-    """挂着的连接器 → 一段"这些实体必须原样收录"的硬要求。
-
-    ⚠ 字段 id 必须**逐字**给出来并要求一字不差。给个"大概有日期和温度"的
-      描述，模型会自己起 `temperature` / `maxTemp` 这种名字，取回来的真数据
-      （`temp_max`）就对不上孔——页面每格填「—」，而且不报错。
-    """
-    conns = active_connectors()
-    if not conns:
-        return ""
-    lines = [
-        "Live data connectors attached to THIS run. Each one supplies REAL data at "
-        "runtime. You MUST include each entity below in datamodel.entities EXACTLY "
-        "as declared — same entity id, same field ids, same types. Do NOT rename, "
-        "merge, translate or drop any field id: the runtime fills these tables by "
-        "field id, and a renamed id silently yields an empty column. You may add "
-        "extra fields and extra entities of your own, and you SHOULD build pages "
-        "that display these entities."
-    ]
-    for conn in conns:
-        entity = conn["entity"]
-        fields = ", ".join(
-            f"{f['id']}:{f.get('type', 'text')}" for f in entity.get("fields") or []
-        )
-        lines.append(
-            f"- connector `{conn['id']}` ({conn['name']}, source: {conn['source']}) "
-            f"→ entity id `{entity['id']}` (name: {entity['name']}) fields: {fields}"
-        )
-    return "\n".join(lines)
-
-
 def set_installed_skills(skills: "Optional[List[Dict[str, Any]]]") -> None:
     """设置本轮推演要注入的已安装技能（清洗：上限 6 条，name/description 截断）。
 
@@ -833,14 +798,9 @@ def set_installed_skills(skills: "Optional[List[Dict[str, Any]]]") -> None:
         if binding:
             entry["binding"] = binding
         cleaned.append(entry)
-        if len(cleaned) >= 6:
+        if len(cleaned) >= _MAX_INSTALLED_SKILLS:
             break
-    _installed_skills_var.set(cleaned)
-
-
-def installed_skills_for_channel(channel: str) -> List[Dict[str, str]]:
-    """按通道取本轮已安装技能。体验层（identity_theme_gen）用它取设计指导。"""
-    return [s for s in (_installed_skills_var.get() or []) if s.get("channel") == channel]
+    _store_installed_skills(cleaned)
 
 
 # E29 增量迭代：精修/回退上下文（与 _installed_skills 同一请求域模式）。

@@ -83,7 +83,9 @@ def experience_skill_guidance_block() -> str:
     """已安装的 experience 通道技能拼成的设计指导块（2026-07-27）。见旧版
     同名函数的说明；这里逻辑不变，只是现在只影响"选哪个种子色"这一步。"""
     try:
-        from .v5_llm_generate import installed_skills_for_channel
+        # ⚠ 取自叶子 turn_context（见其模块头）：这里是 spec_first 侧，
+        #   反过来 import 生成层就成环。
+        from .turn_context import installed_skills_for_channel
 
         skills = installed_skills_for_channel("experience")
     except Exception:

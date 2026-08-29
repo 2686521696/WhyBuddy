@@ -43,6 +43,7 @@ import arch_graph  # noqa: E402
 
 _G = arch_graph.build_graph()
 _M = arch_graph.load_manifest()
+_COMP = arch_graph.component_of(_M)
 
 
 class Test扫描器自己没瞎:
@@ -91,6 +92,28 @@ class Test依赖必须先声明:
         stale = sorted(base - now)
         assert not stale, (
             f"这些欠账已经还清了，从 architecture.toml 的 baseline 里删掉：{stale}"
+        )
+
+    def test_声明了却没有边的组间依赖要清掉(self):
+        """⚠ 反向判据。2026-08-29 手工发现的漏筛：还完三条组间边之后，
+        `architecture.toml` 里那三条 `may_depend_on` 还留着，闸一声不吭——
+        它只查「用了没声明」，从来不查「声明了没用」。
+
+        留着过期声明有两个真代价：下一个人以为那条依赖还在（照着它写新代码），
+        以及**它是一张空白支票**——哪天真长出这条边来，闸会直接放行。
+        跟 `test_例外必须真的存在于代码里` 是同一条纪律的组级版本。
+        """
+        comps = _M.get("component", {})
+        assert comps, "architecture.toml 没有 component 声明，判据会空过"
+        real = {(_COMP.get(e.src), _COMP.get(e.dst)) for e in _G.edges}
+        stale = sorted(
+            f"{name} -> {dep}"
+            for name, spec in comps.items()
+            for dep in spec.get("may_depend_on", [])
+            if (name, dep) not in real
+        )
+        assert not stale, (
+            f"这些组间依赖声明了却没有任何一条边对应，从 architecture.toml 删掉：{stale}"
         )
 
     def test_分层声明本身是自洽的(self):
@@ -399,6 +422,9 @@ class Test显式例外不是后门:
     """
 
     def test_每条例外都写了理由(self):
+        """⚠ 2026-08-29 起仓里例外是 0 条，这条目前**空转**（逐条判据，没条目就没得判）。
+        不是漏筛：机制本身由下面 `test_一个例外不许放行同一对包上的其它边` 自造样本咬住。
+        哪天再加例外，这条自动重新生效。"""
         for edge, why in arch_graph.accepted_edges(_M).items():
             assert len(why) >= 30, f"例外 {edge} 没写清为什么——不写理由就不算显式"
 
@@ -422,19 +448,38 @@ class Test显式例外不是后门:
         只要包对背后还有一条没被接受的边，这个包对就得照样红——
         否则一条例外会顺手把同一对包上所有边一起放行，闸当场穿底。
         """
-        ok = set(arch_graph.accepted_edges(_M))
-        assert ok, "没有例外，这条判据是空的"
-        edge = next(iter(ok))
-        src_pkg = edge.split(" -> ")[0].split(".")[0]
-        dst_pkg = edge.split(" -> ")[1].split(".")[0]
-        fake = arch_graph.Edge(
-            src=f"{src_pkg}.zz_fake", dst=f"{dst_pkg}.zz_fake",
-            src_pkg=src_pkg, dst_pkg=dst_pkg, deferred=False, line=1,
-        )
+        # ⚠ 2026-08-29：这条原本拿仓里真实的例外来构造样本，最后一条例外还清
+        #   之后它变成 `assert ok` 直接红——**判据在为自己的存在而红**，
+        #   而不是在报问题。改成自己造一份 manifest：现在 0 条例外也照样有效，
+        #   而且不管仓里将来有没有例外，测的都是同一件事（机制本身）。
         import copy
 
+        man = copy.deepcopy(_M)
+        man["layer"] = {
+            "zzsrc": {"may_depend_on": [], "why": "判据自造的样本包"},
+            "zzdst": {"may_depend_on": [], "why": "判据自造的样本包"},
+        }
+        man["accepted"] = [
+            {"edge": "zzsrc.a -> zzdst.a", "why": "样本：这一条是被显式接受的"}
+        ]
+        assert set(arch_graph.accepted_edges(man)) == {"zzsrc.a -> zzdst.a"}
+
+        def _edge(src, dst):
+            return arch_graph.Edge(
+                src=f"zzsrc.{src}", dst=f"zzdst.{dst}",
+                src_pkg="zzsrc", dst_pkg="zzdst", deferred=False, line=1,
+            )
+
         g2 = copy.copy(_G)
-        g2.edges = list(_G.edges) + [fake]
-        assert f"{src_pkg} -> {dst_pkg}" in arch_graph.layer_violations(g2, _M), (
+
+        # 只有那条被接受的边 → 这个包对不该报
+        g2.edges = [_edge("a", "a")]
+        assert "zzsrc -> zzdst" not in arch_graph.layer_violations(g2, man), (
+            "唯一一条边已被显式接受，却还在报违规——例外根本没生效"
+        )
+
+        # 同一对包上多一条没被接受的边 → 必须照样报
+        g2.edges = [_edge("a", "a"), _edge("b", "b")]
+        assert "zzsrc -> zzdst" in arch_graph.layer_violations(g2, man), (
             "同一对包上多出一条没被接受的边，却没报违规——例外放行得太宽"
         )

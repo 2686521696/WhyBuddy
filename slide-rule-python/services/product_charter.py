@@ -25,6 +25,14 @@ WhyBuddy 仓里的 Claude.md / AGENTS.md 是**引擎建造者**的纪律，不�
 3. **persist fail-open，inject fail-closed。** 存失败不许拖垮推演；读不到
    或没打旗，就当没有宪章，不许编一份。
 
+## 这个文件只剩「存取」那一半（2026-08-29）
+
+白名单清洗 / 两个 ContextVar / `charter_prompt_block()` 已搬到叶子
+`services.turn_context`（下面按老路径 re-export，调用方不用改）。搬的理由见
+那边模块头：`spec_tree` 要拼宪章块，而这个文件属 drive 组、本身又被 drive 调，
+`spec_first -> drive` 这条边一口气把三个组间环连在一起。
+上面三条硬约束里第 1、2 条现在钉在 turn_context，第 3 条的 persist 半边在这里。
+
 注入点必须是 spec-first / scope_card 真正读上下文的地方
 （`spec_tree.build_spec_prompt`、`rehearsal_control._system_prompt`）。
 只接在 `v5_llm_generate._build_user_content` 上等于接在不通电的插座——
@@ -35,48 +43,29 @@ from __future__ import annotations
 
 import json
 import threading
-from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 from . import env_flags as _env_flags
 
-CHARTER_MARKER = "产品宪章（约束，不是证据）"
-
-CHARTER_FIELDS = (
-    "industry",
-    "terms",
-    "defaultRoles",
-    "hardCompliance",
-    "brandConstraints",
+# 请求域那一半（白名单清洗 + 两个 ContextVar + prompt 块）在叶子 turn_context。
+# 2026-08-29 搬走的：`spec_tree.build_spec_prompt` 要拼宪章块，而这个文件属
+# drive 组、本身又是被 drive 调的，`spec_first -> drive` 这条边一口气把三个
+# 组间环连在一起。存取这一半（CharterStore 要查 identity_store）留在这里。
+#
+# ⚠ 下面这些名字**必须只有一份**。谁哪天在这个文件里"顺手"重新定义
+#   `_charter_var` / `_opt_in_var`，set 写 A、get 读 B，宪章就**安静地不进
+#   prompt 了**——不报错、不告警，只是用户勾了「下一场沿用」却没生效。
+#   判据：tests/test_turn_context_leaf.py::Test宪章读写的是同一个ContextVar
+from .turn_context import (  # noqa: F401  （下游按老路径 import，保持可用）
+    CHARTER_FIELDS,
+    CHARTER_MARKER,
+    _FIVE_SYSTEM_KEYS,
+    charter_has_content,
+    charter_prompt_block,
+    clear_charter_for_run,
+    normalize_charter,
+    set_charter_context,
 )
-
-_FIELD_LABELS = {
-    "industry": "行业",
-    "terms": "术语",
-    "defaultRoles": "默认角色",
-    "hardCompliance": "硬性合规",
-    "brandConstraints": "品牌约束",
-}
-
-# 五系统模型段。出现在宪章 JSON 里必须剥掉——那是「上一场当 priors」的入口。
-_FIVE_SYSTEM_KEYS = frozenset(
-    {
-        "datamodel",
-        "rbac",
-        "workflow",
-        "page",
-        "aigc",
-        "appbundle",
-        "model",
-        "fiveSystemModel",
-        "specFirstPages",
-        "pages",
-        "entities",
-        "permissions",
-    }
-)
-
-_MAX_FIELD = 500
 
 TABLE = "sliderule_product_charter"
 
@@ -102,13 +91,6 @@ create table if not exists {TABLE} (
 )
 """
 
-_charter_var: ContextVar[Dict[str, str]] = ContextVar(
-    "sliderule_product_charter", default={}
-)
-_opt_in_var: ContextVar[bool] = ContextVar(
-    "sliderule_charter_opt_in", default=False
-)
-
 _store_lock = threading.Lock()
 _store: Any = None
 _store_ident: Any = None
@@ -118,26 +100,6 @@ _MEM: Dict[Tuple[str, str], Dict[str, Any]] = {}
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def normalize_charter(raw: Any) -> Dict[str, str]:
-    """只留白名单字段。五系统模型键、建造者文档路径一律丢掉。"""
-    if not isinstance(raw, dict):
-        return {}
-    # 显式扫一遍五系统键再走白名单。删掉 `_FIVE_SYSTEM_KEYS` 这里会
-    # NameError——比「定义了不用」更能被变异咬住。
-    stripped = {k: v for k, v in raw.items() if k not in _FIVE_SYSTEM_KEYS}
-    out: Dict[str, str] = {}
-    for key in CHARTER_FIELDS:
-        value = str(stripped.get(key) or "").strip()
-        if not value:
-            continue
-        # 挡住有人把 Claude.md 正文贴进某一栏
-        lowered = value.lower()
-        if "claude.md" in lowered or "agents.md" in lowered:
-            continue
-        out[key] = value[:_MAX_FIELD]
-    return out
 
 
 def factory_charter_kwargs(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -159,10 +121,6 @@ def factory_charter_kwargs(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return out
 
 
-def charter_has_content(charter: Optional[Dict[str, str]]) -> bool:
-    return bool(charter) and any(str(v).strip() for v in charter.values())
-
-
 def _as_bool(raw: Any) -> Optional[bool]:
     if raw is True or raw is False:
         return raw
@@ -177,38 +135,6 @@ def _as_bool(raw: Any) -> Optional[bool]:
         if s in _env_flags.OFF:
             return False
     return None
-
-
-def charter_prompt_block() -> str:
-    """opt-in 关着 → 空串。空串才能让 spec-first prompt 跟从前逐字节一致。"""
-    if not _opt_in_var.get():
-        return ""
-    charter = dict(_charter_var.get() or {})
-    if not charter_has_content(charter):
-        return ""
-    lines = [
-        CHARTER_MARKER,
-        "这是约束，不是证据。不得当作闭环证据，不得绕过模型闸，"
-        "不得把上一场的五系统模型当先验。",
-    ]
-    for key in CHARTER_FIELDS:
-        value = str(charter.get(key) or "").strip()
-        if value:
-            lines.append(f"{_FIELD_LABELS[key]}：{value}")
-    return "\n".join(lines)
-
-
-def set_charter_context(
-    charter: Optional[Dict[str, str]], *, opt_in: bool
-) -> None:
-    cleaned = normalize_charter(charter or {})
-    _charter_var.set(cleaned)
-    _opt_in_var.set(bool(opt_in) and charter_has_content(cleaned))
-
-
-def clear_charter_for_run() -> None:
-    _charter_var.set({})
-    _opt_in_var.set(False)
 
 
 class CharterStore:

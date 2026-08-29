@@ -2148,3 +2148,158 @@ crate 粒度下的缠绕以前根本没人量过。由七组两两互指衍生�
 
     模块级：未声明依赖 0 · 环 0 · services 越层 0
     组  级：未声明组间依赖 0 · 组间环 **6**（17 → 13 → 8 → 6）
+
+---
+
+## 23. 组级环 6 → 2：ContextVar 那一口，配着判据搬掉了（2026-08-29）
+
+§22.2 结尾写着「这类改动我不在单方面的情况下做……且**必须配一条「set 与 get
+落在同一个 ContextVar 上」的判据**」。这一轮就是把那条判据先写出来，再搬。
+
+### 23.1 装配根不许被业务层 import（6 → 5）
+
+`services/external_provider_cutover.py` 里有一项探针：
+
+```python
+try:
+    import app  # noqa: F401
+    return {"status": "ready", "reason": "python app module loadable"}
+except Exception:
+    return {"status": "degraded", ...}
+```
+
+两个毛病，第二个才是要命的：
+
+1. **方向反的。** 业务层反过来依赖装配根。grok-build 那边装配根
+   `xai-grok-pager-bin` 的**被依赖数是 0**，编译器焊死。我们这条边把
+   `diagnostics → entrypoint → http_routes → diagnostics` 连成了一个组间环。
+2. ⚠ **这个判据永远不会红。** uvicorn 是 `app:app` 起的，`sys.modules['app']`
+   早就在了，那句 `import app` 拿的是缓存，必然成功；而 app 真炸了的话进程
+   根本起不来，这个接口也没人调得到。线上它**只能返回 ready**——
+   CLAUDE.md 第三条点名的「接口返回 200 ≠ 它真的做了事」。
+
+`architecture.toml` 里原来还给它写了一条 `[[accepted]]` 例外，理由是
+「`import app` 是**故意**的，探的正是应用模块能不能加载」。理由本身没错，
+错在**它探不到那件事**。
+
+换成依赖倒置（跟 `persistence.set_cache_sink` 同一招）：装配根装完自己钉标记，
+探针读标记。方向朝下，环断了，而且**判据能红了**——没装配过的进程读到 None。
+
+判据 `tests/test_composition_root_state.py`，三条变异实测都咬住：
+把 `mark_composition_root_ready(...)` 缩进进 `if`（→ 红）、删掉那一行（→ 两条红）、
+探针改回 `import app`（→ 红）。
+
+### 23.2 请求域上下文切成叶子 `turn_context`（5 → 2）
+
+`spec_tree.build_spec_prompt` 要往 prompt 里拼三块东西，三块分别长在**它上游**：
+
+    产品宪章    product_charter.charter_prompt_block        （drive 组）
+    连接器实体  v5_llm_generate.connector_prompt_block      （model_core 组）
+    已安装技能  v5_llm_generate.installed_skills_for_channel（model_core 组）
+
+于是 spec-first 拼一段 prompt 就得反过来 import 上层。**两条边连着四个环**：
+`capability_engine ⇄ spec_first ⇄ drive`、`drive ⇄ model_core ⇄ spec_first`、
+`drive ⇄ spec_first`。
+
+抄 grok 的共用叶子 + `-types`/`-api` 拆法，**切一刀**：
+
+| 搬进 `services/turn_context.py`（叶子，零依赖） | 留在原处 |
+|---|---|
+| 两个技能/连接器 ContextVar、宪章的两个 ContextVar | `set_active_connectors` 的清洗（要查连接器注册表） |
+| `installed_skills_for_channel` / `active_connectors` / `connector_prompt_block` | `set_installed_skills` 的绑定形状清洗（要查 `schema_legal`） |
+| `charter_prompt_block` / `normalize_charter` / 白名单常量 | `CharterStore` / `activate_charter_for_run`（要查 `identity_store`） |
+
+老入口全部按原名 re-export，调用方零改动；**ContextVar 对象本身也 re-export**，
+所以 `v5_llm_generate._installed_skills_var is turn_context._installed_skills_var`。
+
+**判据先于搬家写**（`tests/test_turn_context_leaf.py`）。主判据不是「函数在不在」，
+是**从老入口 set、从叶子 get，读到同一份**——只有它能咬住「两边各有一个
+ContextVar」这种静默失效。五条变异实测：
+
+    生成层再定义一个同名 ContextVar        → 2 条红
+    spec_tree 改回 import 上层              → 1 条红（第一条纪律：搬了但调用点没跟着 = 没搬）
+    宪章 opt-in 关着也灌                    → 1 条红
+    叶子反过来 import 上层                  → 1 条红
+    宪章白名单换成照单全收                  → 2 条红
+
+⚠ 有一条变异**没咬住**，如实记下来：单删 `normalize_charter` 里那行
+`stripped = {k: v for k, v in raw.items() if k not in _FIVE_SYSTEM_KEYS}` 判据不红——
+因为五系统键本来就不在 `CHARTER_FIELDS` 白名单里。那一行是原作者故意留的第二道
+（原注释：「比『定义了不用』更能被变异咬住」），不是漏筛；已写进测试的 docstring。
+
+### 23.3 顺手捡到的两笔真债
+
+搬的过程中量出来两处**跟环无关、本身就是错的**：
+
+**① `html_structure` 是第五本账。** `schema_legal` 模块头写着「本模块是唯一入口」，
+理由是「此前『什么写法是合法的』记在四处靠人肉对齐，E37 的根因就是漏账」。而
+`html_structure` 自己又开了一个 `json.loads` 去读同一份 `five_system_legal.json`：
+
+```python
+_LEGAL = _legal()
+FIELD_TYPES: tuple[str, ...] = tuple(_LEGAL["fieldTypes"])
+PAGE_KINDS:  tuple[str, ...] = tuple(_LEGAL["pageKinds"])
+```
+
+值当时没漂（读的是同一个文件），但**第二个解析器就是漂的前提**——正是它上面
+那行注释（「都从合法域账本派生，**不手抄**」）自己在警告的形状。
+改成 `from .schema_legal import FIELD_TYPES, PAGE_KINDS`。
+顺带：`refine_short_circuit` 原本为了这两个枚举去 import 整条 spec-first 流水线。
+
+**② `spec_llm_call` 归组归错了，按名字前缀。** 它的活是「把传输挂了和模型吐了
+坏 JSON 分开」，依赖只有 `sliderule_llm`，spec-first 五处 + refine 两处在用。
+它是 `llm_gateway`，不是 `spec_first`。
+**按名字前缀归组这仓已经踩过三次**（`models.v5_state` 被 `v5_` 抓走、
+`scripts.block_*` 被 `block_` 抓走、`app_working_session` 被 `app_` 抓走），
+这是第四次——归组是判据的输入，输入错了判据报得再准也是错的。
+
+### 23.4 判据自己也修了一条：例外还完之后它为自己而红
+
+`test_一个例外不许放行同一对包上的其它边` 原本拿仓里**真实的**例外来构造样本，
+开头一句 `assert ok, "没有例外，这条判据是空的"`。§23.1 把最后一条例外还掉之后，
+这条判据当场红——**它在为自己的存在而红，不是在报问题**。
+
+改成自己造一份 manifest（两个假包 + 一条假例外），现在 0 条例外也照样有效，
+而且正反两条都测：唯一一条边被接受 → 不该报；同对包多一条没被接受的边 → 必须报。
+两条变异（`all` 换 `any`、例外完全不生效）都咬住。
+
+### 23.5 剩下 2 组，为什么停在这
+
+    drive ⇄ model_core   (19/21)  工作区重开要整套引擎。真耦合，不是归组问题。
+    refine ⇄ spec_first  (4/5)    精修的三个范围计算器被流水线调用，同时又回用
+                                  流水线的校验器（validate_spec_tree / HtmlStructure /
+                                  app_graph）。
+
+`refine` 一度看着像"应该并进 spec_first"，量了消费者之后**否掉了**：
+`refine_page_scope` 有 8 个消费者，散在 spec_first / drive / model_core 三个组，
+不是流水线的私有卫星。
+
+grok 那边的对应答案是：**同一个 crate 内部的模块互指是合法的**（`xai-grok-tools`
+8 对、`xai-grok-shell` 15 对，含 `implementations ⇄ registry`）。这两组要么是
+真·同一个 crate（那就该合并，但上面的数据说不是），要么就是真耦合。
+再往下动就不是"改归组"，是**改职责边界**——那需要产品侧的判断，不该我一个人定。
+
+两条都进了棘轮基线，**只许变少**。
+
+### 23.6 账
+
+    模块级：未声明依赖 0 · 环 0 · services 越层 0 · 显式例外 **0**
+    组  级：未声明组间依赖 0 · 组间环 **2**（17 → 13 → 8 → 6 → 5 → 2）
+
+### 23.7 闸自己的漏筛：只查「用了没声明」，不查「声明了没用」
+
+还完那三条组间边之后，`architecture.toml` 里对应的三条 `may_depend_on` 还留着，
+**闸一声不吭**：
+
+    diagnostics -> entrypoint
+    spec_first  -> drive
+    spec_first  -> model_core
+
+是手工比对才发现的。过期声明有两个真代价：下一个人以为那条依赖还在（照着它写
+新代码），以及**它是一张空白支票**——哪天真长出这条边，闸会直接放行。
+
+`[[accepted]]` 那一侧早就有 `test_例外必须真的存在于代码里` 盯着，
+组级这一侧一直没有。补上 `test_声明了却没有边的组间依赖要清掉`，变异实测咬住。
+
+**这是本轮最值得记的一条**：闸自己也会有正向判据齐全、反向判据缺失
+（CLAUDE.md 第三条）。写闸的人容易只想「有没有人越界」，忘了「边界画得还准不准」。

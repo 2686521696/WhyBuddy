@@ -742,8 +742,9 @@ def build_spec_prompt(
     # 产品宪章：opt-in 关着时 charter_prompt_block() 是空串，parts 跟从前
     # 逐字节一致（test_refine缺席时_prompt与从前逐字一致）。删这一行，
     # test_product_charter_opt_in 的活路径判据必须红。
-    from services.product_charter import charter_prompt_block
-    from services.v5_llm_generate import connector_prompt_block
+    # ⚠ 两块都取自叶子 turn_context，不取自 product_charter / v5_llm_generate：
+    #   那两个都在**被这条链调用**的一侧，反过来 import 就成环（见叶子模块头）。
+    from services.turn_context import charter_prompt_block, connector_prompt_block
 
     charter = charter_prompt_block()
     if charter:

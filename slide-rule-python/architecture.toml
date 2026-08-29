@@ -86,6 +86,7 @@ what = "纯工具：不依赖 services 里任何其它模块"
 may_depend_on = []
 modules = [
   "services.sql_gateway",
+  "services.turn_context",
   "services.page_naming",
   "services.a2a_core_route_cutover",
   "services.a2a_production_transport_ownership_closure",
@@ -123,6 +124,7 @@ modules = [
   "services.blueprint_state",
   "services.builtin_examples",
   "services.closure_relevance",
+  "services.composition_root_state",
   "services.connectors",
   "services.device_policy",
   "services.env_flags",
@@ -405,7 +407,7 @@ modules = [
 
 [component.diagnostics]
 why = """就绪与切换诊断：只读探针，不在产品链上。"""
-may_depend_on = ["a2a", "entrypoint", "evidence", "model_core", "platform", "web_aigc"]
+may_depend_on = ["a2a", "evidence", "model_core", "platform", "web_aigc"]
 modules = [
   "complete_migration",
   "services.builtin_examples",
@@ -487,11 +489,14 @@ modules = [
 ]
 
 [component.llm_gateway]
-why = """LLM 通道：模型调用、流式、通道配置、熔断。业务不该知道用的是哪家模型。"""
+why = """LLM 通道：模型调用、流式、通道配置、熔断。业务不该知道用的是哪家模型。
+`spec_llm_call` 也在这里：名字带 spec 前缀，干的却是「把传输挂了和模型吐了坏 JSON 分开」，
+依赖只有 sliderule_llm，spec-first 和 refine 都在用——按名字前缀归组是这仓踩过三次的坑。"""
 may_depend_on = ["platform"]
 modules = [
   "services.llm_channel",
   "services.llm_error_text",
+  "services.spec_llm_call",
   "sliderule_llm.__init__",
   "sliderule_llm.capabilities",
   "sliderule_llm.client",
@@ -625,18 +630,20 @@ modules = [
   "models.blueprint_state",
   "models.v5_state",
   "services.closure_relevance",
+  "services.composition_root_state",
   "services.device_policy",
   "services.env_flags",
   "services.rbac_roles",
   "services.run_cancel",
   "services.schema_legal",
   "services.sql_gateway",
+  "services.turn_context",
   "stdio_utf8",
 ]
 
 [component.refine]
 why = """精修环：段级沿用、页级短路、图判范围。已闭环应用的第二条入口。"""
-may_depend_on = ["platform", "spec_first"]
+may_depend_on = ["llm_gateway", "platform", "spec_first"]
 modules = [
   "services.refine_graph_scope",
   "services.refine_page_scope",
@@ -645,7 +652,7 @@ modules = [
 
 [component.spec_first]
 why = """spec-first 七步与页面产出：spec 树、逐页 HTML、外壳、绑定、配色、区块目录。"""
-may_depend_on = ["app_store", "drive", "llm_gateway", "model_core", "observability", "platform", "refine"]
+may_depend_on = ["app_store", "llm_gateway", "observability", "platform", "refine"]
 modules = [
   "services.app_graph",
   "services.app_template",
@@ -671,7 +678,6 @@ modules = [
   "services.palette_guard",
   "services.sheet_palette",
   "services.spec_first_pipeline",
-  "services.spec_llm_call",
   "services.spec_page_html",
   "services.spec_semantics",
   "services.spec_tree",
@@ -737,14 +743,6 @@ modules = [
 # ⚠ 门槛：必须写 why，判据还盯着总量。拿它消违规等于把闸关掉。
 #   一个包对只有在它背后**每一条**具体边都在这里时才不算违规。
 
-[[accepted]]
-edge = "services.external_provider_cutover -> app"
-why = """切换就绪诊断里的一项探针：`import app` 是**故意**的，探的正是
-「应用模块能不能加载」这件事本身，不是要用 app 的任何 API。
-改成 find_spec 会把语义从「能加载」变成「找得到」，那是另一个问题。
-这个模块只被自己的测试调用，不在产品链上。"""
-
-
 # ── 棘轮基线 ────────────────────────────────────────────────────────────────
 #
 # 存量违规与环冻在这里，判据只比「有没有变多」。**这份清单只许变短。**
@@ -763,18 +761,19 @@ services_violations = [
 ]
 component_violations = [
 ]
-# ⚠ 组间的环 17 个（2026-08-29 第一次量到）。模块级的环已经清零，组级还有——
-#   这不矛盾：**粒度不同看到的东西不同**，crate 粒度下的缠绕以前根本没人量过。
-#   七组两两互指衍生出这 17 个：app_store⇄identity、evidence⇄llm_gateway、
-#   app_store⇄drive、model_core⇄spec_first、evidence⇄model_core、
-#   refine⇄spec_first、model_core⇄observability。
-#   **只许变少。** 这是下一轮该还的债。
+# ⚠ 组间的环。2026-08-29 第一次量到 17 个，一路还到 2 个：
+#     17 → 13（归组规则打架 + SQL 网关埋错地方）
+#     13 → 8 （语义陷阱：identity 在这仓里有两个意思）
+#     8  → 6 （契约和闸放回该在的位置）
+#     6  → 5 （装配根不许被业务层 import：探针改成装配根自己钉标记）
+#     5  → 2 （请求域上下文切成叶子 turn_context：宪章 / 连接器 / 技能三块
+#             prompt 上下文原本长在 drive 和 model_core 里，谁要拼就得反过来
+#             import 上层，一条边连着三个环）
+#   模块级的环早已清零，组级还剩这两个——不矛盾：**粒度不同看到的东西不同**。
+#   **只许变少。** 剩下这两个都不是"挪个文件"能了的，见
+#   docs/欠缺模块清单-对照Claude与Grok-build.md §23。
 component_cycles = [
-  "capability_engine -> spec_first -> drive -> capability_engine",
-  "diagnostics -> entrypoint -> http_routes -> diagnostics",
   "drive -> model_core -> drive",
-  "drive -> model_core -> spec_first -> drive",
-  "drive -> spec_first -> drive",
   "refine -> spec_first -> refine",
 ]
 cycles = [

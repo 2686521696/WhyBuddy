@@ -68,21 +68,18 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 
 HTML_STRUCTURE_VERSION = "html-structure-v1"
 
-#: 字段类型与页型都从合法域账本派生，**不手抄**。
-#: 手抄的代价这个仓付过：账本此前记在四处靠人肉对齐，E37 的根因就是漏账。
 from .spec_llm_call import call_spec_json
 
-def _legal() -> Dict[str, Any]:
-    import json
-    from pathlib import Path
-
-    path = Path(__file__).resolve().parent / "data" / "five_system_legal.json"
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-_LEGAL = _legal()
-FIELD_TYPES: tuple[str, ...] = tuple(_LEGAL["fieldTypes"])
-PAGE_KINDS: tuple[str, ...] = tuple(_LEGAL["pageKinds"])
+#: 字段类型与页型都从合法域账本派生，**不手抄**。
+#: 手抄的代价这个仓付过：账本此前记在四处靠人肉对齐，E37 的根因就是漏账。
+#
+# ⚠ 2026-08-29：这两行原来是自己又开一个 json.loads 去读同一份账本
+#   （`_legal()` + `tuple(_LEGAL["fieldTypes"])`）。`schema_legal` 的模块头
+#   写着「本模块是唯一入口」，而这就是第五本账——正是上面这条注释自己在
+#   警告的形状。值当时没漂（读的是同一个文件），但**第二个解析器就是漂的前提**。
+#   顺带：`refine_short_circuit` 原本从这里 import 这两个常量，等于 refine 组
+#   为了两个枚举去依赖整条 spec-first 流水线；现在它直接取账本。
+from .schema_legal import FIELD_TYPES, PAGE_KINDS  # noqa: F401  （对外名字不变）
 
 _ID_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 

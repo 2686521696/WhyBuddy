@@ -197,14 +197,14 @@ def hold_spec_from_reuse(
 
 
 def _coerce_field_type(raw: Any) -> str:
-    from .html_structure import FIELD_TYPES
+    from .schema_legal import FIELD_TYPES  # 账本单一入口，不经 spec-first 流水线
 
     value = str(raw or "string").strip()
     return value if value in FIELD_TYPES else "string"
 
 
 def _coerce_page_kind(raw: Any) -> str:
-    from .html_structure import PAGE_KINDS
+    from .schema_legal import PAGE_KINDS  # 同上
 
     value = str(raw or "workbench").strip()
     return value if value in PAGE_KINDS else "workbench"
