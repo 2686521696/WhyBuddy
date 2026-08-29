@@ -49,6 +49,50 @@ _COMP = arch_graph.component_of(_M)
 class Test扫描器自己没瞎:
     """⚠ 排第一。扫描集不对，下面三条全是绿灯空过。"""
 
+    def test_包名单是从代码派生的_不是手写的(self):
+        """⚠ 2026-08-29 手工发现的漏筛，两个盲区叠在一起。
+
+        `PACKAGES` 原来是手写的，而它同时被当成两样东西用：
+        `_resolve` 里「哪些 import 算内部边」的筛子，和 `_pkg_of` 的分类器。
+        名单里漏了顶层的 `stdio_utf8`，于是：
+
+          1. `app.py:24` 那句**顶层** `from stdio_utf8 import ...` 在图里不存在，
+             `stdio_utf8` 反而以"零入度、没人用"的样子躺在孤儿名单里；
+          2. 就算边补出来，`_pkg_of` 给它打 `"?"`，而 `layer_violations`
+             见 `"?"` 会把整条边跳过——**边在，闸看不见**。
+
+        一并浮出水面的 `complete_migration -> models / services` 两条边，
+        在此之前从来没被任何一道闸看见过。
+
+        这条判据钉的是：**每一个被扫到的模块，它的包都得是真实存在的包**，
+        而且不许再出现 `"?"` 这种"分不出类就当没看见"的出口。
+        """
+        roots = {m.split(".")[0] for m in _G.modules}
+        # 种子名单只是兜底，派生结果必须把它全包住——少了说明扫描范围缩了
+        assert set(arch_graph._SEED_PACKAGES) <= roots, (
+            f"种子包名单里有派生不出来的：{sorted(set(arch_graph._SEED_PACKAGES) - roots)}"
+        )
+        # 反向：派生出来但没声明的包，闸压根管不到它
+        declared = set(_M.get("layer", {}))
+        assert roots <= declared, (
+            f"这些包在代码里存在却没在 architecture.toml 声明，闸管不到它们："
+            f"{sorted(roots - declared)}"
+        )
+        for m in sorted(_G.modules):
+            assert arch_graph._pkg_of(m) != "?", (
+                f"{m} 分不出包——带 '?' 的边会被 layer_violations 整条跳过，"
+                f"等于这个模块的依赖对闸隐形"
+            )
+
+    def test_顶层单文件模块的import也算边(self):
+        """⚠ 上面那条的行为版。只查 `_pkg_of` 不出 '?' 的话，
+        「边根本没被扫出来」这一半照样绿——那正是当时的实际情况。"""
+        edges = {f"{e.src} -> {e.dst}" for e in _G.edges}
+        assert "app -> stdio_utf8" in edges, (
+            "app.py 顶层那句 `from stdio_utf8 import configure_stdio_utf8` "
+            "没被扫成边——包名单又变回手写筛子了"
+        )
+
     def test_扫到的是产线代码不是测试(self):
         assert _G.files_scanned > 200, f"只扫到 {_G.files_scanned} 个文件，判据会空过"
         assert not any(m.startswith("tests.") for m in _G.modules), (
@@ -411,6 +455,71 @@ class Test同一个crate内部允许互指:
                 f"{name} 有 {n} 个模块（全仓 {total}）——太大了，"
                 f"组间依赖声明会退化成废话"
             )
+
+
+class Test没人import的模块只许变少:
+    """抄 grok 的 workspace 成员关系：他们 90 个 crate 里被依赖数为 0 的只有装配根
+    （因为它是 binary）。入口天然没上游，其余模块没上游就得解释。
+
+    ⚠ **这不是待删清单。** 实测 54 个里绝大多数是三类各有理由的东西：
+    Node 边界镜像、脚本/评测插座、未挂载的基线面。所以判据是棘轮，不是"清零"。
+    """
+
+    def test_没有新增的孤儿(self):
+        now = set(arch_graph.orphans(_G, _M))
+        base = set(_M.get("baseline", {}).get("orphans", []))
+        new = sorted(now - base)
+        assert not new, (
+            f"这些模块没有任何人 import：{new}。\n"
+            f"要么把它接上，要么在 architecture.toml 的 [entrypoints] 里说清为什么。"
+            f"不许直接塞进 baseline。"
+        )
+
+    def test_基线只许变短(self):
+        """⚠ 反向判据：接上了/删掉了就要从基线里划掉，
+        否则下一个人以为那笔欠账还在。"""
+        now = set(arch_graph.orphans(_G, _M))
+        base = set(_M.get("baseline", {}).get("orphans", []))
+        stale = sorted(base - now)
+        assert not stale, f"这些已经不是孤儿了，从 baseline.orphans 里删掉：{stale}"
+
+    def test_入口声明不许当消孤儿的开关(self):
+        """⚠ 这一组唯一的后门：往 [entrypoints] 里写 `services.*` 就能
+        一口气把整个包的孤儿全抹掉，而且看起来完全合法。"""
+        import fnmatch
+
+        pats = list((_M.get("entrypoints") or {}).get("patterns") or [])
+        assert pats, "[entrypoints] 是空的，判据会空过"
+        roots = {m.split(".")[0] for m in _G.modules}
+        for p in pats:
+            covered = [m for m in _G.modules if fnmatch.fnmatch(m, p)]
+            # 罩住一整个包 = 那个包的孤儿全免检，等于把闸关掉
+            assert p not in {f"{r}.*" for r in roots if r != "scripts"}, (
+                f"入口模式 {p} 罩住了整个包——这是消孤儿的开关，不是入口声明"
+            )
+            assert covered, f"入口模式 {p} 一个模块都没罩到，是不是写错了/已经删了"
+
+    def test_入口罩住的必须真的没人import(self):
+        """⚠ 反向判据。被声明成入口、却其实有上游的模块，说明这条声明是错的
+        （或者代码变了）——留着它就是一条永远不会被检验的免检条。
+
+        `scripts.*` 例外：脚本之间互相 import 是常事，它们仍然个个是入口。
+        """
+        import collections
+        import fnmatch
+
+        indeg = collections.Counter()
+        for e in _G.edges:
+            indeg[e.dst] += 1
+        pats = [p for p in ((_M.get("entrypoints") or {}).get("patterns") or [])
+                if not p.startswith("scripts.")]
+        wrong = sorted(
+            m for m in _G.modules
+            if indeg[m] and any(fnmatch.fnmatch(m, p) for p in pats)
+        )
+        # app 被 scripts import 是正常的（脚本借装配根起服务），单独放行
+        wrong = [m for m in wrong if m != "app"]
+        assert not wrong, f"这些声明成入口的模块其实有人 import：{wrong}"
 
 
 class Test显式例外不是后门:

@@ -50,6 +50,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Dict, List, Optional
 
 MODEL_ASSEMBLY_VERSION = "model-assembly-v1"
@@ -63,6 +64,95 @@ class ModelAssemblyError(RuntimeError):
 
 
 from .spec_llm_call import call_spec_json
+
+#: 实体/字段 id 的合法形状。跟 html_structure._ID_RE 同一条——连接器声明的 id
+#: 也得过这一关，不然补进去的东西过不了结构闸，等于把炸点往后挪一步。
+_CONN_ID_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
+
+
+def merge_connector_entities(datamodel: Dict[str, Any]) -> List[str]:
+    """把本轮挂着的连接器实体**确定性地**补进 datamodel。返回补了哪些实体 id。
+
+    ## 为什么要有这一步（2026-08-29 真机撞出来）
+
+    挂了 weather 连接器跑一轮（sr-conn-180152），产出的 datamodel 是
+    `camp_site / activity_schedule / schedule_conflict`——**`weather_daily` 不在里面**。
+    页面倒是叫 `weather_calendar` / `weather_reschedule_center`，看着像成了。
+
+    翻 SSE 逐段看，病灶是**连接器块接在了不产 datamodel 的那一步**：
+
+        specfirst.spec       连接器块在这里（spec_tree.build_spec_prompt）
+                             → SPEC 树里确实提到了 weather_daily，但那是**散文**
+        specfirst.structure  datamodel 从这里来（html_structure.derive_structure），
+                             它是**从生成好的 HTML 反推**结构，提示词里没有连接器块
+        → 于是实体从来没被建出来
+
+    仓里第一条的原形：接在不通电的插座上。而且四条既有判据
+    （`test_connectors_reach_the_live_path.py`）全绿——它们只验到「块进了
+    prompt」为止，没有任何一条验「实体活到了模型里」。**正向判据齐全、反向
+    判据缺失**（第三条）。
+
+    ## 为什么是补录，不是再给模型加一句要求
+
+    第 4 步的全部纪律是「只记 HTML 里真有的，臆造的剪掉」。往它的提示词里塞
+    一句"这个实体你必须收录"，等于给臆造开同一道门。
+
+    而连接器实体是**已经逐字声明好的**（id / name / 字段 id / 类型都在注册表里），
+    根本不需要任何模型去"抄"一遍——让模型抄一份我们已经有的东西，只是多一处
+    会抄错的地方。所以这里零 LLM 直接搬，跟 `assemble_mechanical` 同一条原则。
+
+    ## ⚠ 三个坑
+
+    1. **不许重复。** 同 id 已经在了就往里补缺的字段，不新增第二条——
+       重复 id 过不了结构闸。
+    2. **类型必须在合法域里。** 注册表哪天声明了闭集外的类型，宁可丢掉那个
+       字段也不能喂进模型（同 `_clean_binding` 的取舍）。
+    3. **补在 `_vocabulary` 之前。** 绑定层只能在词汇表里挑；补晚了实体虽然在，
+       页面却绑不上它，运行时照样每格填「—」——那正是这条要治的病本身。
+    """
+    from .schema_legal import FIELD_TYPES
+    from .turn_context import active_connectors
+
+    conns = active_connectors()
+    if not conns:
+        return []
+    legal = set(FIELD_TYPES)
+    entities = datamodel.setdefault("entities", [])
+    by_id = {str(e.get("id") or ""): e for e in entities if isinstance(e, dict)}
+    added: List[str] = []
+    for conn in conns:
+        decl = (conn or {}).get("entity") or {}
+        eid = str(decl.get("id") or "").strip()
+        if not eid or not _CONN_ID_RE.match(eid):
+            print(f"[model_assembly] 连接器实体 id 不合法，跳过：{eid!r}")
+            continue
+        fields = []
+        for f in decl.get("fields") or []:
+            fid = str((f or {}).get("id") or "").strip()
+            ftype = str((f or {}).get("type") or "string").strip()
+            if not fid or not _CONN_ID_RE.match(fid) or ftype not in legal:
+                continue
+            fields.append({"id": fid, "name": str(f.get("name") or fid), "type": ftype})
+        if not fields:
+            continue
+        target = by_id.get(eid)
+        if target is None:
+            entities.append(
+                {"id": eid, "name": str(decl.get("name") or eid), "fields": fields}
+            )
+            by_id[eid] = entities[-1]
+            added.append(eid)
+            continue
+        have = {str(f.get("id") or "") for f in target.get("fields") or []}
+        missing = [f for f in fields if f["id"] not in have]
+        if missing:
+            target.setdefault("fields", []).extend(missing)
+            added.append(eid)
+    if added:
+        # 真机自证：跟 set_active_connectors 那行 log 同一条老办法。
+        print(f"[model_assembly] 连接器实体补录：{'、'.join(added)}", flush=True)
+    return added
+
 
 def assemble_mechanical(
     structure: Dict[str, Any],
@@ -90,11 +180,19 @@ def assemble_mechanical(
         }
         for p in st.pages
     ]
-    entity_ids = [e.id for e in st.entities]
+    datamodel = to_datamodel(st)
+    # ⚠ 必须在 entity_ids / _vocabulary 之前：绑定层只能在词汇表里挑，
+    #   补晚了实体在、页面却绑不上它，运行时照样每格填「—」（见函数头第 3 坑）。
+    try:
+        merge_connector_entities(datamodel)
+    except Exception as exc:  # noqa: BLE001 — 补录是确定性搬运，出错只可能是 bug；
+        # 不许因为它把整轮推演打死，但**必须吵**，别静静地少一张表。
+        print(f"[model_assembly] 连接器实体补录失败（本轮少了这些表）：{exc}", flush=True)
+    entity_ids = [str(e.get("id") or "") for e in datamodel.get("entities") or []]
     role_ids = [r.id for r in sem.roles]
 
     return {
-        "datamodel": to_datamodel(st),
+        "datamodel": datamodel,
         "rbac": {**sections["rbac"], "menus": []},   # ← 绑定层填
         "workflow": {"id": "main_flow", "name": "主流程", **sections["workflow"]},
         "page": {"pages": pages},

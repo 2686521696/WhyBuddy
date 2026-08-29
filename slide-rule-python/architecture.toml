@@ -53,13 +53,42 @@ may_depend_on = ["config", "models", "services", "sliderule_llm", "middlewares"]
 rank = 4
 what = "装配根"
 # 对应 grok 的 composition root（xai-grok-pager-bin）：只负责把东西装起来。
-may_depend_on = ["config", "models", "routes", "services", "middlewares"]
+may_depend_on = ["config", "models", "routes", "services", "middlewares", "stdio_utf8"]
 
 [layer.scripts]
 rank = 5
 what = "运维脚本"
 # 一次性脚本可以够到任何东西——它不在产品链上，出事也炸不到用户。
-may_depend_on = ["config", "models", "services", "routes", "sliderule_llm", "app", "middlewares"]
+may_depend_on = ["config", "models", "services", "routes", "sliderule_llm", "app", "middlewares", "stdio_utf8"]
+
+# ── 顶层单文件模块：自己就是一个包 ────────────────────────────────────────────
+#
+# ⚠ 2026-08-29 之前这三个**根本不在架构图里**。扫描器的包名单是手写的，
+#   而那份名单同时当「哪些 import 算内部边」的筛子和 `_pkg_of` 的分类器用，
+#   于是漏一项漏两次：`app.py` 第 24 行顶层 `from stdio_utf8 import ...` 那条边
+#   在图里不存在，`stdio_utf8` 反而以"零入度、没人用"的样子躺在孤儿名单里；
+#   就算边补出来，`_pkg_of` 也会给它打 `"?"`，而 `layer_violations` 见 `"?"` 整条跳过。
+#   现在包名单从真实模块集合派生，这三个必须各自声明。
+#   一并浮出水面的还有 `complete_migration -> models / services` 两条边——
+#   在此之前它们**从来没被任何一道闸看见过**。
+
+[layer.stdio_utf8]
+rank = 0
+what = "顶层叶子：Windows 管道 UTF-8 钉桩"
+# 必须赶在任何会 print 的 import 之前执行，所以它谁都不能依赖。
+may_depend_on = []
+
+[layer.arch_graph]
+rank = 0
+what = "架构编译器自己"
+# 抄 grok 的「根 Cargo.toml 是生成的」。它读代码，不参与产品链，零内部依赖。
+may_depend_on = []
+
+[layer.complete_migration]
+rank = 5
+what = "一次性迁移记录"
+# 跟 scripts 同一性质：不在产品链上。⚠ 它的两条依赖 2026-08-29 才第一次被闸看见。
+may_depend_on = ["models", "services"]
 
 
 # ── services 内部分层（抄 grok 的叶子 crate）──────────────────────────────────
@@ -743,6 +772,25 @@ modules = [
 # ⚠ 门槛：必须写 why，判据还盯着总量。拿它消违规等于把闸关掉。
 #   一个包对只有在它背后**每一条**具体边都在这里时才不算违规。
 
+# ── 入口：没人 import 它是**对的** ──────────────────────────────────────────────
+#
+# 抄 grok：他们 90 个 crate 里被依赖数为 0 的只有装配根 `xai-grok-pager-bin`
+# 一个——因为它是 binary。入口天然没有上游，其余模块没上游就得解释。
+#
+# ⚠ 这里只许放**真入口**，不许拿通配符消孤儿。判据
+#   `test_入口声明不许当消孤儿的开关` 盯着：任何能一口气罩住整个包的模式
+#   （services.* / routes.* 之类）直接红。
+[entrypoints]
+patterns = [
+  "app",                 # 装配根。uvicorn 用 `app:app` 起它。
+  "arch_graph",          # 架构编译器自己，命令行工具。
+  "complete_migration",  # 一次性迁移记录，跟 scripts 同性质。
+  "scripts.*",           # 运维/评测脚本，每个都是自己的入口。
+  "sliderule_llm.__init__",  # 包的 __init__：`import 包.模块` 时必然被加载，
+                             # 但 AST 里那条 import 指向的是子模块，永远扫不出入边。
+]
+
+
 # ── 棘轮基线 ────────────────────────────────────────────────────────────────
 #
 # 存量违规与环冻在这里，判据只比「有没有变多」。**这份清单只许变短。**
@@ -777,4 +825,64 @@ component_cycles = [
   "refine -> spec_first -> refine",
 ]
 cycles = [
+]
+# ⚠ 没人 import 的模块。**这不是待删清单**——实测这批里绝大多数是三类
+#   各有理由的东西（Node 边界镜像 / 脚本插座 / 未挂载的基线面），
+#   详见 arch_graph.orphans() 的文档。这里给的是棘轮：**只许变少**，
+#   新长出来的孤儿必须当场解释——要么接上，要么写进 [entrypoints]。
+orphans = [
+  "routes.sliderule",
+  "services.a2a_core_route_cutover",
+  "services.a2a_runtime",
+  "services.a2a_session_stream_runtime_slice",
+  "services.agent_loop_python_worker",
+  "services.blueprint_event_bus_runtime_takeover",
+  "services.blueprint_job_store_runtime_takeover",
+  "services.blueprint_job_store_scope_decision",
+  "services.blueprint_ledger_runtime_takeover",
+  "services.blueprint_main_runtime_closure",
+  "services.blueprint_preview_state_runtime_takeover",
+  "services.blueprint_production_denominator_reconciliation",
+  "services.blueprint_production_ownership_closure",
+  "services.blueprint_prompt_package_runtime_takeover",
+  "services.blueprint_replan_runtime_takeover",
+  "services.blueprint_shell_state_cutover",
+  "services.blueprint_stage_edit",
+  "services.external_provider_cutover",
+  "services.final_provider_a2a_scope_reconciliation",
+  "services.full_migration_note",
+  "services.knowledge_admin_runtime",
+  "services.nl_command_runtime",
+  "services.rag_ingestion",
+  "services.role_runtime",
+  "services.slide_rule_full_executor",
+  "services.task_durable_mission_store_takeover",
+  "services.task_event_persistence_takeover",
+  "services.task_executor_runtime",
+  "services.task_lifecycle_durable_ownership_closure",
+  "services.task_lifecycle_production_closure",
+  "services.task_mission_store_runtime_slice",
+  "services.task_production_denominator_reconciliation",
+  "services.task_project_auth_runtime_takeover",
+  "services.task_scheduler_runtime_takeover",
+  "services.task_store_auth_scheduler_cutover",
+  "services.telemetry",
+  "services.telemetry_runtime",
+  "services.v5_session_driver",
+  "services.web_aigc_ai_ppt_adapter",
+  "services.web_aigc_device_location_adapter",
+  "services.web_aigc_dynamic_chart_adapter",
+  "services.web_aigc_external_provider_ownership_closure",
+  "services.web_aigc_file_adapter",
+  "services.web_aigc_ocr_static_adapter",
+  "services.web_aigc_open_adapter",
+  "services.web_aigc_orchestration_adapter",
+  "services.web_aigc_provider_closure",
+  "services.web_aigc_real_provider_readiness",
+  "services.web_aigc_search_adapter",
+  "services.web_aigc_transaction_flow_adapter",
+  "services.web_aigc_vision_audio_adapter",
+  "services.web_aigc_web_qa_adapter",
+  "services.workflow_runtime",
+  "sliderule_llm.pool",
 ]

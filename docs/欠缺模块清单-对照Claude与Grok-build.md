@@ -2336,3 +2336,140 @@ schedule_conflict；页面倒是叫 weather_calendar / weather_reschedule_center
 prompt 中段，而末尾那句"Produce the five-system JSON now."权重最高——§22 里精修收尾
 那一条踩过同型的坑），还是结构闸/修复器在下游把它剥了。
 **别拿"块进了 prompt"当"功能生效了"结案**——那正是第三条点名的"名单里有名字 ≠ 埋点在"。
+
+---
+
+## 24. §23.8 那个真机 ❌ 查清了：块接在了不产 datamodel 的那一步（2026-08-29）
+
+### 24.1 病灶
+
+上一轮挂 weather 连接器跑真机，`weather_daily` 没进 datamodel。翻 SSE 逐段数
+这个词的出现次数，一眼就看出来了：
+
+    specfirst.spec        2 次   ← 连接器块在这一步（spec_tree.build_spec_prompt）
+                                   但 SPEC 树是**需求树**，那两次在 notes 的散文里
+    specfirst.structure   0 次   ← datamodel 从这一步来（html_structure.derive_structure），
+                                   它**从生成好的 HTML 反推**结构，提示词里没有连接器块
+    specfirst.semantics   0 次
+    specfirst.assemble    0 次
+
+**实体从来没有被建出来过。** 连接器块接在了写需求的那一步，而不是产数据模型的那一步——
+仓里第一条的原形：装在不通电的插座上。
+
+而 `tests/test_connectors_reach_the_live_path.py` 里那四条专门验"接在链上吗"的判据
+**全绿**：块进了 `_build_user_content`、进了 `build_spec_prompt`、两条路由都设了都清了、
+前端两处载荷都带了。它们**验到「块进了 prompt」为止**。
+
+    正向判据：块进了 prompt          ✅ 四条，全绿
+    反向判据：实体活到了模型里        ❌ 一条都没有
+
+这就是第三条点名的形状。**「块进了 prompt」和「功能生效了」之间，还隔着三步。**
+
+### 24.2 修法：确定性补录，不是再给模型加一句要求
+
+第 4 步的全部纪律是「只记 HTML 里真有的，臆造的剪掉」。往它提示词里塞一句
+"这个实体你必须收录"，等于给臆造开同一道门。
+
+而连接器实体是**已经逐字声明好的**（注册表里 id / name / 字段 id / 类型俱全）——
+不需要任何模型去抄一遍。**让模型抄一份我们已经有的东西，只是多一处会抄错的地方。**
+所以在第 6 步机械段（`assemble_mechanical`，本来就是"零 LLM 纯搬运"）直接搬。
+
+⚠ 位置有讲究：必须补在 `entity_ids` / `_vocabulary()` **之前**。绑定层的提示词是
+全封闭词汇表，模型只能在词汇表里挑；补晚了实体在、页面却绑不上它，运行时照样
+每格填「—」——**病换个位置原样复发**。`test_补录发生在词汇表算出来之前` 钉这一条。
+
+### 24.3 真机前后对照（同一个题目）
+
+    改动前 sr-conn-180152   实体 ['camp_site','activity_schedule','schedule_conflict']   ❌
+    改动后 sr-conn2-181602  实体 [...,'weather_daily']  七个字段 id 全中             ✅
+
+**而且走完了最后一米。** 光有实体还不算数——页面得真的绑上它，运行时才填得进数。
+查改动后那一轮的 `page.pages[].fieldBindings`：
+
+    schedule_workbench          10 个绑定，连接器字段 0
+    site_resource_ledger        11 个绑定，连接器字段 0
+    weather_emergency_dispatch  13 个绑定，**连接器字段 7 个全绑上了**
+                                （date / city / condition / temp_max / temp_min /
+                                 rain_chance / wind_max）
+
+这才是"用户挂了连接器"该有的样子：那一页运行时会被真天气数据填满。
+补录如果晚一步（排在 `_vocabulary()` 之后），实体照样在，这一行会是 0 个。
+
+判据 15 条。变异实测：**把修复整个撤回 → 10 条红**（真机那个 bug 的原样）；
+补录挪到词汇表之后 → 2 条红；同名实体新增第二条 → 红；不过滤非法类型 → 红。
+
+### 24.4 顺带：判据自己也踩了第二条
+
+`test_补录发生在词汇表算出来之前` 第一版直接 `src.index("entity_ids")`，而调用点
+上方那句注释里正好写着"必须在 entity_ids / _vocabulary 之前"——**命中的是注释**，
+判据当场打空。剥完注释才真的红。第二条那个坑，写判据的人自己也会掉进去。
+
+---
+
+## 25. 扫描器自己有两个盲区，叠在一起（2026-08-29）
+
+查孤儿模块的时候，名单里出现了 `stdio_utf8`——而 `app.py` 第 24 行明明写着
+**顶层** `from stdio_utf8 import configure_stdio_utf8`。查下去是扫描器的问题，
+而且是**一份手写名单同时当两样东西用**造成的，漏一项漏两次：
+
+    PACKAGES（手写）
+      ├─ 在 _resolve 里当「哪些 import 算内部边」的筛子  → 边根本没被扫出来
+      └─ 在 _pkg_of 里当分类器，不在名单里就返回 "?"
+                                                         → 而 layer_violations
+                                                           见 "?" 会把整条边跳过
+                                                           （就算边补出来，闸也看不见）
+
+一并浮出水面的：`complete_migration -> models` 和 `complete_migration -> services`
+两条边，**在此之前从来没被任何一道闸看见过**。
+
+修法就是这仓一路在拆的那种东西（合法域四本账、闸的常量拷贝）：**名单改成从真实
+模块集合派生**。加一个顶层 .py 或一个新包，不用再回来改这里。原来那份留作
+`_SEED_PACKAGES`，只当判据的对照物。
+
+判据两条，各咬各的一半（只写一条就会漏另一半）：
+
+    test_包名单是从代码派生的_不是手写的   任何模块的包都不许是 "?"；派生出的包都得声明
+    test_顶层单文件模块的import也算边      `app -> stdio_utf8` 这条边必须在图里
+
+变异实测：退回手写筛子 → 后者红；`_pkg_of` 退回带 "?" 出口 → 前者红。
+
+**这条最值得记的地方**：孤儿名单本身是查这个 bug 的工具，而工具第一次给出的答案
+里就藏着它自己的 bug。先验工具，再信数字。
+
+---
+
+## 26. 抄 grok 的最后一条：workspace 成员关系（2026-08-29）
+
+grok 90 个 crate 全在 workspace 里，**被依赖数为 0 的只有装配根**
+`xai-grok-pager-bin` 一个——因为它是 binary。一个既不是入口、又没人依赖的 crate，
+在那套体系里是明显的死重量。Python 没有编译器替我们数，所以自己数。
+
+    零入度模块 93 个
+      ├─ 声明过的入口 39（app / arch_graph / complete_migration / scripts.* /
+      │                   sliderule_llm.__init__）
+      └─ **真孤儿 54**
+
+### ⚠ 但这 54 个**不是待删清单**
+
+挨个看了，绝大多数不是"忘了删"，是三类各有各的理由：
+
+| 类 | 例子 | 为什么在 |
+|---|---|---|
+| Node 边界镜像 | `web_aigc_*`(14) `task_*_closure`(10) `blueprint_*_takeover`(12) `a2a_*`(3) | Node 拥有运行时，Python 这边把契约镜像下来用测试钉住。删了等于丢掉那份记录 |
+| 脚本/评测插座 | `v5_session_driver` | 模块头明写「产品路由调用点零，禁止再 import 进来当驱动器」——**故意**不在产品链上 |
+| 未挂载的基线面 | `routes.sliderule` | docstring 自己写着「Primary mounted surface in app.py is sliderule_full.py」 |
+
+所以给的是**棘轮**，不是清零：今天这 54 个冻在基线，只许变少；新长出来的孤儿必须
+当场解释——要么接上，要么写进 `[entrypoints]` 说清为什么。
+
+四条判据，其中一条专门堵这套东西唯一的后门：往 `[entrypoints]` 里写 `services.*`
+就能一口气把整个包的孤儿全抹掉，而且看起来完全合法。变异实测这一手会同时点亮三条红。
+
+**删不删是产品判断，不是我一个人能定的**——尤其 Node 边界镜像那 39 个，删掉就等于
+放弃"Python 这边镜像了哪些契约"这份记录。棘轮先把口子焊住，删不删下次当面说。
+
+### 账
+
+    模块级：未声明依赖 0 · 环 0 · services 越层 0 · 显式例外 0
+    组  级：未声明组间依赖 0 · 组间环 2（17 → 13 → 8 → 6 → 5 → 2）
+    成员：  没人 import 的模块 54（新立棘轮，只许变少）

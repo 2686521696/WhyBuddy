@@ -8,6 +8,14 @@
   1. prompt 块真的进了 _build_user_content（不是写了个函数没人调）
   2. **同步和流式两条路由都**设置了、都清空了（第四条：成对的东西）
   3. 前端两处 payload 都带上了 activeConnectors（同上）
+
+⚠ 2026-08-29 补一句，别再被这个文件的绿灯骗一次：**这里每一条都验到
+「块进了 prompt」为止，一条都没有验「实体活到了模型里」。** 真机实测
+（sr-conn-180152）这四条全绿、而产出的 datamodel 里根本没有 `weather_daily`——
+连接器块接在了写需求的第 2 步，而 datamodel 是第 4 步从 HTML 反推出来的。
+「块进了 prompt」和「功能生效了」之间还隔着三步。
+后半程的判据在 `tests/test_connector_entity_survives_to_model.py`，
+病灶与修法见 docs/欠缺模块清单-对照Claude与Grok-build.md §24。
 """
 
 import re

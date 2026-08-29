@@ -67,7 +67,17 @@ MANIFEST = ROOT / "architecture.toml"
 DIAGRAM = REPO / "docs" / "SlideRule V6.2 架构图（自动生成）.md"
 
 #: 顶层包 = 分层单位。对应 grok 的 crate。
-PACKAGES: Tuple[str, ...] = (
+#: ⚠ 2026-08-29：这份名单原来是**手写**的，而它同时被当成「哪些 import 算内部边」
+#:   的筛子——于是任何不在名单里的顶层模块**结构上不可能有入边**。
+#:   实测漏的是 `stdio_utf8`：`app.py` 第 24 行顶层 `from stdio_utf8 import
+#:   configure_stdio_utf8`，图里那条边根本不存在，它在零入度名单里显示成"没人用"。
+#:   同样漏的还有 `complete_migration`、`arch_graph`。
+#:
+#:   手写名单是这仓一路在拆的那种东西（合法域四本账、闸的常量拷贝）。现在改成
+#:   **从真实模块集合派生**（`_package_roots`），加一个顶层 .py 或一个新包都不用
+#:   再来改这里。下面这份只留作**兜底 + 判据的对照物**：
+#:   `test_扫描器_包名单是从代码派生的` 会拿派生结果跟它比，少了就红。
+_SEED_PACKAGES: Tuple[str, ...] = (
     "models",
     "config",
     "sliderule_llm",
@@ -77,6 +87,8 @@ PACKAGES: Tuple[str, ...] = (
     "scripts",
     "app",
 )
+
+PACKAGES: Tuple[str, ...] = _SEED_PACKAGES
 
 #: 不参与架构判定的目录。
 #: ⚠ 判断用 `parts[0]`，不是 `"tests/" in str(p)`——写这个文件的第一版就是后者，
@@ -123,11 +135,19 @@ def _module_name(path: pathlib.Path) -> str:
 
 
 def _pkg_of(module: str) -> str:
-    head = module.split(".")[0]
-    return head if head in PACKAGES else "app" if module == "app" else "?"
+    """模块名的第一段就是它的包；顶层单文件模块自己就是一个包。
+
+    ⚠ 2026-08-29 之前这里写的是
+    `head if head in PACKAGES else "app" if module == "app" else "?"`，
+    而 `layer_violations` 会把带 `"?"` 的边**整条跳过**。于是手写 PACKAGES
+    漏掉的那几个顶层模块（`stdio_utf8` / `arch_graph` / `complete_migration`）
+    造出了**第二个盲区**：就算边扫出来了，闸也当没看见。
+    一份手写名单同时当筛子和分类器用，漏一项漏两次。
+    """
+    return module.split(".")[0]
 
 
-def _resolve(node: ast.AST, here: str) -> List[str]:
+def _resolve(node: ast.AST, here: str, roots: Optional[Set[str]] = None) -> List[str]:
     """把一条 import 语句解析成**候选**内部模块名（外部依赖丢掉）。
 
     ⚠ `from . import x` 的目标是 `当前包.x`，**不是当前包**。
@@ -139,6 +159,12 @@ def _resolve(node: ast.AST, here: str) -> List[str]:
     ⚠ `from .foo import bar` 里的 `bar` 可能是模块也可能是函数，AST 分不清。
       这里两个候选都吐出来（`包.foo` 与 `包.foo.bar`），由 `build_graph`
       拿真实模块集合去筛——**存在的才算边**。
+
+    ⚠ `roots` 必须由调用方从真实文件派生，别退回硬编码的 `PACKAGES`。
+      2026-08-29 实测：名单里漏了顶层的 `stdio_utf8`，于是 `app.py` 第 24 行
+      那句顶层 import **在图里根本不存在**——它反而以"零入度、没人用"的样子
+      出现在孤儿名单里。一份手写名单同时当筛子用，漏一项就是**静默漏边**，
+      而漏边的闸看着是绿的。
     """
     out: List[str] = []
     if isinstance(node, ast.ImportFrom):
@@ -156,7 +182,7 @@ def _resolve(node: ast.AST, here: str) -> List[str]:
                 out.append(f"{node.module}.{a.name}")
     elif isinstance(node, ast.Import):
         out.extend(a.name for a in node.names)
-    return [m for m in out if m.split(".")[0] in PACKAGES]
+    return [m for m in out if m.split(".")[0] in (roots or PACKAGES)]
 
 
 def _deferred_lines(tree: ast.AST) -> Set[int]:
@@ -189,6 +215,8 @@ def build_graph(root: pathlib.Path = ROOT) -> Graph:
     files = _sources(root)
     for path in files:
         g.modules.add(_module_name(path))
+    # 包名单从真实模块集合派生，不用手写的 PACKAGES 当筛子（见 _resolve ⚠）。
+    roots = {m.split(".")[0] for m in g.modules}
 
     for path in files:
         here = _module_name(path)
@@ -201,7 +229,7 @@ def build_graph(root: pathlib.Path = ROOT) -> Graph:
         for node in ast.walk(tree):
             if not isinstance(node, (ast.Import, ast.ImportFrom)):
                 continue
-            cands = [c for c in _resolve(node, here) if c in g.modules and c != here]
+            cands = [c for c in _resolve(node, here, roots) if c in g.modules and c != here]
             if not cands:
                 continue
             # 最长的那个才是真目标：`from services.x import y` 的候选里
@@ -259,6 +287,45 @@ def component_violations(g: "Graph", manifest: dict) -> List[str]:
         if b not in allowed.get(a, set()):
             bad.add(f"{a} -> {b} :: {e.src} -> {e.dst}")
     return sorted(bad)
+
+
+def orphans(g: Graph, manifest: dict) -> List[str]:
+    """**没有任何模块 import 它**的模块，扣掉声明过的入口。
+
+    ## 抄的是什么
+
+    grok 那边 90 个 crate 全在 workspace 里，被依赖数为 0 的只有装配根
+    `xai-grok-pager-bin` 一个——**因为它是 binary**。一个既不是入口、又没人依赖的
+    crate，在那套体系里是明显的死重量。Python 没有编译器替我们数，所以自己数。
+
+    ## ⚠ 零入度 ≠ 死代码，别照着这个名单删
+
+    实测这 55 个里绝大多数**不是忘了删**，是三类各有各的理由：
+
+      · **Node 边界镜像**（web_aigc_* / task_*_closure / blueprint_*_takeover / a2a_*）
+        Node 拥有运行时，Python 这边把契约镜像下来、用测试钉住。删了等于丢掉那份记录。
+      · **脚本/评测插座**（v5_session_driver）模块头明写「产品路由调用点零，
+        禁止再 import 进来当驱动器」——它是**故意**不在产品链上的。
+      · **未挂载的基线面**（routes.sliderule）docstring 自己写着
+        「Primary mounted surface in app.py is sliderule_full.py」。
+
+    所以这里给的是**棘轮**，不是待删清单：今天这些冻在基线里，**只许变少**；
+    新长出来的孤儿必须当场解释——要么接上，要么写进 `[entrypoints]` 说清为什么。
+    """
+    import fnmatch
+
+    indeg: Dict[str, int] = {m: 0 for m in g.modules}
+    for e in g.edges:
+        indeg[e.dst] = indeg.get(e.dst, 0) + 1
+    pats = list((manifest.get("entrypoints") or {}).get("patterns") or [])
+    out = []
+    for m in sorted(g.modules):
+        if indeg.get(m, 0):
+            continue
+        if any(fnmatch.fnmatch(m, p) for p in pats):
+            continue
+        out.append(m)
+    return out
 
 
 def component_cycles(manifest: dict, g: "Graph") -> List[str]:
@@ -448,6 +515,7 @@ def render_doc(g: Graph, manifest: dict) -> str:
     cycles = cross_component_cycles(g, manifest)
     violations = layer_violations(g, manifest)
     svc_v = services_violations(g, manifest)
+    orph = orphans(g, manifest)
     base = manifest.get("baseline", {})
     deferred = sum(1 for e in g.edges if e.deferred)
     body = [
@@ -474,6 +542,9 @@ def render_doc(g: Graph, manifest: dict) -> str:
         f"- 模块级循环依赖 **{len(cycles)}** 个（基线 {len(base.get('cycles', []))} 个）",
         f"- services 内部越层依赖 **{len(svc_v)}** 条"
         f"（基线 {len(base.get('services_violations', []))} 条）",
+        f"- 没人 import 的模块 **{len(orph)}** 个"
+        f"（基线 {len(base.get('orphans', []))} 个）—— ⚠ **不是待删清单**，"
+        f"多数是 Node 边界镜像 / 脚本插座 / 未挂载的基线面，见 `arch_graph.orphans()`",
         "",
         "### services 内部分层（抄 grok 的叶子 crate）",
         "",
@@ -579,6 +650,13 @@ def _freeze(g: Graph, manifest: dict) -> None:
     )
     MANIFEST.write_text(text, encoding="utf-8")
     print(f"基线已写入：违规 {len(v)} 条，环 {len(c)} 个，services 越层 {len(sv)} 条")
+    # ⚠ 说清它**没**覆盖什么。默认全覆盖会让"往基线里加东西"变得太顺手，
+    #   而那正是仓里明写着不该出现在日常流程里的动作（架构边界那一节）。
+    #   不说清则更糟：下一个人以为 --freeze 是全量的，剩下三条棘轮悄悄没跟上。
+    print(
+        "⚠ 未覆盖：component_violations / component_cycles / orphans —— "
+        "这三条要手改 architecture.toml，逼你逐条写清为什么接受这笔欠账"
+    )
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -595,6 +673,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     sv = services_violations(g, manifest)
     cv = component_violations(g, manifest)
     cc = component_cycles(manifest, g)
+    orph = orphans(g, manifest)
     base = manifest.get("baseline", {})
 
     if args.emit:
@@ -628,6 +707,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"组间循环依赖 {len(cc)}（基线 {len(base.get('component_cycles', []))}）")
         for x in cc[:10]:
             print(f"   {x}")
+        print(f"没人 import 的模块 {len(orph)}（基线 {len(base.get('orphans', []))}）"
+              f" —— ⚠ 不是待删清单，见 orphans() 文档")
         if not args.check:
             return 0
 
@@ -636,7 +717,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     new_s = sorted(set(sv) - set(base.get("services_violations", [])))
     new_cv = sorted(set(cv) - set(base.get("component_violations", [])))
     new_cc = sorted(set(cc) - set(base.get("component_cycles", [])))
-    if new_v or new_c or new_s or new_cv or new_cc:
+    new_o = sorted(set(orph) - set(base.get("orphans", [])))
+    if new_v or new_c or new_s or new_cv or new_cc or new_o:
         for x in new_v:
             print(f"❌ 新增未声明依赖：{x}")
         for x in new_c:
@@ -647,6 +729,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"❌ 新增未声明的组间依赖：{x}")
         for x in new_cc:
             print(f"❌ 新增组间循环依赖：{x}")
+        for x in new_o:
+            print(f"❌ 新增没人 import 的模块：{x}"
+                  f"（接上它，或在 architecture.toml 的 [entrypoints] 里说清为什么）")
         return 1
     print("✅ 没有新增的未声明依赖或循环")
     return 0

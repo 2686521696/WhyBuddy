@@ -15,10 +15,11 @@
 ## 此刻的事实（由代码算出，不是手写）
 
 - 扫描文件 **273** 个，模块 **273** 个
-- 内部依赖边 **773** 条，其中 **461** 条写在函数体里（59%）
+- 内部依赖边 **778** 条，其中 **463** 条写在函数体里（59%）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
+- 没人 import 的模块 **54** 个（基线 54 个）—— ⚠ **不是待删清单**，多数是 Node 边界镜像 / 脚本插座 / 未挂载的基线面，见 `arch_graph.orphans()`
 
 ### services 内部分层（抄 grok 的叶子 crate）
 
@@ -34,18 +35,24 @@
 
 ```mermaid
 flowchart TB
+  arch_graph["arch_graph<br/>1 个模块<br/>架构编译器自己"]
   config["config<br/>2 个模块<br/>配置"]
   models["models<br/>3 个模块<br/>数据形状"]
+  stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>13 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
   services["services<br/>201 个模块<br/>业务"]
   routes["routes<br/>12 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
+  complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
   scripts["scripts<br/>36 个模块<br/>运维脚本"]
   app -->|1| config
   app -->|1| models
   app -->|12| routes
   app -->|11 · 其中 3 条在函数体里| services
+  app -->|1| stdio_utf8
+  complete_migration -->|1| models
+  complete_migration -->|3| services
   middlewares -->|1| config
   middlewares -->|2| services
   routes -->|9| config
@@ -58,6 +65,7 @@ flowchart TB
   scripts -->|1 · 其中 1 条在函数体里| models
   scripts -->|58 · 其中 41 条在函数体里| services
   scripts -->|8 · 其中 5 条在函数体里| sliderule_llm
+  scripts -->|2| stdio_utf8
   services -->|15 · 其中 7 条在函数体里| config
   services -->|29 · 其中 1 条在函数体里| models
   services -->|60 · 其中 47 条在函数体里| sliderule_llm
@@ -133,7 +141,7 @@ flowchart LR
   entrypoint -->|7| http_routes
   entrypoint -->|4| model_core
   entrypoint -->|1| permission
-  entrypoint -->|3| platform
+  entrypoint -->|4| platform
   entrypoint -->|3| spec_first
   entrypoint -->|3| task_exec
   evidence -->|7| llm_gateway
@@ -172,7 +180,7 @@ flowchart LR
   ops_scripts -->|1| identity
   ops_scripts -->|8| llm_gateway
   ops_scripts -->|16| model_core
-  ops_scripts -->|7| platform
+  ops_scripts -->|9| platform
   ops_scripts -->|24| spec_first
   permission -->|1| identity
   permission -->|1| platform
@@ -183,7 +191,7 @@ flowchart LR
   spec_first -->|3| app_store
   spec_first -->|33| llm_gateway
   spec_first -->|3| observability
-  spec_first -->|28| platform
+  spec_first -->|30| platform
   spec_first -.->|5| refine
   task_exec -->|2| evidence
   task_exec -->|4| platform
