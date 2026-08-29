@@ -113,11 +113,33 @@ npx tsc --noEmit -p tsconfig.json
 node scripts/mermaid-render-check.mjs "docs/SlideRule V6.0 架构图.md"
 
 # 架构：依赖图**不许手画**，改完代码重新生成 + 过闸
-slide-rule-python/.venv/bin/python slide-rule-python/arch_graph.py --emit    # 重新生成
-slide-rule-python/.venv/bin/python slide-rule-python/arch_graph.py --check   # 闸（CI 里由 pytest 跑）
+# ⚠ 两侧各一份，**都要过**。只跑 Python 那份等于只管了 13% 的仓。
+slide-rule-python/.venv/bin/python slide-rule-python/arch_graph.py --emit    # Python 侧重新生成
+slide-rule-python/.venv/bin/python slide-rule-python/arch_graph.py --check   # Python 侧闸（CI 里由 pytest 跑）
+node scripts/arch-graph-ts.mjs --emit                                        # TS 侧重新生成
+node scripts/arch-graph-ts.mjs --check                                       # TS 侧闸（CI 里由 test:scripts 跑）
 ```
 
 ## 架构边界
+
+⚠ **闸有两份，覆盖两个语言侧。** 2026-08-29 建完 Python 侧才发现它只盖住 273/2103
+= 13% 的模块，TS 侧 1830 个模块一道闸都没有——而「Python 判定 / TypeScript 运行时」
+正是上面第四条点名的成对物。现在两侧都有：
+
+| | Python 侧 | TS 侧 |
+|---|---|---|
+| 编译器 | `slide-rule-python/arch_graph.py` | `scripts/arch-graph-ts.mjs` |
+| 清单 | `architecture.toml` | `architecture.ts.json` |
+| 判据 | `tests/test_architecture.py` | `scripts/arch-graph-ts.test.mjs` |
+| 生成的图 | `docs/SlideRule V6.2 架构图（自动生成）.md` | `docs/WhyBuddy TS 架构图（自动生成）.md` |
+| 逃生口（必须算数） | 函数体里的 import | 动态 `import()` / `require()` |
+
+两侧同一个心智模型：**未声明的边红、新增的环红、图与代码不同步红、存量走棘轮只许变短。**
+
+TS 侧额外一条硬闸（无基线）：**包级不许成环**。client / server / shared 的方向
+今天是干净的（`server → client` 仅一条，是有意复用推演循环、已在清单里声明理由）。
+一旦成环就是浏览器包和 Node 包互相依赖，那是打包器层面的病，不是欠账。
+
 
 `docs/SlideRule V6.2 架构图（自动生成）.md` 是**生成的，别手改**——改了
 `tests/test_architecture.py::Test图与代码同步` 会红。依赖规则写在
