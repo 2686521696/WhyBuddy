@@ -1291,26 +1291,29 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           // 每一步 LLM 想法各自缓冲：并行批里不同能力的增量交织到达，
           // 按标签分开累积，展示最近更新的那条（不互相覆盖内容）。
           const llmDraftBuffers = new Map<string, string>();
+          // key → 后端给的人话。收尾归档（llm_output）时还要用一次。
+          const llmStageLabels = new Map<string, string>();
           // spec-first 流式步的实时输出。对照 GitHub Actions 的 name vs id：
           // SSE `label` 是机器 id，左栏只许出现人话。
           //
-          // ⚠ 这张表跟后端 delta_emitter 传的 label 是**同一份词汇的两半**，
-          //   而它俩隔着一条 SSE，谁也编译不到谁。漏一个的后果不是报错，是
-          //   左栏冒出一行 "LLM 正在执行 specfirst.design"——2026-08-19
-          //   安康随访通就是这样漏的。判据在 test_spec_first_streaming。
-          const SPEC_FIRST_LLM_LABELS: Record<string, string> = {
-            "specfirst.spec": "LLM 正在起草规格：成功判据、需求节点与页面清单",
-            "specfirst.design": "LLM 正在定这个应用的设计语言",
-            "specfirst.pagescope": "LLM 正在判断这次要改哪几页",
-            "specfirst.graphscope": "LLM 正在分析这次修改牵扯的范围",
-            "specfirst.structure": "LLM 正在从界面反推数据模型与关联关系",
-            "specfirst.semantics": "LLM 正在推导权限、工作流与不变式",
-            "specfirst.assemble": "LLM 正在汇合五系统模型",
-          };
-          const humanLlmLabel = (key: string): string => {
+          // ⚠ 2026-08-30：这里原本有一张 `SPEC_FIRST_LLM_LABELS` 手抄表（7 条）。
+          //   它自己的注释写着病灶：「跟后端 delta_emitter 传的 label 是同一份
+          //   词汇的两半，而它俩隔着一条 SSE，谁也编译不到谁。漏一个的后果不是
+          //   报错，是左栏冒出 'LLM 正在执行 specfirst.design'」——2026-08-19
+          //   安康随访通就是这么漏的。
+          //
+          //   **表删了。** 后端事件现在自带 `stageLabel`（来自
+          //   slide-rule-python/services/data/pipeline_stages.json 那本账），
+          //   抄的是 grok 的 typed session events：前端不该有翻译表，
+          //   事件自己带人话。后端加一步，左栏自动显示，不用改这里。
+          //
+          //   非 spec-first 的 key（five-system-model / 能力 id）仍走下面的兜底，
+          //   那些不是流水线阶段，不在阶段账本里。
+          const humanLlmLabel = (key: string, stageLabel?: string): string => {
+            // 后端账本给的人话优先——这是唯一真相源。
+            if (stageLabel) return `LLM 正在${stageLabel}`;
             if (key === "five-system-model") return "LLM 正在起草五系统模型";
             if (key === "closure.summary") return "LLM 正在整理推演总结";
-            if (SPEC_FIRST_LLM_LABELS[key]) return SPEC_FIRST_LLM_LABELS[key];
             // 不流式的步（pages / bind）也会走 reasoning_step，人话表兜住。
             if (SPEC_FIRST_LIVE_LABELS[key]) {
               return `LLM 正在${SPEC_FIRST_LIVE_LABELS[key]}`;
@@ -1395,15 +1398,16 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 runSettledReason = reason;
                 clearActiveRun(resolvedSid);
               },
-              onLlmDelta: (text: string, label?: string) => {
+              onLlmDelta: (text: string, label?: string, stageLabel?: string) => {
                 const key = label || "five-system-model";
+                if (stageLabel) llmStageLabels.set(key, stageLabel);
                 const firstSight = !llmDraftBuffers.has(key);
                 llmDraftBuffers.set(
                   key,
                   (llmDraftBuffers.get(key) || "") + text
                 );
                 if (firstSight) {
-                  const human = humanLlmLabel(key);
+                  const human = humanLlmLabel(key, stageLabel);
                   // 这一条是真·LLM 在吐字（onLlmDelta 就是流式增量），
                   // realLlm 打真的——左栏靠它把"模型在想"和"系统在报进度"
                   // 用不同颜色分开（TurnRouteTimeline 那个 text-[#0958d9]）。
@@ -1663,7 +1667,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             appendStep({
               id: `${turnId}-llm-archive-${++archiveSeq}`,
               kind: "llm_output",
-              title: humanLlmLabel(key).replace(/^LLM 正在/, ""),
+              title: humanLlmLabel(key, llmStageLabels.get(key)).replace(/^LLM 正在/, ""),
               text: buf,
               formatJson: key === "five-system-model",
             });

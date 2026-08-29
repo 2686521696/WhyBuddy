@@ -272,7 +272,9 @@ export interface DriveFullStreamOpts {
   onProgressHeartbeat?: (stage?: string, label?: string) => void;
   /** LLM 实时内容增量。label 标注来源：能力 id（risk.analyze / report.write…）
    *  或 "five-system-model"（五系统起草）。旧后端不带 label 时为 undefined。 */
-  onLlmDelta?: (text: string, label?: string) => void;
+  /** `stageLabel` 是**后端账本给的人话**（2026-08-30 起）。前端不再自己翻译
+   *  阶段 id——那张表跟后端是同一份词汇的两半，隔着一条 SSE 谁也编译不到谁。 */
+  onLlmDelta?: (text: string, label?: string, stageLabel?: string) => void;
   /** spec-first 第 3 步的页面：每落地一页来一次（2026-08-14）。
    *
    *  新链路产出的是**一整份能直接打开的 HTML**，而第一页在整轮的第二分钟
@@ -498,7 +500,11 @@ function applyFactoryStreamEvent(
       );
       return "continue";
     case "llm_delta":
-      opts.onLlmDelta?.(event.text as string, event.label as string | undefined);
+      opts.onLlmDelta?.(
+        event.text as string,
+        event.label as string | undefined,
+        event.stageLabel as string | undefined,
+      );
       return "continue";
     case "spec_page":
       if (typeof event.html === "string" && event.html) {

@@ -16,6 +16,7 @@ E13 早就把叙述放进会话状态（文件 / HTTPS SQL 网关同一份 blob�
 """
 
 from __future__ import annotations
+from .stage_legal import labels as _stage_labels
 from .archetype_legal import required_evidence as _required_evidence
 
 import re
@@ -64,16 +65,13 @@ _CAPABILITY_LIVE_LABELS: Dict[str, str] = {
     "planning": "正在规划本轮动作",
 }
 
+#: ⚠ 2026-08-30：曾是写死的 9 条，而 `v5_full_driver._ENRICH_STAGE_LABELS`
+#: 还有**逐字相同的第二份**（多带耗时）。两份手抄，改一份不报错，只让左栏
+#: 与进度提示悄悄说两套话。现在两份同源于阶段账本。
+#: ⚠ 只取 spec-first 那九条：本模块讲的是**本轮流水线**的叙述，
+#: 老生成链（model.* / monitor.*）不属于它。账本里两组用 pipeline 标区分。
 _SPEC_FIRST_LABELS: Dict[str, str] = {
-    "specfirst.spec": "起草规格：成功判据、需求节点与页面清单",
-    "specfirst.design": "定这个应用的设计语言",
-    "specfirst.pagescope": "判断这次要改哪几页",
-    "specfirst.graphscope": "分析这次修改牵扯的范围",
-    "specfirst.pages": "逐页画界面（并发）",
-    "specfirst.structure": "从界面反推数据模型与关联关系",
-    "specfirst.semantics": "推导权限、工作流与不变式",
-    "specfirst.assemble": "汇合五系统模型并过结构闸",
-    "specfirst.bind": "给界面接上数据",
+    k: v for k, v in _stage_labels().items() if k.startswith("specfirst.")
 }
 
 _SKILL_LABELS: Dict[str, str] = {

@@ -183,38 +183,56 @@ def test_sink_自己炸了不打死这一步():
         set_capability_delta_sink(None)
 
 
-def test_前端认得出所有流式_label():
-    """⚠ 跨端判据：label 是**同一份词汇的两半**，隔着一条 SSE，谁也编译不到谁。
+def test_每个流式阶段账本里都有人话():
+    """⚠ 这条替代了旧的「前端认得出所有流式 label」（2026-08-30）。
 
-    漏一个的后果不是报错，是左栏冒出 "LLM 正在执行 specfirst.structure"
-    ——内部 id 直接漏到用户脸上。所以这里从仓根去读前端那张表，逐个对。
+    旧判据守的是**两份表要对齐**：后端发 id、前端 `SPEC_FIRST_LLM_LABELS`
+    翻译成人话，判据去读前端源码逐个对。那张表现在删了——事件自带人话，
+    抄的是 grok 的 typed session events。
+
+    所以要守的东西变了：不再是「两份表对得上」，而是
+    **「后端发的每个流式阶段，账本里都查得到人话」**。
+    查不到的后果跟以前一样：左栏冒出 "LLM 正在执行 specfirst.structure"。
     """
-    import pathlib
+    from services.stage_legal import labels
 
-    root = pathlib.Path(__file__).resolve().parents[2]
-    text = (root / "client/src/pages/sliderule/useSlideRuleSession.ts").read_text(
-        encoding="utf-8"
+    table = labels()
+    for stage in STREAMED.values():
+        assert stage in table, f"阶段账本缺 {stage}——左栏会漏出内部 id"
+        assert table[stage].strip(), f"{stage} 的人话是空的"
+
+
+def test_事件真的把人话带出去了():
+    """⚠ 上一条的**反向**：账本里有人话 ≠ 它进了事件。
+
+    只查账本的话，把 `stageLabel` 从事件里删掉照样绿——而那正是回到
+    「前端拿不到人话」的老路。这里直接造一个事件看字段在不在。
+    """
+    from services.stage_legal import describe
+
+    d = describe("specfirst.structure")
+    assert d.get("label"), "describe 没给人话"
+    assert d.get("group"), "describe 没给分组"
+
+
+def test_账本里不许有没人发的流式阶段():
+    """反过来也要对：账本多一条没人发的，下一个人会照着它以为那一步在流式。
+
+    ⚠ 但账本**故意**比流式阶段多**——`pages` / `bind` 不流式（它们是并发批，
+    没有 token 增量），却要在左栏显示进度。所以这里只查交集方向：
+    账本里带 specfirst. 前缀的非流式阶段，必须是已知的那两个。
+    """
+    from services.stage_legal import stage_ids
+
+    # ⚠ 只看 spec-first 那组：账本里还有老生成链（model.* / monitor.*），
+    #   它们不属于这条流水线。2026-08-30 建账本时我漏掉过那五条，
+    #   这里显式限定范围，免得下一个人以为账本只有 spec-first。
+    spec_first = {s for s in stage_ids() if s.startswith("specfirst.")}
+    non_streamed = spec_first - set(STREAMED.values())
+    assert non_streamed == {"specfirst.pages", "specfirst.bind"}, (
+        f"账本里出现了既不流式、也不在已知非流式名单里的 spec-first 阶段：{non_streamed}"
     )
-    for label in STREAMED.values():
-        assert f'"{label}":' in text, f"前端 SPEC_FIRST_LLM_LABELS 缺 {label}"
 
-
-def test_不接的那两步也不许出现在前端表里():
-    """反过来也要对：前端多写一个没人发的 label 不会红，但它是**死条目**，
-    下一个人会照着它以为那一步在流式。"""
-    import pathlib
-    import re
-
-    root = pathlib.Path(__file__).resolve().parents[2]
-    text = (root / "client/src/pages/sliderule/useSlideRuleSession.ts").read_text(
-        encoding="utf-8"
-    )
-    block = re.search(r"SPEC_FIRST_LLM_LABELS[^{]*\{(.*?)\};", text, re.DOTALL)
-    assert block, "前端那张表不见了"
-    declared = set(re.findall(r'"(specfirst\.[a-z]+)":', block.group(1)))
-    assert declared == set(STREAMED.values()), (
-        f"两边对不上：前端 {declared}，后端 {set(STREAMED.values())}"
-    )
 
 
 def test_ast_确认没给并发步骤偷偷开流():

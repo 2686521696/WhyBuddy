@@ -5,6 +5,8 @@ This replaces the entire Node V5 loop with Python RAG-backed execution.
 All capabilities now produce real evidence via RAG, no templates, no degraded, no su8 issues.
 """
 
+from .stage_legal import describe as _stage_describe
+from .stage_legal import labels_with_eta as _stage_labels_with_eta
 from .archetype_legal import required_evidence as _required_evidence
 import os
 import time
@@ -1605,47 +1607,14 @@ _CLOSURE_KEY_TO_SKILL_ID = {
 #: 第 200 秒时用户看到的是"早就超了"——而这条提示存在的全部意义就是让人
 #: 分得清"正常"和"卡了"。写窄的提示比不写更糟：它把正常说成异常。
 #: 所以取 p25~p75 当"通常"，另说一句上限，别让长尾看着像故障。
-_ENRICH_STAGE_LABELS: Dict[str, tuple] = {
-    "model.generate": ("生成五系统模型", "通常 3~4 分钟"),
-    "model.regenerate": ("按结构闸的意见重做模型", "通常 3~4 分钟"),
-    "monitor.sheet": ("生成首页参照图", "通常 80~110 秒，偶尔要 4 分钟"),
-    "monitor.palette": ("从参照图读取配色", "通常 15~25 秒"),
-    "monitor.design": ("照着参照图设计页面版式", "通常 55~100 秒，偶尔要 4~5 分钟"),
-    # ── spec-first 七步（新链路）。⚠ 老链路那五条一个不动——两条链路并存，
-    #    各说各的话；共用一张表只是因为它们共用同一套 SSE 事件。
-    #
-    # ⚠ **这里不需要"重新编排左侧"**：本函数的 docstring 已经写明，复用
-    #   reasoning_step / reasoning_step_result 这对既有事件，前端零改动。
-    #   新链路缺的从来不是机制，是这七行文案——没有它们，名单外的阶段
-    #   直接返回 None，左侧就是一片空白。
-    #
-    # 区间取实测。**08-14 端到端跑一趟之后改过一次**，改的是最后一条：
-    #
-    #     spec 65s · pages 190s(5 页并发) · shell 0.004s · structure 60s ·
-    #     semantics 62s · assemble 36s · bind **552s**(5 页) · 整轮 1103s
-    #
-    # ⚠ bind 原来写的是"通常 3~4 分钟"，实测 9.2 分钟——**差了一倍多**。
-    #   这类提示写窄了比不写更糟：用户等到第 5 分钟会以为卡死了，而它只是
-    #   还在正常跑。区间宁可写宽，也不能把正常说成异常。
-    #
-    # ⚠ 整轮 18 分钟，不是当初估的 8~9 分钟。bind 一步吃掉一半。
-    "specfirst.spec": ("起草规格：成功判据、需求节点与页面清单", "通常 60~90 秒"),
-    "specfirst.design": ("定这个应用的设计语言", "通常 10~20 秒"),
-    # 只有精修轮有这一步；新建应用不会出现（run_spec_first 里 refine 才进）。
-    "specfirst.pagescope": ("判断这次要改哪几页", "通常 5~15 秒"),
-    # 2026-08-17 加：图判作用域（影子模式）。也只有精修轮出现。它自己是一次
-    # LLM 调用（判种子），不报的话左侧会黑几秒。影子期它不改变行为，但
-    # "分析牵扯范围"对用户是诚实的描述——切成实弹那天这个名字不用换。
-    "specfirst.graphscope": ("分析这次修改牵扯的范围", "通常 3~10 秒"),
-    "specfirst.pages": ("逐页画界面（并发）", "通常 3~4 分钟，页数越多越久"),
-    "specfirst.structure": ("从界面反推数据模型与关联关系", "通常 60~120 秒"),
-    "specfirst.semantics": ("推导权限、工作流与不变式", "通常 60~120 秒"),
-    "specfirst.assemble": ("汇合五系统模型并过结构闸", "通常 20~40 秒"),
-    "specfirst.bind": ("给界面接上数据", "较慢，通常 4~10 分钟，页数越多越久"),
-    # ⚠ specfirst.shell（外壳统一）**故意不进表**：零 LLM、实测 0.0 秒，
-    #   start/end 背靠背发出去只会在左侧闪一下。这跟本函数
-    #   「名单外的阶段返回 None，不报内部子步骤」是同一条纪律。
-}
+#: ⚠ 2026-08-30：曾是写死的 9 条（人话 + 耗时），与
+#: `turn_narration._SPEC_FIRST_LABELS` 逐字重复。现在同源于阶段账本。
+#: 形状保持 Dict[str, tuple]——老调用方是 `label, eta = TABLE[name]`，
+#: 换成 dict 会静默解包出两个 key 名而不是报错。
+#:
+#: ⚠ 耗时区间是**实测标定**（08-14 端到端那趟），`bind` 原写「3~4 分钟」
+#: 实测 9.2 分钟。改数字要连实测一起重跑（第六条）。区间在账本里。
+_ENRICH_STAGE_LABELS: Dict[str, tuple] = _stage_labels_with_eta()
 
 
 def _enrich_stage_event(phase: str, name: str, fields: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -1659,7 +1628,14 @@ def _enrich_stage_event(phase: str, name: str, fields: Dict[str, Any]) -> Option
     if entry is None:
         return None
     label, hint = entry
+    # ⚠ 2026-08-30：补上 group / order / of，前端就不再需要自己的步骤表。
+    #   `sequence` 传本轮真实要跑的阶段——账本里含两个精修专用步，
+    #   拿账本绝对位置当序号对哪一轮都不准（实测出过 order=8 of=7）。
+    _desc = _stage_describe(name, sequence=fields.get("sequence"))
     common = {
+        "stageGroup": _desc.get("group"),
+        "stageOrder": _desc.get("order"),
+        "stageOf": _desc.get("of"),
         "pageId": fields.get("page"),
         "device": fields.get("device"),
         "current": fields.get("current"),
@@ -1915,7 +1891,20 @@ async def drive_full_v5_session_stream(
             except _queue.Empty:
                 pass
             for label, chunks in batches:
-                yield {"type": "llm_delta", "text": "".join(chunks), "label": label}
+                # ⚠ 2026-08-30：`label` 一直是**机器 id**（specfirst.design 之类），
+                # 人话在前端 `useSlideRuleSession.SPEC_FIRST_LLM_LABELS` 里手抄
+                # 一份。那张表自己的注释写着病灶：「同一份词汇的两半，隔着一条
+                # SSE，谁也编译不到谁；漏一个的后果不是报错，是左栏冒出
+                # 'LLM 正在执行 specfirst.design'」——2026-08-19 安康随访通就这么漏的。
+                # 现在事件自带人话（抄 grok 的 typed session events），前端那张表可以删。
+                # `label` 保持原样不动：既有判据与埋点按它认阶段。
+                _d = _stage_describe(label)
+                yield {
+                    "type": "llm_delta",
+                    "text": "".join(chunks),
+                    "label": label,
+                    **({"stageLabel": _d["label"], "stageGroup": _d["group"]} if _d else {}),
+                }
             # 体验层阶段事件跟增量走同一个排水循环：它们发生在同一段时间里，
             # 分开两个泵只会让顺序不可预期。
             try:

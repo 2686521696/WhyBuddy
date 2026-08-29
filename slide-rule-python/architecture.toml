@@ -116,6 +116,7 @@ may_depend_on = []
 modules = [
   "services.archetype_legal",
   "services.sql_gateway",
+  "services.stage_legal",
   "services.turn_context",
   "services.page_naming",
   "services.a2a_core_route_cutover",
@@ -669,6 +670,7 @@ modules = [
   "services.request_context",
   "services.schema_legal",
   "services.sql_gateway",
+  "services.stage_legal",
   "services.turn_context",
   "services.turn_narration",
   "stdio_utf8",
