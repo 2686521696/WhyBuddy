@@ -350,14 +350,13 @@ modules = [
 
 [component.app_store]
 why = """生成物的家：应用记录、版本、可见性、预览、组件预设。"""
-may_depend_on = ["identity", "model_core", "platform", "spec_first"]
+may_depend_on = ["identity", "platform"]
 modules = [
-  "services.app_graph",
   "services.app_preview",
   "services.app_screenshot",
   "services.app_store",
-  "services.app_template",
   "services.component_preset_store",
+  "services.thumb_image",
 ]
 
 [component.audit]
@@ -427,7 +426,6 @@ modules = [
   "services.rehearsal_control",
   "services.repeat_policy",
   "services.request_context",
-  "services.run_cancel",
   "services.run_degradation",
   "services.run_pause",
   "services.run_registry",
@@ -439,7 +437,7 @@ modules = [
 
 [component.entrypoint]
 why = """组合根（对应 grok 的 xai-grok-pager-bin）：只负责把东西装起来。**被依赖数必须是 0**——箭头只进不出。"""
-may_depend_on = ["agent_loop", "app_store", "drive", "http_routes", "model_core", "permission", "platform", "spec_first", "task_exec"]
+may_depend_on = ["agent_loop", "drive", "http_routes", "model_core", "permission", "platform", "spec_first", "task_exec"]
 modules = [
   "app",
 ]
@@ -477,16 +475,14 @@ modules = [
 
 [component.identity]
 why = """身份与权限：账号、令牌、验证码投递、应用归属、鉴权中间件。fail-closed。"""
-may_depend_on = ["llm_gateway", "model_core", "observability", "platform", "spec_first"]
+may_depend_on = ["platform"]
 modules = [
   "middlewares.auth",
   "middlewares.current_user",
   "services.app_access",
   "services.auth_service",
   "services.auth_tokens",
-  "services.identity_palette_hint",
   "services.identity_store",
-  "services.identity_theme_gen",
   "services.mailer",
 ]
 
@@ -633,14 +629,16 @@ modules = [
   "models.agent_loop",
   "models.blueprint_state",
   "models.v5_state",
+  "services.device_policy",
   "services.env_flags",
+  "services.run_cancel",
   "services.sql_gateway",
   "stdio_utf8",
 ]
 
 [component.refine]
 why = """精修环：段级沿用、页级短路、图判范围。已闭环应用的第二条入口。"""
-may_depend_on = ["app_store", "platform", "spec_first"]
+may_depend_on = ["platform", "spec_first"]
 modules = [
   "services.refine_graph_scope",
   "services.refine_page_scope",
@@ -649,17 +647,20 @@ modules = [
 
 [component.spec_first]
 why = """spec-first 七步与页面产出：spec 树、逐页 HTML、外壳、绑定、配色、区块目录。"""
-may_depend_on = ["app_store", "drive", "identity", "llm_gateway", "model_core", "observability", "platform", "refine"]
+may_depend_on = ["app_store", "drive", "llm_gateway", "model_core", "observability", "platform", "refine"]
 modules = [
+  "services.app_graph",
+  "services.app_template",
   "services.block_assembler",
   "services.block_narrowing",
   "services.block_proposer",
   "services.design_language",
-  "services.device_policy",
   "services.freeform_block",
   "services.freeform_preview_store",
   "services.html_bindings",
   "services.html_structure",
+  "services.identity_palette_hint",
+  "services.identity_theme_gen",
   "services.page_archetypes",
   "services.page_assembler",
   "services.page_blocks",
@@ -678,7 +679,6 @@ modules = [
   "services.spec_tree",
   "services.stock_images",
   "services.theme_tokens",
-  "services.thumb_image",
 ]
 
 [component.task_exec]
@@ -770,17 +770,12 @@ component_violations = [
 #   refine⇄spec_first、model_core⇄observability。
 #   **只许变少。** 这是下一轮该还的债。
 component_cycles = [
-  "app_store -> identity -> model_core -> app_store",
-  "app_store -> model_core -> app_store",
-  "app_store -> spec_first -> app_store",
-  "app_store -> spec_first -> drive -> identity -> model_core -> app_store",
-  "app_store -> spec_first -> drive -> model_core -> app_store",
-  "app_store -> spec_first -> identity -> model_core -> app_store",
-  "app_store -> spec_first -> model_core -> app_store",
-  "app_store -> spec_first -> refine -> app_store",
   "capability_engine -> evidence -> spec_first -> drive -> capability_engine",
-  "capability_engine -> spec_first -> drive -> capability_engine",
   "diagnostics -> entrypoint -> http_routes -> diagnostics",
+  "drive -> evidence -> spec_first -> drive",
+  "drive -> model_core -> drive",
+  "drive -> model_core -> evidence -> spec_first -> drive",
+  "drive -> model_core -> spec_first -> drive",
   "drive -> spec_first -> drive",
   "refine -> spec_first -> refine",
 ]
