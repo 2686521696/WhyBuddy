@@ -2303,3 +2303,36 @@ grok 那边的对应答案是：**同一个 crate 内部的模块互指是合法
 
 **这是本轮最值得记的一条**：闸自己也会有正向判据齐全、反向判据缺失
 （CLAUDE.md 第三条）。写闸的人容易只想「有没有人越界」，忘了「边界画得还准不准」。
+
+### 23.8 真机验证：验到哪、没验到哪（如实记）
+
+**验到的：**
+
+    三轮真话题（养老助餐 / 烘焙订损 / 生鲜前置仓）  闭环 blocked=False，0 悬空菜单孔
+    同进程内 set → 叶子 → build_spec_prompt        weather_daily + temp_max 逐字进了 prompt
+    搬过来的四个函数与 HEAD 逐字相同               connector_prompt_block / charter_prompt_block /
+                                                   normalize_charter / installed_skills_for_channel
+
+**⚠ 一开始的验证设计是错的，查活路径才发现。** 本来打算挂技能跑真机来验叶子，
+查了一遍调用点：
+
+    identity_theme_gen.experience_skill_guidance_block  ← 2026-08-03 整段从
+        v5_capability_executor 摘掉了（"全站一个颜色"），**不在产品路上**
+    v5_llm_generate._build_user_content                 ← 老生成器
+
+技能的两个读侧都不在产品路上，拿技能跑真机只能跑出"没炸"。换成连接器——它的读侧
+`spec_tree.build_spec_prompt` 确实在 spec-first 上，而且要求是"实体一字不差收录进
+datamodel"，**有没有生效在产出的模型里直接看得见**。这就是第一条。
+
+**没验到的，也如实写下来：** 挂 weather 连接器那一轮，`weather_daily` **没有**被
+收录进 datamodel（产出的三个实体是 camp_site / activity_schedule /
+schedule_conflict；页面倒是叫 weather_calendar / weather_reschedule_center）。
+
+已经证明的是**块进了 prompt**（同进程内实测，prompt 里有 weather_daily 和 temp_max
+的逐字要求），所以这一步在本次改动的下游——模型没照做。**但我没有在改动前跑同一题
+做对照**，所以不能断言"这是存量问题"。
+
+下一轮该把它当独立课题查：连接器实体收录率到底是多少，是提示词权重问题（这段在
+prompt 中段，而末尾那句"Produce the five-system JSON now."权重最高——§22 里精修收尾
+那一条踩过同型的坑），还是结构闸/修复器在下游把它剥了。
+**别拿"块进了 prompt"当"功能生效了"结案**——那正是第三条点名的"名单里有名字 ≠ 埋点在"。
