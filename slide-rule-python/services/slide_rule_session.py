@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from .slide_rule_orchestrator import orchestrate_plan
 from .slide_rule_executor import execute_capability
 from .persistence import PersistClosedError, delete_session_record, load_all, load_session_record, save_session_record
+from . import persistence  # set_cache_sink：下层定义接口，这里注入实现
 from .slide_rule_coverage import evaluate_coverage_gate
 from .slide_rule_interactive_gates import (
     open_human_question_gap_count,
@@ -27,6 +28,42 @@ from .slide_rule_interactive_gates import (
 )
 
 _sessions: Dict[str, V5SessionState] = {}
+
+
+def _pin_into_cache(session_id: str, state: V5SessionState) -> None:
+    """持久层写完之后，把这一份钉进内存缓存。
+
+    ⚠ 2026-08-29：这段做法原来长在 persistence 里，靠 `from .slide_rule_session
+      import _sessions` 反向 import——持久层依赖会话层，是个真的循环依赖。
+      抄 grok（§17）：**下层定义接口、上层实现并注入**，依赖箭头始终朝下。
+
+    为什么要钉：驱动器走 persist_state 不经 save_session。库写失败/降级后，
+    GET 若只信库会读到旧指针；钉进缓存让 load_session 在「内存比库新」时
+    把预览和版本交出去（2026-08-18 过夜实测）。
+    """
+    _sessions[session_id] = state
+
+
+def ensure_cache_sink() -> None:
+    """把注入补上（幂等）。
+
+    ⚠ 2026-08-29 实测踩到：**注入活不过一次 `importlib.reload(persistence)`**。
+      reload 会把模块全局重置成 None，而本模块已经 import 过、不会再执行一次
+      注册——于是钉缓存**安静地停了**：写还是成功的，只是库写失败/降级之后
+      GET 又会读到旧指针（2026-08-18 过夜那个病原样回来），一行日志都没有。
+
+      这不只是测试里的事：uvicorn `--reload` 在开发时也会重载模块。
+
+      所以除了 import 时注册，两个入口（load/save）再补一次。代价是一次
+      `is None` 判断；换来的是「reload 之后自愈」而不是「悄悄失效」。
+    """
+    if persistence.get_cache_sink() is None:
+        persistence.set_cache_sink(_pin_into_cache)
+
+
+#: ⚠ 注入必须在 import 这个模块时就发生——**函数写对了 ≠ 它被调用了**（第三条）。
+#:   判据 tests/test_persistence_cache_sink.py 钉的就是这一句真的执行过。
+persistence.set_cache_sink(_pin_into_cache)
 
 def _load_sessions():
     global _sessions
@@ -184,6 +221,7 @@ def _memory_ahead_of_store(mem: Optional[V5SessionState], disk: Optional[V5Sessi
 
 
 def load_session(session_id: str) -> Optional[V5SessionState]:
+    ensure_cache_sink()  # reload 之后自愈，见该函数注释
     # 会话落库之后（2026-08-02）缓存不能再无条件相信：库是**跨机器共享**的，
     # 本进程的缓存看不见别的机器刚写进去的内容，返回缓存等于返回陈旧数据。
     # 存档还在本机文件里时不存在这个问题（本进程独占那个文件），所以只在库
@@ -214,6 +252,7 @@ def load_session(session_id: str) -> Optional[V5SessionState]:
     return None
 
 def save_session(state: V5SessionState) -> V5SessionState:
+    ensure_cache_sink()  # reload 之后自愈，见该函数注释
     # Delegate guard+merge to persistence (replay append-only + monotonic_key lastTurnId+counts guard).
     # Then ALWAYS reconcile _sessions cache from the persistence authoritative result (load after write).
     # This ensures stale/older state passed to service save NEVER stays in the memory authority cache.

@@ -318,6 +318,5 @@ services_violations = [
 ]
 cycles = [
   "services.capability_maps -> services.slide_rule_executor -> services.capability_maps",
-  "services.persistence -> services.slide_rule_session -> services.persistence",
   "services.v5_capability_executor -> services.v5_full_driver -> services.v5_capability_executor",
 ]

@@ -30,7 +30,7 @@ import os
 import re
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from pydantic import ValidationError
 
@@ -190,6 +190,36 @@ def _coerce_state(session_id: str, payload: Any) -> Tuple[Optional[V5SessionStat
         return V5SessionState.server_load(raw), None
     except (TypeError, ValidationError, ValueError) as error:
         return None, _store_error("invalid_session", str(error).splitlines()[0])
+
+
+#: 「写完之后把这一份钉进内存缓存」的做法，由**上层注入**。
+#:
+#: ⚠ 2026-08-29：这里原来是 `from .slide_rule_session import _sessions`——
+#:   持久层反过来 import 会话层，是个真的循环依赖
+#:   （slide_rule_session 顶层就 import 本模块）。只好把 import 藏进函数体绕开。
+#:
+#:   抄 grok-build 的做法（§17）：`xai-grok-tools` 定义 `MemoryBackend` /
+#:   `TerminalBackend` / `ToolSearchIndex` 这些 trait，由上层 `xai-grok-shell`
+#:   去 `impl` 并在运行时注入。依赖箭头始终朝下（shell → tools），
+#:   **调用在运行时反向回去**。这里同理：下层只认一个可调用对象，谁来填不管。
+#:
+#: ⚠ 没人注入时是 None，那一步就**安静地不做**——这是对的：钉缓存是给
+#:   `slide_rule_session.load_session` 用的（「内存比库新时把预览交出去」），
+#:   那个模块没被加载的话，也没人会去读这份缓存。
+#:   但「没注入」不许是悄悄的：判据 test_persistence_cache_sink 钉住
+#:   「import slide_rule_session 之后 sink 必须在」。
+_CACHE_SINK: Optional[Callable[[str, Any], None]] = None
+
+
+def set_cache_sink(fn: Optional[Callable[[str, Any], None]]) -> None:
+    """上层注入「写完钉缓存」的做法。传 None 摘掉（测试用）。"""
+    global _CACHE_SINK
+    _CACHE_SINK = fn
+
+
+def get_cache_sink() -> Optional[Callable[[str, Any], None]]:
+    """判据用：确认上层真的注入过。"""
+    return _CACHE_SINK
 
 
 def _monotonic_key(state: V5SessionState) -> tuple:
@@ -1067,11 +1097,9 @@ def persist_state(state: V5SessionState):
         # 驱动器走 persist_state 不经 save_session。库写失败/降级后，
         # GET 若只信库会读到旧指针；把当轮内存钉进缓存，让 load_session
         # 在「内存比库新」时把预览和版本交出去（2026-08-18 过夜）。
-        if getattr(state, "sessionId", None):
+        if getattr(state, "sessionId", None) and _CACHE_SINK is not None:
             try:
-                from .slide_rule_session import _sessions
-
-                _sessions[state.sessionId] = state
+                _CACHE_SINK(state.sessionId, state)
             except Exception:  # noqa: BLE001 — 缓存留痕不许拖垮写入
                 pass
         if _took >= _PERSIST_SLOW_SECONDS:
