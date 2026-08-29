@@ -20,7 +20,7 @@ from services.slide_rule_coverage import (  # noqa: E402
     evaluate_coverage_gate,
     resolve_coverage_gaps_from_state,
 )
-from services.slide_rule_session import commit_artifact, pick_next_capabilities  # noqa: E402
+from services.engine_scheduling import commit_artifact, pick_next_capabilities  # noqa: E402
 
 COMPLEX_GOAL = "做一个宠物医院预约管理系统，包含预约排班、宠物档案和医生工作台"
 

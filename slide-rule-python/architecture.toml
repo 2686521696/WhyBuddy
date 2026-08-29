@@ -259,6 +259,7 @@ modules = [
   "services.blueprint_state_runtime",
   "services.closure_block_reason",
   "services.design_language",
+  "services.engine_scheduling",
   "services.enrich_timing",
   "services.external_provider_cutover",
   "services.final_provider_a2a_scope_reconciliation",
@@ -539,9 +540,10 @@ modules = [
 
 [component.model_core]
 why = """五系统模型：生成、结构闸、修复、闭环证据、覆盖门、信任。产品的心脏。"""
-may_depend_on = ["app_store", "drive", "evidence", "llm_gateway", "observability", "persist", "platform", "run_control", "spec_first"]
+may_depend_on = ["app_store", "evidence", "llm_gateway", "observability", "persist", "platform", "run_control", "spec_first"]
 modules = [
   "services.closure_block_reason",
+  "services.engine_scheduling",
   "services.merge_patch",
   "services.model_versions",
   "services.role_runtime",
@@ -843,7 +845,6 @@ component_violations = [
 #   **只许变少。** 剩下这两个都不是"挪个文件"能了的，见
 #   docs/欠缺模块清单-对照Claude与Grok-build.md §23。
 component_cycles = [
-  "drive -> model_core -> drive",
 ]
 cycles = [
 ]

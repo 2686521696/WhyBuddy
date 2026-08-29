@@ -303,7 +303,7 @@ def test_phase_enum_values_supported():
 # Classification: PYTHON_AUTHORITY for pick selection/fallback (no Node, no proxy)
 
 try:
-    from services.slide_rule_session import pick_next_capabilities
+    from services.engine_scheduling import pick_next_capabilities
     from services.slide_rule_orchestrator import orchestrate_plan
 except Exception:
     pick_next_capabilities = None
@@ -551,7 +551,7 @@ def test_orchestrate_plan_route_delegates_selected_to_pick():
     }
 
     from models.v5_state import V5SessionState
-    from services.slide_rule_session import pick_next_capabilities
+    from services.engine_scheduling import pick_next_capabilities
     pick_state = V5SessionState(**state_payload)
     expected_picks = pick_next_capabilities(pick_state, "生成报告 可行性 总结")
     expected_ids = [p["capabilityId"] for p in expected_picks]
@@ -781,7 +781,7 @@ def test_drive_full_v5_stops_early_on_coverage_pass_but_blocked_closure_cannot_b
 
 try:
     from models.v5_state import ProducedBy, V5SessionState
-    from services.slide_rule_session import commit_artifact
+    from services.engine_scheduling import commit_artifact
 except Exception:
     commit_artifact = None
     ProducedBy = None
@@ -1448,7 +1448,7 @@ def test_drive_full_v5_appends_reasoning_events_phase_and_replay():
 # Uses isolated store_file to avoid shared store corruption from other minimal-state tests in same run.
 def test_append_reasoning_replay_then_persist_is_visible_to_load_and_get_poll():
     import os, tempfile
-    from services.slide_rule_session import append_reasoning_event, append_replay_event
+    from services.engine_scheduling import append_reasoning_event, append_replay_event
     from services.persistence import save_session_record, load_session_record
     st = _mk_state("sr-immediate-poll")
     # simulate driver emitting start before long cap

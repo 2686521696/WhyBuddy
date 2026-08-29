@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.v5_state import V5SessionState  # noqa: E402
 from services.slide_rule_coverage import author_coverage_contract  # noqa: E402
-from services.slide_rule_session import pick_next_capabilities  # noqa: E402
+from services.engine_scheduling import pick_next_capabilities  # noqa: E402
 
 ESSAY_CAPS = ("critique.generate", "risk.analyze", "report.write")
 GOAL = "做一个请假审批系统，含申请、审批和余额"

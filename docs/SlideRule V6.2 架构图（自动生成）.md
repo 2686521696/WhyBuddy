@@ -14,8 +14,8 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **273** 个，模块 **273** 个
-- 内部依赖边 **778** 条，其中 **463** 条写在函数体里（59%）
+- 扫描文件 **274** 个，模块 **274** 个
+- 内部依赖边 **782** 条，其中 **463** 条写在函数体里（59%）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
@@ -26,7 +26,7 @@
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
 | `util` | 121 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
-| `core` | 52 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
+| `core` | 53 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 28 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
 叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import 的全部理由，也是 `import` 不必躲进函数体的前提。
@@ -41,7 +41,7 @@ flowchart TB
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>13 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>201 个模块<br/>业务"]
+  services["services<br/>202 个模块<br/>业务"]
   routes["routes<br/>12 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -58,7 +58,7 @@ flowchart TB
   routes -->|9| config
   routes -->|5| middlewares
   routes -->|3| models
-  routes -->|130 · 其中 82 条在函数体里| services
+  routes -->|131 · 其中 82 条在函数体里| services
   routes -->|15 · 其中 8 条在函数体里| sliderule_llm
   scripts -->|3| app
   scripts -->|2 · 其中 2 条在函数体里| config
@@ -67,7 +67,7 @@ flowchart TB
   scripts -->|8 · 其中 5 条在函数体里| sliderule_llm
   scripts -->|2| stdio_utf8
   services -->|15 · 其中 7 条在函数体里| config
-  services -->|29 · 其中 1 条在函数体里| models
+  services -->|30 · 其中 1 条在函数体里| models
   services -->|60 · 其中 47 条在函数体里| sliderule_llm
   sliderule_llm -->|2 · 其中 2 条在函数体里| config
 ```
@@ -85,7 +85,7 @@ Rust 里这一类根本编译不出来；Python 得自己数。**只许变少。
 ## crate 级：component 依赖图
 
 抄 grok 的 Cargo.toml——他们 90 个 crate、347 条**声明过**的边由编译器焊死。
-我们 23 个 component、82 条边，由 `architecture.toml` 声明、判据强制。
+我们 23 个 component、81 条边，由 `architecture.toml` 声明、判据强制。
 **红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。
 
 ```mermaid
@@ -103,7 +103,7 @@ flowchart LR
   http_routes["http_routes<br/>8"]
   identity["identity<br/>7"]
   llm_gateway["llm_gateway<br/>16"]
-  model_core["model_core<br/>25"]
+  model_core["model_core<br/>26"]
   observability["observability<br/>5"]
   ops_scripts["ops_scripts<br/>37"]
   permission["permission<br/>8"]
@@ -131,7 +131,7 @@ flowchart LR
   drive -->|2| evidence
   drive -->|1| identity
   drive -->|1| llm_gateway
-  drive -.->|25| model_core
+  drive -->|21| model_core
   drive -->|2| observability
   drive -->|4| persist
   drive -->|10| platform
@@ -152,11 +152,11 @@ flowchart LR
   http_routes -->|1| blueprint
   http_routes -->|2| capability_engine
   http_routes -->|1| diagnostics
-  http_routes -->|20| drive
+  http_routes -->|16| drive
   http_routes -->|5| evidence
   http_routes -->|12| identity
   http_routes -->|22| llm_gateway
-  http_routes -->|18| model_core
+  http_routes -->|23| model_core
   http_routes -->|2| observability
   http_routes -->|3| persist
   http_routes -->|12| platform
@@ -165,12 +165,11 @@ flowchart LR
   identity -->|10| platform
   llm_gateway -->|2| platform
   model_core -->|2| app_store
-  model_core -.->|6| drive
   model_core -->|5| evidence
   model_core -->|18| llm_gateway
   model_core -->|6| observability
   model_core -->|2| persist
-  model_core -->|38| platform
+  model_core -->|39| platform
   model_core -->|11| run_control
   model_core -->|15| spec_first
   observability -->|2| llm_gateway

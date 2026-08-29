@@ -1,33 +1,44 @@
 # -*- coding: utf-8 -*-
-"""引擎 ⇄ 会话文件这条边，到底还剩什么（2026-08-29）。
+"""引擎 ⇄ 会话文件这条边：已经拆了，这里钉住它别长回来（2026-08-29）。
 
-## 这条边是最后一个组间环的全部内容
+## 这条边曾经是最后一个组间环的全部内容
 
-`drive ⇄ model_core` 这个环，2026-08-29 一路量下来：
+`drive ⇄ model_core`，2026-08-29 一路量下来：
 
-    21 条  → 7 条   本轮运行控制面（取消/暂停/降级/重复）单独成 run_control crate。
-                    `run_cancel` 本来在 platform、三个亲兄弟在 drive——同一件事
-                    拆两个组，引擎为了读一个降级标记就得反过来依赖驱动组。
-    7 条   → 6 条   `model_version_restore` 归组归错了（第五次栽在名字前缀上）：
-                    它干的是「读会话 → 重建闭环 → D8 裁决 → 提交」，是编排不是模型核心。
+    21 条  → 7 条   本轮运行控制面（取消/暂停/降级/重复）单独成 run_control crate
+    7 条   → 6 条   `model_version_restore` 归组归错了（第五次栽在名字前缀上）
+    6 条   → 0 条   回合机制那 20 个函数搬去 `services/engine_scheduling.py`
 
-剩下 6 条**全部**是同一件事：`v5_full_driver` 要用 7 个长在
-`slide_rule_session.py` 里的**回合机制函数**。
+## ⚠ 本文件的上一版是「立判据代替修复」，而那个决定建立在一个没做的测量上
 
-## 为什么没接着拆（实测数据在这）
+上一版模块头写着不拆的理由：
 
-那 7 个函数一共 441 行，而它们又用到同文件里**另外 13 个模块级 helper**
-（`_pick_readiness_chain` / `_resolve_role_mode` / `_should_degrade_brainstorm` …）。
-也就是说要动的是 1101 行里的 700 多行——**那不是搬家，是把这个文件劈成两半**。
+> 那 7 个函数又用到同文件里另外 13 个模块级 helper……要动的是 1101 行里的
+> 700 多行——那不是搬家，是把这个文件劈成两半。
 
-而且劈出来的那一半（能力选取 + 回合记账）该叫什么、归谁，是**职责边界的判断**，
-不是重构能顺手带的。`pick_next_capabilities` 一个函数 213 行，是排程主路径。
+**"700 多行"是估的。** 真按传递闭包数了一遍：
 
-所以这里立的是**边界判据**，不是修复：把"引擎从会话文件拿哪些名字"钉死。
-多拿一个就红——逼下一个人当场说清是又长了一笔债，还是该动手拆了。
+    引擎侧  20 个函数  541 行   连续占据文件末尾（477–1101），切口是一刀直的
+    存储侧  12 个函数  402 行
+    两侧共用的 helper：**0 个**
 
-⚠ 这条判据**不是**在说现状是对的。它是在说：现状我量清楚了，边界在这里，
-别再悄悄变宽。
+零重叠。而且那些函数自己的注释里写着它们当初为什么在那儿：
+
+    # Moved into allowed file (slide_rule_session.py) for this task to respect
+    # Allowed files boundary.
+
+——**是某一轮任务的可改文件白名单把它们挤进来的**，从来不是归属判断。
+
+上一版还立了一条 `Test那七个函数确实还缠在一起`，说「哪天缠绕解开了这条会红，
+那是好消息」。它从来没红过，因为**缠绕根本不存在**：判据量的是"引擎侧用了多少
+helper"（13 个，真的），而该量的是"这 13 个是不是也被存储侧用"（0 个）。
+量对了方向，结论就翻过来了。这是本仓第五次「错的测量让我少做该做的事」
+（前四次见 docs/欠缺模块清单-对照Claude与Grok-build.md §29.4 / §30.2）。
+
+## 所以现在钉的是三条反向判据
+
+拆完之后最容易发生的事不是"再拆一次"，是**悄悄长回去**：谁在 `v5_full_driver`
+里补一行 `from .slide_rule_session import ...`，环就回来了，而且不会报错。
 """
 
 from __future__ import annotations
@@ -41,20 +52,32 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
-#: 引擎当前从会话文件拿的全部名字。**只许变少。**
-#: 每一个都是「回合机制」——不是「读写会话」。这正是它们该被拆出去的理由。
-ALLOWED = {
-    "pick_next_capabilities",      # 213 行，排程主路径
-    "pick_repair_capabilities",    # 44 行
-    "commit_artifact",             # 80 行
+#: 回合机制的全部入口。它们现在的家是 `services/engine_scheduling.py`。
+SCHEDULING = {
+    "pick_next_capabilities",       # 213 行，排程主路径
+    "pick_repair_capabilities",     # 44 行
+    "commit_artifact",              # 80 行
     "record_capability_run_error",  # 38 行
-    "append_reasoning_event",      # 32 行
-    "append_replay_event",         # 28 行
-    "_is_delivery_intent",         # 6 行
+    "append_reasoning_event",       # 32 行
+    "append_replay_event",          # 28 行
+    "_is_delivery_intent",          # 6 行
+}
+
+#: `slide_rule_session` 允许从 engine_scheduling 顶层 import 回来的名字。
+#: **只许是 `drive_reasoning_turn`（本文件里 177 行的单轮驱动）真的用到的那些。**
+#: 多一个就说明有别的东西在拿会话文件当引擎的门面——那正是拆之前的病。
+SESSION_MAY_REEXPORT = {
+    "append_reasoning_event",
+    "append_replay_event",
+    "commit_artifact",
+    "pick_next_capabilities",
+    "record_capability_run_error",
 }
 
 
-def _imported_names(path: pathlib.Path, module: str) -> set[str]:
+def _imports_from(path: pathlib.Path, module: str) -> set[str]:
+    """`path` 从 `module` import 了哪些名字。顶层与函数体内一视同仁——
+    函数体内 import 是这仓绕环的标准手法，只数顶层等于给了一句话绕过的办法。"""
     tree = ast.parse(path.read_text(encoding="utf-8"))
     out: set[str] = set()
     for n in ast.walk(tree):
@@ -63,72 +86,84 @@ def _imported_names(path: pathlib.Path, module: str) -> set[str]:
     return out
 
 
-class Test引擎只从会话文件拿这几个名字:
-    def test_没有多拿(self):
-        got = _imported_names(ROOT / "services" / "v5_full_driver.py", "slide_rule_session")
-        extra = sorted(got - ALLOWED)
-        assert not extra, (
-            f"引擎又从 slide_rule_session 多拿了：{extra}。\n"
-            f"这条边是最后一个组间环的全部内容——要么别拿，"
-            f"要么就是该把回合机制那一半拆出去了（见本文件模块头的实测数据）。"
+class Test引擎不再从会话文件拿东西:
+    """⚠ 反向判据。这是环有没有长回来的唯一判据。"""
+
+    def test_v5_full_driver_一个名字都不从_slide_rule_session_拿(self):
+        got = _imports_from(ROOT / "services" / "v5_full_driver.py", "slide_rule_session")
+        assert not got, (
+            f"引擎又从 slide_rule_session 拿了：{sorted(got)}。\n"
+            f"这条边就是 `drive ⇄ model_core` 那个环——它 2026-08-29 才被拆掉，"
+            f"补一行 import 就能让它整个回来，而且 Python 不会报错。\n"
+            f"回合机制在 services/engine_scheduling.py，从那里拿。"
         )
 
-    def test_名单只许变短(self):
-        """⚠ 反向判据。拆走一个就要从名单里划掉，
-        否则下一个人以为那笔债还在（同 baseline 只许变短）。"""
-        got = _imported_names(ROOT / "services" / "v5_full_driver.py", "slide_rule_session")
-        stale = sorted(ALLOWED - got)
-        assert not stale, f"这些引擎已经不拿了，从 ALLOWED 里删掉：{stale}"
-
-    def test_拿的确实都是回合机制不是读写会话(self):
-        """⚠ 这条是上面两条的**意义**所在。
-
-        如果引擎拿的是 `load_session` / `save_session`，那叫「引擎用会话存储」，
-        天经地义，不该算债。它拿的是排程和记账——那是**引擎自己的东西被寄放在
-        会话文件里**，所以才是债。名单里混进读写函数的话，这个判断就得重做。
-        """
-        assert not (ALLOWED & {"load_session", "save_session", "create_session", "delete_session"}), (
-            "名单里混进了会话读写函数——那不是债，本文件的整个论证要重做"
+    def test_路由层也从新家拿排程函数(self):
+        """⚠ CLAUDE.md 第四条：同一件事的第二处。只改驱动器不改路由，
+        路由会继续把会话文件当引擎门面用，而闸看不见（routes → drive 是合法边）。"""
+        got = _imports_from(ROOT / "routes" / "sliderule_full.py", "slide_rule_session")
+        leaked = sorted(got & SCHEDULING)
+        assert not leaked, (
+            f"路由还在从 slide_rule_session 拿排程函数：{leaked}。改成 services.engine_scheduling。"
         )
 
 
-class Test那七个函数确实还缠在一起:
-    """⚠ 钉住「没接着拆」的**理由**。哪天缠绕解开了（helper 变少了），
-    这条会红——那是好消息：该动手拆了。"""
+class Test新家不许反向依赖回去:
+    """⚠ 反向判据。engine_scheduling 一旦 import slide_rule_session，
+    环就换个方向重新成立，而且这次更难看出来。"""
 
-    def test_它们仍然依赖同文件里的一堆helper(self):
-        import builtins
+    def test_engine_scheduling_不import_slide_rule_session(self):
+        got = _imports_from(ROOT / "services" / "engine_scheduling.py", "slide_rule_session")
+        assert not got, (
+            f"engine_scheduling 反向依赖了会话文件：{sorted(got)}。\n"
+            f"它要读写会话就说明拆错了地方——回合机制不该需要会话存储，"
+            f"是调用方把 state 传进来。"
+        )
 
-        src = (ROOT / "services" / "slide_rule_session.py").read_text(encoding="utf-8")
-        tree = ast.parse(src)
-        modlevel = {
+    def test_排程函数确实都在新家(self):
+        """正向判据。配合上面三条反向的——光证明"旧地方没有了"不够，
+        还得证明"新地方真有"，否则删掉整个文件也能让上面全绿。"""
+        tree = ast.parse((ROOT / "services" / "engine_scheduling.py").read_text(encoding="utf-8"))
+        defined = {
             n.name
             for n in tree.body
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
-        bi = set(dir(builtins))
-        need: set[str] = set()
-        for n in tree.body:
-            if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            if n.name not in ALLOWED:
-                continue
-            local: set[str] = set()
-            for x in ast.walk(n):
-                if isinstance(x, ast.arg):
-                    local.add(x.arg)
-                elif isinstance(x, ast.Name) and isinstance(x.ctx, ast.Store):
-                    local.add(x.id)
-                elif isinstance(x, (ast.Import, ast.ImportFrom)):
-                    local.update((a.asname or a.name).split(".")[0] for a in x.names)
-                elif isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    local.add(x.name)
-            for x in ast.walk(n):
-                if isinstance(x, ast.Name) and isinstance(x.ctx, ast.Load):
-                    if x.id in modlevel and x.id not in ALLOWED and x.id not in local and x.id not in bi:
-                        need.add(x.id)
-        assert len(need) >= 8, (
-            f"这 7 个函数对同文件 helper 的依赖降到了 {len(need)} 个（{sorted(need)}）——"
-            f"缠绕松了，**这是好消息**：拆出去的代价变小了，回头看看该不该动手。"
-            f"顺手把这条判据的门槛调下来或删掉。"
+        missing = sorted(SCHEDULING - defined)
+        assert not missing, f"这些排程函数不在 engine_scheduling 里：{missing}"
+
+
+class Test会话文件不许变成引擎的门面:
+    def test_回export的名字只许是drive_reasoning_turn用到的(self):
+        """⚠ 棘轮。`slide_rule_session` 顶层 import 这几个是有理由的
+        （`drive_reasoning_turn` 要用，且顶层 import 让既有的
+        `monkeypatch.setattr("services.slide_rule_session.pick_next_capabilities", …)`
+        仍然拦得住）。但名单只许变短——变长就是有人在拿它当门面。"""
+        got = _imports_from(ROOT / "services" / "slide_rule_session.py", "engine_scheduling")
+        extra = sorted(got - SESSION_MAY_REEXPORT)
+        assert not extra, (
+            f"slide_rule_session 多 import 了：{extra}。\n"
+            f"先问那个调用方是不是也该搬去 engine_scheduling——"
+            f"这个文件是会话存储，不是引擎的门面。"
+        )
+
+    def test_名单只许变短(self):
+        """⚠ 反向判据。哪天 drive_reasoning_turn 不用某个了，名单要跟着删，
+        否则下一个人以为那条依赖还在（同 baseline 只许变短）。"""
+        got = _imports_from(ROOT / "services" / "slide_rule_session.py", "engine_scheduling")
+        stale = sorted(SESSION_MAY_REEXPORT - got)
+        assert not stale, f"这些已经不用了，从 SESSION_MAY_REEXPORT 里删掉：{stale}"
+
+    def test_会话文件里不再定义排程函数(self):
+        """⚠ 这条挡的是"搬了一半"：函数搬走了但留了个同名包装在原地。"""
+        tree = ast.parse((ROOT / "services" / "slide_rule_session.py").read_text(encoding="utf-8"))
+        defined = {
+            n.name
+            for n in tree.body
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        leftover = sorted(defined & SCHEDULING)
+        assert not leftover, (
+            f"这些排程函数又在会话文件里定义了：{leftover}——搬家搬了一半，"
+            f"两份实现会各自漂移，那是本仓踩过三次的坑。"
         )

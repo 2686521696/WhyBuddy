@@ -11,12 +11,12 @@ from typing import Dict, Any, AsyncGenerator, List, Literal, Optional
 from datetime import datetime, timezone
 from models.v5_state import V5SessionState, ProducedBy, SchedulingDecision
 from .slide_rule_orchestrator import orchestrate_plan
-from .slide_rule_session import pick_next_capabilities, pick_repair_capabilities, commit_artifact, append_reasoning_event, append_replay_event
+from .engine_scheduling import pick_next_capabilities, pick_repair_capabilities, commit_artifact, append_reasoning_event, append_replay_event
 
 
 def _has_pending_delivery_picks(state, user_instruction: str) -> bool:
     """交付意图下是否还有未提交的交付能力可选（用于门通过后的继续判定）。"""
-    from .slide_rule_session import _is_delivery_intent
+    from .engine_scheduling import _is_delivery_intent
 
     if not _is_delivery_intent(user_instruction or ""):
         return False
@@ -493,7 +493,7 @@ def _commit_executed_outcome(
             state, cap, loop, batch, "ok", run_id,
         )
     else:
-        from .slide_rule_session import record_capability_run_error
+        from .engine_scheduling import record_capability_run_error
 
         err = {"code": "capability_execution_failed", "message": str(outcome["error"])[:200], "capabilityId": cap}
         record_capability_run_error(
@@ -702,7 +702,7 @@ def _ensure_runtime_closure_evidence(
         )
         persist_state(state)
     except Exception as cap_exc:
-        from .slide_rule_session import record_capability_run_error
+        from .engine_scheduling import record_capability_run_error
 
         # E37 fail-closed 兜底：闭环重建炸掉也要落一个确定性 blocked 闭环
         # （挂在 error run 的 result 上，derive 能扫到）——回合结束后
@@ -1391,7 +1391,7 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                     dur = int((_time.time() - t0) * 1000)
                     err = {"code": "capability_execution_failed", "message": str(cap_exc)[:200], "capabilityId": cap}
                     # import here to keep top minimal; use the record from session (PYTHON slice)
-                    from .slide_rule_session import record_capability_run_error
+                    from .engine_scheduling import record_capability_run_error
                     record_capability_run_error(
                         state,
                         capabilityId=cap,
@@ -2337,7 +2337,7 @@ async def drive_full_v5_session_stream(
                     cap_error = True
                     dur = int((_time.time() - t0) * 1000)
                     err = {"code": "capability_execution_failed", "message": str(cap_exc)[:200], "capabilityId": cap}
-                    from .slide_rule_session import record_capability_run_error
+                    from .engine_scheduling import record_capability_run_error
                     record_capability_run_error(
                         state, capabilityId=cap, turnId=turn_id, error=err, roleId=role,
                         timing={"durationMs": dur},

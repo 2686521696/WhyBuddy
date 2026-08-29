@@ -24,7 +24,8 @@ from models.v5_state import CapabilityRun, V5SessionState
 from middlewares.current_user import CurrentUserOptional
 from services import app_access
 from services.model_version_restore import restore_model_version_locked
-from services.slide_rule_session import create_session, delete_session, load_session, save_session, drive_reasoning_turn, pick_next_capabilities
+from services.slide_rule_session import create_session, delete_session, load_session, save_session, drive_reasoning_turn
+from services.engine_scheduling import pick_next_capabilities
 from services.persistence import PersistClosedError, load_all
 from services.slide_rule_marathon import drive_marathon
 from services.v5_full_driver import drive_full_v5_session, _result_to_dict
@@ -940,7 +941,7 @@ async def exec_cap(
         except asyncio.TimeoutError:
             dur = int((_time.time() - t0) * 1000)
             err = {"code": "execute_timeout", "message": "execute-capability timed out", "capabilityId": cap}
-            from services.slide_rule_session import record_capability_run_error
+            from services.engine_scheduling import record_capability_run_error
             record_capability_run_error(
                 state,
                 capabilityId=cap,
@@ -960,7 +961,7 @@ async def exec_cap(
             # record error run first so durable state captures the failure (addresses review: no record before raise)
             dur = int((_time.time() - t0) * 1000)
             err = {"code": "llm_native_failed", "message": str(e)[:200], "capabilityId": cap}
-            from services.slide_rule_session import record_capability_run_error
+            from services.engine_scheduling import record_capability_run_error
             record_capability_run_error(
                 state,
                 capabilityId=cap,
@@ -1003,7 +1004,7 @@ async def exec_cap(
     except asyncio.TimeoutError:
         dur = int((_time.time() - t0) * 1000)
         err = {"code": "execute_timeout", "message": "execute-capability timed out", "capabilityId": cap}
-        from services.slide_rule_session import record_capability_run_error
+        from services.engine_scheduling import record_capability_run_error
         record_capability_run_error(
             state,
             capabilityId=cap,
@@ -1024,7 +1025,7 @@ async def exec_cap(
         # explicit error record + save for mapped path (review: no error record wrapper)
         dur = int((_time.time() - t0) * 1000)
         err = {"code": "mapped_capability_failed", "message": str(map_exc)[:200], "capabilityId": cap}
-        from services.slide_rule_session import record_capability_run_error
+        from services.engine_scheduling import record_capability_run_error
         record_capability_run_error(
             state,
             capabilityId=cap,
