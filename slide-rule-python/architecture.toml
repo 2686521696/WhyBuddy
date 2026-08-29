@@ -85,6 +85,7 @@ what = "纯工具：不依赖 services 里任何其它模块"
 # 深度 0 实测 117 个：不依赖 services 内任何模块。对应 grok 的叶子 crate。
 may_depend_on = []
 modules = [
+  "services.sql_gateway",
   "services.page_naming",
   "services.a2a_core_route_cutover",
   "services.a2a_production_transport_ownership_closure",
@@ -349,16 +350,14 @@ modules = [
 
 [component.app_store]
 why = """生成物的家：应用记录、版本、可见性、预览、组件预设。"""
-may_depend_on = ["drive", "evidence", "identity", "model_core", "platform", "spec_first"]
+may_depend_on = ["identity", "model_core", "platform", "spec_first"]
 modules = [
   "services.app_graph",
   "services.app_preview",
   "services.app_screenshot",
   "services.app_store",
   "services.app_template",
-  "services.app_working_session",
   "services.component_preset_store",
-  "services.session_blob_store",
 ]
 
 [component.audit]
@@ -399,7 +398,7 @@ modules = [
 # ⚠ 全仓唯一 opt-in 允许内部互指的组，理由见 why。
 allow_internal_cycles = true
 why = """能力执行引擎：slide_rule_executor 是原语与总入口，capability_maps 是能力→实现的映射表。两者互相委托是**有意的**——源码注释写着 structure.decompose 那条分支原本是第二份拷贝，「所以这里改成委托，不再各写一份」。拆开会让同一段逻辑再变成两份，那正是这个仓踩过三次的坑。"""
-may_depend_on = ["evidence", "llm_gateway", "model_core", "spec_first"]
+may_depend_on = ["evidence", "llm_gateway", "platform", "spec_first"]
 modules = [
   "services.capability_maps",
   "services.slide_rule_executor",
@@ -419,8 +418,9 @@ modules = [
 
 [component.drive]
 why = """编排：驱动器信封、控制面、会话、run 注册表、暂停/取消、轮次叙述。"""
-may_depend_on = ["app_store", "capability_engine", "evidence", "identity", "llm_gateway", "model_core", "observability", "persist", "platform", "spec_first"]
+may_depend_on = ["capability_engine", "evidence", "identity", "llm_gateway", "model_core", "observability", "persist", "platform", "spec_first"]
 modules = [
+  "services.app_working_session",
   "services.drive_full_factory",
   "services.nl_command_runtime",
   "services.product_charter",
@@ -446,7 +446,7 @@ modules = [
 
 [component.evidence]
 why = """外部证据：检索、连接器、MCP、技能包、入站判定。全部 fail-closed，不许编数据。"""
-may_depend_on = ["llm_gateway", "model_core", "platform", "spec_first"]
+may_depend_on = ["llm_gateway", "platform", "spec_first"]
 modules = [
   "services.attachment_extract",
   "services.connectors",
@@ -457,6 +457,7 @@ modules = [
   "services.rag_ingestion",
   "services.rag_service",
   "services.skill_runtime",
+  "services.slide_rule_llm",
   "services.vector_rag",
 ]
 
@@ -476,7 +477,7 @@ modules = [
 
 [component.identity]
 why = """身份与权限：账号、令牌、验证码投递、应用归属、鉴权中间件。fail-closed。"""
-may_depend_on = ["app_store", "llm_gateway", "model_core", "observability", "platform", "spec_first"]
+may_depend_on = ["llm_gateway", "model_core", "observability", "platform", "spec_first"]
 modules = [
   "middlewares.auth",
   "middlewares.current_user",
@@ -491,11 +492,10 @@ modules = [
 
 [component.llm_gateway]
 why = """LLM 通道：模型调用、流式、通道配置、熔断。业务不该知道用的是哪家模型。"""
-may_depend_on = ["evidence", "platform"]
+may_depend_on = ["platform"]
 modules = [
   "services.llm_channel",
   "services.llm_error_text",
-  "services.slide_rule_llm",
   "sliderule_llm.__init__",
   "sliderule_llm.capabilities",
   "sliderule_llm.client",
@@ -515,7 +515,6 @@ modules = [
 why = """五系统模型：生成、结构闸、修复、闭环证据、覆盖门、信任。产品的心脏。"""
 may_depend_on = ["app_store", "drive", "evidence", "llm_gateway", "observability", "persist", "platform", "spec_first"]
 modules = [
-  "models.v5_state",
   "services.closure_block_reason",
   "services.closure_relevance",
   "services.merge_patch",
@@ -551,7 +550,7 @@ modules = [
 
 [component.observability]
 why = """可观测：成本台账、分阶段计时、遥测、预算。增强类，炸了不许拖垮主链路。"""
-may_depend_on = ["llm_gateway", "model_core", "persist", "platform"]
+may_depend_on = ["llm_gateway", "persist", "platform"]
 modules = [
   "services.cost_ledger",
   "services.enrich_timing",
@@ -569,6 +568,7 @@ modules = [
   "scripts.backfill_app_badge_counts",
   "scripts.backfill_page_id_aliases",
   "scripts.backfill_session_owner",
+  "scripts.block_selection_metrics",
   "scripts.connector_entity_ab",
   "scripts.content_quality_eval",
   "scripts.enrich_builtin_domain_models",
@@ -583,6 +583,8 @@ modules = [
   "scripts.forum_fit_device",
   "scripts.forum_fit_grade",
   "scripts.forum_neon",
+  "scripts.freeform_trend_palette_smoke",
+  "scripts.freeform_vision_smoke",
   "scripts.fresh_topic_shot",
   "scripts.image_gen_smoke",
   "scripts.label_block_generality",
@@ -616,9 +618,10 @@ modules = [
 
 [component.persist]
 why = """会话落库与单调守卫。谁写、写成什么样，只有这里说了算。"""
-may_depend_on = ["app_store", "model_core", "platform"]
+may_depend_on = ["platform"]
 modules = [
   "services.persistence",
+  "services.session_blob_store",
 ]
 
 [component.platform]
@@ -629,7 +632,9 @@ modules = [
   "config.settings",
   "models.agent_loop",
   "models.blueprint_state",
+  "models.v5_state",
   "services.env_flags",
+  "services.sql_gateway",
   "stdio_utf8",
 ]
 
@@ -646,9 +651,6 @@ modules = [
 why = """spec-first 七步与页面产出：spec 树、逐页 HTML、外壳、绑定、配色、区块目录。"""
 may_depend_on = ["app_store", "drive", "identity", "llm_gateway", "model_core", "observability", "platform", "refine"]
 modules = [
-  "scripts.block_selection_metrics",
-  "scripts.freeform_trend_palette_smoke",
-  "scripts.freeform_vision_smoke",
   "services.block_assembler",
   "services.block_narrowing",
   "services.block_proposer",
@@ -768,22 +770,18 @@ component_violations = [
 #   refine⇄spec_first、model_core⇄observability。
 #   **只许变少。** 这是下一轮该还的债。
 component_cycles = [
-  "app_store -> drive -> app_store",
-  "app_store -> drive -> capability_engine -> evidence -> model_core -> app_store",
-  "app_store -> drive -> capability_engine -> evidence -> model_core -> observability -> persist -> app_store",
-  "app_store -> drive -> capability_engine -> evidence -> model_core -> spec_first -> app_store",
-  "app_store -> drive -> capability_engine -> evidence -> model_core -> spec_first -> identity -> app_store",
-  "app_store -> drive -> capability_engine -> evidence -> model_core -> spec_first -> refine -> app_store",
-  "app_store -> drive -> identity -> app_store",
-  "app_store -> identity -> app_store",
-  "capability_engine -> evidence -> model_core -> drive -> capability_engine",
-  "capability_engine -> evidence -> model_core -> spec_first -> drive -> capability_engine",
+  "app_store -> identity -> model_core -> app_store",
+  "app_store -> model_core -> app_store",
+  "app_store -> spec_first -> app_store",
+  "app_store -> spec_first -> drive -> identity -> model_core -> app_store",
+  "app_store -> spec_first -> drive -> model_core -> app_store",
+  "app_store -> spec_first -> identity -> model_core -> app_store",
+  "app_store -> spec_first -> model_core -> app_store",
+  "app_store -> spec_first -> refine -> app_store",
+  "capability_engine -> evidence -> spec_first -> drive -> capability_engine",
+  "capability_engine -> spec_first -> drive -> capability_engine",
   "diagnostics -> entrypoint -> http_routes -> diagnostics",
-  "evidence -> llm_gateway -> evidence",
-  "evidence -> model_core -> evidence",
-  "model_core -> observability -> model_core",
-  "model_core -> observability -> persist -> model_core",
-  "model_core -> spec_first -> model_core",
+  "drive -> spec_first -> drive",
   "refine -> spec_first -> refine",
 ]
 cycles = [

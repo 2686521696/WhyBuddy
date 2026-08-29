@@ -14,8 +14,8 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **270** 个，模块 **270** 个
-- 内部依赖边 **768** 条，其中 **462** 条写在函数体里（60%）
+- 扫描文件 **271** 个，模块 **271** 个
+- 内部依赖边 **770** 条，其中 **462** 条写在函数体里（60%）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
@@ -24,7 +24,7 @@
 
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
-| `util` | 118 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `util` | 119 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
 | `core` | 52 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 28 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
@@ -38,7 +38,7 @@ flowchart TB
   models["models<br/>3 个模块<br/>数据形状"]
   sliderule_llm["sliderule_llm<br/>13 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>198 个模块<br/>业务"]
+  services["services<br/>199 个模块<br/>业务"]
   routes["routes<br/>12 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   scripts["scripts<br/>36 个模块<br/>运维脚本"]
@@ -59,7 +59,7 @@ flowchart TB
   scripts -->|58 · 其中 41 条在函数体里| services
   scripts -->|8 · 其中 5 条在函数体里| sliderule_llm
   services -->|1 · 其中 1 条在函数体里| app
-  services -->|13 · 其中 6 条在函数体里| config
+  services -->|15 · 其中 7 条在函数体里| config
   services -->|29 · 其中 1 条在函数体里| models
   services -->|60 · 其中 47 条在函数体里| sliderule_llm
   sliderule_llm -->|2 · 其中 2 条在函数体里| config
@@ -78,124 +78,115 @@ Rust 里这一类根本编译不出来；Python 得自己数。**只许变少。
 ## crate 级：component 依赖图
 
 抄 grok 的 Cargo.toml——他们 90 个 crate、347 条**声明过**的边由编译器焊死。
-我们 23 个 component、103 条边，由 `architecture.toml` 声明、判据强制。
+我们 23 个 component、94 条边，由 `architecture.toml` 声明、判据强制。
 **红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。
 
 ```mermaid
 flowchart LR
   a2a["a2a<br/>4"]
   agent_loop["agent_loop<br/>15"]
-  app_store["app_store<br/>8"]
+  app_store["app_store<br/>6"]
   audit["audit<br/>3"]
   blueprint["blueprint<br/>19"]
   capability_engine["capability_engine<br/>2"]
   diagnostics["diagnostics<br/>6"]
-  drive["drive<br/>14"]
+  drive["drive<br/>15"]
   entrypoint["entrypoint<br/>1"]
-  evidence["evidence<br/>10"]
+  evidence["evidence<br/>11"]
   http_routes["http_routes<br/>8"]
   identity["identity<br/>9"]
-  llm_gateway["llm_gateway<br/>16"]
-  model_core["model_core<br/>32"]
+  llm_gateway["llm_gateway<br/>15"]
+  model_core["model_core<br/>31"]
   observability["observability<br/>5"]
-  ops_scripts["ops_scripts<br/>34"]
+  ops_scripts["ops_scripts<br/>37"]
   permission["permission<br/>8"]
-  persist["persist<br/>1"]
-  platform["platform<br/>6"]
+  persist["persist<br/>2"]
+  platform["platform<br/>8"]
   refine["refine<br/>3"]
-  spec_first["spec_first<br/>31"]
+  spec_first["spec_first<br/>28"]
   task_exec["task_exec<br/>19"]
   web_aigc["web_aigc<br/>16"]
   agent_loop -->|1| identity
   agent_loop -->|6| platform
-  app_store -.->|1| drive
-  app_store -->|1| evidence
   app_store -.->|6| identity
-  app_store -->|7| model_core
-  app_store -->|3| platform
-  app_store -->|4| spec_first
+  app_store -.->|2| model_core
+  app_store -->|2| platform
+  app_store -.->|4| spec_first
   blueprint -->|2| platform
-  capability_engine -.->|4| evidence
-  capability_engine -->|2| llm_gateway
-  capability_engine -->|2| model_core
-  capability_engine -->|1| spec_first
+  capability_engine -.->|5| evidence
+  capability_engine -->|1| llm_gateway
+  capability_engine -->|2| platform
+  capability_engine -.->|1| spec_first
   diagnostics -->|1| a2a
   diagnostics -.->|1| entrypoint
   diagnostics -->|1| evidence
-  diagnostics -->|3| model_core
-  diagnostics -->|1| platform
+  diagnostics -->|2| model_core
+  diagnostics -->|2| platform
   diagnostics -->|1| web_aigc
-  drive -.->|1| app_store
   drive -.->|2| capability_engine
-  drive -->|1| evidence
+  drive -->|2| evidence
   drive -.->|2| identity
   drive -->|1| llm_gateway
-  drive -->|20| model_core
+  drive -.->|19| model_core
   drive -->|2| observability
-  drive -->|3| persist
-  drive -->|2| platform
-  drive -->|2| spec_first
+  drive -->|4| persist
+  drive -->|8| platform
+  drive -.->|2| spec_first
   entrypoint -->|2| agent_loop
   entrypoint -->|1| app_store
   entrypoint -->|2| drive
   entrypoint -.->|7| http_routes
-  entrypoint -->|5| model_core
+  entrypoint -->|4| model_core
   entrypoint -->|1| permission
-  entrypoint -->|1| platform
+  entrypoint -->|2| platform
   entrypoint -->|2| spec_first
   entrypoint -->|3| task_exec
-  evidence -.->|7| llm_gateway
-  evidence -.->|1| model_core
-  evidence -->|3| platform
-  evidence -->|1| spec_first
-  http_routes -->|24| app_store
+  evidence -->|7| llm_gateway
+  evidence -->|4| platform
+  evidence -.->|1| spec_first
+  http_routes -->|22| app_store
   http_routes -->|3| audit
   http_routes -->|1| blueprint
   http_routes -->|2| capability_engine
   http_routes -.->|1| diagnostics
-  http_routes -->|20| drive
+  http_routes -->|22| drive
   http_routes -->|5| evidence
   http_routes -->|13| identity
   http_routes -->|22| llm_gateway
-  http_routes -->|21| model_core
+  http_routes -->|19| model_core
   http_routes -->|2| observability
   http_routes -->|3| persist
-  http_routes -->|6| platform
+  http_routes -->|8| platform
   http_routes -->|12| spec_first
   http_routes -->|2| task_exec
-  identity -.->|5| app_store
   identity -->|3| llm_gateway
-  identity -->|1| model_core
+  identity -.->|1| model_core
   identity -->|1| observability
-  identity -->|5| platform
+  identity -->|10| platform
   identity -->|3| spec_first
-  llm_gateway -.->|1| evidence
   llm_gateway -->|2| platform
   model_core -.->|2| app_store
-  model_core -.->|22| drive
-  model_core -.->|4| evidence
-  model_core -->|19| llm_gateway
-  model_core -.->|6| observability
+  model_core -->|22| drive
+  model_core -->|5| evidence
+  model_core -->|18| llm_gateway
+  model_core -->|6| observability
   model_core -->|2| persist
-  model_core -->|7| platform
-  model_core -.->|35| spec_first
+  model_core -->|19| platform
+  model_core -->|35| spec_first
   observability -->|2| llm_gateway
-  observability -.->|2| model_core
-  observability -.->|1| persist
-  observability -->|1| platform
+  observability -->|1| persist
+  observability -->|3| platform
   ops_scripts -->|9| app_store
   ops_scripts -->|3| entrypoint
   ops_scripts -->|3| evidence
   ops_scripts -->|3| identity
   ops_scripts -->|8| llm_gateway
-  ops_scripts -->|19| model_core
-  ops_scripts -->|2| platform
-  ops_scripts -->|10| spec_first
+  ops_scripts -->|22| model_core
+  ops_scripts -->|3| platform
+  ops_scripts -->|21| spec_first
   permission -->|1| identity
   permission -->|1| platform
-  persist -.->|2| app_store
-  persist -.->|1| model_core
-  persist -->|1| platform
+  persist -->|10| platform
   refine -.->|1| app_store
   refine -->|2| platform
   refine -.->|7| spec_first
@@ -203,7 +194,7 @@ flowchart LR
   spec_first -.->|2| drive
   spec_first -.->|2| identity
   spec_first -->|26| llm_gateway
-  spec_first -.->|10| model_core
+  spec_first -.->|6| model_core
   spec_first -->|2| observability
   spec_first -->|7| platform
   spec_first -.->|5| refine

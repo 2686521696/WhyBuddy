@@ -828,7 +828,7 @@ class _SqlExecutor:
         from sqlalchemy import create_engine, text
         from sqlalchemy.pool import NullPool
 
-        from .app_store import _sql_engine_config
+        from .sql_gateway import _sql_engine_config
 
         self._text = text
         # 跟 app_store 保持一致：生产配置常写 postgresql://...，但本镜像依赖的是
@@ -875,7 +875,7 @@ class _NeonHttpExecutor:
         return f"${n}"
 
     def query(self, sql: str, params: list[Any]) -> list[dict[str, Any]]:
-        from .app_store import _neon_http_error
+        from .sql_gateway import _neon_http_error
 
         resp = self._client.post(self._endpoint, json={"query": sql, "params": params})
         if resp.status_code >= 400:
@@ -895,7 +895,7 @@ class _HttpApiExecutor:
     """
 
     def __init__(self, api_base_url: str, api_key: str) -> None:
-        from .app_store import HttpSqlGateway
+        from .sql_gateway import HttpSqlGateway
 
         self.is_sqlite = False
         self._gateway = HttpSqlGateway(api_base_url, api_key)
@@ -923,7 +923,7 @@ _LOCAL_SQLITE = "sqlite:///data/sliderule-identity.db"
 def _signature() -> str:
     from config.settings import settings
 
-    from .app_store import _http_api_target_key, http_api_credentials, prefer_neon_http
+    from .sql_gateway import _http_api_target_key, http_api_credentials, prefer_neon_http
 
     url, key = http_api_credentials()
     return (
@@ -955,7 +955,7 @@ def _build_store() -> IdentityStore:
 
     from config.settings import settings
 
-    from .app_store import http_api_credentials, neon_http_endpoint, prefer_neon_http
+    from .sql_gateway import http_api_credentials, neon_http_endpoint, prefer_neon_http
 
     # 自定义 HTTPS 网关排在最前：配了它就说明这个环境出不去 5432，下面那段
     # TCP 探测纯属白等（每个地址 connect_timeout 4s，最坏一次登录卡二十几秒）。

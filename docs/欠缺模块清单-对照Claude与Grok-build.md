@@ -1989,3 +1989,61 @@ crate 粒度下的缠绕以前根本没人量过。由七组两两互指衍生�
 
 变异验过三刀：新增未声明组间依赖 → 红；23 个组的理由套同一句 → 红；
 给大组开内部成环豁免 → 红。
+
+---
+
+## 20. 组级环 17 → 13：一半是分组画歪的（2026-08-29）
+
+### 20.1 先怀疑分组，再怀疑代码
+
+§19 量到 17 个组间环。逐组看具体边，**其中一半根本不是代码问题，是我的归组规则打架**：
+
+| 归错的 | 被谁抢走 | 真正该在 | 后果 |
+|---|---|---|---|
+| `models.v5_state` | `model_core`（`v5_` 前缀） | `platform` | `evidence ⇄ model_core`、`model_core ⇄ observability` 两个假环 |
+| `scripts.block_selection_metrics` 等 3 个 | `spec_first`（`block_` 前缀） | `ops_scripts` | `model_core ⇄ spec_first` 的一半 |
+| `services.app_working_session` | `app_store`（`app_` 前缀） | `drive`（我自己在 drive 规则里列过它） | `app_store ⇄ drive` |
+| `services.session_blob_store` | `app_store` | `persist`（它是**会话**存档后端） | 同上 |
+| `services.slide_rule_llm` | `llm_gateway` | `evidence`（RAG 支撑的能力 helper） | `evidence ⇄ llm_gateway` |
+
+**根因是规则顺序**：语义前缀（`v5_` / `block_` / `app_`）排在包前缀（`models.` /
+`scripts.`）前面，把不属于自己的模块抢走了。这跟上一轮 `app` 塞进 `platform`
+造出 40 个假环是同一个病，**同一天犯了两次**。
+
+> 归组是判据的输入。**输入错了，判据报出来的东西再精确也是错的。**
+
+### 20.2 真的那一半：SQL 网关埋在应用商店里
+
+`identity ⇄ app_store` 与 `drive ⇄ app_store` 是真耦合，但根因不是业务纠缠——
+是**三个模块共用的数据库基础设施长在了应用商店里**：
+
+    identity_store     → app_store   （_sql_engine_config / HttpSqlGateway / _neon_http_error…）
+    session_blob_store → app_store   （同上 + http_api_credentials / prefer_neon_http…）
+
+连接参数、HTTP 网关客户端、错误形状——**这些根本不是应用商店的业务**，是谁存东西
+谁都要用的东西。抽成叶子 `services/sql_gateway.py`（14 样、约 250 行），
+`app_store` 保留同名转出（它自己 200 多处调用、以及仓里脚本与判据按老名字引用）。
+
+一刀断两条边，组级环 17 → 13。
+
+### 20.3 两处我自己的粗心，都值得记
+
+**① 盲目 sed 换 import。** 我把两个消费者里**所有** `from .app_store import` 一律
+换成 `from .sql_gateway import`，而 `prefer_neon_http` / `neon_http_endpoint` /
+`_http_api_target_key` 当时还在 app_store 里。因为是函数体内 import，
+**模块导入不报错，要到调用时才炸**。查出来之后把这三样一并搬下去（它们本来就同属网关一簇）。
+
+**② 未定义名检查器漏了元组解包。** `connect_args, engine_kwargs = f()` 这种
+`ast.Assign(targets=[Tuple])`，第一版只认直接的 `ast.Name` 目标，于是把解包出来的
+名字全报成未定义（app_store 6 个假阳性）。修完之后两边都是「无」，
+再靠它一轮轮把 `_NEON_ERROR_FIELDS` / `_scan_numeric_placeholders` /
+`_DOLLAR_TAG_RE` / `hashlib` / `settings` 这些遗漏逐个揪出来。
+
+**抽代码不能靠眼睛扫**——这条 §18.4 记过一次，这次是同一条纪律救了场。
+
+### 20.4 剩下 13 个：是真的，留给下一轮
+
+    app_store ⇄ model_core       app_store ⇄ spec_first      identity ⇄ model_core
+    refine ⇄ spec_first          model_core ⇄ spec_first     drive ⇄ …
+
+这些是子系统之间的双向依赖，拆起来要动职责划分而不是搬文件。已进基线，只许变少。

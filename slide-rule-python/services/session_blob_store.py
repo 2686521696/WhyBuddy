@@ -373,7 +373,7 @@ class SqlSessionBlobStore(SessionBlobStore):
         self._text = text
         # 连接参数与 app_store 对齐（pooler 走 NullPool + 关预编译语句缓存）：
         # 同一个库、同样的 PgBouncer 事务模式，参数不一致只会踩同一个坑两次。
-        from .app_store import _sql_engine_config  # 复用，不重复实现
+        from .sql_gateway import _sql_engine_config  # 复用，不重复实现
 
         connect_args, engine_kwargs = _sql_engine_config(database_url, NullPool)
         self._engine = create_engine(database_url, connect_args=connect_args, **engine_kwargs)
@@ -531,7 +531,7 @@ class NeonHttpSessionBlobStore(SessionBlobStore):
         _ensure_list_projection(self._q, is_sqlite=False)
 
     def _q(self, sql: str, params: Optional[list[Any]] = None) -> list[dict[str, Any]]:
-        from .app_store import _neon_http_error
+        from .sql_gateway import _neon_http_error
 
         resp = self._client.post(self._endpoint, json={"query": sql, "params": params or []})
         if resp.status_code >= 400:
@@ -670,7 +670,7 @@ class HttpApiSessionBlobStore(NeonHttpSessionBlobStore):
     """
 
     def __init__(self, api_base_url: str, api_key: str) -> None:
-        from .app_store import HttpSqlGateway
+        from .sql_gateway import HttpSqlGateway
 
         self._gateway = HttpSqlGateway(api_base_url, api_key, timeout_s=_HTTP_TIMEOUT_S)
         self._endpoint = self._gateway.endpoint
@@ -693,13 +693,13 @@ def _db_url() -> str:
 
 
 def _http_api() -> tuple[str, str]:
-    from .app_store import http_api_credentials
+    from .sql_gateway import http_api_credentials
 
     return http_api_credentials()
 
 
 def _signature_now() -> str:
-    from .app_store import _http_api_target_key
+    from .sql_gateway import _http_api_target_key
 
     url, key = _http_api()
     return (
@@ -710,7 +710,7 @@ def _signature_now() -> str:
 
 
 def _prefer_http() -> bool:
-    from .app_store import prefer_neon_http
+    from .sql_gateway import prefer_neon_http
 
     return prefer_neon_http()
 
@@ -755,7 +755,7 @@ def _build() -> Optional[SessionBlobStore]:
     if not url or url in _failed_urls:
         return None
 
-    from .app_store import neon_http_endpoint
+    from .sql_gateway import neon_http_endpoint
 
     endpoint = neon_http_endpoint(url)
 
