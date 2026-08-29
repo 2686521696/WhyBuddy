@@ -267,6 +267,7 @@ what = "编排：驱动器 / 流水线 / 控制面 / 会话"
 # 但**不许被下面两层反过来依赖**。
 may_depend_on = ["util", "core"]
 modules = [
+  "services.model_versions",
   "services.model_version_restore",
   "services.agent_loop_bridge",
   "services.agent_loop_runs",
@@ -318,5 +319,4 @@ services_violations = [
 ]
 cycles = [
   "services.capability_maps -> services.slide_rule_executor -> services.capability_maps",
-  "services.v5_capability_executor -> services.v5_full_driver -> services.v5_capability_executor",
 ]

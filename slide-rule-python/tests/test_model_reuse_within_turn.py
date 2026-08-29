@@ -151,8 +151,11 @@ class TestExecutorReuse:
         def _boom(state):
             raise RuntimeError("版本史读挂了")
 
+        # ⚠ 2026-08-29：模型版本记账搬到了 services/model_versions（原来长在驱动器里，
+        #   执行器要用就得反向 import，是最核心那对的循环依赖）。执行器现在向下取，
+        #   patch 点跟着走——**patch 错模块不会报错，只会静静地测不到东西**。
         monkeypatch.setattr(
-            "services.v5_full_driver.reusable_model_for_turn", _boom
+            "services.model_versions.reusable_model_for_turn", _boom
         )
         st = _state()
         assert ex._reuse_this_turn_model(st, {}) is False

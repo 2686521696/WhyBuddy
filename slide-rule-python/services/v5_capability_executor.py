@@ -1082,7 +1082,8 @@ def _cache_gate_passed_model(
     推演带崩——与 `_reuse_this_turn_model` 同一条纪律。
     """
     try:
-        from .v5_full_driver import record_model_snapshot
+        # ⚠ 2026-08-29：改成向下依赖 model_versions，不再反向 import 驱动器
+        from .model_versions import record_model_snapshot
 
         model = {}
         for skill in REQUIRED_EVIDENCE_KEYS:
@@ -1113,7 +1114,7 @@ def _reuse_this_turn_model(state: V5SessionState, matches: Dict[str, Any]) -> bo
     绝不能把一次能正常生成的推演带崩。
     """
     try:
-        from .v5_full_driver import reusable_model_for_turn
+        from .model_versions import reusable_model_for_turn
         from .v5_llm_generate import model_to_linkage_artifacts
 
         model = reusable_model_for_turn(state)
