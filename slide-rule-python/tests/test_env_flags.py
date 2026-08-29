@@ -164,7 +164,14 @@ class Test词表全仓只剩一份:
         got = []
         for p in sorted(_ROOT.rglob("*.py")):
             rel = p.relative_to(_ROOT).as_posix()
-            if rel.startswith((".venv/", "tests/")) or rel == "services/env_flags.py":
+            # ⚠ 2026-08-29：真身搬到 config/env_flags.py（原来住在 services 里，
+            #   害得 sliderule_llm 要反向依赖业务层）。services/env_flags.py 现在
+            #   只是转出层，两份都得豁免——只豁免旧路径的话，唯一那份正版词表
+            #   会被自己的判据当成「手抄」。
+            if rel.startswith((".venv/", "tests/")) or rel in (
+                "config/env_flags.py",
+                "services/env_flags.py",
+            ):
                 continue
             got.append((rel, p.read_text(encoding="utf-8", errors="ignore")))
         return got

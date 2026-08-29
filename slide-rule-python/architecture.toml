@@ -36,7 +36,12 @@ may_depend_on = ["config", "models", "sliderule_llm"]
 rank = 2
 what = "中间件"
 # 身份中间件要读配置与用户模型。
-may_depend_on = ["config", "models"]
+#
+# ⚠ 2026-08-29 补 services：`current_user` 要 `services.auth_tokens`（验令牌）
+#   与 `services.identity_store`（查用户、查停用/撤销）。这不是绕开分层——
+#   鉴权本来就要问身份服务，把这两样搬进中间件等于让身份逻辑长出第二份。
+#   与 routes 同 rank：两者都是「HTTP 边缘」，都可以调业务，业务不许反过来调它们。
+may_depend_on = ["config", "models", "services"]
 
 [layer.routes]
 rank = 3
@@ -321,6 +326,23 @@ modules = [
 ]
 
 
+# ── 显式例外：有意为之，并且写清了理由 ──────────────────────────────────────
+#
+# ⚠ 跟 [baseline] 是**两件事**：baseline 是欠账（只许变少），这里是「就该这样，
+#   原因如下」。grok 的对应物是 Cargo.toml 依赖行上那句注释——依赖存在是事实，
+#   **为什么存在**得写下来。
+#
+# ⚠ 门槛：必须写 why，判据还盯着总量。拿它消违规等于把闸关掉。
+#   一个包对只有在它背后**每一条**具体边都在这里时才不算违规。
+
+[[accepted]]
+edge = "services.external_provider_cutover -> app"
+why = """切换就绪诊断里的一项探针：`import app` 是**故意**的，探的正是
+「应用模块能不能加载」这件事本身，不是要用 app 的任何 API。
+改成 find_spec 会把语义从「能加载」变成「找得到」，那是另一个问题。
+这个模块只被自己的测试调用，不在产品链上。"""
+
+
 # ── 棘轮基线 ────────────────────────────────────────────────────────────────
 #
 # 存量违规与环冻在这里，判据只比「有没有变多」。**这份清单只许变短。**
@@ -334,9 +356,6 @@ modules = [
 #   所以它不该出现在日常流程里；日常应该是让判据红，然后**改代码**。
 [baseline]
 violations = [
-  "middlewares -> services",
-  "services -> app",
-  "sliderule_llm -> services",
 ]
 services_violations = [
 ]

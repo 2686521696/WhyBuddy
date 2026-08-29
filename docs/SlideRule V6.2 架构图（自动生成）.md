@@ -14,9 +14,9 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **269** 个，模块 **269** 个
-- 内部依赖边 **767** 条，其中 **462** 条写在函数体里（60%）
-- 未声明的跨包依赖 **3** 条（基线 3 条）
+- 扫描文件 **270** 个，模块 **270** 个
+- 内部依赖边 **768** 条，其中 **462** 条写在函数体里（60%）
+- 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
 
@@ -34,7 +34,7 @@
 
 ```mermaid
 flowchart TB
-  config["config<br/>1 个模块<br/>配置"]
+  config["config<br/>2 个模块<br/>配置"]
   models["models<br/>3 个模块<br/>数据形状"]
   sliderule_llm["sliderule_llm<br/>13 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
@@ -47,7 +47,7 @@ flowchart TB
   app -->|12| routes
   app -->|10 · 其中 3 条在函数体里| services
   middlewares -->|1| config
-  middlewares -.->|2| services
+  middlewares -->|2| services
   routes -->|9| config
   routes -->|5| middlewares
   routes -->|3| models
@@ -58,11 +58,11 @@ flowchart TB
   scripts -->|1 · 其中 1 条在函数体里| models
   scripts -->|58 · 其中 41 条在函数体里| services
   scripts -->|8 · 其中 5 条在函数体里| sliderule_llm
-  services -.->|1 · 其中 1 条在函数体里| app
-  services -->|12 · 其中 6 条在函数体里| config
+  services -->|1 · 其中 1 条在函数体里| app
+  services -->|13 · 其中 6 条在函数体里| config
   services -->|29 · 其中 1 条在函数体里| models
   services -->|60 · 其中 47 条在函数体里| sliderule_llm
-  sliderule_llm -.->|2 · 其中 2 条在函数体里| services
+  sliderule_llm -->|2 · 其中 2 条在函数体里| config
 ```
 
 ## 循环依赖
@@ -73,9 +73,7 @@ Rust 里这一类根本编译不出来；Python 得自己数。**只许变少。
 
 ## 未声明的跨包依赖
 
-- `middlewares -> services`
-- `services -> app`
-- `sliderule_llm -> services`
+（当前没有）
 
 ## services 内部越层依赖
 

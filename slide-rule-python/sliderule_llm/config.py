@@ -34,7 +34,7 @@ def _bool(v: str | None, default: bool = False) -> bool:
     今天所有调用点都传 False，所以还没出事；但签名允许 default=True，而那一刻
     拼错一个字母就会静静地关掉一个默认开的功能——仓里另外两处正是这么坏的
     （见 services/env_flags 模块头）。改成回落到声明的默认。"""
-    from services.env_flags import parse
+    from config.env_flags import parse
 
     return parse(v, default=default)
 

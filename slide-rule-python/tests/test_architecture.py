@@ -347,3 +347,53 @@ class Test同一个crate内部允许互指:
             f"component 里塞了 {len(inside)} 个模块（services 共 {total}）——"
             f"这已经不是「同一个 crate」，是在拿声明消环"
         )
+
+
+class Test显式例外不是后门:
+    """⚠ `[accepted]` 与 `[baseline]` 是两件事：baseline 是欠账（只许变少），
+    accepted 是「就该这样，原因如下」。grok 的对应物是 Cargo.toml 依赖行上那句
+    注释——依赖存在是事实，**为什么存在**得写下来。
+
+    这一组判据挡的是它退化成「消违规的开关」。
+    """
+
+    def test_每条例外都写了理由(self):
+        for edge, why in arch_graph.accepted_edges(_M).items():
+            assert len(why) >= 30, f"例外 {edge} 没写清为什么——不写理由就不算显式"
+
+    def test_例外必须真的存在于代码里(self):
+        """⚠ 反向判据：删掉那条依赖之后，例外要跟着删。
+        留着过期例外 = 下一个人以为那条依赖还在，也 = 悄悄放行同名的新边。"""
+        real = {f"{e.src} -> {e.dst}" for e in _G.edges}
+        stale = sorted(set(arch_graph.accepted_edges(_M)) - real)
+        assert not stale, f"这些例外对应的依赖已经没了，从 architecture.toml 删掉：{stale}"
+
+    def test_例外数量不许膨胀(self):
+        n = len(arch_graph.accepted_edges(_M))
+        assert n <= 5, (
+            f"显式例外有 {n} 条——超过个位数就不再是「例外」，"
+            f"该回头看是不是分层本身画错了"
+        )
+
+    def test_一个例外不许放行同一对包上的其它边(self):
+        """⚠ 违规是按**包对**报的，例外是按**具体边**给的。
+
+        只要包对背后还有一条没被接受的边，这个包对就得照样红——
+        否则一条例外会顺手把同一对包上所有边一起放行，闸当场穿底。
+        """
+        ok = set(arch_graph.accepted_edges(_M))
+        assert ok, "没有例外，这条判据是空的"
+        edge = next(iter(ok))
+        src_pkg = edge.split(" -> ")[0].split(".")[0]
+        dst_pkg = edge.split(" -> ")[1].split(".")[0]
+        fake = arch_graph.Edge(
+            src=f"{src_pkg}.zz_fake", dst=f"{dst_pkg}.zz_fake",
+            src_pkg=src_pkg, dst_pkg=dst_pkg, deferred=False, line=1,
+        )
+        import copy
+
+        g2 = copy.copy(_G)
+        g2.edges = list(_G.edges) + [fake]
+        assert f"{src_pkg} -> {dst_pkg}" in arch_graph.layer_violations(g2, _M), (
+            "同一对包上多出一条没被接受的边，却没报违规——例外放行得太宽"
+        )

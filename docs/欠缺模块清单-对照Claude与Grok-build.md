@@ -1895,3 +1895,32 @@ services 模块按老名字引用照常有效。
 第四笔抽 `model_versions` 时漏了 `datetime` / `timezone` 两个 import，35 条红。
 第一版的扫描器把小写名字过滤掉了。换成严格的「未定义名字」分析
 （builtins + 函数参数 + for/with/except 绑定 + 各类 import 全算进已定义）之后为空。
+
+### 18.5 最后三条未声明依赖：三种处理，一个都不是「加进白名单了事」
+
+| 边 | 判断 | 处理 |
+|---|---|---|
+| `sliderule_llm → services.env_flags` | **叶子住错了包**——读环境变量是配置不是业务 | 把 `env_flags` 搬到 `config/`，`services/env_flags.py` 留转出层（28 个调用点不动） |
+| `middlewares → services` | **合理分层**——鉴权本来就要问身份服务（auth_tokens / identity_store） | 在 `may_depend_on` 里声明，写清与 routes 同 rank 的理由 |
+| `services.external_provider_cutover → app` | **有意的探针**——`import app` 探的正是「应用模块能不能加载」 | 新增 `[accepted]` 边级例外，必须写 why |
+
+`[accepted]` 与 `[baseline]` 是**两件事**：baseline 是欠账（只许变少），accepted 是
+「就该这样，原因如下」。grok 的对应物是 Cargo.toml 依赖行上那句注释——
+依赖存在是事实，**为什么存在**得写下来。
+
+四道门槛防它退化成消违规的开关：必须写 why（≥30 字）、例外对应的依赖必须真的
+还在（删了代码要跟着删例外）、总数 ≤5、**一个例外不许放行同一对包上的其它边**
+（违规按包对报、例外按具体边给，漏掉最后这条闸会当场穿底）。
+
+### 18.6 收工时的账
+
+    未声明跨包依赖   4 → 0
+    循环依赖         5 → 0（跨 component 口径；1 组同 crate 内互指，已声明）
+    services 越层    1 → 0
+
+棘轮全部归零，`[baseline]` 三个清单都空了——**这正是它该有的样子**：
+基线是欠账栏，不是永久收容所。
+
+⚠ 顺带咬到一条：`env_flags` 搬家之后，它自己那条「全仓不许手抄词表」的判据
+豁免路径还指着旧家，于是**唯一那份正版词表被自己的判据当成了手抄**。
+搬家要连判据里的路径一起搬。

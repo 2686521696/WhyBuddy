@@ -53,7 +53,7 @@ _state: dict[str, Any] = {
 
 
 def gateway_circuit_enabled() -> bool:
-    from services.env_flags import flag
+    from config.env_flags import flag
 
     return flag("SLIDERULE_GATEWAY_CIRCUIT", default=True)
 

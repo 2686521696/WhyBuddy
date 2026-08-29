@@ -262,18 +262,46 @@ def load_manifest(path: pathlib.Path = MANIFEST) -> dict:
         return tomllib.load(fh)
 
 
+def accepted_edges(manifest: dict) -> Dict[str, str]:
+    """显式例外：`模块 -> 模块` → 为什么接受。
+
+    ⚠ 这是「有意为之、并且写清了理由」，跟 `[baseline]`（欠账、只许变少）
+      是**两件事**。grok 的对应物是 Cargo.toml 依赖行上那句注释
+      （`# CompactionDetail, embedded in CompactionMode::Segments.`）——
+      依赖存在是事实，为什么存在得写下来。
+
+    ⚠ 门槛：必须写 why，而且判据盯着总量。拿它消违规等于把闸关掉。
+    """
+    return {
+        str(item.get("edge", "")).strip(): str(item.get("why", "")).strip()
+        for item in manifest.get("accepted", [])
+        if item.get("edge")
+    }
+
+
 def layer_violations(g: Graph, manifest: dict) -> List[str]:
-    """包与包之间**没有声明过**的依赖边。对应 grok「没声明就编译不过」。"""
+    """包与包之间**没有声明过**的依赖边。对应 grok「没声明就编译不过」。
+
+    ⚠ 一个包对只有在它背后**每一条**具体边都被显式接受时才消失。
+      漏掉这一条的话，一个例外会顺手把同一对包上的其它边一起放行。
+    """
     allowed = {
         name: set(spec.get("may_depend_on", []))
         for name, spec in manifest.get("layer", {}).items()
     }
-    bad: Set[str] = set()
-    for src, dst in g.pkg_edges():
-        if src == "?" or dst == "?":
+    ok_edges = set(accepted_edges(manifest))
+    concrete: Dict[Tuple[str, str], List[str]] = {}
+    for e in g.edges:
+        if e.src_pkg == e.dst_pkg or "?" in (e.src_pkg, e.dst_pkg):
             continue
-        if dst not in allowed.get(src, set()):
-            bad.add(f"{src} -> {dst}")
+        if e.dst_pkg in allowed.get(e.src_pkg, set()):
+            continue
+        concrete.setdefault((e.src_pkg, e.dst_pkg), []).append(f"{e.src} -> {e.dst}")
+    bad: Set[str] = set()
+    for (src, dst), edges in concrete.items():
+        if all(x in ok_edges for x in edges):
+            continue
+        bad.add(f"{src} -> {dst}")
     return sorted(bad)
 
 
