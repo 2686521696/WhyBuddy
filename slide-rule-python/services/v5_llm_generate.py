@@ -16,6 +16,7 @@ North-star discipline (先证通用性，再接 LLM；别把两件事耦合):
 """
 
 from __future__ import annotations
+from .archetype_legal import required_evidence as _required_evidence
 
 import os
 from contextvars import ContextVar
@@ -26,7 +27,10 @@ from sliderule_llm.config import default_max_tokens
 from .enrich_timing import stage as _enrich_stage
 
 # Sections the model must contain — mirrors v5_model_gate.SKILL_KEYS.
-_REQUIRED_SECTIONS = ("datamodel", "rbac", "workflow", "page", "aigc", "appbundle")
+#: ⚠ 2026-08-30：第 10 处手抄的六系统词表（生成契约这一份）。生成侧要产哪几段，
+#: 必须与闸要哪几段同源——不同源就是「生成了五段、闸要六段」这类静默 0/6。
+#: 现在从产品原型账本派生。tuple 语义不变（本模块多处 `in _REQUIRED_SECTIONS`）。
+_REQUIRED_SECTIONS = tuple(_required_evidence())
 
 # 生成调用的输出上限走**全局那一个** `default_max_tokens()`。
 #

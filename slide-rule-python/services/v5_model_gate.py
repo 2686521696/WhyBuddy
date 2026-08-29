@@ -32,10 +32,15 @@ All checks are pure + deterministic. No LLM, no IO.
 """
 
 from __future__ import annotations
+from .archetype_legal import required_evidence as _required_evidence
 
 from typing import Any, Dict, List
 
-SKILL_KEYS = ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"]
+#: ⚠ 2026-08-30：第 11 处手抄的六系统词表——而且是**结构闸自己那一份**。
+#: `v5_llm_generate` 的注释写着 "mirrors v5_model_gate.SKILL_KEYS"，
+#: 「mirror」正是本仓第四条点名的形状：两份靠人肉对齐，改一份不报错。
+#: 现在同源于产品原型账本。
+SKILL_KEYS = _required_evidence()
 
 DANGLING = "PUBLISH_DANGLING_CROSSREF"
 MISSING_SECTION = "PUBLISH_MISSING_SKILL_SECTION"

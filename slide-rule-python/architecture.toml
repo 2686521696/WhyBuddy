@@ -114,6 +114,7 @@ what = "纯工具：不依赖 services 里任何其它模块"
 # 深度 0 实测 117 个：不依赖 services 内任何模块。对应 grok 的叶子 crate。
 may_depend_on = []
 modules = [
+  "services.archetype_legal",
   "services.sql_gateway",
   "services.turn_context",
   "services.page_naming",
@@ -152,7 +153,6 @@ modules = [
   "services.blueprint_stage_edit",
   "services.blueprint_state",
   "services.builtin_examples",
-  "services.closure_relevance",
   "services.composition_root_state",
   "services.connectors",
   "services.device_policy",
@@ -210,7 +210,6 @@ modules = [
   "services.telemetry",
   "services.telemetry_runtime",
   "services.thumb_image",
-  "services.turn_narration",
   "services.v5_design_reference",
   "services.v5_eval_baseline",
   "services.v5_explainable",
@@ -258,6 +257,7 @@ modules = [
   "services.blueprint_main_runtime_closure",
   "services.blueprint_state_runtime",
   "services.closure_block_reason",
+  "services.closure_relevance",
   "services.design_language",
   "services.engine_scheduling",
   "services.enrich_timing",
@@ -288,6 +288,7 @@ modules = [
   "services.spec_semantics",
   "services.task_lifecycle_production_closure",
   "services.theme_tokens",
+  "services.turn_narration",
   "services.v5_agentic_pick",
   "services.v5_closure_summary",
   "services.v5_content_quality",
@@ -659,6 +660,7 @@ modules = [
   "models.agent_loop",
   "models.blueprint_state",
   "models.v5_state",
+  "services.archetype_legal",
   "services.closure_relevance",
   "services.composition_root_state",
   "services.device_policy",

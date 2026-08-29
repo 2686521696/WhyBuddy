@@ -1,0 +1,116 @@
+{
+  "$comment": "产品原型账本——「什么算闭环」的单一真相源（2026-08-30）。此前六系统（datamodel/rbac/workflow/page/aigc/appbundle）写死成全局常量，跨两门语言手抄 10 处，等于把『后台管理系统的闭环定义』当成了全局真理。后果不是难看，是结构性封顶：小游戏没有 datamodel/rbac/workflow，按旧闸永远不可能 gate_passed=true——不是生成得不好，是不允许它存在。同一套路参考 five_system_legal.json（E40.1 四本账收一本）。加原型 = 只改这份 JSON；哪一方没消费到，parity 判据当场红。",
+  "version": 1,
+
+  "$comment_default": "defaultArchetype 是没有显式声明时的兜底。它必须是 wired=true 的，判据 test_默认原型必须是接通的 钉住——否则今天的产品链路会整条 fail-closed。",
+  "defaultArchetype": "business_app",
+
+  "$comment_wired": "wired=false 表示『契约声明了，但生成侧还产不出这些段』。这类原型**不许被选中**，选中即 fail-closed 并说清原因（第七条：闭环类缺证据就是缺，不许伪造绿灯）。它们留在这里是为了让下一个人知道靶子在哪，不是为了让人以为已经能用了——本仓踩过太多次『写好了、有测试、就是没人调它』。",
+
+  "archetypes": {
+    "business_app": {
+      "label": "业务 / 后台应用",
+      "wired": true,
+      "$comment": "今天唯一在跑的原型。requiredEvidence 与 closureEdges 逐字等于 2026-08-29 之前写死在 v5_capability_executor 里的那两个常量——这次改造对它必须是零行为变化，由 test_默认原型与历史常量逐字一致 钉住。",
+      "requiredEvidence": ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"],
+      "closureEdges": [
+        {
+          "sourceSkill": "datamodel",
+          "targetSkill": "rbac",
+          "state": "allowed",
+          "evidenceKey": "DM_RBAC_FIELD_POLICY_EVIDENCE"
+        },
+        {
+          "sourceSkill": "datamodel",
+          "targetSkill": "page",
+          "state": "allowed",
+          "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE"
+        },
+        {
+          "sourceSkill": "rbac",
+          "targetSkill": "workflow",
+          "state": "allowed",
+          "evidenceKey": "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE"
+        },
+        {
+          "sourceSkill": "workflow",
+          "targetSkill": "page",
+          "state": "allowed",
+          "evidenceKey": "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE"
+        },
+        {
+          "sourceSkill": "page",
+          "targetSkill": "appbundle",
+          "state": "allowed",
+          "evidenceKey": "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+        },
+        {
+          "sourceSkill": "aigc",
+          "targetSkill": "appbundle",
+          "state": "allowed",
+          "evidenceKey": "AIGC_APPBUNDLE_RUNTIME_EVIDENCE"
+        }
+      ]
+    },
+
+    "casual_game": {
+      "label": "小游戏 / 互动玩法",
+      "wired": false,
+      "$comment": "⚠ 契约先立，生成侧未接。小游戏没有实体表、没有角色权限、没有审批流——六系统那套一样也套不上，硬套的结果是三个空段顶着『已闭环』。这里的闭环判据换成玩法自己的：有没有主循环、输入响应、胜负/结束条件、渲染面。**闸一条都没放松**，只是换了该问的问题。接通它要做的事：生成侧产出这五段 _model_section + 结构闸认识这些段。",
+      "requiredEvidence": ["gameloop", "input", "outcome", "render", "appbundle"],
+      "closureEdges": [
+        {
+          "sourceSkill": "gameloop",
+          "targetSkill": "outcome",
+          "state": "allowed",
+          "evidenceKey": "LOOP_OUTCOME_TERMINATION_EVIDENCE"
+        },
+        {
+          "sourceSkill": "input",
+          "targetSkill": "gameloop",
+          "state": "allowed",
+          "evidenceKey": "INPUT_LOOP_RESPONSE_EVIDENCE"
+        },
+        {
+          "sourceSkill": "gameloop",
+          "targetSkill": "render",
+          "state": "allowed",
+          "evidenceKey": "LOOP_RENDER_FRAME_EVIDENCE"
+        },
+        {
+          "sourceSkill": "render",
+          "targetSkill": "appbundle",
+          "state": "allowed",
+          "evidenceKey": "RENDER_APPBUNDLE_SURFACE_EVIDENCE"
+        }
+      ]
+    },
+
+    "glance_app": {
+      "label": "手表 / 一瞥式应用",
+      "wired": false,
+      "$comment": "⚠ 契约先立，生成侧未接。手表表盘的闭环不是『页面之间关联对不对』，是『一瞥能不能读完』：数据源、瞥读面、复杂功能位（complication）。页面导航壳在这里是负资产——glance 面不该有面包屑。接通它要做的事同上。",
+      "requiredEvidence": ["datasource", "glance", "complication", "appbundle"],
+      "closureEdges": [
+        {
+          "sourceSkill": "datasource",
+          "targetSkill": "glance",
+          "state": "allowed",
+          "evidenceKey": "SOURCE_GLANCE_FRESHNESS_EVIDENCE"
+        },
+        {
+          "sourceSkill": "datasource",
+          "targetSkill": "complication",
+          "state": "allowed",
+          "evidenceKey": "SOURCE_COMPLICATION_BINDING_EVIDENCE"
+        },
+        {
+          "sourceSkill": "glance",
+          "targetSkill": "appbundle",
+          "state": "allowed",
+          "evidenceKey": "GLANCE_APPBUNDLE_SURFACE_EVIDENCE"
+        }
+      ]
+    }
+  }
+}

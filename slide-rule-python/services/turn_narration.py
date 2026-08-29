@@ -16,6 +16,7 @@ E13 早就把叙述放进会话状态（文件 / HTTPS SQL 网关同一份 blob�
 """
 
 from __future__ import annotations
+from .archetype_legal import required_evidence as _required_evidence
 
 import re
 import time
@@ -86,14 +87,10 @@ _SKILL_LABELS: Dict[str, str] = {
     "appBundle": "应用装配",
 }
 
-_SKILL_EMIT_ORDER = [
-    "datamodel",
-    "rbac",
-    "workflow",
-    "page",
-    "aigc",
-    "appbundle",
-]
+#: ⚠ 2026-08-30：这份曾是 `v5_full_driver._SKILL_EMIT_ORDER` 的**手抄第二份**。
+#: 两份都写死同样六个字面量，改一份不改另一份不报错，只让左栏与 SSE 的点亮顺序
+#: 悄悄错开（第四条）。现在两份同源。
+_SKILL_EMIT_ORDER = _required_evidence()
 
 _SKIP_THINK_PREFIXES = ("phase_changed:", "loop_timing:")
 

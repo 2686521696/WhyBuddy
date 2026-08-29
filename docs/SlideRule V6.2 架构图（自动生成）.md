@@ -14,8 +14,8 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **274** 个，模块 **274** 个
-- 内部依赖边 **782** 条，其中 **463** 条写在函数体里（59%）
+- 扫描文件 **275** 个，模块 **275** 个
+- 内部依赖边 **789** 条，其中 **463** 条写在函数体里（58%）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
@@ -25,8 +25,8 @@
 
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
-| `util` | 121 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
-| `core` | 53 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
+| `util` | 120 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `core` | 55 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 28 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
 叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import 的全部理由，也是 `import` 不必躲进函数体的前提。
@@ -41,7 +41,7 @@ flowchart TB
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>13 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>202 个模块<br/>业务"]
+  services["services<br/>203 个模块<br/>业务"]
   routes["routes<br/>12 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -108,7 +108,7 @@ flowchart LR
   ops_scripts["ops_scripts<br/>37"]
   permission["permission<br/>8"]
   persist["persist<br/>2"]
-  platform["platform<br/>16"]
+  platform["platform<br/>17"]
   run_control["run_control<br/>4"]
   spec_first["spec_first<br/>34"]
   task_exec["task_exec<br/>19"]
@@ -169,7 +169,7 @@ flowchart LR
   model_core -->|18| llm_gateway
   model_core -->|6| observability
   model_core -->|2| persist
-  model_core -->|39| platform
+  model_core -->|43| platform
   model_core -->|11| run_control
   model_core -->|15| spec_first
   observability -->|2| llm_gateway
@@ -190,7 +190,7 @@ flowchart LR
   spec_first -->|3| app_store
   spec_first -->|35| llm_gateway
   spec_first -->|3| observability
-  spec_first -->|33| platform
+  spec_first -->|34| platform
   spec_first -->|1| run_control
   task_exec -->|2| evidence
   task_exec -->|4| platform

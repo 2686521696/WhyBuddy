@@ -32,6 +32,9 @@
       ],
       "@design-systems": [
         "./slide-rule-python/services/data/design_systems.json"
+      ],
+      "@archetypes": [
+        "./slide-rule-python/services/data/product_archetypes.json"
       ]
     }
   }

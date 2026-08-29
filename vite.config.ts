@@ -246,6 +246,12 @@ export default defineConfig(() => {
           import.meta.dirname,
           "slide-rule-python/services/data/identity_theme_presets.json"
         ),
+        // 产品原型账本：「什么算闭环」的单一真相源。前端 skills 的六系统清单
+        // 由 parity 判据锁在这份账本上（第四条：同一件事的第二处）。
+        "@archetypes": path.resolve(
+          import.meta.dirname,
+          "slide-rule-python/services/data/product_archetypes.json"
+        ),
         "@design-systems": path.resolve(
           import.meta.dirname,
           "slide-rule-python/services/data/design_systems.json"

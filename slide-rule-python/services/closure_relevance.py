@@ -52,6 +52,7 @@ Dice 虽然负例更干净，但正例最低只有 0.50，贴着阈值没余量�
 """
 
 from __future__ import annotations
+from .archetype_legal import required_evidence as _required_evidence
 
 import re
 from typing import Any, Dict, List, Sequence
@@ -133,7 +134,12 @@ def collect_model_terms(model: Any) -> List[str]:
         return []
 
     terms: List[str] = []
-    for section in ("datamodel", "workflow", "rbac", "page", "aigc", "appbundle"):
+    # ⚠ 2026-08-30：第 13 处手抄，顺序同样与主表不同。本模块是**标定过的**
+    #   （模块头有标定集与阈值对照），所以改之前实测了顺序敏感性：
+    #   `goal_coverage` 取的是最大相似度、`collect_model_terms` 结尾去重，
+    #   200 次随机打乱 score 与 passed 完全一致 → 顺序无关，可以同源。
+    #   **别跳过这一步**：第六条说标定过的参数不许拍脑袋改。
+    for section in _required_evidence():
         _collect_named_terms(model.get(section), terms)
 
     rbac = model.get("rbac")

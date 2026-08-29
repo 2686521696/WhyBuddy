@@ -113,46 +113,22 @@ def _refine_reuse_note_from_pages(state: Optional["V5SessionState"] = None) -> s
         return ""
     return str(blob.get("refineReuseNote") or "").strip()
 
-REQUIRED_EVIDENCE_KEYS = ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"]
+#: ⚠ 2026-08-30：这两个曾经是写死的字面量，而**六样缺一样就不算闭环**——
+#: 等于把「后台管理系统的闭环定义」当成了全局真理，小游戏/表盘结构上不可能过闸
+#: （没有实体表/角色/审批流，永远 0/6）。现在从产品原型账本派生。
+#:
+#: **名字与类型都没变**（仍是 list），全部老引用零改动——同 schema_legal 当初
+#: 把四本账收成一本时的做法。变的只是来源：改闭环定义 = 只改
+#: `services/data/product_archetypes.json`。
+#:
+#: ⚠ 别在这里加 `.append(...)`：`required_evidence()` 每次返回新 list，
+#: 就地改只会污染这一个模块的副本，而闸有 10 个消费点。要加就加进账本。
+from .archetype_legal import closure_edges as _closure_edges
+from .archetype_legal import required_evidence as _required_evidence
 
-RUNTIME_CLOSURE_EDGES = [
-    {
-        "sourceSkill": "datamodel",
-        "targetSkill": "rbac",
-        "state": "allowed",
-        "evidenceKey": "DM_RBAC_FIELD_POLICY_EVIDENCE",
-    },
-    {
-        "sourceSkill": "datamodel",
-        "targetSkill": "page",
-        "state": "allowed",
-        "evidenceKey": "DM_PAGE_BINDING_IMPACT_EVIDENCE",
-    },
-    {
-        "sourceSkill": "rbac",
-        "targetSkill": "workflow",
-        "state": "allowed",
-        "evidenceKey": "RBAC_WORKFLOW_ASSIGNEE_EVIDENCE",
-    },
-    {
-        "sourceSkill": "workflow",
-        "targetSkill": "page",
-        "state": "allowed",
-        "evidenceKey": "WORKFLOW_PAGE_TASK_SURFACE_EVIDENCE",
-    },
-    {
-        "sourceSkill": "page",
-        "targetSkill": "appbundle",
-        "state": "allowed",
-        "evidenceKey": "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE",
-    },
-    {
-        "sourceSkill": "aigc",
-        "targetSkill": "appbundle",
-        "state": "allowed",
-        "evidenceKey": "AIGC_APPBUNDLE_RUNTIME_EVIDENCE",
-    },
-]
+REQUIRED_EVIDENCE_KEYS = _required_evidence()
+
+RUNTIME_CLOSURE_EDGES = _closure_edges()
 
 PURCHASE_APPROVAL_INTENT_MARKERS = [
     "purchase approval",

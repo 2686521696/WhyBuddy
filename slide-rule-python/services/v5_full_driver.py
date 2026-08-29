@@ -5,6 +5,7 @@ This replaces the entire Node V5 loop with Python RAG-backed execution.
 All capabilities now produce real evidence via RAG, no templates, no degraded, no su8 issues.
 """
 
+from .archetype_legal import required_evidence as _required_evidence
 import os
 import time
 from typing import Dict, Any, AsyncGenerator, List, Literal, Optional
@@ -831,7 +832,10 @@ def extract_model_from_closure(closure) -> "Optional[Dict[str, Any]]":
         else getattr(closure, "perSkillEvidence", None)
     ) or {}
     model: Dict[str, Any] = {}
-    for skill in ("datamodel", "workflow", "rbac", "page", "aigc", "appbundle"):
+    # ⚠ 2026-08-30：这里曾是第 12 处手抄，且顺序与另外 11 处不同
+    #   （workflow/rbac 调换）——正因为顺序不同，"搜同一串字面量"的复查会漏掉它。
+    #   本函数只是按 key 取段建 dict，顺序无关。
+    for skill in _required_evidence():
         ev = per_skill.get(skill) or {}
         section = ev.get("modelSection") if isinstance(ev, dict) else getattr(ev, "modelSection", None)
         if section is None:
@@ -1550,10 +1554,13 @@ def _cap_to_skill_id(cap: str) -> str:
     return "appBundle"
 
 
-# Order in which the 5-system skills are emitted after closure (cross-skill
-# dependency order: datamodel is the SSOT root; appbundle is the assembly root).
-# Matches RUNTIME_CLOSURE_EDGES direction so the UI lights systems in causal order.
-_SKILL_EMIT_ORDER = ["datamodel", "rbac", "workflow", "page", "aigc", "appbundle"]
+# 闭环之后按什么顺序点亮各系统（跨技能依赖序：datamodel 是 SSOT 根，
+# appbundle 是装配根），与闭环边同向，UI 才能按因果顺序亮。
+#
+# ⚠ 2026-08-30：原来是写死的六个字面量，而 `turn_narration.py:89` 还有**第二份
+#   同名常量**——两份手抄，改一份不改另一份不会报错，只会让左栏和 SSE 的点亮
+#   顺序悄悄错开（第四条）。现在两份都从产品原型账本派生。
+_SKILL_EMIT_ORDER = _required_evidence()
 
 # publishClosure.perSkillEvidence uses lowercase keys; the frontend SkillId type
 # uses camelCase. Map so skill_start/skill_result carry the frontend-facing id.
