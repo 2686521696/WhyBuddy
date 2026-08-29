@@ -742,9 +742,13 @@ def build_spec_prompt(
     # 产品宪章：opt-in 关着时 charter_prompt_block() 是空串，parts 跟从前
     # 逐字节一致（test_refine缺席时_prompt与从前逐字一致）。删这一行，
     # test_product_charter_opt_in 的活路径判据必须红。
-    # ⚠ 两块都取自叶子 turn_context，不取自 product_charter / v5_llm_generate：
+    # ⚠ 三块都取自叶子 turn_context，不取自 product_charter / v5_llm_generate：
     #   那两个都在**被这条链调用**的一侧，反过来 import 就成环（见叶子模块头）。
-    from services.turn_context import charter_prompt_block, connector_prompt_block
+    from services.turn_context import (
+        charter_prompt_block,
+        clarification_prompt_block,
+        connector_prompt_block,
+    )
 
     charter = charter_prompt_block()
     if charter:
@@ -752,6 +756,13 @@ def build_spec_prompt(
     connectors = connector_prompt_block()
     if connectors:
         parts.append(connectors)
+    # 开工前用户答过的澄清（硬约束）。⚠ 2026-08-29 之前这一块**只接在老生成器
+    # `_build_user_content` 上**，而 spec-first 成功时根本不跑它——于是卡片答完、
+    # 缺口关掉、闸变绿，生成侧一个字都没看到。它自己的注释写着「少了它，前面问得
+    # 再漂亮也只是让用户多点了几下」，描述的正是它当时的处境。
+    clarified_block = clarification_prompt_block()
+    if clarified_block:
+        parts.append(clarified_block)
     if clarified.strip():
         parts.append(f"澄清与假设（第 1 步产物）：\n{clarified.strip()}")
     if evidence.strip():

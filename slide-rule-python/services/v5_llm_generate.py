@@ -621,12 +621,15 @@ from .turn_context import (  # noqa: F401  （下游按老路径 import，保持
     MAX_CONNECTORS as _MAX_CONNECTORS,
     MAX_INSTALLED_SKILLS as _MAX_INSTALLED_SKILLS,
     SKILL_CHANNELS as _SKILL_CHANNELS,
+    _clarifications_var,
     _connectors_var,
     _installed_skills_var,
     active_connectors,
+    clarification_prompt_block,
     connector_prompt_block,
     installed_skills_for_channel,
     set_active_connectors_cleaned as _store_connectors,
+    set_clarifications,
     set_installed_skills_cleaned as _store_installed_skills,
 )
 
@@ -711,24 +714,6 @@ def set_active_connectors(connectors: "Optional[List[Dict[str, Any]]]") -> None:
         )
 
 
-_clarifications_var: ContextVar[Optional[List[Dict[str, str]]]] = ContextVar(
-    "sliderule_clarifications", default=None
-)
-
-
-def set_clarifications(pairs: "Optional[List[Dict[str, str]]]") -> None:
-    """本轮开工前用户答过的澄清问答。传 None / 空即清空。"""
-    cleaned: List[Dict[str, str]] = []
-    for row in pairs or []:
-        if not isinstance(row, dict):
-            continue
-        q = str(row.get("q") or "").strip()
-        a = str(row.get("a") or "").strip()
-        if q and a:
-            cleaned.append({"q": q[:240], "a": a[:400]})
-    _clarifications_var.set(cleaned or None)
-
-
 def clarifications_from_state(state: Any) -> List[Dict[str, str]]:
     """从状态里捡出**答过的**澄清问答（resolved 且留了答案的 open_question）。
 
@@ -745,30 +730,6 @@ def clarifications_from_state(state: Any) -> List[Dict[str, str]]:
         if q and a:
             out.append({"q": q, "a": a})
     return out
-
-
-def clarification_prompt_block() -> str:
-    """开工前问清楚的那几条 → 一段"用户已经答过，按这个来"的硬约束。
-
-    ⚠ **原样带上问题和答案**，不要压缩成一句概括。压缩之后模型只知道
-      "用户提过审批"，不知道用户选的是"主管审批"还是"HR 审批"——而这两个
-      在权限与工作流里是完全不同的两张图。
-
-    ⚠ 这块是澄清这条链的**最后一环**。少了它，前面问得再漂亮也只是让用户
-      多点了几下：卡片答完、缺口关掉、闸变绿，而生成侧一个字都没多看到。
-    """
-    pairs = _clarifications_var.get() or []
-    if not pairs:
-        return ""
-    lines = [
-        "The user already answered these clarifying questions before this run "
-        "started. Treat every answer as a HARD requirement of this app — do not "
-        "contradict it, do not re-decide it, and reflect it in the systems it "
-        "touches (roles, workflow, pages, fields):"
-    ]
-    for row in pairs:
-        lines.append(f"- Q: {row['q']}\n  A: {row['a']}")
-    return "\n".join(lines)
 
 
 def set_installed_skills(skills: "Optional[List[Dict[str, Any]]]") -> None:

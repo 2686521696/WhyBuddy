@@ -229,8 +229,15 @@ class CoverageGap(BaseModel):
     questionId: Optional[str] = None
     clarifyKind: Optional[str] = None
     # 用户答的原话。resolve 时写在缺口上，生成侧照原样带进提示词
-    # （见 v5_llm_generate.clarification_prompt_block）——只关不留答案的话，
+    # （见 services/turn_context.clarification_prompt_block）——只关不留答案的话，
     # 澄清就白问了：闸是绿了，模型什么也没多知道。
+    #
+    # ⚠ 2026-08-29：上面这句"生成侧照原样带进提示词"在这一天之前**是不成立的**。
+    #   那个块当时只被 `v5_llm_generate._build_user_content` 读，而那是 spec-first
+    #   失败时的回落生成器——正常一轮根本不跑它。也就是说：卡片答完、缺口关掉、
+    #   闸变绿，而生成侧一个字都没看到，跟"只关不留答案"是同一个结果。
+    #   现在 `spec_tree.build_spec_prompt` 跟宪章/连接器一样拼它，
+    #   判据 tests/test_turn_blocks_reach_the_live_chain.py 盯着这条链。
     answer: Optional[str] = None
 
 class CoverageContract(BaseModel):

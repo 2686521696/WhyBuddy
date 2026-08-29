@@ -2473,3 +2473,121 @@ grok 90 个 crate 全在 workspace 里，**被依赖数为 0 的只有装配根*
     模块级：未声明依赖 0 · 环 0 · services 越层 0 · 显式例外 0
     组  级：未声明组间依赖 0 · 组间环 2（17 → 13 → 8 → 6 → 5 → 2）
     成员：  没人 import 的模块 54（新立棘轮，只许变少）
+
+---
+
+## 27. 生成链搬家时，**六块"本轮上下文"被落在了老生成器上**（2026-08-29）
+
+§24 那个连接器 bug 修完，顺手查了一句：**别的上下文块是不是也接错了地方？**
+是的，而且不止一块。
+
+### 27.1 前提：老生成器不是产品路
+
+    v5_capability_executor:  if model is None and not _block_gen5:
+                                 model = generate_five_system_model(goal, ...)
+
+`generate_five_system_model`（以及它拼 prompt 的 `_build_user_content`）是
+**spec-first 失败时的回落**。正常一轮 spec-first 成功，它根本不跑。
+
+`product_charter` 的模块头 2026-08 就点过这个名：
+
+> 注入点必须是 spec-first / scope_card 真正读上下文的地方。
+> 只接在 `v5_llm_generate._build_user_content` 上等于接在不通电的插座——
+> **默认生成路径是 spec-first**。
+
+宪章按这句话接对了，连接器（§24 之后）也接对了。**剩下的没跟上。**
+
+### 27.2 实测：spec-first 七步一处都不读技能
+
+```
+set_installed_skills([aigc 一条, experience 一条, unbound 一条])
+build_spec_prompt(...)            → prompt 里出现技能名：False
+_build_user_content(...)          → prompt 里出现技能名：['损耗率环比统计', '随手记一笔']
+```
+
+grep 也印证：`spec_tree / spec_page_html / page_shell / html_structure /
+spec_semantics / model_assembly / design_language / spec_first_pipeline`
+**八个文件里 `installed_skills` 出现 0 次**。
+
+盘下来六块：
+
+| 块 | 现在接在哪 | 生效吗 |
+|---|---|---|
+| 产品宪章 | spec_tree.build_spec_prompt | ✅ |
+| 连接器实体 | 同上 + 第 6 步确定性补录 | ✅（§24 才修好） |
+| 开工前澄清 | **老生成器** | ❌ → 本轮接上 |
+| 已安装技能 aigc | 老生成器 | ❌ |
+| 已安装技能 unbound | 老生成器 | ❌ |
+| 已安装技能 experience | identity_theme_gen（2026-08-03 整段摘除） | ❌ |
+
+### 27.3 澄清这一块本轮接上了，另外三块没有
+
+**接了澄清**，因为它不是新的产品主张，是一条明显的断线：产品把问题问出去、
+把答案记下来、把缺口置 resolved、闸变绿——**而生成侧一个字都没看到**。
+它自己的注释写着：
+
+> ⚠ 这块是澄清这条链的**最后一环**。少了它，前面问得再漂亮也只是让用户多点了几下：
+> 卡片答完、缺口关掉、闸变绿，而生成侧一个字都没多看到。
+
+这段话描述的正是它自己当时的处境。`models/v5_state.py` 里 `answer` 字段旁边那句
+"生成侧照原样带进提示词"，在这一天之前**也是不成立的**——两处注释都已订正。
+
+**没接技能那三块**，因为那是产品判断不是重构：aigc 通道会给每一轮加一条
+「必须为它产出一条能力卡」的硬要求，直接改变生成结果、还跟结构闸互动；
+experience 通道要复活得先复活 2026-08-03 被用户裁决摘掉的那一步。
+这些该由用户拍板，不该我顺手带上。
+
+### 27.4 真正的产出：把这一类变成一张有闸的表
+
+同一形状的 bug 一天内抓到三次，说明**缺的不是某个修复，是这一类的判据**。
+`tests/test_turn_blocks_reach_the_live_chain.py` 就是那张表：每块只有两种合法状态，
+
+    LIVE      塞进去，然后在**真实的 build_spec_prompt 输出**里找得到
+    STRANDED  在真实 prompt 里找不到，且这里写清为什么没接
+
+**两个方向都验。** 只验 LIVE，"某块被悄悄摘掉"会漏；只验 STRANDED，
+"某块被接上了但没人知道它已经在改变每一轮生成"也会漏。
+
+再加两条钉前提的：老生成器的回落条件没变（`if model is None and not _block_gen5`）、
+spec-first 八步里 `installed_skills` 出现 0 次——**前提塌了，整张表的判定就反了**。
+
+变异实测：撤回澄清接线 → LIVE 那条红；把技能接上而不改表 → STRANDED 那条红；
+摘掉宪章块 → 另一个文件的判据红。
+
+### 27.5 澄清这条线的真机验证：做到哪一步，如实写
+
+**没拿到真机前后对照**，两次都卡在同一处：
+
+    第一次  PUT 少了必填的 createdAt → 422，而脚本照样跑完一整轮（那轮作废）
+    第二次  PUT 返回 ok:true，但读回来 coverageGaps 仍是 []
+
+第二次不是 bug，是**设计如此**。`routes/sliderule_full.py:821` 的 exclude 名单里
+写着 coverageGaps 是服务端的——「澄清问题由控制面写、答案由控制面落在缺口上，
+客户端只读着渲染卡片」（2026-08-27 加的，理由是陈旧 PUT 会把刚问出来的问题整组
+抹掉，卡片凭空消失）。**从 HTTP 这个缝里种不进一条答过的澄清**，这是对的。
+
+所以拿到的是**分层证据**，不是一次端到端真机跑：
+
+    活路径上有人 set   drive_full_factory 里 `set_clarifications(clarifications_from_state(state))`
+                       —— 判据 + 变异（删掉那行，两条红）
+    筛选逻辑对         只认 resolved ∧ 留了答案 ∧ kind=open_question —— 四组样本判据
+    set → 叶子 → prompt  同进程实测：塞进去，`build_spec_prompt` 输出里逐字找得到
+                       （ContextVar 是同一个对象，`is` 判过）
+    清空后不留痕       反向判据
+
+**唯一没验的一环**：真机上控制面写答案那一步。要验得走真正的多轮范围卡对话
+（控制面问 → 用户答 → 缺口 resolved），那是另一个脚本的活，留给下一轮。
+
+⚠ 顺带把一个**我自己差点写成结论的东西**记下来。第一轮（澄清没种进去）产出里
+`CNY` 出现、`JPY` 不出现，看着像个漂亮的负对照——"这题的默认倾向是 CNY，
+将来补上真机对照，JPY 就是干净的信号"。
+
+**第二轮同样没种进澄清，JPY 出现了。**
+
+两轮都没有澄清，一轮有 JPY 一轮没有——所以 JPY 根本不是这题的干净标记，
+是跨境电商题材下的模型自然波动。差一步就把一次运气写成了判据。
+
+结论只剩一条：**这个探针的标记选错了**。将来真要跑澄清的真机对照，得挑一个
+不带澄清时**几乎不可能出现**的答案（比如一个自造的术语或 id），
+而不是"日元"这种题材里本来就会飘出来的词。第五条的老账：判据要落在
+只有被测的那件事才能造成的差别上。

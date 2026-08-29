@@ -127,6 +127,59 @@ def connector_prompt_block() -> str:
     return "\n".join(lines)
 
 
+# ================================================================= 开工前的澄清
+#
+# 用户在范围卡上答过的那几条问答。跟技能/连接器同一请求域模式，
+# 由 drive_full_factory 在开工时 set、结束必清空。
+#
+# ⚠ 2026-08-29 从 v5_llm_generate 搬过来，**同时接上产品路**。搬之前它只被
+#   `_build_user_content` 读，而那是老生成器——spec-first 成功时根本不跑它。
+#   也就是说这块的自述（「少了它，前面问得再漂亮也只是让用户多点了几下」）
+#   描述的正是它自己当时的处境：卡片答完、缺口关掉、闸变绿，生成侧一个字都没看到。
+#   现在 `spec_tree.build_spec_prompt` 跟宪章/连接器一样拼它。
+
+_clarifications_var: ContextVar[Optional[List[Dict[str, str]]]] = ContextVar(
+    "sliderule_clarifications", default=None
+)
+
+
+def set_clarifications(pairs: "Optional[List[Dict[str, str]]]") -> None:
+    """本轮开工前用户答过的澄清问答。传 None / 空即清空。"""
+    cleaned: List[Dict[str, str]] = []
+    for row in pairs or []:
+        if not isinstance(row, dict):
+            continue
+        q = str(row.get("q") or "").strip()
+        a = str(row.get("a") or "").strip()
+        if q and a:
+            cleaned.append({"q": q[:240], "a": a[:400]})
+    _clarifications_var.set(cleaned or None)
+
+
+def clarification_prompt_block() -> str:
+    """开工前问清楚的那几条 → 一段"用户已经答过，按这个来"的硬约束。
+
+    ⚠ **原样带上问题和答案**，不要压缩成一句概括。压缩之后模型只知道
+      "用户提过审批"，不知道用户选的是"主管审批"还是"HR 审批"——而这两个
+      在权限与工作流里是完全不同的两张图。
+
+    ⚠ 这块是澄清这条链的**最后一环**。少了它，前面问得再漂亮也只是让用户
+      多点了几下：卡片答完、缺口关掉、闸变绿，而生成侧一个字都没多看到。
+    """
+    pairs = _clarifications_var.get() or []
+    if not pairs:
+        return ""
+    lines = [
+        "The user already answered these clarifying questions before this run "
+        "started. Treat every answer as a HARD requirement of this app — do not "
+        "contradict it, do not re-decide it, and reflect it in the systems it "
+        "touches (roles, workflow, pages, fields):"
+    ]
+    for row in pairs:
+        lines.append(f"- Q: {row['q']}\n  A: {row['a']}")
+    return "\n".join(lines)
+
+
 # ================================================================= 产品宪章
 #
 # 用户自己的行业约束，opt-in 才进推演。**存取那一半留在 services.product_charter**
