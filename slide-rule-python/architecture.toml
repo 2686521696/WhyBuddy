@@ -57,6 +57,244 @@ what = "运维脚本"
 may_depend_on = ["config", "models", "services", "routes", "sliderule_llm", "app", "middlewares"]
 
 
+# ── services 内部分层（抄 grok 的叶子 crate）──────────────────────────────────
+#
+# grok 把 51 个共用叶子（token 估算、路径、文件工具…）切成独立 crate，依赖方向
+# 由编译器焊死：大块能用叶子，叶子永远碰不到大块。我们 195 个 services 模块平铺
+# 在一个命名空间里，谁都能 import 谁——这正是「463 条 import 藏在函数体里」的根：
+# 放在文件头会循环导入，只好挪进函数体。
+#
+# ⚠ 这份分层是**从今天的真实依赖深度算出来的**（arch_graph.suggest_services_layers），
+#   不是重新设计。它是一条棘轮基线：先把现状固定成契约，此后只许变好。
+#   别把它读成「架构本该如此」。
+#
+# ⚠ 同层之间互相依赖是允许的（util 层实测没有内部边，core/flow 有）。
+#   闸只挡**越层向上**：叶子碰上层、core 碰 flow。
+#
+# ⚠ 新加模块要落进某一层。落不进说明它既不是工具也不是编排——那通常意味着
+#   它该被拆成两个。
+
+[services_layer.util]
+rank = 0
+what = "纯工具：不依赖 services 里任何其它模块"
+# 深度 0 实测 117 个：不依赖 services 内任何模块。对应 grok 的叶子 crate。
+may_depend_on = []
+modules = [
+  "services.a2a_core_route_cutover",
+  "services.a2a_production_transport_ownership_closure",
+  "services.a2a_runtime",
+  "services.a2a_session_stream_runtime_slice",
+  "services.agent_loop_event_schema",
+  "services.agent_loop_paths",
+  "services.agent_loop_redaction",
+  "services.agent_loop_settings",
+  "services.agent_loop_state_reducer",
+  "services.app_access",
+  "services.app_preview",
+  "services.app_screenshot",
+  "services.attachment_extract",
+  "services.audit_durable_store_retention_takeover",
+  "services.audit_retention_export",
+  "services.audit_sink",
+  "services.auth_tokens",
+  "services.blueprint_artifact_memory",
+  "services.blueprint_event_bus_runtime_takeover",
+  "services.blueprint_job_event_stream",
+  "services.blueprint_job_runtime",
+  "services.blueprint_job_store_runtime_takeover",
+  "services.blueprint_job_store_scope_decision",
+  "services.blueprint_ledger_runtime_takeover",
+  "services.blueprint_preview_state_runtime_takeover",
+  "services.blueprint_production_denominator_reconciliation",
+  "services.blueprint_production_ownership_closure",
+  "services.blueprint_prompt_package_runtime_takeover",
+  "services.blueprint_prompt_preview",
+  "services.blueprint_replan_runtime_takeover",
+  "services.blueprint_review_export",
+  "services.blueprint_shell_state_cutover",
+  "services.blueprint_stage_edit",
+  "services.blueprint_state",
+  "services.builtin_examples",
+  "services.closure_relevance",
+  "services.connectors",
+  "services.device_policy",
+  "services.env_flags",
+  "services.executor_dispatch_decisions",
+  "services.executor_event_projection",
+  "services.external_dependency_live_smoke",
+  "services.freeform_preview_store",
+  "services.full_migration_note",
+  "services.identity_palette_hint",
+  "services.knowledge_admin_runtime",
+  "services.llm_channel",
+  "services.llm_error_text",
+  "services.mcp_runtime",
+  "services.mcp_tools",
+  "services.merge_patch",
+  "services.mission_event_replay",
+  "services.nl_command_runtime",
+  "services.page_edit_blocks",
+  "services.page_reconstruction",
+  "services.palette_guard",
+  "services.permission_audit_durable_store_boundary",
+  "services.permission_audit_hooks",
+  "services.permission_audit_policy_store_cutover",
+  "services.permission_audit_production_ownership_closure",
+  "services.permission_management",
+  "services.permission_policy_store_takeover",
+  "services.permission_rate_limit",
+  "services.rbac_roles",
+  "services.repeat_policy",
+  "services.request_context",
+  "services.role_runtime",
+  "services.run_cancel",
+  "services.run_degradation",
+  "services.schema_legal",
+  "services.sheet_palette",
+  "services.skill_runtime",
+  "services.slide_rule_budget",
+  "services.slide_rule_interactive_gates",
+  "services.slide_rule_trust",
+  "services.sliderule_session_sanitizer",
+  "services.spec_llm_call",
+  "services.stock_images",
+  "services.task_durable_mission_store_takeover",
+  "services.task_event_persistence_takeover",
+  "services.task_executor_runtime",
+  "services.task_lifecycle_durable_ownership_closure",
+  "services.task_lifecycle_runtime",
+  "services.task_mission_store_runtime_slice",
+  "services.task_production_denominator_reconciliation",
+  "services.task_project_auth_runtime_takeover",
+  "services.task_scheduler_runtime_takeover",
+  "services.task_store",
+  "services.task_store_auth_scheduler_cutover",
+  "services.telemetry",
+  "services.telemetry_runtime",
+  "services.thumb_image",
+  "services.turn_narration",
+  "services.v5_design_reference",
+  "services.v5_eval_baseline",
+  "services.v5_explainable",
+  "services.v5_publish_closure_response",
+  "services.v5_skill_packages",
+  "services.v5_skill_reference",
+  "services.v5_skill_runtime_graph",
+  "services.vector_rag",
+  "services.web_aigc_ai_ppt_adapter",
+  "services.web_aigc_device_location_adapter",
+  "services.web_aigc_dynamic_chart_adapter",
+  "services.web_aigc_external_provider_ownership_closure",
+  "services.web_aigc_file_adapter",
+  "services.web_aigc_media_adapter",
+  "services.web_aigc_ocr_static_adapter",
+  "services.web_aigc_open_adapter",
+  "services.web_aigc_orchestration_adapter",
+  "services.web_aigc_provider_closure",
+  "services.web_aigc_real_provider_live_contract",
+  "services.web_aigc_real_provider_readiness",
+  "services.web_aigc_search_adapter",
+  "services.web_aigc_transaction_flow_adapter",
+  "services.web_aigc_web_qa_adapter",
+  "services.workflow_runtime",
+]
+
+[services_layer.core]
+rank = 1
+what = "核心：模型 / 闸 / 闭环 / 生成件"
+# 深度 1~2。
+may_depend_on = ["util"]
+modules = [
+  "services.agent_loop_artifacts",
+  "services.agent_loop_event_store",
+  "services.agent_loop_events",
+  "services.agent_loop_legacy_adapter",
+  "services.agent_loop_process_registry",
+  "services.agent_loop_provider_health",
+  "services.agent_loop_python_worker",
+  "services.app_store",
+  "services.app_template",
+  "services.block_assembler",
+  "services.block_narrowing",
+  "services.block_proposer",
+  "services.blueprint_main_runtime_closure",
+  "services.blueprint_state_runtime",
+  "services.closure_block_reason",
+  "services.design_language",
+  "services.enrich_timing",
+  "services.external_provider_cutover",
+  "services.final_provider_a2a_scope_reconciliation",
+  "services.html_bindings",
+  "services.html_structure",
+  "services.identity_store",
+  "services.intake_judge",
+  "services.mailer",
+  "services.model_assembly",
+  "services.node_bridge_runtime",
+  "services.page_archetypes",
+  "services.page_assembler",
+  "services.page_blocks",
+  "services.page_id_freeze",
+  "services.page_shell",
+  "services.rag_ingestion",
+  "services.rag_service",
+  "services.refine_page_scope",
+  "services.run_pause",
+  "services.run_registry",
+  "services.session_blob_store",
+  "services.slide_rule_coverage",
+  "services.slide_rule_llm",
+  "services.slide_rule_orchestrator",
+  "services.spec_page_html",
+  "services.spec_semantics",
+  "services.task_lifecycle_production_closure",
+  "services.theme_tokens",
+  "services.v5_agentic_pick",
+  "services.v5_closure_summary",
+  "services.v5_content_quality",
+  "services.v5_llm_judge",
+  "services.v5_model_gate",
+  "services.v5_model_repair",
+  "services.v5_parallel_generate",
+  "services.web_aigc_vision_audio_adapter",
+]
+
+[services_layer.flow]
+rank = 2
+what = "编排：驱动器 / 流水线 / 控制面 / 会话"
+# 深度 >=3。这一层是 grok 里 xai-grok-shell 那种大块，内部随便缠没关系，
+# 但**不许被下面两层反过来依赖**。
+may_depend_on = ["util", "core"]
+modules = [
+  "services.agent_loop_bridge",
+  "services.agent_loop_runs",
+  "services.app_graph",
+  "services.app_working_session",
+  "services.auth_service",
+  "services.capability_maps",
+  "services.component_preset_store",
+  "services.cost_ledger",
+  "services.drive_full_factory",
+  "services.freeform_block",
+  "services.identity_theme_gen",
+  "services.persistence",
+  "services.product_charter",
+  "services.refine_graph_scope",
+  "services.refine_short_circuit",
+  "services.rehearsal_control",
+  "services.slide_rule_executor",
+  "services.slide_rule_full_executor",
+  "services.slide_rule_marathon",
+  "services.slide_rule_session",
+  "services.spec_first_pipeline",
+  "services.spec_tree",
+  "services.v5_capability_executor",
+  "services.v5_full_driver",
+  "services.v5_llm_generate",
+  "services.v5_session_driver",
+]
+
+
 # ── 棘轮基线 ────────────────────────────────────────────────────────────────
 #
 # 存量违规与环冻在这里，判据只比「有没有变多」。**这份清单只许变短。**
@@ -74,6 +312,9 @@ violations = [
   "services -> app",
   "services -> routes",
   "sliderule_llm -> services",
+]
+services_violations = [
+  "core -> flow :: services.page_shell -> services.spec_tree",
 ]
 cycles = [
   "routes.sliderule_full -> services.rehearsal_control -> routes.sliderule_full",

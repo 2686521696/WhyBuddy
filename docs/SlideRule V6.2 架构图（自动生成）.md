@@ -18,6 +18,17 @@
 - 内部依赖边 **761** 条，其中 **463** 条写在函数体里（60%）
 - 未声明的跨包依赖 **4** 条（基线 4 条）
 - 模块级循环依赖 **5** 个（基线 5 个）
+- services 内部越层依赖 **1** 条（基线 1 条）
+
+### services 内部分层（抄 grok 的叶子 crate）
+
+| 层 | 模块数 | 可以依赖 | 是什么 |
+|---|---|---|---|
+| `util` | 117 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `core` | 52 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
+| `flow` | 26 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
+
+叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import 的全部理由，也是 `import` 不必躲进函数体的前提。
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
 
@@ -71,3 +82,9 @@ Rust 里这一类根本编译不出来；Python 得自己数。**只许变少。
 - `services -> app`
 - `services -> routes`
 - `sliderule_llm -> services`
+
+## services 内部越层依赖
+
+叶子碰了上层，或 core 碰了 flow。**只许变少。**
+
+- `core -> flow :: services.page_shell -> services.spec_tree`

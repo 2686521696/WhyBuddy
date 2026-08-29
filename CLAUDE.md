@@ -131,6 +131,15 @@ slide-rule-python/.venv/bin/python slide-rule-python/arch_graph.py --check   # �
 ⚠ 函数体里的 import **一样算数**。全仓 62% 的内部 import 在函数体里，
 不算就等于默认放行三分之二，而且「把 import 挪进函数」会变成一句话绕过闸的办法。
 
+`services` 内部还分三层（抄 grok 的叶子 crate，声明在同一个 toml 里）：
+
+    util  117 个  纯工具，**不依赖 services 里任何其它模块**
+    core   52 个  模型 / 闸 / 闭环，只能依赖 util
+    flow   26 个  驱动器 / 流水线 / 控制面，可以依赖 core 与 util
+
+新写的 services 模块要落进某一层，落不进通常说明它该被拆成两个。
+叶子层是「import 不必躲进函数体」的前提——它谁都不依赖，所以谁都能安全 import 它。
+
 ## 部署
 
 镜像由 `.github/workflows/deploy-images.yml` 在 main 推送后构建到 ghcr。

@@ -318,6 +318,7 @@ def emit_mermaid(g: Graph, manifest: dict) -> str:
 def render_doc(g: Graph, manifest: dict) -> str:
     cycles = find_cycles(g)
     violations = layer_violations(g, manifest)
+    svc_v = services_violations(g, manifest)
     base = manifest.get("baseline", {})
     deferred = sum(1 for e in g.edges if e.deferred)
     body = [
@@ -342,6 +343,24 @@ def render_doc(g: Graph, manifest: dict) -> str:
         f"（{deferred * 100 // max(1, len(g.edges))}%）",
         f"- 未声明的跨包依赖 **{len(violations)}** 条（基线 {len(base.get('violations', []))} 条）",
         f"- 模块级循环依赖 **{len(cycles)}** 个（基线 {len(base.get('cycles', []))} 个）",
+        f"- services 内部越层依赖 **{len(svc_v)}** 条"
+        f"（基线 {len(base.get('services_violations', []))} 条）",
+        "",
+        "### services 内部分层（抄 grok 的叶子 crate）",
+        "",
+        f"| 层 | 模块数 | 可以依赖 | 是什么 |",
+        f"|---|---|---|---|",
+    ] + [
+        f"| `{name}` | {len(spec.get('modules', []))} | "
+        f"{'、'.join(spec.get('may_depend_on', [])) or '（谁都不依赖）'} | {spec.get('what', '')} |"
+        for name, spec in sorted(
+            manifest.get("services_layer", {}).items(),
+            key=lambda kv: kv[1].get("rank", 99),
+        )
+    ] + [
+        "",
+        "叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import "
+        "的全部理由，也是 `import` 不必躲进函数体的前提。",
         "",
         "虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。",
         "",
@@ -369,6 +388,13 @@ def render_doc(g: Graph, manifest: dict) -> str:
             body.append(f"- `{v}`")
     else:
         body.append("（当前没有）")
+    body += ["", "## services 内部越层依赖", "",
+             "叶子碰了上层，或 core 碰了 flow。**只许变少。**", ""]
+    if svc_v:
+        for v in svc_v:
+            body.append(f"- `{v}`")
+    else:
+        body.append("（当前没有）")
     body.append("")
     return "\n".join(body)
 
@@ -380,6 +406,7 @@ def _freeze(g: Graph, manifest: dict) -> None:
     text = MANIFEST.read_text(encoding="utf-8")
     v = layer_violations(g, manifest)
     c = find_cycles(g)
+    sv = services_violations(g, manifest)
 
     def block(name: str, items: Iterable[str]) -> str:
         rows = "".join(f'  "{i}",\n' for i in items)
@@ -387,8 +414,11 @@ def _freeze(g: Graph, manifest: dict) -> None:
 
     text = re.sub(r"violations = \[[^\]]*\]", block("violations", v), text, flags=re.S)
     text = re.sub(r"cycles = \[[^\]]*\]", block("cycles", c), text, flags=re.S)
+    text = re.sub(
+        r"services_violations = \[[^\]]*\]", block("services_violations", sv), text, flags=re.S
+    )
     MANIFEST.write_text(text, encoding="utf-8")
-    print(f"基线已写入：违规 {len(v)} 条，环 {len(c)} 个")
+    print(f"基线已写入：违规 {len(v)} 条，环 {len(c)} 个，services 越层 {len(sv)} 条")
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -402,6 +432,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     g = build_graph()
     manifest = load_manifest()
     v, c = layer_violations(g, manifest), find_cycles(g)
+    sv = services_violations(g, manifest)
     base = manifest.get("baseline", {})
 
     if args.emit:
@@ -421,19 +452,99 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"循环依赖 {len(c)}（基线 {len(base.get('cycles', []))}）")
         for x in c:
             print(f"   {x}")
+        print(f"services 内部越层 {len(sv)}（基线 {len(base.get('services_violations', []))}）")
+        for x in sv:
+            print(f"   {x}")
         if not args.check:
             return 0
 
     new_v = sorted(set(v) - set(base.get("violations", [])))
     new_c = sorted(set(c) - set(base.get("cycles", [])))
-    if new_v or new_c:
+    new_s = sorted(set(sv) - set(base.get("services_violations", [])))
+    if new_v or new_c or new_s:
         for x in new_v:
             print(f"❌ 新增未声明依赖：{x}")
         for x in new_c:
             print(f"❌ 新增循环依赖：{x}")
+        for x in new_s:
+            print(f"❌ services 内部新增越层依赖：{x}")
         return 1
     print("✅ 没有新增的未声明依赖或循环")
     return 0
+
+
+
+# ── services 内部分层（抄 grok 的叶子 crate）────────────────────────────────
+#
+# grok 把 51 个共用叶子（token 估算、路径、文件工具…）切成独立 crate，
+# 依赖方向由编译器焊死：大块能用叶子，叶子永远碰不到大块。
+# 我们 195 个 services 模块平铺在一个命名空间里，谁都能 import 谁——
+# 这正是「463 条 import 藏在函数体里」的根。
+#
+# ⚠ 分层是**从今天的真实依赖深度算出来的**，不是重新设计。它是一条棘轮基线：
+#   先把现状固定成契约，此后只许变好。别把它读成"架构本该如此"。
+SERVICES_LAYERS = ("util", "core", "flow")
+
+
+def services_depth(g: "Graph") -> Dict[str, int]:
+    """services 内部的依赖深度。0 = 不依赖 services 里任何其它模块。
+
+    环上就地截断——环的存在本身由 find_cycles 单独管，这里只要一个稳定的分层。
+    """
+    inside = {m for m in g.modules if m.startswith("services.")}
+    out: Dict[str, Set[str]] = {}
+    for e in g.edges:
+        if e.src in inside and e.dst in inside and e.src != e.dst:
+            out.setdefault(e.src, set()).add(e.dst)
+    depth: Dict[str, int] = {}
+
+    def walk(m: str, seen: Tuple[str, ...]) -> int:
+        if m in depth:
+            return depth[m]
+        if m in seen:
+            return 0
+        vals = [walk(x, seen + (m,)) + 1 for x in out.get(m, ())]
+        depth[m] = max(vals) if vals else 0
+        return depth[m]
+
+    sys.setrecursionlimit(10000)
+    for m in sorted(inside):
+        walk(m, ())
+    return depth
+
+
+def suggest_services_layers(g: "Graph") -> Dict[str, List[str]]:
+    """按深度分三档。分界线是数出来的，不是拍的：
+
+        深度 0      117 个  纯叶子 → util
+        深度 1..2    52 个  → core
+        深度 >=3     26 个  编排（驱动器 / 流水线 / 控制面）→ flow
+    """
+    depth = services_depth(g)
+    buckets: Dict[str, List[str]] = {k: [] for k in SERVICES_LAYERS}
+    for m, d in depth.items():
+        buckets["util" if d == 0 else "core" if d <= 2 else "flow"].append(m)
+    return {k: sorted(v) for k, v in buckets.items()}
+
+
+def services_violations(g: "Graph", manifest: dict) -> List[str]:
+    """services 内部越层依赖：叶子碰了上层、core 碰了 flow。"""
+    spec = manifest.get("services_layer", {})
+    if not spec:
+        return []
+    owner: Dict[str, str] = {}
+    for layer, cfg in spec.items():
+        for m in cfg.get("modules", []):
+            owner[m] = layer
+    allowed = {k: set(v.get("may_depend_on", [])) | {k} for k, v in spec.items()}
+    bad: Set[str] = set()
+    for e in g.edges:
+        a, b = owner.get(e.src), owner.get(e.dst)
+        if a is None or b is None:
+            continue
+        if b not in allowed.get(a, set()):
+            bad.add(f"{a} -> {b} :: {e.src} -> {e.dst}")
+    return sorted(bad)
 
 
 if __name__ == "__main__":

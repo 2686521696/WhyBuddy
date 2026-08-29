@@ -183,12 +183,96 @@ class Test闸能被真的绕过吗:
             [sys.executable, str(arch_graph.ROOT / "arch_graph.py"), "--check"],
             capture_output=True, text=True,
         )
-        now_v = set(arch_graph.layer_violations(_G, _M))
-        now_c = set(arch_graph.find_cycles(_G))
         base = _M.get("baseline", {})
-        clean = not (now_v - set(base.get("violations", []))) and not (
-            now_c - set(base.get("cycles", []))
+        # ⚠ 三项都要算进来。少算一项，命令行红而这里判 clean，判据会**误报**——
+        #   而误报的闸下一个人会直接注释掉（§14.2 记过这个形状）。
+        clean = (
+            not (set(arch_graph.layer_violations(_G, _M)) - set(base.get("violations", [])))
+            and not (set(arch_graph.find_cycles(_G)) - set(base.get("cycles", [])))
+            and not (
+                set(arch_graph.services_violations(_G, _M))
+                - set(base.get("services_violations", []))
+            )
         )
         assert (r.returncode == 0) == clean, (
             f"命令行闸与 pytest 判据结论不一致：exit={r.returncode} clean={clean}\n{r.stdout}"
         )
+
+
+class Test叶子层不许碰上层:
+    """抄 grok 的叶子 crate：他们把 51 个共用工具切成独立 crate，依赖方向由
+    编译器焊死——大块能用叶子，叶子永远碰不到大块。
+
+    我们 195 个 services 模块平铺在一个命名空间里，谁都能 import 谁，
+    **这正是「463 条 import 藏在函数体里」的根**：放文件头会循环导入，只好挪进
+    函数体。分层之后方向被钉住，环没地方长，import 才有可能挪回文件头。
+
+    ⚠ 分层是从今天的真实依赖深度算出来的（棘轮基线），不是重新设计。
+      所以今天只有 1 条越层——闸的价值在**从今往后**，不在此刻抓到多少。
+    """
+
+    def test_分层声明覆盖了每个services模块(self):
+        """⚠ 先钉住覆盖率：漏掉的模块不受任何约束，而判据看不出来。"""
+        spec = _M.get("services_layer", {})
+        assert spec, "architecture.toml 没有 services_layer 声明"
+        declared = {m for cfg in spec.values() for m in cfg.get("modules", [])}
+        actual = {m for m in _G.modules if m.startswith("services.")}
+        missing = sorted(actual - declared)
+        assert not missing, (
+            f"这些 services 模块没落进任何一层，等于不受约束：{missing[:8]}"
+            f"（共 {len(missing)} 个）。新模块要落进 util / core / flow 之一。"
+        )
+
+    def test_没有模块被分进两层(self):
+        """⚠ 反向判据：一个模块在两层里，闸的结论就取决于遍历顺序。"""
+        spec = _M.get("services_layer", {})
+        seen: dict = {}
+        dup = []
+        for layer, cfg in spec.items():
+            for m in cfg.get("modules", []):
+                if m in seen:
+                    dup.append(f"{m}（{seen[m]} 与 {layer}）")
+                seen[m] = layer
+        assert not dup, f"这些模块被分进了两层：{dup}"
+
+    def test_util层实测确实是叶子(self):
+        """util 的全部意义就是「不依赖 services 内任何模块」。
+        这条一旦不成立，它就不再能被所有人安全 import，也就没资格叫叶子。"""
+        spec = _M.get("services_layer", {})
+        util = set(spec.get("util", {}).get("modules", []))
+        assert len(util) > 50, f"util 只有 {len(util)} 个，分层没生成对"
+        bad = sorted(
+            f"{e.src} -> {e.dst}"
+            for e in _G.edges
+            if e.src in util and e.dst.startswith("services.") and e.dst != e.src
+        )
+        assert not bad, f"util 层有模块依赖了 services 内其它模块：{bad[:6]}"
+
+    def test_没有新增的越层依赖(self):
+        now = set(arch_graph.services_violations(_G, _M))
+        base = set(_M.get("baseline", {}).get("services_violations", []))
+        new = sorted(now - base)
+        assert not new, (
+            f"services 内部新增了越层依赖：{new}\n"
+            f"叶子不许碰上层、core 不许碰 flow。要么调整代码，要么"
+            f"在 architecture.toml 里把模块挪到合适的层（并说明为什么）。"
+        )
+
+    def test_越层基线只许变短(self):
+        now = set(arch_graph.services_violations(_G, _M))
+        base = set(_M.get("baseline", {}).get("services_violations", []))
+        stale = sorted(base - now)
+        assert not stale, f"这些越层已经修好了，从 baseline 里删掉：{stale}"
+
+    def test_分层规则本身不许反向(self):
+        """⚠ 反向判据：rank 高的可以依赖 rank 低的，反过来不行。
+        规则写反了闸照样绿——它只会忠实地执行一条错规则。"""
+        spec = _M.get("services_layer", {})
+        rank = {k: v.get("rank", 99) for k, v in spec.items()}
+        for name, cfg in spec.items():
+            for dep in cfg.get("may_depend_on", []):
+                assert dep in spec, f"{name} 依赖了不存在的层 {dep}"
+                assert rank[dep] < rank[name], (
+                    f"{name}(rank={rank[name]}) 声明可以依赖 {dep}(rank={rank[dep]})"
+                    f"——方向反了，这条规则会把越层放行"
+                )
