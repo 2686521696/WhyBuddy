@@ -184,3 +184,194 @@ class Test别名是历史_不跟着版本回退:
         assert "merge_page_id_aliases" in window, (
             "版本回退整份替换了 specFirstPages 却没合并别名表——回退一次菜单就废"
         )
+
+
+class Test回退的HTTP路也保住别名:
+    """⚠ 2026-08-29：上面那条修复**自己就是「只改一半」**（CLAUDE.md 第四条）。
+
+    合并当时补在 `rehearsal_control._tool_restore`（控制面工具）里，而前端
+    版本条那颗 ◀ 按钮走的是 `POST /sessions/{sid}/model-versions/{id}/restore`
+    → `routes.sliderule_full._restore_model_version_locked` —— **不经过控制面**。
+    那一行 `state.specFirstPages = target.get("specFirstPages") or None` 于是
+    照旧把整份（连同别名表）清空。
+
+    而且这条路上清空是**常态不是例外**：`_PAGES_KEPT_VERSIONS = 1`，早于最近
+    一版的快照页面已经被降级阶梯抹成 None，所以往回退一步以上必然踩到
+    `or None`。真机 sr-it-065848-A 的 mv-1/mv-2 快照都是「带页 0 别名 0」。
+
+    修法：合并搬进两条路**共用的那个核**，调用方一个都不用改。
+    这条判据直接调那个核，把上面那条 grep 式判据顶掉的正是它——
+    grep 判据在合并从 rehearsal_control 搬走之后会变红（那是好事，说明它
+    咬的是位置），但只有这条能证明**行为**对。
+    """
+
+    @staticmethod
+    def _restore(monkeypatch, live_pages, target_pages, mismatch=False, rebuilt=None):
+        import routes.sliderule_full as srf
+        from services import v5_full_driver as drv
+        from services import v5_llm_generate as gen
+        from services import v5_publish_closure_response as pcr
+        from services import v5_skill_runtime_graph as srg
+
+        model = {"datamodel": {"v": 1}, "rbac": {}, "workflow": {}, "aigc": {}}
+        state = V5SessionState(sessionId="sr-test-restore", goal={"text": "x"})
+        state.specFirstPages = live_pages
+        state.modelVersions = [
+            {"id": "mv-1", "model": model, "specFirstPages": target_pages},
+            {"id": "mv-2", "model": {**model, "datamodel": {"v": 2}}},
+        ]
+        state.currentModelVersionId = "mv-2"
+
+        saved = {}
+        monkeypatch.setattr(srf, "load_session", lambda sid: state)
+        monkeypatch.setattr(srf, "save_session", lambda s: saved.setdefault("s", s) or s)
+
+        # ⚠ 真身在重建过程中会 persist_state 三次。这个替身把**重建那一刻看见
+        #   的交付物**记下来，判据据此证明"落库的那几笔里没有被抹空的版本"。
+        seen = {}
+
+        def _rebuild(s, *a, **k):
+            seen["pages"] = getattr(s, "specFirstPages", None)
+            if rebuilt is not None:
+                s.specFirstPages = rebuilt
+            return s
+
+        monkeypatch.setattr(drv, "_ensure_runtime_closure_evidence", _rebuild)
+        monkeypatch.setattr(
+            drv,
+            "extract_model_from_closure",
+            (lambda c: {**model, "datamodel": {"v": 99}}) if mismatch else (lambda c: model),
+        )
+        monkeypatch.setattr(pcr, "derive_publish_closure_response", lambda s: {"ok": True})
+        monkeypatch.setattr(srg, "derive_skill_runtime_graph_response", lambda s: None)
+        monkeypatch.setattr(gen, "set_model_override", lambda m: None)
+        monkeypatch.setattr(gen, "set_refine_context", lambda *a, **k: None)
+
+        out = srf._restore_model_version_locked("sr-test-restore", "mv-1")
+        if mismatch:
+            assert getattr(out, "status_code", None) == 409, out
+        else:
+            assert out.get("restored") is True, out
+        return state.specFirstPages, seen.get("pages")
+
+    def test_目标快照被降级抹空时别名要留下(self, monkeypatch):
+        """最常见的那一种：往回退一步，快照的页早被 _PAGES_KEPT_VERSIONS 抹了。"""
+        got, _ = self._restore(
+            monkeypatch,
+            live_pages={"pages": {"rx_audit": "<html>甲</html>"},
+                        "pageIdAliases": {"p1": "rx_audit"}},
+            target_pages=None,
+        )
+        assert (got or {}).get("pageIdAliases") == {"p1": "rx_audit"}, (
+            "回退把别名表冲掉了——交付 HTML 里按 p1 写死的菜单锚点当场点不动"
+        )
+
+    def test_页面照旧跟着版本回退(self, monkeypatch):
+        """⚠ 反向判据：别把「保住别名」做成「保住上一版的页」。
+
+        那是 D8 那个病的交付物版本——指针回到 v1、右侧还是 v3 的页面。
+        """
+        got, _ = self._restore(
+            monkeypatch,
+            live_pages={"pages": {"rx_audit": "<html>新</html>"},
+                        "pageIdAliases": {"p1": "rx_audit"}},
+            target_pages=None,
+        )
+        assert not (got or {}).get("pages"), "页面必须跟着版本走，不许拿新版的页冒充旧版"
+
+    def test_目标快照自己带别名时两边都在(self, monkeypatch):
+        got, _ = self._restore(
+            monkeypatch,
+            live_pages={"pages": {}, "pageIdAliases": {"p2": "stock_move"}},
+            target_pages={"pages": {"rx_audit": "<html>甲</html>"},
+                          "pageIdAliases": {"p1": "rx_audit"}},
+        )
+        assert (got or {}).get("pageIdAliases") == {
+            "p1": "rx_audit",
+            "p2": "stock_move",
+        }
+        assert (got or {}).get("pages") == {"rx_audit": "<html>甲</html>"}
+
+    def test_两边都没别名时不留空壳(self, monkeypatch):
+        """没有别名可留就老老实实置空——留个 {"pageIdAliases": {}} 会让
+
+        `state.specFirstPages is None` 这类判定（app_working_session 有一处）
+        看见一份"有东西"的空壳。
+        """
+        got, _ = self._restore(monkeypatch, live_pages={"pages": {}}, target_pages=None)
+        assert got is None, got
+
+
+class Test回退失败不许把交付页烧掉:
+    """⚠ 2026-08-29 真机 sr-it-065848-A：**409「指针未移动」骗了人。**
+
+    原来的顺序是 先抹页 → 重建 → D8 判定。而重建内部有三处 `persist_state`
+    （capability_start / complete / error），核心集合都在增长，单调守卫一路
+    放行——抹空的那份**在判定之前就落了库**。于是 409 返回「指针未移动」，
+    库里 `payload->'specFirstPages'->'pages'` 已经不存在：回退前 6 张交付页，
+    回退失败之后 0 张，右侧当场变空。
+
+    ⚠ 而且补不回来：同一个 lastTurnId 再 save 一次会被单调守卫退回旧值
+    （specFirstPages 不在豁免键里）。所以唯一的修法是**判完再动手**，
+    不是"出错了再回滚"。
+
+    照 grok-build `verify_published`：先跑、回读比对、判完再提交。
+    """
+
+    def test_重建期间交付物一个字都没动(self):
+        """最直接的那条：重建那一刻看见的，必须还是回退前那份。
+
+        ⚠ 这条盯的是**时序**，不是终值。只看终值的判据会被"先抹后补"骗过去
+        ——而落库正好发生在中间那一段。
+        """
+        import pytest
+
+        live = {"pages": {"rx_audit": "<html>甲</html>"},
+                "pageIdAliases": {"p1": "rx_audit"}}
+        mp = pytest.MonkeyPatch()
+        try:
+            _, seen = Test回退的HTTP路也保住别名._restore(mp, live_pages=live, target_pages=None)
+        finally:
+            mp.undo()
+        assert seen == live, (
+            f"重建开始时交付物已经被改成 {seen}——重建里的 persist_state 会把它落库，"
+            "而 D8 随后可能判 409，那时页就再也回不来了"
+        )
+
+    def test_D8判不通过时页原样留着(self):
+        import pytest
+
+        live = {"pages": {"rx_audit": "<html>甲</html>"},
+                "pageIdAliases": {"p1": "rx_audit"}}
+        mp = pytest.MonkeyPatch()
+        try:
+            got, seen = Test回退的HTTP路也保住别名._restore(
+                mp, live_pages=live, target_pages=None, mismatch=True
+            )
+        finally:
+            mp.undo()
+        assert got == live, f"409 之后交付物被改成了 {got}"
+        assert seen == live
+
+    def test_重建自己画出新页时不许再抹掉(self):
+        """⚠ 反向判据：别把"判完再动手"做成"判完一律置空"。
+
+        重建是在 set_model_override(目标版本模型) 之下跑的，它画出来的页
+        本来就是目标版本的页——换一块空白才是说谎（跟 D8 同一个病）。
+        """
+        import pytest
+
+        fresh = {"pages": {"rx_audit_v1": "<html>老版</html>"}}
+        mp = pytest.MonkeyPatch()
+        try:
+            got, _ = Test回退的HTTP路也保住别名._restore(
+                mp,
+                live_pages={"pages": {"rx_audit": "<html>新</html>"},
+                            "pageIdAliases": {"p1": "rx_audit"}},
+                target_pages=None,
+                rebuilt=fresh,
+            )
+        finally:
+            mp.undo()
+        assert (got or {}).get("pages") == fresh["pages"], got
+        assert (got or {}).get("pageIdAliases") == {"p1": "rx_audit"}, got

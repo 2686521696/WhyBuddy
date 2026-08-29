@@ -299,19 +299,40 @@ class Test页面跟着版本一起回退:
 
     def test_回退那一处真的会换页面(self):
         """判据钉在路由源码上：这条线断了不会有任何用例变红
-        （回退照常成功、模型照常正确，只有页面是上一版的）。"""
+        （回退照常成功、模型照常正确，只有页面是上一版的）。
+
+        ⚠ 2026-08-29 改写。原判据 grep 的是**那一行的字面**
+        （`state.specFirstPages = target.get("specFirstPages") or None`）。
+        它咬住的是位置，不是语义——而位置正好是后来出事的地方：那一行原本
+        坐在闭环重建**之前**，重建内部三处 persist_state 会把抹空的交付物
+        当场落库，随后 D8 判 409 报「指针未移动」，页却已经没了（真机
+        sr-it-065848-A：回退前 6 张，409 之后 0 张，且单调守卫让它补不回来）。
+
+        修法是把这一刀挪到判决之后，于是那句字面消失、判据变红——**修对了
+        反而红**，正是本仓第五条说的"盯语义别盯字面"。
+
+        现在这条只管**次序**（换页必须在判决之后），换页本身的行为判据在
+        tests/test_page_id_aliases_survive_refine.py::Test回退失败不许把交付页烧掉。
+        """
         import pathlib
 
         src = (pathlib.Path(__file__).resolve().parents[1]
                / "routes/sliderule_full.py").read_text(encoding="utf-8")
         block = src[src.index("def restore_model_version"):]
         block = block[: block.index("\n@router")] if "\n@router" in block else block
-        assert 'state.specFirstPages = target.get("specFirstPages") or None' in block, (
+        # 剥注释再找：本仓踩过"grep 到的词其实在注释里"。
+        code = "\n".join(
+            line for line in block.splitlines() if not line.lstrip().startswith("#")
+        )
+        assert 'target.get("specFirstPages") or None' in code, (
             "回退没换页面——指针回到 v1，右侧还是 v3 的页"
         )
-        # ⚠ `or None` 是关键：目标版本没有页面时要**置空**，
-        #   保留当前的等于拿另一版的页面冒充这一版的
-        assert "or None" in block
+        verdict = code.index("closure_rebuild_mismatch")
+        assign = code.index('target.get("specFirstPages") or None')
+        assert assign > verdict, (
+            "换页坐在 D8 判决之前——重建里的 persist_state 会把它落库，"
+            "而判决可能随后 409：那时指针没动、页已经没了，且补不回来"
+        )
 
 
 class Test循环的进展判据:
@@ -354,3 +375,74 @@ class Test循环的进展判据:
 
         src = inspect.getsource(drv.drive_full_v5_session_stream)
         assert "no_progress_streak >= 2" in src
+
+
+class Test回退时页面要真的落库:
+    """⚠ 2026-08-29 真机 sr-it-B-072108：**指针动了、页没跟着动。**
+
+    回退成功（restored=true、currentModelVersionId=mv-1），库里却还是 mv-2
+    那五张页——五个 md5 与精修轮逐字节相同。查下来在持久层：
+
+        回退这一笔天生没有任何集合增长（artifacts / capabilityRuns /
+        conversation / reasoningEvents / replayLog 全都不变）
+          → _is_same_turn_progress = False（实测）
+          → 同轮守卫「退回旧核」
+          → 只有豁免名单里的字段活下来：publishClosure、skillRuntimeGraph、
+            modelVersions、currentModelVersionId、turnNarrations
+          → specFirstPages 不在名单里 → 被退回旧值
+
+    表现就是 D8 那个病落在交付物上：UI 显示回到 mv-1，右侧还是 mv-2 的页。
+    路由那一层写得再对也没用——它写了，持久层把它退了回去（本仓第三条：
+    「函数写对了 ≠ 它被调用了」在这里是「写进去了 ≠ 落了库」）。
+
+    ⚠ 豁免必须**挂在指针变化上**，不能无条件加进名单：specFirstPages 与名单里
+    其它几个不同，客户端快照**会**带着它回传，无条件豁免等于给"陈旧同轮快照
+    不许 clobber"开了个口子。
+    """
+
+    @staticmethod
+    def _prior_and_incoming(inc_pointer, inc_pages):
+        prior = V5SessionState(
+            sessionId="g1", goal={"text": "x"}, artifacts=[],
+            lastTurnId="turn-4-drive-full",
+        )
+        prior.modelVersions = [{"id": "mv-1", "model": {}}, {"id": "mv-2", "model": {}}]
+        prior.currentModelVersionId = "mv-2"
+        prior.specFirstPages = {"pages": {"p1": "<html>新版</html>"}}
+        inc = prior.model_copy(deep=True)
+        inc.currentModelVersionId = inc_pointer
+        inc.specFirstPages = inc_pages
+        return prior, inc
+
+    def _write_state(self, prior, inc):
+        from services import persistence
+
+        return persistence._resolve_write_state(prior, inc)
+
+    def test_指针动了页就得跟着落库(self):
+        prior, inc = self._prior_and_incoming("mv-1", {"pages": {"p1": "<html>老版</html>"}})
+        out = self._write_state(prior, inc)
+        assert out.currentModelVersionId == "mv-1"
+        assert (out.specFirstPages or {}).get("pages") == {"p1": "<html>老版</html>"}, (
+            "回退把指针挪了，页却被守卫退回旧值——右侧还是上一版的页"
+        )
+
+    def test_目标版本没有页时如实置空(self):
+        """`_PAGES_KEPT_VERSIONS = 1`，往回退一步的快照页早被抹了，这才是常态。"""
+        prior, inc = self._prior_and_incoming("mv-1", None)
+        out = self._write_state(prior, inc)
+        assert out.specFirstPages is None, (
+            f"该置空却留下了 {out.specFirstPages}——拿另一版的页冒充这一版的"
+        )
+
+    def test_指针没动时陈旧快照照旧不许覆盖页(self):
+        """⚠ 反向判据。这一条就是豁免为什么要挂在指针变化上。
+
+        客户端回传的 state 带着 specFirstPages（useSlideRuleSession 会带），
+        同轮陈旧快照若能覆盖交付页，用户刷新一下就能把刚生成的页打回上一版。
+        """
+        prior, inc = self._prior_and_incoming("mv-2", {"pages": {"p1": "<html>陈旧</html>"}})
+        out = self._write_state(prior, inc)
+        assert (out.specFirstPages or {}).get("pages") == {"p1": "<html>新版</html>"}, (
+            "同轮陈旧快照把交付页 clobber 了——守卫这道口子开大了"
+        )

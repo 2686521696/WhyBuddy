@@ -1451,10 +1451,24 @@ def _restore_model_version_locked(sid: str, version_id: str):
     #   v3 的页面。这跟下面 D8 那条修复（"UI 显示回到 v1、实际跑的还是 v3"）
     #   是同一个病，只是发生在交付物上而不是模型上。
     #
-    #   ⚠ 目标版本没有页面时**置空，不保留当前的**——早于 _PAGES_KEPT_VERSIONS
-    #   的版本会被抹掉页面（见 record_model_snapshot 的容量说明）。那时右侧
-    #   如实回落老区块渲染，而不是拿另一版的页面冒充这一版的。
-    state.specFirstPages = target.get("specFirstPages") or None
+    # ⚠ 但**动手要等到 D8 判完之后**（2026-08-29 真机 sr-it-065848-A）。
+    #   原来这一行坐在重建之前，于是：
+    #
+    #       写 state.specFirstPages = None（目标快照的页早被降级阶梯抹了）
+    #         → _ensure_runtime_closure_evidence 内部有三处 persist_state
+    #           （capability_start / complete / error 各一），核心集合有增长，
+    #           单调守卫放行 → **抹空的那份当场落库**
+    #         → D8 判 closure_rebuild_mismatch，409「指针未移动」
+    #
+    #   指针确实没动，页却已经在库里没了：实测回退前 6 张交付页，409 之后
+    #   `payload->'specFirstPages'->'pages'` 直接不存在。而且**补不回来**——
+    #   同一个 lastTurnId 再 save 一次会被单调守卫退回旧值（specFirstPages
+    #   不在 publishClosure/modelVersions 那几个豁免键里，见
+    #   scripts/backfill_page_id_aliases.py 模块头）。
+    #
+    #   照 grok-build `verify_published` 的顺序：先跑、回读比对、**判完再提交**。
+    #   D8 那段一直只做到"回读比对"，提交与回滚这一步从来没写。
+    _pages_before = getattr(state, "specFirstPages", None)
 
     from services.v5_llm_generate import set_model_override
     from services.v5_full_driver import _ensure_runtime_closure_evidence, record_model_version
@@ -1489,6 +1503,7 @@ def _restore_model_version_locked(sid: str, version_id: str):
         return {k: (m or {}).get(k) for k in ("datamodel", "rbac", "workflow", "aigc")}
 
     if restored_model is None or _core_sections(restored_model) != _core_sections(target["model"]):
+        # 指针不动，交付物也不动——上面刻意什么都没改，这里直接走人即可。
         return JSONResponse(
             status_code=409,
             content={
@@ -1497,6 +1512,40 @@ def _restore_model_version_locked(sid: str, version_id: str):
                 "detail": "回退重建未生效（闭环未承载目标版本模型），指针未移动",
             },
         )
+    # ── 判完了，这才提交交付物 ────────────────────────────────────────────
+    from services.page_id_freeze import merge_page_id_aliases
+
+    _target_pages = target.get("specFirstPages") or None
+    _rebuilt = getattr(state, "specFirstPages", None)
+    if _target_pages:
+        state.specFirstPages = _target_pages
+    elif (_rebuilt or {}).get("pages") == (_pages_before or {}).get("pages"):
+        # 目标版本没带页（早于 _PAGES_KEPT_VERSIONS 的快照会被降级阶梯抹掉），
+        # 重建也没自己画出新的 → 置空。右侧如实回落老区块渲染，而不是拿另一
+        # 版的页面冒充这一版的。
+        state.specFirstPages = None
+    # 重建**自己画出了新页**时（_rebuilt 与回退前不同）保留它：那批页是在
+    # set_model_override(target.model) 之下产出的，本来就是目标版本的页，
+    # 抹掉它换一块空白才是说谎。
+
+    # ⚠ 页面可以回退，**别名不许跟着回退**。别名是历史（"p1 曾经叫
+    #   remote_rx_audit"），一旦被抹掉，交付 HTML 里按老 id 写死的菜单锚点
+    #   当场点不动——照例一声不吭。
+    #
+    #   ⚠ 2026-08-29：这一刀最早只补在 rehearsal_control._tool_restore（控制面
+    #   工具）里，而前端 ◀ 按钮走 POST /model-versions/{id}/restore 直接进这个
+    #   函数——修了一半，另一半静默失效（CLAUDE.md 第四条）。合并因此坐在两条
+    #   路**共用的这个核**里，不在任一条调用方。规则见 merge_page_id_aliases。
+    _merged_aliases = merge_page_id_aliases(
+        (_pages_before or {}).get("pageIdAliases"),
+        (getattr(state, "specFirstPages", None) or {}).get("pageIdAliases"),
+    )
+    if _merged_aliases:
+        # 没页也要把表接住：宁可留一份"只有别名、没有页"的 specFirstPages，
+        # 也不能让老 id 失去落点。右侧看 pages 是否为空，不看这张表。
+        _base = state.specFirstPages if isinstance(state.specFirstPages, dict) else {}
+        state.specFirstPages = {**_base, "pageIdAliases": _merged_aliases}
+
     state.publishClosure = closure
     state.skillRuntimeGraph = derive_skill_runtime_graph_response(state)
     # 指针移动，不追加副本（经典 undo/redo；精修会从当前指针的模型出发）

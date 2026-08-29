@@ -379,7 +379,9 @@ def merge_page_id_aliases(prev: Any, incoming: Any) -> Dict[str, str]:
 
         1. 落库    v5_capability_executor._cache_spec_first_pages
         2. 版本快照 v5_full_driver.record_model_snapshot（随 specFirstPages 整份带走）
-        3. 版本回退 rehearsal_control 的 restore_version
+        3. 版本回退 routes.sliderule_full._restore_model_version_locked
+           （前端 ◀ 按钮的 HTTP 路 与 rehearsal_control 的 restore_version 工具
+           **共用这个核**；2026-08-29 之前只补在工具那一侧，HTTP 那条静默失效）
 
     ## ⚠ 别名是历史，历史不许回退
 

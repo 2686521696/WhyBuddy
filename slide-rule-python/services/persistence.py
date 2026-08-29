@@ -745,6 +745,27 @@ def _resolve_write_state(
                     if getattr(state, "modelVersions", None):
                         projection_updates["modelVersions"] = getattr(state, "modelVersions", None)
                         projection_updates["currentModelVersionId"] = getattr(state, "currentModelVersionId", None)
+                        # ⚠ 2026-08-29 真机 sr-it-B-072108：**指针动了、页没跟着动。**
+                        #   回退路由（routes/sliderule_full._restore_model_version_locked）
+                        #   同时改三样：currentModelVersionId、publishClosure、
+                        #   specFirstPages。前两样在这份豁免名单里，第三样不在——
+                        #   而回退这一笔天生**没有任何集合增长**（_is_same_turn_progress
+                        #   实测 False），于是页被退回旧值：UI 显示回到 mv-1、
+                        #   右侧还是 mv-2 那五张页，一声不吭。这正是 D8 那个病
+                        #   （"显示回到 v1、实际跑的还是 v3"）落在交付物上的版本。
+                        #
+                        #   ⚠ 只在**指针真的变了**的时候豁免，不是无条件豁免。
+                        #   specFirstPages 与上面几个不同：客户端快照**会**带着它
+                        #   （useSlideRuleSession 回传 state 时带 specFirstPages），
+                        #   无条件豁免等于把"陈旧同轮快照不许 clobber"那道保护
+                        #   对交付页开了个口子。而陈旧快照带的是**同一个**指针，
+                        #   进不了这个 if——保护不变，只有回退/前进那一笔通过。
+                        if getattr(prior, "currentModelVersionId", None) != getattr(
+                            state, "currentModelVersionId", None
+                        ):
+                            projection_updates["specFirstPages"] = getattr(
+                                state, "specFirstPages", None
+                            )
                     # E13 turnNarrations 是展示投影（同 publishClosure 类）：客户端
                     # 轮末回传时 lastTurnId 与驱动器终持久化相同且核心无增长，
                     # 不豁免会被同轮守卫连快照一起丢掉

@@ -1648,6 +1648,12 @@ async def _tool_restore(state: V5SessionState, version_id: str) -> Dict[str, Any
             #   别名是**历史**，模型版本可以回退，"p1 曾经是 remote_rx_audit"
             #   这件事永远为真。规则见 page_id_freeze.merge_page_id_aliases
             #   （抄 friendly_id：slug 历史只增，回退内容不删老 slug）。
+            #
+            #   ⚠ 2026-08-29：**主刀已经搬进 _restore_model_version_locked 本身**
+            #   （前端 ◀ 按钮走 HTTP 直接进那个核，不经过这里——当时只补这一处
+            #   等于只改一半）。这里留着的是第二道：`state` 是控制面手里的内存态，
+            #   可能带着还没落库的别名，而那个核读的是 load_session 的那份。
+            #   合并是并集且幂等，两道叠着不会打架。
             from services.page_id_freeze import merge_page_id_aliases
 
             _live = getattr(state, "specFirstPages", None)
