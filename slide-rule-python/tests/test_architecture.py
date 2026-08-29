@@ -107,7 +107,10 @@ class Test循环依赖只许变少:
     """对应 grok 的「循环依赖编译不出来」。Rust 里编译器管，Python 得自己数。"""
 
     def test_没有新增的环(self):
-        now = set(arch_graph.find_cycles(_G))
+        # ⚠ 口径是**跨 component**：同一个「crate」内部互指是允许的（见
+        #   Test同一个crate内部允许互指）。三处（CLI / 这里 / 生成的图）必须同口径，
+        #   少算一项就会误报，而误报的闸下一个人会直接注释掉。
+        now = set(arch_graph.cross_component_cycles(_G, _M))
         base = set(_M.get("baseline", {}).get("cycles", []))
         new = sorted(now - base)
         assert not new, (
@@ -117,7 +120,7 @@ class Test循环依赖只许变少:
         )
 
     def test_基线里的环还在_修好了就删掉(self):
-        now = set(arch_graph.find_cycles(_G))
+        now = set(arch_graph.cross_component_cycles(_G, _M))
         base = set(_M.get("baseline", {}).get("cycles", []))
         stale = sorted(base - now)
         assert not stale, (
@@ -188,7 +191,9 @@ class Test闸能被真的绕过吗:
         #   而误报的闸下一个人会直接注释掉（§14.2 记过这个形状）。
         clean = (
             not (set(arch_graph.layer_violations(_G, _M)) - set(base.get("violations", [])))
-            and not (set(arch_graph.find_cycles(_G)) - set(base.get("cycles", [])))
+            and not (
+                set(arch_graph.cross_component_cycles(_G, _M)) - set(base.get("cycles", []))
+            )
             and not (
                 set(arch_graph.services_violations(_G, _M))
                 - set(base.get("services_violations", []))
@@ -276,3 +281,69 @@ class Test叶子层不许碰上层:
                     f"{name}(rank={rank[name]}) 声明可以依赖 {dep}(rank={rank[dep]})"
                     f"——方向反了，这条规则会把越层放行"
                 )
+
+
+class Test同一个crate内部允许互指:
+    """⚠ 这个概念不是给环开的后门，是把 grok 的模型补全。
+
+    Rust 禁止的是 **crate 之间**成环；**同一个 crate 内部的模块可以互相引用**。
+    实测 grok-build：`xai-grok-tools` 内有 8 组互相引用的模块对、
+    `xai-grok-shell` 内 15 组，其中 `implementations ⇄ registry` 与我们
+    `capability_maps ⇄ slide_rule_executor` 形状完全一样（注册表与实现互指）。
+
+    我们的模块粒度比 crate 细，所以要显式声明谁跟谁是一个 crate。
+    **闸没有变松**：跨 component 的环照样红，下面第一条钉的就是这个。
+    """
+
+    def test_跨component的环照样红(self):
+        """⚠ 最要紧的一条。这个概念要是把跨组的环也放行了，闸就废了。"""
+        g = _G
+        owner = arch_graph.component_of(_M)
+        fake = dict(_M)
+        # 造一个「两个模块分属不同 component」的环，确认它不会被放行
+        cyc = "services.a -> services.b -> services.a"
+        fake_manifest = {
+            "component": {
+                "x": {"modules": ["services.a"]},
+                "y": {"modules": ["services.b"]},
+            }
+        }
+        import unittest.mock as mock
+
+        with mock.patch.object(arch_graph, "find_cycles", lambda _g: [cyc]):
+            assert arch_graph.cross_component_cycles(g, fake_manifest) == [cyc], (
+                "跨 component 的环被放行了——闸废了"
+            )
+            same = {"component": {"x": {"modules": ["services.a", "services.b"]}}}
+            assert arch_graph.cross_component_cycles(g, same) == [], (
+                "同一个 component 内部互指没被放行——那 grok 的模型就没抄对"
+            )
+
+    def test_没声明component的模块_成环照样红(self):
+        """⚠ 反向判据：默认是严的。不写声明 = 不许成环。"""
+        import unittest.mock as mock
+
+        with mock.patch.object(
+            arch_graph, "find_cycles", lambda _g: ["services.p -> services.q -> services.p"]
+        ):
+            assert arch_graph.cross_component_cycles(_G, {}) != []
+
+    def test_每个component都写了理由(self):
+        """⚠ 门槛：得能说清「它们为什么是一个东西」，而不是「它们碰巧成环」。
+        把不相干的模块塞进同一个 component 来消环，等于把闸关掉。"""
+        comps = _M.get("component", {})
+        assert comps, "没有 component 声明——如果是有意的，把这条判据一起删掉"
+        for name, spec in comps.items():
+            why = (spec.get("why") or "").strip()
+            assert len(why) >= 30, f"component {name} 没写清为什么它们是一个东西"
+            assert len(spec.get("modules", [])) >= 2, f"component {name} 只有一个模块，没意义"
+
+    def test_component不许无限膨胀(self):
+        """⚠ 把半个仓塞进一个 component 就等于关掉环判据。"""
+        comps = _M.get("component", {})
+        inside = {m for c in comps.values() for m in c.get("modules", [])}
+        total = len({m for m in _G.modules if m.startswith("services.")})
+        assert len(inside) <= max(6, total // 20), (
+            f"component 里塞了 {len(inside)} 个模块（services 共 {total}）——"
+            f"这已经不是「同一个 crate」，是在拿声明消环"
+        )

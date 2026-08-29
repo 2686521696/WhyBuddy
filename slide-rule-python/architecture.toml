@@ -298,6 +298,29 @@ modules = [
 ]
 
 
+# ── component：哪几个模块其实是同一个「crate」──────────────────────────────
+#
+# ⚠ 这不是给环开后门。Rust 禁止的是 **crate 之间**成环，**同一个 crate 内部的
+#   模块可以互相引用**——实测 grok-build：xai-grok-tools 内有 8 组互相引用的
+#   模块对、xai-grok-shell 内有 15 组，其中 `implementations ⇄ registry` 与
+#   下面这一组形状完全一样（注册表与实现互指）。
+#
+#   我们的模块粒度比 crate 细，所以要显式声明。**跨 component 的环照样红**。
+#
+# ⚠ 往这里加东西的门槛：得能说清「它们为什么是一个东西」，而不是「它们碰巧成环」。
+#   把两个不相干的模块塞进同一个 component 来消环，等于把闸关掉。
+
+[component.capability_engine]
+why = """能力执行引擎：slide_rule_executor 是原语与总入口，capability_maps 是
+能力→实现的映射表。两者互相委托是**有意的**——源码注释写着 structure.decompose
+那条分支原本是第二份拷贝，「所以这里改成委托，不再各写一份」。
+拆开会让同一段逻辑再变成两份，那正是这个仓踩过三次的坑。"""
+modules = [
+  "services.capability_maps",
+  "services.slide_rule_executor",
+]
+
+
 # ── 棘轮基线 ────────────────────────────────────────────────────────────────
 #
 # 存量违规与环冻在这里，判据只比「有没有变多」。**这份清单只许变短。**
@@ -318,5 +341,4 @@ violations = [
 services_violations = [
 ]
 cycles = [
-  "services.capability_maps -> services.slide_rule_executor -> services.capability_maps",
 ]

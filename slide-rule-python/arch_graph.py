@@ -221,6 +221,41 @@ def build_graph(root: pathlib.Path = ROOT) -> Graph:
     return g
 
 
+# ── component：同一个「crate」内部允许互相引用 ──────────────────────────────
+#
+# ⚠ 这不是给环开的后门，是把 grok 的模型补全。
+#
+#   Rust 里禁止的是 **crate 之间**成环；**同一个 crate 内部的模块可以互相引用**。
+#   实测 grok-build：`xai-grok-tools` 内有 8 组互相引用的模块对、`xai-grok-shell`
+#   内有 15 组，其中 `implementations ⇄ registry` 与我们
+#   `capability_maps ⇄ slide_rule_executor` 形状完全一样（注册表与实现互指）。
+#
+#   我们的模块粒度比 crate 细，所以要显式声明「哪几个模块其实是同一个 crate」。
+#   声明要写理由，而且**跨 component 的环照样红**——闸没有变松，只是量对了东西。
+def component_of(manifest: dict) -> Dict[str, str]:
+    owner: Dict[str, str] = {}
+    for name, spec in manifest.get("component", {}).items():
+        for m in spec.get("modules", []):
+            owner[m] = name
+    return owner
+
+
+def cross_component_cycles(g: "Graph", manifest: dict) -> List[str]:
+    """跨 component 的环——**闸只认这些**。
+
+    环整个落在同一个 component 里 = 同一个 crate 内部互指，Rust 也允许。
+    """
+    owner = component_of(manifest)
+    out = []
+    for c in find_cycles(g):
+        members = c.split(" -> ")[:-1]
+        owners = {owner.get(m) for m in members}
+        if len(owners) == 1 and None not in owners:
+            continue          # 同一个 component 内部，放行
+        out.append(c)
+    return out
+
+
 # ── 清单 ────────────────────────────────────────────────────────────────────
 def load_manifest(path: pathlib.Path = MANIFEST) -> dict:
     with open(path, "rb") as fh:
@@ -316,7 +351,7 @@ def emit_mermaid(g: Graph, manifest: dict) -> str:
 
 
 def render_doc(g: Graph, manifest: dict) -> str:
-    cycles = find_cycles(g)
+    cycles = cross_component_cycles(g, manifest)
     violations = layer_violations(g, manifest)
     svc_v = services_violations(g, manifest)
     base = manifest.get("baseline", {})
@@ -405,7 +440,7 @@ def _freeze(g: Graph, manifest: dict) -> None:
 
     text = MANIFEST.read_text(encoding="utf-8")
     v = layer_violations(g, manifest)
-    c = find_cycles(g)
+    c = cross_component_cycles(g, manifest)
     sv = services_violations(g, manifest)
 
     def block(name: str, items: Iterable[str]) -> str:
@@ -431,7 +466,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     g = build_graph()
     manifest = load_manifest()
-    v, c = layer_violations(g, manifest), find_cycles(g)
+    v, c = layer_violations(g, manifest), cross_component_cycles(g, manifest)
     sv = services_violations(g, manifest)
     base = manifest.get("baseline", {})
 
@@ -449,9 +484,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"未声明跨包依赖 {len(v)}（基线 {len(base.get('violations', []))}）")
         for x in v:
             print(f"   {x}")
-        print(f"循环依赖 {len(c)}（基线 {len(base.get('cycles', []))}）")
+        print(f"跨 component 循环依赖 {len(c)}（基线 {len(base.get('cycles', []))}）")
         for x in c:
             print(f"   {x}")
+        _inside = [x for x in find_cycles(g) if x not in c]
+        if _inside:
+            print(f"component 内部互指 {len(_inside)}（同一个「crate」，允许）")
+            for x in _inside:
+                print(f"   {x}")
         print(f"services 内部越层 {len(sv)}（基线 {len(base.get('services_violations', []))}）")
         for x in sv:
             print(f"   {x}")

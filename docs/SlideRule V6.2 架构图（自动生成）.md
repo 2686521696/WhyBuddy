@@ -17,7 +17,7 @@
 - 扫描文件 **269** 个，模块 **269** 个
 - 内部依赖边 **767** 条，其中 **462** 条写在函数体里（60%）
 - 未声明的跨包依赖 **3** 条（基线 3 条）
-- 模块级循环依赖 **1** 个（基线 1 个）
+- 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
 
 ### services 内部分层（抄 grok 的叶子 crate）
@@ -69,7 +69,7 @@ flowchart TB
 
 Rust 里这一类根本编译不出来；Python 得自己数。**只许变少。**
 
-- `services.capability_maps -> services.slide_rule_executor -> services.capability_maps`
+（当前没有循环依赖）
 
 ## 未声明的跨包依赖
 

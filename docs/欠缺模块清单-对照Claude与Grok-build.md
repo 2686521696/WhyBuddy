@@ -1839,3 +1839,59 @@ crate 数 90，每个 crate 的 .rs 文件数：中位数 8
 - **涨上去** = 又有人用「挪进函数」绕问题了
 
 它从一个没人知道的事实，变成了一个会被盯着的指标。
+
+---
+
+## 18. 五笔架构债还完（2026-08-29）
+
+抄 grok 抄到底。五个环 + 一条越层，用了**四种**不同的答案——形状不同，药方就不同。
+
+| # | 债 | 病 | grok 的答案 | 结果 |
+|---|---|---|---|---|
+| 1 | routes ⇄ rehearsal_control | 业务逻辑住在入口层 | **入口层是个「汇」**（组合根被依赖数 0） | 下沉 `model_version_restore` |
+| 2 | page_shell ⇄ spec_tree | 两个大文件为两个小函数互指 | **共用件切成叶子 crate**（51 个 ≤10 文件的小 crate） | 抽出 `page_naming` |
+| 3 | persistence ⇄ slide_rule_session | 下层要够上层的状态 | **依赖倒置**（tools 定 trait、shell impl 并注入） | `set_cache_sink` |
+| 4 | v5_capability_executor ⇄ v5_full_driver | 共用件长在大块里 | 同 #2 | 抽出 `model_versions` |
+| 5 | capability_maps ⇄ slide_rule_executor | **有意的互相委托** | **同一个 crate 内部允许互指** | 声明成 component |
+
+### 18.1 第五个的关键：闸差一块，不是代码差一块
+
+前四个都是「代码放错了」。第五个不是——源码注释写着那条委托是**有意的**
+（「原本是第二份拷贝……所以这里改成委托，不再各写一份」），拆开会让同一段逻辑
+再变成两份，那正是这个仓踩过三次的坑。
+
+去查 grok 才发现是**我们的闸把模型抄漏了一半**：Rust 禁止的是 **crate 之间**成环，
+**同一个 crate 内部的模块可以互相引用**。实测：
+
+    xai-grok-tools  内 8 组互相引用的模块对（含 implementations ⇄ registry）
+    xai-grok-shell  内 15 组（含 agent ⇄ auth / config / leader / remote）
+
+`implementations ⇄ registry` 与 `capability_maps ⇄ slide_rule_executor`
+**形状完全一样**：注册表与实现互指。
+
+所以补的是 `component` 概念——显式声明「哪几个模块其实是同一个 crate」。
+**闸没有变松**：跨 component 的环照样红，而且加了三道门槛防它变成消环后门：
+每个 component 必须写清「它们为什么是一个东西」、至少两个模块、总量不许超过
+services 的 5%。变异验过：把十个模块塞进一个 component 消环 → 红。
+
+### 18.2 棘轮
+
+    未声明跨包依赖   4 → 3
+    循环依赖         5 → 0（跨 component 口径；1 组同 crate 内互指，已声明）
+    services 越层    1 → 0
+
+### 18.3 五笔共同守住的一条
+
+**搬家只该改依赖方向，不该把别人的调用点和判据弄红。**
+每一笔都在原位置留同名转出（`_restore_model_version_locked`、`nav_tab_label`、
+`is_host_brand_name`、`record_model_snapshot` 等），仓里十几个测试文件和五个
+services 模块按老名字引用照常有效。
+
+真正必须跟着搬的只有**patch 点**——那类判据钉的是「函数住在哪个模块」。
+⚠ patch 错模块**不会报错，只会静静地测不到东西**（两处真踩到，都验过变异）。
+
+### 18.4 抽代码不能靠眼睛扫
+
+第四笔抽 `model_versions` 时漏了 `datetime` / `timezone` 两个 import，35 条红。
+第一版的扫描器把小写名字过滤掉了。换成严格的「未定义名字」分析
+（builtins + 函数参数 + for/with/except 绑定 + 各类 import 全算进已定义）之后为空。
