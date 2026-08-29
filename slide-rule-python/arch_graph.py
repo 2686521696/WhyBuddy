@@ -240,18 +240,84 @@ def component_of(manifest: dict) -> Dict[str, str]:
     return owner
 
 
-def cross_component_cycles(g: "Graph", manifest: dict) -> List[str]:
-    """跨 component 的环——**闸只认这些**。
+def component_violations(g: "Graph", manifest: dict) -> List[str]:
+    """component 之间**没有声明过**的依赖边。对应 grok 的 Cargo.toml：
+    没写在 `[dependencies]` 里的 crate，`use` 它就编译不过。
 
-    环整个落在同一个 component 里 = 同一个 crate 内部互指，Rust 也允许。
+    ⚠ 这是 component 归组真正的价值所在。只归组不查依赖，那只是给模块贴标签。
+    """
+    spec = manifest.get("component", {})
+    if not spec:
+        return []
+    owner = component_of(manifest)
+    allowed = {n: set(c.get("may_depend_on", [])) for n, c in spec.items()}
+    bad: Set[str] = set()
+    for e in g.edges:
+        a, b = owner.get(e.src), owner.get(e.dst)
+        if a is None or b is None or a == b:
+            continue
+        if b not in allowed.get(a, set()):
+            bad.add(f"{a} -> {b} :: {e.src} -> {e.dst}")
+    return sorted(bad)
+
+
+def component_cycles(manifest: dict, g: "Graph") -> List[str]:
+    """component 之间的环——crate 级的环，Rust 里根本编译不出来。
+
+    ⚠ 模块级的环已经清零，但**组级的环有 17 个**（2026-08-29 实测）。
+      这不是矛盾：粒度不同看到的东西不同，crate 粒度下的缠绕以前根本没人量过。
     """
     owner = component_of(manifest)
+    out_edges: Dict[str, Set[str]] = {}
+    for e in g.edges:
+        a, b = owner.get(e.src), owner.get(e.dst)
+        if a and b and a != b:
+            out_edges.setdefault(a, set()).add(b)
+    color: Dict[str, int] = {}
+    found: Set[str] = set()
+
+    def walk(u: str, stack: List[str]) -> None:
+        color[u] = 1
+        stack.append(u)
+        for v in sorted(out_edges.get(u, ())):
+            c = color.get(v, 0)
+            if c == 1:
+                cyc = stack[stack.index(v):]
+                i = cyc.index(min(cyc))
+                rot = cyc[i:] + cyc[:i]
+                found.add(" -> ".join([*rot, rot[0]]))
+            elif c == 0:
+                walk(v, stack)
+        stack.pop()
+        color[u] = 2
+
+    for n in sorted(out_edges):
+        if color.get(n, 0) == 0:
+            walk(n, [])
+    return sorted(found)
+
+
+def cross_component_cycles(g: "Graph", manifest: dict) -> List[str]:
+    """闸认的环。
+
+    放行的**唯一**条件：环整个落在同一个 component 里，**而且那个 component
+    明写了 `allow_internal_cycles = true`**。
+
+    ⚠ 为什么要单独 opt-in，而不是「同一个 component 就放行」：
+      2026-08-29 把 270 个模块全部归进 component 之后，「同组即放行」会让环判据
+      **当场废掉一大半**——归组的目的是声明依赖，不是给环发通行证。
+      默认严：即使在同一个 component 里，成环也红；确实是有意互指的（注册表与
+      实现那种），单独在清单里写一行并说明理由。
+    """
+    spec = manifest.get("component", {})
+    owner = component_of(manifest)
+    opted = {name for name, c in spec.items() if c.get("allow_internal_cycles")}
     out = []
     for c in find_cycles(g):
         members = c.split(" -> ")[:-1]
         owners = {owner.get(m) for m in members}
-        if len(owners) == 1 and None not in owners:
-            continue          # 同一个 component 内部，放行
+        if len(owners) == 1 and None not in owners and owners.pop() in opted:
+            continue
         out.append(c)
     return out
 
@@ -451,6 +517,37 @@ def render_doc(g: Graph, manifest: dict) -> str:
             body.append(f"- `{v}`")
     else:
         body.append("（当前没有）")
+    comps = manifest.get("component", {})
+    if comps:
+        owner = component_of(manifest)
+        cedges: Dict[Tuple[str, str], int] = {}
+        for e in g.edges:
+            a, b = owner.get(e.src), owner.get(e.dst)
+            if a and b and a != b:
+                cedges[(a, b)] = cedges.get((a, b), 0) + 1
+        cyc = set()
+        for c in component_cycles(manifest, g):
+            m = c.split(" -> ")
+            for i in range(len(m) - 1):
+                cyc.add((m[i], m[i + 1]))
+        body += [
+            "",
+            "## crate 级：component 依赖图",
+            "",
+            "抄 grok 的 Cargo.toml——他们 90 个 crate、347 条**声明过**的边由编译器焊死。",
+            f"我们 {len(comps)} 个 component、{len(cedges)} 条边，由 `architecture.toml` 声明、判据强制。",
+            "**红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。",
+            "",
+            "```mermaid",
+            "flowchart LR",
+        ]
+        for name in sorted(comps):
+            n = len(comps[name].get("modules", []))
+            body.append(f'  {name}["{name}<br/>{n}"]')
+        for (a, b), n in sorted(cedges.items()):
+            body.append(f"  {a} {'-.->' if (a, b) in cyc else '-->'}|{n}| {b}")
+        body += ["```", ""]
+
     body += ["", "## services 内部越层依赖", "",
              "叶子碰了上层，或 core 碰了 flow。**只许变少。**", ""]
     if svc_v:
@@ -496,6 +593,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     manifest = load_manifest()
     v, c = layer_violations(g, manifest), cross_component_cycles(g, manifest)
     sv = services_violations(g, manifest)
+    cv = component_violations(g, manifest)
+    cc = component_cycles(manifest, g)
     base = manifest.get("baseline", {})
 
     if args.emit:
@@ -523,19 +622,31 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"services 内部越层 {len(sv)}（基线 {len(base.get('services_violations', []))}）")
         for x in sv:
             print(f"   {x}")
+        print(f"未声明的组间依赖 {len(cv)}（基线 {len(base.get('component_violations', []))}）")
+        for x in cv[:10]:
+            print(f"   {x}")
+        print(f"组间循环依赖 {len(cc)}（基线 {len(base.get('component_cycles', []))}）")
+        for x in cc[:10]:
+            print(f"   {x}")
         if not args.check:
             return 0
 
     new_v = sorted(set(v) - set(base.get("violations", [])))
     new_c = sorted(set(c) - set(base.get("cycles", [])))
     new_s = sorted(set(sv) - set(base.get("services_violations", [])))
-    if new_v or new_c or new_s:
+    new_cv = sorted(set(cv) - set(base.get("component_violations", [])))
+    new_cc = sorted(set(cc) - set(base.get("component_cycles", [])))
+    if new_v or new_c or new_s or new_cv or new_cc:
         for x in new_v:
             print(f"❌ 新增未声明依赖：{x}")
         for x in new_c:
             print(f"❌ 新增循环依赖：{x}")
         for x in new_s:
             print(f"❌ services 内部新增越层依赖：{x}")
+        for x in new_cv:
+            print(f"❌ 新增未声明的组间依赖：{x}")
+        for x in new_cc:
+            print(f"❌ 新增组间循环依赖：{x}")
         return 1
     print("✅ 没有新增的未声明依赖或循环")
     return 0

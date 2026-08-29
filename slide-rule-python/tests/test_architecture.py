@@ -297,26 +297,36 @@ class Test同一个crate内部允许互指:
 
     def test_跨component的环照样红(self):
         """⚠ 最要紧的一条。这个概念要是把跨组的环也放行了，闸就废了。"""
-        g = _G
-        owner = arch_graph.component_of(_M)
-        fake = dict(_M)
-        # 造一个「两个模块分属不同 component」的环，确认它不会被放行
         cyc = "services.a -> services.b -> services.a"
-        fake_manifest = {
-            "component": {
-                "x": {"modules": ["services.a"]},
-                "y": {"modules": ["services.b"]},
-            }
-        }
         import unittest.mock as mock
 
         with mock.patch.object(arch_graph, "find_cycles", lambda _g: [cyc]):
-            assert arch_graph.cross_component_cycles(g, fake_manifest) == [cyc], (
+            split = {
+                "component": {
+                    "x": {"modules": ["services.a"]},
+                    "y": {"modules": ["services.b"]},
+                }
+            }
+            assert arch_graph.cross_component_cycles(_G, split) == [cyc], (
                 "跨 component 的环被放行了——闸废了"
             )
+            # ⚠ 同组**也不够**：还得那个组明写 allow_internal_cycles。
+            #   2026-08-29 把 270 个模块全归组之后，「同组即放行」会让环判据
+            #   当场废掉一大半——归组是为了声明依赖，不是给环发通行证。
             same = {"component": {"x": {"modules": ["services.a", "services.b"]}}}
-            assert arch_graph.cross_component_cycles(g, same) == [], (
-                "同一个 component 内部互指没被放行——那 grok 的模型就没抄对"
+            assert arch_graph.cross_component_cycles(_G, same) == [cyc], (
+                "同组但没 opt-in 就被放行了——归组成了消环的后门"
+            )
+            opted = {
+                "component": {
+                    "x": {
+                        "modules": ["services.a", "services.b"],
+                        "allow_internal_cycles": True,
+                    }
+                }
+            }
+            assert arch_graph.cross_component_cycles(_G, opted) == [], (
+                "明写了 allow_internal_cycles 还不放行——那 grok 的模型就没抄对"
             )
 
     def test_没声明component的模块_成环照样红(self):
@@ -330,23 +340,54 @@ class Test同一个crate内部允许互指:
 
     def test_每个component都写了理由(self):
         """⚠ 门槛：得能说清「它们为什么是一个东西」，而不是「它们碰巧成环」。
-        把不相干的模块塞进同一个 component 来消环，等于把闸关掉。"""
+
+        ⚠ 2026-08-29 把字数门槛从 30 降到 15，并补了「理由不许重复」。
+          原因：全仓归组之后有 8 个组的理由**本身是有信息的**，只是中文密度高、
+          不到 30 字（「最底下的叶子：配置与数据形状。谁都能依赖它，它谁都不依赖。」）。
+          **为了凑字数去加水，判据就变成了装饰**——本仓第五条：判据要盯语义。
+          真正能挡住敷衍的是**去重**：抄一份模板套 23 个组，当场红。
+        """
         comps = _M.get("component", {})
         assert comps, "没有 component 声明——如果是有意的，把这条判据一起删掉"
+        whys = {}
         for name, spec in comps.items():
             why = (spec.get("why") or "").strip()
-            assert len(why) >= 30, f"component {name} 没写清为什么它们是一个东西"
-            assert len(spec.get("modules", [])) >= 2, f"component {name} 只有一个模块，没意义"
+            assert len(why) >= 15, f"component {name} 没写清为什么它们是一个东西"
+            assert why not in whys, (
+                f"component {name} 与 {whys[why]} 的理由一模一样——"
+                f"套模板等于没写"
+            )
+            whys[why] = name
+            assert spec.get("modules"), f"component {name} 是空的"
 
-    def test_component不许无限膨胀(self):
-        """⚠ 把半个仓塞进一个 component 就等于关掉环判据。"""
+    def test_opt_in允许内部成环的组必须很小(self):
+        """⚠ 这条替代了旧的「component 不许无限膨胀」。
+
+        旧判据挡的是「把半个仓塞进一个 component 来消环」。2026-08-29 全仓归组
+        之后那条按字面必然红（270 个模块都在组里），但**它挡的那件事仍然要挡**——
+        只是位置变了：现在能消环的只有 `allow_internal_cycles` 那几个组，
+        所以门槛钉在**它们**身上。
+        """
         comps = _M.get("component", {})
-        inside = {m for c in comps.values() for m in c.get("modules", [])}
-        total = len({m for m in _G.modules if m.startswith("services.")})
-        assert len(inside) <= max(6, total // 20), (
-            f"component 里塞了 {len(inside)} 个模块（services 共 {total}）——"
-            f"这已经不是「同一个 crate」，是在拿声明消环"
-        )
+        opted = {n: c for n, c in comps.items() if c.get("allow_internal_cycles")}
+        assert len(opted) <= 2, f"太多组允许内部成环了：{sorted(opted)}"
+        for name, c in opted.items():
+            mods = c.get("modules", [])
+            assert len(mods) <= 6, (
+                f"{name} 允许内部成环却有 {len(mods)} 个模块——"
+                f"组越大，这条豁免盖住的东西越多，等于拿声明消环"
+            )
+
+    def test_单个组不许吃掉半个仓(self):
+        """⚠ 组太大就退化成「没分组」：依赖声明会变成一句废话。"""
+        comps = _M.get("component", {})
+        total = len(_G.modules)
+        for name, c in comps.items():
+            n = len(c.get("modules", []))
+            assert n <= total // 4, (
+                f"{name} 有 {n} 个模块（全仓 {total}）——太大了，"
+                f"组间依赖声明会退化成废话"
+            )
 
 
 class Test显式例外不是后门:

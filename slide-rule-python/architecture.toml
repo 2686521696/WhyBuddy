@@ -303,28 +303,428 @@ modules = [
 ]
 
 
-# ── component：哪几个模块其实是同一个「crate」──────────────────────────────
+# ── component：crate 级的边界（2026-08-29 抄 grok 的 Cargo.toml）─────────────
 #
-# ⚠ 这不是给环开后门。Rust 禁止的是 **crate 之间**成环，**同一个 crate 内部的
-#   模块可以互相引用**——实测 grok-build：xai-grok-tools 内有 8 组互相引用的
-#   模块对、xai-grok-shell 内有 15 组，其中 `implementations ⇄ registry` 与
-#   下面这一组形状完全一样（注册表与实现互指）。
+# grok 有 90 个 crate、347 条**声明过**的依赖边，边界由编译器焊死。我们的模块
+# 粒度比 crate 细（270 个文件），所以在这里显式声明「哪几个模块是同一个 crate」，
+# 以及「哪个 crate 可以依赖哪个」。
 #
-#   我们的模块粒度比 crate 细，所以要显式声明。**跨 component 的环照样红**。
+# ⚠ 这份归组与 may_depend_on **是从今天的真实依赖算出来的**（棘轮基线），
+#   不是重新设计。先把现状固定成契约，此后只许变好。
 #
-# ⚠ 往这里加东西的门槛：得能说清「它们为什么是一个东西」，而不是「它们碰巧成环」。
-#   把两个不相干的模块塞进同一个 component 来消环，等于把闸关掉。
+# ⚠ 内部成环默认**红**，要单独 allow_internal_cycles = true 并说明理由。
+#   归组的目的是声明依赖，不是给环发通行证。
+
+
+[component.a2a]
+why = """A2A 协议面：Agent-to-Agent 的会话、报告与分析投影。与推演工厂是两个平面，不共用状态。"""
+may_depend_on = []
+modules = [
+  "services.a2a_core_route_cutover",
+  "services.a2a_production_transport_ownership_closure",
+  "services.a2a_runtime",
+  "services.a2a_session_stream_runtime_slice",
+]
+
+[component.agent_loop]
+why = """Agent Loop 面：事件仓、运行记录、控制目录、心跳。"""
+may_depend_on = ["identity", "platform"]
+modules = [
+  "routes.agent_loop",
+  "services.agent_loop_artifacts",
+  "services.agent_loop_bridge",
+  "services.agent_loop_event_schema",
+  "services.agent_loop_event_store",
+  "services.agent_loop_events",
+  "services.agent_loop_legacy_adapter",
+  "services.agent_loop_paths",
+  "services.agent_loop_process_registry",
+  "services.agent_loop_provider_health",
+  "services.agent_loop_python_worker",
+  "services.agent_loop_redaction",
+  "services.agent_loop_runs",
+  "services.agent_loop_settings",
+  "services.agent_loop_state_reducer",
+]
+
+[component.app_store]
+why = """生成物的家：应用记录、版本、可见性、预览、组件预设。"""
+may_depend_on = ["drive", "evidence", "identity", "model_core", "platform", "spec_first"]
+modules = [
+  "services.app_graph",
+  "services.app_preview",
+  "services.app_screenshot",
+  "services.app_store",
+  "services.app_template",
+  "services.app_working_session",
+  "services.component_preset_store",
+  "services.session_blob_store",
+]
+
+[component.audit]
+why = """审计：留痕落盘、保留期与导出。写失败必须出声——审计静默失败等于没有审计。"""
+may_depend_on = []
+modules = [
+  "services.audit_durable_store_retention_takeover",
+  "services.audit_retention_export",
+  "services.audit_sink",
+]
+
+[component.blueprint]
+why = """蓝图子系统：作业、规格文档、提示词包运行时。"""
+may_depend_on = ["platform"]
+modules = [
+  "services.blueprint_artifact_memory",
+  "services.blueprint_event_bus_runtime_takeover",
+  "services.blueprint_job_event_stream",
+  "services.blueprint_job_runtime",
+  "services.blueprint_job_store_runtime_takeover",
+  "services.blueprint_job_store_scope_decision",
+  "services.blueprint_ledger_runtime_takeover",
+  "services.blueprint_main_runtime_closure",
+  "services.blueprint_preview_state_runtime_takeover",
+  "services.blueprint_production_denominator_reconciliation",
+  "services.blueprint_production_ownership_closure",
+  "services.blueprint_prompt_package_runtime_takeover",
+  "services.blueprint_prompt_preview",
+  "services.blueprint_replan_runtime_takeover",
+  "services.blueprint_review_export",
+  "services.blueprint_shell_state_cutover",
+  "services.blueprint_stage_edit",
+  "services.blueprint_state",
+  "services.blueprint_state_runtime",
+]
 
 [component.capability_engine]
-why = """能力执行引擎：slide_rule_executor 是原语与总入口，capability_maps 是
-能力→实现的映射表。两者互相委托是**有意的**——源码注释写着 structure.decompose
-那条分支原本是第二份拷贝，「所以这里改成委托，不再各写一份」。
-拆开会让同一段逻辑再变成两份，那正是这个仓踩过三次的坑。"""
+# ⚠ 全仓唯一 opt-in 允许内部互指的组，理由见 why。
+allow_internal_cycles = true
+why = """能力执行引擎：slide_rule_executor 是原语与总入口，capability_maps 是能力→实现的映射表。两者互相委托是**有意的**——源码注释写着 structure.decompose 那条分支原本是第二份拷贝，「所以这里改成委托，不再各写一份」。拆开会让同一段逻辑再变成两份，那正是这个仓踩过三次的坑。"""
+may_depend_on = ["evidence", "llm_gateway", "model_core", "spec_first"]
 modules = [
   "services.capability_maps",
   "services.slide_rule_executor",
 ]
 
+[component.diagnostics]
+why = """就绪与切换诊断：只读探针，不在产品链上。"""
+may_depend_on = ["a2a", "entrypoint", "evidence", "model_core", "platform", "web_aigc"]
+modules = [
+  "complete_migration",
+  "services.builtin_examples",
+  "services.external_dependency_live_smoke",
+  "services.external_provider_cutover",
+  "services.final_provider_a2a_scope_reconciliation",
+  "services.full_migration_note",
+]
+
+[component.drive]
+why = """编排：驱动器信封、控制面、会话、run 注册表、暂停/取消、轮次叙述。"""
+may_depend_on = ["app_store", "capability_engine", "evidence", "identity", "llm_gateway", "model_core", "observability", "persist", "platform", "spec_first"]
+modules = [
+  "services.drive_full_factory",
+  "services.nl_command_runtime",
+  "services.product_charter",
+  "services.rehearsal_control",
+  "services.repeat_policy",
+  "services.request_context",
+  "services.run_cancel",
+  "services.run_degradation",
+  "services.run_pause",
+  "services.run_registry",
+  "services.slide_rule_marathon",
+  "services.slide_rule_session",
+  "services.sliderule_session_sanitizer",
+  "services.turn_narration",
+]
+
+[component.entrypoint]
+why = """组合根（对应 grok 的 xai-grok-pager-bin）：只负责把东西装起来。**被依赖数必须是 0**——箭头只进不出。"""
+may_depend_on = ["agent_loop", "app_store", "drive", "http_routes", "model_core", "permission", "platform", "spec_first", "task_exec"]
+modules = [
+  "app",
+]
+
+[component.evidence]
+why = """外部证据：检索、连接器、MCP、技能包、入站判定。全部 fail-closed，不许编数据。"""
+may_depend_on = ["llm_gateway", "model_core", "platform", "spec_first"]
+modules = [
+  "services.attachment_extract",
+  "services.connectors",
+  "services.intake_judge",
+  "services.knowledge_admin_runtime",
+  "services.mcp_runtime",
+  "services.mcp_tools",
+  "services.rag_ingestion",
+  "services.rag_service",
+  "services.skill_runtime",
+  "services.vector_rag",
+]
+
+[component.http_routes]
+why = """HTTP 边缘：路由只做拼装与鉴权，业务不许住在这里。"""
+may_depend_on = ["app_store", "audit", "blueprint", "capability_engine", "diagnostics", "drive", "evidence", "identity", "llm_gateway", "model_core", "observability", "persist", "platform", "spec_first", "task_exec"]
+modules = [
+  "routes.account",
+  "routes.audit",
+  "routes.blueprint_jobs",
+  "routes.blueprint_spec_docs",
+  "routes.rag",
+  "routes.sliderule",
+  "routes.sliderule_full",
+  "routes.tasks",
+]
+
+[component.identity]
+why = """身份与权限：账号、令牌、验证码投递、应用归属、鉴权中间件。fail-closed。"""
+may_depend_on = ["app_store", "llm_gateway", "model_core", "observability", "platform", "spec_first"]
+modules = [
+  "middlewares.auth",
+  "middlewares.current_user",
+  "services.app_access",
+  "services.auth_service",
+  "services.auth_tokens",
+  "services.identity_palette_hint",
+  "services.identity_store",
+  "services.identity_theme_gen",
+  "services.mailer",
+]
+
+[component.llm_gateway]
+why = """LLM 通道：模型调用、流式、通道配置、熔断。业务不该知道用的是哪家模型。"""
+may_depend_on = ["evidence", "platform"]
+modules = [
+  "services.llm_channel",
+  "services.llm_error_text",
+  "services.slide_rule_llm",
+  "sliderule_llm.__init__",
+  "sliderule_llm.capabilities",
+  "sliderule_llm.client",
+  "sliderule_llm.config",
+  "sliderule_llm.control_client",
+  "sliderule_llm.evidence",
+  "sliderule_llm.evidence_context",
+  "sliderule_llm.gateway_circuit",
+  "sliderule_llm.image_client",
+  "sliderule_llm.pool",
+  "sliderule_llm.scoped",
+  "sliderule_llm.structured",
+  "sliderule_llm.vector",
+]
+
+[component.model_core]
+why = """五系统模型：生成、结构闸、修复、闭环证据、覆盖门、信任。产品的心脏。"""
+may_depend_on = ["app_store", "drive", "evidence", "llm_gateway", "observability", "persist", "platform", "spec_first"]
+modules = [
+  "models.v5_state",
+  "services.closure_block_reason",
+  "services.closure_relevance",
+  "services.merge_patch",
+  "services.model_assembly",
+  "services.model_version_restore",
+  "services.model_versions",
+  "services.rbac_roles",
+  "services.role_runtime",
+  "services.slide_rule_coverage",
+  "services.slide_rule_full_executor",
+  "services.slide_rule_interactive_gates",
+  "services.slide_rule_orchestrator",
+  "services.slide_rule_trust",
+  "services.v5_agentic_pick",
+  "services.v5_capability_executor",
+  "services.v5_closure_summary",
+  "services.v5_content_quality",
+  "services.v5_design_reference",
+  "services.v5_eval_baseline",
+  "services.v5_explainable",
+  "services.v5_full_driver",
+  "services.v5_llm_generate",
+  "services.v5_llm_judge",
+  "services.v5_model_gate",
+  "services.v5_model_repair",
+  "services.v5_parallel_generate",
+  "services.v5_publish_closure_response",
+  "services.v5_session_driver",
+  "services.v5_skill_packages",
+  "services.v5_skill_reference",
+  "services.v5_skill_runtime_graph",
+]
+
+[component.observability]
+why = """可观测：成本台账、分阶段计时、遥测、预算。增强类，炸了不许拖垮主链路。"""
+may_depend_on = ["llm_gateway", "model_core", "persist", "platform"]
+modules = [
+  "services.cost_ledger",
+  "services.enrich_timing",
+  "services.slide_rule_budget",
+  "services.telemetry",
+  "services.telemetry_runtime",
+]
+
+[component.ops_scripts]
+why = """一次性运维脚本与架构工具。不在产品链上，可以够到任何东西。"""
+may_depend_on = ["app_store", "entrypoint", "evidence", "identity", "llm_gateway", "model_core", "platform", "spec_first"]
+modules = [
+  "arch_graph",
+  "scripts.agentic_pick_eval",
+  "scripts.backfill_app_badge_counts",
+  "scripts.backfill_page_id_aliases",
+  "scripts.backfill_session_owner",
+  "scripts.connector_entity_ab",
+  "scripts.content_quality_eval",
+  "scripts.enrich_builtin_domain_models",
+  "scripts.enrich_timing_report",
+  "scripts.eval_five_system_generation",
+  "scripts.eval_intake_device",
+  "scripts.eval_intake_judge",
+  "scripts.evidence_context_ab",
+  "scripts.forum_analyze",
+  "scripts.forum_fetch",
+  "scripts.forum_fit_body",
+  "scripts.forum_fit_device",
+  "scripts.forum_fit_grade",
+  "scripts.forum_neon",
+  "scripts.fresh_topic_shot",
+  "scripts.image_gen_smoke",
+  "scripts.label_block_generality",
+  "scripts.label_block_page_kinds",
+  "scripts.layout_diversity_report",
+  "scripts.llm_smoke",
+  "scripts.mail_check",
+  "scripts.migrate_app_ownership",
+  "scripts.overnight_device_iter",
+  "scripts.overview_sheet_probe",
+  "scripts.stock_image_fill_ab",
+  "scripts.sync_block_labels",
+  "scripts.thumb_recompress",
+  "scripts.triage_skills",
+  "scripts.verify_sliderule_flow",
+]
+
+[component.permission]
+why = """权限：契约词表与运行时判定。词表跨 Python/TS 两侧，判据直接读 TS 文件比对。"""
+may_depend_on = ["identity", "platform"]
+modules = [
+  "routes.permissions",
+  "services.permission_audit_durable_store_boundary",
+  "services.permission_audit_hooks",
+  "services.permission_audit_policy_store_cutover",
+  "services.permission_audit_production_ownership_closure",
+  "services.permission_management",
+  "services.permission_policy_store_takeover",
+  "services.permission_rate_limit",
+]
+
+[component.persist]
+why = """会话落库与单调守卫。谁写、写成什么样，只有这里说了算。"""
+may_depend_on = ["app_store", "model_core", "platform"]
+modules = [
+  "services.persistence",
+]
+
+[component.platform]
+why = """最底下的叶子：配置与数据形状。谁都能依赖它，它谁都不依赖。"""
+may_depend_on = []
+modules = [
+  "config.env_flags",
+  "config.settings",
+  "models.agent_loop",
+  "models.blueprint_state",
+  "services.env_flags",
+  "stdio_utf8",
+]
+
+[component.refine]
+why = """精修环：段级沿用、页级短路、图判范围。已闭环应用的第二条入口。"""
+may_depend_on = ["app_store", "platform", "spec_first"]
+modules = [
+  "services.refine_graph_scope",
+  "services.refine_page_scope",
+  "services.refine_short_circuit",
+]
+
+[component.spec_first]
+why = """spec-first 七步与页面产出：spec 树、逐页 HTML、外壳、绑定、配色、区块目录。"""
+may_depend_on = ["app_store", "drive", "identity", "llm_gateway", "model_core", "observability", "platform", "refine"]
+modules = [
+  "scripts.block_selection_metrics",
+  "scripts.freeform_trend_palette_smoke",
+  "scripts.freeform_vision_smoke",
+  "services.block_assembler",
+  "services.block_narrowing",
+  "services.block_proposer",
+  "services.design_language",
+  "services.device_policy",
+  "services.freeform_block",
+  "services.freeform_preview_store",
+  "services.html_bindings",
+  "services.html_structure",
+  "services.page_archetypes",
+  "services.page_assembler",
+  "services.page_blocks",
+  "services.page_edit_blocks",
+  "services.page_id_freeze",
+  "services.page_naming",
+  "services.page_reconstruction",
+  "services.page_shell",
+  "services.palette_guard",
+  "services.schema_legal",
+  "services.sheet_palette",
+  "services.spec_first_pipeline",
+  "services.spec_llm_call",
+  "services.spec_page_html",
+  "services.spec_semantics",
+  "services.spec_tree",
+  "services.stock_images",
+  "services.theme_tokens",
+  "services.thumb_image",
+]
+
+[component.task_exec]
+why = """任务执行面：执行器回调投影、派单、任务生命周期、工作流运行时。与推演工厂是两个平面。"""
+may_depend_on = ["evidence", "platform"]
+modules = [
+  "routes.executor_dispatch",
+  "routes.executor_events",
+  "services.executor_dispatch_decisions",
+  "services.executor_event_projection",
+  "services.mission_event_replay",
+  "services.node_bridge_runtime",
+  "services.task_durable_mission_store_takeover",
+  "services.task_event_persistence_takeover",
+  "services.task_executor_runtime",
+  "services.task_lifecycle_durable_ownership_closure",
+  "services.task_lifecycle_production_closure",
+  "services.task_lifecycle_runtime",
+  "services.task_mission_store_runtime_slice",
+  "services.task_production_denominator_reconciliation",
+  "services.task_project_auth_runtime_takeover",
+  "services.task_scheduler_runtime_takeover",
+  "services.task_store",
+  "services.task_store_auth_scheduler_cutover",
+  "services.workflow_runtime",
+]
+
+[component.web_aigc]
+why = """Web/AIGC 外部供给：生图、外部服务商、素材。"""
+may_depend_on = []
+modules = [
+  "services.web_aigc_ai_ppt_adapter",
+  "services.web_aigc_device_location_adapter",
+  "services.web_aigc_dynamic_chart_adapter",
+  "services.web_aigc_external_provider_ownership_closure",
+  "services.web_aigc_file_adapter",
+  "services.web_aigc_media_adapter",
+  "services.web_aigc_ocr_static_adapter",
+  "services.web_aigc_open_adapter",
+  "services.web_aigc_orchestration_adapter",
+  "services.web_aigc_provider_closure",
+  "services.web_aigc_real_provider_live_contract",
+  "services.web_aigc_real_provider_readiness",
+  "services.web_aigc_search_adapter",
+  "services.web_aigc_transaction_flow_adapter",
+  "services.web_aigc_vision_audio_adapter",
+  "services.web_aigc_web_qa_adapter",
+]
 
 # ── 显式例外：有意为之，并且写清了理由 ──────────────────────────────────────
 #
@@ -358,6 +758,33 @@ why = """切换就绪诊断里的一项探针：`import app` 是**故意**的，
 violations = [
 ]
 services_violations = [
+]
+component_violations = [
+]
+# ⚠ 组间的环 17 个（2026-08-29 第一次量到）。模块级的环已经清零，组级还有——
+#   这不矛盾：**粒度不同看到的东西不同**，crate 粒度下的缠绕以前根本没人量过。
+#   七组两两互指衍生出这 17 个：app_store⇄identity、evidence⇄llm_gateway、
+#   app_store⇄drive、model_core⇄spec_first、evidence⇄model_core、
+#   refine⇄spec_first、model_core⇄observability。
+#   **只许变少。** 这是下一轮该还的债。
+component_cycles = [
+  "app_store -> drive -> app_store",
+  "app_store -> drive -> capability_engine -> evidence -> model_core -> app_store",
+  "app_store -> drive -> capability_engine -> evidence -> model_core -> observability -> persist -> app_store",
+  "app_store -> drive -> capability_engine -> evidence -> model_core -> spec_first -> app_store",
+  "app_store -> drive -> capability_engine -> evidence -> model_core -> spec_first -> identity -> app_store",
+  "app_store -> drive -> capability_engine -> evidence -> model_core -> spec_first -> refine -> app_store",
+  "app_store -> drive -> identity -> app_store",
+  "app_store -> identity -> app_store",
+  "capability_engine -> evidence -> model_core -> drive -> capability_engine",
+  "capability_engine -> evidence -> model_core -> spec_first -> drive -> capability_engine",
+  "diagnostics -> entrypoint -> http_routes -> diagnostics",
+  "evidence -> llm_gateway -> evidence",
+  "evidence -> model_core -> evidence",
+  "model_core -> observability -> model_core",
+  "model_core -> observability -> persist -> model_core",
+  "model_core -> spec_first -> model_core",
+  "refine -> spec_first -> refine",
 ]
 cycles = [
 ]
