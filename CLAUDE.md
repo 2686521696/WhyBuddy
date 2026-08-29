@@ -111,7 +111,25 @@ npx tsc --noEmit -p tsconfig.json
 
 # 架构图改完必须跑（改完不跑 = 提交了但渲染不出来）
 node scripts/mermaid-render-check.mjs "docs/SlideRule V6.0 架构图.md"
+
+# 架构：依赖图**不许手画**，改完代码重新生成 + 过闸
+slide-rule-python/.venv/bin/python slide-rule-python/arch_graph.py --emit    # 重新生成
+slide-rule-python/.venv/bin/python slide-rule-python/arch_graph.py --check   # 闸（CI 里由 pytest 跑）
 ```
+
+## 架构边界
+
+`docs/SlideRule V6.2 架构图（自动生成）.md` 是**生成的，别手改**——改了
+`tests/test_architecture.py::Test图与代码同步` 会红。依赖规则写在
+`slide-rule-python/architecture.toml`，新增跨包依赖必须先在 `may_depend_on` 里
+声明（并写清为什么），新增循环依赖直接红。
+
+⚠ 存量违规/环冻在 `[baseline]` 里，**只许变短**：修好了要从基线里删掉，
+否则下一个人以为那笔欠账还在。往基线里加东西 = 有意接受一笔新欠账，
+不该出现在日常流程里。
+
+⚠ 函数体里的 import **一样算数**。全仓 62% 的内部 import 在函数体里，
+不算就等于默认放行三分之二，而且「把 import 挪进函数」会变成一句话绕过闸的办法。
 
 ## 部署
 

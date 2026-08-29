@@ -1,0 +1,84 @@
+# 架构清单 —— 依赖要**显式声明**，没声明的边判据当场变红。
+#
+# 抄 grok-build：他们 91 个 crate 各自在 Cargo.toml 里声明依赖，边上还写着
+# 为什么依赖（`# CompactionDetail, embedded in CompactionMode::Segments.`），
+# 347 条边全由编译器强制。我们没有那个编译器，这份清单 + tests/test_architecture.py
+# 就是它。详见 arch_graph.py 模块头。
+#
+# ⚠ 改这个文件 = 改架构。加一条 may_depend_on 之前先问：这条依赖是必须的，
+#   还是"顺手 import 一下"？后者的代价是下一个人再也分不清哪些边是设计、
+#   哪些是历史。
+
+[layer.models]
+rank = 0
+what = "数据形状"
+# 数据模型不依赖任何内部模块——它被所有人依赖，反过来就成环。
+may_depend_on = []
+
+[layer.config]
+rank = 0
+what = "配置"
+may_depend_on = []
+
+[layer.sliderule_llm]
+rank = 1
+what = "LLM 通道"
+# 网关要读配置、要用状态模型的形状。
+may_depend_on = ["config", "models"]
+
+[layer.services]
+rank = 2
+what = "业务"
+# 业务层调 LLM 通道、读配置、用状态模型。**不许反向依赖 routes/app**。
+may_depend_on = ["config", "models", "sliderule_llm"]
+
+[layer.middlewares]
+rank = 2
+what = "中间件"
+# 身份中间件要读配置与用户模型。
+may_depend_on = ["config", "models"]
+
+[layer.routes]
+rank = 3
+what = "HTTP 路由"
+# 路由是薄的：拼装业务、读配置、用中间件鉴权。
+may_depend_on = ["config", "models", "services", "sliderule_llm", "middlewares"]
+
+[layer.app]
+rank = 4
+what = "装配根"
+# 对应 grok 的 composition root（xai-grok-pager-bin）：只负责把东西装起来。
+may_depend_on = ["config", "models", "routes", "services", "middlewares"]
+
+[layer.scripts]
+rank = 5
+what = "运维脚本"
+# 一次性脚本可以够到任何东西——它不在产品链上，出事也炸不到用户。
+may_depend_on = ["config", "models", "services", "routes", "sliderule_llm", "app", "middlewares"]
+
+
+# ── 棘轮基线 ────────────────────────────────────────────────────────────────
+#
+# 存量违规与环冻在这里，判据只比「有没有变多」。**这份清单只许变短。**
+#
+# ⚠ 为什么不一次改干净：这些环穿过的是最核心的几对文件
+#   （v5_full_driver ⇄ v5_capability_executor 之类）。一次性拆依赖的风险，
+#   远大于它能换来的整洁——而风险落在一条跑一次要 20 分钟真钱的链上。
+#   想清哪条清哪条，清完从这里删掉。
+#
+# ⚠ 往这里加东西 = 有意接受一笔新欠账。`--freeze` 会一把全写进来，
+#   所以它不该出现在日常流程里；日常应该是让判据红，然后**改代码**。
+[baseline]
+violations = [
+  "middlewares -> services",
+  "services -> app",
+  "services -> routes",
+  "sliderule_llm -> services",
+]
+cycles = [
+  "routes.sliderule_full -> services.rehearsal_control -> routes.sliderule_full",
+  "services.capability_maps -> services.slide_rule_executor -> services.capability_maps",
+  "services.page_shell -> services.spec_tree -> services.page_shell",
+  "services.persistence -> services.slide_rule_session -> services.persistence",
+  "services.v5_capability_executor -> services.v5_full_driver -> services.v5_capability_executor",
+]

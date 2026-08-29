@@ -1656,3 +1656,75 @@ V6.0 是一张大图（19 个子图 / 183 个节点），V6.1 是一组短图。
 图上没有的东西，没人会去问它为什么没有。上一轮我给 POOL/ROLES 的理由是
 「画出来是散文墙」，那是对**画法**的判断，被我当成了对**要不要画**的判断——
 散文墙不该画，不等于那一整块里没有该画的东西。
+
+---
+
+## 16. 抄 grok 的「编译器」：架构图改成生成的（2026-08-29）
+
+### 16.1 差距量出来是什么样
+
+| | grok-build | WhyBuddy（改之前） |
+|---|---|---|
+| 架构图 | **0 张**（svg/png/puml/dot 也是 0） | 17 张，全手画 |
+| 模块级文档 | 1991 文件 / 14828 行 `//!` | 687 文件 / 10266 行 docstring |
+| 写了模块头的比例 | 68%（平均 7.4 行） | **93%（平均 14.9 行）** |
+| 模块边界 | 91 个 crate，**编译器强制** | 265 个模块，**零强制** |
+| 依赖边 | 347 条，Cargo.toml 显式声明（边上写着为什么） | 394 条，自由 import |
+
+**模块文档我们不差，反而更厚**——CLAUDE.md 那条「知识在代码注释里」是真在执行的。
+差距只有一条：**他们的架构图是编译器画的，我们的是人画的。**
+
+手画的后果已经量到过（§15）：已知缺口图六条里四条早就不成立、19 个模块块有 12 个
+从没画过。代码这边同样在飘：内部 import 有 **62% 写在函数体里**（Python 绕环的
+标准手法），顶层 import 图里 **5 个真的环**，包括最核心的
+`v5_full_driver ⇄ v5_capability_executor`。
+
+### 16.2 搬过来的三件
+
+| grok | 这里 |
+|---|---|
+| 每个 crate 在 Cargo.toml 显式声明依赖 | `slide-rule-python/architecture.toml` 声明分层与允许的边 |
+| 没声明就编译不过 / 循环编译不出来 | `tests/test_architecture.py` —— 我们的编译器，CI 里随 pytest 跑 |
+| 根 Cargo.toml 是**生成的**，read-only | `docs/SlideRule V6.2 架构图（自动生成）.md`，判据保证它与代码同步 |
+
+第三条正是「多台电脑架构不一致」的解药：改了代码不重新生成，判据当场红。
+
+### 16.3 三个非做不可的细节
+
+**① 函数体里的 import 必须算数。** 62% 在函数体里，不算就等于默认放行三分之二，
+而且「把 import 挪进函数」会变成一句话绕过闸的办法。变异验过：藏进函数体照样红。
+
+**② 存量用棘轮，不做一次大修。** 4 条违规 + 5 个环冻进 `[baseline]`，只比有没有变多。
+这些环穿的是最核心的几对文件，一次性拆的风险远大于收益——想清哪条清哪条。
+基线**只许变短**，修好了不从基线删掉也会红。
+
+**③ 生成必须确定性。** 一切排序固定。不确定就等于没修：两台电脑生成的文件不一样，
+判据每次都红，下一个人就会把它注释掉。
+
+### 16.4 变异验过（四刀，各咬不同判据）
+
+| 变异 | 结果 |
+|---|---|
+| 新增未声明的跨包依赖（models → services） | 红 ✅ |
+| 把同一条 import **藏进函数体**绕闸 | 红 ✅ |
+| 新增循环依赖 | 红 ✅ |
+| 手改生成的架构图 | 红 ✅ |
+
+⚠ **第三刀第一次没咬住**，逼出了分析器里一个真洞：`from . import x` 被解析成了
+包名而不是 `包.x`，于是 `page_id_freeze ⇄ spec_first_pipeline` 这类环**扫不出来**。
+改成两趟（先收模块集合，再拿它筛候选、取最长匹配）之后才咬住。
+**不做变异就会把一道漏筛的闸当成装好了**——这正是 §14 那条「闸装上了 ≠ 闸咬得动」。
+
+### 16.5 还欠着的（棘轮里，只许变少）
+
+    未声明跨包依赖 4：middlewares→services、services→app、services→routes、
+                      sliderule_llm→services
+    循环依赖 5：      routes.sliderule_full ⇄ services.rehearsal_control
+                      services.capability_maps ⇄ services.slide_rule_executor
+                      services.page_shell ⇄ services.spec_tree
+                      services.persistence ⇄ services.slide_rule_session
+                      services.v5_capability_executor ⇄ services.v5_full_driver
+
+建议先还第一个环：`rehearsal_control` 反过来 import 了
+`routes.sliderule_full._restore_model_version_locked`（services 依赖 routes，
+方向是反的）。把那个函数下沉成 service，环和 `services→routes` 那条违规一起清掉。

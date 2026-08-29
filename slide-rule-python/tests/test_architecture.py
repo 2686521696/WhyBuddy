@@ -1,0 +1,194 @@
+# -*- coding: utf-8 -*-
+"""架构边界闸：这是我们的「编译器」。
+
+## 为什么有这个文件
+
+2026-08-29 对照 grok-build（`docs/欠缺模块清单-对照Claude与Grok-build.md` §16）：
+
+    grok-build   架构图 0 张。91 个 crate 在 Cargo.toml 里显式声明依赖，
+                 347 条边由**编译器**强制；循环依赖在 Rust 里编译不出来。
+    WhyBuddy     架构图 17 张全手画，265 个模块 394 条边**零强制**。
+
+手画的后果量到过：已知缺口图六条里四条早就不成立、19 个模块块有 12 个从没画过。
+代码这边同样飘：62% 的内部 import 写在函数体里（绕环的标准手法），5 个真的环。
+
+**他们的架构图是编译器画的，我们的是人画的。** 这个文件补的就是那个编译器。
+
+## 三条判据，各挡一件事
+
+    未声明的跨包依赖变多   → 红（对应「没声明就编译不过」）
+    新增循环依赖           → 红（对应「循环依赖编译不出来」）
+    图与代码不同步         → 红（对应「根 Cargo.toml 是生成的」）
+
+第三条是用户真正要的那条：**多台电脑改了代码不重新生成，图就不一致**。
+判据把「重新生成一遍，看看和仓里那份一不一样」变成机器的事。
+
+## ⚠ 这道闸自己也得咬得住
+
+本仓 2026-08-29 刚数过一轮「闸装上了 ≠ 闸咬得动」（§14）。所以这里每条判据
+都配了变异验证，而且第一条判据是**扫描器自己没瞎**——写 arch_graph 的第一版
+就把 472 个测试文件算进了依赖图（`"tests/" in str(p)` 匹配不到 `tests/foo.py`，
+因为没有前导斜杠），噪音把真信号整个盖住。
+"""
+
+import os
+import subprocess
+import sys
+
+import pytest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import arch_graph  # noqa: E402
+
+_G = arch_graph.build_graph()
+_M = arch_graph.load_manifest()
+
+
+class Test扫描器自己没瞎:
+    """⚠ 排第一。扫描集不对，下面三条全是绿灯空过。"""
+
+    def test_扫到的是产线代码不是测试(self):
+        assert _G.files_scanned > 200, f"只扫到 {_G.files_scanned} 个文件，判据会空过"
+        assert not any(m.startswith("tests.") for m in _G.modules), (
+            "测试文件被算进依赖图了——第一版就栽在这（路径是 tests/foo.py，"
+            "没有前导斜杠，`\"tests/\" in str(p)` 匹配不到）"
+        )
+
+    def test_核心模块都在图里(self):
+        for m in ("services.v5_full_driver", "routes.sliderule_full",
+                  "services.spec_first_pipeline"):
+            assert m in _G.modules, f"{m} 不在图里，扫描范围漏了"
+
+    def test_函数体里的import也算数(self):
+        """⚠ 全仓 62% 的 import 在函数体里。不算 = 默认放行三分之二的依赖，
+        而且给了一句话绕过闸的办法：把 import 挪进函数。"""
+        deferred = sum(1 for e in _G.edges if e.deferred)
+        assert deferred > 100, f"只认出 {deferred} 条函数体内 import，解析器坏了"
+        assert any(
+            e.deferred and e.src.startswith("services.") for e in _G.edges
+        ), "services 里一条函数体内 import 都没认出来"
+
+
+class Test依赖必须先声明:
+    """对应 grok 的「没声明就编译不过」。"""
+
+    def test_没有新增的未声明依赖(self):
+        now = set(arch_graph.layer_violations(_G, _M))
+        base = set(_M.get("baseline", {}).get("violations", []))
+        new = sorted(now - base)
+        assert not new, (
+            f"新增了未声明的跨包依赖：{new}。\n"
+            f"要么改代码别这么依赖，要么在 architecture.toml 的 may_depend_on 里"
+            f"**显式声明**（并写清为什么）。不许直接塞进 baseline。"
+        )
+
+    def test_基线只许变短(self):
+        """⚠ 反向判据：棘轮不能倒着转。基线里躺着已经修好的条目，
+        下一个人会以为那笔欠账还在。"""
+        now = set(arch_graph.layer_violations(_G, _M))
+        base = set(_M.get("baseline", {}).get("violations", []))
+        stale = sorted(base - now)
+        assert not stale, (
+            f"这些欠账已经还清了，从 architecture.toml 的 baseline 里删掉：{stale}"
+        )
+
+    def test_分层声明本身是自洽的(self):
+        """⚠ 反向判据：声明里不许出现不存在的层，也不许自己依赖自己。"""
+        layers = _M.get("layer", {})
+        assert layers, "architecture.toml 没有 layer 声明，判据会空过"
+        for name, spec in layers.items():
+            for dep in spec.get("may_depend_on", []):
+                assert dep in layers, f"{name} 声明依赖了不存在的层 {dep}"
+                assert dep != name, f"{name} 声明依赖了自己"
+
+
+class Test循环依赖只许变少:
+    """对应 grok 的「循环依赖编译不出来」。Rust 里编译器管，Python 得自己数。"""
+
+    def test_没有新增的环(self):
+        now = set(arch_graph.find_cycles(_G))
+        base = set(_M.get("baseline", {}).get("cycles", []))
+        new = sorted(now - base)
+        assert not new, (
+            f"新增了循环依赖：{new}。\n"
+            f"Python 不会因此报错——它会让你把 import 挪进函数体里继续跑，"
+            f"然后在某次 reload 或某个新入口上炸。"
+        )
+
+    def test_基线里的环还在_修好了就删掉(self):
+        now = set(arch_graph.find_cycles(_G))
+        base = set(_M.get("baseline", {}).get("cycles", []))
+        stale = sorted(base - now)
+        assert not stale, (
+            f"这些环已经拆掉了，从 architecture.toml 的 baseline 里删掉：{stale}"
+        )
+
+    def test_环的签名是规范化的(self):
+        """⚠ 同一个环换个起点就成了「新环」的话，棘轮基线会被自己搅乱。"""
+        for c in arch_graph.find_cycles(_G):
+            members = c.split(" -> ")
+            assert members[0] == members[-1], f"环签名没闭合：{c}"
+            assert members[0] == min(members[:-1]), f"环签名没从最小成员起转：{c}"
+
+
+class Test图与代码同步:
+    """⚠ 用户要的正是这一条：**多台电脑改了代码不重新生成，图就不一致**。
+
+    对应 grok 的「根 Cargo.toml 是生成的，treat it as read-only」。
+    """
+
+    def test_仓里那份图就是现在重新生成的那份(self):
+        assert arch_graph.DIAGRAM.exists(), (
+            f"{arch_graph.DIAGRAM} 不在——跑 "
+            f"`python slide-rule-python/arch_graph.py --emit` 生成"
+        )
+        want = arch_graph.render_doc(_G, _M)
+        got = arch_graph.DIAGRAM.read_text(encoding="utf-8")
+        assert got == want, (
+            "架构图和代码对不上了。**不要手改那个文件**，跑：\n"
+            "  slide-rule-python/.venv/bin/python slide-rule-python/arch_graph.py --emit"
+        )
+
+    def test_生成是确定性的(self):
+        """⚠ 不确定就等于没修：两台电脑生成的文件不一样，判据每次都红，
+        下一个人就会把它注释掉——而「多台电脑不一致」正是要治的病。"""
+        a = arch_graph.render_doc(arch_graph.build_graph(), _M)
+        b = arch_graph.render_doc(arch_graph.build_graph(), _M)
+        assert a == b, "同一份代码生成了两份不同的图"
+
+    def test_图上标着不许手改(self):
+        head = arch_graph.DIAGRAM.read_text(encoding="utf-8")[:400]
+        assert "不要手改" in head, "生成的图必须自己声明是生成的，否则一定有人手改它"
+
+
+class Test闸能被真的绕过吗:
+    """⚠ 反向判据：想清楚这道闸挡不住什么，写下来，别让人以为它全包。"""
+
+    def test_动态import挡不住_已知边界(self):
+        """`importlib.import_module("services.x")` 这类动态 import 是 AST 看不见的。
+
+        这不是缺陷，是**边界**：写下来，免得下一个人以为这道闸全包。
+        真要挡，得上运行时钩子，代价另算。
+        """
+        src = (arch_graph.ROOT / "arch_graph.py").read_text(encoding="utf-8")
+        assert "import_module" not in src.split('"""')[2], (
+            "如果哪天支持了动态 import，把这条判据改掉"
+        )
+
+    def test_命令行闸与判据同源(self):
+        """⚠ CI 跑 `--check`，本地跑 pytest，两条路必须给同一个答案——
+        否则就是本仓第四条：同一件事两个实现，改一个不改另一个。"""
+        r = subprocess.run(
+            [sys.executable, str(arch_graph.ROOT / "arch_graph.py"), "--check"],
+            capture_output=True, text=True,
+        )
+        now_v = set(arch_graph.layer_violations(_G, _M))
+        now_c = set(arch_graph.find_cycles(_G))
+        base = _M.get("baseline", {})
+        clean = not (now_v - set(base.get("violations", []))) and not (
+            now_c - set(base.get("cycles", []))
+        )
+        assert (r.returncode == 0) == clean, (
+            f"命令行闸与 pytest 判据结论不一致：exit={r.returncode} clean={clean}\n{r.stdout}"
+        )
