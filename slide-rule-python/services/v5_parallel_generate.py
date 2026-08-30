@@ -15,6 +15,8 @@ deterministically from validated outputs.
 
 from __future__ import annotations
 from .archetype_legal import default_device as _default_device
+from .archetype_legal import device_domain_bar as _device_domain_bar
+from .archetype_legal import device_domain_or as _device_domain_or
 from .archetype_legal import supported_devices as _supported_devices
 
 import copy
@@ -138,7 +140,7 @@ Shape:
       "outputField":"<entity.field>","roleRefs":["<role id>"]}],
     "aigcPipelines":[{"id":"...","name":"...","steps":["<aigc intent id>"]}],
     "landingPageRef":"<page id>",
-    "preferredDevice":"desktop|phone",
+    "preferredDevice":"__PREFERRED_DEVICES__",
     "appIdentity":{"productName":"...","theme":"azure|forest|graphite|tangerine|violet|amber|clay|indigo",
       "icon":"cart|users|shield|chart|calendar|wrench|spark|globe|heart|book|file|boxes",
       "nav":"side|top"},
@@ -262,7 +264,7 @@ def _contract_instruction() -> str:
     )
 
     return (
-        _CONTRACT_INSTRUCTION
+        _CONTRACT_INSTRUCTION.replace("__PREFERRED_DEVICES__", _device_domain_bar())
         + "\nClosed runtime domains (never invent values): "
         + f"field tone={','.join(FIELD_TONES)}; "
         + f"number format={','.join(NUMBER_FORMATS)}; "
@@ -299,7 +301,7 @@ def _contract_problems(payload: Any) -> list[str]:
     if not isinstance(contract.get("invariants"), list) or not contract.get("invariants"):
         problems.append("contract.invariants must be a non-empty array")
     if contract.get("preferredDevice") not in set(_supported_devices()):
-        problems.append("contract.preferredDevice must be desktop or phone")
+        problems.append(f"contract.preferredDevice must be {_device_domain_or()}")
 
     entities = [item for item in contract.get("entities", []) if isinstance(item, dict)]
     entity_ids = {str(item.get("id") or "").strip() for item in entities}

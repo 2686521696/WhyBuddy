@@ -130,6 +130,13 @@ class Test未接通的原型不许假装能用:
         assert name in str(ei.value)
         assert "生成侧还产不出" in str(ei.value)
 
+    def test_resolve选中未接通的原型即失败(self):
+        """选择通道落地后，resolve 必须 fail-closed。回落默认 = 假绿灯。"""
+        with pytest.raises(A.ArchetypeNotWired):
+            A.resolve(payload={"productArchetype": "casual_game"})
+        with pytest.raises(A.ArchetypeNotWired):
+            A.resolve(payload={"productArchetype": "glance_app"})
+
     def test_未接通的原型不许静静退回默认(self):
         """⚠ 这条是上一条的**意义**所在。
 
@@ -222,6 +229,8 @@ class Test设备形态账本:
         "随手记一笔，或者使用者是个人在日常生活里用（记账、日程、情绪、预约、下单）。\n"
         "  · desktop —— 坐着、长时段、多列对照、批量操作、审批与配置：看板/中台/"
         "后台/分析/汇总/对账/排产/关系图/权限分级，使用者是在工位上处理一批事的人。\n"
+        "  · tablet —— 手持或支起、单手点按为主但视野接近桌面：现场演示、点单、"
+        "查房、巡店，坐站切换。\n"
         "  · unspecified —— **没有姿态信号就必须选这个**。别硬猜。\n"
         "两个方向的坑（这两组最容易判错，判的是谁在什么状态下用，不是词）：\n"
         "  「外卖骑手运力调度看板」有「骑手」，但用的人是调度员坐在后台 → desktop\n"
@@ -240,13 +249,14 @@ class Test设备形态账本:
 
         assert _DEVICE_RUBRIC == self.HISTORICAL_RUBRIC
 
-    def test_闸的合法域与历史一致(self):
-        assert set(A.supported_devices()) == {"desktop", "phone"}
+    def test_闸的合法域含接通的平板(self):
+        assert set(A.supported_devices()) == {"desktop", "phone", "tablet"}
+        assert "watch" not in A.supported_devices()
 
-    def test_判定输出域与历史一致(self):
+    def test_判定输出域含接通的平板(self):
         from services.intake_judge import _VALID_DEVICES
 
-        assert _VALID_DEVICES == {"desktop", "phone", "unspecified"}
+        assert _VALID_DEVICES == {"desktop", "phone", "tablet", "unspecified"}
 
     def test_哨兵不是设备(self):
         """⚠ unspecified 是「没有姿态信号」的判定结果，不是一种设备。
@@ -255,11 +265,12 @@ class Test设备形态账本:
         assert A.JUDGE_UNSPECIFIED in A.valid_judge_devices()
 
     def test_未接通的设备不进合法域也不进提示词(self):
-        """⚠ tablet / watch 是契约声明、版式侧未接。进了提示词 = 判定会输出
-        一个闸不认的值，用户看到的是"生成失败"而不是"暂不支持"。"""
-        for d in ("tablet", "watch"):
-            assert d not in A.supported_devices()
-            assert d not in A.device_rubric_bullets()
+        """⚠ watch 仍是契约声明、生成侧未接。进了提示词 = 判定会输出
+        一个闸不认的值。tablet 已接通，必须在合法域和提示词里。"""
+        assert "watch" not in A.supported_devices()
+        assert "watch" not in A.device_rubric_bullets()
+        assert "tablet" in A.supported_devices()
+        assert "· tablet ——" in A.device_rubric_bullets()
 
     def test_接通的设备必须都进提示词(self):
         """⚠ 反向判据。加了设备、闸认了、提示词没提 = 判定永远不会选它，
@@ -277,7 +288,12 @@ class Test设备形态账本:
         """
         import ast
 
-        pairs = {frozenset({"desktop", "phone"}), frozenset({"desktop", "phone", "unspecified"})}
+        pairs = {
+            frozenset({"desktop", "phone"}),
+            frozenset({"desktop", "phone", "unspecified"}),
+            frozenset({"desktop", "phone", "tablet"}),
+            frozenset({"desktop", "phone", "tablet", "unspecified"}),
+        }
         offenders = []
         for path in (ROOT / "services").rglob("*.py"):
             if path.name == "archetype_legal.py":
@@ -310,18 +326,15 @@ class Test设备形态账本:
             f"改成 archetype_legal.supported_devices() / valid_judge_devices()。"
         )
 
-    def test_Literal标注与账本一致(self):
-        """⚠ parity 锁。`Literal` 派生不了，所以改成"允许手写、但必须对得上"。
+    def test_不许再手抄设备Literal(self):
+        """⚠ 反向判据。加设备只改账本 + 版式。再写 Literal[\"desktop\",\"phone\"]
+        就是下一笔 watch 漏接的种子。
 
-        账本加一个 wired 设备而这几处 Literal 没跟上 → 当场红。
-        这跟 TS 侧那份 archetype-parity 是同一条纪律：
-        **拦不住的地方，就钉住它。**
+        剥 AST 再认——注释里提到 desktop/phone 不算。
         """
         import ast
 
-        expected = set(A.supported_devices())
-        expected_with_sentinel = expected | {A.JUDGE_UNSPECIFIED}
-        checked = 0
+        offenders = []
         for path in (ROOT / "services").rglob("*.py"):
             try:
                 tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -341,16 +354,12 @@ class Test设备形态账本:
                     e.value for e in elts
                     if isinstance(e, ast.Constant) and isinstance(e.value, str)
                 }
-                # 只挑"看起来是设备域"的那些：含 desktop 或 phone
-                if not (vals & {"desktop", "phone"}):
-                    continue
-                checked += 1
-                assert vals in (expected, expected_with_sentinel), (
-                    f"{path.name}:{node.lineno} 的 Literal 是 {sorted(vals)}，"
-                    f"账本是 {sorted(expected)}（判定域再加 {A.JUDGE_UNSPECIFIED}）。"
-                    f"账本加了设备就要同步这里——Literal 派生不了，只能靠这条锁。"
-                )
-        assert checked >= 4, f"只找到 {checked} 处设备 Literal，判据可能在空转"
+                if vals & {"desktop", "phone", "tablet", "watch"}:
+                    offenders.append(f"{path.name}:{node.lineno}:{sorted(vals)}")
+        assert not offenders, (
+            f"这些 Literal 又把设备枚举写死了：{offenders}\n"
+            f"改成 str + archetype_legal.supported_devices()。"
+        )
 
     def test_兜底档必须是接通的设备(self):
         """⚠ 兜底档要是个未接通的设备，判不出姿态时会直接产出闸不认的东西。"""

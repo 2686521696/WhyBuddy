@@ -1,11 +1,17 @@
 /**
- * 作曲家「应用 / Web」目标形态。词表跟 device_policy 的 Device 对齐
- * （desktop / phone），不另发明 tablet。
+ * 作曲家「应用 / Web」目标形态。合法域跟账本接通的设备对齐，
+ * 空态开关仍是应用 / Web 两档；平板在范围卡上选。
  */
-export type ComposerDevice = "desktop" | "phone";
+import {
+  defaultDevice,
+  isWiredDevice,
+  parsePreferredDevice,
+} from "./product-archetypes";
+
+export type ComposerDevice = string;
 
 export function parseComposerDevice(raw: unknown): ComposerDevice {
-  return raw === "phone" ? "phone" : "desktop";
+  return parsePreferredDevice(raw);
 }
 
 export const COMPOSER_DEVICE_OPTIONS: Array<{
@@ -25,6 +31,13 @@ export const COMPOSER_DEVICE_OPTIONS: Array<{
  *   占位符回到只描述任务。再加回去，空框里又是三处重复。
  */
 export function composerHeroPlaceholder(device: ComposerDevice): string {
-  const what = device === "phone" ? "手机应用" : "业务系统";
+  const what =
+    device === "phone"
+      ? "手机应用"
+      : device === "tablet"
+        ? "平板应用"
+        : "业务系统";
   return `描述你想构建的${what}…`;
 }
+
+export { defaultDevice, isWiredDevice };

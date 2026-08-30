@@ -71,6 +71,12 @@ import {
   loadProductCharter,
 } from "./product-charter";
 import {
+  defaultArchetype,
+  isWiredDevice,
+  parseJudgeDevice,
+} from "./product-archetypes";
+import {
+  type ScopeCardChoice,
   type ScopeCardDevice,
   type ScopeCardPending,
 } from "./scope-card-gate";
@@ -814,6 +820,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             restatement: hydrated.awaitDetail,
             variant: hydrated.goal?.text?.trim() ? "thin" : "full",
             device: (loadPreferredDevice() as ScopeCardDevice) || "unspecified",
+            productArchetype: defaultArchetype(),
           };
           pendingScopeRef.current = parked;
           setPendingScope(parked);
@@ -876,7 +883,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     resumeRun?: { runId: string },
     // E26 缺口修复轮：只重跑覆盖门标红的能力，已 PASS 产物原样复用
     mode?: "repair",
-    forcedTool?: string
+    forcedTool?: string,
+    scopeChoice?: ScopeCardChoice
   ) => {
     if (!userText.trim()) return;
 
@@ -1369,7 +1377,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           const streamOpts = {
               stopSignal: controller.signal,
               turnId,
-              preferredDevice: loadPreferredDevice(),
+              preferredDevice:
+                (scopeChoice && isWiredDevice(scopeChoice.device)
+                  ? scopeChoice.device
+                  : loadPreferredDevice()) || "desktop",
+              productArchetype:
+                scopeChoice?.productArchetype || defaultArchetype(),
               // 设计系统跟 preferredDevice 走同一条路：作曲家写 localStorage，
               // 发起推演时在这里读。加一条 props 传参链没有额外好处，反而多一处
               // 会忘记接的地方。
@@ -1563,12 +1576,21 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   userText: String(event.userText || userText.trim()),
                   restatement: restatement || "未命名应用",
                   variant: event.variant === "thin" ? "thin" : "full",
-                  device:
-                    event.device === "phone"
-                      ? "phone"
-                      : event.device === "desktop"
-                        ? "desktop"
-                        : "unspecified",
+                  device: parseJudgeDevice(event.device),
+                  productArchetype:
+                    String(event.productArchetype || "") || defaultArchetype(),
+                  wiredArchetypes: Array.isArray(event.wiredArchetypes)
+                    ? event.wiredArchetypes.filter(
+                        (row): row is { id: string; label: string } =>
+                          Boolean(row && typeof row === "object" && row.id)
+                      )
+                    : undefined,
+                  wiredDevices: Array.isArray(event.wiredDevices)
+                    ? event.wiredDevices.filter(
+                        (row): row is { id: string; label: string } =>
+                          Boolean(row && typeof row === "object" && row.id)
+                      )
+                    : undefined,
                   charterReuseNext: event.charterReuseNext,
                 };
                 pendingScopeRef.current = next;
@@ -2112,20 +2134,29 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
    * 「开始推演」：六字段 + forcedTool rehearse + 复述句当 userText。
    * 不得 POST factoryProfile。
    */
-  const confirmControlScope = async () => {
+  const confirmControlScope = async (choice?: ScopeCardChoice) => {
     const pending = pendingScopeRef.current;
     // ⚠ 2026-08-27：stop() 立刻把 isRunning 画面松开，isRunningRef 要等
     // finally。用 state 闸会在这个窗口里 clearPendingScope 再 runTurn 空转，
     // 卡没了、rehearse 也没 POST。闸在 ref；ref 仍真时连卡都不要清。
     if (!pending || isRunningRef.current) return;
-    const snapshot: ScopeCardPending = { ...pending };
+    const snapshot: ScopeCardPending = {
+      ...pending,
+      ...(choice && typeof choice === "object" && !("nativeEvent" in choice)
+        ? choice
+        : {}),
+    };
     clearPendingScope();
     await runTurn(
       snapshot.restatement || snapshot.userText,
       snapshot.intervention as UserIntervention | undefined,
       undefined,
       snapshot.mode,
-      "rehearse"
+      "rehearse",
+      {
+        device: snapshot.device,
+        productArchetype: snapshot.productArchetype || defaultArchetype(),
+      }
     );
   };
 

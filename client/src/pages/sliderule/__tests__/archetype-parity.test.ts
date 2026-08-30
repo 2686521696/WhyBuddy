@@ -116,4 +116,12 @@ describe("产品原型账本 parity（TS 侧不许再手抄一份闭环定义）
     expect(LEDGER_SIX.length).toBe(6);
     expect(LEDGER_SIX).toContain("appbundle");
   });
+
+  it("接通的设备档跟账本走，平板已接通，手表未接通", () => {
+    const forms = (archetypes as any).deviceForms.forms;
+    expect(forms.tablet.wired).toBe(true);
+    expect(forms.watch.wired).toBe(false);
+    expect(forms.desktop.wired).toBe(true);
+    expect(forms.phone.wired).toBe(true);
+  });
 });

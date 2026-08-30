@@ -116,6 +116,8 @@ describe("目标形态（应用 / Web）", () => {
     expect(loadPreferredDevice()).toBe("desktop");
     setPreferredDevice("phone");
     expect(loadPreferredDevice()).toBe("phone");
+    setPreferredDevice("tablet");
+    expect(loadPreferredDevice()).toBe("tablet");
     setPreferredDevice("desktop");
     expect(loadPreferredDevice()).toBe("desktop");
   });

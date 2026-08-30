@@ -180,7 +180,7 @@ export async function driveFullViaPython(
     stopSignal?: AbortSignal;
     maxLoops?: number;
     turnId?: string;
-    preferredDevice?: "desktop" | "phone";
+    preferredDevice?: string;
     /** 设计系统 id。后端据此取种子色拼提示词 / 选 DESIGN.md。 */
     designSystemId?: string;
   } = {}
@@ -344,7 +344,9 @@ export interface DriveFullStreamOpts {
   /** 流读到 done 却没见终局（协议违规）。见 STREAM_NO_TERMINAL 头注。 */
   onStreamNoTerminal?: (code: string) => void;
   /** 空态作曲家「应用 / Web」。desktop 横屏 / phone 竖屏，跟 device_policy 同词表。 */
-  preferredDevice?: "desktop" | "phone";
+  preferredDevice?: string;
+  /** 范围卡确认的产品原型。只在确认推演时带，缺省走账本默认。 */
+  productArchetype?: string;
   /** 设计系统 id。后端据此取种子色拼提示词 / 选 DESIGN.md。 */
   designSystemId?: string;
   /** M1 控制面昂贵按钮：rehearse/refine/repair/challenge。/推演 不得带 rehearse。 */
@@ -404,6 +406,9 @@ export interface DriveFullStreamOpts {
   onControlScopeCard?: (event: {
     restatement: string;
     device?: string;
+    productArchetype?: string;
+    wiredArchetypes?: Array<{ id: string; label: string }>;
+    wiredDevices?: Array<{ id: string; label: string }>;
     variant?: string;
     userText?: string;
     charterReuseNext?: boolean;
@@ -746,6 +751,9 @@ export async function postControlTurnStream(
         installedSkills: installedSkillsDrivePayload(),
         activeConnectors: pickedConnectorIds(loadTurnCapabilities()),
         preferredDevice: opts.preferredDevice ?? "desktop",
+        ...(opts.productArchetype
+          ? { productArchetype: opts.productArchetype }
+          : {}),
         designSystemId: opts.designSystemId ?? null,
         ...(opts.forcedTool ? { forcedTool: opts.forcedTool } : {}),
         ...(opts.versionId ? { versionId: opts.versionId } : {}),
@@ -856,6 +864,16 @@ export async function consumeControlStreamResponse(
               opts.onControlScopeCard?.({
                 restatement: String(event.restatement || ""),
                 device: event.device,
+                productArchetype:
+                  typeof event.productArchetype === "string"
+                    ? event.productArchetype
+                    : undefined,
+                wiredArchetypes: Array.isArray(event.wiredArchetypes)
+                  ? event.wiredArchetypes
+                  : undefined,
+                wiredDevices: Array.isArray(event.wiredDevices)
+                  ? event.wiredDevices
+                  : undefined,
                 variant: event.variant,
                 userText: event.userText,
                 charterReuseNext:

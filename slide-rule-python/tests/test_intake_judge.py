@@ -278,11 +278,9 @@ def test_device_defaults_to_unspecified_not_desktop():
     assert j.device == "unspecified"
 
 
-@pytest.mark.parametrize("raw", ["tablet", "watch", "", None, "DESKTOP ", 123])
+@pytest.mark.parametrize("raw", ["watch", "", None, "DESKTOP ", 123])
 def test_illegal_device_falls_back_to_unspecified(raw):
-    """不合法一律落 unspecified，不猜。tablet 特别要落回——它在
-    preferredDevice 的合法域里，但平板渲染代码已下架（ADR-0001），
-    判出来下游没有对应的设计与外壳。"""
+    """不合法一律落 unspecified，不猜。watch 仍未接通。"""
     payload = {"verdict": "real", "reason": "r", "confidence": 0.9, "device": raw}
     j = ij.judge_turn("随便一个需求", has_app=False, llm_json_fn=lambda _m: payload)
     assert j.device in ij._VALID_DEVICES
@@ -290,6 +288,12 @@ def test_illegal_device_falls_back_to_unspecified(raw):
         assert j.device == "desktop", "大小写与空格应被规范化"
     else:
         assert j.device == "unspecified"
+
+
+def test_tablet_is_a_legal_judge_device():
+    payload = {"verdict": "real", "reason": "r", "confidence": 0.9, "device": "tablet"}
+    j = ij.judge_turn("餐厅平板点单", has_app=False, llm_json_fn=lambda _m: payload)
+    assert j.device == "tablet"
 
 
 def test_device_rides_the_existing_call_no_extra_roundtrip():
@@ -319,12 +323,15 @@ def test_device_rubric_judges_posture_not_keywords():
     assert "unspecified" in body and "别硬猜" in body
 
 
-def test_device_never_offers_tablet():
-    """判词里不许出现 tablet 选项——判出来也没有对应的设计与外壳，
-    等于让模型判一个系统做不到的东西（跟能力面同一条纪律）。"""
+def test_device_offers_wired_tablet_not_watch():
+    """接通的档必须出现在判定槽位；未接通的 watch 不许出现。"""
+    from services.archetype_legal import judge_device_domain_bar
+
     body = ij.build_messages("随便一句", has_app=False)[0]["content"]
-    assert '"device": desktop|phone|unspecified' in body
-    assert "tablet" not in ij._VALID_DEVICES
+    assert f'"device": {judge_device_domain_bar()}' in body
+    assert "tablet" in ij._VALID_DEVICES
+    assert "watch" not in ij._VALID_DEVICES
+    assert "watch" not in body.split("判定纪律")[0]
 
 
 def test_device_cases_are_wellformed():

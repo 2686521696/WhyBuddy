@@ -823,8 +823,13 @@ def test_generation_contract_teaches_how_to_pick_the_device():
         "缺「带后台词的现场需求」这一向"
     assert "MUST choose exactly one" in body
     assert "NEVER omit" in body
-    assert "'desktop'|'phone'" in body
-    assert "'tablet'" not in body
+    from services.archetype_legal import device_domain_bar
+
+    bar = device_domain_bar()
+    assert f"preferredDevice '{bar}'" in body
+    assert "tablet" in bar
+    assert "emit an unsupported device" in body
+    assert "watch" not in body.split("Step 9")[0]
 
 
 # ── monitor 页放开 page.blocks（2026-07-31）─────────────────────────────
