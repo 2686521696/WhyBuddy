@@ -3,8 +3,8 @@
 > ⚠ **这份文件是 `scripts/arch-graph-ts.mjs --emit` 生成的，别手改。**
 > 手改了 `scripts/arch-graph-ts.test.mjs` 会红。改代码然后重新生成。
 
-对应 grok-build 的做法：92 个 crate 在各自 `Cargo.toml` 里显式声明依赖，
-364 条内部边由编译器强制，根 `Cargo.toml` 是生成的。
+对应 grok-build 的做法：crate 边界由编译器强制，根 `Cargo.toml` 是生成的。
+数字见 `docs/WhyBuddy与Grok-build架构对照.md`（2026-08-30 重测）。
 
 ## 规模
 

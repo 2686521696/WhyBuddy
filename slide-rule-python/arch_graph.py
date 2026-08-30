@@ -6,11 +6,12 @@
 2026-08-29 对照 grok-build 数出来的差距（见
 `docs/欠缺模块清单-对照Claude与Grok-build.md` §16）：
 
-    grok-build   架构图 **0 张**。91 个 crate 在各自 Cargo.toml 里显式声明
-                 依赖（边上还写着为什么依赖），347 条边全由编译器强制；
-                 循环依赖在 Rust 里根本编译不出来。根 Cargo.toml 是**生成的**，
-                 README 里标着 treat it as read-only。
-    WhyBuddy     架构图 17 张，全手画。265 个模块 394 条内部依赖边，**零强制**。
+    grok-build   架构图 **0 张**。crate 边界由编译器强制，根 Cargo.toml 是
+                 **生成的**。2026-08-30 重测：一等 crate 92、一等内部边 351；
+                 带注释的内部边 17%，注释在依赖行上方不是行内。
+                 旧说「91 crate / 347 条 / 边上写着为什么」已废，见
+                 `docs/WhyBuddy与Grok-build架构对照.md`。
+    WhyBuddy     2026-08-29 动手前：架构图 17 张全手画，265 模块 394 边，零强制。
 
 手画的后果已经量到过：已知缺口图六条里四条早就不成立、V6.0 的 19 个模块块有
 12 个从没画过。而代码这边同样在飘——内部 import 有 62% 写在**函数体里**
@@ -579,8 +580,8 @@ def render_doc(g: Graph, manifest: dict) -> str:
         "> slide-rule-python/.venv/bin/python slide-rule-python/arch_graph.py --emit",
         "> ```",
         "",
-        "抄的是 grok-build 的做法：他们**一张架构图都没有**，91 个 crate 在各自",
-        "`Cargo.toml` 里显式声明依赖，347 条边由编译器强制，根 `Cargo.toml` 是生成的。",
+        "抄的是 grok-build 的做法：他们**一张架构图都没有**，crate 边界由编译器",
+        "强制，根 `Cargo.toml` 是生成的。数字见 `docs/WhyBuddy与Grok-build架构对照.md`。",
         "我们没有那个编译器，所以自己写一个——见 `slide-rule-python/arch_graph.py` 模块头。",
         "",
         "## 此刻的事实（由代码算出，不是手写）",
@@ -655,7 +656,7 @@ def render_doc(g: Graph, manifest: dict) -> str:
             "",
             "## crate 级：component 依赖图",
             "",
-            "抄 grok 的 Cargo.toml——他们 90 个 crate、347 条**声明过**的边由编译器焊死。",
+            "抄 grok 的 Cargo.toml——crate 边界由编译器焊死；数字见对照文档。",
             f"我们 {len(comps)} 个 component、{len(cedges)} 条边，由 `architecture.toml` 声明、判据强制。",
             "**红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。",
             "",
