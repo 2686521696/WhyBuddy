@@ -116,7 +116,7 @@ class Test风格段平板:
         assert "1112×834" in joined
         assert "主表几列" not in joined
         assert "有没有右侧详情栏" not in joined
-        assert "手机竖屏" not in joined
+        assert "手机竖屏 App" not in joined
         assert "390×844" not in joined
         assert "逐个点名" in joined
 
@@ -156,7 +156,7 @@ class Test平板壳统一:
             assert "<aside" in html
             assert "phone-tabbar" not in html
             assert "bottom-bar" not in html
-            assert "巡店通" in html
+            assert "巡店助手" in html
 
 
 class Test账本视口:

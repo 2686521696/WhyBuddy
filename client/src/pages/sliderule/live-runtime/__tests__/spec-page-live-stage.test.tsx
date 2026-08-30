@@ -203,6 +203,20 @@ describe("画布视口按设备选（2026-08-14 竖屏）", () => {
     expect(stage.style.height).toBe("844px");
   });
 
+  it("平板页用 1112×834，不套手机框，也不折成 1920", () => {
+    /**
+     * 2026-08-30 夜：SSE 把 tablet 折成 desktop，徽标仍是 1920×1080。
+     * 把 specPageViewport 的 tablet 枝删掉本条必须红。
+     */
+    mount([{ ...page("p1", 1), device: "tablet" as const }]);
+    expect(badge()).toContain("1112×834");
+    expect(badge()).not.toContain("1920×1080");
+    const stage = frames()[0].parentElement as HTMLElement;
+    expect(stage.style.width).toBe("1112px");
+    expect(stage.style.height).toBe("834px");
+    expect(host!.querySelector('[data-testid="sliderule-phone-frame"]')).toBeNull();
+  });
+
   it("手机页套设备框，桌面页不套", () => {
     mount([page("p1", 1)]);
     expect(host!.querySelector('[data-testid="sliderule-phone-frame"]')).toBeNull();
