@@ -129,6 +129,7 @@ describe("产品客户端不得再 POST 工厂流", () => {
     expect(postFn).toContain("sessionId: state.sessionId");
     expect(postFn).toContain("userText");
     expect(postFn).toContain("preferredDevice");
+    expect(postFn).toContain("productArchetype");
     expect(postFn).toContain("designSystemId");
     expect(postFn).toContain("/api/sliderule/control-turn-stream");
     expect(postFn).toContain("reuseCharter");
@@ -151,6 +152,8 @@ describe("开始推演 / 质疑 / /推演", () => {
     );
     expect(confirmFn).toContain('"rehearse"');
     expect(confirmFn).toContain("snapshot.restatement");
+    expect(confirmFn).toContain("productArchetype");
+    expect(confirmFn).toContain("snapshot.device");
     const inferFn = SESSION.slice(
       SESSION.indexOf("export function inferForcedTool"),
       SESSION.indexOf("const DEFAULT_SESSION_ID")

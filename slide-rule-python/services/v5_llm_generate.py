@@ -16,6 +16,7 @@ North-star discipline (先证通用性，再接 LLM；别把两件事耦合):
 """
 
 from __future__ import annotations
+from .archetype_legal import fill_device_placeholders as _fill_device_placeholders
 from .archetype_legal import required_evidence as _required_evidence
 
 import os
@@ -127,7 +128,7 @@ Required shape (use these exact keys):
   "appbundle": {
     "pageBindings": [{"pageRef": "<page_id>", "workflowRef": "<workflow_id_or_node_id>"}],
     "landingPageRef": "<page_id shown first when the app opens>",
-    "preferredDevice": "desktop|phone",
+    "preferredDevice": "__PREFERRED_DEVICES__",
     "roleRefs": ["<role_id>"],
     "dataModelRefs": ["<entity_id>"],
     "appIdentity": {"productName": "<2-6字产品名>", "theme": "__IDENTITY_THEMES__",
@@ -202,10 +203,10 @@ __WORKFLOWREF_RULE__
 - appbundle.landingPageRef is REQUIRED and MUST equal one page.pages[].id. Pick
   the page that best represents the user's main job when the app opens (for
   example a monitor/dashboard/calendar page), not a generic approval home.
-- appbundle.preferredDevice is REQUIRED and MUST be exactly "desktop" or "phone".
+- appbundle.preferredDevice is REQUIRED and MUST be exactly one of: __PREFERRED_DEVICES_OR__.
   Follow an explicit device in the user's goal. Otherwise decide once from the
   complete product, landing-page shape, and primary operating posture. Never omit
-  this field and never request responsive, dual-device, or tablet generation.
+  this field and never request responsive or dual-device generation.
 - Model the SPECIFIC business the intent describes (entities, roles, approval
   steps, pages that fit that domain). Do not emit a generic template.
 - PHASES (swimlanes): give EVERY workflow node a "phase" — a short stage label
@@ -405,7 +406,7 @@ def _render_schema_instruction(template: str) -> str:
     field_ref = "<entity_id>.<field_id>"
     chart_metrics = "|".join(list(METRIC_BARE) + [f"{p}{field_ref}" for p in CHART_METRIC_PREFIXES])
     stat_metrics = "|".join(list(METRIC_BARE) + [f"{p}{field_ref}" for p in STAT_METRIC_PREFIXES])
-    return (
+    rendered = (
         template
         .replace("__WORKFLOWREF_RULE__", _WORKFLOWREF_RULE)
         .replace("__FIELD_TONES__", enum_str("fieldTones"))
@@ -421,13 +422,17 @@ def _render_schema_instruction(template: str) -> str:
         .replace("__IDENTITY_ICONS__", enum_str("identityIcons"))
         .replace("__IDENTITY_NAVS__", enum_str("identityNavs"))
     )
+    return _fill_device_placeholders(rendered)
 
 
 def _append_experience_block_catalog(instruction: str) -> str:
     """二阶段：从同一目录注入过渡说明，不让 Prompt 另写一份区块清单。"""
     from .schema_legal import experience_block_prompt_block
 
-    return f"{instruction.rstrip()}\n\n{experience_block_prompt_block()}\n"
+    return (
+        f"{instruction.rstrip()}\n\n"
+        f"{_fill_device_placeholders(experience_block_prompt_block())}\n"
+    )
 
 
 _SCHEMA_INSTRUCTION = _append_experience_block_catalog(
@@ -486,7 +491,9 @@ def schema_instruction_for(goal: str) -> str:
         # 送进可达区（第 1 层），而选材仍被预设形状主导——实测选中数停在 4.5/16。
         derived = derive_goal_presets(picked, PAGE_KIND_PRESETS, PAGE_KINDS)
         base = _render_schema_instruction(_SCHEMA_INSTRUCTION_TEMPLATE)
-        catalog = experience_block_prompt_block(picked, extra_presets=derived)
+        catalog = _fill_device_placeholders(
+            experience_block_prompt_block(picked, extra_presets=derived)
+        )
         return f"{base.rstrip()}\n\n{catalog}\n"
     except Exception as exc:  # noqa: BLE001 — 窄化失败不得让生成挂掉
         print(f"[v5_llm_generate] catalog narrowing skipped: {str(exc)[:160]}")

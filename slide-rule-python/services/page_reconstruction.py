@@ -6,7 +6,10 @@ import json
 import re
 from typing import Any, Callable, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+
+from .archetype_legal import device_domain_bar as _device_domain_bar
+from .archetype_legal import supported_devices as _supported_devices
 
 from sliderule_llm.config import default_max_tokens
 
@@ -67,7 +70,7 @@ class PageRegionSpec(BaseModel):
 class PageReconstructionSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    device: Literal["desktop", "phone"]
+    device: str
     viewport: ViewportSpec
     componentLibrary: Literal["antd", "antd-mobile"]
     regions: list[PageRegionSpec] = Field(min_length=1, max_length=30)
@@ -76,6 +79,16 @@ class PageReconstructionSpec(BaseModel):
     allowedAdaptations: list[str] = Field(default_factory=list, max_length=32)
     forbiddenDeviations: list[str] = Field(default_factory=list, max_length=64)
     uncertainRegions: list[str] = Field(default_factory=list, max_length=32)
+
+    @field_validator("device")
+    @classmethod
+    def device_must_be_supported(cls, value: str) -> str:
+        raw = str(value or "").strip()
+        if raw not in set(_supported_devices()):
+            raise ValueError(
+                f"device must be one of {_device_domain_bar()}"
+            )
+        return raw
 
     @model_validator(mode="after")
     def uses_one_component_library(self) -> "PageReconstructionSpec":
@@ -162,7 +175,7 @@ DataModel: {model_text}
 
 Required JSON shape:
 {{
-  "device": "desktop|phone",
+  "device": "{_device_domain_bar()}",
   "viewport": {{"width": 1440, "height": 900}},
   "componentLibrary": "antd|antd-mobile",
   "regions": [{{
@@ -179,7 +192,7 @@ Required JSON shape:
   "fixedVisualFacts": [], "allowedAdaptations": [], "forbiddenDeviations": [], "uncertainRegions": []
 }}
 
-Coordinates are fractions of the full image. Include every major visible section in top-to-bottom order. Use only entity and field ids that exist in DataModel. Map desktop regions only to Ant Design and phone regions only to Ant Design Mobile. Record uncertainty instead of inventing invisible details."""
+Coordinates are fractions of the full image. Include every major visible section in top-to-bottom order. Use only entity and field ids that exist in DataModel. Map phone regions only to Ant Design Mobile; desktop and tablet regions map to Ant Design. Record uncertainty instead of inventing invisible details."""
 
 
 def analyze_page_reference(
@@ -187,11 +200,16 @@ def analyze_page_reference(
     *,
     design_brief: str,
     datamodel: dict[str, Any],
-    device: Literal["desktop", "phone"],
+    device: str,
     llm_call: Optional[Callable[..., Any]] = None,
 ) -> dict[str, Any]:
     if not reference_image_b64:
         return _result("skipped", diagnostic="reference image unavailable")
+    if str(device or "").strip() not in set(_supported_devices()):
+        return _result(
+            "skipped",
+            diagnostic=f"device {device!r} is not in {_device_domain_bar()}",
+        )
     try:
         if llm_call is None:
             from sliderule_llm.client import call_llm_with_retry

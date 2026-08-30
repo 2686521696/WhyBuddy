@@ -126,13 +126,14 @@
       ]
     }
   },
-  "$comment_devices": "设备形态账本。此前手抄三处、形态各异：v5_model_gate 的 supported_devices（闸的合法域）、intake_judge 的 _VALID_DEVICES（判定输出域，多一个 unspecified 哨兵）、_DEVICE_RUBRIC（提示词里的姿态描述）。加一个 watch 要找齐三处，漏一处 = 生成出来了但闸不认，静默失效（第四条）。posture 是喂给判定 LLM 的姿态描述，rubric 的设备条目由它生成——加设备只改这份 JSON，提示词自动跟上。⚠ rubric 里那五行「容易判错的例子」是**标定过的**，不由账本生成，手写保留在 intake_judge。",
+  "$comment_devices": "设备形态账本。此前手抄三处、形态各异：v5_model_gate 的 supported_devices（闸的合法域）、intake_judge 的 _VALID_DEVICES（判定输出域，多一个 unspecified 哨兵）、_DEVICE_RUBRIC（提示词里的姿态描述）。加一个 watch 要找齐三处，漏一处 = 生成出来了但闸不认，静默失效（第四条）。posture 是喂给判定 LLM 的中文姿态；postureEn 是生成契约（英文）里的同一条——加设备只改这份 JSON，两侧提示词自动跟上。⚠ rubric 里那五行「容易判错的例子」是**标定过的**，不由账本生成，手写保留在 intake_judge。⚠ 2026-08-30：device_policy / page_reconstruction / intake_judge 的 Literal[\"desktop\",\"phone\"] 已删。合法域只许从本账本派生，不许再手抄一份枚举。",
   "deviceForms": {
     "$order": [
       "phone",
-      "desktop"
+      "desktop",
+      "tablet"
     ],
-    "$comment_order": "⚠ 提示词里的条目顺序。改顺序 = 改提示词 = 可能改判定结果，判据 test_rubric 逐字不变 会红。",
+    "$comment_order": "⚠ 提示词里的条目顺序。phone/desktop 两档顺序是标定过的，只许往后面追加接通的档。改已有顺序 = 改提示词 = 可能改判定结果。",
     "judgeSentinel": "unspecified",
     "$comment_sentinel": "判定专用哨兵：『没有姿态信号』。它不是设备，所以不在 forms 里，闸也不接受它。",
     "sentinelPosture": "**没有姿态信号就必须选这个**。别硬猜。",
@@ -140,24 +141,32 @@
       "phone": {
         "label": "手机",
         "wired": true,
-        "posture": "站着、走动、单手、在现场、即时上报：扫码/拍照/打卡/签字/随手记一笔，或者使用者是个人在日常生活里用（记账、日程、情绪、预约、下单）。"
+        "historicAccepted": true,
+        "posture": "站着、走动、单手、在现场、即时上报：扫码/拍照/打卡/签字/随手记一笔，或者使用者是个人在日常生活里用（记账、日程、情绪、预约、下单）。",
+        "postureEn": "standing, walking, one-handed, on-site, reporting in the moment: scanning, photographing, clocking in, signing, jotting a quick record; or an individual using it in daily life."
       },
       "desktop": {
         "label": "桌面 / PC",
         "wired": true,
-        "posture": "坐着、长时段、多列对照、批量操作、审批与配置：看板/中台/后台/分析/汇总/对账/排产/关系图/权限分级，使用者是在工位上处理一批事的人。"
+        "historicAccepted": true,
+        "posture": "坐着、长时段、多列对照、批量操作、审批与配置：看板/中台/后台/分析/汇总/对账/排产/关系图/权限分级，使用者是在工位上处理一批事的人。",
+        "postureEn": "seated, long sessions, multi-column comparison, batch operations, approvals and configuration: dashboards, back-office, analysis, reconciliation, scheduling, permission matrices."
       },
       "tablet": {
         "label": "平板",
-        "wired": false,
+        "wired": true,
+        "historicAccepted": true,
         "posture": "手持或支起、单手点按为主但视野接近桌面：现场演示、点单、查房、巡店，坐站切换。",
-        "$comment": "⚠ 契约先立，版式侧未接。接通要做的：生成侧认识这个档的版式规则 + 闸放进合法域。"
+        "postureEn": "held or propped, mostly one-handed taps but a near-desktop field of view: on-site demo, ordering, ward rounds, store inspection; sit/stand switching.",
+        "$comment": "2026-08-30 接通：生成侧可产出 preferredDevice=tablet，闸认，版式走平板档（8 列栅格 / 1112×834 / antd）。加设备只改账本 + 版式，不再手抄 Literal。"
       },
       "watch": {
         "label": "手表 / 一瞥式",
         "wired": false,
+        "historicAccepted": false,
         "posture": "抬腕两秒读完、几乎不输入：只看一个数、一个状态、一条提醒。",
-        "$comment": "⚠ 同上。它多半要配 glance_app 原型一起用——页面导航壳在手表上是负资产。"
+        "postureEn": "wrist-up two-second glance, almost no input: one number, one status, one alert.",
+        "$comment": "⚠ 契约先立，生成侧未接。它必须配 glance_app 原型一起接——页面导航壳在手表上是负资产。historicAccepted=false：宽容闸也不认，手表从未进过生成契约。"
       }
     },
     "defaultDevice": "desktop",

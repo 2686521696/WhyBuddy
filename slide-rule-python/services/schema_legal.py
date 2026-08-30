@@ -1249,9 +1249,12 @@ def experience_block_prompt_block(
         '{"blockRef":"feed","x":0,"y":2,"w":4,"h":1}]}}. '
         "Do not emit both a grid placement and a second copy of the same content through another block."
     )
+    # 设备合法域是占位符：本模块是 util 叶子，不许 import archetype_legal。
+    # 生成侧 fill_device_placeholders 填账本。手抄 desktop|phone = 加档漏接。
     lines.append(
         "Step 8 — Shell and device: appbundle MAY include experienceShell "
-        "{mode: 'navigation'|'focus', navigation: 'side'|'top'} and MUST include preferredDevice 'desktop'|'phone'. "
+        "{mode: 'navigation'|'focus', navigation: 'side'|'top'} and MUST include "
+        "preferredDevice '__PREFERRED_DEVICES__'. "
         "Use experienceShell instead of appIdentity.nav for new models. "
         "mode MUST be 'navigation' for now — 'focus' (full-screen single-purpose tools like a report "
         "viewer or document editor) is schema-legal but has NO client renderer yet; declaring it renders "
@@ -1263,14 +1266,9 @@ def experience_block_prompt_block(
     # 的单一权威选择：按完整产品与操作姿态选一档，判不清也走确定性单端兜底。
     lines.append(
         "Step 8b — How to choose preferredDevice. You MUST choose exactly one supported device; "
-        "NEVER omit the field, request both devices, or emit tablet. Judge by the "
+        "NEVER omit the field, request both devices, or emit an unsupported device. Judge by the "
         "user's POSTURE while operating, not by keywords in the request:\n"
-        "  · 'phone' — standing, walking, one-handed, on-site, reporting in the moment: scanning, "
-        "photographing, clocking in, signing, jotting a quick record; or an individual using it in "
-        "daily life.\n"
-        "  · 'desktop' — seated, long sessions, multi-column comparison, batch operations, approvals "
-        "and configuration: dashboards, back-office, analysis, reconciliation, scheduling, permission "
-        "matrices.\n"
+        "__DEVICE_GENERATION_BULLETS__\n"
         "  · When posture is ambiguous, inspect the complete five-system model, landing-page shape, "
         "and primary operation, then still choose exactly one device.\n"
         "Two traps (both judged by WHO operates it in WHAT state, not by the words present): "

@@ -23,21 +23,29 @@ import {
   type ProductCharter,
 } from "./product-charter";
 import {
+  defaultArchetype,
+  deviceDisplayLabel,
+  wiredArchetypes,
+  wiredDevices,
+} from "./product-archetypes";
+import {
   SCOPE_CARD_CONFIRM_LABEL,
   SCOPE_CARD_REVISE_LABEL,
   SCOPE_CARD_TIME_COPY,
   scopeCardSteps,
-  type ScopeCardDevice,
+  type ScopeCardChoice,
   type ScopeCardPending,
 } from "./scope-card-gate";
 
 const OVERLAY_CLASS =
   "pointer-events-auto absolute bottom-full left-0 right-0 z-10 mb-2 origin-bottom sr-composer-pop rounded-[12px] border border-[#e5e7eb] bg-white px-3.5 py-3 text-[13px] leading-5 text-[#171717] shadow-[0_12px_32px_rgb(15_23_42/0.12)]";
 
-function deviceLabel(device: ScopeCardDevice): string {
-  if (device === "phone") return "手机应用";
-  if (device === "desktop") return "Web / PC";
-  return "未指定（两档都生成）";
+function chipClass(on: boolean): string {
+  return `rounded-[8px] border px-2 py-1 text-[12px] leading-4 transition ${
+    on
+      ? "border-[#171717] bg-[#171717] text-white"
+      : "border-[#e5e7eb] bg-[#fafafa] text-[#171717] hover:border-[#d4d4d8] hover:bg-white"
+  }`;
 }
 
 function initialReuseNext(pending: ScopeCardPending): boolean {
@@ -54,7 +62,7 @@ export function ScopeCard({
   confirmDisabled = false,
 }: {
   pending: ScopeCardPending;
-  onConfirm: () => void;
+  onConfirm: (choice: ScopeCardChoice) => void;
   onRevise: () => void;
   /** 本轮 isRunning 时禁止确认：stop 已松画面闸，isRunningRef 仍真。 */
   confirmDisabled?: boolean;
@@ -63,6 +71,19 @@ export function ScopeCard({
   const thin = pending.variant === "thin";
   const [reuseNext, setReuseNext] = useState(() => initialReuseNext(pending));
   const [charter, setCharter] = useState<ProductCharter>(loadProductCharter);
+  const archetypeOptions =
+    pending.wiredArchetypes && pending.wiredArchetypes.length > 0
+      ? pending.wiredArchetypes
+      : wiredArchetypes();
+  const deviceOptions =
+    pending.wiredDevices && pending.wiredDevices.length > 0
+      ? pending.wiredDevices
+      : wiredDevices();
+  const [productArchetype, setProductArchetype] = useState(
+    () => pending.productArchetype || defaultArchetype()
+  );
+  const [device, setDevice] = useState(() => pending.device || "unspecified");
+  const choice: ScopeCardChoice = { device, productArchetype };
 
   const patchCharter = (key: keyof ProductCharter, value: string) => {
     const next = { ...charter, [key]: value };
@@ -101,12 +122,48 @@ export function ScopeCard({
       </p>
       {thin ? null : (
         <>
-          <p
-            className="mt-1.5 text-[12px] leading-4 text-[#3f3f46]"
-            data-testid="sliderule-scope-device"
-          >
-            设备档：{deviceLabel(pending.device)}
-          </p>
+          <div className="mt-1.5" data-testid="sliderule-scope-archetype">
+            <p className="text-[12px] leading-4 text-[#3f3f46]">原型</p>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {archetypeOptions.map(option => {
+                const on = productArchetype === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    data-testid={`sliderule-scope-archetype-${option.id}`}
+                    aria-pressed={on}
+                    onClick={() => setProductArchetype(option.id)}
+                    className={chipClass(on)}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="mt-1.5" data-testid="sliderule-scope-device">
+            <p className="text-[12px] leading-4 text-[#3f3f46]">
+              设备档：{deviceDisplayLabel(device)}
+            </p>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {deviceOptions.map(option => {
+                const on = device === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    data-testid={`sliderule-scope-device-${option.id}`}
+                    aria-pressed={on}
+                    onClick={() => setDevice(option.id)}
+                    className={chipClass(on)}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <p
             className="mt-1.5 text-[12px] leading-4 text-[#3f3f46]"
             data-testid="sliderule-scope-steps"
@@ -128,7 +185,7 @@ export function ScopeCard({
           disabled={confirmDisabled}
           onClick={() => {
             if (confirmDisabled) return;
-            onConfirm();
+            onConfirm(choice);
           }}
           className="rounded-[8px] bg-[#171717] px-3 py-1.5 text-[13px] leading-5 text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
         >

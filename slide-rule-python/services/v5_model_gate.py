@@ -32,8 +32,10 @@ All checks are pure + deterministic. No LLM, no IO.
 """
 
 from __future__ import annotations
-from .archetype_legal import supported_devices as _supported_devices
+from .archetype_legal import device_domain_or as _device_domain_or
+from .archetype_legal import historic_preferred_devices as _historic_preferred_devices
 from .archetype_legal import required_evidence as _required_evidence
+from .archetype_legal import supported_devices as _supported_devices
 
 from typing import Any, Dict, List
 
@@ -446,8 +448,9 @@ def validate_five_system_model(
     present, non-None, and non-blank. Use for LLM-generated and LLM-refined models.
     Defaults to False for backward-compat (old snapshots without the field still pass).
 
-    require_preferred_device=True: appbundle.preferredDevice must be exactly
-    desktop or phone. The tolerant default still accepts missing/tablet historic data.
+    require_preferred_device=True: appbundle.preferredDevice must be one of
+    the wired devices in the product-archetype ledger. The tolerant default
+    still accepts missing values and historic snapshots (desktop/tablet/phone).
 
     require_page_kind_contract（2026-08-14 加，默认 True = 老行为）：
       kanban 必须有 statusField、calendar 必须有 dateField。这两条是**老渲染器
@@ -1214,13 +1217,13 @@ def validate_five_system_model(
     if require_preferred_device and pref_device not in supported_devices:
         findings.append(_finding(
             DANGLING, "appbundle.preferredDevice",
-            f"preferredDevice '{pref_device}' must be exactly desktop or phone",
+            f"preferredDevice '{pref_device}' must be exactly {_device_domain_or()}",
             ref=pref_device, skill="appbundle",
         ))
-    elif pref_device and pref_device not in ("desktop", "tablet", "phone"):
+    elif pref_device and pref_device not in set(_historic_preferred_devices()):
         findings.append(_finding(
             DANGLING, "appbundle.preferredDevice",
-            f"preferredDevice '{pref_device}' must be desktop/tablet/phone",
+            f"preferredDevice '{pref_device}' must be {'/'.join(_historic_preferred_devices())}",
             ref=pref_device, skill="appbundle",
         ))
 

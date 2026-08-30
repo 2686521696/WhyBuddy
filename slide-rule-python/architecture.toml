@@ -172,7 +172,6 @@ modules = [
   "services.mission_event_replay",
   "services.nl_command_runtime",
   "services.page_edit_blocks",
-  "services.page_reconstruction",
   "services.palette_guard",
   "services.permission_audit_durable_store_boundary",
   "services.permission_audit_hooks",
@@ -275,6 +274,8 @@ modules = [
   "services.page_assembler",
   "services.page_blocks",
   "services.page_id_freeze",
+  # 2026-08-30：设备合法域改从账本读之后不再是叶子，从 util 升上来。
+  "services.page_reconstruction",
   "services.page_shell",
   "services.rag_ingestion",
   "services.rag_service",

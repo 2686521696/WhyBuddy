@@ -18,9 +18,11 @@ below only capture non-obvious caveats.
 This is a polyglot product ("SlideRule / 面团 AI", a product-rehearsal engine).
 The four dev services and their run commands are in `package.json` scripts:
 
-- `pnpm run dev:all` — full stack: Vite frontend `:3000`, Node server `:3001`,
-  Lobster executor `:3031`, and Python engine `:9700`. This is the normal way to
-  run everything.
+- `pnpm run dev:all` — start the full stack: Vite frontend `:3000`, Node server
+  `:3001`, Lobster executor `:3031`, and Python engine `:9700`. This is the
+  normal start command.
+- `pnpm run dev:stop` — stop what `dev:all` started (and any leftover listeners
+  on those four ports). Restart = `dev:stop` then `dev:all`.
 - `pnpm run dev:sliderule` — lean core loop: Vite `:3000` + Python `:9700` only
   (frontend proxies `/api/sliderule` and `/api/agent-loop` straight to Python).
 - `pnpm run dev:frontend` — UI only, no server, no `.env` (degraded/BYOK).

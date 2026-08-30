@@ -25,15 +25,24 @@ export type RehearsalCall = {
   mode?: "repair";
 };
 
-export type ScopeCardDevice = "desktop" | "phone" | "unspecified";
+/** 设备档跟账本走，含判定哨兵 unspecified。不许再手抄 desktop|phone。 */
+export type ScopeCardDevice = string;
 
 export type ScopeCardVariant = "full" | "thin";
+
+export type ScopeCardChoice = {
+  device: string;
+  productArchetype: string;
+};
 
 export type ScopeCardPending = {
   userText: string;
   restatement: string;
   variant: ScopeCardVariant;
   device: ScopeCardDevice;
+  productArchetype?: string;
+  wiredArchetypes?: Array<{ id: string; label: string }>;
+  wiredDevices?: Array<{ id: string; label: string }>;
   intervention?: RehearsalIntervention;
   mode?: "repair";
   /** 账户/会话「下一场沿用」。localStorage 未写时用来 hydrate 勾选。 */
