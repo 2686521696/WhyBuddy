@@ -7,20 +7,30 @@ it before making changes.
 
 ## Cursor Cloud specific instructions
 
-These notes are for agents starting in a VM where the startup update script has
-already installed dependencies (Node via `pnpm install`, and the Python venv at
-`slide-rule-python/.venv`). Standard commands live in `package.json`,
+These notes are for Cloud Agents. Standard commands live in `package.json`,
 `CONTRIBUTING.md`, and `slide-rule-python/README.md` — prefer those; the notes
 below only capture non-obvious caveats.
+
+Cloud Agent `install` is `pnpm install --frozen-lockfile` plus a Python venv at
+`slide-rule-python/.venv` (`pip install -r slide-rule-python/requirements.txt`).
+`start` is `pnpm run dev:all` (Vite `:3000`, Node `:3001`, Lobster `:3031`,
+Python `:9700`). Stop with `pnpm run dev:stop`. Do not assume `node_modules` or
+the venv already exist on a fresh checkout.
+
+⚠ Default Ubuntu images often lack `ensurepip`. `python3 -m venv` fails until
+`python3.12-venv` (or `python3-venv`) is installed. The Cloud Agent snapshot
+includes that package; do not drop it from the base image.
 
 ### Services and how to run them
 
 This is a polyglot product ("SlideRule / 面团 AI", a product-rehearsal engine).
 The four dev services and their run commands are in `package.json` scripts:
 
-- `pnpm run dev:all` — full stack: Vite frontend `:3000`, Node server `:3001`,
-  Lobster executor `:3031`, and Python engine `:9700`. This is the normal way to
-  run everything.
+- `pnpm run dev:all` — start the full stack: Vite frontend `:3000`, Node server
+  `:3001`, Lobster executor `:3031`, and Python engine `:9700`. This is the
+  normal start command.
+- `pnpm run dev:stop` — stop what `dev:all` started (and leftover listeners on
+  those four ports). Restart = `dev:stop` then `dev:all`.
 - `pnpm run dev:sliderule` — lean core loop: Vite `:3000` + Python `:9700` only
   (frontend proxies `/api/sliderule` and `/api/agent-loop` straight to Python).
 - `pnpm run dev:frontend` — UI only, no server, no `.env` (degraded/BYOK).
