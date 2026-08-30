@@ -14,8 +14,8 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **276** 个，模块 **276** 个
-- 内部依赖边 **812** 条，其中 **465** 条写在函数体里（57%）
+- 扫描文件 **277** 个，模块 **277** 个
+- 内部依赖边 **817** 条，其中 **466** 条写在函数体里（57%）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
@@ -26,7 +26,7 @@
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
 | `util` | 119 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
-| `core` | 57 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
+| `core` | 58 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 28 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
 叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import 的全部理由，也是 `import` 不必躲进函数体的前提。
@@ -41,7 +41,7 @@ flowchart TB
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>13 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>204 个模块<br/>业务"]
+  services["services<br/>205 个模块<br/>业务"]
   routes["routes<br/>12 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -58,7 +58,7 @@ flowchart TB
   routes -->|9| config
   routes -->|5| middlewares
   routes -->|3| models
-  routes -->|131 · 其中 82 条在函数体里| services
+  routes -->|132 · 其中 83 条在函数体里| services
   routes -->|15 · 其中 8 条在函数体里| sliderule_llm
   scripts -->|3| app
   scripts -->|2 · 其中 2 条在函数体里| config
@@ -108,7 +108,7 @@ flowchart LR
   ops_scripts["ops_scripts<br/>37"]
   permission["permission<br/>8"]
   persist["persist<br/>2"]
-  platform["platform<br/>18"]
+  platform["platform<br/>19"]
   run_control["run_control<br/>4"]
   spec_first["spec_first<br/>34"]
   task_exec["task_exec<br/>19"]
@@ -134,7 +134,7 @@ flowchart LR
   drive -->|21| model_core
   drive -->|2| observability
   drive -->|4| persist
-  drive -->|11| platform
+  drive -->|13| platform
   drive -->|1| run_control
   drive -->|3| spec_first
   entrypoint -->|2| agent_loop
@@ -159,7 +159,7 @@ flowchart LR
   http_routes -->|23| model_core
   http_routes -->|2| observability
   http_routes -->|3| persist
-  http_routes -->|12| platform
+  http_routes -->|13| platform
   http_routes -->|9| spec_first
   http_routes -->|2| task_exec
   identity -->|10| platform

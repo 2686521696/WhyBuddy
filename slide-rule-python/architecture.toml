@@ -259,6 +259,8 @@ modules = [
   "services.closure_relevance",
   "services.design_language",
   "services.device_policy",
+  # 2026-08-30：范围授予的 persist-as-authority。依赖 device_policy，不是叶子。
+  "services.scope_authority",
   "services.engine_scheduling",
   "services.enrich_timing",
   "services.external_provider_cutover",
@@ -666,6 +668,7 @@ modules = [
   "services.closure_relevance",
   "services.composition_root_state",
   "services.device_policy",
+  "services.scope_authority",
   "services.env_flags",
   "services.rbac_roles",
   "services.request_context",

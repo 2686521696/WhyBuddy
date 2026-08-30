@@ -44,6 +44,28 @@ def preferred_device_override() -> Optional[str]:
     return _override
 
 
+def infer_device_from_text(*texts: str) -> Optional[str]:
+    """话题里唯一的显式设备词。不含线程覆盖。
+
+    ⚠ 2026-08-30 真机：作曲家 POST 默认 desktop，「巡店点单平板」里的
+    平板被默认档盖掉。推断必须能单独调用——绑在 override 上，控制面
+    park 那一步根本走不到这条链。冲突词（电脑+平板）返回 None，
+    不猜。
+    """
+    joined = "\n".join(str(item or "") for item in texts)
+    asked: list[str] = []
+    if _DESKTOP_EXPLICIT.search(joined):
+        asked.append("desktop")
+    if _PHONE_EXPLICIT.search(joined):
+        asked.append("phone")
+    if "tablet" in _supported_devices() and _TABLET_EXPLICIT.search(joined):
+        asked.append("tablet")
+    unique = [device for device in asked if device in _supported_devices()]
+    if len(unique) == 1:
+        return unique[0]
+    return None
+
+
 def resolve_preferred_device(goal: str, model_choice: Any) -> str:
     """用户开关 > 话题里的显式设备词 > 模型已有选择 > desktop。
 
@@ -53,18 +75,9 @@ def resolve_preferred_device(goal: str, model_choice: Any) -> str:
     if _override in _supported_devices():
         return _override
 
-    text = str(goal or "")
-    asked: list[str] = []
-    if _DESKTOP_EXPLICIT.search(text):
-        asked.append("desktop")
-    if _PHONE_EXPLICIT.search(text):
-        asked.append("phone")
-    if "tablet" in _supported_devices() and _TABLET_EXPLICIT.search(text):
-        asked.append("tablet")
-
-    unique = [d for d in asked if d in _supported_devices()]
-    if len(unique) == 1:
-        return unique[0]
+    inferred = infer_device_from_text(goal)
+    if inferred:
+        return inferred
     if model_choice in _supported_devices():
         return model_choice
     return _default_device()

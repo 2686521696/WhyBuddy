@@ -6,6 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from services.device_policy import (  # noqa: E402
     DEVICE_AUTHORITY,
+    infer_device_from_text,
     normalize_model_preferred_device,
     resolve_preferred_device,
 )
@@ -39,6 +40,13 @@ def test_missing_invalid_and_watch_choices_fall_back_to_desktop():
     assert resolve_preferred_device(goal, None) == "desktop"
     assert resolve_preferred_device(goal, "") == "desktop"
     assert resolve_preferred_device(goal, "watch") == "desktop"
+
+
+def test_infer_device_from_text_unique_word_only():
+    assert infer_device_from_text("巡店点单平板") == "tablet"
+    assert infer_device_from_text("做一个移动端巡检小程序") == "phone"
+    assert infer_device_from_text("电脑和平板") is None
+    assert infer_device_from_text("请假系统") is None
 
 
 def test_tablet_model_choice_and_explicit_goal_are_kept():

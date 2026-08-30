@@ -76,6 +76,7 @@ import {
   parseJudgeDevice,
 } from "./product-archetypes";
 import {
+  hydrateParkedScope,
   type ScopeCardChoice,
   type ScopeCardDevice,
   type ScopeCardPending,
@@ -815,13 +816,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         const restored = deriveTurnsFromState(hydrated);
         if (restored.length > 0) setUiTurns(restored);
         if (hydrated.awaitReason === "control_scope" && hydrated.awaitDetail) {
-          const parked: ScopeCardPending = {
-            userText: hydrated.awaitDetail,
-            restatement: hydrated.awaitDetail,
-            variant: hydrated.goal?.text?.trim() ? "thin" : "full",
-            device: (loadPreferredDevice() as ScopeCardDevice) || "unspecified",
-            productArchetype: defaultArchetype(),
-          };
+          const parked: ScopeCardPending = hydrateParkedScope(hydrated);
           pendingScopeRef.current = parked;
           setPendingScope(parked);
         }

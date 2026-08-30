@@ -164,6 +164,15 @@ describe("开始推演 / 质疑 / /推演", () => {
     expect(DOCK).toContain('data-testid="sliderule-control-ask"');
   });
 
+  it("control_scope hydrate 走 hydrateParkedScope，不以 localStorage 为第一权威", () => {
+    const hydrate = SESSION.slice(
+      SESSION.indexOf('hydrated.awaitReason === "control_scope"'),
+      SESSION.indexOf('hydrated.awaitReason === "control_ask"')
+    );
+    expect(hydrate).toContain("hydrateParkedScope");
+    expect(hydrate).not.toContain("loadPreferredDevice()");
+  });
+
   it("先改范围 POST dismiss_scope；reload 从 transcript 恢复 ask options", () => {
     const dismissFn = SESSION.slice(
       SESSION.indexOf("const dismissScopeCard"),
