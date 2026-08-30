@@ -206,6 +206,21 @@ class Test注册表把闸和run对上:
         at_pause = code.index("run_pause.bind(run.pause_slot)")
         assert 0 < at_pause - at_cancel < 200, "暂停的绑定没跟取消的绑在同一处"
 
+    def test_孤儿看门狗对暂停中的run放手(self):
+        """⚠ 关页面十分钟变成取消，就是看门狗没认暂停闸。
+
+        删掉 is_holding / orphan_exempt 这两道判断，这条红。
+        """
+        import services.run_registry as rr
+
+        with open(rr.__file__, encoding="utf-8") as fh:
+            code = "\n".join(
+                l for l in fh.read().splitlines() if not l.lstrip().startswith("#")
+            )
+        assert "is_holding" in code
+        assert "is_orphan_exempt" in code
+        assert "mark_unattended" in code
+
     def test_暂停和取消是两个操作_没有被合并(self):
         """⚠ 取消是终止、暂停是停住等人，两者不是同一件事的两个力度。"""
         import services.run_registry as rr

@@ -1,7 +1,8 @@
 """协作式暂停：在安全点上停下来等人（2026-08-28 验证件，第二版）。
 
-⚠ **这仍是验证件（spike），没接进流水线。** 它证明"停在半路"机制上成立，
-  不代表产品已经决定要拦。接线之前先读「还没解决的」那一段。
+⚠ 机制 + 流式接线已经在 2026-08-28 接上（`v5_full_driver` 循环、
+  `/runs/{id}/hold|release`、前端「先别往下跑」）。产品还没决定**哪些澄清
+  值得主动拦**——那是另一件事，见文末。
 
 ## 为什么需要它
 
@@ -79,13 +80,15 @@ claw-code 把「问了人没人答」列成**六个已知故障场景之一**
 只走一次，还不行才升级喊人，每次尝试都留一条结构化事件。见
 `unresolved_recovery` 与 `RecoveryLedger`。
 
-## 还没解决的（接线之前）
+## 还没解决的
 
-  - **接线本身**：安全点要插进驱动器的异步循环；卡片要长出"拦路"的形态；
-    答案要有一条送回正在跑的那一轮的路。这三样都还没有。
-  - **产品判断**：哪些澄清值得拦。2026-08-28 复查发现 `_ASSUMPTIONS_ASK`
+  - **产品判断**：哪些澄清值得主动拦。2026-08-28 复查发现 `_ASSUMPTIONS_ASK`
     的入选门槛本来就是「改了产品会长得不一样」，能上卡的**本来就全是结构
     性的**，再分一档收益很小。倾向于不做，等人拍板。
+  - **关页面 ≠ 取消**：孤儿看门狗（默认 600s 无人观看就 `request_cancel`）
+    跟暂停闸是两件事。暂停等人时不烧 LLM，关页面不该把这一轮判死——
+    标成没人在场，超时按跳过收口，这一轮接着跑完。看门狗自己守着
+    `is_holding` / `orphan_exempt`，见 `run_registry._orphan_watchdog`。
 """
 
 from __future__ import annotations
@@ -191,6 +194,17 @@ class PauseGate:
         self._event = asyncio.Event()
         self._answer: Optional[Any] = None
         self._skipped = False
+        #: 场上还有没有人。预算里的 non_interactive 是起闸时的初值；
+        #: 订阅者走光 / 回来会改这一格，预算本身保持冻结。
+        self._unattended = bool(self._budget.non_interactive)
+
+    def mark_no_operator(self) -> None:
+        """页面关了 / 订阅者走光。超时报 NO_OPERATOR，不是用户跳过。"""
+        self._unattended = True
+
+    def clear_unattended(self) -> None:
+        """操作员回来了。下一回超时恢复成"用户跳过"。"""
+        self._unattended = False
 
     # —— 外部（前端回调 / 控制面）调的三个 ——
     def answer(self, payload: Any) -> None:
@@ -249,7 +263,7 @@ class PauseGate:
     ) -> PauseResult:
         # 没人在场时，"没答"报的是 NO_OPERATOR 而不是"用户跳过"——
         # 那不是用户的选择，是压根没有用户（照 grok 的 non_interactive）。
-        if outcome is PauseOutcome.SKIPPED and self._budget.non_interactive:
+        if outcome is PauseOutcome.SKIPPED and self._unattended:
             outcome = PauseOutcome.NO_OPERATOR
         return PauseResult(
             outcome=outcome,
@@ -388,6 +402,9 @@ class PauseSlot:
 
     pending: Optional["PauseGate"] = None
     active: Optional["PauseGate"] = None
+    #: 没人在场时按跳过收口过 → 这一轮接着跑完，孤儿看门狗不许再判死。
+    #: 只在「无人 + 跳过/没操作员」时立；人答了再关页面，看门狗照常收。
+    orphan_exempt: bool = False
 
 
 _SLOT: ContextVar[Optional[PauseSlot]] = ContextVar(
@@ -453,10 +470,46 @@ def take_hold() -> Optional[PauseGate]:
 
 def finish_hold() -> None:
     """等完了：把"正在等"清掉。不清的话下一轮的 release 会打到一个已经
-    结束的闸上，返回 released=true 却什么也没发生。"""
+    结束的闸上，返回 released=true 却什么也没发生。
+
+    没人在场时按跳过收口的，给位子打上 ``orphan_exempt``：后面接着烧的
+    那几步没有观众，但这一轮已经决定跑完（超时 = 合法结局），孤儿看门狗
+    不许再把闭环掐死。
+    """
     slot = _slot_var().get()
-    if slot is not None:
-        slot.active = None
+    if slot is None:
+        return
+    gate = slot.active
+    if gate is not None and getattr(gate, "_unattended", False):
+        slot.orphan_exempt = True
+    slot.active = None
+
+
+def is_holding(slot: Optional[PauseSlot]) -> bool:
+    """位子上有闸（按了还没到 / 正在等）。孤儿看门狗靠这个决定别取消。"""
+    return slot is not None and (slot.active is not None or slot.pending is not None)
+
+
+def is_orphan_exempt(slot: Optional[PauseSlot]) -> bool:
+    return bool(slot is not None and slot.orphan_exempt)
+
+
+def mark_unattended(slot: Optional[PauseSlot]) -> None:
+    """最后一个订阅者走了：场上没人。闸还在就标成没人在场。"""
+    if slot is None:
+        return
+    for gate in (slot.active, slot.pending):
+        if gate is not None:
+            gate.mark_no_operator()
+
+
+def clear_unattended(slot: Optional[PauseSlot]) -> None:
+    """订阅者回来了：场上又有人。"""
+    if slot is None:
+        return
+    for gate in (slot.active, slot.pending):
+        if gate is not None:
+            gate.clear_unattended()
 
 
 async def pause_here(where: str) -> Optional[PauseResult]:

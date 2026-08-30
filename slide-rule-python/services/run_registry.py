@@ -17,6 +17,12 @@
   不并行双跑双烧钱）；
 - 显式取消：cancel_run（停止按钮）。
 
+⚑ 2026-08-30 —— 暂停等人时**不要**走上面那条孤儿取消。关页面 ≠ 用户拒绝
+  （grok 的 non_interactive / claw-code 的 TrustPromptUnresolved）：闸还在
+  等，标成没人在场，超时按跳过收口，这一轮接着跑完。看门狗见
+  ``is_holding`` 或 ``orphan_exempt`` 就放手。没按过暂停的无人观看 run
+  照旧取消——那才是真的在白烧 LLM。
+
 ⚑ 2026-08-14 —— 上面那三件套里，前两件此前**形同虚设**：它们喊的是
   `task.cancel()`，而引擎每步跑在 `asyncio.to_thread` 里，**那一下打不断
   线程**（只让协程在下一个 await 点抛错，线程照跑到底）。真机后果：客户端
@@ -249,6 +255,13 @@ async def start_run(
                 return
             idle = time.monotonic() - run.last_subscriber_seen
             if run.subscribers == 0 and idle > _orphan_grace_seconds():
+                # 暂停等人：不烧 LLM，关页面不是取消。标成没人在场，
+                # 让闸按跳过 / no_operator 收口，这一轮接着跑完。
+                if run_pause.is_holding(run.pause_slot):
+                    run_pause.mark_unattended(run.pause_slot)
+                    continue
+                if run_pause.is_orphan_exempt(run.pause_slot):
+                    continue
                 if not requested:
                     request_cancel(run, reason="orphan")
                     requested = True
@@ -266,6 +279,8 @@ async def subscribe(run: Run, since: int = 0) -> AsyncIterator[Dict[str, Any]]:
     """从 since 序号起补播日志，追平后跟实时流；run 完结且读尽即止。"""
     run.subscribers += 1
     run.last_subscriber_seen = time.monotonic()
+    if run.subscribers > 0:
+        run_pause.clear_unattended(run.pause_slot)
     try:
         i = max(0, int(since))
         while True:
@@ -281,6 +296,8 @@ async def subscribe(run: Run, since: int = 0) -> AsyncIterator[Dict[str, Any]]:
     finally:
         run.subscribers -= 1
         run.last_subscriber_seen = time.monotonic()
+        if run.subscribers <= 0:
+            run_pause.mark_unattended(run.pause_slot)
 
 
 def request_cancel(run: Run, *, reason: str = "explicit") -> None:

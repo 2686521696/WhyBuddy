@@ -1430,9 +1430,13 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 //   ——那是取消干的事（见 run_pause 模块头的实测）。
                 setRunPaused(phase === "started");
                 if (phase === "ended") {
-                  const auto = info.recovery
-                    ? `；没人答，已按模型定的继续（第 ${info.recovery.attempt} 次自动恢复）`
-                    : "";
+                  const rec = info.recovery;
+                  const auto =
+                    rec?.kind === "recovery_escalated"
+                      ? "；没人答且自动恢复已用尽，已升级喊人"
+                      : rec
+                        ? `；没人答，已按模型定的继续（第 ${rec.attempt} 次自动恢复）`
+                        : "";
                   console.info(
                     `[sliderule] 这一轮在 ${info.where} 停了 ${info.waitedSeconds ?? "?"}s，结局 ${info.outcome}${auto}`
                   );

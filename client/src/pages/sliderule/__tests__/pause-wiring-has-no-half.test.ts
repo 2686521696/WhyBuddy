@@ -92,6 +92,8 @@ describe("六段接线一段都不能少", () => {
     expect(s).toContain("onRunPause");
     // 钩子接了这个回调，否则事件到了没人听
     expect(HOOK()).toContain("onRunPause:");
+    // 升级喊人 和 自动按默认 必须分得开——揉成一句等于配方白抄
+    expect(HOOK()).toContain("recovery_escalated");
   });
 
   it("停住时点「就这样」/「改成 X」会放行，不让它干等满预算", () => {

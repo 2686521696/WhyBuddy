@@ -144,6 +144,27 @@ class Test超时不是失败:
 
         _run(scenario())
 
+    def test_订阅者走光之后超时改报没有操作员(self):
+        """起闸时场上有人，后来走光——要改口，不能还报"用户跳过"。"""
+
+        async def scenario():
+            gate = PauseGate(PauseBudget(seconds=0.2, non_interactive=False))
+            gate.mark_no_operator()
+            got = await gate.wait("第5.5步")
+            assert got.outcome is PauseOutcome.NO_OPERATOR
+            assert got.proceed_with_default is True
+
+        _run(scenario())
+
+    def test_操作员回来之后超时恢复成用户跳过(self):
+        async def scenario():
+            gate = PauseGate(PauseBudget(seconds=0.2, non_interactive=True))
+            gate.clear_unattended()
+            got = await gate.wait("第5.6步")
+            assert got.outcome is PauseOutcome.SKIPPED
+
+        _run(scenario())
+
 
 class Test预算的口径:
     def test_关掉计时就永远等_不是等0秒(self):
@@ -165,8 +186,12 @@ class Test预算的口径:
         assert PauseBudget(enabled=False, seconds=0).wait_budget() is None
 
     def test_默认预算是等人的量级不是等机器的量级(self):
-        """30 分钟：人去倒杯咖啡回来还来得及。几十秒是网络超时的量级。"""
-        assert run_pause.DEFAULT_WAIT_SECONDS >= 10 * 60
+        """30 分钟：人去倒杯咖啡回来还来得及。几十秒是网络超时的量级。
+
+        ⚠ 必须钉死 30 分钟，不能写成 ``>= 10 * 60``——那是旧看门狗的 600 秒，
+        改回十分钟这条照样绿，正好把"关掉页面十分钟就变成取消"放回来。
+        """
+        assert run_pause.DEFAULT_WAIT_SECONDS == 30 * 60
 
 
 class Test暂停中必须还能取消:
@@ -239,3 +264,29 @@ class Test没人答之后的恢复配方:
         assert act.event["detail"] == "skipped@第9步"
         assert act.event["attempt"] == 1
         assert act.event["steps"] == list(run_pause.UNRESOLVED_RECOVERY.steps)
+
+    def test_没人在场收口后位子免除孤儿取消(self):
+        """关页面 + 超时跳过 = 这一轮接着跑完。不立这面旗，看门狗会在
+        下一拍把刚放行的推演掐死，闭环照样黄。"""
+        slot = run_pause.new_slot()
+        run_pause.bind(slot)
+        gate = run_pause.request_hold(slot, PauseBudget(seconds=0.2, non_interactive=True))
+        assert gate is not None
+        run_pause.take_hold()
+        gate.mark_no_operator()
+        _run(gate.wait("第10步"))
+        run_pause.finish_hold()
+        assert slot.orphan_exempt is True
+        assert run_pause.is_orphan_exempt(slot) is True
+
+    def test_人答了再关页面不免除孤儿取消(self):
+        """反向：人在场时答过，后面关页面白烧 LLM，看门狗该收。"""
+        slot = run_pause.new_slot()
+        run_pause.bind(slot)
+        gate = run_pause.request_hold(slot, PauseBudget(seconds=5))
+        assert gate is not None
+        run_pause.take_hold()
+        gate.answer("选了")
+        _run(gate.wait("第11步"))
+        run_pause.finish_hold()
+        assert slot.orphan_exempt is False

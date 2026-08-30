@@ -333,7 +333,12 @@ export interface DriveFullStreamOpts {
       /** 没人答时自动按默认走了一次（claw-code 的恢复配方）。
        *  ⚠ 这条并在 ended 里，不是另一个事件——前端 switch 对不认识的类型是
        *  静默丢弃，另发一条等于"我替你做了决定"发进虚空。 */
-      recovery?: { kind?: string; steps?: string[]; attempt?: number } | null;
+      recovery?: {
+        kind?: string;
+        steps?: string[];
+        attempt?: number;
+        policy?: string;
+      } | null;
     }
   ) => void;
   /** 流读到 done 却没见终局（协议违规）。见 STREAM_NO_TERMINAL 头注。 */
@@ -552,7 +557,12 @@ function applyFactoryStreamEvent(
           typeof event.waitedSeconds === "number" ? event.waitedSeconds : undefined,
         recovery:
           event.recovery && typeof event.recovery === "object"
-            ? (event.recovery as { kind?: string; steps?: string[]; attempt?: number })
+            ? (event.recovery as {
+                kind?: string;
+                steps?: string[];
+                attempt?: number;
+                policy?: string;
+              })
             : null,
       });
       return "continue";
