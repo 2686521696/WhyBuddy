@@ -542,6 +542,28 @@ _PHONE_SPEC_IA = """设备：手机 App（竖屏）。不是 PC 后台。
 - 页面本身就是手机 App，不要在页面里再套一层手机外框或把整页收成居中卡片。"""
 
 
+#: 平板 IA。2026-08-30 夜真机：dropdown 选了平板、goal / pages_json /
+#: generated-app 都盖了 tablet 章，五页 HTML 仍是桌面 <aside class="w-64">
+#: + 1920 工作台。根因跟 08-20 手机那次同类——只改了 stamp，没改 SPEC 树。
+#: 壳仍走桌面统一路径（aside+header+main），密度按 1112 不是 1920。
+#: 数字抄账本 viewportCss / ant-design Layout.Sider（w-52 ≈ 208px），
+#: 不自己发明；grok ScreenMode 的纪律是「一个枚举、一处引导」，不是抄 TUI。
+_TABLET_SPEC_IA = """设备：平板现场作业（横屏 1112×834 CSS 像素）。不是 1920 PC 中台，也不是竖屏手机 App。
+
+切页硬要求：
+- 导航保留 <aside> 侧栏（page_shell 桌面统一路径认 aside；不要改成手机底栏）。
+  宽度用 Tailwind w-52（约 208px，对照 ant-design Layout.Sider / ProLayout siderWidth），
+  不要桌面展开态的宽侧栏（16rem）。
+- 顶栏短：标题 + 最多一个主操作。不要一长条工具栏。
+- 工作区两栏（主列 + 可折叠旁路详情），不要三栏、不要「主表几列 + 右侧详情栏永久占着」。
+- 表格最多 5 列；更多字段进旁路详情。不要桌面那种 8 列宽表。
+- 筛选用顶部 chip，不要左侧筛选面板。
+- 图表一屏最多两张并排，不要四宫格 dashboard。
+- 视口按 1112×834（iPad Air 横屏 CSS px，见 product_archetypes.json tablet.viewportCss）排。
+- 不要手机底栏 TabBar，不要 <nav data-testid="phone-tabbar">。
+"""
+
+
 #: 桌面骨架先验的 IA 硬要求。手机路径禁止进 prompt——跟 `_PHONE_SPEC_IA`
 #: 并排放是 2026-08-20「壳是手机、内容是 PC」的再现：种子全是 workbench /
 #: kanban 宽屏页型，escape hatch 说的是「题装不进骨架」，不是「形态是手机」。
@@ -716,6 +738,8 @@ def build_spec_prompt(
     device=phone 时先验降成用途 / 角色软提示，不进页型硬要求——跟
     `_PHONE_SPEC_IA` 并排「不要抛开骨架」会把 2026-08-20 那次（壳是手机、
     内容是 PC）再演一遍。
+    device=tablet 时骨架仍走桌面页清单（aside 壳），另挂 `_TABLET_SPEC_IA`
+    收密度——2026-08-30 夜只盖 stamp 不改 IA，五页全是 w-64。
 
     ## refine（2026-08-14 晚加）：增量迭代不是从零造
 
@@ -896,6 +920,12 @@ def build_spec_prompt(
             '"name": "列表（底栏短名，2~4字，不要带页）"',
         )
         parts.append(_PHONE_SPEC_IA)
+    elif device == "tablet":
+        # ⚠ 2026-08-30 夜：授予已接通，SPEC 仍按桌面切页。
+        # 平板走桌面骨架（aside+header+main），**不要**改「侧栏→顶栏」——
+        # 那一针是手机壳挂顶栏用的。改了 page_shell 桌面统一路径就抠不到 aside。
+        # 也不许写成 `phone else desktop`：tablet 会静默领走 1920 工作台 IA。
+        parts.append(_TABLET_SPEC_IA)
     # ⚠ 伴随式澄清这一段**必须挂在最后**，不能跟着 JSON 形状那块一起 append。
     #   上面手机分支改的是 `parts[-1]`——一个**按位置**认人的写法。第一版把这
     #   段接在 JSON 块后面，`parts[-1]` 当场变成了它，于是「每一页的侧栏上 →

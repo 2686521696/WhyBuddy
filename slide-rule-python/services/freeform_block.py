@@ -1947,12 +1947,18 @@ def _build_marketing_hero_prompt(design_brief: str, *, device: str = "") -> str:
 
 
 def _build_marketing_page_prompt(design_brief: str, *, device: str = "") -> str:
-    device_label = "手机端" if device == "phone" else "桌面端"
-    composition = (
-        "390x844 左右的单列竖屏页面，触控优先，首屏底部露出下一内容区"
-        if device == "phone"
-        else "1440x900 左右的宽屏页面，首屏内容有明确水平层次，底部露出下一内容区"
-    )
+    if device == "phone":
+        device_label = "手机端"
+        composition = "390x844 左右的单列竖屏页面，触控优先，首屏底部露出下一内容区"
+    elif device == "tablet":
+        device_label = "平板端"
+        composition = (
+            "1112x834 左右的横屏页面，窄侧栏 + 主任务 + 可折叠旁路详情，"
+            "触控优先，不要 1920 工作台密度"
+        )
+    else:
+        device_label = "桌面端"
+        composition = "1440x900 左右的宽屏页面，首屏内容有明确水平层次，底部露出下一内容区"
     return (
         f"为以下品牌生成一张{device_label}完整首页视觉稿，而不是一张独立 Hero 素材：\n"
         f"{design_brief}\n\n"

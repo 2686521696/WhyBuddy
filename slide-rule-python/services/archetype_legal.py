@@ -281,6 +281,29 @@ def layout_device(preferred: Any) -> str:
     return default_device()
 
 
+def device_viewport_css(device: Any) -> Tuple[int, int]:
+    """生成 / 画布共用的 CSS 像素视口。只从账本 `viewportCss` 读。
+
+    ⚠ 2026-08-30 夜：goal 已是 tablet，五页 HTML 仍按 1920×1080 + w-64 画。
+      视口再手抄一份，改账本数字舞台对不上。缺字段才回落到历史三档。
+    """
+    name = layout_device(device)
+    form = _FORMS.get(name) or {}
+    raw = form.get("viewportCss") or {}
+    try:
+        width = int(raw["w"])
+        height = int(raw["h"])
+    except (KeyError, TypeError, ValueError):
+        width = height = 0
+    if width > 0 and height > 0:
+        return width, height
+    if name == "phone":
+        return 390, 844
+    if name == "tablet":
+        return 1112, 834
+    return 1920, 1080
+
+
 def wired_device_choices() -> List[Dict[str, str]]:
     """范围卡设备档选项。只含接通的——未接通的不许出现在可选项里。"""
     return [{"id": name, "label": device_label(name)} for name in supported_devices()]

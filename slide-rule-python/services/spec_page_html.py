@@ -135,6 +135,62 @@ https://placehold.co，每张 <img> 的 alt 写成这张照片的英文检索词
 photo id。产品名要从客户的业务里起，不要用你自己的名字
 （不要写成面团 / 面团AI / SlideRule）。"""
 
+#: 平板契约。2026-08-30 夜：授予已接通，编译仍是 `phone else desktop`，
+#: 巡店点单五页全是 aside + w-64，舞台 1920×1080。跟 08-20 手机
+#: 「壳换了、IA 没换」同构，这次是「戳对了、契约没换」。
+#:
+#: 壳仍用 <aside>+<header>+<main>，好让 page_shell 桌面抠壳继续工作——
+#: 不要另起底栏（那是手机）。数字抄两处成熟口径，不自己发明：
+#:   视口 1112×834 —— 账本 viewportCss / iPad Air 横屏 CSS 像素
+#:   侧栏 w-52     —— ant-design Layout.Sider 默认 200px（ProLayout 208）
+#:   触控 ≥ 44px   —— Apple HIG，跟手机契约同一条
+_STRUCTURAL_CONTRACT_TABLET = """左侧一个较窄的 <aside> 主导航，顶部一个 <header>（含面包屑），正文放在 <main> 里。
+这是平板横屏现场作业，不是 1920 宽的 PC 中台，也不是竖屏手机 App。
+
+面包屑照 W3C ARIA APG 的写法（当前页那一节必须带 aria-current="page"）：
+
+    <nav aria-label="Breadcrumb"><ol>
+      <li><a href="#">模块名</a></li>
+      <li><a href="#" aria-current="page">当前页名</a></li>
+    </ol></nav>
+
+html 与 body 必须 width:100%; height:100%。<aside>、<header>、<main> 铺满 1112×834 视口。
+侧栏用 w-52（约 13rem，对照 ant-design Layout.Sider 默认 200px / ProLayout siderWidth 208），
+不要写成桌面展开态的宽侧栏（16rem），也不要收成图标轨 w-16。
+品牌行（图标+产品名）用 flex items-center 垂直对齐。
+Header 右侧的分段控件跟顶栏同色系（浅底深字），不要 bg-zinc-950 / bg-black。
+不要用 max-w-5xl / max-w-6xl / max-w-7xl / mx-auto 把整页收成屏幕正中一张卡片，
+不要给 body 写 items-center justify-center。
+
+正文是**主任务 + 可选旁路详情**：左列表/看板，右详情或动作，两栏即可。
+表格不超过 5 列，其余字段放进详情，不要 8 列宽表铺满。
+触控目标 ≥ 44px（Apple HIG）。不要手机那种底部 <nav> 标签栏。
+**不要**按桌面中台的宽度排。
+
+页面里的 <script> **不会被执行**（渲染方会移除）。所以不要引图表库、不要写 JS
+渲染——图表一律用内联 <svg> 的 <polyline>/<rect>/<path>/<circle> 直接画出来。
+
+这一页的首屏是 brief 里「用途」处于**未打开浮层**的状态。
+列表 / 台账页的首屏是表格或卡片，只要一个「新增」按钮；不要把新增表单、
+编辑表单、Slide-over、对话框画进首屏——script 不跑，画出来的抽屉关不掉。
+新建和编辑由宿主提供表单，页面里不要再画一份打不开也关不掉的表单。
+
+若必须预留浮层 DOM，根节点若是 ``fixed inset-0``（或 ``inset-y-0`` 侧滑面板、
+它的 backdrop 兄弟），必须带 ``hidden``。
+
+占位数据必须写成**可读的中文文字**，
+不许用灰色横条或色块代替：日期写 20XX-XX-XX，金额写 ¥ ××,×××，百分比写 ××.×%，
+计数写 ×,×××，人名写「张师傅」这类。表格要有真实的中文列名。
+
+这是**客户自己的产品**。页脚、logo、版权行、关于页里不许出现你（生成方）的名字、
+品牌、域名或联系方式；除了上面指定的 Tailwind CDN、placehold.co，以及
+库存图床（images.unsplash.com / images.pexels.com / upload.wikimedia.org /
+staticflickr.com / rawpixel.com），不要写任何外部网址。配图用
+https://placehold.co，每张 <img> 的 alt 写成这张照片的英文检索词（画面上是什么，
+例如 ev charging station；不要写用户分层）。不许自己编 unsplash / pexels
+photo id。产品名要从客户的业务里起，不要用你自己的名字
+（不要写成面团 / 面团AI / SlideRule）。"""
+
 #: 移动端契约。壳的形状同样是**硬约束**：3.5 步抠 <header> + 页面级 <nav>
 #: （底部标签栏），这里不写成 <nav>，3.5 就没得抠，移动端那套判据整个失效。
 #:
@@ -201,6 +257,12 @@ photo id。产品名要从客户的业务里起，不要用你自己的名字
 #: 移动端单独一句——桌面那句「克制的企业后台」会把竖屏画回 PC。
 _DEFAULT_STYLE = "企业后台风格，浅色底。"
 _DEFAULT_STYLE_MOBILE = "移动端 App 风格（竖屏 390×844 CSS 像素），浅色底，单列卡片流铺满视口。触控目标 ≥ 44px（Apple HIG），不要按 1080 物理像素去画 88px 大按钮。"
+#: ⚠ 2026-08-30 夜真机：preferredDevice=tablet 已落盘，五页仍走桌面缺省句。
+#: 桌面那句「企业后台」会把现场手持画回 1920 中台。
+_DEFAULT_STYLE_TABLET = (
+    "平板现场作业风格（横屏 1112×834 CSS 像素，对照 iPad Air 横屏），浅色底，"
+    "主任务 + 旁路详情，触控目标 ≥ 44px（Apple HIG）。不是 PC 中台，也不要手机底栏。"
+)
 
 
 def build_design_system_prompt_block(
@@ -216,9 +278,19 @@ def build_design_system_prompt_block(
       而契约输了的代价不是难看，是 page_shell 抠不到壳、整套外壳判据静默失效。
     """
     style = (design_system or "").strip() or (
-        _DEFAULT_STYLE_MOBILE if device == "phone" else _DEFAULT_STYLE
+        _DEFAULT_STYLE_MOBILE
+        if device == "phone"
+        else _DEFAULT_STYLE_TABLET
+        if device == "tablet"
+        else _DEFAULT_STYLE
     )
-    contract = _STRUCTURAL_CONTRACT_MOBILE if device == "phone" else _STRUCTURAL_CONTRACT
+    # ⚠ 不许写成 `phone else desktop`：tablet 会静默领走 1920 + w-64。
+    if device == "phone":
+        contract = _STRUCTURAL_CONTRACT_MOBILE
+    elif device == "tablet":
+        contract = _STRUCTURAL_CONTRACT_TABLET
+    else:
+        contract = _STRUCTURAL_CONTRACT
     return f"""## Design system
 
 If the design system conflicts with other instructions, prioritize the design system.
@@ -301,8 +373,9 @@ def build_page_html_prompt(
     """create/text.py 的 USER_PROMPT，逐字对齐（image policy 取 disabled 那一支）。
 
     device（2026-08-14 晚加）：`"phone"` 时换移动端契约（竖屏 390×844 CSS
-    像素、顶栏 + 底部标签栏、无侧栏）。词表沿用 device_policy 的 Device
-    （"desktop"/"phone"），不另发明。
+    像素、顶栏 + 底部标签栏、无侧栏）。
+    2026-08-30 夜：`"tablet"` 换平板契约（1112×834、窄侧栏 w-52），
+    不再落到桌面 1920×1080。词表沿用账本接通档，不另发明。
 
     design_system（2026-08-15 晚加）：这个应用的**风格**描述，一路可以从
     调用方传进来（生成 / 人工覆盖都走这个口）。不传就用缺省那一句话。

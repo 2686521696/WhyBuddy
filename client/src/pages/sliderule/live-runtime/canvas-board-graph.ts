@@ -49,6 +49,7 @@
  */
 
 import type { FiveSystemModel } from "../system-screens/five-system-model";
+import { layoutDevice } from "../product-archetypes";
 import { parseBlocksFromHtml, type BlockIdentity } from "./page-blocks";
 
 /* ------------------------------------------------------------------ 连线 */
@@ -562,7 +563,7 @@ export interface BoardFacts {
   name: string;
   /** workbench / kanban / dashboard…；模型没说就是空 */
   kind: string;
-  device: "desktop" | "phone";
+  device: "desktop" | "phone" | "tablet";
   viewport: { w: number; h: number };
   /** 已接数据 / 尚未接数据 / 未通过校验 */
   status: "bound" | "unbound" | "missing";
@@ -626,7 +627,7 @@ export function boardFacts(
     pageId: page.pageId,
     name: labelOf(page),
     kind: String(def?.kind || "").trim(),
-    device: page.device === "phone" ? "phone" : "desktop",
+    device: layoutDevice(page.device) as "desktop" | "phone" | "tablet",
     viewport,
     status: page.missing ? "missing" : page.bound ? "bound" : "unbound",
     bindings: [...byEntity.entries()].map(([entity, fields]) => ({

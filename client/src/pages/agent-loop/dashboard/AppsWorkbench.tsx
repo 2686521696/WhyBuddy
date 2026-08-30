@@ -68,6 +68,7 @@ import { seedRuntimeState } from "@/pages/sliderule/live-runtime/demo-seed";
 import { markConnectorEntities } from "@/pages/sliderule/live-runtime/connector-rows";
 import { connectorEntityIds } from "@/pages/sliderule/connectors-client";
 import { navItemId, navItemName } from "@/pages/sliderule/nav-item";
+import { layoutDevice } from "@/pages/sliderule/product-archetypes";
 import { livePagesFromSpec } from "@/pages/sliderule/spec-live-pages";
 import {
   mergeFiveSystemModels,
@@ -152,9 +153,9 @@ export interface SpecPagesDetail {
   pageBindStatus?: Record<string, string>;
   /** 画页或打孔失败的页 → 原因。打孔部分失败时成功页仍计入 boundPages。 */
   failedPages?: Record<string, unknown>;
-  /** desktop 横屏 1920×1080 / phone 竖屏 390×844 CSS 像素。
+  /** desktop 1920×1080 / tablet 1112×834 / phone 390×844。
    *  老存档没有这个字段——按桌面兜底，行为与从前一致。 */
-  device?: "desktop" | "phone";
+  device?: "desktop" | "phone" | "tablet";
 }
 
 /**
@@ -238,7 +239,7 @@ export function extractSpecPages(raw: unknown): SpecPagesDetail | null {
       r.failedPages && typeof r.failedPages === "object" && !Array.isArray(r.failedPages)
         ? (r.failedPages as Record<string, unknown>)
         : undefined,
-    device: r.device === "phone" ? "phone" : "desktop",
+    device: layoutDevice(r.device) as "desktop" | "phone" | "tablet",
   };
 }
 

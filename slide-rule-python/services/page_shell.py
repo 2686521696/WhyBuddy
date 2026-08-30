@@ -612,6 +612,9 @@ def mark_shell_parts(markup: str, *, device: str = "desktop") -> str:
             if open_end > 0:
                 _plan(nav.start(), open_end + 1, "nav")
     else:
+        # tablet 跟 desktop 同一条 aside 路径。2026-08-30 夜：编译配方
+        # 是窄侧栏 w-52，不是另起手机底栏——给平板换 TabBar，unify 会
+        # 按 aside 抠壳抠空，整套导航锚定静默失效。
         mark_tag("aside", "aside")
         mark_tag("header", "header")
         mark_tag("main", "main")
@@ -1314,6 +1317,9 @@ def unify_shell(
 
     device（2026-08-14 晚加）：`"phone"` 走移动分支（<header> + 页面级
     <nav> 底部标签栏，没有 <aside>）。词表沿用 device_policy 的 Device。
+    `"tablet"` 走这条桌面 aside 路径（2026-08-30 夜接通编译）：壳仍是
+    <aside>+<header>+<main>，密度由上游契约收成 w-52 / 1112×834，
+    这里不许再写成 `phone else desktop` 把平板送进底栏。
 
     返回 {"version", "sourcePageId", "pages": {page_id: html}, "navItems": [...]}。
     """

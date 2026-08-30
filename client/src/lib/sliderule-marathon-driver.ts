@@ -16,6 +16,7 @@ import { buildCapabilityPrompt } from "@shared/blueprint/sliderule-capability-pr
 // 技能库六期"推演注入"：已安装技能随 drive-full 请求进生成契约（纯本地读取，无环）
 import { installedSkillsDrivePayload } from "@/pages/sliderule/installed-skills";
 import { lenientStringList } from "@/pages/sliderule/spec-assumptions";
+import { layoutDevice } from "@/pages/sliderule/product-archetypes";
 import {
   loadTurnCapabilities,
   pickedConnectorIds,
@@ -290,8 +291,8 @@ export interface DriveFullStreamOpts {
     current: number;
     total: number;
     bound: boolean;
-    /** desktop 横屏 1920×1080 / phone 竖屏 390×844 CSS 像素——画布视口据此选。 */
-    device: "desktop" | "phone";
+    /** desktop 1920×1080 / tablet 1112×834 / phone 390×844——画布视口据此选。 */
+    device: "desktop" | "phone" | "tablet";
   }) => void;
   /** 伴随式澄清：spec-first 第 2 步**替用户定下的事**（2026-08-27）。
    *
@@ -524,7 +525,7 @@ function applyFactoryStreamEvent(
           current: Number(event.current) || 0,
           total: Number(event.total) || 0,
           bound: event.bound === true,
-          device: event.device === "phone" ? "phone" : "desktop",
+          device: layoutDevice(event.device) as "desktop" | "phone" | "tablet",
         });
       }
       return "continue";

@@ -15,7 +15,7 @@
 ## 此刻的事实（由代码算出，不是手写）
 
 - 扫描文件 **277** 个，模块 **277** 个
-- 内部依赖边 **817** 条，其中 **466** 条写在函数体里（57%）
+- 内部依赖边 **818** 条，其中 **467** 条写在函数体里（57%）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
@@ -58,7 +58,7 @@ flowchart TB
   routes -->|9| config
   routes -->|5| middlewares
   routes -->|3| models
-  routes -->|132 · 其中 83 条在函数体里| services
+  routes -->|133 · 其中 84 条在函数体里| services
   routes -->|15 · 其中 8 条在函数体里| sliderule_llm
   scripts -->|3| app
   scripts -->|2 · 其中 2 条在函数体里| config
@@ -159,7 +159,7 @@ flowchart LR
   http_routes -->|23| model_core
   http_routes -->|2| observability
   http_routes -->|3| persist
-  http_routes -->|13| platform
+  http_routes -->|14| platform
   http_routes -->|9| spec_first
   http_routes -->|2| task_exec
   identity -->|10| platform

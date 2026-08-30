@@ -2031,9 +2031,13 @@ def _session_screenshot_device(
 
     appbundle = model.get("appbundle") if isinstance(model, dict) else None
     persisted = appbundle.get("preferredDevice") if isinstance(appbundle, dict) else None
-    if persisted in ("desktop", "phone"):
-        return persisted
-    return "phone" if requested_device == "phone" else "desktop"
+    # ⚠ 2026-08-30 夜：只认 desktop/phone，tablet 落盘后截图仍走 1440 桌面。
+    # 分叉问 layout_device，不许再手写 `phone if else desktop`。
+    from services.archetype_legal import layout_device
+
+    if persisted:
+        return layout_device(persisted)
+    return layout_device(requested_device)
 
 
 # ---------------------------------------------------------------------------

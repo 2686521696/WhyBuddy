@@ -80,9 +80,10 @@ export interface SpecPageLive {
   current: number;
   total: number;
   bound: boolean;
-  /** desktop 横屏 1920×1080 / phone 竖屏 390×844 CSS 像素。
-   *  缺席按桌面兜底——老事件/老存档没有这个字段，行为与从前一致。 */
-  device?: "desktop" | "phone";
+  /** desktop 1920×1080 / tablet 1112×834 / phone 390×844。
+   *  缺席按桌面兜底——老事件/老存档没有这个字段，行为与从前一致。
+   *  ⚠ tablet 不是 phone：机框只给竖屏，平板走横屏画布。 */
+  device?: "desktop" | "phone" | "tablet";
   /** 导航有这一项、落库却没有成品 HTML。点进来要停在失败页，
    *  不能回落最新页假装没点。缺席 = 成品页。 */
   missing?: boolean;

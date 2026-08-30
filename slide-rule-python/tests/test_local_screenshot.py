@@ -104,8 +104,24 @@ class TestAppScreenshotTemplate:
         assert config["viewport"] == viewport
         assert config["target"] == target
 
+    def test_tablet_uses_ledger_viewport_and_side_shell(self):
+        """2026-08-30 夜：tablet 曾跟 desktop 共用 1440×1000。
+
+        数字手写在 util 层，必须跟账本 ``device_viewport_css`` 对得上——
+        改账本忘了改这里，本条必须红。
+        """
+        from services.archetype_legal import device_viewport_css
+
+        config = sc._screenshot_device_config("tablet")
+        assert config["device"] == "tablet"
+        assert config["viewport"] == device_viewport_css("tablet") == (1112, 834)
+        assert config["target"] == (
+            '[data-testid="app-shell-side"], [data-testid="app-shell-top"]'
+        )
+        assert config != sc._screenshot_device_config("desktop")
+
     def test_unknown_device_falls_back_to_desktop(self):
-        assert sc._screenshot_device_config("tablet") == sc._screenshot_device_config("desktop")
+        assert sc._screenshot_device_config("watch") == sc._screenshot_device_config("desktop")
 
     def test_phone_template_switches_the_runtime_before_capture(self):
         src = sc._SCREENSHOT_JS_TEMPLATE
@@ -279,6 +295,35 @@ def test_screenshot_route_uses_persisted_model_device_over_conflicting_request(m
     assert response.media_type == "image/png"
     assert response.headers["x-sliderule-device"] == "phone"
     assert called == [("session-authoritative", "phone")]
+
+
+def test_screenshot_route_keeps_persisted_tablet(monkeypatch):
+    """2026-08-30 夜：只认 desktop/phone，tablet 落盘后截图仍走 1440 桌面。"""
+    from types import SimpleNamespace
+    from routes import sliderule_full
+
+    called = []
+    state = SimpleNamespace(
+        currentModelVersionId="mv-tablet",
+        modelVersions=[
+            {"id": "mv-tablet", "model": {"appbundle": {"preferredDevice": "tablet"}}},
+        ],
+    )
+    monkeypatch.setattr(sliderule_full, "_auth", lambda key: None)
+    monkeypatch.setattr(sliderule_full, "load_session", lambda sid: state)
+    monkeypatch.setattr(sc, "app_screenshot_available", lambda: True)
+    monkeypatch.setattr(
+        sc,
+        "capture_app_screenshot",
+        lambda sid, device="desktop": called.append((sid, device)) or b"PNG",
+    )
+
+    response = sliderule_full.capture_session_screenshot(
+        "session-tablet", device="desktop", x_internal_key="test"
+    )
+
+    assert response.headers["x-sliderule-device"] == "tablet"
+    assert called == [("session-tablet", "tablet")]
 
 
 class TestSelfVerifyGate:

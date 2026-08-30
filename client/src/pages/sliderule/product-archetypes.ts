@@ -17,7 +17,11 @@ type Ledger = {
     judgeSentinel?: string;
     forms?: Record<
       string,
-      { label?: string; wired?: boolean }
+      {
+        label?: string;
+        wired?: boolean;
+        viewportCss?: { w?: number; h?: number };
+      }
     >;
   };
 };
@@ -84,6 +88,31 @@ export function parseJudgeDevice(raw: unknown): string {
 export function parsePreferredDevice(raw: unknown): string {
   const value = String(raw || "").trim();
   return isWiredDevice(value) ? value : defaultDevice();
+}
+
+/**
+ * 版式用档：接通的就用，否则兜底。跟 Python `layout_device` 同一句话。
+ *
+ * ⚠ 2026-08-30 夜：`phone ? phone : desktop` 把 SSE / 画布上的 tablet
+ * 折成 1920。前端只问这一处，不许再手写二分。
+ */
+export function layoutDevice(preferred: unknown): string {
+  return parsePreferredDevice(preferred);
+}
+
+/**
+ * 生成 / 画布共用的 CSS 像素视口。只从账本 `viewportCss` 读。
+ * 缺字段才回落到历史三档——跟 Python `device_viewport_css` 对齐。
+ */
+export function deviceViewportCss(device?: string | null): { w: number; h: number } {
+  const name = layoutDevice(device);
+  const raw = LEDGER.deviceForms?.forms?.[name]?.viewportCss;
+  const width = Number(raw?.w);
+  const height = Number(raw?.h);
+  if (width > 0 && height > 0) return { w: width, h: height };
+  if (name === "phone") return { w: 390, h: 844 };
+  if (name === "tablet") return { w: 1112, h: 834 };
+  return { w: 1920, h: 1080 };
 }
 
 export function deviceDisplayLabel(device: string): string {

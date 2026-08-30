@@ -125,6 +125,16 @@ class Test移动端分岔:
         b = build_design_system_prompt_block(None, device="phone")
         assert a != b
 
+    def test_平板既不是桌面也不是手机(self):
+        """2026-08-30 夜：`phone else desktop` 让 tablet 领走 1920 + w-64。"""
+        desk = build_design_system_prompt_block(None, device="desktop")
+        phone = build_design_system_prompt_block(None, device="phone")
+        tablet = build_design_system_prompt_block(None, device="tablet")
+        assert tablet != desk and tablet != phone
+        assert "1112×834" in tablet and "w-52" in tablet
+        assert "铺满 1920×1080" not in tablet
+        assert "不要左侧边栏" not in tablet
+
 
 class Test块的形状沿用上游:
     def test_带优先级声明(self):

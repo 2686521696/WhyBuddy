@@ -54,6 +54,19 @@ def test_strict_gate_accepts_tablet_rejects_watch():
     assert "watch" not in supported_devices()
 
 
+def test_compile_path_has_tablet_branch_not_phone_else_desktop():
+    """授予接通 ≠ 编译接通。这几处曾是 `phone if else desktop`。"""
+    from services import design_language, spec_page_html, spec_tree
+
+    for mod, needle in (
+        (spec_page_html, 'device == "tablet"'),
+        (design_language, 'device == "tablet"'),
+        (spec_tree, "_TABLET_SPEC_IA"),
+    ):
+        code = _code(mod)
+        assert needle in code, f"{mod.__name__} 没有平板枝"
+
+
 def test_generation_schema_bar_comes_from_ledger():
     """契约里的 desktop|phone|tablet 必须是账本现算，不许再手写一份。"""
     from services.archetype_legal import device_domain_bar

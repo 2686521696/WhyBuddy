@@ -145,7 +145,11 @@ export function CanvasInspector({
                 <dd className="min-w-0 flex-1 font-mono tabular-nums text-stone-600">
                   {facts.viewport.w}×{facts.viewport.h}
                   <span className="ml-1 text-stone-400">
-                    {facts.device === "phone" ? "竖屏" : "桌面"}
+                    {facts.device === "phone"
+                      ? "竖屏"
+                      : facts.device === "tablet"
+                        ? "平板"
+                        : "桌面"}
                   </span>
                 </dd>
               </div>

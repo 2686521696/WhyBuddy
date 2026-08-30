@@ -330,6 +330,14 @@ describe("extractSpecPages", () => {
     expect(sp.navItems.map(n => n.pageId)).toEqual(["p1", "p2"]);
     expect(sp.navItems[0].label).toBe("拾取");
   });
+
+  it("tablet 不许折成 desktop——折了舞台就按 1920 看现场页", () => {
+    const sp = extractSpecPages({
+      ...pagesPayload,
+      device: "tablet",
+    })!;
+    expect(sp.device).toBe("tablet");
+  });
 });
 
 describe("orderedSpecPages", () => {

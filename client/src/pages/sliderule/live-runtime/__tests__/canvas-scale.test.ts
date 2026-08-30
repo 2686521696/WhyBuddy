@@ -78,4 +78,14 @@ describe("specPageViewport", () => {
     expect(specPageViewport("desktop")).toEqual({ w: 1920, h: 1080 });
     expect(specPageViewport("desktop").h).not.toBe(1920);
   });
+
+  it("平板画布钉 1112×834，不许折成 1920", () => {
+    /**
+     * 2026-08-30 夜：`phone ? 390 : 1920` 让 dropdown 选了平板，
+     * 舞台徽标仍是 1920×1080。把 tablet 枝删掉本条必须红。
+     */
+    expect(specPageViewport("tablet")).toEqual({ w: 1112, h: 834 });
+    expect(specPageViewport("tablet")).not.toEqual(specPageViewport("desktop"));
+    expect(specPageViewport("tablet")).not.toEqual(specPageViewport("phone"));
+  });
 });

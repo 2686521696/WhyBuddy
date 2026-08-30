@@ -142,6 +142,7 @@
         "label": "手机",
         "wired": true,
         "historicAccepted": true,
+        "viewportCss": { "w": 390, "h": 844 },
         "posture": "站着、走动、单手、在现场、即时上报：扫码/拍照/打卡/签字/随手记一笔，或者使用者是个人在日常生活里用（记账、日程、情绪、预约、下单）。",
         "postureEn": "standing, walking, one-handed, on-site, reporting in the moment: scanning, photographing, clocking in, signing, jotting a quick record; or an individual using it in daily life."
       },
@@ -149,6 +150,7 @@
         "label": "桌面 / PC",
         "wired": true,
         "historicAccepted": true,
+        "viewportCss": { "w": 1920, "h": 1080 },
         "posture": "坐着、长时段、多列对照、批量操作、审批与配置：看板/中台/后台/分析/汇总/对账/排产/关系图/权限分级，使用者是在工位上处理一批事的人。",
         "postureEn": "seated, long sessions, multi-column comparison, batch operations, approvals and configuration: dashboards, back-office, analysis, reconciliation, scheduling, permission matrices."
       },
@@ -158,7 +160,8 @@
         "historicAccepted": true,
         "posture": "手持或支起、单手点按为主但视野接近桌面：现场演示、点单、查房、巡店，坐站切换。",
         "postureEn": "held or propped, mostly one-handed taps but a near-desktop field of view: on-site demo, ordering, ward rounds, store inspection; sit/stand switching.",
-        "$comment": "2026-08-30 接通：生成侧可产出 preferredDevice=tablet，闸认，版式走平板档（8 列栅格 / 1112×834 / antd）。加设备只改账本 + 版式，不再手抄 Literal。"
+        "viewportCss": { "w": 1112, "h": 834 },
+        "$comment": "2026-08-30 接通授予；2026-08-30 夜才接通编译配方。视口 1112×834 对照 iPad Air 横屏 CSS 像素，侧栏对照 ant-design Layout.Sider 默认 200px（w-52），不是桌面 w-64 / 1920×1080。加设备只改账本 + 版式。"
       },
       "watch": {
         "label": "手表 / 一瞥式",

@@ -13,7 +13,7 @@ import type { SpecPageLive } from "./live-runtime/SpecPageLiveStage";
 export type SpecFirstPagesBlob = {
   pages?: Record<string, string>;
   navItems?: unknown[];
-  device?: "desktop" | "phone";
+  device?: "desktop" | "phone" | "tablet";
   boundPages?: number;
   failedPages?: Record<string, unknown> | null;
   pageBindStatus?: Record<string, unknown> | null;
@@ -35,7 +35,7 @@ export function missingPageHtml(opts: {
   name: string;
   reason: string;
   nav: Array<{ pageId: string; name: string }>;
-  device?: "desktop" | "phone";
+  device?: "desktop" | "phone" | "tablet";
 }): string {
   const links = opts.nav
     .map(item => {

@@ -1260,6 +1260,9 @@ def run_spec_first(
     切页仍是「左侧大表 + 右侧表单」，风格段点名「主表几列 / 右侧详情栏」——
     壳是手机、内容是 PC。必须把同一个 device 传进 generate_spec_tree 和
     generate_style_brief / generate_design_language / render_design_language。
+    2026-08-30 夜：tablet 同构——stamp 对了，契约/IA/风格段仍是
+    `phone else desktop`，五页全是 w-64。同一个 device 变量必须原样传到
+    那三处，不许在中途折成 desktop。
 
     返回 {"version", "model", "spec", "structure", "semantics", "pages",
           "navItems", "failedPages", "stages", "device"}。

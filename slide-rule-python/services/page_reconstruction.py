@@ -163,6 +163,8 @@ def compile_reconstruction_prompt(spec: PageReconstructionSpec | dict[str, Any])
 
 
 def _analysis_instruction(design_brief: str, datamodel: dict[str, Any], device: str) -> str:
+    # tablet 跟 desktop 同一套 antd（aside 壳）。写成 `phone else antd`
+    # 对平板是对的——不要改成手机 mobile，page_shell 认的是 aside。
     library = "antd-mobile" if device == "phone" else "antd"
     model_text = json.dumps(datamodel, ensure_ascii=False, separators=(",", ":"))[:7000]
     return f"""Analyze the attached generated homepage visual as a reconstruction engineer.

@@ -18,6 +18,7 @@
  */
 
 import React from "react";
+import { deviceViewportCss } from "../product-archetypes";
 
 /**
  * 缩放模式（2026-07-30 补 "width"）。
@@ -79,9 +80,14 @@ export const SPEC_PAGE_VIEWPORT = { w: 1920, h: 1080 } as const;
  */
 export const SPEC_PAGE_VIEWPORT_PHONE = { w: 390, h: 844 } as const;
 
-/** 按设备取 spec 页画布视口。词表与后端 device_policy 一致（desktop/phone）。 */
+/**
+ * 按设备取 spec 页画布视口。数字从账本 `viewportCss` 读。
+ *
+ * ⚠ 2026-08-30 夜：写成 `phone ? 390 : 1920`，dropdown 选了平板，
+ * 舞台徽标仍是 1920×1080 · 58%。不许再手写二分。
+ */
 export function specPageViewport(device?: string | null): { w: number; h: number } {
-  return device === "phone" ? SPEC_PAGE_VIEWPORT_PHONE : SPEC_PAGE_VIEWPORT;
+  return deviceViewportCss(device);
 }
 
 /**

@@ -36,11 +36,26 @@ _E2B_TEMPLATE_ENV = "SLIDERULE_E2B_TEMPLATE"
 
 
 def _screenshot_device_config(device: str) -> dict:
-    if device == "phone":
+    """截图视口。phone 仍用 430×932（运行时壳，不是 spec 画布 390×844）。
+
+    ⚠ 2026-08-30 夜：tablet 曾跟 desktop 共用 1440×1000——编译已经按
+    1112×834 画，截图再按桌面工作台量，舞台和缩略图对不上。
+    本模块在 util 层，不许 import archetype_legal；数字必须跟账本
+    ``tablet.viewportCss`` 对得上（test_local_screenshot 钉着）。
+    壳仍是 aside/top（平板不是底栏）。不许写成 `phone else desktop`。
+    """
+    token = str(device or "").strip().lower()
+    if token == "phone":
         return {
             "device": "phone",
             "viewport": (430, 932),
             "target": '[data-testid="app-shell-phone"]',
+        }
+    if token == "tablet":
+        return {
+            "device": "tablet",
+            "viewport": (1112, 834),
+            "target": '[data-testid="app-shell-side"], [data-testid="app-shell-top"]',
         }
     return {
         "device": "desktop",

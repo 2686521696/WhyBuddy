@@ -170,6 +170,16 @@ class Test手机风格段:
         assert "有没有右侧详情栏" in joined
         assert "手机竖屏 App" not in joined
 
+    def test_tablet不点名宽表也不走手机竖屏(self):
+        """2026-08-30 夜：tablet 走 `phone else desktop` 会点名主表几列，
+        舞台 1920。把 tablet 枝删掉本条必须红。"""
+        joined = " ".join(m["content"] for m in build_style_brief_prompt(SPEC, device="tablet"))
+        assert "1112×834" in joined
+        assert "主表几列" not in joined
+        assert "有没有右侧详情栏" not in joined
+        assert "手机竖屏 App" not in joined
+        assert "390×844" not in joined
+
     def test_generate_style_brief把device送进prompt(self):
         seen: dict = {}
 

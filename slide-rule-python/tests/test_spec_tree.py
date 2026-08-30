@@ -688,3 +688,21 @@ class Test设备进规格提示词:
         generate_spec_tree("设备报修", device="phone", llm_json_fn=fake)
         assert "一屏一件主任务" in seen["user"]
         assert "每一页的侧栏上" not in seen["user"]
+
+    def test_tablet把密度约束写进user消息(self):
+        user = build_spec_prompt("巡店点单", device="tablet")[-1]["content"]
+        assert "1112×834" in user
+        assert "w-52" in user
+        assert "每一页的侧栏上" in user
+        assert "一屏一件主任务" not in user
+
+    def test_generate_spec_tree把tablet送进prompt(self):
+        seen: dict = {}
+
+        def fake(_messages):
+            seen["user"] = _messages[-1]["content"]
+            return copy.deepcopy(GOOD)
+
+        generate_spec_tree("巡店点单", device="tablet", llm_json_fn=fake)
+        assert "1112×834" in seen["user"]
+        assert "一屏一件主任务" not in seen["user"]
