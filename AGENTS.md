@@ -7,11 +7,18 @@ it before making changes.
 
 ## Cursor Cloud specific instructions
 
-These notes are for agents starting in a VM where the startup update script has
-already installed dependencies (Node via `pnpm install`, and the Python venv at
-`slide-rule-python/.venv`). Standard commands live in `package.json`,
+These notes are for Cloud Agents. Standard commands live in `package.json`,
 `CONTRIBUTING.md`, and `slide-rule-python/README.md` — prefer those; the notes
 below only capture non-obvious caveats.
+
+Cloud Agent `install` is `pnpm install --frozen-lockfile` plus a Python venv at
+`slide-rule-python/.venv` (`pip install -r slide-rule-python/requirements.txt`).
+`start` is `pnpm run dev:sliderule` (Vite `:3000` + Python `:9700`). Do not assume
+`node_modules` or the venv already exist on a fresh checkout.
+
+⚠ Default Ubuntu images often lack `ensurepip`. `python3 -m venv` fails until
+`python3.12-venv` (or `python3-venv`) is installed. The Cloud Agent snapshot
+includes that package; do not drop it from the base image.
 
 ### Services and how to run them
 
