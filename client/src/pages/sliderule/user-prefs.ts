@@ -6,7 +6,7 @@
  *   RollingText 运行时判断；同时自动尊重系统 prefers-reduced-motion；
  * - 推演完成通知：浏览器 Notification（切走标签页才弹，盯着看不打扰）；
  * - Enter 键行为：ComposerDock keydown 每次按键实时读取（设置即改即生效）；
- * - 目标形态（应用 / Web）：作曲家开关，发送时随 drive-full-stream 带上。
+ * - 目标形态（默认 Web 的下拉）：作曲家开关，发送时随 drive-full-stream 带上。
  */
 import {
   defaultDevice,
@@ -154,7 +154,7 @@ export function shouldSendOnKey(ev: {
     : ev.ctrlKey || ev.metaKey;
 }
 
-// --- 目标形态（应用 / Web） ----------------------------------------------------
+// --- 目标形态（默认 Web） ----------------------------------------------------
 
 export function loadPreferredDevice(): ComposerDevice {
   try {

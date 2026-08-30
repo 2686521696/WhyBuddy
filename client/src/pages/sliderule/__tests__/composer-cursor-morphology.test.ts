@@ -95,7 +95,13 @@ describe("ComposerDock Cursor 三行形态", () => {
     expect(col3).not.toContain("{refineButton}");
     expect(dock).not.toContain("col-start-5 row-start-2");
     expect(dock).toContain("sliderule-composer-device");
-    expect(dock).toContain("COMPOSER_DEVICE_OPTIONS");
+    expect(dock).toContain("composerDeviceMenu");
+    expect(dock).toContain("sliderule-composer-device-trigger");
+    expect(dock).toContain("sliderule-composer-device-menu");
+    expect(dock).toContain('aria-haspopup="listbox"');
+    // 反向：两档并排 tab 加回来必红（2026-08-30 用户：多了放不下）
+    expect(dock).not.toContain('role="group"');
+    expect(dock).not.toContain("aria-pressed={on}");
     expect(dock).toContain("{hero ? null : sendButton}");
     expect(dock).not.toContain("sliderule-hero-glow");
     expect(dock).not.toContain("rgba(167,139,250");
