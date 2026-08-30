@@ -8,6 +8,18 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 
+const memStore = new Map<string, string>();
+(globalThis as unknown as { localStorage: Storage }).localStorage ??= {
+  getItem: (k: string) => memStore.get(k) ?? null,
+  setItem: (k: string, v: string) => void memStore.set(k, v),
+  removeItem: (k: string) => void memStore.delete(k),
+  clear: () => memStore.clear(),
+  key: (i: number) => [...memStore.keys()][i] ?? null,
+  get length() {
+    return memStore.size;
+  },
+} as Storage;
+
 import { hydrateParkedScope } from "../scope-card-gate";
 
 function stripComments(src: string): string {
