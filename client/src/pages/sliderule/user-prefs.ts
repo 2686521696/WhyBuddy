@@ -160,7 +160,7 @@ export function loadPreferredDevice(): ComposerDevice {
   try {
     return parseComposerDevice(localStorage.getItem(PREFERRED_DEVICE_KEY));
   } catch {
-    return "desktop";
+    return defaultDevice();
   }
 }
 
