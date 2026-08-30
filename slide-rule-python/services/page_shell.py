@@ -1113,7 +1113,9 @@ def _apply_identity(shell_part: str, old: str, new: str) -> str:
     return _CN_TEXT.sub(_one, shell_part)
 
 
-def _pick_shell_source(pages_html: Dict[str, str]) -> str:
+def _pick_shell_source(
+    pages_html: Dict[str, str], *, device: str = "desktop"
+) -> str:
     """选哪一页的壳当模板：有文字的宽侧栏优先，其次导航链接最多。
 
     链接多仍有用——图标模板多。但 2026-08-20 满电青年真机：工单页链接
@@ -1123,7 +1125,11 @@ def _pick_shell_source(pages_html: Dict[str, str]) -> str:
     对照 shadcn/ui Sidebar：``--sidebar-width: 16rem`` 是展开态（有 label），
     ``--sidebar-width-icon: 3rem`` 只在 *collapsible=icon* 时切。有菜单文字
     时不许拿图标轨当整站壳。导航内容仍按 spec 重排，带走的只有外框。
+
+    平板的「够宽」是 w-52，不是桌面的 w-56。用桌面门槛的话，契约写对的
+    窄侧栏进不了优选池，链接更多的图标轨又会被当成壳源。
     """
+    min_rank, _ = _labeled_aside_policy(device)
     labeled_wide: List[Tuple[int, int, str]] = []
     all_pages: List[Tuple[int, int, str]] = []
     for page_id, markup in pages_html.items():
@@ -1131,7 +1137,7 @@ def _pick_shell_source(pages_html: Dict[str, str]) -> str:
         n = len(_LINK.findall(nav.group(0))) if nav else 0
         w = aside_width_rank(markup)
         all_pages.append((n, w, page_id))
-        if aside_has_text_labels(markup) and w >= _LABELED_ASIDE_MIN_RANK:
+        if aside_has_text_labels(markup) and w >= min_rank:
             labeled_wide.append((n, w, page_id))
     pool = labeled_wide or all_pages
     pool.sort(key=lambda row: (row[0], row[1]), reverse=True)
@@ -1318,8 +1324,9 @@ def unify_shell(
     device（2026-08-14 晚加）：`"phone"` 走移动分支（<header> + 页面级
     <nav> 底部标签栏，没有 <aside>）。词表沿用 device_policy 的 Device。
     `"tablet"` 走这条桌面 aside 路径（2026-08-30 夜接通编译）：壳仍是
-    <aside>+<header>+<main>，密度由上游契约收成 w-52 / 1112×834，
-    这里不许再写成 `phone else desktop` 把平板送进底栏。
+    <aside>+<header>+<main>，侧栏锁 w-52（见 ``_labeled_aside_policy``），
+    视口 1112×834。这里不许再写成 `phone else desktop` 把平板送进底栏，
+    也不许按桌面 min-rank 56 把契约写的 w-52 抬成 w-64。
 
     返回 {"version", "sourcePageId", "pages": {page_id: html}, "navItems": [...]}。
     """
@@ -1334,7 +1341,7 @@ def unify_shell(
     # ⚠ 桌面也曾只在移动分支捞注释（2026-08-20 律所）。unify 替换的
     # aside 仍困在 ``<!-- 左侧导航 <aside`` 里，截图没有侧栏。
     pages_html = {pid: ensure_nav_not_commented(html) for pid, html in pages_html.items()}
-    source_id = _pick_shell_source(pages_html)
+    source_id = _pick_shell_source(pages_html, device=device)
     shell = extract_shell(pages_html[source_id])
     if not shell["aside"] and not shell["header"]:
         raise PageShellError(f"选中的源页 {source_id} 既没有 <aside> 也没有 <header>，抠不出壳")
@@ -1408,9 +1415,11 @@ def unify_shell(
         if aside:
             html = _ensure_desktop_aside(html, aside)
         # ★ 有菜单文字时不许停在图标轨。源页若是 w-16（或 bind 之后才变窄），
-        #   整段复制会把「点进某页侧栏瘪了」扩散到每一页。抬到 w-64 必须在
-        #   reconcile **之前**：让位跟的是抬完之后的宽度。
-        html = ensure_labeled_aside_width(html)
+        #   整段复制会把「点进某页侧栏瘪了」扩散到每一页。锁宽度必须在
+        #   reconcile **之前**：让位跟的是锁完之后的宽度。
+        # ⚠ 2026-08-30 巡店点单真机：device=tablet 仍走桌面抬宽，四页
+        #   w-52 全变成 w-64。宽度政策按 device 分，不许再写死 w-64。
+        html = ensure_labeled_aside_width(html, device=device)
         if header:
             html = (
                 _sub_first_outside_comments(_HEADER, header, html)
@@ -1512,9 +1521,25 @@ _OUT_OF_FLOW = ("fixed", "absolute")
 _WIDTH_CLS = re.compile(r"^w-(\d+|\[[^\]]+\])$")
 _STRIP_TAGS = re.compile(r"<[^>]+>")
 #: 有菜单文字时低于这个 Tailwind 档算图标轨。w-56 = 14rem 是文字轨下限；
-#: shadcn 展开态是 16rem = w-64。
+#: shadcn 展开态是 16rem = w-64。平板另锁 w-52，见 ``_labeled_aside_policy``。
 _LABELED_ASIDE_MIN_RANK = 56
 _LABELED_ASIDE_WIDTH = "w-64"
+_TABLET_LABELED_ASIDE_MIN_RANK = 52
+_TABLET_LABELED_ASIDE_WIDTH = "w-52"
+
+
+def _labeled_aside_policy(device: str = "desktop") -> Tuple[int, str]:
+    """有菜单文字时的侧栏宽度：桌面 w-64，平板锁 w-52。
+
+    ⚠ 2026-08-30 连锁便利店巡店点单真机（sr-20260828100331-H76H5C6N11）：
+    模型按契约写了 ``<aside class="w-52">``，``ensure_labeled_aside_width``
+    仍按桌面 ``rank < 56 → 抬到 w-64`` 把四页全抬成 16rem。舞台已经是
+    1112×834，侧栏却是桌面宽——「契约通了、统一把密度吃掉」。
+    数字抄 ant-design Layout.Sider 200 / ProLayout 208，不许另发明。
+    """
+    if device == "tablet":
+        return _TABLET_LABELED_ASIDE_MIN_RANK, _TABLET_LABELED_ASIDE_WIDTH
+    return _LABELED_ASIDE_MIN_RANK, _LABELED_ASIDE_WIDTH
 
 
 def _aside_tokens(markup: str) -> set:
@@ -1636,23 +1661,44 @@ def apply_aside_width_token(html: str, width_tok: str) -> str:
     return html[: m.start()] + new_tag + html[m.end() :]
 
 
-def ensure_labeled_aside_width(markup: str) -> str:
-    """有菜单文字的侧栏抬到 ``w-64``。已经够宽或纯图标轨不动。
+def ensure_labeled_aside_width(markup: str, *, device: str = "desktop") -> str:
+    """有菜单文字的侧栏锁到该设备的文字轨。纯图标轨不动。
 
     ⚠ 2026-08-20 满电青年：首页 ``w-64`` 文字排得下，工单页 ``w-16``
     同样四个中文项挤成一列。unify 若源页是窄的，点进去就像侧栏自己收了。
     shadcn 展开态是 16rem，不是 3rem。
+
+    ⚠ 2026-08-30 巡店点单：平板契约写 w-52（rank 52），桌面门槛 56
+    会把它当图标轨抬成 w-64。平板锁 ``w-52``——太窄抬上去，已经是
+    桌面宽的也收回来，让位由 ``reconcile_main_offset`` 跟 ``ml-52``。
     """
     if not aside_has_text_labels(markup):
         return markup
+    min_rank, width_tok = _labeled_aside_policy(device)
+    if device == "tablet":
+        if aside_width_token(markup) == width_tok:
+            return markup
+        return apply_aside_width_token(markup, width_tok)
     rank = aside_width_rank(markup)
-    if rank >= _LABELED_ASIDE_MIN_RANK:
+    if rank >= min_rank:
         return markup
-    return apply_aside_width_token(markup, _LABELED_ASIDE_WIDTH)
+    return apply_aside_width_token(markup, width_tok)
 
 
-def canonical_labeled_aside_width(pages_html: Dict[str, str]) -> Optional[str]:
-    """多页里文字侧栏该锁的宽度：够宽的取最宽；全是图标轨则抬到 ``w-64``。"""
+def canonical_labeled_aside_width(
+    pages_html: Dict[str, str], *, device: str = "desktop"
+) -> Optional[str]:
+    """多页里文字侧栏该锁的宽度。
+
+    桌面：够宽的取最宽；全是图标轨则抬到 ``w-64``。
+    平板：有菜单文字就锁 ``w-52``，不许再抬到桌面 16rem。
+    """
+    min_rank, width_tok = _labeled_aside_policy(device)
+    if device == "tablet":
+        for html in pages_html.values():
+            if aside_has_text_labels(html):
+                return width_tok
+        return None
     best_rank, best_tok = -1, None
     labeled = False
     for html in pages_html.values():
@@ -1665,9 +1711,9 @@ def canonical_labeled_aside_width(pages_html: Dict[str, str]) -> Optional[str]:
             best_rank, best_tok = rank, tok
     if not labeled:
         return None
-    if best_tok and best_rank >= _LABELED_ASIDE_MIN_RANK:
+    if best_tok and best_rank >= min_rank:
         return best_tok
-    return _LABELED_ASIDE_WIDTH
+    return width_tok
 
 
 _TAG = re.compile(r"<(/?)([a-zA-Z][\w-]*)\b([^>]*?)(/?)>")
@@ -1965,7 +2011,10 @@ def restore_shell_after_bind(
 
 
 def repair_pages_after_bind(
-    bound: Dict[str, str], before: Dict[str, str]
+    bound: Dict[str, str],
+    before: Dict[str, str],
+    *,
+    device: str = "desktop",
 ) -> Tuple[Dict[str, str], List[str], List[str]]:
     """bind 之后的确定性收尾：**换回被改坏的壳 + 重新对齐内容区偏移**。零 LLM。
 
@@ -1991,20 +2040,23 @@ def repair_pages_after_bind(
       取决于**侧栏是不是 fixed**，宽度取决于**锁完之后的 w-***——先算偏移
       就是拿旧侧栏做的判断。
 
+    ⚠ 宽度政策跟 unify 同一套 ``device``。漏传的话平板 bind 之后
+    又会按桌面门槛把 w-52 抬成 w-64——unify 修好、打孔收尾再弄坏。
+
     返回 (修好的页面, 被还原的壳, 被重新对齐的内容区)。
     """
     fixed, restored = restore_shell_after_bind(bound, before)
     # bind 常只改 class（w-64 → w-16）。shell_fingerprint 把 class 抹平，
     # restore 会以为没动——侧栏就这么瘪了。锁回打孔前那套文字轨宽度。
-    canonical = canonical_labeled_aside_width(before) or canonical_labeled_aside_width(
-        fixed
-    )
+    canonical = canonical_labeled_aside_width(
+        before, device=device
+    ) or canonical_labeled_aside_width(fixed, device=device)
     reconciled: List[str] = []
     for pid, html in list(fixed.items()):
         out = html
         if canonical:
             out = apply_aside_width_token(out, canonical)
-        out = ensure_labeled_aside_width(out)
+        out = ensure_labeled_aside_width(out, device=device)
         aligned = reconcile_main_offset(out)
         if aligned != html:
             fixed[pid] = aligned

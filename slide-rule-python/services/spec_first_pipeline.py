@@ -2039,7 +2039,9 @@ def run_spec_first(
             # ⚠ 还要把内容区偏移重新对齐一遍：bind 重写整页时会把 <main> 上的
             #   ml-64 一起吃掉，而还原那一步只管 aside/header。真机（律所那趟）
             #   4 页里 2 页被吃，判据报了但没人修——见 repair_pages_after_bind。
-            pages, restored, reconciled = repair_pages_after_bind(pages, before_bind)
+            pages, restored, reconciled = repair_pages_after_bind(
+                pages, before_bind, device=device
+            )
             st["shellRestored"] = len(restored)
             st["mainReconciled"] = len(reconciled)
             if restored:

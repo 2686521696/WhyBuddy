@@ -15,7 +15,7 @@
     spec_tree             tablet → 两栏 + 窄侧栏 IA，不写 1920 工作台，不写手机底栏
     design_language       tablet → 1112×834，不点名「主表几列 / 右侧详情栏」
     spec_page_html        tablet → 1112×834 + w-52，保留 <aside>，不要手机 TabBar
-    page_shell            tablet → 走 aside 统一路径（不是底栏）
+    page_shell            tablet → 走 aside 统一路径，侧栏锁 w-52（不是底栏、不是 w-64）
     页面事件 / 产物        每一份都带 device=tablet，前端据此选 1112 画布
 
 数字抄账本 viewportCss / ant-design Layout.Sider，不自己发明。
@@ -34,7 +34,12 @@ from services.design_language import (
     build_style_brief_prompt,
     render_design_language,
 )
-from services.page_shell import unify_shell
+from services.page_shell import (
+    _aside_tokens,
+    main_offset_tokens,
+    repair_pages_after_bind,
+    unify_shell,
+)
 from services.spec_page_html import build_design_system_prompt_block, build_page_html_prompt
 from services.spec_tree import build_spec_prompt
 
@@ -145,6 +150,20 @@ def _tablet_page(brand: str, role: str, labels: list[str], active: int) -> str:
     )
 
 
+def _tablet_fixed(brand: str, role: str, labels: list[str], width: str, offset: str) -> str:
+    """fixed 侧栏 + 让位，用来咬 unify / bind 的宽度锁和 ml-* 成对。"""
+    links = "".join(f'<a class="nav-item"><span>{label}</span></a>' for label in labels)
+    return (
+        "<!DOCTYPE html><html><body class=\"bg-slate-50\">"
+        f'<aside class="{width} flex-shrink-0 bg-slate-900 fixed h-full">'
+        f'<div class="brand">{brand}</div><nav>{links}</nav>'
+        f'<div class="user">{role}</div></aside>'
+        f"<header><span>{brand} · 顶栏</span></header>"
+        f'<main class="{offset} min-h-screen">正文</main>'
+        "</body></html>"
+    )
+
+
 class Test平板壳统一:
     def test_tablet走aside不是底栏(self):
         pages = {
@@ -157,6 +176,71 @@ class Test平板壳统一:
             assert "phone-tabbar" not in html
             assert "bottom-bar" not in html
             assert "巡店助手" in html
+            # ⚠ 2026-08-30 巡店点单真机：只断言品牌和 aside，unify 把
+            # w-52 抬成 w-64 仍绿。宽度必须钉在开标签上。
+            assert "w-52" in _aside_tokens(html)
+            assert "w-64" not in _aside_tokens(html)
+
+    def test_tablet不把w52抬成桌面w64(self):
+        """同一份契约 HTML：tablet 锁 w-52，desktop 仍抬到 w-64。
+
+        把 tablet 枝删掉、ensure 退回桌面门槛，本条必须红——那就是
+        巡店点单四页侧栏全变成 16rem 的那次。桌面半边回潮也红。
+        """
+        pages = {
+            "p1": _tablet_page("巡店通", "店长", ["巡店", "点单"], 0),
+            "p2": _tablet_page("别的名", "店员", ["巡店", "点单"], 1),
+        }
+        tab = unify_shell(pages, SPEC, device="tablet")["pages"]
+        desk = unify_shell(pages, SPEC, device="desktop")["pages"]
+        for html in tab.values():
+            assert "w-52" in _aside_tokens(html)
+            assert "w-64" not in _aside_tokens(html)
+        for html in desk.values():
+            assert "w-64" in _aside_tokens(html)
+            assert "w-52" not in _aside_tokens(html)
+
+    def test_tablet过窄文字轨抬到w52_让位跟ml52(self):
+        pages = {
+            "p1": _tablet_fixed("巡店通", "店长", ["巡店", "点单"], "w-16", "ml-16"),
+            "p2": _tablet_fixed("巡店通", "店长", ["巡店", "点单"], "w-16", "ml-16"),
+        }
+        tab = unify_shell(pages, SPEC, device="tablet")["pages"]["p1"]
+        desk = unify_shell(pages, SPEC, device="desktop")["pages"]["p1"]
+        assert "w-52" in _aside_tokens(tab)
+        assert "w-64" not in _aside_tokens(tab)
+        assert main_offset_tokens(tab) == ["ml-52"]
+        assert "w-64" in _aside_tokens(desk)
+        assert "w-16" not in _aside_tokens(desk)
+        assert main_offset_tokens(desk) == ["ml-64"]
+
+    def test_tablet把桌面宽侧栏收回w52(self):
+        """模型偶发写成 w-64 时，unify 也要收回去，不能当『已经够宽』放行。"""
+        pages = {
+            "p1": _tablet_fixed("巡店通", "店长", ["巡店", "点单"], "w-64", "ml-64"),
+            "p2": _tablet_fixed("巡店通", "店长", ["巡店", "点单"], "w-64", "ml-64"),
+        }
+        tab = unify_shell(pages, SPEC, device="tablet")["pages"]["p1"]
+        assert "w-52" in _aside_tokens(tab)
+        assert "w-64" not in _aside_tokens(tab)
+        assert main_offset_tokens(tab) == ["ml-52"]
+
+    def test_bind之后平板仍锁w52_桌面仍抬w64(self):
+        """unify 修好、打孔收尾再按桌面门槛抬宽 = 只改一半。"""
+        before = {
+            "p1": _tablet_fixed("巡店通", "店长", ["巡店", "点单"], "w-52", "ml-52"),
+        }
+        after = {
+            "p1": before["p1"].replace("w-52", "w-16").replace("ml-52", "ml-16"),
+        }
+        tab, _r, _rec = repair_pages_after_bind(after, before, device="tablet")
+        desk, _r2, _rec2 = repair_pages_after_bind(after, before, device="desktop")
+        assert "w-52" in _aside_tokens(tab["p1"])
+        assert "w-64" not in _aside_tokens(tab["p1"])
+        assert main_offset_tokens(tab["p1"]) == ["ml-52"]
+        assert "w-64" in _aside_tokens(desk["p1"])
+        assert "w-52" not in _aside_tokens(desk["p1"])
+        assert main_offset_tokens(desk["p1"]) == ["ml-64"]
 
 
 class Test账本视口:
@@ -266,3 +350,30 @@ class Test活路不许再写成phone_else_desktop:
         code = _code(spec_tree.build_spec_prompt)
         assert 'device == "tablet"' in code
         assert "_TABLET_SPEC_IA" in inspect.getsource(spec_tree)
+
+    def test_壳统一抬宽有tablet枝且device传到活路(self):
+        """函数写对 ≠ 接在 unify / bind / 管道上。剥注释后再咬调用点。
+
+        把 ``device=device`` 从任一处拿掉，本条必须红——缺省桌面会
+        再把 w-52 抬成 w-64。
+        """
+        from services import page_shell, spec_first_pipeline
+
+        policy = _code(page_shell._labeled_aside_policy)
+        assert 'device == "tablet"' in policy
+        assert "_TABLET_LABELED_ASIDE_WIDTH" in policy
+        assert page_shell._TABLET_LABELED_ASIDE_WIDTH == "w-52"
+        assert page_shell._labeled_aside_policy("tablet") == (52, "w-52")
+        assert page_shell._labeled_aside_policy("desktop") == (56, "w-64")
+        assert page_shell._labeled_aside_policy("phone") == (56, "w-64")
+        unify = _code(page_shell.unify_shell)
+        assert "ensure_labeled_aside_width(html, device=device)" in unify
+        repair = _code(page_shell.repair_pages_after_bind)
+        assert "canonical_labeled_aside_width" in repair
+        assert "ensure_labeled_aside_width(out, device=device)" in repair
+        pipe = _code(spec_first_pipeline)
+        assert "repair_pages_after_bind(" in pipe
+        assert re.search(
+            r"repair_pages_after_bind\(\s*pages,\s*before_bind,\s*device=device",
+            pipe,
+        ), "管道漏传 device，bind 收尾会按桌面抬宽"
