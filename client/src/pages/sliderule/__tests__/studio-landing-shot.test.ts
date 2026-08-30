@@ -24,6 +24,16 @@ describe("rehearsalJustFinished", () => {
 });
 
 describe("landingPageFromSpec", () => {
+  it("平板落地页保住 tablet，不折成 desktop", () => {
+    const landing = landingPageFromSpec({
+      pages: { home: "<html>平板首页</html>" },
+      navItems: [{ pageId: "home" }],
+      device: "tablet",
+    });
+    expect(landing?.html).toContain("平板首页");
+    expect(landing?.device).toBe("tablet");
+  });
+
   it("落地页是导航第一项，不是 Object.keys 碰巧排前的那页", () => {
     const landing = landingPageFromSpec({
       pages: {

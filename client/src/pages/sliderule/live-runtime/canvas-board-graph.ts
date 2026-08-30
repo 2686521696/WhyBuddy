@@ -601,7 +601,7 @@ export function boardFacts(
     html?: string;
     bound?: boolean;
     missing?: boolean;
-    device?: "desktop" | "phone";
+    device?: "desktop" | "phone" | "tablet";
   },
   model: FiveSystemModel | null | undefined,
   links: readonly BoardLink[],

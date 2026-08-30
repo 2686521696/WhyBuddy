@@ -44,7 +44,7 @@ import {
 } from "./live-runtime/SpecPageLiveStage";
 import { SpecPageCanvasStage } from "./live-runtime/SpecPageCanvasStage";
 import { AppStageErrorBoundary } from "./live-runtime/AppStageErrorBoundary";
-import { livePagesFromSpec } from "./spec-live-pages";
+import { livePagesFromSpec, type SpecFirstPagesBlob } from "./spec-live-pages";
 import {
   applyHtmlWorkflowAction,
   initRuntimeState,
@@ -265,13 +265,7 @@ interface SlideRuleStudioProps {
    *
    *  ⚠ 跟 specPages 不是二选一，是**同一份东西的两个来源**：推演中走 SSE
    *  逐页到达，跑完/刷新之后走这份。合并逻辑在下面一处做完，别在两处判。 */
-  specFirstPages?: {
-    pages?: Record<string, string>;
-    navItems?: unknown[];
-    device?: "desktop" | "phone";
-    boundPages?: number;
-    failedPages?: Record<string, unknown> | null;
-  } | null;
+  specFirstPages?: SpecFirstPagesBlob;
 
   className?: string;
   /** 舞台头条右侧：隐藏页面 / 最大化 / 交付物。不另占整页顶栏。 */

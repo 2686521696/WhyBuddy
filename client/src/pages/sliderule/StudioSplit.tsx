@@ -50,7 +50,7 @@ import {
   needsEmptySessionRestore,
 } from "./studio-layout";
 
-function splitDefaults(device?: "desktop" | "phone") {
+function splitDefaults(device?: "desktop" | "phone" | "tablet") {
   const splitPx =
     typeof window !== "undefined"
       ? guessStudioSplitWidthPx(window.innerWidth)
@@ -74,7 +74,7 @@ function SplitFallback({
 }: {
   chat: React.ReactNode;
   stage: React.ReactNode;
-  device?: "desktop" | "phone";
+  device?: "desktop" | "phone" | "tablet";
 }) {
   const phone = isPhoneStudioDevice(device);
   return (
@@ -106,7 +106,7 @@ export function StudioSplit({
 }: {
   chat: React.ReactNode;
   stage: React.ReactNode;
-  device?: "desktop" | "phone";
+  device?: "desktop" | "phone" | "tablet";
   /** 会话里还没有任何轮次。空会话的舞台没东西可看，不许把作曲家折着。 */
   sessionEmpty?: boolean;
 }) {
@@ -134,7 +134,7 @@ function StudioSplitLive({
   layout: NonNullable<ReturnType<typeof useStudioLayout>>;
   chat: React.ReactNode;
   stage: React.ReactNode;
-  device?: "desktop" | "phone";
+  device?: "desktop" | "phone" | "tablet";
   sessionEmpty?: boolean;
 }) {
   const {

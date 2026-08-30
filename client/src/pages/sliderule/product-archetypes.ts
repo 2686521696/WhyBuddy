@@ -90,6 +90,9 @@ export function parsePreferredDevice(raw: unknown): string {
   return isWiredDevice(value) ? value : defaultDevice();
 }
 
+/** 舞台 / SSE / 截图共用的接通档。不许再写 `phone | desktop`。 */
+export type LayoutDevice = "desktop" | "phone" | "tablet";
+
 /**
  * 版式用档：接通的就用，否则兜底。跟 Python `layout_device` 同一句话。
  *

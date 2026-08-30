@@ -340,7 +340,7 @@ export interface ClickEditStageProps {
   appId: string;
   pageId: string;
   html: string;
-  device?: "desktop" | "phone";
+  device?: "desktop" | "phone" | "tablet";
   /** 存成功后把最终 HTML 报给宿主，好更新本地缓存（details[key].specPages）。 */
   onSaved?: (pageId: string, html: string) => void;
   /** 有没有未保存的改动——宿主切页/关弹窗前拿它决定要不要拦一下。 */

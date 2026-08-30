@@ -63,3 +63,33 @@ describe("活路不许再写成 phone else desktop", () => {
     );
   });
 });
+
+describe("消费侧 device 类型必须含 tablet", () => {
+  /**
+   * 2026-08-30 CI：SSE 已经放出 tablet，舞台 / 分栏 / 落图 / 点选编辑
+   * 的 props 还停在 `phone | desktop`，tsc 把整条活路挡住。
+   * 反面：这些文件里若还留着二分类型，本条必须红。
+   */
+  it("舞台落库 blob 用 SpecFirstPagesBlob，不再手写二分 device", () => {
+    const src = load("../SlideRuleStudio.tsx");
+    expect(src).toContain("SpecFirstPagesBlob");
+    expect(src).not.toMatch(/device\?: "desktop" \| "phone";/);
+  });
+
+  const files = [
+    "../StudioSplit.tsx",
+    "../studio-landing-shot.tsx",
+    "../useSlideRuleSession.ts",
+    "../live-runtime/canvas-board-graph.ts",
+    "../../agent-loop/dashboard/ClickEditStage.tsx",
+  ];
+
+  it.each(files)("%s 收下 tablet，不许再写二分类型", rel => {
+    const src = load(rel);
+    expect(src).toMatch(/"desktop"\s*\|\s*"phone"\s*\|\s*"tablet"/);
+    expect(src).not.toMatch(/device\?: "desktop" \| "phone";/);
+    expect(src).not.toMatch(/device\?: "desktop" \| "phone"\)/);
+    expect(src).not.toMatch(/device\?: "desktop" \| "phone" \}/);
+  });
+});
+

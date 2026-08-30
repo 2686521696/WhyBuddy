@@ -35,12 +35,12 @@ export function landingPageFromSpec(
     | {
         pages?: Record<string, string>;
         navItems?: unknown[];
-        device?: "desktop" | "phone";
+        device?: "desktop" | "phone" | "tablet";
       }
     | null
     | undefined,
   specPages?: readonly Pick<SpecPageLive, "html" | "pageId" | "device">[] | null
-): { html: string; device?: "desktop" | "phone" } | null {
+): { html: string; device?: "desktop" | "phone" | "tablet" } | null {
   const pages = specFirstPages?.pages;
   const nav = Array.isArray(specFirstPages?.navItems) ? specFirstPages!.navItems : [];
   if (pages && typeof pages === "object") {
@@ -96,7 +96,7 @@ export function StudioLandingShot({
   specFirstPages?: {
     pages?: Record<string, string>;
     navItems?: unknown[];
-    device?: "desktop" | "phone";
+    device?: "desktop" | "phone" | "tablet";
   } | null;
   specPages?: SpecPageLive[];
   model?: FiveSystemModel | null;
@@ -108,7 +108,7 @@ export function StudioLandingShot({
   const [job, setJob] = React.useState<{
     appId: string;
     html: string;
-    device?: "desktop" | "phone";
+    device?: "desktop" | "phone" | "tablet";
   } | null>(null);
 
   React.useEffect(() => {

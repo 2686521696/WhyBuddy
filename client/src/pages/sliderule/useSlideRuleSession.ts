@@ -606,7 +606,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       total: number;
       bound: boolean;
       // desktop 横屏 / phone 竖屏（2026-08-14）：画布视口据此选
-      device?: "desktop" | "phone";
+      device?: "desktop" | "phone" | "tablet";
     }>
   >([]);
   // LLM 实时草稿（llm_delta 累积）：运行中在左栏流式展示，新一轮开始时清空。
