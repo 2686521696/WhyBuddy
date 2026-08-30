@@ -8,8 +8,8 @@
 > slide-rule-python/.venv/bin/python slide-rule-python/arch_graph.py --emit
 > ```
 
-抄的是 grok-build 的做法：他们**一张架构图都没有**，91 个 crate 在各自
-`Cargo.toml` 里显式声明依赖，347 条边由编译器强制，根 `Cargo.toml` 是生成的。
+抄的是 grok-build 的做法：他们**一张架构图都没有**，crate 边界由编译器
+强制，根 `Cargo.toml` 是生成的。数字见 `docs/WhyBuddy与Grok-build架构对照.md`。
 我们没有那个编译器，所以自己写一个——见 `slide-rule-python/arch_graph.py` 模块头。
 
 ## 此刻的事实（由代码算出，不是手写）
@@ -84,7 +84,7 @@ Rust 里这一类根本编译不出来；Python 得自己数。**只许变少。
 
 ## crate 级：component 依赖图
 
-抄 grok 的 Cargo.toml——他们 90 个 crate、347 条**声明过**的边由编译器焊死。
+抄 grok 的 Cargo.toml——crate 边界由编译器焊死；数字见对照文档。
 我们 23 个 component、81 条边，由 `architecture.toml` 声明、判据强制。
 **红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。
 

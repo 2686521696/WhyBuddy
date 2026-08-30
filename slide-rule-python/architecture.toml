@@ -1,9 +1,10 @@
 # 架构清单 —— 依赖要**显式声明**，没声明的边判据当场变红。
 #
-# 抄 grok-build：他们 91 个 crate 各自在 Cargo.toml 里声明依赖，边上还写着
-# 为什么依赖（`# CompactionDetail, embedded in CompactionMode::Segments.`），
-# 347 条边全由编译器强制。我们没有那个编译器，这份清单 + tests/test_architecture.py
-# 就是它。详见 arch_graph.py 模块头。
+# 抄 grok-build：crate 边界由编译器强制，根 Cargo.toml 是生成的。
+# 2026-08-30 重测（docs/WhyBuddy与Grok-build架构对照.md）：一等 crate 92、
+# 一等内部边 351。带注释的内部边只有 17%——而且注释在依赖行**上方**，
+# 不是行内。旧说「347 条 / 边上写着为什么」是第一次量错的数，不要再抄。
+# 我们没有那个编译器，这份清单 + tests/test_architecture.py 就是它。
 #
 # ⚠ 改这个文件 = 改架构。加一条 may_depend_on 之前先问：这条依赖是必须的，
 #   还是"顺手 import 一下"？后者的代价是下一个人再也分不清哪些边是设计、
@@ -340,9 +341,9 @@ modules = [
 
 # ── component：crate 级的边界（2026-08-29 抄 grok 的 Cargo.toml）─────────────
 #
-# grok 有 90 个 crate、347 条**声明过**的依赖边，边界由编译器焊死。我们的模块
-# 粒度比 crate 细（270 个文件），所以在这里显式声明「哪几个模块是同一个 crate」，
-# 以及「哪个 crate 可以依赖哪个」。
+# grok 的 crate 边界由编译器焊死（2026-08-30 重测：一等 92 crate / 351 边，
+# 见 docs/WhyBuddy与Grok-build架构对照.md）。我们的模块粒度比 crate 细，
+# 所以在这里显式声明「哪几个模块是同一个 crate」，以及「哪个 crate 可以依赖哪个」。
 #
 # ⚠ 这份归组与 may_depend_on **是从今天的真实依赖算出来的**（棘轮基线），
 #   不是重新设计。先把现状固定成契约，此后只许变好。

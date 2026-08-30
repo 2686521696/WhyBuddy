@@ -17,8 +17,9 @@
  * 「Python 判定 / TypeScript 运行时」是这仓最常见的成对物，改一条不改另一条
  * 不会报错，只会有一半不生效。架构闸自己就是这个形状的又一例。
  *
- * grok 那边没有「覆盖率」这个概念：92 个 crate、364 条内部边，一个 cargo
- * workspace 全包，编译器强制。我们要补的就是那个"全包"。
+ * grok 那边没有「覆盖率」这个概念：一个 cargo workspace 全包，编译器强制。
+ * 2026-08-30 重测（docs/WhyBuddy与Grok-build架构对照.md）：一等 crate 92、
+ * 一等内部边 351。旧说 364 是含 third_party 的工作区边。我们要补的就是那个"全包"。
  *
  * ## ⚠ 三个非做不可的细节（少一个这道闸就是摆设）
  *
@@ -29,7 +30,7 @@
  * 就是一句话绕过这道闸的办法。本文件对静态和动态一视同仁，只在报告里标 `deferred`。
  *
  * **② 类型 import 也算边。** `import type { X }` 运行时会被擦掉，但它是**契约
- * 耦合**——Cargo 里 `use` 一个类型同样是依赖，grok 那 364 条边不区分。
+ * 耦合**——Cargo 里 `use` 一个类型同样是依赖，grok 的内部边不区分。
  * 擦不擦得掉是编译细节，不是架构事实。标 `type`，但计入。
  *
  * **③ 判据必须被变异咬住。** 见文件末尾 `--selftest`：四刀分别对应
@@ -500,8 +501,8 @@ export function renderDoc(g, manifest) {
   out.push("> ⚠ **这份文件是 `scripts/arch-graph-ts.mjs --emit` 生成的，别手改。**");
   out.push("> 手改了 `scripts/arch-graph-ts.test.mjs` 会红。改代码然后重新生成。");
   out.push("");
-  out.push("对应 grok-build 的做法：92 个 crate 在各自 `Cargo.toml` 里显式声明依赖，");
-  out.push("364 条内部边由编译器强制，根 `Cargo.toml` 是生成的。");
+  out.push("对应 grok-build 的做法：crate 边界由编译器强制，根 `Cargo.toml` 是生成的。");
+  out.push("数字见 `docs/WhyBuddy与Grok-build架构对照.md`（2026-08-30 重测）。");
   out.push("");
   out.push("## 规模");
   out.push("");
