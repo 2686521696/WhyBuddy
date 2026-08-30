@@ -1249,6 +1249,8 @@ def experience_block_prompt_block(
         '{"blockRef":"feed","x":0,"y":2,"w":4,"h":1}]}}. '
         "Do not emit both a grid placement and a second copy of the same content through another block."
     )
+    # 设备合法域是占位符：本模块是 util 叶子，不许 import archetype_legal。
+    # 生成侧 fill_device_placeholders 填账本。手抄 desktop|phone = 加档漏接。
     lines.append(
         "Step 8 — Shell and device: appbundle MAY include experienceShell "
         "{mode: 'navigation'|'focus', navigation: 'side'|'top'} and MUST include "
