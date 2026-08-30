@@ -109,7 +109,7 @@ describe("推演完成通知", () => {
   });
 });
 
-describe("目标形态（应用 / Web）", () => {
+describe("目标形态（默认 Web）", () => {
   beforeEach(() => memStore.clear());
 
   it("默认 desktop；非法值回落；round-trip 认 phone", () => {

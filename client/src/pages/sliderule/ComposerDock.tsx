@@ -17,6 +17,8 @@ import {
   Monitor,
   Palette,
   Smartphone,
+  Tablet,
+  Watch,
   X,
 } from "lucide-react";
 // 用 navigate 函数而非 useLocation hook：hook 渲染期就读 window.location，
@@ -29,7 +31,8 @@ import {
   shouldSendOnKey,
 } from "./user-prefs";
 import {
-  COMPOSER_DEVICE_OPTIONS,
+  composerDeviceMenu,
+  composerDeviceTriggerLabel,
   composerHeroPlaceholder,
   type ComposerDevice,
 } from "./composer-device";
@@ -467,8 +470,10 @@ export function ComposerDock({
   );
   const [device, setDevice] =
     React.useState<ComposerDevice>(loadPreferredDevice);
+  const [deviceMenuOpen, setDeviceMenuOpen] = React.useState(false);
+  const deviceMenuRef = React.useRef<HTMLDivElement | null>(null);
   // 设计系统（2026-08-24）。Stitch / TRAE 都把它做成画布右侧面板，但我们不是
-  // 画布模式——按用户裁决合并进指令框，和「应用 / Web」并排。
+  // 画布模式——按用户裁决合并进指令框，和目标形态下拉并排。
   const [localDesignSystemId, setLocalDesignSystemId] = React.useState<
     string | null
   >(loadDesignSystemId);
@@ -495,6 +500,10 @@ export function ComposerDock({
       if (refEl && !refEl.contains(event.target as Node)) {
         setIsMenuOpen(false);
         setMenuView("actions");
+      }
+      const deviceEl = deviceMenuRef.current;
+      if (deviceEl && !deviceEl.contains(event.target as Node)) {
+        setDeviceMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -1572,48 +1581,91 @@ export function ComposerDock({
 
               {hero ? (
                 <div
-                  role="group"
-                  aria-label="目标形态"
+                  ref={deviceMenuRef}
+                  className="relative col-start-2 row-start-2 shrink-0"
                   data-testid="sliderule-composer-device"
-                  className="col-start-2 row-start-2 flex h-7 shrink-0 items-center rounded-full bg-[#f4f4f5] p-0.5"
                 >
-                  {COMPOSER_DEVICE_OPTIONS.map(opt => {
-                    const on = device === opt.id;
-                    const Icon = opt.id === "phone" ? Smartphone : Monitor;
-                    return (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        aria-pressed={on}
-                        data-testid={`sliderule-composer-device-${opt.id}`}
-                        disabled={isRunning}
-                        title={
-                          opt.id === "phone"
-                            ? "按手机应用推演（竖屏、底栏）"
-                            : "按网页应用推演（横屏、侧栏）"
-                        }
-                        onClick={() => {
-                          setDevice(opt.id);
-                          setPreferredDevice(opt.id);
-                        }}
-                        className={`inline-flex h-6 items-center gap-1 rounded-full px-2 text-[12px] transition ${
-                          on
-                            ? "bg-white font-medium text-[#171717] shadow-sm"
-                            : "text-[#5e5e5e] hover:text-[#171717]"
-                        } disabled:opacity-45`}
-                      >
-                        <Icon className="h-3.5 w-3.5" />
-                        {opt.label}
-                      </button>
-                    );
-                  })}
+                  <button
+                    type="button"
+                    aria-haspopup="listbox"
+                    aria-expanded={deviceMenuOpen}
+                    aria-label="目标形态"
+                    data-testid="sliderule-composer-device-trigger"
+                    disabled={isRunning}
+                    title="目标形态（默认 Web；平板 / 手表在菜单里，未接通的不能选）"
+                    onClick={() => setDeviceMenuOpen(open => !open)}
+                    className="inline-flex h-7 items-center gap-1 rounded-full bg-[#f4f4f5] px-2 text-[12px] text-[#171717] transition hover:bg-[#ececef] disabled:opacity-45"
+                  >
+                    {device === "phone" ? (
+                      <Smartphone className="h-3.5 w-3.5" />
+                    ) : device === "tablet" ? (
+                      <Tablet className="h-3.5 w-3.5" />
+                    ) : (
+                      <Monitor className="h-3.5 w-3.5" />
+                    )}
+                    {composerDeviceTriggerLabel(device)}
+                    <ChevronRight
+                      className={`h-3 w-3 text-[#5e5e5e] transition ${
+                        deviceMenuOpen ? "-rotate-90" : "rotate-90"
+                      }`}
+                    />
+                  </button>
+                  <div
+                    role="listbox"
+                    aria-label="目标形态"
+                    data-testid="sliderule-composer-device-menu"
+                    hidden={!deviceMenuOpen}
+                    className="absolute bottom-full left-0 z-30 mb-1 min-w-[9.5rem] rounded-[10px] border border-[#ececec] bg-white p-1 shadow-[0_8px_24px_rgba(31,35,40,0.12)]"
+                  >
+                    {composerDeviceMenu().map(opt => {
+                      const on = device === opt.id;
+                      const Icon =
+                        opt.id === "phone"
+                          ? Smartphone
+                          : opt.id === "tablet"
+                            ? Tablet
+                            : opt.id === "watch"
+                              ? Watch
+                              : Monitor;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          role="option"
+                          aria-selected={on}
+                          data-testid={`sliderule-composer-device-${opt.id}`}
+                          disabled={isRunning || !opt.wired}
+                          title={opt.title}
+                          onClick={() => {
+                            if (!opt.wired) return;
+                            setDevice(opt.id);
+                            setPreferredDevice(opt.id);
+                            setDeviceMenuOpen(false);
+                          }}
+                          className={`flex w-full items-center gap-1.5 rounded-[7px] px-2 py-1.5 text-left text-[12px] transition ${
+                            on
+                              ? "bg-[#f4f4f5] font-medium text-[#171717]"
+                              : "text-[#3f3f46] hover:bg-[#f7f7f8]"
+                          } disabled:cursor-not-allowed disabled:opacity-45`}
+                        >
+                          <Icon className="h-3.5 w-3.5 shrink-0" />
+                          <span className="min-w-0 flex-1">{opt.label}</span>
+                          {!opt.wired ? (
+                            <span className="text-[10px] text-[#a1a1aa]">未接通</span>
+                          ) : on ? (
+                            <Check className="h-3 w-3 shrink-0 text-[#171717]" />
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               ) : null}
 
               {/* 设计系统选择器（2026-08-24 用户裁决）。
               Stitch 和 TRAE 都把它做成画布右侧的常驻面板——那是因为它们**是画布
               模式**，右侧本来就有一整条空间。我们不是：舞台右边是正在跑的应用，
-              再插一条面板就得跟它抢地方。所以合并进指令框，跟「应用 / Web」并排。
+              再插一条面板就得跟它抢地方。所以合并进指令框，跟目标形态下拉并排。
 
               ⚠ 与设备切换不同，这个在**首页和会话内都要有**（用户两张截图都圈了）：
               首页决定新推演用哪套皮，会话内改完下一轮生效。所以不能写 hero &&。 */}

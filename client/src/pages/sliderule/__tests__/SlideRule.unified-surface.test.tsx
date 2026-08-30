@@ -189,13 +189,27 @@ describe("unified /sliderule surface (single mental model)", () => {
     // hero composer 仍在首页流里，且全页仍只有一个 ComposerDock
     expect(html).toContain('data-testid="sliderule-hero-composer"');
     expect(html).toContain('data-testid="sliderule-composer-device"');
+    expect(html).toContain('data-testid="sliderule-composer-device-trigger"');
+    expect(html).toContain('data-testid="sliderule-composer-device-menu"');
     expect(html).toContain('data-testid="sliderule-composer-device-phone"');
     expect(html).toContain('data-testid="sliderule-composer-device-desktop"');
-    const phoneChip = html.slice(
-      html.indexOf("sliderule-composer-device-phone"),
-      html.indexOf("sliderule-composer-device-desktop")
+    expect(html).toContain('data-testid="sliderule-composer-device-tablet"');
+    expect(html).toContain('data-testid="sliderule-composer-device-watch"');
+    const trigger = html.slice(
+      html.indexOf("sliderule-composer-device-trigger"),
+      html.indexOf("sliderule-composer-device-menu")
     );
-    expect(phoneChip).toContain("应用");
+    expect(trigger).toContain("Web");
+    expect(trigger).not.toContain("应用");
+    const phoneRow = html.slice(
+      html.indexOf("sliderule-composer-device-phone"),
+      html.indexOf("sliderule-composer-device-phone") + 500
+    );
+    expect(phoneRow).toContain("应用");
+    const watchAt = html.indexOf("sliderule-composer-device-watch");
+    const watchRow = html.slice(watchAt, watchAt + 1800);
+    expect(watchRow).toContain("未接通");
+    expect(watchRow).toContain("disabled");
     expect(html).toContain("描述你想构建的业务系统");
     expect(html).not.toContain("挂技能或连接器");
     expect(html).not.toContain("即可选择技能、连接器或伙伴");

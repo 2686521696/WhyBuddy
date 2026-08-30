@@ -44,11 +44,23 @@ export function wiredArchetypes(): Array<{ id: string; label: string }> {
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
-export function wiredDevices(): Array<{ id: string; label: string }> {
+export function allDeviceForms(): Array<{
+  id: string;
+  label: string;
+  wired: boolean;
+}> {
   const forms = LEDGER.deviceForms?.forms || {};
-  return Object.entries(forms)
-    .filter(([, spec]) => spec?.wired === true)
-    .map(([id, spec]) => ({ id, label: String(spec.label || id) }));
+  return Object.entries(forms).map(([id, spec]) => ({
+    id,
+    label: String(spec.label || id),
+    wired: spec?.wired === true,
+  }));
+}
+
+export function wiredDevices(): Array<{ id: string; label: string }> {
+  return allDeviceForms()
+    .filter(row => row.wired)
+    .map(({ id, label }) => ({ id, label }));
 }
 
 export function wiredDeviceIds(): string[] {
