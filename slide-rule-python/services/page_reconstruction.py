@@ -6,7 +6,7 @@ import json
 import re
 from typing import Any, Callable, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from .archetype_legal import device_domain_bar as _device_domain_bar
 from .archetype_legal import supported_devices as _supported_devices

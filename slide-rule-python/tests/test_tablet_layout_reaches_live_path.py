@@ -57,6 +57,7 @@ def test_strict_gate_accepts_tablet_rejects_watch():
 def test_generation_schema_bar_comes_from_ledger():
     """契约里的 desktop|phone|tablet 必须是账本现算，不许再手写一份。"""
     from services.archetype_legal import device_domain_bar
+    from services.schema_legal import experience_block_prompt_block
     from services.v5_llm_generate import _SCHEMA_INSTRUCTION
     from services.v5_parallel_generate import _contract_instruction
 
@@ -65,3 +66,10 @@ def test_generation_schema_bar_comes_from_ledger():
     assert f'"{bar}"' in _SCHEMA_INSTRUCTION
     assert bar in _contract_instruction()
     assert "watch" not in bar
+    # 叶子只留占位符；填槽必须发生在生成侧。删掉 fill 这两条红。
+    raw = experience_block_prompt_block()
+    assert "__PREFERRED_DEVICES__" in raw
+    assert "__DEVICE_GENERATION_BULLETS__" in raw
+    assert "__PREFERRED_DEVICES__" not in _SCHEMA_INSTRUCTION
+    assert "__DEVICE_GENERATION_BULLETS__" not in _SCHEMA_INSTRUCTION
+    assert "__PREFERRED_DEVICES__" not in _contract_instruction()

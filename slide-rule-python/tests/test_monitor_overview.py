@@ -813,9 +813,11 @@ def test_generation_contract_teaches_how_to_pick_the_device():
     死的，下游那个省时判断（明说桌面就跳过手机档）也就无从做起。两个方向的
     坑也要在正文里——只教一个方向，模型会把所有现场词都往那一边推。
     """
-    from services.schema_legal import experience_block_prompt_block
+    from services.v5_llm_generate import _SCHEMA_INSTRUCTION
 
-    body = experience_block_prompt_block()
+    # 钉通电的插座：模块级指令才是生成侧真用的。只测
+    # experience_block_prompt_block() 会让叶子占位符路径假绿。
+    body = _SCHEMA_INSTRUCTION
     assert "preferredDevice" in body
     assert "POSTURE" in body.upper(), "判据必须是姿态，不是关键词"
     assert "courier" in body and "dispatcher" in body, "缺「带现场词的后台需求」这一向"
@@ -829,7 +831,11 @@ def test_generation_contract_teaches_how_to_pick_the_device():
     assert f"preferredDevice '{bar}'" in body
     assert "tablet" in bar
     assert "emit an unsupported device" in body
-    assert "watch" not in body.split("Step 9")[0]
+    # ⚠ 2026-08-30：不能 `assert "watch" not in body`。Step 8 前文有
+    # "watching live state"，子串会误伤。钉的是带引号的设备词。
+    step8 = body.split("Step 9")[0]
+    assert "'watch'" not in step8
+    assert '"watch"' not in step8
 
 
 # ── monitor 页放开 page.blocks（2026-07-31）─────────────────────────────

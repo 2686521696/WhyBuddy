@@ -210,7 +210,11 @@ def test_generation_contract_requires_exactly_one_supported_device():
     assert "never omit" in _SCHEMA_INSTRUCTION.lower()
     assert "tablet" in bar
     assert "watch" not in bar
-    assert "watch" not in _SCHEMA_INSTRUCTION
+    # ⚠ 2026-08-30：不能 `assert "watch" not in _SCHEMA_INSTRUCTION`。
+    # 契约正文有 "actually watches" / "watching live state"，子串会误伤；
+    # 钉的是合法域槽位和带引号的设备词，不是英文单词。
+    assert "'watch'" not in _SCHEMA_INSTRUCTION
+    assert '"watch"' not in _SCHEMA_INSTRUCTION
 
 
 def test_generation_contract_requires_ref_fields_to_name_their_target():

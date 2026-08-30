@@ -24,9 +24,6 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List
 
-from .archetype_legal import device_domain_bar as _device_domain_bar
-from .archetype_legal import device_generation_bullets as _device_generation_bullets
-
 _LEGAL_PATH = Path(__file__).resolve().parent / "data" / "five_system_legal.json"
 _BLOCK_CATALOG_PATH = Path(__file__).resolve().parent / "data" / "experience_block_catalog.json"
 
@@ -1255,7 +1252,7 @@ def experience_block_prompt_block(
     lines.append(
         "Step 8 — Shell and device: appbundle MAY include experienceShell "
         "{mode: 'navigation'|'focus', navigation: 'side'|'top'} and MUST include "
-        f"preferredDevice '{_device_domain_bar()}'. "
+        "preferredDevice '__PREFERRED_DEVICES__'. "
         "Use experienceShell instead of appIdentity.nav for new models. "
         "mode MUST be 'navigation' for now — 'focus' (full-screen single-purpose tools like a report "
         "viewer or document editor) is schema-legal but has NO client renderer yet; declaring it renders "
@@ -1269,7 +1266,7 @@ def experience_block_prompt_block(
         "Step 8b — How to choose preferredDevice. You MUST choose exactly one supported device; "
         "NEVER omit the field, request both devices, or emit an unsupported device. Judge by the "
         "user's POSTURE while operating, not by keywords in the request:\n"
-        f"{_device_generation_bullets()}\n"
+        "__DEVICE_GENERATION_BULLETS__\n"
         "  · When posture is ambiguous, inspect the complete five-system model, landing-page shape, "
         "and primary operation, then still choose exactly one device.\n"
         "Two traps (both judged by WHO operates it in WHAT state, not by the words present): "

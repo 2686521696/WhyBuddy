@@ -299,3 +299,17 @@ def device_generation_bullets() -> str:
         posture = str(form.get("postureEn") or form.get("posture") or "").strip()
         lines.append(f"  · '{name}' — {posture}")
     return "\n".join(lines)
+
+
+def fill_device_placeholders(text: str) -> str:
+    """叶子模块只留占位符，调用方（core/flow）在通电的插座上填账本。
+
+    ⚠ 2026-08-30：`schema_legal` 是 util 叶子，闸钉着「不依赖 services 内
+    任何模块」。叶子里 import 本模块 = 不再是叶子；叶子里手抄
+    `desktop|phone` = 下一笔加档漏接。占位符是第三条路。
+    """
+    return (
+        text.replace("__PREFERRED_DEVICES__", device_domain_bar())
+        .replace("__PREFERRED_DEVICES_OR__", device_domain_or())
+        .replace("__DEVICE_GENERATION_BULLETS__", device_generation_bullets())
+    )

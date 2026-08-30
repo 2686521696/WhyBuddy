@@ -15,8 +15,8 @@ deterministically from validated outputs.
 
 from __future__ import annotations
 from .archetype_legal import default_device as _default_device
-from .archetype_legal import device_domain_bar as _device_domain_bar
 from .archetype_legal import device_domain_or as _device_domain_or
+from .archetype_legal import fill_device_placeholders as _fill_device_placeholders
 from .archetype_legal import supported_devices as _supported_devices
 
 import copy
@@ -243,7 +243,7 @@ def _section_instruction(section: str) -> str:
             f"chart.type={','.join(CHART_TYPES)}; stat.format={','.join(STAT_FORMATS)}. "
             "Chart metric is count or sum:<number field>. Stat metric is count, "
             "sum:<number field>, or avg:<number field>. Never invent enum values."
-            f"\n\n{experience_block_prompt_block()}"
+            f"\n\n{_fill_device_placeholders(experience_block_prompt_block())}"
         )
     return instruction
 
@@ -263,8 +263,8 @@ def _contract_instruction() -> str:
         experience_block_prompt_block,
     )
 
-    return (
-        _CONTRACT_INSTRUCTION.replace("__PREFERRED_DEVICES__", _device_domain_bar())
+    return _fill_device_placeholders(
+        _CONTRACT_INSTRUCTION
         + "\nClosed runtime domains (never invent values): "
         + f"field tone={','.join(FIELD_TONES)}; "
         + f"number format={','.join(NUMBER_FORMATS)}; "

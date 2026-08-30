@@ -16,8 +16,7 @@ North-star discipline (先证通用性，再接 LLM；别把两件事耦合):
 """
 
 from __future__ import annotations
-from .archetype_legal import device_domain_bar as _device_domain_bar
-from .archetype_legal import device_domain_or as _device_domain_or
+from .archetype_legal import fill_device_placeholders as _fill_device_placeholders
 from .archetype_legal import required_evidence as _required_evidence
 
 import os
@@ -407,7 +406,7 @@ def _render_schema_instruction(template: str) -> str:
     field_ref = "<entity_id>.<field_id>"
     chart_metrics = "|".join(list(METRIC_BARE) + [f"{p}{field_ref}" for p in CHART_METRIC_PREFIXES])
     stat_metrics = "|".join(list(METRIC_BARE) + [f"{p}{field_ref}" for p in STAT_METRIC_PREFIXES])
-    return (
+    rendered = (
         template
         .replace("__WORKFLOWREF_RULE__", _WORKFLOWREF_RULE)
         .replace("__FIELD_TONES__", enum_str("fieldTones"))
@@ -422,16 +421,18 @@ def _render_schema_instruction(template: str) -> str:
         .replace("__IDENTITY_THEMES__", enum_str("identityThemes"))
         .replace("__IDENTITY_ICONS__", enum_str("identityIcons"))
         .replace("__IDENTITY_NAVS__", enum_str("identityNavs"))
-        .replace("__PREFERRED_DEVICES__", _device_domain_bar())
-        .replace("__PREFERRED_DEVICES_OR__", _device_domain_or())
     )
+    return _fill_device_placeholders(rendered)
 
 
 def _append_experience_block_catalog(instruction: str) -> str:
     """二阶段：从同一目录注入过渡说明，不让 Prompt 另写一份区块清单。"""
     from .schema_legal import experience_block_prompt_block
 
-    return f"{instruction.rstrip()}\n\n{experience_block_prompt_block()}\n"
+    return (
+        f"{instruction.rstrip()}\n\n"
+        f"{_fill_device_placeholders(experience_block_prompt_block())}\n"
+    )
 
 
 _SCHEMA_INSTRUCTION = _append_experience_block_catalog(
@@ -490,7 +491,9 @@ def schema_instruction_for(goal: str) -> str:
         # 送进可达区（第 1 层），而选材仍被预设形状主导——实测选中数停在 4.5/16。
         derived = derive_goal_presets(picked, PAGE_KIND_PRESETS, PAGE_KINDS)
         base = _render_schema_instruction(_SCHEMA_INSTRUCTION_TEMPLATE)
-        catalog = experience_block_prompt_block(picked, extra_presets=derived)
+        catalog = _fill_device_placeholders(
+            experience_block_prompt_block(picked, extra_presets=derived)
+        )
         return f"{base.rstrip()}\n\n{catalog}\n"
     except Exception as exc:  # noqa: BLE001 — 窄化失败不得让生成挂掉
         print(f"[v5_llm_generate] catalog narrowing skipped: {str(exc)[:160]}")
