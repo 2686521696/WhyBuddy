@@ -178,7 +178,13 @@ describe("对话列接到输入条，不要横切分隔线", () => {
         "utf8"
       )
     );
-    expect(session).toContain("preferredDevice: loadPreferredDevice()");
+    // 范围卡接通档优先，没选才读作曲家 localStorage。
+    // ⚠ 2026-08-30：不能再盯 `preferredDevice: loadPreferredDevice()` 整行——
+    // 通电路径改成了 isWiredDevice(scopeChoice.device) ? … : loadPreferredDevice()，
+    // 字面一变就假红；删掉 loadPreferredDevice 或不再写进 preferredDevice 才该红。
+    expect(session).toContain("preferredDevice:");
+    expect(session).toContain("loadPreferredDevice()");
+    expect(session).toContain("isWiredDevice(scopeChoice.device)");
     const dock = stripComments(
       readFileSync(new URL("../ComposerDock.tsx", import.meta.url), "utf8")
     );

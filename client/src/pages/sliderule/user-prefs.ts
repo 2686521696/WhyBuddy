@@ -9,6 +9,7 @@
  * - 目标形态（应用 / Web）：作曲家开关，发送时随 drive-full-stream 带上。
  */
 import {
+  defaultDevice,
   parseComposerDevice,
   type ComposerDevice,
 } from "./composer-device";

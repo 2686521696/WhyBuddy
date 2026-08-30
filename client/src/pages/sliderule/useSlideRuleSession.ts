@@ -2178,8 +2178,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           pending?.userText || "",
           {
             forcedTool: "dismiss_scope",
-            preferredDevice:
-              (loadPreferredDevice() as "desktop" | "phone") || "desktop",
+            preferredDevice: loadPreferredDevice() || "desktop",
             designSystemId: loadDesignSystemId() || undefined,
           }
         );
@@ -2388,8 +2387,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         "从这里分一个变体",
         {
           forcedTool: "fork_variant",
-          preferredDevice:
-            (loadPreferredDevice() as "desktop" | "phone") || "desktop",
+          preferredDevice: loadPreferredDevice() || "desktop",
           designSystemId: loadDesignSystemId() || undefined,
           onControlToolResult: event => {
             if (event.tool === "fork_variant" && event.ok === false) {
