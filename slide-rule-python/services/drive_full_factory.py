@@ -25,6 +25,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from models.v5_state import V5SessionState
+from services.scope_authority import preferred_device_for_run
 from services.slide_rule_session import load_session, save_session
 from services.sliderule_session_sanitizer import sanitize_session_state
 from services.v5_full_driver import (
@@ -101,7 +102,15 @@ async def start_drive_full_factory_run(
         # 不从 HTTP 载荷取：答案是控制面写在 coverageGaps 上的，客户端再传一遍
         # 就是同一件事两处来源（本仓第四条），迟早对不上。
         set_clarifications(clarifications_from_state(state))
-        set_preferred_device_override(preferred_device)
+        # 设备跟澄清同一口径：goal 上的授予是权威。HTTP 里的 desktop
+        # 经常是作曲家默认，不是新的 Permission{decision}。
+        goal = dict(state.goal) if isinstance(state.goal, dict) else {}
+        run_device = preferred_device_for_run(
+            goal=goal,
+            payload_device=preferred_device,
+            texts=[user_text, str(goal.get("text") or "")],
+        )
+        set_preferred_device_override(run_device)
         set_design_system_override(design_system_id)
         # 命名字段跟技能/连接器同一形状。传 None 的键等于「信封没带」，
         # 走 state / 账户 reuse_next，不许编成显式 false。

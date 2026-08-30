@@ -2775,7 +2775,9 @@ def _enrich_freeform_blocks_inner(model: dict[str, Any]) -> dict[str, Any]:
     appbundle = model.get("appbundle") or {}
     identity = appbundle.get("appIdentity") or {}
     theme_id = str(identity.get("theme") or "").strip()
-    device = "phone" if appbundle.get("preferredDevice") == "phone" else "desktop"
+    from .device_policy import preferred_layout_device
+
+    device = preferred_layout_device(appbundle)
     # identity_theme_gen.enrich_identity_theme 如果已经跑过（在这之前调用），
     # appIdentity.generatedTheme 会有一份自定义主题——FreeformInsight 的配色
     # 要照它走，不能还停在 8 预设，不然侧边栏和内容卡片颜色对不上。
@@ -3161,7 +3163,9 @@ def _enrich_monitor_page_overviews_inner(
     appbundle = model.get("appbundle") or {}
     identity = appbundle.get("appIdentity") or {}
     theme_id = str(identity.get("theme") or "").strip()
-    device = "phone" if appbundle.get("preferredDevice") == "phone" else "desktop"
+    from .device_policy import preferred_layout_device
+
+    device = preferred_layout_device(appbundle)
     # 哪一页代表这个应用：落地页那张参照板就是用户点开应用第一眼看到的画面，
     # 也就是卡片该显示的东西（见 OverviewPreviewSink.offer 的取舍规则）。
     landing_ref = str(appbundle.get("landingPageRef") or "").strip()

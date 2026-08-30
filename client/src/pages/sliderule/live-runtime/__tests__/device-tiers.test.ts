@@ -75,10 +75,19 @@ describe("availableDeviceTiers", () => {
     expect(availableDeviceTiers({ identity: {}, pages: [page(false)] })).toEqual(["desktop"]);
   });
 
-  it("tablet 按未声明处理（平板范式已下架 ADR-0001）", () => {
+    it("声明 tablet → 只有平板档", () => {
     expect(
       availableDeviceTiers({ identity: { preferredDevice: "tablet" }, pages: [page(true)] })
-    ).toEqual(["desktop", "phone"]);
+    ).toEqual(["tablet"]);
+  });
+
+  it("single-v1 tablet 模型只开放平板档", () => {
+    expect(
+      availableDeviceTiers({
+        identity: { preferredDevice: "tablet", deviceAuthority: "single-v1" },
+        pages: [page(true)],
+      })
+    ).toEqual(["tablet"]);
   });
 
   it("空 schema 不炸，退到桌面档", () => {

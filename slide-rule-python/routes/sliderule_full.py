@@ -1135,9 +1135,16 @@ def drive_full(
     #   才是前端主路径（身份透传、精修模式都在这上面踩过）。
     set_active_connectors(payload.get("activeConnectors"))
     from services.device_policy import set_preferred_device_override
+    from services.scope_authority import preferred_device_for_run
 
+    goal = dict(state.goal) if isinstance(state.goal, dict) else {}
     set_preferred_device_override(
-        payload.get("preferredDevice") or payload.get("preferred_device")
+        preferred_device_for_run(
+            goal=goal,
+            payload_device=payload.get("preferredDevice")
+            or payload.get("preferred_device"),
+            texts=[user_text, str(goal.get("text") or "")],
+        )
     )
     from services.identity_palette_hint import set_design_system_override
 

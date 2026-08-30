@@ -58,7 +58,24 @@ from fastapi import HTTPException
 from starlette.concurrency import run_in_threadpool
 
 from models.v5_state import CoverageGap, UserIntervention, V5SessionState
+from services.archetype_legal import (
+    DEFAULT_ARCHETYPE,
+    ArchetypeNotWired,
+    UnknownArchetype,
+    is_wired,
+    resolve as resolve_archetype,
+    valid_judge_devices,
+    wired_archetype_choices,
+    wired_device_choices,
+)
 from services.drive_full_factory import start_drive_full_factory_run
+from services.scope_authority import (
+    preferred_device_for_run,
+    resolve_confirm_device,
+    resolve_park_device,
+    stamp_scope_onto_goal,
+    wired_device,
+)
 from services.slide_rule_interactive_gates import (
     apply_user_intervention_invalidation,
     resolve_readiness_gaps_by_ids,
@@ -600,6 +617,7 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "restatement": {"type": "string"},
                     "device": {"type": "string"},
+                    "productArchetype": {"type": "string"},
                     "variant": {"type": "string"},
                     "wantEvidence": {"type": "boolean"},
                     "wantFeasibilityReport": {"type": "boolean"},
@@ -735,6 +753,88 @@ def _write_confirmed_goal(state: V5SessionState, restatement: str) -> None:
     state.goal = goal
 
 
+def _last_scope_card(state: V5SessionState) -> Dict[str, Any]:
+    for row in reversed(list(getattr(state, "controlTranscript", None) or [])):
+        if isinstance(row, dict) and row.get("kind") == "scope_card":
+            return row
+    return {}
+
+
+def _scope_texts(state: V5SessionState, user_text: str = "") -> list[str]:
+    goal = state.goal if isinstance(state.goal, dict) else {}
+    return [
+        user_text,
+        str(getattr(state, "awaitDetail", None) or ""),
+        str(goal.get("text") or ""),
+    ]
+
+
+def _resolved_park_device(
+    state: V5SessionState,
+    payload_device: Any,
+    user_text: str = "",
+) -> str:
+    return resolve_park_device(
+        last_card=_last_scope_card(state),
+        goal=dict(state.goal) if isinstance(state.goal, dict) else {},
+        texts=_scope_texts(state, user_text),
+        payload_device=payload_device,
+    )
+
+
+def _park_device(raw: Any, preferred_device: Any = None) -> str:
+    device = str(raw or preferred_device or "unspecified").strip()
+    if device in valid_judge_devices():
+        return device
+    return "unspecified"
+
+
+def _park_archetype(raw: Any) -> str:
+    name = str(raw or "").strip()
+    if not name:
+        return DEFAULT_ARCHETYPE
+    try:
+        if is_wired(name):
+            return name
+    except UnknownArchetype:
+        return DEFAULT_ARCHETYPE
+    return DEFAULT_ARCHETYPE
+
+
+def _stamp_scope_choice_onto_goal(
+    state: V5SessionState,
+    payload: Dict[str, Any] | None = None,
+) -> str:
+    """把范围卡上的原型和设备写进 goal，并在点火前 fail-closed。
+
+    ⚠ 选择通道是范围卡，不是生成器。这里不换五系统段，只保证：
+      选了未接通的原型 → 当场失败，信封调用 = 0。
+    ⚠ 2026-08-30：第一版只 stamp 原型。真机点了平板，goal 里没有
+      preferredDevice，工厂 finally 清掉 override 之后授予就没了。
+      设备跟原型是同一张卡上的一次授予，必须一起落盘。
+    """
+    body = payload if isinstance(payload, dict) else {}
+    last = _last_scope_card(state)
+    goal = dict(state.goal) if isinstance(state.goal, dict) else {}
+    raw = str(
+        body.get("productArchetype") or body.get("product_archetype") or ""
+    ).strip()
+    if not raw:
+        raw = str(last.get("productArchetype") or goal.get("productArchetype") or "").strip()
+    device = resolve_confirm_device(
+        payload_device=body.get("preferredDevice") or body.get("preferred_device"),
+        last_card=last,
+        goal=goal,
+        texts=_scope_texts(state, str(body.get("userText") or "")),
+    )
+    state.goal = stamp_scope_onto_goal(
+        goal,
+        product_archetype=raw,
+        preferred_device=device,
+    )
+    return resolve_archetype(state, body)
+
+
 def _copy_scope_opt_in_into_goal(state: V5SessionState) -> None:
     """把范围卡勾选写进 goal，供 persist-as-authority 工厂短清单读取。
 
@@ -764,6 +864,13 @@ def _copy_scope_opt_in_into_goal(state: V5SessionState) -> None:
     else:
         goal.pop("wantFeasibilityReport", None)
         goal.pop("includeFeasibilityReport", None)
+    card = _last_scope_card(state)
+    archetype = str(card.get("productArchetype") or "").strip()
+    if archetype:
+        goal["productArchetype"] = archetype
+    device = wired_device(card.get("device"))
+    if device:
+        goal["preferredDevice"] = device
     state.goal = goal
 
 
@@ -1267,6 +1374,7 @@ async def _park_scope(
     restatement: str,
     *,
     device: str = "unspecified",
+    product_archetype: str = "",
     variant: str = "full",
     user_text: str = "",
     want_evidence: bool = False,
@@ -1275,13 +1383,16 @@ async def _park_scope(
     state.runtimePhase = "awaiting"
     state.awaitReason = "control_scope"
     state.awaitDetail = restatement
+    parked_device = _park_device(device)
+    parked_archetype = _park_archetype(product_archetype)
     _append_transcript(
         state,
         {
             "role": "assistant",
             "kind": "scope_card",
             "text": restatement,
-            "device": device,
+            "device": parked_device,
+            "productArchetype": parked_archetype,
             "variant": variant,
             "wantEvidence": _truthy_scope_flag(want_evidence),
             "wantFeasibilityReport": _truthy_scope_flag(want_feasibility_report),
@@ -1291,7 +1402,10 @@ async def _park_scope(
     yield {
         "type": "control_scope_card",
         "restatement": restatement,
-        "device": device,
+        "device": parked_device,
+        "productArchetype": parked_archetype,
+        "wiredArchetypes": wired_archetype_choices(),
+        "wiredDevices": wired_device_choices(),
         "variant": variant,
         "userText": user_text or restatement,
         # 前端 localStorage 未写时用账户/会话旗hydrate「下一场沿用」。
@@ -1365,18 +1479,36 @@ async def _confirm_rehearse_and_handoff(
     active_connectors: Any,
     preferred_device: Any,
     design_system_id: Any,
+    payload: Optional[Dict[str, Any]] = None,
 ) -> AsyncIterator[Dict[str, Any]]:
     """确认 rehearse：空 goal 写入复述句、persist，再交给 persist-as-authority 信封。"""
     restatement = _confirmed_restatement(state, user_text)
     _write_confirmed_goal(state, restatement)
     _copy_scope_opt_in_into_goal(state)
+    try:
+        _stamp_scope_choice_onto_goal(state, payload)
+    except (ArchetypeNotWired, UnknownArchetype) as exc:
+        async for event in _canned(
+            state,
+            str(exc),
+            stop=stop_wire(ControlStopReason.LLM_UNAVAILABLE),
+        ):
+            yield event
+        return
     # 新范围一确认，上一轮范围下的控制面提问就作废：否则作曲家会继续弹
     # 问上一个 goal 的澄清卡（2026-08-27 真机：goal 已是宠物医院，卡还在
     # 问诊所系统）。只碰控制面自己出的提问，证据/能力缺口不许动。
     _retire_stale_control_questions(state)
+    confirmed = state.goal if isinstance(state.goal, dict) else {}
     _append_transcript(
         state,
-        {"role": "system", "kind": "scope_confirmed", "text": restatement},
+        {
+            "role": "system",
+            "kind": "scope_confirmed",
+            "text": restatement,
+            "device": confirmed.get("preferredDevice"),
+            "productArchetype": confirmed.get("productArchetype"),
+        },
     )
     state.awaitReason = None
     state.awaitDetail = None
@@ -1415,12 +1547,18 @@ async def _handoff_factory(
     from services.product_charter import factory_charter_kwargs
 
     charter_kw = factory_charter_kwargs(_CONTROL_PAYLOAD.get())
+    goal = dict(state.goal) if isinstance(state.goal, dict) else {}
+    run_device = preferred_device_for_run(
+        goal=goal,
+        payload_device=preferred_device,
+        texts=[user_text, str(goal.get("text") or "")],
+    )
     run = await start_drive_full_factory_run(
         state.sessionId,
         user_text,
         installed_skills,
         active_connectors,
-        preferred_device,
+        run_device,
         design_system_id,
         repair=repair,
         profile=profile,  # type: ignore[arg-type]
@@ -2003,7 +2141,12 @@ async def _run_control_turn_body(
             async for event in _park_scope(
                 state,
                 restatement,
-                device=str(preferred_device or "unspecified"),
+                device=_resolved_park_device(state, preferred_device, user_text),
+                product_archetype=str(
+                    payload.get("productArchetype")
+                    or payload.get("product_archetype")
+                    or ""
+                ),
                 variant="thin" if original_goal else "full",
                 user_text=user_text,
             ):
@@ -2018,6 +2161,7 @@ async def _run_control_turn_body(
                 active_connectors,
                 preferred_device,
                 design_system_id,
+                payload=payload,
             ):
                 yield event
         return
@@ -2244,7 +2388,7 @@ async def _dispatch_tool(
         async for event in _park_scope(
             state,
             _confirmed_restatement(state, user_text) or _restate(original_goal),
-            device=str(preferred_device or "unspecified"),
+            device=_resolved_park_device(state, preferred_device, user_text),
             variant="thin" if original_goal else "full",
             user_text=user_text,
         ):
@@ -2263,7 +2407,7 @@ async def _dispatch_tool(
             async for event in _park_scope(
                 state,
                 _restatement_chain(state, user_text, original_goal),
-                device=str(preferred_device or "unspecified"),
+                device=_resolved_park_device(state, preferred_device, user_text),
                 variant="thin" if original_goal else "full",
                 user_text=user_text,
             ):
@@ -2279,7 +2423,7 @@ async def _dispatch_tool(
         async for event in _park_scope(
             state,
             _restatement_chain(state, user_text, original_goal),
-            device=str(preferred_device or "unspecified"),
+            device=_resolved_park_device(state, preferred_device, user_text),
             variant="thin" if original_goal else "full",
             user_text=user_text,
         ):
@@ -2290,7 +2434,12 @@ async def _dispatch_tool(
         async for event in _park_scope(
             state,
             restatement,
-            device=str(args.get("device") or preferred_device or "unspecified"),
+            device=_resolved_park_device(
+                state,
+                args.get("device") or preferred_device,
+                user_text,
+            ),
+            product_archetype=str(args.get("productArchetype") or args.get("product_archetype") or ""),
             variant=str(args.get("variant") or ("thin" if original_goal else "full")),
             user_text=user_text,
             want_evidence=_truthy_scope_flag(args.get("wantEvidence")),
@@ -2304,6 +2453,16 @@ async def _dispatch_tool(
         restatement = _confirmed_restatement(state, user_text)
         _write_confirmed_goal(state, restatement)
         _copy_scope_opt_in_into_goal(state)
+        try:
+            _stamp_scope_choice_onto_goal(state, _CONTROL_PAYLOAD.get())
+        except (ArchetypeNotWired, UnknownArchetype) as exc:
+            async for event in _canned(
+                state,
+                str(exc),
+                stop=stop_wire(ControlStopReason.LLM_UNAVAILABLE),
+            ):
+                yield event
+            return
         await _apersist(state)
         async for event in _handoff_factory(
             state,

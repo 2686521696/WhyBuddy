@@ -51,6 +51,9 @@ fail-closed 并说清原因，**不许静静退回默认原型**——那就是�
     from .archetype_legal import required_evidence, closure_edges
     required_evidence()                  # 默认原型的六样
     required_evidence("casual_game")     # 抛 ArchetypeNotWired
+
+加设备只改账本 + 版式。`device_policy` / `page_reconstruction` /
+`intake_judge` 不许再手抄 Literal["desktop", "phone"]。
 """
 
 from __future__ import annotations
@@ -146,19 +149,20 @@ def closure_edges(name: str | None = None) -> List[Dict[str, Any]]:
 def resolve(state: Any = None, payload: Dict[str, Any] | None = None) -> str:
     """这一轮该按哪个原型闭环。
 
-    ⚠ 今天恒定返回默认原型——**这不是占位符，是有意的**：选择通道（范围卡上
-      的原型选择）还没做，而在没有选择通道的时候读一个用户传不进来的字段，
-      等于给自己一个「已经支持了」的错觉。等选择通道落地，改这一个函数即可，
-      其余消费点一行都不用动。
+    选择通道是范围卡（`control_scope_card` → 确认 POST 的 `productArchetype`
+    → `goal.productArchetype`）。没人选时回默认原型。
 
-      这正是本仓第一条的正向用法：先确认哪条链真的在跑，再把开关装上去。
+    ⚠ 选中未接通的原型**当场失败**（`ArchetypeNotWired`），不许静静退回
+      `business_app`——那就是「要个游戏、拿到一个后台系统」。拼错同理
+      （`UnknownArchetype`）。这是控制面点火前的 fail-closed 闸，不是生成器
+      里换一套五系统段——五系统内核这轮不动。
     """
     for src in (payload or {}, getattr(state, "goal", None) or {}):
         if isinstance(src, dict):
             raw = str(src.get("productArchetype") or src.get("product_archetype") or "").strip()
             if raw:
-                # 拼错不许静静退回默认（同 §14.6 那 28 份手抄开关的教训）
-                _spec_raw(raw)
+                # 拼错 / 未接通都不许静静退回默认（同 §14.6）
+                _spec(raw)
                 return raw
     return DEFAULT_ARCHETYPE
 
@@ -222,3 +226,90 @@ def device_rubric_bullets() -> str:
 def default_device() -> str:
     """判不出姿态时的兜底档。**必须是接通的**，判据钉着。"""
     return str(_DEVICES.get("defaultDevice") or "desktop")
+
+
+def device_label(name: str) -> str:
+    form = _FORMS.get(name) or {}
+    return str(form.get("label") or name)
+
+
+def device_domain_bar() -> str:
+    """生成契约 / 闸报错用的合法域：`desktop|phone|tablet`。加设备只改账本。"""
+    return "|".join(supported_devices())
+
+
+def judge_device_domain_bar() -> str:
+    """判定 JSON 槽位：接通的设备（提示词顺序）+ 哨兵。"""
+    return "|".join(list(device_order()) + [JUDGE_UNSPECIFIED])
+
+
+def device_domain_or() -> str:
+    """英文报错：`desktop, phone or tablet`。"""
+    names = list(supported_devices())
+    if not names:
+        return ""
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f"{names[0]} or {names[1]}"
+    return ", ".join(names[:-1]) + f" or {names[-1]}"
+
+
+def historic_preferred_devices() -> Tuple[str, ...]:
+    """宽容闸：旧快照可能带的档。含已接通的 + 账本声明 historicAccepted 的。
+
+    不含哨兵。watch 从未进过生成契约（historicAccepted=false），宽容闸也不认。
+    """
+    accepted = {
+        k
+        for k, v in _FORMS.items()
+        if v.get("wired") is True or v.get("historicAccepted") is True
+    }
+    return tuple(sorted(accepted))
+
+
+def layout_device(preferred: Any) -> str:
+    """版式用档：接通的就用，否则兜底。
+
+    ⚠ 2026-08-30 真机形状：`phone if … else desktop` 把 tablet 折叠成桌面，
+      账本接通了平板、生图/总览仍走桌面提示词——装在不通电的插座上。
+      版式侧只问这一处，不许再手写二分。
+    """
+    raw = str(preferred or "").strip()
+    if raw in set(supported_devices()):
+        return raw
+    return default_device()
+
+
+def wired_device_choices() -> List[Dict[str, str]]:
+    """范围卡设备档选项。只含接通的——未接通的不许出现在可选项里。"""
+    return [{"id": name, "label": device_label(name)} for name in supported_devices()]
+
+
+def wired_archetype_choices() -> List[Dict[str, str]]:
+    """范围卡原型选项。只含接通的。"""
+    return [{"id": name, "label": label(name)} for name in wired_archetypes()]
+
+
+def device_generation_bullets() -> str:
+    """生成契约 Step 8b 的英文姿态条目，从账本 postureEn 生成。"""
+    lines = []
+    for name in supported_devices():
+        form = _FORMS.get(name) or {}
+        posture = str(form.get("postureEn") or form.get("posture") or "").strip()
+        lines.append(f"  · '{name}' — {posture}")
+    return "\n".join(lines)
+
+
+def fill_device_placeholders(text: str) -> str:
+    """叶子模块只留占位符，调用方（core/flow）在通电的插座上填账本。
+
+    ⚠ 2026-08-30：`schema_legal` 是 util 叶子，闸钉着「不依赖 services 内
+    任何模块」。叶子里 import 本模块 = 不再是叶子；叶子里手抄
+    `desktop|phone` = 下一笔加档漏接。占位符是第三条路。
+    """
+    return (
+        text.replace("__PREFERRED_DEVICES__", device_domain_bar())
+        .replace("__PREFERRED_DEVICES_OR__", device_domain_or())
+        .replace("__DEVICE_GENERATION_BULLETS__", device_generation_bullets())
+    )

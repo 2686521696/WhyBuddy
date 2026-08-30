@@ -114,7 +114,7 @@ def test_valid_model_passes_gate():
 
 
 def test_generated_model_gate_requires_one_supported_preferred_device():
-    for device in (None, "", "tablet", "watch"):
+    for device in (None, "", "watch"):
         model = _valid_library_model()
         if device is not None:
             model["appbundle"]["preferredDevice"] = device
@@ -127,7 +127,7 @@ def test_generated_model_gate_requires_one_supported_preferred_device():
             for finding in result["findings"]
         )
 
-    for device in ("desktop", "phone"):
+    for device in ("desktop", "phone", "tablet"):
         model = _valid_library_model()
         model["appbundle"]["preferredDevice"] = device
 
@@ -201,12 +201,20 @@ def test_generation_contract_requires_a_real_landing_page():
 
 
 def test_generation_contract_requires_exactly_one_supported_device():
+    from services.archetype_legal import device_domain_bar
     from services.v5_llm_generate import _SCHEMA_INSTRUCTION
 
-    assert '"preferredDevice": "desktop|phone"' in _SCHEMA_INSTRUCTION
+    bar = device_domain_bar()
+    assert f'"preferredDevice": "{bar}"' in _SCHEMA_INSTRUCTION
     assert "preferredDevice is REQUIRED" in _SCHEMA_INSTRUCTION
     assert "never omit" in _SCHEMA_INSTRUCTION.lower()
-    assert "desktop|tablet|phone" not in _SCHEMA_INSTRUCTION
+    assert "tablet" in bar
+    assert "watch" not in bar
+    # ⚠ 2026-08-30：不能 `assert "watch" not in _SCHEMA_INSTRUCTION`。
+    # 契约正文有 "actually watches" / "watching live state"，子串会误伤；
+    # 钉的是合法域槽位和带引号的设备词，不是英文单词。
+    assert "'watch'" not in _SCHEMA_INSTRUCTION
+    assert '"watch"' not in _SCHEMA_INSTRUCTION
 
 
 def test_generation_contract_requires_ref_fields_to_name_their_target():

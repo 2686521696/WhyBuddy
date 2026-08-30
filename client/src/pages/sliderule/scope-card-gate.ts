@@ -11,6 +11,15 @@
  *
  * 时间口径只许 SCOPE_CARD_TIME_COPY。未标定的分钟数不许进产品 DOM。
  */
+import {
+  defaultArchetype,
+  isWiredArchetype,
+  isWiredDevice,
+  wiredArchetypes,
+  wiredDevices,
+} from "./product-archetypes";
+import { loadPreferredDevice } from "./user-prefs";
+
 export type RehearsalIntervention = {
   intent?: string;
   text?: string;
@@ -25,15 +34,24 @@ export type RehearsalCall = {
   mode?: "repair";
 };
 
-export type ScopeCardDevice = "desktop" | "phone" | "unspecified";
+/** 设备档跟账本走，含判定哨兵 unspecified。不许再手抄 desktop|phone。 */
+export type ScopeCardDevice = string;
 
 export type ScopeCardVariant = "full" | "thin";
+
+export type ScopeCardChoice = {
+  device: string;
+  productArchetype: string;
+};
 
 export type ScopeCardPending = {
   userText: string;
   restatement: string;
   variant: ScopeCardVariant;
   device: ScopeCardDevice;
+  productArchetype?: string;
+  wiredArchetypes?: Array<{ id: string; label: string }>;
+  wiredDevices?: Array<{ id: string; label: string }>;
   intervention?: RehearsalIntervention;
   mode?: "repair";
   /** 账户/会话「下一场沿用」。localStorage 未写时用来 hydrate 勾选。 */
@@ -88,6 +106,61 @@ export function restateAppGoal(userText: string): string {
     .replace(/[。！？.!?]+$/u, "")
     .trim();
   return stripped || t;
+}
+
+/**
+ * 刷新后续停泊卡：会话里的授予是权威，localStorage 只是最后兜底。
+ *
+ * ⚠ 2026-08-30 真机：hydrate 写 `device: loadPreferredDevice()`，点过
+ * 平板的卡刷新回来变 desktop。对照 grok PermissionState——磁盘上的
+ * grant 压过客户端随手记的默认档。
+ */
+export function hydrateParkedScope(state: {
+  awaitDetail?: string | null;
+  goal?: {
+    text?: string;
+    preferredDevice?: string;
+    productArchetype?: string;
+  } | null;
+  controlTranscript?: Array<{
+    kind?: string;
+    device?: string;
+    productArchetype?: string;
+    variant?: string;
+    text?: string;
+  } | null>;
+}): ScopeCardPending {
+  const lastCard = [...(state.controlTranscript ?? [])]
+    .reverse()
+    .find(row => row && row.kind === "scope_card");
+  const wiredDev = (raw: unknown): string | undefined => {
+    const value = String(raw ?? "").trim();
+    return isWiredDevice(value) ? value : undefined;
+  };
+  const wiredArch = (raw: unknown): string | undefined => {
+    const value = String(raw ?? "").trim();
+    return isWiredArchetype(value) ? value : undefined;
+  };
+  const restatement = String(state.awaitDetail || lastCard?.text || "").trim();
+  return {
+    userText: restatement,
+    restatement,
+    variant: lastCard?.variant === "thin" || lastCard?.variant === "full"
+      ? lastCard.variant
+      : state.goal?.text?.trim()
+        ? "thin"
+        : "full",
+    device:
+      wiredDev(lastCard?.device) ??
+      wiredDev(state.goal?.preferredDevice) ??
+      loadPreferredDevice(),
+    productArchetype:
+      wiredArch(lastCard?.productArchetype) ??
+      wiredArch(state.goal?.productArchetype) ??
+      defaultArchetype(),
+    wiredArchetypes: wiredArchetypes(),
+    wiredDevices: wiredDevices(),
+  };
 }
 
 /**

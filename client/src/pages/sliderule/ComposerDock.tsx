@@ -428,7 +428,10 @@ export function ComposerDock({
   runPaused?: boolean;
   onReviseAssumption?: (id: string, alternative: string) => void;
   onRemoveQueued?: (index: number) => void;
-  onConfirmScope?: () => void;
+  onConfirmScope?: (choice?: {
+    device?: string;
+    productArchetype?: string;
+  }) => void;
   onReviseScope?: () => void;
   onAnswerAsk?: (text: string) => void;
   onDismissAsk?: () => void;

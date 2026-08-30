@@ -19,6 +19,8 @@
  */
 import React from "react";
 
+import { parseJudgeDevice } from "./product-archetypes";
+
 export type IntakeVerdict =
   | "real"
   | "iteration"
@@ -38,7 +40,7 @@ export type IntakeVerdict =
  * 下游处理完全不同——前者两档版式都生成，后者只生成桌面档并省掉约 67s。
  * 所以这里也不允许缺省成 "desktop"。
  */
-export type IntakeDevice = "desktop" | "phone" | "unspecified";
+export type IntakeDevice = string;
 
 export interface IntakeJudgement {
   verdict: IntakeVerdict;
@@ -101,7 +103,7 @@ export function parseJudgement(body: unknown): IntakeJudgement | null {
     // 不认的值一律落 unspecified，**不猜**。后端已经收敛过一遍，这里是第二道
     // ——前端独立判一次，是因为这个字段将来会被别的调用方消费，不能假定
     // 只有后端那条路径写它。
-    device: raw.device === "desktop" || raw.device === "phone" ? raw.device : "unspecified",
+    device: parseJudgeDevice(raw.device),
     deviceReason: String(raw.deviceReason ?? ""),
   };
 }

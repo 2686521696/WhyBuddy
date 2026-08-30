@@ -129,6 +129,7 @@ describe("产品客户端不得再 POST 工厂流", () => {
     expect(postFn).toContain("sessionId: state.sessionId");
     expect(postFn).toContain("userText");
     expect(postFn).toContain("preferredDevice");
+    expect(postFn).toContain("productArchetype");
     expect(postFn).toContain("designSystemId");
     expect(postFn).toContain("/api/sliderule/control-turn-stream");
     expect(postFn).toContain("reuseCharter");
@@ -151,6 +152,8 @@ describe("开始推演 / 质疑 / /推演", () => {
     );
     expect(confirmFn).toContain('"rehearse"');
     expect(confirmFn).toContain("snapshot.restatement");
+    expect(confirmFn).toContain("productArchetype");
+    expect(confirmFn).toContain("snapshot.device");
     const inferFn = SESSION.slice(
       SESSION.indexOf("export function inferForcedTool"),
       SESSION.indexOf("const DEFAULT_SESSION_ID")
@@ -159,6 +162,15 @@ describe("开始推演 / 质疑 / /推演", () => {
     expect(inferFn).not.toContain('"rehearse"');
     expect(CARD).toContain("onConfirm");
     expect(DOCK).toContain('data-testid="sliderule-control-ask"');
+  });
+
+  it("control_scope hydrate 走 hydrateParkedScope，不以 localStorage 为第一权威", () => {
+    const hydrate = SESSION.slice(
+      SESSION.indexOf('hydrated.awaitReason === "control_scope"'),
+      SESSION.indexOf('hydrated.awaitReason === "control_ask"')
+    );
+    expect(hydrate).toContain("hydrateParkedScope");
+    expect(hydrate).not.toContain("loadPreferredDevice()");
   });
 
   it("先改范围 POST dismiss_scope；reload 从 transcript 恢复 ask options", () => {

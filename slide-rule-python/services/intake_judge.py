@@ -49,6 +49,7 @@
 
 from __future__ import annotations
 from .archetype_legal import device_rubric_bullets as _device_rubric_bullets
+from .archetype_legal import judge_device_domain_bar as _judge_device_domain_bar
 from .archetype_legal import valid_judge_devices as _valid_judge_devices
 
 import os
@@ -60,11 +61,10 @@ from sliderule_llm.config import default_max_tokens
 
 Verdict = Literal["real", "iteration", "vague", "off_topic", "meta", "out_of_scope"]
 Action = Literal["proceed", "hint"]
-# 设备档。**只有三个取值，没有 tablet**——appbundle.preferredDevice 的合法域是
-# desktop/tablet/phone 三档，但平板范式的渲染代码已下架（ADR-0001），这里判出
-# tablet 下游也没有对应的设计与外壳，不如不给这个选项（能力面纪律：不许判出
-# 系统做不到的东西）。unspecified 见 Judgement.device 的说明。
-Device = Literal["desktop", "phone", "unspecified"]
+# 设备档。合法域同源于账本（接通的设备 + unspecified 哨兵）。
+# 2026-08-30：删掉手写 Literal——账本接通 tablet 而这里没跟上，判定会输出
+# 闸不认的值，或反过来把已经接通的档判成非法。unspecified 见 Judgement.device。
+Device = str
 
 _ENABLED_ENV = "SLIDERULE_INTAKE_JUDGE_ENABLED"
 _BLOCKING_ENV = "SLIDERULE_INTAKE_JUDGE_BLOCKING"
@@ -396,7 +396,7 @@ def build_messages(text: str, *, has_app: bool, app_summary: str = "") -> list[d
         '  "guidance": "给用户看的引导话术（verdict 不是 real/iteration 时必填，'
         '中文，友好、具体、不说教，直接告诉他可以怎么说）",\n'
         '  "rewrite": ["改写示例1", "改写示例2"],\n'
-        '  "device": desktop|phone|unspecified,\n'
+        f'  "device": {_judge_device_domain_bar()},\n'
         '  "deviceReason": "一句中文，说明按什么姿态判的"\n'
         "}\n\n"
         f"{_DEVICE_RUBRIC}\n\n"

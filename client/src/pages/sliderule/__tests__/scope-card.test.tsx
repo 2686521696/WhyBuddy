@@ -85,6 +85,10 @@ describe("范围卡 DOM", () => {
     expect(html).toContain('data-variant="full"');
     expect(html).toContain("将做成：连锁宠物医院管理系统");
     expect(html).toContain("Web / PC");
+    expect(html).toContain('data-testid="sliderule-scope-archetype"');
+    expect(html).toContain("业务 / 后台应用");
+    expect(html).toContain('data-testid="sliderule-scope-device-tablet"');
+    expect(html).toContain("平板");
     expect(html).toContain("起草 SPEC");
     expect(html).toContain("页面生成");
     expect(html).toContain(SCOPE_CARD_TIME_COPY);
