@@ -827,10 +827,14 @@ def _stamp_scope_choice_onto_goal(
         goal=goal,
         texts=_scope_texts(state, str(body.get("userText") or "")),
     )
+    raw_tools = body.get("tools")
+    if raw_tools is None:
+        raw_tools = last.get("tools") or goal.get("tools")
     state.goal = stamp_scope_onto_goal(
         goal,
         product_archetype=raw,
         preferred_device=device,
+        tools=raw_tools,
     )
     return resolve_archetype(state, body)
 
@@ -1263,6 +1267,31 @@ def _clarify_rounds_done(state: V5SessionState) -> int:
     )
 
 
+#: 澄清维度 → 人话。事件自己带 kindLabel，前端不许再翻译内部键。
+#: 认不出的键不显示——宁可少一个标签，也不要在用户脸上糊 `users`。
+_CLARIFY_KIND_LABELS = {
+    "users": "谁用",
+    "audience": "谁用",
+    "platform": "在哪用",
+    "scenario": "核心流程",
+    "success-criteria": "核心流程",
+    "scope": "本期边界",
+    "rules": "规则",
+}
+
+
+def _clarify_kind_label(kind: Any) -> str:
+    key = str(kind or "").strip().lower()
+    if not key:
+        return ""
+    if key in _CLARIFY_KIND_LABELS:
+        return _CLARIFY_KIND_LABELS[key]
+    for needle, label in _CLARIFY_KIND_LABELS.items():
+        if needle in key:
+            return label
+    return ""
+
+
 async def _park_clarify(
     state: V5SessionState, raw_questions: Any
 ) -> AsyncIterator[Dict[str, Any]]:
@@ -1331,6 +1360,7 @@ async def _park_clarify(
                 "defaultAnswer": q["defaultAnswer"],
                 "context": q["context"],
                 "clarifyKind": q["kind"],
+                "kindLabel": _clarify_kind_label(q["kind"]),
                 "questionId": gid,
             }
         )
@@ -1354,6 +1384,8 @@ async def _park_clarify(
     await _apersist(state)
     yield {
         "type": "control_clarify",
+        "label": "澄清与取证",
+        "productStep": 1,
         "questions": [
             {
                 "id": g["id"],
@@ -1362,6 +1394,8 @@ async def _park_clarify(
                 "options": g["options"],
                 "defaultAnswer": g["defaultAnswer"],
                 "context": g["context"],
+                "kind": g["clarifyKind"],
+                "kindLabel": _clarify_kind_label(g["clarifyKind"]),
             }
             for g in made
         ],
@@ -1508,6 +1542,7 @@ async def _confirm_rehearse_and_handoff(
             "text": restatement,
             "device": confirmed.get("preferredDevice"),
             "productArchetype": confirmed.get("productArchetype"),
+            "tools": list(confirmed.get("tools") or []),
         },
     )
     state.awaitReason = None

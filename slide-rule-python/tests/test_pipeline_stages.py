@@ -76,6 +76,11 @@ class Test事件自描述:
         d = S.describe("specfirst.assemble")
         for k in ("stage", "label", "group", "eta"):
             assert d.get(k), f"describe 缺 {k}"
+        assert d["productStep"] == 6
+        assert S.describe("specfirst.spec")["productStep"] == 2
+        assert S.describe("specfirst.pages")["productStep"] == 3
+        assert S.describe("specfirst.structure")["productStep"] == 4
+        assert S.describe("specfirst.semantics")["productStep"] == 5
 
     def test_序号按本轮真实序列算不按账本位置(self):
         """⚠ 实测踩过：拿账本绝对位置当序号，新建轮出 order=8 of=7。
@@ -107,6 +112,9 @@ class Test事件自描述:
         assert ev["label"] == HISTORICAL["specfirst.assemble"][0]
         assert ev["stageGroup"] == "收口"
         assert (ev["stageOrder"], ev["stageOf"]) == (2, 2)
+        assert ev["productStep"] == 6
+        spec_ev = _enrich_stage_event("start", "specfirst.spec", {"sequence": seq})
+        assert spec_ev["productStep"] == 2
 
     def test_名单外的阶段仍然不发事件(self):
         from services.v5_full_driver import _enrich_stage_event

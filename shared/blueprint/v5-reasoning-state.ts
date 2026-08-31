@@ -344,6 +344,8 @@ export interface CoverageGap {
   questionId?: string;
   /** V4 alignment for clarification kind (e.g. "audience", "blueprint-question-xxx"); does not override the gap's 'kind' discriminant. */
   clarifyKind?: string;
+  /** 事件自带的人话。有它前端不许再翻译 clarifyKind。 */
+  kindLabel?: string;
   /**
    * 用户答的原话。
    *

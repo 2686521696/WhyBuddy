@@ -23,49 +23,58 @@
     "specfirst.spec": {
       "label": "起草规格：成功判据、需求节点与页面清单",
       "group": "起草",
-      "eta": "通常 60~90 秒"
+      "eta": "通常 60~90 秒",
+      "productStep": 2
     },
     "specfirst.design": {
       "label": "定这个应用的设计语言",
       "group": "起草",
-      "eta": "通常 10~20 秒"
+      "eta": "通常 10~20 秒",
+      "productStep": 2
     },
     "specfirst.pagescope": {
       "label": "判断这次要改哪几页",
       "group": "划范围",
       "eta": "通常 5~15 秒",
-      "refineOnly": true
+      "refineOnly": true,
+      "productStep": 3
     },
     "specfirst.graphscope": {
       "label": "分析这次修改牵扯的范围",
       "group": "划范围",
       "eta": "通常 3~10 秒",
-      "refineOnly": true
+      "refineOnly": true,
+      "productStep": 3
     },
     "specfirst.pages": {
       "label": "逐页画界面（并发）",
       "group": "画界面",
-      "eta": "通常 3~4 分钟，页数越多越久"
+      "eta": "通常 3~4 分钟，页数越多越久",
+      "productStep": 3
     },
     "specfirst.structure": {
       "label": "从界面反推数据模型与关联关系",
       "group": "反推模型",
-      "eta": "通常 60~120 秒"
+      "eta": "通常 60~120 秒",
+      "productStep": 4
     },
     "specfirst.semantics": {
       "label": "推导权限、工作流与不变式",
       "group": "反推模型",
-      "eta": "通常 60~120 秒"
+      "eta": "通常 60~120 秒",
+      "productStep": 5
     },
     "specfirst.assemble": {
       "label": "汇合五系统模型并过结构闸",
       "group": "收口",
-      "eta": "通常 20~40 秒"
+      "eta": "通常 20~40 秒",
+      "productStep": 6
     },
     "specfirst.bind": {
       "label": "给界面接上数据",
       "group": "收口",
-      "eta": "较慢，通常 4~10 分钟，页数越多越久"
+      "eta": "较慢，通常 4~10 分钟，页数越多越久",
+      "productStep": 6
     },
     "model.generate": {
       "label": "生成五系统模型",

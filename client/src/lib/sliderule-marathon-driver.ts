@@ -265,12 +265,12 @@ export interface DriveFullStreamOpts {
     }
   ) => void;
   /** Called for each reasoning-engine step (evidence.search, risk.analyze ...). */
-  onReasoningStep?: (label: string, loop?: number) => void;
+  onReasoningStep?: (label: string, loop?: number, productStep?: number) => void;
   /**
    * 已有 SSE `progress_heartbeat` 的投影点。不另开进度 API。
    * 只推进产品六步钟，不要往左栏再塞一条 chip（心跳会连发）。
    */
-  onProgressHeartbeat?: (stage?: string, label?: string) => void;
+  onProgressHeartbeat?: (stage?: string, label?: string, productStep?: number) => void;
   /** LLM 实时内容增量。label 标注来源：能力 id（risk.analyze / report.write…）
    *  或 "five-system-model"（五系统起草）。旧后端不带 label 时为 undefined。 */
   /** `stageLabel` 是**后端账本给的人话**（2026-08-30 起）。前端不再自己翻译
@@ -348,6 +348,8 @@ export interface DriveFullStreamOpts {
   preferredDevice?: string;
   /** 范围卡确认的产品原型。只在确认推演时带，缺省走账本默认。 */
   productArchetype?: string;
+  /** 范围卡规划器勾选的公开工具。缺省走账本政策包（今天仍是五件套）。 */
+  tools?: string[];
   /** 设计系统 id。后端据此取种子色拼提示词 / 选 DESIGN.md。 */
   designSystemId?: string;
   /** M1 控制面昂贵按钮：rehearse/refine/repair/challenge。/推演 不得带 rehearse。 */
@@ -404,6 +406,24 @@ export interface DriveFullStreamOpts {
     question: string;
     options?: string[];
   }) => void;
+  /**
+   * 开工前澄清。事件自带 questions[] / kindLabel / productStep，
+   * 前端直接喂 ClarificationCard，不许再翻译 `control_clarify`。
+   */
+  onControlClarify?: (event: {
+    questions: Array<{
+      id?: string;
+      prompt?: string;
+      type?: string;
+      options?: string[] | null;
+      defaultAnswer?: string | null;
+      context?: string | null;
+      kind?: string | null;
+      kindLabel?: string | null;
+    }>;
+    label?: string;
+    productStep?: number;
+  }) => void;
   onControlScopeCard?: (event: {
     restatement: string;
     device?: string;
@@ -413,6 +433,7 @@ export interface DriveFullStreamOpts {
     variant?: string;
     userText?: string;
     charterReuseNext?: boolean;
+    tools?: string[];
   }) => void;
   onControlToolStart?: (tool: string) => void;
   onControlToolResult?: (event: Record<string, unknown>) => void;
@@ -507,7 +528,8 @@ function applyFactoryStreamEvent(
       opts.onReasoningStep?.(
         (typeof event.stage === "string" && event.stage) ||
           (event.label as string),
-        event.loop as number | undefined
+        event.loop as number | undefined,
+        typeof event.productStep === "number" ? event.productStep : undefined
       );
       return "continue";
     case "llm_delta":
@@ -578,7 +600,8 @@ function applyFactoryStreamEvent(
     case "progress_heartbeat":
       opts.onProgressHeartbeat?.(
         typeof event.stage === "string" ? event.stage : undefined,
-        typeof event.label === "string" ? event.label : undefined
+        typeof event.label === "string" ? event.label : undefined,
+        typeof event.productStep === "number" ? event.productStep : undefined
       );
       return "continue";
     case "skill_result":
@@ -755,6 +778,9 @@ export async function postControlTurnStream(
         ...(opts.productArchetype
           ? { productArchetype: opts.productArchetype }
           : {}),
+        ...(Array.isArray(opts.tools) && opts.tools.length > 0
+          ? { tools: opts.tools }
+          : {}),
         designSystemId: opts.designSystemId ?? null,
         ...(opts.forcedTool ? { forcedTool: opts.forcedTool } : {}),
         ...(opts.versionId ? { versionId: opts.versionId } : {}),
@@ -861,6 +887,19 @@ export async function consumeControlStreamResponse(
                   : [],
               });
               continue;
+            case "control_clarify":
+              opts.onControlClarify?.({
+                questions: Array.isArray(event.questions)
+                  ? event.questions
+                  : [],
+                label:
+                  typeof event.label === "string" ? event.label : undefined,
+                productStep:
+                  typeof event.productStep === "number"
+                    ? event.productStep
+                    : undefined,
+              });
+              continue;
             case "control_scope_card":
               opts.onControlScopeCard?.({
                 restatement: String(event.restatement || ""),
@@ -881,6 +920,9 @@ export async function consumeControlStreamResponse(
                   typeof event.charterReuseNext === "boolean"
                     ? event.charterReuseNext
                     : undefined,
+                tools: Array.isArray(event.tools)
+                  ? event.tools.map((item: unknown) => String(item))
+                  : undefined,
               });
               continue;
             case "control_handoff_factory":

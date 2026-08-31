@@ -112,6 +112,9 @@ def describe(stage_id: str, *, sequence: List[str] | None = None) -> Dict[str, A
         "group": str(spec.get("group") or ""),
         "eta": str(spec.get("eta") or ""),
     }
+    step = spec.get("productStep")
+    if isinstance(step, int) and 1 <= step <= 6:
+        out["productStep"] = step
     if sequence:
         seq = [s for s in sequence if s in _STAGES]
         if stage_id in seq:

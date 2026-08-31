@@ -157,11 +157,20 @@ export function mapInternalEventToProductStep(
   return null;
 }
 
+function asProductStep(raw: number | null | undefined): RehearsalProductStepId | null {
+  if (raw === 1 || raw === 2 || raw === 3 || raw === 4 || raw === 5 || raw === 6) {
+    return raw;
+  }
+  return null;
+}
+
 export function advanceRehearsalCursor(
   cursor: RehearsalClockCursor,
-  event: string | null | undefined
+  event: string | null | undefined,
+  productStep?: number | null
 ): RehearsalClockCursor {
-  const step = mapInternalEventToProductStep(event);
+  const step =
+    asProductStep(productStep) || mapInternalEventToProductStep(event);
   if (!step) return cursor;
   const seenSteps = rememberSeen(cursor.seenSteps, step);
   if (step === 1) {

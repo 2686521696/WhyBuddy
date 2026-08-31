@@ -90,7 +90,7 @@ describe("SSE 投影接在 useSlideRuleSession（删调用点必红）", () => {
   it("reasoning_step / 页 sink / skill_start / heartbeat 都推进钟", () => {
     const src = load("../useSlideRuleSession.ts");
     expect(handlerSlice(src, "onReasoningStep")).toContain(
-      "applyRehearsalEvent(capabilityId)"
+      "applyRehearsalEvent(capabilityId, productStep)"
     );
     expect(handlerSlice(src, "onSpecPage")).toContain(
       'applyRehearsalEvent("spec_page_html")'
@@ -99,7 +99,10 @@ describe("SSE 投影接在 useSlideRuleSession（删调用点必红）", () => {
       "applyRehearsalEvent(skillId)"
     );
     expect(handlerSlice(src, "onProgressHeartbeat")).toContain(
-      "applyRehearsalEvent(stage)"
+      "applyRehearsalEvent(stage, productStep)"
+    );
+    expect(handlerSlice(src, "onControlClarify")).toContain(
+      "event.productStep ?? 1"
     );
   });
 

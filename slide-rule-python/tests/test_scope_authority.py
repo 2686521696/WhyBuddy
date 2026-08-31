@@ -143,9 +143,20 @@ def test_stamp_writes_both_grants():
         {},
         product_archetype="business_app",
         preferred_device="tablet",
+        tools=["spec", "pages", "closure"],
     )
     assert goal["productArchetype"] == "business_app"
     assert goal["preferredDevice"] == "tablet"
+    assert goal["tools"] == ["spec", "pages", "closure"]
+
+
+def test_stamp_empty_tools_pops_the_key():
+    """空清单不许写成什么都不跑。缺省 = 五件套，由规划器归一。"""
+    goal = stamp_scope_onto_goal(
+        {"tools": ["spec"]},
+        tools=[],
+    )
+    assert "tools" not in goal
 
 
 def test_stamp_ignores_unwired_device():
@@ -176,6 +187,8 @@ def test_live_sockets_call_the_resolvers():
     ]
     assert "stamp_scope_onto_goal" in stamp
     assert "preferred_device" in stamp
+    assert "tools=" in stamp
+    assert 'body.get("tools")' in stamp
     handoff = control[control.index("async def _handoff_factory") :]
     handoff = handoff[: handoff.index("\ndef ", 1)]
     assert "preferred_device_for_run" in handoff
@@ -186,3 +199,4 @@ def test_live_sockets_call_the_resolvers():
     ]
     assert "device" in confirm[confirm.index("scope_confirmed") :]
     assert "productArchetype" in confirm[confirm.index("scope_confirmed") :]
+    assert "tools" in confirm[confirm.index("scope_confirmed") :]

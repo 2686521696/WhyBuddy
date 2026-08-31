@@ -143,6 +143,7 @@ def stamp_scope_onto_goal(
     *,
     product_archetype: Any = None,
     preferred_device: Any = None,
+    tools: Any = None,
 ) -> Dict[str, Any]:
     """把范围卡授予写进 goal。调用方随后 persist——内存 override 不是权威。"""
     body = goal if isinstance(goal, dict) else {}
@@ -152,4 +153,10 @@ def stamp_scope_onto_goal(
     device = wired_device(preferred_device)
     if device:
         body["preferredDevice"] = device
+    if tools is not None:
+        names = [str(item).strip() for item in tools if str(item).strip()]
+        if names:
+            body["tools"] = names
+        else:
+            body.pop("tools", None)
     return body

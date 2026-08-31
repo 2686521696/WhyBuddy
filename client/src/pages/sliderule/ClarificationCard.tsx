@@ -12,6 +12,8 @@ export type ClarificationItem = {
   id: string;
   prompt: string;
   kind?: string;  // V4 alignment (e.g. "audience", blueprint question id)
+  /** 事件自带的人话。有它就不查 KIND_LABELS。 */
+  kindLabel?: string;
   type?: "free_text" | "single_choice" | "multi_choice";
   options?: string[];
   defaultAnswer?: string;
@@ -40,7 +42,8 @@ const KIND_LABELS: Record<string, string> = {
   rules: "规则",
 };
 
-export function kindLabel(kind?: string): string {
+export function kindLabel(kind?: string, explicit?: string): string {
+  if (explicit && explicit.trim()) return explicit.trim();
   if (!kind) return "";
   const key = kind.trim().toLowerCase();
   if (KIND_LABELS[key]) return KIND_LABELS[key];
@@ -162,12 +165,12 @@ export function ClarificationCard({
       <div className="px-4 py-3">
         <div className="flex items-baseline gap-2">
           <p className="text-sm font-semibold text-stone-800">{q.prompt}</p>
-          {kindLabel(q.kind) && (
+          {kindLabel(q.kind, q.kindLabel) && (
             <span
               data-testid="sliderule-clarification-kind"
               className={`shrink-0 rounded px-1.5 py-0 text-[10px] ${kindTone(q.kind)}`}
             >
-              {kindLabel(q.kind)}
+              {kindLabel(q.kind, q.kindLabel)}
             </span>
           )}
         </div>

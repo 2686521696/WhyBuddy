@@ -1642,6 +1642,8 @@ def _enrich_stage_event(phase: str, name: str, fields: Dict[str, Any]) -> Option
         "total": fields.get("total"),
         "elapsedMs": 0 if phase == "start" else fields.get("ms", 0),
     }
+    if _desc.get("productStep"):
+        common["productStep"] = _desc["productStep"]
     if phase == "start":
         return {
             "type": "reasoning_step",
@@ -1673,6 +1675,7 @@ def _progress_heartbeat_event(active: Dict[str, Any], *, elapsed_ms: int) -> Dic
         "current": active.get("current"),
         "total": active.get("total"),
         "elapsedMs": elapsed_ms,
+        "productStep": active.get("productStep"),
     }
 
 

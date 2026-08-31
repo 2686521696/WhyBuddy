@@ -228,6 +228,9 @@ class CoverageGap(BaseModel):
     context: Optional[str] = None
     questionId: Optional[str] = None
     clarifyKind: Optional[str] = None
+    # 事件自带的人话。有它前端不许再翻译 clarifyKind。
+    # ⚠ 2026-08-31：只写 SSE、缺口上不留，刷新后卡片又回去查本地表。
+    kindLabel: Optional[str] = None
     # 用户答的原话。resolve 时写在缺口上，生成侧照原样带进提示词
     # （见 services/turn_context.clarification_prompt_block）——只关不留答案的话，
     # 澄清就白问了：闸是绿了，模型什么也没多知道。

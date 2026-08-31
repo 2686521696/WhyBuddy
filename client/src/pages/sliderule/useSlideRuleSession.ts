@@ -7,6 +7,7 @@ import * as SlideRuleRuntime from "@/lib/sliderule-runtime";
 import { fetchNarration } from "@/lib/sliderule-narrator";
 import { pickMainArtifact } from "./turn-main-artifact";
 import type {
+  CoverageGap,
   UserIntervention,
   V5SessionState,
 } from "@shared/blueprint/v5-reasoning-state";
@@ -624,8 +625,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const [rehearsalCursor, setRehearsalCursor] = useState<RehearsalClockCursor>(
     idleRehearsalCursor()
   );
-  const applyRehearsalEvent = (event: string | null | undefined) => {
-    const next = advanceRehearsalCursor(rehearsalCursorRef.current, event);
+  const applyRehearsalEvent = (
+    event: string | null | undefined,
+    productStep?: number | null
+  ) => {
+    const next = advanceRehearsalCursor(
+      rehearsalCursorRef.current,
+      event,
+      productStep
+    );
     rehearsalCursorRef.current = next;
     setRehearsalCursor(next);
   };
@@ -830,6 +838,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             ? rawOptions.map(item => String(item))
             : undefined;
           setPendingAsk({ question: hydrated.awaitDetail, options });
+        }
+        if (hydrated.awaitReason === "control_clarify") {
+          // ClarificationCard 读 coverageGaps。这里只把钟拨到第 1 步，
+          // 别再做一张 pendingAsk——两张卡叠在一起是 2026-08-27 真机事故。
+          applyRehearsalEvent("intent.clarify", 1);
         }
         // 演示预填：空会话（未推演过）时输入框直接放好项目意图，
         // 访客只需点「发送」即可看全程推演（模板回放）。
@@ -1378,6 +1391,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   : loadPreferredDevice()) || "desktop",
               productArchetype:
                 scopeChoice?.productArchetype || defaultArchetype(),
+              ...(Array.isArray(scopeChoice?.tools) &&
+              scopeChoice.tools.length > 0
+                ? { tools: scopeChoice.tools }
+                : {}),
               // 设计系统跟 preferredDevice 走同一条路：作曲家写 localStorage，
               // 发起推演时在这里读。加一条 props 传参链没有额外好处，反而多一处
               // 会忘记接的地方。
@@ -1475,8 +1492,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   `🖼 界面已出：${page.pageId}（${page.current}/${page.total}）`
                 );
               },
-              onReasoningStep: (capabilityId, loop) => {
-                applyRehearsalEvent(capabilityId);
+              onReasoningStep: (capabilityId, loop, productStep) => {
+                applyRehearsalEvent(capabilityId, productStep);
                 const human = humanReasoningStepLabel(capabilityId);
                 const label =
                   typeof loop === "number"
@@ -1539,8 +1556,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   setLatestMermaid(mermaid);
                 }
               },
-              onProgressHeartbeat: (stage) => {
-                if (stage) applyRehearsalEvent(stage);
+              onProgressHeartbeat: (stage, _label, productStep) => {
+                if (stage) applyRehearsalEvent(stage, productStep);
               },
               onControlText: (text, stop) => {
                 // 结构化的「为什么停」先落下来再渲染文字：拿它区分"我们的闸拦的"
@@ -1557,6 +1574,71 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 };
                 pendingAskRef.current = next;
                 setPendingAsk(next);
+              },
+              onControlClarify: event => {
+                // ⚠ 2026-08-31 真机：事件发了、消费侧没有 case，左栏空转
+                // 「规划第一轮能力与路线…」，ClarificationCard 要等 isRunning
+                // 翻 false 才读 coverageGaps。事件自己带题，当场画卡。
+                setLiveAction(null);
+                applyRehearsalEvent(
+                  "intent.clarify",
+                  event.productStep ?? 1
+                );
+                const questions = Array.isArray(event.questions)
+                  ? event.questions
+                  : [];
+                const now = new Date().toISOString();
+                const incoming: CoverageGap[] = questions.flatMap(
+                  (row, index) => {
+                    const prompt = String(row.prompt || "").trim();
+                    if (!prompt) return [];
+                    const clarifyType: CoverageGap["clarifyType"] =
+                      row.type === "multi_choice" ||
+                      row.type === "single_choice" ||
+                      row.type === "free_text"
+                        ? row.type
+                        : undefined;
+                    return [
+                      {
+                        id: String(row.id || `gap-q-live-${index}`),
+                        kind: "open_question",
+                        label: prompt,
+                        status: "open",
+                        createdAt: now,
+                        reason: "control_plane_clarify",
+                        clarifyType,
+                        options: Array.isArray(row.options)
+                          ? row.options.map(item => String(item))
+                          : undefined,
+                        defaultAnswer: row.defaultAnswer
+                          ? String(row.defaultAnswer)
+                          : undefined,
+                        context: row.context
+                          ? String(row.context)
+                          : undefined,
+                        clarifyKind: row.kind ? String(row.kind) : undefined,
+                        kindLabel: row.kindLabel
+                          ? String(row.kindLabel)
+                          : undefined,
+                      },
+                    ];
+                  }
+                );
+                setSessionState(prev => {
+                  const existing = prev.coverageGaps || [];
+                  const seen = new Set(existing.map(gap => gap.id));
+                  return {
+                    ...prev,
+                    awaitReason: "control_clarify",
+                    awaitDetail: String(
+                      questions[0]?.prompt || prev.awaitDetail || ""
+                    ),
+                    coverageGaps: [
+                      ...existing,
+                      ...incoming.filter(gap => !seen.has(gap.id)),
+                    ],
+                  };
+                });
               },
               onControlScopeCard: event => {
                 const goalText =
@@ -1587,6 +1669,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                       )
                     : undefined,
                   charterReuseNext: event.charterReuseNext,
+                  tools: Array.isArray(event.tools)
+                    ? event.tools.map(item => String(item))
+                    : undefined,
                 };
                 pendingScopeRef.current = next;
                 setPendingScope(next);
@@ -2151,6 +2236,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       {
         device: snapshot.device,
         productArchetype: snapshot.productArchetype || defaultArchetype(),
+        ...(Array.isArray(snapshot.tools) && snapshot.tools.length > 0
+          ? { tools: snapshot.tools }
+          : {}),
       }
     );
   };
@@ -2618,19 +2706,22 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
 
   // G_READY clarification cards: unanswered open_question gaps with V4-style structured options.
   const pendingClarifications = useMemo<ClarificationItem[]>(() => {
-    if (isRunning) return [];
+    const parkedClarify = sessionState.awaitReason === "control_clarify";
+    // 停泊澄清时请求还没拆完 isRunning，卡必须先画出来。
+    if (isRunning && !parkedClarify) return [];
     return (sessionState.coverageGaps || [])
       .filter(g => g.status === "open" && g.kind === "open_question")
       .map(g => ({
         id: g.id,
         prompt: g.label,
         kind: g.clarifyKind, // V4 alignment
+        kindLabel: g.kindLabel,
         type: g.clarifyType,
         options: g.options,
         defaultAnswer: g.defaultAnswer,
         context: g.context,
       }));
-  }, [sessionState.coverageGaps, isRunning]);
+  }, [sessionState.coverageGaps, sessionState.awaitReason, isRunning]);
 
   // Generate deliverables by sending one intent through the existing S19 pipeline.
   const generateDeliverables = useCallback(() => {

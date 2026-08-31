@@ -57,6 +57,7 @@ def _gaps(sid: str, status: str = "open"):
                     "options": get("options"),
                     "context": get("context"),
                     "answer": get("answer"),
+                    "kindLabel": get("kindLabel"),
                 }
             )
     return out
@@ -89,6 +90,13 @@ class TestClarifyProducesRealQuestions:
 
         assert "control_clarify" in event_types(events)
         assert "control_handoff_factory" not in event_types(events), "澄清阶段不许点火"
+        clarify = next(ev for ev in events if ev.get("type") == "control_clarify")
+        assert clarify["label"] == "澄清与取证"
+        assert clarify["productStep"] == 1
+        assert "specfirst." not in str(clarify.get("label") or "")
+        first_q = clarify["questions"][0]
+        assert first_q["kind"] == "users"
+        assert first_q["kindLabel"] == "谁用"
         gaps = _gaps(sid)
         assert len(gaps) == 2, gaps
         first = gaps[0]
@@ -98,6 +106,7 @@ class TestClarifyProducesRealQuestions:
         assert first["type"] == "multi_choice"
         assert first["options"] == ["医生", "护士", "前台", "患者"]
         assert first["context"] == "用谁决定角色与权限怎么切"
+        assert first.get("kindLabel") == "谁用"
 
     def test_choice_without_options_degrades_to_free_text(self, harness):
         """反向：说是选择题却没给选项 → 退成填空，别端出一张点不动的卡。"""

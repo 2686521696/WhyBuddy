@@ -36,6 +36,11 @@ describe("kindLabel", () => {
     expect(kindLabel("")).toBe("");
     expect(kindLabel(undefined)).toBe("");
   });
+
+  it("事件自带 kindLabel 压过本地表", () => {
+    expect(kindLabel("users", "谁在用这套系统")).toBe("谁在用这套系统");
+    expect(kindLabel("blueprint-question-xyz", "本期边界")).toBe("本期边界");
+  });
 });
 
 describe("卡片渲染", () => {
@@ -49,7 +54,7 @@ describe("卡片渲染", () => {
     );
 
   it("显示的是人话标签，不是 kind 原文", () => {
-    const html = render({ kind: "users" });
+    const html = render({ kind: "users", kindLabel: "谁用" });
     expect(html).toContain("谁用");
     // ⚠ 钉的是**标签里**没有 users。整页 grep "users" 会被 class 名之类误伤，
     //   所以取标签那个节点看。

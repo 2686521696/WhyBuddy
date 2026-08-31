@@ -130,6 +130,7 @@ describe("产品客户端不得再 POST 工厂流", () => {
     expect(postFn).toContain("userText");
     expect(postFn).toContain("preferredDevice");
     expect(postFn).toContain("productArchetype");
+    expect(postFn).toContain("opts.tools");
     expect(postFn).toContain("designSystemId");
     expect(postFn).toContain("/api/sliderule/control-turn-stream");
     expect(postFn).toContain("reuseCharter");
@@ -154,6 +155,7 @@ describe("开始推演 / 质疑 / /推演", () => {
     expect(confirmFn).toContain("snapshot.restatement");
     expect(confirmFn).toContain("productArchetype");
     expect(confirmFn).toContain("snapshot.device");
+    expect(confirmFn).toContain("snapshot.tools");
     const inferFn = SESSION.slice(
       SESSION.indexOf("export function inferForcedTool"),
       SESSION.indexOf("const DEFAULT_SESSION_ID")
@@ -162,6 +164,27 @@ describe("开始推演 / 质疑 / /推演", () => {
     expect(inferFn).not.toContain('"rehearse"');
     expect(CARD).toContain("onConfirm");
     expect(DOCK).toContain('data-testid="sliderule-control-ask"');
+  });
+
+  it("control_clarify 只喂澄清卡，停泊时 isRunning 也要画出来", () => {
+    const clarifyCase = DRIVER.slice(
+      DRIVER.indexOf('case "control_clarify"'),
+      DRIVER.indexOf('case "control_scope_card"')
+    );
+    expect(clarifyCase).toContain("onControlClarify");
+    expect(clarifyCase).not.toContain("onControlAskUser");
+    const pendingFn = SESSION.slice(
+      SESSION.indexOf("const pendingClarifications"),
+      SESSION.indexOf("const generateDeliverables")
+    );
+    expect(pendingFn).toContain('awaitReason === "control_clarify"');
+    expect(pendingFn).toContain("isRunning && !parkedClarify");
+    expect(pendingFn).toContain("kindLabel");
+    const factoryPost = DRIVER.slice(
+      DRIVER.indexOf("export async function driveFullViaPythonStream"),
+      DRIVER.indexOf("export async function resumeDriveFullStream")
+    );
+    expect(factoryPost).not.toContain("opts.tools");
   });
 
   it("control_scope hydrate 走 hydrateParkedScope，不以 localStorage 为第一权威", () => {
@@ -197,6 +220,7 @@ describe("consumeControlStreamResponse 与工厂 case 共用", () => {
     );
     expect(consume).toContain("applyFactoryStreamEvent");
     expect(consume).toContain("control_ask_user");
+    expect(consume).toContain("control_clarify");
     expect(consume).toContain("control_scope_card");
     expect(consume).toContain("control_handoff_factory");
     const skillStartCases = countNeedle(consume, 'case "skill_start"');
@@ -228,6 +252,50 @@ describe("consumeControlStreamResponse 与工厂 case 共用", () => {
     expect(asked).toEqual([{ question: "你想做什么应用？" }]);
     expect(skills).toEqual([]);
     expect(out?.finalState?.awaitReason).toBe("control_ask");
+  });
+
+  it("control_clarify 只喂澄清卡，不叠一张 ask，事件自带 kindLabel", async () => {
+    const clarified: Array<{
+      label?: string;
+      productStep?: number;
+      questions: Array<{ kindLabel?: string | null }>;
+    }> = [];
+    const asked: unknown[] = [];
+    const events = [
+      {
+        type: "control_clarify",
+        label: "澄清与取证",
+        productStep: 1,
+        questions: [
+          {
+            id: "g1",
+            prompt: "这个诊所系统主要给谁用？",
+            kind: "users",
+            kindLabel: "谁用",
+          },
+        ],
+      },
+      {
+        type: "complete",
+        state: {
+          sessionId: "s1",
+          awaitReason: "control_clarify",
+        },
+      },
+    ];
+    const body = events.map(e => `data: ${JSON.stringify(e)}\n\n`).join("");
+    const res = new Response(body, {
+      headers: { "Content-Type": "text/event-stream" },
+    });
+    await consumeControlStreamResponse(res, {
+      onControlClarify: ev => clarified.push(ev),
+      onControlAskUser: ev => asked.push(ev),
+    });
+    expect(asked).toEqual([]);
+    expect(clarified).toHaveLength(1);
+    expect(clarified[0].label).toBe("澄清与取证");
+    expect(clarified[0].productStep).toBe(1);
+    expect(clarified[0].questions[0].kindLabel).toBe("谁用");
   });
 
   it("为什么停：结构化字段一路带到回调，四种停法在前端分得开", async () => {

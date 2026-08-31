@@ -211,6 +211,21 @@ describe("M8 产品六步钟映射表", () => {
     expect(next.sawStep1).toBe(false);
   });
 
+  it("事件自带 productStep 压过本地翻译表", () => {
+    const byEvent = advanceRehearsalCursor(
+      startRehearsalCursor(),
+      "specfirst.unknown-stage",
+      4
+    );
+    expect(byEvent.currentStep).toBe(4);
+    const ignored = advanceRehearsalCursor(
+      startRehearsalCursor(),
+      "spec_tree",
+      99
+    );
+    expect(ignored.currentStep).toBe(2);
+  });
+
   it("evidence.search 先到才亮第 1 步；之后 spec_tree 把第 1 步收成 done", () => {
     const afterEvidence = advanceRehearsalCursor(
       startRehearsalCursor(),
