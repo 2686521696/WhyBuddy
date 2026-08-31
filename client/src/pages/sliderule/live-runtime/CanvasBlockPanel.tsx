@@ -22,7 +22,7 @@
 import * as React from "react";
 import { Loader2, Sparkles, X } from "lucide-react";
 
-import { isRealLinkage, type ImpactEdge } from "./block-impact";
+import { impactedBy, type ImpactEdge } from "./block-impact";
 import { blockKey } from "./block-rects";
 
 export interface CanvasBlockPanelProps {
@@ -79,17 +79,11 @@ export function CanvasBlockPanel({
 
   const key = blockKey(pageId, blockName);
 
-  /* 反查：谁跟着变。⚠ 两类**分开算、分开列**——混在一起等于告诉用户
-     "改这一块，这些都会跟着变"，而同源字段那半其实不会。 */
+  /* 反查：谁跟着变。⚠ 走 impactedBy，不在面板另写一套——舞台点亮
+     用的也是它（impactFocus 内部调），两处口径必须同一份。 */
   const { real, sameField } = React.useMemo(() => {
-    const r = new Set<string>();
-    const s = new Set<string>();
-    for (const e of impactEdges) {
-      const other = e.from === key ? e.to : e.to === key ? e.from : null;
-      if (other === null) continue;
-      (isRealLinkage(e.kind) ? r : s).add(other);
-    }
-    return { real: [...r], sameField: [...s] };
+    const hit = impactedBy(impactEdges, key);
+    return { real: [...hit.real], sameField: [...hit.sameField] };
   }, [impactEdges, key]);
 
   const hasAnyBinding =

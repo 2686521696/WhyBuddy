@@ -96,6 +96,7 @@ describe("反向判据", () => {
     // 风险台账 #05。真机基线 15 块里有 7 块是纯视觉块。
     expect(PANEL).toContain("无影响（没有别的块跟它相关）");
     expect(PANEL).toContain("没接数据（纯视觉块）");
+    expect(PANEL).toContain("impactedBy(");
   });
 
   it("同源字段那一段必须写明「改数据模型才一起变」", () => {

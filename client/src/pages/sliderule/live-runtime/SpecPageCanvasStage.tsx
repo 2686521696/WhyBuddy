@@ -113,10 +113,18 @@ import {
 import { buildCurvePath } from "./canvas-curve";
 import { fitBlockNodes, type BlockNodeCandidate } from "./block-node-fit";
 import {
+  IMPACT_DIM_EDGE,
+  IMPACT_DIM_NODE,
+  IMPACT_FOCUS_IDLE,
   buildImpactEdges,
+  impactEdgeDimmed,
+  impactFocus,
+  impactNodeDimmed,
+  islandBlockKeys,
   isRealLinkage,
   scanBlockBindings,
   type ImpactEdgeKind,
+  type ImpactFocus,
 } from "./block-impact";
 import {
   frameRectToNodeRect,
@@ -521,6 +529,10 @@ interface CanvasCtx {
   onPickBlock: (pageId: string, name: string) => void;
   /** 当前选中的那一块（跨页唯一的 key）。 */
   pickedBlockKey: string | null;
+  /** 刀 4：选中一块时邻域点亮、其余压暗。没选中 = idle。 */
+  impactFocus: ImpactFocus;
+  /** 影响图上没有任何线的块。用来标「无影响」，不是「未计算」。 */
+  islandKeys: ReadonlySet<string>;
   /** 点了素材卡：记下来给画板描边（"这张图哪几页在用"） */
   onSelectAsset: (asset: CanvasAsset) => void;
   /** 打开换图面板。null = 宿主没给 appId，卡片上就不摆这颗按钮。 */
@@ -678,6 +690,9 @@ function ArtboardNode({ data }: NodeProps<Node<ArtboardData>>) {
   }, [reportBlocks, page.pageId, blocks.snapshot]);
   const isLinkSource = ctx?.linkFrom === page.pageId;
   const highlighted = ctx?.highlightPageIds.includes(page.pageId) ?? false;
+  const impactLit =
+    ctx?.impactFocus.active === true &&
+    ctx.impactFocus.litKeys.has(page.pageId);
   const labelScale = labelCounterScale(zoom);
 
   const outline = entered
@@ -686,9 +701,11 @@ function ArtboardNode({ data }: NodeProps<Node<ArtboardData>>) {
       ? "3px dashed #1677ff"
       : highlighted
         ? "3px solid #C05621"
-        : isActive
-          ? "2px solid #1677ff"
-          : "none";
+        : impactLit
+          ? "2px dashed #42A5F5"
+          : isActive
+            ? "2px solid #1677ff"
+            : "none";
 
   return (
     <div
@@ -703,6 +720,7 @@ function ArtboardNode({ data }: NodeProps<Node<ArtboardData>>) {
          截图上长得一模一样。 */
       data-block-rects={blocks.snapshot.rects.length}
       data-board-active={isActive || entered ? "1" : "0"}
+      data-impact-lit={impactLit ? "1" : "0"}
       ref={el => {
         /* ⚠ 两个消费者共用这一个 ref：导出要拿画板 DOM，刀 1 要从这儿往下
            找 iframe。写成两个 ref 属性后一个会覆盖前一个（React 的既定行为），
@@ -963,6 +981,12 @@ function BlockNode({ data }: NodeProps<Node<BlockNodeData>>) {
   /* ⚠ 选中态以**块面板**的选择为准，不看元素选择：这两件事经常不是同一块
      （Ctrl+点某个单元格选中的是元素，块面板选中的是整块）。 */
   const selected = ctx?.pickedBlockKey === box.key;
+  const focus = ctx?.impactFocus ?? IMPACT_FOCUS_IDLE;
+  const dimmed = impactNodeDimmed(focus, box.key);
+  const island = ctx?.islandKeys.has(box.key) ?? false;
+  /* 孤岛标记：选中时必须看见（风险 #05）；放大到能读字时也标，
+     全景缩到 17% 不标——那时候字比节点还大，会糊成一片。 */
+  const showIsland = island && (selected || showDetail);
 
   return (
     <div
@@ -971,7 +995,13 @@ function BlockNode({ data }: NodeProps<Node<BlockNodeData>>) {
          既不可选也不可拖的节点整体加 `pointer-events: none`，于是下面那个
          onPointerDown 一次都收不到——真机上表现为"点块没反应、面板不出来"，
          而节点渲染完全正常、控制台一声不吭。 */
-      style={{ width: box.w, height: box.h, pointerEvents: "all" }}
+      style={{
+        width: box.w,
+        height: box.h,
+        pointerEvents: "all",
+        /* cytoscape semitransp：压暗无关块，邻域跳出来。没选中时全是 1。 */
+        opacity: dimmed ? IMPACT_DIM_NODE : 1,
+      }}
       data-testid="sliderule-canvas-block-node"
       /* ⚠ 标题条砍掉之后，名字在画面上没有落脚点了。原生 title 是零重量的
          补偿：悬停一下认得出是哪一块，不占一个像素。全名在右侧面板里。 */
@@ -981,6 +1011,8 @@ function BlockNode({ data }: NodeProps<Node<BlockNodeData>>) {
       data-block-live={live ? "1" : "0"}
       data-block-truncated={box.truncated ? "1" : "0"}
       data-block-selected={selected ? "1" : "0"}
+      data-block-dimmed={dimmed ? "1" : "0"}
+      data-block-island={island ? "1" : "0"}
       /* ⚠ 块节点 `selectable:false`（不进 React Flow 的选择集，避免它跟画板
          抢选中态），所以点选自己接。onPointerDown 而不是 onClick——
          React Flow 会在 pointerdown 阶段吃掉一部分事件。 */
@@ -1144,6 +1176,24 @@ function BlockNode({ data }: NodeProps<Node<BlockNodeData>>) {
             }}
           >
             只显示上半截
+          </span>
+        ) : null}
+        {showIsland ? (
+          /* ⚠ 必须写「无影响」，不许空着或写「未计算」（风险 #05）。
+             选中孤岛时邻域是空的，不标这句话用户会以为点亮坏了。 */
+          <span
+            className="pointer-events-none absolute rounded text-white"
+            data-testid="sliderule-canvas-block-island"
+            style={{
+              left: BLOCK_CHROME.radius,
+              bottom: BLOCK_CHROME.radius,
+              padding: `${BLOCK_CHROME.hintFont * 0.15}px ${BLOCK_CHROME.hintFont * 0.4}px`,
+              fontSize: BLOCK_CHROME.hintFont,
+              lineHeight: 1,
+              background: "rgba(15,23,42,0.72)",
+            }}
+          >
+            无影响
           </span>
         ) : null}
       </div>
@@ -1908,6 +1958,18 @@ function CanvasInner({
     () => buildImpactEdges(blockBindings),
     [blockBindings]
   );
+  const pickedBlockKey = pickedBlock
+    ? blockKey(pickedBlock.pageId, pickedBlock.name)
+    : null;
+  /* 刀 4 开整：选中 → 邻域点亮。纯函数，几何量不许进来。 */
+  const blockImpactFocus = React.useMemo(
+    () => impactFocus(impactEdges, pickedBlockKey),
+    [impactEdges, pickedBlockKey]
+  );
+  const islandKeys = React.useMemo(
+    () => islandBlockKeys(blockBindings, impactEdges),
+    [blockBindings, impactEdges]
+  );
 
   /** 块 key → 给人看的名字（跨页时带上页名，否则重名分不清）。 */
   const labelOfBlockKey = React.useCallback(
@@ -2052,7 +2114,10 @@ function CanvasInner({
            它的位置是画板位置推出来的。 */
         draggable: false,
         selectable: false,
-        zIndex: 0,
+        zIndex:
+          blockImpactFocus.active && blockImpactFocus.litKeys.has(b.key)
+            ? 2
+            : 0,
         data: {
           box: b,
           page,
@@ -2086,6 +2151,7 @@ function CanvasInner({
     blockBoxes,
     blockFit,
     blockRects,
+    blockImpactFocus,
     design.w,
     design.h,
   ]);
@@ -2108,6 +2174,7 @@ function CanvasInner({
         const sides = board
           ? pickLinkSides(b, board)
           : { source: "l" as const, target: "r" as const };
+        const dim = impactNodeDimmed(blockImpactFocus, b.key);
         return {
         id: `own:${b.key}`,
         source: `block:${b.key}`,
@@ -2119,7 +2186,10 @@ function CanvasInner({
         type: "blockCurve",
         selectable: false,
         focusable: false,
-        style: OWNERSHIP_STYLE,
+        style: {
+          ...OWNERSHIP_STYLE,
+          opacity: dim ? IMPACT_DIM_EDGE : 1,
+        },
         };
       });
       const linkEdges = links.map(l => {
@@ -2159,7 +2229,8 @@ function CanvasInner({
       });
       /*
        * 影响线。用户 2026-08-27 裁决**两类都常驻画**（我原本建议同源字段
-       * 只在选中时点亮）。按裁决实现。
+       * 只在选中时点亮）。按裁决实现：线还在。选中时邻域点亮、其余压暗
+       * （cytoscape neighborhood-highlight），不删某一类。
        *
        * ⚠ 只在块条带开着时画：块节点不存在时这些边两端都落空，React Flow
        *   会静默丢掉（不报错），但计算白做。
@@ -2186,6 +2257,8 @@ function CanvasInner({
                 fromBox && toBox
                   ? pickLinkSides(fromBox, toBox)
                   : { source: "r" as const, target: "l" as const };
+              const dim = impactEdgeDimmed(blockImpactFocus, e.id);
+              const lit = blockImpactFocus.active && !dim;
               return {
               id: e.id,
               source: `block:${e.from}`,
@@ -2195,8 +2268,19 @@ function CanvasInner({
               type: "blockCurve",
               selectable: false,
               focusable: false,
-              zIndex: isRealLinkage(e.kind) ? 2 : 1,
-              style: IMPACT_STYLE[e.kind],
+              zIndex: lit
+                ? isRealLinkage(e.kind)
+                  ? 4
+                  : 3
+                : dim
+                  ? 0
+                  : isRealLinkage(e.kind)
+                    ? 2
+                    : 1,
+              style: {
+                ...IMPACT_STYLE[e.kind],
+                opacity: dim ? IMPACT_DIM_EDGE : 1,
+              },
               data: { impactKind: e.kind, shared: e.shared },
               };
             })
@@ -2211,6 +2295,7 @@ function CanvasInner({
       impactEdges,
       blocksShown,
       blockNodeIds,
+      blockImpactFocus,
     ]
   );
 
@@ -2360,9 +2445,9 @@ function CanvasInner({
       onBlockRects,
       blocksShown,
       onPickBlock,
-      pickedBlockKey: pickedBlock
-        ? blockKey(pickedBlock.pageId, pickedBlock.name)
-        : null,
+      pickedBlockKey,
+      impactFocus: blockImpactFocus,
+      islandKeys,
     }),
     [
       entered,
@@ -2385,24 +2470,28 @@ function CanvasInner({
       onBlockRects,
       blocksShown,
       onPickBlock,
-      pickedBlock,
+      pickedBlockKey,
+      blockImpactFocus,
+      islandKeys,
     ]
   );
 
   // Esc：先退连线态，再退进板态。⚠ 只在有态可退时挂监听——常挂会把
   // Studio 里其它 Esc 语义（系统屏抽屉）抢掉。
   React.useEffect(() => {
-    if (!entered && !linkFrom && !picked) return;
+    if (!entered && !linkFrom && !picked && !pickedBlock) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      // 退的顺序：先撤选中的元素，再退连线态，最后退进板态。
+      // 退的顺序：先撤选中的元素，再撤选中的块（邻域点亮跟着灭），
+      // 再退连线态，最后退进板态。
       if (picked) setPicked(null);
+      else if (pickedBlock) setPickedBlock(null);
       else if (linkFrom) setLinkFrom(null);
       else setEntered(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [entered, linkFrom, picked]);
+  }, [entered, linkFrom, picked, pickedBlock]);
 
   // 提示条自己消失。⚠ 用 key 重置计时：连着点两次导出，第二次的提示
   // 不该被第一次的计时器提前掐掉。
@@ -2639,6 +2728,10 @@ function CanvasInner({
                 setEntered(null);
                 setLinkFrom(null);
                 setFocusedAsset(null);
+                /* cytoscape neighborhood-highlight：点空白恢复概览。
+                   不撤选中的话，邻域点亮会一直亮着，像坏了。 */
+                setPickedBlock(null);
+                setPicked(null);
               }}
               onEdgeClick={(_e, edge) => {
                 const l = links.find(x => x.id === edge.id);

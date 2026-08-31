@@ -20,6 +20,9 @@ const STAGE = stripComments(
 const IMPACT = stripComments(
   readFileSync(resolve(__dirname, "../block-impact.ts"), "utf8")
 );
+const PANEL = stripComments(
+  readFileSync(resolve(__dirname, "../CanvasBlockPanel.tsx"), "utf8")
+);
 
 describe("影响线真的挂上了画布", () => {
   it("扫了源 HTML 并造了边", () => {
@@ -102,5 +105,50 @@ describe("反向判据", () => {
 
   it("跳到自己这一页的不画（否则几十条自环）", () => {
     expect(IMPACT).toContain("if (target === b.pageId) continue;");
+  });
+});
+
+describe("刀 4 开整：选中点亮接在通电的链路上", () => {
+  it("舞台真的调了 impactFocus，并把结果交给造边", () => {
+    expect(STAGE).toContain("impactFocus(");
+    expect(STAGE).toContain("impactEdgeDimmed(");
+    expect(STAGE).toContain("impactNodeDimmed(");
+    expect(STAGE).toContain("islandBlockKeys(");
+  });
+
+  it("压暗走 IMPACT_DIM_EDGE / IMPACT_DIM_NODE，不许写 0（那是藏起来）", () => {
+    expect(STAGE).toContain("IMPACT_DIM_EDGE");
+    expect(STAGE).toContain("IMPACT_DIM_NODE");
+    expect(IMPACT).toMatch(/export const IMPACT_DIM_EDGE = 0\.[1-9]/);
+    expect(IMPACT).not.toMatch(/export const IMPACT_DIM_EDGE = 0\s*;/);
+  });
+
+  it("点空白恢复概览（cytoscape tap background）", () => {
+    expect(STAGE).toMatch(/onPaneClick=\{\(\) => \{[\s\S]*?setPickedBlock\(null\)/);
+  });
+
+  it("块节点有孤岛标记「无影响」，不是空着或写未计算", () => {
+    expect(STAGE).toContain('data-testid="sliderule-canvas-block-island"');
+    expect(STAGE).toContain("无影响");
+    expect(STAGE).toContain("data-block-island");
+    expect(STAGE).toContain("data-block-dimmed");
+    expect(STAGE).not.toContain("未计算");
+  });
+
+  it("面板反查走 impactedBy，不另写一套", () => {
+    // CLAUDE.md 第四条：同一件事两处实现必然分叉。
+    expect(PANEL).toContain("impactedBy(");
+    expect(PANEL).not.toMatch(/e\.from === key \? e\.to/);
+  });
+
+  it("影响面的点亮依赖不许混进几何量", () => {
+    const m = STAGE.match(
+      /const blockImpactFocus = React\.useMemo\([\s\S]{0,250}?\[([^\]]*)\]\s*\)/
+    );
+    expect(m).not.toBeNull();
+    expect(m![1]).toContain("impactEdges");
+    expect(m![1]).toContain("pickedBlockKey");
+    expect(m![1]).not.toContain("vp");
+    expect(m![1]).not.toContain("placedBoxes");
   });
 });

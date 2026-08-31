@@ -116,6 +116,14 @@ describe("反向判据", () => {
     expect(STAGE).not.toContain("blockGridExtraGapX(maxBlockCols)");
   });
 
+  it("⚠ extraGapX 真的传进 layoutArtboards（列数靠它才能从 3 收到 2）", () => {
+    // 2026-08-31：间距留了但列数仍按没条带选，块叠在下一页上。
+    // 变异：调用处丢掉第四参，这条红。
+    expect(STAGE).toMatch(
+      /layoutArtboards\(\s*pages,\s*design,\s*hostAspect \|\| undefined,\s*(?:\/\*[\s\S]*?\*\/\s*)?blocksShown \? blockGridExtraGapX\(maxBlockSpan\) : 0\s*\)/
+    );
+  });
+
   it("⚠ 列数按「装得进画板高度」选，不是拍 √n", () => {
     // 2026-08-28 真机：√n 只管形状方不方，不管跟画板比多高。
     // 量到远程审方页的网格 1832 高、越过下一排画板 520 —— 整张图被垂直

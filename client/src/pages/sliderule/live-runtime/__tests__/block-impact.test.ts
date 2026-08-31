@@ -12,8 +12,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  IMPACT_DIM_EDGE,
+  IMPACT_DIM_NODE,
   buildImpactEdges,
+  impactEdgeDimmed,
+  impactFocus,
+  impactNodeDimmed,
   impactedBy,
+  islandBlockKeys,
   isRealLinkage,
   scanBlockBindings,
   REAL_LINKAGE_KINDS,
@@ -239,6 +245,90 @@ describe("⚠ 反查：选中一块，谁跟着变", () => {
     const hit = impactedBy(buildImpactEdges(all), blockKey("p1", "甲"));
     expect([...hit.real]).toEqual([blockKey("p1", "乙")]);
     expect([...hit.sameField]).toEqual([blockKey("p1", "丙")]);
+  });
+});
+
+describe("选中点亮：邻域集合（刀 4 开整）", () => {
+  const mkAll = () => [
+    ...scanBlockBindings(
+      "p1",
+      B("处方表", TBL('data-rows="rx"><tr><td data-field="no"></td></tr>'), "table")
+    ),
+    ...scanBlockBindings(
+      "p1",
+      B("处方卡", '<div data-record="rx"><span data-field="no"></span></div>')
+    ),
+    ...scanBlockBindings(
+      "p2",
+      B("审核台", TBL('data-rows="rx"><tr><td data-field="no"></td></tr>'), "table") +
+        B("交单", '<button data-action="submit"></button>')
+    ),
+    ...scanBlockBindings("p2", B("装饰条", "<h2>欢迎</h2>")),
+  ];
+
+  it("没选中时不点亮、不压暗（全画是概览）", () => {
+    const focus = impactFocus(buildImpactEdges(mkAll()), null);
+    expect(focus.active).toBe(false);
+    expect(focus.island).toBe(false);
+    expect(focus.litKeys.size).toBe(0);
+    expect(focus.litEdgeIds.size).toBe(0);
+    expect(impactEdgeDimmed(focus, "anything")).toBe(false);
+    expect(impactNodeDimmed(focus, "anything")).toBe(false);
+  });
+
+  it("正向：改 rx.no 那 3 块进 litKeys（含跨页、含自己）", () => {
+    const all = mkAll();
+    const edges = buildImpactEdges(all);
+    const me = blockKey("p1", "处方表");
+    const focus = impactFocus(edges, me);
+    expect(focus.active).toBe(true);
+    expect(focus.island).toBe(false);
+    expect(focus.litKeys.has(me)).toBe(true);
+    expect(focus.litKeys.has(blockKey("p1", "处方卡"))).toBe(true);
+    expect(focus.litKeys.has(blockKey("p2", "审核台"))).toBe(true);
+  });
+
+  it("反向：没用这个字段的块不许亮（缺了这条，全亮也是绿的）", () => {
+    const edges = buildImpactEdges(mkAll());
+    const focus = impactFocus(edges, blockKey("p1", "处方表"));
+    expect(focus.litKeys.has(blockKey("p2", "装饰条"))).toBe(false);
+    expect(focus.litKeys.has(blockKey("p2", "交单"))).toBe(false);
+    expect(impactNodeDimmed(focus, blockKey("p2", "装饰条"))).toBe(true);
+    expect(impactNodeDimmed(focus, blockKey("p2", "交单"))).toBe(true);
+  });
+
+  it("反向：不与选中块相连的线不进 litEdgeIds", () => {
+    const edges = buildImpactEdges(mkAll());
+    const me = blockKey("p1", "处方表");
+    const focus = impactFocus(edges, me);
+    for (const e of edges) {
+      const incident = e.from === me || e.to === me;
+      expect(focus.litEdgeIds.has(e.id), e.id).toBe(incident);
+      expect(impactEdgeDimmed(focus, e.id)).toBe(!incident);
+    }
+  });
+
+  it("孤岛：litKeys 只有自己，island 为真", () => {
+    const me = blockKey("p2", "装饰条");
+    const focus = impactFocus(buildImpactEdges(mkAll()), me);
+    expect(focus.island).toBe(true);
+    expect([...focus.litKeys]).toEqual([me]);
+    expect(focus.litEdgeIds.size).toBe(0);
+  });
+
+  it("孤岛名单含装饰条，不含处方表", () => {
+    const all = mkAll();
+    const islands = islandBlockKeys(all, buildImpactEdges(all));
+    expect(islands.has(blockKey("p2", "装饰条"))).toBe(true);
+    expect(islands.has(blockKey("p1", "处方表"))).toBe(false);
+    expect(islands.has(blockKey("p2", "交单"))).toBe(true);
+  });
+
+  it("压暗不是藏起来：透明度 > 0（裁决：两类都常驻画）", () => {
+    expect(IMPACT_DIM_EDGE).toBeGreaterThan(0);
+    expect(IMPACT_DIM_NODE).toBeGreaterThan(0);
+    expect(IMPACT_DIM_EDGE).toBeLessThan(1);
+    expect(IMPACT_DIM_NODE).toBeLessThan(1);
   });
 });
 

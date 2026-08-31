@@ -26,8 +26,28 @@
  * 画成一样的线，用户会以为改一处自动同步了。所以两类必须分色分虚实。
  *
  * ⚠ 用户 2026-08-27 裁决**两类都常驻画**（我原本建议同源字段只在选中时点亮，
- *   理由是稠密图会糊）。按裁决实现；真机上要是糊得没法看，把实际线数和截图
- *   摆出来让用户判断，不自作主张收窄。
+ *   理由是稠密图会糊）。按裁决实现：线还在，选中时用邻域点亮把稠密图收成
+ *   「改这一块谁跟着变」。不自作主张把某一类线删掉。
+ *
+ * ## 选中点亮抄的是谁（2026-08-31 刀 4 开整）
+ *
+ * grok / claw-code 仍然没有图可视化。这一刀的**交互**另有两处成熟答案，
+ * 本地 clone 过（`tmp/oss/ComfyUI_frontend`、`tmp/oss/cytoscape.js`）：
+ *
+ *   1. ComfyUI `LGraphCanvas.select`：选中节点 → 把所有入射/出射 link id
+ *      放进 `highlighted_links`；`pathRenderer.determineLinkColor` 对
+ *      `highlightedIds` 里的线换高亮色，**其余仍画**。不删线。
+ *   2. Cytoscape 官方 neighborhood-highlight：点节点 → 全体加 `semitransp`，
+ *      再把 node + neighborhood 去掉该类；点空白恢复。稠密图能看懂靠的是
+ *      这一刀压暗，不是少画。
+ *
+ * 合在一起：常驻仍全画（裁决），选中时邻域点亮、其余压暗（cytoscape），
+ * 点亮集合按 ComfyUI 的「入射/出射 id」来算（`impactFocus`）。
+ *
+ * ⚠ **不抄 ComfyUI 的「高亮就换一种色」**——它的每条线是平级数据流，
+ *   我们四种关系靠分色分虚实（风险 #03）。换成同一种高亮色等于把那条
+ *   风险做回来。只抄它的 highlightedIds 集合。ComfyUI_frontend 是 GPL-3，
+ *   不把源码搬进来。
  *
  * ## ⚠ 不另写一套 HTML 解析
  *
@@ -304,4 +324,100 @@ export function impactedBy(
     (isRealLinkage(e.kind) ? real : sameField).add(other);
   }
   return { real, sameField };
+}
+
+/**
+ * 选中时无关线/块的透明度。
+ *
+ * ⚠ 必须 > 0：写成 0 等于把线藏起来，直接违反「两类都常驻画」的裁决。
+ *   压暗是让邻域跳出来，不是少画。cytoscape 的 `semitransp` 同款。
+ */
+export const IMPACT_DIM_EDGE = 0.2;
+export const IMPACT_DIM_NODE = 0.4;
+
+/** 选中一块时，画布上该点亮谁、该压暗谁。 */
+export interface ImpactFocus {
+  /** 有没有选中一块。false = 不压暗、不点亮（概览）。 */
+  active: boolean;
+  selectedKey: string | null;
+  /**
+   * 该点亮的身份：选中块自己 + 受影响的块 key + nav 的目标页 id。
+   *
+   * ⚠ 含选中块自己——孤岛的 litKeys 不是空的，是「只有自己」。
+   *   空集合会让选中块也被压暗，看起来像没点中。
+   */
+  litKeys: ReadonlySet<string>;
+  /** 该点亮的影响线 id（与 selected 关联的那些）。 */
+  litEdgeIds: ReadonlySet<string>;
+  /** 选中的是孤岛：无影响，不是未计算。没选中时恒 false。 */
+  island: boolean;
+}
+
+export const IMPACT_FOCUS_IDLE: ImpactFocus = {
+  active: false,
+  selectedKey: null,
+  litKeys: new Set(),
+  litEdgeIds: new Set(),
+  island: false,
+};
+
+/**
+ * 从影响线算出「改这一块，谁跟着变」在画布上该怎么亮。
+ *
+ * 形状抄 ComfyUI `select` → `highlighted_links`：只收与选中节点关联的
+ * 那些 id，不在这儿做「再扩一跳」——那会把处方一个实体的完全图又点亮
+ * 回去，选中等于没选。
+ */
+export function impactFocus(
+  edges: readonly ImpactEdge[],
+  selectedKey: string | null
+): ImpactFocus {
+  if (!selectedKey) return IMPACT_FOCUS_IDLE;
+  const hit = impactedBy(edges, selectedKey);
+  const litKeys = new Set<string>([selectedKey]);
+  for (const k of hit.real) litKeys.add(k);
+  for (const k of hit.sameField) litKeys.add(k);
+  const litEdgeIds = new Set<string>();
+  for (const e of edges) {
+    if (e.from === selectedKey || e.to === selectedKey) litEdgeIds.add(e.id);
+  }
+  return {
+    active: true,
+    selectedKey,
+    litKeys,
+    litEdgeIds,
+    island: hit.real.size === 0 && hit.sameField.size === 0,
+  };
+}
+
+/**
+ * 哪些块在影响图上是孤岛（没有任何入射/出射影响线）。
+ *
+ * ⚠ nav 的 `to` 是页面 id，不是块——不能把它当成「这个块有关联」。
+ * ⚠ 回的是空集不是 null，同 `impactedBy`：没有孤岛是事实，不是没算。
+ */
+export function islandBlockKeys(
+  all: readonly BlockBindings[],
+  edges: readonly ImpactEdge[]
+): Set<string> {
+  const connected = new Set<string>();
+  for (const e of edges) {
+    connected.add(e.from);
+    if (e.kind !== "nav") connected.add(e.to);
+  }
+  const out = new Set<string>();
+  for (const b of all) {
+    if (!connected.has(b.key)) out.add(b.key);
+  }
+  return out;
+}
+
+/** 这条影响线在当前选中态下该不该压暗。没选中 → 不压暗。 */
+export function impactEdgeDimmed(focus: ImpactFocus, edgeId: string): boolean {
+  return focus.active && !focus.litEdgeIds.has(edgeId);
+}
+
+/** 这个块/页在当前选中态下该不该压暗。没选中 → 不压暗。 */
+export function impactNodeDimmed(focus: ImpactFocus, key: string): boolean {
+  return focus.active && !focus.litKeys.has(key);
 }
