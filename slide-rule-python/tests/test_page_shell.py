@@ -130,6 +130,49 @@ class Test统一之后干净:
         assert 'class="icon0"' in aside and 'class="icon1"' in aside
 
 
+class Test菜单项不把文案甩到最右边:
+    """2026-08-31 会聚通：激活项抄了 justify-between，徽标被 _set_label
+    剥掉后文字飞到最右边。对照 shadcn SidebarMenuButton：flex + gap，
+    不是 justify-between。图标上的 text-slate-400 / text-white 也要剥，
+    否则 currentColor 吃不到。"""
+
+    def _templates(self):
+        return {
+            "link": '<a class="flex items-center" href="#"><svg></svg><span>x</span></a>',
+            "base_class": "flex items-center px-3",
+            "active_class": (
+                "bg-brand-700 flex font-medium items-center justify-between "
+                "px-3 py-2 rounded-[6px] shadow-sm text-white"
+            ),
+            "icons": ['<svg class="w-4 h-4 text-slate-400 text-white"></svg>'],
+        }
+
+    def test_激活项不带_justify_between(self):
+        html = build_nav_items(self._templates(), [{"id": "p1", "name": "会议预订看板"}], "p1")
+        assert "justify-between" not in html
+        assert "justify-around" not in html
+        assert "gap-2" in html
+
+    def test_非激活项也不发明_justify_between(self):
+        pages = [{"id": "p1", "name": "甲"}, {"id": "p2", "name": "乙"}]
+        html = build_nav_items(self._templates(), pages, "p1")
+        assert "justify-between" not in html
+
+    def test_图标颜色类被剥掉_尺寸留下(self):
+        html = build_nav_items(self._templates(), [{"id": "p1", "name": "看板"}], "p1")
+        assert "text-slate-400" not in html
+        assert "text-white" not in html.split("<svg")[1].split("</svg>")[0]
+        assert "w-4" in html and "h-4" in html
+
+    def test_反向_不剥就红(self):
+        """变异：把 _nav_item_class / _neutralize_icon 拿掉，本条必红。"""
+        raw_active = self._templates()["active_class"]
+        raw_icon = self._templates()["icons"][0]
+        html = build_nav_items(self._templates(), [{"id": "p1", "name": "看板"}], "p1")
+        assert "justify-between" in raw_active and "justify-between" not in html
+        assert "text-slate-400" in raw_icon and "text-slate-400" not in html
+
+
 class Test判据自己不许误判:
     """第一版拿原文逐字节比 aside，对着真实产物报「3 种不同」——唯一差别是
     aria-current 落在哪一项，而那正是每页应该不同的地方。"""

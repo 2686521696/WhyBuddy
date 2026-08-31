@@ -40,6 +40,8 @@ const HOST_CRITICAL = [
   "data-page-id",
   // 壳节点自报家门：漏了手机底栏永远染不上色
   "data-shell",
+  // 深浅锁：漏了对比层 html[data-theme="light"] 一条都不命中
+  "data-theme",
   // 块身份：漏了画布一块都认不出，HTML 看着还正常
   ...BLOCK_ATTRS,
   // 绑定孔：漏了填不上数

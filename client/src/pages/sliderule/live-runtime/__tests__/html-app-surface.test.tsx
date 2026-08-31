@@ -570,6 +570,10 @@ describe("浅色壳上的白字和高亮", () => {
     expect(CHROME_CONTRAST_CSS.split("16rem").length - 1).toBe(1);
     expect(CHROME_CONTRAST_CSS).toContain("bg-zinc-950");
     expect(CHROME_CONTRAST_CSS).toContain("align-items:center");
+    expect(CHROME_CONTRAST_CSS).toContain("justify-content:flex-start");
+    expect(CHROME_CONTRAST_CSS).toContain("aside nav a svg");
+    expect(CHROME_CONTRAST_CSS).toContain('html[data-theme="light"] aside .bg-slate-950');
+    expect(CHROME_CONTRAST_CSS).toContain(".grid-cols-24{grid-template-columns:repeat(24,minmax(0,1fr))}");
     expect(applyChromeContrast(once)).toBe(once);
   });
 
@@ -776,6 +780,21 @@ describe("data-shell 穿过消毒（应用面这一份）", () => {
     expect(
       sanitizeAppHtml('<!DOCTYPE html><html><body><div data-not-allowed="x">正文</div></body></html>'),
     ).not.toContain("data-not-allowed");
+  });
+});
+
+describe("data-theme 穿过消毒（对比层靠它认浅色）", () => {
+  it("html 上的 data-theme 不许被剥", () => {
+    const out = sanitizeAppHtml(
+      '<!DOCTYPE html><html data-theme="light"><body><aside class="bg-slate-950">侧</aside></body></html>',
+    );
+    expect(out, "data-theme 被剥掉了，aside 深砖改写会全部打空").toContain('data-theme="light"');
+  });
+
+  it("反向：白名单外的 data-theme-secret 仍然被剥", () => {
+    expect(
+      sanitizeAppHtml('<!DOCTYPE html><html><body><div data-theme-secret="x">正文</div></body></html>'),
+    ).not.toContain("data-theme-secret");
   });
 });
 

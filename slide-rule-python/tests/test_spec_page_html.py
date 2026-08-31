@@ -116,6 +116,15 @@ class Test口径抄的是_screenshot_to_code:
         phone = sph.build_page_html_prompt("x", device="phone")
         assert "不要写成图标轨 w-16" not in phone
 
+    def test_时段矩阵表头与格子同档(self):
+        """2026-08-31 会聚通：表头 grid-cols-12、格子 grid-cols-24，
+        Play CDN 又不产出 24 列。提示词要钉「同档列数、空位在文档流」。"""
+        p = sph.build_page_html_prompt("x")
+        assert "grid-cols" in p
+        assert "column count" in p or "同档" in p
+        assert "now-line" in p or "overlay" in p
+        assert "flex-1" in p
+
 
 class Test机械校验只挡明显不完整的:
     def test_合格的过(self):

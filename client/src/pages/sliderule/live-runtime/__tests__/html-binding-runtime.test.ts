@@ -668,3 +668,78 @@ describe("作用域自己也算在内", () => {
     expect(ids).toEqual(["b1", "b2"]);
   });
 });
+
+describe("甘特装饰不是行模板", () => {
+  /**
+   * ⚠ 2026-08-31 会聚通 p1：data-rows 的第一个子元素是绝对定位的
+   * 「当前时间线」，真正的房间行排第二。旧挑选 `tr || firstElementChild`
+   * 把红线缓存成模板，innerHTML="" 之后按实体数克隆 N 条红线，
+   * 启明星那一行被擦掉。页脚 count=6 是真的，用户看见的是一块白。
+   *
+   * 变异：把 pickRowTemplate 改回 firstElementChild，本条必红——
+   * 房间名一条都没有，now-line 变成 6 条。
+   */
+  const source: BindingSource = {
+    rows: {
+      meeting_room: [
+        { id: "r1", name: "3F · 启明星" },
+        { id: "r2", name: "3F · 天工阁" },
+        { id: "r3", name: "2F · 极客吧" },
+        { id: "r4", name: "2F · 思享汇" },
+        { id: "r5", name: "4F · 创客空间" },
+        { id: "r6", name: "4F · 聚贤厅" },
+      ],
+    },
+    fields: { meeting_room: [{ id: "name", name: "名称" }] },
+  };
+
+  const GANTT = `
+    <div class="relative" data-rows="meeting_room">
+      <div class="absolute top-0 bottom-0 left-[22.9%] w-[2px] bg-rose-500 pointer-events-none" data-now-line></div>
+      <div class="h-14 flex items-stretch">
+        <span data-field="name">3F · 启明星</span>
+      </div>
+    </div>`;
+
+  it("now-line 在第一子节点时仍展开实体行", () => {
+    const root = dom(GANTT);
+    const report = applyBindings(root, { source });
+    expect(report.problems).toEqual([]);
+    const box = root.querySelector("[data-rows]")!;
+    const names = [...box.querySelectorAll("[data-field='name']")].map((el) => el.textContent);
+    expect(names).toEqual([
+      "3F · 启明星",
+      "3F · 天工阁",
+      "2F · 极客吧",
+      "2F · 思享汇",
+      "4F · 创客空间",
+      "4F · 聚贤厅",
+    ]);
+    expect(box.querySelectorAll(".h-14")).toHaveLength(6);
+    expect(box.querySelectorAll("[data-now-line]")).toHaveLength(1);
+  });
+
+  it("反向：不许把 now-line 克隆成 N 条冒充行", () => {
+    const root = dom(GANTT);
+    applyBindings(root, { source });
+    const box = root.querySelector("[data-rows]")!;
+    expect(box.querySelectorAll("[data-now-line]").length).not.toBe(6);
+    expect(box.querySelector("[data-now-line]")?.classList.contains("absolute")).toBe(true);
+  });
+
+  it("再 bind 一次不叠 now-line、行数仍对", () => {
+    const root = dom(GANTT);
+    applyBindings(root, { source });
+    applyBindings(root, { source });
+    const box = root.querySelector("[data-rows]")!;
+    expect(box.querySelectorAll(".h-14")).toHaveLength(6);
+    expect(box.querySelectorAll("[data-now-line]")).toHaveLength(1);
+    expect(box.querySelector("[data-field='name']")!.textContent).toBe("3F · 启明星");
+  });
+
+  it("tbody 的 tr 仍按行数展开（别把表路径改坏）", () => {
+    const root = dom(TABLE);
+    applyBindings(root, { source: SOURCE });
+    expect(root.querySelectorAll("tbody tr")).toHaveLength(3);
+  });
+});

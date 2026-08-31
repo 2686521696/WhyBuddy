@@ -315,14 +315,33 @@ def _chrome_contrast_css() -> str:
     ``--sidebar-width: 16rem``）；顶栏右侧分段控件写成 bg-zinc-950，
     浅色 Header 上是一块黑。砖表补 950，宽度和品牌行也盖在这一层——
     已经生成的页刷新即生效，不必重跑推演。
+
+    ⚠ 2026-08-31 会聚通（sr-20260831123105-JTNBQHD7X4）：浅色壳上侧栏菜单
+    文案飞到最右边、图标一灰一白。根因两层——
+      1. ``build_nav_items`` 抄了源导航的 ``justify-between``（徽标位），
+         ``_set_label`` 把徽标剥掉后只剩图标+文字，flex 把文字甩到尾。
+         shadcn SidebarMenuButton 是 ``flex … gap-2``，**不是**
+         justify-between（徽标是独立的 SidebarMenuBadge 兄弟）。
+      2. 图标 SVG 烤着 ``text-slate-400`` / ``text-white``。元素选择器
+         ``aside nav a svg`` 特异性 (0,0,3)，**压不过** Tailwind 类
+         ``.text-slate-400`` (0,1,0)，必须 ``color:inherit!important``。
+      3. 深砖改写原先只盖 header。aside 品牌行 ``bg-slate-950`` 漏光，
+         浅色壳上仍是一块黑。header 选择器必须仍是前缀（既有判据钉着），
+         再接 aside 同一张砖表。
+      4. Tailwind Play 默认只生成 ``grid-cols-1..12``。时段矩阵写了
+         ``grid-cols-24``，CDN 不产出这条，格子塌成一列。13–24 钉在
+         这一层，已生成的页刷新即生效。
     """
     light_white = ",".join(
         f'html[data-theme="light"] {surf} .{cls}'
         for surf in ("header", "aside")
         for cls in ("text-white", "text-slate-100", "text-slate-200", "text-gray-100")
     )
+    # header 选择器保持前缀，aside 接在后面——既有判据盯着 header .bg-*。
     light_dark_bg = ",".join(
-        f'html[data-theme="light"] header .{cls}' for cls in _LIGHT_DARK_BRICKS
+        f'html[data-theme="light"] {surf} .{cls}'
+        for surf in ("header", "aside")
+        for cls in _LIGHT_DARK_BRICKS
     )
     return (
         f"{light_white}{{color:var(--chrome-fg,#0f172a)!important}}"
@@ -330,7 +349,8 @@ def _chrome_contrast_css() -> str:
         f"color:var(--chrome-fg,#0f172a)!important}}"
         "aside nav a{box-sizing:border-box;width:100%;"
         "display:flex!important;flex-direction:row!important;"
-        "align-items:center!important;gap:.5rem}"
+        "align-items:center!important;justify-content:flex-start!important;gap:.5rem}"
+        "aside nav a svg{color:inherit!important}"
         "aside>:first-child:not(nav):not(:has(nav)){"
         "display:flex!important;flex-direction:row!important;"
         "align-items:center!important;gap:.5rem}"
@@ -346,7 +366,16 @@ def _chrome_contrast_css() -> str:
         'header nav[aria-label="breadcrumb"] [aria-current="page"]{'
         "background-color:transparent!important;"
         "color:var(--chrome-fg,inherit)!important;font-weight:600}"
+        + _GRID_COLS_EXTRA_CSS
     )
+
+
+#: Tailwind Play 默认只生成 .grid-cols-1 … 12。真机时段矩阵写了 24 列，
+#: CDN 不产出这条，格子塌掉。补 13–24 钉在对比层——已生成的页刷新即生效。
+_GRID_COLS_EXTRA_CSS = "".join(
+    f".grid-cols-{n}{{grid-template-columns:repeat({n},minmax(0,1fr))}}"
+    for n in range(13, 25)
+)
 
 
 def _theme_css(tokens: Dict[str, str]) -> str:

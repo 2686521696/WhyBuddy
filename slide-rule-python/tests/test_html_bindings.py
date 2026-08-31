@@ -204,6 +204,14 @@ class Test提示词:
         assert "hidden" in user
         assert "不许剥" in user
 
+    def test_行模板不是装饰层(self):
+        """2026-08-31 会聚通：now-line 放成 data-rows 第一个子元素，
+        运行时按实体数克隆红线。提示词必须把「那一行带着绑定孔」说清。"""
+        user = build_prompt(GOOD, MODEL, "p1")[-1]["content"]
+        assert "行模板" in user
+        assert "data-field" in user and "data-cell" in user
+        assert "第一个子元素" in user or "兄弟" in user
+
     def test_校验器原话回喂(self):
         user = build_prompt(GOOD, MODEL, "p1", "某某字段不是 vehicle 的字段")[-1]["content"]
         assert "某某字段不是 vehicle 的字段" in user and "只改这些地方" in user

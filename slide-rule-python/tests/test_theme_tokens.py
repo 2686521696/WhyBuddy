@@ -152,6 +152,12 @@ class Test接在活路上:
         assert 'nav[aria-label="Breadcrumb"] [aria-current="page"]' in out
         assert "aside nav a{box-sizing:border-box;width:100%;" in out.replace("\n", "")
         assert 'html[data-theme="light"] header .bg-zinc-950' in out
+        assert 'html[data-theme="light"] aside .bg-slate-950' in out
+        assert "justify-content:flex-start" in out
+        assert "aside nav a svg" in out
+        assert ".grid-cols-24{" in out
+        assert ".grid-cols-13{" in out
+        assert ".grid-cols-12{" not in out
         assert "min-width:var(--shell-aside-width)" in out
         assert "align-items:center" in out
 
@@ -182,6 +188,10 @@ class Test接在活路上:
             '[data-shell="aside"]',
             "bg-zinc-950",
             "align-items:center",
+            "justify-content:flex-start",
+            "aside nav a svg",
+            'html[data-theme="light"] aside .bg-slate-950',
+            ".grid-cols-24{",
         ):
             assert token in css, token
             assert token in ts, token

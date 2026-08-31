@@ -393,6 +393,7 @@ def build_page_html_prompt(
 - Follow UX best practices.
 - The first screen is the page **at rest**. A list/ledger page shows the table or cards and a single "新增" button — not an open create/edit drawer or dialog. Do not copy Tailwind UI Slide-over "open" snapshots. Create/edit forms are provided by the host; page scripts will not run, so an open drawer cannot be closed.
 - Pick one surface for the whole app (light OR dark). Do not mix a light page with bg-slate-900 / bg-black cards, and do not paint the top header and the sidebar two different darks.
+- Resource timelines / occupancy grids: header ticks and body cells share the same column count. Tailwind Play only ships grid-cols-1..12 — prefer 12 or fewer, or the same N on both sides. Empty slots stay in document flow; do not stretch one row with flex-1 to fake a full board. Now-lines and other overlays are siblings of the repeating row, never the first child of the row list.
 - Breadcrumb first item is the product name from the brief. Never write 通用后台, Admin, 控制台, or Dashboard as the root.
 - Image generation is disabled for this request. Do not call generate_images. \
 Do not invent unsplash or pexels photo IDs. \

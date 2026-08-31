@@ -987,6 +987,45 @@ def _set_class(link: str, value: str) -> str:
     return link.replace("<a", f'<a class="{value}"', 1)
 
 
+#: 源导航常把徽标撑开写成 justify-between。_set_label 剥掉徽标之后，
+#: flex 只剩图标+文字，文字被甩到最右边。对照 shadcn SidebarMenuButton：
+#: ``flex w-full items-center gap-2``，徽标是独立的 SidebarMenuBadge 兄弟，
+#: 按钮本身从不用 justify-between。
+_JUSTIFY_SPREAD = re.compile(r"^justify-(?:between|around|evenly)$")
+_GAP_TOKEN = re.compile(r"^(?:[\w:/\[\]-]+?:)?gap-")
+#: 图标要吃 currentColor（对照 shadcn [&>svg] 继承）。尺寸/对齐类留下。
+_TEXT_KEEP = re.compile(
+    r"^text-(?:xs|sm|base|lg|xl|2xl|3xl|4xl|5xl|6xl|7xl|8xl|9xl|"
+    r"left|center|right|justify|start|end|clip|ellipsis|wrap|nowrap|"
+    r"balance|pretty|\[)"
+)
+
+
+def _nav_item_class(value: str) -> str:
+    tokens = [t for t in (value or "").split() if t and not _JUSTIFY_SPREAD.fullmatch(t)]
+    if not any(_GAP_TOKEN.match(t) for t in tokens):
+        tokens.append("gap-2")
+    return " ".join(tokens)
+
+
+def _is_icon_color_token(token: str) -> bool:
+    if not token.startswith("text-"):
+        return False
+    return _TEXT_KEEP.match(token) is None
+
+
+def _neutralize_icon(icon: str) -> str:
+    """剥掉 SVG 上烤死的 text-white / text-slate-400，让它吃 currentColor。"""
+    if not icon:
+        return icon
+
+    def _repl(match: re.Match[str]) -> str:
+        kept = [t for t in match.group(1).split() if t and not _is_icon_color_token(t)]
+        return f'class="{" ".join(kept)}"'
+
+    return _CLASS.sub(_repl, icon, count=1)
+
+
 def _set_label(link: str, icon: str, label: str) -> str:
     """把链接内部换成「图标 + 文案」。
 
@@ -1025,9 +1064,11 @@ def build_nav_items(
         is_current = str(page.get("id") or "") == current_page_id
         link = _set_class(
             templates["link"],
-            templates["active_class"] if is_current else templates["base_class"],
+            _nav_item_class(
+                templates["active_class"] if is_current else templates["base_class"]
+            ),
         )
-        link = _set_label(link, icons[i % len(icons)], name)
+        link = _set_label(link, _neutralize_icon(icons[i % len(icons)]), name)
         # ⚠ 导航项必须带页面 id（2026-08-14）。宿主要把点击映射回"切到哪一页"，
         #   而**靠标签文字匹配是不行的**：名字可以重复、可以带图标字符、可以被
         #   模型改写成另一种说法。这条跟 data-* 绑定孔是同一条纪律——

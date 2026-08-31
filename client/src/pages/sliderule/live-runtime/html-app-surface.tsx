@@ -164,12 +164,18 @@ export const DESKTOP_FILL_CSS =
  *
  *  2026-08-20 第二趟：品牌行 items-center（对照 shadcn SidebarMenuButton）；
  *  有文字的侧栏锁 16rem（对照 --sidebar-width）；header 的 bg-zinc-950
- *  也改写成 muted，浅色顶栏右侧不再是一块黑开关。 */
+ *  也改写成 muted，浅色顶栏右侧不再是一块黑开关。
+ *
+ *  2026-08-31 会聚通：aside 深砖也改写（header 选择器保持前缀）；
+ *  菜单 justify-content:flex-start（对照 SidebarMenuButton 的 flex+gap，
+ *  不是 justify-between）；svg color:inherit!important（.text-slate-400
+ *  特异性压过元素选择器）；grid-cols-13..24（Play CDN 默认只到 12）。 */
 export const CHROME_CONTRAST_STYLE_ID = "sliderule-chrome-contrast";
 export const CHROME_CONTRAST_CSS =
   'html[data-theme="light"] header .text-white,html[data-theme="light"] header .text-slate-100,html[data-theme="light"] header .text-slate-200,html[data-theme="light"] header .text-gray-100,html[data-theme="light"] aside .text-white,html[data-theme="light"] aside .text-slate-100,html[data-theme="light"] aside .text-slate-200,html[data-theme="light"] aside .text-gray-100{color:var(--chrome-fg,#0f172a)!important}' +
-  'html[data-theme="light"] header .bg-black,html[data-theme="light"] header .bg-slate-800,html[data-theme="light"] header .bg-slate-900,html[data-theme="light"] header .bg-slate-950,html[data-theme="light"] header .bg-gray-800,html[data-theme="light"] header .bg-gray-900,html[data-theme="light"] header .bg-gray-950,html[data-theme="light"] header .bg-zinc-800,html[data-theme="light"] header .bg-zinc-900,html[data-theme="light"] header .bg-zinc-950,html[data-theme="light"] header .bg-neutral-800,html[data-theme="light"] header .bg-neutral-900,html[data-theme="light"] header .bg-neutral-950,html[data-theme="light"] header .bg-stone-800,html[data-theme="light"] header .bg-stone-900,html[data-theme="light"] header .bg-stone-950{background-color:var(--muted)!important;color:var(--chrome-fg,#0f172a)!important}' +
-  "aside nav a{box-sizing:border-box;width:100%;display:flex!important;flex-direction:row!important;align-items:center!important;gap:.5rem}" +
+  'html[data-theme="light"] header .bg-black,html[data-theme="light"] header .bg-slate-800,html[data-theme="light"] header .bg-slate-900,html[data-theme="light"] header .bg-slate-950,html[data-theme="light"] header .bg-gray-800,html[data-theme="light"] header .bg-gray-900,html[data-theme="light"] header .bg-gray-950,html[data-theme="light"] header .bg-zinc-800,html[data-theme="light"] header .bg-zinc-900,html[data-theme="light"] header .bg-zinc-950,html[data-theme="light"] header .bg-neutral-800,html[data-theme="light"] header .bg-neutral-900,html[data-theme="light"] header .bg-neutral-950,html[data-theme="light"] header .bg-stone-800,html[data-theme="light"] header .bg-stone-900,html[data-theme="light"] header .bg-stone-950,html[data-theme="light"] aside .bg-black,html[data-theme="light"] aside .bg-slate-800,html[data-theme="light"] aside .bg-slate-900,html[data-theme="light"] aside .bg-slate-950,html[data-theme="light"] aside .bg-gray-800,html[data-theme="light"] aside .bg-gray-900,html[data-theme="light"] aside .bg-gray-950,html[data-theme="light"] aside .bg-zinc-800,html[data-theme="light"] aside .bg-zinc-900,html[data-theme="light"] aside .bg-zinc-950,html[data-theme="light"] aside .bg-neutral-800,html[data-theme="light"] aside .bg-neutral-900,html[data-theme="light"] aside .bg-neutral-950,html[data-theme="light"] aside .bg-stone-800,html[data-theme="light"] aside .bg-stone-900,html[data-theme="light"] aside .bg-stone-950{background-color:var(--muted)!important;color:var(--chrome-fg,#0f172a)!important}' +
+  "aside nav a{box-sizing:border-box;width:100%;display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-start!important;gap:.5rem}" +
+  "aside nav a svg{color:inherit!important}" +
   "aside>:first-child:not(nav):not(:has(nav)){display:flex!important;flex-direction:row!important;align-items:center!important;gap:.5rem}" +
   "aside :is(img,svg){flex-shrink:0}" +
   // ★「侧栏多宽 / 主体让多少位」这条空间契约归 page_shell.SHELL_ASIDE_LAYOUT_CSS
@@ -192,7 +198,19 @@ export const CHROME_CONTRAST_CSS =
   'body:not(.flex):has(>aside)>aside{position:fixed!important;top:0!important;left:0!important;height:100%!important;z-index:20}' +
   'body:not(.flex):has(>aside)>aside~*{margin-left:var(--shell-aside-width)!important}' +
   'aside [aria-current="page"]{background-color:color-mix(in srgb,var(--primary,currentColor) 16%,var(--chrome,transparent))!important;color:var(--chrome-fg,inherit)!important;font-weight:600}' +
-  'header nav[aria-label="Breadcrumb"] [aria-current="page"],header nav[aria-label="breadcrumb"] [aria-current="page"]{background-color:transparent!important;color:var(--chrome-fg,inherit)!important;font-weight:600}';
+  'header nav[aria-label="Breadcrumb"] [aria-current="page"],header nav[aria-label="breadcrumb"] [aria-current="page"]{background-color:transparent!important;color:var(--chrome-fg,inherit)!important;font-weight:600}' +
+  ".grid-cols-13{grid-template-columns:repeat(13,minmax(0,1fr))}" +
+  ".grid-cols-14{grid-template-columns:repeat(14,minmax(0,1fr))}" +
+  ".grid-cols-15{grid-template-columns:repeat(15,minmax(0,1fr))}" +
+  ".grid-cols-16{grid-template-columns:repeat(16,minmax(0,1fr))}" +
+  ".grid-cols-17{grid-template-columns:repeat(17,minmax(0,1fr))}" +
+  ".grid-cols-18{grid-template-columns:repeat(18,minmax(0,1fr))}" +
+  ".grid-cols-19{grid-template-columns:repeat(19,minmax(0,1fr))}" +
+  ".grid-cols-20{grid-template-columns:repeat(20,minmax(0,1fr))}" +
+  ".grid-cols-21{grid-template-columns:repeat(21,minmax(0,1fr))}" +
+  ".grid-cols-22{grid-template-columns:repeat(22,minmax(0,1fr))}" +
+  ".grid-cols-23{grid-template-columns:repeat(23,minmax(0,1fr))}" +
+  ".grid-cols-24{grid-template-columns:repeat(24,minmax(0,1fr))}";
 
 function injectHeadStyle(html: string, id: string, css: string): string {
   if (!html) return html;
@@ -444,6 +462,11 @@ export const ALLOWED_ATTR = [
   // 认它、不再拿 class 子串猜壳。⚠ 漏了它手机底栏就永远染不上色，
   // 而且不会有任何报错——跟 data-page-id 当年一样的坑。
   "data-shell",
+  // 深浅锁（theme_tokens.apply_theme_to_html 打的）。对比层选择器是
+  // ``html[data-theme="light"] aside .bg-slate-950``。⚠ 2026-08-31 会聚通：
+  // ALLOW_DATA_ATTR=false，漏了这个词 data-theme 被静默剥掉，aside 品牌行
+  // 深砖改写一条都不命中，刷新也救不了。两份白名单必须同改。
+  "data-theme",
   // 块身份（page_blocks.mark_page_blocks 打的）。画布靠它认出「这一页是
   // 哪几块拼的」、以及「双击进去改的是哪一块」。⚠ 两份白名单必须同改；
   // 漏了不会报错——块标被静默剥掉，画布一块都认不出，HTML 看着还正常。

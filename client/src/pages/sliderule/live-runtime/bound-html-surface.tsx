@@ -101,6 +101,8 @@ export const ALLOWED_ATTR = [
   "data-page-id",
   // 壳节点自报家门（page_shell.mark_shell_parts 打的）。⚠ 两份白名单必须同改。
   "data-shell",
+  // 深浅锁。对比层认 html[data-theme]。⚠ 两份白名单必须同改。
+  "data-theme",
   // 块身份（page_blocks.mark_page_blocks 打的）。画布靠它认出「这一页是
   // 哪几块拼的」、以及「双击进去改的是哪一块」。⚠ 两份白名单必须同改；
   // 漏了不会报错——块标被静默剥掉，画布一块都认不出，HTML 看着还正常。

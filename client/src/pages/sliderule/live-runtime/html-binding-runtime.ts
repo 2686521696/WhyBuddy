@@ -214,10 +214,58 @@ export interface ApplyBindingsReport {
 
 const ROW_TPL = "__slideruleRowTpl";
 const HEAD_TPL = "__slideruleHeadTpl";
+const OVERLAY_TPL = "__slideruleOverlayTpl";
 
 interface TemplateCache {
   [ROW_TPL]?: Element;
   [HEAD_TPL]?: Element;
+  [OVERLAY_TPL]?: Element[];
+}
+
+/**
+ * 行模板 vs 装饰层。
+ *
+ * ⚠ 2026-08-31 会聚通 p1 时段矩阵：
+ *
+ *     <div data-rows="meeting_room">
+ *       <div class="absolute … pointer-events-none">当前时间线</div>  ← 装饰
+ *       <div class="h-14">… <span data-field="name">启明星</span></div>
+ *
+ * 旧挑选是 ``tr || firstElementChild``。时间线是第一个子元素，于是被缓存成
+ * ROW_TPL，``innerHTML=""`` 之后按实体数克隆 N 条红线，真正的房间行被擦掉。
+ * 页脚 ``data-value count`` 填成 6，看起来像「画了 6 间」，用户看见的是
+ * 一块白 + 一条红线。
+ *
+ * 对照 FullCalendar 的 now-indicator：刻度一层、资源行一层、now-line 是
+ * 独立覆盖层，不是行模板。petite-vue 的 v-for 也是重复带绑定的那一个节点。
+ */
+function hasBindHole(el: Element): boolean {
+  return (
+    el.hasAttribute("data-field") ||
+    el.hasAttribute("data-cell") ||
+    !!el.querySelector("[data-field],[data-cell]")
+  );
+}
+
+function isOverlayChild(el: Element): boolean {
+  if (hasBindHole(el)) return false;
+  const cls = el.getAttribute("class") || "";
+  return /\babsolute\b/.test(cls) || /\bpointer-events-none\b/.test(cls);
+}
+
+function pickRowTemplate(box: Element): Element | null {
+  const directTr = box.querySelector(":scope > tr");
+  if (directTr) return directTr;
+  const kids = Array.from(box.children);
+  const withHole = kids.find(hasBindHole);
+  if (withHole) return withHole;
+  const nonOverlay = kids.find((el) => !isOverlayChild(el));
+  if (nonOverlay) return nonOverlay;
+  return kids[0] || null;
+}
+
+function pickOverlayChildren(box: Element, rowTpl: Element): Element[] {
+  return Array.from(box.children).filter((el) => el !== rowTpl && isOverlayChild(el));
 }
 
 /** 排序：只按字段值比大小，认不出就保持原序（不排比乱排好）。 */
@@ -420,13 +468,16 @@ export function applyBindings(
     const cache = box as unknown as TemplateCache;
     let rowTpl = cache[ROW_TPL];
     if (!rowTpl) {
-      const first = box.querySelector("tr") || box.firstElementChild;
+      const first = pickRowTemplate(box);
       if (!first) {
         problems.push(`data-rows="${entityId}"：容器里没有行模板`);
         return;
       }
       cache[ROW_TPL] = first.cloneNode(true) as Element;
       rowTpl = cache[ROW_TPL];
+      cache[OVERLAY_TPL] = pickOverlayChildren(box, first).map(
+        (el) => el.cloneNode(true) as Element
+      );
     }
 
     let rows = sortRows(
@@ -468,6 +519,12 @@ export function applyBindings(
         el.setAttribute("data-row-id", rid == null ? "" : String(rid));
       });
       box.appendChild(tr);
+    });
+    // 装饰层（当前时间线）在行之后重新挂上。absolute 相对 data-rows
+    // 这个 relative 容器，top/bottom:0 才能跨过克隆出来的 N 行。
+    // 对照 FullCalendar now-indicator：覆盖层不是行模板。
+    (cache[OVERLAY_TPL] || []).forEach((ov) => {
+      box.appendChild(ov.cloneNode(true));
     });
     filled.rows += rows.length;
   });

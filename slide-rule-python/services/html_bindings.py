@@ -27,7 +27,9 @@
 那份草案把三种载体收成一套词汇，HTML 这一列就是下面这些。不自创：
 
     <tbody data-rows="vehicle" data-sort="created_at" data-order="desc" data-limit="8">
-        逐行容器，第一个子元素是一行的模板
+        逐行容器，带 data-field / data-cell 的子元素是一行的模板。
+        当前时间线、absolute 装饰不是模板（2026-08-31 会聚通：把 now-line
+        放成第一个子元素，运行时按实体数克隆红线、房间行被擦掉）。
     <td data-field="plate">                     取当前行的某个字段
     <span data-value="vehicle" data-aggregate="count">   单值（聚合）
     <div data-chart="donut" data-entity="vehicle" data-dimension="status" data-metric="count">
@@ -274,6 +276,9 @@ data-* 属性**，把写死的示例数据换成绑定孔。
 
     <tbody data-rows="<实体id>" data-sort="<字段id>" data-order="desc" data-limit="8">
         **列表**：逐行容器。里面**只留一行**当模板，其余示例行删掉。
+        ⚠ 那一行必须带着 data-field / data-cell。当前时间线、absolute
+        定位装饰、pointer-events-none 遮罩都不是行模板——留在容器里当
+        兄弟，不要放成第一个子元素，也不要当成「只留一行」里的那一行。
     <div data-record="<实体id>">
         **单条**：详情卡、主从视图的右侧面板、编辑表单、"当前选中那条"的
         摘要区——这些地方**不要循环**，用它开一个作用域就行。
