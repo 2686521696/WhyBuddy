@@ -362,39 +362,76 @@ describe("空格平移要让开能打字的地方", () => {
 });
 
 describe("刀 2：块条带要的额外列间距", () => {
-  const pages = [{ pageId: "p1" }, { pageId: "p2" }, { pageId: "p3" }, { pageId: "p4" }];
+  // ⚠ 不要叫 pages：外层已经有 pages(n) 工厂，盖掉之后
+  // 「五页从 3 列收到 2 列」那条 `pages(5)` 会变成 TypeError，判据根本跑不到。
+  const fourPages = [
+    { pageId: "p1" },
+    { pageId: "p2" },
+    { pageId: "p3" },
+    { pageId: "p4" },
+  ];
   const design = { w: 1920, h: 1080 };
 
-  it("传了 extraGapX，列间距变宽而列数不变", () => {
-    // ⚠ 列数不许跟着变：列数是按容器长宽比配过的，跟着条带一起变会让
-    //   开关块条带时整个排版跳一次。
-    const a = layoutArtboards(pages, design, 1.6);
-    const b = layoutArtboards(pages, design, 1.6, 592);
+  it("小幅 extraGapX 只加列间距，列数不必跳", () => {
+    // 592 还没把外接盒拉到换列的那一档。列数变了也没关系，但间距必须加上。
+    const a = layoutArtboards(fourPages, design, 1.6);
+    const b = layoutArtboards(fourPages, design, 1.6, 592);
     const colsA = new Set(a.map(x => x.x)).size;
     const colsB = new Set(b.map(x => x.x)).size;
     expect(colsB).toBe(colsA);
     const stepA = [...new Set(a.map(x => x.x))].sort((m, n) => m - n);
     const stepB = [...new Set(b.map(x => x.x))].sort((m, n) => m - n);
-    if (stepA.length > 1) {
+    if (stepA.length > 1 && colsA === colsB) {
       expect(stepB[1] - stepB[0]).toBe(stepA[1] - stepA[0] + 592);
     }
   });
 
+  it("⚠ 真机开块：条带宽度参与选列，五页从 3 列收到 2 列，contain 更大", () => {
+    /**
+     * 2026-08-31 会议室预约画布：1680×900 舞台、5 页桌面稿、块条约 1572 宽。
+     * 列数不参与 extraGapX 时仍选 3 列，fitView ~16%，块叠在下一页上。
+     * 变异：boardColumns / layoutArtboards 不把 extra 传进 gridAspect，这条红。
+     */
+    const extra = 1572;
+    const vp = { width: 1680, height: 900 };
+    const aspect = vp.width / vp.height;
+    expect(boardColumns(5, DESKTOP, aspect, 0)).toBe(3);
+    expect(boardColumns(5, DESKTOP, aspect, extra)).toBe(2);
+
+    const aware = layoutArtboards(pages(5), DESKTOP, aspect, extra);
+    expect(new Set(aware.map(b => b.x)).size).toBe(2);
+
+    const compact3 = layoutArtboards(pages(5), DESKTOP, aspect, 0);
+    const step = DESKTOP.w + BOARD_GAP.desktop.x;
+    const unaware = compact3.map(b => {
+      const col = Math.round(b.x / step);
+      return { ...b, x: col * (step + extra) };
+    });
+    const scaleOf = (boxes: typeof aware) => {
+      const b = boardsBounds(boxes);
+      const usableW = vp.width * (1 - 0.14 * 2);
+      const usableH = vp.height * (1 - 0.14 * 2);
+      return Math.min(usableW / (b.w + extra), usableH / b.h);
+    };
+    expect(scaleOf(aware)).toBeGreaterThan(scaleOf(unaware));
+    expect(scaleOf(aware) / scaleOf(unaware)).toBeGreaterThan(1.2);
+  });
+
   it("反向：不传就跟原来逐字节一样（默认 0，不许悄悄改既有排版）", () => {
-    expect(layoutArtboards(pages, design, 1.6)).toEqual(
-      layoutArtboards(pages, design, 1.6, 0)
+    expect(layoutArtboards(fourPages, design, 1.6)).toEqual(
+      layoutArtboards(fourPages, design, 1.6, 0)
     );
   });
 
   it("行间距不受影响（条带是横向的）", () => {
-    const a = layoutArtboards(pages, design, 1.6);
-    const b = layoutArtboards(pages, design, 1.6, 592);
+    const a = layoutArtboards(fourPages, design, 1.6);
+    const b = layoutArtboards(fourPages, design, 1.6, 592);
     expect(b.map(x => x.y)).toEqual(a.map(x => x.y));
   });
 
   it("负数当 0（别把画板叠到一起）", () => {
-    expect(layoutArtboards(pages, design, 1.6, -500)).toEqual(
-      layoutArtboards(pages, design, 1.6, 0)
+    expect(layoutArtboards(fourPages, design, 1.6, -500)).toEqual(
+      layoutArtboards(fourPages, design, 1.6, 0)
     );
   });
 });

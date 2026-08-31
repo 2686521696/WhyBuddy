@@ -67,17 +67,28 @@ export const LABEL_BAND = 96;
 
 /**
  * 一组画板按 cols 列排开之后，外接盒的长宽比（含标题条与留白）。
+ *
+ * `extraGapX` 是刀 2 块条带占的宽度。条带在**每张画板右侧**，所以：
+ *   · 列与列之间多留 extra
+ *   · 最右一列的条带还要再伸出 extra（不算进去的话选列数会当图比实际更窄）
+ *
+ * ⚠ 2026-08-31 真机：会议室预约 5 页开块之后 fitView 16%。列数仍按
+ *   「没条带」选成 3 列，条带叠在下一页上，整张图又宽又挤、上下空一截。
+ *   extra 必须参与长宽比，开块后才能收到 2 列。
  */
 export function gridAspect(
   count: number,
   cols: number,
   design: { w: number; h: number },
-  gap: { x: number; y: number }
+  gap: { x: number; y: number },
+  extraGapX = 0
 ): number {
   const c = Math.max(1, Math.min(cols, Math.max(1, count)));
   const rows = Math.ceil(Math.max(1, count) / c);
   const usedCols = Math.min(c, Math.max(1, count));
-  const w = usedCols * design.w + (usedCols - 1) * gap.x;
+  const extra = Math.max(0, extraGapX);
+  const w =
+    usedCols * design.w + (usedCols - 1) * (gap.x + extra) + extra;
   const h = rows * design.h + (rows - 1) * gap.y + LABEL_BAND;
   return w / h;
 }
@@ -103,7 +114,8 @@ export function gridAspect(
 export function boardColumns(
   count: number,
   design: { w: number; h: number },
-  containerAspect?: number
+  containerAspect?: number,
+  extraGapX = 0
 ): number {
   const n = Math.max(1, count);
   const gap = design.w >= design.h ? BOARD_GAP.desktop : BOARD_GAP.phone;
@@ -116,7 +128,9 @@ export function boardColumns(
     // 比长宽比要在**对数尺度**上比：线性差会偏袒"比容器更宽"的那一侧
     // （2.5 与 1.0 对 1.5 的线性距离是 1.0 vs 0.5，但视觉上一样偏）。
     const err = Math.abs(
-      Math.log(gridAspect(n, cols, design, gap) / containerAspect)
+      Math.log(
+        gridAspect(n, cols, design, gap, extraGapX) / containerAspect
+      )
     );
     if (err < bestErr - 1e-9) {
       bestErr = err;
@@ -140,16 +154,19 @@ export function layoutArtboards(
   /**
    * 每列额外多留的横向间距（刀 2 的块条带占的宽度）。
    *
-   * ⚠ 只加在**列间距**上，不改列数：列数是按容器长宽比配过的
-   *   （见 boardColumns），跟着条带一起变会让开关块条带时整个排版跳一次。
+   * ⚠ 必须传进 boardColumns：条带把图拉宽之后，还按「没条带」选 3 列，
+   *   真机（2026-08-31 会议室预约）fitView 16%，块叠在下一页上。
+   *   开关块会重适应画布（SpecPageCanvasStage 里 fitView），列数跟着
+   *   变不是故障——变完才能摊匀。
    * ⚠ 不留的话条带会盖住右边那列画板——而缩到 13% 的全景下这只是
    *   "看着有点挤"，不报错、不告警。
    */
   extraGapX = 0
 ): ArtboardBox[] {
-  const cols = boardColumns(pages.length, design, containerAspect);
+  const extra = Math.max(0, extraGapX);
+  const cols = boardColumns(pages.length, design, containerAspect, extra);
   const gap = design.w >= design.h ? BOARD_GAP.desktop : BOARD_GAP.phone;
-  const stepX = design.w + gap.x + Math.max(0, extraGapX);
+  const stepX = design.w + gap.x + extra;
   return pages.map((p, i) => {
     const col = i % cols;
     const row = Math.floor(i / cols);
