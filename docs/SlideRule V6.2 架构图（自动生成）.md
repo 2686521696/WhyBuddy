@@ -14,8 +14,8 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **277** 个，模块 **277** 个
-- 内部依赖边 **818** 条，其中 **467** 条写在函数体里（57%）
+- 扫描文件 **279** 个，模块 **279** 个
+- 内部依赖边 **827** 条，其中 **475** 条写在函数体里（57%）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
@@ -25,9 +25,9 @@
 
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
-| `util` | 119 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `util` | 120 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
 | `core` | 58 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
-| `flow` | 28 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
+| `flow` | 29 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
 叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import 的全部理由，也是 `import` 不必躲进函数体的前提。
 
@@ -41,7 +41,7 @@ flowchart TB
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>13 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>205 个模块<br/>业务"]
+  services["services<br/>207 个模块<br/>业务"]
   routes["routes<br/>12 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -110,7 +110,7 @@ flowchart LR
   persist["persist<br/>2"]
   platform["platform<br/>19"]
   run_control["run_control<br/>4"]
-  spec_first["spec_first<br/>34"]
+  spec_first["spec_first<br/>36"]
   task_exec["task_exec<br/>19"]
   web_aigc["web_aigc<br/>16"]
   agent_loop -->|1| identity
@@ -169,9 +169,9 @@ flowchart LR
   model_core -->|18| llm_gateway
   model_core -->|6| observability
   model_core -->|2| persist
-  model_core -->|50| platform
+  model_core -->|51| platform
   model_core -->|11| run_control
-  model_core -->|15| spec_first
+  model_core -->|16| spec_first
   observability -->|2| llm_gateway
   observability -->|1| persist
   observability -->|3| platform
@@ -190,7 +190,7 @@ flowchart LR
   spec_first -->|3| app_store
   spec_first -->|35| llm_gateway
   spec_first -->|3| observability
-  spec_first -->|42| platform
+  spec_first -->|43| platform
   spec_first -->|1| run_control
   task_exec -->|2| evidence
   task_exec -->|4| platform

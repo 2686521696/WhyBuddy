@@ -314,6 +314,34 @@ def wired_archetype_choices() -> List[Dict[str, str]]:
     return [{"id": name, "label": label(name)} for name in wired_archetypes()]
 
 
+def policy_pack(name: str | None = None, device: str | None = None) -> Dict[str, Any]:
+    """原型×设备的政策包。形状抄 SKILL.md frontmatter（name / description /
+    whenToUse / allowedTools），不是 TRAE `skill_runtime`。
+
+    读 `_spec_raw`：未接通的原型也可以亮出政策，但选中仍走
+    `ArchetypeNotWired`。缺字段返回空清单，调用方（flow）再归一成默认五件套。
+    """
+    spec = _spec_raw(name or DEFAULT_ARCHETYPE)
+    policy = dict(spec.get("policy") or {})
+    overlay = dict((policy.get("devices") or {}).get(str(device or "").strip()) or {})
+    tools = overlay.get("allowedTools") or policy.get("allowedTools") or []
+    out: Dict[str, Any] = {
+        "name": str(policy.get("name") or (name or DEFAULT_ARCHETYPE)),
+        "description": str(policy.get("description") or ""),
+        "whenToUse": str(policy.get("whenToUse") or ""),
+        "allowedTools": [str(item).strip() for item in tools if str(item).strip()],
+    }
+    density = overlay.get("density") or policy.get("density")
+    if density:
+        out["density"] = str(density)
+    return out
+
+
+def allowed_tools(name: str | None = None, device: str | None = None) -> Tuple[str, ...]:
+    """这个原型×设备默认跑哪几件公开工具。空清单不是「什么都不跑」。"""
+    return tuple(policy_pack(name, device).get("allowedTools") or ())
+
+
 def device_generation_bullets() -> str:
     """生成契约 Step 8b 的英文姿态条目，从账本 postureEn 生成。"""
     lines = []

@@ -16,6 +16,9 @@ from control_turn_support import PY_ROOT, strip_python
 ROUTES = PY_ROOT / "routes" / "sliderule_full.py"
 DRIVER = PY_ROOT / "services" / "v5_full_driver.py"
 CONTROL = PY_ROOT / "services" / "rehearsal_control.py"
+POLICY = PY_ROOT / "services" / "archetype_legal.py"
+PLAN = PY_ROOT / "services" / "capability_plan.py"
+WORKFLOW = PY_ROOT / "services" / "workflow_registry.py"
 
 DEAD_ADAPTER_IMPORTS = (
     "services.mcp_runtime",
@@ -99,7 +102,7 @@ def test_mcp_and_skill_runtime_not_imported_by_streaming_driver_or_control():
     或在 v5_full_driver 加 `from .skill_runtime import …` → 这条红。
     不匹配 v5_skill_runtime_graph（那是活的技能图投影，不是本适配器）。
     """
-    for path in (DRIVER, CONTROL):
+    for path in (DRIVER, CONTROL, POLICY, PLAN, WORKFLOW):
         imported = _imported_modules(path)
         for name in DEAD_ADAPTER_IMPORTS:
             assert name not in imported, (

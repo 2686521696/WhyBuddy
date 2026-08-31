@@ -134,6 +134,45 @@ class Test执行器接线:
         self._run(monkeypatch, captured)
         assert captured["refine"] is None
 
+    def test_没有state全局时_run_spec_first仍被叫到(self, monkeypatch):
+        """2026-08-31 真机（固定资产领用）：`_invoke_spec_first` 写了
+        `state.goal`，而 `_try_llm_generate_evidence` 没有 `state` 形参。
+        NameError 被宽 except 吃成「spec-first 失败，不回落老链路」，
+        `run_spec_first` 一次都没进，五系统全空。把那行改回去，这条必须红。"""
+        captured: dict = {}
+        self._run(monkeypatch, captured)
+        assert "goal" in captured, (
+            "run_spec_first 没被叫到——又在吞 NameError"
+            "（真机日志：name 'state' is not defined）"
+        )
+
+    def test_tools与原型从形参传到spec_first(self, monkeypatch):
+        from services import v5_capability_executor as ex
+
+        captured: dict = {}
+
+        def fake_run(goal, **kw):
+            captured["tools"] = kw.get("tools")
+            captured["product_archetype"] = kw.get("product_archetype")
+            raise RuntimeError("捕获即止")
+
+        monkeypatch.setattr("services.spec_first_pipeline.run_spec_first", fake_run)
+        monkeypatch.setattr(
+            "services.v5_llm_generate.generate_five_system_model",
+            lambda *a, **k: None,
+        )
+        monkeypatch.setenv("SLIDERULE_SPEC_FIRST", "1")
+        ex._try_llm_generate_evidence(
+            "原始话题",
+            None,
+            tools=["spec", "pages"],
+            product_archetype="business_app",
+        )
+        assert captured.get("tools") == ["spec", "pages"], (
+            "tools 没传到 run_spec_first——计划减工具在生成侧又是空插座"
+        )
+        assert captured.get("product_archetype") == "business_app"
+
     def test_模型直供在场时_spec_first让路(self, monkeypatch):
         """版本回退/fork 直供：快照是权威。spec-first 不让路的话，
         「回退到 v2」被静默变成「按原话重抽一次」。"""

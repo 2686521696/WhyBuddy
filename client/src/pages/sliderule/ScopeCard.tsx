@@ -30,9 +30,11 @@ import {
 } from "./product-archetypes";
 import {
   SCOPE_CARD_CONFIRM_LABEL,
+  SCOPE_CARD_PUBLIC_TOOLS,
   SCOPE_CARD_REVISE_LABEL,
   SCOPE_CARD_TIME_COPY,
-  scopeCardSteps,
+  normalizeScopeTools,
+  scopeCardStepsFromTools,
   type ScopeCardChoice,
   type ScopeCardPending,
 } from "./scope-card-gate";
@@ -67,7 +69,6 @@ export function ScopeCard({
   /** 本轮 isRunning 时禁止确认：stop 已松画面闸，isRunningRef 仍真。 */
   confirmDisabled?: boolean;
 }) {
-  const steps = scopeCardSteps(false);
   const thin = pending.variant === "thin";
   const [reuseNext, setReuseNext] = useState(() => initialReuseNext(pending));
   const [charter, setCharter] = useState<ProductCharter>(loadProductCharter);
@@ -83,7 +84,22 @@ export function ScopeCard({
     () => pending.productArchetype || defaultArchetype()
   );
   const [device, setDevice] = useState(() => pending.device || "unspecified");
-  const choice: ScopeCardChoice = { device, productArchetype };
+  const [tools, setTools] = useState<string[]>(() =>
+    normalizeScopeTools(pending.tools)
+  );
+  const steps = scopeCardStepsFromTools(tools);
+  const choice: ScopeCardChoice = { device, productArchetype, tools };
+
+  const toggleTool = (id: string) => {
+    setTools(prev => {
+      const on = prev.includes(id);
+      if (on && prev.length === 1) return prev;
+      const next = new Set(prev);
+      if (on) next.delete(id);
+      else next.add(id);
+      return normalizeScopeTools([...next]);
+    });
+  };
 
   const patchCharter = (key: keyof ProductCharter, value: string) => {
     const next = { ...charter, [key]: value };
@@ -159,6 +175,26 @@ export function ScopeCard({
                     className={chipClass(on)}
                   >
                     {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="mt-1.5" data-testid="sliderule-scope-tools">
+            <p className="text-[12px] leading-4 text-[#3f3f46]">本轮能力</p>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {SCOPE_CARD_PUBLIC_TOOLS.map(row => {
+                const on = tools.includes(row.id);
+                return (
+                  <button
+                    key={row.id}
+                    type="button"
+                    data-testid={`sliderule-scope-tool-${row.id}`}
+                    aria-pressed={on}
+                    onClick={() => toggleTool(row.id)}
+                    className={chipClass(on)}
+                  >
+                    {row.label}
                   </button>
                 );
               })}

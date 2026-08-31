@@ -135,7 +135,7 @@ def _run(monkeypatch, *, refine=None, reuse_pages=None, reuse_model=None):
         },
     )
     monkeypatch.setattr(ps, "check_shell_consistency", lambda p, s: [])
-    monkeypatch.setattr(ps, "repair_pages_after_bind", lambda p, b: (dict(p), [], []))
+    monkeypatch.setattr(ps, "repair_pages_after_bind", lambda p, b, **kw: (dict(p), [], []))
     monkeypatch.setattr(hs, "derive_structure", lambda p, **kw: dict(STRUCTURE))
     monkeypatch.setattr(ss, "derive_semantics", lambda st, sp, **kw: {"roles": []})
     monkeypatch.setattr(

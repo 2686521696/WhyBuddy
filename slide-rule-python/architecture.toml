@@ -117,6 +117,7 @@ modules = [
   "services.archetype_legal",
   "services.sql_gateway",
   "services.stage_legal",
+  "services.capability_plan",
   "services.turn_context",
   "services.page_naming",
   "services.a2a_core_route_cutover",
@@ -333,6 +334,7 @@ modules = [
   "services.slide_rule_marathon",
   "services.slide_rule_session",
   "services.spec_first_pipeline",
+  "services.workflow_registry",
   "services.spec_tree",
   "services.v5_capability_executor",
   "services.v5_full_driver",
@@ -712,6 +714,7 @@ modules = [
   "services.block_assembler",
   "services.block_narrowing",
   "services.block_proposer",
+  "services.capability_plan",
   "services.design_language",
   "services.freeform_block",
   "services.freeform_preview_store",
@@ -734,6 +737,7 @@ modules = [
   "services.refine_short_circuit",
   "services.sheet_palette",
   "services.spec_first_pipeline",
+  "services.workflow_registry",
   "services.spec_page_html",
   "services.spec_semantics",
   "services.spec_tree",
@@ -847,9 +851,9 @@ patterns = [
 #
 #   unwired               ⚠ **这批才是该问的**：Python 自己拥有运行时（模块头
 #                         明写 Python-owned + 真实现，不是契约壳），却没有任何
-#                         接线，也不是跨语言入口。只有 3 个，见下。
-#                         每一个都要回答"这块运行时到底该不该被 wire 起来"——
-#                         那是产品判断，不是架构活，所以这里只记账不处理。
+#                         接线，也不是跨语言入口。每一个都要回答"这块运行时
+#                         到底该不该被 wire 起来"——那是产品判断，不是架构活，
+#                         所以这里只记账不处理。
 #
 # ⚠ 判据（Test孤儿都要有归类）钉两头：孤儿必须有归类（正），
 #   归类不许指向已经不是孤儿的模块（反）。只钉一头，名单会慢慢变成一份过期的历史。

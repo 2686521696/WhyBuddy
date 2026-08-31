@@ -251,7 +251,7 @@ class Test接线_三步都要传:
         )
         monkeypatch.setattr(ps, "unify_shell", lambda p, s, **kw: {"pages": dict(p)})
         monkeypatch.setattr(ps, "check_shell_consistency", lambda p, s: [])
-        monkeypatch.setattr(ps, "repair_pages_after_bind", lambda p, b: (dict(p), [], []))
+        monkeypatch.setattr(ps, "repair_pages_after_bind", lambda p, b, **kw: (dict(p), [], []))
 
         def fake_structure(pages, **kw):
             seen["structure_prev_ids"] = kw.get("prev_ids")
@@ -366,7 +366,7 @@ class Test结构拨回_过夜形状:
         monkeypatch.setattr(sph, "generate_pages_parallel", fake_pages)
         monkeypatch.setattr(ps, "unify_shell", lambda p, s, **kw: {"pages": dict(p)})
         monkeypatch.setattr(ps, "check_shell_consistency", lambda p, s: [])
-        monkeypatch.setattr(ps, "repair_pages_after_bind", lambda p, b: (dict(p), [], []))
+        monkeypatch.setattr(ps, "repair_pages_after_bind", lambda p, b, **kw: (dict(p), [], []))
         monkeypatch.setattr(hs, "derive_structure", lambda p, **kw: {"entities": [], "pages": []})
         monkeypatch.setattr(ss, "derive_semantics", lambda st, sp, **kw: {"roles": []})
         monkeypatch.setattr(

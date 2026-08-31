@@ -42,6 +42,8 @@ export type ScopeCardVariant = "full" | "thin";
 export type ScopeCardChoice = {
   device: string;
   productArchetype: string;
+  /** 规划器勾选。缺省 = 五件套全开。 */
+  tools?: string[];
 };
 
 export type ScopeCardPending = {
@@ -52,6 +54,7 @@ export type ScopeCardPending = {
   productArchetype?: string;
   wiredArchetypes?: Array<{ id: string; label: string }>;
   wiredDevices?: Array<{ id: string; label: string }>;
+  tools?: string[];
   intervention?: RehearsalIntervention;
   mode?: "repair";
   /** 账户/会话「下一场沿用」。localStorage 未写时用来 hydrate 勾选。 */
@@ -64,17 +67,39 @@ export const SCOPE_CARD_TIME_COPY = "大约数分钟，第一页会先出现";
 /** 取证是 opt-in；默认不亮这一步，免得钟从空心第 1 格起跳。 */
 export const SCOPE_CARD_EVIDENCE_STEP = "澄清与取证";
 
-/** 默认 rehearse 从「起草 SPEC」起（M8）。 */
-export const SCOPE_CARD_STEPS_FROM_SPEC = [
-  "起草 SPEC",
-  "页面生成",
-  "数据结构",
-  "权限工作流",
-  "完整性检查",
+/** 公开五件套。人话跟今天范围卡「将跑」逐字相同。 */
+export const SCOPE_CARD_PUBLIC_TOOLS = [
+  { id: "spec", label: "起草 SPEC" },
+  { id: "pages", label: "页面生成" },
+  { id: "structure", label: "数据结构" },
+  { id: "bind", label: "权限工作流" },
+  { id: "closure", label: "完整性检查" },
 ] as const;
+
+/** 默认 rehearse 从「起草 SPEC」起（M8）。 */
+export const SCOPE_CARD_STEPS_FROM_SPEC = SCOPE_CARD_PUBLIC_TOOLS.map(
+  row => row.label
+);
 
 export const SCOPE_CARD_CONFIRM_LABEL = "开始推演";
 export const SCOPE_CARD_REVISE_LABEL = "先改范围";
+
+export function normalizeScopeTools(raw?: string[] | null): string[] {
+  const wanted = new Set((raw || []).map(item => String(item).trim()));
+  const chosen = SCOPE_CARD_PUBLIC_TOOLS.map(row => row.id).filter(id =>
+    wanted.has(id)
+  );
+  return chosen.length > 0
+    ? chosen
+    : SCOPE_CARD_PUBLIC_TOOLS.map(row => row.id);
+}
+
+export function scopeCardStepsFromTools(tools?: string[] | null): string[] {
+  const chosen = new Set(normalizeScopeTools(tools));
+  return SCOPE_CARD_PUBLIC_TOOLS.filter(row => chosen.has(row.id)).map(
+    row => row.label
+  );
+}
 
 export function scopeCardSteps(includeEvidence: boolean): string[] {
   return includeEvidence
@@ -121,6 +146,7 @@ export function hydrateParkedScope(state: {
     text?: string;
     preferredDevice?: string;
     productArchetype?: string;
+    tools?: string[];
   } | null;
   controlTranscript?: Array<{
     kind?: string;
@@ -128,6 +154,7 @@ export function hydrateParkedScope(state: {
     productArchetype?: string;
     variant?: string;
     text?: string;
+    tools?: string[];
   } | null>;
 }): ScopeCardPending {
   const lastCard = [...(state.controlTranscript ?? [])]
@@ -158,6 +185,11 @@ export function hydrateParkedScope(state: {
       wiredArch(lastCard?.productArchetype) ??
       wiredArch(state.goal?.productArchetype) ??
       defaultArchetype(),
+    tools: normalizeScopeTools(
+      lastCard?.tools && lastCard.tools.length > 0
+        ? lastCard.tools
+        : state.goal?.tools
+    ),
     wiredArchetypes: wiredArchetypes(),
     wiredDevices: wiredDevices(),
   };

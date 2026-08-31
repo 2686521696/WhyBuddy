@@ -160,6 +160,43 @@ class Test未接通的原型不许假装能用:
         assert A.DEFAULT_ARCHETYPE in A.wired_archetypes()
 
 
+class Test政策包不是TRAE:
+    """政策包抄 SKILL.md frontmatter，挂在现有账本上。禁止接 skill_runtime。"""
+
+    def test_默认原型政策包是公开五件套(self):
+        pack = A.policy_pack()
+        assert pack["name"] == "business-app"
+        assert pack["allowedTools"] == ["spec", "pages", "structure", "bind", "closure"]
+        assert pack["whenToUse"]
+        assert A.allowed_tools("business_app", "desktop") == tuple(pack["allowedTools"])
+        assert A.allowed_tools("business_app", "phone") == tuple(pack["allowedTools"])
+
+    def test_未接通原型也能亮出政策但选中仍失败(self):
+        game = A.policy_pack("casual_game")
+        glance = A.policy_pack("glance_app")
+        assert game["allowedTools"] == ["spec", "pages", "closure"]
+        assert glance["allowedTools"] == ["spec", "pages", "closure"]
+        with pytest.raises(A.ArchetypeNotWired):
+            A.required_evidence("casual_game")
+        with pytest.raises(A.ArchetypeNotWired):
+            A.required_evidence("glance_app")
+
+    def test_政策包加载器不许进口skill_runtime(self):
+        import ast
+
+        src = (ROOT / "services" / "archetype_legal.py").read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.add(node.module)
+        assert "services.skill_runtime" not in imported
+        assert "skill_runtime" not in imported
+        assert "from .skill_runtime" not in src
+
+
 class Test账本自身自洽:
     def test_每个原型都要有装配根(self):
         """appbundle 是装配根：任何原型最终都要能装出一个可跑的东西。

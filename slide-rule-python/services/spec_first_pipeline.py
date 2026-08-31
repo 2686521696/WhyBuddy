@@ -70,7 +70,7 @@ from .archetype_legal import supported_devices as _supported_devices
 import os
 import sys
 from contextvars import ContextVar
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from . import env_flags as _env_flags
 
@@ -1225,6 +1225,8 @@ def run_spec_first(
     reuse_model: Optional[Dict[str, Any]] = None,
     reuse_pages: Optional[Dict[str, str]] = None,
     preferred_device: Optional[str] = None,
+    product_archetype: Optional[str] = None,
+    tools: Optional[Iterable[str]] = None,
     on_page: Optional[Callable[[str, str, int, int], None]] = None,
 ) -> Dict[str, Any]:
     """一句话 → 完整五系统模型 + 带 data-* 孔的多页 HTML。
@@ -1293,6 +1295,8 @@ def run_spec_first(
         repair_pages_after_bind,
         unify_shell,
     )
+    from .capability_plan import CapabilityPlan
+    from .workflow_registry import select_workflow
     from .spec_page_html import generate_pages_parallel
     from .spec_semantics import derive_semantics, to_model_sections  # noqa: F401
     from .app_template import all_app_templates, match_app_template
@@ -1321,8 +1325,34 @@ def run_spec_first(
         device = preferred_device
     else:
         device = resolve_preferred_device(goal, None)
-    print(f"[spec_first_pipeline] preferredDevice={device}")
+    # 日历从范围卡上的 原型×设备 + 规划器 tools 派生。话题词不在这里分流。
+    # 不经过 select_workflow = 注册表又成没通电的插座。
+    preset = select_workflow(
+        archetype=product_archetype or "",
+        device=device,
+        refine=bool(refine),
+        tools=tools,
+    )
+    plan = CapabilityPlan(
+        name=preset.name,
+        ids=preset.stages,
+        device=device,
+        tools=preset.tools,
+    )
+    stages["capabilityPlan"] = {
+        "name": plan.name,
+        "tools": list(plan.tools),
+        "capabilities": list(plan.ids),
+        "device": plan.device,
+    }
+    print(f"[spec_first_pipeline] preferredDevice={device} capabilityPlan={plan.name}")
     sink = _with_device(on_page or _page_sink_var.get(), device)
+    pages: Dict[str, str] = {}
+    failed: Dict[str, Any] = {}
+    missing_pages: list = []
+    shell: Dict[str, Any] = {}
+    structure: Any = {}
+    _theme_lang = None
 
     # ★ id 冻结（2026-08-17）：把上一版的「概念名 → id」词表算出来，第 4/5 步
     #   各拿一份。**只在精修轮**——新建应用没有上一版，给它一批无关 id 只会
@@ -1382,7 +1412,7 @@ def run_spec_first(
     _graph_drive_on = str(
         os.environ.get("SLIDERULE_GRAPH_SCOPE_DRIVE", "1")
     ).strip().lower() not in _env_flags.OFF
-    if refine and reuse_model and _shadow_on:
+    if refine and reuse_model and _shadow_on and plan.includes("specfirst.graphscope"):
         raise_if_cancelled("第2.85步 图判作用域")
         with _stage("specfirst.graphscope") as gst:
             _graph = _apply_graph_scope(
@@ -1406,7 +1436,8 @@ def run_spec_first(
     # （第 1 步「澄清 + 缺口 + 证据」用的是现有能力，由调用方把 evidence 传进来）
     spec: Optional[Dict[str, Any]] = None
     if (
-        refine
+        plan.includes("specfirst.spec")
+        and refine
         and page_only_shortcircuit_enabled()
         and _graph_took_over
         and is_page_only_verdict(_graph_verdict)
@@ -1439,7 +1470,7 @@ def run_spec_first(
                 "[spec_first_pipeline] ⚠ 规格沿用重建失败，回落整本起草"
             )
 
-    if not _held_spec:
+    if plan.includes("specfirst.spec") and not _held_spec:
         # 骨架先验（2026-08-27）：match_app_template 此前对工厂是死的。命中则
         # 把页清单 / 区块槽喂给 spec_tree，不是喂 GEN5。匹配失败或匹配器自己
         # 炸了都 fail-open——骨架是增强类结构建议，不是证据闸，不许拦推演。
@@ -1545,7 +1576,10 @@ def run_spec_first(
     _ds = active_design_system()
     if _ds:
         design_override = {**design_system_override(_ds), **(design_override or {})}
-    if (design_system or "").strip():
+    _do_design = plan.includes("specfirst.design")
+    if not _do_design:
+        pass
+    elif (design_system or "").strip():
         pass  # 人直接给了散文，最高优先，连生成带复用一起跳过
     elif reuse_style_brief and style_brief_ok(
         reuse_style_brief, [str(p.get("id")) for p in spec_pages_declared_objs]
@@ -1617,7 +1651,7 @@ def run_spec_first(
             "[spec_first_pipeline] ⚠ 精修轮但没拿到上一版页面，按需重画未生效，"
             "本轮全量重画（reuse_pages 空）"
         )
-    if refine and reuse_pages and not _graph_took_over:
+    if refine and reuse_pages and not _graph_took_over and plan.includes("specfirst.pagescope"):
         raise_if_cancelled("第2.8步 判重画范围")
         with _stage("specfirst.pagescope") as sst:
             from .refine_page_scope import decide_pages_to_regenerate
@@ -1638,166 +1672,179 @@ def run_spec_first(
     # 会把种子 LLM 付两遍钱，对照日志打两行，标定集作废。
 
     # ── 第 3 步：每页 HTML（并发；单页失败不拖垮整批）────────────────
-    raise_if_cancelled("第3步 逐页画界面")
-    with _stage("specfirst.pages") as st:
-        # on_page 透传：这一步是整条链上**第一个产出可以直接看的东西**的地方，
-        # 一份能独立打开的 HTML 比最终模型早四五分钟。攒齐再交等于白白转圈。
-        #
-        # 显式实参优先于 sink：脚本/评测直接调这个函数时不该被"当前请求恰好
-        # 装了个 sink"影响。生产路径（主轴）走 sink，因为中间那层是同步的。
-        st["reusedPages"] = len(_reuse_now)
-        # 库存图：screenshot-to-code / tteg 的口径——先画 placehold，落地后再
-        # 按每张 img 的 alt 搜。一袋 URL 注进提示词会让模型把番茄贴进充电桩卡。
-        _stock_cache: Dict[str, Optional[str]] = {}
+    if plan.includes("specfirst.pages"):
+        raise_if_cancelled("第3步 逐页画界面")
+    if plan.includes("specfirst.pages"):
+        with _stage("specfirst.pages") as st:
+            # on_page 透传：这一步是整条链上**第一个产出可以直接看的东西**的地方，
+            # 一份能独立打开的 HTML 比最终模型早四五分钟。攒齐再交等于白白转圈。
+            #
+            # 显式实参优先于 sink：脚本/评测直接调这个函数时不该被"当前请求恰好
+            # 装了个 sink"影响。生产路径（主轴）走 sink，因为中间那层是同步的。
+            st["reusedPages"] = len(_reuse_now)
+            # 库存图：screenshot-to-code / tteg 的口径——先画 placehold，落地后再
+            # 按每张 img 的 alt 搜。一袋 URL 注进提示词会让模型把番茄贴进充电桩卡。
+            _stock_cache: Dict[str, Optional[str]] = {}
 
-        def _fill_html(markup: str) -> str:
-            try:
-                from .stock_images import fill_stock_placeholders
+            def _fill_html(markup: str) -> str:
+                try:
+                    from .stock_images import fill_stock_placeholders
 
-                return fill_stock_placeholders(
-                    markup, spec=spec, goal=goal, cache=_stock_cache
-                )
-            except Exception as exc:  # noqa: BLE001 — 搜图是增强，不许拖画页
-                _safe_print(
-                    f"[spec_first_pipeline] ⚠ 库存图换图失败（不拦画页）：{str(exc)[:200]}"
-                )
-                return markup
+                    return fill_stock_placeholders(
+                        markup, spec=spec, goal=goal, cache=_stock_cache
+                    )
+                except Exception as exc:  # noqa: BLE001 — 搜图是增强，不许拖画页
+                    _safe_print(
+                        f"[spec_first_pipeline] ⚠ 库存图换图失败（不拦画页）：{str(exc)[:200]}"
+                    )
+                    return markup
 
-        def _sink_stock(
-            pid: str, markup: str, done: int, total: int, *args: Any, **kw: Any
-        ) -> None:
-            if pid not in _reuse_now:
-                markup = _fill_html(markup)
-            if sink:
-                sink(pid, markup, done, total, *args, **kw)
+            def _sink_stock(
+                pid: str, markup: str, done: int, total: int, *args: Any, **kw: Any
+            ) -> None:
+                if pid not in _reuse_now:
+                    markup = _fill_html(markup)
+                if sink:
+                    sink(pid, markup, done, total, *args, **kw)
 
-        batch = generate_pages_parallel(
-            spec, device=device, design_system=design_system,
-            product=goal, on_page=_sink_stock if sink else None, reuse_pages=_reuse_now,
-            # ★ "按需"的第二层：点到的那几页也尽量**只改那几行**，别整页重画。
-            #   edit_base 只在精修轮给，且只含上一版真有的页；新页没有基线，
-            #   自然走整页生成。
-            edit_base=(reuse_pages or {}) if refine else {},
-            edit_instruction=str((refine or {}).get("instruction") or "") if refine else "",
-        )
-        pages = dict(batch.get("pages") or {})
-        pages = {
-            pid: html if pid in _reuse_now else _fill_html(html)
-            for pid, html in pages.items()
-        }
-        failed = dict(batch.get("failed") or {})
-        st["got"] = len(pages)
-        st["failed"] = len(failed)
-        # ★ 交付页数对账（2026-08-14）：**SPEC 说要几页，就得交几页**。
-        #
-        # 第 4 步的 check_page_coverage 守的是「喂几份 HTML → 出几个页面」，
-        # 它比的是**这一步的输入**。而这一步自己少产一页时，第 4 步收到的
-        # 就是少了的那份，喂 4 出 4——**判据全绿，缺口在它上游**。
-        #
-        # 真机撞到过（2026-08-14 市政园林那轮）：spec 5 页、第 3 步 failed=1，
-        # 后面所有步骤按 4 页跑完，闭环 6/6、blocked=false，没有任何一处
-        # 提过"少了一页"。缺的那页记在 failedPages 里，但没人拿它跟 spec 对账。
-        #
-        # ⚠ 只记不拦：单页失败本来就是 fail-open 设计（另外几页已经烧掉几分钟，
-        #   不该被一页拖垮）。这里补的是**让它说得出话**，不是把它改成 fail-closed。
-        st["declaredPages"] = len(spec_pages_declared)
-        missing_pages = [pid for pid in spec_pages_declared if pid not in pages]
-        if missing_pages:
-            st["missingPages"] = ",".join(missing_pages)
-            # ⚠ 2026-08-20 Foclip 真机：这里曾是裸 print。Windows 控制台 GBK
-            #   编不出 ⚠（报错 position 13，正好是 `[spec_first] ⚠` 那个符），
-            #   UnicodeEncodeError 逃出第 3 步，被当成 LLM_GENERATE_FAILED，
-            #   规格和设计都写完了、六段模型整份丢掉，右栏空白、证据 0/6。
-            #   缺页本身是只记不拦；日志把自己写成 fail-closed 才是事故。
-            _safe_print(
-                f"[spec_first] ⚠ 交付页数对不上 SPEC：声明 {len(spec_pages_declared)} 页、"
-                f"实交 {len(pages)} 页，缺 {missing_pages}（失败原因见 failedPages）"
+            batch = generate_pages_parallel(
+                spec, device=device, design_system=design_system,
+                product=goal, on_page=_sink_stock if sink else None, reuse_pages=_reuse_now,
+                # ★ "按需"的第二层：点到的那几页也尽量**只改那几行**，别整页重画。
+                #   edit_base 只在精修轮给，且只含上一版真有的页；新页没有基线，
+                #   自然走整页生成。
+                edit_base=(reuse_pages or {}) if refine else {},
+                edit_instruction=str((refine or {}).get("instruction") or "") if refine else "",
             )
-    stages["pages"] = dict(st)
+            pages = dict(batch.get("pages") or {})
+            pages = {
+                pid: html if pid in _reuse_now else _fill_html(html)
+                for pid, html in pages.items()
+            }
+            failed = dict(batch.get("failed") or {})
+            st["got"] = len(pages)
+            st["failed"] = len(failed)
+            # ★ 交付页数对账（2026-08-14）：**SPEC 说要几页，就得交几页**。
+            #
+            # 第 4 步的 check_page_coverage 守的是「喂几份 HTML → 出几个页面」，
+            # 它比的是**这一步的输入**。而这一步自己少产一页时，第 4 步收到的
+            # 就是少了的那份，喂 4 出 4——**判据全绿，缺口在它上游**。
+            #
+            # 真机撞到过（2026-08-14 市政园林那轮）：spec 5 页、第 3 步 failed=1，
+            # 后面所有步骤按 4 页跑完，闭环 6/6、blocked=false，没有任何一处
+            # 提过"少了一页"。缺的那页记在 failedPages 里，但没人拿它跟 spec 对账。
+            #
+            # ⚠ 只记不拦：单页失败本来就是 fail-open 设计（另外几页已经烧掉几分钟，
+            #   不该被一页拖垮）。这里补的是**让它说得出话**，不是把它改成 fail-closed。
+            st["declaredPages"] = len(spec_pages_declared)
+            missing_pages = [pid for pid in spec_pages_declared if pid not in pages]
+            if missing_pages:
+                st["missingPages"] = ",".join(missing_pages)
+                # ⚠ 2026-08-20 Foclip 真机：这里曾是裸 print。Windows 控制台 GBK
+                #   编不出 ⚠（报错 position 13，正好是 `[spec_first] ⚠` 那个符），
+                #   UnicodeEncodeError 逃出第 3 步，被当成 LLM_GENERATE_FAILED，
+                #   规格和设计都写完了、六段模型整份丢掉，右栏空白、证据 0/6。
+                #   缺页本身是只记不拦；日志把自己写成 fail-closed 才是事故。
+                _safe_print(
+                    f"[spec_first] ⚠ 交付页数对不上 SPEC：声明 {len(spec_pages_declared)} 页、"
+                    f"实交 {len(pages)} 页，缺 {missing_pages}（失败原因见 failedPages）"
+                )
+        stages["pages"] = dict(st)
     if not pages:
         raise SpecFirstError(f"第 3 步一页都没出来：{list(failed.values())[:2]}")
 
     # ── 第 3.5 步：外壳统一（零 LLM）────────────────────────────────
-    raise_if_cancelled("第3.5步 外壳统一")
-    with _stage("specfirst.shell") as st:
-        shell = unify_shell(pages, spec, device=device)
-        pages = dict(shell.get("pages") or pages)
-        st["pages"] = len(pages)
-        # 判据接进生产（此前只在测试里跑）：统一完还剩几处不一致，如实记账。
-        # 只记不拦——挡运行的闸在结构那边，这里的职责是让漂移**看得见**。
-        # ★ 2026-08-20：壳统一之后立刻钉语义色。unify 只换 DOM 结构，
-        #   不换颜色——顶栏黑、侧栏海军蓝、浅页深砖，unify 全绿。
-        _theme_lang = None
-        try:
-            from .theme_tokens import apply_theme_to_pages, resolve_theme_language
-
-            _theme_lang = resolve_theme_language(
-                design_language, style_brief, design_system
-            )
-            pages = apply_theme_to_pages(pages, _theme_lang)
-            st["themePrimary"] = _theme_lang.get("primary")
-        except Exception as exc:  # noqa: BLE001 — 钉色是增强，不许拖画页
-            _safe_print(
-                f"[spec_first_pipeline] ⚠ 主题锁定失败（不拦画页）：{str(exc)[:200]}"
-            )
+    if plan.includes("specfirst.shell"):
+        raise_if_cancelled("第3.5步 外壳统一")
+        with _stage("specfirst.shell") as st:
+            shell = unify_shell(pages, spec, device=device)
+            pages = dict(shell.get("pages") or pages)
+            st["pages"] = len(pages)
+            # 判据接进生产（此前只在测试里跑）：统一完还剩几处不一致，如实记账。
+            # 只记不拦——挡运行的闸在结构那边，这里的职责是让漂移**看得见**。
+            # ★ 2026-08-20：壳统一之后立刻钉语义色。unify 只换 DOM 结构，
+            #   不换颜色——顶栏黑、侧栏海军蓝、浅页深砖，unify 全绿。
             _theme_lang = None
-        # ★ 2026-08-27：壳统一之后给正文打**块身份**（零 LLM，抄 grok-build
-        #   managed_text 的 item 寻址）。打在这儿是为了让直播舞台从第 3.5 步
-        #   起就能按块看；bind 之后还要再打一次（它整页重写会把标吃掉），
-        #   两处都调同一个幂等函数——跟主题色钉两次同一个道理。
-        # ⚠ fail-open（纪律七）：打标是增强，炸了照样交付页面。
-        try:
-            from .page_blocks import mark_pages_blocks, scan_blocks
+            try:
+                from .theme_tokens import apply_theme_to_pages, resolve_theme_language
 
-            pages = mark_pages_blocks(pages)
-            st["blocks"] = sum(len(scan_blocks(h)) for h in pages.values())
-            _safe_print(f"[spec_first_pipeline] 块身份（壳后）：{st['blocks']} 块 / {len(pages)} 页")
-        except Exception as exc:  # noqa: BLE001 — 打块标是增强，不许拦画页
-            _safe_print(f"[spec_first_pipeline] ⚠ 块身份打标失败（不拦画页）：{str(exc)[:200]}")
+                _theme_lang = resolve_theme_language(
+                    design_language, style_brief, design_system
+                )
+                pages = apply_theme_to_pages(pages, _theme_lang)
+                st["themePrimary"] = _theme_lang.get("primary")
+            except Exception as exc:  # noqa: BLE001 — 钉色是增强，不许拖画页
+                _safe_print(
+                    f"[spec_first_pipeline] ⚠ 主题锁定失败（不拦画页）：{str(exc)[:200]}"
+                )
+                _theme_lang = None
+            # ★ 2026-08-27：壳统一之后给正文打**块身份**（零 LLM，抄 grok-build
+            #   managed_text 的 item 寻址）。打在这儿是为了让直播舞台从第 3.5 步
+            #   起就能按块看；bind 之后还要再打一次（它整页重写会把标吃掉），
+            #   两处都调同一个幂等函数——跟主题色钉两次同一个道理。
+            # ⚠ fail-open（纪律七）：打标是增强，炸了照样交付页面。
+            try:
+                from .page_blocks import mark_pages_blocks, scan_blocks
 
-        shell_problems = check_shell_consistency(pages, spec)
-        st["problems"] = len(shell_problems)
-        for p in shell_problems[:3]:
-            print(f"[spec_first_pipeline] 外壳统一后仍不一致：{p['path']} — {p['message']}")
-    stages["shell"] = dict(st)
+                pages = mark_pages_blocks(pages)
+                st["blocks"] = sum(len(scan_blocks(h)) for h in pages.values())
+                _safe_print(f"[spec_first_pipeline] 块身份（壳后）：{st['blocks']} 块 / {len(pages)} 页")
+            except Exception as exc:  # noqa: BLE001 — 打块标是增强，不许拦画页
+                _safe_print(f"[spec_first_pipeline] ⚠ 块身份打标失败（不拦画页）：{str(exc)[:200]}")
 
-    # 统一后的页面立刻重发一遍（bound 仍是 False，但菜单已按 spec 锚定）。
-    # 不发的话，前端直播舞台从第 3 步起一直摆着「三个产品名、三套菜单」的
-    # 素颜页，要等整轮跑完 finalState 到达才换——那是十几分钟的错误画面。
-    _reemit_pages(sink, pages, bound=False)
+            shell_problems = check_shell_consistency(pages, spec)
+            st["problems"] = len(shell_problems)
+            for p in shell_problems[:3]:
+                print(f"[spec_first_pipeline] 外壳统一后仍不一致：{p['path']} — {p['message']}")
+        stages["shell"] = dict(st)
+
+        # 统一后的页面立刻重发一遍（bound 仍是 False，但菜单已按 spec 锚定）。
+        # 不发的话，前端直播舞台从第 3 步起一直摆着「三个产品名、三套菜单」的
+        # 素颜页，要等整轮跑完 finalState 到达才换——那是十几分钟的错误画面。
+        _reemit_pages(sink, pages, bound=False)
 
     # ── 第 4 步：HTML → 结构 ────────────────────────────────────────
     # 照搬页 HTML 没变，数据结构沿用上一版。只把重画页送去反推，再和
     # 沿用页拼回完整结构。整份四页再送一次是洗衣房那 11 秒白烧。
-    raise_if_cancelled("第4步 反推结构")
-    with _stage("specfirst.structure") as st:
-        _redrawn_html = {
-            pid: html for pid, html in pages.items() if pid not in _reuse_now
-        }
-        if (
-            refine
-            and page_only_shortcircuit_enabled()
-            and _reuse_now
-            and _redrawn_html
-        ):
-            structure_model = derive_structure(
-                _redrawn_html, goal=goal, llm_json_fn=llm_json_fn, prev_ids=_prev_ids
-            )
-            merged = merge_held_structure(
-                structure_model,
-                reuse_model,
-                _reuse_now.keys(),
-                required_page_ids=pages.keys(),
-            )
-            if merged is not None:
-                structure = merged
-                _held_structure = True
-                st["heldPages"] = len(_reuse_now)
-                st["derivedPages"] = len(_redrawn_html)
-            else:
-                _safe_print(
-                    "[spec_first_pipeline] ⚠ 未改页结构沿用拼不回，回落全量反推"
+    if plan.includes("specfirst.structure"):
+        raise_if_cancelled("第4步 反推结构")
+        with _stage("specfirst.structure") as st:
+            _redrawn_html = {
+                pid: html for pid, html in pages.items() if pid not in _reuse_now
+            }
+            if (
+                refine
+                and page_only_shortcircuit_enabled()
+                and _reuse_now
+                and _redrawn_html
+            ):
+                structure_model = derive_structure(
+                    _redrawn_html, goal=goal, llm_json_fn=llm_json_fn, prev_ids=_prev_ids
                 )
+                merged = merge_held_structure(
+                    structure_model,
+                    reuse_model,
+                    _reuse_now.keys(),
+                    required_page_ids=pages.keys(),
+                )
+                if merged is not None:
+                    structure = merged
+                    _held_structure = True
+                    st["heldPages"] = len(_reuse_now)
+                    st["derivedPages"] = len(_redrawn_html)
+                else:
+                    _safe_print(
+                        "[spec_first_pipeline] ⚠ 未改页结构沿用拼不回，回落全量反推"
+                    )
+                    structure_model = derive_structure(
+                        pages, goal=goal, llm_json_fn=llm_json_fn, prev_ids=_prev_ids
+                    )
+                    structure = (
+                        structure_model.model_dump(mode="json")
+                        if hasattr(structure_model, "model_dump")
+                        else structure_model
+                    )
+            else:
                 structure_model = derive_structure(
                     pages, goal=goal, llm_json_fn=llm_json_fn, prev_ids=_prev_ids
                 )
@@ -1806,87 +1853,78 @@ def run_spec_first(
                     if hasattr(structure_model, "model_dump")
                     else structure_model
                 )
-        else:
-            structure_model = derive_structure(
-                pages, goal=goal, llm_json_fn=llm_json_fn, prev_ids=_prev_ids
-            )
-            structure = (
-                structure_model.model_dump(mode="json")
-                if hasattr(structure_model, "model_dump")
-                else structure_model
-            )
-        if not isinstance(structure, dict):
-            structure = (
-                structure.model_dump(mode="json")
-                if hasattr(structure, "model_dump")
-                else {}
-            )
-        st["entities"] = len(structure.get("entities") or [])
-        st["pages"] = len(structure.get("pages") or [])
-        # 第 4 步 LLM 仍可能把 page.id 改名。HTML 键已经是拨回后的 id，
-        # 这里只重映射、不补页——结构页没有 purpose/audience，补进去
-        # 过不了 DerivedPage。缺页由第 2 步补回后再画。
-        if refine and _freeze_on and _prev_ids.get("pages"):
-            structure, _struct_freeze = freeze_spec_pages(
-                structure, _prev_ids.get("pages"), restore=False
-            )
-            log_freeze(_struct_freeze, where="第4步 structure")
+            if not isinstance(structure, dict):
+                structure = (
+                    structure.model_dump(mode="json")
+                    if hasattr(structure, "model_dump")
+                    else {}
+                )
+            st["entities"] = len(structure.get("entities") or [])
             st["pages"] = len(structure.get("pages") or [])
-        # ── 第 4.5 步：页面包改键，对齐模型铸出来的页面 id（2026-08-24）──
-        #
-        # 上面那句注释说「HTML 键已经是拨回后的 id」——**那只在精修轮成立**
-        # （第 2 步 freeze 把 SPEC 拨到了上一版模型的 id 上）。首轮没有上一版，
-        # SPEC 铸的是 p1..p4，而模型的页面 id 取自这一步 LLM 起的语义名，
-        # 两套 id 从此各说各话，且**全仓没有一处校验过它们相等**。
-        # 后果（真机三轮实测）与做法，整段写在 page_id_freeze 那半个文件里。
-        #
-        # ⚠ 必须在第 6.5 步 bind **之前**：bind 的
-        #   `this_page_bound = page_id in wf_bound_pages` join 的就是这两套 id，
-        #   晚一步就仍旧恒 False。
-        #
-        # ⚠ 凡是**以页面 id 作键或存页面 id** 的东西都要一起改，漏一个就是
-        #   半新半旧。所以下面把它们列在同一处、一次改完；改完还有
-        #   `pages_match_model` 那条反向不变式兜底（见交付前那一段）——
-        #   将来谁新增一个按页面 id 索引的载体、忘了加进来，那条会喊。
-        _canon = canonical_page_id_map(structure)
-        if _canon:
-            pages = rekey_page_map(pages, _canon)
-            failed = rekey_page_map(failed, _canon)
-            _reuse_now = rekey_page_map(_reuse_now, _canon)
-            spec = rekey_page_refs(spec, _canon)
-            spec_pages_declared = rekey_page_ids(spec_pages_declared, _canon)
-            spec_pages_declared_objs = rekey_page_refs(spec_pages_declared_objs, _canon)
-            missing_pages = rekey_page_ids(missing_pages, _canon)
-            shell = {**shell, "navItems": rekey_page_refs(shell.get("navItems") or [], _canon)}
-            if isinstance(style_brief, dict) and isinstance(style_brief.get("pages"), dict):
-                style_brief = {
-                    **style_brief,
-                    "pages": rekey_page_map(style_brief["pages"], _canon),
-                }
-            # ⚠ 2026-08-28：上面这串把「以页面 id 作键或存页面 id」的载体都改了，
-            #   **唯独改不到已经烧进页面 HTML 正文的 `data-page-id`**——那是第
-            #   3.5 步 unify_shell 按当时的草稿 id 打的孔，`rekey_page_map` 只换
-            #   dict 的键、不碰 value 那串 HTML。
+            # 第 4 步 LLM 仍可能把 page.id 改名。HTML 键已经是拨回后的 id，
+            # 这里只重映射、不补页——结构页没有 purpose/audience，补进去
+            # 过不了 DerivedPage。缺页由第 2 步补回后再画。
+            if refine and _freeze_on and _prev_ids.get("pages"):
+                structure, _struct_freeze = freeze_spec_pages(
+                    structure, _prev_ids.get("pages"), restore=False
+                )
+                log_freeze(_struct_freeze, where="第4步 structure")
+                st["pages"] = len(structure.get("pages") or [])
+            # ── 第 4.5 步：页面包改键，对齐模型铸出来的页面 id（2026-08-24）──
             #
-            #   真机后果（sr-20260827191954 药房、sr-20260827201847 巡检）：页键
-            #   成了 remote_rx_audit…，孔还是 p1..p4，宿主 resolveActivePageId
-            #   查不到就静默回落当前页——**四个菜单项全点不动，且没有任何一处
-            #   报错**。8-22 那场页键本身还是 p1/p2，孔对得上，菜单是好的，所以
-            #   这是第 4.5 步引入的回归，不是一直就坏。
-            #   而 `pages_match_model` 那条兜底够不着：它比的是页键 vs 模型 id，
-            #   两边都被改过键，恒等恒绿。
+            # 上面那句注释说「HTML 键已经是拨回后的 id」——**那只在精修轮成立**
+            # （第 2 步 freeze 把 SPEC 拨到了上一版模型的 id 上）。首轮没有上一版，
+            # SPEC 铸的是 p1..p4，而模型的页面 id 取自这一步 LLM 起的语义名，
+            # 两套 id 从此各说各话，且**全仓没有一处校验过它们相等**。
+            # 后果（真机三轮实测）与做法，整段写在 page_id_freeze 那半个文件里。
             #
-            #   修法照 friendly_id 的 History（`has_many :slugs` + 先查当前再查
-            #   历史）：**改名的这一刻**把映射记下来随页面落库，宿主解析不到时
-            #   按它回退。选它而不是重写 HTML，是因为存量应用的 HTML 已经发出去
-            #   了——回退查表连它们一起救，重写只救新生成的。
-            _page_id_aliases = {**_page_id_aliases, **_canon}
-            st["pageIdCanonicalized"] = len(_canon)
-            print(
-                "[spec_first_pipeline] 首轮页面包改键（草稿 id → 模型 id）："
-                + "、".join(f"{o}→{n}" for o, n in list(_canon.items())[:6])
-            )
-    stages["structure"] = dict(st)
+            # ⚠ 必须在第 6.5 步 bind **之前**：bind 的
+            #   `this_page_bound = page_id in wf_bound_pages` join 的就是这两套 id，
+            #   晚一步就仍旧恒 False。
+            #
+            # ⚠ 凡是**以页面 id 作键或存页面 id** 的东西都要一起改，漏一个就是
+            #   半新半旧。所以下面把它们列在同一处、一次改完；改完还有
+            #   `pages_match_model` 那条反向不变式兜底（见交付前那一段）——
+            #   将来谁新增一个按页面 id 索引的载体、忘了加进来，那条会喊。
+            _canon = canonical_page_id_map(structure)
+            if _canon:
+                pages = rekey_page_map(pages, _canon)
+                failed = rekey_page_map(failed, _canon)
+                _reuse_now = rekey_page_map(_reuse_now, _canon)
+                spec = rekey_page_refs(spec, _canon)
+                spec_pages_declared = rekey_page_ids(spec_pages_declared, _canon)
+                spec_pages_declared_objs = rekey_page_refs(spec_pages_declared_objs, _canon)
+                missing_pages = rekey_page_ids(missing_pages, _canon)
+                shell = {**shell, "navItems": rekey_page_refs(shell.get("navItems") or [], _canon)}
+                if isinstance(style_brief, dict) and isinstance(style_brief.get("pages"), dict):
+                    style_brief = {
+                        **style_brief,
+                        "pages": rekey_page_map(style_brief["pages"], _canon),
+                    }
+                # ⚠ 2026-08-28：上面这串把「以页面 id 作键或存页面 id」的载体都改了，
+                #   **唯独改不到已经烧进页面 HTML 正文的 `data-page-id`**——那是第
+                #   3.5 步 unify_shell 按当时的草稿 id 打的孔，`rekey_page_map` 只换
+                #   dict 的键、不碰 value 那串 HTML。
+                #
+                #   真机后果（sr-20260827191954 药房、sr-20260827201847 巡检）：页键
+                #   成了 remote_rx_audit…，孔还是 p1..p4，宿主 resolveActivePageId
+                #   查不到就静默回落当前页——**四个菜单项全点不动，且没有任何一处
+                #   报错**。8-22 那场页键本身还是 p1/p2，孔对得上，菜单是好的，所以
+                #   这是第 4.5 步引入的回归，不是一直就坏。
+                #   而 `pages_match_model` 那条兜底够不着：它比的是页键 vs 模型 id，
+                #   两边都被改过键，恒等恒绿。
+                #
+                #   修法照 friendly_id 的 History（`has_many :slugs` + 先查当前再查
+                #   历史）：**改名的这一刻**把映射记下来随页面落库，宿主解析不到时
+                #   按它回退。选它而不是重写 HTML，是因为存量应用的 HTML 已经发出去
+                #   了——回退查表连它们一起救，重写只救新生成的。
+                _page_id_aliases = {**_page_id_aliases, **_canon}
+                st["pageIdCanonicalized"] = len(_canon)
+                print(
+                    "[spec_first_pipeline] 首轮页面包改键（草稿 id → 模型 id）："
+                    + "、".join(f"{o}→{n}" for o, n in list(_canon.items())[:6])
+                )
+        stages["structure"] = dict(st)
 
     # ── 第 5 / 6 步：page-only 时权限流程直接沿用，不先做再盖 ───────
     model: Optional[Dict[str, Any]] = None
@@ -1923,29 +1961,33 @@ def run_spec_first(
         # ── 第 5 步：(结构 + SPEC) → 权限 / 工作流 / 不变式 ───────────────
         # ⚠ 两个输入都要。三臂对照实测：只有 SPEC 会编出结构里没有的对象；
         #   只有结构会把多类使用者塌成一个角色。B 是唯一过闸的那一臂。
-        raise_if_cancelled("第5步 推导语义")
-        with _stage("specfirst.semantics") as st:
-            semantics_model = derive_semantics(
-                structure, spec, llm_json_fn=llm_json_fn, prev_ids=_prev_ids
-            )
-            semantics = (
-                semantics_model.model_dump(mode="json")
-                if hasattr(semantics_model, "model_dump")
-                else semantics_model
-            )
-            st["roles"] = len(semantics.get("roles") or [])
-            st["nodes"] = len(semantics.get("workflowNodes") or semantics.get("nodes") or [])
-        stages["semantics"] = dict(st)
+        if plan.includes("specfirst.semantics"):
+            raise_if_cancelled("第5步 推导语义")
+        if plan.includes("specfirst.semantics"):
+            with _stage("specfirst.semantics") as st:
+                semantics_model = derive_semantics(
+                    structure, spec, llm_json_fn=llm_json_fn, prev_ids=_prev_ids
+                )
+                semantics = (
+                    semantics_model.model_dump(mode="json")
+                    if hasattr(semantics_model, "model_dump")
+                    else semantics_model
+                )
+                st["roles"] = len(semantics.get("roles") or [])
+                st["nodes"] = len(semantics.get("workflowNodes") or semantics.get("nodes") or [])
+            stages["semantics"] = dict(st)
 
         # ── 第 6 步：汇合 → 完整六段 → 过结构闸 ─────────────────────────
-        raise_if_cancelled("第6步 汇合过闸")
-        with _stage("specfirst.assemble") as st:
-            assembled = assemble(structure, semantics, spec, llm_json_fn=llm_json_fn)
-            model = assembled.get("model") if isinstance(assembled, dict) else assembled
-            if not isinstance(model, dict):
-                raise SpecFirstError("第 6 步没有产出模型")
-            st["ok"] = 1
-        stages["assemble"] = dict(st)
+        if plan.includes("specfirst.assemble"):
+            raise_if_cancelled("第6步 汇合过闸")
+        if plan.includes("specfirst.assemble"):
+            with _stage("specfirst.assemble") as st:
+                assembled = assemble(structure, semantics, spec, llm_json_fn=llm_json_fn)
+                model = assembled.get("model") if isinstance(assembled, dict) else assembled
+                if not isinstance(model, dict):
+                    raise SpecFirstError("第 6 步没有产出模型")
+                st["ok"] = 1
+            stages["assemble"] = dict(st)
 
     _stamp_preferred_device(model, device)
 
@@ -1991,7 +2033,7 @@ def run_spec_first(
     # ⚠ 到这里实体与字段才定死校验过，孔才打得成。第 3 步打不了——
     #   那时 datamodel 还不存在，写 data-field 是引用没被发明的 id。
     bound_failed: Dict[str, Any] = {}
-    if bind_html:
+    if bind_html and plan.includes("specfirst.bind"):
         raise_if_cancelled("第6.5步 打绑定孔")
         with _stage("specfirst.bind") as st:
             before_bind = dict(pages)

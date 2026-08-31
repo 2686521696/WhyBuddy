@@ -464,6 +464,8 @@ def _try_llm_generate_evidence(
     *,
     require_landing_page_ref: bool = True,
     session_id: Optional[str] = None,
+    tools: Optional[Any] = None,
+    product_archetype: Optional[str] = None,
 ) -> Optional[Dict[str, Dict[str, Any]]]:
     """Generate + gate a five-system model for a novel intent.
 
@@ -598,6 +600,12 @@ def _try_llm_generate_evidence(
                 # ⚠ 必须把开关传进 run_spec_first：只靠模块全局，to_thread
                 #   里能读到，但 assemble 仍写死 desktop。显式参数是画页和
                 #   落库共用的那一个 device。
+                #
+                # ⚠ 2026-08-31 真机（固定资产领用 sr-20260831120905）：这里
+                #   曾经写 `state.goal`，但本函数没有 `state` 形参。NameError
+                #   被下面宽 except 吃成「spec-first 失败，不回落老链路：
+                #   name 'state' is not defined」，五系统全空、闭环 blocked。
+                #   tools / product_archetype 由调用方从 state.goal 传进来。
                 return run_spec_first(
                     goal,
                     llm_json_fn=llm_json_fn,
@@ -614,6 +622,8 @@ def _try_llm_generate_evidence(
                     #   同一个来源（refine 上下文），不另开取数路径。
                     reuse_pages=(_refine_ctx or {}).get("pages"),
                     preferred_device=preferred_device_override(),
+                    product_archetype=product_archetype,
+                    tools=tools,
                 )["model"]
 
             try:
@@ -1195,10 +1205,13 @@ def _build_per_skill_evidence(
         # 精修/回退：走 LLM 生成分支（override 时生成层不调 LLM 直接返回快照）
         # override 路径传 False（历史快照无 landingPageRef 仍可恢复）；
         # refine 路径传 True（精修是新产物，必须声明首屏）。
+        _goal_map = state.goal if isinstance(state.goal, dict) else {}
         llm_result = _try_llm_generate_evidence(
             goal, llm_json_fn,
             require_landing_page_ref=not _is_override,
             session_id=getattr(state, "sessionId", None),
+            tools=_goal_map.get("tools"),
+            product_archetype=_goal_map.get("productArchetype"),
         )
         if llm_result is not None:
             for skill in REQUIRED_EVIDENCE_KEYS:
@@ -1264,8 +1277,11 @@ def _build_per_skill_evidence(
         # T3: novel intent — ask the LLM to generate a five-system model, then run
         # it through the structural gate. Only gate-PASSED models inject evidence;
         # gate failure / LLM unavailable stays fail-closed (0/6). "失败由 gate 拦截而非静默".
+        _goal_map = state.goal if isinstance(state.goal, dict) else {}
         llm_result = _try_llm_generate_evidence(
-            goal, llm_json_fn, session_id=getattr(state, "sessionId", None)
+            goal, llm_json_fn, session_id=getattr(state, "sessionId", None),
+            tools=_goal_map.get("tools"),
+            product_archetype=_goal_map.get("productArchetype"),
         )
         if llm_result is not None:
             # 同上：LLM 生成的产物携带 _model_section，不能被 haystack 壳
@@ -1653,6 +1669,21 @@ def execute_v5_capability(
     if "appbundle" in capability_id.lower() or "runtimeclosure" in capability_id.lower():
         blocked_signal = "blocked" in capability_id.lower() or "blocked" in goal.lower()
         per_skill = _build_per_skill_evidence(state, blocked_signal, goal)
+        # 公开工具的第五步。spec/pages/structure/bind 已经在上面那次
+        # `_build_per_skill_evidence` → `run_spec_first` 里按计划跑过。
+        # 计划拿掉 closure = 不做发布判定。缺信封就是缺，不许补绿灯。
+        from .capability_plan import product_rehearsal_plan
+        from .device_policy import preferred_device_override
+        from .v5_llm_generate import get_refine_context as _plan_refine_ctx
+
+        _goal_map = state.goal if isinstance(state.goal, dict) else {}
+        _capability_plan = product_rehearsal_plan(
+            device=preferred_device_override() or "desktop",
+            refine=bool(_plan_refine_ctx()),
+            tools=_goal_map.get("tools"),
+        )
+        if not _capability_plan.includes("closure"):
+            return base
         evidence_blocked = any(not item.get("evidencePresent") for item in per_skill.values())
         # 证据齐不齐（数量）与证据对不对题（内容）是两道独立的关卡；
         # 降级轮（LLM 选材回落规则版等）的产出不可信，不许判 closed。

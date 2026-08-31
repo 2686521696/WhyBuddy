@@ -369,7 +369,7 @@ class Test端到端接线:
         monkeypatch.setattr(ps, "unify_shell", lambda pages, s, **kw: {"pages": dict(pages)})
         monkeypatch.setattr(ps, "check_shell_consistency", lambda pages, s: [])
         monkeypatch.setattr(
-            ps, "repair_pages_after_bind", lambda pages, before: (dict(pages), [], [])
+            ps, "repair_pages_after_bind", lambda pages, before, **kw: (dict(pages), [], [])
         )
         monkeypatch.setattr(
             hs, "derive_structure", lambda pages, **kw: {"entities": [], "pages": []}
@@ -901,7 +901,7 @@ class Test字段对不上不整段扔:
         monkeypatch.setattr(ps, "unify_shell", lambda pages, s, **kw: {"pages": dict(pages)})
         monkeypatch.setattr(ps, "check_shell_consistency", lambda pages, s: [])
         monkeypatch.setattr(
-            ps, "repair_pages_after_bind", lambda pages, before: (dict(pages), [], [])
+            ps, "repair_pages_after_bind", lambda pages, before, **kw: (dict(pages), [], [])
         )
         monkeypatch.setattr(
             hs, "derive_structure", lambda pages, **kw: {"entities": [], "pages": []}

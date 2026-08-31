@@ -1,0 +1,143 @@
+"""PC / 手机产品推演的可编排工具。
+
+## 公开工具就这五个
+
+    spec → pages → structure → bind → closure
+
+能力已经在，只是焊死在 `run_spec_first` + `appbundle.runtimeClosure` 一条顺序里。
+本文件把它们收成计划：计划说跑哪些；默认顺序仍是今天这条。
+
+内部 `_stage`（design / shell / semantics / assemble / graphscope / pagescope）
+是工具的实现细节，不是另一套公开工具。`specfirst.shell` 故意不进进度线。
+
+⚠ 2026-08-31：上一版用关键词分流（手表 → game-prototype），SPEC 被带偏。
+本文件**不看话题词**。desktop / phone 永远返回下面这份。其它原型不在这里接通。
+
+## 收口是第五个工具，不在 spec-first 函数体里
+
+spec / pages / structure / bind 的门口在 `run_spec_first`。
+closure 的门口在 `execute_v5_capability` 的 runtimeClosure 分支——生成跑完之后
+才写发布信封。计划里拿掉 closure，不许补一份绿灯（fail-closed）。
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Iterable, Optional, Tuple
+
+PRODUCT_REHEARSAL = "product-rehearsal"
+
+#: 公开工具。次序就是今天产品推演的默认编排。
+TOOLS: Tuple[str, ...] = (
+    "spec",
+    "pages",
+    "structure",
+    "bind",
+    "closure",
+)
+
+#: 范围卡 / 钟上的人话。键是公开工具，不是 specfirst id。
+TOOL_LABELS: Tuple[Tuple[str, str], ...] = (
+    ("spec", "起草 SPEC"),
+    ("pages", "页面生成"),
+    ("structure", "数据结构"),
+    ("bind", "权限工作流"),
+    ("closure", "完整性检查"),
+)
+
+#: 能力，但故意不进进度线（stage_legal 名单外）。
+SILENT_CAPABILITIES: Tuple[str, ...] = ("specfirst.shell",)
+
+
+def normalize_tools(raw: Optional[Iterable[str]]) -> Tuple[str, ...]:
+    """只认公开五件套，次序跟 TOOLS 走。空 / 全是生词 → 默认全开。
+
+    规划器可以减菜，不能发明第六道。空清单不许当成「什么都不跑」——
+    那会端出一份空成功，正是闭环类 fail-closed 要挡的。
+    """
+    if raw is None:
+        return TOOLS
+    wanted = {str(item).strip() for item in raw}
+    chosen = tuple(name for name in TOOLS if name in wanted)
+    return chosen if chosen else TOOLS
+
+
+def expand_tools(tools: Iterable[str], *, refine: bool = False) -> Tuple[str, ...]:
+    """公开工具展开成 `run_spec_first` 里的 `_stage` id。
+
+    closure 不是 spec-first 阶段，不进这份展开——它的门口在执行器。
+    """
+    wanted = tuple(tools)
+    seen = set(wanted)
+    ids: list[str] = []
+    if refine and "spec" in seen:
+        ids.append("specfirst.graphscope")
+    if "spec" in seen:
+        ids.extend(("specfirst.spec", "specfirst.design"))
+    if refine and "pages" in seen:
+        ids.append("specfirst.pagescope")
+    if "pages" in seen:
+        ids.extend(("specfirst.pages", "specfirst.shell"))
+    if "structure" in seen:
+        ids.extend(("specfirst.structure", "specfirst.semantics", "specfirst.assemble"))
+    if "bind" in seen:
+        ids.append("specfirst.bind")
+    return tuple(ids)
+
+
+# 新建一轮。顺序必须跟 run_spec_first 里 `_stage` 出现的次序一致。
+NEW_RUN: Tuple[str, ...] = expand_tools(TOOLS, refine=False)
+
+# 精修一轮。graphscope 在 spec 之前——2026-08-18 把插座挪过，别搬回去。
+REFINE_RUN: Tuple[str, ...] = expand_tools(TOOLS, refine=True)
+
+
+@dataclass(frozen=True)
+class CapabilityPlan:
+    """一份本轮要跑的能力清单。tools 是公开编排，ids 是内部阶段。"""
+
+    name: str
+    ids: Tuple[str, ...]
+    device: str = "desktop"
+    tools: Tuple[str, ...] = TOOLS
+
+    def includes(self, capability_id: str) -> bool:
+        if capability_id in self.tools:
+            return True
+        return capability_id in self.ids
+
+    def visible_ids(self) -> Tuple[str, ...]:
+        """进度线用：去掉故意不报的能力。"""
+        silent = set(SILENT_CAPABILITIES)
+        return tuple(cap for cap in self.ids if cap not in silent)
+
+
+def product_rehearsal_plan(
+    *,
+    device: str = "desktop",
+    refine: bool = False,
+    tools: Optional[Iterable[str]] = None,
+) -> CapabilityPlan:
+    """PC / 手机的默认计划。device 只作记录，不改变工具清单。"""
+    chosen = normalize_tools(tools)
+    ids = expand_tools(chosen, refine=bool(refine))
+    return CapabilityPlan(
+        name=PRODUCT_REHEARSAL,
+        ids=ids,
+        device=str(device or "desktop"),
+        tools=chosen,
+    )
+
+
+__all__ = [
+    "PRODUCT_REHEARSAL",
+    "TOOLS",
+    "NEW_RUN",
+    "REFINE_RUN",
+    "SILENT_CAPABILITIES",
+    "TOOL_LABELS",
+    "CapabilityPlan",
+    "expand_tools",
+    "normalize_tools",
+    "product_rehearsal_plan",
+]

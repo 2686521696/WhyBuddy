@@ -16,11 +16,14 @@ import { IntakeHintBar, shouldShowIntakeHint } from "../IntakeHintBar";
 import { ScopeCard } from "../ScopeCard";
 import {
   interceptRehearsalRequest,
+  normalizeScopeTools,
   restateAppGoal,
   SCOPE_CARD_CONFIRM_LABEL,
+  SCOPE_CARD_PUBLIC_TOOLS,
   SCOPE_CARD_REVISE_LABEL,
   SCOPE_CARD_TIME_COPY,
   scopeCardSteps,
+  scopeCardStepsFromTools,
   shouldSkipScopeCard,
   type ScopeCardPending,
 } from "../scope-card-gate";
@@ -91,6 +94,12 @@ describe("范围卡 DOM", () => {
     expect(html).toContain("平板");
     expect(html).toContain("起草 SPEC");
     expect(html).toContain("页面生成");
+    expect(html).toContain('data-testid="sliderule-scope-tools"');
+    expect(html).toContain('data-testid="sliderule-scope-tool-spec"');
+    expect(html).toContain('data-testid="sliderule-scope-tool-pages"');
+    expect(html).toContain('data-testid="sliderule-scope-tool-structure"');
+    expect(html).toContain('data-testid="sliderule-scope-tool-bind"');
+    expect(html).toContain('data-testid="sliderule-scope-tool-closure"');
     expect(html).toContain(SCOPE_CARD_TIME_COPY);
     expect(html).toContain(SCOPE_CARD_CONFIRM_LABEL);
     expect(html).toContain(SCOPE_CARD_REVISE_LABEL);
@@ -133,6 +142,7 @@ describe("范围卡 DOM", () => {
     expect(html).toContain("将做成：收银员不能删除订单");
     expect(html).toContain(SCOPE_CARD_CONFIRM_LABEL);
     expect(html).not.toContain('data-testid="sliderule-scope-steps"');
+    expect(html).not.toContain('data-testid="sliderule-scope-tools"');
     expect(html).not.toContain("8 分钟");
     expect(html).not.toContain("约 2 分钟");
     expect(html).toContain("下一场沿用");
@@ -146,6 +156,33 @@ describe("范围卡 DOM", () => {
     expect(CARD_SRC).not.toContain("取证（web.search，默认关）");
     expect(CARD_SRC).not.toContain("sliderule-scope-evidence");
     expect(SESSION).not.toContain("includeEvidence");
+  });
+
+  it("规划器勾选是公开五件套，空清单回落到全开，不许扣光最后一件", () => {
+    expect(SCOPE_CARD_PUBLIC_TOOLS.map(row => row.id)).toEqual([
+      "spec",
+      "pages",
+      "structure",
+      "bind",
+      "closure",
+    ]);
+    expect(normalizeScopeTools(undefined)).toEqual([
+      "spec",
+      "pages",
+      "structure",
+      "bind",
+      "closure",
+    ]);
+    expect(normalizeScopeTools(["closure", "invented", "spec"])).toEqual([
+      "spec",
+      "closure",
+    ]);
+    expect(scopeCardStepsFromTools(["spec", "pages"])).toEqual([
+      "起草 SPEC",
+      "页面生成",
+    ]);
+    expect(CARD_SRC).toContain("prev.length === 1");
+    expect(CARD_SRC).toContain("toggleTool");
   });
 
   it("产品源码本身也不许写未标定分钟数", () => {

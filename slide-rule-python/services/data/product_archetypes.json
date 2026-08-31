@@ -9,6 +9,18 @@
       "label": "业务 / 后台应用",
       "wired": true,
       "$comment": "今天唯一在跑的原型。requiredEvidence 与 closureEdges 逐字等于 2026-08-29 之前写死在 v5_capability_executor 里的那两个常量——这次改造对它必须是零行为变化，由 test_默认原型与历史常量逐字一致 钉住。",
+      "$comment_policy": "政策包抄 Anthropic SKILL.md / Grok Skills 的 frontmatter：name、description、whenToUse、allowedTools。按 原型×设备 加载，不是 TRAE skill_runtime（那条插座流式 driver 不调，禁止接成控制面）。PC / 手机今天同一套公开工具。",
+      "policy": {
+        "name": "business-app",
+        "description": "业务 / 后台应用的推演政策。有数据表、角色、审批流、页面。",
+        "whenToUse": "坐着、长时段、多列对照、批量操作、审批与配置；或同一套业务在手机上现场办理。",
+        "allowedTools": ["spec", "pages", "structure", "bind", "closure"],
+        "devices": {
+          "desktop": { "density": "comfortable" },
+          "phone": { "density": "compact" },
+          "tablet": { "density": "comfortable" }
+        }
+      },
       "requiredEvidence": [
         "datamodel",
         "rbac",
@@ -60,6 +72,12 @@
       "label": "小游戏 / 互动玩法",
       "wired": false,
       "$comment": "⚠ 契约先立，生成侧未接。小游戏没有实体表、没有角色权限、没有审批流——六系统那套一样也套不上，硬套的结果是三个空段顶着『已闭环』。这里的闭环判据换成玩法自己的：有没有主循环、输入响应、胜负/结束条件、渲染面。**闸一条都没放松**，只是换了该问的问题。接通它要做的事：生成侧产出这五段 _model_section + 结构闸认识这些段。",
+      "policy": {
+        "name": "casual-game",
+        "description": "小游戏 / 互动玩法的推演政策。闭环问主循环、输入、胜负，不套后台六系统。",
+        "whenToUse": "闯关、分数、操作反馈；生成侧未接，选中即 fail-closed。",
+        "allowedTools": ["spec", "pages", "closure"]
+      },
       "requiredEvidence": [
         "gameloop",
         "input",
@@ -98,6 +116,12 @@
       "label": "手表 / 一瞥式应用",
       "wired": false,
       "$comment": "⚠ 契约先立，生成侧未接。手表表盘的闭环不是『页面之间关联对不对』，是『一瞥能不能读完』：数据源、瞥读面、复杂功能位（complication）。页面导航壳在这里是负资产——glance 面不该有面包屑。接通它要做的事同上。",
+      "policy": {
+        "name": "glance-app",
+        "description": "手表 / 一瞥式应用的推演政策。闭环问数据源、瞥读面、复杂功能位。",
+        "whenToUse": "抬腕两秒读完、几乎不输入；生成侧未接，选中即 fail-closed。",
+        "allowedTools": ["spec", "pages", "closure"]
+      },
       "requiredEvidence": [
         "datasource",
         "glance",

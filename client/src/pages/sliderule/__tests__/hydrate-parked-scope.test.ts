@@ -48,6 +48,13 @@ describe("hydrateParkedScope", () => {
     });
     expect(parked.device).toBe("tablet");
     expect(parked.productArchetype).toBe("business_app");
+    expect(parked.tools).toEqual([
+      "spec",
+      "pages",
+      "structure",
+      "bind",
+      "closure",
+    ]);
     expect(parked.wiredDevices?.map(row => row.id)).toEqual(
       expect.arrayContaining(["desktop", "phone", "tablet"])
     );
@@ -63,6 +70,26 @@ describe("hydrateParkedScope", () => {
     });
     expect(parked.device).toBe("tablet");
     expect(parked.variant).toBe("thin");
+  });
+
+  it("goal tools beat an empty last-card tools list", () => {
+    const parked = hydrateParkedScope({
+      awaitDetail: "请假系统",
+      goal: { text: "请假系统", tools: ["spec", "pages", "closure"] },
+      controlTranscript: [{ kind: "scope_card", device: "desktop", tools: [] }],
+    });
+    expect(parked.tools).toEqual(["spec", "pages", "closure"]);
+  });
+
+  it("last-card tools beat goal tools when the card actually picked some", () => {
+    const parked = hydrateParkedScope({
+      awaitDetail: "请假系统",
+      goal: { text: "请假系统", tools: ["spec", "pages", "structure", "bind", "closure"] },
+      controlTranscript: [
+        { kind: "scope_card", device: "desktop", tools: ["spec", "pages"] },
+      ],
+    });
+    expect(parked.tools).toEqual(["spec", "pages"]);
   });
 
   it("localStorage is last resort only", () => {
