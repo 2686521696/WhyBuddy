@@ -22,6 +22,65 @@ export type ClarificationItem = {
 
 export type ClarificationAnswer = { gapId: string; answer: string };
 
+/**
+ * 澄清卡数据源。从 coverageGaps 滤出「现在该画」的题。
+ *
+ * ⚠ 2026-09-01 真机：股票分析器三道题都选完了，「「…」答：…」已经进了
+ * 会话，卡又从「待回答问题 1/3 / 已答 0/3」弹一遍。成因不是模型又问了
+ * 一轮——是提交后新一轮 `isRunning=true`，`awaitReason` 还停在
+ * `control_clarify`，磁盘里的缺口还是 open；`pendingClarifications` 的
+ * useMemo 因 isRunning 换了数组身份，卡片 useEffect 把 picks 清零。
+ *
+ * 停泊那一发（还没提交）isRunning 也要画卡；提交过的这一发不许再画。
+ */
+export type ClarificationGapLike = {
+  id: string;
+  kind?: string;
+  status?: string;
+  label: string;
+  clarifyKind?: string;
+  kindLabel?: string;
+  clarifyType?: ClarificationItem["type"];
+  options?: string[];
+  defaultAnswer?: string;
+  context?: string;
+};
+
+export function pendingClarificationItems(opts: {
+  gaps: ClarificationGapLike[] | undefined;
+  awaitReason: string | undefined | null;
+  isRunning: boolean;
+  submittedGapIds?: Iterable<string>;
+}): ClarificationItem[] {
+  const parkedClarify = opts.awaitReason === "control_clarify";
+  // 停泊澄清时请求还没拆完 isRunning，卡必须先画出来。
+  if (opts.isRunning && !parkedClarify) return [];
+  const submitted = new Set(
+    Array.from(opts.submittedGapIds || []).map(id => String(id))
+  );
+  // 答完提交后的这一发：哪怕 awaitReason 还停在 control_clarify、缺口
+  // 还是 open，也不许把同一张卡再画一遍。
+  if (opts.isRunning && submitted.size > 0) return [];
+  return (opts.gaps || [])
+    .filter(g => g.status === "open" && g.kind === "open_question")
+    .map(g => ({
+      id: g.id,
+      prompt: g.label,
+      kind: g.clarifyKind,
+      kindLabel: g.kindLabel,
+      type: g.clarifyType,
+      options: g.options,
+      defaultAnswer: g.defaultAnswer,
+      context: g.context,
+    }));
+}
+
+export function clarificationQuestionKey(
+  questions: Array<{ id: string }>
+): string {
+  return questions.map(q => q.id).join("|");
+}
+
 const OTHER = "__other__";
 
 /**
@@ -77,9 +136,12 @@ export function ClarificationCard({
   const [picked, setPicked] = React.useState<Record<string, string>>({});
   const [multi, setMulti] = React.useState<Record<string, Set<string>>>({});
   const [otherText, setOtherText] = React.useState<Record<string, string>>({});
+  const questionKey = clarificationQuestionKey(questions);
 
   React.useEffect(() => {
     // 预选 defaultAnswer（若匹配某个选项）
+    // ⚠ 钉 questionKey 不钉 questions 数组身份：提交后 isRunning 翻转会
+    // 换一个同 id 的新数组，useEffect([questions]) 把 picks 清成已答 0/3。
     const seedPick: Record<string, string> = {};
     for (const q of questions) {
       if (q.type !== "multi_choice" && q.defaultAnswer && (q.options || []).includes(q.defaultAnswer)) {
@@ -90,7 +152,8 @@ export function ClarificationCard({
     setMulti({});
     setOtherText({});
     setStep(0);
-  }, [questions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 身份变、id 不变时不许把已答清零
+  }, [questionKey]);
 
   if (total === 0) return null;
   const q = questions[Math.min(step, total - 1)];

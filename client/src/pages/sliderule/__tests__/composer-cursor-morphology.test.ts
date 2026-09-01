@@ -1,8 +1,8 @@
 /**
- * 输入条 Cursor 三行形态（装在真链路上）。
+ * 输入条形态（装在真链路上）。
  *
- * 对照：Cursor Composer 芯片行 / 胶囊+圆发送 / 状态行；
- * Void SidebarChat SelectedFiles → textarea → 底栏。
+ * 2026-09-01：会话内跟新建会话同一张多行卡片（字在上、工具行在下、
+ * 发送在卡片里）。hero 只决定原型/设备芯片和底行话题条，不再切布局。
  * hintChips 必须真渲染——只写在 props 类型里会假绿。
  * 不许出现 git / Commit / main 这种本仓没有的东西。
  */
@@ -14,7 +14,7 @@ function stripComments(src: string): string {
 }
 
 describe("ComposerDock Cursor 三行形态", () => {
-  it("停靠条是 24px 白胶囊，+ 是灰圆，发送在胶囊外的实心圆", () => {
+  it("空态和会话内同一张多行卡片：12px 圆角、字在上、发送在卡片里", () => {
     const dock = stripComments(
       readFileSync(new URL("../ComposerDock.tsx", import.meta.url), "utf8")
     );
@@ -22,12 +22,19 @@ describe("ComposerDock Cursor 三行形态", () => {
       dock.indexOf("sliderule-composer-dock") - 420,
       dock.indexOf("sliderule-composer-dock") + 80
     );
-    expect(shell).toContain("rounded-[24px]");
     expect(shell).toContain("rounded-[12px]");
     expect(shell).toContain("bg-white");
     expect(shell).toContain("border-[#e5e7eb]");
+    expect(shell).not.toContain("rounded-[24px]");
     expect(shell).not.toContain("bg-[#f3f4f6]");
     expect(dock).not.toContain("sliderule-hero-glow");
+    // 反向：开聊后再切回 24px 胶囊 / 28px 单行必红
+    expect(dock).not.toContain("rounded-[24px]");
+    expect(dock).not.toContain("hero ? 72 : 28");
+    expect(dock).not.toContain("min-h-7");
+    expect(dock).toContain("const minH = 72");
+    expect(dock).toContain("min-h-[72px]");
+    expect(dock).toContain("grid-cols-[auto_auto_1fr_auto]");
 
     const plus = dock.slice(
       dock.indexOf("sliderule-composer-plus") - 420,
@@ -44,12 +51,12 @@ describe("ComposerDock Cursor 三行形态", () => {
     expect(send).toContain("pointer-events-auto");
     expect(send).toContain("rounded-full");
     expect(send).not.toContain("mb-0.5");
-    // 发送圆和胶囊同一中线。变异 items-end / mb-0.5 会把圆顶上去或沉下去。
-    expect(dock).toContain("flex w-full items-center gap-2");
-    expect(dock).not.toContain("flex w-full items-end gap-2");
     expect(dock).toContain(">优化<");
     expect(dock).not.toContain("sliderule-hero-upload");
     expect(dock).not.toContain("order-first basis-full");
+    // 发送在卡片底栏，不许再拎到卡片外
+    expect(dock).not.toContain("{hero ? null : sendButton}");
+    expect(dock).not.toContain("{hero ? null : stopButton}");
   });
 
   it("空态是 Cursor 卡片：字在上、发送在卡片里，没有粉紫光晕", () => {
@@ -62,14 +69,15 @@ describe("ComposerDock Cursor 三行形态", () => {
     expect(dock).toContain("col-start-4 row-start-2");
     expect(dock).toContain("{refineButton}");
     expect(dock).toContain("{sendButton}");
-    // 空态：优化和发送同一簇靠右，优化在前。变异把优化塞回 + 右侧 col-start-3 必红。
+    // 优化和发送同一簇靠右，优化在前。变异把优化塞回 + 右侧 col-start-3 必红。
     const heroSend = dock.slice(
       dock.indexOf("col-start-4 row-start-2"),
-      dock.indexOf("{hero ? null : sendButton}")
+      dock.indexOf("{slash ?")
     );
     expect(heroSend.indexOf("{refineButton}")).toBeLessThan(
       heroSend.indexOf("{sendButton}")
     );
+    expect(heroSend).toContain("{stopButton}");
     /**
      * ⚠ 2026-08-24：这两条原本写作 `not.toContain("col-start-3 row-start-2")`，
      * 意图是"优化按钮不许塞回 + 右侧的 col3"。但它盯的是**字面的类名**，不是那个
@@ -98,11 +106,15 @@ describe("ComposerDock Cursor 三行形态", () => {
     expect(dock).toContain("composerDeviceMenu");
     expect(dock).toContain("sliderule-composer-device-trigger");
     expect(dock).toContain("sliderule-composer-device-menu");
+    expect(dock).toContain("sliderule-composer-archetype");
+    expect(dock).toContain("composerArchetypeMenu");
+    expect(dock).toContain("sliderule-composer-archetype-trigger");
+    expect(dock).toContain("sliderule-composer-archetype-menu");
     expect(dock).toContain('aria-haspopup="listbox"');
     // 反向：两档并排 tab 加回来必红（2026-08-30 用户：多了放不下）
     expect(dock).not.toContain('role="group"');
     expect(dock).not.toContain("aria-pressed={on}");
-    expect(dock).toContain("{hero ? null : sendButton}");
+    expect(dock).not.toContain("{hero ? null : sendButton}");
     expect(dock).not.toContain("sliderule-hero-glow");
     expect(dock).not.toContain("rgba(167,139,250");
     expect(dock).not.toContain('filter: "blur(10px)"');
@@ -137,14 +149,19 @@ describe("ComposerDock Cursor 三行形态", () => {
     expect(dock).not.toContain("挂技能或连接器");
   });
 
-  it("底行是话题 + 成品/推演，不是 git 分支", () => {
+  it("会话内不再常驻话题底行（跟舞台大标题重复）", () => {
     const dock = stripComments(
       readFileSync(new URL("../ComposerDock.tsx", import.meta.url), "utf8")
     );
-    expect(dock).toContain("topicLabel");
-    expect(dock).toContain("surfaceLabel");
-    expect(dock).toContain('hasApp ? "成品" : "推演"');
-    expect(dock).toContain("AppWindow");
+    // 正向：附件/优化提示那一行还在（testid 仍是锚点）
+    expect(dock).toContain('data-testid="sliderule-composer-context"');
+    expect(dock).toContain("attachmentHint");
+    // 反向：话题 + 成品/推演加回来必红
+    expect(dock).not.toContain("topicLabel");
+    expect(dock).not.toContain("surfaceLabel");
+    expect(dock).not.toContain('hasApp ? "成品" : "推演"');
+    expect(dock).not.toContain("AppWindow");
+    expect(dock).not.toContain("sliderule-composer-context-spin");
     expect(dock).not.toContain(">main<");
     expect(dock).not.toContain("This PC");
   });
@@ -191,6 +208,9 @@ describe("对话列接到输入条，不要横切分隔线", () => {
     expect(session).toContain("preferredDevice:");
     expect(session).toContain("loadPreferredDevice()");
     expect(session).toContain("isWiredDevice(scopeChoice.device)");
+    expect(session).toContain("productArchetype:");
+    expect(session).toContain("loadProductArchetype()");
+    expect(session).toContain("isWiredArchetype(scopeChoice.productArchetype)");
     const dock = stripComments(
       readFileSync(new URL("../ComposerDock.tsx", import.meta.url), "utf8")
     );
@@ -199,7 +219,11 @@ describe("对话列接到输入条，不要横切分隔线", () => {
       dock.indexOf("const [installedSkills")
     );
     expect(doSend).toContain("setPreferredDevice(device)");
+    expect(doSend).toContain("setProductArchetype(productArchetype)");
     expect(doSend.indexOf("setPreferredDevice(device)")).toBeLessThan(
+      doSend.indexOf("sendMessage")
+    );
+    expect(doSend.indexOf("setProductArchetype(productArchetype)")).toBeLessThan(
       doSend.indexOf("sendMessage")
     );
     const driver = stripComments(

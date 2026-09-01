@@ -1,8 +1,8 @@
 import React from "react";
 import { createPortal } from "react-dom";
 import {
-  AppWindow,
   Blocks,
+  BookOpen,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -18,6 +18,7 @@ import {
   Palette,
   Smartphone,
   Tablet,
+  Wand2,
   Watch,
   X,
 } from "lucide-react";
@@ -27,7 +28,9 @@ import { navigate } from "wouter/use-browser-location";
 import { EXAMPLE_INTENT_TEXTS } from "./example-intents";
 import {
   loadPreferredDevice,
+  loadProductArchetype,
   setPreferredDevice,
+  setProductArchetype,
   shouldSendOnKey,
 } from "./user-prefs";
 import {
@@ -36,6 +39,10 @@ import {
   composerHeroPlaceholder,
   type ComposerDevice,
 } from "./composer-device";
+import {
+  composerArchetypeMenu,
+  composerArchetypeTriggerLabel,
+} from "./composer-archetype";
 import {
   FREE_STYLE_HINT,
   FREE_STYLE_LABEL,
@@ -390,7 +397,6 @@ export function ComposerDock({
   setInput,
   sendMessage,
   isRunning,
-  goal,
   stop,
   placeholder,
   hero = false,
@@ -417,6 +423,7 @@ export function ComposerDock({
   /** 无参 = 发 input；带 textOverride = 发合成文本（附件名并入时用） */
   sendMessage: (textOverride?: string) => void;
   isRunning: boolean;
+  /** 会话目标。话题底行已撤（跟舞台标题重复），父组件仍传入以免调用点炸。 */
   goal: string;
   /** 控制面范围卡。确认走 confirmControlScope → forcedTool rehearse。 */
   pendingScope?: ScopeCardPending | null;
@@ -453,7 +460,12 @@ export function ComposerDock({
   stop?: () => void;
   /** 空态首页嵌入时的占位文案 */
   placeholder?: string;
-  /** 空态变体：Cursor / Continue 卡片——字在上、工具行在下；开聊后仍是胶囊。 */
+  /**
+   * 空态变体：只决定原型/设备芯片、占位文案、底行话题条。
+   * ⚠ 2026-09-01 用户两张截图：开聊后胶囊把质疑文案和工具条挤在一行，
+   *   发送圆在胶囊外。新建会话是字在上、工具行在下的多行卡片。
+   *   两种状态共用这张卡片；hero 不再切布局。
+   */
   hero?: boolean;
 }) {
   // 模式选择器已删（用户裁决 2026-07-10）：深思一轮就是唯一产品路径
@@ -472,6 +484,11 @@ export function ComposerDock({
     React.useState<ComposerDevice>(loadPreferredDevice);
   const [deviceMenuOpen, setDeviceMenuOpen] = React.useState(false);
   const deviceMenuRef = React.useRef<HTMLDivElement | null>(null);
+  const [productArchetype, setProductArchetypeState] = React.useState(
+    loadProductArchetype
+  );
+  const [archetypeMenuOpen, setArchetypeMenuOpen] = React.useState(false);
+  const archetypeMenuRef = React.useRef<HTMLDivElement | null>(null);
   // 设计系统（2026-08-24）。Stitch / TRAE 都把它做成画布右侧面板，但我们不是
   // 画布模式——按用户裁决合并进指令框，和目标形态下拉并排。
   const [localDesignSystemId, setLocalDesignSystemId] = React.useState<
@@ -505,6 +522,10 @@ export function ComposerDock({
       if (deviceEl && !deviceEl.contains(event.target as Node)) {
         setDeviceMenuOpen(false);
       }
+      const archetypeEl = archetypeMenuRef.current;
+      if (archetypeEl && !archetypeEl.contains(event.target as Node)) {
+        setArchetypeMenuOpen(false);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -513,9 +534,8 @@ export function ComposerDock({
   const adjustTextareaHeight = React.useCallback(() => {
     const ta = textareaRef.current;
     if (!ta) return;
-    // 开聊后胶囊单行约 28px；空态 Cursor 卡片要有一块可点的字区
-    // （Continue InputToolbar 在编辑器下面，上面得留行）。
-    const minH = hero ? 72 : 28;
+    // 空态和会话内同一张多行卡片：工具行在下面，上面得留一块可点的字区。
+    const minH = 72;
     const maxH = 160;
     if (!ta.value.trim()) {
       ta.style.height = `${minH}px`;
@@ -523,7 +543,7 @@ export function ComposerDock({
     }
     ta.style.height = "auto";
     ta.style.height = `${Math.max(minH, Math.min(ta.scrollHeight, maxH))}px`;
-  }, [hero]);
+  }, []);
 
   React.useEffect(() => {
     adjustTextareaHeight();
@@ -696,6 +716,7 @@ export function ComposerDock({
     // 开关在 React 态里，发送却读 localStorage。点了「应用」如果没写进
     // 存储（隐私模式 / 只改了画面），推演仍按 desktop 出 PC 端。
     setPreferredDevice(device);
+    setProductArchetype(productArchetype);
     // 运行中也走 sendMessage：那边排队，这里不许改成 stop。
     if (
       isComposerSendBlocked({
@@ -741,6 +762,7 @@ export function ComposerDock({
     isJudging,
     isRefining,
     device,
+    productArchetype,
     pendingScope,
     pendingAsk,
   ]);
@@ -1148,8 +1170,6 @@ export function ComposerDock({
   const showActionRow =
     attachments.length > 0 ||
     (!hero && (actionHints.length > 0 || !!statusPill));
-  const topicLabel = goal.trim() || "新话题";
-  const surfaceLabel = hasApp ? "成品" : "推演";
 
   const refineButton = (
     <button
@@ -1216,11 +1236,10 @@ export function ComposerDock({
   return (
     <div className="pointer-events-none flex w-full flex-col items-stretch gap-1.5">
       {/*
-        Cursor Composer 三行（横排，不是页面三栏）：
-          1. Changes / Commit 芯片
-          2. 胶囊输入 + 右侧实心圆发送
-          3. branch / This PC 状态行
-        Void SidebarChat 同一结构：SelectedFiles → textarea → 底栏。
+        输入条结构（横排，不是页面三栏）：
+          1. 闭环胶囊 / 提示词芯片（会话内；空态不画）
+          2. 多行卡片：字在上，底栏 + / 技能 / 发送
+          3. 有附件/优化提示时才出一行提示（话题条已撤：跟舞台标题重复）
         ⚠ hintChips 从 SlideRule 传来却从未渲染（2026-08-20）——顶行就是把它接上。
         不许编 git / Commit；闭环胶囊和提示词芯片都是仓里已有的。
       */}
@@ -1331,8 +1350,8 @@ export function ComposerDock({
           ) : null}
         </div>
       ) : null}
-      {/* 开聊后：发送圆跟胶囊同一中线。空态：Continue InputToolbar 把发送放进卡片底栏。 */}
-      <div className={hero ? "w-full" : "flex w-full items-center gap-2"}>
+      {/* 空态和会话内同一张卡片：发送在底栏里，不在卡片外另起一个圆。 */}
+      <div className="w-full">
         {/*
           ⚠ **z-30 不能少。** 2026-08-26 用户报"选了之后框里啥也没有"，一半根因
             在这儿：`/` 面板是这一层的 absolute 子元素，而消息区那一层挂着
@@ -1346,11 +1365,7 @@ export function ComposerDock({
           className="relative z-30 min-w-0 flex-1"
         >
           <div
-            className={`pointer-events-auto relative z-20 w-full border bg-white transition-colors ${
-              hero
-                ? "rounded-[12px] px-3 pb-2 pt-3 shadow-[0_2px_8px_rgba(31,35,40,0.06)]"
-                : "rounded-[24px] px-2 py-1.5"
-            } ${
+            className={`pointer-events-auto relative z-20 w-full border bg-white transition-colors rounded-[12px] px-3 pb-2 pt-3 shadow-[0_2px_8px_rgba(31,35,40,0.06)] ${
               isDragOver
                 ? "border-[#1677ff] bg-[#e6f4ff]/40"
                 : "border-[#e5e7eb]"
@@ -1362,7 +1377,7 @@ export function ComposerDock({
           >
             {isDragOver && (
               <div
-                className={`pointer-events-none absolute inset-0 flex items-center justify-center bg-[#e6f4ff]/60 ${hero ? "rounded-[12px]" : "rounded-[24px]"}`}
+                className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-[12px] bg-[#e6f4ff]/60"
               >
                 <div className="flex items-center gap-2 text-sm font-medium text-[#0958d9]">
                   <FileText className="h-4 w-4" />
@@ -1370,17 +1385,10 @@ export function ComposerDock({
                 </div>
               </div>
             )}
-            {/* 空态：Cursor / Continue 卡片（字在上；底栏 + / 应用Web 在左，优化贴发送左边）。
-            开聊后：单行胶囊，发送在胶囊外。 */}
-            <div
-              className={
-                hero
-                  ? "grid grid-cols-[auto_auto_1fr_auto] items-center gap-x-1.5 gap-y-2"
-                  : "flex items-center gap-1.5"
-              }
-            >
+            {/* 字在上、工具行在下。原型/设备只在空态 hero 画，会话内沿用范围卡。 */}
+            <div className="grid grid-cols-[auto_auto_1fr_auto] items-center gap-x-1.5 gap-y-2">
               <div
-                className={`relative shrink-0 ${hero ? "col-start-1 row-start-2" : ""}`}
+                className="relative shrink-0 col-start-1 row-start-2"
                 ref={menuRef}
               >
                 <button
@@ -1580,84 +1588,167 @@ export function ComposerDock({
               </div>
 
               {hero ? (
-                <div
-                  ref={deviceMenuRef}
-                  className="relative col-start-2 row-start-2 shrink-0"
-                  data-testid="sliderule-composer-device"
-                >
-                  <button
-                    type="button"
-                    aria-haspopup="listbox"
-                    aria-expanded={deviceMenuOpen}
-                    aria-label="目标形态"
-                    data-testid="sliderule-composer-device-trigger"
-                    disabled={isRunning}
-                    title="目标形态（默认 Web；平板 / 手表在菜单里，未接通的不能选）"
-                    onClick={() => setDeviceMenuOpen(open => !open)}
-                    className="inline-flex h-7 items-center gap-1 rounded-full bg-[#f4f4f5] px-2 text-[12px] text-[#171717] transition hover:bg-[#ececef] disabled:opacity-45"
-                  >
-                    {device === "phone" ? (
-                      <Smartphone className="h-3.5 w-3.5" />
-                    ) : device === "tablet" ? (
-                      <Tablet className="h-3.5 w-3.5" />
-                    ) : (
-                      <Monitor className="h-3.5 w-3.5" />
-                    )}
-                    {composerDeviceTriggerLabel(device)}
-                    <ChevronRight
-                      className={`h-3 w-3 text-[#5e5e5e] transition ${
-                        deviceMenuOpen ? "-rotate-90" : "rotate-90"
-                      }`}
-                    />
-                  </button>
+                <div className="col-start-2 row-start-2 flex shrink-0 items-center gap-1">
                   <div
-                    role="listbox"
-                    aria-label="目标形态"
-                    data-testid="sliderule-composer-device-menu"
-                    hidden={!deviceMenuOpen}
-                    className="absolute bottom-full left-0 z-30 mb-1 min-w-[9.5rem] rounded-[10px] border border-[#ececec] bg-white p-1 shadow-[0_8px_24px_rgba(31,35,40,0.12)]"
+                    ref={archetypeMenuRef}
+                    className="relative"
+                    data-testid="sliderule-composer-archetype"
                   >
-                    {composerDeviceMenu().map(opt => {
-                      const on = device === opt.id;
-                      const Icon =
-                        opt.id === "phone"
-                          ? Smartphone
-                          : opt.id === "tablet"
-                            ? Tablet
-                            : opt.id === "watch"
-                              ? Watch
-                              : Monitor;
-                      return (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          role="option"
-                          aria-selected={on}
-                          data-testid={`sliderule-composer-device-${opt.id}`}
-                          disabled={isRunning || !opt.wired}
-                          title={opt.title}
-                          onClick={() => {
-                            if (!opt.wired) return;
-                            setDevice(opt.id);
-                            setPreferredDevice(opt.id);
-                            setDeviceMenuOpen(false);
-                          }}
-                          className={`flex w-full items-center gap-1.5 rounded-[7px] px-2 py-1.5 text-left text-[12px] transition ${
-                            on
-                              ? "bg-[#f4f4f5] font-medium text-[#171717]"
-                              : "text-[#3f3f46] hover:bg-[#f7f7f8]"
-                          } disabled:cursor-not-allowed disabled:opacity-45`}
-                        >
-                          <Icon className="h-3.5 w-3.5 shrink-0" />
-                          <span className="min-w-0 flex-1">{opt.label}</span>
-                          {!opt.wired ? (
-                            <span className="text-[10px] text-[#a1a1aa]">未接通</span>
-                          ) : on ? (
-                            <Check className="h-3 w-3 shrink-0 text-[#171717]" />
-                          ) : null}
-                        </button>
-                      );
-                    })}
+                    <button
+                      type="button"
+                      aria-haspopup="listbox"
+                      aria-expanded={archetypeMenuOpen}
+                      aria-label="产品原型"
+                      data-testid="sliderule-composer-archetype-trigger"
+                      disabled={isRunning}
+                      title="产品原型（业务 / 内容 / 自由类型。不跟 Web/应用/平板混在一颗钮里）"
+                      onClick={() => {
+                        setArchetypeMenuOpen(open => !open);
+                        setDeviceMenuOpen(false);
+                      }}
+                      className="inline-flex h-7 items-center gap-1 rounded-full bg-[#f4f4f5] px-2 text-[12px] text-[#171717] transition hover:bg-[#ececef] disabled:opacity-45"
+                    >
+                      {productArchetype === "content_app" ? (
+                        <BookOpen className="h-3.5 w-3.5" />
+                      ) : productArchetype === "free_app" ? (
+                        <Wand2 className="h-3.5 w-3.5" />
+                      ) : (
+                        <Blocks className="h-3.5 w-3.5" />
+                      )}
+                      {composerArchetypeTriggerLabel(productArchetype)}
+                      <ChevronRight
+                        className={`h-3 w-3 text-[#5e5e5e] transition ${
+                          archetypeMenuOpen ? "-rotate-90" : "rotate-90"
+                        }`}
+                      />
+                    </button>
+                    <div
+                      role="listbox"
+                      aria-label="产品原型"
+                      data-testid="sliderule-composer-archetype-menu"
+                      hidden={!archetypeMenuOpen}
+                      className="absolute bottom-full left-0 z-30 mb-1 min-w-[9.5rem] rounded-[10px] border border-[#ececec] bg-white p-1 shadow-[0_8px_24px_rgba(31,35,40,0.12)]"
+                    >
+                      {composerArchetypeMenu().map(opt => {
+                        const on = productArchetype === opt.id;
+                        const Icon =
+                          opt.id === "content_app"
+                            ? BookOpen
+                            : opt.id === "free_app"
+                              ? Wand2
+                              : Blocks;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            role="option"
+                            aria-selected={on}
+                            data-testid={`sliderule-composer-archetype-${opt.id}`}
+                            disabled={isRunning}
+                            title={opt.title}
+                            onClick={() => {
+                              setProductArchetypeState(opt.id);
+                              setProductArchetype(opt.id);
+                              setArchetypeMenuOpen(false);
+                            }}
+                            className={`flex w-full items-center gap-1.5 rounded-[7px] px-2 py-1.5 text-left text-[12px] transition ${
+                              on
+                                ? "bg-[#f4f4f5] font-medium text-[#171717]"
+                                : "text-[#3f3f46] hover:bg-[#f7f7f8]"
+                            } disabled:cursor-not-allowed disabled:opacity-45`}
+                          >
+                            <Icon className="h-3.5 w-3.5 shrink-0" />
+                            <span className="min-w-0 flex-1">{opt.label}</span>
+                            {on ? (
+                              <Check className="h-3 w-3 shrink-0 text-[#171717]" />
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div
+                    ref={deviceMenuRef}
+                    className="relative"
+                    data-testid="sliderule-composer-device"
+                  >
+                    <button
+                      type="button"
+                      aria-haspopup="listbox"
+                      aria-expanded={deviceMenuOpen}
+                      aria-label="目标形态"
+                      data-testid="sliderule-composer-device-trigger"
+                      disabled={isRunning}
+                      title="目标形态（默认 Web；平板 / 手表在菜单里，未接通的不能选）"
+                      onClick={() => {
+                        setDeviceMenuOpen(open => !open);
+                        setArchetypeMenuOpen(false);
+                      }}
+                      className="inline-flex h-7 items-center gap-1 rounded-full bg-[#f4f4f5] px-2 text-[12px] text-[#171717] transition hover:bg-[#ececef] disabled:opacity-45"
+                    >
+                      {device === "phone" ? (
+                        <Smartphone className="h-3.5 w-3.5" />
+                      ) : device === "tablet" ? (
+                        <Tablet className="h-3.5 w-3.5" />
+                      ) : (
+                        <Monitor className="h-3.5 w-3.5" />
+                      )}
+                      {composerDeviceTriggerLabel(device)}
+                      <ChevronRight
+                        className={`h-3 w-3 text-[#5e5e5e] transition ${
+                          deviceMenuOpen ? "-rotate-90" : "rotate-90"
+                        }`}
+                      />
+                    </button>
+                    <div
+                      role="listbox"
+                      aria-label="目标形态"
+                      data-testid="sliderule-composer-device-menu"
+                      hidden={!deviceMenuOpen}
+                      className="absolute bottom-full left-0 z-30 mb-1 min-w-[9.5rem] rounded-[10px] border border-[#ececec] bg-white p-1 shadow-[0_8px_24px_rgba(31,35,40,0.12)]"
+                    >
+                      {composerDeviceMenu().map(opt => {
+                        const on = device === opt.id;
+                        const Icon =
+                          opt.id === "phone"
+                            ? Smartphone
+                            : opt.id === "tablet"
+                              ? Tablet
+                              : opt.id === "watch"
+                                ? Watch
+                                : Monitor;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            role="option"
+                            aria-selected={on}
+                            data-testid={`sliderule-composer-device-${opt.id}`}
+                            disabled={isRunning || !opt.wired}
+                            title={opt.title}
+                            onClick={() => {
+                              if (!opt.wired) return;
+                              setDevice(opt.id);
+                              setPreferredDevice(opt.id);
+                              setDeviceMenuOpen(false);
+                            }}
+                            className={`flex w-full items-center gap-1.5 rounded-[7px] px-2 py-1.5 text-left text-[12px] transition ${
+                              on
+                                ? "bg-[#f4f4f5] font-medium text-[#171717]"
+                                : "text-[#3f3f46] hover:bg-[#f7f7f8]"
+                            } disabled:cursor-not-allowed disabled:opacity-45`}
+                          >
+                            <Icon className="h-3.5 w-3.5 shrink-0" />
+                            <span className="min-w-0 flex-1">{opt.label}</span>
+                            {!opt.wired ? (
+                              <span className="text-[10px] text-[#a1a1aa]">未接通</span>
+                            ) : on ? (
+                              <Check className="h-3 w-3 shrink-0 text-[#171717]" />
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               ) : null}
@@ -1671,16 +1762,10 @@ export function ComposerDock({
               首页决定新推演用哪套皮，会话内改完下一轮生效。所以不能写 hero &&。 */}
               {/*
                 「/ 技能·连接器」提示钮 + 设计系统按钮同占第三格。
-                ⚠ hero 是四列栅格（grid-cols-[auto_auto_1fr_auto]），两个元素
+                ⚠ 四列栅格（grid-cols-[auto_auto_1fr_auto]），两个元素
                   分到同一格会**叠在一起**，所以这里包一层 flex 再放进去。
               */}
-              <div
-                className={
-                  hero
-                    ? "col-start-3 row-start-2 flex min-w-0 items-center gap-1.5 justify-self-start"
-                    : "flex min-w-0 items-center gap-1.5"
-                }
-              >
+              <div className="col-start-3 row-start-2 flex min-w-0 items-center gap-1.5 justify-self-start">
                 <button
                   type="button"
                   data-testid="sliderule-slash-hint"
@@ -1734,9 +1819,7 @@ export function ComposerDock({
               </div>
               </div>
 
-              <div
-                className={`min-w-0 ${hero ? "col-span-4 row-start-1" : "flex-1"}`}
-              >
+              <div className="min-w-0 col-span-4 row-start-1">
                 {/*
                   挂上的能力是**输入框里的前缀标签**，不是上面另起一行的芯片。
                   用户 2026-08-26 指着 TRAE 的截图说的：选完之后能力就待在
@@ -1832,25 +1915,17 @@ export function ComposerDock({
                   }
                   rows={1}
                   disabled={Boolean(pendingScope) || askBlocksTyping(pendingAsk)}
-                  className={`block max-h-40 w-full resize-none bg-transparent py-0 text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60 ${
-                    hero
-                      ? "min-h-[72px] px-0.5 text-[15px] leading-6"
-                      : "min-h-7 px-1 text-[14px] leading-7"
-                  }`}
+                  className="block max-h-40 w-full resize-none bg-transparent py-0 text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60 min-h-[72px] px-0.5 text-[15px] leading-6"
                   data-testid="sliderule-composer-input"
                 />
               </div>
 
-              {/* 优化贴发送左边。空态跟发送同一簇靠右；开聊后仍在字右边、发送圆左边。 */}
-              {hero ? (
-                <div className="col-start-4 row-start-2 flex items-center gap-1 justify-self-end">
-                  {refineButton}
-                  {stopButton}
-                  {sendButton}
-                </div>
-              ) : (
-                refineButton
-              )}
+              {/* 优化贴发送左边，跟发送同一簇靠右。 */}
+              <div className="col-start-4 row-start-2 flex items-center gap-1 justify-self-end">
+                {refineButton}
+                {stopButton}
+                {sendButton}
+              </div>
             </div>
           </div>
           {/* ⚠ 能力面板必须画在这个 relative 容器**内部**——挂 body 的话
@@ -1880,13 +1955,10 @@ export function ComposerDock({
             推演中的两条浮层：**AI 替你定了什么** 和 **你补的那句话**。
 
             ⚠ 2026-08-27 真机咬出来的位置错误。第一版把它们放在输入框正文
-              上方的那个 `min-w-0 flex-1` 盒子里——**首页看着没问题**（hero 是
-              四列栅格，那个盒子 col-span-4，整行宽），一进会话就废了：
-              非 hero 分支是 `flex items-center gap-1.5` 的**一行**，工具条、
-              优化、发送都是同一行的兄弟，剩给它的只有 ~100px。真机截图上
-              「整改流转层级：门店内部指定专人整改…」被压成每行三个字的竖条。
-              下面那条审查卡的注释早就写着答案了——「不进外层 flex，进流会把
-              输入顶走」。同一个坑，同一个修法：挂到 absolute 那一层去。
+              上方的那个 `min-w-0` 盒子里——进流会把输入顶走，或在老胶囊
+              单行里被挤成竖条。修法：挂到 absolute 那一层去，叠在卡片上方。
+              2026-09-01 会话内改成跟空态同一张多行卡片，浮层仍不进栅格，
+              否则会把工具行顶乱。
 
             ⚠ 范围卡 / 控制面提问在场时让路：同一处只许有一张卡（跟
               intakeHintYieldsToScopeCard 同一条纪律）。推演中本来也不会
@@ -2021,35 +2093,20 @@ export function ComposerDock({
             />
           ) : null}
         </div>
-        {hero ? null : stopButton}
-        {hero ? null : sendButton}
       </div>
-      {!hero ? (
+      {/* ⚠ 2026-09-01 用户圈了底行「话题 · 成品」：跟舞台大标题重复，撤掉。
+            这一行只在有附件/优化提示时出现，不再常驻 goal。 */}
+      {!hero && attachmentHint && !isRunning && !extractPending ? (
         <div
           className="pointer-events-auto flex w-full items-center gap-3 px-0.5 text-[11px] leading-4 text-[#71717a]"
           data-testid="sliderule-composer-context"
         >
-          <span className="min-w-0 truncate" title={topicLabel}>
-            {topicLabel}
+          <span
+            className="min-w-0 truncate"
+            data-testid="sliderule-composer-hint"
+          >
+            {attachmentHint}
           </span>
-          <span className="flex shrink-0 items-center gap-1">
-            <AppWindow className="h-3 w-3" />
-            {surfaceLabel}
-          </span>
-          {attachmentHint && !isRunning && !extractPending ? (
-            <span
-              className="min-w-0 truncate"
-              data-testid="sliderule-composer-hint"
-            >
-              {attachmentHint}
-            </span>
-          ) : null}
-          {(isRunning || sendBusy) && (
-            <Loader2
-              className="ml-auto h-3 w-3 shrink-0 animate-spin"
-              data-testid="sliderule-composer-context-spin"
-            />
-          )}
         </div>
       ) : null}
       {lightbox &&

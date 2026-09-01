@@ -130,6 +130,7 @@ describe("产品客户端不得再 POST 工厂流", () => {
     expect(postFn).toContain("userText");
     expect(postFn).toContain("preferredDevice");
     expect(postFn).toContain("productArchetype");
+    expect(postFn).toContain("opts.productArchetype");
     expect(postFn).toContain("opts.tools");
     expect(postFn).toContain("designSystemId");
     expect(postFn).toContain("/api/sliderule/control-turn-stream");
@@ -155,6 +156,12 @@ describe("开始推演 / 质疑 / /推演", () => {
     expect(confirmFn).toContain("snapshot.restatement");
     expect(confirmFn).toContain("productArchetype");
     expect(confirmFn).toContain("snapshot.device");
+    const runTurn = SESSION.slice(
+      SESSION.indexOf("const runTurn = async"),
+      SESSION.indexOf("const requestRehearsal = async")
+    );
+    expect(runTurn).toContain("loadProductArchetype()");
+    expect(runTurn).toContain("isWiredArchetype(scopeChoice.productArchetype)");
     expect(confirmFn).toContain("snapshot.tools");
     const inferFn = SESSION.slice(
       SESSION.indexOf("export function inferForcedTool"),
@@ -177,9 +184,20 @@ describe("开始推演 / 质疑 / /推演", () => {
       SESSION.indexOf("const pendingClarifications"),
       SESSION.indexOf("const generateDeliverables")
     );
-    expect(pendingFn).toContain('awaitReason === "control_clarify"');
-    expect(pendingFn).toContain("isRunning && !parkedClarify");
-    expect(pendingFn).toContain("kindLabel");
+    expect(pendingFn).toContain("pendingClarificationItems");
+    expect(pendingFn).toContain("submittedClarifyIds");
+    expect(pendingFn).toContain("submittedGapIds");
+    const runTurn = SESSION.slice(
+      SESSION.indexOf("const runTurn = async"),
+      SESSION.indexOf("const requestRehearsal = async")
+    );
+    expect(runTurn).toContain("applyAnsweredGapsToState");
+    const clarifyFn = SESSION.slice(
+      SESSION.indexOf("const answerClarifications"),
+      SESSION.indexOf("runTurn: requestRehearsal")
+    );
+    expect(clarifyFn).toContain("setSubmittedClarifyIds");
+    expect(clarifyFn).toContain("applyAnsweredGapsToState");
     const factoryPost = DRIVER.slice(
       DRIVER.indexOf("export async function driveFullViaPythonStream"),
       DRIVER.indexOf("export async function resumeDriveFullStream")
@@ -194,6 +212,19 @@ describe("开始推演 / 质疑 / /推演", () => {
     );
     expect(hydrate).toContain("hydrateParkedScope");
     expect(hydrate).not.toContain("loadPreferredDevice()");
+  });
+
+  it("活路径 park 事件进卡前锁作曲家形态，不是 event.device 可点", () => {
+    const park = SESSION.slice(
+      SESSION.indexOf("onControlScopeCard:"),
+      SESSION.indexOf("charterReuseNext: event.charterReuseNext")
+    );
+    expect(park).toContain("lockScopeMorphology");
+    expect(park).toContain("device: locked.device");
+    expect(park).toContain("productArchetype: locked.productArchetype");
+    expect(CARD).toContain("lockScopeMorphology");
+    expect(CARD).not.toContain("setDevice(");
+    expect(CARD).not.toContain("setProductArchetype(");
   });
 
   it("先改范围 POST dismiss_scope；reload 从 transcript 恢复 ask options", () => {

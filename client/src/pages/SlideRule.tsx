@@ -1196,7 +1196,10 @@ function SlideRuleUnified({
   const showStudioChrome = isStudioChromeShown(isHomeEmpty);
 
   return (
-    <StudioLayoutProvider available={showStudioChrome}>
+    <StudioLayoutProvider
+      available={showStudioChrome}
+      layoutLocked={isRunning}
+    >
       <DesignSystemPanelProvider>
         <div className={`${autopilotTheme.immersionPage} flex flex-col`}>
           {/* 还没推演：顶栏整条不挂（交付物/重置也占一条底边，空态看着像少了一截）。 */}

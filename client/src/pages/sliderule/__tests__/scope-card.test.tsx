@@ -9,13 +9,31 @@
 import { readFileSync } from "node:fs";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+
+import {
+  saveProductCharter,
+  setCharterReuseNext,
+} from "../product-charter";
+
+const memStore = new Map<string, string>();
+(globalThis as unknown as { localStorage: Storage }).localStorage ??= {
+  getItem: (k: string) => memStore.get(k) ?? null,
+  setItem: (k: string, v: string) => void memStore.set(k, v),
+  removeItem: (k: string) => void memStore.delete(k),
+  clear: () => memStore.clear(),
+  key: (i: number) => [...memStore.keys()][i] ?? null,
+  get length() {
+    return memStore.size;
+  },
+} as Storage;
 
 import { isComposerSendBlocked } from "../ComposerDock";
 import { IntakeHintBar, shouldShowIntakeHint } from "../IntakeHintBar";
 import { ScopeCard } from "../ScopeCard";
 import {
   interceptRehearsalRequest,
+  lockScopeMorphology,
   normalizeScopeTools,
   restateAppGoal,
   SCOPE_CARD_CONFIRM_LABEL,
@@ -27,6 +45,10 @@ import {
   shouldSkipScopeCard,
   type ScopeCardPending,
 } from "../scope-card-gate";
+import {
+  setPreferredDevice,
+  setProductArchetype,
+} from "../user-prefs";
 import { intakeHintYieldsToScopeCard } from "../use-intake-judge";
 import type { IntakeJudgement } from "../use-intake-judge";
 
@@ -215,7 +237,7 @@ describe("同一 send 禁止 hint 条和范围卡同时出现", () => {
     expect(DOCK).toContain("pendingScope");
     const overlay = DOCK.slice(
       DOCK.indexOf("{pendingScope && onConfirmScope"),
-      DOCK.indexOf("{hero ? null : sendButton}")
+      DOCK.indexOf('data-testid="sliderule-composer-context"')
     );
     expect(overlay).toContain("<ScopeCard");
     expect(overlay).toContain("key={pendingScope.userText}");
@@ -237,12 +259,16 @@ describe("同一 send 禁止 hint 条和范围卡同时出现", () => {
       SESSION.indexOf("const requestRehearsal = async")
     );
     expect(runTurnBody).toContain("loadCharterReuseNext");
-    expect(runTurnBody).toContain("loadProductCharter");
+    expect(runTurnBody).toContain("hydrateScopeCharter");
     expect(runTurnBody).toContain("reuseCharter");
     expect(runTurnBody).toContain("!== null");
     expect(runTurnBody).toContain('"rehearse"');
+    expect(runTurnBody).toContain('"productCharter"');
     expect(CARD_SRC).toContain("initialReuseNext");
     expect(CARD_SRC).toContain("pending.charterReuseNext");
+    expect(CARD_SRC).toContain("hydrateScopeCharter");
+    expect(CARD_SRC).toContain("productCharter: charter");
+    expect(CARD_SRC).toContain("charterFieldChips");
     expect(SESSION).not.toContain("from \"./ScopeCard\"");
     expect(SESSION).not.toContain("from \"./SlideRuleStudio\"");
     expect(CARD_SRC).toContain("toggleCharterChoice");
@@ -474,6 +500,71 @@ describe("looksLikeNewAppIntent 自动重置已关", () => {
   });
 });
 
+describe("范围卡宪章跟命题走，不跟上一场走", () => {
+  beforeEach(() => {
+    memStore.clear();
+    try {
+      localStorage.clear();
+    } catch {
+      /* 上面 ??= 已经挂了 memStore */
+    }
+    setCharterReuseNext(false);
+    saveProductCharter({
+      industry: "企业服务",
+      defaultRoles: "店长、员工",
+      terms: "工单、审批",
+    });
+  });
+
+  it("不勾下一场沿用：企业服务/店长不得亮着，股票分析器要有行情", () => {
+    const html = renderToStaticMarkup(
+      <ScopeCard
+        pending={{
+          userText: "做一个股票分析器",
+          restatement: "股票分析器",
+          variant: "full",
+          device: "desktop",
+          charterReuseNext: false,
+        }}
+        onConfirm={() => {}}
+        onRevise={() => {}}
+      />
+    );
+    expect(html).toContain("将做成：股票分析器");
+    expect(html).toContain("行情");
+    expect(html).toContain("投资者");
+    const industry = html.slice(
+      html.indexOf('data-testid="sliderule-scope-charter-industry-企业服务"')
+    );
+    expect(industry.slice(0, 180)).toContain('aria-pressed="false"');
+    const role = html.slice(
+      html.indexOf('data-testid="sliderule-scope-charter-defaultRoles-店长"')
+    );
+    expect(role.slice(0, 180)).toContain('aria-pressed="false"');
+  });
+
+  it("勾了下一场沿用：才把上一场企业服务亮上", () => {
+    setCharterReuseNext(true);
+    const html = renderToStaticMarkup(
+      <ScopeCard
+        pending={{
+          userText: "做一个股票分析器",
+          restatement: "股票分析器",
+          variant: "full",
+          device: "desktop",
+          charterReuseNext: true,
+        }}
+        onConfirm={() => {}}
+        onRevise={() => {}}
+      />
+    );
+    const industry = html.slice(
+      html.indexOf('data-testid="sliderule-scope-charter-industry-企业服务"')
+    );
+    expect(industry.slice(0, 180)).toContain('aria-pressed="true"');
+  });
+});
+
 describe("复述与 pending 整份替换", () => {
   it("复述剥掉做一个/帮我做个，不是另一套假分钟数", () => {
     expect(restateAppGoal("做一个连锁宠物医院管理系统")).toBe(
@@ -493,6 +584,115 @@ describe("复述与 pending 整份替换", () => {
     expect(confirmFn).not.toContain("setPendingScope(prev");
     expect(confirmFn).toContain("pendingScopeRef.current");
     expect(confirmFn).not.toContain("pendingScope.");
+  });
+});
+
+describe("范围卡原型和设备档锁死作曲家选择", () => {
+  beforeEach(() => {
+    memStore.clear();
+    try {
+      localStorage.clear();
+    } catch {
+      /* memStore */
+    }
+  });
+
+  it("外面选的平板/自由类型带进卡，桌面不得亮着", () => {
+    setPreferredDevice("tablet");
+    setProductArchetype("free_app");
+    const html = renderToStaticMarkup(
+      <ScopeCard
+        pending={{
+          userText: "团子的一天",
+          restatement: "团子的一天",
+          variant: "full",
+          device: "desktop",
+          productArchetype: "business_app",
+        }}
+        onConfirm={() => {}}
+        onRevise={() => {}}
+      />
+    );
+    expect(html).toContain("设备档：平板");
+    const tablet = html.slice(
+      html.indexOf('data-testid="sliderule-scope-device-tablet"')
+    );
+    expect(tablet.slice(0, 220)).toContain('aria-pressed="true"');
+    const desktop = html.slice(
+      html.indexOf('data-testid="sliderule-scope-device-desktop"')
+    );
+    expect(desktop.slice(0, 220)).toContain('aria-pressed="false"');
+    const free = html.slice(
+      html.indexOf('data-testid="sliderule-scope-archetype-free_app"')
+    );
+    expect(free.slice(0, 220)).toContain('aria-pressed="true"');
+    const biz = html.slice(
+      html.indexOf('data-testid="sliderule-scope-archetype-business_app"')
+    );
+    expect(biz.slice(0, 220)).toContain('aria-pressed="false"');
+    expect(html).not.toContain("设备档：Web / PC");
+  });
+
+  it("原型和设备档置灰锁死，本轮能力仍能点", () => {
+    setPreferredDevice("tablet");
+    setProductArchetype("free_app");
+    const html = renderToStaticMarkup(
+      <ScopeCard
+        pending={{
+          ...FULL_PENDING,
+          device: "desktop",
+          productArchetype: "business_app",
+        }}
+        onConfirm={() => {}}
+        onRevise={() => {}}
+      />
+    );
+    const archetype = html.slice(
+      html.indexOf('data-testid="sliderule-scope-archetype"'),
+      html.indexOf('data-testid="sliderule-scope-device"')
+    );
+    expect(archetype).toContain('data-locked="true"');
+    expect(archetype).toContain("disabled");
+    expect(archetype).toContain('aria-disabled="true"');
+    expect(archetype).toContain("cursor-not-allowed");
+    const device = html.slice(
+      html.indexOf('data-testid="sliderule-scope-device"'),
+      html.indexOf('data-testid="sliderule-scope-tools"')
+    );
+    expect(device).toContain('data-locked="true"');
+    expect(device).toContain("disabled");
+    expect(device).toContain('aria-disabled="true"');
+    const tools = html.slice(
+      html.indexOf('data-testid="sliderule-scope-tools"'),
+      html.indexOf('data-testid="sliderule-scope-steps"')
+    );
+    expect(tools).not.toContain("disabled");
+    expect(tools).not.toContain("cursor-not-allowed");
+    expect(CARD_SRC).toContain("lockScopeMorphology");
+    expect(CARD_SRC).toContain("cursor-not-allowed");
+    expect(CARD_SRC).not.toContain("setDevice(");
+    expect(CARD_SRC).not.toContain("setProductArchetype(");
+    expect(SESSION).toContain("lockScopeMorphology");
+  });
+
+  it("开始推演 POST 作曲家档，不是 park 事件里的桌面", () => {
+    setPreferredDevice("tablet");
+    setProductArchetype("free_app");
+    const locked = lockScopeMorphology({
+      device: "desktop",
+      productArchetype: "business_app",
+    });
+    expect(locked.device).toBe("tablet");
+    expect(locked.productArchetype).toBe("free_app");
+    const confirmFn = SESSION.slice(
+      SESSION.indexOf("const confirmControlScope"),
+      SESSION.indexOf("const dismissScopeCard")
+    );
+    expect(confirmFn).toContain("snapshot.device");
+    expect(confirmFn).toContain("snapshot.productArchetype");
+    expect(CARD_SRC).toContain("onConfirm(choice)");
+    expect(CARD_SRC).toContain("productArchetype");
+    expect(CARD_SRC).toContain("device");
   });
 });
 

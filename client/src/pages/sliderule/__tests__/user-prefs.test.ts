@@ -21,11 +21,13 @@ import {
   loadEnterBehavior,
   loadNotifyCompletePref,
   loadPreferredDevice,
+  loadProductArchetype,
   loadReduceMotionPref,
   notifyDriveComplete,
   setEnterBehavior,
   setNotifyCompletePref,
   setPreferredDevice,
+  setProductArchetype,
   setReduceMotionPref,
   shouldSendOnKey,
   composerEnterHintLabel,
@@ -120,5 +122,21 @@ describe("目标形态（默认 Web）", () => {
     expect(loadPreferredDevice()).toBe("tablet");
     setPreferredDevice("desktop");
     expect(loadPreferredDevice()).toBe("desktop");
+  });
+});
+
+describe("产品原型（默认业务）", () => {
+  beforeEach(() => memStore.clear());
+
+  it("默认 business_app；非法值回落；round-trip 认 free_app", () => {
+    expect(loadProductArchetype()).toBe("business_app");
+    setProductArchetype("content_app");
+    expect(loadProductArchetype()).toBe("content_app");
+    setProductArchetype("free_app");
+    expect(loadProductArchetype()).toBe("free_app");
+    setProductArchetype("casual_game");
+    expect(loadProductArchetype()).toBe("business_app");
+    setProductArchetype("business_app");
+    expect(loadProductArchetype()).toBe("business_app");
   });
 });

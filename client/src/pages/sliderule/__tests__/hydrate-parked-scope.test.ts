@@ -117,6 +117,7 @@ describe("活路径必须调用 helper", () => {
     );
     expect(hydrate).toContain("hydrateParkedScope");
     expect(hydrate).not.toContain("loadPreferredDevice()");
+    expect(hydrate).not.toContain("loadProductArchetype()");
     expect(hydrate).not.toContain("defaultArchetype()");
   });
 });

@@ -14,6 +14,7 @@ import {
 } from "../XrayPanel";
 import { deriveAppRuntimeSchema } from "../live-runtime/app-runtime-schema";
 import { SlideRuleStudio } from "../SlideRuleStudio";
+import { SlideRuleTopHud } from "../SlideRuleTopHud";
 import { StudioLayoutProvider } from "../StudioLayoutContext";
 import type { FiveSystemModel } from "../system-screens/five-system-model";
 
@@ -346,23 +347,26 @@ describe("SlideRuleStudio 三态舞台", () => {
     expect(html).not.toContain('data-testid="sliderule-xray-toggle"');
   });
 
-  it("成品面顶栏：页面/代码 + 关联 + 打开画布在场，沙盘片已撤", () => {
+  it("成品面顶栏：页面/代码 + 关联在场，画布在互斥布局档里，沙盘片已撤", () => {
     const html = renderToStaticMarkup(
-      <SlideRuleStudio
-        chatSlot={<div />}
-        activeSkillId={null}
-        specPages={[
-          {
-            pageId: "p1",
-            html: "<!doctype html><html><body>x</body></html>",
-            current: 1,
-            total: 1,
-            // 第 3 步的素颜页：孔要等第 6.5 步才打。这条用例只看顶栏三件在不在，
-            // 跟接没接数据无关，取 false 即可。
-            bound: false,
-          },
-        ]}
-      />
+      <StudioLayoutProvider available>
+        <SlideRuleStudio
+          chatSlot={<div />}
+          activeSkillId={null}
+          chromeSlot={<SlideRuleTopHud />}
+          specPages={[
+            {
+              pageId: "p1",
+              html: "<!doctype html><html><body>x</body></html>",
+              current: 1,
+              total: 1,
+              // 第 3 步的素颜页：孔要等第 6.5 步才打。这条用例只看顶栏三件在不在，
+              // 跟接没接数据无关，取 false 即可。
+              bound: false,
+            },
+          ]}
+        />
+      </StudioLayoutProvider>
     );
     expect(html).toContain('data-testid="sliderule-stage-gears"');
     expect(html).toContain('data-testid="sliderule-stage-view-page"');
@@ -385,15 +389,17 @@ describe("SlideRuleStudio 三态舞台", () => {
     expect(html).not.toContain(">沙盘<");
 
     /*
-     * ⚠ 2026-08-28 用户裁决：「画布作为独立功能」。它从分段控件里拿出来，
-     *   变成一颗独立的「打开画布」。
-     *
-     * ⚠ 这条必须**正反一起**（「沙盘」那次记下的形状）：只查"分段里没有画布"
-     *   会假绿——把那颗独立按钮也删掉，判据照样全绿，而画布再也打不开。
+     * ⚠ 2026-09-01：画布是顶栏互斥分段的一片，不是独立「打开画布」。
+     * 正反一起（「沙盘」那次记下的形状）：只查"页面/代码里没有画布"
+     * 会假绿——把顶栏那片也删掉，画布再也打不开。
      */
-    expect(html).toContain("打开画布");
+    expect(html).toContain("分栏");
+    expect(html).toContain("全屏");
+    expect(html).toContain("画布");
+    expect(html).not.toContain("打开画布");
+    expect(html).toContain('data-testid="sliderule-workbench-mode"');
     expect(html).toContain('data-testid="sliderule-stage-view-canvas"');
-    // 反向：它不再是分段控件里的一片（分段里只剩页面/代码两片）
+    // 反向：它不再是页面/代码分段里的一片
     const seg = html.slice(
       html.indexOf('data-testid="sliderule-stage-view-page"') - 600,
       html.indexOf('data-testid="sliderule-stage-view-code"')
@@ -401,36 +407,42 @@ describe("SlideRuleStudio 三态舞台", () => {
     expect(seg).not.toContain('data-testid="sliderule-stage-view-canvas"');
   });
 
-  it("顶栏那排的顺序：私有 → 关联 → 打开画布 → 点选编辑", () => {
+  it("顶栏那排的顺序：私有 → 关联 → 点选编辑 → 分栏/全屏/画布", () => {
     /*
-     * 用户 2026-08-28 给的就是这个顺序。判据盯**渲染后 HTML 里的先后**，
-     * 不是源码里出现的次序——后者把按钮渲染到别处照样绿（本仓踩过十次以上
-     * 的形态，见"重置会话落在标题左侧"那条）。
+     * 2026-09-01：画布从独立钮收进 chromeSlot 里的互斥分段。
+     * 判据盯**渲染后 HTML 里的先后**，不是源码里出现的次序。
      */
     const html = renderToStaticMarkup(
-      <SlideRuleStudio
-        chatSlot={<div />}
-        activeSkillId={null}
-        /* ⚠ 必须给 sessionId：StudioShareToggle 没有它直接 `return null`，
-           不给的话「私有」根本不渲染，这条判据会退化成"只查了后三个"。 */
-        sessionId="sr-test"
-        specPages={[
-          {
-            pageId: "p1",
-            html: "<!doctype html><html><body>x</body></html>",
-            current: 1,
-            total: 1,
-            bound: false,
-          },
-        ]}
-      />
+      <StudioLayoutProvider available>
+        <SlideRuleStudio
+          chatSlot={<div />}
+          activeSkillId={null}
+          chromeSlot={<SlideRuleTopHud />}
+          /* ⚠ 必须给 sessionId：StudioShareToggle 没有它直接 `return null`，
+             不给的话「私有」根本不渲染，这条判据会退化成"只查了后三个"。 */
+          sessionId="sr-test"
+          specPages={[
+            {
+              pageId: "p1",
+              html: "<!doctype html><html><body>x</body></html>",
+              current: 1,
+              total: 1,
+              bound: false,
+            },
+          ]}
+        />
+      </StudioLayoutProvider>
     );
     const share = html.indexOf('data-testid="sliderule-share-toggle"');
     const xray = html.indexOf('data-testid="sliderule-xray-toggle"');
+    const edit = html.indexOf('data-testid="sliderule-click-edit-toggle"');
+    const workbench = html.indexOf('data-testid="sliderule-workbench-mode"');
     const canvas = html.indexOf('data-testid="sliderule-stage-view-canvas"');
     expect(share).toBeGreaterThan(-1);
     expect(xray).toBeGreaterThan(share);
-    expect(canvas).toBeGreaterThan(xray);
+    expect(edit).toBeGreaterThan(xray);
+    expect(workbench).toBeGreaterThan(edit);
+    expect(canvas).toBeGreaterThan(workbench);
   });
 
   it("重置会话落在标题**左侧**，不在右侧图标簇里（量渲染后的顺序，不量源码）", () => {
@@ -465,6 +477,10 @@ describe("SlideRuleStudio 三态舞台", () => {
     const gearsAt = html.indexOf('data-testid="sliderule-stage-gears"');
     expect(resetAt).toBeGreaterThan(-1);
     expect(titleAt).toBeGreaterThan(-1);
+    expect(html).toContain('data-testid="sliderule-app-stage-title"');
+    const titleMark = html.indexOf('data-testid="sliderule-app-stage-title"');
+    expect(titleMark).toBeGreaterThan(resetAt);
+    expect(titleMark).toBeLessThan(gearsAt);
     // 左于标题
     expect(resetAt).toBeLessThan(titleAt);
     // 且不在右侧图标簇里

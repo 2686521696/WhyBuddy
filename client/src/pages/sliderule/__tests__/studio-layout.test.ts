@@ -10,11 +10,14 @@ import {
   isStudioChromeShown,
   maximizeIntent,
   needsMaximizeLockFix,
+  needsRunningSplitFix,
   nextStagePageHidden,
+  resolveWorkbenchMode,
   STUDIO_CHAT_FALLBACK_PERCENT,
   STUDIO_CHAT_MAX_PERCENT,
   STUDIO_CHAT_MIN_PERCENT,
   STUDIO_CHAT_SIDEBAR_MULTIPLIER,
+  STUDIO_WORKBENCH_MODE_OPTIONS,
   studioChatDefaultPercent,
   studioChatDefaultPx,
   studioPhoneChatDefaultPercent,
@@ -22,6 +25,7 @@ import {
   studioPhoneStageDefaultPx,
   studioStageDefaultPercent,
   needsEmptySessionRestore,
+  workbenchModeForDisplay,
 } from "../studio-layout";
 import { SHELL_SIDEBAR_WIDTH_PX } from "../shell-sidebar-layout";
 
@@ -222,6 +226,94 @@ describe("needsEmptySessionRestore（空会话不许把对话栏折着）", () =
  * 剥注释后匹配（判据 grep 标识符而那个词同时出现在注释里 = 变异后照样绿，
  * 本仓已经踩过）。
  */
+/**
+ * 2026-09-01：三颗独立开关（打开画布 / 隐藏页面 / 最大化）收成互斥档。
+ * 对照 Primer SegmentedControl + VS Code layoutService。
+ *
+ * 变异：把 resolve 的 canvas 优先拿掉、把推演锁改成仍显示画布、
+ * 把 needsRunningSplitFix 改成永远 false，本组必须红。
+ */
+describe("工作台布局档（分栏 | 全屏 | 画布）", () => {
+  const open = { chat: false, stage: false };
+  const maximized = { chat: true, stage: false };
+
+  it("三档有字，不用「页面」——那个字已经被页面/代码占用", () => {
+    expect(STUDIO_WORKBENCH_MODE_OPTIONS.map(o => o.id)).toEqual([
+      "split",
+      "stage",
+      "canvas",
+    ]);
+    expect(STUDIO_WORKBENCH_MODE_OPTIONS.map(o => o.label)).toEqual([
+      "分栏",
+      "全屏",
+      "画布",
+    ]);
+    for (const opt of STUDIO_WORKBENCH_MODE_OPTIONS) {
+      expect(opt.label).not.toContain("页面");
+    }
+  });
+
+  it("画布优先于全屏：锁着最大化时选中片是画布，不是全屏", () => {
+    expect(
+      resolveWorkbenchMode({
+        maximizeLocked: true,
+        collapsed: maximized,
+        stagePageHidden: false,
+      })
+    ).toBe("canvas");
+    expect(
+      resolveWorkbenchMode({
+        maximizeLocked: false,
+        collapsed: maximized,
+        stagePageHidden: false,
+      })
+    ).toBe("stage");
+    expect(
+      resolveWorkbenchMode({
+        maximizeLocked: false,
+        collapsed: open,
+        stagePageHidden: false,
+      })
+    ).toBe("split");
+  });
+
+  it("隐藏页面不是第四档：藏着时仍报分栏（缝上折钮还在，顶栏不另做一片）", () => {
+    expect(
+      resolveWorkbenchMode({
+        maximizeLocked: false,
+        collapsed: open,
+        stagePageHidden: true,
+      })
+    ).toBe("split");
+  });
+
+  it("推演中显示档强制分栏，控件锁住而不是藏起来", () => {
+    expect(workbenchModeForDisplay("canvas", true)).toEqual({
+      mode: "split",
+      locked: true,
+    });
+    expect(workbenchModeForDisplay("stage", true)).toEqual({
+      mode: "split",
+      locked: true,
+    });
+    // 反向：没在推演，画布就是画布
+    expect(workbenchModeForDisplay("canvas", false)).toEqual({
+      mode: "canvas",
+      locked: false,
+    });
+  });
+
+  it("已经是分栏就别反复扳；画布/全屏在推演中要扳回来", () => {
+    expect(needsRunningSplitFix(true, "canvas")).toBe(true);
+    expect(needsRunningSplitFix(true, "stage")).toBe(true);
+    expect(needsRunningSplitFix(true, "split")).toBe(false);
+    expect(needsRunningSplitFix(false, "canvas")).toBe(false);
+    // 藏着页面时 resolve 仍报 split，但舞台被卸掉了，推演中必须挂回来
+    expect(needsRunningSplitFix(true, "split", true)).toBe(true);
+    expect(needsRunningSplitFix(true, "split", false)).toBe(false);
+  });
+});
+
 describe("通电：空会话还原真的接在活路径上", () => {
   const strip = (src: string) =>
     src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
@@ -242,5 +334,55 @@ describe("通电：空会话还原真的接在活路径上", () => {
     expect(studio).toContain("sessionEmpty={sessionEmpty}");
     const split = read("../StudioSplit.tsx");
     expect(split).toContain("sessionEmpty?: boolean;");
+  });
+});
+
+/**
+ * 2026-09-01 通电：互斥布局档必须接在活路径上。
+ * 只测 helper 会假绿——把 layoutLocked={isRunning} 从 SlideRule 摘掉，
+ * 上面那组纯函数照样过，真机推演中三颗开关还是能乱按。
+ */
+describe("通电：互斥布局档真的接在活路径上", () => {
+  const strip = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+  const read = (rel: string) =>
+    strip(readFileSync(new URL(rel, import.meta.url), "utf8"));
+
+  it("SlideRule 把 isRunning 灌进 Provider.layoutLocked", () => {
+    const src = read("../../SlideRule.tsx");
+    expect(src).toContain("layoutLocked={isRunning}");
+    // 反向：空会话 available 那条不许被改去顶替 layoutLocked
+    expect(src).toContain("available={showStudioChrome}");
+  });
+
+  it("StudioSplit 用判定函数扳回分栏（不是 Provider——chatRef 首屏是 null）", () => {
+    const split = read("../StudioSplit.tsx");
+    expect(split).toContain("needsRunningSplitFix");
+    const at = split.indexOf("needsRunningSplitFix(");
+    expect(at, "判定没用在 effect 里").toBeGreaterThan(-1);
+    expect(split.slice(at, at + 420)).toContain('applyWorkbenchMode("split")');
+    // 反向：Provider 里不许再留一份执行（同一件事两处实现 = 半个锁）
+    const ctx = read("../StudioLayoutContext.tsx");
+    expect(ctx).not.toContain("needsRunningSplitFix");
+  });
+
+  it("顶栏分段走 applyWorkbenchMode；Studio 把 stageView 接进 sink", () => {
+    const hud = read("../SlideRuleTopHud.tsx");
+    expect(hud).toContain("applyWorkbenchMode");
+    expect(hud).toContain("sliderule-workbench-mode");
+    expect(hud).toContain("primer-segmented-control");
+    // 反向：三颗独立开关不许回来
+    expect(hud).not.toContain("sliderule-layout-stage");
+    expect(hud).not.toContain("sliderule-layout-maximize");
+    expect(hud).not.toContain("toggleStagePage");
+    expect(hud).not.toContain("toggleMaximize");
+
+    const studio = read("../SlideRuleStudio.tsx");
+    expect(studio).toContain("registerCanvasSink");
+    expect(studio).toContain('if (on) return "canvas"');
+    expect(studio).toContain("<SpecPageCanvasStage");
+    // 反向：独立「打开画布」钮撤了，画布渲染还在
+    expect(studio).not.toContain("打开画布");
+    expect(studio).not.toContain('data-testid="sliderule-stage-view-canvas"');
   });
 });

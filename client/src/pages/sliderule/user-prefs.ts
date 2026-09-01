@@ -13,11 +13,13 @@ import {
   parseComposerDevice,
   type ComposerDevice,
 } from "./composer-device";
+import { parseProductArchetype } from "./product-archetypes";
 
 const REDUCE_MOTION_KEY = "sliderule:reduce-motion";
 const NOTIFY_COMPLETE_KEY = "sliderule:notify-complete";
 const ENTER_TO_SEND_KEY = "sliderule:enter-to-send";
 const PREFERRED_DEVICE_KEY = "sliderule:preferred-device";
+const PRODUCT_ARCHETYPE_KEY = "sliderule:product-archetype";
 
 const REDUCE_MOTION_CLASS = "sr-reduce-motion";
 
@@ -167,6 +169,22 @@ export function loadPreferredDevice(): ComposerDevice {
 export function setPreferredDevice(value: ComposerDevice): void {
   try {
     localStorage.setItem(PREFERRED_DEVICE_KEY, parseComposerDevice(value));
+  } catch {
+    /* 存储不可用 → 本次会话内仍按调用方内存态生效 */
+  }
+}
+
+export function loadProductArchetype(): string {
+  try {
+    return parseProductArchetype(localStorage.getItem(PRODUCT_ARCHETYPE_KEY));
+  } catch {
+    return parseProductArchetype("");
+  }
+}
+
+export function setProductArchetype(value: string): void {
+  try {
+    localStorage.setItem(PRODUCT_ARCHETYPE_KEY, parseProductArchetype(value));
   } catch {
     /* 存储不可用 → 本次会话内仍按调用方内存态生效 */
   }

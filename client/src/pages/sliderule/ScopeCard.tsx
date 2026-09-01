@@ -9,30 +9,30 @@
  * ⚠ 2026-08-27：宪章五栏曾经是空 input。用户对着「行业 / 术语 / 角色」
  * 不知道填什么，澄清变成写作文。改成闭集点选；写入的仍是 ProductCharter
  * 字符串，后端 normalize 不用动。禁止再摆 placeholder 输入框。
+ *
+ * ⚠ 2026-09-01：原型 / 设备档沿用新建会话作曲家的选择，卡上锁死置灰。
+ * 本轮能力和宪章仍可改。
  */
 import React, { useState } from "react";
 
 import {
   CHARTER_FIELD_CHOICES,
+  charterFieldChips,
+  hydrateScopeCharter,
   loadCharterReuseNext,
-  loadProductCharter,
   parseCharterSelections,
   saveProductCharter,
   setCharterReuseNext,
   toggleCharterChoice,
   type ProductCharter,
 } from "./product-charter";
-import {
-  defaultArchetype,
-  deviceDisplayLabel,
-  wiredArchetypes,
-  wiredDevices,
-} from "./product-archetypes";
+import { deviceDisplayLabel, wiredArchetypes, wiredDevices } from "./product-archetypes";
 import {
   SCOPE_CARD_CONFIRM_LABEL,
   SCOPE_CARD_PUBLIC_TOOLS,
   SCOPE_CARD_REVISE_LABEL,
   SCOPE_CARD_TIME_COPY,
+  lockScopeMorphology,
   normalizeScopeTools,
   scopeCardStepsFromTools,
   type ScopeCardChoice,
@@ -42,7 +42,14 @@ import {
 const OVERLAY_CLASS =
   "pointer-events-auto absolute bottom-full left-0 right-0 z-10 mb-2 origin-bottom sr-composer-pop rounded-[12px] border border-[#e5e7eb] bg-white px-3.5 py-3 text-[13px] leading-5 text-[#171717] shadow-[0_12px_32px_rgb(15_23_42/0.12)]";
 
-function chipClass(on: boolean): string {
+function chipClass(on: boolean, locked = false): string {
+  if (locked) {
+    return `rounded-[8px] border px-2 py-1 text-[12px] leading-4 cursor-not-allowed ${
+      on
+        ? "border-[#71717a] bg-[#71717a] text-white"
+        : "border-[#e5e7eb] bg-[#f4f4f5] text-[#a1a1aa]"
+    }`;
+  }
   return `rounded-[8px] border px-2 py-1 text-[12px] leading-4 transition ${
     on
       ? "border-[#171717] bg-[#171717] text-white"
@@ -71,7 +78,9 @@ export function ScopeCard({
 }) {
   const thin = pending.variant === "thin";
   const [reuseNext, setReuseNext] = useState(() => initialReuseNext(pending));
-  const [charter, setCharter] = useState<ProductCharter>(loadProductCharter);
+  const [charter, setCharter] = useState<ProductCharter>(() =>
+    hydrateScopeCharter(initialReuseNext(pending))
+  );
   const archetypeOptions =
     pending.wiredArchetypes && pending.wiredArchetypes.length > 0
       ? pending.wiredArchetypes
@@ -80,15 +89,17 @@ export function ScopeCard({
     pending.wiredDevices && pending.wiredDevices.length > 0
       ? pending.wiredDevices
       : wiredDevices();
-  const [productArchetype, setProductArchetype] = useState(
-    () => pending.productArchetype || defaultArchetype()
-  );
-  const [device, setDevice] = useState(() => pending.device || "unspecified");
+  const { productArchetype, device } = lockScopeMorphology(pending);
   const [tools, setTools] = useState<string[]>(() =>
     normalizeScopeTools(pending.tools)
   );
   const steps = scopeCardStepsFromTools(tools);
-  const choice: ScopeCardChoice = { device, productArchetype, tools };
+  const choice: ScopeCardChoice = {
+    device,
+    productArchetype,
+    tools,
+    productCharter: charter,
+  };
 
   const toggleTool = (id: string) => {
     setTools(prev => {
@@ -138,7 +149,11 @@ export function ScopeCard({
       </p>
       {thin ? null : (
         <>
-          <div className="mt-1.5" data-testid="sliderule-scope-archetype">
+          <div
+            className="mt-1.5"
+            data-testid="sliderule-scope-archetype"
+            data-locked="true"
+          >
             <p className="text-[12px] leading-4 text-[#3f3f46]">原型</p>
             <div className="mt-1 flex flex-wrap gap-1">
               {archetypeOptions.map(option => {
@@ -149,8 +164,9 @@ export function ScopeCard({
                     type="button"
                     data-testid={`sliderule-scope-archetype-${option.id}`}
                     aria-pressed={on}
-                    onClick={() => setProductArchetype(option.id)}
-                    className={chipClass(on)}
+                    aria-disabled="true"
+                    disabled
+                    className={chipClass(on, true)}
                   >
                     {option.label}
                   </button>
@@ -158,7 +174,11 @@ export function ScopeCard({
               })}
             </div>
           </div>
-          <div className="mt-1.5" data-testid="sliderule-scope-device">
+          <div
+            className="mt-1.5"
+            data-testid="sliderule-scope-device"
+            data-locked="true"
+          >
             <p className="text-[12px] leading-4 text-[#3f3f46]">
               设备档：{deviceDisplayLabel(device)}
             </p>
@@ -171,8 +191,9 @@ export function ScopeCard({
                     type="button"
                     data-testid={`sliderule-scope-device-${option.id}`}
                     aria-pressed={on}
-                    onClick={() => setDevice(option.id)}
-                    className={chipClass(on)}
+                    aria-disabled="true"
+                    disabled
+                    className={chipClass(on, true)}
                   >
                     {option.label}
                   </button>
@@ -259,9 +280,11 @@ export function ScopeCard({
               row.options,
               row.multiple
             );
-            const catalog = new Set<string>(row.options);
-            const extras = selected.filter(item => !catalog.has(item));
-            const chips = [...row.options, ...extras];
+            const chips = charterFieldChips(
+              charter,
+              row,
+              pending.restatement || pending.userText
+            );
             return (
               <div
                 key={row.key}

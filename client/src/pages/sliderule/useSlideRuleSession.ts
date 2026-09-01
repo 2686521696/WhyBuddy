@@ -11,7 +11,10 @@ import type {
   UserIntervention,
   V5SessionState,
 } from "@shared/blueprint/v5-reasoning-state";
-import type { ClarificationItem } from "./ClarificationCard";
+import {
+  pendingClarificationItems,
+  type ClarificationItem,
+} from "./ClarificationCard";
 import { deriveTurnRoute } from "@shared/blueprint/sliderule-turn-route";
 import { resolveImSurfaceMode } from "./im-surface-mode";
 import type { SchedulingDecision } from "@shared/blueprint/v5-reasoning-state";
@@ -29,7 +32,11 @@ import {
   mapArtifactsToWhyArtifacts,
 } from "./ui-capability-executor";
 import { mergePublishClosureForPersistedTurn } from "./derive-persisted-turn";
-import { notifyDriveComplete, loadPreferredDevice } from "./user-prefs";
+import {
+  notifyDriveComplete,
+  loadPreferredDevice,
+  loadProductArchetype,
+} from "./user-prefs";
 import { loadDesignSystemId } from "./design-system";
 import { createHttpSlideRuleSessionStore } from "@/lib/sliderule-http-store";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
@@ -68,16 +75,18 @@ import {
 } from "./challenge-composer";
 import {
   charterHasContent,
+  hydrateScopeCharter,
   loadCharterReuseNext,
-  loadProductCharter,
 } from "./product-charter";
 import {
   defaultArchetype,
+  isWiredArchetype,
   isWiredDevice,
   parseJudgeDevice,
 } from "./product-archetypes";
 import {
   hydrateParkedScope,
+  lockScopeMorphology,
   type ScopeCardChoice,
   type ScopeCardDevice,
   type ScopeCardPending,
@@ -193,6 +202,55 @@ async function persistSession(state: V5SessionState): Promise<V5SessionState> {
  *
  * 非挑战意图保持 fail-open（请求体兜底）：一次落盘抖动不许拖垮整轮推演。
  */
+/**
+ * 澄清卡提交后、runTurn 从磁盘灌回会话之前，先把答过的缺口在内存里关上。
+ *
+ * ⚠ 2026-09-01：乐观关缺口只写 React state，runTurn 开头
+ * `loadOrCreateSessionState` 再 `applyPersistedState` 会把 open +
+ * control_clarify 灌回来，卡从 1/3 已答 0/3 再弹一遍。必须接在
+ * applyPersistedState 前面那一次赋值上，删掉就回到截图。
+ */
+export function applyAnsweredGapsToState(
+  state: V5SessionState,
+  intervention?: {
+    answeredGapIds?: string[];
+    answeredGaps?: Array<{ gapId: string; answer: string }>;
+  }
+): V5SessionState {
+  const ids = (intervention?.answeredGapIds || []).map(id => String(id));
+  if (!ids.length) return state;
+  const answered = new Set(ids);
+  const answersById = new Map(
+    (intervention?.answeredGaps || []).map(row => [
+      String(row.gapId),
+      String(row.answer || ""),
+    ])
+  );
+  const now = new Date().toISOString();
+  const coverageGaps = (state.coverageGaps || []).map(gap =>
+    answered.has(gap.id)
+      ? {
+          ...gap,
+          status: "resolved" as const,
+          answer: answersById.get(gap.id) || gap.answer,
+          updatedAt: now,
+        }
+      : gap
+  );
+  const stillOpenClarify = coverageGaps.some(
+    gap => gap.status === "open" && gap.kind === "open_question"
+  );
+  if (state.awaitReason !== "control_clarify" || stillOpenClarify) {
+    return { ...state, coverageGaps };
+  }
+  return {
+    ...state,
+    coverageGaps,
+    awaitReason: undefined,
+    awaitDetail: undefined,
+  };
+}
+
 export async function persistPreparedStateForDrive(opts: {
   persist: () => Promise<unknown>;
   intent?: UserIntervention["intent"] | null;
@@ -550,6 +608,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   );
   const pendingScopeRef = useRef<ScopeCardPending | null>(null);
   pendingScopeRef.current = pendingScope;
+  const [submittedClarifyIds, setSubmittedClarifyIds] = useState<string[]>([]);
   const [pendingAsk, setPendingAsk] = useState<{
     question: string;
     options?: string[];
@@ -994,7 +1053,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       // M1：cheap 回合禁止把问候/inspect/search 写进 conversation。
       // 控制面 POST 以已持久化会话为权威起点；质疑失效在 Python 做。
       // 续播同样不 intake。
-      const preparedState = workingState;
+      const preparedState = applyAnsweredGapsToState(
+        workingState,
+        intervention
+      );
 
       const activeGoalText =
         preparedState.goal?.text?.trim() || userText.trim();
@@ -1389,8 +1451,14 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 (scopeChoice && isWiredDevice(scopeChoice.device)
                   ? scopeChoice.device
                   : loadPreferredDevice()) || "desktop",
+              // ⚠ 2026-08-31：空态作曲家「自由类型」写 localStorage，
+              // 第一版只读 defaultArchetype()，首包永远 park 成业务后台。
+              // 跟 preferredDevice 同一句话：范围卡接通档优先，没选才读作曲家。
               productArchetype:
-                scopeChoice?.productArchetype || defaultArchetype(),
+                (scopeChoice &&
+                isWiredArchetype(scopeChoice.productArchetype)
+                  ? scopeChoice.productArchetype
+                  : loadProductArchetype()) || defaultArchetype(),
               ...(Array.isArray(scopeChoice?.tools) &&
               scopeChoice.tools.length > 0
                 ? { tools: scopeChoice.tools }
@@ -1649,13 +1717,17 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   userText,
                   String(goalText || "")
                 );
+                const locked = lockScopeMorphology({
+                  device: parseJudgeDevice(event.device),
+                  productArchetype:
+                    String(event.productArchetype || "") || defaultArchetype(),
+                });
                 const next: ScopeCardPending = {
                   userText: String(event.userText || userText.trim()),
                   restatement: restatement || "未命名应用",
                   variant: event.variant === "thin" ? "thin" : "full",
-                  device: parseJudgeDevice(event.device),
-                  productArchetype:
-                    String(event.productArchetype || "") || defaultArchetype(),
+                  device: locked.device,
+                  productArchetype: locked.productArchetype,
                   wiredArchetypes: Array.isArray(event.wiredArchetypes)
                     ? event.wiredArchetypes.filter(
                         (row): row is { id: string; label: string } =>
@@ -1725,9 +1797,21 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                       ...(loadCharterReuseNext() !== null
                         ? { reuseCharter: loadCharterReuseNext() as boolean }
                         : {}),
-                      ...(charterHasContent(loadProductCharter())
-                        ? { productCharter: loadProductCharter() }
-                        : {}),
+                      ...(() => {
+                        // 范围卡确认带了 productCharter（哪怕是 {}）就用卡上的。
+                        // 回头 loadProductCharter() 会把上一场企业服务 POST 进
+                        // 股票分析器——正是 2026-09-01 范围卡跟命题不符。
+                        const choice = scopeChoice;
+                        const fromCard =
+                          choice && "productCharter" in choice
+                            ? choice.productCharter
+                            : hydrateScopeCharter(
+                                loadCharterReuseNext() === true
+                              );
+                        return charterHasContent(fromCard)
+                          ? { productCharter: fromCard }
+                          : {};
+                      })(),
                     }
                   : {}),
               });
@@ -2239,6 +2323,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         ...(Array.isArray(snapshot.tools) && snapshot.tools.length > 0
           ? { tools: snapshot.tools }
           : {}),
+        ...("productCharter" in snapshot
+          ? {
+              productCharter: (snapshot as ScopeCardChoice).productCharter,
+            }
+          : {}),
       }
     );
   };
@@ -2702,26 +2791,25 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     resetSpecAssumptions();
     clearPendingScope();
     setPendingAsk(null);
+    setSubmittedClarifyIds([]);
   }, [isRunning, sessionState.sessionId, sessionId, options.initialGoal, resetSpecAssumptions]);
 
   // G_READY clarification cards: unanswered open_question gaps with V4-style structured options.
-  const pendingClarifications = useMemo<ClarificationItem[]>(() => {
-    const parkedClarify = sessionState.awaitReason === "control_clarify";
-    // 停泊澄清时请求还没拆完 isRunning，卡必须先画出来。
-    if (isRunning && !parkedClarify) return [];
-    return (sessionState.coverageGaps || [])
-      .filter(g => g.status === "open" && g.kind === "open_question")
-      .map(g => ({
-        id: g.id,
-        prompt: g.label,
-        kind: g.clarifyKind, // V4 alignment
-        kindLabel: g.kindLabel,
-        type: g.clarifyType,
-        options: g.options,
-        defaultAnswer: g.defaultAnswer,
-        context: g.context,
-      }));
-  }, [sessionState.coverageGaps, sessionState.awaitReason, isRunning]);
+  const pendingClarifications = useMemo<ClarificationItem[]>(
+    () =>
+      pendingClarificationItems({
+        gaps: sessionState.coverageGaps,
+        awaitReason: sessionState.awaitReason,
+        isRunning,
+        submittedGapIds: submittedClarifyIds,
+      }),
+    [
+      sessionState.coverageGaps,
+      sessionState.awaitReason,
+      isRunning,
+      submittedClarifyIds,
+    ]
+  );
 
   // Generate deliverables by sending one intent through the existing S19 pipeline.
   const generateDeliverables = useCallback(() => {
@@ -2738,6 +2826,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const answerClarifications = useCallback(
     (answers: Array<{ gapId: string; answer: string }>) => {
       if (!answers.length) return;
+      const answeredGapIds = answers.map(a => a.gapId);
+      const answeredGaps = answers.map(a => ({
+        gapId: a.gapId,
+        answer: a.answer,
+      }));
+      setSubmittedClarifyIds(answeredGapIds);
+      setSessionState(prev =>
+        applyAnsweredGapsToState(prev, { answeredGapIds, answeredGaps })
+      );
       const byId = new Map(
         (sessionState.coverageGaps || []).map(g => [g.id, g.label] as const)
       );
@@ -2747,10 +2844,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       void requestRehearsal(supplement, {
         intent: "clarify",
         text: supplement,
-        answeredGapIds: answers.map(a => a.gapId),
+        answeredGapIds,
         /* ⚠ 答案本身也要发过去：服务端把它写在缺口上，开工时原样进生成
            提示词。只发 id 的话缺口是关了，模型什么都没多知道——澄清白问。 */
-        answeredGaps: answers.map(a => ({ gapId: a.gapId, answer: a.answer })),
+        answeredGaps,
       });
     },
     [sessionState.coverageGaps, requestRehearsal]
@@ -2824,4 +2921,5 @@ export const __sessionEvidenceTestHelpers = {
   preservePythonEvidenceProjection,
   prepareVisibleResetSessionState,
   persistPreparedStateForDrive,
+  applyAnsweredGapsToState,
 };

@@ -270,14 +270,16 @@ async function main() {
       });
 
     const lockedState = await page.evaluate(() => {
-      const btn = document.querySelector(
-        '[data-testid="sliderule-layout-maximize"]'
+      const canvas = document.querySelector(
+        '[data-testid="sliderule-stage-view-canvas"]'
+      );
+      const split = document.querySelector(
+        '[data-testid="sliderule-workbench-mode-split"]'
       );
       return {
-        found: !!btn,
-        disabled: btn ? btn.disabled === true : null,
-        title:
-          btn?.getAttribute("title") || btn?.getAttribute("aria-label") || "",
+        canvasPressed: canvas?.getAttribute("aria-pressed") === "true",
+        splitPressed: split?.getAttribute("aria-pressed") === "true",
+        found: !!canvas && !!split,
       };
     });
     const wCanvas = await chatWidth();
@@ -287,18 +289,15 @@ async function main() {
       `chat=${wCanvas}px`
     );
     check(
-      "V 最大化钮置灰且说清原因（不是按了没反应）",
+      "V 互斥分段选中画布（离开走分栏/全屏，不再有一颗置灰的最大化）",
       lockedState.found &&
-        lockedState.disabled === true &&
-        lockedState.title.includes("画布档"),
+        lockedState.canvasPressed === true &&
+        lockedState.splitPressed === false,
       JSON.stringify(lockedState)
     );
 
-    // 强行点它（绕过 disabled）——对话栏不许弹回来
+    // 强行点缝上折对话——对话栏不许弹回来。点「分栏」是离开画布，不在这一条。
     await page.evaluate(() => {
-      document
-        .querySelector('[data-testid="sliderule-layout-maximize"]')
-        ?.click();
       document
         .querySelector('[data-testid="sliderule-studio-split-toggle-chat"]')
         ?.click();
@@ -306,24 +305,29 @@ async function main() {
     await page.waitForTimeout(600);
     const wAfterPoke = await chatWidth();
     check(
-      "W 硬点最大化钮 / 分隔条折钮，对话栏仍然不出来",
+      "W 硬点分隔条折钮，对话栏仍然不出来",
       wAfterPoke === 0,
       `chat=${wAfterPoke}px`
     );
 
-    // 切到页面档 → 锁解开、对话栏回来；再切回画布 → 重新锁上
-    await page.click('[data-testid="sliderule-stage-view-page"]');
+    // 切到分栏 → 离开画布、对话栏回来；再切回画布 → 重新锁上
+    await page.click('[data-testid="sliderule-workbench-mode-split"]');
     await page.waitForTimeout(800);
     const wPage = await chatWidth();
-    const pageBtn = await page.evaluate(
-      () =>
-        document.querySelector('[data-testid="sliderule-layout-maximize"]')
-          ?.disabled === true
-    );
+    const afterSplit = await page.evaluate(() => ({
+      split:
+        document
+          .querySelector('[data-testid="sliderule-workbench-mode-split"]')
+          ?.getAttribute("aria-pressed") === "true",
+      canvas:
+        document
+          .querySelector('[data-testid="sliderule-stage-view-canvas"]')
+          ?.getAttribute("aria-pressed") === "true",
+    }));
     check(
-      "X 切到页面档：锁解开、对话栏回来、钮可用",
-      wPage > 0 && pageBtn === false,
-      `chat=${wPage}px disabled=${pageBtn}`
+      "X 切到分栏：离开画布、对话栏回来",
+      wPage > 0 && afterSplit.split === true && afterSplit.canvas === false,
+      `chat=${wPage}px ${JSON.stringify(afterSplit)}`
     );
 
     await page.click('[data-testid="sliderule-stage-view-canvas"]');

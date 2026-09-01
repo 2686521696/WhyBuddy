@@ -213,3 +213,99 @@ export function isStagePageShown(
 export function isStudioChromeShown(isHomeEmpty: boolean): boolean {
   return !isHomeEmpty;
 }
+
+/**
+ * 工作台布局档。对照三处成熟开源，不自己发明第三套开关：
+ *
+ *   1) microsoft/vscode `layoutService.ts`
+ *      toggleSidebarVisibility / toggleAuxiliaryBar / toggleMaximizeEditorGroup
+ *      ——布局是互斥的 part 组合，不跟编辑器的 Preview|Raw 混在一排独立开关里。
+ *   2) primer/react `SegmentedControl`
+ *      2–5 个**有字**的互斥片，`aria-pressed`，一次只选一档。
+ *      GitHub 自己的 Code | Preview | Blame 就是这个控件。
+ *      本仓 2026-08-24 已经踩过「一排灰图标分不清」——重置布局整颗撤掉。
+ *   3) v0 / bolt / Lovable：生成过程中锁死「对话 + 预览」分栏。
+ *      生成的东西写在对话里，把对话折没等于让用户盯着一块空白舞台。
+ *
+ * 三档：
+ *   split  = 对话 + 舞台并排（VS Code 默认 editor + auxiliaryBar）
+ *   stage  = 舞台铺满（toggleMaximizeEditorGroup）
+ *   canvas = 画布工作方式（另一套手势；进这档同时钉死最大化）
+ *
+ * ⚠ 不把「隐藏页面」做成第四档：推演中几乎不需要只看对话，缝上的折钮还在。
+ *   第四档还会跟「页面/代码」的「页面」撞名——2026-08-28 把画布从那组拿出去
+ *   就是因为两类东西并排放会让人以为可以随便来回切。
+ *
+ * ⚠ 「页面」这两个字已经被页面/代码占用。这三档的字是 分栏 / 全屏 / 画布。
+ */
+export type StudioWorkbenchMode = "split" | "stage" | "canvas";
+
+export const STUDIO_WORKBENCH_MODE_OPTIONS = [
+  {
+    id: "split" as const,
+    label: "分栏",
+    title: "对话和页面并排",
+  },
+  {
+    id: "stage" as const,
+    label: "全屏",
+    title: "只看页面，对话折起",
+  },
+  {
+    id: "canvas" as const,
+    label: "画布",
+    title: "把所有页面摊开成画板",
+  },
+];
+
+/**
+ * 从折叠态 + 画布锁还原当前布局档。
+ *
+ * 画布优先：画布已经 maximizeLocked，不能被「全屏」盖住——否则选中片写着
+ * 「全屏」、舞台却是画布，正是用户说的「识别困难」。
+ */
+export function resolveWorkbenchMode(input: {
+  maximizeLocked: boolean;
+  collapsed: StudioCollapsed;
+  stagePageHidden: boolean;
+}): StudioWorkbenchMode {
+  if (input.maximizeLocked) return "canvas";
+  if (!input.stagePageHidden && isStageMaximized(input.collapsed)) return "stage";
+  return "split";
+}
+
+/**
+ * 推演中锁定分栏。生成需要对话可见。
+ *
+ * ⚠ 锁住时控件留在原位、置灰、title 说清原因——凭空消失是本仓最忌的形状
+ *   （maximizeIntent 的 locked 同款，2026-08-25 写过一次）。
+ *   显示档强制是 split：实际状态由 Provider 的 effect 扳回去，
+ *   选中片不许还停在「画布」上。
+ */
+export function workbenchModeForDisplay(
+  mode: StudioWorkbenchMode,
+  layoutLocked: boolean
+): { mode: StudioWorkbenchMode; locked: boolean } {
+  if (layoutLocked) return { mode: "split", locked: true };
+  return { mode, locked: false };
+}
+
+/**
+ * 推演开始时要不要把布局扳回分栏。
+ *
+ * 判定放纯函数、执行放 StudioSplit——跟 needsMaximizeLockFix 同一条纪律
+ * （2026-08-25：Provider 的 effect 首屏 chatRef 是 null）。
+ * 已经是分栏就别反复 expand，免得跟拖动打架。
+ *
+ * `stagePageHidden`：藏着页面时 resolve 仍报 split，但舞台被卸掉了，
+ * 推演中必须挂回来，否则分栏只剩对话。
+ */
+export function needsRunningSplitFix(
+  layoutLocked: boolean,
+  mode: StudioWorkbenchMode,
+  stagePageHidden = false
+): boolean {
+  if (!layoutLocked) return false;
+  if (stagePageHidden) return true;
+  return mode !== "split";
+}

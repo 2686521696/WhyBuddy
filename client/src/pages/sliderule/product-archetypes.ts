@@ -90,6 +90,11 @@ export function parsePreferredDevice(raw: unknown): string {
   return isWiredDevice(value) ? value : defaultDevice();
 }
 
+export function parseProductArchetype(raw: unknown): string {
+  const value = String(raw || "").trim();
+  return isWiredArchetype(value) ? value : defaultArchetype();
+}
+
 /** 舞台 / SSE / 截图共用的接通档。不许再写 `phone | desktop`。 */
 export type LayoutDevice = "desktop" | "phone" | "tablet";
 

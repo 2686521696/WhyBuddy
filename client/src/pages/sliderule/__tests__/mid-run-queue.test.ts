@@ -190,8 +190,16 @@ describe("发送键不是停止；停止是独立方块", () => {
     expect(stopBtn).toContain("stop?.()");
     expect(stopBtn).not.toContain("doSend");
     expect(stopBtn).not.toContain("sliderule-composer-send");
-    expect(DOCK).toContain("{hero ? null : stopButton}");
-    expect(DOCK).toContain("{hero ? null : sendButton}");
+    // 发送/停止都在卡片底栏里。变异把它们再拎到胶囊外必红。
+    expect(DOCK).not.toContain("{hero ? null : stopButton}");
+    expect(DOCK).not.toContain("{hero ? null : sendButton}");
+    const sendCluster = DOCK.slice(
+      DOCK.indexOf("col-start-4 row-start-2"),
+      DOCK.indexOf("{slash ?")
+    );
+    expect(sendCluster).toContain("{refineButton}");
+    expect(sendCluster).toContain("{stopButton}");
+    expect(sendCluster).toContain("{sendButton}");
   });
 
   it("输入框推演中仍可打字（停泊卡才锁）", () => {

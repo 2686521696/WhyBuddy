@@ -26,6 +26,7 @@ import React, {
   useCallback,
   useMemo,
   useEffect,
+  useLayoutEffect,
   useRef,
 } from "react";
 import type { SkillId } from "@/lib/sliderule-marathon-driver";
@@ -86,7 +87,6 @@ import {
 import {
   ChevronDown,
   Crosshair,
-  LayoutGrid,
   MousePointerClick,
   X,
 } from "lucide-react";
@@ -98,6 +98,7 @@ import { isStagePageShown } from "./studio-layout";
 import { StudioLandingShot } from "./studio-landing-shot";
 import { StudioShareToggle } from "./StudioShareToggle";
 import { HomeHoverDots } from "./home-hover-dots";
+import { TruncatedText } from "./TruncatedText";
 
 /**
  * 推演页底色 + 点阵。子栏必须透底，否则实心 --sr-shell-bg 会把点挡住
@@ -268,7 +269,7 @@ interface SlideRuleStudioProps {
   specFirstPages?: SpecFirstPagesBlob;
 
   className?: string;
-  /** 舞台头条右侧：隐藏页面 / 最大化 / 交付物。不另占整页顶栏。 */
+  /** 舞台头条右侧：布局档分段（分栏/全屏/画布）+ 交付物。不另占整页顶栏。 */
   chromeSlot?: React.ReactNode;
   /**
    * 舞台头条**标题左侧**：重置会话那颗蓝钮。
@@ -599,10 +600,28 @@ export function SlideRuleStudio({
    * ⚠ 锁在 StudioLayoutContext 里统一兜底，不在这儿逐个去堵那五个口子
    *   （顶栏钮 / 分隔条折钮 / 拖分隔条 / 双击还原 / 隐藏页面再显示）。
    *   只堵一处就是半个锁——本仓第四条纪律最经典的形状。
+   *
+   * ⚠ 2026-09-01：顶栏「打开画布」独立钮撤了，改成互斥分段里的「画布」片。
+   *   context 看不见 stageView，进出画布走 registerCanvasSink。
+   *   锁仍然由这份 stageView 派生——sink 只改档位，不改折叠，避免双源。
+   *
+   * useLayoutEffect：首屏 hydrate 到 canvas 时，要在浏览器画出来之前就把
+   * maximizeLocked 翻上，否则顶栏分段会闪一帧「分栏」。
    */
-  useEffect(() => {
+  useLayoutEffect(() => {
     layout?.setMaximizeLocked(stageView === "canvas");
   }, [layout, stageView]);
+  useLayoutEffect(() => {
+    if (!layout) return;
+    layout.registerCanvasSink(on => {
+      setStageView(curr => {
+        if (on) return "canvas";
+        if (curr === "canvas") return "page";
+        return curr;
+      });
+    });
+    return () => layout.registerCanvasSink(null);
+  }, [layout]);
   const [activeSpecPageId, setActiveSpecPageId] = useState<string>("home");
   // 游标开关（计算尺游标 hairline 的品牌梗；偏好持久化，键跟老舞台同一个
   // ——用户在老链路开过游标，这里就该记得）
@@ -831,9 +850,14 @@ export function SlideRuleStudio({
                     灰图标簇的最后一个 ⟳，跟「重置布局」的 ◫ 挨着，两个都叫"重置"
                     也都是灰的，真机上分不出来。 */}
               {resetSlot}
-              <span className="min-w-0 truncate text-[12px] font-semibold text-stone-600">
-                {appTitle || "推演应用"}
-              </span>
+              {/* ⚠ 2026-09-01 用户圈了长标题：放不下要省略号，悬停才出全文。
+                    无条件 native title 会让短名字也弹一层跟眼前一样的浮层
+                    （TruncatedText 头注同一条）。只在真截断时挂 tooltip。 */}
+              <TruncatedText
+                text={appTitle || "推演应用"}
+                className="min-w-0 flex-1 text-[12px] font-semibold text-stone-600"
+                data-testid="sliderule-app-stage-title"
+              />
               {modelIsDraft ? (
                 /* 默认态不打「运行中」——成品预览本来就是在跑。
                      2026-08-20 手机 504 列：绿徽章跟标题抢宽，名字被截成
@@ -864,19 +888,13 @@ export function SlideRuleStudio({
                       （见下面 XrayPanel 的 onOpenSandbox），顶栏再挂一片纯属重复占位。
                       注意撤的只是**这颗按钮**：stageView === "board" 那支渲染和
                       XrayPanel 的入口都还在，删它们会让沙盘真的没法打开。 */}
-                  {/* ⚠ 2026-08-28 用户裁决：「画布作为独立功能」。
-                      「画布」那一片从这个分段控件里**拿出去**了，改成右边
-                      那颗独立的「打开画布」。
-
-                      2026-08-25 曾把它加在这里，理由是"画布→页面→代码，
-                      从粗到细"。那个理由本身没错，错在**它跟另外两片不是
-                      一类东西**：页面/代码是同一页的两种看法，画布是另一种
-                      工作方式（另一套手势、另一套工具、另一个信息层）。
-                      并排放会让人以为它们可以随便来回切。
-
-                      ⚠ 拿走的只是**这一片**：stageView === "canvas" 那支渲染
-                      和 testid 都原样留着（见下面那颗按钮），删它们画布就
-                      真的打不开了——这正是「沙盘」那次记下的形状。 */}
+                  {/* ⚠ 2026-08-28：画布不是页面/代码的第三片。页面/代码是
+                      同一页的两种看法，画布是另一种工作方式。
+                      ⚠ 2026-09-01：独立「打开画布」钮也撤了——它跟隐藏页面
+                      / 最大化并排是三颗独立开关。画布现在是顶栏互斥分段
+                      「分栏|全屏|画布」里的一片（SlideRuleTopHud）。
+                      ⚠ 拿走的只是**按钮**：stageView === "canvas" 那支渲染
+                      和 sink 都留着，删它们画布就真的打不开了。 */}
                   {(
                     [
                       ["page", "页面"],
@@ -928,28 +946,11 @@ export function SlideRuleStudio({
                   <Crosshair className="h-3.5 w-3.5" />
                   {isPhoneStage ? null : "关联"}
                 </button>
-                {/* 「打开画布」：独立功能，不是分段控件里的一片（2026-08-28
-                    用户裁决）。testid 沿用 `sliderule-stage-view-canvas`——
-                    它还是同一个控件，改的是外形不是身份；换掉会把真机 smoke
-                    里三处入口一起打断。 */}
-                <button
-                  type="button"
-                  onClick={() =>
-                    setStageView(stageView === "canvas" ? "page" : "canvas")
-                  }
-                  data-testid="sliderule-stage-view-canvas"
-                  aria-label="打开画布"
-                  aria-pressed={stageView === "canvas"}
-                  className={`flex h-7 items-center rounded-md border text-[12px] font-medium transition ${
-                    stageView === "canvas"
-                      ? "border-transparent bg-[#1677ff] text-white shadow-sm"
-                      : "border-[#e5e7eb] bg-white text-stone-600 hover:border-[#d3d8e0] hover:bg-[#f8f9fb]"
-                  } ${isPhoneStage ? "w-7 justify-center" : "gap-1.5 px-2.5"}`}
-                  title="把所有页面摊开成画板，看它们之间怎么连"
-                >
-                  <LayoutGrid className="h-3.5 w-3.5" />
-                  {isPhoneStage ? null : "打开画布"}
-                </button>
+                {/* ⚠ 2026-09-01：「打开画布」独立钮撤了。它跟隐藏页面 / 最大化
+                    并排是三颗独立开关，用户指着说推演中识别困难。画布进了顶栏
+                    那组互斥分段（分栏|全屏|画布，见 SlideRuleTopHud），testid
+                    `sliderule-stage-view-canvas` 跟着挪过去——真机 smoke 仍
+                    点这一颗。舞台渲染分支和 sink 都留在这儿，只撤按钮。 */}
                 {stageView === "page" && (
                   <button
                     type="button"

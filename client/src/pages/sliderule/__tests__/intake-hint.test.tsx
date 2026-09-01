@@ -278,7 +278,7 @@ describe("审查卡挂在输入框的 relative 壳上", () => {
     expect(head).not.toContain("<IntakeHintBar");
     const around = dock.slice(
       dock.indexOf(shell),
-      dock.indexOf("{hero ? null : sendButton}")
+      dock.indexOf('data-testid="sliderule-composer-context"')
     );
     expect(around).toContain("<IntakeHintBar");
     expect(around.indexOf("sliderule-composer-dock")).toBeLessThan(

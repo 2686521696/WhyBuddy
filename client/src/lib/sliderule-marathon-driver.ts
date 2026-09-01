@@ -346,7 +346,7 @@ export interface DriveFullStreamOpts {
   onStreamNoTerminal?: (code: string) => void;
   /** 空态作曲家「应用 / Web」。desktop 横屏 / phone 竖屏，跟 device_policy 同词表。 */
   preferredDevice?: string;
-  /** 范围卡确认的产品原型。只在确认推演时带，缺省走账本默认。 */
+  /** 产品原型。空态作曲家首包就要带（park 进范围卡）；确认时覆盖。缺省走账本默认。 */
   productArchetype?: string;
   /** 范围卡规划器勾选的公开工具。缺省走账本政策包（今天仍是五件套）。 */
   tools?: string[];

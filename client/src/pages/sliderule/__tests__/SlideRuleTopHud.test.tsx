@@ -72,31 +72,40 @@ describe("SlideRuleTopHud", () => {
     expect(running).toContain("推演进行中，稍后再重置");
   });
 
-  it("空会话不挂对话/舞台折钮（舞台还没登场）", () => {
+  it("空会话不挂布局档分段（舞台还没登场）", () => {
     const html = renderToStaticMarkup(
       <StudioLayoutProvider available={false}>
         <SlideRuleTopHud isRunning={false} />
       </StudioLayoutProvider>
     );
     expect(html).toContain('data-testid="sliderule-layout-controls"');
+    expect(html).not.toContain('data-testid="sliderule-workbench-mode"');
     expect(html).not.toContain('data-testid="sliderule-layout-chat"');
     expect(html).not.toContain('data-testid="sliderule-layout-stage"');
     expect(html).not.toContain('data-testid="sliderule-layout-maximize"');
     expect(html).not.toContain('data-testid="sliderule-layout-reset"');
   });
 
-  it("只有右侧页面显隐 + 最大化；重置布局已撤，没有会话栏/对话键", () => {
+  it("布局是互斥分段 分栏|全屏|画布，不是三颗独立开关", () => {
     const html = renderToStaticMarkup(
       <StudioLayoutProvider available>
         <SlideRuleTopHud isRunning={false} />
       </StudioLayoutProvider>
     );
-    expect(html).toContain('data-testid="sliderule-layout-stage"');
-    expect(html).toContain('aria-label="隐藏页面"');
-    expect(html).toContain('data-testid="sliderule-layout-maximize"');
+    expect(html).toContain('data-testid="sliderule-workbench-mode"');
+    expect(html).toContain("primer-segmented-control");
+    expect(html).toContain('data-testid="sliderule-workbench-mode-split"');
+    expect(html).toContain('data-testid="sliderule-workbench-mode-stage"');
+    expect(html).toContain('data-testid="sliderule-stage-view-canvas"');
+    expect(html).toContain("分栏");
+    expect(html).toContain("全屏");
+    expect(html).toContain("画布");
+    // ⚠ 2026-09-01：隐藏页面 / 最大化独立钮撤了。把它们加回来这条必红。
+    expect(html).not.toContain('data-testid="sliderule-layout-stage"');
+    expect(html).not.toContain('data-testid="sliderule-layout-maximize"');
+    expect(html).not.toContain("隐藏页面");
+    expect(html).not.toContain("打开画布");
     // ⚠ 2026-08-24 用户反馈"按钮一多看不懂啥意思"：重置布局整片撤掉。
-    // 功能没丢——StudioSplit 那道缝上的双击仍走同一条 resetLayout
-    // （由 workbench-chrome-wiring 钉住）。把按钮加回来这两条必红。
     expect(html).not.toContain('data-testid="sliderule-layout-reset"');
     expect(html).not.toContain('aria-label="重置布局"');
     expect(html).not.toContain('data-testid="sliderule-layout-sidebar"');
@@ -104,5 +113,29 @@ describe("SlideRuleTopHud", () => {
     expect(html).not.toContain("折叠舞台");
     expect(html).not.toContain("折叠会话栏");
     expect(html).not.toContain("折叠对话");
+  });
+
+  it("推演锁读 context.layoutLocked，不读 TopHud 的 isRunning prop", () => {
+    /**
+     * ⚠ 双源：TopHud 一直有个没用的 isRunning。若分段控件误读这个 prop，
+     * SlideRule 忘了灌 layoutLocked 时单测仍绿、真机推演中还能乱切。
+     * 正：Provider.layoutLocked 才置灰。反：只传 isRunning 不许锁。
+     */
+    const unlocked = renderToStaticMarkup(
+      <StudioLayoutProvider available>
+        <SlideRuleTopHud isRunning />
+      </StudioLayoutProvider>
+    );
+    expect(unlocked).toContain("分栏");
+    expect(unlocked).not.toContain("推演进行中，布局锁定为分栏");
+
+    const locked = renderToStaticMarkup(
+      <StudioLayoutProvider available layoutLocked>
+        <SlideRuleTopHud isRunning={false} />
+      </StudioLayoutProvider>
+    );
+    expect(locked).toContain("推演进行中，布局锁定为分栏（对话+页面）");
+    expect(locked).toContain("disabled");
+    expect(locked).toContain("opacity-40");
   });
 });

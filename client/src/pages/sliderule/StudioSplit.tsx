@@ -48,6 +48,8 @@ import {
   studioStageDefaultPercent,
   needsMaximizeLockFix,
   needsEmptySessionRestore,
+  needsRunningSplitFix,
+  resolveWorkbenchMode,
 } from "./studio-layout";
 
 function splitDefaults(device?: "desktop" | "phone" | "tablet") {
@@ -220,6 +222,38 @@ function StudioSplitLive({
     chatRef.current?.expand();
   }, [sessionEmpty, collapsed.chat, layout.maximizeLocked, chatRef]);
 
+  /**
+   * 推演一开始把布局扳回分栏。
+   *
+   * ⚠ 必须在这里，不能在 Provider 里（跟 needsMaximizeLockFix 同一条）：
+   *   Provider 首屏 chatRef 是 null，collapse/expand 静静地没执行。
+   *   判定用 needsRunningSplitFix，已经是分栏就别反复 expand。
+   */
+  React.useLayoutEffect(() => {
+    const mode = resolveWorkbenchMode({
+      maximizeLocked: layout.maximizeLocked,
+      collapsed,
+      stagePageHidden: layout.stagePageHidden,
+    });
+    if (
+      !needsRunningSplitFix(
+        layout.layoutLocked,
+        mode,
+        layout.stagePageHidden
+      )
+    ) {
+      return;
+    }
+    layout.applyWorkbenchMode("split");
+  }, [
+    layout.layoutLocked,
+    layout.maximizeLocked,
+    layout.stagePageHidden,
+    collapsed.chat,
+    collapsed.stage,
+    layout.applyWorkbenchMode,
+  ]);
+
   return (
     <div ref={splitElRef} className="h-full w-full min-h-0 min-w-0">
       <PanelGroup
@@ -271,7 +305,11 @@ function StudioSplitLive({
               type="button"
               data-testid="sliderule-studio-split-toggle-chat"
               aria-label={collapsed.chat ? "展开对话" : "折叠对话"}
-              disabled={collapsed.stage || layout.maximizeLocked}
+              disabled={
+                collapsed.stage ||
+                layout.maximizeLocked ||
+                layout.layoutLocked
+              }
               onClick={toggleChat}
               className="flex h-5 w-5 items-center justify-center rounded-[4px] text-[#52525b] hover:bg-[#f4f4f5] disabled:opacity-30"
             >
@@ -285,8 +323,9 @@ function StudioSplitLive({
               type="button"
               data-testid="sliderule-studio-split-toggle-stage"
               aria-label="隐藏页面"
+              disabled={layout.layoutLocked}
               onClick={toggleStagePage}
-              className="flex h-5 w-5 items-center justify-center rounded-[4px] text-[#52525b] hover:bg-[#f4f4f5]"
+              className="flex h-5 w-5 items-center justify-center rounded-[4px] text-[#52525b] hover:bg-[#f4f4f5] disabled:opacity-30"
             >
               <ChevronRight className="h-3.5 w-3.5" />
             </button>

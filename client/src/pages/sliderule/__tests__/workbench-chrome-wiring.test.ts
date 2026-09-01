@@ -33,14 +33,25 @@ describe("workbench chrome live-path wiring", () => {
     expect(src).toContain("data-sidebar-collapsed");
   });
 
-  it("顶栏右边图标走 toggleStagePage，左边会话栏/对话键不存在", () => {
+  it("顶栏走互斥布局档，左边会话栏/对话键不存在", () => {
     const src = stripComments(
       readFileSync(new URL("../SlideRuleTopHud.tsx", import.meta.url), "utf8")
     );
     expect(src).toContain("useStudioLayout");
-    expect(src).toContain("studio?.toggleStagePage");
-    expect(src).toContain("隐藏页面");
-    expect(src).toContain("sliderule-layout-maximize");
+    expect(src).toContain("applyWorkbenchMode");
+    expect(src).toContain("STUDIO_WORKBENCH_MODE_OPTIONS");
+    expect(src).toContain("sliderule-workbench-mode");
+    const layout = stripComments(
+      readFileSync(new URL("../studio-layout.ts", import.meta.url), "utf8")
+    );
+    expect(layout).toContain('label: "分栏"');
+    expect(layout).toContain('label: "全屏"');
+    expect(layout).toContain('label: "画布"');
+    // ⚠ 2026-09-01：隐藏页面 / 最大化独立钮撤了。缝上折钮还在。
+    expect(src).not.toContain("toggleStagePage");
+    expect(src).not.toContain("sliderule-layout-maximize");
+    expect(src).not.toContain("sliderule-layout-stage");
+    expect(src).not.toContain("隐藏页面");
     // ⚠ 2026-08-24：重置布局按钮撤了（用户："按钮一多看不懂啥意思"）。
     // 判据翻面前先剥注释——SlideRuleTopHud 的模块头正好把"重置布局"
     // 和 resetLayout 写进了事故记录里，不剥的话下面三条 not 永远假红。
@@ -271,6 +282,13 @@ describe("workbench chrome live-path wiring", () => {
     expect(titleCluster).toContain("起草中");
     expect(titleCluster).not.toContain("运行中");
     expect(titleCluster).not.toContain("bg-emerald-50");
+    // ⚠ 2026-09-01：长标题省略号 + 截断才出 tooltip。变异回裸 span truncate、
+    //   或不走 TruncatedText（无条件 native title）必红。
+    expect(titleCluster).toContain("<TruncatedText");
+    expect(titleCluster).toContain("sliderule-app-stage-title");
+    expect(titleCluster).not.toContain(
+      'min-w-0 truncate text-[12px] font-semibold text-stone-600'
+    );
 
     const gearsTag = studio.slice(
       studio.lastIndexOf("<div", gearsAt),
@@ -283,12 +301,12 @@ describe("workbench chrome live-path wiring", () => {
     const stageBodyAt = studio.indexOf("flex min-h-0 flex-1 gap-3", gearsAt);
     const gears = studio.slice(gearsAt, stageBodyAt);
     expect(gears).toContain("flex shrink-0 items-center gap-1");
-    // ⚠ 2026-08-28 用户裁决：「透视」改叫「关联」，「画布」从分段控件里
-    //   拿出来变成独立的「打开画布」。顺序：私有 → 关联 → 打开画布 → 点选编辑。
+    // ⚠ 2026-08-28：「透视」改叫「关联」。
+    // ⚠ 2026-09-01：独立「打开画布」撤了，画布进 chromeSlot 里那组互斥分段。
+    //   顺序：私有 → 关联 → 点选编辑 → {chromeSlot=分栏|全屏|画布}。
     expect(gears).toContain("关联");
-    expect(gears).toContain("打开画布");
-    expect(gears.indexOf("关联")).toBeLessThan(gears.indexOf("打开画布"));
-    expect(gears.indexOf("打开画布")).toBeLessThan(gears.indexOf("{chromeSlot}"));
+    expect(gears).not.toContain("打开画布");
+    expect(gears.indexOf("关联")).toBeLessThan(gears.indexOf("{chromeSlot}"));
     // ⚠ 2026-08-24：重置会话搬到标题左侧了，右侧这排不许再有它。
     expect(gears).not.toContain("resetSlot");
     expect(gears).not.toContain("sliderule-stage-role");

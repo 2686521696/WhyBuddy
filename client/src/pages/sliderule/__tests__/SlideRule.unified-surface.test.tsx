@@ -195,6 +195,13 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).toContain('data-testid="sliderule-composer-device-desktop"');
     expect(html).toContain('data-testid="sliderule-composer-device-tablet"');
     expect(html).toContain('data-testid="sliderule-composer-device-watch"');
+    // 原型轴另起一颗：自由类型不进 Web/应用/平板 那颗钮。
+    expect(html).toContain('data-testid="sliderule-composer-archetype"');
+    expect(html).toContain('data-testid="sliderule-composer-archetype-trigger"');
+    expect(html).toContain('data-testid="sliderule-composer-archetype-menu"');
+    expect(html).toContain('data-testid="sliderule-composer-archetype-free_app"');
+    expect(html).toContain('data-testid="sliderule-composer-archetype-content_app"');
+    expect(html).toContain('data-testid="sliderule-composer-archetype-business_app"');
     const trigger = html.slice(
       html.indexOf("sliderule-composer-device-trigger"),
       html.indexOf("sliderule-composer-device-menu")
@@ -210,6 +217,18 @@ describe("unified /sliderule surface (single mental model)", () => {
     const watchRow = html.slice(watchAt, watchAt + 1800);
     expect(watchRow).toContain("未接通");
     expect(watchRow).toContain("disabled");
+    expect(watchRow).not.toContain("自由类型");
+    const archTrigger = html.slice(
+      html.indexOf("sliderule-composer-archetype-trigger"),
+      html.indexOf("sliderule-composer-archetype-menu")
+    );
+    expect(archTrigger).toContain("业务");
+    const archMenu = html.slice(
+      html.indexOf("sliderule-composer-archetype-menu"),
+      html.indexOf("sliderule-composer-device")
+    );
+    expect(archMenu).toContain("自由类型");
+    expect(archMenu).toContain("内容");
     expect(html).toContain("描述你想构建的业务系统");
     expect(html).not.toContain("挂技能或连接器");
     expect(html).not.toContain("即可选择技能、连接器或伙伴");
@@ -248,6 +267,7 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain('data-testid="sliderule-hero-composer"');
     expect(html).not.toContain('data-testid="sliderule-empty-enter-hint"');
     expect(html).not.toContain('data-testid="sliderule-composer-device"');
+    expect(html).not.toContain('data-testid="sliderule-composer-archetype"');
     expect(html).not.toContain('data-testid="sliderule-empty-dot-field"');
     expect(html).toContain('data-testid="sliderule-home-hover-dots"');
     expect(html).not.toContain("pb-[104px]");
@@ -257,11 +277,27 @@ describe("unified /sliderule surface (single mental model)", () => {
     );
     expect(footer).toContain("max-w-[720px]");
     expect(footer).not.toContain("border-t");
-    // Cursor 三行：芯片 / 胶囊 / 状态。空态 hero 不画这三行。
+    // 芯片 / 多行卡片。话题底行已撤（跟舞台标题重复）；没附件提示就不画。
     expect(html).toContain('data-testid="sliderule-composer-actions"');
     expect(html).toContain('data-testid="sliderule-composer-hint-chip"');
-    expect(html).toContain('data-testid="sliderule-composer-context"');
-    expect(html).toContain("推演");
+    expect(html).not.toContain('data-testid="sliderule-composer-context"');
+    expect(html).not.toContain('data-testid="sliderule-composer-context-spin"');
+    // 活路径：会话内渲染出来的就是那张多行卡片，不是 24px 单行胶囊。
+    // className 写在 data-testid 前面，所以窗口要往前探一段。
+    const dockAt = html.indexOf('data-testid="sliderule-composer-dock"');
+    const dockHtml = html.slice(
+      Math.max(0, dockAt - 280),
+      html.indexOf('data-testid="sliderule-composer-input"') + 280
+    );
+    expect(dockHtml).toContain("rounded-[12px]");
+    expect(dockHtml).toContain("min-h-[72px]");
+    expect(dockHtml).toContain("grid-cols-[auto_auto_1fr_auto]");
+    expect(dockHtml).not.toContain("rounded-[24px]");
+    expect(dockHtml).not.toContain("min-h-7");
+    const sendAt = html.indexOf('data-testid="sliderule-composer-send"');
+    expect(sendAt).toBeGreaterThan(
+      html.indexOf('data-testid="sliderule-composer-input"')
+    );
   });
 
   it("empty session hides the right stage entirely（欢迎页独占全宽，不摆空壳看板）", () => {
@@ -290,9 +326,15 @@ describe("unified /sliderule surface (single mental model)", () => {
     // 用户反馈：发了消息右侧还是老面板——推演中必须是 live 占位
     expect(html).toContain('data-testid="sliderule-live-stage"');
     expect(html).toContain("推演中");
-    expect(html).toContain('data-testid="sliderule-layout-stage"');
-    expect(html).toContain('aria-label="隐藏页面"');
-    expect(html).toContain('data-testid="sliderule-layout-maximize"');
+    expect(html).toContain('data-testid="sliderule-workbench-mode"');
+    expect(html).toContain("分栏");
+    expect(html).toContain("全屏");
+    expect(html).toContain("画布");
+    expect(html).toContain("推演进行中，布局锁定为分栏（对话+页面）");
+    // ⚠ 2026-09-01：三颗独立开关收成互斥分段，推演中锁定分栏。
+    // 缝上折钮仍叫「隐藏页面」，不许拿整页 HTML 去禁这个词。
+    expect(html).not.toContain('data-testid="sliderule-layout-stage"');
+    expect(html).not.toContain('data-testid="sliderule-layout-maximize"');
     // ⚠ 2026-08-24：「重置布局」按钮撤了（用户："按钮一多看不懂啥意思"），
     // 双击分栏缝仍走同一条 resetLayout。加回按钮这条必红。
     expect(html).not.toContain('data-testid="sliderule-layout-reset"');

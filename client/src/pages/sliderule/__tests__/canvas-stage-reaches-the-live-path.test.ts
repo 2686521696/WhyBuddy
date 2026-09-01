@@ -40,16 +40,14 @@ describe("画布档接在 SlideRuleStudio 上（而不是只写了个组件）",
     expect(STUDIO).toContain("<SpecPageCanvasStage");
   });
 
-  it("⚠ 画布是**独立的一颗按钮**，不再是分段控件里的一片", () => {
+  it("⚠ 画布是顶栏互斥分段的一片，不再是独立开关，也不在页面/代码里", () => {
     /*
-     * 2026-08-28 用户裁决：「画布作为独立功能」。
+     * 2026-08-28：画布不是页面/代码的第三片。
+     * 2026-09-01：独立「打开画布」也撤了——它跟隐藏页面 / 最大化并排，
+     *   用户指着说推演中识别困难。画布进了 分栏|全屏|画布。
      *
-     * 2026-08-25 曾把它加进分段控件（理由是"画布→页面→代码，从粗到细"）。
-     * 那个理由本身没错，错在它跟另外两片不是一类东西：页面/代码是同一页的
-     * 两种看法，画布是另一种工作方式。并排放会让人以为可以随便来回切。
-     *
-     * ⚠ 正反一起，这是「沙盘」那次记下的形状：只查"分段里没有画布"会假绿——
-     *   把那颗独立按钮一并删掉，判据照样全绿，而画布再也打不开。
+     * ⚠ 正反一起（「沙盘」那次记下的形状）：只查"分段里没有画布"会假绿——
+     *   把顶栏那片也删掉，判据照样全绿，而画布再也打不开。
      */
     expect(STUDIO).not.toContain('["canvas", "画布"]');
     const seg = STUDIO.slice(
@@ -57,19 +55,22 @@ describe("画布档接在 SlideRuleStudio 上（而不是只写了个组件）",
       STUDIO.indexOf('["code", "代码"]') + 20
     );
     expect(seg).not.toContain('"canvas"');
-    // 独立那颗还在，且真的接在同一个档位值上
-    expect(STUDIO).toContain('data-testid="sliderule-stage-view-canvas"');
-    expect(STUDIO).toContain("打开画布");
-    expect(STUDIO).toContain(
-      'setStageView(stageView === "canvas" ? "page" : "canvas")'
-    );
+    expect(STUDIO).not.toContain("打开画布");
+    expect(STUDIO).not.toContain("sliderule-stage-view-canvas");
+    // 顶栏那片还在。testid 是三元表达式，源码里是字面量不是 data-testid="…"
+    expect(HUD).toContain('"sliderule-stage-view-canvas"');
+    expect(HUD).toContain("STUDIO_WORKBENCH_MODE_OPTIONS");
+    expect(HUD).toContain("applyWorkbenchMode");
+    expect(STUDIO).toContain("registerCanvasSink");
+    expect(STUDIO).toContain('if (on) return "canvas"');
   });
 
   it("按钮的档位值与舞台的渲染分支用的是同一个字面量", () => {
     // 只加按钮不加分支 → 点了没反应；只加分支不加按钮 → 永远进不去。
     // 两边都要在，且都得是 "canvas"。
-    expect(STUDIO).toContain('aria-pressed={stageView === "canvas"}');
+    expect(HUD).toContain('"sliderule-stage-view-canvas"');
     expect(STUDIO).toContain('stageView === "canvas" ? (');
+    expect(STUDIO).toContain('if (on) return "canvas"');
   });
 
   it("stageView 的联合类型里有 canvas（否则 TS 之外的分支是死代码）", () => {
@@ -376,17 +377,26 @@ describe("画布档锁死最大化：掰开它的五个口子都堵上了吗", (
     expect(STUDIO).toContain('setMaximizeLocked(stageView === "canvas")');
   });
 
-  it("口子1 顶栏最大化钮：置灰而不是按了没反应", () => {
-    expect(HUD).toContain('maxIntent === "locked"');
-    expect(HUD).toMatch(/disabled=\{[^}]*maxIntent === "locked"/);
+  it("口子1 顶栏不再是独立最大化钮：互斥分段离开画布", () => {
+    /**
+     * 旧形状：最大化钮在画布档置灰。新形状：分栏|全屏|画布一次只选一档，
+     * 离开画布就是点「分栏」或「全屏」，不再有一颗按了没反应的最大化。
+     * 画布锁改堵缝上那四个口子（折对话 / 拖 / 双击 / 隐藏页面）。
+     */
+    expect(HUD).not.toContain("sliderule-layout-maximize");
+    expect(HUD).toContain("applyWorkbenchMode");
+    expect(HUD).toContain("sliderule-stage-view-canvas");
+    expect(HUD).toContain("sliderule-workbench-mode-${opt.id}");
     // 反向：锁的判定要从 context 来，不许顶栏自己按 stageView 猜一遍
-    expect(HUD).toContain("studio?.maximizeLocked");
+    expect(HUD).toContain("studio.maximizeLocked");
     expect(HUD).not.toContain('stageView === "canvas"');
   });
 
   it("口子2 分隔条上的折叠对话钮：锁住时置灰", () => {
+    expect(SPLIT).toContain("layout.maximizeLocked");
+    expect(SPLIT).toContain("layout.layoutLocked");
     expect(SPLIT).toMatch(
-      /disabled=\{collapsed\.stage \|\| layout\.maximizeLocked\}/
+      /disabled=\{[\s\S]*collapsed\.stage[\s\S]*layout\.maximizeLocked[\s\S]*layout\.layoutLocked/
     );
   });
 

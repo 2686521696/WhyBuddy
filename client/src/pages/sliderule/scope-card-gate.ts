@@ -13,12 +13,14 @@
  */
 import {
   defaultArchetype,
+  defaultDevice,
   isWiredArchetype,
   isWiredDevice,
   wiredArchetypes,
   wiredDevices,
 } from "./product-archetypes";
-import { loadPreferredDevice } from "./user-prefs";
+import type { ProductCharter } from "./product-charter";
+import { loadPreferredDevice, loadProductArchetype } from "./user-prefs";
 
 export type RehearsalIntervention = {
   intent?: string;
@@ -44,6 +46,11 @@ export type ScopeCardChoice = {
   productArchetype: string;
   /** 规划器勾选。缺省 = 五件套全开。 */
   tools?: string[];
+  /**
+   * 这张卡上的宪章。确认必须带上（哪怕是 {}），runTurn 才不会回头去
+   * loadProductCharter() 把上一场企业服务 POST 进股票分析器。
+   */
+  productCharter?: ProductCharter;
 };
 
 export type ScopeCardPending = {
@@ -134,11 +141,40 @@ export function restateAppGoal(userText: string): string {
 }
 
 /**
+ * 范围卡上的原型 / 设备档。新建会话时作曲家选的是授予，卡上锁死置灰。
+ *
+ * ⚠ 2026-09-01 真机「团子的一天」：空态选了平板 / 自由类型，park 事件
+ * 画出桌面/PC 还能点。形态不在卡上改；localStorage 是空态那两颗钮写下
+ * 的，pending 里的推断档不是授予。
+ */
+export function lockScopeMorphology(pending?: {
+  device?: string;
+  productArchetype?: string;
+}): { device: string; productArchetype: string } {
+  const composerDevice = loadPreferredDevice();
+  const composerArch = loadProductArchetype();
+  return {
+    device: isWiredDevice(composerDevice)
+      ? composerDevice
+      : isWiredDevice(pending?.device)
+        ? String(pending?.device)
+        : defaultDevice(),
+    productArchetype: isWiredArchetype(composerArch)
+      ? composerArch
+      : isWiredArchetype(pending?.productArchetype)
+        ? String(pending?.productArchetype)
+        : defaultArchetype(),
+  };
+}
+
+/**
  * 刷新后续停泊卡：会话里的授予是权威，localStorage 只是最后兜底。
  *
  * ⚠ 2026-08-30 真机：hydrate 写 `device: loadPreferredDevice()`，点过
  * 平板的卡刷新回来变 desktop。对照 grok PermissionState——磁盘上的
  * grant 压过客户端随手记的默认档。
+ * ⚠ 2026-09-01：卡面锁死走 lockScopeMorphology（作曲家优先）。这里仍认
+ * last_card，给刷新时的 pending 骨架用；画面和确认 POST 不吃这份推断。
  */
 export function hydrateParkedScope(state: {
   awaitDetail?: string | null;

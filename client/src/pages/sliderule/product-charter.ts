@@ -214,3 +214,74 @@ export function charterHasContent(charter: ProductCharter | null | undefined): b
   if (!charter) return false;
   return FIELDS.some(key => String(charter[key] || "").trim());
 }
+
+/**
+ * 范围卡上的宪章初值。
+ *
+ * ⚠ 2026-09-01 真机：股票分析器范围卡亮着上一场的「企业服务 / 店长 /
+ * 员工」。文案写着「不勾选不会带进下一场」，`useState(loadProductCharter)`
+ * 却无条件灌 localStorage。没勾「下一场沿用」必须空着手开。
+ */
+export function hydrateScopeCharter(reuseNext: boolean): ProductCharter {
+  if (!reuseNext) return {};
+  return loadProductCharter();
+}
+
+/**
+ * 命题里能对上的术语/角色，作为闭集之外的可点选项。不预选——预选就是
+ * 把上一场模型当先验，正是「下一场沿用」那条要挡住的。
+ *
+ * 行业闭集已经有「金融」；股票分析器缺的是术语「行情/持仓」和角色
+ * 「投资者」，不是再发明一套行业表。
+ */
+const TOPIC_EXTRAS: ReadonlyArray<{
+  test: RegExp;
+  extras: Partial<Record<keyof ProductCharter, readonly string[]>>;
+}> = [
+  {
+    test: /股票|证券|行情|投研|A股|基金|持仓|K线/,
+    extras: {
+      terms: ["行情", "持仓", "K线"],
+      defaultRoles: ["投资者", "分析师"],
+    },
+  },
+];
+
+export function charterTopicExtras(
+  text: string
+): Partial<Record<keyof ProductCharter, string[]>> {
+  const src = String(text || "");
+  const out: Partial<Record<keyof ProductCharter, string[]>> = {};
+  for (const row of TOPIC_EXTRAS) {
+    if (!row.test.test(src)) continue;
+    for (const key of FIELDS) {
+      const added = row.extras[key];
+      if (!added || added.length === 0) continue;
+      const bucket = out[key] || [];
+      for (const item of added) {
+        if (!bucket.includes(item)) bucket.push(item);
+      }
+      out[key] = bucket;
+    }
+  }
+  return out;
+}
+
+/** 闭集 + 已选自定义 + 命题 extras。选中态由 charter 字符串单独算。 */
+export function charterFieldChips(
+  charter: ProductCharter,
+  row: CharterFieldChoice,
+  topicText?: string
+): string[] {
+  const selected = parseCharterSelections(
+    charter[row.key],
+    row.options,
+    row.multiple
+  );
+  const catalog = new Set<string>(row.options);
+  const extras = selected.filter(item => !catalog.has(item));
+  const topic = (charterTopicExtras(topicText || "")[row.key] || []).filter(
+    item => !catalog.has(item) && !extras.includes(item)
+  );
+  return [...row.options, ...extras, ...topic];
+}

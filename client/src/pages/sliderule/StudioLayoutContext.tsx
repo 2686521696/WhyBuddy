@@ -11,6 +11,7 @@ import {
   maximizeIntent,
   nextStagePageHidden,
   type StudioCollapsed,
+  type StudioWorkbenchMode,
 } from "./studio-layout";
 
 export type StudioLayoutApi = {
@@ -41,6 +42,24 @@ export type StudioLayoutApi = {
    */
   maximizeLocked: boolean;
   setMaximizeLocked: (next: boolean) => void;
+  /**
+   * 推演进行中。对照 v0 / bolt：生成时锁死对话+页面分栏。
+   * 顶栏分段控件置灰，缝上折对话 / 隐藏页面也不许动。
+   */
+  layoutLocked: boolean;
+  /**
+   * 互斥切布局档。顶栏 分栏|全屏|画布 走这一口，不走三颗独立开关。
+   * 画布进出靠 Studio 注册的 sink 改 stageView——context 看不见舞台档位。
+   */
+  applyWorkbenchMode: (next: StudioWorkbenchMode) => void;
+  /**
+   * Studio 把自己的 setStageView 接进来。顶栏切「画布」时 context 只能
+   * 改折叠态，舞台渲染在 Studio 里。
+   *
+   * ⚠ 不用自定义事件、不把 stageView 抬到 SlideRule：那是另一条双源。
+   *   sink 为空时（单测没挂 Studio）只改 maximizeLocked，picker 仍能显示。
+   */
+  registerCanvasSink: (sink: ((on: boolean) => void) | null) => void;
   /** 展开两侧、显示预览页、对话栏回到侧栏×2。拖过之后的一键还原。 */
   resetLayout: () => void;
   /** resetLayout 每按一次 +1。分栏可能被卸掉（藏预览页），要等重新挂上再 resize。 */
@@ -51,9 +70,12 @@ const StudioLayoutContext = React.createContext<StudioLayoutApi | null>(null);
 
 export function StudioLayoutProvider({
   available,
+  layoutLocked = false,
   children,
 }: {
   available: boolean;
+  /** 推演进行中：锁死分栏。从 SlideRule 的 isRunning 灌进来。 */
+  layoutLocked?: boolean;
   children: React.ReactNode;
 }) {
   const chatRef = React.useRef<ImperativePanelHandle>(null);
@@ -72,6 +94,16 @@ export function StudioLayoutProvider({
    * 本来就最大化着的人，退出画布不该被强行展开对话栏。
    */
   const beforeLockRef = React.useRef<boolean | null>(null);
+  const layoutLockedRef = React.useRef(layoutLocked);
+  layoutLockedRef.current = layoutLocked;
+  const canvasSinkRef = React.useRef<((on: boolean) => void) | null>(null);
+
+  const registerCanvasSink = React.useCallback(
+    (sink: ((on: boolean) => void) | null) => {
+      canvasSinkRef.current = sink;
+    },
+    []
+  );
 
   /*
    * ⚠ 锁的**执行**不在这里，在 StudioSplit（2026-08-25 真机改的）。
@@ -113,6 +145,8 @@ export function StudioLayoutProvider({
   }, [available]);
 
   const toggleStagePage = React.useCallback(() => {
+    // 推演中锁死分栏：隐藏页面会把正在生成的舞台卸掉。
+    if (layoutLockedRef.current) return;
     // 只翻显隐。collapse/expand 是改宽度，这里不许碰。
     setStagePageHidden(prev => nextStagePageHidden(prev));
     // ⚠ 第 5 个口子：这行以前无条件把对话栏展开。锁住时不许动，
@@ -124,6 +158,7 @@ export function StudioLayoutProvider({
   const toggleChat = React.useCallback(() => {
     const panel = chatRef.current;
     if (!panel) return;
+    if (layoutLockedRef.current) return; // 推演中对话必须可见
     if (maximizeLocked) return; // 画布档钉死最大化
     if (panel.isCollapsed()) panel.expand();
     else if (
@@ -139,6 +174,7 @@ export function StudioLayoutProvider({
   const toggleStage = React.useCallback(() => {
     const panel = stageRef.current;
     if (!panel) return;
+    if (layoutLockedRef.current) return;
     if (panel.isCollapsed()) panel.expand();
     else if (
       canCollapsePart("stage", {
@@ -153,6 +189,7 @@ export function StudioLayoutProvider({
   const toggleMaximize = React.useCallback(() => {
     const chat = chatRef.current;
     if (!chat) return;
+    if (layoutLockedRef.current) return;
     const intent = maximizeIntent(
       { chat: chat.isCollapsed(), stage: stageCollapsed },
       maximizeLocked
@@ -161,6 +198,38 @@ export function StudioLayoutProvider({
     else if (intent === "restore") chat.expand();
     // "locked" / "noop" 什么都不做——按钮那边已经置灰并说明了原因。
   }, [stageCollapsed, maximizeLocked]);
+
+  const applyWorkbenchMode = React.useCallback((next: StudioWorkbenchMode) => {
+    // 推演中只许落到分栏（force-split effect 走这一口，其它档直接 return）。
+    if (layoutLockedRef.current && next !== "split") return;
+    setStagePageHidden(false);
+    setStageCollapsed(false);
+    if (next === "canvas") {
+      canvasSinkRef.current?.(true);
+      setMaximizeLocked(true);
+      return;
+    }
+    canvasSinkRef.current?.(false);
+    if (next === "stage") {
+      // 离开画布时 unlock effect 会按 beforeLockRef 决定是否展开。
+      // 全屏要对话继续折着，所以先写成「上锁前就是折的」。
+      beforeLockRef.current = true;
+      setMaximizeLocked(false);
+      chatRef.current?.collapse();
+      return;
+    }
+    beforeLockRef.current = false;
+    setMaximizeLocked(false);
+    chatRef.current?.expand();
+  }, []);
+
+  /*
+   * 推演中若页面被藏着，先挂回来。真正 expand 对话栏的执行在
+   * StudioSplit（chatRef 在那儿才有值，2026-08-25 已经踩过一次）。
+   */
+  React.useLayoutEffect(() => {
+    if (layoutLocked && stagePageHidden) setStagePageHidden(false);
+  }, [layoutLocked, stagePageHidden]);
 
   const resetLayout = React.useCallback(() => {
     // 隐藏页面 / 最大化都算布局偏离。分栏可能此刻不在树上
@@ -191,6 +260,9 @@ export function StudioLayoutProvider({
       toggleMaximize,
       maximizeLocked,
       setMaximizeLocked,
+      layoutLocked,
+      applyWorkbenchMode,
+      registerCanvasSink,
       resetLayout,
       layoutGeneration,
     }),
@@ -205,6 +277,9 @@ export function StudioLayoutProvider({
       toggleStagePage,
       toggleMaximize,
       maximizeLocked,
+      layoutLocked,
+      applyWorkbenchMode,
+      registerCanvasSink,
       resetLayout,
       layoutGeneration,
     ]

@@ -1,5 +1,5 @@
 /**
- * 工作台图标簇：隐藏/显示页面、最大化、交付物。
+ * 工作台图标簇：布局档分段控件 + 交付物。
  *
  * 2026-08-20：不再独占整页顶栏（真机占一条底边）。簇挂在舞台头条
  * 右侧空位（角色 / 桌面 那一行），和 GitHub / Cursor 把窗口控件放在
@@ -13,11 +13,21 @@
  *   · 「重置会话」搬走了，见下面 SlideRuleResetSessionButton——它现在是
  *     舞台头条**标题左侧**那颗蓝钮，不再混在右侧灰图标里。这里保留
  *     onResetSession 形参只为不炸老调用点，**不渲染**。
+ *
+ * ⚠ 2026-09-01 用户指着「打开画布 / 隐藏页面 / 最大化」三颗独立开关说
+ *   「推演过程中不是很好用，容易造成用户识别困难」。对照 Primer
+ *   SegmentedControl（GitHub Code|Preview|Blame）和 VS Code layoutService
+ *   （布局互斥、不跟内容视图混排）：收成一档互斥分段 分栏 | 全屏 | 画布。
+ *   推演中锁定分栏（v0/bolt 同款）。「隐藏页面」不再占顶栏一片，缝上折钮还在。
  */
 import React from "react";
-import { Layers, Maximize2, Minimize2, RotateCw } from "lucide-react";
+import { Layers, RotateCw } from "lucide-react";
 import { useStudioLayout } from "./StudioLayoutContext";
-import { isStageMaximized, maximizeIntent } from "./studio-layout";
+import {
+  resolveWorkbenchMode,
+  STUDIO_WORKBENCH_MODE_OPTIONS,
+  workbenchModeForDisplay,
+} from "./studio-layout";
 
 function LayoutBtn({
   testId,
@@ -52,37 +62,63 @@ function LayoutBtn({
   );
 }
 
-function SidebarRightGlyph({ filled }: { filled: boolean }) {
+function StudioWorkbenchModePicker() {
+  const studio = useStudioLayout();
+  if (!studio?.available) return null;
+  const raw = resolveWorkbenchMode({
+    maximizeLocked: !!studio.maximizeLocked,
+    collapsed: studio.collapsed,
+    stagePageHidden: !!studio.stagePageHidden,
+  });
+  const { mode, locked } = workbenchModeForDisplay(raw, !!studio.layoutLocked);
+  const lockTitle = "推演进行中，布局锁定为分栏（对话+页面）";
+
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <rect
-        x="1.75"
-        y="2.75"
-        width="12.5"
-        height="10.5"
-        rx="1.4"
-        stroke="currentColor"
-        strokeWidth="1.2"
-      />
-      <path d="M10.4 3.2v9.6" stroke="currentColor" strokeWidth="1.2" />
-      {filled ? (
-        <rect
-          x="10.8"
-          y="3.3"
-          width="2.9"
-          height="9.4"
-          fill="currentColor"
-          opacity="0.28"
-        />
-      ) : null}
-    </svg>
+    <div
+      role="group"
+      aria-label="工作台布局"
+      data-testid="sliderule-workbench-mode"
+      data-header-pattern="primer-segmented-control"
+      title={locked ? lockTitle : undefined}
+      className={`flex h-7 items-center rounded-md bg-[#f4f4f5] p-0.5 ${
+        locked ? "opacity-40" : ""
+      }`}
+    >
+      {STUDIO_WORKBENCH_MODE_OPTIONS.map(opt => {
+        const selected = mode === opt.id;
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            aria-pressed={selected}
+            aria-label={opt.label}
+            title={locked ? lockTitle : opt.title}
+            disabled={locked}
+            data-testid={
+              opt.id === "canvas"
+                ? "sliderule-stage-view-canvas"
+                : `sliderule-workbench-mode-${opt.id}`
+            }
+            data-workbench-mode={opt.id}
+            onClick={() => studio.applyWorkbenchMode(opt.id)}
+            className={`rounded-[5px] px-2 py-0.5 text-[11px] transition disabled:hover:text-stone-500 ${
+              selected
+                ? "bg-white font-medium text-stone-800 shadow-sm"
+                : "text-stone-500 hover:text-stone-700"
+            }`}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
 export function SlideRuleTopHud({
   onOpenDeliverables,
 }: {
-  /** @deprecated 只有重置会话用它，按钮已搬走 */
+  /** @deprecated 布局锁走 StudioLayoutProvider.layoutLocked，不读这个 prop */
   isRunning?: boolean;
   /** @deprecated 已搬到标题左侧的 SlideRuleResetSessionButton；这里不再渲染 */
   onResetSession?: () => void;
@@ -92,12 +128,6 @@ export function SlideRuleTopHud({
 }) {
   const studio = useStudioLayout();
   const studioOn = !!studio?.available;
-  const pageHidden = !!studio?.stagePageHidden;
-  const collapsed = studio?.collapsed ?? { chat: false, stage: false };
-  const maximized = !pageHidden && isStageMaximized(collapsed);
-  const maxIntent = pageHidden
-    ? "noop"
-    : maximizeIntent(collapsed, !!studio?.maximizeLocked);
 
   return (
     <div
@@ -108,41 +138,7 @@ export function SlideRuleTopHud({
         className="flex items-center gap-0.5"
         data-testid="sliderule-layout-controls"
       >
-        {studioOn ? (
-          <>
-            <LayoutBtn
-              testId="sliderule-layout-stage"
-              label={pageHidden ? "显示页面" : "隐藏页面"}
-              pressed={!pageHidden}
-              onClick={studio?.toggleStagePage}
-            >
-              <SidebarRightGlyph filled={!pageHidden} />
-            </LayoutBtn>
-            <LayoutBtn
-              testId="sliderule-layout-maximize"
-              label={
-                maxIntent === "locked"
-                  ? "画布档固定最大化（切到「页面」档可还原分栏）"
-                  : maxIntent === "restore"
-                    ? "还原分栏"
-                    : maxIntent === "noop"
-                      ? "舞台已折叠，无法最大化"
-                      : "最大化舞台"
-              }
-              pressed={maximized}
-              /* ⚠ 置灰而不是藏起来：按钮凭空消失比按不动更让人以为坏了，
-                 而且档位来回切时顶栏会跳。置灰 + title 说清原因。 */
-              disabled={maxIntent === "noop" || maxIntent === "locked"}
-              onClick={studio?.toggleMaximize}
-            >
-              {maximized ? (
-                <Minimize2 className="h-3.5 w-3.5" strokeWidth={1.75} />
-              ) : (
-                <Maximize2 className="h-3.5 w-3.5" strokeWidth={1.75} />
-              )}
-            </LayoutBtn>
-          </>
-        ) : null}
+        {studioOn ? <StudioWorkbenchModePicker /> : null}
       </div>
 
       {studioOn ? (
