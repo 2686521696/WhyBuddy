@@ -212,6 +212,15 @@ class Test提示词:
         assert "data-field" in user and "data-cell" in user
         assert "第一个子元素" in user or "兄弟" in user
 
+    def test_矩阵不许只留一行把日程复印(self):
+        """2026-09-01 会席宝：提示词「只留一行」把另外七间的块删掉，
+        运行时再按第一行复印。日历/排期/甘特都中。后台宽表仍只留一行。"""
+        user = build_prompt(GOOD, MODEL, "p1")[-1]["content"]
+        assert "甘特" in user
+        assert "复印" in user
+        assert "只留一行" in user
+        assert "时间块" in user or "日程" in user
+
     def test_校验器原话回喂(self):
         user = build_prompt(GOOD, MODEL, "p1", "某某字段不是 vehicle 的字段")[-1]["content"]
         assert "某某字段不是 vehicle 的字段" in user and "只改这些地方" in user

@@ -14,6 +14,8 @@
  * 加一个字段就该多一列，这是 G2 组已经验过的那条真判据。
  */
 
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it, expect, vi } from "vitest";
 
 import {
@@ -21,6 +23,19 @@ import {
   hasAnyDataSource,
   type BindingSource,
 } from "../html-binding-runtime";
+
+/** 剥注释再查标识符——本仓踩过：词在 docstring 里、函数没接上，判据照样绿。 */
+function runtimeSrc(): string {
+  // ⚠ jsdom 下 import.meta.url 不是 file:，readFileSync 会抛。从 cwd 拼。
+  const rel = "src/pages/sliderule/live-runtime/html-binding-runtime.ts";
+  const found = [`client/${rel}`, rel]
+    .map((c) => resolve(process.cwd(), c))
+    .find((c) => existsSync(c));
+  if (!found) throw new Error("html-binding-runtime.ts not found");
+  return readFileSync(found, "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "");
+}
 
 function dom(html: string): HTMLElement {
   const root = document.createElement("div");
@@ -868,5 +883,152 @@ describe("货架上的图不是行模板", () => {
       source: { rows: { photo: [] }, fields: photos.fields },
     });
     expect(srcs(root)).toEqual(URLS);
+  });
+});
+
+describe("矩阵时间块不是第一行的复印件", () => {
+  /**
+   * ⚠ 2026-09-01 会席宝今日排期：静态页每间会议室日程不同，「已接数据」
+   * 一亮，时间块全变成第一行的复印件。顶栏说填了几十处，用户以为数据
+   * 源写错了。日历 / 排期 / 甘特 / 矩阵都会这样。
+   *
+   * 绑洞提示词「只留一行」把另外七间的块删掉之后，运行时 innerHTML=""
+   * 再克隆第一行——房间名对了，会议是复印件。
+   *
+   * 对照：
+   *   · petite-vue v-for（for.ts）指令打在项上，parent.removeChild(模板)，
+   *     从不清空父容器；
+   *   · Alpine x-for 同口径，兄弟节点不动；
+   *   · FullCalendar resource timeline：资源行和事件是两份数据，
+   *     事件不写进资源行模板里跟着 clone。
+   *
+   * 变异：删掉 applyBindings 里 paintedItems 就地填那一岔，三行走克隆，
+   * 再被 strip 剥块，会议全空（本条 equal 必红）。
+   * 变异：删掉 stripUnboundLaneChips，单行模板必复印成 N 份 Q2。
+   */
+  const rooms: BindingSource = {
+    rows: {
+      meeting_room: [
+        { id: "r1", name: "2F · 松风阁" },
+        { id: "r2", name: "3F · 启明星" },
+        { id: "r3", name: "3F · 天工阁" },
+      ],
+    },
+    fields: { meeting_room: [{ id: "name", name: "名称" }] },
+  };
+
+  const MATRIX = `
+    <div class="relative" data-rows="meeting_room">
+      <div class="h-[68px] flex relative">
+        <span data-field="name">2F · 松风阁</span>
+        <div class="absolute top-2 left-[10%]">Q2 行政与资产盘点会</div>
+      </div>
+      <div class="h-[68px] flex relative">
+        <span data-field="name">3F · 启明星</span>
+        <div class="absolute top-2 left-[40%]">华东供应链对接沟通</div>
+      </div>
+      <div class="h-[68px] flex relative">
+        <span data-field="name">3F · 天工阁</span>
+        <div class="absolute top-2 left-[20%]">面试：产品经理</div>
+      </div>
+    </div>`;
+
+  function chipTexts(root: HTMLElement): string[] {
+    return [...root.querySelectorAll(".absolute")]
+      .map((el) => (el.textContent || "").trim())
+      .filter(Boolean);
+  }
+
+  it("多行且时间块文案不同，bind 之后各行自己的会议还在，不许收成第一行复印件", () => {
+    const root = dom(MATRIX);
+    const report = applyBindings(root, { source: rooms });
+    expect(report.problems).toEqual([]);
+    const chips = chipTexts(root);
+    expect(chips).toEqual([
+      "Q2 行政与资产盘点会",
+      "华东供应链对接沟通",
+      "面试：产品经理",
+    ]);
+    expect(chips.filter((t) => t === "Q2 行政与资产盘点会")).toHaveLength(1);
+  });
+
+  it("反向：不许把第一行会议复印到每一行", () => {
+    const root = dom(MATRIX);
+    applyBindings(root, { source: rooms });
+    expect(chipTexts(root)).not.toEqual([
+      "Q2 行政与资产盘点会",
+      "Q2 行政与资产盘点会",
+      "Q2 行政与资产盘点会",
+    ]);
+  });
+
+  it("房间名照旧填，时间块还在原行", () => {
+    const root = dom(MATRIX);
+    applyBindings(root, { source: rooms });
+    const names = [...root.querySelectorAll("[data-field='name']")].map(
+      (el) => el.textContent
+    );
+    expect(names).toEqual(["2F · 松风阁", "3F · 启明星", "3F · 天工阁"]);
+  });
+
+  it("再 bind 一次不丢块、不叠块", () => {
+    const root = dom(MATRIX);
+    applyBindings(root, { source: rooms });
+    applyBindings(root, { source: rooms });
+    expect(chipTexts(root)).toEqual([
+      "Q2 行政与资产盘点会",
+      "华东供应链对接沟通",
+      "面试：产品经理",
+    ]);
+  });
+
+  it("单行模板仍按房间数展开，但不许把示例会议复印 N 份", () => {
+    const root = dom(`
+      <div class="relative" data-rows="meeting_room">
+        <div class="h-[68px] flex relative">
+          <span data-field="name">2F · 松风阁</span>
+          <div class="absolute top-2 left-[10%]">Q2 行政与资产盘点会</div>
+        </div>
+      </div>`);
+    applyBindings(root, { source: rooms });
+    expect(root.querySelectorAll("[data-field='name']")).toHaveLength(3);
+    expect(root.querySelector("[data-field='name']")!.textContent).toBe(
+      "2F · 松风阁"
+    );
+    expect(chipTexts(root).filter((t) => t === "Q2 行政与资产盘点会")).toHaveLength(
+      0
+    );
+  });
+
+  it("tbody 两行示例仍按行展开，不冻成矩阵", () => {
+    const root = dom(TABLE);
+    applyBindings(root, { source: SOURCE });
+    expect(root.querySelectorAll("tbody tr")).toHaveLength(3);
+  });
+
+  it("单行模板展开剥示例会议，now-line 兄弟还在、不许跟着复印", () => {
+    const root = dom(`
+      <div class="relative" data-rows="meeting_room">
+        <div class="absolute top-0 bottom-0 left-[22.9%] w-[2px] pointer-events-none" data-now-line>现在 14:35</div>
+        <div class="h-[68px] flex relative">
+          <span data-field="name">2F · 松风阁</span>
+          <div class="absolute top-2 left-[10%]">Q2 行政与资产盘点会</div>
+          <div class="absolute top-2 left-[40%]">华东供应链对接沟通</div>
+        </div>
+      </div>`);
+    applyBindings(root, { source: rooms });
+    expect(root.querySelectorAll("[data-field='name']")).toHaveLength(3);
+    expect(chipTexts(root).filter((t) => t.includes("Q2"))).toHaveLength(0);
+    expect(root.querySelectorAll("[data-now-line]")).toHaveLength(1);
+    expect(root.querySelector("[data-now-line]")!.textContent).toContain("14:35");
+  });
+
+  it("applyBindings 真调用 paintedItems / stripUnboundLaneChips（别只写了函数）", () => {
+    const src = runtimeSrc();
+    const start = src.indexOf("export function applyBindings");
+    const next = src.indexOf("export function", start + 10);
+    const body = src.slice(start, next === -1 ? undefined : next);
+    expect(body).toContain("paintedItems(");
+    expect(body).toContain("stripUnboundLaneChips(");
   });
 });

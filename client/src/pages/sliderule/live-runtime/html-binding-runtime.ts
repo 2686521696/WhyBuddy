@@ -323,6 +323,65 @@ function isStaticGallery(box: Element): boolean {
 }
 
 /**
+ * 行里未绑定的时间块（absolute + 有字、自己没有 data-field）。
+ *
+ * 对照 FullCalendar resource timeline：资源行是骨架，事件是另一份数据，
+ * 不写进资源模板里跟着 clone。petite-vue / Alpine 的循环打在项上，
+ * 父容器从不清空——多行已经画好的日程应当留着。
+ */
+function unboundLaneChips(row: Element): Element[] {
+  return Array.from(row.querySelectorAll(".absolute")).filter((el) => {
+    if (hasBindHole(el)) return false;
+    return (el.textContent || "").trim().length > 0;
+  });
+}
+
+function laneSignature(row: Element): string {
+  return unboundLaneChips(row)
+    .map((el) => (el.textContent || "").replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join("|");
+}
+
+function laneItems(box: Element): Element[] {
+  return Array.from(box.children).filter(
+    (el) => !isOverlayChild(el) && hasBindHole(el)
+  );
+}
+
+function isTableBox(box: Element): boolean {
+  const tag = box.tagName;
+  return tag === "TBODY" || tag === "THEAD" || tag === "TABLE";
+}
+
+/**
+ * 多行且时间块文案不同 = 这一页已经画好的矩阵，不是「只留一行」的台账模板。
+ *
+ * ⚠ 2026-09-01 会席宝今日排期：静态页每间会议室日程不同，「已接数据」
+ * 一亮全变成第一行的复印件。顶栏 filled 几十，用户以为数据源写错了。
+ * 日历 / 排期 / 甘特 / 矩阵都会这样，不限于会议室。
+ *
+ * 表路径仍按行展开。
+ */
+function isStaticLane(box: Element): boolean {
+  if (isTableBox(box)) return false;
+  const items = laneItems(box);
+  if (items.length < 2) return false;
+  const sigs = new Set(items.map(laneSignature).filter(Boolean));
+  return sigs.size >= 2;
+}
+
+function stripUnboundLaneChips(row: Element): void {
+  for (const chip of unboundLaneChips(row)) chip.remove();
+}
+
+function paintedItems(box: Element): Element[] | null {
+  if (isStaticGallery(box)) return galleryItems(box);
+  if (isStaticLane(box)) return laneItems(box);
+  return null;
+}
+
+/**
  * 把字段值写进孔。petite-vue `v-text` / Alpine `x-text` 都是打在文字叶子上
  * 的；我们的生成侧常把 `data-field` 盖在还含 `<img>` 的父节点上，
  * ``textContent =`` 会把子图一并抹掉——跟上面清空货架是同一类静默事故。
@@ -543,9 +602,9 @@ export function applyBindings(
     const limit = clampLimit(box.getAttribute("data-limit"));
     if (limit != null) rows = rows.slice(0, limit);
 
-    if (isStaticGallery(box)) {
-      const items = galleryItems(box);
-      items.forEach((item, i) => {
+    const painted = paintedItems(box);
+    if (painted) {
+      painted.forEach((item, i) => {
         const row = rows[i];
         if (!row) return;
         fillFields(item, row, fields, entityId, problems, filled, true);
@@ -554,7 +613,7 @@ export function applyBindings(
           el.setAttribute("data-row-id", rid == null ? "" : String(rid));
         });
       });
-      filled.rows += Math.min(items.length, rows.length);
+      filled.rows += Math.min(painted.length, rows.length);
       return;
     }
 
@@ -568,6 +627,9 @@ export function applyBindings(
       }
       cache[ROW_TPL] = first.cloneNode(true) as Element;
       rowTpl = cache[ROW_TPL];
+      // 单行模板里的示例会议是这一行的插画，不是每个资源的数据。
+      // FullCalendar 不把事件写进资源行再 clone；这里剥掉再展开。
+      stripUnboundLaneChips(rowTpl);
       cache[OVERLAY_TPL] = pickOverlayChildren(box, first).map(
         (el) => el.cloneNode(true) as Element
       );
