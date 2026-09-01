@@ -64,6 +64,8 @@ class Test查表只收白名单图床:
         assert hits
         assert all(h["url"].startswith("https://") for h in hits)
         assert any("unsplash.com" in h["url"] for h in hits)
+        assert not any("wikimedia" in h["url"] for h in hits)
+        assert not any("flickr" in h["url"] for h in hits)
 
     def test_编出来的图床不进名单(self):
         def fake(_q: str) -> dict:
@@ -94,7 +96,7 @@ class Test查表只收白名单图床:
                     {
                         "title": "Fuji",
                         "thumbnail": "https://api.openverse.org/v1/images/abc/thumb/",
-                        "url": "https://live.staticflickr.com/65535/a.jpg",
+                        "url": "https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?ixlib=foo",
                         "license": "cc0",
                     }
                 ]
@@ -102,8 +104,33 @@ class Test查表只收白名单图床:
 
         hits = lookup_stock_images(团购, goal="团购苹果", fetch_fn=fake)
         assert hits
-        assert hits[0]["url"].startswith("https://live.staticflickr.com/")
+        assert "photo-1560806887-1e4cd0b6cbd6" in hits[0]["url"]
+        assert "auto=format" in hits[0]["url"]
         assert "openverse.org" not in hits[0]["url"]
+
+    def test_新注入丢掉flickr只挂unsplash(self):
+        """2026-08-31：用户要 Unsplash。Flickr 过闸但不进新注入。"""
+
+        def fake(_q: str) -> dict:
+            return {
+                "results": [
+                    _openverse("x", "https://live.staticflickr.com/1/a.jpg"),
+                    _openverse("y", "https://images.unsplash.com/photo-ok"),
+                ]
+            }
+
+        hits = lookup_stock_images(团购, goal="团购苹果", fetch_fn=fake)
+        urls = [h["url"] for h in hits]
+        assert urls == ["https://images.unsplash.com/photo-ok"]
+        assert not any("flickr" in u for u in urls)
+
+    def test_只有flickr就空_不许硬塞(self):
+        def fake(_q: str) -> dict:
+            return {
+                "results": [_openverse("x", "https://live.staticflickr.com/1/a.jpg")]
+            }
+
+        assert lookup_stock_images(团购, goal="团购苹果", fetch_fn=fake) == []
 
     def test_flickr_与_rawpixel_子域过闸(self):
         from services.stock_images import _host_ok
@@ -221,9 +248,9 @@ class Test查询跟着话题走:
         assert "fresh groceries produce" not in fn
         assert "found or" not in fn
 
-    def test_默认拉取只要照片(self):
-        # 满电青年那张「Battery Error」是文字梗图。category=photograph
-        # 把插画/梗图挡在 API 侧。去掉这条参数，这条必红。
+    def test_默认拉取走unsplash不打openverse(self):
+        # 2026-08-31：活路径换 Unsplash。把 _unsplash_api 调用删掉、改回
+        # Openverse，这条必红。
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         src = open(
             os.path.join(root, "services", "stock_images.py"),
@@ -231,11 +258,19 @@ class Test查询跟着话题走:
         ).read()
         stripped = re.sub(r'""".*?"""', "", src, flags=re.S)
         stripped = re.sub(r"#.*", "", stripped)
+        assert "https://api.unsplash.com/search/photos" in stripped
         fn = stripped[
             stripped.index("def _default_fetch") : stripped.index("def lookup_stock_images")
         ]
-        assert "photograph" in fn
-        assert "category" in fn
+        assert "_unsplash_api(" in fn
+        assert "_catalog_fetch(" in fn
+        assert "api.openverse.org" not in fn
+        api = stripped[
+            stripped.index("def _unsplash_api") : stripped.index("def _default_fetch")
+        ]
+        assert "_UNSPLASH_SEARCH" in api
+        assert "content_filter" in api
+        assert "Client-ID" in api
 
 
 class Test检索结果必须跟话题:
@@ -403,6 +438,36 @@ class Test按格换图:
         assert 'alt="AI Workflow Video"' in out
 
 
+class TestUnsplash目录退路:
+    """没 key 时不能再打 Openverse（超时 + 没有 unsplash 源）。
+    整词命中才换；对不上留占位——错图比没图更糟。"""
+
+    def test_没key时fill挂用户那张林间图(self, monkeypatch):
+        monkeypatch.delenv("UNSPLASH_ACCESS_KEY", raising=False)
+        monkeypatch.delenv("UNSPLASH_API_KEY", raising=False)
+        html = (
+            '<img src="https://placehold.co/1200x800" '
+            'alt="morning forest trail mist">'
+        )
+        out = fill_stock_placeholders(html, spec={}, goal="")
+        assert "photo-1500530855697-b586d89ba3ee" in out
+        assert "auto=format" in out
+        assert "fit=crop" in out
+        assert "placehold.co" not in out
+
+    def test_对不上词就留占位_不许硬塞林间图(self, monkeypatch):
+        monkeypatch.delenv("UNSPLASH_ACCESS_KEY", raising=False)
+        monkeypatch.delenv("UNSPLASH_API_KEY", raising=False)
+        html = (
+            '<img src="https://placehold.co/600x400" '
+            'alt="natal chart astrology zodiac">'
+        )
+        out = fill_stock_placeholders(html, spec={}, goal="")
+        assert "placehold.co" in out
+        assert "photo-1500530855697-b586d89ba3ee" not in out
+        assert "images.unsplash.com" not in out
+
+
 class Test接在画页之后:
     def test_主链路先画再按格填(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -427,6 +492,10 @@ class Test接在画页之后:
 
     def test_图床名单两边一致(self):
         from services import spec_page_html as sph
+        from services.stock_images import FILL_IMAGE_HOSTS
 
         for host in STOCK_IMAGE_HOSTS:
             assert host in sph._ALLOWED_HOSTS
+        for host in FILL_IMAGE_HOSTS:
+            assert host in sph._ALLOWED_HOSTS
+            assert host in STOCK_IMAGE_HOSTS

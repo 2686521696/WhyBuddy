@@ -50,6 +50,14 @@ for (const name of fs.readdirSync(dir).filter((n) => n.endsWith(".html")).sort()
     /* 没编译到也不挡，下面 flexOk 会记 */
   }
   await page.waitForTimeout(900);
+  try {
+    await page.waitForFunction(
+      () => [...document.images].every((i) => i.complete),
+      { timeout: 8000 }
+    );
+  } catch {
+    /* 外链图没齐也截，下面日志能看出 */
+  }
   const d = await page.evaluate(() => {
     const el = document.querySelector(".flex");
     return {

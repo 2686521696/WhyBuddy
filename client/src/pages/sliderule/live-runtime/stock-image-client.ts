@@ -3,9 +3,9 @@
  *
  * 只有一条接口：`POST /api/sliderule/stock-images/search`，按 alt 找可换的真图。
  *
- * ⚠ 为什么必须走后端、不能在浏览器里直接 fetch Openverse：
+ * ⚠ 为什么必须走后端、不能在浏览器里直接 fetch Unsplash：
  *   页面的 CSP 是 `connect-src 'self' blob: <几家 LLM 网关> data:`——
- *   api.openverse.org 不在里面，浏览器直连会被 CSP 拦下。这是"生成侧/消费侧"
+ *   api.unsplash.com 不在里面，浏览器直连会被 CSP 拦下。这是"生成侧/消费侧"
  *   那条纪律的又一个形状：服务端能搜到 ≠ 浏览器能搜到。
  *
  * ⚠ 写回**不在这个文件里**。选中候选之后走的是既有的

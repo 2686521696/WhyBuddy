@@ -2503,9 +2503,9 @@ async def search_stock_images_for_replacement(
     只读——**不碰 pages_json**。用户从候选里挑一张之后，前端走既有的
     `PATCH /apps/{id}/pages/{pageId}` 落库，跟点选编辑同一条写回路径。
 
-    ⚠ 不是通用取图代理：外呼地址写死 Openverse，用户能控的只有查询词，
-      所以没有 SSRF 面。候选也只回 STOCK_IMAGE_HOSTS 里的主机——那几家
-      已经在 spec_page_html._ALLOWED_HOSTS 里，换进页面之后再跑精修不会被
+    ⚠ 不是通用取图代理：外呼地址写死 Unsplash Search（没 key 退已校验目录），
+      用户能控的只有查询词，所以没有 SSRF 面。候选也只回 images.unsplash.com
+      ——已经在 spec_page_html._ALLOWED_HOSTS 里，换进页面之后再跑精修不会被
       「未授权外链」判失败（真机踩过：Unsplash 写进 HTML 整页校验失败）。
 
     ⚠ 搜不到就如实回空 candidates，**不回落成 placehold.co**。自动画页那条

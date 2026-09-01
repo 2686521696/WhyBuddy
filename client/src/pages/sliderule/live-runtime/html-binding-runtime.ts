@@ -268,6 +268,76 @@ function pickOverlayChildren(box: Element, rowTpl: Element): Element[] {
   return Array.from(box.children).filter((el) => el !== rowTpl && isOverlayChild(el));
 }
 
+const MEDIA_SEL = "img, picture, video, canvas, iframe";
+
+function childHasImg(el: Element): boolean {
+  return el.tagName === "IMG" || !!el.querySelector("img");
+}
+
+/**
+ * 货架上的画面项：带图的直接子节点；若只有一个包装层（grid / 卡片墙），
+ * 再往里看一层。装饰层不算。
+ *
+ * 对照 petite-vue `v-for`（for.ts:20-25）：指令打在**被重复的那一项**上，
+ * 父节点只 `removeChild(模板)`，从不 `innerHTML=""`。Alpine `x-for` 同口径
+ * （x-for.js 的 templateEl 是那一项，兄弟节点不动）。
+ */
+function galleryItems(box: Element): Element[] {
+  const direct = Array.from(box.children).filter(
+    (el) => !isOverlayChild(el) && childHasImg(el)
+  );
+  if (direct.length >= 2) return direct;
+  if (direct.length === 1) {
+    const nested = Array.from(direct[0].children).filter(childHasImg);
+    if (nested.length >= 2) return nested;
+  }
+  return direct;
+}
+
+function distinctImgSrcs(root: Element): Set<string> {
+  const srcs = new Set<string>();
+  for (const img of root.querySelectorAll("img[src]")) {
+    const src = img.getAttribute("src") || "";
+    if (src) srcs.add(src);
+  }
+  return srcs;
+}
+
+/**
+ * 多张不同 src 的图在容器里 = 这一页的画面，不是「只留一行」的台账模板。
+ *
+ * ⚠ 2026-09-01 幼儿作息：素材栏抽出 6 张 Unsplash，画面上没了。源 HTML
+ * 还在；`data-rows` 打在货架容器上之后 applyBindings 走 ``innerHTML=""``
+ * 再按实体数克隆第一项——N=0 清空，N=1~2 只剩第一张的复印件。
+ * 2026-08-31 团子的一天只改提示词「至少留 4 张」，运行时没改，闸绿、图还是没。
+ *
+ * 真机常见形状不是四张 figure 平铺，而是 ``<div data-rows><div class="grid">``
+ * 再包四张图——所以认的是**整棵子树里有没有 ≥2 个不同 src**，不认直接子节点。
+ *
+ * 表路径（tbody / thead / table）仍按行展开：台账可以有两行示例图，那是要删的。
+ */
+function isStaticGallery(box: Element): boolean {
+  const tag = box.tagName;
+  if (tag === "TBODY" || tag === "THEAD" || tag === "TABLE") return false;
+  return distinctImgSrcs(box).size >= 2;
+}
+
+/**
+ * 把字段值写进孔。petite-vue `v-text` / Alpine `x-text` 都是打在文字叶子上
+ * 的；我们的生成侧常把 `data-field` 盖在还含 `<img>` 的父节点上，
+ * ``textContent =`` 会把子图一并抹掉——跟上面清空货架是同一类静默事故。
+ */
+function setFieldText(el: HTMLElement, text: string): void {
+  if (el.querySelector(MEDIA_SEL)) {
+    const leaf = Array.from(
+      el.querySelectorAll<HTMLElement>("span, p, figcaption, h1, h2, h3, h4, h5, h6, time, em, strong, small, label, a, div")
+    ).find((n) => n.childElementCount === 0 && !n.matches(MEDIA_SEL));
+    if (leaf) leaf.textContent = text;
+    return;
+  }
+  el.textContent = text;
+}
+
 /** 排序：只按字段值比大小，认不出就保持原序（不排比乱排好）。 */
 function sortRows(rows: BindingRow[], sortBy: string, order: string): BindingRow[] {
   if (!sortBy) return rows;
@@ -408,7 +478,7 @@ function fillFields(
       problems.push(`data-field="${fid}"：不是实体 ${entityId} 的字段`);
       return;
     }
-    el.textContent = formatFieldText(record[fid], asFieldLike(f));
+    setFieldText(el, formatFieldText(record[fid], asFieldLike(f)));
     filled.field += 1;
   });
 }
@@ -465,6 +535,29 @@ export function applyBindings(
       return;
     }
     const fields = source.fields[entityId] || [];
+    let rows = sortRows(
+      all,
+      box.getAttribute("data-sort") || "",
+      box.getAttribute("data-order") || "asc"
+    );
+    const limit = clampLimit(box.getAttribute("data-limit"));
+    if (limit != null) rows = rows.slice(0, limit);
+
+    if (isStaticGallery(box)) {
+      const items = galleryItems(box);
+      items.forEach((item, i) => {
+        const row = rows[i];
+        if (!row) return;
+        fillFields(item, row, fields, entityId, problems, filled, true);
+        const rid = row[rowIdField];
+        selfAndDescendants<HTMLElement>(item, "[data-action]").forEach((el) => {
+          el.setAttribute("data-row-id", rid == null ? "" : String(rid));
+        });
+      });
+      filled.rows += Math.min(items.length, rows.length);
+      return;
+    }
+
     const cache = box as unknown as TemplateCache;
     let rowTpl = cache[ROW_TPL];
     if (!rowTpl) {
@@ -479,14 +572,6 @@ export function applyBindings(
         (el) => el.cloneNode(true) as Element
       );
     }
-
-    let rows = sortRows(
-      all,
-      box.getAttribute("data-sort") || "",
-      box.getAttribute("data-order") || "asc"
-    );
-    const limit = clampLimit(box.getAttribute("data-limit"));
-    if (limit != null) rows = rows.slice(0, limit);
 
     box.innerHTML = "";
     rows.forEach((row) => {
@@ -504,7 +589,7 @@ export function applyBindings(
           parent.innerHTML = "";
           fields.forEach((f) => {
             const cell = cellTpl.cloneNode(true) as HTMLElement;
-            cell.textContent = formatFieldText(row[f.id], asFieldLike(f));
+            setFieldText(cell, formatFieldText(row[f.id], asFieldLike(f)));
             parent.appendChild(cell);
           });
           rest.forEach((c) => parent.appendChild(c));

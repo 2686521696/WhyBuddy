@@ -743,3 +743,130 @@ describe("甘特装饰不是行模板", () => {
     expect(root.querySelectorAll("tbody tr")).toHaveLength(3);
   });
 });
+
+describe("货架上的图不是行模板", () => {
+  /**
+   * ⚠ 2026-09-01 幼儿作息：素材栏抽出 6 张 Unsplash，画面上没了。
+   * 源 HTML 还在；data-rows 打在货架容器上，applyBindings innerHTML=""
+   * 再按实体数克隆第一项——N=0 清空，N=2 只剩第一张的复印件。
+   *
+   * 对照 petite-vue v-for / Alpine x-for：循环打在项上，父容器不清空。
+   * 变异：删掉 isStaticGallery 那一岔、货架再走 innerHTML=""，本条必红。
+   */
+  const URLS = [
+    "https://images.unsplash.com/photo-a",
+    "https://images.unsplash.com/photo-b",
+    "https://images.unsplash.com/photo-c",
+    "https://images.unsplash.com/photo-d",
+  ];
+  const SHELF = `
+    <div class="grid grid-cols-2" data-rows="photo">
+      <figure><img src="${URLS[0]}" alt="一"><figcaption data-field="title">一</figcaption></figure>
+      <figure><img src="${URLS[1]}" alt="二"><figcaption data-field="title">二</figcaption></figure>
+      <figure><img src="${URLS[2]}" alt="三"><figcaption data-field="title">三</figcaption></figure>
+      <figure><img src="${URLS[3]}" alt="四"><figcaption data-field="title">四</figcaption></figure>
+    </div>`;
+  const photos: BindingSource = {
+    rows: {
+      photo: [
+        { id: "p1", title: "晨起" },
+        { id: "p2", title: "午休" },
+      ],
+    },
+    fields: { photo: [{ id: "title", name: "标题" }] },
+  };
+
+  function srcs(root: HTMLElement): string[] {
+    return [...root.querySelectorAll("img")].map((el) => el.getAttribute("src") || "");
+  }
+
+  it("4 张不同 src 的图，bind 之后还在，不许收成第一张的复印件", () => {
+    const root = dom(SHELF);
+    const report = applyBindings(root, { source: photos });
+    expect(report.problems).toEqual([]);
+    expect(srcs(root)).toEqual(URLS);
+    expect(root.querySelectorAll("img")).toHaveLength(4);
+    expect(root.querySelectorAll("img")).not.toHaveLength(2);
+  });
+
+  it("实体 0 行也不许把货架清空", () => {
+    const root = dom(SHELF);
+    applyBindings(root, {
+      source: { rows: { photo: [] }, fields: photos.fields },
+    });
+    expect(srcs(root)).toEqual(URLS);
+  });
+
+  it("反向：不许克隆第一张冒充货架", () => {
+    const root = dom(SHELF);
+    applyBindings(root, { source: photos });
+    const got = srcs(root);
+    expect(got.filter((s) => s === URLS[0]).length).toBe(1);
+    expect(got).not.toEqual([URLS[0], URLS[0]]);
+  });
+
+  it("标题叶子照旧填，图还在", () => {
+    const root = dom(SHELF);
+    applyBindings(root, { source: photos });
+    const caps = [...root.querySelectorAll("figcaption")].map((el) => el.textContent);
+    expect(caps.slice(0, 2)).toEqual(["晨起", "午休"]);
+    expect(root.querySelector("img")?.getAttribute("src")).toBe(URLS[0]);
+  });
+
+  it("data-field 打在含 img 的父节点上，不许 textContent 把图抹掉", () => {
+    const root = dom(`
+      <div data-record="photo" data-record-id="p1">
+        <figure data-field="title">
+          <img src="${URLS[0]}" alt="一">
+          <figcaption>旧标题</figcaption>
+        </figure>
+      </div>`);
+    applyBindings(root, { source: photos });
+    expect(root.querySelector("img")?.getAttribute("src")).toBe(URLS[0]);
+    expect(root.querySelector("figcaption")?.textContent).toBe("晨起");
+  });
+
+  it("再 bind 一次不丢图、不叠图", () => {
+    const root = dom(SHELF);
+    applyBindings(root, { source: photos });
+    applyBindings(root, { source: photos });
+    expect(srcs(root)).toEqual(URLS);
+  });
+
+  it("一张模板卡仍按行数展开（别把列表路径改坏）", () => {
+    const root = dom(`
+      <div data-rows="vehicle">
+        <article><img src="https://example.com/car.jpg"><span data-field="plate">x</span></article>
+      </div>`);
+    applyBindings(root, { source: SOURCE });
+    expect(root.querySelectorAll("article")).toHaveLength(3);
+    expect(root.querySelectorAll("img")).toHaveLength(3);
+  });
+
+  it("tbody 两张示例图仍按行展开，不冻成货架", () => {
+    const root = dom(`
+      <table><tbody data-rows="vehicle">
+        <tr><td><img src="https://example.com/a.jpg"><span data-field="plate">x</span></td></tr>
+        <tr><td><img src="https://example.com/b.jpg"><span data-field="plate">y</span></td></tr>
+      </tbody></table>`);
+    applyBindings(root, { source: SOURCE });
+    expect(root.querySelectorAll("tbody tr")).toHaveLength(3);
+  });
+
+  it("data-rows 包一层 grid 再放 4 张图，0 行也不许清空", () => {
+    const root = dom(`
+      <section data-rows="photo">
+        <h2>成长</h2>
+        <div class="grid grid-cols-2">
+          <img src="${URLS[0]}" alt="一">
+          <img src="${URLS[1]}" alt="二">
+          <img src="${URLS[2]}" alt="三">
+          <img src="${URLS[3]}" alt="四">
+        </div>
+      </section>`);
+    applyBindings(root, {
+      source: { rows: { photo: [] }, fields: photos.fields },
+    });
+    expect(srcs(root)).toEqual(URLS);
+  });
+});

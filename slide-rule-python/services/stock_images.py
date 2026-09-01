@@ -7,8 +7,8 @@
   原因不是网断：第 3 步提示词写死了关图，外链闸只放行 placehold.co，
   Unsplash 一写进 HTML 整页校验失败（refine_page_scope 头注那次同型）。
 
-做法：Openverse 免 key 搜（2026-08-07 生产机探过，api.openverse.org 200），
-把**返回里的 URL**写进画页提示词。闸只放行这几家图床，页脚仍不许乱挂域名。
+做法：画页仍写 placehold.co；落地后按 alt 搜，把**返回里的 URL**直挂进
+<img src>。闸只放行这几家图床，页脚仍不许乱挂域名。
 
 搜不到 / 超时 fail-open 回 placehold.co，不拖画页。
 
@@ -34,13 +34,25 @@ URL 注进画页提示词——模型四处粘贴，卡片 alt 是充电桩、sr
     同款占位）。
   · kiluazen/tteg：一图一条检索词（batch manifest），不是全局袋子。
     托管 API 有日限额、要他们的 Unsplash key，逻辑抄、服务不接。
-  · WordPress/openverse：免 key 的公开照片目录，仍作检索口。
+  · WordPress/openverse：2026-08 的检索口。2026-08-31 真机（团子的一天 /
+    会易订）几乎全 ReadTimeout，偶发命中还是 live.staticflickr.com。
+    同日探过：Openverse 源列表里已经没有 unsplash，source=unsplash 直接 400。
 
-所以：提示词不再塞 URL；画完后按每张 <img alt> 搜 Openverse 直挂地址。
+⚠ 2026-08-31 用户裁决：换成 Unsplash（给的样例
+  https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80
+  本机 HEAD 200 / 613ms）。新注入只挂 images.unsplash.com。
+  Flickr / Pexels / Wiki / Rawpixel 仍在 STOCK_IMAGE_HOSTS——旧页精修
+  不能被判未授权外链——但自动换图和画布「换图」不再往这几家写。
+  检索：有 UNSPLASH_ACCESS_KEY 走官方 Search；没 key / 搜空 / 挂了，
+  退到下面那份 HEAD 过的直链目录（整词命中才用，对不上留占位图）。
+  模型仍然不许自己编 photo id。
+
+所以：提示词不再塞 URL；画完后按每张 <img alt> 搜 Unsplash 直挂地址。
 """
 
 from __future__ import annotations
 
+import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -48,7 +60,7 @@ from html import unescape
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse
 
-_OPENVERSE = "https://api.openverse.org/v1/images/"
+_UNSPLASH_SEARCH = "https://api.unsplash.com/search/photos"
 _UA = "SlideRule/stock-images (URL lookup only; no download)"
 _TIMEOUT_S = 3.0
 _MAX_QUERIES = 3
@@ -66,6 +78,7 @@ _FILL_BUDGET_S = 12.0
 _FILL_WORKERS = 4
 
 # 闸与提示词共用。不在这里的主机，搜到了也不注入——否则模型抄了仍会被拦。
+# ⚠ 这是「页面上已经挂了也能过精修」的名单，不是「新搜到的往哪写」。
 STOCK_IMAGE_HOSTS = (
     "images.unsplash.com",
     "images.pexels.com",
@@ -74,7 +87,64 @@ STOCK_IMAGE_HOSTS = (
     "rawpixel.com",
 )
 
-_OK_LICENSE = frozenset({"cc0", "pdm"})
+#: 2026-08-31 起新注入只写 Unsplash。用户给的 CDN 比 Flickr 稳。
+FILL_IMAGE_HOSTS = ("images.unsplash.com",)
+
+_OK_LICENSE = frozenset({"cc0", "pdm", "unsplash"})
+
+# Unsplash Search 的 orientation。跟 Openverse 那套 wide/tall/square 对齐。
+_UNSPLASH_ORIENT = {
+    "wide": "landscape",
+    "tall": "portrait",
+    "square": "squarish",
+}
+
+#: 真 Unsplash id 是 photo-{数字}-{hex}。测试里的 photo-charger 这种假 id
+#: 不要改写，否则断言 URL 字面的闸会莫名其妙红。
+_UNSPLASH_PHOTO_RE = re.compile(
+    r"https://images\.unsplash\.com/(photo-\d+-[0-9A-Za-z]+)",
+    re.I,
+)
+
+# 没 key 时的退路。每条都是 2026-08-31 对
+# `https://images.unsplash.com/{id}?auto=format&fit=crop&w=80&q=40` HEAD 200。
+# 只整词命中；对不上就空——错图比没图更糟，不许拿林间图硬塞进星盘页。
+_UNSPLASH_CATALOG: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("charging", "charger", "ev"), "photo-1593941707882-a5bba14938c7"),
+    (("scooter", "motorcycle", "bicycle", "bike"), "photo-1571068316344-75bc76f77890"),
+    (("warehouse", "logistics", "cargo"), "photo-1586528116311-ad8dd3c8310d"),
+    (("hospital", "clinic", "medical"), "photo-1519494026892-80bbd2d6fd0d"),
+    (("pharmacy", "medicine", "pills"), "photo-1584308666744-24d5c474f2ae"),
+    (("auditorium", "stage", "concert"), "photo-1516450360452-9312f5e86fc7"),
+    (("meeting", "conference", "boardroom"), "photo-1517245386807-bb43f82c33c4"),
+    (("office", "workplace", "coworking"), "photo-1497366216548-37526070297c"),
+    (("laptop", "keyboard"), "photo-1486312338219-ce68d2c6f44d"),
+    (("team", "collaboration", "creator", "filming"), "photo-1516321318423-f06f85e504b3"),
+    (("camera", "photography"), "photo-1516035069371-29a1b244cc32"),
+    (("kitchen",), "photo-1556909114-f6e7ad7d3136"),
+    (("bedroom",), "photo-1522771739844-6a9f6d5f14af"),
+    (("restaurant", "dining"), "photo-1414235077428-338989a2e8c0"),
+    (("coffee", "cafe", "latte"), "photo-1495474472287-4d71bcdd2085"),
+    (("bakery", "bread"), "photo-1509440159596-0249088772ff"),
+    (("apple", "apples"), "photo-1560806887-1e4cd0b6cbd6"),
+    (
+        ("vegetable", "vegetables", "produce", "groceries"),
+        "photo-1488459716781-31db52582fe9",
+    ),
+    (("fruit", "tomato"), "photo-1488459716781-31db52582fe9"),
+    (("cat", "tabby"), "photo-1514888286974-6c03e2ca1dba"),
+    (("dog",), "photo-1552053831-71594a27632d"),
+    (("library",), "photo-1524995997946-a1c2e315a42f"),
+    (("book", "manuscript"), "photo-1512820790803-83ca734da794"),
+    (
+        ("forest", "woods", "trail", "mist", "mountain"),
+        "photo-1500530855697-b586d89ba3ee",
+    ),
+    (("ocean", "beach", "sea", "wave"), "photo-1507525428034-b723cf961d3e"),
+    (("city", "skyline", "street"), "photo-1449824913935-59a10b8d2000"),
+    (("portrait", "avatar"), "photo-1438761681033-6461ffad8d80"),
+    (("desk",), "photo-1497215728101-856f4ea42174"),
+)
 
 # 中文意图 → Openverse 英语查询。只做桥，答案仍是搜到的 URL。
 # 长词优先（充电桩 盖住 充电；红富士 盖住 苹果），见 _queries。
@@ -224,6 +294,44 @@ def _host_ok(url: str) -> bool:
     return any(host == a or host.endswith("." + a) for a in STOCK_IMAGE_HOSTS)
 
 
+def _fill_host_ok(url: str) -> bool:
+    """新注入只收 Unsplash。闸白名单仍是 STOCK_IMAGE_HOSTS。"""
+    host = (urlparse(url).hostname or "").lower()
+    if not host:
+        return False
+    return any(host == a or host.endswith("." + a) for a in FILL_IMAGE_HOSTS)
+
+
+def _canonical_unsplash_url(url: str, aspect: Optional[str] = None) -> str:
+    """收成用户给的那种稳格式。假 id（测试用 photo-charger）原样返回。"""
+    match = _UNSPLASH_PHOTO_RE.search(url or "")
+    if not match:
+        return url
+    photo = match.group(1)
+    if aspect == "tall":
+        return (
+            f"https://images.unsplash.com/{photo}"
+            "?auto=format&fit=crop&w=800&h=1200&q=80"
+        )
+    if aspect == "square":
+        return (
+            f"https://images.unsplash.com/{photo}"
+            "?auto=format&fit=crop&w=800&h=800&q=80"
+        )
+    return (
+        f"https://images.unsplash.com/{photo}"
+        "?auto=format&fit=crop&w=1200&q=80"
+    )
+
+
+def _unsplash_access_key() -> str:
+    return (
+        os.environ.get("UNSPLASH_ACCESS_KEY")
+        or os.environ.get("UNSPLASH_API_KEY")
+        or ""
+    ).strip()
+
+
 def _topic_text(spec: Dict[str, Any], goal: str = "") -> str:
     pages = spec.get("pages") or []
     names = " ".join(
@@ -317,8 +425,16 @@ def _keep_hit(query: str, row: Dict[str, Any]) -> bool:
 
 
 def _fetch_openverse(
-    query: str, fetch_fn: Callable[..., Any], limit: int = 2
+    query: str,
+    fetch_fn: Callable[..., Any],
+    limit: int = 2,
+    aspect: Optional[str] = None,
 ) -> List[Dict[str, str]]:
+    """从检索口的 {results: [...]} 里挑可注入的 Unsplash 直链。
+
+    函数名是历史包袱（2026-08 检索口是 Openverse）；换 Unsplash 后信封没变，
+    测试按这个名字切片，不改名。
+    """
     payload = fetch_fn(query)
     rows = (payload or {}).get("results") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
@@ -332,15 +448,16 @@ def _fetch_openverse(
         # 不在图床白名单里——优先拿它等于搜到 8 条、注入 0 条，页面还是色块。
         # 用户要的是直挂地址，用原图 url。
         url = str(row.get("url") or row.get("thumbnail") or "").strip()
-        if not url.startswith("https://") or not _host_ok(url):
+        if not url.startswith("https://") or not _fill_host_ok(url):
             continue
+        url = _canonical_unsplash_url(url, aspect)
         if not _keep_hit(query, row):
             continue
         item = {
             "url": url,
             "query": query,
             "label": str(row.get("title") or query).strip()[:40] or query,
-            "source": "openverse",
+            "source": str(row.get("source") or "unsplash").strip() or "unsplash",
             "license": str(row.get("license") or "").lower(),
         }
         if item["license"] in _OK_LICENSE:
@@ -355,32 +472,125 @@ def _fetch_openverse(
     return picked
 
 
+def _catalog_fetch(
+    query: str, aspect: Optional[str] = None
+) -> Dict[str, Any]:
+    """没 key 时按整词从已校验目录里挑。对不上返回空 results。"""
+    text = query or ""
+    best_kw = ""
+    best_photo = ""
+    for keywords, photo in _UNSPLASH_CATALOG:
+        for kw in keywords:
+            if not re.search(
+                r"(?<![a-z0-9])" + re.escape(kw) + r"(?![a-z0-9])",
+                text,
+                flags=re.I,
+            ):
+                continue
+            if len(kw) > len(best_kw):
+                best_kw = kw
+                best_photo = photo
+    if not best_photo:
+        return {"results": []}
+    url = _canonical_unsplash_url(
+        f"https://images.unsplash.com/{best_photo}", aspect
+    )
+    return {
+        "results": [
+            {
+                "title": query,
+                "url": url,
+                "thumbnail": url,
+                "license": "unsplash",
+                "source": "unsplash-catalog",
+                "tags": [{"name": best_kw}] if best_kw else [],
+            }
+        ]
+    }
+
+
+def _unsplash_api(
+    query: str,
+    aspect: Optional[str],
+    timeout_s: Optional[float],
+    key: str,
+) -> Dict[str, Any]:
+    import httpx
+
+    params: Dict[str, Any] = {
+        "query": query,
+        "per_page": 20,
+        "content_filter": "high",
+    }
+    orient = _UNSPLASH_ORIENT.get(aspect or "")
+    if orient:
+        params["orientation"] = orient
+    response = httpx.get(
+        _UNSPLASH_SEARCH,
+        params=params,
+        headers={
+            "User-Agent": _UA,
+            "Accept": "application/json",
+            "Accept-Version": "v1",
+            "Authorization": f"Client-ID {key}",
+        },
+        timeout=_TIMEOUT_S if timeout_s is None else timeout_s,
+    )
+    response.raise_for_status()
+    data = response.json()
+    if not isinstance(data, dict):
+        return {"results": []}
+    rows: List[Dict[str, Any]] = []
+    for item in data.get("results") or []:
+        if not isinstance(item, dict):
+            continue
+        urls = item.get("urls") if isinstance(item.get("urls"), dict) else {}
+        raw = str(
+            urls.get("raw") or urls.get("regular") or urls.get("full") or ""
+        ).strip()
+        url = _canonical_unsplash_url(raw, aspect)
+        if not url.startswith("https://") or not _fill_host_ok(url):
+            continue
+        tags: List[Dict[str, str]] = []
+        for tag in item.get("tags") or []:
+            if isinstance(tag, dict) and tag.get("title"):
+                tags.append({"name": str(tag.get("title"))})
+        rows.append(
+            {
+                "title": str(
+                    item.get("alt_description")
+                    or item.get("description")
+                    or query
+                ).strip()[:80]
+                or query,
+                "url": url,
+                "thumbnail": url,
+                "license": "unsplash",
+                "source": "unsplash",
+                "tags": tags,
+            }
+        )
+    return {"results": rows}
+
+
 def _default_fetch(
     query: str,
     aspect: Optional[str] = None,
     timeout_s: Optional[float] = None,
 ) -> Dict[str, Any]:
-    import httpx
-
-    params: Dict[str, Any] = {
-        "q": query,
-        "page_size": 20,
-        "mature": "false",
-        "category": "photograph",
-    }
-    # Openverse：wide / tall / square。tteg 按 orientation 搜 Unsplash，这里对齐。
-    if aspect in ("wide", "tall", "square"):
-        params["aspect_ratio"] = aspect
-
-    response = httpx.get(
-        _OPENVERSE,
-        params=params,
-        headers={"User-Agent": _UA, "Accept": "application/json"},
-        timeout=_TIMEOUT_S if timeout_s is None else timeout_s,
-    )
-    response.raise_for_status()
-    data = response.json()
-    return data if isinstance(data, dict) else {}
+    """活路径：Unsplash Search；没 key / 搜空 / 挂了退目录。不再打 Openverse。"""
+    key = _unsplash_access_key()
+    if key:
+        try:
+            payload = _unsplash_api(query, aspect, timeout_s, key)
+            if payload.get("results"):
+                return payload
+            print(f"[stock_images] Unsplash 搜空 q={query!r}，退目录")
+        except Exception as exc:  # noqa: BLE001 — 搜图是增强，退目录
+            print(
+                f"[stock_images] ⚠ Unsplash 查询失败，退目录：{str(exc)[:160]}"
+            )
+    return _catalog_fetch(query, aspect)
 
 
 def lookup_stock_images(
@@ -526,6 +736,8 @@ def _resolve_query(
           ancient book page manuscript   → 0 条     ancient book     → 20 条
           orange tabby rescue cat(方图)  → 0 条     orange tabby cat → 20 条
 
+      （数字是 2026-08-25 在 Openverse 上量的；Unsplash Search 同样吃过
+      长尾 AND，阶梯留着。）
       16 条真机 alt 只搜整句命中 0～1；接上阶梯命中 15/16。
 
     ⚠ 放宽只在**同一句话里删词**，绝不换话题。2026-08-20 那次「电动车话题
@@ -548,10 +760,12 @@ def _resolve_query(
         try:
             if fetch_fn is None:
                 batch = _fetch_openverse(
-                    q, lambda qq, a=asp: _default_fetch(qq, aspect=a)
+                    q,
+                    lambda qq, a=asp: _default_fetch(qq, aspect=a),
+                    aspect=asp,
                 )
             else:
-                batch = _fetch_openverse(q, fetch_fn)
+                batch = _fetch_openverse(q, fetch_fn, aspect=asp)
         except Exception as exc:  # noqa: BLE001 — 单级挂了退下一级，不整个放弃
             print(f"[stock_images] ⚠ 按格查询失败（{q}）：{str(exc)[:160]}")
             continue
@@ -829,8 +1043,8 @@ def search_replacement_images(
 ) -> Dict[str, Any]:
     """按 alt 找可换的真图。返回 {query, aspect, candidates, tried}。
 
-    候选只来自 STOCK_IMAGE_HOSTS——那几家**已经在 spec_page_html._ALLOWED_HOSTS
-    里**，换进页面之后再跑精修不会被「未授权外链」判失败。这条是这个功能能
+    候选只来自 FILL_IMAGE_HOSTS（Unsplash）——已经在 spec_page_html._ALLOWED_HOSTS
+    里，换进页面之后再跑精修不会被「未授权外链」判失败。这条是这个功能能
     不能用的前提，不是风格问题（真机踩过：Unsplash 写进 HTML 整页校验失败）。
     """
     aspect = _aspect_of(src)
@@ -844,10 +1058,14 @@ def search_replacement_images(
                     query,
                     lambda q, a=asp: _default_fetch(q, aspect=a, timeout_s=timeout_s),
                     limit=_REPLACEMENT_CANDIDATES,
+                    aspect=asp,
                 )
             else:
                 batch = _fetch_openverse(
-                    query, fetch_fn, limit=_REPLACEMENT_CANDIDATES
+                    query,
+                    fetch_fn,
+                    limit=_REPLACEMENT_CANDIDATES,
+                    aspect=asp,
                 )
         except Exception as exc:  # noqa: BLE001 — 单级挂了就退下一级
             print(f"[stock_images] ⚠ 换图查询失败（{query}）：{str(exc)[:120]}")

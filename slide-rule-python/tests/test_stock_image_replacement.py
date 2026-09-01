@@ -123,7 +123,7 @@ class Test搜替换图:
             {
                 "ancient book page manuscript": [],
                 "book page manuscript": [],
-                "page manuscript": [_row("https://live.staticflickr.com/1/a.jpg")],
+                "page manuscript": [_row("https://images.unsplash.com/photo-ok")],
             }
         )
         out = search_replacement_images(
@@ -147,18 +147,28 @@ class Test搜替换图:
         # 试过的词要带回去，前端才能说清"搜了这些都没有"
         assert out["tried"]
 
-    def test_候选只出白名单图床(self):
+    def test_候选只出unsplash(self):
         fetch = _fetch(
             {
                 "cat": [
                     _row("https://evil.example.com/a.jpg"),
                     _row("https://live.staticflickr.com/1/ok.jpg"),
+                    _row("https://images.unsplash.com/photo-ok"),
                 ]
             }
         )
         out = search_replacement_images("cat", "", fetch_fn=fetch)
         urls = [c["url"] for c in out["candidates"]]
-        assert urls == ["https://live.staticflickr.com/1/ok.jpg"]
+        assert urls == ["https://images.unsplash.com/photo-ok"]
+        assert not any("flickr" in u for u in urls)
+        assert not any("evil" in u for u in urls)
+
+    def test_只有flickr就回空_不把别的图床冒充成功(self):
+        fetch = _fetch(
+            {"cat": [_row("https://live.staticflickr.com/1/ok.jpg")]}
+        )
+        out = search_replacement_images("cat", "", fetch_fn=fetch)
+        assert out["candidates"] == []
 
     def test_白名单已在画页闸里_换完再精修不会被判未授权外链(self):
         # ⚠ 这条不是风格问题：真机踩过 Unsplash 写进 HTML 整页校验失败。
@@ -170,7 +180,7 @@ class Test搜替换图:
         def fetch(query):
             if query == "orange tabby rescue cat":
                 raise TimeoutError("boom")
-            return {"results": [_row("https://live.staticflickr.com/1/c.jpg")]}
+            return {"results": [_row("https://images.unsplash.com/photo-ok")]}
 
         out = search_replacement_images("orange tabby rescue cat", "", fetch_fn=fetch)
         assert out["candidates"]
@@ -191,11 +201,11 @@ class Test自动链路也用上了阶梯:
         fetch = _fetch(
             {
                 # 整句 + 各中间级都空，只有最短那级有货
-                "boarding cage": [_row("https://live.staticflickr.com/1/dog.jpg")]
+                "boarding cage": [_row("https://images.unsplash.com/photo-ok-dog")]
             }
         )
         out = fill_stock_placeholders(html, spec={}, goal="", fetch_fn=fetch)
-        assert "live.staticflickr.com/1/dog.jpg" in out
+        assert "images.unsplash.com/photo-ok-dog" in out
         # 反向：占位图必须真的没了，不是"换了但两个都在"
         assert "placehold.co" not in out
         # 反向：确实是**退让**到的，第一次问的仍是整句
@@ -271,7 +281,7 @@ class Test自动链路也用上了阶梯:
                 seen.append(query)
             time.sleep(0.12)  # 够长，去重没做的话三个线程会同时在飞
             return {
-                "results": [_row("https://live.staticflickr.com/1/a.jpg")]
+                "results": [_row("https://images.unsplash.com/photo-ok")]
                 if query == "administrator avatar portrait"
                 else []
             }
@@ -279,4 +289,4 @@ class Test自动链路也用上了阶梯:
         out = fill_stock_placeholders(html, spec={}, goal="", fetch_fn=slow_fetch)
         assert seen.count("administrator avatar portrait") == 1, seen
         # 三张都换掉了
-        assert out.count("live.staticflickr.com/1/a.jpg") == 3
+        assert out.count("images.unsplash.com/photo-ok") == 3
