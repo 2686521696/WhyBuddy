@@ -148,6 +148,25 @@ class Test提示词不诱导谈结构:
         joined = " ".join(m["content"] for m in build_style_brief_prompt(SPEC))
         assert "p1" in joined and "p2" in joined, "不给 id 它没法按页返回"
 
+    def test_没选也要落到具体参照_不许形容词堆(self):
+        """2026-08-31：没选设计系统时原先只写 80~150 字形容词，
+        会议室预约长成 Inter + #2563eb + 四张等宽 KPI。
+
+        官方 PHILOSOPHY：Adjectives describe a region. A specific reference
+        describes a point. 把「具体参照」从提示词删掉本条必须红。
+        """
+        msgs = build_style_brief_prompt(SPEC)
+        system = msgs[0]["content"]
+        user = msgs[1]["content"]
+        # ⚠ 钉 system 段：user 的 JSON 形状里也有「具体参照」四个字，
+        #   只 grep 拼接全文的话，把 _TASTE_DISCIPLINE 删掉仍绿。
+        assert "具体参照" in system
+        assert "某个真实产品、场所或物件" in system
+        assert "不要只堆" in system
+        assert "#2563eb 当没想好时的退路" in system
+        assert "不是营销落地页" in system
+        assert "像哪个产品/场所" in user
+
 
 class Test手机风格段:
     """2026-08-20：风格段点名「主表几列 / 右侧详情栏」会把竖屏画成 PC 工作台。"""
@@ -163,12 +182,43 @@ class Test手机风格段:
         assert "个人中心" in joined
         assert "手机外框" in joined
         assert "390×844" in joined
+        # 2026-08-31：不要每页都先画 KPI。删这句本条必须红。
+        assert "不要每页都先画一排指标卡" in joined
 
-    def test_desktop仍点名主表和右侧栏(self):
+    def test_desktop仍是后台且按页型点名(self):
+        """2026-08-31：桌面仍是 B 端、仍逐个点名、仍不许凑数；
+        但不再无条件点名「主表几列 / 右侧详情栏」——会议室占用网格会被画成 KPI 中台。
+
+        反向：旧无条件点名回来本条必须红。把「先判页型」删掉也必须红。
+        """
         joined = " ".join(m["content"] for m in build_style_brief_prompt(SPEC))
-        assert "主表几列" in joined
-        assert "有没有右侧详情栏" in joined
+        assert "资深 B 端产品设计师" in joined
+        assert "逐个点名" in joined
+        assert "不要为了凑数硬加" in joined
         assert "手机竖屏 App" not in joined
+        assert "主表几列" not in joined
+        assert "有没有右侧详情栏" not in joined
+        assert "先判这一页是哪种活" in joined
+        assert "不要硬凑统计卡" in joined
+        assert "有主表的台账才写列名" in joined
+
+    def test_content_app换消费端设计师且图是一等公民(self):
+        """选了内容原型，风格段仍点名 KPI/台账 = 杂志画成中台。"""
+        joined = " ".join(
+            m["content"]
+            for m in build_style_brief_prompt(SPEC, product_archetype="content_app")
+        )
+        assert "资深消费端视觉设计师" in joined
+        assert "资深 B 端产品设计师" not in joined
+        assert "图是一等公民" in joined
+        assert "封面、图流、详情、杂志" in joined
+        assert "不要 KPI" in joined or "不要 KPI 统计卡" in joined
+        assert "看板、工作台、台账" not in joined
+
+    def test_没选原型时桌面仍是B端(self):
+        joined = " ".join(m["content"] for m in build_style_brief_prompt(SPEC))
+        assert "资深 B 端产品设计师" in joined
+        assert "资深消费端视觉设计师" not in joined
 
     def test_tablet不点名宽表也不走手机竖屏(self):
         """2026-08-30 夜：tablet 走 `phone else desktop` 会点名主表几列，
@@ -179,6 +229,7 @@ class Test手机风格段:
         assert "有没有右侧详情栏" not in joined
         assert "手机竖屏 App" not in joined
         assert "390×844" not in joined
+        assert "不要硬凑统计卡" in joined
 
     def test_generate_style_brief把device送进prompt(self):
         seen: dict = {}

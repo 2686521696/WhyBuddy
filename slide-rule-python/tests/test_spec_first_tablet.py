@@ -124,6 +124,7 @@ class Test风格段平板:
         assert "手机竖屏 App" not in joined
         assert "390×844" not in joined
         assert "逐个点名" in joined
+        assert "不要硬凑统计卡" in joined
 
     def test_tablet确定性密度也不走桌面条款(self):
         prose = render_design_language(None, device="tablet")

@@ -898,8 +898,8 @@ def _build_user_content(
             desc = f" — {skill['description']}" if skill["description"] else ""
             lines.append(f"- {skill['name']}{desc}")
         parts.append("\n".join(lines))
-    # experience 通道不进这条 prompt：它喂的是过门之后的体验层
-    #（identity_theme_gen 读 installed_skills_for_channel("experience")）。
+    # experience 通道不进这条 prompt：活路径是风格段
+    #（design_language.experience_skill_constraint），不当种子色。
     # ②业界参考技能（软参考）：只借命名与 IO 风格
     try:
         from .v5_skill_reference import reference_prompt_block

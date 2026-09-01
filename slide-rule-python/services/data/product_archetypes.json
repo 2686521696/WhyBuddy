@@ -68,6 +68,64 @@
         }
       ]
     },
+    "content_app": {
+      "label": "消费 / 内容应用",
+      "wired": true,
+      "$comment": "2026-08-31 接通。团子的一天 / 杂志 / 天气是 C 端封面：没有 aside、图是一等公民。闭环不问角色权限和审批流——问的是有没有能看的页面、能不能打成应用包。生成侧必须换壳（header 横栏 + main），不许把后台 aside 皮套在内容产品上。选择通道仍是范围卡 productArchetype，不许按话题词分流。",
+      "shell": "content",
+      "policy": {
+        "name": "content-app",
+        "description": "消费 / 内容应用的推演政策。封面、图流、杂志、天气一瞥。图是一等公民，没有后台侧栏。",
+        "whenToUse": "给人看、刷、读：封面、图流、杂志、天气、一日记。坐工位办事的后台不要选这个。",
+        "allowedTools": ["spec", "pages", "structure", "bind", "closure"],
+        "devices": {
+          "desktop": { "density": "comfortable" },
+          "phone": { "density": "compact" },
+          "tablet": { "density": "comfortable" }
+        }
+      },
+      "requiredEvidence": [
+        "page",
+        "appbundle"
+      ],
+      "closureEdges": [
+        {
+          "sourceSkill": "page",
+          "targetSkill": "appbundle",
+          "state": "allowed",
+          "evidenceKey": "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+        }
+      ]
+    },
+    "free_app": {
+      "label": "自由类型",
+      "wired": true,
+      "$comment": "2026-08-31 接通。用户圈了空态 Web/应用/平板 下拉要加一档——那是设备轴，自由类型是原型轴，两轴混一颗发送会分不清（composer-device 2026-08-30 已裁过）。空态作曲家原型下拉 + 范围卡都能选。不套后台中台，也不套杂志封面/图流四页；按这一页的活儿自己定。壳与 content 相同（header 横栏、剥 aside），SPEC/密度/绑洞分叉：图流货架至少留 4 张示例图。闭环只要页面和应用包。选择通道仍是 productArchetype，不许按话题词分流。",
+      "shell": "content",
+      "policy": {
+        "name": "free-app",
+        "description": "自由类型的推演政策。不套后台中台，也不套杂志四页。按这一页的活儿自己定版式。",
+        "whenToUse": "不确定是后台还是内容、或一页一种活：有的页是图流，有的页是表单。不要为了选原型硬套。",
+        "allowedTools": ["spec", "pages", "structure", "bind", "closure"],
+        "devices": {
+          "desktop": { "density": "comfortable" },
+          "phone": { "density": "compact" },
+          "tablet": { "density": "comfortable" }
+        }
+      },
+      "requiredEvidence": [
+        "page",
+        "appbundle"
+      ],
+      "closureEdges": [
+        {
+          "sourceSkill": "page",
+          "targetSkill": "appbundle",
+          "state": "allowed",
+          "evidenceKey": "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE"
+        }
+      ]
+    },
     "casual_game": {
       "label": "小游戏 / 互动玩法",
       "wired": false,

@@ -710,6 +710,15 @@ def _freeze(g: Graph, manifest: dict) -> None:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    # pytest 把 stdout 收成 pipe：Windows 用 GBK，print("✅") 会 UnicodeEncodeError
+    # 把 --check 成功打成 exit 1。跟 stdio_utf8 同一条，这里不 import 以免多一条边。
+    for _stream in (sys.stdout, sys.stderr):
+        _fn = getattr(_stream, "reconfigure", None)
+        if callable(_fn):
+            try:
+                _fn(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--check", action="store_true", help="闸：违规/环有没有变多")
     ap.add_argument("--emit", action="store_true", help="重新生成架构图")

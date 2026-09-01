@@ -1265,6 +1265,12 @@ def run_spec_first(
     2026-08-30 夜：tablet 同构——stamp 对了，契约/IA/风格段仍是
     `phone else desktop`，五页全是 w-64。同一个 device 变量必须原样传到
     那三处，不许在中途折成 desktop。
+    ⚠ 2026-08-31：product_archetype 同构。范围卡选了 content_app，SPEC /
+    风格段 / 画页契约 / unify_shell 漏传，页还是后台 aside。必须把同一个
+    变量传到 generate_spec_tree、generate_style_brief /
+    generate_design_language / render_design_language、
+    generate_pages_parallel、unify_shell、bind_pages。空 / business_app 时下游
+    is_content_app 为假，桌面路径一字不改。free_app 走开放壳 + 自由切页。
 
     返回 {"version", "model", "spec", "structure", "semantics", "pages",
           "navItems", "failedPages", "stages", "device"}。
@@ -1345,7 +1351,11 @@ def run_spec_first(
         "capabilities": list(plan.ids),
         "device": plan.device,
     }
-    print(f"[spec_first_pipeline] preferredDevice={device} capabilityPlan={plan.name}")
+    arch = str(product_archetype or "").strip()
+    print(
+        f"[spec_first_pipeline] preferredDevice={device} "
+        f"productArchetype={arch or 'business_app'} capabilityPlan={plan.name}"
+    )
     sink = _with_device(on_page or _page_sink_var.get(), device)
     pages: Dict[str, str] = {}
     failed: Dict[str, Any] = {}
@@ -1501,6 +1511,7 @@ def run_spec_first(
                 prev_pages=(_prev_ids.get("pages") or None),
                 device=device,
                 skeleton=skeleton,
+                product_archetype=arch,
             )
             if skeleton:
                 st["appTemplate"] = str(skeleton.get("id") or "")
@@ -1590,7 +1601,7 @@ def run_spec_first(
         design_language = merge_override(
             normalize_design_language(reuse_language), design_override
         )
-        design_system = render_design_language(design_language, device=device)
+        design_system = render_design_language(design_language, device=device, product_archetype=arch)
         # ⚠ 零 LLM、瞬时完成，**不进进度线**——照 specfirst.shell 那条：
         #   start/end 背靠背发出去只会在左侧闪一下。
         print("[spec_first_pipeline] 复用上一版设计语言，不重新生成")
@@ -1599,16 +1610,17 @@ def run_spec_first(
         with _stage("specfirst.design") as st:
             # ★ 2026-08-16 用户裁决：风格段改由 LLM **现写**——
             #   「a 就算内容再多也是写死的」。确定性那套降为回落。
-            style_brief = generate_style_brief(spec, device=device)
+            style_brief = generate_style_brief(spec, device=device, product_archetype=arch)
             st["mode"] = "llm" if style_brief else "fallback"
             if style_brief is None:
                 # ⚠ 回落不是可有可无：审美挂了不该打死整轮，而确定性那套
                 #   永远出得来。这跟 spec_tree「失败不回落占位」不矛盾——
                 #   那条护的是内容，这里回落的是审美。
                 design_language = generate_design_language(
-                    spec, override=design_override, device=device
+                    spec, override=design_override, device=device,
+                    product_archetype=arch,
                 )
-                design_system = render_design_language(design_language, device=device)
+                design_system = render_design_language(design_language, device=device, product_archetype=arch)
                 st["density"] = design_language.get("density")
         stages["design"] = dict(st)
 
@@ -1715,6 +1727,7 @@ def run_spec_first(
                 #   自然走整页生成。
                 edit_base=(reuse_pages or {}) if refine else {},
                 edit_instruction=str((refine or {}).get("instruction") or "") if refine else "",
+                product_archetype=arch,
             )
             pages = dict(batch.get("pages") or {})
             pages = {
@@ -1757,7 +1770,7 @@ def run_spec_first(
     if plan.includes("specfirst.shell"):
         raise_if_cancelled("第3.5步 外壳统一")
         with _stage("specfirst.shell") as st:
-            shell = unify_shell(pages, spec, device=device)
+            shell = unify_shell(pages, spec, device=device, product_archetype=arch)
             pages = dict(shell.get("pages") or pages)
             st["pages"] = len(pages)
             # 判据接进生产（此前只在测试里跑）：统一完还剩几处不一致，如实记账。
@@ -2057,7 +2070,7 @@ def run_spec_first(
                 else set()
             )
             to_bind = {pid: h for pid, h in pages.items() if pid not in _skip_bind}
-            bound = bind_pages(to_bind, model)
+            bound = bind_pages(to_bind, model, product_archetype=arch)
             if bound.get("pages"):
                 # ⚠ 必须合并回全集：bound 只有重打的那几页，直接整份替换会把
                 #   照搬页从交付里弄丢——那是"省了打孔、赔了页面"。

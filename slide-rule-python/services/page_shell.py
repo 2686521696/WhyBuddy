@@ -570,10 +570,28 @@ SHELL_ASIDE_LAYOUT_CSS = (
 )
 
 
-def mark_shell_parts(markup: str, *, device: str = "desktop") -> str:
+def _is_content_shell(device: str, product_archetype: str) -> bool:
+    """顶栏横栏、不要 aside。手机仍走底栏，不走这条。
+
+    content_app 和 free_app 共用这条壳（is_open_chrome）。杂志四页 vs
+    自由切页是 SPEC/密度的事，不在这里分叉。
+    选择通道是范围卡 productArchetype，不许按话题词猜。
+    """
+    if device == "phone":
+        return False
+    from services.archetype_legal import is_open_chrome
+
+    return is_open_chrome(product_archetype)
+
+
+def mark_shell_parts(
+    markup: str, *, device: str = "desktop", product_archetype: str = ""
+) -> str:
     """给这一页的壳节点打 ``data-shell`` 标。幂等，注释里的不算。
 
     桌面打 aside / header / main；手机打 header / main + **页面级** nav。
+    消费 / 内容打 header / main + header 里的横栏 nav，**不打 aside**
+    （那一层会被 unify 剥掉，标了也是给主题锁一个已删除的节点）。
 
     ⚠ 手机的 nav 走 ``_page_nav``，不是裸 ``_NAV``：面包屑 ``<nav
       aria-label="Breadcrumb">`` 住在 <header> 里，正则先吃到的是它。
@@ -604,6 +622,16 @@ def mark_shell_parts(markup: str, *, device: str = "desktop") -> str:
             _plan(m.start(), m.end(), value)
 
     if device == "phone":
+        mark_tag("header", "header")
+        mark_tag("main", "main")
+        nav = _page_nav(text)
+        if nav:
+            open_end = text.find(">", nav.start())
+            if open_end > 0:
+                _plan(nav.start(), open_end + 1, "nav")
+    elif _is_content_shell(device, product_archetype):
+        # 消费端：导航住在 header 横栏，不是 aside。标 aside 等于给
+        # 主题锁一个马上要剥掉的节点。nav 仍走 _page_nav 跳过面包屑。
         mark_tag("header", "header")
         mark_tag("main", "main")
         nav = _page_nav(text)
@@ -695,7 +723,8 @@ def nav_templates(nav_html: str) -> Optional[Dict[str, Any]]:
 #:   （真机两种都见过），写死 `bg-slate-100` 在深色侧栏上等于没有。
 _ACTIVE_FALLBACK_CSS = (
     "<style>"
-    "aside [aria-current=\"page\"]{"
+    "aside [aria-current=\"page\"],"
+    "header nav:not([aria-label=\"Breadcrumb\"]) [aria-current=\"page\"]{"
     "background-color:color-mix(in srgb, var(--primary, currentColor) 16%, transparent);"
     "color:var(--chrome-fg, inherit);"
     "font-weight:600}"
@@ -806,8 +835,35 @@ _CRUMB_SEG = re.compile(r"<(li|span|a)\b[^>]*>[^<>]*</\1>", re.I)
 _SEG_INNER = re.compile(r"(<\w+\b[^>]*>)([\s\S]*)(</\w+>)", re.I)
 
 
+def _looks_like_page_nav(nav_html: str) -> bool:
+    """横栏 / 底栏菜单，不是「首页 › 当前页」。
+
+    ⚠ 消费端顶栏就是页面清单。``_drift_fingerprint`` 会先剥 data-* 再
+      抹面包屑末节——只认 ``data-page-id`` 会在剥完之后失效，当前项文字
+      被抹掉，指纹报「两种 header」。烘焙裸面包屑是 span + chevron，
+      没有成对 ``<a>``；APG / 汽修是 ``<ol>/<li>``。那两种仍走面包屑。
+    """
+    blob = nav_html or ""
+    if _BREADCRUMB_NAV.search(blob):
+        return False
+    if re.search(r"<ol\b|<li\b|fa-chevron|chevron-right|›|»", blob, re.I):
+        return False
+    if re.search(r"\sdata-page-id=", blob, re.I):
+        return True
+    return len(_LINK.findall(blob)) >= 2
+
+
 def _breadcrumb_nav(header_html: str) -> Optional[re.Match]:
-    return _BREADCRUMB_NAV.search(header_html or "") or _ANY_NAV.search(header_html or "")
+    """header 里的面包屑 nav。页面清单横栏不是面包屑。"""
+    labeled = _BREADCRUMB_NAV.search(header_html or "")
+    if labeled:
+        return labeled
+    any_nav = _ANY_NAV.search(header_html or "")
+    if not any_nav:
+        return None
+    if _looks_like_page_nav(any_nav.group(0)):
+        return None
+    return any_nav
 
 
 def _breadcrumb_current_span(header_html: str) -> Optional[Tuple[re.Match, re.Match]]:
@@ -1290,6 +1346,178 @@ def _ensure_desktop_aside(html: str, aside: str) -> str:
     return html[: main_at.start()] + aside + "\n" + html[main_at.start() :]
 
 
+def _strip_aside(html: str) -> str:
+    """消费端不要 leftover <aside>。模型常按后台皮套出侧栏，unify 必须剥掉。
+
+    只剥注释外的真标签；循环几次是因为一页偶尔写两个 aside。
+    """
+    out = html or ""
+    for _ in range(4):
+        nxt = _sub_first_outside_comments(_ASIDE, "", out)
+        if nxt == out:
+            break
+        out = nxt
+    return out
+
+
+def _ensure_content_body_column(markup: str) -> str:
+    """剥掉 aside 之后，body 若仍是横向 flex，header 和 main 会并排。"""
+    if _body_is_flex_row(markup):
+        return _ensure_tag_classes(markup, _BODY_OPEN, ("flex-col",))
+    return markup
+
+
+def _pick_shell_source_content(pages_html: Dict[str, str]) -> str:
+    """消费端选源页：header 横栏链接最多的那页。没有横栏就退到有 header 的。"""
+    best, best_n = "", -1
+    for page_id, markup in pages_html.items():
+        header = extract_shell(markup)["header"]
+        nav = _page_nav(header) if header else None
+        if nav:
+            n = len(_LINK.findall(nav.group(0)))
+        elif header:
+            n = 1
+        else:
+            n = 0
+        if n > best_n:
+            best, best_n = page_id, n
+    return best
+
+
+#: 源页 header 里没有横栏时的基座。class 故意少，激活态交给
+#: ``_ACTIVE_FALLBACK_CSS`` 挂在 aria-current 上，不另发明一套皮。
+_CONTENT_NAV_FALLBACK: Dict[str, Any] = {
+    "link": '<a href="#" class="px-3 py-2 text-sm">x</a>',
+    "base_class": "px-3 py-2 text-sm",
+    "active_class": "px-3 py-2 text-sm font-semibold",
+    "icons": [""],
+}
+
+
+def _minimal_content_header(app_name: str, role: str) -> str:
+    """源页连 header 都没有时的兜底。有 header 不许走这里——会盖掉模型的皮。"""
+    brand = escape(app_name or "应用")
+    who = escape(role) if role else ""
+    return (
+        '<header class="flex items-center justify-between gap-6 px-8 py-4 border-b">'
+        f'<div class="font-semibold">{brand}</div>'
+        '<nav class="flex items-center gap-6"></nav>'
+        f"<div>{who}</div>"
+        "</header>"
+    )
+
+
+def _rewrite_header_nav(header: str, new_nav: str) -> str:
+    """把 header 里那条非面包屑横栏换成统一那份；没有就插在 </header> 前。"""
+    nav = _page_nav(header or "")
+    if nav:
+        return header[: nav.start()] + new_nav + header[nav.end() :]
+    if re.search(r"</header>", header or "", re.I):
+        return re.sub(
+            r"</header>", new_nav + "</header>", header, count=1, flags=re.I
+        )
+    return (header or "") + new_nav
+
+
+def _unify_shell_content(
+    pages_html: Dict[str, str], spec: Dict[str, Any], *, device: str = "desktop"
+) -> Dict[str, Any]:
+    """消费 / 内容应用的壳统一：<header> 顶栏横栏 + <main>。没有 <aside>。
+
+    对照 Medium / Apple News 的顶栏，不是 ant-design Layout.Sider。
+    模型仍可能按后台皮套出 aside——这里剥掉，不把中台侧栏扩散到每一页。
+
+    手机不走这条（底栏 TabBar 仍是竖屏壳）。平板走这条：选了 content_app
+    就不能再要 w-52 侧栏。
+    """
+    spec_pages = list(spec.get("pages") or [])
+    pages_html = {
+        pid: _ensure_content_body_column(_strip_aside(ensure_nav_not_commented(html)))
+        for pid, html in pages_html.items()
+    }
+    source_id = _pick_shell_source_content(pages_html)
+    src = pages_html.get(source_id) or next(iter(pages_html.values()))
+    header_m = _search_outside_comments(_HEADER, src)
+    personas = list(spec.get("personas") or [])
+    role = str((personas[0] or {}).get("name") or "").strip() if personas else ""
+    header = header_m.group(0) if header_m else ""
+    old_brand, old_role = detect_brand_and_role(header)
+    app_name = _usable_app_name(str(spec.get("appName") or "").strip(), old_brand)
+    if not header:
+        # ⚠ 源页连顶栏都没有：合成一条，总比把后台 aside 皮套回去好。
+        #   有 header 不许走这里——会把模型写的气质盖掉。
+        header = _minimal_content_header(app_name or old_brand, role or old_role)
+        print(f"[page_shell] 消费端源页 {source_id} 没有 <header>，用最小顶栏兜底")
+    header = _apply_identity(header, old_brand, app_name)
+    header = _apply_identity(header, old_role, role)
+
+    nav_m = _page_nav(header)
+    templates = nav_templates(nav_m.group(0)) if nav_m else None
+    if templates is None:
+        templates = dict(_CONTENT_NAV_FALLBACK)
+
+    vocabulary: Dict[str, str] = {}
+    for _markup in pages_html.values():
+        for _name, _body in style_class_rules(_markup).items():
+            vocabulary.setdefault(_name, _body)
+
+    print(f"[page_shell] 消费端壳：header 横栏，剥 aside（源页 {source_id}）")
+    out: Dict[str, str] = {}
+    for page_id, markup in pages_html.items():
+        page_header = header
+        # 消费端顶栏横栏是页面清单，不是「首页 › 当前页」。套面包屑改写
+        # 会把最后一项改成页名，再被 blank_breadcrumb_current 当漂移抹掉。
+        items = build_nav_items(templates, spec_pages, page_id, app_name=app_name)
+        if nav_m:
+            new_nav = re.sub(
+                r"(<nav\b[^>]*>)[\s\S]*(</nav>)",
+                lambda m: m.group(1) + "\n" + items + "\n" + m.group(2),
+                nav_m.group(0),
+                count=1,
+            )
+        else:
+            new_nav = f'<nav class="flex items-center gap-6">\n{items}\n</nav>'
+        page_header = _rewrite_header_nav(page_header, new_nav)
+        html = _ensure_phone_header(markup, page_header)
+        html = _strip_aside(html)
+        html = _ensure_content_body_column(html)
+        html = reconcile_main_offset(html)
+        _own = style_class_rules(html)
+        _missing = {
+            name: body
+            for name, body in vocabulary.items()
+            if name in shell_class_tokens("", page_header) and name not in _own
+        }
+        html = transplant_shell_css(html, _missing)
+        if _ACTIVE_FALLBACK_CSS not in html:
+            if "</head>" in html:
+                html = html.replace("</head>", _ACTIVE_FALLBACK_CSS + "</head>", 1)
+            else:
+                html = re.sub(
+                    r"(<body\b[^>]*>)",
+                    lambda m: m.group(1) + _ACTIVE_FALLBACK_CSS,
+                    html,
+                    count=1,
+                )
+        html = mark_shell_parts(
+            html, device=device, product_archetype="content_app"
+        )
+        out[page_id] = ensure_desktop_viewport_fill(html)
+
+    return {
+        "version": PAGE_SHELL_VERSION,
+        "sourcePageId": source_id,
+        "navAnchored": True,
+        "navItems": [
+            {"id": str(p.get("id") or ""), "name": str(p.get("name") or p.get("id") or "")}
+            for p in spec_pages
+        ],
+        "appName": app_name or old_brand,
+        "personaRole": role or old_role,
+        "pages": out,
+    }
+
+
 def _unify_shell_phone(pages_html: Dict[str, str], spec: Dict[str, Any]) -> Dict[str, Any]:
     """移动端（竖屏）的壳统一：<header> 顶栏 + 页面级 <nav> 底部标签栏。
 
@@ -1358,7 +1586,11 @@ def _unify_shell_phone(pages_html: Dict[str, str], spec: Dict[str, Any]) -> Dict
 
 
 def unify_shell(
-    pages_html: Dict[str, str], spec: Dict[str, Any], *, device: str = "desktop"
+    pages_html: Dict[str, str],
+    spec: Dict[str, Any],
+    *,
+    device: str = "desktop",
+    product_archetype: str = "",
 ) -> Dict[str, Any]:
     """把多页 HTML 的壳统一成一套，导航按 spec.pages 重排。零 LLM 调用。
 
@@ -1369,6 +1601,10 @@ def unify_shell(
     视口 1112×834。这里不许再写成 `phone else desktop` 把平板送进底栏，
     也不许按桌面 min-rank 56 把契约写的 w-52 抬成 w-64。
 
+    product_archetype（2026-08-31）：``content_app`` / ``free_app`` 走顶栏横栏、剥 aside。
+    手机 + 开放壳仍走底栏（竖屏壳），平板 + 开放壳走内容壳（不要 w-52 侧栏）。
+    选择通道是范围卡，不许按话题词猜。空 / business_app 一字不改这条桌面路径。
+
     返回 {"version", "sourcePageId", "pages": {page_id: html}, "navItems": [...]}。
     """
     if not pages_html:
@@ -1378,6 +1614,8 @@ def unify_shell(
         raise PageShellError("spec 里没有页面清单，导航无从锚定")
     if device == "phone":
         return _unify_shell_phone(pages_html, spec)
+    if _is_content_shell(device, product_archetype):
+        return _unify_shell_content(pages_html, spec, device=device)
 
     # ⚠ 桌面也曾只在移动分支捞注释（2026-08-20 律所）。unify 替换的
     # aside 仍困在 ``<!-- 左侧导航 <aside`` 里，截图没有侧栏。

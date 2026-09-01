@@ -131,7 +131,57 @@ _DENSITY_RULES_TABLET = {
     ),
 }
 
+#: 消费 / 内容应用的密度。后台那套「统计卡 / 主表几列」会把杂志画成中台。
+_DENSITY_RULES_CONTENT = {
+    "紧凑": (
+        "封面或图流占满第一屏。大幅配图 + 短标题 + 一条主操作。"
+        "不要统计卡，不要宽表，不要侧栏台账。"
+    ),
+    "标准": (
+        "图是一等公民。封面大图、图流卡片、详情长文配图。"
+        "不要 KPI 四宫格，不要后台宽表。"
+    ),
+    "宽松": (
+        "留白多、字号大、一张主图。一屏一件内容。"
+        "不要后台密度，不要四张等宽指标卡。"
+    ),
+}
+
+#: 自由类型密度。内容那套「一张主图」会把图流收成半空货架
+#: （2026-08-31 团子的一天 / 街拍图流、漫游作者）。后台那套 KPI
+#: 又会把同一题画成中台。按这一页的活儿展开，不写死页型。
+_DENSITY_RULES_FREE = {
+    "紧凑": (
+        "一屏放得下这一页的主货。图流/货架至少 4 张可见图，不要一张主图顶替货架。"
+        "不要统计卡四宫格，不要宽表，不要侧栏台账。"
+    ),
+    "标准": (
+        "按这一页的活儿：封面/长文可以一张主图，图流/档案至少 4~6 张可见图，"
+        "表单就一个主表单。不要 KPI 四宫格，不要为了凑杂志硬切四页。"
+    ),
+    "宽松": (
+        "留白可以多、字号可以大，但图流/档案不要空成半屏。"
+        "封面/长文可以一张主图。不要后台密度，不要四张等宽指标卡。"
+    ),
+}
+
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+#: 2026-08-31：没选设计系统时也要落到一个点。选了才走
+#: `design_system_constraint`；没选原先只让模型写 80~150 字形容词，
+#: 会议室预约也会长成 Inter + #2563eb + 四张等宽 KPI。
+#:
+#: 官方 PHILOSOPHY（DESIGN.md）：Adjectives describe a region.
+#: A specific reference describes a point.
+#:
+#: ⚠ 参照只取气质，不取落地页结构。写「去掉侧栏 / 满幅摄影」会跟
+#: 桌面契约打架——08-15 真机栽过，外壳判据还全绿。
+_TASTE_DISCIPLINE = (
+    "气质必须落到一个具体参照（某个真实产品、场所或物件的样子），"
+    "不要只堆「现代、专业、简洁、科技感」这种形容词。"
+    "不要用 Inter + 紫渐变 + 玻璃拟态，也不要把 #2563eb 当没想好时的退路。"
+    "参照只取色、字、疏密、圆角；这是给人干活的产品界面，不是营销落地页。"
+)
 
 #: 缺省设计语言。**没人指定时的兜底**，不是"推荐配置"。
 DEFAULT_DESIGN_LANGUAGE: Dict[str, Any] = {
@@ -205,7 +255,7 @@ def merge_override(base: Dict[str, Any], override: Optional[Dict[str, Any]]) -> 
 
 
 def render_design_language(
-    dl: Optional[Dict[str, Any]], *, device: str = "desktop"
+    dl: Optional[Dict[str, Any]], *, device: str = "desktop", product_archetype: str = ""
 ) -> str:
     """设计语言 → 塞进 `design_system` 槽位的那段散文。**纯函数，零 LLM。**
 
@@ -223,7 +273,31 @@ def render_design_language(
     #   又画回宽表工作台。条款换 _DENSITY_RULES_PHONE，主语换成手机 App。
     # ⚠ 2026-08-30：tablet 也不能复用那句——「主表几列 / 右侧详情栏」会把
     #   1112 现场手持画回 1920 中台。不许写成 `phone else desktop`。
-    if device == "phone":
+    from .archetype_legal import is_content_app, is_free_app
+
+    if is_content_app(product_archetype):
+        extra = _DENSITY_RULES_CONTENT[d["density"]]
+        if device == "phone":
+            bits.append(
+                f"这是手机竖屏内容应用，不是 PC 后台。图是一等公民。"
+                f"{_DENSITY_RULES_PHONE[d['density']]}{extra}"
+            )
+        else:
+            bits.append(
+                f"这是给人看和读的内容产品，不是业务后台。{extra}"
+            )
+    elif is_free_app(product_archetype):
+        extra = _DENSITY_RULES_FREE[d["density"]]
+        if device == "phone":
+            bits.append(
+                f"这是手机竖屏自由类型，不是 PC 后台。"
+                f"{_DENSITY_RULES_PHONE[d['density']]}{extra}"
+            )
+        else:
+            bits.append(
+                f"这是自由类型：不套后台中台，也不套杂志四页。{extra}"
+            )
+    elif device == "phone":
         bits.append(
             f"这是手机竖屏 App，不是 PC 后台。{_DENSITY_RULES_PHONE[d['density']]}"
         )
@@ -244,7 +318,7 @@ def render_design_language(
 
 
 def build_design_language_prompt(
-    spec: Dict[str, Any], *, device: str = "desktop"
+    spec: Dict[str, Any], *, device: str = "desktop", product_archetype: str = ""
 ) -> List[Dict[str, str]]:
     """按 spec 问一次「这个应用该长什么样」。
 
@@ -257,7 +331,54 @@ def build_design_language_prompt(
         if isinstance(p, dict)
     ]
     app = _clean_str(spec.get("appName"), 40)
-    if device == "phone":
+    from .archetype_legal import is_content_app, is_free_app
+
+    content = is_content_app(product_archetype)
+    free = is_free_app(product_archetype)
+    if content:
+        # ⚠ 必须先于 phone/tablet 枝：否则 content+phone 会领走「医疗移动应用」，
+        #   杂志封面被画成后台 App。跟 style_brief 同一分叉顺序。
+        if device == "phone":
+            role = "你是资深移动端视觉设计师。看一眼这个应用是干什么的，定下它的视觉风格。"
+            extra = (
+                "这是手机竖屏内容应用，不是 PC 后台。图是一等公民。"
+                "基调按封面/图流来，不要写成桌面管理系统。\n\n"
+            )
+            tone_ex = "「像一本独立杂志的手机封面，浅色底，大幅配图」"
+        elif device == "tablet":
+            role = "你是资深消费端视觉设计师。看一眼这个应用是干什么的，定下它的视觉风格。"
+            extra = (
+                "这是平板上给人看和读的内容产品，不是巡店后台。"
+                "图是一等公民，不要 w-52 侧栏台账。\n\n"
+            )
+            tone_ex = "「像一本独立杂志的横屏内页，浅色底，大幅配图」"
+        else:
+            role = "你是资深消费端视觉设计师。看一眼这个应用是干什么的，定下它的视觉风格。"
+            extra = "这是给人看和读的内容产品，不是业务后台。图是一等公民。\n\n"
+            tone_ex = "「像一本独立杂志的封面和内页，浅色底，大幅配图」"
+    elif free:
+        if device == "phone":
+            role = "你是资深移动端视觉设计师。看一眼这个应用是干什么的，定下它的视觉风格。"
+            extra = (
+                "这是手机竖屏自由类型，不是 PC 后台。"
+                "按这一页的活儿定基调，不要写成桌面管理系统，也不要硬套杂志封面。\n\n"
+            )
+            tone_ex = "「按这个产品自己的气质，浅色底，该大图就大图」"
+        elif device == "tablet":
+            role = "你是资深产品视觉设计师。看一眼这个应用是干什么的，定下它的视觉风格。"
+            extra = (
+                "这是平板上的自由类型，不是巡店后台，也不是杂志四页。"
+                "按这一页的活儿定基调，不要 w-52 侧栏台账。\n\n"
+            )
+            tone_ex = "「按这个产品自己的气质，浅色底，该大图就大图」"
+        else:
+            role = "你是资深产品视觉设计师。看一眼这个应用是干什么的，定下它的视觉风格。"
+            extra = (
+                "这是自由类型：不套后台中台，也不套杂志四页。"
+                "按这一页的活儿定基调。\n\n"
+            )
+            tone_ex = "「按这个产品自己的气质，浅色底，该大图就大图」"
+    elif device == "phone":
         role = "你是资深移动端产品设计师。看一眼这个应用是干什么的，定下它的视觉风格。"
         extra = "这是手机竖屏 App，不是 PC 后台。基调按移动应用来，不要写成桌面管理系统。\n\n"
         tone_ex = "「清爽的医疗移动应用，浅色底，大触控」"
@@ -271,7 +392,7 @@ def build_design_language_prompt(
     else:
         role = "你是资深 B 端产品设计师。看一眼这个应用是干什么的，定下它的视觉风格。"
         extra = ""
-        tone_ex = "「克制的企业后台，浅色底，弱化装饰」"
+        tone_ex = "「像县域农技站的纸质台账搬上屏，浅色底，弱化装饰」"
     body = (
         f"应用名：{app or '（未命名）'}\n"
         f"页面清单：\n" + ("\n".join(pages[:12]) or "（空）")
@@ -298,7 +419,9 @@ def build_design_language_prompt(
                 '  "components": ["这个应用用得上的组件名，3~6 个，例如 状态标签、进度条、时间线"],\n'
                 '  "charts": true 或 false（这个应用是否适合配图表）\n'
                 "}\n\n"
-                "要求：颜色要贴合业务气质（医疗偏冷静、金融偏稳重、工具偏中性），"
+                f"{_TASTE_DISCIPLINE}"
+                f"{experience_skill_constraint()}"
+                "颜色要贴合业务气质（医疗偏冷静、金融偏稳重、工具偏中性），"
                 "不要用高饱和撞色。只返回 JSON，不要解释。"
             ),
         },
@@ -311,6 +434,7 @@ def generate_design_language(
     llm_json_fn: Optional[Any] = None,
     override: Optional[Dict[str, Any]] = None,
     device: str = "desktop",
+    product_archetype: str = "",
 ) -> Dict[str, Any]:
     """生成这个应用的设计语言。**挂了回落缺省，不抛。**
 
@@ -322,7 +446,11 @@ def generate_design_language(
     dl = dict(DEFAULT_DESIGN_LANGUAGE)
     try:
         outcome = call_spec_json(
-            build_design_language_prompt(spec, device=device), llm_json_fn, stage="specfirst.design"
+            build_design_language_prompt(
+                spec, device=device, product_archetype=product_archetype
+            ),
+            llm_json_fn,
+            stage="specfirst.design",
         )
         if outcome.payload is not None:
             dl = normalize_design_language(outcome.payload)
@@ -508,6 +636,38 @@ def design_system_constraint(system: Optional[Dict[str, Any]]) -> str:
     )
 
 
+def experience_skill_constraint() -> str:
+    """已安装的 experience 技能 → 风格段约束。**排版/参照，不当种子色。**
+
+    2026-08-03 把 experience 从 identity_theme 种子色摘掉（全站一色）。
+    正确的活路径是风格段（本函数），不是把 SKILL.md 倒进画页，也不是再喂给选色。
+
+    只取 name + 短 description（跟 design_system_constraint 同一纪律）。
+    没装返回空串——增强项不改变没装技能时的既有行为。
+    """
+    try:
+        from .turn_context import MAX_INSTALLED_SKILLS, installed_skills_for_channel
+
+        skills = installed_skills_for_channel("experience")
+    except Exception:
+        return ""
+    if not skills:
+        return ""
+    lines = [
+        "\n\n【体验技能】用户装了这些设计技能。它们是排版、层级与气质的参照，"
+        "不是配色种子——不要为了它们改主色 hex，也不要把技能原文写进页面。"
+    ]
+    for s in skills[:MAX_INSTALLED_SKILLS]:
+        name = str(s.get("name") or "").strip()
+        if not name:
+            continue
+        desc = " ".join(str(s.get("description") or "").split())[:80]
+        lines.append(f"- {name}：{desc}" if desc else f"- {name}")
+    if len(lines) == 1:
+        return ""
+    return "\n".join(lines)
+
+
 def design_system_override(system: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """设计系统 → design_language 的逐字段覆盖（回落分支用）。
 
@@ -527,7 +687,7 @@ def design_system_override(system: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def build_style_brief_prompt(
-    spec: Dict[str, Any], *, device: str = "desktop"
+    spec: Dict[str, Any], *, device: str = "desktop", product_archetype: str = ""
 ) -> List[Dict[str, str]]:
     """问一次「这个应用长什么样 + 每一页怎么排」。
 
@@ -555,13 +715,67 @@ def build_style_brief_prompt(
         for p in pages
     )
     ids = "、".join(str(p["id"]) for p in pages)
-    if device == "phone":
+    from .archetype_legal import is_content_app, is_free_app
+
+    content = is_content_app(product_archetype)
+    free = is_free_app(product_archetype)
+    if content:
+        designer = (
+            "你是资深移动端视觉设计师。"
+            if device == "phone"
+            else "你是资深消费端视觉设计师。"
+        )
+        layout_ask = (
+            "每页那段必须**把这一页要放的区块逐个点名**，写成清单：每个区块叫什么、"
+            "放什么内容、大概占多大。这一页该放几个区块由你按它的活儿定，不要为了凑数硬加。"
+            "先判这一页是哪种活（封面、图流、详情、杂志），再点名。"
+            "图是一等公民：封面/图流第一眼必须有大幅配图，不要 KPI 统计卡顶替画面。"
+            "图流/档案第一屏至少 4 张可见图，不要两列网格只放一张。封面/长文可以一张主图。"
+            "不要宽表、不要侧栏台账、不要四张等宽指标卡当首页。"
+            "这是给人看、刷、读的内容产品，不是给坐工位办事的后台。"
+        )
+        if device == "phone":
+            layout_ask += (
+                "这是手机竖屏：单列、不要左右分栏、不要右侧详情栏。"
+                "内容铺满 390×844 视口，不要再套手机外框。"
+            )
+        elif device == "tablet":
+            layout_ask += (
+                "这是平板横屏（1112×834）：两栏可以，不要 1920 中台宽表，不要手机底栏。"
+            )
+    elif free:
+        designer = (
+            "你是资深移动端视觉设计师。"
+            if device == "phone"
+            else "你是资深产品视觉设计师。"
+        )
+        layout_ask = (
+            "每页那段必须**把这一页要放的区块逐个点名**，写成清单：每个区块叫什么、"
+            "放什么内容、大概占多大。这一页该放几个区块由你按它的活儿定，不要为了凑数硬加。"
+            "先判这一页是哪种活（看板、工作台、台账、表单、详情、封面、图流、杂志），再点名。"
+            "不要为了凑后台硬加 KPI，也不要为了凑杂志硬切成封面/图流四页。"
+            "图流/货架第一屏至少 4 张可见图，不要两列网格只放一张。封面/长文可以一张主图。"
+            "头像必须是正方形人像特写，不要把风景或相机裁进小框。"
+            "<main> 不要 justify-between 把稀疏区块撑满视口。"
+        )
+        if device == "phone":
+            layout_ask += (
+                "这是手机竖屏：单列、不要左右分栏、不要右侧详情栏。"
+                "内容铺满 390×844 视口，不要再套手机外框。"
+            )
+        elif device == "tablet":
+            layout_ask += (
+                "这是平板横屏（1112×834）：两栏可以，不要 1920 中台宽表，不要手机底栏。"
+            )
+    elif device == "phone":
         designer = "你是资深移动端产品设计师。"
         layout_ask = (
             "每页那段必须**把这一页要放的区块逐个点名**，写成清单：每个区块叫什么、"
             "放什么内容、大概占多大。这一页该放几个区块由你按它的活儿定——"
             "列表页通常一张指标区 + 一列任务卡，表单页就一个主表单，不要为了凑数硬加。"
-            "点名之后再补：顶部指标卡几张分别是什么、主列表是卡片还是行、有没有底部主按钮。"
+            "先判这一页是哪种活。总览才写顶部指标卡几张分别是什么；"
+            "列表就是列表，表单就是表单，不要每页都先画一排指标卡。"
+            "点名之后再补：主列表是卡片还是行、有没有底部主按钮。"
             "这是手机竖屏 App，不是 PC 后台：单列、不要左右分栏、不要右侧详情栏、不要 6 列以上的宽表。"
             "第一屏是业务列表（卡片/行 + 状态），不要画成个人中心、设置页或退出登录页。"
             "内容铺满 390×844 视口，不要再套手机外框，不要用 max-w-md / mx-auto 把整页收成居中卡片。"
@@ -572,6 +786,7 @@ def build_style_brief_prompt(
             "每页那段必须**把这一页要放的区块逐个点名**，写成清单：每个区块叫什么、"
             "放什么内容、大概占多大。这一页该放几个区块由你按它的活儿定——"
             "台账类通常主列 + 旁路详情，扫码核销这类专注操作的页面要得少，不要为了凑数硬加。"
+            "先判这一页是哪种活。总览才点指标卡；占用网格、排期不要硬凑统计卡。"
             "点名之后再补：主列放什么、旁路详情放什么、表格不超过 5 列分别是哪些列、"
             "有没有可折叠旁路详情。"
             "这是平板横屏现场作业（1112×834），不是 PC 中台：两栏 + 窄侧栏（w-52），"
@@ -584,8 +799,11 @@ def build_style_brief_prompt(
             "每页那段必须**把这一页要放的面板逐个点名**，写成清单：每个面板叫什么、"
             "放什么内容、大概占多大。这一页该放几个面板由你按它的活儿定——"
             "台账类通常要得多，扫码核销这类专注操作的页面要得少，不要为了凑数硬加。"
-            "点名之后再补：统计卡几张分别是什么指标、主表几列分别是哪些列、"
-            "配不配图表配哪种、有没有右侧详情栏。"
+            "先判这一页是哪种活（看板、工作台、台账、表单、详情），再点名。"
+            "总览/看板才点统计卡几张分别是什么指标；"
+            "占用网格、日历、排期这类工作台按格子/时间轴点名，不要硬凑统计卡和宽表；"
+            "表单页就一个主表单；详情页按字段分组。"
+            "有主表的台账才写列名和要不要旁路详情；没有就别写。"
         )
     return [
         {"role": "system", "content": (
@@ -594,16 +812,20 @@ def build_style_brief_prompt(
             "用哪些组件、要不要图表、各区怎么分。"
             "**不要提任何 HTML 标签，不要提侧边导航/面包屑这类外壳结构，不要提技术栈**"
             "——那些由另一套约束负责，你写了会打架。只返回 JSON。"
+            f"{_TASTE_DISCIPLINE}"
             # ⚠ 接在 system 段尾：这是一轮一次的应用级调用，不是逐页那 N 次。
-            #   没选设计系统时是空串，行为与改动前逐字相同。
+            #   没选设计系统时 constraint 仍是空串；参照纪律在上面那句，
+            #   不再靠「提示词与改动前逐字相同」冻住默认路。
             + design_system_constraint(active_design_system())
+            + experience_skill_constraint()
         )},
         {"role": "user", "content": (
             f"应用名：{_clean_str(spec.get('appName'), 40) or '（未命名）'}\n"
             f"页面清单：\n{listing}\n\n"
             "返回 JSON：\n"
             '{\n'
-            '  "app": "应用级基调，80~150 字：气质、主色 hex、强调色 hex、圆角、字号密度。'
+            '  "app": "应用级基调，80~150 字：具体参照（像哪个产品/场所）、'
+            '气质、主色 hex、强调色 hex、圆角、字号密度。'
             '这一段全应用共用，页面才像同一个产品。",\n'
             f'  "pages": {{ 每个页面 id 一段版式计划，200~350 字（id 是：{ids}）}}\n'
             '}\n\n'
@@ -611,7 +833,9 @@ def build_style_brief_prompt(
             #   笼统描述；逼它把面板写成清单之后，表格列数从 3.8 回到 5.3、
             #   图表 0.3→1.5、标题 2.5→5.5。见函数 docstring 里的四臂数据。
             # ⚠ 2026-08-20：phone 不能再点名「主表几列 / 右侧详情栏」，那就是
-            #   把 PC 工作台写进风格段。桌面那句原样保留。
+            #   把 PC 工作台写进风格段。
+            # ⚠ 2026-08-31：桌面也不能无条件点名统计卡/宽表——会议室占用网格
+            #   会被画成 KPI 中台。先判页型，总览才点统计卡。
             f"{layout_ask}"
         )},
     ]
@@ -622,6 +846,7 @@ def generate_style_brief(
     *,
     llm_json_fn: Optional[Any] = None,
     device: str = "desktop",
+    product_archetype: str = "",
 ) -> Optional[Dict[str, Any]]:
     """一次调用出两层风格。**挂了返回 None**，由调用方回落到确定性那套。"""
     page_ids = [str(p.get("id")) for p in (spec.get("pages") or [])
@@ -632,7 +857,9 @@ def generate_style_brief(
 
     try:
         outcome = call_spec_json(
-            build_style_brief_prompt(spec, device=device),
+            build_style_brief_prompt(
+                spec, device=device, product_archetype=product_archetype
+            ),
             llm_json_fn,
             stage="specfirst.design",
         )

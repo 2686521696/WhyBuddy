@@ -564,6 +564,41 @@ _TABLET_SPEC_IA = """设备：平板现场作业（横屏 1112×834 CSS 像素�
 """
 
 
+#: 消费 / 内容应用 IA。2026-08-31：壳换成顶栏横栏不够——SPEC 仍按后台
+#: 切页（看板/台账 + 侧栏）时，第 3 步只能把中台塞进无 aside 的壳。
+#: 对照 Medium / Apple News 的顶栏 + 大图，不是 ant-design Layout.Sider。
+#: 选择通道是范围卡 productArchetype，不许按话题词分流。
+_CONTENT_SPEC_IA = """产品原型：消费 / 内容应用（封面、图流、杂志、天气一瞥）。不是业务后台。
+
+切页硬要求：
+- 导航是顶部一条横栏，放在 <header> 里的 <nav>。不要左侧 <aside> 侧栏。
+- 图是一等公民：封面/图流页第一眼必须有大幅配图，不要用 KPI 统计卡顶替画面。
+- 页型是封面、图流、详情、杂志，不是看板/工作台/台账。
+- appName 和 personas 挂在每一页的顶栏上。
+- 不要宽表、不要右侧详情栏、不要四张等宽统计卡当首页。
+- 桌面铺满视口，不要 max-w-5xl 收成落地页卡片。
+- pages.name 是读者看见的短名（今日、封面、图流），不要带「管理」「台账」。
+"""
+
+
+#: 自由类型 IA。2026-08-31：用户要在空态加「自由类型」。业务原型会把
+#: 团子画成中台，内容原型又硬切成封面/图流/详情/杂志四页——图流绑洞
+#: 收成一张，首屏半空。自由类型不套任何一套页型清单，按这道题自己切。
+_FREE_SPEC_IA = """产品原型：自由类型。不要默认后台中台，也不要默认杂志封面。
+
+切页硬要求：
+- 导航是顶部一条横栏，放在 <header> 里的 <nav>。不要为了凑后台硬加左侧 <aside>。
+- 按这道题自己的活儿切页：有的页是图流、有的页是表单、有的页是封面都可以。
+  不要为了凑后台硬切成看板/工作台/台账，也不要为了凑杂志硬切成封面/图流/详情/杂志四页。
+- 图流、封面架、货架第一屏必须有至少 4 张可见配图，不要两列网格只放一张。
+  封面/长文可以一张主图。
+- 不要四张等宽 KPI 统计卡当首页，不要宽表台账除非这道题就是台账。
+- appName 和 personas 挂在每一页的顶栏上。
+- 桌面铺满视口，不要 max-w-5xl 收成落地页卡片。
+- pages.name 是使用者看见的短名，不要带「管理」除非这道题就是后台。
+"""
+
+
 #: 桌面骨架先验的 IA 硬要求。手机路径禁止进 prompt——跟 `_PHONE_SPEC_IA`
 #: 并排放是 2026-08-20「壳是手机、内容是 PC」的再现：种子全是 workbench /
 #: kanban 宽屏页型，escape hatch 说的是「题装不进骨架」，不是「形态是手机」。
@@ -726,6 +761,7 @@ def build_spec_prompt(
     prev_pages: Optional[list] = None,
     device: str = "desktop",
     skeleton: Optional[dict] = None,
+    product_archetype: str = "",
 ) -> list[dict[str, str]]:
     """装配 spec 生成的对话。
 
@@ -911,6 +947,10 @@ def build_spec_prompt(
 规模按这个产品**真实的复杂度**来，不要凑数也不要偷懒：
 判据 3~6 条，requirement 3~8 个，页面 3~8 页是常见区间。"""
     )
+    from services.archetype_legal import is_content_app, is_free_app
+
+    content = is_content_app(product_archetype)
+    free = is_free_app(product_archetype)
     if device == "phone":
         # 桌面规则第 7 条仍写「侧栏」——手机壳挂的是顶栏。只改这一处，
         # 整段 JSON 形状里的花括号不能进 f-string。
@@ -920,6 +960,21 @@ def build_spec_prompt(
             '"name": "列表（底栏短名，2~4字，不要带页）"',
         )
         parts.append(_PHONE_SPEC_IA)
+        if content:
+            parts.append(
+                "图是一等公民：列表/封面用大图卡片，不要指标卡顶替画面。"
+            )
+        elif free:
+            parts.append(
+                "按这一页的活儿切：图流至少 4 张可见图，表单就一个主表单。"
+                "不要为了凑后台硬加指标卡。"
+            )
+    elif content:
+        parts[-1] = parts[-1].replace("每一页的侧栏上", "每一页的顶栏上")
+        parts.append(_CONTENT_SPEC_IA)
+    elif free:
+        parts[-1] = parts[-1].replace("每一页的侧栏上", "每一页的顶栏上")
+        parts.append(_FREE_SPEC_IA)
     elif device == "tablet":
         # ⚠ 2026-08-30 夜：授予已接通，SPEC 仍按桌面切页。
         # 平板走桌面骨架（aside+header+main），**不要**改「侧栏→顶栏」——
@@ -1067,6 +1122,7 @@ def generate_spec_tree(
     prev_pages: Optional[list] = None,
     device: str = "desktop",
     skeleton: Optional[dict] = None,
+    product_archetype: str = "",
     llm_json_fn: Optional[Any] = None,
     max_reask: int = 2,
 ) -> SpecTree:
@@ -1091,6 +1147,7 @@ def generate_spec_tree(
         prev_pages=prev_pages,
         device=device,
         skeleton=skeleton,
+        product_archetype=product_archetype,
     )
     last_err = "未调用"
     # 精修轮的冻结页 id：coversNodes 校验对它们放宽（豁免理由与真机事故见

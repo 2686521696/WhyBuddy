@@ -100,9 +100,33 @@ def archetype_names() -> Tuple[str, ...]:
     return tuple(sorted(_ARCHETYPES))
 
 
+CONTENT_ARCHETYPE = "content_app"
+FREE_ARCHETYPE = "free_app"
+
+
 def wired_archetypes() -> Tuple[str, ...]:
-    """生成侧真的能产出的原型。今天只有一个。"""
+    """生成侧真的能产出的原型。"""
     return tuple(sorted(k for k, v in _ARCHETYPES.items() if v.get("wired") is True))
+
+
+def is_content_app(name: str | None) -> bool:
+    """消费 / 内容壳：无 aside、图是一等公民。未声明时不是。"""
+    return str(name or "").strip() == CONTENT_ARCHETYPE
+
+
+def is_free_app(name: str | None) -> bool:
+    """自由类型：不套后台中台，也不套杂志四页。未声明时不是。"""
+    return str(name or "").strip() == FREE_ARCHETYPE
+
+
+def is_open_chrome(name: str | None) -> bool:
+    """顶栏横栏、不要 aside。content_app 和 free_app 共用这条壳。
+
+    SPEC / 密度 / 绑洞仍分叉：杂志四页只走 is_content_app，自由类型走
+    is_free_app。壳统一问这一处，免得 page_shell 再手抄两个名字。
+    """
+    raw = str(name or "").strip()
+    return raw in (CONTENT_ARCHETYPE, FREE_ARCHETYPE)
 
 
 def is_wired(name: str) -> bool:

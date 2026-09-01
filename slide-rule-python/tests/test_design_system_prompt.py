@@ -19,11 +19,14 @@ from pathlib import Path
 
 from services.design_language import (
     active_design_system,
+    build_design_language_prompt,
     build_style_brief_prompt,
     design_system_constraint,
     design_system_override,
+    experience_skill_constraint,
 )
 from services.identity_palette_hint import set_design_system_override
+from services.v5_llm_generate import set_installed_skills
 
 _SPEC = {
     "appName": "门店管理",
@@ -48,15 +51,21 @@ def test_主路径_风格段提示词_真的带上了设计系统():
     assert "政府审批窗口" in msg
 
 
-def test_没选设计系统时_提示词与改动前逐字相同():
-    """反向：不选就不许多出任何字节。
+def test_没选设计系统时不倒上游资料():
+    """反向：不选就不注入设计系统约束。
 
-    这条防的是"顺手改了所有人的默认行为"——没选设计系统的用户不该因为这次
-    改动看到不一样的应用。
+    2026-08-31：默认路也要落到具体参照（没选也会长成 Inter+#2563eb），
+    所以不再冻「提示词与改动前逐字相同」。仍钉：constraint 空、不倒
+    style_pack / DESIGN.md。把 constraint(None) 改成非空本条必须红。
     """
     plain = _system_msg(None)
     assert design_system_constraint(None) == ""
-    assert plain.endswith("只返回 JSON。")
+    assert "style_pack" not in plain
+    assert "DESIGN.md" not in plain
+    # 没选时约束仍空；参照纪律是另一段，不是把某套系统当默认。
+    assert "既定事实" not in plain
+    assert "不要再自己发明" not in plain
+    assert "具体参照" in plain
 
 
 def test_措辞是既定事实_不是建议():
@@ -120,3 +129,68 @@ def test_回落分支也接了_否则风格段一挂就静默失效():
 def test_未选时回落分支也不改变行为():
     set_design_system_override(None)
     assert design_system_override(active_design_system()) == {}
+
+
+def test_experience技能进风格段_不当种子色():
+    """2026-08-03 从 identity_theme 摘掉是对的（全站一色）。
+    正确的活路径是风格段：排版/参照，不要改主色 hex，不要倒 SKILL.md。
+
+    把 experience_skill_constraint() 从 build_style_brief_prompt 拿掉，
+    本条必须红。只接回落分支也不够——主路径才是通电的。
+    """
+    set_installed_skills(
+        [
+            {
+                "name": "dashboard-composer",
+                "description": "把总览拆成分区而不是一排 KPI",
+                "channel": "experience",
+            }
+        ]
+    )
+    try:
+        assert "dashboard-composer" in experience_skill_constraint()
+        assert "不是配色种子" in experience_skill_constraint()
+        assert "不要为了它们改主色" in experience_skill_constraint()
+        system = build_style_brief_prompt(_SPEC)[0]["content"]
+        assert "dashboard-composer" in system
+        assert "不是配色种子" in system
+        assert "不要为了它们改主色" in system
+        # 回落分支也要接，否则风格段一挂就静默失效。
+        dl_user = build_design_language_prompt(_SPEC)[1]["content"]
+        assert "dashboard-composer" in dl_user
+        assert "不是配色种子" in dl_user
+    finally:
+        set_installed_skills(None)
+
+
+def test_没装experience时风格段不提体验技能():
+    """反向：增强项不改变没装技能时的既有行为。"""
+    set_installed_skills(None)
+    assert experience_skill_constraint() == ""
+    system = build_style_brief_prompt(_SPEC)[0]["content"]
+    assert "【体验技能】" not in system
+    dl_user = build_design_language_prompt(_SPEC)[1]["content"]
+    assert "【体验技能】" not in dl_user
+
+
+def test_experience活路径是风格段_不是identity_theme种子色():
+    """把约束接到 identity_theme / spec_tree 都算装错插座。"""
+    src = (
+        Path(__file__).resolve().parents[1] / "services" / "design_language.py"
+    ).read_text(encoding="utf-8")
+    assert src.count("experience_skill_constraint()") >= 2
+    brief = src[src.index("def build_style_brief_prompt") : src.index("def generate_style_brief")]
+    assert "experience_skill_constraint()" in brief
+    fallback = src[
+        src.index("def build_design_language_prompt") : src.index("def generate_design_language")
+    ]
+    assert "experience_skill_constraint()" in fallback
+    pipe = (
+        Path(__file__).resolve().parents[1] / "services" / "spec_first_pipeline.py"
+    ).read_text(encoding="utf-8")
+    assert "experience_skill_guidance_block" not in pipe
+    spec = (
+        Path(__file__).resolve().parents[1] / "services" / "spec_tree.py"
+    ).read_text(encoding="utf-8")
+    assert "experience_skill_constraint" not in spec
+    assert "experience_skill_guidance_block" not in spec

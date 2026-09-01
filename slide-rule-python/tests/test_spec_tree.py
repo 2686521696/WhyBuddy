@@ -706,3 +706,51 @@ class Test设备进规格提示词:
         generate_spec_tree("巡店点单", device="tablet", llm_json_fn=fake)
         assert "1112×834" in seen["user"]
         assert "一屏一件主任务" not in seen["user"]
+
+    def test_content_app把消费端IA写进user消息(self):
+        """选了内容原型，SPEC 仍按后台切页的话，第 3 步只能把中台塞进无 aside 的壳。"""
+        user = build_spec_prompt(
+            "团子的一天", product_archetype="content_app"
+        )[-1]["content"]
+        assert "消费 / 内容应用" in user
+        assert "图是一等公民" in user
+        assert "不要左侧 <aside>" in user
+        assert "每一页的顶栏上" in user
+        assert "每一页的侧栏上" not in user
+        assert "w-52" not in user
+
+    def test_content加tablet不领走巡店侧栏(self):
+        """平板 + 内容 = 内容壳，不是 w-52 巡店台账。"""
+        user = build_spec_prompt(
+            "杂志", device="tablet", product_archetype="content_app"
+        )[-1]["content"]
+        assert "图是一等公民" in user
+        assert "不要左侧 <aside>" in user
+        assert "w-52" not in user
+
+    def test_content加phone仍是竖屏再加图优先(self):
+        user = build_spec_prompt(
+            "今日封面", device="phone", product_archetype="content_app"
+        )[-1]["content"]
+        assert "一屏一件主任务" in user
+        assert "图是一等公民" in user
+        assert "每一页的侧栏上" not in user
+
+    def test_没选原型时桌面一字不改侧栏口径(self):
+        """反向：空原型不得把后台 IA 换成内容壳。"""
+        user = build_spec_prompt("请假系统")[-1]["content"]
+        assert "每一页的侧栏上" in user
+        assert "消费 / 内容应用" not in user
+
+    def test_generate_spec_tree把content_app送进prompt(self):
+        seen: dict = {}
+
+        def fake(_messages):
+            seen["user"] = _messages[-1]["content"]
+            return copy.deepcopy(GOOD)
+
+        generate_spec_tree(
+            "团子的一天", product_archetype="content_app", llm_json_fn=fake
+        )
+        assert "图是一等公民" in seen["user"]
+        assert "每一页的侧栏上" not in seen["user"]

@@ -16,8 +16,11 @@
 只依赖账本 + 设备词推断，**不许** import `rehearsal_control`。
 
 park ≠ confirm：
-  park 是提示（NeedPermission）。作曲家默认 desktop **不是**授予；句子里的
-  「平板」才是。confirm 是授予（Permission{decision}）。卡上点的档压过句子。
+  2026-08-30 当时 park 是提示（NeedPermission），卡上还能改档，所以句子里的
+  「平板」压过作曲家默认 desktop。2026-09-01 真机「团子的一天」：空态已经
+  选了平板 / 自由类型，范围卡画出桌面/PC 还能点——形态在新建会话就锁死了，
+  卡上置灰。park 事件必须带作曲家载荷；句子 / 澄清里的 iPad 不再改档。
+  confirm 仍是授予（Permission{decision}），载荷优先（卡上点的 = 锁死的那份）。
 """
 
 from __future__ import annotations
@@ -74,22 +77,42 @@ def resolve_park_device(
     texts: Iterable[Any] | None = None,
     payload_device: Any = None,
 ) -> str:
-    """停泊用档。句子里的唯一设备词 > 已持久化的授予 > 载荷 > 哨兵。
+    """停泊用档。作曲家载荷是授予 > 已持久化 > 句子推断 > 哨兵。
 
     ⚠ 2026-08-30：`device=str(preferred_device or "unspecified")` 让作曲家
-    默认 desktop 盖掉「巡店点单平板」。park 是出卡，不是点火——默认档
-    不是 Permission{decision}。
+    默认 desktop 盖掉「巡店点单平板」。当时 park 是出卡提示，卡上还能改。
+    ⚠ 2026-09-01：形态在空态作曲家就选定，范围卡锁死置灰。作曲家 POST
+    的档才是授予；把优先级改回「句子压过载荷」，团子那场必再现。
     """
-    inferred = infer_device_from_text(*_texts(texts))
-    if inferred:
-        return inferred
-    persisted = _persisted_device(last_card, goal)
-    if persisted:
-        return persisted
     payload = wired_device(payload_device)
     if payload:
         return payload
+    persisted = _persisted_device(last_card, goal)
+    if persisted:
+        return persisted
+    inferred = infer_device_from_text(*_texts(texts))
+    if inferred:
+        return inferred
     return "unspecified"
+
+
+def resolve_park_archetype(
+    *,
+    last_card: Any = None,
+    goal: Any = None,
+    payload_archetype: Any = None,
+) -> str:
+    """停泊用原型。作曲家载荷是授予 > 已持久化。空串交给 _park_archetype 兜底。"""
+    payload = wired_archetype(payload_archetype)
+    if payload:
+        return payload
+    card = wired_archetype(_as_map(last_card).get("productArchetype"))
+    if card:
+        return card
+    persisted = wired_archetype(_as_map(goal).get("productArchetype"))
+    if persisted:
+        return persisted
+    return ""
 
 
 def resolve_confirm_device(

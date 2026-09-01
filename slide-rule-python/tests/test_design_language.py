@@ -130,6 +130,25 @@ class Test风格不许碰契约:
             assert word not in joined
         assert "只谈风格" in joined
 
+    def test_回落提示词也要落到具体参照(self):
+        """主路径走 style_brief；回落仍是 design_language。两条都要接。
+        只改主路径 = 风格段一挂就退回形容词堆。把「具体参照」从回落提示词
+        删掉本条必须红。
+        """
+        joined = " ".join(m["content"] for m in build_design_language_prompt(SPEC))
+        assert "具体参照" in joined
+        assert "不要只堆" in joined
+        assert "#2563eb 当没想好时的退路" in joined
+        assert "不是营销落地页" in joined
+        assert "县域农技站" in joined
+        assert "克制的企业后台" not in joined
+
+    def test_缺省风格仍是fail_open那套蓝(self):
+        """这一刀改提示词，不改挂了之后的兜底色。改 #2563eb 会让无 LLM
+        的回落全站换皮。"""
+        assert DEFAULT_DESIGN_LANGUAGE["primary"] == "#2563eb"
+        assert DEFAULT_DESIGN_LANGUAGE["tone"] == "企业后台风格，浅色底"
+
     def test_注进槽位后契约仍在(self):
         """端到端：生成的风格塞进第 3 步的槽位，结构契约照旧由代码拼在后面。"""
         p = build_page_html_prompt("某页", design_system=render_design_language(GOOD))

@@ -64,7 +64,7 @@ def test_park_card_carries_prototype_and_wired_choices(harness):
     card = cards[0]
     assert card.get("productArchetype") == "business_app"
     ids = {row["id"] for row in card.get("wiredArchetypes") or []}
-    assert ids == {"business_app"}
+    assert ids == {"business_app", "content_app", "free_app"}
     assert "casual_game" not in ids
     device_ids = {row["id"] for row in card.get("wiredDevices") or []}
     assert device_ids == {"desktop", "phone", "tablet"}
@@ -72,6 +72,42 @@ def test_park_card_carries_prototype_and_wired_choices(harness):
     loaded = load_session(sid)
     rows = [r for r in (loaded.controlTranscript or []) if r.get("kind") == "scope_card"]
     assert rows[-1]["productArchetype"] == "business_app"
+
+
+def test_park_card_carries_free_app_from_first_post(harness):
+    """空态作曲家选自由类型，首包必须 park 进范围卡。漏传 = 卡上仍是业务后台。"""
+    sid = new_sid("scope-free")
+    seed_session(sid, goal={"text": "", "status": "needs_refinement"})
+    _, events = harness.post(
+        six_fields(sid, "/推演 团子的一天", productArchetype="free_app")
+    )
+    cards = [e for e in events if e.get("type") == "control_scope_card"]
+    assert cards, events
+    assert cards[0].get("productArchetype") == "free_app"
+    loaded = load_session(sid)
+    rows = [r for r in (loaded.controlTranscript or []) if r.get("kind") == "scope_card"]
+    assert rows[-1]["productArchetype"] == "free_app"
+
+
+def test_confirm_stamps_free_app_then_ignites(harness):
+    """自由类型是接通档，确认必须 stamp 并点火，不许当未接通 fail-closed。"""
+    sid = new_sid("scope-free-stamp")
+    seed_session(sid, goal={"text": "", "status": "needs_refinement"})
+    harness.post(six_fields(sid, "/推演 团子的一天", productArchetype="free_app"))
+    _, second = harness.post(
+        six_fields(
+            sid,
+            "团子的一天",
+            forcedTool="rehearse",
+            preferredDevice="desktop",
+            productArchetype="free_app",
+        )
+    )
+    assert len(harness.helper_calls) == 1
+    assert "control_handoff_factory" in event_types(second)
+    loaded = load_session(sid)
+    goal = loaded.goal if isinstance(loaded.goal, dict) else {}
+    assert goal.get("productArchetype") == "free_app"
 
 
 def test_confirm_stamps_archetype_and_tablet_then_ignites(harness):
@@ -104,17 +140,62 @@ def test_confirm_stamps_archetype_and_tablet_then_ignites(harness):
     assert confirmed[-1].get("productArchetype") == "business_app"
 
 
-def test_park_infers_tablet_from_sentence_not_composer_default(harness):
-    """作曲家默认 desktop 不得盖掉「巡店点单平板」。"""
-    sid = new_sid("park-tablet-text")
+def test_park_composer_tablet_and_free_app_reach_card(harness):
+    """空态选平板 / 自由类型，命题没写设备词，卡上必须带进去。"""
+    sid = new_sid("park-composer-morph")
+    seed_session(sid, goal={"text": "", "status": "needs_refinement"})
+    _, events = harness.post(
+        six_fields(
+            sid,
+            "/推演 团子的一天",
+            preferredDevice="tablet",
+            productArchetype="free_app",
+        )
+    )
+    cards = [e for e in events if e.get("type") == "control_scope_card"]
+    assert cards, events
+    assert cards[0].get("device") == "tablet"
+    assert cards[0].get("productArchetype") == "free_app"
+    loaded = load_session(sid)
+    rows = [r for r in (loaded.controlTranscript or []) if r.get("kind") == "scope_card"]
+    assert rows[-1]["device"] == "tablet"
+    assert rows[-1]["productArchetype"] == "free_app"
+
+
+def test_park_composer_desktop_not_overridden_by_tablet_sentence(harness):
+    """空态停在 Web/PC，句子里的「平板」不得把卡改成平板。"""
+    sid = new_sid("park-composer-desktop")
     seed_session(sid, goal={"text": "", "status": "needs_refinement"})
     _, events = harness.post(six_fields(sid, "/推演 巡店点单平板"))
     cards = [e for e in events if e.get("type") == "control_scope_card"]
     assert cards, events
-    assert cards[0].get("device") == "tablet"
+    assert cards[0].get("device") == "desktop"
     loaded = load_session(sid)
     rows = [r for r in (loaded.controlTranscript or []) if r.get("kind") == "scope_card"]
-    assert rows[-1]["device"] == "tablet"
+    assert rows[-1]["device"] == "desktop"
+
+
+def test_dispatch_park_sockets_pass_payload_archetype():
+    """澄清后再 park / 批准闸 park 漏传 product_archetype → 卡上变回业务后台。"""
+    from services import rehearsal_control as rc
+
+    code = _code(rc)
+    call_count = 0
+    idx = 0
+    while True:
+        at = code.find("_park_scope(", idx)
+        if at < 0:
+            break
+        before = code[max(0, at - 24) : at]
+        if "def " in before:
+            idx = at + 1
+            continue
+        chunk = code[at : at + 420]
+        assert "product_archetype=_resolved_park_archetype" in chunk, chunk[:240]
+        assert "args.get(\"device\") or preferred_device" not in chunk
+        call_count += 1
+        idx = at + 1
+    assert call_count >= 5
 
 
 def test_refine_keeps_persisted_tablet_over_composer_desktop(harness):

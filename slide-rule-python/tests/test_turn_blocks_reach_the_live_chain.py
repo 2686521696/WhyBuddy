@@ -108,9 +108,10 @@ BLOCKS = {
     ),
     "已安装技能.experience": (
         _set_skill("experience"), STRANDED,
-        "唯一读它的 identity_theme_gen.experience_skill_guidance_block 已在 2026-08-03 "
+        "identity_theme_gen.experience_skill_guidance_block 已在 2026-08-03 "
         "整段从 v5_capability_executor 摘掉（用户裁决：全站一个颜色）。"
-        "要复活得先复活那一步，不是补一句 import。",
+        "spec-first 第 2 步仍不读它。活路径改接到风格段 "
+        "design_language.experience_skill_constraint（排版/参照，不当种子色）。",
     ),
 }
 
@@ -243,7 +244,13 @@ class Test老生成器不是产品路:
 
     def test_spec_first七步没有一处读技能(self):
         """⚠ 反向判据。哪天有人在别的步骤里接上了技能，
-        上面 STRANDED 那几条会红，但红在"哪儿接的"上说不清——这条直接点名。"""
+        上面 STRANDED 那几条会红，但红在"哪儿接的"上说不清——这条直接点名。
+
+        2026-08-31：experience 接到风格段（design_language.experience_skill_constraint），
+        排版/参照不当种子色。那是第 2.5 步，不是第 2 步 spec_tree——BLOCKS 表里
+        experience 仍标 STRANDED（LIVE 的定义是 build_spec_prompt）。
+        aigc / unbound 仍不得进这几步。
+        """
         import pathlib
         import re
 
@@ -259,4 +266,19 @@ class Test老生成器不是产品路:
             code = "\n".join(l for l in code.splitlines() if not l.lstrip().startswith("#"))
             if "installed_skills" in code:
                 hit.append(name)
-        assert not hit, f"这几步读了已安装技能，把 BLOCKS 表里对应项挪到 LIVE：{hit}"
+        # 正向：风格段确实读了。把调用删掉、只留允许名单，本条必须红。
+        assert "design_language.py" in hit, (
+            "风格段不再读 installed_skills——experience 活路径断了，"
+            "要么接回去要么把这条允许名单拿掉"
+        )
+        dl = re.sub(
+            r'"""[\s\S]*?"""', "", (root / "design_language.py").read_text(encoding="utf-8")
+        )
+        dl = "\n".join(l for l in dl.splitlines() if not l.lstrip().startswith("#"))
+        assert 'installed_skills_for_channel("experience")' in dl
+        assert 'installed_skills_for_channel("aigc")' not in dl
+        assert 'installed_skills_for_channel("unbound")' not in dl
+        leak = [n for n in hit if n != "design_language.py"]
+        assert not leak, (
+            f"这几步读了已安装技能，把 BLOCKS 表里对应项挪到 LIVE：{leak}"
+        )

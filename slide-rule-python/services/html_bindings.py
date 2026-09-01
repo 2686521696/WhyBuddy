@@ -232,7 +232,14 @@ def check_coverage(markup: str, model: Dict[str, Any]) -> List[Dict[str, str]]:
 _SYSTEM = "你是前端工程师。只输出改造后的完整 HTML 文件内容，不要解释、不要 markdown 围栏。"
 
 
-def build_prompt(markup: str, model: Dict[str, Any], page_id: str, feedback: str = "") -> List[Dict[str, str]]:
+def build_prompt(
+    markup: str,
+    model: Dict[str, Any],
+    page_id: str,
+    feedback: str = "",
+    *,
+    product_archetype: str = "",
+) -> List[Dict[str, str]]:
     import json as _json
 
     slim = {
@@ -265,6 +272,26 @@ def build_prompt(markup: str, model: Dict[str, Any], page_id: str, feedback: str
     else:
         wf_section = ""
 
+    # ⚠ 2026-08-31 团子的一天：图流被标 data-block-kind=table，绑洞
+    # 「只留一行」把 8 张 Unsplash 收成 1 张。当时只改提示词「至少留 4 张」，
+    # 还写「data-rows 可以打」——运行时照样 innerHTML 清空再克隆第一项。
+    # ⚠ 2026-09-01 幼儿作息：素材栏 6 张 Unsplash 还在源 HTML 里，画面上没了。
+    # 对照 petite-vue v-for / Alpine x-for：循环打在**项**上，父容器不清空。
+    # 开放壳货架不要打 data-rows；后台台账仍只留一行。
+    from .archetype_legal import is_open_chrome
+
+    _gallery_keep = (
+        "⚠ 开放壳例外：容器里如果已经有多张不同 src 的 <img>（图流、封面架、货架），"
+        "那是这一页的画面，不是后台台账。"
+        "**不要给这种货架打 data-rows**——运行时会按表格清空再克隆，画面上的图就没了。"
+        "里面**至少留 4 张**示例图，原样放着。"
+        "要绑标题：data-field 打在文字叶子上，或单张卡片用 data-record；"
+        "data-field 不许打在还含 <img> 的父节点上。"
+        "后台宽表仍只留一行。"
+        if is_open_chrome(product_archetype)
+        else ""
+    )
+
     body = f"""把下面这份**静态**页面改造成由数据驱动的模板。
 
 版式一个像素都不要改：不增删元素、不改文案、不动 class。**只往标签上加
@@ -279,6 +306,7 @@ data-* 属性**，把写死的示例数据换成绑定孔。
         ⚠ 那一行必须带着 data-field / data-cell。当前时间线、absolute
         定位装饰、pointer-events-none 遮罩都不是行模板——留在容器里当
         兄弟，不要放成第一个子元素，也不要当成「只留一行」里的那一行。
+        {_gallery_keep}
     <div data-record="<实体id>">
         **单条**：详情卡、主从视图的右侧面板、编辑表单、"当前选中那条"的
         摘要区——这些地方**不要循环**，用它开一个作用域就行。
@@ -402,6 +430,7 @@ def bind_page(
     *,
     llm_call: Optional[Callable[..., Any]] = None,
     max_reask: int = 2,
+    product_archetype: str = "",
 ) -> str:
     """给一页打孔。校验不过就把校验器原话喂回去重问，耗尽则抛。"""
     from .spec_page_html import neutralize_foreign_urls, validate_page_html
@@ -414,7 +443,12 @@ def bind_page(
 
     feedback, last = "", "未调用"
     for attempt in range(max_reask + 1):
-        resp = llm_call(build_prompt(markup, model, page_id, feedback), temperature=0.2)
+        resp = llm_call(
+            build_prompt(
+                markup, model, page_id, feedback, product_archetype=product_archetype
+            ),
+            temperature=0.2,
+        )
         out = neutralize_foreign_urls(
             stamp_implicit_form_record(_strip_fences(getattr(resp, "content", "") or ""))
         )
@@ -441,6 +475,7 @@ def bind_pages(
     *,
     max_workers: int = 6,
     llm_call: Optional[Callable[..., Any]] = None,
+    product_archetype: str = "",
 ) -> Dict[str, Any]:
     """并发给每一页打孔。**单页失败不拖垮整批**（写法同 spec_page_html）。"""
     if not pages_html:
@@ -451,7 +486,14 @@ def bind_pages(
     failed: Dict[str, str] = {}
     with ThreadPoolExecutor(max_workers=min(max_workers, len(pages_html))) as pool:
         fut_to_id = {
-            pool.submit(bind_page, html, model, pid, llm_call=llm_call): pid
+            pool.submit(
+                bind_page,
+                html,
+                model,
+                pid,
+                llm_call=llm_call,
+                product_archetype=product_archetype,
+            ): pid
             for pid, html in pages_html.items()
         }
         # ⚠ **as_completed，不是按提交顺序 `for pid, fut in futures`。**

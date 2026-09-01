@@ -252,7 +252,7 @@ class Test闸能被真的绕过吗:
         否则就是本仓第四条：同一件事两个实现，改一个不改另一个。"""
         r = subprocess.run(
             [sys.executable, str(arch_graph.ROOT / "arch_graph.py"), "--check"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8",
         )
         base = _M.get("baseline", {})
         # ⚠ 三项都要算进来。少算一项，命令行红而这里判 clean，判据会**误报**——

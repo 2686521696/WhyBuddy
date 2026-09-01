@@ -106,7 +106,7 @@ class Test接在活路上:
         ).read()
         # 用赋值语句定位，不用 ident 全文搜索——模块头文档会把
         # unify_shell 这个词带跑，三引号剥错还会把这段代码吃掉。
-        i = src.index("shell = unify_shell(pages, spec, device=device)")
+        i = src.index("shell = unify_shell(pages, spec, device=device")
         j = src.index("pages = apply_theme_to_pages(pages, _theme_lang)")
         k = src.index("_reemit_pages(sink, pages, bound=False)")
         assert i < j < k

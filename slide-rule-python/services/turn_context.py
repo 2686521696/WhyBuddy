@@ -88,7 +88,7 @@ def set_active_connectors_cleaned(connectors: Optional[List[Dict[str, Any]]]) ->
 # ---------------------------------------------------------------- 读
 
 def installed_skills_for_channel(channel: str) -> List[Dict[str, str]]:
-    """按通道取本轮已安装技能。体验层（identity_theme_gen）用它取设计指导。"""
+    """按通道取本轮已安装技能。experience 走风格段（design_language），不当种子色。"""
     return [s for s in (_installed_skills_var.get() or []) if s.get("channel") == channel]
 
 

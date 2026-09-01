@@ -64,14 +64,20 @@ class Test口径抄的是_screenshot_to_code:
         assert "## Design system" in p                    # build_design_system_prompt_block
         assert "# Instructions" in p
 
-    def test_三条_instructions_逐字(self):
+    def test_instructions_跟设计系统走_不许通用后台皮(self):
+        """2026-08-31：modern and sleek / professional fonts 会把每页画成同一套
+        中台皮。风格走 <design_system>，UX 那条可以留。
+
+        反向：那两句套话回来本条必须红；新那句删掉也必须红。
+        """
         p = sph.build_page_html_prompt("x")
-        for line in (
-            "- Make sure to make it look modern and sleek.",
-            "- Use modern, professional fonts and colors.",
-            "- Follow UX best practices.",
-        ):
-            assert line in p
+        assert (
+            "- Follow the <design_system> visual tone. "
+            "Do not invent a generic admin skin."
+        ) in p
+        assert "- Follow UX best practices." in p
+        assert "modern and sleek" not in p
+        assert "professional fonts" not in p
 
     def test_image_policy_取_disabled_那一支(self):
         """这个 harness 没有 generate_images 工具，抄 enabled 那支等于让模型
@@ -115,6 +121,42 @@ class Test口径抄的是_screenshot_to_code:
         assert "bg-zinc-950" in p
         phone = sph.build_page_html_prompt("x", device="phone")
         assert "不要写成图标轨 w-16" not in phone
+
+    def test_content_app契约不要侧栏且图是一等公民(self):
+        p = sph.build_page_html_prompt("某页", product_archetype="content_app")
+        assert "不要左侧边栏" in p or "不要 <aside>" in p
+        assert "图是一等公民" in p
+        assert "placehold.co" in p
+        assert "必须用 w-64" not in p
+        assert "<aside> 固定主导航" not in p
+        desk = sph.build_page_html_prompt("某页")
+        assert "<aside>" in desk
+        assert "消费端内容产品" not in desk
+
+    def test_content加phone仍是竖屏底栏再加图优先(self):
+        p = sph.build_page_html_prompt(
+            "某页", device="phone", product_archetype="content_app"
+        )
+        assert "390×844" in p
+        assert "图是一等公民" in p
+        assert "铺满 1920×1080" not in p
+
+    def test_guidelines闸只记不拦(self):
+        """对照 Vercel guidelines 的可机械部分。进 validate 就成了 fail-closed。"""
+        html = (
+            "<!doctype html><html><head>"
+            '<script src="https://cdn.tailwindcss.com"></script></head>'
+            '<body class="bg-white"><p class="text-gray-200">浅</p>'
+            "<table></table></body></html>"
+        )
+        notes = sph.guidelines_gate_notes(html)
+        assert any("对比" in n for n in notes)
+        assert any("空态" in n for n in notes)
+        assert sph.validate_page_html(html) == []
+        content_notes = sph.guidelines_gate_notes(
+            html, product_archetype="content_app"
+        )
+        assert any("<img>" in n for n in content_notes)
 
     def test_时段矩阵表头与格子同档(self):
         """2026-08-31 会聚通：表头 grid-cols-12、格子 grid-cols-24，

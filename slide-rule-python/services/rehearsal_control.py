@@ -72,6 +72,7 @@ from services.drive_full_factory import start_drive_full_factory_run
 from services.scope_authority import (
     preferred_device_for_run,
     resolve_confirm_device,
+    resolve_park_archetype,
     resolve_park_device,
     stamp_scope_onto_goal,
     wired_device,
@@ -779,6 +780,23 @@ def _resolved_park_device(
         goal=dict(state.goal) if isinstance(state.goal, dict) else {},
         texts=_scope_texts(state, user_text),
         payload_device=payload_device,
+    )
+
+
+def _payload_park_archetype() -> str:
+    body = _CONTROL_PAYLOAD.get() or {}
+    return str(body.get("productArchetype") or body.get("product_archetype") or "")
+
+
+def _resolved_park_archetype(
+    state: V5SessionState,
+    payload_archetype: Any = None,
+) -> str:
+    raw = payload_archetype if payload_archetype not in (None, "") else _payload_park_archetype()
+    return resolve_park_archetype(
+        last_card=_last_scope_card(state),
+        goal=dict(state.goal) if isinstance(state.goal, dict) else {},
+        payload_archetype=raw,
     )
 
 
@@ -2177,10 +2195,11 @@ async def _run_control_turn_body(
                 state,
                 restatement,
                 device=_resolved_park_device(state, preferred_device, user_text),
-                product_archetype=str(
+                product_archetype=_resolved_park_archetype(
+                    state,
                     payload.get("productArchetype")
                     or payload.get("product_archetype")
-                    or ""
+                    or "",
                 ),
                 variant="thin" if original_goal else "full",
                 user_text=user_text,
@@ -2424,6 +2443,7 @@ async def _dispatch_tool(
             state,
             _confirmed_restatement(state, user_text) or _restate(original_goal),
             device=_resolved_park_device(state, preferred_device, user_text),
+            product_archetype=_resolved_park_archetype(state),
             variant="thin" if original_goal else "full",
             user_text=user_text,
         ):
@@ -2443,6 +2463,7 @@ async def _dispatch_tool(
                 state,
                 _restatement_chain(state, user_text, original_goal),
                 device=_resolved_park_device(state, preferred_device, user_text),
+                product_archetype=_resolved_park_archetype(state),
                 variant="thin" if original_goal else "full",
                 user_text=user_text,
             ):
@@ -2459,6 +2480,7 @@ async def _dispatch_tool(
             state,
             _restatement_chain(state, user_text, original_goal),
             device=_resolved_park_device(state, preferred_device, user_text),
+            product_archetype=_resolved_park_archetype(state),
             variant="thin" if original_goal else "full",
             user_text=user_text,
         ):
@@ -2469,12 +2491,8 @@ async def _dispatch_tool(
         async for event in _park_scope(
             state,
             restatement,
-            device=_resolved_park_device(
-                state,
-                args.get("device") or preferred_device,
-                user_text,
-            ),
-            product_archetype=str(args.get("productArchetype") or args.get("product_archetype") or ""),
+            device=_resolved_park_device(state, preferred_device, user_text),
+            product_archetype=_resolved_park_archetype(state),
             variant=str(args.get("variant") or ("thin" if original_goal else "full")),
             user_text=user_text,
             want_evidence=_truthy_scope_flag(args.get("wantEvidence")),

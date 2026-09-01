@@ -255,7 +255,86 @@ photo id。产品名要从客户的业务里起，不要用你自己的名字
 #: 缺省风格。**一句话**——它只是没人指定时的兜底，不是"推荐版式"。
 #: 密度、版式原型、组件词汇这些该由上游按应用给（第 1.5 步生成 / 人工覆盖）。
 #: 移动端单独一句——桌面那句「克制的企业后台」会把竖屏画回 PC。
+#: 消费 / 内容壳。对照 Medium / Apple News：顶栏横栏 + 大图，没有 aside。
+#: page_shell 内容路径认 <header> 里的 <nav>，写了 aside 会被剥掉。
+_STRUCTURAL_CONTRACT_CONTENT = """顶部一个 <header>（产品名 + 一条横栏 <nav> + 当前身份），正文放在 <main> 里。
+**不要左侧边栏（不要 <aside>）**。这是给人看和读的内容产品，不是业务后台。
+
+html 与 body 必须 width:100%; height:100%。<header>、<main> 铺满视口。
+Header 里的 <nav> 是页面入口横栏，每个入口一个 <a>，当前页带 aria-current="page"。
+不要用 max-w-5xl / max-w-6xl / max-w-7xl / mx-auto 把整页收成屏幕正中一张卡片。
+
+图是一等公民：封面/图流页第一眼必须有大幅 <img>（https://placehold.co），
+图流/档案第一屏至少 4 张可见图，不要两列网格只放一张。封面/长文可以一张主图。
+头像必须是正方形人像特写，不要把风景或相机裁进小框。
+<main> 不要 flex justify-between 把稀疏区块撑满视口。
+不要用四张等宽 KPI 统计卡顶替画面，不要宽表台账。
+
+页面里的 <script> **不会被执行**（渲染方会移除）。所以不要引图表库、不要写 JS
+渲染——图表一律用内联 <svg> 的 <polyline>/<rect>/<path>/<circle> 直接画出来。
+
+这一页的首屏是 brief 里「用途」处于**未打开浮层**的状态。
+不要把新增表单、编辑表单、Slide-over、对话框画进首屏——script 不跑，画出来的抽屉关不掉。
+
+若必须预留浮层 DOM，根节点若是 ``fixed inset-0``（或 ``inset-y-0`` 侧滑面板、
+它的 backdrop 兄弟），必须带 ``hidden``。
+
+占位数据必须写成**可读的中文文字**，
+不许用灰色横条或色块代替：日期写 20XX-XX-XX，人名写「张师傅」这类。
+
+这是**客户自己的产品**。页脚、logo、版权行、关于页里不许出现你（生成方）的名字、
+品牌、域名或联系方式；除了上面指定的 Tailwind CDN、placehold.co，以及
+库存图床（images.unsplash.com / images.pexels.com / upload.wikimedia.org /
+staticflickr.com / rawpixel.com），不要写任何外部网址。配图用
+https://placehold.co，每张 <img> 的 alt 写成这张照片的英文检索词（画面上是什么，
+例如 morning light through curtains；不要写用户分层）。不许自己编 unsplash / pexels
+photo id。产品名要从客户的业务里起，不要用你自己的名字
+（不要写成面团 / 面团AI / SlideRule）。"""
+
+#: 自由类型契约。壳跟内容一样（header 横栏、不要 aside），页型不锁死。
+#: 2026-08-31 团子的一天：内容原型把图流收成两列只剩一张，作者页头像
+#: 裁成黑条、main justify-between 把稀疏区块撑满视口。
+_STRUCTURAL_CONTRACT_FREE = """顶部一个 <header>（产品名 + 一条横栏 <nav> + 当前身份），正文放在 <main> 里。
+**不要左侧边栏（不要 <aside>）**。不要为了凑后台硬加侧栏，也不要为了凑杂志硬切四页。
+
+html 与 body 必须 width:100%; height:100%。<header>、<main> 铺满视口。
+Header 里的 <nav> 是页面入口横栏，每个入口一个 <a>，当前页带 aria-current="page"。
+不要用 max-w-5xl / max-w-6xl / max-w-7xl / mx-auto 把整页收成屏幕正中一张卡片。
+<main> 不要 flex justify-between 把稀疏区块撑满视口。
+
+按这一页的活儿画：封面/长文可以一张主图；图流/封面架/货架第一屏必须有至少 4 张
+可见 <img>（https://placehold.co），不要两列网格只放一张。
+头像必须是正方形人像特写，不要把风景或相机裁进 96px 小框。
+不要用四张等宽 KPI 统计卡顶替画面，不要宽表台账除非这一页就是台账。
+
+页面里的 <script> **不会被执行**（渲染方会移除）。所以不要引图表库、不要写 JS
+渲染——图表一律用内联 <svg> 的 <polyline>/<rect>/<path>/<circle> 直接画出来。
+
+这一页的首屏是 brief 里「用途」处于**未打开浮层**的状态。
+不要把新增表单、编辑表单、Slide-over、对话框画进首屏——script 不跑，画出来的抽屉关不掉。
+
+若必须预留浮层 DOM，根节点若是 ``fixed inset-0``（或 ``inset-y-0`` 侧滑面板、
+它的 backdrop 兄弟），必须带 ``hidden``。
+
+占位数据必须写成**可读的中文文字**，
+不许用灰色横条或色块代替：日期写 20XX-XX-XX，人名写「张师傅」这类。
+
+这是**客户自己的产品**。页脚、logo、版权行、关于页里不许出现你（生成方）的名字、
+品牌、域名或联系方式；除了上面指定的 Tailwind CDN、placehold.co，以及
+库存图床（images.unsplash.com / images.pexels.com / upload.wikimedia.org /
+staticflickr.com / rawpixel.com），不要写任何外部网址。配图用
+https://placehold.co，每张 <img> 的 alt 写成这张照片的英文检索词（画面上是什么，
+例如 morning light through curtains；不要写用户分层）。不许自己编 unsplash / pexels
+photo id。产品名要从客户的业务里起，不要用你自己的名字
+（不要写成面团 / 面团AI / SlideRule）。"""
+
 _DEFAULT_STYLE = "企业后台风格，浅色底。"
+_DEFAULT_STYLE_CONTENT = (
+    "消费端内容产品风格，浅色底，图是一等公民。大幅配图 + 短标题，不是业务后台。"
+)
+_DEFAULT_STYLE_FREE = (
+    "自由类型：按这个产品自己的气质，浅色底。不套后台中台，也不套杂志四页。"
+)
 _DEFAULT_STYLE_MOBILE = "移动端 App 风格（竖屏 390×844 CSS 像素），浅色底，单列卡片流铺满视口。触控目标 ≥ 44px（Apple HIG），不要按 1080 物理像素去画 88px 大按钮。"
 #: ⚠ 2026-08-30 夜真机：preferredDevice=tablet 已落盘，五页仍走桌面缺省句。
 #: 桌面那句「企业后台」会把现场手持画回 1920 中台。
@@ -266,7 +345,7 @@ _DEFAULT_STYLE_TABLET = (
 
 
 def build_design_system_prompt_block(
-    design_system: Optional[str], *, device: str = "desktop"
+    design_system: Optional[str], *, device: str = "desktop", product_archetype: str = ""
 ) -> str:
     """拼出 `<design_system>` 块：**风格在前，契约在后**。
 
@@ -277,16 +356,36 @@ def build_design_system_prompt_block(
       注入进来的风格描述可能跟契约打架（比如要求"极简单栏、去掉侧边导航"），
       而契约输了的代价不是难看，是 page_shell 抠不到壳、整套外壳判据静默失效。
     """
+    from .archetype_legal import is_content_app, is_free_app
+
+    content = is_content_app(product_archetype)
+    free = is_free_app(product_archetype)
     style = (design_system or "").strip() or (
         _DEFAULT_STYLE_MOBILE
         if device == "phone"
+        else _DEFAULT_STYLE_CONTENT
+        if content
+        else _DEFAULT_STYLE_FREE
+        if free
         else _DEFAULT_STYLE_TABLET
         if device == "tablet"
         else _DEFAULT_STYLE
     )
     # ⚠ 不许写成 `phone else desktop`：tablet 会静默领走 1920 + w-64。
+    # ⚠ 内容/自由原型优先于平板 aside 契约：选了 open chrome 就不能再要侧栏。
     if device == "phone":
         contract = _STRUCTURAL_CONTRACT_MOBILE
+        if content:
+            contract += "\n图是一等公民：列表/封面用大图卡片，不要指标卡顶替画面。\n"
+        elif free:
+            contract += (
+                "\n按这一页的活儿画：图流至少 4 张可见图，表单就一个主表单。"
+                "不要为了凑后台硬加指标卡。\n"
+            )
+    elif content:
+        contract = _STRUCTURAL_CONTRACT_CONTENT
+    elif free:
+        contract = _STRUCTURAL_CONTRACT_FREE
     elif device == "tablet":
         contract = _STRUCTURAL_CONTRACT_TABLET
     else:
@@ -368,7 +467,11 @@ def build_page_brief(
 
 
 def build_page_html_prompt(
-    brief: str, *, device: str = "desktop", design_system: Optional[str] = None
+    brief: str,
+    *,
+    device: str = "desktop",
+    design_system: Optional[str] = None,
+    product_archetype: str = "",
 ) -> str:
     """create/text.py 的 USER_PROMPT，逐字对齐（image policy 取 disabled 那一支）。
 
@@ -381,15 +484,16 @@ def build_page_html_prompt(
     调用方传进来（生成 / 人工覆盖都走这个口）。不传就用缺省那一句话。
     结构契约不受它影响——见 build_design_system_prompt_block。
     """
-    design = build_design_system_prompt_block(design_system, device=device)
+    design = build_design_system_prompt_block(
+        design_system, device=device, product_archetype=product_archetype
+    )
     return f"""Generate UI for {brief}.
 {_STACK}
 {design}
 
 # Instructions
 
-- Make sure to make it look modern and sleek.
-- Use modern, professional fonts and colors.
+- Follow the <design_system> visual tone. Do not invent a generic admin skin.
 - Follow UX best practices.
 - The first screen is the page **at rest**. A list/ledger page shows the table or cards and a single "新增" button — not an open create/edit drawer or dialog. Do not copy Tailwind UI Slide-over "open" snapshots. Create/edit forms are provided by the host; page scripts will not run, so an open drawer cannot be closed.
 - Pick one surface for the whole app (light OR dark). Do not mix a light page with bg-slate-900 / bg-black cards, and do not paint the top header and the sidebar two different darks.
@@ -556,6 +660,32 @@ def scan_foreign_references(markup: str) -> List[str]:
 #: 这种判断——今天在这上面栽过三次（数字段 / 数语义标签 / 拿坏渲染器截图）。
 #: ⚠ 这里刻意**不判丰富度**：丰富度得渲染出来用眼睛看，机械判据只负责挡住
 #:   「明显不是一份完整页面」的东西。
+def guidelines_gate_notes(markup: str, *, product_archetype: str = "") -> List[str]:
+    """机械审查，不当审美来源。对照 Vercel web-design-guidelines 的可机械部分。
+
+    只记不拦（增强类 fail-open）。对比 / 空态能静态看见的才报；
+    触控尺寸要渲染后才准，这里不拿 class 猜 44px。
+    内容原型另报「没有 <img>」——图是一等公民，缺图就是缺，但本轮不拦画页。
+    """
+    text = markup or ""
+    low = text.lower()
+    notes: List[str] = []
+    if re.search(r"text-(gray|slate|zinc)-[123]00", low) and re.search(
+        r"bg-(white|slate-50|gray-50|zinc-50)", low
+    ):
+        notes.append("浅字浅底，对比可能不够")
+    emptyish = bool(re.search(r"<t(body|able)\b", low)) and not re.search(
+        r"<tr\b", low
+    )
+    if emptyish and not re.search(r"暂无|还没有|空空|没有数据|empty", text):
+        notes.append("表/列表没有行，也没有空态文案")
+    from .archetype_legal import is_open_chrome
+
+    if is_open_chrome(product_archetype) and not re.search(r"<img\b", low):
+        notes.append("开放壳产品没有 <img>，图不是一等公民")
+    return notes
+
+
 def validate_page_html(markup: str) -> List[str]:
     problems: List[str] = []
     text = markup or ""
@@ -589,6 +719,7 @@ def generate_page_html(
     device: str = "desktop",
     design_system: Optional[str] = None,
     product: str = "",
+    product_archetype: str = "",
     llm_call: Optional[Callable[..., Any]] = None,
     max_attempts: int = 2,
 ) -> Dict[str, Any]:
@@ -597,7 +728,12 @@ def generate_page_html(
     返回 {"version", "pageId", "html", "brief", "prompt"}。
     """
     brief = build_page_brief(page, spec, product=product)
-    prompt = build_page_html_prompt(brief, device=device, design_system=design_system)
+    prompt = build_page_html_prompt(
+        brief,
+        device=device,
+        design_system=design_system,
+        product_archetype=product_archetype,
+    )
     if llm_call is None:
         # ⚠ 用带重试的那个，不是裸 call_llm（2026-08-13 修）。
         #
@@ -632,6 +768,10 @@ def generate_page_html(
         html = neutralize_foreign_urls(_strip_fences(getattr(response, "content", "") or ""))
         last = validate_page_html(html)
         if not last:
+            for note in guidelines_gate_notes(
+                html, product_archetype=product_archetype
+            ):
+                print(f"[spec_page_html] 页面 {page.get('id')} 交付闸：{note}")
             return {
                 "version": SPEC_PAGE_HTML_VERSION,
                 "pageId": str(page.get("id") or ""),
@@ -651,6 +791,7 @@ def edit_page_html(
     *,
     llm_call: Optional[Callable[..., Any]] = None,
     max_attempts: int = 2,
+    product_archetype: str = "",
 ) -> Optional[Dict[str, Any]]:
     """在已有页面上**改一小块**，成功返回同 generate_page_html 的形状；
     改不动返回 **None**，由调用方回落整页重画。
@@ -711,6 +852,13 @@ def edit_page_html(
             return None
 
         cleaned = neutralize_foreign_urls(got["html"])
+        from .bind_hole_freeze import freeze_bind_holes
+
+        cleaned = freeze_bind_holes(prev_html, cleaned)
+        for note in guidelines_gate_notes(
+            cleaned, product_archetype=product_archetype
+        ):
+            print(f"[spec_page_html] 页面 {page_id} 交付闸：{note}")
         problems = validate_page_html(cleaned)
         if problems:
             print(
@@ -856,6 +1004,7 @@ def generate_pages_parallel(
     reuse_pages: Optional[Dict[str, str]] = None,
     edit_base: Optional[Dict[str, str]] = None,
     edit_instruction: str = "",
+    product_archetype: str = "",
 ) -> Dict[str, Any]:
     """把 spec 的每一页并发生成 HTML。**单页失败不拖垮整批。**
 
@@ -962,17 +1111,25 @@ def generate_pages_parallel(
             if prev and (edit_instruction or "").strip():
                 try:
                     got = edit_page_html(
-                        pg, prev, edit_instruction, llm_call=llm_call
+                        pg, prev, edit_instruction, llm_call=llm_call,
+                        product_archetype=product_archetype,
                     )
                     if got is not None:
                         return got
                 except Exception as exc:  # noqa: BLE001 — 局部改属增强，炸了走重画
                     print(f"[spec_page_html] 页面 {pid} 局部改异常，回落整页重画：{str(exc)[:160]}")
-            return generate_page_html(
+            drawn = generate_page_html(
                 pg, spec, device=device,
                 design_system=_style_for(design_system, pid),
-                product=product, llm_call=llm_call,
+                product=product, product_archetype=product_archetype,
+                llm_call=llm_call,
             )
+            if prev and isinstance(drawn, dict) and drawn.get("html"):
+                from .bind_hole_freeze import freeze_bind_holes
+
+                drawn = dict(drawn)
+                drawn["html"] = freeze_bind_holes(prev, str(drawn["html"]))
+            return drawn
 
         fut_to_id = {
             pool.submit(_make_page, pg): str(pg.get("id") or "")

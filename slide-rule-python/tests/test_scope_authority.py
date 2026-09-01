@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """范围授权：park / confirm / 本轮生成 三套优先级必须能被变异咬住。
 
-对照 grok PermissionState——默认档不是授予。把 confirm 的 payload 优先
-改成跟 park 一样「句子压过点击」，这条必须红。
+对照 grok PermissionState。2026-09-01 起 park 的作曲家载荷是授予
+（范围卡锁死置灰）。把 park 改回「句子压过载荷」，团子那场必红。
+confirm 仍是载荷优先；把 confirm 改成句子压过点击，这条必须红。
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from services.scope_authority import (  # noqa: E402
     preferred_device_for_run,
     resolve_confirm_device,
+    resolve_park_archetype,
     resolve_park_device,
     stamp_scope_onto_goal,
 )
@@ -28,7 +30,8 @@ def _code(mod) -> str:
     return re.sub(r"#.*", "", re.sub(r'"""[\s\S]*?"""', "", src))
 
 
-def test_park_sentence_beats_composer_default():
+def test_park_composer_payload_beats_sentence():
+    """空态选了 Web/PC，句子里的「平板」不得改档。"""
     assert (
         resolve_park_device(
             last_card={},
@@ -36,19 +39,43 @@ def test_park_sentence_beats_composer_default():
             texts=["/推演 巡店点单平板"],
             payload_device="desktop",
         )
+        == "desktop"
+    )
+
+
+def test_park_composer_tablet_reaches_card():
+    """空态选了平板，命题没写设备词，卡上必须是平板。"""
+    assert (
+        resolve_park_device(
+            last_card={},
+            goal={},
+            texts=["团子的一天"],
+            payload_device="tablet",
+        )
         == "tablet"
     )
 
 
-def test_park_persisted_grant_used_when_sentence_has_no_device():
+def test_park_persisted_grant_used_when_no_payload():
     assert (
         resolve_park_device(
             last_card={"device": "tablet"},
             goal={"preferredDevice": "phone"},
             texts=["请假系统"],
-            payload_device="desktop",
+            payload_device=None,
         )
         == "tablet"
+    )
+
+
+def test_park_archetype_payload_beats_card():
+    assert (
+        resolve_park_archetype(
+            last_card={"productArchetype": "business_app"},
+            goal={},
+            payload_archetype="free_app",
+        )
+        == "free_app"
     )
 
 
@@ -176,6 +203,7 @@ def test_live_sockets_call_the_resolvers():
     control = _code(rc)
     helper = _code(factory)
     assert "resolve_park_device" in control
+    assert "resolve_park_archetype" in control
     assert "resolve_confirm_device" in control
     assert "stamp_scope_onto_goal" in control
     assert "preferred_device_for_run" in control

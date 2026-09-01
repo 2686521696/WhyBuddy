@@ -159,6 +159,43 @@ class Test未接通的原型不许假装能用:
         assert A.is_wired(A.DEFAULT_ARCHETYPE)
         assert A.DEFAULT_ARCHETYPE in A.wired_archetypes()
 
+    def test_content_app接通且闭环只要页面和应用包(self):
+        """消费端没有角色权限和审批流。把 wired 扳回去或把六系统塞回来，本条必须红。"""
+        assert A.is_wired("content_app")
+        assert "content_app" in A.wired_archetypes()
+        assert A.is_content_app("content_app")
+        assert not A.is_content_app("business_app")
+        assert not A.is_content_app("")
+        assert A.required_evidence("content_app") == ["page", "appbundle"]
+        got = [
+            (e["sourceSkill"], e["targetSkill"], e["evidenceKey"])
+            for e in A.closure_edges("content_app")
+        ]
+        assert got == [
+            ("page", "appbundle", "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE")
+        ]
+
+    def test_free_app接通且不跟内容壳混名(self):
+        """自由类型与内容共用开放壳，但 is_content_app 必须仍只认杂志那条。
+        把 wired 扳回去或把六系统塞回来，本条必须红。"""
+        assert A.is_wired("free_app")
+        assert "free_app" in A.wired_archetypes()
+        assert A.is_free_app("free_app")
+        assert A.is_open_chrome("free_app")
+        assert A.is_open_chrome("content_app")
+        assert not A.is_content_app("free_app")
+        assert not A.is_free_app("content_app")
+        assert not A.is_open_chrome("business_app")
+        assert A.required_evidence("free_app") == ["page", "appbundle"]
+        got = [
+            (e["sourceSkill"], e["targetSkill"], e["evidenceKey"])
+            for e in A.closure_edges("free_app")
+        ]
+        assert got == [
+            ("page", "appbundle", "PAGE_APPBUNDLE_RUNTIME_SURFACE_EVIDENCE")
+        ]
+        assert A.label("free_app") == "自由类型"
+
 
 class Test政策包不是TRAE:
     """政策包抄 SKILL.md frontmatter，挂在现有账本上。禁止接 skill_runtime。"""
