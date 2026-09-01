@@ -91,7 +91,13 @@ class _Index(HTMLParser):
                 break
 
     def handle_startendtag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]) -> None:
+        # HTMLParser 默认就是 start + end。覆盖时只开不关，SVG
+        # ``<path />`` 不是 HTML void，进栈不出，后一个图标套进前一个
+        # （2026-09-01 冻洞）。void 已经在 handle_starttag 里不入栈，
+        # 再调 handle_endtag 会把父级弹掉。
         self.handle_starttag(tag, attrs)
+        if tag.lower() not in _VOID:
+            self.handle_endtag(tag)
 
 
 def _tag_end(text: str, start: int) -> int:

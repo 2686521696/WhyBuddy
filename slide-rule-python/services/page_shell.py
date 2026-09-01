@@ -1481,7 +1481,12 @@ def _unify_shell_content(
         html = _ensure_phone_header(markup, page_header)
         html = _strip_aside(html)
         html = _ensure_content_body_column(html)
-        html = reconcile_main_offset(html)
+        # ⚠ 2026-09-01 内容站真机：模型按后台皮套出 aside + main.ml-64，
+        #   剥 aside 再转 flex-col 之后 reconcile_main_offset →
+        #   strip_main_offset 看到「没侧栏 / 已是纵向」直接 return，
+        #   leftover ml-64 留着，main.x=256，左边空一截。
+        #   消费端没有侧栏，偏移不是页面自己的版式。
+        html = _drop_main_offset_classes(html)
         _own = style_class_rules(html)
         _missing = {
             name: body
@@ -2133,6 +2138,27 @@ def offset_needed(markup: str) -> bool:
     return aside_out_of_flow(markup)
 
 
+def _drop_main_offset_classes(markup: str) -> str:
+    """无条件去掉 main 祖先链上的 ml/pl 偏移类。其余 class 不动。
+
+    ``strip_main_offset`` 有闸（fixed 侧栏要留、非横排 body 当版式）。
+    消费端剥掉 aside 之后必须走这里，不能走那条闸。
+    """
+    out = markup
+    # 从内往外改，先改后面的：改了前面的会让后面记下来的偏移量失效。
+    for start, end, tag in reversed(main_offset_chain(markup)):
+        if not _offset_tokens_of(tag):
+            continue
+        cls = _CLASS.search(tag)
+        kept = [t for t in cls.group(1).split() if not _OFFSET_CLS.match(t)]
+        out = (
+            out[:start]
+            + tag.replace(cls.group(0), f'class="{" ".join(kept)}"', 1)
+            + out[end:]
+        )
+    return out
+
+
 def strip_main_offset(markup: str) -> str:
     """去掉内容区上**多余**的左偏移（侧栏在流内、body 又是横排的那种）。
 
@@ -2143,15 +2169,7 @@ def strip_main_offset(markup: str) -> str:
     """
     if aside_out_of_flow(markup) or not _body_is_flex_row(markup):
         return markup
-    out = markup
-    # 从内往外改，先改后面的：改了前面的会让后面记下来的偏移量失效。
-    for start, end, tag in reversed(main_offset_chain(markup)):
-        if not _offset_tokens_of(tag):
-            continue
-        cls = _CLASS.search(tag)
-        kept = [t for t in cls.group(1).split() if not _OFFSET_CLS.match(t)]
-        out = out[:start] + tag.replace(cls.group(0), f'class="{" ".join(kept)}"', 1) + out[end:]
-    return out
+    return _drop_main_offset_classes(markup)
 
 
 def reconcile_main_offset(markup: str) -> str:

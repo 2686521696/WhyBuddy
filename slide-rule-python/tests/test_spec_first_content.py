@@ -17,7 +17,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services import spec_first_pipeline as sfp
 from services.design_language import build_style_brief_prompt, render_design_language
-from services.page_shell import check_shell_consistency, unify_shell
+from services.page_shell import (
+    check_shell_consistency,
+    main_offset_tokens,
+    unify_shell,
+)
 from services.spec_page_html import build_page_html_prompt
 from services.spec_tree import build_spec_prompt
 
@@ -82,6 +86,55 @@ class Test内容壳统一:
         h1 = extract_shell(out["pages"]["p1"])["header"]
         assert blank_breadcrumb_current(h1) == h1
         assert "今日" in h1 and "图流" in h1
+
+    def test_剥aside之后不许留下ml64(self):
+        """模型按后台皮套出 aside + main.ml-64。unify 剥 aside 之后
+        leftover 左边空一截（2026-09-01 内容站真机，main.x=256）。
+
+        ⚠ 夹具必须自己带着 aside 和 ml-64。``_content_page`` 的 main
+        不带偏移——删掉清理函数那条照样绿，正是这次漏掉的形状。
+
+        ⚠ body 已经是 flex-col：只把 reconcile 挪到转列之前不够，
+        源页自己写成纵向时 strip_main_offset 照样 bail。
+        """
+        page = (
+            "<!DOCTYPE html><html><head></head>"
+            '<body class="flex flex-col min-h-screen">'
+            '<aside class="fixed inset-y-0 left-0 w-64">侧栏</aside>'
+            '<header class="flex items-center gap-6"><h1>团子日刊</h1>'
+            '<nav class="flex gap-6"><a>今日</a><a>图流</a></nav>'
+            "<span>读者</span></header>"
+            '<main class="ml-64 flex-1">封面</main>'
+            "</body></html>"
+        )
+        wrapped = (
+            page.replace("flex flex-col min-h-screen", "flex min-h-screen").replace(
+                'class="ml-64 flex-1"', 'class="ml-[248px] flex-1"'
+            )
+        )
+        out = unify_shell(
+            {"p1": page, "p2": wrapped}, SPEC, product_archetype="content_app"
+        )
+        for html in out["pages"].values():
+            assert "<aside" not in html.lower()
+            assert main_offset_tokens(html) == []
+        free = unify_shell(
+            {"p1": page, "p2": wrapped}, SPEC, product_archetype="free_app"
+        )
+        for html in free["pages"].values():
+            assert main_offset_tokens(html) == []
+        biz = unify_shell({"p1": page, "p2": page}, SPEC)
+        assert "<aside" in biz["pages"]["p1"].lower()
+        assert main_offset_tokens(biz["pages"]["p1"]) == ["ml-64"]
+
+    def test_剥偏移接在内容壳unify上(self):
+        """函数写对 ≠ 接在剥 aside 之后。改成只调 reconcile_main_offset
+        本条必须红：转成 flex-col 之后那条会直接 return。"""
+        from services import page_shell as ps
+
+        code = _code(ps._unify_shell_content)
+        assert "_drop_main_offset_classes(" in code
+        assert "reconcile_main_offset(" not in code
 
     def test_没选内容原型时桌面仍要侧栏(self):
         """反向：business_app 桌面路径一字不改。"""

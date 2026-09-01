@@ -14,7 +14,7 @@ import inspect
 import re
 from pathlib import Path
 
-from services.bind_hole_freeze import freeze_bind_holes
+from services.bind_hole_freeze import _Index, _scan, freeze_bind_holes
 from services import spec_page_html as sph
 
 
@@ -91,6 +91,50 @@ def test_validate不因对比不够变严():
     )
     assert sph.validate_page_html(html) == []
     assert any("对比" in n for n in sph.guidelines_gate_notes(html))
+
+
+def test_svg自闭合path是兄弟不是套层():
+    """``<path />`` 不是 HTML void。handle_startendtag 只开不关时，
+    第二个 path 变成 svg[0]/path[0]/path[0]，冻孔对错节点。
+
+    ⚠ 表冻孔测例全是 ``<tr>``，``</svg>`` 会把卡住的 path 弹掉，
+    表格碰巧还能对上——判据必须盯图标本身。
+    """
+    html = '<svg><path d="M1"/><path d="M2"/></svg>'
+    paths = [n for n in _scan(html) if n["tag"] == "path"]
+    assert [n["path"] for n in paths] == ["svg[0]/path[0]", "svg[0]/path[1]"]
+
+
+def test_两个图标各自补回自己的data_field():
+    """旧稿 ``<path />``、新稿 ``<path></path>``。套层时两边树形不一样，
+    第二个 data-field 对不上就被丢掉——两边都自闭合时路径碰巧还能对上。
+    """
+    prev = (
+        '<svg><path data-field="home" d="M1"/><path data-field="user" d="M2"/></svg>'
+    )
+    new = '<svg><path d="M1"></path><path d="M2"></path></svg>'
+    out = freeze_bind_holes(prev, new)
+    home = re.search(r"<path\b[^>]*>", out)
+    rest = out[home.end() :] if home else ""
+    second = re.search(r"<path\b[^>]*>", rest)
+    assert home and 'data-field="home"' in home.group(0)
+    assert second and 'data-field="user"' in second.group(0)
+    assert 'data-field="user"' not in home.group(0)
+
+
+def test_成对path结束标签不许把svg弹出():
+    """把 path 加进 _VOID 会让 ``</path>`` 误弹父级。g 必须仍在 svg 下。"""
+    html = '<svg><path data-field="a"></path><g data-field="b"></g></svg>'
+    nodes = {n["tag"]: n for n in _scan(html)}
+    assert nodes["g"]["path"] == "svg[0]/g[0]"
+    assert nodes["path"]["path"] == "svg[0]/path[0]"
+
+
+def test_自闭合非void会出栈():
+    """只写行为测例、不盯调用，会让 handle_startendtag 继续只开不关。"""
+    src = inspect.getsource(_Index.handle_startendtag)
+    code = _code(src)
+    assert "handle_endtag" in code
 
 
 def test_冻孔模块是叶子不依赖services():
