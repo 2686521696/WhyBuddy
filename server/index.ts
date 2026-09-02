@@ -2,6 +2,7 @@
  * SlideRule - Server Entry Point
  * Express + Socket.IO + REST API + Multi-Agent Orchestration
  */
+import { existsSync } from "node:fs";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { applyInternalKeyAlias } from "./config/internal-key-alias.js";
 import express, { type Request, type Response } from "express";
@@ -2458,7 +2459,14 @@ print(json.dumps(getattr(res, "model_dump", lambda: res)() if hasattr(res, "mode
   app.use(express.static(staticPath));
 
   app.get("*", (_req, res) => {
-    res.sendFile(path.join(staticPath, "index.html"));
+    const indexFile = path.join(staticPath, "index.html");
+    // Vite 在 :3000 管 SPA。dev 下 Node 去找 dist/public/index.html
+    // 会 ENOENT 刷屏，把图判/孤岛真告警淹掉（2026-09-02 执行单 P3-2）。
+    if (process.env.NODE_ENV !== "production" && !existsSync(indexFile)) {
+      res.status(404).end();
+      return;
+    }
+    res.sendFile(indexFile);
   });
 
   const port = process.env.PORT || 3000;
