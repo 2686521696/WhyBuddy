@@ -283,9 +283,14 @@ def _normalize_message(message: Message) -> Message:
     if isinstance(content, list):
         return {"role": role, "content": _normalize_content_parts(content), **extras}
     if content is None and extras.get("tool_calls"):
-        # 空正文 + 工具调用：合法。不许在这里塞一个假正文，
-        # 那会让模型以为自己上一轮说过话。
-        return {"role": role, "content": None, **extras}
+        # 空正文 + 工具调用：合法，归一成空串。
+        #
+        # ⚠ 为什么是 ""，不是原样留 None：`_messages_after_forced_write` 合成的
+        #   同形状 assistant 消息本来就写 ""（rehearsal_control 里那条），
+        #   两种形状混着走会让「同一件事两种表示」再长出来。空串是「这一轮没说话」，
+        #   不是替模型编了一句话。调用侧也已经不再写 `content or None`，
+        #   这里是防御性的第二道。
+        return {"role": role, "content": "", **extras}
     raise LlmError("invalid LLM message: content must be a string or content part list", transient=False)
 
 

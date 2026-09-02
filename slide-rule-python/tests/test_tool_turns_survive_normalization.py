@@ -73,18 +73,19 @@ class Test空正文带工具调用是合法的:
     def test_content_为None_且有tool_calls_不抛(self):
         """模型常把话全放进工具参数（control_client 模块头）。
 
-        调用方写的是 `content or None`——空串会变 None。这是 OpenAI 兼容口径，
-        不是错误输入。
+        历史上调用方写 `content or None`，空串会变 None——那是崩的直接原因。
         """
-        msg = {**ASSISTANT_CALL, "content": None}
-        out = _normalize_message(msg)
-        assert out["content"] is None
+        out = _normalize_message({**ASSISTANT_CALL, "content": None})
         assert out.get("tool_calls")
 
-    def test_不许悄悄塞一个假正文(self):
-        """⚠ 别用空串「修」这个问题——那会让模型以为自己上一轮说过话。"""
+    def test_None归一成空串_跟仓里同形状消息一致(self):
+        """⚠ 口径要跟 `_messages_after_forced_write` 合成的那条对齐。
+
+        那条 assistant 消息本来就写 `content: ""`。这里若原样留 None，
+        同一件事就有两种表示——本仓栽过太多次的形状。空串是「这一轮没说话」。
+        """
         out = _normalize_message({**ASSISTANT_CALL, "content": None})
-        assert out["content"] is None, "None 就是 None，不许替模型编一句话"
+        assert out["content"] == "", "应归一成空串，跟仓里既有形状一致"
 
 
 class Test该拒的还得拒:
