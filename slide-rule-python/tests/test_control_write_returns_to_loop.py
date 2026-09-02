@@ -222,6 +222,10 @@ def test_forced_refine_rejoins_loop_after_factory(harness):
         sid,
         goal={"text": "请假系统", "status": "clear"},
         modelVersions=[{"id": "v1", "model": {"pages": []}}],
+        specFirstPages={
+            "spec": {"appName": "请假", "pages": [{"id": "p1", "name": "申请"}]},
+            "pages": {"p1": "<html>旧</html>"},
+        },
     )
 
     def impl(messages, **kw):
@@ -233,6 +237,8 @@ def test_forced_refine_rejoins_loop_after_factory(harness):
         six_fields(sid, "把提交按钮改成红色", forcedTool="refine")
     )
     assert len(harness.helper_calls) == 1
+    assert harness.helper_calls[0].get("profile") == "app"
+    assert harness.helper_calls[0].get("goal_tools") == ["spec"]
     assert harness.llm_calls
     types = event_types(events)
     assert "factory_complete" in types
@@ -241,6 +247,31 @@ def test_forced_refine_rejoins_loop_after_factory(harness):
         for e in events
     )
     assert types[-1] == "complete"
+    saved = load_session(sid)
+    tools = (saved.goal or {}).get("tools") if saved and isinstance(saved.goal, dict) else None
+    assert list(tools or []) == ["spec"], f"按钮精修缺省 spec，实际 {tools}"
+
+
+def test_refine_branch_writes_tools_and_uses_app_profile():
+    """建设单 O-1：变异把 goal['tools'] 或 profile='app' 改回 full → 红。"""
+    src = strip_python(PY_ROOT / "services" / "rehearsal_control.py")
+    at = src.find("if forced == 'refine'")
+    if at < 0:
+        at = src.find('if forced == "refine"')
+    assert at > 0
+    repair_at = src.find("if forced == 'repair'", at)
+    if repair_at < 0:
+        repair_at = src.find('if forced == "repair"', at)
+    body = src[at:repair_at]
+    assert "_set_goal_tools" in body
+    assert "profile='app'" in body or 'profile="app"' in body
+    assert "profile='full'" not in body and 'profile="full"' not in body
+    challenge_at = src.find("if forced == 'challenge'", repair_at)
+    if challenge_at < 0:
+        challenge_at = src.find('if forced == "challenge"', repair_at)
+    repair = src[repair_at:challenge_at]
+    assert "profile='full'" in repair or 'profile="full"' in repair
+    assert "profile='app'" not in repair and 'profile="app"' not in repair
 
 
 def test_workflow_tool_is_listed_and_handoffs_after_scope(harness):
@@ -401,7 +432,12 @@ def test_llm_pages_after_spec_handoffs(harness):
 
 
 def test_after_spec_hop_lists_pages_and_user_hint(harness):
-    """交回后的清单+提示词必须让模型看见 pages。删掉 hint 的 user 消息这条红。"""
+    """SPEC 跳交回：提示词仍说下一跳 pages，但清单必须空——假设卡等确认。
+
+    ⚠ 2026-09-02：交回时若仍列出 pages / scope_card，模型会自己点火或
+      把范围卡弹回来，ComposerDock 有 pendingScope 就不画假设面板，
+      「确认继续」点不着。变异：把 tools=[] 拿掉 → 本条红。
+    """
     sid = new_sid("after-spec-hint")
     seed_session(
         sid,
@@ -426,9 +462,7 @@ def test_after_spec_hop_lists_pages_and_user_hint(harness):
     harness.llm_impl = impl
     harness.post(six_fields(sid, "将做成：请假系统", forcedTool="rehearse"))
     assert harness.llm_calls, "工厂之后没有第二轮 LLM"
-    assert "pages" in seen["names"], f"交回后清单没有 pages：{seen['names']}"
-    assert "spec" not in seen["names"]
-    assert "rehearse" not in seen["names"]
+    assert seen["names"] == [], f"SPEC 跳完还带工具，会跳过假设确认：{seen['names']}"
     assert any("必须调 pages" in u for u in seen["users"]), (
         "提示词没作为 user 指令交回。只写进 system 会被下一句用户话盖掉。"
     )

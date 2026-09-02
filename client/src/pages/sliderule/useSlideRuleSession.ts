@@ -108,6 +108,7 @@ import {
 } from "./midrun-queue";
 import {
   mergeAssumptions,
+  parseSpecAssumptions,
   revisePhrase,
   settleAssumption,
   type SpecAssumption,
@@ -571,6 +572,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const requestRehearsalRef = useRef<
     (userText: string) => Promise<void>
   >(async () => {});
+  const runTurnRef = useRef<
+    (
+      userText: string,
+      intervention?: UserIntervention,
+      resumeRun?: { runId: string },
+      mode?: "repair",
+      forcedTool?: string
+    ) => Promise<void>
+  >(async () => {});
   /**
    * 版本回退/前进是否有请求在飞（2026-08-16 线上实测）。
    *
@@ -627,6 +637,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
    */
   const overlayBlocksQueueFlush = () =>
     Boolean(pendingScopeRef.current || pendingAskRef.current);
+  /**
+   * 假设卡确认后的下一跳。只在 runTurn 过了 isRunning 闸之后才取走——
+   * ⚠ 2026-09-02 真机：flush 先把 flag 清掉再进 runTurn，isRunning 仍真时
+   *   直接 return，forcedTool=pages 和排队文本一起丢了，控制面去 planning。
+   */
+  const pendingForcedToolRef = useRef<string | undefined>(undefined);
   const flushQueuedControlTurn = () => {
     if (overlayBlocksQueueFlush()) return;
     /* ⚠ 合成**一条**再发：三句补充发三轮 = 烧三次工厂，而且前两轮的产物
@@ -636,6 +652,56 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     setQueuedTurns([]);
     if (text) void requestRehearsalRef.current(text);
   };
+
+  /**
+   * 假设卡「确认继续」：选完才往下。
+   *
+   * ⚠ 闸可能还在 pending（人确认得比安全点早）：一律试放行，不许只在
+   *   `runPaused` 为真时才放。2026-09-02 那条竞态：卡已经撤了，工厂还在
+   *   闸上等满 30 分钟。release 在闸不在时静默返回。
+   *
+   * 已经 hop 完（空闲）= 把改动和「继续」合成一条发给控制面——不能再
+   * 挂在队列上等发送键（queued-turn-has-an-exit-when-idle 那场事故）。
+   */
+  const confirmSpecAssumptions = useCallback(
+    (picks: Record<string, string>) => {
+      const rows =
+        specAssumptionsRef.current.length > 0
+          ? specAssumptionsRef.current
+          : parseSpecAssumptions(
+              (
+                sessionState as {
+                  specFirstPages?: { spec?: { assumptions?: unknown } };
+                }
+              ).specFirstPages?.spec?.assumptions
+            );
+      for (const id of Object.keys(picks)) {
+        if (id) settledAssumptionIdsRef.current.add(id);
+      }
+      for (const row of rows) {
+        const pick = String(picks[row.id] ?? row.decision).trim();
+        if (pick && pick !== row.decision) {
+          const phrase = revisePhrase(row, pick);
+          if (phrase) pushQueuedTurn(phrase);
+        }
+        settledAssumptionIdsRef.current.add(row.id);
+      }
+      applySpecAssumptions([]);
+      // 无论推演中还是空闲，确认 = 要继续。只 release 不排队的话，
+      // P1-1 spec-only hop 结束后面板没了、下一跳也不会自己开。
+      pendingForcedToolRef.current = "pages";
+      pushQueuedTurn("假设已确认。继续画页面。");
+      if (isRunningRef.current) {
+        void releaseRun({ skip: true });
+      } else {
+        const text = mergeQueuedTurns(queuedTurnRef.current);
+        queuedTurnRef.current = [];
+        setQueuedTurns([]);
+        if (text) void runTurnRef.current(text, undefined, undefined, undefined, "pages");
+      }
+    },
+    [applySpecAssumptions, releaseRun, sessionState]
+  );
 
   const clearPendingScope = () => {
     pendingScopeRef.current = null;
@@ -932,7 +998,22 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
 
   const applyPersistedState = useCallback((state: V5SessionState) => {
     setSessionState(state);
-  }, []);
+    // 选完再继续：SSE 漏了也要从落库 spec 把卡摊出来。按 id 并，
+    // 已确认的不回来。变异：删掉这一段 → hop 结束后面板空、用户没得选。
+    const rows = parseSpecAssumptions(
+      (state as { specFirstPages?: { spec?: { assumptions?: unknown } } })
+        .specFirstPages?.spec?.assumptions
+    );
+    if (rows.length) {
+      applySpecAssumptions(
+        mergeAssumptions(
+          specAssumptionsRef.current,
+          rows,
+          settledAssumptionIdsRef.current
+        )
+      );
+    }
+  }, [applySpecAssumptions]);
 
   // E25：显式取消 = 真正杀掉服务端后台 run（不再只是断开本地连接）
   const cancelActiveRunOnServer = useCallback(() => {
@@ -959,8 +1040,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
 
     if (isRunningRef.current) {
       // 运行中再入是排队层的事，这里 fail-closed 拒第二发，不杀工厂。
+      // ⚠ 不许在这里把 pendingForcedToolRef 清掉：确认继续排队等 finally
+      //   flush，flag 必须留到下一次真正进闸的 runTurn。
       return;
     }
+    const hop = forcedTool || pendingForcedToolRef.current;
+    pendingForcedToolRef.current = undefined;
 
     const turnId = `turn-${Date.now()}`;
     const turnStartMs = Date.now(); // E16 收口句：本轮真实计时
@@ -1578,6 +1663,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                     settledAssumptionIdsRef.current
                   )
                 );
+                // 停闸交给 Python `_emit_assumptions` → `hold_current`。
+                // ⚠ 2026-09-02 真机：这里 fetch /hold 会让假设卡整轮不出现
+                //   （debug-collector 拦 fetch，SSE 这条回调等于把自己掐死）。
               },
               onSpecPage: page => {
                 applyRehearsalEvent(
@@ -1810,7 +1898,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             userText,
             intervention,
             mode,
-            forcedTool
+            hop || forcedTool
           );
           const postedText =
             controlUserTextForSlash(
@@ -1831,6 +1919,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             : await driveStream(preparedState, postedText, {
                 ...streamOpts,
                 forcedTool: inferredTool,
+                ...(inferredTool === "pages" ? { tools: ["pages"] } : {}),
                 ...(restoreId ? { versionId: restoreId } : {}),
                 /* ⚠ 质疑指向哪件产物、澄清卡答掉了哪几个缺口，**必须跟着
                    POST 走**。2026-08-27 评审：这两样在客户端都算好了，
@@ -2802,6 +2891,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     },
     [uiTurns, sessionState.sessionId, sessionId, applyPersistedState]
   );
+  runTurnRef.current = runTurn;
 
   // 无理由：只预填作曲家（产品面禁止 window.prompt）。有理由：整轮
   // runTurn + intent challenge，不是局部重跑。
@@ -2916,6 +3006,16 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     [sessionState.coverageGaps, requestRehearsal]
   );
 
+  const specAssumptionsView = useMemo(() => {
+    if (specAssumptions.length > 0) return specAssumptions;
+    const rows = parseSpecAssumptions(
+      (sessionState as { specFirstPages?: { spec?: { assumptions?: unknown } } })
+        .specFirstPages?.spec?.assumptions
+    );
+    if (!rows.length) return specAssumptions;
+    return mergeAssumptions([], rows, settledAssumptionIdsRef.current);
+  }, [specAssumptions, sessionState]);
+
   return {
     goal,
     sessionHydrated,
@@ -2927,9 +3027,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     /** 推演中补的话（排队到下一轮）。看得见、撤得掉——见 midrun-queue 头注。 */
     queuedTurns,
     removeQueuedTurn,
-    specAssumptions,
+    specAssumptions: specAssumptionsView,
     settleSpecAssumption,
     reviseSpecAssumption,
+    confirmSpecAssumptions,
     // 「先别往下跑」：见 holdRun 头注（跟停止不是同一件事）
     holdRun,
     runPaused,

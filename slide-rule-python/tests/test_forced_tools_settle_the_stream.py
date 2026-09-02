@@ -138,13 +138,21 @@ class TestSettledGuardItself:
         out = self._drain([{"type": "control_tool_result", "tool": "x"}])
         assert [e["type"] for e in out] == ["control_tool_result", "complete"]
 
-    def test_does_not_append_after_a_handoff_or_a_complete(self):
-        """反向：已经收尾的不许再补。
+    def test_handoff_is_not_host_terminal(self):
+        """handoff 只是 WRITE 开始。变异：把 control_handoff_factory 加回
+        `_TERMINAL_EVENTS` → 本条红（不再补 complete）。
 
-        补了会让客户端把中途状态当最终状态——交棒之后工厂还要往下发。
+        ⚠ 2026-09-02：确认继续 forced pages，守卫把 handoff 当终局，工厂
+          嵌在同一条 SSE 里跑完后不补 complete，客户端报「推演中断」。
         """
+        from services.rehearsal_control import _TERMINAL_EVENTS
+
+        assert "control_handoff_factory" not in _TERMINAL_EVENTS
         handed = self._drain([{"type": "control_handoff_factory", "runId": "r1"}])
-        assert [e["type"] for e in handed] == ["control_handoff_factory"]
+        assert [e["type"] for e in handed] == ["control_handoff_factory", "complete"]
+
+    def test_does_not_append_after_a_complete(self):
+        """反向：已经收尾的不许再补。"""
         done = self._drain([{"type": "complete", "state": {}}])
         assert [e["type"] for e in done] == ["complete"]
 

@@ -12,15 +12,11 @@
  * 还是工号、审批一级还是两级、库存下单扣还是发货扣。它们此前一直是静默的：
  * 模型自己定了，一个字不说，用户十分钟后打开成品才发现做错了。
  *
- * ## 为什么不是"再弹一张卡等回答"
+ * ## 2026-09-02：改成选完再继续
  *
- * 因为它**不该拦**。工厂中途停下来等回答会撞上闭环的 fail-closed 语义
- * （停下来算不算没闭环、恢复算不算同一轮）。所以这里选的是：推演照跑，
- * 决定摊开摆着，用户想改就把那条改动接进**已经验证过的中途排队**
- * （midrun-queue，本轮结束自动发出）。「用户 → AI」那条路一行没动。
- *
- * ⚠ 所以本模块**不产生任何新的等待状态**。没有 pending、没有 blocking，
- *   用户从头到尾可以什么都不点。不点 = 就按模型定的做，这是个合法结局。
+ * 真机上「只摊开不拦」不好用——用户对着一排改成 X 不知道怎么往下走。
+ * 产品裁决：做成跟点火前澄清卡同一套权力，一题一题选，点「确认继续」
+ * 才放行。工厂用现成的协作式暂停（run_pause）在安全点等，不再边跑边点。
  */
 
 export type SpecAssumption = {
@@ -148,6 +144,30 @@ export function settleAssumption(
 }
 
 /**
+ * SSE / 落库 spec 两头同一份清洗。形状不对宁可少一张，不许把 undefined 摊上屏。
+ *
+ * ⚠ 2026-09-02 真机：P1-1 spec-only hop 结束很快，`spec_assumption` 事件
+ *   有时没赶上前端还在听的那截流，卡整轮不出现。spec 已经写进
+ *   specFirstPages.spec.assumptions——落库那份必须也能把卡摊出来。
+ */
+export function parseSpecAssumptions(rows: unknown): SpecAssumption[] {
+  const list = Array.isArray(rows) ? rows : [];
+  return (
+    list.filter(r => !!r && typeof r === "object") as Array<Record<string, unknown>>
+  )
+    .map((r, i) => ({
+      id: String(r.id || `a${i + 1}`),
+      topic: String(r.topic || "").trim(),
+      decision: String(r.decision || "").trim(),
+      alternatives: (lenientStringList(r.alternatives) ?? [])
+        .map(a => a.trim())
+        .filter(Boolean),
+      why: String(r.why || "").trim(),
+    }))
+    .filter(r => r.topic && r.decision);
+}
+
+/**
  * 面板抬头：**说这一刻真会发生的事**（2026-08-28）。
  *
  * ## 事故
@@ -173,6 +193,6 @@ export function settleAssumption(
  */
 export function assumptionsHeading(count: number, isRunning: boolean): string {
   return isRunning
-    ? `推演中我替你定了这几件事（${count}）· 不改就按这个做`
-    : `这一轮已按这几条做了（${count}）· 改动会排进新一轮`;
+    ? `待确认（${count}）· 选完再继续`
+    : `请确认这些假设（${count}）· 选完再继续`;
 }

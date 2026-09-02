@@ -101,6 +101,18 @@ describe("六段接线一段都不能少", () => {
     expect(h).toContain("releaseRun({ skip: true })");
     expect(h).toContain("releaseRun({ answer:");
   });
+
+  it("确认继续在跑着时一律试放行，不许只认 runPaused", () => {
+    /* ⚠ 人确认得比安全点早：闸还在 pending，runPaused 仍是 false。
+       只在 runPaused 时 release → 卡撤了工厂还在闸上等满 30 分钟。 */
+    const h = HOOK();
+    const at = h.indexOf("const confirmSpecAssumptions");
+    expect(at).toBeGreaterThan(-1);
+    const body = h.slice(at, at + 900);
+    expect(body).toContain("isRunningRef.current");
+    expect(body).toContain("releaseRun({ skip: true })");
+    expect(body).not.toContain("runPaused");
+  });
 });
 
 describe("暂停不是停止", () => {

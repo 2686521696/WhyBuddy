@@ -218,6 +218,14 @@ def _emit_assumptions(spec: Any) -> None:
         if not rows:
             return
         sink(list(rows))
+        # 选完再继续：假设一出就请求停在下一安全点。闸没绑 / 暂停关了
+        # 都静默——不许「顺路说一声」打死已经跑了两分钟的链。
+        try:
+            from .run_pause import hold_current
+
+            hold_current()
+        except Exception:  # noqa: BLE001
+            pass
     except Exception as exc:  # noqa: BLE001 — 见 docstring
         _safe_print(f"[spec_first_pipeline] 假设出口异常（fail-open，不拦推演）：{exc}")
 
@@ -1402,7 +1410,8 @@ def run_spec_first(
     arch = str(product_archetype or "").strip()
     print(
         f"[spec_first_pipeline] preferredDevice={device} "
-        f"productArchetype={arch or 'business_app'} capabilityPlan={plan.name}"
+        f"productArchetype={arch or 'business_app'} capabilityPlan={plan.name} "
+        f"tools={','.join(plan.tools)}"
     )
     sink = _with_device(on_page or _page_sink_var.get(), device)
     pages: Dict[str, str] = {}

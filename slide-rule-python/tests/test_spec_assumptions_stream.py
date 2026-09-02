@@ -16,13 +16,14 @@ A/B 两轮治好了前半句（问题从这句需求里长出来、答案真进�
 审批一级还是两级、库存下单扣还是发货扣。它们此前一直是静默的：模型自己
 定了，一个字都不说；用户十分钟后打开成品才发现做错了，再从头精修一轮。
 
-## 为什么不 park
+## 为什么不 park（2026-09-02：改成选完再继续，但仍不 park）
 
-让工厂中途停下来等回答，会当场撞上闭环的 fail-closed 语义（停下来算不算
-没闭环、恢复算不算同一轮）。这里选的是**不停**：模型该怎么定还怎么定，
-只是把定的内容如实报出来，前端非阻塞地摆在旁边，用户要改就走已经验证过的
-中途排队（fb728f8）。所以"用户 → AI"的方向一行都没动，新增的只有反向的
-一条只读通道。
+让工厂中途 **park** 等回答，会当场撞上闭环的 fail-closed 语义（停下来算不算
+没闭环、恢复算不算同一轮）。模型该怎么定还怎么定，spec 照常写完整。
+
+拦的是下一安全点上的协作式暂停（`hold_current`），不是终止性 park：超时按
+跳过收口，闭环照样能走到 runtimeClosure。前端卡做成跟点火前澄清同一套权力
+——一题一题选，点「确认继续」才放行。
 
 ## 这个文件守的三段接线
 
@@ -386,6 +387,55 @@ def test_出口炸了不许拖垮推演():
 
     # sink 没装（脚本方言、老调用方）同样不抛
     sfp._emit_assumptions({"assumptions": ROWS})
+
+
+def test_有假设就请求停在下一安全点():
+    """2026-09-02：选完再继续。假设一出必须 hold。
+
+    变异：把 `_emit_assumptions` 里的 `hold_current()` 删掉 → 本条红。
+    只 grep 源码会打空（hold_current 三个字在注释里也有），所以真绑位子再叫。
+    """
+    from services import run_pause
+
+    slot = run_pause.new_slot()
+    run_pause.bind(slot)
+    sfp.set_assumption_sink(lambda _rows: None)
+    try:
+        sfp._emit_assumptions({"assumptions": ROWS})
+        assert slot.pending is not None, "假设出了但没请求暂停——工厂会边跑边点"
+        assert slot.active is None, "安全点还没到，闸该停在 pending 不是 active"
+    finally:
+        sfp.set_assumption_sink(None)
+        run_pause.bind(None)
+
+
+def test_没有假设不请求暂停():
+    """反向：空清单 / 没这个字段，不许无故把工厂停住。"""
+    from services import run_pause
+
+    slot = run_pause.new_slot()
+    run_pause.bind(slot)
+    sfp.set_assumption_sink(lambda _rows: None)
+    try:
+        sfp._emit_assumptions({"assumptions": []})
+        assert slot.pending is None and slot.active is None
+        sfp._emit_assumptions({"appName": "巡检通"})
+        assert slot.pending is None and slot.active is None
+    finally:
+        sfp.set_assumption_sink(None)
+        run_pause.bind(None)
+
+
+def test_没绑暂停位子时出口照样不炸():
+    """fail-open：脚本方言 / 测试没绑 slot，不许把推演打死。"""
+    from services import run_pause
+
+    run_pause.bind(None)
+    sfp.set_assumption_sink(lambda _rows: None)
+    try:
+        sfp._emit_assumptions({"assumptions": ROWS})  # 不抛就算过
+    finally:
+        sfp.set_assumption_sink(None)
 
 
 _MIN_SPEC = {

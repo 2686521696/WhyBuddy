@@ -92,11 +92,12 @@ try {
   //   sidebar-session-new。点错就会留在 sliderule-v51-product 上，
   //   上一趟还在「推演中」，范围卡「开始推演」disabled，脚本干等 30s。
   const fresh = page.locator('[data-testid="sidebar-session-new"]').first();
-  if (await fresh.count()) {
-    await fresh.click();
-    await page.waitForTimeout(2500);
-    await shot(page, "新建会话");
+  for (let i = 0; i < 4; i += 1) {
+    if (await page.getByText("想推演成什么应用").count()) break;
+    if (await fresh.count()) await fresh.click().catch(() => {});
+    await page.waitForTimeout(2000);
   }
+  await shot(page, "新建会话");
   for (let i = 0; i < 4; i += 1) {
     const running = await page.evaluate(() =>
       /推演中/.test(document.body.innerText)
@@ -228,6 +229,7 @@ try {
    *   有没有真的出现在**排队条**里。不查内部状态——本仓第五条。
    */
   let sawAssumptions = false;
+  let lastClickAt = 0;
   let sawOrch = false;
   let lastStep = "";
   while (Date.now() - started < DEADLINE_MS) {
@@ -274,35 +276,62 @@ try {
     }
     if (state.interrupted) { log("!! 出现「推演中断」"); await shot(page, `中断-${secs}s`); break; }
 
-    if (!sawAssumptions && (await page.locator('[data-testid="sliderule-assumptions"]').count())) {
-      sawAssumptions = true;
+    if (await page.locator('[data-testid="sliderule-assumptions"]').count()) {
       const rows = await page.evaluate(() =>
         [...document.querySelectorAll('[data-testid="sliderule-assumption"]')].map(
           e => (e.textContent || "").trim().slice(0, 90)
         )
       );
-      log(`伴随式澄清出现（${secs}s，第 2 步之后）：`);
-      for (const r of rows) log("   ·", r);
-      await shot(page, `假设面板-${secs}s`);
-
-      const revise = page.locator('[data-testid="sliderule-assumption-revise"]').first();
+      const pager = (
+        (await page.locator('[data-testid="sliderule-assumption-pager"]').textContent()) || ""
+      ).trim();
+      if (!sawAssumptions) {
+        sawAssumptions = true;
+        log(`伴随式澄清出现（${secs}s，第 2 步之后）：`);
+        for (const r of rows) log("   ·", r);
+        await shot(page, `假设面板-${secs}s`);
+        log(`假设卡分页：${pager || "（没有 pager）"}`);
+      }
       const clickAssumption = process.env.E2E_CLICK_ASSUMPTION === "1";
-      if (clickAssumption && (await revise.count())) {
-        const label = (await revise.textContent()) || "";
-        await revise.click();
-        await page.waitForTimeout(800);
-        const queued = await page.evaluate(() =>
-          [...document.querySelectorAll('[data-testid="sliderule-queued-turn"]')].map(
-            e => (e.textContent || "").trim()
-          )
+      const running = await page.evaluate(() =>
+        /推演中/.test(document.body.innerText)
+      );
+      // 空闲且卡还在就再确认。上一趟点完同一张 1/2 弹回来就不再点，pages 跳开不了。
+      if (clickAssumption && !running && Date.now() - lastClickAt > 20000) {
+        const submit = page.locator('[data-testid="sliderule-assumption-submit"]');
+        const next = page.locator('[data-testid="sliderule-assumption-next"]');
+        for (let i = 0; i < 8 && (await next.count()) && (await next.isVisible()); i += 1) {
+          await next.click();
+          await page.waitForTimeout(300);
+        }
+        if (await submit.count()) {
+          const nextTurn = page.waitForResponse(
+            r =>
+              (r.url().includes("/control-turn-stream") ||
+                r.url().includes("/drive-full-stream")) &&
+              r.request().method() === "POST",
+            { timeout: 45000 }
+          );
+          await submit.click();
+          const postedNext = await nextTurn.catch(() => null);
+          await page.waitForTimeout(800);
+          lastClickAt = Date.now();
+          const still = await page.locator('[data-testid="sliderule-assumptions"]').count();
+          log(
+            `点了「确认继续」（${pager}）→ 卡${still ? "还在" : "已收走"} · 下一跳 ${postedNext ? `控制面 ${postedNext.status()}` : "未见 control-turn-stream"}`
+          );
+          await shot(page, `确认继续-${secs}s`);
+        } else {
+          log("!! 假设卡没有「确认继续」——选完再继续的 CTA 丢了");
+        }
+      } else if (!clickAssumption && !running) {
+        const hasSubmit = await page.locator('[data-testid="sliderule-assumption-submit"]').count();
+        const hasNext = await page.locator('[data-testid="sliderule-assumption-next"]').count();
+        log(
+          hasSubmit || hasNext
+            ? `本趟不点确认（E2E_CLICK_ASSUMPTION 未开）；卡上有 ${hasNext ? "下一步 " : ""}${hasSubmit ? "确认继续" : ""}`
+            : "!! 假设卡没有下一步/确认继续——还是旧的边跑边点"
         );
-        log(`点了「${label.trim()}」→ 排队条现在有 ${queued.length} 条：`, queued);
-        await shot(page, `改一条进排队-${secs}s`);
-        if (queued.length === 0) log("!! 点了个寂寞——那句话没进排队条");
-      } else if (!clickAssumption) {
-        log("本趟不点假设改写（E2E_CLICK_ASSUMPTION 未开），避免搅话题");
-      } else {
-        log("这一轮的假设没有备选做法（模型只是知会一声），跳过点击");
       }
     }
     /*

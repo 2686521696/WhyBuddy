@@ -524,7 +524,13 @@ async def _invoke_control_llm(
 #   紧挨着的 `fork_variant` 有 `yield _complete(state)`，注释还写着
 #   「不 yield 等于点了没反应」，只有它漏了。
 #   所以不再指望每个分支各自记得：**在 forced 这条总出口上兜一次**。
-_TERMINAL_EVENTS = ("complete", "control_handoff_factory")
+#
+# ⚠ 2026-09-02 真机：假设卡「确认继续」forcedTool=pages。第一版把
+#   `control_handoff_factory` 也算终局——那是「交棒后工厂另开一条 SSE」
+#   的旧合同。现在 nest=True，工厂事件还在同一条流里，handoff 只是
+#   WRITE 开始。`_settled` 见了它就不再补 `complete`，工厂跑完流自然
+#   结束，客户端报「推演中断」。host 终局只认 `complete`。
+_TERMINAL_EVENTS = ("complete",)
 
 MAX_TOOL_ROUNDS = 8
 MAX_CHEAP_TOKENS = 8000
@@ -1097,7 +1103,8 @@ async def _settled(
     事（比如版本回退）原地抹掉。
 
     ⚠ 兜底只在**没出过**终局事件时补一个，不是无脑追加：多发一个 complete
-      会让客户端把中途状态当最终状态（handoff 之后工厂还要继续发）。
+      会让客户端把中途状态当最终状态。handoff 不是终局（工厂还在同一条
+      SSE 里）——见 `_TERMINAL_EVENTS` 2026-09-02 那条。
     """
     settled = False
     async for event in events:
@@ -1808,6 +1815,7 @@ async def _handoff_factory(
         repair=repair,
         profile=profile,  # type: ignore[arg-type]
         max_loops=max_loops,
+        goal_tools=goal.get("tools"),
         require_session_id=True,
         **charter_kw,
     )
@@ -2446,6 +2454,11 @@ async def _resume_control_llm_after_write(
     if tool_body is None:
         yield {"type": "control_tool_result", "tool": tool, **body}
     messages = _messages_after_forced_write(state, user_text, tool, body)
+    # SPEC 单跳之后假设卡还在等「确认继续」。交回时若仍带工具，模型会
+    # 调 pages（跳过确认）或 scope_card（ComposerDock 有 pendingScope
+    # 就不画假设面板）。2026-09-02 真机：钟 2:done 后范围卡回来，确认
+    # 继续点不着。这一轮只许说话。
+    spec_waiting = tool in ("spec", "rehearse") and not _has_pages(state)
     async for event in _control_llm_loop(
         state,
         messages,
@@ -2458,10 +2471,9 @@ async def _resume_control_llm_after_write(
         started=time.monotonic(),
         cheap_tokens=0,
         empty_text=(
-            POST_SPEC_HOP_FALLBACK
-            if (tool in ("spec", "rehearse") and not _has_pages(state))
-            else POST_WRITE_FALLBACK
+            POST_SPEC_HOP_FALLBACK if spec_waiting else POST_WRITE_FALLBACK
         ),
+        tools=[] if spec_waiting else None,
     ):
         yield event
 
@@ -2479,8 +2491,12 @@ async def _control_llm_loop(
     started: float,
     cheap_tokens: int,
     empty_text: Optional[str] = None,
+    tools: Optional[List[Any]] = None,
 ) -> AsyncIterator[Dict[str, Any]]:
-    """控制面 host 循环。WRITE 交回后再给便宜思考。"""
+    """控制面 host 循环。WRITE 交回后再给便宜思考。
+
+    tools=None：用本轮清单。tools=[]：只许说话（SPEC 跳完等假设确认）。
+    """
 
     async def _maybe_over_cap() -> Optional[Dict[str, Any]]:
         """到顶了就返回结构化的停止信息，没到顶返回 None。
@@ -2512,7 +2528,10 @@ async def _control_llm_loop(
                 ):
                     yield event
                 return
-            result = await _invoke_control_llm(messages, tools=list_control_tools(state))
+            result = await _invoke_control_llm(
+                messages,
+                tools=list_control_tools(state) if tools is None else list(tools),
+            )
             cheap_tokens += _usage_tokens(getattr(result, "usage", None))
             capped = await _maybe_over_cap()
             if capped:
@@ -2526,6 +2545,9 @@ async def _control_llm_loop(
                 for call in (result.tool_calls or [])
                 if (call.get("name") or "") in CLOSED_TOOLS
             ]
+            if tools == []:
+                # 只许说话：夹具/模型仍可能塞 tool_calls，不许再 park / 点火。
+                calls = []
             content = (result.content or "").strip()
             if not calls:
                 text = content or empty_text or CANNED_FAILURE
@@ -2539,7 +2561,11 @@ async def _control_llm_loop(
 
             assistant_msg: Dict[str, Any] = {
                 "role": "assistant",
-                "content": content or None,
+                # ⚠ 2026-09-02 真机：`content or None` 在模型只回 tool_calls
+                #   时变成 None，下一轮 `_normalize_message` 直接抛
+                #   「content must be a string or content part list」，
+                #   工厂后的控制面收尾整段死掉。空串是合法的。
+                "content": content,
                 "tool_calls": [
                     {
                         "id": call.get("id") or f"call-{i}",
@@ -2626,6 +2652,9 @@ async def _control_llm_loop(
                         else POST_WRITE_FALLBACK
                     )
                 )
+                if not _has_pages(state):
+                    # 成对：LLM 分发 spec 之后同样不许再调 scope_card / pages。
+                    tools = []
         rounds_stop = stop_wire(
             ControlStopReason.TOOL_ROUNDS, limit=MAX_TOOL_ROUNDS, used=MAX_TOOL_ROUNDS
         )
@@ -2808,6 +2837,7 @@ async def _run_control_turn_body(
 
     if forced == "repair":
         # 写权限：forcedTool 绕过 _dispatch_tool 直接进工厂，scope 要在这里设。
+        # repair 走覆盖门选材（pick_repair_capabilities），profile=full 不动。
         handed = False
         with tool_scope_scope("repair"):
             async for event in _handoff_factory(
@@ -2846,20 +2876,27 @@ async def _run_control_turn_body(
             yield event
         return
 
-    if forced in CLOSED_TOOLS:
-        # 其余 forced 工具仍跳过 LLM，走一圈执行器。
-        tool_args: Dict[str, Any] = {}
-        if forced == "restore_version":
-            vid = str(
-                payload.get("versionId") or payload.get("version_id") or ""
-            ).strip()
-            if vid:
-                tool_args["versionId"] = vid
-        async for event in _settled(
-            state,
-            _dispatch_tool(
+    if forced in FACTORY_HOPS:
+        # 假设卡「确认继续」= forcedTool pages。点火前跳过控制面 LLM，
+        # 工厂收尾必须交回 host（跟 rehearse/refine/repair 同一份合同）。
+        #
+        # ⚠ 2026-09-02 真机两刀：
+        #   1. 这里没套 tool_scope_scope，assert_may_write_model 把未声明
+        #      工具当 READ 抛掉。流断了，控制面下一次又去 planning。
+        #   2. 走 `_settled(_dispatch_tool)` 后直接 return。nest=True 把
+        #      工厂 complete 改名 factory_complete，host 再也没有 complete，
+        #      客户端 14 秒后报「推演中断」。rehearse 那条有 resume，这一条漏了。
+        print(
+            f"[control] forced hop={forced} hasSpec={int(_has_spec(state))} "
+            f"hasPages={int(_has_pages(state))}",
+            flush=True,
+        )
+        handed = False
+        tool_body: Optional[Dict[str, Any]] = None
+        with tool_scope_scope(forced):
+            async for event in _dispatch_tool(
                 forced,
-                tool_args,
+                {},
                 state,
                 user_text,
                 installed_skills,
@@ -2867,9 +2904,61 @@ async def _run_control_turn_body(
                 preferred_device,
                 design_system_id,
                 original_goal,
-            ),
+            ):
+                yield event
+                et = str(event.get("type") or "")
+                if et == "control_handoff_factory":
+                    handed = True
+                elif et == "control_tool_result":
+                    tool_body = {k: v for k, v in event.items() if k != "type"}
+        if not handed:
+            return
+        async for event in _resume_control_llm_after_write(
+            state,
+            user_text,
+            forced,
+            tool_body,
+            installed_skills=installed_skills,
+            active_connectors=active_connectors,
+            preferred_device=preferred_device,
+            design_system_id=design_system_id,
+            original_goal=original_goal,
         ):
             yield event
+        return
+
+    if forced in CLOSED_TOOLS:
+        # 其余 forced 工具仍跳过 LLM，走一圈执行器。
+        #
+        # ⚠ 2026-09-02 真机：假设卡「确认继续」forcedTool=pages，这里没套
+        #   tool_scope_scope，assert_may_write_model 把未声明工具当 READ 抛掉。
+        #   流断了，控制面下一次又去 planning / 起草 SPEC，页面框一直 0。
+        #   tool_scope_scope 头注写着「两条分发路径都要用」——LLM 那条有，
+        #   这一条漏了（CLAUDE.md §4）。pages 已改走 FACTORY_HOPS 那支；
+        #   restore / inspect 仍走这里，闸不能拆。
+        tool_args: Dict[str, Any] = {}
+        if forced == "restore_version":
+            vid = str(
+                payload.get("versionId") or payload.get("version_id") or ""
+            ).strip()
+            if vid:
+                tool_args["versionId"] = vid
+        with tool_scope_scope(forced):
+            async for event in _settled(
+                state,
+                _dispatch_tool(
+                    forced,
+                    tool_args,
+                    state,
+                    user_text,
+                    installed_skills,
+                    active_connectors,
+                    preferred_device,
+                    design_system_id,
+                    original_goal,
+                ),
+            ):
+                yield event
         return
 
     messages: List[Dict[str, Any]] = [

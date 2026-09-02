@@ -80,11 +80,12 @@ claw-code 把「问了人没人答」列成**六个已知故障场景之一**
 只走一次，还不行才升级喊人，每次尝试都留一条结构化事件。见
 `unresolved_recovery` 与 `RecoveryLedger`。
 
-## 还没解决的
+## 产品判断（2026-09-02 已拍板）
 
-  - **产品判断**：哪些澄清值得主动拦。2026-08-28 复查发现 `_ASSUMPTIONS_ASK`
-    的入选门槛本来就是「改了产品会长得不一样」，能上卡的**本来就全是结构
-    性的**，再分一档收益很小。倾向于不做，等人拍板。
+  - **伴随式假设值得主动拦。** 入选门槛本来就是「改了产品会长得不一样」，
+    能上卡的全是结构性的。真机上「只摊开不拦」用户对着一排改成 X 不知道
+    怎么继续——做成跟点火前澄清卡同一套权力：一题一题选，点「确认继续」
+    才放行。`spec_first_pipeline._emit_assumptions` 出卡时调 `hold_current()`。
   - **关页面 ≠ 取消**：孤儿看门狗（默认 600s 无人观看就 `request_cancel`）
     跟暂停闸是两件事。暂停等人时不烧 LLM，关页面不该把这一轮判死——
     标成没人在场，超时按跳过收口，这一轮接着跑完。看门狗自己守着
@@ -451,6 +452,14 @@ def request_hold(slot: Optional[PauseSlot], budget: Optional[PauseBudget] = None
         return existing
     slot.pending = PauseGate(budget)
     return slot.pending
+
+
+def hold_current() -> None:
+    """假设出口：有结构性决定时主动拦到下一安全点。失败不许拖垮推演。"""
+    try:
+        request_hold(_SLOT.get())
+    except Exception:  # noqa: BLE001
+        return
 
 
 def take_hold() -> Optional[PauseGate]:

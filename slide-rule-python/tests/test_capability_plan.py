@@ -194,6 +194,12 @@ def test_clip_factory_tools_puts_spec_back_on_a_new_run():
     ) == ("pages",)
 
 
+def test_clip_factory_tools_single_hop_does_not_inject_spec():
+    """建设单 O-4：单跳不在菜单里塞 spec。变异：把 len(chosen) != 1 删掉 → 红。"""
+    assert cp.clip_factory_tools([{"capabilityId": "bind"}], cp.TOOLS) == ("bind",)
+    assert cp.clip_factory_tools([{"capabilityId": "pages"}], cp.TOOLS) == ("pages",)
+
+
 def _stub_pipeline(monkeypatch) -> dict:
     seen: dict = {"bind": 0, "spec": 0, "pages": 0}
 

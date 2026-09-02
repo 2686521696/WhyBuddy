@@ -1002,6 +1002,7 @@ function SlideRuleUnified({
   specAssumptions = [],
   settleSpecAssumption,
   reviseSpecAssumption,
+  confirmSpecAssumptions,
   holdRun,
   runPaused,
   confirmControlScope,
@@ -1071,10 +1072,11 @@ function SlideRuleUnified({
   /** 推演中补的话（排队到下一轮）。看得见、撤得掉——见 midrun-queue 头注。 */
   queuedTurns?: string[];
   removeQueuedTurn?: (index: number) => void;
-  /** 伴随式澄清：推演中模型替用户定下的事。不拦、不等——见 AssumptionStrip 头注。 */
+  /** SPEC 分叉：选完再继续。 */
   specAssumptions?: SpecAssumption[];
   settleSpecAssumption?: (id: string) => void;
   reviseSpecAssumption?: (id: string, alternative: string) => void;
+  confirmSpecAssumptions?: (picks: Record<string, string>) => void;
   /** 「先别往下跑」：在下一个安全点停住这一轮。**不是停止**——见
    *  useSlideRuleSession.holdRun 头注（停止是取消，这一轮判死）。 */
   holdRun?: () => void;
@@ -1288,6 +1290,7 @@ function SlideRuleUnified({
                         onSettleAssumption={settleSpecAssumption}
                         onHoldRun={holdRun}
                         runPaused={runPaused}
+                        onConfirmAssumptions={confirmSpecAssumptions}
                         onReviseAssumption={reviseSpecAssumption}
                       />
                     }
@@ -1836,6 +1839,7 @@ function SlideRuleSessionBody({
     settleSpecAssumption,
     holdRun,
     runPaused,
+    confirmSpecAssumptions,
     reviseSpecAssumption,
     confirmControlScope,
     dismissScopeCard,
@@ -2294,6 +2298,9 @@ function SlideRuleSessionBody({
     specAssumptions,
     settleSpecAssumption,
     reviseSpecAssumption,
+    confirmSpecAssumptions,
+    holdRun,
+    runPaused,
     confirmControlScope,
     dismissScopeCard,
     dismissAsk,

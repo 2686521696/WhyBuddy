@@ -6,8 +6,8 @@
  * 一级还是两级）是**画到 SPEC 那一步才浮出来的**，而它们此前一直是静默的。
  *
  * 这个文件守两件事：
- *   1. 这条链**不产生等待**——推演照跑，用户可以什么都不点；
- *   2. 用户点了「改成 X」，那句话**真的进了中途排队**，不是点了个寂寞。
+ *   1. 卡做成澄清那种：一题一题选，点「确认继续」才往下；
+ *   2. 确认时改过的那句**真的进了中途排队**，不是点了个寂寞。
  */
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -17,6 +17,7 @@ import { AssumptionStrip } from "../AssumptionStrip";
 import {
   lenientStringList,
   mergeAssumptions,
+  parseSpecAssumptions,
   revisePhrase,
   settleAssumption,
   type SpecAssumption,
@@ -144,6 +145,28 @@ describe("revisePhrase", () => {
   });
 });
 
+describe("parseSpecAssumptions", () => {
+  it("把落库 spec 那份清单洗成面板要的形状", () => {
+    const out = parseSpecAssumptions([
+      {
+        id: "a1",
+        topic: "员工怎么登录",
+        decision: "手机号",
+        alternatives: "工号",
+        why: "没说",
+      },
+      { id: "a2", topic: "", decision: "一级" },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].alternatives).toEqual(["工号"]);
+  });
+
+  it("反向：不是数组就不摊", () => {
+    expect(parseSpecAssumptions(null)).toEqual([]);
+    expect(parseSpecAssumptions({ topic: "x" })).toEqual([]);
+  });
+});
+
 describe("settleAssumption", () => {
   it("处理完的收走", () => {
     expect(settleAssumption([LOGIN, APPROVE], "a1").map(r => r.id)).toEqual([
@@ -159,46 +182,39 @@ describe("settleAssumption", () => {
 describe("面板画出来的东西（量渲染后的 DOM，不量源码）", () => {
   const html = (items: SpecAssumption[]) =>
     renderToStaticMarkup(
-      <AssumptionStrip items={items} onSettle={() => {}} onRevise={() => {}} />
+      <AssumptionStrip items={items} onConfirm={() => {}} />
     );
 
-  it("每条假设一张卡，其他做法各一个按钮", () => {
+  it("一次只画当前题，推荐项带标记，其他做法是选项", () => {
     const out = html([LOGIN, APPROVE]);
-    expect(out.match(/data-testid="sliderule-assumption"/g)).toHaveLength(2);
-    expect(
-      out.match(/data-testid="sliderule-assumption-revise"/g)
-    ).toHaveLength(2);
-    expect(out).toContain("改成工号 + 密码");
-    expect(out).toContain("改成企业微信扫码");
+    expect(out).toContain("待确认");
+    expect(out).toContain("1 / 2");
+    expect(out).toContain("员工怎么登录");
+    expect(out).not.toContain("审批几级");
+    expect(out.match(/data-testid="sliderule-assumption-option"/g)).toHaveLength(3);
+    expect(out).toContain("工号 + 密码");
+    expect(out).toContain("企业微信扫码");
+    expect(out).toContain("推荐");
+    expect(out).toContain("下一步");
   });
 
-  it("没有其他做法的那条不渲染空按钮行", () => {
-    /* 模型有时只是知会一声。摆一排空按钮比不摆更糟——看着像坏了。
-       ⚠ 第一版判据写的是 `not.toContain("sliderule-assumption-revise")`，
-         变异（把 `alternatives.length > 0` 换成恒真）**照样绿**——因为
-         空数组 map 出来本来就没有按钮，判据打空了。真正的病是那个
-         **空的容器 div** 还在，撑出一行看不出所以然的间距。
-         本仓第五条：判据要落在渲染出来的东西上，量容器不量按钮。 */
+  it("最后一题才有确认继续", () => {
     const out = html([APPROVE]);
-    expect(out).not.toContain("sliderule-assumption-revise");
+    expect(out).toContain("确认继续");
+    expect(out).toContain('data-testid="sliderule-assumption-submit"');
+    expect(out).not.toContain("sliderule-assumption-next");
     expect(out).toContain("审批几级");
-    expect(out).not.toMatch(/<div class="[^"]*flex-wrap[^"]*">\s*<\/div>/);
-    // 有其他做法的那条才有这个容器，一条一个
-    expect(html([LOGIN, APPROVE]).match(/flex-wrap/g)).toHaveLength(1);
   });
 
   it("反向：一条都没有时整个面板不渲染（不留空壳）", () => {
     expect(html([])).toBe("");
   });
 
-  it("说清楚不点也行——这是它跟澄清卡最关键的区别", () => {
-    /* ⚠ 判据盯**语义**不盯某句话字面：只要还在告诉用户"不处理也有合法结局"。
-       澄清卡是拦路的（不答完不点火），这个一格都不拦。哪天有人给它加上
-       "必须处理完才能继续"，伴随式就退回成了拦路问答。 */
-    const out = html([LOGIN]);
-    expect(out).toMatch(/不改|默认|可以不/);
-    expect(out).not.toContain("必填");
-    expect(out).not.toContain("提交");
+  it("必须确认继续才能往下——这是它跟旧伴随式最关键的区别", () => {
+    const out = html([LOGIN, APPROVE]);
+    expect(out).toContain("选完再继续");
+    expect(out).toContain("下一步");
+    expect(html([LOGIN])).toContain("确认继续");
   });
 });
 
@@ -240,7 +256,7 @@ describe("接线（四段都得接上）", () => {
     /* 「就这样」和「改成 X」都得记。少记一个，那个入口点掉的卡照样会回来，
        而另一个入口是好的——半边生效最难查（CLAUDE.md §4）。 */
     const marks = SESSION.match(/settledAssumptionIdsRef\.current\.add\(id\)/g);
-    expect(marks?.length).toBe(2);
+    expect(marks?.length).toBeGreaterThanOrEqual(2);
   });
 
   it("hook：点「改成 X」真的进中途排队——否则点了个寂寞", () => {
@@ -307,5 +323,75 @@ describe("接线（四段都得接上）", () => {
     expect(PAGE).toContain("specAssumptions={specAssumptions}");
     expect(PAGE).toContain("onSettleAssumption={settleSpecAssumption}");
     expect(PAGE).toContain("onReviseAssumption={reviseSpecAssumption}");
+  });
+
+  it("确认继续接到了输入条上——Dock 用 onConfirmAssumptions 守门，不传 = 卡不画", () => {
+    /* ⚠ 2026-09-02：伴随式改成选完再继续。Dock 里 AssumptionStrip 包在
+       `onConfirmAssumptions ?` 里，页面漏传这一行，面板永远是空的，
+       而且不报错（CLAUDE.md §3）。
+       真机第二刀：Unified 的 ComposerDock 写了这一行，但 props 是从
+       `shared` 对象铺进去的——shared 里漏了 confirmSpecAssumptions，
+       卡照样不画。两头都要有。 */
+    expect(PAGE).toContain("onConfirmAssumptions={confirmSpecAssumptions}");
+    expect(PAGE).toContain("confirmSpecAssumptions,");
+    expect(DOCK).toContain("onConfirm={onConfirmAssumptions}");
+    expect(DOCK).toContain("onConfirmAssumptions ?");
+    const shared = PAGE.slice(
+      PAGE.indexOf("const shared ="),
+      PAGE.indexOf("const shared =") + 900
+    );
+    expect(shared).toContain("confirmSpecAssumptions");
+  });
+
+  it("确认继续必须把每条 id 记进已处理，并撤掉整面板", () => {
+    const at = SESSION.indexOf("const confirmSpecAssumptions");
+    expect(at).toBeGreaterThan(-1);
+    const body = SESSION.slice(at, at + 1600);
+    expect(body).toContain("settledAssumptionIdsRef.current.add(row.id)");
+    expect(body).toContain("applySpecAssumptions([])");
+  });
+
+  it("空闲确认必须真的发出去，不许再挂着等发送键", () => {
+    /* ⚠ queued-turn-has-an-exit-when-idle 那场：点了「改成 X」话进队列，
+       推演已结束，flush 的五个调用点全是「某件事结束时」。确认继续若
+       不自己 flush，用户对着「确认继续」点了没反应。 */
+    const at = SESSION.indexOf("const confirmSpecAssumptions");
+    const body = SESSION.slice(at, at + 1800);
+    expect(body).toContain("runTurnRef.current");
+    expect(body).toContain("假设已确认。继续画页面。");
+    expect(body).toContain('pendingForcedToolRef.current = "pages"');
+    expect(body).toContain('"pages"');
+    expect(body).toContain("isRunningRef.current");
+    // 反向：推演中是放行闸，不是再开一轮
+    expect(body).toContain("releaseRun({ skip: true })");
+  });
+
+  it("确认继续的 pages 闸只在 runTurn 过了 isRunning 之后取走", () => {
+    /* ⚠ 真机：flush 先清 flag 再进 runTurn，isRunning 仍真时直接 return，
+       forcedTool=pages 丢了，控制面去 planning，钟又回到起草 SPEC。 */
+    const at = SESSION.indexOf("const runTurn = async");
+    expect(at).toBeGreaterThan(-1);
+    const body = SESSION.slice(at, at + 900);
+    expect(body).toContain("isRunningRef.current");
+    expect(body).toContain("pendingForcedToolRef.current");
+    expect(body.indexOf("isRunningRef.current")).toBeLessThan(
+      body.indexOf("pendingForcedToolRef.current = undefined")
+    );
+    expect(SESSION).toContain("hop || forcedTool");
+  });
+
+  it("SSE 回调里不许 fetch hold——真机拦 fetch 时卡整轮不出现", () => {
+    const at = SESSION.indexOf("onSpecAssumptions:");
+    expect(at).toBeGreaterThan(-1);
+    const body = SESSION.slice(at, at + 500);
+    expect(body).not.toContain("holdRun()");
+  });
+
+  it("落库 spec 里的假设也必须摊到面板上——SSE 漏了不能没卡", () => {
+    /* ⚠ 2026-09-02 真机：specFirstPages.spec.assumptions 有 3 条，
+       面板整轮没出现。渲染时也要从 sessionState 派生，不能只靠 SSE。 */
+    expect(SESSION).toContain("parseSpecAssumptions(");
+    expect(SESSION).toContain("specAssumptionsView");
+    expect(SESSION).toContain(".spec?.assumptions");
   });
 });

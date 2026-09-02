@@ -114,11 +114,11 @@ describe("抬头说的是这一刻真会发生的事", () => {
     expect(done).toContain("点发送");
   });
 
-  it("跑完之后不许再说「推演中」——卡还在，但不装作还能改这一轮", () => {
-    expect(assumptionsHeading(3, true)).toContain("推演中");
+  it("假设卡抬头说选完再继续，不再假装推演中不拦", () => {
+    expect(assumptionsHeading(3, true)).toContain("选完再继续");
     const done = assumptionsHeading(3, false);
     expect(done).not.toContain("推演中");
-    expect(done).toContain("新一轮");
+    expect(done).toContain("选完再继续");
   });
 
   it("两个抬头都得带上条数：光说状态不说几条等于没说", () => {

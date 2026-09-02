@@ -98,7 +98,10 @@ def clip_factory_tools(
             raise FactoryToolsRefused("提案全不合法，拒绝回落整份菜单")
         else:
             chosen = tuple(name for name in TOOLS if name in seen)
-    if not refine and "spec" not in chosen:
+    # 多件菜单漏了 spec 就补根。单跳（len==1）看会话前置，不在菜单里塞
+    # spec——否则 ['bind'] 进 run_spec_first 没有 SPEC 直接抛（建设单 O-4）。
+    # 空会话单跳由 _factory_hop_blocker 说人话。
+    if not refine and "spec" not in chosen and len(chosen) != 1:
         chosen = ("spec",) + tuple(name for name in chosen if name != "spec")
     return chosen
 

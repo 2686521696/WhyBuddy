@@ -280,7 +280,14 @@ class ControlHarness:
 
         async def stub_factory_stream(state, *args, **kwargs):
             self.driver_goals.append(goal_text(state))
-            self.generator_calls.append({"args": args, "kwargs": kwargs})
+            tools = (
+                list((state.goal or {}).get("tools") or [])
+                if isinstance(getattr(state, "goal", None), dict)
+                else []
+            )
+            self.generator_calls.append(
+                {"args": args, "kwargs": kwargs, "tools": tools}
+            )
             yield {"type": "complete", "state": state.model_dump()}
 
         real_gen = v5_full_driver.drive_full_v5_session_stream

@@ -411,6 +411,7 @@ export function ComposerDock({
   onSettleAssumption,
   onHoldRun,
   runPaused = false,
+  onConfirmAssumptions,
   onReviseAssumption,
   onRemoveQueued,
   onConfirmScope,
@@ -436,6 +437,7 @@ export function ComposerDock({
   /** 「先别往下跑」与「已经停住了」。见 AssumptionStrip.onHold 头注。 */
   onHoldRun?: () => void;
   runPaused?: boolean;
+  onConfirmAssumptions?: (picks: Record<string, string>) => void;
   onReviseAssumption?: (id: string, alternative: string) => void;
   onRemoveQueued?: (index: number) => void;
   onConfirmScope?: (choice?: {
@@ -1972,17 +1974,15 @@ export function ComposerDock({
               data-testid="sliderule-composer-overlay"
             >
               {/*
-                「我替你定了这个」在上，「本轮结束后发出」在下：点了「改成 X」
-                之后那句话就落在紧挨着的下一格里——这是这条链唯一的反馈。
+                假设卡在上（选完点「确认继续」才往下），改过的那句排队在下。
               */}
-              {onSettleAssumption && onReviseAssumption ? (
+              {onConfirmAssumptions ? (
                 <AssumptionStrip
                   items={specAssumptions}
                   isRunning={isRunning}
                   paused={runPaused}
                   onHold={onHoldRun}
-                  onSettle={onSettleAssumption}
-                  onRevise={onReviseAssumption}
+                  onConfirm={onConfirmAssumptions}
                 />
               ) : null}
               {/*

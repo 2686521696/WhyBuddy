@@ -59,8 +59,14 @@ async def start_drive_full_factory_run(
     viewer: Any = None,
     reuse_charter: Any = None,
     product_charter: Any = None,
+    goal_tools: Optional[Any] = None,
 ):
-    """启动（或附着）一条工厂 run。调用方传入已经拆好的命名字段。"""
+    """启动（或附着）一条工厂 run。调用方传入已经拆好的命名字段。
+
+    goal_tools：控制面已经挑好的这一跳。persist-as-authority 会 reload，
+    同一 lastTurnId 改 goal.tools 会被守卫挡住（2026-09-02 真机：确认继续
+    forced pages，落盘仍是上一跳 spec，工厂又起草一遍 SPEC）。
+    """
     from services import run_registry
     from services.device_policy import set_preferred_device_override
     from services.identity_palette_hint import set_design_system_override
@@ -78,6 +84,18 @@ async def start_drive_full_factory_run(
     persisted = await asyncio.to_thread(load_session, sid) if sid else None
     if persisted is not None:
         state = persisted
+        wanted = [
+            str(item).strip()
+            for item in (goal_tools or [])
+            if str(item).strip()
+        ]
+        if wanted:
+            # ⚠ 必须在 `_advance_turn_version` / persist 之前盖上。否则
+            #   reload 到的上一跳 spec 会被新 lastTurnId 钉死，pages 跳再
+            #   也盖不回去。
+            goal = dict(state.goal) if isinstance(state.goal, dict) else {}
+            goal["tools"] = wanted
+            state.goal = goal
     elif require_session_id:
         raise HTTPException(status_code=400, detail="session_id required")
     else:

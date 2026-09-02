@@ -15,7 +15,7 @@ import { buildStructuredReport } from "@shared/blueprint/sliderule-report-builde
 import { buildCapabilityPrompt } from "@shared/blueprint/sliderule-capability-prompts";
 // 技能库六期"推演注入"：已安装技能随 drive-full 请求进生成契约（纯本地读取，无环）
 import { installedSkillsDrivePayload } from "./installed-skills";
-import { lenientStringList } from "./spec-assumptions";
+import { parseSpecAssumptions } from "./spec-assumptions";
 import { layoutDevice } from "./product-archetypes";
 import {
   loadTurnCapabilities,
@@ -569,23 +569,8 @@ function applyFactoryStreamEvent(
     case "spec_assumption": {
       // 服务端已经洗过一遍（spec_tree._sanitize_assumptions）。这里再洗一次
       // 不是不信任它，是这条流也接老后端 / 续播缓存——形状不对宁可少渲染
-      // 一张卡，不许把 undefined 摊到面板上。
-      const rows: unknown[] = Array.isArray(event.items) ? event.items : [];
-      const items = (rows.filter(
-        (r) => !!r && typeof r === "object",
-      ) as Array<Record<string, unknown>>)
-        .map((r: Record<string, unknown>, i: number) => ({
-          id: String(r.id || `a${i + 1}`),
-          topic: String(r.topic || "").trim(),
-          decision: String(r.decision || "").trim(),
-          // ⚠ 裸字符串要变成**单元素数组**，不是被丢掉——口径见
-          //   spec-assumptions.lenientStringList（跟 Python 侧同一张表）。
-          alternatives: (lenientStringList(r.alternatives) ?? [])
-            .map((a: string) => a.trim())
-            .filter(Boolean),
-          why: String(r.why || "").trim(),
-        }))
-        .filter((r: { topic: string; decision: string }) => r.topic && r.decision);
+      // 一张卡，不许把 undefined 摊到面板上。跟落库那份同一把尺子。
+      const items = parseSpecAssumptions(event.items);
       if (items.length > 0) opts.onSpecAssumptions?.(items);
       return "continue";
     }
