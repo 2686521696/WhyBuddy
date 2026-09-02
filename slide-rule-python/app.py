@@ -86,6 +86,7 @@ from routes.rag import router as rag_router
 # 的自检同一条纪律——坏账本不带病进 Prompt。本轮还没接进推演（下一轮做），
 # 但自检要从落地第一天就生效，否则"启动即失败"只是一句写在文档里的话。
 from services.app_template import SEED_APP_TEMPLATES as _SEED_APP_TEMPLATES  # noqa: F401
+from services.workflow_validate import dry_run_registered_calendars as _dry_run_calendars
 from services.slide_rule_session import save_session
 from services.v5_full_driver import drive_full_v5_session
 from services.v5_capability_executor import _llm_generate_enabled
@@ -322,6 +323,9 @@ async def lifespan(app: FastAPI):
 
     if configure_node_bridge_runtimes():
         print("[startup] node-bridge skill/mcp runtimes configured.")
+    # 日历干跑：真编排 + 桩 host。配方缺 assemble 这类洞启动即失败。
+    _dry_run_calendars()
+    print("[startup] workflow calendars dry-ran (stub LLM)")
     # TODO: init vector DB, knowledge like original Python project for RAG
     yield
     # 关停时绝不 save_all：启动快照从不随运行更新，整体覆写会把运行期间

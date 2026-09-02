@@ -1415,6 +1415,11 @@ def run_spec_first(
     )
     sink = _with_device(on_page or _page_sink_var.get(), device)
     pages: Dict[str, str] = {}
+    # 沿用上一跳页面再打孔（structure-bind）时 pages 步不会跑，
+    # bind 收尾仍会调 `_fill_html`。没定义就是 UnboundLocalError，
+    # 干跑整段走才踩到（O-7 对照 grok validate.rs）。活路径同一形状。
+    def _fill_html(markup: str) -> str:
+        return markup
     if (
         not plan.includes("specfirst.pages")
         and isinstance(reuse_pages, dict)
