@@ -62,6 +62,39 @@ def normalize_tools(raw: Optional[Iterable[str]]) -> Tuple[str, ...]:
     return chosen if chosen else TOOLS
 
 
+def clip_factory_tools(
+    proposed: Optional[Iterable[object]],
+    legal: Optional[Iterable[str]] = None,
+    *,
+    refine: bool = False,
+) -> Tuple[str, ...]:
+    """规划器只能在 legal 里减菜，不能发明、不能换序。
+
+    抄 LangGraph plan-and-execute：planner 产出步骤子集，executor 仍按
+    原顺序跑。提案全是生词 / 空 → 回落 legal（范围卡那份），**不是**
+    回落五件套——回落五件套会把范围卡减菜冲掉。
+
+    新跑漏了 spec 就补回去：`run_spec_first` 没有 SPEC 会抛，那不是
+    减菜，是把工厂打崩。
+    """
+    legal_chosen = normalize_tools(legal)
+    seen: set[str] = set()
+    for item in proposed or ():
+        if isinstance(item, dict):
+            cap = str(item.get("capabilityId") or item.get("id") or "").strip()
+        else:
+            cap = str(item or "").strip()
+        if cap in legal_chosen:
+            seen.add(cap)
+    if not seen:
+        chosen = legal_chosen
+    else:
+        chosen = tuple(name for name in TOOLS if name in seen)
+    if not refine and "spec" not in chosen:
+        chosen = ("spec",) + tuple(name for name in chosen if name != "spec")
+    return chosen
+
+
 def expand_tools(tools: Iterable[str], *, refine: bool = False) -> Tuple[str, ...]:
     """公开工具展开成 `run_spec_first` 里的 `_stage` id。
 
@@ -120,6 +153,10 @@ def product_rehearsal_plan(
 ) -> CapabilityPlan:
     """PC / 手机的默认计划。device 只作记录，不改变工具清单。"""
     chosen = normalize_tools(tools)
+    if not refine and "spec" not in chosen and len(chosen) != 1:
+        # 多件菜单漏了 spec 就补根。单跳 host 已经选定 pages/bind/closure
+        # 时不要塞回去——否则「上一跳 SPEC」被这一跳重写成又起草一遍。
+        chosen = ("spec",) + tuple(name for name in chosen if name != "spec")
     ids = expand_tools(chosen, refine=bool(refine))
     return CapabilityPlan(
         name=PRODUCT_REHEARSAL,
@@ -139,5 +176,6 @@ __all__ = [
     "CapabilityPlan",
     "expand_tools",
     "normalize_tools",
+    "clip_factory_tools",
     "product_rehearsal_plan",
 ]

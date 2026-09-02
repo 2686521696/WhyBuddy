@@ -8,6 +8,9 @@ All capabilities now produce real evidence via RAG, no templates, no degraded, n
 from .stage_legal import describe as _stage_describe
 from .stage_legal import labels_with_eta as _stage_labels_with_eta
 from .archetype_legal import required_evidence as _required_evidence
+from .capability_plan import clip_factory_tools, normalize_tools
+from .closed_tools import FACTORY_HOPS
+from .workflow_select import PAGES_PREVIEW, PAGES_PREVIEW_TOOLS, select_workflow
 import os
 import time
 from typing import Dict, Any, AsyncGenerator, List, Literal, Optional
@@ -1254,7 +1257,7 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                         source="llm",
                     ))
                     state.decisionLedger = _dl
-                    picks = _proposal["picks"]
+                    picks = _clip_agentic_picks_to_legal(_proposal["picks"], picks)
                 else:
                     # 回落规则版 = 本轮降级。记一条 Condition，闭环判定据此
                     # 拒发合格证——此前这里只在 stderr 打一行，闭环完全看不见。
@@ -1632,18 +1635,21 @@ def _enrich_stage_event(phase: str, name: str, fields: Dict[str, Any]) -> Option
     #   `sequence` 传本轮真实要跑的阶段——账本里含两个精修专用步，
     #   拿账本绝对位置当序号对哪一轮都不准（实测出过 order=8 of=7）。
     _desc = _stage_describe(name, sequence=fields.get("sequence"))
+    from services.session_events import envelope as _session_envelope
+
+    _wired = _session_envelope(_desc)
     common = {
-        "stageGroup": _desc.get("group"),
-        "stageOrder": _desc.get("order"),
-        "stageOf": _desc.get("of"),
+        "stageGroup": _wired.get("group") or _desc.get("group"),
+        "stageOrder": _wired.get("order") if "order" in _wired else _desc.get("order"),
+        "stageOf": _wired.get("of") if "of" in _wired else _desc.get("of"),
         "pageId": fields.get("page"),
         "device": fields.get("device"),
         "current": fields.get("current"),
         "total": fields.get("total"),
         "elapsedMs": 0 if phase == "start" else fields.get("ms", 0),
     }
-    if _desc.get("productStep"):
-        common["productStep"] = _desc["productStep"]
+    if _wired.get("productStep"):
+        common["productStep"] = _wired["productStep"]
     if phase == "start":
         return {
             "type": "reasoning_step",
@@ -1730,6 +1736,59 @@ def _app_profile_short_picks(state: "V5SessionState") -> list:
     return picks
 
 
+def _clip_agentic_picks_to_legal(proposal_picks: list, legal_picks: list) -> list:
+    """Agentic 只能在短清单里选。提案跑出词表就丢掉，空了回落 legal。
+
+    抄 grok：主 Agent 挑的是预存在的能力单元，不能发明第六道菜。
+    """
+    legal_ids = {str(item.get("capabilityId") or "") for item in legal_picks}
+    clipped = [
+        item
+        for item in proposal_picks
+        if str(item.get("capabilityId") or "") in legal_ids
+    ]
+    return clipped if clipped else list(legal_picks)
+
+
+def _host_factory_hop(state: "V5SessionState") -> bool:
+    """控制面已经挑了一件工厂工具。厂内不许再组一整张菜单盖回去。"""
+    goal = getattr(state, "goal", None)
+    if not isinstance(goal, dict):
+        return False
+    raw = goal.get("tools")
+    if not isinstance(raw, (list, tuple)) or len(raw) != 1:
+        return False
+    return str(raw[0]).strip() in FACTORY_HOPS
+
+
+def _factory_tools_from_state(state: "V5SessionState") -> tuple:
+    """本趟工厂公开工具：范围卡 / 配方已经圈定的那一份。"""
+    goal = getattr(state, "goal", None)
+    if not isinstance(goal, dict):
+        goal = {}
+    preset = select_workflow(
+        name=str(goal.get("workflow") or ""),
+        archetype=str(goal.get("productArchetype") or ""),
+        device=str(goal.get("preferredDevice") or "desktop"),
+        tools=goal.get("tools"),
+    )
+    return preset.tools
+
+
+def _stamp_factory_tools_onto_goal(state: "V5SessionState", tools) -> None:
+    """把工厂减菜写进 goal，run_spec_first / 钟都读这里。
+
+    只改内存不够：完整事件带的是 persist 后的 state。不落盘，钟上仍是五件套。
+    减到 pages-preview 那份菜，顺手记下配方名——控制面下一轮能看见。
+    """
+    goal = dict(state.goal) if isinstance(getattr(state, "goal", None), dict) else {}
+    chosen = list(normalize_tools(tools))
+    goal["tools"] = chosen
+    if tuple(chosen) == PAGES_PREVIEW_TOOLS:
+        goal["workflow"] = PAGES_PREVIEW
+    state.goal = goal
+
+
 async def drive_full_v5_session_stream(
     initial_state: "V5SessionState",
     max_loops: int = 10,
@@ -1753,8 +1812,10 @@ async def drive_full_v5_session_stream(
     agentic pick 不参与（修什么以门说了算），轮数收紧到 2。
 
     profile 由信封 helper 透传（rehearse 传 "app"）。禁止把 factoryProfile
-    做成 HTTP 旗标。profile=="app" 时跳过 orchestrate_plan + 规则 pick +
-    agentic pick，改走短清单；repair 仍走 pick_repair_capabilities。
+    做成 HTTP 旗标。profile=="app" 时跳过 orchestrate_plan + 规则 pick，
+    改走短清单；agentic pick 在工厂节点里开——词表是公开工具
+    （spec/pages/structure/bind/closure），提案 stamp 到 goal.tools，
+    不替换 runtimeClosure 这条执行能力。repair 仍走 pick_repair_capabilities。
     """
     import asyncio
     import queue as _queue
@@ -1971,6 +2032,9 @@ async def drive_full_v5_session_stream(
     state = initial_state
     if repair:
         max_loops = min(max_loops, 2)
+    elif profile == "app" and _host_factory_hop(state):
+        # 抄 grok ToolLoop：一跳一件。hop 成功还按 10 圈跑 = SPEC 起草两遍。
+        max_loops = 1
     _advance_turn_version(state)
     drive_turn_id = str(state.lastTurnId or "")
     events_cursor = len(getattr(state, "reasoningEvents", None) or [])
@@ -1984,6 +2048,16 @@ async def drive_full_v5_session_stream(
     )
     await asyncio.to_thread(persist_state, state)
     yield {"type": "phase_change", "phase": "orchestrating", "repair": repair}
+    if profile == "app" and _host_factory_hop(state):
+        hops = _factory_tools_from_state(state)
+        yield {
+            "type": "factory_plan",
+            "tools": list(hops),
+            "workflow": str(
+                (state.goal.get("workflow") if isinstance(state.goal, dict) else "")
+                or ""
+            ),
+        }
 
     loop = 0
     picks: list = []
@@ -2110,8 +2184,9 @@ async def drive_full_v5_session_stream(
             # 所以现在从进入这一轮就报，一直报到真开始干活。
             yield {"type": "reasoning_step", "label": "planning", "loop": loop}
             _planning_ok = True
-            # ⚠ 2026-08-27 M18：产品 rehearse 短清单。规则 pick 和 agentic pick
-            # 必须在同一分支跳过——只改一条等于一半不生效（Claude.md §4）。
+            # ⚠ 2026-08-27 M18：产品 rehearse 短清单。规则 pick 在 app 分支
+            # 跳过；agentic pick 2026-09-02 在工厂节点里开——只关规则不关
+            # agentic = 一半不生效的对偶（Claude.md §4）。
             # repair 仍走门标红项，禁止短路到 app 短清单。
             if repair:
                 await asyncio.to_thread(orchestrate_plan, state, f"loop-{loop}", ui)
@@ -2126,11 +2201,26 @@ async def drive_full_v5_session_stream(
                 picks = await asyncio.to_thread(pick_next_capabilities, state, ui)
             from .v5_agentic_pick import (
                 agentic_pick_next_capabilities,
+                factory_tool_vocab,
                 should_run_agentic_pick,
             )
-            if picks and should_run_agentic_pick(profile, repair=repair):
+            if picks and should_run_agentic_pick(profile, repair=repair) and not (
+                profile == "app" and _host_factory_hop(state)
+            ):
+                _factory_legal = (
+                    _factory_tools_from_state(state) if profile == "app" else None
+                )
                 _proposal = await asyncio.to_thread(
-                    agentic_pick_next_capabilities, state, ui, loop_index=loop, max_loops=max_loops
+                    agentic_pick_next_capabilities,
+                    state,
+                    ui,
+                    loop_index=loop,
+                    max_loops=max_loops,
+                    vocab=(
+                        factory_tool_vocab(_factory_legal)
+                        if profile == "app"
+                        else None
+                    ),
                 )
                 _planning_ok = _proposal is not None
                 if _proposal:
@@ -2147,7 +2237,33 @@ async def drive_full_v5_session_stream(
                         source="llm",
                     ))
                     state.decisionLedger = _dl
-                    picks = _proposal["picks"]
+                    if profile == "app":
+                        # 工厂节点 pick 只 stamp 公开工具，不替换 runtimeClosure。
+                        # 把 spec/pages 塞进 execute_v5_capability 会当成生词能力跑。
+                        _stamped = clip_factory_tools(
+                            _proposal["picks"],
+                            _factory_legal,
+                            refine=skip_planning_loop_for_refine(repair=repair),
+                        )
+                        _stamp_factory_tools_onto_goal(state, _stamped)
+                        await asyncio.to_thread(persist_state, state)
+                        print(
+                            f"[factory-plan] tools={','.join(_stamped)} "
+                            f"workflow={(state.goal or {}).get('workflow') or ''}",
+                            flush=True,
+                        )
+                        yield {
+                            "type": "factory_plan",
+                            "tools": list(_stamped),
+                            "workflow": str(
+                                ((state.goal or {}) if isinstance(state.goal, dict) else {}).get(
+                                    "workflow"
+                                )
+                                or ""
+                            ),
+                        }
+                    else:
+                        picks = _clip_agentic_picks_to_legal(_proposal["picks"], picks)
                 else:
                     # 同步驱动同款：回落规则版 = 本轮降级，闭环据此拒发合格证。
                     from .run_degradation import (

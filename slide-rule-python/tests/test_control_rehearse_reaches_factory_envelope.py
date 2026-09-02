@@ -50,6 +50,7 @@ def test_m1_header_has_every_clause():
         "six fields",
         '{forcedTool, goal}',
         "forcedTool rehearse",
+        "does NOT exit the tool loop",
         "ask_user, search_evidence, inspect_model, scope_card",
         "No tool may write blocked=false",
     ):

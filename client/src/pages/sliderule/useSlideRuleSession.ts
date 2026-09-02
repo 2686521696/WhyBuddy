@@ -975,6 +975,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     // state.turnNarrations（刷新后回放时间线；setUiTurns 是异步状态，
     // 落定时刻从它读不到完整清单）
     const collectedSteps: TurnStep[] = [];
+    const hostSpeechRef = { current: "" };
     const appendStep = (step: TurnStep) => {
       collectedSteps.push(step);
       setUiTurns(prev =>
@@ -1547,7 +1548,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 );
               },
               onSpecPage: page => {
-                applyRehearsalEvent("spec_page_html");
+                applyRehearsalEvent(
+                  "spec_page_html",
+                  (page as { productStep?: number }).productStep ?? 3
+                );
                 setSpecPages(prev => {
                   const i = prev.findIndex(p => p.pageId === page.pageId);
                   if (i < 0) return [...prev, page];
@@ -1627,6 +1631,18 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               onProgressHeartbeat: (stage, _label, productStep) => {
                 if (stage) applyRehearsalEvent(stage, productStep);
               },
+              onFactoryPlan: (tools, workflow) => {
+                setSessionState(prev => {
+                  const goal =
+                    prev.goal && typeof prev.goal === "object"
+                      ? { ...prev.goal }
+                      : {};
+                  goal.tools = tools;
+                  if (workflow) goal.workflow = workflow;
+                  return { ...prev, goal };
+                });
+                appendStreamStep(`编排 ${tools.join(" → ")}`);
+              },
               onControlText: (text, stop) => {
                 // 结构化的「为什么停」先落下来再渲染文字：拿它区分"我们的闸拦的"
                 // （再试可能有用）和"网关挂了"（再试一百次也一样）。
@@ -1634,6 +1650,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 if (stop) lastControlStopRef.current = stop;
                 if (!text.trim()) return;
                 appendStreamStep(text);
+              },
+              onControlHostText: text => {
+                hostSpeechRef.current = text.trim();
               },
               onControlAskUser: event => {
                 const next = {
@@ -2241,6 +2260,13 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
 
         if (lastDigestNote) {
           assistantText = (assistantText || "") + lastDigestNote;
+        }
+        const hostSpeech = hostSpeechRef.current.trim();
+        if (hostSpeech) {
+          assistantText = assistantText
+            ? `${assistantText}\n\n${hostSpeech}`
+            : hostSpeech;
+          assistantSource = "llm";
         }
 
         setUiTurns(prev =>

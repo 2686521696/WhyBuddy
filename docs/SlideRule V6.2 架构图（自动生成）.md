@@ -8,28 +8,52 @@
 > slide-rule-python/.venv/bin/python slide-rule-python/arch_graph.py --emit
 > ```
 
-抄的是 grok-build 的做法：他们**一张架构图都没有**，91 个 crate 在各自
-`Cargo.toml` 里显式声明依赖，347 条边由编译器强制，根 `Cargo.toml` 是生成的。
+抄的是 grok-build 的做法：他们**一张架构图都没有**，边写在各 crate 的
+`Cargo.toml` 里由 cargo 强制。对照物的现算数字见
+`docs/grok-build 架构图（自动生成）.md`（`scripts/arch-graph-grok.py --emit`）。
 我们没有那个编译器，所以自己写一个——见 `slide-rule-python/arch_graph.py` 模块头。
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **280** 个，模块 **280** 个
-- 内部依赖边 **838** 条，其中 **486** 条写在函数体里（57%）
+- 扫描文件 **283** 个，模块 **283** 个
+- 内部依赖边 **846** 条，其中 **485** 条写在函数体里（57%；基线 485，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
-- 没人 import 的模块 **54** 个（基线 54 个）—— ⚠ **不是待删清单**，多数是 Node 边界镜像 / 脚本插座 / 未挂载的基线面，见 `arch_graph.orphans()`
+- 没人 import 的模块 **54** 个（基线 54 个）—— ⚠ **不是待删清单**，其中 4 个是跨语言入口（见全仓图，不是没人用）
+
+权威图只留自动生成的：本文件、`docs/WhyBuddy TS 架构图（自动生成）.md`、
+`docs/WhyBuddy 全仓架构图（自动生成）.md`、`docs/grok-build 架构图（自动生成）.md`。
+V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
+
+目标形状是**两个大块 + 一批叶子**（util 叶子多于 flow 编排），
+不是把 services 切成 90 个平均文件。
+产品图**不搬**：`xai-grok-pager`、`xai-grok-mcp`、`xai-grok-subagent`、`xai-grok-sandbox`、`xai-grok-agent`
+（pager / MCP / 子代理 / sandbox / grok-agent 提示词）。
 
 ### services 内部分层（抄 grok 的叶子 crate）
 
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
-| `util` | 121 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `util` | 124 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
 | `core` | 58 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 29 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
 叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import 的全部理由，也是 `import` 不必躲进函数体的前提。
+
+### services 三层（从 import 算出，不是表）
+
+表只报数。这张 mermaid 才是层间真实边。虚线 = 越层（欠账，只许变少）。
+
+```mermaid
+flowchart TB
+  util["util<br/>124 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
+  core["core<br/>58 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
+  flow["flow<br/>29 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
+  core -->|138| util
+  flow -->|99| core
+  flow -->|96| util
+```
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
 
@@ -41,7 +65,7 @@ flowchart TB
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>13 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>208 个模块<br/>业务"]
+  services["services<br/>211 个模块<br/>业务"]
   routes["routes<br/>12 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -72,6 +96,30 @@ flowchart TB
   sliderule_llm -->|2 · 其中 2 条在函数体里| config
 ```
 
+## 编排环（从活路径生成）
+
+对照 grok-build 的 spine（shell → agent → tools，`xai-workflow` 是叶子）。
+我们的活路径是 `rehearsal_control._handoff_factory` → `drive_full_factory` →
+`v5_full_driver` → `v5_capability_executor` → `run_spec_first`。
+⚠ `component.run_control` 是 pause/cancel 叶子，不是这张图。
+handoff 标在边上，当且仅当 `_handoff_factory` 函数体里真的调用了
+`start_drive_full_factory_run`（import 在不算数）。
+
+```mermaid
+flowchart LR
+  services_rehearsal_control["services.rehearsal_control<br/>控制面闭集工具环"]
+  services_drive_full_factory["services.drive_full_factory<br/>工厂点火信封"]
+  services_v5_full_driver["services.v5_full_driver<br/>主循环驱动"]
+  services_v5_capability_executor["services.v5_capability_executor<br/>能力执行器（活路径调 run_spec_first）"]
+  services_spec_first_pipeline["services.spec_first_pipeline<br/>spec-first 七步"]
+  services_drive_full_factory -->|1| services_v5_full_driver
+  services_rehearsal_control -->|handoff 1| services_drive_full_factory
+  services_rehearsal_control -->|2| services_v5_full_driver
+  services_v5_capability_executor -->|5| services_spec_first_pipeline
+  services_v5_full_driver -->|2| services_spec_first_pipeline
+  services_v5_full_driver -->|5| services_v5_capability_executor
+```
+
 ## 循环依赖
 
 Rust 里这一类根本编译不出来；Python 得自己数。**只许变少。**
@@ -84,8 +132,9 @@ Rust 里这一类根本编译不出来；Python 得自己数。**只许变少。
 
 ## crate 级：component 依赖图
 
-抄 grok 的 Cargo.toml——他们 90 个 crate、347 条**声明过**的边由编译器焊死。
-我们 23 个 component、81 条边，由 `architecture.toml` 声明、判据强制。
+抄 grok 的 Cargo.toml——边写在 crate 上，由编译器焊死。
+现算数字见 `docs/grok-build 架构图（自动生成）.md`。
+我们 24 个 component、87 条边，由 `architecture.toml` 声明、判据强制。
 **红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。
 
 ```mermaid
@@ -96,8 +145,9 @@ flowchart LR
   audit["audit<br/>3"]
   blueprint["blueprint<br/>19"]
   capability_engine["capability_engine<br/>2"]
+  control["control<br/>1"]
   diagnostics["diagnostics<br/>6"]
-  drive["drive<br/>10"]
+  drive["drive<br/>9"]
   entrypoint["entrypoint<br/>1"]
   evidence["evidence<br/>11"]
   http_routes["http_routes<br/>8"]
@@ -108,7 +158,7 @@ flowchart LR
   ops_scripts["ops_scripts<br/>37"]
   permission["permission<br/>8"]
   persist["persist<br/>2"]
-  platform["platform<br/>19"]
+  platform["platform<br/>22"]
   run_control["run_control<br/>4"]
   spec_first["spec_first<br/>37"]
   task_exec["task_exec<br/>19"]
@@ -122,21 +172,26 @@ flowchart LR
   capability_engine -->|1| llm_gateway
   capability_engine -->|2| platform
   capability_engine -->|1| spec_first
+  control -->|handoff 7| drive
+  control -->|1| evidence
+  control -->|1| llm_gateway
+  control -->|3| model_core
+  control -->|5| platform
+  control -->|2| spec_first
   diagnostics -->|1| a2a
   diagnostics -->|1| evidence
   diagnostics -->|2| model_core
   diagnostics -->|3| platform
   diagnostics -->|1| web_aigc
   drive -->|2| capability_engine
-  drive -->|2| evidence
+  drive -->|1| evidence
   drive -->|1| identity
-  drive -->|1| llm_gateway
-  drive -->|21| model_core
+  drive -->|18| model_core
   drive -->|2| observability
   drive -->|4| persist
-  drive -->|13| platform
+  drive -->|10| platform
   drive -->|1| run_control
-  drive -->|3| spec_first
+  drive -->|2| spec_first
   entrypoint -->|2| agent_loop
   entrypoint -->|2| drive
   entrypoint -->|7| http_routes
@@ -151,8 +206,9 @@ flowchart LR
   http_routes -->|3| audit
   http_routes -->|1| blueprint
   http_routes -->|2| capability_engine
+  http_routes -->|1| control
   http_routes -->|1| diagnostics
-  http_routes -->|16| drive
+  http_routes -->|15| drive
   http_routes -->|5| evidence
   http_routes -->|12| identity
   http_routes -->|22| llm_gateway
@@ -169,9 +225,9 @@ flowchart LR
   model_core -->|18| llm_gateway
   model_core -->|6| observability
   model_core -->|2| persist
-  model_core -->|51| platform
+  model_core -->|53| platform
   model_core -->|11| run_control
-  model_core -->|16| spec_first
+  model_core -->|20| spec_first
   observability -->|2| llm_gateway
   observability -->|1| persist
   observability -->|3| platform
@@ -190,7 +246,7 @@ flowchart LR
   spec_first -->|3| app_store
   spec_first -->|35| llm_gateway
   spec_first -->|3| observability
-  spec_first -->|52| platform
+  spec_first -->|53| platform
   spec_first -->|1| run_control
   task_exec -->|2| evidence
   task_exec -->|4| platform

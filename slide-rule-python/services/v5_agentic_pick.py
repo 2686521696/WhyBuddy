@@ -7,8 +7,8 @@
 
   1. 收敛权仍归规则：规则版 pick 为空 → 本轮照旧收敛，LLM 无权续命；
      LLM 提案只在规则版非空时才可能替换它（选材自主，停机确定）。
-  2. 词表封闭：提案里的 capabilityId 必须在 V5.2 能力词表内，roleId
-     必须在四角色内——幻觉能力/角色直接剔除。
+  2. 词表封闭：提案里的 capabilityId 必须在传入词表内（缺省 V5.2 作文
+     词表；profile=app 传工厂公开工具）。幻觉能力/角色直接剔除。
   3. fail-open 回落：LLM 停用/失败/提案全被剔除 → 返回 None，调用方
      沿用规则版结果。
 
@@ -27,6 +27,7 @@ from typing import Any, Optional
 
 from models.v5_state import V5SessionState
 from sliderule_llm.config import default_max_tokens
+from services.capability_plan import TOOL_LABELS, TOOLS, normalize_tools
 
 # ── V5.2 能力词表（与 slide_rule_session.pick_next_capabilities 的产出
 #    全集一致；中文注解给 LLM 读）─────────────────────────────────────
@@ -374,8 +375,39 @@ def _history_lines(state: V5SessionState) -> list[str]:
 # ── LLM 提案 + 门验收 ─────────────────────────────────────────────────
 
 
+def factory_tool_vocab(legal_tools: Optional[Any] = None) -> dict[str, str]:
+    """工厂节点的闭集词表。主 Agent 只能在范围卡 / 配方圈定的工具里减菜。
+
+    不把作文能力（risk/critique/report）放进来——那是 profile=full 的词表。
+    工厂里开 agentic pick，看见的必须是 spec/pages/structure/bind/closure。
+    """
+    labels = dict(TOOL_LABELS)
+    extra = {
+        "spec": "新跑必选。产出页面清单与结构。",
+        "pages": "逐页 HTML。只要看得见的页面就要。",
+        "structure": "从 HTML 反推实体。只要页面、不要数据模型时可跳过。",
+        "bind": "权限/工作流打孔。先只出页面、先不 bind 时跳过。",
+        "closure": "发布判定。拿掉则没有发布信封，不许补绿灯。",
+    }
+    chosen = normalize_tools(legal_tools)
+    return {
+        name: f"{labels.get(name, name)}。{extra.get(name, '')}".strip()
+        for name in chosen
+    }
+
+
+def _is_factory_vocab(vocab: Optional[dict]) -> bool:
+    if not vocab:
+        return False
+    return set(vocab).issubset(set(TOOLS))
+
+
 def _validate_proposal(
-    raw: Any, state: V5SessionState, dropped: "Optional[list[str]]" = None
+    raw: Any,
+    state: V5SessionState,
+    dropped: "Optional[list[str]]" = None,
+    *,
+    vocab: Optional[dict] = None,
 ) -> list[dict] | None:
     """验收：词表封闭 + 角色纠偏 + 去重 + 重复护栏 + cap<=5。全灭 → None。
 
@@ -398,6 +430,8 @@ def _validate_proposal(
         repeat_ceiling,
     )
 
+    allowed = vocab if vocab is not None else CAPABILITY_VOCAB
+
     def _note(text: str) -> None:
         if dropped is not None:
             dropped.append(text)
@@ -409,7 +443,7 @@ def _validate_proposal(
             _note("提案项不是对象")
             continue
         cap = str(item.get("capabilityId") or "").strip()
-        if cap not in CAPABILITY_VOCAB:
+        if cap not in allowed:
             _note(f"{cap or '(空)'}：不在能力清单里（模型编的）")
             continue
         if cap in seen:
@@ -458,15 +492,16 @@ def _validate_proposal(
 
 
 def should_run_agentic_pick(profile: str = "full", *, repair: bool = False) -> bool:
-    """Agentic pick 是作文能力工厂前段。产品 rehearse（profile=app）必须跳过。
+    """节点内 ReAct：在**已经圈定的短清单**里选下一步。
 
-    ⚠ 2026-08-27 M18：只关规则 pick 不关这里 = 一半不生效（Claude.md §4）。
-    生成器在同一轮同时跳过 pick_next_capabilities。repair 修什么以门说了算，
-    从不走 LLM 选材。本函数不改词表，只给调用点一个开关。
+    repair 修什么以门说了算，从不走 LLM 选材。
+    profile=app 也跑——边界是短清单（证据/报告 opt-in + runtimeClosure），
+    不是整张作文词表。提案必须在调用点 clip 到 legal picks，
+    否则 essay 陷阱会漏进工厂（见 test_rehearse_skips_essay_caps）。
     """
     if repair:
         return False
-    return str(profile or "full") != "app"
+    return True
 
 
 def agentic_pick_next_capabilities(
@@ -475,35 +510,57 @@ def agentic_pick_next_capabilities(
     *,
     loop_index: int = 0,
     max_loops: int = 6,
+    vocab: Optional[dict] = None,
 ) -> Optional[dict]:
     """LLM 看全局提案下一批能力。返回 {"picks": [...], "rationale": str}；
     停用/失败/提案全被门剔除 → None（调用方回落规则版）。
 
-    Factory profile="app" 在 drive_full_v5_session_stream 调用点跳过本函数
-    （should_run_agentic_pick）。不要在这里加一个静默 no-op 的 profile 参数
-    ——那样规则 pick 仍会跑，短清单等于没通电。
+    profile=app 传工厂词表（spec/pages/structure/bind/closure），不传则
+    用作文词表。不要加静默 no-op 的 profile 参数——词表空了提案会被门剔光。
     """
     if not agentic_pick_enabled():
         return None
     import sys as _sys
 
-    vocab_lines = "\n".join(f"- {cap}：{desc}" for cap, desc in CAPABILITY_VOCAB.items())
+    allowed = vocab if vocab is not None else CAPABILITY_VOCAB
+    vocab_lines = "\n".join(f"- {cap}：{desc}" for cap, desc in allowed.items())
+    if _is_factory_vocab(allowed):
+        system = (
+            "你是产品推演工厂的编排器。抄 grok：边界是闭集工具，"
+            "执行路径由你组合，不是唯一日历。\n"
+            "1. 不能发明清单以外的工具，不能换顺序"
+            "（执行按 spec→pages→structure→bind→closure）\n"
+            "2. 新跑必须包含 spec。范围卡已经圈定的清单是上限，不能加回去\n"
+            "3. 根据复述句组合，不要等用户写出「先不 bind」：\n"
+            "   · 看板 / 首屏 / 先看页面 / 管理员首页 / 预览"
+            " → spec+pages+closure，去掉 bind 和 structure\n"
+            "   · 只要规格草稿 → spec+closure\n"
+            "   · 完整产品（审批、权限、角色、工作流、打孔）→ 五件套\n"
+            "4. 复述句已经写了要什么。为「显得完整」而跑满六步 = 死流程\n"
+            "capabilityId 只能从清单里原样抄写。\n"
+            "只输出 JSON：{\"rationale\":\"一句话总体策略\","
+            "\"picks\":[{\"capabilityId\":\"\",\"roleId\":\"\","
+            "\"why\":\"\"}]}\n"
+            "公开工具：\n" + vocab_lines
+        )
+    else:
+        system = (
+            "你是产品推演引擎的编排器。根据推演现场的仪表盘，"
+            "提案下一批要执行的能力（1-5 个，按执行顺序）。原则：\n"
+            "1. 缺证据先补证据，有分歧先红队质疑，结论未综合先综合，"
+            "用户明确要交付物才走交付链\n"
+            "2. 不要重复已充分执行的能力；每个提案说一句为什么\n"
+            "3. capabilityId 只能从能力清单里选（原样抄写），"
+            "roleId 只能是 产品|架构|工程|综合\n"
+            "只输出 JSON：{\"rationale\":\"一句话总体策略\","
+            "\"picks\":[{\"capabilityId\":\"\",\"roleId\":\"\","
+            "\"why\":\"\"}]}\n"
+            "能力清单：\n" + vocab_lines
+        )
     messages = [
         {
             "role": "system",
-            "content": (
-                "你是产品推演引擎的编排器。根据推演现场的仪表盘，"
-                "提案下一批要执行的能力（1-5 个，按执行顺序）。原则：\n"
-                "1. 缺证据先补证据，有分歧先红队质疑，结论未综合先综合，"
-                "用户明确要交付物才走交付链\n"
-                "2. 不要重复已充分执行的能力；每个提案说一句为什么\n"
-                "3. capabilityId 只能从能力清单里选（原样抄写），"
-                "roleId 只能是 产品|架构|工程|综合\n"
-                "只输出 JSON：{\"rationale\":\"一句话总体策略\","
-                "\"picks\":[{\"capabilityId\":\"\",\"roleId\":\"\","
-                "\"why\":\"\"}]}\n"
-                "能力清单：\n" + vocab_lines
-            ),
+            "content": system,
         },
         {
             "role": "user",
@@ -544,7 +601,7 @@ def agentic_pick_next_capabilities(
         print(f"[agentic-pick] loop {loop_index}: 回落规则版", file=_sys.stderr, flush=True)
         return None
     dropped: list[str] = []
-    picks = _validate_proposal(parsed, state, dropped)
+    picks = _validate_proposal(parsed, state, dropped, vocab=allowed)
     if not picks:
         # 剔光 = 这轮 LLM 选材白跑（实测 25~30 秒）+ 整轮被标降级，
         # 所以必须说清剔的是谁、卡在哪道门。只打七个字查不出任何东西。

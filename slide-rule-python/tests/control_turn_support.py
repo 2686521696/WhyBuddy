@@ -33,6 +33,33 @@ def new_sid(prefix: str = "ctl") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
 
+def _seed_hop_artifact(state: V5SessionState) -> None:
+    """假工厂不跑 spec-first，但 host 交回后必须看见这一跳的产物。
+
+    活路径在 v5_capability_executor 把 take_last_pages 写进 specFirstPages。
+    夹具若不落 SPEC，pages 不会进清单，`必须调 pages` 的提示词也拼不出来——
+    测的是「工厂空转」，不是「host 下一跳」。
+    """
+    goal = state.goal if isinstance(state.goal, dict) else {}
+    tools = list(goal.get("tools") or [])
+    if tools != ["spec"]:
+        return
+    blob = state.specFirstPages if isinstance(state.specFirstPages, dict) else {}
+    spec = blob.get("spec")
+    if isinstance(spec, dict) and (spec.get("pages") or spec.get("nodes") or spec.get("appName")):
+        return
+    state.specFirstPages = {
+        **blob,
+        "spec": {
+            "appName": str(goal.get("text") or "应用")[:40],
+            "pages": [{"id": "p1", "name": "首页"}],
+            "nodes": [],
+        },
+        "pages": blob.get("pages") if isinstance(blob.get("pages"), dict) else {},
+    }
+    save_session(state)
+
+
 def six_fields(sid: str, user_text: str, **extra: Any) -> Dict[str, Any]:
     body: Dict[str, Any] = {
         "sessionId": sid,
@@ -191,6 +218,9 @@ class ControlHarness:
                     **kwargs,
                 }
             )
+            if loaded is not None:
+                _seed_hop_artifact(loaded)
+                loaded = load_session(session_id) or loaded
             dump = (
                 loaded.model_dump()
                 if loaded is not None

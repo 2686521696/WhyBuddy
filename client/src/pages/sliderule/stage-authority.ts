@@ -27,63 +27,8 @@ export type StageLine = {
   capabilityId?: string;
 };
 
-export type RecipeStageDef = {
-  id: string;
-  title: string;
-  needles: readonly string[];
-};
-
-/** 首轮画应用的固定配方。id / 针与后端 _ENRICH_STAGE_LABELS 同一份。 */
-export const RECIPE_CORE: readonly RecipeStageDef[] = [
-  {
-    id: "specfirst.spec",
-    title: "起草规格",
-    needles: ["起草规格", "specfirst.spec"],
-  },
-  {
-    id: "specfirst.design",
-    title: "定设计语言",
-    needles: ["设计语言", "specfirst.design"],
-  },
-  {
-    id: "specfirst.pages",
-    title: "逐页画界面",
-    needles: ["逐页画界面", "specfirst.pages"],
-  },
-  {
-    id: "specfirst.structure",
-    title: "反推数据模型",
-    needles: ["反推数据", "specfirst.structure"],
-  },
-  {
-    id: "specfirst.semantics",
-    title: "推导权限与流程",
-    needles: ["推导权限", "specfirst.semantics"],
-  },
-  {
-    id: "specfirst.assemble",
-    title: "汇合五系统",
-    needles: ["汇合五系统", "specfirst.assemble"],
-  },
-  {
-    id: "specfirst.bind",
-    title: "接上数据",
-    needles: ["接上数据", "specfirst.bind"],
-  },
-];
-
-const RECIPE_REFINE: readonly RecipeStageDef[] = [
-  {
-    id: "specfirst.graphscope",
-    title: "判断牵扯范围",
-    needles: ["牵扯的范围", "specfirst.graphscope"],
-  },
-  {
-    id: "specfirst.pagescope",
-    title: "判断改哪几页",
-    needles: ["要改哪几页", "specfirst.pagescope"],
-  },
-];
+/** 配方步只认事件上的 specfirst.* id。查表翻译已删（对齐 xai-grok-session-events）。 */
+const SPECFIRST_ID = /\bspecfirst\.[a-z]+\b/;
 
 const INTAKE_NEEDLES = ["指令已接收", "上一话题已闭环"];
 
@@ -130,9 +75,7 @@ export function classifyStageLine(line: StageLine): StageAuthority {
   if (isIntakeLine(line) || isClosureLine(line)) return "gate";
   const hay = haystack(line);
   if (
-    hay.includes("specfirst.") ||
-    RECIPE_CORE.some(s => s.needles.some(n => hay.includes(n))) ||
-    RECIPE_REFINE.some(s => s.needles.some(n => hay.includes(n))) ||
+    SPECFIRST_ID.test(hay) ||
     PAINT_CHUNK_NEEDLES.some(n => hay.includes(n))
   ) {
     return "recipe";
@@ -142,10 +85,8 @@ export function classifyStageLine(line: StageLine): StageAuthority {
 
 export function matchRecipeStage(line: StageLine): string | undefined {
   const hay = haystack(line);
-  for (const stage of [...RECIPE_REFINE, ...RECIPE_CORE]) {
-    if (stage.needles.some(n => hay.includes(n))) return stage.id;
-  }
-  return undefined;
+  const hit = hay.match(SPECFIRST_ID);
+  return hit ? hit[0] : undefined;
 }
 
 export function linesFromTurnSteps(steps: TurnStep[]): StageLine[] {
@@ -197,44 +138,27 @@ function recipeTrackRows(
   lines: StageLine[],
   streaming: boolean
 ): ActivityRowModel[] {
+  // 只渲染已经到过的阶段。不发明一份 7 格 pending 骨架（那就是 RECIPE_CORE 翻译表）。
+  const rows: ActivityRowModel[] = [];
   const seen = new Set<string>();
-  let latestIndex = -1;
   for (const line of lines) {
     const id = matchRecipeStage(line);
-    if (!id) continue;
+    if (!id || seen.has(id)) continue;
     seen.add(id);
-    const idx = RECIPE_CORE.findIndex(s => s.id === id);
-    if (idx > latestIndex) latestIndex = idx;
+    const parsed = parseActivityLine(line.text);
+    rows.push({
+      id,
+      status: "done",
+      verb: parsed.verb || line.text,
+      target: shortStageId(id),
+      authority: "recipe",
+      stageId: id,
+    });
   }
-  const refineSeen = RECIPE_REFINE.filter(s =>
-    lines.some(line => matchRecipeStage(line) === s.id)
-  );
-  const core = RECIPE_CORE.map((stage, index) => {
-    let status: ActivityStatus = "pending";
-    if (seen.has(stage.id) || (latestIndex >= 0 && index < latestIndex)) {
-      status = streaming && index === latestIndex ? "running" : "done";
-    }
-    return {
-      id: stage.id,
-      status,
-      verb: stage.title,
-      target: shortStageId(stage.id),
-      authority: "recipe" as const,
-      stageId: stage.id,
-    };
-  });
-  const refineRows: ActivityRowModel[] = refineSeen.map((stage, index) => ({
-    id: stage.id,
-    status:
-      streaming && latestIndex < 0 && index === refineSeen.length - 1
-        ? "running"
-        : "done",
-    verb: stage.title,
-    target: shortStageId(stage.id),
-    authority: "recipe",
-    stageId: stage.id,
-  }));
-  return [...refineRows, ...core];
+  if (streaming && rows.length > 0) {
+    rows[rows.length - 1] = { ...rows[rows.length - 1], status: "running" };
+  }
+  return rows;
 }
 
 export function deriveStageBands(args: {

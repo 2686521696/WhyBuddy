@@ -458,6 +458,27 @@ function main(argv) {
   const b = m.baseline ?? {};
   if (argv.includes("--freeze")) { freeze(g, m); console.log("已写入基线"); return 0; }
   if (argv.includes("--report")) { console.log(report(g, m)); return 0; }
+  if (argv.includes("--json-packages")) {
+    const pkgCount = {};
+    for (const mod of g.modules) {
+      const p = packageOf(mod);
+      pkgCount[p] = (pkgCount[p] ?? 0) + 1;
+    }
+    const edges = {};
+    for (const e of g.edges) {
+      if (e.srcPkg === e.dstPkg) continue;
+      const k = `${e.srcPkg}|${e.dstPkg}`;
+      edges[k] = (edges[k] ?? 0) + 1;
+    }
+    process.stdout.write(JSON.stringify({
+      packages: pkgCount,
+      edges: Object.entries(edges).sort().map(([k, n]) => {
+        const [from, to] = k.split("|");
+        return { from, to, n };
+      }),
+    }) + "\n");
+    return 0;
+  }
   if (argv.includes("--emit")) {
     writeFileSync(DIAGRAM, renderDoc(g, m), "utf8");
     console.log(`已生成 ${relative(REPO, DIAGRAM)}`);
@@ -500,8 +521,8 @@ export function renderDoc(g, manifest) {
   out.push("> ⚠ **这份文件是 `scripts/arch-graph-ts.mjs --emit` 生成的，别手改。**");
   out.push("> 手改了 `scripts/arch-graph-ts.test.mjs` 会红。改代码然后重新生成。");
   out.push("");
-  out.push("对应 grok-build 的做法：92 个 crate 在各自 `Cargo.toml` 里显式声明依赖，");
-  out.push("364 条内部边由编译器强制，根 `Cargo.toml` 是生成的。");
+  out.push("对应 grok-build 的做法：边写在各 crate 的 `Cargo.toml` 里，由 cargo 强制。");
+  out.push("对照物的现算数字见 `docs/grok-build 架构图（自动生成）.md`。");
   out.push("");
   out.push("## 规模");
   out.push("");
@@ -515,7 +536,7 @@ export function renderDoc(g, manifest) {
   out.push("");
   out.push("## component 依赖图");
   out.push("");
-  out.push("**红色虚线 = 参与组间成环的边。**");
+  out.push("**红色虚线 = 欠账看板：参与组间成环的边。基线只许变短。**");
   out.push("");
   out.push("```mermaid");
   out.push("graph LR");
@@ -528,6 +549,22 @@ export function renderDoc(g, manifest) {
     out.push(cyclic.has(key) ? `  ${a} -.->|环| ${b}` : `  ${a} --> ${b}`);
   }
   out.push("```");
+  out.push("");
+  const ccyc = componentCycles(g, manifest);
+  const mcyc = crossComponentCycles(g, manifest);
+  const baseCyc = manifest.baseline?.componentCycles ?? [];
+  const baseMod = manifest.baseline?.cycles ?? [];
+  out.push("## 欠账看板（红虚线，基线只许变短）");
+  out.push("");
+  out.push("还一笔就从 `architecture.ts.json` 的 `baseline.componentCycles` / `baseline.cycles` 删掉。");
+  out.push("往基线里加东西 = 有意接受一笔新欠账，不该出现在日常流程里。");
+  out.push("");
+  out.push(`组间环 **${ccyc.length}**（基线 ${baseCyc.length}）`);
+  out.push("");
+  for (const c of ccyc) out.push(`- \`${c}\``);
+  if (!ccyc.length) out.push("（当前没有组间环）");
+  out.push("");
+  out.push(`模块级环 **${mcyc.length}**（基线 ${baseMod.length}）—— 图上不逐条展开，棘轮在 \`--check\`。`);
   out.push("");
   out.push("## 组的职责");
   out.push("");

@@ -1,3 +1,5 @@
+%% ⚠ 非权威 / 历史实验室笔记。禁止再打新 ⚑。
+%% 权威图只留自动生成的：SlideRule V6.2 / WhyBuddy TS / WhyBuddy 全仓 / grok-build。
 %% 面团 AI（原 SlideRule）V5.8 架构图（推演引擎规格 · 继承 V5.7 全图 + ✪ 08-03 升版）
 %% ✪ 2026-08-03 升版：V5.7 图（07-31 11:51 · 0d35b28）之后 45 个动到
 %%   slide-rule-python/services 或 client/src 的提交。这一轮的性质跟前两轮都不同——

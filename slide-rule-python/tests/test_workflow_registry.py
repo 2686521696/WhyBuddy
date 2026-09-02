@@ -8,10 +8,10 @@ from services.capability_plan import NEW_RUN, PRODUCT_REHEARSAL, TOOLS
 from services.workflow_registry import (
     WorkflowPreset,
     register_workflow,
-    select_workflow,
     workflow_for,
     workflow_names,
 )
+from services.workflow_select import PAGES_PREVIEW, PAGES_PREVIEW_TOOLS, select_workflow
 
 
 def test_product_rehearsal_is_the_compatibility_default():
@@ -54,6 +54,27 @@ def test_select_workflow_tools_override_does_not_invent_a_sixth():
     assert reduced.tools == ("spec", "pages", "closure")
     assert "specfirst.bind" not in reduced.stages
     assert "specfirst.structure" not in reduced.stages
+
+
+def test_select_workflow_does_not_overwrite_the_registered_recipe():
+    """本趟减菜不许冲掉注册表。删掉这条、改回 replace=True，下面必红。"""
+    reduced = select_workflow(tools=("spec", "pages"))
+    assert reduced.tools == ("spec", "pages")
+    assert workflow_for("product-rehearsal").tools == TOOLS
+
+
+def test_pages_preview_is_a_registered_choice_not_the_only_calendar():
+    assert PAGES_PREVIEW in workflow_names()
+    preview = select_workflow(name="pages-preview")
+    assert preview.name == PAGES_PREVIEW
+    assert preview.tools == PAGES_PREVIEW_TOOLS
+    assert "specfirst.bind" not in preview.stages
+    assert "specfirst.structure" not in preview.stages
+    underscore = select_workflow(name="pages_preview")
+    assert underscore.name == PAGES_PREVIEW
+    extra = select_workflow(name="pages-preview", tools=("spec", "pages", "bind", "closure"))
+    assert extra.tools == ("spec", "pages", "closure")
+    assert select_workflow().name == PRODUCT_REHEARSAL
 
 
 def test_select_workflow_reads_policy_pack_when_tools_omitted():

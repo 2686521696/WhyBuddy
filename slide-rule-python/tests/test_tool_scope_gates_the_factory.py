@@ -54,9 +54,19 @@ def test_default_is_read_absence_means_read():
 
 
 def test_only_the_three_model_writers_declare_write():
-    """KD3 的三个动词，一个不多一个不少。"""
+    """能造新五系统模型的 WRITE 动词。工厂单跳与 rehearse 同一把闸。"""
     writers = {n for n in CLOSED_TOOLS if resolve_tool_scope(n) is ToolScope.WRITE}
-    assert writers == {"rehearse", "refine", "repair"}, (
+    assert writers == {
+        "rehearse",
+        "workflow",
+        "spec",
+        "pages",
+        "structure",
+        "bind",
+        "closure",
+        "refine",
+        "repair",
+    }, (
         f"能造新五系统模型的工具集变了：{sorted(writers)}。"
         "多一个 = 闸被绕过；少一个 = 那个动词点不着火。"
     )

@@ -118,6 +118,9 @@ modules = [
   "services.sql_gateway",
   "services.stage_legal",
   "services.capability_plan",
+  "services.closed_tools",
+  "services.session_events",
+  "services.workflow_registry",
   "services.turn_context",
   "services.page_naming",
   "services.a2a_core_route_cutover",
@@ -335,7 +338,7 @@ modules = [
   "services.slide_rule_marathon",
   "services.slide_rule_session",
   "services.spec_first_pipeline",
-  "services.workflow_registry",
+  "services.workflow_select",
   "services.spec_tree",
   "services.v5_capability_executor",
   "services.v5_full_driver",
@@ -455,16 +458,31 @@ modules = [
   "services.full_migration_note",
 ]
 
+[component.control]
+why = """控制面闭集工具环。handoff 点火工厂，结果交回控制面（host 循环另算）。
+和 drive 必须是两个 crate：混居的话图上看不见两层终局。
+回流是运行时合同（factory_complete → control_tool_result），不必画成 import 边。"""
+may_depend_on = [
+  "drive",
+  "evidence",
+  "llm_gateway",
+  "model_core",
+  "platform",
+  "spec_first",
+]
+modules = [
+  "services.rehearsal_control",
+]
+
 [component.drive]
-why = """编排：驱动器信封、控制面、会话、run 注册表、暂停/取消、轮次叙述。"""
-may_depend_on = ["capability_engine", "evidence", "identity", "llm_gateway", "model_core", "observability", "persist", "platform", "run_control", "spec_first"]
+why = """工厂信封与会话权威。被控制面 handoff 点火；工厂 complete 改名 factory_complete，不结束 host。"""
+may_depend_on = ["capability_engine", "evidence", "identity", "model_core", "observability", "persist", "platform", "run_control", "spec_first"]
 modules = [
   "services.app_working_session",
   "services.drive_full_factory",
   "services.nl_command_runtime",
   "services.product_charter",
   "services.model_version_restore",
-  "services.rehearsal_control",
   "services.run_registry",
   "services.slide_rule_marathon",
   "services.slide_rule_session",
@@ -497,7 +515,7 @@ modules = [
 
 [component.http_routes]
 why = """HTTP 边缘：路由只做拼装与鉴权，业务不许住在这里。"""
-may_depend_on = ["app_store", "audit", "blueprint", "capability_engine", "diagnostics", "drive", "evidence", "identity", "llm_gateway", "model_core", "observability", "persist", "platform", "spec_first", "task_exec"]
+may_depend_on = ["app_store", "audit", "blueprint", "capability_engine", "control", "diagnostics", "drive", "evidence", "identity", "llm_gateway", "model_core", "observability", "persist", "platform", "spec_first", "task_exec"]
 modules = [
   "routes.account",
   "routes.audit",
@@ -668,6 +686,9 @@ modules = [
   "models.blueprint_state",
   "models.v5_state",
   "services.archetype_legal",
+  "services.closed_tools",
+  "services.session_events",
+  "services.workflow_registry",
   "services.closure_relevance",
   "services.composition_root_state",
   "services.device_policy",
@@ -716,6 +737,7 @@ modules = [
   "services.block_narrowing",
   "services.block_proposer",
   "services.capability_plan",
+  "services.workflow_select",
   "services.design_language",
   "services.freeform_block",
   "services.freeform_preview_store",
@@ -739,7 +761,6 @@ modules = [
   "services.refine_short_circuit",
   "services.sheet_palette",
   "services.spec_first_pipeline",
-  "services.workflow_registry",
   "services.spec_page_html",
   "services.spec_semantics",
   "services.spec_tree",
@@ -917,6 +938,83 @@ patterns = [
 "sliderule_llm.pool" = "unwired"
 
 
+# ── 编排环（spine）──────────────────────────────────────────────────────────
+#
+# 抄 grok-build 的 spine 图：边从真依赖算，不手画盒子。
+# ⚠ 节点不要用 component.run_control——那一组是 pause/cancel 叶子，
+#   不是 rehearsal_control。控制面在 component.control 里。
+# 回流（工厂收工交回控制面）是 SSE 合同，不是 import 边，不画进 spine。
+# handoff 额外要求 from 文件里有 `def via`，且函数体调用 to 的符号
+# （CLAUDE.md 第一条：import 在不等于那条链在跑）。
+
+[spine.nodes.rehearsal_control]
+rank = 0
+module = "services.rehearsal_control"
+what = "控制面闭集工具环"
+
+[spine.nodes.drive_full_factory]
+rank = 1
+module = "services.drive_full_factory"
+what = "工厂点火信封"
+
+[spine.nodes.v5_full_driver]
+rank = 2
+module = "services.v5_full_driver"
+what = "主循环驱动"
+
+[spine.nodes.v5_capability_executor]
+rank = 3
+module = "services.v5_capability_executor"
+what = "能力执行器（活路径调 run_spec_first）"
+
+[spine.nodes.spec_first_pipeline]
+rank = 4
+module = "services.spec_first_pipeline"
+what = "spec-first 七步"
+
+[spine.handoff]
+from_module = "services.rehearsal_control"
+via = "_handoff_factory"
+calls = "start_drive_full_factory_run"
+to_module = "services.drive_full_factory"
+
+
+# ── 跨语言边（Nx implicitDependencies）──────────────────────────────────────
+#
+# Node 用拼出来的字符串 __import__ Python 模块。两侧静态分析都看不见。
+# 抄 Nx：静态看不见的边必须显式声明，否则图上是孤儿、删了判据全绿、
+# 线上只返回 {"ok": false, "code": "py_bridge"}。
+# 闸：声明的 adapter 必须 == server/index.ts 里 createPythonWebAigcAdapter("…")。
+
+[[cross_language_edge]]
+from = "server/index.ts"
+from_pkg = "server"
+to = "services.web_aigc_open_adapter"
+adapter = "open"
+why = "createPythonWebAigcAdapter 拼字符串 __import__"
+
+[[cross_language_edge]]
+from = "server/index.ts"
+from_pkg = "server"
+to = "services.web_aigc_orchestration_adapter"
+adapter = "orchestration"
+why = "createPythonWebAigcAdapter 拼字符串 __import__"
+
+[[cross_language_edge]]
+from = "server/index.ts"
+from_pkg = "server"
+to = "services.web_aigc_web_qa_adapter"
+adapter = "web_qa"
+why = "createPythonWebAigcAdapter 拼字符串 __import__"
+
+[[cross_language_edge]]
+from = "server/index.ts"
+from_pkg = "server"
+to = "services.web_aigc_device_location_adapter"
+adapter = "device_location"
+why = "createPythonWebAigcAdapter 拼字符串 __import__"
+
+
 # ── 棘轮基线 ────────────────────────────────────────────────────────────────
 #
 # 存量违规与环冻在这里，判据只比「有没有变多」。**这份清单只许变短。**
@@ -929,6 +1027,9 @@ patterns = [
 # ⚠ 往这里加东西 = 有意接受一笔新欠账。`--freeze` 会一把全写进来，
 #   所以它不该出现在日常流程里；日常应该是让判据红，然后**改代码**。
 [baseline]
+# 函数体里的内部 import 条数。只许变少。新模块顶层 import。
+# grok 没有这个病：Cargo 边写在 crate 上，藏进函数体绕不过编译器。
+deferred = 485
 violations = [
 ]
 services_violations = [

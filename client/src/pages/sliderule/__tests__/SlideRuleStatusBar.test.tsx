@@ -86,7 +86,7 @@ describe("SlideRuleStatusBar publish closure badge", () => {
 const FORBIDDEN_ETA = ["8–9", "8-9", "8 分钟", "约 2 分钟", "20 分钟"];
 
 describe("推演钟 + 证据 HUD（产品 DOM）", () => {
-  it("运行中渲染六步、第 1 步 skippable，墙上钟没有假分钟数", () => {
+  it("运行中渲染工厂步、不含默认跳过的澄清格，墙上钟没有假分钟数", () => {
     const html = renderToStaticMarkup(
       <SlideRuleStatusBar
         state={state()}
@@ -97,9 +97,7 @@ describe("推演钟 + 证据 HUD（产品 DOM）", () => {
       />
     );
     expect(html).toContain('data-testid="sliderule-rehearsal-clock"');
-    expect(html).toContain('data-testid="sliderule-rehearsal-step-1"');
-    expect(html).toContain('data-skippable="true"');
-    expect(html).toContain('data-status="skipped"');
+    expect(html).not.toContain('data-testid="sliderule-rehearsal-step-1"');
     expect(html).toContain('data-testid="sliderule-rehearsal-step-2"');
     expect(html).toContain('aria-current="step"');
     expect(html).toContain("起草 SPEC");
@@ -150,7 +148,7 @@ describe("推演钟 + 证据 HUD（产品 DOM）", () => {
     expect(html).not.toContain("8888");
   });
 
-  it("停跑后第 2 步是 done 不是 current；第 1 步仍 skipped", () => {
+  it("停跑后第 2 步是 done 不是 current；澄清格不占钟", () => {
     const html = renderToStaticMarkup(
       <SlideRuleStatusBar
         state={state()}
@@ -160,17 +158,13 @@ describe("推演钟 + 证据 HUD（产品 DOM）", () => {
       />
     );
     expect(html).toContain('data-testid="sliderule-rehearsal-step-2"');
+    expect(html).not.toContain('data-testid="sliderule-rehearsal-step-1"');
     const step2 = html.slice(
       html.indexOf('data-testid="sliderule-rehearsal-step-2"'),
       html.indexOf('data-testid="sliderule-rehearsal-step-3"')
     );
     expect(step2).toContain('data-status="done"');
     expect(step2).not.toContain("aria-current");
-    const step1 = html.slice(
-      html.indexOf('data-testid="sliderule-rehearsal-step-1"'),
-      html.indexOf('data-testid="sliderule-rehearsal-step-2"')
-    );
-    expect(step1).toContain('data-status="skipped"');
     expect(html).not.toContain('aria-current="step"');
   });
 

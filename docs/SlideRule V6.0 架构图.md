@@ -1,3 +1,5 @@
+%% ⚠ 非权威 / 历史实验室笔记。禁止再打新 ⚑。
+%% 权威图只留自动生成的：SlideRule V6.2 / WhyBuddy TS / WhyBuddy 全仓 / grok-build。
 %% ⚠ 2026-08-27：V6.0 是历史实验室笔记，不再作为施工图。禁止再打新 ⚑。
 %% 现行图是 V6.1 六张短图：
 %%   docs/SlideRule V6.1 控制面.md

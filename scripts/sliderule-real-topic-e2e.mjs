@@ -22,6 +22,9 @@ const OUT = process.env.E2E_SHOT_DIR || ".manus-logs/e2e-shots";
 const TOPIC =
   process.env.E2E_TOPIC ||
   "做一个社区诊所的预约与排班系统：医生排班、患者线上预约、到诊登记，管理员首页能看今天的预约量和空闲号源";
+const CLARIFY =
+  process.env.E2E_CLARIFY_ANSWER ||
+  "总部统一配发标准清单，门店按清单逐项打勾";
 const DEADLINE_MS = Number(process.env.E2E_DEADLINE_MIN || 14) * 60 * 1000;
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -69,12 +72,6 @@ try {
   await page.waitForSelector('[data-testid="sliderule-composer-input"]', { timeout: 60000 });
   await page.waitForTimeout(4000);
 
-  // 新建会话，别接着旧的跑
-  const fresh = page.getByText("新建会话").first();
-  if (await fresh.count()) {
-    await fresh.click();
-    await page.waitForTimeout(2500);
-  }
   /* ⚠ 上一趟留在屏幕上的卡会**把输入框锁死**：ComposerDock 的
      `disabled={Boolean(pendingScope) || Boolean(pendingAsk)}`。页面恢复
      上一个会话时这些卡会跟着回来，于是脚本卡在「element is not enabled」
@@ -90,6 +87,25 @@ try {
       await page.waitForTimeout(800);
     }
   }
+  // 新建会话，别接着旧的跑（先清卡再点，否则点了也进不去）。
+  // ⚠ 2026-09-01：getByText("新建会话") 会点到帮助文案；真按钮是
+  //   sidebar-session-new。点错就会留在 sliderule-v51-product 上，
+  //   上一趟还在「推演中」，范围卡「开始推演」disabled，脚本干等 30s。
+  const fresh = page.locator('[data-testid="sidebar-session-new"]').first();
+  if (await fresh.count()) {
+    await fresh.click();
+    await page.waitForTimeout(2500);
+    await shot(page, "新建会话");
+  }
+  for (let i = 0; i < 4; i += 1) {
+    const running = await page.evaluate(() =>
+      /推演中/.test(document.body.innerText)
+    );
+    if (!running) break;
+    log("上一轮还在推演中，再点新建会话");
+    if (await fresh.count()) await fresh.click().catch(() => {});
+    await page.waitForTimeout(2000);
+  }
   await page.waitForSelector('[data-testid="sliderule-composer-input"]', { timeout: 60000 });
   await shot(page, "空态");
 
@@ -99,13 +115,39 @@ try {
      然后 click 干等 30 秒超时，报的是「element is not enabled」，
      看着像脚本坏了，其实只是开早了。 */
   await page.waitForSelector(`${TA}:not([disabled])`, { timeout: 90000 });
-  await page.click(TA);
-  await page.fill(TA, TOPIC);
-  await page.waitForTimeout(400);
+  const box = page.locator(TA).first();
+  await box.click();
+  await box.fill("");
+  await box.pressSequentially(TOPIC, { delay: 8 });
+  /* 入站判定 debounce 500ms；判定在飞时发送键灰。等它亮再点。 */
+  await page.waitForTimeout(800);
+  await page.waitForSelector(
+    '[data-testid="sliderule-composer-send"]:not([disabled])',
+    { timeout: 60000 }
+  );
   await shot(page, "输入需求");
 
-  await page.click('[data-testid="sliderule-composer-send"]');
-  log("已发送，等范围卡…");
+  const turnPosted = page.waitForResponse(
+    r => r.url().includes("/control-turn-stream") && r.request().method() === "POST",
+    { timeout: 45000 }
+  );
+  await page.locator('[data-testid="sliderule-composer-send"]').first().click();
+  let posted = await turnPosted.catch(() => null);
+  if (!posted) {
+    log("点击发送没有 POST control-turn-stream，改按 Enter");
+    await box.click();
+    await page.keyboard.press("Enter");
+    posted = await page
+      .waitForResponse(
+        r =>
+          r.url().includes("/control-turn-stream") &&
+          r.request().method() === "POST",
+        { timeout: 45000 }
+      )
+      .catch(() => null);
+  }
+  log("已发送", posted ? `控制面 ${posted.status()}` : "仍未见 control-turn-stream");
+  await shot(page, "发送后");
 
   /*
    * 控制面：无范围卡不点火 —— 先出卡。
@@ -138,8 +180,8 @@ try {
         .textContent()
         .catch(() => "");
       log("  澄清题:", (q || "").trim().slice(0, 60).replace(/\s+/g, " "));
-      if (await other.count()) await other.fill("总部统一配发标准清单，门店按清单逐项打勾");
-      else if (await free.count()) await free.fill("总部统一配发标准清单，门店按清单逐项打勾");
+      if (await other.count()) await other.fill(CLARIFY);
+      else if (await free.count()) await free.fill(CLARIFY);
       const next = page.locator('[data-testid="sliderule-clarification-next"]');
       if (await next.count()) {
         await next.click();
@@ -167,12 +209,17 @@ try {
   log("范围卡复述:", (restate || "").trim().slice(0, 80));
   await shot(page, "范围卡");
 
+  await page.waitForSelector(
+    '[data-testid="sliderule-scope-confirm"]:not([disabled])',
+    { timeout: 90000 }
+  );
   await page.click('[data-testid="sliderule-scope-confirm"]');
   log("点了「开始推演」，工厂点火…");
   const started = Date.now();
 
   let lastText = "";
   let done = false;
+  let factoryDone = false;
   /*
    * 伴随式澄清（2026-08-27）：spec-first 第 2 步会把「我替你定了什么」
    * 推上流。它**不拦**推演，所以这里只观察 + 点一下，不改变主流程节奏。
@@ -181,8 +228,10 @@ try {
    *   有没有真的出现在**排队条**里。不查内部状态——本仓第五条。
    */
   let sawAssumptions = false;
+  let sawOrch = false;
+  let lastStep = "";
   while (Date.now() - started < DEADLINE_MS) {
-    await page.waitForTimeout(20000);
+    await page.waitForTimeout(8000);
     const secs = Math.round((Date.now() - started) / 1000);
     const state = await page.evaluate(() => {
       const pick = sel => document.querySelector(sel)?.textContent?.trim() || "";
@@ -201,11 +250,28 @@ try {
         pages: document.querySelectorAll('[data-testid^="sliderule-artboard"], iframe').length,
         closure: pick('[data-testid="sliderule-publish-closure"]').slice(0, 80),
         interrupted: document.body.innerText.includes("推演中断"),
+        clock: [...document.querySelectorAll('[data-testid^="sliderule-rehearsal-step-"]')]
+          .map(e => `${e.getAttribute("data-step")}:${e.getAttribute("data-status")}`)
+          .join(","),
+        orchestrate: (document.body.innerText.match(/编排[^\n]{0,80}/) || [""])[0],
       };
     });
-    const line = `${secs}s · 页面框 ${state.pages} · 当前步 ${state.step || "—"} · 闭环 ${state.badge || "—"}`;
+    const line = `${secs}s · 页面框 ${state.pages} · 当前步 ${state.step || "—"} · 钟 ${state.clock || "—"} · 闭环 ${state.badge || "—"}`;
     if (line !== lastText) { log(line); lastText = line; }
-    if (secs % 60 < 21) await shot(page, `推演-${secs}s`);
+    if (!sawOrch && state.orchestrate) {
+      sawOrch = true;
+      log("左栏编排:", state.orchestrate);
+      await shot(page, `编排-${secs}s`);
+    }
+    if (state.step && state.step !== lastStep) {
+      lastStep = state.step;
+      await shot(
+        page,
+        `步骤-${state.step.replace(/[\\/:*?"<>|\s]+/g, "-").replace(/-+/g, "-").slice(0, 32)}-${secs}s`
+      );
+    } else if (secs % 40 < 9) {
+      await shot(page, `推演-${secs}s`);
+    }
     if (state.interrupted) { log("!! 出现「推演中断」"); await shot(page, `中断-${secs}s`); break; }
 
     if (!sawAssumptions && (await page.locator('[data-testid="sliderule-assumptions"]').count())) {
@@ -220,7 +286,8 @@ try {
       await shot(page, `假设面板-${secs}s`);
 
       const revise = page.locator('[data-testid="sliderule-assumption-revise"]').first();
-      if (await revise.count()) {
+      const clickAssumption = process.env.E2E_CLICK_ASSUMPTION === "1";
+      if (clickAssumption && (await revise.count())) {
         const label = (await revise.textContent()) || "";
         await revise.click();
         await page.waitForTimeout(800);
@@ -232,6 +299,8 @@ try {
         log(`点了「${label.trim()}」→ 排队条现在有 ${queued.length} 条：`, queued);
         await shot(page, `改一条进排队-${secs}s`);
         if (queued.length === 0) log("!! 点了个寂寞——那句话没进排队条");
+      } else if (!clickAssumption) {
+        log("本趟不点假设改写（E2E_CLICK_ASSUMPTION 未开），避免搅话题");
       } else {
         log("这一轮的假设没有备选做法（模型只是知会一声），跳过点击");
       }
@@ -258,7 +327,33 @@ try {
         document.querySelectorAll("iframe").length > 0
       );
     });
-    if (finished) { done = true; log(`闭环出现，用时 ${secs}s`); break; }
+    if (finished && !factoryDone) {
+      factoryDone = true;
+      log(`工厂收工，用时 ${secs}s，等主 Agent 开口…`);
+      await shot(page, `工厂收工-${secs}s`);
+    }
+    if (factoryDone) {
+      const speech = await page
+        .locator('[data-host-speech="true"]')
+        .first()
+        .innerText()
+        .catch(() => "");
+      const spoke =
+        Boolean((speech || "").trim()) &&
+        !speech.includes("我是面团的推演引擎") &&
+        !speech.includes("当前模型摘要");
+      const idleWithoutSpeech =
+        !(await page.locator('[data-testid="sliderule-composer-stop"]').count()) &&
+        !spoke;
+      if (idleWithoutSpeech) {
+        log("!! 工厂后作曲家已空闲但主 Agent 还没开口");
+      }
+      if (spoke) {
+        log(`主 Agent 开口，用时 ${secs}s:`, (speech || "").trim().slice(0, 80));
+        done = true;
+        break;
+      }
+    }
   }
   await page.waitForTimeout(2000);
   await shot(page, done ? "完成" : "收尾");

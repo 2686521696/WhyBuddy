@@ -148,11 +148,10 @@ def test_app_profile_stream_skips_essay_caps_and_uses_short_list(driver, monkeyp
     leaked = _essay_in(started)
     assert not leaked, (
         f"profile=app 仍启动了作文能力 {leaked}。"
-        "删掉生成器里 profile == 'app' 的跳过，或短清单之后仍走 agentic pick，这条必须红。"
+        "短清单必须 clip agentic 提案；删掉 _clip_agentic_picks_to_legal 这条红。"
     )
-    assert agentic_calls == [], (
-        "app 短清单之后仍调用了 agentic_pick_next_capabilities——"
-        "只跳过规则 pick 等于一半没改。"
+    assert agentic_calls, (
+        "app 路径必须跑节点内 agentic pick。should_run_agentic_pick 若仍对 app 返回 False，这条红。"
     )
     assert orch_calls == [], "app 路径不应再跑 orchestrate_plan"
     joined = " ".join(str(x) for x in started)
@@ -160,6 +159,73 @@ def test_app_profile_stream_skips_essay_caps_and_uses_short_list(driver, monkeyp
         "短清单赋值被删掉的话，循环里不会启动 runtimeclosure。"
         "只断言没作文、不断言有收口，删掉赋值会假绿。"
     )
+
+
+def test_app_agentic_pick_stamps_factory_tools_and_can_omit_bind(driver, monkeypatch):
+    """工厂节点里开 agentic pick：提案 stamp 到 goal.tools，钟才能跟着减。
+
+    反向：删掉 _stamp_factory_tools_onto_goal / clip_factory_tools，
+    这条必红——只跑 agentic 但不动 tools，钟仍是六步。
+    """
+    driver_mod, agentic_mod = driver
+    executed, agentic_calls, orch_calls = _install_traps(
+        driver_mod, agentic_mod, monkeypatch
+    )
+
+    def fake_factory_pick(state, user_text, **kwargs):
+        agentic_calls.append({"user_text": user_text, **kwargs})
+        return {
+            "picks": [
+                {"capabilityId": "spec", "roleId": "产品"},
+                {"capabilityId": "pages", "roleId": "工程"},
+                {"capabilityId": "closure", "roleId": "综合"},
+            ],
+            "rationale": "先只出页面，先不 bind",
+        }
+
+    monkeypatch.setattr(agentic_mod, "agentic_pick_next_capabilities", fake_factory_pick)
+    state = _seeded("app-omit-bind")
+    events = _collect(
+        driver_mod,
+        state,
+        max_loops=1,
+        user_instruction=GOAL,
+        profile="app",
+    )
+    started = _started_caps(events, executed)
+    assert not _essay_in(started)
+    assert orch_calls == []
+    assert agentic_calls, "app 路径没跑工厂节点 agentic pick"
+    vocab = agentic_calls[0].get("vocab") or {}
+    assert "spec" in vocab and "bind" in vocab, (
+        "工厂词表没传进 agentic pick。删掉 vocab=factory_tool_vocab 这条红。"
+    )
+    assert "critique.generate" not in vocab
+    tools = list((state.goal or {}).get("tools") or [])
+    assert tools == ["spec", "pages", "closure"], (
+        f"goal.tools 没被减菜：{tools}。钟仍会画 bind。"
+    )
+    assert "bind" not in tools
+    assert (state.goal or {}).get("workflow") == "pages-preview"
+    joined = " ".join(str(x) for x in started)
+    assert "appbundle.runtime" in joined.lower()
+    assert any(e.get("type") == "factory_plan" for e in events), (
+        "活路径没发出 factory_plan。删掉 yield 钟不会跟着变。"
+    )
+    plan = next(e for e in events if e.get("type") == "factory_plan")
+    assert plan.get("tools") == ["spec", "pages", "closure"]
+
+
+def test_factory_pick_prompt_composes_instead_of_defaulting_all_five():
+    """死流程的那句「没说减就全开」不许再写进工厂词表。"""
+    from services.v5_agentic_pick import agentic_pick_next_capabilities
+
+    src = _code(agentic_pick_next_capabilities)
+    factory = src[src.index("_is_factory_vocab") : src.index("else:")]
+    assert "没说减就全开" not in factory
+    assert "看板" in factory
+    assert "组合" in factory
+    assert "死流程" in factory
 
 
 def test_full_profile_and_rule_pick_still_can_select_essay_caps(driver, monkeypatch):
@@ -283,7 +349,7 @@ def test_scope_opt_in_feasibility_report_brings_essay_caps_back(driver, monkeypa
     assert _essay_in(started), (
         "范围卡勾了可行性报告，短清单应把 risk/critique/report 加回来。"
     )
-    assert agentic_calls == [], "勾选加回作文能力，仍不得把选材交给 agentic pick"
+    assert agentic_calls, "勾选报告后仍应跑节点内 agentic pick（提案 clip 在短清单内）"
     assert orch_calls == []
 
 
@@ -300,9 +366,17 @@ def test_live_stream_body_has_app_skip_and_not_discarded_profile():
     assert "should_run_agentic_pick" in code
     assert "pick_next_capabilities" in code
     assert "agentic_pick_next_capabilities" in code
+    assert "factory_tool_vocab" in code
+    assert "_stamp_factory_tools_onto_goal" in code
+    assert "clip_factory_tools" in code
+    assert '"factory_plan"' in code, (
+        "编排结果必须 yield factory_plan，否则钟拿不到本轮 tools。"
+    )
     app_at = code.index('profile == "app"')
     short_at = code.index("_app_profile_short_picks")
     assert short_at > app_at, "短清单赋值不在 app 分支里"
+    vocab_at = code.index("factory_tool_vocab")
+    assert vocab_at > app_at, "工厂词表没传进 app 分支的 agentic pick"
 
 
 def test_drive_turn_path_still_calls_rule_pick():

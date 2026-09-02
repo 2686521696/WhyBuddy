@@ -131,6 +131,8 @@ export interface V5SessionState {
   goal: {
     text: string;
     status: "clear" | "needs_refinement" | "not_recommended";
+    tools?: string[];
+    workflow?: string;
   };
   graph: BrainstormReasoningGraph; // capability invocation graph (strict)
   artifacts: Artifact[];

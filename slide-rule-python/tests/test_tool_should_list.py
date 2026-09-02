@@ -85,6 +85,46 @@ def test_rehearse_hidden_until_scope_confirmed():
     """
     assert "rehearse" not in _names(_fresh())
     assert "rehearse" in _names(_scoped())
+    assert "spec" in _names(_scoped())
+    assert "pages" not in _names(_scoped())
+    with_model = _with_model()
+    with_model.controlTranscript = [
+        {"id": "ct-1", "kind": "scope_confirmed", "text": "请假系统"}
+    ]
+    assert "rehearse" not in _names(with_model)
+    assert "refine" in _names(with_model)
+    assert "workflow" in _names(_scoped())
+    assert "workflow" in _names(with_model)
+    assert "workflow" not in _names(_fresh())
+    assert "spec" not in _names(_fresh())
+
+
+def test_pages_hidden_until_spec_exists():
+    st = _scoped()
+    st.specFirstPages = {
+        "spec": {"appName": "请假", "pages": [{"id": "p1"}], "nodes": []},
+        "pages": {},
+    }
+    names = _names(st)
+    assert "spec" not in names
+    assert "pages" in names
+    assert "structure" not in names
+    assert "bind" not in names
+    st.specFirstPages["pages"] = {"p1": "<html>1</html>"}
+    names = _names(st)
+    assert "pages" in names
+    assert "structure" in names
+    assert "bind" in names
+    assert "closure" in names
+
+
+def test_workflow_tool_description_lists_registered_presets():
+    """模型看不见配方名字就只能发明流程。删掉 list_control_tools 里的注入必红。"""
+    tools = list_control_tools(_scoped())
+    workflow = next(t for t in tools if t["function"]["name"] == "workflow")
+    desc = workflow["function"]["description"]
+    assert "pages-preview" in desc
+    assert "product-rehearsal" in desc
 
 
 def test_clarify_hidden_after_one_round():
@@ -188,13 +228,20 @@ def test_listed_tools_are_a_subset_of_the_closed_set():
 
 
 def test_full_manifest_shape_is_untouched():
-    """裁的是清单，不是工具定义本身——形状必须原样。"""
+    """裁的是清单，不是工具定义本身——形状必须原样。
+
+    workflow 除外：描述里要写上此刻已登记的配方名，改全局 CONTROL_TOOLS
+    会让 schema 跟着注册表变，provider 那头不稳定。
+    """
     listed = list_control_tools(_scoped())
     by_name = {t["function"]["name"]: t for t in listed}
     for t in CONTROL_TOOLS:
         n = t["function"]["name"]
-        if n in by_name:
+        if n in by_name and n != "workflow":
             assert by_name[n] is t, f"{n} 的定义被复制/改写了，应当原样透传"
+    assert by_name["workflow"] is not CONTROL_TOOLS[
+        next(i for i, t in enumerate(CONTROL_TOOLS) if t["function"]["name"] == "workflow")
+    ]
 
 
 # ── 通电：光有 list_control_tools 不算数 ──────────────────────────

@@ -41,51 +41,32 @@ export const REHEARSAL_PRODUCT_STEPS: readonly RehearsalProductStepDef[] = [
   { id: 6, label: "汇合过闸", skippable: false },
 ];
 
-/**
- * M8 映射表（内部模块 → 产品步）。键是模块名，不是人话。
- *
- * ⚠ 改 `spec_tree` 的步号等于把默认起点挪走——测试按字面钉 2。
- */
-export const REHEARSAL_MODULE_TO_STEP = {
-  "intent.clarify": 1,
-  "gap.ask": 1,
-  "evidence.search": 1,
-  spec_tree: 2,
-  spec_page_html: 3,
-  page_shell: 3,
-  html_structure: 4,
-  spec_semantics: 5,
-  model_assembly: 6,
-  html_bindings: 6,
-  v5_model_gate: 6,
-  evaluate_coverage_gate: 6,
-} as const satisfies Record<string, RehearsalProductStepId>;
+/** 公开工具 → 钟上的步。缺省全开；范围卡减菜后对应格 skippable。 */
+const PUBLIC_TOOL_TO_STEP: Record<string, RehearsalProductStepId> = {
+  spec: 2,
+  pages: 3,
+  structure: 4,
+  bind: 5,
+  closure: 6,
+};
+
+export function enabledFactorySteps(
+  tools?: string[] | null
+): Set<RehearsalProductStepId> {
+  const wanted = (tools || []).map(item => String(item).trim()).filter(Boolean);
+  const chosen = wanted
+    .map(id => PUBLIC_TOOL_TO_STEP[id])
+    .filter((step): step is RehearsalProductStepId => step != null);
+  return new Set(
+    chosen.length > 0 ? chosen : ([2, 3, 4, 5, 6] as RehearsalProductStepId[])
+  );
+}
 
 /**
- * 活 SSE 上的别名。spec-first 阶段 id / 页 sink / 五系统 skill_start
- * 与上表同一套产品步，不另开进度 API。
+ * 推演钟不再查内部模块名。步号只认事件上的 `productStep`
+ * （stage_legal.describe / session_events.envelope）。
+ * 删掉 REHEARSAL_MODULE_TO_STEP / EVENT_ALIASES：那就是翻译表。
  */
-const REHEARSAL_EVENT_ALIASES: Record<string, RehearsalProductStepId> = {
-  "specfirst.spec": 2,
-  "specfirst.design": 2,
-  spec_page: 3,
-  "specfirst.pages": 3,
-  "specfirst.pagescope": 3,
-  "specfirst.graphscope": 3,
-  "specfirst.structure": 4,
-  "specfirst.semantics": 5,
-  "specfirst.assemble": 6,
-  "specfirst.bind": 6,
-  // ⚠ SkillId `page` 是五系统 page 能力（闭环走步 6），不是 SSE spec_page。
-  // 2026-08-27 第一版写成 3：精修/复用没跑 spec-first 时，closure walk
-  // dataModel→rbac→workflow→page 把「每页 HTML」涂成 done。真机钟撒谎。
-  page: 6,
-  dataModel: 6,
-  workflow: 6,
-  rbac: 6,
-  aigc: 6,
-  appBundle: 6,
-};
 
 export type RehearsalClockCursor = {
   currentStep: RehearsalProductStepId | null;
@@ -145,15 +126,9 @@ function rememberSeen(
 }
 
 export function mapInternalEventToProductStep(
-  event: string | null | undefined
+  _event: string | null | undefined
 ): RehearsalProductStepId | null {
-  const raw = String(event || "").trim();
-  if (!raw) return null;
-  const canonical =
-    REHEARSAL_MODULE_TO_STEP[raw as keyof typeof REHEARSAL_MODULE_TO_STEP];
-  if (canonical) return canonical;
-  const alias = REHEARSAL_EVENT_ALIASES[raw];
-  if (alias) return alias;
+  // 故意不查表。事件没带 productStep 就不要猜。
   return null;
 }
 
@@ -199,12 +174,17 @@ export function advanceRehearsalCursor(
 
 export function buildRehearsalClockView(
   cursor: RehearsalClockCursor,
-  opts: { isRunning: boolean; publishClosed?: boolean }
+  opts: { isRunning: boolean; publishClosed?: boolean; tools?: string[] | null }
 ): RehearsalClockView {
   const current = cursor.currentStep;
   const seen = new Set(cursor.seenSteps || []);
-  const steps: RehearsalClockStepView[] = REHEARSAL_PRODUCT_STEPS.map((def) => {
+  const enabled = enabledFactorySteps(opts.tools);
+  const mapped: RehearsalClockStepView[] = REHEARSAL_PRODUCT_STEPS.map((def) => {
     let status: RehearsalStepStatus = "pending";
+    const toolSkipped = def.id >= 2 && !enabled.has(def.id);
+    if (toolSkipped) {
+      return { ...def, skippable: true, status: "skipped" as RehearsalStepStatus };
+    }
     if (def.id === 1) {
       if (cursor.sawStep1) {
         status = opts.isRunning && current === 1 ? "current" : "done";
@@ -227,6 +207,9 @@ export function buildRehearsalClockView(
     }
     return { ...def, status };
   });
+  // 抄 grok：进度只画选中的步。skipped 留在状态机里，钟上不占格——
+  // 永远六格就是死日历。
+  const steps = mapped.filter((s) => s.status !== "skipped");
   const live = steps.find((s) => s.status === "current");
   return {
     currentStep: current,
@@ -478,9 +461,16 @@ export function deriveStatusBarFacts(
     (!Array.isArray(publishClosure.topBlockers) || publishClosure.topBlockers.length === 0)
   );
 
+  const goalTools = Array.isArray((state.goal as { tools?: unknown } | undefined)?.tools)
+    ? ((state.goal as { tools: unknown[] }).tools as string[])
+    : undefined;
   const rehearsalClock = buildRehearsalClockView(
     opts.rehearsalCursor ?? idleRehearsalCursor(),
-    { isRunning: opts.isRunning, publishClosed: publishClosureClosed }
+    {
+      isRunning: opts.isRunning,
+      publishClosed: publishClosureClosed,
+      tools: goalTools,
+    }
   );
   const hud = deriveContextHudFacts(state, opts.publishClosure);
 

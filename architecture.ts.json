@@ -88,15 +88,14 @@
       ]
     },
     "client-lib": {
-      "why": "前端库层：推演运行时、项目存储、路由规划、浏览器侧 LLM。167 个模块，是前端事实上的核心。",
+      "why": "前端库层：推演运行时、项目存储、路由规划、浏览器侧 LLM。workers 是叶子（被 serializer 用），不进装配根。",
       "paths": [
-        "client/src/lib"
+        "client/src/lib",
+        "client/src/workers"
       ],
       "mayDependOn": [
         "client-components",
-        "client-pages-sliderule",
         "client-runtime",
-        "client-shell",
         "shared-blueprint",
         "shared-contracts",
         "shared-web-aigc",
@@ -115,7 +114,7 @@
       ]
     },
     "client-shell": {
-      "why": "前端装配根与横切件：入口、全局上下文、hooks、i18n、worker、开发夹具。",
+      "why": "前端装配根与横切件：入口、全局上下文、hooks、i18n、开发夹具。worker 下沉到 client-lib。",
       "paths": [
         "client/src/App",
         "client/src/main",
@@ -123,7 +122,6 @@
         "client/src/contexts",
         "client/src/hooks",
         "client/src/i18n",
-        "client/src/workers",
         "client/src/dev-harness",
         "client/src/vite-env.d",
         "client/dev-harness"
@@ -160,7 +158,6 @@
       "mayDependOn": [
         "server-audit",
         "server-core",
-        "server-entry",
         "server-integrations",
         "server-permission",
         "server-persist",
@@ -174,13 +171,16 @@
       ]
     },
     "server-core": {
-      "why": "服务端核心：socket、注册表、治理、a2a 适配、nl-command。",
+      "why": "服务端核心：socket、注册表、治理、a2a 适配、nl-command。auth/runtime/config/startup 从组合根拆过来——grok 的 pager-bin 也不把库放进 binary crate。",
       "paths": [
-        "server/core"
+        "server/core",
+        "server/auth",
+        "server/runtime",
+        "server/config",
+        "server/startup"
       ],
       "mayDependOn": [
         "server-audit",
-        "server-entry",
         "server-integrations",
         "server-permission",
         "server-persist",
@@ -291,13 +291,9 @@
       ]
     },
     "server-entry": {
-      "why": "服务端装配根（对应 grok 的 xai-grok-pager-bin）：只负责把东西装起来。",
+      "why": "服务端装配根（对应 grok 的 xai-grok-pager-bin）：只负责把东西装起来。**被依赖数必须是 0**。auth/runtime/config 是库，不进这个 crate。",
       "paths": [
-        "server/index",
-        "server/startup",
-        "server/config",
-        "server/runtime",
-        "server/auth"
+        "server/index"
       ],
       "mayDependOn": [
         "server-audit",
@@ -310,8 +306,7 @@
         "server-routes-blueprint",
         "server-sliderule",
         "server-tasks",
-        "shared-contracts",
-        "shared-workflow"
+        "shared-contracts"
       ]
     },
     "shared-blueprint": {
@@ -527,33 +522,26 @@
     ],
     "componentCycles": [
       "client-components -> client-lib -> client-components",
-      "client-components -> client-lib -> client-pages-sliderule -> client-components",
-      "client-components -> client-lib -> client-pages-sliderule -> client-pages -> client-components",
-      "client-components -> client-lib -> client-pages-sliderule -> client-pages -> client-pages-autopilot -> client-components",
-      "client-components -> client-lib -> client-pages-sliderule -> client-pages -> client-pages-autopilot -> client-shell -> client-components",
-      "client-lib -> client-pages-sliderule -> client-lib",
-      "client-lib -> client-pages-sliderule -> client-pages -> client-lib",
-      "client-lib -> client-pages-sliderule -> client-pages -> client-pages-autopilot -> client-lib",
-      "client-lib -> client-pages-sliderule -> client-pages -> client-pages-autopilot -> client-shell -> client-lib",
-      "client-lib -> client-pages-sliderule -> client-pages -> client-pages-autopilot -> client-shell -> client-runtime -> client-lib",
+      "client-components -> client-pages -> client-components",
+      "client-components -> client-pages -> client-pages-autopilot -> client-components",
+      "client-components -> client-pages -> client-pages-autopilot -> client-shell -> client-components",
+      "client-components -> client-pages -> client-pages-autopilot -> client-shell -> client-pages-sliderule -> client-components",
+      "client-lib -> client-runtime -> client-lib",
       "client-pages -> client-pages-autopilot -> client-pages",
       "client-pages -> client-pages-autopilot -> client-shell -> client-pages",
       "client-pages -> client-pages-autopilot -> client-shell -> client-pages-sliderule -> client-pages",
-      "client-pages -> client-pages-sliderule -> client-pages",
       "client-pages-autopilot -> client-shell -> client-pages-autopilot",
+      "client-pages-autopilot -> client-shell -> client-pages-sliderule -> client-pages-autopilot",
       "server-audit -> server-core -> server-audit",
-      "server-audit -> server-core -> server-entry -> server-audit",
-      "server-audit -> server-core -> server-entry -> server-integrations -> server-permission -> server-audit",
-      "server-audit -> server-core -> server-entry -> server-integrations -> server-permission -> server-persist -> server-tasks -> server-audit",
-      "server-audit -> server-core -> server-entry -> server-integrations -> server-rag -> server-routes -> server-audit",
-      "server-core -> server-entry -> server-core",
-      "server-core -> server-entry -> server-integrations -> server-core",
-      "server-core -> server-entry -> server-integrations -> server-permission -> server-persist -> server-core",
-      "server-core -> server-entry -> server-integrations -> server-permission -> server-persist -> server-tasks -> server-core",
-      "server-core -> server-entry -> server-integrations -> server-rag -> server-routes -> server-core",
-      "server-core -> server-entry -> server-integrations -> server-rag -> server-routes -> server-sliderule -> server-core",
-      "server-core -> server-entry -> server-integrations -> server-rag -> server-routes -> server-sliderule -> server-routes-blueprint -> server-core",
-      "server-entry -> server-integrations -> server-rag -> server-routes -> server-entry",
+      "server-audit -> server-core -> server-integrations -> server-permission -> server-audit",
+      "server-audit -> server-core -> server-integrations -> server-permission -> server-persist -> server-tasks -> server-audit",
+      "server-audit -> server-core -> server-integrations -> server-rag -> server-routes -> server-audit",
+      "server-core -> server-integrations -> server-core",
+      "server-core -> server-integrations -> server-permission -> server-persist -> server-core",
+      "server-core -> server-integrations -> server-permission -> server-persist -> server-tasks -> server-core",
+      "server-core -> server-integrations -> server-rag -> server-routes -> server-core",
+      "server-core -> server-integrations -> server-rag -> server-routes -> server-sliderule -> server-core",
+      "server-core -> server-integrations -> server-rag -> server-routes -> server-sliderule -> server-routes-blueprint -> server-core",
       "server-integrations -> server-rag -> server-routes -> server-integrations",
       "server-permission -> server-persist -> server-tasks -> server-permission",
       "server-persist -> server-tasks -> server-persist",

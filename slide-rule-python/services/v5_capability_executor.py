@@ -15,6 +15,8 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from models.v5_state import V5SessionState, ExecuteCapabilityResult
 from .rag_service import retrieve_evidence, generate_with_rag
+from .capability_plan import CapabilityPlan
+from .workflow_select import select_workflow
 from .run_degradation import (
     blocking_degradations,
     collect_degradations,
@@ -466,6 +468,9 @@ def _try_llm_generate_evidence(
     session_id: Optional[str] = None,
     tools: Optional[Any] = None,
     product_archetype: Optional[str] = None,
+    workflow: Optional[str] = None,
+    reuse_spec: Optional[Any] = None,
+    reuse_pages: Optional[Any] = None,
 ) -> Optional[Dict[str, Dict[str, Any]]]:
     """Generate + gate a five-system model for a novel intent.
 
@@ -540,7 +545,11 @@ def _try_llm_generate_evidence(
     model = None
     _spec_first_enabled = None
     try:
-        from .spec_first_pipeline import run_spec_first, spec_first_enabled as _spec_first_enabled
+        from .spec_first_pipeline import (
+            peek_last_pages,
+            run_spec_first,
+            spec_first_enabled as _spec_first_enabled,
+        )
         from .run_cancel import RunCancelled
     except Exception:  # noqa: BLE001 — 新模块缺失不该打死老路
         pass
@@ -620,15 +629,24 @@ def _try_llm_generate_evidence(
                     reuse_model=_prev_model,
                     # ★ 上一版页面：按需重画用（2026-08-17）。跟 reuse_model
                     #   同一个来源（refine 上下文），不另开取数路径。
-                    reuse_pages=(_refine_ctx or {}).get("pages"),
+                    reuse_pages=reuse_pages or (_refine_ctx or {}).get("pages"),
+                    reuse_spec=reuse_spec,
                     preferred_device=preferred_device_override(),
                     product_archetype=product_archetype,
                     tools=tools,
+                    workflow=workflow,
                 )["model"]
 
             try:
                 model = _invoke_spec_first()
                 from_spec_first = True
+                if model is None:
+                    peeked = peek_last_pages() or {}
+                    if peeked.get("spec") or peeked.get("pages"):
+                        print(
+                            "[v5_capability_executor] spec-first 单跳完成（无汇合模型）"
+                        )
+                        return {}
                 print("[v5_capability_executor] spec-first 链路产出模型")
             except RunCancelled:
                 # ★ 取消不是"新链路挂了"，**不许回落老链路**。
@@ -995,6 +1013,15 @@ def _try_llm_generate_evidence(
     return {a["id"].replace("llm-linkage-", ""): a for a in artifacts}
 
 
+def _reuse_from_state(state: "V5SessionState"):
+    blob = getattr(state, "specFirstPages", None)
+    if not isinstance(blob, dict):
+        return None, None
+    spec = blob.get("spec") if isinstance(blob.get("spec"), dict) else None
+    pages = blob.get("pages") if isinstance(blob.get("pages"), dict) else None
+    return spec, pages
+
+
 def _cache_spec_first_pages(state: "V5SessionState") -> None:
     """把 spec-first 这一轮画出来的整页 HTML 落到会话上。
 
@@ -1021,7 +1048,9 @@ def _cache_spec_first_pages(state: "V5SessionState") -> None:
         from .spec_first_pipeline import take_last_pages
 
         got = take_last_pages()
-        if not got or not (got.get("pages") or {}):
+        if not got:
+            return
+        if not (got.get("pages") or got.get("spec")):
             return
         # 页面 id 别名表要**跨轮累积**（2026-08-28）。
         #
@@ -1041,8 +1070,18 @@ def _cache_spec_first_pages(state: "V5SessionState") -> None:
         merged = merge_page_id_aliases(prev_aliases, got.get("pageIdAliases"))
         if merged:
             got = {**got, "pageIdAliases": merged}
+        if isinstance(prev, dict):
+            # 单跳不许用空 pages 把上一跳的页盖掉。
+            if not (got.get("pages") or {}) and (prev.get("pages") or {}):
+                got = {**got, "pages": prev["pages"]}
+            if not got.get("spec") and prev.get("spec"):
+                got = {**got, "spec": prev["spec"]}
         state.specFirstPages = got
-        print(f"[v5_capability_executor] spec-first 页面落库：{len(got['pages'])} 份")
+        print(
+            f"[v5_capability_executor] spec-first 页面落库："
+            f"{len((got.get('pages') or {}))} 份"
+            f"{' · 有 SPEC' if got.get('spec') else ''}"
+        )
     except Exception as exc:  # noqa: BLE001 — 顺路的事不许打死主路
         print(f"[v5_capability_executor] spec-first 页面落库失败（不影响推演）：{str(exc)[:160]}")
 
@@ -1206,16 +1245,24 @@ def _build_per_skill_evidence(
         # override 路径传 False（历史快照无 landingPageRef 仍可恢复）；
         # refine 路径传 True（精修是新产物，必须声明首屏）。
         _goal_map = state.goal if isinstance(state.goal, dict) else {}
+        _reuse_spec, _reuse_pages = _reuse_from_state(state)
         llm_result = _try_llm_generate_evidence(
             goal, llm_json_fn,
             require_landing_page_ref=not _is_override,
             session_id=getattr(state, "sessionId", None),
             tools=_goal_map.get("tools"),
             product_archetype=_goal_map.get("productArchetype"),
+            workflow=_goal_map.get("workflow"),
+            reuse_spec=_reuse_spec,
+            reuse_pages=_reuse_pages,
         )
         if llm_result is not None:
+            _cache_spec_first_pages(state)
             for skill in REQUIRED_EVIDENCE_KEYS:
-                matches[skill] = llm_result[skill]
+                item = llm_result.get(skill)
+                if item is None:
+                    continue
+                matches[skill] = item
             # ⚠ 版本史的 instruction 必须是**这一轮用户说的话**，不是 goal。
             #   此前三轮精修的版本 instruction 全是首轮 goal 原文（2026-08-18
             #   烘焙店真机实锤），刷新回放按版本史铺气泡时，每一轮都顶着
@@ -1224,8 +1271,8 @@ def _build_per_skill_evidence(
             _refine_instruction = str(
                 (_gen_mod.get_refine_context() or {}).get("instruction") or ""
             ).strip()
-            _cache_gate_passed_model(state, llm_result, _refine_instruction or goal)
-            _cache_spec_first_pages(state)
+            if any(k in llm_result for k in REQUIRED_EVIDENCE_KEYS):
+                _cache_gate_passed_model(state, llm_result, _refine_instruction or goal)
         else:
             # D2 修复（2026-07-27 迭代体验审查）：精修失败（LLM 网关抖动/
             # 输出截断/过不了闸）不得摧毁已收口的 6/6 闭环——此前六段证据
@@ -1278,20 +1325,28 @@ def _build_per_skill_evidence(
         # it through the structural gate. Only gate-PASSED models inject evidence;
         # gate failure / LLM unavailable stays fail-closed (0/6). "失败由 gate 拦截而非静默".
         _goal_map = state.goal if isinstance(state.goal, dict) else {}
+        _reuse_spec, _reuse_pages = _reuse_from_state(state)
         llm_result = _try_llm_generate_evidence(
             goal, llm_json_fn, session_id=getattr(state, "sessionId", None),
             tools=_goal_map.get("tools"),
             product_archetype=_goal_map.get("productArchetype"),
+            workflow=_goal_map.get("workflow"),
+            reuse_spec=_reuse_spec,
+            reuse_pages=_reuse_pages,
         )
         if llm_result is not None:
             # 同上：LLM 生成的产物携带 _model_section，不能被 haystack 壳
             # 产物（如自产的 appbundle.runtimeClosure）抢占槽位。
+            _cache_spec_first_pages(state)
             for skill in REQUIRED_EVIDENCE_KEYS:
+                item = llm_result.get(skill)
+                if item is None:
+                    continue
                 existing = matches.get(skill)
                 if existing is None or "_model_section" not in existing:
-                    matches[skill] = llm_result[skill]
-            _cache_gate_passed_model(state, llm_result, goal)
-            _cache_spec_first_pages(state)
+                    matches[skill] = item
+            if any(k in llm_result for k in REQUIRED_EVIDENCE_KEYS):
+                _cache_gate_passed_model(state, llm_result, goal)
     elif not blocked_signal and recognized_domain is None and (goal or "").strip():
         # 新颖意图但 LLM 生成未开启 → 注定 0/6。把原因留痕给 blocker，
         # 否则用户只看到笼统的 closure blocked，无从排查。
@@ -1672,15 +1727,20 @@ def execute_v5_capability(
         # 公开工具的第五步。spec/pages/structure/bind 已经在上面那次
         # `_build_per_skill_evidence` → `run_spec_first` 里按计划跑过。
         # 计划拿掉 closure = 不做发布判定。缺信封就是缺，不许补绿灯。
-        from .capability_plan import product_rehearsal_plan
         from .device_policy import preferred_device_override
         from .v5_llm_generate import get_refine_context as _plan_refine_ctx
 
         _goal_map = state.goal if isinstance(state.goal, dict) else {}
-        _capability_plan = product_rehearsal_plan(
+        _preset = select_workflow(
+            name=_goal_map.get("workflow"),
             device=preferred_device_override() or "desktop",
             refine=bool(_plan_refine_ctx()),
             tools=_goal_map.get("tools"),
+        )
+        _capability_plan = CapabilityPlan(
+            name=_preset.name,
+            ids=_preset.stages,
+            tools=_preset.tools,
         )
         if not _capability_plan.includes("closure"):
             return base

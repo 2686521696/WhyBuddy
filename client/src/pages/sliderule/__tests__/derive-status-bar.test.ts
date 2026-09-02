@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { createInitialSessionState, intakeMessage, orchestrateReasoningTurn } from "@/lib/sliderule-runtime";
 import {
-  REHEARSAL_MODULE_TO_STEP,
   REHEARSAL_PRODUCT_STEPS,
   REHEARSAL_WALL_CLOCK_COPY,
   advanceRehearsalCursor,
@@ -145,37 +144,33 @@ describe("deriveStatusBarFacts", () => {
 });
 
 /** M7 收尾 + 保全：默认 UI 不得出现内部机制词汇（lint 黑名单）。翻译 + derive 负责用户语言化。 */
-describe("M8 产品六步钟映射表", () => {
-  it("钉死内部模块 → 产品步（改 spec_tree 到 1 必须红）", () => {
-    // ⚠ 变异：把 REHEARSAL_MODULE_TO_STEP.spec_tree 改成 1，下面必红。
-    // 默认 rehearse 从起草 SPEC 起跳；映射成第 1 步等于把钟的起点挪到取证。
-    expect(REHEARSAL_MODULE_TO_STEP.spec_tree).toBe(2);
-    expect(mapInternalEventToProductStep("spec_tree")).toBe(2);
-    expect(mapInternalEventToProductStep("spec_page_html")).toBe(3);
-    expect(mapInternalEventToProductStep("page_shell")).toBe(3);
-    expect(mapInternalEventToProductStep("html_structure")).toBe(4);
-    expect(mapInternalEventToProductStep("spec_semantics")).toBe(5);
-    expect(mapInternalEventToProductStep("model_assembly")).toBe(6);
-    expect(mapInternalEventToProductStep("html_bindings")).toBe(6);
-    expect(mapInternalEventToProductStep("v5_model_gate")).toBe(6);
-    expect(mapInternalEventToProductStep("evaluate_coverage_gate")).toBe(6);
-    expect(mapInternalEventToProductStep("intent.clarify")).toBe(1);
-    expect(mapInternalEventToProductStep("gap.ask")).toBe(1);
-    expect(mapInternalEventToProductStep("evidence.search")).toBe(1);
+describe("M8 产品六步钟只认事件上的 productStep", () => {
+  it("内部模块名不再翻译成步号（翻译表已删）", () => {
+    expect(mapInternalEventToProductStep("spec_tree")).toBeNull();
+    expect(mapInternalEventToProductStep("specfirst.spec")).toBeNull();
+    expect(mapInternalEventToProductStep("page")).toBeNull();
+    expect(mapInternalEventToProductStep("risk.analyze")).toBeNull();
   });
 
-  it("活 SSE 别名落到同一张钟，不另开进度 API", () => {
-    expect(mapInternalEventToProductStep("specfirst.spec")).toBe(2);
-    expect(mapInternalEventToProductStep("specfirst.pages")).toBe(3);
-    expect(mapInternalEventToProductStep("spec_page")).toBe(3);
-    expect(mapInternalEventToProductStep("page")).toBe(6);
-    expect(mapInternalEventToProductStep("dataModel")).toBe(6);
-    expect(mapInternalEventToProductStep("specfirst.structure")).toBe(4);
-    expect(mapInternalEventToProductStep("specfirst.semantics")).toBe(5);
-    expect(mapInternalEventToProductStep("specfirst.assemble")).toBe(6);
-    expect(mapInternalEventToProductStep("specfirst.bind")).toBe(6);
-    expect(mapInternalEventToProductStep("risk.analyze")).toBeNull();
-    expect(mapInternalEventToProductStep("monitor.design")).toBeNull();
+  it("事件自带 productStep 才推进钟", () => {
+    const next = advanceRehearsalCursor(idleRehearsalCursor(), "spec_tree", 2);
+    expect(next.currentStep).toBe(2);
+    expect(next.receivedMappedEvent).toBe(true);
+    const ignored = advanceRehearsalCursor(idleRehearsalCursor(), "spec_tree");
+    expect(ignored.currentStep).toBeNull();
+  });
+
+  it("范围卡减菜：未勾选的工厂步不占钟格", () => {
+    const view = buildRehearsalClockView(startRehearsalCursor(), {
+      isRunning: true,
+      tools: ["spec", "pages", "closure"],
+    });
+    expect(view.steps.map((s) => s.id)).toEqual([2, 3, 6]);
+    expect(view.steps.find((s) => s.id === 4)).toBeUndefined();
+    expect(view.steps.find((s) => s.id === 5)).toBeUndefined();
+    expect(view.steps.find((s) => s.id === 2)?.status).toBe("current");
+    expect(view.steps.find((s) => s.id === 3)?.status).toBe("pending");
+    expect(view.steps.find((s) => s.id === 6)?.status).toBe("pending");
   });
 
   it("第 1 步默认 skippable；2–6 不可跳", () => {
@@ -190,22 +185,21 @@ describe("M8 产品六步钟映射表", () => {
     );
   });
 
-  it("默认 rehearse 从第 2 步起跳，第 1 格是 skipped 不是 current", () => {
+  it("默认 rehearse 从第 2 步起跳，澄清格不占钟", () => {
     const view = buildRehearsalClockView(startRehearsalCursor(), {
       isRunning: true,
     });
     expect(view.currentStep).toBe(2);
     expect(view.currentLabel).toBe("起草 SPEC");
-    expect(view.steps[0].status).toBe("skipped");
-    expect(view.steps[0].skippable).toBe(true);
-    expect(view.steps[1].status).toBe("current");
+    expect(view.steps.map((s) => s.id)).toEqual([2, 3, 4, 5, 6]);
+    expect(view.steps[0].id).toBe(2);
+    expect(view.steps[0].status).toBe("current");
     expect(view.wallClockCopy).toBe(REHEARSAL_WALL_CLOCK_COPY);
     expect(view.wallClockCopy).toBe("大约数分钟，第一页会先出现");
   });
 
-  it("spec_tree 事件把钟钉在第 2 步（从表读，不写死）", () => {
-    const next = advanceRehearsalCursor(idleRehearsalCursor(), "spec_tree");
-    expect(next.currentStep).toBe(REHEARSAL_MODULE_TO_STEP.spec_tree);
+  it("spec_tree 事件把钟钉在第 2 步（只认 productStep）", () => {
+    const next = advanceRehearsalCursor(idleRehearsalCursor(), "spec_tree", 2);
     expect(next.currentStep).toBe(2);
     expect(next.receivedMappedEvent).toBe(true);
     expect(next.sawStep1).toBe(false);
@@ -229,11 +223,12 @@ describe("M8 产品六步钟映射表", () => {
   it("evidence.search 先到才亮第 1 步；之后 spec_tree 把第 1 步收成 done", () => {
     const afterEvidence = advanceRehearsalCursor(
       startRehearsalCursor(),
-      "evidence.search"
+      "evidence.search",
+      1
     );
     expect(afterEvidence.currentStep).toBe(1);
     expect(afterEvidence.sawStep1).toBe(true);
-    const afterSpec = advanceRehearsalCursor(afterEvidence, "spec_tree");
+    const afterSpec = advanceRehearsalCursor(afterEvidence, "spec_tree", 2);
     expect(afterSpec.currentStep).toBe(2);
     const view = buildRehearsalClockView(afterSpec, { isRunning: true });
     expect(view.steps[0].status).toBe("done");
@@ -246,62 +241,53 @@ describe("M8 产品六步钟映射表", () => {
     expect(next).toEqual(start);
   });
 
-  it("停跑后没有 current：默认起点第 2 步是 done，第 1 步仍 skipped", () => {
+  it("停跑后没有 current：默认起点第 2 步是 done，澄清格不占钟", () => {
     const view = buildRehearsalClockView(startRehearsalCursor(), {
       isRunning: false,
     });
-    expect(view.steps[0].status).toBe("skipped");
-    expect(view.steps[1].status).toBe("done");
+    expect(view.steps.map((s) => s.id)).toEqual([2, 3, 4, 5, 6]);
+    expect(view.steps[0].status).toBe("done");
     expect(view.steps.some((s) => s.status === "current")).toBe(false);
     expect(view.currentLabel).toBeNull();
     expect(view.wallClockCopy).toBe("");
-    expect(view.steps.slice(2).every((s) => s.status === "pending")).toBe(true);
+    expect(view.steps.slice(1).every((s) => s.status === "pending")).toBe(true);
   });
 
   it("闭环落定也不许把没跑到的格涂成 done", () => {
     const diedOnPages = advanceRehearsalCursor(
       startRehearsalCursor(),
-      "spec_page_html"
+      "spec_page_html",
+      3
     );
     const view = buildRehearsalClockView(diedOnPages, {
       isRunning: false,
       publishClosed: true,
     });
-    expect(view.steps[2].status).toBe("done");
-    expect(view.steps[2].status).not.toBe("current");
-    expect(view.steps[3].status).toBe("pending");
-    expect(view.steps[4].status).toBe("pending");
-    expect(view.steps[5].status).toBe("pending");
+    expect(view.steps.find((s) => s.id === 3)?.status).toBe("done");
+    expect(view.steps.find((s) => s.id === 2)).toBeUndefined();
+    expect(view.steps.find((s) => s.id === 4)?.status).toBe("pending");
+    expect(view.steps.find((s) => s.id === 5)?.status).toBe("pending");
+    expect(view.steps.find((s) => s.id === 6)?.status).toBe("pending");
     expect(view.steps.some((s) => s.status === "current")).toBe(false);
   });
 
-  it("dataModel skill_start 不许把 3–5 涂成 done（没跑 spec-first 的洞）", () => {
+  it("skill_start 不带 productStep 不许推进钟（翻译表已删）", () => {
     const jumped = advanceRehearsalCursor(startRehearsalCursor(), "dataModel");
-    expect(mapInternalEventToProductStep("dataModel")).toBe(6);
-    const view = buildRehearsalClockView(jumped, { isRunning: true });
-    expect(view.currentStep).toBe(6);
-    expect(view.steps[2].status).not.toBe("done");
-    expect(view.steps[3].status).not.toBe("done");
-    expect(view.steps[4].status).not.toBe("done");
-    expect(view.steps[2].status).toBe("skipped");
-    expect(view.steps[5].status).toBe("current");
+    expect(mapInternalEventToProductStep("dataModel")).toBeNull();
+    expect(jumped.currentStep).toBe(2);
   });
 
-  it("闭环五系统 walk 的 page 不许点亮每页 HTML（page→3 必红）", () => {
-    // ⚠ 活路径是 dataModel→rbac→workflow→page→…，不是单独一条 dataModel。
-    // SkillId page ≠ SSE spec_page。把别名改回 3，这一格会变 done。
+  it("闭环五系统 walk 的 page 不许点亮每页 HTML（没有 productStep 就不猜）", () => {
     let cursor = startRehearsalCursor();
     for (const id of ["dataModel", "rbac", "workflow", "page", "aigc", "appBundle"]) {
       cursor = advanceRehearsalCursor(cursor, id);
     }
     const view = buildRehearsalClockView(cursor, { isRunning: true });
-    expect(view.steps[2].status).not.toBe("done");
-    expect(view.steps[3].status).not.toBe("done");
-    expect(view.steps[4].status).not.toBe("done");
-    expect(view.steps[2].status).toBe("skipped");
-    expect(view.steps[5].status).toBe("current");
-    expect(mapInternalEventToProductStep("page")).toBe(6);
-    expect(mapInternalEventToProductStep("spec_page")).toBe(3);
+    expect(view.currentStep).toBe(2);
+    expect(view.steps.find((s) => s.id === 3)?.status).toBe("pending");
+    expect(view.steps.find((s) => s.id === 6)?.status).toBe("pending");
+    expect(mapInternalEventToProductStep("page")).toBeNull();
+    expect(mapInternalEventToProductStep("spec_page")).toBeNull();
   });
 });
 

@@ -70,7 +70,7 @@ def test_visible_new_run_ids_are_on_the_stage_ledger():
 def test_run_spec_first_consults_the_plan_on_the_live_path():
     stripped = _code(sfp.run_spec_first)
     assert "select_workflow(" in stripped
-    from services import workflow_registry as wr
+    from services import workflow_select as wr
     from services.v5_capability_executor import execute_v5_capability
 
     assert "product_rehearsal_plan(" in _code(wr.select_workflow)
@@ -105,7 +105,7 @@ def test_run_spec_first_stage_order_matches_the_plan():
 
 
 def test_select_workflow_does_not_route_by_keyword():
-    from services.workflow_registry import select_workflow
+    from services.workflow_select import select_workflow
 
     assert "goal" not in inspect.signature(select_workflow).parameters
     watch = select_workflow(device="phone")
@@ -118,6 +118,7 @@ def test_select_workflow_does_not_route_by_keyword():
     assert "archetype=" in call
     assert "device=" in call
     assert "tools=" in call
+    assert "name=" in call
     assert "goal" not in call
 
 
@@ -127,6 +128,32 @@ def test_normalize_tools_empty_or_unknown_falls_back_to_the_five():
     assert cp.normalize_tools(()) == cp.TOOLS
     assert cp.normalize_tools(["invented", "also-fake"]) == cp.TOOLS
     assert cp.normalize_tools(["closure", "spec", "invented"]) == ("spec", "closure")
+
+
+def test_clip_factory_tools_falls_back_to_legal_not_the_five():
+    """空提案回落范围卡，不许把减菜冲回五件套。"""
+    legal = ("spec", "pages", "closure")
+    assert cp.clip_factory_tools([], legal) == legal
+    assert cp.clip_factory_tools(
+        [{"capabilityId": "critique.generate"}, {"capabilityId": "bind"}],
+        legal,
+    ) == legal
+    assert cp.clip_factory_tools(
+        [{"capabilityId": "pages"}, {"capabilityId": "spec"}, {"capabilityId": "bind"}],
+        legal,
+    ) == ("spec", "pages")
+
+
+def test_clip_factory_tools_puts_spec_back_on_a_new_run():
+    assert cp.clip_factory_tools(
+        [{"capabilityId": "pages"}, {"capabilityId": "closure"}],
+        cp.TOOLS,
+    ) == ("spec", "pages", "closure")
+    assert cp.clip_factory_tools(
+        [{"capabilityId": "pages"}],
+        cp.TOOLS,
+        refine=True,
+    ) == ("pages",)
 
 
 def _stub_pipeline(monkeypatch) -> dict:
@@ -276,6 +303,69 @@ def test_run_spec_first_tools_argument_skips_bind_without_monkeypatch(monkeypatc
     assert "specfirst.bind" not in out["stages"]["capabilityPlan"]["capabilities"]
 
 
+def test_spec_only_skips_pages_and_bind(monkeypatch):
+    seen = _stub_pipeline(monkeypatch)
+    try:
+        out = sfp.run_spec_first(
+            "做一个员工请假审批系统",
+            preferred_device="desktop",
+            tools=("spec",),
+        )
+    finally:
+        blob = sfp.take_last_pages()
+    assert seen["spec"] == 1
+    assert seen["pages"] == 0
+    assert seen["bind"] == 0
+    assert blob and blob.get("spec")
+    assert out["spec"]["appName"] == "x"
+
+
+def test_pages_without_spec_raises():
+    with pytest.raises(sfp.SpecFirstError, match="SPEC"):
+        sfp.run_spec_first("请假", tools=("pages",))
+
+
+def test_pages_reuses_prior_spec_without_redrawing_it(monkeypatch):
+    seen = _stub_pipeline(monkeypatch)
+    prior = {
+        "appName": "x",
+        "personas": [],
+        "pages": [{"id": "p1", "name": "首页"}],
+        "nodes": [],
+    }
+    try:
+        sfp.run_spec_first(
+            "请假",
+            preferred_device="desktop",
+            tools=("pages",),
+            reuse_spec=prior,
+        )
+    finally:
+        sfp.take_last_pages()
+    assert seen["spec"] == 0
+    assert seen["pages"] == 1
+    assert seen["bind"] == 0
+
+
+def test_run_spec_first_pages_preview_skips_bind_without_monkeypatch(monkeypatch):
+    """活路径：workflow 名字必须进 select_workflow。只打孔 plan 会假绿。"""
+    seen = _stub_pipeline(monkeypatch)
+    try:
+        out = sfp.run_spec_first(
+            "做一个员工请假审批系统",
+            preferred_device="desktop",
+            workflow="pages-preview",
+        )
+    finally:
+        sfp.take_last_pages()
+    assert seen["spec"] == 1
+    assert seen["pages"] == 1
+    assert seen["bind"] == 0
+    assert out["stages"]["capabilityPlan"]["name"] == "pages-preview"
+    assert "bind" not in out["stages"]["capabilityPlan"]["tools"]
+    assert "specfirst.bind" not in out["stages"]["capabilityPlan"]["capabilities"]
+
+
 def test_goal_tools_omit_closure_on_the_live_path_without_monkeypatch(monkeypatch):
     """执行器必须读 state.goal.tools。重建默认计划这条必红。"""
     monkeypatch.delenv("SLIDERULE_LLM_GENERATE_ENABLED", raising=False)
@@ -298,4 +388,6 @@ def test_goal_tools_omit_closure_on_the_live_path_without_monkeypatch(monkeypatc
     assert "blocked" not in report
     exec_src = _code(execute_v5_capability)
     assert '_goal_map.get("tools")' in exec_src
+    assert '_goal_map.get("workflow")' in exec_src
+    assert "select_workflow(" in exec_src
     assert 'includes("closure")' in exec_src

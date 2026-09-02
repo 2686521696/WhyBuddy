@@ -586,7 +586,10 @@ function ImAssistantMessage() {
         </div>
       ) : (
         /* 14px 正文（用户裁决：再小一号，信息密度优先） */
-        <div className="space-y-1.5 text-[14px] leading-6 text-[#171717]">
+        <div
+          className="space-y-1.5 text-[14px] leading-6 text-[#171717]"
+          data-testid="sliderule-assistant-text"
+        >
           <TurnPhaseTimeline turn={turn} publishClosure={publishClosure} />
           {/* 思考流留档：推演中每步 LLM 的完整输出，完成后保留成可折叠
               记录（Claude 式）——想法不消失，要看随时点开 */}
@@ -621,6 +624,7 @@ function ImAssistantMessage() {
             <div
               className="max-w-none overflow-visible pb-1 text-[14px] leading-[1.7] text-[#171717]"
               data-testid="sliderule-turn-answer"
+              data-host-speech={turn.assistantSource === "llm" ? "true" : "false"}
               data-answer-present={answer ? "true" : "false"}
             >
               <Response

@@ -24,12 +24,17 @@
    Product missing session_id → 400 (no anon-).
 9. Every product POST (including greetings) MUST carry the six fields.
    FORBIDDEN {forcedTool, goal} only.
-10. Expensive buttons are deterministic: 开始推演 = forcedTool rehearse
-    (skip LLM). /推演 without confirmed card parks. /精修 = refine.
+10. Expensive buttons are deterministic ignition: 开始推演 = forcedTool rehearse
+    (skip LLM before factory). /推演 without confirmed card parks. /精修 = refine.
     补齐缺口 = repair. 质疑 = challenge (invalidate once, no helper).
+11. WRITE (rehearse/refine/repair) does NOT exit the tool loop — LLM-picked
+    or forced. Factory complete is nested (`factory_complete`); control yields
+    control_tool_result and keeps picking. Forced buttons still skip LLM
+    before ignition; after factory they rejoin the host loop.
 
 Closed tool table: ask_user, search_evidence, inspect_model, scope_card,
-rehearse, refine, challenge, repair, restore_version, fork_variant.
+rehearse, workflow, spec, pages, structure, bind, closure, refine, challenge,
+repair, restore_version, fork_variant.
 LLM cannot invent tools. No tool may write blocked=false.
 
 Q1=A：tools 只活在 control_client；factory sliderule_llm/client.py 不得长
@@ -68,7 +73,17 @@ from services.archetype_legal import (
     wired_archetype_choices,
     wired_device_choices,
 )
+from services.closed_tools import (
+    CLOSED_TOOLS,
+    FACTORY_HOPS,
+    TOOL_SCOPE,
+    ToolScope,
+    ToolScopeViolation,
+    resolve_tool_scope,
+)
 from services.drive_full_factory import start_drive_full_factory_run
+from services.workflow_registry import workflow_for, workflow_names
+from services.workflow_select import select_workflow
 from services.scope_authority import (
     preferred_device_for_run,
     resolve_confirm_device,
@@ -87,6 +102,12 @@ from sliderule_llm.control_client import ControlLlmResult, call_control_llm
 
 CANNED_FAILURE = (
     "我是面团的推演引擎。说一个要做的应用，或问当前应用里已经推出来的角色/页面。"
+)
+#: 工厂已经出过页面，交回控制面时模型空回复不许套开场罐头。
+POST_WRITE_FALLBACK = "页面已经出来。要改哪一页，或者说继续精修、补齐缺口。"
+#: spec 单跳交回：页面还没有。空回复不许说页面出来了。
+POST_SPEC_HOP_FALLBACK = (
+    "SPEC 已经起草。下一跳请调 pages，或告诉用户为什么先停。"
 )
 
 # ── 控制面为什么停下来：是数据，不是一句话 ────────────────────────────────
@@ -217,74 +238,13 @@ _CONTROL_PAYLOAD: ContextVar[Dict[str, Any]] = ContextVar(
     "sliderule_control_payload", default={}
 )
 
-class ToolScope(str, Enum):
-    """工具在「能不能造一份新五系统模型」这条轴上的权限。
-
-    抄的标准答案：grok-build `xai-tool-protocol/src/capabilities.rs`
-
-        pub enum ToolScope { Read, Write }
-        /// Tools that mutate external state must declare `Write` so the
-        /// computer hub routes them to the leader agent only.
-        /// Absence is treated as `Read`.
-
-    要点是**缺省 Read**：以后加的新工具默认进不了工厂，想写得显式声明。
-    本仓 KD3 说的是同一件事，但一直只是文档里的一段话——而这个仓自己
-    第三条写着「函数写对了 ≠ 它被调用了」，同理：纪律写对了 ≠ 它被强制了。
-
-    ⚠ 这里的 WRITE 精确指**生成新五系统模型**（进 `_handoff_factory`），
-      不是"落不落盘"。challenge 写 staleArtifactIds、restore_version /
-      fork_variant 移指针，都会 persist，但在这条轴上是 READ。
-      别看见 READ 就以为它们不碰会话；也别为了"看着一致"把它们提成
-      WRITE——提上去这道闸就没有意义了。
-    """
-
-    READ = "read"
-    WRITE = "write"
-
-
-CLOSED_TOOLS = (
-    "ask_user",
-    "clarify",
-    "search_evidence",
-    "inspect_model",
-    "scope_card",
-    "rehearse",
-    "refine",
-    "challenge",
-    "repair",
-    "restore_version",
-    "fork_variant",
-)
-
-# 写权限声明表。**只列 WRITE**——缺省即 READ（grok 的 "Absence is
-# treated as Read"）。这三个动词是 KD3 点名可以生成新五系统模型的：
-# 它们各自都最终走 `_handoff_factory`（rehearse 经
-# `_confirm_rehearse_and_handoff`）。
-#
-# ⚠ 往这张表里加名字之前先问：这个工具真的要**造一份新模型**吗？
-#   落盘不等于写模型（见 ToolScope 头注）。加错一个，工厂就多一个入口。
-TOOL_SCOPE: Dict[str, ToolScope] = {
-    "rehearse": ToolScope.WRITE,
-    "refine": ToolScope.WRITE,
-    "repair": ToolScope.WRITE,
-}
-
-
-class ToolScopeViolation(RuntimeError):
-    """READ 权限的工具试图进工厂信封。fail-closed：抛，不降级放行。"""
-
-
+# 词表在 services.closed_tools（叶子，对齐 xai-tool-types）。
 # 本回合正在分发的工具名。走 ContextVar 而不是给 `_handoff_factory` 加参数：
 # 跟本文件里 `_CONTROL_PAYLOAD` / 读 charter 同一套机制（本回合信封），
 # 也逼着判据打在真分发上而不是直调函数。
 #
 # 缺省空串 → resolve_tool_scope 给 READ → 没进过分发就直调工厂会被拦。
 _ACTIVE_TOOL: ContextVar[str] = ContextVar("sliderule_active_tool", default="")
-
-
-def resolve_tool_scope(name: Any) -> ToolScope:
-    """查权限。没声明的一律 READ（含拼错的、以后新加的）。"""
-    return TOOL_SCOPE.get(str(name or "").strip(), ToolScope.READ)
 
 
 @contextmanager
@@ -316,6 +276,36 @@ def _has_model(state: V5SessionState) -> bool:
     return bool(getattr(state, "modelVersions", None) or [])
 
 
+def _spec_first_blob(state: V5SessionState) -> Dict[str, Any]:
+    blob = getattr(state, "specFirstPages", None)
+    return blob if isinstance(blob, dict) else {}
+
+
+def _has_spec(state: V5SessionState) -> bool:
+    spec = _spec_first_blob(state).get("spec")
+    if not isinstance(spec, dict):
+        return False
+    return bool(spec.get("pages") or spec.get("nodes") or spec.get("appName"))
+
+
+def _has_pages(state: V5SessionState) -> bool:
+    pages = _spec_first_blob(state).get("pages")
+    return isinstance(pages, dict) and bool(pages)
+
+
+def _factory_hop_blocker(state: V5SessionState, hop: str) -> str:
+    """缺前置就说人话，不许进工厂空转。"""
+    if hop == "spec":
+        return ""
+    if hop == "pages" and not _has_spec(state):
+        return "还没有 SPEC。先调 spec。"
+    if hop in ("structure", "bind") and not _has_pages(state):
+        return f"还没有页面。先调 pages，再 {hop}。"
+    if hop == "closure" and not (_has_pages(state) or _has_model(state)):
+        return "还没有可判定的产物。先调 spec 或 pages。"
+    return ""
+
+
 def _has_inspectable(state: V5SessionState) -> bool:
     """有没有东西可给 inspect_model 看。
 
@@ -343,7 +333,16 @@ def _has_inspectable(state: V5SessionState) -> bool:
 TOOL_LIST_WHEN: Dict[str, Any] = {
     # 未确认范围时 rehearse 会被 re-park（见 _dispatch_tool 的 rehearse 分支）。
     # 「开始推演」按钮走 forcedTool 绕过 LLM（KD21），裁掉不影响用户点火。
-    "rehearse": lambda st: _scope_confirmed(st),
+    # 已有模型就别再列 rehearse：下一刀 WRITE 是 refine，不是整场重烧。
+    "rehearse": lambda st: _scope_confirmed(st) and not _has_spec(st) and not _has_model(st),
+    "spec": lambda st: _scope_confirmed(st) and not _has_spec(st),
+    "pages": lambda st: _scope_confirmed(st) and _has_spec(st),
+    "structure": lambda st: _scope_confirmed(st) and _has_pages(st),
+    "bind": lambda st: _scope_confirmed(st) and _has_pages(st),
+    "closure": lambda st: _scope_confirmed(st) and (_has_pages(st) or _has_model(st)),
+    # 抄 grok WorkflowTool：有名字的日历是一件可挑选的 WRITE 工具，
+    # 不是默认唯一路径。范围确认后就能看见；有模型后仍列出（减菜再跑）。
+    "workflow": lambda st: _scope_confirmed(st),
     # 问过一轮再问就改开范围卡（见 clarify 分支）。
     "clarify": lambda st: _clarify_rounds_done(st) < 1,
     # 没有上一版可回（_previous_model_version_id fail-closed 返回 ""）。
@@ -390,6 +389,12 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
 TOOL_PERMISSION: Dict[str, Any] = {
     # 范围卡上的「开始推演」就是这道批准。停泊 ≠ 已批准（见 _scope_confirmed）。
     "rehearse": lambda st: _scope_confirmed(st),
+    "workflow": lambda st: _scope_confirmed(st),
+    "spec": lambda st: _scope_confirmed(st),
+    "pages": lambda st: _scope_confirmed(st),
+    "structure": lambda st: _scope_confirmed(st),
+    "bind": lambda st: _scope_confirmed(st),
+    "closure": lambda st: _scope_confirmed(st),
     # 空会话没模型可精修 → 先开卡。有模型时是否也出薄卡是产品决定
     # （M2 Q2），本次不扩大范围。
     "refine": lambda st: _has_model(st),
@@ -426,18 +431,37 @@ def list_control_tools(state: V5SessionState) -> List[Dict[str, Any]]:
 
     ⚠ 永不为空：全裁光了模型无事可做，比多列一个更糟。兜底留下
       ask_user / scope_card——"问一句"和"开范围卡"在任何状态都做得成。
+
+    workflow 的描述把已登记名字写进去——模型看不见配方就只能发明流程，
+    那正是 grok WorkflowTool 要挡的。不改全局 CONTROL_TOOLS：那份是
+    provider schema，名字是运行时注册表。
     """
     listed = [
         t
         for t in CONTROL_TOOLS
         if should_list_tool(((t.get("function") or {}).get("name")), state)
     ]
-    if listed:
-        return listed
-    floor = {"ask_user", "scope_card"}
-    return [
-        t for t in CONTROL_TOOLS if ((t.get("function") or {}).get("name")) in floor
-    ]
+    if not listed:
+        floor = {"ask_user", "scope_card"}
+        listed = [
+            t for t in CONTROL_TOOLS if ((t.get("function") or {}).get("name")) in floor
+        ]
+    names = ", ".join(workflow_names())
+    out: List[Dict[str, Any]] = []
+    for item in listed:
+        fn = item.get("function") or {}
+        if fn.get("name") != "workflow":
+            out.append(item)
+            continue
+        cloned = copy.deepcopy(item)
+        cloned["function"]["description"] = (
+            "跑一份已登记的推演日历（不是发明流程）。"
+            f"已登记：{names}。"
+            "name 必须是其中之一；tools 可再减菜（spec/pages/structure/bind/closure）。"
+            "未确认范围时必须先 park。有模型后仍可减菜再跑。"
+        )
+        out.append(cloned)
+    return out
 
 
 async def _invoke_control_llm(
@@ -622,6 +646,11 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
                     "variant": {"type": "string"},
                     "wantEvidence": {"type": "boolean"},
                     "wantFeasibilityReport": {"type": "boolean"},
+                    "tools": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "本轮公开工具：spec/pages/structure/bind/closure。少列就少跑。",
+                    },
                 },
             },
         },
@@ -630,8 +659,73 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "rehearse",
-            "description": "点火推演。未确认范围卡时必须先 park。",
+            "description": (
+                "开始推演：只点火第一件工厂工具 spec，跑完交回。"
+                "下一跳请挑 pages / structure / bind / closure，"
+                "或用 workflow 把剩下的按配方一次跑完。"
+            ),
             "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spec",
+            "description": "起草 SPEC。新跑第一跳。跑完交回 host，不要一次把后面全跑完。",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "pages",
+            "description": "按已有 SPEC 逐页生成 HTML。没有 SPEC 时不许调。",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "structure",
+            "description": "从已有页面反推数据模型并汇合。没有页面时不许调。",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bind",
+            "description": "给已有页面打权限/工作流孔。没有页面时不许调。",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "closure",
+            "description": "发布闭环判定。缺证据就 blocked，不许补绿灯。",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "workflow",
+            "description": (
+                "跑一份已登记的推演日历（不是发明流程）。"
+                "name 必须是已注册工作流；tools 可减菜（spec/pages/structure/bind/closure）。"
+                "未确认范围时必须先 park。有模型后仍可减菜再跑。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "tools": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                },
+            },
         },
     },
     {
@@ -1431,6 +1525,7 @@ async def _park_scope(
     user_text: str = "",
     want_evidence: bool = False,
     want_feasibility_report: bool = False,
+    tools: Any = None,
 ) -> AsyncIterator[Dict[str, Any]]:
     state.runtimePhase = "awaiting"
     state.awaitReason = "control_scope"
@@ -1448,6 +1543,11 @@ async def _park_scope(
             "variant": variant,
             "wantEvidence": _truthy_scope_flag(want_evidence),
             "wantFeasibilityReport": _truthy_scope_flag(want_feasibility_report),
+            **(
+                {"tools": list(tools)}
+                if isinstance(tools, (list, tuple))
+                else {}
+            ),
         },
     )
     await _apersist(state)
@@ -1462,6 +1562,11 @@ async def _park_scope(
         "userText": user_text or restatement,
         # 前端 localStorage 未写时用账户/会话旗hydrate「下一场沿用」。
         "charterReuseNext": bool(getattr(state, "charterReuseNext", False)),
+        **(
+            {"tools": list(tools)}
+            if isinstance(tools, (list, tuple))
+            else {}
+        ),
     }
     yield _complete(state)
 
@@ -1551,7 +1656,10 @@ async def _confirm_rehearse_and_handoff(
     # 问上一个 goal 的澄清卡（2026-08-27 真机：goal 已是宠物医院，卡还在
     # 问诊所系统）。只碰控制面自己出的提问，证据/能力缺口不许动。
     _retire_stale_control_questions(state)
-    confirmed = state.goal if isinstance(state.goal, dict) else {}
+    confirmed = dict(state.goal) if isinstance(state.goal, dict) else {}
+    # 按钮点火只跑 spec。剩下的交回 host 逐跳挑。
+    confirmed["tools"] = ["spec"]
+    state.goal = confirmed
     _append_transcript(
         state,
         {
@@ -1560,7 +1668,7 @@ async def _confirm_rehearse_and_handoff(
             "text": restatement,
             "device": confirmed.get("preferredDevice"),
             "productArchetype": confirmed.get("productArchetype"),
-            "tools": list(confirmed.get("tools") or []),
+            "tools": ["spec"],
         },
     )
     state.awaitReason = None
@@ -1575,8 +1683,52 @@ async def _confirm_rehearse_and_handoff(
         design_system_id,
         repair=False,
         profile="app",
+        nest=True,
     ):
         yield event
+    fresh = await run_in_threadpool(load_session, str(state.sessionId or ""))
+    yield {
+        "type": "control_tool_result",
+        "tool": "spec",
+        **_factory_tool_body(fresh or state, "spec"),
+    }
+
+
+def _factory_tool_body(state: V5SessionState, tool: str) -> Dict[str, Any]:
+    """WRITE 工具交回控制面的有界结果。不许倒出五系统 JSON。
+
+    ⚠ 2026-09-02 食堂话题：第一版把 specFirstPages（dict）当 list 量，
+      pageCount 恒 0，human 又是 inspect 的「还没有五系统模型」。SPEC
+      单跳交回后模型以为工厂空转，host 就不调 pages——钟剩一格。
+    """
+    digest, human = _inspect_digest(state)
+    closure = getattr(state, "publishClosure", None)
+    blocked = None
+    if isinstance(closure, dict):
+        blocked = closure.get("blocked")
+    blob = _spec_first_blob(state)
+    pages_map = blob.get("pages")
+    page_n = len(pages_map) if isinstance(pages_map, dict) else 0
+    spec_obj = blob.get("spec") if isinstance(blob.get("spec"), dict) else {}
+    declared = spec_obj.get("pages") if isinstance(spec_obj, dict) else None
+    declared_n = len(declared) if isinstance(declared, list) else 0
+    hint = _after_write_hint(state)
+    if _has_spec(state) and not _has_pages(state):
+        human = "SPEC 已经起草，页面还没有。"
+    elif _has_pages(state):
+        human = f"已经出过 {page_n} 页。"
+    return {
+        "ok": True,
+        "tool": tool,
+        "digest": (digest or "")[:INSPECT_MAX_CHARS],
+        "human": human,
+        "blocked": blocked,
+        "hasSpec": _has_spec(state),
+        "pageCount": page_n,
+        "declaredPages": declared_n,
+        "nextHint": hint,
+        "versionId": getattr(state, "currentModelVersionId", None),
+    }
 
 
 async def _handoff_factory(
@@ -1590,8 +1742,14 @@ async def _handoff_factory(
     repair: bool = False,
     profile: str = "full",
     max_loops: int = 10,
+    nest: bool = False,
 ) -> AsyncIterator[Dict[str, Any]]:
-    """唯一点火插座。rehearse/refine/repair 必须走这里，禁止裸生成器。"""
+    """唯一点火插座。rehearse/refine/repair 必须走这里，禁止裸生成器。
+
+    nest=True：工厂的 complete 改成 factory_complete，好让控制面 SSE
+    在 WRITE 之后继续（抄 grok：工具流有自己的 Terminal，host 循环另算）。
+    按钮点火也 nest：跳过的是点火前的 LLM，不是工厂后的 host 循环。
+    """
     # 写权限闸（抄 grok 的 ToolScope）：只有声明了 WRITE 的工具能造新模型。
     # 缺省 READ ⇒ 新工具、拼错的名字、绕过分发直调，统统在这里被拦。
     assert_may_write_model()
@@ -1624,7 +1782,12 @@ async def _handoff_factory(
         "runId": getattr(run, "run_id", None),
     }
     async for event in run_registry.subscribe(run, since=0):
-        yield event
+        if nest and str(event.get("type") or "") == "complete":
+            nested = dict(event)
+            nested["type"] = "factory_complete"
+            yield nested
+        else:
+            yield event
 
 
 def _challenge_target(state: V5SessionState) -> Optional[str]:
@@ -1960,12 +2123,13 @@ def _system_prompt(state: V5SessionState) -> str:
         if missing and asked == 0
         else ("已经问过一轮澄清，不要再问，直接 scope_card。" if asked else "")
     )
+    after_write = _after_write_hint(state)
     base = (
         "你是面团的薄控制面。只能调用给定工具，不能发明工具。"
         "禁止开放闲聊。问候用 ask_user 或一句短回复；"
         "要做应用先 clarify（需求含糊时）再 scope_card；未确认不得 rehearse。"
         "search_evidence 不计入闭环。inspect_model 只看摘要。"
-        f"当前目标：{goal[:200]}。停泊：{parked}。{clarify_hint}"
+        f"当前目标：{goal[:200]}。停泊：{parked}。{clarify_hint} {after_write}"
     )
     return f"{base}\n{extra}" if extra else base
 
@@ -2126,6 +2290,285 @@ async def _resolve_answered_gaps(
     return closed
 
 
+def _after_write_hint(state: V5SessionState) -> str:
+    """交回 host 时下一跳说什么。抄 grok：工具结果之后模型必须再挑或明说停。"""
+    if _has_pages(state) or _has_model(state):
+        return (
+            "已经出过页面。用一两句话问要改哪一页或下一步；不要再调 rehearse。"
+        )
+    if _has_spec(state):
+        return (
+            "SPEC 已经起草，页面还没有。"
+            "下一跳必须调 pages，或者用一句话告诉用户你为什么先停。"
+            "不要调 rehearse，不要假装页面已经出来。"
+        )
+    return ""
+
+
+def _messages_after_forced_write(
+    state: V5SessionState,
+    user_text: str,
+    tool: str,
+    body: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """按钮没走过 tool-calling，交回模型时补一回合合成记录。"""
+    call_id = f"forced-{tool}"
+    hint = _after_write_hint(state) or (
+        "工厂已经跑完。用一两句话告诉用户下一步。不要再调 rehearse。"
+    )
+    return [
+        {"role": "system", "content": _system_prompt(state)},
+        {"role": "user", "content": user_text or "你好"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": call_id,
+                    "type": "function",
+                    "function": {"name": tool, "arguments": "{}"},
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": call_id,
+            "content": bound_tool_result(body),
+        },
+        {
+            "role": "user",
+            "content": hint,
+        },
+    ]
+
+
+async def _resume_control_llm_after_write(
+    state: V5SessionState,
+    user_text: str,
+    tool: str,
+    tool_body: Optional[Dict[str, Any]],
+    *,
+    installed_skills: Any,
+    active_connectors: Any,
+    preferred_device: Any,
+    design_system_id: Any,
+    original_goal: str,
+) -> AsyncIterator[Dict[str, Any]]:
+    """按钮点火不经过 LLM；工厂收尾必须交回控制面。
+
+    ⚠ 2026-09-01 真机：点「开始推演」走 forcedTool，第一版在 handoff 后
+      return，自由编排整轮零介入。抄 grok：工具流有自己的 Terminal，
+      host 循环另算——跳过的是点火前那一轮，不是工厂后的思考。
+    """
+    fresh = await run_in_threadpool(
+        load_session, str(getattr(state, "sessionId", "") or "")
+    )
+    if fresh is not None:
+        state = fresh
+    body = tool_body if tool_body is not None else _factory_tool_body(state, tool)
+    if tool_body is None:
+        yield {"type": "control_tool_result", "tool": tool, **body}
+    messages = _messages_after_forced_write(state, user_text, tool, body)
+    async for event in _control_llm_loop(
+        state,
+        messages,
+        user_text=user_text,
+        installed_skills=installed_skills,
+        active_connectors=active_connectors,
+        preferred_device=preferred_device,
+        design_system_id=design_system_id,
+        original_goal=original_goal,
+        started=time.monotonic(),
+        cheap_tokens=0,
+        empty_text=(
+            POST_SPEC_HOP_FALLBACK
+            if (tool in ("spec", "rehearse") and not _has_pages(state))
+            else POST_WRITE_FALLBACK
+        ),
+    ):
+        yield event
+
+
+async def _control_llm_loop(
+    state: V5SessionState,
+    messages: List[Dict[str, Any]],
+    *,
+    user_text: str,
+    installed_skills: Any,
+    active_connectors: Any,
+    preferred_device: Any,
+    design_system_id: Any,
+    original_goal: str,
+    started: float,
+    cheap_tokens: int,
+    empty_text: Optional[str] = None,
+) -> AsyncIterator[Dict[str, Any]]:
+    """控制面 host 循环。WRITE 交回后再给便宜思考。"""
+
+    async def _maybe_over_cap() -> Optional[Dict[str, Any]]:
+        """到顶了就返回结构化的停止信息，没到顶返回 None。
+
+        ⚠ 原来返回 bool，两条不同的闸（墙钟 / 额度）塌成同一句话。前端分不清
+          "想太久"和"额度烧完"，用户也不知道再点一次有没有用。
+        """
+        elapsed = time.monotonic() - started
+        if elapsed > MAX_WALL_SECONDS:
+            return stop_wire(
+                ControlStopReason.WALL_CLOCK,
+                limit=MAX_WALL_SECONDS,
+                used=round(elapsed, 1),
+            )
+        if cheap_tokens > MAX_CHEAP_TOKENS:
+            return stop_wire(
+                ControlStopReason.TOKEN_BUDGET,
+                limit=MAX_CHEAP_TOKENS,
+                used=cheap_tokens,
+            )
+        return None
+
+    try:
+        for _round in range(MAX_TOOL_ROUNDS):
+            capped = await _maybe_over_cap()
+            if capped:
+                async for event in _canned(
+                    state, stop_text(ControlStopReason(capped["stopReason"])), stop=capped
+                ):
+                    yield event
+                return
+            result = await _invoke_control_llm(messages, tools=list_control_tools(state))
+            cheap_tokens += _usage_tokens(getattr(result, "usage", None))
+            capped = await _maybe_over_cap()
+            if capped:
+                async for event in _canned(
+                    state, stop_text(ControlStopReason(capped["stopReason"])), stop=capped
+                ):
+                    yield event
+                return
+            calls = [
+                call
+                for call in (result.tool_calls or [])
+                if (call.get("name") or "") in CLOSED_TOOLS
+            ]
+            content = (result.content or "").strip()
+            if not calls:
+                text = content or empty_text or CANNED_FAILURE
+                _append_transcript(
+                    state, {"role": "assistant", "kind": "control_text", "text": text}
+                )
+                await _apersist(state)
+                yield {"type": "control_text", "text": text}
+                yield _complete(state)
+                return
+
+            assistant_msg: Dict[str, Any] = {
+                "role": "assistant",
+                "content": content or None,
+                "tool_calls": [
+                    {
+                        "id": call.get("id") or f"call-{i}",
+                        "type": "function",
+                        "function": {
+                            "name": call.get("name"),
+                            "arguments": json.dumps(
+                                call.get("arguments") or {}, ensure_ascii=False
+                            ),
+                        },
+                    }
+                    for i, call in enumerate(calls)
+                ],
+            }
+            messages.append(assistant_msg)
+
+            parked = False
+            aborted = False
+            wrote = False
+            for call in calls:
+                name = str(call.get("name") or "")
+                args = call.get("arguments") if isinstance(call.get("arguments"), dict) else {}
+                tool_body: Optional[Dict[str, Any]] = None
+                with tool_scope_scope(name):
+                    async for event in _dispatch_tool(
+                        name,
+                        args,
+                        state,
+                        user_text,
+                        installed_skills,
+                        active_connectors,
+                        preferred_device,
+                        design_system_id,
+                        original_goal,
+                    ):
+                        yield event
+                        et = str(event.get("type") or "")
+                        if et == "control_tool_result":
+                            tool_body = {
+                                k: v for k, v in event.items() if k != "type"
+                            }
+                        if et in ("control_ask_user", "control_scope_card"):
+                            parked = True
+                        elif et == "control_handoff_factory":
+                            wrote = True
+                        elif et == "complete" and not wrote:
+                            aborted = True
+                if parked or aborted:
+                    return
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.get("id") or "",
+                        # ⚠ 必须走 bound_tool_result，不许裸 json.dumps：
+                        #   search_evidence 的 hits 来自公网，一次胖搜索能把
+                        #   下一发请求的提示词顶穿（见该函数头注）。
+                        "content": bound_tool_result(
+                            tool_body
+                            if tool_body is not None
+                            else {"ok": True, "tool": name}
+                        ),
+                    }
+                )
+            if wrote:
+                # 工厂墙钟不计入控制面 45s。WRITE 交回后再给便宜思考。
+                started = time.monotonic()
+                reloaded = await run_in_threadpool(
+                    load_session, str(getattr(state, "sessionId", "") or "")
+                )
+                if reloaded is not None:
+                    state = reloaded
+                    messages[0] = {"role": "system", "content": _system_prompt(state)}
+                hint = _after_write_hint(state)
+                if hint:
+                    # 抄 grok：工具结果之后必须再挑或明说停。只改 system
+                    # 会被下一轮用户话盖掉；hint 要作为本回合的 user 指令。
+                    messages.append({"role": "user", "content": hint})
+        rounds_stop = stop_wire(
+            ControlStopReason.TOOL_ROUNDS, limit=MAX_TOOL_ROUNDS, used=MAX_TOOL_ROUNDS
+        )
+        async for event in _canned(
+            state, stop_text(ControlStopReason.TOOL_ROUNDS), stop=rounds_stop
+        ):
+            yield event
+    except HTTPException:
+        raise
+    except Exception:  # noqa: BLE001 — 失败合同：罐头回复，禁止点火
+        import logging
+
+        logging.getLogger(__name__).exception("control llm loop failed after write")
+        if empty_text:
+            _append_transcript(
+                state, {"role": "assistant", "kind": "control_text", "text": empty_text}
+            )
+            await _apersist(state)
+            yield {"type": "control_text", "text": empty_text}
+            yield _complete(state)
+            return
+        async for event in _canned(
+            state,
+            stop_text(ControlStopReason.LLM_UNAVAILABLE),
+            stop=stop_wire(ControlStopReason.LLM_UNAVAILABLE),
+        ):
+            yield event
+
+
 async def _run_control_turn_body(
     payload: Dict[str, Any],
     state: V5SessionState,
@@ -2152,28 +2595,7 @@ async def _run_control_turn_body(
 
     forced = resolve_forced_tool(payload, user_text)
 
-    async def _maybe_over_cap() -> Optional[Dict[str, Any]]:
-        """到顶了就返回结构化的停止信息，没到顶返回 None。
-
-        ⚠ 原来返回 bool，两条不同的闸（墙钟 / 额度）塌成同一句话。前端分不清
-          "想太久"和"额度烧完"，用户也不知道再点一次有没有用。
-        """
-        elapsed = time.monotonic() - started
-        if elapsed > MAX_WALL_SECONDS:
-            return stop_wire(
-                ControlStopReason.WALL_CLOCK,
-                limit=MAX_WALL_SECONDS,
-                used=round(elapsed, 1),
-            )
-        if cheap_tokens > MAX_CHEAP_TOKENS:
-            return stop_wire(
-                ControlStopReason.TOKEN_BUDGET,
-                limit=MAX_CHEAP_TOKENS,
-                used=cheap_tokens,
-            )
-        return None
-
-    # 昂贵按钮：跳过控制面 LLM。
+    # 昂贵按钮：点火前跳过控制面 LLM。工厂收尾交回 host 循环。
     # 停泊中只有「开始推演」(forcedTool=rehearse) 才点火；/推演 与模型
     # rehearse 必须再 park。确认时把复述句写入 goal 并 persist，再 handoff。
     parked_unconfirmed = getattr(state, "awaitReason", None) == "control_scope"
@@ -2207,6 +2629,8 @@ async def _run_control_turn_body(
                 yield event
             return
         # 写权限：forcedTool 绕过 _dispatch_tool 直接进工厂，scope 要在这里设。
+        handed = False
+        tool_body: Optional[Dict[str, Any]] = None
         with tool_scope_scope("rehearse"):
             async for event in _confirm_rehearse_and_handoff(
                 state,
@@ -2218,6 +2642,25 @@ async def _run_control_turn_body(
                 payload=payload,
             ):
                 yield event
+                et = str(event.get("type") or "")
+                if et == "control_handoff_factory":
+                    handed = True
+                elif et == "control_tool_result":
+                    tool_body = {k: v for k, v in event.items() if k != "type"}
+        if not handed:
+            return
+        async for event in _resume_control_llm_after_write(
+            state,
+            user_text,
+            "spec",
+            tool_body,
+            installed_skills=installed_skills,
+            active_connectors=active_connectors,
+            preferred_device=preferred_device,
+            design_system_id=design_system_id,
+            original_goal=original_goal,
+        ):
+            yield event
         return
 
     if forced == "refine":
@@ -2228,6 +2671,7 @@ async def _run_control_turn_body(
         state.goal = goal
         await _apersist(state)
         # 写权限：forcedTool 绕过 _dispatch_tool 直接进工厂，scope 要在这里设。
+        handed = False
         with tool_scope_scope("refine"):
             async for event in _handoff_factory(
                 state,
@@ -2238,12 +2682,30 @@ async def _run_control_turn_body(
                 design_system_id,
                 repair=False,
                 profile="full",
+                nest=True,
             ):
                 yield event
+                if str(event.get("type") or "") == "control_handoff_factory":
+                    handed = True
+        if not handed:
+            return
+        async for event in _resume_control_llm_after_write(
+            state,
+            user_text,
+            "refine",
+            None,
+            installed_skills=installed_skills,
+            active_connectors=active_connectors,
+            preferred_device=preferred_device,
+            design_system_id=design_system_id,
+            original_goal=original_goal,
+        ):
+            yield event
         return
 
     if forced == "repair":
         # 写权限：forcedTool 绕过 _dispatch_tool 直接进工厂，scope 要在这里设。
+        handed = False
         with tool_scope_scope("repair"):
             async for event in _handoff_factory(
                 state,
@@ -2255,8 +2717,25 @@ async def _run_control_turn_body(
                 repair=True,
                 profile="full",
                 max_loops=2,
+                nest=True,
             ):
                 yield event
+                if str(event.get("type") or "") == "control_handoff_factory":
+                    handed = True
+        if not handed:
+            return
+        async for event in _resume_control_llm_after_write(
+            state,
+            user_text,
+            "repair",
+            None,
+            installed_skills=installed_skills,
+            active_connectors=active_connectors,
+            preferred_device=preferred_device,
+            design_system_id=design_system_id,
+            original_goal=original_goal,
+        ):
+            yield event
         return
 
     if forced == "challenge":
@@ -2294,131 +2773,19 @@ async def _run_control_turn_body(
         {"role": "system", "content": _system_prompt(state)},
         {"role": "user", "content": user_text or "你好"},
     ]
-
-    try:
-        for _round in range(MAX_TOOL_ROUNDS):
-            capped = await _maybe_over_cap()
-            if capped:
-                async for event in _canned(
-                    state, stop_text(ControlStopReason(capped["stopReason"])), stop=capped
-                ):
-                    yield event
-                return
-            result = await _invoke_control_llm(messages, tools=list_control_tools(state))
-            cheap_tokens += _usage_tokens(getattr(result, "usage", None))
-            capped = await _maybe_over_cap()
-            if capped:
-                async for event in _canned(
-                    state, stop_text(ControlStopReason(capped["stopReason"])), stop=capped
-                ):
-                    yield event
-                return
-            calls = [
-                call
-                for call in (result.tool_calls or [])
-                if (call.get("name") or "") in CLOSED_TOOLS
-            ]
-            content = (result.content or "").strip()
-            if not calls:
-                text = content or CANNED_FAILURE
-                _append_transcript(
-                    state, {"role": "assistant", "kind": "control_text", "text": text}
-                )
-                await _apersist(state)
-                yield {"type": "control_text", "text": text}
-                yield _complete(state)
-                return
-
-            assistant_msg: Dict[str, Any] = {
-                "role": "assistant",
-                "content": content or None,
-                "tool_calls": [
-                    {
-                        "id": call.get("id") or f"call-{i}",
-                        "type": "function",
-                        "function": {
-                            "name": call.get("name"),
-                            "arguments": json.dumps(
-                                call.get("arguments") or {}, ensure_ascii=False
-                            ),
-                        },
-                    }
-                    for i, call in enumerate(calls)
-                ],
-            }
-            messages.append(assistant_msg)
-
-            parked = False
-            handed = False
-            for call in calls:
-                name = str(call.get("name") or "")
-                args = call.get("arguments") if isinstance(call.get("arguments"), dict) else {}
-                tool_body: Optional[Dict[str, Any]] = None
-                # 写权限：本回合分发的是 name 这个工具。缺省 READ，
-                # 只有 TOOL_SCOPE 里声明 WRITE 的才进得了工厂信封。
-                with tool_scope_scope(name):
-                    async for event in _dispatch_tool(
-                        name,
-                        args,
-                        state,
-                        user_text,
-                        installed_skills,
-                        active_connectors,
-                        preferred_device,
-                        design_system_id,
-                        original_goal,
-                    ):
-                        yield event
-                        if event.get("type") == "control_tool_result":
-                            tool_body = {
-                                k: v for k, v in event.items() if k != "type"
-                            }
-                        if event.get("type") in {
-                            "control_ask_user",
-                            "control_scope_card",
-                            "control_handoff_factory",
-                            "complete",
-                        }:
-                            parked = event.get("type") in {
-                                "control_ask_user",
-                                "control_scope_card",
-                                "complete",
-                            }
-                            handed = event.get("type") == "control_handoff_factory"
-                if parked or handed:
-                    return
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": call.get("id") or "",
-                        # ⚠ 必须走 bound_tool_result，不许裸 json.dumps：
-                        #   search_evidence 的 hits 来自公网，一次胖搜索能把
-                        #   下一发请求的提示词顶穿（见该函数头注）。
-                        "content": bound_tool_result(
-                            tool_body
-                            if tool_body is not None
-                            else {"ok": True, "tool": name}
-                        ),
-                    }
-                )
-        # 走到这儿 = 八轮工具跑满还没收敛。抄 grok 的 MaxTurns：这跟墙钟、
-        # 额度是**三件不同的事**，别再塌成同一句话。
-        rounds_stop = stop_wire(
-            ControlStopReason.TOOL_ROUNDS, limit=MAX_TOOL_ROUNDS, used=MAX_TOOL_ROUNDS
-        )
-        async for event in _canned(
-            state, stop_text(ControlStopReason.TOOL_ROUNDS), stop=rounds_stop
-        ):
-            yield event
-    except HTTPException:
-        raise
-    except Exception:  # noqa: BLE001 — 失败合同：罐头回复，禁止点火
-        async for event in _canned(
-            state,
-            stop_text(ControlStopReason.LLM_UNAVAILABLE),
-            stop=stop_wire(ControlStopReason.LLM_UNAVAILABLE),
-        ):
-            yield event
+    async for event in _control_llm_loop(
+        state,
+        messages,
+        user_text=user_text,
+        installed_skills=installed_skills,
+        active_connectors=active_connectors,
+        preferred_device=preferred_device,
+        design_system_id=design_system_id,
+        original_goal=original_goal,
+        started=started,
+        cheap_tokens=cheap_tokens,
+    ):
+        yield event
 
 
 async def _dispatch_tool(
@@ -2497,12 +2864,12 @@ async def _dispatch_tool(
             user_text=user_text,
             want_evidence=_truthy_scope_flag(args.get("wantEvidence")),
             want_feasibility_report=_truthy_scope_flag(args.get("wantFeasibilityReport")),
+            tools=args.get("tools"),
         ):
             yield event
         return
-    if name == "rehearse":
-        # 「模型 rehearse 不是确认按钮」这道闸已收进函数开头的统一批准闸
-        # （TOOL_PERMISSION["rehearse"] = _scope_confirmed）。
+    if name in FACTORY_HOPS or name == "rehearse":
+        hop = "spec" if name == "rehearse" else name
         restatement = _confirmed_restatement(state, user_text)
         _write_confirmed_goal(state, restatement)
         _copy_scope_opt_in_into_goal(state)
@@ -2516,6 +2883,18 @@ async def _dispatch_tool(
             ):
                 yield event
             return
+        blocker = _factory_hop_blocker(state, hop)
+        if blocker:
+            async for event in _canned(
+                state,
+                blocker,
+                stop=stop_wire(ControlStopReason.LLM_UNAVAILABLE),
+            ):
+                yield event
+            return
+        goal = dict(state.goal) if isinstance(state.goal, dict) else {}
+        goal["tools"] = [hop]
+        state.goal = goal
         await _apersist(state)
         async for event in _handoff_factory(
             state,
@@ -2525,8 +2904,69 @@ async def _dispatch_tool(
             preferred_device,
             design_system_id,
             profile="app",
+            nest=True,
         ):
             yield event
+        fresh = await run_in_threadpool(load_session, str(state.sessionId or ""))
+        yield {
+            "type": "control_tool_result",
+            "tool": hop,
+            **_factory_tool_body(fresh or state, hop),
+        }
+        return
+    if name == "workflow":
+        wf_name = str(args.get("name") or "product-rehearsal").strip() or "product-rehearsal"
+        try:
+            registered = workflow_for(wf_name)
+        except KeyError:
+            async for event in _canned(
+                state,
+                f"未知工作流 {wf_name}。只能跑已登记的日历。",
+                stop=stop_wire(ControlStopReason.LLM_UNAVAILABLE),
+            ):
+                yield event
+            return
+        restatement = _confirmed_restatement(state, user_text)
+        _write_confirmed_goal(state, restatement)
+        _copy_scope_opt_in_into_goal(state)
+        try:
+            _stamp_scope_choice_onto_goal(state, _CONTROL_PAYLOAD.get())
+        except (ArchetypeNotWired, UnknownArchetype) as exc:
+            async for event in _canned(
+                state,
+                str(exc),
+                stop=stop_wire(ControlStopReason.LLM_UNAVAILABLE),
+            ):
+                yield event
+            return
+        preset = select_workflow(
+            name=registered.name,
+            archetype=str((state.goal or {}).get("productArchetype") or ""),
+            device=str((state.goal or {}).get("preferredDevice") or "desktop"),
+            tools=args.get("tools"),
+        )
+        goal = dict(state.goal) if isinstance(state.goal, dict) else {}
+        goal["workflow"] = preset.name
+        goal["tools"] = list(preset.tools)
+        state.goal = goal
+        await _apersist(state)
+        async for event in _handoff_factory(
+            state,
+            user_text,
+            installed_skills,
+            active_connectors,
+            preferred_device,
+            design_system_id,
+            profile="app",
+            nest=True,
+        ):
+            yield event
+        fresh = await run_in_threadpool(load_session, str(state.sessionId or ""))
+        yield {
+            "type": "control_tool_result",
+            "tool": "workflow",
+            **_factory_tool_body(fresh or state, "workflow"),
+        }
         return
     if name == "refine":
         # 空会话没东西可精修这道闸已收进统一批准闸
@@ -2544,8 +2984,15 @@ async def _dispatch_tool(
             preferred_device,
             design_system_id,
             profile="full",
+            nest=True,
         ):
             yield event
+        fresh = await run_in_threadpool(load_session, str(state.sessionId or ""))
+        yield {
+            "type": "control_tool_result",
+            "tool": "refine",
+            **_factory_tool_body(fresh or state, "refine"),
+        }
         return
     if name == "repair":
         async for event in _handoff_factory(
@@ -2558,8 +3005,15 @@ async def _dispatch_tool(
             repair=True,
             profile="full",
             max_loops=2,
+            nest=True,
         ):
             yield event
+        fresh = await run_in_threadpool(load_session, str(state.sessionId or ""))
+        yield {
+            "type": "control_tool_result",
+            "tool": "repair",
+            **_factory_tool_body(fresh or state, "repair"),
+        }
         return
     if name == "challenge":
         async for event in _tool_challenge(state, user_text):

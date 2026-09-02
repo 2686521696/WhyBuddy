@@ -26,40 +26,19 @@ function handlerSlice(src: string, name: string, span = 700): string {
   return src.slice(at, at + span);
 }
 
-describe("M8 映射表落在 derive-status-bar（不是文档）", () => {
-  it("表里的 spec_tree 是字面 2，不是 1", () => {
+describe("M8 推演钟不查翻译表", () => {
+  it("翻译表已经删掉", () => {
     const src = load("../derive-status-bar.ts");
-    const table = src.slice(
-      src.indexOf("export const REHEARSAL_MODULE_TO_STEP"),
-      src.indexOf("} as const")
-    );
-    expect(table).toMatch(/spec_tree:\s*2/);
-    expect(table).not.toMatch(/spec_tree:\s*1/);
-    expect(table).toMatch(/spec_page_html:\s*3/);
-    expect(table).toMatch(/html_structure:\s*4/);
-    expect(table).toMatch(/spec_semantics:\s*5/);
-    expect(table).toMatch(/model_assembly:\s*6/);
-    expect(table).toMatch(/html_bindings:\s*6/);
-    expect(table).toMatch(/v5_model_gate:\s*6/);
-    expect(table).toMatch(/evaluate_coverage_gate:\s*6/);
-  });
-
-  it("别名 SkillId page 是 6 不是 3（跟 SSE spec_page 不是一回事）", () => {
-    const src = load("../derive-status-bar.ts");
-    const aliases = src.slice(
-      src.indexOf("const REHEARSAL_EVENT_ALIASES"),
-      src.indexOf("export type RehearsalClockCursor")
-    );
-    expect(aliases).toMatch(/(?:^|\n)\s*page:\s*6\b/);
-    expect(aliases).not.toMatch(/(?:^|\n)\s*page:\s*3\b/);
-    expect(aliases).toMatch(/(?:^|\n)\s*spec_page:\s*3\b/);
+    expect(src).not.toContain("export const REHEARSAL_MODULE_TO_STEP");
+    expect(src).not.toContain("REHEARSAL_EVENT_ALIASES");
+    expect(src).toMatch(/mapInternalEventToProductStep[\s\S]*return null/);
   });
 
   it("第 1 步 skippable: true 写在步骤表里", () => {
     const src = load("../derive-status-bar.ts");
     const steps = src.slice(
       src.indexOf("export const REHEARSAL_PRODUCT_STEPS"),
-      src.indexOf("export const REHEARSAL_MODULE_TO_STEP")
+      src.indexOf("export type RehearsalClockCursor")
     );
     expect(steps).toMatch(/id:\s*1[\s\S]*skippable:\s*true/);
   });
@@ -92,9 +71,7 @@ describe("SSE 投影接在 useSlideRuleSession（删调用点必红）", () => {
     expect(handlerSlice(src, "onReasoningStep")).toContain(
       "applyRehearsalEvent(capabilityId, productStep)"
     );
-    expect(handlerSlice(src, "onSpecPage")).toContain(
-      'applyRehearsalEvent("spec_page_html")'
-    );
+    expect(handlerSlice(src, "onSpecPage")).toContain("productStep");
     expect(handlerSlice(src, "onSkillActivated")).toContain(
       "applyRehearsalEvent(skillId)"
     );
@@ -184,5 +161,14 @@ describe("已有 SSE progress_heartbeat 投影，不另开 API", () => {
     const slice = src.slice(at, at + 280);
     expect(slice).toContain("opts.onProgressHeartbeat");
     expect(slice).not.toContain("appendStreamStep");
+  });
+
+  it("factory_plan 写进 goal.tools，钟才跟编排走", () => {
+    const driver = load("../../../lib/sliderule-marathon-driver.ts");
+    expect(driver).toContain('case "factory_plan"');
+    expect(driver).toContain("opts.onFactoryPlan");
+    const session = load("../useSlideRuleSession.ts");
+    expect(handlerSlice(session, "onFactoryPlan")).toContain("goal.tools = tools");
+    expect(handlerSlice(session, "onFactoryPlan")).toContain("appendStreamStep");
   });
 });

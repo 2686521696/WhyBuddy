@@ -254,6 +254,8 @@ describe("consumeControlStreamResponse 与工厂 case 共用", () => {
     expect(consume).toContain("control_clarify");
     expect(consume).toContain("control_scope_card");
     expect(consume).toContain("control_handoff_factory");
+    expect(consume).toContain("handedOff && !factoryDone");
+    expect(consume).toContain('type: "factory_complete"');
     const skillStartCases = countNeedle(consume, 'case "skill_start"');
     expect(skillStartCases).toBe(0);
   });
@@ -427,5 +429,84 @@ describe("consumeControlStreamResponse 与工厂 case 共用", () => {
       SESSION.indexOf("onControlAskUser:")
     );
     expect(streamOpts).not.toContain("onControlToolResult");
+  });
+
+  it("handoff 后未改名的工厂 complete 不断流（抄 grok ToolLoop::Continue）", async () => {
+    const texts: string[] = [];
+    const settled: string[] = [];
+    const events = [
+      { type: "control_handoff_factory", runId: "run-1" },
+      { type: "complete", state: { sessionId: "s1", goal: { text: "工厂态" } } },
+      { type: "control_text", text: "页面已经出来，要改哪一页说一声。" },
+      {
+        type: "complete",
+        state: { sessionId: "s1", goal: { text: "请假系统", status: "clear" } },
+      },
+    ];
+    const body = events.map(e => `data: ${JSON.stringify(e)}\n\n`).join("");
+    const res = new Response(body, {
+      headers: { "Content-Type": "text/event-stream" },
+    });
+    const out = await consumeControlStreamResponse(res, {
+      onControlText: text => texts.push(text),
+      onRunSettled: reason => settled.push(reason),
+    });
+    expect(texts).toContain("页面已经出来，要改哪一页说一声。");
+    expect(settled).toEqual(["complete"]);
+    expect(out?.finalState?.goal?.text).toBe("请假系统");
+  });
+
+  it("factory_complete 不断流，后面的控制面文字还能读到", async () => {
+    const texts: string[] = [];
+    const events = [
+      { type: "control_handoff_factory", runId: "run-1" },
+      { type: "factory_complete", state: { sessionId: "s1" } },
+      {
+        type: "control_tool_result",
+        tool: "rehearse",
+        human: "工厂摘要",
+      },
+      { type: "control_text", text: "页面已经出来，要改哪一页说一声。" },
+      {
+        type: "complete",
+        state: { sessionId: "s1", goal: { text: "请假系统", status: "clear" } },
+      },
+    ];
+    const body = events.map(e => `data: ${JSON.stringify(e)}\n\n`).join("");
+    const res = new Response(body, {
+      headers: { "Content-Type": "text/event-stream" },
+    });
+    const out = await consumeControlStreamResponse(res, {
+      onControlText: text => texts.push(text),
+    });
+    expect(texts).toContain("工厂摘要");
+    expect(texts).toContain("页面已经出来，要改哪一页说一声。");
+    expect(out?.finalState?.goal?.text).toBe("请假系统");
+  });
+
+  it("工具摘要人话不进 onControlHostText（那才是主 Agent 开口）", async () => {
+    const host: string[] = [];
+    const events = [
+      { type: "control_handoff_factory", runId: "run-1" },
+      { type: "factory_complete", state: { sessionId: "s1" } },
+      { type: "control_tool_result", tool: "rehearse", human: "当前模型摘要（有界，不是原始五系统 JSON）。" },
+      { type: "control_text", text: "页面已经出来，要改哪一页说一声。" },
+      { type: "complete", state: { sessionId: "s1" } },
+    ];
+    const body = events.map(e => `data: ${JSON.stringify(e)}\n\n`).join("");
+    await consumeControlStreamResponse(
+      new Response(body, { headers: { "Content-Type": "text/event-stream" } }),
+      { onControlHostText: text => host.push(text) }
+    );
+    expect(host).toEqual(["页面已经出来，要改哪一页说一声。"]);
+  });
+
+  it("工厂后的 control_text 写进本轮 assistant（主 Agent 开口）", () => {
+    const runTurn = SESSION.slice(
+      SESSION.indexOf("const runTurn = async"),
+      SESSION.indexOf("const requestRehearsal = async")
+    );
+    expect(runTurn).toContain("hostSpeechRef");
+    expect(runTurn).toContain("assistantSource = \"llm\"");
   });
 });

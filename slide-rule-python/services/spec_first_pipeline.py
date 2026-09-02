@@ -1224,9 +1224,11 @@ def run_spec_first(
     reuse_style_brief: Optional[Dict[str, Any]] = None,
     reuse_model: Optional[Dict[str, Any]] = None,
     reuse_pages: Optional[Dict[str, str]] = None,
+    reuse_spec: Optional[Dict[str, Any]] = None,
     preferred_device: Optional[str] = None,
     product_archetype: Optional[str] = None,
     tools: Optional[Iterable[str]] = None,
+    workflow: Optional[str] = None,
     on_page: Optional[Callable[[str, str, int, int], None]] = None,
 ) -> Dict[str, Any]:
     """一句话 → 完整五系统模型 + 带 data-* 孔的多页 HTML。
@@ -1302,7 +1304,7 @@ def run_spec_first(
         unify_shell,
     )
     from .capability_plan import CapabilityPlan
-    from .workflow_registry import select_workflow
+    from .workflow_select import select_workflow
     from .spec_page_html import generate_pages_parallel
     from .spec_semantics import derive_semantics, to_model_sections  # noqa: F401
     from .app_template import all_app_templates, match_app_template
@@ -1334,6 +1336,7 @@ def run_spec_first(
     # 日历从范围卡上的 原型×设备 + 规划器 tools 派生。话题词不在这里分流。
     # 不经过 select_workflow = 注册表又成没通电的插座。
     preset = select_workflow(
+        name=workflow or "",
         archetype=product_archetype or "",
         device=device,
         refine=bool(refine),
@@ -1358,6 +1361,17 @@ def run_spec_first(
     )
     sink = _with_device(on_page or _page_sink_var.get(), device)
     pages: Dict[str, str] = {}
+    if (
+        not plan.includes("specfirst.pages")
+        and isinstance(reuse_pages, dict)
+        and reuse_pages
+    ):
+        pages = {
+            str(k): str(v)
+            for k, v in reuse_pages.items()
+            if str(v or "").strip()
+        }
+        print(f"[spec_first_pipeline] 沿用上一跳页面 {len(pages)} 份")
     failed: Dict[str, Any] = {}
     missing_pages: list = []
     shell: Dict[str, Any] = {}
@@ -1445,6 +1459,13 @@ def run_spec_first(
     # ── 第 2 步：起草 SPEC（page-only 改为打补丁，不整本重写）────────
     # （第 1 步「澄清 + 缺口 + 证据」用的是现有能力，由调用方把 evidence 传进来）
     spec: Optional[Dict[str, Any]] = None
+    if (
+        not plan.includes("specfirst.spec")
+        and isinstance(reuse_spec, dict)
+        and reuse_spec
+    ):
+        spec = reuse_spec
+        print("[spec_first_pipeline] 沿用上一跳 SPEC")
     if (
         plan.includes("specfirst.spec")
         and refine
@@ -1538,7 +1559,7 @@ def run_spec_first(
         stages["spec"] = dict(st)
 
     if spec is None:
-        raise SpecFirstError("第 2 步没有产出 SPEC")
+        raise SpecFirstError("第 2 步没有产出 SPEC。单跳 pages/structure/bind 需要上一跳的 SPEC。")
     # 图只碰 page 时，没声明 refineScope 也按「一段都没点名」——否则 6.2
     # 把 None 当成不知道，权限/流程仍先做再盖。
     if (
@@ -1763,7 +1784,7 @@ def run_spec_first(
                     f"实交 {len(pages)} 页，缺 {missing_pages}（失败原因见 failedPages）"
                 )
         stages["pages"] = dict(st)
-    if not pages:
+    if plan.includes("specfirst.pages") and not pages:
         raise SpecFirstError(f"第 3 步一页都没出来：{list(failed.values())[:2]}")
 
     # ── 第 3.5 步：外壳统一（零 LLM）────────────────────────────────
@@ -1815,6 +1836,11 @@ def run_spec_first(
         # 不发的话，前端直播舞台从第 3 步起一直摆着「三个产品名、三套菜单」的
         # 素颜页，要等整轮跑完 finalState 到达才换——那是十几分钟的错误画面。
         _reemit_pages(sink, pages, bound=False)
+
+    if plan.includes("specfirst.structure") and not pages:
+        raise SpecFirstError("structure 需要上一跳的页面")
+    if bind_html and plan.includes("specfirst.bind") and not pages:
+        raise SpecFirstError("bind 需要上一跳的页面")
 
     # ── 第 4 步：HTML → 结构 ────────────────────────────────────────
     # 照搬页 HTML 没变，数据结构沿用上一版。只把重画页送去反推，再和
@@ -2251,6 +2277,7 @@ def run_spec_first(
     #   于是暂存里不会留下半份产物冒充成品。
     _last_pages_var.set({
         "version": SPEC_FIRST_VERSION,
+        "spec": dict(spec) if isinstance(spec, dict) else None,
         "pages": dict(pages),
         "navItems": list(result["navItems"]),
         "boundPages": count_bound_pages(pages, bind_html, bound_failed),

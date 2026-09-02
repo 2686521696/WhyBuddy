@@ -32,7 +32,7 @@ export function RehearsalClockHud({
           data-testid="sliderule-rehearsal-clock"
           aria-label={
             live
-              ? `推演进度 ${live.id}/6 ${live.label}`
+              ? `推演进度 ${live.label}（${clock.steps.length} 步）`
               : "推演进度"
           }
         >

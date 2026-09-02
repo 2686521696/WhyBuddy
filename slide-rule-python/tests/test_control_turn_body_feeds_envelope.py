@@ -100,7 +100,6 @@ def test_refine_does_not_overwrite_session_goal(monkeypatch):
     _, _events = harness.post(
         six_fields(sid, "把提交按钮改成红色", forcedTool="refine")
     )
-    assert harness.llm_calls == []
     assert len(harness.helper_calls) == 1
     assert harness.helper_calls[0]["user_text"] == "把提交按钮改成红色"
     assert harness.goals_at_handoff == ["请假系统"]

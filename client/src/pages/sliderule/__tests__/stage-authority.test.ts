@@ -31,7 +31,7 @@ describe("stage-authority", () => {
   it("第 N 轮包着配方文案仍是配方，不能只看前缀", () => {
     const live = {
       text: "第 2 轮 · 正在执行 起草规格：成功判据、需求节点与页面清单",
-      capabilityId: "起草规格：成功判据、需求节点与页面清单",
+      capabilityId: "specfirst.spec",
     };
     expect(classifyStageLine(live)).toBe("recipe");
     expect(matchRecipeStage(live)).toBe("specfirst.spec");
@@ -53,7 +53,7 @@ describe("stage-authority", () => {
         chip("第 1 轮 · 正在澄清需求", "intent.parse"),
         chip(
           "第 2 轮 · 正在执行 起草规格：成功判据、需求节点与页面清单",
-          "起草规格：成功判据、需求节点与页面清单"
+          "specfirst.spec"
         ),
       ],
       streaming: true,
@@ -66,10 +66,7 @@ describe("stage-authority", () => {
     expect(recipe.rows.find(r => r.stageId === "specfirst.spec")?.status).toBe(
       "running"
     );
-    expect(recipe.rows.find(r => r.stageId === "specfirst.bind")?.status).toBe(
-      "pending"
-    );
-    expect(recipe.rows.some(r => r.verb === "接上数据")).toBe(true);
+    expect(recipe.rows.find(r => r.stageId === "specfirst.bind")).toBeUndefined();
     expect(groups.find(g => g.authority === "agent")?.rows.some(r => r.verb === "澄清需求")).toBe(
       true
     );
@@ -107,8 +104,6 @@ describe("stage-authority", () => {
     expect(recipe.rows.find(r => r.stageId === "specfirst.bind")?.status).toBe(
       "running"
     );
-    expect(recipe.rows.find(r => r.stageId === "specfirst.pages")?.status).toBe(
-      "done"
-    );
+    expect(recipe.rows.find(r => r.stageId === "specfirst.pages")).toBeUndefined();
   });
 });

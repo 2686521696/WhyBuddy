@@ -14,13 +14,13 @@ import * as SlideRuleRuntime from "./sliderule-runtime";
 import { buildStructuredReport } from "@shared/blueprint/sliderule-report-builder";
 import { buildCapabilityPrompt } from "@shared/blueprint/sliderule-capability-prompts";
 // 技能库六期"推演注入"：已安装技能随 drive-full 请求进生成契约（纯本地读取，无环）
-import { installedSkillsDrivePayload } from "@/pages/sliderule/installed-skills";
-import { lenientStringList } from "@/pages/sliderule/spec-assumptions";
-import { layoutDevice } from "@/pages/sliderule/product-archetypes";
+import { installedSkillsDrivePayload } from "./installed-skills";
+import { lenientStringList } from "./spec-assumptions";
+import { layoutDevice } from "./product-archetypes";
 import {
   loadTurnCapabilities,
   pickedConnectorIds,
-} from "@/pages/sliderule/turn-capabilities";
+} from "./turn-capabilities";
 
 /**
  * 控制面为什么停下来（服务端 ControlStopReason / StoppedBy 的线上形状）。
@@ -271,6 +271,8 @@ export interface DriveFullStreamOpts {
    * 只推进产品六步钟，不要往左栏再塞一条 chip（心跳会连发）。
    */
   onProgressHeartbeat?: (stage?: string, label?: string, productStep?: number) => void;
+  /** 工厂编排器 stamp 的本轮公开工具。钟只画这些步。 */
+  onFactoryPlan?: (tools: string[], workflow?: string) => void;
   /** LLM 实时内容增量。label 标注来源：能力 id（risk.analyze / report.write…）
    *  或 "five-system-model"（五系统起草）。旧后端不带 label 时为 undefined。 */
   /** `stageLabel` 是**后端账本给的人话**（2026-08-30 起）。前端不再自己翻译
@@ -402,6 +404,8 @@ export interface DriveFullStreamOpts {
    *   本仓第四条的经典形态——四种停法在前端仍然长得一模一样。
    */
   onControlText?: (text: string, stop?: ControlStop) => void;
+  /** 仅 `control_text`（主 Agent 开口）。工具摘要人话不走这里。 */
+  onControlHostText?: (text: string) => void;
   onControlAskUser?: (event: {
     question: string;
     options?: string[];
@@ -604,6 +608,18 @@ function applyFactoryStreamEvent(
         typeof event.productStep === "number" ? event.productStep : undefined
       );
       return "continue";
+    case "factory_plan": {
+      const tools = Array.isArray(event.tools)
+        ? event.tools.map((item: unknown) => String(item).trim()).filter(Boolean)
+        : [];
+      if (tools.length > 0) {
+        opts.onFactoryPlan?.(
+          tools,
+          typeof event.workflow === "string" ? event.workflow : undefined
+        );
+      }
+      return "continue";
+    }
     case "skill_result":
       opts.onSkillCompleted?.(event.skill as SkillId, Boolean(event.error), {
         mermaid: (event.mermaid as string | null) ?? null,
@@ -617,6 +633,15 @@ function applyFactoryStreamEvent(
       return "continue";
     case "publish_closure":
       acc.publishClosure = event.data;
+      return "continue";
+    case "factory_complete":
+      // 嵌套在控制面 WRITE 里的工厂终局：记下状态，但不断流。
+      if (event.state) {
+        acc.finalState = event.state as V5SessionState;
+        if (acc.publishClosure !== undefined) {
+          (acc.finalState as any).publishClosure = acc.publishClosure;
+        }
+      }
       return "continue";
     case "complete":
       if (event.state) {
@@ -818,6 +843,9 @@ export async function consumeControlStreamResponse(
     if (!res.body) return null;
     let runIdSeen = false;
     let handedOff = false;
+    // 抄 grok ToolLoop::Continue：工具流 Final ≠ host EndTurn。
+    // handoff 之后第一发 complete 若没改名，只当工厂收工，继续读控制面。
+    let factoryDone = false;
     let sawTerminal = false;
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -848,7 +876,7 @@ export async function consumeControlStreamResponse(
           opts.onRunId?.(event.runId);
         }
 
-        if (!handedOff) {
+        {
           switch (event.type) {
             case "control_text":
               opts.onControlText?.(
@@ -866,6 +894,10 @@ export async function consumeControlStreamResponse(
                     }
                   : undefined
               );
+              {
+                const host = String(event.text || "").trim();
+                if (host) opts.onControlHostText?.(host);
+              }
               continue;
             case "control_tool_start":
               opts.onControlToolStart?.(String(event.tool || ""));
@@ -932,9 +964,25 @@ export async function consumeControlStreamResponse(
                 opts.onRunId?.(event.runId);
               }
               continue;
+            case "factory_complete":
+              factoryDone = true;
+              break;
             case "complete":
+              if (handedOff && !factoryDone) {
+                factoryDone = true;
+                applyFactoryStreamEvent(
+                  { ...event, type: "factory_complete" },
+                  opts,
+                  acc
+                );
+                continue;
+              }
               if (event.state) {
                 acc.finalState = event.state as V5SessionState;
+                if (acc.publishClosure !== undefined) {
+                  (acc.finalState as { publishClosure?: unknown }).publishClosure =
+                    acc.publishClosure;
+                }
               }
               opts.onRunSettled?.("complete");
               sawTerminal = true;

@@ -154,6 +154,7 @@ class Test执行器接线:
         def fake_run(goal, **kw):
             captured["tools"] = kw.get("tools")
             captured["product_archetype"] = kw.get("product_archetype")
+            captured["workflow"] = kw.get("workflow")
             raise RuntimeError("捕获即止")
 
         monkeypatch.setattr("services.spec_first_pipeline.run_spec_first", fake_run)
@@ -167,11 +168,15 @@ class Test执行器接线:
             None,
             tools=["spec", "pages"],
             product_archetype="business_app",
+            workflow="pages-preview",
         )
         assert captured.get("tools") == ["spec", "pages"], (
             "tools 没传到 run_spec_first——计划减工具在生成侧又是空插座"
         )
         assert captured.get("product_archetype") == "business_app"
+        assert captured.get("workflow") == "pages-preview", (
+            "workflow 没传到 run_spec_first——按名字选日历又是空插座"
+        )
 
     def test_模型直供在场时_spec_first让路(self, monkeypatch):
         """版本回退/fork 直供：快照是权威。spec-first 不让路的话，

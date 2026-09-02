@@ -74,7 +74,16 @@ def test_default_is_no_permission_needed():
 def test_the_expensive_verbs_declare_permission():
     """今天已经在查批准的那两个，一个不多一个不少。"""
     declared = {n for n in CLOSED_TOOLS if tool_requires_permission(n)}
-    assert declared == {"rehearse", "refine"}, (
+    assert declared == {
+        "rehearse",
+        "workflow",
+        "spec",
+        "pages",
+        "structure",
+        "bind",
+        "closure",
+        "refine",
+    }, (
         f"要批准的工具集变了：{sorted(declared)}。"
         "多一个 = 用户平白多一次确认；少一个 = 那个动词能绕过范围卡点火。"
     )

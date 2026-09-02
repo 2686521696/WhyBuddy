@@ -3,26 +3,26 @@
 > ⚠ **这份文件是 `scripts/arch-graph-ts.mjs --emit` 生成的，别手改。**
 > 手改了 `scripts/arch-graph-ts.test.mjs` 会红。改代码然后重新生成。
 
-对应 grok-build 的做法：92 个 crate 在各自 `Cargo.toml` 里显式声明依赖，
-364 条内部边由编译器强制，根 `Cargo.toml` 是生成的。
+对应 grok-build 的做法：边写在各 crate 的 `Cargo.toml` 里，由 cargo 强制。
+对照物的现算数字见 `docs/grok-build 架构图（自动生成）.md`。
 
 ## 规模
 
 | 包 | 模块数 |
 |---|---:|
 | agent-loop | 99 |
-| client | 1026 |
+| client | 1031 |
 | server | 579 |
 | services | 32 |
 | shared | 176 |
-| **合计** | **1912** |
+| **合计** | **1917** |
 
-边 5923 条，其中动态 import / require 307 条、
-类型 import 2219 条。
+边 5931 条，其中动态 import / require 307 条、
+类型 import 2221 条。
 
 ## component 依赖图
 
-**红色虚线 = 参与组间成环的边。**
+**红色虚线 = 欠账看板：参与组间成环的边。基线只许变短。**
 
 ```mermaid
 graph LR
@@ -30,16 +30,16 @@ graph LR
   agent-loop-tools["agent-loop-tools<br/>17"]
   agent-loop-vscode["agent-loop-vscode<br/>38"]
   client-components["client-components<br/>280"]
-  client-lib["client-lib<br/>167"]
+  client-lib["client-lib<br/>173"]
   client-pages["client-pages<br/>74"]
   client-pages-autopilot["client-pages-autopilot<br/>191"]
   client-pages-sliderule["client-pages-sliderule<br/>261"]
   client-runtime["client-runtime<br/>16"]
-  client-shell["client-shell<br/>37"]
+  client-shell["client-shell<br/>36"]
   lobster-executor["lobster-executor<br/>32"]
   server-audit["server-audit<br/>26"]
-  server-core["server-core<br/>102"]
-  server-entry["server-entry<br/>7"]
+  server-core["server-core<br/>108"]
+  server-entry["server-entry<br/>1"]
   server-integrations["server-integrations<br/>26"]
   server-permission["server-permission<br/>16"]
   server-persist["server-persist<br/>13"]
@@ -54,7 +54,7 @@ graph LR
   shared-workflow["shared-workflow<br/>6"]
   agent-loop-tools --> agent-loop-src
   client-components -.->|环| client-lib
-  client-components --> client-pages
+  client-components -.->|环| client-pages
   client-components --> client-pages-autopilot
   client-components --> client-pages-sliderule
   client-components --> client-shell
@@ -62,27 +62,25 @@ graph LR
   client-components --> shared-contracts
   client-components --> shared-workflow
   client-lib -.->|环| client-components
-  client-lib -.->|环| client-pages-sliderule
-  client-lib --> client-runtime
-  client-lib --> client-shell
+  client-lib -.->|环| client-runtime
   client-lib --> shared-blueprint
   client-lib --> shared-contracts
   client-lib --> shared-web-aigc
   client-lib --> shared-workflow
   client-pages-autopilot -.->|环| client-components
-  client-pages-autopilot -.->|环| client-lib
+  client-pages-autopilot --> client-lib
   client-pages-autopilot -.->|环| client-pages
   client-pages-autopilot -.->|环| client-shell
   client-pages-autopilot --> shared-blueprint
   client-pages-sliderule -.->|环| client-components
-  client-pages-sliderule -.->|环| client-lib
+  client-pages-sliderule --> client-lib
   client-pages-sliderule -.->|环| client-pages
-  client-pages-sliderule --> client-pages-autopilot
+  client-pages-sliderule -.->|环| client-pages-autopilot
   client-pages-sliderule --> shared-blueprint
   client-pages -.->|环| client-components
-  client-pages -.->|环| client-lib
+  client-pages --> client-lib
   client-pages -.->|环| client-pages-autopilot
-  client-pages -.->|环| client-pages-sliderule
+  client-pages --> client-pages-sliderule
   client-pages --> client-shell
   client-pages --> shared-blueprint
   client-pages --> shared-contracts
@@ -90,11 +88,11 @@ graph LR
   client-runtime --> shared-contracts
   client-runtime --> shared-workflow
   client-shell -.->|环| client-components
-  client-shell -.->|环| client-lib
+  client-shell --> client-lib
   client-shell -.->|环| client-pages
   client-shell -.->|环| client-pages-autopilot
   client-shell -.->|环| client-pages-sliderule
-  client-shell -.->|环| client-runtime
+  client-shell --> client-runtime
   client-shell --> shared-blueprint
   client-shell --> shared-contracts
   lobster-executor --> shared-contracts
@@ -105,8 +103,7 @@ graph LR
   server-audit --> shared-contracts
   server-audit --> shared-web-aigc
   server-core -.->|环| server-audit
-  server-core -.->|环| server-entry
-  server-core --> server-integrations
+  server-core -.->|环| server-integrations
   server-core --> server-permission
   server-core --> server-persist
   server-core --> server-rag
@@ -115,9 +112,9 @@ graph LR
   server-core --> shared-contracts
   server-core --> shared-web-aigc
   server-core --> shared-workflow
-  server-entry -.->|环| server-audit
-  server-entry -.->|环| server-core
-  server-entry -.->|环| server-integrations
+  server-entry --> server-audit
+  server-entry --> server-core
+  server-entry --> server-integrations
   server-entry --> server-permission
   server-entry --> server-persist
   server-entry --> server-rag
@@ -126,7 +123,6 @@ graph LR
   server-entry --> server-sliderule
   server-entry --> server-tasks
   server-entry --> shared-contracts
-  server-entry --> shared-workflow
   server-integrations -.->|环| server-core
   server-integrations -.->|环| server-permission
   server-integrations --> server-persist
@@ -149,7 +145,6 @@ graph LR
   server-routes-blueprint --> shared-contracts
   server-routes -.->|环| server-audit
   server-routes -.->|环| server-core
-  server-routes -.->|环| server-entry
   server-routes -.->|环| server-integrations
   server-routes --> server-permission
   server-routes --> server-persist
@@ -180,6 +175,44 @@ graph LR
   shared-workflow -.->|环| shared-contracts
 ```
 
+## 欠账看板（红虚线，基线只许变短）
+
+还一笔就从 `architecture.ts.json` 的 `baseline.componentCycles` / `baseline.cycles` 删掉。
+往基线里加东西 = 有意接受一笔新欠账，不该出现在日常流程里。
+
+组间环 **28**（基线 28）
+
+- `client-components -> client-lib -> client-components`
+- `client-components -> client-pages -> client-components`
+- `client-components -> client-pages -> client-pages-autopilot -> client-components`
+- `client-components -> client-pages -> client-pages-autopilot -> client-shell -> client-components`
+- `client-components -> client-pages -> client-pages-autopilot -> client-shell -> client-pages-sliderule -> client-components`
+- `client-lib -> client-runtime -> client-lib`
+- `client-pages -> client-pages-autopilot -> client-pages`
+- `client-pages -> client-pages-autopilot -> client-shell -> client-pages`
+- `client-pages -> client-pages-autopilot -> client-shell -> client-pages-sliderule -> client-pages`
+- `client-pages-autopilot -> client-shell -> client-pages-autopilot`
+- `client-pages-autopilot -> client-shell -> client-pages-sliderule -> client-pages-autopilot`
+- `server-audit -> server-core -> server-audit`
+- `server-audit -> server-core -> server-integrations -> server-permission -> server-audit`
+- `server-audit -> server-core -> server-integrations -> server-permission -> server-persist -> server-tasks -> server-audit`
+- `server-audit -> server-core -> server-integrations -> server-rag -> server-routes -> server-audit`
+- `server-core -> server-integrations -> server-core`
+- `server-core -> server-integrations -> server-permission -> server-persist -> server-core`
+- `server-core -> server-integrations -> server-permission -> server-persist -> server-tasks -> server-core`
+- `server-core -> server-integrations -> server-rag -> server-routes -> server-core`
+- `server-core -> server-integrations -> server-rag -> server-routes -> server-sliderule -> server-core`
+- `server-core -> server-integrations -> server-rag -> server-routes -> server-sliderule -> server-routes-blueprint -> server-core`
+- `server-integrations -> server-rag -> server-routes -> server-integrations`
+- `server-permission -> server-persist -> server-tasks -> server-permission`
+- `server-persist -> server-tasks -> server-persist`
+- `server-rag -> server-routes -> server-rag`
+- `server-routes -> server-sliderule -> server-routes-blueprint -> server-routes`
+- `shared-contracts -> shared-web-aigc -> shared-contracts`
+- `shared-contracts -> shared-workflow -> shared-contracts`
+
+模块级环 **94**（基线 94）—— 图上不逐条展开，棘轮在 `--check`。
+
 ## 组的职责
 
 ### agent-loop-src
@@ -208,9 +241,9 @@ Agent Loop 的 VS Code 扩展。
 
 ### client-lib
 
-前端库层：推演运行时、项目存储、路由规划、浏览器侧 LLM。167 个模块，是前端事实上的核心。
+前端库层：推演运行时、项目存储、路由规划、浏览器侧 LLM。workers 是叶子（被 serializer 用），不进装配根。
 
-路径：`client/src/lib`
+路径：`client/src/lib`、`client/src/workers`
 
 ### client-pages
 
@@ -238,9 +271,9 @@ Autopilot 路线页与右栏控制面。产品面收敛的对象（见 M17），
 
 ### client-shell
 
-前端装配根与横切件：入口、全局上下文、hooks、i18n、worker、开发夹具。
+前端装配根与横切件：入口、全局上下文、hooks、i18n、开发夹具。worker 下沉到 client-lib。
 
-路径：`client/src/App`、`client/src/main`、`client/src/const`、`client/src/contexts`、`client/src/hooks`、`client/src/i18n`、`client/src/workers`、`client/src/dev-harness`、`client/src/vite-env.d`、`client/dev-harness`
+路径：`client/src/App`、`client/src/main`、`client/src/const`、`client/src/contexts`、`client/src/hooks`、`client/src/i18n`、`client/src/dev-harness`、`client/src/vite-env.d`、`client/dev-harness`
 
 ### lobster-executor
 
@@ -256,15 +289,15 @@ Autopilot 路线页与右栏控制面。产品面收敛的对象（见 M17），
 
 ### server-core
 
-服务端核心：socket、注册表、治理、a2a 适配、nl-command。
+服务端核心：socket、注册表、治理、a2a 适配、nl-command。auth/runtime/config/startup 从组合根拆过来——grok 的 pager-bin 也不把库放进 binary crate。
 
-路径：`server/core`
+路径：`server/core`、`server/auth`、`server/runtime`、`server/config`、`server/startup`
 
 ### server-entry
 
-服务端装配根（对应 grok 的 xai-grok-pager-bin）：只负责把东西装起来。
+服务端装配根（对应 grok 的 xai-grok-pager-bin）：只负责把东西装起来。**被依赖数必须是 0**。auth/runtime/config 是库，不进这个 crate。
 
-路径：`server/index`、`server/startup`、`server/config`、`server/runtime`、`server/auth`
+路径：`server/index`
 
 ### server-integrations
 

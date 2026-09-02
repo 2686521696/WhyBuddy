@@ -736,3 +736,235 @@ class Test孤儿都要有归类:
             f"跨语言判据实际钉住的：        {sorted(pinned)}\n"
             f"对不上就意味着有模块顶着「产线代码不许删」的标签，却没有任何判据护着它。"
         )
+
+
+class Test手画降为历史:
+    """权威只留自动生成的图。V5.x～V6.0 手画必须标明非权威，禁止再打 ⚑。"""
+
+    _HISTORIC = (
+        "docs/SlideRule V5.2 架构图.md",
+        "docs/SlideRule V5.3 架构图.md",
+        "docs/SlideRule V5.4 架构图.md",
+        "docs/SlideRule V5.5 架构图.md",
+        "docs/SlideRule V5.6 架构图.md",
+        "docs/SlideRule V5.7 架构图.md",
+        "docs/SlideRule V5.8 架构图.md",
+        "docs/SlideRule V5.9 架构图.md",
+        "docs/SlideRule V6.0 架构图.md",
+        "docs/系统 Mermaid 架构图.md",
+    )
+
+    def test_手画都标明非权威(self):
+        mark = arch_graph.HISTORIC_MARK
+        missing = []
+        for rel in self._HISTORIC:
+            p = arch_graph.REPO / rel
+            assert p.is_file(), f"找不到历史图 {rel}"
+            head = p.read_text(encoding="utf-8")[:1200]
+            if mark not in head:
+                missing.append(rel)
+        assert not missing, (
+            f"这些手画架构图没标明「{mark}」：{missing}\n"
+            f"权威图只留自动生成的，手画是实验室笔记。"
+        )
+
+    def test_V6_0头注禁止再打旗(self):
+        head = (arch_graph.REPO / "docs/SlideRule V6.0 架构图.md").read_text(
+            encoding="utf-8"
+        )[:800]
+        assert "禁止再打新" in head, "V6.0 必须自己写着不许再打 ⚑"
+
+    def test_权威图是生成的那几份(self):
+        """反向：生成的图必须自称生成的，否则手画和权威分不清。"""
+        for p in (arch_graph.DIAGRAM, arch_graph.REPO_DIAGRAM):
+            assert p.is_file(), f"{p} 不在——跑 arch_graph.py --emit"
+            head = p.read_text(encoding="utf-8")[:500]
+            assert "不要手改" in head or "别手改" in head, f"{p} 没自称是生成的"
+
+
+class Testservices三层进mermaid:
+    """表里有分层但图上没有 = 抄 grok 叶子 crate 是空话。"""
+
+    def test_util_core_flow是mermaid节点(self):
+        doc = arch_graph.render_doc(_G, _M)
+        assert "### services 三层（从 import 算出，不是表）" in doc
+        for layer in ("util", "core", "flow"):
+            assert f'  {layer}["' in doc, f"{layer} 只在表里，没进 mermaid"
+
+    def test_层间边来自真import(self):
+        """flow 依赖 core 必须画出来。没有这条边 = 图在撒谎。"""
+        mermaid = arch_graph.emit_services_layer_mermaid(_G, _M)
+        assert "flow -->" in mermaid or "flow -.->" in mermaid
+        assert "|core|" in mermaid.replace(" ", "") or " core" in mermaid
+
+    def test_反向_删掉层图这段标题就红(self):
+        src = (arch_graph.ROOT / "arch_graph.py").read_text(encoding="utf-8")
+        assert "emit_services_layer_mermaid" in src
+        assert "从 import 算出，不是表" in src
+
+
+class Test编排环从活路径生成:
+    """run_control（实际是 rehearsal_control）→ handoff → spec_first。
+    ⚠ 不要跟 component.run_control（pause/cancel 叶子）搞混。"""
+
+    def test_handoff函数体真的调用工厂(self):
+        assert arch_graph.handoff_is_live(_M), (
+            "spine.handoff 对不上活路径：_handoff_factory 里没有 "
+            "start_drive_full_factory_run。改代码或改 architecture.toml。"
+        )
+
+    def test_图上标了handoff(self):
+        mermaid = arch_graph.emit_spine_mermaid(_G, _M)
+        assert "handoff" in mermaid, "编排环图没标 handoff——那条链看起来像普通 import"
+        assert "services.rehearsal_control" in mermaid
+        assert "services.spec_first_pipeline" in mermaid
+        assert any(
+            "v5_full_driver" in line
+            and "v5_capability_executor" in line
+            and "-->" in line
+            for line in mermaid.splitlines()
+        ), "主循环到执行器的边没画上，编排环在图上是断的"
+
+    def test_handoff探测器删了调用就红(self, tmp_path):
+        """变异：函数在、调用不在，必须报假。"""
+        p = tmp_path / "fake.py"
+        p.write_text("async def _handoff_factory():\n    return 1\n", encoding="utf-8")
+        assert not arch_graph.handoff_is_live_from(
+            p, "_handoff_factory", "start_drive_full_factory_run"
+        )
+        p.write_text(
+            "async def _handoff_factory():\n"
+            "    await start_drive_full_factory_run()\n",
+            encoding="utf-8",
+        )
+        assert arch_graph.handoff_is_live_from(
+            p, "_handoff_factory", "start_drive_full_factory_run"
+        )
+
+    def test_能力执行器活路径调run_spec_first(self):
+        """第二条链：v5_capability_executor 里必须还有 run_spec_first(。"""
+        src = (
+            arch_graph.ROOT / "services" / "v5_capability_executor.py"
+        ).read_text(encoding="utf-8")
+        assert "run_spec_first(" in src, (
+            "v5_capability_executor 不再调用 run_spec_first——"
+            "编排环图画到 spec_first 就成了不通电的插座"
+        )
+
+
+class Test跨语言边入全仓图:
+    """Nx implicitDependencies：静态看不见的边必须显式声明并画出来。"""
+
+    def test_声明与Node接线对得上(self):
+        missing, stale = arch_graph.cross_language_gaps(_M)
+        assert not missing, f"Node 接了但 toml 没声明：{missing}"
+        assert not stale, f"toml 声明了但 Node 不接了：{stale}"
+
+    def test_四个adapter都在全仓mermaid里(self):
+        ts_pkgs, ts_edges = {"server": 1, "client": 1}, {("client", "server"): 0}
+        mermaid = arch_graph.emit_repo_mermaid(_G, _M, ts_pkgs, ts_edges)
+        for adapter in ("open", "orchestration", "web_qa", "device_location"):
+            assert adapter in mermaid, f"全仓图没画 adapter {adapter}"
+            assert f"services.web_aigc_{adapter}_adapter" in mermaid
+
+    def test_反向_声明了却不画就红(self):
+        src = (arch_graph.ROOT / "arch_graph.py").read_text(encoding="utf-8")
+        assert "cross_language_edge" in src
+        assert "emit_repo_mermaid" in src
+
+    def test_全仓图与代码同步(self):
+        assert arch_graph.REPO_DIAGRAM.exists(), (
+            "全仓图不在——跑 arch_graph.py --emit"
+        )
+        ts_pkgs, ts_edges = arch_graph.ts_package_graph()
+        want = arch_graph.render_repo_doc(_G, _M, ts_pkgs, ts_edges)
+        got = arch_graph.REPO_DIAGRAM.read_text(encoding="utf-8")
+        assert got == want, "全仓图和代码对不上了。跑 arch_graph.py --emit"
+
+
+def _services_outdegree(module: str) -> list:
+    return sorted(
+        {
+            e.dst
+            for e in _G.edges
+            if e.src == module and e.dst.startswith("services.") and e.dst != module
+        }
+    )
+
+
+class Test叶子crate对齐grok:
+    def test_workflow_registry_不依赖其它services(self):
+        assert "services.workflow_registry" in _G.modules
+        bad = _services_outdegree("services.workflow_registry")
+        assert not bad, f"workflow_registry 不是叶子：{bad}"
+
+    def test_closed_tools_不依赖其它services(self):
+        assert "services.closed_tools" in _G.modules
+        bad = _services_outdegree("services.closed_tools")
+        assert not bad, f"closed_tools 不是叶子：{bad}"
+        src = (arch_graph.ROOT / "services" / "rehearsal_control.py").read_text(
+            encoding="utf-8"
+        )
+        assert "from services.closed_tools import" in src
+
+    def test_session_events_不依赖其它services(self):
+        assert "services.session_events" in _G.modules
+        bad = _services_outdegree("services.session_events")
+        assert not bad, f"session_events 不是叶子：{bad}"
+
+    def test_控制面和工厂是两个component(self):
+        assert _COMP.get("services.rehearsal_control") == "control"
+        assert _COMP.get("services.drive_full_factory") == "drive"
+        assert _COMP.get("services.rehearsal_control") != _COMP.get(
+            "services.drive_full_factory"
+        )
+
+    def test_component图handoff不是普通调用(self):
+        doc = arch_graph.render_doc(_G, _M)
+        assert "control -->|handoff" in doc.replace(" ", "") or "|handoff" in doc
+        assert "services.rehearsal_control" in {
+            e.src for e in _G.edges if e.dst == "services.drive_full_factory"
+        }
+
+
+class Test新边不许藏进函数体:
+    def test_deferred只许变少(self):
+        now = arch_graph.deferred_count(_G)
+        base = _M.get("baseline", {}).get("deferred")
+        assert base is not None, "architecture.toml [baseline] 要有 deferred 条数"
+        assert now <= int(base), (
+            f"函数体 import 新增了 {now - int(base)} 条（现 {now}，基线 {base}）。新边顶层 import。"
+        )
+        assert now >= int(base), (
+            f"函数体 import 已经变少（现 {now}），把 baseline.deferred 改成 {now}"
+        )
+
+    def test_反向_探测器真的会报(self):
+        assert arch_graph.deferred_count(_G) > 100, "一条 deferred 都没有，棘轮会空过"
+
+
+class Test两个大块加一批叶子:
+    def test_util叶子多于flow编排(self):
+        spec = _M.get("services_layer", {})
+        util = len(spec.get("util", {}).get("modules", []))
+        flow = len(spec.get("flow", {}).get("modules", []))
+        assert set(spec) == {"util", "core", "flow"}, (
+            f"services 分层应保持 util/core/flow 三层，不要再切成 {sorted(spec)}"
+        )
+        assert util > flow * 2, (
+            f"util={util} flow={flow}：叶子应明显多于编排大块，"
+            "别把 services 切成 90 个平均文件"
+        )
+        assert flow <= 40, f"flow 已经 {flow} 个，再切就成平均 crate 了"
+
+    def test_产品图不画grok巨石(self):
+        doc = arch_graph.render_doc(_G, _M)
+        assert "不搬" in doc
+        mermaid = []
+        parts = doc.split("```mermaid")
+        for p in parts[1:]:
+            mermaid.append(p.split("```", 1)[0])
+        blob = "\n".join(mermaid)
+        for name in arch_graph.FORBIDDEN_GROK_COPY:
+            assert name in doc, f"产品图要写明不搬 {name}"
+            assert name not in blob, f"产品 mermaid 里出现了不该抄的 {name}"

@@ -131,7 +131,7 @@ node scripts/arch-graph-ts.mjs --check                                       # T
 | 编译器 | `slide-rule-python/arch_graph.py` | `scripts/arch-graph-ts.mjs` |
 | 清单 | `architecture.toml` | `architecture.ts.json` |
 | 判据 | `tests/test_architecture.py` | `scripts/arch-graph-ts.test.mjs` |
-| 生成的图 | `docs/SlideRule V6.2 架构图（自动生成）.md` | `docs/WhyBuddy TS 架构图（自动生成）.md` |
+| 生成的图 | `docs/SlideRule V6.2 架构图（自动生成）.md`、`docs/WhyBuddy 全仓架构图（自动生成）.md` | `docs/WhyBuddy TS 架构图（自动生成）.md` |
 | 逃生口（必须算数） | 函数体里的 import | 动态 `import()` / `require()` |
 
 两侧同一个心智模型：**未声明的边红、新增的环红、图与代码不同步红、存量走棘轮只许变短。**
@@ -140,6 +140,10 @@ TS 侧额外一条硬闸（无基线）：**包级不许成环**。client / serv
 今天是干净的（`server → client` 仅一条，是有意复用推演循环、已在清单里声明理由）。
 一旦成环就是浏览器包和 Node 包互相依赖，那是打包器层面的病，不是欠账。
 
+
+权威图只留自动生成的（Python / TS / 全仓 / grok-build）。
+`docs/SlideRule V5.2`～`V6.0 架构图.md` 是**非权威 / 历史实验室笔记**，禁止再打新 ⚑。
+新事实只进 `--emit`。
 
 `docs/SlideRule V6.2 架构图（自动生成）.md` 是**生成的，别手改**——改了
 `tests/test_architecture.py::Test图与代码同步` 会红。依赖规则写在

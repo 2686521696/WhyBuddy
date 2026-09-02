@@ -55,7 +55,10 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
 import pathlib
+import re
+import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass, field
@@ -65,6 +68,18 @@ ROOT = pathlib.Path(__file__).resolve().parent
 REPO = ROOT.parent
 MANIFEST = ROOT / "architecture.toml"
 DIAGRAM = REPO / "docs" / "SlideRule V6.2 架构图（自动生成）.md"
+REPO_DIAGRAM = REPO / "docs" / "WhyBuddy 全仓架构图（自动生成）.md"
+HISTORIC_MARK = "非权威 / 历史实验室笔记"
+
+#: 对照 grok 可以画，WhyBuddy 产品图不许当目标节点。
+#: 子代理改五系统 = 第二生成器；Bash/MCP 会把本仓收成编码代理。
+FORBIDDEN_GROK_COPY = (
+    "xai-grok-pager",
+    "xai-grok-mcp",
+    "xai-grok-subagent",
+    "xai-grok-sandbox",
+    "xai-grok-agent",
+)
 
 #: 顶层包 = 分层单位。对应 grok 的 crate。
 #: ⚠ 2026-08-29：这份名单原来是**手写**的，而它同时被当成「哪些 import 算内部边」
@@ -339,6 +354,11 @@ def satellite_components(g: Graph, manifest: dict) -> List[str]:
     return out
 
 
+def deferred_count(g: Graph) -> int:
+    """函数体里的内部 import 条数。棘轮只许变少。"""
+    return sum(1 for e in g.edges if e.deferred)
+
+
 def orphans(g: Graph, manifest: dict) -> List[str]:
     """**没有任何模块 import 它**的模块，扣掉声明过的入口。
 
@@ -561,6 +581,223 @@ def emit_mermaid(g: Graph, manifest: dict) -> str:
     return "\n".join(lines)
 
 
+def emit_services_layer_mermaid(g: Graph, manifest: dict) -> str:
+    """services 的 util/core/flow。抄 import-linter 的 layers contract：
+    节点是层，边是层间真实 import 条数。表不够，必须进 mermaid。"""
+    spec = manifest.get("services_layer", {})
+    owner: Dict[str, str] = {}
+    for layer, cfg in spec.items():
+        for m in cfg.get("modules", []):
+            owner[m] = layer
+    counts: Dict[Tuple[str, str], int] = {}
+    for e in g.edges:
+        a, b = owner.get(e.src), owner.get(e.dst)
+        if a and b and a != b:
+            counts[(a, b)] = counts.get((a, b), 0) + 1
+    upward = set()
+    for v in services_violations(g, manifest):
+        pair = v.split(" :: ", 1)[0]
+        if " -> " in pair:
+            src, dst = pair.split(" -> ", 1)
+            upward.add((src, dst))
+    lines = ["flowchart TB"]
+    for name, cfg in sorted(spec.items(), key=lambda kv: kv[1].get("rank", 99)):
+        what = cfg.get("what", "")
+        n = len(cfg.get("modules", []))
+        lines.append(f'  {name}["{name}<br/>{n} 个模块<br/>{what}"]')
+    for (a, b), n in sorted(counts.items()):
+        arrow = "-.->" if (a, b) in upward else "-->"
+        lines.append(f"  {a} {arrow}|{n}| {b}")
+    return "\n".join(lines)
+
+
+def _module_path(module: str) -> pathlib.Path:
+    return ROOT / (module.replace(".", "/") + ".py")
+
+
+def handoff_is_live_from(path: pathlib.Path, via: str, calls: str) -> bool:
+    """from 文件里有 `def via`，且函数体点名 `calls`。import 在不算数。"""
+    if not path.is_file():
+        return False
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
+    except SyntaxError:
+        return False
+    for n in ast.walk(tree):
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == via:
+            for child in ast.walk(n):
+                if isinstance(child, ast.Name) and child.id == calls:
+                    return True
+                if isinstance(child, ast.Attribute) and child.attr == calls:
+                    return True
+    return False
+
+
+def handoff_is_live(manifest: dict) -> bool:
+    spec = (manifest.get("spine") or {}).get("handoff") or {}
+    via = spec.get("via") or ""
+    calls = spec.get("calls") or ""
+    src = spec.get("from_module") or ""
+    if not (via and calls and src):
+        return False
+    return handoff_is_live_from(_module_path(src), via, calls)
+
+
+def emit_spine_mermaid(g: Graph, manifest: dict) -> str:
+    """编排环。边来自这些模块之间的真 import；handoff 是活路径上的那一条。"""
+    nodes = (manifest.get("spine") or {}).get("nodes") or {}
+    by_mod = {cfg["module"]: (name, cfg) for name, cfg in nodes.items() if cfg.get("module")}
+    mods = set(by_mod)
+    edges: Dict[Tuple[str, str], int] = {}
+    for e in g.edges:
+        if e.src in mods and e.dst in mods and e.src != e.dst:
+            edges[(e.src, e.dst)] = edges.get((e.src, e.dst), 0) + 1
+    handoff = (manifest.get("spine") or {}).get("handoff") or {}
+    h_from = handoff.get("from_module") or ""
+    h_to = handoff.get("to_module") or ""
+    live = handoff_is_live(manifest)
+    lines = ["flowchart LR"]
+    for name, cfg in sorted(nodes.items(), key=lambda kv: kv[1].get("rank", 99)):
+        mod = cfg.get("module") or name
+        mid = mod.replace(".", "_")
+        what = cfg.get("what") or mod
+        lines.append(f'  {mid}["{mod}<br/>{what}"]')
+    for (a, b), n in sorted(edges.items()):
+        la, lb = a.replace(".", "_"), b.replace(".", "_")
+        if live and a == h_from and b == h_to:
+            lines.append(f"  {la} -->|handoff {n}| {lb}")
+        else:
+            lines.append(f"  {la} -->|{n}| {lb}")
+    return "\n".join(lines)
+
+
+def live_cross_language_adapters(repo: pathlib.Path = REPO) -> Set[str]:
+    text = (repo / "server" / "index.ts").read_text(encoding="utf-8")
+    return set(re.findall(r'createPythonWebAigcAdapter\("([a-z0-9_]+)"\)', text))
+
+
+def declared_cross_language_edges(manifest: dict) -> List[dict]:
+    return list(manifest.get("cross_language_edge") or [])
+
+
+def cross_language_gaps(manifest: dict, repo: pathlib.Path = REPO) -> Tuple[List[str], List[str]]:
+    """声明的 adapter 与 server/index.ts 接线的差。两边都要空。"""
+    declared = {str(e.get("adapter") or "") for e in declared_cross_language_edges(manifest)}
+    declared.discard("")
+    live = live_cross_language_adapters(repo)
+    missing = sorted(live - declared)
+    stale = sorted(declared - live)
+    return missing, stale
+
+
+def ts_package_graph() -> Tuple[Dict[str, int], Dict[Tuple[str, str], int]]:
+    """TS 包级实际边。抄 Nx project graph：另一门语言的图由它自己的编译器吐 JSON。"""
+    script = REPO / "scripts" / "arch-graph-ts.mjs"
+    r = subprocess.run(
+        ["node", str(script), "--json-packages"],
+        cwd=str(REPO),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if r.returncode != 0:
+        raise RuntimeError(f"arch-graph-ts --json-packages 失败：{r.stderr or r.stdout}")
+    data = json.loads(r.stdout)
+    pkgs = {str(k): int(v) for k, v in (data.get("packages") or {}).items()}
+    edges: Dict[Tuple[str, str], int] = {}
+    for item in data.get("edges") or []:
+        a, b = item.get("from"), item.get("to")
+        if a and b and a != b:
+            edges[(str(a), str(b))] = int(item.get("n") or 0)
+    return pkgs, edges
+
+
+def emit_repo_mermaid(
+    g: Graph,
+    manifest: dict,
+    ts_pkgs: Dict[str, int],
+    ts_edges: Dict[Tuple[str, str], int],
+) -> str:
+    """全仓一张图：TS 包 + Python 包 + 跨语言边。"""
+    lines = ["flowchart TB"]
+    lines.append("  subgraph ts [TypeScript]")
+    for name in sorted(ts_pkgs):
+        mid = "ts_" + name.replace("-", "_")
+        lines.append(f'    {mid}["ts/{name}<br/>{ts_pkgs[name]} 个模块"]')
+    lines.append("  end")
+    py_count: Dict[str, int] = {}
+    for m in g.modules:
+        py_count[_pkg_of(m)] = py_count.get(_pkg_of(m), 0) + 1
+    lines.append("  subgraph py [Python]")
+    for name in sorted(py_count):
+        lines.append(f'    py_{name}["py/{name}<br/>{py_count[name]} 个模块"]')
+    for e in declared_cross_language_edges(manifest):
+        to = str(e.get("to") or "")
+        if to:
+            mid = "py_" + to.replace(".", "_")
+            lines.append(f'    {mid}["{to}"]')
+    lines.append("  end")
+    for (a, b), n in sorted(ts_edges.items()):
+        lines.append(
+            f"  ts_{a.replace('-', '_')} -->|{n}| ts_{b.replace('-', '_')}"
+        )
+    py_pkg_edges: Dict[Tuple[str, str], int] = {}
+    for e in g.edges:
+        if e.src_pkg != e.dst_pkg and "?" not in (e.src_pkg, e.dst_pkg):
+            py_pkg_edges[(e.src_pkg, e.dst_pkg)] = (
+                py_pkg_edges.get((e.src_pkg, e.dst_pkg), 0) + 1
+            )
+    for (a, b), n in sorted(py_pkg_edges.items()):
+        lines.append(f"  py_{a} -->|{n}| py_{b}")
+    for e in declared_cross_language_edges(manifest):
+        adapter = e.get("adapter") or "?"
+        to = str(e.get("to") or "")
+        src = "ts_" + str(e.get("from_pkg") or "server").replace("-", "_")
+        dst = "py_" + to.replace(".", "_")
+        lines.append(f"  {src} -.->|{adapter}| {dst}")
+    return "\n".join(lines)
+
+
+def render_repo_doc(
+    g: Graph,
+    manifest: dict,
+    ts_pkgs: Optional[Dict[str, int]] = None,
+    ts_edges: Optional[Dict[Tuple[str, str], int]] = None,
+) -> str:
+    if ts_pkgs is None or ts_edges is None:
+        ts_pkgs, ts_edges = ts_package_graph()
+    xedges = declared_cross_language_edges(manifest)
+    body = [
+        "# WhyBuddy 全仓架构图（自动生成）",
+        "",
+        "> ⚠ **这份文件是 `arch_graph.py --emit` 生成的，不要手改。**",
+        "> Python 包边来自 `arch_graph.py`，TS 包边来自 `arch-graph-ts.mjs --json-packages`，",
+        "> 跨语言边来自 `architecture.toml` 的 `[[cross_language_edge]]`（Nx implicitDependencies）。",
+        "",
+        f"- TS 包 **{len(ts_pkgs)}**，包间边 **{len(ts_edges)}**",
+        f"- Python 包 **{len({_pkg_of(m) for m in g.modules})}**",
+        f"- 跨语言边 **{len(xedges)}**（server/index.ts 拼字符串加载 Python adapter）",
+        "",
+        "四个 adapter 在 Python 依赖图里入度为 0，看起来像孤儿；",
+        "它们是产线代码，接线在另一门语言里。这张图把那四条边画出来。",
+        "",
+        "```mermaid",
+        emit_repo_mermaid(g, manifest, ts_pkgs, ts_edges),
+        "```",
+        "",
+        "## 跨语言边",
+        "",
+        "| 从 | adapter | 到 | 为什么 |",
+        "|---|---|---|---|",
+    ]
+    for e in xedges:
+        body.append(
+            f"| `{e.get('from')}` | `{e.get('adapter')}` | `{e.get('to')}` | {e.get('why', '')} |"
+        )
+    body.append("")
+    return "\n".join(body)
+
+
 def render_doc(g: Graph, manifest: dict) -> str:
     cycles = cross_component_cycles(g, manifest)
     violations = layer_violations(g, manifest)
@@ -579,22 +816,33 @@ def render_doc(g: Graph, manifest: dict) -> str:
         "> slide-rule-python/.venv/bin/python slide-rule-python/arch_graph.py --emit",
         "> ```",
         "",
-        "抄的是 grok-build 的做法：他们**一张架构图都没有**，91 个 crate 在各自",
-        "`Cargo.toml` 里显式声明依赖，347 条边由编译器强制，根 `Cargo.toml` 是生成的。",
+        "抄的是 grok-build 的做法：他们**一张架构图都没有**，边写在各 crate 的",
+        "`Cargo.toml` 里由 cargo 强制。对照物的现算数字见",
+        "`docs/grok-build 架构图（自动生成）.md`（`scripts/arch-graph-grok.py --emit`）。",
         "我们没有那个编译器，所以自己写一个——见 `slide-rule-python/arch_graph.py` 模块头。",
         "",
         "## 此刻的事实（由代码算出，不是手写）",
         "",
         f"- 扫描文件 **{g.files_scanned}** 个，模块 **{len(g.modules)}** 个",
         f"- 内部依赖边 **{len(g.edges)}** 条，其中 **{deferred}** 条写在函数体里"
-        f"（{deferred * 100 // max(1, len(g.edges))}%）",
+        f"（{deferred * 100 // max(1, len(g.edges))}%；基线 {base.get('deferred', deferred)}，只许变少）",
         f"- 未声明的跨包依赖 **{len(violations)}** 条（基线 {len(base.get('violations', []))} 条）",
         f"- 模块级循环依赖 **{len(cycles)}** 个（基线 {len(base.get('cycles', []))} 个）",
         f"- services 内部越层依赖 **{len(svc_v)}** 条"
         f"（基线 {len(base.get('services_violations', []))} 条）",
         f"- 没人 import 的模块 **{len(orph)}** 个"
         f"（基线 {len(base.get('orphans', []))} 个）—— ⚠ **不是待删清单**，"
-        f"多数是 Node 边界镜像 / 脚本插座 / 未挂载的基线面，见 `arch_graph.orphans()`",
+        f"其中 {sum(1 for m in orph if (manifest.get('orphan_reasons') or {}).get(m) == 'cross_language_entry')} "
+        f"个是跨语言入口（见全仓图，不是没人用）",
+        "",
+        "权威图只留自动生成的：本文件、`docs/WhyBuddy TS 架构图（自动生成）.md`、",
+        "`docs/WhyBuddy 全仓架构图（自动生成）.md`、`docs/grok-build 架构图（自动生成）.md`。",
+        "V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。",
+        "",
+        "目标形状是**两个大块 + 一批叶子**（util 叶子多于 flow 编排），",
+        "不是把 services 切成 90 个平均文件。",
+        "产品图**不搬**：`" + "`、`".join(FORBIDDEN_GROK_COPY) + "`",
+        "（pager / MCP / 子代理 / sandbox / grok-agent 提示词）。",
         "",
         "### services 内部分层（抄 grok 的叶子 crate）",
         "",
@@ -612,10 +860,31 @@ def render_doc(g: Graph, manifest: dict) -> str:
         "叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import "
         "的全部理由，也是 `import` 不必躲进函数体的前提。",
         "",
+        "### services 三层（从 import 算出，不是表）",
+        "",
+        "表只报数。这张 mermaid 才是层间真实边。虚线 = 越层（欠账，只许变少）。",
+        "",
+        "```mermaid",
+        emit_services_layer_mermaid(g, manifest),
+        "```",
+        "",
         "虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。",
         "",
         "```mermaid",
         emit_mermaid(g, manifest),
+        "```",
+        "",
+        "## 编排环（从活路径生成）",
+        "",
+        "对照 grok-build 的 spine（shell → agent → tools，`xai-workflow` 是叶子）。",
+        "我们的活路径是 `rehearsal_control._handoff_factory` → `drive_full_factory` →",
+        "`v5_full_driver` → `v5_capability_executor` → `run_spec_first`。",
+        "⚠ `component.run_control` 是 pause/cancel 叶子，不是这张图。",
+        "handoff 标在边上，当且仅当 `_handoff_factory` 函数体里真的调用了",
+        "`start_drive_full_factory_run`（import 在不算数）。",
+        "",
+        "```mermaid",
+        emit_spine_mermaid(g, manifest),
         "```",
         "",
         "## 循环依赖",
@@ -655,7 +924,8 @@ def render_doc(g: Graph, manifest: dict) -> str:
             "",
             "## crate 级：component 依赖图",
             "",
-            "抄 grok 的 Cargo.toml——他们 90 个 crate、347 条**声明过**的边由编译器焊死。",
+            "抄 grok 的 Cargo.toml——边写在 crate 上，由编译器焊死。",
+            "现算数字见 `docs/grok-build 架构图（自动生成）.md`。",
             f"我们 {len(comps)} 个 component、{len(cedges)} 条边，由 `architecture.toml` 声明、判据强制。",
             "**红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。",
             "",
@@ -666,7 +936,10 @@ def render_doc(g: Graph, manifest: dict) -> str:
             n = len(comps[name].get("modules", []))
             body.append(f'  {name}["{name}<br/>{n}"]')
         for (a, b), n in sorted(cedges.items()):
-            body.append(f"  {a} {'-.->' if (a, b) in cyc else '-->'}|{n}| {b}")
+            if a == "control" and b == "drive":
+                body.append(f"  {a} -->|handoff {n}| {b}")
+            else:
+                body.append(f"  {a} {'-.->' if (a, b) in cyc else '-->'}|{n}| {b}")
         body += ["```", ""]
 
     body += ["", "## services 内部越层依赖", "",
@@ -682,7 +955,6 @@ def render_doc(g: Graph, manifest: dict) -> str:
 
 # ── CLI ─────────────────────────────────────────────────────────────────────
 def _freeze(g: Graph, manifest: dict) -> None:
-    import re
 
     text = MANIFEST.read_text(encoding="utf-8")
     v = layer_violations(g, manifest)
@@ -740,13 +1012,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         DIAGRAM.parent.mkdir(parents=True, exist_ok=True)
         DIAGRAM.write_text(render_doc(g, manifest), encoding="utf-8")
         print(f"已生成 {DIAGRAM.relative_to(REPO)}")
+        REPO_DIAGRAM.write_text(render_repo_doc(g, manifest), encoding="utf-8")
+        print(f"已生成 {REPO_DIAGRAM.relative_to(REPO)}")
         return 0
     if args.freeze:
         _freeze(g, manifest)
         return 0
     if args.report or not args.check:
         print(f"模块 {len(g.modules)}  边 {len(g.edges)}  "
-              f"函数体内 {sum(1 for e in g.edges if e.deferred)}")
+              f"函数体内 {deferred_count(g)}（基线 {base.get('deferred', '?')}）")
         print(f"未声明跨包依赖 {len(v)}（基线 {len(base.get('violations', []))}）")
         for x in v:
             print(f"   {x}")
@@ -798,6 +1072,24 @@ def main(argv: Optional[List[str]] = None) -> int:
         for x in new_o:
             print(f"❌ 新增没人 import 的模块：{x}"
                   f"（接上它，或在 architecture.toml 的 [entrypoints] 里说清为什么）")
+        return 1
+    missing, stale = cross_language_gaps(manifest)
+    if missing or stale:
+        for x in missing:
+            print(f"❌ server/index.ts 接了 adapter `{x}` 但 architecture.toml 没声明跨语言边")
+        for x in stale:
+            print(f"❌ architecture.toml 声明了 adapter `{x}` 但 Node 侧已经不接了")
+        return 1
+    if (manifest.get("spine") or {}).get("handoff") and not handoff_is_live(manifest):
+        print("❌ spine.handoff 声明了，但 from 文件里找不到 via 函数体对 calls 的调用")
+        return 1
+    now_d = deferred_count(g)
+    base_d = base.get("deferred")
+    if base_d is not None and now_d > int(base_d):
+        print(f"❌ 函数体 import 新增了 {now_d - int(base_d)} 条（现 {now_d}，基线 {base_d}）。新边顶层 import。")
+        return 1
+    if base_d is not None and now_d < int(base_d):
+        print(f"❌ 函数体 import 已经变少（现 {now_d}），从 baseline.deferred 改成 {now_d}")
         return 1
     print("✅ 没有新增的未声明依赖或循环")
     return 0

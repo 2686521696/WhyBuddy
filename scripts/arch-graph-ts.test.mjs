@@ -103,6 +103,18 @@ describe("循环依赖只许变少", () => {
     // 一旦成环就意味着浏览器包和 Node 包互相依赖，那是打包器层面的病，不是欠账。
     assert.deepEqual(A.packageCycles(G), [], "包级成环了——client/server/shared 的方向必须是单向的");
   });
+
+  test("client-lib 不再倒着依赖 pages-sliderule", () => {
+    const owner = A.componentOf(M);
+    const back = G.edges.filter(
+      (e) => owner(e.src) === "client-lib" && owner(e.dst) === "client-pages-sliderule"
+    );
+    assert.equal(back.length, 0, back.map((e) => `${e.src} -> ${e.dst}`).join("\n"));
+    const two = A.componentCycles(G, M).filter(
+      (c) => c === "client-lib -> client-pages-sliderule -> client-lib"
+    );
+    assert.deepEqual(two, [], "推演主路径 2 环又回来了");
+  });
 });
 
 describe("成员关系", () => {
@@ -145,6 +157,18 @@ describe("图与代码同步", () => {
     // 不确定就等于没修：两台电脑生成的文件不一样，判据每次都红，
     // 下一个人就会把它注释掉。而「多台电脑架构不一致」正是要治的病。
     assert.equal(A.renderDoc(G, M), A.renderDoc(A.buildGraph(), A.loadManifest()));
+  });
+
+  test("红虚线是欠账看板且基线只许变短", () => {
+    const doc = A.renderDoc(G, M);
+    assert.ok(doc.includes("欠账看板"), "TS 图没把红虚线写成欠账看板");
+    assert.ok(doc.includes("基线只许变短"));
+    const ccyc = A.componentCycles(G, M);
+    assert.ok(ccyc.length > 0, "今天组间环是空的——这条判据会空过，改成断言 0 并删掉看板");
+    assert.ok(doc.includes(ccyc[0]), `欠账看板没列出组间环：${ccyc[0]}`);
+    const base = M.baseline?.componentCycles ?? [];
+    const stale = base.filter((x) => !ccyc.includes(x));
+    assert.deepEqual(stale, [], `baseline.componentCycles 里这些已经还清了，删掉：${stale.slice(0, 3).join(", ")}`);
   });
 });
 
