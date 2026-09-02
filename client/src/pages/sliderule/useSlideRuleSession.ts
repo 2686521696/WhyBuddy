@@ -42,6 +42,10 @@ import { createHttpSlideRuleSessionStore } from "@/lib/sliderule-http-store";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { loadByokPool, validateByokPool } from "@/lib/sliderule-byok-config";
 import { describeDriveAuthFailure } from "@/lib/auth-client";
+import {
+  DEFAULT_SESSION_ID,
+  assertDriveSessionMatchesShell,
+} from "@/lib/sliderule-session-id";
 import { useAuth } from "@/lib/use-auth";
 import type { V5CapabilityId } from "@shared/blueprint/contracts";
 import {
@@ -141,8 +145,6 @@ export function previousModelVersionId(state: {
 // 105 Python full-path: product /agent-loop/sliderule + /sliderule use this hook + http store.
 // Sessions: Node thin-compat proxy. Turns/evidence/report: delegated to slide-rule-python (python-rag provenance).
 // Smoke (updated) starts here and asserts the path.
-
-const DEFAULT_SESSION_ID = "sliderule-v51-product";
 
 function createEmptySessionState(sessionId: string): V5SessionState {
   const base = SlideRuleRuntime.createInitialSessionState(
@@ -1023,13 +1025,18 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     ]);
 
     try {
-      const loadedState = preservePythonEvidenceProjection(
-        sanitizeLegacyEmptySeed(
-          await SlideRuleRuntime.loadOrCreateSessionState(
-            sessionState.sessionId || sessionId
-          )
-        )
+      const driveSid = assertDriveSessionMatchesShell(
+        sessionState.sessionId,
+        sessionId
       );
+      const loadedState = {
+        ...preservePythonEvidenceProjection(
+          sanitizeLegacyEmptySeed(
+            await SlideRuleRuntime.loadOrCreateSessionState(driveSid)
+          )
+        ),
+        sessionId: driveSid,
+      };
 
       // PR-3：禁用已闭环会话上 looksLikeNewAppIntent 自动重置。
       // 静默清会话会让范围卡上点「开始推演」同意的是一份已经不在的旧话题。
@@ -1419,8 +1426,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 .driveGithubPagesDemoPlayback
             : postControlTurnStream;
           // E25：发起与续播共用同一组回调——同一事件词表喂同一 UI
-          const resolvedSid =
-            preparedState.sessionId || sessionState.sessionId || sessionId;
+          const resolvedSid = assertDriveSessionMatchesShell(
+            preparedState.sessionId || sessionState.sessionId,
+            sessionId
+          );
           let runSettledReason:
             | "complete"
             | "cancelled"

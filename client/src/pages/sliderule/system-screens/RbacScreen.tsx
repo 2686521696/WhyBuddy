@@ -10,6 +10,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from "react";
+import { DEFAULT_SESSION_ID } from "@/lib/sliderule-session-id";
 import { Alert, Segmented } from "antd";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import { EvidenceBadges } from "./EvidenceBadges";
@@ -227,7 +228,7 @@ export function RbacScreen({
   publishClosure,
   rawContent,
   model,
-  sessionId = "sliderule-v51-product",
+  sessionId = DEFAULT_SESSION_ID,
   isActive = false,
   className = "",
 }: RbacScreenProps) {

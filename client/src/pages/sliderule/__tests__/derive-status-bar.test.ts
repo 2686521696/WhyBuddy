@@ -173,6 +173,15 @@ describe("M8 产品六步钟只认事件上的 productStep", () => {
     expect(view.steps.find((s) => s.id === 6)?.status).toBe("pending");
   });
 
+  it("bind 跟账本一样占第 6 格，不是第 5", () => {
+    const view = buildRehearsalClockView(startRehearsalCursor(), {
+      isRunning: true,
+      tools: ["spec", "pages", "bind"],
+    });
+    expect(view.steps.map((s) => s.id)).toEqual([2, 3, 6]);
+    expect(view.steps.find((s) => s.id === 5)).toBeUndefined();
+  });
+
   it("第 1 步默认 skippable；2–6 不可跳", () => {
     expect(REHEARSAL_PRODUCT_STEPS).toHaveLength(6);
     expect(REHEARSAL_PRODUCT_STEPS[0]).toMatchObject({

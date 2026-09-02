@@ -317,7 +317,7 @@ describe("拦截点是 requestRehearsal，不是 doSend", () => {
     expect(SESSION).toContain("export function inferForcedTool");
     const inferFn = SESSION.slice(
       SESSION.indexOf("export function inferForcedTool"),
-      SESSION.indexOf("const DEFAULT_SESSION_ID")
+      SESSION.indexOf("export function previousModelVersionId")
     );
     expect(inferFn).toContain('mode === "repair"');
     expect(inferFn).toContain('intent === "challenge"');
@@ -684,6 +684,16 @@ describe("范围卡原型和设备档锁死作曲家选择", () => {
     });
     expect(locked.device).toBe("tablet");
     expect(locked.productArchetype).toBe("free_app");
+  });
+
+  it("反向：空存储不得用 desktop/business_app 压过 park 授予", () => {
+    memStore.clear();
+    const locked = lockScopeMorphology({
+      device: "tablet",
+      productArchetype: "content_app",
+    });
+    expect(locked.device).toBe("tablet");
+    expect(locked.productArchetype).toBe("content_app");
     const confirmFn = SESSION.slice(
       SESSION.indexOf("const confirmControlScope"),
       SESSION.indexOf("const dismissScopeCard")

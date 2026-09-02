@@ -158,12 +158,24 @@ export function shouldSendOnKey(ev: {
 
 // --- 目标形态（默认 Web） ----------------------------------------------------
 
-export function loadPreferredDevice(): ComposerDevice {
+function readStoredRaw(key: string): string | null {
   try {
-    return parseComposerDevice(localStorage.getItem(PREFERRED_DEVICE_KEY));
+    return localStorage.getItem(key);
   } catch {
-    return defaultDevice();
+    return null;
   }
+}
+
+/** 用户真的选过才有值。空存储必须是 null，不许冒充 desktop。 */
+export function loadStoredPreferredDevice(): ComposerDevice | null {
+  const raw = readStoredRaw(PREFERRED_DEVICE_KEY);
+  if (raw == null || raw === "") return null;
+  const parsed = parseComposerDevice(raw);
+  return parsed || null;
+}
+
+export function loadPreferredDevice(): ComposerDevice {
+  return loadStoredPreferredDevice() || defaultDevice();
 }
 
 export function setPreferredDevice(value: ComposerDevice): void {
@@ -174,12 +186,14 @@ export function setPreferredDevice(value: ComposerDevice): void {
   }
 }
 
+export function loadStoredProductArchetype(): string | null {
+  const raw = readStoredRaw(PRODUCT_ARCHETYPE_KEY);
+  if (raw == null || raw === "") return null;
+  return parseProductArchetype(raw);
+}
+
 export function loadProductArchetype(): string {
-  try {
-    return parseProductArchetype(localStorage.getItem(PRODUCT_ARCHETYPE_KEY));
-  } catch {
-    return parseProductArchetype("");
-  }
+  return loadStoredProductArchetype() || parseProductArchetype("");
 }
 
 export function setProductArchetype(value: string): void {

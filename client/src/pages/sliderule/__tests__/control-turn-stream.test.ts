@@ -160,12 +160,13 @@ describe("开始推演 / 质疑 / /推演", () => {
       SESSION.indexOf("const runTurn = async"),
       SESSION.indexOf("const requestRehearsal = async")
     );
+    expect(runTurn).toContain("assertDriveSessionMatchesShell");
     expect(runTurn).toContain("loadProductArchetype()");
     expect(runTurn).toContain("isWiredArchetype(scopeChoice.productArchetype)");
     expect(confirmFn).toContain("snapshot.tools");
     const inferFn = SESSION.slice(
       SESSION.indexOf("export function inferForcedTool"),
-      SESSION.indexOf("const DEFAULT_SESSION_ID")
+      SESSION.indexOf("export function previousModelVersionId")
     );
     expect(inferFn).not.toContain('"/推演"');
     expect(inferFn).not.toContain('"rehearse"');

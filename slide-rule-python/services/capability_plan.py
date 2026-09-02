@@ -62,6 +62,10 @@ def normalize_tools(raw: Optional[Iterable[str]]) -> Tuple[str, ...]:
     return chosen if chosen else TOOLS
 
 
+class FactoryToolsRefused(ValueError):
+    """规划器点了名，但没有一件落在 legal 里。不许回落整份菜单。"""
+
+
 def clip_factory_tools(
     proposed: Optional[Iterable[object]],
     legal: Optional[Iterable[str]] = None,
@@ -70,26 +74,30 @@ def clip_factory_tools(
 ) -> Tuple[str, ...]:
     """规划器只能在 legal 里减菜，不能发明、不能换序。
 
-    抄 LangGraph plan-and-execute：planner 产出步骤子集，executor 仍按
-    原顺序跑。提案全是生词 / 空 → 回落 legal（范围卡那份），**不是**
-    回落五件套——回落五件套会把范围卡减菜冲掉。
-
-    新跑漏了 spec 就补回去：`run_spec_first` 没有 SPEC 会抛，那不是
-    减菜，是把工厂打崩。
+    「没提案」（None）和「提案全不合法」不是一回事：
+    前者回落 legal（范围卡那份）；后者拒绝——回落菜单会把一跳一件
+    装回不通电的插座（2026-09-02 真机 capabilityPlan=product-rehearsal
+    一口气跑完全链）。
     """
     legal_chosen = normalize_tools(legal)
-    seen: set[str] = set()
-    for item in proposed or ():
-        if isinstance(item, dict):
-            cap = str(item.get("capabilityId") or item.get("id") or "").strip()
-        else:
-            cap = str(item or "").strip()
-        if cap in legal_chosen:
-            seen.add(cap)
-    if not seen:
+    if proposed is None:
         chosen = legal_chosen
     else:
-        chosen = tuple(name for name in TOOLS if name in seen)
+        items = list(proposed)
+        seen: set[str] = set()
+        for item in items:
+            if isinstance(item, dict):
+                cap = str(item.get("capabilityId") or item.get("id") or "").strip()
+            else:
+                cap = str(item or "").strip()
+            if cap in legal_chosen:
+                seen.add(cap)
+        if not items:
+            chosen = legal_chosen
+        elif not seen:
+            raise FactoryToolsRefused("提案全不合法，拒绝回落整份菜单")
+        else:
+            chosen = tuple(name for name in TOOLS if name in seen)
     if not refine and "spec" not in chosen:
         chosen = ("spec",) + tuple(name for name in chosen if name != "spec")
     return chosen
@@ -111,7 +119,9 @@ def expand_tools(tools: Iterable[str], *, refine: bool = False) -> Tuple[str, ..
         ids.append("specfirst.pagescope")
     if "pages" in seen:
         ids.extend(("specfirst.pages", "specfirst.shell"))
-    if "structure" in seen:
+    if "structure" in seen or "bind" in seen:
+        # bind 隐含 assemble。子集缺依赖闭包时 bind_pages(pages, None)
+        # 会静默把整批打孔归零（2026-09-02 执行单 P1-3）。
         ids.extend(("specfirst.structure", "specfirst.semantics", "specfirst.assemble"))
     if "bind" in seen:
         ids.append("specfirst.bind")
@@ -177,5 +187,6 @@ __all__ = [
     "expand_tools",
     "normalize_tools",
     "clip_factory_tools",
+    "FactoryToolsRefused",
     "product_rehearsal_plan",
 ]

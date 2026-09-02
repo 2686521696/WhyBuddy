@@ -16,6 +16,7 @@ import {
   PROJECTION_DENSITY_STORAGE_KEY,
   type ProjectionDensity,
 } from "./sliderule-projection-constants";
+import { DEFAULT_SESSION_ID } from "@/lib/sliderule-session-id";
 import { AccountCenterPanel } from "./AccountCenterPanel";
 import { LlmChannelPanel } from "./LlmChannelPanel";
 import {
@@ -119,10 +120,10 @@ export function SettingsPage() {
     try {
       return (
         localStorage.getItem("sliderule:active-session-id") ||
-        "sliderule-v51-product"
+        DEFAULT_SESSION_ID
       );
     } catch {
-      return "sliderule-v51-product";
+      return DEFAULT_SESSION_ID;
     }
   }, []);
 

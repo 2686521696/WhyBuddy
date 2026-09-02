@@ -11,6 +11,7 @@
  */
 
 import { BRAND_NAME_FULL } from "@shared/brand";
+import { DEFAULT_SESSION_ID } from "@/lib/sliderule-session-id";
 import React, {
   useCallback,
   useEffect,
@@ -1116,7 +1117,7 @@ function SlideRuleUnified({
   llmStreams?: Array<{ label: string; text: string }>;
   rehearsalCursor?: RehearsalClockCursor;
 }) {
-  const sessionId = sessionState.sessionId || "sliderule-v51-product";
+  const sessionId = sessionState.sessionId || DEFAULT_SESSION_ID;
   const composerHints = useMemo(
     () => deriveComposerHintChips(sessionState),
     [sessionState]
@@ -1661,7 +1662,7 @@ function SlideRuleSplitEngineering({
                         steps={turn.steps}
                         actions={turn.actions}
                         sessionId={
-                          sessionState.sessionId || "sliderule-v51-product"
+                          sessionState.sessionId || DEFAULT_SESSION_ID
                         }
                         expanded={
                           turn.routeExpanded || turn.status === "streaming"
@@ -1696,7 +1697,7 @@ function SlideRuleSplitEngineering({
                       <TurnFootnote
                         turn={turn}
                         sessionId={
-                          sessionState.sessionId || "sliderule-v51-product"
+                          sessionState.sessionId || DEFAULT_SESSION_ID
                         }
                         onChallenge={id =>
                           dispatchChallengePrefill({ artifactId: id })
@@ -1783,11 +1784,11 @@ export default function SlideRule({
           ? stored
           : GITHUB_PAGES_DEMO_SESSION_ID;
       }
-      return stored || "sliderule-v51-product";
+      return stored || DEFAULT_SESSION_ID;
     } catch {
       return IS_GITHUB_PAGES
         ? GITHUB_PAGES_DEMO_SESSION_ID
-        : "sliderule-v51-product";
+        : DEFAULT_SESSION_ID;
     }
   });
 
@@ -2027,7 +2028,7 @@ function SlideRuleSessionBody({
     if (IS_GITHUB_PAGES) return;
     let cancelled = false;
     loadPythonRuntimeProjectionFromSession(
-      sessionState.sessionId || "sliderule-v51-product"
+      sessionState.sessionId || DEFAULT_SESSION_ID
     )
       .then(projection => {
         if (cancelled || !projection) return;

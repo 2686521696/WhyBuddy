@@ -10,6 +10,7 @@
  */
 
 import React, { useMemo, useState } from "react";
+import { DEFAULT_SESSION_ID } from "@/lib/sliderule-session-id";
 import { Segmented, Tag } from "antd";
 import { MermaidDiagram } from "../MermaidDiagram";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
@@ -62,7 +63,7 @@ export function WorkflowScreen({
   mermaidSource,
   model,
   skillRuntimeGraph,
-  sessionId = "sliderule-v51-product",
+  sessionId = DEFAULT_SESSION_ID,
   isActive = false,
   className = "",
 }: WorkflowScreenProps) {

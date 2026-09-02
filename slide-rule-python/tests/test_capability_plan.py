@@ -131,17 +131,33 @@ def test_normalize_tools_empty_or_unknown_falls_back_to_the_five():
 
 
 def test_clip_factory_tools_falls_back_to_legal_not_the_five():
-    """空提案回落范围卡，不许把减菜冲回五件套。"""
+    """没提案回落范围卡，不许把减菜冲回五件套。"""
     legal = ("spec", "pages", "closure")
+    assert cp.clip_factory_tools(None, legal) == legal
     assert cp.clip_factory_tools([], legal) == legal
-    assert cp.clip_factory_tools(
-        [{"capabilityId": "critique.generate"}, {"capabilityId": "bind"}],
-        legal,
-    ) == legal
     assert cp.clip_factory_tools(
         [{"capabilityId": "pages"}, {"capabilityId": "spec"}, {"capabilityId": "bind"}],
         legal,
     ) == ("spec", "pages")
+
+
+def test_clip_factory_tools_refuses_all_illegal_proposals():
+    """提案全不合法不许回落菜单——回落就是一跳一件装在不通电的插座上。"""
+    legal = ("spec", "pages", "closure")
+    with pytest.raises(cp.FactoryToolsRefused):
+        cp.clip_factory_tools(
+            [{"capabilityId": "critique.generate"}, {"capabilityId": "bind"}],
+            legal,
+        )
+
+
+def test_expand_tools_bind_implies_assemble():
+    """任意含 bind 的子集展开后 assemble 必在。把闭包删掉必须红。"""
+    ids = cp.expand_tools(("spec", "pages", "bind"))
+    assert "specfirst.bind" in ids
+    assert "specfirst.assemble" in ids
+    assert "specfirst.structure" in ids
+    assert "specfirst.assemble" in _code(cp.expand_tools)
 
 
 def test_clip_factory_tools_puts_spec_back_on_a_new_run():

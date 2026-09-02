@@ -363,6 +363,7 @@ def test_live_stream_body_has_app_skip_and_not_discarded_profile():
         "删掉这条跳过，上面的行为测试必须一起红。"
     )
     assert "_app_profile_short_picks" in code
+    assert "_host_factory_hop" in code
     assert "should_run_agentic_pick" in code
     assert "pick_next_capabilities" in code
     assert "agentic_pick_next_capabilities" in code

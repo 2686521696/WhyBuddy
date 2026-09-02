@@ -42,6 +42,8 @@ def register_workflow(preset: WorkflowPreset, *, replace: bool = False) -> None:
         raise ValueError("workflow name must be normalized kebab-case")
     if not preset.stages or len(set(preset.stages)) != len(preset.stages):
         raise ValueError("workflow stages must be non-empty and unique")
+    if "specfirst.bind" in preset.stages and "specfirst.assemble" not in preset.stages:
+        raise ValueError("workflow bind requires assemble")
     with _LOCK:
         if key in _PRESETS and not replace:
             raise ValueError(f"workflow already registered: {key}")

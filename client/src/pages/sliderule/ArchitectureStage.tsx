@@ -42,10 +42,10 @@ export function ArchitectureStage({
   const archMermaid = useMemo(() => linkageToMermaid(model), [model]);
 
   const present = publishClosure?.evidencePresentCount ?? 0;
-  const total = publishClosure?.skillCount ?? 6;
+  const total = publishClosure?.skillCount ?? 0;
   const blocked = publishClosure?.blocked ?? true;
   const missing = Math.max(0, total - present);
-  const checksFailed = blocked || missing > 0;
+  const checksFailed = blocked || missing > 0 || total === 0;
 
   return (
     <div
@@ -104,7 +104,8 @@ export function ArchitectureStage({
                 : "text-stone-500 hover:bg-[#f4f4f5]"
             }`}
           >
-            {checksFailed ? "✗" : "✓"} Checks {present}/{total}
+            {checksFailed ? "✗" : "✓"}{" "}
+            {total === 0 ? "Checks 未产出" : `Checks ${present}/${total}`}
           </button>
           {versionToolbar}
           {trailing}

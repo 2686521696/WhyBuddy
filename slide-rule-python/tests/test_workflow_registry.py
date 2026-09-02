@@ -28,6 +28,10 @@ def test_workflow_registry_rejects_duplicates_and_bad_stage_contracts():
         register_workflow(WorkflowPreset("Game Prototype", ("goal",)))
     with pytest.raises(ValueError, match="non-empty"):
         register_workflow(WorkflowPreset("empty-workflow", ()))
+    with pytest.raises(ValueError, match="assemble"):
+        register_workflow(
+            WorkflowPreset("bind-without-model", ("specfirst.bind",))
+        )
 
 
 def test_workflow_registry_keeps_custom_presets_isolated():

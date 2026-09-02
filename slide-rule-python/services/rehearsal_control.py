@@ -2540,6 +2540,15 @@ async def _control_llm_loop(
                     # 抄 grok：工具结果之后必须再挑或明说停。只改 system
                     # 会被下一轮用户话盖掉；hint 要作为本回合的 user 指令。
                     messages.append({"role": "user", "content": hint})
+                # LLM 路径原先 empty_text=None，空回复会吐开场罐头（P3 ③）。
+                empty_text = (
+                    hint
+                    or (
+                        POST_SPEC_HOP_FALLBACK
+                        if not _has_pages(state)
+                        else POST_WRITE_FALLBACK
+                    )
+                )
         rounds_stop = stop_wire(
             ControlStopReason.TOOL_ROUNDS, limit=MAX_TOOL_ROUNDS, used=MAX_TOOL_ROUNDS
         )

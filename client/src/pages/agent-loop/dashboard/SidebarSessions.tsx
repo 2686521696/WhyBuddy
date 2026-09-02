@@ -14,6 +14,7 @@
 
 import React from "react";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
+import { DEFAULT_SESSION_ID } from "@/lib/sliderule-session-id";
 import { listApps, type AppStoreSummary } from "./app-store-client";
 import {
   SESSION_THUMB_APP_LIMIT,
@@ -421,9 +422,9 @@ export function activateSession(sessionId: string): void {
 
 function readActiveSessionId(): string {
   try {
-    return localStorage.getItem(ACTIVE_SESSION_KEY) || "sliderule-v51-product";
+    return localStorage.getItem(ACTIVE_SESSION_KEY) || DEFAULT_SESSION_ID;
   } catch {
-    return "sliderule-v51-product";
+    return DEFAULT_SESSION_ID;
   }
 }
 
@@ -617,11 +618,17 @@ export function SidebarSessions({
           //   DOM 里还有 3 个轮次）。
           const list = sessions ?? [];
           const activeMeta = list.find((s) => s.sessionId === activeId);
-          if (isBlankSessionMeta(activeMeta)) {
+          if (
+            isBlankSessionMeta(activeMeta) &&
+            activeId !== DEFAULT_SESSION_ID
+          ) {
             pick(activeId);
             return;
           }
-          const blank = list.find((s) => isBlankSessionMeta(s));
+          const blank = list.find(
+            (s) =>
+              isBlankSessionMeta(s) && s.sessionId !== DEFAULT_SESSION_ID
+          );
           if (blank) {
             pick(blank.sessionId);
             return;

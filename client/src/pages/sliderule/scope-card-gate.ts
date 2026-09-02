@@ -20,7 +20,12 @@ import {
   wiredDevices,
 } from "./product-archetypes";
 import type { ProductCharter } from "./product-charter";
-import { loadPreferredDevice, loadProductArchetype } from "./user-prefs";
+import {
+  loadPreferredDevice,
+  loadProductArchetype,
+  loadStoredPreferredDevice,
+  loadStoredProductArchetype,
+} from "./user-prefs";
 
 export type RehearsalIntervention = {
   intent?: string;
@@ -151,16 +156,16 @@ export function lockScopeMorphology(pending?: {
   device?: string;
   productArchetype?: string;
 }): { device: string; productArchetype: string } {
-  const composerDevice = loadPreferredDevice();
-  const composerArch = loadProductArchetype();
+  const storedDevice = loadStoredPreferredDevice();
+  const storedArch = loadStoredProductArchetype();
   return {
-    device: isWiredDevice(composerDevice)
-      ? composerDevice
+    device: storedDevice && isWiredDevice(storedDevice)
+      ? storedDevice
       : isWiredDevice(pending?.device)
         ? String(pending?.device)
         : defaultDevice(),
-    productArchetype: isWiredArchetype(composerArch)
-      ? composerArch
+    productArchetype: storedArch && isWiredArchetype(storedArch)
+      ? storedArch
       : isWiredArchetype(pending?.productArchetype)
         ? String(pending?.productArchetype)
         : defaultArchetype(),

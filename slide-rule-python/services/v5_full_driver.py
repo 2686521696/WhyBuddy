@@ -8,7 +8,7 @@ All capabilities now produce real evidence via RAG, no templates, no degraded, n
 from .stage_legal import describe as _stage_describe
 from .stage_legal import labels_with_eta as _stage_labels_with_eta
 from .archetype_legal import required_evidence as _required_evidence
-from .capability_plan import clip_factory_tools, normalize_tools
+from .capability_plan import FactoryToolsRefused, clip_factory_tools, normalize_tools
 from .closed_tools import FACTORY_HOPS
 from .workflow_select import PAGES_PREVIEW, PAGES_PREVIEW_TOOLS, select_workflow
 import os
@@ -2195,7 +2195,13 @@ async def drive_full_v5_session_stream(
                     state, ui,
                 )
             elif profile == "app":
-                picks = _app_profile_short_picks(state)
+                if _host_factory_hop(state):
+                    # 一跳一件：短清单里的作文能力会把 spec  hop 拖成整轮散文。
+                    picks = [
+                        {"capabilityId": "appbundle.runtimeClosure", "roleId": "综合"}
+                    ]
+                else:
+                    picks = _app_profile_short_picks(state)
             else:
                 await asyncio.to_thread(orchestrate_plan, state, f"loop-{loop}", ui)
                 picks = await asyncio.to_thread(pick_next_capabilities, state, ui)
@@ -2240,28 +2246,36 @@ async def drive_full_v5_session_stream(
                     if profile == "app":
                         # 工厂节点 pick 只 stamp 公开工具，不替换 runtimeClosure。
                         # 把 spec/pages 塞进 execute_v5_capability 会当成生词能力跑。
-                        _stamped = clip_factory_tools(
-                            _proposal["picks"],
-                            _factory_legal,
-                            refine=skip_planning_loop_for_refine(repair=repair),
-                        )
-                        _stamp_factory_tools_onto_goal(state, _stamped)
-                        await asyncio.to_thread(persist_state, state)
-                        print(
-                            f"[factory-plan] tools={','.join(_stamped)} "
-                            f"workflow={(state.goal or {}).get('workflow') or ''}",
-                            flush=True,
-                        )
-                        yield {
-                            "type": "factory_plan",
-                            "tools": list(_stamped),
-                            "workflow": str(
-                                ((state.goal or {}) if isinstance(state.goal, dict) else {}).get(
-                                    "workflow"
-                                )
-                                or ""
-                            ),
-                        }
+                        try:
+                            _stamped = clip_factory_tools(
+                                _proposal["picks"],
+                                _factory_legal,
+                                refine=skip_planning_loop_for_refine(repair=repair),
+                            )
+                        except FactoryToolsRefused:
+                            print(
+                                "[factory-plan] 提案全不合法，保持本跳 tools，不回落整份菜单",
+                                flush=True,
+                            )
+                            _stamped = None
+                        if _stamped is not None:
+                            _stamp_factory_tools_onto_goal(state, _stamped)
+                            await asyncio.to_thread(persist_state, state)
+                            print(
+                                f"[factory-plan] tools={','.join(_stamped)} "
+                                f"workflow={(state.goal or {}).get('workflow') or ''}",
+                                flush=True,
+                            )
+                            yield {
+                                "type": "factory_plan",
+                                "tools": list(_stamped),
+                                "workflow": str(
+                                    ((state.goal or {}) if isinstance(state.goal, dict) else {}).get(
+                                        "workflow"
+                                    )
+                                    or ""
+                                ),
+                            }
                     else:
                         picks = _clip_agentic_picks_to_legal(_proposal["picks"], picks)
                 else:

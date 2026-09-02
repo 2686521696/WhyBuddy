@@ -30,6 +30,7 @@ import React, {
   useRef,
 } from "react";
 import type { SkillId } from "@/lib/sliderule-marathon-driver";
+import { DEFAULT_SESSION_ID } from "@/lib/sliderule-session-id";
 import type { PublishClosureSummary } from "./derive-cross-runtime-summary";
 import { ArchitectureStage } from "./ArchitectureStage";
 import { ActiveSystemScreen } from "./system-screens/ActiveSystemScreen";
@@ -417,7 +418,7 @@ export function SlideRuleStudio({
   //
   // ⚠ 种子照走 seedRuntimeState：它管着"每个实体只判一次要不要铺示例"，
   //   以及"用户写了真实数据就整批清掉示例"。绕过它自己造数据会把这套语义丢掉。
-  const runtimeSessionId = sessionId ?? "sliderule-v51-product";
+  const runtimeSessionId = sessionId ?? DEFAULT_SESSION_ID;
   const [htmlRuntime, setHtmlRuntime] = useState<RuntimeState | null>(null);
   useEffect(() => {
     if (!fiveSystemModel) return;

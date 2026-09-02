@@ -240,7 +240,7 @@ describe("斜杠动词走控制面，客户端 /推演 不得 yolo", () => {
   it("确认范围才带 rehearse；推断函数本身不含这个字面", () => {
     const inferFn = SESSION.slice(
       SESSION.indexOf("export function inferForcedTool"),
-      SESSION.indexOf("const DEFAULT_SESSION_ID")
+      SESSION.indexOf("export function previousModelVersionId")
     );
     expect(inferFn).toContain("parseRehearsalSlash");
     expect(inferFn).toContain("forcedToolForRehearsalVerb");

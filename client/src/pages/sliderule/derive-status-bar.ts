@@ -46,7 +46,7 @@ const PUBLIC_TOOL_TO_STEP: Record<string, RehearsalProductStepId> = {
   spec: 2,
   pages: 3,
   structure: 4,
-  bind: 5,
+  bind: 6,
   closure: 6,
 };
 

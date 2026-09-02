@@ -58,6 +58,7 @@ describe("isBlankSessionMeta（新建会话该复用谁）", () => {
     expect(to, "找不到按钮文案收尾").toBeGreaterThan(from);
     const handler = src.slice(from, to);
     expect(handler).toContain("isBlankSessionMeta");
+    expect(handler).toContain("DEFAULT_SESSION_ID");
     expect(
       /\.find\(\s*\(?s\)?\s*=>\s*!s\.goal\s*\)/.test(handler),
       "还留着 `list.find(s => !s.goal)`：那条分支会挑中有便宜轮历史的会话"

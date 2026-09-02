@@ -14,6 +14,7 @@ import { datamodelToMermaid, type FiveSystemModel } from "./five-system-model";
 import { EntityDataPanel } from "../live-runtime/EntityDataPanel";
 import { EmptyScreenHint } from "./EmptyScreenHint";
 import { EntityRelationGraph } from "./EntityRelationGraph";
+import { DEFAULT_SESSION_ID } from "@/lib/sliderule-session-id";
 
 interface DataModelScreenProps {
   publishClosure?: PublishClosureSummary | null;
@@ -42,7 +43,7 @@ export function DataModelScreen({
   publishClosure,
   mermaidSource,
   model,
-  sessionId = "sliderule-v51-product",
+  sessionId = DEFAULT_SESSION_ID,
   isActive = false,
   className = "",
 }: DataModelScreenProps) {
