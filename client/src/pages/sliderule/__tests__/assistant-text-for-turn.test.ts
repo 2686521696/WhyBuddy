@@ -74,6 +74,17 @@ describe("assistantTextForTurn", () => {
     expect(text).not.toContain("含 2 角色");
   });
 
+  it("反向：skillCount 缺省不许冒充 6", () => {
+    const src = readFileSync(
+      new URL("../assistant-text-for-turn.ts", import.meta.url),
+      "utf8"
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^[ \t]*\/\/.*$/gm, "");
+    expect(src).toContain("skillCount ?? 0");
+    expect(src).not.toContain("skillCount ?? 6");
+  });
+
   it("本轮有叙述就用叙述，不套总结", () => {
     const text = assistantTextForTurn(
       turn({

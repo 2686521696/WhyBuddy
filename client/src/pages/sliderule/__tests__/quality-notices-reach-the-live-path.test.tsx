@@ -63,6 +63,10 @@ describe("质量提示接到活路径", () => {
     expect(STUDIO).toContain("specFirstPages?.qualityNotices");
     expect(ACTIVE).toContain("qualityNotices={qualityNotices}");
   });
+
+  it("本跳 tools 传到 Checks，spec 单跳不许沿用 6/6", () => {
+    expect(STUDIO).toContain("roundTools={specFirstPages?.capabilityPlan?.tools}");
+  });
 });
 
 describe("交付面真的画出降级标记", () => {

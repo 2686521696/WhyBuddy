@@ -1010,6 +1010,7 @@ export function SlideRuleStudio({
                       ? specFirstPages.qualityNotices
                       : []
                   }
+                  roundTools={specFirstPages?.capabilityPlan?.tools}
                 />
               </div>
             ) : editMode &&
@@ -1136,6 +1137,12 @@ export function SlideRuleStudio({
           publishClosure={publishClosure}
           onInspect={setDrawerSkill}
           focusSkill={activeSkillId}
+          qualityNotices={
+            Array.isArray(specFirstPages?.qualityNotices)
+              ? specFirstPages.qualityNotices
+              : []
+          }
+          roundTools={specFirstPages?.capabilityPlan?.tools}
           versionToolbar={versionToolbar}
           trailing={
             chromeSlot || resetSlot ? (

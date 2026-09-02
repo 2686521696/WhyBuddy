@@ -682,7 +682,8 @@ describe("AppBundleScreen", () => {
   it("空态：无 publishClosure → 诚实提示，无绑定区", () => {
     const html = renderToStaticMarkup(<AppBundleScreen />);
     expect(html).toContain("发送应用意图后");
-    expect(html).toContain("failed 0/6");
+    expect(html).toContain("未产出");
+    expect(html).not.toContain("0/6");
     expect(html).toContain('data-missing="true"');
     expect(html).not.toContain('data-testid="appbundle-bindings"');
   });
@@ -733,6 +734,18 @@ describe("ArchitectureStage", () => {
     expect(html).toContain('data-testid="architecture-checks"');
     expect(html).toContain("Checks 未产出");
     expect(html).not.toContain("Checks 0/6");
+    expect(html).not.toContain("Checks 6/6");
+  });
+
+  it("本跳只跑 spec 时不许沿用上一版 6/6", () => {
+    const html = renderToStaticMarkup(
+      <ArchitectureStage
+        onInspect={() => {}}
+        publishClosure={CLOSURE_CLOSED}
+        roundTools={["spec"]}
+      />
+    );
+    expect(html).toContain("Checks 未产出");
     expect(html).not.toContain("Checks 6/6");
     expect(html).toContain("text-red-600");
     expect(html).not.toContain("bg-blue-400");

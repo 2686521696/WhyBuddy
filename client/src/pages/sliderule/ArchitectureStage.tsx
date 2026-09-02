@@ -26,6 +26,7 @@ export function ArchitectureStage({
   trailing,
   className = "",
   qualityNotices = [],
+  roundTools,
 }: {
   model?: FiveSystemModel | null;
   publishClosure?: PublishClosureSummary | null;
@@ -37,6 +38,8 @@ export function ArchitectureStage({
   trailing?: React.ReactNode;
   className?: string;
   qualityNotices?: Array<{ kind?: string; text: string }>;
+  /** 本跳公开工具。没跑 closure/bind 时不许沿用上一版 6/6。 */
+  roundTools?: string[] | null;
 }) {
   const [graphStyle, setGraphStyle] = useState<"flow" | "mermaid">("flow");
   const [archFit, setArchFit] = useState(true);
@@ -44,8 +47,12 @@ export function ArchitectureStage({
   const archMermaid = useMemo(() => linkageToMermaid(model), [model]);
 
   const present = publishClosure?.evidencePresentCount ?? 0;
-  const total = publishClosure?.skillCount ?? 0;
-  const blocked = publishClosure?.blocked ?? true;
+  const hopClosed =
+    !roundTools ||
+    roundTools.includes("closure") ||
+    roundTools.includes("bind");
+  const total = hopClosed ? (publishClosure?.skillCount ?? 0) : 0;
+  const blocked = hopClosed ? (publishClosure?.blocked ?? true) : true;
   const missing = Math.max(0, total - present);
   const checksFailed = blocked || missing > 0 || total === 0;
 

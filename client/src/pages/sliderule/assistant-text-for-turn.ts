@@ -53,7 +53,7 @@ export function assistantTextForTurn(
       goalText: turn.user || goalText,
       blocked: !!publishClosure.blocked,
       evidencePresentCount: publishClosure.evidencePresentCount ?? 0,
-      skillCount: publishClosure.skillCount ?? 6,
+      skillCount: publishClosure.skillCount ?? 0,
       versionPinsChecked: !!publishClosure.versionPinsChecked,
     });
   }

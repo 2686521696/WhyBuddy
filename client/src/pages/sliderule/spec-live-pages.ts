@@ -20,6 +20,8 @@ export type SpecFirstPagesBlob = {
   /** 页面 id 别名表（旧 id → 新 id），第 4.5 步改键时记的。
    *  见 canonicalPageId 的头注：菜单孔烧的是改名前的 id。 */
   pageIdAliases?: Record<string, string> | null;
+  qualityNotices?: Array<{ kind?: string; text: string }>;
+  capabilityPlan?: { tools?: string[] } | null;
 } | null;
 
 function escapeHtml(text: string): string {

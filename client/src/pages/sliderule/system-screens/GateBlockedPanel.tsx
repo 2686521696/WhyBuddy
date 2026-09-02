@@ -39,7 +39,7 @@ export function GateBlockedPanel({
   compact?: boolean;
 }) {
   const present = publishClosure.evidencePresentCount ?? 0;
-  const total = publishClosure.skillCount ?? 6;
+  const total = publishClosure.skillCount ?? 0;
   const missing = Math.max(0, total - present);
   const blockers = publishClosure.topBlockers ?? [];
   const details = (

@@ -63,7 +63,7 @@ export function AppBundleScreen({
     PublishClosureSummary["perSkillEvidence"]
   >;
   const totalPresent = publishClosure?.evidencePresentCount ?? 0;
-  const totalSkills = publishClosure?.skillCount ?? 6;
+  const totalSkills = publishClosure?.skillCount ?? 0;
   const blocked = publishClosure?.blocked ?? true;
   const allDone = !blocked && totalPresent >= totalSkills;
 
@@ -123,7 +123,9 @@ export function AppBundleScreen({
             allDone ? "text-stone-500" : "text-red-600"
           }`}
         >
-          {allDone ? "closed" : "failed"} {totalPresent}/{totalSkills}
+          {totalSkills === 0
+            ? "未产出"
+            : `${allDone ? "closed" : "failed"} ${totalPresent}/${totalSkills}`}
         </span>
       </div>
 
