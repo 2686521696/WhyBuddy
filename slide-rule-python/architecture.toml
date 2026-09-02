@@ -246,6 +246,11 @@ what = "核心：模型 / 闸 / 闭环 / 生成件"
 # 深度 1~2。
 may_depend_on = ["util"]
 modules = [
+  # 工厂菜单 → 钟面步集。组合 capability_plan 与 stage_legal 两个 util 叶子——
+  # 两个叶子谁也不许 import 谁，所以组合只能落在这一层；而写 goal["tools"] 的
+  # flow 模块有两个（rehearsal_control / v5_full_driver），抄两份就是 §4 的
+  # 「同一件事两条实现」。2026-09-02 删前端步骤表时建。
+  "services.factory_plan_steps",
   "services.agent_loop_artifacts",
   "services.agent_loop_event_store",
   "services.agent_loop_events",

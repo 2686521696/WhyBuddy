@@ -49,7 +49,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 _PATH = Path(__file__).resolve().parent / "data" / "pipeline_stages.json"
 
@@ -125,6 +125,42 @@ def describe(stage_id: str, *, sequence: List[str] | None = None) -> Dict[str, A
     if spec.get("refineOnly"):
         out["refineOnly"] = True
     return out
+
+
+def product_steps_for_stages(stage_ids: Iterable[str]) -> Tuple[int, ...]:
+    """本轮真要跑的阶段 → 钟上该亮哪几格。升序去重。
+
+    ## 为什么在这里，不在 capability_plan
+
+    `capability_plan.expand_tools` 知道「跑哪些 stage」，账本知道「stage 是第几步」。
+    两个都是 util 叶子（`may_depend_on = []`），谁也不许 import 谁——所以组合发生在
+    调用点（flow 层），这里只收 stage id，那本来就是账本自己的地盘。
+
+    ## 为什么必须有这个函数
+
+    ⚠ 2026-09-02：前端一直自带一张 `PUBLIC_TOOL_TO_STEP`（公开工具 → 步号），
+    跟账本对不上——`bind` 前端写 5、账本是 6；`closure` 前端写 6，而**账本里
+    根本没有 closure 阶段**（它不是 spec-first 步，见 capability_plan.expand_tools
+    的说明），于是 `pages-preview` 配方下第 6 格永远 pending，没人点得亮。
+    同一趟还把 `semantics`(5) 整格漏了：`[spec,pages,structure,bind]` 前端只开
+    {2,3,4,6}，第 5 格被当成「工具没选」直接不画。
+
+    本文件模块头写着「正确的抄法是**删表，不是改表**」，`session_events` 写着
+    「不许在前端再补一张表」。这个函数就是那句话的落点：步集由账本算，随 goal
+    下发，前端只渲染。
+
+    名单外的阶段（如 `specfirst.shell`，故意不进账本）不贡献步号——不报就是不报，
+    不许在这里补一个默认值。
+    """
+    steps: set[int] = set()
+    for stage_id in stage_ids or ():
+        spec = _STAGES.get(str(stage_id or ""))
+        if not spec:
+            continue
+        step = spec.get("productStep")
+        if isinstance(step, int) and 1 <= step <= 6:
+            steps.add(step)
+    return tuple(sorted(steps))
 
 
 def groups() -> List[str]:

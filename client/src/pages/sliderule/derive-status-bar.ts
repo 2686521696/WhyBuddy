@@ -41,25 +41,36 @@ export const REHEARSAL_PRODUCT_STEPS: readonly RehearsalProductStepDef[] = [
   { id: 6, label: "汇合过闸", skippable: false },
 ];
 
-/** 公开工具 → 钟上的步。缺省全开；范围卡减菜后对应格 skippable。 */
-const PUBLIC_TOOL_TO_STEP: Record<string, RehearsalProductStepId> = {
-  spec: 2,
-  pages: 3,
-  structure: 4,
-  bind: 6,
-  closure: 6,
-};
+/** 没拿到步集时的缺省：工厂五格全开。 */
+const ALL_FACTORY_STEPS: readonly RehearsalProductStepId[] = [2, 3, 4, 5, 6];
 
+/**
+ * 本轮该亮哪几格——**由后端账本算好随 goal 下发，这里不查表**。
+ *
+ * ⚠ 2026-09-02：这里原本有一张 `PUBLIC_TOOL_TO_STEP`（公开工具 → 步号），
+ * 是全前端最后一张翻译表，而且跟账本对不上：
+ *
+ *     bind      前端 5 / 账本 6          → bind 那 4~10 分钟钟上没有 current
+ *     closure   前端 6 / 账本里没这个阶段  → pages-preview 第 6 格永远 pending
+ *     semantics 前端没有                  → [spec,pages,structure,bind] 第 5 格整格不画
+ *
+ * 上一轮把 `bind: 5` 改成 `6`——但**改表不是删表**。`stage_legal` 模块头写着
+ * 「正确的抄法是删表」，`session_events` 写着「不许在前端再补一张表」：后端事件
+ * 自描述之后，前端再留一份静态映射，逐跳编排一铺开就会再错位一次。
+ *
+ * 现在步集来自 `goal.productSteps`（`stage_legal.product_steps_for_stages`
+ * 按本轮真跑的 stage 算）。拿不到就全开——**老会话没有这个字段，不许因此把格子
+ * 画没**；这也是改造前的默认行为。
+ */
 export function enabledFactorySteps(
-  tools?: string[] | null
+  productSteps?: readonly number[] | null
 ): Set<RehearsalProductStepId> {
-  const wanted = (tools || []).map(item => String(item).trim()).filter(Boolean);
-  const chosen = wanted
-    .map(id => PUBLIC_TOOL_TO_STEP[id])
-    .filter((step): step is RehearsalProductStepId => step != null);
-  return new Set(
-    chosen.length > 0 ? chosen : ([2, 3, 4, 5, 6] as RehearsalProductStepId[])
-  );
+  const chosen = (productSteps || [])
+    .map(step => Number(step))
+    .filter((step): step is RehearsalProductStepId =>
+      Number.isInteger(step) && step >= 1 && step <= 6
+    );
+  return new Set(chosen.length > 0 ? chosen : ALL_FACTORY_STEPS);
 }
 
 /**
@@ -174,11 +185,16 @@ export function advanceRehearsalCursor(
 
 export function buildRehearsalClockView(
   cursor: RehearsalClockCursor,
-  opts: { isRunning: boolean; publishClosed?: boolean; tools?: string[] | null }
+  opts: {
+    isRunning: boolean;
+    publishClosed?: boolean;
+    /** 本轮该亮哪几格。来自 goal.productSteps（后端账本算），不是工具名。 */
+    productSteps?: readonly number[] | null;
+  }
 ): RehearsalClockView {
   const current = cursor.currentStep;
   const seen = new Set(cursor.seenSteps || []);
-  const enabled = enabledFactorySteps(opts.tools);
+  const enabled = enabledFactorySteps(opts.productSteps);
   const mapped: RehearsalClockStepView[] = REHEARSAL_PRODUCT_STEPS.map((def) => {
     let status: RehearsalStepStatus = "pending";
     const toolSkipped = def.id >= 2 && !enabled.has(def.id);
@@ -461,15 +477,17 @@ export function deriveStatusBarFacts(
     (!Array.isArray(publishClosure.topBlockers) || publishClosure.topBlockers.length === 0)
   );
 
-  const goalTools = Array.isArray((state.goal as { tools?: unknown } | undefined)?.tools)
-    ? ((state.goal as { tools: unknown[] }).tools as string[])
+  const goalProductSteps = Array.isArray(
+    (state.goal as { productSteps?: unknown } | undefined)?.productSteps
+  )
+    ? ((state.goal as { productSteps: unknown[] }).productSteps as number[])
     : undefined;
   const rehearsalClock = buildRehearsalClockView(
     opts.rehearsalCursor ?? idleRehearsalCursor(),
     {
       isRunning: opts.isRunning,
       publishClosed: publishClosureClosed,
-      tools: goalTools,
+      productSteps: goalProductSteps,
     }
   );
   const hud = deriveContextHudFacts(state, opts.publishClosure);

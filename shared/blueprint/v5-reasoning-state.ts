@@ -132,6 +132,13 @@ export interface V5SessionState {
     text: string;
     status: "clear" | "needs_refinement" | "not_recommended";
     tools?: string[];
+    /**
+     * 本轮该亮哪几格。后端 `stage_legal.product_steps_for_stages` 按真跑的
+     * stage 算好写进来（`rehearsal_control._set_goal_tools` 是唯一写入点）。
+     * ⚠ 前端不许再从 tools 名字自己推——那张表 2026-09-02 已删。
+     * 老会话没有这个字段：读不到就全开，不是画没。
+     */
+    productSteps?: number[];
     workflow?: string;
   };
   graph: BrainstormReasoningGraph; // capability invocation graph (strict)

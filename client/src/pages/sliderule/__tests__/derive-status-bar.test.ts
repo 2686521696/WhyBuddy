@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, it, expect, vi } from "vitest";
 import { createInitialSessionState, intakeMessage, orchestrateReasoningTurn } from "@/lib/sliderule-runtime";
 import {
@@ -161,25 +162,67 @@ describe("M8 产品六步钟只认事件上的 productStep", () => {
   });
 
   it("范围卡减菜：未勾选的工厂步不占钟格", () => {
+    // pages-preview 的真实步集（stage_legal.product_steps_for_stages 算出来的）。
     const view = buildRehearsalClockView(startRehearsalCursor(), {
       isRunning: true,
-      tools: ["spec", "pages", "closure"],
+      productSteps: [2, 3],
     });
-    expect(view.steps.map((s) => s.id)).toEqual([2, 3, 6]);
+    expect(view.steps.map((s) => s.id)).toEqual([2, 3]);
     expect(view.steps.find((s) => s.id === 4)).toBeUndefined();
     expect(view.steps.find((s) => s.id === 5)).toBeUndefined();
     expect(view.steps.find((s) => s.id === 2)?.status).toBe("current");
     expect(view.steps.find((s) => s.id === 3)?.status).toBe("pending");
-    expect(view.steps.find((s) => s.id === 6)?.status).toBe("pending");
   });
 
-  it("bind 跟账本一样占第 6 格，不是第 5", () => {
+  it("pages-preview 不再留一个永远点不亮的第 6 格", () => {
+    // ⚠ 2026-09-02 真机之前：前端表把 closure 映到第 6 步，而账本里**没有
+    //   closure 阶段**（它不是 spec-first 步），于是那格永远 pending——
+    //   钟面上挂着一个谁也点不亮的「汇合过闸」。步集改由账本算之后它就不该出现。
     const view = buildRehearsalClockView(startRehearsalCursor(), {
       isRunning: true,
-      tools: ["spec", "pages", "bind"],
+      productSteps: [2, 3],
     });
-    expect(view.steps.map((s) => s.id)).toEqual([2, 3, 6]);
-    expect(view.steps.find((s) => s.id === 5)).toBeUndefined();
+    expect(view.steps.find((s) => s.id === 6)).toBeUndefined();
+  });
+
+  it("bind 那一跳把 4/5/6 都亮出来，第 5 格不再整格丢失", () => {
+    // 后端 expand_tools(['spec','pages','bind']) → (2,3,4,5,6)：
+    // bind 隐含 structure/semantics/assemble，semantics 是第 5 步。
+    // 旧前端表没有 semantics 这一项，第 5 格被当成「没选」直接不画。
+    const view = buildRehearsalClockView(startRehearsalCursor(), {
+      isRunning: true,
+      productSteps: [2, 3, 4, 5, 6],
+    });
+    expect(view.steps.map((s) => s.id)).toEqual([2, 3, 4, 5, 6]);
+    expect(view.steps.find((s) => s.id === 5)).toBeDefined();
+  });
+
+  it("老会话没有 productSteps：全开，不是把格子画没", () => {
+    const view = buildRehearsalClockView(startRehearsalCursor(), {
+      isRunning: true,
+    });
+    expect(view.steps.map((s) => s.id)).toEqual([2, 3, 4, 5, 6]);
+    const empty = buildRehearsalClockView(startRehearsalCursor(), {
+      isRunning: true,
+      productSteps: [],
+    });
+    expect(empty.steps.map((s) => s.id)).toEqual([2, 3, 4, 5, 6]);
+  });
+
+  it("反向判据：前端不许再有「公开工具 → 步号」的映射表", () => {
+    // ⚠ 匹配前必须先剥注释（纪律二）。本文件的模块注释里就写着
+    //   PUBLIC_TOOL_TO_STEP 这个词（记事故用），裸 grep 会永远红；
+    //   而只 grep 标识符名的话，换个名字重建一张表又会永远绿。
+    //   所以盯的是**形状**：工具名后面跟一个步号。
+    const src = readFileSync(
+      new URL("../derive-status-bar.ts", import.meta.url),
+      "utf8"
+    );
+    const code = src
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+    expect(code).not.toMatch(/PUBLIC_TOOL_TO_STEP/);
+    expect(code).not.toMatch(/\b(spec|pages|structure|bind|closure)\s*:\s*[1-6]\b/);
   });
 
   it("第 1 步默认 skippable；2–6 不可跳", () => {

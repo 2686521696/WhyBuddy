@@ -272,7 +272,12 @@ export interface DriveFullStreamOpts {
    */
   onProgressHeartbeat?: (stage?: string, label?: string, productStep?: number) => void;
   /** 工厂编排器 stamp 的本轮公开工具。钟只画这些步。 */
-  onFactoryPlan?: (tools: string[], workflow?: string) => void;
+  onFactoryPlan?: (
+    tools: string[],
+    workflow?: string,
+    /** 钟面步集，后端账本算。前端不许从 tools 名字自己推（表已删）。 */
+    productSteps?: number[]
+  ) => void;
   /** LLM 实时内容增量。label 标注来源：能力 id（risk.analyze / report.write…）
    *  或 "five-system-model"（五系统起草）。旧后端不带 label 时为 undefined。 */
   /** `stageLabel` 是**后端账本给的人话**（2026-08-30 起）。前端不再自己翻译
@@ -615,7 +620,12 @@ function applyFactoryStreamEvent(
       if (tools.length > 0) {
         opts.onFactoryPlan?.(
           tools,
-          typeof event.workflow === "string" ? event.workflow : undefined
+          typeof event.workflow === "string" ? event.workflow : undefined,
+          Array.isArray(event.productSteps)
+            ? event.productSteps
+                .map((item: unknown) => Number(item))
+                .filter((step: number) => Number.isInteger(step) && step >= 1 && step <= 6)
+            : undefined
         );
       }
       return "continue";

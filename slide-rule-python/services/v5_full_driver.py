@@ -10,6 +10,7 @@ from .stage_legal import labels_with_eta as _stage_labels_with_eta
 from .archetype_legal import required_evidence as _required_evidence
 from .capability_plan import FactoryToolsRefused, clip_factory_tools, normalize_tools
 from .closed_tools import FACTORY_HOPS
+from .factory_plan_steps import product_steps_for_tools
 from .workflow_select import PAGES_PREVIEW, PAGES_PREVIEW_TOOLS, select_workflow
 import os
 import time
@@ -1784,6 +1785,13 @@ def _stamp_factory_tools_onto_goal(state: "V5SessionState", tools) -> None:
     goal = dict(state.goal) if isinstance(getattr(state, "goal", None), dict) else {}
     chosen = list(normalize_tools(tools))
     goal["tools"] = chosen
+    # ⚠ 2026-09-02：钟面步集跟 tools 必须同进同出。此前前端自带一张
+    #   PUBLIC_TOOL_TO_STEP 从工具名猜步号，跟账本对不上（bind 猜 5、账本是 6；
+    #   closure 猜 6、账本里压根没这阶段）。表删了，步集改由账本算——
+    #   这里少写一行，减完菜的那轮钟面就会按上一轮的格子画。
+    goal["productSteps"] = product_steps_for_tools(
+        chosen, refine=bool(getattr(state, "modelVersions", None))
+    )
     if tuple(chosen) == PAGES_PREVIEW_TOOLS:
         goal["workflow"] = PAGES_PREVIEW
     state.goal = goal
@@ -2053,6 +2061,10 @@ async def drive_full_v5_session_stream(
         yield {
             "type": "factory_plan",
             "tools": list(hops),
+            # 钟面步集跟事件一起走。前端不许再从工具名自己推（表已删）。
+            "productSteps": product_steps_for_tools(
+                hops, refine=bool(getattr(state, "modelVersions", None))
+            ),
             "workflow": str(
                 (state.goal.get("workflow") if isinstance(state.goal, dict) else "")
                 or ""
@@ -2269,6 +2281,12 @@ async def drive_full_v5_session_stream(
                             yield {
                                 "type": "factory_plan",
                                 "tools": list(_stamped),
+                                "productSteps": list(
+                                    ((state.goal or {}) if isinstance(state.goal, dict) else {}).get(
+                                        "productSteps"
+                                    )
+                                    or ()
+                                ),
                                 "workflow": str(
                                     ((state.goal or {}) if isinstance(state.goal, dict) else {}).get(
                                         "workflow"

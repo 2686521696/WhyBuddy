@@ -57,7 +57,9 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from enum import Enum
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, Iterable, List, Optional
+
+from services.factory_plan_steps import product_steps_for_tools
 
 from fastapi import HTTPException
 from starlette.concurrency import run_in_threadpool
@@ -274,6 +276,25 @@ def assert_may_write_model() -> None:
 def _has_model(state: V5SessionState) -> bool:
     """这个会话里已经有一份可精修 / 可分叉 / 可回退的模型吗。"""
     return bool(getattr(state, "modelVersions", None) or [])
+
+
+def _set_goal_tools(
+    goal: Dict[str, Any], tools: Iterable[str], *, refine: bool
+) -> Dict[str, Any]:
+    """写本轮工厂菜单，**顺带把钟该亮哪几格一起算出来**。
+
+    ⚠ 2026-09-02：这两件事必须在同一个函数里落，别再分开写。前端原本自带一张
+    `PUBLIC_TOOL_TO_STEP`，跟账本对不上（`bind` 写 5、账本是 6；`closure` 写 6
+    而账本里没有 closure 阶段），`semantics`(5) 整格漏掉——典型的「同一件事两处
+    实现，改一条不改另一条」。现在步集由账本算、随 goal 下发，前端不许再有表。
+
+    三个写入点（按钮点火 / 单跳 / workflow 减菜）都走这里：少一处，那条路径的
+    钟面就会静静地按上一轮的步集画。
+    """
+    chosen = [str(item or "").strip() for item in (tools or ()) if str(item or "").strip()]
+    goal["tools"] = chosen
+    goal["productSteps"] = product_steps_for_tools(chosen, refine=refine)
+    return goal
 
 
 def _spec_first_blob(state: V5SessionState) -> Dict[str, Any]:
@@ -1658,7 +1679,7 @@ async def _confirm_rehearse_and_handoff(
     _retire_stale_control_questions(state)
     confirmed = dict(state.goal) if isinstance(state.goal, dict) else {}
     # 按钮点火只跑 spec。剩下的交回 host 逐跳挑。
-    confirmed["tools"] = ["spec"]
+    _set_goal_tools(confirmed, ["spec"], refine=_has_model(state))
     state.goal = confirmed
     _append_transcript(
         state,
@@ -2902,7 +2923,7 @@ async def _dispatch_tool(
                 yield event
             return
         goal = dict(state.goal) if isinstance(state.goal, dict) else {}
-        goal["tools"] = [hop]
+        _set_goal_tools(goal, [hop], refine=_has_model(state))
         state.goal = goal
         await _apersist(state)
         async for event in _handoff_factory(
@@ -2956,7 +2977,7 @@ async def _dispatch_tool(
         )
         goal = dict(state.goal) if isinstance(state.goal, dict) else {}
         goal["workflow"] = preset.name
-        goal["tools"] = list(preset.tools)
+        _set_goal_tools(goal, preset.tools, refine=_has_model(state))
         state.goal = goal
         await _apersist(state)
         async for event in _handoff_factory(

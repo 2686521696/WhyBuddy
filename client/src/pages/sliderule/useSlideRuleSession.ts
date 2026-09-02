@@ -1640,13 +1640,18 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               onProgressHeartbeat: (stage, _label, productStep) => {
                 if (stage) applyRehearsalEvent(stage, productStep);
               },
-              onFactoryPlan: (tools, workflow) => {
+              onFactoryPlan: (tools, workflow, productSteps) => {
                 setSessionState(prev => {
                   const goal =
                     prev.goal && typeof prev.goal === "object"
                       ? { ...prev.goal }
                       : {};
                   goal.tools = tools;
+                  // ⚠ tools 与 productSteps 必须同进同出：只写 tools 的话，
+                  //   减完菜那轮钟面会按上一轮的格子画（表删掉之后没人兜底了）。
+                  if (productSteps && productSteps.length > 0) {
+                    goal.productSteps = productSteps;
+                  }
                   if (workflow) goal.workflow = workflow;
                   return { ...prev, goal };
                 });
