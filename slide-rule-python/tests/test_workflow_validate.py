@@ -57,6 +57,30 @@ def test_pages_preview_dry_run_passes():
     dry_run_workflow(select_workflow(name=PAGES_PREVIEW))
 
 
+def test_new_presets_pass_the_dry_run_gate():
+    """O-9 新日历必须过 O-7。没有干跑就扩库 = 批量生产跑不通的子集。"""
+    from services.workflow_select import SPEC_PAGES_STRUCTURE, STRUCTURE_BIND
+
+    dry_run_workflow(select_workflow(name=STRUCTURE_BIND))
+    dry_run_workflow(select_workflow(name=SPEC_PAGES_STRUCTURE))
+
+
+def test_new_presets_are_not_the_incomplete_bind_subset():
+    """反向：structure-bind 若漏 assemble，干跑必须红。"""
+    from services.capability_plan import expand_tools
+    from services.workflow_select import STRUCTURE_BIND_TOOLS
+
+    required = expand_tools(STRUCTURE_BIND_TOOLS)
+    assert "specfirst.assemble" in required
+    bad = WorkflowPreset(
+        name="almost-structure-bind",
+        stages=tuple(s for s in required if s != "specfirst.assemble"),
+        tools=STRUCTURE_BIND_TOOLS,
+    )
+    with pytest.raises(WorkflowDryRunError, match="assemble"):
+        dry_run_workflow(bad)
+
+
 def test_dry_run_calls_real_page_generator_not_a_fake(monkeypatch):
     """只桩 LLM：generate_pages_parallel 必须还是真函数。"""
     from services import spec_page_html

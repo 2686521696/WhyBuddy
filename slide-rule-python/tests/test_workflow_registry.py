@@ -11,7 +11,15 @@ from services.workflow_registry import (
     workflow_for,
     workflow_names,
 )
-from services.workflow_select import PAGES_PREVIEW, PAGES_PREVIEW_TOOLS, select_workflow
+from services.workflow_select import (
+    PAGES_PREVIEW,
+    PAGES_PREVIEW_TOOLS,
+    SPEC_PAGES_STRUCTURE,
+    SPEC_PAGES_STRUCTURE_TOOLS,
+    STRUCTURE_BIND,
+    STRUCTURE_BIND_TOOLS,
+    select_workflow,
+)
 
 
 def test_product_rehearsal_is_the_compatibility_default():
@@ -79,6 +87,34 @@ def test_pages_preview_is_a_registered_choice_not_the_only_calendar():
     extra = select_workflow(name="pages-preview", tools=("spec", "pages", "bind", "closure"))
     assert extra.tools == ("spec", "pages", "closure")
     assert select_workflow().name == PRODUCT_REHEARSAL
+
+
+def test_structure_bind_is_a_complete_named_calendar():
+    """建设单 O-9：完整闭包，不注入 spec，assemble 在场。"""
+    assert STRUCTURE_BIND in workflow_names()
+    preset = select_workflow(name=STRUCTURE_BIND)
+    assert preset.name == STRUCTURE_BIND
+    assert preset.tools == STRUCTURE_BIND_TOOLS
+    assert "spec" not in preset.tools
+    assert "specfirst.assemble" in preset.stages
+    assert "specfirst.bind" in preset.stages
+    assert "specfirst.spec" not in preset.stages
+
+
+def test_spec_pages_structure_skips_bind_keeps_assemble():
+    assert SPEC_PAGES_STRUCTURE in workflow_names()
+    preset = select_workflow(name=SPEC_PAGES_STRUCTURE)
+    assert preset.tools == SPEC_PAGES_STRUCTURE_TOOLS
+    assert "specfirst.assemble" in preset.stages
+    assert "specfirst.bind" not in preset.stages
+    assert "specfirst.pages" in preset.stages
+
+
+def test_unwired_archetypes_do_not_get_a_calendar():
+    """O-9 不许给 wired=false 的原型批量开跑不通的日历。"""
+    names = workflow_names()
+    assert "casual-game" not in names
+    assert "glance-app" not in names
 
 
 def test_select_workflow_reads_policy_pack_when_tools_omitted():

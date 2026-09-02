@@ -15,8 +15,8 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **284** 个，模块 **284** 个
-- 内部依赖边 **850** 条，其中 **485** 条写在函数体里（57%；基线 485，只许变少）
+- 扫描文件 **286** 个，模块 **286** 个
+- 内部依赖边 **867** 条，其中 **491** 条写在函数体里（56%；基线 485，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
@@ -35,9 +35,9 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
-| `util` | 124 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `util` | 125 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
 | `core` | 59 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
-| `flow` | 29 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
+| `flow` | 30 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
 叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import 的全部理由，也是 `import` 不必躲进函数体的前提。
 
@@ -47,12 +47,12 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 ```mermaid
 flowchart TB
-  util["util<br/>124 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
+  util["util<br/>125 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
   core["core<br/>59 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
-  flow["flow<br/>29 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
+  flow["flow<br/>30 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
   core -->|140| util
-  flow -->|101| core
-  flow -->|96| util
+  flow -->|103| core
+  flow -->|105| util
 ```
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
@@ -65,7 +65,7 @@ flowchart TB
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>13 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>212 个模块<br/>业务"]
+  services["services<br/>214 个模块<br/>业务"]
   routes["routes<br/>12 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -73,7 +73,7 @@ flowchart TB
   app -->|1| config
   app -->|1| models
   app -->|12| routes
-  app -->|11 · 其中 3 条在函数体里| services
+  app -->|12 · 其中 3 条在函数体里| services
   app -->|1| stdio_utf8
   complete_migration -->|1| models
   complete_migration -->|3| services
@@ -92,7 +92,7 @@ flowchart TB
   scripts -->|2| stdio_utf8
   services -->|15 · 其中 7 条在函数体里| config
   services -->|30 · 其中 1 条在函数体里| models
-  services -->|60 · 其中 47 条在函数体里| sliderule_llm
+  services -->|62 · 其中 48 条在函数体里| sliderule_llm
   sliderule_llm -->|2 · 其中 2 条在函数体里| config
 ```
 
@@ -116,7 +116,7 @@ flowchart LR
   services_rehearsal_control -->|handoff 1| services_drive_full_factory
   services_rehearsal_control -->|2| services_v5_full_driver
   services_v5_capability_executor -->|5| services_spec_first_pipeline
-  services_v5_full_driver -->|2| services_spec_first_pipeline
+  services_v5_full_driver -->|3| services_spec_first_pipeline
   services_v5_full_driver -->|5| services_v5_capability_executor
 ```
 
@@ -158,9 +158,9 @@ flowchart LR
   ops_scripts["ops_scripts<br/>37"]
   permission["permission<br/>8"]
   persist["persist<br/>2"]
-  platform["platform<br/>22"]
+  platform["platform<br/>23"]
   run_control["run_control<br/>4"]
-  spec_first["spec_first<br/>37"]
+  spec_first["spec_first<br/>38"]
   task_exec["task_exec<br/>19"]
   web_aigc["web_aigc<br/>16"]
   agent_loop -->|1| identity
@@ -177,7 +177,7 @@ flowchart LR
   control -->|1| llm_gateway
   control -->|3| model_core
   control -->|5| platform
-  control -->|2| spec_first
+  control -->|3| spec_first
   diagnostics -->|1| a2a
   diagnostics -->|1| evidence
   diagnostics -->|2| model_core
@@ -188,8 +188,8 @@ flowchart LR
   drive -->|1| identity
   drive -->|18| model_core
   drive -->|2| observability
-  drive -->|4| persist
-  drive -->|10| platform
+  drive -->|5| persist
+  drive -->|11| platform
   drive -->|1| run_control
   drive -->|2| spec_first
   entrypoint -->|2| agent_loop
@@ -198,7 +198,7 @@ flowchart LR
   entrypoint -->|4| model_core
   entrypoint -->|1| permission
   entrypoint -->|4| platform
-  entrypoint -->|3| spec_first
+  entrypoint -->|4| spec_first
   entrypoint -->|3| task_exec
   evidence -->|7| llm_gateway
   evidence -->|8| platform
@@ -225,9 +225,9 @@ flowchart LR
   model_core -->|18| llm_gateway
   model_core -->|6| observability
   model_core -->|2| persist
-  model_core -->|53| platform
+  model_core -->|55| platform
   model_core -->|11| run_control
-  model_core -->|20| spec_first
+  model_core -->|21| spec_first
   observability -->|2| llm_gateway
   observability -->|1| persist
   observability -->|3| platform
@@ -244,10 +244,10 @@ flowchart LR
   persist -->|10| platform
   run_control -->|1| platform
   spec_first -->|3| app_store
-  spec_first -->|35| llm_gateway
+  spec_first -->|37| llm_gateway
   spec_first -->|3| observability
-  spec_first -->|53| platform
-  spec_first -->|1| run_control
+  spec_first -->|55| platform
+  spec_first -->|2| run_control
   task_exec -->|2| evidence
   task_exec -->|4| platform
 ```

@@ -18,10 +18,15 @@ from __future__ import annotations
 
 from typing import Iterable, Optional
 
+from services.capability_plan import expand_tools
 from services.workflow_registry import WorkflowPreset, register_workflow, workflow_for
 
 PAGES_PREVIEW = "pages-preview"
 PAGES_PREVIEW_TOOLS = ("spec", "pages", "closure")
+STRUCTURE_BIND = "structure-bind"
+STRUCTURE_BIND_TOOLS = ("structure", "bind")
+SPEC_PAGES_STRUCTURE = "spec-pages-structure"
+SPEC_PAGES_STRUCTURE_TOOLS = ("spec", "pages", "structure")
 
 
 def select_workflow(
@@ -58,7 +63,14 @@ def select_workflow(
             else:
                 wanted = set(normalize_tools(tools))
                 chosen = tuple(item for item in legal if item in wanted) or legal
-            if not refine and "spec" not in chosen:
+            # 登记过的日历自己决定要不要 spec。structure-bind 故意没有
+            # spec——往里塞会把「页面已经在、只补孔」打回起草。
+            if (
+                not refine
+                and "spec" not in chosen
+                and "spec" in legal
+                and len(chosen) != 1
+            ):
                 chosen = ("spec",) + tuple(item for item in chosen if item != "spec")
             return WorkflowPreset(
                 name=base.name,
@@ -108,5 +120,43 @@ def register_pages_preview() -> None:
     )
 
 
+def register_structure_bind() -> None:
+    """页面已经在，补数据结构和权限孔。不重起草 SPEC。
+
+    建设单 O-9：完整闭包（bind ⇒ assemble），走 expand_tools，不造缺依赖
+    的子集。未接通的 casual_game / glance_app 不在这里开日历。
+    """
+    register_workflow(
+        WorkflowPreset(
+            name=STRUCTURE_BIND,
+            stages=expand_tools(STRUCTURE_BIND_TOOLS),
+            description=(
+                "页面已经在，补数据结构和权限孔。"
+                "不重起草 SPEC、不重画页面。"
+            ),
+            tools=STRUCTURE_BIND_TOOLS,
+        ),
+        replace=True,
+    )
+
+
+def register_spec_pages_structure() -> None:
+    """先出页面和数据模型，不打权限孔。"""
+    register_workflow(
+        WorkflowPreset(
+            name=SPEC_PAGES_STRUCTURE,
+            stages=expand_tools(SPEC_PAGES_STRUCTURE_TOOLS),
+            description=(
+                "先出页面和数据模型，不打权限 / 工作流孔。"
+                "只要看板加表、先不角色时用。"
+            ),
+            tools=SPEC_PAGES_STRUCTURE_TOOLS,
+        ),
+        replace=True,
+    )
+
+
 register_product_rehearsal()
 register_pages_preview()
+register_structure_bind()
+register_spec_pages_structure()

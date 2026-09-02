@@ -125,6 +125,8 @@ def test_workflow_tool_description_lists_registered_presets():
     desc = workflow["function"]["description"]
     assert "pages-preview" in desc
     assert "product-rehearsal" in desc
+    assert "structure-bind" in desc
+    assert "spec-pages-structure" in desc
 
 
 def test_clarify_hidden_after_one_round():
