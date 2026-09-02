@@ -225,6 +225,28 @@ describe("M8 产品六步钟只认事件上的 productStep", () => {
     expect(code).not.toMatch(/\b(spec|pages|structure|bind|closure)\s*:\s*[1-6]\b/);
   });
 
+  it("structure 展开含 semantics，第 5 格在场", () => {
+    const view = buildRehearsalClockView(startRehearsalCursor(), {
+      isRunning: true,
+      tools: ["spec", "pages", "structure", "bind", "closure"],
+    });
+    expect(view.steps.map((s) => s.id)).toEqual([2, 3, 4, 5, 6]);
+  });
+
+  it("反向：前端不得再养 PUBLIC_TOOL_TO_STEP", () => {
+    const { readFileSync } = require("node:fs") as typeof import("node:fs");
+    const src = readFileSync(
+      new URL("../derive-status-bar.ts", import.meta.url),
+      "utf8"
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^[ \t]*\/\/.*$/gm, "");
+    expect(src).not.toContain("PUBLIC_TOOL_TO_STEP");
+    expect(src).not.toContain("REHEARSAL_MODULE_TO_STEP");
+    expect(src).not.toContain("EVENT_ALIASES");
+    expect(src).not.toMatch(/Record<\s*string,\s*RehearsalProductStepId\s*>/);
+  });
+
   it("第 1 步默认 skippable；2–6 不可跳", () => {
     expect(REHEARSAL_PRODUCT_STEPS).toHaveLength(6);
     expect(REHEARSAL_PRODUCT_STEPS[0]).toMatchObject({
