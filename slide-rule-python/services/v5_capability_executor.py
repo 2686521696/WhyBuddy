@@ -16,6 +16,14 @@ from contextvars import ContextVar
 from models.v5_state import V5SessionState, ExecuteCapabilityResult
 from .rag_service import retrieve_evidence, generate_with_rag
 from .capability_plan import CapabilityPlan
+from .workflow_journal import (
+    JournalError,
+    active_journal,
+    bind_orchestration,
+    hop_payload,
+    journaled_call,
+)
+from .workflow_registry import workflow_for
 from .workflow_select import select_workflow
 from .run_degradation import (
     blocking_degradations,
@@ -615,27 +623,70 @@ def _try_llm_generate_evidence(
                 #   被下面宽 except 吃成「spec-first 失败，不回落老链路：
                 #   name 'state' is not defined」，五系统全空、闭环 blocked。
                 #   tools / product_archetype 由调用方从 state.goal 传进来。
-                return run_spec_first(
-                    goal,
-                    llm_json_fn=llm_json_fn,
-                    refine=_spec_refine,
-                    reuse_language=_reuse_language,
-                    reuse_style_brief=_reuse_style,
-                    # ★ 上一版模型整份带过去（2026-08-17）：指令没点名的段在
-                    #   spec-first 汇合出口直接从它复制。传的是**完整模型**不是
-                    #   digest——digest 是给 LLM 看的摘要，照搬得用原始数据。
-                    #   `_prev_model` 就是上面读 designLanguage/styleBrief 的那份，
-                    #   同一个来源，不另开一条取数路径。
-                    reuse_model=_prev_model,
-                    # ★ 上一版页面：按需重画用（2026-08-17）。跟 reuse_model
-                    #   同一个来源（refine 上下文），不另开取数路径。
-                    reuse_pages=reuse_pages or (_refine_ctx or {}).get("pages"),
-                    reuse_spec=reuse_spec,
-                    preferred_device=preferred_device_override(),
-                    product_archetype=product_archetype,
-                    tools=tools,
-                    workflow=workflow,
-                )["model"]
+                def _run():
+                    return run_spec_first(
+                        goal,
+                        llm_json_fn=llm_json_fn,
+                        refine=_spec_refine,
+                        reuse_language=_reuse_language,
+                        reuse_style_brief=_reuse_style,
+                        # ★ 上一版模型整份带过去（2026-08-17）：指令没点名的段在
+                        #   spec-first 汇合出口直接从它复制。传的是**完整模型**不是
+                        #   digest——digest 是给 LLM 看的摘要，照搬得用原始数据。
+                        #   `_prev_model` 就是上面读 designLanguage/styleBrief 的那份，
+                        #   同一个来源，不另开一条取数路径。
+                        reuse_model=_prev_model,
+                        # ★ 上一版页面：按需重画用（2026-08-17）。跟 reuse_model
+                        #   同一个来源（refine 上下文），不另开取数路径。
+                        reuse_pages=reuse_pages or (_refine_ctx or {}).get("pages"),
+                        reuse_spec=reuse_spec,
+                        preferred_device=preferred_device_override(),
+                        product_archetype=product_archetype,
+                        tools=tools,
+                        workflow=workflow,
+                    )
+
+                journal = active_journal()
+                if journal is None:
+                    return _run()["model"]
+                # 建设单 O-8：seq 0 钉日历。改了编排再续跑必须 divergence，
+                # 不许静默接在错的 stages 上。journal 不在场（单测直调）
+                # 保持原行为。
+                wf_name = str(workflow or "").strip() or "product-rehearsal"
+                try:
+                    preset = workflow_for(wf_name)
+                except KeyError:
+                    preset = None
+                if preset is not None:
+                    bind_orchestration(journal, preset.name, preset.stages)
+                tool_list = [
+                    str(item).strip()
+                    for item in (tools or ())
+                    if str(item).strip()
+                ]
+                full: dict = {}
+
+                def execute():
+                    out = _run()
+                    full["out"] = out
+                    return {
+                        "ok": True,
+                        "tools": tool_list,
+                        "workflow": wf_name,
+                    }
+
+                try:
+                    journaled_call(
+                        journal,
+                        journal.len(),
+                        "spec_first",
+                        hop_payload(tool_list, wf_name),
+                        execute,
+                    )
+                except JournalError:
+                    raise
+                out = full.get("out") or {}
+                return out.get("model")
 
             try:
                 model = _invoke_spec_first()
@@ -648,6 +699,10 @@ def _try_llm_generate_evidence(
                         )
                         return {}
                 print("[v5_capability_executor] spec-first 链路产出模型")
+            except JournalError:
+                # 建设单 O-8：编排对不上记录。不许回落 GEN5 假装没这回事。
+                print("[v5_capability_executor] workflow journal divergence，不回落老链路")
+                raise
             except RunCancelled:
                 # ★ 取消不是"新链路挂了"，**不许回落老链路**。
                 #

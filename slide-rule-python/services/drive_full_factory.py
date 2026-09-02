@@ -19,12 +19,14 @@ profile="app" 由 rehearse 传入；生成器消费短清单。禁止 HTTP facto
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any, Dict, Literal, Optional
 
 from fastapi import HTTPException
 from pydantic import ValidationError
 
 from models.v5_state import V5SessionState
+from services.persistence import _checkpoint_dir, _safe_ckpt_token
 from services.scope_authority import preferred_device_for_run
 from services.slide_rule_session import load_session, save_session
 from services.sliderule_session_sanitizer import sanitize_session_state
@@ -32,6 +34,15 @@ from services.v5_full_driver import (
     drive_full_v5_session_stream,
     transient_blocked_signal,
 )
+from services.workflow_journal import Journal, journal_scope
+
+
+def _workflow_journal_path(session_id: str) -> Path:
+    """会话级 jsonl。跟 checkpoint 同一目录，中断续跑才能找到。"""
+    sid = str(session_id or "").strip()
+    if not sid:
+        return Path("workflow-journal.jsonl")
+    return _checkpoint_dir() / _safe_ckpt_token(sid) / "workflow-journal.jsonl"
 
 
 def _adopt_owner(state: V5SessionState, viewer: Any) -> V5SessionState:
@@ -138,29 +149,31 @@ async def start_drive_full_factory_run(
         if product_charter is not None:
             charter_payload["productCharter"] = product_charter
         activate_charter_for_run(state, charter_payload)
+        journal = Journal.load(_workflow_journal_path(sid)) if sid else Journal()
         try:
-            async for event in drive_full_v5_session_stream(
-                state,
-                max_loops=max_loops,
-                user_instruction=user_text,
-                repair=repair,
-                profile=profile,
-            ):
-                if (
-                    event.get("type") == "complete"
-                    and not repair
-                    and transient_blocked_signal(state)
+            with journal_scope(journal):
+                async for event in drive_full_v5_session_stream(
+                    state,
+                    max_loops=max_loops,
+                    user_instruction=user_text,
+                    repair=repair,
+                    profile=profile,
                 ):
-                    async for repair_event in drive_full_v5_session_stream(
-                        state,
-                        max_loops=2,
-                        user_instruction=user_text,
-                        repair=True,
-                        profile=profile,
+                    if (
+                        event.get("type") == "complete"
+                        and not repair
+                        and transient_blocked_signal(state)
                     ):
-                        yield repair_event
-                    return
-                yield event
+                        async for repair_event in drive_full_v5_session_stream(
+                            state,
+                            max_loops=2,
+                            user_instruction=user_text,
+                            repair=True,
+                            profile=profile,
+                        ):
+                            yield repair_event
+                        return
+                    yield event
         finally:
             set_installed_skills(None)
             set_active_connectors(None)
