@@ -753,8 +753,21 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "refine",
-            "description": "在现有模型上精修。不得用 userText 覆盖 session goal。",
-            "parameters": {"type": "object", "properties": {}},
+            "description": (
+                "在现有模型上精修。**一跳一件**：hop 指明这一轮改哪一段"
+                "（spec / pages / structure / bind / closure），跑完交回来再挑下一跳。"
+                "不给 hop 就从 spec 起。不得用 userText 覆盖 session goal。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "hop": {
+                        "type": "string",
+                        "enum": list(FACTORY_HOPS),
+                        "description": "这一跳重跑哪一段。不确定就留空，从 spec 起。",
+                    }
+                },
+            },
         },
     },
     {
@@ -2696,8 +2709,25 @@ async def _run_control_turn_body(
     if forced == "refine":
         # 精修：userText 是增量指令，禁止覆盖 session goal。persist 后再
         # handoff，否则 persist-as-authority 工厂加载看不到这道闸。
+        #
+        # ⚠ 2026-09-02：精修有**两个入口**——模型在 _dispatch_tool 里挑 refine，
+        #   和用户点按钮走 forcedTool 到这里。只改前者的话，按钮那条（更常走的
+        #   那条）照样全量跑，而且不会报错——正是 CLAUDE.md 第四条说的
+        #   「成对的东西改一条不改另一条，只会有一半不生效」。两处都要写单件。
+        #   这里没有 LLM 参数可点名 hop，缺省 spec，跟 _confirm_rehearse 同一个口径。
         goal = dict(state.goal) if isinstance(state.goal, dict) else {}
         goal["text"] = original_goal
+        _hop = "spec"
+        _blocker = _factory_hop_blocker(state, _hop)
+        if _blocker:
+            async for event in _canned(
+                state,
+                _blocker,
+                stop=stop_wire(ControlStopReason.LLM_UNAVAILABLE),
+            ):
+                yield event
+            return
+        _set_goal_tools(goal, [_hop], refine=True)
         state.goal = goal
         await _apersist(state)
         # 写权限：forcedTool 绕过 _dispatch_tool 直接进工厂，scope 要在这里设。
@@ -2711,7 +2741,7 @@ async def _run_control_turn_body(
                 preferred_device,
                 design_system_id,
                 repair=False,
-                profile="full",
+                profile="app",
                 nest=True,
             ):
                 yield event
@@ -3002,8 +3032,39 @@ async def _dispatch_tool(
         # 空会话没东西可精修这道闸已收进统一批准闸
         # （TOOL_PERMISSION["refine"] = _has_model）。实测过的洞：补之前
         # 模型在空 goal 会话上挑 refine，信封被调 1 次、零范围卡就点了火。
+        #
+        # ⚠ 2026-09-02 真机（社区图书馆那趟）：精修此前不写 goal["tools"]、
+        #   直接 profile="full"，于是**一跳一件在最常走的路径上等于没生效**——
+        #   capabilityPlan=product-rehearsal，43 步 195 秒把全链跑完，而控制面
+        #   收尾还在问「或是进入下一步的结构绑定?」，那步本轮早跑完了。
+        #   现在跟单跳工具同一形状：写一件、profile="app"、跑完交回控制面再问。
         goal = dict(state.goal) if isinstance(state.goal, dict) else {}
         goal["text"] = original_goal
+        raw_hop = str(args.get("hop") or "").strip()
+        if raw_hop and raw_hop not in FACTORY_HOPS:
+            # 不合法就重问，**不静默回落**——跟 clip_factory_tools 同一套语义：
+            # 「没点名」可以给默认值，「点名了但是生词」是模型在乱点，得说出来。
+            async for event in _canned(
+                state,
+                f"精修这一跳只能是 {' / '.join(FACTORY_HOPS)} 之一，"
+                f"收到的是「{raw_hop}」。想改哪一段？",
+                stop=stop_wire(ControlStopReason.LLM_UNAVAILABLE),
+            ):
+                yield event
+            return
+        # 没点名就从 spec 起，跟按钮点火同一个缺省（"剩下的交回 host 逐跳挑"）。
+        hop = raw_hop or "spec"
+        blocker = _factory_hop_blocker(state, hop)
+        if blocker:
+            async for event in _canned(
+                state,
+                blocker,
+                stop=stop_wire(ControlStopReason.LLM_UNAVAILABLE),
+            ):
+                yield event
+            return
+        # refine=True 恒成立：TOOL_PERMISSION["refine"] = _has_model 已经保证有上一版。
+        _set_goal_tools(goal, [hop], refine=True)
         state.goal = goal
         await _apersist(state)
         async for event in _handoff_factory(
@@ -3013,7 +3074,7 @@ async def _dispatch_tool(
             active_connectors,
             preferred_device,
             design_system_id,
-            profile="full",
+            profile="app",
             nest=True,
         ):
             yield event
