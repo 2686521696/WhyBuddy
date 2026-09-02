@@ -103,6 +103,54 @@ def clip_factory_tools(
     return chosen
 
 
+#: 不是 spec-first 阶段的 stages 键。断言「实际执行 = tools 展开」时要剥掉。
+_STAGES_META = frozenset(
+    {
+        "capabilityPlan",
+        "orphans",
+        "qualityNotices",
+        "pageIdMatch",
+        "refineReuse",
+    }
+)
+
+
+def executed_stage_ids(stages: Optional[dict]) -> Tuple[str, ...]:
+    """stages 字典里真正跑过的 specfirst.* id。"""
+    if not isinstance(stages, dict):
+        return ()
+    return tuple(
+        f"specfirst.{key}" for key in stages if key not in _STAGES_META
+    )
+
+
+#: 精修时没拿到上一版页面，pagescope 会跳过。不许因此把「多跑了整链」放过。
+_OPTIONAL_SKIPS = frozenset({"specfirst.pagescope"})
+
+
+def assert_stages_match_tools(
+    tools: Iterable[str],
+    stages: Optional[dict],
+    *,
+    refine: bool = False,
+) -> None:
+    """clip / 计划出口：不许多跑声明之外的阶段。
+
+    2026-09-02 真机：规划器没点名就回落整份菜单，控制面还以为自己只点了
+    spec。盯「多跑了什么」——缺 pagescope（没上一版页面）不是这道闸的目标。
+    """
+    declared = set(expand_tools(tools, refine=refine))
+    actual = set(executed_stage_ids(stages))
+    extra = actual - declared
+    missing = (declared - _OPTIONAL_SKIPS) - actual
+    if extra or missing:
+        raise AssertionError(
+            "本跳 tools="
+            f"{tuple(tools)} 展开 {sorted(declared)} 实际 {sorted(actual)}"
+            f" extra={sorted(extra)} missing={sorted(missing)}"
+        )
+
+
 def expand_tools(tools: Iterable[str], *, refine: bool = False) -> Tuple[str, ...]:
     """公开工具展开成 `run_spec_first` 里的 `_stage` id。
 
@@ -185,6 +233,8 @@ __all__ = [
     "TOOL_LABELS",
     "CapabilityPlan",
     "expand_tools",
+    "executed_stage_ids",
+    "assert_stages_match_tools",
     "normalize_tools",
     "clip_factory_tools",
     "FactoryToolsRefused",

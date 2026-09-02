@@ -2324,8 +2324,51 @@ async def _resolve_answered_gaps(
     return closed
 
 
+def _this_hop_tools(state: V5SessionState) -> List[str]:
+    """本跳工厂真正跑过的公开工具。先看页面载体上的 capabilityPlan。"""
+    blob = _spec_first_blob(state)
+    plan = blob.get("capabilityPlan") if isinstance(blob, dict) else None
+    if isinstance(plan, dict) and isinstance(plan.get("tools"), list) and plan["tools"]:
+        return [str(t).strip() for t in plan["tools"] if str(t).strip()]
+    stages = blob.get("stages") if isinstance(blob, dict) else None
+    if isinstance(stages, dict):
+        nested = stages.get("capabilityPlan")
+        if (
+            isinstance(nested, dict)
+            and isinstance(nested.get("tools"), list)
+            and nested["tools"]
+        ):
+            return [str(t).strip() for t in nested["tools"] if str(t).strip()]
+    goal = getattr(state, "goal", None)
+    if isinstance(goal, dict) and isinstance(goal.get("tools"), list):
+        return [str(t).strip() for t in goal["tools"] if str(t).strip()]
+    return []
+
+
 def _after_write_hint(state: V5SessionState) -> str:
-    """交回 host 时下一跳说什么。抄 grok：工具结果之后模型必须再挑或明说停。"""
+    """交回 host 时下一跳说什么。抄 grok：工具结果之后模型必须再挑或明说停。
+
+    ⚠ 2026-09-02：话术曾看「会话里有没有旧页面」，spec 单跳交回仍问结构绑定。
+    必须读本跳 capabilityPlan.tools。
+    """
+    from services.capability_plan import TOOL_LABELS
+
+    tools = _this_hop_tools(state)
+    labels = dict(TOOL_LABELS)
+    ran = "、".join(labels.get(t, t) for t in tools)
+    factory = {"pages", "structure", "bind", "closure"}
+    if tools and not factory.intersection(tools):
+        return (
+            f"本跳实际跑了：{ran}。页面还没有。"
+            "下一跳必须调 pages，或者用一句话告诉用户你为什么先停。"
+            "不要调 rehearse，不要假装页面已经出来，不要问结构绑定。"
+        )
+    if tools:
+        return (
+            f"本跳实际跑了：{ran}。"
+            "用一两句话问要改哪一页或下一步；不要再调 rehearse；"
+            "不要问已经跑过的那一步。"
+        )
     if _has_pages(state) or _has_model(state):
         return (
             "已经出过页面。用一两句话问要改哪一页或下一步；不要再调 rehearse。"

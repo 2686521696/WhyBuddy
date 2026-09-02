@@ -151,6 +151,28 @@ def test_clip_factory_tools_refuses_all_illegal_proposals():
         )
 
 
+def test_assert_stages_match_tools_positive_and_negative():
+    """实际执行必须等于本跳 tools 展开。把 bind 从实际里拿掉必须红。"""
+    tools = ("spec", "pages", "bind")
+    declared = cp.expand_tools(tools)
+    stages = {cap.split(".", 1)[1]: {} for cap in declared}
+    cp.assert_stages_match_tools(tools, stages)
+    stages.pop("assemble")
+    with pytest.raises(AssertionError, match="missing"):
+        cp.assert_stages_match_tools(tools, stages)
+    stages = {cap.split(".", 1)[1]: {} for cap in declared}
+    stages["invented"] = {}
+    with pytest.raises(AssertionError, match="extra"):
+        cp.assert_stages_match_tools(tools, stages)
+
+
+def test_run_spec_first_calls_assert_stages_match_tools():
+    """出口断言必须接在活路径上。只测 helper 会假绿。"""
+    src = _code(sfp.run_spec_first)
+    assert "assert_stages_match_tools" in src
+    assert "plan.tools" in src
+
+
 def test_expand_tools_bind_implies_assemble():
     """任意含 bind 的子集展开后 assemble 必在。把闭包删掉必须红。"""
     ids = cp.expand_tools(("spec", "pages", "bind"))

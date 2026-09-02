@@ -2337,6 +2337,9 @@ def run_spec_first(
     _notices = list(_quality_notices_var.get() or [])
     stages["qualityNotices"] = _notices
     result["qualityNotices"] = _notices
+    from .capability_plan import assert_stages_match_tools as _assert_stages
+
+    _assert_stages(plan.tools, stages, refine=bool(refine))
     try:
         _quality_notices_var.reset(_quality_token)
     except Exception:
@@ -2374,5 +2377,7 @@ def run_spec_first(
         # 闭环白名单再投影一次（跟 refinePaintNote 同一条路）。
         "refineReuseNote": _refine_reuse_note,
         "qualityNotices": list(_notices),
+        # 控制面收尾读这一跳真正跑过的 tools，不许靠「有没有旧页面」猜。
+        "capabilityPlan": dict(stages.get("capabilityPlan") or {}),
     })
     return result

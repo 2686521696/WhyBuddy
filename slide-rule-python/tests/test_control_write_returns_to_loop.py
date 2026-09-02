@@ -24,8 +24,10 @@ from services.rehearsal_control import (
     CANNED_FAILURE,
     POST_SPEC_HOP_FALLBACK,
     POST_WRITE_FALLBACK,
+    _after_write_hint,
     _factory_tool_body,
 )
+from models.v5_state import V5SessionState
 from services.slide_rule_session import load_session
 
 pytest.importorskip("fastapi")
@@ -155,6 +157,38 @@ def test_forced_rehearse_rejoins_loop_after_factory(harness):
     assert fc < speech < last_complete, (
         f"流序必须是 factory_complete → control_text → complete，实际 {types}"
     )
+
+
+def test_after_write_hint_reads_this_hop_tools_not_stale_pages():
+    """会话里还有上一跳的页面，本跳只跑了 spec，不许问结构绑定 / 假装页面刚出来。"""
+    state = V5SessionState(
+        sessionId="t-hint-hop",
+        goal={"text": "图书馆", "status": "clear", "tools": ["spec"]},
+        specFirstPages={
+            "pages": {"p1": "<html>旧页</html>"},
+            "capabilityPlan": {"tools": ["spec"]},
+        },
+    )
+    hint = _after_write_hint(state)
+    assert "本跳实际跑了" in hint
+    assert "起草 SPEC" in hint
+    assert "结构绑定" in hint
+    assert "已经出过页面" not in hint
+    assert "下一跳必须调 pages" in hint
+
+
+def test_after_write_hint_full_hop_does_not_ask_structure_bind():
+    state = V5SessionState(
+        sessionId="t-hint-full",
+        goal={"text": "图书馆", "status": "clear"},
+        specFirstPages={"capabilityPlan": {"tools": ["spec", "pages", "bind"]}},
+    )
+    hint = _after_write_hint(state)
+    assert "权限工作流" in hint or "bind" in hint
+    assert "不要问已经跑过的那一步" in hint
+    src = strip_python(PY_ROOT / "services" / "rehearsal_control.py")
+    assert "_this_hop_tools" in src
+    assert "capabilityPlan" in src
 
 
 def test_forced_rehearse_empty_llm_uses_post_spec_hop_fallback(harness):
