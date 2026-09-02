@@ -246,15 +246,46 @@ def _normalize_content_parts(content: list[Any]) -> list[ContentPart]:
     return normalized
 
 
+#: 工具调用轮次要带的字段。归一化**必须原样透传**，剥掉就等于把多轮工具
+#: 对话拆散：assistant 少了 tool_calls，后面那条 role="tool" 就成了孤儿。
+_TOOL_TURN_KEYS = ("tool_calls", "tool_call_id", "name")
+
+
 def _normalize_message(message: Message) -> Message:
+    """归一化一条消息。
+
+    ⚠ 2026-09-02 真机（健身房那趟）：控制面 WRITE 交回 host 之后，循环里
+    `control llm loop failed after write` 每次必崩，
+    `LlmError: content must be a string or content part list`。两个原因叠在一起：
+
+    **① 这里原来只返回 `{role, content}`**，`tool_calls` / `tool_call_id`
+    被静默剥掉。控制面拼的消息本来是合法的工具轮次（assistant 带 tool_calls、
+    随后 role="tool" 带 tool_call_id），剥完就成了「孤儿 tool 消息」——
+    请求还能发出去，所以一直没人发现，只是模型看到的对话是残的。
+
+    **② 空正文的 assistant 是合法的**：模型常把话全放进工具参数
+    （`control_client` 模块头写着这条）。调用方于是写 `content or None`，
+    而这里只认 str / list，None 直接抛——host 循环第二轮必挂，
+    「工厂跑完交回控制面继续挑」整条自由编排链就断在这儿。
+
+    所以：带 tool_calls 时允许 content 为 None（OpenAI 兼容口径），
+    并把工具轮次字段原样带上。纯聊天那两条路径行为不变。
+    """
     role = message.get("role")
     content = message.get("content")
     if not isinstance(role, str):
         raise LlmError("invalid LLM message: role must be a string", transient=False)
+
+    extras = {k: message[k] for k in _TOOL_TURN_KEYS if message.get(k) is not None}
+
     if isinstance(content, str):
-        return {"role": role, "content": content}
+        return {"role": role, "content": content, **extras}
     if isinstance(content, list):
-        return {"role": role, "content": _normalize_content_parts(content)}
+        return {"role": role, "content": _normalize_content_parts(content), **extras}
+    if content is None and extras.get("tool_calls"):
+        # 空正文 + 工具调用：合法。不许在这里塞一个假正文，
+        # 那会让模型以为自己上一轮说过话。
+        return {"role": role, "content": None, **extras}
     raise LlmError("invalid LLM message: content must be a string or content part list", transient=False)
 
 
