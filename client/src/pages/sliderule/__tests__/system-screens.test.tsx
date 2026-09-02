@@ -731,7 +731,9 @@ describe("ArchitectureStage", () => {
     expect(html).toContain('data-testid="sliderule-architecture-stage"');
     expect(html).toContain('data-testid="architecture-empty"');
     expect(html).toContain('data-testid="architecture-checks"');
-    expect(html).toContain("Checks 0/6");
+    expect(html).toContain("Checks 未产出");
+    expect(html).not.toContain("Checks 0/6");
+    expect(html).not.toContain("Checks 6/6");
     expect(html).toContain("text-red-600");
     expect(html).not.toContain("bg-blue-400");
     expect(html).not.toContain("SkillThumbnailBar");

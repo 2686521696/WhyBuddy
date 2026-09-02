@@ -1545,6 +1545,29 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   );
                 }
               },
+              onQualityNotice: note => {
+                appendStreamStep(note.text);
+                setSessionState(prev => {
+                  const sp =
+                    prev.specFirstPages && typeof prev.specFirstPages === "object"
+                      ? { ...prev.specFirstPages }
+                      : {};
+                  const prevNotes = Array.isArray((sp as { qualityNotices?: unknown }).qualityNotices)
+                    ? ([...(sp as { qualityNotices: unknown[] }).qualityNotices] as Array<{
+                        kind: string;
+                        text: string;
+                      }>)
+                    : [];
+                  if (prevNotes.some(n => n.text === note.text)) return prev;
+                  return {
+                    ...prev,
+                    specFirstPages: {
+                      ...sp,
+                      qualityNotices: [...prevNotes, note],
+                    },
+                  };
+                });
+              },
               onSpecAssumptions: items => {
                 // 按 id 并（不是追加）：续播会把同一条再送一遍，
                 // 理由见 spec-assumptions.mergeAssumptions 头注。

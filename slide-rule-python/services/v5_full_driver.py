@@ -1929,6 +1929,16 @@ async def drive_full_v5_session_stream(
         _sinks.enter_context(
             _spec_assumption_scope(lambda rows: _assumption_q.put(list(rows or [])))
         )
+    _quality_q: "_queue.Queue[dict]" = _queue.Queue()
+    _spec_quality_scope = None
+    try:
+        from .spec_first_pipeline import quality_sink_scope as _spec_quality_scope
+    except Exception:  # noqa: BLE001
+        pass
+    if _spec_quality_scope is not None:
+        _sinks.enter_context(
+            _spec_quality_scope(lambda note: _quality_q.put(dict(note or {})))
+        )
     _budget_token = _enrich_timing.begin_run_budget()
     # 与同步入口同一件事：让能力执行看得见本轮用户说了什么。
     # 流式是主路径（前端走 SSE），两条都要接，否则只有回退路径改好了——
@@ -2021,6 +2031,13 @@ async def drive_full_v5_session_stream(
                     _rows = _assumption_q.get_nowait()
                     if _rows:
                         yield {"type": "spec_assumption", "items": _rows}
+            except _queue.Empty:
+                pass
+            try:
+                while True:
+                    _note = _quality_q.get_nowait()
+                    if _note:
+                        yield {"type": "quality_notice", **_note}
             except _queue.Empty:
                 pass
             now = _time.perf_counter()

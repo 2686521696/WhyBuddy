@@ -25,6 +25,7 @@ export function ArchitectureStage({
   versionToolbar,
   trailing,
   className = "",
+  qualityNotices = [],
 }: {
   model?: FiveSystemModel | null;
   publishClosure?: PublishClosureSummary | null;
@@ -35,6 +36,7 @@ export function ArchitectureStage({
   /** 标题行最右：工作台图标簇（隐藏页面/交付物…） */
   trailing?: React.ReactNode;
   className?: string;
+  qualityNotices?: Array<{ kind?: string; text: string }>;
 }) {
   const [graphStyle, setGraphStyle] = useState<"flow" | "mermaid">("flow");
   const [archFit, setArchFit] = useState(true);
@@ -111,6 +113,23 @@ export function ArchitectureStage({
           {trailing}
         </div>
       </div>
+      {qualityNotices.length > 0 && (
+        <ul
+          className="shrink-0 space-y-0.5 border-b border-[#e5e7eb] px-2 py-1"
+          data-testid="sliderule-quality-notices"
+        >
+          {qualityNotices.map((n, i) => (
+            <li
+              key={`${n.kind || "note"}-${i}`}
+              data-testid="sliderule-quality-notice"
+              data-kind={n.kind}
+              className="text-[11px] text-amber-800"
+            >
+              {n.text}
+            </li>
+          ))}
+        </ul>
+      )}
 
       <div className="min-h-0 flex-1">
         {canLinkage && graphStyle === "mermaid" && archMermaid ? (

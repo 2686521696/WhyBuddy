@@ -366,6 +366,22 @@ describe("通电：互斥布局档真的接在活路径上", () => {
     expect(ctx).not.toContain("needsRunningSplitFix");
   });
 
+  it("P3-④ applyWorkbenchMode 先展开舞台，不许只翻 stageCollapsed", () => {
+    /**
+     * ⚠ 执行单 P3-④：翻 stageCollapsed 但不 expand 面板，两栏可能同时塌掉。
+     * 变异：删掉 stageRef.current?.expand()，本条必红。
+     */
+    const ctx = read("../StudioLayoutContext.tsx");
+    const start = ctx.indexOf("const applyWorkbenchMode");
+    expect(start, "找不到 applyWorkbenchMode").toBeGreaterThan(-1);
+    const fn = ctx.slice(start, ctx.indexOf("}, []);", start) + 8);
+    expect(fn).toContain("setStageCollapsed(false)");
+    expect(fn).toContain("stageRef.current?.expand()");
+    expect(fn.indexOf("stageRef.current?.expand()")).toBeLessThan(
+      fn.indexOf('if (next === "canvas")')
+    );
+  });
+
   it("顶栏分段走 applyWorkbenchMode；Studio 把 stageView 接进 sink", () => {
     const hud = read("../SlideRuleTopHud.tsx");
     expect(hud).toContain("applyWorkbenchMode");

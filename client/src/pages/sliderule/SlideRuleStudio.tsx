@@ -1005,6 +1005,11 @@ export function SlideRuleStudio({
                   onInspect={setDrawerSkill}
                   focusSkill={activeSkillId}
                   className="min-h-0 flex-1"
+                  qualityNotices={
+                    Array.isArray(specFirstPages?.qualityNotices)
+                      ? specFirstPages.qualityNotices
+                      : []
+                  }
                 />
               </div>
             ) : editMode &&
@@ -1179,6 +1184,11 @@ export function SlideRuleStudio({
             model={fiveSystemModel}
             fill
             className="min-h-0 flex-1"
+            qualityNotices={
+              Array.isArray(specFirstPages?.qualityNotices)
+                ? specFirstPages.qualityNotices
+                : []
+            }
           />
         </div>
       )}

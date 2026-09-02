@@ -316,9 +316,20 @@ function distinctImgSrcs(root: Element): Set<string> {
  *
  * 表路径（tbody / thead / table）仍按行展开：台账可以有两行示例图，那是要删的。
  */
+function looksLikeCardLedger(box: Element): boolean {
+  if (box.querySelector("[data-record]")) return true;
+  const items = Array.from(box.children).filter((el) => !isOverlayChild(el));
+  if (items.length < 2) return false;
+  return items.every(
+    (el) => el.querySelectorAll("[data-field]").length >= 2
+  );
+}
+
 function isStaticGallery(box: Element): boolean {
   const tag = box.tagName;
   if (tag === "TBODY" || tag === "THEAD" || tag === "TABLE") return false;
+  // 卡片台账每张卡也有头像/封面图。≥2 张不同 src 不等于货架。
+  if (looksLikeCardLedger(box)) return false;
   return distinctImgSrcs(box).size >= 2;
 }
 
@@ -386,15 +397,20 @@ function paintedItems(box: Element): Element[] | null {
  * 的；我们的生成侧常把 `data-field` 盖在还含 `<img>` 的父节点上，
  * ``textContent =`` 会把子图一并抹掉——跟上面清空货架是同一类静默事故。
  */
-function setFieldText(el: HTMLElement, text: string): void {
+function setFieldText(el: HTMLElement, text: string): boolean {
   if (el.querySelector(MEDIA_SEL)) {
+    // 不含 div：卡片渐变遮罩是空 div，写进去看不见，filled.field 却照加。
     const leaf = Array.from(
-      el.querySelectorAll<HTMLElement>("span, p, figcaption, h1, h2, h3, h4, h5, h6, time, em, strong, small, label, a, div")
+      el.querySelectorAll<HTMLElement>(
+        "span, p, figcaption, h1, h2, h3, h4, h5, h6, time, em, strong, small, label, a"
+      )
     ).find((n) => n.childElementCount === 0 && !n.matches(MEDIA_SEL));
-    if (leaf) leaf.textContent = text;
-    return;
+    if (!leaf) return false;
+    leaf.textContent = text;
+    return true;
   }
   el.textContent = text;
+  return true;
 }
 
 /** 排序：只按字段值比大小，认不出就保持原序（不排比乱排好）。 */
@@ -537,8 +553,13 @@ function fillFields(
       problems.push(`data-field="${fid}"：不是实体 ${entityId} 的字段`);
       return;
     }
-    setFieldText(el, formatFieldText(record[fid], asFieldLike(f)));
-    filled.field += 1;
+    if (setFieldText(el, formatFieldText(record[fid], asFieldLike(f)))) {
+      filled.field += 1;
+    } else {
+      problems.push(
+        `data-field="${fid}"：有图的孔里找不到可写文字叶子，值没写上`
+      );
+    }
   });
 }
 

@@ -83,7 +83,9 @@ def _drive(monkeypatch, *, assembled_model, refine=False, reuse_model=None):
         ma, "assemble",
         lambda *a, **k: {"model": dict(assembled_model), "gate": {"passed": True}},
     )
-    monkeypatch.setattr(hb, "bind_pages", lambda p, m: {"pages": dict(p), "failed": {}})
+    monkeypatch.setattr(
+        hb, "bind_pages", lambda p, m, **kw: {"pages": dict(p), "failed": {}}
+    )
 
     return sfp.run_spec_first(
         "做个工单系统",
@@ -100,6 +102,17 @@ class Test交付时说得出话:
         assert "交付的应用带着 1 个孤岛" in text
         assert "entity:lonely" in text and "孤岛" in text
         assert out_model.get("model"), "只报不拦——报了归报了，交付照常"
+        notices = out_model.get("qualityNotices") or []
+        assert any(n.get("kind") == "orphan" for n in notices), (
+            "孤岛只打了 stderr，交付面拿不到"
+        )
+        from services import spec_first_pipeline as sfp
+
+        blob = sfp.take_last_pages() or {}
+        carrier = blob.get("qualityNotices") or []
+        assert any(n.get("kind") == "orphan" for n in carrier), (
+            "孤岛没随页面载体落库——刷新后交付面又看不见"
+        )
 
     def test_体检结果记进stages(self, monkeypatch):
         """日志会滚走；stages 落在返回值里，排查时对得上账。"""
@@ -109,8 +122,10 @@ class Test交付时说得出话:
 
     def test_没有孤岛时一声不吭(self, monkeypatch, capsys):
         """反向判据：把正常也报出来，这条提示会被当噪音，真出事时没人看。"""
-        _drive(monkeypatch, assembled_model=MODEL_CLEAN)
+        out = _drive(monkeypatch, assembled_model=MODEL_CLEAN)
         assert "孤岛" not in capsys.readouterr().out
+        notices = out.get("qualityNotices") or []
+        assert not any(n.get("kind") == "orphan" for n in notices)
 
 
 class Test精修轮_新增与存量分开:
@@ -186,3 +201,72 @@ class Test只报不拦:
         monkeypatch.setattr(sys, "stdout", GbkConsole())
         out = _drive(monkeypatch, assembled_model=MODEL_WITH_ORPHAN)
         assert out.get("model"), "⚠ 打不出就把交付拖死了——跟真机回落老链路同一形状"
+
+
+class Test图判降级上到交付面:
+    def test_精修图判缺席进qualityNotices(self, monkeypatch):
+        """drive_on 但种子是空：必须能在交付面看见降级，不只 stderr。"""
+        out = _drive(
+            monkeypatch,
+            assembled_model=MODEL_CLEAN,
+            refine=True,
+            reuse_model=MODEL_CLEAN,
+        )
+        notices = out.get("qualityNotices") or []
+        assert any(n.get("kind") == "graph_scope_fallback" for n in notices), (
+            "图判回落文本判只打了日志，交付面拿不到"
+        )
+        assert any("回落文本判" in str(n.get("text") or "") for n in notices)
+
+    def test_新建不跑图判就不要冒降级(self, monkeypatch):
+        """反向：新建路径没有 graphscope，不许假装降级过。"""
+        out = _drive(monkeypatch, assembled_model=MODEL_CLEAN)
+        notices = out.get("qualityNotices") or []
+        assert not any(n.get("kind") == "graph_scope_fallback" for n in notices)
+
+
+class Test对比告警上到交付面:
+    def test_浅字浅底写进qualityNotices(self, monkeypatch):
+        """_ggn 的出口必须接到 _emit_quality_notice。只测 helper 会假绿。"""
+        import services.spec_page_html as sph
+
+        seen: list = []
+
+        def fake_ggn(html, **kw):
+            seen.append(str(html or ""))
+            return ["浅字浅底，对比可能不够"]
+
+        monkeypatch.setattr(sph, "guidelines_gate_notes", fake_ggn)
+        out = _drive(monkeypatch, assembled_model=MODEL_CLEAN)
+        assert seen, "交付出口没调 guidelines_gate_notes"
+        notices = out.get("qualityNotices") or []
+        assert any(n.get("kind") == "contrast" for n in notices), (
+            "对比告警只在 guidelines_gate_notes 里，没送到交付面"
+        )
+        assert any("对比" in str(n.get("text") or "") for n in notices)
+
+    def test_反向没有对比二字就不报contrast(self, monkeypatch):
+        import services.spec_page_html as sph
+
+        monkeypatch.setattr(
+            sph, "guidelines_gate_notes", lambda html, **kw: ["表/列表没有行，也没有空态文案"]
+        )
+        out = _drive(monkeypatch, assembled_model=MODEL_CLEAN)
+        notices = out.get("qualityNotices") or []
+        assert not any(n.get("kind") == "contrast" for n in notices)
+
+
+def test_流式驱动把质量提示送上SSE():
+    """函数写对了 ≠ 它被调用了。删 yield quality_notice 必须红。"""
+    import inspect
+    import re
+
+    from services import v5_full_driver as drv
+
+    src = inspect.getsource(drv.drive_full_v5_session_stream)
+    code = re.sub(r'""".*?"""', "", src, flags=re.S)
+    code = re.sub(r"#.*", "", code)
+    assert "quality_sink_scope" in code
+    assert '"quality_notice"' in code
+    assert "yield" in code
+

@@ -27,6 +27,7 @@ interface AppBundleScreenProps {
   appTitle?: string;
   isActive?: boolean;
   className?: string;
+  qualityNotices?: Array<{ kind: string; text: string }>;
 }
 
 const SKILL_META: Array<{
@@ -55,6 +56,7 @@ export function AppBundleScreen({
   model,
   isActive = false,
   className = "",
+  qualityNotices = [],
 }: AppBundleScreenProps) {
   type SkillKey = "datamodel" | "rbac" | "workflow" | "page" | "aigc" | "appbundle";
   const perSkill = (publishClosure?.perSkillEvidence ?? {}) as NonNullable<
@@ -125,6 +127,20 @@ export function AppBundleScreen({
         </span>
       </div>
 
+      {qualityNotices.length > 0 && (
+        <ul className="space-y-1 border-b border-[#e5e7eb] px-4 py-2" data-testid="sliderule-quality-notices">
+          {qualityNotices.map((n, i) => (
+            <li
+              key={`${n.kind}-${i}`}
+              data-testid="sliderule-quality-notice"
+              data-kind={n.kind}
+              className="text-[12px] text-amber-800"
+            >
+              {n.text}
+            </li>
+          ))}
+        </ul>
+      )}
       {publishClosure && blocked && (
         <GateBlockedPanel publishClosure={publishClosure} compact />
       )}

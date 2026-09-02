@@ -317,6 +317,12 @@ export interface DriveFullStreamOpts {
     alternatives: string[];
     why: string;
   }>) => void;
+  /** 图判降级 / 孤岛 / 对比。只报不拦，必须能在交付面看见。 */
+  onQualityNotice?: (note: {
+    kind: string;
+    text: string;
+    items?: unknown[];
+  }) => void;
   /** E25：后端 run id（事件里首见即回调一次）——客户端记书签供刷新后续播。 */
   onRunId?: (runId: string) => void;
   /** E25：仅当服务端亲口宣布 run 终局（complete / run_cancelled / error
@@ -581,6 +587,18 @@ function applyFactoryStreamEvent(
         }))
         .filter((r: { topic: string; decision: string }) => r.topic && r.decision);
       if (items.length > 0) opts.onSpecAssumptions?.(items);
+      return "continue";
+    }
+    case "quality_notice": {
+      const text = String(event.text || "").trim();
+      const kind = String(event.kind || "").trim() || "note";
+      if (text) {
+        opts.onQualityNotice?.({
+          kind,
+          text,
+          items: Array.isArray(event.items) ? event.items : undefined,
+        });
+      }
       return "continue";
     }
     case "run_pause_started":

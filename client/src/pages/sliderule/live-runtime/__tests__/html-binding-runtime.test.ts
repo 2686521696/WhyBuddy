@@ -1032,3 +1032,139 @@ describe("矩阵时间块不是第一行的复印件", () => {
     expect(body).toContain("stripUnboundLaneChips(");
   });
 });
+
+describe("P3-① 卡片台账不是货架", () => {
+  /**
+   * ⚠ 执行单 P3-①：isStaticGallery 把「非表格 + ≥2 张不同图」认成画廊，
+   * 卡片式台账（每张卡头像/封面 + 多个 data-field）静默截成货架，且不进
+   * problems。变异：删 looksLikeCardLedger 那一岔，下面必红。
+   */
+  const BOOKS: BindingSource = {
+    rows: {
+      book: [
+        { id: "b1", title: "借还须知", author: "馆员甲" },
+        { id: "b2", title: "开馆时间", author: "馆员乙" },
+        { id: "b3", title: "热门书单", author: "馆员丙" },
+      ],
+    },
+    fields: {
+      book: [
+        { id: "title", name: "书名" },
+        { id: "author", name: "作者" },
+      ],
+    },
+  };
+
+  const CARDS = `
+    <div class="grid grid-cols-2" data-rows="book">
+      <article>
+        <img src="https://images.example/cover-a.jpg" alt="">
+        <h3 data-field="title">示例书</h3>
+        <p data-field="author">示例作者</p>
+      </article>
+      <article>
+        <img src="https://images.example/cover-b.jpg" alt="">
+        <h3 data-field="title">另一本</h3>
+        <p data-field="author">另一个人</p>
+      </article>
+    </div>`;
+
+  it("两张不同封面的卡按实体行数展开，不许冻成两张货架", () => {
+    const root = dom(CARDS);
+    const report = applyBindings(root, { source: BOOKS });
+    expect(report.problems).toEqual([]);
+    expect(root.querySelectorAll("article")).toHaveLength(3);
+    const titles = [...root.querySelectorAll("[data-field='title']")].map(
+      (el) => el.textContent
+    );
+    expect(titles).toEqual(["借还须知", "开馆时间", "热门书单"]);
+    expect(root.querySelectorAll("img")).toHaveLength(3);
+  });
+
+  it("反向：真货架（每项只有图+一条说明）仍不许收成第一张复印件", () => {
+    const root = dom(`
+      <div class="grid" data-rows="photo">
+        <figure><img src="https://images.unsplash.com/photo-a" alt=""><figcaption data-field="title">一</figcaption></figure>
+        <figure><img src="https://images.unsplash.com/photo-b" alt=""><figcaption data-field="title">二</figcaption></figure>
+      </div>`);
+    applyBindings(root, {
+      source: {
+        rows: { photo: [{ id: "p1", title: "晨起" }, { id: "p2", title: "午休" }] },
+        fields: { photo: [{ id: "title", name: "标题" }] },
+      },
+    });
+    expect(root.querySelectorAll("img")).toHaveLength(2);
+    expect(
+      [...root.querySelectorAll("img")].map((el) => el.getAttribute("src"))
+    ).toEqual([
+      "https://images.unsplash.com/photo-a",
+      "https://images.unsplash.com/photo-b",
+    ]);
+  });
+
+  it("通电：isStaticGallery 必须先问 looksLikeCardLedger", () => {
+    const src = runtimeSrc();
+    const start = src.indexOf("function isStaticGallery");
+    const next = src.indexOf("function ", start + 10);
+    const body = src.slice(start, next === -1 ? undefined : next);
+    expect(body).toContain("looksLikeCardLedger(box)");
+    expect(body).toContain("return false");
+  });
+});
+
+describe("P3-② 有图的孔不写进渐变遮罩", () => {
+  /**
+   * ⚠ 执行单 P3-②：setFieldText 选中第一个空后代（选择器曾含 div），
+   * 卡片里通常是渐变遮罩；无空叶子时值被丢但 filled.field 照加。
+   * 变异：把 div 加回文字叶子选择器，或写不上仍 filled.field++，下面必红。
+   */
+  const SRC: BindingSource = {
+    rows: { book: [{ id: "b1", title: "开馆时间" }] },
+    fields: { book: [{ id: "title", name: "书名" }] },
+  };
+
+  it("只有遮罩 div 时值不许写上，filled.field 不许假装成功", () => {
+    const root = dom(`
+      <div data-record="book" data-record-id="b1">
+        <div data-field="title">
+          <img src="https://images.example/cover.jpg" alt="">
+          <div class="absolute inset-0 bg-gradient-to-t"></div>
+        </div>
+      </div>`);
+    const report = applyBindings(root, { source: SRC });
+    expect(root.querySelector("img")?.getAttribute("src")).toBe(
+      "https://images.example/cover.jpg"
+    );
+    expect(root.querySelector(".absolute")?.textContent).toBe("");
+    expect(report.filled.field).toBe(0);
+    expect(report.problems.some((p) => p.includes("可写文字叶子"))).toBe(true);
+  });
+
+  it("有 span 叶子就写进 span，遮罩仍空", () => {
+    const root = dom(`
+      <div data-record="book" data-record-id="b1">
+        <div data-field="title">
+          <img src="https://images.example/cover.jpg" alt="">
+          <span>占位</span>
+          <div class="absolute inset-0 bg-gradient-to-t"></div>
+        </div>
+      </div>`);
+    const report = applyBindings(root, { source: SRC });
+    expect(root.querySelector("span")?.textContent).toBe("开馆时间");
+    expect(root.querySelector(".absolute")?.textContent).toBe("");
+    expect(report.filled.field).toBe(1);
+    expect(report.problems).toEqual([]);
+  });
+
+  it("反向：文字叶子选择器不许再含裸 div", () => {
+    const src = runtimeSrc();
+    const start = src.indexOf("function setFieldText");
+    const next = src.indexOf("function ", start + 10);
+    const body = src.slice(start, next === -1 ? undefined : next);
+    expect(body).toContain('"span, p, figcaption, h1, h2, h3, h4, h5, h6, time, em, strong, small, label, a"');
+    expect(body).not.toContain("label, a, div");
+    expect(body).toContain("return false");
+    expect(src).toContain("可写文字叶子");
+  });
+});
+

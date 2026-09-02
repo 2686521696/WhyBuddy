@@ -204,6 +204,7 @@ export function StudioLayoutProvider({
     if (layoutLockedRef.current && next !== "split") return;
     setStagePageHidden(false);
     setStageCollapsed(false);
+    stageRef.current?.expand();
     if (next === "canvas") {
       canvasSinkRef.current?.(true);
       setMaximizeLocked(true);

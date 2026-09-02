@@ -163,6 +163,46 @@ def assumption_sink_scope(sink):
     return sink_scope(_assumption_sink_var, sink)
 
 
+_quality_sink_var: ContextVar[Optional[Callable[..., None]]] = ContextVar(
+    "sliderule_spec_first_quality_sink", default=None
+)
+
+
+def quality_sink_scope(sink):
+    """图判降级 / 孤岛 / 对比。只报不拦。抄 grok typed session events。"""
+    from sliderule_llm.scoped import sink_scope
+
+    return sink_scope(_quality_sink_var, sink)
+
+
+def _emit_quality_notice(
+    kind: str,
+    text: str,
+    *,
+    items: Optional[List[Any]] = None,
+) -> None:
+    """交付质量提示。stderr 会滚走；sink 没装就只打日志。"""
+    note = {"kind": str(kind), "text": str(text)}
+    if items:
+        note["items"] = list(items)
+    bucket = _quality_notices_var.get()
+    if bucket is not None:
+        bucket.append(note)
+    _safe_print(f"[spec_first_pipeline] ⚠ {text}")
+    sink = _quality_sink_var.get()
+    if sink is None:
+        return
+    try:
+        sink(note)
+    except Exception as exc:  # noqa: BLE001
+        _safe_print(f"[spec_first_pipeline] 质量出口异常（fail-open）：{exc}")
+
+
+_quality_notices_var: ContextVar[Optional[List[Dict[str, Any]]]] = ContextVar(
+    "sliderule_spec_first_quality_notices", default=None
+)
+
+
 def _emit_assumptions(spec: Any) -> None:
     """把这一份 spec 里的假设推给出口。**整条 fail-open**。
 
@@ -1161,9 +1201,9 @@ def _apply_graph_scope(
             )
         elif drive_on:
             stage["decider"] = "text"
-            _safe_print(
-                "[spec_first_pipeline] ⚠ 图判作用域缺席（种子判失败或闭包无页），"
-                "重画范围回落文本判"
+            _emit_quality_notice(
+                "graph_scope_fallback",
+                "图判作用域缺席，重画范围回落文本判",
             )
         else:
             stage["decider"] = "shadow"
@@ -1171,6 +1211,10 @@ def _apply_graph_scope(
         _safe_print(f"[spec_first_pipeline] ⚠ 图判作用域失败（回落文本判）：{str(exc)[:200]}")
         stage["failed"] = str(exc)[:120]
         stage["decider"] = "text"
+        _emit_quality_notice(
+            "graph_scope_fallback",
+            f"图判作用域失败，重画范围回落文本判：{str(exc)[:80]}",
+        )
     return out
 
 
@@ -1323,6 +1367,7 @@ def run_spec_first(
     from .run_cancel import raise_if_cancelled
 
     stages: Dict[str, Any] = {}
+    _quality_token = _quality_notices_var.set([])
     #: 页面 id 别名表（旧 id → 新 id）。第 4.5 步改键时**当场**记下来，
     #: 交付时随页面载体一起落库，宿主点菜单解析不到时按它回退。
     #: 空表是常态（没改过名的轮次），不是缺失。
@@ -2196,11 +2241,16 @@ def run_spec_first(
         if _fresh:
             _head = "、".join(f"{o['key']}（{o['reason']}）" for o in _fresh[:5])
             _label = "这次修改新产生" if _baseline_known else "交付的应用带着"
-            _safe_print(f"[spec_first_pipeline] ⚠ 断线体检：{_label} {len(_fresh)} 个孤岛：{_head}")
+            _emit_quality_notice(
+                "orphan",
+                f"{_label} {len(_fresh)} 个孤岛：{_head}",
+                items=_fresh[:8],
+            )
         if _stale:
-            _safe_print(
-                f"[spec_first_pipeline] 断线体检：存量孤岛 {len(_stale)} 个"
-                f"（上一版就有，非本次造成）：{'、'.join(o['key'] for o in _stale[:5])}"
+            _emit_quality_notice(
+                "orphan_stale",
+                f"存量孤岛 {len(_stale)} 个（上一版就有，非本次造成）",
+                items=_stale[:8],
             )
     except Exception as exc:  # noqa: BLE001 — 体检是增强类，不许拦交付
         _safe_print(f"[spec_first_pipeline] ⚠ 断线体检自己失败了（不拦交付）：{str(exc)[:200]}")
@@ -2272,6 +2322,25 @@ def run_spec_first(
         "stages": stages,
         "device": device,
     }
+    try:
+        from .spec_page_html import guidelines_gate_notes as _ggn
+
+        for _pid, _html in (pages or {}).items():
+            for _note in _ggn(str(_html or ""), product_archetype=str(product_archetype or "")):
+                if "对比" in _note:
+                    _emit_quality_notice(
+                        "contrast",
+                        f"页面 {_pid}：{_note}",
+                    )
+    except Exception:  # noqa: BLE001 — 对比是增强类
+        pass
+    _notices = list(_quality_notices_var.get() or [])
+    stages["qualityNotices"] = _notices
+    result["qualityNotices"] = _notices
+    try:
+        _quality_notices_var.reset(_quality_token)
+    except Exception:
+        _quality_notices_var.set(None)
     # 顺路把页面留给调用方落库（见 take_last_pages 的说明）。
     # ⚠ 只在**整条链跑成**之后写：中途抛 SpecFirstError 时这里根本不执行，
     #   于是暂存里不会留下半份产物冒充成品。
@@ -2304,5 +2373,6 @@ def run_spec_first(
         # 左栏收口句。执行器只取 result["model"]，这句话走页面载体，
         # 闭环白名单再投影一次（跟 refinePaintNote 同一条路）。
         "refineReuseNote": _refine_reuse_note,
+        "qualityNotices": list(_notices),
     })
     return result

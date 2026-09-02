@@ -35,13 +35,14 @@ from sliderule_llm.scoped import sink_scope  # noqa: E402
 
 _SERVICES = Path(__file__).resolve().parents[1] / "services"
 
-#: 本轮驱动器要装的五根管子，以及各自的作用域函数。
+#: 本轮驱动器要装的管子，以及各自的作用域函数。
 _SCOPES = [
     ("sliderule_llm.capabilities", "capability_delta_sink_scope", "_delta_sink_var"),
     ("services.v5_llm_generate", "generate_delta_sink_scope", "_delta_sink_var"),
     ("services.enrich_timing", "stage_sink_scope", "_stage_sink_var"),
     ("services.spec_first_pipeline", "page_sink_scope", "_page_sink_var"),
     ("services.spec_first_pipeline", "assumption_sink_scope", "_assumption_sink_var"),
+    ("services.spec_first_pipeline", "quality_sink_scope", "_quality_sink_var"),
 ]
 
 
@@ -95,7 +96,7 @@ def test_存的是值不是Token():
     assert ".reset(" not in body, "用了 token/reset——异步生成器里会 ValueError"
 
 
-# ── 五根管子都有作用域版 ──────────────────────────────────────────
+# ── 每根管子都有作用域版 ──────────────────────────────────────────
 
 
 @pytest.mark.parametrize("mod,fn,var", _SCOPES)
@@ -178,8 +179,7 @@ def test_装载点和卸载点不再隔着几百行():
     enters = [i for i, ln in enumerate(lines) if "_sinks.enter_context(" in ln]
     closes = [i for i, ln in enumerate(lines) if "_sinks.close()" in ln]
     assert enters and closes, "栈没接上"
-    # 五根管子都装在同一小段里
-    assert max(enters) - min(enters) < 120, "装载点被拆散到几百行外去了"
+    assert max(enters) - min(enters) < 160, "装载点被拆散到几百行外去了"
 
 
 def test_scoped模块没有别的依赖():
