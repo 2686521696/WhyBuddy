@@ -122,14 +122,22 @@ export function inferForcedTool(
   userText: string,
   intervention?: UserIntervention,
   mode?: "repair",
-  explicit?: string
+  explicit?: string,
+  firstPass?: boolean
 ): string | undefined {
   // 人话点明某一跳：只许盖掉上一跳留下的 factory hop（pages 等残留），
   // 不许盖掉 rehearse / refine / restore_version 这类显式意图。
   // 2026-09-03 真机：确认继续钉 pages，随后 Structure 仍 POST pages。
   // 2026-09-04：文本提到 explicit 之前修过头——话题含「结构」时，
   // 开始推演的 rehearse 被劫持成 structure。
-  const fromText = factoryHopFromText(userText);
+  //
+  // ⚠ 2026-09-04 真机（社区旧物置换站）：上面那条护栏首轮**根本不生效**。
+  //   本函数头一行注释自己写着「/推演 不得在客户端带 rehearse」——首轮
+  //   explicit 就是 undefined，`!explicit` 于是反而放行了文本，
+  //   POST 出去 forcedTool=structure，后端 `hasSpec=0 hasPages=0` 直接卡住。
+  //   护栏挡的是「显式意图被文本盖掉」，挡不住「压根没有显式意图」。
+  //   首轮那句是**产品话题**，不是针对交付物的指令：还没有东西可反推。
+  const fromText = firstPass ? undefined : factoryHopFromText(userText);
   if (fromText && (!explicit || isFactoryHop(explicit))) return fromText;
   if (explicit) return explicit;
   if (mode === "repair") return "repair";
@@ -1946,11 +1954,19 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               },
           } satisfies import("@/lib/sliderule-marathon-driver").DriveFullStreamOpts;
           // 续播只 GET /runs/{id}/stream，禁止 POST control-turn-stream。
+          // 首轮 = 会话里既没 SPEC 也没页面。跟后端 resolve_forced_tool 的
+          // first_pass 同一个口径（§4 成对物，两边必须一起判）。
+          const sfpNow =
+            (preparedState as { specFirstPages?: { spec?: unknown; pages?: Record<string, unknown> } })
+              .specFirstPages || {};
+          const firstPassNow =
+            !sfpNow.spec && Object.keys(sfpNow.pages || {}).length === 0;
           const inferredTool = inferForcedTool(
             userText,
             intervention,
             mode,
-            hop || forcedTool
+            hop || forcedTool,
+            firstPassNow
           );
           const postedText =
             controlUserTextForSlash(

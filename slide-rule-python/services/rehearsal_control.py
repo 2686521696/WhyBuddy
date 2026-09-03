@@ -1065,7 +1065,14 @@ def _is_slash_rehearse(user_text: str) -> bool:
     return text.startswith("/推演") or text == "推演"
 
 
-def resolve_forced_tool(payload: Dict[str, Any], user_text: str) -> Optional[str]:
+def resolve_forced_tool(
+    payload: Dict[str, Any], user_text: str, *, first_pass: bool = False
+) -> Optional[str]:
+    """把 payload + 人话解析成这一轮要强制跑的那一跳。
+
+    first_pass：这个会话还没有任何交付物（没 SPEC 也没页面）。此时用户这句
+    是**产品话题**，不是针对交付物的指令，文本里的 hop 词一律不算数。
+    """
     text = (user_text or "").strip()
     raw = payload.get("forcedTool") or payload.get("forced_tool")
     forced = (
@@ -1081,7 +1088,17 @@ def resolve_forced_tool(payload: Dict[str, Any], user_text: str) -> Optional[str
     # 2026-09-04 审查：把文本提到 forcedTool 之前修过头——新会话话题含
     # 「结构」时，开始推演的 forcedTool=rehearse 被劫持成 structure，
     # 撞上「还没有页面」。只压残留 hop，不压显式意图。
-    hop = factory_hop_from_text(text)
+    #
+    # ⚠ 2026-09-04 真机（社区旧物置换站，话题里有「数据结构」）：上面那条
+    #   护栏**整个没生效**——前端首轮点火按设计不带 rehearse（见
+    #   useSlideRuleSession:120 的注释「/推演 不得在客户端带 rehearse」），
+    #   于是 forced 是 None，`forced is None` 反而放行了文本。
+    #   uvicorn 只留下一行 `[control] forced hop=structure hasSpec=0 hasPages=0`，
+    #   后面连 capabilityPlan= 都没有——点了没反应。
+    #   单测当时是绿的：它喂了 forcedTool='rehearse'，而真机根本不传。
+    #   §1「先确认哪条链真的在跑」。
+    #   根子是**话题不是指令**：首轮没有可供反推/绑定的交付物。
+    hop = None if first_pass else factory_hop_from_text(text)
     if hop and (forced is None or forced in FACTORY_HOPS):
         return hop
     if forced:
@@ -2798,7 +2815,12 @@ async def _run_control_turn_body(
             yield event
         return
 
-    forced = resolve_forced_tool(payload, user_text)
+    # 没 SPEC 也没页面 = 这句是产品话题，不是针对交付物的指令。
+    forced = resolve_forced_tool(
+        payload,
+        user_text,
+        first_pass=not _has_spec(state) and not _has_pages(state),
+    )
 
     # 昂贵按钮：点火前跳过控制面 LLM。工厂收尾交回 host 循环。
     # 停泊中只有「开始推演」(forcedTool=rehearse) 才点火；/推演 与模型
