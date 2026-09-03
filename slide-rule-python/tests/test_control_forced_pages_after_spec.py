@@ -63,7 +63,13 @@ def test_forced_pages_skips_llm_and_sets_goal_tools_pages(harness):
     )
     saved = load_session(sid)
     tools = (saved.goal or {}).get("tools") if saved and isinstance(saved.goal, dict) else None
-    assert tools == ["pages"], f"下一跳 tools 必须是 pages，实际 {tools}"
+    assert tools == ["pages", "structure", "bind"], (
+        f"假设确认必须把首轮剩下的产出跳一次跑完，实际 {tools}"
+    )
+    sfp = (saved.specFirstPages or {}) if saved else {}
+    assert sfp.get("assumptionsConfirmed") is True, (
+        f"假设确认必须进盘，刷新才不复弹。实际 {sfp}"
+    )
 
 
 def test_forced_pages_survives_stale_session_reload(monkeypatch):
@@ -113,9 +119,15 @@ def test_forced_pages_survives_stale_session_reload(monkeypatch):
         six_fields(sid, "假设已确认。继续画页面。", forcedTool="pages")
     )
     assert harness.helper_calls, "确认继续没有 handoff 工厂"
-    assert harness.helper_calls[-1].get("goal_tools") == ["pages"]
+    assert harness.helper_calls[-1].get("goal_tools") == [
+        "pages",
+        "structure",
+        "bind",
+    ]
     seen = [row.get("tools") for row in harness.generator_calls]
-    assert ["pages"] in seen, f"工厂 reload 后 tools 不是 pages：{seen}"
+    assert ["pages", "structure", "bind"] in seen, (
+        f"工厂 reload 后 tools 不是首轮剩余产出链：{seen}"
+    )
     types = event_types(events)
     assert "control_handoff_factory" in types
     assert types[-1] == "complete"
@@ -274,6 +286,31 @@ def test_spec_hop_resume_cannot_park_scope_card(harness):
         f"SPEC 跳完又弹出范围卡，假设面板被 pendingScope 藏起来：{types}"
     )
     assert types[-1] == "complete"
+
+
+def test_later_pages_hop_without_confirm_phrase_stays_one_hop(harness):
+    """反向：迭代改页仍是 pages 一跳，不许把 structure/bind 绑上去。"""
+    sid = new_sid("pages-iter")
+    seed_session(
+        sid,
+        goal={"text": "请假系统", "status": "clear", "tools": ["pages"]},
+        controlTranscript=[
+            {"id": "ct-1", "kind": "scope_confirmed", "text": "请假系统"}
+        ],
+        specFirstPages={
+            "spec": {
+                "appName": "请假",
+                "pages": [{"id": "p1", "name": "申请"}],
+            },
+            "pages": {"p1": "<html>旧</html>"},
+            "assumptionsConfirmed": True,
+        },
+    )
+    harness.llm_impl = lambda messages, **kw: llm_text("按钮改过了。")
+    harness.post(six_fields(sid, "把提交按钮改成红色", forcedTool="pages"))
+    saved = load_session(sid)
+    tools = (saved.goal or {}).get("tools") if saved and isinstance(saved.goal, dict) else None
+    assert tools == ["pages"], f"迭代改页被绑上了产出链：{tools}"
 
 
 def test_forced_pages_without_spec_does_not_invent_pages(harness):

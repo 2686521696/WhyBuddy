@@ -706,6 +706,61 @@ describe("unified /sliderule surface (single mental model)", () => {
     });
     expect(html).toContain("sliderule-clarification-card");
   });
+
+  /*
+   * 2026-09-03 用户两张截图：弹出层（sliderule-control-ask 白卡）盖住输入，
+   * 要求跟「路线对比一下」同一排芯片。判据落在渲染 HTML 上，不是源码写法。
+   */
+  it("控制面提问是输入框上方的芯片行，不是弹出层", () => {
+    const html = renderPage({
+      goal: "做一个采购审批应用",
+      uiTurns: [streamingTurn],
+      pendingAsk: {
+        question: "下一跳点哪张卡片",
+        options: ["bind", "closure", "refine"],
+      },
+      dismissAsk: () => {},
+    });
+
+    expect(html).toContain('data-testid="sliderule-control-ask"');
+    expect(html).toContain("下一跳点哪张卡片");
+    expect(html).toContain("接上数据");
+    expect(html).toContain("完整性检查");
+    expect(html).toContain("精修页面");
+    expect(html).toContain("稍后再说");
+
+    const actions = html.slice(
+      html.indexOf('data-testid="sliderule-composer-actions"'),
+      html.indexOf('data-testid="sliderule-composer-dock"')
+    );
+    expect(actions).toContain("sliderule-control-ask");
+    expect(actions).toContain("sliderule-control-ask-chip");
+    expect(actions).toContain("rounded-full");
+    // 提问在场时 hint 芯片让位，别两排抢
+    expect(html).not.toContain('data-testid="sliderule-composer-hint-chip"');
+    // 反向：弹出层形态（absolute 盖在输入框上）
+    const askAt = html.indexOf('data-testid="sliderule-control-ask"');
+    const askHtml = html.slice(Math.max(0, askAt - 80), askAt + 220);
+    expect(askHtml).not.toContain("absolute");
+    expect(askHtml).not.toContain("bottom-full");
+    expect(askHtml).not.toContain("sr-composer-pop");
+    expect(html).not.toContain('data-testid="sliderule-composer-overlay"');
+  });
+
+  it("开放式提问也走芯片行，并明说在输入框里答", () => {
+    const html = renderPage({
+      goal: "做一个采购审批应用",
+      uiTurns: [streamingTurn],
+      pendingAsk: { question: "还想补哪条约束？", options: [] },
+    });
+    const actions = html.slice(
+      html.indexOf('data-testid="sliderule-composer-actions"'),
+      html.indexOf('data-testid="sliderule-composer-dock"')
+    );
+    expect(actions).toContain("sliderule-control-ask-typehint");
+    expect(actions).toContain("直接在下面的输入框里回答");
+    expect(html).not.toContain('data-testid="sliderule-control-ask-chip"');
+  });
 });
 
 describe("buildImItems（消息 id 对账——重复 id 会让 assistant-ui 整页崩）", () => {

@@ -84,13 +84,19 @@ def resolve_park_device(
     ⚠ 2026-09-01：形态在空态作曲家就选定，范围卡锁死置灰。作曲家 POST
     的档才是授予；把优先级改回「句子压过载荷」，团子那场必再现。
     """
+    inferred = infer_device_from_text(*_texts(texts))
     payload = wired_device(payload_device)
+    # 微信小程序 / 手机 不能画成桌面卡。作曲家默认 desktop 不是授予。
+    # 2026-09-03 真机：句子「微信小程序」+ POST desktop → 卡锁 Web/PC，
+    # 工厂 preferred_device_for_run 却出 phone，卡在撒谎。
+    # 空态点了平板、句子没设备词：inferred 为空，下面仍走 payload（团子那场）。
+    if inferred == "phone" and payload in (None, "desktop"):
+        return "phone"
     if payload:
         return payload
     persisted = _persisted_device(last_card, goal)
     if persisted:
         return persisted
-    inferred = infer_device_from_text(*_texts(texts))
     if inferred:
         return inferred
     return "unspecified"

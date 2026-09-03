@@ -108,6 +108,7 @@ import {
   removeQueued,
 } from "./midrun-queue";
 import {
+  assumptionsWereConfirmed,
   mergeAssumptions,
   parseSpecAssumptions,
   revisePhrase,
@@ -123,13 +124,16 @@ export function inferForcedTool(
   mode?: "repair",
   explicit?: string
 ): string | undefined {
+  // 人话已经点明某一跳：不许被上一跳留下的 pendingForcedTool=pages 盖掉。
+  // 2026-09-03 真机：确认继续钉 pages，随后 Structure 仍 POST pages。
+  const fromText = factoryHopFromText(userText);
+  if (fromText) return fromText;
   if (explicit) return explicit;
   if (mode === "repair") return "repair";
   if (intervention?.intent === "challenge") return "challenge";
   const slash = forcedToolForRehearsalVerb(parseRehearsalSlash(userText));
   if (slash) return slash;
-  // 收尾卡「进入数据模型反推（Structure）」= structure，不当新聊天。
-  return factoryHopFromText(userText);
+  return undefined;
 }
 
 /** `/回退` 默认上一版。空 versionId 在服务端是静默 no-op。 */
@@ -490,6 +494,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     assumptionsConfirmedRef.current = false;
     specAssumptionsRef.current = [];
     setSpecAssumptions([]);
+    setSessionState(prev => {
+      const sp = (prev as { specFirstPages?: Record<string, unknown> })
+        .specFirstPages;
+      if (!sp?.assumptionsConfirmed) return prev;
+      return {
+        ...prev,
+        specFirstPages: { ...sp, assumptionsConfirmed: false },
+      };
+    });
   }, []);
   /**
    * 「先别往下跑」：让服务端在下一个安全点停住这一轮（2026-08-28 接线）。
@@ -695,6 +708,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       }
       applySpecAssumptions([]);
       assumptionsConfirmedRef.current = true;
+      setSessionState(prev => {
+        const sp =
+          ((prev as { specFirstPages?: Record<string, unknown> }).specFirstPages) ||
+          {};
+        return {
+          ...prev,
+          specFirstPages: { ...sp, assumptionsConfirmed: true },
+        };
+      });
       // 无论推演中还是空闲，确认 = 要继续。只 release 不排队的话，
       // P1-1 spec-only hop 结束后面板没了、下一跳也不会自己开。
       pendingForcedToolRef.current = "pages";
@@ -957,6 +979,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       }
       if (!cancelled) {
         const hydrated = preservePythonEvidenceProjection(loaded);
+        // 刷新后内存 ref 是空的。确认过的伴随式卡必须在摊卡之前认出来，
+        // 否则落库 spec.assumptions 会把同一张卡再铺一遍。
+        if (assumptionsWereConfirmed(hydrated)) {
+          assumptionsConfirmedRef.current = true;
+          applySpecAssumptions([]);
+        }
         setSessionState(hydrated);
         setSessionHydrated(true);
         // 刷新后内存 uiTurns 是空的。版本史/叙述里有用户逐轮发出的话，
@@ -1013,10 +1041,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     setSessionState(state);
     // 选完再继续：SSE 漏了也要从落库 spec 把卡摊出来。按 id 并，
     // 已确认的不回来。变异：删掉这一段 → hop 结束后面板空、用户没得选。
-    const rows = parseSpecAssumptions(
-      (state as { specFirstPages?: { spec?: { assumptions?: unknown } } })
-        .specFirstPages?.spec?.assumptions
-    );
+    const pages = (
+      state as { specFirstPages?: { spec?: { assumptions?: unknown }; assumptionsConfirmed?: unknown } }
+    ).specFirstPages;
+    if (assumptionsWereConfirmed(state)) {
+      assumptionsConfirmedRef.current = true;
+      applySpecAssumptions([]);
+      return;
+    }
+    const rows = parseSpecAssumptions(pages?.spec?.assumptions);
     if (rows.length && !assumptionsConfirmedRef.current) {
       applySpecAssumptions(
         mergeAssumptions(
@@ -2623,6 +2656,14 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     }
     // 运行中发送排队，不许 stop()。sliderule:resend-prompt 也走这里。
     if (isRunningRef.current) {
+      const hop = factoryHopFromText(text);
+      if (hop) {
+        // 收尾卡 / 人话 hop 是 typed 答案，进静默队列，盖掉确认留下的 pages。
+        pendingForcedToolRef.current = hop;
+        queuedTurnRef.current = enqueueTurn(queuedTurnRef.current, text);
+        setInput("");
+        return;
+      }
       pushQueuedTurn(text);
       setInput("");
       return;
@@ -3023,7 +3064,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   );
 
   const specAssumptionsView = useMemo(() => {
-    if (assumptionsConfirmedRef.current) return [];
+    if (
+      assumptionsConfirmedRef.current ||
+      assumptionsWereConfirmed(sessionState)
+    ) {
+      return [];
+    }
     if (specAssumptions.length > 0) return specAssumptions;
     const rows = parseSpecAssumptions(
       (sessionState as { specFirstPages?: { spec?: { assumptions?: unknown } } })

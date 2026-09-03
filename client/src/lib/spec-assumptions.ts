@@ -108,6 +108,31 @@ export function shouldResetSpecAssumptions(
   return true;
 }
 
+/**
+ * 这轮假设卡是不是已经点过「确认继续」。
+ *
+ * ⚠ 2026-09-03 真机（团子）：确认只把 `specFirstPages.assumptionsConfirmed`
+ *   写进会话，工厂 `_cache_spec_first_pages` 整份替换页面时把这个键冲掉。
+ *   刷新后内存 ref 是空的，面板又从 spec.assumptions 把同一张卡摊回来。
+ *   控制面每一跳都会把用户原文记进 controlTranscript；确认那句
+ *   「假设已确认。继续画页面。」还在，认它。
+ */
+export function assumptionsWereConfirmed(state: {
+  specFirstPages?: { assumptionsConfirmed?: unknown } | null;
+  turnNarrations?: Array<{ user?: unknown }> | null;
+  controlTranscript?: Array<{ text?: unknown }> | null;
+} | null | undefined): boolean {
+  if (!state) return false;
+  if (state.specFirstPages?.assumptionsConfirmed) return true;
+  for (const row of state.controlTranscript || []) {
+    if (/假设已确认/.test(String(row?.text || ""))) return true;
+  }
+  for (const n of state.turnNarrations || []) {
+    if (/假设已确认/.test(String(n?.user || ""))) return true;
+  }
+  return false;
+}
+
 export function mergeAssumptions(
   prev: readonly SpecAssumption[],
   incoming: readonly SpecAssumption[],

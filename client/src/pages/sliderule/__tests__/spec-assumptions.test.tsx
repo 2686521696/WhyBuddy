@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 
 import { AssumptionStrip } from "../AssumptionStrip";
 import {
+  assumptionsWereConfirmed,
   lenientStringList,
   mergeAssumptions,
   parseSpecAssumptions,
@@ -400,6 +401,59 @@ describe("接线（四段都得接上）", () => {
     expect(body).not.toContain(
       'pushQueuedTurn("假设已确认。继续画页面。")'
     );
+    expect(body).toContain("enqueueTurn(");
+    expect(body).toContain("assumptionsConfirmed: true");
+  });
+
+  it("刷新必须认落盘的 assumptionsConfirmed，不许再摊卡", () => {
+    const at = SESSION.indexOf("const applyPersistedState");
+    expect(at).toBeGreaterThan(-1);
+    const body = SESSION.slice(at, at + 900);
+    expect(body).toContain("assumptionsWereConfirmed");
+    expect(body).toContain("applySpecAssumptions([])");
+    // 水合那一跳也要认，不能只活在 applyPersistedState 里
+    // （刷新走 loadOrCreateSessionState，不经过那条）。
+    const hydrate = SESSION.slice(
+      SESSION.indexOf("const hydrated = preservePythonEvidenceProjection"),
+      SESSION.indexOf("const hydrated = preservePythonEvidenceProjection") + 700
+    );
+    expect(hydrate).toContain("assumptionsWereConfirmed(hydrated)");
+    expect(SESSION).toContain("assumptionsWereConfirmed(sessionState)");
+  });
+
+  it("工厂冲掉 key 之后，确认那句话仍能挡住复弹", () => {
+    expect(
+      assumptionsWereConfirmed({
+        specFirstPages: {
+          spec: { assumptions: [{ id: "a1" }] },
+        },
+        controlTranscript: [
+          { text: "假设已确认。继续画页面。" },
+        ],
+      })
+    ).toBe(true);
+    expect(
+      assumptionsWereConfirmed({
+        specFirstPages: { assumptionsConfirmed: true },
+      })
+    ).toBe(true);
+    // 反向：没确认过，spec 里有假设 → 必须摊卡
+    expect(
+      assumptionsWereConfirmed({
+        specFirstPages: {
+          spec: { assumptions: [{ id: "a1" }] },
+        },
+        controlTranscript: [{ text: "进入数据模型反推（structure）" }],
+      })
+    ).toBe(false);
+  });
+
+  it("推演中发 Structure 进静默队列，盖掉确认留下的 pages", () => {
+    const at = SESSION.indexOf("const sendMessage");
+    expect(at).toBeGreaterThan(-1);
+    const body = SESSION.slice(at, at + 1600);
+    expect(body).toContain("factoryHopFromText(text)");
+    expect(body).toContain("pendingForcedToolRef.current = hop");
     expect(body).toContain("enqueueTurn(");
   });
 

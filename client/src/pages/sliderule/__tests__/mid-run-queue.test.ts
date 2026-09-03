@@ -238,6 +238,12 @@ describe("斜杠动词走控制面，客户端 /推演 不得 yolo", () => {
     expect(inferForcedTool("进入数据模型反推（Structure）")).toBe("structure");
     expect(inferForcedTool("进入权限绑定（bind）")).toBe("bind");
     expect(inferForcedTool("闭环发布管理系统")).toBeUndefined();
+    expect(
+      inferForcedTool("进入数据模型反推（Structure）", undefined, undefined, "pages")
+    ).toBe("structure");
+    expect(
+      inferForcedTool("假设已确认。继续画页面。", undefined, undefined, "pages")
+    ).toBe("pages");
     expect(forcedToolForRehearsalVerb(parseRehearsalSlash("/推演"))).toBeUndefined();
   });
 

@@ -68,9 +68,10 @@ def test_llm_rehearse_calls_llm_again_after_factory(harness):
         "嵌套工厂的 complete 没改名——客户端会在工厂收尾处掐断 SSE"
     )
     assert any(
-        e.get("type") == "control_tool_result" and e.get("tool") == "spec"
+        e.get("type") == "control_tool_result"
+        and e.get("tool") in ("spec", "rehearse")
         for e in events
-    ), "WRITE 没有 control_tool_result 交回模型。开始推演必须只点火 spec。"
+    ), "WRITE 没有 control_tool_result 交回模型。"
     assert rounds["n"] >= 2, "工厂之后没有第二轮 LLM——控制面被 handoff 吞掉了"
     assert types[-1] == "complete"
 
@@ -137,7 +138,8 @@ def test_forced_rehearse_rejoins_loop_after_factory(harness):
         "按钮路径 nest=False 的话客户端会在工厂 complete 处掐断 SSE"
     )
     assert any(
-        e.get("type") == "control_tool_result" and e.get("tool") == "spec"
+        e.get("type") == "control_tool_result"
+        and e.get("tool") in ("spec", "rehearse")
         for e in events
     )
     assert any(
@@ -181,7 +183,10 @@ def test_after_write_hint_full_hop_does_not_ask_structure_bind():
     state = V5SessionState(
         sessionId="t-hint-full",
         goal={"text": "图书馆", "status": "clear"},
-        specFirstPages={"capabilityPlan": {"tools": ["spec", "pages", "bind"]}},
+        specFirstPages={
+        "pages": {"p1": "<html>本跳页</html>"},
+        "capabilityPlan": {"tools": ["spec", "pages", "bind"]},
+    },
     )
     hint = _after_write_hint(state)
     assert "权限工作流" in hint or "bind" in hint
@@ -344,9 +349,33 @@ def test_forced_rehearse_stamps_scope_card_tools_onto_goal(harness):
     loaded = load_session(sid)
     assert loaded is not None
     tools = (loaded.goal or {}).get("tools") if isinstance(loaded.goal, dict) else None
-    assert list(tools or []) == ["spec"], (
-        "开始推演必须只点火 spec。范围卡减菜是后续 hops 的上限，不是这一跳的菜单。"
+    assert list(tools or []) == ["spec", "pages"], (
+        "开始推演跑首轮产出链，范围卡减菜仍是上限："
+        "卡上 spec/pages/closure → 首轮只剩 spec+pages，不许把 structure/bind 塞回去，"
+        "也不许只点火 spec。"
     )
+
+
+def test_forced_rehearse_default_menu_is_first_pass_chain(harness):
+    """没减菜时开始推演必须一口气跑 spec→bind，不许再只点火 spec。"""
+    from services.capability_plan import FIRST_PASS_TOOLS
+
+    sid = new_sid("first-pass")
+    seed_session(
+        sid,
+        goal={"text": "请假系统", "status": "clear"},
+        awaitReason="control_scope",
+        awaitDetail="请假系统",
+    )
+    harness.llm_impl = lambda messages, **kw: llm_text("首轮做完了。")
+    harness.post(six_fields(sid, "将做成：请假系统", forcedTool="rehearse"))
+    loaded = load_session(sid)
+    tools = (loaded.goal or {}).get("tools") if loaded and isinstance(loaded.goal, dict) else None
+    assert list(tools or []) == list(FIRST_PASS_TOOLS), (
+        f"开始推演没跑产出链：{tools}"
+    )
+    assert "closure" not in list(tools or [])
+    assert harness.helper_calls[-1].get("goal_tools") == list(FIRST_PASS_TOOLS)
 
 
 def test_pages_preview_workflow_stamps_recipe_tools_without_override(harness):

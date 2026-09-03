@@ -52,8 +52,13 @@ def test_resolve_forced_tool_reads_hop_from_user_text():
         resolve_forced_tool({}, "进入数据模型反推（Structure）") == "structure"
     )
     assert resolve_forced_tool({}, "闭环发布管理系统") is None
+    # 确认继续留下的 pages 不许盖掉 Structure 人话。
     assert (
         resolve_forced_tool({"forcedTool": "pages"}, "进入数据模型反推（Structure）")
+        == "structure"
+    )
+    assert (
+        resolve_forced_tool({"forcedTool": "pages"}, "假设已确认。继续画页面。")
         == "pages"
     )
 

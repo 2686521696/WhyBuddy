@@ -1140,6 +1140,14 @@ def _cache_spec_first_pages(state: "V5SessionState") -> None:
                 got = {**got, "pages": prev["pages"]}
             if not got.get("spec") and prev.get("spec"):
                 got = {**got, "spec": prev["spec"]}
+            # 假设确认是前端选完再继续的落盘闸。take_last_pages 的产物
+            # 没有这个键，整份替换会把 True 冲掉。2026-09-03 真机（团子）：
+            # 确认过的伴随式卡，结构反推后再刷新又摊回来。
+            if "assumptionsConfirmed" in prev and "assumptionsConfirmed" not in got:
+                got = {
+                    **got,
+                    "assumptionsConfirmed": prev["assumptionsConfirmed"],
+                }
         state.specFirstPages = got
         print(
             f"[v5_capability_executor] spec-first 页面落库："

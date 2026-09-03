@@ -61,6 +61,11 @@ from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Dict, Iterable, List, Optional
 
 from services.factory_plan_steps import product_steps_for_tools
+from services.capability_plan import (
+    first_pass_tools,
+    is_first_pass_chain,
+    remaining_first_pass_tools,
+)
 
 from fastapi import HTTPException
 from starlette.concurrency import run_in_threadpool
@@ -899,11 +904,19 @@ def _last_scope_card(state: V5SessionState) -> Dict[str, Any]:
 
 def _scope_texts(state: V5SessionState, user_text: str = "") -> list[str]:
     goal = state.goal if isinstance(state.goal, dict) else {}
-    return [
+    out = [
         user_text,
         str(getattr(state, "awaitDetail", None) or ""),
         str(goal.get("text") or ""),
     ]
+    # 澄清后的 park 用的 user_text 往往是最后一答，不含「微信小程序」。
+    # 原命题在 transcript 里，漏了卡就会锁成作曲家默认 desktop。
+    for row in list(getattr(state, "controlTranscript", None) or []):
+        if not isinstance(row, dict):
+            continue
+        if row.get("role") == "user" or row.get("kind") in ("turn", "scope_card"):
+            out.append(str(row.get("text") or ""))
+    return out
 
 
 def _resolved_park_device(
@@ -1047,12 +1060,18 @@ def _is_slash_rehearse(user_text: str) -> bool:
 
 
 def resolve_forced_tool(payload: Dict[str, Any], user_text: str) -> Optional[str]:
+    text = (user_text or "").strip()
+    # 人话已经点明某一跳：不许被上一跳留下的 forcedTool=pages 盖掉。
+    # 2026-09-03 真机：确认继续把 pending 钉成 pages，随后「进入数据模型
+    # 反推（Structure）」仍 POST pages，uvicorn `[control] forced hop=pages`。
+    hop = factory_hop_from_text(text)
+    if hop:
+        return hop
     raw = payload.get("forcedTool") or payload.get("forced_tool")
     if isinstance(raw, str) and raw.strip() in CLOSED_TOOLS:
         return raw.strip()
     if str(payload.get("mode") or "").strip().lower() == "repair":
         return "repair"
-    text = (user_text or "").strip()
     if text.startswith("/精修"):
         return "refine"
     if text.startswith("/质疑"):
@@ -1061,11 +1080,6 @@ def resolve_forced_tool(payload: Dict[str, Any], user_text: str) -> Optional[str
         return "scope_card"
     if text.startswith("/回退"):
         return "restore_version"
-    # 收尾卡 / 人话 hop：点「进入数据模型反推（Structure）」= structure，
-    # 不是新聊天。抄 grok AskUserQuestion 的 typed 答案。
-    hop = factory_hop_from_text(text)
-    if hop:
-        return hop
     return None
 
 
@@ -1705,8 +1719,11 @@ async def _confirm_rehearse_and_handoff(
     # 问诊所系统）。只碰控制面自己出的提问，证据/能力缺口不许动。
     _retire_stale_control_questions(state)
     confirmed = dict(state.goal) if isinstance(state.goal, dict) else {}
-    # 按钮点火只跑 spec。剩下的交回 host 逐跳挑。
-    _set_goal_tools(confirmed, ["spec"], refine=_has_model(state))
+    # 开始推演一口气跑完产出链（spec→pages→structure→bind）。
+    # 2026-09-03 用户：一跳一停手点，画布块之间的关联看不见。
+    # closure 是判定，留给迭代。范围卡减菜仍是上限。
+    chosen = list(first_pass_tools(confirmed.get("tools")))
+    _set_goal_tools(confirmed, chosen, refine=_has_model(state))
     state.goal = confirmed
     _append_transcript(
         state,
@@ -1716,7 +1733,7 @@ async def _confirm_rehearse_and_handoff(
             "text": restatement,
             "device": confirmed.get("preferredDevice"),
             "productArchetype": confirmed.get("productArchetype"),
-            "tools": ["spec"],
+            "tools": list(chosen),
         },
     )
     state.awaitReason = None
@@ -1738,8 +1755,8 @@ async def _confirm_rehearse_and_handoff(
     fresh = await run_in_threadpool(load_session, str(state.sessionId or ""))
     yield {
         "type": "control_tool_result",
-        "tool": "spec",
-        **_factory_tool_body(fresh or state, "spec", before_fingerprint=_fp_before),
+        "tool": "rehearse",
+        **_factory_tool_body(fresh or state, "rehearse", before_fingerprint=_fp_before),
     }
 
 
@@ -2424,7 +2441,10 @@ def _after_write_hint(state: V5SessionState) -> str:
     labels = dict(TOOL_LABELS)
     ran = "、".join(labels.get(t, t) for t in tools)
     factory = {"pages", "structure", "bind", "closure"}
-    if tools and not factory.intersection(tools):
+    if tools and (
+        not factory.intersection(tools)
+        or (is_first_pass_chain(tools) and not _has_pages(state))
+    ):
         return (
             f"本跳实际跑了：{ran}。页面还没有。"
             "下一跳必须调 pages，或者用一句话告诉用户你为什么先停。"
@@ -2957,6 +2977,14 @@ async def _run_control_turn_body(
             f"hasPages={int(_has_pages(state))}",
             flush=True,
         )
+        # 假设确认必须进盘。只活在前端 ref 里，刷新就把同一张卡摊回来。
+        sfp = dict(getattr(state, "specFirstPages", None) or {})
+        if forced in ("spec",):
+            sfp["assumptionsConfirmed"] = False
+            state.specFirstPages = sfp
+        elif forced == "pages" and "假设已确认" in (user_text or ""):
+            sfp["assumptionsConfirmed"] = True
+            state.specFirstPages = sfp
         handed = False
         tool_body: Optional[Dict[str, Any]] = None
         with tool_scope_scope(forced):
@@ -3127,7 +3155,6 @@ async def _dispatch_tool(
             yield event
         return
     if name in FACTORY_HOPS or name == "rehearse":
-        hop = "spec" if name == "rehearse" else name
         restatement = _confirmed_restatement(state, user_text)
         _write_confirmed_goal(state, restatement)
         _copy_scope_opt_in_into_goal(state)
@@ -3141,6 +3168,33 @@ async def _dispatch_tool(
             ):
                 yield event
             return
+        goal = dict(state.goal) if isinstance(state.goal, dict) else {}
+        if name == "rehearse":
+            chosen = list(first_pass_tools(goal.get("tools")))
+        elif name == "pages" and "假设已确认" in (user_text or ""):
+            # 确认继续把首轮剩下的产出跳一次跑完，不再只 pages。
+            # 没有 SPEC 时仍走 pages，让 blocker 说人话，不许假装首轮从零开始。
+            if not _has_spec(state):
+                chosen = ["pages"]
+            else:
+                chosen = list(
+                    remaining_first_pass_tools(
+                        goal.get("tools"),
+                        has_spec=True,
+                        has_pages=_has_pages(state),
+                    )
+                )
+                if not chosen:
+                    chosen = list(
+                        remaining_first_pass_tools(
+                            None,
+                            has_spec=True,
+                            has_pages=_has_pages(state),
+                        )
+                    ) or ["pages"]
+        else:
+            chosen = [name]
+        hop = chosen[0]
         blocker = _factory_hop_blocker(state, hop)
         if blocker:
             async for event in _canned(
@@ -3150,8 +3204,7 @@ async def _dispatch_tool(
             ):
                 yield event
             return
-        goal = dict(state.goal) if isinstance(state.goal, dict) else {}
-        _set_goal_tools(goal, [hop], refine=_has_model(state))
+        _set_goal_tools(goal, chosen, refine=_has_model(state))
         state.goal = goal
         await _apersist(state)
         _fp_before = factory_deliverable_fingerprint(state)
@@ -3167,10 +3220,13 @@ async def _dispatch_tool(
         ):
             yield event
         fresh = await run_in_threadpool(load_session, str(state.sessionId or ""))
+        result_tool = name if name == "rehearse" or len(chosen) > 1 else hop
         yield {
             "type": "control_tool_result",
-            "tool": hop,
-            **_factory_tool_body(fresh or state, hop, before_fingerprint=_fp_before),
+            "tool": result_tool,
+            **_factory_tool_body(
+                fresh or state, result_tool, before_fingerprint=_fp_before
+            ),
         }
         return
     if name == "workflow":

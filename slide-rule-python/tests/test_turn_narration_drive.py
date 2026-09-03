@@ -90,6 +90,22 @@ def test_structure_hop_does_not_claim_missing_pages():
     assert "含 2 角色" not in blob
 
 
+def test_structure_user_text_wins_over_stale_pages_tools():
+    """确认继续把 tools 钉成 pages 之后点 Structure，叙述仍不许说没画页。"""
+    st = _state(
+        goal={"text": "两个人的账本", "status": "clear", "tools": ["pages"]},
+        specFirstPages={"pages": {"p1": "<html>账本</html>"}},
+        publishClosure={"refinePaintNote": "", "chatSummary": "含 2 角色、3 页面。"},
+    )
+    steps = project_drive_steps(
+        st, user="进入数据模型反推（structure）", events_cursor=0
+    )
+    finals = [s["text"] for s in steps if s.get("kind") == "narration" and s.get("isFinal")]
+    blob = " ".join(finals)
+    assert "本轮没有画出新的页面" not in blob
+    assert "本轮已完成数据模型反推。" in blob
+
+
 def test_project_pages_and_refine_narration():
     st = _state(
         goal={"text": "社区工具屋", "status": "clear"},

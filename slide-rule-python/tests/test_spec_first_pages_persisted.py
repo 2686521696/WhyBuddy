@@ -174,6 +174,49 @@ class Test落库那一处:
         ex._cache_spec_first_pages(now)
         assert now.specFirstPages is None, "读到了上一轮的页面——东西看着在，其实是旧的"
 
+    def test_假设确认不被整份替换冲掉(self):
+        """⚠ 2026-09-03 团子：确认继续把 assumptionsConfirmed=True 写进
+        specFirstPages，结构反推那一跳 take_last_pages 没有这个键，整份
+        替换后刷新又把伴随式卡摊回来。
+
+        变异：把 _cache_spec_first_pages 里那行 carry 删掉 → 本条红。
+        """
+        from services import v5_capability_executor as ex
+
+        state = V5SessionState(sessionId="s-ask", goal={"text": "x"}, artifacts=[])
+        state.specFirstPages = {
+            "pages": {"p1": "<html>旧</html>"},
+            "spec": {"appName": "团子", "assumptions": [{"id": "a1"}]},
+            "assumptionsConfirmed": True,
+        }
+        sfp._last_pages_var.set({
+            "version": "spec-first-pipeline-v1",
+            "pages": {"p1": "<html>新</html>"},
+            "spec": {"appName": "团子", "assumptions": [{"id": "a1"}]},
+        })
+        ex._cache_spec_first_pages(state)
+        assert state.specFirstPages["pages"]["p1"] == "<html>新</html>"
+        assert state.specFirstPages.get("assumptionsConfirmed") is True, (
+            "工厂整份替换把假设确认冲掉了——刷新会复弹伴随式卡"
+        )
+
+    def test_反向_上一跳没确认就不要凭空写成已确认(self):
+        from services import v5_capability_executor as ex
+
+        state = V5SessionState(sessionId="s-open", goal={"text": "x"}, artifacts=[])
+        state.specFirstPages = {
+            "pages": {"p1": "<html>旧</html>"},
+            "spec": {"appName": "团子"},
+        }
+        sfp._last_pages_var.set({
+            "pages": {"p1": "<html>新</html>"},
+            "spec": {"appName": "团子"},
+        })
+        ex._cache_spec_first_pages(state)
+        assert "assumptionsConfirmed" not in (state.specFirstPages or {}), (
+            "没确认过却写成 True，卡就永远摊不出来"
+        )
+
 
 class Test应用中心那一份:
     """页面除了落会话（上面那组），还要跟着闭环记录落进 App Store（2026-08-14）

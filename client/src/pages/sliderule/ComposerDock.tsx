@@ -180,6 +180,32 @@ export function askBlocksTyping(
   return Boolean(ask) && (ask?.options?.length ?? 0) > 0;
 }
 
+/**
+ * 控制面提问选项上脸用的短芯片文案。
+ *
+ * ⚠ 2026-09-03 真机：模型有时只给 hop 英文名（bind / closure / refine），
+ *   芯片行跟「路线对比一下」一样短，英文工具名上脸不认。完整标签
+ *   （「进入数据模型反推（structure）」）原样展示，不缩短——点选发送的
+ *   仍是原始 option，这条只改显示。
+ */
+const ASK_CHIP_BARE_HOP: Record<string, string> = {
+  spec: "起草规格",
+  pages: "画页面",
+  structure: "数据模型反推",
+  bind: "接上数据",
+  closure: "完整性检查",
+  refine: "精修页面",
+};
+
+export function controlAskChipLabel(option: string): string {
+  const key = option.trim().toLowerCase();
+  return ASK_CHIP_BARE_HOP[key] ?? option.trim();
+}
+
+/** 顶行芯片：提示词和提问选项同一套圆角胶囊。 */
+const COMPOSER_CHIP_CLASS =
+  "rounded-full border border-[#e5e7eb] bg-white px-3 py-1 text-[12px] text-[#3f3f46] transition hover:bg-[#f4f4f5]";
+
 export function isComposerSendBlocked(opts: {
   isRunning: boolean;
   input: string;
@@ -1168,9 +1194,12 @@ export function ComposerDock({
   const actionHints = hintChips.slice(0, statusPill ? 1 : 2);
   /* ⚠ 能力标签**不在这一行**了（2026-08-26 挪进了输入框，见下面的
      sliderule-composer-tags）。所以这里不能再拿 picked 当显示条件——
-     那会在没有附件/提示芯片时留下一条空行。 */
+     那会在没有附件/提示芯片时留下一条空行。
+     pendingAsk 也必须出这一行——提问改成芯片后，没有附件/hint 时也得
+     把这一行撑出来，否则选项没地方画。 */
   const showActionRow =
     attachments.length > 0 ||
+    Boolean(pendingAsk) ||
     (!hero && (actionHints.length > 0 || !!statusPill));
 
   const refineButton = (
@@ -1244,6 +1273,8 @@ export function ComposerDock({
           3. 有附件/优化提示时才出一行提示（话题条已撤：跟舞台标题重复）
         ⚠ hintChips 从 SlideRule 传来却从未渲染（2026-08-20）——顶行就是把它接上。
         不许编 git / Commit；闭环胶囊和提示词芯片都是仓里已有的。
+        ⚠ 2026-09-03 用户截图：控制面提问做成 absolute 弹出层盖住输入框。
+          改成跟提示词同一排芯片（点下去仍走 onAnswerAsk，不是填入再发）。
       */}
       {showActionRow ? (
         <div
@@ -1264,22 +1295,69 @@ export function ComposerDock({
               {statusPill.label}
             </span>
           ) : null}
-          {actionHints.map(text => (
-            <button
-              key={text}
-              type="button"
-              data-testid="sliderule-composer-hint-chip"
-              title="填入输入框，可再编辑"
-              onClick={() => {
-                setInput(text);
-                requestAnimationFrame(adjustTextareaHeight);
-                textareaRef.current?.focus();
-              }}
-              className="rounded-full border border-[#e5e7eb] bg-white px-3 py-1 text-[12px] text-[#3f3f46] transition hover:bg-[#f4f4f5]"
+          {pendingAsk ? (
+            <div
+              data-testid="sliderule-control-ask"
+              aria-label="控制面提问"
+              className="flex min-w-0 flex-wrap items-center gap-1.5"
             >
-              {text}
-            </button>
-          ))}
+              <span
+                data-testid="sliderule-control-ask-question"
+                title={pendingAsk.question}
+                className="max-w-[14rem] truncate text-[12px] leading-4 text-[#71717a]"
+              >
+                {pendingAsk.question}
+              </span>
+              {(pendingAsk.options || []).length === 0 ? (
+                /* 没有选项 = 开放式提问。明说怎么答，别让人对着一句问话发呆。 */
+                <span
+                  className="text-[12px] leading-4 text-[#a1a1aa]"
+                  data-testid="sliderule-control-ask-typehint"
+                >
+                  直接在下面的输入框里回答
+                </span>
+              ) : (
+                pendingAsk.options!.map(option => (
+                  <button
+                    key={option}
+                    type="button"
+                    data-testid="sliderule-control-ask-chip"
+                    title={option}
+                    className={COMPOSER_CHIP_CLASS}
+                    onClick={() => onAnswerAsk?.(option)}
+                  >
+                    {controlAskChipLabel(option)}
+                  </button>
+                ))
+              )}
+              {onDismissAsk ? (
+                <button
+                  type="button"
+                  className="rounded-full px-2 py-1 text-[12px] text-[#a1a1aa] transition hover:bg-[#f4f4f5] hover:text-[#3f3f46]"
+                  onClick={onDismissAsk}
+                >
+                  稍后再说
+                </button>
+              ) : null}
+            </div>
+          ) : (
+            actionHints.map(text => (
+              <button
+                key={text}
+                type="button"
+                data-testid="sliderule-composer-hint-chip"
+                title="填入输入框，可再编辑"
+                onClick={() => {
+                  setInput(text);
+                  requestAnimationFrame(adjustTextareaHeight);
+                  textareaRef.current?.focus();
+                }}
+                className={COMPOSER_CHIP_CLASS}
+              >
+                {text}
+              </button>
+            ))
+          )}
           {attachments.length > 0 ? (
             <div
               className="flex flex-wrap gap-2"
@@ -1962,9 +2040,11 @@ export function ComposerDock({
               2026-09-01 会话内改成跟空态同一张多行卡片，浮层仍不进栅格，
               否则会把工具行顶乱。
 
-            ⚠ 范围卡 / 控制面提问在场时让路：同一处只许有一张卡（跟
-              intakeHintYieldsToScopeCard 同一条纪律）。推演中本来也不会
-              同时出现这三样。
+            ⚠ 范围卡在场时让路：同一处只许有一张卡（跟
+              intakeHintYieldsToScopeCard 同一条纪律）。
+            ⚠ 控制面提问不再占这层弹出卡（2026-09-03 用户截图：弹出层盖住
+              输入，要求跟「路线对比一下」同一排芯片）。提问走顶行
+              sliderule-control-ask。仍让路：提问在场时假设卡/排队卡不许叠上来。
           */}
           {!pendingScope &&
           !pendingAsk &&
@@ -2028,7 +2108,8 @@ export function ComposerDock({
             </div>
           ) : null}
           {/* 审查卡叠在输入框上方，不进外层 flex——进流会把输入顶走。
-              范围卡开着时 hint 必须让路：同一 send 禁止两张卡。 */}
+              范围卡开着时 hint 必须让路：同一 send 禁止两张卡。
+              提问芯片在顶行，这里同样让路，别跟审查卡叠两张决策面。 */}
           {pendingScope && onConfirmScope && onReviseScope ? (
             <ScopeCard
               key={pendingScope.userText}
@@ -2037,50 +2118,8 @@ export function ComposerDock({
               onRevise={onReviseScope}
               confirmDisabled={isRunning}
             />
-          ) : pendingAsk ? (
-            <div
-              className="pointer-events-auto absolute bottom-full left-0 right-0 z-10 mb-2 origin-bottom sr-composer-pop rounded-[12px] border border-[#e5e7eb] bg-white px-3.5 py-3 text-[13px] leading-5 text-[#171717] shadow-[0_12px_32px_rgb(15_23_42/0.12)]"
-              data-testid="sliderule-control-ask"
-              role="dialog"
-              aria-label="控制面提问"
-            >
-              <p data-testid="sliderule-control-ask-question">
-                {pendingAsk.question}
-              </p>
-              {(pendingAsk.options || []).length === 0 ? (
-                /* 没有选项 = 开放式提问。明说怎么答，别让人对着一句问话发呆。 */
-                <p
-                  className="mt-1.5 text-[12px] leading-4 text-[#71717a]"
-                  data-testid="sliderule-control-ask-typehint"
-                >
-                  直接在下面的输入框里回答
-                </p>
-              ) : null}
-              {(pendingAsk.options || []).length > 0 ? (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {pendingAsk.options!.map(option => (
-                    <button
-                      key={option}
-                      type="button"
-                      className="rounded-[8px] border border-[#e5e7eb] bg-[#fafafa] px-3 py-1.5 text-[13px] leading-5 text-[#171717] transition hover:bg-white"
-                      onClick={() => onAnswerAsk?.(option)}
-                    >
-                      {option}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              {onDismissAsk ? (
-                <button
-                  type="button"
-                  className="mt-2 text-[12px] leading-4 text-[#71717a]"
-                  onClick={onDismissAsk}
-                >
-                  稍后再说
-                </button>
-              ) : null}
-            </div>
-          ) : intakeHintYieldsToScopeCard(Boolean(pendingScope)) ? (
+          ) : !pendingAsk &&
+            intakeHintYieldsToScopeCard(Boolean(pendingScope)) ? (
             <IntakeHintBar
               judgement={judgement}
               isJudging={isJudging}

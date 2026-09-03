@@ -12,7 +12,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { askBlocksTyping, isComposerSendBlocked } from "../ComposerDock";
+import {
+  askBlocksTyping,
+  controlAskChipLabel,
+  isComposerSendBlocked,
+} from "../ComposerDock";
 
 function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
@@ -83,5 +87,39 @@ describe("输入框和卡片本身", () => {
   it("没有选项时卡片要明说怎么答", () => {
     expect(DOCK).toContain('data-testid="sliderule-control-ask-typehint"');
     expect(DOCK).toContain("直接在下面的输入框里回答");
+  });
+});
+
+describe("控制面提问是芯片行，不是弹出层", () => {
+  it("bare hop 英文名翻成短芯片，完整标签原样", () => {
+    expect(controlAskChipLabel("bind")).toBe("接上数据");
+    expect(controlAskChipLabel("closure")).toBe("完整性检查");
+    expect(controlAskChipLabel("refine")).toBe("精修页面");
+    expect(controlAskChipLabel("STRUCTURE")).toBe("数据模型反推");
+    expect(controlAskChipLabel("进入数据模型反推（structure）")).toBe(
+      "进入数据模型反推（structure）"
+    );
+    // 反向：把完整标签也缩短的话，点选发出去的 option 对不上显示
+    expect(controlAskChipLabel("进入权限绑定（bind）")).not.toBe("接上数据");
+  });
+
+  it("提问画在 composer-actions 顶行，点选仍发原始 option", () => {
+    const askAt = DOCK.indexOf('data-testid="sliderule-control-ask"');
+    const actionsAt = DOCK.indexOf("sliderule-composer-actions");
+    expect(askAt).toBeGreaterThan(-1);
+    expect(actionsAt).toBeGreaterThan(-1);
+    expect(actionsAt).toBeLessThan(askAt);
+    const askChunk = DOCK.slice(askAt, askAt + 360);
+    expect(askChunk).toContain('aria-label="控制面提问"');
+    expect(askChunk).not.toContain('role="dialog"');
+    expect(askChunk).not.toContain('role="group"');
+    expect(DOCK).toContain('data-testid="sliderule-control-ask-chip"');
+    expect(DOCK).toContain("onClick={() => onAnswerAsk?.(option)}");
+    expect(DOCK).toContain("COMPOSER_CHIP_CLASS");
+    // 反向：弹出层形态加回去必红（2026-09-03 用户截图那张白卡）
+    expect(DOCK).not.toContain(") : pendingAsk ? (");
+    expect(DOCK).not.toContain(
+      "rounded-[8px] border border-[#e5e7eb] bg-[#fafafa]"
+    );
   });
 });

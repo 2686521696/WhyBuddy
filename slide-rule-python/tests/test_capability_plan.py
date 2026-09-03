@@ -31,6 +31,20 @@ def test_public_tools_are_spec_pages_structure_bind_closure():
     assert "closure" not in cp.NEW_RUN
 
 
+def test_first_pass_is_producing_chain_without_closure():
+    assert cp.FIRST_PASS_TOOLS == ("spec", "pages", "structure", "bind")
+    assert "closure" not in cp.FIRST_PASS_TOOLS
+    assert cp.first_pass_tools(None) == cp.FIRST_PASS_TOOLS
+    assert cp.first_pass_tools(["spec", "pages", "closure"]) == ("spec", "pages")
+    assert cp.first_pass_tools(["invented"]) == cp.FIRST_PASS_TOOLS
+    assert cp.remaining_first_pass_tools(
+        None, has_spec=True, has_pages=False
+    ) == ("pages", "structure", "bind")
+    assert cp.is_first_pass_chain(["spec", "pages", "structure", "bind"])
+    assert not cp.is_first_pass_chain(["structure"])
+    assert not cp.is_first_pass_chain(["spec", "pages", "closure"])
+
+
 def test_desktop_and_phone_share_the_same_capabilities():
     desktop = cp.product_rehearsal_plan(device="desktop")
     phone = cp.product_rehearsal_plan(device="phone")

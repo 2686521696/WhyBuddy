@@ -42,7 +42,9 @@ def _seed_hop_artifact(state: V5SessionState) -> None:
     """
     goal = state.goal if isinstance(state.goal, dict) else {}
     tools = list(goal.get("tools") or [])
-    if tools != ["spec"]:
+    # 首轮产出链也含 spec。只认 ["spec"] 的话，开始推演一口气跑四跳时
+    # 夹具不落 SPEC，交回提示词 / hasSpec 全假绿。
+    if "spec" not in tools:
         return
     blob = state.specFirstPages if isinstance(state.specFirstPages, dict) else {}
     spec = blob.get("spec")

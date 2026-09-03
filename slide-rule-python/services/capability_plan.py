@@ -36,6 +36,11 @@ TOOLS: Tuple[str, ...] = (
     "closure",
 )
 
+#: 开始推演一口气跑完的产出链。closure 是判定，留给迭代。
+#: 2026-09-03 用户（团子）：一跳一停手点 structure/bind，画布块之间
+#: 的关联关系看不见。首轮必须把数据模型、权限工作流、绑定做完。
+FIRST_PASS_TOOLS: Tuple[str, ...] = ("spec", "pages", "structure", "bind")
+
 #: 范围卡 / 钟上的人话。键是公开工具，不是 specfirst id。
 TOOL_LABELS: Tuple[Tuple[str, str], ...] = (
     ("spec", "起草 SPEC"),
@@ -47,6 +52,42 @@ TOOL_LABELS: Tuple[Tuple[str, str], ...] = (
 
 #: 能力，但故意不进进度线（stage_legal 名单外）。
 SILENT_CAPABILITIES: Tuple[str, ...] = ("specfirst.shell",)
+
+
+def first_pass_tools(legal: Optional[Iterable[str]] = None) -> Tuple[str, ...]:
+    """开始推演的菜单：产出链 ∩ 范围卡减菜。
+
+    空 / 生词回落整份首轮，不许端出空成功。closure 即使勾了也不进首轮。
+    """
+    if legal is None:
+        return FIRST_PASS_TOOLS
+    wanted = {str(item).strip() for item in legal}
+    chosen = tuple(name for name in FIRST_PASS_TOOLS if name in wanted)
+    return chosen if chosen else FIRST_PASS_TOOLS
+
+
+def remaining_first_pass_tools(
+    legal: Optional[Iterable[str]] = None,
+    *,
+    has_spec: bool = False,
+    has_pages: bool = False,
+) -> Tuple[str, ...]:
+    """假设卡确认继续：首轮还没跑完的产出跳。"""
+    skip = set()
+    if has_spec:
+        skip.add("spec")
+    if has_pages:
+        skip.add("pages")
+    return tuple(name for name in first_pass_tools(legal) if name not in skip)
+
+
+def is_first_pass_chain(tools: Optional[Iterable[str]]) -> bool:
+    """goal.tools 是两件及以上的首轮产出链（不是 host 一跳一件）。"""
+    chosen = tuple(str(item).strip() for item in (tools or ()) if str(item).strip())
+    if len(chosen) < 2:
+        return False
+    allowed = set(FIRST_PASS_TOOLS)
+    return all(name in allowed for name in chosen)
 
 
 def normalize_tools(raw: Optional[Iterable[str]]) -> Tuple[str, ...]:
@@ -261,6 +302,10 @@ def product_rehearsal_plan(
 __all__ = [
     "PRODUCT_REHEARSAL",
     "TOOLS",
+    "FIRST_PASS_TOOLS",
+    "first_pass_tools",
+    "remaining_first_pass_tools",
+    "is_first_pass_chain",
     "NEW_RUN",
     "REFINE_RUN",
     "SILENT_CAPABILITIES",

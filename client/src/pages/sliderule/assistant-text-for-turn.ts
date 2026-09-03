@@ -35,22 +35,31 @@ export function assistantTextForTurn(
   publishClosure?: PublishClosureSummary | null,
   goalText?: string
 ): string {
-  const assistant = turn.assistant?.trim();
-  if (assistant) return assistant;
-  const narration = textFromNarration(turn);
-  if (narration) return narration;
-
   const user = (turn.user || "").trim();
+  const hop = factoryHopFromText(user);
+  const hopNote =
+    hop && hop !== "pages"
+      ? HOP_DONE_NOTE[hop] || `本轮已完成 ${hop}。`
+      : "";
+
+  const assistant = turn.assistant?.trim();
+  if (assistant) {
+    if (hopNote && assistant.includes("没有画出新的页面")) return hopNote;
+    return assistant;
+  }
+  const narration = textFromNarration(turn);
+  if (narration) {
+    if (hopNote && narration.includes("没有画出新的页面")) return hopNote;
+    return narration;
+  }
+
   const goal = (goalText || "").trim();
   const isFollowUp = Boolean(user && goal && user !== goal);
 
   if (isFollowUp) {
     const paint = publishClosure?.refinePaintNote?.trim();
     if (paint) return paint;
-    const hop = factoryHopFromText(user);
-    if (hop && hop !== "pages") {
-      return HOP_DONE_NOTE[hop] || `本轮已完成 ${hop}。`;
-    }
+    if (hopNote) return hopNote;
     return REFINE_TURN_NO_PAGE_NOTE;
   }
 

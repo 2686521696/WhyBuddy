@@ -8,7 +8,12 @@ All capabilities now produce real evidence via RAG, no templates, no degraded, n
 from .stage_legal import describe as _stage_describe
 from .stage_legal import labels_with_eta as _stage_labels_with_eta
 from .archetype_legal import required_evidence as _required_evidence
-from .capability_plan import FactoryToolsRefused, clip_factory_tools, normalize_tools
+from .capability_plan import (
+    FactoryToolsRefused,
+    clip_factory_tools,
+    is_first_pass_chain,
+    normalize_tools,
+)
 from .closed_tools import (
     FACTORY_HOPS,
     factory_capability_id,
@@ -1815,6 +1820,14 @@ def _host_factory_hop(state: "V5SessionState") -> bool:
     return _host_hop_name(state) is not None
 
 
+def _first_pass_chain(state: "V5SessionState") -> bool:
+    """开始推演一口气跑完产出链。不是 host 一跳一件。"""
+    goal = getattr(state, "goal", None)
+    if not isinstance(goal, dict):
+        return False
+    return is_first_pass_chain(goal.get("tools"))
+
+
 def _host_hop_picks(state: "V5SessionState") -> list:
     """一跳一件：账本身份是 factory.{hop}，不是共用的信封 runtimeClosure。
 
@@ -2145,8 +2158,11 @@ async def drive_full_v5_session_stream(
     state = initial_state
     if repair:
         max_loops = min(max_loops, 2)
-    elif profile == "app" and _host_factory_hop(state):
+    elif profile == "app" and (
+        _host_factory_hop(state) or _first_pass_chain(state)
+    ):
         # 抄 grok ToolLoop：一跳一件。hop 成功还按 10 圈跑 = SPEC 起草两遍。
+        # 首轮产出链同样只许一圈：runtimeClosure 一次跑完 spec→bind。
         max_loops = 1
     _advance_turn_version(state)
     drive_turn_id = str(state.lastTurnId or "")
@@ -2161,11 +2177,15 @@ async def drive_full_v5_session_stream(
     )
     # 一跳一件：tools 与钟面步集必须在第一笔 persist 之前同进同出。
     # 信封只盖 tools 的话，这一笔会把控制面算好的 productSteps 钉成上一跳。
-    if profile == "app" and _host_factory_hop(state):
+    if profile == "app" and (
+        _host_factory_hop(state) or _first_pass_chain(state)
+    ):
         _stamp_factory_tools_onto_goal(state, _factory_tools_from_state(state))
     await asyncio.to_thread(persist_state, state)
     yield {"type": "phase_change", "phase": "orchestrating", "repair": repair}
-    if profile == "app" and _host_factory_hop(state):
+    if profile == "app" and (
+        _host_factory_hop(state) or _first_pass_chain(state)
+    ):
         hops = _factory_tools_from_state(state)
         goal_now = state.goal if isinstance(state.goal, dict) else {}
         yield {
@@ -2383,7 +2403,8 @@ async def drive_full_v5_session_stream(
                 should_run_agentic_pick,
             )
             if picks and should_run_agentic_pick(profile, repair=repair) and not (
-                profile == "app" and _host_factory_hop(state)
+                profile == "app"
+                and (_host_factory_hop(state) or _first_pass_chain(state))
             ):
                 _factory_legal = (
                     _factory_tools_from_state(state) if profile == "app" else None

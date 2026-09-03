@@ -79,6 +79,29 @@ def test_park_archetype_payload_beats_card():
     )
 
 
+def test_park_wechat_miniprogram_beats_default_desktop():
+    """作曲家默认 desktop 不是授予。微信小程序必须停成 phone，卡不许撒谎。"""
+    assert (
+        resolve_park_device(
+            last_card={},
+            goal={},
+            texts=["做一个情侣共同记账的微信小程序"],
+            payload_device="desktop",
+        )
+        == "phone"
+    )
+    # 澄清最后一答没有设备词，原命题还在。
+    assert (
+        resolve_park_device(
+            last_card={},
+            goal={},
+            texts=["线上预付定金锁定档期", "做一个社区宠物寄养的微信小程序"],
+            payload_device="desktop",
+        )
+        == "phone"
+    )
+
+
 def test_park_without_grant_or_sentence_keeps_payload_or_sentinel():
     assert (
         resolve_park_device(

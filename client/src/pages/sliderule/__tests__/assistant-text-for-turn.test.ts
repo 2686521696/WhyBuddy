@@ -72,6 +72,23 @@ describe("assistantTextForTurn", () => {
     );
     expect(structure).toBe("本轮已完成数据模型反推。");
     expect(structure).not.toBe(REFINE_TURN_NO_PAGE_NOTE);
+    const stamped = assistantTextForTurn(
+      turn({
+        user: "进入数据模型反推（structure）",
+        steps: [
+          {
+            id: "n1",
+            kind: "narration",
+            text: REFINE_TURN_NO_PAGE_NOTE,
+            source: "fallback",
+            isFinal: true,
+          },
+        ],
+      }),
+      closure(),
+      GOAL
+    );
+    expect(stamped).toBe("本轮已完成数据模型反推。");
     const bind = assistantTextForTurn(
       turn({ user: "进入权限绑定（bind）" }),
       closure(),

@@ -18,7 +18,12 @@ E13 早就把叙述放进会话状态（文件 / HTTPS SQL 网关同一份 blob�
 from __future__ import annotations
 from .stage_legal import labels as _stage_labels
 from .archetype_legal import required_evidence as _required_evidence
-from .closed_tools import FACTORY_HOP_LABELS, hop_from_factory_capability
+from .closed_tools import (
+    FACTORY_HOP_LABELS,
+    FACTORY_HOPS,
+    factory_hop_from_text,
+    hop_from_factory_capability,
+)
 
 import re
 import time
@@ -156,6 +161,17 @@ def _hop_done_note(tools: List[str]) -> str:
         note = _HOP_DONE_NOTE.get(name)
         if note:
             return note
+    return ""
+
+
+def _turn_hop(state: Any, user: str) -> str:
+    """本跳是哪一件 WRITE。人话点名压过 goal.tools 里上一跳的残留。"""
+    named = factory_hop_from_text(user)
+    if named:
+        return named
+    tools = _goal_tools(state)
+    if len(tools) == 1 and tools[0] in FACTORY_HOPS:
+        return tools[0]
     return ""
 
 
@@ -350,20 +366,19 @@ def project_drive_steps(
     goal = _goal_text(state).strip()
     follow_up = bool(instruction and goal and instruction != goal)
     painted = bool(page_map)
-    hop_tools = _goal_tools(state)
-    this_hop_paints = (not hop_tools) or ("pages" in hop_tools)
+    hop = _turn_hop(state, instruction)
+    this_hop_paints = hop in ("", "pages")
     if paint:
         add_narration(paint)
+    elif follow_up and hop and hop != "pages":
+        # structure / bind 本跳就没打算画页。套「没画出页面」是把 hop 当精修。
+        # 人话点名压过 goal.tools 残留的 pages（确认继续留下的那份）。
+        done = _HOP_DONE_NOTE.get(hop) or f"本轮已完成 {hop}。"
+        add_narration(done)
     elif follow_up and painted and this_hop_paints:
         add_narration("本轮已按指令改画页面。")
     elif follow_up and this_hop_paints:
         add_narration("本轮没有画出新的页面，上一版保留。")
-    elif follow_up:
-        # structure / bind / closure 本跳就没打算画页。套「没画出页面」
-        # 是把 hop 当精修——2026-09-03 真机点 Structure 左栏就这么说。
-        done = _hop_done_note(hop_tools)
-        if done:
-            add_narration(done)
     elif summary:
         add_narration(summary)
 
