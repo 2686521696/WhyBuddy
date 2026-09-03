@@ -118,7 +118,11 @@ export function shouldResetSpecAssumptions(
  *   「假设已确认。继续画页面。」还在，认它。
  */
 export function assumptionsWereConfirmed(state: {
-  specFirstPages?: { assumptionsConfirmed?: unknown } | null;
+  // ⚠ 索引签名不是随手加的：只写 `{ assumptionsConfirmed?: unknown }` 会让
+  //   调用方传整份 specFirstPages（带 spec / pages）时撞上 TS 的多余属性检查。
+  //   2026-09-04：badec6f 的判据就这么把 `npx tsc --noEmit` 从 22 顶到 23。
+  //   本函数只读 assumptionsConfirmed，读法是 hasOwnProperty，放宽不影响判定。
+  specFirstPages?: { assumptionsConfirmed?: unknown; [key: string]: unknown } | null;
   turnNarrations?: Array<{ user?: unknown }> | null;
   controlTranscript?: Array<{ text?: unknown }> | null;
 } | null | undefined): boolean {
