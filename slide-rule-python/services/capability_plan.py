@@ -171,7 +171,15 @@ def executed_stage_ids(stages: Optional[dict]) -> Tuple[str, ...]:
 
 
 #: 精修时没拿到上一版页面，pagescope 会跳过。不许因此把「多跑了整链」放过。
-_OPTIONAL_SKIPS = frozenset({"specfirst.pagescope"})
+#: 这些阶段"该跑没跑"不算违规——它们各自还有前置条件，展开时判不出来。
+#: ⚠ graphscope（2026-09-04 补）：展开只看 `refine and "spec" in tools`，
+#:   而流水线要 `refine and reuse_model and _shadow_on`（spec_first_pipeline:1507）。
+#:   精修但没有上一版模型时，声明有、实跑没有 → 这道闸把整条链判死，
+#:   31 条判据一起红。跟 pagescope 是同一形状（"没上一版页面"）。
+#:   这道闸的目标写在下面的 docstring 里：盯"多跑了什么"。
+#:   反向不空：`test_refine_graph_scope.py:460+` 钉着"带上一版模型时
+#:   graphscope 必须真的跑、decider 必须对"，放宽这里不会让它静默消失。
+_OPTIONAL_SKIPS = frozenset({"specfirst.pagescope", "specfirst.graphscope"})
 
 #: 假设卡一出就停在 SPEC：design 及之后本跳不再跑，选完下一跳再跑。
 _HELD_OPTIONAL_SKIPS = frozenset(
