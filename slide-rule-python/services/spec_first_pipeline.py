@@ -2172,7 +2172,27 @@ def run_spec_first(
     #   接线由 tests/test_refine_segment_reuse.py 端到端钉住（跑真实控制流，非 mock）。
     #
     # 放在 bind 之前：bind_pages 要用 model 打孔，让它看到最终那份，别打完再换。
-    if refine and refine_reuse_enabled():
+    # ⚠ 2026-09-04 真机（社区老年助餐点 sr-20260903232557）：这里要防 model 为 None。
+    #   「一跳一件」的精修是 pages 单跳（`capabilityPlan tools=pages`），
+    #   assemble 被 `plan.includes("specfirst.assemble")` 挡在门外**根本不跑**，
+    #   于是 model 一路保持 :2103 的初值 None（返回处 `"model": model` 本来就
+    #   允许单跳不产模型）。`apply_refine_segment_reuse(None, …)` 原样返回 None，
+    #   下面那个 listcomp 的 `model.get(seg)` 当场炸：
+    #
+    #       spec_first_pipeline.py:2188 in <listcomp>
+    #       AttributeError: 'NoneType' object has no attribute 'get'
+    #
+    #   后果不是报错而是**静默**：宽 except 把它吃成一句「spec-first 失败」，
+    #   控制面接着打「refine failed, keeping previous model（本轮修改未生效）」。
+    #   用户改一处、等几分钟、页面原样——真机上连着三次都是这样。
+    #
+    #   段沿用是**增强类**，它自己的文档串写着 fail-open（纪律七）：
+    #   「把它写成 fail-closed 会让一次本来能跑完的推演直接崩掉」。本轮没有
+    #   模型就没有段可沿用，跳过即可，不该把整条链带走。
+    #   同文件里 `_stamp_preferred_device`（:1265）和
+    #   `freeze_pages_in_model`（page_id_freeze:220）用的都是这个守卫，
+    #   本处是唯一漏掉的一个。
+    if refine and refine_reuse_enabled() and isinstance(model, dict):
         model = apply_refine_segment_reuse(
             model,
             reuse_model,
