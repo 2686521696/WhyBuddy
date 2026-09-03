@@ -16,7 +16,7 @@
 ## 此刻的事实（由代码算出，不是手写）
 
 - 扫描文件 **286** 个，模块 **286** 个
-- 内部依赖边 **867** 条，其中 **491** 条写在函数体里（56%；基线 485，只许变少）
+- 内部依赖边 **870** 条，其中 **491** 条写在函数体里（56%；基线 485，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
@@ -50,9 +50,9 @@ flowchart TB
   util["util<br/>125 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
   core["core<br/>59 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
   flow["flow<br/>30 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
-  core -->|140| util
+  core -->|142| util
   flow -->|103| core
-  flow -->|105| util
+  flow -->|106| util
 ```
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
@@ -201,7 +201,7 @@ flowchart LR
   entrypoint -->|4| spec_first
   entrypoint -->|3| task_exec
   evidence -->|7| llm_gateway
-  evidence -->|8| platform
+  evidence -->|9| platform
   http_routes -->|25| app_store
   http_routes -->|3| audit
   http_routes -->|1| blueprint
@@ -225,7 +225,7 @@ flowchart LR
   model_core -->|18| llm_gateway
   model_core -->|6| observability
   model_core -->|2| persist
-  model_core -->|55| platform
+  model_core -->|56| platform
   model_core -->|11| run_control
   model_core -->|21| spec_first
   observability -->|2| llm_gateway

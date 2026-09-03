@@ -11,13 +11,13 @@
 | 包 | 模块数 |
 |---|---:|
 | agent-loop | 99 |
-| client | 1032 |
+| client | 1033 |
 | server | 579 |
 | services | 32 |
 | shared | 176 |
-| **合计** | **1918** |
+| **合计** | **1919** |
 
-边 5939 条，其中动态 import / require 307 条、
+边 5943 条，其中动态 import / require 307 条、
 类型 import 2221 条。
 
 ## component 依赖图
@@ -30,7 +30,7 @@ graph LR
   agent-loop-tools["agent-loop-tools<br/>17"]
   agent-loop-vscode["agent-loop-vscode<br/>38"]
   client-components["client-components<br/>280"]
-  client-lib["client-lib<br/>174"]
+  client-lib["client-lib<br/>175"]
   client-pages["client-pages<br/>74"]
   client-pages-autopilot["client-pages-autopilot<br/>191"]
   client-pages-sliderule["client-pages-sliderule<br/>261"]

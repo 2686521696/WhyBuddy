@@ -50,6 +50,7 @@ from __future__ import annotations
 import copy
 import asyncio
 import inspect
+import hashlib
 import json
 import time
 import uuid
@@ -1721,6 +1722,7 @@ async def _confirm_rehearse_and_handoff(
     state.awaitReason = None
     state.awaitDetail = None
     await _apersist(state)
+    _fp_before = factory_deliverable_fingerprint(state)
     async for event in _handoff_factory(
         state,
         user_text,
@@ -1737,16 +1739,54 @@ async def _confirm_rehearse_and_handoff(
     yield {
         "type": "control_tool_result",
         "tool": "spec",
-        **_factory_tool_body(fresh or state, "spec"),
+        **_factory_tool_body(fresh or state, "spec", before_fingerprint=_fp_before),
     }
 
 
-def _factory_tool_body(state: V5SessionState, tool: str) -> Dict[str, Any]:
+#: 会改动交付物的 hop。closure 是判定，不产出，不进这份名单。
+_PRODUCING_HOPS = ("spec", "pages", "structure", "bind", "rehearse", "refine")
+
+
+def factory_deliverable_fingerprint(state: V5SessionState) -> str:
+    """交付物指纹：SPEC + 页面 + 模型版本。用来回答「这一跳到底动没动东西」。
+
+    只取会被工厂改写的那几块，稳定序列化后哈希。取整个 state 会把
+    lastActive / 台账这类每轮必变的字段算进去，指纹就永远"变了"，
+    等于没判据。
+    """
+    blob = _spec_first_blob(state)
+    payload = {
+        "spec": blob.get("spec"),
+        "pages": blob.get("pages"),
+        "version": getattr(state, "currentModelVersionId", None),
+    }
+    try:
+        raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    except Exception:  # noqa: BLE001
+        raw = repr(payload)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _factory_tool_body(
+    state: V5SessionState, tool: str, *, before_fingerprint: Optional[str] = None
+) -> Dict[str, Any]:
     """WRITE 工具交回控制面的有界结果。不许倒出五系统 JSON。
 
     ⚠ 2026-09-02 食堂话题：第一版把 specFirstPages（dict）当 list 量，
       pageCount 恒 0，human 又是 inspect 的「还没有五系统模型」。SPEC
       单跳交回后模型以为工厂空转，host 就不调 pages——钟剩一格。
+
+    ⚠ 2026-09-03 真机（宠物寄养 EBCW1P6FYT）：为了修上面那条，`ok` 被焊成
+      恒 True——于是**再也表达不了「这一跳真的什么都没干」**。那天
+      forcedTool=pages 带精修指令，驱动器的精修短路把整个执行循环 break 掉，
+      一件活没干；回执照样 ok=true + 页面清单，控制面据此对用户说
+      「宠物建档页的疫苗到期红色角标已更新，数据结构已同步」——
+      而五页哈希逐字节没变。**接口返回 ok ≠ 它真的做了事**（CLAUDE.md §3）。
+
+      现在 `ok` 由交付物指纹判定：产出型 hop 跑完指纹没变 = 这轮没产出，
+      `ok=False` 且 human 直说。⚠ 修的时候别退回上面那条老坑：
+      指纹**不看** pageCount，动了东西就是动了，不许因为"页数没变"报 0。
+      `before_fingerprint` 缺省 None（老调用点 / 非产出 hop）时保持恒真。
     """
     digest, human = _inspect_digest(state)
     closure = getattr(state, "publishClosure", None)
@@ -1764,8 +1804,19 @@ def _factory_tool_body(state: V5SessionState, tool: str) -> Dict[str, Any]:
         human = "SPEC 已经起草，页面还没有。"
     elif _has_pages(state):
         human = f"已经出过 {page_n} 页。"
+    changed: Optional[bool] = None
+    ok = True
+    if before_fingerprint is not None and tool in _PRODUCING_HOPS:
+        changed = factory_deliverable_fingerprint(state) != before_fingerprint
+        ok = changed
+        if not changed:
+            human = (
+                f"这一跳（{tool}）跑完了，但交付物一个字节都没变——"
+                "本轮没有产出，别当成已经改好。"
+            )
     return {
-        "ok": True,
+        "ok": ok,
+        "changed": changed,
         "tool": tool,
         "digest": (digest or "")[:INSPECT_MAX_CHARS],
         "human": human,
@@ -2446,6 +2497,7 @@ async def _resume_control_llm_after_write(
     preferred_device: Any,
     design_system_id: Any,
     original_goal: str,
+    before_fingerprint: Optional[str] = None,
 ) -> AsyncIterator[Dict[str, Any]]:
     """按钮点火不经过 LLM；工厂收尾必须交回控制面。
 
@@ -2458,7 +2510,11 @@ async def _resume_control_llm_after_write(
     )
     if fresh is not None:
         state = fresh
-    body = tool_body if tool_body is not None else _factory_tool_body(state, tool)
+    body = (
+        tool_body
+        if tool_body is not None
+        else _factory_tool_body(state, tool, before_fingerprint=before_fingerprint)
+    )
     if tool_body is None:
         yield {"type": "control_tool_result", "tool": tool, **body}
     messages = _messages_after_forced_write(state, user_text, tool, body)
@@ -2810,6 +2866,7 @@ async def _run_control_turn_body(
         _set_goal_tools(goal, [_hop], refine=True)
         state.goal = goal
         await _apersist(state)
+        _fp_before = factory_deliverable_fingerprint(state)
         # 写权限：forcedTool 绕过 _dispatch_tool 直接进工厂，scope 要在这里设。
         handed = False
         with tool_scope_scope("refine"):
@@ -2839,6 +2896,7 @@ async def _run_control_turn_body(
             preferred_device=preferred_device,
             design_system_id=design_system_id,
             original_goal=original_goal,
+            before_fingerprint=_fp_before,
         ):
             yield event
         return
@@ -3096,6 +3154,7 @@ async def _dispatch_tool(
         _set_goal_tools(goal, [hop], refine=_has_model(state))
         state.goal = goal
         await _apersist(state)
+        _fp_before = factory_deliverable_fingerprint(state)
         async for event in _handoff_factory(
             state,
             user_text,
@@ -3111,7 +3170,7 @@ async def _dispatch_tool(
         yield {
             "type": "control_tool_result",
             "tool": hop,
-            **_factory_tool_body(fresh or state, hop),
+            **_factory_tool_body(fresh or state, hop, before_fingerprint=_fp_before),
         }
         return
     if name == "workflow":
@@ -3207,6 +3266,7 @@ async def _dispatch_tool(
         _set_goal_tools(goal, [hop], refine=True)
         state.goal = goal
         await _apersist(state)
+        _fp_before = factory_deliverable_fingerprint(state)
         async for event in _handoff_factory(
             state,
             user_text,
@@ -3222,7 +3282,7 @@ async def _dispatch_tool(
         yield {
             "type": "control_tool_result",
             "tool": "refine",
-            **_factory_tool_body(fresh or state, "refine"),
+            **_factory_tool_body(fresh or state, "refine", before_fingerprint=_fp_before),
         }
         return
     if name == "repair":

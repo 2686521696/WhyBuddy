@@ -1022,8 +1022,25 @@ def enter_refine_mode(state: "V5SessionState", user_instruction: str) -> bool:
     return True
 
 
-def skip_planning_loop_for_refine(*, repair: bool = False) -> bool:
+def skip_planning_loop_for_refine(
+    *, repair: bool = False, host_picked_hop: bool = False
+) -> bool:
     """精修轮不跑 intent.parse / risk / handoff，直进收口。
+
+    ⚠ 2026-09-03 真机（宠物寄养 EBCW1P6FYT）：`host_picked_hop` 是这天补的边界。
+      forcedTool=pages 带精修指令时，这里返回 True → 调用点 `break` 跳出主循环，
+      而**能力执行就在那个循环里**（`_host_hop_picks` → `factory.pages`
+      → run_spec_first）。于是整跳一件活都没干：
+      ⚠ 上一句原本原样写了主循环那行源码的字面量，被
+      `test_refine_mode_before_loop` 的行级 grep 当成第三条循环——
+      判据 grep 源码、而那个词同时出现在注释里，正是 CLAUDE.md §2 那个坑。
+      日志里没有 `capabilityPlan=` 行、没有 enrich 阶段、五页哈希逐字节不变，
+      而 `factory_complete` 照发、回执 ok=true、控制面对用户说
+      「疫苗到期红色角标已更新，数据结构已同步」——一件没发生的事。
+
+      本函数的本意是**跳过规划**（2026-08-18 那次 agentic pick 空转两圈）。
+      host 已经点名 hop 时根本没有规划可跳：picks 是现成的
+      （`_host_hop_picks`），此时短路等于把执行也一并跳掉。
 
     2026-08-18 篮球馆半场预约（sr-20260818033315）：每轮精修仍走规划循环，
     agentic pick 两圈覆盖同一 ``art-0-*`` → ``no_progress``，说明书改了、
@@ -1034,6 +1051,9 @@ def skip_planning_loop_for_refine(*, repair: bool = False) -> bool:
     首轮（指令==话题 / 无基线）``enter_refine_mode`` 为假，这里也是假。
     """
     if repair:
+        return False
+    if host_picked_hop:
+        # host 已经选定这一跳 —— 没有规划要跳，只有活要干。
         return False
     from .v5_llm_generate import get_refine_context
 
@@ -1237,7 +1257,11 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
         prev_resolved = _count_resolved(state)
         while loop < max_loops:
             ui = user_instruction or ""
-            if skip_planning_loop_for_refine(repair=False):
+            # ⚠ 成对物：流式那条在下面（§4）。同步这条是脚本 / 测试入口，
+            #   但 host 选定 hop 的语义一样——只改流式等于只改一半。
+            if skip_planning_loop_for_refine(
+                repair=False, host_picked_hop=_host_factory_hop(state)
+            ):
                 record_refine_skip_planning(state, ui)
                 persist_state(state)
                 break
@@ -2297,7 +2321,9 @@ async def drive_full_v5_session_stream(
                     "recovery": _recovered,
                 }
             ui = user_instruction or ""
-            if skip_planning_loop_for_refine(repair=repair):
+            if skip_planning_loop_for_refine(
+                repair=repair, host_picked_hop=_host_factory_hop(state)
+            ):
                 record_refine_skip_planning(state, ui)
                 yield {"type": "reasoning_step", "label": "refine", "loop": 0}
                 await asyncio.to_thread(persist_state, state)
