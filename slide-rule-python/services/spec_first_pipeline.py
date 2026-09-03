@@ -1403,11 +1403,44 @@ def run_spec_first(
         refine=bool(refine),
         tools=tools,
     )
+    # ⚠ 2026-09-04 真机（社区旧物置换站 sr-20260903220228）：
+    #   `select_workflow` 见到**多件**且缺 spec 会「补根」——
+    #     ['pages','structure','bind'] → preset.tools 里 spec 又回来了
+    #     （单跳 ['structure'] / ['bind'] 不补，所以只在剩余链上现形）
+    #   于是假设确认后的那一跳：
+    #     [control] forced hop=pages hasSpec=1 hasPages=0
+    #     capabilityPlan=product-rehearsal tools=spec,pages,structure,bind
+    #     stage=specfirst.spec ms=18428 ok=1 pages=6 nodes=17   ← 重起草
+    #     spec-first 页面落库：0 份 · 有 SPEC                    ← 一页没画
+    #   首版 SPEC 是 5 页 16 节点，重起草出来 6 页 17 节点——**用户刚确认的
+    #   那些假设是针对旧 SPEC 的，落到了一份新的上**；整轮预算烧在起草上，
+    #   页面一页都没出。用户看到的就是「点了确认继续，还在起草规格」。
+    #
+    #   badec6f 已经修过一次同名的病，护栏加在驱动侧
+    #   `v5_full_driver._factory_tools_from_state`（那里剔 spec 是对的，
+    #   stamp 出来的 goal.tools 确实是 pages,structure,bind），但
+    #   `run_spec_first` 转手又 `select_workflow(tools=tools)` 并拿
+    #   **preset.tools** 当计划，把剔掉的 spec 原样加回来——§4 成对物
+    #   只改了一半，不报错，只是一半不生效。
+    #
+    #   规则：调用方明确没点 spec、而且带了上一版 SPEC（reuse_spec）＝
+    #   会话里已经有，不许补根重起草。spec 那一步按
+    #   `plan.includes("specfirst.spec")` 判（:1531/1572），所以从 ids 里
+    #   摘掉这一个就够；design 不动——pages 跳要靠它定风格，
+    #   `assert_stages_match_tools` 对这一份是显式放行的。
+    _plan_tools = tuple(preset.tools)
+    _plan_ids = tuple(preset.stages)
+    _requested = tuple(
+        str(item).strip() for item in (tools or ()) if str(item or "").strip()
+    )
+    if _requested and "spec" not in _requested and "spec" in _plan_tools and reuse_spec:
+        _plan_tools = tuple(name for name in _plan_tools if name != "spec")
+        _plan_ids = tuple(sid for sid in _plan_ids if sid != "specfirst.spec")
     plan = CapabilityPlan(
         name=preset.name,
-        ids=preset.stages,
+        ids=_plan_ids,
         device=device,
-        tools=preset.tools,
+        tools=_plan_tools,
     )
     stages["capabilityPlan"] = {
         "name": plan.name,
