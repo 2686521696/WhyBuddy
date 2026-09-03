@@ -17,13 +17,8 @@ import type { UiTurn } from "./types";
 export const REFINE_TURN_NO_PAGE_NOTE =
   "本轮没有画出新的页面，上一版保留。叙述未留下，不套用首轮总结。";
 
-/** 跟 Python `turn_narration._HOP_DONE_NOTE` 同一张表。 */
-const HOP_DONE_NOTE: Record<string, string> = {
-  structure: "本轮已完成数据模型反推。",
-  bind: "本轮已完成权限绑定。",
-  closure: "本轮已完成完整性检查。",
-  spec: "本轮已完成规格起草。",
-};
+/** 跟 Python `turn_narration.HOP_NO_PRODUCE_NOTE` 同一句。 */
+export const HOP_NO_PRODUCE_NOTE = "这一跳没有新的产出，上一版保留。";
 
 function textFromNarration(turn: UiTurn): string {
   const finalStepText = finalNarrationStep(turn.steps)?.text?.trim();
@@ -36,20 +31,12 @@ export function assistantTextForTurn(
   goalText?: string
 ): string {
   const user = (turn.user || "").trim();
-  const hop = factoryHopFromText(user);
-  const hopNote =
-    hop && hop !== "pages"
-      ? HOP_DONE_NOTE[hop] || `本轮已完成 ${hop}。`
-      : "";
-
   const assistant = turn.assistant?.trim();
   if (assistant) {
-    if (hopNote && assistant.includes("没有画出新的页面")) return hopNote;
     return assistant;
   }
   const narration = textFromNarration(turn);
   if (narration) {
-    if (hopNote && narration.includes("没有画出新的页面")) return hopNote;
     return narration;
   }
 
@@ -59,7 +46,8 @@ export function assistantTextForTurn(
   if (isFollowUp) {
     const paint = publishClosure?.refinePaintNote?.trim();
     if (paint) return paint;
-    if (hopNote) return hopNote;
+    const hop = factoryHopFromText(user);
+    if (hop && hop !== "pages") return HOP_NO_PRODUCE_NOTE;
     return REFINE_TURN_NO_PAGE_NOTE;
   }
 

@@ -590,6 +590,12 @@ def _ensure_runtime_closure_evidence(
     instruction = (user_instruction or "").strip() or (goal_text or "").strip()
     if not instruction:
         return state
+    if not repair and _first_pass_chain(state):
+        # 首轮不收口。伴随式澄清停在 SPEC 时，runtimeClosure 信封不算
+        # closure_attempted，这里会再跑五系统生成，把确认继续堵在队列里。
+        # 2026-09-03 真机 sr-20260903204902-3QRNQT9RZX：确认后 25 分钟
+        # 仍「起草规格」，账本没有 factory.pages。
+        return state
     hop = _host_hop_name(state)
     hop_cap = factory_capability_id(hop) if hop else None
     # 信封 runtimeClosure 不算真收口（spec/pages/structure/bind 的
@@ -1226,6 +1232,9 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
     _turn_ctx.enter_context(bind_cost_session(initial_state))
     _budget_token = _enrich_timing.begin_run_budget()
     state = initial_state
+    from .turn_narration import deliverable_fingerprint, stamp_drive_narration
+
+    _fp_before = deliverable_fingerprint(state)
     _advance_turn_version(state)
     # 步骤记录跟版本史用同一个 turnId（drive 开头那格）。收尾改名
     # turn-N-drive-full 只服务持久化守卫；叙述对不上版本就会再铺一个空气泡。
@@ -1566,14 +1575,13 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
             state.publishClosure = derive_publish_closure_response(state)
     except Exception:
         pass
-    from .turn_narration import stamp_drive_narration
-
     stamp_drive_narration(
         state,
         turn_id=drive_turn_id,
         user=user_instruction,
         events_cursor=events_cursor,
         started_monotonic=drive_started,
+        produced=deliverable_fingerprint(state) != _fp_before,
     )
     persist_state(state)
     _enrich_timing.reset_run_budget(_budget_token)
@@ -1828,6 +1836,17 @@ def _first_pass_chain(state: "V5SessionState") -> bool:
     return is_first_pass_chain(goal.get("tools"))
 
 
+def _state_has_spec(state: "V5SessionState") -> bool:
+    """会话里已经有 SPEC。假设确认后的剩余链靠这个跳过作文短清单。"""
+    blob = getattr(state, "specFirstPages", None)
+    if not isinstance(blob, dict):
+        return False
+    spec = blob.get("spec")
+    return isinstance(spec, dict) and bool(
+        spec.get("pages") or spec.get("nodes") or spec.get("appName")
+    )
+
+
 def _host_hop_picks(state: "V5SessionState") -> list:
     """一跳一件：账本身份是 factory.{hop}，不是共用的信封 runtimeClosure。
 
@@ -1868,13 +1887,30 @@ def _factory_tools_from_state(state: "V5SessionState") -> tuple:
     goal = getattr(state, "goal", None)
     if not isinstance(goal, dict):
         goal = {}
+    requested = tuple(
+        str(item).strip()
+        for item in (goal.get("tools") or ())
+        if str(item).strip()
+    )
     preset = select_workflow(
         name=str(goal.get("workflow") or ""),
         archetype=str(goal.get("productArchetype") or ""),
         device=str(goal.get("preferredDevice") or "desktop"),
         tools=goal.get("tools"),
     )
-    return preset.tools
+    chosen = tuple(preset.tools)
+    # ⚠ 2026-09-04 真机（社区宠物走失互助）：假设确认 remaining=
+    #   pages,structure,bind，product_rehearsal_plan 见多件没 spec 就补根，
+    #   又起草一遍 SPEC，确认继续看起来像卡在「起草规格」。
+    #   会话里已经有 SPEC、host 没点 spec，不许塞回去。
+    if (
+        _state_has_spec(state)
+        and requested
+        and "spec" not in requested
+        and "spec" in chosen
+    ):
+        chosen = tuple(name for name in chosen if name != "spec")
+    return chosen
 
 
 def _stamp_factory_tools_onto_goal(state: "V5SessionState", tools) -> None:
@@ -1935,6 +1971,7 @@ async def drive_full_v5_session_stream(
 
     from . import enrich_timing as _enrich_timing
     from . import v5_llm_generate as _gen
+    from .turn_narration import deliverable_fingerprint, stamp_drive_narration
 
     # 本轮装上去的所有 sink 都进这个栈：**装的那一行自带卸的动作**，栈在
     # finally 里一次性关掉，顺序自动倒着来。
@@ -2156,6 +2193,7 @@ async def drive_full_v5_session_stream(
             await asyncio.sleep(0.15)
 
     state = initial_state
+    _fp_before = deliverable_fingerprint(state)
     if repair:
         max_loops = min(max_loops, 2)
     elif profile == "app" and (
@@ -2392,6 +2430,19 @@ async def drive_full_v5_session_stream(
                     # 一跳一件：短清单里的作文能力会把 spec  hop 拖成整轮散文。
                     # 账本按 hop 记，不许五跳共用 runtimeClosure 把 repeat 耗尽。
                     picks = _host_hop_picks(state)
+                elif _first_pass_chain(state) and _state_has_spec(state):
+                    # 假设确认后的剩余产出链。短清单会再跑一遍 evidence/report；
+                    # 再 pick 信封 runtimeClosure 会被 max_repeat 跳过——
+                    # 2026-09-04 真机 remaining tools 已是 pages,structure,bind，
+                    # 十分钟账本仍只有第一条 runtimeClosure，页面 0。
+                    picks = [
+                        {
+                            "capabilityId": factory_capability_id(name),
+                            "roleId": "综合",
+                        }
+                        for name in _factory_tools_from_state(state)
+                        if name in FACTORY_HOPS
+                    ]
                 else:
                     picks = _app_profile_short_picks(state)
             else:
@@ -2864,14 +2915,13 @@ async def drive_full_v5_session_stream(
         _gen.set_model_override(None)
 
     # 旁路 drive 没有客户端 PUT。这里不写，刷新就是「1 阶段 · 0 步」。
-    from .turn_narration import stamp_drive_narration
-
     stamp_drive_narration(
         state,
         turn_id=drive_turn_id,
         user=user_instruction,
         events_cursor=events_cursor,
         started_monotonic=drive_started,
+        produced=deliverable_fingerprint(state) != _fp_before,
     )
     await asyncio.to_thread(persist_state, state)
 
@@ -2977,6 +3027,7 @@ async def drive_full_v5_session_stream(
             user=user_instruction,
             events_cursor=events_cursor,
             started_monotonic=drive_started,
+            produced=deliverable_fingerprint(state) != _fp_before,
         )
         await asyncio.to_thread(persist_state, state)
         yield {"type": "publish_closure", "data": publish_closure}

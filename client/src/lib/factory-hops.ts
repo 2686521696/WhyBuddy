@@ -44,6 +44,11 @@ export function hopFromFactoryCapability(
   return (FACTORY_HOPS as readonly string[]).includes(hop) ? hop : undefined;
 }
 
+/** 是不是工厂 hop 残留值。rehearse / refine 这类显式意图不是。 */
+export function isFactoryHop(name: unknown): name is FactoryHop {
+  return (FACTORY_HOPS as readonly string[]).includes(String(name || ""));
+}
+
 const HOP_ID_RE = /(?:^|[^\w])(spec|pages|structure|bind|closure)(?:[^\w]|$)/gi;
 
 const ZH: Array<[RegExp, FactoryHop]> = [

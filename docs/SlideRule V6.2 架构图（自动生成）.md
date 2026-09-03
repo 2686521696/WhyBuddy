@@ -16,7 +16,7 @@
 ## 此刻的事实（由代码算出，不是手写）
 
 - 扫描文件 **286** 个，模块 **286** 个
-- 内部依赖边 **871** 条，其中 **491** 条写在函数体里（56%；基线 485，只许变少）
+- 内部依赖边 **869** 条，其中 **485** 条写在函数体里（55%；基线 485，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
@@ -51,8 +51,8 @@ flowchart TB
   core["core<br/>59 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
   flow["flow<br/>30 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
   core -->|142| util
-  flow -->|103| core
-  flow -->|107| util
+  flow -->|104| core
+  flow -->|106| util
 ```
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
@@ -92,7 +92,7 @@ flowchart TB
   scripts -->|2| stdio_utf8
   services -->|15 · 其中 7 条在函数体里| config
   services -->|30 · 其中 1 条在函数体里| models
-  services -->|62 · 其中 48 条在函数体里| sliderule_llm
+  services -->|60 · 其中 45 条在函数体里| sliderule_llm
   sliderule_llm -->|2 · 其中 2 条在函数体里| config
 ```
 
@@ -176,8 +176,8 @@ flowchart LR
   control -->|1| evidence
   control -->|1| llm_gateway
   control -->|3| model_core
-  control -->|5| platform
-  control -->|4| spec_first
+  control -->|6| platform
+  control -->|3| spec_first
   diagnostics -->|1| a2a
   diagnostics -->|1| evidence
   diagnostics -->|2| model_core
@@ -244,7 +244,7 @@ flowchart LR
   persist -->|10| platform
   run_control -->|1| platform
   spec_first -->|3| app_store
-  spec_first -->|37| llm_gateway
+  spec_first -->|35| llm_gateway
   spec_first -->|3| observability
   spec_first -->|55| platform
   spec_first -->|2| run_control

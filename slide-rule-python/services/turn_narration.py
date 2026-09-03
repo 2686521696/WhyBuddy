@@ -25,6 +25,8 @@ from .closed_tools import (
     hop_from_factory_capability,
 )
 
+import hashlib
+import json
 import re
 import time
 from typing import Any, Dict, List, Optional
@@ -144,6 +146,31 @@ _HOP_DONE_NOTE = {
     "closure": "本轮已完成完整性检查。",
     "spec": "本轮已完成规格起草。",
 }
+
+#: 零产出不许说「已完成」。跟回执 ok=false 同一把尺子。
+HOP_NO_PRODUCE_NOTE = "这一跳没有新的产出，上一版保留。"
+
+
+def deliverable_fingerprint(state: Any) -> str:
+    """交付物指纹：SPEC + 页面 + 模型版本。用来回答「这一跳到底动没动东西」。
+
+    只取会被工厂改写的那几块，稳定序列化后哈希。取整个 state 会把
+    lastActive / 台账这类每轮必变的字段算进去，指纹就永远"变了"，
+    等于没判据。
+    """
+    blob = getattr(state, "specFirstPages", None)
+    if not isinstance(blob, dict):
+        blob = {}
+    payload = {
+        "spec": blob.get("spec"),
+        "pages": blob.get("pages"),
+        "version": getattr(state, "currentModelVersionId", None),
+    }
+    try:
+        raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    except Exception:  # noqa: BLE001
+        raw = repr(payload)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def _goal_tools(state: Any) -> List[str]:
@@ -272,6 +299,7 @@ def project_drive_steps(
     *,
     user: str,
     events_cursor: int,
+    produced: Optional[bool] = None,
 ) -> List[Dict[str, Any]]:
     """把本趟 drive 新增的 reasoningEvents + 本轮页面/闭环投成左栏 steps。
 
@@ -368,18 +396,24 @@ def project_drive_steps(
     painted = bool(page_map)
     hop = _turn_hop(state, instruction)
     this_hop_paints = hop in ("", "pages")
+    # 叙述由「本轮真的产出了什么」决定。人话点名 hop 只用来认这一跳
+    # 是哪一件 WRITE，不许单独把零产出说成已完成。produced 缺省
+    # None = 不知道，按没产出（fail-closed）。
+    did_produce = produced is True
     if paint:
         add_narration(paint)
     elif follow_up and hop and hop != "pages":
         # structure / bind 本跳就没打算画页。套「没画出页面」是把 hop 当精修。
-        # 人话点名压过 goal.tools 残留的 pages（确认继续留下的那份）。
-        done = _HOP_DONE_NOTE.get(hop) or f"本轮已完成 {hop}。"
-        add_narration(done)
-    elif follow_up and painted and this_hop_paints:
+        if did_produce:
+            done = _HOP_DONE_NOTE.get(hop) or f"本轮已完成 {hop}。"
+            add_narration(done)
+        else:
+            add_narration(HOP_NO_PRODUCE_NOTE)
+    elif follow_up and painted and this_hop_paints and did_produce:
         add_narration("本轮已按指令改画页面。")
     elif follow_up and this_hop_paints:
         add_narration("本轮没有画出新的页面，上一版保留。")
-    elif summary:
+    elif summary and did_produce:
         add_narration(summary)
 
     return steps[:MAX_STEPS]
@@ -392,9 +426,12 @@ def stamp_drive_narration(
     user: str,
     events_cursor: int,
     started_monotonic: Optional[float] = None,
+    produced: Optional[bool] = None,
 ) -> Any:
     """轮末把本趟步骤打进 state.turnNarrations，下一笔 persist_state 进库。"""
-    steps = project_drive_steps(state, user=user, events_cursor=events_cursor)
+    steps = project_drive_steps(
+        state, user=user, events_cursor=events_cursor, produced=produced
+    )
     duration_ms = None
     if started_monotonic is not None:
         duration_ms = int((time.monotonic() - started_monotonic) * 1000)

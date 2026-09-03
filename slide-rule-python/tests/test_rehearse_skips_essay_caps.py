@@ -332,6 +332,93 @@ def test_repair_picks_come_from_the_gate_not_the_short_list(driver, monkeypatch)
     )
 
 
+def test_remaining_first_pass_does_not_restamp_spec():
+    """假设确认 remaining 不许被 product_rehearsal_plan 补回 spec。"""
+    import services.v5_full_driver as drv
+
+    state = _seeded("restamp-spec", tools=["pages", "structure", "bind"])
+    state.specFirstPages = {
+        "spec": {
+            "appName": "请假",
+            "pages": [{"id": "p1", "name": "申请"}],
+            "nodes": [{"id": "n0", "title": "申请"}],
+        },
+        "pages": {},
+        "assumptionsConfirmed": True,
+    }
+    got = drv._factory_tools_from_state(state)
+    assert "spec" not in got, f"剩余链又被补上 spec：{got}"
+    assert list(got) == ["pages", "structure", "bind"]
+
+
+def test_first_pass_remaining_after_spec_skips_essay_caps(driver, monkeypatch):
+    """假设确认后的剩余链不许再跑一遍 evidence/report。
+
+    变异：把 `_first_pass_chain and _state_has_spec` 那支删掉 → 本条红。
+    """
+    driver_mod, agentic_mod = driver
+    executed, agentic_calls, orch_calls = _install_traps(
+        driver_mod, agentic_mod, monkeypatch
+    )
+    state = _seeded(
+        "first-pass-rest",
+        tools=["pages", "structure", "bind"],
+        wantEvidence=True,
+        wantFeasibilityReport=True,
+    )
+    state.specFirstPages = {
+        "spec": {
+            "appName": "请假",
+            "pages": [{"id": "p1", "name": "申请"}],
+            "nodes": [{"id": "n0", "title": "申请"}],
+        },
+        "pages": {},
+        "assumptionsConfirmed": True,
+    }
+    state.capabilityRuns = [
+        {
+            "id": "run-0-appbundle.runtimeClosure",
+            "capabilityId": "appbundle.runtimeClosure",
+            "turnId": "loop-0",
+        }
+    ]
+    events = _collect(
+        driver_mod,
+        state,
+        max_loops=1,
+        user_instruction=GOAL,
+        profile="app",
+    )
+    started = _started_caps(events, executed)
+    leaked = _essay_in(started)
+    assert not leaked, f"剩余产出链又跑了作文 {leaked}"
+    assert "evidence.search" not in started
+    assert agentic_calls == [], "剩余链不应再跑 agentic pick"
+    joined = " ".join(str(x) for x in started)
+    assert "factory.pages" in joined, (
+        "剩余链必须按 hop 身份跑 factory.pages。"
+        "再 pick runtimeClosure 会被 repeat 跳过，页面一直 0。"
+    )
+    assert "factory.structure" in joined
+    assert "factory.bind" in joined
+
+
+def test_first_pass_skips_closure_failsafe(monkeypatch):
+    """首轮不许走五系统收口。变异：把 `_first_pass_chain` 那支删掉 → 本条红。"""
+    import services.v5_full_driver as drv
+
+    src = _code(drv._ensure_runtime_closure_evidence)
+    assert "_first_pass_chain" in src
+
+    def boom(*a, **k):
+        raise AssertionError("首轮停在 SPEC 还去收口")
+
+    monkeypatch.setattr(drv, "derive_publish_closure_response", boom)
+    state = _seeded("fp-skip-closure", tools=["spec", "pages", "structure", "bind"])
+    out = drv._ensure_runtime_closure_evidence(state, GOAL, 0)
+    assert out is state
+
+
 def test_scope_opt_in_feasibility_report_brings_essay_caps_back(driver, monkeypatch):
     driver_mod, agentic_mod = driver
     executed, agentic_calls, orch_calls = _install_traps(

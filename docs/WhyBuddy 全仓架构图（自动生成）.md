@@ -63,7 +63,7 @@ flowchart TB
   py_scripts -->|2| py_stdio_utf8
   py_services -->|15| py_config
   py_services -->|30| py_models
-  py_services -->|62| py_sliderule_llm
+  py_services -->|60| py_sliderule_llm
   py_sliderule_llm -->|2| py_config
   ts_server -.->|open| py_services_web_aigc_open_adapter
   ts_server -.->|orchestration| py_services_web_aigc_orchestration_adapter

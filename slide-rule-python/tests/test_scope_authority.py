@@ -218,6 +218,41 @@ def test_stamp_ignores_unwired_device():
     assert goal["preferredDevice"] == "desktop"
 
 
+def test_park_ignores_assistant_scope_card_restatement():
+    """助手复述带旧设备词，不得跟本轮句子冲突成 None 再回落 payload。"""
+    from types import SimpleNamespace
+
+    from services.rehearsal_control import _scope_texts
+
+    state = SimpleNamespace(
+        goal={"text": "请假系统"},
+        awaitDetail="",
+        controlTranscript=[
+            {"role": "user", "kind": "turn", "text": "做一个微信小程序请假"},
+            {
+                "role": "assistant",
+                "kind": "scope_card",
+                "text": "将做成：Web/PC 桌面端请假系统",
+                "device": "desktop",
+            },
+        ],
+    )
+    texts = _scope_texts(state, "改成手机版")
+    assert "将做成：Web/PC 桌面端请假系统" not in texts
+    assert "做一个微信小程序请假" in texts
+    assert "改成手机版" in texts
+    # 若把复述喂回去，电脑+手机 → None → 回落 desktop。
+    assert (
+        resolve_park_device(
+            last_card={},
+            goal={},
+            texts=texts,
+            payload_device="desktop",
+        )
+        == "phone"
+    )
+
+
 def test_live_sockets_call_the_resolvers():
     """删掉控制面 / 工厂的调用点，这条必须红。单独测函数会绿。"""
     from services import drive_full_factory as factory

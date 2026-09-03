@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from types import SimpleNamespace  # noqa: E402
 
 from services.turn_narration import (  # noqa: E402
+    HOP_NO_PRODUCE_NOTE,
     project_drive_steps,
     stamp_drive_narration,
     stamp_turn_narration,
@@ -81,7 +82,10 @@ def test_structure_hop_does_not_claim_missing_pages():
         publishClosure={"refinePaintNote": "", "chatSummary": "含 2 角色、3 页面。"},
     )
     steps = project_drive_steps(
-        st, user="进入数据模型反推（Structure）", events_cursor=0
+        st,
+        user="进入数据模型反推（Structure）",
+        events_cursor=0,
+        produced=True,
     )
     finals = [s["text"] for s in steps if s.get("kind") == "narration" and s.get("isFinal")]
     blob = " ".join(finals)
@@ -98,12 +102,33 @@ def test_structure_user_text_wins_over_stale_pages_tools():
         publishClosure={"refinePaintNote": "", "chatSummary": "含 2 角色、3 页面。"},
     )
     steps = project_drive_steps(
-        st, user="进入数据模型反推（structure）", events_cursor=0
+        st,
+        user="进入数据模型反推（structure）",
+        events_cursor=0,
+        produced=True,
     )
     finals = [s["text"] for s in steps if s.get("kind") == "narration" and s.get("isFinal")]
     blob = " ".join(finals)
     assert "本轮没有画出新的页面" not in blob
     assert "本轮已完成数据模型反推。" in blob
+
+
+def test_zero_production_hop_does_not_claim_done_from_user_text():
+    """反向：零产出的一跳，原文提到 hop 名也不许叙述成已完成。"""
+    st = _state(
+        goal={"text": "萌芽成长树", "status": "clear", "tools": ["structure"]},
+        specFirstPages={"pages": {"p1": "<html>打卡</html>"}},
+        publishClosure={"refinePaintNote": "", "chatSummary": "含 2 角色、3 页面。"},
+    )
+    steps = project_drive_steps(
+        st, user="进入数据模型反推（Structure）", events_cursor=0, produced=False
+    )
+    finals = [s["text"] for s in steps if s.get("kind") == "narration" and s.get("isFinal")]
+    blob = " ".join(finals)
+    assert "本轮已完成数据模型反推" not in blob
+    assert "已完成" not in blob
+    assert HOP_NO_PRODUCE_NOTE in blob
+    assert "含 2 角色" not in blob
 
 
 def test_project_pages_and_refine_narration():
@@ -112,13 +137,32 @@ def test_project_pages_and_refine_narration():
         specFirstPages={"pages": {"p2": "<html>台账</html>", "p5": "<html>逾期</html>"}},
         publishClosure={"refinePaintNote": "", "chatSummary": "含 2 角色、3 页面。"},
     )
-    steps = project_drive_steps(st, user="台账加预约排队人数", events_cursor=0)
+    steps = project_drive_steps(
+        st, user="台账加预约排队人数", events_cursor=0, produced=True
+    )
     labels = [s.get("label") or s.get("text") or "" for s in steps]
     assert any("🖼 界面已出：p2" in x for x in labels)
     assert any("🖼 界面已出：p5" in x for x in labels)
     finals = [s["text"] for s in steps if s.get("kind") == "narration" and s.get("isFinal")]
     assert finals == ["本轮已按指令改画页面。"]
     assert "含 2 角色" not in "".join(finals)
+
+
+def test_refine_without_production_does_not_claim_updated():
+    """A-7 收口：没改页面不许说已改画 / 已更新。"""
+    st = _state(
+        goal={"text": "社区工具屋", "status": "clear"},
+        specFirstPages={"pages": {"p2": "<html>台账</html>"}},
+        publishClosure={"refinePaintNote": "", "chatSummary": "含 2 角色、3 页面。"},
+    )
+    steps = project_drive_steps(
+        st, user="台账加预约排队人数", events_cursor=0, produced=False
+    )
+    finals = [s["text"] for s in steps if s.get("kind") == "narration" and s.get("isFinal")]
+    blob = " ".join(finals)
+    assert "已按指令改画" not in blob
+    assert "已更新" not in blob
+    assert "本轮没有画出新的页面" in blob
 
 
 def test_stamp_drive_writes_on_state_and_caps_three_turns():
@@ -143,3 +187,16 @@ def test_empty_steps_do_not_stamp():
     st = _state(goal={"text": "x"})
     stamp_turn_narration(st, turn_id="turn-1", user="u", steps=[])
     assert st.turnNarrations == []
+
+
+def test_live_driver_passes_produced_into_stamp():
+    """函数写对了 ≠ 它被调用了。两条驱动都要把 produced 传进 stamp。"""
+    import re
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parents[1] / "services" / "v5_full_driver.py").read_text(
+        encoding="utf-8"
+    )
+    src = re.sub(r"(?m)^\s*#.*$", "", src)
+    assert src.count("produced=deliverable_fingerprint(state) != _fp_before") >= 2
+    assert "_fp_before = deliverable_fingerprint(state)" in src

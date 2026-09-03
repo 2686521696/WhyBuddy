@@ -50,7 +50,6 @@ from __future__ import annotations
 import copy
 import asyncio
 import inspect
-import hashlib
 import json
 import time
 import uuid
@@ -62,6 +61,7 @@ from typing import Any, AsyncIterator, Dict, Iterable, List, Optional
 
 from services.factory_plan_steps import product_steps_for_tools
 from services.capability_plan import (
+    TOOL_LABELS,
     first_pass_tools,
     is_first_pass_chain,
     remaining_first_pass_tools,
@@ -106,6 +106,7 @@ from services.slide_rule_interactive_gates import (
     resolve_readiness_gaps_by_ids,
 )
 from services.slide_rule_session import load_session, save_session
+from services.turn_narration import deliverable_fingerprint as factory_deliverable_fingerprint  # 叙述/回执同一把尺子
 from services.v5_full_driver import _truthy_scope_flag
 from sliderule_llm.control_client import ControlLlmResult, call_control_llm
 
@@ -911,10 +912,15 @@ def _scope_texts(state: V5SessionState, user_text: str = "") -> list[str]:
     ]
     # 澄清后的 park 用的 user_text 往往是最后一答，不含「微信小程序」。
     # 原命题在 transcript 里，漏了卡就会锁成作曲家默认 desktop。
+    #
+    # ⚠ 只收用户原文 / turn，不收助手的 scope_card 复述。复述里带着上一
+    #   张卡的设备词（「Web/PC」「桌面端」），跟第二次 park「改成手机」
+    #   拼在一起，infer_device_from_text 见冲突就返回 None，回落
+    #   payload_device——正好把这次要改的档盖回去。
     for row in list(getattr(state, "controlTranscript", None) or []):
         if not isinstance(row, dict):
             continue
-        if row.get("role") == "user" or row.get("kind") in ("turn", "scope_card"):
+        if row.get("role") == "user" or row.get("kind") == "turn":
             out.append(str(row.get("text") or ""))
     return out
 
@@ -1061,15 +1067,25 @@ def _is_slash_rehearse(user_text: str) -> bool:
 
 def resolve_forced_tool(payload: Dict[str, Any], user_text: str) -> Optional[str]:
     text = (user_text or "").strip()
-    # 人话已经点明某一跳：不许被上一跳留下的 forcedTool=pages 盖掉。
+    raw = payload.get("forcedTool") or payload.get("forced_tool")
+    forced = (
+        raw.strip()
+        if isinstance(raw, str) and raw.strip() in CLOSED_TOOLS
+        else None
+    )
+    # 人话点明某一跳：只许盖掉上一跳留下的 factory hop（pages 等残留），
+    # 不许盖掉 rehearse / refine / repair / restore_version 这类显式意图。
+    #
     # 2026-09-03 真机：确认继续把 pending 钉成 pages，随后「进入数据模型
     # 反推（Structure）」仍 POST pages，uvicorn `[control] forced hop=pages`。
+    # 2026-09-04 审查：把文本提到 forcedTool 之前修过头——新会话话题含
+    # 「结构」时，开始推演的 forcedTool=rehearse 被劫持成 structure，
+    # 撞上「还没有页面」。只压残留 hop，不压显式意图。
     hop = factory_hop_from_text(text)
-    if hop:
+    if hop and (forced is None or forced in FACTORY_HOPS):
         return hop
-    raw = payload.get("forcedTool") or payload.get("forced_tool")
-    if isinstance(raw, str) and raw.strip() in CLOSED_TOOLS:
-        return raw.strip()
+    if forced:
+        return forced
     if str(payload.get("mode") or "").strip().lower() == "repair":
         return "repair"
     if text.startswith("/精修"):
@@ -1764,26 +1780,6 @@ async def _confirm_rehearse_and_handoff(
 _PRODUCING_HOPS = ("spec", "pages", "structure", "bind", "rehearse", "refine")
 
 
-def factory_deliverable_fingerprint(state: V5SessionState) -> str:
-    """交付物指纹：SPEC + 页面 + 模型版本。用来回答「这一跳到底动没动东西」。
-
-    只取会被工厂改写的那几块，稳定序列化后哈希。取整个 state 会把
-    lastActive / 台账这类每轮必变的字段算进去，指纹就永远"变了"，
-    等于没判据。
-    """
-    blob = _spec_first_blob(state)
-    payload = {
-        "spec": blob.get("spec"),
-        "pages": blob.get("pages"),
-        "version": getattr(state, "currentModelVersionId", None),
-    }
-    try:
-        raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
-    except Exception:  # noqa: BLE001
-        raw = repr(payload)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
 def _factory_tool_body(
     state: V5SessionState, tool: str, *, before_fingerprint: Optional[str] = None
 ) -> Dict[str, Any]:
@@ -2435,8 +2431,6 @@ def _after_write_hint(state: V5SessionState) -> str:
     ⚠ 2026-09-02：话术曾看「会话里有没有旧页面」，spec 单跳交回仍问结构绑定。
     必须读本跳 capabilityPlan.tools。
     """
-    from services.capability_plan import TOOL_LABELS
-
     tools = _this_hop_tools(state)
     labels = dict(TOOL_LABELS)
     ran = "、".join(labels.get(t, t) for t in tools)
@@ -2537,12 +2531,26 @@ async def _resume_control_llm_after_write(
     )
     if tool_body is None:
         yield {"type": "control_tool_result", "tool": tool, **body}
-    messages = _messages_after_forced_write(state, user_text, tool, body)
     # SPEC 单跳之后假设卡还在等「确认继续」。交回时若仍带工具，模型会
     # 调 pages（跳过确认）或 scope_card（ComposerDock 有 pendingScope
     # 就不画假设面板）。2026-09-02 真机：钟 2:done 后范围卡回来，确认
-    # 继续点不着。这一轮只许说话。
+    # 继续点不着。
+    #
+    # ⚠ 2026-09-03 真机 sr-20260903204902-3QRNQT9RZX：交回「只许说话」
+    #   仍要等 `_invoke_control_llm`。墙钟 45s 只在轮与轮之间查，这一发
+    #   HTTP 挂住 SSE，确认继续排队 25 分钟发不出去，账本没有 pages。
+    #   假设卡等确认 = 罐头收尾 + complete，让队列立刻发剩余产出链。
     spec_waiting = tool in ("spec", "rehearse") and not _has_pages(state)
+    if spec_waiting:
+        text = POST_SPEC_HOP_FALLBACK
+        _append_transcript(
+            state, {"role": "assistant", "kind": "control_text", "text": text}
+        )
+        await _apersist(state)
+        yield {"type": "control_text", "text": text}
+        yield _complete(state)
+        return
+    messages = _messages_after_forced_write(state, user_text, tool, body)
     async for event in _control_llm_loop(
         state,
         messages,
@@ -2554,10 +2562,8 @@ async def _resume_control_llm_after_write(
         original_goal=original_goal,
         started=time.monotonic(),
         cheap_tokens=0,
-        empty_text=(
-            POST_SPEC_HOP_FALLBACK if spec_waiting else POST_WRITE_FALLBACK
-        ),
-        tools=[] if spec_waiting else None,
+        empty_text=POST_WRITE_FALLBACK,
+        tools=None,
     ):
         yield event
 
@@ -2827,6 +2833,12 @@ async def _run_control_turn_body(
             ):
                 yield event
             return
+        # 新一轮 SPEC 起草：上一轮「假设已确认」不许压住新卡。
+        # 只在 forced=="spec" 时清的话，这次首轮链走 rehearse，陈旧 True
+        # 把假设卡闩死，resetSpecAssumptions 成了死代码。
+        sfp = dict(getattr(state, "specFirstPages", None) or {})
+        sfp["assumptionsConfirmed"] = False
+        state.specFirstPages = sfp
         # 写权限：forcedTool 绕过 _dispatch_tool 直接进工厂，scope 要在这里设。
         handed = False
         tool_body: Optional[Dict[str, Any]] = None
@@ -3173,25 +3185,20 @@ async def _dispatch_tool(
             chosen = list(first_pass_tools(goal.get("tools")))
         elif name == "pages" and "假设已确认" in (user_text or ""):
             # 确认继续把首轮剩下的产出跳一次跑完，不再只 pages。
-            # 没有 SPEC 时仍走 pages，让 blocker 说人话，不许假装首轮从零开始。
+            # ⚠ 确认 POST 常把 payload.tools 写成 ["pages"]，stamp 之后
+            #   remaining 只看见 pages。legal 用范围卡/首轮菜单，不用这笔。
             if not _has_spec(state):
                 chosen = ["pages"]
             else:
+                last = _last_scope_card(state)
+                legal = last.get("tools") if isinstance(last, dict) else None
                 chosen = list(
                     remaining_first_pass_tools(
-                        goal.get("tools"),
+                        legal,
                         has_spec=True,
                         has_pages=_has_pages(state),
                     )
-                )
-                if not chosen:
-                    chosen = list(
-                        remaining_first_pass_tools(
-                            None,
-                            has_spec=True,
-                            has_pages=_has_pages(state),
-                        )
-                    ) or ["pages"]
+                ) or ["pages"]
         else:
             chosen = [name]
         hop = chosen[0]

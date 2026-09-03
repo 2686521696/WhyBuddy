@@ -72,6 +72,39 @@ def test_forced_pages_skips_llm_and_sets_goal_tools_pages(harness):
     )
 
 
+def test_forced_rehearse_resets_stale_assumptions_confirmed(harness):
+    """首轮链走 rehearse，上一轮的 True 必须清掉，假设卡才能再弹。
+
+    变异：只在 forced=="spec" 时重置 → 本条红。
+    """
+    sid = new_sid("rehearse-reset-assumptions")
+    seed_session(
+        sid,
+        goal={"text": "请假系统", "status": "clear"},
+        awaitReason="control_scope",
+        awaitDetail="请假系统",
+        specFirstPages={
+            "spec": {
+                "appName": "旧应用",
+                "pages": [{"id": "p1", "name": "首页"}],
+                "nodes": [{"id": "n0", "title": "首页"}],
+            },
+            "assumptionsConfirmed": True,
+        },
+    )
+
+    def impl(messages, **kw):
+        return llm_text("页面已经出来，要改哪一页说一声。")
+
+    harness.llm_impl = impl
+    harness.post(six_fields(sid, "将做成：请假系统", forcedTool="rehearse"))
+    saved = load_session(sid)
+    sfp = (saved.specFirstPages or {}) if saved else {}
+    assert sfp.get("assumptionsConfirmed") is False, (
+        f"rehearse 必须清掉陈旧确认。实际 {sfp.get('assumptionsConfirmed')}"
+    )
+
+
 def test_forced_pages_survives_stale_session_reload(monkeypatch):
     """同一 lastTurnId 改 goal.tools 会被落盘守卫挡住。工厂 reload 后仍必须是 pages。
 
@@ -260,7 +293,7 @@ def test_forced_closed_tools_bind_write_scope():
 def test_spec_hop_resume_cannot_park_scope_card(harness):
     """选完再继续：SPEC 跳交回后模型想开范围卡，不许把假设面板冲掉。
 
-    变异：把 tools=[] 那道闸删掉 → 本条红（流里出现 control_scope_card）。
+    变异：把 spec_waiting 提前 complete 拿掉、再带工具交回 → 本条红。
     """
     from control_turn_support import llm_tool
 
@@ -273,7 +306,6 @@ def test_spec_hop_resume_cannot_park_scope_card(harness):
     )
 
     def impl(messages, **kw):
-        assert harness.helper_calls, "点火前不得问控制面模型"
         return llm_tool("scope_card", {"restatement": "社区图书馆借还书系统"})
 
     harness.llm_impl = impl
@@ -285,7 +317,69 @@ def test_spec_hop_resume_cannot_park_scope_card(harness):
     assert "control_scope_card" not in types, (
         f"SPEC 跳完又弹出范围卡，假设面板被 pendingScope 藏起来：{types}"
     )
+    assert not harness.llm_calls, "假设卡等确认还去问了控制面"
     assert types[-1] == "complete"
+
+
+def test_spec_waiting_resume_completes_before_control_llm():
+    """剥注释：spec_waiting 必须自己 complete，不许进控制面 LLM。"""
+    from control_turn_support import strip_python
+    from pathlib import Path
+
+    src = strip_python(Path("slide-rule-python/services/rehearsal_control.py"))
+    at = src.find("async def _resume_control_llm_after_write")
+    end = src.find("async def _control_llm_loop")
+    assert at > 0 and end > at
+    body = src[at:end]
+    wait_at = body.find("spec_waiting")
+    assert wait_at > 0, "交回没有 spec_waiting 闸"
+    complete_at = body.find("_complete(state)", wait_at)
+    loop_at = body.find("_control_llm_loop", wait_at)
+    assert complete_at > 0, "假设卡等确认没有 host complete"
+    assert loop_at < 0 or complete_at < loop_at, (
+        "spec_waiting 仍先进控制面 LLM，确认继续会排队"
+    )
+    assert "POST_SPEC_HOP_FALLBACK" in body[wait_at:]
+
+
+def test_confirm_ignores_payload_tools_pages_and_keeps_first_pass_rest(harness):
+    """确认 POST 常带 tools=['pages']。stamp 之后 remaining 不许只剩 pages。"""
+    sid = new_sid("confirm-payload-pages")
+    seed_session(
+        sid,
+        goal={"text": "社区图书馆借还书系统", "status": "clear"},
+        controlTranscript=[
+            {
+                "id": "ct-1",
+                "kind": "scope_card",
+                "text": "社区图书馆借还书系统",
+                "tools": ["spec", "pages", "structure", "bind", "closure"],
+            },
+            {"id": "ct-2", "kind": "scope_confirmed", "text": "社区图书馆借还书系统"},
+        ],
+        specFirstPages={
+            "spec": {
+                "appName": "社区图书馆",
+                "pages": [{"id": "p1", "name": "借还台"}],
+                "nodes": [{"id": "n0", "title": "借还"}],
+            },
+            "pages": {},
+        },
+    )
+    harness.llm_impl = lambda messages, **kw: llm_text("页面已经出来。")
+    harness.post(
+        six_fields(
+            sid,
+            "假设已确认。继续画页面。",
+            forcedTool="pages",
+            tools=["pages"],
+        )
+    )
+    saved = load_session(sid)
+    tools = (saved.goal or {}).get("tools") if saved and isinstance(saved.goal, dict) else None
+    assert tools == ["pages", "structure", "bind"], (
+        f"确认被 payload.tools=pages 削成单跳：{tools}"
+    )
 
 
 def test_later_pages_hop_without_confirm_phrase_stays_one_hop(harness):

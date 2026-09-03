@@ -73,6 +73,9 @@ from contextvars import ContextVar
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from . import env_flags as _env_flags
+from .capability_plan import CapabilityPlan
+from .run_pause import current_slot, hold_current
+from sliderule_llm.scoped import sink_scope
 
 SPEC_FIRST_VERSION = "spec-first-pipeline-v1"
 
@@ -125,8 +128,6 @@ def page_sink_scope(sink):
     调用方优先用这个，别用上面那个裸 setter——裸 setter 要人肉记得去别处
     补一行卸载，而且卸成 None 而不是还原成原来那个。
     """
-    from sliderule_llm.scoped import sink_scope
-
     return sink_scope(_page_sink_var, sink)
 
 
@@ -158,8 +159,6 @@ def assumption_sink_scope(sink):
     调用方优先用这个，别用上面那个裸 setter——裸 setter 要人肉记得去别处
     补一行卸载，而且卸成 None 而不是还原成原来那个。
     """
-    from sliderule_llm.scoped import sink_scope
-
     return sink_scope(_assumption_sink_var, sink)
 
 
@@ -170,8 +169,6 @@ _quality_sink_var: ContextVar[Optional[Callable[..., None]]] = ContextVar(
 
 def quality_sink_scope(sink):
     """图判降级 / 孤岛 / 对比。只报不拦。抄 grok typed session events。"""
-    from sliderule_llm.scoped import sink_scope
-
     return sink_scope(_quality_sink_var, sink)
 
 
@@ -226,8 +223,6 @@ def _emit_assumptions(spec: Any) -> bool:
         # 选完再继续：假设一出就请求停在下一安全点。闸没绑 / 暂停关了
         # 都静默——不许「顺路说一声」打死已经跑了两分钟的链。
         try:
-            from .run_pause import current_slot, hold_current
-
             hold_current()
             slot = current_slot()
             if slot is None or slot.pending is None:
@@ -1369,7 +1364,6 @@ def run_spec_first(
         repair_pages_after_bind,
         unify_shell,
     )
-    from .capability_plan import CapabilityPlan
     from .workflow_select import select_workflow
     from .spec_page_html import generate_pages_parallel
     from .spec_semantics import derive_semantics, to_model_sections  # noqa: F401

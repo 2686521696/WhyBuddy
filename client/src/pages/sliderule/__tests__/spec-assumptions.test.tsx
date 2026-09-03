@@ -448,13 +448,33 @@ describe("接线（四段都得接上）", () => {
     ).toBe(false);
   });
 
-  it("推演中发 Structure 进静默队列，盖掉确认留下的 pages", () => {
+  it("SPEC 重起草后显式 false 必须压过旧确认，同一张卡重新出现", () => {
+    expect(
+      assumptionsWereConfirmed({
+        specFirstPages: { assumptionsConfirmed: false },
+        controlTranscript: [{ text: "假设已确认。继续画页面。" }],
+        turnNarrations: [{ user: "假设已确认。继续画页面。" }],
+      })
+    ).toBe(false);
+    expect(
+      assumptionsWereConfirmed({
+        specFirstPages: { spec: { assumptions: [{ id: "a1" }] } },
+        controlTranscript: [
+          { text: "假设已确认。继续画页面。" },
+          { text: "将做成：做一个亲子打卡应用" },
+        ],
+      })
+    ).toBe(false);
+  });
+
+  it("推演中发 Structure 进可见队列，盖掉确认留下的 pages", () => {
     const at = SESSION.indexOf("const sendMessage");
     expect(at).toBeGreaterThan(-1);
-    const body = SESSION.slice(at, at + 1600);
+    const body = SESSION.slice(at, at + 1800);
     expect(body).toContain("factoryHopFromText(text)");
     expect(body).toContain("pendingForcedToolRef.current = hop");
-    expect(body).toContain("enqueueTurn(");
+    expect(body).toContain("pushQueuedTurn(text)");
+    expect(body).toContain("setPendingAsk(null)");
   });
 
   it("确认继续的 pages 闸只在 runTurn 过了 isRunning 之后取走", () => {

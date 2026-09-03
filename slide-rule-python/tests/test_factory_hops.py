@@ -63,6 +63,37 @@ def test_resolve_forced_tool_reads_hop_from_user_text():
     )
 
 
+def test_resolve_forced_tool_does_not_let_topic_hijack_explicit_intent():
+    """显式意图不许被话题里的 hop 关键词盖掉。
+
+    变异：把 factory_hop_from_text 无条件排到 forcedTool 之前 → 本条红。
+    """
+    assert (
+        resolve_forced_tool(
+            {"forcedTool": "rehearse"}, "做一个门店客户数据结构管理台"
+        )
+        == "rehearse"
+    )
+    assert (
+        resolve_forced_tool(
+            {"forcedTool": "refine"}, "把权限绑定那一栏改成扫码"
+        )
+        == "refine"
+    )
+    assert (
+        resolve_forced_tool(
+            {"forcedTool": "rehearse"}, "做一个社区健身房预约系统"
+        )
+        == "rehearse"
+    )
+    assert (
+        resolve_forced_tool(
+            {"forcedTool": "restore_version"}, "进入数据模型反推（Structure）"
+        )
+        == "restore_version"
+    )
+
+
 def test_ts_parser_exists_and_shares_the_wechat_guard():
     """漏一侧 = 审查条仍闪，或者新产品被当 hop。"""
     src = TS.read_text(encoding="utf-8")

@@ -52,7 +52,7 @@ def test_start_rehearse_skips_ask_user_fixture_and_forwards_slash_connector(harn
         )
     )
     assert len(harness.helper_calls) == 1
-    assert harness.llm_calls, "工厂之后没有 LLM——自由编排没介入"
+    assert not harness.llm_calls, "假设卡等确认还去问了控制面"
     call = harness.helper_calls[0]
     assert connector_id in (call["active_connectors"] or [])
     assert call["installed_skills"] == [{"id": "skill-a"}]
@@ -62,6 +62,7 @@ def test_start_rehearse_skips_ask_user_fixture_and_forwards_slash_connector(harn
     assert "control_ask_user" not in types
     assert "control_handoff_factory" in types
     assert "factory_complete" in types
+    assert types[-1] == "complete"
     assert types.count("control_ask_user") == 0
 
 

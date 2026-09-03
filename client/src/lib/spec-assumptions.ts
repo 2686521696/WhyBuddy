@@ -123,12 +123,25 @@ export function assumptionsWereConfirmed(state: {
   controlTranscript?: Array<{ text?: unknown }> | null;
 } | null | undefined): boolean {
   if (!state) return false;
-  if (state.specFirstPages?.assumptionsConfirmed) return true;
-  for (const row of state.controlTranscript || []) {
-    if (/假设已确认/.test(String(row?.text || ""))) return true;
+  // 键在就认键。显式 false（SPEC 重起草 / resetSpecAssumptions）必须
+  // 压过 transcript 里上一轮的「假设已确认」，否则确认过一次就终身为真，
+  // resetSpecAssumptions 成死代码。
+  const pages = state.specFirstPages;
+  if (pages && Object.prototype.hasOwnProperty.call(pages, "assumptionsConfirmed")) {
+    return Boolean(pages.assumptionsConfirmed);
   }
-  for (const n of state.turnNarrations || []) {
-    if (/假设已确认/.test(String(n?.user || ""))) return true;
+  // 工厂整份替换页面时可能把键冲掉。回落只看「当前这一轮」：从后往前，
+  // 先碰到确认就是已确认；先碰到重起草（将做成 / 开始推演 / spec hop）
+  // 就是新一轮，旧确认作废。
+  const rows: Array<{ text?: unknown }> = [
+    ...(state.controlTranscript || []),
+    ...((state.turnNarrations || []).map(n => ({ text: n?.user }))),
+  ];
+  for (const row of [...rows].reverse()) {
+    const text = String(row?.text || "");
+    if (/假设已确认/.test(text)) return true;
+    if (factoryHopFromText(text) === "spec") return false;
+    if (/开始推演|将做成：/.test(text)) return false;
   }
   return false;
 }

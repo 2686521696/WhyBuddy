@@ -95,7 +95,7 @@ import {
   type ScopeCardDevice,
   type ScopeCardPending,
 } from "./scope-card-gate";
-import { factoryHopFromText } from "@/lib/factory-hops";
+import { factoryHopFromText, isFactoryHop } from "@/lib/factory-hops";
 import {
   controlUserTextForSlash,
   forcedToolForRehearsalVerb,
@@ -124,10 +124,13 @@ export function inferForcedTool(
   mode?: "repair",
   explicit?: string
 ): string | undefined {
-  // 人话已经点明某一跳：不许被上一跳留下的 pendingForcedTool=pages 盖掉。
+  // 人话点明某一跳：只许盖掉上一跳留下的 factory hop（pages 等残留），
+  // 不许盖掉 rehearse / refine / restore_version 这类显式意图。
   // 2026-09-03 真机：确认继续钉 pages，随后 Structure 仍 POST pages。
+  // 2026-09-04：文本提到 explicit 之前修过头——话题含「结构」时，
+  // 开始推演的 rehearse 被劫持成 structure。
   const fromText = factoryHopFromText(userText);
-  if (fromText) return fromText;
+  if (fromText && (!explicit || isFactoryHop(explicit))) return fromText;
   if (explicit) return explicit;
   if (mode === "repair") return "repair";
   if (intervention?.intent === "challenge") return "challenge";
@@ -2658,12 +2661,13 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     if (isRunningRef.current) {
       const hop = factoryHopFromText(text);
       if (hop) {
-        // 收尾卡 / 人话 hop 是 typed 答案，进静默队列，盖掉确认留下的 pages。
+        // 收尾卡 / 人话 hop 是 typed 答案，盖掉确认留下的 pages。
         pendingForcedToolRef.current = hop;
-        queuedTurnRef.current = enqueueTurn(queuedTurnRef.current, text);
-        setInput("");
-        return;
       }
+      // 提问 chip / 人话 hop 都要看得见、撤得掉。静默入队 = 点了没反馈、
+      // 条目删不掉，下次 pushQueuedTurn 才蹦进可见队列。
+      pendingAskRef.current = null;
+      setPendingAsk(null);
       pushQueuedTurn(text);
       setInput("");
       return;

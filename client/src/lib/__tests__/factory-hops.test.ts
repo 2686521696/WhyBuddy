@@ -9,6 +9,7 @@ import {
   factoryCapabilityId,
   factoryHopFromText,
   hopFromFactoryCapability,
+  isFactoryHop,
   looksLikeFactoryHopCommand,
 } from "../factory-hops";
 
@@ -41,5 +42,8 @@ describe("factoryHopFromText", () => {
     expect(hopFromFactoryCapability("factory.structure")).toBe("structure");
     expect(hopFromFactoryCapability("appbundle.runtimeClosure")).toBeUndefined();
     expect(FACTORY_HOP_LABELS.structure).toContain("数据模型");
+    expect(isFactoryHop("pages")).toBe(true);
+    expect(isFactoryHop("rehearse")).toBe(false);
+    expect(isFactoryHop("refine")).toBe(false);
   });
 });

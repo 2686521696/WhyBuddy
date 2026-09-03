@@ -95,6 +95,7 @@ def test_stream_picks_host_hop_identity_not_the_envelope():
     assert "factory-hop:" in _strip(inspect.getsource(drv._pending_batch_key))
     assert "_capability_ran(" in ensure
     assert "hop_cap" in ensure
+    assert "_first_pass_chain(" in ensure
 
 
 def test_structure_after_pages_envelope_is_not_repeat_exhausted(driver, monkeypatch):

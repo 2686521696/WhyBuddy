@@ -244,6 +244,12 @@ describe("斜杠动词走控制面，客户端 /推演 不得 yolo", () => {
     expect(
       inferForcedTool("假设已确认。继续画页面。", undefined, undefined, "pages")
     ).toBe("pages");
+    expect(
+      inferForcedTool("做一个门店客户数据结构管理台", undefined, undefined, "rehearse")
+    ).toBe("rehearse");
+    expect(
+      inferForcedTool("把权限绑定那一栏改成扫码", undefined, undefined, "refine")
+    ).toBe("refine");
     expect(forcedToolForRehearsalVerb(parseRehearsalSlash("/推演"))).toBeUndefined();
   });
 

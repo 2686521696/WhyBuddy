@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   assistantTextForTurn,
+  HOP_NO_PRODUCE_NOTE,
   REFINE_TURN_NO_PAGE_NOTE,
 } from "../assistant-text-for-turn";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
@@ -64,14 +65,14 @@ describe("assistantTextForTurn", () => {
     expect(text).toBe(REFINE_TURN_NO_PAGE_NOTE);
   });
 
-  it("Structure / bind 跳不许说没画出页面", () => {
+  it("Structure / bind 跳不许把「没画出页面」改写成已完成", () => {
     const structure = assistantTextForTurn(
       turn({ user: "进入数据模型反推（Structure）" }),
       closure(),
       GOAL
     );
-    expect(structure).toBe("本轮已完成数据模型反推。");
-    expect(structure).not.toBe(REFINE_TURN_NO_PAGE_NOTE);
+    expect(structure).toBe(HOP_NO_PRODUCE_NOTE);
+    expect(structure).not.toContain("已完成");
     const stamped = assistantTextForTurn(
       turn({
         user: "进入数据模型反推（structure）",
@@ -88,13 +89,27 @@ describe("assistantTextForTurn", () => {
       closure(),
       GOAL
     );
-    expect(stamped).toBe("本轮已完成数据模型反推。");
-    const bind = assistantTextForTurn(
+    expect(stamped).toBe(REFINE_TURN_NO_PAGE_NOTE);
+    expect(stamped).not.toContain("已完成");
+    const produced = assistantTextForTurn(
+      turn({
+        user: "进入数据模型反推（Structure）",
+        assistant: "本轮已完成数据模型反推。",
+      }),
+      closure(),
+      GOAL
+    );
+    expect(produced).toBe("本轮已完成数据模型反推。");
+  });
+
+  it("零产出的 hop 原文提到名字也不许叙述成已完成", () => {
+    const text = assistantTextForTurn(
       turn({ user: "进入权限绑定（bind）" }),
       closure(),
       GOAL
     );
-    expect(bind).toBe("本轮已完成权限绑定。");
+    expect(text).not.toContain("已完成");
+    expect(text).toBe(HOP_NO_PRODUCE_NOTE);
   });
 
   it("精修失败优先用 refinePaintNote", () => {
