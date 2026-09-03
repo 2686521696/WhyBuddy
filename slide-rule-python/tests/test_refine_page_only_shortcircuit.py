@@ -98,7 +98,7 @@ def _drive(monkeypatch, *, seed="page:p1", shortcircuit=True):
     monkeypatch.setattr(hs, "derive_structure", fake_structure)
     monkeypatch.setattr(ss, "derive_semantics", fake_sem)
     monkeypatch.setattr(ma, "assemble", fake_assemble)
-    monkeypatch.setattr(hb, "bind_pages", lambda p, m: {"pages": dict(p), "failed": {}})
+    monkeypatch.setattr(hb, "bind_pages", lambda p, m, **kw: {"pages": dict(p), "failed": {}})
     if not shortcircuit:
         monkeypatch.setenv("SLIDERULE_REFINE_PAGE_ONLY_SHORTCIRCUIT", "0")
 
@@ -166,7 +166,7 @@ def test_switch_off_falls_back_to_full_spec(monkeypatch):
     monkeypatch.setattr(hs, "derive_structure", lambda p, **kw: {"entities": [], "pages": []})
     monkeypatch.setattr(ss, "derive_semantics", lambda *a, **k: {"roles": []})
     monkeypatch.setattr(ma, "assemble", lambda *a, **k: {"model": {"datamodel": {}}, "gate": {"passed": True}})
-    monkeypatch.setattr(hb, "bind_pages", lambda p, m: {"pages": dict(p), "failed": {}})
+    monkeypatch.setattr(hb, "bind_pages", lambda p, m, **kw: {"pages": dict(p), "failed": {}})
 
     sfp.run_spec_first(
         "做个工单系统",
@@ -217,7 +217,7 @@ def test_empty_segments_must_not_short_circuit(monkeypatch):
     monkeypatch.setattr(hs, "derive_structure", lambda p, **kw: {"entities": [], "pages": []})
     monkeypatch.setattr(ss, "derive_semantics", lambda *a, **k: {"roles": []})
     monkeypatch.setattr(ma, "assemble", lambda *a, **k: {"model": {"datamodel": {}}, "gate": {"passed": True}})
-    monkeypatch.setattr(hb, "bind_pages", lambda p, m: {"pages": dict(p), "failed": {}})
+    monkeypatch.setattr(hb, "bind_pages", lambda p, m, **kw: {"pages": dict(p), "failed": {}})
 
     sfp.run_spec_first(
         "做个工单系统",

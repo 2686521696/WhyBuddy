@@ -367,7 +367,7 @@ class Test端到端接线_基线要落到第3步:
         monkeypatch.setattr(
             ma, "assemble", lambda *a, **k: {"model": {"datamodel": {}}, "gate": {"passed": True}}
         )
-        monkeypatch.setattr(hb, "bind_pages", lambda p, m: {"pages": dict(p), "failed": {}})
+        monkeypatch.setattr(hb, "bind_pages", lambda p, m, **kw: {"pages": dict(p), "failed": {}})
 
         sfp.run_spec_first(
             "做个工单系统",

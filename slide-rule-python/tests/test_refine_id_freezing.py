@@ -267,7 +267,7 @@ class Test接线_三步都要传:
             ma, "assemble",
             lambda *a, **k: {"model": {"datamodel": {}}, "gate": {"passed": True}},
         )
-        monkeypatch.setattr(hb, "bind_pages", lambda p, m: {"pages": dict(p), "failed": {}})
+        monkeypatch.setattr(hb, "bind_pages", lambda p, m, **kw: {"pages": dict(p), "failed": {}})
 
         sfp.run_spec_first(
             "做一个维保工单系统",
@@ -373,7 +373,7 @@ class Test结构拨回_过夜形状:
             ma, "assemble",
             lambda *a, **k: {"model": {"datamodel": {}, "page": {"pages": []}}, "gate": {"passed": True}},
         )
-        monkeypatch.setattr(hb, "bind_pages", lambda p, m: {"pages": dict(p), "failed": {}})
+        monkeypatch.setattr(hb, "bind_pages", lambda p, m, **kw: {"pages": dict(p), "failed": {}})
 
         sfp.run_spec_first(
             "做一个维保工单系统",

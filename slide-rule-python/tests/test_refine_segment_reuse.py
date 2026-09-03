@@ -382,7 +382,7 @@ class Test端到端接线:
             lambda *a, **k: {"model": _fresh(), "gate": {"passed": True, "findings": []}},
         )
         monkeypatch.setattr(
-            hb, "bind_pages", lambda pages, model: {"pages": dict(pages), "failed": {}}
+            hb, "bind_pages", lambda pages, model, **kw: {"pages": dict(pages), "failed": {}}
         )
 
         return sfp.run_spec_first(
@@ -914,7 +914,7 @@ class Test字段对不上不整段扔:
             lambda *a, **k: {"model": _allergy_fresh(), "gate": {"passed": True, "findings": []}},
         )
         monkeypatch.setattr(
-            hb, "bind_pages", lambda pages, model: {"pages": dict(pages), "failed": {}}
+            hb, "bind_pages", lambda pages, model, **kw: {"pages": dict(pages), "failed": {}}
         )
         out = sfp.run_spec_first(
             "食堂订餐过敏",

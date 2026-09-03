@@ -275,7 +275,7 @@ class Test端到端接线:
         monkeypatch.setattr(
             ma, "assemble", lambda *a, **k: {"model": {"datamodel": {}}, "gate": {"passed": True}}
         )
-        monkeypatch.setattr(hb, "bind_pages", lambda p, m: {"pages": dict(p), "failed": {}})
+        monkeypatch.setattr(hb, "bind_pages", lambda p, m, **kw: {"pages": dict(p), "failed": {}})
 
         sfp.run_spec_first(
             "做个工单系统",
@@ -492,7 +492,7 @@ class Test设计段随精修上下文回流:
         monkeypatch.setattr(
             ma, "assemble", lambda *a, **k: {"model": {"datamodel": {}}, "gate": {"passed": True}}
         )
-        monkeypatch.setattr(hb, "bind_pages", lambda p, m: {"pages": dict(p), "failed": {}})
+        monkeypatch.setattr(hb, "bind_pages", lambda p, m, **kw: {"pages": dict(p), "failed": {}})
 
         sfp.run_spec_first("做个工单系统")
         got = sfp.take_last_pages()

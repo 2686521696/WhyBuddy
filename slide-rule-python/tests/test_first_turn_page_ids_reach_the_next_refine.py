@@ -145,7 +145,7 @@ def _run(monkeypatch, *, refine=None, reuse_pages=None, reuse_model=None):
         },
     )
     monkeypatch.setattr(
-        hb, "bind_pages", lambda p, m: {"pages": dict(p), "failed": {}}
+        hb, "bind_pages", lambda p, m, **kw: {"pages": dict(p), "failed": {}}
     )
     return sfp.run_spec_first(
         "做一个社区图书馆的借阅系统",
