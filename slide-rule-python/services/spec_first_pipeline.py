@@ -1436,6 +1436,18 @@ def run_spec_first(
     if _requested and "spec" not in _requested and "spec" in _plan_tools and reuse_spec:
         _plan_tools = tuple(name for name in _plan_tools if name != "spec")
         _plan_ids = tuple(sid for sid in _plan_ids if sid != "specfirst.spec")
+        # ⚠ design 跟着走，除非这一跳要画页。
+        #   `_do_design = (not _skip_after_assumptions) and plan.includes("specfirst.design")`
+        #   （:1722）——而 `_skip_after_assumptions` 是在 **spec 那一步**里置位的。
+        #   跳过 spec 就没人置位，design 于是跑了起来；对 structure/bind 这种
+        #   不画页的跳，它是白跑，还会被 assert_stages_match_tools 判成
+        #   extra（design 的豁免只给「有 pages 且没 spec」那一种，
+        #   capability_plan:214）。2026-09-04 我这条修复的第一版就漏了它：
+        #   test_dry_run_walks_structure_not_a_clip 变红，
+        #   extra=['specfirst.design']——单跑那几个闸没盖住，全量才照出来。
+        #   pages 跳必须留着：真机 stage=specfirst.design ms=54626 就是给它定风格的。
+        if "pages" not in _requested:
+            _plan_ids = tuple(sid for sid in _plan_ids if sid != "specfirst.design")
     plan = CapabilityPlan(
         name=preset.name,
         ids=_plan_ids,

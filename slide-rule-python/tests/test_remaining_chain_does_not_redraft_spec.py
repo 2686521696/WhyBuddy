@@ -112,6 +112,24 @@ class Test有上一版SPEC时不许重起草:
         _, ids = _plan(["pages", "structure", "bind"], reuse_spec=PREV_SPEC)
         assert "specfirst.design" in ids, f"design 被误伤：{ids}"
 
+    def test_不画页的跳不留design(self):
+        """⚠ 2026-09-04：本条是我这条修复的第一版漏掉的那一半。
+
+        `_do_design` 按 plan 成员判（spec_first_pipeline:1722），而
+        `_skip_after_assumptions` 是在 **spec 那一步**里置位的。跳过 spec
+        就没人置位，design 于是跑了起来——对 structure/bind 这种不画页的跳
+        是白跑，还会被 `assert_stages_match_tools` 判成 extra：
+
+            test_dry_run_walks_structure_not_a_clip
+            extra=['specfirst.design']
+
+        单跑那几个闸没盖住，跑全量才照出来。
+        """
+        _, ids = _plan(["structure", "bind"], reuse_spec=PREV_SPEC)
+        assert "specfirst.design" not in ids, (
+            f"不画页却留着 design，干跑会判 extra：{ids}"
+        )
+
     def test_要画的那几步都还在(self):
         _, ids = _plan(["pages", "structure", "bind"], reuse_spec=PREV_SPEC)
         for need in ("specfirst.pages", "specfirst.structure", "specfirst.bind"):
