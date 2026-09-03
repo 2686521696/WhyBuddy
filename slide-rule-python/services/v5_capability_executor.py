@@ -11,6 +11,7 @@ from typing import Dict, Any, Iterator, List, Callable, Optional
 import hashlib
 import os
 import re
+import traceback
 from contextlib import contextmanager
 from contextvars import ContextVar
 from models.v5_state import V5SessionState, ExecuteCapabilityResult
@@ -718,6 +719,18 @@ def _try_llm_generate_evidence(
                 print("[v5_capability_executor] 已请求取消，spec-first 停止且不回落老链路")
                 raise
             except Exception as exc:  # noqa: BLE001 — 传输可再试，其余也不回落 GEN5
+                # ⚠ 崩点必须打出来。这个 except 已经吃掉过两次真机事故：
+                #   2026-08-31 固定资产领用：NameError 被吃成一句
+                #     「spec-first 失败，不回落老链路：name 'state' is not defined」
+                #     （上面 :624 那条注释就是为它写的）；
+                #   2026-09-04 社区旧物置换站 sr-20260903221324：精修跑到
+                #     「局部改：套上 2 块」之后 AttributeError，日志只留下
+                #     「'NoneType' object has no attribute 'get'」+
+                #     「refine failed, keeping previous model（本轮修改未生效）」，
+                #     崩在哪一行完全看不见，只能靠猜。
+                #   `str(exc)[:200]` 说的是「什么坏了」，从不说「在哪坏的」。
+                #   这一行不改任何控制流，只是别再让下一个人猜。
+                traceback.print_exc()
                 if spec_first_failure_blocks_gen5(exc):
                     # 过夜咖啡馆：525 / JSON parse 打回 GEN5 = 首轮「页面：无」。
                     # 下层 call_llm_with_retry 已经退避过，这里整条再试一次
