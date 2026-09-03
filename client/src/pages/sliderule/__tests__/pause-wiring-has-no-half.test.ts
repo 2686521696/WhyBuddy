@@ -108,7 +108,7 @@ describe("六段接线一段都不能少", () => {
     const h = HOOK();
     const at = h.indexOf("const confirmSpecAssumptions");
     expect(at).toBeGreaterThan(-1);
-    const body = h.slice(at, at + 900);
+    const body = h.slice(at, at + 1800);
     expect(body).toContain("isRunningRef.current");
     expect(body).toContain("releaseRun({ skip: true })");
     expect(body).not.toContain("runPaused");

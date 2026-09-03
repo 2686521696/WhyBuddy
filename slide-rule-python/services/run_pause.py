@@ -426,6 +426,14 @@ def bind(slot: Optional[PauseSlot]) -> None:
     _slot_var().set(slot)
 
 
+def current_slot() -> Optional[PauseSlot]:
+    """流水线问：这一轮有没有位子。没绑就 None，不许抛。"""
+    try:
+        return _slot_var().get()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def pause_enabled() -> bool:
     """`SLIDERULE_RUN_PAUSE_ENABLED=0` 关掉整条暂停线路。默认开。
 

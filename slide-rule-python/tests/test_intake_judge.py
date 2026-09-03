@@ -80,6 +80,68 @@ def test_precheck_catches_obvious_noise(text, verdict):
     assert hit.guidance, "确定性层拦下也必须给引导，不能只说不行"
 
 
+# ── 已有应用上的工厂单跳：不许再走新话题审查 ──────────────────────
+
+_HOP_CASES = [
+    "继续进行数据模型反推（structure）与权限绑定（bind）",
+    "直接执行闭环发布（closure）",
+    "直接执行闭环发布",
+    "继续进行数据模型反推",
+]
+
+
+@pytest.mark.parametrize("text", _HOP_CASES)
+def test_has_app_factory_hop_is_iteration_without_llm(text):
+    """2026-09-03 真机：迭代输入 structure/bind/closure 弹出审查需求。
+
+    变异：把 precheck 的 has_app 支路删掉 → 本条红（llm_json_fn 被叫到）。
+    """
+    called = []
+
+    def spy(_messages):
+        called.append(1)
+        return {"verdict": "vague", "reason": "should not run", "confidence": 0.99}
+
+    j = ij.judge_turn(text, has_app=True, llm_json_fn=spy)
+    assert called == [], f"{text!r} 还去调了 LLM"
+    assert j.verdict == "iteration"
+    assert j.action == "proceed"
+    assert j.source == "precheck"
+
+
+@pytest.mark.parametrize("text", [
+    "闭环发布管理系统",
+    "做一个闭环发布管理系统",
+    "另外再做一套版本发布流程",
+])
+def test_empty_session_product_named_like_a_hop_still_goes_to_llm(text):
+    """空会话里「闭环发布管理系统」是新产品，不是 hop。"""
+    assert ij.precheck(text, has_app=False) is None
+    called = []
+    j = ij.judge_turn(
+        text, has_app=False,
+        llm_json_fn=lambda _m: called.append(1) or {
+            "verdict": "real", "reason": "新产品", "confidence": 0.9,
+        },
+    )
+    assert called == [1]
+    assert j.verdict == "real"
+
+
+def test_frontend_hop_detector_stays_in_sync():
+    """两侧同一把尺子。漏一侧 = 审查条仍闪「正在审查需求」。"""
+    ts = (Path(__file__).resolve().parents[2]
+          / "client" / "src" / "pages" / "sliderule" / "use-intake-judge.ts")
+    src = ts.read_text(encoding="utf-8")
+    assert "looksLikeFactoryHopCommand" in src
+    assert "hasApp && looksLikeFactoryHopCommand" in src
+    from services.closed_tools import is_factory_hop_command
+    for text in _HOP_CASES:
+        assert is_factory_hop_command(text), text
+    assert not is_factory_hop_command("闭环发布管理系统")
+    assert not is_factory_hop_command("做一个社区图书馆借还书系统")
+
+
 # ── 判决与会话状态一致 ────────────────────────────────────────────
 
 def test_empty_session_cannot_be_iteration():

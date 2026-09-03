@@ -19,7 +19,16 @@
  */
 import React from "react";
 
+import { looksLikeFactoryHopCommand } from "@/lib/factory-hops";
 import { parseJudgeDevice } from "./product-archetypes";
+
+/**
+ * 已有应用上的工厂单跳指令。跟 Python `closed_tools.is_factory_hop_command`
+ * 同一把尺子——两侧必须一起改，test_intake_judge 钉着。
+ *
+ * 空会话不走这条：「闭环发布管理系统」是新产品，不是 hop。
+ */
+export { looksLikeFactoryHopCommand };
 
 export type IntakeVerdict =
   | "real"
@@ -165,6 +174,13 @@ export function useIntakeJudge(
     const trimmed = text.trim();
     if (!enabled || trimmed.length < MIN_JUDGE_CHARS) {
       setState({ judgedFor: "", judgement: null });
+      setIsJudging(false);
+      return;
+    }
+    // 已有应用上的 hop 指令：确定性放行，连「正在审查需求」都不闪。
+    // 变异：删掉这支 → 真机「直接执行闭环发布（closure）」仍弹审查卡。
+    if (hasApp && looksLikeFactoryHopCommand(trimmed)) {
+      setState({ judgedFor: trimmed, judgement: null });
       setIsJudging(false);
       return;
     }

@@ -69,6 +69,27 @@ def test_project_skips_prior_drive_events():
     assert any("正在理解你的目标" in x for x in all_labels)
 
 
+def test_structure_hop_does_not_claim_missing_pages():
+    """点 Structure 本跳没画页是正常的，不许套精修那句「没画出页面」。"""
+    st = _state(
+        goal={
+            "text": "萌芽成长树",
+            "status": "clear",
+            "tools": ["structure"],
+        },
+        specFirstPages={"pages": {"p1": "<html>打卡</html>"}},
+        publishClosure={"refinePaintNote": "", "chatSummary": "含 2 角色、3 页面。"},
+    )
+    steps = project_drive_steps(
+        st, user="进入数据模型反推（Structure）", events_cursor=0
+    )
+    finals = [s["text"] for s in steps if s.get("kind") == "narration" and s.get("isFinal")]
+    blob = " ".join(finals)
+    assert "本轮没有画出新的页面" not in blob
+    assert "本轮已完成数据模型反推。" in blob
+    assert "含 2 角色" not in blob
+
+
 def test_project_pages_and_refine_narration():
     st = _state(
         goal={"text": "社区工具屋", "status": "clear"},

@@ -19,6 +19,8 @@
  * 才放行。工厂用现成的协作式暂停（run_pause）在安全点等，不再边跑边点。
  */
 
+import { factoryHopFromText, looksLikeFactoryHopCommand } from "./factory-hops";
+
 export type SpecAssumption = {
   id: string;
   /** 这件事是什么：「员工怎么登录」 */
@@ -83,6 +85,29 @@ export function lenientStringList(value: unknown): string[] | null {
  * 后到的同 id 覆盖先到的，并且**留在原来的位置**——面板上的卡不许因为一次
  * 重连就重新洗牌。
  */
+
+const CONTINUATION_HOPS = new Set(["pages", "structure", "bind", "closure"]);
+
+/**
+ * 新一轮 runTurn 要不要把已确认的伴随式卡清掉。
+ *
+ * 只有会重新起草 SPEC 的那一跳才清。pages / structure / bind / closure
+ * ——包括控制面收尾卡「进入数据模型反推（Structure）」这种人话——
+ * 清了 settled，落库 spec 就把同一张卡摊回来。
+ * 2026-09-03 真机（萌芽成长树）：SPEC 确认过了，点 Structure 又弹出家长模式那张。
+ */
+export function shouldResetSpecAssumptions(
+  hop: string | undefined,
+  userText: string
+): boolean {
+  const h = String(hop || "").trim().toLowerCase();
+  if (CONTINUATION_HOPS.has(h)) return false;
+  const text = String(userText || "");
+  if (/假设已确认/.test(text)) return false;
+  if (factoryHopFromText(text) || looksLikeFactoryHopCommand(text)) return false;
+  return true;
+}
+
 export function mergeAssumptions(
   prev: readonly SpecAssumption[],
   incoming: readonly SpecAssumption[],

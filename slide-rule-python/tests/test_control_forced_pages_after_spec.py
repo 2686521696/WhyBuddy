@@ -121,6 +121,97 @@ def test_forced_pages_survives_stale_session_reload(monkeypatch):
     assert types[-1] == "complete"
 
 
+def test_structure_card_label_without_forced_tool_skips_llm(harness):
+    """收尾卡「进入数据模型反推（Structure）」不带 forcedTool 也必须当 structure。
+
+    2026-09-03 真机：onAnswerAsk 把标签当聊天发出去，控制面去 planning，
+    伴随式卡又弹。抄 grok：选项点下去是 typed 答案。
+    """
+    from services.factory_plan_steps import product_steps_for_tools
+
+    sid = new_sid("structure-from-card")
+    seed_session(
+        sid,
+        goal={"text": "萌芽成长树", "status": "clear", "tools": ["pages"]},
+        controlTranscript=[
+            {"id": "ct-1", "kind": "scope_confirmed", "text": "萌芽成长树"}
+        ],
+        specFirstPages={
+            "spec": {
+                "appName": "萌芽成长树",
+                "pages": [{"id": "p1", "name": "打卡"}],
+                "nodes": [{"id": "n0", "title": "打卡"}],
+            },
+            "pages": {"p1": "<html>打卡</html>"},
+        },
+    )
+
+    def impl(messages, **kw):
+        assert harness.helper_calls, "structure 点火前不得问控制面模型"
+        return llm_text("数据模型已经出来。")
+
+    harness.llm_impl = impl
+    _, events = harness.post(
+        six_fields(sid, "进入数据模型反推（Structure）")
+    )
+    assert harness.helper_calls, "收尾卡没有 handoff 工厂"
+    types = event_types(events)
+    assert "control_ask_user" not in types
+    assert "control_handoff_factory" in types
+    assert types[-1] == "complete"
+    saved = load_session(sid)
+    tools = (saved.goal or {}).get("tools") if saved and isinstance(saved.goal, dict) else None
+    assert tools == ["structure"], f"下一跳 tools 必须是 structure，实际 {tools}"
+    steps = (saved.goal or {}).get("productSteps") if saved and isinstance(saved.goal, dict) else None
+    assert steps == product_steps_for_tools(["structure"], refine=False), (
+        f"钟没跟本跳 tools：{steps}"
+    )
+
+
+def test_structure_hop_factory_stamp_writes_clock_steps(monkeypatch):
+    """活路径：工厂信封 reload 之后 productSteps 必须是 structure 的 [4,5,6]。
+
+    假工厂不跑 spec-first，但 start_drive_full 盖章必须在进生成器之前完成。
+    变异：信封只写 tools → generator_calls 里 productSteps 仍是上一跳的 [2]。
+    """
+    from services.factory_plan_steps import product_steps_for_tools
+
+    harness = ControlHarness(monkeypatch, live_factory=True)
+    sid = new_sid("structure-clock")
+    seed_session(
+        sid,
+        lastTurnId="turn-2",
+        goal={
+            "text": "萌芽成长树",
+            "status": "clear",
+            "tools": ["pages"],
+            "productSteps": [2],
+        },
+        controlTranscript=[
+            {"id": "ct-1", "kind": "scope_confirmed", "text": "萌芽成长树"}
+        ],
+        specFirstPages={
+            "spec": {
+                "appName": "萌芽成长树",
+                "pages": [{"id": "p1", "name": "打卡"}],
+                "nodes": [{"id": "n0", "title": "打卡"}],
+            },
+            "pages": {"p1": "<html>打卡</html>"},
+        },
+    )
+    harness.llm_impl = lambda messages, **kw: llm_text("数据模型已经出来。")
+    _, events = harness.post(
+        six_fields(sid, "进入数据模型反推（Structure）")
+    )
+    assert harness.helper_calls, "没有 handoff 工厂"
+    assert harness.helper_calls[-1].get("goal_tools") == ["structure"]
+    stamped = [row.get("productSteps") for row in harness.generator_calls]
+    want = product_steps_for_tools(["structure"], refine=False)
+    assert want in stamped, f"工厂入场钟没跟 structure：{stamped}"
+    types = event_types(events)
+    assert "control_handoff_factory" in types
+
+
 def test_handoff_passes_goal_tools():
     from control_turn_support import strip_python
     from pathlib import Path

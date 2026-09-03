@@ -9,7 +9,12 @@ from .stage_legal import describe as _stage_describe
 from .stage_legal import labels_with_eta as _stage_labels_with_eta
 from .archetype_legal import required_evidence as _required_evidence
 from .capability_plan import FactoryToolsRefused, clip_factory_tools, normalize_tools
-from .closed_tools import FACTORY_HOPS
+from .closed_tools import (
+    FACTORY_HOPS,
+    factory_capability_id,
+    hop_from_factory_capability,
+    host_factory_hop,
+)
 from .factory_plan_steps import product_steps_for_tools
 from .workflow_select import PAGES_PREVIEW, PAGES_PREVIEW_TOOLS, select_workflow
 import os
@@ -212,7 +217,15 @@ def _is_closure_cap(capability_id: str) -> bool:
     跟下面的 `_is_commit_order_sensitive_cap` 分开写：那个还包含 synthesis /
     report（它们同样要当屏障），而"本轮收过口没有"必须只认收口本身——
     多认一个就会把没收口的轮次也标成已收口。
+
+    ⚠ 2026-09-03：工厂 hop 信封不是真收口。pages/structure/bind 都走
+      `factory.{hop}` 执行入口（内部仍调 runtimeClosure），但只有
+      `factory.closure` 才把 `closure_attempted` 拉起来。否则 pages 一跑
+      `_ensure` 被跳过、structure 再被 repeat 跳过，两跳都是空信封。
     """
+    hop = hop_from_factory_capability(capability_id)
+    if hop is not None:
+        return hop == "closure"
     cap = (capability_id or "").lower()
     return "appbundle" in cap or "runtimeclosure" in cap
 
@@ -228,6 +241,8 @@ def _is_commit_order_sensitive_cap(capability_id: str) -> bool:
     evidence from state.artifacts, so in serial mode it observes the commits of
     caps earlier in the same batch. Such caps must run as barriers.
     """
+    if hop_from_factory_capability(capability_id):
+        return True
     cap = (capability_id or "").lower()
     if "appbundle" in cap or "runtimeclosure" in cap:
         return True
@@ -430,12 +445,16 @@ def _apply_pending_run_skips(
     ⚠ 老存档没有 `goal` 键：`None != goal_text` → 当成新批，整批重跑一次。
       多烧一轮，但不会把旧目标的产物错认成新目标的——这一类要 fail 向
       "重做"，不是 fail 向"复用"（第七条）。
+
+    ⚠ 2026-09-03：工厂 hop 必须编进批次键。同一目标 + 同一信封
+      `runtimeClosure` 会让 pages 的 pending 把 structure 当「同一批已完成」
+      跳掉。不是无脑清空 pending（同一跳崩溃恢复还要用），换跳 = 新 WRITE。
     """
     ids = [s.get("capabilityId") for s in selected if s.get("capabilityId")]
     pending = getattr(state, "pendingRuns", None)
     if not isinstance(pending, dict):
         pending = {}
-    goal_text = pending_goal_key(state)
+    goal_text = _pending_batch_key(state)
     prev_selected = [c for c in (pending.get("selected") or []) if c]
     prev_completed = [c for c in (pending.get("completed") or []) if isinstance(c, dict)]
     done_ids = {c.get("capabilityId") for c in prev_completed if c.get("capabilityId")}
@@ -566,6 +585,14 @@ def _ensure_runtime_closure_evidence(
     instruction = (user_instruction or "").strip() or (goal_text or "").strip()
     if not instruction:
         return state
+    hop = _host_hop_name(state)
+    hop_cap = factory_capability_id(hop) if hop else None
+    # 信封 runtimeClosure 不算真收口（spec/pages/structure/bind 的
+    # closure_attempted 仍是假），所以本函数不会被那道门跳过。
+    # 这一跳自己的 WRITE 已经在循环里落地时，再跑会把 structure 推两遍。
+    # 循环被 pending/repeat 跳过、账本里还没有这一跳 → 这里当 failsafe 跑。
+    if hop and hop != "closure" and hop_cap and not repair and _capability_ran(state, hop_cap):
+        return state
     if closure_attempted and not repair:
         return state
     existing_closure = derive_publish_closure_response(state)
@@ -645,7 +672,7 @@ def _ensure_runtime_closure_evidence(
 
     import time as _time
 
-    capability_id = "appbundle.runtimeClosure"
+    capability_id = hop_cap or "appbundle.runtimeClosure"
     role_id = "appbundle"
     # ⚠ 2026-08-29：**id 命名空间决定这轮证据能不能落库。**
     #
@@ -1751,15 +1778,52 @@ def _clip_agentic_picks_to_legal(proposal_picks: list, legal_picks: list) -> lis
     return clipped if clipped else list(legal_picks)
 
 
-def _host_factory_hop(state: "V5SessionState") -> bool:
-    """控制面已经挑了一件工厂工具。厂内不许再组一整张菜单盖回去。"""
+def _host_hop_name(state: "V5SessionState") -> Optional[str]:
+    """控制面这一跳的公开工具名。不是 host hop → None。"""
     goal = getattr(state, "goal", None)
     if not isinstance(goal, dict):
+        return None
+    return host_factory_hop(goal.get("tools"))
+
+
+def _host_factory_hop(state: "V5SessionState") -> bool:
+    """控制面已经挑了一件工厂工具。厂内不许再组一整张菜单盖回去。"""
+    return _host_hop_name(state) is not None
+
+
+def _host_hop_picks(state: "V5SessionState") -> list:
+    """一跳一件：账本身份是 factory.{hop}，不是共用的信封 runtimeClosure。
+
+    ⚠ 2026-09-03 真机（团子的一天 XNDW5W2M59）：五跳都 pick
+      `appbundle.runtimeClosure`，pages 写了两条之后 structure 被
+      max_repeat_guard 整跳跳过，画布「打过孔但没填上数据」。
+    """
+    hop = _host_hop_name(state) or "spec"
+    return [{"capabilityId": factory_capability_id(hop), "roleId": "综合"}]
+
+
+def _pending_batch_key(state: "V5SessionState") -> str:
+    """pendingRuns 这批活的身份：目标文本 + 工厂 hop。
+
+    崩溃恢复仍不能用 turnId（见 `_apply_pending_run_skips`）。hop 编进键，
+    换跳就是新 WRITE；同一跳恢复仍对得上。
+    """
+    text = pending_goal_key(state)
+    hop = _host_hop_name(state)
+    if hop:
+        return f"{text}\nfactory-hop:{hop}"
+    return text
+
+
+def _capability_ran(state: "V5SessionState", capability_id: str) -> bool:
+    want = str(capability_id or "")
+    if not want:
         return False
-    raw = goal.get("tools")
-    if not isinstance(raw, (list, tuple)) or len(raw) != 1:
-        return False
-    return str(raw[0]).strip() in FACTORY_HOPS
+    for run in getattr(state, "capabilityRuns", None) or []:
+        cid = run.get("capabilityId") if isinstance(run, dict) else getattr(run, "capabilityId", "")
+        if str(cid or "") == want:
+            return True
+    return False
 
 
 def _factory_tools_from_state(state: "V5SessionState") -> tuple:
@@ -2071,21 +2135,24 @@ async def drive_full_v5_session_stream(
         capabilityId="driver", kind="think",
         text=f"phase_changed: orchestrating ({'repair drive' if repair else 'full drive'})", order=0,
     )
+    # 一跳一件：tools 与钟面步集必须在第一笔 persist 之前同进同出。
+    # 信封只盖 tools 的话，这一笔会把控制面算好的 productSteps 钉成上一跳。
+    if profile == "app" and _host_factory_hop(state):
+        _stamp_factory_tools_onto_goal(state, _factory_tools_from_state(state))
     await asyncio.to_thread(persist_state, state)
     yield {"type": "phase_change", "phase": "orchestrating", "repair": repair}
     if profile == "app" and _host_factory_hop(state):
         hops = _factory_tools_from_state(state)
+        goal_now = state.goal if isinstance(state.goal, dict) else {}
         yield {
             "type": "factory_plan",
             "tools": list(hops),
             # 钟面步集跟事件一起走。前端不许再从工具名自己推（表已删）。
-            "productSteps": product_steps_for_tools(
+            "productSteps": list(goal_now.get("productSteps") or ())
+            or product_steps_for_tools(
                 hops, refine=bool(getattr(state, "modelVersions", None))
             ),
-            "workflow": str(
-                (state.goal.get("workflow") if isinstance(state.goal, dict) else "")
-                or ""
-            ),
+            "workflow": str(goal_now.get("workflow") or ""),
         }
 
     loop = 0
@@ -2114,11 +2181,62 @@ async def drive_full_v5_session_stream(
         # 整轮共用一个恢复账本：「只自动一次」是按**这一轮**算的，每次进
         # 循环新建一个等于每轮都能再自动一次，那条上限就形同虚设。
         try:
-            from .run_pause import RecoveryLedger as _RL
+            from .run_pause import (
+                RecoveryLedger as _RL,
+                finish_hold as _finish_hold,
+                recover_from as _recover_from,
+                take_hold as _take_hold,
+            )
 
             _pause_ledger = _RL()
         except Exception:  # noqa: BLE001
             _pause_ledger = None
+            _finish_hold = None
+            _recover_from = None
+            _take_hold = None
+
+        async def _drain_assumption_hold():
+            """spec-first 在 to_thread 里出卡后把闸挂在 pending。
+            整段返回才轮到这里——异步等，不占执行槽。"""
+            events = []
+            if _take_hold is None or _finish_hold is None:
+                return events
+            try:
+                gate = _take_hold()
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"[v5_full_driver] ⚠ 假设闸异常，按不暂停继续：{str(exc)[:160]}"
+                )
+                return events
+            if gate is None:
+                return events
+            events.append({"type": "run_pause_started", "where": "spec-assumptions"})
+            res = None
+            try:
+                res = await gate.wait("spec-assumptions")
+            finally:
+                _finish_hold()
+            recovered = None
+            if (
+                res is not None
+                and not res.answered
+                and _pause_ledger is not None
+                and _recover_from is not None
+            ):
+                act = _recover_from(res, _pause_ledger)
+                if act is not None:
+                    recovered = act.event
+            if res is not None:
+                events.append(
+                    {
+                        "type": "run_pause_ended",
+                        "where": res.where,
+                        "outcome": res.outcome.value,
+                        "waitedSeconds": res.waited_seconds,
+                        "recovery": recovered,
+                    }
+                )
+            return events
 
         while loop < max_loops:
             # ── 安全点：用户按过「先别往下跑」就停在这儿等（2026-08-28）──
@@ -2226,9 +2344,8 @@ async def drive_full_v5_session_stream(
             elif profile == "app":
                 if _host_factory_hop(state):
                     # 一跳一件：短清单里的作文能力会把 spec  hop 拖成整轮散文。
-                    picks = [
-                        {"capabilityId": "appbundle.runtimeClosure", "roleId": "综合"}
-                    ]
+                    # 账本按 hop 记，不许五跳共用 runtimeClosure 把 repeat 耗尽。
+                    picks = _host_hop_picks(state)
                 else:
                     picks = _app_profile_short_picks(state)
             else:
@@ -2418,6 +2535,8 @@ async def drive_full_v5_session_stream(
                     async for _delta_event in _pump_llm_deltas(batch_task):
                         yield _delta_event
                     outcomes = batch_task.result()
+                    for _pause_ev in await _drain_assumption_hold():
+                        yield _pause_ev
                     for sel, outcome in zip(group, outcomes):
                         await asyncio.to_thread(
                             _commit_executed_outcome,
@@ -2467,6 +2586,8 @@ async def drive_full_v5_session_stream(
                     async for _delta_event in _pump_llm_deltas(exec_task):
                         yield _delta_event
                     result = exec_task.result()
+                    for _pause_ev in await _drain_assumption_hold():
+                        yield _pause_ev
                     result_data = _result_to_dict(result)
                     art_id = f"art-{loop}-{cap}"
                     produced = ProducedBy(capabilityRunId=run_id, capabilityId=cap, roleId=role)

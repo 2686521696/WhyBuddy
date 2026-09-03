@@ -30,6 +30,21 @@ describe("spec-first 人话（Actions name vs id）", () => {
     expect(humanReasoningStepLabel("unknown.cap")).toBe("正在执行 unknown.cap");
   });
 
+  it("工厂 hop 账本身份翻人话，不许 factory.structure 上脸", () => {
+    expect(humanReasoningStepLabel("factory.structure")).toBe(
+      "从界面反推数据模型与关联关系"
+    );
+    expect(humanReasoningStepLabel("factory.structure")).not.toMatch(
+      /factory\./
+    );
+    expect(humanReasoningStepLabel("factory.pages")).toBe(
+      "逐页画界面（并发）"
+    );
+    expect(humanReasoningStepLabel("factory.closure")).toBe(
+      "完整性检查与发布闭环"
+    );
+  });
+
   it("Python 那份键这里都有——漏一个就是下一处漏词", () => {
     const py = readFileSync(
       fileURLToPath(

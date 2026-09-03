@@ -20,6 +20,7 @@ import {
   parseSpecAssumptions,
   revisePhrase,
   settleAssumption,
+  shouldResetSpecAssumptions,
   type SpecAssumption,
 } from "../spec-assumptions";
 
@@ -270,6 +271,37 @@ describe("接线（四段都得接上）", () => {
     expect(SESSION.match(/resetSpecAssumptions\(\)/g)?.length).toBe(2);
   });
 
+  it("确认继续的 pages 跳不许清已处理集合", () => {
+    /* 2026-09-03 真机：选完「确认继续」排队 pages，runTurn 开头
+       resetSpecAssumptions 把 settled 清掉，落库 spec 同一张卡又摊回来。 */
+    const at = SESSION.indexOf("setSpecPages([])");
+    expect(at).toBeGreaterThan(-1);
+    const window = SESSION.slice(at, at + 700);
+    expect(window).toContain("shouldResetSpecAssumptions(hop, userText)");
+    expect(window).toContain("resetSpecAssumptions()");
+  });
+
+  it("控制面收尾卡点 Structure 不许清", () => {
+    expect(
+      shouldResetSpecAssumptions(undefined, "进入数据模型反推（Structure）")
+    ).toBe(false);
+    expect(shouldResetSpecAssumptions("structure", "继续")).toBe(false);
+    expect(shouldResetSpecAssumptions("pages", "假设已确认。继续画页面。")).toBe(
+      false
+    );
+  });
+
+  it("真的重新起草 SPEC 才清", () => {
+    expect(shouldResetSpecAssumptions("spec", "做一个亲子打卡应用")).toBe(true);
+    expect(shouldResetSpecAssumptions("rehearse", "开始推演")).toBe(true);
+    expect(shouldResetSpecAssumptions(undefined, "把侧栏改成深色")).toBe(true);
+  });
+
+  it("确认后落库 spec 不许再把卡摊回来", () => {
+    expect(SESSION).toContain("assumptionsConfirmedRef.current = true");
+    expect(SESSION).toContain("if (assumptionsConfirmedRef.current) return");
+  });
+
   it("清空必须**连「已处理」集合一起**清——否则下一轮的新假设被当回声吞掉", () => {
     /* ⚠ id 兜底是 `f"a{i+1}"`，所以下一轮的 a1 跟这一轮的 a1 是两件不同的事。
        只清列表不清集合，下一轮那条真·新假设会被 mergeAssumptions 当成
@@ -364,6 +396,11 @@ describe("接线（四段都得接上）", () => {
     expect(body).toContain("isRunningRef.current");
     // 反向：推演中是放行闸，不是再开一轮
     expect(body).toContain("releaseRun({ skip: true })");
+    // 确认是 typed 答案，不许进「本轮结束后发出」那条可见队列。
+    expect(body).not.toContain(
+      'pushQueuedTurn("假设已确认。继续画页面。")'
+    );
+    expect(body).toContain("enqueueTurn(");
   });
 
   it("确认继续的 pages 闸只在 runTurn 过了 isRunning 之后取走", () => {

@@ -169,6 +169,7 @@ describe("已有 SSE progress_heartbeat 投影，不另开 API", () => {
     expect(driver).toContain("opts.onFactoryPlan");
     const session = load("../useSlideRuleSession.ts");
     expect(handlerSlice(session, "onFactoryPlan")).toContain("goal.tools = tools");
+    expect(handlerSlice(session, "onFactoryPlan")).toContain("goal.productSteps = productSteps");
     expect(handlerSlice(session, "onFactoryPlan")).toContain("appendStreamStep");
   });
 });

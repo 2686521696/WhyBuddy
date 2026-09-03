@@ -286,7 +286,16 @@ class ControlHarness:
                 else []
             )
             self.generator_calls.append(
-                {"args": args, "kwargs": kwargs, "tools": tools}
+                {
+                    "args": args,
+                    "kwargs": kwargs,
+                    "tools": tools,
+                    "productSteps": list(
+                        (state.goal or {}).get("productSteps") or []
+                    )
+                    if isinstance(getattr(state, "goal", None), dict)
+                    else [],
+                }
             )
             yield {"type": "complete", "state": state.model_dump()}
 

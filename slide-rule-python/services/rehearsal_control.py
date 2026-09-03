@@ -78,6 +78,7 @@ from services.archetype_legal import (
 from services.closed_tools import (
     CLOSED_TOOLS,
     FACTORY_HOPS,
+    factory_hop_from_text,
     TOOL_SCOPE,
     ToolScope,
     ToolScopeViolation,
@@ -1059,6 +1060,11 @@ def resolve_forced_tool(payload: Dict[str, Any], user_text: str) -> Optional[str
         return "scope_card"
     if text.startswith("/回退"):
         return "restore_version"
+    # 收尾卡 / 人话 hop：点「进入数据模型反推（Structure）」= structure，
+    # 不是新聊天。抄 grok AskUserQuestion 的 typed 答案。
+    hop = factory_hop_from_text(text)
+    if hop:
+        return hop
     return None
 
 
@@ -2170,6 +2176,8 @@ def _system_prompt(state: V5SessionState) -> str:
         "你是面团的薄控制面。只能调用给定工具，不能发明工具。"
         "禁止开放闲聊。问候用 ask_user 或一句短回复；"
         "要做应用先 clarify（需求含糊时）再 scope_card；未确认不得 rehearse。"
+        "问下一跳时 ask_user 的选项必须带工具名括号，例如"
+        "「进入数据模型反推（structure）」「进入权限绑定（bind）」。"
         "search_evidence 不计入闭环。inspect_model 只看摘要。"
         f"当前目标：{goal[:200]}。停泊：{parked}。{clarify_hint} {after_write}"
     )

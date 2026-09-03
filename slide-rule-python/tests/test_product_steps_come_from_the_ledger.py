@@ -151,6 +151,37 @@ class Test驱动器那处也得写:
                 f"{name} 没走共用组合——抄第二份就是 §4 的老毛病"
             )
 
+    def test_工厂信封盖tools必须走同一把章(self):
+        """2026-09-03 团子的一天：信封只写 tools，钟停在起草 SPEC。
+
+        变异：把 `_stamp_factory_tools_onto_goal` 改回 `goal["tools"]=wanted`
+        → 本条红。
+        """
+        src = (
+            Path(__file__).resolve().parents[1]
+            / "services"
+            / "drive_full_factory.py"
+        ).read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        src_no_doc = ast.unparse(tree)
+        assert "_stamp_factory_tools_onto_goal" in src_no_doc
+        # 剥文档串后再找裸写：头注里会提到 goal["tools"]。
+        bare = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign):
+                continue
+            for target in node.targets:
+                if (
+                    isinstance(target, ast.Subscript)
+                    and isinstance(target.slice, ast.Constant)
+                    and target.slice.value == "tools"
+                ):
+                    bare.append(node.lineno)
+        assert not bare, (
+            f"drive_full_factory 裸写 goal['tools'] 于 {bare}，"
+            "钟面步集不会一起走。"
+        )
+
 
 class Test叶子层没有互相import:
     """`stage_legal` 与 `capability_plan` 都是 util 叶子（may_depend_on = []）。

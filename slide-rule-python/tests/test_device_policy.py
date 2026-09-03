@@ -49,6 +49,12 @@ def test_infer_device_from_text_unique_word_only():
     assert infer_device_from_text("请假系统") is None
 
 
+def test_wechat_miniprogram_stays_phone():
+    """微信小程序仍只成 phone 档，不许另开一档、不许掉回 desktop。"""
+    assert infer_device_from_text("做一个微信小程序亲子打卡") == "phone"
+    assert resolve_preferred_device("做一个微信小程序亲子打卡", "desktop") == "phone"
+
+
 def test_tablet_model_choice_and_explicit_goal_are_kept():
     assert resolve_preferred_device("做一个设备维护记录系统", "tablet") == "tablet"
     assert resolve_preferred_device("做个平板端堂食点单", None) == "tablet"

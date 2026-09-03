@@ -64,6 +64,22 @@ describe("assistantTextForTurn", () => {
     expect(text).toBe(REFINE_TURN_NO_PAGE_NOTE);
   });
 
+  it("Structure / bind 跳不许说没画出页面", () => {
+    const structure = assistantTextForTurn(
+      turn({ user: "进入数据模型反推（Structure）" }),
+      closure(),
+      GOAL
+    );
+    expect(structure).toBe("本轮已完成数据模型反推。");
+    expect(structure).not.toBe(REFINE_TURN_NO_PAGE_NOTE);
+    const bind = assistantTextForTurn(
+      turn({ user: "进入权限绑定（bind）" }),
+      closure(),
+      GOAL
+    );
+    expect(bind).toBe("本轮已完成权限绑定。");
+  });
+
   it("精修失败优先用 refinePaintNote", () => {
     const text = assistantTextForTurn(
       turn(),

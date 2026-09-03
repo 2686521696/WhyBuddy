@@ -686,6 +686,35 @@ def design_system_override(system: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _assumption_layout_block(spec: Dict[str, Any]) -> str:
+    """伴随式决定进风格提示词。空则空串，不留空段。
+
+    跟 spec_page_html.assumption_prompt_block 同一段话。不 import 那边：
+    那边会拉 HTML 栈，风格模块只该谈气质。判据盯「家长模式」进了 user 段。
+    """
+    rows = spec.get("assumptions") if isinstance(spec, dict) else None
+    if not isinstance(rows, list) or not rows:
+        return ""
+    lines = [
+        "已确认的产品决定（必须做成看得见的界面：输入框、按钮、开关、列表；",
+        "禁止只写在 HTML 注释、角标或空状态说明里）：",
+    ]
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        topic = str(row.get("topic") or "").strip()
+        decision = str(row.get("decision") or "").strip()
+        if topic and decision:
+            lines.append(f"- {topic}：{decision}")
+        elif decision:
+            lines.append(f"- {decision}")
+        elif topic:
+            lines.append(f"- {topic}")
+    if len(lines) <= 2:
+        return ""
+    return "\n".join(lines) + "\n"
+
+
 def build_style_brief_prompt(
     spec: Dict[str, Any], *, device: str = "desktop", product_archetype: str = ""
 ) -> List[Dict[str, str]]:
@@ -821,8 +850,9 @@ def build_style_brief_prompt(
         )},
         {"role": "user", "content": (
             f"应用名：{_clean_str(spec.get('appName'), 40) or '（未命名）'}\n"
-            f"页面清单：\n{listing}\n\n"
-            "返回 JSON：\n"
+            f"页面清单：\n{listing}\n"
+            f"{_assumption_layout_block(spec)}"
+            "\n返回 JSON：\n"
             '{\n'
             '  "app": "应用级基调，80~150 字：具体参照（像哪个产品/场所）、'
             '气质、主色 hex、强调色 hex、圆角、字号密度。'

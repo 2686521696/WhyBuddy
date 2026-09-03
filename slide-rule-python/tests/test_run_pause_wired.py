@@ -166,8 +166,10 @@ class Test接在流式那条链上:
         code = self._driver_code()
         loops = [m.start() for m in re.finditer(r"while loop < max_loops:", code)]
         assert len(loops) == 2, f"驱动器里的主循环数量变了（{len(loops)}），接线位置要重认"
-        at = code.index("take_hold()")
-        assert at > loops[1], "安全点插在了同步驱动器上——流式才是前端主路径"
+        holds = [m.start() for m in re.finditer(r"take_hold\(\)", code)]
+        assert holds, "驱动器里没有安全点调用——机制没接上"
+        assert all(h > loops[0] for h in holds), "有安全点插在了同步驱动器上"
+        assert any(h > loops[1] for h in holds), "流式循环里没有安全点"
 
     def test_安全点在最贵的活开始之前(self):
         """位置照 run_cancel 的纪律：别再开始下一件大活儿。
@@ -178,6 +180,22 @@ class Test接在流式那条链上:
         at = code.index("take_hold()")
         nxt = code.index("orchestrate_plan", at)
         assert at < nxt
+
+    def test_假设出口之后还有一道安全点(self):
+        """2026-09-03：spec-first 在 to_thread 里出卡。循环开头那道闸
+        已经过了（max_loops=1 的 hop 甚至没有下一圈）。必须在 execute
+        返回后再等，否则卡出来工厂还在跑。
+
+        变异：把 `_drain_assumption_hold` 的调用点删掉 → 本条红。
+        """
+        code = self._driver_code()
+        loops = [m.start() for m in re.finditer(r"while loop < max_loops:", code)]
+        stream = code[loops[1] :]
+        calls = list(re.finditer(r"await _drain_assumption_hold\(\)", stream))
+        assert len(calls) >= 2, "并行批和串行两条 execute 都要在返回后等假设闸"
+        for match in calls:
+            window = stream[max(0, match.start() - 500) : match.start()]
+            assert ".result()" in window, "假设闸没接在 to_thread 返回之后——卡出来停不住"
 
     def test_三种没答的结局都不许把这一轮判死(self):
         """暂停不是取消。真机实测取消 → publishClosure=null、白烧一轮；

@@ -51,6 +51,7 @@ from __future__ import annotations
 from .archetype_legal import device_rubric_bullets as _device_rubric_bullets
 from .archetype_legal import judge_device_domain_bar as _judge_device_domain_bar
 from .archetype_legal import valid_judge_devices as _valid_judge_devices
+from .closed_tools import is_factory_hop_command
 
 import os
 import re
@@ -136,7 +137,7 @@ class Judgement:
         }
 
 
-def precheck(text: str) -> Optional[Judgement]:
+def precheck(text: str, *, has_app: bool = False) -> Optional[Judgement]:
     """确定性层。命中返回判定，否则 None（交给 LLM 层）。"""
     t = (text or "").strip()
     if not t:
@@ -164,6 +165,17 @@ def precheck(text: str) -> Optional[Judgement]:
             reason="内容过短，无法判断意图",
             guidance="再多说两句？比如涉及哪些角色、要走什么流程。",
         )
+    # 已有应用：工厂单跳指令（structure / bind / closure …）不是新话题。
+    # 空会话不走这条——「闭环发布管理系统」仍交给 LLM 当新产品。
+    if has_app:
+        if is_factory_hop_command(t):
+            return Judgement(
+                verdict="iteration",
+                action="proceed",
+                source="precheck",
+                reason="工厂单跳指令",
+                confidence=1.0,
+            )
     return None
 
 
@@ -502,7 +514,7 @@ def judge_turn(
                          action="proceed", source="degraded",
                          degraded_reason="judge disabled by env")
 
-    hit = precheck(text)
+    hit = precheck(text, has_app=has_app)
     if hit is not None:
         return hit
 

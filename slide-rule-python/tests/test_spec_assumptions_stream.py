@@ -21,9 +21,10 @@ A/B 两轮治好了前半句（问题从这句需求里长出来、答案真进�
 让工厂中途 **park** 等回答，会当场撞上闭环的 fail-closed 语义（停下来算不算
 没闭环、恢复算不算同一轮）。模型该怎么定还怎么定，spec 照常写完整。
 
-拦的是下一安全点上的协作式暂停（`hold_current`），不是终止性 park：超时按
-跳过收口，闭环照样能走到 runtimeClosure。前端卡做成跟点火前澄清同一套权力
-——一题一题选，点「确认继续」才放行。
+拦的是协作式暂停（`hold_current`），不是终止性 park：超时按跳过收口。
+2026-09-03：闸挂上之后本跳停在 SPEC（不再接着跑 design），驱动器在
+to_thread 返回后异步等。前端卡做成跟点火前澄清同一套权力——一题一题选，
+点「确认继续」才放行。
 
 ## 这个文件守的三段接线
 
@@ -302,8 +303,8 @@ def test_管道第二步出口真的调了这个通道(driver, monkeypatch):
 
     ⚠ 只有上一条的话，是本仓第三条的经典形状：sink 装着、泵通着、
       **没有任何地方往里写**，十一条判据全绿而东西没了。
-      所以这里真跑一趟 run_spec_first，让它在第 2 步之后自然失败
-      （第 2.5 步要调 LLM，测试环境里没有 key），只看第 2 步有没有喊出来。
+      所以这里真跑一趟 run_spec_first，只看第 2 步有没有喊出来。
+      卡一出本跳就停在 SPEC（不再靠下一步没 key 自然失败来截断）。
     """
     got: list = []
     sfp.set_assumption_sink(lambda rows: got.append(list(rows)))
@@ -315,13 +316,15 @@ def test_管道第二步出口真的调了这个通道(driver, monkeypatch):
             "generate_spec_tree",
             lambda *a, **k: SpecTree.model_validate({**_MIN_SPEC, "assumptions": ROWS}),
         )
-        with pytest.raises(Exception):
-            sfp.run_spec_first(GOAL)
+        out = sfp.run_spec_first(GOAL, tools=["spec"])
     finally:
         sfp.set_assumption_sink(None)
 
     assert got, "第 2 步没把假设交出来——插座通电了但没人往里插"
     assert [r["topic"] for r in got[0]] == ["店长怎么登录", "审批几级"]
+    # 卡已经到用户面前：本跳停在 SPEC，不再靠「下一步没 key 自然失败」来截断。
+    assert out["stages"].get("assumptionsHeld", {}).get("count") == 2
+    assert "design" not in out["stages"]
 
 
 def test_没有假设就一个事件都没有(driver):
@@ -434,6 +437,78 @@ def test_没绑暂停位子时出口照样不炸():
     sfp.set_assumption_sink(lambda _rows: None)
     try:
         sfp._emit_assumptions({"assumptions": ROWS})  # 不抛就算过
+    finally:
+        sfp.set_assumption_sink(None)
+
+
+def test_有假设就停在SPEC_不接着跑设计(monkeypatch):
+    """2026-09-03 真机：卡出来了工厂还在跑 design，人选完要等 hop 结束才发。
+
+    变异：把 `_skip_after_assumptions` 那支删掉 → 本条红（设计被叫到）。
+    没绑位子时，只要 sink 在（用户面前有卡），照样停——脚本没装 sink 才往下跑。
+    """
+    from services import run_pause
+
+    design_calls: list = []
+    slot = run_pause.new_slot()
+    run_pause.bind(slot)
+    sfp.set_assumption_sink(lambda _rows: None)
+    try:
+        import services.spec_tree as spec_tree_mod
+        import services.design_language as dl
+
+        monkeypatch.setattr(
+            spec_tree_mod,
+            "generate_spec_tree",
+            lambda *a, **k: SpecTree.model_validate({**_MIN_SPEC, "assumptions": ROWS}),
+        )
+
+        def boom_design(*_a, **_k):
+            design_calls.append(1)
+            raise AssertionError("假设出了还在跑设计")
+
+        monkeypatch.setattr(dl, "generate_style_brief", boom_design)
+        out = sfp.run_spec_first(GOAL, tools=["spec"])
+        assert design_calls == [], "假设出了还去定风格——卡会边跑边点"
+        assert slot.pending is not None
+        assert slot.active is None
+        assert out["spec"]["appName"] == "巡检通"
+        assert out["stages"].get("assumptionsHeld", {}).get("count") == 2
+        assert "design" not in out["stages"]
+    finally:
+        sfp.set_assumption_sink(None)
+        run_pause.bind(None)
+
+
+def test_卡到了用户面前没绑位子也停(monkeypatch):
+    """活路径 sink 装着、to_thread 里位子却是 None：仍须停在 SPEC。
+
+    变异：`_emit_assumptions` 只在 hold 成功时返回 True → 本条红。
+    """
+    from services import run_pause
+
+    design_calls: list = []
+    run_pause.bind(None)
+    sfp.set_assumption_sink(lambda _rows: None)
+    try:
+        import services.spec_tree as spec_tree_mod
+        import services.design_language as dl
+
+        monkeypatch.setattr(
+            spec_tree_mod,
+            "generate_spec_tree",
+            lambda *a, **k: SpecTree.model_validate({**_MIN_SPEC, "assumptions": ROWS}),
+        )
+        monkeypatch.setattr(
+            dl,
+            "generate_style_brief",
+            lambda *_a, **_k: design_calls.append(1) or (_ for _ in ()).throw(
+                AssertionError("卡在屏幕上还在跑设计")
+            ),
+        )
+        out = sfp.run_spec_first(GOAL, tools=["spec"])
+        assert design_calls == []
+        assert out["stages"].get("assumptionsHeld", {}).get("count") == 2
     finally:
         sfp.set_assumption_sink(None)
 

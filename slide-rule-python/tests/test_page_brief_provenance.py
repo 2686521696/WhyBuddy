@@ -43,7 +43,10 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services.spec_page_html import build_page_brief  # noqa: E402
+from services.spec_page_html import (  # noqa: E402
+    assumption_prompt_block,
+    build_page_brief,
+)
 
 SPEC = {
     "appName": "邻里药安",
@@ -109,6 +112,45 @@ class Test设计要点不许再被丢掉:
         spec = {"appName": "甲", "nodes": [{"id": "n1", "title": "t", "acceptance": "a"}]}
         out = build_page_brief({"name": "p", "coversNodes": ["n1"]}, spec)
         assert "设计要点：" not in out
+
+
+class Test假设决定必须进brief:
+    """2026-09-03 萌芽成长树：家长模式进了 spec.assumptions，HTML 里 0 次。"""
+
+    def test_家长模式和提醒时间都在(self):
+        spec = {
+            **SPEC,
+            "assumptions": [
+                {"id": "a1", "topic": "使用模式", "decision": "家长模式"},
+                {"id": "a2", "topic": "提醒时间", "decision": "20:00"},
+            ],
+        }
+        out = build_page_brief(PAGE, spec, product=PRODUCT)
+        assert "家长模式" in out
+        assert "20:00" in out
+        assert "已确认的产品决定" in out
+        assert "看得见的界面" in out
+        assert "禁止只写在 HTML 注释" in out
+
+    def test_没有assumptions就不写那一段(self):
+        out = build_page_brief(PAGE, SPEC, product=PRODUCT)
+        assert "已确认的产品决定" not in out
+        assert assumption_prompt_block(SPEC) == ""
+
+    def test_脏行不许把整段带崩(self):
+        spec = {
+            **SPEC,
+            "assumptions": [None, "x", {"topic": "", "decision": ""}],
+        }
+        assert assumption_prompt_block(spec) == ""
+
+    def test_风格段和画页用同一句已确认决定(self):
+        """两处各写一段（风格模块不拉 HTML 栈）。漏一侧 = 半边不生效。"""
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        token = "已确认的产品决定（必须做成看得见的界面："
+        dl = open(os.path.join(root, "services", "design_language.py"), encoding="utf-8").read()
+        sph = open(os.path.join(root, "services", "spec_page_html.py"), encoding="utf-8").read()
+        assert token in dl and token in sph
 
 
 class Test那句各不相同不抄:

@@ -95,6 +95,7 @@ import {
   type ScopeCardDevice,
   type ScopeCardPending,
 } from "./scope-card-gate";
+import { factoryHopFromText } from "@/lib/factory-hops";
 import {
   controlUserTextForSlash,
   forcedToolForRehearsalVerb,
@@ -111,6 +112,7 @@ import {
   parseSpecAssumptions,
   revisePhrase,
   settleAssumption,
+  shouldResetSpecAssumptions,
   type SpecAssumption,
 } from "./spec-assumptions";
 
@@ -124,7 +126,10 @@ export function inferForcedTool(
   if (explicit) return explicit;
   if (mode === "repair") return "repair";
   if (intervention?.intent === "challenge") return "challenge";
-  return forcedToolForRehearsalVerb(parseRehearsalSlash(userText));
+  const slash = forcedToolForRehearsalVerb(parseRehearsalSlash(userText));
+  if (slash) return slash;
+  // 收尾卡「进入数据模型反推（Structure）」= structure，不当新聊天。
+  return factoryHopFromText(userText);
 }
 
 /** `/回退` 默认上一版。空 versionId 在服务端是静默 no-op。 */
@@ -475,12 +480,14 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const activeRunIdRef = useRef<string | null>(null);
   const [runPaused, setRunPaused] = useState(false);
   const settledAssumptionIdsRef = useRef<Set<string>>(new Set());
+  const assumptionsConfirmedRef = useRef(false);
   const applySpecAssumptions = useCallback((next: SpecAssumption[]) => {
     specAssumptionsRef.current = next;
     setSpecAssumptions(next);
   }, []);
   const resetSpecAssumptions = useCallback(() => {
     settledAssumptionIdsRef.current = new Set();
+    assumptionsConfirmedRef.current = false;
     specAssumptionsRef.current = [];
     setSpecAssumptions([]);
   }, []);
@@ -687,10 +694,16 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         settledAssumptionIdsRef.current.add(row.id);
       }
       applySpecAssumptions([]);
+      assumptionsConfirmedRef.current = true;
       // 无论推演中还是空闲，确认 = 要继续。只 release 不排队的话，
       // P1-1 spec-only hop 结束后面板没了、下一跳也不会自己开。
       pendingForcedToolRef.current = "pages";
-      pushQueuedTurn("假设已确认。继续画页面。");
+      // 抄 grok AskUserQuestion：确认是 typed 答案，不是聊天欠条。
+      // 进 ref 等空闲立刻发 / 跑着的 finally flush，不进「本轮结束后发出」。
+      queuedTurnRef.current = enqueueTurn(
+        queuedTurnRef.current,
+        "假设已确认。继续画页面。"
+      );
       if (isRunningRef.current) {
         void releaseRun({ skip: true });
       } else {
@@ -1004,7 +1017,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       (state as { specFirstPages?: { spec?: { assumptions?: unknown } } })
         .specFirstPages?.spec?.assumptions
     );
-    if (rows.length) {
+    if (rows.length && !assumptionsConfirmedRef.current) {
       applySpecAssumptions(
         mergeAssumptions(
           specAssumptionsRef.current,
@@ -1455,10 +1468,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           // ⚠ 新一轮清空：不清的话右侧会先亮上一轮的页面，而用户刚说的是
           //   "改成 XXX"——看着像改完了，其实一个字都还没动。
           setSpecPages([]);
-          // 伴随式澄清同理：上一轮"我替你定了手机号"是对上一份 spec 说的，
-          // 这一轮重新起草会重新定一遍。不清的话用户会对着一张过期的卡
-          // 点「改成工号」，而那句话排进的是**下一轮**——改的是已经不存在的决定。
-          resetSpecAssumptions();
+          // 伴随式澄清：只有本轮会重新起草 SPEC 时才清已处理集合。
+          // 控制面收尾卡「进入数据模型反推（Structure）」也走 runTurn，
+          // hop 经常还没落到 forcedTool——按人话认 hop，清了就把同一张卡摊回来。
+          if (shouldResetSpecAssumptions(hop, userText)) {
+            resetSpecAssumptions();
+          }
           // 每一步 LLM 想法各自缓冲：并行批里不同能力的增量交织到达，
           // 按标签分开累积，展示最近更新的那条（不互相覆盖内容）。
           const llmDraftBuffers = new Map<string, string>();
@@ -1656,6 +1671,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               onSpecAssumptions: items => {
                 // 按 id 并（不是追加）：续播会把同一条再送一遍，
                 // 理由见 spec-assumptions.mergeAssumptions 头注。
+                if (assumptionsConfirmedRef.current) return;
                 applySpecAssumptions(
                   mergeAssumptions(
                     specAssumptionsRef.current,
@@ -3007,6 +3023,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   );
 
   const specAssumptionsView = useMemo(() => {
+    if (assumptionsConfirmedRef.current) return [];
     if (specAssumptions.length > 0) return specAssumptions;
     const rows = parseSpecAssumptions(
       (sessionState as { specFirstPages?: { spec?: { assumptions?: unknown } } })

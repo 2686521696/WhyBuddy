@@ -166,6 +166,24 @@ def test_assert_stages_match_tools_positive_and_negative():
         cp.assert_stages_match_tools(tools, stages)
 
 
+def test_assert_allows_held_assumptions_to_skip_design():
+    """伴随式澄清停在 SPEC：design 及之后允许缺。把标记拿掉必须红。"""
+    stages = {"spec": {}, "assumptionsHeld": {"count": 2}}
+    cp.assert_stages_match_tools(("spec",), stages)
+    stages.pop("assumptionsHeld")
+    with pytest.raises(AssertionError, match="missing"):
+        cp.assert_stages_match_tools(("spec",), stages)
+
+
+def test_assert_allows_pages_hop_to_run_design():
+    """pages 单跳补跑 design 允许多。发明别的阶段仍红。"""
+    stages = {"design": {}, "pages": {}, "shell": {}}
+    cp.assert_stages_match_tools(("pages",), stages)
+    stages["invented"] = {}
+    with pytest.raises(AssertionError, match="extra"):
+        cp.assert_stages_match_tools(("pages",), stages)
+
+
 def test_run_spec_first_calls_assert_stages_match_tools():
     """出口断言必须接在活路径上。只测 helper 会假绿。"""
     src = _code(sfp.run_spec_first)

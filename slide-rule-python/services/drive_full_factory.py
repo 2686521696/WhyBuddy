@@ -31,6 +31,7 @@ from services.scope_authority import preferred_device_for_run
 from services.slide_rule_session import load_session, save_session
 from services.sliderule_session_sanitizer import sanitize_session_state
 from services.v5_full_driver import (
+    _stamp_factory_tools_onto_goal,
     drive_full_v5_session_stream,
     transient_blocked_signal,
 )
@@ -104,9 +105,11 @@ async def start_drive_full_factory_run(
             # ⚠ 必须在 `_advance_turn_version` / persist 之前盖上。否则
             #   reload 到的上一跳 spec 会被新 lastTurnId 钉死，pages 跳再
             #   也盖不回去。
-            goal = dict(state.goal) if isinstance(state.goal, dict) else {}
-            goal["tools"] = wanted
-            state.goal = goal
+            #
+            # ⚠ 2026-09-03 真机（团子的一天）：这里只写 tools，productSteps
+            #   还停在上一跳的 [2]。钟读的是步集，不是工具名——structure
+            #   跳 tools 对了、格子仍亮「起草 SPEC」。跟控制面同一把章。
+            _stamp_factory_tools_onto_goal(state, wanted)
     elif require_session_id:
         raise HTTPException(status_code=400, detail="session_id required")
     else:

@@ -110,6 +110,24 @@ class Test收进封闭形状:
         assert not style_brief_ok(None, ["p1"])
 
 
+class Test假设决定进风格提示词:
+    def test_家长模式进了user段(self):
+        spec = {
+            **SPEC,
+            "assumptions": [
+                {"id": "a1", "topic": "使用模式", "decision": "家长模式"},
+            ],
+        }
+        joined = " ".join(m["content"] for m in build_style_brief_prompt(spec))
+        assert "家长模式" in joined
+        assert "已确认的产品决定" in joined
+        assert "看得见的界面" in joined
+
+    def test_没有assumptions就不写那一段(self):
+        joined = " ".join(m["content"] for m in build_style_brief_prompt(SPEC))
+        assert "已确认的产品决定" not in joined
+
+
 class Test提示词不诱导谈结构:
     def test_明写不许提标签与外壳(self):
         joined = " ".join(m["content"] for m in build_style_brief_prompt(SPEC))

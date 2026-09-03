@@ -226,6 +226,11 @@ def test_closure_cap_detector_does_not_over_match():
 
     assert _is_closure_cap("appbundle.runtimeClosure")
     assert _is_closure_cap("appbundle.runtimeclosure")
+    assert _is_closure_cap("factory.closure")
+    assert not _is_closure_cap("factory.pages")
+    assert not _is_closure_cap("factory.structure")
+    assert not _is_closure_cap("factory.bind")
+    assert not _is_closure_cap("factory.spec")
     assert not _is_closure_cap("synthesis.merge")
     assert not _is_closure_cap("evidence.search")
     # 屏障判据认得更宽是对的，两者不能混用

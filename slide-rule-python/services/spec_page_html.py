@@ -411,6 +411,34 @@ class SpecPageHtmlError(RuntimeError):
     """
 
 
+def assumption_prompt_block(spec: Dict[str, Any]) -> str:
+    """伴随式确认过的决定，喂给画页 / 定风格。空则空串。
+
+    2026-09-03 真机（萌芽成长树）：家长模式 / 20:00 进了 spec.assumptions，
+    画页 brief 没读，四页 HTML 里这两个词都是 0。确认过的分叉必须进提示词，
+    不然卡白选。
+    """
+    rows = spec.get("assumptions") if isinstance(spec, dict) else None
+    if not isinstance(rows, list) or not rows:
+        return ""
+    lines: List[str] = [
+        "已确认的产品决定（必须做成看得见的界面：输入框、按钮、开关、列表；",
+        "禁止只写在 HTML 注释、角标或空状态说明里）：",
+    ]
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        topic = str(row.get("topic") or "").strip()
+        decision = str(row.get("decision") or "").strip()
+        if topic and decision:
+            lines.append(f"- {topic}：{decision}")
+        elif decision:
+            lines.append(f"- {decision}")
+        elif topic:
+            lines.append(f"- {topic}")
+    return "\n".join(lines) if len(lines) > 2 else ""
+
+
 def build_page_brief(
     page: Dict[str, Any], spec: Dict[str, Any], *, product: str = ""
 ) -> str:
@@ -463,6 +491,9 @@ def build_page_brief(
         # ⚠ 单独成段，不塞回需求那一行：它说的是**怎么排**，跟"要满足什么"
         #   不是一类信息，混在一起模型会当成验收条件的补充说明读过去。
         lines.append("设计要点：" + "；".join(notes))
+    decided = assumption_prompt_block(spec)
+    if decided:
+        lines.append(decided)
     return "\n".join(lines)
 
 
@@ -495,6 +526,7 @@ def build_page_html_prompt(
 
 - Follow the <design_system> visual tone. Do not invent a generic admin skin.
 - Follow UX best practices.
+- If the brief contains 已确认的产品决定, those decisions must appear as real UI (inputs, buttons, toggles, lists) using the decision's own words. Do not hide them in HTML comments or a tiny badge.
 - The first screen is the page **at rest**. A list/ledger page shows the table or cards and a single "新增" button — not an open create/edit drawer or dialog. Do not copy Tailwind UI Slide-over "open" snapshots. Create/edit forms are provided by the host; page scripts will not run, so an open drawer cannot be closed.
 - Pick one surface for the whole app (light OR dark). Do not mix a light page with bg-slate-900 / bg-black cards, and do not paint the top header and the sidebar two different darks.
 - Resource timelines / occupancy grids: header ticks and body cells share the same column count. Tailwind Play only ships grid-cols-1..12 — prefer 12 or fewer, or the same N on both sides. Empty slots stay in document flow; do not stretch one row with flex-1 to fake a full board. Now-lines and other overlays are siblings of the repeating row, never the first child of the row list.

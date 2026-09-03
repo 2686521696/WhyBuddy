@@ -114,6 +114,8 @@ _STAGES_META = frozenset(
         "qualityNotices",
         "pageIdMatch",
         "refineReuse",
+        # 伴随式澄清当场停：这是标记，不是跑过的阶段。
+        "assumptionsHeld",
     }
 )
 
@@ -130,6 +132,20 @@ def executed_stage_ids(stages: Optional[dict]) -> Tuple[str, ...]:
 #: 精修时没拿到上一版页面，pagescope 会跳过。不许因此把「多跑了整链」放过。
 _OPTIONAL_SKIPS = frozenset({"specfirst.pagescope"})
 
+#: 假设卡一出就停在 SPEC：design 及之后本跳不再跑，选完下一跳再跑。
+_HELD_OPTIONAL_SKIPS = frozenset(
+    {
+        "specfirst.design",
+        "specfirst.pagescope",
+        "specfirst.pages",
+        "specfirst.shell",
+        "specfirst.structure",
+        "specfirst.semantics",
+        "specfirst.assemble",
+        "specfirst.bind",
+    }
+)
+
 
 def assert_stages_match_tools(
     tools: Iterable[str],
@@ -141,11 +157,26 @@ def assert_stages_match_tools(
 
     2026-09-02 真机：规划器没点名就回落整份菜单，控制面还以为自己只点了
     spec。盯「多跑了什么」——缺 pagescope（没上一版页面）不是这道闸的目标。
+
+    2026-09-03：伴随式澄清出卡后本跳停在 SPEC，design 及之后允许缺。
+    pages 单跳在上一跳没定风格时会补跑 design（不在展开里），允许多。
     """
     declared = set(expand_tools(tools, refine=refine))
     actual = set(executed_stage_ids(stages))
     extra = actual - declared
-    missing = (declared - _OPTIONAL_SKIPS) - actual
+    optional = set(_OPTIONAL_SKIPS)
+    if isinstance(stages, dict) and stages.get("assumptionsHeld"):
+        optional |= _HELD_OPTIONAL_SKIPS
+    tool_names = {str(item or "").strip() for item in (tools or ())}
+    # spec 单跳被假设卡停住 → 下一跳 pages 必须能定风格。展开不含
+    # design（以免整链 spec+pages 跑两遍），所以这里允许多跑这一份。
+    if (
+        "specfirst.design" in extra
+        and "pages" in tool_names
+        and "spec" not in tool_names
+    ):
+        extra.discard("specfirst.design")
+    missing = (declared - optional) - actual
     if extra or missing:
         raise AssertionError(
             "本跳 tools="

@@ -16,6 +16,7 @@ from contextvars import ContextVar
 from models.v5_state import V5SessionState, ExecuteCapabilityResult
 from .rag_service import retrieve_evidence, generate_with_rag
 from .capability_plan import CapabilityPlan
+from .closed_tools import FACTORY_HOPS, hop_from_factory_capability
 from .workflow_journal import (
     JournalError,
     active_journal,
@@ -479,6 +480,8 @@ def _try_llm_generate_evidence(
     workflow: Optional[str] = None,
     reuse_spec: Optional[Any] = None,
     reuse_pages: Optional[Any] = None,
+    reuse_style_brief: Optional[Any] = None,
+    reuse_language: Optional[Any] = None,
 ) -> Optional[Dict[str, Dict[str, Any]]]:
     """Generate + gate a five-system model for a novel intent.
 
@@ -594,10 +597,10 @@ def _try_llm_generate_evidence(
             _prev_model = (_refine_ctx or {}).get("model")
             _reuse_language = (
                 _prev_model.get("designLanguage") if isinstance(_prev_model, dict) else None
-            )
+            ) or reuse_language
             _reuse_style = (
                 _prev_model.get("styleBrief") if isinstance(_prev_model, dict) else None
-            )
+            ) or reuse_style_brief
             if _reuse_style:
                 print("[v5_capability_executor] 精修沿用上一版风格段")
             elif _reuse_language:
@@ -1071,10 +1074,16 @@ def _try_llm_generate_evidence(
 def _reuse_from_state(state: "V5SessionState"):
     blob = getattr(state, "specFirstPages", None)
     if not isinstance(blob, dict):
-        return None, None
+        return None, None, None, None
     spec = blob.get("spec") if isinstance(blob.get("spec"), dict) else None
     pages = blob.get("pages") if isinstance(blob.get("pages"), dict) else None
-    return spec, pages
+    style = blob.get("styleBrief") if isinstance(blob.get("styleBrief"), dict) else None
+    language = (
+        blob.get("designLanguage")
+        if isinstance(blob.get("designLanguage"), dict)
+        else None
+    )
+    return spec, pages, style, language
 
 
 def _cache_spec_first_pages(state: "V5SessionState") -> None:
@@ -1300,7 +1309,7 @@ def _build_per_skill_evidence(
         # override 路径传 False（历史快照无 landingPageRef 仍可恢复）；
         # refine 路径传 True（精修是新产物，必须声明首屏）。
         _goal_map = state.goal if isinstance(state.goal, dict) else {}
-        _reuse_spec, _reuse_pages = _reuse_from_state(state)
+        _reuse_spec, _reuse_pages, _blob_style, _blob_lang = _reuse_from_state(state)
         llm_result = _try_llm_generate_evidence(
             goal, llm_json_fn,
             require_landing_page_ref=not _is_override,
@@ -1310,9 +1319,13 @@ def _build_per_skill_evidence(
             workflow=_goal_map.get("workflow"),
             reuse_spec=_reuse_spec,
             reuse_pages=_reuse_pages,
+            reuse_style_brief=_blob_style,
+            reuse_language=_blob_lang,
         )
+        # 单跳可能没有汇合模型（structure/bind 不产五系统）。
+        # 不落库 = 计划还停在上一跳 pages，控制面以为做完了。
+        _cache_spec_first_pages(state)
         if llm_result is not None:
-            _cache_spec_first_pages(state)
             for skill in REQUIRED_EVIDENCE_KEYS:
                 item = llm_result.get(skill)
                 if item is None:
@@ -1380,7 +1393,7 @@ def _build_per_skill_evidence(
         # it through the structural gate. Only gate-PASSED models inject evidence;
         # gate failure / LLM unavailable stays fail-closed (0/6). "失败由 gate 拦截而非静默".
         _goal_map = state.goal if isinstance(state.goal, dict) else {}
-        _reuse_spec, _reuse_pages = _reuse_from_state(state)
+        _reuse_spec, _reuse_pages, _blob_style, _blob_lang = _reuse_from_state(state)
         llm_result = _try_llm_generate_evidence(
             goal, llm_json_fn, session_id=getattr(state, "sessionId", None),
             tools=_goal_map.get("tools"),
@@ -1388,11 +1401,14 @@ def _build_per_skill_evidence(
             workflow=_goal_map.get("workflow"),
             reuse_spec=_reuse_spec,
             reuse_pages=_reuse_pages,
+            reuse_style_brief=_blob_style,
+            reuse_language=_blob_lang,
         )
+        # 单跳可能没有汇合模型。不落库 = 计划还停在上一跳。
+        _cache_spec_first_pages(state)
         if llm_result is not None:
             # 同上：LLM 生成的产物携带 _model_section，不能被 haystack 壳
             # 产物（如自产的 appbundle.runtimeClosure）抢占槽位。
-            _cache_spec_first_pages(state)
             for skill in REQUIRED_EVIDENCE_KEYS:
                 item = llm_result.get(skill)
                 if item is None:
@@ -1776,16 +1792,32 @@ def execute_v5_capability(
         toolName=capability_id if "mcp" in capability_id else None,
         skillName=capability_id if "skill" in capability_id else None,
     )
-    if "appbundle" in capability_id.lower() or "runtimeclosure" in capability_id.lower():
+    if (
+        "appbundle" in capability_id.lower()
+        or "runtimeclosure" in capability_id.lower()
+        or hop_from_factory_capability(capability_id)
+    ):
         blocked_signal = "blocked" in capability_id.lower() or "blocked" in goal.lower()
-        per_skill = _build_per_skill_evidence(state, blocked_signal, goal)
+        _goal_map = state.goal if isinstance(state.goal, dict) else {}
+        _hop_tools = [
+            str(item).strip()
+            for item in (_goal_map.get("tools") or [])
+            if str(item).strip()
+        ]
+        # 抄 grok：WRITE 工具点下去必须真跑。T3 五系统开关管的是新颖意图
+        # 生模型，不许把用户点的 structure/bind 跳过。
+        _host_hop = len(_hop_tools) == 1 and _hop_tools[0] in FACTORY_HOPS
+        per_skill = _build_per_skill_evidence(
+            state, blocked_signal, goal, force_llm=_host_hop
+        )
+        if _host_hop:
+            _cache_spec_first_pages(state)
         # 公开工具的第五步。spec/pages/structure/bind 已经在上面那次
         # `_build_per_skill_evidence` → `run_spec_first` 里按计划跑过。
         # 计划拿掉 closure = 不做发布判定。缺信封就是缺，不许补绿灯。
         from .device_policy import preferred_device_override
         from .v5_llm_generate import get_refine_context as _plan_refine_ctx
 
-        _goal_map = state.goal if isinstance(state.goal, dict) else {}
         _preset = select_workflow(
             name=_goal_map.get("workflow"),
             device=preferred_device_override() or "desktop",

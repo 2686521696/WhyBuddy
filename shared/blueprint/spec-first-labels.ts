@@ -27,6 +27,13 @@ export const SPEC_FIRST_LIVE_LABELS: Record<string, string> = {
 export function humanReasoningStepLabel(idOrLabel: string): string {
   const raw = String(idOrLabel || "").trim();
   if (!raw) return "正在执行";
+  // 工厂 hop 账本身份是 factory.{hop}。不许回落「正在执行 factory.structure」。
+  if (raw.startsWith("factory.")) {
+    const hop = raw.slice("factory.".length);
+    if (hop === "closure") return "完整性检查与发布闭环";
+    const hopSpec = SPEC_FIRST_LIVE_LABELS[`specfirst.${hop}`];
+    if (hopSpec) return hopSpec;
+  }
   const spec = SPEC_FIRST_LIVE_LABELS[raw];
   if (spec) return spec;
   const entry = (

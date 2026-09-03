@@ -203,31 +203,45 @@ _quality_notices_var: ContextVar[Optional[List[Dict[str, Any]]]] = ContextVar(
 )
 
 
-def _emit_assumptions(spec: Any) -> None:
+def _emit_assumptions(spec: Any) -> bool:
     """把这一份 spec 里的假设推给出口。**整条 fail-open**。
 
     ⚠ 本仓第七条：这是增强类。出口没装（脚本方言、测试、老调用方）、
       推的时候炸了、spec 里根本没有 assumptions——三种情况都必须让
       推演照常往下跑。一次"顺路说一声"不许有能力打死一条已经跑了两分钟的链。
+
+    返回卡是否已经推到用户面前。调用方据此停在 SPEC——
+    2026-09-03 真机：卡出来了工厂还在跑，人选完要等 hop 结束才发。
+    闸没挂上（位子没绑进 to_thread）也要停：卡已经在屏幕上了，
+    再跑 design 就是边跑边点。脚本方言没装 sink，照旧往下跑。
     """
     sink = _assumption_sink_var.get()
     if sink is None:
-        return
+        return False
     try:
         rows = (spec or {}).get("assumptions") if isinstance(spec, dict) else None
         if not rows:
-            return
+            return False
         sink(list(rows))
         # 选完再继续：假设一出就请求停在下一安全点。闸没绑 / 暂停关了
         # 都静默——不许「顺路说一声」打死已经跑了两分钟的链。
         try:
-            from .run_pause import hold_current
+            from .run_pause import current_slot, hold_current
 
             hold_current()
+            slot = current_slot()
+            if slot is None or slot.pending is None:
+                _safe_print(
+                    "[spec_first_pipeline] 伴随式澄清：卡已出但暂停位子没挂上，本跳仍停在 SPEC"
+                )
         except Exception:  # noqa: BLE001
-            pass
+            _safe_print(
+                "[spec_first_pipeline] 伴随式澄清：hold 失败，本跳仍停在 SPEC"
+            )
+        return True
     except Exception as exc:  # noqa: BLE001 — 见 docstring
         _safe_print(f"[spec_first_pipeline] 假设出口异常（fail-open，不拦推演）：{exc}")
+        return False
 
 
 #: 本轮跑出来的整页 HTML，供**调用方落库**用。
@@ -1489,6 +1503,7 @@ def run_spec_first(
     _held_semantics = False
     _held_assemble = False
     _held_structure = False
+    _skip_after_assumptions = False
     _shadow_on = str(
         os.environ.get("SLIDERULE_GRAPH_SCOPE_SHADOW", "1")
     ).strip().lower() not in _env_flags.OFF
@@ -1598,7 +1613,17 @@ def run_spec_first(
             spec = spec_model.model_dump(mode="json") if hasattr(spec_model, "model_dump") else spec_model
             # 伴随式澄清：这一步刚替用户定下的事，**当场**推给前端，
             # 不等后面 8 分钟的画页和打孔（理由见 _assumption_sink_var 头注）。
-            _emit_assumptions(spec)
+            if _emit_assumptions(spec):
+                # 闸挂上了就本跳停在 SPEC。design 在 to_thread 里，驱动器的
+                # 异步安全点要等整段返回才到——不在这里切断，卡会边跑边点。
+                _skip_after_assumptions = True
+                rows = spec.get("assumptions") if isinstance(spec, dict) else None
+                stages["assumptionsHeld"] = {
+                    "count": len(list(rows or [])),
+                }
+                _safe_print(
+                    "[spec_first_pipeline] 伴随式澄清：SPEC 已出，停住等人选完再继续"
+                )
             # ★ 结构拨回（2026-08-18 过夜）：提示词冻结求不动。必须在
             #   spec_pages_declared 取值之前——图判、照搬、画页、风格复用
             #   全都拿那份清单当键。拨完再取，键才对得上上一版。
@@ -1667,7 +1692,18 @@ def run_spec_first(
     _ds = active_design_system()
     if _ds:
         design_override = {**design_system_override(_ds), **(design_override or {})}
-    _do_design = plan.includes("specfirst.design")
+    _do_design = (not _skip_after_assumptions) and plan.includes("specfirst.design")
+    # spec 单跳被假设卡停住之后，下一跳 pages 展开不含 design。
+    # 上一跳没定风格时这里补跑，否则页面走缺省皮。
+    if (
+        not _do_design
+        and not _skip_after_assumptions
+        and plan.includes("specfirst.pages")
+        and not reuse_style_brief
+        and not reuse_language
+        and not (design_system or "").strip()
+    ):
+        _do_design = True
     if not _do_design:
         pass
     elif (design_system or "").strip():
@@ -1743,7 +1779,7 @@ def run_spec_first(
             "[spec_first_pipeline] ⚠ 精修轮但没拿到上一版页面，按需重画未生效，"
             "本轮全量重画（reuse_pages 空）"
         )
-    if refine and reuse_pages and not _graph_took_over and plan.includes("specfirst.pagescope"):
+    if refine and reuse_pages and not _graph_took_over and (not _skip_after_assumptions) and plan.includes("specfirst.pagescope"):
         raise_if_cancelled("第2.8步 判重画范围")
         with _stage("specfirst.pagescope") as sst:
             from .refine_page_scope import decide_pages_to_regenerate
@@ -1764,9 +1800,9 @@ def run_spec_first(
     # 会把种子 LLM 付两遍钱，对照日志打两行，标定集作废。
 
     # ── 第 3 步：每页 HTML（并发；单页失败不拖垮整批）────────────────
-    if plan.includes("specfirst.pages"):
+    if (not _skip_after_assumptions) and plan.includes("specfirst.pages"):
         raise_if_cancelled("第3步 逐页画界面")
-    if plan.includes("specfirst.pages"):
+    if (not _skip_after_assumptions) and plan.includes("specfirst.pages"):
         with _stage("specfirst.pages") as st:
             # on_page 透传：这一步是整条链上**第一个产出可以直接看的东西**的地方，
             # 一份能独立打开的 HTML 比最终模型早四五分钟。攒齐再交等于白白转圈。
@@ -1843,11 +1879,11 @@ def run_spec_first(
                     f"实交 {len(pages)} 页，缺 {missing_pages}（失败原因见 failedPages）"
                 )
         stages["pages"] = dict(st)
-    if plan.includes("specfirst.pages") and not pages:
+    if (not _skip_after_assumptions) and plan.includes("specfirst.pages") and not pages:
         raise SpecFirstError(f"第 3 步一页都没出来：{list(failed.values())[:2]}")
 
     # ── 第 3.5 步：外壳统一（零 LLM）────────────────────────────────
-    if plan.includes("specfirst.shell"):
+    if (not _skip_after_assumptions) and plan.includes("specfirst.shell"):
         raise_if_cancelled("第3.5步 外壳统一")
         with _stage("specfirst.shell") as st:
             shell = unify_shell(pages, spec, device=device, product_archetype=arch)
@@ -1896,15 +1932,15 @@ def run_spec_first(
         # 素颜页，要等整轮跑完 finalState 到达才换——那是十几分钟的错误画面。
         _reemit_pages(sink, pages, bound=False)
 
-    if plan.includes("specfirst.structure") and not pages:
+    if (not _skip_after_assumptions) and plan.includes("specfirst.structure") and not pages:
         raise SpecFirstError("structure 需要上一跳的页面")
-    if bind_html and plan.includes("specfirst.bind") and not pages:
+    if bind_html and (not _skip_after_assumptions) and plan.includes("specfirst.bind") and not pages:
         raise SpecFirstError("bind 需要上一跳的页面")
 
     # ── 第 4 步：HTML → 结构 ────────────────────────────────────────
     # 照搬页 HTML 没变，数据结构沿用上一版。只把重画页送去反推，再和
     # 沿用页拼回完整结构。整份四页再送一次是洗衣房那 11 秒白烧。
-    if plan.includes("specfirst.structure"):
+    if (not _skip_after_assumptions) and plan.includes("specfirst.structure"):
         raise_if_cancelled("第4步 反推结构")
         with _stage("specfirst.structure") as st:
             _redrawn_html = {
@@ -2059,9 +2095,9 @@ def run_spec_first(
         # ── 第 5 步：(结构 + SPEC) → 权限 / 工作流 / 不变式 ───────────────
         # ⚠ 两个输入都要。三臂对照实测：只有 SPEC 会编出结构里没有的对象；
         #   只有结构会把多类使用者塌成一个角色。B 是唯一过闸的那一臂。
-        if plan.includes("specfirst.semantics"):
+        if (not _skip_after_assumptions) and plan.includes("specfirst.semantics"):
             raise_if_cancelled("第5步 推导语义")
-        if plan.includes("specfirst.semantics"):
+        if (not _skip_after_assumptions) and plan.includes("specfirst.semantics"):
             with _stage("specfirst.semantics") as st:
                 semantics_model = derive_semantics(
                     structure, spec, llm_json_fn=llm_json_fn, prev_ids=_prev_ids
@@ -2076,9 +2112,9 @@ def run_spec_first(
             stages["semantics"] = dict(st)
 
         # ── 第 6 步：汇合 → 完整六段 → 过结构闸 ─────────────────────────
-        if plan.includes("specfirst.assemble"):
+        if (not _skip_after_assumptions) and plan.includes("specfirst.assemble"):
             raise_if_cancelled("第6步 汇合过闸")
-        if plan.includes("specfirst.assemble"):
+        if (not _skip_after_assumptions) and plan.includes("specfirst.assemble"):
             with _stage("specfirst.assemble") as st:
                 assembled = assemble(structure, semantics, spec, llm_json_fn=llm_json_fn)
                 model = assembled.get("model") if isinstance(assembled, dict) else assembled
@@ -2131,7 +2167,7 @@ def run_spec_first(
     # ⚠ 到这里实体与字段才定死校验过，孔才打得成。第 3 步打不了——
     #   那时 datamodel 还不存在，写 data-field 是引用没被发明的 id。
     bound_failed: Dict[str, Any] = {}
-    if bind_html and plan.includes("specfirst.bind"):
+    if bind_html and (not _skip_after_assumptions) and plan.includes("specfirst.bind"):
         raise_if_cancelled("第6.5步 打绑定孔")
         with _stage("specfirst.bind") as st:
             before_bind = dict(pages)

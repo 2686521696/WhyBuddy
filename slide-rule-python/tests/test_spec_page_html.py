@@ -76,6 +76,8 @@ class Test口径抄的是_screenshot_to_code:
             "Do not invent a generic admin skin."
         ) in p
         assert "- Follow UX best practices." in p
+        assert "已确认的产品决定" in p
+        assert "HTML comments" in p
         assert "modern and sleek" not in p
         assert "professional fonts" not in p
 

@@ -234,6 +234,10 @@ describe("斜杠动词走控制面，客户端 /推演 不得 yolo", () => {
     expect(inferForcedTool("https://miantuan.ai")).toBeUndefined();
     // 反向：把 /推演 映射成 rehearse，空会话会跳过停泊直接点火。
     expect(inferForcedTool("/推演")).not.toBe("rehearse");
+    // 收尾卡点下去是 typed 答案：标签里的 Structure = structure。
+    expect(inferForcedTool("进入数据模型反推（Structure）")).toBe("structure");
+    expect(inferForcedTool("进入权限绑定（bind）")).toBe("bind");
+    expect(inferForcedTool("闭环发布管理系统")).toBeUndefined();
     expect(forcedToolForRehearsalVerb(parseRehearsalSlash("/推演"))).toBeUndefined();
   });
 

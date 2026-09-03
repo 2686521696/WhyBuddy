@@ -17,6 +17,7 @@ import {
   parseJudgement,
   MIN_JUDGE_CHARS,
   intakeHintYieldsToScopeCard,
+  looksLikeFactoryHopCommand,
   type IntakeJudgement,
 } from "../use-intake-judge";
 
@@ -220,6 +221,35 @@ describe("判定触发阈值", () => {
     expect(MIN_JUDGE_CHARS).toBeGreaterThan(1);
     expect("帮我".length).toBeLessThan(MIN_JUDGE_CHARS);
     expect("给宠物医院做预约挂号".length).toBeGreaterThanOrEqual(MIN_JUDGE_CHARS);
+  });
+});
+
+describe("工厂单跳指令不走新话题审查", () => {
+  it("已有应用上的 structure/bind/closure 指令认成 hop", () => {
+    expect(
+      looksLikeFactoryHopCommand(
+        "继续进行数据模型反推（structure）与权限绑定（bind）"
+      )
+    ).toBe(true);
+    expect(looksLikeFactoryHopCommand("直接执行闭环发布（closure）")).toBe(true);
+    expect(looksLikeFactoryHopCommand("直接执行闭环发布")).toBe(true);
+    expect(looksLikeFactoryHopCommand("进入数据模型反推（Structure）")).toBe(
+      true
+    );
+  });
+
+  it("新产品名即使带闭环发布也不认成 hop", () => {
+    expect(looksLikeFactoryHopCommand("闭环发布管理系统")).toBe(false);
+    expect(looksLikeFactoryHopCommand("做一个闭环发布管理系统")).toBe(false);
+    expect(looksLikeFactoryHopCommand("给社区图书馆做借还书系统")).toBe(false);
+  });
+
+  it("hook 在 hasApp 时对 hop 指令连审查请求都不发", async () => {
+    const src = await import("../use-intake-judge?raw").then(
+      m => (m as unknown as { default: string }).default
+    );
+    expect(src).toContain("hasApp && looksLikeFactoryHopCommand");
+    expect(src).toContain("setIsJudging(false)");
   });
 });
 

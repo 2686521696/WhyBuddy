@@ -18,6 +18,7 @@ E13 早就把叙述放进会话状态（文件 / HTTPS SQL 网关同一份 blob�
 from __future__ import annotations
 from .stage_legal import labels as _stage_labels
 from .archetype_legal import required_evidence as _required_evidence
+from .closed_tools import FACTORY_HOP_LABELS, hop_from_factory_capability
 
 import re
 import time
@@ -95,6 +96,9 @@ _SKIP_THINK_PREFIXES = ("phase_changed:", "loop_timing:")
 
 def human_capability_label(capability_id: str) -> str:
     cap = str(capability_id or "").strip()
+    hop = hop_from_factory_capability(cap)
+    if hop:
+        return FACTORY_HOP_LABELS.get(hop) or f"正在执行 {hop}"
     if cap in _CAPABILITY_LIVE_LABELS:
         return _CAPABILITY_LIVE_LABELS[cap]
     if cap in _SPEC_FIRST_LABELS:
@@ -127,6 +131,32 @@ def _goal_text(state: Any) -> str:
     if goal is None:
         return ""
     return str(getattr(goal, "text", "") or "")
+
+
+_HOP_DONE_NOTE = {
+    "structure": "本轮已完成数据模型反推。",
+    "bind": "本轮已完成权限绑定。",
+    "closure": "本轮已完成完整性检查。",
+    "spec": "本轮已完成规格起草。",
+}
+
+
+def _goal_tools(state: Any) -> List[str]:
+    goal = getattr(state, "goal", None)
+    if not isinstance(goal, dict):
+        return []
+    raw = goal.get("tools")
+    if not isinstance(raw, list):
+        return []
+    return [str(item).strip() for item in raw if str(item).strip()]
+
+
+def _hop_done_note(tools: List[str]) -> str:
+    for name in tools:
+        note = _HOP_DONE_NOTE.get(name)
+        if note:
+            return note
+    return ""
 
 
 def _slim_step(step: Dict[str, Any]) -> Dict[str, Any]:
@@ -320,12 +350,20 @@ def project_drive_steps(
     goal = _goal_text(state).strip()
     follow_up = bool(instruction and goal and instruction != goal)
     painted = bool(page_map)
+    hop_tools = _goal_tools(state)
+    this_hop_paints = (not hop_tools) or ("pages" in hop_tools)
     if paint:
         add_narration(paint)
-    elif follow_up and painted:
+    elif follow_up and painted and this_hop_paints:
         add_narration("本轮已按指令改画页面。")
-    elif follow_up:
+    elif follow_up and this_hop_paints:
         add_narration("本轮没有画出新的页面，上一版保留。")
+    elif follow_up:
+        # structure / bind / closure 本跳就没打算画页。套「没画出页面」
+        # 是把 hop 当精修——2026-09-03 真机点 Structure 左栏就这么说。
+        done = _hop_done_note(hop_tools)
+        if done:
+            add_narration(done)
     elif summary:
         add_narration(summary)
 
