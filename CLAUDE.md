@@ -24,6 +24,34 @@
 **做法**：改之前先在目标路径打一行日志或加一条断言，确认它真的被执行到。
 `tests/test_refine_merge_reaches_the_live_path.py` 就是这条纪律的具象化。
 
+### 一之二、护栏装对了地方，条件却永远不成立
+
+**这是第一条的变种，2026-09-04 一夜里发作两次，同一个人写的两条护栏。**
+两次都不是装错位置——装在真跑的那条路上，但**它依赖的输入在真机上根本不出现**：
+
+```
+护栏  「文本只许压残留 hop，不许压显式意图」        写成 forced is None or forced in FACTORY_HOPS
+真机   首轮点火按设计不传 forcedTool → forced is None → 文本照样赢
+       [control] forced hop=structure hasSpec=0 hasPages=0   后面连 capabilityPlan= 都没有
+
+护栏  「已有 SPEC、host 没点 spec，不许把 spec 塞回去」  加在 _factory_tools_from_state
+真机   run_spec_first 转手 select_workflow(tools=…) 拿 preset.tools 当计划，
+       ['pages','structure','bind'] → ['spec','pages','structure','bind']   spec 又回来了
+       stage=specfirst.spec ms=18428 …… 页面落库：0 份
+```
+
+两次的单测都是绿的，因为**判据自己构造了护栏需要的那个输入**（喂
+`{'forcedTool':'rehearse'}`），而真机不喂。第二次更贵：用户答完假设卡点确认，
+整跳预算烧在重起草一份**不一样的** SPEC 上（5 页 16 节点 → 6 页 17 节点），
+页面一页没画，而刚确认的假设是针对旧那份的。
+
+**做法**：护栏的判据必须喂**真机那一发的原样载荷**，不许自己拼一个。
+拿不到就先去日志里抄一行。写完再问一句：*这个条件在真机上真的会成立吗？*
+`tests/test_topic_is_not_an_instruction.py` 与
+`tests/test_remaining_chain_does_not_redraft_spec.py` 是这条的具象化——
+前者第一条判据先证明「不设边界时文本确实会赢」，后者干脆**直接执行产线源码**，
+不重抄逻辑（重抄的判据只能证明"我抄对了"）。
+
 ## 二、判据必须能被变异咬住
 
 写完测试，**把修复改回去，确认它变红**。没红就是判据没用。
