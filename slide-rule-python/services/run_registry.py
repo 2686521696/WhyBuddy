@@ -49,6 +49,9 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+
+# gate_health 是 util 叶子（谁都不依赖），顶层 import——别塞函数体，架构闸盯着逃生口
+from .gate_health import summary_line
 import uuid
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional
 
@@ -167,6 +170,20 @@ async def _append(run: Run, event: Dict[str, Any]) -> None:
 async def _finish(run: Run, status: str) -> None:
     run.status = status
     run.finished_at = time.monotonic()
+    # 跑批收尾打一行各道闸的开火情况。
+    #
+    # ⚠ 放在 `_finish` 而不是驱动器里：四种终态（complete/error/cancelled/
+    #   partial）全都从这一个口出去，接在这儿才不会漏掉"跑挂了那一轮"——
+    #   而恰恰是挂掉的那些轮次最需要知道闸当时在说什么。
+    #
+    # 统计是**跨会话累计**的（台账是进程级）：一道闸对 15 个不同会话说同一句话，
+    # 正是今天要抓的形状，按单会话统计反而看不见。
+    try:
+        line = summary_line()
+        if line:
+            print(line, flush=True)
+    except Exception as exc:  # noqa: BLE001 — 收尾统计不许挡住 run 收尾
+        print(f"[gate-health] 收尾统计跳过：{str(exc)[:120]}")
     if _active_by_session.get(run.session_id) == run.run_id:
         _active_by_session.pop(run.session_id, None)
     async with run.cond:

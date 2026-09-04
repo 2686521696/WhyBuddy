@@ -62,7 +62,7 @@ import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 ROOT = pathlib.Path(__file__).resolve().parent
 REPO = ROOT.parent
@@ -357,6 +357,112 @@ def satellite_components(g: Graph, manifest: dict) -> List[str]:
 def deferred_count(g: Graph) -> int:
     """函数体里的内部 import 条数。棘轮只许变少。"""
     return sum(1 for e in g.edges if e.deferred)
+
+
+#: 一条 blocker code 长什么样：全大写下划线，至少两段。
+#: 收窄到这个形状是为了别把 HTTP 头、环境变量名之类也当成闸的产物。
+_BLOCKER_CODE_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$")
+
+#: 体检入口的名字。`record_verdict` 是本名，`_gate_record` 是调用侧的别名
+#: （v5_capability_executor 顶层 import 时改的名）——两个都认，否则改个别名
+#: 就等于悄悄退出体检。
+_GATE_HEALTH_CALLS = ("record_verdict", "_gate_record")
+
+
+def gate_inventory(root: pathlib.Path = ROOT) -> List[Dict[str, Any]]:
+    """**闸清单**：谁在发拦截理由、谁被体检看着。由 AST 算出来，不许手写。
+
+    ## 为什么要有它（2026-09-05）
+
+    「为什么几个月没审查出来」的答案里有一条是：**没人知道这个系统里到底有
+    几道闸**。相关性闸、证据闸、待办闸、孤岛体检、降级闸……散在四五个模块里，
+    各自发各自的 blocker code，没有任何一处把它们摆在一起。于是
+    「15 个会话全被同一道闸按同一个理由拦下」这种事，没有观察它的位置。
+
+    依赖图回答「谁 import 谁」，回答不了「这个系统有哪些判定、各自装在哪」。
+    这份清单补的是后者，同样**由代码算出**（§「依赖图不许手画」同一条纪律）。
+
+    ## 判据
+
+    每个模块两个数：
+      · `codes`  —— 它字面量里出现的 blocker code（`{"code": "XXX_YYY"}`）
+      · `gates`  —— 它调 `record_verdict("...")` 报进体检的闸名
+
+    交叉出一条真问题：**发 blocker 却一次都没进体检的模块**。那种闸坏成
+    「一直响」时没有任何人会发现——今天 0/6 躲了几个月就是这个形状。
+    """
+    out: List[Dict[str, Any]] = []
+    for path in sorted(_sources(root)):
+        module = _module_name(path)
+        if not module.startswith("services."):
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+        except SyntaxError:
+            continue
+        codes: Set[str] = set()
+        gates: Set[str] = set()
+        for node in ast.walk(tree):
+            # {"code": "CLOSURE_GOAL_RELEVANCE_FAILED", ...}
+            if isinstance(node, ast.Dict):
+                for k, v in zip(node.keys, node.values):
+                    if (
+                        isinstance(k, ast.Constant) and k.value == "code"
+                        and isinstance(v, ast.Constant)
+                        and isinstance(v.value, str)
+                        and _BLOCKER_CODE_RE.match(v.value)
+                    ):
+                        codes.add(v.value)
+            # record_verdict("evidence", ...) / _gate_record("relevance", ...)
+            if isinstance(node, ast.Call):
+                name = getattr(node.func, "id", getattr(node.func, "attr", ""))
+                if name in _GATE_HEALTH_CALLS and node.args:
+                    first = node.args[0]
+                    if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                        gates.add(first.value)
+        if codes or gates:
+            out.append({
+                "module": module,
+                "codes": sorted(codes),
+                "gates": sorted(gates),
+            })
+    return out
+
+
+def all_blocker_codes(root: pathlib.Path = ROOT) -> List[str]:
+    """代码里出现过的全部 blocker code。"""
+    return sorted({c for row in gate_inventory(root) for c in row["codes"]})
+
+
+def undeclared_gate_codes(
+    manifest: dict, root: pathlib.Path = ROOT
+) -> List[str]:
+    """新增了拦截理由、却没在 `[gate_codes]` 里说清谁体检它。**一条都不许有。**
+
+    ## 为什么做成"必须声明"而不是自动推断
+
+    第一版想自动推断——「发 blocker 却没调体检的模块」。跑出来 4 条，
+    其中 3 条是误报：`capability_plan` 发 `CLOSURE_FACTORY_TODO_OPEN`，
+    而 `factoryTodo` 那道闸的体检记在 `v5_capability_executor`（算的地方和
+    落的地方本来就常常分家）；`llm_channel` 的 `LLM_TEST_*` 压根不是闭环闸。
+    **一份 3/4 是误报的名单，下一个人会直接把它关掉。**
+
+    所以改成本仓既有的那条路子：像 `may_depend_on` / `orphan_reasons` 一样
+    **先声明再放行**。新增一条 blocker code 就必须回答一句「它归哪道被体检的
+    闸；如果不体检，为什么」。答不上来的那些，恰恰就是几个月没人发现的那种。
+    """
+    declared = set((manifest.get("gate_codes") or {}).keys())
+    return [c for c in all_blocker_codes(root) if c not in declared]
+
+
+def gate_codes_without_health(manifest: dict, root: pathlib.Path = ROOT) -> List[str]:
+    """声明了、但明说不进体检的 code。**只许变少**，是一本欠账。"""
+    table = manifest.get("gate_codes") or {}
+    present = set(all_blocker_codes(root))
+    return sorted(
+        c for c, gate in table.items()
+        if c in present and not str(gate or "").strip()
+    )
 
 
 def orphans(g: Graph, manifest: dict) -> List[str]:
@@ -949,7 +1055,41 @@ def render_doc(g: Graph, manifest: dict) -> str:
             body.append(f"- `{v}`")
     else:
         body.append("（当前没有）")
-    body.append("")
+
+    # ── 闸清单（2026-09-05）─────────────────────────────────────────
+    inv = gate_inventory()
+    codes = all_blocker_codes()
+    table = manifest.get("gate_codes") or {}
+    watched = sorted({c for c, gv in table.items() if str(gv or "").strip() and c in set(codes)})
+    unwatched = gate_codes_without_health(manifest)
+    body += [
+        "", "## 闸清单（谁在拦，谁看着它）", "",
+        "> 依赖图回答「谁 import 谁」，回答不了「这个系统有哪些判定、各自装在哪、",
+        "> 坏成一直响的时候谁会发现」。2026-09-05 补的就是后者——",
+        "> 「为什么几个月没审查出来」的答案里有一条是**没人知道这里到底有几道闸**：",
+        "> 15 个会话全被同一道闸按同一个理由拦下，而没有观察它的位置。",
+        "",
+        f"- 拦截理由（blocker code）共 **{len(codes)}** 条，"
+        f"其中 **{len(watched)}** 条进了体检（`services/gate_health.py`），"
+        f"**{len(unwatched)}** 条没进（欠账，只许变少）",
+        f"- 新增一条 code 必须在 `architecture.toml` 的 `[gate_codes]` 里声明归属，"
+        f"否则 `--check` 变红",
+        "",
+        "| 拦截理由 | 体检的闸 | 发它的模块 |",
+        "|---|---|---|",
+    ]
+    for code in codes:
+        gate = str(table.get(code, "") or "").strip()
+        where = "、".join(
+            f"`{r['module'].split('.')[-1]}`" for r in inv if code in r["codes"]
+        )
+        body.append(f"| `{code}` | {('`' + gate + '`') if gate else '—'} | {where} |")
+    body += [
+        "",
+        "「—」是明说不体检的：诊断类（只在真失败时出现，没有「一直说同一句话」的",
+        "退化形态），以及压根不是闭环闸的连通性自检。理由逐条写在 `[gate_codes]` 里。",
+        "",
+    ]
     return "\n".join(body)
 
 
@@ -1073,6 +1213,29 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"❌ 新增没人 import 的模块：{x}"
                   f"（接上它，或在 architecture.toml 的 [entrypoints] 里说清为什么）")
         return 1
+    # 新增了拦截理由却没说清谁体检它 → 红（2026-09-05）。
+    # 逼着加闸的人回答一句「它坏成一直响的时候，谁会发现」——那正是
+    # 证据 0/6 躲过几个月的那个形状。
+    und = undeclared_gate_codes(manifest)
+    if und:
+        for x in und:
+            print(
+                f"❌ 新增拦截理由 `{x}` 没在 architecture.toml 的 [gate_codes] 里声明。"
+                f"写上它归哪道体检的闸（见 services/gate_health.py）；"
+                f"确实不该体检就写空串并说明理由。"
+            )
+        return 1
+    # 欠账棘轮：明说不体检的那些只许变少
+    _unwatched = gate_codes_without_health(manifest)
+    _base_unwatched = base.get("gate_codes_without_health")
+    if _base_unwatched is not None and len(_unwatched) > int(_base_unwatched):
+        print(
+            f"❌ 不体检的拦截理由变多了（现 {len(_unwatched)}，基线 {_base_unwatched}）："
+            f"{_unwatched}。新加的闸要么进体检，要么在提交说明里讲清为什么它没有"
+            f"「一直说同一句话」这种退化形态。"
+        )
+        return 1
+
     missing, stale = cross_language_gaps(manifest)
     if missing or stale:
         for x in missing:

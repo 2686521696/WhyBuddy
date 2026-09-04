@@ -1044,6 +1044,9 @@ why = "createPythonWebAigcAdapter 拼字符串 __import__"
 # 函数体里的内部 import 条数。只许变少。新模块顶层 import。
 # grok 没有这个病：Cargo 边写在 crate 上，藏进函数体绕不过编译器。
 deferred = 483
+# 明说不体检的拦截理由条数（[gate_codes] 里值为空串的）。**只许变少**。
+# 2026-09-05 建账时 9 条，第一笔要还的是 CLOSURE_DEGRADED_RUN。
+gate_codes_without_health = 9
 violations = [
 ]
 services_violations = [
@@ -1130,3 +1133,41 @@ orphans = [
   "services.workflow_runtime",
   "sliderule_llm.pool",
 ]
+
+# ── 闸清单：每条拦截理由归哪道被体检的闸 ────────────────────────────
+#
+# 2026-09-05 建。起因是「为什么几个月没审查出来」——答案里有一条是**没人知道
+# 这个系统里到底有几道闸**。它们散在四五个模块里各发各的 code，没有任何一处
+# 把它们摆在一起，于是「15 个会话全被同一道闸按同一个理由拦下」这种事
+# 没有观察它的位置。
+#
+# 值 = `services/gate_health.py` 里的闸名（进体检）；空串 = 明说不体检。
+# **新增一条 code 必须在这里出现**，否则 arch_graph --check 变红——
+# 逼着加闸的人回答一句「它坏成一直响的时候，谁会发现」。
+#
+# ⚠ 空串那几条是欠账，只许变少。
+[gate_codes]
+
+# 闭环判定三道，都进体检（v5_capability_executor 落）
+"APPBUNDLE_RUNTIME_CLOSURE_BLOCKED" = "evidence"
+"CLOSURE_GOAL_RELEVANCE_FAILED" = "relevance"
+"CLOSURE_FACTORY_TODO_OPEN" = "factoryTodo"
+
+# 生成链路的失败留痕：它们不是"判定"，是**诊断**——随 blocker 透出来给人看，
+# 不参与 blocked/hash。诊断没有"一直说同一句话"的退化形态（它只在真失败时
+# 出现），所以不进体检。
+"LLM_GENERATE_DISABLED" = ""
+"LLM_GENERATE_FAILED" = ""
+"REFINE_PAINT_FAILED" = ""
+"CLOSURE_REBUILD_FAILED" = ""
+"MODEL_GATE_BLOCKED" = ""
+
+# 降级闸：参与 blocked，**该进体检还没进**。今天的欠账，下一笔要还的就是它
+# （一轮里所有能力全退兜底 → 每次都同一条 CLOSURE_DEGRADED_RUN，
+#  正是"一直说同一句话"那种形状）。
+"CLOSURE_DEGRADED_RUN" = ""
+
+# 不是闭环闸：连通性自检 / 任务生命周期鉴权，跟"产出合不合格"无关。
+"LLM_TEST_ERROR" = ""
+"LLM_TEST_FAILED" = ""
+"TASK_LIFECYCLE_AUTH_DENIED" = ""

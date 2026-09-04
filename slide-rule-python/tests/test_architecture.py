@@ -968,3 +968,70 @@ class Test两个大块加一批叶子:
         for name in arch_graph.FORBIDDEN_GROK_COPY:
             assert name in doc, f"产品图要写明不搬 {name}"
             assert name not in blob, f"产品 mermaid 里出现了不该抄的 {name}"
+
+
+class Test闸清单:
+    """依赖图回答「谁 import 谁」，回答不了「这个系统有哪些判定、谁看着它们」。
+
+    2026-09-05 补的这一节回答后者。起因是「为什么几个月没审查出来」——
+    答案里有一条是**没人知道这里到底有几道闸**：15 个会话全被同一道闸按
+    同一个理由拦下，而没有观察它的位置。
+    """
+
+    def test_清单是算出来的_不是手写的(self):
+        from arch_graph import all_blocker_codes, gate_inventory
+
+        inv = gate_inventory()
+        assert inv, "一条闸都没扫出来——扫描器坏了，不是仓里真没有闸"
+        codes = all_blocker_codes()
+        # 闭环那三条必须在（它们是真机上天天在跑的）
+        for c in ("APPBUNDLE_RUNTIME_CLOSURE_BLOCKED",
+                  "CLOSURE_GOAL_RELEVANCE_FAILED",
+                  "CLOSURE_FACTORY_TODO_OPEN"):
+            assert c in codes, f"{c} 没被扫出来"
+
+    def test_每条拦截理由都声明了归属(self):
+        """★ 新增一条 code 必须回答「它坏成一直响的时候谁会发现」。"""
+        from arch_graph import load_manifest, undeclared_gate_codes
+
+        und = undeclared_gate_codes(load_manifest())
+        assert not und, (
+            f"这些拦截理由没在 [gate_codes] 里声明：{und}。"
+            f"写上它归哪道体检的闸，确实不该体检就写空串并说明理由。"
+        )
+
+    def test_不体检的欠账只许变少(self):
+        from arch_graph import gate_codes_without_health, load_manifest
+
+        m = load_manifest()
+        now = gate_codes_without_health(m)
+        base = (m.get("baseline") or {}).get("gate_codes_without_health")
+        assert base is not None, "基线没了——欠账账本被人删了"
+        assert len(now) <= int(base), f"不体检的拦截理由变多了：{now}"
+
+    def test_闭环那三道闸真的进了体检(self):
+        """★ 反向配对：声明归声明，代码里得真调。
+
+        钉住的是「声明」和「实现」不许分家——toml 里写着 evidence 归体检，
+        而 v5_capability_executor 里没这一行，那份声明就是纸面上的。
+        """
+        from arch_graph import gate_inventory, load_manifest
+
+        declared = {
+            g for g in (load_manifest().get("gate_codes") or {}).values()
+            if str(g or "").strip()
+        }
+        recorded = {g for row in gate_inventory() for g in row["gates"]}
+        missing = declared - recorded
+        assert not missing, f"toml 里声明了这些闸进体检，代码里却没人调：{sorted(missing)}"
+
+    def test_图里那一节跟着代码走(self):
+        """生成的架构图里必须有闸清单这一节，且条数对得上。"""
+        import pathlib
+
+        from arch_graph import DIAGRAM, all_blocker_codes
+
+        doc = pathlib.Path(DIAGRAM).read_text(encoding="utf-8")
+        assert "## 闸清单" in doc, "架构图里没有闸清单——重新 --emit"
+        for code in all_blocker_codes():
+            assert f"`{code}`" in doc, f"{code} 没进架构图，图与代码不同步"

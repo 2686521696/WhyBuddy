@@ -16,7 +16,7 @@
 ## 此刻的事实（由代码算出，不是手写）
 
 - 扫描文件 **288** 个，模块 **288** 个
-- 内部依赖边 **873** 条，其中 **483** 条写在函数体里（55%；基线 483，只许变少）
+- 内部依赖边 **874** 条，其中 **483** 条写在函数体里（55%；基线 483，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
@@ -50,7 +50,7 @@ flowchart TB
   util["util<br/>126 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
   core["core<br/>60 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
   flow["flow<br/>30 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
-  core -->|142| util
+  core -->|143| util
   flow -->|106| core
   flow -->|107| util
 ```
@@ -258,3 +258,31 @@ flowchart LR
 叶子碰了上层，或 core 碰了 flow。**只许变少。**
 
 （当前没有）
+
+## 闸清单（谁在拦，谁看着它）
+
+> 依赖图回答「谁 import 谁」，回答不了「这个系统有哪些判定、各自装在哪、
+> 坏成一直响的时候谁会发现」。2026-09-05 补的就是后者——
+> 「为什么几个月没审查出来」的答案里有一条是**没人知道这里到底有几道闸**：
+> 15 个会话全被同一道闸按同一个理由拦下，而没有观察它的位置。
+
+- 拦截理由（blocker code）共 **12** 条，其中 **3** 条进了体检（`services/gate_health.py`），**9** 条没进（欠账，只许变少）
+- 新增一条 code 必须在 `architecture.toml` 的 `[gate_codes]` 里声明归属，否则 `--check` 变红
+
+| 拦截理由 | 体检的闸 | 发它的模块 |
+|---|---|---|
+| `APPBUNDLE_RUNTIME_CLOSURE_BLOCKED` | `evidence` | `v5_capability_executor` |
+| `CLOSURE_DEGRADED_RUN` | — | `run_degradation` |
+| `CLOSURE_FACTORY_TODO_OPEN` | `factoryTodo` | `capability_plan` |
+| `CLOSURE_GOAL_RELEVANCE_FAILED` | `relevance` | `v5_capability_executor` |
+| `CLOSURE_REBUILD_FAILED` | — | `v5_capability_executor` |
+| `LLM_GENERATE_DISABLED` | — | `v5_capability_executor` |
+| `LLM_GENERATE_FAILED` | — | `v5_capability_executor` |
+| `LLM_TEST_ERROR` | — | `llm_channel` |
+| `LLM_TEST_FAILED` | — | `llm_channel` |
+| `MODEL_GATE_BLOCKED` | — | `v5_capability_executor` |
+| `REFINE_PAINT_FAILED` | — | `v5_capability_executor` |
+| `TASK_LIFECYCLE_AUTH_DENIED` | — | `task_lifecycle_production_closure` |
+
+「—」是明说不体检的：诊断类（只在真失败时出现，没有「一直说同一句话」的
+退化形态），以及压根不是闭环闸的连通性自检。理由逐条写在 `[gate_codes]` 里。
