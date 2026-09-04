@@ -102,12 +102,25 @@ def test_两边同一张表():
 
     变异：把 TS 那份的裸字符串分支改回 `return null` → 本条红。
     """
+    import re
     from pathlib import Path
 
-    ts = (
-        Path(__file__).resolve().parents[2]
-        / "client/src/pages/sliderule/spec-assumptions.ts"
-    ).read_text(encoding="utf-8")
+    # ⚠ 2026-09-04：实现搬到了 client/src/lib/，老路径只剩一行 `export *` 的壳。
+    #   判据钉死老路径 → `ts.index(...)` 抛 ValueError，红了但**红错了原因**：
+    #   看起来像「两边口径分叉」，其实是文件搬了家。跨语言这道闸本来就是本仓
+    #   最难查的那一类（§4），它自己不许有这种假信号。
+    #   改成顺着 `export * from` 追一跳：谁再搬家判据自己跟着走；真找不到实现
+    #   （名字没了/转出断了）才红，且报的是那句话。
+    repo = Path(__file__).resolve().parents[2]
+    entry = repo / "client/src/pages/sliderule/spec-assumptions.ts"
+    ts = entry.read_text(encoding="utf-8")
+    if "export function lenientStringList" not in ts:
+        m = re.search(r'export \* from ["\']@/([^"\']+)["\']', ts)
+        assert m, f"{entry} 里既没有实现也没有 `export * from`——转出链断了"
+        ts = (repo / "client/src" / f"{m.group(1)}.ts").read_text(encoding="utf-8")
+    assert "export function lenientStringList" in ts, (
+        "顺着转出也没找到 lenientStringList——TS 侧这个函数没了，两边不再是同一张表"
+    )
     body = ts[ts.index("export function lenientStringList") :][:900]
     assert "return text === null ? null : [text]" in body, (
         "TS 侧没有「裸字符串 → 单元素数组」这一支，两边口径分叉了"

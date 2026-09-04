@@ -81,6 +81,7 @@ from services.archetype_legal import (
     wired_archetype_choices,
     wired_device_choices,
 )
+from services.closure_block_reason import user_report as closure_user_report
 from services.closed_tools import (
     CLOSED_TOOLS,
     FACTORY_HOPS,
@@ -2562,6 +2563,33 @@ def _after_write_hint(state: V5SessionState) -> str:
         done = "、".join(labels.get(t, t) for t in tools) if tools else ""
         if done:
             facts.append(f"{done} 这几件本跳已经做过，重复调不会有新产出。")
+
+    # ★ 裁决要回流到计划侧（2026-09-04 社区养老真机 sr-20260904181150）。
+    #
+    # 真机形状：closure 判出
+    #   CLOSURE_GOAL_RELEVANCE_FAILED「目标的 24 个业务点只覆盖了 5 个（21%
+    #   < 50%）。未见落实：老人全景档案、饮食忌口、补贴资质…」
+    # 而这个 hint 里只有「本跳实际跑了：闭环判定。当前产出：SPEC 有，页面 4 份。」
+    # ——**一个字都没提它没过**。于是模型照着手上的材料如实叙述成
+    #   「闭环判定已完成。当前已具备 4 份页面…请问下一步」
+    # 用户看到的是"完成"，实际是被拦下的；接着它又点了一次 closure，
+    # 原地重跑，同样的理由再来一遍。日志里连着两条 `factory-plan tools=closure`。
+    #
+    # 这跟 factoryTodo 那条是同一件事：**机器已经算出来的事实，计划侧看不见**。
+    # 拦截理由本来就是数据（topBlockers），人话只有 closure_block_reason.
+    # user_report 一个出口（那个模块头注写着为什么），这里直接用它，
+    # 不许在这儿另拼一句——上一次另拼的那句把用户指去补了一天错东西。
+    _pc = getattr(state, "publishClosure", None)
+    _why = closure_user_report(_pc) if isinstance(_pc, dict) else ""
+    if _why:
+        facts.append(f"闭环判定**没过**：{_why}。")
+        facts.append(
+            "同样的产出再调一次 closure 会得到同样的结论——"
+            "要么先补产出（pages 补画缺的那几页、structure/bind 跟着补），"
+            "要么把这个结论如实告诉用户，由用户决定接不接受。"
+        )
+    elif isinstance(_pc, dict) and _pc.get("blocked") is False:
+        facts.append("闭环判定已通过，这份应用可以交付。")
 
     facts.append(
         "rehearse 会从头重跑整条产出链，已有的 SPEC 与页面都会被覆盖。"

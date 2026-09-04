@@ -200,6 +200,11 @@ def test_progress_heartbeat_keeps_active_stage_context():
         {"page": "quality_dashboard", "device": "phone", "current": 2, "total": 2},
     )
     heartbeat = _progress_heartbeat_event(active, elapsed_ms=15001)
+    # ⚠ 这里**故意**比整份 dict，不是比几个键：精确相等就是这条的反向判据
+    #   （§3）——「心跳里不许多带东西」。多带 = 前端拿到没约定的字段，
+    #   或者内部字段顺着心跳漏出去。
+    #   所以产线正当地新增一个字段时，正确做法是**在这里补上并配一条透传判据**
+    #   （见下），不是把 == 改成"包含"——那等于把反向判据拆了。
     assert heartbeat == {
         "type": "progress_heartbeat",
         "stage": "monitor.design",
@@ -209,7 +214,26 @@ def test_progress_heartbeat_keeps_active_stage_context():
         "current": 2,
         "total": 2,
         "elapsedMs": 15001,
+        "productStep": None,
     }
+
+
+def test_progress_heartbeat_carries_the_product_step():
+    """★ 配对：上一条只证明了 productStep 这个**键**在，没证明它**透传**。
+
+    上一条喂的 active 里根本没有 productStep，拿到 None 是「两边都空」的巧合——
+    把产线那行改成写死 `"productStep": None` 也照样绿。这条把值喂进去再读出来。
+    （§3：每写一条「应该有 X」，配一条「X 真的被用到了」。）
+    """
+    active = _enrich_stage_event(
+        "start",
+        "monitor.design",
+        {"page": "quality_dashboard", "device": "phone", "current": 1, "total": 3},
+    )
+    active["productStep"] = "画页面"
+    assert _progress_heartbeat_event(active, elapsed_ms=1)["productStep"] == "画页面", (
+        "productStep 没从 active 透传到心跳——前端那条进度线上这一格永远是空的"
+    )
 
 
 def test_internal_substeps_stay_off_the_stream():
