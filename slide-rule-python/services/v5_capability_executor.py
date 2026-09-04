@@ -20,6 +20,8 @@ from .capability_plan import CapabilityPlan, factory_todo_blockers, merge_factor
 from .closed_tools import FACTORY_HOPS, hop_from_factory_capability
 # ⚠ 顶层 import：model_versions 是叶子模块（2026-08-29 从驱动器抽出来正是为此），
 #   不许再塞进函数体——那是架构闸盯着的逃生口，只许变少。
+# gate_health 是叶子（谁都不依赖），顶层 import，别塞函数体（架构闸盯着逃生口）
+from .gate_health import record_verdict as _gate_record
 from .model_versions import latest_model_snapshot
 from .v5_llm_generate import model_to_linkage_artifacts
 from .workflow_journal import (
@@ -1996,6 +1998,45 @@ def execute_v5_capability(
             or blocking_degradations(degradations)
             or todo_blockers
         )
+        # ── 闸的体检（2026-09-05）：闸的输出本身也要被看着 ────────────
+        #
+        # 今天之前 15 个走到闭环的会话**全是 0/6 + blocked，一个例外都没有**。
+        # 那个整齐度就是答案——一道永远开火的闸不是"严"，是坏了。但没有任何
+        # 一处在看这件事，于是它躲了几个月（`0/6 blocked` 读起来像"闸正常工作"）。
+        #
+        # 记在**判定真正产生的地方**，不是事后从日志里数：这里是产线路径，
+        # 上面那些 blocked / relevance / todo 都是刚算出来的原件。
+        # 指纹用「结论 + 量化结果」，不掺会话 id——掺了每次都不一样，
+        # 连击永远不触发（那就等于装了个不会响的报警器）。
+        try:
+            _n_present = sum(
+                1 for _v in per_skill.values() if _v.get("evidencePresent")
+            )
+            _gate_record(
+                "evidence",
+                passed=not evidence_blocked,
+                fingerprint=f"{_n_present}/{len(per_skill) or 0}",
+                context=str(getattr(state, "sessionId", "") or ""),
+            )
+            if relevance is not None and relevance.get("applicable"):
+                _gate_record(
+                    "relevance",
+                    passed=bool(relevance.get("passed")),
+                    fingerprint=(
+                        "pass" if relevance.get("passed")
+                        else f"CLOSURE_GOAL_RELEVANCE_FAILED@{relevance.get('score')}"
+                    ),
+                    context=str(getattr(state, "sessionId", "") or ""),
+                )
+            _gate_record(
+                "factoryTodo",
+                passed=not todo_blockers,
+                fingerprint=",".join(sorted(b.get("code", "") for b in todo_blockers)) or "clear",
+                context=str(getattr(state, "sessionId", "") or ""),
+            )
+        except Exception as _exc:  # noqa: BLE001 — 体检是增强类，不许拖垮判定
+            print(f"[gate-health] 记录跳过：{str(_exc)[:120]}")
+
         closure_hash, stable_digest = _stable_closure_hash(per_skill, blocked, goal)
         # LLM 生成路径的失败原因随 blocker 透出（诊断留痕，不参与 blocked/hash 判定）。
         llm_diag = dict(_diagnostic()) if _diagnostic().get("code") else None

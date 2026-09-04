@@ -115,6 +115,9 @@ what = "纯工具：不依赖 services 里任何其它模块"
 may_depend_on = []
 modules = [
   "services.archetype_legal",
+  # 闸的体检：谁都不依赖（只吃「结论 + 指纹」两个字符串），所以是叶子。
+  # 它反过来被闭环判定顶层 import——叶子层的意义就在这儿：谁都能安全引它。
+  "services.gate_health",
   "services.sql_gateway",
   "services.stage_legal",
   "services.capability_plan",

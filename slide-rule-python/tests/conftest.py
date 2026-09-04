@@ -198,6 +198,23 @@ def _all_apps() -> list:
     return list(_seen_apps)
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _gate_health_goes_to_tmp(tmp_path_factory):
+    """闸体检的台账落到 tmp，别写进仓里那份真记录。
+
+    ⚠ 2026-09-05 当场踩到：跑一遍全量之后 `data/gate-health.jsonl` 里全是
+      `authority-check`、`golden-conv-drive`、`t-capability-plan` 这种**判据里的
+      会话 id**——测试把生产记录污染了。那份文件是给几个月后排查用的，
+      混进判据的样本，看的人会以为线上真出现过这些会话。
+    """
+    import os
+
+    os.environ["SLIDERULE_GATE_HEALTH_DIR"] = str(
+        tmp_path_factory.mktemp("gate-health")
+    )
+    yield
+
+
 @pytest.fixture(autouse=True)
 def _default_logged_in_user():
     """全套件默认已登录。用 real_auth fixture 可摘掉。"""
