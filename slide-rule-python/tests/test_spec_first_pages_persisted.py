@@ -19,6 +19,7 @@
 """
 
 import inspect
+import textwrap
 import os
 import sys
 
@@ -118,14 +119,51 @@ class Test打孔成功数不许被一页失败清零:
 
 class Test落库那一处:
     def test_主轴真的调了落库(self):
+        """**每一个**调生成的分支都要落库，漏一处就是「某些路径下页面没了」。
+
+        ⚠ 2026-09-04 重写：上一版钉的是
+        `src.count("_cache_spec_first_pages(state)") == 2`——一个写死的数字。
+        产线后来正当地多出第三处（closure 单跳那条，`if _host_hop:`），判据就
+        红了，而它红的原因跟它想守的事一点关系都没有：**没人漏落库，是数字过期了**。
+        这正是 CLAUDE.md §2 说的「盯字面别盯语义」，红了两周没人敢动，因为看不出
+        它到底在守什么。
+
+        改成按语义问：凡是调了 `_try_llm_generate_evidence` 的那个分支体，
+        里面必须也有 `_cache_spec_first_pages`。新增分支自动被盖住，
+        删掉任何一处的落库照样红。
+        """
+        import ast
+
         from services import v5_capability_executor as ex
 
-        src = inspect.getsource(ex)
-        assert "_cache_spec_first_pages(state)" in src, "主轴没落库——页面还是会蒸发"
-        # 两处 llm_result 分支都要落，漏一处就是"某些路径下页面没了"
-        assert src.count("_cache_spec_first_pages(state)") == 2, (
-            "两个 llm_result 分支都要落库"
+        fn_src = textwrap.dedent(inspect.getsource(ex._build_per_skill_evidence))
+        fn = ast.parse(fn_src).body[0]
+
+        def _calls(nodes, name):
+            return any(
+                isinstance(n, ast.Call)
+                and getattr(n.func, "id", getattr(n.func, "attr", None)) == name
+                for node in nodes
+                for n in ast.walk(node)
+            )
+
+        branches = []
+        for node in ast.walk(fn):
+            if isinstance(node, ast.If):
+                branches.append(node.body)
+                if node.orelse and not (
+                    len(node.orelse) == 1 and isinstance(node.orelse[0], ast.If)
+                ):
+                    branches.append(node.orelse)
+
+        generating = [b for b in branches if _calls(b, "_try_llm_generate_evidence")]
+        assert generating, (
+            "一个调生成的分支都没找到——判据跟产线脱节了，去看 _build_per_skill_evidence"
         )
+        for body in generating:
+            assert _calls(body, "_cache_spec_first_pages"), (
+                f"第 {body[0].lineno} 行那个分支调了生成却没落库——这条路径上页面会蒸发"
+            )
 
     def test_落库失败不打死推演(self):
         from services import v5_capability_executor as ex

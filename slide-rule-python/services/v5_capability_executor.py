@@ -18,6 +18,10 @@ from models.v5_state import V5SessionState, ExecuteCapabilityResult
 from .rag_service import retrieve_evidence, generate_with_rag
 from .capability_plan import CapabilityPlan, factory_todo_blockers, merge_factory_todo
 from .closed_tools import FACTORY_HOPS, hop_from_factory_capability
+# ⚠ 顶层 import：model_versions 是叶子模块（2026-08-29 从驱动器抽出来正是为此），
+#   不许再塞进函数体——那是架构闸盯着的逃生口，只许变少。
+from .model_versions import latest_model_snapshot
+from .v5_llm_generate import model_to_linkage_artifacts
 from .workflow_journal import (
     JournalError,
     active_journal,
@@ -1258,7 +1262,6 @@ def _reuse_this_turn_model(state: V5SessionState, matches: Dict[str, Any]) -> bo
     """
     try:
         from .model_versions import reusable_model_for_turn
-        from .v5_llm_generate import model_to_linkage_artifacts
 
         model = reusable_model_for_turn(state)
         if not model:
@@ -1406,8 +1409,6 @@ def _build_per_skill_evidence(
             if not isinstance(base_model, dict):
                 base_model = _gen_mod.get_model_override()
             if isinstance(base_model, dict):
-                from .v5_llm_generate import model_to_linkage_artifacts
-
                 keep = model_to_linkage_artifacts(base_model, goal)
                 keep_by_skill = {a["id"].replace("llm-linkage-", ""): a for a in keep}
                 for skill in REQUIRED_EVIDENCE_KEYS:
@@ -1481,6 +1482,64 @@ def _build_per_skill_evidence(
             "code": "LLM_GENERATE_DISABLED",
             "detail": "SLIDERULE_LLM_GENERATE_ENABLED 未开启：新颖意图不会调用 LLM 生成五系统模型",
         })
+
+    _shell_only = [
+        skill
+        for skill in REQUIRED_EVIDENCE_KEYS
+        if not isinstance(matches.get(skill), dict)
+        or "_model_section" not in matches[skill]
+    ]
+    if _shell_only and not blocked_signal and not _diagnostic().get("code"):
+        # ★ 判定跳读账上那份模型（2026-09-04 连锁药店 sr-20260904172213）。
+        #
+        # 真机形状：pages/structure/bind 三跳把六段模型依次记进 modelVersions
+        # （队尾那版 turn-7，六段齐），用户答「进行闭环判定」开新一轮 turn-9。
+        # closure 单跳按设计**不产汇合模型** → `_try_llm_generate_evidence`
+        # 老老实实 `return {}`。于是：
+        #   · `{}` 不是 None，上面精修分支那条「生成失败就沿用上一版」的退路
+        #     （D2）压根不会走到——它判的是 `llm_result is None`；
+        #   · 生成侧的复用锁 `_reuse_this_turn_model` 锁死单轮，turn-9 ≠ turn-7
+        #     不给复用（那是对的，见 reusable_model_for_turn 头注）。
+        # 结果 matches 一段不剩 → 六段 evidencePresent 全 False → 0/6 blocked，
+        # 而库里明明躺着一份六段齐全的模型、5 份页面、5 条绑定。
+        #
+        # 今天 15 个会话里凡是走到闭环的**全是** 0/6，一个例外都没有。之前
+        # 一直当「生成没跑」在查（我自己还错判过一次「判定跑在产出之前」，
+        # 后来发现点火那一跳 runtimeClosure 本来就在生成模型，那个结论只对
+        # 了一半）——真正的错是**判定侧跳读错了地方**：它问的是「本轮生成过
+        # 吗」，而该问的是「这个会话现在有东西可判吗」。
+        #
+        # 为什么这不是伪造绿灯（§7 闭环 fail-closed）：这里不凭空造证据，
+        # 只是把判定对象指向**确实存在**的那份产物。账上没有模型 →
+        # latest_model_snapshot 返回 None → 照旧 0/6。生成这一轮真炸了 →
+        # _diagnostic() 有 code → 上面的条件不成立，照旧 0/6。
+        try:
+            _snapshot = latest_model_snapshot(state)
+            # ⚠ 判「六段齐」必须问**模型**，不能问转出来的产物。
+            #   model_to_linkage_artifacts 对缺的段照样产一个 `_model_section:
+            #   None` 的壳产物（见其实现），六个 id 永远齐——拿它当条件等于
+            #   没条件，半份模型会被判成 6/6，_assemble_model_from_per_skill
+            #   再拼回一份带 None 段的"完整"应用。半份判绿比不判更糟（§7）。
+            _adopted = {}
+            if isinstance(_snapshot, dict) and all(
+                _snapshot.get(skill) is not None for skill in REQUIRED_EVIDENCE_KEYS
+            ):
+                _adopted = {
+                    a["id"].replace("llm-linkage-", ""): a
+                    for a in model_to_linkage_artifacts(_snapshot, goal)
+                }
+            if _adopted and all(skill in _adopted for skill in REQUIRED_EVIDENCE_KEYS):
+                # 只补**缺模型段**的那几个槽位——与本文件既有的那条规则同一句话：
+                # 「携带模型段的产物优先于不带模型段的 haystack 壳」。本轮真生成
+                # 出来的段（带 _model_section）绝不许被账上旧的顶掉。
+                for skill in _shell_only:
+                    matches[skill] = _adopted[skill]
+                print(
+                    "[v5_capability_executor] 本跳没产汇合模型，判定改读账上"
+                    f"最新那一版，补上 {','.join(_shell_only)}"
+                )
+        except Exception as exc:  # noqa: BLE001 — 读账失败就退回 0/6，别打死主路
+            print(f"[v5_capability_executor] 判定读账跳过：{str(exc)[:140]}")
 
     per_skill: Dict[str, Any] = {}
     for skill in REQUIRED_EVIDENCE_KEYS:

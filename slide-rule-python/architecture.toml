@@ -1040,7 +1040,7 @@ why = "createPythonWebAigcAdapter 拼字符串 __import__"
 [baseline]
 # 函数体里的内部 import 条数。只许变少。新模块顶层 import。
 # grok 没有这个病：Cargo 边写在 crate 上，藏进函数体绕不过编译器。
-deferred = 485
+deferred = 483
 violations = [
 ]
 services_violations = [

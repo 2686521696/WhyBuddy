@@ -93,6 +93,38 @@ def reusable_model_for_turn(state: "V5SessionState") -> "Optional[Dict[str, Any]
     if str(last.get("goalDigest") or "") != goal_digest(state):
         return None  # 目标变了（或旧快照没记指纹）——宁可重算
     return last["model"]
+
+
+def latest_model_snapshot(state: "V5SessionState") -> "Optional[Dict[str, Any]]":
+    """账上最新那一份五系统模型，**不问是哪一轮生成的**。
+
+    ⚠ 这不是 `reusable_model_for_turn` 的放宽版，两者服务两件事，别合并：
+
+    - `reusable_model_for_turn`：**生成侧**的省钱锁。它必须锁死单轮，否则
+      「用户补充需求之后仍然拿到旧模型」（turborepo#4572 那个坑）。
+    - 本函数：**判定侧**的读账。闭环判定的对象就是会话里已经存在的那份
+      应用，它是哪一轮画出来的与判定无关——问「这份东西合不合格」时，
+      拿本轮没生成过当作「什么都没有」是错的。
+
+    真机（2026-09-04 连锁药店 sr-20260904172213）：pages/structure/bind 三跳
+    在 turn-1/5/7 依次把六段模型记进 modelVersions，用户接着答「进行闭环判定」
+    ——那是 turn-9，新的一轮。closure 单跳走 spec-first 沿用上一版，按设计
+    **不产汇合模型**，`_try_llm_generate_evidence` 老老实实 `return {}`。
+    于是判定侧一段证据都没有：库里躺着六段齐全的模型，判定说 0/6 blocked。
+    今天 15 个会话里凡是走到闭环的**全是** 0/6，无一例外——一直被当成
+    「生成没跑」在查，其实是判定跳读错了地方。
+
+    只读队尾一版：`record_model_snapshot` 保证队尾是最新的。
+    """
+    versions = list(getattr(state, "modelVersions", None) or [])
+    if not versions:
+        return None
+    last = versions[-1]
+    if not isinstance(last, dict) or not isinstance(last.get("model"), dict):
+        return None
+    return last["model"]
+
+
 #: 有几版带得起整页 HTML。实测单页 19~28KB、五页一版约 125KB，
 #: 而模型版本上限是 20 版——全带就是 2.5MB 的会话 blob，每次存盘都要过一遍。
 #:

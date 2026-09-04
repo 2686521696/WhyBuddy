@@ -408,7 +408,11 @@ def _drive_pipeline(monkeypatch, *, refine=True, reuse_model=None,
                  for pid in page_ids if pid not in reused}
         return {"pages": {**reused, **drawn}, "failed": {}}
 
-    def fake_bind(p, m):
+    # ⚠ 替身必须跟着产线签名走（2026-09-04）：bind_pages 加了关键字参数
+    #   product_archetype，替身没跟 → 38 条判据全炸在 TypeError 上，
+    #   一条真正的行为都没验到。替身一律收 *a/**kw，别再让签名漂移
+    #   把整个文件打成红的。
+    def fake_bind(p, m, *a, **kw):
         seen["bind_input"] = sorted(p.keys())
         return {"pages": {pid: f"<html>bound-{pid}</html>" for pid in p}, "failed": {}}
 
