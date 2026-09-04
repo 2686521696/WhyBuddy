@@ -15,7 +15,7 @@
 flowchart TB
   subgraph ts [TypeScript]
     ts_agent_loop["ts/agent-loop<br/>99 个模块"]
-    ts_client["ts/client<br/>1034 个模块"]
+    ts_client["ts/client<br/>1036 个模块"]
     ts_server["ts/server<br/>579 个模块"]
     ts_services["ts/services<br/>32 个模块"]
     ts_shared["ts/shared<br/>176 个模块"]

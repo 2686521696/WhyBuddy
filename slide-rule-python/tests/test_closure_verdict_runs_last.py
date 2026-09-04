@@ -81,26 +81,41 @@ class Test判定挂在closure那一跳:
         assert _CLOSURE_CAP not in got
 
 
-class Test点火不再早产信封:
-    def test_有取证时点火不带信封(self):
-        """点火那一刻页面 0，这时候算信封必然 0/6。"""
-        picks = _app_profile_short_picks(_st(wantEvidence=True))
-        assert _CLOSURE_CAP not in _ids(picks)
-        assert "evidence.search" in _ids(picks)
+class Test点火清单不许摘掉发动机:
+    """⚠ 2026-09-04 我在这里改坏过一次，判据是为了不让它再发生。
 
-    def test_已经有页面时可以带(self):
-        """不是早产就没问题——算出来的数是真的。"""
-        picks = _app_profile_short_picks(_st(wantEvidence=True, pages=5))
-        assert _CLOSURE_CAP in _ids(picks)
+    我把 `appbundle.runtimeClosure` 当成「只是出判定的信封」，于是给点火清单
+    加了 `if _state_has_pages(state) or not picks:`，想避开"点火时算信封必然
+    0/6"。真机 sr-20260904163026 当场停摆：stamp 了
+    `factory-plan tools=spec,pages,structure,bind` 之后**一跳都没执行**，
+    30 分钟只有 GET 轮询，页面 0。
 
-    def test_清单会空时必须保底(self):
-        """⚠ 反向：空 picks 被判 convergence 直接收敛（:1589/:3148），
-        点火那一轮就什么都不做了。宁可留一个早产信封，也不能让点火空转
-        ——反正 closure 那一跳会用真数据重算覆盖它。
-        """
-        picks = _app_profile_short_picks(_st())   # 什么都没勾
-        assert picks, "点火清单空了，会被判收敛"
-        assert _ids(picks) == [_CLOSURE_CAP]
+    因为它根本不只是信封：`execute_v5_capability("appbundle.runtimeClosure")`
+    里同时做**五系统模型生成**与**页面落库**。摘掉它等于把发动机拆了，
+    只剩一张计划单。名字叫 runtimeClosure、干的却是"生成 + 判定"两件事，
+    这个命名就是我误判的直接原因。
+    """
+
+    def test_点火一定带发动机(self):
+        """这条红 = 点火不产出任何东西，只 stamp 一张计划单。"""
+        for st in (_st(), _st(wantEvidence=True), _st(wantEvidence=True, pages=5)):
+            assert _CLOSURE_CAP in _ids(_app_profile_short_picks(st)), (
+                "点火清单里没有 appbundle.runtimeClosure —— 它是生成引擎，不是可选项"
+            )
+
+    def test_它永远排在最后(self):
+        """取证在前、生成在后：evidence.search 的产物要能被生成读到。"""
+        picks = _ids(_app_profile_short_picks(_st(wantEvidence=True)))
+        assert picks[-1] == _CLOSURE_CAP, picks
+
+    def test_点火清单不许为空(self):
+        """空 picks 被判 convergence 直接收敛（:1589/:3148），点火那轮什么都不做。"""
+        assert _app_profile_short_picks(_st())
+
+    def test_源码里钉着为什么不许摘(self):
+        """⚠ 注释是这条教训唯一的载体，删了下一个人还会再摘一次。"""
+        src = _DRV.read_text(encoding="utf-8")
+        assert "把发动机拆了" in src, "撤回那次的教训注释没了"
 
 
 class Test接在真跑的那条路上:
@@ -117,15 +132,21 @@ class Test接在真跑的那条路上:
         assert "_host_hop_picks(state)" in body
         assert "_app_profile_short_picks(state)" in body
 
-    def test_保底判据钉住不许写死追加(self):
-        """⚠ 反向判据，钉的就是病灶本身：无条件 append 就是早产。"""
+    def test_点火清单不许再挂条件(self):
+        """⚠ 反向：给 append 加任何条件都会把发动机摘掉（我 2026-09-04 干过）。"""
         tree = ast.parse(_DRV.read_text(encoding="utf-8"))
         fn = next(
             n for n in ast.walk(tree)
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
             and n.name == "_app_profile_short_picks"
         )
-        src = ast.unparse(fn)
-        assert "_state_has_pages(state)" in src, (
-            "点火清单又无条件追加信封了——判定会在没有证据时算完"
+        appends = [
+            n for n in ast.walk(fn)
+            if isinstance(n, ast.Expr) and _CLOSURE_CAP in ast.unparse(n)
+        ]
+        assert appends, "点火清单里没有发动机"
+        # 那句 append 必须是函数体的直接语句，不许躲在 if 里
+        top = [ast.unparse(n) for n in fn.body]
+        assert any(_CLOSURE_CAP in t and t.startswith("picks.append") for t in top), (
+            "append 被挂上条件了 —— 条件不成立时点火就只 stamp 计划、不产出"
         )

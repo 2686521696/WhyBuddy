@@ -1830,14 +1830,22 @@ def _app_profile_short_picks(state: "V5SessionState") -> list:
                 {"capabilityId": "report.write", "roleId": "综合"},
             ]
         )
-    # 点火时**还没有任何产出**，这时候算信封必然 0/6（见 _host_hop_picks
-    # 里那段头注）。所以只在两种情况下才加：
-    #   · 已经有页面 —— 不是早产，算出来的数是真的；
-    #   · picks 会空 —— 空清单被判 convergence 直接收敛（:1589/:3148），
-    #     点火那一轮就什么都不做了。宁可留一个早产信封，也不能让点火空转；
-    #     反正 closure 那一跳会用真数据重算覆盖它。
-    if _state_has_pages(state) or not picks:
-        picks.append({"capabilityId": "appbundle.runtimeClosure", "roleId": "综合"})
+    # ⚠ 2026-09-04 撤回过一次改动，教训写在这：
+    #
+    #   我把 `appbundle.runtimeClosure` 当成「只是出判定的信封」，于是加了
+    #   `if _state_has_pages(state) or not picks:` 想避免"点火时算信封必然 0/6"。
+    #   真机 sr-20260904163026 当场停摆：16:31 stamp 了
+    #   `factory-plan tools=spec,pages,structure,bind` 之后**一跳都没执行**，
+    #   30 分钟只有 GET 轮询，页面 0。
+    #
+    #   因为它根本不只是信封 —— `execute_v5_capability("appbundle.runtimeClosure")`
+    #   里同时做**五系统模型生成**（_try_llm_generate_evidence）与
+    #   **页面落库**（_cache_spec_first_pages）。把它从点火清单摘掉，
+    #   等于把发动机拆了，只剩一张计划单。
+    #
+    #   名字叫 runtimeClosure，干的却是"生成 + 判定"两件事——这个命名是
+    #   我误判的直接原因。**改它之前先读 execute_v5_capability 那一支**。
+    picks.append({"capabilityId": "appbundle.runtimeClosure", "roleId": "综合"})
     return picks
 
 
