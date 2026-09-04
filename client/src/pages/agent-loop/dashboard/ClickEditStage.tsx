@@ -317,16 +317,43 @@ export function placeToolbar(
  * 存库前把编辑过的 body 换回干净壳。纯函数，单测钉着。
  * 找不到 `<body>` 就返回 null——**不许**编一份出来，宁可保存失败让用户重试。
  */
+/** 我们自己注入进画布那份文档的东西——它们**不许**跟着存回去。 */
+const INJECTED_SCRIPT_MARKS = ["tailwind-play", "sliderule-preview-chrome", "cdn.tailwindcss.com"];
+
+/**
+ * 原文里的 `<script>`，按出现顺序。**不含**我们注入的那几个。
+ *
+ * ⚠ 2026-09-05：消毒器的 `FORBID_TAGS` 里有 `script`（那是给**展示**用的，
+ *   舞台不跑页面脚本，页面是数据绑定驱动的木偶）。但存库那份是**交付物**，
+ *   而 `spliceEditedBody` 先把整份原文消毒再换 body——于是**点选编辑存一次，
+ *   这一页里所有 `<script>` 就永久没了**，接口还返回 `{ok:true}`。
+ *
+ *   真机 sr-20260904232526（汉字连线消除小游戏）三页各带 2~3 个内联 script、
+ *   最多 880 字符，整局逻辑（落子、下落补位、连击计数）全在里面。用户去改一
+ *   个标题，存完游戏就变成一张死图——而他改的那处跟脚本毫无关系。
+ *   这正是本仓最忌的「闸绿但东西没了」：没有报错、没有告警、判据全绿。
+ */
+export function preservedScripts(originalHtml: string): string[] {
+  const all = String(originalHtml || "").match(/<script\b[\s\S]*?<\/script>/gi) || [];
+  return all.filter(tag => !INJECTED_SCRIPT_MARKS.some(mark => tag.includes(mark)));
+}
+
 export function spliceEditedBody(
   originalHtml: string,
   editedBodyOuterHtml: string
 ): string | null {
   const clean = stripFrameNavigatingHrefs(sanitizeAppHtml(originalHtml));
   if (!clean || !/<body[^>]*>[\s\S]*<\/body>/i.test(clean)) return null;
-  return clean.replace(
-    /<body[^>]*>[\s\S]*<\/body>/i,
-    () => editedBodyOuterHtml
-  );
+  // 编辑过的 body 来自消过毒的 DOM，脚本已经不在里面了；从原文捞回来补在
+  // body 末尾。补在末尾而不是原位：位置信息在消毒那一刻就没了，而 body 末尾
+  // 是最安全的一处（DOM 已经解析完，取元素不会取空）。
+  const keep = preservedScripts(originalHtml);
+  const body = keep.length
+    ? /<\/body>/i.test(editedBodyOuterHtml)
+      ? editedBodyOuterHtml.replace(/<\/body>/i, () => `\n${keep.join("\n")}\n</body>`)
+      : `${editedBodyOuterHtml}\n${keep.join("\n")}`
+    : editedBodyOuterHtml;
+  return clean.replace(/<body[^>]*>[\s\S]*<\/body>/i, () => body);
 }
 
 interface Selection {

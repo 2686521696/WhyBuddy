@@ -250,6 +250,9 @@ what = "核心：模型 / 闸 / 闭环 / 生成件"
 # 深度 1~2。
 may_depend_on = ["util"]
 modules = [
+  # 点选编辑存库前的体检。**不是叶子**：它复用 html_bindings.scan_bindings
+  # 数数据孔——数孔这件事只该有一把尺子（§4），为了当叶子另写一个才是错的。
+  "services.page_edit_guard",
   # 工厂菜单 → 钟面步集。组合 capability_plan 与 stage_legal 两个 util 叶子——
   # 两个叶子谁也不许 import 谁，所以组合只能落在这一层；而写 goal["tools"] 的
   # flow 模块有两个（rehearsal_control / v5_full_driver），抄两份就是 §4 的

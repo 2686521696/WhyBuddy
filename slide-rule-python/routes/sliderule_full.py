@@ -22,6 +22,9 @@ from pydantic import ValidationError
 from typing import Dict, Any, List, Optional
 from models.v5_state import CapabilityRun, V5SessionState
 from middlewares.current_user import CurrentUserOptional
+# 两个都是 util 叶子：顶层 import，别塞函数体（架构闸盯着逃生口）
+from services.gate_health import record_verdict as _gate_record
+from services.page_edit_guard import edit_losses, losses_message
 from services import app_access
 from services.model_version_restore import restore_model_version_locked
 from services.slide_rule_session import create_session, delete_session, load_session, save_session, drive_reasoning_turn
@@ -2251,6 +2254,34 @@ async def patch_generated_app_page(
     if len(html.encode("utf-8")) > _MAX_PAGE_HTML_BYTES:
         raise HTTPException(413, f"页面 HTML 超过 {_MAX_PAGE_HTML_BYTES} 字节上限")
 
+    # ── 存之前先看一眼这一笔顺手带走了什么（2026-09-05）────────────────
+    #
+    # 只报不拦（§7）：用户确实可能故意删一段，拿这个去 403 会挡住正当编辑。
+    # 但"一次无关的编辑把交付物里的东西悄悄带走"不该没人吭声——真机
+    # sr-20260904232526 就是改个标题把整局游戏逻辑（内联 script）存没了，
+    # 接口还返回 ok。理由与量法见 services/page_edit_guard 头注。
+    _losses: List[Dict[str, Any]] = []
+    try:
+        # ⚠ 存的是 `pages_json["pages"][page_id]`（见 app_store.update_page_html），
+        #   不是 `pages_json[page_id]`。第一版写错了一层，取到的永远是空串，
+        #   于是体检永远说"没损失"——一道恒绿的闸比没有闸更糟。
+        _pj = (record.get("pages_json") or {}) if isinstance(record, dict) else {}
+        _pages_before = _pj.get("pages") if isinstance(_pj, dict) else None
+        _cand = _pages_before.get(page_id) if isinstance(_pages_before, dict) else None
+        _before = _cand if isinstance(_cand, str) else ""
+        if _before:
+            _losses = edit_losses(_before, html)
+            _gate_record(
+                "pageEdit",
+                passed=not _losses,
+                fingerprint=",".join(sorted(x["kind"] for x in _losses)) or "clean",
+                context=str(app_id),
+            )
+            if _losses:
+                print(f"[page-edit] ⚠ {app_id}/{page_id} {losses_message(_losses)}")
+    except Exception as _exc:  # noqa: BLE001 — 体检是增强类，不许挡住保存
+        print(f"[page-edit] 体检跳过：{str(_exc)[:120]}")
+
     try:
         updated = await asyncio.to_thread(
             app_store.update_page_html, app_id, page_id, html
@@ -2267,6 +2298,8 @@ async def patch_generated_app_page(
     return {
         "id": updated.get("id"),
         "pageId": page_id,
+        # 带走了什么如实透出。前端要不要弹提示是它的事，但**接口不许只说 ok**。
+        "losses": _losses,
         "bytes": len(html.encode("utf-8")),
     }
 

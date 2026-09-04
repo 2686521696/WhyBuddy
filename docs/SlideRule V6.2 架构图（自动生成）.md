@@ -15,8 +15,8 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **288** 个，模块 **288** 个
-- 内部依赖边 **874** 条，其中 **483** 条写在函数体里（55%；基线 483，只许变少）
+- 扫描文件 **289** 个，模块 **289** 个
+- 内部依赖边 **877** 条，其中 **483** 条写在函数体里（55%；基线 483，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
@@ -36,7 +36,7 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
 | `util` | 126 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
-| `core` | 60 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
+| `core` | 61 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 30 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
 叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import 的全部理由，也是 `import` 不必躲进函数体的前提。
@@ -48,7 +48,7 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 ```mermaid
 flowchart TB
   util["util<br/>126 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
-  core["core<br/>60 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
+  core["core<br/>61 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
   flow["flow<br/>30 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
   core -->|143| util
   flow -->|106| core
@@ -65,7 +65,7 @@ flowchart TB
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>13 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>216 个模块<br/>业务"]
+  services["services<br/>217 个模块<br/>业务"]
   routes["routes<br/>12 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -82,7 +82,7 @@ flowchart TB
   routes -->|9| config
   routes -->|5| middlewares
   routes -->|3| models
-  routes -->|133 · 其中 84 条在函数体里| services
+  routes -->|135 · 其中 84 条在函数体里| services
   routes -->|15 · 其中 8 条在函数体里| sliderule_llm
   scripts -->|3| app
   scripts -->|2 · 其中 2 条在函数体里| config

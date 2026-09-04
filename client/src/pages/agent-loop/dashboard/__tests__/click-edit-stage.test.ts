@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   spliceEditedBody,
+  preservedScripts,
   labelOfEditable,
   firstEditableDescendant,
   editableAncestorChain,
@@ -300,5 +301,58 @@ describe("placeToolbar（工具条翻面与贴边）", () => {
     const p = placeToolbar({ left: 100, top: 300, width: 200, height: 30 }, { width: 0, height: 0 }, CONTAINER);
     expect(p.left).toBe(100);
     expect(p.top).toBe(300 - 8);
+  });
+});
+
+/**
+ * 点选编辑存一次，页面里的 `<script>` 不许没（2026-09-05 真机）。
+ *
+ * 事故：`spliceEditedBody` 先把**整份原文**消毒再换 body，而消毒器的
+ * `FORBID_TAGS` 里有 `script`——那是给**展示**用的（舞台不跑页面脚本，
+ * 页面是数据绑定驱动的木偶），但存库那份是**交付物**。
+ *
+ * 真机 sr-20260904232526（汉字连线消除小游戏）三页各带 2~3 个内联 script、
+ * 最多 880 字符，整局逻辑全在里面。用户去改一个标题，存完游戏变成一张死图，
+ * 而他改的那处跟脚本毫无关系；接口还返回 `{ok:true, bytes:N}`。
+ * 没有报错、没有告警、判据全绿——本仓最忌的「闸绿但东西没了」。
+ */
+describe("存库不许把页面脚本吃掉", () => {
+  const GAME = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>限时消除对战台</title>
+<script>window.__CFG={grid:8,seconds:90};</script></head>
+<body><h1>限时消除对战台</h1><div id="board"></div>
+<script>function tick(){}document.getElementById('board').addEventListener('click',tick);</script>
+</body></html>`;
+
+  it("★ 事故本体：改标题不许把整局逻辑改没", () => {
+    const editedBody = `<body><h1>限时消除对战台（改过）</h1><div id="board"></div></body>`;
+    const out = spliceEditedBody(GAME, editedBody) || "";
+    expect(out).toContain("改过");
+    expect(out).toContain("function tick");
+    expect(out).toContain("window.__CFG");
+    expect((out.match(/<script\b/gi) || []).length).toBe(2);
+  });
+
+  it("脚本之间的先后顺序保住（配置脚本要排在用它的那个前面）", () => {
+    const out = spliceEditedBody(GAME, `<body><h1>x</h1></body>`) || "";
+    expect(out.indexOf("window.__CFG")).toBeLessThan(out.indexOf("function tick"));
+  });
+
+  it("反向配对：我们自己注入的那几个仍然不许存回去", () => {
+    const injected = `<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script>
+<script id="sliderule-preview-chrome">/*chrome*/</script></head><body><h1>t</h1></body></html>`;
+    const out = spliceEditedBody(injected, `<body><h1>t2</h1></body>`) || "";
+    expect(out).not.toContain("cdn.tailwindcss.com");
+    expect(out).not.toContain("sliderule-preview-chrome");
+  });
+
+  it("反向配对：本来就没有脚本的页，输出不许平白多出 script", () => {
+    const out = spliceEditedBody(PAGE, `<body><h1>改过的标题</h1></body>`) || "";
+    expect((out.match(/<script\b/gi) || []).length).toBe(0);
+  });
+
+  it("preservedScripts 只捞原文的，注入物滤掉", () => {
+    expect(preservedScripts(GAME)).toHaveLength(2);
+    expect(preservedScripts(`<script src="https://cdn.tailwindcss.com"></script>`)).toHaveLength(0);
+    expect(preservedScripts("")).toHaveLength(0);
   });
 });
