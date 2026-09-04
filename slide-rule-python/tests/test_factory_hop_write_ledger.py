@@ -75,6 +75,15 @@ def _drive(driver_mod, state):
     return asyncio.run(_collect())
 
 
+def _hop_state(hop: str) -> V5SessionState:
+    """某一跳的会话态。判据要按跳分别验，不能只验 structure 一种。"""
+    return V5SessionState(
+        sessionId="hop-ledger",
+        goal={"text": GOAL, "status": "clear", "tools": [hop]},
+        artifacts=[],
+    )
+
+
 def _structure_state(**extra) -> V5SessionState:
     goal = {"text": GOAL, "status": "clear", "tools": ["structure"]}
     return V5SessionState(sessionId="hop-ledger", goal=goal, artifacts=[], **extra)
@@ -90,7 +99,27 @@ def test_stream_picks_host_hop_identity_not_the_envelope():
     ensure = _strip(inspect.getsource(drv._ensure_runtime_closure_evidence))
     assert "_host_hop_picks(" in stream
     assert "factory_capability_id" in helper
-    assert "appbundle.runtimeClosure" not in helper
+    # ⚠ 2026-09-04 收窄：原来是「helper 里一个 runtimeClosure 都不许有」。
+    #   这条钉的事故是 2026-09-03（团子 XNDW5W2M59）**五跳全 pick 信封**
+    #   → pages 写了两条之后 structure 被 max_repeat_guard 整跳跳过。
+    #   而发布判定挪到产出链末尾之后，`closure` 那一跳**就该**建信封
+    #   （见 _host_hop_picks 头注：判定是 Terminal，Terminal 在最后）。
+    #   所以判据从"字面上不许出现"改成"四个产出跳不许拿到它"——
+    #   盯的是事故本身，不是某个字符串。
+    from services.v5_full_driver import _host_hop_picks
+
+    for hop in ("spec", "pages", "structure", "bind"):
+        got = [
+            p["capabilityId"]
+            for p in _host_hop_picks(_hop_state(hop))
+        ]
+        assert got == [f"factory.{hop}"], f"{hop} 跳的账本身份不对：{got}"
+        assert "appbundle.runtimeClosure" not in got, (
+            f"{hop} 跳又去 pick 信封了——max_repeat_guard 会把后面的跳整跳跳过"
+        )
+    assert [
+        p["capabilityId"] for p in _host_hop_picks(_hop_state("closure"))
+    ] == ["appbundle.runtimeClosure"], "closure 跳必须建信封，否则合格证发不出"
     assert "_pending_batch_key(" in skip
     assert "factory-hop:" in _strip(inspect.getsource(drv._pending_batch_key))
     assert "_capability_ran(" in ensure

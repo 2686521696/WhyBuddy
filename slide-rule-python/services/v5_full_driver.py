@@ -1830,7 +1830,14 @@ def _app_profile_short_picks(state: "V5SessionState") -> list:
                 {"capabilityId": "report.write", "roleId": "综合"},
             ]
         )
-    picks.append({"capabilityId": "appbundle.runtimeClosure", "roleId": "综合"})
+    # 点火时**还没有任何产出**，这时候算信封必然 0/6（见 _host_hop_picks
+    # 里那段头注）。所以只在两种情况下才加：
+    #   · 已经有页面 —— 不是早产，算出来的数是真的；
+    #   · picks 会空 —— 空清单被判 convergence 直接收敛（:1589/:3148），
+    #     点火那一轮就什么都不做了。宁可留一个早产信封，也不能让点火空转；
+    #     反正 closure 那一跳会用真数据重算覆盖它。
+    if _state_has_pages(state) or not picks:
+        picks.append({"capabilityId": "appbundle.runtimeClosure", "roleId": "综合"})
     return picks
 
 
@@ -1914,6 +1921,36 @@ def _host_hop_picks(state: "V5SessionState") -> list:
       max_repeat_guard 整跳跳过，画布「打过孔但没填上数据」。
     """
     hop = _host_hop_name(state) or "spec"
+    if hop == "closure":
+        # ★ 发布判定在**产出链末尾**算，不在点火时算（2026-09-04）。
+        #
+        # 真机 15 个会话，凡成型闭环的全是 `0/6 + blocked`，一个例外没有。
+        # 查能力执行顺序，三个会话完全一致：
+        #
+        #     evidence.search → risk.analyze → critique.generate → report.write
+        #     → appbundle.runtimeClosure     ← 信封在这里就算完了（第 5 位）
+        #     → factory.pages → factory.structure → factory.bind → factory.closure
+        #                       ↑ 页面/实体/角色全在信封之后才做出来
+        #
+        # `appbundle.runtimeClosure` 每个会话只跑一次，跑在点火那一轮的
+        # 规则短清单里——那时页面 0、实体 0、角色 0，六段证据当然全 missing。
+        # 之后工厂把东西全做出来了，信封**再没重算过**。
+        # 所以 0/6 不是「认不出证据」，是**在还没有证据的时候把证据数完了**。
+        #
+        # 用户可见的后果：屏幕上摆着六页应用，闭环却说 blocked——
+        # 合格证今天一张都发不出来。
+        #
+        # 抄 grok 的 Terminal 不变量（`xai-tool-runtime/src/dispatch.rs`）：
+        #     The returned stream MUST end with exactly one `Terminal` item
+        # 判定就是 Terminal，Terminal 必须在最后。closure 这一跳的全部意义
+        # 就是出判定（capability_plan 头注：「closure 是判定，留给迭代」），
+        # 所以由它来建信封，语义与位置一致。
+        #
+        # ⚠ 只有 closure 这一跳这么做。2026-09-03 真机（团子 XNDW5W2M59）
+        #   五跳**全都** pick runtimeClosure，pages 写了两条之后 structure
+        #   被 max_repeat_guard 整跳跳过，画布「打过孔但没填上数据」。
+        #   一跳一次不会复现那个：closure 一轮里只出现一次。
+        return [{"capabilityId": "appbundle.runtimeClosure", "roleId": "综合"}]
     return [{"capabilityId": factory_capability_id(hop), "roleId": "综合"}]
 
 
