@@ -16,6 +16,10 @@ import {
 import type { SlideRuleExecutorMode } from "./types";
 import { projectConclusionBadge } from "./conclusion-badge";
 import type { PublishClosureSummary } from "./derive-cross-runtime-summary";
+import {
+  deriveFactoryDecisionView,
+  type FactoryDecisionView,
+} from "./derive-factory-decision";
 
 /** 墙上钟 v1。8–9 / 2 / 20 不是标定集，禁止写进产品 DOM（KD4）。 */
 export const REHEARSAL_WALL_CLOCK_COPY = "大约数分钟，第一页会先出现";
@@ -281,6 +285,8 @@ export type StatusBarFacts = {
   publishClosureFailClosed?: boolean;
   rehearsalClock: RehearsalClockView;
   hud: ContextHudFacts;
+  /** 最近一次工厂选材。没有账本条目就是 null，不许伪造。 */
+  factoryDecision: FactoryDecisionView | null;
 };
 
 export function deriveStatusBarFacts(
@@ -522,6 +528,7 @@ export function deriveStatusBarFacts(
     planError: opts.planError ?? null,
     rehearsalClock,
     hud,
+    factoryDecision: deriveFactoryDecisionView(state),
   };
 }
 

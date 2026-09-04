@@ -1811,12 +1811,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               onProgressHeartbeat: (stage, _label, productStep) => {
                 if (stage) applyRehearsalEvent(stage, productStep);
               },
-              onFactoryPlan: (tools, workflow, productSteps) => {
+              onFactoryPlan: (tools, workflow, productSteps, decision) => {
                 setSessionState(prev => {
-                  const goal =
-                    prev.goal && typeof prev.goal === "object"
-                      ? { ...prev.goal }
-                      : {};
+                  const goal = {
+                    text: "",
+                    status: "needs_refinement" as const,
+                    ...(prev.goal && typeof prev.goal === "object"
+                      ? prev.goal
+                      : {}),
+                  };
                   goal.tools = tools;
                   // ⚠ tools 与 productSteps 必须同进同出：只写 tools 的话，
                   //   减完菜那轮钟面会按上一轮的格子画（表删掉之后没人兜底了）。
@@ -1824,7 +1827,30 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                     goal.productSteps = productSteps;
                   }
                   if (workflow) goal.workflow = workflow;
-                  return { ...prev, goal };
+                  // 开局那一发没有 decision。有理由才进账本——缺席不许伪造。
+                  if (!decision?.rationale && !(decision?.chose || []).length) {
+                    return { ...prev, goal };
+                  }
+                  const loop = decision?.loop ?? 0;
+                  const entry = {
+                    id: `dec-${loop}-agentic-pick${
+                      decision?.source === "heuristic_fallback" ? "-fallback" : ""
+                    }`,
+                    turnId: `loop-${loop}`,
+                    saw: decision?.saw || [],
+                    chose: decision?.chose || [],
+                    skipped: [] as Array<{ capabilityId: string; reason: string }>,
+                    addresses: [] as string[],
+                    rationale: decision?.rationale || "",
+                    alternativesRejected: [] as string[],
+                    createdAt: new Date().toISOString(),
+                    source: decision?.source,
+                  };
+                  const ledger = [...(prev.decisionLedger || [])].filter(
+                    d => d.id !== entry.id
+                  );
+                  ledger.push(entry);
+                  return { ...prev, goal, decisionLedger: ledger };
                 });
                 appendStreamStep(`编排 ${tools.join(" → ")}`);
               },

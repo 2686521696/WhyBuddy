@@ -476,7 +476,7 @@ def test_live_stream_body_has_app_skip_and_not_discarded_profile():
     assert "factory_tool_vocab" in code
     assert "_stamp_factory_tools_onto_goal" in code
     assert "clip_factory_tools" in code
-    assert '"factory_plan"' in code, (
+    assert "_factory_plan_payload" in code, (
         "编排结果必须 yield factory_plan，否则钟拿不到本轮 tools。"
     )
     app_at = code.index('profile == "app"')

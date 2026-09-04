@@ -1326,7 +1326,7 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                         saw=[p["capabilityId"] for p in picks],
                         chose=[p["capabilityId"] for p in _proposal["picks"]],
                         skipped=[],
-                        rationale=f"agentic pick: {_proposal['rationale']}",
+                        rationale=str(_proposal.get("rationale") or ""),
                         createdAt=_now,
                         source="llm",
                     ))
@@ -1340,14 +1340,29 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                         REASON_AGENTIC_PICK_FALLBACK,
                         mark_degraded,
                     )
+                    _fallback_msg = f"第 {loop} 轮 LLM 选材未成，回落规则版选能力"
                     mark_degraded(
                         state,
                         reason=REASON_AGENTIC_PICK_FALLBACK,
-                        message=f"第 {loop} 轮 LLM 选材未成，回落规则版选能力",
+                        message=_fallback_msg,
                         # 只决定「这轮挑哪几件活儿干」，挑出来的活儿照样认真执行，
                         # 做出来的东西不因此变差——显式写出来，不靠默认值猜
                         impact=IMPACT_REASONING,
                     )
+                    _now = datetime.now(timezone.utc).isoformat()
+                    _dl = getattr(state, "decisionLedger", []) or []
+                    _saw = _public_factory_names(picks)
+                    _dl.append(SchedulingDecision(
+                        id=f"dec-{loop}-agentic-pick-fallback",
+                        turnId=f"loop-{loop}",
+                        saw=_saw,
+                        chose=_saw,
+                        skipped=[],
+                        rationale=_fallback_msg,
+                        createdAt=_now,
+                        source="heuristic_fallback",
+                    ))
+                    state.decisionLedger = _dl
             picks = ensure_closure_pick_by_deadline(
                 state,
                 picks,
@@ -1992,6 +2007,56 @@ def _record_factory_todo(state: "V5SessionState", *, ran, deferred, legal) -> tu
     return todo
 
 
+def _public_factory_names(items) -> list:
+    """账本 / 提案里的 capabilityId → 公开工具名。生词丢掉。"""
+    out: list[str] = []
+    for item in items or ():
+        if isinstance(item, dict):
+            cap = str(item.get("capabilityId") or item.get("id") or "").strip()
+        else:
+            cap = str(item or "").strip()
+        hop = hop_from_factory_capability(cap)
+        name = hop or (cap if cap in FACTORY_PUBLIC_TOOLS else "")
+        if name and name not in out:
+            out.append(name)
+    return out
+
+
+def _factory_plan_payload(
+    state: "V5SessionState",
+    tools,
+    *,
+    deferred=None,
+    saw=None,
+    chose=None,
+    rationale=None,
+    source=None,
+    loop=None,
+    max_loops=None,
+) -> dict:
+    """钟面事件。没有决策就不写 saw/chose/rationale——缺席是信号，不许伪造。"""
+    goal_now = state.goal if isinstance(state.goal, dict) else {}
+    payload: dict = {
+        "type": "factory_plan",
+        "tools": list(tools),
+        "productSteps": list(goal_now.get("productSteps") or ())
+        or product_steps_for_tools(
+            tools, refine=bool(getattr(state, "modelVersions", None))
+        ),
+        "workflow": str(goal_now.get("workflow") or ""),
+    }
+    if deferred is not None:
+        payload["deferred"] = list(deferred)
+    if rationale or chose or source:
+        payload["saw"] = list(saw or [])
+        payload["chose"] = list(chose or [])
+        payload["rationale"] = str(rationale or "")
+        payload["source"] = source or "llm"
+        payload["loop"] = int(loop or 0)
+        payload["maxLoops"] = int(max_loops or 0)
+    return payload
+
+
 def _persist_phase_after_abandon(state: "V5SessionState") -> None:
     """流被放弃之后把相位落库。单独一个函数，好让它在线程里跑。
 
@@ -2295,17 +2360,8 @@ async def drive_full_v5_session_stream(
         _host_factory_hop(state) or _first_pass_chain(state)
     ):
         hops = _factory_tools_from_state(state)
-        goal_now = state.goal if isinstance(state.goal, dict) else {}
-        yield {
-            "type": "factory_plan",
-            "tools": list(hops),
-            # 钟面步集跟事件一起走。前端不许再从工具名自己推（表已删）。
-            "productSteps": list(goal_now.get("productSteps") or ())
-            or product_steps_for_tools(
-                hops, refine=bool(getattr(state, "modelVersions", None))
-            ),
-            "workflow": str(goal_now.get("workflow") or ""),
-        }
+        # 开局这一发只给钟面步集。选材还没发生，不许伪造一条理由。
+        yield _factory_plan_payload(state, hops)
 
     loop = 0
     picks: list = []
@@ -2567,7 +2623,7 @@ async def drive_full_v5_session_stream(
                         saw=[p["capabilityId"] for p in picks],
                         chose=[p["capabilityId"] for p in _proposal["picks"]],
                         skipped=[],
-                        rationale=f"agentic pick: {_proposal['rationale']}",
+                        rationale=str(_proposal.get("rationale") or ""),
                         createdAt=_now,
                         source="llm",
                     ))
@@ -2626,23 +2682,17 @@ async def drive_full_v5_session_stream(
                                 f"[factory-todo] deferred={','.join(_todo) or '-'}",
                                 flush=True,
                             )
-                            yield {
-                                "type": "factory_plan",
-                                "tools": list(_stamped),
-                                "deferred": list(_todo),
-                                "productSteps": list(
-                                    ((state.goal or {}) if isinstance(state.goal, dict) else {}).get(
-                                        "productSteps"
-                                    )
-                                    or ()
-                                ),
-                                "workflow": str(
-                                    ((state.goal or {}) if isinstance(state.goal, dict) else {}).get(
-                                        "workflow"
-                                    )
-                                    or ""
-                                ),
-                            }
+                            yield _factory_plan_payload(
+                                state,
+                                _stamped,
+                                deferred=_todo,
+                                saw=_public_factory_names(picks),
+                                chose=_public_factory_names(_proposal["picks"]),
+                                rationale=_proposal.get("rationale") or "",
+                                source="llm",
+                                loop=loop,
+                                max_loops=max_loops,
+                            )
                     else:
                         picks = _clip_agentic_picks_to_legal(_proposal["picks"], picks)
                 else:
@@ -2652,14 +2702,41 @@ async def drive_full_v5_session_stream(
                         REASON_AGENTIC_PICK_FALLBACK,
                         mark_degraded,
                     )
+                    _fallback_msg = f"第 {loop} 轮 LLM 选材未成，回落规则版选能力"
                     mark_degraded(
                         state,
                         reason=REASON_AGENTIC_PICK_FALLBACK,
-                        message=f"第 {loop} 轮 LLM 选材未成，回落规则版选能力",
+                        message=_fallback_msg,
                         # 只决定「这轮挑哪几件活儿干」，挑出来的活儿照样认真执行，
                         # 做出来的东西不因此变差——显式写出来，不靠默认值猜
                         impact=IMPACT_REASONING,
                     )
+                    _now = datetime.now(timezone.utc).isoformat()
+                    _dl = getattr(state, "decisionLedger", []) or []
+                    _saw = _public_factory_names(picks)
+                    _dl.append(SchedulingDecision(
+                        id=f"dec-{loop}-agentic-pick-fallback",
+                        turnId=f"loop-{loop}",
+                        saw=_saw,
+                        chose=_saw,
+                        skipped=[],
+                        rationale=_fallback_msg,
+                        createdAt=_now,
+                        source="heuristic_fallback",
+                    ))
+                    state.decisionLedger = _dl
+                    if profile == "app":
+                        _rule = _factory_tools_from_state(state)
+                        yield _factory_plan_payload(
+                            state,
+                            _rule,
+                            saw=_saw or list(_rule),
+                            chose=list(_rule),
+                            rationale=_fallback_msg,
+                            source="heuristic_fallback",
+                            loop=loop,
+                            max_loops=max_loops,
+                        )
             picks = ensure_closure_pick_by_deadline(
                 state,
                 picks,

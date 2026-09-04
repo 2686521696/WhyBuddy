@@ -78,6 +78,7 @@ import {
   type RehearsalClockCursor,
   type RehearsalClockView,
 } from "./sliderule/derive-status-bar";
+import type { FactoryDecisionView } from "./sliderule/derive-factory-decision";
 import {
   SlideRuleResetSessionButton,
   SlideRuleTopHud,
@@ -710,6 +711,7 @@ export function ClaudeChatSurface({
   clarifySlot,
   rehearsalClock = null,
   hud = null,
+  factoryDecision = null,
 }: {
   uiTurns: UiTurn[];
   isRunning: boolean;
@@ -724,6 +726,8 @@ export function ClaudeChatSurface({
   llmStreams?: Array<{ label: string; text: string }>;
   rehearsalClock?: RehearsalClockView | null;
   hud?: ContextHudFacts | null;
+  /** 最近一次工厂选材。没有账本就不传——HUD 不许伪造。 */
+  factoryDecision?: FactoryDecisionView | null;
   /** 会话话题（恢复的轮次没有 turn.user，总结用它兜底） */
   goalText?: string;
   onChallenge: (id: string) => void;
@@ -790,6 +794,7 @@ export function ClaudeChatSurface({
       (isRunning ||
         hasClockProgress ||
         publishClosure ||
+        factoryDecision ||
         hud.gatedEvidenceCount > 0 ||
         hud.hasServerTokenFacts)
   );
@@ -807,6 +812,7 @@ export function ClaudeChatSurface({
                 <RehearsalClockHud
                   clock={rehearsalClock}
                   hud={hud}
+                  decision={factoryDecision}
                   show
                   showSteps={isRunning || hasClockProgress}
                 />
@@ -1258,6 +1264,7 @@ function SlideRuleUnified({
                     llmDraftLabel={llmDraftLabel}
                     rehearsalClock={rehearsalFacts.rehearsalClock}
                     hud={rehearsalFacts.hud}
+                    factoryDecision={rehearsalFacts.factoryDecision}
                     onChallenge={id =>
                       dispatchChallengePrefill({ artifactId: id })
                     }

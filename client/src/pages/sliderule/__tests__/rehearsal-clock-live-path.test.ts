@@ -136,12 +136,14 @@ describe("产品面挂上了钟（不是只写了组件）", () => {
     );
     expect(surface).toContain("<RehearsalClockHud");
     expect(surface).toContain("clock={rehearsalClock}");
+    expect(surface).toContain("decision={factoryDecision}");
   });
 
   it("Unified 把 rehearsalFacts 喂给对话列", () => {
     const src = load("../../SlideRule.tsx");
     expect(src).toContain("rehearsalClock={rehearsalFacts.rehearsalClock}");
     expect(src).toContain("hud={rehearsalFacts.hud}");
+    expect(src).toContain("factoryDecision={rehearsalFacts.factoryDecision}");
   });
 
   it("工程面 StatusBar 吃 rehearsalCursor", () => {
@@ -167,9 +169,23 @@ describe("已有 SSE progress_heartbeat 投影，不另开 API", () => {
     const driver = load("../../../lib/sliderule-marathon-driver.ts");
     expect(driver).toContain('case "factory_plan"');
     expect(driver).toContain("opts.onFactoryPlan");
+    expect(driver).toContain("event.rationale");
     const session = load("../useSlideRuleSession.ts");
-    expect(handlerSlice(session, "onFactoryPlan")).toContain("goal.tools = tools");
-    expect(handlerSlice(session, "onFactoryPlan")).toContain("goal.productSteps = productSteps");
-    expect(handlerSlice(session, "onFactoryPlan")).toContain("appendStreamStep");
+    const plan = handlerSlice(session, "onFactoryPlan", 1800);
+    expect(plan).toContain("goal.tools = tools");
+    expect(plan).toContain("goal.productSteps = productSteps");
+    expect(plan).toContain("appendStreamStep");
+    expect(plan).toContain("decisionLedger");
+    expect(plan).toContain("decision?.rationale");
+  });
+});
+
+describe("选材决策上屏（2026-09-04 阶段 2）", () => {
+  it("HUD 有账本才画决策，回落说人话", () => {
+    const bar = load("../SlideRuleStatusBar.tsx");
+    expect(bar).toContain("sliderule-factory-decision");
+    expect(bar).toContain("选材回落规则版，不是模型挑的");
+    expect(bar).toContain("decision.degraded");
+    expect(bar).toContain("sliderule-factory-loop");
   });
 });

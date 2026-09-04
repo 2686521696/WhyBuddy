@@ -276,7 +276,17 @@ export interface DriveFullStreamOpts {
     tools: string[],
     workflow?: string,
     /** 钟面步集，后端账本算。前端不许从 tools 名字自己推（表已删）。 */
-    productSteps?: number[]
+    productSteps?: number[],
+    /** 选材决策。开局那一发没有——缺席不许当成「按默认编排」。 */
+    decision?: {
+      saw: string[];
+      chose: string[];
+      rationale: string;
+      source: "llm" | "heuristic_fallback" | "local_heuristic";
+      loop?: number;
+      maxLoops?: number;
+      deferred?: string[];
+    }
   ) => void;
   /** LLM 实时内容增量。label 标注来源：能力 id（risk.analyze / report.write…）
    *  或 "five-system-model"（五系统起草）。旧后端不带 label 时为 undefined。 */
@@ -621,6 +631,38 @@ function applyFactoryStreamEvent(
         ? event.tools.map((item: unknown) => String(item).trim()).filter(Boolean)
         : [];
       if (tools.length > 0) {
+        const rationale =
+          typeof event.rationale === "string" ? event.rationale.trim() : "";
+        const sourceRaw = String(event.source || "");
+        const source =
+          sourceRaw === "heuristic_fallback" || sourceRaw === "local_heuristic"
+            ? sourceRaw
+            : sourceRaw === "llm"
+              ? "llm"
+              : undefined;
+        const names = (raw: unknown): string[] =>
+          Array.isArray(raw)
+            ? raw.map((item: unknown) => String(item).trim()).filter(Boolean)
+            : [];
+        const decision =
+          rationale || names(event.chose).length > 0 || source
+            ? {
+                saw: names(event.saw),
+                chose: names(event.chose),
+                rationale,
+                source: (source || "llm") as
+                  | "llm"
+                  | "heuristic_fallback"
+                  | "local_heuristic",
+                loop:
+                  typeof event.loop === "number" ? event.loop : undefined,
+                maxLoops:
+                  typeof event.maxLoops === "number"
+                    ? event.maxLoops
+                    : undefined,
+                deferred: names(event.deferred),
+              }
+            : undefined;
         opts.onFactoryPlan?.(
           tools,
           typeof event.workflow === "string" ? event.workflow : undefined,
@@ -628,7 +670,8 @@ function applyFactoryStreamEvent(
             ? event.productSteps
                 .map((item: unknown) => Number(item))
                 .filter((step: number) => Number.isInteger(step) && step >= 1 && step <= 6)
-            : undefined
+            : undefined,
+          decision
         );
       }
       return "continue";

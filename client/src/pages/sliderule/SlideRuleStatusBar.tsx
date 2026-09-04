@@ -7,6 +7,7 @@ import {
   type RehearsalClockCursor,
   type RehearsalClockView,
 } from "./derive-status-bar";
+import type { FactoryDecisionView } from "./derive-factory-decision";
 import type { SlideRuleExecutorMode } from "./types";
 import type { PublishClosureSummary } from "./derive-cross-runtime-summary";
 
@@ -15,12 +16,15 @@ export function RehearsalClockHud({
   hud,
   show,
   showSteps = true,
+  decision = null,
 }: {
   clock: RehearsalClockView;
   hud: ContextHudFacts;
   show?: boolean;
   /** 刷新后 cursor 丢了：只留证据/token 行，不画六格全 pending。 */
   showSteps?: boolean;
+  /** 最近一次工厂选材。没有账本就不画——不许伪造一条。 */
+  decision?: FactoryDecisionView | null;
 }) {
   if (!show) return null;
   const live = clock.steps.find((s) => s.status === "current");
@@ -62,6 +66,12 @@ export function RehearsalClockHud({
         </div>
       ) : null}
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-0.5 text-[11px] text-stone-600">
+        {decision?.loopIndex != null ? (
+          <span data-testid="sliderule-factory-loop" className="tabular-nums text-stone-500">
+            第 {decision.loopIndex}
+            {decision.maxLoops != null ? `/${decision.maxLoops}` : ""} 轮
+          </span>
+        ) : null}
         {clock.wallClockCopy ? (
           <span data-testid="sliderule-wall-clock" className="text-stone-500">
             {clock.wallClockCopy}
@@ -79,13 +89,46 @@ export function RehearsalClockHud({
             data-token-known={hud.hasServerTokenFacts ? "true" : "false"}
             className="tabular-nums"
           >
-            <span className="text-stone-400">token </span>
+            <span className="text-stone-400">额度 </span>
             <span className="font-mono font-semibold text-stone-800">
               {hud.hasServerTokenFacts ? hud.narrativeTokens : "—"}
             </span>
           </span>
         </span>
       </div>
+      {decision ? (
+        <div
+          data-testid="sliderule-factory-decision"
+          data-source={decision.source}
+          data-degraded={decision.degraded ? "true" : "false"}
+          className={`mt-0.5 text-[11px] leading-[1.45] ${
+            decision.degraded ? "text-amber-800" : "text-stone-600"
+          }`}
+        >
+          {decision.degraded ? (
+            <div data-testid="sliderule-factory-decision-degraded" className="font-medium">
+              选材回落规则版，不是模型挑的
+            </div>
+          ) : (
+            <div data-testid="sliderule-factory-decision-source">模型挑的</div>
+          )}
+          {decision.saw.length > 0 ? (
+            <div data-testid="sliderule-factory-decision-saw">
+              规则给的 {decision.saw.join("、")}
+            </div>
+          ) : null}
+          {decision.chose.length > 0 ? (
+            <div data-testid="sliderule-factory-decision-chose">
+              这一跳 {decision.chose.join("、")}
+            </div>
+          ) : null}
+          {decision.rationale ? (
+            <div data-testid="sliderule-factory-decision-rationale">
+              {decision.rationale}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -201,6 +244,7 @@ export function SlideRuleStatusBar({
         <RehearsalClockHud
           clock={facts.rehearsalClock}
           hud={facts.hud}
+          decision={facts.factoryDecision}
           show={showHud}
           showSteps={isRunning || hasClockProgress}
         />
