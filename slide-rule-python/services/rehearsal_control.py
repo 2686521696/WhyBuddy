@@ -1125,7 +1125,15 @@ def _complete(state: V5SessionState) -> Dict[str, Any]:
 
 
 def _persist(state: V5SessionState) -> V5SessionState:
-    return save_session(state)
+    """控制面的落盘口。
+
+    ⚠ `server_write=True` 不是随手加的：控制面写的多半是**纯标量翻转**
+      （assumptionsConfirmed、awaitReason、runtimePhase），零集合增长，
+      而 persistence 的同轮守卫此前只认「有增长」→ 这些写入一直在被静静
+      丢掉。2026-09-04 真机：假设卡确认后刷新，同一张卡又摊回来
+      （详见 persistence._resolve_write_state 的 server_write 头注）。
+    """
+    return save_session(state, server_write=True)
 
 
 async def _apersist(state: V5SessionState) -> V5SessionState:

@@ -251,14 +251,14 @@ def load_session(session_id: str) -> Optional[V5SessionState]:
         return state
     return None
 
-def save_session(state: V5SessionState) -> V5SessionState:
+def save_session(state: V5SessionState, *, server_write: bool = False) -> V5SessionState:
     ensure_cache_sink()  # reload 之后自愈，见该函数注释
     # Delegate guard+merge to persistence (replay append-only + monotonic_key lastTurnId+counts guard).
     # Then ALWAYS reconcile _sessions cache from the persistence authoritative result (load after write).
     # This ensures stale/older state passed to service save NEVER stays in the memory authority cache.
     # load_session will see only the guard-protected newer state; fixes review finding 1.
     # Python service save path now respects the persistence guard final result.
-    saved = save_session_record(state)
+    saved = save_session_record(state, server_write=server_write)
     # checkpoint 是证据链。save_session_record 可能已经把会话正文落了，
     # 再 load 成功并不能当存档成功——PUT 200 会让客户端以为能回退到这一轮。
     # ⚠ 2026-08-27：只在 save_session_record 判 fail-closed、save_session

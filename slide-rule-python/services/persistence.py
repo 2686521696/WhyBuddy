@@ -246,6 +246,29 @@ def _id_set(items: Any) -> set:
     return ids
 
 
+def _collections_not_shrunk(prior: V5SessionState, incoming: V5SessionState) -> bool:
+    """服务端集合一个都没丢：prior 的 artifacts / capabilityRuns 都还在，对话没变短。
+
+    ⚠ 2026-09-04：这段是从 `_is_same_turn_progress` 里原样拆出来的（逐行照搬，
+      没有行为改动），因为「没缩水」和「有增长」是两件事，而同轮守卫此前只
+      认后者。拆开之后进程内的服务端写入可以只要求前者——见
+      `_resolve_write_state` 的 `server_write` 那段头注。
+    """
+    prior_arts = _id_set(getattr(prior, "artifacts", None))
+    inc_arts = _id_set(getattr(incoming, "artifacts", None))
+    if not prior_arts.issubset(inc_arts):
+        return False
+    prior_runs = _id_set(getattr(prior, "capabilityRuns", None))
+    inc_runs = _id_set(getattr(incoming, "capabilityRuns", None))
+    if not prior_runs.issubset(inc_runs):
+        return False
+    prior_conv = len(getattr(prior, "conversation", None) or [])
+    inc_conv = len(getattr(incoming, "conversation", None) or [])
+    if inc_conv < prior_conv:
+        return False
+    return True
+
+
 def _is_same_turn_progress(prior: V5SessionState, incoming: V5SessionState) -> bool:
     """Distinguish the driver's own mid-turn incremental saves (legitimate progress at the
     SAME lastTurnId) from stale same-turn snapshots (which must stay blocked).
@@ -260,18 +283,14 @@ def _is_same_turn_progress(prior: V5SessionState, incoming: V5SessionState) -> b
     conversation/artifacts/ledgers) is preserved, while the drive loop's own commits are no
     longer dropped on the reload-after-save path.
     """
+    if not _collections_not_shrunk(prior, incoming):
+        return False
     prior_arts = _id_set(getattr(prior, "artifacts", None))
     inc_arts = _id_set(getattr(incoming, "artifacts", None))
-    if not prior_arts.issubset(inc_arts):
-        return False
     prior_runs = _id_set(getattr(prior, "capabilityRuns", None))
     inc_runs = _id_set(getattr(incoming, "capabilityRuns", None))
-    if not prior_runs.issubset(inc_runs):
-        return False
     prior_conv = len(getattr(prior, "conversation", None) or [])
     inc_conv = len(getattr(incoming, "conversation", None) or [])
-    if inc_conv < prior_conv:
-        return False
     # Strict growth in at least one server-owned collection marks real progress.
     if len(inc_arts) > len(prior_arts) or len(inc_runs) > len(prior_runs) or inc_conv > prior_conv:
         return True
@@ -648,7 +667,12 @@ def _write_turn_checkpoint(state: V5SessionState, store_file: Optional[StorePath
     return None
 
 
-def save_session_record(state: V5SessionState, store_file: Optional[StorePath] = None) -> StoreError:
+def save_session_record(
+    state: V5SessionState,
+    store_file: Optional[StorePath] = None,
+    *,
+    server_write: bool = False,
+) -> StoreError:
     # Use lock to serialize the entire read-prior + replay-merge + monotonic compare + write.
     # This ensures that on concurrent saves, each entrant re-reads the *latest* committed
     # prior (after previous writer's atomic replace), then decides using current prior.
@@ -659,7 +683,7 @@ def save_session_record(state: V5SessionState, store_file: Optional[StorePath] =
     # Serialized lock provides timestamp-equivalent ordering for same lastTurnId.
     store = _blob_store(store_file)
     if store is not None:
-        result = _save_session_record_db(store, state)
+        result = _save_session_record_db(store, state, server_write=server_write)
         if result.get("ok"):
             ckpt_state = result.get("state") if isinstance(result.get("state"), V5SessionState) else state
             ckpt_err = _write_turn_checkpoint(ckpt_state, store_file)
@@ -672,7 +696,7 @@ def save_session_record(state: V5SessionState, store_file: Optional[StorePath] =
             return error
 
         prior = sessions.get(state.sessionId)
-        write_state = _resolve_write_state(prior, state)
+        write_state = _resolve_write_state(prior, state, server_write=server_write)
         sessions[write_state.sessionId] = write_state
         result = _write_store(sessions, store_file)
         if not result.get("ok"):
@@ -685,7 +709,10 @@ def save_session_record(state: V5SessionState, store_file: Optional[StorePath] =
 
 
 def _resolve_write_state(
-    prior: Optional[V5SessionState], state: V5SessionState
+    prior: Optional[V5SessionState],
+    state: V5SessionState,
+    *,
+    server_write: bool = False,
 ) -> V5SessionState:
     """决定这次到底该把什么写下去——**判定逻辑的唯一副本**。
 
@@ -695,6 +722,32 @@ def _resolve_write_state(
     两件事：
       ① replay / reasoning 事件按 id 追加合并（服务端历史只增不减）；
       ② lastTurnId 单调守卫决定核心字段能不能被覆盖。
+
+    ## server_write：进程内的服务端写入不是「陈旧快照」
+
+    ⚠ 2026-09-04 真机（宠物寄养 / 充电桩，两趟都复现）。同轮守卫要求
+      「至少一个服务端集合有增长」才算真进展。**纯标量翻转天生零增长**，
+      于是这两笔一直在被静静丢掉，落库日志一个字都不吭：
+
+          in(lt=turn-2 ph=awaiting)      prior(lt=turn-2 ph=orchestrating)  → 写回 orchestrating
+          in(lt=turn-1 conf=True)        prior(lt=turn-1 conf=False)        → 写回 False
+
+      前者是驱动器终端块把相位落回 awaiting——连写 5 笔（persist_state、
+      控制面 _persist、前端 PUT）全被丢掉，会话在侧栏永远显示「推演中」。
+      后者是假设卡「确认继续」：控制面在 :3020 把 assumptionsConfirmed
+      置 True 后 `_apersist`，而 `_handoff_factory` 只把 **sessionId** 交给
+      工厂、工厂从库里重新加载——库里那笔没落，工厂读回 False，
+      刷新页面同一张卡又摊回来。用户报的就是这一条。
+
+      ⚑ 这正是 CLAUDE.md「一之二」那个形状的第三次发作：护栏装在真跑的
+        那条路上，条件却在下一层被吃掉。单测全绿，因为单测直接调这个函数
+        看返回值，从不看它写没写进库。
+
+    守卫本来要防的是**客户端**回传的轮前快照（见下面 2026-08-27 那几段）。
+    进程内的服务端写入手里拿的就是活对象，不存在"少了一截committed 数据"
+    ——所以对它们把同轮判据从「有增长」放宽到「没缩水」：prior 的
+    artifacts / capabilityRuns 仍是子集、对话没变短，接受这一笔就丢不了东西。
+    **低轮次仍然照旧挡住**（那才是真陈旧），客户端 PUT 的判据一个字没动。
     """
     if True:
         # Append-only replay log merge on save (sliderule-python-v52-session-replay-append-only-105)
@@ -765,7 +818,10 @@ def _resolve_write_state(
                 # Equal-turn saves that are append-only supersets of prior (the drive loop's own
                 # incremental persists within one turn) are ACCEPTED as progress; only lower-turn
                 # or same-turn non-superset/no-growth snapshots retain the prior core.
-                if i_turn < p_turn or (i_turn == p_turn and not _is_same_turn_progress(prior, state)):
+                same_turn_ok = _is_same_turn_progress(prior, state) or (
+                    server_write and _collections_not_shrunk(prior, state)
+                )
+                if i_turn < p_turn or (i_turn == p_turn and not same_turn_ok):
                     # lower or stale-equal turn (when version present): retain prior authoritative core fields (prevents same-turn stale clobber);
                     # still carry any newly appended server-owned replay/reasoning from this attempt
                     projection_updates: Dict[str, Any] = {}
@@ -816,7 +872,9 @@ def _resolve_write_state(
         return write_state
 
 
-def _save_session_record_db(store, state: V5SessionState) -> StoreError:
+def _save_session_record_db(
+    store, state: V5SessionState, *, server_write: bool = False
+) -> StoreError:
     """库后端的写入：读一条 prior → 同一套守卫 → CAS 写回，冲突就重来。
 
     与文件后端的区别只有原子性来源：文件靠 `_save_lock`（单进程独占文件），
@@ -848,7 +906,7 @@ def _save_session_record_db(store, state: V5SessionState) -> StoreError:
                 else:
                     prior = coerced
 
-            write_state = _resolve_write_state(prior, state)
+            write_state = _resolve_write_state(prior, state, server_write=server_write)
             write_state, degrade_flags = _slim_to_budget(write_state)
             new_payload = write_state.model_dump()
 
@@ -1078,7 +1136,7 @@ def persist_state(state: V5SessionState):
     _t0 = time.monotonic()
     result: Any = None
     try:
-        result = save_session_record(state)
+        result = save_session_record(state, server_write=True)
         return result
     finally:
         _took = time.monotonic() - _t0

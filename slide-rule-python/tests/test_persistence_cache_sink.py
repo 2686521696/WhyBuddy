@@ -62,7 +62,7 @@ class Test钉缓存这件事真的发生:
 
         state = V5SessionState(sessionId="sr-sink-1", goal={"text": "x"})
         monkeypatch.setattr(
-            persistence, "save_session_record", lambda s: {"ok": True}
+            persistence, "save_session_record", lambda s, *a, **kw: {"ok": True}
         )
         sess._sessions.pop("sr-sink-1", None)
         persistence.persist_state(state)
@@ -77,7 +77,7 @@ class Test钉缓存这件事真的发生:
         def _boom(sid, state):
             raise RuntimeError("boom")
 
-        monkeypatch.setattr(persistence, "save_session_record", lambda s: {"ok": True})
+        monkeypatch.setattr(persistence, "save_session_record", lambda s, *a, **kw: {"ok": True})
         monkeypatch.setattr(persistence, "_CACHE_SINK", _boom)
         persistence.persist_state(V5SessionState(sessionId="sr-sink-2", goal={"text": "x"}))
 
@@ -85,7 +85,7 @@ class Test钉缓存这件事真的发生:
         """没加载会话层的进程里，这一步不做是对的——没人会去读那份缓存。"""
         from models.v5_state import V5SessionState
 
-        monkeypatch.setattr(persistence, "save_session_record", lambda s: {"ok": True})
+        monkeypatch.setattr(persistence, "save_session_record", lambda s, *a, **kw: {"ok": True})
         monkeypatch.setattr(persistence, "_CACHE_SINK", None)
         persistence.persist_state(V5SessionState(sessionId="sr-sink-3", goal={"text": "x"}))
 
