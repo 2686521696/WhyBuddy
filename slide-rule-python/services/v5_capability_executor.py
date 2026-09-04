@@ -1165,6 +1165,30 @@ def _cache_spec_first_pages(state: "V5SessionState") -> None:
                     **got,
                     "assumptionsConfirmed": prev["assumptionsConfirmed"],
                 }
+            # 孤岛清单同理：它只在 **bind 跳**算（打孔之后才量得准），
+            # 而 closure/structure 单跳照样整份替换 qualityNotices ——
+            # 上一跳刚照出来的孤岛，下一跳就被一个空列表盖掉了。
+            #
+            # 2026-09-05 真机（社区养老 sr-20260904181150）：bind 跳日志里
+            # 明明写着「新产生 2 个孤岛 + 存量 4 个」，closure 跳跑完再读
+            # 会话，qualityNotices 里一条 orphan 都没有——计划侧只在算出来
+            # 的那一跳看得见它，隔一跳就忘干净。跟上面 pages / spec /
+            # assumptionsConfirmed 是同一条纪律：**单跳不许用"我没算"
+            # 冒充"没有"**。
+            if "bind" not in [
+                str(t).strip()
+                for t in (((got.get("capabilityPlan") or {}).get("tools")) or [])
+            ]:
+                _prev_orphans = [
+                    n for n in (prev.get("qualityNotices") or [])
+                    if isinstance(n, dict) and str(n.get("kind") or "") == "orphan"
+                ]
+                _cur = list(got.get("qualityNotices") or [])
+                if _prev_orphans and not any(
+                    isinstance(n, dict) and str(n.get("kind") or "") == "orphan"
+                    for n in _cur
+                ):
+                    got = {**got, "qualityNotices": _cur + _prev_orphans}
         # ── 销账：按**实际跑了什么**划，不按选材器 stamp 了什么 ─────────
         #
         # ⚠ 2026-09-04 真机 sr-20260904103406（建材市场）：待办**只进不出**。

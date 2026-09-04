@@ -171,3 +171,62 @@ class Test计划侧看得见:
 
     def test_压根没体检过时不炸(self):
         assert isinstance(_after_write_hint(self._state([])), str)
+
+
+class Test孤岛不许隔一跳就忘:
+    """孤岛只在 bind 跳算（打孔之后才量得准），而单跳会整份替换 qualityNotices。
+
+    真机 2026-09-05：bind 跳日志里明明写着「新产生 2 个孤岛 + 存量 4 个」，
+    closure 跳跑完再读会话，一条 orphan 都没有——计划侧只在算出来的那一跳
+    看得见它。跟 pages / spec / assumptionsConfirmed 是同一条纪律：
+    **单跳不许用「我没算」冒充「没有」**。
+    """
+
+    ORPHAN = {"kind": "orphan", "text": "交付的应用带着 4 个孤岛：perm:elder:update（…）"}
+
+    def _cache(self, monkeypatch, prev, got):
+        # ⚠ take_last_pages 是**函数体里**才 import 的（v5_capability_executor:1129），
+        #   所以替身要打在源模块上，打在执行器上是打空——替身没生效时
+        #   `_cache_spec_first_pages` 会去读真的请求域暂存（空），判据会以
+        #   "什么都没发生"的方式绿掉。
+        import services.spec_first_pipeline as sfp
+        import services.v5_capability_executor as ex
+
+        st = V5SessionState(sessionId="s-1", goal={"text": "题"}, ownerId="u-1")
+        st.specFirstPages = prev
+        monkeypatch.setattr(sfp, "take_last_pages", lambda: got)
+        ex._cache_spec_first_pages(st)
+        return st.specFirstPages or {}
+
+    def test_closure单跳不许把上一跳的孤岛盖掉(self, monkeypatch):
+        got = self._cache(
+            monkeypatch,
+            {"pages": {"p1": "<html/>"}, "spec": {"x": 1}, "qualityNotices": [self.ORPHAN]},
+            {"pages": {"p1": "<html/>"}, "spec": {"x": 1}, "qualityNotices": [],
+             "capabilityPlan": {"tools": ["closure"]}},
+        )
+        kinds = [n.get("kind") for n in (got.get("qualityNotices") or [])]
+        assert "orphan" in kinds, "closure 单跳把上一跳照出来的孤岛盖没了"
+
+    def test_bind跳重算时以本跳为准(self, monkeypatch):
+        """★ 反向配对：bind 跳是**真的重算过**的，它说没有就是没有——
+        不许把修好的孤岛一直留在账上。"""
+        got = self._cache(
+            monkeypatch,
+            {"pages": {"p1": "<html/>"}, "spec": {"x": 1}, "qualityNotices": [self.ORPHAN]},
+            {"pages": {"p1": "<html/>"}, "spec": {"x": 1}, "qualityNotices": [],
+             "capabilityPlan": {"tools": ["bind"]}},
+        )
+        kinds = [n.get("kind") for n in (got.get("qualityNotices") or [])]
+        assert "orphan" not in kinds, "孤岛已经修好了，账上还留着"
+
+    def test_本跳自己算出孤岛时不叠加上一跳的(self, monkeypatch):
+        fresh = {"kind": "orphan", "text": "本跳的孤岛"}
+        got = self._cache(
+            monkeypatch,
+            {"pages": {"p1": "<html/>"}, "spec": {"x": 1}, "qualityNotices": [self.ORPHAN]},
+            {"pages": {"p1": "<html/>"}, "spec": {"x": 1}, "qualityNotices": [fresh],
+             "capabilityPlan": {"tools": ["closure"]}},
+        )
+        orphans = [n for n in (got.get("qualityNotices") or []) if n.get("kind") == "orphan"]
+        assert orphans == [fresh], f"本跳有自己的结论，不该再叠上一跳的：{orphans}"
