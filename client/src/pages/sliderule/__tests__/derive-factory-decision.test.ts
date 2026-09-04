@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createInitialSessionState } from "@/lib/sliderule-runtime";
 import {
   deriveFactoryDecisionView,
+  labelDecisionItems,
   labelFactoryTools,
 } from "../derive-factory-decision";
 import { deriveStatusBarFacts } from "../derive-status-bar";
@@ -111,5 +112,66 @@ describe("labelFactoryTools", () => {
       "权限工作流",
       "页面生成",
     ]);
+  });
+});
+
+describe("「规则给的」不许因为不是工厂工具就整行消失（2026-09-04 真机）", () => {
+  // 真机 saw 原样：点火那一跳规则给的是作文能力，不是工厂工具。
+  const REAL_SAW = [
+    "evidence.search",
+    "risk.analyze",
+    "critique.generate",
+    "report.write",
+    "appbundle.runtimeClosure",
+  ];
+
+  it("作文能力 id 原样透出，不被滤空", () => {
+    const out = labelDecisionItems(REAL_SAW);
+    expect(out.length).toBe(REAL_SAW.length);
+    expect(out).toContain("evidence.search");
+    expect(out).toContain("risk.analyze");
+  });
+
+  it("工厂工具仍然翻成人话", () => {
+    const out = labelDecisionItems(["factory.pages", "structure"]);
+    expect(out).toContain("页面生成");
+    expect(out).toContain("数据结构");
+    expect(out).not.toContain("factory.pages");
+  });
+
+  it("混着来时两种都在，且去重", () => {
+    const out = labelDecisionItems([
+      "evidence.search",
+      "factory.pages",
+      "pages",
+      "evidence.search",
+    ]);
+    expect(out).toEqual(["evidence.search", "页面生成"]);
+  });
+
+  it("空串丢掉，不许渲染出空条目", () => {
+    expect(labelDecisionItems(["", "  ", "pages"])).toEqual(["页面生成"]);
+  });
+
+  it("⚠ 反向：labelFactoryTools 仍然只认工厂工具（chose 那一侧没被顺手改掉）", () => {
+    expect(labelFactoryTools(REAL_SAW)).toEqual([]);
+  });
+
+  it("整条决策视图里 saw 不再是空数组", () => {
+    const view = deriveFactoryDecisionView({
+      decisionLedger: [
+        {
+          id: "dec-0-agentic-pick",
+          turnId: "loop-0",
+          saw: REAL_SAW,
+          chose: ["spec", "pages", "structure", "bind"],
+          rationale: "按序执行规格起草、页面生成、数据建模与权限流转打孔",
+          source: "llm",
+        },
+      ],
+    } as never);
+    expect(view).not.toBeNull();
+    expect(view!.saw.length).toBeGreaterThan(0);
+    expect(view!.chose).toContain("起草 SPEC");
   });
 });
