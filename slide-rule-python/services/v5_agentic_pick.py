@@ -547,8 +547,13 @@ def agentic_pick_next_capabilities(
             "\"why\":\"\"}],"
             "\"tasks\":[{\"type\":\"evidence|compliance|page_quality\","
             "\"prompt\":\"\"}]}\n"
-            "tasks 是只读取料子代理，可并行；写侧（spec/pages/structure/"
-            "bind/closure）只能放 picks，不许派出去写。\n"
+            "tasks 这个键**必须给**，没有要派的就写 []。\n"
+            "什么时候该派：这道题依赖你手上没有的外部事实时——行业法规/资质"
+            "证照/国标行标/监管口径用 compliance，市场做法与竞品实现用 "
+            "evidence，已经出过页面要复检排版与信息密度用 page_quality。"
+            "它们只读、可并行、失败不影响你这一跳的产出。\n"
+            "写侧（spec/pages/structure/bind/closure）只能放 picks，"
+            "不许派出去写。\n"
             "公开工具：\n" + vocab_lines
         )
     else:
@@ -565,7 +570,11 @@ def agentic_pick_next_capabilities(
             "\"why\":\"\"}],"
             "\"tasks\":[{\"type\":\"evidence|compliance|page_quality\","
             "\"prompt\":\"\"}]}\n"
-            "tasks 是只读取料子代理（证据/合规/页面复检），可并行；"
+            "tasks 这个键**必须给**，没有要派的就写 []。\n"
+            "什么时候该派：这道题依赖你手上没有的外部事实时——行业法规/资质"
+            "证照/国标行标/监管口径用 compliance，市场做法与竞品实现用 "
+            "evidence，已经出过页面要复检排版与信息密度用 page_quality。"
+            "它们只读、可并行、失败不影响你这一跳的产出。\n"
             "写侧能力不许派出去。\n"
             "能力清单：\n" + vocab_lines
         )
@@ -623,8 +632,27 @@ def agentic_pick_next_capabilities(
             file=_sys.stderr, flush=True,
         )
         return None
+    # ⚠ 2026-09-04：派工这条路原来是**完全静默**的——模型没给 tasks、
+    #   还是给了被 clip_task_requests 剔光，日志一个字都没有。真机连跑两趟
+    #   合规话题（食安报备、监管自查）子代理都是 0 只，而"0 只"有三种截然
+    #   不同的解释：模型压根没提、提了但写侧被拒、提了但种类是生词。
+    #   分不清就没法修——跟上面「提案全被门剔除」那行同一条纪律：出声。
+    _raw_tasks = parsed.get("tasks")
+    _kept = list(clip_task_requests(_raw_tasks))
+    _n_raw = len(_raw_tasks) if isinstance(_raw_tasks, list) else 0
+    if _n_raw or _kept:
+        _kinds = ",".join(str(t.get("type") or "?") for t in _kept) or "无"
+        print(
+            f"[agentic-pick] loop {loop_index}: 派工 提案{_n_raw} 收下{len(_kept)}（{_kinds}）",
+            file=_sys.stderr, flush=True,
+        )
+    else:
+        print(
+            f"[agentic-pick] loop {loop_index}: 派工 模型没提 tasks",
+            file=_sys.stderr, flush=True,
+        )
     return {
         "picks": picks,
         "rationale": str(parsed.get("rationale") or "")[:200],
-        "tasks": list(clip_task_requests(parsed.get("tasks"))),
+        "tasks": _kept,
     }
