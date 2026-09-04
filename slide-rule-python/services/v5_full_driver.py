@@ -2540,6 +2540,9 @@ async def drive_full_v5_session_stream(
                                 _factory_legal,
                                 refine=skip_planning_loop_for_refine(repair=repair),
                                 floor=_floor,
+                                # 已经有 SPEC 就别补根——补了会让流水线
+                                # 重起草一份不一样的（见 clip_factory_tools 头注）。
+                                has_spec=_state_has_spec(state),
                             )
                         except FactoryToolsRefused:
                             print(

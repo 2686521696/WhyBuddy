@@ -108,10 +108,28 @@ class Test模型的自由没被没收:
         )
 
 
-class Test补根那条没被挤坏:
-    """地板垫在补根之前——补根看 len(chosen)，顺序反了会误判单跳。"""
+class Test地板不许把补根变成重起草SPEC:
+    """⚠ 2026-09-04 真机 sr-20260904050038（洗衣店）：地板的第一版当场闯祸。
 
-    def test_多件仍然补spec(self):
+    剩余链从 ('pages',) 变成 ('pages','structure','bind') → len != 1 → 补根塞进
+    spec → spec_first_pipeline:1436 的去根判据是「spec 不在 _requested 里」，
+    一带上就不去根 → 整跳预算烧在重起草一份**不一样的** SPEC 上
+    （5 页 16 节点 → 4 页 13 节点），落库 0 份，25 分钟白跑、页面一张没有。
+
+    那正是 b6e0ab3 修过的事故原样复发。上一版之所以没犯，是靠模型减到单件、
+    len==1 侥幸绕开补根——**不是真的挡住了**。地板把侥幸拿掉，病就露出来。
+    """
+
+    def test_有SPEC时地板不许招来重起草(self):
+        """这条红 = 洗衣店那 25 分钟白跑原样回来。"""
+        out = clip_factory_tools(
+            _REAL_PROPOSAL, _REAL_LEGAL, floor=_REAL_LEGAL, has_spec=True
+        )
+        assert "spec" not in out, f"已经有 SPEC 还补根，流水线会重起草：{out}"
+        assert out == ("pages", "structure", "bind")
+
+    def test_没有SPEC时照旧补根(self):
+        """⚠ 反向：空会话多件菜单缺根，run_spec_first 会直接抛（建设单 O-4）。"""
         out = clip_factory_tools(
             [{"capabilityId": "pages"}], ("pages", "structure"), floor=("pages", "structure")
         )

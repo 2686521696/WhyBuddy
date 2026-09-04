@@ -113,6 +113,7 @@ def clip_factory_tools(
     *,
     refine: bool = False,
     floor: Optional[Iterable[str]] = None,
+    has_spec: bool = False,
 ) -> Tuple[str, ...]:
     """规划器只能在 legal 里减菜，不能发明、不能换序。
 
@@ -182,7 +183,18 @@ def clip_factory_tools(
     # 多件菜单漏了 spec 就补根。单跳（len==1）看会话前置，不在菜单里塞
     # spec——否则 ['bind'] 进 run_spec_first 没有 SPEC 直接抛（建设单 O-4）。
     # 空会话单跳由 _factory_hop_blocker 说人话。
-    if not refine and "spec" not in chosen and len(chosen) != 1:
+    #
+    # ⚠ 2026-09-04：**会话已经有 SPEC 就没有根要补**，而且补了会出事。
+    #   真机 sr-20260904050038（洗衣店）：加了 floor 之后剩余链从 ('pages',)
+    #   变成 ('pages','structure','bind')，len != 1 于是这里补上 spec →
+    #   spec_first_pipeline:1436 的去根判据是「spec 不在 _requested 里」，
+    #   一带上 spec 就不去根 → **整跳预算烧在重起草一份不一样的 SPEC 上**
+    #   （5 页 16 节点 → 4 页 13 节点），页面落库 0 份，25 分钟白跑。
+    #
+    #   这正是 b6e0ab3 修过的那个事故原样复发：那次靠的是模型减到单件、
+    #   len==1 侥幸绕开补根，不是真的挡住了。地板把侥幸拿掉，病就露出来。
+    #   补根的前提本来就是「没有 SPEC」，现在把这个前提写出来。
+    if not refine and not has_spec and "spec" not in chosen and len(chosen) != 1:
         chosen = ("spec",) + tuple(name for name in chosen if name != "spec")
     return chosen
 
