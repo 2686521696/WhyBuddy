@@ -2450,42 +2450,126 @@ def _this_hop_tools(state: V5SessionState) -> List[str]:
     return []
 
 
+#: 交回时贴在工具结果上的提醒标签。
+#:
+#: 抄 grok `xai-grok-tools/src/reminders/mod.rs`：
+#:
+#:     //! Provides contextual hints wrapped in `<system-reminder>` tags that are
+#:     //! appended to tool outputs before being sent to the model.
+#:
+#: 以及 `xai-tool-runtime/src/render.rs:205`——
+#: 「the model sees `prompt_text` (reminders appended), never a JSON dump」。
+_REMINDER_TAG = "system-reminder"
+
+
+def wrap_reminder(text: str) -> str:
+    """把一段情报裹成提醒块。对应 grok 的 `wrap_reminder`。"""
+    return f"<{_REMINDER_TAG}>\n{text}\n</{_REMINDER_TAG}>"
+
+
+def append_reminder(output: str, reminder: str) -> str:
+    """把提醒**追加在工具结果后面**（grok `format_with_reminders`）。
+
+    ⚠ 追加、不是另起一条 `role: user`。原来的写法是伪造一条用户消息，
+      模型看见的是「用户命令我调 pages」——那不是用户说的，而且下一轮
+      真用户开口时两条 user 会打架。
+    """
+    if not reminder:
+        return output
+    wrapped = wrap_reminder(reminder)
+    return wrapped if not output else f"{output}\n\n{wrapped}"
+
+
+def _assumptions_awaiting(state: V5SessionState) -> bool:
+    """假设卡摊着、用户还没点「确认继续」。"""
+    sfp = getattr(state, "specFirstPages", None)
+    if not isinstance(sfp, dict):
+        return False
+    if sfp.get("assumptionsConfirmed") is True:
+        return False
+    spec = sfp.get("spec")
+    rows = (spec or {}).get("assumptions") if isinstance(spec, dict) else None
+    return bool(rows)
+
+
 def _after_write_hint(state: V5SessionState) -> str:
-    """交回 host 时下一跳说什么。抄 grok：工具结果之后模型必须再挑或明说停。
+    """交回 host 时把**现场情况**摆给模型，让它自己挑下一步。
 
     ⚠ 2026-09-02：话术曾看「会话里有没有旧页面」，spec 单跳交回仍问结构绑定。
     必须读本跳 capabilityPlan.tools。
+
+    ## 2026-09-04：从命令式改成情报式
+
+    上一版是祈使句——「下一跳**必须**调 pages，不要调 rehearse，不要问结构绑定」。
+    那不是模型在决定下一步，是流程在下命令、模型负责复述；用户看完架构的原话是
+    「还是死流程，不是很智能呢」。
+
+    抄 grok 的 reminder 措辞：陈述**事实**与**可选项**，禁令只在跟一条事实
+    绑定时才出现（`task_completion.rs`：「This task was killed by the user —
+    do not restart it.」）。所以这里只报：本跳跑了什么、现在手上有什么、
+    还缺什么、还能调哪几件、调 rehearse 的后果是什么。挑哪一件交给模型。
+
+    ⚠ 事实比禁令更硬：写「页面 0 份」比写「不要假装页面已经出来」更难被绕过——
+      前者是可核对的数，后者只是一句叮嘱。
     """
     tools = _this_hop_tools(state)
     labels = dict(TOOL_LABELS)
     ran = "、".join(labels.get(t, t) for t in tools)
+
+    n_pages = len(((getattr(state, "specFirstPages", None) or {}).get("pages")) or {})
+    facts: List[str] = []
+    if ran:
+        facts.append(f"本跳实际跑了：{ran}。")
+    facts.append(
+        f"当前产出：SPEC {'有' if _has_spec(state) else '没有'}，页面 {n_pages} 份。"
+    )
+
     factory = {"pages", "structure", "bind", "closure"}
-    if tools and (
-        not factory.intersection(tools)
-        or (is_first_pass_chain(tools) and not _has_pages(state))
-    ):
-        return (
-            f"本跳实际跑了：{ran}。页面还没有。"
-            "下一跳必须调 pages，或者用一句话告诉用户你为什么先停。"
-            "不要调 rehearse，不要假装页面已经出来，不要问结构绑定。"
+    pages_missing = not _has_pages(state) and (
+        not tools
+        or not factory.intersection(tools)
+        or is_first_pass_chain(tools)
+    )
+    if not tools and not _has_spec(state) and not _has_pages(state) and not _has_model(state):
+        return ""
+
+    if pages_missing:
+        facts.append(
+            "页面还没有，用户现在看不到任何东西——"
+            "pages 是唯一能把页面画出来的工具。"
         )
-    if tools:
-        return (
-            f"本跳实际跑了：{ran}。"
-            "用一两句话问要改哪一页或下一步；不要再调 rehearse；"
-            "不要问已经跑过的那一步。"
-        )
-    if _has_pages(state) or _has_model(state):
-        return (
-            "已经出过页面。用一两句话问要改哪一页或下一步；不要再调 rehearse。"
-        )
-    if _has_spec(state):
-        return (
-            "SPEC 已经起草，页面还没有。"
-            "下一跳必须调 pages，或者用一句话告诉用户你为什么先停。"
-            "不要调 rehearse，不要假装页面已经出来。"
-        )
-    return ""
+        if _assumptions_awaiting(state):
+            # ⚠ 这一条不是叮嘱，是**把闸说清楚**。
+            #
+            # SPEC 单跳之后本回合会被降成「只许说话」（host 循环里的
+            # `tools = []`）。那个闸是产品裁决——假设卡在等「确认继续」，
+            # 模型这时调 pages 等于替用户跳过确认；调 scope_card 会让
+            # ComposerDock 画范围卡、把假设面板顶掉（2026-09-02 真机）。
+            #
+            # ⚠ 这个闸**故意不改成「缩小工具集」**：2026-09-03 真机
+            #   sr-20260903204902-3QRNQT9RZX——交回时哪怕只留只读工具，
+            #   仍要等一发 `_invoke_control_llm`，而墙钟只在轮与轮之间查，
+            #   那一发 HTTP 挂住 SSE，「确认继续」排队 25 分钟发不出去、
+            #   账本里一份页面都没有。为一点自主权换回那个事故不划算。
+            #
+            # 能做的是别让它**静静地**哑掉：把「在等谁、等什么」摆出来，
+            # 模型知道自己为什么这一轮只说话。
+            facts.append(
+                "假设卡正在等用户点「确认继续」，确认之前不画页面——"
+                "这一轮的任务是把现在的状态讲清楚，不是往下调工具。"
+            )
+    else:
+        done = "、".join(labels.get(t, t) for t in tools) if tools else ""
+        if done:
+            facts.append(f"{done} 这几件本跳已经做过，重复调不会有新产出。")
+
+    facts.append(
+        "rehearse 会从头重跑整条产出链，已有的 SPEC 与页面都会被覆盖。"
+    )
+    facts.append(
+        "下一步由你决定：接着调工具，或者用一两句话告诉用户现在的状态和你的建议。"
+    )
+    return "".join(facts)
 
 
 def _messages_after_forced_write(
@@ -2516,11 +2600,9 @@ def _messages_after_forced_write(
         {
             "role": "tool",
             "tool_call_id": call_id,
-            "content": bound_tool_result(body),
-        },
-        {
-            "role": "user",
-            "content": hint,
+            # 跟 host 循环那条成对（CLAUDE.md §4）：情报贴在工具结果上，
+            # 不伪造 role:user。只改一条，按钮点火这条路就还是老样子。
+            "content": append_reminder(bound_tool_result(body), hint),
         },
     ]
 
@@ -2755,9 +2837,25 @@ async def _control_llm_loop(
                     messages[0] = {"role": "system", "content": _system_prompt(state)}
                 hint = _after_write_hint(state)
                 if hint:
-                    # 抄 grok：工具结果之后必须再挑或明说停。只改 system
-                    # 会被下一轮用户话盖掉；hint 要作为本回合的 user 指令。
-                    messages.append({"role": "user", "content": hint})
+                    # 抄 grok `format_with_reminders`：情报**追加在工具结果上**，
+                    # 不另起一条 role:user。
+                    #
+                    # ⚠ 2026-09-04：原来是 `messages.append({"role":"user",...})`
+                    #   ——伪造一条用户消息。模型看见的是「用户命令我调 pages」，
+                    #   而用户根本没说过；下一轮真用户开口时两条 user 还会打架。
+                    #   只改 system 会被下一轮用户话盖掉（这条原注释是对的），
+                    #   贴在 tool 结果上两个毛病都没有。
+                    _last_tool = next(
+                        (m for m in reversed(messages) if m.get("role") == "tool"), None
+                    )
+                    if _last_tool is not None:
+                        _last_tool["content"] = append_reminder(
+                            str(_last_tool.get("content") or ""), hint
+                        )
+                    else:
+                        # 没有工具消息可贴（理论上 wrote=True 时不会发生）：
+                        # 宁可退回老写法，也不许把情报整段丢掉。
+                        messages.append({"role": "user", "content": wrap_reminder(hint)})
                 # LLM 路径原先 empty_text=None，空回复会吐开场罐头（P3 ③）。
                 empty_text = (
                     hint

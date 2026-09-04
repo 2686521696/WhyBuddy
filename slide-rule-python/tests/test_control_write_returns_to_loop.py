@@ -172,11 +172,17 @@ def test_after_write_hint_reads_this_hop_tools_not_stale_pages():
         },
     )
     hint = _after_write_hint(state)
+    # ⚠ 2026-09-04：话术从祈使句改成情报式（见
+    #   test_after_write_hint_is_intel_not_orders）。判据跟着盯**语义**：
+    #   本跳跑的是 spec、页面数照实报、不许把上一跳的页面说成本跳产出。
+    #   盯原文（旧版写的是「下一跳必须调 pages」）会在改话术时假红/假绿。
     assert "本跳实际跑了" in hint
     assert "起草 SPEC" in hint
-    assert "结构绑定" in hint
-    assert "已经出过页面" not in hint
-    assert "下一跳必须调 pages" in hint
+    assert "页面 1 份" in hint, f"页数没照实报：{hint}"
+    for done_word in ("数据结构", "权限工作流"):
+        assert f"{done_word} 这几件" not in hint, (
+            f"本跳没跑 {done_word}，不许说成已经做过：{hint}"
+        )
 
 
 def test_after_write_hint_full_hop_does_not_ask_structure_bind():
@@ -190,7 +196,8 @@ def test_after_write_hint_full_hop_does_not_ask_structure_bind():
     )
     hint = _after_write_hint(state)
     assert "权限工作流" in hint or "bind" in hint
-    assert "不要问已经跑过的那一步" in hint
+    # 语义同上：本跳跑过的那几件要标成「做过」，别再问一遍。
+    assert "本跳已经做过" in hint, f"没标明哪几件已经做过：{hint}"
     src = strip_python(PY_ROOT / "services" / "rehearsal_control.py")
     assert "_this_hop_tools" in src
     assert "capabilityPlan" in src

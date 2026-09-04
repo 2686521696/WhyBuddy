@@ -2466,10 +2466,25 @@ async def drive_full_v5_session_stream(
                 factory_tool_vocab,
                 should_run_agentic_pick,
             )
-            if picks and should_run_agentic_pick(profile, repair=repair) and not (
-                profile == "app"
-                and (_host_factory_hop(state) or _first_pass_chain(state))
-            ):
+            # ⚠ 2026-09-04：这里原本挂着 `and not (profile == "app" and
+            #   (_host_factory_hop(state) or _first_pass_chain(state)))`。
+            #   那两个谓词合起来覆盖**全部**产品推演——真机 profile 恒为 app，
+            #   一跳一件与首轮产出链必居其一——于是「节点内 ReAct」这台机器
+            #   一次都没通过电：三份过夜日志、11 次整轮真机落库，
+            #   `[factory-plan]` 出现 0 次。
+            #
+            #   而 `should_run_agentic_pick` 的头注写的是「profile=app 也跑
+            #   ——边界是短清单，不是整张作文词表」。声明与接线相反，
+            #   单测看的又是**同步**驱动（:1310 无条件跑），所以全绿。
+            #   CLAUDE.md §4 那个成对物：智能装在了不通电的那一半上。
+            #
+            #   边界不是靠这个 if 兜的，靠的是下面三层，一层都没动：
+            #     · vocab=factory_tool_vocab(legal)  模型只看得见工厂五件
+            #     · _clip_agentic_picks_to_legal     只能在规则清单里减/换序
+            #     · clip_factory_tools / FactoryToolsRefused  全不合法就保持原样
+            #   所以模型能改的是「这一跳干哪几件、什么次序」，
+            #   发明不出第六道菜（抄 grok：主 Agent 挑的是预存在的能力单元）。
+            if picks and should_run_agentic_pick(profile, repair=repair):
                 _factory_legal = (
                     _factory_tools_from_state(state) if profile == "app" else None
                 )

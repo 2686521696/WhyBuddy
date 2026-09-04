@@ -355,6 +355,16 @@ def test_first_pass_remaining_after_spec_skips_essay_caps(driver, monkeypatch):
     """假设确认后的剩余链不许再跑一遍 evidence/report。
 
     变异：把 `_first_pass_chain and _state_has_spec` 那支删掉 → 本条红。
+
+    ⚠ 2026-09-04 改过一条断言：原来是 `agentic_calls == []`（剩余链不跑
+      LLM 选材）。那条钉的是**旧策略**本身，而旧策略正是「死流程」的病灶——
+      真机上 profile 恒为 app、一跳一件与首轮链必居其一，两个谓词合起来
+      让节点内 ReAct 一次都没跑过（11 次整轮真机、`[factory-plan]` 0 次）。
+
+      本测试真正要防的事故是**作文能力漏进工厂**，那两条断言原样保留、
+      仍然绿。挡住它的不是这个 if，是 `vocab=factory_tool_vocab(legal)`
+      与 `clip_factory_tools`——本轮实测 stdout 打的就是
+      「[factory-plan] 提案全不合法，保持本跳 tools，不回落整份菜单」。
     """
     driver_mod, agentic_mod = driver
     executed, agentic_calls, orch_calls = _install_traps(
@@ -393,7 +403,16 @@ def test_first_pass_remaining_after_spec_skips_essay_caps(driver, monkeypatch):
     leaked = _essay_in(started)
     assert not leaked, f"剩余产出链又跑了作文 {leaked}"
     assert "evidence.search" not in started
-    assert agentic_calls == [], "剩余链不应再跑 agentic pick"
+    assert agentic_calls, (
+        "剩余链没跑节点内 agentic pick——「人定义边界，AI 动态决定执行路径」"
+        "又退回成写死的产出链了"
+    )
+    # ⚠ 反向：跑归跑，模型看见的必须只有本跳合法的工厂工具。
+    #   这条才是挡作文漏入的真护栏（上面那个 if 从来不是）。
+    vocab = agentic_calls[0].get("vocab") or {}
+    assert vocab and set(vocab) <= {"pages", "structure", "bind"}, (
+        f"词表越界，作文能力会漏进工厂：{sorted(vocab)}"
+    )
     joined = " ".join(str(x) for x in started)
     assert "factory.pages" in joined, (
         "剩余链必须按 hop 身份跑 factory.pages。"
