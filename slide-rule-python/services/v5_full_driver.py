@@ -23,6 +23,7 @@ from .closed_tools import (
 from .factory_plan_steps import product_steps_for_tools
 from .workflow_select import PAGES_PREVIEW, PAGES_PREVIEW_TOOLS, select_workflow
 import os
+import threading
 import time
 from typing import Dict, Any, AsyncGenerator, List, Literal, Optional
 from datetime import datetime, timezone
@@ -1934,6 +1935,18 @@ def _stamp_factory_tools_onto_goal(state: "V5SessionState", tools) -> None:
     state.goal = goal
 
 
+def _persist_phase_after_abandon(state: "V5SessionState") -> None:
+    """流被放弃之后把相位落库。单独一个函数，好让它在线程里跑。
+
+    ⚠ 吞异常：这是兜底路径，网关抖一下不该再抛——线程里抛只会打一堆栈，
+      而这时候已经没有人在收这条流了。
+    """
+    try:
+        persist_state(state)
+    except Exception:  # noqa: BLE001 — 兜底本身不许再抛
+        pass
+
+
 async def drive_full_v5_session_stream(
     initial_state: "V5SessionState",
     max_loops: int = 10,
@@ -2893,6 +2906,50 @@ async def drive_full_v5_session_stream(
                 text=f"phase_changed: awaiting ({state.awaitReason or 'coverage'})", order=10)
             await asyncio.to_thread(persist_state, state)
 
+    except (GeneratorExit, asyncio.CancelledError):
+        # ⚠ 2026-09-04 真机：客户端断开 / 切走 / 关标签页时，这个异步生成器
+        #   被关闭，抛的是 GeneratorExit（任务被取消则是 CancelledError）。
+        #   两个都是 **BaseException**，下面的 `except Exception` 一个都接不住
+        #   → 上面那个把相位设回 awaiting/done 的终端块整段跳过
+        #   → 库里留着 :2209 开轮时写、:2222 落库的那笔 `orchestrating`。
+        #
+        #   真机证据（两个会话，浏览器全关、无活跑批）：
+        #       页=5 版本=1 停泊=max_loops 相=orchestrating
+        #       GET /runs/active → {"active": null}
+        #   三个字段互相矛盾：停泊说在等人，相位说还在跑，跑批说没有。
+        #
+        #   看得见的后果：`SidebarSessions` 的列表 phase 就是 runtimePhase
+        #   （见那边 :330 的注释），于是这个会话在侧栏**永远显示「推演中」**，
+        #   按状态筛选时堆着一批早就结束的会话。
+        #
+        #   ⚠ 这里只能用同步 persist：生成器正在关闭，不许再 await
+        #     （`await asyncio.to_thread(...)` 会 RuntimeError）。
+        #   ⚠ 也不许 yield：流已经没人收了。设完相位原样抛回去。
+        if getattr(state, "runtimePhase", None) == "orchestrating":
+            state.runtimePhase = "awaiting"
+            if not getattr(state, "awaitReason", None):
+                # ⚠ 用词表里已有的 no_progress，别新造一个词。
+                #   `models/v5_state.py` 的 AwaitReason 是一道闸：未申报的值
+                #   pydantic 写的时候不报错，读回来时 `_coerce_many` 会把
+                #   **整条会话跳过**（persistence.py:370）——症状是「会话从
+                #   侧栏消失了」，比这里要修的僵死还严重。第一版写了
+                #   "interrupted"，`test_state_enum_values_are_declared` 当场变红。
+                #   no_progress 的既有含义正是「一轮被掐掉」
+                #   （run_pause.py 头注：真机跑到 75 秒掐掉 →
+                #   runtimePhase=awaiting / awaitReason=no_progress），
+                #   跟"流被放弃"是同一件事，复用它还省掉 shared/blueprint
+                #   那份 TS 镜像的同步（§4）。
+                state.awaitReason = "no_progress"
+            # ⚠ 这一笔既不能 await（生成器正在关闭，`await asyncio.to_thread(…)`
+            #   会 RuntimeError），也不能裸调 `persist_state`
+            #   ——`test_no_blocking_io_on_event_loop` 那道闸说得很直白：
+            #   「一处卡住，全站请求一起排队」，而 persist 走的是远端
+            #   HTTPS SQL 网关。丢给一个 daemon 线程 fire-and-forget：
+            #   两个约束同时满足。第一版裸调，全量当场多一条红。
+            threading.Thread(
+                target=_persist_phase_after_abandon, args=(state,), daemon=True
+            ).start()
+        raise
     except Exception as exc:
         state.runtimePhase = "failed"
         state.awaitReason = "ready"
