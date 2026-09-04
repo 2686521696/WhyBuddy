@@ -230,3 +230,42 @@ class Test孤岛不许隔一跳就忘:
         )
         orphans = [n for n in (got.get("qualityNotices") or []) if n.get("kind") == "orphan"]
         assert orphans == [fresh], f"本跳有自己的结论，不该再叠上一跳的：{orphans}"
+
+
+class Test存量孤岛也是孤岛:
+    """★ 2026-09-05 真机（融媒体 sr-20260904195810）抓到的。
+
+    pages/structure/bind 那一跳报了 3 个新孤岛（kind=orphan），紧接着的精修跳
+    报的是「存量孤岛 2 个」——kind 变成 `orphan_stale`。只认 `orphan` 的过滤器
+    看不见它，于是保留逻辑判定"这一跳跑了 bind 而且没有孤岛"，把上一跳那 3 条
+    清了；计划侧最终一条都没看到。
+
+    **存量孤岛照样是用户点不进去的动作**，"上一版就有"说的是责任归属，
+    不是"已经不用管了"。
+    """
+
+    STALE = {"kind": "orphan_stale", "text": "存量孤岛 2 个（上一版就有，非本次造成）"}
+
+    def test_存量孤岛进得了情报(self):
+        from services.rehearsal_control import _after_write_hint as hint
+        st = V5SessionState(sessionId="s-1",
+                            goal={"text": "题目", "status": "clear", "tools": ["bind"]},
+                            ownerId="u-1")
+        st.specFirstPages = {
+            "spec": {"pages": [{"id": "p1"}]}, "pages": {"p1": "<html/>"},
+            "qualityNotices": [self.STALE],
+        }
+        assert "孤岛" in hint(st), "存量孤岛没进情报——计划侧还是不知道有东西点不进去"
+
+    def test_存量孤岛不会被下一跳清掉(self, monkeypatch):
+        import services.spec_first_pipeline as sfp
+        import services.v5_capability_executor as ex
+        st = V5SessionState(sessionId="s-2", goal={"text": "题"}, ownerId="u-1")
+        st.specFirstPages = {"pages": {"p1": "<html/>"}, "spec": {"x": 1},
+                             "qualityNotices": [self.STALE]}
+        monkeypatch.setattr(sfp, "take_last_pages", lambda: {
+            "pages": {"p1": "<html/>"}, "spec": {"x": 1},
+            "qualityNotices": [], "capabilityPlan": {"tools": ["closure"]}})
+        ex._cache_spec_first_pages(st)
+        kinds = [n.get("kind") for n in ((st.specFirstPages or {}).get("qualityNotices") or [])]
+        assert "orphan_stale" in kinds

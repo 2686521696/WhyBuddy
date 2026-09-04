@@ -1179,13 +1179,15 @@ def _cache_spec_first_pages(state: "V5SessionState") -> None:
                 str(t).strip()
                 for t in (((got.get("capabilityPlan") or {}).get("tools")) or [])
             ]:
+                # 两种 kind 都算孤岛：orphan（本次新产生）/ orphan_stale（存量）。
+                _okinds = ("orphan", "orphan_stale")
                 _prev_orphans = [
                     n for n in (prev.get("qualityNotices") or [])
-                    if isinstance(n, dict) and str(n.get("kind") or "") == "orphan"
+                    if isinstance(n, dict) and str(n.get("kind") or "") in _okinds
                 ]
                 _cur = list(got.get("qualityNotices") or [])
                 if _prev_orphans and not any(
-                    isinstance(n, dict) and str(n.get("kind") or "") == "orphan"
+                    isinstance(n, dict) and str(n.get("kind") or "") in _okinds
                     for n in _cur
                 ):
                     got = {**got, "qualityNotices": _cur + _prev_orphans}

@@ -2609,9 +2609,17 @@ def _after_write_hint(state: V5SessionState) -> str:
     # 没有——用户那道题的第 1 条「老人全景档案」进不去就是这个形状。
     # （权限这一类的孤岛规则本身也是 2026-09-05 才补的，见 app_graph
     #   _ORPHAN_RULES：在那之前图上根本看不见它。）
+    # ⚠ 两种 kind 都要收：`orphan`（本次新产生）与 `orphan_stale`（上一版就有）。
+    #   只收前者的后果在真机上验到了（2026-09-05 融媒体 sr-20260904195810）：
+    #   pages/structure/bind 那一跳报了 3 个新孤岛，紧接着的精修跳报的是
+    #   「存量孤岛 2 个」——kind 变成 orphan_stale，过滤器认不出，于是
+    #   `_cache_spec_first_pages` 的保留逻辑判定"这一跳跑了 bind 且没有孤岛"，
+    #   把上一跳的 3 条清了。**存量孤岛照样是用户点不进去的动作**，
+    #   不是"已经处理过"的意思。
+    _ORPHAN_KINDS = ("orphan", "orphan_stale")
     _orphans = [
         n for n in ((_sfp(state).get("qualityNotices")) or [])
-        if isinstance(n, dict) and str(n.get("kind") or "") == "orphan"
+        if isinstance(n, dict) and str(n.get("kind") or "") in _ORPHAN_KINDS
     ]
     if _orphans:
         _head = "；".join(str(n.get("text") or "")[:120] for n in _orphans[:2])
