@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from models.v5_state import V5SessionState, ExecuteCapabilityResult
 from .rag_service import retrieve_evidence, generate_with_rag
-from .capability_plan import CapabilityPlan, factory_todo_blockers
+from .capability_plan import CapabilityPlan, factory_todo_blockers, merge_factory_todo
 from .closed_tools import FACTORY_HOPS, hop_from_factory_capability
 from .workflow_journal import (
     JournalError,
@@ -1161,6 +1161,39 @@ def _cache_spec_first_pages(state: "V5SessionState") -> None:
                     **got,
                     "assumptionsConfirmed": prev["assumptionsConfirmed"],
                 }
+        # ── 销账：按**实际跑了什么**划，不按选材器 stamp 了什么 ─────────
+        #
+        # ⚠ 2026-09-04 真机 sr-20260904103406（建材市场）：待办**只进不出**。
+        #   模型把 structure/bind 延后 → 进账（对）；后续 host hop 一跳一件
+        #   把两件都跑完了——ask 卡原话「权限与工作流绑定已完成（2个角色、
+        #   9项权限、4个工作流节点已挂载至5个页面）」——而 `factoryTodo`
+        #   仍是 ["structure","bind"]。
+        #
+        #   病灶：销账写在 v5_full_driver 的 `_record_factory_todo(ran=_stamped)`，
+        #   而那一处**只在选材器出了提案并 stamp 时才执行**。控制面一跳一件
+        #   的 host hop 不走那条分支，于是活干了、账没销。
+        #
+        #   后果是复合的：账不清 → 闭环永远挂 CLOSURE_FACTORY_TODO_OPEN
+        #   → 合格证发不出；而首轮"没做完"的判定也永远为真。
+        #
+        #   挂在这里是因为**这是每一跳都会经过的唯一落库口**（host hop、
+        #   首轮链、精修轮都走 take_last_pages），而 capabilityPlan.tools
+        #   是流水线自己写的"这一跳真正跑了哪几件"。
+        try:
+            # ⚠ 顶层 import，不写函数体里：架构闸把函数体 import 算成
+            #   「逃生口」且只许变少（CLAUDE.md 架构边界那节）。第一版写在
+            #   这里，三条架构判据当场红。
+            _ran = list(((got.get("capabilityPlan") or {}).get("tools")) or [])
+            if _ran and getattr(state, "factoryTodo", None):
+                _before = list(getattr(state, "factoryTodo", None) or [])
+                state.factoryTodo = list(merge_factory_todo(_before, ran=_ran))
+                if list(state.factoryTodo) != _before:
+                    print(
+                        f"[factory-todo] 跑掉 {','.join(_ran)} → "
+                        f"账上剩 {','.join(state.factoryTodo) or '（空）'}"
+                    )
+        except Exception as exc:  # noqa: BLE001 — 销账失败不许拖垮落库
+            print(f"[factory-todo] 销账跳过：{str(exc)[:120]}")
         state.specFirstPages = got
         print(
             f"[v5_capability_executor] spec-first 页面落库："
