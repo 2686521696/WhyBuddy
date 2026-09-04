@@ -55,7 +55,7 @@
 
 import React from "react";
 
-import type { BaseComponentDef } from "./base-catalog";
+import type { BaseComponentDef } from "./base-catalog-types";
 import {
   CodeEditor,
   ExcelExportButton,

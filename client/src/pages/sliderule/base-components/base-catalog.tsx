@@ -107,47 +107,16 @@ import { MOBILE_BASE_COMPONENTS } from "./base-catalog-mobile";
 import { PRO_BASE_COMPONENTS } from "./base-catalog-pro";
 import { CUSTOM_BASE_COMPONENTS } from "./base-catalog-custom";
 
-/** 官方分组（antd 的 index.zh-CN.md 里那个 group 字段） */
-export type BaseGroup = "通用" | "布局" | "导航" | "数据录入" | "数据展示" | "反馈" | "其他";
+import type {
+  BaseComponentDef,
+  BaseGroup,
+  BasePlatform,
+  BaseSource,
+} from "./base-catalog-types";
 
-export type BasePlatform = "pc" | "mobile";
-
-/**
- * 这个组件是**哪儿来的**（2026-08-08）。
- *
- * 此前目录里只有 antd 与 antd-mobile，来源不言自明所以没有这一栏。加它是因为
- * 用户提了一句要害的话：「基础组件是不是可以增加一项『自定义组件』」。
- *
- * 查了一遍供给才发现这一栏早就该有了：
- *
- *     antd（桌面）        库里 78 个，目录收了 67 —— **基本到顶**
- *     antd-mobile（手机）  库里 83 个，目录收了 72 —— 也基本到顶
- *     pro-components      库里 118 个，目录收了 1  —— **已经装着，几乎没登记**
- *     自定义（非组件库）    ECharts 一个，一直混在里面没标出来
- *
- * pro-components 那 117 个是最扎眼的一条：区块渲染器天天在用（ProTable /
- * 35 个 ProForm* / ProCard / DrawerForm / StepsForm 全在跑），但目录里没有，
- * 于是**AI 组装区块时看不见它们**。这跟"139 个里 118 个没被区块用上"是同一个
- * 病的反面——那边是登记了没人用，这边是用着却没登记。
- *
- * 标出来之后，"下一个量级从哪来"这个问题在界面上就能直接看见答案。
- */
-export type BaseSource = "antd" | "antd-mobile" | "pro-components" | "custom";
-
-export interface BaseComponentDef {
-  /** 组件名，与官方一致（Input / DatePicker…） */
-  name: string;
-  /** 中文名，官方 subtitle */
-  label: string;
-  /** 一句话说明，官方 description 的精简版 */
-  description: string;
-  group: BaseGroup;
-  platform: BasePlatform;
-  /** 出处。不填按 antd / antd-mobile 推（见 BASE_COMPONENTS 的组装处）。 */
-  source?: BaseSource;
-  /** 通用示例。**不带业务数据**——出现"订单""门店"就是滑回业务积木那层了 */
-  render: () => React.ReactNode;
-}
+// 类型挪到 `base-catalog-types.ts`（叶子），这里 re-export 保持对外 API 不变。
+// 三个变体改从叶子取，环就断了。
+export type { BaseComponentDef, BaseGroup, BasePlatform, BaseSource };
 
 // ── 示例用的中性数据 ───────────────────────────────────────────────
 // 刻意用「选项一 / 甲 / 乙」这种没有行业色彩的词。写成"华东大区""待审核"

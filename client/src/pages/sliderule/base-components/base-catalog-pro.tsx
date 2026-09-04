@@ -99,7 +99,7 @@ import {
   WaterMark,
 } from "@ant-design/pro-components";
 
-import type { BaseComponentDef } from "./base-catalog";
+import type { BaseComponentDef } from "./base-catalog-types";
 
 /**
  * ProFormUploadButton 的类型漏了一层 forwardRef。

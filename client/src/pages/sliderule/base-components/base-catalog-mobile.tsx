@@ -102,7 +102,7 @@ import {
   TreeSelect,
   WaterMark,
 } from "antd-mobile";
-import type { BaseComponentDef } from "./base-catalog";
+import type { BaseComponentDef } from "./base-catalog-types";
 
 /**
  * 窄壳。手机组件必须在手机宽度里看才是它真实的样子——
