@@ -11,14 +11,14 @@
 | 包 | 模块数 |
 |---|---:|
 | agent-loop | 99 |
-| client | 1033 |
+| client | 1034 |
 | server | 579 |
 | services | 32 |
 | shared | 176 |
-| **合计** | **1919** |
+| **合计** | **1920** |
 
-边 5943 条，其中动态 import / require 307 条、
-类型 import 2221 条。
+边 5948 条，其中动态 import / require 307 条、
+类型 import 2224 条。
 
 ## component 依赖图
 
@@ -33,7 +33,7 @@ graph LR
   client-lib["client-lib<br/>175"]
   client-pages["client-pages<br/>74"]
   client-pages-autopilot["client-pages-autopilot<br/>191"]
-  client-pages-sliderule["client-pages-sliderule<br/>261"]
+  client-pages-sliderule["client-pages-sliderule<br/>262"]
   client-runtime["client-runtime<br/>16"]
   client-shell["client-shell<br/>36"]
   lobster-executor["lobster-executor<br/>32"]
