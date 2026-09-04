@@ -1743,9 +1743,25 @@ def run_spec_first(
         and not (design_system or "").strip()
     ):
         _do_design = True
-    if not _do_design:
-        pass
-    elif (design_system or "").strip():
+    # ⚠ 2026-09-04 真机（慢病随访 sr-20260904000148 + 共享工具房 sr-20260903234956）：
+    #   **复用不许挂在 `_do_design` 后面**。第一版写成 `if not _do_design: pass`
+    #   打头，于是「一跳一件」的精修（`capabilityPlan tools=pages`，展开里没有
+    #   design）连复用分支都够不着：`reuse_style_brief` / `reuse_language` 明明
+    #   传进来了，`style_brief` 和 `design_language` 却一路是 None，
+    #   第 3.5 步 `resolve_theme_language(None, None, "")` 退回缺省蓝——
+    #
+    #       首轮 design=llm → shell themePrimary=#1a535c（医疗青绿）
+    #       精修 单跳       → shell themePrimary=#2563eb（缺省蓝）
+    #
+    #   用户只说「把随访列表改成看板视图」，整个应用的配色被换掉，
+    #   而且 unify_shell 拿新色重刷每一页 → 日志说「3/4 页原样沿用」，
+    #   交付物却是 4 页全变。两个会话各复现一次。
+    #   流水线自己那句「复用上一版风格段，不重新生成」在真机日志里
+    #   **一次都没出现过**，正是它够不着的证据。
+    #
+    #   `_do_design` 管的是**要不要现生成**（那才费 LLM）；复用是零 LLM 的
+    #   赋值，只要上游给了就该认。两件事分开。
+    if (design_system or "").strip():
         pass  # 人直接给了散文，最高优先，连生成带复用一起跳过
     elif reuse_style_brief and style_brief_ok(
         reuse_style_brief, [str(p.get("id")) for p in spec_pages_declared_objs]
@@ -1760,6 +1776,8 @@ def run_spec_first(
         # ⚠ 零 LLM、瞬时完成，**不进进度线**——照 specfirst.shell 那条：
         #   start/end 背靠背发出去只会在左侧闪一下。
         print("[spec_first_pipeline] 复用上一版设计语言，不重新生成")
+    elif not _do_design:
+        pass
     else:
         raise_if_cancelled("第2.5步 定设计语言")
         with _stage("specfirst.design") as st:
