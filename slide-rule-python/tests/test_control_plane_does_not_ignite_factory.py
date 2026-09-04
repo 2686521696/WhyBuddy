@@ -124,8 +124,18 @@ def test_control_plane_failure_canned_no_helper(harness):
     _, events = harness.post(six_fields(sid, "随便聊聊"))
     assert harness.helper_calls == []
     texts = [e.get("text") for e in events if e.get("type") == "control_text"]
-    assert CANNED_FAILURE in texts
+    # ⚠ 2026-09-05：这里原先钉死 `CANNED_FAILURE` 那句字面量。网关不可用的
+    #   回话改成说实话之后（不再套开场罐头「说一个要做的应用」，见
+    #   test_stop_reason_does_not_blame_the_user.py 的事故记录），这条就红了
+    #   ——而它想守的事（控制面炸了不许叫 helper、不许点火）一个字没变。
+    #   改成读 `_STOP_TABLE` 这个唯一出口：措辞再改也不用回来改判据，
+    #   而"这条路不走停因表了"照样红。
+    from services.rehearsal_control import ControlStopReason, _STOP_TABLE
+
+    assert _STOP_TABLE[ControlStopReason.LLM_UNAVAILABLE][1] in texts
     assert "control_handoff_factory" not in event_types(events)
+    # 顺带钉住这次修复：别再回到"叫用户说一个要做的应用"
+    assert not any("说一个要做的应用" in (t or "") for t in texts)
 
 
 def test_comment_stripped_control_plane_has_no_drive_reasoning_session():
