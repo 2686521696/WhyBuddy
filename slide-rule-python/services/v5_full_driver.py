@@ -2519,10 +2519,27 @@ async def drive_full_v5_session_stream(
                         # 工厂节点 pick 只 stamp 公开工具，不替换 runtimeClosure。
                         # 把 spec/pages 塞进 execute_v5_capability 会当成生词能力跑。
                         try:
+                            # 首轮链上「数据模型 / 权限工作流 / 绑定」是产品
+                            # 裁决，不是模型可选项——把它当地板传下去
+                            # （见 clip_factory_tools 的 floor 头注：真机
+                            # sr-20260904041125 第 2 跳模型刚把它摘过）。
+                            #
+                            # ⚠ 只在**首轮链**上垫地板：
+                            #   · 一跳一件是用户自己点的，他点 pages 就只画
+                            #     pages，垫地板等于替他改主意；
+                            #   · 精修轮不重跑产出链；
+                            #   · pages-preview 这类别的配方有自己的合同。
+                            #   这三种情况模型的减菜权原样保留。
+                            _floor = (
+                                _factory_legal
+                                if (profile == "app" and _first_pass_chain(state))
+                                else None
+                            )
                             _stamped = clip_factory_tools(
                                 _proposal["picks"],
                                 _factory_legal,
                                 refine=skip_planning_loop_for_refine(repair=repair),
+                                floor=_floor,
                             )
                         except FactoryToolsRefused:
                             print(

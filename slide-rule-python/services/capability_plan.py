@@ -112,6 +112,7 @@ def clip_factory_tools(
     legal: Optional[Iterable[str]] = None,
     *,
     refine: bool = False,
+    floor: Optional[Iterable[str]] = None,
 ) -> Tuple[str, ...]:
     """规划器只能在 legal 里减菜，不能发明、不能换序。
 
@@ -119,6 +120,31 @@ def clip_factory_tools(
     前者回落 legal（范围卡那份）；后者拒绝——回落菜单会把一跳一件
     装回不通电的插座（2026-09-02 真机 capabilityPlan=product-rehearsal
     一口气跑完全链）。
+
+    ## floor：产品裁决写进边界，不指望模型自觉（2026-09-04）
+
+    `FIRST_PASS_TOOLS` 上面钉着一条用户裁决：
+
+        2026-09-03 用户（团子）：一跳一停手点 structure/bind，画布块之间的
+        关联关系看不见。**首轮必须把数据模型、权限工作流、绑定做完。**
+
+    节点内 ReAct 通电（v5_full_driver 那个剖面排除去掉）之后，真机
+    sr-20260904041125 第 2 跳模型就把它摘了：
+
+        规则给的 pages,structure,bind → 模型选的 pages
+        理由：聚焦页面绘制与视觉原型，跳过数据实体建模与权限工作流打孔
+
+    那一趟终态没坏（19 节点、6/6 bound），但**不是因为有护栏，是因为后面
+    又跳了两次、控制面 LLM 恰好把 structure 捡了回来**。用户在页面出来那一刻
+    收手，拿到的就是一份没绑定的原型——正是团子那条抱怨。
+
+    ⚠ 病根不只是「少做一件」，是**减菜会把首轮链的身份抹掉**：
+      stamp 成 `['pages']` 之后 `is_first_pass_chain` 变 False（len < 2），
+      「首轮必须做完」这条不变量连载体都没了，后面全靠运气。
+
+    所以 floor 里的工具**只要 legal 里有，就必须留在结果里**。模型在首轮链上
+    因此没有减菜空间——这是产品裁决本来就没留空间，不是护栏过严；它的自由
+    仍在一跳一件、pages-preview 这类别的配方、以及精修轮上。
     """
     legal_chosen = normalize_tools(legal)
     if proposed is None:
@@ -139,6 +165,20 @@ def clip_factory_tools(
             raise FactoryToolsRefused("提案全不合法，拒绝回落整份菜单")
         else:
             chosen = tuple(name for name in TOOLS if name in seen)
+    # 产品裁决兜底：floor ∩ legal 一件都不许少。放在补根之前——
+    # 补根那条会看 len(chosen)，先把地板垫上，判断的才是最终清单。
+    # ⚠ 不许走 normalize_tools：它「空 / 全是生词 → 默认全开」（见其头注），
+    #   于是 floor=None / () 会被当成「五件全是地板」，把一跳一件也强行补成
+    #   整条链。本文件第一版就栽在这，是下面三条反向判据逮出来的：
+    #   `clip_factory_tools([pages], (pages,structure,bind))` 本该原样返回
+    #   ('pages',)，实测返回了 ('spec','pages','structure','bind')。
+    _floor_raw = tuple(str(item).strip() for item in (floor or ()) if str(item or "").strip())
+    floor_chosen = tuple(
+        name for name in TOOLS if name in set(_floor_raw) and name in legal_chosen
+    )
+    if floor_chosen:
+        kept = set(chosen) | set(floor_chosen)
+        chosen = tuple(name for name in TOOLS if name in kept)
     # 多件菜单漏了 spec 就补根。单跳（len==1）看会话前置，不在菜单里塞
     # spec——否则 ['bind'] 进 run_spec_first 没有 SPEC 直接抛（建设单 O-4）。
     # 空会话单跳由 _factory_hop_blocker 说人话。
