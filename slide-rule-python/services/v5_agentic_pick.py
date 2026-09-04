@@ -27,7 +27,12 @@ from typing import Any, Optional
 
 from models.v5_state import V5SessionState
 from sliderule_llm.config import default_max_tokens
-from services.capability_plan import TOOL_LABELS, TOOLS, normalize_tools
+from services.capability_plan import (
+    TOOL_LABELS,
+    TOOLS,
+    factory_todo_open,
+    normalize_tools,
+)
 from services.subagent_tasks import clip_task_requests, digest_lines as subagent_digest_lines
 
 # ── V5.2 能力词表（与 slide_rule_session.pick_next_capabilities 的产出
@@ -240,6 +245,30 @@ def _state_digest(state: V5SessionState, user_text: str, loop_index: int, max_lo
     sub = subagent_digest_lines(state)
     if sub:
         lines.append("【只读取料】" + "；".join(sub))
+    # 待办要给决策者看见 —— 否则记了账也白记。
+    #
+    # ⚠ 2026-09-04 真机 sr-20260904103406：会话待办挂着 structure/bind，
+    #   用户说「继续，把还没做的补上」，模型提案却是整条
+    #   spec,pages,structure,bind —— 把已有的 5 页 SPEC 重起草成 3 页
+    #   （stage=specfirst.spec pages=3 nodes=11），页面落库 0 份。
+    #
+    #   查下来 `factoryTodo` 在本文件里**一次都没出现**：摘要只有
+    #   【目标】【健康产物】【未答问题】【覆盖缺口】【只读取料】。
+    #   账记下来了、销账也修好了，但**账从来没给做决定的人看过**，
+    #   模型每次都从零重新规划，重画整份 SPEC 是它能想到的最合理动作。
+    #
+    #   这是「装好了但没通电」的第三种形态（信息对模型不可见）第二次发作：
+    #   上一次是派工提示词只写禁令不写触发条件。
+    todo = factory_todo_open(getattr(state, "factoryTodo", None))
+    if todo:
+        labels = dict(TOOL_LABELS)
+        lines.append(
+            "【首轮待办】"
+            + "、".join(f"{labels.get(t, t)}({t})" for t in todo)
+            + " —— 这几件是上一跳延后的，还欠着。"
+            "账不清完首轮就不算做完，闭环也发不出合格证。"
+            "优先把它们补上，别重画已经有的东西。"
+        )
     lines.extend(_history_lines(state))
     return "\n".join(lines)
 
