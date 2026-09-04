@@ -110,14 +110,19 @@ export function CanvasBlockPanel({
 
   return (
     <div
-      className="flex h-full w-[320px] shrink-0 flex-col gap-3 overflow-y-auto border-l border-stone-200 bg-white p-3 text-[12px]"
+      className="flex h-full w-[280px] shrink-0 flex-col overflow-hidden border-l border-[#e8eaed] bg-white text-[12px]"
       data-testid="sliderule-canvas-block-panel"
       data-block-name={blockName}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="truncate font-medium text-stone-800">
-            {kindLabel}·{blockName}
+      <div className="flex shrink-0 items-start gap-2 border-b border-[#f0f1f3] px-3 py-2.5">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="shrink-0 rounded-md bg-[#f1f3f5] px-1.5 py-px text-[10px] font-medium text-stone-500">
+              {kindLabel}
+            </span>
+            <span className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.01em] text-stone-800">
+              {blockName}
+            </span>
           </div>
           <div className="truncate text-[11px] text-stone-400">
             {pageName}
@@ -130,48 +135,81 @@ export function CanvasBlockPanel({
         <button
           type="button"
           onClick={onClose}
-          className="rounded p-1 text-stone-400 hover:bg-stone-100"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-stone-400 transition hover:bg-[#f4f4f5] hover:text-stone-700"
           aria-label="关闭"
         >
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      <section data-testid="sliderule-block-panel-bindings">
-        <div className="mb-1 font-medium text-stone-600">这一块用到什么</div>
+      <div className="min-h-0 flex-1 space-y-0 overflow-y-auto [scrollbar-width:thin]">
+      <section className="border-b border-[#f0f1f3] px-3 py-3" data-testid="sliderule-block-panel-bindings">
+        <div className="mb-2 text-[11px] font-medium tracking-[0.02em] text-stone-400">
+          这一块用到什么
+        </div>
         {hasAnyBinding ? (
-          <ul className="space-y-0.5 text-stone-500">
+          <div className="space-y-2">
             {bindings!.fields.length > 0 ? (
-              <li>字段 {bindings!.fields.join("、")}</li>
+              <div>
+                <div className="mb-1 text-[10px] text-stone-400">字段</div>
+                <div className="flex flex-wrap gap-1">
+                  {bindings!.fields.map(f => (
+                    <span
+                      key={f}
+                      className="rounded-md bg-[#f4f6f8] px-1.5 py-0.5 font-mono text-[10px] text-stone-600"
+                    >
+                      {f}
+                    </span>
+                  ))}
+                </div>
+              </div>
             ) : null}
             {bindings!.actions.length > 0 ? (
-              <li>动作 {bindings!.actions.join("、")}</li>
+              <div>
+                <div className="mb-1 text-[10px] text-stone-400">动作</div>
+                <div className="flex flex-wrap gap-1">
+                  {bindings!.actions.map(a => (
+                    <span
+                      key={a}
+                      className="rounded-md bg-[#f4f6f8] px-1.5 py-0.5 font-mono text-[10px] text-stone-600"
+                    >
+                      {a}
+                    </span>
+                  ))}
+                </div>
+              </div>
             ) : null}
             {bindings!.navTargets.length > 0 ? (
-              <li>跳转 {bindings!.navTargets.join("、")}</li>
+              <div className="text-[11px] leading-4 text-stone-500">
+                跳转 {bindings!.navTargets.join("、")}
+              </div>
             ) : null}
             {bindings!.assets.length > 0 ? (
-              <li>素材 {bindings!.assets.length} 张</li>
+              <div className="text-[11px] leading-4 text-stone-500">
+                素材 {bindings!.assets.length} 张
+              </div>
             ) : null}
-          </ul>
+          </div>
         ) : (
           /* ⚠ 「没接数据」是结论，不是空白。见文件头注那条。 */
-          <div className="text-stone-400">没接数据（纯视觉块）</div>
+          <div className="text-[11px] text-stone-400">没接数据（纯视觉块）</div>
         )}
       </section>
 
-      <section data-testid="sliderule-block-panel-impact">
-        <div className="mb-1 font-medium text-stone-600">改了它谁跟着变</div>
+      <section className="border-b border-[#f0f1f3] px-3 py-3" data-testid="sliderule-block-panel-impact">
+        <div className="mb-2 text-[11px] font-medium tracking-[0.02em] text-stone-400">
+          改了它谁跟着变
+        </div>
         {real.length === 0 && sameField.length === 0 ? (
-          <div className="text-stone-400">无影响（没有别的块跟它相关）</div>
+          <div className="text-[11px] text-stone-400">无影响（没有别的块跟它相关）</div>
         ) : (
-          <div className="space-y-1">
+          <div className="space-y-2">
             {real.length > 0 ? (
-              <div>
-                <div className="text-[11px] text-orange-700">
+              <div className="rounded-lg border border-[#f3e6d8] bg-[#fdf8f3] px-2 py-1.5">
+                <div className="text-[11px] font-medium text-[#b45309]">
                   真联动 · 运行时跟着变（{real.length}）
                 </div>
-                <div className="text-stone-500">
+                <div className="mt-0.5 text-[11px] leading-4 text-stone-600">
                   {real.map(labelOfKey).join("、")}
                 </div>
               </div>
@@ -183,7 +221,7 @@ export function CanvasBlockPanel({
                 <div className="text-[11px] text-stone-400">
                   同源字段 · 改数据模型才一起变（{sameField.length}）
                 </div>
-                <div className="text-stone-400">
+                <div className="mt-0.5 text-[11px] leading-4 text-stone-400">
                   {sameField.map(labelOfKey).join("、")}
                 </div>
               </div>
@@ -191,12 +229,15 @@ export function CanvasBlockPanel({
           </div>
         )}
       </section>
+      </div>
 
-      <section className="mt-auto space-y-2">
-        <div className="font-medium text-stone-600">重写这一块</div>
+      <section className="mt-auto shrink-0 space-y-2 border-t border-[#f0f1f3] p-3">
+        <div className="text-[11px] font-medium tracking-[0.02em] text-stone-400">
+          重写这一块
+        </div>
         {canEdit ? null : (
           /* 如实说原因，不把按钮藏起来——藏起来用户只会觉得功能没了。 */
-          <div className="rounded bg-amber-50 p-2 text-[11px] text-amber-700">
+          <div className="rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] text-amber-700">
             这个会话还没存成应用，先跑完一轮推演再改。
           </div>
         )}
@@ -207,14 +248,14 @@ export function CanvasBlockPanel({
           rows={3}
           placeholder="比如：把状态列换成彩色徽标，其余不动"
           data-testid="sliderule-block-panel-instruction"
-          className="w-full resize-none rounded border border-stone-200 p-2 text-[12px] outline-none focus:border-[#1677ff] disabled:bg-stone-50"
+          className="w-full resize-none rounded-lg border border-[#e8eaed] bg-[#f7f8fa] p-2 text-[12px] leading-5 text-stone-700 outline-none transition focus:border-stone-300 focus:bg-white disabled:opacity-60"
         />
         <button
           type="button"
           onClick={run}
           disabled={!canEdit || busy || !instruction.trim()}
           data-testid="sliderule-block-panel-rewrite"
-          className="flex w-full items-center justify-center gap-1 rounded bg-[#1677ff] py-1.5 text-white disabled:bg-stone-200 disabled:text-stone-400"
+          className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-stone-900 text-[12px] font-medium text-white transition hover:bg-stone-800 disabled:bg-[#eceef1] disabled:text-stone-400"
         >
           {busy ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -257,7 +298,7 @@ export function CanvasBlockPanel({
                 }}
                 disabled={busy}
                 data-testid="sliderule-block-panel-save"
-                className="rounded bg-[#1677ff] px-2 py-1 text-white disabled:bg-stone-300"
+                className="rounded-lg bg-stone-900 px-2.5 py-1 text-white disabled:bg-stone-300"
               >
                 保存这一页
               </button>

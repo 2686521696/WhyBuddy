@@ -80,6 +80,18 @@ export const STAGE_FRAME_SHADOW =
 export const STAGE_FRAME_FLAT = "0 0 0 1px rgba(15,23,42,0.08)";
 
 /**
+ * 画布浮层 chrome（读数 / 缩放条 / 小地图）。
+ *
+ * 2026-09-04：用户指了截图上四处，要 Stitch / Figma 那种**浮着的药丸**——
+ * 四角全圆、浅描边、近距投影、离开边 12px。不是贴边切一角的 `rounded-tr-lg`。
+ * ⚠ 只给 chrome，不给画板：画板仍用 STAGE_FRAME_FLAT（平铺一排时投影会糊）。
+ */
+export const CANVAS_CHROME_SHADOW =
+  "0 0 0 1px rgba(15,23,42,0.06)," +
+  "0 1px 2px rgba(15,23,42,0.05)," +
+  "0 8px 20px -6px rgba(15,23,42,0.12)";
+
+/**
  * 手机档：机身黑边本身就是边界，不需要 ring，只把单层换成分层。
  * 原值 `0 18px 40px rgba(15,23,42,0.28)` —— 色相已经是对的，只是没分层。
  */

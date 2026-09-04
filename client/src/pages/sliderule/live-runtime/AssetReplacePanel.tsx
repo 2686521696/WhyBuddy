@@ -121,7 +121,7 @@ export function AssetReplacePanel({
 
   return (
     <aside
-      className="flex h-full w-[300px] shrink-0 flex-col overflow-hidden rounded-md border border-[#e9edf2] bg-white"
+      className="flex h-full w-[280px] shrink-0 flex-col overflow-hidden border-l border-[#e8eaed] bg-white"
       data-testid="sliderule-asset-replace"
       data-asset-url={asset.url}
       data-use-groups={groups.length}

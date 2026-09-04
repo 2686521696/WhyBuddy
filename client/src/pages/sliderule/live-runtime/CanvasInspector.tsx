@@ -60,8 +60,8 @@ function Row({
   children: React.ReactNode;
 }): React.ReactElement {
   return (
-    <section className="border-t border-[#f0f1f3] px-3 py-2.5 first:border-t-0">
-      <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-stone-500">
+    <section className="border-t border-[#f0f1f3] px-3 py-3 first:border-t-0">
+      <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium tracking-[0.02em] text-stone-400">
         {icon}
         {title}
       </div>
@@ -92,12 +92,12 @@ export function CanvasInspector({
 }: CanvasInspectorProps): React.ReactElement {
   return (
     <aside
-      className="flex h-full w-[248px] shrink-0 flex-col overflow-hidden rounded-md border border-[#e9edf2] bg-white"
+      className="flex h-full w-[280px] shrink-0 flex-col overflow-hidden border-l border-[#e8eaed] bg-white"
       data-testid="sliderule-canvas-inspector"
       data-page-id={facts?.pageId ?? undefined}
     >
-      <div className="flex shrink-0 items-center gap-1.5 border-b border-[#f0f1f3] px-3 py-2">
-        <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-stone-700">
+      <div className="flex h-10 shrink-0 items-center gap-1.5 border-b border-[#f0f1f3] px-3">
+        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold tracking-[-0.01em] text-stone-800">
           {facts ? facts.name : "画板属性"}
         </span>
         <button
@@ -372,12 +372,12 @@ export function CanvasInspector({
       )}
 
       {facts ? (
-        <div className="shrink-0 space-y-1 border-t border-[#f0f1f3] p-2">
+        <div className="shrink-0 space-y-1.5 border-t border-[#f0f1f3] p-3">
           <button
             type="button"
             onClick={() => onOpenInPageView(facts.pageId)}
             data-testid="sliderule-canvas-inspector-open-page"
-            className="flex h-7 w-full items-center justify-center gap-1.5 rounded-md border border-[#e5e7eb] bg-white text-[11px] font-medium text-stone-600 transition hover:border-[#d3d8e0] hover:bg-[#f8f9fb]"
+            className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-[#e8eaed] bg-white text-[12px] font-medium text-stone-700 transition hover:bg-[#f7f8fa]"
             title="去页面档：那里有点选编辑（改元素）与透视"
           >
             <MousePointerClick className="h-3 w-3" />
@@ -387,7 +387,7 @@ export function CanvasInspector({
             type="button"
             onClick={() => onRegenerate(facts.pageId)}
             data-testid="sliderule-canvas-inspector-regenerate"
-            className="flex h-7 w-full items-center justify-center gap-1.5 rounded-md border border-[#e5e7eb] bg-white text-[11px] font-medium text-stone-600 transition hover:border-[#d3d8e0] hover:bg-[#f8f9fb]"
+            className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-[#e8eaed] bg-white text-[12px] font-medium text-stone-700 transition hover:bg-[#f7f8fa]"
             title="把这一页的重画指令填进输入框（只重画这一页，其余照搬）"
           >
             <RefreshCw className="h-3 w-3" />

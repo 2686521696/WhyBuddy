@@ -248,7 +248,7 @@ export function CanvasElementPanel({
        如实说清是哪一类，别只丢一句"出错了"。 */
     return (
       <aside
-        className="flex h-full w-[248px] shrink-0 flex-col overflow-hidden rounded-md border border-[#e9edf2] bg-white"
+        className="flex h-full w-[280px] shrink-0 flex-col overflow-hidden border-l border-[#e8eaed] bg-white"
         data-testid="sliderule-canvas-element-panel"
         data-page-id={picked.pageId}
         data-tag={picked.tag}
@@ -271,7 +271,7 @@ export function CanvasElementPanel({
 
   return (
     <aside
-      className="flex h-full w-[248px] shrink-0 flex-col overflow-hidden rounded-md border border-[#e9edf2] bg-white"
+      className="flex h-full w-[280px] shrink-0 flex-col overflow-hidden border-l border-[#e8eaed] bg-white"
       data-testid="sliderule-canvas-element-panel"
       data-page-id={picked.pageId}
       data-tag={picked.tag}

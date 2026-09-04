@@ -595,14 +595,13 @@ describe("⚠ 画布档的顶部不占高度：读数在左下，权限切换悬
      */
     const meta = STAGE.indexOf('data-testid="sliderule-canvas-meta"');
     expect(meta).toBeGreaterThan(-1);
-    // 正向：绝对定位、贴左下、压在画布上不吃事件
-    const box = STAGE.slice(meta - 400, meta);
+    // 正向：绝对定位、左下、压在画布上不吃事件
+    const box = STAGE.slice(meta - 500, meta);
     expect(box).toContain("absolute");
-    /* ⚠ 2026-08-28 用户裁决：「悬浮元素贴边，不要给往里的位移」。
-       变异：改回 left-3，这条红。 */
-    expect(box).toContain("left-0");
-    expect(box).not.toMatch(/\bleft-[1-9]/);
-    expect(box).toContain("bottom-");
+    /* ⚠ 2026-09-04：Figma/Stitch 浮药丸，内缩 12px。覆盖 08-28「贴边」。
+       变异：改回 left-0 / bottom-0，这条红。 */
+    expect(box).toContain("left-3");
+    expect(box).toContain("bottom-3");
     expect(box).toContain("pointer-events-none");
     // 反向：它必须在**画布宿主里面**（flowHostRef 那一层）而不是外层容器
     expect(meta).toBeGreaterThan(STAGE.indexOf("ref={flowHostRef}"));
@@ -630,7 +629,7 @@ describe("⚠ 画布档的顶部不占高度：读数在左下，权限切换悬
     expect(at).toBeGreaterThan(-1);
     const box = STAGE.slice(at - 300, at);
     // ⚠ 贴边，没有往里的位移（2026-08-28 用户裁决）。
-    expect(box).toContain("absolute right-0 top-0");
+    expect(box).toContain("absolute right-3 top-3");
     expect(box).not.toContain("pointer-events-none");
     expect(at).toBeGreaterThan(STAGE.indexOf("ref={flowHostRef}"));
   });
@@ -713,7 +712,7 @@ describe("⚠ 换会话回到默认档：偏好必须带着它属于谁（2026-0
   });
 });
 
-describe("⚠ 台面上的浮层一律贴边（2026-08-28 用户裁决）", () => {
+describe("⚠ 台面 chrome 是 Figma/Stitch 浮药丸（2026-09-04）", () => {
   const STAGE = stripComments(
     readFileSync(
       new URL("../live-runtime/SpecPageCanvasStage.tsx", import.meta.url),
@@ -721,26 +720,27 @@ describe("⚠ 台面上的浮层一律贴边（2026-08-28 用户裁决）", () =
     )
   );
 
-  it("四个角上的浮层都没有往里的位移", () => {
+  it("读数+缩放条叠在左下内缩，小地图右下内缩，权限右上内缩", () => {
     /*
-     * 用户原话：「悬浮元素贴边，不要给往里的位移」。四个都要，漏一个就是
-     * 三个贴边一个悬着——截图上一眼看得出，判据里却最容易只写一个。
+     * 用户截图指了四处，要 Stitch/Figma 那种离开边、四角全圆的浮层。
+     * 覆盖 2026-08-28「贴边不要往里位移」——那条会把药丸切成直角贴角。
      */
-    const cases: [string, RegExp][] = [
-      ["读数", /absolute bottom-\[[^\]]+\] left-0/],
-      ["缩放药丸", /absolute bottom-0 left-0/],
-      ["小地图", /!bottom-0 !right-0/],
-      ["权限切换", /absolute right-0 top-0/],
-    ];
-    for (const [name, re] of cases) expect(STAGE, name).toMatch(re);
+    expect(STAGE).toContain("absolute bottom-3 left-3");
+    expect(STAGE).toContain("!bottom-3 !right-3");
+    expect(STAGE).toContain("absolute right-3 top-3");
   });
 
-  it("反向：不许再有 bottom-3 / left-3 / right-3 / top-3 这类内缩", () => {
-    // 变异：任意一个改回去，这条红。
+  it("反向：不许再贴边切一角（rounded-tr / border-b-0 border-l-0）", () => {
     const overlays = STAGE.slice(STAGE.indexOf("ref={flowHostRef}"));
-    expect(overlays).not.toMatch(/absolute[^"]*\b(?:bottom|left|right|top)-3\b/);
-    expect(overlays).not.toContain("!bottom-3");
-    expect(overlays).not.toContain("!right-3");
+    expect(overlays).not.toContain("rounded-tr-lg");
+    expect(overlays).not.toContain("border-b-0 border-l-0");
+    expect(overlays).not.toContain("!bottom-0 !right-0");
+  });
+
+  it("浮层用同一份 CANVAS_CHROME_SHADOW，画板仍用平框", () => {
+    expect(STAGE).toContain("CANVAS_CHROME_SHADOW");
+    expect(STAGE).toContain("STAGE_FRAME_FLAT");
+    expect(STAGE).not.toContain("STAGE_FRAME_SHADOW");
   });
 
   it("⚠ 台面自己也不许再圆角（不然四个角把浮层各啃掉一块）", () => {

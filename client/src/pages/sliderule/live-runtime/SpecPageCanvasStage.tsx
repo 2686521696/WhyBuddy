@@ -81,6 +81,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   ImageOff,
+  Images,
   Link2,
   Maximize2,
   Minus,
@@ -95,7 +96,7 @@ import {
 import { HtmlAppSurface } from "./html-app-surface";
 import { specPageViewport } from "./canvas-scale";
 import { findDevicePreset, loadDevicePresetId } from "./device-presets";
-import { STAGE_FRAME_FLAT } from "./stage-frame-style";
+import { CANVAS_CHROME_SHADOW, STAGE_FRAME_FLAT } from "./stage-frame-style";
 import { elementPath, type PathStep } from "./element-path";
 import { blockIdentity, type BlockIdentity } from "./page-blocks";
 import { useBlockRects } from "./use-block-rects";
@@ -1226,10 +1227,13 @@ function AssetNode({ data }: NodeProps<Node<AssetData>>) {
    *   夹宽度只解决了"不重叠"，没解决"读得出来"。名字是识别用的，最后才能丢。
    */
   const compact = labelWidth < 170;
+  /* ⚠ 17% 缩放下 1/zoom ≈ 6，整颗「换图」会盖住卡片。Figma 缩略图
+     上的动作不跟着反缩放到比图还大——夹住上限，窄卡只留图标。 */
+  const btnScale = Math.min(labelScale, 2.15);
 
   return (
     <div
-      className="relative"
+      className="group/asset relative"
       /*
        * ⚠ 2026-08-25 用户报"换图点了没反应"，真机查出来的根因：
        *   素材节点建的时候写了 `selectable: false`，React Flow 据此给整个
@@ -1305,7 +1309,7 @@ function AssetNode({ data }: NodeProps<Node<AssetData>>) {
       </div>
 
       <div
-        className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-md border border-[#e9edf2] bg-white"
+        className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-xl bg-[#f7f8fa]"
         style={{ boxShadow: STAGE_FRAME_FLAT }}
         title={asset.url}
         onClick={e => {
@@ -1334,7 +1338,7 @@ function AssetNode({ data }: NodeProps<Node<AssetData>>) {
             src={asset.url}
             alt={asset.label}
             referrerPolicy="no-referrer"
-            className="h-full w-full object-contain p-3"
+            className="h-full w-full object-contain p-2"
             onLoad={e => {
               const el = e.currentTarget;
               if (el.naturalWidth && el.naturalHeight) {
@@ -1358,13 +1362,13 @@ function AssetNode({ data }: NodeProps<Node<AssetData>>) {
               ctx.onReplaceAsset?.(asset);
             }}
             style={{
-              transform: `scale(${labelScale})`,
-              transformOrigin: "top right",
+              transform: `scale(${btnScale})`,
+              transformOrigin: "bottom right",
             }}
-            className="absolute right-2 top-2 flex items-center gap-1 rounded bg-white/95 px-2 py-1 text-[11px] text-stone-600 shadow-sm ring-1 ring-stone-200 transition hover:text-[#1677ff] hover:ring-[#1677ff]"
+            className="absolute bottom-2 right-2 flex items-center gap-1 rounded-lg bg-white/95 px-1.5 py-1 text-[11px] font-medium text-stone-600 shadow-[0_1px_3px_rgba(15,23,42,0.12)] ring-1 ring-black/[0.06] transition hover:text-stone-900"
           >
             <RefreshCw className="h-3 w-3" />
-            换图
+            {compact ? null : "换图"}
           </button>
         ) : null}
       </div>
@@ -2754,39 +2758,28 @@ function CanvasInner({
                       ? "#1677ff"
                       : "#cbd5e1"
                 }
-                className="!bottom-0 !right-0 !h-[92px] !w-[148px] overflow-hidden rounded-tl-lg border border-b-0 border-r-0 border-[#e9edf2] !bg-white"
+                className="!bottom-3 !right-3 !h-[96px] !w-[152px] overflow-hidden !rounded-xl !border-0 !bg-white/95 ![box-shadow:0_0_0_1px_rgba(15,23,42,0.06),0_8px_20px_-6px_rgba(15,23,42,0.12)]"
               />
             </ReactFlow>
           </CanvasContext.Provider>
 
           {/*
-            ## 台面读数：左下角，压在画布上（2026-08-28 用户裁决）
+            ## 台面 chrome：Figma / Stitch 浮药丸（2026-09-04）
 
-            原来这些字是画板**上方**一条 shrink-0 的说明行。用户的话是
-            「画布模式下顶部信息显示在左下角，可以参考 comfyui 这种方式」。
+            读数仍在左下、仍不占布局高度（2026-08-28 ComfyUI 位置裁决还在）。
+            变的是**贴边切一角**→**内缩 12px、四角全圆、近距投影**。
+            用户截图指了四处（读数 / 缩放条 / 素材卡 / 右侧面板）。
 
-            ComfyUI 的做法（LGraphCanvas 的 `renderInfo`，画在左下角）：
-            一小块等宽数字，一行一项，压在画布上、不占任何布局高度。
-            它跟缩放药丸叠在一起，读数在上、控件在下。
-
-            ⚠ `pointer-events-none` 是**功能不是样式**：这块浮在画布上，
-              漏了它鼠标划过就把平移/框选的事件吃掉一片，而画面上完全看不出
-              这里有个透明盒子。同 ElementSpot 那条。
-
-            ⚠ 有一层浅底，**这一处跟 ComfyUI 不一样，是故意的**：它的画布是
-              深色且空的，裸字永远读得出；我们的台面上铺的是白色的页面卡片，
-              2026-08-28 真机 50% 那张截图上，这几行灰字正好压在一张表格上，
-              糊成一片。底色跟缩放药丸/小地图/toast 同一套（白 + 描边 +
-              backdrop-blur），画布上的浮层就该是同一种东西。
-
-            ⚠ 缩放百分比**不在这里重复**：正下方的药丸就是读数（还能点）。
-              两处显示同一个数，改了一处忘了另一处就会自相矛盾。
+            ⚠ `pointer-events-none` 是功能：漏了它鼠标划过就把平移吃掉。
+            ⚠ 缩放百分比不在读数里重复：正下方的药丸就是读数（还能点）。
           */}
+          <div className="absolute bottom-3 left-3 z-10 flex flex-col items-start gap-1.5">
           <div
-            className="pointer-events-none absolute bottom-[2.75rem] left-0 flex flex-col gap-0.5 rounded-r-lg border border-l-0 border-[#e9edf2] bg-white/85 px-2 py-1 font-mono text-[10px] leading-[1.35] tabular-nums text-stone-400 backdrop-blur"
+            className="pointer-events-none flex flex-col gap-0.5 rounded-xl bg-white/92 px-2.5 py-1.5 text-[11px] leading-[1.45] text-stone-500 backdrop-blur-md"
+            style={{ boxShadow: CANVAS_CHROME_SHADOW }}
             data-testid="sliderule-canvas-meta"
           >
-            <span>
+            <span className="font-mono tabular-nums text-stone-400">
               {design.w}×{design.h}
             </span>
             <span data-testid="sliderule-canvas-page-count">
@@ -2802,7 +2795,7 @@ function CanvasInner({
                 ) : null}
               </span>
             ) : null}
-            <span data-testid="sliderule-canvas-hint">
+            <span data-testid="sliderule-canvas-hint" className="text-stone-400">
               {linkFrom
                 ? "点另一块画板连上，Esc 取消"
                 : entered
@@ -2819,28 +2812,16 @@ function CanvasInner({
             </span>
           </div>
 
-          {/* 角色切换：浮在台面**右上角**（2026-08-28 用户裁决
-              「右上角的权限切换改为悬浮显示」）。它原来钉在说明行右端，
-              那一行整条撤掉之后它得自己找位置。
-              ⚠ 外层不能 pointer-events-none：这是要点的控件，不是读数。 */}
-          {metaTrailing ? (
-            <div
-              className="absolute right-0 top-0 z-10"
-              data-testid="sliderule-canvas-meta-trailing"
-            >
-              {metaTrailing}
-            </div>
-          ) : null}
-
-          {/* 缩放药丸：位置对齐 Figma/Stitch（画布左下角），读数可点=适应画布。 */}
+          {/* 缩放药丸：Figma/Stitch 浮条，读数可点=适应画布。 */}
           <div
-            className="absolute bottom-0 left-0 flex items-center gap-0.5 rounded-tr-lg border border-b-0 border-l-0 border-[#e9edf2] bg-white/95 p-1 shadow-sm backdrop-blur"
+            className="flex items-center gap-0.5 rounded-xl bg-white/95 p-1 backdrop-blur-md"
+            style={{ boxShadow: CANVAS_CHROME_SHADOW }}
             data-testid="sliderule-canvas-zoom"
           >
             <button
               type="button"
               onClick={() => flow.zoomOut({ duration: 160 })}
-              className="flex h-6 w-6 items-center justify-center rounded text-stone-500 transition hover:bg-[#f4f4f5] hover:text-stone-800"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-stone-500 transition hover:bg-[#f1f3f5] hover:text-stone-800"
               aria-label="缩小"
               title="缩小"
             >
@@ -2849,7 +2830,7 @@ function CanvasInner({
             <button
               type="button"
               onClick={fitAll}
-              className="min-w-[3.2rem] rounded px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-stone-600 transition hover:bg-[#f4f4f5]"
+              className="min-w-[3.2rem] rounded-lg px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-stone-600 transition hover:bg-[#f1f3f5]"
               data-testid="sliderule-canvas-zoom-readout"
               title="适应画布（看全所有页面）"
             >
@@ -2858,17 +2839,17 @@ function CanvasInner({
             <button
               type="button"
               onClick={() => flow.zoomIn({ duration: 160 })}
-              className="flex h-6 w-6 items-center justify-center rounded text-stone-500 transition hover:bg-[#f4f4f5] hover:text-stone-800"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-stone-500 transition hover:bg-[#f1f3f5] hover:text-stone-800"
               aria-label="放大"
               title="放大"
             >
               <Plus className="h-3.5 w-3.5" />
             </button>
-            <span className="mx-0.5 h-4 w-px bg-[#e9edf2]" aria-hidden />
+            <span className="mx-0.5 h-4 w-px bg-[#eceef1]" aria-hidden />
             <button
               type="button"
               onClick={fitAll}
-              className="flex h-6 w-6 items-center justify-center rounded text-stone-500 transition hover:bg-[#f4f4f5] hover:text-stone-800"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-stone-500 transition hover:bg-[#f1f3f5] hover:text-stone-800"
               aria-label="适应画布"
               title="适应画布"
             >
@@ -2895,7 +2876,7 @@ function CanvasInner({
                 复位
               </button>
             ) : null}
-            <span className="mx-0.5 h-4 w-px bg-[#e9edf2]" aria-hidden />
+            <span className="mx-0.5 h-4 w-px bg-[#eceef1]" aria-hidden />
             <button
               type="button"
               onClick={() => {
@@ -2930,7 +2911,7 @@ function CanvasInner({
                 }`}
                 title="页面引用到的图，摊在画板下方"
               >
-                <ImageOff className="h-3 w-3" />
+                <Images className="h-3 w-3" />
                 素材
                 <span className="font-mono tabular-nums">{assets.length}</span>
               </button>
@@ -2986,7 +2967,7 @@ function CanvasInner({
             </button>
             {activePageId && onOpenInPageView ? (
               <>
-                <span className="mx-0.5 h-4 w-px bg-[#e9edf2]" aria-hidden />
+                <span className="mx-0.5 h-4 w-px bg-[#eceef1]" aria-hidden />
                 <button
                   type="button"
                   onClick={() => onOpenInPageView(activePageId)}
@@ -3000,6 +2981,19 @@ function CanvasInner({
               </>
             ) : null}
           </div>
+          </div>
+
+          {/* 角色切换：浮在台面**右上角**（2026-08-28 用户裁决
+              「右上角的权限切换改为悬浮显示」）。
+              ⚠ 外层不能 pointer-events-none：这是要点的控件，不是读数。 */}
+          {metaTrailing ? (
+            <div
+              className="absolute right-3 top-3 z-10"
+              data-testid="sliderule-canvas-meta-trailing"
+            >
+              {metaTrailing}
+            </div>
+          ) : null}
 
           {/* 操作回执。⚠ 增强类是 fail-open，但**失败也要说话**：
               点了导出却什么都没下载，比报个错更让人以为是自己点错了。 */}
