@@ -1978,7 +1978,7 @@ def run_spec_first(
             except Exception as exc:  # noqa: BLE001 — 打块标是增强，不许拦画页
                 _safe_print(f"[spec_first_pipeline] ⚠ 块身份打标失败（不拦画页）：{str(exc)[:200]}")
 
-            shell_problems = check_shell_consistency(pages, spec)
+            shell_problems = check_shell_consistency(pages, spec, device=device)
             st["problems"] = len(shell_problems)
             for p in shell_problems[:3]:
                 print(f"[spec_first_pipeline] 外壳统一后仍不一致：{p['path']} — {p['message']}")
@@ -2333,7 +2333,7 @@ def run_spec_first(
                 _safe_print(f"[spec_first_pipeline] ⚠ 块身份重打失败（不拦）：{str(exc)[:200]}")
 
             # 还原之后再量一次：剩下的才是还原不了的（比如两页壳本来就不同源）。
-            drift = check_shell_consistency(pages, spec)
+            drift = check_shell_consistency(pages, spec, device=device)
             st["shellProblems"] = len(drift)
             for p in drift[:3]:
                 print(f"[spec_first_pipeline] 打孔后外壳漂移：{p['path']} — {p['message']}")

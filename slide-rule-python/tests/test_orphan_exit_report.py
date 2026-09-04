@@ -75,7 +75,7 @@ def _drive(monkeypatch, *, assembled_model, refine=False, reuse_model=None):
         lambda s, **kw: {"pages": {"p1": "<html>x</html>"}, "failed": {}},
     )
     monkeypatch.setattr(ps, "unify_shell", lambda p, s, **kw: {"pages": dict(p)})
-    monkeypatch.setattr(ps, "check_shell_consistency", lambda p, s: [])
+    monkeypatch.setattr(ps, "check_shell_consistency", lambda *a, **kw: [])
     monkeypatch.setattr(ps, "repair_pages_after_bind", lambda p, b, **kw: (dict(p), [], []))
     monkeypatch.setattr(hs, "derive_structure", lambda p, **kw: {"entities": [], "pages": []})
     monkeypatch.setattr(ss, "derive_semantics", lambda st, sp, **kw: {"roles": []})

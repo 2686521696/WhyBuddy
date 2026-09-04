@@ -67,11 +67,42 @@ def _strip_page_suffix(text: str) -> str:
     return text
 
 
-def nav_tab_label(name: str, app_name: str = "") -> str:
+def nav_tab_label(
+    name: str, app_name: str = "", *, strip_page_suffix: bool = False
+) -> str:
     """底栏标签只要短名。精修后 spec.pages.name 常被写成「产品名 - 某页」。
 
     ⚠ 不能见到 `` - `` 就 rsplit 取后半：真机有过「订单详情 - 团长帮」，
     一刀切会把标签变成产品名。只剥**前缀或后缀等于产品名**的那一截。
+
+    ## `strip_page_suffix`：剥不剥「页」看设备（2026-09-05）
+
+    去 GitHub 抄的标准答案，两边都亲自看过源码，不是凭语感：
+
+      · **手机**——`ant-design/ant-design-mobile`
+        `src/components/tab-bar/demos/demo1.tsx`：
+        `title: '首页' / '待办' / '消息' / '我的'`。2~4 字短名，除「首页」
+        （「页」是词的一部分）外**不带「页」**。这条本来就有真机事故背书：
+        2026-08-20 芸编智管，五项 × 390px，「页」单独折成第三行。
+
+      · **桌面**——`ant-design/ant-design-pro`
+        `src/locales/zh-CN/menu.ts`：`'menu.dashboard.analysis': '分析页'`、
+        `'menu.form': '表单页'`、`'menu.list': '列表页'`、
+        `'menu.profile': '详情页'`、`'menu.profile.basic': '基础详情页'`、
+        `'menu.result': '结果页'`、`'menu.exception': '异常页'`……
+        **14 项带「页」**。侧栏 `w-64`（256px）一行一项，放得下。
+        （不带「页」的是那些自带具体名词的：工作台 / 基础表单 / 查询表格。）
+
+    所以：**手机剥，桌面不剥**。此前不分设备一律剥，是把一个为 390px 底栏
+    挤出来的补丁套到了完全不缺地方的桌面侧栏上——还顺手把「挑战主页」
+    削成了「挑战主」。
+
+    ⚠ 剥**产品名前缀**那一半跟设备无关，两边都做：菜单项里重复一遍产品名
+      在哪个设备上都是废话。
+
+    ⚠ 默认 **False（不剥）**，手机那一路显式传 True。默认值刻意选保守的那一头：
+      少剥一个字最多是标签长一点，多剥一个字会把「挑战主页」削成「挑战主」
+      ——2026-09-05 真机就是这么出的事。忘记传参时，希望它落在不会毁词的那边。
     """
     text = str(name or "").strip()
     brand = str(app_name or "").strip()
@@ -85,4 +116,4 @@ def nav_tab_label(name: str, app_name: str = "") -> str:
             if text.endswith(suffix) and len(text) > len(suffix):
                 text = text[: -len(suffix)].strip()
                 break
-    return _strip_page_suffix(text)
+    return _strip_page_suffix(text) if strip_page_suffix else text

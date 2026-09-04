@@ -214,8 +214,11 @@ class Test移动壳统一:
         assert nav_tab_label("团长帮 - 核销首页", "团长帮") == "核销首页"
         assert nav_tab_label("订单详情 - 团长帮", "团长帮") == "订单详情"
         assert nav_tab_label("工单", "维保云") == "工单"
-        assert nav_tab_label("古籍列表页", "芸编智管") == "古籍列表"
-        assert nav_tab_label("档案页", "") == "档案"
+        # ⚠ 2026-09-05：剥「页」改成设备相关（手机剥、桌面不剥，标准答案见
+        #   page_naming.nav_tab_label 头注：antd-mobile TabBar 短名 vs
+        #   Ant Design Pro 菜单 14 项带「页」）。这是移动壳的判据，显式传手机口径。
+        assert nav_tab_label("古籍列表页", "芸编智管", strip_page_suffix=True) == "古籍列表"
+        assert nav_tab_label("档案页", "", strip_page_suffix=True) == "档案"
         assert nav_tab_label("首页", "维保云") == "首页"
         assert nav_tab_label("核销首页", "") == "核销首页"
 

@@ -1106,6 +1106,7 @@ def build_nav_items(
     current_page_id: str,
     *,
     app_name: str = "",
+    device: str = "desktop",
 ) -> str:
     """按 spec 的页面清单生成导航项。
 
@@ -1116,7 +1117,13 @@ def build_nav_items(
     icons = [i for i in templates["icons"] if i] or [""]
     out: List[str] = []
     for i, page in enumerate(spec_pages):
-        name = nav_tab_label(str(page.get("name") or page.get("id") or ""), app_name)
+        # 剥「页」只在手机做（标准答案见 page_naming.nav_tab_label 头注：
+        # antd-mobile TabBar 短名 vs Ant Design Pro 菜单 14 项带「页」）。
+        name = nav_tab_label(
+            str(page.get("name") or page.get("id") or ""),
+            app_name,
+            strip_page_suffix=(device == "phone"),
+        )
         is_current = str(page.get("id") or "") == current_page_id
         link = _set_class(
             templates["link"],
@@ -1564,7 +1571,9 @@ def _unify_shell_phone(pages_html: Dict[str, str], spec: Dict[str, Any]) -> Dict
             page_header = set_breadcrumb_root(page_header, app_name)
             html = _ensure_phone_header(html, page_header)
         if templates and nav_m:
-            items = build_nav_items(templates, spec_pages, page_id, app_name=app_name)
+            items = build_nav_items(
+                templates, spec_pages, page_id, app_name=app_name, device="phone"
+            )
             new_nav = re.sub(
                 r"(<nav\b[^>]*>)[\s\S]*(</nav>)",
                 lambda m: m.group(1) + "\n" + items + "\n" + m.group(2),
@@ -2386,7 +2395,7 @@ def _drift_fingerprint(part: str, part_html: str) -> str:
 
 
 def check_shell_consistency(
-    pages_html: Dict[str, str], spec: Dict[str, Any]
+    pages_html: Dict[str, str], spec: Dict[str, Any], *, device: str = "desktop"
 ) -> List[Dict[str, str]]:
     """判据：统一之后还剩几处不一致。**这是本模块存在的理由，别删。**
 
@@ -2512,7 +2521,11 @@ def check_shell_consistency(
     #   两侧共用同一把尺子（§4：成对的东西不许只改一半）。
     _app_for_nav = str(spec.get("appName") or "").strip()
     want = [
-        nav_tab_label(str(p.get("name") or p.get("id") or ""), _app_for_nav)
+        nav_tab_label(
+            str(p.get("name") or p.get("id") or ""),
+            _app_for_nav,
+            strip_page_suffix=(device == "phone"),
+        )
         for p in (spec.get("pages") or [])
     ]
     for pid, s in shells.items():

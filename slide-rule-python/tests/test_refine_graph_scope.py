@@ -418,7 +418,7 @@ def _drive_pipeline(monkeypatch, *, refine=True, reuse_model=None,
 
     monkeypatch.setattr(sph, "generate_pages_parallel", fake_pages)
     monkeypatch.setattr(ps, "unify_shell", lambda p, s, **kw: {"pages": dict(p)})
-    monkeypatch.setattr(ps, "check_shell_consistency", lambda p, s: [])
+    monkeypatch.setattr(ps, "check_shell_consistency", lambda *a, **kw: [])
     monkeypatch.setattr(ps, "repair_pages_after_bind", lambda p, b, **kw: (dict(p), [], []))
     monkeypatch.setattr(hs, "derive_structure", lambda p, **kw: {"entities": [], "pages": []})
     monkeypatch.setattr(ss, "derive_semantics", lambda st, sp, **kw: {"roles": []})

@@ -93,7 +93,7 @@ def _drive(monkeypatch, *, seed="page:p1", shortcircuit=True):
         "failed": {},
     })
     monkeypatch.setattr(ps, "unify_shell", lambda p, s, **kw: {"pages": dict(p)})
-    monkeypatch.setattr(ps, "check_shell_consistency", lambda p, s: [])
+    monkeypatch.setattr(ps, "check_shell_consistency", lambda *a, **kw: [])
     monkeypatch.setattr(ps, "repair_pages_after_bind", lambda p, b, **kw: (dict(p), [], []))
     monkeypatch.setattr(hs, "derive_structure", fake_structure)
     monkeypatch.setattr(ss, "derive_semantics", fake_sem)
@@ -161,7 +161,7 @@ def test_switch_off_falls_back_to_full_spec(monkeypatch):
         lambda spec, **kw: {"pages": {"p1": "<html>x</html>", "p2": "<html>y</html>"}, "failed": {}},
     )
     monkeypatch.setattr(ps, "unify_shell", lambda p, s, **kw: {"pages": dict(p)})
-    monkeypatch.setattr(ps, "check_shell_consistency", lambda p, s: [])
+    monkeypatch.setattr(ps, "check_shell_consistency", lambda *a, **kw: [])
     monkeypatch.setattr(ps, "repair_pages_after_bind", lambda p, b, **kw: (dict(p), [], []))
     monkeypatch.setattr(hs, "derive_structure", lambda p, **kw: {"entities": [], "pages": []})
     monkeypatch.setattr(ss, "derive_semantics", lambda *a, **k: {"roles": []})
@@ -212,7 +212,7 @@ def test_empty_segments_must_not_short_circuit(monkeypatch):
         lambda spec, **kw: {"pages": {"p1": "<html>x</html>", "p2": "<html>y</html>"}, "failed": {}},
     )
     monkeypatch.setattr(ps, "unify_shell", lambda p, s, **kw: {"pages": dict(p)})
-    monkeypatch.setattr(ps, "check_shell_consistency", lambda p, s: [])
+    monkeypatch.setattr(ps, "check_shell_consistency", lambda *a, **kw: [])
     monkeypatch.setattr(ps, "repair_pages_after_bind", lambda p, b, **kw: (dict(p), [], []))
     monkeypatch.setattr(hs, "derive_structure", lambda p, **kw: {"entities": [], "pages": []})
     monkeypatch.setattr(ss, "derive_semantics", lambda *a, **k: {"roles": []})

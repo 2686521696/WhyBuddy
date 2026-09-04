@@ -29,20 +29,31 @@ from services.page_naming import nav_tab_label
 class Test主页不是后缀:
     @pytest.mark.parametrize("name", ["挑战主页", "首页", "个人主页"])
     def test_主页首页原样保留(self, name):
-        assert nav_tab_label(name) == name, f"{name} 的「页」是词的一部分，不该剥"
+        """连**手机**上都不许剥——「页」是词的一部分，不是后缀。"""
+        assert nav_tab_label(name, strip_page_suffix=True) == name
 
     @pytest.mark.parametrize("name,want", [
         ("限时对局页", "限时对局"),
         ("战绩结算与历史页", "战绩结算与历史"),
         ("古籍列表页", "古籍列表"),
     ])
-    def test_真后缀照剥(self, name, want):
+    def test_手机上真后缀照剥(self, name, want):
         """★ 反向配对：别为了修一个词把整条规则关掉。
 
-        剥「页」这条规则本身是对的（2026-08-20 芸编智管：五项 × 390px，
-        「页」单独折成第三行）。
+        手机上剥「页」是对的，有真机事故背书（2026-08-20 芸编智管：
+        五项 × 390px，「页」单独折成第三行），也对得上 antd-mobile
+        TabBar 官方 demo 的短名（首页/待办/消息/我的）。
         """
-        assert nav_tab_label(name) == want
+        assert nav_tab_label(name, strip_page_suffix=True) == want
+
+    @pytest.mark.parametrize("name", ["工单详情页", "新建报修页", "分析页", "表单页"])
+    def test_桌面不剥(self, name):
+        """★ 标准答案：Ant Design Pro `src/locales/zh-CN/menu.ts` 里
+        分析页/表单页/列表页/详情页/结果页/异常页…**14 项带「页」**。
+        侧栏 w-64（256px）一行一项，放得下——那条剥「页」的补丁是为手机
+        390px 底栏挤出来的，不该套到桌面上。
+        """
+        assert nav_tab_label(name) == name
 
 
 class Test两侧同一把尺子:
@@ -86,7 +97,36 @@ class Test两侧同一把尺子:
     def test_一页名字带页时不再误报(self):
         """端到端：spec 里带「页」，渲染出来剥掉，两边仍应判一致。"""
         spec_names = ["挑战主页", "限时对局页", "战绩结算与历史页"]
-        rendered = [nav_tab_label(n) for n in spec_names]
-        want = [nav_tab_label(n) for n in spec_names]   # 检查侧同一把尺子
+        rendered = [nav_tab_label(n, strip_page_suffix=True) for n in spec_names]
+        want = [nav_tab_label(n, strip_page_suffix=True) for n in spec_names]
         assert rendered == want, "同一把尺子量两遍还不一样，那是尺子有随机性"
         assert rendered == ["挑战主页", "限时对局", "战绩结算与历史"]
+
+
+class Test替身别再被签名漂移打红:
+    """★ 今晚第二次栽在同一件事上（第一次是 `fake_bind`，2026-09-05 早些时候）。
+
+    `check_shell_consistency` 加了个 `device` 关键字参数，7 个判据文件里的
+    替身写的是 `lambda p, s: []` ——**62 条判据当场炸在 TypeError 上**，
+    一条真正的行为都没验到。产线是对的，红的全是替身。
+
+    替身收 `*a, **kw` 就没这回事。这条判据钉住它，免得第三次。
+    """
+
+    def test_替身都收变长参数(self):
+        import pathlib
+        import re
+
+        tests_dir = pathlib.Path(__file__).resolve().parent
+        bad = []
+        for f in tests_dir.glob("test_*.py"):
+            for m in re.finditer(
+                r'check_shell_consistency"?,\s*lambda\s+([^:]*):', f.read_text(encoding="utf-8")
+            ):
+                args = m.group(1).strip()
+                if "*" not in args:
+                    bad.append(f"{f.name}: lambda {args}")
+        assert not bad, (
+            f"这些 check_shell_consistency 的替身没收 *a/**kw，"
+            f"产线签名一变就集体炸 TypeError：{bad}"
+        )

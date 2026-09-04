@@ -488,10 +488,19 @@ def infer_page_id_aliases(
     def _forms(name: str) -> List[str]:
         out = [_label_text(name)]
         if _tab_label is not None:
-            try:
-                out.append(_label_text(_tab_label(name)))
-            except Exception:  # noqa: BLE001
-                pass
+            # 两种口径都试：桌面（不剥「页」）与手机（剥）。
+            #
+            # ⚠ 2026-09-05：剥「页」改成设备相关之后，这里只试默认口径就不够了。
+            #   这个函数的活儿是**反推老会话**的页面 id——库里存着的 HTML 可能是
+            #   旧规则（不分设备一律剥）画出来的，标签是「闭环验真报告」，
+            #   而 navItems 里还是「闭环验真报告页」。认不出来就填不上别名，
+            #   刷新回放会错页。反推侧宽容不花钱：下面重名整个作废那道闸还在，
+            #   宽容匹配不会把两页认成一页。
+            for kw in ({}, {"strip_page_suffix": True}):
+                try:
+                    out.append(_label_text(_tab_label(name, **kw)))
+                except Exception:  # noqa: BLE001
+                    pass
         return [f for f in dict.fromkeys(out) if f]
 
     # 标签 → 页面 id。重名的标签整个作废——宁可不填也不猜。

@@ -1074,7 +1074,9 @@ def _sanitize_phone_page_names(payload: Any) -> None:
         raw = str(page.get("name") or "").strip()
         if not raw:
             continue
-        page["name"] = nav_tab_label(raw, app)
+        # 这是**手机**页名清洗（函数名就写着 phone）：底栏短名，剥「页」。
+        # 桌面不走这条——标准答案见 page_naming.nav_tab_label 头注。
+        page["name"] = nav_tab_label(raw, app, strip_page_suffix=True)
 
 
 def _prune_stale_covers_on_frozen_pages(payload: Any, frozen_ids: set) -> None:

@@ -134,7 +134,7 @@ def _run(monkeypatch, *, refine=None, reuse_pages=None, reuse_model=None):
             "navItems": [{"id": str(q["id"]), "name": q["name"]} for q in (s.get("pages") or [])],
         },
     )
-    monkeypatch.setattr(ps, "check_shell_consistency", lambda p, s: [])
+    monkeypatch.setattr(ps, "check_shell_consistency", lambda *a, **kw: [])
     monkeypatch.setattr(ps, "repair_pages_after_bind", lambda p, b, **kw: (dict(p), [], []))
     monkeypatch.setattr(hs, "derive_structure", lambda p, **kw: dict(STRUCTURE))
     monkeypatch.setattr(ss, "derive_semantics", lambda st, sp, **kw: {"roles": []})
