@@ -799,6 +799,16 @@ def _resolve_write_state(
                     update={"pendingRuns": prior_pending}
                 )
 
+        # 工厂待办：客户端漏带 / 默认 None 不许把已挂账的延后抹掉。
+        # ⚠ [] 是驱动器清账，必须落盘——把 [] 当成 blank 会让 bind 永远清不掉。
+        prior_todo = getattr(prior, "factoryTodo", None) if prior is not None else None
+        if prior_todo:
+            inc_todo = getattr(merged_logs_state, "factoryTodo", None)
+            if inc_todo is None:
+                merged_logs_state = merged_logs_state.model_copy(
+                    update={"factoryTodo": prior_todo}
+                )
+
         # Version/timestamp-equivalent guard (sliderule-python-v52-session-concurrency-guard-105):
         # lastTurnId ONLY decides core clobber (goal/conversation/artifacts/ledgers/...).
         # Replay counts etc are excluded from key and from clobber decision (per review finding 1).

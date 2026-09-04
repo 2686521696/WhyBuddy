@@ -764,6 +764,9 @@ def save_sess(
     # 前端 PUT 全量 state 默认 None / {}，merge setattr 会把已完成的 A/B
     # 抹掉，崩溃恢复再烧一遍 LLM。pop + 下面 exclude，persist restore 是第二闸。
     client_input.pop("pendingRuns", None)
+    # 工厂待办跟 pendingRuns 同一类事故：前端 PUT 全量 state 默认 None / []，
+    # merge setattr 会把模型刚延后的 bind 抹掉，下一跳合法集里没了。
+    client_input.pop("factoryTodo", None)
     # publishClosure is client-side derived evidence projection (from python /drive-full); safe for client contrib roundtrip.
     # Do not pop; allow in V5SessionState parse + updates merge for frontend session store persistence (119).
     # Legacy sessions load with default None (see model).
@@ -819,7 +822,7 @@ def save_sess(
             #   其中就有 `scope_confirmed`——而 _scope_confirmed 正是靠它判定
             #   范围确认过没有。表现是"刚确认完范围、这轮又失败了，下次 /推演
             #   还弹卡"，而且只在第一场推演之前复现（之后 modelVersions 兜底）。
-            updates = client_contrib.model_dump(exclude={"sessionId", "ownerId", "pendingRuns", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents", "modelVersions", "currentModelVersionId", "lastTurnId", "specFirstPages", "controlTranscript", "coverageGaps"})
+            updates = client_contrib.model_dump(exclude={"sessionId", "ownerId", "pendingRuns", "factoryTodo", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents", "modelVersions", "currentModelVersionId", "lastTurnId", "specFirstPages", "controlTranscript", "coverageGaps"})
             for k, v in updates.items():
                 if hasattr(merged, k):
                     setattr(merged, k, v)

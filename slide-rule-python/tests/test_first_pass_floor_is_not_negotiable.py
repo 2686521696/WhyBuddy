@@ -24,11 +24,10 @@ sr-20260904041125 第 2 跳模型当场就把它摘了，账本原文：
   stamp 成 `['pages']` 之后 `is_first_pass_chain` 变 False（len < 2），
   「首轮必须做完」这条不变量连载体都没了，之后全靠运气。
 
-## 修法
+## 修法（阶段 1）
 
-把裁决写进 `clip_factory_tools` 的 `floor`：floor ∩ legal 一件都不许少。
-模型在首轮链上因此没有减菜空间——**产品裁决本来就没留空间**，
-它的自由仍在一跳一件、别的配方、精修轮上。
+阶段 0 把裁决焊成「floor ∩ legal 一件都不许少」——首轮链上模型零自由。
+阶段 1 放宽：clip 按提案走，摘掉的进待办。账不清空就不算首轮做完。
 """
 
 from __future__ import annotations
@@ -38,7 +37,13 @@ from pathlib import Path
 
 import pytest
 
-from services.capability_plan import FIRST_PASS_TOOLS, clip_factory_tools
+from services.capability_plan import (
+    FIRST_PASS_TOOLS,
+    clip_factory_tools,
+    deferred_factory_tools,
+    first_pass_still_open,
+    merge_factory_todo,
+)
 
 _DRV = Path(__file__).resolve().parents[1] / "services" / "v5_full_driver.py"
 
@@ -47,33 +52,52 @@ _REAL_LEGAL = ("pages", "structure", "bind")
 _REAL_PROPOSAL = [{"capabilityId": "pages", "roleId": "工程"}]
 
 
-class Test真机那一刀现在砍不动了:
-    def test_模型只选pages也留得住structure和bind(self):
-        """这条红 = 团子那条抱怨原样回来。"""
-        out = clip_factory_tools(_REAL_PROPOSAL, _REAL_LEGAL, floor=_REAL_LEGAL)
-        assert "structure" in out and "bind" in out, f"裁决被摘掉了：{out}"
-        assert "pages" in out
+class Test真机那一刀现在记在待办上:
+    def test_模型只选pages这一跳就只跑pages(self):
+        """阶段 1：可以延后，不许把这一跳强行补回 structure/bind。"""
+        out = clip_factory_tools(
+            _REAL_PROPOSAL, _REAL_LEGAL, floor=_REAL_LEGAL, has_spec=True
+        )
+        assert out == ("pages",), f"不许摘被改回去了：{out}"
 
-    def test_首轮链的身份保得住(self):
+    def test_摘掉的structure和bind进待办(self):
+        """这条红 = 团子那条抱怨原样回来（延后的活丢了）。"""
+        chosen = clip_factory_tools(
+            _REAL_PROPOSAL, _REAL_LEGAL, floor=_REAL_LEGAL, has_spec=True
+        )
+        todo = deferred_factory_tools(chosen, floor=_REAL_LEGAL, legal=_REAL_LEGAL)
+        assert "structure" in todo and "bind" in todo, f"裁决被摘掉且没进账：{todo}"
+        assert "pages" not in todo
+
+    def test_首轮链的身份挂在待办上(self):
         """⚠ 真正的病根：减到一件，`is_first_pass_chain` 变 False，
         「首轮必须做完」这条不变量连载体都没了。"""
         from services.capability_plan import is_first_pass_chain
 
         assert not is_first_pass_chain(("pages",)), "前提变了：单件本来就不算首轮链"
-        out = clip_factory_tools(_REAL_PROPOSAL, _REAL_LEGAL, floor=_REAL_LEGAL)
-        assert is_first_pass_chain(out), f"首轮链身份没保住：{out}"
-
-    def test_地板只垫legal里有的(self):
-        """⚠ 反向：范围卡减过菜的，不许被地板塞回来。
-
-        用户在范围卡上取消了 bind，legal 里就没有 bind——
-        地板不是「无条件补齐五件」，是「legal 里有的不许少」。
-        """
-        out = clip_factory_tools(
-            [{"capabilityId": "pages"}], ("pages", "structure"), floor=("pages", "structure")
+        chosen = clip_factory_tools(
+            _REAL_PROPOSAL, _REAL_LEGAL, floor=_REAL_LEGAL, has_spec=True
         )
-        assert "bind" not in out, f"把用户取消掉的 bind 塞回来了：{out}"
-        assert "structure" in out
+        todo = deferred_factory_tools(chosen, floor=_REAL_LEGAL, legal=_REAL_LEGAL)
+        assert first_pass_still_open(chosen, todo), (
+            f"首轮链身份没保住：tools={chosen} todo={todo}"
+        )
+
+    def test_范围卡取消的不许被待办塞回来(self):
+        """⚠ 反向：用户在范围卡上取消了 bind，legal 里就没有 bind。"""
+        chosen = clip_factory_tools(
+            [{"capabilityId": "pages"}],
+            ("pages", "structure"),
+            floor=("pages", "structure"),
+            has_spec=True,
+        )
+        todo = deferred_factory_tools(
+            chosen, floor=("pages", "structure"), legal=("pages", "structure")
+        )
+        assert "bind" not in todo, f"把用户取消掉的 bind 塞回来了：{todo}"
+        assert "structure" in todo
+        merged = merge_factory_todo((), ran=chosen, deferred=todo, legal=("pages", "structure"))
+        assert "bind" not in merged
 
 
 class Test模型的自由没被没收:
@@ -126,14 +150,27 @@ class Test地板不许把补根变成重起草SPEC:
             _REAL_PROPOSAL, _REAL_LEGAL, floor=_REAL_LEGAL, has_spec=True
         )
         assert "spec" not in out, f"已经有 SPEC 还补根，流水线会重起草：{out}"
-        assert out == ("pages", "structure", "bind")
+        assert out == ("pages",)
 
-    def test_没有SPEC时照旧补根(self):
-        """⚠ 反向：空会话多件菜单缺根，run_spec_first 会直接抛（建设单 O-4）。"""
+    def test_没有SPEC时首轮不许把spec延后(self):
+        """⚠ 反向：空会话 pages 没根，run_spec_first 会直接抛（建设单 O-4）。
+
+        阶段 1 不再并 floor，pages 单跳会走到 len==1 那条侥幸。
+        首轮 floor 在、还没 SPEC 时必须把 spec 留在这一跳。
+        """
         out = clip_factory_tools(
-            [{"capabilityId": "pages"}], ("pages", "structure"), floor=("pages", "structure")
+            [{"capabilityId": "pages"}],
+            ("spec", "pages", "structure"),
+            floor=("spec", "pages", "structure"),
         )
-        assert out[0] == "spec", f"多件菜单没补根：{out}"
+        assert out[0] == "spec", f"首轮没 SPEC 却把根延后了：{out}"
+        assert "pages" in out
+        todo = deferred_factory_tools(
+            out,
+            floor=("spec", "pages", "structure"),
+            legal=("spec", "pages", "structure"),
+        )
+        assert "spec" not in todo, f"spec 进了待办：{todo}"
 
     def test_单跳仍然不塞spec(self):
         out = clip_factory_tools([{"capabilityId": "bind"}], ("bind",))
@@ -149,28 +186,31 @@ class Test地板不许把补根变成重起草SPEC:
 
 
 class Test接在真跑的那条路上:
-    """CLAUDE.md §1：地板只有传下去才算数。"""
+    """CLAUDE.md §1：待办只有传下去才算数。"""
 
-    def test_调用点把地板传给了clip(self):
+    def test_调用点把摘掉的记进待办(self):
         src = _DRV.read_text(encoding="utf-8")
-        assert "floor=_floor" in src, "地板没传进 clip_factory_tools，等于没装"
+        assert "deferred_factory_tools" in src, "摘了没进待办，等于没装"
+        assert "_record_factory_todo" in src, "待办没写进 state"
+        assert "floor=_floor" in src, "地板没传进 deferred_factory_tools"
 
     def test_地板只在首轮链上垫(self):
         """⚠ 反向：一跳一件是用户自己点的，垫地板等于替他改主意。"""
-        tree = ast.parse(_DRV.read_text(encoding="utf-8"))
-        assigns = [
-            n for n in ast.walk(tree)
-            if isinstance(n, ast.Assign)
-            and any(
-                isinstance(t, ast.Name) and t.id == "_floor" for t in n.targets
-            )
-        ]
-        assert assigns, "找不到 _floor 的计算"
-        src = ast.unparse(assigns[0])
-        assert "_first_pass_chain(state)" in src, (
-            f"地板没按首轮链设条件，一跳一件会被强行补菜：{src}"
+        src = _DRV.read_text(encoding="utf-8")
+        fn = src.split("def _first_pass_floor")[1].split("\ndef ")[0]
+        assert "_first_pass_chain(state)" in fn, (
+            f"地板没按首轮链设条件，一跳一件会被强行补菜：{fn[:400]}"
         )
-        assert "profile == 'app'" in src or 'profile == "app"' in src
+        assign_src = ast.unparse(
+            [
+                n
+                for n in ast.walk(ast.parse(src))
+                if isinstance(n, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == "_floor" for t in n.targets)
+            ][0]
+        )
+        assert "_first_pass_floor" in assign_src
+        assert "profile == 'app'" in assign_src or 'profile == "app"' in assign_src
 
     def test_裁决的原文还在(self):
         """⚠ 这条钉的是「别把注释改回去」：地板的理由写在 FIRST_PASS_TOOLS 头上。"""
@@ -178,4 +218,5 @@ class Test接在真跑的那条路上:
             Path(__file__).resolve().parents[1] / "services" / "capability_plan.py"
         ).read_text(encoding="utf-8")
         assert "首轮必须把数据模型、权限工作流、绑定做完" in cp
+        assert "摘了进待办" in cp
         assert set(FIRST_PASS_TOOLS) == {"spec", "pages", "structure", "bind"}

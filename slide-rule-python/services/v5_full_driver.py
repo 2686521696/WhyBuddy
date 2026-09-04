@@ -9,10 +9,15 @@ from .stage_legal import describe as _stage_describe
 from .stage_legal import labels_with_eta as _stage_labels_with_eta
 from .archetype_legal import required_evidence as _required_evidence
 from .capability_plan import (
+    TOOLS as FACTORY_PUBLIC_TOOLS,
     FactoryToolsRefused,
     clip_factory_tools,
-    is_first_pass_chain,
+    deferred_factory_tools,
+    factory_todo_open,
+    first_pass_still_open,
+    merge_factory_todo,
     normalize_tools,
+    remaining_first_pass_tools,
 )
 from .closed_tools import (
     FACTORY_HOPS,
@@ -837,6 +842,8 @@ def ensure_closure_pick_by_deadline(
         or closure_attempted
         or loop_index < 1
         or isinstance(getattr(state, "publishClosure", None), dict)
+        # 待办没清完不许催收口——催了就会在缺 bind 的时候发合格证。
+        or factory_todo_open(getattr(state, "factoryTodo", None))
     ):
         return picks
     if any(_is_closure_cap(str(item.get("capabilityId") or "")) for item in picks):
@@ -1830,11 +1837,14 @@ def _host_factory_hop(state: "V5SessionState") -> bool:
 
 
 def _first_pass_chain(state: "V5SessionState") -> bool:
-    """开始推演一口气跑完产出链。不是 host 一跳一件。"""
+    """开始推演一口气跑完产出链。不是 host 一跳一件。
+
+    阶段 1：stamp 成 `['pages']` 不再等于销账——待办里还挂着 structure/bind
+    时身份仍在。变异：这里不读 factoryTodo，下一跳就不垫地板、合法集也不并。
+    """
     goal = getattr(state, "goal", None)
-    if not isinstance(goal, dict):
-        return False
-    return is_first_pass_chain(goal.get("tools"))
+    tools = goal.get("tools") if isinstance(goal, dict) else None
+    return first_pass_still_open(tools, getattr(state, "factoryTodo", None))
 
 
 def _state_has_spec(state: "V5SessionState") -> bool:
@@ -1846,6 +1856,29 @@ def _state_has_spec(state: "V5SessionState") -> bool:
     return isinstance(spec, dict) and bool(
         spec.get("pages") or spec.get("nodes") or spec.get("appName")
     )
+
+
+def _state_has_pages(state: "V5SessionState") -> bool:
+    blob = getattr(state, "specFirstPages", None)
+    if not isinstance(blob, dict):
+        return False
+    pages = blob.get("pages")
+    return isinstance(pages, dict) and bool(pages)
+
+
+def _first_pass_floor(state: "V5SessionState", legal) -> Optional[tuple]:
+    """首轮还没做完的产出跳。已经跑过的不许再塞回待办。"""
+    if not legal or not _first_pass_chain(state):
+        return None
+    remaining = remaining_first_pass_tools(
+        legal,
+        has_spec=_state_has_spec(state),
+        has_pages=_state_has_pages(state),
+    )
+    todo = factory_todo_open(getattr(state, "factoryTodo", None))
+    legal_set = {str(item).strip() for item in legal if str(item).strip()}
+    kept = set(remaining) | {name for name in todo if name in legal_set}
+    return tuple(name for name in FACTORY_PUBLIC_TOOLS if name in kept) or None
 
 
 def _host_hop_picks(state: "V5SessionState") -> list:
@@ -1911,6 +1944,18 @@ def _factory_tools_from_state(state: "V5SessionState") -> tuple:
         and "spec" in chosen
     ):
         chosen = tuple(name for name in chosen if name != "spec")
+    # 阶段 1：下一跳合法集并上待办。stamp 成 ['pages'] 之后 goal.tools
+    # 只剩这一跳的菜，不并就把延后的 bind 弄丢。
+    todo = factory_todo_open(getattr(state, "factoryTodo", None))
+    if todo:
+        kept = set(chosen) | set(todo)
+        chosen = tuple(name for name in FACTORY_PUBLIC_TOOLS if name in kept)
+        if (
+            _state_has_spec(state)
+            and "spec" not in requested
+            and "spec" in chosen
+        ):
+            chosen = tuple(name for name in chosen if name != "spec")
     return chosen
 
 
@@ -1933,6 +1978,18 @@ def _stamp_factory_tools_onto_goal(state: "V5SessionState", tools) -> None:
     if tuple(chosen) == PAGES_PREVIEW_TOOLS:
         goal["workflow"] = PAGES_PREVIEW
     state.goal = goal
+
+
+def _record_factory_todo(state: "V5SessionState", *, ran, deferred, legal) -> tuple:
+    """摘了进待办，跑掉的划掉。返回当前挂账。"""
+    todo = merge_factory_todo(
+        getattr(state, "factoryTodo", None),
+        ran=ran,
+        deferred=deferred,
+        legal=legal,
+    )
+    state.factoryTodo = list(todo)
+    return todo
 
 
 def _persist_phase_after_abandon(state: "V5SessionState") -> None:
@@ -2520,19 +2577,17 @@ async def drive_full_v5_session_stream(
                         # 把 spec/pages 塞进 execute_v5_capability 会当成生词能力跑。
                         try:
                             # 首轮链上「数据模型 / 权限工作流 / 绑定」是产品
-                            # 裁决，不是模型可选项——把它当地板传下去
-                            # （见 clip_factory_tools 的 floor 头注：真机
-                            # sr-20260904041125 第 2 跳模型刚把它摘过）。
+                            # 裁决：阶段 0 焊成不许摘，阶段 1 放宽成摘了进待办
+                            # （见 clip_factory_tools / deferred_factory_tools）。
                             #
-                            # ⚠ 只在**首轮链**上垫地板：
+                            # ⚠ 只在**首轮链**上记待办：
                             #   · 一跳一件是用户自己点的，他点 pages 就只画
                             #     pages，垫地板等于替他改主意；
                             #   · 精修轮不重跑产出链；
                             #   · pages-preview 这类别的配方有自己的合同。
-                            #   这三种情况模型的减菜权原样保留。
                             _floor = (
-                                _factory_legal
-                                if (profile == "app" and _first_pass_chain(state))
+                                _first_pass_floor(state, _factory_legal)
+                                if profile == "app"
                                 else None
                             )
                             _stamped = clip_factory_tools(
@@ -2551,6 +2606,15 @@ async def drive_full_v5_session_stream(
                             )
                             _stamped = None
                         if _stamped is not None:
+                            _deferred = deferred_factory_tools(
+                                _stamped, floor=_floor, legal=_factory_legal
+                            )
+                            _todo = _record_factory_todo(
+                                state,
+                                ran=_stamped,
+                                deferred=_deferred,
+                                legal=_factory_legal,
+                            )
                             _stamp_factory_tools_onto_goal(state, _stamped)
                             await asyncio.to_thread(persist_state, state)
                             print(
@@ -2558,9 +2622,14 @@ async def drive_full_v5_session_stream(
                                 f"workflow={(state.goal or {}).get('workflow') or ''}",
                                 flush=True,
                             )
+                            print(
+                                f"[factory-todo] deferred={','.join(_todo) or '-'}",
+                                flush=True,
+                            )
                             yield {
                                 "type": "factory_plan",
                                 "tools": list(_stamped),
+                                "deferred": list(_todo),
                                 "productSteps": list(
                                     ((state.goal or {}) if isinstance(state.goal, dict) else {}).get(
                                         "productSteps"

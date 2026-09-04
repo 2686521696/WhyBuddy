@@ -39,6 +39,10 @@ TOOLS: Tuple[str, ...] = (
 #: 开始推演一口气跑完的产出链。closure 是判定，留给迭代。
 #: 2026-09-03 用户（团子）：一跳一停手点 structure/bind，画布块之间
 #: 的关联关系看不见。首轮必须把数据模型、权限工作流、绑定做完。
+#:
+#: ⚠ 2026-09-04 阶段 1：这句「必须做完」不是「这一跳不许摘」。
+#:   阶段 0 把 floor 焊成不许摘，首轮链上模型零自由；真正该有的语义是
+#:   可以延后、不许丢失——摘掉的进待办，账不清空就不算首轮做完。
 FIRST_PASS_TOOLS: Tuple[str, ...] = ("spec", "pages", "structure", "bind")
 
 #: 范围卡 / 钟上的人话。键是公开工具，不是 specfirst id。
@@ -88,6 +92,27 @@ def is_first_pass_chain(tools: Optional[Iterable[str]]) -> bool:
         return False
     allowed = set(FIRST_PASS_TOOLS)
     return all(name in allowed for name in chosen)
+
+
+def factory_todo_open(raw: Optional[Iterable[str]]) -> Tuple[str, ...]:
+    """待办里还挂着的公开工具，次序跟 TOOLS 走。空 / 生词 → 空元组。"""
+    wanted = {str(item).strip() for item in (raw or ()) if str(item or "").strip()}
+    return tuple(name for name in TOOLS if name in wanted)
+
+
+def first_pass_still_open(
+    tools: Optional[Iterable[str]] = None,
+    todo: Optional[Iterable[str]] = None,
+) -> bool:
+    """首轮账没清完：当前 tools 是首轮链，或待办里还挂着首轮产出跳。
+
+    ⚠ 病根是 stamp 成 `['pages']` 之后 `is_first_pass_chain` 变 False，
+      「必须做完」连载体都没了。身份改挂在待办上，减菜不再等于销账。
+    """
+    if is_first_pass_chain(tools):
+        return True
+    open_todo = factory_todo_open(todo)
+    return any(name in FIRST_PASS_TOOLS for name in open_todo)
 
 
 def normalize_tools(raw: Optional[Iterable[str]]) -> Tuple[str, ...]:
@@ -143,9 +168,9 @@ def clip_factory_tools(
       stamp 成 `['pages']` 之后 `is_first_pass_chain` 变 False（len < 2），
       「首轮必须做完」这条不变量连载体都没了，后面全靠运气。
 
-    所以 floor 里的工具**只要 legal 里有，就必须留在结果里**。模型在首轮链上
-    因此没有减菜空间——这是产品裁决本来就没留空间，不是护栏过严；它的自由
-    仍在一跳一件、pages-preview 这类别的配方、以及精修轮上。
+    阶段 0 把这条焊成「floor ∩ legal 一件都不许少」——模型在首轮链上零自由。
+    阶段 1 放宽：floor 不再并进 chosen，摘掉的进待办（`deferred_factory_tools`）。
+    clip 自己只还管一件：还没 SPEC 时 spec 不能延后（pages 没根会抛，建设单 O-4）。
     """
     legal_chosen = normalize_tools(legal)
     if proposed is None:
@@ -166,20 +191,13 @@ def clip_factory_tools(
             raise FactoryToolsRefused("提案全不合法，拒绝回落整份菜单")
         else:
             chosen = tuple(name for name in TOOLS if name in seen)
-    # 产品裁决兜底：floor ∩ legal 一件都不许少。放在补根之前——
-    # 补根那条会看 len(chosen)，先把地板垫上，判断的才是最终清单。
     # ⚠ 不许走 normalize_tools：它「空 / 全是生词 → 默认全开」（见其头注），
-    #   于是 floor=None / () 会被当成「五件全是地板」，把一跳一件也强行补成
-    #   整条链。本文件第一版就栽在这，是下面三条反向判据逮出来的：
-    #   `clip_factory_tools([pages], (pages,structure,bind))` 本该原样返回
-    #   ('pages',)，实测返回了 ('spec','pages','structure','bind')。
+    #   于是 floor=None / () 会被当成「五件全是地板」。阶段 0 并进 chosen
+    #   时第一版就栽在这；阶段 1 不再并，但这份解析仍给补根用。
     _floor_raw = tuple(str(item).strip() for item in (floor or ()) if str(item or "").strip())
     floor_chosen = tuple(
         name for name in TOOLS if name in set(_floor_raw) and name in legal_chosen
     )
-    if floor_chosen:
-        kept = set(chosen) | set(floor_chosen)
-        chosen = tuple(name for name in TOOLS if name in kept)
     # 多件菜单漏了 spec 就补根。单跳（len==1）看会话前置，不在菜单里塞
     # spec——否则 ['bind'] 进 run_spec_first 没有 SPEC 直接抛（建设单 O-4）。
     # 空会话单跳由 _factory_hop_blocker 说人话。
@@ -191,12 +209,77 @@ def clip_factory_tools(
     #   一带上 spec 就不去根 → **整跳预算烧在重起草一份不一样的 SPEC 上**
     #   （5 页 16 节点 → 4 页 13 节点），页面落库 0 份，25 分钟白跑。
     #
-    #   这正是 b6e0ab3 修过的那个事故原样复发：那次靠的是模型减到单件、
-    #   len==1 侥幸绕开补根，不是真的挡住了。地板把侥幸拿掉，病就露出来。
-    #   补根的前提本来就是「没有 SPEC」，现在把这个前提写出来。
-    if not refine and not has_spec and "spec" not in chosen and len(chosen) != 1:
+    #   阶段 1 不再把 floor 并进 chosen，单跳 pages 又会走到 len==1 那条
+    #   侥幸。首轮且还没 SPEC 时 spec 不能延后——pages 没根还是会抛。
+    #   补根的前提本来就是「没有 SPEC」，has_spec=True 一条不动。
+    _must_keep_spec = bool(floor_chosen and "spec" in legal_chosen)
+    if (
+        not refine
+        and not has_spec
+        and "spec" not in chosen
+        and (len(chosen) != 1 or _must_keep_spec)
+    ):
         chosen = ("spec",) + tuple(name for name in chosen if name != "spec")
     return chosen
+
+
+def deferred_factory_tools(
+    chosen: Optional[Iterable[str]],
+    *,
+    floor: Optional[Iterable[str]] = None,
+    legal: Optional[Iterable[str]] = None,
+) -> Tuple[str, ...]:
+    """floor ∩ legal − chosen。摘了进待办，不是这一跳强行跑。
+
+    ⚠ 用户在范围卡上取消的工具不在 legal 里——不许被待办塞回来。
+    ⚠ spec 不能延后：没根的 pages 会抛（建设单 O-4）。
+    ⚠ 不许走 normalize_tools 解析 floor：空地板会被当成五件全开。
+    """
+    chosen_set = {str(item).strip() for item in (chosen or ()) if str(item or "").strip()}
+    legal_chosen = normalize_tools(legal)
+    _floor_raw = {str(item).strip() for item in (floor or ()) if str(item or "").strip()}
+    floor_set = {name for name in TOOLS if name in _floor_raw and name in legal_chosen}
+    return tuple(
+        name
+        for name in TOOLS
+        if name in floor_set and name not in chosen_set and name != "spec"
+    )
+
+
+def merge_factory_todo(
+    existing: Optional[Iterable[str]],
+    *,
+    ran: Optional[Iterable[str]] = None,
+    deferred: Optional[Iterable[str]] = None,
+    legal: Optional[Iterable[str]] = None,
+) -> Tuple[str, ...]:
+    """本跳跑掉的从待办划掉，新延后的挂上。不在 legal 的新项不进账。
+
+    已挂在账上的项不按本跳 legal 过滤——legal 在 stamp 之后会缩成
+    这一跳的菜，拿它滤一遍等于把待办清掉。
+    """
+    ran_set = {str(item).strip() for item in (ran or ()) if str(item or "").strip()}
+    legal_set = set(normalize_tools(legal) if legal is not None else TOOLS)
+    kept = set(factory_todo_open(existing)) - ran_set
+    for name in factory_todo_open(deferred):
+        if name in legal_set and name not in ran_set:
+            kept.add(name)
+    return tuple(name for name in TOOLS if name in kept)
+
+
+def factory_todo_blockers(raw: Optional[Iterable[str]]) -> Tuple[dict, ...]:
+    """待办非空 → 闭环 blocker。缺证据就是缺，不许伪造绿灯。"""
+    open_items = factory_todo_open(raw)
+    if not open_items:
+        return ()
+    return (
+        {
+            "code": "CLOSURE_FACTORY_TODO_OPEN",
+            "path": "runtimeClosure.factoryTodo",
+            "affectedSkill": "",
+            "ref": ",".join(open_items),
+        },
+    )
 
 
 #: 不是 spec-first 阶段的 stages 键。断言「实际执行 = tools 展开」时要剥掉。
@@ -366,6 +449,11 @@ __all__ = [
     "first_pass_tools",
     "remaining_first_pass_tools",
     "is_first_pass_chain",
+    "factory_todo_open",
+    "first_pass_still_open",
+    "deferred_factory_tools",
+    "merge_factory_todo",
+    "factory_todo_blockers",
     "NEW_RUN",
     "REFINE_RUN",
     "SILENT_CAPABILITIES",

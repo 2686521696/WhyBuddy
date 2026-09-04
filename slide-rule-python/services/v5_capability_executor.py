@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from models.v5_state import V5SessionState, ExecuteCapabilityResult
 from .rag_service import retrieve_evidence, generate_with_rag
-from .capability_plan import CapabilityPlan
+from .capability_plan import CapabilityPlan, factory_todo_blockers
 from .closed_tools import FACTORY_HOPS, hop_from_factory_capability
 from .workflow_journal import (
     JournalError,
@@ -1857,12 +1857,17 @@ def execute_v5_capability(
         # 降级轮（LLM 选材回落规则版等）的产出不可信，不许判 closed。
         relevance, relevance_blockers = _relevance_findings(goal, per_skill)
         degradations = collect_degradations(state)
+        # 待办非空 = 首轮还挂着没做的产出跳。缺证据就是缺，不许伪造绿灯。
+        todo_blockers = list(factory_todo_blockers(getattr(state, "factoryTodo", None)))
         # 只有**伤到交付物**的降级才拦（argo#12530：「能继续跑」与「算不算数」
         # 是两件事）。推演环节退兜底会让结论粗糙，但应用照样能用——上一版
         # 一刀切，真跑里出现过「六项证据齐、判定对题、建模生图设计全成，
         # 只因两处推演退 RAG 就整轮作废」，用户白等 33 分钟。
         blocked = bool(
-            evidence_blocked or relevance_blockers or blocking_degradations(degradations)
+            evidence_blocked
+            or relevance_blockers
+            or blocking_degradations(degradations)
+            or todo_blockers
         )
         closure_hash, stable_digest = _stable_closure_hash(per_skill, blocked, goal)
         # LLM 生成路径的失败原因随 blocker 透出（诊断留痕，不参与 blocked/hash 判定）。
@@ -1882,7 +1887,7 @@ def execute_v5_capability(
         hard_findings = [{"code": "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED"}] if blocked else []
         # 两道新关卡的 blocker 与证据缺失并列透出：用户要能一眼看出
         # 「是没做完」还是「做的不是这道题」还是「这轮降级了」。
-        for extra in relevance_blockers + degradation_blockers(degradations):
+        for extra in relevance_blockers + degradation_blockers(degradations) + todo_blockers:
             blockers.append(extra)
             hard_findings.append({"code": extra["code"]})
         if blocked and llm_diag:

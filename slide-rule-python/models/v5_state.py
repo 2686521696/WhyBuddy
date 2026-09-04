@@ -484,6 +484,11 @@ class V5SessionState(BaseModel):
     # LLM 白烧」；到 2026-08-27 代码里仍只有一份最新快照。crash recovery
     # 读这份台账跳过已完成能力。不是挑战级局部重跑 UI——只是持久化地基。
     pendingRuns: Optional[Dict[str, Any]] = None
+    # 工厂待办（2026-09-04 阶段 1）：模型从首轮链上摘掉的公开工具。
+    # 服务端拥有，客户端只读——所有权写法照 pendingRuns（PUT pop + exclude，
+    # persist 见 None 才 restore，[] 是驱动器清账）。
+    # 摘了进待办，账不清空就不算首轮做完；闭环读它，非空不许发合格证。
+    factoryTodo: Optional[List[str]] = None
     # ... (add more fields as migrated from TS)
 
     @classmethod

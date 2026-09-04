@@ -194,6 +194,11 @@ export interface V5SessionState {
     durationMs?: number;
   }>;
   lastTurnId?: string;
+  /**
+   * 工厂待办（2026-09-04 阶段 1）。模型从首轮链上摘掉的公开工具。
+   * 服务端拥有，客户端只读——PUT 不得写回。空 = 账已清。
+   */
+  factoryTodo?: string[];
   /** P0: why the session is parked awaiting human input (distinct from trust-layer confirm gate). */
   awaitReason?: AwaitReason;
   awaitDetail?: string;
