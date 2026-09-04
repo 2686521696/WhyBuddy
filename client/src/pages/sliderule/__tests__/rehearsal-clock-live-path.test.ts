@@ -20,10 +20,32 @@ function load(rel: string): string {
   return stripComments(readFileSync(new URL(rel, import.meta.url), "utf8"));
 }
 
-function handlerSlice(src: string, name: string, span = 700): string {
+/**
+ * 取一个 handler 的**完整**函数体，按大括号配平找结尾。
+ *
+ * ⚠ 2026-09-04：原来是 `src.slice(at, at + span)` 固定字符窗。阶段 2 给
+ *   `onFactoryPlan` 加了写决策账本那一段，handler 从约 900 字符涨到约 2000，
+ *   最后一行 `appendStreamStep(\`编排 …\`)` 被挤出 1800 的窗外 → 判据红，
+ *   而代码一个字都没错。**改成配平找结尾，handler 再长也不会假红。**
+ *
+ *   固定窗还有个更坏的方向：窗太长会把下一个 handler 的内容也框进来，
+ *   于是「A 里有 X」实际断言的是「A 或它后面那个里有 X」——假绿。
+ */
+function handlerSlice(src: string, name: string): string {
   const at = src.indexOf(`${name}:`);
   expect(at, `${name} 不见了 —— 判据锚点失效`).toBeGreaterThan(-1);
-  return src.slice(at, at + span);
+  const open = src.indexOf("{", at);
+  expect(open, `${name} 后面没有函数体`).toBeGreaterThan(-1);
+  let depth = 0;
+  for (let i = open; i < src.length; i += 1) {
+    const ch = src[i];
+    if (ch === "{") depth += 1;
+    else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) return src.slice(at, i + 1);
+    }
+  }
+  throw new Error(`${name} 的函数体没有配平的右大括号`);
 }
 
 describe("M8 推演钟不查翻译表", () => {
@@ -171,7 +193,7 @@ describe("已有 SSE progress_heartbeat 投影，不另开 API", () => {
     expect(driver).toContain("opts.onFactoryPlan");
     expect(driver).toContain("event.rationale");
     const session = load("../useSlideRuleSession.ts");
-    const plan = handlerSlice(session, "onFactoryPlan", 1800);
+    const plan = handlerSlice(session, "onFactoryPlan");
     expect(plan).toContain("goal.tools = tools");
     expect(plan).toContain("goal.productSteps = productSteps");
     expect(plan).toContain("appendStreamStep");
