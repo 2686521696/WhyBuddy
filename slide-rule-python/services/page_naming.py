@@ -57,7 +57,10 @@ def _strip_page_suffix(text: str) -> str:
     「页」单独折成第三行。对照 iOS Tab Bar：标签是短名。「首页」本身就是短名；
     剥完只剩一个字也留着。
     """
-    if text.endswith("页") and not text.endswith("首页"):
+    # ⚠ 2026-09-05 补 `主页`：真机（汉字消除小游戏）「挑战主页」被剥成
+    #   「挑战主」——「主页」跟「首页」一样，那个「页」是词的一部分，不是后缀。
+    #   剥完 `len>=2` 那道保险拦不住它（「挑战主」正好 3 个字）。
+    if text.endswith("页") and not text.endswith(("首页", "主页")):
         stripped = text[:-1].rstrip()
         if len(stripped) >= 2:
             return stripped

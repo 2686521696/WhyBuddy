@@ -61,6 +61,7 @@ from typing import Any, AsyncIterator, Dict, Iterable, List, Optional
 
 from services.factory_plan_steps import product_steps_for_tools
 from services.capability_plan import (
+    factory_todo_open,
     TOOL_LABELS,
     first_pass_tools,
     is_first_pass_chain,
@@ -2569,6 +2570,27 @@ def _after_write_hint(state: V5SessionState) -> str:
         done = "、".join(labels.get(t, t) for t in tools) if tools else ""
         if done:
             facts.append(f"{done} 这几件本跳已经做过，重复调不会有新产出。")
+
+    # ★ 首轮待办也要回流（2026-09-05 真机第 4 轮 sr-20260904214530）。
+    #
+    # 真机形状：3 页画完、loop 预算耗尽停在 max_loops，而账上
+    # `factoryTodo = ['structure','bind']` **一直没清**——数据模型没反推、
+    # 权限没打孔。而交回 host 的最后一句是：
+    #     「页面已经出来。要改哪一页，或者说继续精修、补齐缺口。」
+    # 听起来像做完了。用户看到的是一个"完工"的口气配一份半成品。
+    #
+    # 跟今晚闭环裁决那条一模一样：**机器已经算出来的事实，叙述侧看不见**。
+    # 待办本来就在 `_state_digest` 里给选材器看（【首轮待办】那一行），
+    # 唯独这条收尾情报没接——于是选材器知道、说话的那一版不知道。
+    # 用同一个 `factory_todo_open`，不另开一份口径（§4）。
+    _todo_open = factory_todo_open(getattr(state, "factoryTodo", None))
+    if _todo_open:
+        _todo_text = "、".join(labels.get(t, t) for t in _todo_open)
+        facts.append(
+            f"首轮账上还挂着没做的产出跳：{_todo_text}。"
+            "这几跳没跑完，应用是半成品——数据模型没反推 / 权限没打孔，"
+            "闭环判定也会因此拦下。"
+        )
 
     # ★ 裁决要回流到计划侧（2026-09-04 社区养老真机 sr-20260904181150）。
     #

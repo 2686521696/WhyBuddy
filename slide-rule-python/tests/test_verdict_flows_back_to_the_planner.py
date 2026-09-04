@@ -143,3 +143,77 @@ class Test人话只有一个出口:
             "那正是「证据缺口拦截」那次事故的形状"
         )
         assert "24" not in hint, "既然换了出口，原理由不该还漏在别处"
+
+
+class Test首轮待办也要回流:
+    """★ 2026-09-05 真机第 4 轮（汉字消除小游戏 sr-20260904214530）抓到的。
+
+    3 页画完、loop 预算耗尽停在 max_loops，而账上
+    `factoryTodo = ['structure','bind']` 一直没清——数据模型没反推、权限没打孔。
+    而交回 host 的最后一句是：
+
+        「页面已经出来。要改哪一页，或者说继续精修、补齐缺口。」
+
+    听起来像做完了。用户看到的是一个「完工」的口气配一份半成品。
+
+    跟闭环裁决那条一模一样：**机器已经算出来的事实，叙述侧看不见**。
+    待办本来就在 `_state_digest` 里给选材器看，唯独这条收尾情报没接——
+    于是选材器知道、说话的那一版不知道。
+    """
+
+    def _state(self, todo):
+        st = V5SessionState(
+            sessionId="sr-20260904214530-VHN09C3T6Z",
+            goal={"text": "做一个网页端的汉字连线消除小游戏", "status": "clear",
+                  "tools": ["pages"]},
+            ownerId="u-1",
+        )
+        st.specFirstPages = {"spec": {"pages": [{"id": f"p{i}"} for i in (1, 2, 3)]},
+                             "pages": {f"p{i}": "<html/>" for i in (1, 2, 3)}}
+        st.factoryTodo = todo
+        return st
+
+    def test_待办没清时情报里必须写着(self):
+        hint = _after_write_hint(self._state(["structure", "bind"]))
+        assert "还挂着" in hint, f"账上挂着两跳没做，情报里一个字没提。原文：{hint}"
+
+    def test_说清是哪几跳_不是笼统一句还有活(self):
+        """模型得知道缺的是**哪两跳**才可能去补。"""
+        hint = _after_write_hint(self._state(["structure", "bind"]))
+        assert "数据结构" in hint and "权限工作流" in hint, (
+            f"没说清缺哪几跳。原文：{hint}"
+        )
+
+    def test_说清后果_否则模型会当成可选项(self):
+        hint = _after_write_hint(self._state(["structure", "bind"]))
+        assert "半成品" in hint or "闭环判定也会因此拦下" in hint
+
+    def test_账清了就不提(self):
+        """★ 反向配对：别在做完的轮次里制造焦虑。"""
+        assert "还挂着" not in _after_write_hint(self._state([]))
+        assert "还挂着" not in _after_write_hint(self._state(None))
+
+    def test_生词不当成待办(self):
+        """`factory_todo_open` 只认公开工具，脏数据不许变成"还有活没干"。"""
+        assert "还挂着" not in _after_write_hint(self._state(["不存在的跳", ""]))
+
+    def test_用的是同一个待办口径(self):
+        """§4：选材器（_state_digest）和这条收尾情报必须同一个 factory_todo_open，
+        不许各拼各的——两份口径分叉时，一边说有活一边说做完了。"""
+        import ast
+        import inspect
+
+        from services import rehearsal_control as rc
+
+        fn = None
+        for node in ast.walk(ast.parse(inspect.getsource(rc))):
+            if isinstance(node, ast.FunctionDef) and node.name == "_after_write_hint":
+                fn = node
+        assert fn is not None
+        calls = {
+            getattr(c.func, "id", getattr(c.func, "attr", None))
+            for c in ast.walk(fn) if isinstance(c, ast.Call)
+        }
+        assert "factory_todo_open" in calls, (
+            f"收尾情报没用 factory_todo_open 算待办（用到的是 {sorted(x for x in calls if x)}）"
+        )

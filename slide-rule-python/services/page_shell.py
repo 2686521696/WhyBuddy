@@ -2502,7 +2502,19 @@ def check_shell_consistency(
                 "message": f"标了 {marked} 个当前页，应该恰好 1 个",
             })
 
-    want = [str(p.get("name") or p.get("id") or "").strip() for p in (spec.get("pages") or [])]
+    # ⚠ 2026-09-05：这里原先拿 **spec 原名** 去比渲染出来的导航项，而导航项是
+    #   `nav_tab_label()` 出来的——它会剥产品名前缀、剥「某某页」的「页」。
+    #   于是**只要有一页的名字以「页」结尾，这条检查就必然报错**，跟壳对不
+    #   对得上无关。真机（汉字消除小游戏 sr-20260904214530）三页全中：
+    #     导航项 ['挑战主', '限时对局', '战绩结算与历史']
+    #     spec  ['挑战主页', '限时对局页', '战绩结算与历史页']
+    #   一条系统性误报的检查，下一个人只会学会忽略它——那比没有更糟。
+    #   两侧共用同一把尺子（§4：成对的东西不许只改一半）。
+    _app_for_nav = str(spec.get("appName") or "").strip()
+    want = [
+        nav_tab_label(str(p.get("name") or p.get("id") or ""), _app_for_nav)
+        for p in (spec.get("pages") or [])
+    ]
     for pid, s in shells.items():
         nav = _nav_of(pid)
         if not nav:
