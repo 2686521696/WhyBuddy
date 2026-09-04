@@ -28,6 +28,7 @@ from typing import Any, Optional
 from models.v5_state import V5SessionState
 from sliderule_llm.config import default_max_tokens
 from services.capability_plan import TOOL_LABELS, TOOLS, normalize_tools
+from services.subagent_tasks import clip_task_requests, digest_lines as subagent_digest_lines
 
 # ── V5.2 能力词表（与 slide_rule_session.pick_next_capabilities 的产出
 #    全集一致；中文注解给 LLM 读）─────────────────────────────────────
@@ -236,6 +237,9 @@ def _state_digest(state: V5SessionState, user_text: str, loop_index: int, max_lo
         f"【未答问题】{open_qs or '无'}",
         f"【覆盖缺口】{gaps or '无'}",
     ]
+    sub = subagent_digest_lines(state)
+    if sub:
+        lines.append("【只读取料】" + "；".join(sub))
     lines.extend(_history_lines(state))
     return "\n".join(lines)
 
@@ -540,7 +544,11 @@ def agentic_pick_next_capabilities(
             "capabilityId 只能从清单里原样抄写。\n"
             "只输出 JSON：{\"rationale\":\"一句话总体策略\","
             "\"picks\":[{\"capabilityId\":\"\",\"roleId\":\"\","
-            "\"why\":\"\"}]}\n"
+            "\"why\":\"\"}],"
+            "\"tasks\":[{\"type\":\"evidence|compliance|page_quality\","
+            "\"prompt\":\"\"}]}\n"
+            "tasks 是只读取料子代理，可并行；写侧（spec/pages/structure/"
+            "bind/closure）只能放 picks，不许派出去写。\n"
             "公开工具：\n" + vocab_lines
         )
     else:
@@ -554,7 +562,11 @@ def agentic_pick_next_capabilities(
             "roleId 只能是 产品|架构|工程|综合\n"
             "只输出 JSON：{\"rationale\":\"一句话总体策略\","
             "\"picks\":[{\"capabilityId\":\"\",\"roleId\":\"\","
-            "\"why\":\"\"}]}\n"
+            "\"why\":\"\"}],"
+            "\"tasks\":[{\"type\":\"evidence|compliance|page_quality\","
+            "\"prompt\":\"\"}]}\n"
+            "tasks 是只读取料子代理（证据/合规/页面复检），可并行；"
+            "写侧能力不许派出去。\n"
             "能力清单：\n" + vocab_lines
         )
     messages = [
@@ -614,4 +626,5 @@ def agentic_pick_next_capabilities(
     return {
         "picks": picks,
         "rationale": str(parsed.get("rationale") or "")[:200],
+        "tasks": list(clip_task_requests(parsed.get("tasks"))),
     }

@@ -199,6 +199,14 @@ export interface V5SessionState {
    * 服务端拥有，客户端只读——PUT 不得写回。空 = 账已清。
    */
   factoryTodo?: string[];
+  /** 只读子代理账本。服务端拥有，客户端只读。 */
+  subagentTasks?: Array<{
+    id: string;
+    type: string;
+    status?: string;
+    content?: string;
+    error?: string;
+  }>;
   /**
    * 本轮降级 Condition（K8s 形状）。服务端 `run_degradation` 写。
    * 阶段 2：AgenticPickFallback 必须上屏说人话，不许装成模型挑的。

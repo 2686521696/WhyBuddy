@@ -48,6 +48,13 @@ def _has_pending_delivery_picks(state, user_instruction: str) -> bool:
     except Exception:
         return False
 from .v5_capability_executor import execute_v5_capability
+from .subagent_tasks import (
+    WRITE_BLOCKED,
+    clip_task_requests,
+    page_quality_report,
+    record_task_result,
+    spawn_readonly_task,
+)
 from .persistence import (
     PersistClosedError,
     pending_goal_key,
@@ -1331,6 +1338,9 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                         source="llm",
                     ))
                     state.decisionLedger = _dl
+                    _run_readonly_subagents(
+                        state, clip_task_requests(_proposal.get("tasks")), loop
+                    )
                     picks = _clip_agentic_picks_to_legal(_proposal["picks"], picks)
                 else:
                     # 回落规则版 = 本轮降级。记一条 Condition，闭环判定据此
@@ -2007,6 +2017,62 @@ def _record_factory_todo(state: "V5SessionState", *, ran, deferred, legal) -> tu
     return todo
 
 
+def _run_readonly_subagents(state: "V5SessionState", requests, loop: int) -> None:
+    """并行跑只读子代理。失败记 error，不抛、不改 picks。
+
+    写侧种类在 clip_task_requests 里已经丢掉。这里再挡一层：
+    capabilityId 落在 WRITE_BLOCKED 的直接记 error。
+    """
+    spawned: List[Dict[str, Any]] = []
+    for req in requests or ():
+        rec = spawn_readonly_task(
+            state, str(req.get("type") or ""), str(req.get("prompt") or "")
+        )
+        if rec:
+            spawned.append(rec)
+    if not spawned:
+        return
+    print(
+        f"[subagent-task] spawn={','.join(str(r.get('type') or '') for r in spawned)}",
+        flush=True,
+    )
+
+    def _one(rec: Dict[str, Any]) -> None:
+        kind = str(rec.get("type") or "")
+        cap = rec.get("capabilityId")
+        tid = str(rec.get("id") or "")
+        if cap and str(cap) in WRITE_BLOCKED:
+            record_task_result(state, tid, ok=False, error="write-side refused")
+            return
+        try:
+            if not cap:
+                content = page_quality_report(state)
+            else:
+                result = execute_v5_capability(
+                    str(cap), state, [], "接地", f"sub-{loop}-{kind}"
+                )
+                if isinstance(result, dict):
+                    content = str(result.get("content") or result.get("summary") or "")
+                else:
+                    content = str(
+                        getattr(result, "content", "")
+                        or getattr(result, "summary", "")
+                        or ""
+                    )
+            record_task_result(state, tid, ok=True, content=content)
+        except Exception as exc:  # noqa: BLE001 — 增强类 fail-open
+            record_task_result(state, tid, ok=False, error=str(exc)[:300])
+
+    if len(spawned) == 1:
+        _one(spawned[0])
+        return
+    threads = [threading.Thread(target=_one, args=(rec,)) for rec in spawned]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+
 def _public_factory_names(items) -> list:
     """账本 / 提案里的 capabilityId → 公开工具名。生词丢掉。"""
     out: list[str] = []
@@ -2628,6 +2694,9 @@ async def drive_full_v5_session_stream(
                         source="llm",
                     ))
                     state.decisionLedger = _dl
+                    _run_readonly_subagents(
+                        state, clip_task_requests(_proposal.get("tasks")), loop
+                    )
                     if profile == "app":
                         # 工厂节点 pick 只 stamp 公开工具，不替换 runtimeClosure。
                         # 把 spec/pages 塞进 execute_v5_capability 会当成生词能力跑。

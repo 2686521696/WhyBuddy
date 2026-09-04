@@ -809,6 +809,14 @@ def _resolve_write_state(
                     update={"factoryTodo": prior_todo}
                 )
 
+        prior_subs = getattr(prior, "subagentTasks", None) if prior is not None else None
+        if prior_subs:
+            inc_subs = getattr(merged_logs_state, "subagentTasks", None)
+            if inc_subs is None:
+                merged_logs_state = merged_logs_state.model_copy(
+                    update={"subagentTasks": prior_subs}
+                )
+
         # Version/timestamp-equivalent guard (sliderule-python-v52-session-concurrency-guard-105):
         # lastTurnId ONLY decides core clobber (goal/conversation/artifacts/ledgers/...).
         # Replay counts etc are excluded from key and from clobber decision (per review finding 1).
