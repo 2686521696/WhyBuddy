@@ -1662,7 +1662,7 @@ def _closure_app_slug(model: Dict[str, Any], goal: str) -> str:
 
 
 def _relevance_findings(
-    goal: str, per_skill: Dict[str, Any]
+    goal: str, per_skill: Dict[str, Any], spec: Any = None
 ) -> "tuple[Dict[str, Any] | None, List[Dict[str, Any]]]":
     """题目相关性校验：产出的模型是不是**这道题**的产出。
 
@@ -1685,7 +1685,11 @@ def _relevance_findings(
     model = _assemble_model_from_per_skill(per_skill)
     if not model:
         return None, []
-    verdict = evaluate_model_relevance(goal, model)
+    # ★ SPEC 一起喂进去（2026-09-05）。此前这个函数的入参里**没有 spec**，
+    #   结构上就够不着 `state.specFirstPages.spec`——判定只能拿被压短的显示名
+    #   （菜单 2~4 字、页名更短）去比目标原话，真库上误杀了六成。理由与标定
+    #   见 closure_relevance 模块头「2026-09-05 重标定」。
+    verdict = evaluate_model_relevance(goal, model, spec=spec)
     if verdict.get("applicable") and not verdict.get("passed"):
         return verdict, [
             {
@@ -1947,7 +1951,12 @@ def execute_v5_capability(
         evidence_blocked = any(not item.get("evidencePresent") for item in per_skill.values())
         # 证据齐不齐（数量）与证据对不对题（内容）是两道独立的关卡；
         # 降级轮（LLM 选材回落规则版等）的产出不可信，不许判 closed。
-        relevance, relevance_blockers = _relevance_findings(goal, per_skill)
+        relevance, relevance_blockers = _relevance_findings(
+            goal,
+            per_skill,
+            spec=((getattr(state, "specFirstPages", None) or {}).get("spec")
+                  if isinstance(getattr(state, "specFirstPages", None), dict) else None),
+        )
         degradations = collect_degradations(state)
         # 待办非空 = 首轮还挂着没做的产出跳。缺证据就是缺，不许伪造绿灯。
         todo_blockers = list(factory_todo_blockers(getattr(state, "factoryTodo", None)))

@@ -2493,6 +2493,12 @@ def _assumptions_awaiting(state: V5SessionState) -> bool:
     return bool(rows)
 
 
+def _sfp(state: V5SessionState) -> Dict[str, Any]:
+    """specFirstPages 那个 blob，取不到就空字典。"""
+    blob = getattr(state, "specFirstPages", None)
+    return blob if isinstance(blob, dict) else {}
+
+
 def _after_write_hint(state: V5SessionState) -> str:
     """交回 host 时把**现场情况**摆给模型，让它自己挑下一步。
 
@@ -2590,6 +2596,30 @@ def _after_write_hint(state: V5SessionState) -> str:
         )
     elif isinstance(_pc, dict) and _pc.get("blocked") is False:
         facts.append("闭环判定已通过，这份应用可以交付。")
+
+    # ★ 孤岛清单也要回流（2026-09-05）。跟上面闭环裁决同一个病：
+    #
+    # `app_graph.find_orphans` 早就在打孔之后跑了，结论存进
+    # `specFirstPages.qualityNotices`——但那条路**只通到前端**（
+    # ArchitectureStage 画一块提示），计划侧一个字看不见。于是「这个应用
+    # 声明了『新建服务工单』却没有任何页面能新建」这种事，模型永远不知道。
+    #
+    # 真机（社区养老 sr-20260904181150）：elder:update / staff:manage /
+    # service_order:create / qc_work_order:create 四个动作纸面上有、界面上
+    # 没有——用户那道题的第 1 条「老人全景档案」进不去就是这个形状。
+    # （权限这一类的孤岛规则本身也是 2026-09-05 才补的，见 app_graph
+    #   _ORPHAN_RULES：在那之前图上根本看不见它。）
+    _orphans = [
+        n for n in ((_sfp(state).get("qualityNotices")) or [])
+        if isinstance(n, dict) and str(n.get("kind") or "") == "orphan"
+    ]
+    if _orphans:
+        _head = "；".join(str(n.get("text") or "")[:120] for n in _orphans[:2])
+        facts.append(f"体检报了孤岛：{_head}。")
+        facts.append(
+            "孤岛是「东西做出来了但接不上」——通常补一页或给某一页加个动作就能接上，"
+            "不需要重跑整条链。"
+        )
 
     facts.append(
         "rehearse 会从头重跑整条产出链，已有的 SPEC 与页面都会被覆盖。"
