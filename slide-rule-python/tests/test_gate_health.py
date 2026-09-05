@@ -369,3 +369,23 @@ class Test读接口:
 
         src = inspect.getsource(run_registry._finish)
         assert "summary_line()" in src, "跑批收尾不打开火率了"
+
+    def test_空清单不许读成绿灯(self):
+        """★ 台账是**进程内存**：uvicorn 一 reload 就归零。
+
+        2026-09-05 真机：跑完一轮画布编辑去读开火率，拿到
+        `{"gates": [], "line": ""}`——看着像「各道闸都没开过火，一切正常」，
+        实情是我刚改过 python 文件、uvicorn 重启、台账清零。
+        「还没判过任何东西」和「判过而且都放行了」在屏幕上长得一模一样，
+        正是本仓最忌的那类。所以空清单必须自带「从什么时候开始记的」。
+        """
+        import ast
+
+        node = self._route()
+        assert node is not None
+        src = ast.dump(node)
+        assert "since" in src, "空清单没带记账起点——空会被读成绿灯"
+        from services.gate_health import ledger_since
+
+        assert ledger_since(), "记账起点是空的"
+

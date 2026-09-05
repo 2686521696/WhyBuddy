@@ -1035,3 +1035,39 @@ class Test闸清单:
         assert "## 闸清单" in doc, "架构图里没有闸清单——重新 --emit"
         for code in all_blocker_codes():
             assert f"`{code}`" in doc, f"{code} 没进架构图，图与代码不同步"
+
+    def test_清单要盖住routes_不只是services(self):
+        """★ 2026-09-05：第一版只扫 `services.`，`routes/` 整片没算。
+
+        于是 `pageEdit`（点选编辑 / 画布存回页面前的体检）**根本不在清单上**——
+        而它恰恰是当天抓到「交付页的 Tailwind 被摘掉」的那一道。
+        一份只盖住一半仓的清单，回答不了它自己声称回答的那个问题。
+        """
+        from arch_graph import gate_inventory
+
+        mods = {row["module"] for row in gate_inventory()}
+        assert any(m.startswith("routes.") for m in mods), (
+            "闸清单没扫 routes/——接口层那几道闸整个看不见"
+        )
+        assert any(m.startswith("services.") for m in mods), "反向：services 那侧也得还在"
+
+    def test_只报不拦的闸也要在图上(self):
+        """★ §3 反向配对：上面那张表按 blocker code 排，**没有 code 的闸会整个漏掉**。
+
+        只报不拦不等于不重要——§7 说增强类本来就该 fail-open。
+        所以图里必须另有一张按闸名排的表，`gate_health` 记了谁就有谁。
+        """
+        import pathlib
+
+        from arch_graph import DIAGRAM, gate_inventory, load_manifest
+
+        doc = pathlib.Path(DIAGRAM).read_text(encoding="utf-8")
+        table = load_manifest().get("gate_codes") or {}
+        watched_codes = {str(v).strip() for v in table.values() if str(v or "").strip()}
+        recorded = {g for row in gate_inventory() for g in row["gates"]}
+        no_code = sorted(recorded - watched_codes)
+        assert no_code, (
+            "一道只报不拦的闸都没有了？那这条判据该跟着删，别留着自我印证"
+        )
+        for gate in recorded:
+            assert f"`{gate}`" in doc, f"闸 {gate} 没进架构图，图与代码不同步"

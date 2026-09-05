@@ -194,6 +194,18 @@ def record_verdict(
         return None
 
 
+#: 这个进程是什么时候开始记账的。**台账是进程内存**——uvicorn 一 reload、
+#: 一重启，全部归零。没有这个字段，空清单读起来像「各道闸都没开过火，一切正常」，
+#: 而实情往往是「这个进程刚起来，还没判过任何东西」。
+#: 两件事在屏幕上长得一模一样，正是本仓最忌的那类。
+_STARTED_AT = _now_iso = datetime.now(timezone.utc).isoformat()
+
+
+def ledger_since() -> str:
+    """台账从什么时候开始记的（进程启动时刻，ISO）。"""
+    return _STARTED_AT
+
+
 def snapshot() -> List[Dict[str, Any]]:
     """当前各道闸的开火情况。跑批收尾打一行用，也给判据看。"""
     out: List[Dict[str, Any]] = []

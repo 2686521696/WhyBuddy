@@ -266,7 +266,7 @@ flowchart LR
 > 「为什么几个月没审查出来」的答案里有一条是**没人知道这里到底有几道闸**：
 > 15 个会话全被同一道闸按同一个理由拦下，而没有观察它的位置。
 
-- 拦截理由（blocker code）共 **12** 条，其中 **3** 条进了体检（`services/gate_health.py`），**9** 条没进（欠账，只许变少）
+- 拦截理由（blocker code）共 **14** 条，其中 **3** 条进了体检（`services/gate_health.py`），**11** 条没进（欠账，只许变少）
 - 新增一条 code 必须在 `architecture.toml` 的 `[gate_codes]` 里声明归属，否则 `--check` 变红
 
 | 拦截理由 | 体检的闸 | 发它的模块 |
@@ -276,13 +276,27 @@ flowchart LR
 | `CLOSURE_FACTORY_TODO_OPEN` | `factoryTodo` | `capability_plan` |
 | `CLOSURE_GOAL_RELEVANCE_FAILED` | `relevance` | `v5_capability_executor` |
 | `CLOSURE_REBUILD_FAILED` | — | `v5_capability_executor` |
-| `LLM_GENERATE_DISABLED` | — | `v5_capability_executor` |
-| `LLM_GENERATE_FAILED` | — | `v5_capability_executor` |
+| `LLM_EMPTY_OUTPUT` | — | `sliderule_full` |
+| `LLM_GENERATE_DISABLED` | — | `sliderule_full`、`v5_capability_executor` |
+| `LLM_GENERATE_FAILED` | — | `sliderule_full`、`v5_capability_executor` |
 | `LLM_TEST_ERROR` | — | `llm_channel` |
 | `LLM_TEST_FAILED` | — | `llm_channel` |
 | `MODEL_GATE_BLOCKED` | — | `v5_capability_executor` |
+| `PACKAGE_NOT_FOUND` | — | `sliderule_full` |
 | `REFINE_PAINT_FAILED` | — | `v5_capability_executor` |
 | `TASK_LIFECYCLE_AUTH_DENIED` | — | `task_lifecycle_production_closure` |
 
 「—」是明说不体检的：诊断类（只在真失败时出现，没有「一直说同一句话」的
 退化形态），以及压根不是闭环闸的连通性自检。理由逐条写在 `[gate_codes]` 里。
+
+### 体检在看的闸（按闸名，含只报不拦的）
+
+> 上面那张表按 blocker code 排，**只报不拦的闸没有 code，会整个漏掉**。
+> 这张按闸名排，`gate_health` 记了谁就有谁。
+
+| 闸 | 记在哪 | 拦人吗 |
+|---|---|---|
+| `evidence` | `v5_capability_executor` | 拦，`APPBUNDLE_RUNTIME_CLOSURE_BLOCKED` |
+| `factoryTodo` | `v5_capability_executor` | 拦，`CLOSURE_FACTORY_TODO_OPEN` |
+| `pageEdit` | `sliderule_full` | 只报不拦（§7 增强类） |
+| `relevance` | `v5_capability_executor` | 拦，`CLOSURE_GOAL_RELEVANCE_FAILED` |

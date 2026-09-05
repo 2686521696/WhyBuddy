@@ -394,7 +394,11 @@ def gate_inventory(root: pathlib.Path = ROOT) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for path in sorted(_sources(root)):
         module = _module_name(path)
-        if not module.startswith("services."):
+        # ⚠ 2026-09-05：第一版只扫 `services.`，于是 `routes/` 里那道
+        #   `pageEdit`（点选编辑 / 画布存回页面前的体检）**根本不在清单上**——
+        #   而它恰恰是当天抓到「交付页的 Tailwind 被摘掉」的那一道。
+        #   清单要是只盖住一半的仓，它回答不了自己声称回答的那个问题。
+        if not (module.startswith("services.") or module.startswith("routes.")):
             continue
         try:
             tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
@@ -1090,6 +1094,37 @@ def render_doc(g: Graph, manifest: dict) -> str:
         "退化形态），以及压根不是闭环闸的连通性自检。理由逐条写在 `[gate_codes]` 里。",
         "",
     ]
+
+    # ── 第二张表：体检在看的闸 ────────────────────────────────────────
+    #
+    # ⚠ 2026-09-05 下半场补的。上面那张表是**按 blocker code 排**的，于是
+    #   「拦下来只报不拦、没有 code」的闸整个不在清单上——`pageEdit`
+    #   （点选编辑 / 画布存回页面前数脚本、数据孔、表单控件）就是这样一道，
+    #   而它恰恰是当天抓到「交付页的 Tailwind 被摘掉」的那一道。
+    #
+    #   只报不拦不等于不重要：§7 说得清楚，增强类本来就该 fail-open。
+    #   一份「只认会拦人的闸」的清单，看不见的正是这一类。
+    gate_rows: Dict[str, Set[str]] = {}
+    for row in inv:
+        for gate in row["gates"]:
+            gate_rows.setdefault(gate, set()).add(row["module"].split(".")[-1])
+    if gate_rows:
+        body += [
+            "### 体检在看的闸（按闸名，含只报不拦的）",
+            "",
+            "> 上面那张表按 blocker code 排，**只报不拦的闸没有 code，会整个漏掉**。",
+            "> 这张按闸名排，`gate_health` 记了谁就有谁。",
+            "",
+            "| 闸 | 记在哪 | 拦人吗 |",
+            "|---|---|---|",
+        ]
+        code_of_gate = {str(v).strip(): k for k, v in table.items() if str(v or "").strip()}
+        for gate in sorted(gate_rows):
+            where = "、".join(f"`{m}`" for m in sorted(gate_rows[gate]))
+            code = code_of_gate.get(gate, "")
+            blocks = f"拦，`{code}`" if code else "只报不拦（§7 增强类）"
+            body.append(f"| `{gate}` | {where} | {blocks} |")
+        body.append("")
     return "\n".join(body)
 
 

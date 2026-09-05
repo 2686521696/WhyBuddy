@@ -147,3 +147,52 @@ describe("元素编辑作用在源 HTML 上", () => {
     expect(clampFontPx(17.6)).toBe(18);
   });
 });
+
+/**
+ * 「顺手带走了东西」这条回执不许自己消失。
+ *
+ * ⚠ 2026-09-05：画布的提示条 2.6 秒自动消失——对「已连上」「PNG 已导出」
+ *   这类回执是对的，对那条**要人去做点什么**的话不是：它说的是
+ *   「你这一存把页面脚本 / 数据孔 / 表单控件弄少了，撤销后重存」。
+ *   闪一下就没，等于没说过。真机那次（点选编辑把交付页的 Tailwind 摘掉）
+ *   能被抓到靠的是服务端日志，不是屏幕。
+ *
+ * 判据钉在源码上：这条分支散在 effect 和渲染两处，单渲染一处证明不了另一处。
+ * 剥注释再匹配——本仓踩过"判据 grep 的词同时出现在注释里，删了实现照样绿"。
+ */
+describe("带走了东西的回执要留在屏幕上", () => {
+  const code = () => {
+    const fs = require("node:fs") as typeof import("node:fs");
+    const path = require("node:path") as typeof import("node:path");
+    return (
+      fs.readFileSync(
+        path.resolve(__dirname, "../SpecPageCanvasStage.tsx"),
+        "utf8"
+      ) as string
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+  };
+
+  it("自动消失的计时器对这一条不生效", () => {
+    const src = code();
+    expect(src).toMatch(/toastIsLoss/);
+    // effect 里必须有"是这条就别起计时器"的早退
+    expect(src).toMatch(/if\s*\(!toast\s*\|\|\s*toastIsLoss\)\s*return;/);
+  });
+
+  it("屏幕上给得出关掉它的办法（不许只能等）", () => {
+    expect(code()).toContain("sliderule-canvas-toast-dismiss");
+  });
+
+  it("反向配对：普通回执还得自己消失", () => {
+    // 全都不消失的话，画布上会堆一排「已连上」——那是另一种坏。
+    const src = code();
+    expect(src).toMatch(/setTimeout\(\(\)\s*=>\s*setToast\(null\),\s*2600\)/);
+  });
+
+  it("判的是语义不是某个域名/字面", () => {
+    // 「顺手带走了」这句由后端 losses_message 出，前端只认它这半句。
+    expect(code()).toContain('toast.includes("顺手带走了")');
+  });
+});

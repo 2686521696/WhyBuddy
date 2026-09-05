@@ -2504,11 +2504,19 @@ function CanvasInner({
 
   // 提示条自己消失。⚠ 用 key 重置计时：连着点两次导出，第二次的提示
   // 不该被第一次的计时器提前掐掉。
+  //
+  // ⚠ 2026-09-05：**「顺手带走了东西」那条不许自己消失。**
+  //   2.6 秒对"已连上"「PNG 已导出」这类回执够了，但那条说的是
+  //   「你这一存把页面脚本 / 数据孔 / 表单控件弄少了，撤销后重存」——
+  //   一条需要人去做点什么的话，闪一下就没，等于没说过。
+  //   真机那次（点选编辑把交付页的 Tailwind 摘掉）能被抓到，
+  //   靠的是服务端日志，不是屏幕。
+  const toastIsLoss = !!toast && toast.includes("顺手带走了");
   React.useEffect(() => {
-    if (!toast) return;
+    if (!toast || toastIsLoss) return;
     const t = setTimeout(() => setToast(null), 2600);
     return () => clearTimeout(t);
-  }, [toast]);
+  }, [toast, toastIsLoss]);
 
   /**
    * 页面数变了（推演中逐页到达）重新适应一次画布。
@@ -3004,10 +3012,24 @@ function CanvasInner({
               点了导出却什么都没下载，比报个错更让人以为是自己点错了。 */}
           {toast ? (
             <div
-              className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 rounded-b-md bg-stone-800/90 px-3 py-1.5 text-[11px] text-white shadow-lg"
+              className={`absolute left-1/2 top-0 max-w-[70%] -translate-x-1/2 rounded-b-md px-3 py-1.5 text-[11px] shadow-lg ${
+                toastIsLoss
+                  ? "bg-amber-500 text-white"
+                  : "pointer-events-none bg-stone-800/90 text-white"
+              }`}
               data-testid="sliderule-canvas-toast"
             >
               {toast}
+              {toastIsLoss ? (
+                <button
+                  type="button"
+                  className="ml-2 underline underline-offset-2"
+                  onClick={() => setToast(null)}
+                  data-testid="sliderule-canvas-toast-dismiss"
+                >
+                  知道了
+                </button>
+              ) : null}
             </div>
           ) : null}
 

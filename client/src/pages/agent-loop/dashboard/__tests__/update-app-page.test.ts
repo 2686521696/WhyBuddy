@@ -28,7 +28,9 @@ describe("updateAppPage", () => {
   it("成功：返回 ok + 后端报的字节数", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { id: "a1", pageId: "p1", bytes: 1234 }));
     const res = await updateAppPage("a1", "p1", "<html></html>");
-    expect(res).toEqual({ ok: true, bytes: 1234 });
+    // warn = 后端 lossesMessage。没带就是空串——**不是 undefined**，
+    // 调用方 `res.warn || "已改好"` 才走得通。
+    expect(res).toEqual({ ok: true, bytes: 1234, warn: "" });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/sliderule/apps/a1/pages/p1");
     expect(init.method).toBe("PATCH");
@@ -64,5 +66,34 @@ describe("updateAppPage", () => {
     fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     const res = await updateAppPage("a1", "p1", "<x/>");
     expect(res).toEqual({ ok: false, error: "网络请求失败，请检查连接后重试" });
+  });
+
+  /**
+   * 「存进去了，但顺手带走了东西」得原样带回来。
+   *
+   * ⚠ 2026-09-05：后端 page_edit_guard 数出了缺口、`PATCH` 也把它透出来了，
+   *   而这一层**把字段丢在地上**，三个写回点全都只显「已保存 / 已改好」。
+   *   生成侧加了字段、消费侧没接——没有报错、没有告警、判据全绿。
+   */
+  it("后端说带走了东西，warn 要原样带回来", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        bytes: 9,
+        losses: [{ kind: "scripts", label: "页面脚本", before: 2, after: 1, lost: 1 }],
+        lossesMessage: "这次保存顺手带走了：页面脚本 2→1。",
+      })
+    );
+    const res = await updateAppPage("a1", "p1", "<x/>");
+    expect(res).toEqual({
+      ok: true,
+      bytes: 9,
+      warn: "这次保存顺手带走了：页面脚本 2→1。",
+    });
+  });
+
+  it("反向配对：措辞不许前端自己拼（后端没给就是空串）", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { bytes: 9, losses: [] }));
+    const res = await updateAppPage("a1", "p1", "<x/>");
+    expect(res).toEqual({ ok: true, bytes: 9, warn: "" });
   });
 });

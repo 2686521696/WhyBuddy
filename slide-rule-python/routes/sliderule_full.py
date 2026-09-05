@@ -25,6 +25,7 @@ from middlewares.current_user import CurrentUserOptional
 # 顶层 import，别塞函数体（架构闸盯着逃生口，函数体 import 一样算数）。
 # gate_health 是 util 叶子；page_edit_guard 在 core（它要 html_bindings 数据洞）。
 from services.gate_health import (
+    ledger_since as _gate_since,
     record_verdict as _gate_record,
     snapshot as _gate_snapshot,
     summary_line as _gate_summary,
@@ -1417,7 +1418,16 @@ async def gate_health(
       读接口跟收尾那行走**同一个** `snapshot()`，不另起一套口径（§4）。
     """
     _auth(x_internal_key)
-    return {"gates": _gate_snapshot(), "line": _gate_summary()}
+    rows = _gate_snapshot()
+    return {
+        "gates": rows,
+        "line": _gate_summary(),
+        # ⚠ 台账是**进程内存**：uvicorn 一 reload 就归零。没有这个字段，
+        #   空清单读起来像「各道闸都没开过火，一切正常」，而实情通常是
+        #   「这个进程刚起来」。空≠绿灯。
+        "since": _gate_since(),
+        "empty": not rows,
+    }
 
 
 @router.get("/runs/{run_id}/stream")

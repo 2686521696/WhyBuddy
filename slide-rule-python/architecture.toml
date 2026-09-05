@@ -1049,7 +1049,11 @@ why = "createPythonWebAigcAdapter 拼字符串 __import__"
 deferred = 483
 # 明说不体检的拦截理由条数（[gate_codes] 里值为空串的）。**只许变少**。
 # 2026-09-05 建账时 9 条，第一笔要还的是 CLOSURE_DEGRADED_RUN。
-gate_codes_without_health = 9
+# ⚠ 同日 11 条：清单从「只扫 services/」扩到「services/ + routes/」，
+#   多认出 LLM_EMPTY_OUTPUT / PACKAGE_NOT_FOUND 两条接口层反馈。
+#   **这不是新欠了两笔账**——那两条一直在，只是清单先前看不见它们。
+#   涨基线只在"量程变宽"时允许，日常流程里往这加数字＝有意接受新欠账。
+gate_codes_without_health = 11
 violations = [
 ]
 services_violations = [
@@ -1169,6 +1173,13 @@ orphans = [
 # （一轮里所有能力全退兜底 → 每次都同一条 CLOSURE_DEGRADED_RUN，
 #  正是"一直说同一句话"那种形状）。
 "CLOSURE_DEGRADED_RUN" = ""
+
+# ⚠ 2026-09-05 下半场：清单原来只扫 services/，routes/ 整片没算。补上之后
+#   多出来这两条——它们一直在那儿，只是清单看不见。两条都是**接口层的即时
+#   反馈**（AI 改提示词返回空 / 点了一个不存在的技能包），当场回给调用方，
+#   不参与任何闭环判定，也没有"一直说同一句话"的退化形态：不进体检。
+"LLM_EMPTY_OUTPUT" = ""
+"PACKAGE_NOT_FOUND" = ""
 
 # 不是闭环闸：连通性自检 / 任务生命周期鉴权，跟"产出合不合格"无关。
 "LLM_TEST_ERROR" = ""
