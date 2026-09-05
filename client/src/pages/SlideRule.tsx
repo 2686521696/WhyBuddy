@@ -39,6 +39,7 @@ import { RollingText } from "./sliderule/RollingText";
 import { turnTimelineHeader } from "./sliderule/activity-rows";
 import { ActivityList } from "./sliderule/ActivityList";
 import { deriveStageBands } from "./sliderule/stage-authority";
+import { isContinuationTurn } from "./sliderule/turn-continuation";
 
 /** llm_delta 来源标签 → 实时块标题（能力 id / "five-system-model" / "closure.summary"）。 */
 function llmDraftTitle(label: string | null | undefined): string {
@@ -280,6 +281,9 @@ function TurnPhaseTimeline({
         streaming,
         planSource: turn.routeFacts.planSource,
         extraTexts,
+        // 续跑轮不重演开场（接收意图 / 编排 / planning）——见
+        // turn-continuation 头注：一跳一件是有意的，重画开场不是。
+        continuation: isContinuationTurn(turn.user),
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
@@ -288,6 +292,8 @@ function TurnPhaseTimeline({
       llmDraft,
       publishClosure,
       turn.routeFacts.planSource,
+      // ⚠ 少一条依赖 = 续跑轮切换时不重算，左栏还是旧的那份。
+      turn.user,
     ]
   );
   const stepTexts = turn.steps.map(textFromStep).filter(Boolean);

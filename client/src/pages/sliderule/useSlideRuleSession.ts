@@ -1119,6 +1119,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     // state.turnNarrations（刷新后回放时间线；setUiTurns 是异步状态，
     // 落定时刻从它读不到完整清单）
     const collectedSteps: TurnStep[] = [];
+    /** 本轮已经在左栏报过的页面。同一页第二次到达不再追加一条芯片。 */
+    const announcedPages = new Set<string>();
     const hostSpeechRef = { current: "" };
     const appendStep = (step: TurnStep) => {
       collectedSteps.push(step);
@@ -1740,9 +1742,21 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   next[i] = page;
                   return next;
                 });
-                appendStreamStep(
-                  `🖼 界面已出：${page.pageId}（${page.current}/${page.total}）`
-                );
+                // ⚠ 2026-09-05：上面那行「覆盖，不是追加」的纪律，下面这行
+                //   **没跟上**——页面覆盖了，左栏却又追加一条一模一样的芯片。
+                //   真机 sr-20260905004750 第 3 轮：五页的「🖼 界面已出」连着
+                //   出现两遍，编号顺序逐字相同（id 全是 turn-…-stream-N，
+                //   两遍都来自这里）。这就是本仓 §4「只改一半必然静默失效」：
+                //   不报错、不告警，只是左栏多出一份。
+                // ⚠ 判「第一次到达」不能读 setSpecPages 的更新函数里的标记：
+                //   那个函数是渲染时才跑的，读的时候它还没执行过——写成那样
+                //   等于永远都算第一次，什么都没修。用本轮作用域的集合，同步。
+                if (!announcedPages.has(page.pageId)) {
+                  announcedPages.add(page.pageId);
+                  appendStreamStep(
+                    `🖼 界面已出：${page.pageId}（${page.current}/${page.total}）`
+                  );
+                }
               },
               onReasoningStep: (capabilityId, loop, productStep) => {
                 applyRehearsalEvent(capabilityId, productStep);

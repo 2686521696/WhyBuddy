@@ -113,7 +113,21 @@ describe("对话区 / 输入条 Cursor 尺度（装在真链路上）", () => {
 });
 
 describe("产品对话列的六步钟（不打开轨迹也能看见）", () => {
-  it("运行中直接画出 6 步，第 1 步 skippable，无假 ETA", () => {
+  /**
+   * ⚠ 2026-09-05 重写。原判据要的是「永远画 6 步、第 1 步显示成 skipped」。
+   *   2026-09-02 `7afc6a9`（钟跟本趟 goal.tools 走）把它改了，
+   *   `buildRehearsalClockView` 末尾写着：
+   *
+   *     // 抄 grok：进度只画选中的步。skipped 留在状态机里，钟上不占格——
+   *     // 永远六格就是死日历。
+   *
+   *   于是 skipped 的格子**根本不渲染**，`data-status="skipped"` 再也不会出现，
+   *   钟从第 2 格起画。真机截图上顶栏就是「2 起草 SPEC … 6 汇合过闸」五格。
+   *   代码改了、判据没改，红了三天——而长期红着的判据比没有更坏。
+   *
+   *   现在按那个决定重写：只画会跑的那几步，不画死日历，仍然不许有假 ETA。
+   */
+  it("钟只画会跑的那几步（skipped 不占格），无假 ETA", () => {
     const clock = buildRehearsalClockView(startRehearsalCursor(), {
       isRunning: true,
     });
@@ -133,10 +147,14 @@ describe("产品对话列的六步钟（不打开轨迹也能看见）", () => {
       />
     );
     expect(html).toContain('data-testid="sliderule-rehearsal-clock"');
-    expect(html).toContain('data-step="1"');
-    expect(html).toContain('data-skippable="true"');
-    expect(html).toContain('data-status="skipped"');
+    // 会跑的那几格在，第一格是当前步
+    expect(html).toContain('data-step="2"');
+    expect(html).toContain('data-step="6"');
     expect(html).toContain("起草 SPEC");
+    expect(html).toContain("汇合过闸");
+    // ★ 反向配对：跳过的格子不占位，也不许把状态漏到页面上
+    expect(html).not.toContain('data-step="1"');
+    expect(html).not.toContain('data-status="skipped"');
     expect(html).toContain("大约数分钟，第一页会先出现");
     expect(html).not.toContain("8–9");
     expect(html).not.toContain("8 分钟");

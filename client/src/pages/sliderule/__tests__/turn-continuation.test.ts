@@ -1,0 +1,225 @@
+// @vitest-environment jsdom
+/**
+ * 续跑的一轮不许重演开场；同一件事不许在左栏列两遍。
+ *
+ * ## 事故（2026-09-05 真机 + 用户裁决）
+ *
+ * 伴随式澄清的设计是「停住 → 人选 → 注入 → 接着跑」，后端那半是好的。
+ * 但「一跳一件」（2026-09-02 `7afc6a9`）决定了续跑只能再开一轮，而**每一轮
+ * 都从头演一遍开场**。用户指着这一处说：「这块的切换很不自然，看着又跟
+ * 重新推演的感觉似的」。
+ *
+ * ⚠ 判据全部照**真机原样载荷**写（§一之二）：下面这些 label / capabilityId
+ *   逐字抄自 sr-20260905004750 的 `turnNarrations`，不是自己拼一份。
+ *   自己拼的判据只能证明"我抄对了"。
+ */
+import { describe, expect, it } from "vitest";
+
+import { deriveStageBands } from "../stage-authority";
+import { isContinuationTurn } from "../turn-continuation";
+import type { TurnStep } from "../types";
+
+let seq = 0;
+const chip = (capabilityId: string, label: string): TurnStep =>
+  ({
+    id: `s${++seq}`,
+    kind: "chip",
+    capabilityId,
+    roleId: "system",
+    label,
+    realLlm: false,
+  }) as unknown as TurnStep;
+
+/** 真机 sr-20260905004750 第 3 轮（user =「假设已确认。继续画页面。」）的开头。 */
+const REAL_CONTINUATION: TurnStep[] = [
+  chip("intent.parse", "指令已接收 · 启动推理"),
+  chip("intent.parse", "编排 pages → structure → bind"),
+  chip("planning", "第 1 轮 · 正在执行 planning"),
+  chip("intent.parse", "编排 pages"),
+  chip("factory.pages", "第 1 轮 · 逐页画界面（并发）"),
+  chip("specfirst.design", "定这个应用的设计语言"),
+];
+
+/** 真机第 2 轮里那段「同一件事上报两遍」。 */
+const REAL_DOUBLE_REPORT: TurnStep[] = [
+  chip("evidence.search", "第 1 轮 · ⚡ 正在全网检索外部证据"),
+  chip("risk.analyze", "第 1 轮 · 正在分析风险"),
+  chip("critique.generate", "第 1 轮 · 正在自我挑刺"),
+  chip("report.write", "第 1 轮 · 正在撰写可行性报告"),
+  chip("intent.parse", "🖋 LLM 正在全网检索外部证据（实时输出见下方）..."),
+  chip("intent.parse", "🖋 LLM 正在自我挑刺（实时输出见下方）..."),
+  chip("intent.parse", "🖋 LLM 正在分析风险（实时输出见下方）..."),
+  chip("intent.parse", "🖋 LLM 正在撰写可行性报告（实时输出见下方）..."),
+];
+
+const allVerbs = (steps: TurnStep[], continuation: boolean) =>
+  deriveStageBands({ steps, streaming: false, continuation })
+    .flatMap(g => g.rows)
+    .map(r => r.verb);
+
+describe("认出续跑", () => {
+  it("确认伴随式假设那句是续跑", () => {
+    expect(isContinuationTurn("假设已确认。继续画页面。")).toBe(true);
+  });
+
+  it("盯半句不盯整句（措辞改了还得认出来）", () => {
+    expect(isContinuationTurn("假设已确认，接着往下走")).toBe(true);
+  });
+
+  it("工厂跳的指令也是续跑", () => {
+    expect(isContinuationTurn("进入数据模型反推（Structure）")).toBe(true);
+  });
+
+  it("★ 反向配对：新话题不是续跑", () => {
+    expect(isContinuationTurn("做一个社区食堂的每日菜单和预订台账")).toBe(false);
+    expect(isContinuationTurn("")).toBe(false);
+    expect(isContinuationTurn(null)).toBe(false);
+  });
+});
+
+describe("续跑轮不重演开场", () => {
+  it("开场那三样都不再画：接收意图 / 编排 / planning", () => {
+    const verbs = allVerbs(REAL_CONTINUATION, true);
+    expect(verbs).not.toContain("接收意图");
+    expect(verbs.some(v => v.startsWith("编排"))).toBe(false);
+    expect(verbs.some(v => v.includes("planning"))).toBe(false);
+  });
+
+  it("真正干的活还在（少画的只是开场）", () => {
+    const verbs = allVerbs(REAL_CONTINUATION, true);
+    expect(verbs).toContain("逐页画界面（并发）");
+    expect(verbs).toContain("定这个应用的设计语言");
+  });
+
+  it("★ 反向配对：首轮照旧全画", () => {
+    // 首轮那几行是真信息——它接了活、编排了这条路线。一起藏掉就是另一种坏。
+    const verbs = allVerbs(REAL_CONTINUATION, false);
+    expect(verbs).toContain("接收意图");
+    expect(verbs.some(v => v.startsWith("编排"))).toBe(true);
+  });
+
+  it("★ 续跑轮不许把整条时间线清空", () => {
+    const groups = deriveStageBands({
+      steps: REAL_CONTINUATION,
+      streaming: false,
+      continuation: true,
+    });
+    expect(groups.length).toBeGreaterThan(0);
+    expect(groups.flatMap(g => g.rows).length).toBeGreaterThan(0);
+  });
+});
+
+describe("同一件事只列一遍", () => {
+  it("「实时输出见下方」的指路条不再单占一行", () => {
+    const verbs = allVerbs(REAL_DOUBLE_REPORT, false);
+    const n = verbs.filter(v => v === "全网检索外部证据").length;
+    expect(n).toBe(1);
+    expect(verbs.filter(v => v === "分析风险")).toHaveLength(1);
+    expect(verbs.filter(v => v === "自我挑刺")).toHaveLength(1);
+    expect(verbs.filter(v => v === "撰写可行性报告")).toHaveLength(1);
+  });
+
+  it("★ 正主不在时，指路条得留着（不许跑了却没记）", () => {
+    const only = [chip("intent.parse", "🖋 LLM 正在分析风险（实时输出见下方）...")];
+    expect(allVerbs(only, false)).toContain("分析风险");
+  });
+
+  it("连着两条一模一样的合成一条", () => {
+    const doubled: TurnStep[] = [
+      chip("ux.preview", "🖼 界面已出：p5（1/5）"),
+      chip("ux.preview", "🖼 界面已出：p5（1/5）"),
+      chip("ux.preview", "🖼 界面已出：p2（2/5）"),
+    ];
+    expect(allVerbs(doubled, false)).toHaveLength(2);
+  });
+
+  it("★ 反向配对：隔开的重复是真跑了两轮，不许合", () => {
+    // 「第 1 轮 / 第 2 轮 各画一次」是事实，合掉就把"它重跑过"抹了。
+    const twoRounds: TurnStep[] = [
+      chip("factory.pages", "第 1 轮 · 逐页画界面（并发）"),
+      chip("specfirst.design", "定这个应用的设计语言"),
+      chip("factory.pages", "第 2 轮 · 逐页画界面（并发）"),
+    ];
+    expect(allVerbs(twoRounds, false)).toHaveLength(3);
+  });
+});
+
+describe("接在真链路上", () => {
+  it("★ §1：SlideRule 真的把 continuation 传进去了", () => {
+    // 光有参数不算数——装在不通电的插座上是本仓最贵的那条。
+    const fs = require("node:fs") as typeof import("node:fs");
+    const path = require("node:path") as typeof import("node:path");
+    const src = (
+      fs.readFileSync(path.resolve(__dirname, "../../SlideRule.tsx"), "utf8") as string
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    expect(src).toMatch(/continuation:\s*isContinuationTurn\(turn\.user\)/);
+    // memo 依赖漏了 turn.user = 切换时不重算，左栏还是旧的那份
+    expect(src).toMatch(/turn\.user,/);
+  });
+});
+
+/**
+ * 拿**真机那一发的原样载荷**再验一遍。
+ *
+ * ⚠ 本仓 §一之二：护栏的判据必须喂真机那一发的原样载荷，不许自己拼一个。
+ *   上面那些 REAL_* 是我照着日志抄的，抄错了判据也发现不了；这一段直接读
+ *   `fixtures/real-turn-narrations.json`——sr-20260905004750 三轮的全部 chip
+ *   （用户当天截图里那一次），是从会话状态里导出来的，不是手写的。
+ */
+import realTurns from "./fixtures/real-turn-narrations.json";
+
+describe("喂真机原样载荷", () => {
+  const turnOf = (userNeedle: string) => {
+    const t = (realTurns as Array<{ user: string; steps: Array<{ capabilityId: string; label: string }> }>)
+      .find(x => x.user.includes(userNeedle));
+    if (!t) throw new Error(`真机夹具里没有这一轮：${userNeedle}`);
+    return t;
+  };
+  const toSteps = (t: { steps: Array<{ capabilityId: string; label: string }> }): TurnStep[] =>
+    t.steps.map((s, i) =>
+      ({
+        id: `r${i}`,
+        kind: "chip",
+        capabilityId: s.capabilityId,
+        roleId: "system",
+        label: s.label,
+        realLlm: false,
+      }) as unknown as TurnStep
+    );
+
+  it("真机那一轮续跑：开场三样全不画", () => {
+    const t = turnOf("假设已确认");
+    const verbs = allVerbs(toSteps(t), true);
+    expect(verbs).not.toContain("接收意图");
+    expect(verbs.some(v => v.startsWith("编排"))).toBe(false);
+    expect(verbs.some(v => v.includes("planning"))).toBe(false);
+    // 真干的活还在
+    expect(verbs).toContain("逐页画界面（并发）");
+  });
+
+  it("真机那一轮：五页的「界面已出」不再各列两遍", () => {
+    const t = turnOf("假设已确认");
+    const raw = t.steps.filter(s => s.label.includes("界面已出")).length;
+    // 夹具本身就带着那个 bug（每页两条），判据先证明它真的在
+    expect(raw).toBeGreaterThan(10);
+    const verbs = allVerbs(toSteps(t), true);
+    const shown = verbs.filter(v => v.includes("界面已出")).length;
+    expect(shown).toBeLessThan(raw);
+  });
+
+  it("真机首轮：同一件事上报两遍的四条，各只剩一条", () => {
+    const t = turnOf("打造社区食堂");
+    const verbs = allVerbs(toSteps(t), false);
+    for (const v of ["全网检索外部证据", "分析风险", "自我挑刺", "撰写可行性报告"]) {
+      expect(verbs.filter(x => x === v)).toHaveLength(1);
+    }
+  });
+
+  it("★ 反向配对：真机首轮不是续跑，开场照旧画", () => {
+    const t = turnOf("打造社区食堂");
+    expect(isContinuationTurn(t.user)).toBe(false);
+    expect(allVerbs(toSteps(t), false)).toContain("接收意图");
+  });
+});

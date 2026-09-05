@@ -32,6 +32,25 @@ const SPECFIRST_ID = /\bspecfirst\.[a-z]+\b/;
 
 const INTAKE_NEEDLES = ["指令已接收", "上一话题已闭环"];
 
+/**
+ * 开场三行：每一轮 runTurn 都会重演的那几条。
+ *
+ * ⚠ 2026-09-05 真机 sr-20260905004750 第 3 轮（用户原文「假设已确认。继续画
+ *   页面。」）开头逐字：
+ *
+ *     intent.parse｜指令已接收 · 启动推理
+ *     intent.parse｜编排 pages → structure → bind
+ *     planning    ｜第 1 轮 · 正在执行 planning
+ *     intent.parse｜编排 pages
+ *
+ *   续跑本来就是接着上一跳走，路线上一轮已经摆过了。再演一遍，屏幕上就是
+ *   「怎么又从头推演了一遍」——用户当天指着这一处说「切换很不自然」。
+ *
+ *   只在**续跑轮**少画（`continuation`）。首轮照旧全画：那时候用户确实需要
+ *   看见它接了活、编排了什么路线。
+ */
+const OPENING_NEEDLES = ["编排 "];
+
 const CLOSURE_NEEDLES = ["本话题已闭环", "发布闭环"];
 
 /** 画页/证据，但不是具名配方阶段（BettaFish 里当 chunk，不进阶段轨）。 */
@@ -69,6 +88,13 @@ function isClosureLine(line: StageLine): boolean {
 
 function isIntakeLine(line: StageLine): boolean {
   return INTAKE_NEEDLES.some(n => haystack(line).includes(n));
+}
+
+/** 续跑轮里要少画的那几条（见 OPENING_NEEDLES 头注）。 */
+export function isOpeningLine(line: StageLine): boolean {
+  if (isIntakeLine(line)) return true;
+  if ((line.capabilityId || "").trim() === "planning") return true;
+  return OPENING_NEEDLES.some(n => line.text.includes(n));
 }
 
 export function classifyStageLine(line: StageLine): StageAuthority {
@@ -161,16 +187,79 @@ function recipeTrackRows(
   return rows;
 }
 
+/**
+ * 「（实时输出见下方）」那几条是**指路条，不是活动**。
+ *
+ * ⚠ 2026-09-05 真机 sr-20260905004750 第 2 轮，同一件事上报了两遍：
+ *
+ *     evidence.search｜第 1 轮 · ⚡ 正在全网检索外部证据
+ *     intent.parse   ｜🖋 LLM 正在全网检索外部证据（实时输出见下方）...
+ *
+ *   `parseActivityLine` 把两条都归成 verb=「全网检索外部证据」，左栏于是
+ *   列两遍。真机上「全网检索外部证据 / 分析风险 / 自我挑刺 / 撰写可行性报告」
+ *   四条全是这个形状——用户看到的「同一个栏里重复 5 条」就是它。
+ *
+ *   指路条指的那份东西（LLM 实时输出）本来就另有面板在渲染，所以它自己
+ *   不必再占一行。**但不许无脑丢**：同 verb 的正主不在时它就是唯一的记录，
+ *   那时候留着。丢了会变成「跑了但左栏没记」——本仓最忌的那类。
+ */
+function isLiveOutputPointer(line: StageLine): boolean {
+  return line.text.includes("（实时输出见下方）");
+}
+
+function dropRedundantPointers(lines: StageLine[]): StageLine[] {
+  const verbOf = (l: StageLine) => parseActivityLine(l.text).verb;
+  const anchored = new Set(
+    lines.filter(l => !isLiveOutputPointer(l)).map(verbOf)
+  );
+  return lines.filter(l => !(isLiveOutputPointer(l) && anchored.has(verbOf(l))));
+}
+
+/**
+ * 连着两条一模一样的，合成一条。
+ *
+ * ⚠ 2026-09-05 真机：同一批「🖼 界面已出：p5（1/5）… p4（5/5）」连着出现两遍，
+ *   编号和顺序逐字相同（id 全是 `turn-…-stream-N`，即两遍都来自前端
+ *   `onSpecPage`——同一页第二次到达时 `setSpecPages` 是**覆盖**，而
+ *   `appendStreamStep` 是**追加**，只改了一半）。
+ *   源头那处一并修了；这里兜住的是"任何来源的连续重复"。
+ *
+ * ⚠ 只合**相邻**的。跨开的重复是真的跑了两轮（第 1 轮 / 第 2 轮 各一次），
+ *   合掉就把"它重跑过"这个事实抹了。
+ */
+function collapseAdjacentRepeats(lines: StageLine[]): StageLine[] {
+  const out: StageLine[] = [];
+  for (const line of lines) {
+    const prev = out[out.length - 1];
+    if (
+      prev &&
+      prev.text === line.text &&
+      (prev.capabilityId || "") === (line.capabilityId || "")
+    ) {
+      continue;
+    }
+    out.push(line);
+  }
+  return out;
+}
+
 export function deriveStageBands(args: {
   steps: TurnStep[];
   streaming: boolean;
   planSource?: PlanSourceValue;
   extraTexts?: string[];
+  /** 这一轮是不是上一跳的续跑（见 turn-continuation.isContinuationTurn）。 */
+  continuation?: boolean;
 }): ActivityGroup[] {
-  const lines = [
+  const raw = [
     ...linesFromTurnSteps(args.steps),
     ...(args.extraTexts || []).map(text => ({ text })),
   ];
+  const lines = collapseAdjacentRepeats(
+    dropRedundantPointers(
+      args.continuation ? raw.filter(l => !isOpeningLine(l)) : raw
+    )
+  );
   if (lines.length === 0) return [];
 
   const buckets = {

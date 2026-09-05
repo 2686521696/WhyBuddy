@@ -68,7 +68,20 @@ describe("ActivityList", () => {
     expect(html).not.toContain('data-testid="sliderule-turn-steps-toggle"');
   });
 
-  it("配方轨铺未到的步骤，正文块不进阶段名单", () => {
+  /**
+   * ⚠ 2026-09-05 重写。这条判据原本要的是**已经删掉的设计**：
+   *   一上来铺一份 7 格 pending 骨架（`RECIPE_CORE` 翻译表），没走到的步骤
+   *   先灰着。那份骨架在 2026-09-02 `7afc6a9`「控制面 WRITE 交回 host：
+   *   开始推演只点火 spec，一跳一件」里被**有意删掉**了，注释写着
+   *   「配方步只认事件上的 specfirst.* id，查表翻译已删」。
+   *
+   *   代码改了、判据没跟着改，于是它红了三天没人管——而**一条长期红着的
+   *   判据比没有更坏**：它训练所有人把红当背景色。
+   *
+   *   现在按 09-02 那个决定重写：配方轨只认事件上真到过的 specfirst.*，
+   *   一格都不发明。反向那半（正文块不进阶段名单）是原判据里对的部分，留着。
+   */
+  it("配方轨只认真到过的 specfirst.*，不发明 pending 骨架", () => {
     const groups = deriveStageBands({
       steps: [
         {
@@ -95,10 +108,12 @@ describe("ActivityList", () => {
       <ActivityList groups={groups} streaming header="2 步" />
     );
     expect(html).toContain("Agent 选");
-    expect(html).toContain("配方");
     expect(html).toContain("起草规格");
-    expect(html).toContain("接上数据");
-    expect(html).toContain('data-status="pending"');
-    expect(html).toContain('data-stage-id="specfirst.bind"');
+    // ★ 没到过的步骤不许凭空出现：没有 pending 骨架，也没有 bind 那一格。
+    expect(html).not.toContain('data-status="pending"');
+    expect(html).not.toContain('data-stage-id="specfirst.bind"');
+    expect(html).not.toContain("接上数据");
+    // 正文块（chip 的人话）不进阶段名单——这半是原判据里对的部分。
+    expect(html).not.toContain("正在澄清需求");
   });
 });

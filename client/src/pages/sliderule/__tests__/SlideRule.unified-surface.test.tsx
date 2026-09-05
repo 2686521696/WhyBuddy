@@ -445,7 +445,13 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain('data-testid="sliderule-empty-state"');
   });
 
-  it("左栏拆出 Agent 选 和 配方轨，未到的配方步是 pending", () => {
+  /**
+   * ⚠ 2026-09-05 重写。原判据要的是 2026-09-02 `7afc6a9` **有意删掉**的
+   *   pending 骨架（`RECIPE_CORE` 翻译表）。代码改了、判据没改，红了三天。
+   *   一条长期红着的判据比没有更坏——它训练所有人把红当背景色。
+   *   现在按那次决定重写：左栏仍然按权属分带，但一格都不发明。
+   */
+  it("左栏按权属分带，没到过的步骤一格都不发明", () => {
     const html = renderPage({
       goal: "做一个采购审批应用",
       isRunning: true,
@@ -486,11 +492,19 @@ describe("unified /sliderule surface (single mental model)", () => {
       ],
     });
     expect(html).toContain("Agent 选");
-    expect(html).toContain("配方");
     expect(html).toContain("起草规格");
-    expect(html).toContain("接上数据");
-    expect(html).toContain('data-status="pending"');
-    expect(html).toContain('data-authority="recipe"');
+    expect(html).toContain('data-authority="agent"');
+    // ★ 没走到的步骤，**活动行里**一格都不发明。
+    //
+    // ⚠ 判据只能盯活动行：整页里 `data-status="pending"` 还有第二个来源——
+    //   顶上那个六步钟（SlideRuleStatusBar），它本来就该把没走到的步骤显成
+    //   pending。第一版写成整页 not.toContain，红在了一个跟本判据无关的组件上。
+    const activityRows = [
+      ...html.matchAll(/data-testid="sliderule-activity-row"[^>]*/g),
+    ].map(m => m[0]);
+    expect(activityRows.length).toBeGreaterThan(0);
+    expect(activityRows.some(r => r.includes('data-status="pending"'))).toBe(false);
+    expect(html).not.toContain("接上数据");
     expect(html).not.toContain("ChainOfThought");
   });
 
