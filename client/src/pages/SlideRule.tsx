@@ -39,7 +39,10 @@ import { RollingText } from "./sliderule/RollingText";
 import { turnTimelineHeader } from "./sliderule/activity-rows";
 import { ActivityList } from "./sliderule/ActivityList";
 import { deriveStageBands } from "./sliderule/stage-authority";
-import { isContinuationTurn } from "./sliderule/turn-continuation";
+import {
+  foldContinuationTurns,
+  isContinuationTurn,
+} from "./sliderule/turn-continuation";
 
 /** llm_delta 来源标签 → 实时块标题（能力 id / "five-system-model" / "closure.summary"）。 */
 function llmDraftTitle(label: string | null | undefined): string {
@@ -453,7 +456,7 @@ type ImItem = { id: string; role: "user" | "assistant"; turn: UiTurn };
  * 消息并留告警，不该崩掉整个页面。同 id 保留**后出现**的那条（更新）。
  */
 export function buildImItems(uiTurns: UiTurn[]): ImItem[] {
-  const flat = uiTurns.flatMap(turn => [
+  const flat = foldContinuationTurns(uiTurns).flatMap(turn => [
     ...(turn.user
       ? ([{ id: `${turn.id}-user`, role: "user", turn }] as ImItem[])
       : []),

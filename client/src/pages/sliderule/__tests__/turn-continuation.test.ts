@@ -258,3 +258,122 @@ describe("喂真机原样载荷", () => {
     expect(allVerbs(toSteps(t), false)).toContain("接收意图");
   });
 });
+
+/**
+ * 续跑接在上一段后面——不另起一个气泡、不另起一张卡。
+ *
+ * ⚠ 2026-09-05 用户第二次指出来：我第一版只做了「少画开场」，没做
+ *   「接在上一段后面」。结果那一轮只剩一条 `接收意图`，看着还是重新开始；
+ *   全滤掉又变成一片空白。两头都不对，因为少的那一半才是关键：
+ *   **它不该是一块新的。**
+ */
+describe("续跑接在上一段后面", () => {
+  const turn = (
+    id: string,
+    user: string,
+    labels: Array<[string, string]>,
+    status: "streaming" | "complete" = "complete"
+  ) =>
+    ({
+      id,
+      user,
+      status,
+      steps: labels.map(([cap, label], i) =>
+        ({
+          id: `${id}-${i}`,
+          kind: "chip",
+          capabilityId: cap,
+          roleId: "system",
+          label,
+          realLlm: false,
+        }) as unknown as TurnStep
+      ),
+      routeFacts: { turnId: id },
+      routeExpanded: false,
+      routeLitCount: 0,
+      assistant: "",
+      assistantSource: "llm" as const,
+      main: null,
+      actions: [],
+    }) as unknown as import("../types").UiTurn;
+
+  const FIRST = turn("t1", "做一个社区图书角的借书还书登记", [
+    ["intent.parse", "指令已接收 · 启动推理"],
+    ["specfirst.spec", "起草规格：成功判据、需求节点与页面清单"],
+  ]);
+  /** 真机那一轮开头逐字（sr-20260905004750 第 3 轮）。 */
+  const CONT = turn(
+    "t2",
+    "假设已确认。继续画页面。",
+    [
+      ["intent.parse", "指令已接收 · 启动推理"],
+      ["intent.parse", "编排 pages → structure → bind"],
+      ["planning", "第 1 轮 · 正在执行 planning"],
+      ["specfirst.design", "定这个应用的设计语言"],
+    ],
+    "streaming"
+  );
+
+  it("两轮折成一块", async () => {
+    const { foldContinuationTurns } = await import("../turn-continuation");
+    expect(foldContinuationTurns([FIRST, CONT])).toHaveLength(1);
+  });
+
+  it("气泡留的是人真说过的那句，不是机器排的那句", async () => {
+    const { foldContinuationTurns } = await import("../turn-continuation");
+    const [merged] = foldContinuationTurns([FIRST, CONT]);
+    expect(merged.user).toBe("做一个社区图书角的借书还书登记");
+    expect(merged.user).not.toContain("假设已确认");
+  });
+
+  it("上一段的步骤还在，续跑的活接在后面", async () => {
+    const { foldContinuationTurns } = await import("../turn-continuation");
+    const [merged] = foldContinuationTurns([FIRST, CONT]);
+    const labels = merged.steps.map(s => (s as { label?: string }).label);
+    expect(labels).toContain("起草规格：成功判据、需求节点与页面清单");
+    expect(labels).toContain("定这个应用的设计语言");
+  });
+
+  it("★ 续跑那半的开场三样一条都不带进来", async () => {
+    const { foldContinuationTurns } = await import("../turn-continuation");
+    const [merged] = foldContinuationTurns([FIRST, CONT]);
+    const labels = merged.steps.map(s => String((s as { label?: string }).label));
+    // 上一段自己那条「指令已接收」留着（它是首轮的真开场）
+    expect(labels.filter(l => l.includes("指令已接收"))).toHaveLength(1);
+    expect(labels.some(l => l.startsWith("编排 "))).toBe(false);
+    expect(labels.some(l => l.includes("执行 planning"))).toBe(false);
+  });
+
+  it("状态跟着新的那一跳走（还在跑就还是 streaming）", async () => {
+    const { foldContinuationTurns } = await import("../turn-continuation");
+    const [merged] = foldContinuationTurns([FIRST, CONT]);
+    expect(merged.status).toBe("streaming");
+  });
+
+  it("★ 反向配对：新话题不折（那是两件事，必须两块）", async () => {
+    const { foldContinuationTurns } = await import("../turn-continuation");
+    const another = turn("t3", "再做一个快递代收登记", [
+      ["intent.parse", "指令已接收 · 启动推理"],
+    ]);
+    expect(foldContinuationTurns([FIRST, another])).toHaveLength(2);
+  });
+
+  it("★ 反向配对：续跑排在第一条时没得可折，不许把它吃掉", async () => {
+    // 刷新后只恢复了最近几轮就会这样。折不了就原样留着，
+    // 少画开场那条路（deriveStageBands）继续兜。
+    const { foldContinuationTurns } = await import("../turn-continuation");
+    expect(foldContinuationTurns([CONT])).toHaveLength(1);
+  });
+
+  it("★ §1 接在真链路上：气泡列表真的走了折叠", () => {
+    // 光有折叠函数不算数——`buildImItems` 不调它，屏幕上照样两个气泡。
+    const fs = require("node:fs") as typeof import("node:fs");
+    const path = require("node:path") as typeof import("node:path");
+    const src = (
+      fs.readFileSync(path.resolve(__dirname, "../../SlideRule.tsx"), "utf8") as string
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    expect(src).toMatch(/foldContinuationTurns\(uiTurns\)/);
+  });
+});

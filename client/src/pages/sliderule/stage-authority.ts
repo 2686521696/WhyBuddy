@@ -90,6 +90,12 @@ function isIntakeLine(line: StageLine): boolean {
   return INTAKE_NEEDLES.some(n => haystack(line).includes(n));
 }
 
+/** 一条 step 是不是开场（见 OPENING_NEEDLES 头注）。给折叠续跑用。 */
+export function isOpeningStep(step: TurnStep): boolean {
+  const lines = linesFromTurnSteps([step]);
+  return lines.length > 0 && lines.every(isOpeningLine);
+}
+
 /** 续跑轮里要少画的那几条（见 OPENING_NEEDLES 头注）。 */
 export function isOpeningLine(line: StageLine): boolean {
   if (isIntakeLine(line)) return true;
