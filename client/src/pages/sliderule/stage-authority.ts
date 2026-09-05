@@ -255,10 +255,19 @@ export function deriveStageBands(args: {
     ...linesFromTurnSteps(args.steps),
     ...(args.extraTexts || []).map(text => ({ text })),
   ];
+  // ⚠ 2026-09-05 真机（宠物疫苗那趟）：续跑轮**刚开头的那十几秒里只有开场**，
+  //   全滤掉之后一条不剩 → `ActivityList` 返回 null → 左栏整个空白。
+  //   量到的原话是「带 0 条，行 0」——比"重演开场"更坏：屏幕上什么都没有，
+  //   用户不知道它还在不在跑。
+  //
+  //   我先前那条反向判据（「不许把整条时间线清空」）没咬住，因为它喂的那份
+  //   载荷里**已经有真活了**，那种情况下这个坑压根不成立——正是本仓
+  //   §一之二：判据自己构造了护栏需要的那个输入，而真机不喂。
+  //
+  //   所以：**开场只在有别的可看时才省掉**。滤空了就照原样画。
+  const trimmed = args.continuation ? raw.filter(l => !isOpeningLine(l)) : raw;
   const lines = collapseAdjacentRepeats(
-    dropRedundantPointers(
-      args.continuation ? raw.filter(l => !isOpeningLine(l)) : raw
-    )
+    dropRedundantPointers(trimmed.length > 0 ? trimmed : raw)
   );
   if (lines.length === 0) return [];
 

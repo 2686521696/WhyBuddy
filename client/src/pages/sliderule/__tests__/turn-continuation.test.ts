@@ -98,6 +98,41 @@ describe("续跑轮不重演开场", () => {
     expect(verbs.some(v => v.startsWith("编排"))).toBe(true);
   });
 
+  /**
+   * ★ 2026-09-05 真机咬出来的：**续跑轮开头那十几秒里只有开场**。
+   *
+   * 宠物疫苗那趟量到「带 0 条，行 0」——全滤掉之后一条不剩，左栏整个空白。
+   * 比"重演开场"更坏：屏幕上什么都没有，用户不知道它还在不在跑。
+   *
+   * ⚠ 我先前那条「不许把整条时间线清空」没咬住，因为它喂的载荷里**已经有
+   *   真活了**，那种情况下这个坑压根不成立——§一之二 的标准形状：判据自己
+   *   构造了护栏需要的那个输入，而真机不喂。这一条专喂真机那一帧。
+   */
+  it("★ 只有开场时不许滤空（真机那一帧）", () => {
+    const openingOnly: TurnStep[] = [
+      chip("intent.parse", "指令已接收 · 启动推理"),
+      chip("intent.parse", "编排 pages → structure → bind"),
+      chip("planning", "第 1 轮 · 正在执行 planning"),
+    ];
+    const groups = deriveStageBands({
+      steps: openingOnly,
+      streaming: true,
+      continuation: true,
+    });
+    expect(groups.length).toBeGreaterThan(0);
+    expect(groups.flatMap(g => g.rows).length).toBeGreaterThan(0);
+  });
+
+  it("★ 反向配对：一有别的可看，开场就该省掉", () => {
+    // 否则上一条会退化成「永远不滤」，等于这个修复没做。
+    const withWork: TurnStep[] = [
+      chip("intent.parse", "指令已接收 · 启动推理"),
+      chip("planning", "第 1 轮 · 正在执行 planning"),
+      chip("specfirst.design", "定这个应用的设计语言"),
+    ];
+    expect(allVerbs(withWork, true)).not.toContain("接收意图");
+  });
+
   it("★ 续跑轮不许把整条时间线清空", () => {
     const groups = deriveStageBands({
       steps: REAL_CONTINUATION,
