@@ -249,6 +249,33 @@ function collapseAdjacentRepeats(lines: StageLine[]): StageLine[] {
   return out;
 }
 
+/**
+ * 同一条路线不许说两遍。
+ *
+ * ⚠ 2026-09-05 真机 sr-20260905004750 第 2 轮：
+ *
+ *     intent.parse｜编排 spec → pages → structure → bind
+ *     planning    ｜第 1 轮 · 正在执行 planning
+ *     intent.parse｜编排 spec → pages → structure → bind      ← 逐字相同
+ *
+ *   隔着一行，所以「只合相邻」那条兜不住；用户原话里那 5 条重复，这是最后一条。
+ *
+ * ⚠ **只对「编排」这一类下手，不做通用的全局去重。** 同一份夹具里
+ *   `specfirst.pages｜逐页画界面（并发）` 出现了 3 次——那是真的画了三轮，
+ *   通用去重会把「它重跑过」这个事实抹掉。「编排 X → Y → Z」不一样：
+ *   它是**一句路线声明**，不是一次活动，说第二遍永远不带新消息。
+ */
+function collapseRepeatedRoutePlans(lines: StageLine[]): StageLine[] {
+  const seen = new Set<string>();
+  return lines.filter(line => {
+    if (!OPENING_NEEDLES.some(n => line.text.includes(n))) return true;
+    const key = `${line.capabilityId || ""}\u0000${line.text}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function deriveStageBands(args: {
   steps: TurnStep[];
   streaming: boolean;
@@ -272,8 +299,10 @@ export function deriveStageBands(args: {
   //
   //   所以：**开场只在有别的可看时才省掉**。滤空了就照原样画。
   const trimmed = args.continuation ? raw.filter(l => !isOpeningLine(l)) : raw;
-  const lines = collapseAdjacentRepeats(
-    dropRedundantPointers(trimmed.length > 0 ? trimmed : raw)
+  const lines = collapseRepeatedRoutePlans(
+    collapseAdjacentRepeats(
+      dropRedundantPointers(trimmed.length > 0 ? trimmed : raw)
+    )
   );
   if (lines.length === 0) return [];
 

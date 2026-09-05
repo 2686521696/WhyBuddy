@@ -244,6 +244,29 @@ describe("喂真机原样载荷", () => {
     expect(shown).toBeLessThan(raw);
   });
 
+  it("★ 真机首轮：同一条路线不许说两遍（用户列的第 5 条）", () => {
+    const t = turnOf("打造社区食堂");
+    const raw = t.steps.filter(s => s.label.includes("编排 spec")).length;
+    expect(raw).toBe(2);                       // 夹具里确实说了两遍
+    const verbs = allVerbs(toSteps(t), false);
+    expect(verbs.filter(v => v.startsWith("编排"))).toHaveLength(1);
+  });
+
+  it("★ 反向配对：隔开的同名活动不许被这条规则合掉", () => {
+    // 「编排」是一句路线声明，说两遍没新消息；**一次活动跑了两遍是事实**，
+    // 合掉就把「它重跑过」抹了。所以这条规则只许对「编排」下手，不许做成通用去重。
+    //
+    // ⚠ 第一版这条判据是拿夹具里的 `逐页画界面（并发）×3` 写的，**咬不住**：
+    //   那三条里有两条进了配方带，而配方带本来就按 stage id 去重，
+    //   通用去重与否结果都是 >1。改成直接构造：同一条活动隔开出现两次。
+    const doubled: TurnStep[] = [
+      chip("factory.pages", "逐页画界面（并发）"),
+      chip("critique.generate", "自我挑刺"),
+      chip("factory.pages", "逐页画界面（并发）"),
+    ];
+    expect(allVerbs(doubled, false).filter(v => v === "逐页画界面（并发）")).toHaveLength(2);
+  });
+
   it("真机首轮：同一件事上报两遍的四条，各只剩一条", () => {
     const t = turnOf("打造社区食堂");
     const verbs = allVerbs(toSteps(t), false);
