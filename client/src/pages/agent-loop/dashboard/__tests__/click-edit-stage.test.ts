@@ -338,11 +338,48 @@ describe("存库不许把页面脚本吃掉", () => {
   });
 
   it("反向配对：我们自己注入的那几个仍然不许存回去", () => {
-    const injected = `<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"></script>
+    // ⚠ 注入的是**本地** /vendor/tailwind-play-3.js（buildDocument:646），
+    //   不是 cdn.tailwindcss.com——见下一条。
+    const injected = `<!DOCTYPE html><html><head><script src="/vendor/tailwind-play-3.js"></script>
 <script id="sliderule-preview-chrome">/*chrome*/</script></head><body><h1>t</h1></body></html>`;
     const out = spliceEditedBody(injected, `<body><h1>t2</h1></body>`) || "";
-    expect(out).not.toContain("cdn.tailwindcss.com");
+    expect(out).not.toContain("tailwind-play-3.js");
     expect(out).not.toContain("sliderule-preview-chrome");
+  });
+
+  /**
+   * ★ 2026-09-05 真机抓到的第二刀。
+   *
+   * 交付页**自己带着** `<script src="https://cdn.tailwindcss.com">`——
+   * spec_page_html 的栈约束点名要引，缺了那边判「栈约束没被遵守」。
+   * 而第一版的注入清单手写了这一条，于是点选编辑每存一次就把它摘掉一次：
+   * 真机 sr-20260904232526 的 p1 从 2 个脚本变成 1 个，页面在站外打开
+   * 一条样式都没有，屏幕上却是绿色的「已保存」。
+   *
+   * 判据盯**语义**（"页面自己的 Tailwind 得留着"），不盯某个域名字面。
+   */
+  it("交付页自带的 Tailwind CDN 不许被当成注入物摘掉", () => {
+    const delivered = `<!DOCTYPE html><html><head>
+<script src="https://cdn.tailwindcss.com"></script>
+<script> tailwind.config = { theme: { extend: {} } }; </script>
+</head><body><h1>标题</h1></body></html>`;
+    expect(preservedScripts(delivered)).toHaveLength(2);
+    const out = spliceEditedBody(delivered, `<body><h1>改过的标题</h1></body>`) || "";
+    expect(out).toContain("cdn.tailwindcss.com");
+    expect(out).toContain("tailwind.config");
+  });
+
+  it("清单从注入方那边取，不许再手写一份（§4 一把尺子）", () => {
+    // 手写的清单是一份关于别人在做什么的猜测，而猜测会过期——今天就过期了。
+    const src = require("node:fs").readFileSync(
+      require("node:path").resolve(__dirname, "../ClickEditStage.tsx"),
+      "utf8"
+    ) as string;
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code).toMatch(
+      /INJECTED_SCRIPT_MARKS\s*=\s*PREVIEW_INJECTED_SCRIPT_MARKS/
+    );
+    expect(code).not.toContain("cdn.tailwindcss.com");
   });
 
   it("反向配对：本来就没有脚本的页，输出不许平白多出 script", () => {
@@ -352,7 +389,61 @@ describe("存库不许把页面脚本吃掉", () => {
 
   it("preservedScripts 只捞原文的，注入物滤掉", () => {
     expect(preservedScripts(GAME)).toHaveLength(2);
-    expect(preservedScripts(`<script src="https://cdn.tailwindcss.com"></script>`)).toHaveLength(0);
+    expect(
+      preservedScripts(`<script src="/vendor/tailwind-play-3.js"></script>`)
+    ).toHaveLength(0);
     expect(preservedScripts("")).toHaveLength(0);
+  });
+});
+
+/**
+ * 「存进去了，但顺手带走了东西」这句话必须走到屏幕上。
+ *
+ * ⚠ 2026-09-05：后端 page_edit_guard 数出了缺口、`PATCH` 也把 `losses` 透出来了，
+ *   **前端却把这个字段丢在地上**——三个写回点全都只显「已保存 / 已改好」。
+ *   于是"点选编辑把整局游戏脚本吃掉"在屏幕上仍然长得跟成功一模一样。
+ *   这正是本仓 §4「只改一半必然静默失效」的标准形状：生成侧加了字段，
+ *   消费侧没接，没有报错、没有告警、判据全绿。
+ *
+ * 判据钉在**源码**上而不是渲染上：三个写回点分散在两个大组件里，
+ * 单独渲染任何一个都证明不了另外两个还接着。
+ */
+describe("带走了什么，得让人看见", () => {
+  const read = (p: string) =>
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    require("node:fs").readFileSync(
+      require("node:path").resolve(__dirname, p),
+      "utf8"
+    ) as string;
+  /** ⚠ 先剥注释再匹配：本仓踩过——判据 grep 的那个词同时出现在文档字符串里，
+   *  把实现删了照样绿。 */
+  const code = (p: string) =>
+    read(p)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+
+  it("接口把 warn 带回来（不是只回 bytes）", () => {
+    const src = code("../app-store-client.ts");
+    expect(src).toMatch(/lossesMessage/);
+    expect(src).toMatch(/warn/);
+  });
+
+  it("点选编辑保存后把 warn 显出来", () => {
+    const src = code("../ClickEditStage.tsx");
+    expect(src).toMatch(/warn:\s*res\.warn/);
+    expect(src).toContain("click-edit-status-warn");
+  });
+
+  it("画布两条写回路径也都显（元素编辑 / 换图）", () => {
+    const src = code("../../../sliderule/live-runtime/SpecPageCanvasStage.tsx");
+    expect(src).toMatch(/setToast\(\s*res\.warn\s*\|\|/);
+    expect(src).toMatch(/lostWarn/);
+  });
+
+  it("反向配对：绿色的「已保存」不许把 warn 顶掉", () => {
+    // 两个都得在——只留 warn 就没人知道存成功了，只留「已保存」就是今天要修的坑。
+    const src = code("../ClickEditStage.tsx");
+    expect(src).toContain("click-edit-status-ok");
+    expect(src).toContain("click-edit-status-warn");
   });
 });

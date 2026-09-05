@@ -22,8 +22,13 @@ from pydantic import ValidationError
 from typing import Dict, Any, List, Optional
 from models.v5_state import CapabilityRun, V5SessionState
 from middlewares.current_user import CurrentUserOptional
-# 两个都是 util 叶子：顶层 import，别塞函数体（架构闸盯着逃生口）
-from services.gate_health import record_verdict as _gate_record
+# 顶层 import，别塞函数体（架构闸盯着逃生口，函数体 import 一样算数）。
+# gate_health 是 util 叶子；page_edit_guard 在 core（它要 html_bindings 数据洞）。
+from services.gate_health import (
+    record_verdict as _gate_record,
+    snapshot as _gate_snapshot,
+    summary_line as _gate_summary,
+)
 from services.page_edit_guard import edit_losses, losses_message
 from services import app_access
 from services.model_version_restore import restore_model_version_locked
@@ -1399,6 +1404,22 @@ async def runs_active(
     return {"active": run.snapshot() if run is not None else None}
 
 
+@router.get("/gate-health")
+async def gate_health(
+    x_internal_key: Optional[str] = Header(None),
+):
+    """各道闸当前的开火情况。
+
+    ⚠ 2026-09-05 加这条的原因：收尾统计只挂在 `run_registry._finish` 上，
+      而**三处迭代里有两处不产生 run**——点选编辑和画布是直接 PATCH 页面，
+      跑完不经过任何 run 收尾，那两处的 `pageEdit` 闸攒在台账里没人打印，
+      要等下一次有人跑推演才顺带露出来。跑迭代批次时就等于看不见。
+      读接口跟收尾那行走**同一个** `snapshot()`，不另起一套口径（§4）。
+    """
+    _auth(x_internal_key)
+    return {"gates": _gate_snapshot(), "line": _gate_summary()}
+
+
 @router.get("/runs/{run_id}/stream")
 async def run_stream(
     run_id: str,
@@ -2298,8 +2319,11 @@ async def patch_generated_app_page(
     return {
         "id": updated.get("id"),
         "pageId": page_id,
-        # 带走了什么如实透出。前端要不要弹提示是它的事，但**接口不许只说 ok**。
+        # 带走了什么如实透出。**接口不许只说 ok**。
+        # ⚠ 人话那句一并给出去：措辞只该有一处（§4）。让每个客户端各自拼一遍，
+        #   改口径时就得改三处，漏一处就是"只改一半"。
         "losses": _losses,
+        "lossesMessage": losses_message(_losses),
         "bytes": len(html.encode("utf-8")),
     }
 

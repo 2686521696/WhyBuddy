@@ -1812,7 +1812,10 @@ function CanvasInner({
       const res = await updateAppPage(appId, pageId, nextHtml);
       if (!res.ok) throw new Error(res.error);
       onPagesReplaced?.({ [pageId]: nextHtml });
-      setToast("已改好并存进这一页");
+      // ⚠ 2026-09-05：存成功但顺手带走了东西（脚本 / 数据孔 / 表单控件变少），
+      //   后端如实报了，这里就得显出来——只说「已改好」等于绿灯盖住了缺口。
+      //   点选编辑那一侧同一天一起修的，两处别只改一处（§4）。
+      setToast(res.warn || "已改好并存进这一页");
     },
     [appId, onPagesReplaced]
   );
@@ -1845,8 +1848,10 @@ function CanvasInner({
         throw new Error("页面里没找到这张图（可能刚被别处改过）——刷新一下再试");
       }
       const saved: Record<string, string> = {};
+      let lostWarn = "";
       for (const patch of patches) {
         const res = await updateAppPage(appId, patch.pageId, patch.html);
+        if (res.ok && res.warn) lostWarn = res.warn;
         if (!res.ok) {
           throw new Error(
             `「${nameOf(patch.pageId)}」保存失败：${res.error}` +
@@ -1859,7 +1864,7 @@ function CanvasInner({
       }
       onPagesReplaced?.(saved);
       const n = patches.reduce((acc, x) => acc + x.replaced, 0);
-      setToast(`已换掉 ${n} 处，共 ${patches.length} 页`);
+      setToast(lostWarn || `已换掉 ${n} 处，共 ${patches.length} 页`);
       return n;
     },
     [appId, pages, nameOf, onPagesReplaced]

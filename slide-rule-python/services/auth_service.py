@@ -22,6 +22,22 @@
 "库里一个用户都没有时自动提升"——自部署场景下不用先配环境变量再启动。
 之后再注册的都是普通用户。
 
+**④ 账号库连不上 ≠ 密码不对**
+
+防枚举（①）说的是"**同一个库里**邮箱存不存在，对外不许有区别"。库本身
+连不上是另一回事，跟输入的邮箱无关，说出来泄露不了任何账号信息。
+
+⚠ 2026-09-05 真机踩的就是这个：代理端口换了，容器里所有出站 HTTPS 变成
+`Connection refused`，`identity_store` 静静降级到本地 SQLite——那个库里
+一个用户都没有。真实存在的账号登录，拿到的是 **「邮箱或密码不正确」**。
+排查方向被这句话整个带偏：去查密码、去查账号、去点找回密码（改到的还是
+那个空库），而真正坏掉的是网络。日志里其实有一行
+`[identity] HTTPS 网关不可用，继续按常规顺序降级`，但没人会因为一句
+"密码不对"去翻服务端日志。
+
+所以降级到兜底库时，登录失败改口说**服务连不上**。判据两头都钉：
+库正常时密码打错必须还是那句 LOGIN_FAILED（否则防枚举白做了）。
+
 ## 验证码按用途隔离（2026-08-03 随找回密码加入）
 
 验证码表 `sliderule_email_code` 的主键是**邮箱**，一个邮箱同一时刻只有一个码，
@@ -47,6 +63,9 @@ from services.auth_tokens import create_access_token
 
 # 登录失败的统一话术。**不要**按情况细分（见模块说明 ①）。
 LOGIN_FAILED = "邮箱或密码不正确"
+
+# 账号库连不上时的话术。跟 LOGIN_FAILED 分开，见模块说明 ④。
+IDENTITY_UNAVAILABLE = "账号服务暂时连不上，请稍后再试——这不是你的密码有问题"
 
 # 验码失败的统一话术。过期 / 次数用尽 / 用途不符 / 压根就填错，对外都是这一句：
 # 分开说等于告诉攻击者"这个邮箱有一个正在生效的码"。
@@ -261,6 +280,16 @@ def login(email: str, password: str) -> dict[str, Any]:
     if user is None:
         # 空跑一次哈希，抹平"邮箱不存在"与"密码错误"的耗时差（见模块说明 ②）
         ident.verify_password(password or "", _dummy_hash())
+        # ★ 见模块说明 ④：配了远端却落到空的兜底库，这时"查无此人"说明不了
+        #   任何事——别把基础设施故障说成用户密码不对。
+        degraded = ident.identity_backend_degraded()
+        if degraded:
+            print(f"[auth] 账号库降级中，登录按服务不可用回：{degraded[:160]}")
+            return {
+                "ok": False,
+                "error": "identity_unavailable",
+                "message": IDENTITY_UNAVAILABLE,
+            }
         return {"ok": False, "error": "invalid_credentials", "message": LOGIN_FAILED}
 
     ok, upgraded = ident.verify_password(password or "", str(user.get("password_hash") or ""))

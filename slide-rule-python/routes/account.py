@@ -114,6 +114,11 @@ async def login(response: Response, request: Request, payload: dict[str, Any] = 
         str(payload.get("password") or ""),
     )
     if not result.get("ok"):
+        # ⚠ 2026-09-05：账号库连不上不是 401。401 的意思是"你的凭据不对"，
+        #   而这时我们**根本没查到库**——前端会照 401 去引导重输密码、去找回
+        #   密码，全是白费力气。503 才是实情，也让监控能把它跟真的密码错分开。
+        if result.get("error") == "identity_unavailable":
+            raise HTTPException(503, result.get("message") or "账号服务暂时不可用")
         # 401 而不是 400：前端据此判断"要重新输密码"而不是"参数错了"。
         # 消息本身对"邮箱不存在"和"密码错误"是同一句（见 auth_service）。
         raise HTTPException(401, result.get("message") or "登录失败")

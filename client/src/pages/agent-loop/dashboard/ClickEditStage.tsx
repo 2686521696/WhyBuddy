@@ -30,6 +30,7 @@ import {
   sanitizeHtmlFragment,
   stripFrameNavigatingHrefs,
   markSrcdocGeneration,
+  PREVIEW_INJECTED_SCRIPT_MARKS,
 } from "@/pages/sliderule/live-runtime/html-app-surface";
 import { BINDING_ATTRS } from "@/pages/sliderule/live-runtime/html-binding-runtime";
 import {
@@ -317,8 +318,23 @@ export function placeToolbar(
  * 存库前把编辑过的 body 换回干净壳。纯函数，单测钉着。
  * 找不到 `<body>` 就返回 null——**不许**编一份出来，宁可保存失败让用户重试。
  */
-/** 我们自己注入进画布那份文档的东西——它们**不许**跟着存回去。 */
-const INJECTED_SCRIPT_MARKS = ["tailwind-play", "sliderule-preview-chrome", "cdn.tailwindcss.com"];
+/**
+ * 我们自己注入进画布那份文档的东西——它们**不许**跟着存回去。
+ *
+ * ⚠ 2026-09-05 真机（同一天的第二刀）：这份清单第一版是**手写**的，里面
+ *   多了一条 `cdn.tailwindcss.com`。预览注的是本地 `/vendor/tailwind-play-3.js`
+ *   （buildDocument:646），从来不是那个 CDN；而**交付页自己带着**那一行
+ *   （spec_page_html:66 的栈约束点名要引，缺了判"栈约束没被遵守"）。
+ *
+ *   后果：点选编辑每存一次就把交付页的 Tailwind 摘掉一次。真机
+ *   sr-20260904232526 的 p1 就是这么从 2 个脚本变成 1 个的——页面在站外打开
+ *   一条样式都没有，而屏幕上是绿色的「已保存」。服务端的 page_edit_guard
+ *   报了「页面脚本 2→1」，是那条告警把它捞出来的。
+ *
+ *   现在清单**从注入方那边取**（PREVIEW_INJECTED_SCRIPT_MARKS），不再手写：
+ *   手写的清单是一份关于别人在做什么的猜测，而猜测会过期。
+ */
+const INJECTED_SCRIPT_MARKS = PREVIEW_INJECTED_SCRIPT_MARKS;
 
 /**
  * 原文里的 `<script>`，按出现顺序。**不含**我们注入的那几个。
@@ -397,7 +413,7 @@ export function ClickEditStage({
   const [status, setStatus] = React.useState<
     | { kind: "idle" }
     | { kind: "saving" }
-    | { kind: "ok"; text: string }
+    | { kind: "ok"; text: string; warn?: string }
     | { kind: "err"; text: string }
   >({ kind: "idle" });
   const [aiOpen, setAiOpen] = React.useState(false);
@@ -755,9 +771,14 @@ export function ClickEditStage({
     rawBaseRef.current = finalHtml;
     setDirty(false);
     onDirtyChange?.(false);
+    // ⚠ 2026-09-05：`warn` 是"存进去了，但顺手带走了东西"（后端数出来的：
+    //   脚本 / 数据孔 / 表单控件变少）。它不是错误——东西确实存了——但只显
+    //   「已保存」就是本仓最忌的那句"闸全绿但东西没了"：真机上一次点选编辑
+    //   把整局游戏逻辑吃掉，屏幕上照样是绿色的「已保存」。
     setStatus({
       kind: "ok",
       text: `已保存 · ${res.bytes.toLocaleString("zh-CN")} 字节`,
+      warn: res.warn,
     });
     onSaved?.(pageId, finalHtml);
   };
@@ -784,6 +805,15 @@ export function ClickEditStage({
               {status.text}
             </span>
           )}
+          {status.kind === "ok" && status.warn ? (
+            <span
+              className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800"
+              data-testid="click-edit-status-warn"
+              title={status.warn}
+            >
+              {status.warn}
+            </span>
+          ) : null}
           {status.kind === "err" && (
             <span className="text-red-600" data-testid="click-edit-status-err">
               {status.text}

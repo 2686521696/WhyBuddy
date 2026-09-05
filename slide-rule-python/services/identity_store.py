@@ -494,10 +494,27 @@ class _InvalidatingExecutor:
 class IdentityStore:
     """身份存储。三种后端共用这一个类，差异只在 `_q` 怎么执行 SQL。"""
 
-    def __init__(self, executor: Any, *, is_sqlite: bool) -> None:
+    def __init__(
+        self,
+        executor: Any,
+        *,
+        is_sqlite: bool,
+        degraded_from: str = "",
+    ) -> None:
         # 包一层：任何一次写都清鉴权缓存（见 _InvalidatingExecutor 的说明）。
         self._x = _InvalidatingExecutor(executor)
         self._is_sqlite = is_sqlite
+        #: 非空 = **配了远端但没连上，这是个兜底的空库**。值是那句降级原因。
+        #:
+        #: ⚠ 2026-09-05 真机：代理端口换了，容器里所有出站 HTTPS 变成
+        #:   `Connection refused`，身份存储静静降级到本地 SQLite——那个库里
+        #:   一个用户都没有。于是真实存在的账号登录时被告知
+        #:   **「邮箱或密码不正确」**。用户会去改密码，改到的是那个空库；
+        #:   网关一恢复，一切照旧，什么线索都不留。
+        #:
+        #:   这跟同一天修的「网关连不上时别把锅甩给用户」是**同一个形状的另一扇门**：
+        #:   基础设施出不去，话术却在说人做错了事。
+        self.degraded_from = degraded_from
         self._x.execute(_DDL_SQLITE if is_sqlite else _DDL_PG)
         self._x.execute(_CODE_DDL_SQLITE if is_sqlite else _CODE_DDL_PG)
         self._x.execute(_REVOKE_DDL_SQLITE if is_sqlite else _REVOKE_DDL_PG)
@@ -959,6 +976,7 @@ def _build_store() -> IdentityStore:
 
     # 自定义 HTTPS 网关排在最前：配了它就说明这个环境出不去 5432，下面那段
     # TCP 探测纯属白等（每个地址 connect_timeout 4s，最坏一次登录卡二十几秒）。
+    degraded = ""   # 非空 = 配了远端却落到本地兜底，登录话术要据此改口
     api_url, api_key = http_api_credentials()
     if api_url:
         if not api_key:
@@ -970,6 +988,7 @@ def _build_store() -> IdentityStore:
                 print("[identity] 身份存储：自定义 HTTPS SQL 网关")
                 return store
             except Exception as exc:  # noqa: BLE001 — 指定了也可能连不上
+                degraded = f"HTTPS SQL 网关不可用：{str(exc)[:160]}"
                 print(f"[identity] HTTPS 网关不可用，继续按常规顺序降级: {str(exc)[:200]}")
 
     url = (getattr(settings, "APP_STORE_DATABASE_URL", "") or "").strip()
@@ -995,13 +1014,28 @@ def _build_store() -> IdentityStore:
                     return IdentityStore(x2, is_sqlite=False)
                 except Exception as http_exc:  # noqa: BLE001
                     print(f"[identity] 远端两条通道均不可用: HTTP={str(http_exc)[:200]}")
+            degraded = f"远端身份库不可用：{tcp_err}"
             print(f"[identity] 远端不可用，身份改存本地 SQLite（不跨机器共享）: {tcp_err}")
 
     local = (os.getenv("SLIDERULE_IDENTITY_SQLITE") or _LOCAL_SQLITE).strip()
     if local.startswith("sqlite:///"):
         Path(local[len("sqlite:///") :]).parent.mkdir(parents=True, exist_ok=True)
     x = _SqlExecutor(local)
-    return IdentityStore(x, is_sqlite=True)
+    # ⚠ 只在**配了远端却没连上**时才算降级。压根没配远端（纯本地开发）
+    #   落到 SQLite 是正常形态，不该让登录改口——那会把本地开发的
+    #   「密码打错了」也说成「服务暂时不可用」。
+    return IdentityStore(x, is_sqlite=True, degraded_from=degraded)
+
+
+def identity_backend_degraded() -> str:
+    """配了远端身份库却落到本地兜底时，返回那句原因；正常时返回空串。
+
+    调用方（auth_service.login）据此改口：**账号库连不上，不是密码不对**。
+    """
+    try:
+        return str(getattr(get_identity_store(), "degraded_from", "") or "")
+    except Exception:  # noqa: BLE001 — 问一句体检情况不许把登录问崩
+        return ""
 
 
 def reset_identity_cache() -> None:

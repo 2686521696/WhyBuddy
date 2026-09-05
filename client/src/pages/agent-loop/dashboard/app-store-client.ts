@@ -274,12 +274,20 @@ export async function deleteApp(id: string): Promise<boolean> {
  * 跟 `patchApp` 不同，这里失败要把后端的话原样带回去给用户看（"页面超过 1MB
  * 上限" / "这个应用没有可编辑的页面产物"），不能只回一个 null——点选编辑器
  * 本来就是给非技术用户用的手动动作，静默失败等于东西丢了都不知道。
+ *
+ * ⚠ 2026-09-05：`warn` 是**保存成功但顺手带走了东西**（后端 page_edit_guard
+ *   数出来的：页面脚本 / 数据孔 / 表单控件变少了）。它跟 `error` 是两回事——
+ *   东西存进去了，但交付物少了一块。第一版接口把这个字段丢在地上没人读，
+ *   于是"存完游戏变成一张死图"在屏幕上仍然长得像成功。三个调用点
+ *   （点选编辑保存 / 画布元素编辑 / 画布换图）都得把它显出来。
  */
 export async function updateAppPage(
   id: string,
   pageId: string,
   html: string
-): Promise<{ ok: true; bytes: number } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; bytes: number; warn: string } | { ok: false; error: string }
+> {
   try {
     const res = await fetch(
       `${BASE}/apps/${encodeURIComponent(id)}/pages/${encodeURIComponent(pageId)}`,
@@ -298,7 +306,9 @@ export async function updateAppPage(
       return { ok: false, error: msg };
     }
     const bytes = typeof body?.bytes === "number" ? body.bytes : html.length;
-    return { ok: true, bytes };
+    // 措辞由后端 losses_message 一处说了算，前端不另拼一句（§4）。
+    const warn = typeof body?.lossesMessage === "string" ? body.lossesMessage : "";
+    return { ok: true, bytes, warn };
   } catch {
     return { ok: false, error: "网络请求失败，请检查连接后重试" };
   }

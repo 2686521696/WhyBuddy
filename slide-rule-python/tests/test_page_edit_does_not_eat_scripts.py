@@ -129,3 +129,19 @@ class Test接在真链路上:
         from routes import sliderule_full as r
 
         assert '"losses"' in inspect.getsource(r.patch_generated_app_page)
+
+    def test_人话那句也一并带出来_不留给前端各自拼(self):
+        """★ §4：措辞只该有一处。
+
+        2026-09-05：第一版只回 `losses` 数组，前端要显提示就得自己拼一句。
+        三个写回点（点选编辑保存 / 画布元素编辑 / 画布换图）各拼一遍，
+        改口径时漏掉一处就是"只改一半"。所以人话由 `losses_message` 出。
+        """
+        import inspect
+
+        from routes import sliderule_full as r
+
+        src = inspect.getsource(r.patch_generated_app_page)
+        assert '"lossesMessage"' in src, "响应没带人话那句，前端只能各拼各的"
+        assert "losses_message(" in src, "人话不是 losses_message 出的——多出了第二套口径"
+

@@ -387,7 +387,27 @@ export function watchPreviewChromePin(
  *
  * 固化的那份见 client/public/vendor/（含更新方式与"必须是 v3"的理由）。
  */
-const TAILWIND_SRC = "/vendor/tailwind-play-3.js";
+export const TAILWIND_SRC = "/vendor/tailwind-play-3.js";
+
+/**
+ * `buildDocument` 往预览文档里塞的那几个 `<script>` 的特征串。
+ *
+ * 导出是给**存库那一侧**用的（ClickEditStage.preservedScripts）：它要把原文
+ * 的脚本捡回来，但绝不能把这里注入的也存回去。两边照同一份清单走（§4）——
+ * 各写各的清单是本仓最常见的"只改一半"。
+ *
+ * ⚠ 2026-09-05 真机踩过：那份清单里**多写了一条 `cdn.tailwindcss.com`**。
+ *   预览注的是上面这个本地 `tailwind-play-3.js`，从来不是那个 CDN；
+ *   而**交付页自己带着** `<script src="https://cdn.tailwindcss.com">`
+ *   （spec_page_html 的栈约束点名要引，缺了会判"栈约束没被遵守"）。
+ *   于是点选编辑每存一次就把交付页的 Tailwind 摘掉一次，页面在站外打开
+ *   一条样式都没有——而屏幕上是绿色的「已保存」。
+ *   **清单只许写"我们注进去的"，不许写"看着像框架的"。**
+ */
+export const PREVIEW_INJECTED_SCRIPT_MARKS: readonly string[] = [
+  TAILWIND_SRC,
+  PREVIEW_CHROME_STYLE_ID,
+];
 
 /**
  * 从页面自带的 `tailwind.config = {...}` 里**读出**颜色表。

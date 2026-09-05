@@ -296,3 +296,76 @@ class Test记录要能回查:
         for _ in range(STREAK_THRESHOLD):
             rec = record_verdict("evidence", passed=False, fingerprint="0/6")
         assert rec is not None and rec.get("samples") == []
+
+
+class Test读接口:
+    """跑迭代批次时得能随时看见开火率——**三处迭代里有两处不产生 run**。
+
+    ⚠ 2026-09-05：`summary_line()` 只挂在 `run_registry._finish` 上。会话迭代
+      走 run，收尾会打；点选编辑和画布是直接 `PATCH /apps/{id}/pages/{pid}`，
+      跑完不经过任何 run 收尾——那两处的 `pageEdit` 闸攒在进程台账里没人打印。
+      于是加了 `GET /gate-health`。判据两头都要钉：**接口在**（正），
+      **它跟收尾那行是同一个 snapshot**（负——另起一套口径就是 §4 的"只改一半"）。
+    """
+
+    def _route(self):
+        import ast
+        import inspect
+
+        from routes import sliderule_full as rf
+
+        tree = ast.parse(inspect.getsource(rf))
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for dec in node.decorator_list:
+                if (isinstance(dec, ast.Call)
+                        and getattr(dec.func, "attr", "") == "get"
+                        and dec.args
+                        and isinstance(dec.args[0], ast.Constant)
+                        and dec.args[0].value == "/gate-health"):
+                    return node
+        return None
+
+    def test_有这条读接口(self):
+        assert self._route() is not None, "GET /gate-health 没了——跑迭代时看不见开火率"
+
+    def test_读接口走的是收尾那同一个snapshot(self):
+        """★ 反向判据：不许自己再算一遍比率。
+
+        自己算 = 两套口径，收尾说 3/10、接口说别的，下一个人查半天。
+        """
+        import ast
+
+        node = self._route()
+        assert node is not None
+        called = {
+            getattr(c.func, "id", None) or getattr(c.func, "attr", None)
+            for c in ast.walk(node)
+            if isinstance(c, ast.Call)
+        }
+        assert "_gate_snapshot" in called, "读接口没调 snapshot()，多半自己另算了一套"
+        assert not any(
+            isinstance(n, ast.BinOp) and isinstance(n.op, ast.Div)
+            for n in ast.walk(node)
+        ), "读接口里出现了除法——比率该由 snapshot/summary_line 一处说了算"
+
+    def test_读接口没绕过鉴权(self):
+        import ast
+
+        node = self._route()
+        assert node is not None
+        assert any(
+            isinstance(c, ast.Call) and getattr(c.func, "id", None) == "_auth"
+            for c in ast.walk(node)
+        ), "读接口没过 _auth"
+
+    def test_收尾那行也还在(self):
+        """§3 配对：接口有了不等于收尾那行还在。删掉收尾照样"有地方能看"，
+        但跑批日志里就再也没有那一行了。"""
+        import inspect
+
+        from services import run_registry
+
+        src = inspect.getsource(run_registry._finish)
+        assert "summary_line()" in src, "跑批收尾不打开火率了"
