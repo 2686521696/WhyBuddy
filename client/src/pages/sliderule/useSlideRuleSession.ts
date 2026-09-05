@@ -95,7 +95,12 @@ import {
   type ScopeCardDevice,
   type ScopeCardPending,
 } from "./scope-card-gate";
-import { factoryHopFromText, isFactoryHop } from "@/lib/factory-hops";
+import {
+  FACTORY_HOP_LABELS,
+  factoryHopFromText,
+  isFactoryHop,
+} from "@/lib/factory-hops";
+import { isContinuationTurn } from "@/pages/sliderule/turn-continuation";
 import {
   controlUserTextForSlash,
   forcedToolForRehearsalVerb,
@@ -1280,17 +1285,36 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           progressType: "thinking",
         });
       }
-      appendStep({
-        id: `${turnId}-intake`,
-        kind: "chip",
-        capabilityId: "intent.parse" as any,
-        roleId: "system",
-        label: "指令已接收 · 启动推理",
-        realLlm: false,
-        loopTurnId: turnId,
-        progressType: "thinking",
-      });
-      setLiveAction({ label: "规划第一轮能力与路线...", external: false });
+      // ⚠ 2026-09-05：续跑的一轮**不报开场**。
+      //
+      //   用户第三次指着同一处说「是伴随式澄清选择完之后」。前面几刀把左栏的
+      //   行折进了上一段，但**这两行是另一路**：`指令已接收 · 启动推理` 和
+      //   状态条上的「规划第一轮能力与路线…」是每一轮 runTurn 无条件发的，
+      //   折叠管不着——右栏于是照样写着"正在规划第一轮"，看着就是从头再来。
+      //
+      //   续跑本来就没有"第一轮"可规划：这一跳是接着上一跳走的，
+      //   路线上一轮就定了。所以开场芯片不发，状态条说这一跳在干什么。
+      if (!isContinuationTurn(userText)) {
+        appendStep({
+          id: `${turnId}-intake`,
+          kind: "chip",
+          capabilityId: "intent.parse" as any,
+          roleId: "system",
+          label: "指令已接收 · 启动推理",
+          realLlm: false,
+          loopTurnId: turnId,
+          progressType: "thinking",
+        });
+        setLiveAction({ label: "规划第一轮能力与路线...", external: false });
+      } else {
+        const hopLabel = isFactoryHop(hop)
+          ? FACTORY_HOP_LABELS[hop]
+          : "";
+        setLiveAction({
+          label: hopLabel ? `接着上一跳：${hopLabel}` : "接着上一跳往下走",
+          external: false,
+        });
+      }
 
       // M2/M3/M4/M5/M6: driveMode selects single vs marathon thin layer.
       // Product path for marathon now uses driveMarathon (with budget enforcement and real M3/M6 ledger append).

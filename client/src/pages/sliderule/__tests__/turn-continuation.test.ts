@@ -400,3 +400,71 @@ describe("续跑接在上一段后面", () => {
     expect(src).toMatch(/foldContinuationTurns\(uiTurns\)/);
   });
 });
+
+/**
+ * 状态条也不许说「规划第一轮」。
+ *
+ * ⚠ 2026-09-05，用户第三次指着同一处：「是伴随式澄清选择完之后」。
+ *   前面几刀把左栏的行折进了上一段，但这两样是**另一路**——
+ *   `指令已接收 · 启动推理` 这条芯片、和状态条上的
+ *   「规划第一轮能力与路线…」，是每一轮 runTurn **无条件**发的
+ *   （useSlideRuleSession:1293），折叠管不着。右栏于是照样写着
+ *   "正在规划第一轮"，看着就是从头再来。
+ *
+ *   续跑没有"第一轮"可规划：这一跳接着上一跳走，路线上一轮就定了。
+ */
+describe("续跑的状态条不许报开场", () => {
+  const code = () => {
+    const fs = require("node:fs") as typeof import("node:fs");
+    const path = require("node:path") as typeof import("node:path");
+    return (
+      fs.readFileSync(
+        path.resolve(__dirname, "../useSlideRuleSession.ts"),
+        "utf8"
+      ) as string
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+  };
+
+  /** 取出 `if (...) { … }` 真正的那一对花括号之间的内容。 */
+  const blockAfter = (src: string, needle: string) => {
+    const at = src.indexOf(needle);
+    if (at < 0) return "";
+    let i = src.indexOf("{", at);
+    if (i < 0) return "";
+    let depth = 0;
+    for (let j = i; j < src.length; j++) {
+      if (src[j] === "{") depth++;
+      else if (src[j] === "}") {
+        depth--;
+        if (depth === 0) return src.slice(i + 1, j);
+      }
+    }
+    return "";
+  };
+
+  it("开场芯片和「规划第一轮」都在「不是续跑」那个块**里面**", () => {
+    const src = code();
+    // ⚠ 判据不许用「往后数 900 个字符」那种窗口：把 setLiveAction 挪到 if
+    //   外面一行，它照样落在窗口里——变异不红。必须数花括号，取真正的块。
+    const block = blockAfter(src, "if (!isContinuationTurn(userText)) {");
+    expect(block).not.toBe("");
+    expect(block).toContain("指令已接收 · 启动推理");
+    expect(block).toContain("规划第一轮能力与路线");
+  });
+
+  it("续跑那一支要说清这一跳在干什么，不许留空", () => {
+    const src = code();
+    expect(src).toMatch(/接着上一跳/);
+    // 说得出跳名就说跳名（FACTORY_HOP_LABELS），说不出才用兜底那句
+    expect(src).toContain("FACTORY_HOP_LABELS");
+  });
+
+  it("★ 反向配对：新话题照旧报开场", () => {
+    // 首轮那两样是真信息——它接了活、正在规划路线。一起藏掉是另一种坏。
+    const src = code();
+    expect(src).toContain("指令已接收 · 启动推理");
+    expect(src).toContain("规划第一轮能力与路线...");
+  });
+});
