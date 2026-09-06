@@ -17,6 +17,22 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from routes import sliderule_full as sr  # noqa: E402
 
 
+def _skip_ownership(monkeypatch) -> None:
+    """把归属守卫摘掉。
+
+    ⚠ 2026-09-06：`restore_model_version` 补了归属判定（此前它连 `viewer`
+      参数都没有，任何人都能把别人会话的模型换成某个历史版本）。这两条用例
+      按位置只传 `(sid, version_id)`，签名一变就 TypeError —— 线程里抛的异常
+      不会让用例红，只会让 `peak` 停在 0，报出来是"没有串行化"，
+      **指向一个不存在的病**。
+
+      这里显式摘掉守卫而不是给它喂一个合法访问者：这两条测的是**锁的粒度**，
+      鉴权由 tests/test_runs_ownership.py 单独钉。摘得明白比混在一起好。
+    """
+    monkeypatch.setattr(sr, "_auth", lambda *_a, **_k: None)
+    monkeypatch.setattr(sr, "_require_run_session", lambda *_a, **_k: None)
+
+
 def test_same_session_shares_one_lock_and_different_sessions_do_not():
     a1, a2 = sr._restore_lock("s-a"), sr._restore_lock("s-a")
     b = sr._restore_lock("s-b")
@@ -45,9 +61,10 @@ def test_concurrent_restores_do_not_overlap(monkeypatch):
         return {"restored": True}
 
     monkeypatch.setattr(sr, "_restore_model_version_locked", slow)
-    monkeypatch.setattr(sr, "_auth", lambda *_a, **_k: None)
+    _skip_ownership(monkeypatch)
 
-    ts = [threading.Thread(target=sr.restore_model_version, args=("s-race", "mv-1"))
+    ts = [threading.Thread(target=sr.restore_model_version,
+                           args=("s-race", "mv-1", None))
           for _ in range(3)]
     [t.start() for t in ts]
     [t.join() for t in ts]
@@ -75,9 +92,10 @@ def test_different_sessions_still_run_in_parallel(monkeypatch):
         return {"restored": True}
 
     monkeypatch.setattr(sr, "_restore_model_version_locked", slow)
-    monkeypatch.setattr(sr, "_auth", lambda *_a, **_k: None)
+    _skip_ownership(monkeypatch)
 
-    ts = [threading.Thread(target=sr.restore_model_version, args=(f"s-{i}", "mv-1"))
+    ts = [threading.Thread(target=sr.restore_model_version,
+                           args=(f"s-{i}", "mv-1", None))
           for i in range(3)]
     [t.start() for t in ts]
     [t.join() for t in ts]
