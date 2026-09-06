@@ -259,11 +259,89 @@ def _pages_of(state: Any) -> Dict[str, Any]:
     return pages if isinstance(pages, dict) else {}
 
 
+#: EARS 中文验收的分句标记：`当…时，**系统应**…`。
+#: 标记**之前**是触发条件（用户/环境做了什么），之后是系统自己要做的事。
+_SYSTEM_CLAUSE_MARKERS = ("系统应", "系统将", "系统会", "系统需", "则系统", "系统自动")
+
+#: 动词前面挂着这些字，说明它在描述**条件**而不是**用户动作**：
+#:   未签到 / 没提交 / 无上传 —— 否定
+#:   被举报 / 被审批            —— 被动
+#: ⚠ 只看紧邻左侧一个字。放宽到"整句里出现过否定词"会把
+#:   「先上传证明，未通过则重新上传」这种真需要上传口的需求也排掉。
+_NON_ACTION_PREFIX = ("未", "没", "无", "非", "被", "免")
+
+
+def _trigger_clause(acceptance: str) -> str:
+    """取 EARS 验收的触发从句（`系统应…` 之前那半截）。
+
+    找不到标记就返回原文——判不出来的时候倾向于**算作提交意图**（宁可多拦
+    也不放过），跟这道闸整体的取向一致。
+    """
+    text = str(acceptance or "")
+    cut = len(text)
+    for marker in _SYSTEM_CLAUSE_MARKERS:
+        i = text.find(marker)
+        if 0 <= i < cut:
+            cut = i
+    return text[:cut] if cut < len(text) else text
+
+
+def _has_user_submit_action(text: str) -> bool:
+    """这段话里有没有**用户主动**的录入/提交动作。
+
+    命中的动词紧邻左侧是否定或被动标记时不算——那是在说条件。
+    """
+    for word in _SUBMIT_WORDS:
+        start = 0
+        while True:
+            i = text.find(word, start)
+            if i < 0:
+                break
+            prefix = text[i - 1] if i > 0 else ""
+            if prefix not in _NON_ACTION_PREFIX:
+                return True
+            start = i + 1
+    return False
+
+
 def submit_intent_nodes(spec: Dict[str, Any]) -> List[str]:
     """SPEC 里"要用户往里填东西"的需求节点 id。
 
     只看 `type == "requirement"` 的 title + acceptance：evidence 节点是取证
     记录、design 节点是实现笔记，两者出现"上传"不代表交付面要有上传口。
+
+    ## ⚠ 只看触发从句，且排除否定/被动（2026-09-06 第二轮真机喂出来的）
+
+    第一版是「title + acceptance 全文里出现任一提交动词」。真机（校区自习室
+    座位预约）当场误报，把一份**合格**交付物拦了下来：
+
+        n1 座位预约与扫码签到    触发：学生**选择**座位、**扫描**座位码   真要录入 ✔
+        n2 信用分奖惩与自动封禁  触发：学生**发生**违约（迟到**未**签到、
+                                      **被**举报）→ 系统**自动**封禁      不该要 ✘
+        n3 拍照举报              触发：学生**拍照上传**举报               真要录入 ✔
+        n4 分区时段与报表        触发：管理员**调整**分区                 真要录入 ✔
+
+    四条 requirement 全被判成"需要录入"——**等于没有区分度**。而 n2 承载在
+    「我的预约与信用分」这张只读页上（0 input / 0 select / 13 button），
+    它本来就不该有输入框：验收写的是"系统应自动…并在小程序端**提示**"。
+    于是 `blocked=True`、`blockerCount=1`，一份三条真需求都被正确服务的交付物
+    被拦住了。
+
+    一道会误报的 hard_blocker 的结局是**被人关掉**，那就等于白做——同
+    `_ENRICH_STAGE_LABELS` 头注那句「写窄的提示比不写更糟：它把正常说成异常」。
+
+    两条规则合起来正好把这四条分开：
+
+      ① 只看**触发从句**（`系统应` 之前）。`系统应自动释放座位` 里的动词是
+         系统的活，不是用户的落笔处。
+      ② 从句里命中的动词，紧邻左侧是否定/被动标记（未/没/无/非/被/免）时
+         不算。n2 的 `迟到**未**签到`、`**被**举报` 说的是条件。
+
+    ⚠ 遗留（不在这一刀里）：n4 目前是靠 `可预约时段` 里的 `预约` 命中的，
+      它真正的用户动作是 `调整` / `筛选` / `划分`，而这几个词不在
+      `_SUBMIT_WORDS` 里。也就是说 n4 的分类站在一次偶然匹配上。要不要把
+      管理类动词加进词表是**另一个决定**（`筛选` 会让纯看板应用也要求有
+      select，那未必是错的，但影响面不同），单独议。这里只加排除规则、不加词。
 
     ⚠ **根节点必须排除**（2026-09-06 真机喂出来的）。厚那一轮的 `n0` 是
       umbrella 需求（「当教务人员、老师与家长登录对应终端时，系统应支持
@@ -282,8 +360,8 @@ def submit_intent_nodes(spec: Dict[str, Any]) -> List[str]:
         nid = str(node.get("id") or "").strip()
         if not nid or (root and nid == root):
             continue
-        text = f"{node.get('title') or ''}\n{node.get('acceptance') or ''}"
-        if any(word in text for word in _SUBMIT_WORDS):
+        text = f"{node.get('title') or ''}\n{_trigger_clause(node.get('acceptance'))}"
+        if _has_user_submit_action(text):
             out.append(nid)
     return out
 

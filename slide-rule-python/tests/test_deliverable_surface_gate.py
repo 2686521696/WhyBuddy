@@ -36,6 +36,7 @@
 `blocked` 翻成 True。少这一条，上面三条全绿也可能是装在不通电的插座上。
 """
 
+import dataclasses
 import json
 import os
 import pathlib
@@ -384,3 +385,100 @@ class Test真的接在闭环上:
         assert hard == [], "两个角色两个页面只该警告，不该拦"
         assert [w["code"] for w in warn] == ["CLOSURE_ONE_PAGE_PER_ROLE"]
         assert ds.is_thin(st) is False
+
+
+# ── 第二轮真机：这道闸把一份合格交付物拦了（假阳性）────────────────────
+#
+# 校区自习室座位预约那一轮，四条 requirement **全部**被判成「需要用户录入」，
+# 等于没有区分度。而其中 n2 承载在一张只读页上（0 input / 0 select / 13 button），
+# 它本来就不该有输入框——验收写的是「系统应自动…并在小程序端**提示**」。
+# 于是 blocked=True / blockerCount=1，一份三条真需求都被正确服务的交付物被拦住。
+#
+# 一道会误报的 hard_blocker 的结局是**被人关掉**，那就等于白做。
+# 所以这一组判据的份量跟「薄那一轮必须被拦」是**对等**的：
+#   前者守「该拦的拦得住」，这一组守「不该拦的别拦」。缺任何一半这道闸都不能用。
+
+_FP = (
+    pathlib.Path(__file__).parent
+    / "fixtures" / "deliverable_surface" / "false-positive-20260906.json"
+)
+
+
+def _fp_blob() -> dict:
+    return json.loads(_FP.read_text(encoding="utf-8"))
+
+
+class Test第二轮真机的假阳性:
+    def test_夹具记着第一版确实误判了四条(self):
+        """判据自检：夹具被人"整理"成正确的之后，这一组会立刻变红而不是空跑。"""
+        blob = _fp_blob()
+        assert blob["firstVersionVerdict"]["submitIntentNodes"] == ["n1", "n2", "n3", "n4"], (
+            "夹具里第一版的判定变了"
+        )
+        assert blob["firstVersionVerdict"]["reasons"] == ["submit_intent_unserved"]
+
+    def test_系统自动行为不算提交意图(self):
+        """★ 这一条就是那个误报。
+
+        n2「信用分奖惩与自动封禁策略」触发从句：
+            当学生发生违约事件（迟到**未**签到、**被**举报占座核实）
+            导致信用分低于设定阈值时
+        —— 签到 前面是否定、举报 前面是被动，两个都在描述**条件**；
+        真正的动作在「系统应自动…」之后，那是系统的活。
+
+        变异：去掉触发从句切分（用 acceptance 全文）→ 本条红。
+        变异：去掉否定/被动排除 → 本条红（`未签到` 会命中 `签到`）。
+        """
+        blob = _fp_blob()
+        got = ds.submit_intent_nodes(blob["spec"])
+        assert got == blob["expected"]["submitIntentNodes"], (
+            f"提交意图判定变了：得到 {got}，期望 {blob['expected']['submitIntentNodes']}\n"
+            + json.dumps(blob["expected"]["why"], ensure_ascii=False, indent=2)
+        )
+        assert "n2" not in got, blob["expected"]["why"]["n2"]
+
+    def test_三条真需求一条都不许漏(self):
+        """⚠ 排除规则的代价判据。只写「n2 不许命中」的话，把整个判定改成
+        「一律不算提交意图」也能绿——那是把闸关掉，不是修准。"""
+        got = ds.submit_intent_nodes(_fp_blob()["spec"])
+        for nid in ("n1", "n3", "n4"):
+            assert nid in got, f"{nid} 是真的要用户录入，漏了就等于闸失效"
+
+    def test_这一轮不该被拦(self):
+        """端到端：同一份 SPEC + 同一份逐页控件数，结论必须是「不拦」。"""
+        blob = _fp_blob()
+        # 夹具的 perPage 就是 PageSurface.as_dict() 的原样（字段名一致），
+        # 直接展开——手抄一遍字段名就是给自己留一处会漂的书写。
+        keep = {f.name for f in dataclasses.fields(ds.PageSurface)}
+        by_page = {
+            p["pageId"]: ds.PageSurface(**{k: v for k, v in p.items() if k in keep})
+            for p in blob["perPage"]
+        }
+        unserved = ds.unserved_submit_intents(blob["spec"], by_page)
+        hard = [u for u in unserved if u["why"] == "covering_pages_have_no_entry"]
+        assert hard == [], (
+            f"还在拦：{hard}。那一页（{blob['firstVersionVerdict']['pagesWithoutEntry']}）"
+            "是只读展示页，承载的是「系统自动封禁并提示」这条需求。"
+        )
+
+    def test_否定与被动只看紧邻左侧一个字(self):
+        """⚠ 放宽到「整句里出现过否定词」会把真需要上传口的需求也排掉。
+
+        变异：改成 `any(neg in text for neg in ...)` → 本条红。
+        """
+        from services.deliverable_surface import _has_user_submit_action
+
+        assert ds._has_user_submit_action("迟到未签到") is False
+        assert ds._has_user_submit_action("被举报占座") is False
+        assert ds._has_user_submit_action("学生拍照上传举报") is True
+        assert ds._has_user_submit_action("先上传证明，未通过则重新上传") is True, (
+            "整句里有「未」就排掉 —— 这条真的需要上传口"
+        )
+
+    def test_找不到系统从句时按全文算(self):
+        """判不出来的时候倾向于**算作提交意图**（宁可多拦也不放过），
+        跟这道闸整体的取向一致。"""
+        from services.deliverable_surface import _trigger_clause
+
+        assert ds._trigger_clause("学生提交申请") == "学生提交申请"
+        assert ds._trigger_clause("当学生提交申请时，系统应记录") == "当学生提交申请时，"
