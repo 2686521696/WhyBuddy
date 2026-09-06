@@ -232,6 +232,55 @@ class PauseGate:
     def budget(self) -> PauseBudget:
         return self._budget
 
+    def arm(self, where: str) -> float:
+        """把这道闸置成「真的在等」：记下**等什么**和**从什么时候开始等**，
+        返回起算时刻。
+
+        ## 为什么要单独有它（2026-09-06 第二轮真机）
+
+        停泊那一刻立刻问 `GET /runs/active`，拿到的是：
+
+            {"phase": "waiting", "where": "", "waitedSeconds": null,
+             "budgetSeconds": 1800}
+
+        自相矛盾——说"正在等"，却说不出等什么、等了多久。因为当时这两格是
+        `wait()` 进去之后才写的，而 `phase` 是从 `slot.active` 推的，而
+        `take_hold()` 把闸转成 active 发生在 `await wait()` **之前**。
+        两步之间那道缝就是这个窗口。上一轮我等了 1.2 秒才问，正好躲过去了。
+
+        ## 抄的是 grok 的哪一处
+
+        `xai-grok-session-events/src/tracker.rs`：
+
+            /// Emits `PhaseChanged(PermissionPrompt)` and then `PermissionRequested`.
+            /// Returns the `Instant` that `permission_resolved()` uses to compute `wait_ms`.
+            pub fn permission_requested(&self, tool_name: &str) -> Instant {
+                self.emit(Event::PhaseChanged { phase: Phase::PermissionPrompt });
+                self.emit(Event::PermissionRequested { tool_name: tool_name.to_string() });
+                Instant::now()
+            }
+
+        三件事**一次全部建立**：相位、等什么、起算时刻。而且起算时刻被
+        **交回调用方**——`permission_resolved(…, start)` 必须拿着它，配对成了
+        结构上的必然。它那个写法在结构上不可能出现"相位说在等、却不知道等什么"。
+
+        ⚠ 幂等：重复 arm 不改起算时刻。否则刷新一次快照就把"等了多久"清零，
+          那比不报更骗人（用户会以为闸刚挂上）。
+        """
+        if self._started_at is None:
+            self._where = str(where or "")
+            self._started_at = time.monotonic()
+        elif where and not self._where:
+            # arm 过但当时没给 where（不该发生），后来知道了就补上，不动时刻。
+            self._where = str(where)
+        return self._started_at
+
+    @property
+    def armed(self) -> bool:
+        """已经开始等了吗。**这才是"正在等"的事实**，`slot.active` 只说明
+        闸被取走了。`hold_state()` 的 phase 按这一格判。"""
+        return self._started_at is not None
+
     async def wait(self, where: str) -> PauseResult:
         """停在这儿等。**不抛异常**——四种结局都由返回值如实说出来。
 
@@ -241,14 +290,11 @@ class PauseGate:
           的头注：特意不继承 CancelledError 就是为了能被接住，这里要的是
           同一套行为）。
         """
-        started = time.monotonic()
+        # 落点在 `arm()` 里落。调用方（驱动器）应当在**发出「我在等你」之前**
+        # 就 arm 过；没 arm 过的（脚本 / 判据直调）这里补上，语义不变。
+        started = self.arm(where) if self._started_at is None else self._started_at
         budget = self._budget.wait_budget()
         deadline = None if budget is None else started + budget
-        # 落点写在**开始等之前**：外面（run_registry 的快照 / 诊断端点）要能
-        # 在等待期间读到它。写在返回时就只有等完了才可见——那正是
-        # run_pause_started 事件踩过的那个坑，同一条纪律。
-        self._where = str(where or "")
-        self._started_at = started
 
         while True:
             if is_cancelled():
@@ -557,8 +603,16 @@ def hold_state(slot: Optional[PauseSlot]) -> Optional[Dict[str, Any]]:
     gate = slot.active or slot.pending
     if gate is None:
         return None
-    phase = "waiting" if slot.active is not None else "pending"
+    # ⚠ phase 按**真的开始等了没有**判（`gate.armed`），不按「闸被取走了」
+    #   （`slot.active`）判。第二轮真机在那两步之间的缝里问到过
+    #   `{"phase":"waiting","where":"","waitedSeconds":null}` —— 说在等却说不出
+    #   等什么、等了多久。一个说不出内容的状态字，比没有这个字更糟：
+    #   前端会照着它把「快答」的按钮点亮，而此时闸还没进 wait()。
+    #
+    #   `active` 但还没 arm 的那几毫秒如实报 `pending`（"马上就要停"），
+    #   这跟用户此刻能做的事一致 —— `release_run` 两格都认，答案照样收得下。
     started = getattr(gate, "_started_at", None)
+    phase = "waiting" if started is not None else "pending"
     waited = None if started is None else round(time.monotonic() - started, 3)
     budget = None
     try:

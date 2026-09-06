@@ -2903,6 +2903,20 @@ async def drive_full_v5_session_stream(
             # 这一层的意义是"别再开始下一件大活儿"，不是把当前这件切碎。
             #
             # ⚠ 正常路径零成本：没人按暂停时 pause_here 一次字典读取就返回。
+            # ★★ arm 在**发通知之前**（2026-09-06 第二轮真机）。
+            #   `take_hold()` 只是把闸从 pending 转成 active，它不知道 where，
+            #   所以"等什么、从什么时候开始等"这两格原来要等 `await gate.wait()`
+            #   进去才写。而通知一发出去，前端立刻就会来问
+            #   `GET /runs/active` —— 正好落在那道缝里，拿到
+            #   `{"phase":"waiting","where":"","waitedSeconds":null}`。
+            #
+            #   照 grok `permission_requested()`：相位、等什么、起算时刻
+            #   **一次全部建立**，然后才轮到"通知"和"阻塞"。它那个写法在结构上
+            #   不可能出现"相位说在等、却不知道等什么"。
+            try:
+                gate.arm("spec-assumptions")
+            except Exception as exc:  # noqa: BLE001 — 观测项，不许拦住停泊
+                print(f"[v5_full_driver] ⚠ 停泊落点写入跳过：{str(exc)[:120]}")
             # ⚠ 三种结局都往下跑，**没有一种把这一轮判死**：
             #     人答了    → 接着跑
             #     超时/跳过  → 按模型自己定的做（spec-assumptions 认定的合法结局）

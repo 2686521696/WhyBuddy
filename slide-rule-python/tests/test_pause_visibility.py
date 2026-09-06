@@ -271,18 +271,29 @@ class Test快照里有正在等人这一格:
     def test_落点写在开始等之前(self):
         """跟 #2a 同一条纪律：写在返回时就只有等完了才可见。
 
-        变异：把 `self._where = ...` / `self._started_at = ...` 挪到
-        `_settle` 里 → 上面那条 test_已经停住 会红（等待期间读到空 where）。
-        这一条从源码顺序上再钉一次，免得靠 sleep 的时序判据变成偶发。
+        ⚠ 2026-09-06 第二轮真机之后，落点从 `wait()` 里挪到了 `arm()` 里 ——
+          因为 `wait()` 里已经太晚了：`take_hold()` 把闸转成 active 之后、
+          `await wait()` 之前有一道缝，前端在那道缝里问到过
+          `{"phase":"waiting","where":"","waitedSeconds":null}`。
+          现在驱动器在**发通知之前**先 arm（照 grok permission_requested）。
+
+        这一条改成钉住 `wait()` **不许自己另写一份落点**：两处书写就会漂。
         """
         src = (
             Path(__file__).parent.parent / "services" / "run_pause.py"
         ).read_text(encoding="utf-8")
-        body_start = src.index("    async def wait(self, where: str)")
-        body = src[body_start : src.index("\n    def ", body_start + 10)]
-        i_set = body.index("self._where = str(where or \"\")")
-        i_loop = body.index("while True:")
-        assert i_set < i_loop, "落点写在等待循环里面/后面了，等待期间读不到"
+        # arm() 里必须两格一起落
+        arm_start = src.index("    def arm(self, where: str) -> float:")
+        arm_body = src[arm_start : src.index("\n    @property", arm_start)]
+        assert "self._where = str(where or \"\")" in arm_body
+        assert "self._started_at = time.monotonic()" in arm_body
+
+        # wait() 只许通过 arm() 拿落点，不许自己再写一份
+        wait_start = src.index("    async def wait(self, where: str)")
+        wait_body = src[wait_start : src.index("\n    def _settle", wait_start)]
+        assert "self.arm(where)" in wait_body, "wait() 没走 arm()，落点又变成两处书写"
+        assert "self._started_at = " not in wait_body, "wait() 自己又写了一份起算时刻"
+        assert "self._where = " not in wait_body, "wait() 自己又写了一份 where"
 
     def test_不限时报None而不是0(self):
         """⚠ 0 不表示不限时——那是 `enabled=False` 的活
@@ -369,3 +380,139 @@ def test_is_holding与hold_state不许互相打架(setup):
     elif setup == "active":
         slot.active = PauseGate(PauseBudget())
     assert run_pause.is_holding(slot) is (hold_state(slot) is not None)
+
+
+# ── 第二轮真机：waiting 却说不出等什么、等了多久 ──────────────────────
+#
+# 停泊那一刻**立刻**问 GET /runs/active，拿到的是：
+#
+#     {"phase": "waiting", "where": "", "waitedSeconds": null, "budgetSeconds": 1800}
+#
+# 自相矛盾。因为 phase 是从 `slot.active` 推的，而 `take_hold()` 把闸转成 active
+# 发生在 `await gate.wait()` **之前**；`where` / `_started_at` 是 wait() 进去才写的。
+# 两步之间那道缝就是这个窗口。上一轮我等了 1.2 秒才问，正好躲过去了。
+#
+# 一个说不出内容的状态字比没有这个字更糟：前端会照着它把「快答」的按钮点亮，
+# 而此时闸还没进 wait()。
+#
+# 抄 grok tracker.rs 的 `permission_requested()`：相位、等什么、起算时刻
+# **一次全部建立**，并把起算时刻交回调用方。
+
+
+class Test说在等就必须说得出等什么:
+    def test_取到闸但还没开始等时报pending(self):
+        """★ 这一条就是那个窗口。
+
+        `take_hold()` 之后、`wait()` 之前，如实报 `pending`（"马上就要停"），
+        不许报 `waiting`。
+
+        变异：把 phase 改回按 `slot.active` 判 → 本条红。
+        """
+        slot = PauseSlot()
+        gate = PauseGate(PauseBudget())
+        slot.active = gate                      # take_hold() 干的事
+        assert gate.armed is False, "还没 arm 就说自己在等了"
+        st = hold_state(slot)
+        assert st is not None
+        assert st["phase"] == "pending", (
+            f"取到闸但还没进 wait()，却报了 {st['phase']} —— 前端会把「快答」点亮"
+        )
+
+    def test_arm之后三格一起有值(self):
+        """相位、等什么、等了多久，一次全部建立——不许出现「有相位没内容」。"""
+        slot = PauseSlot()
+        gate = PauseGate(PauseBudget())
+        slot.active = gate
+        gate.arm("spec-assumptions")
+        st = hold_state(slot)
+        assert st["phase"] == "waiting"
+        assert st["where"] == "spec-assumptions"
+        assert st["waitedSeconds"] is not None and st["waitedSeconds"] >= 0
+
+    @pytest.mark.parametrize("setup", ["pending", "active-not-armed", "armed"])
+    def test_任何时刻都不许有说不出内容的waiting(self, setup):
+        """⚠ 不变式判据：`phase == "waiting"` ⇒ `where` 非空且 `waitedSeconds` 有值。
+
+        这条比上面两条都硬——它不关心是哪条路走出来的，只钉住"不许自相矛盾"。
+        变异：任何让 phase 与落点分两步建立的改法都会让某一档红。
+        """
+        slot = PauseSlot()
+        gate = PauseGate(PauseBudget())
+        if setup == "pending":
+            slot.pending = gate
+        else:
+            slot.active = gate
+            if setup == "armed":
+                gate.arm("spec-assumptions")
+        st = hold_state(slot)
+        assert st is not None
+        if st["phase"] == "waiting":
+            assert st["where"], f"{setup}: 报 waiting 却说不出等什么"
+            assert st["waitedSeconds"] is not None, f"{setup}: 报 waiting 却说不出等了多久"
+
+    def test_arm是幂等的不许把等了多久清零(self):
+        """⚠ 刷新一次快照就把"等了多久"清零，比不报更骗人——用户会以为闸刚挂上。"""
+        gate = PauseGate(PauseBudget())
+        first = gate.arm("spec-assumptions")
+        time.sleep(0.02)
+        again = gate.arm("spec-assumptions")
+        assert again == first, "重复 arm 改了起算时刻"
+
+    def test_wait没被arm过也能自己补上(self):
+        """脚本 / 判据直调 `wait()` 的路径语义不变。"""
+        gate = PauseGate(PauseBudget())
+        slot = PauseSlot()
+        slot.active = gate
+
+        async def _park():
+            task = asyncio.ensure_future(gate.wait("直调"))
+            await asyncio.sleep(0.05)
+            st = hold_state(slot)
+            gate.skip()
+            await task
+            return st
+
+        st = asyncio.run(_park())
+        assert st["phase"] == "waiting"
+        assert st["where"] == "直调"
+
+    def test_驱动器在发通知之前就arm(self):
+        """照 grok：相位/等什么/起算时刻先建立，然后才轮到通知和阻塞。
+
+        前端一收到「我在等你」就会来问 runs/active —— 通知发出去的那一刻，
+        落点必须已经在了。
+
+        变异：把 `gate.arm(...)` 挪到 yield 之后 → 本条红。
+        """
+        import ast
+
+        node = _nested_node("_drain_assumption_hold")
+        arm_lines = [
+            n.lineno
+            for n in ast.walk(node)
+            if isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute)
+            and n.func.attr == "arm"
+            and isinstance(n.func.value, ast.Name)
+            and n.func.value.id == "gate"
+        ]
+        notify_lines = [
+            n.lineno
+            for n in ast.walk(node)
+            if isinstance(n, ast.Yield) and "run_pause_started" in ast.dump(n)
+        ]
+        assert arm_lines, "驱动器没有 arm —— 通知发出去时落点还是空的"
+        assert notify_lines, "判据自己打空了：找不到 run_pause_started"
+        assert min(arm_lines) < min(notify_lines), (
+            "arm 排在通知之后了 —— 前端问到的会是一个说不出内容的 waiting"
+        )
+
+    def test_arm失败不许拦住停泊(self):
+        """观测项 fail-open（本仓第七条）：落点写不进去，停泊本身照样要成立。"""
+        body = _drain_hold_src()
+        i_arm = body.index("gate.arm(")
+        segment = body[max(0, i_arm - 200) : i_arm + 260]
+        assert "except Exception" in segment, "arm 没有兜底，会把整条停泊拖死"
+
+
+import time  # noqa: E402  —— 上面 test_arm是幂等的 要用
