@@ -107,10 +107,30 @@ class Run:
         self.hard_cancelled: bool = False
 
     def snapshot(self) -> Dict[str, Any]:
+        # ⚠ 「正在等人」必须是快照里**独立的一格**（2026-09-06 真机）。
+        #
+        #   停泊 30 分钟期间这个快照报的是 `status:"running"`，而停泊期间
+        #   零事件——刷新回来的浏览器拿到"在跑"却再也收不到任何东西，
+        #   分不出"在等你答假设卡"和"服务端死了"。
+        #
+        #   `status` 描述的是**引擎**（`is_live` 的头注早就写清楚了这个区分），
+        #   等人是会话的另一个**相**。照 grok `xai-grok-session-events` 的
+        #   `Phase::PermissionPrompt`：等人不是"跑着"的一个子情况。
+        #
+        #   ⚠ 读取不许抛：快照是诊断面，炸了会让 `runs/active` 整个 500，
+        #     那比少一格严重得多（本仓第七条：增强类 fail-open）。
+        try:
+            hold = run_pause.hold_state(self.pause_slot)
+        except Exception:  # noqa: BLE001
+            hold = None
         return {
             "runId": self.run_id,
             "sessionId": self.session_id,
             "status": self.status,
+            # 布尔给判断，详情给展示。只给 hold 的话调用方得先判 None 再取值；
+            # 只给布尔的话又回到"不知道在等什么"。
+            "held": hold is not None,
+            "hold": hold,
             # ⚠ 前端/排查要能分出「已请求停止」与「真停了」，所以这两个都给
             "cancelRequested": self.cancel_token.is_set(),
             "cancelReason": self.cancel_reason,

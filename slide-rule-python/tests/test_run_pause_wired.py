@@ -143,14 +143,56 @@ class Test接在流式那条链上:
             line for line in body.splitlines() if not line.lstrip().startswith("#")
         )
 
+    def _hold_fn_code(self) -> str:
+        """`_drain_assumption_hold` 那个函数的代码（去注释、去 docstring）。
+
+        ⚠ 2026-09-06 从"`take_hold()` 之后固定 N 字符的窗口"改成按 AST 切函数。
+          原因：那个窗口是个魔数。这一轮在通知和 `await` 之间补了"停泊态落库"
+          （SSE 只服务当前连着的客户端，刷新回来读的是 state），代码长了
+          二十来行，`.wait(` 就掉到 600 字符窗口外面 —— 判据报的是
+          `ValueError: substring not found`，**不是**"顺序错了"。
+          魔数窗口每次隔壁加几行就得回来调一次，而调它的人不知道该调多少。
+        """
+        import ast
+
+        import services.v5_full_driver as d
+
+        src = open(d.__file__, encoding="utf-8").read()
+        tree = ast.parse(src, filename=d.__file__)
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef))
+                and node.name == "_drain_assumption_hold"
+            ):
+                body = node.body
+                if (
+                    body
+                    and isinstance(body[0], ast.Expr)
+                    and isinstance(body[0].value, ast.Constant)
+                    and isinstance(body[0].value.value, str)
+                ):
+                    body = body[1:]  # docstring 里逐字引了修复前的写法
+                lines = src.splitlines(keepends=True)
+                code = "".join(
+                    lines[body[0].lineno - 1 : max(n.end_lineno or n.lineno for n in body)]
+                )
+                return "\n".join(
+                    ln for ln in code.splitlines() if not ln.lstrip().startswith("#")
+                )
+        raise AssertionError("驱动器里找不到 _drain_assumption_hold —— 接线被拆了")
+
     def test_停住之前先报一声_前端才变得了形态(self):
         """⚠ 必须在**开始等之前** yield：等上了才报，卡片在整段等待期间都是
-        旧样子，用户不知道自己按的那下生效了没有。"""
-        code = self._driver_code()
-        at = code.index("take_hold()")
-        window = code[at : at + 600]
-        started = window.index("run_pause_started")
-        waited = window.index(".wait(")
+        旧样子，用户不知道自己按的那下生效了没有。
+
+        真机（2026-09-06 sr-20260906045441）：`run_pause_started` 迟到 3 秒，
+        前端 `runPaused` 点不亮，假设卡上单条的两个按钮点了不放行。
+        更细的同款判据见 tests/test_pause_visibility.py（按 AST 认 yield，
+        防"退化成普通赋值时字面量还在原地"）。
+        """
+        code = self._hold_fn_code()
+        started = code.index("run_pause_started")
+        waited = code.index("gate.wait(")
         assert started < waited, "先等上了才报「已暂停」——中间那段前端是懵的"
 
     def test_流式循环里真的调了安全点(self):
@@ -191,7 +233,14 @@ class Test接在流式那条链上:
         code = self._driver_code()
         loops = [m.start() for m in re.finditer(r"while loop < max_loops:", code)]
         stream = code[loops[1] :]
-        calls = list(re.finditer(r"await _drain_assumption_hold\(\)", stream))
+        # ⚠ 2026-09-06 改成认 `async for`。`_drain_assumption_hold` 从"返回 list
+        #   的协程"改成了 async generator —— 停泊通知必须在 `await` 之前就流到
+        #   前端，攒成 list 再交等于等完了才通知（真机迟到 3 秒，前端 runPaused
+        #   点不亮）。原判据认的是 `await _drain_assumption_hold()`，改完之后
+        #   量到 0 个调用点，报的是"两条 execute 都要接"而不是"形式变了"。
+        calls = list(
+            re.finditer(r"async for \w+ in _drain_assumption_hold\(\)", stream)
+        )
         assert len(calls) >= 2, "并行批和串行两条 execute 都要在返回后等假设闸"
         for match in calls:
             window = stream[max(0, match.start() - 500) : match.start()]
@@ -200,12 +249,13 @@ class Test接在流式那条链上:
     def test_三种没答的结局都不许把这一轮判死(self):
         """暂停不是取消。真机实测取消 → publishClosure=null、白烧一轮；
         暂停的三种结局都要接着跑到最后一步。"""
-        code = self._driver_code()
-        at = code.index("take_hold()")
-        window = code[at : at + 1400]
+        # ⚠ 同上：从"`take_hold()` 之后 1400 字符"改成整个函数体。
+        #   魔数窗口在隔壁加几行之后就把要找的东西挤出去了，而它报的错
+        #   （断言 recover_from 不在窗口里）看起来像"恢复配方被删了"。
+        code = self._hold_fn_code()
         # 没答时走恢复配方继续，而不是 break / raise
-        assert "recover_from" in window
-        assert "break" not in window.split("recover_from")[0][-200:]
+        assert "recover_from" in code
+        assert "break" not in code.split("recover_from")[0][-200:]
 
 
 class Test注册表把闸和run对上:

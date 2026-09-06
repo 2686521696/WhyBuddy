@@ -26,6 +26,10 @@ from .closed_tools import (
     host_factory_hop,
 )
 from .factory_plan_steps import product_steps_for_tools
+from .stage_pairing import (
+    DANGLING_REASON as _STAGE_DANGLING_REASON,
+    StagePairTracker as _StagePairTracker,
+)
 from .workflow_select import PAGES_PREVIEW, PAGES_PREVIEW_TOOLS, select_workflow
 import os
 import threading
@@ -1173,7 +1177,13 @@ def transient_blocked_signal(state: "V5SessionState") -> bool:
 
 
 def _advance_turn_version(state: "V5SessionState") -> None:
-    """一次 drive = 一个 turn：把 state.lastTurnId 步进一格。
+    r"""一次 drive = 一个 turn：把 state.lastTurnId 步进一格。
+
+    ⚠ 这个 docstring 必须是 raw 字符串（前缀 r）：下面引了正则 (\d+)\s*$，
+      非 raw 的话 \d 是非法转义序列，每次 ast.parse 都刷一条 SyntaxWarning，
+      而 Python 未来版本会把它升成 SyntaxError。
+      2026-09-06 修——全仓就这一处，arch_graph 每跑一次报一次。
+      （加前缀时不要在文中写出三引号，那会把 docstring 提前终结。）
 
     持久化守卫以 lastTurnId 为单调版本（同 turn 不可覆盖核心字段）。驱动器
     若不推进它，drive 开始时那笔"goal 还没写进"的快照就成了该版本的终点，
@@ -2268,6 +2278,20 @@ async def drive_full_v5_session_stream(
             lambda phase, name, fields: _stage_q.put((phase, name, dict(fields)))
         )
     )
+    # 阶段配对台账（2026-09-06）。**一次流一本，不是一个泵一本。**
+    #
+    # 真机 sr-20260906045441 那轮：`specfirst.pages` 开 3 次收 0 次、
+    # `specfirst.bind` 开 1 次收 0 次——整条链最长的两步都没有收尾事件，
+    # 前端那条进度转到流结束。发出端是干净的（`enrich_timing.stage()` 是
+    # try/finally），丢在传输段：泵是按任务一个的，泵之间的空档、以及停泊
+    # 打断，都会让队列里剩下的 end 没有下一个泵来取。
+    #
+    # 台账放在这一层（而不是泵局部）同时修掉第二个病：心跳那句
+    # `active_stage` 原来是泵局部变量，每个泵都从 None 开始，所以最长的那
+    # 一步上心跳内容恒为空（443 个事件里 progress_heartbeat = 0）。
+    # 抄 grok `xai-grok-session-events/src/tracker.rs` 的 `active_tool` +
+    # `cancel_active_tool()` + `emit_turn_ended` 幂等闩三件套。
+    _stage_pairs = _StagePairTracker()
 
     # spec-first 第 3 步的页面（2026-08-14）。
     #
@@ -2283,10 +2307,27 @@ async def drive_full_v5_session_stream(
     # sink 调用（spec_first_pipeline._with_device），前端拿它选画布视口。
     _page_q: "_queue.Queue[tuple[str, str, int, int, bool, str]]" = _queue.Queue()
     _spec_first_scope = None
+    _note_page_event = None
+    _peek_page_events = None
+    _reset_page_events = None
+    _peek_pages_for_fallback = None
     try:
-        from .spec_first_pipeline import page_sink_scope as _spec_first_scope
+        # ⚠ 三个计数函数**挂在这条已有的 import 上**，不新开一条。
+        #   架构闸盯着"函数体 import 只许变少"（baseline.deferred），
+        #   新开一条 import 语句就会把那个棘轮顶上去。
+        from .spec_first_pipeline import (  # noqa: F401
+            note_page_event_emitted as _note_page_event,
+            page_sink_scope as _spec_first_scope,
+            peek_last_pages as _peek_pages_for_fallback,
+            peek_page_events_emitted as _peek_page_events,
+            reset_page_events_emitted as _reset_page_events,
+        )
     except Exception:  # noqa: BLE001 — 新模块缺失不该打死整条流
         pass
+    # 新一轮开始先清零：不清的话上一轮的计数会让这一轮"看起来发过事件"，
+    # 补发判定永远不触发（见 reset_page_events_emitted 头注）。
+    if _reset_page_events is not None:
+        _reset_page_events()
     if _spec_first_scope is not None:
         _sinks.enter_context(
             _spec_first_scope(
@@ -2339,11 +2380,19 @@ async def drive_full_v5_session_stream(
     async def _pump_llm_deltas(task: "asyncio.Task"):
         """任务运行期间持续排水：把队列里的（标签, 增量）按相邻同标签聚合成
         llm_delta 事件（150ms 批量，防逐 token 事件风暴）。先记完成标志再排水，
-        保证任务结束瞬间到达的尾部增量也被冲出，不会滞留队列。"""
-        active_stage: Optional[Dict[str, Any]] = None
-        active_started = 0.0
+        保证任务结束瞬间到达的尾部增量也被冲出，不会滞留队列。
+
+        ⚠ "现在开着哪个阶段"记在**流级**的 `_stage_pairs` 里，不是这里的局部
+          变量。阶段跨泵边界是常态（start 落在上一个泵、end 落在下一个泵），
+          泵局部变量会让它每隔几秒清零一次——真机那轮心跳全灭就是这个。
+        """
         last_heartbeat = 0.0
         heartbeat_seconds = 15.0
+        # 心跳的判据是「流沉默了多久」，所以要有个"上次吐东西"的时刻。
+        # 初值设成泵启动时刻：一个从头到尾没有任何产出的能力，也会在 15 秒后
+        # 开始报心跳，而不是等到有第一个事件才开始计时。
+        pump_started = _time.perf_counter()
+        last_yield_at = pump_started
         while True:
             finished = task.done()
             batches: List[tuple] = []
@@ -2371,6 +2420,7 @@ async def drive_full_v5_session_stream(
                     "label": label,
                     **({"stageLabel": _d["label"], "stageGroup": _d["group"]} if _d else {}),
                 }
+                last_yield_at = _time.perf_counter()
             # 体验层阶段事件跟增量走同一个排水循环：它们发生在同一段时间里，
             # 分开两个泵只会让顺序不可预期。
             try:
@@ -2380,12 +2430,14 @@ async def drive_full_v5_session_stream(
                     if ev is not None:
                         now = _time.perf_counter()
                         if phase == "start":
-                            active_stage = ev
-                            active_started = now
+                            _stage_pairs.note_start(name, ev, now=now)
                             last_heartbeat = now
+                        else:
+                            # 返回值只用于对账（孤儿 end 单独记一笔），
+                            # 不决定要不要发——事件本身是真的，一定要发。
+                            _stage_pairs.note_end(name)
                         yield ev
-                        if phase == "end" and active_stage is not None:
-                            active_stage = None
+                        last_yield_at = _time.perf_counter()
             except _queue.Empty:
                 pass
             # spec-first 的页面跟上面两条走同一个泵，理由同上：它们发生在
@@ -2407,6 +2459,11 @@ async def drive_full_v5_session_stream(
                         # desktop 横屏 / phone 竖屏——前端选画布视口用
                         "device": _device,
                     }
+                    # 记一笔"这一页真的发出去了"。落库时拿它对账，对不上就补发
+                    # （照 grok message_chunks_emitted / fallback_text）。
+                    if _note_page_event is not None:
+                        _note_page_event()
+                    last_yield_at = _time.perf_counter()
             except _queue.Empty:
                 pass
             # 伴随式澄清：第 2 步替用户定下的事，跟上面三条走同一个泵。
@@ -2415,6 +2472,7 @@ async def drive_full_v5_session_stream(
                     _rows = _assumption_q.get_nowait()
                     if _rows:
                         yield {"type": "spec_assumption", "items": _rows}
+                        last_yield_at = _time.perf_counter()
             except _queue.Empty:
                 pass
             try:
@@ -2422,18 +2480,57 @@ async def drive_full_v5_session_stream(
                     _note = _quality_q.get_nowait()
                     if _note:
                         yield {"type": "quality_notice", **_note}
+                        last_yield_at = _time.perf_counter()
             except _queue.Empty:
                 pass
+            # ── 心跳：判据是「多久没吐东西」，不是「有没有已知阶段」──────────
+            #
+            # ⚠ 2026-09-06 改。原条件是 `active_stage is not None`，真机实测在
+            #   **最长的那一步上恒不成立**：
+            #
+            #     v3 真机（sr-20260906045441）turn ④
+            #       [ 20s] reasoning_step  stage=specfirst.pages     ← start 到了
+            #       [103s] reasoning_step_result stage=specfirst.semantics
+            #       中间 83 秒零事件、零心跳
+            #     整轮 443 个事件里 progress_heartbeat = **0**
+            #
+            #   原因是 `_stage_q` 的 start/end 跨了泵的实例边界：每个能力执行
+            #   都新起一个 `_pump_llm_deltas`（`active_stage=None` 从头开始），
+            #   而 spec-first 的子阶段事件由流水线在**某一个**能力里发出——
+            #   start 落在上一个泵、end 落在下一个泵，于是这个泵从头到尾
+            #   `active_stage` 都是 None，心跳的条件永远不成立。
+            #
+            #   这正是本仓「一之二」那条：护栏装对了位置，**它依赖的输入在
+            #   真机上根本不出现**。修法不是去补 stage 记账（那是第三位的活），
+            #   是把心跳的判据换成一个不依赖记账的事实：**流沉默了多久**。
+            #
+            # 抄 grok `xai-grok-sampler/src/stream/chat_completions.rs:20-30`
+            # 的双计时器：
+            #     1. The transport stops yielding chunks at all
+            #     2. The transport keeps yielding empty / keepalive chunks but
+            #        no meaningful content (separate `last_content_chunk_at` timer)
+            #   这里对应：`last_yield_at` 管第一条（流沉默 → 发心跳），
+            #   `active_stage` 退化成心跳的**内容**（有就带上，没有就诚实留空），
+            #   不再充当心跳的**条件**。
+            #
+            # ⚠ 2026-09-06 第二处改动：`active_stage` 从**泵局部变量**换成流级
+            #   `_stage_pairs.active()`。原来那个每个泵都从 None 开始，所以在
+            #   最长的那一步上心跳内容恒为空——补了心跳也说不出"在做什么"。
             now = _time.perf_counter()
-            if (
-                active_stage is not None
-                and now - last_heartbeat >= heartbeat_seconds
-            ):
+            if now - last_yield_at >= heartbeat_seconds:
+                _active = _stage_pairs.active()
+                _active_at = _stage_pairs.active_started_at()
                 yield _progress_heartbeat_event(
-                    active_stage,
-                    elapsed_ms=int((now - active_started) * 1000),
+                    # 没有已知阶段时给空壳：字段如实为 None，而不是编一个阶段名。
+                    # `_progress_heartbeat_event` 全用 .get()，形状不变——它的
+                    # 精确相等判据（test_enrich_stage_visibility）照旧成立。
+                    _active or {},
+                    elapsed_ms=int(
+                        (now - (_active_at if _active_at is not None else pump_started)) * 1000
+                    ),
                 )
                 last_heartbeat = now
+                last_yield_at = now
             if finished:
                 break
             await asyncio.sleep(0.15)
@@ -2478,6 +2575,11 @@ async def drive_full_v5_session_stream(
     picks: list = []
     closure_attempted = False
     no_progress_streak = 0
+    # ⚠ 先占位。`_close_dangling_stages` 定义在下面那个 `try:` 里面，而调用点
+    #   在 `finally` **之后**（要覆盖正常结束和异常两条路）。如果异常在 def
+    #   执行之前就发生，调用点会 NameError——那种失败出现在一轮跑完之后，
+    #   最难查。占位让它退化成"这一轮不补收尾"，而不是把整条流打死。
+    _close_dangling_stages = None
     from .repeat_policy import max_repeat_per_cap
 
     MAX_REPEAT_PER_CAP = max_repeat_per_cap()  # 阈值与窗口见 services/repeat_policy.py
@@ -2514,27 +2616,259 @@ async def drive_full_v5_session_stream(
             _recover_from = None
             _take_hold = None
 
+        async def _fallback_page_events():
+            """页面落了盘，但一个 `spec_page` 事件都没发出去 → 补发。
+
+            ## 抄的是 grok 的哪一处
+
+            `xai-grok-sampling-types/src/conversation.rs:966-979`：
+
+                /// Returns the assistant text when `AgentMessageChunk` events were
+                /// lost during streaming (e.g. after an empty-response retry).
+                /// The caller then emits it as a fallback.
+                pub fn fallback_text(&self) -> Option<String> {
+                    if self.message_chunks_emitted > 0 { return None; }
+                    …
+                }
+
+            **有终态内容但增量事件数为 0 ⇒ 事件丢了 ⇒ 补发兜底。**
+
+            ## 真机（2026-09-06）
+
+                gemini-3.8 那轮：7 页落库，`spec_page` 事件 3 个
+                gemini-3.7 那轮：3 页落库，`spec_page` 事件 **0 个**
+
+            画布上 83 秒纯空白然后什么都没有。而这一步的注释写着它存在的
+            全部理由：「一份能独立打开的 HTML 比最终模型早四五分钟，攒齐
+            再交等于白白转圈」。
+
+            ⚠ `bound=True`：补发发生在整链跑完之后，此时页面已经打过孔，
+              说 `False` 会让前端把成品当素颜页再等一次覆盖。
+            """
+            if (
+                _peek_page_events is None
+                or _note_page_event is None
+                or _peek_pages_for_fallback is None
+            ):
+                return
+            try:
+                _emitted = _peek_page_events()
+                # ⚠ `None` = 这一轮没量到，**不许当成 0 去补发**。
+                #   真机（2026-09-06）就差点在这里翻车：计数器当时是
+                #   `ContextVar[int]`，写在泵的 Context、读在 to_thread 的副本里，
+                #   读出来恒为 0 —— 于是明明发过 15 个事件，这里会再补发一遍，
+                #   前端每页闪两次。那一轮没重发纯属 `peek_last_pages()` 已被取空。
+                if _emitted is None or _emitted > 0:
+                    return
+                blob = _peek_pages_for_fallback() or {}
+                pages = blob.get("pages") if isinstance(blob, dict) else None
+                if not isinstance(pages, dict) or not pages:
+                    return
+                total = len(pages)
+                device = str(blob.get("device") or "desktop")
+            except Exception as exc:  # noqa: BLE001 — 兜底自己不许炸主链路
+                print(f"[v5_full_driver] ⚠ spec_page 兜底补发跳过：{str(exc)[:120]}")
+                return
+            print(
+                f"[v5_full_driver] ⚠ spec_page 事件丢了（落库 {total} 页 / 发出 0 个），"
+                f"补发 {total} 条兜底事件"
+            )
+            for _i, (_pid, _html) in enumerate(sorted(pages.items()), start=1):
+                _note_page_event()
+                yield {
+                    "type": "spec_page",
+                    "pageId": _pid,
+                    "html": _html,
+                    "current": _i,
+                    "total": total,
+                    "bound": True,
+                    "device": device,
+                    # 让下游能分出"这是补发的"——排查时最想知道的第一件事。
+                    "fallback": True,
+                }
+
+        async def _close_dangling_stages():
+            """收尾：把还开着的阶段补一个收尾事件，让 start/end 成对。
+
+            ## 抄的是 grok 的哪一处
+
+            `xai-grok-session-events/src/tracker.rs`：
+
+                /// Cancels the in-flight tool and emits `ToolCompleted(cancelled)`.
+                /// `cancel_running_task()` calls this before `turn_ended`.
+                pub fn cancel_active_tool(&self) { … }
+
+            两个要点照抄：
+              * **走之前替它收尾**，别把一条开着的记录留在台账里；
+              * 收的是 `Cancelled` 而**不是** Success——`ok=False` +
+                `skippedReason` 如实说"没等到它自己收尾"。编一个成功
+                就是用假绿盖住真相。
+              * 幂等由 `close_dangling()` 那把闩管（正常结束、取消、异常三条
+                路都会叫这里，照 `emit_turn_ended` 的 `replace(true)`）。
+
+            ## 真机（2026-09-06 sr-20260906045441）
+
+                specfirst.pages   start 3 / end 0
+                specfirst.bind    start 1 / end 0
+
+            整条链最长的两步都没有收尾事件，前端进度条转到流结束。发出端
+            （`enrich_timing.stage()` 的 try/finally）是干净的，丢在传输段：
+            泵按任务一个，泵之间的空档没人排水。
+
+            ⚠ **先把队列排干再判断谁还开着**。不排干就会给一个其实已经收尾、
+              只是 end 还躺在队列里的阶段补一条"被打断"——比不补更糟，因为
+              它把正常说成异常（同 `_ENRICH_STAGE_LABELS` 那条"写窄的提示比
+              不写更糟"）。
+            """
+            try:
+                while True:
+                    _phase, _name, _fields = _stage_q.get_nowait()
+                    _ev = _enrich_stage_event(_phase, _name, _fields)
+                    if _ev is None:
+                        continue
+                    if _phase == "start":
+                        _stage_pairs.note_start(_name, _ev, now=_time.perf_counter())
+                    else:
+                        _stage_pairs.note_end(_name)
+                    yield _ev
+            except _queue.Empty:
+                pass
+            _left = _stage_pairs.close_dangling()
+            if not _left:
+                return
+            _now = _time.perf_counter()
+            print(
+                "[v5_full_driver] ⚠ 阶段开了没收："
+                + ", ".join(row.name for row in _left)
+                + f"（对账 {_stage_pairs.counters()}）"
+            )
+            for _row in _left:
+                # ⚠ 逐字段翻译，不是 `**_row.event`：台账里存的是 **start 事件**
+                #   （键叫 pageId），而 `_enrich_stage_event` 吃的是**埋点 fields**
+                #   （键叫 page）。直接摊开会让 pageId / device 静默变 None——
+                #   本仓「白名单投影漏一行就被静默丢掉」那个形状。
+                _ev = _enrich_stage_event(
+                    "end",
+                    _row.name,
+                    {
+                        "page": _row.event.get("pageId"),
+                        "device": _row.event.get("device"),
+                        "current": _row.event.get("current"),
+                        "total": _row.event.get("total"),
+                        "ms": int((_now - _row.started_at) * 1000),
+                        "ok": False,
+                        "skippedReason": _STAGE_DANGLING_REASON,
+                    },
+                )
+                if _ev is not None:
+                    yield {**_ev, "synthetic": True}
+
         async def _drain_assumption_hold():
             """spec-first 在 to_thread 里出卡后把闸挂在 pending。
-            整段返回才轮到这里——异步等，不占执行槽。"""
-            events = []
+            整段返回才轮到这里——异步等，不占执行槽。
+
+            ## ⚠ 这是 async generator，不是返回 list 的协程（2026-09-06 修）
+
+            上一版把 `run_pause_started` **append 进本地 list**，然后 `await
+            gate.wait()` 等最多 30 分钟，等完了再 append `run_pause_ended`，
+            最后 `return events` —— 两条一起交出去。也就是说：**「我在等你」
+            这个通知只有在不用等了之后才发出去。**
+
+            真机复现（2026-09-06，sr-20260906045441）：
+
+                [56s] spec_assumption          items=2
+                      （我在 59s 主动 POST /runs/{id}/release）
+                [59s] run_pause_started        where=spec-assumptions   ← 迟到
+                [59s] run_pause_ended          outcome=skipped  waitedSeconds=3.016
+
+            后果不是"少一条日志"。前端 `useSlideRuleSession` 靠这条事件点亮
+            `runPaused`（`setRunPaused(phase === "started")`），而假设卡上单条的
+            两个按钮都是 `if (runPaused) void releaseRun(...)`——「就这样」和
+            「改成 X」于是**点了不放行**，用户干等满 30 分钟
+            （`run_pause.DEFAULT_WAIT_SECONDS = 30 * 60`）。
+            只有整卡确认那条路（查的是 `isRunningRef.current`）能放行。
+
+            ## 抄的是 grok 的哪一处
+
+            `grok-build/crates/codegen/xai-grok-tools/src/implementations/
+            grok_build/ask_user_question/mod.rs`，Step 4/5/6 的顺序：
+
+                // ── Step 4: Send UserQuestionRequest ──
+                if sender.0.send(request).is_err() { … }          // 请求先交出去
+                // ── Step 5: Emit UserQuestionAsked + read the wait budget ──
+                handle.0.send_user_question_asked(UserQuestionAsked { … });   // 通知先发
+                // ── Step 6: Block on the oneshot result ──
+                let outcome = match wait {
+                    Some(dur) => tokio::time::timeout(dur, result_rx).await,  // 才开始等
+                    None      => Ok(result_rx.await),
+                };
+
+            它那个写法在结构上**不可能**出现"等完了才通知"：`result_tx` 在
+            Step 4 就 move 出去了，通道两端在 await 之前已经建立。
+
+            ⚠ 本仓早就抄过同一个文件的另外两样东西——30 分钟预算、
+              「`seconds=0` 不表示永远等」（`run_pause.PauseBudget` 的注释里
+              直接引了 grok 那句原文）。**唯独漏了这一行顺序。**
+              这是本仓第四条（只改一半必然静默失效）的教科书案例。
+            """
             if _take_hold is None or _finish_hold is None:
-                return events
+                return
             try:
                 gate = _take_hold()
             except Exception as exc:  # noqa: BLE001
                 print(
                     f"[v5_full_driver] ⚠ 假设闸异常，按不暂停继续：{str(exc)[:160]}"
                 )
-                return events
+                return
             if gate is None:
-                return events
-            events.append({"type": "run_pause_started", "where": "spec-assumptions"})
+                return
+            # ★ 先把「我在等你」交出去，再 await。顺序就是这条修复的全部内容。
+            #   `budgetSeconds` 一起带上：前端要能显示"最多等多久"，而不是
+            #   让用户对着一个没有期限的转圈猜。None = 不限时。
+            _budget = None
+            try:
+                _budget = gate.budget.wait_budget()
+            except Exception:  # noqa: BLE001 — 预算读不到不该拦住通知
+                pass
+            yield {
+                "type": "run_pause_started",
+                "where": "spec-assumptions",
+                "budgetSeconds": _budget,
+            }
+            # 落库同一件事：SSE 只服务**当前连着的**那个客户端；刷新 / 换设备
+            # 回来读的是 state。真机实测停泊期间 `runtimePhase=orchestrating`
+            # 且 `awaitReason=null`——状态自己都不知道它在等人。
+            # ⚠ 增强类，炸了不许拖垮停泊（本仓第七条）。
+            _phase_before, _reason_before = state.runtimePhase, state.awaitReason
+            try:
+                state.runtimePhase = "awaiting"
+                # ⚠ 用词表里已有的 `user_input`，别新造一个词。
+                #   第一版写的是 "spec_assumption"，`models/v5_state.py` 的
+                #   `AwaitReason` 里没有它——pydantic v2 默认不校验赋值，所以
+                #   写的时候一声不响，等到从库里读回来走 server_load 会
+                #   `invalid_session` → `_coerce_many` 把**整条会话跳过**
+                #   （persistence.py:370）。症状是「停在假设卡的会话，重启后
+                #   从侧栏消失了」，比这里要修的"看不出在等人"严重得多。
+                #   这正是那张词表头上记着的第三次同形状事故，
+                #   `test_state_enum_values_are_declared` 当场把它照出来。
+                #   `user_input` 的既有含义就是"在等用户说话"，正好是这件事。
+                state.awaitReason = "user_input"
+                await asyncio.to_thread(persist_state, state)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[v5_full_driver] ⚠ 停泊态落库跳过：{str(exc)[:120]}")
             res = None
             try:
                 res = await gate.wait("spec-assumptions")
             finally:
                 _finish_hold()
+                # 等完了把相恢复回去，否则这一轮后面的步骤全在 "awaiting" 下跑，
+                # 而终局判定（terminal_phase_decision）会读到一个骗人的相。
+                try:
+                    state.runtimePhase = _phase_before or "orchestrating"
+                    state.awaitReason = _reason_before
+                    await asyncio.to_thread(persist_state, state)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[v5_full_driver] ⚠ 停泊态恢复跳过：{str(exc)[:120]}")
             recovered = None
             if (
                 res is not None
@@ -2546,16 +2880,13 @@ async def drive_full_v5_session_stream(
                 if act is not None:
                     recovered = act.event
             if res is not None:
-                events.append(
-                    {
-                        "type": "run_pause_ended",
-                        "where": res.where,
-                        "outcome": res.outcome.value,
-                        "waitedSeconds": res.waited_seconds,
-                        "recovery": recovered,
-                    }
-                )
-            return events
+                yield {
+                    "type": "run_pause_ended",
+                    "where": res.where,
+                    "outcome": res.outcome.value,
+                    "waitedSeconds": res.waited_seconds,
+                    "recovery": recovered,
+                }
 
         while loop < max_loops:
             # ── 安全点：用户按过「先别往下跑」就停在这儿等（2026-08-28）──
@@ -2941,8 +3272,13 @@ async def drive_full_v5_session_stream(
                     async for _delta_event in _pump_llm_deltas(batch_task):
                         yield _delta_event
                     outcomes = batch_task.result()
-                    for _pause_ev in await _drain_assumption_hold():
+                    # `async for`（不是 `await …()`）：停泊通知必须在 await 之前
+                    # 就流到前端，攒成 list 再交等于等完了才通知。见
+                    # _drain_assumption_hold 头注的真机时间线。
+                    async for _pause_ev in _drain_assumption_hold():
                         yield _pause_ev
+                    async for _fb in _fallback_page_events():
+                        yield _fb
                     for sel, outcome in zip(group, outcomes):
                         await asyncio.to_thread(
                             _commit_executed_outcome,
@@ -2992,8 +3328,13 @@ async def drive_full_v5_session_stream(
                     async for _delta_event in _pump_llm_deltas(exec_task):
                         yield _delta_event
                     result = exec_task.result()
-                    for _pause_ev in await _drain_assumption_hold():
+                    # 同上：`async for`，理由见 _drain_assumption_hold 头注。
+                    # ⚠ 两个调用点都要改——只改一个就是本仓第四条那个形状
+                    #   （串行/并行两条路，改一条不报错、只有一半不生效）。
+                    async for _pause_ev in _drain_assumption_hold():
                         yield _pause_ev
+                    async for _fb in _fallback_page_events():
+                        yield _fb
                     result_data = _result_to_dict(result)
                     art_id = f"art-{loop}-{cap}"
                     produced = ProducedBy(capabilityRunId=run_id, capabilityId=cap, roleId=role)
@@ -3265,6 +3606,16 @@ async def drive_full_v5_session_stream(
         # E29：精修/直供上下文兜底清理（异常路径防泄漏到下一轮）
         _gen.set_refine_context(None)
         _gen.set_model_override(None)
+
+    # 阶段配对收尾（2026-09-06）。位置是刻意的：**在 `finally` 里
+    # `_sinks.close()` 之后**——此时不会再有新的阶段事件进队列，队列内容是
+    # 稳定的，先排干再判断"谁还开着"才不会把一个其实已经收尾的阶段说成
+    # 被打断。正常结束和 `except Exception` 两条路都会走到这里；
+    # GeneratorExit / CancelledError 那条**故意不走**（流已经没人收，
+    # 那边的注释写着"也不许 yield"）。
+    if _close_dangling_stages is not None:
+        async for _tail_ev in _close_dangling_stages():
+            yield _tail_ev
 
     # 旁路 drive 没有客户端 PUT。这里不写，刷新就是「1 阶段 · 0 步」。
     stamp_drive_narration(

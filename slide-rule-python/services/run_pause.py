@@ -198,6 +198,16 @@ class PauseGate:
         #: 场上还有没有人。预算里的 non_interactive 是起闸时的初值；
         #: 订阅者走光 / 回来会改这一格，预算本身保持冻结。
         self._unattended = bool(self._budget.non_interactive)
+        #: 停在哪儿、从什么时候开始等。**只为了让外面看得见**（run_registry
+        #: 的快照要能回答"这个 run 是在等人还是挂了"）。
+        #:
+        #: ⚠ 2026-09-06 加的。之前 `where` 只作为 `wait()` 的入参存在，等待
+        #:   状态在进程里**没有任何可观测的落点**：`runs/active` 只报
+        #:   `status:"running"`，刷新回来的浏览器分不出"在等你"和"服务端死了"。
+        #:   照 grok `xai-grok-session-events` 的 `Phase::PermissionPrompt`——
+        #:   等人是会话的一个**相**，不是"跑着"的一个子情况。
+        self._where: str = ""
+        self._started_at: Optional[float] = None
 
     def mark_no_operator(self) -> None:
         """页面关了 / 订阅者走光。超时报 NO_OPERATOR，不是用户跳过。"""
@@ -234,6 +244,11 @@ class PauseGate:
         started = time.monotonic()
         budget = self._budget.wait_budget()
         deadline = None if budget is None else started + budget
+        # 落点写在**开始等之前**：外面（run_registry 的快照 / 诊断端点）要能
+        # 在等待期间读到它。写在返回时就只有等完了才可见——那正是
+        # run_pause_started 事件踩过的那个坑，同一条纪律。
+        self._where = str(where or "")
+        self._started_at = started
 
         while True:
             if is_cancelled():
@@ -505,6 +520,61 @@ def finish_hold() -> None:
 def is_holding(slot: Optional[PauseSlot]) -> bool:
     """位子上有闸（按了还没到 / 正在等）。孤儿看门狗靠这个决定别取消。"""
     return slot is not None and (slot.active is not None or slot.pending is not None)
+
+
+def hold_state(slot: Optional[PauseSlot]) -> Optional[Dict[str, Any]]:
+    """这个 run 现在是不是在等人；是的话，等什么、等了多久、还能等多久。
+
+    ## 为什么要有它（2026-09-06 真机）
+
+    `Run.snapshot()` 只报 `status` / `cancelRequested` / `hardCancelled` / `seq`，
+    **没有"正在等人"这一格**。于是停泊 30 分钟期间：
+
+        GET /api/sliderule/runs/active  →  {"status":"running", …}
+
+    刷新回来的浏览器拿到一个"在跑"的 run，却一个事件都不会再来（停泊期间
+    零事件），分不出"在等你答假设卡"和"服务端死了"。而 `run_pause` 里
+    `status` 描述的是**引擎**——这个区分 `is_live` 的头注早就写清楚了，
+    只是快照没跟上。
+
+    照 grok `xai-grok-session-events/src/types.rs` 的 `Phase`：
+
+        pub enum Phase { WaitingForModel, StreamingText, StreamingReasoning,
+                         ToolExecution, PermissionPrompt }
+
+    `PermissionPrompt` 就是"正在等人"那一格——等人是会话的一个**相**，
+    不是"跑着"的一个子情况。
+
+    ## 两格分开报，因为它们不是同一件事
+
+        pending  按了暂停 / 出了假设卡，但还没走到安全点  → 马上就要停
+        waiting  已经停住，正在等答案                      → 现在就在等你
+
+    合成一个布尔的话，前端没法区分"再等一下就停"和"已经停了快答"。
+    """
+    if slot is None:
+        return None
+    gate = slot.active or slot.pending
+    if gate is None:
+        return None
+    phase = "waiting" if slot.active is not None else "pending"
+    started = getattr(gate, "_started_at", None)
+    waited = None if started is None else round(time.monotonic() - started, 3)
+    budget = None
+    try:
+        budget = gate.budget.wait_budget()
+    except Exception:  # noqa: BLE001 — 读不到预算不该让快照整体失败
+        pass
+    return {
+        "phase": phase,
+        "where": str(getattr(gate, "_where", "") or ""),
+        "waitedSeconds": waited,
+        # None = 不限时（`timeout_enabled=false`）。⚠ 不许拿 0 表示不限时——
+        # 那是 `enabled=False` 的活，见 PauseBudget 头注引的 grok 原话。
+        "budgetSeconds": budget,
+        # 场上还有没有人。超时的结局会因此不同（跳过 vs 没有操作员）。
+        "unattended": bool(getattr(gate, "_unattended", False)),
+    }
 
 
 def is_orphan_exempt(slot: Optional[PauseSlot]) -> bool:
