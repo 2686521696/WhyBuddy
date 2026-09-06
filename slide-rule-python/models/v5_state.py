@@ -302,6 +302,60 @@ class CapabilityRun(BaseModel):
             **data,
         )
 
+
+def stamp_run_timing(run: Any, *, durationMs: Optional[int], **extra: Any) -> None:
+    """给一条**已存在**的台账补耗时。顶层 `durationMs` 与 `timing.durationMs` 一起写。
+
+    ## 为什么要有它（2026-09-06 第二轮真机）
+
+    上一轮给 `CapabilityRun` 加了顶层 `durationMs`，`server_record()` 里也做了
+    与 `timing` 的双向对齐。真机跑完一看，**13 行台账的顶层 durationMs 全是
+    `None`**，而 `timing.durationMs` 全都有值：
+
+        evidence.search   顶层=None  timing.durationMs=9477
+        factory.pages     顶层=None  timing.durationMs=219510
+
+    因为主路径上耗时不是**建记录时**给的，是**跑完之后**打在已有记录上的，
+    一共五处（v5_full_driver 三处、slide_rule_session 两处），形状都是
+    `last.timing = {"durationMs": dur}`。它们绕过了工厂，于是我新加的那一格
+    从落地第一天就是死的。
+
+    这就是本仓第四条的又一次现形：**加字段的时候只改了"创建"那一半，
+    "更新"那一半在别处**。把两处书写收成一处，加字段的人不必再去找五个地方。
+
+    ## 形状上的两件事
+
+    · 同时收掉这五处各自手写的 `hasattr(run, "timing") / isinstance(run, dict)`
+      分支——台账在库里可能是裸 dict（历史数据），也可能是 pydantic 模型。
+    · `durationMs=None` 是**合法**的（有些路径真的没计时），此时只写 extra，
+      不往 timing 里塞一个 None 冒充测量值。
+    """
+    if run is None:
+        return
+    timing: Dict[str, Any] = {}
+    if durationMs is not None:
+        timing["durationMs"] = int(durationMs)
+    for key, value in extra.items():
+        if value is not None:
+            timing[key] = value
+    if not timing:
+        return
+    if isinstance(run, dict):
+        merged = dict(run.get("timing") or {})
+        merged.update(timing)
+        run["timing"] = merged
+        if durationMs is not None:
+            run["durationMs"] = int(durationMs)
+        return
+    try:
+        merged = dict(getattr(run, "timing", None) or {})
+        merged.update(timing)
+        run.timing = merged
+        if durationMs is not None:
+            run.durationMs = int(durationMs)
+    except Exception:  # noqa: BLE001 — 补耗时是观测项，不许拖垮已经跑完的一轮
+        return
+
 # Classification for sliderule-python-v52-capability-run-contract-105 (this task):
 # TS_RUNTIME_OWNED -> NODE_BACKEND_OWNED -> PYTHON_COMPAT (partial fields: inputs/outputs/gateResults/result only) -> PYTHON_AUTHORITY
 # Python now owns full CapabilityRun contract (inputs, outputs, gateResults, result, timing, error + roleId/ledger for parity).

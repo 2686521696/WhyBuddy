@@ -7,6 +7,7 @@ Provides create, load, save, drive loop using stable Python RAG for evidence ins
 import os
 from typing import Dict, Any, Optional
 from models.v5_state import Artifact, CapabilityRun, ProducedBy, V5SessionState, DependencyEdge, SlideRuleReplayEvent, ReasoningEvent, UserIntervention
+from models.v5_state import stamp_run_timing as _stamp_run_timing
 from datetime import datetime, timezone
 from .slide_rule_orchestrator import orchestrate_plan
 from .slide_rule_executor import execute_capability
@@ -375,11 +376,11 @@ def drive_reasoning_turn(state: V5SessionState, turn_id: str, user_text: str, in
                 else:
                     if isinstance(run, dict):
                         run["result"] = exec_res_dump
-                if hasattr(run, "timing"):
-                    run.timing = {"startedAt": None, "completedAt": None, "durationMs": dur}
-                else:
-                    if isinstance(run, dict):
-                        run["timing"] = {"durationMs": dur}
+                # ⚠ 两处一起写：顶层 durationMs 与 timing.durationMs。
+                #   只赋 timing 的话上一轮新加的那一格从落地第一天就是死的
+                #   （真机 13 行台账顶层全 None，见 stamp_run_timing 头注）。
+                #   dict / pydantic 两种形态由那个函数一并处理，这里不再分叉。
+                _stamp_run_timing(run, durationMs=dur, startedAt=None, completedAt=None)
                 # Emit capability_complete so UI sees completion without waiting full drive end
                 append_reasoning_event(
                     state, turnId=turn_id, capabilityRunId=run_id, capabilityId=cap_id, kind="capability_complete",

@@ -36,7 +36,12 @@ import threading
 import time
 from typing import Dict, Any, AsyncGenerator, List, Literal, Optional
 from datetime import datetime, timezone
-from models.v5_state import V5SessionState, ProducedBy, SchedulingDecision
+from models.v5_state import (
+    ProducedBy,
+    SchedulingDecision,
+    V5SessionState,
+    stamp_run_timing as _stamp_run_timing,
+)
 from .slide_rule_orchestrator import orchestrate_plan
 from .engine_scheduling import pick_next_capabilities, pick_repair_capabilities, commit_artifact, append_reasoning_event, append_replay_event
 
@@ -164,13 +169,12 @@ def _commit_capability_result(
             last.result = result_data
         elif isinstance(last, dict):
             last["result"] = result_data
-        if hasattr(last, "timing"):
-            timing: Dict[str, Any] = {"durationMs": duration_ms}
-            if parallel is not None:
-                # Timing telemetry marker: attribute this measurement to the
-                # parallel batch path (absent on the untouched serial path).
-                timing["parallel"] = parallel
-            last.timing = timing
+        # ⚠ 走 stamp_run_timing 而不是直接赋 `last.timing`：顶层 durationMs 与
+        #   timing.durationMs 必须一起写。真机实测过只写 timing 的后果——
+        #   13 行台账的顶层 durationMs 全是 None（见那个函数的头注）。
+        # Timing telemetry marker: attribute this measurement to the parallel
+        # batch path (absent on the untouched serial path).
+        _stamp_run_timing(last, durationMs=duration_ms, parallel=parallel)
 
 
 # ---------------------------------------------------------------------------
@@ -1495,8 +1499,8 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                             last.result = result_data
                         elif isinstance(last, dict):
                             last["result"] = result_data
-                        if hasattr(last, "timing"):
-                            last.timing = {"durationMs": dur}
+                        # 同上：两处一起写，别只赋 timing（见 stamp_run_timing 头注）。
+                        _stamp_run_timing(last, durationMs=dur)
                     # Emit complete
                     append_reasoning_event(
                         state, turnId=turn_id, capabilityRunId=run_id, capabilityId=cap, kind="capability_complete",
@@ -3358,8 +3362,8 @@ async def drive_full_v5_session_stream(
                             last.result = result_data
                         elif isinstance(last, dict):
                             last["result"] = result_data
-                        if hasattr(last, "timing"):
-                            last.timing = {"durationMs": dur}
+                        # 同上：两处一起写，别只赋 timing（见 stamp_run_timing 头注）。
+                        _stamp_run_timing(last, durationMs=dur)
                     append_reasoning_event(
                         state, turnId=turn_id, capabilityRunId=run_id, capabilityId=cap,
                         kind="capability_complete", text=f"capability_completed: {cap}", roleId=role, order=2,

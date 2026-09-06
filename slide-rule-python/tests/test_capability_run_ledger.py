@@ -333,3 +333,122 @@ class Test全仓构造点:
             f"申报了但生产代码里没人写的来源：{sorted(declared - used)}；"
             f"（反过来也查：写了但没申报的会被 pydantic 当场拦下）"
         )
+
+
+# ── 第二轮真机：顶层 durationMs 从落地第一天就是死的 ──────────────────
+#
+# 上一轮给 CapabilityRun 加了顶层 durationMs，`server_record()` 里也做了与
+# timing 的双向对齐。真机跑完一看，**13 行台账的顶层 durationMs 全是 None**，
+# 而 timing.durationMs 全都有值：
+#
+#     evidence.search   顶层=None  timing.durationMs=9477
+#     factory.pages     顶层=None  timing.durationMs=219510
+#
+# 因为主路径上耗时不是**建记录时**给的，是**跑完之后**打在已有记录上的，
+# 一共五处（v5_full_driver 三处、slide_rule_session 两处），形状都是
+# `last.timing = {"durationMs": dur}`。它们绕过了工厂。
+#
+# 这是本仓第四条的又一次现形：**加字段的时候只改了「创建」那一半，
+# 「更新」那一半在别处。** 判据分两层：
+#   · 行为层：stamp_run_timing 必须两处一起写
+#   · 接线层：扫全仓，不许再有绕过它的裸赋值
+
+
+class Test补耗时:
+    def test_两处一起写(self):
+        """顶层 durationMs 与 timing.durationMs 必须同时落。
+
+        变异：去掉 `run.durationMs = int(durationMs)` → 本条红。
+        """
+        from models.v5_state import stamp_run_timing
+
+        run = CapabilityRun.server_record(
+            status="success", durationMs=None, provenance="test.fixture",
+            id="r-stamp", capabilityId="evidence.search", turnId="t",
+        )
+        assert run.durationMs is None and run.timing is None
+
+        stamp_run_timing(run, durationMs=9477, parallel=True)
+        assert run.durationMs == 9477, "顶层没写 —— 真机那 13 行全 None 就是这个"
+        assert (run.timing or {})["durationMs"] == 9477
+        assert (run.timing or {})["parallel"] is True
+
+    def test_裸dict也认(self):
+        """台账在库里可能是历史裸 dict。五处补丁点原来各自手写
+        `hasattr / isinstance` 分叉，收进来一处。"""
+        from models.v5_state import stamp_run_timing
+
+        row = {"id": "r", "capabilityId": "c", "turnId": "t"}
+        stamp_run_timing(row, durationMs=1234)
+        assert row["durationMs"] == 1234
+        assert row["timing"]["durationMs"] == 1234
+
+    def test_不覆盖已有的timing其它字段(self):
+        """合并而不是整块替换 —— 原来那五处是直接赋一个新字典，
+        谁先写的 startedAt 会被后写的抹掉。"""
+        from models.v5_state import stamp_run_timing
+
+        run = CapabilityRun.server_record(
+            status="success", durationMs=None, provenance="test.fixture",
+            id="r2", capabilityId="c", turnId="t",
+            timing={"startedAt": "2026-09-06T00:00:00Z"},
+        )
+        stamp_run_timing(run, durationMs=42)
+        assert (run.timing or {})["startedAt"] == "2026-09-06T00:00:00Z"
+        assert (run.timing or {})["durationMs"] == 42
+
+    def test_没耗时就不往timing里塞None(self):
+        """`durationMs=None` 是合法的（有些路径真的没计时）。
+        塞一个 None 进 timing 等于拿空值冒充测量值。"""
+        from models.v5_state import stamp_run_timing
+
+        run = CapabilityRun.server_record(
+            status="success", durationMs=None, provenance="test.fixture",
+            id="r3", capabilityId="c", turnId="t",
+        )
+        stamp_run_timing(run, durationMs=None)
+        assert run.durationMs is None
+        assert run.timing is None, "凭空造了一个 timing 出来"
+
+    def test_自己炸了不许拖垮已经跑完的一轮(self):
+        """补耗时是观测项（本仓第七条：增强类 fail-open）。"""
+        from models.v5_state import stamp_run_timing
+
+        class _Hostile:
+            @property
+            def timing(self):
+                raise RuntimeError("炸了")
+
+        stamp_run_timing(_Hostile(), durationMs=1)   # 不许抛
+        stamp_run_timing(None, durationMs=1)
+
+    def test_生产代码不许绕过它裸赋timing(self):
+        """★ 这条才是防「加第六处补丁点又忘了顶层」的闸。
+
+        变异：把任一处改回 `last.timing = {...}` → 本条红并指名道姓。
+        """
+        import re
+
+        offenders = []
+        for path in _production_py_files():
+            rel = path.relative_to(PY_ROOT)
+            if rel == pathlib.Path("models/v5_state.py"):
+                continue          # 本体在这儿
+            for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                stripped = line.split("#", 1)[0]
+                if re.search(r"\.timing\s*=\s*\{", stripped) or re.search(
+                    r"\[[\"']timing[\"']\]\s*=\s*\{", stripped
+                ):
+                    offenders.append(f"{rel.as_posix()}:{i}")
+        assert not offenders, (
+            "这些地方绕过 stamp_run_timing 直接赋 timing，顶层 durationMs 会静默留空："
+            + ", ".join(offenders)
+        )
+
+    def test_判据自己没打空(self):
+        found = [
+            p.relative_to(PY_ROOT).as_posix()
+            for p in _production_py_files()
+            if "_stamp_run_timing(" in p.read_text(encoding="utf-8")
+        ]
+        assert len(found) >= 2, f"生产侧 stamp_run_timing 调用点只量到 {found}"
