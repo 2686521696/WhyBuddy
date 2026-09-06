@@ -18,6 +18,8 @@ from models.v5_state import V5SessionState, ExecuteCapabilityResult
 from .rag_service import retrieve_evidence, generate_with_rag
 from .capability_plan import CapabilityPlan, factory_todo_blockers, merge_factory_todo
 from .closed_tools import FACTORY_HOPS, hop_from_factory_capability
+# deliverable_surface 也是叶子（只依赖 re/dataclass/enum），顶层 import 同理。
+from .deliverable_surface import surface_findings, surface_fingerprint
 # ⚠ 顶层 import：model_versions 是叶子模块（2026-08-29 从驱动器抽出来正是为此），
 #   不许再塞进函数体——那是架构闸盯着的逃生口，只许变少。
 # gate_health 是叶子（谁都不依赖），顶层 import，别塞函数体（架构闸盯着逃生口）
@@ -1128,13 +1130,45 @@ def _cache_spec_first_pages(state: "V5SessionState") -> None:
     （与 _cache_gate_passed_model 同一条纪律）。
     """
     try:
-        from .spec_first_pipeline import take_last_pages
+        from .spec_first_pipeline import peek_page_events_emitted, take_last_pages
 
         got = take_last_pages()
         if not got:
             return
         if not (got.get("pages") or got.get("spec")):
             return
+        # ── 事件数对账（2026-09-06）──────────────────────────────────────
+        #
+        # 抄 grok `ConversationResponse.message_chunks_emitted`
+        # （xai-grok-sampling-types/src/conversation.rs:851-855）：把"应该发多少
+        # 事件"做成**持久化字段**，而不是只在运行时断言一下。
+        #
+        # 真机：7 页落库 / 3 个事件；换供应商后 3 页落库 / **0 个**事件。
+        # 页面在盘上、闭环是绿的、事件丢了没有任何东西会红——因为没人数。
+        #
+        # 存下来之后，事后审计不用重放整条流：读一眼
+        # `specFirstPages.specPageEventsEmitted` 就知道那一轮画布上有没有东西动。
+        # ⚠ `None` = 本轮没装计数器（不知道），不是"知道是 0"。
+        #   折成 0 的话，每条没走流式驱动器的路径都会被判成"事件丢了" ——
+        #   而这条判据的全部价值就在于它平时不响。
+        _emitted = peek_page_events_emitted()
+        _page_n = len(got.get("pages") or {})
+        got = {
+            **got,
+            "specPageEventsEmitted": _emitted,
+            # ⚠ 记的是"对不对得上"，不是"发了几个"。前者才是判据能钉的东西：
+            #   同一页会到达多次（素颜 → 外壳统一 → 打孔），所以事件数
+            #   **大于**页数是正常的，只有"落了页却一个事件都没发"才是丢了。
+            #   `None` 如实透出"这一轮没量"，不许说成"丢了"。
+            "specPageEventsLost": (
+                None if _emitted is None else bool(_page_n > 0 and _emitted == 0)
+            ),
+        }
+        if _page_n > 0 and _emitted == 0:
+            print(
+                f"[spec-first] ⚠ spec_page 事件丢了：落库 {_page_n} 页、"
+                f"发出 0 个事件。画布这一轮什么都不会动。"
+            )
         # 页面 id 别名表要**跨轮累积**（2026-08-28）。
         #
         # 第 4.5 步的 canonical_page_id_map「一个都没改就返回空表」，而那正是
@@ -2058,6 +2092,36 @@ def execute_v5_capability(
         for extra in relevance_blockers + degradation_blockers(degradations) + todo_blockers:
             blockers.append(extra)
             hard_findings.append({"code": extra["code"]})
+        # ── 第四道：交付面可用性（2026-09-06 换模型当场量出来）─────────────
+        #
+        # 上面三道量的都是"流程走完没有"：证据交齐了吗、对不对题、产出跳跑完了吗。
+        # 没有一道量"用户真正看到的那一屏能不能用"。换 LLM 供应商之后同类题目
+        # 交付物差三倍（7 页 22 个 input → 3 页 1 个 input），而这三道闸的输出
+        # **逐字相同**。见 services/deliverable_surface.py 模块头的实测数字。
+        #
+        # ⚠ 顺序在这三道之后、`blocked` 之前重算：它要能把 blocked 从 False 翻成
+        #   True（该填的地方没有填的入口 = 交付物不成立，本仓第七条 fail-closed），
+        #   而 warning 只透出不参与。
+        surface_summary = None
+        surface_warnings: List[Dict[str, Any]] = []
+        try:
+            surface_summary, surface_hard, surface_warnings = surface_findings(state)
+            for extra in surface_hard:
+                blockers.append(extra)
+                hard_findings.append({"code": extra["code"]})
+            if surface_hard:
+                blocked = True
+            _gate_record(
+                "deliverableSurface",
+                passed=not surface_hard,
+                fingerprint=surface_fingerprint(surface_summary),
+                context=str(getattr(state, "sessionId", "") or ""),
+            )
+        except Exception as _exc:  # noqa: BLE001
+            # ⚠ 这里吞异常是**有意**的，但吞的是"量的时候炸了"，不是"量出来不合格"。
+            #   HTML 解析炸掉不该让一条跑了十分钟的推演作废；而真量出问题时
+            #   上面那几行已经把 blocked 翻成 True 了。
+            print(f"[deliverable-surface] 量渲染面跳过：{str(_exc)[:160]}")
         if blocked and llm_diag:
             diag_blocker = {
                 "code": llm_diag["code"],
@@ -2110,9 +2174,16 @@ def execute_v5_capability(
                 "degradationSummary": degradation_summary(degradations),
                 "findingsByTier": {
                     "hard_blocker": hard_findings,
-                    "warning": [],
+                    # 交付面的警告（角色数 >= 页面数、某页零控件、SPEC 有需求
+                    # 没页面承载）走 warning：它们不判死这一轮，但必须**可见**。
+                    # 上一版这里恒为空列表，于是 tierCounts.warning 永远是 0，
+                    # 「有话说但不拦」这一档在闭环报告里根本不存在。
+                    "warning": [{"code": w["code"], "ref": w.get("ref", "")} for w in surface_warnings],
                     "info": [],
                 },
+                # 量出来的渲染面数字随闭环一起交付：blocked 只是结论，这是过程。
+                # 换模型/换提示词之后对着这几个数就能看出交付物有没有变薄。
+                "deliverableSurface": surface_summary,
                 # 精修没画上：应用仍跑上一版，对话必须说这一处，不许套首轮总结。
                 "refinePaintNote": refine_paint_note_from_diagnostic(),
                 # 精修沿用收口句。take 先于本段（见 _refine_reuse_note_from_pages）。

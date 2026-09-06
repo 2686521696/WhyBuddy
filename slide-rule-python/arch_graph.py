@@ -237,8 +237,17 @@ def build_graph(root: pathlib.Path = ROOT) -> Graph:
         here = _module_name(path)
         g.files_scanned += 1
         try:
-            tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
-        except SyntaxError:
+            # ⚠ `filename=` 必须给：不给的话警告与报错都显示成 `<unknown>:1185`，
+            #   定位得另写一个脚本才知道是哪个文件（2026-09-06 实测踩过）。
+            tree = ast.parse(
+                path.read_text(encoding="utf-8", errors="ignore"), filename=str(path)
+            )
+        except SyntaxError as exc:
+            # ⚠ 吞掉解析失败**看着跟没有依赖一模一样**：那个文件贡献 0 条边，
+            #   闸照样绿。实测过一次：边从 877 掉到 816（少 61 条）、孤儿从
+            #   54 涨到 58，而没有任何提示。对一道自称 fail-closed 的闸，
+            #   至少要喊一声（本仓第七条：证据类不许静默）。
+            print(f"[arch_graph] ⚠ 解析失败，这个文件的依赖边全部缺失：{path} — {exc}")
             continue
         deferred = _deferred_lines(tree)
         for node in ast.walk(tree):
@@ -368,6 +377,30 @@ _BLOCKER_CODE_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$")
 #: 就等于悄悄退出体检。
 _GATE_HEALTH_CALLS = ("record_verdict", "_gate_record")
 
+#: 模块级 blocker code 声明的名字。
+#:
+#: ⚠ 2026-09-06 补的第二条入口。原来只认字面量 `{"code": "XXX_YYY"}` 字典，
+#:   于是把 code 收在**查表**里的模块整个漏掉：
+#:
+#:       _CODE = {SurfaceReason.SUBMIT_INTENT_UNSERVED: "CLOSURE_SUBMIT_INTENT_UNSERVED", …}
+#:       …
+#:       {"code": _CODE[reason], …}          # ← 值是下标表达式，不是常量
+#:
+#:   `services/deliverable_surface.py` 就是这个形状：新加了 5 条拦截理由，
+#:   `--check` 却是绿的。**一道漏筛的闸看着跟装好了一模一样**（本仓 §14 原话）。
+#:
+#: ⚠ 为什么是"认一个约定的名字"而不是"扫所有模块级常量"：
+#:   泛化扫描会把环境变量名（`"SLIDERULE_GRAPH_SCOPE_SHADOW"` 这类）也当成
+#:   blocker code——它们同样匹配 `_BLOCKER_CODE_RE`。而
+#:   `undeclared_gate_codes` 的头注已经写清楚了教训：**一份 3/4 是误报的名单，
+#:   下一个人会直接把它关掉。** 所以宁可要一条需要显式 opt-in 的窄入口。
+#:
+#:   新模块要让自己的 code 进清单，就在模块级写一行：
+#:       BLOCKER_CODES = ("CLOSURE_XXX", "CLOSURE_YYY")
+#:   并且用一条判据钉住它跟真正发出去的那份一致（见
+#:   tests/test_deliverable_surface_gate.py::test_声明的code跟真正发出的一致）。
+_BLOCKER_CODE_DECLS = ("BLOCKER_CODES",)
+
 
 def gate_inventory(root: pathlib.Path = ROOT) -> List[Dict[str, Any]]:
     """**闸清单**：谁在发拦截理由、谁被体检看着。由 AST 算出来，不许手写。
@@ -407,6 +440,22 @@ def gate_inventory(root: pathlib.Path = ROOT) -> List[Dict[str, Any]]:
         codes: Set[str] = set()
         gates: Set[str] = set()
         for node in ast.walk(tree):
+            # BLOCKER_CODES = ("CLOSURE_XXX", …)  —— 见 _BLOCKER_CODE_DECLS 头注
+            if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                _targets = (
+                    node.targets if isinstance(node, ast.Assign) else [node.target]
+                )
+                if any(
+                    isinstance(t, ast.Name) and t.id in _BLOCKER_CODE_DECLS
+                    for t in _targets
+                ) and isinstance(node.value, (ast.Tuple, ast.List, ast.Set)):
+                    for elt in node.value.elts:
+                        if (
+                            isinstance(elt, ast.Constant)
+                            and isinstance(elt.value, str)
+                            and _BLOCKER_CODE_RE.match(elt.value)
+                        ):
+                            codes.add(elt.value)
             # {"code": "CLOSURE_GOAL_RELEVANCE_FAILED", ...}
             if isinstance(node, ast.Dict):
                 for k, v in zip(node.keys, node.values):

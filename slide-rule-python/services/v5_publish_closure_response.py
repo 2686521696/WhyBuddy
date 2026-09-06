@@ -62,6 +62,10 @@ class PublishClosureResponse(BaseModel):
     # runConditions 是本轮的降级审计（K8s Condition 形状，见 run_degradation）。
     goalRelevance: Optional[Dict[str, Any]] = None
     runConditions: List[Dict[str, Any]] = Field(default_factory=list)
+    # 交付面可用性（2026-09-06）：页数 / 角色数 / 每页可交互与录入控件 /
+    # 未被服务的提交类需求。见 services/deliverable_surface.py。
+    # `None` = 本轮没有页面，不归那道闸管（不是"量过了没问题"）。
+    deliverableSurface: Optional[Dict[str, Any]] = None
     degradationSummary: str = ""
     # 精修没画上时给对话的那一句。空 = 本轮不是「保住上一版」。
     refinePaintNote: str = ""
@@ -153,6 +157,10 @@ def _to_publish_closure_summary(report: Dict[str, Any]) -> Optional[Dict[str, An
         # 这是白名单投影：不在这里列出的字段一律被丢掉。新增闭环判定信号时
         # 记得同步加，否则前端只看到结论看不到依据（本次实测就漏过一轮）。
         "goalRelevance": report.get("goalRelevance") or None,
+        # ⚠ 这一行不加就等于没做：白名单投影会把 deliverableSurface 静默丢掉，
+        #   前端只看到 blocked 却看不到"为什么"——上一轮 goalRelevance 就漏过一次
+        #   （见本 dict 上方那句注释）。判据钉在 test_deliverable_surface_gate.py。
+        "deliverableSurface": _as_dict(report.get("deliverableSurface")) or None,
         "runConditions": [
             _as_dict(c) for c in (report.get("runConditions") or [])
         ],
