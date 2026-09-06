@@ -280,6 +280,117 @@ def peek_last_pages() -> Optional[Dict[str, Any]]:
     return _last_pages_var.get()
 
 
+#: 本轮**真的发出去过几个 `spec_page` 事件**。
+#:
+#: ## 事故（2026-09-06 真机，sr-20260906045441）
+#:
+#: 7 页画出来、落库 7 份，而客户端只收到 **3 个** `spec_page` 事件；换 LLM
+#: 供应商之后更彻底：3 页落库、`spec_page` 事件 **0 个**。画布上是 83 秒
+#: 纯空白，然后什么都没有——而这一步的代码注释写着它存在的全部理由：
+#: 「一份能独立打开的 HTML 比最终模型早四五分钟。**攒齐再交等于白白转圈**。」
+#:
+#: 没有任何东西会因此变红：页面在盘上、闭环是绿的、事件丢了没人数。
+#:
+#: ## 抄的是 grok 的哪一处
+#:
+#: `xai-grok-sampling-types/src/conversation.rs:851-855` 把"应该发多少事件"
+#: 做成了**持久化字段**而不是运行时断言：
+#:
+#:     /// Number of `AgentMessageChunk` (text-only) streaming events emitted
+#:     /// during this response.
+#:     /// When this is zero but the response contains text, the streaming events
+#:     /// were lost (e.g. after an empty-response retry).
+#:     /// The caller should then emit a fallback `AgentMessageChunk` so downstream
+#:     /// consumers (e.g. the TUI) see the turn as complete.
+#:     pub message_chunks_emitted: u64,
+#:
+#: 配套 `fallback_text()`（:966-979）：**有终态内容但增量事件数为 0 ⇒ 事件
+#: 丢了 ⇒ 补发兜底**。这里照搬：计数随 `specFirstPages` 落库
+#: （`specPageEventsEmitted`），落库时对不上就补发。
+#:
+#: ⚠ 同样是请求域：多租户下计数串台会让 A 的补发判定读到 B 的数。
+#:
+#: ## ⚠⚠ 存的是**可变对象**，不是 int（2026-09-06 真机当场抓到）
+#:
+#: 第一版是 `ContextVar[int]` + `set(get() + 1)`。真机实测：那一轮明明发出了
+#: **15 个** `spec_page` 事件，落库里 `specPageEventsEmitted=0`、
+#: `specPageEventsLost=true`。
+#:
+#: 因为写和读**不在同一个 Context 里**：
+#:
+#:     写：驱动器的泵（`_pump_llm_deltas`）—— 驱动器协程自己的 Context
+#:     读：`v5_capability_executor._cache_spec_first_pages` —— 它跑在
+#:         `asyncio.to_thread(...)` 里，那是 `copy_context()` 出来的**副本**
+#:
+#: `ContextVar.set()` 只改**当前** Context 的那一格，副本里看不见。于是
+#: 「有内容但事件数为 0 ⇒ 事件丢了」这条判据的输入恒为 0 —— 护栏装对了位置，
+#: **它依赖的输入在真机上根本不成立**。这正是本仓「一之二」那条，也是本轮
+#: 心跳那个 bug 的同一形状，我在同一轮里又踩了一次。
+#:
+#: 后果不止是"少一个字段"：`_fallback_page_events` 读的是同一个数，所以它会去
+#: **重发已经发过的页**。这一轮没重发纯属运气 —— `peek_last_pages()` 那时已经
+#: 被 `take_last_pages()` 取空，兜底静静地跳过了。
+#:
+#: 改法：ContextVar 里放一个**可变计数器对象**，`reset` 装一个新的，之后所有
+#: Context 副本共享同一个引用，谁改谁都看得见。对照 OpenTelemetry 的
+#: span context——跨线程传的是同一个 span 对象，不是它的一份拷贝。
+class _PageEventCounter:
+    """本轮真的发出去过几个 `spec_page`。可变，跨 Context 副本共享。"""
+
+    __slots__ = ("n",)
+
+    def __init__(self) -> None:
+        self.n = 0
+
+
+_page_events_var: ContextVar[Optional["_PageEventCounter"]] = ContextVar(
+    "sliderule_spec_first_page_events", default=None
+)
+
+
+def note_page_event_emitted(n: int = 1) -> None:
+    """驱动器的泵每吐一个 `spec_page` 就记一笔。失败不许拖垮出页。"""
+    try:
+        counter = _page_events_var.get()
+        if counter is None:
+            # 本轮没人装计数器（脚本直调 / 老调用方）。这里**不许现装**：
+            # 在 Context 副本里 set 的东西外面读不到，装了等于自欺。
+            return
+        counter.n += int(n)
+    except Exception:  # noqa: BLE001
+        return
+
+
+def peek_page_events_emitted() -> Optional[int]:
+    """本轮发出去过几个 `spec_page`。只读不清——落库那一处要拿它对账。
+
+    ⚠ 返回 `None` 表示**本轮没装计数器，所以不知道**，与"知道是 0"不是一回事。
+      把"不知道"折成 0 会让每条没走驱动器的路径都被判成"事件丢了"，
+      而那条判据的全部价值就在于它平时不响。同 `CapabilityRunStatus` 里
+      `unknown` 那一档的理由。
+    """
+    try:
+        counter = _page_events_var.get()
+        return None if counter is None else int(counter.n)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def reset_page_events_emitted() -> None:
+    """新一轮开始时装一个新计数器。
+
+    **必须装**：不装的话对账读到 `None`（不知道），补发判定不会触发；
+    装的是**新对象**而不是把旧的清零，免得上一轮的引用还被谁攥着。
+
+    ⚠ 必须在**起线程之前**调（驱动器起流那一处就是）：`to_thread` 复制的是
+      那一刻的 Context，装晚了线程里读到的还是 None。
+    """
+    try:
+        _page_events_var.set(_PageEventCounter())
+    except Exception:  # noqa: BLE001
+        return
+
+
 #: 单页打孔相位。对照 Kubernetes Pod.Status.phase /
 #: Deployment.status.readyReplicas（kubernetes/api/core/v1）：
 #: 副本数是聚合，**每单元自己的 phase 才是权威**——有 phase 就不要
