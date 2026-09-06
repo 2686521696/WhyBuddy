@@ -177,9 +177,20 @@ def _emit_quality_notice(
     text: str,
     *,
     items: Optional[List[Any]] = None,
+    pageId: Optional[str] = None,
 ) -> None:
-    """交付质量提示。stderr 会滚走；sink 没装就只打日志。"""
+    """交付质量提示。stderr 会滚走；sink 没装就只打日志。
+
+    ⚠ `pageId` 是**结构化字段**，不许只烘在 `text` 里（2026-09-06 第二轮真机）。
+      对比度那类通知原来只发 `text="页面 p1：对比度不足…"`，页面名埋在prose 里。
+      结果流级去重拿不到"这条说的是哪一页"，六页的身份粗成同一个 `contrast`，
+      内容又轮着变，于是**一条都没被压住**（18 条原样发出去）。
+      同 session_events 头注那句「事件自描述，前端不查翻译表」——
+      要被机器用的东西就得是字段。
+    """
     note = {"kind": str(kind), "text": str(text)}
+    if pageId:
+        note["pageId"] = str(pageId)
     if items:
         note["items"] = list(items)
     bucket = _quality_notices_var.get()
@@ -2569,6 +2580,8 @@ def run_spec_first(
                     _emit_quality_notice(
                         "contrast",
                         f"页面 {_pid}：{_note}",
+                        # 页面名同时给成字段：流级去重要靠它认「这条说的是哪一页」。
+                        pageId=str(_pid),
                     )
     except Exception:  # noqa: BLE001 — 对比是增强类
         pass

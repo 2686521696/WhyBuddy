@@ -26,6 +26,12 @@ from .closed_tools import (
     host_factory_hop,
 )
 from .factory_plan_steps import product_steps_for_tools
+from .session_events import (
+    RepeatSuppressor as _RepeatSuppressor,
+    envelope as _session_envelope,
+    notice_identity as _notice_identity,
+    notice_payload as _notice_payload,
+)
 from .stage_pairing import (
     DANGLING_REASON as _STAGE_DANGLING_REASON,
     StagePairTracker as _StagePairTracker,
@@ -1747,8 +1753,8 @@ def _enrich_stage_event(phase: str, name: str, fields: Dict[str, Any]) -> Option
     #   `sequence` 传本轮真实要跑的阶段——账本里含两个精修专用步，
     #   拿账本绝对位置当序号对哪一轮都不准（实测出过 order=8 of=7）。
     _desc = _stage_describe(name, sequence=fields.get("sequence"))
-    from services.session_events import envelope as _session_envelope
-
+    # `_session_envelope` 已提到模块顶层（architecture.toml 的 baseline.deferred
+    # 是个只许变少的棘轮，函数体 import 能提就提）。
     _wired = _session_envelope(_desc)
     common = {
         "stageGroup": _wired.get("group") or _desc.get("group"),
@@ -2359,6 +2365,11 @@ async def drive_full_v5_session_stream(
             _spec_assumption_scope(lambda rows: _assumption_q.put(list(rows or [])))
         )
     _quality_q: "_queue.Queue[dict]" = _queue.Queue()
+    # 质检通知的流级去重。**一次流一本**，理由同 `_stage_pairs`：
+    # 重复发生在流水线的多次运行之间，只有这一层跨得过去。
+    # 抄 grok `dedup_duplicate_tool_results()`（见 RepeatSuppressor 头注，
+    # 里头也写清了「流上要留第一条而不是最后一条」这个差异）。
+    _quality_dedup = _RepeatSuppressor()
     _spec_quality_scope = None
     try:
         from .spec_first_pipeline import quality_sink_scope as _spec_quality_scope
@@ -2482,9 +2493,20 @@ async def drive_full_v5_session_stream(
             try:
                 while True:
                     _note = _quality_q.get_nowait()
-                    if _note:
-                        yield {"type": "quality_notice", **_note}
-                        last_yield_at = _time.perf_counter()
+                    if not _note:
+                        continue
+                    # ⚠ 去重在**流级**（2026-09-06 第二轮真机：18 条里 12 条
+                    #   是原样重复）。质检本身没问题——`spec_first_pipeline`
+                    #   每跑完一次就把全部页面重检一遍并广播，而它在一个 turn
+                    #   里跑多次（每个 factory 跳一次）。流水线内部那个
+                    #   `_quality_notices_var` 桶只管单次运行，跨运行的重复只有
+                    #   这一层看得见。同 `_stage_pairs` 建在流级的理由。
+                    if not _quality_dedup.allow(
+                        _notice_identity(_note), _notice_payload(_note)
+                    ):
+                        continue
+                    yield {"type": "quality_notice", **_note}
+                    last_yield_at = _time.perf_counter()
             except _queue.Empty:
                 pass
             # ── 心跳：判据是「多久没吐东西」，不是「有没有已知阶段」──────────

@@ -1059,7 +1059,13 @@ why = "createPythonWebAigcAdapter 拼字符串 __import__"
 # `routes/sliderule_full.py` 顶层，`run_registry` 也没有环 —— 于是把
 # `run_registry` 提到顶层，顺手删掉 `_require_session` 与四条 run 端点里
 # 那五条重复的函数体 import。**闸把"多加一条"逼成了"少了六条"。**
-deferred = 477
+#
+# 2026-09-06（同日第二轮）：477 → 476。给 quality_notice 补流级去重时要从
+# `services.session_events` 拿 `RepeatSuppressor`，而 `_enrich_stage_event` 里
+# 本来就有一条 `from services.session_events import envelope` 的函数体 import。
+# 既然要加顶层 import，那一条顺手提上去。session_events 是 util 叶子（出度 0），
+# 提上去不可能成环。
+deferred = 476
 # 明说不体检的拦截理由条数（[gate_codes] 里值为空串的）。**只许变少**。
 # 2026-09-05 建账时 9 条，第一笔要还的是 CLOSURE_DEGRADED_RUN。
 # ⚠ 同日 11 条：清单从「只扫 services/」扩到「services/ + routes/」，
