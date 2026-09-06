@@ -16,7 +16,7 @@
 ## 此刻的事实（由代码算出，不是手写）
 
 - 扫描文件 **291** 个，模块 **291** 个
-- 内部依赖边 **873** 条，其中 **477** 条写在函数体里（54%；基线 477，只许变少）
+- 内部依赖边 **874** 条，其中 **476** 条写在函数体里（54%；基线 476，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
@@ -91,7 +91,7 @@ flowchart TB
   scripts -->|8 · 其中 5 条在函数体里| sliderule_llm
   scripts -->|2| stdio_utf8
   services -->|15 · 其中 7 条在函数体里| config
-  services -->|30 · 其中 1 条在函数体里| models
+  services -->|31 · 其中 1 条在函数体里| models
   services -->|60 · 其中 45 条在函数体里| sliderule_llm
   sliderule_llm -->|2 · 其中 2 条在函数体里| config
 ```
@@ -189,7 +189,7 @@ flowchart LR
   drive -->|18| model_core
   drive -->|2| observability
   drive -->|5| persist
-  drive -->|11| platform
+  drive -->|12| platform
   drive -->|1| run_control
   drive -->|2| spec_first
   entrypoint -->|2| agent_loop
