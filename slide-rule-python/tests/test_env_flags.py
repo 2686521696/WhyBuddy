@@ -168,7 +168,12 @@ class Test词表全仓只剩一份:
             #   害得 sliderule_llm 要反向依赖业务层）。services/env_flags.py 现在
             #   只是转出层，两份都得豁免——只豁免旧路径的话，唯一那份正版词表
             #   会被自己的判据当成「手抄」。
-            if rel.startswith((".venv/", "tests/")) or rel in (
+            # ⚠ 2026-09-06 加 `tmp/`：那底下放的是**别人的仓库**
+            #   （`tmp/oss-screenshot-to-code/backend/config.py` 是照抄口径时
+            #   拉下来的参照实现，`.gitignore:133` 已经把整个 tmp/ 排掉）。
+            #   拿"本仓不许手抄词表"去要求第三方代码，红的是噪音不是病 ——
+            #   而一条长期红着的判据等于没有判据（本仓已经数过这个形状）。
+            if rel.startswith((".venv/", "tests/", "tmp/")) or rel in (
                 "config/env_flags.py",
                 "services/env_flags.py",
             ):

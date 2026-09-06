@@ -115,11 +115,18 @@ what = "纯工具：不依赖 services 里任何其它模块"
 may_depend_on = []
 modules = [
   "services.archetype_legal",
+  # 交付面可用性：只吃 HTML 字符串与 SPEC 字典，services 里谁都不依赖 → 叶子。
+  # 跟 gate_health 同一个理由被闭环判定顶层 import。
+  "services.deliverable_surface",
   # 闸的体检：谁都不依赖（只吃「结论 + 指纹」两个字符串），所以是叶子。
   # 它反过来被闭环判定顶层 import——叶子层的意义就在这儿：谁都能安全引它。
   "services.gate_health",
   "services.sql_gateway",
   "services.stage_legal",
+  # 阶段配对台账：只吃「阶段名 + start 事件字典」，出度 0 → 叶子。
+  # 被驱动器顶层 import——它是**流级**状态，不许每个泵新建一本
+  # （真机那轮心跳全灭就是泵局部变量每几秒清零一次）。
+  "services.stage_pairing",
   "services.capability_plan",
   "services.closed_tools",
   "services.session_events",
@@ -1046,7 +1053,13 @@ why = "createPythonWebAigcAdapter 拼字符串 __import__"
 [baseline]
 # 函数体里的内部 import 条数。只许变少。新模块顶层 import。
 # grok 没有这个病：Cargo 边写在 crate 上，藏进函数体绕不过编译器。
-deferred = 483
+#
+# 2026-09-06：483 → 477。给 `/runs/*` 补归属判定时，闸先咬住 484（新写的
+# `_visible_run` 带了两条函数体 import）。查下来 `app_access` 本来就在
+# `routes/sliderule_full.py` 顶层，`run_registry` 也没有环 —— 于是把
+# `run_registry` 提到顶层，顺手删掉 `_require_session` 与四条 run 端点里
+# 那五条重复的函数体 import。**闸把"多加一条"逼成了"少了六条"。**
+deferred = 477
 # 明说不体检的拦截理由条数（[gate_codes] 里值为空串的）。**只许变少**。
 # 2026-09-05 建账时 9 条，第一笔要还的是 CLOSURE_DEGRADED_RUN。
 # ⚠ 同日 11 条：清单从「只扫 services/」扩到「services/ + routes/」，
@@ -1159,6 +1172,16 @@ orphans = [
 "APPBUNDLE_RUNTIME_CLOSURE_BLOCKED" = "evidence"
 "CLOSURE_GOAL_RELEVANCE_FAILED" = "relevance"
 "CLOSURE_FACTORY_TODO_OPEN" = "factoryTodo"
+# 第四道：交付面可用性（2026-09-06）。前三道量的都是"流程走完没有"——证据交齐了
+# 吗、对不对题、产出跳跑完了吗。没有一道量"用户真正看到的那一屏能不能用"。
+# 换 LLM 供应商之后同类题目交付物差三倍（7 页 22 个 input → 3 页 1 个 input），
+# 而前三道的输出**逐字相同**。实测数字见 services/deliverable_surface.py 模块头。
+# 五条同属一道闸：拦的只有 UNSERVED，其余四条只报不拦，但都由它记进体检。
+"CLOSURE_SUBMIT_INTENT_UNSERVED" = "deliverableSurface"
+"CLOSURE_SUBMIT_INTENT_UNMAPPED" = "deliverableSurface"
+"CLOSURE_NO_ENTRY_SURFACE" = "deliverableSurface"
+"CLOSURE_ONE_PAGE_PER_ROLE" = "deliverableSurface"
+"CLOSURE_PAGE_WITHOUT_CONTROLS" = "deliverableSurface"
 
 # 生成链路的失败留痕：它们不是"判定"，是**诊断**——随 blocker 透出来给人看，
 # 不参与 blocked/hash。诊断没有"一直说同一句话"的退化形态（它只在真失败时

@@ -15,8 +15,8 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **289** 个，模块 **289** 个
-- 内部依赖边 **877** 条，其中 **483** 条写在函数体里（55%；基线 483，只许变少）
+- 扫描文件 **291** 个，模块 **291** 个
+- 内部依赖边 **873** 条，其中 **477** 条写在函数体里（54%；基线 477，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
@@ -35,7 +35,7 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
-| `util` | 126 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `util` | 128 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
 | `core` | 61 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 30 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
@@ -47,12 +47,12 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 ```mermaid
 flowchart TB
-  util["util<br/>126 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
+  util["util<br/>128 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
   core["core<br/>61 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
   flow["flow<br/>30 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
   core -->|143| util
   flow -->|106| core
-  flow -->|107| util
+  flow -->|109| util
 ```
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
@@ -65,7 +65,7 @@ flowchart TB
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>13 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>217 个模块<br/>业务"]
+  services["services<br/>219 个模块<br/>业务"]
   routes["routes<br/>12 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -82,7 +82,7 @@ flowchart TB
   routes -->|9| config
   routes -->|5| middlewares
   routes -->|3| models
-  routes -->|135 · 其中 84 条在函数体里| services
+  routes -->|129 · 其中 78 条在函数体里| services
   routes -->|15 · 其中 8 条在函数体里| sliderule_llm
   scripts -->|3| app
   scripts -->|2 · 其中 2 条在函数体里| config
@@ -208,9 +208,9 @@ flowchart LR
   http_routes -->|2| capability_engine
   http_routes -->|1| control
   http_routes -->|1| diagnostics
-  http_routes -->|15| drive
+  http_routes -->|11| drive
   http_routes -->|5| evidence
-  http_routes -->|12| identity
+  http_routes -->|10| identity
   http_routes -->|22| llm_gateway
   http_routes -->|23| model_core
   http_routes -->|2| observability
@@ -266,7 +266,7 @@ flowchart LR
 > 「为什么几个月没审查出来」的答案里有一条是**没人知道这里到底有几道闸**：
 > 15 个会话全被同一道闸按同一个理由拦下，而没有观察它的位置。
 
-- 拦截理由（blocker code）共 **14** 条，其中 **3** 条进了体检（`services/gate_health.py`），**11** 条没进（欠账，只许变少）
+- 拦截理由（blocker code）共 **19** 条，其中 **8** 条进了体检（`services/gate_health.py`），**11** 条没进（欠账，只许变少）
 - 新增一条 code 必须在 `architecture.toml` 的 `[gate_codes]` 里声明归属，否则 `--check` 变红
 
 | 拦截理由 | 体检的闸 | 发它的模块 |
@@ -275,7 +275,12 @@ flowchart LR
 | `CLOSURE_DEGRADED_RUN` | — | `run_degradation` |
 | `CLOSURE_FACTORY_TODO_OPEN` | `factoryTodo` | `capability_plan` |
 | `CLOSURE_GOAL_RELEVANCE_FAILED` | `relevance` | `v5_capability_executor` |
+| `CLOSURE_NO_ENTRY_SURFACE` | `deliverableSurface` | `deliverable_surface` |
+| `CLOSURE_ONE_PAGE_PER_ROLE` | `deliverableSurface` | `deliverable_surface` |
+| `CLOSURE_PAGE_WITHOUT_CONTROLS` | `deliverableSurface` | `deliverable_surface` |
 | `CLOSURE_REBUILD_FAILED` | — | `v5_capability_executor` |
+| `CLOSURE_SUBMIT_INTENT_UNMAPPED` | `deliverableSurface` | `deliverable_surface` |
+| `CLOSURE_SUBMIT_INTENT_UNSERVED` | `deliverableSurface` | `deliverable_surface` |
 | `LLM_EMPTY_OUTPUT` | — | `sliderule_full` |
 | `LLM_GENERATE_DISABLED` | — | `sliderule_full`、`v5_capability_executor` |
 | `LLM_GENERATE_FAILED` | — | `sliderule_full`、`v5_capability_executor` |
@@ -296,6 +301,7 @@ flowchart LR
 
 | 闸 | 记在哪 | 拦人吗 |
 |---|---|---|
+| `deliverableSurface` | `v5_capability_executor` | 拦，`CLOSURE_PAGE_WITHOUT_CONTROLS` |
 | `evidence` | `v5_capability_executor` | 拦，`APPBUNDLE_RUNTIME_CLOSURE_BLOCKED` |
 | `factoryTodo` | `v5_capability_executor` | 拦，`CLOSURE_FACTORY_TODO_OPEN` |
 | `pageEdit` | `sliderule_full` | 只报不拦（§7 增强类） |

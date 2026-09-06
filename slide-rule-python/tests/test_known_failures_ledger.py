@@ -139,6 +139,14 @@ def test_the_ledger_really_turns_a_known_red_into_xfail():
         cwd=str(_TESTS.parent),
         capture_output=True,
         text=True,
+        # ⚠ 2026-09-06 补 encoding/errors。子进程打的是**中文用例名**，
+        #   `text=True` 不给 encoding 就按本地代码页解（Windows 是 cp936），
+        #   解不动 → 读取线程抛 UnicodeDecodeError → `proc.stdout` 变成 None
+        #   → 这条报的是 `TypeError: argument of type 'NoneType' is not
+        #   iterable`，**看起来像台账坏了**，而台账是好的。
+        #   这是本仓「判据自己出的错被当成被测对象的病」那个形状。
+        encoding="utf-8",
+        errors="replace",
         timeout=300,
     )
     assert proc.returncode == 0, f"台账没生效，这条还是红的：\n{proc.stdout[-1500:]}"
