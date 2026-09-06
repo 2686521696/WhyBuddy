@@ -43,6 +43,7 @@ _SCOPES = [
     ("services.spec_first_pipeline", "page_sink_scope", "_page_sink_var"),
     ("services.spec_first_pipeline", "assumption_sink_scope", "_assumption_sink_var"),
     ("services.spec_first_pipeline", "quality_sink_scope", "_quality_sink_var"),
+    ("services.spec_first_pipeline", "rename_sink_scope", "_rename_sink_var"),
 ]
 
 

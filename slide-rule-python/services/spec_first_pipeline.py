@@ -172,6 +172,64 @@ def quality_sink_scope(sink):
     return sink_scope(_quality_sink_var, sink)
 
 
+#: 页面改名出口（2026-09-06）。第 4.5 步把草稿 id 改成模型铸的语义 id
+#: （p1 → seat_selection），**这件事必须当场告诉前端**。
+#:
+#: ⚠ 为什么非要有这条实时通道，而不是让前端读落库的那张 `pageIdAliases`：
+#:   那张表要等**整条管道跑完**才随交付物交出去，而页面是边跑边推的。
+#:   真机 sr-20260906111901 实测：第 3 步、3.5 步各推一批 `p1..p6`，
+#:   第 4.5 步改名，第 6.5 步再推同样这六页、但 id 已是语义名。前端按
+#:   pageId 认卡（useSlideRuleSession.onSpecPage 里那句 findIndex），
+#:   认不出这是同六页，于是走了**追加**那一支——画布 12 张卡对应 6 个页面，
+#:   前 6 张素颜、未打孔、点不动，左栏「🖼 界面已出」跟着出 12 条。
+#:   等落库那份别名表到货时，重复的卡早就建好了。
+#:
+#: 形状抄 grok-build `xai-codebase-graph/src/types/file_event.rs`：
+#:   `Renamed { from: PathBuf, to: PathBuf }`
+#: 改名在那儿是**一等事件**、自带两头；且 `requires_reparse()` 对它返回
+#: `false // Only path update needed`——消费方只更新键，不重新解析内容。
+#: 这正是这里要的语义：前端把那张卡的 pageId 换掉，HTML 一个字都不用动。
+#:
+#: 跟 _page_sink_var 同一个模子（ContextVar 不是模块属性，多租户串台的
+#: 理由见那一条头注），装卸也在同一处。
+_rename_sink_var: ContextVar[Optional[Callable[..., None]]] = ContextVar(
+    "sliderule_spec_first_rename_sink", default=None
+)
+
+
+def rename_sink_scope(sink):
+    """装了自带卸的写法（抄 grok 的 SinkGuard，见 sliderule_llm/scoped.py）。"""
+    return sink_scope(_rename_sink_var, sink)
+
+
+def _emit_page_renamed(canon: Any) -> int:
+    """把第 4.5 步的改名推给前端。返回**真的推出去几条**（照 grok
+    `dedup_duplicate_tool_results` 交回抑制条数那个习惯：这类"顺带推一把"
+    的口子不返回点什么，判据就只能去猜）。
+
+    ⚠ 空表不许发。没改过名的轮次是常态——`canonical_page_id_map` 一个都
+      没改就返回空表，精修轮几乎总是这样。那种轮次里"改名"这件事根本没
+      发生过，发一条空事件等于让前端去处理一件不存在的事。
+    """
+    if not isinstance(canon, dict) or not canon:
+        return 0
+    sink = _rename_sink_var.get()
+    if sink is None:
+        return 0
+    sent = 0
+    for _from, _to in canon.items():
+        _f, _t = str(_from or ""), str(_to or "")
+        # 改成自己不是改名（rekey 表里出现恒等项时不许惊动前端）。
+        if not _f or not _t or _f == _t:
+            continue
+        try:
+            sink(_f, _t)
+            sent += 1
+        except Exception as exc:  # noqa: BLE001 — 顺带推给前端看，不许赔掉已烧的页
+            _safe_print(f"[spec_first_pipeline] 改名出口异常（fail-open）：{exc}")
+    return sent
+
+
 def _emit_quality_notice(
     kind: str,
     text: str,
@@ -2232,6 +2290,16 @@ def run_spec_first(
                 #   按它回退。选它而不是重写 HTML，是因为存量应用的 HTML 已经发出去
                 #   了——回退查表连它们一起救，重写只救新生成的。
                 _page_id_aliases = {**_page_id_aliases, **_canon}
+                # ⚠ 落库那份救的是**刷新之后**的宿主；正在看直播的前端一个字
+                #   都收不到——它按 pageId 认卡，第 6.5 步那批新 id 到达时会
+                #   认成六个新页面，画布就成了 12 张卡对应 6 页
+                #   （真机 sr-20260906111901）。所以改名要在**这一刻**同时
+                #   推给流。两个消费者、同一件事实，写在一处别拆开。
+                #
+                # ⚠ 顺序不是靠这里"发得早"约定出来的，是靠**同一条队列**：
+                #   驱动器把改名和页面塞进同一个 _page_q（见那边的头注），
+                #   而第 6.5 步的重发还在后头，先后由队列本身保证。
+                st["pageIdRenamesEmitted"] = _emit_page_renamed(_canon)
                 st["pageIdCanonicalized"] = len(_canon)
                 print(
                     "[spec_first_pipeline] 首轮页面包改键（草稿 id → 模型 id）："

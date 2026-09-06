@@ -311,6 +311,22 @@ export interface DriveFullStreamOpts {
     /** desktop 1920×1080 / tablet 1112×834 / phone 390×844——画布视口据此选。 */
     device: "desktop" | "phone" | "tablet";
   }) => void;
+  /** 页面**改名**：草稿 id → 模型铸的语义 id（2026-09-06）。
+   *
+   *  服务端第 4.5 步会把 `p1` 改成 `seat_selection` 这样的语义 id。改名之后
+   *  第 6.5 步会把同样这几页**再推一遍**，但 pageId 已经换了。消费方按
+   *  pageId 认卡的话，认不出这是同一批页 → 当新页追加 → 真机
+   *  sr-20260906111901 的画布 12 张卡对应 6 个页面，前 6 张素颜、未打孔、
+   *  点不动，左栏「🖼 界面已出」也出了 12 条。
+   *
+   *  ⚠ 这条**一定排在改名后那批 `spec_page` 之前**到达（服务端让两者走同
+   *  一条队列，先后由队列保证，不是靠约定）。所以正确的处理是：收到就把
+   *  已有那张卡的 pageId 换掉，等后面那批 `spec_page` 落在同一张卡上覆盖。
+   *
+   *  形状抄 grok-build `xai-codebase-graph` 的 `FileEvent::Renamed { from, to }`：
+   *  改名是一等事件、自带两头，且那边 `requires_reparse()` 返回
+   *  `false // Only path update needed`——这里同理，只换键，HTML 不用重取。 */
+  onSpecPageRenamed?: (rename: { from: string; to: string }) => void;
   /** 伴随式澄清：spec-first 第 2 步**替用户定下的事**（2026-08-27）。
    *
    *  它不是提问，不阻塞，也不需要回答。推演照常往下跑，这些只是把模型
@@ -576,6 +592,14 @@ function applyFactoryStreamEvent(
         });
       }
       return "continue";
+    case "spec_page_renamed": {
+      // 两头缺一头这条就没意义；改成自己也不是改名。宁可不派发，
+      // 也不让下游拿着空 id 去找卡（找不到 = 静默不动，比报错难查）。
+      const from = String(event.from || "");
+      const to = String(event.to || "");
+      if (from && to && from !== to) opts.onSpecPageRenamed?.({ from, to });
+      return "continue";
+    }
     case "spec_assumption": {
       // 服务端已经洗过一遍（spec_tree._sanitize_assumptions）。这里再洗一次
       // 不是不信任它，是这条流也接老后端 / 续播缓存——形状不对宁可少渲染

@@ -38,6 +38,11 @@ import {
   loadProductArchetype,
 } from "./user-prefs";
 import { loadDesignSystemId } from "./design-system";
+import {
+  renameAnnouncedPage,
+  renameSpecPageCard,
+  upsertSpecPageCard,
+} from "./live-runtime/spec-page-cards";
 import { createHttpSlideRuleSessionStore } from "@/lib/sliderule-http-store";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import { loadByokPool, validateByokPool } from "@/lib/sliderule-byok-config";
@@ -1758,14 +1763,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   "spec_page_html",
                   (page as { productStep?: number }).productStep ?? 3
                 );
-                setSpecPages(prev => {
-                  const i = prev.findIndex(p => p.pageId === page.pageId);
-                  if (i < 0) return [...prev, page];
-                  // 同一页第二次到达（第 6.5 步打完孔）——覆盖，不是追加
-                  const next = prev.slice();
-                  next[i] = page;
-                  return next;
-                });
+                // 同一页第二次到达（第 6.5 步打完孔）——覆盖，不是追加。
+                // 规则跟下面的改名住在同一个模块里：它们是同一条"按 pageId
+                // 认卡"规则的两半，分开放迟早只改一半（见那边头注）。
+                setSpecPages(prev => upsertSpecPageCard(prev, page));
                 // ⚠ 2026-09-05：上面那行「覆盖，不是追加」的纪律，下面这行
                 //   **没跟上**——页面覆盖了，左栏却又追加一条一模一样的芯片。
                 //   真机 sr-20260905004750 第 3 轮：五页的「🖼 界面已出」连着
@@ -1781,6 +1782,27 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                     `🖼 界面已出：${page.pageId}（${page.current}/${page.total}）`
                   );
                 }
+              },
+              // 服务端第 4.5 步把草稿 id 改成语义 id（p1 → seat_selection）。
+              //
+              // ⚠ 上面那句「同一页第二次到达——覆盖，不是追加」的前提是
+              //   **pageId 一直没变**。改名一发生这个前提就破了：第 6.5 步把
+              //   同样六页再推一遍、但 id 已经换了，`findIndex` 找不到，于是走
+              //   `[...prev, page]` 追加。真机 sr-20260906111901 的后果是画布
+              //   12 张卡对应 6 个页面，前 6 张素颜、未打孔、点不动，左栏
+              //   「🖼 界面已出」也出了 12 条。
+              //
+              // ⚠ 这条事件**一定先于**改名后那批 spec_page 到达（服务端让改名
+              //   和页面走同一条队列，先后由队列保证）。所以这里只做一件事：
+              //   把已有那张卡的键换掉，让后面那批页照常覆盖它。
+              //   照 grok FileEvent::Renamed 的 `requires_reparse() => false
+              //   // Only path update needed`——只换键，HTML 一个字都不动。
+              onSpecPageRenamed: ({ from, to }) => {
+                setSpecPages(prev => renameSpecPageCard(prev, from, to));
+                // ⚠ 芯片集合必须跟着改键，否则 6.5 那批用新 id 一问
+                //   `has(to)` 是 false，左栏再追加一遍「界面已出」——就是
+                //   2026-09-05 那个"只改一半"的坑，换个入口重演一次。
+                renameAnnouncedPage(announcedPages, from, to);
               },
               onReasoningStep: (capabilityId, loop, productStep) => {
                 applyRehearsalEvent(capabilityId, productStep);

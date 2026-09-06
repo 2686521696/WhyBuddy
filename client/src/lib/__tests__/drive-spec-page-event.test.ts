@@ -160,3 +160,89 @@ describe("spec_page 事件落到 onSpecPage", () => {
     expect(out?.finalState).toBeTruthy();
   });
 });
+
+/**
+ * `spec_page_renamed`（2026-09-06）——服务端第 4.5 步把草稿 id 改成语义 id。
+ *
+ * 这条流跟上面那条共用一段接线，但**顺序**是它独有的要害：改名必须排在改名
+ * 后那批 `spec_page` 之前。晚一步，消费方已经按新 id 建好了重复的卡。
+ * 服务端靠"跟页面走同一条队列"保证先后（见 v5_full_driver._PageRenamed 头注），
+ * 这里验前端确实按到达顺序转发、不攒不重排。
+ */
+describe("spec_page_renamed 事件落到 onSpecPageRenamed", () => {
+  function driveRename(
+    events: Array<Record<string, unknown>>,
+    opts: Record<string, unknown>
+  ) {
+    vi.stubGlobal("fetch", vi.fn(async () => sseStream(events)));
+    return driveFullViaPythonStream(STATE, "做一个工单系统", opts as never);
+  }
+
+  it("两头都传过去", async () => {
+    const got: unknown[] = [];
+    await driveRename(
+      [
+        { type: "spec_page_renamed", from: "p1", to: "seat_selection" },
+        { type: "complete", state: STATE },
+      ],
+      { onSpecPageRenamed: (r: unknown) => got.push(r) }
+    );
+    expect(got).toEqual([{ from: "p1", to: "seat_selection" }]);
+  });
+
+  it("改名和页面按到达顺序转发，不攒不重排", async () => {
+    // 要害。攒起来批量发、或者两条流各走一个队列，都会让"先改名后建卡"
+    // 这个前提失效——而那正是真机 12 张卡的成因。
+    const trail: string[] = [];
+    await driveRename(
+      [
+        { type: "spec_page", pageId: "p1", html: HTML, current: 1, total: 1 },
+        { type: "spec_page_renamed", from: "p1", to: "seat_selection" },
+        {
+          type: "spec_page",
+          pageId: "seat_selection",
+          html: HTML,
+          current: 1,
+          total: 1,
+          bound: true,
+        },
+        { type: "complete", state: STATE },
+      ],
+      {
+        onSpecPage: (p: { pageId: string }) => trail.push(`page:${p.pageId}`),
+        onSpecPageRenamed: (r: { to: string }) => trail.push(`rename:${r.to}`),
+      }
+    );
+    expect(trail).toEqual([
+      "page:p1",
+      "rename:seat_selection",
+      "page:seat_selection",
+    ]);
+  });
+
+  it.each([
+    ["缺 from", { type: "spec_page_renamed", to: "seat_selection" }],
+    ["缺 to", { type: "spec_page_renamed", from: "p1" }],
+    ["改成自己", { type: "spec_page_renamed", from: "p1", to: "p1" }],
+  ])("%s 不派发（拿空 id 去找卡 = 静默不动，比报错难查）", async (_why, ev) => {
+    const got: unknown[] = [];
+    await driveRename([ev, { type: "complete", state: STATE }], {
+      onSpecPageRenamed: (r: unknown) => got.push(r),
+    });
+    expect(got).toEqual([]);
+  });
+
+  it("没接这个回调也不许炸——老前端要能收新事件", async () => {
+    // 服务端先上、前端后上是常态（同一份后端还服务着已缓存的旧 bundle）。
+    const pages: unknown[] = [];
+    await driveRename(
+      [
+        { type: "spec_page_renamed", from: "p1", to: "seat_selection" },
+        { type: "spec_page", pageId: "p1", html: HTML, current: 1, total: 1 },
+        { type: "complete", state: STATE },
+      ],
+      { onSpecPage: (p: unknown) => pages.push(p) }
+    );
+    expect(pages).toHaveLength(1);
+  });
+});

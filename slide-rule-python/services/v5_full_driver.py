@@ -40,7 +40,7 @@ from .workflow_select import PAGES_PREVIEW, PAGES_PREVIEW_TOOLS, select_workflow
 import os
 import threading
 import time
-from typing import Dict, Any, AsyncGenerator, List, Literal, Optional
+from typing import Dict, Any, AsyncGenerator, List, Literal, NamedTuple, Optional
 from datetime import datetime, timezone
 from models.v5_state import (
     ProducedBy,
@@ -2200,6 +2200,26 @@ def _persist_phase_after_abandon(state: "V5SessionState") -> None:
         pass
 
 
+class _PageRenamed(NamedTuple):
+    """第 4.5 步的一次页面改名（草稿 id → 模型铸的语义 id）。
+
+    形状抄 grok-build `xai-codebase-graph/src/types/file_event.rs` 的
+    `Renamed { from: PathBuf, to: PathBuf }`：改名是**一等事件**、自带两头。
+    那边 `requires_reparse()` 对它返回 `false // Only path update needed`，
+    正是这里要的语义——前端只把卡片的 pageId 换掉，HTML 一个字都不用重解析。
+
+    ⚠ 它跟页面**走同一条队列**（_page_q），不是各走一条。这是刻意的：改名
+      必须排在第 6.5 步那批新 id 页面**之前**到达前端，否则前端已经按新 id
+      建好了六张重复的卡，再告诉它"其实是改名"已经晚了。同一条队列 =
+      先后由队列本身保证；两条队列各自泵，先后就跟那句老注释说的一样
+      「在前端的先后不可预期」。所以这里用 NamedTuple 而不是裸 2 元组：
+      排水口要能一眼分清"这是改名还是页面"，靠长度去猜迟早猜错。
+    """
+
+    from_id: str
+    to_id: str
+
+
 async def drive_full_v5_session_stream(
     initial_state: "V5SessionState",
     max_loops: int = 10,
@@ -2315,8 +2335,15 @@ async def drive_full_v5_session_stream(
     # （见 spec_first_pipeline._reemit_pages）。默认值兜住老调用方。
     # 第 6 位 device（2026-08-14 竖屏加）：管道在开头认一次设备并注进每次
     # sink 调用（spec_first_pipeline._with_device），前端拿它选画布视口。
-    _page_q: "_queue.Queue[tuple[str, str, int, int, bool, str]]" = _queue.Queue()
+    # ⚠ 队列里混着两种东西：页面（上面那个 6 元组）和**改名**（_PageRenamed）。
+    #   混在一条队列里不是偷懒，它是**顺序的唯一来源**——第 4.5 步的改名必须
+    #   排在第 6.5 步那批新 id 页面之前到前端，分两条队列泵先后就不可预期了
+    #   （同上面那句「分开泵只会让…在前端的先后不可预期」）。
+    _page_q: "_queue.Queue[tuple[str, str, int, int, bool, str] | _PageRenamed]" = (
+        _queue.Queue()
+    )
     _spec_first_scope = None
+    _spec_rename_scope = None
     _note_page_event = None
     _peek_page_events = None
     _reset_page_events = None
@@ -2325,11 +2352,13 @@ async def drive_full_v5_session_stream(
         # ⚠ 三个计数函数**挂在这条已有的 import 上**，不新开一条。
         #   架构闸盯着"函数体 import 只许变少"（baseline.deferred），
         #   新开一条 import 语句就会把那个棘轮顶上去。
+        #   改名出口（2026-09-06）同理，也挂在这条上。
         from .spec_first_pipeline import (  # noqa: F401
             note_page_event_emitted as _note_page_event,
             page_sink_scope as _spec_first_scope,
             peek_last_pages as _peek_pages_for_fallback,
             peek_page_events_emitted as _peek_page_events,
+            rename_sink_scope as _spec_rename_scope,
             reset_page_events_emitted as _reset_page_events,
         )
     except Exception:  # noqa: BLE001 — 新模块缺失不该打死整条流
@@ -2344,6 +2373,14 @@ async def drive_full_v5_session_stream(
                 lambda pid, html, done, total, bound=False, device="desktop": _page_q.put(
                     (pid, html, done, total, bool(bound), str(device))
                 )
+            )
+        )
+    # 页面改名（2026-09-06）：进**同一条** _page_q，理由见那边的头注和
+    # _PageRenamed 的头注——顺序靠队列，不靠"谁先发"的约定。
+    if _spec_rename_scope is not None:
+        _sinks.enter_context(
+            _spec_rename_scope(
+                lambda frm, to: _page_q.put(_PageRenamed(str(frm), str(to)))
             )
         )
     # 伴随式澄清（2026-08-27）：spec-first 第 2 步替用户定下的事。
@@ -2460,7 +2497,19 @@ async def drive_full_v5_session_stream(
             # 第二页"在前端的先后不可预期。
             try:
                 while True:
-                    _pid, _html, _done, _total, _bound, _device = _page_q.get_nowait()
+                    _item = _page_q.get_nowait()
+                    # 改名先认——它跟页面共用这条队列（见 _PageRenamed 头注）。
+                    # 不能靠元组长度去分，靠类型。
+                    if isinstance(_item, _PageRenamed):
+                        yield {
+                            "type": "spec_page_renamed",
+                            # 字段名跟 grok FileEvent::Renamed 对齐（from/to）。
+                            "from": _item.from_id,
+                            "to": _item.to_id,
+                        }
+                        last_yield_at = _time.perf_counter()
+                        continue
+                    _pid, _html, _done, _total, _bound, _device = _item
                     yield {
                         "type": "spec_page",
                         "pageId": _pid,
@@ -2470,6 +2519,12 @@ async def drive_full_v5_session_stream(
                         # 同一页会到达多次：第 3 步素颜页（bound=False）→
                         # 3.5 外壳统一后重发（仍 False，菜单已按 spec 锚定）→
                         # 6.5 打完 data-* 孔重发（True）。前端按 pageId 覆盖。
+                        #
+                        # ⚠ "按 pageId 覆盖"只在 id 没变过时成立。第 4.5 步会把
+                        #   草稿 id 改成语义 id，那一刻必须有一条
+                        #   spec_page_renamed 先到（就在上面那支），否则前端认不出
+                        #   6.5 这批是同一批页，会当新页**追加**——真机
+                        #   sr-20260906111901 的 12 张卡对应 6 页就是这么来的。
                         "bound": _bound,
                         # desktop 横屏 / phone 竖屏——前端选画布视口用
                         "device": _device,
@@ -2848,6 +2903,20 @@ async def drive_full_v5_session_stream(
                 return
             if gate is None:
                 return
+            # ★★ arm 在**发通知之前**（2026-09-06 第二轮真机）。
+            #   `take_hold()` 只是把闸从 pending 转成 active，它不知道 where，
+            #   所以"等什么、从什么时候开始等"这两格原来要等 `await gate.wait()`
+            #   进去才写。而通知一发出去，前端立刻就会来问
+            #   `GET /runs/active` —— 正好落在那道缝里，拿到
+            #   `{"phase":"waiting","where":"","waitedSeconds":null}`。
+            #
+            #   照 grok `permission_requested()`：相位、等什么、起算时刻
+            #   **一次全部建立**，然后才轮到"通知"和"阻塞"。它那个写法在结构上
+            #   不可能出现"相位说在等、却不知道等什么"。
+            try:
+                gate.arm("spec-assumptions")
+            except Exception as exc:  # noqa: BLE001 — 观测项，不许拦住停泊
+                print(f"[v5_full_driver] ⚠ 停泊落点写入跳过：{str(exc)[:120]}")
             # ★ 先把「我在等你」交出去，再 await。顺序就是这条修复的全部内容。
             #   `budgetSeconds` 一起带上：前端要能显示"最多等多久"，而不是
             #   让用户对着一个没有期限的转圈猜。None = 不限时。
@@ -2925,20 +2994,6 @@ async def drive_full_v5_session_stream(
             # 这一层的意义是"别再开始下一件大活儿"，不是把当前这件切碎。
             #
             # ⚠ 正常路径零成本：没人按暂停时 pause_here 一次字典读取就返回。
-            # ★★ arm 在**发通知之前**（2026-09-06 第二轮真机）。
-            #   `take_hold()` 只是把闸从 pending 转成 active，它不知道 where，
-            #   所以"等什么、从什么时候开始等"这两格原来要等 `await gate.wait()`
-            #   进去才写。而通知一发出去，前端立刻就会来问
-            #   `GET /runs/active` —— 正好落在那道缝里，拿到
-            #   `{"phase":"waiting","where":"","waitedSeconds":null}`。
-            #
-            #   照 grok `permission_requested()`：相位、等什么、起算时刻
-            #   **一次全部建立**，然后才轮到"通知"和"阻塞"。它那个写法在结构上
-            #   不可能出现"相位说在等、却不知道等什么"。
-            try:
-                gate.arm("spec-assumptions")
-            except Exception as exc:  # noqa: BLE001 — 观测项，不许拦住停泊
-                print(f"[v5_full_driver] ⚠ 停泊落点写入跳过：{str(exc)[:120]}")
             # ⚠ 三种结局都往下跑，**没有一种把这一轮判死**：
             #     人答了    → 接着跑
             #     超时/跳过  → 按模型自己定的做（spec-assumptions 认定的合法结局）
