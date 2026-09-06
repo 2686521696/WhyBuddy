@@ -31,7 +31,7 @@ from services.gate_health import (
     summary_line as _gate_summary,
 )
 from services.page_edit_guard import edit_losses, losses_message
-from services import app_access
+from services import app_access, run_registry
 from services.model_version_restore import restore_model_version_locked
 from services.slide_rule_session import create_session, delete_session, load_session, save_session, drive_reasoning_turn
 from services.engine_scheduling import pick_next_capabilities
@@ -539,10 +539,86 @@ def _require_session(state: Any, action: str, viewer) -> None:
     级别不够抛 404 而不是 403 —— 与 app_access.require 同一取向：403 等于告诉
     对方"这个 id 存在但你没权限"，把 id 的存在性也泄漏出去了。
     """
-    from services.app_access import can_session
-
-    if not can_session(action, _session_payload(state), viewer):
+    # `app_access` 已在模块顶层 import —— 函数体 import 是架构闸盯着的棘轮
+    # （`baseline.deferred` 只许变少），别在这里新开一条。
+    if not app_access.can_session(action, _session_payload(state), viewer):
         raise HTTPException(404, "Not found")
+
+
+def _require_run_session(session_id: str, action: str, viewer) -> None:
+    """`/runs/*` 的归属守卫：按**这个 run 属于哪个会话**判权限。
+
+    ## 事故（2026-09-06 审计，三个端口上实测）
+
+    `/runs/*` 五条此前只有 `_auth(x_internal_key)`，而 `_auth` 在
+    `NODE_ENV != production` 下**是 no-op**（它自己的注释写着这是为了让 vite
+    直连 Python 的开发代理能跑）。实测不带任何 cookie：
+
+        GET /api/sliderule/runs/active?sessionId=<别人的会话>
+            :3000 → 200    :3001 → 200    :9700 → 200
+        对照 GET /api/sliderule/sessions/<同一个 id>
+                           → 404          （归属判定生效）
+
+    也就是说：会话本体拦住了，**围着它的那圈 run 接口全是敞开的**。
+    敞开的不只是读：
+
+        DELETE /runs/{id}         杀掉别人正在跑的推演
+        POST   /runs/{id}/hold    把别人的推演停在下一个安全点
+        POST   /runs/{id}/release 替别人回答假设卡
+
+    这是本仓反复数到的形状：**主资源装了闸，围着它的附属接口没装**。
+
+    ## 口径与 `_require_session` 完全同一条
+
+    级别不够抛 **404 而不是 403** —— 403 等于告诉对方"这个 id 存在但你没权限"，
+    把 run id / session id 的存在性也泄漏出去了（见 app_access.require 头注）。
+
+    动作沿用既有词表，不新造：
+        view   读（active / stream）                    → READ
+        drive  改这一轮的走向（cancel / hold / release）→ WRITE
+
+    ## ⚠ 会话查不到也拒绝
+
+    查不到就没法判归属，此时"放行"等于默认公开。fail-closed，报同一个 404。
+    """
+    state = load_session(session_id) or _sessions.get(session_id)
+    if state is None:
+        raise HTTPException(404, "Not found")
+    _require_session(state, action, viewer)
+
+
+def _visible_run(run_id: str, action: str, viewer):
+    """按 run id 找 run，并按它所属会话判权限。**看不见和不存在都返回 None。**
+
+    ## ⚠ 为什么这里不抛，而是返回 None
+
+    第一版是"找不到返回 None、看不见抛 404"。写完跑判据当场露馅：
+
+        run 不存在        → 200 {"cancelled": false}   （既有契约）
+        run 存在但看不见  → 404
+
+    这两个**可区分**，于是它自己变成一个枚举探针——正好把 404-不-403 那条
+    纪律（不泄漏 id 的存在性）在同一个接口上又破掉一次。
+
+    所以两种情况在这里合并成同一个 None，由调用方按**它自己既有的**
+    "什么也没发生"形状回话：
+
+        cancel / hold / release   200 + false（真机竞态是常态，不是错误）
+        stream                    404 {"error": "run_not_found"}
+
+    调用方形状不同没关系，要紧的是**同一个接口上两种情况说同一句话**。
+    """
+    run = run_registry.get_run(run_id)
+    if run is None:
+        return None
+    session_id = str(getattr(run, "session_id", "") or "")
+    state = load_session(session_id) or _sessions.get(session_id)
+    if state is None:
+        # 查不到会话就没法判归属。fail-closed：此时"放行"等于默认公开。
+        return None
+    if not app_access.can_session(action, _session_payload(state), viewer):
+        return None
+    return run
 
 
 # ── 副本会话的话题问题：**已经修好了，这里只留教训**（2026-08-06→08-07）──
@@ -987,11 +1063,21 @@ async def exec_cap(
         dur = int((_time.time() - t0) * 1000)
         run_id = f"run-{payload['turnId']}-{cap}"
         # success path still records run (enriched later); keep prior append for compat
-        state.capabilityRuns.append(CapabilityRun(id=run_id, capabilityId=cap, turnId=payload["turnId"], outputs=[]))
-        # attach timing on last
-        if state.capabilityRuns:
-            last = state.capabilityRuns[-1]
-            if hasattr(last, "timing"): last.timing = {"durationMs": dur}
+        #
+        # ⚠ 2026-09-06：此前是 append 之后再按 `capabilityRuns[-1]` 打耗时补丁。
+        #   下标 -1 假定"我刚 append 的一定还在最后"——并发或中间插了别的记录
+        #   就把耗时记到别人头上，而且不报错。耗时现在直接进构造，没有第二步。
+        state.capabilityRuns.append(
+            CapabilityRun.server_record(
+                status="success",
+                durationMs=dur,
+                provenance="route.execute_capability_native_llm",
+                id=run_id,
+                capabilityId=cap,
+                turnId=payload["turnId"],
+                outputs=[],
+            )
+        )
         await asyncio.to_thread(save_session, state)
         result = result if isinstance(result, dict) else dict(result)
         result.setdefault("provenance", PROVENANCE_PYTHON_RAG)
@@ -1070,10 +1156,18 @@ async def exec_cap(
         result.setdefault("visualContract", "python-mapped")
     # Update state with run (like Node)
     run_id = f"run-{payload['turnId']}-{cap}"
-    state.capabilityRuns.append(CapabilityRun(id=run_id, capabilityId=cap, turnId=payload["turnId"], outputs=[]))
-    if state.capabilityRuns:
-        last = state.capabilityRuns[-1]
-        if hasattr(last, "timing"): last.timing = {"durationMs": dur}
+    # ⚠ 同上：耗时进构造，不再按 `capabilityRuns[-1]` 打补丁。
+    state.capabilityRuns.append(
+        CapabilityRun.server_record(
+            status="success",
+            durationMs=dur,
+            provenance="route.execute_capability",
+            id=run_id,
+            capabilityId=cap,
+            turnId=payload["turnId"],
+            outputs=[],
+        )
+    )
     await asyncio.to_thread(save_session, state)
     return result
 
@@ -1395,12 +1489,16 @@ def _run_sse_response(run, since: int) -> StreamingResponse:
 @router.get("/runs/active")
 async def runs_active(
     sessionId: str,
+    viewer: CurrentUserOptional,
     x_internal_key: Optional[str] = Header(None),
 ):
-    """会话当前活跃 run（刷新回来的客户端据此决定是否续播）。"""
-    _auth(x_internal_key)
-    from services import run_registry
+    """会话当前活跃 run（刷新回来的客户端据此决定是否续播）。
 
+    ⚠ 归属先判、再查 run（2026-09-06）。这条接口拿的是**调用方给的
+      sessionId**，不判归属就等于"给我一个 id 我就告诉你它在不在跑"。
+    """
+    _auth(x_internal_key)
+    _require_run_session(sessionId, "view", viewer)
     run = run_registry.get_active_run(sessionId)
     return {"active": run.snapshot() if run is not None else None}
 
@@ -1433,14 +1531,17 @@ async def gate_health(
 @router.get("/runs/{run_id}/stream")
 async def run_stream(
     run_id: str,
+    viewer: CurrentUserOptional,
     since: int = 0,
     x_internal_key: Optional[str] = Header(None),
 ):
-    """续播：从 since 序号补播事件日志，追平后接实时流。"""
-    _auth(x_internal_key)
-    from services import run_registry
+    """续播：从 since 序号补播事件日志，追平后接实时流。
 
-    run = run_registry.get_run(run_id)
+    ⚠ 这条泄漏面最大：事件流里带着别人的话题、SPEC、逐页 HTML、LLM 增量。
+      归属不判等于把整轮推演的全文交给任何知道 run id 的人。
+    """
+    _auth(x_internal_key)
+    run = _visible_run(run_id, "view", viewer)
     if run is None:
         return JSONResponse(status_code=404, content={"error": "run_not_found"})
     return _run_sse_response(run, since=since)
@@ -1479,13 +1580,24 @@ _restore_model_version_locked = restore_model_version_locked
 def restore_model_version(
     sid: str,
     version_id: str,
+    viewer: CurrentUserOptional,
     x_internal_key: Optional[str] = Header(None),
 ):
     """E29 版本回退：把历史模型快照置为当前（追加式，不改写历史）。
 
     快照经 set_model_override 直供生成层（不调 LLM），同一结构闸照常校验，
-    闭环/联动图重新推导，随后追加一条「回退」版本记录。"""
+    闭环/联动图重新推导，随后追加一条「回退」版本记录。
+
+    ⚠ 2026-09-06 补归属。这条是查 `/runs/*` 那五条时**在隔壁发现的同一形状**：
+      它连 `viewer` 参数都没有，只有一个开发环境下形同虚设的 `_auth`。
+      而它是**写**路径——把别人会话的当前模型换成某个历史版本，并追加一条
+      版本记录。比那五条读接口更严重。
+
+      `drive`（WRITE）而不是 `view`：它改会话状态。
+      404 不 403，理由同 `_require_session`。
+    """
     _auth(x_internal_key)
+    _require_run_session(sid, "drive", viewer)
     with _restore_lock(sid):
         return _restore_model_version_locked(sid, version_id)
 
@@ -1493,18 +1605,26 @@ def restore_model_version(
 @router.delete("/runs/{run_id}")
 async def run_cancel(
     run_id: str,
+    viewer: CurrentUserOptional,
     x_internal_key: Optional[str] = Header(None),
 ):
-    """显式取消（停止按钮的新语义：真正杀掉服务端推演）。"""
-    _auth(x_internal_key)
-    from services import run_registry
+    """显式取消（停止按钮的新语义：真正杀掉服务端推演）。
 
+    ⚠ `drive`（WRITE）而不是 `view`：取消 = 这一轮判死、白烧（真机实测
+      publishClosure=null、modelVersions=0）。归属不判 = 任何人都能杀掉
+      别人跑了十分钟的推演。
+    """
+    _auth(x_internal_key)
+    if _visible_run(run_id, "drive", viewer) is None:
+        # 看不见的 run 与不存在的 run 对外同一形状，不泄漏存在性。
+        return {"cancelled": False}
     return {"cancelled": run_registry.cancel_run(run_id)}
 
 
 @router.post("/runs/{run_id}/hold")
 async def run_hold(
     run_id: str,
+    viewer: CurrentUserOptional,
     payload: Optional[Dict[str, Any]] = None,
     x_internal_key: Optional[str] = Header(None),
 ):
@@ -1516,10 +1636,14 @@ async def run_hold(
 
     `nonInteractive` 由调用方给：页面已经关了 / 无头跑的时候传 true，
     超时报的就是"没有操作员"而不是"用户跳过"——那是两个不同的事实。
+
+    ⚠ `drive`（WRITE）：停住别人的推演是改这一轮的走向，不是只读。
     """
     _auth(x_internal_key)
-    from services import run_registry
-
+    if _visible_run(run_id, "drive", viewer) is None:
+        # 闸不在时本来就返回 held=false（真机竞态是常态，不是错误），
+        # 看不见的 run 沿用同一形状。
+        return {"held": False}
     body = payload or {}
     held = run_registry.hold_run(
         run_id, non_interactive=bool(body.get("nonInteractive"))
@@ -1530,6 +1654,7 @@ async def run_hold(
 @router.post("/runs/{run_id}/release")
 async def run_release(
     run_id: str,
+    viewer: CurrentUserOptional,
     payload: Optional[Dict[str, Any]] = None,
     x_internal_key: Optional[str] = Header(None),
 ):
@@ -1537,10 +1662,13 @@ async def run_release(
 
     ⚠ 闸不在时返回 released=false 而**不是报错**：真机上「答案到得比暂停
       生效还早」是正常竞态（用户手快、或上一步还没跑完），那不是错误。
+
+    ⚠ `drive`（WRITE）：这条是**替人拿主意**——`answer` 会被当成用户对假设卡
+      的回答写进推演。归属不判等于任何人都能替别人做决定。
     """
     _auth(x_internal_key)
-    from services import run_registry
-
+    if _visible_run(run_id, "drive", viewer) is None:
+        return {"released": False}
     body = payload or {}
     released = run_registry.release_run(
         run_id,

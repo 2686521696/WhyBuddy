@@ -119,6 +119,34 @@ export interface CapabilityRun {
   result?: unknown;
   timing?: { startedAt?: string; completedAt?: string; durationMs?: number };
   error?: { code?: string; message?: string; detail?: unknown };
+  /**
+   * 2026-09-06 台账三格。抄 grok `ToolCallCompleted`
+   * （xai-tool-protocol/src/session_event.rs）：结局 + 耗时 + 谁写的，一次执行
+   * 该说的话一次说完。
+   *
+   * 此前台账**说不出结局**：只有 `error`（有值=失败），于是"成功"和"没人填
+   * error"长得一模一样。
+   *
+   * ⚠ 三个都是可选的，因为这是**持久化记录**：库里已有的记录都没有它们，
+   *   写成必填会让老会话读不回来。"必填"落在 Python 写路径
+   *   （`CapabilityRun.server_record(...)` 三个参数 keyword-only 无默认值），
+   *   见 models/v5_state.py 里那段。
+   *
+   * `unknown` 对应 grok 的 `#[serde(other)] Unknown`：旧记录和占位记录
+   * **如实说不知道**，不许被编成 success。
+   */
+  status?: "success" | "error" | "cancelled" | "unknown";
+  /** 顶层耗时。`timing.durationMs` 保留给老读者，两处由 server_record 对齐。 */
+  durationMs?: number;
+  /** 这条台账是哪条代码路径写的。申报制——自由字符串半年后会有七种拼法。 */
+  provenance?:
+    | "scheduling.error"
+    | "scheduling.commit"
+    | "executor.run"
+    | "trust.ledger_stub"
+    | "route.execute_capability"
+    | "route.execute_capability_native_llm"
+    | "test.fixture";
 }
 
 export interface DependencyEdge {

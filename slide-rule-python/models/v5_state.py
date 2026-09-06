@@ -162,6 +162,49 @@ class DependencyEdge(BaseModel):
     toArtifactId: str
     reason: str
 
+#: 一次能力执行的结局。**四档，抄 grok 的 `ToolCallOutcome`**
+#: （`xai-tool-protocol/src/session_event.rs`）：
+#:
+#:     pub enum ToolCallOutcome {
+#:         Success,
+#:         Error,
+#:         Cancelled,
+#:         #[serde(other)]
+#:         Unknown,
+#:     }
+#:
+#: `unknown` 不是"懒得填"，它是 grok 那个 `#[serde(other)]` 的对应物：
+#: **旧记录和占位记录如实说"不知道"**，而不是被编成 success。
+#: 词表故意不加 `blocked` / `needs_approval` 之类——那些是 runtime adapter
+#: 结果壳的词汇，混进来会变成两处半重合的词表各自漂移。
+CapabilityRunStatus = Literal["success", "error", "cancelled", "unknown"]
+
+#: 这条台账是**哪条代码路径**写下的。
+#:
+#: 加它的直接原因：`CapabilityRun` 在生产代码里有 6 个构造点，各写一部分字段
+#: （`slide_rule_trust` 那处只为挂 ledgerEntryId 造一条空壳、`engine_scheduling`
+#: 的 commit 路径压根没有 timing）。事后看台账时第一个问题永远是"这条是谁写的"，
+#: 而此前只能靠 id 前缀猜。
+#:
+#: ⚠ 必须是**申报制**。写成自由字符串的话，半年后会有七种拼法指同一条路径，
+#: 台账就退化成噪音。同一条纪律见 `AwaitReason` 头上那三次事故。
+CapabilityRunProvenance = Literal[
+    # engine_scheduling.record_capability_run_error —— 执行炸了那条
+    "scheduling.error",
+    # engine_scheduling.commit_artifact* —— 产物落地顺带记一条
+    "scheduling.commit",
+    # slide_rule_executor.* —— 带 timing 的正常执行
+    "executor.run",
+    # slide_rule_trust.* —— 只为挂 ledgerEntryId 造的空壳，结局确实不知道
+    "trust.ledger_stub",
+    # routes/sliderule_full.py 的 execute-capability 两条路
+    "route.execute_capability",
+    "route.execute_capability_native_llm",
+    # 测试与脚本。**显式一档**，不给"不填也行"留门
+    "test.fixture",
+]
+
+
 class CapabilityRun(BaseModel):
     id: str
     capabilityId: str
@@ -176,6 +219,88 @@ class CapabilityRun(BaseModel):
     ledgerEntryId: Optional[str] = None
     timing: Optional[Dict[str, Any]] = None  # {startedAt, completedAt, durationMs}
     error: Optional[Dict[str, Any]] = None  # {code, message, ...} for failed runs
+
+    # ── 2026-09-06：台账三格 ────────────────────────────────────────────
+    #
+    # ## 事故形态
+    #
+    # 台账此前**说不出一次执行的结局**：只有 `error`（有值=失败）和嵌在
+    # `timing` 里的 `durationMs`。于是：
+    #   * "成功"和"没人填 error" 长得一模一样；
+    #   * 两个路由构造点是 `append(CapabilityRun(...))` 之后再
+    #     `state.capabilityRuns[-1].timing = {"durationMs": dur}` —— 按
+    #     **下标 -1** 打补丁，并发或顺序一变就把耗时记到别人头上；
+    #   * 6 个构造点各写一部分，谁都不知道另外 5 个写了什么。
+    #
+    # ## 抄的是 grok 的哪一处
+    #
+    # `xai-tool-protocol/src/session_event.rs` 的 `ToolCallCompleted`：
+    #
+    #     ToolCallCompleted {
+    #         tool_call_id: String,
+    #         tool_name: String,
+    #         duration_ms: u64,
+    #         outcome: ToolCallOutcome,
+    #     }
+    #
+    # **四个字段全必填**，配一条反向判据
+    # `turn_ended_missing_required_field_rejected`（少一个字段就必须反序列化失败）。
+    #
+    # ## ⚠ 为什么这里是"有默认值"而不是 pydantic 级 required
+    #
+    # 因为这是**持久化记录**，不是新发出的事件。grok 那边的 required 管的是
+    # 一条刚生成的事件；历史数据靠 `#[serde(other)] Unknown` 兜。
+    # 这里同理：库里已有的每条 `CapabilityRun` 都没有这三个字段，改成
+    # pydantic required 的话读回来会 `invalid_session` → `_coerce_many`
+    # 把**整条会话跳过**（persistence.py:370）—— 就是 `AwaitReason` 头上
+    # 记着的那三次事故，症状是「会话从侧栏消失了」。
+    #
+    # 所以"必填"落在**写路径**：新增记录一律走
+    # `CapabilityRun.server_record(...)`，那三个参数是 keyword-only 且
+    # **没有默认值**，漏一个就是 TypeError。
+    # 配套判据（tests/test_capability_run_ledger.py）扫全仓，禁止生产代码
+    # 直接 `CapabilityRun(...)` —— 这条才是防"加第 7 个构造点又忘填"的闸。
+    status: CapabilityRunStatus = "unknown"
+    #: 顶层耗时。`timing.durationMs` 保留（老读者按它取值），由
+    #: `server_record` 保证两处一致——两处书写靠一处填。
+    durationMs: Optional[int] = None
+    provenance: Optional[CapabilityRunProvenance] = None
+
+    @classmethod
+    def server_record(
+        cls,
+        *,
+        status: CapabilityRunStatus,
+        durationMs: Optional[int],
+        provenance: CapabilityRunProvenance,
+        **data: Any,
+    ) -> "CapabilityRun":
+        """写一条台账。**三个字段是 keyword-only 且无默认值** —— 漏一个是
+        TypeError，不是一条静默残缺的记录。
+
+        照 `Artifact.server_construct` 的既有约定：服务端写路径走命名工厂，
+        客户端/历史数据走普通构造。
+
+        `durationMs` 允许显式 `None`：`engine_scheduling.commit_artifact*`
+        那条路径**真的不知道**耗时（它是产物落地顺带记一笔，没有计时）。
+        逼它编一个 0 比留 None 糟——0 会被当成"这一步不花时间"。
+        但**必须显式传**：`server_record(...)` 少写这个参数就报错，
+        写 `durationMs=None` 是一次有意识的声明。
+        """
+        timing = dict(data.pop("timing", None) or {})
+        if durationMs is not None:
+            # 两处书写、一处填：老读者取 `timing.durationMs`，新读者取顶层。
+            timing.setdefault("durationMs", int(durationMs))
+        elif isinstance(timing.get("durationMs"), (int, float)):
+            # 反向也补：调用方只给了 timing 时，顶层别空着。
+            durationMs = int(timing["durationMs"])
+        return cls(
+            status=status,
+            durationMs=durationMs,
+            provenance=provenance,
+            timing=timing or None,
+            **data,
+        )
 
 # Classification for sliderule-python-v52-capability-run-contract-105 (this task):
 # TS_RUNTIME_OWNED -> NODE_BACKEND_OWNED -> PYTHON_COMPAT (partial fields: inputs/outputs/gateResults/result only) -> PYTHON_AUTHORITY

@@ -101,7 +101,15 @@ def record_capability_run_error(
     if "completedAt" not in t:
         t["completedAt"] = now_iso
     run_id = f"run-{turnId}-{capabilityId}"
-    run = CapabilityRun(
+    run = CapabilityRun.server_record(
+        # 这条路径的名字就是"执行炸了"，结局没有第二种可能。
+        status="error",
+        # 调用方给的 timing 里可能已经带了 durationMs（真机两个路由都带）；
+        # server_record 会把顶层和 timing 两处对齐，这里如实透传。
+        durationMs=(
+            int(t["durationMs"]) if isinstance(t.get("durationMs"), (int, float)) else None
+        ),
+        provenance="scheduling.error",
         id=run_id,
         capabilityId=capabilityId,
         turnId=turnId,
@@ -657,7 +665,13 @@ def commit_artifact(
 
     run_id = producedBy.capabilityRunId
     turn = turnId or getattr(state, "lastTurnId", None) or "t"
-    run = CapabilityRun(
+    run = CapabilityRun.server_record(
+        # 产物已经落地并过了接地闸 —— 这条路径只在成功时走到。
+        status="success",
+        # ⚠ 如实 None：这条是"产物落地顺带记一笔"，**它没有计时**。
+        #   编一个 0 会被当成"这一步不花时间"，比留空更骗人。
+        durationMs=None,
+        provenance="scheduling.commit",
         id=run_id,
         capabilityId=producedBy.capabilityId,
         turnId=turn,

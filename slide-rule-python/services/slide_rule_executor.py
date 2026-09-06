@@ -198,7 +198,17 @@ def _write_capability_telemetry(state: V5SessionState, capability_id: str, role_
         existing_costs.append(cost_rec)
         state.costLedger = existing_costs
     # write/ensure CapabilityRun with timing (idempotent)
-    cap_run = CapabilityRun(
+    cap_run = CapabilityRun.server_record(
+        # 走到这一行说明能力返回了结果（失败那条走
+        # engine_scheduling.record_capability_run_error）。
+        status="success",
+        # timing 是这条路径唯一真正量过墙钟的地方，顶层跟它对齐。
+        durationMs=(
+            int(timing["durationMs"])
+            if isinstance((timing or {}).get("durationMs"), (int, float))
+            else None
+        ),
+        provenance="executor.run",
         id=run_id,
         capabilityId=capability_id,
         turnId=turn_key,
