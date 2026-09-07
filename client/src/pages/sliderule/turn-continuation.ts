@@ -36,17 +36,26 @@ export const ASSUMPTIONS_CONFIRMED_PHRASE = "假设已确认。继续画页面�
 /**
  * 这一轮的用户原文是不是「接着上一跳往下走」。
  *
- * 两类都算：
+ * 三类都算：
  *   · 伴随式假设确认（「假设已确认。继续画页面。」）
  *   · 工厂公开跳的指令（收尾卡「进入数据模型反推（Structure）」之类）
+ *   · 刷新续播塞进气泡的「（续播上一轮推演）」——用户没说过
+ *   · 澄清卡交卷那句「「…」答：…」——是答系统的题，不是新话题
  *
  * ⚠ 判据盯**语义**不盯整句：确认那句以后可能改文案，`假设已确认` 这半句
  *   才是它的身份（`spec-assumptions` 那边也是认这半句）。
+ *
+ * ⚠ 2026-09-07 真机 sr-20260907170712（街边烘焙店收银台）：
+ *   假设确认后刷新/重开会话，resume 用「（续播上一轮推演）」新开一轮；
+ *   后续 bind 跳又折进澄清答句。左栏看起来像智障重来：旧问答再演一遍，
+ *   结构跳再烧 243 秒。认这些机器句，才能折回人真正说过的那句。
  */
 export function isContinuationTurn(userText: unknown): boolean {
   const text = String(userText || "").trim();
   if (!text) return false;
   if (/假设已确认/.test(text)) return true;
+  if (/续播上一轮推演/.test(text)) return true;
+  if (/^「[^」]+」答：/.test(text)) return true;
   if (factoryHopFromText(text)) return true;
   return looksLikeFactoryHopCommand(text);
 }
@@ -78,20 +87,36 @@ export function isContinuationTurn(userText: unknown): boolean {
 export function foldContinuationTurns(uiTurns: UiTurn[]): UiTurn[] {
   const out: UiTurn[] = [];
   for (const turn of uiTurns) {
-    const prev = out[out.length - 1];
-    if (prev && isContinuationTurn(turn.user)) {
-      const carried = turn.steps.filter(step => !isOpeningStep(step));
-      out[out.length - 1] = {
-        ...turn,
-        // 人真正说过的那句留着；机器排的「假设已确认。继续画页面。」不当用户气泡
-        user: prev.user,
-        steps: [...prev.steps, ...carried],
-        durationMs:
-          (prev.durationMs || 0) + (turn.durationMs || 0) || undefined,
-      };
+    if (!isContinuationTurn(turn.user)) {
+      out.push(turn);
       continue;
     }
-    out.push(turn);
+    const carried = turn.steps.filter(step => !isOpeningStep(step));
+    let realIdx = -1;
+    for (let i = out.length - 1; i >= 0; i -= 1) {
+      if (!isContinuationTurn(out[i].user)) {
+        realIdx = i;
+        break;
+      }
+    }
+    if (realIdx < 0) {
+      // 刷新后只恢复了续跑轮：没得可折，原样留着，但机器句不当作用户原话。
+      out.push({
+        ...turn,
+        user: /续播上一轮推演/.test(String(turn.user || "")) ? "" : turn.user,
+        steps: carried.length ? carried : turn.steps,
+      });
+      continue;
+    }
+    const target = out[realIdx];
+    out[realIdx] = {
+      ...turn,
+      user: target.user,
+      steps: [...target.steps, ...carried],
+      durationMs:
+        (target.durationMs || 0) + (turn.durationMs || 0) || undefined,
+    };
+    if (out.length > realIdx + 1) out.splice(realIdx + 1);
   }
   return out;
 }

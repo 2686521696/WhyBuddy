@@ -70,6 +70,18 @@ describe("认出续跑", () => {
     expect(isContinuationTurn("进入数据模型反推（Structure）")).toBe(true);
   });
 
+  it("刷新续播那句用户没说过，也是续跑", () => {
+    expect(isContinuationTurn("（续播上一轮推演）")).toBe(true);
+  });
+
+  it("澄清卡交卷不是新话题", () => {
+    expect(
+      isContinuationTurn(
+        "「请问这个收银台主要是给谁在什么设备上使用的？」答：电脑网页收银台"
+      )
+    ).toBe(true);
+  });
+
   it("★ 反向配对：新话题不是续跑", () => {
     expect(isContinuationTurn("做一个社区食堂的每日菜单和预订台账")).toBe(false);
     expect(isContinuationTurn("")).toBe(false);
@@ -386,6 +398,52 @@ describe("续跑接在上一段后面", () => {
     // 少画开场那条路（deriveStageBands）继续兜。
     const { foldContinuationTurns } = await import("../turn-continuation");
     expect(foldContinuationTurns([CONT])).toHaveLength(1);
+  });
+
+  it("续播 / 澄清答句 / bind 跳都折进原话题，不许再开一块", async () => {
+    /**
+     * ⚠ 2026-09-07 真机 sr-20260907170712：左栏先是「（续播上一轮推演）」，
+     * 再把澄清问答演一遍，bind 跳折进那句答。变异：不认续播/答句，本条红。
+     */
+    const { foldContinuationTurns } = await import("../turn-continuation");
+    const resume = turn("t-resume", "（续播上一轮推演）", [
+      ["intent.parse", "指令已接收 · 启动推理"],
+    ]);
+    const clarify = turn(
+      "t-clarify",
+      "「请问这个收银台主要是给谁在什么设备上使用的？」答：电脑网页收银台",
+      [["intent.parse", "指令已接收 · 启动推理"]]
+    );
+    const bind = turn("t-bind", "进入权限绑定（bind）", [
+      ["specfirst.structure", "从界面反推数据模型与关联关系"],
+    ]);
+    const folded = foldContinuationTurns([FIRST, resume, CONT, clarify, bind]);
+    expect(folded).toHaveLength(1);
+    expect(folded[0].user).toBe("做一个社区图书角的借书还书登记");
+    expect(folded[0].user).not.toContain("续播");
+    expect(folded[0].user).not.toContain("答：");
+    const labels = folded[0].steps.map(s => String((s as { label?: string }).label));
+    expect(labels).toContain("从界面反推数据模型与关联关系");
+    expect(labels).toContain("定这个应用的设计语言");
+  });
+
+  it("★ 续播不插用户气泡（接在 runTurn 上，不是只改折叠）", () => {
+    const fs = require("node:fs") as typeof import("node:fs");
+    const path = require("node:path") as typeof import("node:path");
+    const src = (
+      fs.readFileSync(
+        path.resolve(__dirname, "../useSlideRuleSession.ts"),
+        "utf8"
+      ) as string
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    const from = src.indexOf("let turnId = ");
+    expect(from).toBeGreaterThan(-1);
+    const body = src.slice(from, src.indexOf("try {", from) + 40);
+    expect(body).toContain("if (resumeRun)");
+    expect(body).toContain("user: \"\"");
+    expect(body).toMatch(/if \(last\)/);
   });
 
   it("★ §1 接在真链路上：气泡列表真的走了折叠", () => {

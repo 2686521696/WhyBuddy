@@ -416,6 +416,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const { refresh: refreshAuth } = useAuth();
   const sessionId = options.sessionId ?? DEFAULT_SESSION_ID;
   const [uiTurns, setUiTurns] = useState<UiTurn[]>([]);
+  const uiTurnsRef = useRef<UiTurn[]>([]);
+  uiTurnsRef.current = uiTurns;
   const [input, setInput] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   /**
@@ -1114,7 +1116,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     const hop = forcedTool || pendingForcedToolRef.current;
     pendingForcedToolRef.current = undefined;
 
-    const turnId = `turn-${Date.now()}`;
+    let turnId = `turn-${Date.now()}`;
     const turnStartMs = Date.now(); // E16 收口句：本轮真实计时
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -1161,22 +1163,51 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       );
     };
 
-    setUiTurns(prev => [
-      ...prev,
-      {
-        id: turnId,
-        user: userText.trim(),
-        status: "streaming",
-        steps: [],
-        routeFacts: { turnId, timestamp: turnTimestamp },
-        routeExpanded: true,
-        routeLitCount: 1,
-        assistant: "",
-        assistantSource: "fallback",
-        main: null,
-        actions: [],
-      },
-    ]);
+    // 续播是接回已有 run，不是用户又说了一句。新气泡会把
+    // 「（续播上一轮推演）」画成用户原话（2026-09-07 烘焙店收银台）。
+    if (resumeRun) {
+      const last = uiTurnsRef.current[uiTurnsRef.current.length - 1];
+      if (last) {
+        turnId = last.id;
+        setUiTurns(prev =>
+          prev.map(t => (t.id === turnId ? { ...t, status: "streaming" } : t))
+        );
+      } else {
+        setUiTurns(prev => [
+          ...prev,
+          {
+            id: turnId,
+            user: "",
+            status: "streaming",
+            steps: [],
+            routeFacts: { turnId, timestamp: turnTimestamp },
+            routeExpanded: true,
+            routeLitCount: 1,
+            assistant: "",
+            assistantSource: "fallback",
+            main: null,
+            actions: [],
+          },
+        ]);
+      }
+    } else {
+      setUiTurns(prev => [
+        ...prev,
+        {
+          id: turnId,
+          user: userText.trim(),
+          status: "streaming",
+          steps: [],
+          routeFacts: { turnId, timestamp: turnTimestamp },
+          routeExpanded: true,
+          routeLitCount: 1,
+          assistant: "",
+          assistantSource: "fallback",
+          main: null,
+          actions: [],
+        },
+      ]);
+    }
 
     try {
       const driveSid = assertDriveSessionMatchesShell(
