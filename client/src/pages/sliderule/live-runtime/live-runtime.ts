@@ -91,6 +91,24 @@ export interface RuntimeState {
   /** 单调递增，生成稳定 id 用（避免 Date.now 依赖注入烦恼仍需时间戳时由调用方传入） */
   seq: number;
   /**
+   * 实体 → 当前这条记录的 id。
+   *
+   * ⚠ 2026-09-07：HTML 页的详情卡（data-record）原先没选过就填第一行。
+   *   点列表一行只开抽屉，页内主从未跟着切——区块页已经有 PageFocusState，
+   *   这条是同一份概念接到 RuntimeState 上，给 HTML 绑定解释器读。
+   *   对象由宿主钉，不烤进生成的 HTML（petite-vue v-scope 同一纪律）。
+   */
+  selection?: Record<string, string>;
+  /**
+   * 收银/备货那种「从货架点进购物车」的数量。
+   *
+   * ⚠ 2026-09-07 烘焙坊收银台：货架和购物车都打了 data-rows="product"，
+   *   解释器把整张商品表填进购物车，加减按钮又没有 data-action
+   *   （生成页的 onclick 被消毒剥掉）。点了没反应。数量记在运行时，
+   *   不烤进 HTML，跟 selection 同一纪律。
+   */
+  cartQty?: Record<string, Record<string, number>>;
+  /**
    * 已经对"要不要铺演示种子"做过决定的实体（见 demo-seed.ts）。
    *
    * 存的是**决定过**，不是**铺过**：首次遇见时已有真实数据的实体也记在这里，
@@ -135,7 +153,11 @@ export function addRow(
   const row: RuntimeRow = { id: `row-${seq}`, values, createdAt: now };
   const rows = [...(state.entities[entityId] ?? []), row];
   return {
-    state: { ...state, seq, entities: { ...state.entities, [entityId]: rows } },
+    state: pinSelection(
+      { ...state, seq, entities: { ...state.entities, [entityId]: rows } },
+      entityId,
+      row.id
+    ),
     row,
   };
 }
@@ -158,7 +180,96 @@ export function updateRow(
 
 export function deleteRow(state: RuntimeState, entityId: string, rowId: string): RuntimeState {
   const rows = (state.entities[entityId] ?? []).filter((r) => r.id !== rowId);
-  return { ...state, entities: { ...state.entities, [entityId]: rows } };
+  const next = { ...state, entities: { ...state.entities, [entityId]: rows } };
+  return state.selection?.[entityId] === rowId
+    ? clearSelection(next, entityId)
+    : next;
+}
+
+function pinSelection(
+  state: RuntimeState,
+  entityId: string,
+  rowId: string
+): RuntimeState {
+  if (state.selection?.[entityId] === rowId) return state;
+  return {
+    ...state,
+    selection: { ...state.selection, [entityId]: rowId },
+  };
+}
+
+function clearSelection(state: RuntimeState, entityId: string): RuntimeState {
+  if (!state.selection || !(entityId in state.selection)) return state;
+  const selection = { ...state.selection };
+  delete selection[entityId];
+  return {
+    ...state,
+    selection: Object.keys(selection).length ? selection : undefined,
+  };
+}
+
+/**
+ * 把「当前这条」钉进运行时。行不在表里就不动——不许把详情卡指到空气。
+ */
+export function selectRecord(
+  state: RuntimeState,
+  entityId: string,
+  rowId: string
+): RuntimeState {
+  const id = String(rowId || "").trim();
+  if (!id) return state;
+  const rows = state.entities[entityId] ?? [];
+  if (!rows.some(r => r.id === id)) return state;
+  return pinSelection(state, entityId, id);
+}
+
+function qtyMap(
+  state: RuntimeState,
+  entityId: string
+): Record<string, number> {
+  return { ...(state.cartQty?.[entityId] ?? {}) };
+}
+
+export function addToCart(
+  state: RuntimeState,
+  entityId: string,
+  rowId: string
+): RuntimeState {
+  const id = String(rowId || "").trim();
+  if (!id) return state;
+  const rows = state.entities[entityId] ?? [];
+  if (!rows.some(r => r.id === id)) return state;
+  const next = qtyMap(state, entityId);
+  next[id] = (next[id] || 0) + 1;
+  return {
+    ...pinSelection(state, entityId, id),
+    cartQty: { ...state.cartQty, [entityId]: next },
+  };
+}
+
+export function adjustCartQty(
+  state: RuntimeState,
+  entityId: string,
+  rowId: string,
+  delta: number
+): RuntimeState {
+  const id = String(rowId || "").trim();
+  if (!id || !delta) return state;
+  const next = qtyMap(state, entityId);
+  const n = (next[id] || 0) + delta;
+  if (n <= 0) delete next[id];
+  else next[id] = n;
+  return { ...state, cartQty: { ...state.cartQty, [entityId]: next } };
+}
+
+export function clearCart(
+  state: RuntimeState,
+  entityId: string
+): RuntimeState {
+  if (!state.cartQty?.[entityId]) return state;
+  const cartQty = { ...state.cartQty };
+  delete cartQty[entityId];
+  return { ...state, cartQty };
 }
 
 /** 一条字段级的校验结论：`fieldId` 让表单能把红字标在出问题的那一栏上。 */

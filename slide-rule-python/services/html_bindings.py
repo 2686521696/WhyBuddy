@@ -70,7 +70,15 @@ WORKFLOW_ACTION_KINDS: tuple[str, ...] = (
     "submitWorkflow", "approveWorkflow", "rejectWorkflow",
 )
 
-ACTION_KINDS: tuple[str, ...] = RECORD_ACTION_KINDS + WORKFLOW_ACTION_KINDS
+#: 购物车四种。照 Stimulus/HTMX：动作写在标签上，不猜按钮文案。
+#: addToCart / adjustCartQty 要当前行；clearCart / checkout 不要。
+CART_ACTION_KINDS: tuple[str, ...] = (
+    "addToCart", "adjustCartQty", "clearCart", "checkout",
+)
+
+ACTION_KINDS: tuple[str, ...] = (
+    RECORD_ACTION_KINDS + WORKFLOW_ACTION_KINDS + CART_ACTION_KINDS
+)
 
 AGGREGATES: tuple[str, ...] = ("count", "sum", "avg")
 
@@ -117,7 +125,10 @@ def scan_bindings(markup: str) -> List[Dict[str, Any]]:
             continue
         attrs = _attrs(body)
         scope = next((s for _, s in reversed(stack) if s), None)
-        if any(k in attrs for k in ("rows", "record", "field", "value", "action", "chart", "fields")):
+        if any(k in attrs for k in (
+            "rows", "record", "field", "value", "action", "chart", "fields",
+            "search", "filter", "match", "view", "delta",
+        )):
             out.append({"tag": tag, "attrs": attrs, "scope": scope, "pos": m.start()})
         if tag not in void and not selfclose:
             # ⚠ `data-record` 与 `data-rows` **同样开作用域**（2026-08-15）。
@@ -141,7 +152,10 @@ def check_bindings(markup: str, model: Dict[str, Any]) -> List[Dict[str, str]]:
 
         # ⚠ record 也要算：漏了它 `data-record="不存在的实体"` 会静默放行，
         #   然后运行时取不到数据、页面一片空白而没有任何一处报错。
-        ent = a.get("rows") or a.get("record") or a.get("value") or a.get("entity")
+        ent = (
+            a.get("rows") or a.get("record") or a.get("value")
+            or a.get("entity") or a.get("search") or a.get("filter")
+        )
         if ent and ent not in entities:
             problems.append({
                 "path": f"<{tag} data-*>",
@@ -183,7 +197,8 @@ def check_bindings(markup: str, model: Dict[str, Any]) -> List[Dict[str, str]]:
                     "message": "带了 data-action 却没有 data-entity，不知道操作哪张表",
                 })
             elif (
-                a["action"] in ("openRecord", "editRecord") + WORKFLOW_ACTION_KINDS
+                a["action"] in ("openRecord", "editRecord", "addToCart", "adjustCartQty")
+                + WORKFLOW_ACTION_KINDS
                 and not node["scope"]
             ):
                 problems.append({
@@ -205,6 +220,12 @@ def check_bindings(markup: str, model: Dict[str, Any]) -> List[Dict[str, str]]:
                     "path": f"<{tag} data-chart>",
                     "message": f"维度 '{dim}' 不是 '{e2}' 的字段",
                 })
+
+        if a.get("view") and a["view"] != "cart":
+            problems.append({
+                "path": f"<{tag} data-view={a['view']}>",
+                "message": "data-view 目前只能是 cart（同一张表的选中数量，不是第二份实体）",
+            })
     return problems
 
 
@@ -324,11 +345,28 @@ data-* 属性**，把写死的示例数据换成绑定孔。
         ⚠ **两个作用域都不在里面就不要写 data-field**：没有"当前这条"，
           取不到东西。这种地方要么套一个 data-record，要么干脆不绑。
     <span data-value="<实体id>" data-aggregate="count">
-        单值。aggregate 可以是 count / sum:<字段id> / avg:<字段id>。
+        单值。aggregate 可以是 count / sum / avg，sum/avg 加 data-field="<字段id>"。
+        购物车合计：同一个元素再加 data-view="cart"（对选中数量做 sum，行上的 qty 会乘进去）。
+        **页上的件数、合计、应付，必须打这个孔，不许留生成时的死数字。**
+    <input data-search="<实体id>">
+        搜索框。照 petite-vue v-model：指令打在 input 上，滤的是该实体的货架
+        data-rows（不是购物车）。placeholder 原样留着，只加属性。
+    <button data-filter="<实体id>" data-match="吐司">
+        筛选芯片。data-match 是匹配词（对字段文本做包含）；data-match="*" 或
+        不写 = 全部。芯片上的件数用里面一颗 data-value count，不要把 (48) 写死。
+    <div data-rows="<实体id>" data-view="cart">
+        购物车/已选列表。和货架可以绑同一张表，靠 data-view="cart" 区分——
+        运行时读的是选中数量，不是整张表。加减按钮：
+        data-action="adjustCartQty" data-entity="<实体id>" data-delta="1" 或 "-1"，
+        **必须写在这行模板里**。
     <div data-chart="donut" data-entity="<实体id>" data-dimension="<字段id>" data-metric="count">
     <button data-action="openRecord" data-entity="<实体id>">
-        记录动作三种：createRecord（不需要当前行）/ openRecord / editRecord。
-        后两种要"当前这一行"，**必须写在 data-rows 容器内部**。{wf_section}
+        记录动作：createRecord（不需要当前行）/ openRecord / editRecord。
+        后两种要"当前这一行"，**必须写在 data-rows 容器内部**。
+        货架点一下加入购物车：data-action="addToCart" data-entity="<实体id>"（行内）。
+        清空：data-action="clearCart" data-entity="<实体id>"（不要当前行）。
+        结算：data-action="checkout" data-entity="<实体id>"（不要当前行）。
+        {wf_section}
 
 这个应用真实的实体与字段（**只能用这些 id，一个都不许新造**）：
 {_json.dumps(slim, ensure_ascii=False, indent=1)}
@@ -340,7 +378,10 @@ data-* 属性**，把写死的示例数据换成绑定孔。
 2. 挑容器：**多条**用 data-rows，**一条**用 data-record，**聚合数字**用 data-value。
    判断方法：这块地方在页面上会不会重复出现多份？会 → data-rows；
    只有一份、展示某一个对象 → data-record；是个统计数 → data-value。
-3. 纯装饰文字（标题、说明、页脚）**不要绑定**。
+   搜索框 → data-search；分类/状态芯片 → data-filter + data-match。
+   货架旁边的已选列表 → 同一个实体的 data-rows 加 data-view="cart"。
+3. 纯装饰文字（标题、说明、页脚）**不要绑定**。合计、件数、搜索、筛选
+   **不是装饰**——必须打孔，运行时不认中文标签。
 4. 挑不到合适字段的地方就不绑，**不要造一个看着像的 id**。
 5. 这是客户自己的产品：**不许**往页面里加你（生成方）的名字、品牌、域名或
    联系方式，也不许加任何新的外部网址。原页面的品牌与页脚原样保留。

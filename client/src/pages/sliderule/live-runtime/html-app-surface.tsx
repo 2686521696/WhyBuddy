@@ -38,7 +38,11 @@ import DOMPurify from "dompurify";
 
 import {
   applyBindings,
+  catalogEntityId,
+  findCatalogSearchInput,
+  searchEntityId,
   hasAnyDataSource,
+  implicitActionFromClick,
   BINDING_ATTRS,
   type ActionGates,
   type ApplyBindingsReport,
@@ -713,6 +717,11 @@ export function HtmlAppSurface({
   // 表现是页面闪、输入框失焦。
   const cbs = React.useRef({ onAction, onNavigate, onHoverBinding, onReport });
   cbs.current = { onAction, onNavigate, onHoverBinding, onReport };
+  // 搜索/筛选只活在这一页的 iframe 里。写进 React 会重写 srcdoc，输入框失焦。
+  const catalogView = React.useRef({
+    query: {} as Record<string, string>,
+    chip: {} as Record<string, string>,
+  });
 
   React.useEffect(() => {
     const frame = ref.current;
@@ -748,12 +757,46 @@ export function HtmlAppSurface({
         return;
       }
 
-      const report = applyBindings(d.body, {
-        source,
-        gates,
-        onAction: e => cbs.current.onAction?.(e),
-      });
-      cbs.current.onReport?.({ ...report, hasDataSource: hasAnyDataSource(d.body) });
+      const bindNow = () => {
+        const merged: BindingSource = {
+          ...source,
+          catalogQuery: {
+            ...(source.catalogQuery || {}),
+            ...catalogView.current.query,
+          },
+          catalogChip: {
+            ...(source.catalogChip || {}),
+            ...catalogView.current.chip,
+          },
+        };
+        const report = applyBindings(d.body, {
+          source: merged,
+          gates,
+          onAction: e => cbs.current.onAction?.(e),
+        });
+        cbs.current.onReport?.({
+          ...report,
+          hasDataSource: hasAnyDataSource(d.body),
+        });
+        const search = findCatalogSearchInput(d.body);
+        const entityId = searchEntityId(search) || catalogEntityId(d.body);
+        if (search && entityId) {
+          search.value = catalogView.current.query[entityId] || "";
+        }
+        return entityId;
+      };
+
+      bindNow();
+
+      const search0 = findCatalogSearchInput(d.body);
+      const entityId0 = searchEntityId(search0) || catalogEntityId(d.body);
+      if (search0 && entityId0) {
+        search0.addEventListener("input", () => {
+          catalogView.current.query[entityId0] = search0.value;
+          bindNow();
+          search0.focus();
+        });
+      }
 
       // 抽屉开/关：页面 script 被摘了，对照 Radix Dialog 的 onOpenChange
       // 由宿主接。必须赶在切页监听之前挂到 document（捕获阶段比 body 早），
@@ -770,6 +813,20 @@ export function HtmlAppSurface({
           ev.preventDefault();
           ev.stopPropagation();
           cbs.current.onNavigate?.(pid);
+          return;
+        }
+        const implicit = implicitActionFromClick(ev.target as Element | null, d.body);
+        if (implicit) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (implicit.kind === "filterCatalog" && implicit.entityId) {
+            const stem = implicit.chip || "";
+            catalogView.current.chip[implicit.entityId] =
+              !stem || stem === "*" ? "" : stem;
+            bindNow();
+            return;
+          }
+          cbs.current.onAction?.(implicit);
           return;
         }
         const a = (ev.target as Element | null)?.closest?.("a");

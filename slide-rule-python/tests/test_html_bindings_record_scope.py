@@ -156,7 +156,10 @@ class Test词表跨语言同步_绑定属性:
         assert m, "前端找不到 BINDING_ATTRS 数组了"
         return set(re.findall(r'"(data-[a-z-]+)"', m.group(1)))
 
-    @pytest.mark.parametrize("attr", ["data-record", "data-record-id"])
+    @pytest.mark.parametrize("attr", [
+        "data-record", "data-record-id",
+        "data-search", "data-filter", "data-match", "data-view", "data-delta",
+    ])
     def test_新词必须进前端白名单(self, attr):
         assert attr in self._frontend_attrs(), (
             f"{attr} 不在前端 BINDING_ATTRS 里——消毒器会把它静默删掉，"
@@ -228,6 +231,60 @@ class Test覆盖闸认单条数据源:
             "第 1 条还在说必须有 rows/value/chart——"
             "向导按第 2 条写了 data-record，第 1 条照样判死"
         )
+
+    def test_提示词要求搜索筛选合计打孔(self):
+        user = build_prompt("<html></html>", MODEL, "p1")[-1]["content"]
+        assert "data-search" in user
+        assert "data-filter" in user
+        assert 'data-view="cart"' in user
+        assert "data-value" in user
+
+
+class Test搜索筛选购物车孔:
+    def test_search_filter_实体必须存在(self):
+        bad = '<input data-search="nope">'
+        assert check_bindings(bad, MODEL)
+        ok = '<input data-search="product">'
+        assert check_bindings(ok, MODEL) == []
+
+    def test_view_只许_cart(self):
+        bad = '<div data-rows="product" data-view="shelf"></div>'
+        assert check_bindings(bad, MODEL)
+        ok = '<div data-rows="product" data-view="cart"></div>'
+        assert check_bindings(ok, MODEL) == []
+
+    def test_scan_认得_search_filter_view(self):
+        nodes = scan_bindings(
+            '<input data-search="product">'
+            '<button data-filter="product" data-match="*">all</button>'
+            '<div data-rows="product" data-view="cart"></div>'
+        )
+        keys = {k for n in nodes for k in n["attrs"]}
+        assert {"search", "filter", "match", "view", "rows"} <= keys
+
+    def test_addToCart_要写在行内(self):
+        bad = '<button data-action="addToCart" data-entity="product">加购</button>'
+        msgs = [p["message"] for p in check_bindings(bad, MODEL)]
+        assert any("当前这一行" in m for m in msgs)
+        ok = (
+            '<div data-rows="product">'
+            '<button data-action="addToCart" data-entity="product">加购</button>'
+            "</div>"
+        )
+        assert check_bindings(ok, MODEL) == []
+
+    def test_clearCart_checkout_不要当前行(self):
+        for kind in ("clearCart", "checkout"):
+            html = f'<button data-action="{kind}" data-entity="product">x</button>'
+            assert check_bindings(html, MODEL) == [], kind
+
+    def test_adjustCartQty_要写在行内(self):
+        bad = (
+            '<button data-action="adjustCartQty" data-entity="product"'
+            ' data-delta="1">+</button>'
+        )
+        msgs = [p["message"] for p in check_bindings(bad, MODEL)]
+        assert any("当前这一行" in m for m in msgs)
 
 
 class Test表单隐式单条作用域:

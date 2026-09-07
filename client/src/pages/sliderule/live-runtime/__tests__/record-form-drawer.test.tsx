@@ -153,6 +153,9 @@ describe("RecordFormDrawer 新建（createRecord）", () => {
     // 种子行（row-2）被清，真实行（row-1）保留，新行追加
     expect(rows.map(r => r.values.name)).toEqual(["旺财", "小黑"]);
     expect(rows.some(r => r.seed)).toBe(false);
+    const created = rows.find(r => r.values.name === "小黑");
+    expect(created).toBeTruthy();
+    expect(next.selection?.pet).toBe(created!.id);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

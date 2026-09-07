@@ -20,9 +20,16 @@ import { describe, it, expect, vi } from "vitest";
 
 import {
   applyBindings,
+  filterCatalogRows,
+  findCatalogSearchInput,
   hasAnyDataSource,
+  implicitActionFromClick,
   type BindingSource,
 } from "../html-binding-runtime";
+import { deriveSettledFiveSystemModel } from "../../system-screens/five-system-model";
+import { deriveBindingSource } from "../derive-binding-source";
+import { seedRuntimeState } from "../demo-seed";
+import { initRuntimeState } from "../live-runtime";
 
 /** 剥注释再查标识符——本仓踩过：词在 docstring 里、函数没接上，判据照样绿。 */
 function runtimeSrc(): string {
@@ -313,6 +320,17 @@ describe("权限门（gates）——无权的锁住，不隐藏", () => {
     (btn as HTMLElement).click();
     expect(fn).toHaveBeenCalledTimes(1);
   });
+
+  it("有权再锁上：点了不发（委托在点击时看 data-locked，不是看绑定时）", () => {
+    const fn = vi.fn();
+    const root = dom(CREATE);
+    const granted = { createGate: { vehicle: { permission: "vehicle:create", granted: true } } };
+    const locked = { createGate: { vehicle: { permission: "vehicle:create", granted: false } } };
+    applyBindings(root, { source: SOURCE, onAction: fn, gates: granted });
+    applyBindings(root, { source: SOURCE, onAction: fn, gates: locked });
+    (root.querySelector("button") as HTMLElement).click();
+    expect(fn).not.toHaveBeenCalled();
+  });
 });
 
 describe("转移动作（submitWorkflow / approveWorkflow / rejectWorkflow）", () => {
@@ -501,6 +519,33 @@ describe("单条记录作用域", () => {
     );
     applyBindings(root, { source: SOURCE });
     expect(root.querySelector("h4")!.textContent).toBe("京C·33333");
+  });
+
+  it("没写 data-record-id 时读宿主 selected，不是永远第一行", () => {
+    const root = dom(
+      '<div data-record="vehicle"><h4 data-field="plate">x</h4></div>'
+    );
+    applyBindings(root, { source: { ...SOURCE, selected: { vehicle: "v2" } } });
+    expect(root.querySelector("h4")!.textContent).toBe("京B·22222");
+  });
+
+  it("模板写了 data-record-id，盖过宿主 selected", () => {
+    const root = dom(
+      '<div data-record="vehicle" data-record-id="v3"><h4 data-field="plate">x</h4></div>'
+    );
+    applyBindings(root, { source: { ...SOURCE, selected: { vehicle: "v2" } } });
+    expect(root.querySelector("h4")!.textContent).toBe("京C·33333");
+  });
+
+  it("selected 指向已删的行时回落第一条，不报错", () => {
+    const root = dom(
+      '<div data-record="vehicle"><h4 data-field="plate">x</h4></div>'
+    );
+    const r = applyBindings(root, {
+      source: { ...SOURCE, selected: { vehicle: "gone" } },
+    });
+    expect(root.querySelector("h4")!.textContent).toBe("京A·11111");
+    expect(r.problems).toEqual([]);
   });
 
   it("动作带得出当前这条的 id", () => {
@@ -884,6 +929,278 @@ describe("货架上的图不是行模板", () => {
     });
     expect(srcs(root)).toEqual(URLS);
   });
+
+  it("收银台：data-rows 包 grid、只有一张模板卡 → 卡进格子，不复印网格", () => {
+    /**
+     * ⚠ 2026-09-07 烘焙坊：孔打在滚动层，里面 grid-cols-4 只有一张卡。
+     * 旧逻辑克隆 12 份网格，每份一卡 → 一列卡、右边空三列。
+     * 变异：rowsHost 不下移到 grid，下面 grid 数量变成 2、class 丢。
+     */
+    const root = dom(`
+      <div class="flex-1 overflow-y-auto" data-rows="product">
+        <div class="grid grid-cols-4 gap-3.5">
+          <article>
+            <h3 data-field="product_name">样板吐司</h3>
+            <span data-field="price">0</span>
+          </article>
+        </div>
+      </div>`);
+    applyBindings(root, {
+      source: {
+        rows: {
+          product: [
+            { id: "a", product_name: "日式北海道奶油吐司", price: 22 },
+            { id: "b", product_name: "法式经典原味牛角颂", price: 12 },
+          ],
+        },
+        fields: {
+          product: [
+            { id: "product_name", name: "成品名" },
+            { id: "price", name: "售价", type: "number" },
+          ],
+        },
+      },
+    });
+    expect(root.querySelectorAll(".grid").length).toBe(1);
+    expect(root.querySelector(".grid")?.className).toContain("grid-cols-4");
+    const names = [...root.querySelectorAll("[data-field='product_name']")].map(
+      el => el.textContent
+    );
+    expect(names).toEqual(["日式北海道奶油吐司", "法式经典原味牛角颂"]);
+    expect(root.textContent).not.toContain("样板吐司");
+  });
+});
+
+describe("收银台点得动：货架进车、车不是整张商品表", () => {
+  const PAGE = `
+    <div data-rows="product">
+      <div class="grid grid-cols-4">
+        <article>
+          <h3 data-field="product_name">样板</h3>
+        </article>
+      </div>
+    </div>
+    <div>
+      <button>清空购物车</button>
+      <div class="space-y-3" data-rows="product">
+        <div>
+          <h4 data-field="product_name">样板</h4>
+          <div>
+            <button>-</button>
+            <span>1</span>
+            <button>+</button>
+          </div>
+        </div>
+      </div>
+      <button>立即结算</button>
+    </div>`;
+  const source: BindingSource = {
+    rows: {
+      product: [
+        { id: "a", product_name: "日式北海道奶油吐司" },
+        { id: "b", product_name: "法式经典原味牛角颂" },
+      ],
+    },
+    fields: { product: [{ id: "product_name", name: "成品名" }] },
+    cartRows: {
+      product: [{ id: "a", product_name: "日式北海道奶油吐司", qty: 2 }],
+    },
+  };
+
+  it("货架两件、购物车只有已点的那件", () => {
+    const root = dom(PAGE);
+    applyBindings(root, { source });
+    const grids = root.querySelector(".grid")!;
+    const cart = root.querySelector(".space-y-3")!;
+    expect(grids.querySelectorAll("[data-field='product_name']")).toHaveLength(2);
+    expect(cart.querySelectorAll("[data-field='product_name']")).toHaveLength(1);
+    expect(cart.textContent).toContain("日式北海道奶油吐司");
+    expect(cart.textContent).not.toContain("牛角");
+    expect(cart.querySelector("[data-row-id='a']")).toBeTruthy();
+  });
+
+  it("点货架（有购物车同伴）→ addToCart；没打孔的「结算」文案不认", () => {
+    const root = dom(PAGE);
+    applyBindings(root, { source });
+    const card = root.querySelector(".grid [data-row-id]") as HTMLElement;
+    expect(implicitActionFromClick(card, root)).toEqual({
+      kind: "addToCart",
+      entityId: "product",
+      rowId: card.getAttribute("data-row-id"),
+    });
+    const pay = [...root.querySelectorAll("button")].find(b =>
+      (b.textContent || "").includes("结算")
+    )!;
+    expect(implicitActionFromClick(pay, root)).toBeNull();
+  });
+
+  it("data-filter 芯片筛货架；data-value count 写真件数", () => {
+    const root = dom(`
+      ${PAGE}
+      <button data-filter="product" data-match="*">全部商品 (<span data-value="product" data-aggregate="count">48</span>)</button>
+      <button data-filter="product" data-match="吐司">吐司 (<span data-value="product" data-aggregate="count" data-match="吐司">8</span>)</button>`);
+    applyBindings(root, {
+      source: {
+        ...source,
+        catalogChip: { product: "吐司" },
+      },
+    });
+    const gridNames = [
+      ...root.querySelectorAll(".grid [data-field='product_name']"),
+    ].map(el => el.textContent);
+    expect(gridNames.every(n => (n || "").includes("吐司"))).toBe(true);
+    expect(gridNames.join()).not.toContain("牛角");
+    expect(root.textContent).toContain("全部商品 (2)");
+    expect(root.textContent).toContain("吐司 (1)");
+    expect(root.textContent).not.toContain("(48)");
+    expect(
+      implicitActionFromClick(root.querySelector("[data-match='吐司']"), root)
+    ).toEqual({
+      kind: "filterCatalog",
+      entityId: "product",
+      rowId: null,
+      chip: "吐司",
+    });
+  });
+
+  it("data-value + data-view=cart 的合计 = 单价×数量，没打孔的 ¥67 不许改", () => {
+    const root = dom(`
+      ${PAGE}
+      <span data-value="product" data-aggregate="sum" data-field="price" data-view="cart">0</span>
+      <span class="dead">¥ 67.00</span>`);
+    applyBindings(root, {
+      source: {
+        ...source,
+        cartRows: {
+          product: [
+            {
+              id: "a",
+              product_name: "日式北海道奶油吐司",
+              price: 22,
+              qty: 2,
+            },
+          ],
+        },
+      },
+    });
+    expect(
+      root.querySelector("[data-view='cart'][data-aggregate='sum']")?.textContent
+    ).toBe("44");
+    expect(root.querySelector(".dead")?.textContent).toBe("¥ 67.00");
+  });
+
+  it("filterCatalogRows 搜索子串", () => {
+    const rows = [
+      { id: "a", product_name: "日式北海道奶油吐司" },
+      { id: "b", product_name: "法式经典原味牛角颂" },
+    ];
+    expect(filterCatalogRows(rows, "牛角", "").map(r => r.id)).toEqual(["b"]);
+    expect(filterCatalogRows(rows, "", "*").map(r => r.id)).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
+  it("stampRowId 不许用 instanceof HTMLElement（iframe 另一份 realm）", () => {
+    const src = runtimeSrc();
+    const start = src.indexOf("function stampRowId");
+    const next = src.indexOf("function ", start + 10);
+    const body = src.slice(start, next === -1 ? undefined : next);
+    expect(body).toContain("setAttribute(\"data-row-id\"");
+    expect(body).not.toContain("instanceof");
+  });
+
+  it("运行时路径不许再猜应收总计/招牌/拼音（孔没打就不改）", () => {
+    const src = runtimeSrc();
+    expect(src).not.toContain("应收总计");
+    expect(src).not.toContain("拼音");
+    expect(src).not.toContain("招牌");
+  });
+
+  it("catalogQuery 滤货架；没打 data-search 的输入框不认", () => {
+    const root = dom(`
+      ${PAGE}
+      <input placeholder="拼音 / 名称">
+      <input data-search="product" placeholder="搜">`);
+    applyBindings(root, {
+      source: { ...source, catalogQuery: { product: "牛角" } },
+    });
+    const names = [
+      ...root.querySelectorAll(".grid [data-field='product_name']"),
+    ].map(el => el.textContent);
+    expect(names.join()).toContain("牛角");
+    expect(names.join()).not.toContain("吐司");
+    expect(findCatalogSearchInput(root)?.getAttribute("data-search")).toBe(
+      "product"
+    );
+  });
+
+  it("data-action 购物车四种：行内带 rowId，页头不要行；没打孔的文案不发", () => {
+    const seen: unknown[] = [];
+    const root = dom(`
+      <div data-rows="product">
+        <article>
+          <h3 data-field="product_name">样板</h3>
+          <button data-action="addToCart" data-entity="product">加入</button>
+          <button data-action="adjustCartQty" data-entity="product" data-delta="-1">-</button>
+        </article>
+      </div>
+      <button data-action="clearCart" data-entity="product">清空</button>
+      <button data-action="checkout" data-entity="product">结算</button>
+      <button>立即结算</button>`);
+    applyBindings(root, {
+      source: {
+        rows: { product: [{ id: "a", product_name: "吐司" }] },
+        fields: { product: [{ id: "product_name", name: "名" }] },
+      },
+      onAction: e => seen.push(e),
+    });
+    (root.querySelector("[data-action='addToCart']") as HTMLElement).click();
+    (root.querySelector("[data-action='adjustCartQty']") as HTMLElement).click();
+    (root.querySelector("[data-action='clearCart']") as HTMLElement).click();
+    (root.querySelector("[data-action='checkout']") as HTMLElement).click();
+    const unlabeled = [...root.querySelectorAll("button")].find(
+      b => (b.textContent || "").trim() === "立即结算"
+    )!;
+    unlabeled.click();
+    expect(seen).toEqual([
+      { kind: "addToCart", entityId: "product", rowId: "a" },
+      { kind: "adjustCartQty", entityId: "product", rowId: "a", delta: -1 },
+      { kind: "clearCart", entityId: "product", rowId: null },
+      { kind: "checkout", entityId: "product", rowId: null },
+    ]);
+  });
+
+  it("重复 applyBindings 页头按钮只发一次（搜索 bindNow 同一纪律）", () => {
+    const fn = vi.fn();
+    const root = dom(
+      '<button data-action="checkout" data-entity="vehicle">结算</button>'
+    );
+    applyBindings(root, { source: SOURCE, onAction: fn });
+    applyBindings(root, { source: SOURCE, onAction: fn });
+    applyBindings(root, { source: SOURCE, onAction: fn });
+    (root.querySelector("button") as HTMLElement).click();
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it("data-view=cart 优先于结构猜测（grid 默认当货架）", () => {
+    const root = dom(`
+      <div data-rows="product" data-view="cart" class="grid grid-cols-2">
+        <article><h3 data-field="product_name">样板</h3></article>
+      </div>
+      <div data-rows="product" class="grid grid-cols-4">
+        <article><h3 data-field="product_name">样板</h3></article>
+      </div>`);
+    applyBindings(root, { source });
+    expect(root.querySelector("[data-view='cart']")?.textContent).toContain(
+      "日式北海道奶油吐司"
+    );
+    expect(root.querySelector("[data-view='cart']")?.textContent).not.toContain(
+      "牛角"
+    );
+    expect(root.querySelector(".grid-cols-4")?.textContent).toContain("牛角");
+    expect(root.querySelector(".grid-cols-4")?.textContent).toContain("吐司");
+  });
 });
 
 describe("矩阵时间块不是第一行的复印件", () => {
@@ -1165,6 +1482,76 @@ describe("P3-② 有图的孔不写进渐变遮罩", () => {
     expect(body).not.toContain("label, a, div");
     expect(body).toContain("return false");
     expect(src).toContain("可写文字叶子");
+  });
+});
+
+describe("闭环空、版本史有模型时孔能填上（2026-09-07 烘焙坊）", () => {
+  /**
+   * 真机形状：页面 HTML 带 data-rows、样板字还在、publishClosure 空。
+   * 只走前两源 → BindingSource 没有实体 → 解释器早退、样板不改、filled=0。
+   * 接上第三源 + 种子 → 表格按行克隆，样板字被换掉。
+   *
+   * 变异：deriveSettledFiveSystemModel 不再读 versionHistory，下面必红。
+   */
+  const BAKERY_HTML = `
+    <table>
+      <tbody data-rows="product">
+        <tr>
+          <td data-field="product_name">样板吐司</td>
+          <td data-field="price">0</td>
+        </tr>
+      </tbody>
+    </table>`;
+  const SNAP = {
+    id: "mv-1",
+    model: {
+      datamodel: {
+        entities: [
+          {
+            id: "product",
+            name: "成品",
+            fields: [
+              { id: "product_name", name: "品名", type: "string" },
+              { id: "price", name: "售价", type: "number" },
+            ],
+          },
+        ],
+      },
+    },
+  };
+
+  it("不读版本史：样板还在，filled 为 0", () => {
+    const model = deriveSettledFiveSystemModel({}, undefined);
+    expect(model).toBeNull();
+    const root = dom(BAKERY_HTML);
+    const r = applyBindings(root, {
+      source: deriveBindingSource(model, null),
+    });
+    expect(r.filled.field).toBe(0);
+    expect(r.filled.rows).toBe(0);
+    expect(root.textContent).toContain("样板吐司");
+    expect(r.problems.some((p) => p.includes("product"))).toBe(true);
+  });
+
+  it("读版本史并铺种子：样板被换掉，filled > 0", () => {
+    const model = deriveSettledFiveSystemModel({}, undefined, {
+      versions: [SNAP],
+      currentId: "mv-1",
+    });
+    expect(model?.datamodel?.entities?.[0].id).toBe("product");
+    const seeded = seedRuntimeState(
+      initRuntimeState(model),
+      model,
+      Date.UTC(2026, 8, 7)
+    );
+    const source = deriveBindingSource(model, seeded);
+    expect(source.rows.product.length).toBeGreaterThan(0);
+    const root = dom(BAKERY_HTML);
+    const r = applyBindings(root, { source });
+    expect(r.filled.rows).toBeGreaterThan(0);
+    expect(r.filled.field).toBeGreaterThan(0);
+    expect(root.textContent).not.toContain("样板吐司");
+    expect(r.problems).toEqual([]);
   });
 });
 

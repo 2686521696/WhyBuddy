@@ -314,9 +314,12 @@ class Test词表跨语言同步:
 
         assert words("RECORD_ACTION_KINDS") == RECORD_ACTION_KINDS, "记录词分叉"
         assert words("WORKFLOW_ACTION_KINDS") == WORKFLOW_ACTION_KINDS, "转移词分叉"
+        from services.html_bindings import CART_ACTION_KINDS
+
+        assert words("CART_ACTION_KINDS") == CART_ACTION_KINDS, "购物车词分叉"
         # 总表必须是组合，不许退化回第三份手抄——手抄的会跟子表悄悄错开
         assert re.search(
-            r"export const ACTION_KINDS =\s*\[\.\.\.RECORD_ACTION_KINDS,\s*\.\.\.WORKFLOW_ACTION_KINDS\]\s*as const",
+            r"export const ACTION_KINDS =\s*\[\s*\.\.\.RECORD_ACTION_KINDS,\s*\.\.\.WORKFLOW_ACTION_KINDS,\s*\.\.\.CART_ACTION_KINDS\s*\]\s*as const",
             src,
         ), "前端 ACTION_KINDS 不再是子表组合——别退回手抄总表"
 

@@ -27,6 +27,7 @@
  *
  *     data-rows="<entity>"        逐行容器；可带 data-sort / data-order / data-limit
  *     data-record="<entity>"      **单条记录作用域**；可带 data-record-id
+ *                                 （没写 id 时读宿主 selection，再没有才第一条）
  *     data-field="<fieldId>"      取**当前作用域**那条记录的字段
  *                                 （行内 = 当前行，data-record 内 = 那一条）
  *     data-head="<entity>" + data-col   表头按字段清单展开
@@ -75,6 +76,9 @@ export const BINDING_ATTRS = [
   "data-chart", "data-entity", "data-dimension", "data-metric", "data-metric-field",
   // 动作
   "data-action",
+  // 搜索 / 筛选 / 购物车视图（照 petite-vue v-model / v-on：指令打在标签上）
+  // ⚠ Python scan 的 data-([a-z]+) 看不见带连字符的属性，所以这些都是单段名。
+  "data-search", "data-filter", "data-match", "data-view", "data-delta",
   // 运行时**写回**的三个：行 id、算好的 series、动作上锁的原因。
   // ⚠ 它们由解释器写、不由生成侧写，但消毒发生在解释之**前**也可能在之后
   //   （重新消毒一份已填好的 HTML），漏了它们等于点击丢行、图表丢数、锁丢因。
@@ -133,6 +137,19 @@ export interface BindingSource {
   rows: Record<string, BindingRow[]>;
   /** entityId → 字段定义（顺序即列序） */
   fields: Record<string, BindingField[]>;
+  /**
+   * 宿主当前选中的行 id。详情卡没写 data-record-id 时用这份，
+   * 跟 petite-vue `evaluate(ctx.scope, exp)` 一样：对象在宿主，不写进模板。
+   */
+  selected?: Record<string, string>;
+  /**
+   * 购物车行（带 qty）。同一页两个 data-rows 绑同一实体时，
+   * 非 grid / 非表的那一份读这里，不要把整张商品表倒进去。
+   */
+  cartRows?: Record<string, BindingRow[]>;
+  /** 货架搜索词 / 筛选芯片。只滤非购物车的 data-rows。 */
+  catalogQuery?: Record<string, string>;
+  catalogChip?: Record<string, string>;
 }
 
 /**
@@ -151,7 +168,12 @@ export const WORKFLOW_ACTION_KINDS = [
   "submitWorkflow", "approveWorkflow", "rejectWorkflow",
 ] as const;
 
-export const ACTION_KINDS = [...RECORD_ACTION_KINDS, ...WORKFLOW_ACTION_KINDS] as const;
+/** 购物车四种。照 Stimulus：动作写在标签上，不猜「清空」「结算」。 */
+export const CART_ACTION_KINDS = [
+  "addToCart", "adjustCartQty", "clearCart", "checkout",
+] as const;
+
+export const ACTION_KINDS = [...RECORD_ACTION_KINDS, ...WORKFLOW_ACTION_KINDS, ...CART_ACTION_KINDS] as const;
 
 export type ActionKind = (typeof ACTION_KINDS)[number];
 export type WorkflowActionKind = (typeof WORKFLOW_ACTION_KINDS)[number];
@@ -161,11 +183,68 @@ export function isWorkflowActionKind(v: string): v is WorkflowActionKind {
   return (WORKFLOW_ACTION_KINDS as readonly string[]).includes(v);
 }
 
+/** 运行时从画面推出来的动作，不进封闭词表、不写进 HTML。 */
+export const IMPLICIT_ACTION_KINDS = ["filterCatalog"] as const;
+export type ImplicitActionKind = (typeof IMPLICIT_ACTION_KINDS)[number];
+
+export function isImplicitActionKind(v: string): v is ImplicitActionKind {
+  return (IMPLICIT_ACTION_KINDS as readonly string[]).includes(v);
+}
+
+export function isRecordActionKind(v: string): v is (typeof RECORD_ACTION_KINDS)[number] {
+  return (RECORD_ACTION_KINDS as readonly string[]).includes(v);
+}
+
+/**
+ * 孔驱动的点击。照 petite-vue v-on / Stimulus：认标签上的 data-*，不认文案。
+ * 已有 data-action 的不抢——交给 applyBindings 挂的监听。
+ */
+export function implicitActionFromClick(
+  target: Element | null,
+  root: Element
+): BindingActionEvent | null {
+  if (!target || !root.contains(target)) return null;
+  if (target.closest("input, textarea, select, [data-action]")) return null;
+
+  const filterEl = target.closest("[data-filter]");
+  if (filterEl && !filterEl.closest("[data-rows]")) {
+    const entityId = filterEl.getAttribute("data-filter") || "";
+    const match = (filterEl.getAttribute("data-match") || "*").trim();
+    if (entityId) {
+      return {
+        kind: "filterCatalog",
+        entityId,
+        rowId: null,
+        chip: !match || match === "*" ? "" : match,
+      };
+    }
+  }
+
+  const rowEl = target.closest("[data-row-id]");
+  const box = rowEl?.closest("[data-rows]");
+  if (!rowEl || !box) return null;
+  const entityId = box.getAttribute("data-rows") || "";
+  const rowId = rowEl.getAttribute("data-row-id") || "";
+  if (!entityId || !rowId) return null;
+
+  const peers = root.querySelectorAll(
+    `[data-rows="${entityId.replace(/"/g, "")}"]`
+  );
+  if (peers.length >= 2 && !isCartList(box, root)) {
+    return { kind: "addToCart", entityId, rowId };
+  }
+  return { kind: "openRecord", entityId, rowId };
+}
+
 export interface BindingActionEvent {
-  kind: ActionKind;
+  kind: ActionKind | ImplicitActionKind;
   entityId: string;
   /** 行内动作带得出当前行 id；页头动作没有行，为 null */
   rowId: string | null;
+  /** adjustCartQty 用：+1 / -1 */
+  delta?: number;
+  /** filterCatalog：data-match 的词；空 / * = 全部 */
+  chip?: string;
 }
 
 /**
@@ -251,6 +330,136 @@ function isOverlayChild(el: Element): boolean {
   if (hasBindHole(el)) return false;
   const cls = el.getAttribute("class") || "";
   return /\babsolute\b/.test(cls) || /\bpointer-events-none\b/.test(cls);
+}
+
+/**
+ * data-rows 常常打在滚动层上，真正重复的项在里面那一层 `grid` 里。
+ *
+ * ⚠ 2026-09-07 烘焙坊收银台：
+ *
+ *     <div class="overflow-y-auto" data-rows="product">
+ *       <div class="grid grid-cols-4">
+ *         <!-- 只有一张模板卡 -->
+ *
+ *   旧逻辑把 **grid 整块**当行模板，`innerHTML=""` 后再克隆 12 份网格。
+ *   每份仍是四列、里面一张卡 → 画面上一列卡、右边空出三列。
+ *   petite-vue / Alpine 的循环打在**项**上，父网格从不清空外壳。
+ *
+ *   只有「唯一子节点是 grid」时才把宿主下移；购物车那种 `space-y-3`
+ *   直接挂条目的，仍以 data-rows 自己为宿主。
+ */
+export function rowsHost(box: Element): Element {
+  const kids = Array.from(box.children).filter((el) => !isOverlayChild(el));
+  if (kids.length !== 1) return box;
+  const only = kids[0];
+  if (
+    only.hasAttribute("data-rows") ||
+    only.hasAttribute("data-record")
+  ) {
+    return box;
+  }
+  const cls = only.getAttribute("class") || "";
+  if (/\bgrid\b/.test(cls)) return only;
+  return box;
+}
+
+/**
+ * 同一页两个 data-rows 绑同一实体：grid/表 = 货架，另一份 = 购物车。
+ * 只有一份时不当购物车——后台台账仍是整表。
+ */
+export function isCartList(box: Element, root: Element): boolean {
+  if ((box.getAttribute("data-view") || "") === "cart") return true;
+  // 存量页还没再跑 bind：同一实体两份 data-rows，非表非 grid 的当购物车。
+  const entityId = box.getAttribute("data-rows") || "";
+  if (!entityId) return false;
+  const peers = root.querySelectorAll(
+    `[data-rows="${entityId.replace(/"/g, "")}"]`
+  );
+  if (peers.length < 2) return false;
+  const host = rowsHost(box);
+  const tag = host.tagName;
+  if (tag === "TBODY" || tag === "THEAD" || tag === "TABLE") return false;
+  const cls = host.getAttribute("class") || "";
+  if (/\bgrid\b/.test(cls)) return false;
+  return true;
+}
+
+function stampRowId(rowEl: Element, rid: unknown): void {
+  // ⚠ 不能 `instanceof HTMLElement`：iframe 里的节点是另一份 realm，
+  //   父页的 HTMLElement 对不上，属性根本打不上。jsdom 单测同 realm 绿、
+  //   真机点了没反应（2026-09-07 烘焙坊收银台）。
+  const id = rid == null ? "" : String(rid);
+  rowEl.setAttribute("data-row-id", id);
+  selfAndDescendants<HTMLElement>(rowEl, "[data-action]").forEach(el => {
+    el.setAttribute("data-row-id", id);
+  });
+}
+
+function paintCartQty(rowEl: Element, qty: unknown): void {
+  const n = Number(qty);
+  if (!Number.isFinite(n)) return;
+  const text = String(n);
+  const candidates = Array.from(rowEl.querySelectorAll("span, em, strong, b")).filter(
+    el =>
+      !el.hasAttribute("data-field") &&
+      /^\s*\d+\s*$/.test(el.textContent || "")
+  );
+  if (candidates.length) candidates[candidates.length - 1].textContent = text;
+}
+
+export function catalogEntityId(root: Element): string {
+  const boxes = Array.from(root.querySelectorAll("[data-rows]"));
+  const shelf = boxes.find(b => !isCartList(b, root));
+  return (shelf || boxes[0])?.getAttribute("data-rows") || "";
+}
+
+export function chipStem(label: string): string {
+  return label.replace(/\s*\(\d+\)\s*$/, "").trim();
+}
+
+export function rowBlob(row: BindingRow): string {
+  return Object.values(row)
+    .map(v => String(v ?? ""))
+    .join(" ")
+    .toLowerCase();
+}
+
+export function catalogChipKeys(chip: string): string[] {
+  const stem = chipStem(chip);
+  if (!stem || stem === "*") return [];
+  return [stem];
+}
+
+export function filterCatalogRows(
+  rows: BindingRow[],
+  query: string | undefined,
+  chip: string | undefined
+): BindingRow[] {
+  const q = (query || "").trim().toLowerCase();
+  const keys = catalogChipKeys(chip || "");
+  return rows.filter(row => {
+    const blob = rowBlob(row);
+    if (q && !blob.includes(q)) return false;
+    if (!keys.length) return true;
+    return keys.some(k => blob.includes(k.toLowerCase()));
+  });
+}
+
+export function findCatalogSearchInput(root: Element): HTMLInputElement | null {
+  const el = root.querySelector("[data-search]");
+  if (!el) return null;
+  const tag = el.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA") return el as HTMLInputElement;
+  return (el.querySelector("input, textarea") as HTMLInputElement | null) ?? null;
+}
+
+export function searchEntityId(el: Element | null): string {
+  if (!el) return "";
+  return (
+    el.getAttribute("data-search") ||
+    el.closest("[data-search]")?.getAttribute("data-search") ||
+    ""
+  );
 }
 
 function pickRowTemplate(box: Element): Element | null {
@@ -440,7 +649,12 @@ function clampLimit(raw: string | null): number | null {
 function aggregate(kind: string, rows: BindingRow[], fieldId: string): string {
   if (kind === "count") return String(rows.length);
   const nums = rows
-    .map((r) => Number(r[fieldId]))
+    .map((r) => {
+      const n = Number(r[fieldId]);
+      if (!Number.isFinite(n)) return NaN;
+      const qty = Number(r.qty);
+      return Number.isFinite(qty) && qty > 0 ? n * qty : n;
+    })
     .filter((n) => Number.isFinite(n));
   // 空数据不显 0 —— 0 是个真值，拿它冒充"没有"是在撒谎。
   // 这条跟 ✦3「sum 空数据显 —」同一口径（SQL / pandas 语义）。
@@ -563,6 +777,11 @@ function fillFields(
   });
 }
 
+// 照 HTMX / Stimulus：点击挂在根上委托。搜索 bindNow 每按一键再跑
+// applyBindings，逐钮 addEventListener 会让「结算」点一次发 N 次。
+const actionDelegates = new WeakSet<Element>();
+const actionHandlers = new WeakMap<Element, (e: BindingActionEvent) => void>();
+
 export function applyBindings(
   root: Element,
   opts: ApplyBindingsOptions
@@ -615,24 +834,31 @@ export function applyBindings(
       return;
     }
     const fields = source.fields[entityId] || [];
+    const cart = isCartList(box, root);
+    const listed = cart
+      ? source.cartRows?.[entityId] ?? []
+      : filterCatalogRows(
+          all,
+          source.catalogQuery?.[entityId],
+          source.catalogChip?.[entityId]
+        );
     let rows = sortRows(
-      all,
+      listed,
       box.getAttribute("data-sort") || "",
       box.getAttribute("data-order") || "asc"
     );
     const limit = clampLimit(box.getAttribute("data-limit"));
     if (limit != null) rows = rows.slice(0, limit);
 
-    const painted = paintedItems(box);
+    const host = rowsHost(box);
+    const painted = paintedItems(host);
     if (painted) {
       painted.forEach((item, i) => {
         const row = rows[i];
         if (!row) return;
         fillFields(item, row, fields, entityId, problems, filled, true);
-        const rid = row[rowIdField];
-        selfAndDescendants<HTMLElement>(item, "[data-action]").forEach((el) => {
-          el.setAttribute("data-row-id", rid == null ? "" : String(rid));
-        });
+        stampRowId(item, row[rowIdField]);
+        if (cart) paintCartQty(item, row.qty);
       });
       filled.rows += Math.min(painted.length, rows.length);
       return;
@@ -641,7 +867,7 @@ export function applyBindings(
     const cache = box as unknown as TemplateCache;
     let rowTpl = cache[ROW_TPL];
     if (!rowTpl) {
-      const first = pickRowTemplate(box);
+      const first = pickRowTemplate(host);
       if (!first) {
         problems.push(`data-rows="${entityId}"：容器里没有行模板`);
         return;
@@ -651,12 +877,13 @@ export function applyBindings(
       // 单行模板里的示例会议是这一行的插画，不是每个资源的数据。
       // FullCalendar 不把事件写进资源行再 clone；这里剥掉再展开。
       stripUnboundLaneChips(rowTpl);
-      cache[OVERLAY_TPL] = pickOverlayChildren(box, first).map(
+      const overlayOf = host === box ? first : host;
+      cache[OVERLAY_TPL] = pickOverlayChildren(box, overlayOf).map(
         (el) => el.cloneNode(true) as Element
       );
     }
 
-    box.innerHTML = "";
+    host.innerHTML = "";
     rows.forEach((row) => {
       const tr = rowTpl!.cloneNode(true) as HTMLElement;
       // 单元格模板：按字段清单展开（G2 验过的那条——加字段自动多列）
@@ -680,13 +907,9 @@ export function applyBindings(
       }
       // 行内 data-field：作用域是**这一行**
       fillFields(tr, row, fields, entityId, problems, filled, true);
-      // 行内动作带得出当前行 —— 取不到 rowId 就发空事件是静默失败，
-      // actionRef 那轮补运行时判据时点过名，这里同样不许发生
-      const rid = row[rowIdField];
-      selfAndDescendants<HTMLElement>(tr, "[data-action]").forEach((el) => {
-        el.setAttribute("data-row-id", rid == null ? "" : String(rid));
-      });
-      box.appendChild(tr);
+      stampRowId(tr, row[rowIdField]);
+      if (cart) paintCartQty(tr, row.qty);
+      host.appendChild(tr);
     });
     // 装饰层（当前时间线）在行之后重新挂上。absolute 相对 data-rows
     // 这个 relative 容器，top/bottom:0 才能跨过克隆出来的 N 行。
@@ -716,12 +939,19 @@ export function applyBindings(
       problems.push(`data-record="${entityId}"：模型里没有这个实体`);
       return;
     }
-    // 指定了 id 就取那条，否则取第一条（预览态下"展示某一条"的合理默认）
+    // 指定了 id 就取那条（模板写死的优先）；没写读宿主选中态；
+    // 都没有才用第一条做预览。选中的那条已经被删时回落第一条，
+    // 不报错——删除侧会清 selection，这里是防陈旧指针。
     const wanted = box.getAttribute("data-record-id");
+    const selectedId = source.selected?.[entityId];
+    const byId = (id: string) =>
+      rows.find((r) => String(r[rowIdField]) === id);
     const record =
       wanted != null
-        ? rows.find((r) => String(r[rowIdField]) === wanted)
-        : rows[0];
+        ? byId(wanted)
+        : selectedId != null
+          ? byId(selectedId) ?? rows[0]
+          : rows[0];
     if (!record) {
       problems.push(
         `data-record="${entityId}"${wanted != null ? ` data-record-id="${wanted}"` : ""}：取不到记录`
@@ -740,10 +970,20 @@ export function applyBindings(
   // ── 单值聚合 ───────────────────────────────────────────────────
   root.querySelectorAll<HTMLElement>("[data-value]").forEach((el) => {
     const entityId = el.getAttribute("data-value") || "";
-    const rows = source.rows[entityId];
+    let rows = source.rows[entityId];
     if (!rows) {
       problems.push(`data-value="${entityId}"：模型里没有这个实体`);
       return;
+    }
+    if ((el.getAttribute("data-view") || "") === "cart") {
+      rows = source.cartRows?.[entityId] ?? [];
+    }
+    const match =
+      el.getAttribute("data-match") ||
+      el.closest("[data-filter]")?.getAttribute("data-match") ||
+      "";
+    if (match && match !== "*") {
+      rows = filterCatalogRows(rows, undefined, match);
     }
     const kind = (el.getAttribute("data-aggregate") || "count").toLowerCase();
     el.textContent = aggregate(kind, rows, el.getAttribute("data-field") || "");
@@ -813,7 +1053,7 @@ export function applyBindings(
     // 行内动作必须带得出行 id。带不出还挂监听，点下去就是一个空事件——
     // 页面开出一个空详情，看着像"点了没反应"。宁可如实报问题。
     const raw = el.getAttribute("data-row-id");
-    const needsRow = kind !== "createRecord";
+    const needsRow = !["createRecord", "clearCart", "checkout"].includes(kind);
     if (needsRow && (raw == null || raw === "")) {
       problems.push(`data-action="${kind}" entity=${entityId}：取不到行 id，不挂监听`);
       return;
@@ -835,13 +1075,38 @@ export function applyBindings(
     el.setAttribute("role", "button");
     // 键盘可达：axe 会报但没人跑 axe，所以这里直接给上
     if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "0");
-    if (onAction) {
-      el.addEventListener("click", () =>
-        onAction({ kind, entityId, rowId: needsRow ? raw : null })
-      );
-    }
     filled.action += 1;
   });
+
+  // 照 HTMX / Stimulus：点击挂在根上委托，不在每个按钮上。
+  // ⚠ 2026-09-07 搜索 bindNow 每按一键再跑 applyBindings。逐钮
+  //   addEventListener 让「结算」点一次发 N 次——jsdom 单测只绑一次所以绿，
+  //   真机输入框一打字，页头按钮就叠一层。
+  if (onAction) {
+    actionHandlers.set(root, onAction);
+    if (!actionDelegates.has(root)) {
+      actionDelegates.add(root);
+      root.addEventListener("click", (ev) => {
+        const el = (ev.target as Element | null)?.closest?.("[data-action]");
+        if (!el || !root.contains(el) || el.hasAttribute("data-locked")) return;
+        const kind = el.getAttribute("data-action") as ActionKind;
+        if (!(ACTION_KINDS as readonly string[]).includes(kind)) return;
+        const entityId = el.getAttribute("data-entity") || "";
+        const raw = el.getAttribute("data-row-id");
+        const needsRow = !["createRecord", "clearCart", "checkout"].includes(kind);
+        if (needsRow && (raw == null || raw === "")) return;
+        actionHandlers.get(root)?.({
+          kind,
+          entityId,
+          rowId: needsRow ? raw : null,
+          delta:
+            kind === "adjustCartQty"
+              ? Number(el.getAttribute("data-delta"))
+              : undefined,
+        });
+      });
+    }
+  }
 
   return { version: HTML_BINDING_RUNTIME_VERSION, filled, problems };
 }

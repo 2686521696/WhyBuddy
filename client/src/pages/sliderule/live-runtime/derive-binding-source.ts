@@ -42,6 +42,7 @@ export function deriveBindingSource(
 ): BindingSource {
   const rows: Record<string, BindingRow[]> = {};
   const fields: Record<string, BindingField[]> = {};
+  const cartRows: Record<string, BindingRow[]> = {};
 
   for (const entity of model?.datamodel?.entities ?? []) {
     if (!entity?.id) continue;
@@ -57,9 +58,20 @@ export function deriveBindingSource(
         //   `{value,label}` 那个 bug 的来源（enum 恒显内部 id）。
         options: f.options?.map(o => ({ id: o.id, label: o.label })),
       }));
-    rows[entity.id] = (runtime?.entities?.[entity.id] ?? []).map(flatten);
+    const table = (runtime?.entities?.[entity.id] ?? []).map(flatten);
+    rows[entity.id] = table;
+    const qty = runtime?.cartQty?.[entity.id] ?? {};
+    cartRows[entity.id] = Object.entries(qty)
+      .map(([id, n]) => {
+        const row = table.find(r => String(r.id) === id);
+        return row ? { ...row, qty: n } : null;
+      })
+      .filter((r): r is BindingRow => r != null);
   }
-  return { rows, fields };
+  const selected = runtime?.selection;
+  const extra =
+    selected && Object.keys(selected).length ? { selected } : {};
+  return { rows, fields, cartRows, ...extra };
 }
 
 /** 页面上引用了、而模型里没有的实体。给报告用——**不是**用来兜底造数据的。 */

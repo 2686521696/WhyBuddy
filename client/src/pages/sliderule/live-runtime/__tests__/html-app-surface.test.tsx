@@ -224,6 +224,22 @@ describe("四件事各自的接线点都在", () => {
     expect(src).toMatch(/onAction:\s*e\s*=>\s*cbs\.current\.onAction/);
   });
 
+  it("搜索/筛选走 iframe 内 bindNow，不写 React state（否则 srcdoc 重写、输入失焦）", () => {
+    /**
+     * 对照 petite-vue v-model：筛选项活在这一页的运行时，不进宿主 React。
+     * 变异：删掉 catalogView / bindNow，搜索只能靠改 props → useEffect
+     * 重写 srcdoc，输入框失焦。本条必须红。
+     */
+    expect(src).toMatch(/catalogView = React\.useRef/);
+    expect(src).toContain("const bindNow = ");
+    expect(src).toContain("findCatalogSearchInput");
+    expect(src).toContain("filterCatalog");
+    const bindAt = src.indexOf("const bindNow = ");
+    expect(bindAt).toBeGreaterThan(0);
+    const bindBody = src.slice(bindAt, src.indexOf("search0.addEventListener", bindAt));
+    expect(bindBody).not.toContain("srcdoc");
+  });
+
   it("③ 切页：认 data-page-id，不认标签文字", () => {
     expect(src).toContain('closest?.("[data-page-id]")');
     // 反向：不许退回按文字匹配
@@ -397,7 +413,11 @@ describe("数据源产出", () => {
 
   it("模型缺席返回空源 —— 让解释器如实报 problems", () => {
     // 页面引用了不存在的实体是模型的问题，不该被一份假数据盖住
-    expect(deriveBindingSource(null, RUNTIME)).toEqual({ rows: {}, fields: {} });
+    expect(deriveBindingSource(null, RUNTIME)).toEqual({
+      rows: {},
+      fields: {},
+      cartRows: {},
+    });
   });
 });
 
