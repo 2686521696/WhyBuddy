@@ -36,6 +36,7 @@ import {
   deriveSettledFiveSystemModel,
   parseFiveSystemModelFromContents,
   parseFiveSystemModelFromPerSkillEvidence,
+  parseFiveSystemModelFromVersionHistory,
   mergeFiveSystemModels,
   workflowModelToMermaid,
   crossSkillEdgesToMermaid,
@@ -281,6 +282,74 @@ describe("five-system-model 解析", () => {
     expect(
       deriveSettledFiveSystemModel({ workflow: "flowchart LR\n a --> b" }, {})
     ).toBeNull();
+  });
+
+  it("deriveSettledFiveSystemModel：闭环空着时读版本史（烘焙坊那场）", () => {
+    /**
+     * 真机 sr-20260907143221：publishClosure=None、skillContents 刷新即丢，
+     * mv-1.model 六段齐。变异：把第三参拿掉，下面必红——那正是徽章
+     * 「打过孔但没填上数据」的成因。
+     */
+    const bakery = {
+      id: "mv-1",
+      model: {
+        datamodel: {
+          entities: [
+            {
+              id: "product",
+              name: "成品",
+              fields: [{ id: "product_name", name: "品名", type: "string" }],
+            },
+          ],
+        },
+        rbac: MODEL.rbac,
+      },
+    };
+    const fromShelf = deriveSettledFiveSystemModel({}, undefined, {
+      versions: [bakery],
+      currentId: "mv-1",
+    });
+    expect(fromShelf?.datamodel?.entities?.map(e => e.id)).toEqual(["product"]);
+    expect(fromShelf?.rbac?.roles).toContain("student");
+
+    // 没有第三源 = 还是「会话里没有应用」
+    expect(deriveSettledFiveSystemModel({}, undefined)).toBeNull();
+    expect(parseFiveSystemModelFromVersionHistory(undefined)).toBeNull();
+    expect(parseFiveSystemModelFromVersionHistory([{ id: "mv-1" }])).toBeNull();
+
+    // SSE / 闭环段优先，版本史只补缺，不许把直播里的段盖成旧的
+    const liveWins = deriveSettledFiveSystemModel(
+      { workflow: JSON.stringify({ workflow: MODEL.workflow }) },
+      undefined,
+      {
+        versions: [
+          {
+            id: "mv-1",
+            model: {
+              workflow: { id: "stale_wf", nodes: [], transitions: [] },
+              datamodel: bakery.model.datamodel,
+            },
+          },
+        ],
+      }
+    );
+    expect(liveWins?.workflow?.id).toBe("wf_enroll");
+    expect(liveWins?.datamodel?.entities?.[0].id).toBe("product");
+
+    // 指针认 currentId，不是永远队尾
+    const older = parseFiveSystemModelFromVersionHistory(
+      [
+        { id: "mv-1", model: { datamodel: bakery.model.datamodel } },
+        {
+          id: "mv-2",
+          model: {
+            datamodel: { entities: [{ id: "newer", fields: [] }] },
+          },
+        },
+      ],
+      "mv-1"
+    );
+    expect(older?.datamodel?.entities?.[0].id).toBe("product");
   });
 
   it("workflowModelToMermaid 输出 nodes/transitions/条件/角色", () => {

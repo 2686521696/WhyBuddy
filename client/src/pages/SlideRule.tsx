@@ -1201,9 +1201,23 @@ function SlideRuleUnified({
     () =>
       deriveSettledFiveSystemModel(
         skillContents,
-        publishClosure?.perSkillEvidence
+        publishClosure?.perSkillEvidence,
+        {
+          versions: (
+            sessionState as {
+              modelVersions?: Array<{ id?: string; model?: unknown }>;
+            }
+          ).modelVersions,
+          currentId: (
+            sessionState as { currentModelVersionId?: string | null }
+          ).currentModelVersionId,
+        }
       ),
-    [skillContents, publishClosure?.perSkillEvidence]
+    [
+      skillContents,
+      publishClosure?.perSkillEvidence,
+      sessionState,
+    ]
   );
   const hasApp = !!settledModel;
 
@@ -1283,6 +1297,7 @@ function SlideRuleUnified({
                         setInput={setInput}
                         sendMessage={sendMessage}
                         isRunning={isRunning}
+                        sessionId={sessionId}
                         goal={goal}
                         hasApp={hasApp}
                         appSummary={appSummary}
@@ -1363,6 +1378,7 @@ function SlideRuleUnified({
                       modelVersions?: Array<{
                         id: string;
                         instruction?: string;
+                        model?: unknown;
                       }>;
                     }
                   ).modelVersions ?? []

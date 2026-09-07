@@ -356,6 +356,7 @@ describe("接线（四段都得接上）", () => {
     expect(PAGE).toContain("specAssumptions={specAssumptions}");
     expect(PAGE).toContain("onSettleAssumption={settleSpecAssumption}");
     expect(PAGE).toContain("onReviseAssumption={reviseSpecAssumption}");
+    expect(PAGE).toContain("sessionId={sessionId}");
   });
 
   it("确认继续接到了输入条上——Dock 用 onConfirmAssumptions 守门，不传 = 卡不画", () => {

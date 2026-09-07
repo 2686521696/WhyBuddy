@@ -564,6 +564,22 @@ function detectBareSection(
   return null;
 }
 
+function sectionsFromPlainObject(
+  candidate: Record<string, unknown>
+): FiveSystemModel | null {
+  const sections: FiveSystemModel = {};
+  let found = false;
+  for (const key of MODEL_KEYS) {
+    const section = candidate[key];
+    if (isPlainObject(section)) {
+      (sections as Record<string, unknown>)[key] = section;
+      found = true;
+    }
+  }
+  if (found) return sections;
+  return detectBareSection(candidate);
+}
+
 /**
  * Parse a raw string that may contain a five-system model (full model JSON,
  * fenced JSON, or a bare single-section JSON). Returns null when nothing
@@ -575,18 +591,8 @@ export function parseFiveSystemModel(
   if (!raw || !raw.trim()) return null;
   for (const candidate of jsonCandidates(raw)) {
     if (!isPlainObject(candidate)) continue;
-    const sections: FiveSystemModel = {};
-    let found = false;
-    for (const key of MODEL_KEYS) {
-      const section = candidate[key];
-      if (isPlainObject(section)) {
-        (sections as Record<string, unknown>)[key] = section;
-        found = true;
-      }
-    }
-    if (found) return sections;
-    const bare = detectBareSection(candidate);
-    if (bare) return bare;
+    const parsed = sectionsFromPlainObject(candidate);
+    if (parsed) return parsed;
   }
   return null;
 }
@@ -637,6 +643,45 @@ export function parseFiveSystemModelFromPerSkillEvidence(
     }
   }
   return model;
+}
+
+/** 版本史里一条快照。舞台只取 `model`；id 用来认当前指针。 */
+export interface ModelVersionSnapLike {
+  id?: string;
+  model?: unknown;
+}
+
+/**
+ * 从 `modelVersions` 取出当前那份五系统模型。
+ *
+ * ⚠ 2026-09-07 社区烘焙坊进销存 sr-20260907143221：bind 5/5、mv-1 六段齐，
+ *   舞台徽章却写「打过孔但没填上数据」。Python 记快照就是为了「闭环没跑完，
+ *   模型别蒸发」（model_versions.record_model_snapshot 头注）；前端只读
+ *   SSE skillContents + publishClosure.perSkillEvidence。那场停在
+ *   max_loops，publishClosure 是空的，货架上的模型没人取。
+ *
+ * 指针认 currentId（◀▶ 回退）；没有或那一版没有 model 就读队尾——
+ * 与 Python `latest_model_snapshot` 同一句话：队尾是最新的。
+ */
+export function parseFiveSystemModelFromVersionHistory(
+  versions:
+    | ReadonlyArray<ModelVersionSnapLike | null | undefined>
+    | null
+    | undefined,
+  currentId?: string | null
+): FiveSystemModel | null {
+  if (!versions?.length) return null;
+  const list = versions.filter((v): v is ModelVersionSnapLike => !!v);
+  if (!list.length) return null;
+  const pick =
+    (currentId
+      ? list.find(v => v.id === currentId && isPlainObject(v.model))
+      : undefined) ??
+    (isPlainObject(list[list.length - 1]?.model)
+      ? list[list.length - 1]
+      : undefined);
+  if (!pick || !isPlainObject(pick.model)) return null;
+  return sectionsFromPlainObject(pick.model);
 }
 
 /**
@@ -773,26 +818,46 @@ export function mergeFiveSystemModels(
 /**
  * 「这个会话到底有没有一个成形的应用」的唯一判据。
  *
- * 两个来源合并：本轮 SSE 的 skill 原文（skillContents）+ 持久化闭环证据里的
- * modelSection（刷新/重载路径）。非空即意味着舞台能真的跑起应用——
- * SlideRuleStudio 的 stage === "app" 就是这么判的。
+ * 三个来源合并，前两个段优先、第三源补缺：
+ *   1. 本轮 SSE 的 skill 原文（skillContents）
+ *   2. 持久化闭环证据里的 modelSection（刷新/重载路径）
+ *   3. 版本史 `modelVersions[].model`（闭环没落到会话上时的货架）
+ *
+ * 非空即意味着舞台能真的跑起应用——SlideRuleStudio 的 stage === "app"
+ * 就是这么判的。
  *
  * 注意它跟"有没有目标文案"不是一回事：用户敲完目标、推演还没出模型时，
  * goal 已经有值但应用并不存在。凡是要区分"还没应用" / "已有应用"的地方
  * （入站判定的 hasApp 语境、舞台判定）都该用这个，别用 Boolean(goal)。
  *
  * 起草中的部分模型（llmDraft 流式解析）不算——那是预览，不是成品。
+ *
+ * ⚠ 第三源不是可选项。2026-09-07 烘焙坊那场：模型在 mv-1，闭环是空的，
+ *   只读前两源 = 舞台手里没有模型 = 孔在、数不灌、样板 HTML 还挂着。
+ *   Python 侧早就把模型记进版本史了；漏读等于装在不通电的插座上。
  */
 export function deriveSettledFiveSystemModel(
   skillContents: Partial<Record<string, string>> | null | undefined,
   perSkillEvidence:
     | Partial<Record<string, { modelSection?: unknown } | undefined>>
     | null
-    | undefined
+    | undefined,
+  versionHistory?: {
+    versions?:
+      | ReadonlyArray<ModelVersionSnapLike | null | undefined>
+      | null;
+    currentId?: string | null;
+  } | null
 ): FiveSystemModel | null {
   return mergeFiveSystemModels(
-    parseFiveSystemModelFromContents(skillContents ?? {}),
-    parseFiveSystemModelFromPerSkillEvidence(perSkillEvidence)
+    mergeFiveSystemModels(
+      parseFiveSystemModelFromContents(skillContents ?? {}),
+      parseFiveSystemModelFromPerSkillEvidence(perSkillEvidence)
+    ),
+    parseFiveSystemModelFromVersionHistory(
+      versionHistory?.versions,
+      versionHistory?.currentId
+    )
   );
 }
 
