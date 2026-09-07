@@ -16,7 +16,12 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from models.v5_state import V5SessionState, ExecuteCapabilityResult
 from .rag_service import retrieve_evidence, generate_with_rag
-from .capability_plan import CapabilityPlan, factory_todo_blockers, merge_factory_todo
+from .capability_plan import (
+    CapabilityPlan,
+    factory_todo_blockers,
+    live_spec_first_tools,
+    merge_factory_todo,
+)
 from .closed_tools import FACTORY_HOPS, hop_from_factory_capability
 # deliverable_surface 也是叶子（只依赖 re/dataclass/enum），顶层 import 同理。
 from .deliverable_surface import surface_findings, surface_fingerprint
@@ -1107,6 +1112,25 @@ def _reuse_from_state(state: "V5SessionState"):
     return spec, pages, style, language
 
 
+def _spec_first_tools_from_state(state: "V5SessionState"):
+    """流水线要跑的公开工具：stamp 的菜 ∪ 待办里还挂着的首轮跳。
+
+    ⚠ 2026-09-07：goal.tools 被选材器盖成 ['pages'] 之后，原样传进去
+    等于 specfirst.bind 永远进不了计划。函数体见 live_spec_first_tools。
+    """
+    goal = state.goal if isinstance(state.goal, dict) else {}
+    spec, _, _, _ = _reuse_from_state(state)
+    has_spec = bool(
+        isinstance(spec, dict)
+        and (spec.get("pages") or spec.get("nodes") or spec.get("appName"))
+    )
+    return live_spec_first_tools(
+        goal.get("tools"),
+        getattr(state, "factoryTodo", None),
+        has_spec=has_spec,
+    )
+
+
 def _cache_spec_first_pages(state: "V5SessionState") -> None:
     """把 spec-first 这一轮画出来的整页 HTML 落到会话上。
 
@@ -1433,7 +1457,7 @@ def _build_per_skill_evidence(
             goal, llm_json_fn,
             require_landing_page_ref=not _is_override,
             session_id=getattr(state, "sessionId", None),
-            tools=_goal_map.get("tools"),
+            tools=_spec_first_tools_from_state(state),
             product_archetype=_goal_map.get("productArchetype"),
             workflow=_goal_map.get("workflow"),
             reuse_spec=_reuse_spec,
@@ -1513,7 +1537,7 @@ def _build_per_skill_evidence(
         _reuse_spec, _reuse_pages, _blob_style, _blob_lang = _reuse_from_state(state)
         llm_result = _try_llm_generate_evidence(
             goal, llm_json_fn, session_id=getattr(state, "sessionId", None),
-            tools=_goal_map.get("tools"),
+            tools=_spec_first_tools_from_state(state),
             product_archetype=_goal_map.get("productArchetype"),
             workflow=_goal_map.get("workflow"),
             reuse_spec=_reuse_spec,

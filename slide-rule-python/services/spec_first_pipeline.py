@@ -2666,13 +2666,18 @@ def run_spec_first(
     # 顺路把页面留给调用方落库（见 take_last_pages 的说明）。
     # ⚠ 只在**整条链跑成**之后写：中途抛 SpecFirstError 时这里根本不执行，
     #   于是暂存里不会留下半份产物冒充成品。
+    # ⚠ 2026-09-07 真机 sr-20260907112112：本跳 tools=pages，specfirst.bind
+    #   根本没进计划。落库却把 bind_html 开关（默认 True）当成「打孔跑过了」，
+    #   6 页 pageBindStatus 全是 bound，HTML 里一个 data-rows 都没有。
+    #   bind_html 是「这条管道允许打孔」，不是「这一跳真的打了」。
+    bind_ran = "bind" in stages
     _last_pages_var.set({
         "version": SPEC_FIRST_VERSION,
         "spec": dict(spec) if isinstance(spec, dict) else None,
         "pages": dict(pages),
         "navItems": list(result["navItems"]),
-        "boundPages": count_bound_pages(pages, bind_html, bound_failed),
-        "pageBindStatus": page_bind_status(pages, bind_html, bound_failed),
+        "boundPages": count_bound_pages(pages, bind_ran, bound_failed),
+        "pageBindStatus": page_bind_status(pages, bind_ran, bound_failed),
         "failedPages": dict(result["failedPages"]),
         # ★ 设计段随载体回流（2026-08-18）。此前只挂在 model 上，而精修回流的
         #   模型是 extract_model_from_closure 从闭环证据拼的**六段**——应用级

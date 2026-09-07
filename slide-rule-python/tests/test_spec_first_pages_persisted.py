@@ -116,6 +116,20 @@ class Test打孔成功数不许被一页失败清零:
             "又退回「有失败就整记 0」——CareBridge 那次的谎"
         )
 
+    def test_没跑bind不许记成bound(self):
+        """2026-09-07 真机：tools=pages，6 页零 data-rows，相位全 bound。
+
+        变异：第二参改回 bind_html，本条必须红。bind_html 默认 True，
+        pages 单跳也会冒充打过孔。
+        """
+        src = inspect.getsource(sfp.run_spec_first)
+        blob = src[src.index("bind_ran =") : src.index("return result")]
+        assert '"bind" in stages' in blob
+        assert "count_bound_pages(pages, bind_ran" in blob
+        assert "page_bind_status(pages, bind_ran" in blob
+        assert "count_bound_pages(pages, bind_html" not in blob
+        assert "page_bind_status(pages, bind_html" not in blob
+
 
 class Test落库那一处:
     def test_主轴真的调了落库(self):

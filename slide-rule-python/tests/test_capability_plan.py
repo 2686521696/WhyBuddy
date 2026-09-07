@@ -45,6 +45,25 @@ def test_first_pass_is_producing_chain_without_closure():
     assert not cp.is_first_pass_chain(["spec", "pages", "closure"])
 
 
+def test_live_spec_first_tools_unions_todo_after_pages_stamp():
+    """2026-09-07 真机：stamp=['pages']，待办 structure/bind，流水线必须带 bind。
+
+    变异：live_spec_first_tools 直接 return requested，本条红。
+    """
+    out = cp.live_spec_first_tools(
+        ["pages"], ["structure", "bind"], has_spec=True
+    )
+    assert out == ("pages", "structure", "bind")
+    assert "specfirst.bind" in cp.expand_tools(out)
+    assert "spec" not in out
+
+
+def test_live_spec_first_tools_does_not_rewrite_a_lone_host_hop():
+    """用户点 bind / 空待办的 pages 单跳，不许被并回整条首轮链。"""
+    assert cp.live_spec_first_tools(["bind"], [], has_spec=True) == ("bind",)
+    assert cp.live_spec_first_tools(["pages"], None, has_spec=True) == ("pages",)
+
+
 def test_desktop_and_phone_share_the_same_capabilities():
     desktop = cp.product_rehearsal_plan(device="desktop")
     phone = cp.product_rehearsal_plan(device="phone")
@@ -467,3 +486,35 @@ def test_goal_tools_omit_closure_on_the_live_path_without_monkeypatch(monkeypatc
     assert '_goal_map.get("workflow")' in exec_src
     assert "select_workflow(" in exec_src
     assert 'includes("closure")' in exec_src
+
+
+def test_executor_feeds_run_spec_first_the_todo_union_not_the_stamp():
+    """接线：生成侧两处都必须走 _spec_first_tools_from_state。
+
+    变异：改回 tools=_goal_map.get("tools")，本条红，真机又会 6 页零孔。
+    """
+    from services.v5_capability_executor import (
+        _build_per_skill_evidence,
+        _spec_first_tools_from_state,
+    )
+    from models.v5_state import V5SessionState
+
+    gen = _code(_build_per_skill_evidence)
+    assert gen.count("_spec_first_tools_from_state(") >= 2
+    assert "tools=_goal_map.get(" not in gen.replace(" ", "")
+    helper = _code(_spec_first_tools_from_state)
+    assert "live_spec_first_tools(" in helper
+
+    state = V5SessionState(
+        sessionId="sr-20260907112112-HATKBMVS6V",
+        goal={"text": "社区便利店进销存", "tools": ["pages"]},
+        factoryTodo=["structure", "bind"],
+        specFirstPages={
+            "spec": {"appName": "邻掌柜", "pages": [{"id": "p1"}]},
+        },
+    )
+    assert _spec_first_tools_from_state(state) == (
+        "pages",
+        "structure",
+        "bind",
+    )
