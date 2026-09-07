@@ -2068,6 +2068,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   tools: Array.isArray(event.tools)
                     ? event.tools.map(item => String(item))
                     : undefined,
+                  gate: event.gate === false ? false : true,
                 };
                 pendingScopeRef.current = next;
                 setPendingScope(next);

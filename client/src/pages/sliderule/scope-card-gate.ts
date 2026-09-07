@@ -71,7 +71,20 @@ export type ScopeCardPending = {
   mode?: "repair";
   /** 账户/会话「下一场沿用」。localStorage 未写时用来 hydrate 勾选。 */
   charterReuseNext?: boolean;
+  /**
+   * 默认 true = 门禁（停泊等确认）。
+   * false = 复述「我认成了桌面收银台，不对再说」，不当门禁。
+   */
+  gate?: boolean;
 };
+
+/** 复述卡不锁输入。门禁卡（停泊）才锁。 */
+export function scopeCardBlocksComposer(
+  pending?: { gate?: boolean } | null
+): boolean {
+  if (!pending) return false;
+  return pending.gate !== false;
+}
 
 /** 墙上钟 v1。禁止把未标定分钟数写进产品 UI。 */
 export const SCOPE_CARD_TIME_COPY = "大约数分钟，第一页会先出现";
@@ -95,6 +108,7 @@ export const SCOPE_CARD_STEPS_FROM_SPEC = SCOPE_CARD_PUBLIC_TOOLS.map(
 
 export const SCOPE_CARD_CONFIRM_LABEL = "开始推演";
 export const SCOPE_CARD_REVISE_LABEL = "先改范围";
+export const SCOPE_CARD_WRONG_LABEL = "不对再说";
 
 /** 开卡默认五件全开。人可以减，控制面 LLM 不许替人减。 */
 export function defaultScopeCardTools(): string[] {

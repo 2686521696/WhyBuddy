@@ -112,6 +112,12 @@ class Test活路径resolve_forced_tool:
         assert "factory_hop_from_text" in names
 
 
+class Test精修已有SPEC不许从spec起:
+    def test_refine_branch_picks_pages_when_spec_exists(self):
+        src = CTRL.read_text(encoding="utf-8")
+        assert '_hop = "pages" if _has_spec(state) else "spec"' in src
+
+
 class Test两侧同一张表:
     def test_ts_exports_closed_tools_and_parser(self):
         src = TS.read_text(encoding="utf-8")

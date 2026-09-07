@@ -33,7 +33,7 @@ export const REHEARSAL_SLASH_ITEMS: SlashItem[] = [
     key: "rehearse",
     kind: "rehearsal",
     name: "推演",
-    description: "出范围卡；未确认不得点火",
+    description: "复述范围；不对再说",
   },
   {
     key: "refine",

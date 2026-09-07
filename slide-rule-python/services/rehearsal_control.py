@@ -51,6 +51,7 @@ import copy
 import asyncio
 import inspect
 import json
+import re
 import time
 import uuid
 from contextlib import contextmanager
@@ -1697,6 +1698,93 @@ async def _park_scope(
     yield _complete(state)
 
 
+def _can_auto_grant_scope(user_text: str, original_goal: str) -> bool:
+    """这句话够不够当产品话题，从而自动授予、不当门禁。
+
+    问候 / 空 / 纯标点仍走停泊。抄 grok：Permission 是对破坏性工具的，
+    不是让人先点「我要做桌面收银台」。
+    """
+    topic = f"{user_text or ''} {original_goal or ''}"
+    meaningful = re.sub(r"[\s\W_]", "", topic, flags=re.UNICODE)
+    return len(meaningful) >= 4
+
+
+def _auto_grant_scope(state: V5SessionState, restatement: str) -> None:
+    """把推断写进 goal，记一笔 scope_confirmed。此后 _scope_confirmed 为真。"""
+    _write_confirmed_goal(state, restatement)
+    if getattr(state, "awaitReason", None) == "control_scope":
+        state.awaitReason = None
+        state.awaitDetail = None
+        if getattr(state, "runtimePhase", None) == "awaiting":
+            state.runtimePhase = "idle"
+    _append_transcript(
+        state,
+        {
+            "role": "system",
+            "kind": "scope_confirmed",
+            "text": (restatement or "").strip(),
+        },
+    )
+
+
+async def _emit_scope_restatement(
+    state: V5SessionState,
+    restatement: str,
+    *,
+    device: str = "unspecified",
+    product_archetype: str = "",
+    variant: str = "full",
+    user_text: str = "",
+    want_evidence: bool = False,
+    want_feasibility_report: bool = False,
+    tools: Any = None,
+) -> AsyncIterator[Dict[str, Any]]:
+    """复述卡：我认成了什么。不当门禁——不设 awaitReason=control_scope。
+
+    ⚠ 2026-09-07：卡当授予闸，点精修/新话题都要人先认设备类型。
+    设备由模型从这句话认；卡留下当「不对再说」。
+    """
+    parked_device = _park_device(device)
+    parked_archetype = _park_archetype(product_archetype)
+    _append_transcript(
+        state,
+        {
+            "role": "assistant",
+            "kind": "scope_card",
+            "text": restatement,
+            "device": parked_device,
+            "productArchetype": parked_archetype,
+            "variant": variant,
+            "gate": False,
+            "wantEvidence": _truthy_scope_flag(want_evidence),
+            "wantFeasibilityReport": _truthy_scope_flag(want_feasibility_report),
+            **(
+                {"tools": list(tools)}
+                if isinstance(tools, (list, tuple))
+                else {}
+            ),
+        },
+    )
+    await _apersist(state)
+    yield {
+        "type": "control_scope_card",
+        "restatement": restatement,
+        "device": parked_device,
+        "productArchetype": parked_archetype,
+        "wiredArchetypes": wired_archetype_choices(),
+        "wiredDevices": wired_device_choices(),
+        "variant": variant,
+        "gate": False,
+        "userText": user_text or restatement,
+        "charterReuseNext": bool(getattr(state, "charterReuseNext", False)),
+        **(
+            {"tools": list(tools)}
+            if isinstance(tools, (list, tuple))
+            else {}
+        ),
+    }
+
+
 async def _dismiss_scope(state: V5SessionState) -> AsyncIterator[Dict[str, Any]]:
     """先改范围：持久化清掉 control_scope 停泊，不点火。"""
     state.awaitReason = None
@@ -2286,8 +2374,9 @@ def _system_prompt(state: V5SessionState) -> str:
     after_write = _after_write_hint(state)
     base = (
         "你是面团的薄控制面。只能调用给定工具，不能发明工具。"
-        "禁止开放闲聊。问候用 ask_user 或一句短回复；"
-        "要做应用先 clarify（需求含糊时）再 scope_card；未确认不得 rehearse。"
+        "禁止开放闲聊。问候用 ask_user 或一句短回复。"
+        "人话进环：设备/类型从这句话推断，用 scope_card 复述「我认成了…」，"
+        "不要等人点确认才 rehearse。真的听不懂才 clarify 一句。"
         "问下一跳时 ask_user 的选项必须带工具名括号，例如"
         "「进入数据模型反推（structure）」「进入权限绑定（bind）」"
         "「精修（refine）」。"
@@ -3037,6 +3126,11 @@ async def _run_control_turn_body(
         user_text,
         first_pass=not _has_spec(state) and not _has_pages(state),
     )
+    print(
+        f"[control] forced hop={forced} hasSpec={int(_has_spec(state))} "
+        f"hasPages={int(_has_pages(state))} text={user_text[:48]!r}",
+        flush=True,
+    )
 
     # 昂贵按钮：点火前跳过控制面 LLM。工厂收尾交回 host 循环。
     # 停泊中只有「开始推演」(forcedTool=rehearse) 才点火；/推演 与模型
@@ -3120,10 +3214,11 @@ async def _run_control_turn_body(
         #   和用户点按钮走 forcedTool 到这里。只改前者的话，按钮那条（更常走的
         #   那条）照样全量跑，而且不会报错——正是 CLAUDE.md 第四条说的
         #   「成对的东西改一条不改另一条，只会有一半不生效」。两处都要写单件。
-        #   这里没有 LLM 参数可点名 hop，缺省 spec，跟 _confirm_rehearse 同一个口径。
+        #   已有 SPEC 不许再从 spec 起——2026-09-07 真机水果店点精修弹出
+        #   登录假设卡，就是缺省 spec 把刚确认的假设整份重起草。
         goal = dict(state.goal) if isinstance(state.goal, dict) else {}
         goal["text"] = original_goal
-        _hop = "spec"
+        _hop = "pages" if _has_spec(state) else "spec"
         _blocker = _factory_hop_blocker(state, _hop)
         if _blocker:
             async for event in _canned(
@@ -3342,16 +3437,35 @@ async def _dispatch_tool(
     # grok 把 `Started` 的语义钉成「批准之后、执行之前」，所以这道闸必须在
     # 任何 control_tool_start / handoff 之前。
     if not tool_permission_granted(name, state):
-        async for event in _park_scope(
-            state,
-            _confirmed_restatement(state, user_text) or _restate(original_goal),
-            device=_resolved_park_device(state, preferred_device, user_text),
-            product_archetype=_resolved_park_archetype(state),
-            variant="thin" if original_goal else "full",
-            user_text=user_text,
-        ):
-            yield event
-        return
+        # 人话进环：有产品话题就推断设备、复述、自动授予，接着干。
+        # 卡留下当「我认成了桌面收银台，不对再说」，不当门禁。
+        needs_scope = name == "rehearse" or name == "workflow" or name in FACTORY_HOPS
+        if needs_scope and _can_auto_grant_scope(user_text, original_goal):
+            restatement = (
+                _confirmed_restatement(state, user_text) or _restate(original_goal)
+            )
+            async for event in _emit_scope_restatement(
+                state,
+                restatement,
+                device=_resolved_park_device(state, preferred_device, user_text),
+                product_archetype=_resolved_park_archetype(state),
+                variant="thin" if original_goal else "full",
+                user_text=user_text,
+            ):
+                yield event
+            _auto_grant_scope(state, restatement)
+            await _apersist(state)
+        else:
+            async for event in _park_scope(
+                state,
+                _confirmed_restatement(state, user_text) or _restate(original_goal),
+                device=_resolved_park_device(state, preferred_device, user_text),
+                product_archetype=_resolved_park_archetype(state),
+                variant="thin" if original_goal else "full",
+                user_text=user_text,
+            ):
+                yield event
+            return
     if name == "ask_user":
         question = str(args.get("question") or "你想做什么应用？")
         options = args.get("options") if isinstance(args.get("options"), list) else []
@@ -3360,38 +3474,45 @@ async def _dispatch_tool(
         return
     if name == "clarify":
         # ⚠ 已经问过一轮就不许再问：模型很容易越问越细，把用户困在问答里。
-        #   问过了还想问 → 直接去开范围卡（不清楚的部分让用户在卡上改）。
+        #   问过了还想问 → 复述推断、自动授予、点火。卡不当门禁。
         if _clarify_rounds_done(state) >= 1:
-            async for event in _park_scope(
+            restatement = _restatement_chain(state, user_text, original_goal)
+            async for event in _emit_scope_restatement(
                 state,
-                _restatement_chain(state, user_text, original_goal),
+                restatement,
                 device=_resolved_park_device(state, preferred_device, user_text),
                 product_archetype=_resolved_park_archetype(state),
                 variant="thin" if original_goal else "full",
                 user_text=user_text,
             ):
                 yield event
-            return
-        yielded = False
-        async for event in _park_clarify(state, args.get("questions")):
-            yielded = True
-            yield event
-        if yielded:
-            return
-        # 模型自己判断"已经够清楚"（给了空列表）→ 不 park，接着开范围卡
-        async for event in _park_scope(
-            state,
-            _restatement_chain(state, user_text, original_goal),
-            device=_resolved_park_device(state, preferred_device, user_text),
-            product_archetype=_resolved_park_archetype(state),
-            variant="thin" if original_goal else "full",
-            user_text=user_text,
-        ):
-            yield event
-        return
+            _auto_grant_scope(state, restatement)
+            await _apersist(state)
+            name = "rehearse"
+        else:
+            yielded = False
+            async for event in _park_clarify(state, args.get("questions")):
+                yielded = True
+                yield event
+            if yielded:
+                return
+            # 模型自己判断"已经够清楚"（给了空列表）→ 复述、授予、点火
+            restatement = _restatement_chain(state, user_text, original_goal)
+            async for event in _emit_scope_restatement(
+                state,
+                restatement,
+                device=_resolved_park_device(state, preferred_device, user_text),
+                product_archetype=_resolved_park_archetype(state),
+                variant="thin" if original_goal else "full",
+                user_text=user_text,
+            ):
+                yield event
+            _auto_grant_scope(state, restatement)
+            await _apersist(state)
+            name = "rehearse"
     if name == "scope_card":
         restatement = str(args.get("restatement") or _restatement_chain(state, user_text, original_goal))
-        async for event in _park_scope(
+        async for event in _emit_scope_restatement(
             state,
             restatement,
             device=_resolved_park_device(state, preferred_device, user_text),
@@ -3403,7 +3524,9 @@ async def _dispatch_tool(
             tools=args.get("tools"),
         ):
             yield event
-        return
+        _auto_grant_scope(state, restatement)
+        await _apersist(state)
+        name = "rehearse"
     if name in FACTORY_HOPS or name == "rehearse":
         restatement = _confirmed_restatement(state, user_text)
         _write_confirmed_goal(state, restatement)
@@ -3453,17 +3576,20 @@ async def _dispatch_tool(
         state.goal = goal
         await _apersist(state)
         _fp_before = factory_deliverable_fingerprint(state)
-        async for event in _handoff_factory(
-            state,
-            user_text,
-            installed_skills,
-            active_connectors,
-            preferred_device,
-            design_system_id,
-            profile="app",
-            nest=True,
-        ):
-            yield event
+        # scope_card 复述后改名为 rehearse：外层 tool_scope 仍是 READ 的
+        # scope_card，信封闸会拒。内层盖成当前 name。
+        with tool_scope_scope(name):
+            async for event in _handoff_factory(
+                state,
+                user_text,
+                installed_skills,
+                active_connectors,
+                preferred_device,
+                design_system_id,
+                profile="app",
+                nest=True,
+            ):
+                yield event
         fresh = await run_in_threadpool(load_session, str(state.sessionId or ""))
         result_tool = name if name == "rehearse" or len(chosen) > 1 else hop
         yield {

@@ -41,6 +41,7 @@ import {
   SCOPE_CARD_PUBLIC_TOOLS,
   SCOPE_CARD_REVISE_LABEL,
   SCOPE_CARD_TIME_COPY,
+  scopeCardBlocksComposer,
   scopeCardSteps,
   scopeCardStepsFromTools,
   shouldSkipScopeCard,
@@ -266,6 +267,13 @@ describe("同一 send 禁止 hint 条和范围卡同时出现", () => {
     ).toBe("");
   });
 
+  it("复述卡不锁作曲家；门禁卡才锁", () => {
+    expect(scopeCardBlocksComposer(null)).toBe(false);
+    expect(scopeCardBlocksComposer({ gate: false } as never)).toBe(false);
+    expect(scopeCardBlocksComposer({ gate: true } as never)).toBe(true);
+    expect(scopeCardBlocksComposer({} as never)).toBe(true);
+  });
+
   it("ComposerDock 活路径：pendingScope 时挂 ScopeCard，不并排 IntakeHintBar", () => {
     // ⚠ 必须查 JSX 挂载点。只 import ScopeCard 不渲染是不通电的插座。
     expect(DOCK).toContain("<ScopeCard");
@@ -345,7 +353,7 @@ describe("拦截点是 requestRehearsal，不是 doSend", () => {
     expect(doSend).toContain("sendMessage");
     expect(doSend).not.toContain("requestRehearsal");
     expect(doSend).not.toContain("runTurn");
-    expect(doSend).toContain("scopeCardOpen: Boolean(pendingScope)");
+    expect(doSend).toContain("scopeCardOpen: scopeCardBlocksComposer(pendingScope)");
   });
 
   it("/推演 不得在客户端带 forcedTool rehearse", () => {
@@ -759,13 +767,12 @@ describe("范围卡停泊时发送只能走确认/先改范围", () => {
         scopeCardOpen: false,
       })
     ).toBe(false);
-    expect(DOCK).toContain("scopeCardOpen: Boolean(pendingScope)");
+    expect(DOCK).toContain("scopeCardOpen: scopeCardBlocksComposer(pendingScope)");
     /* ⚠ 2026-08-27：只钉「范围卡锁输入框」这半句。整句字面里另半句
        （提问）已经改成 askBlocksTyping —— 开放式提问要能打字回答，
        否则那张卡是死胡同。盯语义别盯字面（本仓第二条）。 */
-    expect(DOCK).toContain(
-      "disabled={Boolean(pendingScope) || askBlocksTyping(pendingAsk)}"
-    );
+    expect(DOCK).toContain("scopeCardBlocksComposer(pendingScope)");
+    expect(DOCK).toContain("askBlocksTyping(pendingAsk)");
     expect(DOCK).not.toContain(
       "disabled={isRunning || Boolean(pendingScope) || Boolean(pendingAsk)}"
     );

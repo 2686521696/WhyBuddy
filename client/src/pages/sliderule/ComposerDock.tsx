@@ -59,7 +59,10 @@ import { IntakeHintBar, INTAKE_JUDGING_LABEL } from "./IntakeHintBar";
 import { ScopeCard } from "./ScopeCard";
 import { AssumptionStrip } from "./AssumptionStrip";
 import type { SpecAssumption } from "./spec-assumptions";
-import type { ScopeCardPending } from "./scope-card-gate";
+import {
+  scopeCardBlocksComposer,
+  type ScopeCardPending,
+} from "./scope-card-gate";
 import {
   installKeyOf,
   loadInjectDisabledKeys,
@@ -756,7 +759,7 @@ export function ComposerDock({
         attachments,
         isJudging,
         isRefining,
-        scopeCardOpen: Boolean(pendingScope),
+        scopeCardOpen: scopeCardBlocksComposer(pendingScope),
         askOpen: askBlocksTyping(pendingAsk),
         queuedCount: queuedTurns.length,
       })
@@ -1187,7 +1190,7 @@ export function ComposerDock({
     attachments,
     isJudging,
     isRefining,
-    scopeCardOpen: Boolean(pendingScope),
+    scopeCardOpen: scopeCardBlocksComposer(pendingScope),
     askOpen: askBlocksTyping(pendingAsk),
     // ⚠ 两个调用点必须给同一组参数：doSend 那处放行了、这处没放行的话，
     //   键是灰的但 Enter 能发——半新半旧（CLAUDE.md §4）。
@@ -1997,7 +2000,10 @@ export function ComposerDock({
                     picked.length > 0 ? "输入你的任务" : placeholderText
                   }
                   rows={1}
-                  disabled={Boolean(pendingScope) || askBlocksTyping(pendingAsk)}
+                  disabled={
+                    scopeCardBlocksComposer(pendingScope) ||
+                    askBlocksTyping(pendingAsk)
+                  }
                   className="block max-h-40 w-full resize-none bg-transparent py-0 text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60 min-h-[72px] px-0.5 text-[15px] leading-6"
                   data-testid="sliderule-composer-input"
                 />
@@ -2127,7 +2133,7 @@ export function ComposerDock({
             <IntakeHintBar
               judgement={judgement}
               isJudging={isJudging}
-              scopeCardOpen={Boolean(pendingScope)}
+              scopeCardOpen={scopeCardBlocksComposer(pendingScope)}
               onRewrite={text => {
                 setInput(text);
                 requestAnimationFrame(adjustTextareaHeight);

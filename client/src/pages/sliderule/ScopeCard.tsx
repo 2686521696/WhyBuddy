@@ -32,6 +32,7 @@ import {
   SCOPE_CARD_PUBLIC_TOOLS,
   SCOPE_CARD_REVISE_LABEL,
   SCOPE_CARD_TIME_COPY,
+  SCOPE_CARD_WRONG_LABEL,
   defaultScopeCardTools,
   lockScopeMorphology,
   normalizeScopeTools,
@@ -141,13 +142,14 @@ export function ScopeCard({
       data-testid="sliderule-scope-card"
       data-variant={pending.variant}
       role="dialog"
-      aria-label="确认推演范围"
+      aria-label={pending.gate === false ? "复述推演范围" : "确认推演范围"}
     >
       <p
         className="text-[13px] leading-5 text-[#171717]"
         data-testid="sliderule-scope-restatement"
       >
-        将做成：{pending.restatement}
+        {pending.gate === false ? "我认成了：" : "将做成："}
+        {pending.restatement}
       </p>
       {thin ? null : (
         <>
@@ -238,25 +240,29 @@ export function ScopeCard({
         </>
       )}
       <div className="mt-3 flex items-center gap-2">
-        <button
-          type="button"
-          data-testid="sliderule-scope-confirm"
-          disabled={confirmDisabled}
-          onClick={() => {
-            if (confirmDisabled) return;
-            onConfirm(choice);
-          }}
-          className="rounded-[8px] bg-[#171717] px-3 py-1.5 text-[13px] leading-5 text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {SCOPE_CARD_CONFIRM_LABEL}
-        </button>
+        {pending.gate === false ? null : (
+          <button
+            type="button"
+            data-testid="sliderule-scope-confirm"
+            disabled={confirmDisabled}
+            onClick={() => {
+              if (confirmDisabled) return;
+              onConfirm(choice);
+            }}
+            className="rounded-[8px] bg-[#171717] px-3 py-1.5 text-[13px] leading-5 text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {SCOPE_CARD_CONFIRM_LABEL}
+          </button>
+        )}
         <button
           type="button"
           data-testid="sliderule-scope-revise"
           onClick={onRevise}
           className="rounded-[8px] border border-[#e5e7eb] bg-[#fafafa] px-3 py-1.5 text-[13px] leading-5 text-[#171717] transition hover:border-[#d4d4d8] hover:bg-white"
         >
-          {SCOPE_CARD_REVISE_LABEL}
+          {pending.gate === false
+            ? SCOPE_CARD_WRONG_LABEL
+            : SCOPE_CARD_REVISE_LABEL}
         </button>
       </div>
       <label

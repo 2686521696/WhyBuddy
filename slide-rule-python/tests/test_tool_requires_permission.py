@@ -133,25 +133,29 @@ def _run_tool(tool: str, *, goal_text: str = ""):
         mp.undo()
 
 
-@pytest.mark.parametrize("tool", ["rehearse", "refine"])
-def test_ungranted_tool_parks_instead_of_igniting(tool):
-    calls, types = _run_tool(tool)
+def test_rehearse_with_topic_restates_and_ignites():
+    """人话进环：有产品话题就复述 + 自动授予 + 点火，卡不当门禁。"""
+    calls, types = _run_tool("rehearse")
+    assert calls == 1, f"有话题的 rehearse 必须点火。事件：{types}"
+    assert "control_scope_card" in types
+    assert "control_handoff_factory" in types
+
+
+def test_refine_without_model_still_parks():
+    """空会话没模型可精修 → 仍停。"""
+    calls, types = _run_tool("refine")
     assert calls == 0, (
-        f"{tool} 未获批准就点了火——确认前 drive_full_* 必须是 0（验收 A / KD4）。事件：{types}"
+        f"refine 未获批准就点了火——没模型时 drive_full_* 必须是 0。事件：{types}"
     )
     assert "control_scope_card" in types, (
-        f"{tool} 既没点火也没开范围卡：用户会看到一轮什么都没发生。事件：{types}"
+        f"refine 既没点火也没开范围卡：用户会看到一轮什么都没发生。事件：{types}"
     )
 
 
-@pytest.mark.parametrize("tool", ["rehearse", "refine"])
-def test_no_started_event_before_permission(tool):
-    """grok：`Started` 是「批准之后、执行之前」。未获批准不许有 Started。"""
-    _, types = _run_tool(tool)
-    assert "control_tool_start" not in types, (
-        f"{tool} 未获批准却发了 control_tool_start——Started 的语义是"
-        f"「批准之后、执行之前」。事件：{types}"
-    )
+def test_no_started_event_before_permission_for_refine():
+    """grok：`Started` 是「批准之后、执行之前」。没模型的 refine 不许有 Started。"""
+    _, types = _run_tool("refine")
+    assert "control_tool_start" not in types
     assert "control_handoff_factory" not in types
 
 

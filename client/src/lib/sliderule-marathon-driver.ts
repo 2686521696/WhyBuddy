@@ -475,6 +475,7 @@ export interface DriveFullStreamOpts {
     userText?: string;
     charterReuseNext?: boolean;
     tools?: string[];
+    gate?: boolean;
   }) => void;
   onControlToolStart?: (tool: string) => void;
   onControlToolResult?: (event: Record<string, unknown>) => void;
@@ -1035,6 +1036,7 @@ export async function consumeControlStreamResponse(
                 tools: Array.isArray(event.tools)
                   ? event.tools.map((item: unknown) => String(item))
                   : undefined,
+                gate: event.gate === false ? false : true,
               });
               continue;
             case "control_handoff_factory":
