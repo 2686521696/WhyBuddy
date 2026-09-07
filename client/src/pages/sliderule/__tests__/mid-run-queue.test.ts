@@ -238,6 +238,17 @@ describe("斜杠动词走控制面，客户端 /推演 不得 yolo", () => {
     expect(inferForcedTool("进入数据模型反推（Structure）")).toBe("structure");
     expect(inferForcedTool("进入权限绑定（bind）")).toBe("bind");
     expect(inferForcedTool("闭环发布管理系统")).toBeUndefined();
+    // ⚠ 2026-09-07 真机水果店：芯片「精修（refine）」必须 POST refine，
+    // 不许当新话题让控制面重猜。首轮没有交付物时仍不算。
+    expect(inferForcedTool("精修（refine）")).toBe("refine");
+    expect(inferForcedTool("refine")).toBe("refine");
+    expect(
+      inferForcedTool("精修（refine）", undefined, undefined, "bind")
+    ).toBe("refine");
+    expect(
+      inferForcedTool("精修（refine）", undefined, undefined, undefined, true)
+    ).toBeUndefined();
+    expect(inferForcedTool("开始推演（rehearse）")).toBeUndefined();
     expect(
       inferForcedTool("进入数据模型反推（Structure）", undefined, undefined, "pages")
     ).toBe("structure");
@@ -260,6 +271,7 @@ describe("斜杠动词走控制面，客户端 /推演 不得 yolo", () => {
     );
     expect(inferFn).toContain("parseRehearsalSlash");
     expect(inferFn).toContain("forcedToolForRehearsalVerb");
+    expect(inferFn).toContain("closedToolFromText");
     expect(inferFn).not.toContain('"rehearse"');
     expect(inferFn).not.toContain('"/推演"');
     const confirmFn = SESSION.slice(

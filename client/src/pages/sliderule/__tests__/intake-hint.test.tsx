@@ -17,6 +17,7 @@ import {
   parseJudgement,
   MIN_JUDGE_CHARS,
   intakeHintYieldsToScopeCard,
+  looksLikeClosedToolCommand,
   looksLikeFactoryHopCommand,
   type IntakeJudgement,
 } from "../use-intake-judge";
@@ -244,11 +245,19 @@ describe("工厂单跳指令不走新话题审查", () => {
     expect(looksLikeFactoryHopCommand("给社区图书馆做借还书系统")).toBe(false);
   });
 
+  it("闭集芯片含 refine，已有应用上不当新话题", () => {
+    expect(looksLikeFactoryHopCommand("精修（refine）")).toBe(false);
+    expect(looksLikeClosedToolCommand("精修（refine）")).toBe(true);
+    expect(looksLikeClosedToolCommand("refine")).toBe(true);
+    expect(looksLikeClosedToolCommand("闭环发布管理系统")).toBe(false);
+  });
+
   it("hook 在 hasApp 时对 hop 指令连审查请求都不发", async () => {
     const src = await import("../use-intake-judge?raw").then(
       m => (m as unknown as { default: string }).default
     );
-    expect(src).toContain("hasApp && looksLikeFactoryHopCommand");
+    expect(src).toContain("looksLikeFactoryHopCommand");
+    expect(src).toContain("looksLikeClosedToolCommand");
     expect(src).toContain("setIsJudging(false)");
   });
 });

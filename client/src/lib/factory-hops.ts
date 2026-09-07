@@ -1,5 +1,5 @@
 /**
- * 工厂公开跳：从人话里抠出唯一工具名。
+ * 工厂公开跳 + 闭集工具名：从人话里抠出唯一工具名。
  *
  * 抄 grok-build AskUserQuestion：选项点下去是 typed 答案（Accepted），
  * 不是把标签当新 prompt 再问一轮模型。面团收尾卡
@@ -7,7 +7,11 @@
  * 不许当聊天发出去（2026-09-03 真机：点了 Structure 又弹伴随式卡、
  * 控制面去 planning）。
  *
- * 跟 Python `closed_tools.factory_hop_from_text` 同一把尺子。
+ * ⚠ 2026-09-07 真机水果店：芯片「精修（refine）」不是五件套，也不是 /精修，
+ *   POST 空 forcedTool，控制面重猜成 bind。括号里的名字必须对全表。
+ *
+ * 跟 Python `closed_tools.factory_hop_from_text` /
+ * `closed_tools.closed_tool_from_text` 同一把尺子。
  */
 export const FACTORY_HOPS = [
   "spec",
@@ -18,6 +22,25 @@ export const FACTORY_HOPS = [
 ] as const;
 
 export type FactoryHop = (typeof FACTORY_HOPS)[number];
+
+/** 跟 Python `closed_tools.CLOSED_TOOLS` 同一张表。漏一侧 = 芯片一半不认。 */
+export const CLOSED_TOOLS = [
+  "ask_user",
+  "clarify",
+  "search_evidence",
+  "inspect_model",
+  "scope_card",
+  "rehearse",
+  "workflow",
+  ...FACTORY_HOPS,
+  "refine",
+  "challenge",
+  "repair",
+  "restore_version",
+  "fork_variant",
+] as const;
+
+export type ClosedTool = (typeof CLOSED_TOOLS)[number];
 
 /** 账本上的 WRITE 身份。跟 Python `closed_tools.factory_capability_id` 同一把尺子。 */
 export const FACTORY_CAP_PREFIX = "factory.";
@@ -50,6 +73,14 @@ export function isFactoryHop(name: unknown): name is FactoryHop {
 }
 
 const HOP_ID_RE = /(?:^|[^\w])(spec|pages|structure|bind|closure)(?:[^\w]|$)/gi;
+
+const CLOSED_ID_RE = new RegExp(
+  `(?:^|[^\\w])(${[...CLOSED_TOOLS].sort((a, b) => b.length - a.length).join("|")})(?:[^\\w]|$)`,
+  "gi"
+);
+
+/** 文本不得把 rehearse 当成 forcedTool。跟 `/推演` 同一条合同。 */
+const TEXT_FORCED_SKIP = new Set<string>(["rehearse"]);
 
 const ZH: Array<[RegExp, FactoryHop]> = [
   [/数据模型反推|数据结构/, "structure"],
@@ -98,4 +129,33 @@ export function looksLikeFactoryHopCommand(text: string): boolean {
   if (!t) return false;
   if (factoryHopFromText(t)) return true;
   return hopIdsIn(t).length >= 1;
+}
+
+function closedIdsIn(text: string): string[] {
+  const found: string[] = [];
+  const seen = new Set<string>();
+  CLOSED_ID_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = CLOSED_ID_RE.exec(text))) {
+    const id = m[1].toLowerCase();
+    if (TEXT_FORCED_SKIP.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    found.push(id);
+  }
+  return found;
+}
+
+export function closedToolFromText(text: string): string | undefined {
+  const t = text.trim();
+  if (!t) return undefined;
+  const ids = closedIdsIn(t);
+  return ids.length === 1 ? ids[0] : undefined;
+}
+
+export function looksLikeClosedToolCommand(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (closedToolFromText(t)) return true;
+  CLOSED_ID_RE.lastIndex = 0;
+  return CLOSED_ID_RE.test(t);
 }

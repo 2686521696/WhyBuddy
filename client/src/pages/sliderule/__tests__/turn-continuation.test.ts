@@ -70,6 +70,12 @@ describe("认出续跑", () => {
     expect(isContinuationTurn("进入数据模型反推（Structure）")).toBe(true);
   });
 
+  it("闭集芯片是 typed 答案，不是新话题", () => {
+    // ⚠ 2026-09-07 真机水果店：点「精修（refine）」左栏画成用户原话。
+    expect(isContinuationTurn("精修（refine）")).toBe(true);
+    expect(isContinuationTurn("refine")).toBe(true);
+  });
+
   it("刷新续播那句用户没说过，也是续跑", () => {
     expect(isContinuationTurn("（续播上一轮推演）")).toBe(true);
   });

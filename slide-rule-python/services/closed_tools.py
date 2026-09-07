@@ -66,6 +66,25 @@ CLOSED_TOOLS: Tuple[str, ...] = (
     "fork_variant",
 )
 
+# 文本里抠闭集工具名。抄 grok-build AskUserQuestion：选项点下去是 typed
+# 答案（Accepted），不是把标签当新 prompt 再问一轮模型。
+#
+# ⚠ 2026-09-07 真机水果店 sr-20260907192228：芯片写着「精修（refine）」，
+#   factory_hop_from_text 只认五件套，parseRehearsalSlash 只认「/精修」，
+#   POST 不带 forcedTool，控制面重猜成 bind，弹出登录假设卡。
+#   括号里的名字必须对全表，含 refine。
+#
+# rehearse 故意不从文本回 forcedTool：跟 `/推演` 同一条合同——空会话带
+# rehearse 会跳过停泊直接点火。认不认「这句话在点工具」另说，见
+# is_closed_tool_command。
+_CLOSED_ID_RE = re.compile(
+    r"(?:^|[^\w])("
+    + "|".join(sorted(CLOSED_TOOLS, key=len, reverse=True))
+    + r")(?:[^\w]|$)",
+    re.IGNORECASE,
+)
+_TEXT_FORCED_SKIP = frozenset({"rehearse"})
+
 # 只列 WRITE。没写的一律 READ。
 TOOL_SCOPE: Dict[str, ToolScope] = {
     "rehearse": ToolScope.WRITE,
@@ -186,5 +205,42 @@ def is_factory_hop_command(text: str) -> bool:
     if factory_hop_from_text(t):
         return True
     if _HOP_ID_RE.search(t):
+        return True
+    return False
+
+
+def closed_tool_from_text(text: str) -> Optional[str]:
+    """从人话里抠出唯一一件闭集工具。多件或新产品名 → None。
+
+    认括号里的英文名（「精修（refine）」「进入权限绑定（bind）」），
+    也认裸 id（芯片有时只给 refine）。中文启发式仍走 factory_hop_from_text
+    （「继续画页面」没有括号）。
+    """
+    t = str(text or "").strip()
+    if not t:
+        return None
+    ids = [
+        m.group(1).lower()
+        for m in _CLOSED_ID_RE.finditer(t)
+        if m.group(1).lower() not in _TEXT_FORCED_SKIP
+    ]
+    uniq = list(dict.fromkeys(ids))
+    if len(uniq) == 1:
+        return uniq[0]
+    return None
+
+
+def is_closed_tool_command(text: str) -> bool:
+    """这句话是不是在点闭集表里的某一件（可多件，含 refine）。
+
+    已有应用时 intake 用它跳过「正在审查需求」。空会话不走——
+    「闭环发布管理系统」仍交给 LLM 当新产品。
+    """
+    t = str(text or "").strip()
+    if not t:
+        return False
+    if closed_tool_from_text(t):
+        return True
+    if _CLOSED_ID_RE.search(t):
         return True
     return False

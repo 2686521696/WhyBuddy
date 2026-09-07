@@ -89,8 +89,16 @@ _HOP_CASES = [
     "继续进行数据模型反推",
 ]
 
+#: ⚠ 2026-09-07 真机水果店：芯片「精修（refine）」不是工厂 hop，
+#: 旧尺子会放去 LLM 当新话题。闭集括号名必须一起跳过审查。
+_CLOSED_CHIP_CASES = [
+    "精修（refine）",
+    "refine",
+    "质疑（challenge）",
+]
 
-@pytest.mark.parametrize("text", _HOP_CASES)
+
+@pytest.mark.parametrize("text", _HOP_CASES + _CLOSED_CHIP_CASES)
 def test_has_app_factory_hop_is_iteration_without_llm(text):
     """2026-09-03 真机：迭代输入 structure/bind/closure 弹出审查需求。
 
@@ -134,12 +142,19 @@ def test_frontend_hop_detector_stays_in_sync():
           / "client" / "src" / "pages" / "sliderule" / "use-intake-judge.ts")
     src = ts.read_text(encoding="utf-8")
     assert "looksLikeFactoryHopCommand" in src
-    assert "hasApp && looksLikeFactoryHopCommand" in src
-    from services.closed_tools import is_factory_hop_command
+    assert "looksLikeClosedToolCommand" in src
+    from services.closed_tools import (
+        is_closed_tool_command,
+        is_factory_hop_command,
+    )
     for text in _HOP_CASES:
         assert is_factory_hop_command(text), text
+    for text in _CLOSED_CHIP_CASES:
+        assert is_closed_tool_command(text), text
+        assert not is_factory_hop_command(text), text
     assert not is_factory_hop_command("闭环发布管理系统")
     assert not is_factory_hop_command("做一个社区图书馆借还书系统")
+    assert not is_closed_tool_command("闭环发布管理系统")
 
 
 # ── 判决与会话状态一致 ────────────────────────────────────────────

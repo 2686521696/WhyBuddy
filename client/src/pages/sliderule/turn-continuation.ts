@@ -25,7 +25,12 @@
  *   就别重画开场。这里只回答「是不是续跑」，怎么少画在 `stage-authority`。
  */
 
-import { factoryHopFromText, looksLikeFactoryHopCommand } from "@/lib/factory-hops";
+import {
+  closedToolFromText,
+  factoryHopFromText,
+  looksLikeClosedToolCommand,
+  looksLikeFactoryHopCommand,
+} from "@/lib/factory-hops";
 
 import { isOpeningStep } from "./stage-authority";
 import type { UiTurn } from "./types";
@@ -39,6 +44,7 @@ export const ASSUMPTIONS_CONFIRMED_PHRASE = "假设已确认。继续画页面�
  * 三类都算：
  *   · 伴随式假设确认（「假设已确认。继续画页面。」）
  *   · 工厂公开跳的指令（收尾卡「进入数据模型反推（Structure）」之类）
+ *   · 闭集芯片（「精修（refine）」）——点下去是 typed 答案，不是新话题
  *   · 刷新续播塞进气泡的「（续播上一轮推演）」——用户没说过
  *   · 澄清卡交卷那句「「…」答：…」——是答系统的题，不是新话题
  *
@@ -56,6 +62,8 @@ export function isContinuationTurn(userText: unknown): boolean {
   if (/假设已确认/.test(text)) return true;
   if (/续播上一轮推演/.test(text)) return true;
   if (/^「[^」]+」答：/.test(text)) return true;
+  if (closedToolFromText(text)) return true;
+  if (looksLikeClosedToolCommand(text)) return true;
   if (factoryHopFromText(text)) return true;
   return looksLikeFactoryHopCommand(text);
 }

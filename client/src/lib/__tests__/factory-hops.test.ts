@@ -5,11 +5,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CLOSED_TOOLS,
   FACTORY_HOP_LABELS,
+  closedToolFromText,
   factoryCapabilityId,
   factoryHopFromText,
   hopFromFactoryCapability,
   isFactoryHop,
+  looksLikeClosedToolCommand,
   looksLikeFactoryHopCommand,
 } from "../factory-hops";
 
@@ -35,6 +38,22 @@ describe("factoryHopFromText", () => {
     const text = "继续进行数据模型反推（structure）与权限绑定（bind）";
     expect(factoryHopFromText(text)).toBeUndefined();
     expect(looksLikeFactoryHopCommand(text)).toBe(true);
+  });
+
+  it("闭集括号名全表都认，含 refine；旧五件套解析器看不见", () => {
+    // ⚠ 2026-09-07 真机水果店：点「精修（refine）」forcedTool 空。
+    // 先证明旧尺子确实不认——下面几条才不是空跑。
+    expect(factoryHopFromText("精修（refine）")).toBeUndefined();
+    expect(closedToolFromText("精修（refine）")).toBe("refine");
+    expect(closedToolFromText("refine")).toBe("refine");
+    expect(closedToolFromText("质疑（challenge）")).toBe("challenge");
+    expect(closedToolFromText("进入权限绑定（bind）")).toBe("bind");
+    expect(looksLikeClosedToolCommand("精修（refine）")).toBe(true);
+    expect(closedToolFromText("闭环发布管理系统")).toBeUndefined();
+    expect(looksLikeClosedToolCommand("闭环发布管理系统")).toBe(false);
+    // 文本里的 rehearse 不得 yolo 点火（跟 /推演 同一条）。
+    expect(closedToolFromText("开始推演（rehearse）")).toBeUndefined();
+    expect(CLOSED_TOOLS).toContain("refine");
   });
 
   it("账本身份按 hop 分开，不是共用信封", () => {

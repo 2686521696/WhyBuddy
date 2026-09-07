@@ -102,6 +102,7 @@ import {
 } from "./scope-card-gate";
 import {
   FACTORY_HOP_LABELS,
+  closedToolFromText,
   factoryHopFromText,
   isFactoryHop,
 } from "@/lib/factory-hops";
@@ -147,7 +148,9 @@ export function inferForcedTool(
   //   POST 出去 forcedTool=structure，后端 `hasSpec=0 hasPages=0` 直接卡住。
   //   护栏挡的是「显式意图被文本盖掉」，挡不住「压根没有显式意图」。
   //   首轮那句是**产品话题**，不是针对交付物的指令：还没有东西可反推。
-  const fromText = firstPass ? undefined : factoryHopFromText(userText);
+  const fromText = firstPass
+    ? undefined
+    : closedToolFromText(userText) || factoryHopFromText(userText);
   if (fromText && (!explicit || isFactoryHop(explicit))) return fromText;
   if (explicit) return explicit;
   if (mode === "repair") return "repair";

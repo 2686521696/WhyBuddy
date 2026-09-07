@@ -86,6 +86,7 @@ from services.closure_block_reason import user_report as closure_user_report
 from services.closed_tools import (
     CLOSED_TOOLS,
     FACTORY_HOPS,
+    closed_tool_from_text,
     factory_hop_from_text,
     TOOL_SCOPE,
     ToolScope,
@@ -1117,7 +1118,10 @@ def resolve_forced_tool(
     #   单测当时是绿的：它喂了 forcedTool='rehearse'，而真机根本不传。
     #   §1「先确认哪条链真的在跑」。
     #   根子是**话题不是指令**：首轮没有可供反推/绑定的交付物。
-    hop = None if first_pass else factory_hop_from_text(text)
+    # 括号里的闭集名（含 refine）优先；中文工厂启发式兜底「继续画页面」。
+    hop = None if first_pass else (
+        closed_tool_from_text(text) or factory_hop_from_text(text)
+    )
     if hop and (forced is None or forced in FACTORY_HOPS):
         return hop
     if forced:
@@ -2285,7 +2289,8 @@ def _system_prompt(state: V5SessionState) -> str:
         "禁止开放闲聊。问候用 ask_user 或一句短回复；"
         "要做应用先 clarify（需求含糊时）再 scope_card；未确认不得 rehearse。"
         "问下一跳时 ask_user 的选项必须带工具名括号，例如"
-        "「进入数据模型反推（structure）」「进入权限绑定（bind）」。"
+        "「进入数据模型反推（structure）」「进入权限绑定（bind）」"
+        "「精修（refine）」。"
         "search_evidence 不计入闭环。inspect_model 只看摘要。"
         f"当前目标：{goal[:200]}。停泊：{parked}。{clarify_hint} {after_write}"
     )
