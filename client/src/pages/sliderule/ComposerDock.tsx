@@ -424,6 +424,7 @@ export function ComposerDock({
   sendMessage,
   isRunning,
   stop,
+  sessionId,
   placeholder,
   hero = false,
   hasApp = false,
@@ -450,6 +451,8 @@ export function ComposerDock({
   /** 无参 = 发 input；带 textOverride = 发合成文本（附件名并入时用） */
   sendMessage: (textOverride?: string) => void;
   isRunning: boolean;
+  /** 假设卡草稿按会话隔离；空态/会话态拆挂时仍读同一把钥匙。 */
+  sessionId: string;
   /** 会话目标。话题底行已撤（跟舞台标题重复），父组件仍传入以免调用点炸。 */
   goal: string;
   /** 控制面范围卡。确认走 confirmControlScope → forcedTool rehearse。 */
@@ -2059,6 +2062,7 @@ export function ComposerDock({
               {onConfirmAssumptions ? (
                 <AssumptionStrip
                   items={specAssumptions}
+                  sessionId={sessionId}
                   isRunning={isRunning}
                   paused={runPaused}
                   onHold={onHoldRun}

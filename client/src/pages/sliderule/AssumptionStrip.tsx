@@ -1,6 +1,65 @@
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { type SpecAssumption } from "./spec-assumptions";
+
+export const ASSUMPTION_DRAFT_PREFIX = "sliderule:assumption-draft:";
+
+type AssumptionDraft = {
+  step: number;
+  picked: Record<string, string>;
+};
+
+export function assumptionDraftKey(
+  sessionId: string,
+  items: readonly SpecAssumption[]
+): string {
+  return `${ASSUMPTION_DRAFT_PREFIX}${encodeURIComponent(sessionId)}:${encodeURIComponent(
+    items
+      .map(row => `${row.id}:${row.topic}:${row.decision}:${row.alternatives.join("|")}`)
+      .join("\u001f")
+  )}`;
+}
+
+function readAssumptionDraft(key: string, total: number): AssumptionDraft | null {
+  if (typeof window === "undefined" || total <= 0) return null;
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<AssumptionDraft>;
+    const picked =
+      parsed.picked && typeof parsed.picked === "object"
+        ? Object.fromEntries(
+            Object.entries(parsed.picked).filter(
+              ([, value]) => typeof value === "string"
+            )
+          )
+        : {};
+    return {
+      step: Math.max(0, Math.min(total - 1, Number(parsed.step) || 0)),
+      picked,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeAssumptionDraft(key: string, draft: AssumptionDraft) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify(draft));
+  } catch {
+    /* sessionStorage 是增强：内存态仍能点完 */
+  }
+}
+
+function clearAssumptionDraft(key: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {
+    /* 清不掉也不能挡住确认 */
+  }
+}
 
 /**
  * SPEC 里浮出来的结构性分叉。做成跟 ClarificationCard 同一套权力：
@@ -8,30 +67,59 @@ import { type SpecAssumption } from "./spec-assumptions";
  *
  * ⚠ 2026-09-02 真机：伴随式只摊开不拦，用户对着一排「改成 X」不知道
  *   怎么继续。产品裁决改成选完再继续。
+ *
+ * ⚠ ComposerDock 在空态/会话态之间会拆掉重挂这棵树。进度按 sessionId +
+ *   题目内容进 sessionStorage，确认后清掉——不是第二套运行时真相源。
  */
 export function AssumptionStrip({
   items,
+  sessionId,
   isRunning = true,
   paused = false,
   onHold,
   onConfirm,
 }: {
   items: SpecAssumption[];
+  /** 显式会话键，禁止默认成 anonymous：串会话草稿比丢进度更糟。 */
+  sessionId: string;
   isRunning?: boolean;
   paused?: boolean;
   onHold?: () => void;
   onConfirm: (picks: Record<string, string>) => void;
 }) {
-  const [step, setStep] = useState(0);
-  const [picked, setPicked] = useState<Record<string, string>>({});
+  const total = items.length;
+  const draftKey = useMemo(
+    () => assumptionDraftKey(sessionId, items),
+    [items, sessionId]
+  );
+  const [step, setStep] = useState(() => readAssumptionDraft(draftKey, total)?.step ?? 0);
+  const [picked, setPicked] = useState<Record<string, string>>(
+    () => readAssumptionDraft(draftKey, total)?.picked ?? {}
+  );
+  const skipWriteRef = useRef(true);
 
   useEffect(() => {
-    setStep(s => Math.min(s, Math.max(0, items.length - 1)));
-  }, [items.length]);
+    skipWriteRef.current = true;
+    const saved = readAssumptionDraft(draftKey, total);
+    setStep(saved?.step ?? 0);
+    setPicked(saved?.picked ?? {});
+  }, [draftKey, total]);
+
+  useEffect(() => {
+    if (skipWriteRef.current) {
+      skipWriteRef.current = false;
+      return;
+    }
+    if (total <= 0) return;
+    writeAssumptionDraft(draftKey, {
+      step: Math.max(0, Math.min(total - 1, step)),
+      picked,
+    });
+  }, [draftKey, picked, step, total]);
 
   if (!items || items.length === 0) return null;
-  const total = items.length;
-  const q = items[Math.min(step, total - 1)];
+  const safeStep = Math.min(step, total - 1);
+  const q = items[safeStep];
   if (!q) return null;
   const options = [q.decision, ...q.alternatives.filter(a => a !== q.decision)];
   const current = picked[q.id] ?? q.decision;
@@ -41,6 +129,8 @@ export function AssumptionStrip({
     for (const row of items) {
       picks[row.id] = picked[row.id] ?? row.decision;
     }
+    skipWriteRef.current = true;
+    clearAssumptionDraft(draftKey);
     onConfirm(picks);
   };
 
@@ -58,7 +148,7 @@ export function AssumptionStrip({
             className="truncate text-[11px] text-stone-400"
             data-testid="sliderule-assumption-pager"
           >
-            {step + 1} / {total}
+            {safeStep + 1} / {total}
             {paused ? " · 已停住，选完再继续" : " · 选完再继续"}
           </span>
         </div>
@@ -118,10 +208,10 @@ export function AssumptionStrip({
 
       <div className="flex items-center justify-between border-t border-[#e8eaee] px-3 py-2">
         <span className="text-[11px] text-stone-400">
-          已选 {step + 1} / {total}
+          已选 {safeStep + 1} / {total}
         </span>
         <div className="flex items-center gap-2">
-          {step > 0 ? (
+          {safeStep > 0 ? (
             <button
               type="button"
               onClick={() => setStep(s => Math.max(0, s - 1))}
@@ -130,7 +220,7 @@ export function AssumptionStrip({
               <ChevronLeft className="h-3.5 w-3.5" /> 上一步
             </button>
           ) : null}
-          {step < total - 1 ? (
+          {safeStep < total - 1 ? (
             <button
               type="button"
               data-testid="sliderule-assumption-next"

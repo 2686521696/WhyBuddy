@@ -96,14 +96,17 @@ export const SCOPE_CARD_STEPS_FROM_SPEC = SCOPE_CARD_PUBLIC_TOOLS.map(
 export const SCOPE_CARD_CONFIRM_LABEL = "开始推演";
 export const SCOPE_CARD_REVISE_LABEL = "先改范围";
 
+/** 开卡默认五件全开。人可以减，控制面 LLM 不许替人减。 */
+export function defaultScopeCardTools(): string[] {
+  return SCOPE_CARD_PUBLIC_TOOLS.map(row => row.id);
+}
+
 export function normalizeScopeTools(raw?: string[] | null): string[] {
   const wanted = new Set((raw || []).map(item => String(item).trim()));
   const chosen = SCOPE_CARD_PUBLIC_TOOLS.map(row => row.id).filter(id =>
     wanted.has(id)
   );
-  return chosen.length > 0
-    ? chosen
-    : SCOPE_CARD_PUBLIC_TOOLS.map(row => row.id);
+  return chosen.length > 0 ? chosen : defaultScopeCardTools();
 }
 
 export function scopeCardStepsFromTools(tools?: string[] | null): string[] {

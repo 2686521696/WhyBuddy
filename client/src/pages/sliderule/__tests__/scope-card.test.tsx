@@ -32,6 +32,7 @@ import { isComposerSendBlocked } from "../ComposerDock";
 import { IntakeHintBar, shouldShowIntakeHint } from "../IntakeHintBar";
 import { ScopeCard } from "../ScopeCard";
 import {
+  defaultScopeCardTools,
   interceptRehearsalRequest,
   lockScopeMorphology,
   normalizeScopeTools,
@@ -205,6 +206,40 @@ describe("范围卡 DOM", () => {
     ]);
     expect(CARD_SRC).toContain("prev.length === 1");
     expect(CARD_SRC).toContain("toggleTool");
+  });
+
+  it("开卡默认五件全勾，不吃控制面减过的 tools", () => {
+    /**
+     * ⚠ 2026-09-07 水果店：pending.tools=["pages","structure"]，卡上 bind
+     *   没亮，确认假设 remaining 拿这张卡当上限，工厂不打孔。
+     * 变异：useState 改回 normalizeScopeTools(pending.tools)，本条必须红。
+     */
+    expect(defaultScopeCardTools()).toEqual([
+      "spec",
+      "pages",
+      "structure",
+      "bind",
+      "closure",
+    ]);
+    expect(CARD_SRC).toContain("defaultScopeCardTools()");
+    expect(CARD_SRC).not.toContain("normalizeScopeTools(pending.tools)");
+    const html = renderToStaticMarkup(
+      <ScopeCard
+        pending={{ ...FULL_PENDING, tools: ["pages", "structure"] }}
+        onConfirm={() => {}}
+        onRevise={() => {}}
+      />
+    );
+    for (const id of ["spec", "pages", "structure", "bind", "closure"]) {
+      expect(html).toMatch(
+        new RegExp(
+          `data-testid="sliderule-scope-tool-${id}"[^>]*aria-pressed="true"`
+        )
+      );
+    }
+    expect(html).toContain(
+      "将跑：起草 SPEC → 页面生成 → 数据结构 → 权限工作流 → 完整性检查"
+    );
   });
 
   it("产品源码本身也不许写未标定分钟数", () => {

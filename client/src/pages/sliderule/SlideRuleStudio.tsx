@@ -48,13 +48,27 @@ import { SpecPageCanvasStage } from "./live-runtime/SpecPageCanvasStage";
 import { AppStageErrorBoundary } from "./live-runtime/AppStageErrorBoundary";
 import { livePagesFromSpec, type SpecFirstPagesBlob } from "./spec-live-pages";
 import {
+  addToCart,
+  adjustCartQty,
   applyHtmlWorkflowAction,
+  clearCart,
   initRuntimeState,
+  selectRecord,
   type RuntimeState,
 } from "./live-runtime/live-runtime";
 import { deriveHtmlActionGates } from "./live-runtime/rbac-preview";
-import { isWorkflowActionKind } from "./live-runtime/html-binding-runtime";
+import {
+  isImplicitActionKind,
+  isRecordActionKind,
+  isWorkflowActionKind,
+  type BindingActionEvent,
+} from "./live-runtime/html-binding-runtime";
 import { seedRuntimeState } from "./live-runtime/demo-seed";
+import {
+  adoptHarvestedRows,
+  harvestBoundHtml,
+  lockSeedDecisions,
+} from "./live-runtime/harvest-bound-html";
 import {
   hydrateConnectors,
   hydrateSummary,
@@ -207,11 +221,12 @@ const SKILL_LABELS: Record<SkillId, string> = {
 };
 
 interface SlideRuleStudioProps {
-  /** E29 模型版本史（前进/回退按钮数据源） */
+  /** E29 模型版本史（前进/回退按钮数据源）。`model` 是闭环空着时舞台填数的货架。 */
   modelVersions?: Array<{
     id: string;
     instruction?: string;
     createdAt?: string;
+    model?: unknown;
   }>;
   currentModelVersionId?: string | null;
   onRestoreVersion?: (versionId: string) => void;
@@ -318,14 +333,21 @@ export function SlideRuleStudio({
 
   // SSE 当前 skill 不再切屏，只给沙盘描边（没有成员级 flow 证据就不编路径）。
 
-  // 五系统模型在此解析一次：舞台判定（能否运行应用）+ 抽屉/游标共享
+  // 五系统模型在此解析一次：舞台判定（能否运行应用）+ 抽屉/游标共享。
+  // 第三源是版本史：闭环没落到会话上时，mv-N.model 仍是填数的那份。
   const settledModel = useMemo(
     () =>
       deriveSettledFiveSystemModel(
         skillContents ?? {},
-        publishClosure?.perSkillEvidence
+        publishClosure?.perSkillEvidence,
+        { versions: modelVersions, currentId: currentModelVersionId }
       ),
-    [skillContents, publishClosure?.perSkillEvidence]
+    [
+      skillContents,
+      publishClosure?.perSkillEvidence,
+      modelVersions,
+      currentModelVersionId,
+    ]
   );
 
   // 起草中的部分模型：五系统 JSON 还在流式生成时容错解析（每 +300 字符重解一次，
@@ -419,6 +441,13 @@ export function SlideRuleStudio({
   // ⚠ 种子照走 seedRuntimeState：它管着"每个实体只判一次要不要铺示例"，
   //   以及"用户写了真实数据就整批清掉示例"。绕过它自己造数据会把这套语义丢掉。
   const runtimeSessionId = sessionId ?? DEFAULT_SESSION_ID;
+  const boundHtmlKey = useMemo(
+    () =>
+      displayPages
+        .map(p => `${p.pageId}:${(p.html || "").length}:${p.bound ? 1 : 0}`)
+        .join("|"),
+    [displayPages]
+  );
   const [htmlRuntime, setHtmlRuntime] = useState<RuntimeState | null>(null);
   useEffect(() => {
     if (!fiveSystemModel) return;
@@ -457,16 +486,34 @@ export function SlideRuleStudio({
         if (typeof console !== "undefined")
           console.info("[连接器]", hydrateSummary(res.outcome));
       }
-      const seeded = seedRuntimeState(next, fiveSystemModel);
+      const htmls = displayPages.map(p => p.html).filter(Boolean);
+      /*
+       * HTML 页上已经写着一套样例（吐司 / 面粉 / 采购单）。再铺「高原成品」
+       * 就是两个世界——2026-09-07 烘焙坊收银台那场。有页面就从孔里收数，
+       * 不许 seedRuntimeState 另编。没页面（老区块应用）仍走种子。
+       */
+      let ready = next;
+      if (htmls.length > 0) {
+        ready = lockSeedDecisions(
+          adoptHarvestedRows(
+            next,
+            harvestBoundHtml(htmls, fiveSystemModel),
+            fiveSystemModel
+          ),
+          fiveSystemModel
+        );
+      } else {
+        ready = seedRuntimeState(next, fiveSystemModel);
+      }
       if (!alive) return;
-      if (ids.length > 0) saveRuntimeState(runtimeSessionId, seeded);
-      setHtmlRuntime(seeded);
+      saveRuntimeState(runtimeSessionId, ready);
+      setHtmlRuntime(ready);
     })();
 
     return () => {
       alive = false;
     };
-  }, [fiveSystemModel, runtimeSessionId]);
+  }, [fiveSystemModel, runtimeSessionId, boundHtmlKey]);
 
   // 当前角色（2026-08-14 晚：权限那只手伸进 HTML 页）。
   // 持久化和广播沿用老区块舞台那套（loadRuntimeRole + 事件）——RBAC 屏的
@@ -513,10 +560,37 @@ export function SlideRuleStudio({
     [runtimeSessionId]
   );
   const handleHtmlAction = useCallback(
-    (ev: RecordActionRequest) => {
+    (ev: BindingActionEvent) => {
       // 模型/运行态没就绪时不接（推演早期理论上没有动作可点，这条是
       // 防御性一致：接不住就如实什么都不做）
       if (!fiveSystemModel || !htmlRuntime) return;
+      if (ev.kind === "addToCart" && ev.rowId) {
+        applyRuntime(addToCart(htmlRuntime, ev.entityId, ev.rowId));
+        return;
+      }
+      if (ev.kind === "adjustCartQty" && ev.rowId && ev.delta) {
+        applyRuntime(
+          adjustCartQty(htmlRuntime, ev.entityId, ev.rowId, ev.delta)
+        );
+        return;
+      }
+      if (ev.kind === "clearCart") {
+        applyRuntime(clearCart(htmlRuntime, ev.entityId));
+        return;
+      }
+      if (ev.kind === "checkout") {
+        const lines = Object.values(htmlRuntime.cartQty?.[ev.entityId] ?? {});
+        const n = lines.reduce((a, b) => a + b, 0);
+        if (!n) {
+          message.warning("购物车是空的");
+          return;
+        }
+        applyRuntime(clearCart(htmlRuntime, ev.entityId));
+        message.success(`已结算 ${n} 件`);
+        return;
+      }
+      if (ev.kind === "filterCatalog") return;
+      if (isImplicitActionKind(ev.kind)) return;
       if (isWorkflowActionKind(ev.kind)) {
         const res = applyHtmlWorkflowAction(
           htmlRuntime,
@@ -534,7 +608,15 @@ export function SlideRuleStudio({
         }
         return;
       }
-      setRecordAction(ev);
+      // 点列表一行 / 编辑：先把「当前这条」钉进运行时，页内 data-record
+      // 详情卡才能跟着切。只开抽屉、不钉选中 = 主从未动（2026-09-07）。
+      if (
+        (ev.kind === "openRecord" || ev.kind === "editRecord") &&
+        ev.rowId
+      ) {
+        applyRuntime(selectRecord(htmlRuntime, ev.entityId, ev.rowId));
+      }
+      if (isRecordActionKind(ev.kind)) setRecordAction(ev);
     },
     [fiveSystemModel, htmlRuntime, role, applyRuntime]
   );

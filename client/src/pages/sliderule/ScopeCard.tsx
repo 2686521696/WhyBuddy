@@ -32,6 +32,7 @@ import {
   SCOPE_CARD_PUBLIC_TOOLS,
   SCOPE_CARD_REVISE_LABEL,
   SCOPE_CARD_TIME_COPY,
+  defaultScopeCardTools,
   lockScopeMorphology,
   normalizeScopeTools,
   scopeCardStepsFromTools,
@@ -90,9 +91,10 @@ export function ScopeCard({
       ? pending.wiredDevices
       : wiredDevices();
   const { productArchetype, device } = lockScopeMorphology(pending);
-  const [tools, setTools] = useState<string[]>(() =>
-    normalizeScopeTools(pending.tools)
-  );
+  // ⚠ 2026-09-07 真机水果店：控制面 scope_card 少列 bind，卡上默认
+  //   就没勾「权限工作流」。确认假设 remaining 拿这张卡当上限，工厂
+  //   只跑 pages+structure，再问人点 bind。默认全勾；人可以减，LLM 不许替人减。
+  const [tools, setTools] = useState<string[]>(() => defaultScopeCardTools());
   const steps = scopeCardStepsFromTools(tools);
   const choice: ScopeCardChoice = {
     device,
