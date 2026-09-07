@@ -121,6 +121,25 @@ export function isBlankSessionMeta(
   return phase === "" || phase === "idle";
 }
 
+export type NewSessionAction = "reuse-active" | "create";
+
+/**
+ * 点「新建会话」时只许做两件事之一：
+ *   reuse-active  当前这条就是真正的空会话 → 站住，别再铸一条
+ *   create        其它情况 → 向服务端要新 id
+ *
+ * ⚠ 不许扫列表里「别的」空壳拿来当新会话。那条 2026-08-27 真机就是：
+ *   上一条 goal 空但已经聊过，被当成空壳复用，点新建还是旧内容。
+ * 当前这条空着再点新建，才复用——铸 id 等于库里多一行，连点会堆空会话。
+ */
+export function decideNewSessionAction(opts: {
+  activeId: string;
+  activeMeta: { goal?: string | null; phase?: string | null } | null | undefined;
+}): NewSessionAction {
+  if (opts.activeId === DEFAULT_SESSION_ID) return "create";
+  return isBlankSessionMeta(opts.activeMeta) ? "reuse-active" : "create";
+}
+
 export type SessionSort = "active" | "created";
 export type SessionPhaseFilter = "all" | "running" | "done" | "failed";
 
@@ -442,6 +461,8 @@ export function SidebarSessions({
   const [sortOrder, setSortOrder] = React.useState<SessionSort>("active");
   const [phaseFilter, setPhaseFilter] = React.useState<SessionPhaseFilter>("all");
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const creatingSessionRef = React.useRef(false);
+  const [creatingSession, setCreatingSession] = React.useState(false);
   const menuRef = React.useRef<HTMLDivElement | null>(null);
   const [activeId, setActiveId] = React.useState<string>(() => readActiveSessionId());
   // 两步删除确认：第一次点垃圾桶进入待确认（变红），再点才真删；点别处/超时复位
@@ -604,40 +625,30 @@ export function SidebarSessions({
         type="button"
         className="native-agent-session-new"
         data-testid="sidebar-session-new"
+        disabled={creatingSession}
         onClick={() => {
-          // E28 防双开：已经站在空会话上（不在列表=刚建未落盘，或在列表但
-          // 无话题）→ 复用当前；列表里已有空的「新会话」→ 复用它；
-          // 都没有才真正要一个新 id。用户实测连点会叠出多个空会话。
-          //
-          // 这条复用逻辑在"id 改由服务端生成"（2026-08-06）之后更重要了：
-          // 铸新 id 现在等于**真的在库里建一条**，不再是懒创建。有它挡着，
-          // 连点不会在库里堆出一串空会话。
-          // ⚠ 空判据走 isBlankSessionMeta，别在这儿退回裸 `!s.goal`：
-          //   PR-4 之后便宜轮（问候/搜索/ask_user）不写 goal，只看 goal
-          //   会把用户丢回上一条有内容的会话（2026-08-27 真机：点完新建
-          //   DOM 里还有 3 个轮次）。
+          // 只复用**当前**这条空会话。扫列表里别的空壳 = 2026-08-27
+          // 把聊过的会话当新建（goal 空）。当前这条空着再点，才站住——
+          // 铸 id 等于库里多一行。
+          if (creatingSessionRef.current) return;
           const list = sessions ?? [];
           const activeMeta = list.find((s) => s.sessionId === activeId);
           if (
-            isBlankSessionMeta(activeMeta) &&
-            activeId !== DEFAULT_SESSION_ID
+            decideNewSessionAction({ activeId, activeMeta }) === "reuse-active"
           ) {
             pick(activeId);
             return;
           }
-          const blank = list.find(
-            (s) =>
-              isBlankSessionMeta(s) && s.sessionId !== DEFAULT_SESSION_ID
-          );
-          if (blank) {
-            pick(blank.sessionId);
-            return;
-          }
+          creatingSessionRef.current = true;
+          setCreatingSession(true);
           void (async () => {
             try {
               pick(await createSessionId());
             } catch (e) {
               setError(String(e instanceof Error ? e.message : e));
+            } finally {
+              creatingSessionRef.current = false;
+              setCreatingSession(false);
             }
           })();
         }}

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { isBlankSessionMeta } from "../SidebarSessions";
+import { DEFAULT_SESSION_ID } from "@/lib/sliderule-session-id";
+import { decideNewSessionAction, isBlankSessionMeta } from "../SidebarSessions";
 
 /**
  * 用户报「点新建会话，右侧的显示有问题」。追下去两条独立的因：
@@ -42,23 +43,60 @@ describe("isBlankSessionMeta（新建会话该复用谁）", () => {
     expect(isBlankSessionMeta({ goal: "连锁宠物医院", phase: "idle" })).toBe(false);
   });
 
-  it("通电：两个复用分支都得走这条判据，不许还留着裸 !s.goal", () => {
+  it("当前这条空着 → 复用；聊过 / 默认 id → 铸新", () => {
+    expect(
+      decideNewSessionAction({
+        activeId: "sr-idle",
+        activeMeta: { goal: "", phase: "idle" },
+      })
+    ).toBe("reuse-active");
+    expect(
+      decideNewSessionAction({
+        activeId: "sr-just-minted",
+        activeMeta: undefined,
+      }),
+      "刚建未落盘：再点新建不许再铸一条"
+    ).toBe("reuse-active");
+    expect(
+      decideNewSessionAction({
+        activeId: "sr-cheap-turns",
+        activeMeta: { goal: "", phase: "awaiting" },
+      }),
+      "问候/搜索之后 goal 仍空——必须铸新，不许复用"
+    ).toBe("create");
+    expect(
+      decideNewSessionAction({
+        activeId: "sr-done",
+        activeMeta: { goal: "连锁宠物医院", phase: "idle" },
+      })
+    ).toBe("create");
+    expect(
+      decideNewSessionAction({
+        activeId: DEFAULT_SESSION_ID,
+        activeMeta: { goal: "", phase: "idle" },
+      })
+    ).toBe("create");
+  });
+
+  it("通电：按钮只复用当前空会话，不扫列表里别的空壳", () => {
     const src = readFileSync(
       new URL("../SidebarSessions.tsx", import.meta.url),
       "utf8"
     )
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/^[ \t]*\/\/.*$/gm, "");
-    // ⚠ 从 testid 往后找按钮文案：`新建会话` 这四个字在文件更早处的
-    //   createSessionId 错误文案里也出现（"请先登录后再新建会话"），
-    //   直接 indexOf 会把切片切空——空串 toContain 永远失败，看着像功能没接。
     const from = src.indexOf('data-testid="sidebar-session-new"');
     expect(from, "找不到新建会话按钮").toBeGreaterThan(-1);
     const to = src.indexOf("新建会话", from);
     expect(to, "找不到按钮文案收尾").toBeGreaterThan(from);
     const handler = src.slice(from, to);
-    expect(handler).toContain("isBlankSessionMeta");
-    expect(handler).toContain("DEFAULT_SESSION_ID");
+    expect(handler).toContain("decideNewSessionAction");
+    expect(handler).toContain("createSessionId");
+    expect(handler).toContain("creatingSessionRef");
+    expect(
+      /isBlankSessionMeta\(\s*s\s*\)/.test(handler),
+      "又在扫列表里别的空壳了——那会把聊过的会话当新建"
+    ).toBe(false);
     expect(
       /\.find\(\s*\(?s\)?\s*=>\s*!s\.goal\s*\)/.test(handler),
       "还留着 `list.find(s => !s.goal)`：那条分支会挑中有便宜轮历史的会话"
