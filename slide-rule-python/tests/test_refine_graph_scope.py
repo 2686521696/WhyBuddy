@@ -642,7 +642,16 @@ class Test局部打孔:
         seen = _drive_pipeline(monkeypatch, reuse_model=MODEL, reuse_pages=PREV_PAGES,
                                text_scope=["p2"], seed_fn=lambda i, g, **kw: ["page:p1"])
         assert set(seen["pages"]) == {"p1", "p2"}, "交付页数少了"
-        assert seen["stages"]["bind"]["bindSkipped"] == 1
+        # ⚠ 2026-09-08（`pages_to_skip_bind`）：跳过条件收紧成「**已经打过孔**
+        #   的照搬页」。上一版把没打孔的照搬页也跳过，交付里就留下一页永远
+        #   没绑数据的壳。PREV_PAGES 里的 `<html>旧1</html>` 没打过孔，
+        #   所以现在**不跳**、照常打——bindSkipped=0 才是对的。
+        #
+        #   这条断言原来写 ==1，钉的是旧语义。真正贵的是上面那句（★ 反向：
+        #   照搬页不许从交付里消失），它没变。
+        assert seen["stages"]["bind"]["bindSkipped"] == 0, (
+            "没打过孔的照搬页被跳过了——交付里会留一页没绑数据的壳"
+        )
 
     def test_开关关掉回全量打孔(self, monkeypatch):
         monkeypatch.setenv("SLIDERULE_REFINE_PARTIAL_BIND", "0")

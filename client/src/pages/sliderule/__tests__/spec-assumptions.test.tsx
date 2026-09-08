@@ -481,9 +481,16 @@ describe("接线（四段都得接上）", () => {
   it("确认继续的 pages 闸只在 runTurn 过了 isRunning 之后取走", () => {
     /* ⚠ 真机：flush 先清 flag 再进 runTurn，isRunning 仍真时直接 return，
        forcedTool=pages 丢了，控制面去 planning，钟又回到起草 SPEC。 */
+    /* ⚠ 2026-09-09：窗口从「起点 + 900 字节」改成「到函数体结束」。
+       900 是当时数出来的一个数，不是语义边界——`runTurn` 里加了几行
+       （toolAnswer 回执那次）就把 `pendingForcedToolRef` 挤出窗口，
+       判据红了，而它要钉的顺序**一点没变**。按字节切窗口就是这个毛病：
+       改动无关的代码也会让它红，红了还看不出是真出问题还是窗口太小。
+       改成切到下一个顶层 `const `，让边界跟着代码走。 */
     const at = SESSION.indexOf("const runTurn = async");
     expect(at).toBeGreaterThan(-1);
-    const body = SESSION.slice(at, at + 900);
+    const after = SESSION.indexOf("\n  const ", at + 1);
+    const body = SESSION.slice(at, after > at ? after : SESSION.length);
     expect(body).toContain("isRunningRef.current");
     expect(body).toContain("pendingForcedToolRef.current");
     expect(body.indexOf("isRunningRef.current")).toBeLessThan(

@@ -523,7 +523,16 @@ def _unstamped_product_turn(state: V5SessionState) -> str:
         if row.get("role") == "user" and row.get("kind") == "turn":
             text = str(row.get("text") or "").strip()
             break
-    if not text:
+    # ⚠ 2026-09-09：最后一句是廉价确认（「就按上面这个推演」「开始吧」）时，
+    #   上一版直接判空——于是历史里明明有话题，控制面还是反过来问
+    #   「想做什么应用，说一句就行。」，用户会读成"你刚才说的我没听见"。
+    #   照 grok `get_first_user_text`：会话身份取**第一句有内容的话**，
+    #   不取最后一句。最后一句只决定这一轮干什么。
+    #
+    #   注意不能无条件退回第一句：只有问候的会话（hello / hhh）里
+    #   `first_substantive_user_text` 也返回空，所以「你好」仍然进不了环——
+    #   反向条钉在 `test_greeting_then_bare_slash_still_parks`。
+    if not text or _is_cheap_chat(text) or _cjk_len(text) < 4:
         text = first_substantive_user_text(state)
     if not text or _is_cheap_chat(text) or _cjk_len(text) < 4:
         return ""

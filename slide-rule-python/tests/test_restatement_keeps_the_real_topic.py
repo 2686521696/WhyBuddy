@@ -187,8 +187,17 @@ def test_the_fallback_chain_recovers_the_topic_on_the_live_route():
     ⚠ 打在**真 HTTP 路由**上（control_turn_support 的纪律）：单独调
       _restatement_chain 会让「四个 park 点没换成链条」照样绿。
 
-    变异：把 _restate 的空确认守卫去掉 → 停下来的复述句变回
-    「就按上面这个推演」，本条红。
+    变异：把 _restate 的空确认守卫去掉 → 复述句变回「就按上面这个推演」，
+    本条红。
+
+    ⚠ 2026-09-09：原来靠夹具让模型挑 `clarify`（空 questions）走那条 park 点。
+      clarify 整件退役之后模型挑不到它，调用会被 `offered_names` 丢掉，
+      这条判据实际测的是「丢掉之后的兜底」，跟复述链无关了。
+      改走 `scope_card` 且**不给 restatement 实参**——复述句同样完全由
+      `_restatement_chain` 决定，是本条真正的主题，而且这条路真机在走。
+
+      断言从 `awaitDetail` 改成读 `control_scope_card` 事件的 restatement：
+      门禁拆掉之后真产品不再停泊，复述句在卡上，不在停泊详情里。
     """
     pytest.importorskip("fastapi")
     from control_turn_support import (  # noqa: PLC0415
@@ -213,16 +222,15 @@ def test_the_fallback_chain_recovers_the_topic_on_the_live_route():
             ],
             runtimePhase="awaiting",
         )
-        # 模型判"已经够清楚"（空 questions）→ 走 clarify 分支那个 park 点，
-        # 复述句完全由兜底链决定。
-        harness.llm_impl = lambda messages, **kw: llm_tool("clarify", {"questions": []})
-        harness.post(six_fields(sid, "就按上面这个推演"))
+        # 模型开卡但不给 restatement → 复述句完全由兜底链决定。
+        harness.llm_impl = lambda messages, **kw: llm_tool("scope_card", {})
+        _, events = harness.post(six_fields(sid, "就按上面这个推演"))
 
-        from services.slide_rule_session import load_session  # noqa: PLC0415
-
-        parked = str(getattr(load_session(sid), "awaitDetail", "") or "")
-        assert "智能工单" in parked, f"复述句没捞回原话题：{parked!r}"
-        assert "就按上面这个" not in parked, f"把空确认当成了复述句：{parked!r}"
+        cards = [e for e in events if e.get("type") == "control_scope_card"]
+        assert cards, f"没出复述卡：{[e.get('type') for e in events]}"
+        said = str(cards[0].get("restatement") or "")
+        assert "智能工单" in said, f"复述句没捞回原话题：{said!r}"
+        assert "就按上面这个" not in said, f"把空确认当成了复述句：{said!r}"
     finally:
         mp.undo()
 
@@ -256,12 +264,14 @@ def test_a_real_topic_turn_still_restates_itself():
             ],
             runtimePhase="awaiting",
         )
-        harness.llm_impl = lambda messages, **kw: llm_tool("clarify", {"questions": []})
-        harness.post(six_fields(sid, "改成做一个社区养老助餐的订餐与配送系统"))
+        harness.llm_impl = lambda messages, **kw: llm_tool("scope_card", {})
+        _, events = harness.post(
+            six_fields(sid, "改成做一个社区养老助餐的订餐与配送系统")
+        )
 
-        from services.slide_rule_session import load_session  # noqa: PLC0415
-
-        parked = str(getattr(load_session(sid), "awaitDetail", "") or "")
-        assert "养老助餐" in parked, f"改需求没生效，复述的还是旧话题：{parked!r}"
+        cards = [e for e in events if e.get("type") == "control_scope_card"]
+        assert cards, f"没出复述卡：{[e.get('type') for e in events]}"
+        said = str(cards[0].get("restatement") or "")
+        assert "养老助餐" in said, f"改需求没生效，复述的还是旧话题：{said!r}"
     finally:
         mp.undo()
