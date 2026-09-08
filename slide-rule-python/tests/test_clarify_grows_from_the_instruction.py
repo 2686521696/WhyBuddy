@@ -296,7 +296,8 @@ class TestPromptTellsTheModelWhatIsMissing:
             sessionId="p1", goal={"text": "做一个诊所系统", "status": "needs_refinement"}
         )
         prompt = _system_prompt(vague)
-        assert "还没读到" in prompt
+        assert "把这件事做完" in prompt
+        assert "还没读到" not in prompt
         assert "开范围卡之前" not in prompt
         assert "先用 clarify" not in prompt
 
@@ -306,9 +307,9 @@ class TestPromptTellsTheModelWhatIsMissing:
             controlTranscript=[{"id": "c1", "kind": "clarify", "text": "问过了"}],
         )
         after = _system_prompt(asked)
-        assert "已经问过一轮" in after
         assert "还没读到" not in after
         assert "直接 scope_card" not in after
+        assert "已经问过一轮" not in after
 
 
 class TestUnansweredClarifyDoesNotBlockClosure:

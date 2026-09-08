@@ -19,6 +19,7 @@ import pytest
 from control_turn_support import (
     PY_ROOT,
     ControlHarness,
+    event_types,
     llm_text,
     llm_tool,
     new_sid,
@@ -57,6 +58,80 @@ def test_live_spec_first_tools_does_not_read_todo():
     chunk = src[at : src.find("def is_first_pass_chain", at)]
     assert "factory_todo_open" not in chunk
     assert "FIRST_PASS_TOOLS" not in chunk
+
+
+def test_rehearse_on_restatement_card_ignites_without_park_reason(harness):
+    """真机载荷：复述卡 gate=False，awaitReason 空。点开始推演仍须点火 spec。
+
+    变异：may_ignite 只认 awaitReason==control_scope → helper 空，本条红。
+    """
+    sid = new_sid("p4-restate-rehearse")
+    restatement = "正在为您构建支持员工请假与主管审批流程的请假系统。"
+    seed_session(
+        sid,
+        goal={"text": "", "status": "needs_refinement"},
+        awaitReason=None,
+        controlTranscript=[
+            {"role": "user", "kind": "turn", "text": "请假系统"},
+            {
+                "role": "assistant",
+                "kind": "scope_card",
+                "text": restatement,
+                "tools": ["spec", "pages", "structure", "bind", "closure"],
+                "gate": False,
+            },
+        ],
+    )
+    harness.llm_impl = lambda messages, **kw: llm_text("规格已经记下。")
+    _, events = harness.post(six_fields(sid, restatement, forcedTool="rehearse"))
+    assert harness.helper_calls, event_types(events)
+    assert harness.helper_calls[-1].get("goal_tools") == ["spec"]
+    loaded = load_session(sid)
+    tools = (loaded.goal or {}).get("tools") if loaded and isinstance(loaded.goal, dict) else None
+    assert list(tools or []) == ["spec"], tools
+    todo = list(getattr(loaded, "factoryTodo", None) or [])
+    assert "pages" in todo and "structure" in todo and "bind" in todo, todo
+
+
+def test_typing_while_restatement_card_is_not_a_new_topic(harness):
+    """真机：复述卡摊着又打「权限管理系统」，又问一轮又出一张卡。
+
+    变异：仍进 LLM → helper 或第二张 ask_user，本条红。
+    """
+    sid = new_sid("p4-restate-type")
+    restatement = "员工权限与后台菜单管理系统（支持RBAC角色、部门层级、动态菜单）"
+    seed_session(
+        sid,
+        goal={"text": "", "status": "needs_refinement"},
+        awaitReason=None,
+        controlTranscript=[
+            {
+                "role": "user",
+                "kind": "turn",
+                "text": "做个公司内部的员工权限与后台菜单管理系统",
+            },
+            {
+                "role": "assistant",
+                "kind": "scope_card",
+                "text": restatement,
+                "gate": False,
+            },
+        ],
+    )
+    harness.llm_impl = lambda messages, **kw: llm_tool(
+        "ask_user", {"question": "请选一个核心侧重点"}
+    )
+    _, events = harness.post(six_fields(sid, "权限管理系统"))
+    assert harness.helper_calls == [], event_types(events)
+    types = event_types(events)
+    assert "control_ask_user" not in types, types
+    assert "control_handoff_factory" not in types
+    texts = [
+        str(e.get("text") or "")
+        for e in events
+        if e.get("type") == "control_text"
+    ]
+    assert any("开始推演" in t and "不对再说" in t for t in texts), texts
 
 
 def test_rehearse_ignites_spec_and_parks_the_rest_on_todo(harness):

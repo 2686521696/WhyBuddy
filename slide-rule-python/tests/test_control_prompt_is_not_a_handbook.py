@@ -29,6 +29,9 @@ HANDBOOK = (
     "问候用 ask_user",
     "请调 pages",
     "精修（refine）",
+    "下一跳请挑",
+    "在哪用（平台）",
+    "已经问过一轮澄清",
 )
 
 
@@ -44,14 +47,17 @@ def test_prompt_is_complete_the_job_not_a_syllabus():
         assert banned not in text, banned
 
 
-def test_missing_dimensions_are_facts_not_orders():
+def test_missing_dimensions_are_not_a_start_gate():
+    """第 7 格：有产品话题就干活。缺维度不许再写进 system 当开工门。"""
     text = _system_prompt(
         V5SessionState(
             sessionId="p2-miss",
             goal={"text": "做一个诊所系统", "status": "needs_refinement"},
         )
     )
-    assert "还没读到" in text
+    assert "把这件事做完" in text
+    assert "还没读到" not in text
+    assert "在哪用" not in text
     assert "开范围卡之前" not in text
     assert "最多 3 条" not in text
 
@@ -72,13 +78,27 @@ def test_empty_topic_still_says_none():
     assert "还没读到" not in cont, "目标是「继续」还报缺维度"
 
 
+def test_fruit_shop_cashier_is_enough_to_start():
+    """漫画第 7 格：做个水果店收银台。不许先问类型/设备。"""
+    text = _system_prompt(
+        V5SessionState(
+            sessionId="p7-fruit",
+            goal={"text": "做个水果店收银台", "status": "clear"},
+        )
+    )
+    assert "把这件事做完" in text
+    assert "水果店收银台" in text
+    assert "还没读到" not in text
+    assert "在哪用" not in text
+    assert "产品类型" not in text
+    assert "请先选择" not in text
+
+
 def test_scope_card_tool_is_restatement_not_a_gate():
     """工具说明书也不能再教「等用户点开始推演」。"""
-    from pathlib import Path
+    from control_turn_support import PY_ROOT, strip_python
 
-    from control_turn_support import strip_python
-
-    src = strip_python(Path("slide-rule-python/services/rehearsal_control.py"))
+    src = strip_python(PY_ROOT / "services" / "rehearsal_control.py")
     assert "等用户点开始推演" not in src
     at = src.find("'name': 'scope_card'")
     if at < 0:

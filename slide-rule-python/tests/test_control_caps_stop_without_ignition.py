@@ -22,7 +22,14 @@ from control_turn_support import (
     seed_session,
     six_fields,
 )
-from services.rehearsal_control import ControlStopReason, stop_text
+from services.rehearsal_control import (
+    ControlStopReason,
+    POST_SPEC_USER,
+    POST_WRITE_FALLBACK,
+    _cap_speech,
+    stop_text,
+)
+from models.v5_state import V5SessionState
 
 pytest.importorskip("fastapi")
 
@@ -155,9 +162,10 @@ def test_控制面挂了是_provider_不是_runtime(harness):
     对用户也是两句不同的话：额度到了再点一次可能就过了；网关挂了点一百次
     也没用。
     """
+    from sliderule_llm.client import LlmError
 
     def boom(messages, **kw):
-        raise RuntimeError("网关 502")
+        raise LlmError("gateway timeout (522):", status=522, transient=True)
 
     sid = new_sid("cap-provider")
     _confirmed(sid)
@@ -167,3 +175,129 @@ def test_控制面挂了是_provider_不是_runtime(harness):
     [stop] = _stops(events)
     assert stop["stopReason"] == ControlStopReason.LLM_UNAVAILABLE.value, stop
     assert stop["stoppedBy"] == "provider", "把网关故障算成了我们自己的闸"
+    texts = _over_cap_texts(events)
+    assert any("522" in (t or "") for t in texts), texts
+    assert not any("模型网关这会儿连不上" == (t or "") for t in texts)
+
+
+def test_打孔失败时额度到顶要说失败页():
+    """真机：p1/p2 failed 仍端「页面已经出来」= 装已经接好。"""
+    state = V5SessionState(
+        sessionId="cap-bind-fail",
+        goal={"text": "鲜果速收", "status": "clear"},
+        specFirstPages={
+            "spec": {"appName": "鲜果速收", "pages": [{"id": "p1"}]},
+            "pages": {"p1": "<html/>", "p2": "<html/>", "p3": "<html/>"},
+            "pageBindStatus": {"p1": "failed", "p2": "failed", "p3": "bound"},
+        },
+    )
+    text = _cap_speech(state, ControlStopReason.TOOL_ROUNDS)
+    assert "failed" in text
+    assert "p1" in text and "p2" in text
+    assert "没点火" not in text
+    assert "额度用完" not in text
+    assert "闭环完成" not in text
+
+
+def test_工厂出过页后轮次到顶不许说没点火(harness):
+    """⚠ 2026-09-09 真机 sr-20260909032509：bind 都跑完了，收尾却端
+    「思考额度用完了，先停在控制面没点火」。额度是闸，不是完工台词。
+
+    变异：``_cap_speech`` 改回 ``stop_text`` → 本条红。
+    反向：下面那条没出货的仍说没点火，不许一律换成「页面已经出来」。
+    """
+    sid = new_sid("cap-after-write")
+    seed_session(
+        sid,
+        goal={"text": "请假系统", "status": "clear"},
+        specFirstPages={
+            "spec": {"appName": "请假", "pages": [{"id": "p1", "name": "申请"}]},
+            "pages": {"p1": "<html>已出的页</html>"},
+        },
+        modelVersions=[{"id": "v1", "model": {"pages": []}}],
+    )
+
+    def impl(messages, **kw):
+        n = len(harness.llm_calls)
+        if n <= 8:
+            return llm_tool("search_evidence", {"query": f"q{n}"}, call_id=f"c{n}")
+        return llm_tool("rehearse", {}, call_id="rehearse")
+
+    harness.llm_impl = impl
+    _, events = harness.post(six_fields(sid, "帮我搜一下再推演"))
+    texts = _over_cap_texts(events)
+    blob = "\n".join(t or "" for t in texts)
+    assert POST_WRITE_FALLBACK in blob, texts
+    assert "没点火" not in blob, texts
+    assert "额度用完" not in blob, texts
+    [stop] = _stops(events)
+    assert stop["stopReason"] == ControlStopReason.TOOL_ROUNDS.value, stop
+    assert harness.helper_calls == []
+
+
+def test_工厂出过页后token帽不许说额度用完(harness):
+    """用户原话就是「别把额度用完当成完工台词」。stopReason 仍是 token_budget，
+    给人看的那句必须是页面已经出来，不许再说没点火。"""
+    sid = new_sid("cap-tok-after-write")
+    seed_session(
+        sid,
+        goal={"text": "请假系统", "status": "clear"},
+        specFirstPages={
+            "spec": {"appName": "请假", "pages": [{"id": "p1", "name": "申请"}]},
+            "pages": {"p1": "<html>已出的页</html>"},
+        },
+        modelVersions=[{"id": "v1", "model": {"pages": []}}],
+    )
+    harness.llm_impl = lambda messages, **kw: llm_tool(
+        "search_evidence", {"query": "q"}, usage={"total_tokens": 8001}
+    )
+    _, events = harness.post(six_fields(sid, "开始"))
+    blob = "\n".join(t or "" for t in _over_cap_texts(events))
+    assert POST_WRITE_FALLBACK in blob, _over_cap_texts(events)
+    assert "额度用完" not in blob
+    assert "没点火" not in blob
+    [stop] = _stops(events)
+    assert stop["stopReason"] == ControlStopReason.TOKEN_BUDGET.value, stop
+    assert harness.helper_calls == []
+
+
+def test_只有SPEC没有页面时轮次到顶说规格不是额度(harness):
+    sid = new_sid("cap-after-spec")
+    seed_session(
+        sid,
+        goal={"text": "请假系统", "status": "clear"},
+        specFirstPages={
+            "spec": {"appName": "请假", "pages": [{"id": "p1", "name": "申请"}]},
+            "pages": {},
+        },
+    )
+
+    def impl(messages, **kw):
+        n = len(harness.llm_calls)
+        if n <= 8:
+            return llm_tool("search_evidence", {"query": f"q{n}"}, call_id=f"c{n}")
+        return llm_tool("rehearse", {}, call_id="rehearse")
+
+    harness.llm_impl = impl
+    _, events = harness.post(six_fields(sid, "帮我搜一下"))
+    blob = "\n".join(t or "" for t in _over_cap_texts(events))
+    assert POST_SPEC_USER in blob
+    assert "没点火" not in blob
+    assert "额度用完" not in blob
+
+
+def test_非_LlmError_不许冒充网关连不上(harness):
+    """persist / schema 自己炸了走 UNKNOWN，不许借网关那张嘴。"""
+
+    def boom(messages, **kw):
+        raise RuntimeError("persist exploded")
+
+    sid = new_sid("cap-unknown")
+    _confirmed(sid)
+    harness.llm_impl = boom
+    _, events = harness.post(six_fields(sid, "现在有哪些角色？"))
+    assert harness.helper_calls == [], "控制面挂了不许点火"
+    [stop] = _stops(events)
+    assert stop["stopReason"] == ControlStopReason.UNKNOWN.value, stop
+    texts = _over_cap_texts(events)
+    assert not any("网关" in (t or "") for t in texts), texts

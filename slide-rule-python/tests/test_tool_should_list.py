@@ -71,7 +71,6 @@ def test_default_is_list_absence_means_visible():
       别再把它加回来：加回来这条就成了"断言一个有谓词的工具没被裁"，
       测的不是缺省行为。
     """
-    assert should_list_tool("search_evidence", _fresh()) is True
     assert should_list_tool("ask_user", _fresh()) is True
     assert should_list_tool("scope_card", _fresh()) is False
     assert should_list_tool(
@@ -171,6 +170,42 @@ def test_refine_and_fork_hidden_without_a_model():
     """
     assert "refine" not in _names(_fresh())
     assert "fork_variant" not in _names(_fresh())
+
+
+def test_scope_card_listed_after_ask_answer_candidate():
+    """回执还没写成目标时，模型要看得见 scope_card 才能认产品。
+
+    反向：空会话没有回执，仍不许列（问候会开范围卡）。
+    """
+    assert "scope_card" not in _names(_fresh())
+    st = V5SessionState(
+        sessionId="lst-ask-ans",
+        goal={"text": "", "status": "needs_refinement"},
+        controlTranscript=[
+            {"role": "user", "kind": "turn", "text": "hello"},
+            {"role": "assistant", "kind": "ask_user", "text": "想做什么应用，说一句就行。"},
+            {"role": "tool", "kind": "user_answer", "text": "请假系统", "answerKind": "ask_user"},
+        ],
+    )
+    assert "scope_card" in _names(st)
+
+
+def test_search_evidence_hidden_without_a_product_topic():
+    """空会话检索会把任意话当术语拆义。有产品才列。
+
+    反向：goal 里已经有产品时必须还能搜（test_control_search 那条路）。
+    """
+    assert "search_evidence" not in _names(_fresh())
+    assert should_list_tool("search_evidence", _fresh()) is False
+    topic = V5SessionState(
+        sessionId="lst-search-topic",
+        goal={"text": "请假系统", "status": "needs_refinement"},
+    )
+    assert "search_evidence" in _names(topic)
+    assert "challenge" not in _names(_fresh())
+    assert "repair" not in _names(_fresh())
+    assert "challenge" in _names(_with_model())
+    assert "repair" in _names(_with_model())
 
 
 def test_inspect_model_hidden_without_anything_to_inspect():
@@ -279,8 +314,11 @@ def test_llm_call_site_uses_the_filtered_manifest():
 
     src = re.sub(r'"""[\s\S]*?"""', "", inspect.getsource(rc))
     src = re.sub(r"#.*", "", src)
-    assert "tools=list_control_tools(" in src, (
+    assert "list_control_tools(" in src, (
         "喂给控制模型的还是整张 CONTROL_TOOLS——裁剪没通电"
+    )
+    assert "offered_names" in src, (
+        "模型塞了本轮没列出的工具仍会分发——空会话 spec 会变成继续执行范围卡"
     )
     assert "tools=CONTROL_TOOLS" not in src, (
         "还留着直接传全量的调用点：裁剪会被绕过"
@@ -316,12 +354,14 @@ def test_refine_without_model_reparks_instead_of_igniting():
         seed_session(sid, goal={"text": "", "status": "needs_refinement"})
         harness.llm_impl = lambda messages, **kw: llm_tool("refine", {})
         _, events = harness.post(six_fields(sid, "做一个请假系统"))
+        types = event_types(events)
         assert harness.helper_calls == [], (
             "空会话上 refine 点着了工厂——确认前 drive_full_* 必须是 0"
-            f"（验收 A / KD4）。事件：{event_types(events)}"
+            f"（验收 A / KD4）。事件：{types}"
         )
-        assert "control_scope_card" in event_types(events), (
-            "既没点火也没开范围卡：用户会看到一轮什么都没发生"
+        assert "control_handoff_factory" not in types
+        assert "control_scope_card" not in types, (
+            "没列出的 refine 被复述成产品卡：继续执行就会开范围卡"
         )
     finally:
         mp.undo()

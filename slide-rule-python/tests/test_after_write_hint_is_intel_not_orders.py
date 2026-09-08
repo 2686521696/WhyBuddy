@@ -146,6 +146,38 @@ class Test假设闸不许静静地哑掉:
     def test_没有假设时不提(self):
         assert "确认继续" not in _after_write_hint(_spec_only_state())
 
+    def test_打孔部分failed不许说可以交付(self):
+        """真机 sr-20260909041801：p1/p2 failed、p3 bound、blocked=false。"""
+        state = V5SessionState(
+            sessionId="t-bind-fail",
+            goal={"text": "鲜果速收", "status": "clear", "tools": ["bind"]},
+            specFirstPages={
+                "pages": {"p1": "<html/>", "p2": "<html/>", "p3": "<html/>"},
+                "pageBindStatus": {"p1": "failed", "p2": "failed", "p3": "bound"},
+                "capabilityPlan": {"tools": ["bind"]},
+            },
+            publishClosure={"blocked": False, "topBlockers": []},
+        )
+        hint = _after_write_hint(state)
+        assert "failed" in hint
+        assert "p1" in hint and "p2" in hint
+        assert "可以交付" not in hint
+        assert "闭环完成" not in hint
+
+    def test_打孔全skipped不许说闭环完成(self):
+        state = V5SessionState(
+            sessionId="t-bind-skip",
+            goal={"text": "权盾后台", "status": "clear", "tools": ["bind"]},
+            specFirstPages={
+                "pages": {"p1": "<html/>", "p2": "<html/>", "p3": "<html/>"},
+                "pageBindStatus": {"p1": "skipped", "p2": "skipped", "p3": "skipped"},
+                "capabilityPlan": {"tools": ["bind"]},
+            },
+        )
+        hint = _after_write_hint(state)
+        assert "没接到任何页面" in hint
+        assert "不许说已经闭环完成" in hint
+
     def test_没有假设时不许再把清单清成空(self):
         """变异：把 `tools = []` 加回 host 循环 → 本条红。
 

@@ -420,8 +420,9 @@ def test_llm_pages_without_spec_does_not_handoff(harness):
     harness.llm_impl = lambda messages, **kw: llm_tool("pages", {}, call_id="p1")
     _, events = harness.post(six_fields(sid, "先出页面"))
     assert harness.helper_calls == []
-    blob = "\n".join(str(e.get("text") or "") for e in events if e.get("type") == "control_text")
-    assert "SPEC" in blob
+    types = event_types(events)
+    assert "control_handoff_factory" not in types
+    assert "control_scope_card" not in types
 
 
 def test_llm_pages_after_spec_handoffs(harness):
@@ -606,3 +607,37 @@ def test_host_hop_clips_factory_loop_to_one():
     assert "max_loops = 1" in window, (
         "host hop 没有把工厂循环收成一跳。删掉这句，食堂那趟会再起草一遍 SPEC。"
     )
+
+
+def test_bind_partial_failed_is_not_ok():
+    """真机：3 页里 2 页 failed，不能当已经全部接好。"""
+    state = V5SessionState(
+        sessionId="bind-fail",
+        goal={"text": "鲜果速收", "tools": ["bind"]},
+        specFirstPages={
+            "pages": {"p1": "<html/>", "p2": "<html/>", "p3": "<html/>"},
+            "pageBindStatus": {"p1": "failed", "p2": "failed", "p3": "bound"},
+            "capabilityPlan": {"tools": ["bind"]},
+        },
+    )
+    body = _factory_tool_body(state, "bind", before_fingerprint="old")
+    assert body["ok"] is False
+    assert "failed" in body["human"]
+    assert "闭环" in body["human"]
+
+
+def test_bind_skip_all_pages_is_not_ok():
+    """真机：bind 三页 skipped，收尾却说闭环完成。"""
+    state = V5SessionState(
+        sessionId="bind-skip",
+        goal={"text": "权盾后台", "tools": ["bind"]},
+        specFirstPages={
+            "pages": {"p1": "<html/>", "p2": "<html/>", "p3": "<html/>"},
+            "pageBindStatus": {"p1": "skipped", "p2": "skipped", "p3": "skipped"},
+            "capabilityPlan": {"tools": ["bind"]},
+        },
+    )
+    body = _factory_tool_body(state, "bind", before_fingerprint="old")
+    assert body["ok"] is False
+    assert "skipped" in body["human"]
+    assert "闭环" in body["human"]

@@ -50,9 +50,11 @@ def test_greeting_does_not_call_helper(harness):
     assert harness.helper_calls == []
     assert harness.generator_calls == []
     assert "control_handoff_factory" not in event_types(events)
-    assert "control_text" in event_types(events)
+    # 第 3 格：空会话只说话也要停成提问，下一句才是回执。
+    assert "control_ask_user" in event_types(events)
     loaded = load_session(sid)
     assert loaded is not None
+    assert loaded.awaitReason == "control_ask"
     assert len(loaded.conversation or []) == 1
     assert (loaded.conversation or [])[0]["text"] == "already-here"
     transcript = loaded.controlTranscript or []
@@ -60,7 +62,7 @@ def test_greeting_does_not_call_helper(harness):
     kinds = [
         row.get("kind") for row in transcript if isinstance(row, dict)
     ]
-    assert "control_text" in kinds
+    assert "ask_user" in kinds
     reloaded = load_session(sid)
     assert reloaded is not None
     assert len(reloaded.controlTranscript or []) >= 2
@@ -95,7 +97,11 @@ def test_inspect_tool_message_contains_digest(harness):
 
 
 def test_inspect_does_not_call_helper(harness):
-    sid = _seed("inspect")
+    sid = _seed(
+        "inspect",
+        modelVersions=[{"id": "v1", "model": {"appName": "请假", "pages": []}}],
+        currentModelVersionId="v1",
+    )
     rounds = {"n": 0}
 
     def impl(messages, **kw):
@@ -132,7 +138,9 @@ def test_control_plane_failure_canned_no_helper(harness):
     #   而"这条路不走停因表了"照样红。
     from services.rehearsal_control import ControlStopReason, _STOP_TABLE
 
-    assert _STOP_TABLE[ControlStopReason.LLM_UNAVAILABLE][1] in texts
+    # RuntimeError 不是网关故障，不许借「连不上」那张嘴（2026-09-08）。
+    assert _STOP_TABLE[ControlStopReason.UNKNOWN][1] in texts
+    assert _STOP_TABLE[ControlStopReason.LLM_UNAVAILABLE][1] not in texts
     assert "control_handoff_factory" not in event_types(events)
     # 顺带钉住这次修复：别再回到"叫用户说一个要做的应用"
     assert not any("说一个要做的应用" in (t or "") for t in texts)

@@ -40,6 +40,7 @@ from services.rehearsal_control import (
     list_control_tools,
 )
 from services.slide_rule_session import load_session
+from sliderule_llm.control_client import ControlLlmResult
 
 pytest.importorskip("fastapi")
 
@@ -120,6 +121,69 @@ def test_prompt_does_not_report_missing_dims_on_meta():
         assert "还没读到" not in hi, text
 
 
+def test_cheap_speech_park_is_on_the_live_no_calls_path():
+    """变异：把 if not calls 里的 _park_ask 删掉 → 本条红。"""
+    src = strip_python(PY_ROOT / "services" / "rehearsal_control.py")
+    at = src.find("if not calls:")
+    assert at > 0
+    chunk = src[at : at + 1800]
+    assert "_park_ask" in chunk
+    assert "CHEAP_TURN_FALLBACK" in chunk
+    assert "_has_ask_answer_candidate" in chunk
+
+
+def test_ask_answer_does_not_refresh_original_goal_from_the_stamp():
+    """变异：stamp 之后又写 original_goal = _goal_text / or user_text → 红。"""
+    src = strip_python(PY_ROOT / "services" / "rehearsal_control.py")
+    at = src.find("await _stamp_user_answer")
+    assert at > 0
+    chunk = src[at : at + 900]
+    assert "if not original_goal" not in chunk
+    assert "original_goal or user_text" not in chunk
+
+
+def test_gibberish_ask_answer_does_not_ignite_spec(harness):
+    """真机：hello 停在提问，回执 sfljsdlf → 我认成了 + 点着 SPEC。
+
+    回执不是本回合开始时就有的产品目标，scope_card 不许同一跳点火。
+    """
+    sid = new_sid("cheap-gibber")
+    seed_session(
+        sid,
+        goal={"text": "", "status": "needs_refinement"},
+        awaitReason="control_ask",
+        awaitDetail=CHEAP_TURN_FALLBACK,
+        runtimePhase="awaiting",
+        controlTranscript=[
+            {"role": "user", "kind": "turn", "text": "hello"},
+            {
+                "role": "assistant",
+                "kind": "ask_user",
+                "text": CHEAP_TURN_FALLBACK,
+                "reqId": "need-gib",
+            },
+        ],
+    )
+    harness.llm_impl = lambda messages, **kw: llm_tool(
+        "scope_card", {"restatement": "sfljsdlf"}
+    )
+    _, events = harness.post(
+        six_fields(
+            sid,
+            "sfljsdlf",
+            toolAnswer={"kind": "ask_user", "text": "sfljsdlf", "reqId": "need-gib"},
+        )
+    )
+    types = event_types(events)
+    assert harness.helper_calls == [], f"乱码回执点着了工厂：{types}"
+    assert "control_handoff_factory" not in types
+    loaded = load_session(sid)
+    assert loaded is not None
+    goal = (loaded.goal or {}).get("text") if isinstance(loaded.goal, dict) else ""
+    assert goal != "sfljsdlf", f"乱码回执被写成了目标：{goal!r}"
+    assert types[-1] == "complete", types
+
+
 def test_need_answer_continue_does_not_stamp_goal_or_dump_canned(harness):
     """真机路径 1：芯片「继续」是纸条回执，不是产品名，空回复不许套开场罐头。"""
     sid = new_sid("cheap-continue")
@@ -159,7 +223,8 @@ def test_need_answer_continue_does_not_stamp_goal_or_dump_canned(harness):
     assert CANNED_FAILURE not in blob
     assert "说一个要做的应用" not in blob
     assert "请调 pages" not in blob
-    assert CHEAP_TURN_FALLBACK in blob or any(texts)
+    ask = [e for e in events if e.get("type") == "control_ask_user"]
+    assert CHEAP_TURN_FALLBACK in blob or ask or any(texts)
     assert harness.helper_calls == []
     assert "control_handoff_factory" not in event_types(events)
 
@@ -238,6 +303,191 @@ def test_composer_nihao_does_not_answer_a_stuck_clarify_card(harness):
     assert harness.helper_calls == []
 
 
+def test_continue_execute_does_not_open_a_scope_card(harness):
+    """真机：继续执行 → 模型塞 spec → 「我认成了：接续用户指令完成未竟目标」。
+
+    本轮清单没有 spec，调了也不许 park 成产品卡。
+    """
+    sid = new_sid("cheap-continue-exec")
+    seed_session(sid, goal={"text": "", "status": "needs_refinement"})
+    harness.llm_impl = lambda messages, **kw: llm_tool("spec", {})
+    _, events = harness.post(six_fields(sid, "继续执行"))
+    types = event_types(events)
+    blob = "\n".join(
+        str(e.get("text") or e.get("restatement") or "")
+        for e in events
+        if e.get("type") in ("control_text", "control_scope_card")
+    )
+    assert "control_scope_card" not in types, types
+    assert "接续用户指令" not in blob
+    assert harness.helper_calls == []
+    listed = []
+    for call in harness.llm_calls:
+        tools = (call.get("kwargs") or {}).get("tools") or []
+        listed.extend(
+            (t.get("function") or {}).get("name")
+            for t in tools
+            if isinstance(t, dict)
+        )
+    assert "spec" not in listed
+
+
+def test_cheap_idle_speech_parks_so_next_line_is_receipt(harness):
+    """模型空会话只回一句话、不调工具：必须停成 ask_user。
+
+    变异：if not calls 仍 complete 成 control_text → awaitReason 空，
+    下一句当新话题。
+    """
+    sid = new_sid("cheap-speech-park")
+    seed_session(sid, goal={"text": "", "status": "needs_refinement"})
+    harness.llm_impl = lambda messages, **kw: llm_text("Hello! How can I help you today?")
+    _, events = harness.post(six_fields(sid, "hello"))
+    types = event_types(events)
+    assert "control_ask_user" in types
+    assert "control_handoff_factory" not in types
+    spoken = [
+        str(e.get("text") or "")
+        for e in events
+        if e.get("type") == "control_text"
+    ]
+    assert any("Hello" in t for t in spoken), spoken
+    ask = [e for e in events if e.get("type") == "control_ask_user"]
+    assert ask and ask[0].get("options") == []
+    loaded = load_session(sid)
+    assert loaded is not None
+    assert loaded.awaitReason == "control_ask"
+    turns = [
+        row.get("text")
+        for row in (loaded.controlTranscript or [])
+        if isinstance(row, dict) and row.get("role") == "user" and row.get("kind") == "turn"
+    ]
+    assert "hello" in turns
+
+
+def test_capability_question_is_not_the_same_canned_line(harness):
+    """「你能做什么」必须能听到模型自己的话，不许盖成同一句开场。"""
+    sid = new_sid("cheap-what")
+    seed_session(sid, goal={"text": "", "status": "needs_refinement"})
+    harness.llm_impl = lambda messages, **kw: llm_text(
+        "我是面团，可以把一句话推演成能点的应用。"
+    )
+    _, events = harness.post(six_fields(sid, "你能做什么"))
+    spoken = [
+        str(e.get("text") or "")
+        for e in events
+        if e.get("type") == "control_text"
+    ]
+    assert any("面团" in t for t in spoken), spoken
+    assert CHEAP_TURN_FALLBACK not in spoken
+
+
+def test_capability_question_as_receipt_is_not_the_same_canned_line(harness):
+    """真机：前一句已经停成提问，「你能做什么」是回执。
+
+    回执事实若写成「继续问想做什么应用」，空回复再盖 CHEAP_TURN_FALLBACK，
+    左栏三轮都是同一句。变异：回执仍 dump 开场罐头 → 本条红。
+    """
+    sid = new_sid("cheap-what-receipt")
+    seed_session(
+        sid,
+        goal={"text": "", "status": "needs_refinement"},
+        awaitReason="control_ask",
+        awaitDetail=CHEAP_TURN_FALLBACK,
+        runtimePhase="awaiting",
+        controlTranscript=[
+            {"role": "user", "kind": "turn", "text": "hhh"},
+            {
+                "role": "assistant",
+                "kind": "ask_user",
+                "text": CHEAP_TURN_FALLBACK,
+                "reqId": "need-what",
+            },
+        ],
+    )
+    harness.llm_impl = lambda messages, **kw: llm_text(
+        "我是面团，可以把一句话推演成能点的应用。"
+    )
+    _, events = harness.post(
+        six_fields(
+            sid,
+            "你能做什么",
+            toolAnswer={"kind": "ask_user", "text": "你能做什么", "reqId": "need-what"},
+        )
+    )
+    spoken = [
+        str(e.get("text") or "")
+        for e in events
+        if e.get("type") == "control_text"
+    ]
+    assert any("面团" in t for t in spoken), spoken
+    assert CHEAP_TURN_FALLBACK not in spoken
+    assert harness.helper_calls == []
+
+
+def test_ask_user_does_not_hide_model_speech_behind_the_canned_question(harness):
+    """模型开口 + 调 ask_user：左栏要听到开口，提问只许当停泊。"""
+    sid = new_sid("cheap-speech-ask")
+    seed_session(sid, goal={"text": "", "status": "needs_refinement"})
+
+    def impl(messages, **kw):
+        return ControlLlmResult(
+            content="我是面团，可以把一句话推演成能点的应用。",
+            tool_calls=[
+                {
+                    "id": "call-1",
+                    "name": "ask_user",
+                    "arguments": {"question": CHEAP_TURN_FALLBACK},
+                }
+            ],
+            usage={"total_tokens": 12},
+            finish_reason="tool_calls",
+            model="ctrl-test",
+            latency_ms=1,
+        )
+
+    harness.llm_impl = impl
+    _, events = harness.post(six_fields(sid, "你能做什么"))
+    spoken = [
+        str(e.get("text") or "")
+        for e in events
+        if e.get("type") == "control_text"
+    ]
+    assert any("面团" in t for t in spoken), spoken
+    ask = [e for e in events if e.get("type") == "control_ask_user"]
+    assert ask, event_types(events)
+    assert "control_handoff_factory" not in event_types(events)
+
+
+def test_receipt_prompt_lets_the_model_answer_instead_of_copying_the_opener():
+    """回执事实不许再教「继续问想做什么应用」——模型会整句照抄。"""
+    st = V5SessionState(
+        sessionId="cheap-receipt-prompt",
+        goal={"text": "", "status": "needs_refinement"},
+        controlTranscript=[
+            {"role": "user", "kind": "turn", "text": "hhh"},
+            {
+                "role": "assistant",
+                "kind": "ask_user",
+                "text": CHEAP_TURN_FALLBACK,
+            },
+            {"role": "tool", "kind": "user_answer", "text": "你能做什么"},
+        ],
+    )
+    text = _system_prompt(st)
+    assert "先用文本回答" in text
+    assert "不要每句都用同一句开场" in text
+    assert "继续问想做什么应用" not in text
+    assert CHEAP_TURN_FALLBACK not in text
+    empty = _system_prompt(
+        V5SessionState(
+            sessionId="cheap-empty-prompt",
+            goal={"text": "", "status": "needs_refinement"},
+        )
+    )
+    assert CHEAP_TURN_FALLBACK not in empty
+    assert "先用文本回答" in empty
+
+
 def test_hello_does_not_list_clarify_or_ignite(harness):
     """真机：发 hello 弹出「哪类用户」澄清卡。清单不许有 clarify/spec。"""
     sid = new_sid("cheap-hello")
@@ -258,10 +508,15 @@ def test_hello_does_not_list_clarify_or_ignite(harness):
     assert "clarify" not in listed, listed
     assert "spec" not in listed, listed
     assert "scope_card" not in listed, listed
+    assert "search_evidence" not in listed, listed
     assert harness.helper_calls == []
     types = event_types(events)
     assert "control_handoff_factory" not in types
     assert "control_clarify" not in types
+    assert "control_ask_user" in types
+    loaded = load_session(sid)
+    assert loaded is not None
+    assert loaded.awaitReason == "control_ask"
 
 
 def test_need_answer_path_does_not_pass_canned_as_empty_text():

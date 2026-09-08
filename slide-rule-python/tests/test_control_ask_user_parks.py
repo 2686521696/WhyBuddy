@@ -16,6 +16,7 @@ from control_turn_support import (
     seed_session,
     six_fields,
 )
+from services.rehearsal_control import CHEAP_TURN_FALLBACK
 from services.slide_rule_session import load_session
 
 pytest.importorskip("fastapi")
@@ -45,6 +46,7 @@ def test_ask_user_parks_and_ends_this_request(harness):
     assert harness.llm_calls == [harness.llm_calls[0]], "不得空转等用户再调一轮模型"
     ask_events = [e for e in events if e.get("type") == "control_ask_user"]
     assert ask_events[0]["question"] == question
+    assert ask_events[0]["options"] == []
 
     loaded = load_session(sid)
     assert loaded is not None
@@ -82,10 +84,15 @@ def test_answer_to_ask_is_tool_result_not_new_user_turn(harness):
         rounds["n"] += 1
         roles = [m.get("role") for m in messages]
         assert "tool" in roles, f"回执没进 messages：{roles}"
+        assert "user" in roles, f"function call 前缺 user：{roles}"
+        assert roles.index("user") < roles.index("assistant"), roles
         users = [m for m in messages if m.get("role") == "user"]
         assert not any(
             "请假" == str(m.get("content") or "").strip() for m in users
         ), "答案被当成新的 user 原话"
+        assert any(
+            "你好" == str(m.get("content") or "").strip() for m in users
+        ), f"提问前那句 user 丢了：{users}"
         return llm_text("好，按请假系统做。")
 
     harness.llm_impl = impl
@@ -315,3 +322,107 @@ def test_unconfirmed_assumptions_plain_text_does_not_steal_pages(harness):
         for row in (loaded.controlTranscript or [])
     )
     assert not harness.helper_calls, f"没确认就画页了：{event_types(events)}"
+
+
+def test_ask_user_without_product_drops_meaning_chips(harness):
+    """空会话不许把任意话拆成「这是哪种意思」的芯片。
+
+    变异：仍把模型的 options 原样 park → 本条红。
+    """
+    sid = new_sid("ask-chips")
+    seed_session(sid, goal={"text": "", "status": "needs_refinement"})
+    harness.llm_impl = lambda messages, **kw: llm_tool(
+        "ask_user",
+        {
+            "question": "Hello! How can I help you today?",
+            "options": [
+                "Greeting / General conversation",
+                "SMTP protocol command (HELO)",
+            ],
+        },
+    )
+    _, events = harness.post(six_fields(sid, "helo"))
+    ask = [e for e in events if e.get("type") == "control_ask_user"]
+    assert ask, event_types(events)
+    assert ask[0].get("options") == []
+    assert "SMTP" not in str(ask[0].get("options"))
+    assert "Greeting" not in str(ask[0].get("options"))
+
+
+def test_ask_user_with_product_keeps_options(harness):
+    """反向：已经有产品目标时，问句和选项还是模型给的。"""
+    sid = new_sid("ask-keep")
+    seed_session(sid, goal={"text": "请假系统", "status": "needs_refinement"})
+    harness.llm_impl = lambda messages, **kw: llm_tool(
+        "ask_user",
+        {"question": "给谁用？", "options": ["员工", "主管"]},
+    )
+    _, events = harness.post(six_fields(sid, "下一步"))
+    ask = [e for e in events if e.get("type") == "control_ask_user"]
+    assert ask, event_types(events)
+    assert ask[0]["question"] == "给谁用？"
+    assert ask[0]["options"] == ["员工", "主管"]
+
+
+def test_need_answer_messages_put_user_before_function_call():
+    """Gemini 400：function call 不能直接跟在 system 后面。
+
+    ⚠ 2026-09-08：回执路径 system → assistant(tool_calls) → tool，
+      网关 v_api_biz_error「function call turn comes immediately after
+      a user turn or after a function response turn」。
+    变异：拿掉那句 user → roles 仍以 assistant 开头 → 本条红。
+    变异：把答案写进 user → 请假变成新话题 → 本条红。
+    """
+    from services.rehearsal_control import _messages_after_need_answer
+
+    sid = new_sid("need-order")
+    state = seed_session(
+        sid,
+        goal={"text": "", "status": "needs_refinement"},
+        controlTranscript=[
+            {"role": "user", "kind": "turn", "text": "其他含义"},
+            {
+                "role": "assistant",
+                "kind": "ask_user",
+                "text": "想做什么？",
+                "reqId": "need-abc",
+            },
+        ],
+    )
+    msgs = _messages_after_need_answer(
+        state, "请假", {"kind": "ask_user", "text": "请假", "reqId": "need-abc"}
+    )
+    roles = [m.get("role") for m in msgs]
+    assert roles == ["system", "user", "assistant", "tool"], roles
+    assert msgs[1]["content"] == "其他含义"
+    assert "请假" not in str(msgs[1].get("content") or "")
+    assert msgs[2]["tool_calls"][0]["function"]["name"] == "ask_user"
+    assert "请假" in str(msgs[3].get("content") or "")
+
+
+def test_repair_inserts_user_when_function_call_follows_system():
+    from services.rehearsal_control import _repair_function_call_turn_order
+
+    raw = [
+        {"role": "system", "content": "把这件事做完。"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "need-1",
+                    "type": "function",
+                    "function": {"name": "ask_user", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "need-1", "content": "{}"},
+    ]
+    out = _repair_function_call_turn_order(raw, fallback_user="其他含义")
+    roles = [m.get("role") for m in out]
+    assert roles == ["system", "user", "assistant", "tool"], roles
+    assert out[1]["content"] == "其他含义"
+    # 已经合法的序列不许再插一条 user。
+    again = _repair_function_call_turn_order(out, fallback_user="别插")
+    assert [m.get("role") for m in again] == roles
+    assert again[1]["content"] == "其他含义"
