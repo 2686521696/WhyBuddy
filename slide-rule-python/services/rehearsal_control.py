@@ -3488,7 +3488,8 @@ async def _dispatch_tool(
                 yield event
             _auto_grant_scope(state, restatement)
             await _apersist(state)
-            name = "rehearse"
+            # spec 是闭集 WRITE 工具，不是 rehearse 课表的第 0 格。
+            name = "spec"
         else:
             yielded = False
             async for event in _park_clarify(state, args.get("questions")):
@@ -3496,7 +3497,7 @@ async def _dispatch_tool(
                 yield event
             if yielded:
                 return
-            # 模型自己判断"已经够清楚"（给了空列表）→ 复述、授予、点火
+            # 模型自己判断"已经够清楚"（给了空列表）→ 复述、授予、调 spec
             restatement = _restatement_chain(state, user_text, original_goal)
             async for event in _emit_scope_restatement(
                 state,
@@ -3509,7 +3510,7 @@ async def _dispatch_tool(
                 yield event
             _auto_grant_scope(state, restatement)
             await _apersist(state)
-            name = "rehearse"
+            name = "spec"
     if name == "scope_card":
         restatement = str(args.get("restatement") or _restatement_chain(state, user_text, original_goal))
         async for event in _emit_scope_restatement(
@@ -3526,7 +3527,9 @@ async def _dispatch_tool(
             yield event
         _auto_grant_scope(state, restatement)
         await _apersist(state)
-        name = "rehearse"
+        # 人话进环之后第一件活是 spec 这件工具。改成 rehearse 会展开
+        # first_pass 课表再取 [0]，钟面像流水线，模型从没挑过 spec。
+        name = "spec"
     if name in FACTORY_HOPS or name == "rehearse":
         restatement = _confirmed_restatement(state, user_text)
         _write_confirmed_goal(state, restatement)
@@ -3576,8 +3579,8 @@ async def _dispatch_tool(
         state.goal = goal
         await _apersist(state)
         _fp_before = factory_deliverable_fingerprint(state)
-        # scope_card 复述后改名为 rehearse：外层 tool_scope 仍是 READ 的
-        # scope_card，信封闸会拒。内层盖成当前 name。
+        # scope_card 复述后改名为 spec：外层 tool_scope 仍是 READ 的
+        # scope_card，信封闸会拒。内层盖成当前 name（spec 是 WRITE）。
         with tool_scope_scope(name):
             async for event in _handoff_factory(
                 state,

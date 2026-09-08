@@ -55,6 +55,9 @@ def test_scope_card_tool_ignites_without_waiting():
         st = load_session(sid)
         assert st is not None
         assert getattr(st, "awaitReason", None) != "control_scope"
+        goal = st.goal if isinstance(st.goal, dict) else {}
+        # spec 是工具：复述后调 spec，不许展开 first_pass 课表再取 [0]。
+        assert goal.get("tools") == ["spec"], goal.get("tools")
     finally:
         mp.undo()
 
@@ -67,6 +70,35 @@ def test_control_prompt_does_not_require_confirm_before_rehearse():
     assert "未确认不得 rehearse" not in text
     assert "我认成了" in text
     assert "精修（refine）" in text
+
+
+def test_restatement_continues_as_spec_tool_not_rehearse_bundle():
+    """变异：把 name='spec' 改回 name='rehearse' → 本条红。"""
+    from pathlib import Path
+    import ast
+
+    src = (
+        Path(__file__).resolve().parents[1]
+        / "services"
+        / "rehearsal_control.py"
+    ).read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    fn = next(
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and n.name == "_dispatch_tool"
+    )
+    assigns = [
+        n
+        for n in ast.walk(fn)
+        if isinstance(n, ast.Assign)
+        and any(isinstance(t, ast.Name) and t.id == "name" for t in n.targets)
+        and isinstance(n.value, ast.Constant)
+    ]
+    values = [n.value.value for n in assigns]
+    assert "spec" in values
+    assert "rehearse" not in values
 
 
 def test_can_auto_grant_needs_a_real_topic():
