@@ -52,7 +52,9 @@ FACTORY_HOP_LABELS: Dict[str, str] = {
 
 CLOSED_TOOLS: Tuple[str, ...] = (
     "ask_user",
-    "clarify",
+    # clarify 2026-09-09 退役：维度问题长在 SPEC 假设卡上，不再有一件
+    # 「开场先问几条模板题」的工具。答题路径（awaitReason=control_clarify
+    # 的老会话交卷）不在这张表上，照常可用——见 rehearsal_control 那段注释。
     "search_evidence",
     "inspect_model",
     "scope_card",

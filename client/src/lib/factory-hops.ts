@@ -26,7 +26,9 @@ export type FactoryHop = (typeof FACTORY_HOPS)[number];
 /** 跟 Python `closed_tools.CLOSED_TOOLS` 同一张表。漏一侧 = 芯片一半不认。 */
 export const CLOSED_TOOLS = [
   "ask_user",
-  "clarify",
+  // clarify 2026-09-09 退役（跟 Python `closed_tools.CLOSED_TOOLS` 同步）：
+  // 维度问题长在 SPEC 假设卡上，不再有一件「开场先问几条模板题」的工具。
+  // 答题路径（awaitReason=control_clarify 的老会话交卷）不看这张表，照常可用。
   "search_evidence",
   "inspect_model",
   "scope_card",

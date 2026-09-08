@@ -134,11 +134,54 @@ def _run_tool(tool: str, *, goal_text: str = ""):
 
 
 def test_rehearse_with_topic_restates_and_ignites():
-    """人话进环：有产品话题就复述 + 自动授予 + 点火，卡不当门禁。"""
-    calls, types = _run_tool("rehearse")
-    assert calls == 1, f"有话题的 rehearse 必须点火。事件：{types}"
-    assert "control_scope_card" in types
-    assert "control_handoff_factory" in types
+    """人话进环：有产品话题就复述 + 自动授予 + 点火，卡不当门禁。
+
+    ⚠ 2026-09-09 改走 forced 路径。上一版让夹具**模型**去挑 rehearse，
+      而 `TOOL_LIST_WHEN` 里 rehearse 要 `_scope_confirmed` 才列出——
+      空会话上模型根本看不见它，挑了也会被 `offered_names` 整个丢掉，
+      于是这条判据喂的是一发真机不可能出现的载荷（§一之二）。
+
+      用户真正拥有的那条路是「开始推演」按钮 / `/推演`，走 forcedTool。
+      闸拆掉之后它就是「有真产品直接点火」的入口，正是本条要钉的东西。
+    """
+    pytest.importorskip("fastapi")
+    from control_turn_support import (  # noqa: PLC0415
+        ControlHarness,
+        event_types,
+        new_sid,
+        seed_session,
+        six_fields,
+    )
+    import _pytest.monkeypatch as _mp
+
+    mp = _mp.MonkeyPatch()
+    try:
+        harness = ControlHarness(mp)
+        sid = new_sid("perm-forced-rehearse")
+        seed_session(sid, goal={"text": "", "status": "needs_refinement"})
+        _, events = harness.post(
+            six_fields(sid, "做一个请假系统", forcedTool="rehearse")
+        )
+        types = event_types(events)
+        assert len(harness.helper_calls) == 1, (
+            f"有话题的开始推演必须点火。事件：{types}"
+        )
+        assert "control_scope_card" in types, "复述回执没了——卡不当门禁≠不说话"
+        assert "control_handoff_factory" in types
+    finally:
+        mp.undo()
+
+
+def test_rehearse_is_not_offered_before_scope_is_confirmed():
+    """反向：模型在空会话上看不见 rehearse（所以上面那条只能走 forced）。"""
+    from models.v5_state import V5SessionState  # noqa: PLC0415
+
+    from services.rehearsal_control import should_list_tool  # noqa: PLC0415
+
+    fresh = V5SessionState(
+        sessionId="perm-list", goal={"text": "", "status": "needs_refinement"}
+    )
+    assert should_list_tool("rehearse", fresh) is False
 
 
 def test_refine_without_model_still_parks():

@@ -81,71 +81,75 @@ QUESTIONS = [
 ]
 
 
-class TestClarifyProducesRealQuestions:
-    def test_questions_land_as_gaps_with_their_options(self, harness):
-        sid = new_sid("clarify")
-        seed_session(sid, goal={"text": VAGUE, "status": "needs_refinement"})
-        harness.llm_impl = lambda m, **k: llm_tool("clarify", {"questions": QUESTIONS})
-        _, events = harness.post(six_fields(sid, VAGUE))
+class TestClarifyIsRetired:
+    """clarify 这件工具 2026-09-09 退役（用户裁决）。
 
-        assert "control_clarify" in event_types(events)
-        assert "control_handoff_factory" not in event_types(events), "澄清阶段不许点火"
-        clarify = next(ev for ev in events if ev.get("type") == "control_clarify")
-        assert clarify["label"] == "澄清与取证"
-        assert clarify["productStep"] == 1
-        assert "specfirst." not in str(clarify.get("label") or "")
-        first_q = clarify["questions"][0]
-        assert first_q["kind"] == "users"
-        assert first_q["kindLabel"] == "谁用"
-        gaps = _gaps(sid)
-        assert len(gaps) == 2, gaps
-        first = gaps[0]
-        assert first["label"] == "这个诊所系统主要给谁用？"
-        # ⚠ 选项必须**原样落盘**。Python 的 CoverageGap 之前根本没声明这些字段，
-        #   pydantic 静默丢掉，卡片就退化成一个纯文本框——看着就是"只会问大白话"。
-        assert first["type"] == "multi_choice"
-        assert first["options"] == ["医生", "护士", "前台", "患者"]
-        assert first["context"] == "用谁决定角色与权限怎么切"
-        assert first.get("kindLabel") == "谁用"
+    ## 退役掉的是什么
 
-    def test_choice_without_options_degrades_to_free_text(self, harness):
-        """反向：说是选择题却没给选项 → 退成填空，别端出一张点不动的卡。"""
-        sid = new_sid("clarify-noopt")
-        seed_session(sid, goal={"text": VAGUE, "status": "needs_refinement"})
-        harness.llm_impl = lambda m, **k: llm_tool(
-            "clarify", {"questions": [{"prompt": "预算多少？", "type": "single_choice"}]}
+    原来这里有四条：问题落成带选项的 gap、single_choice 缺 options 退化成
+    自由文本、空列表不许 park 一张空卡、第二轮澄清被拒。它们测的是
+    `_park_clarify` 与 `_dispatch_tool` 的 clarify 分支。
+
+    ## 为什么退役而不是修
+
+    `TOOL_LIST_WHEN` 早已是 `"clarify": lambda st: False`——模型永远看不见
+    它；`should_list` 之后没被列出的调用会被整个丢掉，所以那条分发分支
+    **一次都跑不到**（forced 也到不了，实测过）。四条判据在测一段没通电的
+    代码，正是 §一 反过来的形状。
+
+    维度问题现在长在 SPEC 假设卡上——那里问才有上下文可依，也不会变成
+    "开场先考几道模板题"（漫画第 2 格）。
+
+    ## 留下来的是什么
+
+    · 答题路径：已经停在 `awaitReason=control_clarify` 的老会话仍要能交卷
+      （`_tool_answer_from_payload` / `_messages_after_need_answer`）。
+      抄 grok：把一件工具移出目录，不作废在途的 NeedUserAnswer 相关性。
+    · 本文件其余几组：提示词把答案原样带进生成、答案落在 gap 上、
+      未答的澄清 gap 不阻断闭环——都跟这件工具无关，照常跑。
+
+    变异：把 clarify 加回 `CONTROL_TOOLS` → 本条红。
+    """
+
+    def test_clarify_is_not_in_the_model_catalog(self):
+        from services.rehearsal_control import CONTROL_TOOLS
+
+        names = {(t.get("function") or {}).get("name") for t in CONTROL_TOOLS}
+        assert "clarify" not in names, "clarify 又回到模型目录里了"
+        # 反向：目录本身没被清空
+        assert "ask_user" in names and "scope_card" in names
+
+    def test_clarify_is_not_a_closed_tool_on_either_side(self):
+        """两侧同一张表。只改一侧 = 芯片一半认一半不认（§4）。"""
+        from pathlib import Path
+
+        from services.closed_tools import CLOSED_TOOLS
+
+        assert "clarify" not in CLOSED_TOOLS
+        ts = (
+            Path(__file__).resolve().parents[2]
+            / "client" / "src" / "lib" / "factory-hops.ts"
+        ).read_text(encoding="utf-8")
+        at = ts.index("export const CLOSED_TOOLS")
+        # ⚠ 结束标记要从 at 之后找：FACTORY_HOPS 也用 `] as const;`，
+        #   从 0 找会切出一段空的，反向断言反而先红（写这条时就踩了）。
+        body = ts[at : ts.index("] as const;", at)]
+        assert '"clarify"' not in body, "TS 侧闭集表里 clarify 还在"
+        assert '"ask_user"' in body, "反向：TS 侧那张表没被读空"
+
+    def test_the_dispatch_branch_is_gone(self):
+        """分支还在就说明只撤了目录——下一个人加回 TOOL_LIST_WHEN 就会复活。"""
+        from pathlib import Path
+
+        from control_turn_support import strip_python
+
+        src = strip_python(
+            Path(__file__).resolve().parents[1] / "services" / "rehearsal_control.py"
         )
-        harness.post(six_fields(sid, VAGUE))
-        assert _gaps(sid)[0]["type"] == "free_text"
-
-    def test_empty_question_list_does_not_park_an_empty_card(self, harness):
-        """反向：模型判断"已经够清楚"（空列表）→ 不许硬 park，直接开范围卡。
-
-        参考 dzhng/deep-research 的 generateFeedback：本来就清楚就少问或不问。
-        为了问而问比不问更烦人。
-        """
-        sid = new_sid("clarify-empty")
-        seed_session(sid, goal={"text": VAGUE, "status": "needs_refinement"})
-        harness.llm_impl = lambda m, **k: llm_tool("clarify", {"questions": []})
-        _, events = harness.post(six_fields(sid, VAGUE))
-        types = event_types(events)
-        assert "control_clarify" not in types
-        assert "control_scope_card" in types, types
-        assert _gaps(sid) == []
-
-    def test_second_clarify_round_is_refused(self, harness):
-        """反向：已经问过一轮就不再问，改开范围卡——别把人困在问答里。"""
-        sid = new_sid("clarify-twice")
-        seed_session(
-            sid,
-            goal={"text": VAGUE, "status": "needs_refinement"},
-            controlTranscript=[{"id": "ct-1", "kind": "clarify", "text": "上一轮问过了"}],
-        )
-        harness.llm_impl = lambda m, **k: llm_tool("clarify", {"questions": QUESTIONS})
-        _, events = harness.post(six_fields(sid, VAGUE))
-        types = event_types(events)
-        assert "control_clarify" not in types
-        assert "control_scope_card" in types, types
+        assert 'if name == "clarify":' not in src
+        assert "_park_clarify" not in src
+        # 反向：答题路径必须还在
+        assert "control_clarify" in src, "老会话的交卷路径被一起删了"
 
 
 class TestPromptGetsTheAnswers:

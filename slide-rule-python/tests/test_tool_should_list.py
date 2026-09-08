@@ -325,6 +325,41 @@ def test_llm_call_site_uses_the_filtered_manifest():
     )
 
 
+def test_a_continuation_phrase_does_not_open_a_product_card():
+    """「继续执行」不是产品——不许被复述成一张产品卡。
+
+    这是上一条判据自己写下的担心（"继续执行就会开范围卡"），但它当时用的
+    userText 是一句真产品，测不到。这里用它说的那句话真跑一遍。
+    """
+    pytest.importorskip("fastapi")
+    from control_turn_support import (  # noqa: PLC0415
+        ControlHarness,
+        event_types,
+        llm_tool,
+        new_sid,
+        seed_session,
+        six_fields,
+    )
+
+    import _pytest.monkeypatch as _mp
+
+    mp = _mp.MonkeyPatch()
+    try:
+        harness = ControlHarness(mp)
+        sid = new_sid("continuation-no-card")
+        seed_session(sid, goal={"text": "", "status": "needs_refinement"})
+        harness.llm_impl = lambda messages, **kw: llm_tool("refine", {})
+        _, events = harness.post(six_fields(sid, "继续执行"))
+        types = event_types(events)
+        assert "control_scope_card" not in types, (
+            f"「继续执行」被复述成了产品卡：{types}"
+        )
+        assert harness.helper_calls == []
+        assert "control_handoff_factory" not in types
+    finally:
+        mp.undo()
+
+
 def test_refine_without_model_reparks_instead_of_igniting():
     """分发兜底：裁清单挡不住硬调，refine 空会话必须 re-park 而不是点火。
 
@@ -360,8 +395,13 @@ def test_refine_without_model_reparks_instead_of_igniting():
             f"（验收 A / KD4）。事件：{types}"
         )
         assert "control_handoff_factory" not in types
-        assert "control_scope_card" not in types, (
-            "没列出的 refine 被复述成产品卡：继续执行就会开范围卡"
-        )
+        # ⚠ 2026-09-09：这条断言原本是「没列出的 refine 不许被复述成产品卡」，
+        #   理由写着「继续执行就会开范围卡」。但它用的 userText 是
+        #   「做一个请假系统」——一句**真产品**。真产品出复述卡正是第 5/7 格
+        #   要的行为，拿它来证明「继续执行」的毛病是张冠李戴。
+        #
+        #   这条判据真正贵的地方是上面两句（refine 不许点火），那两句照旧钉着。
+        #   它自己担心的那件事另立一条，用它自己说的那句话去测。
+        assert "control_handoff_factory" not in types
     finally:
         mp.undo()

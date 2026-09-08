@@ -90,15 +90,19 @@ def test_park_card_carries_free_app_from_first_post(harness):
 
 
 def test_confirm_stamps_free_app_then_ignites(harness):
-    """自由类型是接通档，确认必须 stamp 并点火，不许当未接通 fail-closed。"""
+    """自由类型是接通档，必须 stamp 并点火，不许当未接通 fail-closed。
+
+    ⚠ 2026-09-09：这条原来是「先 /推演 停在卡上、再点确认」两步。闸拆掉之后
+      第一步自己就点火了，第二步变成第二次点火，`helper_calls == 1` 变 2。
+      收成一步——本条的主题是 **archetype / device 有没有落到 goal 并抵达
+      工厂**，不是那支停泊舞。
+    """
     sid = new_sid("scope-free-stamp")
     seed_session(sid, goal={"text": "", "status": "needs_refinement"})
-    harness.post(six_fields(sid, "/推演 团子的一天", productArchetype="free_app"))
     _, second = harness.post(
         six_fields(
             sid,
-            "团子的一天",
-            forcedTool="rehearse",
+            "/推演 团子的一天",
             preferredDevice="desktop",
             productArchetype="free_app",
         )
@@ -111,14 +115,19 @@ def test_confirm_stamps_free_app_then_ignites(harness):
 
 
 def test_confirm_stamps_archetype_and_tablet_then_ignites(harness):
+    """archetype 与设备档要落到 goal、落到 scope_confirmed、传进工厂。
+
+    ⚠ 2026-09-09：这条原来是「先 /推演 停在卡上、再点确认」两步。闸拆掉之后
+      第一步自己就点火了，第二步变成第二次点火，`helper_calls == 1` 变 2。
+      收成一步——本条的主题是 **archetype / device 有没有落到 goal 并抵达
+      工厂**，不是那支停泊舞。
+    """
     sid = new_sid("scope-stamp")
     seed_session(sid, goal={"text": "", "status": "needs_refinement"})
-    harness.post(six_fields(sid, "/推演 请假系统"))
     _, second = harness.post(
         six_fields(
             sid,
-            "请假系统",
-            forcedTool="rehearse",
+            "/推演 请假系统",
             preferredDevice="tablet",
             productArchetype="business_app",
         )
@@ -230,15 +239,18 @@ def test_refine_keeps_persisted_tablet_over_composer_desktop(harness):
 
 
 def test_unwired_archetype_does_not_handoff(harness):
-    """选 casual_game 必须 fail-closed：信封次数 = 0。"""
+    """选 casual_game 必须 fail-closed：信封次数 = 0。
+
+    ⚠ 2026-09-09：原来是「先 /推演 停卡、再带 archetype 确认」。闸拆掉之后
+      第一步就点火了（而且那一步没带 archetype，等于绕过本条要测的闸）。
+      收成一步，archetype 从第一发就带上——真机上作曲家也是这么发的。
+    """
     sid = new_sid("scope-unwired")
     seed_session(sid, goal={"text": "", "status": "needs_refinement"})
-    harness.post(six_fields(sid, "/推演 做一个小游戏"))
     _, second = harness.post(
         six_fields(
             sid,
-            "做一个小游戏",
-            forcedTool="rehearse",
+            "/推演 做一个小游戏",
             productArchetype="casual_game",
         )
     )

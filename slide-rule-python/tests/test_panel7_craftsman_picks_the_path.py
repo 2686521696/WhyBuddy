@@ -95,16 +95,25 @@ class Test批准不管产品形态:
             assert name in TOOL_PERMISSION
 
     def test_clarify_is_not_on_the_catalog(self):
+        """clarify 2026-09-09 整件退役，不只是「不列出」。
+
+        ⚠ 上一版断言 `should_list_tool("clarify", …) is False`——那是靠
+          `TOOL_LIST_WHEN` 里一条 `lambda st: False` 把它按住。工具本体退役
+          之后那条谓词也没了，`should_list_tool` 对没声明的名字**默认放行**，
+          于是这条断言会红——但它红得没有道理：目录里根本没有这件工具了。
+          改成直接问目录，这才是「模型能不能看见它」的真判据。
+        """
         state = V5SessionState(
             sessionId="p7-clar",
             goal={"text": "做个水果店收银台", "status": "clear"},
         )
-        assert should_list_tool("clarify", state) is False
         names = {
             ((t.get("function") or {}).get("name"))
             for t in list_control_tools(state)
         }
         assert "clarify" not in names
+        # 反向：目录没被读空，真产品会话该有的工具还在
+        assert "scope_card" in names or "spec" in names
 
 
 class Test真产品第一句不许再考功能:

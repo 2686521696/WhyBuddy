@@ -573,7 +573,6 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
     # 抄 grok WorkflowTool：有名字的日历是一件可挑选的 WRITE 工具，
     # 不是默认唯一路径。范围确认后就能看见；有模型后仍列出（减菜再跑）。
     "workflow": lambda st: _scope_confirmed(st),
-    # 问过一轮再问就改开范围卡（见 clarify 分支）。
     # 已确认过范围就别再列：交回后模型再挑 scope_card 会把假设面板顶掉
     # （2026-09-02 真机）。下一步是 pages，不是再开一张卡。
     "scope_card": lambda st: (not _scope_confirmed(st))
@@ -582,9 +581,6 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
         or _has_ask_answer_candidate(st)
         or bool(_unstamped_product_turn(st))
     ),
-    # 模板问卷不当开场工具。用户会说任意话，列出来就会拿「谁用」填空
-    # （2026-09-08 真机 hello / 你好啊 / 你好）。维度问在 SPEC 假设卡。
-    "clarify": lambda st: False,
     # 没有上一版可回（_previous_model_version_id fail-closed 返回 ""）。
     "restore_version": lambda st: bool(_previous_model_version_id(st)),
     # ⚠ refine / fork_variant 在空会话上无事可做，而 refine 的分发分支
@@ -808,61 +804,6 @@ INSPECT_MAX_CHARS = 4000
 CONTROL_TOOL_RESULT_MAX_CHARS = 4000
 
 CONTROL_TOOLS: List[Dict[str, Any]] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "clarify",
-            "description": (
-                "开工前把这句需求里**没说清的**问出来，最多 3 条。"
-                "只问缺的：用户已经说清的不许再问一遍。"
-                "已经够清楚就别调这个工具，直接 scope_card——问废话比不问更烦人。"
-                "选项要用**这门生意自己的词**（诊所就写 医生/护士/前台/患者，"
-                "不要写 个人C端/企业内部 这种通用词）。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "questions": {
-                        "type": "array",
-                        "maxItems": 3,
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "prompt": {
-                                    "type": "string",
-                                    "description": "问题本身，一句话，用用户的词",
-                                },
-                                "type": {
-                                    "type": "string",
-                                    "enum": [
-                                        "single_choice",
-                                        "multi_choice",
-                                        "free_text",
-                                    ],
-                                },
-                                "options": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
-                                    "description": "选项（single/multi 必填，3-5 个，本行业的词）",
-                                },
-                                "defaultAnswer": {"type": "string"},
-                                "context": {
-                                    "type": "string",
-                                    "description": "为什么要问这条：它会影响推演里的什么",
-                                },
-                                "kind": {
-                                    "type": "string",
-                                    "description": "维度：users / platform / scenario / scope / rules",
-                                },
-                            },
-                            "required": ["prompt", "type"],
-                        },
-                    }
-                },
-                "required": ["questions"],
-            },
-        },
-    },
     {
         "type": "function",
         "function": {
@@ -1961,152 +1902,6 @@ def _session_topic(state: V5SessionState) -> str:
     确认过的目标优先；还没确认就回到用户最初说的那句实话。
     """
     return _goal_text(state) or first_substantive_user_text(state)
-
-
-def _clarify_rounds_done(state: V5SessionState) -> int:
-    """已经问过几轮澄清。用来防止模型没完没了地问。"""
-    return sum(
-        1
-        for row in getattr(state, "controlTranscript", None) or []
-        if isinstance(row, dict) and row.get("kind") == "clarify"
-    )
-
-
-#: 澄清维度 → 人话。事件自己带 kindLabel，前端不许再翻译内部键。
-#: 认不出的键不显示——宁可少一个标签，也不要在用户脸上糊 `users`。
-_CLARIFY_KIND_LABELS = {
-    "users": "谁用",
-    "audience": "谁用",
-    "platform": "在哪用",
-    "scenario": "核心流程",
-    "success-criteria": "核心流程",
-    "scope": "本期边界",
-    "rules": "规则",
-}
-
-
-def _clarify_kind_label(kind: Any) -> str:
-    key = str(kind or "").strip().lower()
-    if not key:
-        return ""
-    if key in _CLARIFY_KIND_LABELS:
-        return _CLARIFY_KIND_LABELS[key]
-    for needle, label in _CLARIFY_KIND_LABELS.items():
-        if needle in key:
-            return label
-    return ""
-
-
-async def _park_clarify(
-    state: V5SessionState, raw_questions: Any
-) -> AsyncIterator[Dict[str, Any]]:
-    """把澄清问题落成 coverageGaps，让现成的澄清卡去渲染。
-
-    ⚠ **不是新做一张卡。** `ClarificationCard.tsx` 早就做好了：多步分页、
-      单选/多选/自由文本、默认值、context、「其他」。前端
-      `pendingClarifications` 也早就在读 coverageGaps 里的 open_question。
-      缺的从来只是——**产品路径上没有任何东西往里写问题**
-      （profile=app 的短清单里没有 gap.ask，TS 那套模拟问题在旧本地引擎上）。
-      所以这里只补"写"，一行渲染代码都不加。
-
-    ⚠ 空问题列表 = 模型判断"已经够清楚"。那就**不要 park**，让它接着去开
-      范围卡；硬 park 一张空卡片就是为了问而问。
-    """
-    questions: List[Dict[str, Any]] = []
-    for i, raw in enumerate(raw_questions if isinstance(raw_questions, list) else []):
-        if not isinstance(raw, dict):
-            continue
-        prompt = str(raw.get("prompt") or "").strip()
-        if not prompt:
-            continue
-        options = [
-            str(o).strip()
-            for o in (raw.get("options") or [])
-            if str(o or "").strip()
-        ]
-        qtype = str(raw.get("type") or "").strip()
-        if qtype not in ("single_choice", "multi_choice", "free_text"):
-            qtype = "single_choice" if options else "free_text"
-        # ⚠ 说是选择题却没给选项 → 退成填空，别端出一张点不动的卡
-        if qtype in ("single_choice", "multi_choice") and not options:
-            qtype = "free_text"
-        questions.append(
-            {
-                "prompt": prompt[:240],
-                "type": qtype,
-                "options": options or None,
-                "defaultAnswer": (str(raw.get("defaultAnswer") or "").strip() or None),
-                "context": (str(raw.get("context") or "").strip() or None),
-                "kind": (str(raw.get("kind") or "").strip() or None),
-            }
-        )
-        if len(questions) >= 3:
-            break
-
-    if not questions:
-        return
-
-    now = _now_iso()
-    turn = str(getattr(state, "lastTurnId", None) or "ctl")
-    gaps = list(getattr(state, "coverageGaps", None) or [])
-    made: List[Dict[str, Any]] = []
-    for i, q in enumerate(questions):
-        gid = f"gap-q-{turn}-{uuid.uuid4().hex[:6]}-{i}"
-        made.append(
-            {
-                "id": gid,
-                "kind": "open_question",
-                "label": q["prompt"],
-                "status": "open",
-                "createdAt": now,
-                "reason": "control_plane_clarify",
-                "clarifyType": q["type"],
-                "options": q["options"],
-                "defaultAnswer": q["defaultAnswer"],
-                "context": q["context"],
-                "clarifyKind": q["kind"],
-                "kindLabel": _clarify_kind_label(q["kind"]),
-                "questionId": gid,
-            }
-        )
-    # ⚠ 往 `List[CoverageGap]` 里塞裸 dict 能跑，但 pydantic 会在序列化时
-    #   报 PydanticSerializationUnexpectedValue——模型头注里那段"代码是靠
-    #   状态没被校验才正常工作的"说的就是这个。这里直接建模型对象：
-    #   哪天校验真的生效，缺口不会无声无息地少几个字段。
-    state.coverageGaps = gaps + [CoverageGap(**row) for row in made]
-    state.runtimePhase = "awaiting"
-    state.awaitReason = "control_clarify"
-    state.awaitDetail = questions[0]["prompt"]
-    _append_transcript(
-        state,
-        {
-            "role": "assistant",
-            "kind": "clarify",
-            "text": "；".join(q["prompt"] for q in questions),
-            "questionIds": [g["id"] for g in made],
-            "reqId": f"need-{uuid.uuid4().hex[:10]}",
-        },
-    )
-    await _apersist(state)
-    yield {
-        "type": "control_clarify",
-        "label": "澄清与取证",
-        "productStep": 1,
-        "questions": [
-            {
-                "id": g["id"],
-                "prompt": g["label"],
-                "type": g["clarifyType"],
-                "options": g["options"],
-                "defaultAnswer": g["defaultAnswer"],
-                "context": g["context"],
-                "kind": g["clarifyKind"],
-                "kindLabel": _clarify_kind_label(g["clarifyKind"]),
-            }
-            for g in made
-        ],
-    }
-    yield _complete(state)
 
 
 async def _park_scope(
@@ -3864,19 +3659,39 @@ async def _run_control_turn_body(
             return
 
     # 昂贵按钮：点火前跳过控制面 LLM。工厂收尾交回 host 循环。
-    # 停泊中只有「开始推演」(forcedTool=rehearse) 才点火；/推演 与模型
-    # rehearse 必须再 park。确认时把复述句写入 goal 并 persist，再 handoff。
-    parked_unconfirmed = getattr(state, "awaitReason", None) == "control_scope"
     if forced == "rehearse" or (forced is None and _is_slash_rehearse(user_text)):
-        # ⚠ 这里不是"又查一遍" TOOL_PERMISSION，**这一支就是那次授予**：
-        #   停泊态 + forcedTool=rehearse = 用户点了范围卡上的「开始推演」。
-        #   对照 grok：`NeedPermission{req_id}` 是请求，用户回的
-        #   `Permission{req_id, decision}` 是授予——这个按钮就是那个 decision。
-        #   `_scope_confirmed` 对停泊态返回 False（停泊 ≠ 已确认），所以
-        #   少了下面这个 or 子句，按钮永远点不着。别把它"统一"掉。
-        may_ignite = _scope_confirmed(state) or (
-            forced == "rehearse"
-            and (parked_unconfirmed or _has_unconfirmed_restatement(state))
+        # ## 2026-09-09：这道闸拆了（用户裁决）
+        #
+        # 上一版是「停泊中只有『开始推演』按钮才点火；/推演 与模型 rehearse
+        # 必须再 park」，把范围卡建模成 grok 的 `NeedPermission{req_id}`、
+        # 把按钮建模成 `Permission{req_id, decision}`。模型对，但**用错了地方**。
+        #
+        # 回去读 grok-build 的原件（`xai-grok-workspace-types`）：
+        #
+        #     pub struct PermissionRequest {
+        #         pub tool_name: String,
+        #         pub input_json: String,
+        #         pub destructive: bool,   // 「允许这次会不会改动外部状态」
+        #     }
+        #
+        # 它按**破坏性**问，而且带着这次调用的实参问——改生产库、跑危险命令、
+        # 进计划模式（`NeedPermission` / `NeedPlanModeChange`）。
+        # 「按用户自己说的那句话，给他造一个新应用」不改动任何外部状态，
+        # 在 grok 那边根本不会触发 NeedPermission。
+        #
+        # 我们却拿它当「你确认要开工吗」的确认框——那不是权限，是门禁。
+        # 代价是漫画第 5/7 格那句：人话进环要先点一次按钮。
+        #
+        # 所以判据换成「这一轮手上有没有一个真产品」。挡住的仍然是该挡的：
+        # 问候、你能做什么、刚收回的乱码纸条（`_turn_has_real_product` 把
+        # 「刚收回的纸条还没成产品」整条否掉，不去猜那串字符像不像产品）。
+        # 真机 2026-09-09 复验：「你好」仍然只答一句 + 问一句，不点火。
+        #
+        # ⚠ 真正该留的破坏性闸不在这儿，在 `TOOL_PERMISSION`：refine 要有模型
+        #   可精修、restore_version 要有上一版。那些是「会改掉已有东西」的动作，
+        #   跟 grok 的 destructive 对得上。别把这两件事再合并回去。
+        may_ignite = _scope_confirmed(state) or _turn_has_real_product(
+            state, original_goal
         )
         if not may_ignite:
             restatement = _confirmed_restatement(state, user_text) or _restate(
@@ -3897,6 +3712,37 @@ async def _run_control_turn_body(
             ):
                 yield event
             return
+        # 拆闸不等于把复述一起拆掉。第 5 格要的是「卡不当门禁」，
+        # 不是「连我认成了什么都不说了」——直接闷头开工，用户看不到系统
+        # 把他那句话读成了什么，认错了也没有地方说「不对」。
+        #
+        # 所以未确认时先发一张 gate=False 的复述卡当**回执**，再接着点火。
+        #
+        # ⚠ 但屏幕上已经有卡时不许再发一张。用户停在卡上点「开始推演」，
+        #   再弹一张一模一样的 = 按钮看起来坏了
+        #   （`test_the_button_is_the_grant_not_a_bypass` 咬的就是这个）。
+        #   停泊态 / 已有未确认复述 = 卡还在，只补点火，不补回执。
+        already_on_screen = (
+            getattr(state, "awaitReason", None) == "control_scope"
+            or _has_unconfirmed_restatement(state)
+        )
+        if not _scope_confirmed(state) and not already_on_screen:
+            async for event in _emit_scope_restatement(
+                state,
+                _confirmed_restatement(state, user_text)
+                or _restate(original_goal)
+                or user_text,
+                device=_resolved_park_device(state, preferred_device, user_text),
+                product_archetype=_resolved_park_archetype(
+                    state,
+                    payload.get("productArchetype")
+                    or payload.get("product_archetype")
+                    or "",
+                ),
+                variant="thin" if original_goal else "full",
+                user_text=user_text,
+            ):
+                yield event
         # 新一轮 SPEC 起草：上一轮「假设已确认」不许压住新卡。
         # 只在 forced=="spec" 时清的话，这次首轮链走 rehearse，陈旧 True
         # 把假设卡闩死，resetSpecAssumptions 成了死代码。
@@ -4235,57 +4081,14 @@ async def _dispatch_tool(
         async for event in _park_ask(state, question, [str(x) for x in options]):
             yield event
         return
-    if name == "clarify":
-        if not _has_product_topic(state):
-            async for event in _park_ask(
-                state, "想做什么应用，说一句就行。", []
-            ):
-                yield event
-            return
-        # ⚠ 已经问过一轮就不许再问：模型很容易越问越细，把用户困在问答里。
-        #   问过了还想问 → 复述推断、自动授予、点火。卡不当门禁。
-        if _clarify_rounds_done(state) >= 1:
-            restatement = _restatement_chain(state, user_text, original_goal)
-            async for event in _emit_scope_restatement(
-                state,
-                restatement,
-                device=_resolved_park_device(state, preferred_device, user_text),
-                product_archetype=_resolved_park_archetype(state),
-                variant="thin" if original_goal else "full",
-                user_text=user_text,
-            ):
-                yield event
-            if not _turn_has_real_product(state, original_goal):
-                yield _complete(state)
-                return
-            _auto_grant_scope(state, restatement)
-            await _apersist(state)
-            # spec 是闭集 WRITE 工具，不是 rehearse 课表的第 0 格。
-            name = "spec"
-        else:
-            yielded = False
-            async for event in _park_clarify(state, args.get("questions")):
-                yielded = True
-                yield event
-            if yielded:
-                return
-            # 模型自己判断"已经够清楚"（给了空列表）→ 复述、授予、调 spec
-            restatement = _restatement_chain(state, user_text, original_goal)
-            async for event in _emit_scope_restatement(
-                state,
-                restatement,
-                device=_resolved_park_device(state, preferred_device, user_text),
-                product_archetype=_resolved_park_archetype(state),
-                variant="thin" if original_goal else "full",
-                user_text=user_text,
-            ):
-                yield event
-            if not _turn_has_real_product(state, original_goal):
-                yield _complete(state)
-                return
-            _auto_grant_scope(state, restatement)
-            await _apersist(state)
-            name = "spec"
+    # clarify 已退役（2026-09-09 用户裁决）。它当年是"开场先问几条模板题"，
+    # 而维度问题现在长在 SPEC 假设卡上——那里问才有上下文可依。工具从目录
+    # 撤掉之后这段分发就没有生产者了，留着就是 §一 说的不通电的插座。
+    #
+    # ⚠ 撤的是**模型能不能调它**。已经停在 `awaitReason=control_clarify`
+    #   的老会话仍要能交卷：`_tool_answer_from_payload` /
+    #   `_messages_after_need_answer` 那条回执路径原样保留。抄 grok：
+    #   把一件工具移出目录，不作废在途的 NeedUserAnswer 相关性。
     if name == "scope_card":
         if _scope_confirmed(state):
             yield {
@@ -4294,6 +4097,27 @@ async def _dispatch_tool(
                 "ok": True,
                 "alreadyConfirmed": True,
             }
+            return
+        # `/范围`（forcedTool=scope_card）是**复查**动作：用户在说「让我看看
+        # 你认成了什么、我要改」。它不是开工指令，所以照旧停在卡上等人动手。
+        #
+        # ⚠ 这跟 2026-09-09 拆掉的那道闸不是一回事。拆的是「说了产品还要再点
+        #   一次才开工」；这里用户**明确要求**看范围，停下来才是他要的。
+        #   少了这个区分，`/范围` 会在有 goal 的会话上直接点火——用户想改范围，
+        #   系统开始重烧。
+        if str((_CONTROL_PAYLOAD.get() or {}).get("forcedTool") or "") == "scope_card":
+            async for event in _park_scope(
+                state,
+                str(args.get("restatement") or _restatement_chain(state, user_text, original_goal)),
+                device=_resolved_park_device(state, preferred_device, user_text),
+                product_archetype=_resolved_park_archetype(state),
+                variant=str(args.get("variant") or ("thin" if original_goal else "full")),
+                user_text=user_text,
+                want_evidence=_truthy_scope_flag(args.get("wantEvidence")),
+                want_feasibility_report=_truthy_scope_flag(args.get("wantFeasibilityReport")),
+                tools=args.get("tools"),
+            ):
+                yield event
             return
         restatement = str(args.get("restatement") or _restatement_chain(state, user_text, original_goal))
         async for event in _emit_scope_restatement(
