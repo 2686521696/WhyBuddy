@@ -15,7 +15,7 @@
 flowchart TB
   subgraph ts [TypeScript]
     ts_agent_loop["ts/agent-loop<br/>99 个模块"]
-    ts_client["ts/client<br/>1038 个模块"]
+    ts_client["ts/client<br/>1039 个模块"]
     ts_server["ts/server<br/>579 个模块"]
     ts_services["ts/services<br/>32 个模块"]
     ts_shared["ts/shared<br/>176 个模块"]
@@ -28,7 +28,7 @@ flowchart TB
     py_middlewares["py/middlewares<br/>2 个模块"]
     py_models["py/models<br/>3 个模块"]
     py_routes["py/routes<br/>12 个模块"]
-    py_scripts["py/scripts<br/>36 个模块"]
+    py_scripts["py/scripts<br/>37 个模块"]
     py_services["py/services<br/>219 个模块"]
     py_sliderule_llm["py/sliderule_llm<br/>13 个模块"]
     py_stdio_utf8["py/stdio_utf8<br/>1 个模块"]
@@ -45,6 +45,7 @@ flowchart TB
   py_app -->|1| py_models
   py_app -->|12| py_routes
   py_app -->|12| py_services
+  py_app -->|1| py_sliderule_llm
   py_app -->|1| py_stdio_utf8
   py_complete_migration -->|1| py_models
   py_complete_migration -->|3| py_services
@@ -63,7 +64,7 @@ flowchart TB
   py_scripts -->|2| py_stdio_utf8
   py_services -->|15| py_config
   py_services -->|31| py_models
-  py_services -->|60| py_sliderule_llm
+  py_services -->|61| py_sliderule_llm
   py_sliderule_llm -->|2| py_config
   ts_server -.->|open| py_services_web_aigc_open_adapter
   ts_server -.->|orchestration| py_services_web_aigc_orchestration_adapter

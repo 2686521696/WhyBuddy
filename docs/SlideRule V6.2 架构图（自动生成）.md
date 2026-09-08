@@ -15,9 +15,9 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **291** 个，模块 **291** 个
-- 内部依赖边 **874** 条，其中 **476** 条写在函数体里（54%；基线 476，只许变少）
-- 未声明的跨包依赖 **0** 条（基线 0 条）
+- 扫描文件 **292** 个，模块 **292** 个
+- 内部依赖边 **878** 条，其中 **478** 条写在函数体里（54%；基线 476，只许变少）
+- 未声明的跨包依赖 **1** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
 - 没人 import 的模块 **54** 个（基线 54 个）—— ⚠ **不是待删清单**，其中 4 个是跨语言入口（见全仓图，不是没人用）
@@ -52,7 +52,7 @@ flowchart TB
   flow["flow<br/>30 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
   core -->|143| util
   flow -->|106| core
-  flow -->|109| util
+  flow -->|110| util
 ```
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
@@ -69,11 +69,12 @@ flowchart TB
   routes["routes<br/>12 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
-  scripts["scripts<br/>36 个模块<br/>运维脚本"]
+  scripts["scripts<br/>37 个模块<br/>运维脚本"]
   app -->|1| config
   app -->|1| models
   app -->|12| routes
   app -->|12 · 其中 3 条在函数体里| services
+  app -.->|1 · 其中 1 条在函数体里| sliderule_llm
   app -->|1| stdio_utf8
   complete_migration -->|1| models
   complete_migration -->|3| services
@@ -92,7 +93,7 @@ flowchart TB
   scripts -->|2| stdio_utf8
   services -->|15 · 其中 7 条在函数体里| config
   services -->|31 · 其中 1 条在函数体里| models
-  services -->|60 · 其中 45 条在函数体里| sliderule_llm
+  services -->|61 · 其中 45 条在函数体里| sliderule_llm
   sliderule_llm -->|2 · 其中 2 条在函数体里| config
 ```
 
@@ -128,13 +129,13 @@ Rust 里这一类根本编译不出来；Python 得自己数。**只许变少。
 
 ## 未声明的跨包依赖
 
-（当前没有）
+- `app -> sliderule_llm`
 
 ## crate 级：component 依赖图
 
 抄 grok 的 Cargo.toml——边写在 crate 上，由编译器焊死。
 现算数字见 `docs/grok-build 架构图（自动生成）.md`。
-我们 24 个 component、87 条边，由 `architecture.toml` 声明、判据强制。
+我们 24 个 component、88 条边，由 `architecture.toml` 声明、判据强制。
 **红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。
 
 ```mermaid
@@ -174,7 +175,7 @@ flowchart LR
   capability_engine -->|1| spec_first
   control -->|handoff 7| drive
   control -->|1| evidence
-  control -->|1| llm_gateway
+  control -->|3| llm_gateway
   control -->|4| model_core
   control -->|6| platform
   control -->|3| spec_first
@@ -195,6 +196,7 @@ flowchart LR
   entrypoint -->|2| agent_loop
   entrypoint -->|2| drive
   entrypoint -->|7| http_routes
+  entrypoint -->|1| llm_gateway
   entrypoint -->|4| model_core
   entrypoint -->|1| permission
   entrypoint -->|4| platform

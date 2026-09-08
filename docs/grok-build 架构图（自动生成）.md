@@ -5,7 +5,7 @@
 > cargo 编译器强制。本文件只是把那些声明画出来，方便和 WhyBuddy 对照。
 > grok-build 源码不进本仓。
 
-- 对照物路径：`/home/user/grok-build`
+- 对照物路径：`/home/user/external/grok-build`
 - `SOURCE_REV`：`a549186d9d39311f2d3ee4208db62af8c65aa476`
 - workspace members **97**，读到 crate **97**
 - 内部运行时依赖边 **348**（含 build-dependencies，不含 dev-dependencies）
