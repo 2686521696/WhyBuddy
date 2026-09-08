@@ -113,7 +113,7 @@ def test_loop_does_not_return_on_handoff_flag():
 
 
 def test_forced_rehearse_rejoins_loop_after_factory(harness):
-    """按钮点火不经过 LLM；工厂收尾必须 host complete。把 handoff 后的 return 加回去，这条红。"""
+    """按钮点火不经过 LLM；工厂收尾必须交回 host，按 hint 挑下一跳。"""
     sid = new_sid("forced-rejoin")
     seed_session(
         sid,
@@ -131,7 +131,7 @@ def test_forced_rehearse_rejoins_loop_after_factory(harness):
         six_fields(sid, "将做成：请假系统", forcedTool="rehearse")
     )
     assert len(harness.helper_calls) == 1
-    assert not harness.llm_calls, "假设卡等确认还去问了控制面"
+    assert harness.llm_calls, "没有假设时工厂之后必须问控制面挑下一跳"
     types = event_types(events)
     assert "control_handoff_factory" in types
     assert "factory_complete" in types, (
@@ -144,21 +144,10 @@ def test_forced_rehearse_rejoins_loop_after_factory(harness):
     )
     assert any(
         e.get("type") == "control_text"
-        and POST_SPEC_HOP_FALLBACK in str(e.get("text") or "")
+        and "页面已经出来" in str(e.get("text") or "")
         for e in events
     ), "交回之后的人话没上屏"
     assert types[-1] == "complete"
-    fc = types.index("factory_complete")
-    speech = next(
-        i
-        for i, e in enumerate(events)
-        if e.get("type") == "control_text"
-        and POST_SPEC_HOP_FALLBACK in str(e.get("text") or "")
-    )
-    last_complete = len(types) - 1 - types[::-1].index("complete")
-    assert fc < speech < last_complete, (
-        f"流序必须是 factory_complete → control_text → complete，实际 {types}"
-    )
 
 
 def test_after_write_hint_reads_this_hop_tools_not_stale_pages():
@@ -250,7 +239,7 @@ def test_forced_refine_rejoins_loop_after_factory(harness):
     )
     assert len(harness.helper_calls) == 1
     assert harness.helper_calls[0].get("profile") == "app"
-    assert harness.helper_calls[0].get("goal_tools") == ["spec"]
+    assert harness.helper_calls[0].get("goal_tools") == ["pages"]
     assert harness.llm_calls
     types = event_types(events)
     assert "factory_complete" in types
@@ -261,7 +250,7 @@ def test_forced_refine_rejoins_loop_after_factory(harness):
     assert types[-1] == "complete"
     saved = load_session(sid)
     tools = (saved.goal or {}).get("tools") if saved and isinstance(saved.goal, dict) else None
-    assert list(tools or []) == ["spec"], f"按钮精修缺省 spec，实际 {tools}"
+    assert list(tools or []) == ["pages"], f"已有 SPEC 的精修走 pages，实际 {tools}"
 
 
 def test_refine_branch_writes_tools_and_uses_app_profile():
@@ -467,12 +456,10 @@ def test_llm_pages_after_spec_handoffs(harness):
     assert rounds["n"] >= 2
 
 
-def test_after_spec_hop_lists_pages_and_user_hint(harness):
-    """SPEC 跳交回：罐头收尾 + complete，不许再问控制面。
+def test_after_spec_hop_host_lists_pages(harness):
+    """SPEC 跳交回、没有假设卡：清单里必须有 pages，host 才能挑下一跳。
 
-    ⚠ 2026-09-02：交回时若仍列出 pages / scope_card，模型会自己点火。
-    ⚠ 2026-09-03：只许说话仍要等 `_invoke_control_llm`，确认继续排队
-      发不出去。变异：把 spec_waiting 提前 complete 拿掉 → 本条红。
+    变异：把 `tools = []` 加回去 → llm kwargs 里没有 pages，本条红。
     """
     sid = new_sid("after-spec-hint")
     seed_session(
@@ -481,27 +468,94 @@ def test_after_spec_hop_lists_pages_and_user_hint(harness):
         awaitReason="control_scope",
         awaitDetail="请假系统",
     )
-    harness.llm_impl = lambda messages, **kw: llm_text("先出页面。")
+    seen = {"names": []}
+
+    def impl(messages, **kw):
+        tools = kw.get("tools") or []
+        names = [
+            ((t.get("function") or {}).get("name") if isinstance(t, dict) else None)
+            for t in tools
+        ]
+        seen["names"] = [n for n in names if n]
+        return llm_text("先出页面。")
+
+    harness.llm_impl = impl
     _, events = harness.post(
         six_fields(sid, "将做成：请假系统", forcedTool="rehearse")
     )
-    assert not harness.llm_calls, (
-        f"假设卡还在等确认，工厂之后又问了控制面：{len(harness.llm_calls)} 次"
-    )
-    types = event_types(events)
-    assert types[-1] == "complete"
-    texts = [
-        str(e.get("text") or "")
-        for e in events
-        if e.get("type") == "control_text"
-    ]
-    assert any("下一跳请调 pages" in t or "必须调 pages" in t for t in texts), texts
+    assert harness.llm_calls, "没有假设时工厂之后必须问控制面"
+    assert "pages" in seen["names"], f"交回清单没有 pages：{seen['names']}"
+    assert "spec" not in seen["names"], f"已经有 SPEC 不该再列 spec：{seen['names']}"
     loaded = load_session(sid)
     assert loaded is not None
     body = _factory_tool_body(loaded, "spec")
     assert body.get("hasSpec") is True
     assert body.get("pageCount") == 0
     assert "pages" in str(body.get("nextHint") or "")
+
+
+def test_spec_then_pages_in_same_host_loop(harness):
+    """步骤级自主：spec 交回后同一轮 host 按 hint 挑 pages。
+
+    变异：交回 tools=[] → 第二轮 LLM 调 pages 进不了工厂，helper 仍是 1。
+    """
+    sid = new_sid("spec-then-pages")
+    _scoped(sid)
+    rounds = {"n": 0}
+
+    def impl(messages, **kw):
+        rounds["n"] += 1
+        if rounds["n"] == 1:
+            return llm_tool("spec", {}, call_id="s1")
+        if rounds["n"] == 2:
+            return llm_tool("pages", {}, call_id="p1")
+        return llm_text("页面出来了。")
+
+    harness.llm_impl = impl
+    _, events = harness.post(six_fields(sid, "做一个请假系统"))
+    assert len(harness.helper_calls) == 2, (
+        f"spec 之后 host 没挑 pages：helper={len(harness.helper_calls)} rounds={rounds['n']}"
+    )
+    loaded = load_session(sid)
+    tools = (loaded.goal or {}).get("tools") if loaded and isinstance(loaded.goal, dict) else None
+    assert list(tools or []) == ["pages"], tools
+    types = event_types(events)
+    assert types[-1] == "complete"
+
+
+def test_assumptions_awaiting_does_not_ask_control(harness):
+    """假设卡摊着：工厂之后零 LLM，确认继续才能发出去（2026-09-03）。"""
+    sid = new_sid("assumptions-wait")
+    seed_session(
+        sid,
+        goal={"text": "请假系统", "status": "clear", "tools": ["spec"]},
+        specFirstPages={
+            "spec": {
+                "appName": "请假",
+                "pages": [{"id": "p1"}],
+                "assumptions": [{"id": "a1", "topic": "登录"}],
+            },
+            "pages": {},
+            "assumptionsConfirmed": False,
+        },
+        controlTranscript=[
+            {"id": "ct-1", "kind": "scope_confirmed", "text": "请假系统"}
+        ],
+    )
+    harness.llm_impl = lambda messages, **kw: llm_text("不该被叫到")
+    _, events = harness.post(
+        six_fields(sid, "将做成：请假系统", forcedTool="spec")
+    )
+    assert not harness.llm_calls, (
+        f"假设卡还在等确认，工厂之后又问了控制面：{len(harness.llm_calls)} 次"
+    )
+    texts = [
+        str(e.get("text") or "")
+        for e in events
+        if e.get("type") == "control_text"
+    ]
+    assert any("下一跳请调 pages" in t or "SPEC 已经起草" in t for t in texts), texts
+    assert event_types(events)[-1] == "complete"
 
 
 def test_factory_tool_body_counts_pages_from_the_dict():

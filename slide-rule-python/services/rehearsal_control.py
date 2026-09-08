@@ -394,6 +394,9 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
     # 不是默认唯一路径。范围确认后就能看见；有模型后仍列出（减菜再跑）。
     "workflow": lambda st: _scope_confirmed(st),
     # 问过一轮再问就改开范围卡（见 clarify 分支）。
+    # 已确认过范围就别再列：交回后模型再挑 scope_card 会把假设面板顶掉
+    # （2026-09-02 真机）。下一步是 pages，不是再开一张卡。
+    "scope_card": lambda st: not _scope_confirmed(st),
     "clarify": lambda st: _clarify_rounds_done(st) < 1,
     # 没有上一版可回（_previous_model_version_id fail-closed 返回 ""）。
     "restore_version": lambda st: bool(_previous_model_version_id(st)),
@@ -2593,6 +2596,23 @@ def append_reminder(output: str, reminder: str) -> str:
     return wrapped if not output else f"{output}\n\n{wrapped}"
 
 
+async def _complete_waiting_for_assumptions(
+    state: V5SessionState,
+) -> AsyncIterator[Dict[str, Any]]:
+    """假设卡等确认：罐头收尾 + complete，不再问控制面。
+
+    ⚠ 2026-09-03 sr-20260903204902：交回仍 `_invoke_control_llm`，
+      HTTP 挂住 SSE，确认继续排队 25 分钟。这一支必须零 LLM。
+    """
+    text = POST_SPEC_HOP_FALLBACK
+    _append_transcript(
+        state, {"role": "assistant", "kind": "control_text", "text": text}
+    )
+    await _apersist(state)
+    yield {"type": "control_text", "text": text}
+    yield _complete(state)
+
+
 def _assumptions_awaiting(state: V5SessionState) -> bool:
     """假设卡摊着、用户还没点「确认继续」。"""
     sfp = getattr(state, "specFirstPages", None)
@@ -2660,19 +2680,10 @@ def _after_write_hint(state: V5SessionState) -> str:
         if _assumptions_awaiting(state):
             # ⚠ 这一条不是叮嘱，是**把闸说清楚**。
             #
-            # SPEC 单跳之后本回合会被降成「只许说话」（host 循环里的
-            # `tools = []`）。那个闸是产品裁决——假设卡在等「确认继续」，
-            # 模型这时调 pages 等于替用户跳过确认；调 scope_card 会让
-            # ComposerDock 画范围卡、把假设面板顶掉（2026-09-02 真机）。
-            #
-            # ⚠ 这个闸**故意不改成「缩小工具集」**：2026-09-03 真机
-            #   sr-20260903204902-3QRNQT9RZX——交回时哪怕只留只读工具，
-            #   仍要等一发 `_invoke_control_llm`，而墙钟只在轮与轮之间查，
-            #   那一发 HTTP 挂住 SSE，「确认继续」排队 25 分钟发不出去、
-            #   账本里一份页面都没有。为一点自主权换回那个事故不划算。
-            #
-            # 能做的是别让它**静静地**哑掉：把「在等谁、等什么」摆出来，
-            # 模型知道自己为什么这一轮只说话。
+            # 假设卡等确认时本轮 HTTP 直接收工（`_complete_waiting_for_assumptions`），
+            # 不再 tools=[] 还问一轮控制面——那是 2026-09-03 的 25 分钟事故。
+            # 没有假设时 host 按 hint 挑 pages。这里把闸讲清楚，给交回那一
+            # 轮看（forced 路径罐头收尾也会带上）。
             facts.append(
                 "假设卡正在等用户点「确认继续」，确认之前不画页面——"
                 "这一轮的任务是把现在的状态讲清楚，不是往下调工具。"
@@ -2837,24 +2848,13 @@ async def _resume_control_llm_after_write(
     )
     if tool_body is None:
         yield {"type": "control_tool_result", "tool": tool, **body}
-    # SPEC 单跳之后假设卡还在等「确认继续」。交回时若仍带工具，模型会
-    # 调 pages（跳过确认）或 scope_card（ComposerDock 有 pendingScope
-    # 就不画假设面板）。2026-09-02 真机：钟 2:done 后范围卡回来，确认
-    # 继续点不着。
-    #
-    # ⚠ 2026-09-03 真机 sr-20260903204902-3QRNQT9RZX：交回「只许说话」
-    #   仍要等 `_invoke_control_llm`。墙钟 45s 只在轮与轮之间查，这一发
-    #   HTTP 挂住 SSE，确认继续排队 25 分钟发不出去，账本没有 pages。
-    #   假设卡等确认 = 罐头收尾 + complete，让队列立刻发剩余产出链。
-    spec_waiting = tool in ("spec", "rehearse") and not _has_pages(state)
-    if spec_waiting:
-        text = POST_SPEC_HOP_FALLBACK
-        _append_transcript(
-            state, {"role": "assistant", "kind": "control_text", "text": text}
-        )
-        await _apersist(state)
-        yield {"type": "control_text", "text": text}
-        yield _complete(state)
+    # 假设卡等确认：结束本轮 HTTP，别再问控制面。
+    # ⚠ 2026-09-03 sr-20260903204902：交回仍 `_invoke_control_llm`，
+    #   HTTP 挂住 SSE，确认继续排队 25 分钟。没有假设时 host 按 hint 挑
+    #   pages——那是步骤级自主，不许再 tools=[] 把清单清掉。
+    if _assumptions_awaiting(state) and not _has_pages(state):
+        async for event in _complete_waiting_for_assumptions(state):
+            yield event
         return
     messages = _messages_after_forced_write(state, user_text, tool, body)
     async for event in _control_llm_loop(
@@ -2868,7 +2868,11 @@ async def _resume_control_llm_after_write(
         original_goal=original_goal,
         started=time.monotonic(),
         cheap_tokens=0,
-        empty_text=POST_WRITE_FALLBACK,
+        empty_text=(
+            POST_SPEC_HOP_FALLBACK
+            if not _has_pages(state)
+            else POST_WRITE_FALLBACK
+        ),
         tools=None,
     ):
         yield event
@@ -2891,7 +2895,8 @@ async def _control_llm_loop(
 ) -> AsyncIterator[Dict[str, Any]]:
     """控制面 host 循环。WRITE 交回后再给便宜思考。
 
-    tools=None：用本轮清单。tools=[]：只许说话（SPEC 跳完等假设确认）。
+    tools=None：用本轮清单（list_control_tools）。假设卡等确认时本函数
+    不会被叫到——见 `_complete_waiting_for_assumptions`。
     """
 
     async def _maybe_over_cap() -> Optional[Dict[str, Any]]:
@@ -3064,9 +3069,12 @@ async def _control_llm_loop(
                         else POST_WRITE_FALLBACK
                     )
                 )
-                if not _has_pages(state):
-                    # 成对：LLM 分发 spec 之后同样不许再调 scope_card / pages。
-                    tools = []
+                if _assumptions_awaiting(state) and not _has_pages(state):
+                    async for event in _complete_waiting_for_assumptions(state):
+                        yield event
+                    return
+                # 没有假设：清单仍走 list_control_tools（pages 在有 SPEC
+                # 时会出现）。host 按 hint 挑下一跳，不许 tools=[]。
         rounds_stop = stop_wire(
             ControlStopReason.TOOL_ROUNDS, limit=MAX_TOOL_ROUNDS, used=MAX_TOOL_ROUNDS
         )
@@ -3512,6 +3520,14 @@ async def _dispatch_tool(
             await _apersist(state)
             name = "spec"
     if name == "scope_card":
+        if _scope_confirmed(state):
+            yield {
+                "type": "control_tool_result",
+                "tool": "scope_card",
+                "ok": True,
+                "alreadyConfirmed": True,
+            }
+            return
         restatement = str(args.get("restatement") or _restatement_chain(state, user_text, original_goal))
         async for event in _emit_scope_restatement(
             state,

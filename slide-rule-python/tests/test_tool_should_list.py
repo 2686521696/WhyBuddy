@@ -87,6 +87,10 @@ def test_rehearse_hidden_until_scope_confirmed():
     assert "rehearse" in _names(_scoped())
     assert "spec" in _names(_scoped())
     assert "pages" not in _names(_scoped())
+    assert "scope_card" in _names(_fresh())
+    assert "scope_card" not in _names(_scoped()), (
+        "已确认后还列 scope_card，交回会把假设面板顶掉"
+    )
     with_model = _with_model()
     with_model.controlTranscript = [
         {"id": "ct-1", "kind": "scope_confirmed", "text": "请假系统"}

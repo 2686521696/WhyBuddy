@@ -128,8 +128,7 @@ class Test本跳跑了什么读的是本跳:
 
 
 class Test假设闸不许静静地哑掉:
-    """`tools = []` 那个降级是产品裁决 + 一条 25 分钟的延迟事故，故意保留；
-    但要让模型知道自己为什么这一轮只说话。"""
+    """假设卡等确认：本轮 HTTP 直接收工（零 LLM）。没有假设：host 按 hint 挑 pages。"""
 
     def test_假设卡等确认时把闸讲出来(self):
         state = _spec_only_state(spec={"assumptions": [{"id": "a1", "topic": "登录"}]})
@@ -147,17 +146,29 @@ class Test假设闸不许静静地哑掉:
     def test_没有假设时不提(self):
         assert "确认继续" not in _after_write_hint(_spec_only_state())
 
-    def test_只许说话那个闸还在(self):
-        """⚠ 反向：这条红 = 有人把闸拆了，模型会替用户跳过确认；
-        而且会把 2026-09-03 那次「确认继续排队 25 分钟」换回来。"""
+    def test_没有假设时不许再把清单清成空(self):
+        """变异：把 `tools = []` 加回 host 循环 → 本条红。
+
+        那是「步骤不是 LLM 决策」的那一刀。没有假设时 pages 必须还在清单里。
+        """
         tree = ast.parse(_RC.read_text(encoding="utf-8"))
         fn = next(
-            n for n in ast.walk(tree)
+            n
+            for n in ast.walk(tree)
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and "tools = []" in ast.unparse(n)
+            and n.name == "_control_llm_loop"
         )
-        assert "if not _has_pages(state)" in ast.unparse(fn), (
-            "「没有页面就只许说话」那个闸不见了"
+        body = ast.unparse(fn)
+        assert "tools = []" not in body, "host 循环又把工具清单清掉了"
+
+    def test_假设卡等确认时两处都提前收工(self):
+        """⚠ 2026-09-03：交回还问控制面 = 确认继续排队 25 分钟。
+
+        成对：按钮路径 `_resume_control_llm_after_write` 与 host 循环。
+        """
+        src = _RC.read_text(encoding="utf-8")
+        assert src.count("_complete_waiting_for_assumptions") >= 3, (
+            "定义 1 处 + 调用至少 2 处（forced / host）。少一处 = 一半不生效。"
         )
 
 

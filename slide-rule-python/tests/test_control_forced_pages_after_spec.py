@@ -293,7 +293,7 @@ def test_forced_closed_tools_bind_write_scope():
 def test_spec_hop_resume_cannot_park_scope_card(harness):
     """选完再继续：SPEC 跳交回后模型想开范围卡，不许把假设面板冲掉。
 
-    变异：把 spec_waiting 提前 complete 拿掉、再带工具交回 → 本条红。
+    已确认后 scope_card 不进清单；即便模型硬调也是 alreadyConfirmed，不 park。
     """
     from control_turn_support import llm_tool
 
@@ -305,8 +305,13 @@ def test_spec_hop_resume_cannot_park_scope_card(harness):
         awaitDetail="社区图书馆借还书系统",
     )
 
+    rounds = {"n": 0}
+
     def impl(messages, **kw):
-        return llm_tool("scope_card", {"restatement": "社区图书馆借还书系统"})
+        rounds["n"] += 1
+        if rounds["n"] == 1:
+            return llm_tool("scope_card", {"restatement": "社区图书馆借还书系统"})
+        return llm_text("页面还没有，下一步画页面。")
 
     harness.llm_impl = impl
     _, events = harness.post(
@@ -317,12 +322,11 @@ def test_spec_hop_resume_cannot_park_scope_card(harness):
     assert "control_scope_card" not in types, (
         f"SPEC 跳完又弹出范围卡，假设面板被 pendingScope 藏起来：{types}"
     )
-    assert not harness.llm_calls, "假设卡等确认还去问了控制面"
     assert types[-1] == "complete"
 
 
-def test_spec_waiting_resume_completes_before_control_llm():
-    """剥注释：spec_waiting 必须自己 complete，不许进控制面 LLM。"""
+def test_assumptions_waiting_resume_completes_before_control_llm():
+    """剥注释：假设卡等确认必须自己 complete，不许进控制面 LLM。"""
     from control_turn_support import strip_python
     from pathlib import Path
 
@@ -331,15 +335,14 @@ def test_spec_waiting_resume_completes_before_control_llm():
     end = src.find("async def _control_llm_loop")
     assert at > 0 and end > at
     body = src[at:end]
-    wait_at = body.find("spec_waiting")
-    assert wait_at > 0, "交回没有 spec_waiting 闸"
-    complete_at = body.find("_complete(state)", wait_at)
+    wait_at = body.find("_assumptions_awaiting")
+    assert wait_at > 0, "交回没有假设卡闸"
+    complete_at = body.find("_complete_waiting_for_assumptions", wait_at)
     loop_at = body.find("_control_llm_loop", wait_at)
-    assert complete_at > 0, "假设卡等确认没有 host complete"
+    assert complete_at > 0, "假设卡等确认没有提前收工"
     assert loop_at < 0 or complete_at < loop_at, (
-        "spec_waiting 仍先进控制面 LLM，确认继续会排队"
+        "假设卡等确认仍先进控制面 LLM，确认继续会排队"
     )
-    assert "POST_SPEC_HOP_FALLBACK" in body[wait_at:]
 
 
 def test_confirm_ignores_payload_tools_pages_and_keeps_first_pass_rest(harness):
