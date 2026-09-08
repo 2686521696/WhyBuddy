@@ -225,6 +225,35 @@ def check_hop_is_one(rounds: List[List[Dict[str, Any]]]) -> List[str]:
     return bad
 
 
+def check_slash_ignites(rounds: List[List[Dict[str, Any]]]) -> List[str]:
+    """2026-09-09 拆闸：`/推演 <真产品>` 直接点火，不要求再点一次按钮。
+
+    反向面在 check_greeting：没有产品时一次火都不点。
+    """
+    bad: List[str] = []
+    ev = rounds[0]
+    ts = types_of(ev)
+    if "control_handoff_factory" not in ts:
+        bad.append(f"有真产品的 /推演 没点火（门禁是不是又装回去了）：{ts}")
+    if "control_scope_card" not in ts:
+        bad.append(f"点火了但没给复述回执——用户看不到你认成了什么：{ts}")
+    if "control_clarify" in ts:
+        bad.append("clarify 又出现了（应已整件退役）")
+    return bad
+
+
+def check_no_questionnaire(rounds: List[List[Dict[str, Any]]]) -> List[str]:
+    """含糊的产品话也不许弹模板问卷——维度问题归 SPEC 假设卡。"""
+    bad: List[str] = []
+    ev = rounds[0]
+    ts = types_of(ev)
+    if "control_clarify" in ts:
+        bad.append(f"含糊产品话弹了澄清问卷：{ts}")
+    if "complete" not in ts and "control_handoff_factory" not in ts:
+        bad.append(f"既没点火也没有终止事件：{ts}")
+    return bad
+
+
 SCENARIOS: List[Scenario] = [
     Scenario(
         key="greeting",
@@ -255,6 +284,22 @@ SCENARIOS: List[Scenario] = [
         panel="第 2 格",
         turns=["你能做什么"],
         check=check_greeting,
+    ),
+    Scenario(
+        key="slash-ignites",
+        title="/推演 带真产品直接点火（门禁已拆）",
+        panel="第 5/7 格",
+        turns=["/推演 做一个社区书店的库存与会员系统"],
+        check=check_slash_ignites,
+        stop_types=("control_handoff_factory", "complete"),
+    ),
+    Scenario(
+        key="vague-product",
+        title="含糊产品话不弹模板问卷（clarify 已退役）",
+        panel="第 2 格",
+        turns=["做个诊所系统"],
+        check=check_no_questionnaire,
+        stop_types=("control_handoff_factory", "complete"),
     ),
 ]
 
