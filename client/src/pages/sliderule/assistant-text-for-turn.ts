@@ -28,7 +28,7 @@ function textFromNarration(turn: UiTurn): string {
   return finalStepText || "";
 }
 
-function turnDidFactoryWork(turn: UiTurn): boolean {
+export function turnDidFactoryWork(turn: UiTurn): boolean {
   const user = (turn.user || "").trim();
   if (factoryHopFromText(user)) return true;
   if (/假设已确认/.test(user)) return true;

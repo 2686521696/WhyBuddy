@@ -457,10 +457,14 @@ describe("续跑接在上一段后面", () => {
     );
     expect(runTurn).toContain("answeringAsk");
     expect(runTurn).toContain("pendingToolAnswerRef");
+    expect(runTurn).toContain('awaitReason === "control_ask"');
+    expect(runTurn).toContain("parkedAsk");
     expect(runTurn).toContain('kind: "ask_user"');
     expect(runTurn).toContain('kind: "assumptions"');
     expect(runTurn).toContain('kind: "clarify"');
-    expect(runTurn).toMatch(
+    expect(runTurn).toContain("skipUserBubble");
+    expect(runTurn).toContain("isContinuationTurn(userText)");
+    expect(runTurn).not.toMatch(
       /skipUserBubble = Boolean\(resumeRun\) \|\| Boolean\(toolAnswer\)/
     );
     expect(runTurn).toContain("...(toolAnswer ? { toolAnswer } : {})");

@@ -243,6 +243,7 @@ describe("开始推演 / 质疑 / /推演", () => {
     );
     expect(hydrate).toContain("ask_user");
     expect(hydrate).toContain("options");
+    expect(hydrate).toContain("pendingAskRef.current");
   });
 });
 
@@ -288,6 +289,34 @@ describe("consumeControlStreamResponse 与工厂 case 共用", () => {
     expect(asked).toEqual([{ question: "你想做什么应用？" }]);
     expect(skills).toEqual([]);
     expect(out?.finalState?.awaitReason).toBe("control_ask");
+  });
+
+  it("control_ask_user 不经 onControlHostText，避免盖掉已经开口的话", async () => {
+    const host: string[] = [];
+    const events = [
+      { type: "control_text", text: "我是面团，可以把一句话推演成能点的应用。" },
+      {
+        type: "control_ask_user",
+        question: "想做什么应用，说一句就行。",
+        options: [],
+      },
+      { type: "complete", state: { sessionId: "s1", awaitReason: "control_ask" } },
+    ];
+    const body = events.map(e => `data: ${JSON.stringify(e)}\n\n`).join("");
+    await consumeControlStreamResponse(
+      new Response(body, { headers: { "Content-Type": "text/event-stream" } }),
+      { onControlHostText: text => host.push(text) }
+    );
+    expect(host).toEqual(["我是面团，可以把一句话推演成能点的应用。"]);
+    const consume = DRIVER.slice(
+      DRIVER.indexOf("export async function consumeControlStreamResponse"),
+      DRIVER.indexOf("export interface FrontierProposal")
+    );
+    const askCase = consume.slice(
+      consume.indexOf('case "control_ask_user"'),
+      consume.indexOf('case "control_clarify"')
+    );
+    expect(askCase).not.toContain("onControlHostText");
   });
 
   it("control_clarify 只喂澄清卡，不叠一张 ask，事件自带 kindLabel", async () => {
@@ -502,6 +531,19 @@ describe("consumeControlStreamResponse 与工厂 case 共用", () => {
       { onControlHostText: text => host.push(text) }
     );
     expect(host).toEqual(["页面已经出来，要改哪一页说一声。"]);
+  });
+
+  it("提问事件把问题写进 hostSpeechRef（左栏才有回答）", () => {
+    const runTurn = SESSION.slice(
+      SESSION.indexOf("const runTurn = async"),
+      SESSION.indexOf("const requestRehearsal = async")
+    );
+    const ask = runTurn.slice(
+      runTurn.indexOf("onControlAskUser:"),
+      runTurn.indexOf("onControlClarify:")
+    );
+    expect(ask).toContain("hostSpeechRef.current");
+    expect(ask).toContain("!hostSpeechRef.current");
   });
 
   it("工厂后的 control_text 写进本轮 assistant（主 Agent 开口）", () => {

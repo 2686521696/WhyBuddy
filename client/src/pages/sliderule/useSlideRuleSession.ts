@@ -1046,7 +1046,13 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             typeof lastAsk?.reqId === "string" && lastAsk.reqId
               ? lastAsk.reqId
               : undefined;
-          setPendingAsk({ question: hydrated.awaitDetail, options, reqId });
+          const parkedAsk = {
+            question: hydrated.awaitDetail,
+            options,
+            reqId,
+          };
+          pendingAskRef.current = parkedAsk;
+          setPendingAsk(parkedAsk);
         }
         if (hydrated.awaitReason === "control_clarify") {
           // ClarificationCard 读 coverageGaps。这里只把钟拨到第 1 步，
@@ -1137,7 +1143,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     const pendingNeed = pendingAskRef.current;
     const stamped = pendingToolAnswerRef.current;
     pendingToolAnswerRef.current = undefined;
-    const answeringAsk = Boolean(pendingNeed) || Boolean(stamped);
+    const parkedAsk =
+      sessionState.awaitReason === "control_ask" || Boolean(pendingNeed);
+    const answeringAsk =
+      Boolean(pendingNeed) || Boolean(stamped) || parkedAsk;
     const toolAnswer = pendingNeed
       ? {
           kind: "ask_user",
@@ -1150,16 +1159,22 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             text: stamped.text || userText.trim(),
             ...(stamped.reqId ? { reqId: stamped.reqId } : {}),
           }
-        : /假设已确认/.test(userText)
-          ? { kind: "assumptions", text: userText.trim() }
-          : /^「[^」]+」答：/.test(userText)
-            ? { kind: "clarify", text: userText.trim() }
-            : undefined;
+        : parkedAsk
+          ? { kind: "ask_user", text: userText.trim() }
+          : /假设已确认/.test(userText)
+            ? { kind: "assumptions", text: userText.trim() }
+            : /^「[^」]+」答：/.test(userText)
+              ? { kind: "clarify", text: userText.trim() }
+              : undefined;
     if (pendingNeed) {
       pendingAskRef.current = null;
       setPendingAsk(null);
     }
-    const skipUserBubble = Boolean(resumeRun) || Boolean(toolAnswer);
+    // 续播 / 芯片 typed 答案不另起用户气泡（「精修（refine）」不是人新说的一句）。
+    // 开放回执（停在「想做什么应用」时打的字）必须看见——第 3 格是纸条，
+    // 不是把字吞掉（2026-09-09 真机：sdgdfgfd 发出去左栏空白）。
+    const skipUserBubble =
+      Boolean(resumeRun) || isContinuationTurn(userText);
     const hop = forcedTool || pendingForcedToolRef.current;
     pendingForcedToolRef.current = undefined;
     // 跟后面 POST 的 inferForcedTool 同一把尺子。问候/提问不是 WRITE，
@@ -2058,6 +2073,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 };
                 pendingAskRef.current = next;
                 setPendingAsk(next);
+                const q = String(event.question || "").trim();
+                // 已经有 control_text 开口时不要盖成同一句提问。
+                if (q && !hostSpeechRef.current) hostSpeechRef.current = q;
                 setLiveAction(null);
               },
               onControlClarify: event => {

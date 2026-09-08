@@ -63,6 +63,20 @@ describe("迭代环一期：编辑重跑 / 重新推演", () => {
     expect(html).not.toContain('data-testid="sliderule-edit-rerun"');
   });
 
+  it("廉价提问轮没有产物 → 不渲染重新推演（那不是推演）", () => {
+    const html = surface([
+      completeTurn({
+        user: "你是谁",
+        assistant: "想做什么应用，说一句就行。",
+        main: null,
+        steps: [],
+      }),
+    ]);
+    expect(html).toContain("你是谁");
+    expect(html).toContain('data-answer-present="true"');
+    expect(html).not.toContain('data-testid="sliderule-rerun-turn"');
+  });
+
   it("运行中 → 重新推演禁用（重入保护）", () => {
     const html = surface([completeTurn()], true);
     const btn = html.slice(html.indexOf('data-testid="sliderule-rerun-turn"') - 200);

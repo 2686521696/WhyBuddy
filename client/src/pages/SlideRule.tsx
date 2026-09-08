@@ -69,7 +69,10 @@ import {
 } from "./sliderule/derive-cross-runtime-summary";
 import { resolveImSurfaceMode } from "./sliderule/im-surface-mode";
 import { deriveSettledFiveSystemModel } from "./sliderule/system-screens/five-system-model";
-import { assistantTextForTurn } from "./sliderule/assistant-text-for-turn";
+import {
+  assistantTextForTurn,
+  turnDidFactoryWork,
+} from "./sliderule/assistant-text-for-turn";
 import { ensureReadableChatMarkdown } from "./sliderule/readable-chat-markdown";
 import {
   RehearsalClockHud,
@@ -679,7 +682,7 @@ function ImAssistantMessage() {
                 </button>
               )}
               {/* 迭代环：同题重发（基于当前推演状态再推一次，非回滚重放） */}
-              {turn.user && (
+              {turn.user && (turn.main || turnDidFactoryWork(turn)) && (
                 <button
                   type="button"
                   data-testid="sliderule-rerun-turn"

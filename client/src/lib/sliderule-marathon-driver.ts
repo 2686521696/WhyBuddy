@@ -1000,15 +1000,19 @@ export async function consumeControlStreamResponse(
               }
               continue;
             case "control_ask_user":
-              opts.onControlAskUser?.({
-                question: String(event.question || ""),
-                options: Array.isArray(event.options)
-                  ? event.options.map((x: unknown) => String(x))
-                  : [],
-                ...(typeof event.reqId === "string" && event.reqId
-                  ? { reqId: event.reqId }
-                  : {}),
-              });
+              {
+                const question = String(event.question || "");
+                opts.onControlAskUser?.({
+                  question,
+                  options: Array.isArray(event.options)
+                    ? event.options.map((x: unknown) => String(x))
+                    : [],
+                  ...(typeof event.reqId === "string" && event.reqId
+                    ? { reqId: event.reqId }
+                    : {}),
+                });
+                // 提问进左栏；若本轮已经有 control_text，消费侧不得盖掉。
+              }
               continue;
             case "control_clarify":
               opts.onControlClarify?.({
