@@ -189,8 +189,13 @@ def _normalize_error(status: int, body: str) -> LlmError:
         return LlmError(f"auth failed ({status}): check API key", status=status, transient=False)
     if status == 404:
         return LlmError("404: check base URL / model id", status=status, transient=False)
-    if status == 524:
-        return LlmError(f"gateway timeout (524): {snippet}", status=status, transient=True)
+    if status in (522, 524):
+        # 522 = Cloudflare 源站连接超时；524 = 源站读超时。都是瞬时的。
+        # ⚠ 2026-09-08：522 原先掉进下面的 generic 5xx，控制面 except 再
+        #   一律说「网关连不上」。直连同一网关是 200，用户不认那句罐头。
+        return LlmError(
+            f"gateway timeout ({status}): {snippet}", status=status, transient=True
+        )
     if 500 <= status < 600:
         return LlmError(f"upstream {status}: {snippet}", status=status, transient=True)
     return LlmError(f"HTTP {status}: {snippet}", status=status, transient=False)

@@ -60,6 +60,12 @@ class Test认错:
         assert not is_gateway_handshake(LlmError("upstream 503", status=503, transient=True))
         assert not is_gateway_handshake(LlmError("timeout after 525s", transient=True))
 
+    def test_522_源站超时不是握手塌了(self):
+        """522 该重试，不该开门熔断。认进去会把瞬时 522 打成 30s 冷却。"""
+        assert not is_gateway_handshake(
+            LlmError("gateway timeout (522):", status=522, transient=True)
+        )
+
 
 class Test状态机:
     def test_连续两次525开门(self):

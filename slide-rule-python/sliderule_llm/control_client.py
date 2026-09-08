@@ -9,6 +9,7 @@ factory 客户端把空 content 当失败，所以控制面不能复用那条提
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
@@ -26,7 +27,12 @@ from .client import (
     _describe_http_error,
     _describe_timeout,
 )
-from .config import clamp_max_tokens, default_max_tokens, get_llm_config
+from .config import (
+    clamp_max_tokens,
+    default_max_tokens,
+    ensure_llm_proxy_bypass,
+    get_llm_config,
+)
 
 
 @dataclass
@@ -97,6 +103,69 @@ def _extract_control(data: dict[str, Any]) -> tuple[str, list[dict[str, Any]], d
 
 
 async def call_control_llm(
+    messages: list[dict[str, Any]],
+    *,
+    tools: list[dict[str, Any]] | None = None,
+    model: str | None = None,
+    temperature: float = 0.2,
+    max_tokens: int | None = None,
+    timeout_ms: int | None = None,
+) -> ControlLlmResult:
+    """控制面专用。失败 raise LlmError；空正文但有 tool_calls 算成功。
+
+    瞬时错误（522/524/5xx/超时）重试两次。工厂路径 `call_llm_with_retry`
+    已经这么干；控制面以前一发 522 就罐头「网关连不上」（2026-09-08）。
+    不对冲：cheap 回合不需要第二份影子，取消还得能掐断。
+    """
+    ensure_llm_proxy_bypass()
+    from .gateway_circuit import note_failure, note_success, reject_reason, retries_allowed
+
+    blocked = reject_reason()
+    if blocked is not None:
+        raise LlmError(blocked, status=525, transient=True)
+
+    last_error: LlmError | None = None
+    for attempt in range(1, 4):
+        if attempt > 1 and not retries_allowed():
+            if last_error is not None:
+                raise last_error
+            raise LlmError(
+                "gateway circuit open (525): retries disabled",
+                status=525,
+                transient=True,
+            )
+        try:
+            result = await _call_control_llm_once(
+                messages,
+                tools=tools,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout_ms=timeout_ms,
+            )
+            note_success()
+            return result
+        except asyncio.CancelledError:
+            raise
+        except LlmError as error:
+            task = asyncio.current_task()
+            if task is not None and task.cancelled():
+                # httpx 有时把取消收成 ReadError → LlmError。再重试就把
+                # 「真的停了」变成第二发还在烧（取消判据会红）。
+                raise asyncio.CancelledError() from error
+            last_error = error
+            note_failure(error)
+            if not error.transient or attempt >= 3:
+                raise
+            if not retries_allowed():
+                raise
+            await asyncio.sleep(0.2 * attempt)
+    if last_error is not None:
+        raise last_error
+    raise LlmError("call_control_llm exhausted without result", transient=False)
+
+
+async def _call_control_llm_once(
     messages: list[dict[str, Any]],
     *,
     tools: list[dict[str, Any]] | None = None,

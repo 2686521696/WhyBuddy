@@ -49,8 +49,9 @@ class _SlowLLM(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b'{"choices":[{"message":{"content":"hi"}}]}')
             self.server.finished.append(time.time())  # type: ignore[attr-defined]
-        except (BrokenPipeError, ConnectionResetError):
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             # 客户端 socket 已经被关掉 —— 正是"真的停了"的证据。
+            # Windows 上是 ConnectionAbortedError（WinError 10053），不是 BrokenPipe。
             self.server.aborted.append(time.time())  # type: ignore[attr-defined]
 
     def log_message(self, *a):  # noqa: A003

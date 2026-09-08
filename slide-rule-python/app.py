@@ -64,6 +64,14 @@ def _hydrate_env_files() -> None:
             key, value = key.strip(), value.strip().strip('"').strip("'")
             if key and key not in os.environ:
                 os.environ[key] = value
+    # 手起 uvicorn 也要绕过 Clash。只靠 dev:all 灌 NO_PROXY 时，
+    # Windows 系统代理仍把 LLM 送进 7890（2026-09-08 控制面 522）。
+    try:
+        from sliderule_llm.config import ensure_llm_proxy_bypass
+
+        ensure_llm_proxy_bypass()
+    except Exception:
+        pass
 
 
 # 必须先于 config.settings / 各服务 import（它们在 import 期就读环境）。

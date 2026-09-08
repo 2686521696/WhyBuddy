@@ -315,6 +315,96 @@ def get_pool_config() -> PoolConfig:
     )
 
 
+#: 跟 `scripts/dev-all.mjs` `collectLlmBypassHosts` 同一份硬编码兜底。
+#: 换供应商时真正救命的是 LLM_BASE_URL 的 hostname，这几个是历史踩坑。
+_LLM_BYPASS_DEFAULTS = (
+    "localhost",
+    "127.0.0.1",
+    "::1",
+    "blackaicoding.com",
+    "api.rcouyi.com",
+    "www.su8.codes",
+    "miantuan.ai",
+)
+
+_LLM_BYPASS_URL_KEYS = (
+    "LLM_BASE_URL",
+    "LLM_API_BASE",
+    "LLM_HOST",
+    "OPENAI_API_BASE",
+    "OPENAI_BASE_URL",
+    "FALLBACK_LLM_BASE_URL",
+    "APP_STORE_HTTP_API_URL",
+    "APP_STORE_DATABASE_URL",
+)
+
+
+def hostname_from_maybe_url(raw: str | None) -> str:
+    s = str(raw or "").strip()
+    if not s:
+        return ""
+    try:
+        parsed = urlparse(s if "://" in s else f"https://{s}")
+        return (parsed.hostname or "").strip()
+    except Exception:
+        host = s.split("/")[0]
+        if "://" in s:
+            host = s.split("://", 1)[1].split("/")[0]
+        return host.split(":")[0].strip()
+
+
+def llm_bypass_hosts() -> tuple[str, ...]:
+    """必须绕过 Clash 的主机。漏了 LLM_BASE_URL 就会把长请求送进 7890。"""
+    seen: list[str] = []
+    for key in _LLM_BYPASS_URL_KEYS:
+        host = hostname_from_maybe_url(os.environ.get(key))
+        if host and host not in seen:
+            seen.append(host)
+    for host in _LLM_BYPASS_DEFAULTS:
+        if host not in seen:
+            seen.append(host)
+    return tuple(seen)
+
+
+def ensure_llm_proxy_bypass() -> None:
+    """让 httpx 的 NO_PROXY 对 LLM 主机生效。
+
+    ⚠ 2026-08-19（dev-all 注释）：Python httpx 把长请求送进 Clash 7890，
+      画页/打孔 502/503/504。`dev:all` 会给子进程灌 NO_PROXY，手起
+      uvicorn 没有那份名单。
+
+    ⚠ 2026-09-08 真机：控制面每句 5–11s 后罐头「网关连不上」。直连
+      `api.rcouyi.com` 是 200，同一条控制面请求是 Cloudflare **522**。
+      Windows 上 HTTP_PROXY 环境变量为空时，`urllib.getproxies()` 走
+      注册表（Clash 系统代理），这时 NO_PROXY **环境变量不生效**
+      （`proxy_bypass` 走 registry 分支）。把系统代理抬进 HTTP_PROXY，
+      再把 LLM 主机写进 NO_PROXY，httpx 才走 environment 分支并绕过它们。
+    """
+    import urllib.request
+
+    env_http = _pick("HTTP_PROXY", "http_proxy")
+    env_https = _pick("HTTPS_PROXY", "https_proxy")
+    if not env_http and not env_https:
+        try:
+            registry = urllib.request.getproxies()
+        except Exception:
+            registry = {}
+        url = str(registry.get("https") or registry.get("http") or "").strip()
+        if url:
+            os.environ.setdefault("HTTP_PROXY", url)
+            os.environ.setdefault("HTTPS_PROXY", url)
+
+    existing = _pick("NO_PROXY", "no_proxy") or ""
+    merged: list[str] = []
+    for part in (*existing.split(","), *llm_bypass_hosts()):
+        item = part.strip()
+        if item and item not in merged:
+            merged.append(item)
+    blob = ",".join(merged)
+    os.environ["NO_PROXY"] = blob
+    os.environ["no_proxy"] = blob
+
+
 @dataclass(frozen=True)
 class VectorStoreConfig:
     """Runtime config contract for vector-backed evidence retrieval."""

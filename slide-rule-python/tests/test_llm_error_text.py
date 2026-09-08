@@ -28,6 +28,7 @@ def test_upstream_502_html_page_becomes_human_readable() -> None:
 def test_gateway_timeout_524_and_http_503_matched() -> None:
     assert humanize_llm_error("gateway timeout (524): snippet").startswith("LLM 服务商网关 524")
     assert humanize_llm_error("HTTP 503: overloaded").startswith("LLM 服务商网关 503")
+    assert humanize_llm_error("gateway timeout (522):").startswith("LLM 服务商网关 522")
 
 
 def test_non_5xx_passthrough_cleaned() -> None:
