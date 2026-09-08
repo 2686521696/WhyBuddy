@@ -3521,6 +3521,21 @@ async def _control_llm_loop(
                 for call in (result.tool_calls or [])
                 if (call.get("name") or "") in offered_names
             ]
+            # ⚠ 诊断：模型**看见了什么**、**挑了什么**、**被裁掉了什么**。
+            #   缺这一行时，「你好为什么点着了工厂」只能靠读代码猜——真机日志里
+            #   只有 `[control] forced hop=None`，看不出模型挑了哪件工具。
+            dropped = [
+                str(c.get("name") or "")
+                for c in (result.tool_calls or [])
+                if (c.get("name") or "") not in offered_names
+            ]
+            print(
+                f"[control] goal={_goal_text(state)[:40]!r} "
+                f"offered={sorted(offered_names)} "
+                f"picked={[str(c.get('name') or '') for c in calls]} "
+                f"dropped={dropped}",
+                flush=True,
+            )
             if tools == []:
                 # 只许说话：夹具/模型仍可能塞 tool_calls，不许再 park / 点火。
                 calls = []

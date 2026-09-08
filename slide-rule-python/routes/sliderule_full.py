@@ -760,7 +760,18 @@ def create_sess(
                 "backend": PYTHON_BACKEND,
             }
 
-    goal_text = payload.get("goal", {}).get("text", "default")
+    # ⚠ 2026-09-08 真机（scripts/run_real_topics.py 第一条就撞上）：这里的
+    #   兜底曾是字面量 "default"。不带 goal 建的会话于是拿到一个**叫
+    #   「default」的产品**——`_has_product_topic` 看它非空又不是确认词，判真，
+    #   于是控制面把 scope_card / search_evidence 摆给模型，模型开卡、
+    #   自动授予、`capabilityPlan=product-rehearsal tools=spec`：
+    #   一句「你好」真去起草了 SPEC（真机 25 秒，事件里连 complete 都没有）。
+    #
+    #   前端建会话发的是 `{"goal":{"text":""}}`，所以产品路径没踩到；踩到的是
+    #   任何**省掉 goal** 的调用方（脚本、集成、以后新写的路由）。占位串放进
+    #   语义字段就是这个形状：它不会报错，只会在下游被当成真东西。
+    #   空目标要 fail-closed 成空，不是 fail-open 成一个假产品（§7）。
+    goal_text = payload.get("goal", {}).get("text", "") or ""
     repaired_payload, _ = sanitize_session_dict({"goal": {"text": goal_text}})
     state = create_session(repaired_payload.get("goal", {}).get("text", goal_text), requested_id or None)
     state, changed = sanitize_session_state(state)
