@@ -53,8 +53,10 @@ export function pendingClarificationItems(opts: {
   submittedGapIds?: Iterable<string>;
 }): ClarificationItem[] {
   const parkedClarify = opts.awaitReason === "control_clarify";
-  // 停泊澄清时请求还没拆完 isRunning，卡必须先画出来。
-  if (opts.isRunning && !parkedClarify) return [];
+  // 只在停泊澄清时画卡。open 缺口留下但 awaitReason 已空 = 用户已经
+  // 另说一句，不许把「谁用」问卷粘在后面每一轮上（2026-09-08 真机：
+  // hello 出卡后打「你好」卡还在）。
+  if (!parkedClarify) return [];
   const submitted = new Set(
     Array.from(opts.submittedGapIds || []).map(id => String(id))
   );

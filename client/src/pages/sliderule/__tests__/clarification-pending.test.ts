@@ -78,6 +78,16 @@ describe("pendingClarificationItems", () => {
     ).toEqual([]);
   });
 
+  it("awaitReason 已空时，残留 open 缺口不许把卡粘在后面每一轮", () => {
+    expect(
+      pendingClarificationItems({
+        gaps: GAPS,
+        awaitReason: null,
+        isRunning: false,
+      })
+    ).toEqual([]);
+  });
+
   it("答完提交后的这一发：isRunning + 已交 id → 空（截图那条）", () => {
     expect(
       pendingClarificationItems({
