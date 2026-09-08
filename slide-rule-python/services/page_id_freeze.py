@@ -334,6 +334,37 @@ def rekey_page_map(value: Any, mapping: Dict[str, str]) -> Any:
     return {mapping.get(str(k), k): v for k, v in value.items()}
 
 
+#: 已经烧进 HTML 正文的菜单孔。引号卡住，避免 p1 误伤 p10。
+_DATA_PAGE_ID_ATTR = re.compile(r'(data-page-id=")([^"]*)(")', re.I)
+
+
+def rewrite_html_page_ids(pages_html: Any, mapping: Dict[str, str]) -> Any:
+    """把已经烧进 HTML 正文的 ``data-page-id`` 换成新 id。
+
+    ``rekey_page_map`` 只换 dict 的键。第 3.5 步 unify_shell 按草稿 id 打的
+    孔还在 value 那串 HTML 里。别名表是给存量 / 直播的第二通道；**新生成
+    的这一份，孔和键必须同一套**——别名表被某一跳抹掉时，菜单又会静默
+    点不动（真机 sr-20260827191954 药房、sr-20260909 菜单再废）。
+
+    选别名而不是重写，当初是为了救已经发出去的存量 HTML。新生成这一份
+    两手都做：改键、改孔、别名照记。
+    """
+    if not mapping or not isinstance(pages_html, dict):
+        return pages_html
+    out: Dict[str, Any] = {}
+    for pid, html in pages_html.items():
+        if not isinstance(html, str):
+            out[pid] = html
+            continue
+
+        def _sub(match: re.Match[str], _map: Dict[str, str] = mapping) -> str:
+            old = match.group(2)
+            return f"{match.group(1)}{_map.get(old, old)}{match.group(3)}"
+
+        out[pid] = _DATA_PAGE_ID_ATTR.sub(_sub, html)
+    return out
+
+
 def rekey_page_ids(value: Any, mapping: Dict[str, str]) -> Any:
     """把一串页面 id 换成新 id。非 list 原样返回。"""
     if not mapping or not isinstance(value, list):

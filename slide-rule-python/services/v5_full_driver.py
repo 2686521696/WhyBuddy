@@ -2735,6 +2735,13 @@ async def drive_full_v5_session_stream(
                 blob = _peek_pages_for_fallback() or {}
                 pages = blob.get("pages") if isinstance(blob, dict) else None
                 if not isinstance(pages, dict) or not pages:
+                    # take_last_pages 在 execute 里已经取空。grok fallback_text
+                    # 读的是终态内容，不是被消费掉的队列。
+                    # ⚠ 2026-09-09：落库 3 页 / 发出 0 个，补发静静跳过。
+                    _sfp = getattr(state, "specFirstPages", None) or {}
+                    blob = _sfp if isinstance(_sfp, dict) else {}
+                    pages = blob.get("pages") if isinstance(blob, dict) else None
+                if not isinstance(pages, dict) or not pages:
                     return
                 total = len(pages)
                 device = str(blob.get("device") or "desktop")

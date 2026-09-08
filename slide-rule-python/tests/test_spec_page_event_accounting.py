@@ -239,6 +239,14 @@ class Test兜底补发:
         code = _code_of(DRIVER, "_fallback_page_events")
         assert "_emitted = _peek_page_events()" in code, "补发不看事件数"
 
+    def test_take之后从落库补发(self):
+        """execute 里 take_last_pages 已取空。grok fallback_text 读终态。
+
+        变异：只 peek 暂存 → 本条红，画布补发永远跳过。
+        """
+        code = _code_of(DRIVER, "_fallback_page_events")
+        assert "specFirstPages" in code, "take 之后必须读落库页面"
+
     def test_不知道的时候不许补发(self):
         """★ 真机差点在这里翻车：计数器读不到（恒 0）时，补发会把**已经发过的
         页再发一遍**，前端每页闪两次。那一轮没重发纯属 `peek_last_pages()`

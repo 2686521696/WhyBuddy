@@ -281,6 +281,33 @@ class Test产出形状:
         for pid in ("p1", "p2", "p3"):
             assert f'data-page-id="{pid}"' in out["pages"]["p1"], f"导航里没有 {pid}"
 
+    def test_侧栏是button也要打上_data_page_id(self):
+        """模型常把菜单写成 button。原先 nav_templates 取不到 <a> 就跳过重排，
+        菜单还在，点了没反应、也没有任何报错。消费端壳有兜底，桌面漏了。
+
+        变异：桌面 unify 不再走 ``_nav_templates_or_fallback`` → 本条红。
+        """
+        buttons = "".join(
+            f'<button type="button" class="nav-item">项{i}</button>' for i in range(3)
+        )
+        markup = (
+            "<!DOCTYPE html><html><body>"
+            f'<aside class="w-56"><div class="brand">甲</div><nav>{buttons}</nav></aside>'
+            '<header class="h-14">顶</header>'
+            '<main class="p-6">正文</main></body></html>'
+        )
+        spec = {
+            "pages": [
+                {"id": "p1", "name": "甲页"},
+                {"id": "p2", "name": "乙页"},
+            ]
+        }
+        out = unify_shell({"p1": markup, "p2": markup}, spec)
+        html = out["pages"]["p1"]
+        assert 'data-page-id="p1"' in html
+        assert 'data-page-id="p2"' in html
+        assert out["navAnchored"] is True
+
     def test_当前页仍然标出来(self):
         out = unify_shell(PAGES, SPEC)
         # aria-current 与 data-page-id 并存，不能因为加了后者把前者挤掉

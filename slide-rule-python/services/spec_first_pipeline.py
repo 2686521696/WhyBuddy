@@ -469,6 +469,35 @@ PAGE_BIND_FAILED = "failed"
 PAGE_BIND_SKIPPED = "skipped"
 
 
+def html_already_bound(html: str) -> bool:
+    """这一页是不是已经打过 data-* 孔。
+
+    ⚠ 2026-09-09 真机：首轮 pages 之后 bind 被标成 refine（已经有模型），
+      `_skip_bind = reuse ∩ pages` 把**还没打孔的照搬页**全跳过。
+      照搬 ≠ 打过孔。有 data-rows / data-record / data-field 才算打过。
+    """
+    raw = str(html or "")
+    return "data-rows=" in raw or "data-record=" in raw or "data-field=" in raw
+
+
+def pages_to_skip_bind(
+    pages: Any,
+    *,
+    refine: bool,
+    reuse_ids: Any,
+) -> set:
+    """局部打孔只许跳过**已经打过孔**的照搬页。"""
+    if not refine:
+        return set()
+    wanted = {str(pid) for pid in (reuse_ids or ())}
+    out = set()
+    blob = pages if isinstance(pages, dict) else {}
+    for pid in wanted:
+        if pid in blob and html_already_bound(str(blob.get(pid) or "")):
+            out.add(pid)
+    return out
+
+
 def page_bind_status(
     page_ids: Any,
     bind_ran: bool,
@@ -1559,6 +1588,7 @@ def run_spec_first(
         rekey_page_ids,
         rekey_page_map,
         rekey_page_refs,
+        rewrite_html_page_ids,
     )
     from .run_cancel import raise_if_cancelled
 
@@ -2262,6 +2292,12 @@ def run_spec_first(
                 pages = rekey_page_map(pages, _canon)
                 failed = rekey_page_map(failed, _canon)
                 _reuse_now = rekey_page_map(_reuse_now, _canon)
+                # ⚠ 改键改不到已经烧进 HTML 的 data-page-id。别名表是第二
+                #   通道；新生成这一份孔必须跟键同一套，否则别名被抹掉菜单
+                #   又静默点不动。p1 不会误伤 p10（正则带引号）。
+                pages = rewrite_html_page_ids(pages, _canon)
+                failed = rewrite_html_page_ids(failed, _canon)
+                _reuse_now = rewrite_html_page_ids(_reuse_now, _canon)
                 spec = rekey_page_refs(spec, _canon)
                 spec_pages_declared = rekey_page_ids(spec_pages_declared, _canon)
                 spec_pages_declared_objs = rekey_page_refs(spec_pages_declared_objs, _canon)
@@ -2272,23 +2308,16 @@ def run_spec_first(
                         **style_brief,
                         "pages": rekey_page_map(style_brief["pages"], _canon),
                     }
-                # ⚠ 2026-08-28：上面这串把「以页面 id 作键或存页面 id」的载体都改了，
-                #   **唯独改不到已经烧进页面 HTML 正文的 `data-page-id`**——那是第
-                #   3.5 步 unify_shell 按当时的草稿 id 打的孔，`rekey_page_map` 只换
-                #   dict 的键、不碰 value 那串 HTML。
+                # ⚠ 2026-08-28：rekey 只换 dict 键，改不到已经烧进 HTML 的
+                #   `data-page-id`。真机（sr-20260827191954 药房、
+                #   sr-20260827201847 巡检）页键成了语义 id、孔还是 p1..p4，
+                #   宿主 resolveActivePageId 静默回落——四个菜单项全点不动，
+                #   且没有任何一处报错。
                 #
-                #   真机后果（sr-20260827191954 药房、sr-20260827201847 巡检）：页键
-                #   成了 remote_rx_audit…，孔还是 p1..p4，宿主 resolveActivePageId
-                #   查不到就静默回落当前页——**四个菜单项全点不动，且没有任何一处
-                #   报错**。8-22 那场页键本身还是 p1/p2，孔对得上，菜单是好的，所以
-                #   这是第 4.5 步引入的回归，不是一直就坏。
-                #   而 `pages_match_model` 那条兜底够不着：它比的是页键 vs 模型 id，
-                #   两边都被改过键，恒等恒绿。
-                #
-                #   修法照 friendly_id 的 History（`has_many :slugs` + 先查当前再查
-                #   历史）：**改名的这一刻**把映射记下来随页面落库，宿主解析不到时
-                #   按它回退。选它而不是重写 HTML，是因为存量应用的 HTML 已经发出去
-                #   了——回退查表连它们一起救，重写只救新生成的。
+                #   别名表（friendly_id History）救存量 / 直播。2026-09-09
+                #   再废一次：新生成这一份必须同时改孔，别名被某一跳抹掉
+                #   时菜单还能点。上面 rewrite_html_page_ids 就是改孔；
+                #   别名照记，两手都做。
                 _page_id_aliases = {**_page_id_aliases, **_canon}
                 # ⚠ 落库那份救的是**刷新之后**的宿主；正在看直播的前端一个字
                 #   都收不到——它按 pageId 认卡，第 6.5 步那批新 id 到达时会
@@ -2453,8 +2482,10 @@ def run_spec_first(
                 os.environ.get("SLIDERULE_REFINE_PARTIAL_BIND", "1")
             ).strip().lower() not in _env_flags.OFF
             _skip_bind = (
-                set(_reuse_now.keys()) & set(pages.keys())
-                if (_partial_on and refine)
+                pages_to_skip_bind(
+                    pages, refine=True, reuse_ids=_reuse_now.keys()
+                )
+                if _partial_on
                 else set()
             )
             to_bind = {pid: h for pid, h in pages.items() if pid not in _skip_bind}

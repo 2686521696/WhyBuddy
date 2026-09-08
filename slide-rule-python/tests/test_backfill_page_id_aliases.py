@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from services.page_id_freeze import (  # noqa: E402
     dangling_nav_holes,
     infer_page_id_aliases,
+    rewrite_html_page_ids,
 )
 
 
@@ -166,3 +167,27 @@ class Test判定点不动的口径:
         pages = {"a": _page([("x", "甲页")])}
         nav = [{"id": "a", "name": "甲页"}]
         assert dangling_nav_holes(pages, {"x": "y", "y": "x"}, nav) == ["x"]
+
+
+class Test改键同时改HTML孔:
+    def test_孔跟着映射走_点得动(self):
+        """真机形态：页键已经是语义 id，孔还是 p1。改完孔必须对得上键。"""
+        mapping = {h: pid for h, pid, _n in REAL}
+        pages, nav = _real_blob()
+        assert dangling_nav_holes(pages, None, nav) == ["p1", "p2", "p3", "p4", "p5"]
+        rewritten = rewrite_html_page_ids(pages, mapping)
+        assert dangling_nav_holes(rewritten, None, nav) == []
+        html = rewritten["book_list"]
+        assert 'data-page-id="p1"' not in html
+        assert 'data-page-id="book_list"' in html
+        assert 'data-page-id="service_desk"' in html
+
+    def test_p1_不许误伤_p10(self):
+        html = '<a data-page-id="p1">甲</a><a data-page-id="p10">乙</a>'
+        got = rewrite_html_page_ids({"p10": html}, {"p1": "alpha"})
+        assert 'data-page-id="alpha"' in got["p10"]
+        assert 'data-page-id="p10"' in got["p10"]
+
+    def test_空映射不动(self):
+        pages = {"p1": '<a data-page-id="p1">甲</a>'}
+        assert rewrite_html_page_ids(pages, {}) is pages

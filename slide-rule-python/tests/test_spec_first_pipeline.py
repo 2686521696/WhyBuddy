@@ -397,3 +397,21 @@ class Test缺页日志不许炸交付:
             "缺页对账的 ⚠ 打不出就把交付拖死了——跟 Foclip 那轮 0/6 同一形状"
         )
         assert out["stages"]["pages"].get("missingPages") == "p2"
+
+
+class Test局部打孔只跳过已经打过孔的页:
+    def test_照搬但没打孔的页必须重打(self):
+        """真机：首轮 bind 被标 refine，reuse 页全 skip，权限没接到页面上。"""
+        pages = {
+            "p1": "<html><body>素颜页</body></html>",
+            "p2": '<div data-rows="employee"><span data-field="name"></span></div>',
+        }
+        skip = sfp.pages_to_skip_bind(
+            pages, refine=True, reuse_ids=["p1", "p2"]
+        )
+        assert "p1" not in skip
+        assert "p2" in skip
+
+    def test_非精修不跳(self):
+        pages = {"p1": '<div data-field="x"></div>'}
+        assert sfp.pages_to_skip_bind(pages, refine=False, reuse_ids=["p1"]) == set()

@@ -1400,6 +1400,33 @@ _CONTENT_NAV_FALLBACK: Dict[str, Any] = {
     "icons": [""],
 }
 
+#: 源侧栏 <nav> 里不够两条 <a> 时的基座。模型常写成 <button>，
+#: ``nav_templates`` 取不到链接就 return None。消费端壳 2026-08 已经有
+#: 上面那条兜底；桌面 / 手机漏了 = 菜单还在，一个 data-page-id 都没有，
+#: 点了没反应、也没有任何报错（2026-09-09 真机）。
+_DESKTOP_NAV_FALLBACK: Dict[str, Any] = {
+    "link": '<a href="#" class="flex items-center gap-3 px-4 py-3 rounded-lg text-sm">x</a>',
+    "base_class": "flex items-center gap-3 px-4 py-3 rounded-lg text-sm",
+    "active_class": "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold",
+    "icons": [""],
+}
+_PHONE_NAV_FALLBACK: Dict[str, Any] = {
+    "link": '<a href="#" class="flex flex-col items-center justify-center gap-1 text-xs">x</a>',
+    "base_class": "flex flex-col items-center justify-center gap-1 text-xs",
+    "active_class": "flex flex-col items-center justify-center gap-1 text-xs font-semibold",
+    "icons": [""],
+}
+
+
+def _nav_templates_or_fallback(
+    nav_html: Optional[str], fallback: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """有 <nav> 就必须能重排。取不到 <a> 就用兜底基座，不许跳过。"""
+    if not nav_html:
+        return None
+    got = nav_templates(nav_html)
+    return got if got is not None else dict(fallback)
+
 
 def _minimal_content_header(app_name: str, role: str) -> str:
     """源页连 header 都没有时的兜底。有 header 不许走这里——会盖掉模型的皮。"""
@@ -1554,7 +1581,9 @@ def _unify_shell_phone(pages_html: Dict[str, str], spec: Dict[str, Any]) -> Dict
     header = _apply_identity(header, old_brand, app_name)
     header = _apply_identity(header, old_role, role)
 
-    templates = nav_templates(nav_m.group(0)) if nav_m else None
+    templates = _nav_templates_or_fallback(
+        nav_m.group(0) if nav_m else None, _PHONE_NAV_FALLBACK
+    )
     name_of = {
         str(p.get("id") or ""): str(p.get("name") or p.get("id") or "").strip()
         for p in spec_pages
@@ -1657,7 +1686,9 @@ def unify_shell(
     # check_shell_consistency 的前两条也照样绿。这种"闸全绿但功能没生效"的
     # 形状，本仓踩过不止一次。
     nav_match = _NAV.search(shell["aside"])
-    templates = nav_templates(nav_match.group(0)) if nav_match else None
+    templates = _nav_templates_or_fallback(
+        nav_match.group(0) if nav_match else None, _DESKTOP_NAV_FALLBACK
+    )
 
 
     # ⚠ **无条件注入**这条兜底，不再试图判断"源导航有没有激活样式"。

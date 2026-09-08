@@ -1176,6 +1176,17 @@ def _cache_spec_first_pages(state: "V5SessionState") -> None:
         #   而这条判据的全部价值就在于它平时不响。
         _emitted = peek_page_events_emitted()
         _page_n = len(got.get("pages") or {})
+        prev = getattr(state, "specFirstPages", None)
+        prev = prev if isinstance(prev, dict) else {}
+        # 本跳没画页（structure/bind/closure）时不许把上一跳的「发过事件」
+        # 盖成 lost。真机收尾 hop 把 specPageEventsEmitted 写成 0，画布像没动。
+        prev_emitted = prev.get("specPageEventsEmitted")
+        if (
+            _emitted == 0
+            and isinstance(prev_emitted, int)
+            and prev_emitted > 0
+        ):
+            _emitted = prev_emitted
         got = {
             **got,
             "specPageEventsEmitted": _emitted,
@@ -1187,6 +1198,19 @@ def _cache_spec_first_pages(state: "V5SessionState") -> None:
                 None if _emitted is None else bool(_page_n > 0 and _emitted == 0)
             ),
         }
+        prev_bind = prev.get("pageBindStatus") if isinstance(prev.get("pageBindStatus"), dict) else {}
+        new_bind = got.get("pageBindStatus") if isinstance(got.get("pageBindStatus"), dict) else {}
+        if (
+            prev_bind
+            and new_bind
+            and new_bind
+            and all(str(v) == "skipped" for v in new_bind.values())
+            and any(str(v) == "bound" for v in prev_bind.values())
+        ):
+            got["pageBindStatus"] = dict(prev_bind)
+            got["boundPages"] = sum(
+                1 for v in prev_bind.values() if str(v) == "bound"
+            )
         if _page_n > 0 and _emitted == 0:
             print(
                 f"[spec-first] ⚠ spec_page 事件丢了：落库 {_page_n} 页、"
