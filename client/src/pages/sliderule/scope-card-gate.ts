@@ -73,17 +73,21 @@ export type ScopeCardPending = {
   charterReuseNext?: boolean;
   /**
    * 默认 true = 门禁（停泊等确认）。
-   * false = 复述「我认成了桌面收银台，不对再说」，不当门禁。
+   * false = 复述「我认成了…」，不当类型/设备门禁。仍要有「开始推演」。
    */
   gate?: boolean;
 };
 
-/** 复述卡不锁输入。门禁卡（停泊）才锁。 */
+/** 范围卡摊着时发送只能走开始推演 / 不对再说。复述卡也锁。
+
+ * ⚠ 2026-09-09 真机：gate=false 不锁作曲家，卡上「我认成了…」时
+ *   用户又打一句，控制面当新话题再问一轮。抄 grok NeedPermission：
+ *   批准/拒绝是按钮，不是另开一条 HumanIntent。
+ */
 export function scopeCardBlocksComposer(
   pending?: { gate?: boolean } | null
 ): boolean {
-  if (!pending) return false;
-  return pending.gate !== false;
+  return Boolean(pending);
 }
 
 /** 墙上钟 v1。禁止把未标定分钟数写进产品 UI。 */

@@ -240,20 +240,18 @@ export function ScopeCard({
         </>
       )}
       <div className="mt-3 flex items-center gap-2">
-        {pending.gate === false ? null : (
-          <button
-            type="button"
-            data-testid="sliderule-scope-confirm"
-            disabled={confirmDisabled}
-            onClick={() => {
-              if (confirmDisabled) return;
-              onConfirm(choice);
-            }}
-            className="rounded-[8px] bg-[#171717] px-3 py-1.5 text-[13px] leading-5 text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {SCOPE_CARD_CONFIRM_LABEL}
-          </button>
-        )}
+        <button
+          type="button"
+          data-testid="sliderule-scope-confirm"
+          disabled={confirmDisabled}
+          onClick={() => {
+            if (confirmDisabled) return;
+            onConfirm(choice);
+          }}
+          className="rounded-[8px] bg-[#171717] px-3 py-1.5 text-[13px] leading-5 text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {SCOPE_CARD_CONFIRM_LABEL}
+        </button>
         <button
           type="button"
           data-testid="sliderule-scope-revise"

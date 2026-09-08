@@ -41,6 +41,7 @@ import {
   SCOPE_CARD_PUBLIC_TOOLS,
   SCOPE_CARD_REVISE_LABEL,
   SCOPE_CARD_TIME_COPY,
+  SCOPE_CARD_WRONG_LABEL,
   scopeCardBlocksComposer,
   scopeCardSteps,
   scopeCardStepsFromTools,
@@ -174,6 +175,31 @@ describe("范围卡 DOM", () => {
     expect(html).not.toContain('data-testid="sliderule-scope-charter-fields"');
   });
 
+  it("复述卡仍有开始推演，不当成没下一步", () => {
+    /**
+     * 真机：gate=false 写成「我认成了」，确认钮被藏掉，卡上只剩「不对再说」。
+     * 变异：再 `gate === false ? null` 包确认钮 → 本条红。
+     */
+    const html = renderToStaticMarkup(
+      <ScopeCard
+        pending={{
+          ...FULL_PENDING,
+          restatement: "员工权限与后台菜单管理系统",
+          gate: false,
+        }}
+        onConfirm={() => {}}
+        onRevise={() => {}}
+      />
+    );
+    expect(html).toContain("我认成了：员工权限与后台菜单管理系统");
+    expect(html).toContain(SCOPE_CARD_CONFIRM_LABEL);
+    expect(html).toContain('data-testid="sliderule-scope-confirm"');
+    expect(html).toContain(SCOPE_CARD_WRONG_LABEL);
+    expect(CARD_SRC).not.toMatch(
+      /gate === false \? null[\s\S]{0,80}sliderule-scope-confirm/
+    );
+  });
+
   it("scopeCardSteps 仍是未接线 helper；产品卡不得再露取证勾选", () => {
     expect(scopeCardSteps(false)[0]).toBe("起草 SPEC");
     expect(scopeCardSteps(false)).not.toContain("澄清与取证");
@@ -267,9 +293,9 @@ describe("同一 send 禁止 hint 条和范围卡同时出现", () => {
     ).toBe("");
   });
 
-  it("复述卡不锁作曲家；门禁卡才锁", () => {
+  it("复述卡也锁作曲家，不许另开一单", () => {
     expect(scopeCardBlocksComposer(null)).toBe(false);
-    expect(scopeCardBlocksComposer({ gate: false } as never)).toBe(false);
+    expect(scopeCardBlocksComposer({ gate: false } as never)).toBe(true);
     expect(scopeCardBlocksComposer({ gate: true } as never)).toBe(true);
     expect(scopeCardBlocksComposer({} as never)).toBe(true);
   });
