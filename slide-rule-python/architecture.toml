@@ -53,7 +53,16 @@ may_depend_on = ["config", "models", "services", "sliderule_llm", "middlewares"]
 rank = 4
 what = "装配根"
 # 对应 grok 的 composition root（xai-grok-pager-bin）：只负责把东西装起来。
-may_depend_on = ["config", "models", "routes", "services", "middlewares", "stdio_utf8"]
+#
+# ⚠ sliderule_llm 这一项是 2026-09-08 加的，理由不是「装配要用 LLM」——
+#   装配根不调 LLM。是 `ensure_llm_proxy_bypass()`：Windows 上 HTTP_PROXY
+#   为空时 httpx 走注册表里的 Clash，NO_PROXY 环境变量不生效，控制面每句
+#   都 Cloudflare 522。绕过名单要在**任何服务 import 之前**设好，而算这份
+#   名单要读 LLM_BASE_URL——那份逻辑的家在 sliderule_llm.config，抄一份到
+#   装配根只会有两份会漂的名单。config 是叶子（顶层只有标准库、import 期
+#   不读 env、httpx 由 PEP 562 推迟），所以这条边顶层 import 就行，
+#   不必躲进函数体。
+may_depend_on = ["config", "models", "routes", "services", "sliderule_llm", "middlewares", "stdio_utf8"]
 
 [layer.scripts]
 rank = 5
@@ -511,8 +520,11 @@ modules = [
 ]
 
 [component.entrypoint]
-why = """组合根（对应 grok 的 xai-grok-pager-bin）：只负责把东西装起来。**被依赖数必须是 0**——箭头只进不出。"""
-may_depend_on = ["agent_loop", "drive", "http_routes", "model_core", "permission", "platform", "spec_first", "task_exec"]
+why = """组合根（对应 grok 的 xai-grok-pager-bin）：只负责把东西装起来。**被依赖数必须是 0**——箭头只进不出。
+llm_gateway 是 2026-09-08 加的一条：装配根不调 LLM，但要在任何服务 import 前调
+`ensure_llm_proxy_bypass()` 设好代理绕过名单（Windows/Clash 下控制面 522），
+而算名单要读 LLM_BASE_URL。理由全文见 [layer.app]。"""
+may_depend_on = ["agent_loop", "drive", "http_routes", "llm_gateway", "model_core", "permission", "platform", "spec_first", "task_exec"]
 modules = [
   "app",
 ]

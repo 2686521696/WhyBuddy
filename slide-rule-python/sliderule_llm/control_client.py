@@ -33,6 +33,12 @@ from .config import (
     ensure_llm_proxy_bypass,
     get_llm_config,
 )
+from .gateway_circuit import (  # 叶子（顶层只有标准库），无循环，顶层 import 让这条边留在架构闸上
+    note_failure,
+    note_success,
+    reject_reason,
+    retries_allowed,
+)
 
 
 @dataclass
@@ -118,7 +124,6 @@ async def call_control_llm(
     不对冲：cheap 回合不需要第二份影子，取消还得能掐断。
     """
     ensure_llm_proxy_bypass()
-    from .gateway_circuit import note_failure, note_success, reject_reason, retries_allowed
 
     blocked = reject_reason()
     if blocked is not None:

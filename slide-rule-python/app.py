@@ -32,6 +32,10 @@ import threading
 import re
 from contextlib import asynccontextmanager
 
+# LLM 主机的代理绕过。叶子模块（顶层只有标准库），顶层 import 安全；
+# 调用点在 `_hydrate_env_files()` 末尾，那里 env 才灌完。
+from sliderule_llm.config import ensure_llm_proxy_bypass
+
 from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -66,9 +70,12 @@ def _hydrate_env_files() -> None:
                 os.environ[key] = value
     # 手起 uvicorn 也要绕过 Clash。只靠 dev:all 灌 NO_PROXY 时，
     # Windows 系统代理仍把 LLM 送进 7890（2026-09-08 控制面 522）。
+    #
+    # ⚠ import 在文件顶层，不在这里。`sliderule_llm.config` 是叶子（顶层只有
+    #   标准库，import 期不读 env，httpx 由 PEP 562 推迟），所以没有「必须躲
+    #   进函数体」的理由——躲进来只会让这条边从架构闸上消失。要晚的是**调用**，
+    #   不是 import：env 文件得先灌完再算 NO_PROXY。
     try:
-        from sliderule_llm.config import ensure_llm_proxy_bypass
-
         ensure_llm_proxy_bypass()
     except Exception:
         pass
