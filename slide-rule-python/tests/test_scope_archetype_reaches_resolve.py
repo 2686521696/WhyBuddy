@@ -176,26 +176,37 @@ def test_park_composer_desktop_not_overridden_by_tablet_sentence(harness):
 
 
 def test_dispatch_park_sockets_pass_payload_archetype():
-    """澄清后再 park / 批准闸 park 漏传 product_archetype → 卡上变回业务后台。"""
+    """澄清后再 park / 批准闸 park 漏传 product_archetype → 卡上变回业务后台。
+
+    ⚠ 2026-09-08：范围卡有**两种**插座了。门禁那版只有 `_park_scope`
+      （停泊等确认）；复述卡走 `_emit_scope_restatement`（不设 awaitReason）。
+      重构时 3 个 `_park_scope` 点改成了后者，这条判据只数前者，于是
+      `call_count >= 5` 从 8 掉到 2 变红——**不是插座少了，是判据只认一种**。
+      两种都会把卡画到用户眼前，两种都得解析 archetype，所以两种都数。
+      只放宽数字（改成 >= 2）会让「以后新加的复述卡插座漏传」重新静默。
+    """
     from services import rehearsal_control as rc
 
     code = _code(rc)
     call_count = 0
-    idx = 0
-    while True:
-        at = code.find("_park_scope(", idx)
-        if at < 0:
-            break
-        before = code[max(0, at - 24) : at]
-        if "def " in before:
+    for socket in ("_park_scope(", "_emit_scope_restatement("):
+        idx = 0
+        while True:
+            at = code.find(socket, idx)
+            if at < 0:
+                break
+            before = code[max(0, at - 24) : at]
+            if "def " in before:
+                idx = at + 1
+                continue
+            chunk = code[at : at + 420]
+            assert "product_archetype=_resolved_park_archetype" in chunk, (
+                f"{socket} 漏传 archetype：{chunk[:240]}"
+            )
+            assert "args.get(\"device\") or preferred_device" not in chunk
+            call_count += 1
             idx = at + 1
-            continue
-        chunk = code[at : at + 420]
-        assert "product_archetype=_resolved_park_archetype" in chunk, chunk[:240]
-        assert "args.get(\"device\") or preferred_device" not in chunk
-        call_count += 1
-        idx = at + 1
-    assert call_count >= 5
+    assert call_count >= 5, f"范围卡插座只剩 {call_count} 个，是不是又漏认了一种"
 
 
 def test_refine_keeps_persisted_tablet_over_composer_desktop(harness):

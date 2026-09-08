@@ -196,6 +196,14 @@ class StoppedBy(str, Enum):
     UNKNOWN = "unknown"
 
 
+#: 「收到了但没点火」那半句。供应商失败时前半句要换成真实错误（522 不许
+#: 说成「连不上」），后半句必须还是这一份——写第二遍就是 CLAUDE.md §4 那张
+#: 表：两处措辞，改一处不报错、只有一半生效。
+_STOP_TAIL_RECEIVED = (
+    "你说的我收到了，先停在控制面没点火。"
+    "稍等再说一次，或者直接点「开始推演」。"
+)
+
 #: reason → (谁停的, 给用户的那句话)。**唯一渲染处**（同 closure_block_reason
 #: 那条纪律）。想在别处再拼一句"停在控制面"，先回来看这张表。
 _STOP_TABLE: Dict[ControlStopReason, tuple] = {
@@ -227,8 +235,7 @@ _STOP_TABLE: Dict[ControlStopReason, tuple] = {
     #   唯独这一种在甩锅给用户。
     ControlStopReason.LLM_UNAVAILABLE: (
         StoppedBy.PROVIDER,
-        "模型网关这会儿连不上，你说的我收到了，先停在控制面没点火。"
-        "稍等再说一次，或者直接点「开始推演」。",
+        "模型网关这会儿连不上，" + _STOP_TAIL_RECEIVED,
     ),
     ControlStopReason.UNKNOWN: (
         StoppedBy.UNKNOWN,
@@ -274,10 +281,8 @@ def _provider_failure_text(exc: BaseException) -> str:
     detail = humanize_llm_error(str(exc) or "").strip()
     if not detail:
         return stop_text(ControlStopReason.LLM_UNAVAILABLE)
-    return (
-        f"{detail} 你说的我收到了，先停在控制面没点火。"
-        "稍等再说一次，或者直接点「开始推演」。"
-    )
+    # 只换前半句（真实错误），后半句取那一份 —— 不在这里再拼一遍。
+    return f"{detail} {_STOP_TAIL_RECEIVED}"
 
 CONTROL_SIX_FIELDS = (
     "sessionId",
@@ -2160,14 +2165,59 @@ async def _park_scope(
     yield _complete(state)
 
 
-def _can_auto_grant_scope(user_text: str, original_goal: str) -> bool:
-    """已有记下的产品目标才授予。当前这句话不参与判定。
+def _turn_has_real_product(state: V5SessionState, original_goal: str) -> bool:
+    """本回合手上有没有一个**真产品**可以直接进环。
 
-    抄 grok：Permission 是对破坏性工具的。用户会说任意话，
-    用字数 / 问候表猜是不是产品永远漏（hello、你能做啥）。
-    无目标时 park，让 ask_user 或复述卡处理。
+    ## 为什么不是「original_goal 空不空」
+
+    ⚠ 2026-09-09 真机：hello → 回执 sfljsdlf → 「我认成了：sfljsdlf」+ 推演中。
+      当时的止血是「本回合开始时没有记下的产品目标就不点火」，即拿
+      `original_goal` 空不空当挡箭牌。它确实挡住了乱码，但**同一条件也挡住了
+      水果店的第一句**——空会话说「做个水果店收银台」，original_goal 同样是空。
+      于是漫画第 5/7 格那条「人话直接进环」在首轮上被一起收走了，
+      `test_rehearse_with_topic_restates_and_ignites` /
+      `test_scope_card_tool_ignites_without_waiting` 两条判据同时变红。
+
+      要挡的是「这一轮没有真产品」，不是「历史里没记下产品」。这两件事在
+      乱码那条路上恰好同真，在水果店这条路上一真一假——上一版把它们当成
+      了一件事。
+
+    ## 三层，按可信度从高到低
+
+    1. `_has_product_topic`：goal 里已经记下了。回执是真产品时
+       `_stamp_user_answer` 会先写进 goal，所以正常答题走这一层。
+    2. `_has_ask_answer_candidate`：刚收回一张纸条、还没成产品——乱码就在
+       这条路上。**直接否**，不去猜那串字符像不像产品。
+    3. `_unstamped_product_turn`：这一轮说的就是产品（水果店第一句）。
+
+    抄 grok：Permission 判的是这次调用本身（`PermissionRequest` 带 tool_name
+    与 input_json），不是「会话里有没有攒够状态」。
+    """
+    if _has_product_topic(state):
+        return True
+    if _has_ask_answer_candidate(state):
+        return False
+    if bool(_unstamped_product_turn(state)):
+        return True
+    g = (original_goal or "").strip()
+    if not g or g.startswith("（尚无"):
+        return False
+    return not _is_exact_filler(g)
+
+
+def _can_auto_grant_scope(
+    user_text: str, original_goal: str, state: Optional[V5SessionState] = None
+) -> bool:
+    """能不能免「开始推演」直接授予。
+
+    ⚠ 用字数 / 问候表猜是不是产品会漏（hello、你能做啥），所以这里不自己猜：
+      判定全交给 `_turn_has_real_product`，它把「刚收回的纸条」整条否掉，
+      不对那串字符做长度判断。state 缺省时退回只看 original_goal（老签名，
+      给还没传 state 的调用点用）。
     """
     del user_text
+    if state is not None:
+        return _turn_has_real_product(state, original_goal)
     g = (original_goal or "").strip()
     if not g or g.startswith("（尚无"):
         return False
@@ -3490,6 +3540,17 @@ async def _control_llm_loop(
                         user_text=user_text,
                     ):
                         yield event
+                    # ⚠ 这条路以前直接 return，一个 complete 都不发——前端等的是
+                    #   终止事件，等不到就转圈到超时。CLAUDE.md §4 记过同一种伤
+                    #   （工厂 complete 被 nest 成 factory_complete，客户端报
+                    #   「推演中断」）。`_emit_scope_restatement` 故意不自带
+                    #   complete（它设计成后面接点火），所以这条路自己补。
+                    #
+                    # 这里**不点火**：走到这一步说明模型挑了没列出来的工具
+                    # （refine 在空会话就是这样），点火等于绕过那件工具自己的
+                    # 批准闸。要进环的正路是模型挑 `scope_card`——那条分支里
+                    # `_turn_has_real_product` 会授予并接上 spec。
+                    yield _complete(state)
                     return
                 # 第 3 格：空会话说完仍停成提问，下一句才是回执。
                 # ⚠ 模型已经开口时必须先把那句话端出去——盖成同一句
@@ -4097,7 +4158,7 @@ async def _dispatch_tool(
         # 人话进环：有产品话题就推断设备、复述、自动授予，接着干。
         # 卡留下当「我认成了桌面收银台，不对再说」，不当门禁。
         needs_scope = name == "rehearse" or name == "workflow" or name in FACTORY_HOPS
-        if needs_scope and _can_auto_grant_scope(user_text, original_goal):
+        if needs_scope and _can_auto_grant_scope(user_text, original_goal, state):
             restatement = (
                 _confirmed_restatement(state, user_text) or _restate(original_goal)
             )
@@ -4179,7 +4240,7 @@ async def _dispatch_tool(
                 user_text=user_text,
             ):
                 yield event
-            if not str(original_goal or "").strip():
+            if not _turn_has_real_product(state, original_goal):
                 yield _complete(state)
                 return
             _auto_grant_scope(state, restatement)
@@ -4204,7 +4265,7 @@ async def _dispatch_tool(
                 user_text=user_text,
             ):
                 yield event
-            if not str(original_goal or "").strip():
+            if not _turn_has_real_product(state, original_goal):
                 yield _complete(state)
                 return
             _auto_grant_scope(state, restatement)
@@ -4235,7 +4296,7 @@ async def _dispatch_tool(
         # 人话进环之后第一件活是 spec。但本回合开始时还没有记下的
         # 产品目标：卡留下等「开始推演」，不许同一跳把乱码回执点着
         # SPEC（2026-09-09 真机：hello → 乱码 → 我认成了 + 推演中）。
-        if not str(original_goal or "").strip():
+        if not _turn_has_real_product(state, original_goal):
             yield _complete(state)
             return
         _auto_grant_scope(state, restatement)
