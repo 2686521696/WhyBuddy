@@ -10,7 +10,8 @@
    run; same SSE (or client resume consumer) then factory events.
 3. Parking: awaitReason MUST be the expanded control_ask / control_scope.
    controlTranscript is a schema field. Tool loop MUST NOT spin waiting for
-   the user in the same HTTP request.
+   the user in the same HTTP request. The *next* POST is a NeedUserAnswer
+   reply (kind=user_answer), not a new HumanIntent turn.
 4. Cheap turns write only controlTranscript. FORBIDDEN to append
    greetings/inspect/search into conversation.
 5. inspect_model bounded digest (≤40 items / ≤4k chars), never raw five-system
@@ -66,7 +67,7 @@ from services.capability_plan import (
     TOOL_LABELS,
     first_pass_tools,
     is_first_pass_chain,
-    remaining_first_pass_tools,
+    merge_factory_todo,
 )
 
 from fastapi import HTTPException
@@ -117,12 +118,24 @@ from sliderule_llm.control_client import ControlLlmResult, call_control_llm
 CANNED_FAILURE = (
     "我是面团的推演引擎。说一个要做的应用，或问当前应用里已经推出来的角色/页面。"
 )
+#: 廉价回执后模型空回复。不许套开场罐头。
+#: ⚠ 2026-09-08 真机：点问候芯片「继续」，empty_text=CANNED_FAILURE，
+#:   左栏写出「我是面团的推演引擎。说一个要做的应用」——像没听见。
+CHEAP_TURN_FALLBACK = "想做什么应用，说一句就行。"
 #: 工厂已经出过页面，交回控制面时模型空回复不许套开场罐头。
 POST_WRITE_FALLBACK = "页面已经出来。要改哪一页，或者说继续精修、补齐缺口。"
-#: spec 单跳交回：页面还没有。空回复不许说页面出来了。
-POST_SPEC_HOP_FALLBACK = (
+#: 给**模型**的空回复情报。不许当 control_text 端给人。
+#: 2026-09-08 真机：点「开始设计新应用」左栏写出「下一跳请调 pages」——
+#: 那是对 host 的命令，用户听不懂，还像没做就完工了。
+POST_SPEC_HOP_REMINDER = (
     "SPEC 已经起草。下一跳请调 pages，或告诉用户为什么先停。"
 )
+#: spec 单跳交回、端给人的话。页面还没有。不许说页面出来了，也不许下命令。
+POST_SPEC_USER = "规格已经记下。要继续画页面，或者说想先改哪一点。"
+#: 假设卡摊着：卡自己会说话，这里只补一句人话。
+ASSUMPTIONS_WAIT_USER = "规格里有几条假设要你先拍板，确认后继续画页面。"
+#: 兼容旧名：曾经误把 reminder 当用户可见 empty_text。
+POST_SPEC_HOP_FALLBACK = POST_SPEC_USER
 
 # ── 控制面为什么停下来：是数据，不是一句话 ────────────────────────────────
 #
@@ -369,6 +382,18 @@ def _has_inspectable(state: V5SessionState) -> bool:
     return _has_model(state)
 
 
+def _has_product_topic(state: V5SessionState) -> bool:
+    """goal 里已经记下的产品。不看当前这句话像不像产品。
+
+    用户会说 hello / 你能做啥 / 任意话。写死问候表永远漏。
+    没写入 goal 就不列 clarify / scope_card——让模型用 ask_user。
+    """
+    g = _goal_text(state)
+    if not g or g.startswith("（尚无"):
+        return False
+    return not _is_exact_filler(g)
+
+
 # 按轮的清单谓词。**只列需要裁的**——没声明的一律列出
 # （grok 的 `should_list` 默认 true）。
 #
@@ -396,8 +421,10 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
     # 问过一轮再问就改开范围卡（见 clarify 分支）。
     # 已确认过范围就别再列：交回后模型再挑 scope_card 会把假设面板顶掉
     # （2026-09-02 真机）。下一步是 pages，不是再开一张卡。
-    "scope_card": lambda st: not _scope_confirmed(st),
-    "clarify": lambda st: _clarify_rounds_done(st) < 1,
+    "scope_card": lambda st: (not _scope_confirmed(st)) and _has_product_topic(st),
+    # 模板问卷不当开场工具。用户会说任意话，列出来就会拿「谁用」填空
+    # （2026-09-08 真机 hello / 你好啊 / 你好）。维度问在 SPEC 假设卡。
+    "clarify": lambda st: False,
     # 没有上一版可回（_previous_model_version_id fail-closed 返回 ""）。
     "restore_version": lambda st: bool(_previous_model_version_id(st)),
     # ⚠ refine / fork_variant 在空会话上无事可做，而 refine 的分发分支
@@ -482,8 +509,8 @@ def should_list_tool(name: Any, state: V5SessionState) -> bool:
 def list_control_tools(state: V5SessionState) -> List[Dict[str, Any]]:
     """本回合摆给模型的工具清单。原样透传定义，只做裁剪。
 
-    ⚠ 永不为空：全裁光了模型无事可做，比多列一个更糟。兜底留下
-      ask_user / scope_card——"问一句"和"开范围卡"在任何状态都做得成。
+    ⚠ 永不为空：全裁光了模型无事可做，比多列一个更糟。兜底只留
+      ask_user。空会话把 scope_card 放进兜底 = 问候也会开范围卡。
 
     workflow 的描述把已登记名字写进去——模型看不见配方就只能发明流程，
     那正是 grok WorkflowTool 要挡的。不改全局 CONTROL_TOOLS：那份是
@@ -495,7 +522,7 @@ def list_control_tools(state: V5SessionState) -> List[Dict[str, Any]]:
         if should_list_tool(((t.get("function") or {}).get("name")), state)
     ]
     if not listed:
-        floor = {"ask_user", "scope_card"}
+        floor = {"ask_user"}
         listed = [
             t for t in CONTROL_TOOLS if ((t.get("function") or {}).get("name")) in floor
         ]
@@ -695,7 +722,7 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "scope_card",
-            "description": "出示推演范围卡并停泊，等用户点开始推演。",
+            "description": "复述我认成了什么（设备/类型）。不当门禁，出卡后接着干活。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1340,6 +1367,7 @@ async def _park_ask(
     state.runtimePhase = "awaiting"
     state.awaitReason = "control_ask"
     state.awaitDetail = question
+    req_id = f"need-{uuid.uuid4().hex[:10]}"
     _append_transcript(
         state,
         {
@@ -1347,6 +1375,7 @@ async def _park_ask(
             "kind": "ask_user",
             "text": question,
             "options": list(options or []),
+            "reqId": req_id,
         },
     )
     await _apersist(state)
@@ -1354,8 +1383,175 @@ async def _park_ask(
         "type": "control_ask_user",
         "question": question,
         "options": list(options or []),
+        "reqId": req_id,
     }
     yield _complete(state)
+
+
+def _tool_answer_from_payload(
+    payload: Dict[str, Any], state: V5SessionState, user_text: str
+) -> Optional[Dict[str, str]]:
+    """这一发是不是对停泊提问的回执（grok NeedUserAnswer → UserAnswer）。
+
+    抄 grok：答案是当前工具的回执，不是新的 HumanIntent。
+    本请求仍结束在 park（合同第 3 条：不许同一 HTTP 空转等用户）；
+    **下一发 POST** 才是纸条，不是新开一单。
+    """
+    raw = payload.get("toolAnswer") or payload.get("tool_answer")
+    if isinstance(raw, dict):
+        kind = str(raw.get("kind") or "").strip()
+        text = str(raw.get("text") or user_text or "").strip()
+        req_id = str(raw.get("reqId") or raw.get("req_id") or "").strip()
+        if kind or text or raw.get("confirmed"):
+            if not kind:
+                reason = getattr(state, "awaitReason", None)
+                if reason == "control_ask":
+                    kind = "ask_user"
+                elif reason == "control_clarify":
+                    kind = "clarify"
+                elif _assumptions_awaiting(state):
+                    kind = "assumptions"
+                else:
+                    kind = "ask_user"
+            out = {"kind": kind, "text": text}
+            if req_id:
+                out["reqId"] = req_id
+            return out
+    reason = getattr(state, "awaitReason", None)
+    # 作曲家另说一句不是答澄清卡。答卡必须带 toolAnswer（前端「」答：）。
+    # ⚠ 2026-09-08 真机：卡还摊着，用户打「你好」被当成谁用的答案，
+    #   再 stamp 成 goal，问卷又弹一轮。
+    if reason == "control_ask" and str(user_text or "").strip():
+        return {
+            "kind": "ask_user",
+            "text": str(user_text).strip(),
+        }
+    # 只认确认短语。forcedTool=pages 单独不算——未确认时偷画页
+    # 是 2026-09-02 真机事故，不许用 NeedUserAnswer 再开一条口。
+    if _assumptions_awaiting(state) and "假设已确认" in str(user_text or ""):
+        return {"kind": "assumptions", "text": str(user_text or "").strip()}
+    return None
+
+
+def _last_need_question(state: V5SessionState) -> str:
+    detail = str(getattr(state, "awaitDetail", None) or "").strip()
+    if detail:
+        return detail
+    for row in reversed(getattr(state, "controlTranscript", None) or []):
+        if not isinstance(row, dict):
+            continue
+        if row.get("kind") in ("ask_user", "clarify"):
+            return str(row.get("text") or "").strip()
+    return ""
+
+
+def _last_need_req_id(state: V5SessionState) -> str:
+    """grok 用同一条 req_id 把 NeedUserAnswer 和 UserAnswer 对上。"""
+    for row in reversed(getattr(state, "controlTranscript", None) or []):
+        if not isinstance(row, dict):
+            continue
+        if row.get("kind") in ("ask_user", "clarify"):
+            rid = str(row.get("reqId") or "").strip()
+            if rid:
+                return rid
+    return ""
+
+
+async def _stamp_user_answer(
+    state: V5SessionState, payload: Dict[str, Any], answer: Dict[str, str]
+) -> None:
+    """把点选写进 transcript（kind=user_answer），清停泊。不点火。
+
+    ⚠ 合同第 3 条：本请求仍在 park 时结束。下一发 POST 才是这张纸条。
+    点名了闭集工具的话，点火走 `_run_control_turn_body` 同一份 forced
+    分发——第一版在这里 `_settled(_dispatch_tool)` 直接 return，工厂
+    complete 被 nest 成 factory_complete，host 再也没有 complete，
+    客户端报「推演中断」（2026-09-02 同一条伤，CLAUDE.md §4）。
+    """
+    user_text = answer.get("text") or ""
+    kind = answer.get("kind") or "ask_user"
+    question = _last_need_question(state)
+    req_id = str(answer.get("reqId") or "").strip() or _last_need_req_id(state)
+    original_goal = _goal_text(state)
+
+    row: Dict[str, Any] = {
+        "role": "tool",
+        "kind": "user_answer",
+        "text": user_text,
+        "answerKind": kind,
+        "question": question,
+    }
+    if req_id:
+        row["reqId"] = req_id
+    _append_transcript(state, row)
+    reason = getattr(state, "awaitReason", None)
+    if reason in ("control_ask", "control_clarify"):
+        state.awaitReason = None
+        state.awaitDetail = None
+        if getattr(state, "runtimePhase", None) == "awaiting":
+            state.runtimePhase = "idle"
+    if kind == "assumptions":
+        sfp = dict(getattr(state, "specFirstPages", None) or {})
+        sfp["assumptionsConfirmed"] = True
+        state.specFirstPages = sfp
+    await _resolve_answered_gaps(state, payload)
+
+    if (
+        not original_goal
+        and user_text
+        and kind == "ask_user"
+        and not closed_tool_from_text(user_text)
+        and not _is_exact_filler(user_text)
+    ):
+        goal = dict(state.goal) if isinstance(state.goal, dict) else {}
+        if not str(goal.get("text") or "").strip():
+            goal["text"] = user_text[:200]
+            state.goal = goal
+
+    await _apersist(state)
+
+
+def _messages_after_need_answer(
+    state: V5SessionState, user_text: str, answer: Dict[str, str]
+) -> List[Dict[str, Any]]:
+    """开放式回答：提问是上一轮 tool_call，答案是 tool result。
+
+    不许塞 role=user——七个字的「请假」会变成新话题。
+    """
+    kind = answer.get("kind") or "ask_user"
+    question = str(answer.get("question") or "").strip() or _last_need_question(state)
+    tool_name = "clarify" if kind == "clarify" else "ask_user"
+    call_id = (
+        str(answer.get("reqId") or "").strip()
+        or _last_need_req_id(state)
+        or f"need-{uuid.uuid4().hex[:8]}"
+    )
+    return [
+        {"role": "system", "content": _system_prompt(state)},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": call_id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "arguments": json.dumps(
+                            {"question": question}, ensure_ascii=False
+                        ),
+                    },
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": call_id,
+            "content": bound_tool_result(
+                {"ok": True, "kind": kind, "answer": user_text, "question": question}
+            ),
+        },
+    ]
 
 
 # 这句需求里通常会漏掉的四个维度。**只当提示，不当闸。**
@@ -1368,7 +1564,7 @@ async def _park_ask(
 #   ——"最多 N 条，本来就清楚就少问或不问"，规则只负责告诉它"这句话里我没读到
 #   用户/平台/场景/边界"，问不问、问什么由模型看着办。
 _SPEC_DIMENSIONS: List[tuple] = [
-    ("users", "谁用（角色）", r"用户|面向|客户|员工|老师|学生|医生|护士|患者|商家|管理员|团队|to ?[cb]"),
+    ("users", "谁用（角色）", r"用户|面向|客户|员工|老师|学生|医生|护士|患者|商家|管理员|团队|老板|摊主|店长|to ?[cb]"),
     ("platform", "在哪用（平台）", r"平台|web|网页|ios|android|安卓|小程序|桌面|客户端|pc|手机|大屏"),
     ("scenario", "核心流程与验收", r"流程|场景|用于|目标是|核心|kpi|指标|验收|成功标准|解决|审批|下单|结算"),
     ("scope", "本期边界", r"范围|不做|边界|mvp|仅|只做|首期|第一期|优先|暂不"),
@@ -1437,6 +1633,21 @@ _FILLER_TOKENS = (
 )
 #: 单字确认。只在**整句就是它**时算数——"好用的排班系统"里的"好"不能算。
 _FILLER_ALONE = ("好", "行", "嗯", "是", "对", "可", "中", "y", "ye")
+
+
+def _is_exact_filler(text: str) -> bool:
+    """整句就是确认词。不是问候名单——用户会说任意话。"""
+    raw = (text or "").strip()
+    if not raw:
+        return True
+    low = re.sub(
+        r"[\s，,。.！!？?、~～;；:：'\"“”‘’()（）]+", "", raw.lower()
+    )
+    if not low:
+        return True
+    if low in _FILLER_ALONE:
+        return True
+    return low in {tok.lower() for tok in _FILLER_TOKENS}
 
 
 def _is_content_free_reply(text: str) -> bool:
@@ -1621,6 +1832,7 @@ async def _park_clarify(
             "kind": "clarify",
             "text": "；".join(q["prompt"] for q in questions),
             "questionIds": [g["id"] for g in made],
+            "reqId": f"need-{uuid.uuid4().hex[:10]}",
         },
     )
     await _apersist(state)
@@ -1702,14 +1914,17 @@ async def _park_scope(
 
 
 def _can_auto_grant_scope(user_text: str, original_goal: str) -> bool:
-    """这句话够不够当产品话题，从而自动授予、不当门禁。
+    """已有记下的产品目标才授予。当前这句话不参与判定。
 
-    问候 / 空 / 纯标点仍走停泊。抄 grok：Permission 是对破坏性工具的，
-    不是让人先点「我要做桌面收银台」。
+    抄 grok：Permission 是对破坏性工具的。用户会说任意话，
+    用字数 / 问候表猜是不是产品永远漏（hello、你能做啥）。
+    无目标时 park，让 ask_user 或复述卡处理。
     """
-    topic = f"{user_text or ''} {original_goal or ''}"
-    meaningful = re.sub(r"[\s\W_]", "", topic, flags=re.UNICODE)
-    return len(meaningful) >= 4
+    del user_text
+    g = (original_goal or "").strip()
+    if not g or g.startswith("（尚无"):
+        return False
+    return not _is_exact_filler(g)
 
 
 def _auto_grant_scope(state: V5SessionState, restatement: str) -> None:
@@ -1874,12 +2089,22 @@ async def _confirm_rehearse_and_handoff(
     # 问诊所系统）。只碰控制面自己出的提问，证据/能力缺口不许动。
     _retire_stale_control_questions(state)
     confirmed = dict(state.goal) if isinstance(state.goal, dict) else {}
-    # 开始推演一口气跑完产出链（spec→pages→structure→bind）。
-    # 2026-09-03 用户：一跳一停手点，画布块之间的关联看不见。
-    # closure 是判定，留给迭代。范围卡减菜仍是上限。
-    chosen = list(first_pass_tools(confirmed.get("tools")))
+    # 抄 grok：开始推演 = 第一件 spec。其余进待办，host 交回再挑。
+    # workflow 才是一次跑完的日历。范围卡减菜仍是待办上限。
+    floor = list(first_pass_tools(confirmed.get("tools")))
+    chosen = ["spec"]
+    deferred = [t for t in floor if t != "spec"]
     _set_goal_tools(confirmed, chosen, refine=_has_model(state))
     state.goal = confirmed
+    if deferred:
+        state.factoryTodo = list(
+            merge_factory_todo(
+                getattr(state, "factoryTodo", None),
+                ran=chosen,
+                deferred=deferred,
+                legal=list(dict.fromkeys([*chosen, *deferred])),
+            )
+        )
     _append_transcript(
         state,
         {
@@ -2344,47 +2569,38 @@ async def _tool_fork(state: V5SessionState, new_name: str) -> Dict[str, Any]:
 
 
 def _system_prompt(state: V5SessionState) -> str:
-    # ⚠ 这里以前只读 _goal_text。范围没确认时它是空的，于是模型这一轮看到的
-    #   全部世界就是 system 里一句"（尚无确认的应用目标）"加当前那句用户话。
-    #   用户回「就按上面这个推演」时，「上面这个」在 messages 里**没有指代**
-    #   （探针实测：原话题出现在 messages 里 -> False），模型只能编一个复述，
-    #   于是库里一排「按当前设定的应用范围进行推演」。
-    #   改成 _session_topic：确认过的目标优先，没确认就回到用户最初说的那句
-    #   实话（照 grok 的 `title(primary, fallback)` 兜底链）。
+    """给控制面模型的那一句。抄 grok：complete the request，不是答题手册。
+
+    ⚠ 2026-09-08 第 2 格：上一版教「先 clarify → scope_card → 选项带括号
+      → 未确认不许 rehearse」。模型在填答题卡，空回复把「请调 pages」端给人。
+      规章只留边界（闭集工具、禁止闲聊、证据不计闭环）；路径自己挑。
+      缺维度、交回现场是**事实**，不是流程命令。
+
+    ⚠ 话题必须看得见。以前只读 _goal_text，未确认时是空的，「就按上面这个
+      推演」没有指代，库里一排场面话 goal（2026-08-27）。改成 _session_topic。
+    """
     topic = _session_topic(state)
     goal = topic or "（尚无确认的应用目标）"
     parked = getattr(state, "awaitReason", None) or "none"
     from services.product_charter import charter_prompt_block
 
     extra = charter_prompt_block()
-    # 缺哪些维度也照着真话题判。喂空串的那一版在"还没确认"的每一轮都报
-    # 「全都没读到」，模型据此问一堆本来说清了的模板题。
     missing = _missing_dimensions(topic)
     asked = _clarify_rounds_done(state)
-    # ⚠ 规则只报告"这句话里我没读到什么"，**问不问、问几条由模型定**。
-    #   参考 dzhng/deep-research 的 generateFeedback：最多 N 条、本来清楚就少问。
-    #   做成硬闸的那一版（TS isUnderSpecifiedGoal：≥80 字就算说清）会一边放过
-    #   一百字的废话，一边对着一句好需求问四条模板题。
-    clarify_hint = (
-        (
-            f"这句需求里还没读到：{'、'.join(missing)}。"
-            "开范围卡之前先用 clarify 把其中真正影响推演的问出来（最多 3 条，"
-            "已经清楚的别问）。"
-        )
-        if missing and asked == 0
-        else ("已经问过一轮澄清，不要再问，直接 scope_card。" if asked else "")
-    )
+    facts: List[str] = []
+    if _has_product_topic(state) and missing and asked == 0:
+        facts.append(f"这句话里还没读到：{'、'.join(missing)}。")
+    elif asked:
+        facts.append("已经问过一轮澄清。")
     after_write = _after_write_hint(state)
+    if after_write:
+        facts.append(after_write.strip())
+    fact_blob = " ".join(facts)
     base = (
-        "你是面团的薄控制面。只能调用给定工具，不能发明工具。"
-        "禁止开放闲聊。问候用 ask_user 或一句短回复。"
-        "人话进环：设备/类型从这句话推断，用 scope_card 复述「我认成了…」，"
-        "不要等人点确认才 rehearse。真的听不懂才 clarify 一句。"
-        "问下一跳时 ask_user 的选项必须带工具名括号，例如"
-        "「进入数据模型反推（structure）」「进入权限绑定（bind）」"
-        "「精修（refine）」。"
+        "把这件事做完。只能调用给定工具，不能发明工具。禁止开放闲聊。"
         "search_evidence 不计入闭环。inspect_model 只看摘要。"
-        f"当前目标：{goal[:200]}。停泊：{parked}。{clarify_hint} {after_write}"
+        f"当前目标：{goal[:200]}。停泊：{parked}。"
+        f"{fact_blob}"
     )
     return f"{base}\n{extra}" if extra else base
 
@@ -2604,7 +2820,7 @@ async def _complete_waiting_for_assumptions(
     ⚠ 2026-09-03 sr-20260903204902：交回仍 `_invoke_control_llm`，
       HTTP 挂住 SSE，确认继续排队 25 分钟。这一支必须零 LLM。
     """
-    text = POST_SPEC_HOP_FALLBACK
+    text = ASSUMPTIONS_WAIT_USER
     _append_transcript(
         state, {"role": "assistant", "kind": "control_text", "text": text}
     )
@@ -2869,7 +3085,7 @@ async def _resume_control_llm_after_write(
         started=time.monotonic(),
         cheap_tokens=0,
         empty_text=(
-            POST_SPEC_HOP_FALLBACK
+            POST_SPEC_USER
             if not _has_pages(state)
             else POST_WRITE_FALLBACK
         ),
@@ -3062,12 +3278,9 @@ async def _control_llm_loop(
                         messages.append({"role": "user", "content": wrap_reminder(hint)})
                 # LLM 路径原先 empty_text=None，空回复会吐开场罐头（P3 ③）。
                 empty_text = (
-                    hint
-                    or (
-                        POST_SPEC_HOP_FALLBACK
-                        if not _has_pages(state)
-                        else POST_WRITE_FALLBACK
-                    )
+                    POST_SPEC_USER
+                    if not _has_pages(state)
+                    else POST_WRITE_FALLBACK
                 )
                 if _assumptions_awaiting(state) and not _has_pages(state):
                     async for event in _complete_waiting_for_assumptions(state):
@@ -3088,14 +3301,10 @@ async def _control_llm_loop(
         import logging
 
         logging.getLogger(__name__).exception("control llm loop failed after write")
-        if empty_text:
-            _append_transcript(
-                state, {"role": "assistant", "kind": "control_text", "text": empty_text}
-            )
-            await _apersist(state)
-            yield {"type": "control_text", "text": empty_text}
-            yield _complete(state)
-            return
+        # empty_text 是模型空回复的人话，不是异常的人话。
+        # ⚠ 2026-09-05：网关挂了还套 CANNED_FAILURE「说一个要做的应用」。
+        # ⚠ 2026-09-08：NeedUserAnswer 把 empty_text 设成那句罐头，
+        #   异常分支优先端罐头，停因表的实话又被盖掉。
         async for event in _canned(
             state,
             stop_text(ControlStopReason.LLM_UNAVAILABLE),
@@ -3117,9 +3326,6 @@ async def _run_control_turn_body(
     cheap_tokens = 0
     original_goal = _goal_text(state)
 
-    _append_transcript(state, {"role": "user", "kind": "turn", "text": user_text})
-    await _resolve_answered_gaps(state, payload)
-
     raw_forced = str(
         payload.get("forcedTool") or payload.get("forced_tool") or ""
     ).strip()
@@ -3128,17 +3334,71 @@ async def _run_control_turn_body(
             yield event
         return
 
-    # 没 SPEC 也没页面 = 这句是产品话题，不是针对交付物的指令。
-    forced = resolve_forced_tool(
-        payload,
-        user_text,
-        first_pass=not _has_spec(state) and not _has_pages(state),
-    )
-    print(
-        f"[control] forced hop={forced} hasSpec={int(_has_spec(state))} "
-        f"hasPages={int(_has_pages(state))} text={user_text[:48]!r}",
-        flush=True,
-    )
+    # 抄 grok NeedUserAnswer：停泊提问的下一发是纸条回执，不是新话题。
+    # 点名了闭集工具 → 落完回执后走下面同一份 forced 分发（refine 按钮
+    # 那条有 host 交回）。开放式回答才在这里把答案当 tool result 交给 LLM。
+    answer = _tool_answer_from_payload(payload, state, user_text)
+    if answer:
+        await _stamp_user_answer(state, payload, answer)
+        user_text = answer.get("text") or user_text
+        if not original_goal:
+            original_goal = _goal_text(state)
+        forced = resolve_forced_tool(
+            payload,
+            user_text,
+            first_pass=not _has_spec(state) and not _has_pages(state),
+        )
+        print(
+            f"[control] forced hop={forced} hasSpec={int(_has_spec(state))} "
+            f"hasPages={int(_has_pages(state))} answer={user_text[:48]!r} "
+            f"kind={answer.get('kind')}",
+            flush=True,
+        )
+        if not forced or forced in ("ask_user", "clarify"):
+            async for event in _control_llm_loop(
+                state,
+                _messages_after_need_answer(state, user_text, answer),
+                user_text=user_text,
+                installed_skills=installed_skills,
+                active_connectors=active_connectors,
+                preferred_device=preferred_device,
+                design_system_id=design_system_id,
+                original_goal=original_goal or user_text,
+                started=started,
+                cheap_tokens=0,
+                empty_text=(
+                    POST_SPEC_USER
+                    if _has_spec(state) and not _has_pages(state)
+                    else POST_WRITE_FALLBACK
+                    if _has_pages(state)
+                    else CHEAP_TURN_FALLBACK
+                ),
+                tools=None,
+            ):
+                yield event
+            return
+    else:
+        # 作曲家另说一句：作废摊着的澄清卡，不当答卷。
+        if getattr(state, "awaitReason", None) == "control_clarify":
+            _retire_stale_control_questions(state)
+            state.awaitReason = None
+            state.awaitDetail = None
+            if getattr(state, "runtimePhase", None) == "awaiting":
+                state.runtimePhase = "idle"
+        _append_transcript(state, {"role": "user", "kind": "turn", "text": user_text})
+        await _resolve_answered_gaps(state, payload)
+
+        # 没 SPEC 也没页面 = 这句是产品话题，不是针对交付物的指令。
+        forced = resolve_forced_tool(
+            payload,
+            user_text,
+            first_pass=not _has_spec(state) and not _has_pages(state),
+        )
+        print(
+            f"[control] forced hop={forced} hasSpec={int(_has_spec(state))} "
+            f"hasPages={int(_has_pages(state))} text={user_text[:48]!r}",
+            flush=True,
+        )
 
     # 昂贵按钮：点火前跳过控制面 LLM。工厂收尾交回 host 循环。
     # 停泊中只有「开始推演」(forcedTool=rehearse) 才点火；/推演 与模型
@@ -3481,6 +3741,12 @@ async def _dispatch_tool(
             yield event
         return
     if name == "clarify":
+        if not _has_product_topic(state):
+            async for event in _park_ask(
+                state, "想做什么应用，说一句就行。", []
+            ):
+                yield event
+            return
         # ⚠ 已经问过一轮就不许再问：模型很容易越问越细，把用户困在问答里。
         #   问过了还想问 → 复述推断、自动授予、点火。卡不当门禁。
         if _clarify_rounds_done(state) >= 1:
@@ -3561,26 +3827,24 @@ async def _dispatch_tool(
                 yield event
             return
         goal = dict(state.goal) if isinstance(state.goal, dict) else {}
+        # 抄 grok Tool::execute：点哪件跑哪件。rehearse 是「开始」= 第一件
+        # spec，其余进待办；workflow 才是一次跑完的日历。
+        # 漫画第 4 格：你叫了 pages，不许把 structure/bind 焊进这一跳。
+        deferred: List[str] = []
         if name == "rehearse":
-            chosen = list(first_pass_tools(goal.get("tools")))
-        elif name == "pages" and "假设已确认" in (user_text or ""):
-            # 确认继续把首轮剩下的产出跳一次跑完，不再只 pages。
-            # ⚠ 确认 POST 常把 payload.tools 写成 ["pages"]，stamp 之后
-            #   remaining 只看见 pages。legal 用范围卡/首轮菜单，不用这笔。
-            if not _has_spec(state):
-                chosen = ["pages"]
-            else:
-                last = _last_scope_card(state)
-                legal = last.get("tools") if isinstance(last, dict) else None
-                chosen = list(
-                    remaining_first_pass_tools(
-                        legal,
-                        has_spec=True,
-                        has_pages=_has_pages(state),
-                    )
-                ) or ["pages"]
+            floor = list(first_pass_tools(goal.get("tools")))
+            chosen = ["spec"]
+            deferred = [t for t in floor if t != "spec"]
         else:
             chosen = [name]
+            if name == "spec" and not _has_spec(state):
+                floor = list(first_pass_tools(goal.get("tools")))
+                deferred = [t for t in floor if t != "spec"]
+            elif name == "pages" and "假设已确认" in (user_text or ""):
+                last = _last_scope_card(state)
+                legal = last.get("tools") if isinstance(last, dict) else goal.get("tools")
+                floor = list(first_pass_tools(legal))
+                deferred = [t for t in floor if t not in ("spec", "pages")]
         hop = chosen[0]
         blocker = _factory_hop_blocker(state, hop)
         if blocker:
@@ -3593,6 +3857,15 @@ async def _dispatch_tool(
             return
         _set_goal_tools(goal, chosen, refine=_has_model(state))
         state.goal = goal
+        if deferred:
+            state.factoryTodo = list(
+                merge_factory_todo(
+                    getattr(state, "factoryTodo", None),
+                    ran=chosen,
+                    deferred=deferred,
+                    legal=list(dict.fromkeys([*chosen, *deferred])),
+                )
+            )
         await _apersist(state)
         _fp_before = factory_deliverable_fingerprint(state)
         # scope_card 复述后改名为 spec：外层 tool_scope 仍是 READ 的

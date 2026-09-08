@@ -22,6 +22,7 @@ from control_turn_support import (
 )
 from services.rehearsal_control import (
     CANNED_FAILURE,
+    ASSUMPTIONS_WAIT_USER,
     POST_SPEC_HOP_FALLBACK,
     POST_WRITE_FALLBACK,
     _after_write_hint,
@@ -212,6 +213,7 @@ def test_forced_rehearse_empty_llm_uses_post_spec_hop_fallback(harness):
     ]
     blob = "\n".join(texts)
     assert POST_SPEC_HOP_FALLBACK in blob
+    assert "请调 pages" not in blob
     assert POST_WRITE_FALLBACK not in blob
     assert CANNED_FAILURE not in blob
 
@@ -345,17 +347,19 @@ def test_forced_rehearse_stamps_scope_card_tools_onto_goal(harness):
     loaded = load_session(sid)
     assert loaded is not None
     tools = (loaded.goal or {}).get("tools") if isinstance(loaded.goal, dict) else None
-    assert list(tools or []) == ["spec", "pages"], (
-        "开始推演跑首轮产出链，范围卡减菜仍是上限："
-        "卡上 spec/pages/closure → 首轮只剩 spec+pages，不许把 structure/bind 塞回去，"
-        "也不许只点火 spec。"
+    assert list(tools or []) == ["spec"], (
+        "开始推演只点火 spec。卡上减菜进待办，不许把课表焊进这一跳。"
+        f"实际 {tools}"
+    )
+    todo = list(getattr(loaded, "factoryTodo", None) or [])
+    assert "pages" in todo
+    assert "structure" not in todo and "bind" not in todo, (
+        f"范围卡没勾的 hop 被待办塞回来了：{todo}"
     )
 
 
-def test_forced_rehearse_default_menu_is_first_pass_chain(harness):
-    """没减菜时开始推演必须一口气跑 spec→bind，不许再只点火 spec。"""
-    from services.capability_plan import FIRST_PASS_TOOLS
-
+def test_forced_rehearse_default_menu_is_spec_then_todo(harness):
+    """没减菜时开始推演只点火 spec，其余进待办。不许焊课表。"""
     sid = new_sid("first-pass")
     seed_session(
         sid,
@@ -363,15 +367,14 @@ def test_forced_rehearse_default_menu_is_first_pass_chain(harness):
         awaitReason="control_scope",
         awaitDetail="请假系统",
     )
-    harness.llm_impl = lambda messages, **kw: llm_text("首轮做完了。")
+    harness.llm_impl = lambda messages, **kw: llm_text("规格已经记下。")
     harness.post(six_fields(sid, "将做成：请假系统", forcedTool="rehearse"))
     loaded = load_session(sid)
     tools = (loaded.goal or {}).get("tools") if loaded and isinstance(loaded.goal, dict) else None
-    assert list(tools or []) == list(FIRST_PASS_TOOLS), (
-        f"开始推演没跑产出链：{tools}"
-    )
-    assert "closure" not in list(tools or [])
-    assert harness.helper_calls[-1].get("goal_tools") == list(FIRST_PASS_TOOLS)
+    assert list(tools or []) == ["spec"], f"开始推演焊了课表：{tools}"
+    todo = list(getattr(loaded, "factoryTodo", None) or [])
+    assert todo == ["pages", "structure", "bind"], todo
+    assert harness.helper_calls[-1].get("goal_tools") == ["spec"]
 
 
 def test_pages_preview_workflow_stamps_recipe_tools_without_override(harness):
@@ -554,7 +557,8 @@ def test_assumptions_awaiting_does_not_ask_control(harness):
         for e in events
         if e.get("type") == "control_text"
     ]
-    assert any("下一跳请调 pages" in t or "SPEC 已经起草" in t for t in texts), texts
+    assert any(ASSUMPTIONS_WAIT_USER in t for t in texts), texts
+    assert not any("请调 pages" in t for t in texts)
     assert event_types(events)[-1] == "complete"
 
 

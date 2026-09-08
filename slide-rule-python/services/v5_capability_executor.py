@@ -1113,10 +1113,9 @@ def _reuse_from_state(state: "V5SessionState"):
 
 
 def _spec_first_tools_from_state(state: "V5SessionState"):
-    """流水线要跑的公开工具：stamp 的菜 ∪ 待办里还挂着的首轮跳。
+    """流水线要跑的公开工具：host stamp 的这一跳。
 
-    ⚠ 2026-09-07：goal.tools 被选材器盖成 ['pages'] 之后，原样传进去
-    等于 specfirst.bind 永远进不了计划。函数体见 live_spec_first_tools。
+    待办不进菜单。函数体见 live_spec_first_tools。
     """
     goal = state.goal if isinstance(state.goal, dict) else {}
     spec, _, _, _ = _reuse_from_state(state)

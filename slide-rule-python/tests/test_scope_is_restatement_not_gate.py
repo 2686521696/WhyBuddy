@@ -68,8 +68,8 @@ def test_control_prompt_does_not_require_confirm_before_rehearse():
 
     text = _system_prompt(V5SessionState(sessionId="p", goal={"text": "收银台"}))
     assert "未确认不得 rehearse" not in text
-    assert "我认成了" in text
-    assert "精修（refine）" in text
+    assert "把这件事做完" in text
+    assert "收银台" in text
 
 
 def test_restatement_continues_as_spec_tool_not_rehearse_bundle():
@@ -104,6 +104,11 @@ def test_restatement_continues_as_spec_tool_not_rehearse_bundle():
 def test_can_auto_grant_needs_a_real_topic():
     from services.rehearsal_control import _can_auto_grant_scope
 
-    assert _can_auto_grant_scope("街边早餐摊收银台", "") is True
+    assert _can_auto_grant_scope("街边早餐摊收银台", "") is False
     assert _can_auto_grant_scope("你好", "") is False
+    assert _can_auto_grant_scope("hello", "") is False
     assert _can_auto_grant_scope("", "") is False
+    assert _can_auto_grant_scope("你能做啥", "") is False
+    assert _can_auto_grant_scope("你能做啥", "继续") is False
+    assert _can_auto_grant_scope("继续", "") is False
+    assert _can_auto_grant_scope("hello", "街边早餐摊收银台") is True

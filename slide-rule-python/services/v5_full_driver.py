@@ -2034,18 +2034,9 @@ def _factory_tools_from_state(state: "V5SessionState") -> tuple:
         and "spec" in chosen
     ):
         chosen = tuple(name for name in chosen if name != "spec")
-    # 阶段 1：下一跳合法集并上待办。stamp 成 ['pages'] 之后 goal.tools
-    # 只剩这一跳的菜，不并就把延后的 bind 弄丢。
-    todo = factory_todo_open(getattr(state, "factoryTodo", None))
-    if todo:
-        kept = set(chosen) | set(todo)
-        chosen = tuple(name for name in FACTORY_PUBLIC_TOOLS if name in kept)
-        if (
-            _state_has_spec(state)
-            and "spec" not in requested
-            and "spec" in chosen
-        ):
-            chosen = tuple(name for name in chosen if name != "spec")
+    # 漫画第 4 格 / 抄 grok：厂内合法集就是 host stamp 的菜。
+    # 待办挂在 factoryTodo 上给 host 下一跳看，并进来等于「你叫了 pages
+    # 却把 structure/bind 偷跑进这一跳」。丢失由闭环 fail-closed 挡。
     return chosen
 
 

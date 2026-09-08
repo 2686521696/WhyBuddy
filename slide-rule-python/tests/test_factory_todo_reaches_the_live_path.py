@@ -7,7 +7,7 @@
 
 阶段 1：可以延后，不许丢失。判据盯四件事（正反成对）：
 
-  正  模型延后 bind → 待办里有 bind → 下一跳合法集含 bind
+  正  模型延后 bind → 待办里有 bind（厂内合法集仍是 stamp）
   正  首轮链身份不因减菜丢失（挂在待办上，不靠这一跳 tools 长度）
   反  待办非空时闭环不发合格证
   反  用户在范围卡上取消掉的工具不许被待办塞回来
@@ -64,13 +64,16 @@ class Test延后进账下一跳能看见:
         )
         assert todo == ("structure", "bind"), todo
 
-    def test_下一跳合法集并上待办(self):
-        """正：stamp 成 pages 之后，下一跳仍能看见 bind。"""
+    def test_厂内合法集是stamp待办留给host(self):
+        """第 4 格：stamp 成 pages 之后，这一跳合法集不许并 bind。
+
+        bind 还在待办上，闭环 fail-closed，host 下一跳能看见。
+        """
         state = _state_after_defer(todo=["structure", "bind"])
         legal = _factory_tools_from_state(state)
-        assert "bind" in legal, f"待办没并进合法集：{legal}"
-        assert "structure" in legal
-        assert "pages" in legal
+        assert legal == ("pages",), legal
+        assert "bind" in factory_todo_open(state.factoryTodo)
+        assert "structure" in factory_todo_open(state.factoryTodo)
 
     def test_首轮身份在待办上还活着(self):
         state = _state_after_defer(todo=["structure", "bind"])
@@ -129,10 +132,10 @@ class Test接在真跑的那条路上:
         body = src.split("def _record_factory_todo")[1].split("\ndef ")[0]
         assert "state.factoryTodo" in body
 
-    def test_下一跳合法集在产线函数里并待办(self):
+    def test_厂内合法集函数不再并待办(self):
+        """变异：再把 factory_todo_open 并进 chosen → 红。"""
         src = inspect.getsource(_factory_tools_from_state)
-        assert "factory_todo_open" in src
-        assert "factoryTodo" in src
+        assert "factory_todo_open" not in src
 
     def test_首轮谓词读待办(self):
         src = inspect.getsource(_first_pass_chain)

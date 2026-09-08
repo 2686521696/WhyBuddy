@@ -71,6 +71,8 @@ def six_fields(sid: str, user_text: str, **extra: Any) -> Dict[str, Any]:
         "preferredDevice": extra.pop("preferredDevice", "desktop"),
         "designSystemId": extra.pop("designSystemId", None),
     }
+    if extra.get("toolAnswer") is not None:
+        body["toolAnswer"] = extra.pop("toolAnswer")
     body.update(extra)
     return body
 

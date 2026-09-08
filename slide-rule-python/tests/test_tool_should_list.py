@@ -73,7 +73,14 @@ def test_default_is_list_absence_means_visible():
     """
     assert should_list_tool("search_evidence", _fresh()) is True
     assert should_list_tool("ask_user", _fresh()) is True
-    assert should_list_tool("scope_card", _fresh()) is True
+    assert should_list_tool("scope_card", _fresh()) is False
+    assert should_list_tool(
+        "scope_card",
+        V5SessionState(
+            sessionId="lst-topic",
+            goal={"text": "诊所系统", "status": "needs_refinement"},
+        ),
+    ) is True
     assert should_list_tool("一个还没声明谓词的新工具", _fresh()) is True
 
 
@@ -87,7 +94,7 @@ def test_rehearse_hidden_until_scope_confirmed():
     assert "rehearse" in _names(_scoped())
     assert "spec" in _names(_scoped())
     assert "pages" not in _names(_scoped())
-    assert "scope_card" in _names(_fresh())
+    assert "scope_card" not in _names(_fresh()), "问候空会话还列范围卡会把你好当成产品开干"
     assert "scope_card" not in _names(_scoped()), (
         "已确认后还列 scope_card，交回会把假设面板顶掉"
     )
@@ -136,11 +143,13 @@ def test_workflow_tool_description_lists_registered_presets():
 def test_clarify_hidden_after_one_round():
     """分发器 :1631：问过一轮再问就改开范围卡。裁掉省一次往返。"""
     st = _fresh()
-    assert "clarify" in _names(st)
-    st.controlTranscript = [
-        {"id": "c1", "role": "assistant", "kind": "clarify", "text": "问题一；问题二"}
-    ]
-    assert "clarify" not in _names(st)
+    assert "clarify" not in _names(st), "空目标还列 clarify，问候会弹出产品类型问卷"
+    st.controlTranscript = [{"role": "user", "kind": "turn", "text": "hello"}]
+    assert "clarify" not in _names(st), "当前话是 hello 但 goal 空，仍列 clarify"
+    st.goal = {"text": "继续", "status": "needs_refinement"}
+    assert "clarify" not in _names(st), "芯片「继续」当目标仍列 clarify"
+    st.goal = {"text": "诊所系统", "status": "needs_refinement"}
+    assert "clarify" not in _names(st), "问卷工具不再列给模型，避免问候被填成谁用"
 
 
 def test_restore_version_hidden_without_a_previous_version():
@@ -213,8 +222,8 @@ def test_manifest_is_never_empty():
         rc.TOOL_LIST_WHEN.update({n: (lambda st: False) for n in CLOSED_TOOLS})
         floor = _names(_fresh())
         assert floor, "所有谓词都为假时清单空了——兜底没顶住，模型这一轮无事可做"
-        assert floor == {"ask_user", "scope_card"}, (
-            f"兜底放行的不是「问一句 / 开范围卡」，而是 {sorted(floor)}"
+        assert floor == {"ask_user"}, (
+            f"兜底放行的不是「问一句」，而是 {sorted(floor)}"
         )
     finally:
         rc.TOOL_LIST_WHEN.clear()
@@ -222,9 +231,14 @@ def test_manifest_is_never_empty():
 
     for st in (_fresh(), _scoped()):
         assert len(list_control_tools(st)) > 0
-    assert {"ask_user", "scope_card"} <= _names(_fresh()), (
-        "空会话至少要留得下「问一句」和「开范围卡」，否则控制面无事可做"
+    assert "ask_user" in _names(_fresh()), (
+        "空会话至少要留得下「问一句」，否则问候无事可做"
     )
+    topic = V5SessionState(
+        sessionId="lst-topic2",
+        goal={"text": "诊所系统", "status": "needs_refinement"},
+    )
+    assert "scope_card" in _names(topic)
 
 
 def test_listed_tools_are_a_subset_of_the_closed_set():

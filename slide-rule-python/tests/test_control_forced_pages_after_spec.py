@@ -63,9 +63,11 @@ def test_forced_pages_skips_llm_and_sets_goal_tools_pages(harness):
     )
     saved = load_session(sid)
     tools = (saved.goal or {}).get("tools") if saved and isinstance(saved.goal, dict) else None
-    assert tools == ["pages", "structure", "bind"], (
-        f"假设确认必须把首轮剩下的产出跳一次跑完，实际 {tools}"
+    assert tools == ["pages"], (
+        f"假设确认是 pages 这一跳，不许把剩余课表焊进来。实际 {tools}"
     )
+    todo = list(getattr(saved, "factoryTodo", None) or [])
+    assert "structure" in todo and "bind" in todo, todo
     sfp = (saved.specFirstPages or {}) if saved else {}
     assert sfp.get("assumptionsConfirmed") is True, (
         f"假设确认必须进盘，刷新才不复弹。实际 {sfp}"
@@ -152,14 +154,10 @@ def test_forced_pages_survives_stale_session_reload(monkeypatch):
         six_fields(sid, "假设已确认。继续画页面。", forcedTool="pages")
     )
     assert harness.helper_calls, "确认继续没有 handoff 工厂"
-    assert harness.helper_calls[-1].get("goal_tools") == [
-        "pages",
-        "structure",
-        "bind",
-    ]
+    assert harness.helper_calls[-1].get("goal_tools") == ["pages"]
     seen = [row.get("tools") for row in harness.generator_calls]
-    assert ["pages", "structure", "bind"] in seen, (
-        f"工厂 reload 后 tools 不是首轮剩余产出链：{seen}"
+    assert ["pages"] in seen, (
+        f"工厂 reload 后 tools 必须仍是 pages 一跳：{seen}"
     )
     types = event_types(events)
     assert "control_handoff_factory" in types
@@ -346,7 +344,7 @@ def test_assumptions_waiting_resume_completes_before_control_llm():
 
 
 def test_confirm_ignores_payload_tools_pages_and_keeps_first_pass_rest(harness):
-    """确认 POST 常带 tools=['pages']。stamp 之后 remaining 不许只剩 pages。"""
+    """确认 POST 常带 tools=['pages']。这一跳就是 pages，剩余进待办。"""
     sid = new_sid("confirm-payload-pages")
     seed_session(
         sid,
@@ -380,8 +378,12 @@ def test_confirm_ignores_payload_tools_pages_and_keeps_first_pass_rest(harness):
     )
     saved = load_session(sid)
     tools = (saved.goal or {}).get("tools") if saved and isinstance(saved.goal, dict) else None
-    assert tools == ["pages", "structure", "bind"], (
-        f"确认被 payload.tools=pages 削成单跳：{tools}"
+    assert tools == ["pages"], (
+        f"确认继续必须是 pages 一跳，实际 {tools}"
+    )
+    todo = list(getattr(saved, "factoryTodo", None) or [])
+    assert "structure" in todo and "bind" in todo, (
+        f"剩余产出跳必须进待办，不许丢：{todo}"
     )
 
 

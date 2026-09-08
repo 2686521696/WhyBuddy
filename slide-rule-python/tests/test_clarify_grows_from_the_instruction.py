@@ -84,7 +84,7 @@ QUESTIONS = [
 class TestClarifyProducesRealQuestions:
     def test_questions_land_as_gaps_with_their_options(self, harness):
         sid = new_sid("clarify")
-        seed_session(sid, goal={"text": "", "status": "needs_refinement"})
+        seed_session(sid, goal={"text": VAGUE, "status": "needs_refinement"})
         harness.llm_impl = lambda m, **k: llm_tool("clarify", {"questions": QUESTIONS})
         _, events = harness.post(six_fields(sid, VAGUE))
 
@@ -111,7 +111,7 @@ class TestClarifyProducesRealQuestions:
     def test_choice_without_options_degrades_to_free_text(self, harness):
         """反向：说是选择题却没给选项 → 退成填空，别端出一张点不动的卡。"""
         sid = new_sid("clarify-noopt")
-        seed_session(sid, goal={"text": "", "status": "needs_refinement"})
+        seed_session(sid, goal={"text": VAGUE, "status": "needs_refinement"})
         harness.llm_impl = lambda m, **k: llm_tool(
             "clarify", {"questions": [{"prompt": "预算多少？", "type": "single_choice"}]}
         )
@@ -125,7 +125,7 @@ class TestClarifyProducesRealQuestions:
         为了问而问比不问更烦人。
         """
         sid = new_sid("clarify-empty")
-        seed_session(sid, goal={"text": "", "status": "needs_refinement"})
+        seed_session(sid, goal={"text": VAGUE, "status": "needs_refinement"})
         harness.llm_impl = lambda m, **k: llm_tool("clarify", {"questions": []})
         _, events = harness.post(six_fields(sid, VAGUE))
         types = event_types(events)
@@ -138,7 +138,7 @@ class TestClarifyProducesRealQuestions:
         sid = new_sid("clarify-twice")
         seed_session(
             sid,
-            goal={"text": "", "status": "needs_refinement"},
+            goal={"text": VAGUE, "status": "needs_refinement"},
             controlTranscript=[{"id": "ct-1", "kind": "clarify", "text": "上一轮问过了"}],
         )
         harness.llm_impl = lambda m, **k: llm_tool("clarify", {"questions": QUESTIONS})
@@ -272,6 +272,9 @@ class TestPromptTellsTheModelWhatIsMissing:
         # 反向：说清楚了的维度不许再报缺
         said = "给医生和前台用的诊所网页系统，核心流程是挂号到缴费，本期不做库存"
         assert _missing_dimensions(said) == [], _missing_dimensions(said)
+        # 真机水果店：「老板能看今天卖了多少」就是谁用。漏掉老板 = 问候后还问核心用户。
+        fruit = "街边水果店的收银台：称重、改价、结账，老板能看今天卖了多少"
+        assert "谁用（角色）" not in _missing_dimensions(fruit), _missing_dimensions(fruit)
 
     def test_long_but_vague_text_is_not_auto_declared_clear(self):
         """反向：**不许**再用"字数够长就算说清"那条规则。
@@ -294,7 +297,8 @@ class TestPromptTellsTheModelWhatIsMissing:
         )
         prompt = _system_prompt(vague)
         assert "还没读到" in prompt
-        assert "clarify" in prompt
+        assert "开范围卡之前" not in prompt
+        assert "先用 clarify" not in prompt
 
         asked = V5SessionState(
             sessionId="p2",
@@ -304,6 +308,7 @@ class TestPromptTellsTheModelWhatIsMissing:
         after = _system_prompt(asked)
         assert "已经问过一轮" in after
         assert "还没读到" not in after
+        assert "直接 scope_card" not in after
 
 
 class TestUnansweredClarifyDoesNotBlockClosure:
