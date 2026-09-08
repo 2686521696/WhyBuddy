@@ -105,6 +105,7 @@ import {
   closedToolFromText,
   factoryHopFromText,
   isFactoryHop,
+  isFactoryWriteTool,
 } from "@/lib/factory-hops";
 import { isContinuationTurn } from "@/pages/sliderule/turn-continuation";
 import {
@@ -670,9 +671,19 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const [pendingAsk, setPendingAsk] = useState<{
     question: string;
     options?: string[];
+    reqId?: string;
   } | null>(null);
   const pendingAskRef = useRef(pendingAsk);
   pendingAskRef.current = pendingAsk;
+  /**
+   * 点芯片时第一发可能还在收 SSE（isRunning=true）。sendMessage 会清
+   * pendingAsk，好让 finally 的 flush 不被 overlay 挡住——回执必须先
+   * 盖到这枚章上，否则 POST 只有 forcedTool、没有 toolAnswer
+   * （2026-09-08 真机：点「开始起草规范（spec）」）。
+   */
+  const pendingToolAnswerRef = useRef<
+    { kind: string; text: string; reqId?: string } | undefined
+  >(undefined);
 
   /**
    * 停泊卡 / 提问还在时不许 flush。
@@ -1031,7 +1042,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           const options = Array.isArray(rawOptions)
             ? rawOptions.map(item => String(item))
             : undefined;
-          setPendingAsk({ question: hydrated.awaitDetail, options });
+          const reqId =
+            typeof lastAsk?.reqId === "string" && lastAsk.reqId
+              ? lastAsk.reqId
+              : undefined;
+          setPendingAsk({ question: hydrated.awaitDetail, options, reqId });
         }
         if (hydrated.awaitReason === "control_clarify") {
           // ClarificationCard 读 coverageGaps。这里只把钟拨到第 1 步，
@@ -1116,8 +1131,55 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       //   flush，flag 必须留到下一次真正进闸的 runTurn。
       return;
     }
+
+    // 抄 grok NeedUserAnswer：点芯片/答澄清/确认假设是当前提问的回执，
+    // 不是用户又说了一句。新气泡会把「精修（refine）」画成原话。
+    const pendingNeed = pendingAskRef.current;
+    const stamped = pendingToolAnswerRef.current;
+    pendingToolAnswerRef.current = undefined;
+    const answeringAsk = Boolean(pendingNeed) || Boolean(stamped);
+    const toolAnswer = pendingNeed
+      ? {
+          kind: "ask_user",
+          text: userText.trim(),
+          ...(pendingNeed.reqId ? { reqId: pendingNeed.reqId } : {}),
+        }
+      : stamped
+        ? {
+            kind: stamped.kind,
+            text: stamped.text || userText.trim(),
+            ...(stamped.reqId ? { reqId: stamped.reqId } : {}),
+          }
+        : /假设已确认/.test(userText)
+          ? { kind: "assumptions", text: userText.trim() }
+          : /^「[^」]+」答：/.test(userText)
+            ? { kind: "clarify", text: userText.trim() }
+            : undefined;
+    if (pendingNeed) {
+      pendingAskRef.current = null;
+      setPendingAsk(null);
+    }
+    const skipUserBubble = Boolean(resumeRun) || Boolean(toolAnswer);
     const hop = forcedTool || pendingForcedToolRef.current;
     pendingForcedToolRef.current = undefined;
+    // 跟后面 POST 的 inferForcedTool 同一把尺子。问候/提问不是 WRITE，
+    // 钟保持 idle——抄 grok：Progress 跟工具走，不是一按发送就铺六格。
+    const sfpAtStart =
+      (
+        sessionState as {
+          specFirstPages?: { spec?: unknown; pages?: Record<string, unknown> };
+        }
+      ).specFirstPages || {};
+    const firstPassAtStart =
+      !sfpAtStart.spec && Object.keys(sfpAtStart.pages || {}).length === 0;
+    const earlyTool = inferForcedTool(
+      userText,
+      intervention,
+      mode,
+      hop,
+      firstPassAtStart
+    );
+    const factoryLit = isFactoryWriteTool(earlyTool);
 
     let turnId = `turn-${Date.now()}`;
     const turnStartMs = Date.now(); // E16 收口句：本轮真实计时
@@ -1125,10 +1187,16 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     abortControllerRef.current = controller;
     isRunningRef.current = true;
     setIsRunning(true);
-    // ⚠ 必须跟 setIsRunning(true) 同一拍。放在 persist/intake 之后的话，
-    // 迭代会先继续亮着上一轮「汇合过闸」，跟右侧旧页面同一类谎。
-    rehearsalCursorRef.current = startRehearsalCursor();
-    setRehearsalCursor(startRehearsalCursor());
+    // ⚠ 必须跟 setIsRunning(true) 同一拍清掉上一轮「汇合过闸」。
+    // 廉价回合用 idle，不许 startRehearsalCursor 把第 2 格点成 current
+    // （2026-09-08 真机：发「你好」右栏演规划第一轮）。
+    if (factoryLit) {
+      rehearsalCursorRef.current = startRehearsalCursor();
+      setRehearsalCursor(startRehearsalCursor());
+    } else {
+      rehearsalCursorRef.current = idleRehearsalCursor();
+      setRehearsalCursor(idleRehearsalCursor());
+    }
 
     // E13：直播步骤同步攒进本地数组——轮次落定时随 PUT 写进
     // state.turnNarrations（刷新后回放时间线；setUiTurns 是异步状态，
@@ -1166,9 +1234,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       );
     };
 
-    // 续播是接回已有 run，不是用户又说了一句。新气泡会把
-    // 「（续播上一轮推演）」画成用户原话（2026-09-07 烘焙店收银台）。
-    if (resumeRun) {
+    // 续播 / 提问回执都不是用户又说了一句。新气泡会把
+    // 「（续播上一轮推演）」或「精修（refine）」画成原话。
+    if (skipUserBubble) {
       const last = uiTurnsRef.current[uiTurnsRef.current.length - 1];
       if (last) {
         turnId = last.id;
@@ -1284,7 +1352,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         }).length
       );
 
-      setLiveAction({ label: "正在规划本轮动作...", external: false });
+      if (factoryLit) {
+        setLiveAction({ label: "正在规划本轮动作...", external: false });
+      } else {
+        setLiveAction({ label: "正在想…", external: false });
+      }
 
       const firstLoopPlanCountRef = { value: 0 };
       const driveLoopsRef: SlideRuleRuntime.DriveReasoningResult["loops"] = [];
@@ -1325,34 +1397,33 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         });
       }
       // ⚠ 2026-09-05：续跑的一轮**不报开场**。
-      //
-      //   用户第三次指着同一处说「是伴随式澄清选择完之后」。前面几刀把左栏的
-      //   行折进了上一段，但**这两行是另一路**：`指令已接收 · 启动推理` 和
-      //   状态条上的「规划第一轮能力与路线…」是每一轮 runTurn 无条件发的，
-      //   折叠管不着——右栏于是照样写着"正在规划第一轮"，看着就是从头再来。
-      //
-      //   续跑本来就没有"第一轮"可规划：这一跳是接着上一跳走的，
-      //   路线上一轮就定了。所以开场芯片不发，状态条说这一跳在干什么。
-      if (!isContinuationTurn(userText)) {
-        appendStep({
-          id: `${turnId}-intake`,
-          kind: "chip",
-          capabilityId: "intent.parse" as any,
-          roleId: "system",
-          label: "指令已接收 · 启动推理",
-          realLlm: false,
-          loopTurnId: turnId,
-          progressType: "thinking",
-        });
-        setLiveAction({ label: "规划第一轮能力与路线...", external: false });
-      } else {
-        const hopLabel = isFactoryHop(hop)
-          ? FACTORY_HOP_LABELS[hop]
-          : "";
-        setLiveAction({
-          label: hopLabel ? `接着上一跳：${hopLabel}` : "接着上一跳往下走",
-          external: false,
-        });
+      // ⚠ 2026-09-08：问候/提问也不是开场。抄 grok Progress 跟工具走——
+      //   只有 WRITE（rehearse/spec/pages/…）才报「规划第一轮」。
+      //   「你好」对 isContinuationTurn 是新原话，旧代码于是无条件演开工，
+      //   模型其实只问了一句「我是面团的薄控制面」。
+      if (factoryLit) {
+        if (!isContinuationTurn(userText) && !toolAnswer) {
+          appendStep({
+            id: `${turnId}-intake`,
+            kind: "chip",
+            capabilityId: "intent.parse" as any,
+            roleId: "system",
+            label: "指令已接收 · 启动推理",
+            realLlm: false,
+            loopTurnId: turnId,
+            progressType: "thinking",
+          });
+          setLiveAction({ label: "规划第一轮能力与路线...", external: false });
+        } else {
+          const writeHop = earlyTool || hop;
+          const hopLabel = isFactoryHop(writeHop)
+            ? FACTORY_HOP_LABELS[writeHop]
+            : "";
+          setLiveAction({
+            label: hopLabel ? `接着上一跳：${hopLabel}` : "接着上一跳往下走",
+            external: false,
+          });
+        }
       }
 
       // M2/M3/M4/M5/M6: driveMode selects single vs marathon thin layer.
@@ -1572,8 +1643,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           setLlmDraft("");
           setLlmDraftLabel(null);
           setLlmStreams([]);
-          rehearsalCursorRef.current = startRehearsalCursor();
-          setRehearsalCursor(startRehearsalCursor());
+          if (factoryLit) {
+            rehearsalCursorRef.current = startRehearsalCursor();
+            setRehearsalCursor(startRehearsalCursor());
+          }
           // ⚠ 新一轮清空：不清的话右侧会先亮上一轮的页面，而用户刚说的是
           //   "改成 XXX"——看着像改完了，其实一个字都还没动。
           setSpecPages([]);
@@ -1658,6 +1731,14 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           //
           // 实测踩到过：2026-08-10 一趟推演的 POST 流在第 2 分钟被对端 reset，
           // 而服务端一路跑到 seq 1812 正常收尾。前端在那一刻会把整轮重跑一遍。
+          const clockLitRef = { current: factoryLit };
+          const ensureFactoryClock = (tool?: string) => {
+            if (clockLitRef.current) return;
+            if (tool && tool !== "factory" && !isFactoryWriteTool(tool)) return;
+            clockLitRef.current = true;
+            rehearsalCursorRef.current = startRehearsalCursor();
+            setRehearsalCursor(startRehearsalCursor());
+          };
           let sawRunId = false;
           // 这条流见过终局事件吗。消费者读到 done 却没收到 complete /
           // run_cancelled / error 就是协议违规（见 driver 的
@@ -1689,6 +1770,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               ...(mode === "repair" ? { mode } : {}),
               onRunId: (runId: string) => {
                 sawRunId = true;
+                ensureFactoryClock("factory");
                 activeRunIdRef.current = runId;
                 // 后端 run 书签：刷新/跳页回来据此续播接回
                 saveActiveRun(resolvedSid, {
@@ -1696,6 +1778,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   userText: userText.trim(),
                   startedAt: new Date().toISOString(),
                 });
+              },
+              onControlToolStart: (tool: string) => {
+                ensureFactoryClock(tool);
+                if (isFactoryWriteTool(tool)) {
+                  const label = isFactoryHop(tool)
+                    ? FACTORY_HOP_LABELS[tool]
+                    : tool;
+                  setLiveAction({ label, external: false });
+                }
               },
               onStreamNoTerminal: () => {
                 // 断流：书签**不清**——后端 run 多半还在跑，书签是刷新后
@@ -1963,9 +2054,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 const next = {
                   question: event.question,
                   options: event.options,
+                  ...(event.reqId ? { reqId: event.reqId } : {}),
                 };
                 pendingAskRef.current = next;
                 setPendingAsk(next);
+                setLiveAction(null);
               },
               onControlClarify: event => {
                 // ⚠ 2026-08-31 真机：事件发了、消费侧没有 case，左栏空转
@@ -2108,6 +2201,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             : await driveStream(preparedState, postedText, {
                 ...streamOpts,
                 forcedTool: inferredTool,
+                ...(toolAnswer ? { toolAnswer } : {}),
                 ...(inferredTool === "pages" ? { tools: ["pages"] } : {}),
                 ...(restoreId ? { versionId: restoreId } : {}),
                 /* ⚠ 质疑指向哪件产物、澄清卡答掉了哪几个缺口，**必须跟着
@@ -2801,8 +2895,18 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         // 收尾卡 / 人话 hop 是 typed 答案，盖掉确认留下的 pages。
         pendingForcedToolRef.current = hop;
       }
+      const pendingNeed = pendingAskRef.current;
+      if (pendingNeed) {
+        pendingToolAnswerRef.current = {
+          kind: "ask_user",
+          text,
+          ...(pendingNeed.reqId ? { reqId: pendingNeed.reqId } : {}),
+        };
+      }
       // 提问 chip / 人话 hop 都要看得见、撤得掉。静默入队 = 点了没反馈、
       // 条目删不掉，下次 pushQueuedTurn 才蹦进可见队列。
+      // 清 pendingAsk 是为了 finally flush 不被 overlay 挡住；回执在
+      // pendingToolAnswerRef，runTurn 入闸时再贴上。
       pendingAskRef.current = null;
       setPendingAsk(null);
       pushQueuedTurn(text);

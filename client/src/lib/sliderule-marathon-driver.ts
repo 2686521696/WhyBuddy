@@ -423,6 +423,11 @@ export interface DriveFullStreamOpts {
    *   澄清这条链 2026-08-27 之前就断在这儿：问了等于没问。
    */
   answeredGaps?: Array<{ gapId: string; answer: string }>;
+  /**
+   * 停泊提问的回执（grok NeedUserAnswer）。
+   * 有它时服务端不当成新的 user turn。
+   */
+  toolAnswer?: { kind: string; text?: string; reqId?: string };
   /** 产品宪章 opt-in。只在确认推演时带，缺省不送，免得问候把账户旗清掉。 */
   reuseCharter?: boolean;
   productCharter?: {
@@ -446,6 +451,7 @@ export interface DriveFullStreamOpts {
   onControlAskUser?: (event: {
     question: string;
     options?: string[];
+    reqId?: string;
   }) => void;
   /**
    * 开工前澄清。事件自带 questions[] / kindLabel / productStep，
@@ -899,6 +905,7 @@ export async function postControlTurnStream(
         ...(opts.answeredGaps?.length
           ? { answeredGaps: opts.answeredGaps }
           : {}),
+        ...(opts.toolAnswer ? { toolAnswer: opts.toolAnswer } : {}),
         ...(opts.mode ? { mode: opts.mode } : {}),
         ...(opts.reuseCharter !== undefined
           ? { reuseCharter: opts.reuseCharter }
@@ -998,6 +1005,9 @@ export async function consumeControlStreamResponse(
                 options: Array.isArray(event.options)
                   ? event.options.map((x: unknown) => String(x))
                   : [],
+                ...(typeof event.reqId === "string" && event.reqId
+                  ? { reqId: event.reqId }
+                  : {}),
               });
               continue;
             case "control_clarify":

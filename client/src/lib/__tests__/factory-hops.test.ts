@@ -12,6 +12,7 @@ import {
   factoryHopFromText,
   hopFromFactoryCapability,
   isFactoryHop,
+  isFactoryWriteTool,
   looksLikeClosedToolCommand,
   looksLikeFactoryHopCommand,
 } from "../factory-hops";
@@ -64,5 +65,14 @@ describe("factoryHopFromText", () => {
     expect(isFactoryHop("pages")).toBe(true);
     expect(isFactoryHop("rehearse")).toBe(false);
     expect(isFactoryHop("refine")).toBe(false);
+  });
+
+  it("WRITE 才亮钟：问候/提问不是工厂", () => {
+    expect(isFactoryWriteTool("spec")).toBe(true);
+    expect(isFactoryWriteTool("rehearse")).toBe(true);
+    expect(isFactoryWriteTool("refine")).toBe(true);
+    expect(isFactoryWriteTool("ask_user")).toBe(false);
+    expect(isFactoryWriteTool("inspect_model")).toBe(false);
+    expect(isFactoryWriteTool("")).toBe(false);
   });
 });

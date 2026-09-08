@@ -78,6 +78,7 @@ import {
 import {
   deriveStatusBarFacts,
   idleRehearsalCursor,
+  rehearsalClockShowSteps,
   type ContextHudFacts,
   type RehearsalClockCursor,
   type RehearsalClockView,
@@ -823,7 +824,7 @@ export function ClaudeChatSurface({
                   hud={hud}
                   decision={factoryDecision}
                   show
-                  showSteps={isRunning || hasClockProgress}
+                  showSteps={rehearsalClockShowSteps(rehearsalClock)}
                 />
               </div>
             ) : null}

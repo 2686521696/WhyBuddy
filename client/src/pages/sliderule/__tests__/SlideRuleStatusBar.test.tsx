@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import type { PublishClosureSummary } from "../derive-cross-runtime-summary";
 import { SlideRuleStatusBar } from "../SlideRuleStatusBar";
-import { startRehearsalCursor } from "../derive-status-bar";
+import { idleRehearsalCursor, startRehearsalCursor } from "../derive-status-bar";
 
 function state(): V5SessionState {
   return {
@@ -107,6 +107,21 @@ describe("推演钟 + 证据 HUD（产品 DOM）", () => {
     for (const eta of FORBIDDEN_ETA) {
       expect(html, `产品 DOM 不许出现 ETA ${eta}`).not.toContain(eta);
     }
+  });
+
+  it("廉价回合跑着：不铺六格、不说大约数分钟", () => {
+    const html = renderToStaticMarkup(
+      <SlideRuleStatusBar
+        state={state()}
+        turnCount={1}
+        isRunning
+        executorMode="server-llm"
+        rehearsalCursor={idleRehearsalCursor()}
+      />
+    );
+    expect(html).not.toContain('data-testid="sliderule-rehearsal-step-2"');
+    expect(html).not.toContain("大约数分钟，第一页会先出现");
+    expect(html).not.toContain("起草 SPEC");
   });
 
   it("非 server 的 costLedger 行不进 HUD token 列", () => {

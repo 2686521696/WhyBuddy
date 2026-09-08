@@ -447,9 +447,31 @@ describe("续跑接在上一段后面", () => {
     const from = src.indexOf("let turnId = ");
     expect(from).toBeGreaterThan(-1);
     const body = src.slice(from, src.indexOf("try {", from) + 40);
-    expect(body).toContain("if (resumeRun)");
+    expect(src).toContain("toolAnswer");
+    expect(body).toContain("if (skipUserBubble)");
     expect(body).toContain("user: \"\"");
     expect(body).toMatch(/if \(last\)/);
+    const runTurn = src.slice(
+      src.indexOf("const runTurn = async"),
+      src.indexOf("const requestRehearsal = async")
+    );
+    expect(runTurn).toContain("answeringAsk");
+    expect(runTurn).toContain("pendingToolAnswerRef");
+    expect(runTurn).toContain('kind: "ask_user"');
+    expect(runTurn).toContain('kind: "assumptions"');
+    expect(runTurn).toContain('kind: "clarify"');
+    expect(runTurn).toMatch(
+      /skipUserBubble = Boolean\(resumeRun\) \|\| Boolean\(toolAnswer\)/
+    );
+    expect(runTurn).toContain("...(toolAnswer ? { toolAnswer } : {})");
+    const sendFn = src.slice(
+      src.indexOf("const sendMessage = async"),
+      src.indexOf("const repairGaps = async")
+    );
+    expect(sendFn).toContain("pendingToolAnswerRef.current");
+    expect(sendFn.indexOf("pendingToolAnswerRef.current")).toBeLessThan(
+      sendFn.indexOf("pendingAskRef.current = null")
+    );
   });
 
   it("★ §1 接在真链路上：气泡列表真的走了折叠", () => {
@@ -508,14 +530,19 @@ describe("续跑的状态条不许报开场", () => {
     return "";
   };
 
-  it("开场芯片和「规划第一轮」都在「不是续跑」那个块**里面**", () => {
+  it("开场芯片和「规划第一轮」都在 factoryLit 且不是续跑那个块**里面**", () => {
     const src = code();
-    // ⚠ 判据不许用「往后数 900 个字符」那种窗口：把 setLiveAction 挪到 if
-    //   外面一行，它照样落在窗口里——变异不红。必须数花括号，取真正的块。
-    const block = blockAfter(src, "if (!isContinuationTurn(userText)) {");
-    expect(block).not.toBe("");
-    expect(block).toContain("指令已接收 · 启动推理");
-    expect(block).toContain("规划第一轮能力与路线");
+    const inner = blockAfter(
+      src,
+      "if (!isContinuationTurn(userText) && !toolAnswer)"
+    );
+    expect(inner).not.toBe("");
+    expect(inner).toContain("指令已接收 · 启动推理");
+    expect(inner).toContain("规划第一轮能力与路线");
+    const planAt = src.indexOf("规划第一轮能力与路线");
+    const factoryIf = src.lastIndexOf("if (factoryLit)", planAt);
+    expect(factoryIf, "规划第一轮必须包在 factoryLit 里").toBeGreaterThan(-1);
+    expect(factoryIf).toBeLessThan(planAt);
   });
 
   it("续跑那一支要说清这一跳在干什么，不许留空", () => {

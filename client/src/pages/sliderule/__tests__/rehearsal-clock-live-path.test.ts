@@ -105,25 +105,43 @@ describe("SSE 投影接在 useSlideRuleSession（删调用点必红）", () => {
     );
   });
 
-  it("runTurn 里 setIsRunning(true) 同一拍就 startRehearsalCursor", () => {
+  it("runTurn 里 setIsRunning(true) 同一拍就重置钟（idle 或 start）", () => {
     const src = load("../useSlideRuleSession.ts");
     const runAt = src.indexOf("const runTurn = async");
     expect(runAt, "runTurn 不见了").toBeGreaterThan(-1);
     const runningAt = src.indexOf("setIsRunning(true)", runAt);
     expect(runningAt, "runTurn 的 setIsRunning(true) 不见了").toBeGreaterThan(runAt);
-    const cursorAt = src.indexOf("startRehearsalCursor()", runningAt);
-    expect(cursorAt, "startRehearsalCursor 必须在 setIsRunning(true) 之后").toBeGreaterThan(
-      runningAt
-    );
-    const between = src.slice(runningAt, cursorAt);
+    const idleAt = src.indexOf("idleRehearsalCursor()", runningAt);
+    const startAt = src.indexOf("startRehearsalCursor()", runningAt);
+    expect(idleAt, "廉价回合必须 idle 掉上一轮汇合过闸").toBeGreaterThan(runningAt);
+    expect(startAt, "WRITE 仍要 startRehearsalCursor").toBeGreaterThan(runningAt);
+    const between = src.slice(runningAt, Math.min(idleAt, startAt));
     expect(
       between.length,
-      "startRehearsalCursor 被挪到 persist/intake 之后了"
-    ).toBeLessThan(400);
+      "重置钟被挪到 persist/intake 之后了"
+    ).toBeLessThan(500);
     expect(between).not.toContain("await ");
     expect(src).not.toContain("/rehearsal-progress");
     expect(src).not.toContain("/progress-clock");
     expect(src).not.toContain("POST /api/sliderule/progress");
+  });
+
+  it("规划第一轮只在 factoryLit 里，问候不点钟", () => {
+    const src = load("../useSlideRuleSession.ts");
+    const runTurn = src.slice(
+      src.indexOf("const runTurn = async"),
+      src.indexOf("const requestRehearsal = async")
+    );
+    expect(runTurn).toContain("factoryLit");
+    expect(runTurn).toContain("isFactoryWriteTool");
+    expect(runTurn).toContain("正在想…");
+    expect(runTurn).toContain("ensureFactoryClock");
+    expect(runTurn).toContain("onControlToolStart");
+    const planAt = runTurn.indexOf("规划第一轮能力与路线");
+    expect(planAt).toBeGreaterThan(-1);
+    const factoryIf = runTurn.lastIndexOf("if (factoryLit)", planAt);
+    expect(factoryIf, "规划第一轮必须在 factoryLit 块里").toBeGreaterThan(-1);
+    expect(runTurn.indexOf("if (factoryLit)")).toBeGreaterThan(-1);
   });
 });
 
@@ -159,6 +177,8 @@ describe("产品面挂上了钟（不是只写了组件）", () => {
     expect(surface).toContain("<RehearsalClockHud");
     expect(surface).toContain("clock={rehearsalClock}");
     expect(surface).toContain("decision={factoryDecision}");
+    expect(surface).toContain("rehearsalClockShowSteps(rehearsalClock)");
+    expect(surface).not.toContain("showSteps={isRunning || hasClockProgress}");
   });
 
   it("Unified 把 rehearsalFacts 喂给对话列", () => {

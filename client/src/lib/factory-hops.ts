@@ -72,6 +72,22 @@ export function isFactoryHop(name: unknown): name is FactoryHop {
   return (FACTORY_HOPS as readonly string[]).includes(String(name || ""));
 }
 
+/**
+ * 会进工厂、该亮产品钟的 WRITE。
+ *
+ * 抄 grok：Progress 跟工具走。ask_user / inspect / 问候不是 WRITE，
+ * 不许点「规划第一轮」（2026-09-08 真机：发「你好」右栏演开场）。
+ */
+export function isFactoryWriteTool(name: unknown): boolean {
+  const tool = String(name || "");
+  return (
+    tool === "rehearse" ||
+    tool === "refine" ||
+    tool === "repair" ||
+    isFactoryHop(tool)
+  );
+}
+
 const HOP_ID_RE = /(?:^|[^\w])(spec|pages|structure|bind|closure)(?:[^\w]|$)/gi;
 
 const CLOSED_ID_RE = new RegExp(

@@ -58,11 +58,60 @@ describe("assistantTextForTurn", () => {
   });
 
   it("精修空轮不许套首轮 chatSummary", () => {
-    const text = assistantTextForTurn(turn(), closure(), GOAL);
+    const text = assistantTextForTurn(
+      turn({
+        steps: [
+          {
+            id: "c1",
+            kind: "chip",
+            capabilityId: "intent.parse" as any,
+            roleId: "system",
+            label: "逐页画界面（并发）",
+            realLlm: false,
+          },
+        ],
+      }),
+      closure(),
+      GOAL
+    );
     expect(text).not.toContain("含 2 角色");
     expect(text).not.toContain("3 页面");
     expect(text).not.toBe(FIRST_SUMMARY);
     expect(text).toBe(REFINE_TURN_NO_PAGE_NOTE);
+  });
+
+  it("问候空轮不许套「没画出新的页面」——goal 后来被芯片改了也不许", () => {
+    const text = assistantTextForTurn(
+      turn({ user: "你好", assistant: "", steps: [] }),
+      closure(),
+      "开始设计新应用"
+    );
+    expect(text).not.toBe(REFINE_TURN_NO_PAGE_NOTE);
+    expect(text).not.toContain("含 2 角色");
+    expect(text).toBe("");
+  });
+
+  it("问候收尾不许写「本轮已完成，但还没有生成可展示的回答」", () => {
+    const text = assistantTextForTurn(
+      turn({ user: "你好", assistant: "", steps: [] }),
+      null,
+      ""
+    );
+    expect(text).toBe("");
+    expect(text).not.toContain("本轮已完成");
+  });
+
+  it("模型命令不许当对用户的收尾", () => {
+    const text = assistantTextForTurn(
+      turn({
+        user: "开始设计新应用",
+        assistant: "SPEC 已经起草。下一跳请调 pages，或告诉用户为什么先停。",
+      }),
+      closure(),
+      "开始设计新应用"
+    );
+    expect(text).not.toContain("请调 pages");
+    expect(text).not.toContain("告诉用户为什么先停");
   });
 
   it("Structure / bind 跳不许把「没画出页面」改写成已完成", () => {

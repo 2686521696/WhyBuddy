@@ -134,6 +134,8 @@ describe("产品客户端不得再 POST 工厂流", () => {
     expect(postFn).toContain("opts.tools");
     expect(postFn).toContain("designSystemId");
     expect(postFn).toContain("/api/sliderule/control-turn-stream");
+    expect(postFn).toContain("toolAnswer");
+    expect(postFn).toContain("opts.toolAnswer");
     expect(postFn).toContain("reuseCharter");
     expect(postFn).toContain("productCharter");
     expect(postFn).toContain("opts.reuseCharter !== undefined");
