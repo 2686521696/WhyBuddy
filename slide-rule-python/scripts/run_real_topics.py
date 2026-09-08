@@ -42,6 +42,58 @@ BASE = os.environ.get("REAL_TOPIC_BASE", "http://127.0.0.1:9700")
 API = "/api/sliderule"
 
 
+def _post_stream(
+    url: str,
+    body: Dict[str, Any],
+    headers: Dict[str, str],
+    *,
+    stop_types: tuple = ("complete",),
+    max_seconds: int = 240,
+) -> List[Dict[str, Any]]:
+    """边收边判，拿到判据就断开——**不等它把整个应用建完**。
+
+    ⚠ 2026-09-08：第一版把整条 SSE 读完才解析。真产品第一句会一路建到
+      交付（真机 >15 分钟，一个 HTTP 请求同步跑完），脚本 900 秒超时，
+      于是「第 5/7 格」永远拿不到结论。而这些判据要看的是**头几个事件**：
+      有没有出复述卡、有没有反过来问产品类型。收到就够了，剩下的建它的。
+    """
+    data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    req = request.Request(url, data=data, method="POST")
+    req.add_header("Content-Type", "application/json")
+    for k, v in headers.items():
+        req.add_header(k, v)
+    opener = request.build_opener(request.ProxyHandler({}))
+    out: List[Dict[str, Any]] = []
+    deadline = time.time() + max_seconds
+    try:
+        resp = opener.open(req, timeout=max_seconds)
+    except error.HTTPError as exc:
+        body_text = ""
+        try:
+            body_text = exc.read().decode("utf-8", "replace")[:600]
+        except Exception:  # noqa: BLE001
+            pass
+        raise RuntimeError(f"HTTP {exc.code} {url}\n{body_text}") from None
+    try:
+        for raw_line in resp:
+            line = raw_line.decode("utf-8", "replace").strip()
+            if line.startswith("data:"):
+                payload = line[5:].strip()
+                if payload:
+                    try:
+                        out.append(json.loads(payload))
+                    except json.JSONDecodeError:
+                        pass
+                    if str(out[-1].get("type") or "") in stop_types:
+                        break
+            if time.time() > deadline:
+                out.append({"type": "__timeout__"})
+                break
+    finally:
+        resp.close()
+    return out
+
+
 def _post(url: str, body: Dict[str, Any], headers: Dict[str, str], timeout: int = 900) -> str:
     data = json.dumps(body, ensure_ascii=False).encode("utf-8")
     req = request.Request(url, data=data, method="POST")
@@ -93,6 +145,8 @@ class Scenario:
     turns: List[str]
     check: Callable[[List[List[Dict[str, Any]]]], List[str]]
     seed_goal: str = ""
+    #: 收到其中任一事件就断开。真产品会一路建到交付，判据不必等它建完。
+    stop_types: tuple = ("complete",)
 
 
 def _first(events: List[Dict[str, Any]], t: str) -> Optional[Dict[str, Any]]:
@@ -125,8 +179,12 @@ def check_real_product(rounds: List[List[Dict[str, Any]]]) -> List[str]:
     bad: List[str] = []
     ev = rounds[0]
     ts = types_of(ev)
-    if "complete" not in ts:
-        bad.append(f"没有终止事件：{ts}")
+    # 断在 handoff 上是**故意的**（不等它建完），此时没有 complete 不算问题；
+    # 一路到底却没有 complete 才是前端转圈那条伤。
+    if "complete" not in ts and "control_handoff_factory" not in ts:
+        bad.append(f"既没点火也没有终止事件：{ts}")
+    if "__timeout__" in ts:
+        bad.append(f"到判据超时都没收到该收的事件：{ts}")
     if "control_clarify" in ts:
         bad.append("真产品第一句还在弹澄清问卷")
     card = _first(ev, "control_scope_card")
@@ -181,6 +239,7 @@ SCENARIOS: List[Scenario] = [
         panel="第 5/7 格",
         turns=["做个水果店收银台"],
         check=check_real_product,
+        stop_types=("control_handoff_factory", "complete"),
     ),
     Scenario(
         key="clinic",
@@ -188,6 +247,7 @@ SCENARIOS: List[Scenario] = [
         panel="第 5/7 格",
         turns=["做一个社区诊所的挂号与排队叫号系统"],
         check=check_real_product,
+        stop_types=("control_handoff_factory", "complete"),
     ),
     Scenario(
         key="capability-question",
@@ -226,13 +286,18 @@ def run_scenario(sc: Scenario, token: str, key: str) -> Dict[str, Any]:
             "preferredDevice": "desktop",
             "designSystemId": None,
         }
-        raw = _post(f"{BASE}{API}/control-turn-stream", payload, headers)
+        events = _post_stream(
+            f"{BASE}{API}/control-turn-stream",
+            payload,
+            headers,
+            stop_types=sc.stop_types,
+        )
         # 原始流留档：判据只看事件名，出问题时要看字段（restatement 是什么、
         # 谁点的火）。不留档就得重跑一次真 LLM。
         dump = REPORT.parent / "raw" / f"{sid}-{len(rounds)}.json"
         dump.parent.mkdir(parents=True, exist_ok=True)
-        dump.write_text(raw, encoding="utf-8")
-        rounds.append(parse_sse(raw))
+        dump.write_text(json.dumps(events, ensure_ascii=False, indent=2), encoding="utf-8")
+        rounds.append(events)
     problems = sc.check(rounds)
     return {
         "key": sc.key,
