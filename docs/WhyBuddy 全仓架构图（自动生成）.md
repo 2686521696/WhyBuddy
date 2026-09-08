@@ -28,7 +28,7 @@ flowchart TB
     py_middlewares["py/middlewares<br/>2 个模块"]
     py_models["py/models<br/>3 个模块"]
     py_routes["py/routes<br/>12 个模块"]
-    py_scripts["py/scripts<br/>37 个模块"]
+    py_scripts["py/scripts<br/>38 个模块"]
     py_services["py/services<br/>219 个模块"]
     py_sliderule_llm["py/sliderule_llm<br/>13 个模块"]
     py_stdio_utf8["py/stdio_utf8<br/>1 个模块"]
