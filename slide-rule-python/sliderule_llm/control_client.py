@@ -40,6 +40,7 @@ from .gateway_circuit import (  # 叶子（顶层只有标准库），无循环�
     retries_allowed,
 )
 from .retry_budget import charge_retry  # 同上：叶子，顶层 import 让这条边留在闸上
+from .doom_loop import Collector as DoomLoopCollector, peek as peek_doom_loop
 
 
 @dataclass
@@ -268,6 +269,22 @@ async def _call_control_llm_once(
         raise LlmError(
             f"non-JSON response: {response.text[:200]}", transient=False
         ) from exc
+
+    # 服务端 doom-loop 信号：终局响应对象上那份冗余拷贝就挂在这份 JSON 里。
+    #
+    # ⚠ **当前网关不发这个字段**，所以 peek 恒返回 NONE，这段等于不存在。
+    #   接在这儿不是为了今天生效，是为了「哪天网关换了」不用再找一遍入口——
+    #   而且架构闸不许留没人 import 的模块（它那句「要么接上，要么说清为什么」
+    #   是对的）。收到了先留痕；据以重采样是下一步，`should_resample` 要一份
+    #   Policy，而 Policy 缺席就是关着。
+    _doom = DoomLoopCollector()
+    _kind, _signals = peek_doom_loop(response.text)
+    if _signals:
+        _doom.observe(_signals)
+        print(
+            f"[doom-loop] 服务端报了循环信号：{[s.raw for s in _doom.signals][:6]}",
+            flush=True,
+        )
 
     content, tool_calls, usage, finish = _extract_control(data)
     if not content.strip() and not tool_calls:
