@@ -85,6 +85,12 @@ from services.archetype_legal import (
     wired_device_choices,
 )
 from services.action_stationarity import IdenticalToolCallRun, step_signature, step_tool_name
+from services.hop_requirements import (
+    HOP_REQUIRES,
+    Need,
+    blocker_text as hop_blocker_text,
+    satisfied as hop_satisfied,
+)
 from services.plan_todo import (
     MAX_TODO_ITEMS,
     apply as apply_todo,
@@ -470,17 +476,38 @@ def _cap_speech(state: V5SessionState, reason: ControlStopReason) -> str:
     return stop_text(reason)
 
 
+def _session_has(state: V5SessionState) -> Any:
+    """把「这个会话手上有什么」包成 `hop_requirements` 要的那个闭包。
+
+    抄 grok `Expr::eval(&|req| req.eval(&ctx))`——叶子怎么判由调用方给，
+    表达式树本身不认识 state（所以它能是叶子模块）。
+    """
+
+    def have(need: Need) -> bool:
+        if need is Need.SCOPE:
+            return _scope_confirmed(state)
+        if need is Need.SPEC:
+            return _has_spec(state)
+        if need is Need.PAGES:
+            return _has_pages(state)
+        if need is Need.MODEL:
+            return _has_model(state)
+        return False
+
+    return have
+
+
 def _factory_hop_blocker(state: V5SessionState, hop: str) -> str:
-    """缺前置就说人话，不许进工厂空转。"""
-    if hop == "spec":
-        return ""
-    if hop == "pages" and not _has_spec(state):
-        return "还没有 SPEC。先调 spec。"
-    if hop in ("structure", "bind") and not _has_pages(state):
-        return f"还没有页面。先调 pages，再 {hop}。"
-    if hop == "closure" and not (_has_pages(state) or _has_model(state)):
-        return "还没有可判定的产物。先调 spec 或 pages。"
-    return ""
+    """缺前置就说人话，不许进工厂空转。
+
+    ⚠ 2026-09-09：这里原来是一段手写 if 链，而**同一条规则在
+      `TOOL_LIST_WHEN` 里还写了一遍**（形式还不一样：那边是 lambda）。
+      改一处不报错，只有一半生效：
+        只改清单 → 模型看不见它，但 forcedTool 直接点进去照跑
+        只改这里 → 摆在菜单上，点了当场被拒（用户眼里就是「按钮坏了」）
+      现在两处都从 `HOP_REQUIRES` 那一份声明派生，判据钉着两者必须一致。
+    """
+    return hop_blocker_text(hop, _session_has(state))
 
 
 def _has_inspectable(state: V5SessionState) -> bool:
@@ -651,11 +678,18 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
     # 「开始推演」按钮走 forcedTool 绕过 LLM（KD21），裁掉不影响用户点火。
     # 已有模型就别再列 rehearse：下一刀 WRITE 是 refine，不是整场重烧。
     "rehearse": lambda st: _scope_confirmed(st) and not _has_spec(st) and not _has_model(st),
-    "spec": lambda st: _scope_confirmed(st) and not _has_spec(st),
-    "pages": lambda st: _scope_confirmed(st) and _has_spec(st),
-    "structure": lambda st: _scope_confirmed(st) and _has_pages(st),
-    "bind": lambda st: _scope_confirmed(st) and _has_pages(st),
-    "closure": lambda st: _scope_confirmed(st) and (_has_pages(st) or _has_model(st)),
+    # ⚠ 这五条**不再手写**：前置只有 `HOP_REQUIRES` 一份声明（抄 grok
+    #   `requires_expr`），这里派生。改造前同一条规则在
+    #   `_factory_hop_blocker` 里还有一份手写 if 链，两处会漂（§4）。
+    #
+    #   spec 多一条「已经有 SPEC 就别再列」——那不是前置，是**别重复干活**
+    #   （前置问"跑得动吗"，这一条问"值得再跑吗"）。两件事，故意不合并进
+    #   HOP_REQUIRES：合并了 forcedTool=spec 的重起草会被当成缺前置拦掉。
+    "spec": lambda st: hop_satisfied("spec", _session_has(st)) and not _has_spec(st),
+    "pages": lambda st: hop_satisfied("pages", _session_has(st)),
+    "structure": lambda st: hop_satisfied("structure", _session_has(st)),
+    "bind": lambda st: hop_satisfied("bind", _session_has(st)),
+    "closure": lambda st: hop_satisfied("closure", _session_has(st)),
     # 没产出就没什么可报完工的。跟 closure 同一个条件——它俩问的是同一件事
     # 「手上有没有可判的东西」，不许在这儿另写一份口径（§4）。
     "report_done": lambda st: _scope_confirmed(st) and (_has_pages(st) or _has_model(st)),
