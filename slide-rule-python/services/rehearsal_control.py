@@ -1154,6 +1154,66 @@ def _last_scope_card(state: V5SessionState) -> Dict[str, Any]:
     return {}
 
 
+def _declined_scope(state: V5SessionState) -> str:
+    """上一轮那份范围刚被用户点了「不对再说」，返回被拒的那句复述。没有就空串。
+
+    抄的标准答案：grok-build
+    `xai-grok-tools/src/implementations/grok_build/enter_plan_mode/mod.rs`
+
+        //! This tool requires user approval before executing. The UI should present a
+        //! confirmation dialog. If the user declines, the tool result is rejected and
+        //! the model receives `"User declined to enter plan mode."`.
+
+    要点是**拒绝要变成模型收得到的一句话**，不是静默的状态复位。
+
+    ⚠ 2026-09-09 查真机得到的现状：`_dismiss_scope` 只清 awaitReason、
+      往 transcript 写一条 `scope_dismissed`、yield complete。而控制面的
+      messages **每轮从零拼**（`[system_prompt, user_text]`，见
+      `_run_control_turn_body` 结尾），transcript 根本不进 messages——
+      `scope_dismissed` 全仓只在那一次写入处出现，提示词里没有、前端也没有。
+      也就是说：**模型完全不知道自己被拒过**，下一轮可以原样再提一遍。
+
+    ⚠ 为什么必须把被拒的那句话一起带上，不能像 grok 那样只回一句
+      「用户拒绝了」：grok 的模型手里还攥着它刚发出的那次调用，知道被拒的是
+      什么；我们每轮重拼 messages，模型手里什么都没有。只说「被拒了」而不说
+      被拒的是哪一份，等于让它蒙着眼睛换一个——那不是信息，是噪音。
+
+    真机验过（2026-09-09，真 uvicorn + 真 HTTP + 真 SSE）：网关换成一台回声机
+    （收到的 system 原样吐回来），三发——说一句产品话出卡、点「不对再说」、
+    再说一句：
+
+        ① 卡出来了: True   复述: 请假系统
+        ② 已点「不对再说」
+        ③ 模型那一发收到的 system 里，含这条回执: True
+           原句: 上一轮你提的范围是「请假系统」，用户点了「不对再说」——那份没被接受
+
+    量的是**线上那一发请求体里的东西**，不是 `_system_prompt` 的返回值——
+    后者单测已经量过，证明不了「它接在链路上」（§1、§3 第二条）。
+
+    「还新鲜」的判据（对应 grok 那条回执只在那一轮的上下文里出现一次）：
+    从末尾往回扫，跳过用户自己说的话，碰到的**第一条**非用户行是
+    `scope_dismissed` 才算数。中间要是已经又出过卡、或者已经确认过，
+    这条回执就过期了，不再往提示词里塞。
+    """
+    rows = [r for r in (getattr(state, "controlTranscript", None) or []) if isinstance(r, dict)]
+    dismissed_at = -1
+    for i in range(len(rows) - 1, -1, -1):
+        row = rows[i]
+        if row.get("role") == "user" or row.get("kind") == "turn":
+            continue
+        if row.get("kind") == "scope_dismissed":
+            dismissed_at = i
+        break
+    if dismissed_at < 0:
+        return ""
+    for row in reversed(rows[:dismissed_at]):
+        if row.get("kind") == "scope_card":
+            return str(row.get("text") or "").strip()
+    # 卡的原文找不到（老会话 / 手改过的库）：宁可不说，也不说半句。
+    # 「用户拒绝了某个你看不见的东西」对模型是纯噪音——见上面那段。
+    return ""
+
+
 def _has_unconfirmed_restatement(state: V5SessionState) -> bool:
     """复述卡已经摊着，还没写成确认。
 
@@ -2774,6 +2834,15 @@ def _system_prompt(state: V5SessionState) -> str:
 
     extra = charter_prompt_block()
     facts: List[str] = []
+    # 抄 grok enter_plan_mode 的拒绝回执，摆在最前面：这一条比「还没有应用
+    # 目标」之类的现场更要紧——它说的是**模型刚提的东西被否了**。
+    #
+    # ⚠ 措辞只陈述发生了什么，不写「别再提一遍」。本函数头注那条纪律：
+    #   规章只留边界，现场是**事实**不是流程命令（2026-09-08 第 2 格的教训——
+    #   写成命令模型就开始填答题卡）。判断留给它自己。
+    _declined = _declined_scope(state)
+    if _declined:
+        facts.append(f"上一轮你提的范围是「{_declined[:60]}」，用户点了「不对再说」——那份没被接受。")
     if _has_ask_answer_candidate(state):
         # ⚠ 2026-09-09 真机：hhh / ghgjg / 你能做什么 三轮左栏都是
         #   「想做什么应用，说一句就行。」回执事实写成「继续问想做什么
