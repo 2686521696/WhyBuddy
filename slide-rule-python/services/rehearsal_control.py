@@ -139,6 +139,7 @@ from services.v5_full_driver import _truthy_scope_flag
 from services.llm_error_text import humanize_llm_error
 from sliderule_llm.client import LlmError
 from sliderule_llm.control_client import ControlLlmResult, call_control_llm
+from sliderule_llm.retry_budget import retry_budget_scope
 
 CANNED_FAILURE = (
     "我是面团的推演引擎。说一个要做的应用，或问当前应用里已经推出来的角色/页面。"
@@ -3130,8 +3131,14 @@ async def run_control_turn(
     token = _CONTROL_PAYLOAD.set(payload if isinstance(payload, dict) else {})
     activate_charter_for_run(state, payload)
     try:
-        async for event in _run_control_turn_body(payload, state):
-            yield event
+        # 抄 grok 第二层重试预算：**一个回合一份，中途永不清零**。
+        # 开在这儿而不是 `_control_llm_loop` 里——loop 一个回合可能进两次
+        # （回执路径 / forced 交回后），开在 loop 里等于每次进都重新给额度，
+        # 那正好是这一层要治的「每轮成功就把额度赚回来」。
+        # grok 把它存在 actor 的 Cell 上、不是循环局部，同一个道理。
+        with retry_budget_scope():
+            async for event in _run_control_turn_body(payload, state):
+                yield event
     finally:
         clear_charter_for_run()
         _CONTROL_PAYLOAD.reset(token)

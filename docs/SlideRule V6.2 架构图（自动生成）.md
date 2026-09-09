@@ -15,8 +15,8 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **297** 个，模块 **297** 个
-- 内部依赖边 **882** 条，其中 **476** 条写在函数体里（53%；基线 476，只许变少）
+- 扫描文件 **298** 个，模块 **298** 个
+- 内部依赖边 **884** 条，其中 **476** 条写在函数体里（53%；基线 476，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
 - services 内部越层依赖 **0** 条（基线 0 条）
@@ -63,7 +63,7 @@ flowchart TB
   config["config<br/>2 个模块<br/>配置"]
   models["models<br/>3 个模块<br/>数据形状"]
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
-  sliderule_llm["sliderule_llm<br/>13 个模块<br/>LLM 通道"]
+  sliderule_llm["sliderule_llm<br/>14 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
   services["services<br/>223 个模块<br/>业务"]
   routes["routes<br/>12 个模块<br/>HTTP 路由"]
@@ -93,7 +93,7 @@ flowchart TB
   scripts -->|2| stdio_utf8
   services -->|15 · 其中 7 条在函数体里| config
   services -->|31 · 其中 1 条在函数体里| models
-  services -->|61 · 其中 45 条在函数体里| sliderule_llm
+  services -->|62 · 其中 45 条在函数体里| sliderule_llm
   sliderule_llm -->|2 · 其中 2 条在函数体里| config
 ```
 

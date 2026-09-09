@@ -39,6 +39,7 @@ from .gateway_circuit import (  # 叶子（顶层只有标准库），无循环�
     reject_reason,
     retries_allowed,
 )
+from .retry_budget import charge_retry  # 同上：叶子，顶层 import 让这条边留在闸上
 
 
 @dataclass
@@ -164,6 +165,17 @@ async def call_control_llm(
                 raise
             if not retries_allowed():
                 raise
+            # 抄 grok 的第二层：**整个回合累计**的重试上限，中途永不清零。
+            #
+            # ⚠ 上面那个 `attempt >= 3` 是第一层（每次调用 3 次，下一次调用
+            #   又从 1 开始）。一个控制面回合最多 8 次调用，所以只有第一层时
+            #   一回合能烧到 24 次重试——而三道现有的闸（45s 墙钟 / 8000 token
+            #   / 8 轮）量的都是单轮，一道都拦不住：每一轮单独看都正常。
+            #   没开预算的路径（工厂 call_llm_with_retry、夹具、脚本）拿到
+            #   None，行为一字不变。
+            denial = charge_retry()
+            if denial is not None:
+                raise LlmError(denial, status=error.status, transient=False) from error
             await asyncio.sleep(0.2 * attempt)
     if last_error is not None:
         raise last_error
