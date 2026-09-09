@@ -631,12 +631,21 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
     "workflow": lambda st: _scope_confirmed(st),
     # 已确认过范围就别再列：交回后模型再挑 scope_card 会把假设面板顶掉
     # （2026-09-02 真机）。下一步是 pages，不是再开一张卡。
-    "scope_card": lambda st: (not _scope_confirmed(st))
-    and (
-        _has_product_topic(st)
-        or _has_ask_answer_candidate(st)
-        or bool(_unstamped_product_turn(st))
-    ),
+    # ⚠ 2026-09-09 照 grok 改：清单只看**这件工具现在能不能用**，不猜用户
+    #   那句话像不像需求。
+    #
+    #   查过 grok-build（97 个 crate）：`Tool::should_list` 只被覆写 3 次，
+    #   全在转发/解析的管道层，**没有一件真工具覆写它**——read_file / bash /
+    #   ask_user_question / task / workflow 全走默认 `true`。而且它的
+    #   `ListToolsContext` 里压根没有用户消息（只有 Cwd / SessionContext /
+    #   功能开关），按"用户说了什么"筛在类型上就做不到。
+    #
+    #   上一版这里并了三个猜意图的谓词（有没有产品话题、是不是刚收回纸条、
+    #   这一轮像不像产品）。它们是长度启发式的延伸，正是 grok 刻意不做的事：
+    #   猜错一次就是「你好」弹一张卡，或者英文需求一整年进不来。
+    #   意图由提示词那条 work_policy 判（回答就好，不要顺手造东西），
+    #   贵动作由点火那道闸挡（`_turn_has_real_product`）——两层都在动作侧。
+    "scope_card": lambda st: not _scope_confirmed(st),
     # 没有上一版可回（_previous_model_version_id fail-closed 返回 ""）。
     "restore_version": lambda st: bool(_previous_model_version_id(st)),
     # ⚠ refine / fork_variant 在空会话上无事可做，而 refine 的分发分支

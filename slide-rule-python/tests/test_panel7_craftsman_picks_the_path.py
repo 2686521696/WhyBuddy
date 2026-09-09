@@ -143,7 +143,10 @@ class Test真产品第一句不许再考功能:
             ((t.get("function") or {}).get("name"))
             for t in list_control_tools(st)
         }
-        assert "scope_card" not in names
+        # ⚠ 清单不再猜意图（2026-09-09 照 grok 改：`Tool::should_list` 在 grok 全仓只被覆写 3 次、全在管道层，`ListToolsContext` 里根本没有用户消息）。保证挪到了分发那层：没有真产品就不画卡、改成再问一句——**模型硬挑 scope_card 也挡得住**，比「菜单里不摆」更强。
+        #   「你好不许得到一张卡」这条保证仍然钉着，见
+        #   `test_cheap_followup_is_not_a_product` 里的分发判据。
+        assert "scope_card" in names
         assert "ask_user" in names
 
     def test_fruit_shop_ask_user_is_redirected_to_restatement(self, harness):

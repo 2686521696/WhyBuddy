@@ -72,7 +72,8 @@ def test_default_is_list_absence_means_visible():
       测的不是缺省行为。
     """
     assert should_list_tool("ask_user", _fresh()) is True
-    assert should_list_tool("scope_card", _fresh()) is False
+    # ⚠ 清单不再猜意图（2026-09-09 照 grok 改：`Tool::should_list` 在 grok 全仓只被覆写 3 次、全在管道层，`ListToolsContext` 里根本没有用户消息）。保证挪到了分发那层：没有真产品就不画卡、改成再问一句——**模型硬挑 scope_card 也挡得住**，比「菜单里不摆」更强。
+    assert should_list_tool("scope_card", _fresh()) is True
     assert should_list_tool(
         "scope_card",
         V5SessionState(
@@ -93,7 +94,8 @@ def test_rehearse_hidden_until_scope_confirmed():
     assert "rehearse" in _names(_scoped())
     assert "spec" in _names(_scoped())
     assert "pages" not in _names(_scoped())
-    assert "scope_card" not in _names(_fresh()), "问候空会话还列范围卡会把你好当成产品开干"
+    # ⚠ 清单不再猜意图（2026-09-09 照 grok 改：`Tool::should_list` 在 grok 全仓只被覆写 3 次、全在管道层，`ListToolsContext` 里根本没有用户消息）。保证挪到了分发那层：没有真产品就不画卡、改成再问一句——**模型硬挑 scope_card 也挡得住**，比「菜单里不摆」更强。
+    assert "scope_card" in _names(_fresh()), "问候空会话还列范围卡会把你好当成产品开干"
     assert "scope_card" not in _names(_scoped()), (
         "已确认后还列 scope_card，交回会把假设面板顶掉"
     )
@@ -172,12 +174,19 @@ def test_refine_and_fork_hidden_without_a_model():
     assert "fork_variant" not in _names(_fresh())
 
 
-def test_scope_card_listed_after_ask_answer_candidate():
-    """回执还没写成目标时，模型要看得见 scope_card 才能认产品。
+def test_scope_card_listed_until_scope_is_confirmed():
+    """范围卡在**确认之前**一直摆着，确认之后撤掉。
 
-    反向：空会话没有回执，仍不许列（问候会开范围卡）。
+    ⚠ 2026-09-09 照 grok 改：这条原来叫「回执之后才列」，靠猜「这一轮像不像
+      产品」来决定摆不摆。查过 grok-build——`Tool::should_list` 全仓只被覆写
+      3 次且全在管道层，`ListToolsContext` 里根本没有用户消息，按"用户说了
+      什么"筛在类型上就做不到。清单只答「这件工具现在能不能用」。
+
+      「你好不许得到一张卡」那条保证没丢，只是挪到了分发那层：没有真产品就
+      不画卡、改成再问一句——模型硬挑 scope_card 也挡得住，比「菜单里不摆」
+      更强（判据在 test_cheap_followup_is_not_a_product）。
     """
-    assert "scope_card" not in _names(_fresh())
+    assert "scope_card" in _names(_fresh())
     st = V5SessionState(
         sessionId="lst-ask-ans",
         goal={"text": "", "status": "needs_refinement"},
@@ -188,6 +197,8 @@ def test_scope_card_listed_after_ask_answer_candidate():
         ],
     )
     assert "scope_card" in _names(st)
+    # 反向：确认过范围就撤掉——下一步是 pages，不是再开一张卡。
+    assert "scope_card" not in _names(_scoped())
 
 
 def test_search_evidence_hidden_without_a_product_topic():

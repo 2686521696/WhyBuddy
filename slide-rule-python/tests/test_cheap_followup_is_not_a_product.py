@@ -98,7 +98,7 @@ def test_continue_and_meta_do_not_list_write_tools():
         )
         names = _names(st)
         assert "clarify" not in names, text
-        assert "scope_card" not in names, text
+        # ⚠ 2026-09-09 照 grok 改：清单不猜意图（`ListToolsContext` 里没有用户消息，grok 全仓只有 3 处管道层覆写 `should_list`）。保证挪到分发层——模型硬挑 scope_card 也不画卡，只再问一句。
         assert "spec" not in names, text
         assert "rehearse" not in names, text
         assert "ask_user" in names, text
@@ -140,6 +140,38 @@ def test_ask_answer_does_not_refresh_original_goal_from_the_stamp():
     chunk = src[at : at + 900]
     assert "if not original_goal" not in chunk
     assert "original_goal or user_text" not in chunk
+
+
+def test_a_greeting_gets_no_card_even_when_the_model_picks_scope_card(harness):
+    """模型**硬挑** scope_card，会话只有「你好」→ 不画卡，只再问一句。
+
+    ⚠ 2026-09-09：这条是清单那层撤掉之后，「你好不许得到一张卡」这条保证的新家。
+
+      原来靠 `should_list` 不把 scope_card 摆出来——模型看不见就挑不了。
+      照 grok 改成清单不猜意图之后（它的 `ListToolsContext` 里根本没有用户
+      消息，全仓只有 3 处管道层覆写 `should_list`），那道防线没了。
+
+      但换来的这道更强：**就算模型挑了，分发那层也不画卡**。前者只是不诱惑
+      模型，后者是模型受了诱惑也没用。真机验过同一件事——范围卡摆在菜单上，
+      模型自己没挑（`offered=[ask_user, scope_card] picked=[]`）；这条判据
+      钉的是它万一挑了的那种情况。
+
+    反向：同一条路上换成真产品，卡照出、火照点（见
+    `test_scope_card_tool_ignites_without_waiting`）。
+    """
+    sid = new_sid("hello-forced-card")
+    seed_session(
+        sid,
+        goal={"text": "", "status": "needs_refinement"},
+        controlTranscript=[{"role": "user", "kind": "turn", "text": "你好"}],
+    )
+    harness.llm_impl = lambda m, **k: llm_tool("scope_card", {"restatement": "你好"})
+    _, events = harness.post(six_fields(sid, "你好"))
+    types = event_types(events)
+    assert "control_scope_card" not in types, f"问候被画成了范围卡：{types}"
+    assert harness.helper_calls == [], f"问候点着了工厂：{types}"
+    assert "control_ask_user" in types, f"没画卡也得问一句，不能干瞪眼：{types}"
+    assert types[-1] == "complete", types
 
 
 def test_gibberish_ask_answer_does_not_ignite_spec(harness):
@@ -507,7 +539,7 @@ def test_hello_does_not_list_clarify_or_ignite(harness):
     _, events = harness.post(six_fields(sid, "hello"))
     assert "clarify" not in listed, listed
     assert "spec" not in listed, listed
-    assert "scope_card" not in listed, listed
+    # ⚠ 2026-09-09 照 grok 改：清单不猜意图（`ListToolsContext` 里没有用户消息，grok 全仓只有 3 处管道层覆写 `should_list`）。保证挪到分发层——模型硬挑 scope_card 也不画卡，只再问一句。
     assert "search_evidence" not in listed, listed
     assert harness.helper_calls == []
     types = event_types(events)

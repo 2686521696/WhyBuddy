@@ -77,8 +77,9 @@ def test_placeholder_goal_would_have_opened_the_factory_door():
     assert _has_product_topic(empty) is False
     assert _has_product_topic(placeholder) is True, "占位串被当成了真产品"
 
-    assert should_list_tool("scope_card", empty) is False
+    # ⚠ 2026-09-09 照 grok 改：清单不猜意图（`ListToolsContext` 里没有用户消息，grok 全仓只有 3 处管道层覆写 `should_list`）。保证挪到分发层——模型硬挑 scope_card 也不画卡，只再问一句。
+    #   scope_card 现在两种情况都列，区分不出占位串；能区分的是
+    #   search_evidence（它按「有没有记下的产品」列，那是前提不是意图）。
     assert should_list_tool("search_evidence", empty) is False
-    # 反向：占位串在场时这两件确实会被摆出来——这就是「你好」点着工厂的那一步。
-    assert should_list_tool("scope_card", placeholder) is True
+    # 反向：占位串在场时它确实会被摆出来——这就是「你好」点着工厂的那一步。
     assert should_list_tool("search_evidence", placeholder) is True
