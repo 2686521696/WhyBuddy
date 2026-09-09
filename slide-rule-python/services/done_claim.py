@@ -35,6 +35,30 @@ grok 的解法在结构上更硬：**把「我做完了」变成一个有后果�
 声称完成要走判官，而不是绕过判官。声称被驳回，模型当场就知道。
 
 ──────────────────────────────────────────────────────────────────────────
+## 真机验过（2026-09-09，真 LLM + 真 HTTP + 真建一遍应用）
+
+会话 done3-1788946492：说需求 → 开始推演 → pages(138s) → structure(93s)
+→ bind(38s) → 问「都做完了吗」。两条路都走到了：
+
+    ⑦ 模型**主动挑了** report_done，但 completed=false（只报进度）
+       判决: accepted  「记下了。这一条不算完工声明。」
+       它接着如实告诉用户：闭环判定未通过，页面缺录入控件、权限孤岛
+
+    ⑧ 再逼它 completed=true
+       判决: not_achieved  「闭环判定没过，这次完工声明不成立。」
+       第几次/上限: 1 / 3
+       理由原样带回（页面：2 条需要录入的需求，承载页上没有任何落笔的地方）
+
+⚠ 顺带炸出一个**存量** bug，记在这儿备查（不是这次改动引入的）：
+  上面那条理由的前半句是「被拦下了，但本版本不认识这个拦截原因
+  （CLOSURE_SUBMIT_INTENT_UNSERVED）」。产线实际会发 13 个拦截码，
+  而 `closure_block_reason._CLASS_BY_CODE` 只认识 9 个，漏的正是最常出现的
+  交付面那一族（SUBMIT_INTENT_UNSERVED / UNMAPPED / PAGE_WITHOUT_CONTROLS /
+  NO_ENTRY_SURFACE / ONE_PAGE_PER_ROLE / FACTORY_TODO_OPEN）和五系统引用
+  那一族（PUBLISH_*）。这条影响的是**所有**读那个出口的地方（本工具、
+  `_after_write_hint`、前端），不只这一件。
+
+──────────────────────────────────────────────────────────────────────────
 ## 故意没抄的那一档：fail-open
 
 grok 有一档 `ClassifierFailOpenAchieved`——判官自己挂了就当达成，
