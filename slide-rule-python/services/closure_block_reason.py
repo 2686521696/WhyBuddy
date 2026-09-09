@@ -106,6 +106,20 @@ class ClosureBlockClass(str, Enum):
     #:   照 path 把它当证据缺口，就会在新代码里复刻这次事故本身：告诉用户
     #:   "证据没交齐"，而证据明明写着 6/6。
     UMBRELLA = "umbrella"
+    #: 页面画出来了，但用户在上面**做不了事**——交付面可用性那道闸
+    #: （deliverable_surface 的五条）。跟"没做完"是两回事：东西在，用不了。
+    #:
+    #: ⚠ 2026-09-09 真机 done3-1788946492 逮到的：模型报完工，闭环拿
+    #:   `CLOSURE_SUBMIT_INTENT_UNSERVED` 拦下，而这个模块回的是
+    #:   「本版本不认识这个拦截原因」。那道闸 2026-09-06 就上线了，
+    #:   人话这一侧一直没跟上——**判定侧和叙述侧只改了一半**（CLAUDE.md §4）。
+    #:
+    #:   改前 真机: 被拦下了，但本版本不认识这个拦截原因（CLOSURE_SUBMIT_INTENT_UNSERVED）·页面：…
+    #:   改后 真机: 页面画出来了，但用户在上面做不了事·页面：2 条需要用户录入/提交的需求…
+    SURFACE_UNUSABLE = "surface_unusable"
+    #: 首轮账上还挂着没跑的产出跳（structure / bind 没跑完就想收工）。
+    #: 跟证据缺口的区别：证据缺口是"跑了但没交"，这个是"压根还没跑"。
+    TODO_OPEN = "todo_open"
     #: 本版本不认识这个 code。**绝不**构造成上面任何一种。
     #:
     #: 抄 `IdleWithholdReason::Unknown`。这里的代价和那边一样具体：把不认识
@@ -124,6 +138,16 @@ _CLASS_BY_CODE: Dict[str, ClosureBlockClass] = {
     "CLOSURE_DEGRADED_RUN": ClosureBlockClass.DEGRADED_RUN,
     "MODEL_GATE_BLOCKED": ClosureBlockClass.MODEL_GATE,
     "CLOSURE_REBUILD_FAILED": ClosureBlockClass.REBUILD_FAILED,
+    # 交付面可用性那道闸的五条（deliverable_surface.BLOCKER_CODES，2026-09-06
+    # 上线）。拦的只有 UNSERVED，其余四条只报不拦——但**都会进 topBlockers**，
+    # 所以人话这一侧五条都要认识。分层（拦 / 只报）是判定侧的事，
+    # 这儿只管把它翻成人话，不在这里重判一次。
+    "CLOSURE_SUBMIT_INTENT_UNSERVED": ClosureBlockClass.SURFACE_UNUSABLE,
+    "CLOSURE_SUBMIT_INTENT_UNMAPPED": ClosureBlockClass.SURFACE_UNUSABLE,
+    "CLOSURE_NO_ENTRY_SURFACE": ClosureBlockClass.SURFACE_UNUSABLE,
+    "CLOSURE_ONE_PAGE_PER_ROLE": ClosureBlockClass.SURFACE_UNUSABLE,
+    "CLOSURE_PAGE_WITHOUT_CONTROLS": ClosureBlockClass.SURFACE_UNUSABLE,
+    "CLOSURE_FACTORY_TODO_OPEN": ClosureBlockClass.TODO_OPEN,
     "LLM_GENERATE_FAILED": ClosureBlockClass.GENERATE_FAILED,
     "LLM_GENERATE_DISABLED": ClosureBlockClass.GENERATE_FAILED,
     "LLM_TEST_FAILED": ClosureBlockClass.GENERATE_FAILED,
@@ -139,6 +163,8 @@ _CLASS_HEAD: Dict[ClosureBlockClass, str] = {
     ClosureBlockClass.MODEL_GATE: "模型没过结构闸",
     ClosureBlockClass.REBUILD_FAILED: "闭环重建这一步失败了",
     ClosureBlockClass.GENERATE_FAILED: "五系统模型没能生成出来",
+    ClosureBlockClass.SURFACE_UNUSABLE: "页面画出来了，但用户在上面做不了事",
+    ClosureBlockClass.TODO_OPEN: "首轮的产出跳还没跑完",
     ClosureBlockClass.UMBRELLA: "被拦下了，但这一轮只落了笼统的 blocked 标记，没有具体原因",
     ClosureBlockClass.UNKNOWN: "被拦下了，但本版本不认识这个拦截原因",
 }
@@ -263,6 +289,25 @@ def classify_blockers(publish_closure: Any) -> List[ClosureBlocker]:
             ClosureBlocker(klass=klass, code=code, detail=detail, affected_skill=skill)
         )
     return out
+
+
+#: `architecture.toml [gate_codes]` 里**不会进 topBlockers** 的码，按理由归类。
+#: 判据 `test_闸码注册表里的闭环码都得认识` 拿这份名单做差集——
+#: 以后新加一道闸，人话表没跟上就当场红，不会再像交付面那五条一样
+#: 静静地渲染成「本版本不认识这个拦截原因」三个月。
+#:
+#: ⚠ 往这儿加东西 = 声明「这个码不是闭环拦截理由」。加错了的代价是
+#:   把一条真拦截理由挡在人话之外——跟这次要修的是同一个病。
+_NOT_A_CLOSURE_BLOCKER: Dict[str, str] = {
+    # 诊断，随 blocker 透出给人看，不进 report["blockers"]
+    # （v5_capability_executor:1528 落进 _diagnostic()，不是 blockers）。
+    "REFINE_PAINT_FAILED": "精修画页失败的留痕，是诊断不是拦截",
+    # 接口层的即时反馈，当场回给调用方，不参与任何闭环判定。
+    "LLM_EMPTY_OUTPUT": "AI 改提示词返回空，接口层即时反馈",
+    "PACKAGE_NOT_FOUND": "点了一个不存在的技能包，接口层即时反馈",
+    # 连通性自检 / 任务生命周期鉴权，跟"产出合不合格"无关。
+    "TASK_LIFECYCLE_AUTH_DENIED": "任务生命周期鉴权，跟产出合不合格无关",
+}
 
 
 def user_report(publish_closure: Any, *, max_rows: int = 3) -> str:

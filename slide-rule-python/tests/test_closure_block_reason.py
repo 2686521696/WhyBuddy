@@ -295,3 +295,88 @@ def test_skill_labels_are_not_copied_a_second_time():
     assert imported, "没复用 turn_narration._SKILL_LABELS"
     body = _src("closure_block_reason.py")
     assert '"数据模型"' not in body, "又抄了一份五系统中文名"
+
+
+# ── 2026-09-09：真机逮到的那一条，以及让它不会再发生的那道闸 ──────────────
+
+
+def test_交付面那道闸的拦截理由说得出人话():
+    """真机 done3-1788946492 的原样载荷（CLAUDE.md §一之二：喂真机那一发）。
+
+    模型报完工 → 闭环拿 `CLOSURE_SUBMIT_INTENT_UNSERVED` 拦下 →
+    这个模块回的却是「本版本不认识这个拦截原因」。那道闸 2026-09-06 就上线了，
+    人话这一侧一直没跟上——判定侧和叙述侧只改了一半（§4）。
+    """
+    said = user_report(
+        {
+            "blocked": True,
+            "topBlockers": [
+                {
+                    "code": "CLOSURE_SUBMIT_INTENT_UNSERVED",
+                    "ref": "页面：2 条需要用户录入/提交的需求，其承载页面上"
+                    "**没有任何落笔的地方**：n1→p1；n2→p2",
+                }
+            ],
+        }
+    )
+    assert "不认识" not in said, said
+    assert "做不了事" in said, said
+    assert "n1→p1" in said, said
+
+
+def test_首轮账没清完也说得出人话():
+    said = user_report(
+        {
+            "blocked": True,
+            "topBlockers": [
+                {"code": "CLOSURE_FACTORY_TODO_OPEN", "ref": "structure,bind"}
+            ],
+        }
+    )
+    assert "不认识" not in said, said
+    assert "structure,bind" in said, said
+
+
+def test_闸码注册表里的闭环码都得认识():
+    """**这一条才是真修复**，上面两条只是今天这一笔。
+
+    `architecture.toml [gate_codes]` 是本仓的闸码权威注册表（arch_graph 逼人
+    回答"谁体检它"的那个机制）。以后新加一道闸、人话表没跟上，本条当场红——
+    不会再像交付面那五条一样，静静渲染成「本版本不认识这个拦截原因」几个月。
+
+    不进 topBlockers 的码走 `_NOT_A_CLOSURE_BLOCKER` 显式豁免，**每条带理由**。
+    往那份名单里加东西 = 声明"这个码不是闭环拦截理由"，加错的代价跟这次
+    要修的是同一个病，所以要写下为什么。
+    """
+    import tomllib
+
+    from services.closure_block_reason import (
+        _CLASS_BY_CODE,
+        _NOT_A_CLOSURE_BLOCKER,
+    )
+
+    toml = Path(__file__).resolve().parents[1] / "architecture.toml"
+    registry = tomllib.loads(toml.read_text(encoding="utf-8")).get("gate_codes") or {}
+    assert registry, "注册表读空了——这条判据就成了空转"
+
+    unknown = sorted(
+        code
+        for code in registry
+        if code not in _CLASS_BY_CODE and code not in _NOT_A_CLOSURE_BLOCKER
+    )
+    assert not unknown, (
+        f"这些闸码人话表不认识，会渲染成「本版本不认识这个拦截原因」：{unknown}。"
+        "要么在 _CLASS_BY_CODE 里给它归类，要么在 _NOT_A_CLOSURE_BLOCKER 里"
+        "写清为什么它不是闭环拦截理由。"
+    )
+
+    # 反向：豁免名单不许收留注册表里已经没有的码（那是没人扫的死条目），
+    # 也不许跟正表打架（同一个码两处都有，改一处不报错、只有一半生效）。
+    stale = sorted(c for c in _NOT_A_CLOSURE_BLOCKER if c not in registry)
+    assert not stale, f"豁免名单里有注册表已经没有的码：{stale}"
+    both = sorted(set(_NOT_A_CLOSURE_BLOCKER) & set(_CLASS_BY_CODE))
+    assert not both, f"这些码正表和豁免名单里都有：{both}"
+
+    # 每条豁免都要有理由，不许空着糊过去。
+    empty = sorted(c for c, why in _NOT_A_CLOSURE_BLOCKER.items() if not str(why).strip())
+    assert not empty, f"这些豁免没写理由：{empty}"
