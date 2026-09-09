@@ -85,6 +85,13 @@ from services.archetype_legal import (
     wired_device_choices,
 )
 from services.action_stationarity import IdenticalToolCallRun, step_signature, step_tool_name
+from services.plan_todo import (
+    MAX_TODO_ITEMS,
+    apply as apply_todo,
+    normalize as normalize_todo,
+    one_line as todo_one_line,
+    summarize as summarize_todo,
+)
 from services.done_claim import (
     BLOCKED_REASON_SCHEMA,
     COMPLETED_SCHEMA,
@@ -652,6 +659,8 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
     # 没产出就没什么可报完工的。跟 closure 同一个条件——它俩问的是同一件事
     # 「手上有没有可判的东西」，不许在这儿另写一份口径（§4）。
     "report_done": lambda st: _scope_confirmed(st) and (_has_pages(st) or _has_model(st)),
+    # 清单是给多步活儿用的。范围没确认时手上还没有"活儿"，列了也是空谈。
+    "todo_write": lambda st: _scope_confirmed(st),
     # 抄 grok WorkflowTool：有名字的日历是一件可挑选的 WRITE 工具，
     # 不是默认唯一路径。范围确认后就能看见；有模型后仍列出（减菜再跑）。
     "workflow": lambda st: _scope_confirmed(st),
@@ -1002,6 +1011,55 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
             "name": "closure",
             "description": "发布闭环判定。缺证据就 blocked，不许补绿灯。",
             "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    # 抄 grok `TodoWriteTool`。工具说明两句都要——第二句「用户能看见」
+    # 是它存在的理由，去掉就只剩模型自言自语。
+    {
+        "type": "function",
+        "function": {
+            "name": "todo_write",
+            "description": (
+                "列一张活儿清单并维护它。**用户看得见这张清单，这是你展示进度的主要方式。**"
+                "三步以上的活儿就列；一步能做完的别列。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "todos": {
+                        "type": "array",
+                        "description": "要写入的条目",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string", "description": "条目唯一标识"},
+                                "content": {
+                                    "type": "string",
+                                    "description": "这一条要做什么。改已有条目的状态时可以不带。",
+                                },
+                                "status": {
+                                    "type": "string",
+                                    "enum": [
+                                        "pending",
+                                        "in_progress",
+                                        "completed",
+                                        "cancelled",
+                                    ],
+                                },
+                            },
+                            "required": ["id"],
+                        },
+                    },
+                    "merge": {
+                        "type": "boolean",
+                        "description": (
+                            "缺省 true：按 id 合并进现有清单——只发你要改的那几条，"
+                            "只翻状态时带 id + status 就够。false 表示整张替换。"
+                        ),
+                    },
+                },
+                "required": ["todos"],
+            },
         },
     },
     # 抄 grok `update_goal`：模型自称做完了**不算数**，判决当场回喂。
@@ -2900,6 +2958,12 @@ def _system_prompt(state: V5SessionState) -> str:
     # ⚠ 措辞只陈述发生了什么，不写「别再提一遍」。本函数头注那条纪律：
     #   规章只留边界，现场是**事实**不是流程命令（2026-09-08 第 2 格的教训——
     #   写成命令模型就开始填答题卡）。判断留给它自己。
+    # 活儿清单回喂。抄 grok：`summary_for_prompt` 每轮跟着走——
+    # 模型自己列的计划要它自己看得见，否则下一轮就忘了列过什么，
+    # 于是重列一张（用户眼里进度归零）。
+    _plan = normalize_todo(getattr(state, "controlTodo", None))
+    if _plan:
+        facts.append(f"你列的活儿清单（用户看得见）：\n{summarize_todo(_plan)}")
     _declined = _declined_scope(state)
     if _declined:
         facts.append(f"上一轮你提的范围是「{_declined[:60]}」，用户点了「不对再说」——那份没被接受。")
@@ -4703,6 +4767,46 @@ async def _dispatch_tool(
         result = await _tool_search(state, str(args.get("query") or user_text))
         await _apersist(state)
         yield {"type": "control_tool_result", "tool": "search_evidence", **result}
+        return
+    if name == "todo_write":
+        yield {"type": "control_tool_start", "tool": "todo_write"}
+        raw_updates = args.get("todos")
+        updates = [u for u in (raw_updates or []) if isinstance(u, dict)]
+        # merge 缺省为真（grok `default_merge`）。显式传 false 才整张替换。
+        merge = args.get("merge")
+        rows, err = apply_todo(
+            getattr(state, "controlTodo", None),
+            updates,
+            merge=True if merge is None else bool(merge),
+        )
+        if err:
+            # 重复 id 是**错误即输出**，不是抛异常——抄 grok 那句
+            # 「so the Python side can distinguish this from infra errors」。
+            # 分不清「模型写错了」和「我们炸了」，两种都会被当成后者。
+            yield {
+                "type": "control_tool_result",
+                "tool": "todo_write",
+                "ok": False,
+                "error": err,
+            }
+            return
+        state.controlTodo = rows
+        await _apersist(state)
+        # 用户看得见这半句要真的成立：左栏 chip 靠这条事件。
+        # 只落库不发事件 = 抄了一半（工具说明第二句就成了假话）。
+        yield {
+            "type": "control_todo",
+            "todos": rows,
+            "summary": summarize_todo(rows),
+            "line": todo_one_line(rows),
+        }
+        yield {
+            "type": "control_tool_result",
+            "tool": "todo_write",
+            "ok": True,
+            "count": len(rows),
+            "summary": summarize_todo(rows),
+        }
         return
     if name == "report_done":
         # 抄 grok update_goal：**阻塞在判决上**。判决就是这次调用的 tool result，

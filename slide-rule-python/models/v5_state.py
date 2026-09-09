@@ -668,6 +668,13 @@ class V5SessionState(BaseModel):
     # persist 见 None 才 restore，[] 是驱动器清账）。
     # 摘了进待办，账不清空就不算首轮做完；闭环读它，非空不许发合格证。
     factoryTodo: Optional[List[str]] = None
+    # 老师傅自己列的活儿清单（2026-09-09，抄 grok todo_write）。
+    # 服务端拥有、客户端只读——所有权写法照 factoryTodo / pendingRuns
+    # 三处齐备：PUT pop + model_dump exclude + persist 见 None 才 restore。
+    # ⚠ 跟上面那个 factoryTodo **不是一回事**：那个是闭集五件套的待办账、
+    #   闭环读它 fail-closed；这个是模型自己写的自由清单，不参与任何判定。
+    #   合并了就会出现「模型把 closure 划掉，闭环就放行」（§7 伪造绿灯）。
+    controlTodo: Optional[List[Dict[str, Any]]] = None
     # 只读子代理账本（2026-09-04 阶段 3）。服务端拥有，客户端只读。
     # 失败 fail-open：error 记在条目上，不改主链路结论。
     subagentTasks: Optional[List[Dict[str, Any]]] = None

@@ -148,6 +148,10 @@ modules = [
   # 同 action_stationarity 那条分工：查 state 的活（指纹、数次数、拼理由）
   # 留在 rehearsal_control，搬进来它就立刻不是叶子。
   "services.done_claim",
+  # 活儿清单的纯算法：吃「旧清单 + 这一笔改动」吐新清单，services 里谁都不依赖 → 叶子。
+  # 同 action_stationarity / done_claim 那条分工：查 state、发事件、落库留在
+  # rehearsal_control，搬进来就立刻不是叶子。
+  "services.plan_todo",
   "services.closed_tools",
   "services.session_events",
   "services.workflow_registry",

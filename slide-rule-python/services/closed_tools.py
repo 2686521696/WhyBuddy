@@ -63,6 +63,8 @@ CLOSED_TOOLS: Tuple[str, ...] = (
     # 落 READ 还有一个好处：`action_stationarity` 的紧档正好接得上，
     # 同一份产出上一遍遍重报会被 4 次掐掉。
     "report_done",
+    # 老师傅自己列活儿清单（抄 grok todo_write）。缺省 READ——它不造五系统模型。
+    "todo_write",
     "rehearse",
     "workflow",
     *FACTORY_HOPS,

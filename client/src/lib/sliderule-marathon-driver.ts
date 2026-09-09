@@ -351,6 +351,12 @@ export interface DriveFullStreamOpts {
   }) => void;
   /** E25：后端 run id（事件里首见即回调一次）——客户端记书签供刷新后续播。 */
   onRunId?: (runId: string) => void;
+  /** 活儿清单更新（抄 grok todo_write：用户看得见才算数）。 */
+  onControlTodo?: (payload: {
+    todos: unknown[];
+    summary: string;
+    line: string;
+  }) => void;
   /** E25：仅当服务端亲口宣布 run 终局（complete / run_cancelled / error
    *  事件到达）时回调一次。纯连接断开（刷新/跳页/网络抖动）不触发——
    *  run 仍在后台跑，续播书签必须保留。 */
@@ -627,6 +633,16 @@ function applyFactoryStreamEvent(
       }
       return "continue";
     }
+    // 活儿清单（2026-09-09，抄 grok todo_write）：模型自己列的步骤。
+    // ⚠ 工具说明写着「用户看得见这张清单」——这条事件就是那半句的载体。
+    //   服务端发了、客户端不认，那半句就是假话（CLAUDE.md §4 生成侧/消费侧）。
+    case "control_todo":
+      opts.onControlTodo?.({
+        todos: Array.isArray(event.todos) ? event.todos : [],
+        summary: String(event.summary || ""),
+        line: String(event.line || ""),
+      });
+      return "continue";
     case "run_pause_started":
       opts.onRunPause?.("started", { where: String(event.where || "") });
       return "continue";

@@ -2054,6 +2054,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 });
                 appendStreamStep(`编排 ${tools.join(" → ")}`);
               },
+              onControlTodo: payload => {
+                // 左栏 chip：清单是给人看进度的，看不见就等于没做。
+                if (payload.line) appendStreamStep(`📋 ${payload.line}`);
+              },
               onControlText: (text, stop) => {
                 // 结构化的「为什么停」先落下来再渲染文字：拿它区分"我们的闸拦的"
                 // （再试可能有用）和"网关挂了"（再试一百次也一样）。

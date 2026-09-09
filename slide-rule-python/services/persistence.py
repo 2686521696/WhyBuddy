@@ -809,6 +809,16 @@ def _resolve_write_state(
                     update={"factoryTodo": prior_todo}
                 )
 
+        # 活儿清单：同 factoryTodo，客户端漏带 / 默认 None 不许把清单抹掉。
+        # ⚠ [] 是「模型清空了清单」，必须落盘——当成 blank 会让清空永远不生效。
+        prior_plan = getattr(prior, "controlTodo", None) if prior is not None else None
+        if prior_plan:
+            inc_plan = getattr(merged_logs_state, "controlTodo", None)
+            if inc_plan is None:
+                merged_logs_state = merged_logs_state.model_copy(
+                    update={"controlTodo": prior_plan}
+                )
+
         prior_subs = getattr(prior, "subagentTasks", None) if prior is not None else None
         if prior_subs:
             inc_subs = getattr(merged_logs_state, "subagentTasks", None)
