@@ -85,6 +85,11 @@ from services.archetype_legal import (
     wired_device_choices,
 )
 from services.action_stationarity import IdenticalToolCallRun, step_signature, step_tool_name
+from services.hook_events import (
+    HookDecision,
+    HookEvent,
+    dispatch as dispatch_hook,
+)
 from services.hop_requirements import (
     HOP_REQUIRES,
     Need,
@@ -4450,6 +4455,30 @@ async def _dispatch_tool(
     #
     # grok 把 `Started` 的语义钉成「批准之后、执行之前」，所以这道闸必须在
     # 任何 control_tool_start / handoff 之前。
+    # ── pre_tool_use 钩子（抄 grok）。批准闸**之前**跑：grok 的顺序是
+    #    钩子可以在权限对话弹出之前就把这次调用拦掉 / 改写入参。
+    #
+    # ⚠ fail-open：处理器炸了什么都不贡献（grok 那行 SECURITY 注释）。
+    #   钩子是**增强类**，不是证据/闭环类——CLAUDE.md §7 的分法。
+    #   没挂处理器时 dispatch 立刻返回 ALLOW，这条路等于不存在。
+    _hook = dispatch_hook(
+        HookEvent.PRE_TOOL_USE,
+        {"tool": name, "args": dict(args or {}), "sessionId": getattr(state, "sessionId", "")},
+    )
+    if _hook.errors:
+        print(f"[hooks] pre_tool_use 有处理器炸了（已放行）：{_hook.errors}", flush=True)
+    if isinstance(_hook.updated_input, dict):
+        # grok `updatedInput`：钩子可以改写这次调用的实参。
+        args = dict(_hook.updated_input)
+    if _hook.decision is HookDecision.DENY:
+        # 拦下必须有理由，否则用户只看到「点了没反应」。
+        yield {
+            "type": "control_text",
+            "text": _hook.reason or f"这次 {name} 被拦下了。",
+        }
+        yield _complete(state)
+        return
+
     if not tool_permission_granted(name, state):
         # 人话进环：有产品话题就推断设备、复述、自动授予，接着干。
         # 卡留下当「我认成了桌面收银台，不对再说」，不当门禁。

@@ -156,6 +156,10 @@ modules = [
   # 本模块不认识 state → services 里谁都不依赖 → 叶子。
   # 这也是它能当单一真相源的前提：谁都能安全 import 它去问「跑得动吗」。
   "services.hop_requirements",
+  # 生命周期钩子的事件闭集 + 派发器：只吃「事件名 + 一份 dict」，
+  # services 里谁都不依赖 → 叶子。注册表是进程内的，不从文件发现
+  # （配置来源是产品决定，见模块头注）。
+  "services.hook_events",
   "services.closed_tools",
   "services.session_events",
   "services.workflow_registry",
