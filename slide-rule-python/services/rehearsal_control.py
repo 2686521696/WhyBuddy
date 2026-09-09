@@ -84,6 +84,7 @@ from services.archetype_legal import (
     wired_archetype_choices,
     wired_device_choices,
 )
+from services.action_stationarity import IdenticalToolCallRun, step_signature, step_tool_name
 from services.closure_block_reason import user_report as closure_user_report
 from services.closed_tools import (
     CLOSED_TOOLS,
@@ -177,6 +178,11 @@ class ControlStopReason(str, Enum):
     TOKEN_BUDGET = "token_budget"
     #: 工具轮次到顶还没收敛（MAX_TOOL_ROUNDS）。抄 grok 的 MaxTurns。
     TOOL_ROUNDS = "tool_rounds"
+    #: 同一件工具、同一份实参连着调，捅过一次仍不改。抄 grok 的
+    #: `TurnOutcome::StationarityEnded`。**跟 TOOL_ROUNDS 是两码事**：
+    #: 「想了 8 轮没定下来」是在往前走但走不到头，「同一件事干了 4 遍」
+    #: 是根本没在走。塌成同一句话，前端和日志就都看不出哪种。
+    STATIONARITY = "stationarity"
     #: 控制面模型/网关不可用，或分发器自己抛了。
     LLM_UNAVAILABLE = "llm_unavailable"
     #: 归不了类的。**新原因先落这儿，直到有人给它起名字**——抄 grok 的
@@ -219,6 +225,14 @@ _STOP_TABLE: Dict[ControlStopReason, tuple] = {
         StoppedBy.RUNTIME,
         "来回想了好几轮还没定下来，先停在控制面没点火。把需求说具体一点，"
         "或者直接点「开始推演」。",
+    ),
+    # ⚠ 这句话故意**不说**「想得太久」「说具体一点」——那是 TOOL_ROUNDS 的实话，
+    #   不是这一种的。这一种是模型自己卡在同一次调用上，跟用户把话说得清不清楚
+    #   没关系，让用户去「说具体一点」是又一次甩锅（见下面 LLM_UNAVAILABLE
+    #   那段 2026-09-05 的事故记录，同一个病）。
+    ControlStopReason.STATIONARITY: (
+        StoppedBy.RUNTIME,
+        "我在同一步上打转了，先停下没点火。再说一次，或者直接点「开始推演」。",
     ),
     # ⚠ 2026-09-05 真机第 5 轮（汉字消除小游戏 sr-20260904220902）：
     #   用户把话说得清清楚楚——「做一个网页端的汉字连线消除小游戏：网格里随机
@@ -3012,6 +3026,54 @@ def append_reminder(output: str, reminder: str) -> str:
     return wrapped if not output else f"{output}\n\n{wrapped}"
 
 
+def _push_system_reminder(messages: List[Dict[str, Any]], reminder: str) -> None:
+    """把一段情报贴到**最后一条工具结果**上。对应 grok `push_system_reminder`。
+
+    ⚠ 这段逻辑原来只长在「交回工厂之后贴 hint」那一处，行内写死。
+      2026-09-09 加原地打转的 nudge 时要贴第二段情报——照 CLAUDE.md §4，
+      同一件事有两份实现就必然只改一半：抄一遍等于埋一条「nudge 贴在
+      role:user 上、hint 贴在 tool 上」的静默分叉。所以提成一处。
+
+    没有工具消息可贴（理论上不会：能走到这儿说明上一轮跑过工具）时退回
+    role:user——宁可退回老写法，也不许把情报整段丢掉。
+    """
+    if not reminder:
+        return
+    last_tool = next(
+        (m for m in reversed(messages) if m.get("role") == "tool"), None
+    )
+    if last_tool is not None:
+        last_tool["content"] = append_reminder(
+            str(last_tool.get("content") or ""), reminder
+        )
+    else:
+        messages.append({"role": "user", "content": wrap_reminder(reminder)})
+
+
+def _step_is_problematically_repeating(calls: List[Dict[str, Any]]) -> bool:
+    """这一轮的重复该不该走紧档阈值。
+
+    抄 grok `step_is_problematically_repeating` 的**形状与理由**，只是换了轴：
+    grok 按 `ToolKind::Read | Plan` 分档，理由是「同一个路径同一段范围再读一遍
+    只会回同一批字节」；我们按 `ToolScope.READ` 分，理由一模一样——
+    `inspect_model` / `search_evidence` 同一份实参必然回同一份结果，
+    重复一次就是零进展。
+
+    两条细节照抄，别自己简化：
+    - **按声明的权限判，不按名字判。** 名字会改（芯片上写「精修（refine）」
+      那次就踩过），`TOOL_SCOPE` 不会。
+    - **要求这一轮里每一件都是 READ**，不是任意一件。混着 WRITE 的一轮落宽档：
+      其中一件本来就可能正当重复，整轮跟着算正当。
+    - 空轮不算（`not calls` → False）：没有调用就没有「重复的调用」。
+    """
+    if not calls:
+        return False
+    return all(
+        resolve_tool_scope(str((c or {}).get("name") or "")) is ToolScope.READ
+        for c in calls
+    )
+
+
 async def _complete_waiting_for_assumptions(
     state: V5SessionState,
 ) -> AsyncIterator[Dict[str, Any]]:
@@ -3355,6 +3417,11 @@ async def _control_llm_loop(
             )
         return None
 
+    # 一个回合一份游标。抄 grok：`identical_tool_calls` 是
+    # `process_conversation_turn` 的局部变量，不是 actor 上的字段——
+    # 上一个回合的打转记录不许漏进这一个。
+    identical_tool_calls = IdenticalToolCallRun()
+
     try:
         for _round in range(MAX_TOOL_ROUNDS):
             capped = await _maybe_over_cap()
@@ -3365,6 +3432,55 @@ async def _control_llm_loop(
                 ):
                     yield event
                 return
+
+            # ── 原地打转：先判断状态，再花钱问模型 ────────────────────────
+            # 抄 grok 主循环的**顺序**，这一点比阈值本身重要：
+            #
+            #     loop {
+            #         self.emit_event(Event::LoopStarted { loop_index });
+            #         loop_index += 1;
+            #         if identical_tool_calls.run_len >= …hard_stop_threshold() { … }
+            #         if identical_tool_calls.take_nudge() { … }
+            #         …然后才去采样
+            #
+            # 每一轮开头第一件事是问「模型是不是在原地打转」，问完才采样。
+            # 我们原来是反过来的：先问模型，再看结果——所以「同一件事干了 8 遍」
+            # 只能等 MAX_TOOL_ROUNDS 兜底，还兜成一句「想得太久」的假话。
+            if identical_tool_calls.should_hard_stop():
+                tool_name, run_len, problematic = identical_tool_calls.telemetry()
+                print(
+                    f"[control] stationarity_stop tool={tool_name!r} "
+                    f"run_len={run_len} problematic={int(problematic)} "
+                    f"round={_round}",
+                    flush=True,
+                )
+                stationarity_stop = stop_wire(
+                    ControlStopReason.STATIONARITY,
+                    limit=identical_tool_calls.hard_stop_threshold(),
+                    used=run_len,
+                )
+                # ⚠ limit/used 不是装饰：光说「打转了」没法行动，说「同一件
+                #   inspect_model 连了 4 轮、紧档上限就是 4」才知道该不该调这个数。
+                #   跟另外两条闸（墙钟 45s / 额度 8000）同一个合同。
+                async for event in _canned(
+                    state,
+                    _cap_speech(state, ControlStopReason.STATIONARITY),
+                    stop=stationarity_stop,
+                ):
+                    yield event
+                return
+            if identical_tool_calls.take_nudge():
+                tool_name, run_len, problematic = identical_tool_calls.telemetry()
+                print(
+                    f"[control] stationarity_nudge tool={tool_name!r} "
+                    f"run_len={run_len} problematic={int(problematic)} "
+                    f"round={_round}",
+                    flush=True,
+                )
+                # 贴在上一轮的工具结果上，不另起 role:user——同 _after_write_hint
+                # 那条纪律（伪造用户消息会让模型以为是用户在下命令）。
+                _push_system_reminder(messages, identical_tool_calls.nudge_text())
+
             offered = list_control_tools(state) if tools is None else list(tools)
             prior = _user_turn_before_need(state, user_text) or "你好"
             messages[:] = _repair_function_call_turn_order(
@@ -3511,6 +3627,19 @@ async def _control_llm_loop(
             }
             messages.append(assistant_msg)
 
+            # 这一轮的签名记进游标。**在这儿记、到下一轮开头才判**，
+            # 抄 grok 的位置（observe 在执行前、take_nudge 在下一轮循环开头）：
+            # 提醒必须贴在已经落进对话的结果后面，不能贴在还没发生的事上。
+            #
+            # ⚠ 记的是 `calls`（过滤后真会跑的那批），不是 result.tool_calls。
+            #   模型反复挑没列出来的工具时 calls 为空，上面早就 return 了，
+            #   在这儿再算一遍只会把「被裁掉的」也当成一段打转。
+            identical_tool_calls.observe(
+                step_signature(calls),
+                step_tool_name(calls),
+                _step_is_problematically_repeating(calls),
+            )
+
             parked = False
             aborted = False
             wrote = False
@@ -3577,17 +3706,9 @@ async def _control_llm_loop(
                     #   而用户根本没说过；下一轮真用户开口时两条 user 还会打架。
                     #   只改 system 会被下一轮用户话盖掉（这条原注释是对的），
                     #   贴在 tool 结果上两个毛病都没有。
-                    _last_tool = next(
-                        (m for m in reversed(messages) if m.get("role") == "tool"), None
-                    )
-                    if _last_tool is not None:
-                        _last_tool["content"] = append_reminder(
-                            str(_last_tool.get("content") or ""), hint
-                        )
-                    else:
-                        # 没有工具消息可贴（理论上 wrote=True 时不会发生）：
-                        # 宁可退回老写法，也不许把情报整段丢掉。
-                        messages.append({"role": "user", "content": wrap_reminder(hint)})
+                    # 2026-09-09 提成 _push_system_reminder：原地打转的 nudge
+                    # 要贴同一个位置，两份实现必然只改一半（CLAUDE.md §4）。
+                    _push_system_reminder(messages, hint)
                 # LLM 路径原先 empty_text=None，空回复会吐开场罐头（P3 ③）。
                 empty_text = (
                     POST_SPEC_USER

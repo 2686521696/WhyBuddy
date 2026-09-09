@@ -43,6 +43,7 @@ _WIRE = {
     ControlStopReason.WALL_CLOCK: ("wall_clock", "runtime"),
     ControlStopReason.TOKEN_BUDGET: ("token_budget", "runtime"),
     ControlStopReason.TOOL_ROUNDS: ("tool_rounds", "runtime"),
+    ControlStopReason.STATIONARITY: ("stationarity", "runtime"),
     ControlStopReason.LLM_UNAVAILABLE: ("llm_unavailable", "provider"),
     ControlStopReason.UNKNOWN: ("unknown", "unknown"),
 }
@@ -73,7 +74,11 @@ def test_每个原因都有一句能据以行动的话(reason: ControlStopReason
 
 
 def test_给用户的话两两不同():
-    """五个原因五句话。塌成一句就是改这一版之前的现状。"""
+    """一个原因一句话。塌成一句就是改这一版之前的现状。
+
+    ⚠ 2026-09-09 加 STATIONARITY 时差点又塌一次：「打转」和 TOOL_ROUNDS
+      都是运行时闸、都停在控制面，措辞一顺手就写成同一句「来回想了好几轮」。
+      那正是这条判据存在的意义——两种停法用户该做的事不一样。"""
     texts = [stop_text(r) for r in ControlStopReason]
     assert len(set(texts)) == len(texts), "有两个原因给的是同一句话"
 

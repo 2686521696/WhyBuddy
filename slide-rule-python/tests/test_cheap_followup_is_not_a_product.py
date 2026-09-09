@@ -122,9 +122,19 @@ def test_prompt_does_not_report_missing_dims_on_meta():
 
 
 def test_cheap_speech_park_is_on_the_live_no_calls_path():
-    """变异：把 if not calls 里的 _park_ask 删掉 → 本条红。"""
+    """变异：把 if not calls 里的 _park_ask 删掉 → 本条红。
+
+    ⚠ 2026-09-09：原来是 `src.find("if not calls:")` 从**全文件**找第一处。
+      加原地打转分档时 `_step_is_problematically_repeating` 里也有一句
+      `if not calls:`（空轮不算重复的调用），而它排在文件靠前——锚点静静地
+      挪到了另一个函数上，判据开始量一段跟它无关的代码。
+      这跟 CLOSED_TOOLS 那次 `ts.index("] as const;")` 匹配到 FACTORY_HOPS
+      是同一种伤：**先定位到那个函数，再在它之后找**。
+    """
     src = strip_python(PY_ROOT / "services" / "rehearsal_control.py")
-    at = src.find("if not calls:")
+    fn = src.find("async def _control_llm_loop")
+    assert fn > 0, "活路径那个函数改名了，这条判据的锚点得跟着改"
+    at = src.find("if not calls:", fn)
     assert at > 0
     chunk = src[at : at + 1800]
     assert "_park_ask" in chunk

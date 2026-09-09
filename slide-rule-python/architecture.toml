@@ -137,6 +137,12 @@ modules = [
   # （真机那轮心跳全灭就是泵局部变量每几秒清零一次）。
   "services.stage_pairing",
   "services.capability_plan",
+  # 原地打转游标：只吃「这一轮的调用列表 + 一个 bool」，services 里谁都不依赖 → 叶子。
+  # 抄 grok `IdenticalToolCallRun` 的**分工**：分档（哪些工具算紧档）留在
+  # rehearsal_control，因为那要查 TOOL_SCOPE；游标本身只收算好的 bool。
+  # 把分档搬进来它就立刻不是叶子了——跟 closed_tools 那句「运行时谓词留在
+  # rehearsal_control」同一个理由。
+  "services.action_stationarity",
   "services.closed_tools",
   "services.session_events",
   "services.workflow_registry",
