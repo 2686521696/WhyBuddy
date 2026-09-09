@@ -42,7 +42,16 @@ def test_prompt_is_complete_the_job_not_a_syllabus():
     assert "把这件事做完" in text
     assert "水果店收银台" in text
     assert "只能调用给定工具" in text
-    assert "禁止开放闲聊" in text
+    # ⚠ 2026-09-09：这里原来断言「禁止开放闲聊」。那句和「把这件事做完」加在
+    #   一起堵死了「就回答一句」这条路——模型只剩造东西一个合法出口，真机乱码
+    #   那轮它把心里话说出来了：「但我需要推进应用创建流程」。
+    #
+    #   改抄 grok-build `xai-grok-agent/templates/prompt.md` 的 work_policy：
+    #   「明确要动手的就动手；提问/说明/评论这类，回答就好，不要顺手造东西」。
+    #   边界没丢——「别跑题」还在，只是不再顺手把「回答」也禁掉。
+    assert "不跑题" in text, "跑题那道边界丢了"
+    assert "回答就好" in text, "又把「只回答一句」这条路堵死了"
+    assert "不要顺手造东西" in text
     for banned in HANDBOOK:
         assert banned not in text, banned
 

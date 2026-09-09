@@ -2773,7 +2773,22 @@ def _system_prompt(state: V5SessionState) -> str:
         facts.append(after_write.strip())
     fact_blob = " ".join(facts)
     base = (
-        "把这件事做完。只能调用给定工具，不能发明工具。禁止开放闲聊。"
+        "把这件事做完。只能调用给定工具，不能发明工具。"
+        # ⚠ 抄 grok-build `xai-grok-agent/templates/prompt.md` 的 work_policy：
+        #     Match your response to the user's intent. Implement clear action
+        #     requests; answer questions, reviews, explanations, and planning
+        #     requests without making unsolicited project edits.
+        #
+        #   我们原来只抄了它第一行（complete the user's request → 把这件事做完），
+        #   把这条限定语丢了，还多写了一句「禁止开放闲聊」。两句加起来等于堵死
+        #   「就回答一句」这条路——模型只剩造东西一个合法出口。2026-09-09 真机
+        #   乱码那轮它把心里话说出来了：「但我需要推进应用创建流程」。
+        #
+        #   注意 grok 没有分类器：没有长度启发式、没有关键词表、也不单独跑一次
+        #   模型判「这是不是需求」。就是提示词里这一句，安全网在工具那侧
+        #   （破坏性动作要批准）。
+        "回应要对上用户的意图：明确要动手的就动手；提问、说明、评论、闲谈这类，"
+        "回答就好，不要顺手造东西。不跑题。"
         "search_evidence 不计入闭环。inspect_model 只看摘要。"
         f"当前目标：{goal[:200]}。停泊：{parked}。"
         f"{fact_blob}"
