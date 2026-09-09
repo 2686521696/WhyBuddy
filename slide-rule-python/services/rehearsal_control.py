@@ -85,6 +85,15 @@ from services.archetype_legal import (
     wired_device_choices,
 )
 from services.action_stationarity import IdenticalToolCallRun, step_signature, step_tool_name
+from services.done_claim import (
+    BLOCKED_REASON_SCHEMA,
+    COMPLETED_SCHEMA,
+    DONE_CLAIM_MAX_RUNS,
+    MESSAGE_SCHEMA,
+    DoneVerdict,
+    judge as judge_done_claim,
+    verdict_text,
+)
 from services.closure_block_reason import user_report as closure_user_report
 from services.closed_tools import (
     CLOSED_TOOLS,
@@ -640,6 +649,9 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
     "structure": lambda st: _scope_confirmed(st) and _has_pages(st),
     "bind": lambda st: _scope_confirmed(st) and _has_pages(st),
     "closure": lambda st: _scope_confirmed(st) and (_has_pages(st) or _has_model(st)),
+    # 没产出就没什么可报完工的。跟 closure 同一个条件——它俩问的是同一件事
+    # 「手上有没有可判的东西」，不许在这儿另写一份口径（§4）。
+    "report_done": lambda st: _scope_confirmed(st) and (_has_pages(st) or _has_model(st)),
     # 抄 grok WorkflowTool：有名字的日历是一件可挑选的 WRITE 工具，
     # 不是默认唯一路径。范围确认后就能看见；有模型后仍列出（减菜再跑）。
     "workflow": lambda st: _scope_confirmed(st),
@@ -992,6 +1004,30 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
             "parameters": {"type": "object", "properties": {}},
         },
     },
+    # 抄 grok `update_goal`：模型自称做完了**不算数**，判决当场回喂。
+    # 参数说明书三条都照它的措辞（见 done_claim.BLOCKED_REASON_SCHEMA 头注）。
+    {
+        "type": "function",
+        "function": {
+            "name": "report_done",
+            "description": (
+                "报完工 / 报进度 / 报受阻。"
+                "声称做完了会走闭环判定，判定没过这次声明不成立——"
+                "判决当场回给你，不是一句「收到」。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "completed": {"type": "boolean", "description": COMPLETED_SCHEMA},
+                    "message": {"type": "string", "description": MESSAGE_SCHEMA},
+                    "blocked_reason": {
+                        "type": "string",
+                        "description": BLOCKED_REASON_SCHEMA,
+                    },
+                },
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -1152,6 +1188,30 @@ def _last_scope_card(state: V5SessionState) -> Dict[str, Any]:
         if isinstance(row, dict) and row.get("kind") == "scope_card":
             return row
     return {}
+
+
+def _done_claim_rejections(state: V5SessionState, fingerprint: str) -> int:
+    """**同一份产出上**已经被驳回过几次。
+
+    抄 grok `blocked_reason` 那句「3+ consecutive failed attempts at
+    **the same problem**」里的 the same problem——「同一个问题」不是「连续」，
+    是「产出没变」。用 `deliverable_fingerprint`（SPEC + 页面 + 模型版本）当键：
+    模型补画了几页、指纹就变了，计数自然归零。那才是它该归零的时刻。
+
+    ⚠ 不另开一份「产出动没动」的口径（§4 那张表）。turn_narration 那把尺子
+      已经在被叙述侧用着，这儿再拼一个 hash 就是两处会漂的实现。
+    """
+    if not fingerprint:
+        return 0
+    n = 0
+    for row in getattr(state, "controlTranscript", None) or []:
+        if not isinstance(row, dict) or row.get("kind") != "done_claim":
+            continue
+        if row.get("verdict") != DoneVerdict.NOT_ACHIEVED.value:
+            continue
+        if str(row.get("fingerprint") or "") == fingerprint:
+            n += 1
+    return n
 
 
 def _declined_scope(state: V5SessionState) -> str:
@@ -4643,6 +4703,63 @@ async def _dispatch_tool(
         result = await _tool_search(state, str(args.get("query") or user_text))
         await _apersist(state)
         yield {"type": "control_tool_result", "tool": "search_evidence", **result}
+        return
+    if name == "report_done":
+        # 抄 grok update_goal：**阻塞在判决上**。判决就是这次调用的 tool result，
+        # 顺着 `_control_llm_loop` 里那条 `bound_tool_result` 回喂给模型——
+        # 不是「收到」，不是下一轮的提示词事实（那是 2026-09-04 修的那一版，
+        # 事实是劝告，模型照样可以说完成）。
+        yield {"type": "control_tool_start", "tool": "report_done"}
+        completed = bool(args.get("completed"))
+        message = str(args.get("message") or "").strip()
+        blocked_reason = str(
+            args.get("blocked_reason") or args.get("blockedReason") or ""
+        ).strip()
+
+        _pc = getattr(state, "publishClosure", None)
+        # 三态，不许折成 bool：None 是「压根没判过」，False 是「判过且没拦」。
+        # 折了就是把没判过当成通过——§7 点名的伪造绿灯。
+        _blocked = _pc.get("blocked") if isinstance(_pc, dict) else None
+        fingerprint = factory_deliverable_fingerprint(state)
+        prior = _done_claim_rejections(state, fingerprint)
+        verdict, detail = judge_done_claim(
+            completed=completed,
+            blocked_reason=blocked_reason,
+            closure_blocked=_blocked,
+            prior_rejections=prior,
+        )
+
+        body: Dict[str, Any] = {
+            "ok": verdict is not DoneVerdict.REJECTED,
+            "verdict": verdict.value,
+            "say": verdict_text(verdict),
+            **detail,
+        }
+        if verdict is DoneVerdict.NOT_ACHIEVED:
+            # 驳回理由只有 closure_block_reason.user_report 一个出口。
+            # 在这儿另拼一句的代价付过：上一次另拼的那句把用户指去补了一天
+            # 错东西（见 _after_write_hint 里那段）。
+            why = closure_user_report(_pc) if isinstance(_pc, dict) else ""
+            if why:
+                body["why"] = why
+            if detail.get("exhausted"):
+                body["say"] = (
+                    f"{verdict_text(verdict)}同一份产出已经报过 "
+                    f"{detail.get('attempt')} 次，都是同样的结论——"
+                    "别再报了，把这个结论如实告诉用户，由用户决定接不接受。"
+                )
+        _append_transcript(
+            state,
+            {
+                "role": "system",
+                "kind": "done_claim",
+                "verdict": verdict.value,
+                "fingerprint": fingerprint,
+                "text": message or blocked_reason,
+            },
+        )
+        await _apersist(state)
+        yield {"type": "control_tool_result", "tool": "report_done", **body}
         return
     if name == "inspect_model":
         yield {"type": "control_tool_start", "tool": "inspect_model"}

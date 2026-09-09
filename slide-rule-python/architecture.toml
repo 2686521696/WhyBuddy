@@ -143,6 +143,11 @@ modules = [
   # 把分档搬进来它就立刻不是叶子了——跟 closed_tools 那句「运行时谓词留在
   # rehearsal_control」同一个理由。
   "services.action_stationarity",
+  # 报完工的判决词表：只吃四个算好的值（completed / blocked_reason /
+  # 判官三态 / 已驳回次数），services 里谁都不依赖 → 叶子。
+  # 同 action_stationarity 那条分工：查 state 的活（指纹、数次数、拼理由）
+  # 留在 rehearsal_control，搬进来它就立刻不是叶子。
+  "services.done_claim",
   "services.closed_tools",
   "services.session_events",
   "services.workflow_registry",

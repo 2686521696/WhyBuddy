@@ -58,6 +58,11 @@ CLOSED_TOOLS: Tuple[str, ...] = (
     "search_evidence",
     "inspect_model",
     "scope_card",
+    # 报完工：模型声称做完了，判官说了算（抄 grok update_goal）。
+    # 缺省 READ——它不产出新的五系统模型，只是把一次声明交给判官。
+    # 落 READ 还有一个好处：`action_stationarity` 的紧档正好接得上，
+    # 同一份产出上一遍遍重报会被 4 次掐掉。
+    "report_done",
     "rehearse",
     "workflow",
     *FACTORY_HOPS,

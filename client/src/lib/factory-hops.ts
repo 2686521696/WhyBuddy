@@ -32,6 +32,9 @@ export const CLOSED_TOOLS = [
   "search_evidence",
   "inspect_model",
   "scope_card",
+  // 报完工 2026-09-09 加（跟 Python `closed_tools.CLOSED_TOOLS` 同步）：
+  // 模型声称做完了要走闭环判官，判决当场回喂。抄 grok update_goal。
+  "report_done",
   "rehearse",
   "workflow",
   ...FACTORY_HOPS,
