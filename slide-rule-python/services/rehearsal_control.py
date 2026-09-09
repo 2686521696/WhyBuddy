@@ -482,6 +482,42 @@ def _cjk_len(text: str) -> int:
     return len(re.findall(r"[\u4e00-\u9fff]", text or ""))
 
 
+#: 拉丁侧的元问句开头。跟中文侧那几个（你是谁 / 你能做）同一类，
+#: **不是问候表**——问候靠下面的结构判据挡，不靠列举。
+_LATIN_META_PREFIX = (
+    "what can you",
+    "what do you",
+    "what are you",
+    "who are you",
+    "how do you",
+    "can you tell",
+)
+
+
+def _latin_is_cheap(text: str) -> bool:
+    """拉丁文本是不是闲聊。**结构判据，不列问候表**。
+
+    中文那条是「剥掉确认词还剩 ≥4 个汉字」；拉丁这条是「≥3 个词且 ≥10 个字符」，
+    再加元问句开头。两边同一个形状，都不去枚举用户会说什么。
+
+        hello / hhh / sfljsdlf   1 个词        → 闲聊
+        ok thanks                2 个词        → 闲聊
+        what can you do          元问开头      → 闲聊
+        build a CRM              3 词 11 字符  → 需求
+        Build a small inventory tracker …      → 需求
+
+    ⚠ 已知漏网：`hi there ok` 这类三词寒暄会被当成需求。中文侧有同样的漏网
+      （「今天天气真好啊」七个汉字也会过），这是同一种取舍——宁可漏一句闲聊，
+      不要靠枚举问候语去猜产品（`test_product_gate_does_not_enumerate_what_people_say`
+      钉的就是这条）。真正兜住它的是回执那道闸：乱码/闲聊回执不点火。
+    """
+    low = text.strip().lower()
+    if low.startswith(_LATIN_META_PREFIX):
+        return True
+    words = re.findall(r"[A-Za-z][A-Za-z'-]*", low)
+    return len(words) < 3 or len(low) < 10
+
+
 def _is_cheap_chat(text: str) -> bool:
     """问候 / 能力问答 / 确认词。不是产品。
 
@@ -496,7 +532,14 @@ def _is_cheap_chat(text: str) -> bool:
     if compact.startswith(("你是谁", "你能做", "你会做", "你是")):
         return True
     if _cjk_len(raw) == 0:
-        return True
+        # ⚠ 2026-09-09 真机：这里原来是「没有中文字符 → 一律闲聊」。注释写的
+        #   意图是排掉拉丁短句（hello / hhh / sfljsdlf），但它把**所有英文需求**
+        #   一起排掉了——"Build a small inventory tracker for a coffee shop"
+        #   进不了环，控制面反过来问一句，英文用户永远开不了工。
+        #
+        #   改成跟中文那条同形状：中文是「剥掉确认词还剩 ≥4 个汉字」，
+        #   拉丁就是「剥掉寒暄/元问词还剩 ≥2 个实词」。
+        return _latin_is_cheap(raw)
     # 「继续执行」剥掉确认词只剩「执行」——不是产品。真产品剥完还剩四个字以上
     # （请假系统 / 做个水果店收银台）。
     leftover = compact.lower()
@@ -532,9 +575,13 @@ def _unstamped_product_turn(state: V5SessionState) -> str:
     #   注意不能无条件退回第一句：只有问候的会话（hello / hhh）里
     #   `first_substantive_user_text` 也返回空，所以「你好」仍然进不了环——
     #   反向条钉在 `test_greeting_then_bare_slash_still_parks`。
-    if not text or _is_cheap_chat(text) or _cjk_len(text) < 4:
+    # ⚠ 这里原来还并了一个 `_cjk_len(text) < 4`。它跟 `_is_cheap_chat` 里那条
+    #   重复（那边剥掉确认词之后同样要求 ≥4 个汉字），而且**对英文永远成立**——
+    #   英文的汉字数是 0，于是修好了 `_is_cheap_chat` 之后英文仍然进不了环。
+    #   判据只留一处：闲不闲聊问 `_is_cheap_chat`，两种文字它都认。
+    if not text or _is_cheap_chat(text):
         text = first_substantive_user_text(state)
-    if not text or _is_cheap_chat(text) or _cjk_len(text) < 4:
+    if not text or _is_cheap_chat(text):
         return ""
     return text
 
@@ -4128,6 +4175,21 @@ async def _dispatch_tool(
             ):
                 yield event
             return
+        # ⚠ 判断在**发卡之前**。上一版是「先发卡、再判断要不要点火」，于是
+        #   乱码回执照样弹出一张卡——2026-09-09 真机第二轮回 sfljsdlf，卡上
+        #   写的是模型的内心独白：
+        #
+        #     「用户输入了"sfljsdlf"，似乎是随机字符或尚未明确具体的目标。
+        #       但我需要推进应用创建流程，先为用户建立一个基础的自定义应用蓝图。」
+        #
+        #   点火确实挡住了（那次事故的核心没复发），但用户看到的是一段莫名其妙
+        #   的话，还得自己看懂"这张卡不用管"。没有产品就别画卡——再问一句。
+        if not _turn_has_real_product(state, original_goal):
+            async for event in _park_ask(
+                state, "这个还没看懂，想做什么应用，说一句就行。", []
+            ):
+                yield event
+            return
         restatement = str(args.get("restatement") or _restatement_chain(state, user_text, original_goal))
         async for event in _emit_scope_restatement(
             state,
@@ -4141,12 +4203,6 @@ async def _dispatch_tool(
             tools=args.get("tools"),
         ):
             yield event
-        # 人话进环之后第一件活是 spec。但本回合开始时还没有记下的
-        # 产品目标：卡留下等「开始推演」，不许同一跳把乱码回执点着
-        # SPEC（2026-09-09 真机：hello → 乱码 → 我认成了 + 推演中）。
-        if not _turn_has_real_product(state, original_goal):
-            yield _complete(state)
-            return
         _auto_grant_scope(state, restatement)
         await _apersist(state)
         name = "spec"

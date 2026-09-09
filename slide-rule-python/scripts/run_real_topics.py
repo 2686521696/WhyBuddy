@@ -254,6 +254,60 @@ def check_no_questionnaire(rounds: List[List[Dict[str, Any]]]) -> List[str]:
     return bad
 
 
+def check_gibberish_never_builds(rounds: List[List[Dict[str, Any]]]) -> List[str]:
+    """乱码不许被当成产品名造出来（2026-09-09 真机 sfljsdlf 那次的形状）。
+
+    第一轮问候 → 系统问一句；第二轮回一串乱码 → 不许「我认成了：xxx」+ 开工。
+    """
+    bad: List[str] = []
+    for i, ev in enumerate(rounds):
+        ts = types_of(ev)
+        if "control_handoff_factory" in ts:
+            bad.append(f"第 {i + 1} 轮就点了火：{ts}")
+        card = _first(ev, "control_scope_card")
+        if card is not None:
+            bad.append(f"第 {i + 1} 轮把乱码复述成了产品：{card.get('restatement')!r}")
+    if "complete" not in types_of(rounds[-1]):
+        bad.append(f"最后一轮没有终止事件：{types_of(rounds[-1])}")
+    return bad
+
+
+def check_topic_survives_a_short_confirm(
+    rounds: List[List[Dict[str, Any]]]
+) -> List[str]:
+    """说过产品之后只回一句短确认，话题不许丢。
+
+    2026-09-09 修的那个缺口：只看最后一句，短确认就判空，于是反过来问
+    「想做什么应用」——用户会读成"你刚才说的我没听见"。
+    """
+    bad: List[str] = []
+    last = rounds[-1]
+    ts = types_of(last)
+    ask = _first(last, "control_ask_user")
+    if ask is not None and "想做什么应用" in str(ask.get("question") or ""):
+        bad.append("短确认之后把前面说过的话题丢了，又问「想做什么应用」")
+    if "control_handoff_factory" not in ts and "control_scope_card" not in ts:
+        bad.append(f"既没认下来也没开工：{ts}")
+    return bad
+
+
+def check_long_vague_is_not_a_product(
+    rounds: List[List[Dict[str, Any]]]
+) -> List[str]:
+    """一长段没有产品的废话，不许因为"字够多"就开工。
+
+    CLAUDE.md 记过反过来的坑：靠字数判断"够不够具体"，100 字废话照样放行。
+    """
+    bad: List[str] = []
+    ts = types_of(rounds[0])
+    if "control_handoff_factory" in ts:
+        card = _first(rounds[0], "control_scope_card") or {}
+        bad.append(
+            f"一段没有产品的长文被当成产品开工了：{card.get('restatement')!r}"
+        )
+    return bad
+
+
 SCENARIOS: List[Scenario] = [
     Scenario(
         key="greeting",
@@ -299,6 +353,52 @@ SCENARIOS: List[Scenario] = [
         panel="第 2 格",
         turns=["做个诊所系统"],
         check=check_no_questionnaire,
+        stop_types=("control_handoff_factory", "complete"),
+    ),
+    Scenario(
+        key="gibberish",
+        title="乱码回执不许被造成应用",
+        panel="第 2 格",
+        turns=["你好", "sfljsdlf"],
+        check=check_gibberish_never_builds,
+    ),
+    Scenario(
+        key="topic-survives",
+        title="说完产品再回一句短确认，话题不许丢",
+        panel="第 3 格",
+        turns=["做一个门店排班与考勤系统", "就按上面这个推演"],
+        check=check_topic_survives_a_short_confirm,
+        stop_types=("control_handoff_factory", "complete"),
+    ),
+    Scenario(
+        key="long-vague",
+        title="长篇废话不是产品（不许按字数放行）",
+        panel="第 2 格",
+        turns=[
+            "我最近在想一些事情，感觉现在的工作方式有很多可以改进的地方，"
+            "团队之间沟通的成本挺高的，信息也比较散，"
+            "有时候一件事要问好几个人才能弄清楚，效率上确实还有提升空间，"
+            "你觉得呢，这种情况一般大家都是怎么处理的"
+        ],
+        check=check_long_vague_is_not_a_product,
+        # 断在 handoff 上：这条要是红了，它会一路造到 SPEC（真机几分钟），
+        # 判据窗口会先超时，报出来的就成了「超时」而不是「它把废话当产品了」。
+        stop_types=("control_handoff_factory", "complete"),
+    ),
+    Scenario(
+        key="english-product",
+        title="英文产品话同样进环（不是只认中文）",
+        panel="第 5/7 格",
+        turns=["Build a small inventory tracker for a coffee shop"],
+        check=check_real_product,
+        stop_types=("control_handoff_factory", "complete"),
+    ),
+    Scenario(
+        key="followup-change",
+        title="造完之后再提一句改动（续做不是新话题）",
+        panel="第 3 格",
+        turns=["做一个宠物店会员卡系统", "再加一个到期提醒"],
+        check=check_topic_survives_a_short_confirm,
         stop_types=("control_handoff_factory", "complete"),
     ),
 ]
