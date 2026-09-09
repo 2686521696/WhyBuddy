@@ -65,6 +65,10 @@ CLOSED_TOOLS: Tuple[str, ...] = (
     "report_done",
     # 老师傅自己列活儿清单（抄 grok todo_write）。缺省 READ——它不造五系统模型。
     "todo_write",
+    # 模型自己攒的记忆（抄 grok MemorySearch / MemoryGet）。都是 READ——
+    # remember 写的是**记忆**不是五系统模型，不进工厂信封。
+    "remember",
+    "recall",
     "rehearse",
     "workflow",
     *FACTORY_HOPS,

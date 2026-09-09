@@ -289,6 +289,10 @@ what = "核心：模型 / 闸 / 闭环 / 生成件"
 # 深度 1~2。
 may_depend_on = ["util"]
 modules = [
+  # 模型自己攒的记忆（抄 grok xai-grok-memory 的分寸，不抄它那套向量索引）。
+  # **不是叶子**：要借 identity_store 那条执行器落库（跟 product_charter 同一条，
+  # 不另开数据库、也不共用它那张表）。只依赖 util，碰不到驱动器 → core。
+  "services.model_memory",
   # 点选编辑存库前的体检。**不是叶子**：它复用 html_bindings.scan_bindings
   # 数数据孔——数孔这件事只该有一把尺子（§4），为了当叶子另写一个才是错的。
   "services.page_edit_guard",

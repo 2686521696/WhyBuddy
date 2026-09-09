@@ -37,6 +37,9 @@ export const CLOSED_TOOLS = [
   "report_done",
   // 活儿清单 2026-09-09 加（跟 Python `closed_tools.CLOSED_TOOLS` 同步）。
   "todo_write",
+  // 模型记忆 2026-09-09 加（跟 Python `closed_tools.CLOSED_TOOLS` 同步）。
+  "remember",
+  "recall",
   "rehearse",
   "workflow",
   ...FACTORY_HOPS,

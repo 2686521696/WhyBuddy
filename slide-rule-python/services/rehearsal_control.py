@@ -85,6 +85,11 @@ from services.archetype_legal import (
     wired_device_choices,
 )
 from services.action_stationarity import IdenticalToolCallRun, step_signature, step_tool_name
+from services.model_memory import (
+    recall as recall_memory,
+    remember as remember_memory,
+    summarize as summarize_memory,
+)
 from services.hook_events import (
     HookDecision,
     HookEvent,
@@ -482,6 +487,16 @@ def _cap_speech(state: V5SessionState, reason: ControlStopReason) -> str:
     return stop_text(reason)
 
 
+def _memory_scope_id(state: V5SessionState) -> str:
+    """记忆挂在**账号**上，不是会话上——跨会话活着才是它的意义。
+
+    ⚠ 用 ownerId：那是服务端拥有的归属字段（客户端 PUT 一律不许带，
+      见 routes/sliderule_full.py 那段 2026-08-09 的事故记录）。
+      拿 sessionId 当键就退化成"会话内记忆"，跟直接写 transcript 没区别。
+    """
+    return str(getattr(state, "ownerId", "") or "").strip()
+
+
 def _session_has(state: V5SessionState) -> Any:
     """把「这个会话手上有什么」包成 `hop_requirements` 要的那个闭包。
 
@@ -701,6 +716,9 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
     "report_done": lambda st: _scope_confirmed(st) and (_has_pages(st) or _has_model(st)),
     # 清单是给多步活儿用的。范围没确认时手上还没有"活儿"，列了也是空谈。
     "todo_write": lambda st: _scope_confirmed(st),
+    # 记忆按**账号**归属。没有归属就没地方记，列出来只会让模型白调一次。
+    "remember": lambda st: bool(_memory_scope_id(st)),
+    "recall": lambda st: bool(_memory_scope_id(st)),
     # 抄 grok WorkflowTool：有名字的日历是一件可挑选的 WRITE 工具，
     # 不是默认唯一路径。范围确认后就能看见；有模型后仍列出（减菜再跑）。
     "workflow": lambda st: _scope_confirmed(st),
@@ -1051,6 +1069,34 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
             "name": "closure",
             "description": "发布闭环判定。缺证据就 blocked，不许补绿灯。",
             "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    # 抄 grok MemorySearch / MemoryGet：模型自己攒的经验，跨会话活着。
+    # ⚠ 跟产品宪章不是一回事——宪章是**用户写的规矩**，这是**模型攒的经验**。
+    {
+        "type": "function",
+        "function": {
+            "name": "remember",
+            "description": (
+                "记一条跨会话的经验（用户的偏好、习惯、叫法）。"
+                "只记以后还用得上的事实，别记这一轮的过程。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"text": {"type": "string", "description": "一句话"}},
+                "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recall",
+            "description": "翻以前记下的经验。不给关键词就拿最近几条。",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "关键词，可空"}},
+            },
         },
     },
     # 抄 grok `TodoWriteTool`。工具说明两句都要——第二句「用户能看见」
@@ -4837,6 +4883,39 @@ async def _dispatch_tool(
         result = await _tool_search(state, str(args.get("query") or user_text))
         await _apersist(state)
         yield {"type": "control_tool_result", "tool": "search_evidence", **result}
+        return
+    if name in ("remember", "recall"):
+        yield {"type": "control_tool_start", "tool": name}
+        owner = _memory_scope_id(state)
+        if not owner:
+            # 没归属就没地方记。说清楚，别假装记下了（§7：不许伪造绿灯）。
+            yield {
+                "type": "control_tool_result",
+                "tool": name,
+                "ok": False,
+                "error": "这一发没有账号归属，记忆用不了。",
+            }
+            return
+        if name == "remember":
+            saved, say = remember_memory(
+                scope_id=owner, text=str(args.get("text") or "")
+            )
+            yield {
+                "type": "control_tool_result",
+                "tool": "remember",
+                "ok": bool(saved),
+                "say": say,
+            }
+            return
+        rows = recall_memory(scope_id=owner, query=str(args.get("query") or ""))
+        yield {
+            "type": "control_tool_result",
+            "tool": "recall",
+            "ok": True,
+            "count": len(rows),
+            "notes": rows,
+            "summary": summarize_memory(rows),
+        }
         return
     if name == "todo_write":
         yield {"type": "control_tool_start", "tool": "todo_write"}
