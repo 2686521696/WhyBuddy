@@ -401,6 +401,13 @@ SCENARIOS: List[Scenario] = [
         check=check_topic_survives_a_short_confirm,
         stop_types=("control_handoff_factory", "complete"),
     ),
+    Scenario(
+        key="chitchat",
+        title="闲聊句不许被当成产品开卡（真机截图 2026-09-09）",
+        panel="第 2 格",
+        turns=["ksdfjlsdf", "你好啊", "困了，想去睡觉"],
+        check=check_gibberish_never_builds,
+    ),
 ]
 
 
