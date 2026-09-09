@@ -306,8 +306,13 @@ describe("停泊 overlay 时 flush 不得清卡", () => {
     expect(flushFn.indexOf("overlayBlocksQueueFlush()")).toBeGreaterThanOrEqual(
       0
     );
+    /* ⚠ 2026-09-09：这一行原来钉的是 `queuedTurnRef.current = []`。
+       合并规则照 grok 改成前缀合并之后，flush 里写的是
+       `queuedTurnRef.current = rest`（没合并的那几条要留着），
+       旧字面 indexOf 变成 -1，判据在量一个不存在的位置。
+       **意图没变**：overlay 闸必须排在动队列**之前**。键跟着新写法走。 */
     expect(flushFn.indexOf("overlayBlocksQueueFlush()")).toBeLessThan(
-      flushFn.indexOf("queuedTurnRef.current = []")
+      flushFn.indexOf("queuedTurnRef.current = rest")
     );
     expect(flushFn.indexOf("overlayBlocksQueueFlush()")).toBeLessThan(
       flushFn.indexOf("requestRehearsalRef.current")

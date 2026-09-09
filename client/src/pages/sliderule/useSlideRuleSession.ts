@@ -116,7 +116,8 @@ import {
 } from "./composer-slash";
 import {
   enqueueTurn,
-  mergeQueuedTurns,
+  combinePrefix,
+  type QueuedTurn,
   removeQueued,
 } from "./midrun-queue";
 import {
@@ -445,10 +446,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
    *   机制通、人是懵的——ref 同步判定照旧留着（setState 异步，连点会漏），
    *   另加 state 只为了让它**看得见、撤得掉**。
    */
-  const queuedTurnRef = useRef<string[]>([]);
-  const [queuedTurns, setQueuedTurns] = useState<string[]>([]);
-  const pushQueuedTurn = (text: string) => {
-    const next = enqueueTurn(queuedTurnRef.current, text);
+  const queuedTurnRef = useRef<QueuedTurn[]>([]);
+  const [queuedTurns, setQueuedTurns] = useState<QueuedTurn[]>([]);
+  const pushQueuedTurn = (text: string, opts?: { synthetic?: boolean }) => {
+    const next = enqueueTurn(queuedTurnRef.current, text, opts);
     queuedTurnRef.current = next;
     setQueuedTurns(next);
   };
@@ -704,9 +705,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     if (overlayBlocksQueueFlush()) return;
     /* ⚠ 合成**一条**再发：三句补充发三轮 = 烧三次工厂，而且前两轮的产物
        立刻被后一轮推翻。用户补的是同一件事的三个细节。 */
-    const text = mergeQueuedTurns(queuedTurnRef.current);
-    queuedTurnRef.current = [];
-    setQueuedTurns([]);
+    // 抄 grok `combine_prefix_len`：只发**开头连续可合并的一段**，
+    // 剩下的（比如系统合成的那条）留在队列里。这一条发出去的回合完成时
+    // 会再 flush 一次——flush 挂在回合完成上，天然是个 drain 循环。
+    const { text, rest } = combinePrefix(queuedTurnRef.current);
+    queuedTurnRef.current = rest;
+    setQueuedTurns(rest);
     if (text) void requestRehearsalRef.current(text);
   };
 
@@ -759,16 +763,22 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       pendingForcedToolRef.current = "pages";
       // 抄 grok AskUserQuestion：确认是 typed 答案，不是聊天欠条。
       // 进 ref 等空闲立刻发 / 跑着的 finally flush，不进「本轮结束后发出」。
+      // ⚠ synthetic：这是**系统自己生成**的回执，不是用户打的字。
+      //   grok `is_synthetic` 明确规定它永不参与合并——改造前它会跟用户
+      //   排队的真需求粘成一条，模型收到的是
+      //   「登录页改成工号\n假设已确认。继续画页面。」，把系统的指令
+      //   当成用户说的话。
       queuedTurnRef.current = enqueueTurn(
         queuedTurnRef.current,
-        "假设已确认。继续画页面。"
+        "假设已确认。继续画页面。",
+        { synthetic: true }
       );
       if (isRunningRef.current) {
         void releaseRun({ skip: true });
       } else {
-        const text = mergeQueuedTurns(queuedTurnRef.current);
-        queuedTurnRef.current = [];
-        setQueuedTurns([]);
+        const { text, rest } = combinePrefix(queuedTurnRef.current);
+        queuedTurnRef.current = rest;
+        setQueuedTurns(rest);
         if (text) void runTurnRef.current(text, undefined, undefined, undefined, "pages");
       }
     },

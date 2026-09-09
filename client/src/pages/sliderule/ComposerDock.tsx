@@ -462,7 +462,7 @@ export function ComposerDock({
   pendingScope?: ScopeCardPending | null;
   pendingAsk?: { question: string; options?: string[] } | null;
   /** 推演中补的话（排队到下一轮）。看得见、撤得掉——见 midrun-queue 头注。 */
-  queuedTurns?: string[];
+  queuedTurns?: { text: string; synthetic?: boolean }[];
   /** 伴随式澄清：推演中模型替用户定下的事。见 AssumptionStrip 头注。 */
   specAssumptions?: SpecAssumption[];
   onSettleAssumption?: (id: string) => void;
@@ -2090,14 +2090,14 @@ export function ComposerDock({
                   <div className="mb-1 text-[11px] leading-4 text-[#71717a]">
                     {queuedTurnsHeading(queuedTurns.length, isRunning)}
                   </div>
-                  {queuedTurns.map((line, i) => (
+                  {queuedTurns.map((row, i) => (
                     <div
-                      key={`${i}-${line}`}
+                      key={`${i}-${row.text}`}
                       data-testid="sliderule-queued-turn"
                       className="flex items-start gap-1.5 py-0.5"
                     >
                       <span className="min-w-0 flex-1 truncate text-[12px] leading-5 text-[#171717]">
-                        {line}
+                        {row.text}
                       </span>
                       {onRemoveQueued ? (
                         <button

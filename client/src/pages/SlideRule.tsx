@@ -1089,7 +1089,8 @@ function SlideRuleUnified({
   driveMode?: "single" | "marathon";
   setDriveMode?: (m: "single" | "marathon") => void;
   /** 推演中补的话（排队到下一轮）。看得见、撤得掉——见 midrun-queue 头注。 */
-  queuedTurns?: string[];
+  /** 队列条目带 synthetic 标记（grok is_synthetic：合成品永不参与合并）。 */
+  queuedTurns?: { text: string; synthetic?: boolean }[];
   removeQueuedTurn?: (index: number) => void;
   /** SPEC 分叉：选完再继续。 */
   specAssumptions?: SpecAssumption[];
