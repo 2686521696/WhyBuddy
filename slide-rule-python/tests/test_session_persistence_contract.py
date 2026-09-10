@@ -683,6 +683,7 @@ def test_persistence_guard_prevents_older_lastturn_from_overwriting_newer_state(
     older = V5SessionState(
         sessionId=sid,
         goal={"text": "stale old goal should be rejected", "status": "needs_refinement"},
+        ownerId=newer.ownerId,
         artifacts=[],
         capabilityRuns=[],
         coverageGaps=[],

@@ -2843,6 +2843,7 @@ async def _handoff_factory(
         max_loops=max_loops,
         goal_tools=goal.get("tools"),
         require_session_id=True,
+        expected_owner_id=state.ownerId,
         **charter_kw,
     )
     yield {
@@ -3309,11 +3310,17 @@ async def _canned(
 
 async def run_control_turn(
     payload: Dict[str, Any],
+    *,
+    authorized_owner_id: Optional[str] = None,
 ) -> AsyncIterator[Dict[str, Any]]:
     """产品控制面主循环。cheap 请求内结束；点火才调信封 helper。"""
     validate_control_turn_body(payload)
     session_id = str(payload["sessionId"]).strip()
     state = await run_in_threadpool(load_session, session_id)
+    if authorized_owner_id is not None and (
+        state is None or state.ownerId != authorized_owner_id
+    ):
+        raise HTTPException(status_code=404, detail="Not found")
     if state is None:
         raise HTTPException(status_code=400, detail="session_id required")
 

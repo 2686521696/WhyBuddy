@@ -243,7 +243,8 @@ class ControlHarness:
                 yield {"type": "complete", "state": dump}
 
             return await run_registry.start_run(
-                str(session_id), gen, user_text=user_text or ""
+                str(session_id), gen, user_text=user_text or "",
+                owner_id=getattr(loaded, "ownerId", None),
             )
 
         def fake_llm(messages, **kwargs):

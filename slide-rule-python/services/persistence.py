@@ -582,7 +582,7 @@ def save_all(sessions: Dict[str, V5SessionState], store_file: Optional[StorePath
 
 
 class PersistClosedError(Exception):
-    """pending / checkpoint 写失败。证据链不许假装存了。"""
+    """认领 / pending / checkpoint 写失败。归属与证据链不许假装存了。"""
 
     def __init__(self, reason: str, message: str = ""):
         self.reason = reason
@@ -708,6 +708,88 @@ def save_session_record(
         return {"ok": True, "sessionId": write_state.sessionId}
 
 
+def claim_session_record(
+    candidate: V5SessionState, store_file: Optional[StorePath] = None,
+) -> StoreError:
+    """Atomically insert a new session, or return the existing record unchanged.
+
+    A first stream used to exist before its owner reached durable storage. Two
+    viewers could both observe a missing session and attach to that same run.
+    Claiming must never use save's merge/retry behavior: a lost insert returns
+    the winner, and an unreadable record is not permission to replace it.
+    """
+    sid = candidate.sessionId
+
+    def failed(error: StoreError) -> StoreError:
+        return {**error, "ok": False, "sessionId": sid, "state": None, "created": False}
+
+    def existing(payload: Any) -> StoreError:
+        state, error = _coerce_state(sid, payload)
+        if error:
+            return failed(error)
+        if state is None or state.sessionId != sid:
+            return failed(_store_error("invalid_session", "Stored session id does not match its key"))
+        return {"ok": True, "sessionId": sid, "state": state, "created": False}
+
+    if not isinstance(sid, str) or not sid.strip():
+        return failed(_store_error("invalid_session", "A session id is required"))
+    try:
+        store = _blob_store(store_file)
+    except Exception as exc:  # noqa: BLE001 - ownership never falls back on backend failure
+        return failed(_store_error("store_unavailable", str(exc)[:200]))
+
+    with _save_lock:
+        if store is not None:
+            try:
+                row = store.load(sid)
+            except Exception as exc:  # noqa: BLE001
+                return failed(_store_error("db_read_failed", str(exc)[:200]))
+            if row is not None:
+                return existing(row.payload)
+            try:
+                inserted = store.save(sid, candidate.model_dump(), expected_rev=None)
+            except Exception as exc:  # noqa: BLE001
+                return failed({"error": "persist_failed", "reason": "db_write_failed",
+                               "message": str(exc)[:200]})
+            if not inserted:
+                try:
+                    winner = store.load(sid)
+                except Exception as exc:  # noqa: BLE001
+                    return failed(_store_error("db_read_failed", str(exc)[:200]))
+                if winner is None:
+                    return failed({"error": "persist_failed", "reason": "claim_conflict",
+                                   "message": "The winning session could not be read"})
+                return existing(winner.payload)
+        else:
+            path = _resolve_store_file(store_file)
+            _unreadable_by_path.pop(str(path), None)
+            try:
+                sessions, error = _read_store_file(store_file)
+            except (OSError, UnicodeError) as exc:
+                return failed(_store_error("read_failed", str(exc)[:200]))
+            if error:
+                return failed(error)
+            if any(key == sid for key, _payload in _unreadable_by_path.get(str(path), [])):
+                return failed(_store_error("invalid_session", "Existing session cannot be decoded"))
+            if sid in sessions:
+                return existing(sessions[sid].model_dump())
+            sessions[sid] = candidate
+            try:
+                result = _write_store(sessions, store_file)
+            except (OSError, TypeError, ValueError) as exc:
+                return failed({"error": "persist_failed", "reason": "write_failed",
+                               "message": str(exc)[:200]})
+            if not result.get("ok"):
+                return failed(result)
+
+        checkpoint_error = _write_turn_checkpoint(candidate, store_file)
+        if checkpoint_error:
+            return failed(checkpoint_error)
+        if store is None:
+            _stamp_session_meta(sid, store_file)
+        return {"ok": True, "sessionId": sid, "state": candidate, "created": True}
+
+
 def _resolve_write_state(
     prior: Optional[V5SessionState],
     state: V5SessionState,
@@ -749,6 +831,10 @@ def _resolve_write_state(
     artifacts / capabilityRuns 仍是子集、对话没变短，接受这一笔就丢不了东西。
     **低轮次仍然照旧挡住**（那才是真陈旧），客户端 PUT 的判据一个字没动。
     """
+    # A late driver must not merge private data into a deleted/recreated ID.
+    # Keep this under the same file lock / database CAS loop as every write.
+    if prior is not None and prior.ownerId != state.ownerId:
+        raise PersistClosedError("session_owner_changed", "Session ownership changed before save")
     if True:
         # Append-only replay log merge on save (sliderule-python-v52-session-replay-append-only-105)
         # Classification: ... -> PYTHON_COMPAT -> PYTHON_AUTHORITY

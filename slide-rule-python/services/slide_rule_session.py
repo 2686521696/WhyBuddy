@@ -92,7 +92,7 @@ def _shared_store_active() -> bool:
 # 注意：这里刻意没有"整体 dump 内存缓存到存档"的函数。历史上 create_session
 # 调 save_all(_sessions) 整体覆写存档文件——当缓存在别的写入者之后变陈旧时，
 # 一次 create 就会把其他会话从磁盘上抹掉（实测踩过：真实话题跨重启失忆的
-# 元凶之一）。一切落盘必须走 save_session_record 的单条守卫式合并。
+# 元凶之一）。新建走原子认领，已有会话的更新走 save_session_record 的单条守卫。
 
 # Crockford Base32 —— 去掉了 I / L / O / U。
 #
@@ -134,54 +134,63 @@ def _new_session_id() -> str:
     随机源用 `os.urandom`（跟 python-ulid 的 default provider 一致，
     ulid/providers/default.py:36）。`b % 32` 没有取模偏置——256 是 32 的整数倍。
 
-    50 位熵的碰撞概率：同一秒内建 10000 个会话时约 4.4e-8。ULID 不做协调、
-    纯靠熵，这里同理；下面那层存在性检查只是额外的一道保险，不是主要依靠。
+    50 位熵让碰撞极少发生；create_session 仍以持久层原子认领的 created
+    结果为准，真撞上就重新生成。不能拿「先查没有」代替插入成功。
     """
     stamp = datetime.now().strftime("%Y%m%d%H%M%S")
     suffix = "".join(_ID_ALPHABET[b % 32] for b in os.urandom(_ID_SUFFIX_LEN))
     return f"sr-{stamp}-{suffix}"
 
 
+def _claim_and_cache(state: V5SessionState) -> Dict[str, Any]:
+    ensure_cache_sink()
+    try:
+        result = persistence.claim_session_record(state)
+    except Exception as exc:  # noqa: BLE001 - every persistence failure stops the first run
+        raise PersistClosedError("claim_failed", str(exc)[:200]) from exc
+    authoritative = result.get("state") if isinstance(result, dict) else None
+    if (
+        not isinstance(result, dict) or result.get("ok") is not True
+        or not isinstance(authoritative, V5SessionState)
+        or authoritative.sessionId != state.sessionId
+    ):
+        error = result if isinstance(result, dict) else {}
+        raise PersistClosedError(
+            str(error.get("reason") or "claim_failed"), str(error.get("message") or ""),
+        )
+    _sessions[state.sessionId] = authoritative
+    return result
+
+
+def claim_session(state: V5SessionState) -> V5SessionState:
+    """Return the durable owner before starting work; failed claims never populate cache."""
+    return _claim_and_cache(state)["state"]
+
+
 def create_session(goal_text: str, session_id: Optional[str] = None) -> V5SessionState:
-    if not session_id:
-        session_id = _new_session_id()
-        # 第二道保险：真撞上就换一个再来。
-        #
-        # 跨进程时这是 TOCTOU（检查完到写入之间别人可能插进来），挡不住所有情况，
-        # 唯一真正的保证是上面那 50 位熵。但这次踩的坑恰好是**单进程内**并发
-        # （uvicorn 线程池里 5 趟同时跑），这一层能百分之百拦下；而且代价只是
-        # 一次字典查找。留着，别当它是主要防线。
-        #
-        # ⚠️ load_session_record **不返回 None**，查不到时返回
-        # {"ok": False, "error": "not_found"}（persistence.py:581）。写成
-        # `is None` 会恒真判定"撞了"，白跑满重试次数、每次多打几趟库，日志还
-        # 骗人说撞了——第一版就是这么写错的，靠日志里冒出 3 次"id 撞了"才发现
-        # （50 位熵下真碰撞是 4e-8 量级，一出现就该起疑）。
-        for _ in range(5):
-            in_memory = session_id in _sessions
-            on_disk = bool((load_session_record(session_id) or {}).get("ok"))
-            if not in_memory and not on_disk:
-                break
-            print(f"[session] id 撞了（{session_id}），换一个重试")
-            session_id = _new_session_id()
     # 归属：从请求上下文取当前用户（contextvars，见 services/request_context.py
     # 顶部那段说明）。拿不到就是 None = 无主——匿名建的会话是合法状态，
     # 不能因为没登录就建不出来。判定语义在 app_access。
     from .request_context import current_user_id
 
-    state = V5SessionState(
-        sessionId=session_id,
-        ownerId=current_user_id(),
-        goal={"text": goal_text, "status": "needs_refinement"},
-        artifacts=[],
-        capabilityRuns=[],
-        coverageGaps=[],
-        conversation=[],
-        runtimePhase="idle"
-    )
-    _sessions[session_id] = state
-    save_session_record(state)  # 单条守卫式写入，绝不整体覆写存档
-    return state
+    generated = not session_id
+    for _attempt in range(6 if generated else 1):
+        candidate_id = _new_session_id() if generated else session_id
+        state = V5SessionState(
+            sessionId=candidate_id,
+            ownerId=current_user_id(),
+            goal={"text": goal_text, "status": "needs_refinement"},
+            artifacts=[],
+            capabilityRuns=[],
+            coverageGaps=[],
+            conversation=[],
+            runtimePhase="idle",
+        )
+        result = _claim_and_cache(state)
+        if result["created"] or not generated:
+            return result["state"]
+        print(f"[session] id 撞了（{candidate_id}），换一个重试")
+    raise PersistClosedError("session_id_collision", "Could not allocate a new session id")
 
 def _mv_seq(vid: Any) -> int:
     s = str(vid or "")
@@ -200,7 +209,7 @@ def _memory_ahead_of_store(mem: Optional[V5SessionState], disk: Optional[V5Sessi
     把新 lastTurnId 盖上去，版本史被钉死。另一台机器写了更新的库行时
     内存并不 ahead——那种情况仍信库。
     """
-    if mem is None or disk is None:
+    if mem is None or disk is None or mem.ownerId != disk.ownerId:
         return False
     from .persistence import _monotonic_key
 

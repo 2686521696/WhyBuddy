@@ -26,6 +26,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from models.v5_state import V5SessionState
+from services import app_access
 from services.persistence import _checkpoint_dir, _safe_ckpt_token
 from services.scope_authority import preferred_device_for_run
 from services.slide_rule_session import load_session, save_session
@@ -69,6 +70,7 @@ async def start_drive_full_factory_run(
     require_session_id: bool = True,
     fallback_state: Optional[Dict[str, Any]] = None,
     viewer: Any = None,
+    expected_owner_id: Optional[str] = None,
     reuse_charter: Any = None,
     product_charter: Any = None,
     goal_tools: Optional[Any] = None,
@@ -94,8 +96,14 @@ async def start_drive_full_factory_run(
         raise HTTPException(status_code=400, detail="session_id required")
 
     persisted = await asyncio.to_thread(load_session, sid) if sid else None
+    if expected_owner_id is not None and (
+        persisted is None or persisted.ownerId != expected_owner_id
+    ):
+        raise HTTPException(status_code=404, detail="Not found")
     if persisted is not None:
         state = persisted
+        if viewer is not None and not app_access.can_session("drive", state.model_dump(), viewer):
+            raise HTTPException(status_code=404, detail="Not found")
         wanted = [
             str(item).strip()
             for item in (goal_tools or [])
@@ -193,9 +201,13 @@ async def start_drive_full_factory_run(
             return {**event, "state": final_state.model_dump()}
         return event
 
-    return await run_registry.start_run(
-        sid or f"anon-{id(state)}",
-        stream_factory,
-        on_complete,
-        user_text=user_text,
-    )
+    try:
+        return await run_registry.start_run(
+            sid or f"anon-{id(state)}",
+            stream_factory,
+            on_complete,
+            user_text=user_text,
+            owner_id=state.ownerId,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=404, detail="Not found") from exc

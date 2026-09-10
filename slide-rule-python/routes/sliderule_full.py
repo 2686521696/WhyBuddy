@@ -33,7 +33,7 @@ from services.gate_health import (
 from services.page_edit_guard import edit_losses, losses_message
 from services import app_access, run_registry
 from services.model_version_restore import restore_model_version_locked
-from services.slide_rule_session import create_session, delete_session, load_session, save_session, drive_reasoning_turn
+from services.slide_rule_session import claim_session, create_session, delete_session, load_session, save_session, drive_reasoning_turn
 from services.engine_scheduling import pick_next_capabilities
 from services.persistence import PersistClosedError, load_all
 from services.slide_rule_marathon import drive_marathon
@@ -545,7 +545,42 @@ def _require_session(state: Any, action: str, viewer) -> None:
         raise HTTPException(404, "Not found")
 
 
-def _require_run_session(session_id: str, action: str, viewer) -> None:
+def _drive_state(payload: Dict[str, Any], viewer) -> V5SessionState:
+    """Authorize the server snapshot before any legacy driver can execute.
+
+    2026-09-11: login alone let another user drive a private session, and the
+    turn/marathon routes trusted a forged client owner and state. New sessions
+    still work, but their owner always comes from the authenticated viewer.
+    """
+    try:
+        raw_state, _ = sanitize_session_dict(_coerce_state_payload(payload.get("state", {})))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, str(exc).splitlines()[0] or "invalid_state") from exc
+    sid = str(raw_state.get("sessionId") or payload.get("sessionId") or "").strip()
+    persisted = (load_session(sid) or _sessions.get(sid)) if sid else None
+    if persisted is not None:
+        _require_session(persisted, "drive", viewer)
+        persisted, _ = sanitize_session_state(persisted)
+        return persisted
+    raw_state.pop("ownerId", None)
+    for key in ("controlTranscript", "controlTodo", "modelVersions", "currentModelVersionId", "capabilityRuns", "specFirstPages", "awaitReason", "awaitDetail"):
+        raw_state.pop(key, None)
+    if sid:
+        raw_state["sessionId"] = sid
+    try:
+        candidate = _adopt_owner(V5SessionState(**raw_state), viewer)
+    except (ValidationError, TypeError, ValueError) as exc:
+        raise HTTPException(400, str(exc).splitlines()[0] or "invalid_state") from exc
+    # A second first turn must see the winner before either driver starts.
+    try:
+        claimed = claim_session(candidate)
+    except PersistClosedError as exc:
+        raise HTTPException(503, "session_store_unavailable") from exc
+    _require_session(claimed, "drive", viewer)
+    return claimed
+
+
+def _require_run_session(session_id: str, action: str, viewer) -> V5SessionState:
     """`/runs/*` 的归属守卫：按**这个 run 属于哪个会话**判权限。
 
     ## 事故（2026-09-06 审计，三个端口上实测）
@@ -585,6 +620,7 @@ def _require_run_session(session_id: str, action: str, viewer) -> None:
     if state is None:
         raise HTTPException(404, "Not found")
     _require_session(state, action, viewer)
+    return state
 
 
 def _visible_run(run_id: str, action: str, viewer):
@@ -617,6 +653,9 @@ def _visible_run(run_id: str, action: str, viewer):
         # 查不到会话就没法判归属。fail-closed：此时"放行"等于默认公开。
         return None
     if not app_access.can_session(action, _session_payload(state), viewer):
+        return None
+    # The session ID can be deleted and reused; old events keep their owner.
+    if not app_access.can_session(action, {"ownerId": run.owner_id}, viewer):
         return None
     return run
 
@@ -773,7 +812,11 @@ def create_sess(
     #   空目标要 fail-closed 成空，不是 fail-open 成一个假产品（§7）。
     goal_text = payload.get("goal", {}).get("text", "") or ""
     repaired_payload, _ = sanitize_session_dict({"goal": {"text": goal_text}})
-    state = create_session(repaired_payload.get("goal", {}).get("text", goal_text), requested_id or None)
+    try:
+        state = create_session(repaired_payload.get("goal", {}).get("text", goal_text), requested_id or None)
+    except PersistClosedError as exc:
+        raise HTTPException(503, "session_store_unavailable") from exc
+    _require_session(state, "view", viewer)
     state, changed = sanitize_session_state(state)
     # If sanitize mutated the state, persist via save_session so the authoritative
     # store is consistent. create_session already persisted (guarded per-record
@@ -888,6 +931,7 @@ def save_sess(
     # load existing server state (trusted)
     existing = load_session(sid) or _sessions.get(sid)
     if existing:
+        _require_session(existing, "drive", viewer)
         # Concurrency guard for PUT: reject if client claims older lastTurnId than server (stale request must not overwrite newer authoritative state).
         # Returns conflict so caller can reload. Persistence-level guard also protects on save even for direct calls.
         # (Finding 2 resolution)
@@ -950,6 +994,11 @@ def save_sess(
         else:
             state = V5SessionState(sessionId=sid, goal={"text": "", "status": "needs_refinement"})
         _adopt_owner(state, viewer)
+        try:
+            state = claim_session(state)
+        except PersistClosedError as exc:
+            raise HTTPException(503, "session_store_unavailable") from exc
+        _require_session(state, "drive", viewer)
     # Use authoritative result from save_session (which delegates to persistence guard + cache reload)
     # instead of the pre-save input state. Ensures route _sessions reflects service-forced authoritative
     # (consistent with "service forces reload authoritative into cache" and load_session behavior).
@@ -1022,13 +1071,9 @@ async def exec_cap(
     # 与 drive-full / orchestrate-plan 同一条门。
     _auth(x_internal_key)
     _require_login(viewer)
-    # For execute-capability in drive context (JS driver or mixed), the incoming state
-    # may contain previously server-constructed artifacts (with producedBy, gated_pass etc.)
-    # from prior commits in the same turn or loaded session state.
-    # Use server_load (server_trusted context) to allow legitimate elevated artifacts.
-    # Client cannot forge *new* ones this way because the data originated from server.
-    state_payload = _coerce_state_payload(payload.get("state") or {})
-    state = V5SessionState.server_load(state_payload)
+    # Both executors and the later save must use the same authorized snapshot.
+    state = await asyncio.to_thread(_drive_state, payload, viewer)
+    payload = {**payload, "state": state.model_dump()}
     cap = payload["capabilityId"]
     import time as _time
     t0 = _time.time()
@@ -1195,7 +1240,7 @@ def drive(
     """Single turn drive (drive_reasoning_turn). Full multi-loop driver authority exposed via /drive-full."""
     _auth(x_internal_key)
     _require_login(viewer)
-    state = _adopt_owner(V5SessionState(**payload["state"]), viewer)
+    state = _drive_state(payload, viewer)
     new_state = drive_reasoning_turn(state, payload["turnId"], payload.get("userText", ""))
     # python provenance for turn/drive (covers turn + downstream evidence/report)
     return {"state": new_state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_RAG, "backend": PYTHON_BACKEND}
@@ -1234,16 +1279,11 @@ def drive_full(
     """
     _auth(x_internal_key)
     _require_login(viewer)
-    raw_state, _ = sanitize_session_dict(payload["state"])
     # PYTHON_AUTHORITY: 已持久化的服务端会话是权威起点。客户端 state 经防伪造清洗后
     # 会失去 trustLevel/producedBy/台账（正确的防伪行为），若以它为起点，之前所有
     # trusted-committed 产物会被清零、收敛状态丢失（例如"生成交付物"回合触发不了
     # delivery 分支）。仅在无持久化会话（首轮）时才用清洗后的客户端 state 起步。
-    sid = str(raw_state.get("sessionId") or payload.get("sessionId") or "")
-    persisted = load_session(sid) if sid else None
-    state = persisted if persisted is not None else _adopt_owner(
-        V5SessionState(**raw_state), viewer
-    )
+    state = _drive_state(payload, viewer)
     max_loops = int(payload.get("max_loops", 10))
     user_text = sanitize_session_dict({"text": payload.get("userText", "") or payload.get("user_text", "")})[0].get("text", "")
     # 技能库六期"推演注入"：已安装技能进生成契约（setter 内清洗；结束必清空）
@@ -1340,7 +1380,7 @@ def drive_marathon_route(
     # 它把 drive_reasoning_turn 当步进器跑，而那个函数内部会 save_session ——
     # 也就是**这条路会落库**，所以同样得认归属（2026-08-09）。原来这条路由
     # 连 viewer 都没取，无从认起。
-    state = _adopt_owner(V5SessionState(**payload["state"]), viewer)
+    state = _drive_state(payload, viewer)
     seed_text = payload.get("seedText") or payload.get("seed_text") or payload.get("userText") or ""
     budget = payload.get("budget") or {}
     policy = payload.get("policy") or None
@@ -1402,9 +1442,8 @@ async def drive_full_stream(
 
     _auth(x_internal_key)
 
-    raw_state, _ = sanitize_session_dict(payload.get("state") or {})
-    # PYTHON_AUTHORITY persist-as-authority 在信封 helper 里 load_session。
-    sid = str(raw_state.get("sessionId") or payload.get("sessionId") or "")
+    state = await asyncio.to_thread(_drive_state, payload, viewer)
+    sid = state.sessionId
 
     max_loops = int(payload.get("max_loops", 10))
     user_text = sanitize_session_dict(
@@ -1432,8 +1471,9 @@ async def drive_full_stream(
         profile="full",
         max_loops=max_loops,
         require_session_id=False,
-        fallback_state=raw_state,
+        fallback_state=state.model_dump(),
         viewer=viewer,
+        expected_owner_id=state.ownerId,
         **factory_charter_kwargs(payload),
     )
     return _run_sse_response(run, since=0)
@@ -1453,14 +1493,12 @@ async def control_turn_stream(
     from services.rehearsal_control import run_control_turn, validate_control_turn_body
 
     validate_control_turn_body(payload)
-    # load_session None 必须在 StreamingResponse 之前变成 400。SSE 开了之后
-    # 再 raise HTTPException，客户端看到的是 200 流中断，不是 400。
+    # Authorize before opening SSE; private and missing IDs have the same 404.
     sid = str(payload.get("sessionId") or "").strip()
-    if load_session(sid) is None:
-        raise HTTPException(status_code=400, detail="session_id required")
+    state = await asyncio.to_thread(_require_run_session, sid, "drive", viewer)
 
     async def event_generator():
-        async for event in run_control_turn(payload):
+        async for event in run_control_turn(payload, authorized_owner_id=state.ownerId):
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
@@ -1513,6 +1551,8 @@ async def runs_active(
     _auth(x_internal_key)
     _require_run_session(sessionId, "view", viewer)
     run = run_registry.get_active_run(sessionId)
+    if run is not None:
+        run = _visible_run(run.run_id, "view", viewer)
     return {"active": run.snapshot() if run is not None else None}
 
 

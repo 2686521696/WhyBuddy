@@ -66,6 +66,16 @@ def _uid(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:10]}"
 
 
+def _login_as(monkeypatch, owner: str) -> None:
+    from types import SimpleNamespace
+    from control_turn_support import client
+    from middlewares.current_user import optional_user
+
+    # Earlier tests reload app; the harness still sends requests to its original instance.
+    user = SimpleNamespace(id=owner, is_active=True, is_superuser=False)
+    monkeypatch.setitem(client.app.dependency_overrides, optional_user, lambda: user)
+
+
 # ── 一、写 / 查 ─────────────────────────────────────────────────────────
 
 
@@ -177,9 +187,10 @@ def test_没账号归属时压根不列这两件工具():
 # ── 三、活路径 ───────────────────────────────────────────────────────────
 
 
-def test_模型调remember_真的落到账号上(harness):
+def test_模型调remember_真的落到账号上(harness, monkeypatch):
     sid = new_sid("mem")
     owner = _uid("owner")
+    _login_as(monkeypatch, owner)
     seed_session(sid, goal={"text": "请假系统", "status": "clear"}, ownerId=owner)
 
     harness.llm_impl = lambda messages, **kw: (
@@ -199,9 +210,10 @@ def test_模型调remember_真的落到账号上(harness):
     ]
 
 
-def test_换一个会话还查得到_这才叫跨会话(harness):
+def test_换一个会话还查得到_这才叫跨会话(harness, monkeypatch):
     """**这条是这件工具存在的理由。** 同一个账号、另一个会话。"""
     owner = _uid("owner")
+    _login_as(monkeypatch, owner)
     sid1 = new_sid("mem-a")
     seed_session(sid1, goal={"text": "请假系统", "status": "clear"}, ownerId=owner)
     harness.llm_impl = lambda messages, **kw: (

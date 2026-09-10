@@ -61,7 +61,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app import app  # noqa: E402
 from models.v5_state import V5SessionState  # noqa: E402
-from services.slide_rule_session import save_session  # noqa: E402
+from services.slide_rule_session import load_session, save_session  # noqa: E402
 
 client = TestClient(app)
 KEY = {"x-internal-key": "dev-slide-rule-internal"}
@@ -123,7 +123,8 @@ def _register_run(run_id: str, sid: str, *, live: bool = False, with_task: bool 
 
     from services import run_registry
 
-    run = run_registry.Run(run_id, sid)
+    state = load_session(sid)
+    run = run_registry.Run(run_id, sid, owner_id=state.ownerId if state else None)
     if not live:
         run.finished_at = time.monotonic()
     if with_task:
