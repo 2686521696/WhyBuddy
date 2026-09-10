@@ -11,14 +11,14 @@
 | 包 | 模块数 |
 |---|---:|
 | agent-loop | 99 |
-| client | 1040 |
+| client | 1027 |
 | server | 579 |
 | services | 32 |
 | shared | 176 |
-| **合计** | **1926** |
+| **合计** | **1913** |
 
-边 5968 条，其中动态 import / require 310 条、
-类型 import 2233 条。
+边 5929 条，其中动态 import / require 311 条、
+类型 import 2234 条。
 
 ## component 依赖图
 
@@ -30,10 +30,10 @@ graph LR
   agent-loop-tools["agent-loop-tools<br/>17"]
   agent-loop-vscode["agent-loop-vscode<br/>38"]
   client-components["client-components<br/>280"]
-  client-lib["client-lib<br/>175"]
+  client-lib["client-lib<br/>174"]
   client-pages["client-pages<br/>74"]
   client-pages-autopilot["client-pages-autopilot<br/>192"]
-  client-pages-sliderule["client-pages-sliderule<br/>267"]
+  client-pages-sliderule["client-pages-sliderule<br/>255"]
   client-runtime["client-runtime<br/>16"]
   client-shell["client-shell<br/>36"]
   lobster-executor["lobster-executor<br/>32"]
@@ -55,9 +55,9 @@ graph LR
   agent-loop-tools --> agent-loop-src
   client-components -.->|环| client-lib
   client-components -.->|环| client-pages
-  client-components --> client-pages-autopilot
-  client-components --> client-pages-sliderule
-  client-components --> client-shell
+  client-components -.->|环| client-pages-autopilot
+  client-components -.->|环| client-pages-sliderule
+  client-components -.->|环| client-shell
   client-components --> shared-blueprint
   client-components --> shared-contracts
   client-components --> shared-workflow
@@ -68,47 +68,47 @@ graph LR
   client-lib --> shared-web-aigc
   client-lib --> shared-workflow
   client-pages-autopilot -.->|环| client-components
-  client-pages-autopilot --> client-lib
+  client-pages-autopilot -.->|环| client-lib
   client-pages-autopilot -.->|环| client-pages
   client-pages-autopilot -.->|环| client-shell
   client-pages-autopilot --> shared-blueprint
   client-pages-sliderule -.->|环| client-components
-  client-pages-sliderule --> client-lib
+  client-pages-sliderule -.->|环| client-lib
   client-pages-sliderule -.->|环| client-pages
   client-pages-sliderule -.->|环| client-pages-autopilot
   client-pages-sliderule --> shared-blueprint
   client-pages -.->|环| client-components
-  client-pages --> client-lib
+  client-pages -.->|环| client-lib
   client-pages -.->|环| client-pages-autopilot
-  client-pages --> client-pages-sliderule
-  client-pages --> client-shell
+  client-pages -.->|环| client-pages-sliderule
+  client-pages -.->|环| client-shell
   client-pages --> shared-blueprint
   client-pages --> shared-contracts
   client-runtime -.->|环| client-lib
   client-runtime --> shared-contracts
   client-runtime --> shared-workflow
   client-shell -.->|环| client-components
-  client-shell --> client-lib
+  client-shell -.->|环| client-lib
   client-shell -.->|环| client-pages
   client-shell -.->|环| client-pages-autopilot
   client-shell -.->|环| client-pages-sliderule
-  client-shell --> client-runtime
+  client-shell -.->|环| client-runtime
   client-shell --> shared-blueprint
   client-shell --> shared-contracts
   lobster-executor --> shared-contracts
   server-audit -.->|环| server-core
-  server-audit --> server-integrations
-  server-audit --> server-persist
-  server-audit --> server-tasks
+  server-audit -.->|环| server-integrations
+  server-audit -.->|环| server-persist
+  server-audit -.->|环| server-tasks
   server-audit --> shared-contracts
   server-audit --> shared-web-aigc
   server-core -.->|环| server-audit
   server-core -.->|环| server-integrations
-  server-core --> server-permission
-  server-core --> server-persist
-  server-core --> server-rag
-  server-core --> server-routes
-  server-core --> server-tasks
+  server-core -.->|环| server-permission
+  server-core -.->|环| server-persist
+  server-core -.->|环| server-rag
+  server-core -.->|环| server-routes
+  server-core -.->|环| server-tasks
   server-core --> shared-contracts
   server-core --> shared-web-aigc
   server-core --> shared-workflow
@@ -125,7 +125,7 @@ graph LR
   server-entry --> shared-contracts
   server-integrations -.->|环| server-core
   server-integrations -.->|环| server-permission
-  server-integrations --> server-persist
+  server-integrations -.->|环| server-persist
   server-integrations -.->|环| server-rag
   server-integrations --> shared-contracts
   server-integrations --> shared-web-aigc
@@ -140,17 +140,17 @@ graph LR
   server-rag --> shared-contracts
   server-routes-blueprint -.->|环| server-core
   server-routes-blueprint -.->|环| server-routes
-  server-routes-blueprint --> server-tasks
+  server-routes-blueprint -.->|环| server-tasks
   server-routes-blueprint --> shared-blueprint
   server-routes-blueprint --> shared-contracts
   server-routes -.->|环| server-audit
   server-routes -.->|环| server-core
   server-routes -.->|环| server-integrations
-  server-routes --> server-permission
-  server-routes --> server-persist
+  server-routes -.->|环| server-permission
+  server-routes -.->|环| server-persist
   server-routes -.->|环| server-rag
   server-routes -.->|环| server-sliderule
-  server-routes --> server-tasks
+  server-routes -.->|环| server-tasks
   server-routes --> shared-blueprint
   server-routes --> shared-contracts
   server-routes --> shared-web-aigc
@@ -173,45 +173,89 @@ graph LR
   shared-contracts -.->|环| shared-workflow
   shared-web-aigc -.->|环| shared-contracts
   shared-workflow -.->|环| shared-contracts
+  linkStyle 1,2,3,4,5,9,10,15,16,17,18,20,21,22,23,25,26,27,28,29,32,35,36,37,38,39,40,44,45,46,47,50,51,52,53,54,55,56,71,72,73,74,78,79,81,82,84,86,87,88,91,92,93,94,95,96,97,98,104,105,109,110,111,112,117,118,119,120 stroke:#dc2626,color:#b91c1c
 ```
 
 ## 欠账看板（红虚线，基线只许变短）
 
-还一笔就从 `architecture.ts.json` 的 `baseline.componentCycles` / `baseline.cycles` 删掉。
+还一笔就从 `architecture.ts.json` 的 `baseline.componentCyclicEdges` / `baseline.cyclicEdges` 删掉。
 往基线里加东西 = 有意接受一笔新欠账，不该出现在日常流程里。
+按强连通分量统计每条循环边，已有环内新增一条边也会触发检查。
 
-组间环 **28**（基线 28）
+2026-09-11 校正统计：旧算法遗漏了 83 条模块循环边、23 条组间循环边。基线迁移核对的是同一批源码依赖，未新增依赖放行。
 
-- `client-components -> client-lib -> client-components`
-- `client-components -> client-pages -> client-components`
-- `client-components -> client-pages -> client-pages-autopilot -> client-components`
-- `client-components -> client-pages -> client-pages-autopilot -> client-shell -> client-components`
-- `client-components -> client-pages -> client-pages-autopilot -> client-shell -> client-pages-sliderule -> client-components`
-- `client-lib -> client-runtime -> client-lib`
-- `client-pages -> client-pages-autopilot -> client-pages`
-- `client-pages -> client-pages-autopilot -> client-shell -> client-pages`
-- `client-pages -> client-pages-autopilot -> client-shell -> client-pages-sliderule -> client-pages`
-- `client-pages-autopilot -> client-shell -> client-pages-autopilot`
-- `client-pages-autopilot -> client-shell -> client-pages-sliderule -> client-pages-autopilot`
-- `server-audit -> server-core -> server-audit`
-- `server-audit -> server-core -> server-integrations -> server-permission -> server-audit`
-- `server-audit -> server-core -> server-integrations -> server-permission -> server-persist -> server-tasks -> server-audit`
-- `server-audit -> server-core -> server-integrations -> server-rag -> server-routes -> server-audit`
-- `server-core -> server-integrations -> server-core`
-- `server-core -> server-integrations -> server-permission -> server-persist -> server-core`
-- `server-core -> server-integrations -> server-permission -> server-persist -> server-tasks -> server-core`
-- `server-core -> server-integrations -> server-rag -> server-routes -> server-core`
-- `server-core -> server-integrations -> server-rag -> server-routes -> server-sliderule -> server-core`
-- `server-core -> server-integrations -> server-rag -> server-routes -> server-sliderule -> server-routes-blueprint -> server-core`
-- `server-integrations -> server-rag -> server-routes -> server-integrations`
-- `server-permission -> server-persist -> server-tasks -> server-permission`
-- `server-persist -> server-tasks -> server-persist`
-- `server-rag -> server-routes -> server-rag`
-- `server-routes -> server-sliderule -> server-routes-blueprint -> server-routes`
-- `shared-contracts -> shared-web-aigc -> shared-contracts`
-- `shared-contracts -> shared-workflow -> shared-contracts`
+组间循环边 **68**（基线 68）
 
-模块级环 **89**（基线 89）—— 图上不逐条展开，棘轮在 `--check`。
+- `client-components -> client-lib`
+- `client-components -> client-pages`
+- `client-components -> client-pages-autopilot`
+- `client-components -> client-pages-sliderule`
+- `client-components -> client-shell`
+- `client-lib -> client-components`
+- `client-lib -> client-runtime`
+- `client-pages -> client-components`
+- `client-pages -> client-lib`
+- `client-pages -> client-pages-autopilot`
+- `client-pages -> client-pages-sliderule`
+- `client-pages -> client-shell`
+- `client-pages-autopilot -> client-components`
+- `client-pages-autopilot -> client-lib`
+- `client-pages-autopilot -> client-pages`
+- `client-pages-autopilot -> client-shell`
+- `client-pages-sliderule -> client-components`
+- `client-pages-sliderule -> client-lib`
+- `client-pages-sliderule -> client-pages`
+- `client-pages-sliderule -> client-pages-autopilot`
+- `client-runtime -> client-lib`
+- `client-shell -> client-components`
+- `client-shell -> client-lib`
+- `client-shell -> client-pages`
+- `client-shell -> client-pages-autopilot`
+- `client-shell -> client-pages-sliderule`
+- `client-shell -> client-runtime`
+- `server-audit -> server-core`
+- `server-audit -> server-integrations`
+- `server-audit -> server-persist`
+- `server-audit -> server-tasks`
+- `server-core -> server-audit`
+- `server-core -> server-integrations`
+- `server-core -> server-permission`
+- `server-core -> server-persist`
+- `server-core -> server-rag`
+- `server-core -> server-routes`
+- `server-core -> server-tasks`
+- `server-integrations -> server-core`
+- `server-integrations -> server-permission`
+- `server-integrations -> server-persist`
+- `server-integrations -> server-rag`
+- `server-permission -> server-audit`
+- `server-permission -> server-persist`
+- `server-persist -> server-core`
+- `server-persist -> server-tasks`
+- `server-rag -> server-routes`
+- `server-routes -> server-audit`
+- `server-routes -> server-core`
+- `server-routes -> server-integrations`
+- `server-routes -> server-permission`
+- `server-routes -> server-persist`
+- `server-routes -> server-rag`
+- `server-routes -> server-sliderule`
+- `server-routes -> server-tasks`
+- `server-routes-blueprint -> server-core`
+- `server-routes-blueprint -> server-routes`
+- `server-routes-blueprint -> server-tasks`
+- `server-sliderule -> server-core`
+- `server-sliderule -> server-routes-blueprint`
+- `server-tasks -> server-audit`
+- `server-tasks -> server-core`
+- `server-tasks -> server-permission`
+- `server-tasks -> server-persist`
+- `shared-contracts -> shared-web-aigc`
+- `shared-contracts -> shared-workflow`
+- `shared-web-aigc -> shared-contracts`
+- `shared-workflow -> shared-contracts`
+
+模块级循环边 **265**（基线 265）—— 图上不逐条展开，棘轮在 `--check`。
 
 ## 组的职责
 

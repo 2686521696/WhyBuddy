@@ -896,7 +896,7 @@ if (process.argv.includes("--check")) {
   const current = fs.existsSync(OUTPUT_FILE)
     ? fs.readFileSync(OUTPUT_FILE, "utf8")
     : "";
-  if (current !== serialized) {
+  if (current.replace(/\r\n/g, "\n") !== serialized) {
     console.error(
       "Block-to-component usage is stale. Run: pnpm usage:generate"
     );

@@ -528,13 +528,22 @@ why = """控制面闭集工具环。handoff 点火工厂，结果交回控制面
 may_depend_on = [
   "drive",
   "evidence",
+  # 2026-09-11 补齐既有 model_memory 归属：它借 identity_store 的执行器持久化。
+  "identity",
   "llm_gateway",
   "model_core",
   "platform",
   "spec_first",
 ]
 modules = [
+  "services.action_stationarity",
+  "services.done_claim",
+  "services.hook_events",
+  "services.hop_requirements",
+  "services.model_memory",
+  "services.plan_todo",
   "services.rehearsal_control",
+  "services.user_questions",
 ]
 
 [component.drive]
@@ -620,11 +629,13 @@ modules = [
   "sliderule_llm.client",
   "sliderule_llm.config",
   "sliderule_llm.control_client",
+  "sliderule_llm.doom_loop",
   "sliderule_llm.evidence",
   "sliderule_llm.evidence_context",
   "sliderule_llm.gateway_circuit",
   "sliderule_llm.image_client",
   "sliderule_llm.pool",
+  "sliderule_llm.retry_budget",
   "sliderule_llm.scoped",
   "sliderule_llm.structured",
   "sliderule_llm.vector",
@@ -669,7 +680,9 @@ may_depend_on = ["llm_gateway", "persist", "platform"]
 modules = [
   "services.cost_ledger",
   "services.enrich_timing",
+  "services.gate_health",
   "services.slide_rule_budget",
+  "services.stage_pairing",
   "services.telemetry",
   "services.telemetry_runtime",
 ]
@@ -710,6 +723,9 @@ modules = [
   "scripts.migrate_app_ownership",
   "scripts.overnight_device_iter",
   "scripts.overview_sheet_probe",
+  "scripts.run_full_build",
+  "scripts.run_panel7_stages",
+  "scripts.run_real_topics",
   "scripts.stock_image_fill_ab",
   "scripts.sync_block_labels",
   "scripts.thumb_recompress",
@@ -808,6 +824,8 @@ modules = [
   "services.workflow_select",
   "services.workflow_validate",
   "services.design_language",
+  "services.deliverable_surface",
+  "services.factory_plan_steps",
   "services.freeform_block",
   "services.freeform_preview_store",
   "services.html_bindings",
@@ -820,6 +838,7 @@ modules = [
   "services.page_blocks",
   "services.bind_hole_freeze",
   "services.page_edit_blocks",
+  "services.page_edit_guard",
   "services.page_id_freeze",
   "services.page_naming",
   "services.page_reconstruction",
@@ -909,8 +928,6 @@ patterns = [
   "arch_graph",          # 架构编译器自己，命令行工具。
   "complete_migration",  # 一次性迁移记录，跟 scripts 同性质。
   "scripts.*",           # 运维/评测脚本，每个都是自己的入口。
-  "sliderule_llm.__init__",  # 包的 __init__：`import 包.模块` 时必然被加载，
-                             # 但 AST 里那条 import 指向的是子模块，永远扫不出入边。
 ]
 
 
@@ -1110,7 +1127,7 @@ why = "createPythonWebAigcAdapter 拼字符串 __import__"
 # 本来就有一条 `from services.session_events import envelope` 的函数体 import。
 # 既然要加顶层 import，那一条顺手提上去。session_events 是 util 叶子（出度 0），
 # 提上去不可能成环。
-deferred = 476
+deferred = 474
 # 明说不体检的拦截理由条数（[gate_codes] 里值为空串的）。**只许变少**。
 # 2026-09-05 建账时 9 条，第一笔要还的是 CLOSURE_DEGRADED_RUN。
 # ⚠ 同日 11 条：清单从「只扫 services/」扩到「services/ + routes/」，
@@ -1144,6 +1161,12 @@ component_cycles = [
 ]
 cycles = [
 ]
+# 2026-09-11: SCC 成环边取代 DFS 见证环作为棘轮。对照源版本
+# 527cc265b65403fae43ebad09ac2961af3f901a0 重新扫描，跨 component
+# 模块成环边与 component 成环边均为 0；未接纳任何新增循环债务。
+# cycles/component_cycles 仅保留旧诊断展示兼容，不再用于判定新增环。
+cyclic_edges = []
+component_cyclic_edges = []
 # ⚠ 没人 import 的模块。**这不是待删清单**——实测这批里绝大多数是三类
 #   各有理由的东西（Node 边界镜像 / 脚本插座 / 未挂载的基线面），
 #   详见 arch_graph.orphans() 的文档。这里给的是棘轮：**只许变少**，

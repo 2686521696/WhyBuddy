@@ -178,8 +178,8 @@ class Test循环依赖只许变少:
         # ⚠ 口径是**跨 component**：同一个「crate」内部互指是允许的（见
         #   Test同一个crate内部允许互指）。三处（CLI / 这里 / 生成的图）必须同口径，
         #   少算一项就会误报，而误报的闸下一个人会直接注释掉。
-        now = set(arch_graph.cross_component_cycles(_G, _M))
-        base = set(_M.get("baseline", {}).get("cycles", []))
+        now = set(arch_graph.cyclic_edges(_G, _M))
+        base = set(_M.get("baseline", {}).get("cyclic_edges", []))
         new = sorted(now - base)
         assert not new, (
             f"新增了循环依赖：{new}。\n"
@@ -188,8 +188,8 @@ class Test循环依赖只许变少:
         )
 
     def test_基线里的环还在_修好了就删掉(self):
-        now = set(arch_graph.cross_component_cycles(_G, _M))
-        base = set(_M.get("baseline", {}).get("cycles", []))
+        now = set(arch_graph.cyclic_edges(_G, _M))
+        base = set(_M.get("baseline", {}).get("cyclic_edges", []))
         stale = sorted(base - now)
         assert not stale, (
             f"这些环已经拆掉了，从 architecture.toml 的 baseline 里删掉：{stale}"
@@ -254,22 +254,14 @@ class Test闸能被真的绕过吗:
             [sys.executable, str(arch_graph.ROOT / "arch_graph.py"), "--check"],
             capture_output=True, text=True, encoding="utf-8",
         )
-        base = _M.get("baseline", {})
-        # ⚠ 三项都要算进来。少算一项，命令行红而这里判 clean，判据会**误报**——
-        #   而误报的闸下一个人会直接注释掉（§14.2 记过这个形状）。
-        clean = (
-            not (set(arch_graph.layer_violations(_G, _M)) - set(base.get("violations", [])))
-            and not (
-                set(arch_graph.cross_component_cycles(_G, _M)) - set(base.get("cycles", []))
-            )
-            and not (
-                set(arch_graph.services_violations(_G, _M))
-                - set(base.get("services_violations", []))
-            )
-        )
+        errors = arch_graph.validate_graph(_G, _M)
+        clean = not errors
         assert (r.returncode == 0) == clean, (
             f"命令行闸与 pytest 判据结论不一致：exit={r.returncode} clean={clean}\n{r.stdout}"
         )
+
+    def test_共享完整闸通过(self):
+        assert arch_graph.validate_graph(_G, _M) == []
 
 
 class Test叶子层不许碰上层:

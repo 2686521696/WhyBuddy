@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import fnmatch
 import json
 import pathlib
 import re
@@ -123,6 +124,7 @@ class Edge:
     dst_pkg: str
     deferred: bool
     line: int
+    column: int = 0
 
     def key(self) -> str:
         return f"{self.src} -> {self.dst}"
@@ -144,8 +146,8 @@ class Graph:
         return g
 
 
-def _module_name(path: pathlib.Path) -> str:
-    rel = path.relative_to(ROOT)
+def _module_name(path: pathlib.Path, root: pathlib.Path = ROOT) -> str:
+    rel = path.relative_to(root)
     return rel.with_suffix("").as_posix().replace("/", ".")
 
 
@@ -219,6 +221,35 @@ def _sources(root: pathlib.Path) -> List[pathlib.Path]:
     return out
 
 
+class GraphScanError(ValueError):
+    """A partial dependency graph must never be published or accepted."""
+
+
+def _read_tree(path: pathlib.Path) -> ast.Module:
+    try:
+        return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (SyntaxError, UnicodeError) as exc:
+        raise GraphScanError(f"Cannot parse {path}: {exc}") from exc
+
+
+def _import_targets(node: ast.AST, here: str, modules: Set[str]) -> Set[str]:
+    roots = {m.split(".")[0] for m in modules}
+    targets: Set[str] = set()
+    for candidate in _resolve(node, here, roots):
+        target = candidate if candidate in modules else candidate + ".__init__"
+        if target in modules:
+            targets.add(target)
+            # Importing a child from outside its package executes each initializer.
+            # Sibling imports do not restart the already active parent initializer.
+            parts = target.split(".")
+            for i in range(1, len(parts)):
+                package = ".".join(parts[:i])
+                initializer = package + ".__init__"
+                if initializer in modules and not here.startswith(package + "."):
+                    targets.add(initializer)
+    return targets - {here}
+
+
 def build_graph(root: pathlib.Path = ROOT) -> Graph:
     """两趟：先把模块集合收齐，再拿它筛 import 候选。
 
@@ -229,46 +260,28 @@ def build_graph(root: pathlib.Path = ROOT) -> Graph:
     g = Graph()
     files = _sources(root)
     for path in files:
-        g.modules.add(_module_name(path))
+        g.modules.add(_module_name(path, root))
     # 包名单从真实模块集合派生，不用手写的 PACKAGES 当筛子（见 _resolve ⚠）。
-    roots = {m.split(".")[0] for m in g.modules}
-
     for path in files:
-        here = _module_name(path)
+        here = _module_name(path, root)
         g.files_scanned += 1
-        try:
-            # ⚠ `filename=` 必须给：不给的话警告与报错都显示成 `<unknown>:1185`，
-            #   定位得另写一个脚本才知道是哪个文件（2026-09-06 实测踩过）。
-            tree = ast.parse(
-                path.read_text(encoding="utf-8", errors="ignore"), filename=str(path)
-            )
-        except SyntaxError as exc:
-            # ⚠ 吞掉解析失败**看着跟没有依赖一模一样**：那个文件贡献 0 条边，
-            #   闸照样绿。实测过一次：边从 877 掉到 816（少 61 条）、孤儿从
-            #   54 涨到 58，而没有任何提示。对一道自称 fail-closed 的闸，
-            #   至少要喊一声（本仓第七条：证据类不许静默）。
-            print(f"[arch_graph] ⚠ 解析失败，这个文件的依赖边全部缺失：{path} — {exc}")
-            continue
+        tree = _read_tree(path)
         deferred = _deferred_lines(tree)
         for node in ast.walk(tree):
             if not isinstance(node, (ast.Import, ast.ImportFrom)):
                 continue
-            cands = [c for c in _resolve(node, here, roots) if c in g.modules and c != here]
-            if not cands:
-                continue
-            # 最长的那个才是真目标：`from services.x import y` 的候选里
-            # `services.x` 与 `services.x.y` 都可能在，前者才是模块。
-            target = max(cands, key=len)
-            g.edges.append(
-                Edge(
-                    src=here,
-                    dst=target,
-                    src_pkg=_pkg_of(here),
-                    dst_pkg=_pkg_of(target),
-                    deferred=node.lineno in deferred,
-                    line=node.lineno,
+            for target in sorted(_import_targets(node, here, g.modules)):
+                g.edges.append(
+                    Edge(
+                        src=here,
+                        dst=target,
+                        src_pkg=_pkg_of(here),
+                        dst_pkg=_pkg_of(target),
+                        deferred=node.lineno in deferred,
+                        line=node.lineno,
+                        column=node.col_offset,
+                    )
                 )
-            )
     g.edges.sort(key=lambda e: (e.src, e.dst, e.line))
     return g
 
@@ -313,14 +326,8 @@ def component_violations(g: "Graph", manifest: dict) -> List[str]:
     return sorted(bad)
 
 
-_COMPONENT_OF_CACHE: dict = {}
-
-
 def _comp_map(manifest: dict) -> Dict[str, str]:
-    key = id(manifest)
-    if key not in _COMPONENT_OF_CACHE:
-        _COMPONENT_OF_CACHE[key] = component_of(manifest)
-    return _COMPONENT_OF_CACHE[key]
+    return component_of(manifest)
 
 
 def satellite_components(g: Graph, manifest: dict) -> List[str]:
@@ -364,8 +371,8 @@ def satellite_components(g: Graph, manifest: dict) -> List[str]:
 
 
 def deferred_count(g: Graph) -> int:
-    """函数体里的内部 import 条数。棘轮只许变少。"""
-    return sum(1 for e in g.edges if e.deferred)
+    """函数体里的内部 import 语句数；多 alias 和隐式初始化不重复计数。"""
+    return len({(e.src, e.line, e.column) for e in g.edges if e.deferred})
 
 
 #: 一条 blocker code 长什么样：全大写下划线，至少两段。
@@ -426,17 +433,14 @@ def gate_inventory(root: pathlib.Path = ROOT) -> List[Dict[str, Any]]:
     """
     out: List[Dict[str, Any]] = []
     for path in sorted(_sources(root)):
-        module = _module_name(path)
+        module = _module_name(path, root)
         # ⚠ 2026-09-05：第一版只扫 `services.`，于是 `routes/` 里那道
         #   `pageEdit`（点选编辑 / 画布存回页面前的体检）**根本不在清单上**——
         #   而它恰恰是当天抓到「交付页的 Tailwind 被摘掉」的那一道。
         #   清单要是只盖住一半的仓，它回答不了自己声称回答的那个问题。
         if not (module.startswith("services.") or module.startswith("routes.")):
             continue
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
-        except SyntaxError:
-            continue
+        tree = _read_tree(path)
         codes: Set[str] = set()
         gates: Set[str] = set()
         for node in ast.walk(tree):
@@ -541,8 +545,6 @@ def orphans(g: Graph, manifest: dict) -> List[str]:
     所以这里给的是**棘轮**，不是待删清单：今天这些冻在基线里，**只许变少**；
     新长出来的孤儿必须当场解释——要么接上，要么写进 `[entrypoints]` 说清为什么。
     """
-    import fnmatch
-
     indeg: Dict[str, int] = {m: 0 for m in g.modules}
     for e in g.edges:
         indeg[e.dst] = indeg.get(e.dst, 0) + 1
@@ -558,7 +560,7 @@ def orphans(g: Graph, manifest: dict) -> List[str]:
 
 
 def component_cycles(manifest: dict, g: "Graph") -> List[str]:
-    """component 之间的环——crate 级的环，Rust 里根本编译不出来。
+    """component DFS 见证环路径，仅用于诊断；完整棘轮使用 component_cyclic_edges。
 
     ⚠ 模块级的环已经清零，但**组级的环有 17 个**（2026-08-29 实测）。
       这不是矛盾：粒度不同看到的东西不同，crate 粒度下的缠绕以前根本没人量过。
@@ -593,8 +595,77 @@ def component_cycles(manifest: dict, g: "Graph") -> List[str]:
     return sorted(found)
 
 
+def strongly_connected_components(graph: Dict[str, Set[str]]) -> List[Set[str]]:
+    """Tarjan SCCs; unlike DFS back-edge witnesses these cover every cyclic edge."""
+    index: Dict[str, int] = {}
+    low: Dict[str, int] = {}
+    stack: List[str] = []
+    active: Set[str] = set()
+    groups: List[Set[str]] = []
+
+    def visit(node: str) -> None:
+        index[node] = low[node] = len(index)
+        stack.append(node)
+        active.add(node)
+        for target in sorted(graph.get(node, ())):
+            if target not in index:
+                visit(target)
+                low[node] = min(low[node], low[target])
+            elif target in active:
+                low[node] = min(low[node], index[target])
+        if low[node] == index[node]:
+            group: Set[str] = set()
+            while True:
+                member = stack.pop()
+                active.remove(member)
+                group.add(member)
+                if member == node:
+                    break
+            groups.append(group)
+
+    nodes = set(graph) | {v for targets in graph.values() for v in targets}
+    sys.setrecursionlimit(max(sys.getrecursionlimit(), len(nodes) * 2 + 100))
+    for node in sorted(nodes):
+        if node not in index:
+            visit(node)
+    return groups
+
+
+def _cyclic_pairs(graph: Dict[str, Set[str]]) -> Set[Tuple[str, str]]:
+    owner = {node: i for i, group in enumerate(strongly_connected_components(graph))
+             for node in group}
+    return {(src, dst) for src, targets in graph.items() for dst in targets
+            if owner[src] == owner[dst]}
+
+
+def cyclic_edges(g: Graph, manifest: Optional[dict] = None) -> List[str]:
+    """Complete cyclic module edges, excluding explicitly allowed internal SCCs."""
+    graph = g.module_graph()
+    spec = (manifest or {}).get("component", {})
+    owners = component_of(manifest or {})
+    allowed: Set[str] = set()
+    for group in strongly_connected_components(graph):
+        components = {owners.get(module) for module in group}
+        if len(components) == 1:
+            component = next(iter(components))
+            if component is not None and spec[component].get("allow_internal_cycles"):
+                allowed.update(group)
+    return sorted(f"{src} -> {dst}" for src, dst in _cyclic_pairs(graph)
+                  if not (src in allowed and dst in allowed))
+
+
+def component_cyclic_edges(g: Graph, manifest: dict) -> List[str]:
+    owners = component_of(manifest)
+    graph: Dict[str, Set[str]] = {}
+    for edge in g.edges:
+        src, dst = owners.get(edge.src), owners.get(edge.dst)
+        if src and dst and src != dst:
+            graph.setdefault(src, set()).add(dst)
+    return sorted(f"{src} -> {dst}" for src, dst in _cyclic_pairs(graph))
+
+
 def cross_component_cycles(g: "Graph", manifest: dict) -> List[str]:
-    """闸认的环。
+    """未豁免的 DFS 见证路径，仅用于诊断；完整棘轮使用 cyclic_edges。
 
     放行的**唯一**条件：环整个落在同一个 component 里，**而且那个 component
     明写了 `allow_internal_cycles = true`**。
@@ -668,7 +739,7 @@ def layer_violations(g: Graph, manifest: dict) -> List[str]:
 
 
 def find_cycles(g: Graph) -> List[str]:
-    """模块级循环依赖。Rust 里编译器管这件事，Python 里只能自己数。
+    """模块级 DFS 见证环路径，不枚举全部环，也不用于新增环棘轮。
 
     返回**规范化**的环签名（从字典序最小的成员起转），否则同一个环换个起点
     就成了「新环」，棘轮基线会被自己搅乱。
@@ -734,7 +805,7 @@ def emit_mermaid(g: Graph, manifest: dict) -> str:
         lines.append(f'  {name}["{name}<br/>{per_pkg.get(name, 0)} 个模块<br/>{why}"]')
     for (a, b), n in sorted(counts.items()):
         d = deferred_counts.get((a, b), 0)
-        label = f"{n}" + (f" · 其中 {d} 条在函数体里" if d else "")
+        label = f"{n}" + (f" · 其中 {d} 条边来自函数体 import" if d else "")
         arrow = "-.->" if f"{a} -> {b}" in violations else "-->"
         lines.append(f"  {a} {arrow}|{label}| {b}")
     return "\n".join(lines)
@@ -775,7 +846,7 @@ def _module_path(module: str) -> pathlib.Path:
 
 
 def handoff_is_live_from(path: pathlib.Path, via: str, calls: str) -> bool:
-    """from 文件里有 `def via`，且函数体点名 `calls`。import 在不算数。"""
+    """from 文件里有 `def via`，且自身函数体含对 `calls` 的 ast.Call。"""
     if not path.is_file():
         return False
     try:
@@ -784,11 +855,17 @@ def handoff_is_live_from(path: pathlib.Path, via: str, calls: str) -> bool:
         return False
     for n in ast.walk(tree):
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == via:
-            for child in ast.walk(n):
-                if isinstance(child, ast.Name) and child.id == calls:
+            pending: List[ast.AST] = list(n.body)
+            while pending:
+                child = pending.pop()
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                    continue
+                if isinstance(child, ast.Call) and (
+                    isinstance(child.func, ast.Name) and child.func.id == calls
+                    or isinstance(child.func, ast.Attribute) and child.func.attr == calls
+                ):
                     return True
-                if isinstance(child, ast.Attribute) and child.attr == calls:
-                    return True
+                pending.extend(ast.iter_child_nodes(child))
     return False
 
 
@@ -958,12 +1035,12 @@ def render_repo_doc(
 
 
 def render_doc(g: Graph, manifest: dict) -> str:
-    cycles = cross_component_cycles(g, manifest)
+    cycles = cyclic_edges(g, manifest)
     violations = layer_violations(g, manifest)
     svc_v = services_violations(g, manifest)
     orph = orphans(g, manifest)
     base = manifest.get("baseline", {})
-    deferred = sum(1 for e in g.edges if e.deferred)
+    deferred = deferred_count(g)
     body = [
         "# SlideRule V6.2 架构图（自动生成）",
         "",
@@ -983,10 +1060,14 @@ def render_doc(g: Graph, manifest: dict) -> str:
         "## 此刻的事实（由代码算出，不是手写）",
         "",
         f"- 扫描文件 **{g.files_scanned}** 个，模块 **{len(g.modules)}** 个",
-        f"- 内部依赖边 **{len(g.edges)}** 条，其中 **{deferred}** 条写在函数体里"
-        f"（{deferred * 100 // max(1, len(g.edges))}%；基线 {base.get('deferred', deferred)}，只许变少）",
+        f"- 内部依赖边 **{len(g.edges)}** 条（包含普通包初始化依赖）",
+        f"- 内部 import 语句 **{len({(e.src, e.line, e.column) for e in g.edges})}** 条，"
+        f"其中函数体内 **{deferred}** 条语句（基线 {base.get('deferred', deferred)}，只许变少）",
         f"- 未声明的跨包依赖 **{len(violations)}** 条（基线 {len(base.get('violations', []))} 条）",
-        f"- 模块级循环依赖 **{len(cycles)}** 个（基线 {len(base.get('cycles', []))} 个）",
+        f"- 未豁免的模块级成环边 **{len(cycles)}** 条（完整 SCC，"
+        f"基线 {len(base.get('cyclic_edges', []))} 条）",
+        f"- component 级成环边 **{len(component_cyclic_edges(g, manifest))}** 条"
+        f"（完整 SCC，基线 {len(base.get('component_cyclic_edges', []))} 条）",
         f"- services 内部越层依赖 **{len(svc_v)}** 条"
         f"（基线 {len(base.get('services_violations', []))} 条）",
         f"- 没人 import 的模块 **{len(orph)}** 个"
@@ -1048,14 +1129,15 @@ def render_doc(g: Graph, manifest: dict) -> str:
         "",
         "## 循环依赖",
         "",
-        "Rust 里这一类根本编译不出来；Python 得自己数。**只许变少。**",
+        "下面列出完整 SCC 中每一条成环边，扣除清单明确允许的组件内部 SCC。"
+        "**只许变少。** DFS 见证路径不作为基线。",
         "",
     ]
     if cycles:
         for c in cycles:
             body.append(f"- `{c}`")
     else:
-        body.append("（当前没有循环依赖）")
+        body.append("（当前没有未豁免的成环边）")
     body += [
         "",
         "## 未声明的跨包依赖",
@@ -1074,11 +1156,7 @@ def render_doc(g: Graph, manifest: dict) -> str:
             a, b = owner.get(e.src), owner.get(e.dst)
             if a and b and a != b:
                 cedges[(a, b)] = cedges.get((a, b), 0) + 1
-        cyc = set()
-        for c in component_cycles(manifest, g):
-            m = c.split(" -> ")
-            for i in range(len(m) - 1):
-                cyc.add((m[i], m[i + 1]))
+        cyc = {tuple(edge.split(" -> ")) for edge in component_cyclic_edges(g, manifest)}
         body += [
             "",
             "## crate 级：component 依赖图",
@@ -1177,6 +1255,155 @@ def render_doc(g: Graph, manifest: dict) -> str:
     return "\n".join(body)
 
 
+def ownership_errors(g: Graph, manifest: dict) -> List[str]:
+    errors: List[str] = []
+    for section, actual in (
+        ("component", g.modules),
+        ("services_layer", {m for m in g.modules if m.startswith("services.")}),
+    ):
+        owners: Dict[str, List[str]] = {}
+        for name, spec in manifest.get(section, {}).items():
+            for module in spec.get("modules", []):
+                owners.setdefault(module, []).append(name)
+        for module in sorted(actual - set(owners)):
+            errors.append(f"{section}: unassigned module {module}")
+        for module in sorted(set(owners) - actual):
+            errors.append(f"{section}: stale module {module}")
+        for module, names in sorted(owners.items()):
+            if len(names) != 1:
+                errors.append(f"{section}: duplicate ownership {module}: {names}")
+    return errors
+
+
+def _ratchet_errors(name: str, actual: Iterable[str], baseline: dict) -> List[str]:
+    if name not in baseline:
+        return [f"baseline.{name}: missing baseline"]
+    now, previous = set(actual), set(baseline[name])
+    return ([f"baseline.{name}: new {item}" for item in sorted(now - previous)]
+            + [f"baseline.{name}: stale {item}" for item in sorted(previous - now)])
+
+
+def document_errors(g: Graph, manifest: dict) -> List[str]:
+    errors: List[str] = []
+    for path, render in (
+        (DIAGRAM, lambda: render_doc(g, manifest)),
+        (REPO_DIAGRAM, lambda: render_repo_doc(g, manifest)),
+    ):
+        if not path.is_file():
+            errors.append(f"Missing generated diagram: {path}")
+        elif path.read_text(encoding="utf-8").replace("\r\n", "\n") != render():
+            errors.append(f"Generated diagram is stale: {path}; run arch:emit")
+    return errors
+
+
+def validate_graph(g: Graph, manifest: dict, *, check_documents: bool = True) -> List[str]:
+    """The shared CLI/pytest gate. Diagnostic DFS witnesses are not ratchets."""
+    errors = ownership_errors(g, manifest)
+    layers = manifest.get("layer", {})
+    roots = {_pkg_of(module) for module in g.modules}
+    for name in sorted(roots - set(layers)):
+        errors.append(f"layer: undeclared package {name}")
+    for name in sorted(set(layers) - roots):
+        errors.append(f"layer: stale package {name}")
+    for section in ("layer", "services_layer", "component"):
+        specs = manifest.get(section, {})
+        if not specs:
+            errors.append(f"{section}: empty declarations")
+        for name, spec in specs.items():
+            for dependency in spec.get("may_depend_on", []):
+                if dependency not in specs or dependency == name:
+                    errors.append(f"{section}: invalid dependency {name} -> {dependency}")
+                elif section == "services_layer" and (
+                    specs[dependency].get("rank", 99) >= spec.get("rank", 99)
+                ):
+                    errors.append(f"{section}: upward declaration {name} -> {dependency}")
+
+    components = manifest.get("component", {})
+    owner = component_of(manifest)
+    real_pairs = {(owner.get(e.src), owner.get(e.dst)) for e in g.edges}
+    whys: Set[str] = set()
+    opted = []
+    for name, spec in components.items():
+        why = str(spec.get("why") or "").strip()
+        if len(why) < 15 or why in whys:
+            errors.append(f"component.{name}: missing or repeated rationale")
+        whys.add(why)
+        members = spec.get("modules", [])
+        if not members or len(members) > max(1, len(g.modules) // 4):
+            errors.append(f"component.{name}: invalid component size {len(members)}")
+        if spec.get("allow_internal_cycles"):
+            opted.append(name)
+            if len(members) > 6:
+                errors.append(f"component.{name}: cyclic component exceeds six modules")
+        for dependency in spec.get("may_depend_on", []):
+            if (name, dependency) not in real_pairs:
+                errors.append(f"component: stale dependency {name} -> {dependency}")
+    if len(opted) > 2:
+        errors.append(f"component: too many cycle exemptions {opted}")
+    errors.extend(f"component: satellite {item}" for item in satellite_components(g, manifest))
+
+    util = set(manifest.get("services_layer", {}).get("util", {}).get("modules", []))
+    errors.extend(f"services_layer.util: non-leaf {e.key()}" for e in g.edges
+                  if e.src in util and e.dst.startswith("services.") and e.src != e.dst)
+    baseline = manifest.get("baseline", {})
+    for name, actual in (
+        ("violations", layer_violations(g, manifest)),
+        ("services_violations", services_violations(g, manifest)),
+        ("component_violations", component_violations(g, manifest)),
+        ("cyclic_edges", cyclic_edges(g, manifest)),
+        ("component_cyclic_edges", component_cyclic_edges(g, manifest)),
+        ("orphans", orphans(g, manifest)),
+    ):
+        errors.extend(_ratchet_errors(name, actual, baseline))
+    if baseline.get("deferred") != deferred_count(g):
+        errors.append(f"baseline.deferred: expected {baseline.get('deferred')}, actual {deferred_count(g)}")
+
+    reasons = orphan_reason_gaps(g, manifest)
+    for kind, items in zip(("missing", "stale", "unknown"), reasons):
+        errors.extend(f"orphan_reasons: {kind} {item}" for item in items)
+    patterns = manifest.get("entrypoints", {}).get("patterns", [])
+    if not patterns:
+        errors.append("entrypoints: empty declarations")
+    incoming = {edge.dst for edge in g.edges}
+    for pattern in patterns:
+        covered = {m for m in g.modules if fnmatch.fnmatch(m, pattern)}
+        if not covered or pattern in {f"{root}.*" for root in roots if root != "scripts"}:
+            errors.append(f"entrypoints: invalid pattern {pattern}")
+        if not pattern.startswith("scripts."):
+            errors.extend(f"entrypoints: imported module {m}" for m in sorted(covered & incoming - {"app"}))
+    accepted = accepted_edges(manifest)
+    if len(accepted) > 5:
+        errors.append("accepted: more than five exceptions")
+    for edge, why in accepted.items():
+        if len(why) < 30 or edge not in {e.key() for e in g.edges}:
+            errors.append(f"accepted: invalid or stale exception {edge}")
+
+    inventory = gate_inventory()
+    codes = {code for row in inventory for code in row["codes"]}
+    table = manifest.get("gate_codes", {})
+    errors.extend(f"gate_codes: undeclared {code}" for code in sorted(codes - set(table)))
+    errors.extend(f"gate_codes: stale {code}" for code in sorted(set(table) - codes))
+    watched = {str(value).strip() for value in table.values() if str(value or "").strip()}
+    recorded = {gate for row in inventory for gate in row["gates"]}
+    errors.extend(f"gate_codes: unrecorded gate {gate}" for gate in sorted(watched - recorded))
+    unwatched = len([code for code in codes if code in table and not str(table[code] or "").strip()])
+    if baseline.get("gate_codes_without_health") != unwatched:
+        errors.append(f"baseline.gate_codes_without_health: expected {baseline.get('gate_codes_without_health')}, actual {unwatched}")
+
+    missing, stale = cross_language_gaps(manifest)
+    errors.extend(f"cross_language_edge: missing adapter {name}" for name in missing)
+    errors.extend(f"cross_language_edge: stale adapter {name}" for name in stale)
+    for edge in declared_cross_language_edges(manifest):
+        expected = f"services.web_aigc_{str(edge.get('adapter', '')).replace('-', '_')}_adapter"
+        if edge.get("to") != expected or expected not in g.modules:
+            errors.append(f"cross_language_edge: invalid destination {edge.get('to')}")
+    if not handoff_is_live(manifest):
+        errors.append("spine.handoff: no actual factory call")
+    if check_documents:
+        errors.extend(document_errors(g, manifest))
+    return sorted(set(errors))
+
+
 # ── CLI ─────────────────────────────────────────────────────────────────────
 def _freeze(g: Graph, manifest: dict) -> None:
 
@@ -1186,22 +1413,41 @@ def _freeze(g: Graph, manifest: dict) -> None:
     sv = services_violations(g, manifest)
 
     def block(name: str, items: Iterable[str]) -> str:
-        rows = "".join(f'  "{i}",\n' for i in items)
+        rows = "".join(f"  {json.dumps(item, ensure_ascii=False)},\n" for item in items)
         return f"{name} = [\n{rows}]"
 
-    text = re.sub(r"violations = \[[^\]]*\]", block("violations", v), text, flags=re.S)
-    text = re.sub(r"cycles = \[[^\]]*\]", block("cycles", c), text, flags=re.S)
-    text = re.sub(
-        r"services_violations = \[[^\]]*\]", block("services_violations", sv), text, flags=re.S
-    )
+    parsed = tomllib.loads(text)
+    section = re.search(r"(?m)^\[baseline\][ \t]*(?:#[^\n]*)?\n", text)
+    if section is None or not isinstance(parsed.get("baseline"), dict):
+        raise ValueError("Cannot freeze: missing [baseline] table")
+    following = re.search(r"(?m)^\[", text[section.end():])
+    end = section.end() + following.start() if following else len(text)
+    body = text[section.end():end]
+    updates = {"violations": v, "cycles": c, "services_violations": sv,
+               "cyclic_edges": cyclic_edges(g, manifest)}
+    for key, values in updates.items():
+        if key not in parsed["baseline"] or not isinstance(parsed["baseline"][key], list):
+            raise ValueError(f"Cannot freeze: baseline.{key} must be an existing array")
+        body, count = re.subn(
+            rf"(?m)^{re.escape(key)}[ \t]*=[ \t]*\[[^\]]*\]",
+            lambda _match: block(key, values), body,
+        )
+        if count != 1:
+            raise ValueError(f"Cannot freeze: ambiguous baseline.{key}")
+    text = text[:section.end()] + body + text[end:]
+    rewritten = tomllib.loads(text)
+    expected = {**parsed, "baseline": {**parsed["baseline"], **updates}}
+    if rewritten != expected:
+        raise ValueError("Cannot freeze: unrelated TOML values changed")
     MANIFEST.write_text(text, encoding="utf-8")
-    print(f"基线已写入：违规 {len(v)} 条，环 {len(c)} 个，services 越层 {len(sv)} 条")
+    print(f"基线已写入：违规 {len(v)} 条，成环边 {len(updates['cyclic_edges'])} 条，"
+          f"DFS 诊断路径 {len(c)} 条，services 越层 {len(sv)} 条")
     # ⚠ 说清它**没**覆盖什么。默认全覆盖会让"往基线里加东西"变得太顺手，
     #   而那正是仓里明写着不该出现在日常流程里的动作（架构边界那一节）。
     #   不说清则更糟：下一个人以为 --freeze 是全量的，剩下三条棘轮悄悄没跟上。
     print(
-        "⚠ 未覆盖：component_violations / component_cycles / orphans —— "
-        "这三条要手改 architecture.toml，逼你逐条写清为什么接受这笔欠账"
+        "⚠ 未覆盖：component_violations / component_cycles / component_cyclic_edges / orphans —— "
+        "这些条目要手改 architecture.toml，逼你逐条写清为什么接受这笔欠账"
     )
 
 
@@ -1222,21 +1468,33 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--report", action="store_true", help="人看的摘要")
     args = ap.parse_args(argv)
 
-    g = build_graph()
+    try:
+        g = build_graph()
+    except GraphScanError as exc:
+        print(f"[arch_graph] {exc}", file=sys.stderr)
+        return 1
     manifest = load_manifest()
-    v, c = layer_violations(g, manifest), cross_component_cycles(g, manifest)
+    ownership = ownership_errors(g, manifest)
+    if ownership:
+        for error in ownership:
+            print(f"[arch_graph] {error}", file=sys.stderr)
+        return 1
+    v, c = layer_violations(g, manifest), cyclic_edges(g, manifest)
     sv = services_violations(g, manifest)
     cv = component_violations(g, manifest)
-    cc = component_cycles(manifest, g)
+    cc = component_cyclic_edges(g, manifest)
     orph = orphans(g, manifest)
     sat = satellite_components(g, manifest)
     base = manifest.get("baseline", {})
 
     if args.emit:
+        # Render both first: a failing TS scan must not leave half a generation.
+        python_doc = render_doc(g, manifest)
+        repo_doc = render_repo_doc(g, manifest)
         DIAGRAM.parent.mkdir(parents=True, exist_ok=True)
-        DIAGRAM.write_text(render_doc(g, manifest), encoding="utf-8")
+        DIAGRAM.write_text(python_doc, encoding="utf-8")
         print(f"已生成 {DIAGRAM.relative_to(REPO)}")
-        REPO_DIAGRAM.write_text(render_repo_doc(g, manifest), encoding="utf-8")
+        REPO_DIAGRAM.write_text(repo_doc, encoding="utf-8")
         print(f"已生成 {REPO_DIAGRAM.relative_to(REPO)}")
         return 0
     if args.freeze:
@@ -1244,16 +1502,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
     if args.report or not args.check:
         print(f"模块 {len(g.modules)}  边 {len(g.edges)}  "
-              f"函数体内 {deferred_count(g)}（基线 {base.get('deferred', '?')}）")
+              f"函数体 import 语句 {deferred_count(g)} 条（基线 {base.get('deferred', '?')}）")
         print(f"未声明跨包依赖 {len(v)}（基线 {len(base.get('violations', []))}）")
         for x in v:
             print(f"   {x}")
-        print(f"跨 component 循环依赖 {len(c)}（基线 {len(base.get('cycles', []))}）")
+        print(f"未豁免的模块级 SCC 成环边 {len(c)} 条（基线 {len(base.get('cyclic_edges', []))}）")
         for x in c:
             print(f"   {x}")
-        _inside = [x for x in find_cycles(g) if x not in c]
+        _inside = sorted(set(find_cycles(g)) - set(cross_component_cycles(g, manifest)))
         if _inside:
-            print(f"component 内部互指 {len(_inside)}（同一个「crate」，允许）")
+            print(f"已豁免的组件内部 DFS 见证路径 {len(_inside)} 条（仅作诊断）")
             for x in _inside:
                 print(f"   {x}")
         print(f"services 内部越层 {len(sv)}（基线 {len(base.get('services_violations', []))}）")
@@ -1262,7 +1520,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"未声明的组间依赖 {len(cv)}（基线 {len(base.get('component_violations', []))}）")
         for x in cv[:10]:
             print(f"   {x}")
-        print(f"组间循环依赖 {len(cc)}（基线 {len(base.get('component_cycles', []))}）")
+        print(f"component 级 SCC 成环边 {len(cc)} 条（基线 {len(base.get('component_cyclic_edges', []))}）")
         for x in cc[:10]:
             print(f"   {x}")
         print(f"没人 import 的模块 {len(orph)}（基线 {len(base.get('orphans', []))}）"
@@ -1273,73 +1531,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         if not args.check:
             return 0
 
-    new_v = sorted(set(v) - set(base.get("violations", [])))
-    new_c = sorted(set(c) - set(base.get("cycles", [])))
-    new_s = sorted(set(sv) - set(base.get("services_violations", [])))
-    new_cv = sorted(set(cv) - set(base.get("component_violations", [])))
-    new_cc = sorted(set(cc) - set(base.get("component_cycles", [])))
-    new_o = sorted(set(orph) - set(base.get("orphans", [])))
-    if new_v or new_c or new_s or new_cv or new_cc or new_o or sat:
-        for x in new_v:
-            print(f"❌ 新增未声明依赖：{x}")
-        for x in new_c:
-            print(f"❌ 新增循环依赖：{x}")
-        for x in new_s:
-            print(f"❌ services 内部新增越层依赖：{x}")
-        for x in new_cv:
-            print(f"❌ 新增未声明的组间依赖：{x}")
-        for x in new_cc:
-            print(f"❌ 新增组间循环依赖：{x}")
-        for x in sat:
-            print(f"❌ 卫星组：{x} —— 那不是两个 crate，是一个。合并掉，"
-                  f"或者说清为什么它该独立（见 satellite_components 文档）")
-        for x in new_o:
-            print(f"❌ 新增没人 import 的模块：{x}"
-                  f"（接上它，或在 architecture.toml 的 [entrypoints] 里说清为什么）")
+    try:
+        errors = validate_graph(g, manifest)
+    except (GraphScanError, OSError, RuntimeError, ValueError) as exc:
+        print(f"[arch_graph] validation failed: {exc}", file=sys.stderr)
         return 1
-    # 新增了拦截理由却没说清谁体检它 → 红（2026-09-05）。
-    # 逼着加闸的人回答一句「它坏成一直响的时候，谁会发现」——那正是
-    # 证据 0/6 躲过几个月的那个形状。
-    und = undeclared_gate_codes(manifest)
-    if und:
-        for x in und:
-            print(
-                f"❌ 新增拦截理由 `{x}` 没在 architecture.toml 的 [gate_codes] 里声明。"
-                f"写上它归哪道体检的闸（见 services/gate_health.py）；"
-                f"确实不该体检就写空串并说明理由。"
-            )
-        return 1
-    # 欠账棘轮：明说不体检的那些只许变少
-    _unwatched = gate_codes_without_health(manifest)
-    _base_unwatched = base.get("gate_codes_without_health")
-    if _base_unwatched is not None and len(_unwatched) > int(_base_unwatched):
-        print(
-            f"❌ 不体检的拦截理由变多了（现 {len(_unwatched)}，基线 {_base_unwatched}）："
-            f"{_unwatched}。新加的闸要么进体检，要么在提交说明里讲清为什么它没有"
-            f"「一直说同一句话」这种退化形态。"
-        )
-        return 1
-
-    missing, stale = cross_language_gaps(manifest)
-    if missing or stale:
-        for x in missing:
-            print(f"❌ server/index.ts 接了 adapter `{x}` 但 architecture.toml 没声明跨语言边")
-        for x in stale:
-            print(f"❌ architecture.toml 声明了 adapter `{x}` 但 Node 侧已经不接了")
-        return 1
-    if (manifest.get("spine") or {}).get("handoff") and not handoff_is_live(manifest):
-        print("❌ spine.handoff 声明了，但 from 文件里找不到 via 函数体对 calls 的调用")
-        return 1
-    now_d = deferred_count(g)
-    base_d = base.get("deferred")
-    if base_d is not None and now_d > int(base_d):
-        print(f"❌ 函数体 import 新增了 {now_d - int(base_d)} 条（现 {now_d}，基线 {base_d}）。新边顶层 import。")
-        return 1
-    if base_d is not None and now_d < int(base_d):
-        print(f"❌ 函数体 import 已经变少（现 {now_d}），从 baseline.deferred 改成 {now_d}")
-        return 1
-    print("✅ 没有新增的未声明依赖或循环")
-    return 0
+    for error in errors:
+        print(f"[arch_graph] {error}")
+    if not errors:
+        print("Architecture declarations, ratchets and generated diagrams are synchronized.")
+    return int(bool(errors))
 
 
 
@@ -1416,10 +1617,6 @@ def services_violations(g: "Graph", manifest: dict) -> List[str]:
     return sorted(bad)
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
-
-
 #: 孤儿归类的合法取值。新增一类要同时在 `architecture.toml` 的 `[orphan_reasons]`
 #: 注释里写清含义——一个没有定义的类别名等于没归类。
 ORPHAN_CATEGORIES = frozenset({
@@ -1452,3 +1649,7 @@ def orphan_reason_gaps(g: "Graph", manifest: dict) -> Tuple[List[str], List[str]
         f"{m} = {c}" for m, c in reasons.items() if c not in ORPHAN_CATEGORIES
     )
     return missing, stale, unknown
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

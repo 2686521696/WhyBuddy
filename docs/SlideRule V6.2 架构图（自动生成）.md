@@ -16,9 +16,11 @@
 ## 此刻的事实（由代码算出，不是手写）
 
 - 扫描文件 **303** 个，模块 **303** 个
-- 内部依赖边 **889** 条，其中 **476** 条写在函数体里（53%；基线 476，只许变少）
+- 内部依赖边 **976** 条（包含普通包初始化依赖）
+- 内部 import 语句 **888** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
-- 模块级循环依赖 **0** 个（基线 0 个）
+- 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
+- component 级成环边 **0** 条（完整 SCC，基线 0 条）
 - services 内部越层依赖 **0** 条（基线 0 条）
 - 没人 import 的模块 **54** 个（基线 54 个）—— ⚠ **不是待删清单**，其中 4 个是跨语言入口（见全仓图，不是没人用）
 
@@ -51,8 +53,8 @@ flowchart TB
   core["core<br/>62 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
   flow["flow<br/>30 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
   core -->|143| util
-  flow -->|107| core
-  flow -->|116| util
+  flow -->|106| core
+  flow -->|117| util
 ```
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
@@ -73,8 +75,8 @@ flowchart TB
   app -->|1| config
   app -->|1| models
   app -->|12| routes
-  app -->|12 · 其中 3 条在函数体里| services
-  app -->|1| sliderule_llm
+  app -->|12 · 其中 3 条边来自函数体 import| services
+  app -->|2| sliderule_llm
   app -->|1| stdio_utf8
   complete_migration -->|1| models
   complete_migration -->|3| services
@@ -83,18 +85,18 @@ flowchart TB
   routes -->|9| config
   routes -->|5| middlewares
   routes -->|3| models
-  routes -->|129 · 其中 78 条在函数体里| services
-  routes -->|15 · 其中 8 条在函数体里| sliderule_llm
+  routes -->|131 · 其中 77 条边来自函数体 import| services
+  routes -->|30 · 其中 16 条边来自函数体 import| sliderule_llm
   scripts -->|3| app
-  scripts -->|2 · 其中 2 条在函数体里| config
-  scripts -->|1 · 其中 1 条在函数体里| models
-  scripts -->|58 · 其中 41 条在函数体里| services
-  scripts -->|8 · 其中 5 条在函数体里| sliderule_llm
+  scripts -->|2 · 其中 2 条边来自函数体 import| config
+  scripts -->|1 · 其中 1 条边来自函数体 import| models
+  scripts -->|58 · 其中 41 条边来自函数体 import| services
+  scripts -->|16 · 其中 10 条边来自函数体 import| sliderule_llm
   scripts -->|2| stdio_utf8
-  services -->|15 · 其中 7 条在函数体里| config
-  services -->|31 · 其中 1 条在函数体里| models
-  services -->|62 · 其中 45 条在函数体里| sliderule_llm
-  sliderule_llm -->|2 · 其中 2 条在函数体里| config
+  services -->|15 · 其中 7 条边来自函数体 import| config
+  services -->|31 · 其中 1 条边来自函数体 import| models
+  services -->|124 · 其中 90 条边来自函数体 import| sliderule_llm
+  sliderule_llm -->|2 · 其中 2 条边来自函数体 import| config
 ```
 
 ## 编排环（从活路径生成）
@@ -115,17 +117,17 @@ flowchart LR
   services_spec_first_pipeline["services.spec_first_pipeline<br/>spec-first 七步"]
   services_drive_full_factory -->|1| services_v5_full_driver
   services_rehearsal_control -->|handoff 1| services_drive_full_factory
-  services_rehearsal_control -->|2| services_v5_full_driver
+  services_rehearsal_control -->|1| services_v5_full_driver
   services_v5_capability_executor -->|5| services_spec_first_pipeline
-  services_v5_full_driver -->|3| services_spec_first_pipeline
+  services_v5_full_driver -->|2| services_spec_first_pipeline
   services_v5_full_driver -->|5| services_v5_capability_executor
 ```
 
 ## 循环依赖
 
-Rust 里这一类根本编译不出来；Python 得自己数。**只许变少。**
+下面列出完整 SCC 中每一条成环边，扣除清单明确允许的组件内部 SCC。**只许变少。** DFS 见证路径不作为基线。
 
-（当前没有循环依赖）
+（当前没有未豁免的成环边）
 
 ## 未声明的跨包依赖
 
@@ -135,7 +137,7 @@ Rust 里这一类根本编译不出来；Python 得自己数。**只许变少。
 
 抄 grok 的 Cargo.toml——边写在 crate 上，由编译器焊死。
 现算数字见 `docs/grok-build 架构图（自动生成）.md`。
-我们 24 个 component、88 条边，由 `architecture.toml` 声明、判据强制。
+我们 24 个 component、89 条边，由 `architecture.toml` 声明、判据强制。
 **红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。
 
 ```mermaid
@@ -146,22 +148,22 @@ flowchart LR
   audit["audit<br/>3"]
   blueprint["blueprint<br/>19"]
   capability_engine["capability_engine<br/>2"]
-  control["control<br/>1"]
+  control["control<br/>8"]
   diagnostics["diagnostics<br/>6"]
   drive["drive<br/>9"]
   entrypoint["entrypoint<br/>1"]
   evidence["evidence<br/>11"]
   http_routes["http_routes<br/>8"]
   identity["identity<br/>7"]
-  llm_gateway["llm_gateway<br/>16"]
+  llm_gateway["llm_gateway<br/>18"]
   model_core["model_core<br/>27"]
-  observability["observability<br/>5"]
-  ops_scripts["ops_scripts<br/>37"]
+  observability["observability<br/>7"]
+  ops_scripts["ops_scripts<br/>40"]
   permission["permission<br/>8"]
   persist["persist<br/>2"]
   platform["platform<br/>23"]
   run_control["run_control<br/>4"]
-  spec_first["spec_first<br/>38"]
+  spec_first["spec_first<br/>41"]
   task_exec["task_exec<br/>19"]
   web_aigc["web_aigc<br/>16"]
   agent_loop -->|1| identity
@@ -170,15 +172,16 @@ flowchart LR
   app_store -->|2| platform
   blueprint -->|2| platform
   capability_engine -->|5| evidence
-  capability_engine -->|1| llm_gateway
+  capability_engine -->|2| llm_gateway
   capability_engine -->|2| platform
   capability_engine -->|1| spec_first
   control -->|handoff 7| drive
   control -->|1| evidence
-  control -->|3| llm_gateway
-  control -->|4| model_core
+  control -->|1| identity
+  control -->|7| llm_gateway
+  control -->|3| model_core
   control -->|6| platform
-  control -->|3| spec_first
+  control -->|4| spec_first
   diagnostics -->|1| a2a
   diagnostics -->|1| evidence
   diagnostics -->|2| model_core
@@ -186,23 +189,23 @@ flowchart LR
   diagnostics -->|1| web_aigc
   drive -->|2| capability_engine
   drive -->|1| evidence
-  drive -->|1| identity
+  drive -->|2| identity
   drive -->|18| model_core
-  drive -->|2| observability
+  drive -->|3| observability
   drive -->|5| persist
   drive -->|12| platform
-  drive -->|1| run_control
+  drive -->|2| run_control
   drive -->|2| spec_first
   entrypoint -->|2| agent_loop
   entrypoint -->|2| drive
   entrypoint -->|7| http_routes
-  entrypoint -->|1| llm_gateway
+  entrypoint -->|2| llm_gateway
   entrypoint -->|4| model_core
   entrypoint -->|1| permission
   entrypoint -->|4| platform
   entrypoint -->|4| spec_first
   entrypoint -->|3| task_exec
-  evidence -->|7| llm_gateway
+  evidence -->|14| llm_gateway
   evidence -->|9| platform
   http_routes -->|25| app_store
   http_routes -->|3| audit
@@ -212,32 +215,32 @@ flowchart LR
   http_routes -->|1| diagnostics
   http_routes -->|11| drive
   http_routes -->|5| evidence
-  http_routes -->|10| identity
-  http_routes -->|22| llm_gateway
-  http_routes -->|23| model_core
-  http_routes -->|2| observability
+  http_routes -->|11| identity
+  http_routes -->|37| llm_gateway
+  http_routes -->|24| model_core
+  http_routes -->|3| observability
   http_routes -->|3| persist
   http_routes -->|14| platform
-  http_routes -->|9| spec_first
+  http_routes -->|10| spec_first
   http_routes -->|2| task_exec
   identity -->|10| platform
   llm_gateway -->|2| platform
   model_core -->|2| app_store
   model_core -->|5| evidence
-  model_core -->|18| llm_gateway
-  model_core -->|6| observability
+  model_core -->|35| llm_gateway
+  model_core -->|8| observability
   model_core -->|2| persist
   model_core -->|56| platform
   model_core -->|11| run_control
-  model_core -->|21| spec_first
-  observability -->|2| llm_gateway
+  model_core -->|22| spec_first
+  observability -->|4| llm_gateway
   observability -->|1| persist
   observability -->|3| platform
   ops_scripts -->|10| app_store
   ops_scripts -->|3| entrypoint
   ops_scripts -->|3| evidence
   ops_scripts -->|1| identity
-  ops_scripts -->|8| llm_gateway
+  ops_scripts -->|16| llm_gateway
   ops_scripts -->|16| model_core
   ops_scripts -->|9| platform
   ops_scripts -->|24| spec_first
@@ -246,10 +249,10 @@ flowchart LR
   persist -->|10| platform
   run_control -->|1| platform
   spec_first -->|3| app_store
-  spec_first -->|35| llm_gateway
+  spec_first -->|62| llm_gateway
   spec_first -->|3| observability
-  spec_first -->|55| platform
-  spec_first -->|2| run_control
+  spec_first -->|56| platform
+  spec_first -->|1| run_control
   task_exec -->|2| evidence
   task_exec -->|4| platform
 ```

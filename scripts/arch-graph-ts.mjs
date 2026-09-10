@@ -62,7 +62,7 @@
  */
 
 import ts from "typescript";
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -199,7 +199,18 @@ export function buildGraph(root = REPO) {
   const edges = [];
   for (const rel of files) {
     const text = readFileSync(join(root, rel), "utf8");
-    const sf = ts.createSourceFile(rel, text, ts.ScriptTarget.ESNext, true, ts.ScriptKind.TSX);
+    // TSX treats a valid TS generic arrow as JSX and can swallow later imports.
+    const kind = rel.endsWith(".tsx") ? ts.ScriptKind.TSX
+      : rel.endsWith(".jsx") ? ts.ScriptKind.JSX
+      : /\.[cm]?js$/.test(rel) ? ts.ScriptKind.JS : ts.ScriptKind.TS;
+    const sf = ts.createSourceFile(rel, text, ts.ScriptTarget.ESNext, true, kind);
+    if (sf.parseDiagnostics.length) {
+      const errors = sf.parseDiagnostics.map((diagnostic) => {
+        const { line, character } = sf.getLineAndCharacterOfPosition(diagnostic.start ?? 0);
+        return `${rel}:${line + 1}:${character + 1}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")}`;
+      });
+      throw new Error("Incomplete architecture scan:\n" + errors.join("\n"));
+    }
     const from = moduleId(rel);
     /** @param {ts.Node} n @param {boolean} inFn */
     const visit = (n, inFn) => {
@@ -318,57 +329,80 @@ export function staleLayerDeclarations(g, manifest) {
 
 // ── 环 ──────────────────────────────────────────────────────────────────────
 
-/** 有向图找环，返回规范化后的环（最小元素起始，确定性）。 */
-function cyclesOf(nodes, outEdges) {
-  const color = new Map();
-  const found = new Set();
+/** Every edge within a strongly connected component is cyclic. A DFS back-edge
+ * list misses new chords inside an existing cycle, so it cannot enforce a ratchet. */
+function cyclicEdgesOf(nodes, outEdges, exempt = (_members) => false) {
+  const indexes = new Map();
+  const low = new Map();
   const stack = [];
-  function walk(u) {
-    color.set(u, 1);
+  const stacked = new Set();
+  const regions = [];
+  let next = 0;
+  function visit(u) {
+    indexes.set(u, next);
+    low.set(u, next++);
     stack.push(u);
+    stacked.add(u);
     for (const v of [...(outEdges.get(u) ?? [])].sort()) {
-      const c = color.get(v) ?? 0;
-      if (c === 1) {
-        const cyc = stack.slice(stack.indexOf(v));
-        let i = 0;
-        for (let k = 1; k < cyc.length; k++) if (cyc[k] < cyc[i]) i = k;
-        const rot = [...cyc.slice(i), ...cyc.slice(0, i)];
-        found.add([...rot, rot[0]].join(" -> "));
-      } else if (c === 0) walk(v);
+      if (!indexes.has(v)) {
+        visit(v);
+        low.set(u, Math.min(low.get(u), low.get(v)));
+      } else if (stacked.has(v)) {
+        low.set(u, Math.min(low.get(u), indexes.get(v)));
+      }
     }
-    stack.pop();
-    color.set(u, 2);
+    if (low.get(u) === indexes.get(u)) {
+      const members = [];
+      let v;
+      do {
+        v = stack.pop();
+        stacked.delete(v);
+        members.push(v);
+      } while (v !== u);
+      regions.push(members);
+    }
   }
-  for (const n of [...nodes].sort()) if ((color.get(n) ?? 0) === 0) walk(n);
-  return [...found].sort();
+  for (const n of [...nodes].sort()) if (!indexes.has(n)) visit(n);
+  const found = [];
+  for (const members of regions) {
+    if (exempt(members)) continue;
+    const inside = new Set(members);
+    for (const u of members) {
+      for (const v of outEdges.get(u) ?? []) {
+        if (inside.has(v)) found.push(`${u} -> ${v}`);
+      }
+    }
+  }
+  return found.sort();
 }
 
-/** 模块级环。 */
-export function findCycles(g) {
+function moduleEdges(g) {
   const out = new Map();
   for (const e of g.edges) {
     if (!out.has(e.src)) out.set(e.src, new Set());
     out.get(e.src).add(e.dst);
   }
-  return cyclesOf(g.modules, out);
+  return out;
 }
 
-/** 组间环。放行条件与 Python 侧同口径：整个环落在同一个 component **且**
+export function findCyclicEdges(g) {
+  return cyclicEdgesOf(g.modules, moduleEdges(g));
+}
+
+/** 模块循环边。放行条件与 Python 侧同口径：整个 SCC 落在同一个 component **且**
  *  那个 component 明写了 allowInternalCycles。 */
-export function crossComponentCycles(g, manifest) {
+export function crossComponentCyclicEdges(g, manifest) {
   const owner = componentOf(manifest);
   const opted = new Set(
     Object.entries(manifest.component ?? {}).filter(([, c]) => c.allowInternalCycles).map(([n]) => n)
   );
-  return findCycles(g).filter((c) => {
-    const members = c.split(" -> ").slice(0, -1);
+  return cyclicEdgesOf(g.modules, moduleEdges(g), (members) => {
     const owners = new Set(members.map(owner));
-    return !(owners.size === 1 && !owners.has(null) && opted.has([...owners][0]));
+    return owners.size === 1 && !owners.has(null) && opted.has([...owners][0]);
   });
 }
 
-export function componentCycles(g, manifest) {
-  const owner = componentOf(manifest);
+function projectedCyclicEdges(g, owner) {
   const out = new Map();
   const nodes = new Set();
   for (const e of g.edges) {
@@ -378,20 +412,16 @@ export function componentCycles(g, manifest) {
     if (!out.has(a)) out.set(a, new Set());
     out.get(a).add(b);
   }
-  return cyclesOf(nodes, out);
+  return cyclicEdgesOf(nodes, out);
+}
+
+export function componentCyclicEdges(g, manifest) {
+  return projectedCyclicEdges(g, componentOf(manifest));
 }
 
 /** 包级环（client ⇄ server 那种）。 */
-export function packageCycles(g) {
-  const out = new Map();
-  const nodes = new Set();
-  for (const e of g.edges) {
-    if (e.srcPkg === e.dstPkg) continue;
-    nodes.add(e.srcPkg); nodes.add(e.dstPkg);
-    if (!out.has(e.srcPkg)) out.set(e.srcPkg, new Set());
-    out.get(e.srcPkg).add(e.dstPkg);
-  }
-  return cyclesOf(nodes, out);
+export function packageCyclicEdges(g) {
+  return projectedCyclicEdges(g, packageOf);
 }
 
 /** 没人 import 的模块。⚠ 不是待删清单——入口、被 HTML/路由拉起的页面、
@@ -407,15 +437,66 @@ export function orphans(g, manifest) {
     .sort();
 }
 
+export function normalizeDocument(text) {
+  return text.replace(/\r\n/g, "\n");
+}
+
+/** The CLI and repository tests must enforce the same rules. */
+export function validateGraph(g, manifest, { document } = {}) {
+  const problems = [];
+  const add = (code, items) => {
+    if (items.length) problems.push({ code, items });
+  };
+  const base = manifest.baseline ?? {};
+  for (const [key, now] of [
+    ["violations", layerViolations(g, manifest)],
+    ["componentViolations", componentViolations(g, manifest)],
+    ["cyclicEdges", crossComponentCyclicEdges(g, manifest)],
+    ["componentCyclicEdges", componentCyclicEdges(g, manifest)],
+    ["orphans", orphans(g, manifest)],
+  ]) {
+    const prior = base[key] ?? [];
+    add(`new:${key}`, now.filter((x) => !prior.includes(x)));
+    add(`stale:${key}`, prior.filter((x) => !now.includes(x)));
+  }
+  add("legacy-cycle-baseline", ["cycles", "componentCycles"].filter((key) => key in base));
+  add("package-cycles", packageCyclicEdges(g));
+  add("stale-component-declarations", staleComponentDeclarations(g, manifest));
+  add("stale-layer-declarations", staleLayerDeclarations(g, manifest));
+  const owner = componentOf(manifest);
+  // This restored layer boundary is a hard rule, independent of accepted cycle debt.
+  add("client-lib-page-dependency", [...new Set(g.edges
+    .filter((e) => owner(e.src) === "client-lib" && owner(e.dst) === "client-pages-sliderule")
+    .map((e) => `${e.src} -> ${e.dst}`))].sort());
+  add("unowned-modules", [...g.modules].filter((mod) => !owner(mod)).sort());
+  add("undeclared-packages", [...new Set([...g.modules].map(packageOf))]
+    .filter((pkg) => !Object.hasOwn(manifest.layer ?? {}, pkg)).sort());
+  const rules = Object.entries(manifest.component ?? {})
+    .flatMap(([name, spec]) => (spec.paths ?? []).map((path) => ({ name, path })));
+  add("ambiguous-component-owners", [...g.modules].filter((mod) => {
+    const matches = rules.filter(({ path }) => mod === path || mod.startsWith(path + "/"));
+    const longest = Math.max(...matches.map(({ path }) => path.length));
+    return new Set(matches.filter(({ path }) => path.length === longest).map(({ name }) => name)).size > 1;
+  }).sort());
+  add("broad-entrypoint-patterns", (manifest.entrypoints?.patterns ?? []).filter((pattern) => {
+    const head = pattern.split("*")[0];
+    return !head.includes("/") || head.length <= 6;
+  }));
+  if (document !== undefined && normalizeDocument(document) !== normalizeDocument(renderDoc(g, manifest))) {
+    add("document-sync", ["Run node scripts/arch-graph-ts.mjs --emit"]);
+  }
+  return problems;
+}
+
 // ── 报告 / 生成 ──────────────────────────────────────────────────────────────
 
 export function report(g, manifest) {
   const b = manifest.baseline ?? {};
   const lv = layerViolations(g, manifest);
   const cv = componentViolations(g, manifest);
-  const cyc = crossComponentCycles(g, manifest);
-  const ccyc = componentCycles(g, manifest);
-  const pcyc = packageCycles(g);
+  const cyc = crossComponentCyclicEdges(g, manifest);
+  const ccyc = componentCyclicEdges(g, manifest);
+  const pcyc = packageCyclicEdges(g);
   const orp = orphans(g, manifest);
   const deferred = g.edges.filter((e) => e.deferred).length;
   const typeOnly = g.edges.filter((e) => e.typeOnly).length;
@@ -425,39 +506,44 @@ export function report(g, manifest) {
     ...lv.map((v) => `   ${v}`),
     `未声明的组间依赖 ${cv.length}（基线 ${(b.componentViolations ?? []).length}）`,
     ...cv.slice(0, 12).map((v) => `   ${v}`),
-    `包级环 ${pcyc.length}`,
+    `包级循环边 ${pcyc.length}`,
     ...pcyc.map((c) => `   ${c}`),
-    `模块级环 ${cyc.length}（基线 ${(b.cycles ?? []).length}）`,
+    `模块级循环边 ${cyc.length}（基线 ${(b.cyclicEdges ?? []).length}）`,
     ...cyc.slice(0, 12).map((c) => `   ${c}`),
-    `组间环 ${ccyc.length}（基线 ${(b.componentCycles ?? []).length}）`,
+    `组间循环边 ${ccyc.length}（基线 ${(b.componentCyclicEdges ?? []).length}）`,
     ...ccyc.slice(0, 12).map((c) => `   ${c}`),
     `没人 import 的模块 ${orp.length}（基线 ${(b.orphans ?? []).length}） —— ⚠ 不是待删清单`,
   ];
   return lines.join("\n");
 }
 
-function freeze(g, manifest) {
+function freeze(g, manifest, path = MANIFEST) {
   const next = {
     ...manifest,
     baseline: {
       violations: layerViolations(g, manifest),
       componentViolations: componentViolations(g, manifest),
-      cycles: crossComponentCycles(g, manifest),
-      componentCycles: componentCycles(g, manifest),
+      cyclicEdges: crossComponentCyclicEdges(g, manifest),
+      componentCyclicEdges: componentCyclicEdges(g, manifest),
       orphans: orphans(g, manifest),
     },
   };
-  writeFileSync(MANIFEST, JSON.stringify(next, null, 2) + "\n", "utf8");
+  writeFileSync(path, JSON.stringify(next, null, 2) + "\n", "utf8");
 }
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 
-function main(argv) {
-  const g = buildGraph();
-  const m = loadManifest();
-  const b = m.baseline ?? {};
-  if (argv.includes("--freeze")) { freeze(g, m); console.log("已写入基线"); return 0; }
-  if (argv.includes("--report")) { console.log(report(g, m)); return 0; }
+export function main(argv, {
+  root = REPO,
+  manifestPath = join(root, "architecture.ts.json"),
+  diagramPath = join(root, "docs", "WhyBuddy TS 架构图（自动生成）.md"),
+  log = console.log,
+  error = console.error,
+} = {}) {
+  const g = buildGraph(root);
+  const m = loadManifest(manifestPath);
+  if (argv.includes("--freeze")) { freeze(g, m, manifestPath); log("已写入基线"); return 0; }
+  if (argv.includes("--report")) { log(report(g, m)); return 0; }
   if (argv.includes("--json-packages")) {
     const pkgCount = {};
     for (const mod of g.modules) {
@@ -480,23 +566,19 @@ function main(argv) {
     return 0;
   }
   if (argv.includes("--emit")) {
-    writeFileSync(DIAGRAM, renderDoc(g, m), "utf8");
-    console.log(`已生成 ${relative(REPO, DIAGRAM)}`);
+    writeFileSync(diagramPath, renderDoc(g, m), "utf8");
+    log(`已生成 ${relative(root, diagramPath)}`);
     return 0;
   }
   // --check
-  const problems = [];
-  const cmp = (now, base, label) => {
-    const extra = now.filter((x) => !(base ?? []).includes(x));
-    if (extra.length) problems.push(`新增${label}：\n   ` + extra.join("\n   "));
-  };
-  cmp(layerViolations(g, m), b.violations, "未声明跨包依赖");
-  cmp(componentViolations(g, m), b.componentViolations, "未声明组间依赖");
-  cmp(crossComponentCycles(g, m), b.cycles, "循环依赖");
-  cmp(componentCycles(g, m), b.componentCycles, "组间环");
-  cmp(orphans(g, m), b.orphans, "无人引用模块");
-  if (problems.length) { console.error("❌ " + problems.join("\n")); return 1; }
-  console.log("✅ 没有新增的未声明依赖或循环");
+  const problems = validateGraph(g, m, {
+    document: existsSync(diagramPath) ? readFileSync(diagramPath, "utf8") : "",
+  });
+  if (problems.length) {
+    error(problems.map(({ code, items }) => `${code}:\n   ${items.join("\n   ")}`).join("\n"));
+    return 1;
+  }
+  log("Architecture checks passed (dependencies, cycles, ownership, ratchets, document sync).");
   return 0;
 }
 
@@ -508,11 +590,7 @@ export function renderDoc(g, manifest) {
     const a = owner(e.src), b = owner(e.dst);
     if (a && b && a !== b) compEdges.add(`${a}|${b}`);
   }
-  const cyclic = new Set();
-  for (const c of componentCycles(g, manifest)) {
-    const ms = c.split(" -> ");
-    for (let i = 0; i + 1 < ms.length; i++) cyclic.add(`${ms[i]}|${ms[i + 1]}`);
-  }
+  const cyclic = new Set(componentCyclicEdges(g, manifest).map((edge) => edge.replace(" -> ", "|")));
   const pkgCount = {};
   for (const mod of g.modules) pkgCount[packageOf(mod)] = (pkgCount[packageOf(mod)] ?? 0) + 1;
   const out = [];
@@ -544,27 +622,39 @@ export function renderDoc(g, manifest) {
     const n = [...g.modules].filter((m) => owner(m) === c).length;
     out.push(`  ${c}["${c}<br/>${n}"]`);
   }
+  const cyclicLinks = [];
+  let linkIndex = 0;
   for (const key of [...compEdges].sort()) {
     const [a, b] = key.split("|");
+    if (cyclic.has(key)) cyclicLinks.push(linkIndex);
     out.push(cyclic.has(key) ? `  ${a} -.->|环| ${b}` : `  ${a} --> ${b}`);
+    linkIndex++;
   }
+  if (cyclicLinks.length) out.push(`  linkStyle ${cyclicLinks.join(",")} stroke:#dc2626,color:#b91c1c`);
   out.push("```");
   out.push("");
-  const ccyc = componentCycles(g, manifest);
-  const mcyc = crossComponentCycles(g, manifest);
-  const baseCyc = manifest.baseline?.componentCycles ?? [];
-  const baseMod = manifest.baseline?.cycles ?? [];
+  const ccyc = componentCyclicEdges(g, manifest);
+  const mcyc = crossComponentCyclicEdges(g, manifest);
+  const baseCyc = manifest.baseline?.componentCyclicEdges ?? [];
+  const baseMod = manifest.baseline?.cyclicEdges ?? [];
   out.push("## 欠账看板（红虚线，基线只许变短）");
   out.push("");
-  out.push("还一笔就从 `architecture.ts.json` 的 `baseline.componentCycles` / `baseline.cycles` 删掉。");
+  out.push("还一笔就从 `architecture.ts.json` 的 `baseline.componentCyclicEdges` / `baseline.cyclicEdges` 删掉。");
   out.push("往基线里加东西 = 有意接受一笔新欠账，不该出现在日常流程里。");
+  out.push("按强连通分量统计每条循环边，已有环内新增一条边也会触发检查。");
+  const migration = manifest.cyclicEdgeBaselineMigration;
+  if (migration) {
+    out.push("");
+    out.push(`${migration.date} 校正统计：旧算法遗漏了 ${migration.discoveredExistingModuleCyclicEdges} 条模块循环边、` +
+      `${migration.discoveredExistingComponentCyclicEdges} 条组间循环边。基线迁移核对的是同一批源码依赖，未新增依赖放行。`);
+  }
   out.push("");
-  out.push(`组间环 **${ccyc.length}**（基线 ${baseCyc.length}）`);
+  out.push(`组间循环边 **${ccyc.length}**（基线 ${baseCyc.length}）`);
   out.push("");
   for (const c of ccyc) out.push(`- \`${c}\``);
   if (!ccyc.length) out.push("（当前没有组间环）");
   out.push("");
-  out.push(`模块级环 **${mcyc.length}**（基线 ${baseMod.length}）—— 图上不逐条展开，棘轮在 \`--check\`。`);
+  out.push(`模块级循环边 **${mcyc.length}**（基线 ${baseMod.length}）—— 图上不逐条展开，棘轮在 \`--check\`。`);
   out.push("");
   out.push("## 组的职责");
   out.push("");
@@ -581,5 +671,10 @@ export function renderDoc(g, manifest) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  process.exitCode = main(process.argv.slice(2));
+  try {
+    process.exitCode = main(process.argv.slice(2));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  }
 }

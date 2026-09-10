@@ -44,7 +44,176 @@ function fixture(files) {
   return root;
 }
 
+function cycleFixture() {
+  return fixture({
+    "shared/a.ts": "import './b.js';\n",
+    "shared/b.ts": "import './c.js';\n",
+    "shared/c.ts": "import './a.js';\n",
+  });
+}
+
+function fixtureManifest(g) {
+  const m = {
+    layer: { shared: { mayDependOn: [] } },
+    component: Object.fromEntries([...g.modules].map((mod) => [mod.replaceAll("/", "-"), {
+      paths: [mod],
+      mayDependOn: [...new Set(g.edges.filter((e) => e.src === mod).map((e) => e.dst.replaceAll("/", "-")))],
+    }])),
+    entrypoints: { patterns: [] },
+    baseline: {},
+  };
+  m.baseline = {
+    violations: [], componentViolations: [],
+    cyclicEdges: A.crossComponentCyclicEdges(g, m),
+    componentCyclicEdges: A.componentCyclicEdges(g, m),
+    orphans: A.orphans(g, m),
+  };
+  return m;
+}
+
+describe("review regression: scanner and complete checks", () => {
+  test("a valid TS generic arrow does not swallow the following import", () => {
+    const root = fixture({
+      "shared/a.ts": "export const id = <T>(x: T) => x;\nimport './b.js';\n",
+      "shared/b.ts": "export {};\n",
+      "shared/view.tsx": "export const view = <div />;\nimport './b.js';\n",
+    });
+    try {
+      assert.deepEqual(A.buildGraph(root).edges.map((e) => `${e.src} -> ${e.dst}`), [
+        "shared/a -> shared/b", "shared/view -> shared/b",
+      ]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("an incomplete parse fails the scan instead of hiding imports", () => {
+    const root = fixture({ "shared/a.ts": "export const broken = ;\n" });
+    try {
+      assert.throws(() => A.buildGraph(root), /shared\/a\.ts:1:\d+.*Expression expected/);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("adding an edge within an existing SCC is new debt and is drawn as cyclic", () => {
+    const root = cycleFixture();
+    try {
+      const before = A.buildGraph(root);
+      const m = fixtureManifest(before);
+      assert.deepEqual(A.findCyclicEdges(before), [
+        "shared/a -> shared/b", "shared/b -> shared/c", "shared/c -> shared/a",
+      ]);
+      writeFileSync(join(root, "shared/a.ts"), "import './b.js';\nimport './c.js';\n", "utf8");
+      const after = A.buildGraph(root);
+      m.component["shared-a"].mayDependOn.push("shared-c");
+      const problems = A.validateGraph(after, m);
+      assert.deepEqual(problems.find((p) => p.code === "new:cyclicEdges")?.items, ["shared/a -> shared/c"]);
+      assert.deepEqual(problems.find((p) => p.code === "new:componentCyclicEdges")?.items, ["shared-a -> shared-c"]);
+      assert.ok(A.renderDoc(after, m).includes("shared-a -.->|环| shared-c"));
+      assert.ok(!A.renderDoc(after, m).includes("shared-a --> shared-c"));
+      assert.ok(A.renderDoc(after, m).includes("linkStyle 0,1,2,3 stroke:#dc2626"));
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("allowInternalCycles exempts only SCCs wholly within the opted component", () => {
+    const root = cycleFixture();
+    try {
+      const g = A.buildGraph(root);
+      const m = { component: { one: { paths: ["shared"], allowInternalCycles: true } } };
+      assert.deepEqual(A.crossComponentCyclicEdges(g, m), []);
+      m.component.two = { paths: ["shared/c"], allowInternalCycles: true };
+      assert.equal(A.crossComponentCyclicEdges(g, m).length, 3);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("the real server SCC rejects an extra core-to-route import", () => {
+    const src = "server/core/agent", dst = "server/routes/rag";
+    assert.ok(G.modules.has(src) && G.modules.has(dst));
+    assert.ok(!G.edges.some((e) => e.src === src && e.dst === dst));
+    const mutated = { ...G, edges: [...G.edges, {
+      src, dst, srcPkg: "server", dstPkg: "server", deferred: false, typeOnly: false, line: 1,
+    }] };
+    const added = A.validateGraph(mutated, M).find((p) => p.code === "new:cyclicEdges");
+    assert.ok(added?.items.includes(`${src} -> ${dst}`));
+  });
+
+  test("the real client library cannot import the SlideRule page even when ordinary debt is accepted", () => {
+    const src = "client/src/lib/sliderule-runtime";
+    const dst = "client/src/pages/sliderule/useSlideRuleSession";
+    assert.ok(G.modules.has(src) && G.modules.has(dst));
+    assert.ok(!G.edges.some((e) => e.src === src && e.dst === dst));
+    const mutated = { ...G, edges: [...G.edges, {
+      src, dst, srcPkg: "client", dstPkg: "client", deferred: false, typeOnly: false, line: 1,
+    }] };
+    const accepted = structuredClone(M);
+    accepted.component["client-lib"].mayDependOn.push("client-pages-sliderule");
+    accepted.baseline.cyclicEdges = A.crossComponentCyclicEdges(mutated, accepted);
+    accepted.baseline.componentCyclicEdges = A.componentCyclicEdges(mutated, accepted);
+    accepted.baseline.orphans = A.orphans(mutated, accepted);
+    assert.deepEqual(A.validateGraph(mutated, accepted), [{
+      code: "client-lib-page-dependency", items: [`${src} -> ${dst}`],
+    }]);
+  });
+
+  test("CLI check shares coverage, reverse ratchets, hard package and document checks", () => {
+    const root = cycleFixture();
+    try {
+      const g = A.buildGraph(root);
+      const m = fixtureManifest(g);
+      const manifestPath = join(root, "architecture.ts.json");
+      const diagramPath = join(root, "diagram.md");
+      const messages = [];
+      const options = { root, manifestPath, diagramPath, log: (msg) => messages.push(msg), error: (msg) => messages.push(msg) };
+      const write = (manifest, doc = A.renderDoc(g, manifest)) => {
+        writeFileSync(manifestPath, JSON.stringify(manifest), "utf8");
+        writeFileSync(diagramPath, doc, "utf8");
+      };
+      write(m, A.renderDoc(g, m).replaceAll("\n", "\r\n"));
+      assert.equal(A.main(["--check"], options), 0, messages.join("\n"));
+      write(m, "tampered");
+      assert.equal(A.main(["--check"], options), 1);
+      assert.match(messages.at(-1), /document-sync/);
+      const unowned = structuredClone(m);
+      delete unowned.component["shared-a"];
+      write(unowned);
+      assert.equal(A.main(["--check"], options), 1);
+      assert.match(messages.at(-1), /unowned-modules/);
+      const stale = structuredClone(m);
+      stale.baseline.orphans.push("shared/deleted");
+      stale.component["shared-a"].mayDependOn.push("shared-a");
+      write(stale);
+      assert.equal(A.main(["--check"], options), 1);
+      assert.match(messages.at(-1), /stale:orphans/);
+      assert.match(messages.at(-1), /stale-component-declarations/);
+      const cyclicPackages = {
+        modules: new Set(["client/a", "server/b"]), filesScanned: 2,
+        edges: [
+          { src: "client/a", dst: "server/b", srcPkg: "client", dstPkg: "server" },
+          { src: "server/b", dst: "client/a", srcPkg: "server", dstPkg: "client" },
+        ],
+      };
+      const withDebt = fixtureManifest(cyclicPackages);
+      withDebt.baseline.violations = A.layerViolations(cyclicPackages, withDebt);
+      assert.ok(A.validateGraph(cyclicPackages, withDebt).some((p) => p.code === "package-cycles"));
+      writeFileSync(join(root, "shared/a.ts"), "export {};\n", "utf8");
+      for (const pkg of ["client", "server"]) mkdirSync(join(root, pkg));
+      writeFileSync(join(root, "client/a.ts"), "import '../server/b.js';\n", "utf8");
+      writeFileSync(join(root, "server/b.ts"), "import '../client/a.js';\n", "utf8");
+      const fullGraph = A.buildGraph(root);
+      const acceptedEdges = fixtureManifest(fullGraph);
+      acceptedEdges.layer.client = { mayDependOn: ["server"] };
+      acceptedEdges.layer.server = { mayDependOn: ["client"] };
+      write(acceptedEdges, A.renderDoc(fullGraph, acceptedEdges));
+      assert.equal(A.main(["--check"], options), 1);
+      assert.match(messages.at(-1), /package-cycles/);
+      assert.equal(A.validateGraph(fullGraph, acceptedEdges).length, 1,
+        "the hard package-cycle rule must fail even with all ordinary debt accepted");
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+});
+
 describe("依赖必须先声明", () => {
+  test("CLI 与测试共用全部架构规则", () => {
+    assert.deepEqual(A.validateGraph(G, M, { document: readFileSync(A.DIAGRAM, "utf8") }), []);
+  });
+
   test("没有新增的未声明跨包依赖", () => {
     const now = A.layerViolations(G, M);
     const extra = now.filter((x) => !(B.violations ?? []).includes(x));
@@ -75,8 +244,8 @@ describe("依赖必须先声明", () => {
     for (const [key, fn] of [
       ["violations", () => A.layerViolations(G, M)],
       ["componentViolations", () => A.componentViolations(G, M)],
-      ["cycles", () => A.crossComponentCycles(G, M)],
-      ["componentCycles", () => A.componentCycles(G, M)],
+      ["cyclicEdges", () => A.crossComponentCyclicEdges(G, M)],
+      ["componentCyclicEdges", () => A.componentCyclicEdges(G, M)],
       ["orphans", () => A.orphans(G, M)],
     ]) {
       const now = new Set(fn());
@@ -88,32 +257,25 @@ describe("依赖必须先声明", () => {
 
 describe("循环依赖只许变少", () => {
   test("没有新增的模块级环", () => {
-    const extra = A.crossComponentCycles(G, M).filter((x) => !(B.cycles ?? []).includes(x));
+    const extra = A.crossComponentCyclicEdges(G, M).filter((x) => !(B.cyclicEdges ?? []).includes(x));
     assert.deepEqual(extra, [], `新增了循环依赖：${extra.join("\n")}\n` +
       `TS 不会因此报错——它会让你把 import 改成 await import() 继续跑，然后在某个打包顺序上炸。`);
   });
 
   test("没有新增的组间环", () => {
-    const extra = A.componentCycles(G, M).filter((x) => !(B.componentCycles ?? []).includes(x));
+    const extra = A.componentCyclicEdges(G, M).filter((x) => !(B.componentCyclicEdges ?? []).includes(x));
     assert.deepEqual(extra, [], `新增了组间环：${extra.join("\n")}`);
   });
 
   test("包级不许成环（无基线，硬闸）", () => {
     // ⚠ 这条**不设基线**：今天是 0，client/server/shared 三个包的方向是干净的。
     // 一旦成环就意味着浏览器包和 Node 包互相依赖，那是打包器层面的病，不是欠账。
-    assert.deepEqual(A.packageCycles(G), [], "包级成环了——client/server/shared 的方向必须是单向的");
+    assert.deepEqual(A.packageCyclicEdges(G), [], "包级成环了——client/server/shared 的方向必须是单向的");
   });
 
   test("client-lib 不再倒着依赖 pages-sliderule", () => {
-    const owner = A.componentOf(M);
-    const back = G.edges.filter(
-      (e) => owner(e.src) === "client-lib" && owner(e.dst) === "client-pages-sliderule"
-    );
-    assert.equal(back.length, 0, back.map((e) => `${e.src} -> ${e.dst}`).join("\n"));
-    const two = A.componentCycles(G, M).filter(
-      (c) => c === "client-lib -> client-pages-sliderule -> client-lib"
-    );
-    assert.deepEqual(two, [], "推演主路径 2 环又回来了");
+    const back = A.validateGraph(G, M).filter((p) => p.code === "client-lib-page-dependency");
+    assert.deepEqual(back, [], "推演主路径的库层又倒着依赖页面了");
   });
 });
 
@@ -148,7 +310,7 @@ describe("成员关系", () => {
 describe("图与代码同步", () => {
   test("仓里那份图就是现在重新生成的那份", () => {
     const onDisk = readFileSync(A.DIAGRAM, "utf8");
-    assert.equal(A.renderDoc(G, M), onDisk,
+    assert.equal(A.normalizeDocument(A.renderDoc(G, M)), A.normalizeDocument(onDisk),
       "docs/WhyBuddy TS 架构图（自动生成）.md 与代码不同步。" +
       "别手改它——跑 `node scripts/arch-graph-ts.mjs --emit`。");
   });
@@ -163,12 +325,12 @@ describe("图与代码同步", () => {
     const doc = A.renderDoc(G, M);
     assert.ok(doc.includes("欠账看板"), "TS 图没把红虚线写成欠账看板");
     assert.ok(doc.includes("基线只许变短"));
-    const ccyc = A.componentCycles(G, M);
+    const ccyc = A.componentCyclicEdges(G, M);
     assert.ok(ccyc.length > 0, "今天组间环是空的——这条判据会空过，改成断言 0 并删掉看板");
     assert.ok(doc.includes(ccyc[0]), `欠账看板没列出组间环：${ccyc[0]}`);
-    const base = M.baseline?.componentCycles ?? [];
+    const base = M.baseline?.componentCyclicEdges ?? [];
     const stale = base.filter((x) => !ccyc.includes(x));
-    assert.deepEqual(stale, [], `baseline.componentCycles 里这些已经还清了，删掉：${stale.slice(0, 3).join(", ")}`);
+    assert.deepEqual(stale, [], `baseline.componentCyclicEdges 里这些已经还清了，删掉：${stale.slice(0, 3).join(", ")}`);
   });
 });
 
@@ -267,9 +429,9 @@ describe("扫描器自己没瞎", () => {
       "shared/b.ts": "import { a } from './a.js';\nexport const b = a;\n",
     });
     try {
-      const cycles = A.findCycles(A.buildGraph(root));
-      assert.equal(cycles.length, 1, "环探测器没报出构造出来的环——它可能一直在空转");
-      assert.equal(cycles[0], "shared/a -> shared/b -> shared/a");
+      const cycles = A.findCyclicEdges(A.buildGraph(root));
+      assert.deepEqual(cycles, ["shared/a -> shared/b", "shared/b -> shared/a"],
+        "环探测器必须报出构造出来的环的全部边");
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
