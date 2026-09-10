@@ -90,6 +90,33 @@ export function scopeCardBlocksComposer(
   return Boolean(pending);
 }
 
+/**
+ * 这张卡是**闸**还是**回执**。
+ *
+ * ⚠ 2026-09-10 真机（sr-20260910024540-RATAS13KJX）：控制面同一回合里
+ *   `control_scope_card` 紧接 `control_handoff_factory`——卡是回执，
+ *   `gate: false`，推演已经自己点着了。而**没有人清掉这张回执**：
+ *   确认键在 isRunning 时置灰、用户也没有理由去点「不对再说」，
+ *   于是它一直摊在那儿。
+ *
+ *   ComposerDock 的假设卡悬浮层写的是 `!pendingScope && …`——那条让路规则
+ *   是范围卡还是闸的时候定的（"卡在 = 用户还没拿主意"）。卡变成回执之后，
+ *   让路变成**永久**的：工厂停在 spec-assumptions 等人（真机等了 584 秒，
+ *   `hold.where=spec-assumptions`），而假设卡永远不渲染，用户对着
+ *   「推演中 · LLM 正在起草规格…」干看，一个可点的东西都没有。
+ *
+ *   本仓 §四：同一件事的两半，服务端把卡从闸改成了回执，消费侧的让路规则
+ *   没跟着改——不报错，只是有一半永远不生效。
+ *
+ * 跟 `scopeCardBlocksComposer` 是两个问题，别合并：那条**回执也要锁**
+ * 作曲家（见它头注的 2026-09-09 事故），这条只问"要不要给它让路"。
+ */
+export function scopeCardIsGate(
+  pending?: { gate?: boolean } | null
+): boolean {
+  return Boolean(pending) && pending?.gate !== false;
+}
+
 /** 墙上钟 v1。禁止把未标定分钟数写进产品 UI。 */
 export const SCOPE_CARD_TIME_COPY = "大约数分钟，第一页会先出现";
 

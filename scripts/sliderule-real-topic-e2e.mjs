@@ -210,12 +210,41 @@ try {
   log("范围卡复述:", (restate || "").trim().slice(0, 80));
   await shot(page, "范围卡");
 
-  await page.waitForSelector(
-    '[data-testid="sliderule-scope-confirm"]:not([disabled])',
-    { timeout: 90000 }
-  );
-  await page.click('[data-testid="sliderule-scope-confirm"]');
-  log("点了「开始推演」，工厂点火…");
+  /*
+   * ⚠ 2026-09-10：范围卡**不一定是闸**。控制面现在会在同一回合里
+   *   `control_scope_card` 紧接 `control_handoff_factory`——卡是**回执**
+   *   （载荷里 `gate: false`），推演已经自己点着了，而 `ScopeCard` 的
+   *   `confirmDisabled` 在 isRunning 时把「开始推演」置灰（那是对的：
+   *   没有东西要确认了）。旧脚本对着 `:not([disabled])` 干等 90 秒然后抛
+   *   TimeoutError，报出来像「页面上点不动」，其实是**脚本比产品旧一版**。
+   *
+   *   所以：等它变可点，等不到就看是不是已经在跑——在跑就别点，往下走。
+   */
+  const confirmSel = '[data-testid="sliderule-scope-confirm"]';
+  const clickable = await page
+    .waitForSelector(`${confirmSel}:not([disabled])`, { timeout: 20000 })
+    .then(() => true)
+    .catch(() => false);
+  if (clickable) {
+    await page.click(confirmSel);
+    log("点了「开始推演」，工厂点火…");
+  } else {
+    /* ⚠ 判「在跑」要拿**只在跑的时候才存在**的东西。composer 的停止键是
+       `isRunning ? <button…> : null`（ComposerDock.tsx:1229）——这条件在
+       真机上真的会成立。随手编个 testid 的话，护栏的判据永远不成立，
+       于是"没在跑"分支照样抛（本仓 §一之二）。 */
+    const running = await page
+      .locator('[data-testid="sliderule-composer-stop"]')
+      .count()
+      .catch(() => 0);
+    log(
+      `「开始推演」是灰的（范围卡是回执，gate=false）；${running ? "推演已自行点火" : "但也没看到推演在跑"}，不点，继续观察`
+    );
+    if (!running) {
+      await shot(page, "确认键点不动");
+      throw new Error("范围卡既不能点、也没看到推演在跑——这条链断了");
+    }
+  }
   const started = Date.now();
 
   let lastText = "";
@@ -291,13 +320,52 @@ try {
         for (const r of rows) log("   ·", r);
         await shot(page, `假设面板-${secs}s`);
         log(`假设卡分页：${pager || "（没有 pager）"}`);
+        /*
+         * ⚠ 2026-09-10：`locator().count()` 只证明**它在 DOM 里**。这一趟
+         *   真机上卡就在 DOM 里、脚本读得到分页文案，而截图上一片空白——
+         *   悬浮层锚在作曲家 `bottom-full`，范围卡回执正好压在同一块地方。
+         *   本仓 §五：判据要落在用户真正看得见的东西上。所以这里量三样：
+         *   盒子多大、在不在视口里、那块地方最上层是不是它自己。
+         */
+        const seen = await page.evaluate(() => {
+          const el = document.querySelector('[data-testid="sliderule-assumptions"]');
+          if (!el) return { present: false };
+          const r = el.getBoundingClientRect();
+          const cs = getComputedStyle(el);
+          const cx = Math.round(r.left + r.width / 2);
+          const cy = Math.round(r.top + Math.min(r.height / 2, 20));
+          const top = document.elementFromPoint(cx, cy);
+          return {
+            present: true,
+            rect: `${Math.round(r.width)}x${Math.round(r.height)} @ ${Math.round(r.x)},${Math.round(r.y)}`,
+            painted: cs.display !== "none" && cs.visibility !== "hidden" && Number(cs.opacity) > 0,
+            inViewport: r.top >= 0 && r.bottom <= innerHeight && r.width > 0 && r.height > 0,
+            覆盖它的是: top && !el.contains(top)
+              ? `${top.tagName}${top.getAttribute("data-testid") ? `[${top.getAttribute("data-testid")}]` : ""}`
+              : null,
+          };
+        });
+        log("假设卡可见性:", JSON.stringify(seen));
+        if (seen.present && (!seen.painted || !seen.inViewport || seen.覆盖它的是)) {
+          log("!! 假设卡在 DOM 里但人看不见——这跟没出是一回事");
+        }
       }
       const clickAssumption = process.env.E2E_CLICK_ASSUMPTION === "1";
       const running = await page.evaluate(() =>
         /推演中/.test(document.body.innerText)
       );
+      /*
+       * ⚠ 2026-09-10：「推演中就不点」这条守卫已经不成立了。工厂**停在**
+       *   spec-assumptions 等人的时候，右栏照样写着「推演中」（它确实还在跑，
+       *   只是 held），而卡上自己写的是「已停住，选完再继续」——
+       *   等 `!running` 等于等一个永远不来的时刻，真机实测干等 584 秒。
+       *
+       *   所以：停住了就点，别看「推演中」。停没停以卡自己那句为准，
+       *   那是**用户看得见的那句话**（本仓 §五）。
+       */
+      const parked = /已停住/.test(pager);
       // 空闲且卡还在就再确认。上一趟点完同一张 1/2 弹回来就不再点，pages 跳开不了。
-      if (clickAssumption && !running && Date.now() - lastClickAt > 20000) {
+      if (clickAssumption && (!running || parked) && Date.now() - lastClickAt > 20000) {
         const submit = page.locator('[data-testid="sliderule-assumption-submit"]');
         const next = page.locator('[data-testid="sliderule-assumption-next"]');
         for (let i = 0; i < 8 && (await next.count()) && (await next.isVisible()); i += 1) {

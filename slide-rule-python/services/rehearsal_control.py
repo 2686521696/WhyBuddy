@@ -3950,8 +3950,26 @@ async def _control_llm_loop(
                             tool_body = {
                                 k: v for k, v in event.items() if k != "type"
                             }
-                        if et in ("control_ask_user", "control_scope_card"):
+                        if et == "control_ask_user":
                             parked = True
+                        elif et == "control_scope_card":
+                            # ⚠ `gate: False` 的范围卡是**回执**，不是停泊：
+                            #   同一发里它后面就跟着 handoff（:2430 那份载荷）。
+                            #   上一版把两种卡一视同仁地记成 parked，于是下面
+                            #   `if parked: return` 在工厂转播完之后立刻返回——
+                            #   **整轮没有终局事件**。
+                            #
+                            #   真机代价（2026-09-10，浏览器那条路量到的）：
+                            #   前端 `classifyStreamFallback` 见不到终局就判
+                            #   `report_interrupted`，每一趟自动点火的推演最后
+                            #   都弹「推演连接中断，后台仍在进行」；而且
+                            #   `_resume_control_llm_after_write` 整段被跳过，
+                            #   「假设卡等确认」那句罐头收尾也不会发。
+                            #
+                            #   本仓 §四：卡从「闸」改成「回执」是服务端改的，
+                            #   这半边的判断没跟着改——不报错，只是有一半不生效。
+                            if event.get("gate") is not False:
+                                parked = True
                         elif et == "control_handoff_factory":
                             wrote = True
                         elif et == "complete" and not wrote:

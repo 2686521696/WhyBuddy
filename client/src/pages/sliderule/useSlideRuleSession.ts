@@ -96,6 +96,7 @@ import {
 import {
   hydrateParkedScope,
   lockScopeMorphology,
+  scopeCardIsGate,
   type ScopeCardChoice,
   type ScopeCardDevice,
   type ScopeCardPending,
@@ -693,8 +694,19 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
    * 开头就 clearPendingScope——/推演 刚 park 的卡被排队文本清掉，确认没了。
    * 队列留着（一格、仍 latest-wins），确认/先改范围/关掉提问之后再发。
    */
+  /*
+   * ⚠ 2026-09-10 真机（浏览器那条路）：这里原来是
+   *   `Boolean(pendingScopeRef.current || pendingAskRef.current)`。
+   *   范围卡变成**回执**（gate:false，推演已自己点着）之后没有人清它，
+   *   于是这条闸永远为真——假设卡确认时排进队的
+   *   「假设已确认。继续画页面。」**一次都没发出去**：SPEC 出完就停死，
+   *   钟停在 2:done，页面 0 份，等了 500 秒也不动。
+   *
+   *   跟 ComposerDock 那两处是同一个根（本仓 §四）：让路规则是范围卡还是
+   *   闸的时候定的，卡改成回执之后，让路变成了永久的。
+   */
   const overlayBlocksQueueFlush = () =>
-    Boolean(pendingScopeRef.current || pendingAskRef.current);
+    scopeCardIsGate(pendingScopeRef.current) || Boolean(pendingAskRef.current);
   /**
    * 假设卡确认后的下一跳。只在 runTurn 过了 isRunning 闸之后才取走——
    * ⚠ 2026-09-02 真机：flush 先把 flag 清掉再进 runTurn，isRunning 仍真时

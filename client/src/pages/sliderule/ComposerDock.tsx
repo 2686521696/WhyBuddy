@@ -61,6 +61,7 @@ import { AssumptionStrip } from "./AssumptionStrip";
 import type { SpecAssumption } from "./spec-assumptions";
 import {
   scopeCardBlocksComposer,
+  scopeCardIsGate,
   type ScopeCardPending,
 } from "./scope-card-gate";
 import {
@@ -1226,6 +1227,25 @@ export function ComposerDock({
     </button>
   );
 
+  /*
+   * 回执让位：范围卡是**回执**（gate:false，推演已自己点着）而假设卡正等着人
+   * 选的时候，这张回执必须让开。
+   *
+   * ⚠ 2026-09-10 真机（sr-20260910025848）量出来的：假设卡在 DOM 里、
+   *   `painted:true`、`inViewport:true`，可 `elementFromPoint` 拿回来的最上层
+   *   是 `P[sliderule-scope-steps]` —— 两张都是作曲家上方的悬浮层，回执在 JSX
+   *   里排在后面，就画在了假设卡上面。人看见的是一张不能点的回执，
+   *   底下压着**唯一能让推演继续下去的那个东西**（工厂 hold 在
+   *   spec-assumptions，实测干等 584 秒）。
+   *
+   *   `count() > 0` 证明不了这一格：上一版判据就是这么绿的（本仓 §五——
+   *   判据要落在用户真正看得见的东西上，别量 DOM 里有没有）。
+   *
+   * 闸（gate:true）不让：那时候用户本来就该先回答范围卡。
+   */
+  const scopeReceiptYields =
+    specAssumptions.length > 0 && !scopeCardIsGate(pendingScope);
+
   const stopButton = isRunning ? (
     <button
       type="button"
@@ -2055,7 +2075,7 @@ export function ComposerDock({
               输入，要求跟「路线对比一下」同一排芯片）。提问走顶行
               sliderule-control-ask。仍让路：提问在场时假设卡/排队卡不许叠上来。
           */}
-          {!pendingScope &&
+          {!scopeCardIsGate(pendingScope) &&
           !pendingAsk &&
           (specAssumptions.length > 0 || queuedTurns.length > 0) ? (
             <div
@@ -2120,7 +2140,7 @@ export function ComposerDock({
           {/* 审查卡叠在输入框上方，不进外层 flex——进流会把输入顶走。
               范围卡开着时 hint 必须让路：同一 send 禁止两张卡。
               提问芯片在顶行，这里同样让路，别跟审查卡叠两张决策面。 */}
-          {pendingScope && onConfirmScope && onReviseScope ? (
+          {pendingScope && onConfirmScope && onReviseScope && !scopeReceiptYields ? (
             <ScopeCard
               key={pendingScope.userText}
               pending={pendingScope}

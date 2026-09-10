@@ -453,3 +453,46 @@ def test_forced_bind_without_pages_says_so(harness):
     texts = "\n".join(str(e.get("text") or "") for e in events)
     assert "还没有页面" in texts
     assert types[-1] == "complete"
+
+
+def test_回执范围卡点火之后整轮仍有终局(harness):
+    """`gate: False` 的范围卡是**回执**，同一发后面就跟着 handoff。
+    这一轮**必须**有终局事件。
+
+    ⚠ 2026-09-10 浏览器那条路量到的：上一版把回执也记成 parked，
+      `if parked: return` 在工厂转播完之后立刻返回，整轮没有 `complete`。
+      前端 `classifyStreamFallback` 见不到终局就判 `report_interrupted`，
+      于是每一趟自动点火的推演最后都弹「推演连接中断，后台仍在进行」，
+      而且 `_resume_control_llm_after_write` 整段被跳过。
+
+      脚本那条路当时是绿的——探针读到 `factory_complete` 就 break 了，
+      根本没读到流的结尾（判据自己把证据截断了，本仓 §二）。
+    """
+    from control_turn_support import llm_tool
+
+    sid = new_sid("receipt-terminal")
+    seed_session(sid, goal={"text": ""})
+
+    def impl(messages, **kw):
+        # 复述由 `_restate` 真跑出来，判据不许自己编一句（见
+        # test_declined_scope_reaches_the_model 头注）。
+        if len(harness.llm_calls) == 1:
+            return llm_tool("scope_card", {}, call_id="card")
+        return llm_text("SPEC 出来了。")
+
+    harness.llm_impl = impl
+    _, events = harness.post(six_fields(sid, "做一个宠物美容店的预约与会员卡系统"))
+    types = event_types(events)
+    assert "control_scope_card" in types, types
+    assert "control_handoff_factory" in types, (
+        f"回执卡没点火，这条判据测的就不是那条路了：{types}"
+    )
+    # 正向：有终局。
+    assert types[-1] in ("complete", "factory_complete"), (
+        f"点了火却没有终局事件——前端会判成断线：{types}"
+    )
+    # 反向：终局不许只是工厂那一个（`factory_complete` 在前端是 "continue"，
+    # 不算 sawTerminal）。控制面自己那一发 `complete` 必须在。
+    assert "complete" in types, (
+        f"只有 factory_complete、没有控制面的 complete：{types}"
+    )
