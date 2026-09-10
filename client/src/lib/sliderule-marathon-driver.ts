@@ -29,6 +29,20 @@ import {
  * 推一遍——抄 grok 的 CancelledBy："shipped anyway, so hosts do not re-derive
  * it as reasons are added"。自己推的那份，新增原因时必然漂。
  */
+/**
+ * 控制面问答的线上形状（grok `Question` / `QuestionOption`）。
+ *
+ * ⚠ 本地声明而不是 import 页面目录：`spec-assumptions` 头注那句
+ *   「实现下沉到 client-lib，避免 marathon-driver 倒着依赖页面目录」同一条。
+ *   两处形状必须一致，判据 `问答线上形状两处一致` 盯着。
+ */
+export type ControlQuestionWire = {
+  id: string;
+  question: string;
+  options: { label: string; description?: string; preview?: string }[];
+  multiSelect?: boolean;
+};
+
 export type ControlStop = {
   /** wall_clock | token_budget | tool_rounds | llm_unavailable | unknown */
   stopReason: string;
@@ -457,6 +471,8 @@ export interface DriveFullStreamOpts {
   onControlAskUser?: (event: {
     question: string;
     options?: string[];
+    /** 抄 grok `AskUserQuestion`：一发几道题，每项带解释。缺席 = 老形状。 */
+    questions?: ControlQuestionWire[];
     reqId?: string;
   }) => void;
   /**
@@ -1023,6 +1039,12 @@ export async function consumeControlStreamResponse(
                   options: Array.isArray(event.options)
                     ? event.options.map((x: unknown) => String(x))
                     : [],
+                  // 抄 grok `AskUserQuestion`：一发可以问几道，每项带解释。
+                  // ⚠ 老字段 question/options 留着（第一道题的投影）——
+                  //   水合、左栏那句、`_last_need_question` 都按单题写的。
+                  ...(Array.isArray(event.questions) && event.questions.length
+                    ? { questions: event.questions as ControlQuestionWire[] }
+                    : {}),
                   ...(typeof event.reqId === "string" && event.reqId
                     ? { reqId: event.reqId }
                     : {}),

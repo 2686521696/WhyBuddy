@@ -58,6 +58,10 @@ import { intakeHintYieldsToScopeCard, useIntakeJudge } from "./use-intake-judge"
 import { IntakeHintBar, INTAKE_JUDGING_LABEL } from "./IntakeHintBar";
 import { ScopeCard } from "./ScopeCard";
 import { AssumptionStrip } from "./AssumptionStrip";
+import {
+  QuestionnaireCard,
+  type QuestionnaireOutcome,
+} from "./QuestionnaireCard";
 import type { SpecAssumption } from "./spec-assumptions";
 import {
   scopeCardBlocksComposer,
@@ -448,6 +452,7 @@ export function ComposerDock({
   onConfirmScope,
   onReviseScope,
   onAnswerAsk,
+  onSubmitQuestionnaire,
   onDismissAsk,
 }: {
   input: string;
@@ -461,7 +466,14 @@ export function ComposerDock({
   goal: string;
   /** 控制面范围卡。确认走 confirmControlScope → forcedTool rehearse。 */
   pendingScope?: ScopeCardPending | null;
-  pendingAsk?: { question: string; options?: string[] } | null;
+  pendingAsk?: {
+    question: string;
+    options?: string[];
+    /** 抄 grok `AskUserQuestion`：一发几道题，每项带解释。 */
+    questions?: import("@/lib/sliderule-marathon-driver").ControlQuestionWire[];
+  } | null;
+  /** 问答卡提交：四条路径（选完 / 你自己定 / 别再问了）。 */
+  onSubmitQuestionnaire?: (result: QuestionnaireOutcome) => void;
   /** 推演中补的话（排队到下一轮）。看得见、撤得掉——见 midrun-queue 头注。 */
   queuedTurns?: { text: string; synthetic?: boolean }[];
   /** 伴随式澄清：推演中模型替用户定下的事。见 AssumptionStrip 头注。 */
@@ -1321,7 +1333,7 @@ export function ComposerDock({
               {statusPill.label}
             </span>
           ) : null}
-          {pendingAsk ? (
+          {pendingAsk && !pendingAsk.questions?.length ? (
             <div
               data-testid="sliderule-control-ask"
               aria-label="控制面提问"
@@ -2075,6 +2087,24 @@ export function ComposerDock({
               输入，要求跟「路线对比一下」同一排芯片）。提问走顶行
               sliderule-control-ask。仍让路：提问在场时假设卡/排队卡不许叠上来。
           */}
+          {/*
+            问答卡（grok `AskUserQuestion`）：一发几道题、每项带解释、
+            自动补「其他（自己写）」、推荐项排第一。
+            ⚠ 它压过范围卡回执与假设卡：工厂正停着等这几道题的答案，
+              这时候摊别的卡等于把唯一能点的东西盖住（2026-09-10 那条伤）。
+          */}
+          {pendingAsk?.questions?.length && onSubmitQuestionnaire ? (
+            <div
+              className="pointer-events-auto absolute bottom-full left-0 right-0 z-20 mb-2 origin-bottom sr-composer-pop"
+              data-testid="sliderule-questionnaire-overlay"
+            >
+              <QuestionnaireCard
+                questions={pendingAsk.questions}
+                paused={isRunning}
+                onSubmit={onSubmitQuestionnaire}
+              />
+            </div>
+          ) : null}
           {!scopeCardIsGate(pendingScope) &&
           !pendingAsk &&
           (specAssumptions.length > 0 || queuedTurns.length > 0) ? (

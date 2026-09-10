@@ -84,6 +84,14 @@ from services.archetype_legal import (
     wired_archetype_choices,
     wired_device_choices,
 )
+from services.user_questions import (
+    coerce_questions as coerce_user_questions,
+    format_accepted as format_answers_for_model,
+    format_chat_about_this as format_chat_answers,
+    format_skip_interview as format_skip_answers,
+    normalize_answers as normalize_user_answers,
+    unanswered_text as unanswered_question_text,
+)
 from services.action_stationarity import IdenticalToolCallRun, step_signature, step_tool_name
 from services.model_memory import (
     recall as recall_memory,
@@ -966,17 +974,66 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "ask_user",
-            "description": "停下来问用户一个问题。本请求必须结束，不得空转等待。",
+            # 抄 grok `AskUserQuestion` 的 description_template（两句都要）：
+            #   - Every question automatically gets an "Other" choice where the
+            #     user can type their own answer.
+            #   - Put your recommended option first and append "(Recommended)"
+            #     to its label.
+            # ⚠ 第一句是**给渲染侧的承诺**：Other 由前端补，模型不许自己往
+            #   options 里塞一个「其他」。生成侧/消费侧成对（本仓 §四）。
+            "description": (
+                "问用户一道或几道选择题。一次可以问几件相关的事，别拆成几轮。"
+                "每道题渲染时都会自动多一个「其他（自己写）」，你不要自己加。"
+                "把你推荐的那一项排第一，标签后面加「（推荐）」。"
+                "本请求必须结束，不得空转等待。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "question": {"type": "string"},
-                    "options": {
+                    "questions": {
                         "type": "array",
-                        "items": {"type": "string"},
+                        "description": "要问的题，每道自带选项。",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "question": {
+                                    "type": "string",
+                                    "description": "问句，写成一整句问话。",
+                                },
+                                "options": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "label": {
+                                                "type": "string",
+                                                "description": "选项文字，几个字就够。",
+                                            },
+                                            "description": {
+                                                "type": "string",
+                                                "description": "选它意味着什么。",
+                                            },
+                                            "preview": {
+                                                "type": "string",
+                                                "description": (
+                                                    "焦点在这一项时给人看的对照内容"
+                                                    "（示例、片段）。单选题专用。"
+                                                ),
+                                            },
+                                        },
+                                        "required": ["label"],
+                                    },
+                                },
+                                "multi_select": {
+                                    "type": "boolean",
+                                    "description": "允许多选，缺省单选。",
+                                },
+                            },
+                            "required": ["question", "options"],
+                        },
                     },
                 },
-                "required": ["question"],
+                "required": ["questions"],
             },
         },
     },
@@ -1848,8 +1905,32 @@ def _inspect_digest(state: V5SessionState) -> tuple[str, str]:
 
 
 async def _park_ask(
-    state: V5SessionState, question: str, options: Optional[List[str]] = None
+    state: V5SessionState,
+    question: str,
+    options: Optional[List[str]] = None,
+    *,
+    questions: Optional[List[Dict[str, Any]]] = None,
 ) -> AsyncIterator[Dict[str, Any]]:
+    """停下来问。**一次可以问几道**（抄 grok `AskUserQuestion`）。
+
+    ⚠ `question` / `options` 两个老字段留着，值是**第一道题的投影**。
+      不是懒得删：`awaitDetail`、`_last_need_question`、水合时摊回卡的那条路
+      全按单题写的，一起改会把「刷新之后卡还在」那条链一并动了。
+      多题走 `questions`，单题两边一致——判据
+      `test_ask_user_carries_every_question` 钉着"两个字段说的是同一道题"。
+    """
+    rows = list(questions or [])
+    if not rows:
+        rows = [
+            {
+                "id": "q1",
+                "question": question,
+                "options": [{"label": str(o)} for o in (options or [])],
+            }
+        ]
+    head = rows[0]
+    question = str(head.get("question") or question or "")
+    flat = [str(o.get("label") or "") for o in (head.get("options") or [])]
     state.runtimePhase = "awaiting"
     state.awaitReason = "control_ask"
     state.awaitDetail = question
@@ -1860,7 +1941,8 @@ async def _park_ask(
             "role": "assistant",
             "kind": "ask_user",
             "text": question,
-            "options": list(options or []),
+            "options": flat,
+            "questions": rows,
             "reqId": req_id,
         },
     )
@@ -1868,10 +1950,60 @@ async def _park_ask(
     yield {
         "type": "control_ask_user",
         "question": question,
-        "options": list(options or []),
+        "options": flat,
+        "questions": rows,
         "reqId": req_id,
     }
     yield _complete(state)
+
+
+def _model_text_for_answer(
+    raw: Dict[str, Any], state: V5SessionState
+) -> Optional[str]:
+    """结构化答案 → 回给模型的那段话。四条路径抄 grok `format.rs`。
+
+        accepted   选完提交了
+        cancelled  明确不答 —— **不是错误**，别回成 error
+        chat       想先聊聊：答了的算数，没答的换个问法再问
+        skip       别再问了，直接开干
+
+    ⚠ 认不出结构就返回 None，调用方用前端送来的自然语言兜底。
+      认不出 ≠ 出错：老前端、老回执、脚本手打的一句话都走这条。
+    """
+    outcome = str(raw.get("outcome") or "").strip().lower()
+    answers_raw = raw.get("answers")
+    if not outcome and not isinstance(answers_raw, dict):
+        return None
+    questions = _last_asked_questions(state)
+    answers = normalize_user_answers(answers_raw)
+    notes_raw = raw.get("notes")
+    notes = (
+        {str(k): str(v) for k, v in notes_raw.items()}
+        if isinstance(notes_raw, dict)
+        else {}
+    )
+    if outcome in ("cancelled", "cancel", "dismissed"):
+        return unanswered_question_text(bool(raw.get("nonInteractive")))
+    if outcome in ("chat", "chat_about_this"):
+        return format_chat_answers(questions, answers)
+    if outcome in ("skip", "skip_interview"):
+        return format_skip_answers(questions, answers)
+    if not answers:
+        return None
+    return format_answers_for_model(questions, answers, notes)
+
+
+def _last_asked_questions(state: V5SessionState) -> List[Dict[str, Any]]:
+    """上一发问出去的那几道题。回喂要带问句原文——模型看不见自己上一发。"""
+    for row in reversed(getattr(state, "controlTranscript", None) or []):
+        if not isinstance(row, dict):
+            continue
+        if row.get("role") == "assistant" and row.get("kind") == "ask_user":
+            rows = row.get("questions")
+            if isinstance(rows, list) and rows:
+                return [r for r in rows if isinstance(r, dict)]
+            return [{"id": "q1", "question": str(row.get("text") or ""), "options": []}]
+    return []
 
 
 def _tool_answer_from_payload(
@@ -1887,6 +2019,14 @@ def _tool_answer_from_payload(
     if isinstance(raw, dict):
         kind = str(raw.get("kind") or "").strip()
         text = str(raw.get("text") or user_text or "").strip()
+        # ⚠ 结构化答案优先：`answers` 在，就按 grok 那四条路径之一造回喂的话，
+        #   不用前端拼好的自然语言。抄 grok `format.rs` 头注那句——
+        #   「Each function produces the **exact** model-visible string for one
+        #   of the four user-action paths.」措辞由**这一层**拥有，
+        #   前端换个说法不该改变模型看到的东西（本仓 §四）。
+        structured = _model_text_for_answer(raw, state)
+        if structured:
+            text = structured
         req_id = str(raw.get("reqId") or raw.get("req_id") or "").strip()
         if kind or text or raw.get("confirmed"):
             if not kind:
@@ -4599,14 +4739,43 @@ async def _dispatch_tool(
             return
         # 没记下的产品：不许把「这句话是问候还是协议」做成选项。
         # 问句用模型的；空才用兜底。盖成同一句 = 每轮回答都一样。
-        question = str(args.get("question") or "").strip() or CHEAP_TURN_FALLBACK
-        if not _has_product_topic(state):
-            options = []
-        else:
-            options = (
-                args.get("options") if isinstance(args.get("options"), list) else []
+        #
+        # ⚠ 入参形状换成 grok 的 `questions[]` 之后，**老形状仍要认**：
+        #   模型学过上一版的 `{question, options: string[]}`，真机上一定还会
+        #   那么填。`coerce_questions` 认字符串题、认字符串选项，认不出的
+        #   整题丢掉——丢掉之后这里 fail-closed（下面那句），不许静默出一张空卡
+        #   （本仓 §三，`plan_todo` 那个形状已经栽过两次）。
+        rows = coerce_user_questions(args.get("questions"))
+        if not rows:
+            legacy = args.get("options") if isinstance(args.get("options"), list) else []
+            rows = coerce_user_questions(
+                [{"question": args.get("question") or "", "options": legacy}]
             )
-        async for event in _park_ask(state, question, [str(x) for x in options]):
+        if not _has_product_topic(state):
+            # 还不知道要做什么：只要一句话，不给选项——把「问候还是协议」
+            # 做成选择题是 2026-09-08 真机那条伤。
+            rows = [
+                {
+                    "id": "q1",
+                    "question": (
+                        str(args.get("question") or "").strip()
+                        or (rows[0]["question"] if rows else "")
+                        or CHEAP_TURN_FALLBACK
+                    ),
+                    "options": [],
+                }
+            ]
+        if not rows:
+            yield {
+                "type": "control_tool_result",
+                "tool": "ask_user",
+                "ok": False,
+                "error": "这一笔没解析出任何一道题。questions 要是一串题，每道至少给 question。",
+            }
+            return
+        async for event in _park_ask(
+            state, str(rows[0].get("question") or ""), questions=rows
+        ):
             yield event
         return
     # clarify 已退役（2026-09-09 用户裁决）。它当年是"开场先问几条模板题"，

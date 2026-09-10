@@ -152,6 +152,12 @@ modules = [
   # 同 action_stationarity / done_claim 那条分工：查 state、发事件、落库留在
   # rehearsal_control，搬进来就立刻不是叶子。
   "services.plan_todo",
+  # 问用户那几道题的形状与四条结果文案（抄 grok AskUserQuestion）：
+  # 吃「模型送来的入参」吐归一后的题、吃「选了什么」吐回喂给模型的那段话，
+  # services 里谁都不依赖 → 叶子。
+  # 同 action_stationarity / plan_todo 那条分工：查 state（上一发问了什么）、
+  # 发事件、落库留在 rehearsal_control，搬进来它就立刻不是叶子。
+  "services.user_questions",
   # 跳的前置表达式树（抄 grok Expr<T>）：叶子怎么判由调用方那个闭包给，
   # 本模块不认识 state → services 里谁都不依赖 → 叶子。
   # 这也是它能当单一真相源的前提：谁都能安全 import 它去问「跑得动吗」。

@@ -1016,6 +1016,7 @@ function SlideRuleUnified({
   sendMessage,
   pendingScope = null,
   pendingAsk = null,
+  onSubmitQuestionnaire,
   queuedTurns = [],
   removeQueuedTurn,
   specAssumptions = [],
@@ -1072,7 +1073,16 @@ function SlideRuleUnified({
   sessionState: ReturnType<typeof useSlideRuleSession>["sessionState"];
   sendMessage: (textOverride?: string) => void;
   pendingScope?: import("./sliderule/scope-card-gate").ScopeCardPending | null;
-  pendingAsk?: { question: string; options?: string[] } | null;
+  pendingAsk?: {
+    question: string;
+    options?: string[];
+    /** 抄 grok `AskUserQuestion`：一发几道题，每项带解释。 */
+    questions?: import("@/lib/sliderule-marathon-driver").ControlQuestionWire[];
+  } | null;
+  /** 问答卡提交：四条路径（选完 / 你自己定 / 别再问了）。 */
+  onSubmitQuestionnaire?: (
+    result: import("./sliderule/QuestionnaireCard").QuestionnaireOutcome
+  ) => void;
   confirmControlScope?: () => void;
   dismissScopeCard?: () => void;
   dismissAsk?: () => void;
@@ -1316,6 +1326,7 @@ function SlideRuleUnified({
                         hero={isHomeEmpty}
                         pendingScope={pendingScope}
                         pendingAsk={pendingAsk}
+                        onSubmitQuestionnaire={onSubmitQuestionnaire}
                         onConfirmScope={confirmControlScope}
                         onReviseScope={dismissScopeCard}
                         onDismissAsk={dismissAsk}
@@ -1870,6 +1881,7 @@ function SlideRuleSessionBody({
     sendMessage,
     pendingScope,
     pendingAsk,
+    submitQuestionnaire,
     queuedTurns,
     removeQueuedTurn,
     specAssumptions,
@@ -2330,6 +2342,7 @@ function SlideRuleSessionBody({
     sendMessage,
     pendingScope,
     pendingAsk,
+    onSubmitQuestionnaire: submitQuestionnaire,
     queuedTurns,
     removeQueuedTurn,
     specAssumptions,

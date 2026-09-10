@@ -93,6 +93,8 @@ import {
   isWiredDevice,
   parseJudgeDevice,
 } from "./product-archetypes";
+import type { ControlQuestionWire } from "@/lib/sliderule-marathon-driver";
+import type { QuestionnaireOutcome } from "./QuestionnaireCard";
 import {
   hydrateParkedScope,
   lockScopeMorphology,
@@ -673,6 +675,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const [pendingAsk, setPendingAsk] = useState<{
     question: string;
     options?: string[];
+    /** 抄 grok `AskUserQuestion`：一发几道题。缺席 = 服务端还是老形状。 */
+    questions?: ControlQuestionWire[];
     reqId?: string;
   } | null>(null);
   const pendingAskRef = useRef(pendingAsk);
@@ -684,7 +688,18 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
    * （2026-09-08 真机：点「开始起草规范（spec）」）。
    */
   const pendingToolAnswerRef = useRef<
-    { kind: string; text: string; reqId?: string } | undefined
+    {
+      kind: string;
+      text: string;
+      reqId?: string;
+      /* 抄 grok `format.rs` 那四条路径：措辞归**服务端**拥有，
+         这里只送结构（选了哪些、手打了什么、走的哪条路）。
+         前端换个说法不该改变模型看到的东西（本仓 §四）。 */
+      outcome?: string;
+      answers?: Record<string, string[]>;
+      notes?: Record<string, string>;
+    }
+    | undefined
   >(undefined);
 
   /**
@@ -795,6 +810,49 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       }
     },
     [applySpecAssumptions, releaseRun, sessionState]
+  );
+
+
+  /**
+   * 问答卡提交。抄 grok `AskUserQuestion` 那四条路径。
+   *
+   * ⚠ 这里**只送结构**，不拼给模型看的话。回喂措辞归服务端
+   *   （`services/user_questions.py` 的四条 format），前端换个说法不该改变
+   *   模型看到的东西——本仓 §四那张「生成侧 / 消费侧」的表。
+   *
+   * ⚠ `text` 仍要给一句人话：它进 transcript、进左栏气泡，是**用户视角**的
+   *   记录。两者不是一回事，别拿同一份糊弄过去。
+   */
+  const submitQuestionnaire = useCallback(
+    (result: QuestionnaireOutcome) => {
+      const rows = pendingAskRef.current?.questions || [];
+      const reqId = pendingAskRef.current?.reqId;
+      const label = (qid: string) =>
+        rows.find(r => r.id === qid)?.question || qid;
+      let human = "";
+      if (result.outcome === "accepted") {
+        const parts = Object.entries(result.answers).map(
+          ([qid, picks]) => `${label(qid)}：${picks.join("、")}`
+        );
+        human = parts.length ? parts.join("；") : "（没有选）";
+      } else if (result.outcome === "cancelled") {
+        human = "这些我不答，你自己定";
+      } else {
+        human = "别再问了，直接开始";
+      }
+      pendingToolAnswerRef.current = {
+        kind: "ask_user",
+        text: human,
+        ...(reqId ? { reqId } : {}),
+        outcome: result.outcome,
+        ...("answers" in result ? { answers: result.answers } : {}),
+        ...("notes" in result ? { notes: result.notes } : {}),
+      };
+      pendingAskRef.current = null;
+      setPendingAsk(null);
+      void runTurnRef.current(human);
+    },
+    []
   );
 
   const clearPendingScope = () => {
@@ -1180,6 +1238,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             kind: stamped.kind,
             text: stamped.text || userText.trim(),
             ...(stamped.reqId ? { reqId: stamped.reqId } : {}),
+            ...(stamped.outcome ? { outcome: stamped.outcome } : {}),
+            ...(stamped.answers ? { answers: stamped.answers } : {}),
+            ...(stamped.notes ? { notes: stamped.notes } : {}),
           }
         : parkedAsk
           ? { kind: "ask_user", text: userText.trim() }
@@ -2095,6 +2156,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 const next = {
                   question: event.question,
                   options: event.options,
+                  ...(event.questions?.length ? { questions: event.questions } : {}),
                   ...(event.reqId ? { reqId: event.reqId } : {}),
                 };
                 pendingAskRef.current = next;
@@ -3422,6 +3484,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     requestRehearsal,
     pendingScope,
     pendingAsk,
+    submitQuestionnaire,
     confirmControlScope,
     dismissScopeCard,
     dismissAsk,
