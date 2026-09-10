@@ -1,433 +1,220 @@
 /**
- * 真实话题端到端：登录 → 新建会话 → 发一句需求 → 范围卡确认 → 推演到闭环。
+ * 真实话题端到端：登录、新会话、问卷、计划批准、生成与闭环。
+ * 2026-09-11：范围回执和专用假设卡已退役。所有问题经通用问卷回答，
+ * 计划必须通过真正的批准按钮提交，不能以「已经在跑」替代用户批准。
+ * 保留逐节点截图、页面可见性与控制面回执，超时不能作为成功退出。
  *
- * 跟其它烟测的分工：那些验的是**某一条判据**，这支验的是"一句真需求进去，
- * 到底能不能端出东西来"——所以它不断言，只**按节点截图**并把左栏正在显示的
- * 步骤文字打出来。判据落在人眼看得见的东西上（页面框出没出、有没有
- * 「推演中断」），不量内部状态。
- *
- * ⚠ 控制面之后，发送**不再直接点火**：先出范围卡，点「开始推演」才进工厂。
- *   脚本必须等 sliderule-scope-card，等不到就是控制面那条链断了。
- *
- * 用法：
- *   SLIDERULE_SMOKE_EMAIL=… SLIDERULE_SMOKE_PASSWORD=… \
- *   PLAYWRIGHT_CHROMIUM_EXECUTABLE=… node scripts/sliderule-real-topic-e2e.mjs
- * 可选：E2E_TOPIC 换话题、E2E_SHOT_DIR 换截图目录、E2E_DEADLINE_MIN 换上限。
+ * SLIDERULE_SMOKE_EMAIL / SLIDERULE_SMOKE_PASSWORD 配置账号。
+ * PLAYWRIGHT_CHROMIUM_EXECUTABLE 可指定浏览器。
+ * E2E_TOPIC / E2E_SHOT_DIR / E2E_BASE / E2E_DEADLINE_MIN 可覆盖默认值。
+ * 默认选每题推荐项或首项；E2E_CLARIFY_ANSWER 指定「其他」的手写答案。
  */
 import { chromium } from "playwright";
 import fs from "node:fs";
+import {
+  answerQuestionnaire,
+  approvePlan,
+  measureDecision,
+  visibleDecision,
+} from "./sliderule-e2e-decisions.mjs";
 
 const BASE = process.env.E2E_BASE || "http://localhost:3000";
 const OUT = process.env.E2E_SHOT_DIR || ".manus-logs/e2e-shots";
 const TOPIC =
   process.env.E2E_TOPIC ||
   "做一个社区诊所的预约与排班系统：医生排班、患者线上预约、到诊登记，管理员首页能看今天的预约量和空闲号源";
-const CLARIFY =
-  process.env.E2E_CLARIFY_ANSWER ||
-  "总部统一配发标准清单，门店按清单逐项打勾";
 const DEADLINE_MS = Number(process.env.E2E_DEADLINE_MIN || 14) * 60 * 1000;
+if (!Number.isFinite(DEADLINE_MS) || DEADLINE_MS <= 0)
+  throw new Error("E2E_DEADLINE_MIN must be positive");
 fs.mkdirSync(OUT, { recursive: true });
-
-let n = 0;
+const log = (...args) => console.log("[e2e]", ...args);
+let shotNumber = 0;
 const shot = async (page, tag) => {
-  const name = `${String(++n).padStart(2, "0")}-${tag}.png`;
+  const name = `${String(++shotNumber).padStart(2, "0")}-${tag}.png`;
   await page.screenshot({ path: `${OUT}/${name}`, fullPage: false });
-  console.log(`[shot] ${name}`);
-  return name;
+  log("截图:", name);
 };
-const log = (...a) => console.log("[e2e]", ...a);
 
-const b = await chromium.launch({
+const browser = await chromium.launch({
   args: ["--no-sandbox"],
   executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
 });
-const ctx = await b.newContext({ viewport: { width: 1600, height: 950 }, deviceScaleFactor: 1 });
-const page = await ctx.newPage();
-const errors = [];
-page.on("pageerror", e => errors.push(String(e).slice(0, 200)));
-page.on("console", m => {
-  const t = m.text();
-  if (/\[连接器\]|\[control|control_|推演|error/i.test(t)) console.log("  [console]", t.slice(0, 160));
+const context = await browser.newContext({
+  viewport: { width: 1600, height: 950 },
+  deviceScaleFactor: 1,
 });
+const page = await context.newPage();
+const errors = [];
+page.on("pageerror", error => errors.push(String(error).slice(0, 200)));
+page.on("console", message => {
+  const text = message.text();
+  if (/\[连接器\]|\[control|control_|推演|error/i.test(text))
+    log("浏览器:", text.slice(0, 160));
+});
+const result = {
+  topic: TOPIC,
+  approvedPlans: 0,
+  answeredQuestionnaires: 0,
+  done: false,
+  errors,
+};
 
 try {
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
   const status = await page.evaluate(
-    async ([email, password]) => {
-      const r = await fetch("/api/sliderule/account/login", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      return r.status;
-    },
+    async ([email, password]) =>
+      (
+        await fetch("/api/sliderule/account/login", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        })
+      ).status,
     [
       process.env.SLIDERULE_SMOKE_EMAIL || process.env.E || "",
       process.env.SLIDERULE_SMOKE_PASSWORD || process.env.P || "",
     ]
   );
-  log("登录 ->", status);
+  if (status !== 200) throw new Error(`Login returned HTTP ${status}`);
 
-  await page.goto(BASE + "/agent-loop/sliderule", { waitUntil: "domcontentloaded" });
-  await page.waitForSelector('[data-testid="sliderule-composer-input"]', { timeout: 60000 });
-  await page.waitForTimeout(4000);
-
-  /* ⚠ 上一趟留在屏幕上的卡会**把输入框锁死**：ComposerDock 的
-     `disabled={Boolean(pendingScope) || Boolean(pendingAsk)}`。页面恢复
-     上一个会话时这些卡会跟着回来，于是脚本卡在「element is not enabled」
-     等到超时——看着像输入框坏了，其实是上一轮还压着。先把它们打发走。 */
-  for (const sel of [
-    '[data-testid="sliderule-scope-revise"]',
-    '[data-testid="sliderule-clarification-close"]',
-  ]) {
-    const leftover = page.locator(sel);
-    if (await leftover.count()) {
-      log("清掉上一轮留下的卡:", sel);
-      await leftover.first().click().catch(() => {});
-      await page.waitForTimeout(800);
-    }
-  }
-  // 新建会话，别接着旧的跑（先清卡再点，否则点了也进不去）。
-  // ⚠ 2026-09-01：getByText("新建会话") 会点到帮助文案；真按钮是
-  //   sidebar-session-new。点错就会留在 sliderule-v51-product 上，
-  //   上一趟还在「推演中」，范围卡「开始推演」disabled，脚本干等 30s。
-  const fresh = page.locator('[data-testid="sidebar-session-new"]').first();
-  for (let i = 0; i < 4; i += 1) {
-    if (await page.getByText("想推演成什么应用").count()) break;
-    if (await fresh.count()) await fresh.click().catch(() => {});
-    await page.waitForTimeout(2000);
-  }
+  await page.goto(`${BASE}/agent-loop/sliderule`, {
+    waitUntil: "domcontentloaded",
+  });
+  // The real sidebar command changes session identity; never dismiss an old user's decision.
+  await page
+    .getByTestId("sidebar-session-new")
+    .first()
+    .click({ timeout: 60000 });
+  const input = page.getByTestId("sliderule-composer-input").first();
+  await page.waitForSelector(
+    '[data-testid="sliderule-composer-input"]:not([disabled])',
+    { timeout: 90000 }
+  );
   await shot(page, "新建会话");
-  for (let i = 0; i < 4; i += 1) {
-    const running = await page.evaluate(() =>
-      /推演中/.test(document.body.innerText)
-    );
-    if (!running) break;
-    log("上一轮还在推演中，再点新建会话");
-    if (await fresh.count()) await fresh.click().catch(() => {});
-    await page.waitForTimeout(2000);
-  }
-  await page.waitForSelector('[data-testid="sliderule-composer-input"]', { timeout: 60000 });
-  await shot(page, "空态");
-
-  const TA = '[data-testid="sliderule-composer-input"]';
-  /* ⚠ 等它**可用**，不只是"在页面上"。上一轮的 run 还没落幕、或会话还在
-     hydrate 时，输入框是 disabled 的——waitForSelector 照样能解析到它，
-     然后 click 干等 30 秒超时，报的是「element is not enabled」，
-     看着像脚本坏了，其实只是开早了。 */
-  await page.waitForSelector(`${TA}:not([disabled])`, { timeout: 90000 });
-  const box = page.locator(TA).first();
-  await box.click();
-  await box.fill("");
-  await box.pressSequentially(TOPIC, { delay: 8 });
-  /* 入站判定 debounce 500ms；判定在飞时发送键灰。等它亮再点。 */
-  await page.waitForTimeout(800);
+  await input.fill(TOPIC);
   await page.waitForSelector(
     '[data-testid="sliderule-composer-send"]:not([disabled])',
     { timeout: 60000 }
   );
   await shot(page, "输入需求");
-
-  const turnPosted = page.waitForResponse(
-    r => r.url().includes("/control-turn-stream") && r.request().method() === "POST",
-    { timeout: 45000 }
-  );
-  await page.locator('[data-testid="sliderule-composer-send"]').first().click();
-  let posted = await turnPosted.catch(() => null);
-  if (!posted) {
-    log("点击发送没有 POST control-turn-stream，改按 Enter");
-    await box.click();
-    await page.keyboard.press("Enter");
-    posted = await page
-      .waitForResponse(
-        r =>
-          r.url().includes("/control-turn-stream") &&
-          r.request().method() === "POST",
-        { timeout: 45000 }
-      )
-      .catch(() => null);
-  }
-  log("已发送", posted ? `控制面 ${posted.status()}` : "仍未见 control-turn-stream");
+  const firstTurn = page
+    .waitForResponse(
+      response =>
+        response.url().includes("/control-turn-stream") &&
+        response.request().method() === "POST",
+      { timeout: 45000 }
+    )
+    .catch(error => error);
+  await page.getByTestId("sliderule-composer-send").first().click();
+  const posted = await firstTurn;
+  if (posted instanceof Error) throw posted;
+  if (!posted.ok())
+    throw new Error(`First control turn returned HTTP ${posted.status()}`);
   await shot(page, "发送后");
 
-  /*
-   * 控制面：无范围卡不点火 —— 先出卡。
-   *
-   * ⚠ 2026-08-27：先出的**不一定**是范围卡。控制面现在会先问一轮澄清
-   *   （A/B：问题从这句需求里长出来），真机上这一趟出的是
-   *   「连锁药店的巡检项通常是怎么来的？」。旧脚本只等 scope-card，
-   *   90 秒超时退出——看起来像"控制面那条链断了"，其实是它**正常工作**
-   *   走了另一支。等两张卡里的任意一张，是澄清就答完再等范围卡。
-   */
-  await page.waitForSelector(
-    '[data-testid="sliderule-scope-card"], [data-testid="sliderule-clarification-card"]',
-    { timeout: 120000 }
-  );
-  /* ⚠ 澄清可能不止一轮：控制面答完一轮后**还可以再问一轮**（服务端上限 3）。
-     只处理一轮的话，第二轮的卡挂在那儿，脚本对着 scope-card 干等 120 秒
-     超时——2026-08-27 就是这么挂的，看着像"答完没反应"。所以 while，
-     直到范围卡出来或者澄清卡不再出现。 */
-  for (let round = 0; round < 3; round += 1) {
-    if (await page.locator('[data-testid="sliderule-scope-card"]').count()) break;
-    if (!(await page.locator('[data-testid="sliderule-clarification-card"]').count())) break;
-    log(`先出的是澄清卡（第 ${round + 1} 轮，控制面按这句需求生成的问题），逐题作答…`);
-    await shot(page, "澄清卡");
-    for (let step = 0; step < 4; step += 1) {
-      const other = page.locator('[data-testid="sliderule-clarification-other"]');
-      const free = page.locator('[data-testid="sliderule-clarification-text"]');
-      const q = await page
-        .locator('[data-testid="sliderule-clarification-card"] h3, [data-testid="sliderule-clarification-card"]')
-        .first()
-        .textContent()
-        .catch(() => "");
-      log("  澄清题:", (q || "").trim().slice(0, 60).replace(/\s+/g, " "));
-      if (await other.count()) await other.fill(CLARIFY);
-      else if (await free.count()) await free.fill(CLARIFY);
-      const next = page.locator('[data-testid="sliderule-clarification-next"]');
-      if (await next.count()) {
-        await next.click();
-        await page.waitForTimeout(500);
-        continue;
-      }
-      await page.click('[data-testid="sliderule-clarification-submit"]');
-      break;
-    }
-    log("澄清已提交，等下一张卡…");
-    await page
-      .waitForSelector(
-        '[data-testid="sliderule-scope-card"], [data-testid="sliderule-clarification-card"]',
-        { timeout: 120000 }
-      )
-      .catch(() => {});
-    await page.waitForTimeout(1500);
-  }
-  await page.waitForSelector('[data-testid="sliderule-scope-card"]', { timeout: 120000 });
-  await page.waitForTimeout(1200);
-  const restate = await page
-    .locator('[data-testid="sliderule-scope-restatement"]')
-    .textContent()
-    .catch(() => "");
-  log("范围卡复述:", (restate || "").trim().slice(0, 80));
-  await shot(page, "范围卡");
-
-  /*
-   * ⚠ 2026-09-10：范围卡**不一定是闸**。控制面现在会在同一回合里
-   *   `control_scope_card` 紧接 `control_handoff_factory`——卡是**回执**
-   *   （载荷里 `gate: false`），推演已经自己点着了，而 `ScopeCard` 的
-   *   `confirmDisabled` 在 isRunning 时把「开始推演」置灰（那是对的：
-   *   没有东西要确认了）。旧脚本对着 `:not([disabled])` 干等 90 秒然后抛
-   *   TimeoutError，报出来像「页面上点不动」，其实是**脚本比产品旧一版**。
-   *
-   *   所以：等它变可点，等不到就看是不是已经在跑——在跑就别点，往下走。
-   */
-  const confirmSel = '[data-testid="sliderule-scope-confirm"]';
-  const clickable = await page
-    .waitForSelector(`${confirmSel}:not([disabled])`, { timeout: 20000 })
-    .then(() => true)
-    .catch(() => false);
-  if (clickable) {
-    await page.click(confirmSel);
-    log("点了「开始推演」，工厂点火…");
-  } else {
-    /* ⚠ 判「在跑」要拿**只在跑的时候才存在**的东西。composer 的停止键是
-       `isRunning ? <button…> : null`（ComposerDock.tsx:1229）——这条件在
-       真机上真的会成立。随手编个 testid 的话，护栏的判据永远不成立，
-       于是"没在跑"分支照样抛（本仓 §一之二）。 */
-    const running = await page
-      .locator('[data-testid="sliderule-composer-stop"]')
-      .count()
-      .catch(() => 0);
-    log(
-      `「开始推演」是灰的（范围卡是回执，gate=false）；${running ? "推演已自行点火" : "但也没看到推演在跑"}，不点，继续观察`
-    );
-    if (!running) {
-      await shot(page, "确认键点不动");
-      throw new Error("范围卡既不能点、也没看到推演在跑——这条链断了");
-    }
-  }
   const started = Date.now();
-
-  let lastText = "";
-  let done = false;
-  let factoryDone = false;
-  /*
-   * 伴随式澄清（2026-08-27）：spec-first 第 2 步会把「我替你定了什么」
-   * 推上流。它**不拦**推演，所以这里只观察 + 点一下，不改变主流程节奏。
-   *
-   * ⚠ 判据落在人眼看得见的东西上：面板出没出、点了「改成 X」之后那句话
-   *   有没有真的出现在**排队条**里。不查内部状态——本仓第五条。
-   */
-  let sawAssumptions = false;
-  let lastClickAt = 0;
-  let sawOrch = false;
   let lastStep = "";
+  let nextPeriodicShot = 0;
+  let factoryDone = false;
+  let speechBeforeFactory = "";
   while (Date.now() - started < DEADLINE_MS) {
-    await page.waitForTimeout(8000);
-    const secs = Math.round((Date.now() - started) / 1000);
+    const seconds = Math.round((Date.now() - started) / 1000);
+    const decision = await visibleDecision(page);
+    if (decision) {
+      const measured = await measureDecision(page, decision);
+      log(`${seconds}s ${decision}:`, JSON.stringify(measured));
+      await shot(page, `${decision}-${seconds}s`);
+      if (!measured.painted || !measured.inViewport || measured.covered)
+        throw new Error(`${decision} is present but not visible to the user`);
+      if (decision === "questionnaire") {
+        const answer = await answerQuestionnaire(page, {
+          otherAnswer: process.env.E2E_CLARIFY_ANSWER || "",
+          onQuestion: async ({ step, question, answer }) => {
+            log(`题 ${step}:`, question.slice(0, 160), "答案:", answer);
+            await shot(
+              page,
+              `问卷-${result.answeredQuestionnaires + 1}-题-${step}`
+            );
+          },
+        });
+        result.answeredQuestionnaires += 1;
+        log("问卷回执:", JSON.stringify(answer));
+      } else {
+        if (!result.approvedPlans) {
+          const previews = await page
+            .locator('[data-testid^="sliderule-artboard"], iframe')
+            .count();
+          if (previews)
+            throw new Error(
+              "Product previews appeared before the first plan approval"
+            );
+        }
+        const approval = await approvePlan(page);
+        result.approvedPlans += 1;
+        fs.writeFileSync(
+          `${OUT}/approved-plan-${result.approvedPlans}.txt`,
+          approval.content,
+          "utf8"
+        );
+        log("批准回执:", JSON.stringify(approval.answer));
+        speechBeforeFactory = await page
+          .locator('[data-host-speech="true"]')
+          .first()
+          .innerText()
+          .catch(() => "");
+      }
+      continue;
+    }
+
     const state = await page.evaluate(() => {
-      const pick = sel => document.querySelector(sel)?.textContent?.trim() || "";
-      const steps = [...document.querySelectorAll('[data-testid^="sliderule-step"], .sr-step, [class*="step"]')]
-        .map(e => (e.textContent || "").trim())
-        .filter(Boolean);
+      const pick = selector =>
+        document.querySelector(selector)?.textContent?.trim() || "";
       return {
-        step: (() => {
-          const cur = document.querySelector(
-            '[data-testid^="sliderule-rehearsal-step-"][data-status="current"]'
-          );
-          return cur ? cur.textContent.trim() : "";
-        })(),
-        badge: pick('[data-testid="sliderule-publish-closure-badge"]'),
-        last: steps.length ? steps[steps.length - 1].slice(0, 120) : "",
-        pages: document.querySelectorAll('[data-testid^="sliderule-artboard"], iframe').length,
-        closure: pick('[data-testid="sliderule-publish-closure"]').slice(0, 80),
-        interrupted: document.body.innerText.includes("推演中断"),
-        clock: [...document.querySelectorAll('[data-testid^="sliderule-rehearsal-step-"]')]
-          .map(e => `${e.getAttribute("data-step")}:${e.getAttribute("data-status")}`)
+        step: pick(
+          '[data-testid^="sliderule-rehearsal-step-"][data-status="current"]'
+        ),
+        clock: [
+          ...document.querySelectorAll(
+            '[data-testid^="sliderule-rehearsal-step-"]'
+          ),
+        ]
+          .map(
+            element =>
+              `${element.getAttribute("data-step")}:${element.getAttribute("data-status")}`
+          )
           .join(","),
-        orchestrate: (document.body.innerText.match(/编排[^\n]{0,80}/) || [""])[0],
+        pages: document.querySelectorAll(
+          '[data-testid^="sliderule-artboard"], iframe'
+        ).length,
+        badge: pick('[data-testid="sliderule-publish-closure-badge"]'),
+        step6Done:
+          document
+            .querySelector('[data-testid="sliderule-rehearsal-step-6"]')
+            ?.getAttribute("data-status") === "done",
+        interrupted: document.body.innerText.includes("推演中断"),
       };
     });
-    const line = `${secs}s · 页面框 ${state.pages} · 当前步 ${state.step || "—"} · 钟 ${state.clock || "—"} · 闭环 ${state.badge || "—"}`;
-    if (line !== lastText) { log(line); lastText = line; }
-    if (!sawOrch && state.orchestrate) {
-      sawOrch = true;
-      log("左栏编排:", state.orchestrate);
-      await shot(page, `编排-${secs}s`);
-    }
+    log(
+      `${seconds}s 页面框=${state.pages} 当前步=${state.step || "无"} 钟=${state.clock || "无"} 闭环=${state.badge || "无"}`
+    );
+    if (state.interrupted) throw new Error("The workbench shows 推演中断");
+    if (!result.approvedPlans && state.pages)
+      throw new Error("Product previews appeared without plan approval");
     if (state.step && state.step !== lastStep) {
       lastStep = state.step;
       await shot(
         page,
-        `步骤-${state.step.replace(/[\\/:*?"<>|\s]+/g, "-").replace(/-+/g, "-").slice(0, 32)}-${secs}s`
+        `步骤-${state.step.replace(/[\\/:*?"<>|\s]+/g, "-").slice(0, 32)}-${seconds}s`
       );
-    } else if (secs % 40 < 9) {
-      await shot(page, `推演-${secs}s`);
+    } else if (seconds >= nextPeriodicShot) {
+      await shot(page, `推演-${seconds}s`);
+      nextPeriodicShot = seconds + 40;
     }
-    if (state.interrupted) { log("!! 出现「推演中断」"); await shot(page, `中断-${secs}s`); break; }
-
-    if (await page.locator('[data-testid="sliderule-assumptions"]').count()) {
-      const rows = await page.evaluate(() =>
-        [...document.querySelectorAll('[data-testid="sliderule-assumption"]')].map(
-          e => (e.textContent || "").trim().slice(0, 90)
-        )
-      );
-      const pager = (
-        (await page.locator('[data-testid="sliderule-assumption-pager"]').textContent()) || ""
-      ).trim();
-      if (!sawAssumptions) {
-        sawAssumptions = true;
-        log(`伴随式澄清出现（${secs}s，第 2 步之后）：`);
-        for (const r of rows) log("   ·", r);
-        await shot(page, `假设面板-${secs}s`);
-        log(`假设卡分页：${pager || "（没有 pager）"}`);
-        /*
-         * ⚠ 2026-09-10：`locator().count()` 只证明**它在 DOM 里**。这一趟
-         *   真机上卡就在 DOM 里、脚本读得到分页文案，而截图上一片空白——
-         *   悬浮层锚在作曲家 `bottom-full`，范围卡回执正好压在同一块地方。
-         *   本仓 §五：判据要落在用户真正看得见的东西上。所以这里量三样：
-         *   盒子多大、在不在视口里、那块地方最上层是不是它自己。
-         */
-        const seen = await page.evaluate(() => {
-          const el = document.querySelector('[data-testid="sliderule-assumptions"]');
-          if (!el) return { present: false };
-          const r = el.getBoundingClientRect();
-          const cs = getComputedStyle(el);
-          const cx = Math.round(r.left + r.width / 2);
-          const cy = Math.round(r.top + Math.min(r.height / 2, 20));
-          const top = document.elementFromPoint(cx, cy);
-          return {
-            present: true,
-            rect: `${Math.round(r.width)}x${Math.round(r.height)} @ ${Math.round(r.x)},${Math.round(r.y)}`,
-            painted: cs.display !== "none" && cs.visibility !== "hidden" && Number(cs.opacity) > 0,
-            inViewport: r.top >= 0 && r.bottom <= innerHeight && r.width > 0 && r.height > 0,
-            覆盖它的是: top && !el.contains(top)
-              ? `${top.tagName}${top.getAttribute("data-testid") ? `[${top.getAttribute("data-testid")}]` : ""}`
-              : null,
-          };
-        });
-        log("假设卡可见性:", JSON.stringify(seen));
-        if (seen.present && (!seen.painted || !seen.inViewport || seen.覆盖它的是)) {
-          log("!! 假设卡在 DOM 里但人看不见——这跟没出是一回事");
-        }
-      }
-      const clickAssumption = process.env.E2E_CLICK_ASSUMPTION === "1";
-      const running = await page.evaluate(() =>
-        /推演中/.test(document.body.innerText)
-      );
-      /*
-       * ⚠ 2026-09-10：「推演中就不点」这条守卫已经不成立了。工厂**停在**
-       *   spec-assumptions 等人的时候，右栏照样写着「推演中」（它确实还在跑，
-       *   只是 held），而卡上自己写的是「已停住，选完再继续」——
-       *   等 `!running` 等于等一个永远不来的时刻，真机实测干等 584 秒。
-       *
-       *   所以：停住了就点，别看「推演中」。停没停以卡自己那句为准，
-       *   那是**用户看得见的那句话**（本仓 §五）。
-       */
-      const parked = /已停住/.test(pager);
-      // 空闲且卡还在就再确认。上一趟点完同一张 1/2 弹回来就不再点，pages 跳开不了。
-      if (clickAssumption && (!running || parked) && Date.now() - lastClickAt > 20000) {
-        const submit = page.locator('[data-testid="sliderule-assumption-submit"]');
-        const next = page.locator('[data-testid="sliderule-assumption-next"]');
-        for (let i = 0; i < 8 && (await next.count()) && (await next.isVisible()); i += 1) {
-          await next.click();
-          await page.waitForTimeout(300);
-        }
-        if (await submit.count()) {
-          const nextTurn = page.waitForResponse(
-            r =>
-              (r.url().includes("/control-turn-stream") ||
-                r.url().includes("/drive-full-stream")) &&
-              r.request().method() === "POST",
-            { timeout: 45000 }
-          );
-          await submit.click();
-          const postedNext = await nextTurn.catch(() => null);
-          await page.waitForTimeout(800);
-          lastClickAt = Date.now();
-          const still = await page.locator('[data-testid="sliderule-assumptions"]').count();
-          log(
-            `点了「确认继续」（${pager}）→ 卡${still ? "还在" : "已收走"} · 下一跳 ${postedNext ? `控制面 ${postedNext.status()}` : "未见 control-turn-stream"}`
-          );
-          await shot(page, `确认继续-${secs}s`);
-        } else {
-          log("!! 假设卡没有「确认继续」——选完再继续的 CTA 丢了");
-        }
-      } else if (!clickAssumption && !running) {
-        const hasSubmit = await page.locator('[data-testid="sliderule-assumption-submit"]').count();
-        const hasNext = await page.locator('[data-testid="sliderule-assumption-next"]').count();
-        log(
-          hasSubmit || hasNext
-            ? `本趟不点确认（E2E_CLICK_ASSUMPTION 未开）；卡上有 ${hasNext ? "下一步 " : ""}${hasSubmit ? "确认继续" : ""}`
-            : "!! 假设卡没有下一步/确认继续——还是旧的边跑边点"
-        );
-      }
-    }
-    /*
-     * ⚠ 完成判定**只看六步钟和闭环徽标**，不许 grep 整页文字。
-     *
-     *   2026-08-27 第一版写的是
-     *   `/闭环|6\/6|已完成|交付/.test(document.body.innerText)`，
-     *   结果 60s 就报「闭环出现」——匹配到的是**左侧会话列表里旧话题的标题**
-     *   （「…全流程闭环系统」「…完整业务闭环」）。那会儿服务端才刚跑到
-     *   structure，第 4 步。本仓第二条的原话：判据 grep 的词同时出现在别处，
-     *   变异后照样绿；这里是连变异都不用，一开跑就是假绿灯。
-     */
-    const finished = await page.evaluate(() => {
-      const step6 = document.querySelector(
-        '[data-testid="sliderule-rehearsal-step-6"]'
-      );
-      const badge = document.querySelector(
-        '[data-testid="sliderule-publish-closure-badge"]'
-      );
-      return (
-        (step6?.getAttribute("data-status") === "done" || !!badge) &&
-        document.querySelectorAll("iframe").length > 0
-      );
-    });
-    if (finished && !factoryDone) {
+    // Scope completion to the current workbench; sidebar titles can contain "闭环".
+    if ((state.step6Done || state.badge) && state.pages && !factoryDone) {
       factoryDone = true;
-      log(`工厂收工，用时 ${secs}s，等主 Agent 开口…`);
-      await shot(page, `工厂收工-${secs}s`);
+      await shot(page, `工厂收工-${seconds}s`);
+      log("工厂收工，等主 Agent 回应");
     }
     if (factoryDone) {
       const speech = await page
@@ -435,29 +222,45 @@ try {
         .first()
         .innerText()
         .catch(() => "");
-      const spoke =
-        Boolean((speech || "").trim()) &&
+      const idle = !(await page.getByTestId("sliderule-composer-stop").count());
+      if (
+        idle &&
+        speech.trim() &&
+        speech !== speechBeforeFactory &&
         !speech.includes("我是面团的推演引擎") &&
-        !speech.includes("当前模型摘要");
-      const idleWithoutSpeech =
-        !(await page.locator('[data-testid="sliderule-composer-stop"]').count()) &&
-        !spoke;
-      if (idleWithoutSpeech) {
-        log("!! 工厂后作曲家已空闲但主 Agent 还没开口");
-      }
-      if (spoke) {
-        log(`主 Agent 开口，用时 ${secs}s:`, (speech || "").trim().slice(0, 80));
-        done = true;
+        !speech.includes("当前模型摘要")
+      ) {
+        log("主 Agent 回应:", speech.trim().slice(0, 160));
+        result.done = true;
         break;
       }
     }
+    await page.waitForTimeout(3000);
   }
-  await page.waitForTimeout(2000);
-  await shot(page, done ? "完成" : "收尾");
-  const body = await page.evaluate(() => document.body.innerText.slice(0, 1200));
-  fs.writeFileSync(`${OUT}/final-text.txt`, body, "utf8");
-  log("伴随式澄清面板:", sawAssumptions ? "出现过" : "整轮没出现");
-  log("页面错误:", errors.length ? errors.slice(0, 3) : "无");
+  if (!result.approvedPlans)
+    throw new Error("No plan was presented and approved");
+  if (!result.done)
+    throw new Error(
+      "Timed out before product generation and host response completed"
+    );
+  if (errors.length)
+    throw new Error(`Browser raised ${errors.length} page errors`);
+  await shot(page, "完成");
+} catch (error) {
+  result.failure = String(error);
+  process.exitCode = 1;
+  log("失败:", result.failure);
+  await shot(page, "失败").catch(() => {});
 } finally {
-  await b.close();
+  const body = await page
+    .locator("body")
+    .innerText()
+    .catch(() => "");
+  fs.writeFileSync(`${OUT}/final-text.txt`, body, "utf8");
+  fs.writeFileSync(
+    `${OUT}/result.json`,
+    JSON.stringify(result, null, 2),
+    "utf8"
+  );
+  await browser.close();
 }
