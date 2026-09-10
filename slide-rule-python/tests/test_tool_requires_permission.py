@@ -1,264 +1,63 @@
-"""批准是工具声明的属性，由分发统一强制——不是每个分支各写一遍。
-
-抄的标准答案：grok-build `xai-grok-workspace-types/src/types/tools.rs`
-
-    pub struct ToolDef {
-        pub name: String,
-        ...
-        /// Whether invocations require explicit user permission.
-        pub requires_permission: bool,
-    }
-
-    pub enum ToolProgress {
-        /// Tool started (after permission was granted, before execution).
-        Started { call_id: ToolCallId },
-        ...
-    }
-
-两件事：
-  1. 「要不要批准」是**工具定义上的一个字段**，缺省 false；
-  2. `Started` 的语义被钉死为「批准之后、执行之前」——所以未获批准的工具
-     不许出现 Started。
-
-本仓原来的形状：批准检查散在各自的 if 分支里——rehearse 一处
-（`_scope_confirmed`）、refine 一处（`_has_model`，还是 2026-08-27 才补的，
-补之前空会话上 refine 零范围卡就点火）。散着写的代价刚付过：**新加一个
-贵动词很容易忘了写那一段**，而忘了不会报错，只会绕过范围卡。
-
-⚠ 这条只搬机制，不扩大范围：声明的就是今天已经在查的那两个。
-  「有模型时的 refine 要不要也出薄卡」是产品决定（M2 Q2），不在本次。
-
-反向：删掉声明 / 删掉统一闸 / 未获批准时冒出 control_tool_start —— 都必须红。
-"""
-
+"""Declared WRITE permissions require a persisted approval of the current plan."""
 from __future__ import annotations
 
-import os
-import sys
+import asyncio
 
 import pytest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from control_turn_support import ControlHarness, event_types, new_sid, seed_session, seed_approved_session, six_fields
+from models.v5_state import V5SessionState
+from plan_approval_support import approved_plan_rows
+from services import rehearsal_control as control
 
-from models.v5_state import V5SessionState  # noqa: E402
-from services.rehearsal_control import (  # noqa: E402
-    CLOSED_TOOLS,
-    TOOL_PERMISSION,
-    tool_permission_granted,
-    tool_requires_permission,
-)
+WRITERS = {"rehearse", "workflow", "spec", "pages", "structure", "bind", "closure", "refine", "repair", "challenge", "restore_version", "fork_variant"}
 
 
-def _fresh() -> V5SessionState:
-    return V5SessionState(sessionId="perm-fresh", goal={"text": "", "status": "needs_refinement"})
+def test_all_mutating_tools_declare_permission():
+    assert {name for name in control.CLOSED_TOOLS if control.tool_requires_permission(name)} == WRITERS
+    assert set(control.TOOL_PERMISSION) <= set(control.CLOSED_TOOLS)
 
 
-def _confirmed() -> V5SessionState:
-    return V5SessionState(
-        sessionId="perm-ok",
-        goal={"text": "请假系统", "status": "clear"},
-        controlTranscript=[
-            {"id": "c1", "role": "system", "kind": "scope_confirmed", "text": "请假系统"}
-        ],
-    )
+@pytest.mark.parametrize("name", ["ask_user_question", "enter_plan_mode", "write_plan", "exit_plan_mode", "search_evidence", "inspect_model"])
+def test_interview_and_plan_tools_need_no_execution_approval(name):
+    state = V5SessionState(sessionId="planning", goal={"text": "inventory app"})
+    assert not control.tool_requires_permission(name)
+    assert control.tool_permission_granted(name, state)
 
 
-def test_default_is_no_permission_needed():
-    """缺省 false（grok 的 `requires_permission` 默认 false）。"""
-    for name in ("ask_user", "clarify", "search_evidence", "inspect_model", "scope_card"):
-        assert tool_requires_permission(name) is False
-    assert tool_requires_permission("一个还没声明过的新工具") is False
-    assert tool_permission_granted("search_evidence", _fresh()) is True
+@pytest.mark.parametrize("name", sorted(WRITERS))
+def test_only_current_persisted_plan_grants_write(name):
+    state = V5SessionState(sessionId="permission", goal={"text": "inventory app"})
+    assert not control.tool_permission_granted(name, state)
+    state.controlTranscript = [{"kind": "scope_confirmed"}]
+    assert not control.tool_permission_granted(name, state)
+    state.controlTranscript = approved_plan_rows()[:2]
+    state.awaitReason = "control_plan_approval"
+    assert not control.tool_permission_granted(name, state)
+    state.controlTranscript = approved_plan_rows()
+    state.awaitReason = None
+    if name == "refine":
+        state.modelVersions = [{"id": "v1", "model": {"pages": []}}]
+    assert control.tool_permission_granted(name, state)
+    state.controlTranscript.append({"kind": "plan_entered"})
+    assert not control.tool_permission_granted(name, state)
 
 
-def test_the_expensive_verbs_declare_permission():
-    """今天已经在查批准的那两个，一个不多一个不少。"""
-    declared = {n for n in CLOSED_TOOLS if tool_requires_permission(n)}
-    assert declared == {
-        "rehearse",
-        "workflow",
-        "spec",
-        "pages",
-        "structure",
-        "bind",
-        "closure",
-        "refine",
-    }, (
-        f"要批准的工具集变了：{sorted(declared)}。"
-        "多一个 = 用户平白多一次确认；少一个 = 那个动词能绕过范围卡点火。"
-    )
+@pytest.mark.parametrize("name", sorted(WRITERS))
+def test_dispatch_rejects_write_before_started(name):
+    state = V5SessionState(sessionId="denied", goal={"text": "inventory app"})
+    async def run():
+        return [event async for event in control._dispatch_tool(name, {}, state, "continue", [], [], "desktop", None, "inventory app")]
+    events = asyncio.run(run())
+    assert events == [{"type": "control_tool_result", "tool": name, "ok": False, "error": "plan_approval_required"}]
 
 
-def test_permission_table_only_covers_closed_tools():
-    assert set(TOOL_PERMISSION) - set(CLOSED_TOOLS) == set()
-
-
-def test_rehearse_granted_only_after_scope_confirmed():
-    assert tool_permission_granted("rehearse", _fresh()) is False
-    assert tool_permission_granted("rehearse", _confirmed()) is True
-
-
-def test_parked_on_scope_card_is_not_granted():
-    """停泊 = 等确认，不是已确认（_scope_confirmed 头注记过这次评审）。"""
-    st = _confirmed()
-    st.awaitReason = "control_scope"
-    assert tool_permission_granted("rehearse", st) is False
-
-
-# ── 统一强制：未获批准不许执行，也不许冒出 Started ────────────────
-
-
-def _run_tool(tool: str, *, goal_text: str = ""):
-    """夹具让模型挑指定工具，回 (信封调用次数, 事件类型)。"""
-    pytest.importorskip("fastapi")
-    from control_turn_support import (  # noqa: PLC0415
-        ControlHarness,
-        event_types,
-        llm_tool,
-        new_sid,
-        seed_session,
-        six_fields,
-    )
-    import _pytest.monkeypatch as _mp
-
-    mp = _mp.MonkeyPatch()
-    try:
-        harness = ControlHarness(mp)
-        sid = new_sid(f"perm-{tool}")
-        seed_session(sid, goal={"text": goal_text, "status": "needs_refinement"})
-        harness.llm_impl = lambda messages, **kw: llm_tool(tool, {})
-        _, events = harness.post(six_fields(sid, "做一个请假系统"))
-        return len(harness.helper_calls), event_types(events)
-    finally:
-        mp.undo()
-
-
-def test_rehearse_with_topic_restates_and_ignites():
-    """人话进环：有产品话题就复述 + 自动授予 + 点火，卡不当门禁。
-
-    ⚠ 2026-09-09 改走 forced 路径。上一版让夹具**模型**去挑 rehearse，
-      而 `TOOL_LIST_WHEN` 里 rehearse 要 `_scope_confirmed` 才列出——
-      空会话上模型根本看不见它，挑了也会被 `offered_names` 整个丢掉，
-      于是这条判据喂的是一发真机不可能出现的载荷（§一之二）。
-
-      用户真正拥有的那条路是「开始推演」按钮 / `/推演`，走 forcedTool。
-      闸拆掉之后它就是「有真产品直接点火」的入口，正是本条要钉的东西。
-    """
-    pytest.importorskip("fastapi")
-    from control_turn_support import (  # noqa: PLC0415
-        ControlHarness,
-        event_types,
-        new_sid,
-        seed_session,
-        six_fields,
-    )
-    import _pytest.monkeypatch as _mp
-
-    mp = _mp.MonkeyPatch()
-    try:
-        harness = ControlHarness(mp)
-        sid = new_sid("perm-forced-rehearse")
-        seed_session(sid, goal={"text": "", "status": "needs_refinement"})
-        _, events = harness.post(
-            six_fields(sid, "做一个请假系统", forcedTool="rehearse")
-        )
-        types = event_types(events)
-        assert len(harness.helper_calls) == 1, (
-            f"有话题的开始推演必须点火。事件：{types}"
-        )
-        assert "control_scope_card" in types, "复述回执没了——卡不当门禁≠不说话"
-        assert "control_handoff_factory" in types
-    finally:
-        mp.undo()
-
-
-def test_rehearse_is_not_offered_before_scope_is_confirmed():
-    """反向：模型在空会话上看不见 rehearse（所以上面那条只能走 forced）。"""
-    from models.v5_state import V5SessionState  # noqa: PLC0415
-
-    from services.rehearsal_control import should_list_tool  # noqa: PLC0415
-
-    fresh = V5SessionState(
-        sessionId="perm-list", goal={"text": "", "status": "needs_refinement"}
-    )
-    assert should_list_tool("rehearse", fresh) is False
-
-
-def test_refine_without_model_still_parks():
-    """空会话没模型可精修 → 仍停。"""
-    calls, types = _run_tool("refine")
-    assert calls == 0, (
-        f"refine 未获批准就点了火——没模型时 drive_full_* 必须是 0。事件：{types}"
-    )
-    assert "control_scope_card" in types, (
-        f"refine 既没点火也没开范围卡：用户会看到一轮什么都没发生。事件：{types}"
-    )
-
-
-def test_no_started_event_before_permission_for_refine():
-    """grok：`Started` 是「批准之后、执行之前」。没模型的 refine 不许有 Started。"""
-    _, types = _run_tool("refine")
-    assert "control_tool_start" not in types
-    assert "control_handoff_factory" not in types
-
-
-def test_gate_is_declared_once_not_per_branch():
-    """通电：闸要在统一出口上，不是各分支各写一段。
-
-    变异：把统一闸删掉、退回每分支自查 → 上面的 park 判据仍可能绿
-    （因为分支里还有），所以这条单独钉"只有一处"。
-    """
-    import inspect
-    import re
-
-    from services import rehearsal_control as rc
-
-    src = re.sub(r'"""[\s\S]*?"""', "", inspect.getsource(rc._dispatch_tool))
-    src = re.sub(r"#.*", "", src)
-    assert "tool_permission_granted(" in src, "分发器没走统一批准闸"
-    assert src.count("tool_permission_granted(") == 1, (
-        "统一闸出现了不止一次——又散回各分支了"
-    )
-
-
-def test_the_button_is_the_grant_not_a_bypass():
-    """停泊态 + forcedTool=rehearse = 用户授予，必须点得着火。
-
-    对照 grok：NeedPermission 是请求，用户回的 Permission{decision} 是授予。
-    分发闸（TOOL_PERMISSION）管的是**模型自己挑** rehearse；按钮走 forced
-    路径，是那个 decision 本身。
-    变异：把 forced 路径那个 or 子句删掉 → 按钮永远点不着，本条必红。
-    """
-    pytest.importorskip("fastapi")
-    from control_turn_support import (  # noqa: PLC0415
-        ControlHarness,
-        event_types,
-        llm_tool,
-        new_sid,
-        seed_session,
-        six_fields,
-    )
-    import _pytest.monkeypatch as _mp
-
-    mp = _mp.MonkeyPatch()
-    try:
-        harness = ControlHarness(mp)
-        sid = new_sid("perm-grant")
-        seed_session(
-            sid,
-            goal={"text": "请假系统", "status": "clear"},
-            awaitReason="control_scope",
-            awaitDetail="请假系统",
-        )
-        harness.llm_impl = lambda messages, **kw: llm_tool("ask_user", {"question": "?"})
-        _, events = harness.post(
-            six_fields(sid, "将做成：请假系统", forcedTool="rehearse")
-        )
-        assert len(harness.helper_calls) == 1, (
-            f"停泊态点「开始推演」没点着火——授予被当成了未批准。事件：{event_types(events)}"
-        )
-        assert "control_scope_card" not in event_types(events), (
-            "点了确认还在重开范围卡：用户会以为按钮坏了"
-        )
-    finally:
-        mp.undo()
+@pytest.mark.parametrize("approved", [False, True])
+def test_forced_button_is_not_an_approval_receipt(monkeypatch, approved):
+    harness = ControlHarness(monkeypatch)
+    sid = new_sid("forced-permission")
+    (seed_approved_session if approved else seed_session)(sid, goal={"text": "inventory app", "status": "clear"})
+    _, events = harness.post(six_fields(sid, "continue", forcedTool="rehearse"))
+    assert len(harness.helper_calls) == int(approved)
+    assert ("control_handoff_factory" in event_types(events)) is approved
+    assert "control_scope_card" not in event_types(events)

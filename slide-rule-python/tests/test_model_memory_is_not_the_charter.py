@@ -28,7 +28,7 @@ from control_turn_support import (
     llm_text,
     llm_tool,
     new_sid,
-    seed_session,
+    seed_approved_session as seed_session,
     six_fields,
 )
 from services.closed_tools import CLOSED_TOOLS, ToolScope, resolve_tool_scope

@@ -62,7 +62,7 @@ def test_greeting_does_not_call_helper(harness):
     kinds = [
         row.get("kind") for row in transcript if isinstance(row, dict)
     ]
-    assert "ask_user" in kinds
+    assert "ask_user_question" in kinds
     reloaded = load_session(sid)
     assert reloaded is not None
     assert len(reloaded.controlTranscript or []) >= 2

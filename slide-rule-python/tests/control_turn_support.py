@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from app import app
 from conftest import TEST_USER_ID
 from models.v5_state import V5SessionState
+from plan_approval_support import approved_plan_rows
 from services.slide_rule_session import load_session, save_session
 from sliderule_llm.control_client import ControlLlmResult
 
@@ -115,6 +116,18 @@ def seed_session(sid: str, **kwargs: Any) -> V5SessionState:
     }
     payload.update(kwargs)
     return save_session(V5SessionState(**payload))
+
+
+def seed_approved_session(sid: str, **kwargs: Any) -> V5SessionState:
+    """Execution tests opt in to the now-required server approval precondition."""
+    kwargs["controlTranscript"] = [
+        row for row in kwargs.get("controlTranscript", [])
+        if not str(row.get("kind", "")).startswith("plan_")
+    ] + approved_plan_rows()
+    if kwargs.get("awaitReason") == "control_scope":
+        kwargs["awaitReason"] = None
+        kwargs["awaitDetail"] = None
+    return seed_session(sid, **kwargs)
 
 
 def goal_text(state: Optional[V5SessionState]) -> str:

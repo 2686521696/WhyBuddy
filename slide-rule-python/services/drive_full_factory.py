@@ -28,7 +28,7 @@ from pydantic import ValidationError
 from models.v5_state import V5SessionState
 from services import app_access
 from services.persistence import _checkpoint_dir, _safe_ckpt_token
-from services.scope_authority import preferred_device_for_run
+from services.scope_authority import preferred_device_for_run, plan_execution_authorized, latest_control_plan, approved_plan_instruction
 from services.slide_rule_session import load_session, save_session
 from services.sliderule_session_sanitizer import sanitize_session_state
 from services.v5_full_driver import (
@@ -88,6 +88,7 @@ async def start_drive_full_factory_run(
         clarifications_from_state,
         set_active_connectors,
         set_clarifications,
+        set_approved_plan,
         set_installed_skills,
     )
 
@@ -101,9 +102,13 @@ async def start_drive_full_factory_run(
     ):
         raise HTTPException(status_code=404, detail="Not found")
     if persisted is not None:
-        state = persisted
+        # A later authorization reload may share the session cache object.
+        # Keep the already stamped hop isolated from that read.
+        state = persisted.model_copy(deep=True)
         if viewer is not None and not app_access.can_session("drive", state.model_dump(), viewer):
             raise HTTPException(status_code=404, detail="Not found")
+        if not plan_execution_authorized(state):
+            raise HTTPException(status_code=409, detail="plan_approval_required")
         wanted = [
             str(item).strip()
             for item in (goal_tools or [])
@@ -121,14 +126,11 @@ async def start_drive_full_factory_run(
     elif require_session_id:
         raise HTTPException(status_code=400, detail="session_id required")
     else:
-        raw = fallback_state if isinstance(fallback_state, dict) else {}
-        try:
-            state = _adopt_owner(V5SessionState(**raw), viewer)
-        except (ValidationError, TypeError, ValueError) as exc:
-            raise HTTPException(
-                status_code=400,
-                detail=str(exc).splitlines()[0] or "invalid_state",
-            ) from exc
+        raise HTTPException(status_code=409, detail="plan_approval_required")
+
+    approved_plan = dict(latest_control_plan(state))
+    plan_content = str(approved_plan["planContent"])
+    execution_instruction = approved_plan_instruction(state, user_text)
 
     async def stream_factory():
         from services.product_charter import (
@@ -136,6 +138,13 @@ async def start_drive_full_factory_run(
             clear_charter_for_run,
         )
 
+        fresh = await asyncio.to_thread(load_session, sid)
+        if (
+            fresh is None or fresh.ownerId != state.ownerId
+            or not plan_execution_authorized(fresh)
+            or latest_control_plan(fresh) != approved_plan
+        ):
+            raise HTTPException(status_code=409, detail="plan_approval_required")
         set_installed_skills(installed_skills)
         set_active_connectors(active_connectors)
         # 开工前用户答过的澄清 → 生成提示词的硬约束。**从持久化状态里取**，
@@ -148,7 +157,7 @@ async def start_drive_full_factory_run(
         run_device = preferred_device_for_run(
             goal=goal,
             payload_device=preferred_device,
-            texts=[user_text, str(goal.get("text") or "")],
+            texts=[plan_content, user_text, str(goal.get("text") or "")],
         )
         set_preferred_device_override(run_device)
         set_design_system_override(design_system_id)
@@ -162,11 +171,12 @@ async def start_drive_full_factory_run(
         activate_charter_for_run(state, charter_payload)
         journal = Journal.load(_workflow_journal_path(sid)) if sid else Journal()
         try:
+            set_approved_plan(plan_content)
             with journal_scope(journal):
                 async for event in drive_full_v5_session_stream(
                     state,
                     max_loops=max_loops,
-                    user_instruction=user_text,
+                    user_instruction=execution_instruction,
                     repair=repair,
                     profile=profile,
                 ):
@@ -178,7 +188,7 @@ async def start_drive_full_factory_run(
                         async for repair_event in drive_full_v5_session_stream(
                             state,
                             max_loops=2,
-                            user_instruction=user_text,
+                            user_instruction=execution_instruction,
                             repair=True,
                             profile=profile,
                         ):
@@ -189,6 +199,7 @@ async def start_drive_full_factory_run(
             set_installed_skills(None)
             set_active_connectors(None)
             set_clarifications(None)
+            set_approved_plan(None)
             set_preferred_device_override(None)
             set_design_system_override(None)
             clear_charter_for_run()

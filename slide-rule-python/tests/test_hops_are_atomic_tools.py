@@ -23,7 +23,7 @@ from control_turn_support import (
     llm_text,
     llm_tool,
     new_sid,
-    seed_session,
+    seed_approved_session as seed_session,
     six_fields,
     strip_python,
 )
@@ -93,7 +93,7 @@ def test_rehearse_on_restatement_card_ignites_without_park_reason(harness):
     assert "pages" in todo and "structure" in todo and "bind" in todo, todo
 
 
-def test_typing_while_restatement_card_is_not_a_new_topic(harness):
+def test_retired_restatement_card_does_not_block_an_interview(harness):
     """真机：复述卡摊着又打「权限管理系统」，又问一轮又出一张卡。
 
     变异：仍进 LLM → helper 或第二张 ask_user，本条红。
@@ -119,19 +119,19 @@ def test_typing_while_restatement_card_is_not_a_new_topic(harness):
         ],
     )
     harness.llm_impl = lambda messages, **kw: llm_tool(
-        "ask_user", {"question": "请选一个核心侧重点"}
+        "ask_user_question", {"question": "请选一个核心侧重点"}
     )
     _, events = harness.post(six_fields(sid, "权限管理系统"))
     assert harness.helper_calls == [], event_types(events)
     types = event_types(events)
-    assert "control_ask_user" not in types, types
+    assert "control_ask_user" in types, types
     assert "control_handoff_factory" not in types
     texts = [
         str(e.get("text") or "")
         for e in events
         if e.get("type") == "control_text"
     ]
-    assert any("开始推演" in t and "不对再说" in t for t in texts), texts
+    assert any(e.get("question") == "请选一个核心侧重点" for e in events)
 
 
 def test_rehearse_ignites_spec_and_parks_the_rest_on_todo(harness):

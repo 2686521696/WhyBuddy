@@ -176,4 +176,4 @@ class Test两条分支没有别的full残留:
                         apps += 1
         # repair 有两个入口（模型挑 / 按钮点），两处都该保持 full。
         assert fulls == 2, f"只有 repair 的两个入口该用 full，实际 {fulls} 处"
-        assert apps >= 5, f"点火/单跳/精修两入口至少五处 app 档，实际 {apps} 处"
+        assert apps >= 4, f"批准/单跳/精修两入口至少四处 app 档，实际 {apps} 处"

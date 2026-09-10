@@ -26,14 +26,14 @@ export type {
   SlashItem,
   RehearsalSlashVerb,
 } from "@/lib/slash-item";
-import type { SlashItem } from "@/lib/slash-item";
+import type { SlashItem, SlashKind, RehearsalSlashVerb } from "@/lib/slash-item";
 
 export const REHEARSAL_SLASH_ITEMS: SlashItem[] = [
   {
     key: "rehearse",
     kind: "rehearsal",
     name: "推演",
-    description: "复述范围；不对再说",
+    description: "讨论需求并拟定计划",
   },
   {
     key: "refine",
@@ -50,8 +50,8 @@ export const REHEARSAL_SLASH_ITEMS: SlashItem[] = [
   {
     key: "scope",
     kind: "rehearsal",
-    name: "范围",
-    description: "只出范围卡，不点火",
+    name: "计划",
+    description: "拟定或修改执行计划",
   },
   {
     key: "restore",
@@ -206,6 +206,8 @@ const REHEARSAL_VERBS: ReadonlyArray<{
   { cmd: "/推演", verb: "rehearse" },
   { cmd: "/精修", verb: "refine" },
   { cmd: "/质疑", verb: "challenge" },
+  { cmd: "/计划", verb: "scope" },
+  { cmd: "/plan", verb: "scope" },
   { cmd: "/范围", verb: "scope" },
   { cmd: "/回退", verb: "restore" },
 ];
@@ -239,7 +241,7 @@ export function forcedToolForRehearsalVerb(
   if (verb === "refine") return "refine";
   if (verb === "challenge") return "challenge";
   if (verb === "restore") return "restore_version";
-  if (verb === "scope") return "scope_card";
+  if (verb === "scope") return "enter_plan_mode";
   return undefined;
 }
 
@@ -270,39 +272,6 @@ export function controlUserTextForSlash(
   const raw = String(userText || "").trim();
   if (parseRehearsalSlash(raw) !== "scope") return raw;
   return rehearsalSlashRemainder(raw) || String(currentGoal || "").trim();
-}
-
-/**
- * 范围卡标题。服务端若仍把 `/范围` 当 restatement，客户端不得照画。
- *
- * ⚠ 2026-08-27：兜底那一段原来是 `remainder || goal`，而
- *   `rehearsalSlashRemainder` 对**不带斜杠动词**的句子是原样返回。于是
- *   服务端复述句为空时，卡上写的就是用户这一轮那句话——用户回一句
- *   「就按上面这个推演」，卡就叫「将做成：就按上面这个推演」。这正是同一天
- *   在 Python 侧修掉的那个病（rehearsal_control._restate 的空确认守卫），
- *   TS 这半边是它的孪生（CLAUDE.md §4：成对的东西改一条等于一半不生效）。
- *
- *   修法**不是**把那个判定再抄一份到 TS——那样就多出一对要同步的实现，
- *   正是第四条要防的事。这里只用手头已有的信息：`remainder` 只有在这句话
- *   **真的带了斜杠动词**时才是"用户新给的范围"，值得盖过 goal；不带斜杠时
- *   它只是原文回声，该让位给 goal。
- *   服务端复述句的唯一权威在 `services/rehearsal_control.py`
- *   （`_restatement_chain`），客户端不再自己从 userText 造一个。
- */
-export function scopeCardRestatement(
-  eventRestatement: string,
-  userText: string,
-  currentGoal: string
-): string {
-  const raw = String(eventRestatement || "").trim();
-  const goal = String(currentGoal || "").trim();
-  if (raw && parseRehearsalSlash(raw) === null && !raw.startsWith("/")) {
-    return raw;
-  }
-  const typed = String(userText || "").trim();
-  const hadSlashVerb = parseRehearsalSlash(typed) !== null;
-  const remainder = hadSlashVerb ? rehearsalSlashRemainder(typed) : "";
-  return remainder || goal || rehearsalSlashRemainder(typed);
 }
 
 /** 选中推演动词：把 `/查询串` 补成完整命令，不摘成芯片。 */

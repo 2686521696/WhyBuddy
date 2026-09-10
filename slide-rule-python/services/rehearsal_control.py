@@ -5,10 +5,10 @@
 
 1. Route POST /api/sliderule/control-turn-stream, _require_login. No Node twin.
 2. SSE: control_text, control_tool_start, control_tool_result, control_ask_user,
-   control_scope_card, control_handoff_factory (with runId), complete.
+   control_plan_approval, control_handoff_factory (with runId), complete.
    Cheap turns are request-scoped (no run_registry). Handoff starts the factory
    run; same SSE (or client resume consumer) then factory events.
-3. Parking: awaitReason MUST be the expanded control_ask / control_scope.
+3. Parking: awaitReason MUST be control_ask / control_plan_approval.
    controlTranscript is a schema field. Tool loop MUST NOT spin waiting for
    the user in the same HTTP request. The *next* POST is a NeedUserAnswer
    reply (kind=user_answer), not a new HumanIntent turn.
@@ -25,15 +25,16 @@
    Product missing session_id → 400 (no anon-).
 9. Every product POST (including greetings) MUST carry the six fields.
    FORBIDDEN {forcedTool, goal} only.
-10. Expensive buttons are deterministic ignition: 开始推演 = forcedTool rehearse
-    (skip LLM before factory). /推演 without confirmed card parks. /精修 = refine.
+10. After plan approval, forcedTool rehearse skips LLM before factory.
+    Before approval, /推演 and expensive tools stay in planning. /精修 = refine.
     补齐缺口 = repair. 质疑 = challenge (invalidate once, no helper).
 11. WRITE (rehearse/refine/repair) does NOT exit the tool loop — LLM-picked
     or forced. Factory complete is nested (`factory_complete`); control yields
     control_tool_result and keeps picking. Forced buttons still skip LLM
     before ignition; after factory they rejoin the host loop.
 
-Closed tool table: ask_user, search_evidence, inspect_model, scope_card,
+Closed tool table: ask_user_question, search_evidence, inspect_model,
+enter_plan_mode, write_plan, exit_plan_mode,
 rehearse, workflow, spec, pages, structure, bind, closure, refine, challenge,
 repair, restore_version, fork_variant.
 LLM cannot invent tools. No tool may write blocked=false.
@@ -43,7 +44,7 @@ tools 字段。rehearse/refine/repair 只调 start_drive_full_factory_run。
 FORBIDDEN: `async for drive_full_v5_session_stream`。
 refine 走生成器 refine-context（v5_full_driver wants_refine /
 set_refine_context）；FORBIDDEN 把 v5_capability_executor 当入口 import。
-未确认范围 + forcedTool rehearse → park，helper calls = 0。
+未批准计划 + forcedTool rehearse → 继续规划，helper calls = 0。
 """
 
 from __future__ import annotations
@@ -140,12 +141,9 @@ from services.drive_full_factory import start_drive_full_factory_run
 from services.workflow_registry import workflow_for, workflow_names
 from services.workflow_select import select_workflow
 from services.scope_authority import (
+    latest_control_plan,
+    plan_execution_authorized,
     preferred_device_for_run,
-    resolve_confirm_device,
-    resolve_park_archetype,
-    resolve_park_device,
-    stamp_scope_onto_goal,
-    wired_device,
 )
 from services.slide_rule_interactive_gates import (
     apply_user_intervention_invalidation,
@@ -153,7 +151,6 @@ from services.slide_rule_interactive_gates import (
 )
 from services.slide_rule_session import load_session, save_session
 from services.turn_narration import deliverable_fingerprint as factory_deliverable_fingerprint  # 叙述/回执同一把尺子
-from services.v5_full_driver import _truthy_scope_flag
 from services.llm_error_text import humanize_llm_error
 from sliderule_llm.client import LlmError
 from sliderule_llm.control_client import ControlLlmResult, call_control_llm
@@ -513,8 +510,8 @@ def _session_has(state: V5SessionState) -> Any:
     """
 
     def have(need: Need) -> bool:
-        if need is Need.SCOPE:
-            return _scope_confirmed(state)
+        if need is Need.PLAN:
+            return plan_execution_authorized(state)
         if need is Need.SPEC:
             return _has_spec(state)
         if need is Need.PAGES:
@@ -686,7 +683,7 @@ def _has_ask_answer_candidate(state: V5SessionState) -> bool:
         if row.get("kind") == "user_answer":
             text = str(row.get("text") or "").strip()
             return bool(text) and not _is_exact_filler(text)
-        if row.get("kind") in ("scope_confirmed", "scope_card"):
+        if row.get("kind") in ("plan_written", "plan_approved", "plan_approval"):
             return False
     return False
 
@@ -706,7 +703,7 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
     # 未确认范围时 rehearse 会被 re-park（见 _dispatch_tool 的 rehearse 分支）。
     # 「开始推演」按钮走 forcedTool 绕过 LLM（KD21），裁掉不影响用户点火。
     # 已有模型就别再列 rehearse：下一刀 WRITE 是 refine，不是整场重烧。
-    "rehearse": lambda st: _scope_confirmed(st) and not _has_spec(st) and not _has_model(st),
+    "rehearse": lambda st: plan_execution_authorized(st) and not _has_spec(st) and not _has_model(st),
     # ⚠ 这五条**不再手写**：前置只有 `HOP_REQUIRES` 一份声明（抄 grok
     #   `requires_expr`），这里派生。改造前同一条规则在
     #   `_factory_hop_blocker` 里还有一份手写 if 链，两处会漂（§4）。
@@ -721,17 +718,15 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
     "closure": lambda st: hop_satisfied("closure", _session_has(st)),
     # 没产出就没什么可报完工的。跟 closure 同一个条件——它俩问的是同一件事
     # 「手上有没有可判的东西」，不许在这儿另写一份口径（§4）。
-    "report_done": lambda st: _scope_confirmed(st) and (_has_pages(st) or _has_model(st)),
-    # 清单是给多步活儿用的。范围没确认时手上还没有"活儿"，列了也是空谈。
-    "todo_write": lambda st: _scope_confirmed(st),
+    "report_done": lambda st: plan_execution_authorized(st) and (_has_pages(st) or _has_model(st)),
+    # 执行清单只在计划批准后开放。
+    "todo_write": lambda st: plan_execution_authorized(st),
     # 记忆按**账号**归属。没有归属就没地方记，列出来只会让模型白调一次。
     "remember": lambda st: bool(_memory_scope_id(st)),
     "recall": lambda st: bool(_memory_scope_id(st)),
     # 抄 grok WorkflowTool：有名字的日历是一件可挑选的 WRITE 工具，
-    # 不是默认唯一路径。范围确认后就能看见；有模型后仍列出（减菜再跑）。
-    "workflow": lambda st: _scope_confirmed(st),
-    # 已确认过范围就别再列：交回后模型再挑 scope_card 会把假设面板顶掉
-    # （2026-09-02 真机）。下一步是 pages，不是再开一张卡。
+    # 不是默认唯一路径。计划批准后就能看见；有模型后仍列出（减菜再跑）。
+    "workflow": lambda st: plan_execution_authorized(st),
     # ⚠ 2026-09-09 照 grok 改：清单只看**这件工具现在能不能用**，不猜用户
     #   那句话像不像需求。
     #
@@ -746,7 +741,8 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
     #   猜错一次就是「你好」弹一张卡，或者英文需求一整年进不来。
     #   意图由提示词那条 work_policy 判（回答就好，不要顺手造东西），
     #   贵动作由点火那道闸挡（`_turn_has_real_product`）——两层都在动作侧。
-    "scope_card": lambda st: not _scope_confirmed(st),
+    "write_plan": lambda st: not plan_execution_authorized(st),
+    "exit_plan_mode": lambda st: bool(latest_control_plan(st)) and not plan_execution_authorized(st),
     # 没有上一版可回（_previous_model_version_id fail-closed 返回 ""）。
     "restore_version": lambda st: bool(_previous_model_version_id(st)),
     # ⚠ refine / fork_variant 在空会话上无事可做，而 refine 的分发分支
@@ -795,13 +791,13 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
 #   内部类型，对应物就是这张表。
 TOOL_PERMISSION: Dict[str, Any] = {
     # 范围卡上的「开始推演」就是这道批准。停泊 ≠ 已批准（见 _scope_confirmed）。
-    "rehearse": lambda st: _scope_confirmed(st),
-    "workflow": lambda st: _scope_confirmed(st),
-    "spec": lambda st: _scope_confirmed(st),
-    "pages": lambda st: _scope_confirmed(st),
-    "structure": lambda st: _scope_confirmed(st),
-    "bind": lambda st: _scope_confirmed(st),
-    "closure": lambda st: _scope_confirmed(st),
+    "rehearse": lambda st: plan_execution_authorized(st),
+    "workflow": lambda st: plan_execution_authorized(st),
+    "spec": lambda st: plan_execution_authorized(st),
+    "pages": lambda st: plan_execution_authorized(st),
+    "structure": lambda st: plan_execution_authorized(st),
+    "bind": lambda st: plan_execution_authorized(st),
+    "closure": lambda st: plan_execution_authorized(st),
     # 空会话没模型可精修 → 先开卡。有模型时是否也出薄卡是产品决定
     # （M2 Q2），本次不扩大范围。
     "refine": lambda st: _has_model(st),
@@ -810,11 +806,13 @@ TOOL_PERMISSION: Dict[str, Any] = {
 
 def tool_requires_permission(name: Any) -> bool:
     """这个工具要不要显式批准。没声明的一律不需要。"""
-    return str(name or "").strip() in TOOL_PERMISSION
+    return resolve_tool_scope(name) == ToolScope.WRITE or str(name or "").strip() in TOOL_PERMISSION
 
 
 def tool_permission_granted(name: Any, state: V5SessionState) -> bool:
     """已获批准吗。不需要批准的恒为真。"""
+    if resolve_tool_scope(name) == ToolScope.WRITE and not plan_execution_authorized(state):
+        return False
     pred = TOOL_PERMISSION.get(str(name or "").strip())
     if pred is None:
         return True
@@ -823,6 +821,8 @@ def tool_permission_granted(name: Any, state: V5SessionState) -> bool:
 
 def should_list_tool(name: Any, state: V5SessionState) -> bool:
     """这一轮要不要把这个工具摆给模型看。没声明谓词的一律列出。"""
+    if resolve_tool_scope(name) == ToolScope.WRITE and not plan_execution_authorized(state):
+        return False
     pred = TOOL_LIST_WHEN.get(str(name or "").strip())
     if pred is None:
         return True
@@ -849,7 +849,7 @@ def list_control_tools(state: V5SessionState) -> List[Dict[str, Any]]:
         if should_list_tool(((t.get("function") or {}).get("name")), state)
     ]
     if not listed:
-        floor = {"ask_user"}
+        floor = {"ask_user_question"}
         listed = [
             t for t in CONTROL_TOOLS if ((t.get("function") or {}).get("name")) in floor
         ]
@@ -868,15 +868,7 @@ def list_control_tools(state: V5SessionState) -> List[Dict[str, Any]]:
             )
             out.append(cloned)
             continue
-        if name == "ask_user" and _unstamped_product_turn(state):
-            cloned = copy.deepcopy(item)
-            cloned["function"]["description"] = (
-                "用户已经说了要做什么。不要再问功能清单或类型设备，"
-                "调 scope_card 复述。缺的细节留给 SPEC 假设卡。"
-            )
-            out.append(cloned)
-            continue
-        if name == "ask_user" and not _has_product_topic(state):
+        if name == "ask_user_question" and not _has_product_topic(state):
             cloned = copy.deepcopy(item)
             cloned["function"]["description"] = (
                 "用户在问你是谁、能做什么时：不要调这个工具，用文本回答。"
@@ -973,7 +965,7 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "ask_user",
+            "name": "ask_user_question",
             # 抄 grok `AskUserQuestion` 的 description_template（两句都要）：
             #   - Every question automatically gets an "Other" choice where the
             #     user can type their own answer.
@@ -1060,24 +1052,32 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "scope_card",
-            "description": "复述我认成了什么。不当门禁，出卡后接着干活。",
+            "name": "write_plan",
+            "description": "保存完整实施计划。包含目标、访谈结论、设备与设计选择、工作步骤和验收方法。每次重写使上一版批准失效。",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "restatement": {"type": "string"},
-                    "device": {"type": "string"},
-                    "productArchetype": {"type": "string"},
-                    "variant": {"type": "string"},
-                    "wantEvidence": {"type": "boolean"},
-                    "wantFeasibilityReport": {"type": "boolean"},
-                    "tools": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "本轮公开工具：spec/pages/structure/bind/closure。少列就少跑。",
-                    },
+                    "planContent": {"type": "string"},
                 },
+                "required": ["planContent"],
+                "additionalProperties": False,
             },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "enter_plan_mode",
+            "description": "进入只读规划，重新访谈并编写计划；暂停现有执行授权。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "exit_plan_mode",
+            "description": "读取已保存的完整计划并请求用户批准。输入必须为空，批准之前不能执行。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
         },
     },
     {
@@ -1353,21 +1353,6 @@ def _goal_text(state: V5SessionState) -> str:
     return str(getattr(goal, "text", "") or "").strip()
 
 
-def _scope_confirmed(state: V5SessionState) -> bool:
-    """已确认范围：有模型版本，或 transcript 里有 scope_confirmed。
-
-    ⚠ 2026-08-27 评审：awaitReason==control_scope 是「等确认」，不是已确认。
-    第一版把停泊当成已确认，先改范围后 /推演 或模型 rehearse 会跳卡点火。
-    """
-    if getattr(state, "awaitReason", None) == "control_scope":
-        return False
-    versions = getattr(state, "modelVersions", None) or []
-    if versions:
-        return True
-    for row in getattr(state, "controlTranscript", None) or []:
-        if isinstance(row, dict) and row.get("kind") == "scope_confirmed":
-            return True
-    return False
 
 
 def _write_confirmed_goal(state: V5SessionState, restatement: str) -> None:
@@ -1384,11 +1369,6 @@ def _write_confirmed_goal(state: V5SessionState, restatement: str) -> None:
     state.goal = goal
 
 
-def _last_scope_card(state: V5SessionState) -> Dict[str, Any]:
-    for row in reversed(list(getattr(state, "controlTranscript", None) or [])):
-        if isinstance(row, dict) and row.get("kind") == "scope_card":
-            return row
-    return {}
 
 
 def _done_claim_rejections(state: V5SessionState, fingerprint: str) -> int:
@@ -1415,243 +1395,8 @@ def _done_claim_rejections(state: V5SessionState, fingerprint: str) -> int:
     return n
 
 
-def _declined_scope(state: V5SessionState) -> str:
-    """上一轮那份范围刚被用户点了「不对再说」，返回被拒的那句复述。没有就空串。
-
-    抄的标准答案：grok-build
-    `xai-grok-tools/src/implementations/grok_build/enter_plan_mode/mod.rs`
-
-        //! This tool requires user approval before executing. The UI should present a
-        //! confirmation dialog. If the user declines, the tool result is rejected and
-        //! the model receives `"User declined to enter plan mode."`.
-
-    要点是**拒绝要变成模型收得到的一句话**，不是静默的状态复位。
-
-    ⚠ 2026-09-09 查真机得到的现状：`_dismiss_scope` 只清 awaitReason、
-      往 transcript 写一条 `scope_dismissed`、yield complete。而控制面的
-      messages **每轮从零拼**（`[system_prompt, user_text]`，见
-      `_run_control_turn_body` 结尾），transcript 根本不进 messages——
-      `scope_dismissed` 全仓只在那一次写入处出现，提示词里没有、前端也没有。
-      也就是说：**模型完全不知道自己被拒过**，下一轮可以原样再提一遍。
-
-    ⚠ 为什么必须把被拒的那句话一起带上，不能像 grok 那样只回一句
-      「用户拒绝了」：grok 的模型手里还攥着它刚发出的那次调用，知道被拒的是
-      什么；我们每轮重拼 messages，模型手里什么都没有。只说「被拒了」而不说
-      被拒的是哪一份，等于让它蒙着眼睛换一个——那不是信息，是噪音。
-
-    真机验过（2026-09-09，真 uvicorn + 真 HTTP + 真 SSE）：网关换成一台回声机
-    （收到的 system 原样吐回来），三发——说一句产品话出卡、点「不对再说」、
-    再说一句：
-
-        ① 卡出来了: True   复述: 请假系统
-        ② 已点「不对再说」
-        ③ 模型那一发收到的 system 里，含这条回执: True
-           原句: 上一轮你提的范围是「请假系统」，用户点了「不对再说」——那份没被接受
-
-    量的是**线上那一发请求体里的东西**，不是 `_system_prompt` 的返回值——
-    后者单测已经量过，证明不了「它接在链路上」（§1、§3 第二条）。
-
-    「还新鲜」的判据（对应 grok 那条回执只在那一轮的上下文里出现一次）：
-    从末尾往回扫，跳过用户自己说的话，碰到的**第一条**非用户行是
-    `scope_dismissed` 才算数。中间要是已经又出过卡、或者已经确认过，
-    这条回执就过期了，不再往提示词里塞。
-    """
-    rows = [r for r in (getattr(state, "controlTranscript", None) or []) if isinstance(r, dict)]
-    dismissed_at = -1
-    for i in range(len(rows) - 1, -1, -1):
-        row = rows[i]
-        if row.get("role") == "user" or row.get("kind") == "turn":
-            continue
-        if row.get("kind") == "scope_dismissed":
-            dismissed_at = i
-        break
-    if dismissed_at < 0:
-        return ""
-    for row in reversed(rows[:dismissed_at]):
-        if row.get("kind") == "scope_card":
-            return str(row.get("text") or "").strip()
-    # 卡的原文找不到（老会话 / 手改过的库）：宁可不说，也不说半句。
-    # 「用户拒绝了某个你看不见的东西」对模型是纯噪音——见上面那段。
-    return ""
-
-
-def _has_unconfirmed_restatement(state: V5SessionState) -> bool:
-    """复述卡已经摊着，还没写成确认。
-
-    ⚠ 2026-09-09 真机：`_emit_scope_restatement` 故意不设
-      awaitReason=control_scope（卡不当类型/设备门禁）。前端仍画卡，
-      点「开始推演」带 forcedTool=rehearse。只认停泊态的话第一次点击
-      会再 park 一次，工厂 0 次、日志里连 capabilityPlan= 都没有。
-    """
-    restated = False
-    confirmed = False
-    for row in getattr(state, "controlTranscript", None) or []:
-        if not isinstance(row, dict):
-            continue
-        kind = row.get("kind")
-        if kind == "scope_card" and str(row.get("text") or "").strip():
-            restated = True
-            confirmed = False
-        elif kind == "scope_confirmed":
-            confirmed = True
-    return restated and not confirmed
-
-
-def _scope_texts(state: V5SessionState, user_text: str = "") -> list[str]:
-    goal = state.goal if isinstance(state.goal, dict) else {}
-    out = [
-        user_text,
-        str(getattr(state, "awaitDetail", None) or ""),
-        str(goal.get("text") or ""),
-    ]
-    # 澄清后的 park 用的 user_text 往往是最后一答，不含「微信小程序」。
-    # 原命题在 transcript 里，漏了卡就会锁成作曲家默认 desktop。
-    #
-    # ⚠ 只收用户原文 / turn，不收助手的 scope_card 复述。复述里带着上一
-    #   张卡的设备词（「Web/PC」「桌面端」），跟第二次 park「改成手机」
-    #   拼在一起，infer_device_from_text 见冲突就返回 None，回落
-    #   payload_device——正好把这次要改的档盖回去。
-    for row in list(getattr(state, "controlTranscript", None) or []):
-        if not isinstance(row, dict):
-            continue
-        if row.get("role") == "user" or row.get("kind") == "turn":
-            out.append(str(row.get("text") or ""))
-    return out
-
-
-def _resolved_park_device(
-    state: V5SessionState,
-    payload_device: Any,
-    user_text: str = "",
-) -> str:
-    return resolve_park_device(
-        last_card=_last_scope_card(state),
-        goal=dict(state.goal) if isinstance(state.goal, dict) else {},
-        texts=_scope_texts(state, user_text),
-        payload_device=payload_device,
-    )
-
-
-def _payload_park_archetype() -> str:
-    body = _CONTROL_PAYLOAD.get() or {}
-    return str(body.get("productArchetype") or body.get("product_archetype") or "")
-
-
-def _resolved_park_archetype(
-    state: V5SessionState,
-    payload_archetype: Any = None,
-) -> str:
-    raw = payload_archetype if payload_archetype not in (None, "") else _payload_park_archetype()
-    return resolve_park_archetype(
-        last_card=_last_scope_card(state),
-        goal=dict(state.goal) if isinstance(state.goal, dict) else {},
-        payload_archetype=raw,
-    )
-
-
-def _park_device(raw: Any, preferred_device: Any = None) -> str:
-    device = str(raw or preferred_device or "unspecified").strip()
-    if device in valid_judge_devices():
-        return device
-    return "unspecified"
-
-
-def _park_archetype(raw: Any) -> str:
-    name = str(raw or "").strip()
-    if not name:
-        return DEFAULT_ARCHETYPE
-    try:
-        if is_wired(name):
-            return name
-    except UnknownArchetype:
-        return DEFAULT_ARCHETYPE
-    return DEFAULT_ARCHETYPE
-
-
-def _stamp_scope_choice_onto_goal(
-    state: V5SessionState,
-    payload: Dict[str, Any] | None = None,
-) -> str:
-    """把范围卡上的原型和设备写进 goal，并在点火前 fail-closed。
-
-    ⚠ 选择通道是范围卡，不是生成器。这里不换五系统段，只保证：
-      选了未接通的原型 → 当场失败，信封调用 = 0。
-    ⚠ 2026-08-30：第一版只 stamp 原型。真机点了平板，goal 里没有
-      preferredDevice，工厂 finally 清掉 override 之后授予就没了。
-      设备跟原型是同一张卡上的一次授予，必须一起落盘。
-    """
-    body = payload if isinstance(payload, dict) else {}
-    last = _last_scope_card(state)
-    goal = dict(state.goal) if isinstance(state.goal, dict) else {}
-    raw = str(
-        body.get("productArchetype") or body.get("product_archetype") or ""
-    ).strip()
-    if not raw:
-        raw = str(last.get("productArchetype") or goal.get("productArchetype") or "").strip()
-    device = resolve_confirm_device(
-        payload_device=body.get("preferredDevice") or body.get("preferred_device"),
-        last_card=last,
-        goal=goal,
-        texts=_scope_texts(state, str(body.get("userText") or "")),
-    )
-    raw_tools = body.get("tools")
-    if raw_tools is None:
-        raw_tools = last.get("tools") or goal.get("tools")
-    state.goal = stamp_scope_onto_goal(
-        goal,
-        product_archetype=raw,
-        preferred_device=device,
-        tools=raw_tools,
-    )
-    return resolve_archetype(state, body)
-
-
-def _copy_scope_opt_in_into_goal(state: V5SessionState) -> None:
-    """把范围卡勾选写进 goal，供 persist-as-authority 工厂短清单读取。
-
-    ⚠ 2026-08-27 评审：第一版「两旗都假就 return」。上一张卡勾过的
-    wantFeasibilityReport 留在 goal 上，下一张没勾的卡确认时 copy 空转，
-    短清单仍注入 critique/risk/report——缺字段本应 fail-closed。每次都
-    按最后一张 scope_card 同步 True 和 False（没勾就删键）。
-    bool("false") 是 True，读旗必须走生成器同一份 _truthy_scope_flag。
-    不把 HTTP factoryProfile 当勾选通道。
-    """
-    want_evidence = False
-    want_report = False
-    for row in reversed(list(getattr(state, "controlTranscript", None) or [])):
-        if not isinstance(row, dict) or row.get("kind") != "scope_card":
-            continue
-        want_evidence = _truthy_scope_flag(row.get("wantEvidence"))
-        want_report = _truthy_scope_flag(row.get("wantFeasibilityReport"))
-        break
-    goal = dict(state.goal) if isinstance(state.goal, dict) else {}
-    if want_evidence:
-        goal["wantEvidence"] = True
-    else:
-        goal.pop("wantEvidence", None)
-        goal.pop("includeEvidence", None)
-    if want_report:
-        goal["wantFeasibilityReport"] = True
-    else:
-        goal.pop("wantFeasibilityReport", None)
-        goal.pop("includeFeasibilityReport", None)
-    card = _last_scope_card(state)
-    archetype = str(card.get("productArchetype") or "").strip()
-    if archetype:
-        goal["productArchetype"] = archetype
-    device = wired_device(card.get("device"))
-    if device:
-        goal["preferredDevice"] = device
-    state.goal = goal
-
-
 def _confirmed_restatement(state: V5SessionState, user_text: str) -> str:
-    parked = str(getattr(state, "awaitDetail", None) or "").strip()
-    if parked:
-        return parked
-    # user_text 是纯确认时 _restate 返回空串，这里接着往下要——否则
-    # _write_confirmed_goal 拿到空串直接 return，goal 一直是空的。
-    return _restate(user_text) or _restate(_session_topic(state))
+    return _restate(_session_topic(state)) or _restate(user_text)
 
 
 def _is_slash_rehearse(user_text: str) -> bool:
@@ -1707,7 +1452,7 @@ def resolve_forced_tool(
     if text.startswith("/质疑"):
         return "challenge"
     if text.startswith("/范围"):
-        return "scope_card"
+        return "enter_plan_mode"
     if text.startswith("/回退"):
         return "restore_version"
     return None
@@ -1910,6 +1655,7 @@ async def _park_ask(
     options: Optional[List[str]] = None,
     *,
     questions: Optional[List[Dict[str, Any]]] = None,
+    assumption_snapshot: Optional[List[Dict[str, Any]]] = None,
 ) -> AsyncIterator[Dict[str, Any]]:
     """停下来问。**一次可以问几道**（抄 grok `AskUserQuestion`）。
 
@@ -1939,11 +1685,12 @@ async def _park_ask(
         state,
         {
             "role": "assistant",
-            "kind": "ask_user",
+            "kind": "ask_user_question",
             "text": question,
             "options": flat,
             "questions": rows,
             "reqId": req_id,
+            **({"assumptionSnapshot": copy.deepcopy(assumption_snapshot)} if assumption_snapshot is not None else {}),
         },
     )
     await _apersist(state)
@@ -1955,6 +1702,73 @@ async def _park_ask(
         "reqId": req_id,
     }
     yield _complete(state)
+
+
+async def _park_plan_approval(state: V5SessionState) -> AsyncIterator[Dict[str, Any]]:
+    plan = latest_control_plan(state)
+    if not str(plan.get("planContent") or "").strip():
+        yield {"type": "control_tool_result", "tool": "exit_plan_mode", "ok": False, "error": "empty_plan"}
+        return
+    candidate = state.model_copy(deep=True)
+    rows = getattr(candidate, "controlTranscript", None) or []
+    request = next((r for r in reversed(rows) if r.get("kind") == "plan_approval"), {})
+    if not (
+        state.awaitReason == "control_plan_approval"
+        and all(request.get(k) == plan.get(k) for k in ("planId", "revision", "planContent"))
+    ):
+        request = {
+            "role": "assistant", "kind": "plan_approval",
+            "reqId": f"plan-approval-{uuid.uuid4().hex}",
+            **{k: plan[k] for k in ("planId", "revision", "planContent")},
+        }
+        _append_transcript(candidate, request)
+    candidate.runtimePhase = "awaiting"
+    candidate.awaitReason = "control_plan_approval"
+    candidate.awaitDetail = str(plan["planContent"])
+    await _commit_plan_state(state, candidate)
+    yield {"type": "control_plan_approval", "reqId": request["reqId"], "planContent": plan["planContent"]}
+    yield _complete(state)
+
+
+async def _commit_plan_state(state: V5SessionState, candidate: V5SessionState) -> None:
+    """Publish plan state only after storage confirms the exact revision."""
+    saved = await run_in_threadpool(
+        save_session, candidate, server_write=True, require_durable=True
+    )
+    for field in ("controlTranscript", "awaitReason", "awaitDetail", "runtimePhase", "goal"):
+        setattr(state, field, getattr(saved, field))
+
+
+async def _accept_plan_answer(state: V5SessionState, raw: Dict[str, Any]) -> str:
+    """The request id authorizes only the persisted revision that was shown."""
+    rows = getattr(state, "controlTranscript", None) or []
+    request = next((r for r in reversed(rows) if r.get("kind") == "plan_approval"), {})
+    plan = latest_control_plan(state)
+    if (
+        state.awaitReason != "control_plan_approval"
+        or not request.get("reqId")
+        or str(raw.get("reqId") or "") != request["reqId"]
+        or not all(request.get(k) == plan.get(k) for k in ("planId", "revision", "planContent"))
+    ):
+        return "stale"
+    outcome = str(raw.get("outcome") or "cancelled")
+    if outcome not in ("approved", "cancelled", "abandoned"):
+        outcome = "cancelled"
+    # The loaded object may also be the cache entry. Never publish a grant in
+    # that object before storage confirms the write.
+    candidate = state.model_copy(deep=True)
+    _append_transcript(candidate, {
+        "role": "user", "kind": f"plan_{outcome}",
+        **{k: request[k] for k in ("reqId", "planId", "revision", "planContent")},
+        "feedback": str(raw.get("feedback") or ""),
+    })
+    candidate.awaitReason = None
+    candidate.awaitDetail = None
+    candidate.runtimePhase = "idle"
+    if outcome == "approved":
+        _write_confirmed_goal(candidate, _session_topic(candidate))
+    await _commit_plan_state(state, candidate)
+    return outcome
 
 
 def _model_text_for_answer(
@@ -1998,7 +1812,7 @@ def _last_asked_questions(state: V5SessionState) -> List[Dict[str, Any]]:
     for row in reversed(getattr(state, "controlTranscript", None) or []):
         if not isinstance(row, dict):
             continue
-        if row.get("role") == "assistant" and row.get("kind") == "ask_user":
+        if row.get("role") == "assistant" and row.get("kind") in ("ask_user_question", "ask_user"):
             rows = row.get("questions")
             if isinstance(rows, list) and rows:
                 return [r for r in rows if isinstance(r, dict)]
@@ -2032,14 +1846,14 @@ def _tool_answer_from_payload(
             if not kind:
                 reason = getattr(state, "awaitReason", None)
                 if reason == "control_ask":
-                    kind = "ask_user"
+                    kind = "ask_user_question"
                 elif reason == "control_clarify":
                     kind = "clarify"
-                elif _assumptions_awaiting(state):
-                    kind = "assumptions"
                 else:
-                    kind = "ask_user"
-            out = {"kind": kind, "text": text}
+                    kind = "ask_user_question"
+            if kind not in ("ask_user_question", "ask_user", "clarify"):
+                return None
+            out = {"kind": kind, "text": text, "outcome": raw.get("outcome"), "answers": raw.get("answers"), "notes": raw.get("notes")}
             if req_id:
                 out["reqId"] = req_id
             return out
@@ -2049,13 +1863,11 @@ def _tool_answer_from_payload(
     #   再 stamp 成 goal，问卷又弹一轮。
     if reason == "control_ask" and str(user_text or "").strip():
         return {
-            "kind": "ask_user",
+            "kind": "ask_user_question",
             "text": str(user_text).strip(),
         }
     # 只认确认短语。forcedTool=pages 单独不算——未确认时偷画页
     # 是 2026-09-02 真机事故，不许用 NeedUserAnswer 再开一条口。
-    if _assumptions_awaiting(state) and "假设已确认" in str(user_text or ""):
-        return {"kind": "assumptions", "text": str(user_text or "").strip()}
     return None
 
 
@@ -2066,7 +1878,7 @@ def _last_need_question(state: V5SessionState) -> str:
     for row in reversed(getattr(state, "controlTranscript", None) or []):
         if not isinstance(row, dict):
             continue
-        if row.get("kind") in ("ask_user", "clarify"):
+        if row.get("kind") in ("ask_user_question", "ask_user", "clarify"):
             return str(row.get("text") or "").strip()
     return ""
 
@@ -2076,7 +1888,7 @@ def _last_need_req_id(state: V5SessionState) -> str:
     for row in reversed(getattr(state, "controlTranscript", None) or []):
         if not isinstance(row, dict):
             continue
-        if row.get("kind") in ("ask_user", "clarify"):
+        if row.get("kind") in ("ask_user_question", "ask_user", "clarify"):
             rid = str(row.get("reqId") or "").strip()
             if rid:
                 return rid
@@ -2095,9 +1907,15 @@ async def _stamp_user_answer(
     客户端报「推演中断」（2026-09-02 同一条伤，CLAUDE.md §4）。
     """
     user_text = answer.get("text") or ""
-    kind = answer.get("kind") or "ask_user"
+    kind = answer.get("kind") or "ask_user_question"
     question = _last_need_question(state)
     req_id = str(answer.get("reqId") or "").strip() or _last_need_req_id(state)
+    if req_id != _last_need_req_id(state):
+        raise HTTPException(409, "question_answer_stale")
+    asked = next((r for r in reversed(state.controlTranscript) if r.get("reqId") == req_id and r.get("kind") in ("ask_user_question", "ask_user")), {})
+    snapshot = asked.get("assumptionSnapshot")
+    if isinstance(snapshot, list) and ((_sfp(state).get("spec") or {}).get("assumptions") != snapshot):
+        raise HTTPException(409, "assumption_revision_changed")
     original_goal = _goal_text(state)
 
     row: Dict[str, Any] = {
@@ -2106,6 +1924,9 @@ async def _stamp_user_answer(
         "text": user_text,
         "answerKind": kind,
         "question": question,
+        "answers": normalize_user_answers(answer.get("answers")),
+        "outcome": answer.get("outcome"),
+        "notes": answer.get("notes"),
     }
     if req_id:
         row["reqId"] = req_id
@@ -2116,9 +1937,22 @@ async def _stamp_user_answer(
         state.awaitDetail = None
         if getattr(state, "runtimePhase", None) == "awaiting":
             state.runtimePhase = "idle"
-    if kind == "assumptions":
-        sfp = dict(getattr(state, "specFirstPages", None) or {})
-        sfp["assumptionsConfirmed"] = True
+    if isinstance(snapshot, list):
+        sfp = copy.deepcopy(getattr(state, "specFirstPages", None) or {})
+        spec = sfp.get("spec") or {}
+        picks = normalize_user_answers(answer.get("answers"))
+        notes = answer.get("notes") if isinstance(answer.get("notes"), dict) else {}
+        for assumption in spec.get("assumptions") or []:
+            qid = str(assumption.get("id") or "")
+            values = picks.get(qid) or []
+            if values:
+                assumption["decision"] = "；".join(values)
+                if notes.get(qid):
+                    assumption["decision"] += "；" + str(notes[qid])
+        sfp["assumptionsConfirmed"] = (
+            answer.get("outcome") in ("skip", "skip_interview")
+            or (answer.get("outcome") in ("accepted", "accept") and all(picks.get(str(a.get("id") or "")) for a in snapshot))
+        )
         state.specFirstPages = sfp
     await _resolve_answered_gaps(state, payload)
 
@@ -2139,7 +1973,7 @@ def _user_turn_before_need(state: V5SessionState, answer_text: str) -> str:
     ]
     cut = len(rows)
     for i in range(len(rows) - 1, -1, -1):
-        if rows[i].get("kind") in ("ask_user", "clarify") and rows[i].get(
+        if rows[i].get("kind") in ("ask_user_question", "clarify") and rows[i].get(
             "role"
         ) == "assistant":
             cut = i
@@ -2192,9 +2026,9 @@ def _messages_after_need_answer(
     答案不许塞 role=user——七个字的「请假」会变成新话题。
     提问前那句 user 必须在：Gemini 不允许 function call 直接跟在 system 后面。
     """
-    kind = answer.get("kind") or "ask_user"
+    kind = answer.get("kind") or "ask_user_question"
     question = str(answer.get("question") or "").strip() or _last_need_question(state)
-    tool_name = "clarify" if kind == "clarify" else "ask_user"
+    tool_name = "clarify" if kind == "clarify" else "ask_user_question"
     call_id = (
         str(answer.get("reqId") or "").strip()
         or _last_need_req_id(state)
@@ -2387,209 +2221,6 @@ def _session_topic(state: V5SessionState) -> str:
     return _goal_text(state) or first_substantive_user_text(state)
 
 
-async def _park_scope(
-    state: V5SessionState,
-    restatement: str,
-    *,
-    device: str = "unspecified",
-    product_archetype: str = "",
-    variant: str = "full",
-    user_text: str = "",
-    want_evidence: bool = False,
-    want_feasibility_report: bool = False,
-    tools: Any = None,
-) -> AsyncIterator[Dict[str, Any]]:
-    state.runtimePhase = "awaiting"
-    state.awaitReason = "control_scope"
-    state.awaitDetail = restatement
-    parked_device = _park_device(device)
-    parked_archetype = _park_archetype(product_archetype)
-    _append_transcript(
-        state,
-        {
-            "role": "assistant",
-            "kind": "scope_card",
-            "text": restatement,
-            "device": parked_device,
-            "productArchetype": parked_archetype,
-            "variant": variant,
-            "wantEvidence": _truthy_scope_flag(want_evidence),
-            "wantFeasibilityReport": _truthy_scope_flag(want_feasibility_report),
-            **(
-                {"tools": list(tools)}
-                if isinstance(tools, (list, tuple))
-                else {}
-            ),
-        },
-    )
-    await _apersist(state)
-    yield {
-        "type": "control_scope_card",
-        "restatement": restatement,
-        "device": parked_device,
-        "productArchetype": parked_archetype,
-        "wiredArchetypes": wired_archetype_choices(),
-        "wiredDevices": wired_device_choices(),
-        "variant": variant,
-        "userText": user_text or restatement,
-        # 前端 localStorage 未写时用账户/会话旗hydrate「下一场沿用」。
-        "charterReuseNext": bool(getattr(state, "charterReuseNext", False)),
-        **(
-            {"tools": list(tools)}
-            if isinstance(tools, (list, tuple))
-            else {}
-        ),
-    }
-    yield _complete(state)
-
-
-def _turn_has_real_product(state: V5SessionState, original_goal: str) -> bool:
-    """本回合手上有没有一个**真产品**可以直接进环。
-
-    ## 为什么不是「original_goal 空不空」
-
-    ⚠ 2026-09-09 真机：hello → 回执 sfljsdlf → 「我认成了：sfljsdlf」+ 推演中。
-      当时的止血是「本回合开始时没有记下的产品目标就不点火」，即拿
-      `original_goal` 空不空当挡箭牌。它确实挡住了乱码，但**同一条件也挡住了
-      水果店的第一句**——空会话说「做个水果店收银台」，original_goal 同样是空。
-      于是漫画第 5/7 格那条「人话直接进环」在首轮上被一起收走了，
-      `test_rehearse_with_topic_restates_and_ignites` /
-      `test_scope_card_tool_ignites_without_waiting` 两条判据同时变红。
-
-      要挡的是「这一轮没有真产品」，不是「历史里没记下产品」。这两件事在
-      乱码那条路上恰好同真，在水果店这条路上一真一假——上一版把它们当成
-      了一件事。
-
-    ## 三层，按可信度从高到低
-
-    1. `_has_product_topic`：goal 里已经记下了。回执是真产品时
-       `_stamp_user_answer` 会先写进 goal，所以正常答题走这一层。
-    2. `_has_ask_answer_candidate`：刚收回一张纸条、还没成产品——乱码就在
-       这条路上。**直接否**，不去猜那串字符像不像产品。
-    3. `_unstamped_product_turn`：这一轮说的就是产品（水果店第一句）。
-
-    抄 grok：Permission 判的是这次调用本身（`PermissionRequest` 带 tool_name
-    与 input_json），不是「会话里有没有攒够状态」。
-    """
-    if _has_product_topic(state):
-        return True
-    if _has_ask_answer_candidate(state):
-        return False
-    if bool(_unstamped_product_turn(state)):
-        return True
-    g = (original_goal or "").strip()
-    if not g or g.startswith("（尚无"):
-        return False
-    return not _is_exact_filler(g)
-
-
-def _can_auto_grant_scope(
-    user_text: str, original_goal: str, state: Optional[V5SessionState] = None
-) -> bool:
-    """能不能免「开始推演」直接授予。
-
-    ⚠ 用字数 / 问候表猜是不是产品会漏（hello、你能做啥），所以这里不自己猜：
-      判定全交给 `_turn_has_real_product`，它把「刚收回的纸条」整条否掉，
-      不对那串字符做长度判断。state 缺省时退回只看 original_goal（老签名，
-      给还没传 state 的调用点用）。
-    """
-    del user_text
-    if state is not None:
-        return _turn_has_real_product(state, original_goal)
-    g = (original_goal or "").strip()
-    if not g or g.startswith("（尚无"):
-        return False
-    return not _is_exact_filler(g)
-
-
-def _auto_grant_scope(state: V5SessionState, restatement: str) -> None:
-    """把推断写进 goal，记一笔 scope_confirmed。此后 _scope_confirmed 为真。"""
-    _write_confirmed_goal(state, restatement)
-    if getattr(state, "awaitReason", None) == "control_scope":
-        state.awaitReason = None
-        state.awaitDetail = None
-        if getattr(state, "runtimePhase", None) == "awaiting":
-            state.runtimePhase = "idle"
-    _append_transcript(
-        state,
-        {
-            "role": "system",
-            "kind": "scope_confirmed",
-            "text": (restatement or "").strip(),
-        },
-    )
-
-
-async def _emit_scope_restatement(
-    state: V5SessionState,
-    restatement: str,
-    *,
-    device: str = "unspecified",
-    product_archetype: str = "",
-    variant: str = "full",
-    user_text: str = "",
-    want_evidence: bool = False,
-    want_feasibility_report: bool = False,
-    tools: Any = None,
-) -> AsyncIterator[Dict[str, Any]]:
-    """复述卡：我认成了什么。不当门禁——不设 awaitReason=control_scope。
-
-    ⚠ 2026-09-07：卡当授予闸，点精修/新话题都要人先认设备类型。
-    设备由模型从这句话认；卡留下当「不对再说」。
-    """
-    parked_device = _park_device(device)
-    parked_archetype = _park_archetype(product_archetype)
-    _append_transcript(
-        state,
-        {
-            "role": "assistant",
-            "kind": "scope_card",
-            "text": restatement,
-            "device": parked_device,
-            "productArchetype": parked_archetype,
-            "variant": variant,
-            "gate": False,
-            "wantEvidence": _truthy_scope_flag(want_evidence),
-            "wantFeasibilityReport": _truthy_scope_flag(want_feasibility_report),
-            **(
-                {"tools": list(tools)}
-                if isinstance(tools, (list, tuple))
-                else {}
-            ),
-        },
-    )
-    await _apersist(state)
-    yield {
-        "type": "control_scope_card",
-        "restatement": restatement,
-        "device": parked_device,
-        "productArchetype": parked_archetype,
-        "wiredArchetypes": wired_archetype_choices(),
-        "wiredDevices": wired_device_choices(),
-        "variant": variant,
-        "gate": False,
-        "userText": user_text or restatement,
-        "charterReuseNext": bool(getattr(state, "charterReuseNext", False)),
-        **(
-            {"tools": list(tools)}
-            if isinstance(tools, (list, tuple))
-            else {}
-        ),
-    }
-
-
-async def _dismiss_scope(state: V5SessionState) -> AsyncIterator[Dict[str, Any]]:
-    """先改范围：持久化清掉 control_scope 停泊，不点火。"""
-    state.awaitReason = None
-    state.awaitDetail = None
-    if getattr(state, "runtimePhase", None) == "awaiting":
-        state.runtimePhase = "idle"
-    _append_transcript(
-        state,
-        {"role": "system", "kind": "scope_dismissed", "text": "先改范围"},
-    )
-    await _apersist(state)
-    yield _complete(state)
 
 
 def _retire_stale_control_questions(state: V5SessionState) -> None:
@@ -2636,86 +2267,8 @@ def _retire_stale_control_questions(state: V5SessionState) -> None:
         state.coverageGaps = out
 
 
-async def _confirm_rehearse_and_handoff(
-    state: V5SessionState,
-    user_text: str,
-    installed_skills: Any,
-    active_connectors: Any,
-    preferred_device: Any,
-    design_system_id: Any,
-    payload: Optional[Dict[str, Any]] = None,
-) -> AsyncIterator[Dict[str, Any]]:
-    """确认 rehearse：空 goal 写入复述句、persist，再交给 persist-as-authority 信封。"""
-    restatement = _confirmed_restatement(state, user_text)
-    _write_confirmed_goal(state, restatement)
-    _copy_scope_opt_in_into_goal(state)
-    try:
-        _stamp_scope_choice_onto_goal(state, payload)
-    except (ArchetypeNotWired, UnknownArchetype) as exc:
-        async for event in _canned(
-            state,
-            str(exc),
-            stop=stop_wire(ControlStopReason.LLM_UNAVAILABLE),
-        ):
-            yield event
-        return
-    # 新范围一确认，上一轮范围下的控制面提问就作废：否则作曲家会继续弹
-    # 问上一个 goal 的澄清卡（2026-08-27 真机：goal 已是宠物医院，卡还在
-    # 问诊所系统）。只碰控制面自己出的提问，证据/能力缺口不许动。
-    _retire_stale_control_questions(state)
-    confirmed = dict(state.goal) if isinstance(state.goal, dict) else {}
-    # 抄 grok：开始推演 = 第一件 spec。其余进待办，host 交回再挑。
-    # workflow 才是一次跑完的日历。范围卡减菜仍是待办上限。
-    floor = list(first_pass_tools(confirmed.get("tools")))
-    chosen = ["spec"]
-    deferred = [t for t in floor if t != "spec"]
-    _set_goal_tools(confirmed, chosen, refine=_has_model(state))
-    state.goal = confirmed
-    if deferred:
-        state.factoryTodo = list(
-            merge_factory_todo(
-                getattr(state, "factoryTodo", None),
-                ran=chosen,
-                deferred=deferred,
-                legal=list(dict.fromkeys([*chosen, *deferred])),
-            )
-        )
-    _append_transcript(
-        state,
-        {
-            "role": "system",
-            "kind": "scope_confirmed",
-            "text": restatement,
-            "device": confirmed.get("preferredDevice"),
-            "productArchetype": confirmed.get("productArchetype"),
-            "tools": list(chosen),
-        },
-    )
-    state.awaitReason = None
-    state.awaitDetail = None
-    await _apersist(state)
-    _fp_before = factory_deliverable_fingerprint(state)
-    async for event in _handoff_factory(
-        state,
-        user_text,
-        installed_skills,
-        active_connectors,
-        preferred_device,
-        design_system_id,
-        repair=False,
-        profile="app",
-        nest=True,
-    ):
-        yield event
-    fresh = await run_in_threadpool(load_session, str(state.sessionId or ""))
-    yield {
-        "type": "control_tool_result",
-        "tool": "rehearse",
-        **_factory_tool_body(fresh or state, "rehearse", before_fingerprint=_fp_before),
-    }
 
 
-#: 会改动交付物的 hop。closure 是判定，不产出，不进这份名单。
 _PRODUCING_HOPS = ("spec", "pages", "structure", "bind", "rehearse", "refine")
 
 
@@ -2820,6 +2373,16 @@ async def _handoff_factory(
     # 写权限闸（抄 grok 的 ToolScope）：只有声明了 WRITE 的工具能造新模型。
     # 缺省 READ ⇒ 新工具、拼错的名字、绕过分发直调，统统在这里被拦。
     assert_may_write_model()
+
+    durable = await run_in_threadpool(load_session, str(state.sessionId or ""))
+    if durable is None or durable.ownerId != state.ownerId or not plan_execution_authorized(durable):
+        raise HTTPException(status_code=409, detail="plan_approval_required")
+    try:
+        resolve_archetype(durable)
+    except (ArchetypeNotWired, UnknownArchetype) as exc:
+        yield {"type": "control_text", "text": str(exc)}
+        yield _complete(state)
+        return
 
     from services import run_registry
     from services.product_charter import factory_charter_kwargs
@@ -3179,6 +2742,30 @@ def _system_prompt(state: V5SessionState) -> str:
 
     extra = charter_prompt_block()
     facts: List[str] = []
+    interview = [
+        str(row.get("text") or "")
+        for row in (getattr(state, "controlTranscript", None) or [])
+        if isinstance(row, dict) and row.get("kind") == "user_answer"
+    ]
+    if interview:
+        facts.append("已收集的访谈回答：\n" + "\n".join(interview[-12:])[-10000:])
+    plan = latest_control_plan(state)
+    if plan:
+        facts.append(f"已保存计划（第 {plan.get('revision')} 版）：\n{plan.get('planContent')}")
+    if plan_execution_authorized(state):
+        facts.append("用户已明确批准这份计划，可以按该版本执行。")
+    else:
+        facts.append(
+            "当前处于只读规划。先通过 ask_user_question 访谈澄清真实需求、设备和设计选择，"
+            "再调用 write_plan 写完整实施计划，最后用空参数 exit_plan_mode 请求批准。"
+            "问卷提交、跳过访谈或普通文字都不是计划批准；批准前不能执行任何生成或修改工具。"
+        )
+    for row in reversed(getattr(state, "controlTranscript", None) or []):
+        if row.get("kind") in ("plan_cancelled", "plan_abandoned"):
+            facts.append(f"用户对上一版计划的处理：{row.get('kind')}；反馈：{row.get('feedback', '')}")
+            break
+        if row.get("kind") in ("plan_written", "plan_approved"):
+            break
     # 抄 grok enter_plan_mode 的拒绝回执，摆在最前面：这一条比「还没有应用
     # 目标」之类的现场更要紧——它说的是**模型刚提的东西被否了**。
     #
@@ -3191,9 +2778,6 @@ def _system_prompt(state: V5SessionState) -> str:
     _plan = normalize_todo(getattr(state, "controlTodo", None))
     if _plan:
         facts.append(f"你列的活儿清单（用户看得见）：\n{summarize_todo(_plan)}")
-    _declined = _declined_scope(state)
-    if _declined:
-        facts.append(f"上一轮你提的范围是「{_declined[:60]}」，用户点了「不对再说」——那份没被接受。")
     if _has_ask_answer_candidate(state):
         # ⚠ 2026-09-09 真机：hhh / ghgjg / 你能做什么 三轮左栏都是
         #   「想做什么应用，说一句就行。」回执事实写成「继续问想做什么
@@ -3514,13 +3098,29 @@ async def _complete_waiting_for_assumptions(
     ⚠ 2026-09-03 sr-20260903204902：交回仍 `_invoke_control_llm`，
       HTTP 挂住 SSE，确认继续排队 25 分钟。这一支必须零 LLM。
     """
-    text = ASSUMPTIONS_WAIT_USER
-    _append_transcript(
-        state, {"role": "assistant", "kind": "control_text", "text": text}
-    )
-    await _apersist(state)
-    yield {"type": "control_text", "text": text}
-    yield _complete(state)
+    assumptions = copy.deepcopy((_sfp(state).get("spec") or {}).get("assumptions") or [])
+    questions = []
+    for i, assumption in enumerate(assumptions):
+        if not isinstance(assumption, dict):
+            continue
+        qid = str(assumption.get("id") or f"assumption-{i + 1}")
+        assumption["id"] = qid
+        decision = str(assumption.get("decision") or "")
+        questions.append({
+            "id": qid, "question": str(assumption.get("topic") or qid),
+            "options": [
+                {"label": decision, "description": str(assumption.get("why") or "")},
+                *[{"label": str(option)} for option in assumption.get("alternatives") or [] if str(option) != decision],
+            ],
+        })
+    if not questions:
+        yield _complete(state)
+        return
+    sfp = copy.deepcopy(_sfp(state))
+    sfp["spec"]["assumptions"] = assumptions
+    state.specFirstPages = sfp
+    async for event in _park_ask(state, questions[0]["question"], questions=questions, assumption_snapshot=assumptions):
+        yield event
 
 
 def _assumptions_awaiting(state: V5SessionState) -> bool:
@@ -3964,36 +3564,6 @@ async def _control_llm_loop(
                 calls = []
             content = (result.content or "").strip()
             if not calls:
-                live = _unstamped_product_turn(state)
-                if tools != [] and live:
-                    restatement = _restate(live) or live
-                    async for event in _emit_scope_restatement(
-                        state,
-                        restatement,
-                        device=_resolved_park_device(
-                            state, preferred_device, user_text
-                        ),
-                        product_archetype=_resolved_park_archetype(state),
-                        variant="thin" if original_goal else "full",
-                        user_text=user_text,
-                    ):
-                        yield event
-                    # ⚠ 这条路以前直接 return，一个 complete 都不发——前端等的是
-                    #   终止事件，等不到就转圈到超时。CLAUDE.md §4 记过同一种伤
-                    #   （工厂 complete 被 nest 成 factory_complete，客户端报
-                    #   「推演中断」）。`_emit_scope_restatement` 故意不自带
-                    #   complete（它设计成后面接点火），所以这条路自己补。
-                    #
-                    # 这里**不点火**：走到这一步说明模型挑了没列出来的工具
-                    # （refine 在空会话就是这样），点火等于绕过那件工具自己的
-                    # 批准闸。要进环的正路是模型挑 `scope_card`——那条分支里
-                    # `_turn_has_real_product` 会授予并接上 spec。
-                    yield _complete(state)
-                    return
-                # 第 3 格：空会话说完仍停成提问，下一句才是回执。
-                # ⚠ 模型已经开口时必须先把那句话端出去——盖成同一句
-                #   「想做什么应用」= 每轮回答都一样（2026-09-09 真机）。
-                # tools==[] 是夹具「只许说话」，不许改成提问。
                 if (
                     tools != []
                     and not _has_product_topic(state)
@@ -4028,7 +3598,7 @@ async def _control_llm_loop(
             if (
                 content
                 and not _has_product_topic(state)
-                and any((c.get("name") or "") == "ask_user" for c in calls)
+                and any((c.get("name") or "") == "ask_user_question" for c in calls)
             ):
                 _append_transcript(
                     state,
@@ -4099,24 +3669,8 @@ async def _control_llm_loop(
                             }
                         if et == "control_ask_user":
                             parked = True
-                        elif et == "control_scope_card":
-                            # ⚠ `gate: False` 的范围卡是**回执**，不是停泊：
-                            #   同一发里它后面就跟着 handoff（:2430 那份载荷）。
-                            #   上一版把两种卡一视同仁地记成 parked，于是下面
-                            #   `if parked: return` 在工厂转播完之后立刻返回——
-                            #   **整轮没有终局事件**。
-                            #
-                            #   真机代价（2026-09-10，浏览器那条路量到的）：
-                            #   前端 `classifyStreamFallback` 见不到终局就判
-                            #   `report_interrupted`，每一趟自动点火的推演最后
-                            #   都弹「推演连接中断，后台仍在进行」；而且
-                            #   `_resume_control_llm_after_write` 整段被跳过，
-                            #   「假设卡等确认」那句罐头收尾也不会发。
-                            #
-                            #   本仓 §四：卡从「闸」改成「回执」是服务端改的，
-                            #   这半边的判断没跟着改——不报错，只是有一半不生效。
-                            if event.get("gate") is not False:
-                                parked = True
+                        elif et == "control_plan_approval":
+                            parked = True
                         elif et == "control_handoff_factory":
                             wrote = True
                         elif et == "complete" and not wrote:
@@ -4226,17 +3780,42 @@ async def _run_control_turn_body(
     raw_forced = str(
         payload.get("forcedTool") or payload.get("forced_tool") or ""
     ).strip()
-    if raw_forced == "dismiss_scope":
-        async for event in _dismiss_scope(state):
+    raw_answer = payload.get("toolAnswer") or payload.get("tool_answer")
+    if isinstance(raw_answer, dict) and raw_answer.get("kind") == "plan_approval":
+        outcome = await _accept_plan_answer(state, raw_answer)
+        if outcome in ("stale", "abandoned"):
+            yield {"type": "control_text", "text": "计划审批已失效，请重新提交计划。" if outcome == "stale" else "已放弃本次计划。"}
+            yield _complete(state)
+            return
+        user_text = (
+            "用户已批准已保存的计划，请按该版本执行。"
+            if outcome == "approved"
+            else "用户取消了计划审批，请继续访谈并修改计划。反馈：" + str(raw_answer.get("feedback") or "")
+        )
+        async for event in _control_llm_loop(
+            state,
+            [{"role": "system", "content": _system_prompt(state)}, {"role": "user", "content": user_text}],
+            user_text=user_text, installed_skills=installed_skills,
+            active_connectors=active_connectors, preferred_device=preferred_device,
+            design_system_id=design_system_id, original_goal=_goal_text(state),
+            started=started, cheap_tokens=0, empty_text=CHEAP_TURN_FALLBACK,
+        ):
             yield event
         return
-
-    # 抄 grok NeedUserAnswer：停泊提问的下一发是纸条回执，不是新话题。
-    # 点名了闭集工具 → 落完回执后走下面同一份 forced 分发（refine 按钮
-    # 那条有 host 交回）。开放式回答才在这里把答案当 tool result 交给 LLM。
+    if state.awaitReason == "control_plan_approval":
+        async for event in _park_plan_approval(state):
+            yield event
+        return
     answer = _tool_answer_from_payload(payload, state, user_text)
     if answer:
-        await _stamp_user_answer(state, payload, answer)
+        try:
+            await _stamp_user_answer(state, payload, answer)
+        except HTTPException as exc:
+            if exc.status_code != 409:
+                raise
+            yield {"type": "control_tool_result", "tool": "ask_user_question", "ok": False, "error": str(exc.detail)}
+            yield _complete(state)
+            return
         user_text = answer.get("text") or user_text
         # 回执不是新指令。只有纸条本身点名了闭集工具（芯片「精修（refine）」）
         # 或 payload 带了 forcedTool，才走强制分发；开放回答里的 hop 词不算。
@@ -4251,7 +3830,7 @@ async def _run_control_turn_body(
             f"kind={answer.get('kind')}",
             flush=True,
         )
-        if not forced or forced in ("ask_user", "clarify"):
+        if not forced or forced in ("ask_user_question", "clarify"):
             async for event in _control_llm_loop(
                 state,
                 _messages_after_need_answer(state, user_text, answer),
@@ -4299,139 +3878,14 @@ async def _run_control_turn_body(
         # 抄 grok NeedPermission：卡摊着时输入不是新话题。
         # ⚠ 2026-09-09 真机：复述卡 gate=false，用户又打「权限管理系统」，
         #   又问一轮又出一张卡。开始推演 / 不对再说才是这张卡的出路。
-        if not forced and _has_unconfirmed_restatement(state):
-            text = "范围还摊着。点开始推演，或点不对再说。"
-            _append_transcript(
-                state, {"role": "assistant", "kind": "control_text", "text": text}
-            )
-            await _apersist(state)
-            yield {"type": "control_text", "text": text}
-            yield _complete(state)
-            return
-
-    # 昂贵按钮：点火前跳过控制面 LLM。工厂收尾交回 host 循环。
     if forced == "rehearse" or (forced is None and _is_slash_rehearse(user_text)):
-        # ## 2026-09-09：这道闸拆了（用户裁决）
-        #
-        # 上一版是「停泊中只有『开始推演』按钮才点火；/推演 与模型 rehearse
-        # 必须再 park」，把范围卡建模成 grok 的 `NeedPermission{req_id}`、
-        # 把按钮建模成 `Permission{req_id, decision}`。模型对，但**用错了地方**。
-        #
-        # 回去读 grok-build 的原件（`xai-grok-workspace-types`）：
-        #
-        #     pub struct PermissionRequest {
-        #         pub tool_name: String,
-        #         pub input_json: String,
-        #         pub destructive: bool,   // 「允许这次会不会改动外部状态」
-        #     }
-        #
-        # 它按**破坏性**问，而且带着这次调用的实参问——改生产库、跑危险命令、
-        # 进计划模式（`NeedPermission` / `NeedPlanModeChange`）。
-        # 「按用户自己说的那句话，给他造一个新应用」不改动任何外部状态，
-        # 在 grok 那边根本不会触发 NeedPermission。
-        #
-        # 我们却拿它当「你确认要开工吗」的确认框——那不是权限，是门禁。
-        # 代价是漫画第 5/7 格那句：人话进环要先点一次按钮。
-        #
-        # 所以判据换成「这一轮手上有没有一个真产品」。挡住的仍然是该挡的：
-        # 问候、你能做什么、刚收回的乱码纸条（`_turn_has_real_product` 把
-        # 「刚收回的纸条还没成产品」整条否掉，不去猜那串字符像不像产品）。
-        # 真机 2026-09-09 复验：「你好」仍然只答一句 + 问一句，不点火。
-        #
-        # ⚠ 真正该留的破坏性闸不在这儿，在 `TOOL_PERMISSION`：refine 要有模型
-        #   可精修、restore_version 要有上一版。那些是「会改掉已有东西」的动作，
-        #   跟 grok 的 destructive 对得上。别把这两件事再合并回去。
-        may_ignite = _scope_confirmed(state) or _turn_has_real_product(
-            state, original_goal
-        )
-        if not may_ignite:
-            restatement = _confirmed_restatement(state, user_text) or _restate(
-                original_goal
-            )
-            async for event in _park_scope(
-                state,
-                restatement,
-                device=_resolved_park_device(state, preferred_device, user_text),
-                product_archetype=_resolved_park_archetype(
-                    state,
-                    payload.get("productArchetype")
-                    or payload.get("product_archetype")
-                    or "",
-                ),
-                variant="thin" if original_goal else "full",
-                user_text=user_text,
-            ):
-                yield event
-            return
-        # 拆闸不等于把复述一起拆掉。第 5 格要的是「卡不当门禁」，
-        # 不是「连我认成了什么都不说了」——直接闷头开工，用户看不到系统
-        # 把他那句话读成了什么，认错了也没有地方说「不对」。
-        #
-        # 所以未确认时先发一张 gate=False 的复述卡当**回执**，再接着点火。
-        #
-        # ⚠ 但屏幕上已经有卡时不许再发一张。用户停在卡上点「开始推演」，
-        #   再弹一张一模一样的 = 按钮看起来坏了
-        #   （`test_the_button_is_the_grant_not_a_bypass` 咬的就是这个）。
-        #   停泊态 / 已有未确认复述 = 卡还在，只补点火，不补回执。
-        already_on_screen = (
-            getattr(state, "awaitReason", None) == "control_scope"
-            or _has_unconfirmed_restatement(state)
-        )
-        if not _scope_confirmed(state) and not already_on_screen:
-            async for event in _emit_scope_restatement(
-                state,
-                _confirmed_restatement(state, user_text)
-                or _restate(original_goal)
-                or user_text,
-                device=_resolved_park_device(state, preferred_device, user_text),
-                product_archetype=_resolved_park_archetype(
-                    state,
-                    payload.get("productArchetype")
-                    or payload.get("product_archetype")
-                    or "",
-                ),
-                variant="thin" if original_goal else "full",
-                user_text=user_text,
-            ):
-                yield event
-        # 新一轮 SPEC 起草：上一轮「假设已确认」不许压住新卡。
-        # 只在 forced=="spec" 时清的话，这次首轮链走 rehearse，陈旧 True
-        # 把假设卡闩死，resetSpecAssumptions 成了死代码。
-        sfp = dict(getattr(state, "specFirstPages", None) or {})
-        sfp["assumptionsConfirmed"] = False
-        state.specFirstPages = sfp
-        # 写权限：forcedTool 绕过 _dispatch_tool 直接进工厂，scope 要在这里设。
-        handed = False
-        tool_body: Optional[Dict[str, Any]] = None
-        with tool_scope_scope("rehearse"):
-            async for event in _confirm_rehearse_and_handoff(
-                state,
-                user_text,
-                installed_skills,
-                active_connectors,
-                preferred_device,
-                design_system_id,
-                payload=payload,
-            ):
-                yield event
-                et = str(event.get("type") or "")
-                if et == "control_handoff_factory":
-                    handed = True
-                elif et == "control_tool_result":
-                    tool_body = {k: v for k, v in event.items() if k != "type"}
-        if not handed:
-            return
-        async for event in _resume_control_llm_after_write(
-            state,
-            user_text,
-            "spec",
-            tool_body,
-            installed_skills=installed_skills,
-            active_connectors=active_connectors,
-            preferred_device=preferred_device,
-            design_system_id=design_system_id,
-            original_goal=original_goal,
-        ):
+        forced = "spec"
+
+    if forced and resolve_tool_scope(forced) == ToolScope.WRITE and not plan_execution_authorized(state):
+        # An explicit tool name is an intent, never approval. Continue planning.
+        forced = None
+    if forced in ("pages", "structure", "bind", "closure", "workflow", "refine", "repair") and _assumptions_awaiting(state):
+        async for event in _complete_waiting_for_assumptions(state):
             yield event
         return
 
@@ -4555,9 +4009,6 @@ async def _run_control_turn_body(
         sfp = dict(getattr(state, "specFirstPages", None) or {})
         if forced in ("spec",):
             sfp["assumptionsConfirmed"] = False
-            state.specFirstPages = sfp
-        elif forced == "pages" and "假设已确认" in (user_text or ""):
-            sfp["assumptionsConfirmed"] = True
             state.specFirstPages = sfp
         handed = False
         tool_body: Optional[Dict[str, Any]] = None
@@ -4691,67 +4142,50 @@ async def _dispatch_tool(
         return
 
     if not tool_permission_granted(name, state):
-        # 人话进环：有产品话题就推断设备、复述、自动授予，接着干。
-        # 卡留下当「我认成了桌面收银台，不对再说」，不当门禁。
-        needs_scope = name == "rehearse" or name == "workflow" or name in FACTORY_HOPS
-        if needs_scope and _can_auto_grant_scope(user_text, original_goal, state):
-            restatement = (
-                _confirmed_restatement(state, user_text) or _restate(original_goal)
-            )
-            async for event in _emit_scope_restatement(
-                state,
-                restatement,
-                device=_resolved_park_device(state, preferred_device, user_text),
-                product_archetype=_resolved_park_archetype(state),
-                variant="thin" if original_goal else "full",
-                user_text=user_text,
-            ):
-                yield event
-            _auto_grant_scope(state, restatement)
-            await _apersist(state)
-        else:
-            # 没记下的产品目标：问一句，不要把「继续执行」复述成应用。
-            if not _has_product_topic(state) and not str(original_goal or "").strip():
-                async for event in _park_ask(
-                    state, "想做什么应用，说一句就行。", []
-                ):
-                    yield event
-                return
-            async for event in _park_scope(
-                state,
-                _confirmed_restatement(state, user_text) or _restate(original_goal),
-                device=_resolved_park_device(state, preferred_device, user_text),
-                product_archetype=_resolved_park_archetype(state),
-                variant="thin" if original_goal else "full",
-                user_text=user_text,
-            ):
-                yield event
+        yield {"type": "control_tool_result", "tool": name, "ok": False, "error": "plan_approval_required"}
+        return
+    if name in ("pages", "structure", "bind", "closure", "workflow", "refine", "repair") and _assumptions_awaiting(state):
+        async for event in _complete_waiting_for_assumptions(state):
+            yield event
+        return
+    if name == "enter_plan_mode":
+        candidate = state.model_copy(deep=True)
+        _append_transcript(candidate, {"role": "assistant", "kind": "plan_entered"})
+        candidate.awaitReason = None
+        candidate.awaitDetail = None
+        candidate.runtimePhase = "idle"
+        await _commit_plan_state(state, candidate)
+        yield {"type": "control_tool_result", "tool": name, "ok": True}
+        return
+    if name == "write_plan":
+        content = str(args.get("planContent") or "").strip()
+        if not content or len(content) > 60000:
+            yield {"type": "control_tool_result", "tool": name, "ok": False, "error": "invalid_plan_content"}
             return
-    if name == "ask_user":
+        previous = latest_control_plan(state)
+        candidate = state.model_copy(deep=True)
+        _append_transcript(candidate, {
+            "role": "assistant", "kind": "plan_written", "planContent": content,
+            "planId": previous.get("planId") or f"plan-{uuid.uuid4().hex}",
+            "revision": int(previous.get("revision") or 0) + 1,
+        })
+        candidate.awaitReason = None
+        candidate.awaitDetail = None
+        candidate.runtimePhase = "idle"
+        await _commit_plan_state(state, candidate)
+        yield {"type": "control_tool_result", "tool": name, "ok": True, "revision": latest_control_plan(state)["revision"]}
+        return
+    if name == "exit_plan_mode":
+        if args:
+            yield {"type": "control_tool_result", "tool": name, "ok": False, "error": "exit_plan_mode_takes_no_input"}
+            return
+        async for event in _park_plan_approval(state):
+            yield event
+        return
+    if name == "ask_user_question":
         # ⚠ 2026-09-09 真机 sr-20260909041801：做个水果店收银台，
         #   模型问核心功能清单。抄 grok AskUserQuestion：问是债务，
         #   不是开工考卷。已经说了产品 → 复述卡，缺的进假设卡。
-        live = _unstamped_product_turn(state)
-        if live:
-            restatement = _restate(live) or live
-            async for event in _emit_scope_restatement(
-                state,
-                restatement,
-                device=_resolved_park_device(state, preferred_device, user_text),
-                product_archetype=_resolved_park_archetype(state),
-                variant="thin" if original_goal else "full",
-                user_text=user_text,
-            ):
-                yield event
-            return
-        # 没记下的产品：不许把「这句话是问候还是协议」做成选项。
-        # 问句用模型的；空才用兜底。盖成同一句 = 每轮回答都一样。
-        #
-        # ⚠ 入参形状换成 grok 的 `questions[]` 之后，**老形状仍要认**：
-        #   模型学过上一版的 `{question, options: string[]}`，真机上一定还会
-        #   那么填。`coerce_questions` 认字符串题、认字符串选项，认不出的
-        #   整题丢掉——丢掉之后这里 fail-closed（下面那句），不许静默出一张空卡
-        #   （本仓 §三，`plan_todo` 那个形状已经栽过两次）。
         rows = coerce_user_questions(args.get("questions"))
         if not rows:
             legacy = args.get("options") if isinstance(args.get("options"), list) else []
@@ -4775,7 +4209,7 @@ async def _dispatch_tool(
         if not rows:
             yield {
                 "type": "control_tool_result",
-                "tool": "ask_user",
+                "tool": "ask_user_question",
                 "ok": False,
                 "error": "这一笔没解析出任何一道题。questions 要是一串题，每道至少给 question。",
             }
@@ -4793,81 +4227,9 @@ async def _dispatch_tool(
     #   的老会话仍要能交卷：`_tool_answer_from_payload` /
     #   `_messages_after_need_answer` 那条回执路径原样保留。抄 grok：
     #   把一件工具移出目录，不作废在途的 NeedUserAnswer 相关性。
-    if name == "scope_card":
-        if _scope_confirmed(state):
-            yield {
-                "type": "control_tool_result",
-                "tool": "scope_card",
-                "ok": True,
-                "alreadyConfirmed": True,
-            }
-            return
-        # `/范围`（forcedTool=scope_card）是**复查**动作：用户在说「让我看看
-        # 你认成了什么、我要改」。它不是开工指令，所以照旧停在卡上等人动手。
-        #
-        # ⚠ 这跟 2026-09-09 拆掉的那道闸不是一回事。拆的是「说了产品还要再点
-        #   一次才开工」；这里用户**明确要求**看范围，停下来才是他要的。
-        #   少了这个区分，`/范围` 会在有 goal 的会话上直接点火——用户想改范围，
-        #   系统开始重烧。
-        if str((_CONTROL_PAYLOAD.get() or {}).get("forcedTool") or "") == "scope_card":
-            async for event in _park_scope(
-                state,
-                str(args.get("restatement") or _restatement_chain(state, user_text, original_goal)),
-                device=_resolved_park_device(state, preferred_device, user_text),
-                product_archetype=_resolved_park_archetype(state),
-                variant=str(args.get("variant") or ("thin" if original_goal else "full")),
-                user_text=user_text,
-                want_evidence=_truthy_scope_flag(args.get("wantEvidence")),
-                want_feasibility_report=_truthy_scope_flag(args.get("wantFeasibilityReport")),
-                tools=args.get("tools"),
-            ):
-                yield event
-            return
-        # ⚠ 判断在**发卡之前**。上一版是「先发卡、再判断要不要点火」，于是
-        #   乱码回执照样弹出一张卡——2026-09-09 真机第二轮回 sfljsdlf，卡上
-        #   写的是模型的内心独白：
-        #
-        #     「用户输入了"sfljsdlf"，似乎是随机字符或尚未明确具体的目标。
-        #       但我需要推进应用创建流程，先为用户建立一个基础的自定义应用蓝图。」
-        #
-        #   点火确实挡住了（那次事故的核心没复发），但用户看到的是一段莫名其妙
-        #   的话，还得自己看懂"这张卡不用管"。没有产品就别画卡——再问一句。
-        if not _turn_has_real_product(state, original_goal):
-            async for event in _park_ask(
-                state, "这个还没看懂，想做什么应用，说一句就行。", []
-            ):
-                yield event
-            return
-        restatement = str(args.get("restatement") or _restatement_chain(state, user_text, original_goal))
-        async for event in _emit_scope_restatement(
-            state,
-            restatement,
-            device=_resolved_park_device(state, preferred_device, user_text),
-            product_archetype=_resolved_park_archetype(state),
-            variant=str(args.get("variant") or ("thin" if original_goal else "full")),
-            user_text=user_text,
-            want_evidence=_truthy_scope_flag(args.get("wantEvidence")),
-            want_feasibility_report=_truthy_scope_flag(args.get("wantFeasibilityReport")),
-            tools=args.get("tools"),
-        ):
-            yield event
-        _auto_grant_scope(state, restatement)
-        await _apersist(state)
-        name = "spec"
     if name in FACTORY_HOPS or name == "rehearse":
         restatement = _confirmed_restatement(state, user_text)
         _write_confirmed_goal(state, restatement)
-        _copy_scope_opt_in_into_goal(state)
-        try:
-            _stamp_scope_choice_onto_goal(state, _CONTROL_PAYLOAD.get())
-        except (ArchetypeNotWired, UnknownArchetype) as exc:
-            async for event in _canned(
-                state,
-                str(exc),
-                stop=stop_wire(ControlStopReason.LLM_UNAVAILABLE),
-            ):
-                yield event
-            return
         goal = dict(state.goal) if isinstance(state.goal, dict) else {}
         # 抄 grok Tool::execute：点哪件跑哪件。rehearse 是「开始」= 第一件
         # spec，其余进待办；workflow 才是一次跑完的日历。
@@ -4883,8 +4245,7 @@ async def _dispatch_tool(
                 floor = list(first_pass_tools(goal.get("tools")))
                 deferred = [t for t in floor if t != "spec"]
             elif name == "pages" and "假设已确认" in (user_text or ""):
-                last = _last_scope_card(state)
-                legal = last.get("tools") if isinstance(last, dict) else goal.get("tools")
+                legal = goal.get("tools")
                 floor = list(first_pass_tools(legal))
                 deferred = [t for t in floor if t not in ("spec", "pages")]
         hop = chosen[0]
@@ -4948,17 +4309,6 @@ async def _dispatch_tool(
             return
         restatement = _confirmed_restatement(state, user_text)
         _write_confirmed_goal(state, restatement)
-        _copy_scope_opt_in_into_goal(state)
-        try:
-            _stamp_scope_choice_onto_goal(state, _CONTROL_PAYLOAD.get())
-        except (ArchetypeNotWired, UnknownArchetype) as exc:
-            async for event in _canned(
-                state,
-                str(exc),
-                stop=stop_wire(ControlStopReason.LLM_UNAVAILABLE),
-            ):
-                yield event
-            return
         preset = select_workflow(
             name=registered.name,
             archetype=str((state.goal or {}).get("productArchetype") or ""),

@@ -41,7 +41,6 @@ _SCOPES = [
     ("services.v5_llm_generate", "generate_delta_sink_scope", "_delta_sink_var"),
     ("services.enrich_timing", "stage_sink_scope", "_stage_sink_var"),
     ("services.spec_first_pipeline", "page_sink_scope", "_page_sink_var"),
-    ("services.spec_first_pipeline", "assumption_sink_scope", "_assumption_sink_var"),
     ("services.spec_first_pipeline", "quality_sink_scope", "_quality_sink_var"),
     ("services.spec_first_pipeline", "rename_sink_scope", "_rename_sink_var"),
 ]
@@ -151,7 +150,6 @@ def test_驱动器里不许再有裸的_set_sink():
             "set_generate_delta_sink",
             "set_stage_sink",
             "set_page_sink",
-            "set_assumption_sink",
         )
         if name in src
     ]

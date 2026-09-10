@@ -31,6 +31,7 @@ export type AwaitReason =
   | "closure_missing"
   | "control_ask"
   | "control_scope"
+  | "control_plan_approval"
   /** 控制面澄清停靠。缺它会让停在澄清的会话读不回来，见 models/v5_state.py 同名注释。 */
   | "control_clarify"
   /** 马拉松内层驱动失败停靠（slide_rule_marathon.py）。同上，缺它会连失败取证一起丢。 */
@@ -179,6 +180,11 @@ export interface V5SessionState {
     text?: string;
     kind?: string;
     timestamp?: string;
+    /** Server-owned plan revision and its correlated approval request. */
+    planContent?: string;
+    planId?: string;
+    revision?: number;
+    reqId?: string;
     [key: string]: unknown;
   }>;
   openQuestions: Array<{ id: string; text: string }>;

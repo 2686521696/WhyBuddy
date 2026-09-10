@@ -2,7 +2,6 @@ import React from "react";
 import { createPortal } from "react-dom";
 import {
   Blocks,
-  BookOpen,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -14,60 +13,18 @@ import {
   ArrowUp,
   Sparkles,
   Square,
-  Monitor,
-  Palette,
-  Smartphone,
-  Tablet,
-  Wand2,
-  Watch,
   X,
 } from "lucide-react";
 // 用 navigate 函数而非 useLocation hook：hook 渲染期就读 window.location，
 // 会炸掉 node 环境的静态渲染测试；navigate 只在点击时触达 history。
 import { navigate } from "wouter/use-browser-location";
 import { EXAMPLE_INTENT_TEXTS } from "./example-intents";
-import {
-  loadPreferredDevice,
-  loadProductArchetype,
-  setPreferredDevice,
-  setProductArchetype,
-  shouldSendOnKey,
-} from "./user-prefs";
-import {
-  composerDeviceMenu,
-  composerDeviceTriggerLabel,
-  composerHeroPlaceholder,
-  type ComposerDevice,
-} from "./composer-device";
-import {
-  composerArchetypeMenu,
-  composerArchetypeTriggerLabel,
-} from "./composer-archetype";
-import {
-  FREE_STYLE_HINT,
-  FREE_STYLE_LABEL,
-  findDesignSystem,
-  isCustomDesignSystem,
-  loadDesignSystemId,
-  saveDesignSystemId,
-} from "./design-system";
-import { DesignSystemSwatch } from "./DesignSystemSwatch";
-import { useDesignSystemPanel } from "./DesignSystemContext";
-import { DesignSystemRail } from "./DesignSystemRail";
-import { intakeHintYieldsToScopeCard, useIntakeJudge } from "./use-intake-judge";
-import { IntakeHintBar, INTAKE_JUDGING_LABEL } from "./IntakeHintBar";
-import { ScopeCard } from "./ScopeCard";
-import { AssumptionStrip } from "./AssumptionStrip";
+import { shouldSendOnKey } from "./user-prefs";
+import { PlanApprovalPanel, type PlanApprovalOutcome } from "./PlanApprovalPanel";
 import {
   QuestionnaireCard,
   type QuestionnaireOutcome,
 } from "./QuestionnaireCard";
-import type { SpecAssumption } from "./spec-assumptions";
-import {
-  scopeCardBlocksComposer,
-  scopeCardIsGate,
-  type ScopeCardPending,
-} from "./scope-card-gate";
 import {
   installKeyOf,
   loadInjectDisabledKeys,
@@ -218,10 +175,7 @@ export function isComposerSendBlocked(opts: {
   isRunning: boolean;
   input: string;
   attachments: Array<{ extractStatus?: "pending" | "ready" | "failed" }>;
-  isJudging?: boolean;
   isRefining?: boolean;
-  /** 范围卡停泊时发送只能走确认/先改范围，Enter 不得另 park 一发。 */
-  scopeCardOpen?: boolean;
   askOpen?: boolean;
   /**
    * 中途排队里还压着几条（2026-08-28）。
@@ -244,8 +198,7 @@ export function isComposerSendBlocked(opts: {
    */
   queuedCount?: number;
 }): boolean {
-  if (opts.scopeCardOpen || opts.askOpen) return true;
-  if (opts.isJudging || opts.isRefining) return true;
+  if (opts.askOpen || opts.isRefining) return true;
   if (isAttachmentExtractPending(opts.attachments)) return true;
   if (!opts.input.trim() && opts.attachments.length === 0) {
     return opts.isRunning || (opts.queuedCount ?? 0) === 0;
@@ -432,25 +385,15 @@ export function ComposerDock({
   sendMessage,
   isRunning,
   stop,
-  sessionId,
   placeholder,
   hero = false,
-  hasApp = false,
-  appSummary = "",
   hintChips = [],
   statusPill = null,
-  pendingScope = null,
+  pendingPlanApproval = null,
+  onSubmitPlanApproval,
   pendingAsk = null,
   queuedTurns = [],
-  specAssumptions = [],
-  onSettleAssumption,
-  onHoldRun,
-  runPaused = false,
-  onConfirmAssumptions,
-  onReviseAssumption,
   onRemoveQueued,
-  onConfirmScope,
-  onReviseScope,
   onAnswerAsk,
   onSubmitQuestionnaire,
   onDismissAsk,
@@ -460,13 +403,14 @@ export function ComposerDock({
   /** 无参 = 发 input；带 textOverride = 发合成文本（附件名并入时用） */
   sendMessage: (textOverride?: string) => void;
   isRunning: boolean;
-  /** 假设卡草稿按会话隔离；空态/会话态拆挂时仍读同一把钥匙。 */
+  /** Reserved for session-scoped composer state. */
   sessionId: string;
   /** 会话目标。话题底行已撤（跟舞台标题重复），父组件仍传入以免调用点炸。 */
   goal: string;
-  /** 控制面范围卡。确认走 confirmControlScope → forcedTool rehearse。 */
-  pendingScope?: ScopeCardPending | null;
+  pendingPlanApproval?: import("@/lib/sliderule-marathon-driver").ControlPlanApprovalWire | null;
+  onSubmitPlanApproval?: (result: PlanApprovalOutcome) => void;
   pendingAsk?: {
+    reqId?: string;
     question: string;
     options?: string[];
     /** 抄 grok `AskUserQuestion`：一发几道题，每项带解释。 */
@@ -476,30 +420,9 @@ export function ComposerDock({
   onSubmitQuestionnaire?: (result: QuestionnaireOutcome) => void;
   /** 推演中补的话（排队到下一轮）。看得见、撤得掉——见 midrun-queue 头注。 */
   queuedTurns?: { text: string; synthetic?: boolean }[];
-  /** 伴随式澄清：推演中模型替用户定下的事。见 AssumptionStrip 头注。 */
-  specAssumptions?: SpecAssumption[];
-  onSettleAssumption?: (id: string) => void;
-  /** 「先别往下跑」与「已经停住了」。见 AssumptionStrip.onHold 头注。 */
-  onHoldRun?: () => void;
-  runPaused?: boolean;
-  onConfirmAssumptions?: (picks: Record<string, string>) => void;
-  onReviseAssumption?: (id: string, alternative: string) => void;
   onRemoveQueued?: (index: number) => void;
-  onConfirmScope?: (choice?: {
-    device?: string;
-    productArchetype?: string;
-  }) => void;
-  onReviseScope?: () => void;
   onAnswerAsk?: (text: string) => void;
   onDismissAsk?: () => void;
-
-  /** 会话里是否已经有一个成形的应用（由五系统模型判定，见 SlideRule.tsx）。
-   *  入站判定按这个切规则域：没应用时首轮描述算 real，有应用时算 iteration。 */
-  hasApp?: boolean;
-
-  /** 当前应用摘要，喂给入站判定让引导话术具体到这个应用（缺省则话术泛化，
-   *  不影响判定结果本身）。 */
-  appSummary?: string;
 
   hintChips?: string[];
   /** 闭环/缺口胶囊。主文案是已收口/未收口，分数在 title。 */
@@ -508,7 +431,7 @@ export function ComposerDock({
   /** 空态首页嵌入时的占位文案 */
   placeholder?: string;
   /**
-   * 空态变体：只决定原型/设备芯片、占位文案、底行话题条。
+   * 空态变体：只决定占位文案和提示条。
    * ⚠ 2026-09-01 用户两张截图：开聊后胶囊把质疑文案和工具条挤在一行，
    *   发送圆在胶囊外。新建会话是字在上、工具行在下的多行卡片。
    *   两种状态共用这张卡片；hero 不再切布局。
@@ -527,33 +450,6 @@ export function ComposerDock({
   const [attachmentHint, setAttachmentHint] = React.useState<string | null>(
     null
   );
-  const [device, setDevice] =
-    React.useState<ComposerDevice>(loadPreferredDevice);
-  const [deviceMenuOpen, setDeviceMenuOpen] = React.useState(false);
-  const deviceMenuRef = React.useRef<HTMLDivElement | null>(null);
-  const [productArchetype, setProductArchetypeState] = React.useState(
-    loadProductArchetype
-  );
-  const [archetypeMenuOpen, setArchetypeMenuOpen] = React.useState(false);
-  const archetypeMenuRef = React.useRef<HTMLDivElement | null>(null);
-  // 设计系统（2026-08-24）。Stitch / TRAE 都把它做成画布右侧面板，但我们不是
-  // 画布模式——按用户裁决合并进指令框，和目标形态下拉并排。
-  const [localDesignSystemId, setLocalDesignSystemId] = React.useState<
-    string | null
-  >(loadDesignSystemId);
-  const designPanel = useDesignSystemPanel();
-  const designAnchorRef = React.useRef<HTMLDivElement | null>(null);
-  // 有 Provider 就以它为准（面板保存后作曲家立刻跟着变）；没有则用本地态，
-  // 这样单测/应用中心那边不挂 Provider 也能正常渲染。
-  const designSystemId = designPanel
-    ? designPanel.appliedId
-    : localDesignSystemId;
-  const setDesignSystemId = (id: string) => {
-    if (designPanel) designPanel.apply(id);
-    else setLocalDesignSystemId(id);
-  };
-  // null = 用户还没选：按钮显示图标而不是色块（2026-08-25 用户裁决）。
-  const designSystem = designSystemId ? findDesignSystem(designSystemId) : null;
   const menuRef = React.useRef<HTMLDivElement | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
@@ -564,14 +460,6 @@ export function ComposerDock({
       if (refEl && !refEl.contains(event.target as Node)) {
         setIsMenuOpen(false);
         setMenuView("actions");
-      }
-      const deviceEl = deviceMenuRef.current;
-      if (deviceEl && !deviceEl.contains(event.target as Node)) {
-        setDeviceMenuOpen(false);
-      }
-      const archetypeEl = archetypeMenuRef.current;
-      if (archetypeEl && !archetypeEl.contains(event.target as Node)) {
-        setArchetypeMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -745,34 +633,18 @@ export function ComposerDock({
 
   // 优化提示词进行中：锁发送，避免改写还没回填就把原文推出去。
   const [isRefining, setIsRefining] = React.useState(false);
-  // 入站判定：推演中不判（用户这会儿打的字多半是下一轮的草稿，判了也没用）。
-  // 语境用 hasApp（真有成形应用）而不是 Boolean(goal)（只是有目标文案），
-  // 摘要让引导话术具体到这个应用而不是泛泛的"指出当前应用要怎么改"。
-  const { judgement, isJudging } = useIntakeJudge(
-    input,
-    hasApp,
-    !isRunning,
-    appSummary
-  );
-
   /** 发送：有附件时把附件名 + 文本类附件内容并进消息，发完清预览卡。
    *  解析中直接拒绝——不清附件、不排队等提取。LobeChat handleSend 在
    *  isUploadingFiles 时 return；只靠按钮 disabled 挡不住 Enter。
    *  审查/优化在飞同样拒绝——生成卡的时候发送必须灰。 */
   const doSend = React.useCallback(() => {
-    // 开关在 React 态里，发送却读 localStorage。点了「应用」如果没写进
-    // 存储（隐私模式 / 只改了画面），推演仍按 desktop 出 PC 端。
-    setPreferredDevice(device);
-    setProductArchetype(productArchetype);
     // 运行中也走 sendMessage：那边排队，这里不许改成 stop。
     if (
       isComposerSendBlocked({
         isRunning,
         input,
         attachments,
-        isJudging,
         isRefining,
-        scopeCardOpen: scopeCardBlocksComposer(pendingScope),
         askOpen: askBlocksTyping(pendingAsk),
         queuedCount: queuedTurns.length,
       })
@@ -806,12 +678,9 @@ export function ComposerDock({
     input,
     attachments,
     sendMessage,
-    isJudging,
     isRefining,
-    device,
-    productArchetype,
-    pendingScope,
     pendingAsk,
+    queuedTurns.length,
   ]);
 
   // 已安装技能（+ 菜单就地勾选哪些注入推演）；打开 skills 视图时重读
@@ -1193,17 +1062,15 @@ export function ComposerDock({
   }, [isRefining, setInput]);
 
   const placeholderText =
-    placeholder || (hero ? composerHeroPlaceholder(device) : "畅所欲问");
+    placeholder || (hero ? "描述你想做的应用" : "畅所欲问");
 
   const extractPending = isAttachmentExtractPending(attachments);
-  const sendBusy = extractPending || isJudging || isRefining;
+  const sendBusy = extractPending || isRefining;
   const sendBlocked = isComposerSendBlocked({
     isRunning,
     input,
     attachments,
-    isJudging,
     isRefining,
-    scopeCardOpen: scopeCardBlocksComposer(pendingScope),
     askOpen: askBlocksTyping(pendingAsk),
     // ⚠ 两个调用点必须给同一组参数：doSend 那处放行了、这处没放行的话，
     //   键是灰的但 Enter 能发——半新半旧（CLAUDE.md §4）。
@@ -1228,7 +1095,7 @@ export function ComposerDock({
       title="优化提示词：把意图改写得更完整（实体/流程/角色/页面/AI）"
       data-testid="sliderule-prompt-refine"
       onClick={refinePrompt}
-      disabled={isRunning || isRefining || isJudging || !input.trim()}
+      disabled={isRunning || isRefining || !input.trim()}
     >
       {isRefining ? (
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1238,25 +1105,6 @@ export function ComposerDock({
       <span>优化</span>
     </button>
   );
-
-  /*
-   * 回执让位：范围卡是**回执**（gate:false，推演已自己点着）而假设卡正等着人
-   * 选的时候，这张回执必须让开。
-   *
-   * ⚠ 2026-09-10 真机（sr-20260910025848）量出来的：假设卡在 DOM 里、
-   *   `painted:true`、`inViewport:true`，可 `elementFromPoint` 拿回来的最上层
-   *   是 `P[sliderule-scope-steps]` —— 两张都是作曲家上方的悬浮层，回执在 JSX
-   *   里排在后面，就画在了假设卡上面。人看见的是一张不能点的回执，
-   *   底下压着**唯一能让推演继续下去的那个东西**（工厂 hold 在
-   *   spec-assumptions，实测干等 584 秒）。
-   *
-   *   `count() > 0` 证明不了这一格：上一版判据就是这么绿的（本仓 §五——
-   *   判据要落在用户真正看得见的东西上，别量 DOM 里有没有）。
-   *
-   * 闸（gate:true）不让：那时候用户本来就该先回答范围卡。
-   */
-  const scopeReceiptYields =
-    specAssumptions.length > 0 && !scopeCardIsGate(pendingScope);
 
   const stopButton = isRunning ? (
     <button
@@ -1283,15 +1131,11 @@ export function ComposerDock({
       title={
         isRunning
           ? "排队"
-          : pendingScope
-            ? "先确认范围或改范围"
-            : extractPending
-              ? "附件解析中，请稍候"
-              : isRefining
-                ? "正在优化提示词"
-                : isJudging
-                  ? INTAKE_JUDGING_LABEL
-                  : "发送"
+          : extractPending
+            ? "附件解析中，请稍候"
+            : isRefining
+              ? "正在优化提示词"
+              : "发送"
       }
     >
       {sendBusy ? (
@@ -1504,7 +1348,8 @@ export function ComposerDock({
               </div>
             )}
             {/* 字在上、工具行在下。原型/设备只在空态 hero 画，会话内沿用范围卡。 */}
-            <div className="grid grid-cols-[auto_auto_1fr_auto] items-center gap-x-1.5 gap-y-2">
+            {/* 手机工具宽度会超过一行；缩窄 1fr 会让设计选择器盖住发送。 */}
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 sm:grid sm:grid-cols-[auto_auto_1fr_auto]">
               <div
                 className="relative shrink-0 col-start-1 row-start-2"
                 ref={menuRef}
@@ -1705,185 +1550,7 @@ export function ComposerDock({
                 </div>
               </div>
 
-              {hero ? (
-                <div className="col-start-2 row-start-2 flex shrink-0 items-center gap-1">
-                  <div
-                    ref={archetypeMenuRef}
-                    className="relative"
-                    data-testid="sliderule-composer-archetype"
-                  >
-                    <button
-                      type="button"
-                      aria-haspopup="listbox"
-                      aria-expanded={archetypeMenuOpen}
-                      aria-label="产品原型"
-                      data-testid="sliderule-composer-archetype-trigger"
-                      disabled={isRunning}
-                      title="产品原型（业务 / 内容 / 自由类型。不跟 Web/应用/平板混在一颗钮里）"
-                      onClick={() => {
-                        setArchetypeMenuOpen(open => !open);
-                        setDeviceMenuOpen(false);
-                      }}
-                      className="inline-flex h-7 items-center gap-1 rounded-full bg-[#f4f4f5] px-2 text-[12px] text-[#171717] transition hover:bg-[#ececef] disabled:opacity-45"
-                    >
-                      {productArchetype === "content_app" ? (
-                        <BookOpen className="h-3.5 w-3.5" />
-                      ) : productArchetype === "free_app" ? (
-                        <Wand2 className="h-3.5 w-3.5" />
-                      ) : (
-                        <Blocks className="h-3.5 w-3.5" />
-                      )}
-                      {composerArchetypeTriggerLabel(productArchetype)}
-                      <ChevronRight
-                        className={`h-3 w-3 text-[#5e5e5e] transition ${
-                          archetypeMenuOpen ? "-rotate-90" : "rotate-90"
-                        }`}
-                      />
-                    </button>
-                    <div
-                      role="listbox"
-                      aria-label="产品原型"
-                      data-testid="sliderule-composer-archetype-menu"
-                      hidden={!archetypeMenuOpen}
-                      className="absolute bottom-full left-0 z-30 mb-1 min-w-[9.5rem] rounded-[10px] border border-[#ececec] bg-white p-1 shadow-[0_8px_24px_rgba(31,35,40,0.12)]"
-                    >
-                      {composerArchetypeMenu().map(opt => {
-                        const on = productArchetype === opt.id;
-                        const Icon =
-                          opt.id === "content_app"
-                            ? BookOpen
-                            : opt.id === "free_app"
-                              ? Wand2
-                              : Blocks;
-                        return (
-                          <button
-                            key={opt.id}
-                            type="button"
-                            role="option"
-                            aria-selected={on}
-                            data-testid={`sliderule-composer-archetype-${opt.id}`}
-                            disabled={isRunning}
-                            title={opt.title}
-                            onClick={() => {
-                              setProductArchetypeState(opt.id);
-                              setProductArchetype(opt.id);
-                              setArchetypeMenuOpen(false);
-                            }}
-                            className={`flex w-full items-center gap-1.5 rounded-[7px] px-2 py-1.5 text-left text-[12px] transition ${
-                              on
-                                ? "bg-[#f4f4f5] font-medium text-[#171717]"
-                                : "text-[#3f3f46] hover:bg-[#f7f7f8]"
-                            } disabled:cursor-not-allowed disabled:opacity-45`}
-                          >
-                            <Icon className="h-3.5 w-3.5 shrink-0" />
-                            <span className="min-w-0 flex-1">{opt.label}</span>
-                            {on ? (
-                              <Check className="h-3 w-3 shrink-0 text-[#171717]" />
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div
-                    ref={deviceMenuRef}
-                    className="relative"
-                    data-testid="sliderule-composer-device"
-                  >
-                    <button
-                      type="button"
-                      aria-haspopup="listbox"
-                      aria-expanded={deviceMenuOpen}
-                      aria-label="目标形态"
-                      data-testid="sliderule-composer-device-trigger"
-                      disabled={isRunning}
-                      title="目标形态（默认 Web；平板 / 手表在菜单里，未接通的不能选）"
-                      onClick={() => {
-                        setDeviceMenuOpen(open => !open);
-                        setArchetypeMenuOpen(false);
-                      }}
-                      className="inline-flex h-7 items-center gap-1 rounded-full bg-[#f4f4f5] px-2 text-[12px] text-[#171717] transition hover:bg-[#ececef] disabled:opacity-45"
-                    >
-                      {device === "phone" ? (
-                        <Smartphone className="h-3.5 w-3.5" />
-                      ) : device === "tablet" ? (
-                        <Tablet className="h-3.5 w-3.5" />
-                      ) : (
-                        <Monitor className="h-3.5 w-3.5" />
-                      )}
-                      {composerDeviceTriggerLabel(device)}
-                      <ChevronRight
-                        className={`h-3 w-3 text-[#5e5e5e] transition ${
-                          deviceMenuOpen ? "-rotate-90" : "rotate-90"
-                        }`}
-                      />
-                    </button>
-                    <div
-                      role="listbox"
-                      aria-label="目标形态"
-                      data-testid="sliderule-composer-device-menu"
-                      hidden={!deviceMenuOpen}
-                      className="absolute bottom-full left-0 z-30 mb-1 min-w-[9.5rem] rounded-[10px] border border-[#ececec] bg-white p-1 shadow-[0_8px_24px_rgba(31,35,40,0.12)]"
-                    >
-                      {composerDeviceMenu().map(opt => {
-                        const on = device === opt.id;
-                        const Icon =
-                          opt.id === "phone"
-                            ? Smartphone
-                            : opt.id === "tablet"
-                              ? Tablet
-                              : opt.id === "watch"
-                                ? Watch
-                                : Monitor;
-                        return (
-                          <button
-                            key={opt.id}
-                            type="button"
-                            role="option"
-                            aria-selected={on}
-                            data-testid={`sliderule-composer-device-${opt.id}`}
-                            disabled={isRunning || !opt.wired}
-                            title={opt.title}
-                            onClick={() => {
-                              if (!opt.wired) return;
-                              setDevice(opt.id);
-                              setPreferredDevice(opt.id);
-                              setDeviceMenuOpen(false);
-                            }}
-                            className={`flex w-full items-center gap-1.5 rounded-[7px] px-2 py-1.5 text-left text-[12px] transition ${
-                              on
-                                ? "bg-[#f4f4f5] font-medium text-[#171717]"
-                                : "text-[#3f3f46] hover:bg-[#f7f7f8]"
-                            } disabled:cursor-not-allowed disabled:opacity-45`}
-                          >
-                            <Icon className="h-3.5 w-3.5 shrink-0" />
-                            <span className="min-w-0 flex-1">{opt.label}</span>
-                            {!opt.wired ? (
-                              <span className="text-[10px] text-[#a1a1aa]">未接通</span>
-                            ) : on ? (
-                              <Check className="h-3 w-3 shrink-0 text-[#171717]" />
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {/* 设计系统选择器（2026-08-24 用户裁决）。
-              Stitch 和 TRAE 都把它做成画布右侧的常驻面板——那是因为它们**是画布
-              模式**，右侧本来就有一整条空间。我们不是：舞台右边是正在跑的应用，
-              再插一条面板就得跟它抢地方。所以合并进指令框，跟目标形态下拉并排。
-
-              ⚠ 与设备切换不同，这个在**首页和会话内都要有**（用户两张截图都圈了）：
-              首页决定新推演用哪套皮，会话内改完下一轮生效。所以不能写 hero &&。 */}
-              {/*
-                「/ 技能·连接器」提示钮 + 设计系统按钮同占第三格。
-                ⚠ 四列栅格（grid-cols-[auto_auto_1fr_auto]），两个元素
-                  分到同一格会**叠在一起**，所以这里包一层 flex 再放进去。
-              */}
-              <div className="col-start-3 row-start-2 flex min-w-0 items-center gap-1.5 justify-self-start">
+              <div className="col-start-3 row-start-2 flex max-w-full min-w-0 flex-wrap items-center gap-1.5 justify-self-start sm:flex-nowrap">
                 <button
                   type="button"
                   data-testid="sliderule-slash-hint"
@@ -1895,49 +1562,9 @@ export function ComposerDock({
                 <span className="font-mono text-[13px] leading-none">/</span>
                 技能 · 连接器
               </button>
-              <div
-                ref={designAnchorRef}
-                className="relative shrink-0"
-              >
-                <button
-                  type="button"
-                  data-testid="sliderule-composer-design-system"
-                  aria-haspopup="menu"
-                  aria-expanded={!!designPanel?.menuOpen}
-                  disabled={isRunning}
-                  title={
-                    designSystem
-                      ? `设计系统：${designSystem.label} · ${designSystem.description}`
-                      : `${FREE_STYLE_LABEL}：${FREE_STYLE_HINT}`
-                  }
-                  onClick={() => designPanel?.toggleMenu()}
-                  className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[#f4f4f5] px-2 text-[12px] text-[#5e5e5e] transition hover:text-[#171717] disabled:opacity-45"
-                >
-                  {/* ⚠ 2026-08-25 用户裁决：没选是**图标**，选了是**多色色块**。
-                      单色圆点两态长得太像，分不出"我选过没有"。 */}
-                  {designSystem ? (
-                    <DesignSystemSwatch seed={designSystem.seed} size={14} />
-                  ) : (
-                    <Palette className="h-3.5 w-3.5 shrink-0" />
-                  )}
-                  {/* ⚠ 自由风格（默认档）只显示图标、不带字（2026-08-25 用户裁决
-                      「底部直接显示这个图标」）。挂个「设计系统」的字在那儿，会让人
-                      以为已经选了某套；光一个图标才读作"还没钉死，交给 AI"。 */}
-                  {hero && designSystem ? designSystem.label : null}
-                  <ChevronRight
-                    className={`h-3 w-3 transition ${
-                      designPanel?.menuOpen ? "-rotate-90" : "rotate-90"
-                    }`}
-                  />
-                </button>
-                {/* 清单 + 色板面板锚在这颗按钮正上方（见 DesignSystemRail 头注）。
-                    必须在这个 relative 容器**内部**——挂页面根的话 absolute 会
-                    一路找到 body，跑去左上角。 */}
-                <DesignSystemRail anchorRef={designAnchorRef} />
-              </div>
               </div>
 
-              <div className="min-w-0 col-span-4 row-start-1">
+              <div className="order-first w-full min-w-0 col-span-4 row-start-1 sm:order-none">
                 {/*
                   挂上的能力是**输入框里的前缀标签**，不是上面另起一行的芯片。
                   用户 2026-08-26 指着 TRAE 的截图说的：选完之后能力就待在
@@ -2033,7 +1660,6 @@ export function ComposerDock({
                   }
                   rows={1}
                   disabled={
-                    scopeCardBlocksComposer(pendingScope) ||
                     askBlocksTyping(pendingAsk)
                   }
                   className="block max-h-40 w-full resize-none bg-transparent py-0 text-[#171717] outline-none placeholder:text-[#9aa0a6] disabled:opacity-60 min-h-[72px] px-0.5 text-[15px] leading-6"
@@ -2042,7 +1668,7 @@ export function ComposerDock({
               </div>
 
               {/* 优化贴发送左边，跟发送同一簇靠右。 */}
-              <div className="col-start-4 row-start-2 flex items-center gap-1 justify-self-end">
+              <div className="col-start-4 row-start-2 ml-auto flex shrink-0 items-center gap-1 justify-self-end sm:ml-0">
                 {refineButton}
                 {stopButton}
                 {sendButton}
@@ -2072,59 +1698,29 @@ export function ComposerDock({
               }}
             />
           ) : null}
-          {/*
-            推演中的两条浮层：**AI 替你定了什么** 和 **你补的那句话**。
-
-            ⚠ 2026-08-27 真机咬出来的位置错误。第一版把它们放在输入框正文
-              上方的那个 `min-w-0` 盒子里——进流会把输入顶走，或在老胶囊
-              单行里被挤成竖条。修法：挂到 absolute 那一层去，叠在卡片上方。
-              2026-09-01 会话内改成跟空态同一张多行卡片，浮层仍不进栅格，
-              否则会把工具行顶乱。
-
-            ⚠ 范围卡在场时让路：同一处只许有一张卡（跟
-              intakeHintYieldsToScopeCard 同一条纪律）。
-            ⚠ 控制面提问不再占这层弹出卡（2026-09-03 用户截图：弹出层盖住
-              输入，要求跟「路线对比一下」同一排芯片）。提问走顶行
-              sliderule-control-ask。仍让路：提问在场时假设卡/排队卡不许叠上来。
-          */}
-          {/*
-            问答卡（grok `AskUserQuestion`）：一发几道题、每项带解释、
-            自动补「其他（自己写）」、推荐项排第一。
-            ⚠ 它压过范围卡回执与假设卡：工厂正停着等这几道题的答案，
-              这时候摊别的卡等于把唯一能点的东西盖住（2026-09-10 那条伤）。
-          */}
           {pendingAsk?.questions?.length && onSubmitQuestionnaire ? (
             <div
-              className="pointer-events-auto absolute bottom-full left-0 right-0 z-20 mb-2 origin-bottom sr-composer-pop"
+              className="pointer-events-auto fixed inset-x-3 bottom-3 z-20 max-h-[calc(100dvh-24px)] overflow-y-auto origin-bottom sr-composer-pop sm:absolute sm:inset-x-0 sm:bottom-full sm:mb-2 sm:max-h-none sm:overflow-visible"
               data-testid="sliderule-questionnaire-overlay"
             >
               <QuestionnaireCard
+                key={pendingAsk.reqId}
                 questions={pendingAsk.questions}
                 paused={isRunning}
                 onSubmit={onSubmitQuestionnaire}
               />
             </div>
           ) : null}
-          {!scopeCardIsGate(pendingScope) &&
-          !pendingAsk &&
-          (specAssumptions.length > 0 || queuedTurns.length > 0) ? (
+          {pendingPlanApproval && onSubmitPlanApproval ? (
+            <div className="pointer-events-auto fixed inset-x-3 bottom-3 z-20 origin-bottom sr-composer-pop sm:absolute sm:inset-x-0 sm:bottom-full sm:mb-2" data-testid="sliderule-plan-overlay">
+              <PlanApprovalPanel key={pendingPlanApproval.reqId} plan={pendingPlanApproval} onSubmit={onSubmitPlanApproval} />
+            </div>
+          ) : null}
+          {!pendingAsk && !pendingPlanApproval && queuedTurns.length > 0 ? (
             <div
               className="pointer-events-auto absolute bottom-full left-0 right-0 z-10 mb-2 origin-bottom sr-composer-pop rounded-[12px] border border-[#e5e7eb] bg-white p-1.5 shadow-[0_12px_32px_rgb(15_23_42/0.12)]"
               data-testid="sliderule-composer-overlay"
             >
-              {/*
-                假设卡在上（选完点「确认继续」才往下），改过的那句排队在下。
-              */}
-              {onConfirmAssumptions ? (
-                <AssumptionStrip
-                  items={specAssumptions}
-                  sessionId={sessionId}
-                  isRunning={isRunning}
-                  paused={runPaused}
-                  onHold={onHoldRun}
-                  onConfirm={onConfirmAssumptions}
-                />
-              ) : null}
               {/*
                 推演中补的话：**必须看得见**。
                 ⚠ 2026-08-27 真机实测的老形态：点发送 → 输入框清空、整页
@@ -2166,30 +1762,6 @@ export function ComposerDock({
                 </div>
               ) : null}
             </div>
-          ) : null}
-          {/* 审查卡叠在输入框上方，不进外层 flex——进流会把输入顶走。
-              范围卡开着时 hint 必须让路：同一 send 禁止两张卡。
-              提问芯片在顶行，这里同样让路，别跟审查卡叠两张决策面。 */}
-          {pendingScope && onConfirmScope && onReviseScope && !scopeReceiptYields ? (
-            <ScopeCard
-              key={pendingScope.userText}
-              pending={pendingScope}
-              onConfirm={onConfirmScope}
-              onRevise={onReviseScope}
-              confirmDisabled={isRunning}
-            />
-          ) : !pendingAsk &&
-            intakeHintYieldsToScopeCard(Boolean(pendingScope)) ? (
-            <IntakeHintBar
-              judgement={judgement}
-              isJudging={isJudging}
-              scopeCardOpen={scopeCardBlocksComposer(pendingScope)}
-              onRewrite={text => {
-                setInput(text);
-                requestAnimationFrame(adjustTextareaHeight);
-                textareaRef.current?.focus();
-              }}
-            />
           ) : null}
         </div>
       </div>

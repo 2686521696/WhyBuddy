@@ -165,7 +165,7 @@ def _ask_with(harness, args):
     sid = new_sid("askq")
     seed_session(sid, goal={"text": "社区诊所预约与排班系统", "status": "clear"})
     harness.llm_impl = lambda m, **k: (
-        llm_tool("ask_user", args, call_id="ask")
+        llm_tool("ask_user_question", args, call_id="ask")
         if len(harness.llm_calls) == 1
         else llm_text("好")
     )
@@ -212,7 +212,7 @@ def test_一道题都认不出时不许出空卡(harness):
     res = [
         e
         for e in events
-        if e.get("type") == "control_tool_result" and e.get("tool") == "ask_user"
+        if e.get("type") == "control_tool_result" and e.get("tool") == "ask_user_question"
     ]
     assert res and res[-1].get("ok") is False, res
     assert "题" in str(res[-1].get("error") or "")
@@ -224,7 +224,7 @@ def test_结构化答案按grok那套回喂给模型(harness):
     sid = new_sid("askq-answer")
     seed_session(sid, goal={"text": "社区诊所预约与排班系统", "status": "clear"})
     harness.llm_impl = lambda m, **k: (
-        llm_tool("ask_user", {"questions": GROK_SHAPE}, call_id="ask")
+        llm_tool("ask_user_question", {"questions": GROK_SHAPE}, call_id="ask")
         if len(harness.llm_calls) == 1
         else llm_text("好")
     )
@@ -234,7 +234,7 @@ def test_结构化答案按grok那套回喂给模型(harness):
     harness.llm_impl = lambda m, **k: (seen.append(m), llm_text("知道了"))[1]
     payload = six_fields(sid, "微信授权")
     payload["toolAnswer"] = {
-        "kind": "ask_user",
+        "kind": "ask_user_question",
         "outcome": "accepted",
         "answers": {"q1": ["微信授权"], "q2": ["7 天", "30 天"]},
         "notes": {"q1": "老人多"},
@@ -253,7 +253,7 @@ def test_拒答走的是那句话而不是报错(harness):
     sid = new_sid("askq-cancel")
     seed_session(sid, goal={"text": "社区诊所预约与排班系统", "status": "clear"})
     harness.llm_impl = lambda m, **k: (
-        llm_tool("ask_user", {"questions": GROK_SHAPE}, call_id="ask")
+        llm_tool("ask_user_question", {"questions": GROK_SHAPE}, call_id="ask")
         if len(harness.llm_calls) == 1
         else llm_text("好")
     )
@@ -262,7 +262,7 @@ def test_拒答走的是那句话而不是报错(harness):
     seen: list = []
     harness.llm_impl = lambda m, **k: (seen.append(m), llm_text("那我自己定"))[1]
     payload = six_fields(sid, "")
-    payload["toolAnswer"] = {"kind": "ask_user", "outcome": "cancelled"}
+    payload["toolAnswer"] = {"kind": "ask_user_question", "outcome": "cancelled"}
     harness.post(payload)
 
     blob = "\n".join(
@@ -279,7 +279,7 @@ def test_工具说明里那两句承诺不许掉(harness):
     desc = next(
         t["function"]["description"]
         for t in CONTROL_TOOLS
-        if t["function"]["name"] == "ask_user"
+        if t["function"]["name"] == "ask_user_question"
     )
     assert "其他（自己写）" in desc, desc
     assert "你不要自己加" in desc, desc

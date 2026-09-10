@@ -208,7 +208,7 @@ if (process.argv.includes("--check")) {
   for (const f of files) {
     const p = path.join(OUT_DIR, f.name);
     const cur = fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
-    if (cur !== f.body) stale.push(f.name);
+    if (cur.replace(/\r\n/g, "\n") !== f.body.replace(/\r\n/g, "\n")) stale.push(f.name);
   }
   if (stale.length) {
     console.error(

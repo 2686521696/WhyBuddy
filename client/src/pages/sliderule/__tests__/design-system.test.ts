@@ -9,13 +9,12 @@
  *       brandSeed 注释专门警告过这个。
  */
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import {
-  DEFAULT_DESIGN_SYSTEM_ID,
-  DESIGN_SYSTEMS,
-  findDesignSystem,
-} from "../design-system";
+import designSystems from "@design-systems";
 import themePresets from "@identity-themes";
+
+const DESIGN_SYSTEMS = designSystems.systems;
 
 function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
@@ -23,7 +22,7 @@ function stripComments(src: string): string {
 
 describe("设计系统清单", () => {
   it("默认那套的种子色 = brandSeed（升级不许换掉存量应用的颜色）", () => {
-    const def = findDesignSystem(DEFAULT_DESIGN_SYSTEM_ID);
+    const def = DESIGN_SYSTEMS.find(system => system.id === designSystems.defaultId)!;
     const brand = (themePresets as { brandSeed: { seed: string } }).brandSeed;
     expect(def.seed.toLowerCase()).toBe(brand.seed.toLowerCase());
   });
@@ -39,80 +38,15 @@ describe("设计系统清单", () => {
     expect(DESIGN_SYSTEMS.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("认不出的 id 静默回落默认，不炸作曲家", () => {
-    expect(findDesignSystem("不存在").id).toBe(DEFAULT_DESIGN_SYSTEM_ID);
-    expect(findDesignSystem(null).id).toBe(DEFAULT_DESIGN_SYSTEM_ID);
-    expect(findDesignSystem(undefined).id).toBe(DEFAULT_DESIGN_SYSTEM_ID);
-  });
 });
 
 describe("选择器接线：UI 动了，生成也要跟着动", () => {
   const read = (rel: string) =>
     stripComments(readFileSync(new URL(rel, import.meta.url), "utf8"));
 
-  it("作曲家挂了选择器，且首页/会话内都渲染（不许写成 hero &&）", () => {
-    const src = read("../ComposerDock.tsx");
-    expect(src).toContain("sliderule-composer-design-system");
-    expect(src).toContain("saveDesignSystemId");
-    // ⚠ 2026-08-25 两轮都改到这条：
-    //   一轮：原文写死 `DESIGN_SYSTEMS.map`，菜单改成渲染"自建+预设"合并清单后假红；
-    //   二轮：清单整块搬去右侧栏（DesignSystemRail），作曲家里只剩触发按钮。
-    //   它反复假红的根因是**盯的是清单渲染在哪个文件里**，而这条用例真正要钉的
-    //   是"作曲家上有触发入口、且首页和会话内都渲染"。所以只留后者。
-    const railSrc = stripComments(
-      readFileSync(new URL("../DesignSystemRail.tsx", import.meta.url), "utf8")
-    );
-    expect(railSrc).toContain("allDesignSystems");
-    expect(railSrc).toMatch(/list\.map/);
-    /**
-     * ⚠ 反向：设备切换是 `hero ? (...) : null`，设计系统**不是**。
-     * 用户两张截图分别圈了首页和会话内的指令框，两处都要有。
-     * 把它包进 hero 判断里，这条必红。
-     */
-    const at = src.indexOf("sliderule-composer-design-system");
-    const before = src.slice(Math.max(0, at - 700), at);
-    expect(before).not.toMatch(/\{hero \?\s*\($/);
-  });
 
-  it("选择真的进了推演 payload（只存 localStorage 不发出去 = 纯装饰）", () => {
-    const session = read("../useSlideRuleSession.ts");
-    expect(session).toContain("designSystemId: loadDesignSystemId()");
 
-    /*
-     * 每一个点火 payload 都要带上——本仓"只改一半"的经典位置：
-     * 流式是前端主路径，只改同步等于没改。
-     *
-     * ⚠ 2026-08-27 审查：原判据写死 `expect(sites.length).toBe(2)`。PR-4 加了
-     *   控制面第三条点火路径（postControlTurnStream，且它也正确带上了
-     *   designSystemId）——功能是**更全了**，判据却因为数字对不上而变红。
-     *   写死计数就是盯字面：加一条带的会假红，加一条不带的（3→3）会假绿。
-     *
-     * 现在自动发现：`installedSkills` 是点火 payload 的天然标记
-     * （marathon 那条 body 没有它，契约本来就不同）。每一个带
-     * installedSkills 的 body 都必须同时带 designSystemId。
-     * 新增点火路径会自动进入本判据，忘了带就红。
-     */
-    const driver = read("../../../lib/sliderule-marathon-driver.ts");
-    const bodies = driver
-      .split("body: JSON.stringify({")
-      .slice(1)
-      .map(chunk => chunk.slice(0, 900));
-    const ignitionBodies = bodies.filter(b => b.includes("installedSkills"));
-    expect(
-      ignitionBodies.length,
-      "一个点火 payload 都没找到——driver 的请求体写法变了，判据要跟着改"
-    ).toBeGreaterThanOrEqual(2);
-    const missing = ignitionBodies.filter(b => !b.includes("designSystemId"));
-    expect(
-      missing.length,
-      `有 ${missing.length} 个点火 payload 没带 designSystemId —— 选择器只存 localStorage 不发出去 = 纯装饰`
-    ).toBe(0);
-    // 正向：控制面那条（今天产品唯一的新烧插座）必须在里面
-    expect(
-      ignitionBodies.some(b => b.includes("forcedTool")),
-      "控制面点火 payload 不在检查范围内"
-    ).toBe(true);
-  });
+
 
   it("后端按轮取种子色，不是读模块常量", () => {
     const block = stripComments(
@@ -158,7 +92,7 @@ describe("DESIGN.md 与渲染色板同源", () => {
      */
     const { execFileSync } =
       require("node:child_process") as typeof import("node:child_process");
-    const root = new URL("../../../../../", import.meta.url).pathname;
+    const root = fileURLToPath(new URL("../../../../../", import.meta.url));
     const run = () =>
       execFileSync("node", ["scripts/generate-design-md.mjs", "--check"], {
         cwd: root,

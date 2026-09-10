@@ -103,15 +103,9 @@ def test_fruit_shop_cashier_is_enough_to_start():
     assert "请先选择" not in text
 
 
-def test_scope_card_tool_is_restatement_not_a_gate():
-    """工具说明书也不能再教「等用户点开始推演」。"""
-    from control_turn_support import PY_ROOT, strip_python
+def test_scope_card_is_replaced_by_plan_tools():
+    from services.rehearsal_control import CONTROL_TOOLS
 
-    src = strip_python(PY_ROOT / "services" / "rehearsal_control.py")
-    assert "等用户点开始推演" not in src
-    at = src.find("'name': 'scope_card'")
-    if at < 0:
-        at = src.find('"name": "scope_card"')
-    assert at > 0, "scope_card 工具条目不见了"
-    chunk = src[at : at + 500]
-    assert "不当门禁" in chunk or "复述" in chunk
+    names = {tool["function"]["name"] for tool in CONTROL_TOOLS}
+    assert "scope_card" not in names
+    assert {"write_plan", "exit_plan_mode", "ask_user_question"} <= names

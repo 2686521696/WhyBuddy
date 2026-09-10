@@ -67,16 +67,14 @@ describe("发送闸", () => {
     ).toBe(true);
   });
 
-  it("反向：范围卡照旧一律挡（这次只放开提问那一种）", () => {
-    expect(isComposerSendBlocked({ ...base, scopeCardOpen: true })).toBe(true);
-  });
+
 });
 
 describe("输入框和卡片本身", () => {
   it("textarea 的 disabled 走 askBlocksTyping，不是裸 Boolean(pendingAsk)", () => {
     /* ⚠ 这条钉的是**接线**：判定函数写对了但输入框还照旧裸判，死胡同原样还在
        （本仓第三条：写对了 ≠ 接上了）。 */
-    expect(DOCK).toContain("scopeCardBlocksComposer(pendingScope)");
+    expect(DOCK).not.toContain("scopeCardBlocksComposer(pendingScope)");
     expect(DOCK).toContain("askBlocksTyping(pendingAsk)");
     expect(DOCK).not.toContain(
       "disabled={Boolean(pendingScope) || Boolean(pendingAsk)}"

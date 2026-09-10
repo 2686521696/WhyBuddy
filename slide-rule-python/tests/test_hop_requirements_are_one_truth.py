@@ -77,7 +77,12 @@ def _state(scope: bool, spec: bool, pages: bool, model: bool) -> V5SessionState:
     if model:
         st.modelVersions = [{"id": "v1", "model": {"pages": []}}]
     if scope:
-        st.controlTranscript = [{"id": "c1", "kind": "scope_confirmed"}]
+        plan = {"planId": "plan-1", "revision": 1, "planContent": "Build the app"}
+        st.controlTranscript = [
+            {"kind": "plan_written", **plan},
+            {"kind": "plan_approval", "reqId": "approval-1", **plan},
+            {"kind": "plan_approved", "reqId": "approval-1", **plan},
+        ]
     blob = {}
     if spec:
         blob["spec"] = {"appName": "x", "pages": [{"id": "p1"}], "nodes": []}
@@ -92,14 +97,13 @@ def _state(scope: bool, spec: bool, pages: bool, model: bool) -> V5SessionState:
 _REACHABLE = [
     combo
     for combo in itertools.product([False, True], repeat=4)
-    if not (combo[3] and not combo[0])
 ]
 
 
 def test_不可达的组合确实被挡掉了():
     """反向：别把 `_REACHABLE` 写成恒真——那样上面那条又变回枚举幻想。"""
-    assert len(_REACHABLE) == 12, len(_REACHABLE)
-    assert (False, False, False, True) not in _REACHABLE
+    assert len(_REACHABLE) == 16, len(_REACHABLE)
+    assert (False, False, False, True) in _REACHABLE
 
 
 @pytest.mark.parametrize("scope,spec,pages,model", _REACHABLE)
@@ -118,12 +122,13 @@ def test_列出来的一定跑得动(hop, scope, spec, pages, model):
     listed = should_list_tool(hop, st)
     runnable = not _factory_hop_blocker(st, hop)
 
-    if hop == "spec" and spec:
+    if hop == "spec" and spec and scope:
         assert runnable, "已有 SPEC 时重起草被当成缺前置拦掉了"
         return
     # 范围没确认时清单谓词一律为假，而 blocker 只说产物缺口（范围是范围卡的事）。
     if not scope:
         assert not listed, f"{hop} 在范围没确认时被列出来了"
+        assert not runnable
         return
     assert listed == runnable, (
         f"{hop} 列={listed} 但跑得动={runnable}"
@@ -189,7 +194,7 @@ def test_没声明前置的跳缺省跑得动():
 def test_三句人话逐字不变():
     """重构不许顺手改文案——那会让「重构」和「改产品」混在一条 diff 里，
     出事时分不清是哪一边。"""
-    scope_only = _have(scope=True)
+    scope_only = _have(plan=True)
     assert blocker_text("pages", scope_only) == "还没有 SPEC。先调 spec。"
     assert blocker_text("bind", scope_only) == "还没有页面。先调 pages，再 bind。"
     assert (
@@ -201,9 +206,9 @@ def test_三句人话逐字不变():
 
 def test_新前置组合不许静默返回空串():
     """空串等于"跑得动"。新加一条前置忘了写措辞就放行 = 伪造绿灯（§7）。"""
-    HOP_REQUIRES["__probe__"] = all_of(Need.SCOPE, Need.MODEL)
+    HOP_REQUIRES["__probe__"] = all_of(Need.PLAN, Need.MODEL)
     try:
-        said = blocker_text("__probe__", _have(scope=True))
+        said = blocker_text("__probe__", _have(plan=True))
         assert said, "新组合静默放行了"
         assert "五系统模型" in said, said
     finally:

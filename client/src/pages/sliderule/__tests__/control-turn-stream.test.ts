@@ -27,10 +27,6 @@ const DRIVER = stripComments(
 const DOCK = stripComments(
   readFileSync(new URL("../ComposerDock.tsx", import.meta.url), "utf8")
 );
-const CARD = stripComments(
-  readFileSync(new URL("../ScopeCard.tsx", import.meta.url), "utf8")
-);
-
 function countNeedle(src: string, needle: string): number {
   let n = 0;
   let from = 0;
@@ -143,43 +139,17 @@ describe("产品客户端不得再 POST 工厂流", () => {
       SESSION.indexOf("const runTurn = async"),
       SESSION.indexOf("const requestRehearsal = async")
     );
-    expect(runTurn).toContain("reuseCharter: loadCharterReuseNext()");
-    expect(runTurn).toContain("!== null");
+    expect(runTurn).not.toContain("loadCharterReuseNext()");
   });
 });
 
 describe("开始推演 / 质疑 / /推演", () => {
-  it("confirmControlScope POST forcedTool rehearse，/推演 客户端不得带 rehearse", () => {
-    const confirmFn = SESSION.slice(
-      SESSION.indexOf("const confirmControlScope"),
-      SESSION.indexOf("const dismissScopeCard")
-    );
-    expect(confirmFn).toContain('"rehearse"');
-    expect(confirmFn).toContain("snapshot.restatement");
-    expect(confirmFn).toContain("productArchetype");
-    expect(confirmFn).toContain("snapshot.device");
-    const runTurn = SESSION.slice(
-      SESSION.indexOf("const runTurn = async"),
-      SESSION.indexOf("const requestRehearsal = async")
-    );
-    expect(runTurn).toContain("assertDriveSessionMatchesShell");
-    expect(runTurn).toContain("loadProductArchetype()");
-    expect(runTurn).toContain("isWiredArchetype(scopeChoice.productArchetype)");
-    expect(confirmFn).toContain("snapshot.tools");
-    const inferFn = SESSION.slice(
-      SESSION.indexOf("export function inferForcedTool"),
-      SESSION.indexOf("export function previousModelVersionId")
-    );
-    expect(inferFn).not.toContain('"/推演"');
-    expect(inferFn).not.toContain('"rehearse"');
-    expect(CARD).toContain("onConfirm");
-    expect(DOCK).toContain('data-testid="sliderule-control-ask"');
-  });
+
 
   it("control_clarify 只喂澄清卡，停泊时 isRunning 也要画出来", () => {
     const clarifyCase = DRIVER.slice(
       DRIVER.indexOf('case "control_clarify"'),
-      DRIVER.indexOf('case "control_scope_card"')
+      DRIVER.indexOf('case "control_plan_approval"')
     );
     expect(clarifyCase).toContain("onControlClarify");
     expect(clarifyCase).not.toContain("onControlAskUser");
@@ -208,35 +178,11 @@ describe("开始推演 / 质疑 / /推演", () => {
     expect(factoryPost).not.toContain("opts.tools");
   });
 
-  it("control_scope hydrate 走 hydrateParkedScope，不以 localStorage 为第一权威", () => {
-    const hydrate = SESSION.slice(
-      SESSION.indexOf('hydrated.awaitReason === "control_scope"'),
-      SESSION.indexOf('hydrated.awaitReason === "control_ask"')
-    );
-    expect(hydrate).toContain("hydrateParkedScope");
-    expect(hydrate).not.toContain("loadPreferredDevice()");
-  });
 
-  it("活路径 park 事件进卡前锁作曲家形态，不是 event.device 可点", () => {
-    const park = SESSION.slice(
-      SESSION.indexOf("onControlScopeCard:"),
-      SESSION.indexOf("charterReuseNext: event.charterReuseNext")
-    );
-    expect(park).toContain("lockScopeMorphology");
-    expect(park).toContain("device: locked.device");
-    expect(park).toContain("productArchetype: locked.productArchetype");
-    expect(CARD).toContain("lockScopeMorphology");
-    expect(CARD).not.toContain("setDevice(");
-    expect(CARD).not.toContain("setProductArchetype(");
-  });
 
-  it("先改范围 POST dismiss_scope；reload 从 transcript 恢复 ask options", () => {
-    const dismissFn = SESSION.slice(
-      SESSION.indexOf("const dismissScopeCard"),
-      SESSION.indexOf("const stop =")
-    );
-    expect(dismissFn).toContain("dismiss_scope");
-    expect(dismissFn).toContain("postControlTurnStream");
+
+
+  it("reload 从 transcript 恢复 ask options", () => {
     const hydrate = SESSION.slice(
       SESSION.indexOf('hydrated.awaitReason === "control_ask"'),
       SESSION.indexOf("options.initialGoal")
@@ -256,7 +202,7 @@ describe("consumeControlStreamResponse 与工厂 case 共用", () => {
     expect(consume).toContain("applyFactoryStreamEvent");
     expect(consume).toContain("control_ask_user");
     expect(consume).toContain("control_clarify");
-    expect(consume).toContain("control_scope_card");
+    expect(consume).toContain("control_plan_approval");
     expect(consume).toContain("control_handoff_factory");
     expect(consume).toContain("handedOff && !factoryDone");
     expect(consume).toContain('type: "factory_complete"');

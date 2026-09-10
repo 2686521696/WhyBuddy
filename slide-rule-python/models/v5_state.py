@@ -23,6 +23,7 @@ AwaitReason = Literal[
     "closure_missing",
     "control_ask",
     "control_scope",
+    "control_plan_approval",
     # ⚠ 2026-08-27 压测挖出来的静默数据丢失：控制面澄清停靠写的是
     #   `state.awaitReason = "control_clarify"`（rehearsal_control.py:906），
     #   而这个名单里从来没有它。pydantic v2 默认**不校验赋值**，所以写的时候

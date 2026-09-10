@@ -96,21 +96,14 @@ describe("ComposerDock Cursor 三行形态", () => {
       dock.indexOf("col-start-3 row-start-2"),
       dock.indexOf("col-start-4 row-start-2")
     );
-    expect(col3).toContain("sliderule-composer-design-system");
+    expect(col3).not.toContain("sliderule-composer-design-system");
     // 提示钮跟设计系统同占 col3（2026-08-26 用户："输入框中应该加入提醒"）
     // ⚠ 连引号一起钉：只写裸串的话改名成 `...-hint-GONE` 照样是子串，变异咬不住
     expect(col3).toContain('data-testid="sliderule-slash-hint"');
     expect(col3).not.toContain("{refineButton}");
     expect(dock).not.toContain("col-start-5 row-start-2");
-    expect(dock).toContain("sliderule-composer-device");
-    expect(dock).toContain("composerDeviceMenu");
-    expect(dock).toContain("sliderule-composer-device-trigger");
-    expect(dock).toContain("sliderule-composer-device-menu");
-    expect(dock).toContain("sliderule-composer-archetype");
-    expect(dock).toContain("composerArchetypeMenu");
-    expect(dock).toContain("sliderule-composer-archetype-trigger");
-    expect(dock).toContain("sliderule-composer-archetype-menu");
-    expect(dock).toContain('aria-haspopup="listbox"');
+    expect(dock).not.toContain("sliderule-composer-device");
+    expect(dock).not.toContain("sliderule-composer-archetype");
     // 反向：两档并排 tab 加回来必红（2026-08-30 用户：多了放不下）
     expect(dock).not.toContain('role="group"');
     expect(dock).not.toContain("aria-pressed={on}");
@@ -194,48 +187,5 @@ describe("对话列接到输入条，不要横切分隔线", () => {
     expect(call).not.toContain("闭环 ${");
   });
 
-  it("应用/Web 开关接到 drive-full-stream 请求体，不是只画在输入条上", () => {
-    const session = stripComments(
-      readFileSync(
-        new URL("../useSlideRuleSession.ts", import.meta.url),
-        "utf8"
-      )
-    );
-    // 范围卡接通档优先，没选才读作曲家 localStorage。
-    // ⚠ 2026-08-30：不能再盯 `preferredDevice: loadPreferredDevice()` 整行——
-    // 通电路径改成了 isWiredDevice(scopeChoice.device) ? … : loadPreferredDevice()，
-    // 字面一变就假红；删掉 loadPreferredDevice 或不再写进 preferredDevice 才该红。
-    expect(session).toContain("preferredDevice:");
-    expect(session).toContain("loadPreferredDevice()");
-    expect(session).toContain("isWiredDevice(scopeChoice.device)");
-    expect(session).toContain("productArchetype:");
-    expect(session).toContain("loadProductArchetype()");
-    expect(session).toContain("isWiredArchetype(scopeChoice.productArchetype)");
-    const dock = stripComments(
-      readFileSync(new URL("../ComposerDock.tsx", import.meta.url), "utf8")
-    );
-    const doSend = dock.slice(
-      dock.indexOf("const doSend = React.useCallback"),
-      dock.indexOf("const [installedSkills")
-    );
-    expect(doSend).toContain("setPreferredDevice(device)");
-    expect(doSend).toContain("setProductArchetype(productArchetype)");
-    expect(doSend.indexOf("setPreferredDevice(device)")).toBeLessThan(
-      doSend.indexOf("sendMessage")
-    );
-    expect(doSend.indexOf("setProductArchetype(productArchetype)")).toBeLessThan(
-      doSend.indexOf("sendMessage")
-    );
-    const driver = stripComments(
-      readFileSync(
-        new URL("../../../lib/sliderule-marathon-driver.ts", import.meta.url),
-        "utf8"
-      )
-    );
-    expect(driver).toContain(
-      'preferredDevice: opts.preferredDevice ?? "desktop"'
-    );
-    expect(driver).toContain("/drive-full-stream");
-    expect(driver).not.toContain("...(opts.preferredDevice");
-  });
+
 });

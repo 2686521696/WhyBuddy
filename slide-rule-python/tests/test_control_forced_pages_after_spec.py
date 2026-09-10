@@ -13,7 +13,7 @@ from control_turn_support import (
     event_types,
     llm_text,
     new_sid,
-    seed_session,
+    seed_approved_session as seed_session,
     six_fields,
 )
 from services.slide_rule_session import load_session
@@ -69,9 +69,7 @@ def test_forced_pages_skips_llm_and_sets_goal_tools_pages(harness):
     todo = list(getattr(saved, "factoryTodo", None) or [])
     assert "structure" in todo and "bind" in todo, todo
     sfp = (saved.specFirstPages or {}) if saved else {}
-    assert sfp.get("assumptionsConfirmed") is True, (
-        f"假设确认必须进盘，刷新才不复弹。实际 {sfp}"
-    )
+    assert sfp.get("assumptionsConfirmed") is not True, "Plain text is not a structured questionnaire receipt"
 
 
 def test_forced_rehearse_resets_stale_assumptions_confirmed(harness):
@@ -471,19 +469,19 @@ def test_回执范围卡点火之后整轮仍有终局(harness):
     from control_turn_support import llm_tool
 
     sid = new_sid("receipt-terminal")
-    seed_session(sid, goal={"text": ""})
+    seed_session(sid, goal={"text": "宠物美容店的预约与会员卡系统"})
 
     def impl(messages, **kw):
         # 复述由 `_restate` 真跑出来，判据不许自己编一句（见
         # test_declined_scope_reaches_the_model 头注）。
         if len(harness.llm_calls) == 1:
-            return llm_tool("scope_card", {}, call_id="card")
+            return llm_tool("spec", {}, call_id="spec")
         return llm_text("SPEC 出来了。")
 
     harness.llm_impl = impl
     _, events = harness.post(six_fields(sid, "做一个宠物美容店的预约与会员卡系统"))
     types = event_types(events)
-    assert "control_scope_card" in types, types
+    assert "control_scope_card" not in types, types
     assert "control_handoff_factory" in types, (
         f"回执卡没点火，这条判据测的就不是那条路了：{types}"
     )

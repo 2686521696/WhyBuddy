@@ -34,12 +34,12 @@ from models.v5_state import V5SessionState
 from services.rehearsal_control import (
     CANNED_FAILURE,
     CHEAP_TURN_FALLBACK,
-    _can_auto_grant_scope,
     _has_product_topic,
     _system_prompt,
     list_control_tools,
 )
 from services.slide_rule_session import load_session
+from services.scope_authority import plan_execution_authorized
 from sliderule_llm.control_client import ControlLlmResult
 
 pytest.importorskip("fastapi")
@@ -77,15 +77,10 @@ def test_empty_goal_is_not_a_product_even_if_user_said_hello():
 
 
 def test_auto_grant_rejects_the_live_pair():
-    """真机：user_text=你能做啥 original_goal=继续。字数够了也不许授予。"""
-    assert _can_auto_grant_scope(LIVE_META, LIVE_CONTINUE) is False
-    assert _can_auto_grant_scope(LIVE_META, "") is False
-    assert _can_auto_grant_scope(LIVE_CONTINUE, "") is False
-    assert _can_auto_grant_scope("hello", "") is False
-    assert _can_auto_grant_scope(REAL_TOPIC, "") is False
-    # 已有真产品时，「继续」是跟进，不是新话题——授予仍成立。
-    assert _can_auto_grant_scope(LIVE_CONTINUE, "请假系统") is True
-    assert _can_auto_grant_scope("hello", REAL_TOPIC) is True
+    """Neither a real product nor a conversational reply is plan approval."""
+    for topic in (LIVE_META, LIVE_CONTINUE, "hello", REAL_TOPIC):
+        state = V5SessionState(sessionId="no-auto-grant", goal={"text": topic})
+        assert not plan_execution_authorized(state)
 
 
 def test_continue_and_meta_do_not_list_write_tools():
@@ -101,12 +96,13 @@ def test_continue_and_meta_do_not_list_write_tools():
         # ⚠ 2026-09-09 照 grok 改：清单不猜意图（`ListToolsContext` 里没有用户消息，grok 全仓只有 3 处管道层覆写 `should_list`）。保证挪到分发层——模型硬挑 scope_card 也不画卡，只再问一句。
         assert "spec" not in names, text
         assert "rehearse" not in names, text
-        assert "ask_user" in names, text
+        assert "ask_user_question" in names, text
     clinic = V5SessionState(
         sessionId="cheap-list-clinic",
         goal={"text": "诊所系统", "status": "needs_refinement"},
     )
-    assert "scope_card" in _names(clinic)
+    assert "write_plan" in _names(clinic)
+    assert "scope_card" not in _names(clinic)
     assert "clarify" not in _names(clinic)
 
 

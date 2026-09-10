@@ -136,28 +136,6 @@ def test_empty_session_product_named_like_a_hop_still_goes_to_llm(text):
     assert j.verdict == "real"
 
 
-def test_frontend_hop_detector_stays_in_sync():
-    """两侧同一把尺子。漏一侧 = 审查条仍闪「正在审查需求」。"""
-    ts = (Path(__file__).resolve().parents[2]
-          / "client" / "src" / "pages" / "sliderule" / "use-intake-judge.ts")
-    src = ts.read_text(encoding="utf-8")
-    assert "looksLikeFactoryHopCommand" in src
-    assert "looksLikeClosedToolCommand" in src
-    from services.closed_tools import (
-        is_closed_tool_command,
-        is_factory_hop_command,
-    )
-    for text in _HOP_CASES:
-        assert is_factory_hop_command(text), text
-    for text in _CLOSED_CHIP_CASES:
-        assert is_closed_tool_command(text), text
-        assert not is_factory_hop_command(text), text
-    assert not is_factory_hop_command("闭环发布管理系统")
-    assert not is_factory_hop_command("做一个社区图书馆借还书系统")
-    assert not is_closed_tool_command("闭环发布管理系统")
-
-
-# ── 判决与会话状态一致 ────────────────────────────────────────────
 
 def test_empty_session_cannot_be_iteration():
     """空会话判成 iteration 一定是错的——没有"现有应用"可改，这个方向安全收敛。"""
@@ -305,16 +283,6 @@ def test_out_of_scope_never_blocks():
     assert ij._resolve_action("out_of_scope", 0.2) == "proceed"
 
 
-def test_frontend_verdict_set_stays_in_sync():
-    """前端 VALID_VERDICTS 是个闭集，后端加了判词而前端没加时
-    parseJudgement 返回 null → 提示条一个字都不显示，而且**不报错**
-    （fail-open 在这里会把功能悄悄吞掉）。所以两侧必须钉在一起。"""
-    ts = (Path(__file__).resolve().parents[2]
-          / "client" / "src" / "pages" / "sliderule" / "use-intake-judge.ts")
-    src = ts.read_text(encoding="utf-8")
-    block = src.split("VALID_VERDICTS", 1)[1].split("]", 1)[0]
-    front = set(re.findall(r'"([a-z_]+)"', block))
-    assert front == ij._VALID_VERDICTS, f"前后端判词不一致: 前端 {front} 后端 {ij._VALID_VERDICTS}"
 
 
 def test_prompt_does_not_leak_the_cases_it_is_measured_on():

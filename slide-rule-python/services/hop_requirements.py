@@ -72,8 +72,8 @@ from typing import Any, Callable, Dict, List, Tuple, Union
 class Need(str, Enum):
     """一条前置。可穷举——加一档必须在 `_PHRASE` 里给它一句人话。"""
 
-    #: 范围已确认（范围卡上点过「开始推演」，或已经有模型版本）。
-    SCOPE = "scope"
+    #: Durable approval for the exact implementation plan revision.
+    PLAN = "plan"
     #: 手上有 SPEC。
     SPEC = "spec"
     #: 手上有页面。
@@ -84,7 +84,7 @@ class Need(str, Enum):
 
 #: 前置 → 人话里的名字。**唯一渲染处**（同 `_STOP_TABLE` / `_SAY` 那条纪律）。
 _PHRASE: Dict[Need, str] = {
-    Need.SCOPE: "确认范围",
+    Need.PLAN: "批准实施计划",
     Need.SPEC: "SPEC",
     Need.PAGES: "页面",
     Need.MODEL: "五系统模型",
@@ -172,12 +172,12 @@ def unmet(expr: "Expr", have: Callable[[Need], bool]) -> Tuple[Tuple[Need, ...],
 #:   改造前要改两处，忘一处不报错。
 HOP_REQUIRES: Dict[str, "Expr"] = {
     # 起草 SPEC 只要范围定了就能跑（第一件 WRITE）。
-    "spec": Need.SCOPE,
-    "pages": all_of(Need.SCOPE, Need.SPEC),
-    "structure": all_of(Need.SCOPE, Need.PAGES),
-    "bind": all_of(Need.SCOPE, Need.PAGES),
+    "spec": Need.PLAN,
+    "pages": all_of(Need.PLAN, Need.SPEC),
+    "structure": all_of(Need.PLAN, Need.PAGES),
+    "bind": all_of(Need.PLAN, Need.PAGES),
     # 有页面**或**有模型都算「有可判定的产物」。
-    "closure": all_of(Need.SCOPE, any_of(Need.PAGES, Need.MODEL)),
+    "closure": all_of(Need.PLAN, any_of(Need.PAGES, Need.MODEL)),
 }
 
 
@@ -198,10 +198,8 @@ def blocker_text(hop: str, have: Callable[[Need], bool]) -> str:
     if not groups:
         return ""
     missing = {n for group in groups for n in group}
-    # 范围没确认时不在这儿说——那是范围卡的事，不是「缺前置」。
-    missing.discard(Need.SCOPE)
-    if not missing:
-        return ""
+    if Need.PLAN in missing:
+        return "实施计划尚未批准。先写计划并请求批准。"
     if missing == {Need.SPEC}:
         return "还没有 SPEC。先调 spec。"
     if missing == {Need.PAGES}:

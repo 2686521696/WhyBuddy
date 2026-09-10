@@ -16,7 +16,7 @@ from control_turn_support import (
     llm_text,
     llm_tool,
     new_sid,
-    seed_session,
+    seed_approved_session as seed_session,
     six_fields,
     strip_python,
 )
@@ -317,7 +317,7 @@ def test_workflow_tool_is_listed_and_handoffs_after_scope(harness):
     assert (loaded.goal or {}).get("workflow") == "product-rehearsal"
 
 
-def test_forced_rehearse_stamps_scope_card_tools_onto_goal(harness):
+def test_forced_rehearse_does_not_read_retired_scope_card_tools(harness):
     """范围卡 tools 必须落到 goal，工厂才能少跑。只打孔 plan 会假绿。"""
     sid = new_sid("scope-tools")
     seed_session(
@@ -353,9 +353,7 @@ def test_forced_rehearse_stamps_scope_card_tools_onto_goal(harness):
     )
     todo = list(getattr(loaded, "factoryTodo", None) or [])
     assert "pages" in todo
-    assert "structure" not in todo and "bind" not in todo, (
-        f"范围卡没勾的 hop 被待办塞回来了：{todo}"
-    )
+    assert "structure" in todo and "bind" in todo, todo
 
 
 def test_forced_rehearse_default_menu_is_spec_then_todo(harness):
@@ -558,7 +556,8 @@ def test_assumptions_awaiting_does_not_ask_control(harness):
         for e in events
         if e.get("type") == "control_text"
     ]
-    assert any(ASSUMPTIONS_WAIT_USER in t for t in texts), texts
+    question = next(e for e in events if e.get("type") == "control_ask_user")
+    assert [row["id"] for row in question["questions"]] == ["a1"]
     assert not any("请调 pages" in t for t in texts)
     assert event_types(events)[-1] == "complete"
 

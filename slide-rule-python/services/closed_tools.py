@@ -51,13 +51,15 @@ FACTORY_HOP_LABELS: Dict[str, str] = {
 }
 
 CLOSED_TOOLS: Tuple[str, ...] = (
-    "ask_user",
+    "ask_user_question",
     # clarify 2026-09-09 退役：维度问题长在 SPEC 假设卡上，不再有一件
     # 「开场先问几条模板题」的工具。答题路径（awaitReason=control_clarify
     # 的老会话交卷）不在这张表上，照常可用——见 rehearsal_control 那段注释。
     "search_evidence",
     "inspect_model",
-    "scope_card",
+    "write_plan",
+    "enter_plan_mode",
+    "exit_plan_mode",
     # 报完工：模型声称做完了，判官说了算（抄 grok update_goal）。
     # 缺省 READ——它不产出新的五系统模型，只是把一次声明交给判官。
     # 落 READ 还有一个好处：`action_stationarity` 的紧档正好接得上，
@@ -109,6 +111,9 @@ TOOL_SCOPE: Dict[str, ToolScope] = {
     "closure": ToolScope.WRITE,
     "refine": ToolScope.WRITE,
     "repair": ToolScope.WRITE,
+    "challenge": ToolScope.WRITE,
+    "restore_version": ToolScope.WRITE,
+    "fork_variant": ToolScope.WRITE,
 }
 
 

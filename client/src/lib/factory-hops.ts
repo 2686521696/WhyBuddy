@@ -25,13 +25,13 @@ export type FactoryHop = (typeof FACTORY_HOPS)[number];
 
 /** 跟 Python `closed_tools.CLOSED_TOOLS` 同一张表。漏一侧 = 芯片一半不认。 */
 export const CLOSED_TOOLS = [
-  "ask_user",
-  // clarify 2026-09-09 退役（跟 Python `closed_tools.CLOSED_TOOLS` 同步）：
-  // 维度问题长在 SPEC 假设卡上，不再有一件「开场先问几条模板题」的工具。
-  // 答题路径（awaitReason=control_clarify 的老会话交卷）不看这张表，照常可用。
+  "ask_user_question",
+  // 历史 clarify 回执仍可提交，新问题统一使用问卷工具。
   "search_evidence",
   "inspect_model",
-  "scope_card",
+  "enter_plan_mode",
+  "write_plan",
+  "exit_plan_mode",
   // 报完工 2026-09-09 加（跟 Python `closed_tools.CLOSED_TOOLS` 同步）：
   // 模型声称做完了要走闭环判官，判决当场回喂。抄 grok update_goal。
   "report_done",

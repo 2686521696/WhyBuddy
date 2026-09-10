@@ -588,6 +588,8 @@ def _run_selected_batch_parallel(state: V5SessionState, selected: List[Dict[str,
     turn_id = f"loop-{loop}"
     _emit_batch_capability_starts(state, selected, loop)
     for group in _split_parallel_segments(selected):
+        if _spec_decisions_pending(state):
+            break
         outcomes = _execute_group_parallel(state, group, turn_id)
         for sel, outcome in zip(group, outcomes):
             _commit_executed_outcome(
@@ -1305,6 +1307,8 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
             return sum(1 for g in gaps if (g.get("status") if isinstance(g, dict) else getattr(g, "status", None)) == "resolved")
         prev_resolved = _count_resolved(state)
         while loop < max_loops:
+            if _spec_decisions_pending(state):
+                break
             ui = user_instruction or ""
             # ⚠ 成对物：流式那条在下面（§4）。同步这条是脚本 / 测试入口，
             #   但 host 选定 hop 的语义一样——只改流式等于只改一半。
@@ -1463,6 +1467,8 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
             else:
                 serial_selected = to_run
             for sel in serial_selected:
+                if _spec_decisions_pending(state):
+                    break
                 cap = sel["capabilityId"]
                 role = sel.get("roleId", "agent")
                 turn_id = f"loop-{loop}"
@@ -1537,6 +1543,8 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                 # ⚠ 写失败不许接着跑下一个——假装存了 = 崩溃后重烧已完成的 LLM。
                 persist_pending_capability(state, cap, loop, selected, cap_status, run_id)
             executed_loops += 1
+            if _spec_decisions_pending(state):
+                break
             # 同步驱动同款写回——理由见流式驱动那处的长注释。
             # 两条路径都得改：这个 bug 在提示词层，跟走哪条驱动无关。
             if any(_is_closure_cap(p.get("capabilityId", "")) for p in selected):
@@ -1586,6 +1594,17 @@ def drive_full_v5_session(initial_state: V5SessionState, max_loops: int = 10, us
                 break
             loop += 1
             persist_state(state)
+        if _spec_decisions_pending(state):
+            _park_spec_decisions(state)
+            stamp_drive_narration(
+                state, turn_id=drive_turn_id, user=user_instruction,
+                events_cursor=events_cursor, started_monotonic=drive_started,
+                produced=deliverable_fingerprint(state) != _fp_before,
+            )
+            persist_state(state)
+            _enrich_timing.reset_run_budget(_budget_token)
+            _turn_ctx.close()
+            return state
         state = _ensure_runtime_closure_evidence(
             state, user_instruction, loop, False, closure_attempted
         )
@@ -1812,18 +1831,7 @@ def _truthy_scope_flag(value: Any) -> bool:
 
 
 def _scope_opted_in(state: "V5SessionState", *keys: str) -> bool:
-    """范围卡勾了取证 / 可行性报告才把散文能力加回短清单。
-
-    最后一张 scope_card 说了算。goal 只在还没有范围卡时回落（测试直
-    接 seed、或 copy 写进 persist-as-authority 之后卡被清掉的情况）。
-    ⚠ 2026-08-27 评审：第一版把 scope_confirmed 当旗标行并 break——
-    确认行不带勾选，transcript 回落全死，goal 残留 True 还能压过
-    新卡缺字段。缺字段 = 没勾 = 跳过。
-    """
-    for row in reversed(list(getattr(state, "controlTranscript", None) or [])):
-        if not isinstance(row, dict) or row.get("kind") != "scope_card":
-            continue
-        return any(_truthy_scope_flag(row.get(key)) for key in keys)
+    """Read explicit execution flags; retired scope cards carry no authority."""
     goal = getattr(state, "goal", None) or {}
     if isinstance(goal, dict):
         for key in keys:
@@ -1924,6 +1932,23 @@ def _state_has_pages(state: "V5SessionState") -> bool:
         return False
     pages = blob.get("pages")
     return isinstance(pages, dict) and bool(pages)
+
+
+def _spec_decisions_pending(state: "V5SessionState") -> bool:
+    blob = getattr(state, "specFirstPages", None)
+    if not isinstance(blob, dict) or blob.get("assumptionsConfirmed") is True:
+        return False
+    spec = blob.get("spec")
+    return isinstance(spec, dict) and bool(spec.get("assumptions"))
+
+
+def _park_spec_decisions(state: "V5SessionState") -> None:
+    state.runtimePhase = "awaiting"
+    state.awaitReason = "user_input"
+    state.awaitDetail = "SPEC decisions require questionnaire answers"
+    result = persist_state(state)
+    if not isinstance(result, dict) or not result.get("ok"):
+        raise PersistClosedError("spec_decisions_write_failed", "SPEC was not saved")
 
 
 def _first_pass_floor(state: "V5SessionState", legal) -> Optional[tuple]:
@@ -2374,24 +2399,6 @@ async def drive_full_v5_session_stream(
                 lambda frm, to: _page_q.put(_PageRenamed(str(frm), str(to)))
             )
         )
-    # 伴随式澄清（2026-08-27）：spec-first 第 2 步替用户定下的事。
-    #
-    # 跟上面那条页面流同一个模子、同一个泵、同一处装卸——理由也一样：
-    # 它们发生在同一段时间里，分开泵只会让"第 2 步在报进度"和"第 2 步说
-    # 它把登录定成了手机号"在前端的先后不可预期。
-    #
-    # ⚠ 这是**增强**（本仓第七条）：模块缺失、sink 没装、里头炸了，都不许
-    #   拖垮一条已经跑了两分钟的推演。所以 import 和 emit 两侧都吞异常。
-    _assumption_q: "_queue.Queue[list]" = _queue.Queue()
-    _spec_assumption_scope = None
-    try:
-        from .spec_first_pipeline import assumption_sink_scope as _spec_assumption_scope
-    except Exception:  # noqa: BLE001 — 新模块缺失不该打死整条流
-        pass
-    if _spec_assumption_scope is not None:
-        _sinks.enter_context(
-            _spec_assumption_scope(lambda rows: _assumption_q.put(list(rows or [])))
-        )
     _quality_q: "_queue.Queue[dict]" = _queue.Queue()
     # 质检通知的流级去重。**一次流一本**，理由同 `_stage_pairs`：
     # 重复发生在流水线的多次运行之间，只有这一层跨得过去。
@@ -2525,15 +2532,6 @@ async def drive_full_v5_session_stream(
                     if _note_page_event is not None:
                         _note_page_event()
                     last_yield_at = _time.perf_counter()
-            except _queue.Empty:
-                pass
-            # 伴随式澄清：第 2 步替用户定下的事，跟上面三条走同一个泵。
-            try:
-                while True:
-                    _rows = _assumption_q.get_nowait()
-                    if _rows:
-                        yield {"type": "spec_assumption", "items": _rows}
-                        last_yield_at = _time.perf_counter()
             except _queue.Empty:
                 pass
             try:
@@ -2676,17 +2674,11 @@ async def drive_full_v5_session_stream(
         try:
             from .run_pause import (
                 RecoveryLedger as _RL,
-                finish_hold as _finish_hold,
-                recover_from as _recover_from,
-                take_hold as _take_hold,
             )
 
             _pause_ledger = _RL()
         except Exception:  # noqa: BLE001
             _pause_ledger = None
-            _finish_hold = None
-            _recover_from = None
-            _take_hold = None
 
         async def _fallback_page_events():
             """页面落了盘，但一个 `spec_page` 事件都没发出去 → 补发。
@@ -2842,146 +2834,10 @@ async def drive_full_v5_session_stream(
                 if _ev is not None:
                     yield {**_ev, "synthetic": True}
 
-        async def _drain_assumption_hold():
-            """spec-first 在 to_thread 里出卡后把闸挂在 pending。
-            整段返回才轮到这里——异步等，不占执行槽。
-
-            ## ⚠ 这是 async generator，不是返回 list 的协程（2026-09-06 修）
-
-            上一版把 `run_pause_started` **append 进本地 list**，然后 `await
-            gate.wait()` 等最多 30 分钟，等完了再 append `run_pause_ended`，
-            最后 `return events` —— 两条一起交出去。也就是说：**「我在等你」
-            这个通知只有在不用等了之后才发出去。**
-
-            真机复现（2026-09-06，sr-20260906045441）：
-
-                [56s] spec_assumption          items=2
-                      （我在 59s 主动 POST /runs/{id}/release）
-                [59s] run_pause_started        where=spec-assumptions   ← 迟到
-                [59s] run_pause_ended          outcome=skipped  waitedSeconds=3.016
-
-            后果不是"少一条日志"。前端 `useSlideRuleSession` 靠这条事件点亮
-            `runPaused`（`setRunPaused(phase === "started")`），而假设卡上单条的
-            两个按钮都是 `if (runPaused) void releaseRun(...)`——「就这样」和
-            「改成 X」于是**点了不放行**，用户干等满 30 分钟
-            （`run_pause.DEFAULT_WAIT_SECONDS = 30 * 60`）。
-            只有整卡确认那条路（查的是 `isRunningRef.current`）能放行。
-
-            ## 抄的是 grok 的哪一处
-
-            `grok-build/crates/codegen/xai-grok-tools/src/implementations/
-            grok_build/ask_user_question/mod.rs`，Step 4/5/6 的顺序：
-
-                // ── Step 4: Send UserQuestionRequest ──
-                if sender.0.send(request).is_err() { … }          // 请求先交出去
-                // ── Step 5: Emit UserQuestionAsked + read the wait budget ──
-                handle.0.send_user_question_asked(UserQuestionAsked { … });   // 通知先发
-                // ── Step 6: Block on the oneshot result ──
-                let outcome = match wait {
-                    Some(dur) => tokio::time::timeout(dur, result_rx).await,  // 才开始等
-                    None      => Ok(result_rx.await),
-                };
-
-            它那个写法在结构上**不可能**出现"等完了才通知"：`result_tx` 在
-            Step 4 就 move 出去了，通道两端在 await 之前已经建立。
-
-            ⚠ 本仓早就抄过同一个文件的另外两样东西——30 分钟预算、
-              「`seconds=0` 不表示永远等」（`run_pause.PauseBudget` 的注释里
-              直接引了 grok 那句原文）。**唯独漏了这一行顺序。**
-              这是本仓第四条（只改一半必然静默失效）的教科书案例。
-            """
-            if _take_hold is None or _finish_hold is None:
-                return
-            try:
-                gate = _take_hold()
-            except Exception as exc:  # noqa: BLE001
-                print(
-                    f"[v5_full_driver] ⚠ 假设闸异常，按不暂停继续：{str(exc)[:160]}"
-                )
-                return
-            if gate is None:
-                return
-            # ★★ arm 在**发通知之前**（2026-09-06 第二轮真机）。
-            #   `take_hold()` 只是把闸从 pending 转成 active，它不知道 where，
-            #   所以"等什么、从什么时候开始等"这两格原来要等 `await gate.wait()`
-            #   进去才写。而通知一发出去，前端立刻就会来问
-            #   `GET /runs/active` —— 正好落在那道缝里，拿到
-            #   `{"phase":"waiting","where":"","waitedSeconds":null}`。
-            #
-            #   照 grok `permission_requested()`：相位、等什么、起算时刻
-            #   **一次全部建立**，然后才轮到"通知"和"阻塞"。它那个写法在结构上
-            #   不可能出现"相位说在等、却不知道等什么"。
-            try:
-                gate.arm("spec-assumptions")
-            except Exception as exc:  # noqa: BLE001 — 观测项，不许拦住停泊
-                print(f"[v5_full_driver] ⚠ 停泊落点写入跳过：{str(exc)[:120]}")
-            # ★ 先把「我在等你」交出去，再 await。顺序就是这条修复的全部内容。
-            #   `budgetSeconds` 一起带上：前端要能显示"最多等多久"，而不是
-            #   让用户对着一个没有期限的转圈猜。None = 不限时。
-            _budget = None
-            try:
-                _budget = gate.budget.wait_budget()
-            except Exception:  # noqa: BLE001 — 预算读不到不该拦住通知
-                pass
-            yield {
-                "type": "run_pause_started",
-                "where": "spec-assumptions",
-                "budgetSeconds": _budget,
-            }
-            # 落库同一件事：SSE 只服务**当前连着的**那个客户端；刷新 / 换设备
-            # 回来读的是 state。真机实测停泊期间 `runtimePhase=orchestrating`
-            # 且 `awaitReason=null`——状态自己都不知道它在等人。
-            # ⚠ 增强类，炸了不许拖垮停泊（本仓第七条）。
-            _phase_before, _reason_before = state.runtimePhase, state.awaitReason
-            try:
-                state.runtimePhase = "awaiting"
-                # ⚠ 用词表里已有的 `user_input`，别新造一个词。
-                #   第一版写的是 "spec_assumption"，`models/v5_state.py` 的
-                #   `AwaitReason` 里没有它——pydantic v2 默认不校验赋值，所以
-                #   写的时候一声不响，等到从库里读回来走 server_load 会
-                #   `invalid_session` → `_coerce_many` 把**整条会话跳过**
-                #   （persistence.py:370）。症状是「停在假设卡的会话，重启后
-                #   从侧栏消失了」，比这里要修的"看不出在等人"严重得多。
-                #   这正是那张词表头上记着的第三次同形状事故，
-                #   `test_state_enum_values_are_declared` 当场把它照出来。
-                #   `user_input` 的既有含义就是"在等用户说话"，正好是这件事。
-                state.awaitReason = "user_input"
-                await asyncio.to_thread(persist_state, state)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[v5_full_driver] ⚠ 停泊态落库跳过：{str(exc)[:120]}")
-            res = None
-            try:
-                res = await gate.wait("spec-assumptions")
-            finally:
-                _finish_hold()
-                # 等完了把相恢复回去，否则这一轮后面的步骤全在 "awaiting" 下跑，
-                # 而终局判定（terminal_phase_decision）会读到一个骗人的相。
-                try:
-                    state.runtimePhase = _phase_before or "orchestrating"
-                    state.awaitReason = _reason_before
-                    await asyncio.to_thread(persist_state, state)
-                except Exception as exc:  # noqa: BLE001
-                    print(f"[v5_full_driver] ⚠ 停泊态恢复跳过：{str(exc)[:120]}")
-            recovered = None
-            if (
-                res is not None
-                and not res.answered
-                and _pause_ledger is not None
-                and _recover_from is not None
-            ):
-                act = _recover_from(res, _pause_ledger)
-                if act is not None:
-                    recovered = act.event
-            if res is not None:
-                yield {
-                    "type": "run_pause_ended",
-                    "where": res.where,
-                    "outcome": res.outcome.value,
-                    "waitedSeconds": res.waited_seconds,
-                    "recovery": recovered,
-                }
 
         while loop < max_loops:
+            if _spec_decisions_pending(state):
+                break
             # ── 安全点：用户按过「先别往下跑」就停在这儿等（2026-08-28）──
             #
             # ⚠ 只装在**流式**这一条循环上（同步那条在 1386 行）。流式是前端
@@ -2994,7 +2850,7 @@ async def drive_full_v5_session_stream(
             # ⚠ 正常路径零成本：没人按暂停时 pause_here 一次字典读取就返回。
             # ⚠ 三种结局都往下跑，**没有一种把这一轮判死**：
             #     人答了    → 接着跑
-            #     超时/跳过  → 按模型自己定的做（spec-assumptions 认定的合法结局）
+            #     超时/跳过  → 按原计划继续
             #     没人在场   → 同上，只是如实报 no_operator 而不是"用户跳过"
             #   会抛的只有取消，那时取消赢（RunCancelled 一路上抛）。
             # ⚠ take_hold + wait 分两步，不用 pause_here 那个合体版：
@@ -3354,6 +3210,8 @@ async def drive_full_v5_session_stream(
                 for sel in to_run:
                     yield {"type": "reasoning_step", "label": sel["capabilityId"], "loop": loop}
                 for group in _split_parallel_segments(to_run):
+                    if _spec_decisions_pending(state):
+                        break
                     batch_task = asyncio.ensure_future(asyncio.gather(*[
                         asyncio.to_thread(
                             _timed_execute, sel["capabilityId"], state, sel.get("roleId", "agent"), turn_id
@@ -3365,11 +3223,6 @@ async def drive_full_v5_session_stream(
                     async for _delta_event in _pump_llm_deltas(batch_task):
                         yield _delta_event
                     outcomes = batch_task.result()
-                    # `async for`（不是 `await …()`）：停泊通知必须在 await 之前
-                    # 就流到前端，攒成 list 再交等于等完了才通知。见
-                    # _drain_assumption_hold 头注的真机时间线。
-                    async for _pause_ev in _drain_assumption_hold():
-                        yield _pause_ev
                     async for _fb in _fallback_page_events():
                         yield _fb
                     for sel, outcome in zip(group, outcomes):
@@ -3391,6 +3244,8 @@ async def drive_full_v5_session_stream(
                 _append_loop_timing_event(state, loop, len(to_run), int((_time.time() - t_loop) * 1000))
                 await asyncio.to_thread(persist_state, state)
             for sel in ([] if batch_parallel else to_run):
+                if _spec_decisions_pending(state):
+                    break
                 cap = sel["capabilityId"]
                 role = sel.get("roleId", "agent")
                 turn_id = f"loop-{loop}"
@@ -3421,11 +3276,6 @@ async def drive_full_v5_session_stream(
                     async for _delta_event in _pump_llm_deltas(exec_task):
                         yield _delta_event
                     result = exec_task.result()
-                    # 同上：`async for`，理由见 _drain_assumption_hold 头注。
-                    # ⚠ 两个调用点都要改——只改一个就是本仓第四条那个形状
-                    #   （串行/并行两条路，改一条不报错、只有一半不生效）。
-                    async for _pause_ev in _drain_assumption_hold():
-                        yield _pause_ev
                     async for _fb in _fallback_page_events():
                         yield _fb
                     result_data = _result_to_dict(result)
@@ -3491,6 +3341,9 @@ async def drive_full_v5_session_stream(
                     "error": cap_error,
                     "summary": result_data.get("summary") if not cap_error else None,
                 }
+
+            if _spec_decisions_pending(state):
+                break
 
             # 本轮真收过口 → 立刻把闭环结果写回 state（2026-08-05）。
             #
@@ -3590,6 +3443,21 @@ async def drive_full_v5_session_stream(
                 break
             loop += 1
             await asyncio.to_thread(persist_state, state)
+
+        if _spec_decisions_pending(state):
+            await asyncio.to_thread(_park_spec_decisions, state)
+            stamp_drive_narration(
+                state, turn_id=drive_turn_id, user=user_instruction,
+                events_cursor=events_cursor, started_monotonic=drive_started,
+                produced=deliverable_fingerprint(state) != _fp_before,
+            )
+            await asyncio.to_thread(persist_state, state)
+            if _close_dangling_stages is not None:
+                async for event in _close_dangling_stages():
+                    yield event
+            yield {"type": "phase_change", "phase": state.runtimePhase}
+            yield {"type": "complete", "state": state.model_dump()}
+            return
 
         # 闭环证据重建里藏着最长的一步：新颖意图的五系统 LLM 生成（60~100s）。
         # 等待线程期间持续排水（共享带标签队列），把 LLM 的实时输出以

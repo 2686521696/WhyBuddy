@@ -181,97 +181,15 @@ def test_the_placeholder_still_shows_when_there_really_is_no_topic():
     assert "尚无确认的应用目标" in prompt
 
 
-def test_the_fallback_chain_recovers_the_topic_on_the_live_route():
-    """真机链路：模型不给 restatement 时，停泊的复述句必须是原话题。
+@pytest.mark.parametrize("current", ["就按上面这个推演", "改成做一个社区养老助餐的订餐与配送系统"])
+def test_plan_model_receives_original_topic_and_current_instruction(monkeypatch, current):
+    from control_turn_support import ControlHarness, new_sid, seed_session, six_fields
 
-    ⚠ 打在**真 HTTP 路由**上（control_turn_support 的纪律）：单独调
-      _restatement_chain 会让「四个 park 点没换成链条」照样绿。
-
-    变异：把 _restate 的空确认守卫去掉 → 复述句变回「就按上面这个推演」，
-    本条红。
-
-    ⚠ 2026-09-09：原来靠夹具让模型挑 `clarify`（空 questions）走那条 park 点。
-      clarify 整件退役之后模型挑不到它，调用会被 `offered_names` 丢掉，
-      这条判据实际测的是「丢掉之后的兜底」，跟复述链无关了。
-      改走 `scope_card` 且**不给 restatement 实参**——复述句同样完全由
-      `_restatement_chain` 决定，是本条真正的主题，而且这条路真机在走。
-
-      断言从 `awaitDetail` 改成读 `control_scope_card` 事件的 restatement：
-      门禁拆掉之后真产品不再停泊，复述句在卡上，不在停泊详情里。
-    """
-    pytest.importorskip("fastapi")
-    from control_turn_support import (  # noqa: PLC0415
-        ControlHarness,
-        llm_tool,
-        new_sid,
-        seed_session,
-        six_fields,
-    )
-    import _pytest.monkeypatch as _mp
-
-    mp = _mp.MonkeyPatch()
-    try:
-        harness = ControlHarness(mp)
-        sid = new_sid("restate-live")
-        seed_session(
-            sid,
-            goal={"text": "", "status": "needs_refinement"},
-            controlTranscript=[
-                {"id": "c1", "role": "user", "kind": "turn", "text": TOPIC},
-                {"id": "c2", "role": "assistant", "kind": "clarify", "text": "服务主体？"},
-            ],
-            runtimePhase="awaiting",
-        )
-        # 模型开卡但不给 restatement → 复述句完全由兜底链决定。
-        harness.llm_impl = lambda messages, **kw: llm_tool("scope_card", {})
-        _, events = harness.post(six_fields(sid, "就按上面这个推演"))
-
-        cards = [e for e in events if e.get("type") == "control_scope_card"]
-        assert cards, f"没出复述卡：{[e.get('type') for e in events]}"
-        said = str(cards[0].get("restatement") or "")
-        assert "智能工单" in said, f"复述句没捞回原话题：{said!r}"
-        assert "就按上面这个" not in said, f"把空确认当成了复述句：{said!r}"
-    finally:
-        mp.undo()
-
-
-def test_a_real_topic_turn_still_restates_itself():
-    """反向：用户这一轮说的就是实话时，复述的是**这一轮**，不是翻旧账。
-
-    没有这条，把兜底链写成"永远取第一句"也全绿——那样用户改需求就再也
-    改不动了（CLAUDE.md §3）。
-    """
-    pytest.importorskip("fastapi")
-    from control_turn_support import (  # noqa: PLC0415
-        ControlHarness,
-        llm_tool,
-        new_sid,
-        seed_session,
-        six_fields,
-    )
-    import _pytest.monkeypatch as _mp
-
-    mp = _mp.MonkeyPatch()
-    try:
-        harness = ControlHarness(mp)
-        sid = new_sid("restate-fresh")
-        seed_session(
-            sid,
-            goal={"text": "", "status": "needs_refinement"},
-            controlTranscript=[
-                {"id": "c1", "role": "user", "kind": "turn", "text": TOPIC},
-                {"id": "c2", "role": "assistant", "kind": "clarify", "text": "服务主体？"},
-            ],
-            runtimePhase="awaiting",
-        )
-        harness.llm_impl = lambda messages, **kw: llm_tool("scope_card", {})
-        _, events = harness.post(
-            six_fields(sid, "改成做一个社区养老助餐的订餐与配送系统")
-        )
-
-        cards = [e for e in events if e.get("type") == "control_scope_card"]
-        assert cards, f"没出复述卡：{[e.get('type') for e in events]}"
-        said = str(cards[0].get("restatement") or "")
-        assert "养老助餐" in said, f"改需求没生效，复述的还是旧话题：{said!r}"
-    finally:
-        mp.undo()
+    sid = new_sid("plan-topic-context")
+    seed_session(sid, controlTranscript=[{"role": "user", "kind": "turn", "text": TOPIC}])
+    harness = ControlHarness(monkeypatch)
+    harness.post(six_fields(sid, current))
+    messages = harness.llm_calls[0]["messages"]
+    assert TOPIC in str(messages)
+    assert current in str(messages)
+    assert not harness.helper_calls

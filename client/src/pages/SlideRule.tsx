@@ -100,9 +100,7 @@ import {
 } from "./sliderule/ClarificationCard";
 import { DeliverablesPanel } from "./sliderule/DeliverablesPanel";
 import { ComposerDock } from "./sliderule/ComposerDock";
-import type { SpecAssumption } from "./sliderule/spec-assumptions";
 import { dispatchChallengePrefill } from "./sliderule/challenge-composer";
-import { DesignSystemPanelProvider } from "./sliderule/DesignSystemContext";
 import { HomeInspiration } from "./sliderule/home-inspiration";
 import { composerEnterHintLabel } from "./sliderule/user-prefs";
 import { EXAMPLE_INTENT_TEXTS } from "./sliderule/example-intents";
@@ -812,8 +810,9 @@ export function ClaudeChatSurface({
         hud.hasServerTokenFacts)
   );
 
+  // 手机问卷固定到视口后会跨出对话栏，不能让右侧舞台截获按钮点击。
   return (
-    <div className="relative z-0 flex h-full flex-col overflow-hidden bg-transparent text-[#1f2329]">
+    <div className="relative z-30 flex h-full flex-col overflow-hidden bg-transparent text-[#1f2329] sm:z-0">
       {/* 点阵改挂 SlideRuleStudio 外壳（空态+开聊同一张网）。这里铺实心底
           会把那层点挡住——2026-08-20 已经踩过一次。 */}
       {/* Chat area — Viewport 自带贴底跟随（增量到达自动滚底、回翻停住） */}
@@ -1014,19 +1013,12 @@ function SlideRuleUnified({
   liveAction,
   sessionState,
   sendMessage,
-  pendingScope = null,
+  pendingPlanApproval = null,
+  submitPlanApproval,
   pendingAsk = null,
   onSubmitQuestionnaire,
   queuedTurns = [],
   removeQueuedTurn,
-  specAssumptions = [],
-  settleSpecAssumption,
-  reviseSpecAssumption,
-  confirmSpecAssumptions,
-  holdRun,
-  runPaused,
-  confirmControlScope,
-  dismissScopeCard,
   dismissAsk,
   challengeTurn: _challengeTurn,
   restoreModelVersion,
@@ -1072,7 +1064,8 @@ function SlideRuleUnified({
   liveAction: LiveAction | null;
   sessionState: ReturnType<typeof useSlideRuleSession>["sessionState"];
   sendMessage: (textOverride?: string) => void;
-  pendingScope?: import("./sliderule/scope-card-gate").ScopeCardPending | null;
+  pendingPlanApproval?: import("@/lib/sliderule-marathon-driver").ControlPlanApprovalWire | null;
+  submitPlanApproval?: (result: import("./sliderule/PlanApprovalPanel").PlanApprovalOutcome) => void;
   pendingAsk?: {
     question: string;
     options?: string[];
@@ -1083,8 +1076,6 @@ function SlideRuleUnified({
   onSubmitQuestionnaire?: (
     result: import("./sliderule/QuestionnaireCard").QuestionnaireOutcome
   ) => void;
-  confirmControlScope?: () => void;
-  dismissScopeCard?: () => void;
   dismissAsk?: () => void;
   challengeTurn: (id: string) => void;
   restoreModelVersion: (versionId: string) => void;
@@ -1102,16 +1093,6 @@ function SlideRuleUnified({
   /** 队列条目带 synthetic 标记（grok is_synthetic：合成品永不参与合并）。 */
   queuedTurns?: { text: string; synthetic?: boolean }[];
   removeQueuedTurn?: (index: number) => void;
-  /** SPEC 分叉：选完再继续。 */
-  specAssumptions?: SpecAssumption[];
-  settleSpecAssumption?: (id: string) => void;
-  reviseSpecAssumption?: (id: string, alternative: string) => void;
-  confirmSpecAssumptions?: (picks: Record<string, string>) => void;
-  /** 「先别往下跑」：在下一个安全点停住这一轮。**不是停止**——见
-   *  useSlideRuleSession.holdRun 头注（停止是取消，这一轮判死）。 */
-  holdRun?: () => void;
-  /** 这一轮已经停住了。 */
-  runPaused?: boolean;
   pendingClarifications?: ClarificationItem[];
   answerClarifications?: (
     answers: Array<{ gapId: string; answer: string }>
@@ -1167,7 +1148,7 @@ function SlideRuleUnified({
   // 澄清卡让位——2026-08-27 真机截图里两张卡叠在一起，背后那张问的还是
   // 上一轮的 goal（服务端那半在 rehearsal_control._retire_stale_control_questions）。
   // 只是让位不是关掉：没有停泊时它照旧出现（见同名测试的反向判据）。
-  const parkedDecisionSurface = Boolean(pendingScope) || Boolean(pendingAsk);
+  const parkedDecisionSurface = Boolean(pendingPlanApproval) || Boolean(pendingAsk);
   const showClarify =
     clarifications.length > 0 &&
     !clarifyHidden &&
@@ -1234,16 +1215,6 @@ function SlideRuleUnified({
       sessionState,
     ]
   );
-  const hasApp = !!settledModel;
-
-  // 「当前应用是什么」。有了它，判成 iteration 时的引导话术会具体到这个应用
-  // （"补充预算校验、调整审批流程"），而不是泛泛的"指出当前应用要怎么改"。
-  // 没应用就给空串——摘要只影响话术，判定结果不靠它。
-  const appSummary = useMemo(() => {
-    if (!hasApp) return "";
-    return publishClosure?.chatSummary?.trim() || goal.trim();
-  }, [hasApp, publishClosure, goal]);
-
   const showStudioChrome = isStudioChromeShown(isHomeEmpty);
 
   return (
@@ -1251,7 +1222,6 @@ function SlideRuleUnified({
       available={showStudioChrome}
       layoutLocked={isRunning}
     >
-      <DesignSystemPanelProvider>
         <div className={`${autopilotTheme.immersionPage} flex flex-col`}>
           {/* 还没推演：顶栏整条不挂（交付物/重置也占一条底边，空态看着像少了一截）。 */}
           {showStudioChrome &&
@@ -1314,8 +1284,6 @@ function SlideRuleUnified({
                         isRunning={isRunning}
                         sessionId={sessionId}
                         goal={goal}
-                        hasApp={hasApp}
-                        appSummary={appSummary}
                         hintChips={composerHints}
                         statusPill={
                           publishClosure
@@ -1324,21 +1292,14 @@ function SlideRuleUnified({
                         }
                         stop={stop}
                         hero={isHomeEmpty}
-                        pendingScope={pendingScope}
+                        pendingPlanApproval={pendingPlanApproval}
+                        onSubmitPlanApproval={submitPlanApproval}
                         pendingAsk={pendingAsk}
                         onSubmitQuestionnaire={onSubmitQuestionnaire}
-                        onConfirmScope={confirmControlScope}
-                        onReviseScope={dismissScopeCard}
                         onDismissAsk={dismissAsk}
                         onAnswerAsk={text => sendMessage(text)}
                         queuedTurns={queuedTurns}
                         onRemoveQueued={removeQueuedTurn}
-                        specAssumptions={specAssumptions}
-                        onSettleAssumption={settleSpecAssumption}
-                        onHoldRun={holdRun}
-                        runPaused={runPaused}
-                        onConfirmAssumptions={confirmSpecAssumptions}
-                        onReviseAssumption={reviseSpecAssumption}
                       />
                     }
                     clarifySlot={
@@ -1443,7 +1404,6 @@ function SlideRuleUnified({
             publishClosure={publishClosure}
           />
         </div>
-      </DesignSystemPanelProvider>
     </StudioLayoutProvider>
   );
 }
@@ -1879,19 +1839,12 @@ function SlideRuleSessionBody({
     sessionState,
     executorMode,
     sendMessage,
-    pendingScope,
+    pendingPlanApproval,
+    submitPlanApproval,
     pendingAsk,
     submitQuestionnaire,
     queuedTurns,
     removeQueuedTurn,
-    specAssumptions,
-    settleSpecAssumption,
-    holdRun,
-    runPaused,
-    confirmSpecAssumptions,
-    reviseSpecAssumption,
-    confirmControlScope,
-    dismissScopeCard,
     dismissAsk,
     repairGaps,
     restoreModelVersion,
@@ -2340,19 +2293,12 @@ function SlideRuleSessionBody({
     liveAction,
     sessionState,
     sendMessage,
-    pendingScope,
+    pendingPlanApproval,
+    submitPlanApproval,
     pendingAsk,
     onSubmitQuestionnaire: submitQuestionnaire,
     queuedTurns,
     removeQueuedTurn,
-    specAssumptions,
-    settleSpecAssumption,
-    reviseSpecAssumption,
-    confirmSpecAssumptions,
-    holdRun,
-    runPaused,
-    confirmControlScope,
-    dismissScopeCard,
     dismissAsk,
     restoreModelVersion,
     forkVariant,

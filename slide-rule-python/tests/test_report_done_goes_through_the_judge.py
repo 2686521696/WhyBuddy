@@ -40,7 +40,7 @@ from control_turn_support import (
     llm_text,
     llm_tool,
     new_sid,
-    seed_session,
+    seed_approved_session as seed_session,
     six_fields,
 )
 from models.v5_state import V5SessionState
@@ -218,7 +218,7 @@ def test_报到上限就别再报_改成如实告诉用户(harness):
     from services.turn_narration import deliverable_fingerprint
 
     fp = deliverable_fingerprint(st)
-    st.controlTranscript = [_claim_row(fp)] * (DONE_CLAIM_MAX_RUNS - 1)
+    st.controlTranscript += [_claim_row(fp)] * (DONE_CLAIM_MAX_RUNS - 1)
     save_session(st)
 
     shots = _drive(harness, sid)

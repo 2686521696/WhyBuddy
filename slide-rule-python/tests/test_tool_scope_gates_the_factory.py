@@ -1,32 +1,7 @@
-"""工具的写权限是**声明出来的能力**，缺省只读，由分发强制。
+"""All product-state mutations declare WRITE and require plan approval.
 
-抄的标准答案：grok-build `xai-tool-protocol/src/capabilities.rs`
-
-    pub enum ToolScope { Read, Write }
-    /// Tools that mutate external state must declare `Write` so the
-    /// computer hub routes them to the leader agent only.
-    /// Absence is treated as `Read`.
-
-那边写权限是**工具自己声明的字段**、由路由强制；缺省 Read 意味着新工具
-默认不能写，要写得显式声明。
-
-本仓 KD3 说的是同一件事，但只是文档里的一段话：
-「只有 rehearse/refine/repair 可生成新五系统模型。challenge 只失效；
- restore_version/fork_variant 只移/复制指针。无工具可写 blocked=false」
-靠人读文档遵守 —— 而这个仓自己的第三条写着「函数写对了 ≠ 它被调用了」，
-同理：纪律写对了 ≠ 它被强制了。
-
-这里的「写」精确指**生成新五系统模型**，也就是进工厂信封
-（`_handoff_factory` 是唯一那道门，rehearse 经
-`_confirm_rehearse_and_handoff` 也归它）。
-
-⚠ challenge / restore_version / fork_variant 在这条轴上是 READ，
-  **不代表它们不落盘**：challenge 写 staleArtifactIds、restore/fork 移指针，
-  都会 persist。这条轴只管「能不能造一份新模型」。别看见 READ 就以为
-  它们不碰会话——也别为了"看着一致"把它们提成 WRITE，那会让这道闸失去意义。
-
-反向：把 rehearse 的 WRITE 声明删掉 / 把闸从 _handoff_factory 拿掉 /
-只在 forced 一条路上设 scope —— 三种都必须红。
+The factory additionally requires an explicit tool scope; an omitted scope is
+READ, so direct or newly introduced callers cannot silently generate models.
 """
 
 from __future__ import annotations
@@ -66,17 +41,20 @@ def test_only_the_three_model_writers_declare_write():
         "closure",
         "refine",
         "repair",
+        "challenge",
+        "restore_version",
+        "fork_variant",
     }, (
         f"能造新五系统模型的工具集变了：{sorted(writers)}。"
         "多一个 = 闸被绕过；少一个 = 那个动词点不着火。"
     )
 
 
-def test_pointer_movers_and_invalidator_are_read_on_this_axis():
-    """这条轴只管"能不能造新模型"，不是"落不落盘"。"""
+def test_pointer_movers_and_invalidator_require_write_approval():
+    """Changing the active model or invalidating evidence also needs approval."""
     for name in ("challenge", "restore_version", "fork_variant"):
-        assert resolve_tool_scope(name) is ToolScope.READ, (
-            f"{name} 被提成 WRITE 了——它不生成新模型，提上去这道闸就没意义了"
+        assert resolve_tool_scope(name) is ToolScope.WRITE, (
+            f"{name} mutates product state and must declare WRITE"
         )
 
 

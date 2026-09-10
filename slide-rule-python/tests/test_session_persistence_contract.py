@@ -1,3 +1,5 @@
+
+from plan_approval_support import approved_execution_payload
 import json
 import threading
 
@@ -289,7 +291,7 @@ def test_python_session_responses_report_state_authority_and_normalized_fields(m
         "turnId": "env-t1",
         "userText": "",
     }
-    drive_resp = client.post("/api/sliderule/drive-turn", json=drive_payload, headers=headers)
+    drive_resp = client.post("/api/sliderule/drive-turn", json=approved_execution_payload(drive_payload), headers=headers)
     assert drive_resp.status_code == 200
     drive_env = drive_resp.json()
 

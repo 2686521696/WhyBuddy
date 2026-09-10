@@ -24,7 +24,7 @@ from control_turn_support import (
     ControlHarness,
     event_types,
     new_sid,
-    seed_session,
+    seed_approved_session as seed_session,
     six_fields,
 )
 from services.slide_rule_session import load_session

@@ -15,7 +15,6 @@ import { buildStructuredReport } from "@shared/blueprint/sliderule-report-builde
 import { buildCapabilityPrompt } from "@shared/blueprint/sliderule-capability-prompts";
 // 技能库六期"推演注入"：已安装技能随 drive-full 请求进生成契约（纯本地读取，无环）
 import { installedSkillsDrivePayload } from "./installed-skills";
-import { parseSpecAssumptions } from "./spec-assumptions";
 import { layoutDevice } from "./product-archetypes";
 import {
   loadTurnCapabilities,
@@ -32,15 +31,28 @@ import {
 /**
  * 控制面问答的线上形状（grok `Question` / `QuestionOption`）。
  *
- * ⚠ 本地声明而不是 import 页面目录：`spec-assumptions` 头注那句
- *   「实现下沉到 client-lib，避免 marathon-driver 倒着依赖页面目录」同一条。
- *   两处形状必须一致，判据 `问答线上形状两处一致` 盯着。
+ * 声明在传输层，页面消费它；底层驱动不能反向依赖页面目录。
  */
 export type ControlQuestionWire = {
   id: string;
   question: string;
   options: { label: string; description?: string; preview?: string }[];
   multiSelect?: boolean;
+};
+
+export type ControlPlanApprovalWire = {
+  reqId: string;
+  planContent: string;
+};
+
+export type ControlToolAnswer = {
+  kind: string;
+  text?: string;
+  reqId?: string;
+  outcome?: "accepted" | "cancelled" | "chat" | "chat_about_this" | "skip" | "skip_interview" | "approved" | "abandoned";
+  answers?: Record<string, string[]>;
+  notes?: Record<string, string>;
+  feedback?: string;
 };
 
 export type ControlStop = {
@@ -341,22 +353,6 @@ export interface DriveFullStreamOpts {
    *  改名是一等事件、自带两头，且那边 `requires_reparse()` 返回
    *  `false // Only path update needed`——这里同理，只换键，HTML 不用重取。 */
   onSpecPageRenamed?: (rename: { from: string; to: string }) => void;
-  /** 伴随式澄清：spec-first 第 2 步**替用户定下的事**（2026-08-27）。
-   *
-   *  它不是提问，不阻塞，也不需要回答。推演照常往下跑，这些只是把模型
-   *  已经做的决定摊开——「员工登录我定成了手机号，也可以是工号」。
-   *  用户改哪条，就把那条改动接进中途排队（本轮结束自动发出），
-   *  走的是已经验证过的「用户 → AI」那条路，不新开通道。
-   *
-   *  ⚠ 第 2 步在整轮的第 1~2 分钟，而整轮 8~10 分钟。这个回调存在的全部
-   *  理由就是别等到最后——那时候用户唯一能做的只剩整轮重来。 */
-  onSpecAssumptions?: (items: Array<{
-    id: string;
-    topic: string;
-    decision: string;
-    alternatives: string[];
-    why: string;
-  }>) => void;
   /** 图判降级 / 孤岛 / 对比。只报不拦，必须能在交付面看见。 */
   onQualityNotice?: (note: {
     kind: string;
@@ -447,7 +443,7 @@ export interface DriveFullStreamOpts {
    * 停泊提问的回执（grok NeedUserAnswer）。
    * 有它时服务端不当成新的 user turn。
    */
-  toolAnswer?: { kind: string; text?: string; reqId?: string };
+  toolAnswer?: ControlToolAnswer;
   /** 产品宪章 opt-in。只在确认推演时带，缺省不送，免得问候把账户旗清掉。 */
   reuseCharter?: boolean;
   productCharter?: {
@@ -493,18 +489,7 @@ export interface DriveFullStreamOpts {
     label?: string;
     productStep?: number;
   }) => void;
-  onControlScopeCard?: (event: {
-    restatement: string;
-    device?: string;
-    productArchetype?: string;
-    wiredArchetypes?: Array<{ id: string; label: string }>;
-    wiredDevices?: Array<{ id: string; label: string }>;
-    variant?: string;
-    userText?: string;
-    charterReuseNext?: boolean;
-    tools?: string[];
-    gate?: boolean;
-  }) => void;
+  onControlPlanApproval?: (event: ControlPlanApprovalWire) => void;
   onControlToolStart?: (tool: string) => void;
   onControlToolResult?: (event: Record<string, unknown>) => void;
 }
@@ -627,14 +612,6 @@ function applyFactoryStreamEvent(
       const from = String(event.from || "");
       const to = String(event.to || "");
       if (from && to && from !== to) opts.onSpecPageRenamed?.({ from, to });
-      return "continue";
-    }
-    case "spec_assumption": {
-      // 服务端已经洗过一遍（spec_tree._sanitize_assumptions）。这里再洗一次
-      // 不是不信任它，是这条流也接老后端 / 续播缓存——形状不对宁可少渲染
-      // 一张卡，不许把 undefined 摊到面板上。跟落库那份同一把尺子。
-      const items = parseSpecAssumptions(event.items);
-      if (items.length > 0) opts.onSpecAssumptions?.(items);
       return "continue";
     }
     case "quality_notice": {
@@ -1065,31 +1042,14 @@ export async function consumeControlStreamResponse(
                     : undefined,
               });
               continue;
-            case "control_scope_card":
-              opts.onControlScopeCard?.({
-                restatement: String(event.restatement || ""),
-                device: event.device,
-                productArchetype:
-                  typeof event.productArchetype === "string"
-                    ? event.productArchetype
-                    : undefined,
-                wiredArchetypes: Array.isArray(event.wiredArchetypes)
-                  ? event.wiredArchetypes
-                  : undefined,
-                wiredDevices: Array.isArray(event.wiredDevices)
-                  ? event.wiredDevices
-                  : undefined,
-                variant: event.variant,
-                userText: event.userText,
-                charterReuseNext:
-                  typeof event.charterReuseNext === "boolean"
-                    ? event.charterReuseNext
-                    : undefined,
-                tools: Array.isArray(event.tools)
-                  ? event.tools.map((item: unknown) => String(item))
-                  : undefined,
-                gate: event.gate === false ? false : true,
-              });
+            case "control_plan_approval":
+              if (typeof event.reqId === "string" && event.reqId &&
+                  typeof event.planContent === "string" && event.planContent.trim()) {
+                opts.onControlPlanApproval?.({
+                  reqId: event.reqId,
+                  planContent: event.planContent,
+                });
+              }
               continue;
             case "control_handoff_factory":
               handedOff = true;

@@ -294,12 +294,30 @@ class Test兜底补发:
     def test_两个调用点都接了补发(self):
         """⚠ 串行 / 并行两条执行路。只改一条不报错、只有一半不生效——
         本仓第四条那个形状。"""
-        src = DRIVER.read_text(encoding="utf-8")
-        assert src.count("async for _fb in _fallback_page_events():") == 2, (
-            "补发只接了一条执行路（串行和并行都要）"
-        )
-        assert src.count("async for _pause_ev in _drain_assumption_hold():") == 2, (
-            "停泊通知只接了一条执行路"
+        tree = ast.parse(DRIVER.read_text(encoding="utf-8"))
+        stream = next(node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "drive_full_v5_session_stream")
+        sources = []
+        for parent in ast.walk(stream):
+            body = getattr(parent, "body", None)
+            if not isinstance(body, list):
+                continue
+            for index, node in enumerate(body):
+                if not (isinstance(node, ast.AsyncFor) and isinstance(node.iter, ast.Call) and isinstance(node.iter.func, ast.Name) and node.iter.func.id == "_fallback_page_events"):
+                    continue
+                assert index > 0
+                previous = body[index - 1]
+                assert isinstance(previous, ast.Assign)
+                result = previous.value
+                assert isinstance(result, ast.Call) and isinstance(result.func, ast.Attribute)
+                assert result.func.attr == "result" and isinstance(result.func.value, ast.Name)
+                sources.append(result.func.value.id)
+                assert isinstance(node.target, ast.Name)
+                assert any(
+                    isinstance(child, ast.Yield) and isinstance(child.value, ast.Name) and child.value.id == node.target.id
+                    for child in ast.walk(node)
+                ), "Reading fallback events without yielding them still leaves the canvas blank"
+        assert sorted(sources) == ["batch_task", "exec_task"], (
+            "Serial and parallel capability results must each trigger page fallback"
         )
 
     def test_计数函数挂在已有的import上而不是新开一条(self):

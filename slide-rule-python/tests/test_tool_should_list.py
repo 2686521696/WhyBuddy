@@ -26,6 +26,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.v5_state import V5SessionState  # noqa: E402
+from plan_approval_support import approved_plan_rows
 from services.rehearsal_control import (  # noqa: E402
     CLOSED_TOOLS,
     CONTROL_TOOLS,
@@ -47,9 +48,7 @@ def _scoped() -> V5SessionState:
     return V5SessionState(
         sessionId="lst-scoped",
         goal={"text": "请假系统", "status": "clear"},
-        controlTranscript=[
-            {"id": "c1", "role": "system", "kind": "scope_confirmed", "text": "请假系统"}
-        ],
+        controlTranscript=approved_plan_rows(),
     )
 
 
@@ -60,6 +59,7 @@ def _with_model() -> V5SessionState:
         goal={"text": "请假系统", "status": "clear"},
         modelVersions=[{"id": "v1", "model": {"systems": []}}],
         currentModelVersionId="v1",
+        controlTranscript=approved_plan_rows(),
     )
 
 
@@ -71,11 +71,11 @@ def test_default_is_list_absence_means_visible():
       别再把它加回来：加回来这条就成了"断言一个有谓词的工具没被裁"，
       测的不是缺省行为。
     """
-    assert should_list_tool("ask_user", _fresh()) is True
+    assert should_list_tool("ask_user_question", _fresh()) is True
     # ⚠ 清单不再猜意图（2026-09-09 照 grok 改：`Tool::should_list` 在 grok 全仓只被覆写 3 次、全在管道层，`ListToolsContext` 里根本没有用户消息）。保证挪到了分发那层：没有真产品就不画卡、改成再问一句——**模型硬挑 scope_card 也挡得住**，比「菜单里不摆」更强。
-    assert should_list_tool("scope_card", _fresh()) is True
+    assert should_list_tool("write_plan", _fresh()) is True
     assert should_list_tool(
-        "scope_card",
+        "write_plan",
         V5SessionState(
             sessionId="lst-topic",
             goal={"text": "诊所系统", "status": "needs_refinement"},
@@ -95,14 +95,12 @@ def test_rehearse_hidden_until_scope_confirmed():
     assert "spec" in _names(_scoped())
     assert "pages" not in _names(_scoped())
     # ⚠ 清单不再猜意图（2026-09-09 照 grok 改：`Tool::should_list` 在 grok 全仓只被覆写 3 次、全在管道层，`ListToolsContext` 里根本没有用户消息）。保证挪到了分发那层：没有真产品就不画卡、改成再问一句——**模型硬挑 scope_card 也挡得住**，比「菜单里不摆」更强。
-    assert "scope_card" in _names(_fresh()), "问候空会话还列范围卡会把你好当成产品开干"
-    assert "scope_card" not in _names(_scoped()), (
+    assert "write_plan" in _names(_fresh()), "问候空会话还列范围卡会把你好当成产品开干"
+    assert "write_plan" not in _names(_scoped()), (
         "已确认后还列 scope_card，交回会把假设面板顶掉"
     )
     with_model = _with_model()
-    with_model.controlTranscript = [
-        {"id": "ct-1", "kind": "scope_confirmed", "text": "请假系统"}
-    ]
+    with_model.controlTranscript = approved_plan_rows()
     assert "rehearse" not in _names(with_model)
     assert "refine" in _names(with_model)
     assert "workflow" in _names(_scoped())
@@ -186,19 +184,19 @@ def test_scope_card_listed_until_scope_is_confirmed():
       不画卡、改成再问一句——模型硬挑 scope_card 也挡得住，比「菜单里不摆」
       更强（判据在 test_cheap_followup_is_not_a_product）。
     """
-    assert "scope_card" in _names(_fresh())
+    assert "write_plan" in _names(_fresh())
     st = V5SessionState(
         sessionId="lst-ask-ans",
         goal={"text": "", "status": "needs_refinement"},
         controlTranscript=[
             {"role": "user", "kind": "turn", "text": "hello"},
-            {"role": "assistant", "kind": "ask_user", "text": "想做什么应用，说一句就行。"},
-            {"role": "tool", "kind": "user_answer", "text": "请假系统", "answerKind": "ask_user"},
+            {"role": "assistant", "kind": "ask_user_question", "text": "想做什么应用，说一句就行。"},
+            {"role": "tool", "kind": "user_answer", "text": "请假系统", "answerKind": "ask_user_question"},
         ],
     )
-    assert "scope_card" in _names(st)
+    assert "write_plan" in _names(st)
     # 反向：确认过范围就撤掉——下一步是 pages，不是再开一张卡。
-    assert "scope_card" not in _names(_scoped())
+    assert "write_plan" not in _names(_scoped())
 
 
 def test_search_evidence_hidden_without_a_product_topic():
@@ -268,7 +266,7 @@ def test_manifest_is_never_empty():
         rc.TOOL_LIST_WHEN.update({n: (lambda st: False) for n in CLOSED_TOOLS})
         floor = _names(_fresh())
         assert floor, "所有谓词都为假时清单空了——兜底没顶住，模型这一轮无事可做"
-        assert floor == {"ask_user"}, (
+        assert floor == {"ask_user_question"}, (
             f"兜底放行的不是「问一句」，而是 {sorted(floor)}"
         )
     finally:
@@ -277,14 +275,14 @@ def test_manifest_is_never_empty():
 
     for st in (_fresh(), _scoped()):
         assert len(list_control_tools(st)) > 0
-    assert "ask_user" in _names(_fresh()), (
+    assert "ask_user_question" in _names(_fresh()), (
         "空会话至少要留得下「问一句」，否则问候无事可做"
     )
     topic = V5SessionState(
         sessionId="lst-topic2",
         goal={"text": "诊所系统", "status": "needs_refinement"},
     )
-    assert "scope_card" in _names(topic)
+    assert "write_plan" in _names(topic)
 
 
 def test_listed_tools_are_a_subset_of_the_closed_set():

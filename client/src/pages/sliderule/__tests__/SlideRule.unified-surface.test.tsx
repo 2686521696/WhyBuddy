@@ -49,7 +49,8 @@ function baseHookReturn() {
     isRunning: false,
     liveAction: null,
     sendMessage: async () => {},
-    pendingScope: null,
+    pendingPlanApproval: null,
+    submitPlanApproval: () => {},
     pendingAsk: null,
     confirmControlScope: async () => {},
     dismissScopeCard: () => {},
@@ -188,48 +189,10 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain("应用中心还没有可展示的项目");
     // hero composer 仍在首页流里，且全页仍只有一个 ComposerDock
     expect(html).toContain('data-testid="sliderule-hero-composer"');
-    expect(html).toContain('data-testid="sliderule-composer-device"');
-    expect(html).toContain('data-testid="sliderule-composer-device-trigger"');
-    expect(html).toContain('data-testid="sliderule-composer-device-menu"');
-    expect(html).toContain('data-testid="sliderule-composer-device-phone"');
-    expect(html).toContain('data-testid="sliderule-composer-device-desktop"');
-    expect(html).toContain('data-testid="sliderule-composer-device-tablet"');
-    expect(html).toContain('data-testid="sliderule-composer-device-watch"');
-    // 原型轴另起一颗：自由类型不进 Web/应用/平板 那颗钮。
-    expect(html).toContain('data-testid="sliderule-composer-archetype"');
-    expect(html).toContain('data-testid="sliderule-composer-archetype-trigger"');
-    expect(html).toContain('data-testid="sliderule-composer-archetype-menu"');
-    expect(html).toContain('data-testid="sliderule-composer-archetype-free_app"');
-    expect(html).toContain('data-testid="sliderule-composer-archetype-content_app"');
-    expect(html).toContain('data-testid="sliderule-composer-archetype-business_app"');
-    const trigger = html.slice(
-      html.indexOf("sliderule-composer-device-trigger"),
-      html.indexOf("sliderule-composer-device-menu")
-    );
-    expect(trigger).toContain("Web");
-    expect(trigger).not.toContain("应用");
-    const phoneRow = html.slice(
-      html.indexOf("sliderule-composer-device-phone"),
-      html.indexOf("sliderule-composer-device-phone") + 500
-    );
-    expect(phoneRow).toContain("应用");
-    const watchAt = html.indexOf("sliderule-composer-device-watch");
-    const watchRow = html.slice(watchAt, watchAt + 1800);
-    expect(watchRow).toContain("未接通");
-    expect(watchRow).toContain("disabled");
-    expect(watchRow).not.toContain("自由类型");
-    const archTrigger = html.slice(
-      html.indexOf("sliderule-composer-archetype-trigger"),
-      html.indexOf("sliderule-composer-archetype-menu")
-    );
-    expect(archTrigger).toContain("业务");
-    const archMenu = html.slice(
-      html.indexOf("sliderule-composer-archetype-menu"),
-      html.indexOf("sliderule-composer-device")
-    );
-    expect(archMenu).toContain("自由类型");
-    expect(archMenu).toContain("内容");
-    expect(html).toContain("描述你想构建的业务系统");
+    expect(html).not.toContain("sliderule-composer-device");
+    expect(html).not.toContain("sliderule-composer-archetype");
+    expect(html).not.toContain("sliderule-composer-design-system");
+    expect(html).toContain("描述你想做的应用");
     expect(html).not.toContain("挂技能或连接器");
     expect(html).not.toContain("即可选择技能、连接器或伙伴");
     expect(html).not.toContain('data-testid="sliderule-composer-slash-hint"');
@@ -674,22 +637,17 @@ describe("unified /sliderule surface (single mental model)", () => {
    * 判据落在渲染出来的 HTML 上（两个 testid 不许同时出现），不是落在
    * showClarify 的源码写法上。
    */
-  it("KD19：范围卡停泊时不许同时画澄清卡", () => {
+  it("KD19：计划审批时不许同时画澄清卡", () => {
     const html = renderPage({
       pendingClarifications: [
         { id: "gap-1", prompt: "这个诊所系统首期主要服务哪几类核心角色？", type: "free_text" },
       ],
       answerClarifications: () => {},
-      pendingScope: {
-        userText: "做一个连锁宠物医院管理系统",
-        restatement: "连锁宠物医院管理系统",
-        device: "desktop",
-      },
-      onConfirmScope: () => {},
-      onReviseScope: () => {},
+      pendingPlanApproval: { reqId: "plan-render", planContent: "# Clinic plan" },
+      submitPlanApproval: () => {},
     });
 
-    expect(html).toContain("sliderule-scope-card");
+    expect(html).toContain("sliderule-plan-approval");
     expect(
       html.includes("sliderule-clarification-card"),
       "范围卡和澄清卡同屏：两张决策面叠在一起（KD19）"

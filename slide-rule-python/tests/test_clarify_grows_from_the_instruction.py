@@ -117,7 +117,8 @@ class TestClarifyIsRetired:
         names = {(t.get("function") or {}).get("name") for t in CONTROL_TOOLS}
         assert "clarify" not in names, "clarify 又回到模型目录里了"
         # 反向：目录本身没被清空
-        assert "ask_user" in names and "scope_card" in names
+        assert "ask_user_question" in names and "exit_plan_mode" in names
+        assert "scope_card" not in names
 
     def test_clarify_is_not_a_closed_tool_on_either_side(self):
         """两侧同一张表。只改一侧 = 芯片一半认一半不认（§4）。"""
@@ -135,7 +136,7 @@ class TestClarifyIsRetired:
         #   从 0 找会切出一段空的，反向断言反而先红（写这条时就踩了）。
         body = ts[at : ts.index("] as const;", at)]
         assert '"clarify"' not in body, "TS 侧闭集表里 clarify 还在"
-        assert '"ask_user"' in body, "反向：TS 侧那张表没被读空"
+        assert '"ask_user_question"' in body, "反向：TS 侧那张表没被读空"
 
     def test_the_dispatch_branch_is_gone(self):
         """分支还在就说明只撤了目录——下一个人加回 TOOL_LIST_WHEN 就会复活。"""

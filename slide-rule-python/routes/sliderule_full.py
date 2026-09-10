@@ -33,6 +33,8 @@ from services.gate_health import (
 from services.page_edit_guard import edit_losses, losses_message
 from services import app_access, run_registry
 from services.model_version_restore import restore_model_version_locked
+from services.scope_authority import plan_execution_authorized, preferred_device_for_run, approved_plan_instruction, latest_control_plan
+from services.v5_llm_generate import set_approved_plan
 from services.slide_rule_session import claim_session, create_session, delete_session, load_session, save_session, drive_reasoning_turn
 from services.engine_scheduling import pick_next_capabilities
 from services.persistence import PersistClosedError, load_all
@@ -208,6 +210,15 @@ def _perform_native_execute(payload: Dict[str, Any], cap: str) -> Dict[str, Any]
     else:
         res = execute_capability(payload)
         return res if isinstance(res, dict) else dict(res)
+
+
+def _with_approved_plan(state, function, *args, **kwargs):
+    """Bind the durable plan in the worker that actually builds the model prompt."""
+    set_approved_plan(latest_control_plan(state).get("planContent"))
+    try:
+        return function(*args, **kwargs)
+    finally:
+        set_approved_plan(None)
 
 
 def _perform_mapped_execute(cap: str, state: V5SessionState, input_artifact_ids: List[str], role: str, turn: str) -> Dict[str, Any]:
@@ -561,6 +572,8 @@ def _drive_state(payload: Dict[str, Any], viewer) -> V5SessionState:
     if persisted is not None:
         _require_session(persisted, "drive", viewer)
         persisted, _ = sanitize_session_state(persisted)
+        if not plan_execution_authorized(persisted):
+            raise HTTPException(409, "plan_approval_required")
         return persisted
     raw_state.pop("ownerId", None)
     for key in ("controlTranscript", "controlTodo", "modelVersions", "currentModelVersionId", "capabilityRuns", "specFirstPages", "awaitReason", "awaitDetail"):
@@ -577,6 +590,8 @@ def _drive_state(payload: Dict[str, Any], viewer) -> V5SessionState:
     except PersistClosedError as exc:
         raise HTTPException(503, "session_store_unavailable") from exc
     _require_session(claimed, "drive", viewer)
+    if not plan_execution_authorized(claimed):
+        raise HTTPException(409, "plan_approval_required")
     return claimed
 
 
@@ -909,6 +924,8 @@ def save_sess(
     # 活儿清单同 factoryTodo：服务端拥有，客户端 PUT 一律不许带。
     client_input.pop("controlTodo", None)
     client_input.pop("subagentTasks", None)
+    for key in ("controlTranscript", "modelVersions", "currentModelVersionId", "specFirstPages", "coverageGaps", "awaitReason", "awaitDetail", "runtimePhase"):
+        client_input.pop(key, None)
     # publishClosure is client-side derived evidence projection (from python /drive-full); safe for client contrib roundtrip.
     # Do not pop; allow in V5SessionState parse + updates merge for frontend session store persistence (119).
     # Legacy sessions load with default None (see model).
@@ -965,10 +982,23 @@ def save_sess(
             #   其中就有 `scope_confirmed`——而 _scope_confirmed 正是靠它判定
             #   范围确认过没有。表现是"刚确认完范围、这轮又失败了，下次 /推演
             #   还弹卡"，而且只在第一场推演之前复现（之后 modelVersions 兜底）。
-            updates = client_contrib.model_dump(exclude={"sessionId", "ownerId", "pendingRuns", "factoryTodo", "controlTodo", "subagentTasks", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents", "modelVersions", "currentModelVersionId", "lastTurnId", "specFirstPages", "controlTranscript", "coverageGaps"})
+            updates = client_contrib.model_dump(exclude={"sessionId", "ownerId", "pendingRuns", "factoryTodo", "controlTodo", "subagentTasks", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents", "modelVersions", "currentModelVersionId", "lastTurnId", "specFirstPages", "controlTranscript", "coverageGaps", "awaitReason", "awaitDetail", "runtimePhase"})
             for k, v in updates.items():
                 if hasattr(merged, k):
                     setattr(merged, k, v)
+            old_goal = existing.goal if isinstance(existing.goal, dict) else {}
+            new_goal = merged.goal if isinstance(merged.goal, dict) else {}
+            if plan_execution_authorized(existing) and any(
+                old_goal.get(key) != new_goal.get(key)
+                for key in ("text", "preferredDevice", "productArchetype", "designSystemId")
+            ):
+                merged.controlTranscript = [*merged.controlTranscript, {
+                    "id": f"plan-reopen-{os.urandom(12).hex()}",
+                    "role": "system", "kind": "plan_entered", "reason": "goal_changed",
+                }]
+                merged.awaitReason = None
+                merged.awaitDetail = None
+                merged.runtimePhase = "idle"
             merged.sessionId = sid
         state = merged
     else:
@@ -1073,7 +1103,7 @@ async def exec_cap(
     _require_login(viewer)
     # Both executors and the later save must use the same authorized snapshot.
     state = await asyncio.to_thread(_drive_state, payload, viewer)
-    payload = {**payload, "state": state.model_dump()}
+    payload = {**payload, "state": state.model_dump(), "userText": approved_plan_instruction(state, str(payload.get("userText") or ""))}
     cap = payload["capabilityId"]
     import time as _time
     t0 = _time.time()
@@ -1081,7 +1111,7 @@ async def exec_cap(
         try:
             result = await asyncio.wait_for(
                 asyncio.to_thread(
-                    _perform_native_execute, payload, cap,
+                    _with_approved_plan, state, _perform_native_execute, payload, cap,
                 ),
                 timeout=_execute_timeout_seconds(),
             )
@@ -1149,6 +1179,8 @@ async def exec_cap(
     try:
         result = await asyncio.wait_for(
             asyncio.to_thread(
+                _with_approved_plan,
+                state,
                 _perform_mapped_execute,
                 cap,
                 state,
@@ -1241,7 +1273,7 @@ def drive(
     _auth(x_internal_key)
     _require_login(viewer)
     state = _drive_state(payload, viewer)
-    new_state = drive_reasoning_turn(state, payload["turnId"], payload.get("userText", ""))
+    new_state = _with_approved_plan(state, drive_reasoning_turn, state, payload["turnId"], approved_plan_instruction(state, payload.get("userText", "")))
     # python provenance for turn/drive (covers turn + downstream evidence/report)
     return {"state": new_state.model_dump(), "stateAuthority": STATE_AUTHORITY_PYTHON, "provenance": PROVENANCE_PYTHON_RAG, "backend": PYTHON_BACKEND}
 
@@ -1286,6 +1318,7 @@ def drive_full(
     state = _drive_state(payload, viewer)
     max_loops = int(payload.get("max_loops", 10))
     user_text = sanitize_session_dict({"text": payload.get("userText", "") or payload.get("user_text", "")})[0].get("text", "")
+    user_text = approved_plan_instruction(state, user_text)
     # 技能库六期"推演注入"：已安装技能进生成契约（setter 内清洗；结束必清空）
     from services.v5_llm_generate import set_active_connectors, set_installed_skills
 
@@ -1295,7 +1328,6 @@ def drive_full(
     #   才是前端主路径（身份透传、精修模式都在这上面踩过）。
     set_active_connectors(payload.get("activeConnectors"))
     from services.device_policy import set_preferred_device_override
-    from services.scope_authority import preferred_device_for_run
 
     goal = dict(state.goal) if isinstance(state.goal, dict) else {}
     set_preferred_device_override(
@@ -1315,7 +1347,7 @@ def drive_full(
 
     activate_charter_for_run(state, payload)
     try:
-        new_state = drive_full_v5_session(state, max_loops=max_loops, user_instruction=user_text)
+        new_state = _with_approved_plan(state, drive_full_v5_session, state, max_loops=max_loops, user_instruction=user_text)
     finally:
         set_installed_skills(None)
         set_active_connectors(None)
@@ -1382,10 +1414,13 @@ def drive_marathon_route(
     # 连 viewer 都没取，无从认起。
     state = _drive_state(payload, viewer)
     seed_text = payload.get("seedText") or payload.get("seed_text") or payload.get("userText") or ""
+    seed_text = approved_plan_instruction(state, seed_text)
     budget = payload.get("budget") or {}
     policy = payload.get("policy") or None
     max_rounds = int(payload.get("maxRounds") or payload.get("max_rounds") or 8)
-    result = drive_marathon(
+    result = _with_approved_plan(
+        state,
+        drive_marathon,
         state,
         seed_text,
         budget=budget,

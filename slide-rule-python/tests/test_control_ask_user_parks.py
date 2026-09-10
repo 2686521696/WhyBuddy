@@ -32,7 +32,7 @@ def test_ask_user_parks_and_ends_this_request(harness):
     seed_session(sid, goal={"text": "", "status": "needs_refinement"})
     question = "你想做什么应用？"
     harness.llm_impl = lambda messages, **kw: llm_tool(
-        "ask_user", {"question": question, "options": ["请假", "报销"]}
+        "ask_user_question", {"question": question, "options": ["请假", "报销"]}
     )
     _, events = harness.post(six_fields(sid, "你好"))
     assert harness.helper_calls == []
@@ -74,7 +74,7 @@ def test_answer_to_ask_is_tool_result_not_new_user_turn(harness):
     seed_session(sid, goal={"text": "", "status": "needs_refinement"})
     question = "你想做什么应用？"
     harness.llm_impl = lambda messages, **kw: llm_tool(
-        "ask_user", {"question": question, "options": ["请假", "报销"]}
+        "ask_user_question", {"question": question, "options": ["请假", "报销"]}
     )
     harness.post(six_fields(sid, "你好"))
 
@@ -133,7 +133,7 @@ def test_ask_answer_empty_llm_does_not_dump_operator_speak(harness):
         controlTranscript=[
             {
                 "role": "assistant",
-                "kind": "ask_user",
+                "kind": "ask_user_question",
                 "text": "你想做什么应用？",
                 "options": ["请假", "报销"],
             }
@@ -168,8 +168,9 @@ def test_explicit_tool_answer_payload_is_the_live_path(harness):
         controlTranscript=[
             {
                 "role": "assistant",
-                "kind": "ask_user",
+                "kind": "ask_user_question",
                 "text": "下一跳做什么？",
+                "reqId": "need-live1",
                 "options": ["精修（refine）", "画页面（pages）"],
             }
         ],
@@ -184,7 +185,7 @@ def test_explicit_tool_answer_payload_is_the_live_path(harness):
         six_fields(
             sid,
             "精修（refine）",
-            toolAnswer={"kind": "ask_user", "text": "精修（refine）", "reqId": "need-live1"},
+            toolAnswer={"kind": "ask_user_question", "text": "精修（refine）", "reqId": "need-live1"},
         )
     )
     loaded = load_session(sid)
@@ -201,20 +202,16 @@ def test_explicit_tool_answer_payload_is_the_live_path(harness):
         if isinstance(row, dict) and row.get("kind") == "user_answer"
     ]
     assert answers and answers[-1].get("text") == "精修（refine）"
-    # 已有 SPEC/页面：括号名是 typed 答案 → 直接 refine，不重猜。
-    assert harness.helper_calls, f"回执没把 refine 交工厂：{event_types(events)}"
+    # Artifacts and a question answer do not replace explicit plan approval.
+    assert not harness.helper_calls
     # 反向：第一版 _settled(_dispatch_tool) 直接 return，工厂 complete 被
     # nest 掉，host 零 LLM、客户端报推演中断。
     assert harness.llm_calls, "refine 回执没有交回 host"
     assert event_types(events)[-1] == "complete", event_types(events)
 
 
-def test_assumptions_confirm_is_tool_result_not_new_user_turn(harness):
-    """假设卡确认是纸条。必须带假设行，否则 _assumptions_awaiting 假绿。
-
-    变异：仍 append kind=turn → 本条红。
-    变异：确认后 _settled 收工不交 host → llm_calls 空，本条红。
-    """
+def test_legacy_confirmation_text_cannot_replace_structured_assumption_answers(harness):
+    """Free text is not a questionnaire receipt or plan approval."""
     sid = new_sid("ask-assumptions")
     seed_session(
         sid,
@@ -246,22 +243,18 @@ def test_assumptions_confirm_is_tool_result_not_new_user_turn(harness):
         and row.get("role") == "user"
         and row.get("kind") == "turn"
     ]
-    assert "假设已确认。继续画页面。" not in turns, f"确认写进了 user turn：{turns}"
+    assert "假设已确认。继续画页面。" in turns
     answers = [
         row
         for row in (loaded.controlTranscript or [])
         if isinstance(row, dict) and row.get("kind") == "user_answer"
     ]
-    assert answers and "假设已确认" in str(answers[-1].get("text") or "")
-    assert harness.helper_calls, f"确认继续没有 handoff 工厂：{event_types(events)}"
-    assert harness.llm_calls, "确认继续没有交回 host"
+    assert not answers
+    assert not harness.helper_calls
+    assert harness.llm_calls
     assert event_types(events)[-1] == "complete"
     sfp = loaded.specFirstPages or {}
-    assert sfp.get("assumptionsConfirmed") is True
-    tools = loaded.goal.get("tools") if isinstance(loaded.goal, dict) else None
-    assert tools == ["pages"], tools
-    todo = list(getattr(loaded, "factoryTodo", None) or [])
-    assert "structure" in todo and "bind" in todo, todo
+    assert sfp.get("assumptionsConfirmed") is False
 
 
 def test_fresh_utterance_is_still_a_user_turn(harness):
@@ -332,7 +325,7 @@ def test_ask_user_without_product_drops_meaning_chips(harness):
     sid = new_sid("ask-chips")
     seed_session(sid, goal={"text": "", "status": "needs_refinement"})
     harness.llm_impl = lambda messages, **kw: llm_tool(
-        "ask_user",
+        "ask_user_question",
         {
             "question": "Hello! How can I help you today?",
             "options": [
@@ -354,7 +347,7 @@ def test_ask_user_with_product_keeps_options(harness):
     sid = new_sid("ask-keep")
     seed_session(sid, goal={"text": "请假系统", "status": "needs_refinement"})
     harness.llm_impl = lambda messages, **kw: llm_tool(
-        "ask_user",
+        "ask_user_question",
         {"question": "给谁用？", "options": ["员工", "主管"]},
     )
     _, events = harness.post(six_fields(sid, "下一步"))
@@ -383,20 +376,20 @@ def test_need_answer_messages_put_user_before_function_call():
             {"role": "user", "kind": "turn", "text": "其他含义"},
             {
                 "role": "assistant",
-                "kind": "ask_user",
+                "kind": "ask_user_question",
                 "text": "想做什么？",
                 "reqId": "need-abc",
             },
         ],
     )
     msgs = _messages_after_need_answer(
-        state, "请假", {"kind": "ask_user", "text": "请假", "reqId": "need-abc"}
+        state, "请假", {"kind": "ask_user_question", "text": "请假", "reqId": "need-abc"}
     )
     roles = [m.get("role") for m in msgs]
     assert roles == ["system", "user", "assistant", "tool"], roles
     assert msgs[1]["content"] == "其他含义"
     assert "请假" not in str(msgs[1].get("content") or "")
-    assert msgs[2]["tool_calls"][0]["function"]["name"] == "ask_user"
+    assert msgs[2]["tool_calls"][0]["function"]["name"] == "ask_user_question"
     assert "请假" in str(msgs[3].get("content") or "")
 
 
@@ -412,7 +405,7 @@ def test_repair_inserts_user_when_function_call_follows_system():
                 {
                     "id": "need-1",
                     "type": "function",
-                    "function": {"name": "ask_user", "arguments": "{}"},
+                    "function": {"name": "ask_user_question", "arguments": "{}"},
                 }
             ],
         },

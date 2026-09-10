@@ -805,11 +805,15 @@ def build_spec_prompt(
     # ⚠ 三块都取自叶子 turn_context，不取自 product_charter / v5_llm_generate：
     #   那两个都在**被这条链调用**的一侧，反过来 import 就成环（见叶子模块头）。
     from services.turn_context import (
+        approved_plan_prompt_block,
         charter_prompt_block,
         clarification_prompt_block,
         connector_prompt_block,
     )
 
+    plan = approved_plan_prompt_block()
+    if plan:
+        parts.append(plan)
     charter = charter_prompt_block()
     if charter:
         parts.append(charter)

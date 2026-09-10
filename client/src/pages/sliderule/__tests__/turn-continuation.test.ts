@@ -455,12 +455,11 @@ describe("续跑接在上一段后面", () => {
       src.indexOf("const runTurn = async"),
       src.indexOf("const requestRehearsal = async")
     );
-    expect(runTurn).toContain("answeringAsk");
     expect(runTurn).toContain("pendingToolAnswerRef");
     expect(runTurn).toContain('awaitReason === "control_ask"');
     expect(runTurn).toContain("parkedAsk");
     expect(runTurn).toContain('kind: "ask_user"');
-    expect(runTurn).toContain('kind: "assumptions"');
+    expect(runTurn).not.toContain('kind: "assumptions"');
     expect(runTurn).toContain('kind: "clarify"');
     expect(runTurn).toContain("skipUserBubble");
     expect(runTurn).toContain("isContinuationTurn(userText)");
@@ -472,10 +471,11 @@ describe("续跑接在上一段后面", () => {
       src.indexOf("const sendMessage = async"),
       src.indexOf("const repairGaps = async")
     );
-    expect(sendFn).toContain("pendingToolAnswerRef.current");
-    expect(sendFn.indexOf("pendingToolAnswerRef.current")).toBeLessThan(
+    expect(sendFn).toContain("toolAnswer: answer");
+    expect(sendFn.indexOf("const answer = pendingNeed")).toBeLessThan(
       sendFn.indexOf("pendingAskRef.current = null")
     );
+    expect(sendFn).not.toContain("pendingToolAnswerRef.current =");
   });
 
   it("★ §1 接在真链路上：气泡列表真的走了折叠", () => {

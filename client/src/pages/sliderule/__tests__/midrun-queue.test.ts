@@ -158,9 +158,8 @@ describe("接线（三段都得接上）", () => {
   });
 
   it("**系统那条回执真的标了 synthetic**（不标 = 这次改造白做）", () => {
-    expect(SESSION).toContain('"假设已确认。继续画页面。",');
-    const at = SESSION.indexOf('"假设已确认。继续画页面。",');
-    expect(SESSION.slice(at, at + 120)).toContain("synthetic: true");
+    expect(SESSION).toContain("{ text: human, synthetic: true, toolAnswer }");
+    expect(SESSION).not.toContain("假设已确认。继续画页面。");
   });
 
   it("hook：队列导出去了，否则永远画不出来", () => {
