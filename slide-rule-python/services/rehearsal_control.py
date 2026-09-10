@@ -4920,14 +4920,28 @@ async def _dispatch_tool(
     if name == "todo_write":
         yield {"type": "control_tool_start", "tool": "todo_write"}
         raw_updates = args.get("todos")
-        updates = [u for u in (raw_updates or []) if isinstance(u, dict)]
         # merge 缺省为真（grok `default_merge`）。显式传 false 才整张替换。
         merge = args.get("merge")
+        # 显式的「清空」：只有 merge 明确写了 false 才算。缺省的合并调用送不出
+        # 任何一条 = 什么都没写，不许当成"清空成功"。
+        explicit_replace = merge is not None and not bool(merge)
+        # ⚠ 别在这里挑形状。`coerce_updates` 认整条字符串、认 task/text、认没带
+        #   id——上一版先 `isinstance(u, dict)` 滤一道，那三条韧性在真机上**一次
+        #   都用不上**（本仓 §一：装在不通电的插座上，这回不通电的是入参）。
         rows, err = apply_todo(
             getattr(state, "controlTodo", None),
-            updates,
+            raw_updates,
             merge=True if merge is None else bool(merge),
         )
+        # ⚠ 2026-09-10 真机 probe-build-1789004996 第 4 轮：模型自己挑了
+        #   todo_write，回给它的是 `ok: true, count: 0`，发出去的 control_todo
+        #   line=''，用户那边一个字都没有。**同一形状第二次发作**——
+        #   plan_todo 头注记的 2026-09-09 那次是"没带 id 被静默丢掉"，
+        #   修完补的判据是「非空输入不许产出空清单」，而这次输入本身就没剩下，
+        #   反向那半（"空结果不许回 ok"）当时没写（§三）。
+        #   §7：工具结果是一句「我干了活」的声明，不是增强项，fail-closed。
+        if err is None and not rows and not explicit_replace:
+            err = "这一笔没解析出任何一条待办。todos 要是一串条目，每条至少给 content。"
         if err:
             # 重复 id 是**错误即输出**，不是抛异常——抄 grok 那句
             # 「so the Python side can distinguish this from infra errors」。
@@ -4947,7 +4961,11 @@ async def _dispatch_tool(
             "type": "control_todo",
             "todos": rows,
             "summary": summarize_todo(rows),
-            "line": todo_one_line(rows),
+            # ⚠ 空清单时 `one_line` 返回 ''，而前端是 `if (payload.line)` 才渲染
+            #   （useSlideRuleSession:2069）——空串 = 这一发在左栏彻底隐身。
+            #   走到这里的空清单只剩"显式清空"一种，那是**有意的动作**，
+            #   得让人看见（工具说明第二句：用户看得见这份清单）。
+            "line": todo_one_line(rows) or "活儿清单已清空",
         }
         yield {
             "type": "control_tool_result",

@@ -44,6 +44,7 @@ from services.plan_todo import (
     MAX_TODO_ITEMS,
     TodoStatus,
     apply as apply_todo,
+    coerce_updates,
     effective_merge,
     normalize,
     one_line,
@@ -422,3 +423,174 @@ def test_工具不许在吞掉了内容之后还说ok(harness):
         if e.get("type") == "control_tool_result" and e.get("tool") == "todo_write"
     ]
     assert res and res[-1].get("count") == 3, res
+
+
+def test_活路径上整条字符串的清单不许被滤掉(harness):
+    """`coerce_updates` 认「整条是字符串」这种形状，判据也钉过——**但那三条
+    韧性在真机上一次都用不上**：分发处先 `isinstance(u, dict)` 滤了一道。
+
+    ⚠ 2026-09-10 逮到的形状，本仓 §一：修复本身是对的，装在不通电的插座上。
+      上一版 22 条判据全绿，因为它们直接调 `apply_todo`，从没经过分发。
+      这一条走 harness，钉的是**入参进得来**。
+    """
+    sid = new_sid("todo-strings")
+    _confirmed(sid)
+    harness.llm_impl = lambda messages, **kw: (
+        llm_tool("todo_write", {"todos": ["登记书目", "扫码借出", "到期提醒"]})
+        if len(harness.llm_calls) == 1
+        else llm_text("好")
+    )
+    _, events = harness.post(six_fields(sid, "分几步做"))
+
+    todo_ev = [e for e in events if e.get("type") == "control_todo"]
+    assert todo_ev, [e.get("type") for e in events]
+    assert len(todo_ev[-1]["todos"]) == 3, todo_ev[-1]
+    assert "登记书目" in todo_ev[-1]["summary"], todo_ev[-1]
+    assert todo_ev[-1]["line"], "左栏那一句是空的 = 用户还是看不见"
+
+
+def test_活路径上写不进任何一条时不许回ok(harness):
+    """反向那半（§三）：上一条钉「非空输入不许产出空清单」，这一条钉
+    **空结果不许回 ok**。
+
+    ⚠ 2026-09-10 真机 probe-build-1789004996 第 4 轮：模型自己挑了 todo_write，
+      拿到的是 `ok: true, count: 0`，`control_todo` 的 line 是空串——
+      用户那边一个字都没有，模型那边是一盏绿灯。§7：工具结果是一句
+      「我干了活」的声明，不是增强项，缺就是缺。
+    """
+    sid = new_sid("todo-empty")
+    _confirmed(sid)
+    harness.llm_impl = lambda messages, **kw: (
+        llm_tool("todo_write", {"todos": []})
+        if len(harness.llm_calls) == 1
+        else llm_text("好")
+    )
+    _, events = harness.post(six_fields(sid, "分几步做"))
+
+    res = [
+        e for e in events
+        if e.get("type") == "control_tool_result" and e.get("tool") == "todo_write"
+    ]
+    assert res, [e.get("type") for e in events]
+    assert res[-1].get("ok") is False, res[-1]
+    assert "待办" in str(res[-1].get("error") or ""), res[-1]
+    # 反向：不许一边报错一边还发一条空 chip 出去。
+    assert not [e for e in events if e.get("type") == "control_todo"], events
+
+
+def test_显式清空是有意的动作_左栏要看得见(harness):
+    """`merge: false` + 空 todos = 「把清单清了」，这是真动作，不是没写成。
+    它得走 ok，而且左栏那一句不许是空串——空串在前端等于隐身
+    （useSlideRuleSession:2069 `if (payload.line)`）。"""
+    sid = new_sid("todo-clear")
+    _confirmed(sid)
+    harness.llm_impl = lambda messages, **kw: (
+        llm_tool("todo_write", {"todos": [], "merge": False})
+        if len(harness.llm_calls) == 1
+        else llm_text("好")
+    )
+    _, events = harness.post(six_fields(sid, "清了吧"))
+
+    res = [
+        e for e in events
+        if e.get("type") == "control_tool_result" and e.get("tool") == "todo_write"
+    ]
+    assert res and res[-1].get("ok") is True, res
+    todo_ev = [e for e in events if e.get("type") == "control_todo"]
+    assert todo_ev and todo_ev[-1]["todos"] == [], todo_ev
+    assert todo_ev[-1]["line"], "清空也要看得见，空串在前端等于没发"
+
+
+#: 2026-09-10 真机 real-topic-survives-1789005461 第 2 轮的**原样载荷**。
+#: 不许照着记忆重拼一个（§一之二）——键名没加引号正是它抛 json 的原因。
+真机序列化的一发 = [
+    '{id: "spec", content: "起草并确认门店排班与考勤系统 SPEC", status: "in_progress"}',
+    '{id: "pages", content: "生成相关前端页面", status: "pending"}',
+    '{id: "structure", content: "反推数据结构与权限点", status: "pending"}',
+]
+
+
+#: 同一天第二发（real-topic-survives-1789005633）：值用的是**单引号**。
+#: 两发都留着——只留一发，另一种填法回来时红的还是用户那边。
+真机序列化的第二发 = [
+    "{id: '1', content: '起草系统 SPEC', status: 'pending'}",
+    "{id: '2', content: '生成页面代码', status: 'pending'}",
+]
+
+
+def test_单引号的对象字面量也要能还原():
+    """只补键的引号治不了它——`json.loads` 认双引号。第三道
+    `ast.literal_eval` 管这一种。"""
+    rows = coerce_updates(真机序列化的第二发)
+    assert [r["id"] for r in rows] == ["1", "2"], rows
+    assert rows[0]["content"] == "起草系统 SPEC", rows[0]
+    assert all("{" not in r["content"] for r in rows), rows
+
+
+def test_活路径上单引号那一发同样变成人看得懂的清单(harness):
+    """真机 real-topic-survives-1789005633 的原样载荷，走完控制面。"""
+    sid = new_sid("todo-single-quote")
+    _confirmed(sid)
+    harness.llm_impl = lambda messages, **kw: (
+        llm_tool("todo_write", {"todos": 真机序列化的第二发})
+        if len(harness.llm_calls) == 1
+        else llm_text("好")
+    )
+    _, events = harness.post(six_fields(sid, "分几步做"))
+    todo_ev = [e for e in events if e.get("type") == "control_todo"]
+    assert todo_ev, [e.get("type") for e in events]
+    summary = todo_ev[-1]["summary"]
+    assert "起草系统 SPEC" in summary, summary
+    assert "{" not in summary and "status" not in summary, summary
+
+
+def test_被序列化成字符串的一条要能还原():
+    """模型把每条待办 `JSON.stringify` 了一遍再塞进数组，而且键名没加引号。
+
+    ⚠ 拆掉分发处那道 dict 滤网之后才看得见这一发：在那之前它整张被丢掉
+      （`ok: true, count: 0`）；拆掉之后整串字面量成了 content，
+      用户在左栏看见一行代码。两种都不对。
+    """
+    rows = coerce_updates(真机序列化的一发)
+    assert [r["id"] for r in rows] == ["spec", "pages", "structure"], rows
+    assert rows[0]["content"] == "起草并确认门店排班与考勤系统 SPEC", rows[0]
+    assert rows[0]["status"] == TodoStatus.IN_PROGRESS.value, rows[0]
+    # 反向：不许把整串字面量留在内容里。
+    assert all("{" not in r["content"] for r in rows), rows
+
+
+def test_普通字符串还是整串当内容():
+    """反向那半：别为了认对象字面量，把「登记书目」这种也当成解析失败丢掉。"""
+    rows = coerce_updates(["登记书目", "扫码借出"])
+    assert [r["content"] for r in rows] == ["登记书目", "扫码借出"], rows
+
+
+def test_解析不了的花括号不许被丢掉():
+    """看着像对象、其实解析不了——退回「整串当内容」，**不许**变成静默丢弃。
+    丢弃是这个模块被逮到两次的那个形状。"""
+    rows = coerce_updates(["{这不是对象}"])
+    assert len(rows) == 1 and rows[0]["content"] == "{这不是对象}", rows
+
+
+def test_活路径上序列化的一发要变成人看得懂的清单(harness):
+    """把真机那一发喂进**分发**，不是喂进 `coerce_updates`。
+
+    上一轮 22 条判据全绿而真机是红的，就是因为它们只调纯函数
+    （本仓 §一）。这一条钉的是：同一份载荷走完控制面，左栏那句话里
+    是「起草并确认…」，不是一行代码。
+    """
+    sid = new_sid("todo-serialized")
+    _confirmed(sid)
+    harness.llm_impl = lambda messages, **kw: (
+        llm_tool("todo_write", {"todos": 真机序列化的一发})
+        if len(harness.llm_calls) == 1
+        else llm_text("好")
+    )
+    _, events = harness.post(six_fields(sid, "分几步做"))
+
+    todo_ev = [e for e in events if e.get("type") == "control_todo"]
+    assert todo_ev, [e.get("type") for e in events]
+    line = todo_ev[-1]["line"]
+    assert "起草并确认" in line, line
+    assert "{" not in line and "status" not in line, line
+    assert len(todo_ev[-1]["todos"]) == 3, todo_ev[-1]

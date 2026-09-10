@@ -55,6 +55,38 @@
 
 模型自己会用 in_progress 标当前这一条。
 
+### 第二次发作（2026-09-10，probe-build-1789004996 第 4 轮）
+
+**同一个症状，换了个真因，而且上一轮补的判据一条都咬不住。**
+
+真机：模型自己挑了 todo_write，回给它 `ok: true, count: 0`，
+`control_todo` 的 `line` 是空串——前端 `if (payload.line)` 才渲染，
+于是用户那边一个字都没有，模型那边一盏绿灯。
+
+两个真因，都在**分发处**，不在这个模块里：
+
+1. `rehearsal_control` 先 `[u for u in raw if isinstance(u, dict)]` 滤了一道，
+   于是上面 `coerce_updates` 认的三种松散形状（整条字符串、task/text、
+   没带 id）**在真机上一次都用不上**。修复是对的，装在不通电的插座上
+   （本仓 §一）——22 条判据全绿，因为它们直接调 `apply`，从没经过分发。
+2. 解析不出任何一条时仍然回 `ok: true`。上一轮补的判据是
+   「非空输入不许产出空清单」，**反向那半没写**（本仓 §三）：
+   空结果不许回 ok。§7 的分类是 fail-closed——工具结果是一句
+   「我干了活」的声明，不是增强项。
+
+`apply` 本身没改：空清单是它的合法输出（`merge: false` + 空 todos =
+「把清单清了」，那是真动作）。判决属于**发声明的那一层**，
+判据落在 `test_活路径上*` 三条，全走 harness。
+
+**拆掉滤网当场看见第三种形状**（real-topic-survives-1789005461）：模型把每条
+待办 `JSON.stringify` 了一遍再塞进数组，键名还没加引号——
+
+    "{id: \"spec\", content: \"起草并确认门店排班与考勤系统 SPEC\", status: \"in_progress\"}"
+
+滤网在的时候它整张被丢掉；滤网一拆，整串字面量成了 content，用户在左栏
+看见一行代码。两种都不对，`_row_from_text` 管这一种。
+**这就是拆滤网的收益**：静默丢弃变成看得见的错，才有得修。
+
 ──────────────────────────────────────────────────────────────────────────
 
 重复 id 是**错误即输出**，不是抛异常：grok 那句
@@ -64,6 +96,9 @@ from infra errors」——分不清"模型写错了"和"我们炸了"，两种�
 
 from __future__ import annotations
 
+import ast
+import json
+import re
 from enum import Enum
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -123,6 +158,51 @@ def normalize(raw: Any) -> List[Dict[str, str]]:
     return out
 
 
+#: 键名没加引号的对象字面量，把**键**位置的裸词补上引号。只认这一处形状：
+#: `{` 或 `,` 之后、冒号之前的那个标识符。值里的冒号、逗号一概不碰。
+_BARE_KEY = re.compile(r'([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:')
+
+
+def _row_from_text(text: str) -> Optional[Dict[str, Any]]:
+    """一条待办被模型**当成字符串**送进来时，看它是不是一整个对象字面量。
+
+    ⚠ 2026-09-10 真机 real-topic-survives-1789005461：模型把三条待办
+      序列化成了字符串再塞进数组——
+
+          "{id: \"spec\", content: \"起草并确认门店排班与考勤系统 SPEC\", status: \"in_progress\"}"
+
+      键名没加引号，`json.loads` 直接抛。上一版分发处先滤掉非 dict，
+      于是整张清单静默清零（`ok: true, count: 0`）；把滤网拆掉之后，
+      整串字面量成了 content——用户在左栏看见一行代码。两种都不对。
+
+    ⚠ 同一天第二发（real-topic-survives-1789005633）值用的是**单引号**——
+
+          "{id: '1', content: '起草系统 SPEC', status: 'pending'}"
+
+      只补键的引号还是抛。所以第三道用 `ast.literal_eval`：它认单引号、
+      只吃字面量，遇到函数调用/名字一律抛，拿来解析模型即兴填的入参是安全的。
+      两发都留在判据里（§一之二：判据喂真机那一发的原样载荷）。
+
+    解析不出来就返回 None，调用方把原文当 content —— **不许丢**。
+    """
+    t = (text or "").strip()
+    if not (t.startswith("{") and t.endswith("}")):
+        return None
+    quoted = _BARE_KEY.sub(r'\1"\2":', t)
+    for parse, candidate in (
+        (json.loads, t),
+        (json.loads, quoted),
+        (ast.literal_eval, quoted),
+    ):
+        try:
+            parsed = parse(candidate)
+        except Exception:  # noqa: BLE001 — 解析不了就是解析不了，走兜底
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
 def coerce_updates(raw: Any) -> List[Dict[str, str]]:
     """把模型送来的这一笔归一成 {id, content, status}。
 
@@ -136,14 +216,17 @@ def coerce_updates(raw: Any) -> List[Dict[str, str]]:
       哲学的**反方向**——它在 content 缺席时拿 id 兜底
       （"so the tool never errors"），我们在 id 缺席时拿 content 兜底。
 
-    还认两种真机上出现过的松散形状：整条是字符串、内容写在 `task`/`text` 上。
+    还认三种真机上出现过的松散形状：整条是字符串、整条是**被序列化的对象
+    字面量**（见 `_row_from_text`）、内容写在 `task`/`text` 上。
     多认几种键不是纵容，是承认「工具的入参由模型即兴填」这个事实——
     不认就只能丢，而丢是静默的。
     """
     out: List[Dict[str, str]] = []
     for i, row in enumerate(raw or []):
         if isinstance(row, str):
-            row = {"content": row}
+            # 先看它是不是被序列化过的一条（见 `_row_from_text`）；
+            # 不是就整串当内容，那是真机上另一种出现过的形状。
+            row = _row_from_text(row) or {"content": row}
         if not isinstance(row, dict):
             continue
         content = str(

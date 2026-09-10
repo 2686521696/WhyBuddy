@@ -15,7 +15,7 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **301** 个，模块 **301** 个
+- 扫描文件 **302** 个，模块 **302** 个
 - 内部依赖边 **888** 条，其中 **476** 条写在函数体里（53%；基线 476，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 模块级循环依赖 **0** 个（基线 0 个）
@@ -69,7 +69,7 @@ flowchart TB
   routes["routes<br/>12 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
-  scripts["scripts<br/>38 个模块<br/>运维脚本"]
+  scripts["scripts<br/>39 个模块<br/>运维脚本"]
   app -->|1| config
   app -->|1| models
   app -->|12| routes
