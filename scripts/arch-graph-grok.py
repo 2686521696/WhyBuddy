@@ -30,6 +30,7 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 REPO = Path(__file__).resolve().parent.parent
 DIAGRAM = REPO / "docs" / "grok-build 架构图（自动生成）.md"
+OVERVIEW = REPO / "docs" / "grok-build 模块总览（自动生成）.md"
 
 # 编排环那一截：Agent / 工具 / 工作流 / 会话壳。对照 WhyBuddy 时盯这一簇，
 # 不要把 pager 的 700+ 个 rs 文件当成「我们也要长这么大」。
@@ -66,6 +67,9 @@ class Crate:
     family: str
     description: str
     rs_files: int
+    raw_loc: int
+    source_loc: int
+    test_loc: int
 
 
 @dataclass
@@ -105,15 +109,82 @@ def _family_of(rel: str) -> str:
     return parts[0]  # third_party / prod
 
 
-def _count_rs(crate_dir: Path) -> int:
-    n = 0
+def _rust_loc(path: Path) -> Tuple[int, int]:
+    """Return (raw lines, non-blank/non-comment source lines) for one Rust file.
+
+    This deliberately uses a small line scanner instead of a formatter/parser:
+    the report must work on an unbuilt checkout and the number is an orientation
+    metric, not a compiler statistic.  Block and line comments are removed;
+    strings are left intact so URLs and ``//`` in literals do not erase a line.
+    """
+    raw = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    source = 0
+    in_block = False
+    for line in raw:
+        i = 0
+        kept: List[str] = []
+        while i < len(line):
+            if in_block:
+                end = line.find("*/", i)
+                if end < 0:
+                    i = len(line)
+                    continue
+                in_block = False
+                i = end + 2
+                continue
+            start = line.find("/*", i)
+            slash = line.find("//", i)
+            if slash >= 0 and (start < 0 or slash < start):
+                kept.append(line[i:slash])
+                i = len(line)
+                continue
+            if start >= 0:
+                kept.append(line[i:start])
+                in_block = True
+                i = start + 2
+                continue
+            kept.append(line[i:])
+            i = len(line)
+        if "".join(kept).strip():
+            source += 1
+    return len(raw), source
+
+
+def _count_loc(crate_dir: Path) -> Tuple[int, int, int, int]:
+    files = raw = source = test_source = 0
     for p in crate_dir.rglob("*.rs"):
         # 第三方 vendored / fuzz 语料不算 crate 自己的形状
         rel = p.relative_to(crate_dir).as_posix()
         if "/target/" in f"/{rel}" or rel.startswith("fuzz/"):
             continue
-        n += 1
-    return n
+        files += 1
+        file_raw, file_source = _rust_loc(p)
+        raw += file_raw
+        source += file_source
+        rel_parts = p.relative_to(crate_dir).parts
+        if "tests" in rel_parts or p.name.startswith("test_") or p.name.endswith("_test.rs"):
+            test_source += file_source
+    return files, raw, source, test_source
+
+
+def _purpose(crate_dir: Path, declared: str) -> str:
+    if declared:
+        return declared.replace("|", "/").replace("\n", " ").strip()
+    readme = crate_dir / "README.md"
+    if readme.is_file():
+        for line in readme.read_text(encoding="utf-8", errors="replace").splitlines():
+            text = line.strip().lstrip("#").strip()
+            if text and not text.startswith("<!--"):
+                return text.replace("|", "/")[:240]
+    for entry in (crate_dir / "src" / "lib.rs", crate_dir / "src" / "main.rs"):
+        if entry.is_file():
+            for line in entry.read_text(encoding="utf-8", errors="replace").splitlines()[:80]:
+                text = line.strip()
+                if text.startswith("//!"):
+                    text = text[3:].strip()
+                    if text:
+                        return text.replace("|", "/")[:240]
+    return "根据 crate 名称和目录推断"
 
 
 def _dep_tables(manifest: dict) -> Iterable[dict]:
@@ -179,13 +250,17 @@ def build_graph(root: Path) -> Graph:
         name = pkg.get("name")
         if not name:
             continue
+        rs_files, raw_loc, source_loc, test_loc = _count_loc(crate_dir)
         g.crates[name] = Crate(
             name=name,
             path=crate_dir,
             rel=rel.replace("\\", "/"),
             family=_family_of(rel.replace("\\", "/")),
-            description=(pkg.get("description") or "").strip(),
-            rs_files=_count_rs(crate_dir),
+            description=_purpose(crate_dir, (pkg.get("description") or "").strip()),
+            rs_files=rs_files,
+            raw_loc=raw_loc,
+            source_loc=source_loc,
+            test_loc=test_loc,
         )
         path_by_name[name] = crate_dir
 
@@ -334,6 +409,7 @@ def render_doc(g: Graph) -> str:
         "> grok-build 自己一张架构图都没有：边写在各 crate 的 `Cargo.toml` 里，",
         "> cargo 编译器强制。本文件只是把那些声明画出来，方便和 WhyBuddy 对照。",
         "> grok-build 源码不进本仓。",
+        "> 模块用途、source LOC、叶子排行和 WhyBuddy 对照见 `docs/grok-build 模块总览（自动生成）.md`。",
         "",
         f"- 对照物路径：`{g.root}`",
         f"- `SOURCE_REV`：`{g.source_rev or '（无）'}`",
@@ -488,6 +564,91 @@ def _report(g: Graph) -> None:
         print(f"xai-workflow out={out['xai-workflow']} -> {internal or '(none)'}")
 
 
+def render_overview(g: Graph) -> str:
+    """Render the navigable module inventory that sits beside the graph."""
+    inn, out = _degrees(g)
+    leaves = [n for n in g.crates if out[n] == 0]
+    roots = [n for n in g.crates if inn[n] == 0]
+    giant = sorted((g.crates[n] for n in leaves if g.crates[n].source_loc >= 10_000),
+                   key=lambda c: (-c.source_loc, c.name))
+    leaf_rank = sorted((g.crates[n] for n in leaves), key=lambda c: (-c.source_loc, c.name))
+    largest = sorted(g.crates.values(), key=lambda c: (-c.source_loc, c.name))
+    top_in = sorted(g.crates, key=lambda n: (-inn[n], n))[:12]
+    top_out = sorted(g.crates, key=lambda n: (-out[n], n))[:12]
+    by_family: Dict[str, List[Crate]] = defaultdict(list)
+    for c in g.crates.values():
+        by_family[c.family].append(c)
+    family_what = {
+        "codegen": "产品主干：agent、tools、shell、pager、workspace",
+        "common": "跨产品基础能力：协议、运行时、会话与压缩",
+        "build": "构建期代码生成和协议类型",
+        "third_party": "第三方布局/图渲染库",
+        "prod": "生产侧小型共享包",
+    }
+    lines = [
+        "# grok-build 模块总览（自动生成）", "",
+        "> ⚠ 这份文件由 `scripts/arch-graph-grok.py --overview` 生成。请修改源码后重新生成，不要手改。", "",
+        f"- 对照源码：`{g.root}`", f"- SOURCE_REV：`{g.source_rev or '（未提供）'}`",
+        f"- Cargo workspace 声明成员：**{g.workspace_members}**；实际读取 crate：**{len(g.crates)}**",
+        f"- 内部运行时依赖边：**{len(g.edges)}**；叶子：**{len(leaves)}**；根：**{len(roots)}**；循环：**{len(_cycles(g))}**",
+        "- 行数口径：`source LOC` = 所有 `.rs` 去掉空行和注释后的行（包含内嵌测试）；`raw LOC` = 原始行数；`测试 LOC` 只统计 tests/ 等独立测试路径。",
+        "- 巨型叶子口径：出度为 0 且 source LOC ≥ 10,000。它们是依赖图的底层节点，但可能承载完整产品功能。",
+        "",
+        "## 先看结论", "",
+        f"- 最大模块：`{largest[0].name}`（{largest[0].source_loc:,} source LOC，{largest[0].raw_loc:,} raw LOC）",
+        f"- 达到 10,000 source LOC 的巨型叶子：**{len(giant)}** 个；" + (f"最大为 `{giant[0].name}`（{giant[0].source_loc:,} source LOC）" if giant else "当前没有"),
+        "- 依赖关系最密集的模块见下方“入度/出度排行”；这比单看文件数量更能说明谁是公共底座、谁是产品入口。",
+        "",
+        "## 叶子模块（优先阅读）", "",
+        "叶子没有继续依赖 grok-build 内部 crate。下面按 source LOC 列出前 12 个；达到 10,000 的标为“巨型”，小而关键的 `xai-workflow` 也保留在清单里。",
+        "",
+        "| crate | 标记 | 用途 | source LOC | raw LOC | .rs 文件 | 入度 |", "|---|---|---|---:|---:|---:|---:|",
+    ]
+    for c in leaf_rank[:12]:
+        marker = "巨型" if c.source_loc >= 10_000 else ("关键叶子" if c.name == "xai-workflow" else "")
+        lines.append(f"| `{c.name}` | {marker} | {c.description} | {c.source_loc:,} | {c.raw_loc:,} | {c.rs_files} | {inn[c.name]} |")
+    lines += ["", "## 巨型模块（不一定是叶子）", "", "用户界面、会话宿主和工具实现往往是大模块，同时还会依赖很多底层 crate。它们是拆分五十多个面板时最值得对照的地方。", "", "| crate | 用途 | source LOC | raw LOC | .rs 文件 | 入度 | 出度 |", "|---|---|---:|---:|---:|---:|---:|"]
+    for c in largest[:12]:
+        lines.append(f"| `{c.name}` | {c.description} | {c.source_loc:,} | {c.raw_loc:,} | {c.rs_files} | {inn[c.name]} | {out[c.name]} |")
+    lines += ["", "## 按功能分组", "", "| 分组 | crate 数 | source LOC | 这一组负责什么 |", "|---|---:|---:|---|"]
+    for family in sorted(by_family):
+        members = by_family[family]
+        lines.append(f"| `{family}` | {len(members)} | {sum(c.source_loc for c in members):,} | {family_what.get(family, '根据目录归类')} |")
+    lines += ["", "## 入度排行（谁被最多模块使用）", "", "| crate | 入度 | 出度 | source LOC | 用途 |", "|---|---:|---:|---:|---|"]
+    for n in top_in:
+        c = g.crates[n]
+        lines.append(f"| `{n}` | {inn[n]} | {out[n]} | {c.source_loc:,} | {c.description} |")
+    lines += ["", "## 出度排行（谁在编排最多模块）", "", "| crate | 出度 | 入度 | source LOC | 用途 |", "|---|---:|---:|---:|---|"]
+    for n in top_out:
+        c = g.crates[n]
+        lines.append(f"| `{n}` | {out[n]} | {inn[n]} | {c.source_loc:,} | {c.description} |")
+    lines += ["", "## 完整 crate 清单", "", "| crate | 分组 | 用途 | source LOC | raw LOC | 测试 LOC | .rs 文件 | 入度 | 出度 | 角色 | 路径 |", "|---|---|---|---:|---:|---:|---:|---:|---:|---|---|"]
+    for n in sorted(g.crates):
+        c = g.crates[n]
+        role = "leaf" if out[n] == 0 else "";
+        role += "/root" if inn[n] == 0 else ""
+        role = role or "internal"
+        lines.append(f"| `{n}` | `{c.family}` | {c.description} | {c.source_loc:,} | {c.raw_loc:,} | {c.test_loc:,} | {c.rs_files} | {inn[n]} | {out[n]} | {role} | `{c.rel}` |")
+    lines += ["", "## WhyBuddy 对照时最有价值的模块", "", "| grok-build 模块 | 价值 | WhyBuddy 当前对应方向 |", "|---|---|---|"]
+    alignment = [
+        ("xai-grok-shell", "完整会话宿主、命令循环、生命周期；是最大的产品编排层", "WhyBuddy control plane / session / SSE"),
+        ("xai-grok-tools", "工具协议和实现的集中入口，决定模型能做什么", "WhyBuddy capability/tool executor"),
+        ("xai-grok-workspace", "文件、VCS、执行、发现和 preview 的宿主能力", "WhyBuddy workspace + generated app runtime"),
+        ("xai-grok-pager", "终端 UI 巨型叶子，包含大量面板和交互状态", "WhyBuddy 五十多个面板的拆分参考"),
+        ("xai-grok-agent", "Agent 定义、提示词和工具装配", "WhyBuddy agent loop / planning"),
+        ("xai-computer-hub-sdk", "浏览器/电脑控制的 SDK 与连接池", "WhyBuddy sandbox + browser runtime 缺口"),
+        ("xai-grok-memory", "会话记忆和持久化相关能力", "WhyBuddy memory / charter"),
+        ("xai-codebase-graph", "用 tree-sitter 生成代码图", "WhyBuddy architecture graph 生成器"),
+    ]
+    for crate, value, wb in alignment:
+        if crate in g.crates:
+            lines.append(f"| `{crate}` | {value} | {wb} |")
+    lines += ["", "## 数据来源与限制", "", "- 依赖边来自各 crate 的 `Cargo.toml`，只保留 workspace 内部运行时依赖，忽略 `dev-dependencies`。",
+              "- 用途优先取 `Cargo.toml` 的 `description`，没有时取 crate README 或顶层模块注释；仍没有时会标记为“根据 crate 名称和目录推断”。",
+              "- 这份清单描述的是静态 crate 结构。它不能单独证明某个模块在生产启动链路上一定会被调用；运行链路仍要结合入口、feature 和真实 smoke。", ""]
+    return "\n".join(lines)
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         fn = getattr(stream, "reconfigure", None)
@@ -499,6 +660,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--root", help="grok-build 源码根目录")
     ap.add_argument("--emit", action="store_true", help="写 docs/grok-build 架构图（自动生成）.md")
+    ap.add_argument("--overview", action="store_true", help="写 docs/grok-build 模块总览（自动生成）.md")
     ap.add_argument("--report", action="store_true", help="人看的摘要")
     args = ap.parse_args(argv)
 
@@ -508,6 +670,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         DIAGRAM.write_text(render_doc(g), encoding="utf-8")
         print(f"已生成 {DIAGRAM.relative_to(REPO)}")
         _report(g)
+    if args.overview:
+        OVERVIEW.parent.mkdir(parents=True, exist_ok=True)
+        OVERVIEW.write_text(render_overview(g), encoding="utf-8")
+        print(f"已生成 {OVERVIEW.relative_to(REPO)}")
+        _report(g)
+    if args.emit or args.overview:
         return 0
     _report(g)
     return 0

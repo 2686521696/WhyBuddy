@@ -4,6 +4,7 @@
 > grok-build 自己一张架构图都没有：边写在各 crate 的 `Cargo.toml` 里，
 > cargo 编译器强制。本文件只是把那些声明画出来，方便和 WhyBuddy 对照。
 > grok-build 源码不进本仓。
+> 模块用途、source LOC、叶子排行和 WhyBuddy 对照见 `docs/grok-build 模块总览（自动生成）.md`。
 
 - 对照物路径：`C:\Users\wangchunji\Documents\grok-build`
 - `SOURCE_REV`：`c4ea71cfdbcdb21e32e41bc25a0043d7d4836714`
@@ -51,8 +52,8 @@ flowchart LR
   c_xai_tool_protocol["xai-tool-protocol<br/>Wire-protocol types for the xAI Computer…"]
   c_xai_tool_types["xai-tool-types<br/>Canonical tool-description types for the…"]
   c_xai_workflow["xai-workflow<br/>Rhai-scripted dynamic workflow engine: s…"]
-  c_xai_grok_shell["xai-grok-shell<br/>xai-grok-shell"]
-  c_xai_agent_lifecycle["xai-agent-lifecycle<br/>xai-agent-lifecycle"]
+  c_xai_grok_shell["xai-grok-shell<br/>Grok"]
+  c_xai_agent_lifecycle["xai-agent-lifecycle<br/>Host-agnostic agent lifecycle hooks shar…"]
   c_xai_chat_state["xai-chat-state<br/>Actor-based chat state management for xA…"]
   c_xai_grok_hooks["xai-grok-hooks<br/>Runtime hook system for Grok — file-base…"]
   c_xai_grok_mcp["xai-grok-mcp<br/>MCP integration crate. Quarantines rmcp …"]
@@ -482,10 +483,10 @@ flowchart TB
 | `prod-mc-cli-chat-proxy-types` | prod | 11 | 5 | 0 | `prod/mc/cli-chat-proxy-types` | Lightweight request/response types for cli-chat-proxy API |
 | `ptyctl` | codegen | 8 | 2 | 0 | `crates/codegen/ptyctl` | Headless PTY controller built on alacritty_terminal |
 | `ptyctl-cli` | codegen | 6 | 0 | 1 | `crates/codegen/ptyctl-cli` | CLI for ptyctl headless PTY controller |
-| `xai-acp-lib` | codegen | 8 | 6 | 0 | `crates/codegen/xai-acp-lib` |  |
-| `xai-agent-lifecycle` | codegen | 15 | 1 | 0 | `crates/codegen/xai-agent-lifecycle` |  |
+| `xai-acp-lib` | codegen | 8 | 6 | 0 | `crates/codegen/xai-acp-lib` | 根据 crate 名称和目录推断 |
+| `xai-agent-lifecycle` | codegen | 15 | 1 | 0 | `crates/codegen/xai-agent-lifecycle` | Host-agnostic agent lifecycle hooks shared by multiple agent hosts (e.g. xai-grok-shell). |
 | `xai-chat-state` | codegen | 18 | 1 | 4 | `crates/codegen/xai-chat-state` | Actor-based chat state management for xAI agents |
-| `xai-circuit-breaker` | common | 19 | 2 | 0 | `crates/common/xai-circuit-breaker` |  |
+| `xai-circuit-breaker` | common | 19 | 2 | 0 | `crates/common/xai-circuit-breaker` | Shared circuit breaker. |
 | `xai-codebase-graph` | codegen | 27 | 2 | 1 | `crates/codegen/xai-codebase-graph` | High-performance code graph generation using tree-sitter queries |
 | `xai-compaction-transcript` | codegen | 1 | 2 | 1 | `crates/codegen/xai-compaction-transcript` | Markdown rendering of compacted conversation segments and the on-disk segment-store naming convention |
 | `xai-computer-hub-core` | common | 16 | 2 | 3 | `crates/common/xai-computer-hub-core` | Transport, ToolRegistry, and resolver abstractions for the xAI Computer Hub |
@@ -520,26 +521,26 @@ flowchart TB
 | `xai-grok-markdown` | codegen | 27 | 2 | 2 | `crates/codegen/xai-grok-markdown` | Streaming markdown renderer for terminal UIs |
 | `xai-grok-markdown-core` | codegen | 1 | 1 | 0 | `crates/codegen/xai-grok-markdown-core` | Headless markdown analysis sharing Grok Build's exact pulldown-cmark config. |
 | `xai-grok-mcp` | codegen | 18 | 3 | 11 | `crates/codegen/xai-grok-mcp` | MCP integration crate. Quarantines rmcp + reqwest 0.13 (rmcp 3.x requires reqwest >= 0.13.2 while the rest of the workspace uses reqwest 0.12) and owns the MCP credential store and OAuth flow orchestrator. |
-| `xai-grok-memory` | codegen | 25 | 2 | 7 | `crates/codegen/xai-grok-memory` |  |
+| `xai-grok-memory` | codegen | 25 | 2 | 7 | `crates/codegen/xai-grok-memory` | Cross-session memory for Grok. |
 | `xai-grok-mermaid` | codegen | 7 | 1 | 2 | `crates/codegen/xai-grok-mermaid` | Render Mermaid diagram source to a rasterized PNG behind a swappable engine trait |
 | `xai-grok-models` | codegen | 1 | 2 | 0 | `crates/codegen/xai-grok-models` | Default model IDs for the grok CLI, loaded from the embedded default_models.json. |
 | `xai-grok-otel` | codegen | 8 | 5 | 4 | `crates/codegen/xai-grok-otel` | OpenTelemetry foundation for Grok Build: W3C trace-context propagation, the OTLP HTTP client, and the tracing->OTLP span layer/provider |
-| `xai-grok-pager` | codegen | 604 | 2 | 36 | `crates/codegen/xai-grok-pager` |  |
-| `xai-grok-pager-bin` | codegen | 2 | 0 | 15 | `crates/codegen/xai-grok-pager-bin` |  |
+| `xai-grok-pager` | codegen | 604 | 2 | 36 | `crates/codegen/xai-grok-pager` | xai-grok-pager |
+| `xai-grok-pager-bin` | codegen | 2 | 0 | 15 | `crates/codegen/xai-grok-pager-bin` | 根据 crate 名称和目录推断 |
 | `xai-grok-pager-diff` | codegen | 1 | 2 | 1 | `crates/codegen/xai-grok-pager-diff` | Diff hunk construction for the Grok Build TUI |
-| `xai-grok-pager-minimal` | codegen | 12 | 1 | 6 | `crates/codegen/xai-grok-pager-minimal` |  |
+| `xai-grok-pager-minimal` | codegen | 12 | 1 | 6 | `crates/codegen/xai-grok-pager-minimal` | Minimal (scrollback-native) render mode: `grok --minimal`. |
 | `xai-grok-pager-pty-harness` | codegen | 275 | 0 | 3 | `crates/codegen/xai-grok-pager-pty-harness` | Shared PTY harness + scenario library for xai-grok-pager e2e tests and benchmarks. |
-| `xai-grok-pager-render` | codegen | 79 | 1 | 12 | `crates/codegen/xai-grok-pager-render` |  |
+| `xai-grok-pager-render` | codegen | 79 | 1 | 12 | `crates/codegen/xai-grok-pager-render` | 根据 crate 名称和目录推断 |
 | `xai-grok-paths` | codegen | 1 | 5 | 0 | `crates/codegen/xai-grok-paths` | Type-safe path wrappers for absolute and relative UTF-8 paths |
-| `xai-grok-plugin-marketplace` | codegen | 11 | 2 | 5 | `crates/codegen/xai-grok-plugin-marketplace` |  |
+| `xai-grok-plugin-marketplace` | codegen | 11 | 2 | 5 | `crates/codegen/xai-grok-plugin-marketplace` | Provides marketplace source configuration and plugin discovery, indexed with a filesystem fallback. |
 | `xai-grok-sampler` | codegen | 40 | 4 | 4 | `crates/codegen/xai-grok-sampler` | Actor-based sampling/inference layer for xAI grok (HTTP streaming + retry, no shell coupling) |
 | `xai-grok-sampling-types` | codegen | 16 | 6 | 3 | `crates/codegen/xai-grok-sampling-types` | Pure data types for the xAI sampling / chat-completion API layer |
 | `xai-grok-sandbox` | codegen | 22 | 8 | 2 | `crates/codegen/xai-grok-sandbox` | OS-level sandboxing for Grok Build using kernel primitives (Landlock/Seatbelt) via nono |
 | `xai-grok-secrets` | codegen | 2 | 3 | 0 | `crates/codegen/xai-grok-secrets` | Regex sanitizer for Grok Build outbound data (Sentry / Mixpanel / product-event scrubbing) |
 | `xai-grok-session-events` | codegen | 4 | 4 | 0 | `crates/codegen/xai-grok-session-events` | Typed per-session event log written as JSON lines |
 | `xai-grok-session-search` | codegen | 10 | 1 | 3 | `crates/codegen/xai-grok-session-search` | SQLite FTS5 index over local grok sessions: lease-guarded bootstrap, debounced incremental upserts, and BM25 ranked query |
-| `xai-grok-shared` | codegen | 9 | 3 | 7 | `crates/codegen/xai-grok-shared` |  |
-| `xai-grok-shell` | codegen | 633 | 4 | 58 | `crates/codegen/xai-grok-shell` |  |
+| `xai-grok-shared` | codegen | 9 | 3 | 7 | `crates/codegen/xai-grok-shared` | Shared utilities used by both `xai-grok-shell` and its downstream clients (e.g. `xai-grok-pager-render`). |
+| `xai-grok-shell` | codegen | 633 | 4 | 58 | `crates/codegen/xai-grok-shell` | Grok |
 | `xai-grok-shell-base` | codegen | 13 | 2 | 7 | `crates/codegen/xai-grok-shell-base` | Foundation modules for the grok shell crate family: environment presets, CPU profiling, and process/filesystem utilities. |
 | `xai-grok-shell-session-support` | codegen | 2 | 1 | 3 | `crates/codegen/xai-grok-shell-session-support` | Session-support modules for the grok shell crate family: managed MCP gateway catalog/call caching and file-access tracking. |
 | `xai-grok-shell-terminal` | codegen | 11 | 1 | 7 | `crates/codegen/xai-grok-shell-terminal` | Local, ACP, and PTY terminal runners extracted from xai-grok-shell so they compile in parallel. |
@@ -549,7 +550,7 @@ flowchart TB
 | `xai-grok-test-support` | codegen | 14 | 1 | 2 | `crates/codegen/xai-grok-test-support` | Shared test-support for grok-build crates: mock inference server, SSE generators, ACP stdio client, headless runner, env sandbox |
 | `xai-grok-tools` | codegen | 270 | 14 | 22 | `crates/codegen/xai-grok-tools` | Grok tools library |
 | `xai-grok-tools-api` | codegen | 5 | 3 | 2 | `crates/codegen/xai-grok-tools-api` | Protobuf API definitions for Grok tools |
-| `xai-grok-update` | codegen | 16 | 2 | 7 | `crates/codegen/xai-grok-update` |  |
+| `xai-grok-update` | codegen | 16 | 2 | 7 | `crates/codegen/xai-grok-update` | 根据 crate 名称和目录推断 |
 | `xai-grok-version` | codegen | 2 | 18 | 0 | `crates/codegen/xai-grok-version` | Lockstepped grok CLI version. |
 | `xai-grok-voice` | codegen | 18 | 1 | 3 | `crates/codegen/xai-grok-voice` | Voice dictation (streaming STT) for Grok Build CLI |
 | `xai-grok-workspace` | codegen | 113 | 6 | 34 | `crates/codegen/xai-grok-workspace` | Core host-local workspace library (FS, VCS, execution, discovery) for xai-grok-shell and remote sampler |
@@ -559,12 +560,12 @@ flowchart TB
 | `xai-hooks-plugins-types` | codegen | 1 | 3 | 0 | `crates/codegen/xai-hooks-plugins-types` | Shared DTO types for hooks/plugins ACP extensions (wire format only) |
 | `xai-hunk-tracker` | codegen | 17 | 2 | 1 | `crates/codegen/xai-hunk-tracker` | Track file hunks (diffs) with agent/external attribution |
 | `xai-interjection-core` | common | 4 | 2 | 0 | `crates/common/xai-interjection-core` | Shared mid-turn interjection buffer and formatting for the client and server agent loops |
-| `xai-message-delivery-core` | common | 8 | 2 | 0 | `crates/common/xai-message-delivery-core` |  |
+| `xai-message-delivery-core` | common | 8 | 2 | 0 | `crates/common/xai-message-delivery-core` | Source-typed message delivery values and operation authorization. |
 | `xai-mixpanel` | codegen | 1 | 1 | 1 | `crates/codegen/xai-mixpanel` | Lightweight Mixpanel HTTP tracking client (replaces mixpanel-rs to avoid pulling reqwest 0.11) |
 | `xai-prompt-queue` | codegen | 3 | 2 | 0 | `crates/codegen/xai-prompt-queue` | Shared prompt-queue wire types for xai-grok-shell and xai-grok-pager |
 | `xai-proto-build` | build | 3 | 1 | 0 | `crates/build/xai-proto-build` | Build protobuf |
-| `xai-ratatui-inline` | codegen | 10 | 3 | 0 | `crates/codegen/xai-ratatui-inline` |  |
-| `xai-ratatui-textarea` | codegen | 14 | 3 | 0 | `crates/codegen/xai-ratatui-textarea` |  |
+| `xai-ratatui-inline` | codegen | 10 | 3 | 0 | `crates/codegen/xai-ratatui-inline` | ratatui-inline |
+| `xai-ratatui-textarea` | codegen | 14 | 3 | 0 | `crates/codegen/xai-ratatui-textarea` | 根据 crate 名称和目录推断 |
 | `xai-sqlite-journal` | codegen | 1 | 5 | 0 | `crates/codegen/xai-sqlite-journal` | Filesystem-aware SQLite journal-mode selection: WAL on local disks, rollback journal on network mounts where WAL's mmap'd -shm is unsafe |
 | `xai-system-power` | codegen | 4 | 1 | 0 | `crates/codegen/xai-system-power` | Cross-platform system sleep/wake (suspend) notifications — used to defer work across a suspend boundary |
 | `xai-test-utils` | common | 6 | 0 | 0 | `crates/common/xai-test-utils` | Shared test utilities: hermetic git, optional runfiles helpers |
@@ -572,7 +573,7 @@ flowchart TB
 | `xai-tool-protocol` | common | 23 | 10 | 1 | `crates/common/xai-tool-protocol` | Wire-protocol types for the xAI Computer Hub |
 | `xai-tool-runtime` | common | 18 | 8 | 3 | `crates/common/xai-tool-runtime` | Unified Tool trait, dispatch trait, error taxonomy, notifications, and search index for the xAI Computer Hub |
 | `xai-tool-types` | common | 7 | 12 | 0 | `crates/common/xai-tool-types` | Canonical tool-description types for the xAI platform |
-| `xai-tracing` | common | 8 | 2 | 0 | `crates/common/xai-tracing` |  |
+| `xai-tracing` | common | 8 | 2 | 0 | `crates/common/xai-tracing` | 根据 crate 名称和目录推断 |
 | `xai-tracing-macros` | codegen | 3 | 1 | 0 | `crates/codegen/xai-tracing-macros` | Tracing-based utility macros for timestamped logging and timing |
 | `xai-tty-utils` | codegen | 12 | 19 | 0 | `crates/codegen/xai-tty-utils` | Lightweight process-spawning utilities for TTY safety — detach from controlling terminal, suppress interactive pagers, process-group lifecycle |
 | `xai-workflow` | codegen | 8 | 1 | 0 | `crates/codegen/xai-workflow` | Rhai-scripted dynamic workflow engine: scripts orchestrate agents through a host channel |

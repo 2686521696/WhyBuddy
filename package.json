@@ -36,6 +36,7 @@
     "arch:py:emit": "node scripts/arch-graph-all.mjs --emit --only=py",
     "arch:grok": "node scripts/arch-graph-all.mjs --report --only=grok",
     "arch:grok:emit": "node scripts/arch-graph-all.mjs --emit --only=grok",
+    "arch:grok:overview": "node scripts/arch-graph-all.mjs --overview --only=grok",
     "arch": "node scripts/arch-graph-all.mjs --report",
     "arch:check": "node scripts/arch-graph-all.mjs --check",
     "arch:emit": "node scripts/arch-graph-all.mjs --emit",

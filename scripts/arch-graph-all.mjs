@@ -58,17 +58,17 @@ function run(label, cmd, args, opts = {}) {
 }
 
 function main(argv) {
-  const flag = argv.find(a => ["--emit", "--check", "--report"].includes(a)) || "--report";
+  const flag = argv.find(a => ["--emit", "--check", "--report", "--overview"].includes(a)) || "--report";
   const onlyArg = argv.find(a => a.startsWith("--only="));
   const only = onlyArg ? onlyArg.slice("--only=".length).trim() : "";
   const wants = name => !only || only === name;
   const py = pythonExe();
   let failed = 0;
 
-  if (wants("py")) {
+  if (wants("py") && flag !== "--overview") {
     failed += run("Python 侧", py, ["slide-rule-python/arch_graph.py", flag]) ? 1 : 0;
   }
-  if (wants("ts")) {
+  if (wants("ts") && flag !== "--overview") {
     failed += run("TS 侧", process.execPath, ["scripts/arch-graph-ts.mjs", flag]) ? 1 : 0;
   }
   if (!wants("grok")) {
