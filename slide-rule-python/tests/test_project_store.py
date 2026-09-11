@@ -424,8 +424,8 @@ def test_invalid_or_unleased_write_does_not_consume_history_budget(store):
     assert budget["reserved_revisions"] == 1 and budget["reserved_bytes"] == 10
 
 
-def runtime_operation(store, project, key="runtime-1", worker="worker", ttl=120):
-    op = store.create_operation(project.projectId, owner_id="alice", kind="runtime.start",
+def runtime_operation(store, project, key="runtime-1", worker="worker", ttl=120, kind="runtime.start"):
+    op = store.create_operation(project.projectId, owner_id="alice", kind=kind,
         idempotency_key=key, expected_revision=project.currentRevision, approval_ref="plan-1")
     lease = store.acquire_lease(project.projectId, owner_id="alice", lease_owner=worker, ttl_seconds=ttl)
     op = store.claim_operation(op.operationId, owner_id="alice", generation=lease.generation, lease_owner=worker)
@@ -548,11 +548,12 @@ def test_flush_cas_does_not_clear_a_replacement_outbox(store, monkeypatch):
     assert [event.seq for event in store.list_events(op.operationId, owner_id="alice")] == [1, 2]
 
 
-def test_recovery_replays_old_outbox_then_records_reconciling_without_losing_cancel(store, monkeypatch):
+@pytest.mark.parametrize("kind", ["runtime.start", "runtime.exec"])
+def test_recovery_replays_old_outbox_then_records_reconciling_without_losing_cancel(store, monkeypatch, kind):
     project = create(store)
     clock = [1000.0]
     monkeypatch.setattr(module.time, "time", lambda: clock[0])
-    op, old, runtime = runtime_operation(store, project, worker="old", ttl=10)
+    op, old, runtime = runtime_operation(store, project, worker="old", ttl=10, kind=kind)
     runtime_update(store, op, old, runtime.model_copy(update={"status": "ready", "processId": "42"}))
     store.request_operation_cancel(op.operationId, owner_id="alice")
     clock[0] += 11
@@ -570,13 +571,14 @@ def test_recovery_replays_old_outbox_then_records_reconciling_without_losing_can
 
 
 @pytest.mark.parametrize("crash_after_event_insert", [False, True])
-def test_terminal_outbox_survives_database_reopen_and_fenced_takeover(tmp_path, monkeypatch, crash_after_event_insert):
+@pytest.mark.parametrize("kind", ["runtime.start", "runtime.exec"])
+def test_terminal_outbox_survives_database_reopen_and_fenced_takeover(tmp_path, monkeypatch, crash_after_event_insert, kind):
     url = f"sqlite:///{tmp_path / 'runtime-restart.db'}"
     first = ProjectStore.from_url(url)
     clock = [1000.0]
     monkeypatch.setattr(module.time, "time", lambda: clock[0])
     project = create(first)
-    op, old, runtime = runtime_operation(first, project, worker="old", ttl=10)
+    op, old, runtime = runtime_operation(first, project, worker="old", ttl=10, kind=kind)
     running = runtime_update(first, op, old, runtime)
     failed = runtime_update(first, running, old, runtime.model_copy(update={"status": "failed", "errorCode": "install_failed"}), status="failed")
     if crash_after_event_insert:

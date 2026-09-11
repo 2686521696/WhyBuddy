@@ -375,6 +375,15 @@ class ProjectStore:
     def get_operation(self, operation_id: str, *, owner_id: str) -> ProjectOperation:
         return ProjectOperation.model_validate_json(self._operation_row(operation_id, owner_id)["payload"])
 
+    def list_project_operations(self, project_id: str, *, owner_id: str,
+                                after_id: str = "", limit: int = 9) -> list[ProjectOperation]:
+        self.get_project(project_id, owner_id=owner_id)
+        if not 1 <= limit <= 100 or len(after_id) > 240:
+            raise ValueError("invalid_operation_cursor")
+        rows = self._q("select o.payload from wb_project_operation o join wb_project p on p.id=o.project_id where o.project_id=$1 and p.owner_id=$2 and o.id>$3 order by o.id limit $4",
+            [project_id, owner_id, after_id, limit])
+        return [ProjectOperation.model_validate_json(row["payload"]) for row in rows]
+
     def list_runnable_operations(self, *, limit: int = 100) -> list[tuple[ProjectOperation, str]]:
         """Trusted worker scan, including terminal rows whose outbox needs repair."""
         if not 1 <= limit <= 1000:
@@ -396,7 +405,7 @@ class ProjectStore:
                     prior = self.get_operation(prior_id, owner_id=row["owner_id"])
                     if prior.status not in _TERMINAL_OPERATIONS or prior.pendingEvent is not None:
                         continue
-                if operation.kind == "runtime.start" and (operation.status not in _TERMINAL_OPERATIONS or operation.pendingEvent is not None):
+                if operation.kind in {"runtime.start", "runtime.exec"} and (operation.status not in _TERMINAL_OPERATIONS or operation.pendingEvent is not None):
                     selected.append((operation, row["owner_id"]))
                     if len(selected) == limit:
                         break
@@ -520,7 +529,7 @@ class ProjectStore:
             return operation
         if operation.leaseGeneration is not None and operation.leaseGeneration >= generation:
             raise ProjectConflict("workspace_lease_lost")
-        managed_runtime = operation.kind == "runtime.start" and operation.runtime is not None
+        managed_runtime = operation.kind in {"runtime.start", "runtime.exec"} and operation.runtime is not None
         updated = operation.model_copy(update={
             "leaseGeneration": generation, "leaseOwner": lease_owner,
             "status": operation.status if managed_runtime or operation.status == "queued" else "interrupted", "updatedAt": _now(),

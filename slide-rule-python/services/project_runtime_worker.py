@@ -2,12 +2,12 @@
 
 This is an execution supervisor, not an agent loop. A runtime.start operation
 owns the managed runtime until cancellation, idle/total budget expiry, or failure.
+A runtime.exec operation owns one fixed check/build/test command and its sandbox.
 Every side effect has a saved phase; uncertain dispatches are never replayed.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import threading
@@ -16,32 +16,30 @@ import uuid
 from typing import Callable
 
 from models.project_runtime import ProjectOperation, RuntimeInstance
+from services.project_authority import approved_reference
+from services.project_creation import load_authorized_session
 from services.project_runtime import REVISION_FILE, _LeaseHeartbeat, _timestamp
-from services.project_store import ProjectConflict, ProjectNotFound, ProjectStore, ProjectStoreUnavailable
-from services.scope_authority import latest_control_plan, plan_execution_authorized
-from services.slide_rule_session import load_session
+from services.project_store import ProjectConflict, ProjectStore, ProjectStoreUnavailable
 from services.workspace_provider import WorkspaceHandle, WorkspaceProvider, WorkspaceProviderError
 
 logger = logging.getLogger(__name__)
 TERMINAL = {"completed", "cancelled", "failed"}
+PROJECT_COMMANDS = {"check", "build", "test"}
 
 
-def approved_reference(state) -> str:
-    plan = latest_control_plan(state)
-    digest = hashlib.sha256(str(plan.get("planContent", "")).encode("utf-8")).hexdigest()
-    return f"{plan.get('planId')}:{plan.get('revision')}:{digest}"
+class ProjectExecutionRejected(ProjectConflict):
+    """The request is stale; unlike a lost lease, it can be failed by its owner."""
 
 
 def authorize_operation(store: ProjectStore, operation: ProjectOperation, owner_id: str) -> None:
     project = store.get_project(operation.projectId, owner_id=owner_id)
-    state = load_session(project.sessionId)
-    if state is None or str(state.ownerId or "") != owner_id:
-        raise ProjectNotFound("project_not_found")
+    state = load_authorized_session(project.sessionId, owner_id=owner_id, approval_ref=operation.approvalRef)
+    if state.runtimeKind != "project" or state.projectId != project.projectId:
+        raise ProjectExecutionRejected("project_session_binding_required")
     revision = store.get_revision(project.projectId, owner_id=owner_id)
     if revision.revision != operation.expectedRevision:
-        raise ProjectConflict("project_revision_conflict")
-    if (not plan_execution_authorized(state) or operation.approvalRef != approved_reference(state)
-            or revision.planRef != operation.approvalRef):
+        raise ProjectExecutionRejected("project_revision_conflict")
+    if revision.planRef != operation.approvalRef:
         raise PermissionError("project_plan_approval_required")
 
 
@@ -121,6 +119,23 @@ class ProjectRuntimeSupervisor:
         self._wake.set()
         return operation
 
+    def submit_command(self, project_id: str, *, owner_id: str, expected_revision: str,
+                       approval_ref: str, idempotency_key: str, command: str = "check") -> ProjectOperation:
+        if not self.running:
+            raise ProjectStoreUnavailable("project_worker_unavailable")
+        if not isinstance(command, str) or command not in PROJECT_COMMANDS:
+            raise ValueError("invalid_project_command")
+        project = self.store.get_project(project_id, owner_id=owner_id)
+        candidate = ProjectOperation(operationId="pending", projectId=project_id, sessionId=project.sessionId,
+            kind="runtime.exec", idempotencyKey=idempotency_key, requestHash="", expectedRevision=expected_revision,
+            approvalRef=approval_ref, createdAt=_timestamp(), updatedAt=_timestamp())
+        self.authorizer(self.store, candidate, owner_id)
+        operation = self.store.create_operation(project_id, owner_id=owner_id, kind="runtime.exec",
+            idempotency_key=idempotency_key, expected_revision=expected_revision, approval_ref=approval_ref,
+            input={"command": command})
+        self._wake.set()
+        return operation
+
     def cancel(self, operation_id: str, *, owner_id: str) -> ProjectOperation:
         operation = self.store.request_operation_cancel(operation_id, owner_id=owner_id)
         self._wake.set()
@@ -178,9 +193,12 @@ class ProjectRuntimeSupervisor:
                 except _Cancel:
                     context.finish("cancelled", "stopped", "user_cancelled")
                 except _Expired:
-                    context.finish("completed", "expired", "runtime_budget_exhausted")
+                    context.finish("failed" if original.kind == "runtime.exec" else "completed",
+                        "expired", "runtime_budget_exhausted")
                 except _Shutdown:
                     context.suspend("worker_shutdown")
+                except ProjectExecutionRejected as exc:
+                    context.finish("failed", "failed", str(exc))
                 except (ProjectConflict, ProjectStoreUnavailable):
                     # Ownership or durable-state uncertainty forbids further IO.
                     raise
@@ -217,6 +235,9 @@ class _RuntimeTask:
         self.log_offsets: dict[str, int] = {}
         self.result = dict(original.result or {})
         self.result.setdefault("idleSeconds", supervisor.idle_seconds)
+        if original.kind == "runtime.exec":
+            self.result.setdefault("command", original.input.get("command"))
+            self.result.setdefault("exitCode", None)
 
     def set_provider(self, provider):
         self.provider = provider
@@ -230,6 +251,8 @@ class _RuntimeTask:
         self.runtime = self.runtime.model_copy(update={"status": phase, "errorCode": error,
             "health": "revision_verified" if phase == "ready" else "unknown", "lastHeartbeat": _timestamp()})
         self.result["phase"] = phase
+        if self.original.kind == "runtime.exec":
+            self.result["errorCode"] = error
         current = self.operation()
         self.store.update_runtime_operation(self.operation_id, owner_id=self.owner_id,
             lease_generation=self.lease.generation, lease_owner=self.lease.leaseOwner,
@@ -276,6 +299,9 @@ class _RuntimeTask:
             return
         self.check()
         self.supervisor.authorizer(self.store, self.original, self.owner_id)
+        command = self.original.input.get("command") if self.original.kind == "runtime.exec" else None
+        if self.original.kind == "runtime.exec" and (not isinstance(command, str) or command not in PROJECT_COMMANDS):
+            raise ValueError("invalid_project_command")
         if self.original.runtime is None:
             self.save("provisioning")
             files = self.store.read_files(self.original.projectId, self.original.expectedRevision, owner_id=self.owner_id)
@@ -309,7 +335,8 @@ class _RuntimeTask:
             self.provider.connect(self.handle)
             self.heartbeat.handle = self.handle
             phase = self.result.get("phase") or self.original.runtime.status
-            if phase not in {"installing", "starting", "ready"}:
+            phases = {"installing", "executing"} if self.original.kind == "runtime.exec" else {"installing", "starting", "ready"}
+            if phase not in phases:
                 raise WorkspaceProviderError("runtime_dispatch_uncertain")
             self.save(phase)
         if phase == "installing":
@@ -328,14 +355,26 @@ class _RuntimeTask:
                 if self.logs(pid) == previous:
                     break
             if installed.exit_code != 0:
+                if self.original.kind == "runtime.exec":
+                    self.result["installExitCode"] = installed.exit_code
                 raise WorkspaceProviderError("project_dependency_install_failed", result=installed)
             self.check()
-            self.result["phaseDeadline"] = time.time() + self.supervisor.ready_timeout
-            self.save("starting")
-            started = self.provider.start_process(self.handle,
-                f"npm run dev -- --host 0.0.0.0 --port {self.runtime.port} --strictPort", timeout_seconds=900)
-            self._register("server", started.process_id)
-            phase = "starting"
+            self.supervisor.authorizer(self.store, self.original, self.owner_id)
+            if self.original.kind == "runtime.exec":
+                self.save("executing")
+                executed = self.provider.start_process(self.handle, f"npm run {command}", timeout_seconds=900)
+                self._register("command", executed.process_id)
+                phase = "executing"
+            else:
+                self.result["phaseDeadline"] = time.time() + self.supervisor.ready_timeout
+                self.save("starting")
+                started = self.provider.start_process(self.handle,
+                    f"npm run dev -- --host 0.0.0.0 --port {self.runtime.port} --strictPort", timeout_seconds=900)
+                self._register("server", started.process_id)
+                phase = "starting"
+        if self.original.kind == "runtime.exec":
+            self.run_command()
+            return
         pid = self._process("server")
         self.runtime = self.runtime.model_copy(update={"processId": pid})
         if phase == "starting":
@@ -368,6 +407,29 @@ class _RuntimeTask:
                 self.save("ready")
                 next_health = time.time() + min(30, self.supervisor.lease_ttl / 3)
             self.sleep()
+
+    def run_command(self):
+        pid = self._process("command")
+        self.runtime = self.runtime.model_copy(update={"processId": pid})
+        self.save("executing")
+        while True:
+            self.check()
+            self.logs(pid)
+            if not self.provider.is_process_running(self.handle, pid):
+                break
+            self.sleep()
+        executed = self.provider.process_result(self.handle, pid)
+        self.result["exitCode"] = executed.exit_code
+        while True:
+            previous = self.log_offsets.get(pid, 0)
+            if self.logs(pid) == previous:
+                break
+        if executed.exit_code is None:
+            raise WorkspaceProviderError("project_command_result_unknown", result=executed)
+        if executed.exit_code != 0:
+            raise WorkspaceProviderError("project_command_failed", result=executed)
+        self.check()
+        self.finish("completed", "stopped", None)
 
     def _register(self, key, pid):
         if not pid:

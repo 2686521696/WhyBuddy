@@ -10,6 +10,8 @@ import pytest
 from control_turn_support import KEY, client, new_sid, seed_session
 from models.v5_state import V5SessionState
 from services.slide_rule_session import load_session, save_session
+from services import persistence
+from services.project_authority import approved_reference
 
 
 PROJECT_FIELDS = {
@@ -17,6 +19,22 @@ PROJECT_FIELDS = {
     "projectId": "project-owned",
     "projectRevision": "revision-owned",
 }
+
+
+def bind_project(state, path=None):
+    plan = {"planId": "plan-binding", "revision": 1, "planContent": "Create a source project", "reqId": "approve-binding"}
+    state = state.model_copy(update={"controlTranscript": [
+        {**plan, "kind": kind} for kind in ("plan_written", "plan_approval", "plan_approved")
+    ]})
+    assert persistence.save_session_record(state, path, server_write=True)["ok"]
+    reference = approved_reference(state)
+    result = persistence.save_session_record(state.model_copy(update=PROJECT_FIELDS), path,
+        server_write=True, project_binding_approval=reference)
+    assert result["ok"]
+    sink = persistence.get_cache_sink()
+    if sink is not None:
+        sink(state.sessionId, result["state"])
+    return result["state"]
 
 
 def test_old_sessions_keep_the_html_runtime():
@@ -45,8 +63,7 @@ def test_client_put_cannot_claim_a_project_or_browser_success():
 def test_client_snapshot_cannot_erase_or_replace_existing_project(incoming):
     sid = new_sid("project-roundtrip")
     state = seed_session(sid)
-    state = state.model_copy(update=PROJECT_FIELDS)
-    save_session(state, server_write=True, require_durable=True)
+    state = bind_project(state)
     response = client.put(f"/api/sliderule/sessions/{sid}", headers=KEY, json={
         "sessionId": sid, "goal": state.goal, **incoming,
     })
@@ -58,8 +75,7 @@ def test_client_snapshot_cannot_erase_or_replace_existing_project(incoming):
 def test_late_html_driver_cannot_clear_server_project_reference():
     sid = new_sid("project-stale-driver")
     stale = seed_session(sid).model_copy(deep=True)
-    current = stale.model_copy(update=PROJECT_FIELDS)
-    save_session(current, server_write=True, require_durable=True)
+    bind_project(stale)
     stale.lastTurnId = "999999"
     save_session(stale, server_write=True, require_durable=True)
     stored = load_session(sid)
@@ -86,8 +102,8 @@ def project_persistence(request, tmp_path, monkeypatch):
     monkeypatch.setattr(persistence, "_blob_store", lambda _path=None: database)
     path = tmp_path / "sessions.json"
     state = V5SessionState(sessionId="project-revisions", ownerId="alice", goal={"text": "current goal"},
-        lastTurnId="turn-2", **PROJECT_FIELDS)
-    assert persistence.save_session_record(state, path, server_write=True)["ok"]
+        lastTurnId="turn-2")
+    state = bind_project(state, path)
     yield persistence, path, state, database
     if database is not None:
         database._engine.dispose()
@@ -152,3 +168,13 @@ def test_project_reference_cas_rechecks_after_database_conflict(project_persiste
         persistence.save_session_record(prior.model_copy(update={"projectRevision": "revision-loser"}), path,
             server_write=True, expected_project_revision=prior.projectRevision)
     assert persistence.load_session_record(prior.sessionId, path)["session"].projectRevision == "revision-winner"
+
+
+@pytest.mark.parametrize("server_write", [False, True])
+def test_ordinary_save_cannot_introduce_first_project_reference(tmp_path, monkeypatch, server_write):
+    monkeypatch.setattr(persistence, "_blob_store", lambda _path=None: None)
+    state = V5SessionState(sessionId="unprivileged-binding", ownerId="alice", goal={}, **PROJECT_FIELDS)
+    path = tmp_path / "sessions.json"
+    assert persistence.save_session_record(state, path, server_write=server_write)["ok"]
+    stored = persistence.load_session_record(state.sessionId, path)["session"]
+    assert stored.runtimeKind == "html-prototype" and stored.projectId is None

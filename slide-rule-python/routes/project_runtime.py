@@ -6,7 +6,6 @@ the explicit cancel endpoint persists intent even while the worker is offline.
 
 from __future__ import annotations
 
-import os
 import time
 from contextlib import contextmanager
 
@@ -17,9 +16,9 @@ from config.settings import settings
 from middlewares.current_user import CurrentUser
 from models.project_runtime import ProjectOperationSnapshot, RuntimeEventPage
 from services.project_runtime_worker import approved_reference as _approved_reference
+from services.project_access import project_access_enabled
+from services.project_creation import create_session_project, load_authorized_session
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStoreUnavailable, get_project_store
-from services.scope_authority import plan_execution_authorized
-from services.slide_rule_session import load_session
 
 
 router = APIRouter(tags=["Project runtime"])
@@ -33,10 +32,13 @@ class StartRuntimeRequest(BaseModel):
     idempotencyKey: str = Field(min_length=1, max_length=256, pattern=r"\S")
 
 
+class CreateProjectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    approvalRef: str = Field(min_length=1, max_length=512)
+
+
 def _internal_gate(viewer) -> None:
-    if (settings.NODE_ENV == "production" or os.getenv("NODE_ENV") == "production"
-            or os.getenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED") != "1"
-            or not viewer.get("is_superuser", False)):
+    if not project_access_enabled(viewer):
         raise HTTPException(status_code=503, detail="project_preview_not_enabled")
 
 
@@ -64,6 +66,24 @@ def _runtime_response(runtime):
         "runtimeId", "workspaceId", "projectId", "revision", "status", "port", "health",
         "lastHeartbeat", "expiresAt", "errorCode",
     )}
+
+
+@router.post("/sessions/{session_id}/project", status_code=201)
+def create_project(session_id: str, body: CreateProjectRequest, viewer: CurrentUser):
+    _internal_gate(viewer)
+    with _store_errors():
+        project = create_session_project(get_project_store(), session_id,
+            owner_id=str(viewer.id), approval_ref=body.approvalRef)
+        return {"project": project.model_dump(mode="json"), "verification": "not_run"}
+
+
+@router.get("/sessions/{session_id}/project")
+def get_session_project(session_id: str, viewer: CurrentUser):
+    _internal_gate(viewer)
+    with _store_errors():
+        load_authorized_session(session_id, owner_id=str(viewer.id), approval_ref=None)
+        project = get_project_store().get_project_for_session(session_id, owner_id=str(viewer.id))
+        return {"project": project.model_dump(mode="json") if project else None, "verification": "not_run"}
 
 
 def _snapshot_response(snapshot):
@@ -101,15 +121,13 @@ def start_project_runtime(project_id: str, body: StartRuntimeRequest, request: R
     with _store_errors():
         store = get_project_store()
         project = store.get_project(project_id, owner_id=owner_id)
-        state = load_session(project.sessionId)
-        if state is None or str(state.ownerId or "") != owner_id:
-            raise ProjectNotFound("project_not_found")
+        state = load_authorized_session(project.sessionId, owner_id=owner_id, approval_ref=body.approvalRef)
+        if state.runtimeKind != "project" or state.projectId != project.projectId:
+            raise ProjectConflict("project_session_binding_required")
         revision = store.get_revision(project_id, owner_id=owner_id)
         if revision.revision != body.expectedRevision:
             raise ProjectConflict("project_revision_conflict")
-        if (not plan_execution_authorized(state)
-                or body.approvalRef != _approved_reference(state)
-                or revision.planRef != body.approvalRef):
+        if revision.planRef != body.approvalRef:
             raise PermissionError("project_plan_approval_required")
         _internal_gate(viewer)
         supervisor = getattr(request.app.state, "project_runtime_supervisor", None)

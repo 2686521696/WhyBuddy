@@ -35,6 +35,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from pydantic import ValidationError
 
 from models.v5_state import V5SessionState
+from services.project_authority import assert_session_authorized, has_generated_application
 
 STORE_FILE = "data/sliderule-sessions.json"
 STORE_FILE_ENV = "SLIDERULE_SESSIONS_FILE"
@@ -673,6 +674,7 @@ def save_session_record(
     *,
     server_write: bool = False,
     expected_project_revision: Optional[str] = None,
+    project_binding_approval: Optional[str] = None,
 ) -> StoreError:
     # Use lock to serialize the entire read-prior + replay-merge + monotonic compare + write.
     # This ensures that on concurrent saves, each entrant re-reads the *latest* committed
@@ -685,7 +687,8 @@ def save_session_record(
     store = _blob_store(store_file)
     if store is not None:
         result = _save_session_record_db(store, state, server_write=server_write,
-                                       expected_project_revision=expected_project_revision)
+                                       expected_project_revision=expected_project_revision,
+                                       project_binding_approval=project_binding_approval)
         if result.get("ok"):
             ckpt_state = result.get("state") if isinstance(result.get("state"), V5SessionState) else state
             ckpt_err = _write_turn_checkpoint(ckpt_state, store_file)
@@ -699,7 +702,8 @@ def save_session_record(
 
         prior = sessions.get(state.sessionId)
         write_state = _resolve_write_state(prior, state, server_write=server_write,
-                                           expected_project_revision=expected_project_revision)
+                                           expected_project_revision=expected_project_revision,
+                                           project_binding_approval=project_binding_approval)
         sessions[write_state.sessionId] = write_state
         result = _write_store(sessions, store_file)
         if not result.get("ok"):
@@ -708,7 +712,10 @@ def save_session_record(
         if ckpt_err:
             return ckpt_err
         _stamp_session_meta(write_state.sessionId, store_file)
-        return {"ok": True, "sessionId": write_state.sessionId}
+        result = {"ok": True, "sessionId": write_state.sessionId}
+        if project_binding_approval is not None:
+            result["state"] = write_state
+        return result
 
 
 def claim_session_record(
@@ -799,6 +806,7 @@ def _resolve_write_state(
     *,
     server_write: bool = False,
     expected_project_revision: Optional[str] = None,
+    project_binding_approval: Optional[str] = None,
 ) -> V5SessionState:
     """决定这次到底该把什么写下去——**判定逻辑的唯一副本**。
 
@@ -840,6 +848,28 @@ def _resolve_write_state(
     if prior is not None and prior.ownerId != state.ownerId:
         raise PersistClosedError("session_owner_changed", "Session ownership changed before save")
     project_updates: Optional[Dict[str, Any]] = None
+    if project_binding_approval is not None:
+        if not server_write:
+            raise PersistClosedError("project_reference_server_only", "Only the project service can bind a project")
+        if prior is None:
+            raise PersistClosedError("project_session_required", "A durable session is required")
+        try:
+            assert_session_authorized(prior, owner_id=str(state.ownerId or ""), approval_ref=project_binding_approval)
+        except PermissionError as exc:
+            raise PersistClosedError(str(exc), "The persisted plan no longer authorizes this project") from exc
+        if state.runtimeKind != "project" or not state.projectId or not state.projectRevision:
+            raise PersistClosedError("project_identity_required", "The project service must supply a complete reference")
+        if prior.projectId and prior.projectId != state.projectId:
+            raise PersistClosedError("project_identity_changed", "The session already belongs to another project")
+        if not prior.projectId and has_generated_application(prior):
+            raise PersistClosedError("project_conversion_required", "Existing applications need an explicit conversion")
+        if prior.projectId is None:
+            project_updates = {"runtimeKind": "project", "projectId": state.projectId,
+                               "projectRevision": state.projectRevision}
+    # Ordinary saves, including stale server snapshots, cannot introduce a first
+    # project pointer. The privileged binding above checks approval inside CAS.
+    if prior is None or not prior.projectId:
+        state = state.model_copy(update={"runtimeKind": "html-prototype", "projectId": None, "projectRevision": None})
     if expected_project_revision is not None:
         if not server_write:
             raise PersistClosedError("project_reference_server_only", "Only the project service can update the revision")
@@ -849,6 +879,10 @@ def _resolve_write_state(
             raise PersistClosedError("project_identity_changed", "A revision update cannot replace the session project")
         project_updates = {"runtimeKind": "project", "projectId": prior.projectId,
                            "projectRevision": state.projectRevision}
+    if project_binding_approval is not None:
+        # A reference update is not a conversation save. A concurrent turn may
+        # have changed scalar fields without growing any collection.
+        return prior.model_copy(update=project_updates or {})
     # Conversation turns and project versions advance independently. A server
     # driver can carry a nonempty but obsolete revision, even in a newer turn.
     if prior is not None and prior.projectId:
@@ -1013,6 +1047,7 @@ def _resolve_write_state(
 def _save_session_record_db(
     store, state: V5SessionState, *, server_write: bool = False,
     expected_project_revision: Optional[str] = None,
+    project_binding_approval: Optional[str] = None,
 ) -> StoreError:
     """库后端的写入：读一条 prior → 同一套守卫 → CAS 写回，冲突就重来。
 
@@ -1046,7 +1081,8 @@ def _save_session_record_db(
                     prior = coerced
 
             write_state = _resolve_write_state(prior, state, server_write=server_write,
-                                               expected_project_revision=expected_project_revision)
+                                               expected_project_revision=expected_project_revision,
+                                               project_binding_approval=project_binding_approval)
             write_state, degrade_flags = _slim_to_budget(write_state)
             new_payload = write_state.model_dump()
 

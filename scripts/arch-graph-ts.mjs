@@ -79,7 +79,7 @@ export const DIAGRAM = join(REPO, "docs", "WhyBuddy TS 架构图（自动生成�
  * 于是漏掉的那个包**结构上不可能有入边**，在零入度名单里显示成"没人用"。
  * 下面这份只作兜底对照物，判据 `包名单是从磁盘派生的` 会拿派生结果跟它比。
  */
-export const SEED_PACKAGES = ["agent-loop", "client", "server", "services", "shared"];
+export const SEED_PACKAGES = ["agent-loop", "client", "project-templates", "server", "services", "shared"];
 
 /** 不参与架构判定的目录。判断用路径分段，不是 `includes()`——
  *  Python 侧第一版就是后者，把 472 个测试文件全算进了依赖图。 */

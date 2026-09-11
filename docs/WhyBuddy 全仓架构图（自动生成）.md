@@ -4,7 +4,7 @@
 > Python 包边来自 `arch_graph.py`，TS 包边来自 `arch-graph-ts.mjs --json-packages`，
 > 跨语言边来自 `architecture.toml` 的 `[[cross_language_edge]]`（Nx implicitDependencies）。
 
-- TS 包 **5**，包间边 **4**
+- TS 包 **6**，包间边 **4**
 - Python 包 **11**
 - 跨语言边 **4**（server/index.ts 拼字符串加载 Python adapter）
 
@@ -16,6 +16,7 @@ flowchart TB
   subgraph ts [TypeScript]
     ts_agent_loop["ts/agent-loop<br/>99 个模块"]
     ts_client["ts/client<br/>1027 个模块"]
+    ts_project_templates["ts/project-templates<br/>2 个模块"]
     ts_server["ts/server<br/>579 个模块"]
     ts_services["ts/services<br/>32 个模块"]
     ts_shared["ts/shared<br/>177 个模块"]
@@ -29,7 +30,7 @@ flowchart TB
     py_models["py/models<br/>4 个模块"]
     py_routes["py/routes<br/>13 个模块"]
     py_scripts["py/scripts<br/>39 个模块"]
-    py_services["py/services<br/>232 个模块"]
+    py_services["py/services<br/>237 个模块"]
     py_sliderule_llm["py/sliderule_llm<br/>15 个模块"]
     py_stdio_utf8["py/stdio_utf8<br/>1 个模块"]
     py_services_web_aigc_open_adapter["services.web_aigc_open_adapter"]
@@ -54,7 +55,7 @@ flowchart TB
   py_routes -->|10| py_config
   py_routes -->|6| py_middlewares
   py_routes -->|4| py_models
-  py_routes -->|135| py_services
+  py_routes -->|138| py_services
   py_routes -->|30| py_sliderule_llm
   py_scripts -->|3| py_app
   py_scripts -->|2| py_config
@@ -62,8 +63,8 @@ flowchart TB
   py_scripts -->|58| py_services
   py_scripts -->|16| py_sliderule_llm
   py_scripts -->|2| py_stdio_utf8
-  py_services -->|16| py_config
-  py_services -->|35| py_models
+  py_services -->|17| py_config
+  py_services -->|38| py_models
   py_services -->|124| py_sliderule_llm
   py_sliderule_llm -->|2| py_config
   ts_server -.->|open| py_services_web_aigc_open_adapter

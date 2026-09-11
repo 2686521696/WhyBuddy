@@ -138,6 +138,8 @@ from services.closed_tools import (
     resolve_tool_scope,
 )
 from services.drive_full_factory import start_drive_full_factory_run
+from services.project_authority import approved_reference
+from services.project_tool_contracts import PROJECT_TOOLS, PROJECT_TOOL_NAMES, PROJECT_WRITE_TOOLS
 from services.workflow_registry import workflow_for, workflow_names
 from services.workflow_select import select_workflow
 from services.scope_authority import (
@@ -359,6 +361,21 @@ _CONTROL_PAYLOAD: ContextVar[Dict[str, Any]] = ContextVar(
 #
 # 缺省空串 → resolve_tool_scope 给 READ → 没进过分发就直调工厂会被拦。
 _ACTIVE_TOOL: ContextVar[str] = ContextVar("sliderule_active_tool", default="")
+_PROJECT_TOOLS: ContextVar[Any] = ContextVar("sliderule_project_tools", default=None)
+
+
+def _project_tool_error(name, state):
+    if getattr(state, "runtimeKind", None) == "project":
+        if resolve_tool_scope(name) == ToolScope.WRITE:
+            return "project_html_factory_not_supported"
+        if name == "report_done":
+            return "project_verification_not_available"
+    if name in PROJECT_TOOL_NAMES:
+        if _PROJECT_TOOLS.get() is None:
+            return "project_tools_not_enabled"
+        if name in PROJECT_WRITE_TOOLS and not plan_execution_authorized(state):
+            return "project_plan_approval_required"
+    return None
 
 
 @contextmanager
@@ -806,11 +823,13 @@ TOOL_PERMISSION: Dict[str, Any] = {
 
 def tool_requires_permission(name: Any) -> bool:
     """这个工具要不要显式批准。没声明的一律不需要。"""
-    return resolve_tool_scope(name) == ToolScope.WRITE or str(name or "").strip() in TOOL_PERMISSION
+    return resolve_tool_scope(name) == ToolScope.WRITE or str(name or "").strip() in TOOL_PERMISSION or name in PROJECT_WRITE_TOOLS
 
 
 def tool_permission_granted(name: Any, state: V5SessionState) -> bool:
     """已获批准吗。不需要批准的恒为真。"""
+    if _project_tool_error(name, state):
+        return False
     if resolve_tool_scope(name) == ToolScope.WRITE and not plan_execution_authorized(state):
         return False
     pred = TOOL_PERMISSION.get(str(name or "").strip())
@@ -821,6 +840,10 @@ def tool_permission_granted(name: Any, state: V5SessionState) -> bool:
 
 def should_list_tool(name: Any, state: V5SessionState) -> bool:
     """这一轮要不要把这个工具摆给模型看。没声明谓词的一律列出。"""
+    if _project_tool_error(name, state):
+        return False
+    if name in PROJECT_TOOL_NAMES:
+        return name == "project_create" or bool(getattr(state, "projectId", None))
     if resolve_tool_scope(name) == ToolScope.WRITE and not plan_execution_authorized(state):
         return False
     pred = TOOL_LIST_WHEN.get(str(name or "").strip())
@@ -962,6 +985,7 @@ INSPECT_MAX_CHARS = 4000
 CONTROL_TOOL_RESULT_MAX_CHARS = 4000
 
 CONTROL_TOOLS: List[Dict[str, Any]] = [
+    *PROJECT_TOOLS,
     {
         "type": "function",
         "function": {
@@ -2812,7 +2836,22 @@ def _system_prompt(state: V5SessionState) -> str:
     # 第 7 格：有产品话题就干活。缺维度是 SPEC 假设卡的事，不是开工前门禁。
     # 再把「在哪用（平台）」写进 system = 类型/设备门借提示词还魂
     # （漫画第 5 格已经拆掉的 NeedPermission-on-product-type）。
-    after_write = _after_write_hint(state)
+    is_project = getattr(state, "runtimeKind", None) == "project"
+    if _PROJECT_TOOLS.get() is not None or is_project:
+        facts.append(
+            "工程工具运行在受管 E2B 中，源码版本持久保存。"
+            f"当前工程：{getattr(state, 'projectId', None)}；源码版本：{getattr(state, 'projectRevision', None)}。"
+            "创建新工程用 project_create；已有 HTML 应用转换尚未支持。"
+            "工程会话使用 project_* 工具，不调用 HTML 工厂。"
+            "修改前先取消活跃运行，等停止并清理完成后再 patch；修改形成新版本。"
+            "project_exec 只运行 check/build/test，返回 operationId；用 status/logs 读取真实结果。"
+            "新回合可用不带 operationId 的 project_status 找回任务；已有服务运行时先取消并等清理，再执行检查。"
+            "任务未结束就如实交回 operationId，下轮继续查询，不能重复提交或宣称完成。"
+            "构建通过和服务就绪均不是业务验收；私有预览和独立浏览器验收尚未接入。"
+        )
+        if plan_execution_authorized(state):
+            facts.append(f"工程操作批准引用 approvalRef：{approved_reference(state)}。")
+    after_write = None if is_project else _after_write_hint(state)
     if after_write:
         facts.append(after_write.strip())
     fact_blob = " ".join(facts)
@@ -2929,6 +2968,7 @@ async def run_control_turn(
     *,
     authorized_owner_id: Optional[str] = None,
     reservation_held: bool = False,
+    project_tools: Any = None,
 ) -> AsyncIterator[Dict[str, Any]]:
     """One control producer per session, including while durable writes await I/O."""
     validate_control_turn_body(payload)
@@ -2938,7 +2978,7 @@ async def run_control_turn(
     # same task: deferred async-generator GC used to reset ContextVars elsewhere
     # and release exclusivity before the producer's finally block ran.
     with nullcontext() if reservation_held else reserve_control_turn(session_id):
-        async with aclosing(_run_control_turn_serial(payload, authorized_owner_id=authorized_owner_id)) as stream:
+        async with aclosing(_run_control_turn_serial(payload, authorized_owner_id=authorized_owner_id, project_tools=project_tools)) as stream:
             async for event in stream:
                 yield event
 
@@ -2947,6 +2987,7 @@ async def _run_control_turn_serial(
     payload: Dict[str, Any],
     *,
     authorized_owner_id: Optional[str] = None,
+    project_tools: Any = None,
 ) -> AsyncIterator[Dict[str, Any]]:
     """产品控制面主循环。cheap 请求内结束；点火才调信封 helper。"""
     validate_control_turn_body(payload)
@@ -2962,6 +3003,7 @@ async def _run_control_turn_serial(
     from services.product_charter import activate_charter_for_run, clear_charter_for_run
 
     token = _CONTROL_PAYLOAD.set(payload if isinstance(payload, dict) else {})
+    project_token = _PROJECT_TOOLS.set(project_tools)
     activate_charter_for_run(state, payload)
     try:
         # 抄 grok 第二层重试预算：**一个回合一份，中途永不清零**。
@@ -2976,6 +3018,7 @@ async def _run_control_turn_serial(
     finally:
         clear_charter_for_run()
         _CONTROL_PAYLOAD.reset(token)
+        _PROJECT_TOOLS.reset(project_token)
 
 
 def _open_question_gaps(state: V5SessionState) -> List[str]:
@@ -3745,6 +3788,8 @@ async def _control_llm_loop(
                         ),
                     }
                 )
+                if name in PROJECT_TOOL_NAMES or name in {"write_plan", "enter_plan_mode"}:
+                    messages[0] = {"role": "system", "content": _system_prompt(state)}
             if wrote:
                 # 工厂墙钟不计入控制面 45s。WRITE 交回后再给便宜思考。
                 started = time.monotonic()
@@ -3937,6 +3982,12 @@ async def _run_control_turn_body(
     if forced == "rehearse" or (forced is None and _is_slash_rehearse(user_text)):
         forced = "spec"
 
+    if forced and _project_tool_error(forced, state):
+        yield {"type": "control_tool_result", "tool": forced, "ok": False,
+               "error": _project_tool_error(forced, state)}
+        yield _complete(state)
+        return
+
     if forced and resolve_tool_scope(forced) == ToolScope.WRITE and not plan_execution_authorized(state):
         # An explicit tool name is an intent, never approval. Continue planning.
         forced = None
@@ -4117,7 +4168,7 @@ async def _run_control_turn_body(
         #   tool_scope_scope 头注写着「两条分发路径都要用」——LLM 那条有，
         #   这一条漏了（CLAUDE.md §4）。pages 已改走 FACTORY_HOPS 那支；
         #   restore / inspect 仍走这里，闸不能拆。
-        tool_args: Dict[str, Any] = {}
+        tool_args: Dict[str, Any] = (payload.get("toolArgs") or {}) if forced in PROJECT_TOOL_NAMES else {}
         if forced == "restore_version":
             vid = str(
                 payload.get("versionId") or payload.get("version_id") or ""
@@ -4174,6 +4225,9 @@ async def _dispatch_tool(
     design_system_id: Any,
     original_goal: str,
 ) -> AsyncIterator[Dict[str, Any]]:
+    if name in PROJECT_TOOL_NAMES and not isinstance(args, dict):
+        yield {"type": "control_tool_result", "tool": name, "ok": False, "error": "project_tool_arguments_invalid"}
+        return
     # 批准闸（抄 grok 的 ToolDef.requires_permission）。声明在 TOOL_PERMISSION
     # 一处，强制在这一处——不再让每个贵动词各写一段（漏写不报错，只会绕过
     # 范围卡：refine 就这么漏过一次）。
@@ -4219,8 +4273,25 @@ async def _dispatch_tool(
         yield _complete(state)
         return
 
+    project_error = _project_tool_error(name, state)
+    if project_error:
+        yield {"type": "control_tool_result", "tool": name, "ok": False, "error": project_error}
+        return
     if not tool_permission_granted(name, state):
         yield {"type": "control_tool_result", "tool": name, "ok": False, "error": "plan_approval_required"}
+        return
+    if name in PROJECT_TOOL_NAMES:
+        adapter = _PROJECT_TOOLS.get()
+        yield {"type": "control_tool_start", "tool": name}
+        body = await run_in_threadpool(adapter.execute, name, args, state)
+        # Source CAS can succeed before session projection. Reload only the
+        # authoritative reference; never replace the in-flight conversation.
+        reloaded = await run_in_threadpool(load_session, state.sessionId)
+        if reloaded is not None and reloaded.ownerId == state.ownerId:
+            state.runtimeKind = reloaded.runtimeKind
+            state.projectId = reloaded.projectId
+            state.projectRevision = reloaded.projectRevision
+        yield {"type": "control_tool_result", "tool": name, **body}
         return
     if name in ("pages", "structure", "bind", "closure", "workflow", "refine", "repair") and _assumptions_awaiting(state):
         async for event in _complete_waiting_for_assumptions(state):

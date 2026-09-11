@@ -12,20 +12,26 @@ from services.project_store import ProjectStore
 from services.project_runtime_worker import ProjectRuntimeSupervisor
 from services import project_runtime_worker as worker
 from models.project_runtime import RuntimeInstance
+from models.v5_state import V5SessionState
+from services import persistence
+from services.project_creation import create_session_project
+from services.session_blob_store import SqlSessionBlobStore
 from routes import project_runtime as route
 
 
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
     store = ProjectStore.from_url(f"sqlite:///{tmp_path / 'route.db'}")
+    sessions = SqlSessionBlobStore(f"sqlite:///{tmp_path / 'sessions.db'}")
+    monkeypatch.setattr(persistence, "_blob_store", lambda *_: sessions)
     plan = {"planId": "plan-1", "revision": 1, "planContent": "Run fixed internal project", "reqId": "request-1"}
-    state = SimpleNamespace(ownerId="u1", controlTranscript=[
+    state = V5SessionState(sessionId="s1", ownerId="u1", goal={"text": "Run fixed internal project"}, controlTranscript=[
         {**plan, "kind": "plan_written"}, {**plan, "kind": "plan_approval"}, {**plan, "kind": "plan_approved"}])
     approval = route._approved_reference(state)
-    project = store.create_project("s1", owner_id="u1", files={"package.json": "{}", "package-lock.json": "{}"}, template_version="vite-1", plan_ref=approval)
+    persistence.save_session_record(state, server_write=True)
+    project = create_session_project(store, "s1", owner_id="u1", approval_ref=approval)
+    state = persistence.load_session_record("s1")["session"]
     monkeypatch.setattr(route, "get_project_store", lambda: store)
-    monkeypatch.setattr(route, "load_session", lambda sid: state)
-    monkeypatch.setattr(worker, "load_session", lambda sid: route.load_session(sid))
     monkeypatch.delenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", raising=False)
     monkeypatch.setenv("NODE_ENV", "development")
     monkeypatch.setattr(route.settings, "NODE_ENV", "development")
@@ -43,11 +49,12 @@ def setup(tmp_path, monkeypatch):
     supervisor._scanner = SimpleNamespace(is_alive=lambda: True)
     app.state.project_runtime_supervisor = supervisor
     with TestClient(app) as client:
-        yield SimpleNamespace(store=store, project=project, client=client, state=state,
+        yield SimpleNamespace(store=store, sessions=sessions, project=project, client=client, state=state,
             viewer=viewer, called=called, app=app, supervisor=supervisor,
             body={"expectedRevision": project.currentRevision, "approvalRef": approval, "idempotencyKey": "start-1"},
             url=f"/projects/{project.projectId}/runtime/start")
     store.close()
+    sessions._engine.dispose()
 
 
 def test_public_start_remains_closed_before_private_preview(setup):
@@ -62,13 +69,16 @@ def test_public_start_remains_closed_before_private_preview(setup):
 def test_actual_http_path_rejects_invalid_authority_before_side_effects(setup, monkeypatch, scenario, status):
     monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
     if scenario == "wrong-owner": setup.viewer["id"] = "mallory"
-    if scenario == "missing-session": monkeypatch.setattr(route, "load_session", lambda _: None)
+    if scenario == "missing-session": setup.sessions.delete("s1")
     if scenario == "session-owner": setup.state.ownerId = "mallory"
     if scenario == "no-approval": setup.state.controlTranscript.pop()
     if scenario == "changed-plan": setup.state.controlTranscript[0]["planContent"] = "Different plan"
     if scenario == "forged-approval": setup.body["approvalRef"] = "forged"
     if scenario == "stale-revision": setup.body["expectedRevision"] = "old"
     if scenario == "unknown-command": setup.body["command"] = "unapproved"
+    if scenario in {"session-owner", "no-approval", "changed-plan"}:
+        row = setup.sessions.load("s1")
+        setup.sessions.save("s1", setup.state.model_dump(mode="json"), expected_rev=row.rev)
     response = setup.client.post(setup.url, json=setup.body)
     assert response.status_code == status
     assert not setup.called
@@ -97,6 +107,16 @@ def test_internal_authorized_request_persists_once_and_returns_before_provider_i
     assert setup.supervisor._wake.is_set()
     assert not setup.called
     assert setup.client.post(setup.url, json={**setup.body, "port": 5174}).status_code == 409
+
+
+def test_source_created_without_session_binding_cannot_start(setup, monkeypatch):
+    monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
+    row = setup.sessions.load("s1")
+    setup.sessions.save("s1", {**row.payload, "projectId": None, "projectRevision": None,
+        "runtimeKind": "html-prototype"}, expected_rev=row.rev)
+    response = setup.client.post(setup.url, json=setup.body)
+    assert response.status_code == 409 and response.json()["detail"] == "project_session_binding_required"
+    assert not setup.called and not setup.store.list_runnable_operations()
 
 
 def test_settings_production_blocks_internal_flag_without_process_environment(setup, monkeypatch):

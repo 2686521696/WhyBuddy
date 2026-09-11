@@ -79,6 +79,9 @@ CLOSED_TOOLS: Tuple[str, ...] = (
     "repair",
     "restore_version",
     "fork_variant",
+    "project_create", "project_list", "project_read", "project_search",
+    "project_patch", "project_start", "project_exec", "project_status",
+    "project_logs", "project_cancel",
 )
 
 # 文本里抠闭集工具名。抄 grok-build AskUserQuestion：选项点下去是 typed
@@ -98,7 +101,7 @@ _CLOSED_ID_RE = re.compile(
     + r")(?:[^\w]|$)",
     re.IGNORECASE,
 )
-_TEXT_FORCED_SKIP = frozenset({"rehearse"})
+_TEXT_FORCED_SKIP = frozenset({"rehearse", *(name for name in CLOSED_TOOLS if name.startswith("project_"))})
 
 # 只列 WRITE。没写的一律 READ。
 TOOL_SCOPE: Dict[str, ToolScope] = {

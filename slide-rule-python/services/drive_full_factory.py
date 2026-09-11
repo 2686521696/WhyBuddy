@@ -107,6 +107,8 @@ async def start_drive_full_factory_run(
         state = persisted.model_copy(deep=True)
         if viewer is not None and not app_access.can_session("drive", state.model_dump(), viewer):
             raise HTTPException(status_code=404, detail="Not found")
+        if state.runtimeKind == "project":
+            raise HTTPException(status_code=409, detail="project_html_factory_not_supported")
         if not plan_execution_authorized(state):
             raise HTTPException(status_code=409, detail="plan_approval_required")
         wanted = [
@@ -139,6 +141,8 @@ async def start_drive_full_factory_run(
         )
 
         fresh = await asyncio.to_thread(load_session, sid)
+        if fresh is not None and fresh.runtimeKind == "project":
+            raise HTTPException(status_code=409, detail="project_html_factory_not_supported")
         if (
             fresh is None or fresh.ownerId != state.ownerId
             or not plan_execution_authorized(fresh)

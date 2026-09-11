@@ -124,6 +124,8 @@ what = "纯工具：不依赖 services 里任何其它模块"
 may_depend_on = []
 modules = [
   "services.archetype_legal",
+  "services.project_access",
+  "services.project_tool_contracts",
   # 交付面可用性：只吃 HTML 字符串与 SPEC 字典，services 里谁都不依赖 → 叶子。
   # 跟 gate_health 同一个理由被闭环判定顶层 import。
   "services.deliverable_surface",
@@ -387,6 +389,9 @@ what = "编排：驱动器 / 流水线 / 控制面 / 会话"
 may_depend_on = ["util", "core"]
   modules = [
     "services.project_runtime_worker",
+    "services.project_authority",
+    "services.project_creation",
+    "services.project_tools",
   "services.model_versions",
   "services.model_version_restore",
   "services.agent_loop_bridge",
@@ -537,6 +542,9 @@ why = """控制面闭集工具环。handoff 点火工厂，结果交回控制面
 回流是运行时合同（factory_complete → control_tool_result），不必画成 import 边。"""
 may_depend_on = [
   "drive",
+  # Session-bound tools reuse durable source storage and E2B operations.
+  "persist",
+  "runtime",
   "evidence",
   # 2026-09-11 补齐既有 model_memory 归属：它借 identity_store 的执行器持久化。
   "identity",
@@ -546,6 +554,7 @@ may_depend_on = [
   "spec_first",
 ]
 modules = [
+  "services.project_tools",
   "services.action_stationarity",
   "services.done_claim",
   "services.hook_events",
@@ -763,6 +772,7 @@ modules = [
 why = """会话落库与单调守卫。谁写、写成什么样，只有这里说了算。"""
 may_depend_on = ["platform"]
 modules = [
+  "services.project_creation",
   "services.persistence",
   "services.project_store",
   "services.session_blob_store",
@@ -779,7 +789,7 @@ modules = [
 [component.runtime]
 why = "工程运行编排：把持久源码、租约和 E2B provider 组合成可恢复的运行实例。"
   # Recover execution using the same persisted session and approved-plan authority.
-  may_depend_on = ["platform", "persist", "workspace", "drive"]
+  may_depend_on = ["platform", "persist", "workspace"]
   modules = [
     "services.project_runtime",
     "services.project_runtime_worker",
@@ -794,6 +804,9 @@ why = """最底下的共用叶子：配置、数据形状、请求域上下文�
 叶子被多个组用是 grok 叶子 crate 的常态，只有**成环**时才是问题。别拿零依赖当搬家理由。"""
 may_depend_on = []
 modules = [
+  "services.project_authority",
+  "services.project_access",
+  "services.project_tool_contracts",
   "config.env_flags",
   "config.settings",
   "models.agent_loop",

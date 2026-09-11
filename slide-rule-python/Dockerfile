@@ -26,6 +26,7 @@ COPY slide-rule-python/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY slide-rule-python/ ./
+COPY project-templates/ /project-templates/
 
 EXPOSE 9700
 

@@ -48,6 +48,9 @@ export const CLOSED_TOOLS = [
   "repair",
   "restore_version",
   "fork_variant",
+  "project_create", "project_list", "project_read", "project_search",
+  "project_patch", "project_start", "project_exec", "project_status",
+  "project_logs", "project_cancel",
 ] as const;
 
 export type ClosedTool = (typeof CLOSED_TOOLS)[number];
@@ -106,7 +109,7 @@ const CLOSED_ID_RE = new RegExp(
 );
 
 /** 文本不得把 rehearse 当成 forcedTool。跟 `/推演` 同一条合同。 */
-const TEXT_FORCED_SKIP = new Set<string>(["rehearse"]);
+const TEXT_FORCED_SKIP = new Set<string>(["rehearse", ...CLOSED_TOOLS.filter(name => name.startsWith("project_"))]);
 
 const ZH: Array<[RegExp, FactoryHop]> = [
   [/数据模型反推|数据结构/, "structure"],

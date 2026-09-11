@@ -15,6 +15,10 @@
     "note": "The old and corrected scanners returned identical modules and dependency edges. This migration records existing edges the DFS witness list missed; it does not accept newly added imports. Other baseline fields were preserved."
   },
   "layer": {
+    "project-templates": {
+      "mayDependOn": [],
+      "why": "Fixed source projects executed only inside E2B; cannot import WhyBuddy host code."
+    },
     "shared": {
       "mayDependOn": [],
       "why": "叶子：前后端同读的契约。**不许依赖任何其它包**——对应 grok 的叶子 crate，也是「同一份契约两份实现」这类事故的唯一解药。"
@@ -44,6 +48,11 @@
     }
   },
   "component": {
+    "project-template-vite": {
+      "why": "Versioned React/TS/Vite template. index.html loads src/main.tsx after Python publishes these files to E2B.",
+      "paths": ["project-templates/react-vite"],
+      "mayDependOn": []
+    },
     "client-pages-sliderule": {
       "why": "推演产品的主页面族：会话舞台、画布、区块运行时、点选编辑。前端最大的一块。",
       "paths": [
@@ -427,6 +436,7 @@
   },
   "entrypoints": {
     "patterns": [
+      "project-templates/react-vite/src/main",
       "server/index",
       "client/src/main",
       "client/src/App",

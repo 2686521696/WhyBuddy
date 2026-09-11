@@ -12,12 +12,13 @@
 |---|---:|
 | agent-loop | 99 |
 | client | 1027 |
+| project-templates | 2 |
 | server | 579 |
 | services | 32 |
 | shared | 177 |
-| **合计** | **1914** |
+| **合计** | **1916** |
 
-边 5930 条，其中动态 import / require 311 条、
+边 5931 条，其中动态 import / require 311 条、
 类型 import 2235 条。
 
 ## component 依赖图
@@ -37,6 +38,7 @@ graph LR
   client-runtime["client-runtime<br/>16"]
   client-shell["client-shell<br/>36"]
   lobster-executor["lobster-executor<br/>32"]
+  project-template-vite["project-template-vite<br/>2"]
   server-audit["server-audit<br/>26"]
   server-core["server-core<br/>108"]
   server-entry["server-entry<br/>1"]
@@ -324,6 +326,12 @@ Autopilot 路线页与右栏控制面。产品面收敛的对象（见 M17），
 沙箱执行器，独立进程（:3031），只依赖 shared 的契约。
 
 路径：`services/lobster-executor`
+
+### project-template-vite
+
+Versioned React/TS/Vite template. index.html loads src/main.tsx after Python publishes these files to E2B.
+
+路径：`project-templates/react-vite`
 
 ### server-audit
 

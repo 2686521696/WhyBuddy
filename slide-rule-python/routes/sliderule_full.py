@@ -50,6 +50,9 @@ from services.v5_capability_executor import execute_v5_capability
 from services.slide_rule_coverage import author_coverage_contract, evaluate_coverage_gate, reconcile_coverage
 from services.capability_maps import execute_mapped_capability
 from config.settings import settings
+from services.project_access import project_access_enabled
+from services.project_store import get_project_store, ProjectStoreUnavailable
+from services.project_tools import ProjectTools
 from sliderule_llm.capabilities import execute_capability, is_python_native_capability
 from sliderule_llm.client import LlmError
 from sliderule_llm.evidence import execute_evidence_runtime
@@ -574,6 +577,8 @@ def _drive_state(payload: Dict[str, Any], viewer) -> V5SessionState:
     if persisted is not None:
         _require_session(persisted, "drive", viewer)
         persisted, _ = sanitize_session_state(persisted)
+        if persisted.runtimeKind == "project":
+            raise HTTPException(409, "project_html_factory_not_supported")
         if not plan_execution_authorized(persisted):
             raise HTTPException(409, "plan_approval_required")
         return persisted
@@ -1544,6 +1549,7 @@ class _ExclusiveControlResponse(StreamingResponse):
 async def control_turn_stream(
     payload: Dict[str, Any],
     viewer: CurrentUserOptional,
+    request: Request,
     x_internal_key: Optional[str] = Header(None),
 ):
     """M1 薄控制面。产品新烧唯一点火 HTTP。无 Node twin（catch-all 转发）。"""
@@ -1557,9 +1563,17 @@ async def control_turn_stream(
     # Authorize before opening SSE; private and missing IDs have the same 404.
     sid = str(payload.get("sessionId") or "").strip()
     state = await asyncio.to_thread(_require_run_session, sid, "drive", viewer)
+    project_tools = None
+    if project_access_enabled(viewer):
+        try:
+            store = await asyncio.to_thread(get_project_store)
+            project_tools = ProjectTools(store, getattr(request.app.state, "project_runtime_supervisor", None), str(viewer.id))
+        except ProjectStoreUnavailable:
+            pass
 
     async def event_generator():
-        async with aclosing(run_control_turn(payload, authorized_owner_id=state.ownerId, reservation_held=True)) as stream:
+        async with aclosing(run_control_turn(payload, authorized_owner_id=state.ownerId,
+                reservation_held=True, project_tools=project_tools)) as stream:
             async for event in stream:
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 

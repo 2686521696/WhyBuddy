@@ -67,7 +67,7 @@ OperationStatus = Literal[
     "cancelling", "cancelled", "interrupted",
 ]
 
-RuntimeStatus = Literal["provisioning", "syncing", "installing", "starting", "ready", "stopping", "stopped", "expired", "failed", "reconciling"]
+RuntimeStatus = Literal["provisioning", "syncing", "installing", "executing", "starting", "ready", "stopping", "stopped", "expired", "failed", "reconciling"]
 
 
 class RuntimeInstance(ProjectContract):

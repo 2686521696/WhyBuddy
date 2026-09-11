@@ -11,7 +11,7 @@ export type PreviewDescriptor = {
   "projectId": string;
   "runtimeId": string;
   "revision": string;
-  "status": "provisioning" | "syncing" | "installing" | "starting" | "ready" | "stopping" | "stopped" | "expired" | "failed" | "reconciling";
+  "status": "provisioning" | "syncing" | "installing" | "executing" | "starting" | "ready" | "stopping" | "stopped" | "expired" | "failed" | "reconciling";
   "entryUrl"?: string | null;
   "expiresAt"?: string | null;
   "capabilities"?: Array<string>;
@@ -135,7 +135,7 @@ export type RuntimeInstance = {
   "workspaceId": string;
   "projectId": string;
   "revision": string;
-  "status": "provisioning" | "syncing" | "installing" | "starting" | "ready" | "stopping" | "stopped" | "expired" | "failed" | "reconciling";
+  "status": "provisioning" | "syncing" | "installing" | "executing" | "starting" | "ready" | "stopping" | "stopped" | "expired" | "failed" | "reconciling";
   "port": number;
   "previewUrl"?: string | null;
   "processId"?: string | null;
@@ -150,7 +150,7 @@ export type RuntimeView = {
   "workspaceId": string;
   "projectId": string;
   "revision": string;
-  "status": "provisioning" | "syncing" | "installing" | "starting" | "ready" | "stopping" | "stopped" | "expired" | "failed" | "reconciling";
+  "status": "provisioning" | "syncing" | "installing" | "executing" | "starting" | "ready" | "stopping" | "stopped" | "expired" | "failed" | "reconciling";
   "port": number;
   "health": string | null;
   "lastHeartbeat": string;
