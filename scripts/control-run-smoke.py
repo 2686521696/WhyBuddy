@@ -46,10 +46,16 @@ def serve(directory):
     from services.slide_rule_session import save_session
     from sliderule_llm.control_client import ControlLlmResult
 
-    sessions = SqlSessionBlobStore(f"sqlite:///{directory / 'sessions.db'}")
+    # The session CAS checks its producer lease in SQL, so both tables must be
+    # visible to the same database connection used for the guarded write.
+    database_url = f"sqlite:///{(directory / 'state.db').as_posix()}"
+    sessions = SqlSessionBlobStore(database_url)
     persistence._blob_store = lambda *_: sessions
-    projects = ProjectStore.from_url(f"sqlite:///{directory / 'control.db'}")
+    projects = ProjectStore.from_url(database_url)
     store = ControlRunStore(projects._q)
+    tables = {row["name"] for row in projects._q("select name from sqlite_master where type='table'")}
+    if not {"sliderule_session", "wb_control_run", "wb_project"} <= tables:
+        raise RuntimeError("control_smoke_shared_database_required")
     viewer = User(id=OWNER, is_superuser=True)
     app.dependency_overrides[optional_user] = lambda: viewer
     plan = {"planId": "smoke-plan", "revision": 1, "planContent": "Verify durable control delivery", "reqId": "approve-smoke"}
@@ -140,14 +146,14 @@ def smoke(output):
     directory = output / (str(int(time.time())) + "-" + uuid.uuid4().hex[:8])
     directory.mkdir(parents=True)
     report = {"schemaVersion": 1, "passed": False, "transport": "real TCP HTTP/SSE via child Uvicorn",
-        "storage": "isolated SQLite sessions and control runs", "model": "injected deterministic coroutine",
+        "storage": "one isolated SQLite database for sessions, control runs, and projects", "model": "injected deterministic coroutine",
         "llmInvoked": False, "e2bInvoked": False, "authentication": "injected local smoke owner; login not tested",
         "artifactDirectory": str(directory.relative_to(ROOT)), "checks": [], "cleanup": {"processExited": False}}
     environment = {**os.environ, "SLIDERULE_DISABLE_ENV_HYDRATION": "1", "NODE_ENV": "development",
         "SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED": "1", "SLIDE_RULE_INTERNAL_KEY": INTERNAL_KEY,
         "APP_STORE_HTTP_API_URL": "", "APP_STORE_HTTP_API_KEY": "",
-        "APP_STORE_DATABASE_URL": f"sqlite:///{directory / 'auxiliary.db'}",
-        "APP_STORE_LOCAL_SQLITE": f"sqlite:///{directory / 'auxiliary.db'}",
+        "APP_STORE_DATABASE_URL": f"sqlite:///{(directory / 'state.db').as_posix()}",
+        "APP_STORE_LOCAL_SQLITE": f"sqlite:///{(directory / 'state.db').as_posix()}",
         "APP_STORE_FILE": str(directory / "apps.json"),
         "SLIDERULE_IDENTITY_SQLITE": f"sqlite:///{directory / 'identity.db'}",
         "SLIDERULE_WEB_SEARCH": "off", "SLIDERULE_CODE_RUN": "off", "SLIDERULE_AGENTIC_PICK": "off",

@@ -44,6 +44,7 @@ def main():
         "controlTransport": "actual FastAPI control-turn-stream using in-process HTTP",
         "model": "not invoked; forcedTool selection and approved plan are scripted fixtures",
         "identity": "injected development superuser; durable session owner checked by real services",
+        "storage": "one isolated SQLite database for sessions, control runs, and projects",
         "execution": "real E2B; checked-in React/TypeScript/Vite template",
         "notCovered": ["live model decisions", "production authentication", "private browser preview",
             "browser behavior", "application business acceptance"],
@@ -100,6 +101,10 @@ def main():
     app.state.project_runtime_supervisor = supervisor
     control = ControlRunService(ControlRunStore(store._q), store, supervisor,
         authorize=lambda sid, owner: load_authorized_session(sid, owner_id=owner))
+    # Session writes fence against wb_control_run in the same SQL statement.
+    tables = {row["name"] for row in store._q("select name from sqlite_master where type='table'")}
+    if not {"sliderule_session", "wb_control_run", "wb_project"} <= tables:
+        raise RuntimeError("project_smoke_shared_database_required")
     @asynccontextmanager
     async def lifespan(application):
         application.state.control_run_service = control
