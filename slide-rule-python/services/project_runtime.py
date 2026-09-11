@@ -64,4 +64,3 @@ class ProjectRuntimeService:
             except Exception:
                 pass
             raise
-
