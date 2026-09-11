@@ -13,7 +13,9 @@ const python = join(
 if (!existsSync(python))
   throw new Error("Project smoke requires slide-rule-python/.venv");
 const args = process.argv.slice(2);
-const mode = ["--lifecycle", "--process", "--tools"].includes(args[0])
+const mode = ["--lifecycle", "--process", "--tools", "--control"].includes(
+  args[0]
+)
   ? args.shift()
   : null;
 const script =
@@ -23,7 +25,9 @@ const script =
       ? "project-process-smoke.py"
       : mode === "--tools"
         ? "project-tools-smoke.py"
-        : "project-runtime-smoke.py";
+        : mode === "--control"
+          ? "control-run-smoke.py"
+          : "project-runtime-smoke.py";
 const result = spawnSync(python, [join(root, "scripts", script), ...args], {
   cwd: root,
   stdio: "inherit",

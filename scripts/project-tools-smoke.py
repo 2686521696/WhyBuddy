@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 import uuid
+from contextlib import asynccontextmanager
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "slide-rule-python"))
@@ -79,6 +80,9 @@ def main():
     from services.project_runtime_worker import ProjectRuntimeSupervisor
     from services.project_store import get_project_store, reset_project_store
     from services.session_blob_store import SqlSessionBlobStore
+    from services.control_run_store import ControlRunStore
+    from services.control_run_service import ControlRunService
+    from services.project_creation import load_authorized_session
 
     session_id, owner_id = "smoke-tools-" + uuid.uuid4().hex, "smoke-project-owner"
     store = get_project_store()
@@ -94,7 +98,19 @@ def main():
         lifetime_seconds=min(900, args.timeout + 30), idle_seconds=60,
         install_timeout=min(600, args.timeout))
     app.state.project_runtime_supervisor = supervisor
+    control = ControlRunService(ControlRunStore(store._q), store, supervisor,
+        authorize=lambda sid, owner: load_authorized_session(sid, owner_id=owner))
+    @asynccontextmanager
+    async def lifespan(application):
+        application.state.control_run_service = control
+        await control.start()
+        try:
+            yield
+        finally:
+            await control.shutdown()
+    app.router.lifespan_context = lifespan
     client = TestClient(app)
+    client.__enter__()
     project_id = None
     operations = []
 
@@ -267,6 +283,7 @@ def main():
             except Exception:
                 report["status"] = "failed"
                 report["cleanup"].append({"workspaceId": workspace_id, "status": "pending"})
+        client.__exit__(None, None, None)
         client.close()
         app.dependency_overrides.pop(optional_user, None)
         app.dependency_overrides.pop(require_user, None)

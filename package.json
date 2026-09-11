@@ -34,6 +34,7 @@
     "smoke:project-process": "node scripts/project-runtime-smoke.mjs --process",
     "smoke:project-lifecycle": "node scripts/project-runtime-smoke.mjs --lifecycle",
     "smoke:project-tools": "node scripts/project-runtime-smoke.mjs --tools",
+    "smoke:control-runs": "node scripts/project-runtime-smoke.mjs --control",
     "arch:ts": "node scripts/arch-graph-ts.mjs --report",
     "arch:ts:check": "node scripts/arch-graph-ts.mjs --check",
     "arch:ts:emit": "node scripts/arch-graph-ts.mjs --emit",
