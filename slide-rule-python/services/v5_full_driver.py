@@ -2427,6 +2427,8 @@ async def drive_full_v5_session_stream(
     _cost_cm = bind_cost_session(initial_state)
     _cost_cm.__enter__()
 
+    _delivered_pages: Dict[tuple, tuple] = {}
+
     async def _pump_llm_deltas(task: "asyncio.Task"):
         """任务运行期间持续排水：把队列里的（标签, 增量）按相邻同标签聚合成
         llm_delta 事件（150ms 批量，防逐 token 事件风暴）。先记完成标志再排水，
@@ -2485,7 +2487,7 @@ async def drive_full_v5_session_stream(
                         else:
                             # 返回值只用于对账（孤儿 end 单独记一笔），
                             # 不决定要不要发——事件本身是真的，一定要发。
-                            _stage_pairs.note_end(name)
+                            _stage_pairs.note_end(name, ev)
                         yield ev
                         last_yield_at = _time.perf_counter()
             except _queue.Empty:
@@ -2508,6 +2510,7 @@ async def drive_full_v5_session_stream(
                         last_yield_at = _time.perf_counter()
                         continue
                     _pid, _html, _done, _total, _bound, _device = _item
+                    _delivered_pages[(_device, _pid)] = (_html, bool(_bound))
                     yield {
                         "type": "spec_page",
                         "pageId": _pid,
@@ -2722,7 +2725,7 @@ async def drive_full_v5_session_stream(
                 #   `ContextVar[int]`，写在泵的 Context、读在 to_thread 的副本里，
                 #   读出来恒为 0 —— 于是明明发过 15 个事件，这里会再补发一遍，
                 #   前端每页闪两次。那一轮没重发纯属 `peek_last_pages()` 已被取空。
-                if _emitted is None or _emitted > 0:
+                if _emitted is None:
                     return
                 blob = _peek_pages_for_fallback() or {}
                 pages = blob.get("pages") if isinstance(blob, dict) else None
@@ -2741,10 +2744,13 @@ async def drive_full_v5_session_stream(
                 print(f"[v5_full_driver] ⚠ spec_page 兜底补发跳过：{str(exc)[:120]}")
                 return
             print(
-                f"[v5_full_driver] ⚠ spec_page 事件丢了（落库 {total} 页 / 发出 0 个），"
-                f"补发 {total} 条兜底事件"
+                f"[v5_full_driver] spec_page 对账：落库 {total} 页 / 已发 {_emitted} 个事件，"
+                "补发尚未通知的最终页面"
             )
             for _i, (_pid, _html) in enumerate(sorted(pages.items()), start=1):
+                if _delivered_pages.get((device, _pid)) == (_html, True):
+                    continue
+                _delivered_pages[(device, _pid)] = (_html, True)
                 _note_page_event()
                 yield {
                     "type": "spec_page",
@@ -2800,7 +2806,7 @@ async def drive_full_v5_session_stream(
                     if _phase == "start":
                         _stage_pairs.note_start(_name, _ev, now=_time.perf_counter())
                     else:
-                        _stage_pairs.note_end(_name)
+                        _stage_pairs.note_end(_name, _ev)
                     yield _ev
             except _queue.Empty:
                 pass

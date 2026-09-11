@@ -106,7 +106,9 @@ class Test三向区分:
         """
         m = ds.measure(rich)
         assert m is not None
-        assert m.pageCount == 7 and m.totalEntry == 30
+        # readonly identity fields are visible but cannot accept input; browser
+        # semantics intentionally count only editable controls.
+        assert m.pageCount == 7 and m.totalEntry == 28
         assert m.unserved == [], f"合格交付物被判成未服务：{m.unserved}"
         assert ds.surface_reason(rich) is None
         assert ds.is_thin(rich) is False

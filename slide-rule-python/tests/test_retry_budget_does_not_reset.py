@@ -267,7 +267,7 @@ def test_预算开在回合上_不是开在循环里():
     src = strip_python(
         Path(__file__).resolve().parents[1] / "services" / "rehearsal_control.py"
     )
-    at = src.find("async def run_control_turn")
+    at = src.find("async def _run_control_turn_serial")
     assert at > 0
     assert "retry_budget_scope" in src[at : at + 1200], "回合入口没开预算"
     loop_at = src.find("async def _control_llm_loop")

@@ -291,7 +291,7 @@ class CapabilityRun(BaseModel):
         timing = dict(data.pop("timing", None) or {})
         if durationMs is not None:
             # 两处书写、一处填：老读者取 `timing.durationMs`，新读者取顶层。
-            timing.setdefault("durationMs", int(durationMs))
+            timing["durationMs"] = int(durationMs)
         elif isinstance(timing.get("durationMs"), (int, float)):
             # 反向也补：调用方只给了 timing 时，顶层别空着。
             durationMs = int(timing["durationMs"])

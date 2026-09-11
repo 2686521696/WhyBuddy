@@ -49,6 +49,7 @@ freeform_block.py 的 check_field_refs_scoped），不另发明。
 from __future__ import annotations
 
 import re
+from html.parser import HTMLParser
 from typing import Any, Callable, Dict, List, Optional
 
 HTML_BINDINGS_VERSION = "html-bindings-v1"
@@ -80,7 +81,7 @@ ACTION_KINDS: tuple[str, ...] = (
     RECORD_ACTION_KINDS + WORKFLOW_ACTION_KINDS + CART_ACTION_KINDS
 )
 
-AGGREGATES: tuple[str, ...] = ("count", "sum", "avg")
+AGGREGATES: tuple[str, ...] = ("count", "sum", "avg", "min", "max")
 
 #: 整页「能取到数」的数据源。check_coverage / 提示词硬性要求 / 前端
 #: hasAnyDataSource 必须认同一份——漏一个，那种页打对了孔也会被判死。
@@ -91,54 +92,57 @@ AGGREGATES: tuple[str, ...] = ("count", "sum", "avg")
 #:   覆盖闸一律「没有任何数据源」，重问 2 次仍挂。前端徽标同一漏。
 DATA_SOURCE_KEYS: tuple[str, ...] = ("rows", "record", "value", "chart")
 
-_TAG = re.compile(r"<([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>")
-_ATTR = re.compile(r'data-([a-z]+)="([^"]*)"')
-
-
 class HtmlBindingsError(RuntimeError):
     """打孔失败。**不回落**——半套绑定比没有绑定更难查。"""
 
 
 def _attrs(tag_body: str) -> Dict[str, str]:
-    return {k: v for k, v in _ATTR.findall(tag_body)}
+    nodes = scan_bindings(f"<div {tag_body}></div>")
+    return nodes[0]["attrs"] if nodes else {}
 
 
 def scan_bindings(markup: str) -> List[Dict[str, Any]]:
-    """扫出所有带 data-* 的标签，并算出每个标签所处的 data-rows 作用域。
-
-    作用域靠一个标签栈算：进 `<tbody data-rows="vehicle">` 就压栈，
-    遇到它的闭合标签就弹栈。**自闭合标签不压栈**（`<td ... />` 这种）。
-    """
+    """Parse HTML attributes, excluding inert markup, with row/record scope."""
     out: List[Dict[str, Any]] = []
-    stack: List[tuple[str, Optional[str]]] = []
-    pos = 0
     text = markup or ""
-    void = {"br", "hr", "img", "input", "meta", "link", "source", "col"}
+    offsets = [0]
+    offsets.extend(m.end() for m in re.finditer("\n", text))
+    void = {"area", "base", "br", "col", "embed", "hr", "img", "input",
+            "link", "meta", "param", "source", "track", "wbr"}
 
-    for m in re.finditer(r"<(/?)([a-zA-Z][a-zA-Z0-9]*)\b([^>]*?)(/?)>", text):
-        closing, tag, body, selfclose = m.group(1), m.group(2).lower(), m.group(3), m.group(4)
-        if closing:
-            while stack and stack[-1][0] != tag:
-                stack.pop()
-            if stack:
-                stack.pop()
-            continue
-        attrs = _attrs(body)
-        scope = next((s for _, s in reversed(stack) if s), None)
-        if any(k in attrs for k in (
-            "rows", "record", "field", "value", "action", "chart", "fields",
-            "search", "filter", "match", "view", "delta",
-        )):
-            out.append({"tag": tag, "attrs": attrs, "scope": scope, "pos": m.start()})
-        if tag not in void and not selfclose:
-            # ⚠ `data-record` 与 `data-rows` **同样开作用域**（2026-08-15）。
-            #   照 petite-vue：它的 v-scope 和 v-for 走同一个
-            #   createScopedContext（walk.ts:44 / for.ts:105），差别只在要不要
-            #   循环。我们原来只认 rows，于是详情卡没有合法写法——真机上模型
-            #   把 data-field 打在容器外面，重问两次都改不对，整页 bind 失败。
-            stack.append((tag, attrs.get("rows") or attrs.get("record")))
-        pos = m.end()
-    del pos
+    class Parser(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.stack = []
+
+        def handle_starttag(self, tag, pairs):
+            attrs = {}
+            for key, value in pairs:
+                if key.startswith("data-"):
+                    attrs.setdefault(key[5:], value or "")
+            inert = tag in ("script", "style", "template") or any(s[2] for s in self.stack)
+            scope = next((s[1] for s in reversed(self.stack) if s[1]), None)
+            if attrs and not inert:
+                line, column = self.getpos()
+                out.append({"tag": tag, "attrs": attrs, "scope": scope,
+                            "pos": offsets[line - 1] + column})
+            if tag not in void:
+                self.stack.append((tag, attrs.get("rows") or attrs.get("record"), inert))
+
+        def handle_endtag(self, tag):
+            for i in range(len(self.stack) - 1, -1, -1):
+                if self.stack[i][0] == tag:
+                    del self.stack[i:]
+                    break
+
+        def handle_startendtag(self, tag, attrs):
+            self.handle_starttag(tag, attrs)
+            if tag not in void:
+                self.handle_endtag(tag)
+
+    parser = Parser()
+    parser.feed(text)
+    parser.close()
     return out
 
 
@@ -156,14 +160,16 @@ def check_bindings(markup: str, model: Dict[str, Any]) -> List[Dict[str, str]]:
             a.get("rows") or a.get("record") or a.get("value")
             or a.get("entity") or a.get("search") or a.get("filter")
         )
-        if ent and ent not in entities:
-            problems.append({
-                "path": f"<{tag} data-*>",
-                "message": f"实体 '{ent}' 不存在。真实实体：{sorted(entities)}",
-            })
+        for entity_key in ("rows", "record", "value", "entity", "search", "filter"):
+            entity_ref = a.get(entity_key)
+            if entity_ref and entity_ref not in entities:
+                problems.append({
+                    "path": f"<{tag} data-{entity_key}>",
+                    "message": f"实体 '{entity_ref}' 不存在。真实实体：{sorted(entities)}",
+                })
 
         if "field" in a:
-            scope = node["scope"]
+            scope = a.get("value") or a.get("record") or a.get("rows") or node["scope"]
             if not scope:
                 problems.append({
                     "path": f"<{tag} data-field={a['field']}>",
@@ -178,7 +184,7 @@ def check_bindings(markup: str, model: Dict[str, Any]) -> List[Dict[str, str]]:
                 })
 
         if "aggregate" in a:
-            agg = a["aggregate"].split(":")[0]
+            agg = a["aggregate"].lower()
             if agg not in AGGREGATES:
                 problems.append({
                     "path": f"<{tag} data-aggregate={a['aggregate']}>",
@@ -220,6 +226,10 @@ def check_bindings(markup: str, model: Dict[str, Any]) -> List[Dict[str, str]]:
                     "path": f"<{tag} data-chart>",
                     "message": f"维度 '{dim}' 不是 '{e2}' 的字段",
                 })
+            metric_field = a.get("metric-field")
+            if e2 in entities and metric_field and metric_field not in entities[e2]:
+                problems.append({"path": f"<{tag} data-metric-field>",
+                                 "message": f"'{metric_field}' 不是 '{e2}' 的字段"})
 
         if a.get("view") and a["view"] != "cart":
             problems.append({
@@ -407,12 +417,6 @@ def _strip_fences(text: str) -> str:
 _FORM_OPEN = re.compile(r"<form\b([^>]*)>", re.I)
 _FORM_CLOSE = re.compile(r"</form>", re.I)
 _ENTITY_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
-_WRITE_ENTITY_A = re.compile(
-    r'data-action="(?:createRecord|editRecord)"[^>]*data-entity="([^"]+)"'
-)
-_WRITE_ENTITY_B = re.compile(
-    r'data-entity="([^"]+)"[^>]*data-action="(?:createRecord|editRecord)"'
-)
 
 
 def stamp_implicit_form_record(markup: str) -> str:
@@ -448,13 +452,16 @@ def stamp_implicit_form_record(markup: str) -> str:
         inner = text[open_m.end() : close_m.start()]
         if re.search(r"<form\b", inner, re.I):
             continue
-        entities = set(_WRITE_ENTITY_A.findall(inner)) | set(_WRITE_ENTITY_B.findall(inner))
+        nodes = scan_bindings(inner)
+        entities = {n["attrs"]["entity"] for n in nodes
+                    if n["attrs"].get("action") in ("createRecord", "editRecord")
+                    and n["attrs"].get("entity")}
         form_ent = attrs.get("entity")
         if form_ent:
             if entities and form_ent not in entities:
                 continue
             entities = {form_ent} | entities
-        if len(entities) != 1 or "data-field=" not in inner:
+        if len(entities) != 1 or not any("field" in n["attrs"] for n in nodes):
             continue
         ent = next(iter(entities))
         if not _ENTITY_ID.match(ent):

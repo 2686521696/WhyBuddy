@@ -1677,6 +1677,8 @@ async def _park_ask(
     head = rows[0]
     question = str(head.get("question") or question or "")
     flat = [str(o.get("label") or "") for o in (head.get("options") or [])]
+    published = state
+    state = state.model_copy(deep=True)
     state.runtimePhase = "awaiting"
     state.awaitReason = "control_ask"
     state.awaitDetail = question
@@ -1693,7 +1695,7 @@ async def _park_ask(
             **({"assumptionSnapshot": copy.deepcopy(assumption_snapshot)} if assumption_snapshot is not None else {}),
         },
     )
-    await _apersist(state)
+    await _commit_question_state(published, state)
     yield {
         "type": "control_ask_user",
         "question": question,
@@ -1736,6 +1738,16 @@ async def _commit_plan_state(state: V5SessionState, candidate: V5SessionState) -
         save_session, candidate, server_write=True, require_durable=True
     )
     for field in ("controlTranscript", "awaitReason", "awaitDetail", "runtimePhase", "goal"):
+        setattr(state, field, getattr(saved, field))
+
+
+async def _commit_question_state(state: V5SessionState, candidate: V5SessionState) -> None:
+    """Do not expose a question or consume its answer before durable storage."""
+    saved = await run_in_threadpool(
+        save_session, candidate, server_write=True, require_durable=True
+    )
+    for field in ("controlTranscript", "awaitReason", "awaitDetail", "runtimePhase",
+                  "specFirstPages", "coverageGaps"):
         setattr(state, field, getattr(saved, field))
 
 
@@ -1910,14 +1922,19 @@ async def _stamp_user_answer(
     kind = answer.get("kind") or "ask_user_question"
     question = _last_need_question(state)
     req_id = str(answer.get("reqId") or "").strip() or _last_need_req_id(state)
-    if req_id != _last_need_req_id(state):
+    if (
+        req_id != _last_need_req_id(state)
+        or state.awaitReason not in ("control_ask", "control_clarify")
+        or any(r.get("kind") == "user_answer" and r.get("reqId") == req_id
+               for r in state.controlTranscript)
+    ):
         raise HTTPException(409, "question_answer_stale")
     asked = next((r for r in reversed(state.controlTranscript) if r.get("reqId") == req_id and r.get("kind") in ("ask_user_question", "ask_user")), {})
     snapshot = asked.get("assumptionSnapshot")
     if isinstance(snapshot, list) and ((_sfp(state).get("spec") or {}).get("assumptions") != snapshot):
         raise HTTPException(409, "assumption_revision_changed")
-    original_goal = _goal_text(state)
-
+    published = state
+    state = state.model_copy(deep=True)
     row: Dict[str, Any] = {
         "role": "tool",
         "kind": "user_answer",
@@ -1954,14 +1971,14 @@ async def _stamp_user_answer(
             or (answer.get("outcome") in ("accepted", "accept") and all(picks.get(str(a.get("id") or "")) for a in snapshot))
         )
         state.specFirstPages = sfp
-    await _resolve_answered_gaps(state, payload)
+    await _resolve_answered_gaps(state, payload, persist=False)
 
     # ⚠ 2026-09-09：这里曾把 ask_user 答案写进 goal。下一行又把
     #   original_goal 刷新成这句话，`_can_auto_grant_scope` 立刻为真，
     #   乱码回执变成「我认成了：sfljsdlf」并点着 SPEC。
     #   目标只在 scope_card / 开始推演 时由 `_write_confirmed_goal` 写。
 
-    await _apersist(state)
+    await _commit_question_state(published, state)
 
 
 def _user_turn_before_need(state: V5SessionState, answer_text: str) -> str:
@@ -2892,7 +2909,28 @@ async def _canned(
     yield _complete(state)
 
 
+_ACTIVE_CONTROL_TURNS: set[str] = set()
+
+
 async def run_control_turn(
+    payload: Dict[str, Any],
+    *,
+    authorized_owner_id: Optional[str] = None,
+) -> AsyncIterator[Dict[str, Any]]:
+    """One control producer per session, including while durable writes await I/O."""
+    validate_control_turn_body(payload)
+    session_id = str(payload["sessionId"]).strip()
+    if session_id in _ACTIVE_CONTROL_TURNS:
+        raise HTTPException(409, "control_turn_in_progress")
+    _ACTIVE_CONTROL_TURNS.add(session_id)
+    try:
+        async for event in _run_control_turn_serial(payload, authorized_owner_id=authorized_owner_id):
+            yield event
+    finally:
+        _ACTIVE_CONTROL_TURNS.discard(session_id)
+
+
+async def _run_control_turn_serial(
     payload: Dict[str, Any],
     *,
     authorized_owner_id: Optional[str] = None,
@@ -2938,7 +2976,7 @@ def _open_question_gaps(state: V5SessionState) -> List[str]:
 
 
 async def _resolve_answered_gaps(
-    state: V5SessionState, payload: Dict[str, Any]
+    state: V5SessionState, payload: Dict[str, Any], *, persist: bool = True
 ) -> List[str]:
     """澄清卡答完，按 id 精确关掉这几个缺口。返回真的被关掉的那些。
 
@@ -2986,7 +3024,7 @@ async def _resolve_answered_gaps(
                 pass
     resolve_readiness_gaps_by_ids(state, ids)
     closed = sorted(before - set(_open_question_gaps(state)))
-    if closed:
+    if closed and persist:
         await _apersist(state)
     return closed
 

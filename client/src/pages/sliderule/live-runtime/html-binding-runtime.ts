@@ -230,7 +230,7 @@ export function implicitActionFromClick(
   const peers = root.querySelectorAll(
     `[data-rows="${entityId.replace(/"/g, "")}"]`
   );
-  if (peers.length >= 2 && !isCartList(box, root)) {
+  if (Array.from(peers).some(peer => isCartList(peer, root)) && !isCartList(box, root)) {
     return { kind: "addToCart", entityId, rowId };
   }
   return { kind: "openRecord", entityId, rowId };
@@ -364,24 +364,10 @@ export function rowsHost(box: Element): Element {
 }
 
 /**
- * 同一页两个 data-rows 绑同一实体：grid/表 = 货架，另一份 = 购物车。
- * 只有一份时不当购物车——后台台账仍是整表。
+ * Cart semantics require an explicit marker; layout does not identify data.
  */
 export function isCartList(box: Element, root: Element): boolean {
-  if ((box.getAttribute("data-view") || "") === "cart") return true;
-  // 存量页还没再跑 bind：同一实体两份 data-rows，非表非 grid 的当购物车。
-  const entityId = box.getAttribute("data-rows") || "";
-  if (!entityId) return false;
-  const peers = root.querySelectorAll(
-    `[data-rows="${entityId.replace(/"/g, "")}"]`
-  );
-  if (peers.length < 2) return false;
-  const host = rowsHost(box);
-  const tag = host.tagName;
-  if (tag === "TBODY" || tag === "THEAD" || tag === "TABLE") return false;
-  const cls = host.getAttribute("class") || "";
-  if (/\bgrid\b/.test(cls)) return false;
-  return true;
+  return root.contains(box) && box.getAttribute("data-view") === "cart";
 }
 
 function stampRowId(rowEl: Element, rid: unknown): void {
@@ -393,18 +379,6 @@ function stampRowId(rowEl: Element, rid: unknown): void {
   selfAndDescendants<HTMLElement>(rowEl, "[data-action]").forEach(el => {
     el.setAttribute("data-row-id", id);
   });
-}
-
-function paintCartQty(rowEl: Element, qty: unknown): void {
-  const n = Number(qty);
-  if (!Number.isFinite(n)) return;
-  const text = String(n);
-  const candidates = Array.from(rowEl.querySelectorAll("span, em, strong, b")).filter(
-    el =>
-      !el.hasAttribute("data-field") &&
-      /^\s*\d+\s*$/.test(el.textContent || "")
-  );
-  if (candidates.length) candidates[candidates.length - 1].textContent = text;
 }
 
 export function catalogEntityId(root: Element): string {
@@ -646,14 +620,15 @@ function clampLimit(raw: string | null): number | null {
   return Math.min(Math.floor(n), 200);
 }
 
-function aggregate(kind: string, rows: BindingRow[], fieldId: string): string {
+function aggregate(kind: string, rows: BindingRow[], fieldId: string, cart = false): string {
   if (kind === "count") return String(rows.length);
   const nums = rows
     .map((r) => {
+      if (r[fieldId] == null || String(r[fieldId]).trim() === "") return NaN;
       const n = Number(r[fieldId]);
       if (!Number.isFinite(n)) return NaN;
       const qty = Number(r.qty);
-      return Number.isFinite(qty) && qty > 0 ? n * qty : n;
+      return cart && kind === "sum" && Number.isFinite(qty) && qty > 0 ? n * qty : n;
     })
     .filter((n) => Number.isFinite(n));
   // 空数据不显 0 —— 0 是个真值，拿它冒充"没有"是在撒谎。
@@ -858,7 +833,6 @@ export function applyBindings(
         if (!row) return;
         fillFields(item, row, fields, entityId, problems, filled, true);
         stampRowId(item, row[rowIdField]);
-        if (cart) paintCartQty(item, row.qty);
       });
       filled.rows += Math.min(painted.length, rows.length);
       return;
@@ -908,7 +882,6 @@ export function applyBindings(
       // 行内 data-field：作用域是**这一行**
       fillFields(tr, row, fields, entityId, problems, filled, true);
       stampRowId(tr, row[rowIdField]);
-      if (cart) paintCartQty(tr, row.qty);
       host.appendChild(tr);
     });
     // 装饰层（当前时间线）在行之后重新挂上。absolute 相对 data-rows
@@ -986,7 +959,7 @@ export function applyBindings(
       rows = filterCatalogRows(rows, undefined, match);
     }
     const kind = (el.getAttribute("data-aggregate") || "count").toLowerCase();
-    el.textContent = aggregate(kind, rows, el.getAttribute("data-field") || "");
+    el.textContent = aggregate(kind, rows, el.getAttribute("data-field") || "", el.getAttribute("data-view") === "cart");
     filled.value += 1;
   });
 

@@ -256,7 +256,7 @@ class Test兜底补发:
         → 本条红。
         """
         code = _code_of(DRIVER, "_fallback_page_events")
-        assert "if _emitted is None or _emitted > 0:" in code, (
+        assert "if _emitted is None:" in code, (
             "「不知道」时还会去补发 —— 会重发已经发过的页"
         )
 

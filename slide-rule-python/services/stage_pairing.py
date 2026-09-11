@@ -123,7 +123,7 @@ class StagePairTracker:
         self._starts += 1
         return entry
 
-    def note_end(self, name: str) -> bool:
+    def note_end(self, name: str, event: Optional[Dict[str, Any]] = None) -> bool:
         """收一个。配上了返回 True；没有对应 start（孤儿 / 重复收）返回 False。
 
         返回值**不是**"要不要把事件发出去"——事件永远该发，它是真的。
@@ -134,7 +134,14 @@ class StagePairTracker:
         if not stack:
             self._orphan_ends += 1
             return False
-        entry = stack.pop(0)  # 先开的先收
+        # Parallel pages can complete out of order; unkeyed legacy stages stay FIFO.
+        keys = [key for key in ("pageId", "device") if (event or {}).get(key) is not None]
+        index = next((i for i, row in enumerate(stack)
+                      if all(row.event.get(key) == event[key] for key in keys)), None)
+        if index is None:
+            self._orphan_ends += 1
+            return False
+        entry = stack.pop(index)
         if not stack:
             self._open.pop(name, None)
         try:
