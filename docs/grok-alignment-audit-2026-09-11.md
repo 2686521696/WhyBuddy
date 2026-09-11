@@ -29,6 +29,7 @@
 - 购物车新增明确的 `data-cart-qty` 显示孔，Python 校验器与 TS allowlist 成对维护；数量更新不会覆盖普通 badge。
 - `sliderule_model_memory` 和 `sliderule_product_charter` 从 DELETE+INSERT 改成单条 `ON CONFLICT ... DO UPDATE`，避免第二条 SQL 失败时丢失旧值。
 - 更新主题 token 的结构判据，使其接受带有 per-page binding status 的新调用形状。
+- 追修截图中的首轮问卷：用户刚提交产品目标时 `goal` 还未 stamp，旧逻辑误把模型选项清空；现在只对纯问候收窄为空，首轮产品话题保留桌面端/移动端等真实选项。
 
 ## 验证结果
 
@@ -39,6 +40,7 @@
 - `pnpm run arch:check`：通过；`pnpm run build`：通过。构建保留既有 Rollup 跨 chunk cycle 和大 chunk warning。
 - Mermaid 实际渲染：全仓图 20 节点/33 边，TS 图 26/121，Python 图 4 块，grok 对照图 5 块，全部通过 Chrome 解析。
 - 受控浏览器检查已覆盖 1280px 与 390px 的 HTML binding、多搜索框、汇总和溢出；本轮数量协议的单元回归已覆盖，真实付费模型链路未验证。
+- 问卷首轮产品话题回归：`test_control_ask_user_parks.py` 12 passed；前端问卷卡 12 passed。
 
 ## 尚存边界
 
