@@ -132,6 +132,148 @@ def test_postgres_payload_bind_expr_keeps_named_param_parseable():
     assert ":p::jsonb" not in expr
 
 
+def test_control_generation_fences_session_insert_and_update(db):
+    """控制 worker 必须和会话 CAS 共用同一条 SQL fence。"""
+    from services.control_run_store import ControlRunStore
+    from services.project_store import ProjectStore
+
+    session_store = session_blob_store.get_store()
+    control_db = ProjectStore.from_url(db)
+    control = ControlRunStore(control_db._q)
+    run = control.submit("sr-fenced", "alice", "request-1", {"message": "run"})
+    claimed = control.claim(run["runId"], "worker-1", 30)
+    assert claimed is not None
+    fence = {"runId": claimed["runId"], "ownerId": "alice",
+             "generation": claimed["generation"], "workerId": "worker-1"}
+
+    payload = _state("sr-fenced", goal="受保护").model_dump()
+    payload["ownerId"] = "alice"
+    assert session_store.save("sr-fenced", payload, expected_rev=None,
+                              expected_control_run=fence) is True
+    row = session_store.load("sr-fenced")
+    assert row is not None
+    assert session_store.save("sr-fenced", {**payload, "lastTurnId": "turn-2"},
+                              expected_rev=row.rev, expected_control_run=fence) is True
+
+    assert session_store.save("sr-fenced", {**payload, "lastTurnId": "turn-3"},
+                              expected_rev=2, expected_control_run={**fence, "generation": fence["generation"] + 1}) is False
+    control.finish(claimed["runId"], "worker-1", claimed["generation"], "completed")
+    latest = session_store.load("sr-fenced")
+    assert latest is not None
+    assert session_store.save("sr-fenced", {**payload, "lastTurnId": "turn-4"},
+                              expected_rev=latest.rev, expected_control_run=fence) is False
+    control_db.close()
+
+
+@pytest.mark.parametrize("invalidate", ["generation", "worker", "owner", "expired", "cancelled", "request_cancelled", "inactive"])
+@pytest.mark.parametrize("existing", [False, True])
+def test_control_fence_rejects_lost_ownership_before_any_session_write(db, invalidate, existing):
+    from services.control_run_store import ControlRunStore
+    from services.project_store import ProjectStore
+
+    blobs = session_blob_store.get_store()
+    control_db = ProjectStore.from_url(db)
+    control = ControlRunStore(control_db._q)
+    run = control.submit("sr-fence-lost", "alice", "request", {})
+    owned = control.claim(run["runId"], "worker", 30)
+    fence = {"runId": owned["runId"], "ownerId": "alice", "workerId": "worker", "generation": owned["generation"]}
+    payload = {**_state("sr-fence-lost").model_dump(), "ownerId": "alice"}
+    if existing:
+        assert blobs.save("sr-fence-lost", payload, expected_rev=None)
+    if invalidate == "generation":
+        fence["generation"] += 1
+    elif invalidate == "worker":
+        fence["workerId"] = "old-worker"
+    elif invalidate == "owner":
+        fence["ownerId"] = "bob"
+        payload["ownerId"] = "bob"
+    elif invalidate == "expired":
+        control_db._q("update wb_control_run set lease_expires_at=0 where id=$1", [owned["runId"]])
+    elif invalidate == "cancelled":
+        control.cancel(owned["runId"], "alice")
+    elif invalidate == "request_cancelled":
+        control_db._q("insert into wb_control_cancel_request values($1,$2,$3)", ["sr-fence-lost", "alice", "request"])
+    else:
+        control_db._q("update wb_control_session set active_run_id=null where session_id=$1", ["sr-fence-lost"])
+    assert not blobs.save("sr-fence-lost", {**payload, "lastTurnId": "turn-2"},
+                          expected_rev=1 if existing else None, expected_control_run=fence)
+    row = blobs.load("sr-fence-lost")
+    if existing:
+        assert row.rev == 1 and row.payload["lastTurnId"] == "turn-1"
+    else:
+        assert row is None
+    control_db.close()
+
+
+def test_control_fence_rejects_cross_session_and_payload_owner(db):
+    from services.control_run_store import ControlRunStore
+    from services.project_store import ProjectStore
+
+    blobs = session_blob_store.get_store()
+    control_db = ProjectStore.from_url(db)
+    control = ControlRunStore(control_db._q)
+    run = control.submit("source", "alice", "request", {})
+    owned = control.claim(run["runId"], "worker", 30)
+    fence = {"runId": owned["runId"], "ownerId": "alice", "workerId": "worker", "generation": 1}
+    payload = {**_state("target").model_dump(), "ownerId": "alice"}
+    assert not blobs.save("target", payload, expected_rev=None, expected_control_run=fence)
+    with pytest.raises(ValueError, match="owner_mismatch"):
+        blobs.save("source", {**payload, "sessionId": "source", "ownerId": "bob"}, expected_rev=None, expected_control_run=fence)
+    with pytest.raises(ValueError, match="id_mismatch"):
+        blobs.save("source", payload, expected_rev=None, expected_control_run=fence)
+    assert blobs.load("target") is None and blobs.load("source") is None
+    control_db.close()
+
+
+@pytest.mark.parametrize("expected_rev", [None, 1])
+def test_http_control_fence_reaches_single_statement_gateway(expected_rev):
+    import httpx
+    from services.sql_gateway import HttpSqlGateway
+
+    requests = []
+    def respond(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        return httpx.Response(200, json={"rows": [{"session_id": "sr-http-fence"}], "truncated": False})
+
+    gateway = HttpSqlGateway("https://db.test", "test-only-key")
+    gateway._client.close()
+    gateway._client = httpx.Client(transport=httpx.MockTransport(respond))
+    blobs = object.__new__(session_blob_store.HttpApiSessionBlobStore)
+    blobs._gateway = gateway
+    fence = {"runId": "run", "ownerId": "alice", "workerId": "worker", "generation": 3}
+    payload = {**_state("sr-http-fence").model_dump(), "ownerId": "alice"}
+    assert blobs.save("sr-http-fence", payload, expected_rev=expected_rev, expected_control_run=fence)
+    assert len(requests) == 1
+    sql = requests[0]["sql"].lower()
+    assert sql.startswith("with owned_control as materialized")
+    assert "for update of cr" in sql and "clock_timestamp()" in sql
+    assert "wb_control_cancel_request" in sql and "cancelrequested" in sql
+    assert ("insert into sliderule_session" if expected_rev is None else "update sliderule_session") in sql
+    assert "cast(%s as jsonb)" in sql
+    assert "run" in requests[0]["params"] and "worker" in requests[0]["params"] and 3 in requests[0]["params"]
+    gateway._client.close()
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_control_fence_never_falls_back_when_control_tables_are_absent(db, existing):
+    from sqlalchemy.exc import OperationalError
+
+    blobs = session_blob_store.get_store()
+    payload = {**_state("sr-no-control-db").model_dump(), "ownerId": "alice"}
+    if existing:
+        assert blobs.save("sr-no-control-db", payload, expected_rev=None)
+    fence = {"runId": "missing", "ownerId": "alice", "workerId": "worker", "generation": 1}
+    with pytest.raises(OperationalError, match="wb_control_run"):
+        blobs.save("sr-no-control-db", {**payload, "lastTurnId": "turn-2"},
+                   expected_rev=1 if existing else None, expected_control_run=fence)
+    row = blobs.load("sr-no-control-db")
+    if existing:
+        assert row.rev == 1 and row.payload["lastTurnId"] == "turn-1"
+    else:
+        assert row is None
+
+
 def test_delete_is_idempotent(db):
     """删不存在的会话算成功（G1 契约），与文件后端一致。"""
     assert persistence.delete_session_record("sr-never-existed")["ok"] is True

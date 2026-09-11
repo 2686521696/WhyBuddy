@@ -21,7 +21,8 @@ def test_plan_storage_failure_does_not_publish_candidate(monkeypatch, tool, args
 
     def fail_save(candidate, **kwargs):
         assert candidate is not state
-        assert kwargs == {"server_write": True, "require_durable": True}
+        assert kwargs == {"server_write": True, "require_durable": True,
+                          "expected_control_run": None}
         writes.append(candidate.model_dump())
         raise RuntimeError("storage unavailable")
 

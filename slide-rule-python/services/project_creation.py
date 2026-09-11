@@ -13,6 +13,7 @@ from pathlib import Path
 from models.project_runtime import Project
 from models.v5_state import V5SessionState
 from services import persistence
+from services.control_checkpoint import current_checkpoint
 from services.project_authority import approved_reference, assert_session_authorized, has_generated_application
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStore, ProjectStoreUnavailable
 
@@ -48,11 +49,15 @@ def load_authorized_session(session_id: str, *, owner_id: str,
 
 
 def _save_reference(state: V5SessionState, project: Project, approval_ref: str) -> V5SessionState:
+    port = current_checkpoint.get()
+    if port is not None:
+        port.guard()
     candidate = state.model_copy(update={"runtimeKind": "project", "projectId": project.projectId,
                                          "projectRevision": project.currentRevision})
     result = persistence.save_session_record(candidate, server_write=True,
         project_binding_approval=approval_ref,
-        expected_project_revision=state.projectRevision if state.projectId else None)
+        expected_project_revision=state.projectRevision if state.projectId else None,
+        expected_control_run=port.fence() if port is not None else None)
     if not result.get("ok") or not isinstance(result.get("state"), V5SessionState):
         raise ProjectStoreUnavailable("project_session_binding_failed")
     authoritative = result["state"]

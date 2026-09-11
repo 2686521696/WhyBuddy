@@ -22,6 +22,8 @@ class CheckpointPort(Protocol):
 
     async def save(self, checkpoint: dict[str, Any]) -> None: ...
 
+    def fence(self) -> dict[str, Any]: ...
+
 
 current_checkpoint: ContextVar[CheckpointPort | None] = ContextVar(
     "control_run_checkpoint", default=None

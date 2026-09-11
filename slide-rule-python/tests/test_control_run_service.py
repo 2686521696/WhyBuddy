@@ -26,7 +26,7 @@ from services.project_store import ProjectStore
 def env(tmp_path, monkeypatch):
     monkeypatch.setenv("SLIDERULE_SESSIONS_FILE", str(tmp_path / "sessions.json"))
     from services.session_blob_store import SqlSessionBlobStore
-    blobs = SqlSessionBlobStore(f"sqlite:///{tmp_path / 'sessions.db'}")
+    blobs = SqlSessionBlobStore(f"sqlite:///{tmp_path / 'state.db'}")
     monkeypatch.setattr(persistence, "_blob_store", lambda *_: blobs)
     monkeypatch.setenv("NODE_ENV", "development")
     monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
@@ -41,7 +41,7 @@ def env(tmp_path, monkeypatch):
     def service():
         return ControlRunService(store, project, None, authorize=authorize,
                                  poll_seconds=0.01, lease_seconds=3)
-    yield SimpleNamespace(project=project, store=store, state=state, service=service,
+    yield SimpleNamespace(project=project, store=store, blobs=blobs, state=state, service=service,
         owner=TEST_USER_ID, viewer=viewer, ref=approved_reference(state))
     project.close()
     blobs._engine.dispose()
@@ -455,6 +455,159 @@ def test_lost_generation_cannot_commit_question_or_plan_receipts(env, commit):
             current_checkpoint.reset(token)
     asyncio.run(run())
     assert load_authorized_session(env.state.sessionId, owner_id=env.owner).awaitDetail != "must never commit"
+
+
+@pytest.mark.parametrize("entry", ["persist", "plan", "question"])
+@pytest.mark.parametrize("changed", [True, False], ids=["changed-state", "unchanged-state"])
+def test_session_sql_rejects_takeover_after_control_guard_passes(env, monkeypatch, entry, changed):
+    """A passing Python guard cannot authorize a write after SQL lease takeover.
+
+    The ordinary save and both receipt commits must carry the same fence through
+    persistence, including its unchanged-payload shortcut and CAS retries.
+    """
+    from services.control_checkpoint import current_checkpoint
+
+    first_service, second_service = env.service(), env.service()
+    record = env.store.submit(env.state.sessionId, env.owner, "inflight-writer",
+        six_fields(env.state.sessionId, "Continue"))
+    first = env.store.claim(record["runId"], first_service.worker_id, 60)
+    old = RunCheckpoint(first_service, first)
+    before = env.blobs.load(env.state.sessionId)
+    candidate = env.state.model_copy(deep=True)
+    if changed:
+        candidate.awaitDetail = "old worker must not commit"
+    actual_save = env.blobs.save
+    takeover = []
+    old_sql_results = []
+
+    def save_after_takeover(session_id, payload, *, expected_rev, expected_control_run=None):
+        if not takeover:
+            assert expected_control_run == old.fence()
+            old.guard()
+            env.store.suspend(record["runId"], first_service.worker_id, first["generation"])
+            second = env.store.claim(record["runId"], second_service.worker_id, 60)
+            assert second["generation"] == first["generation"] + 1
+            takeover.append(RunCheckpoint(second_service, second))
+        result = actual_save(session_id, payload, expected_rev=expected_rev,
+            expected_control_run=expected_control_run)
+        if expected_control_run == old.fence():
+            old_sql_results.append(result)
+        return result
+
+    monkeypatch.setattr(env.blobs, "save", save_after_takeover)
+
+    async def commit(port, state):
+        token = current_checkpoint.set(port)
+        try:
+            if entry == "persist":
+                return await asyncio.to_thread(control._persist, state)
+            method = control._commit_plan_state if entry == "plan" else control._commit_question_state
+            return await method(env.state, state)
+        finally:
+            current_checkpoint.reset(token)
+
+    async def run():
+        with pytest.raises(ControlRunStopped, match="control_session_persist_failed"):
+            await commit(old, candidate)
+        assert len(takeover) == 1
+        assert old_sql_results and not any(old_sql_results)
+        after = env.blobs.load(env.state.sessionId)
+        assert after.rev == before.rev and after.payload == before.payload
+        assert control.load_session(env.state.sessionId).awaitDetail == before.payload["awaitDetail"]
+        assert env.state.awaitDetail == before.payload["awaitDetail"]
+
+        current = load_authorized_session(env.state.sessionId, owner_id=env.owner).model_copy(deep=True)
+        current.awaitDetail = "current worker committed"
+        await commit(takeover[0], current)
+        saved = env.blobs.load(env.state.sessionId)
+        assert saved.rev == before.rev + 1
+        assert saved.payload["awaitDetail"] == "current worker committed"
+        assert control.load_session(env.state.sessionId).awaitDetail == "current worker committed"
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("entry", ["create", "sync"])
+def test_project_reference_save_rejects_takeover_and_new_owner_repairs_it(env, monkeypatch, entry):
+    """Source may commit before takeover; the old worker cannot publish its pointer."""
+    from services import project_creation as creation
+    from services.control_checkpoint import current_checkpoint
+    from services.project_store import ProjectStoreUnavailable
+
+    if entry == "sync":
+        project = creation.create_session_project(env.project, env.state.sessionId,
+            owner_id=env.owner, approval_ref=env.ref)
+        files = env.project.read_files(project.projectId, owner_id=env.owner)
+        files["src/main.tsx"] += "\n// Persisted source awaiting session reference sync\n"
+        revision = env.project.commit_revision(project.projectId, owner_id=env.owner,
+            expected_revision=project.currentRevision, files=files,
+            template_version=creation.TEMPLATE_VERSION, plan_ref=env.ref)
+        assert revision.revision != project.currentRevision
+
+    before = env.blobs.load(env.state.sessionId)
+    first_service, second_service = env.service(), env.service()
+    record = env.store.submit(env.state.sessionId, env.owner, "reference-writer",
+        six_fields(env.state.sessionId, "Continue"))
+    first = env.store.claim(record["runId"], first_service.worker_id, 60)
+    old = RunCheckpoint(first_service, first)
+    actual_save = env.blobs.save
+    takeover, writes = [], []
+
+    def save_after_takeover(session_id, payload, *, expected_rev, expected_control_run=None):
+        if not takeover:
+            old.guard()
+            assert payload["projectId"]
+            assert payload["projectRevision"] != before.payload["projectRevision"]
+            env.store.suspend(record["runId"], first_service.worker_id, first["generation"])
+            second = env.store.claim(record["runId"], second_service.worker_id, 60)
+            assert second["generation"] == first["generation"] + 1
+            takeover.append(RunCheckpoint(second_service, second))
+        result = actual_save(session_id, payload, expected_rev=expected_rev,
+            expected_control_run=expected_control_run)
+        writes.append((expected_control_run, result))
+        return result
+
+    monkeypatch.setattr(env.blobs, "save", save_after_takeover)
+    operation = creation.create_session_project if entry == "create" else creation.sync_session_project
+
+    def execute(port):
+        token = current_checkpoint.set(port)
+        try:
+            return operation(env.project, env.state.sessionId, owner_id=env.owner, approval_ref=env.ref)
+        finally:
+            current_checkpoint.reset(token)
+
+    with pytest.raises(ProjectStoreUnavailable, match="project_session_binding_failed"):
+        execute(old)
+    assert len(takeover) == 1
+    assert writes and all(fence == old.fence() and not saved for fence, saved in writes)
+    after = env.blobs.load(env.state.sessionId)
+    assert after.rev == before.rev and after.payload == before.payload
+    cached = control.load_session(env.state.sessionId)
+    assert (cached.runtimeKind, cached.projectId, cached.projectRevision) == (
+        before.payload["runtimeKind"], before.payload["projectId"], before.payload["projectRevision"])
+
+    retained = env.project.get_project_for_session(env.state.sessionId, owner_id=env.owner)
+    assert retained is not None
+    retained_files = env.project.read_files(retained.projectId, owner_id=env.owner)
+    if entry == "create":
+        assert retained_files == creation.load_project_template()[0]
+    else:
+        assert retained.projectId == project.projectId
+        assert retained.currentRevision == revision.revision and retained_files == files
+
+    execute(takeover[0])
+    recovered = env.project.get_project_for_session(env.state.sessionId, owner_id=env.owner)
+    assert recovered.projectId == retained.projectId
+    assert recovered.currentRevision == retained.currentRevision
+    assert env.project.read_files(recovered.projectId, owner_id=env.owner) == retained_files
+    saved = env.blobs.load(env.state.sessionId)
+    assert saved.rev == before.rev + 1
+    assert saved.payload["runtimeKind"] == "project"
+    assert saved.payload["projectId"] == retained.projectId
+    assert saved.payload["projectRevision"] == retained.currentRevision
+    cached = control.load_session(env.state.sessionId)
+    assert cached.projectId == retained.projectId and cached.projectRevision == retained.currentRevision
 
 
 @pytest.mark.parametrize("budget,reason", [("cheapTokens", "token_budget"), ("round", "tool_rounds"), ("startedAt", "wall_clock")])

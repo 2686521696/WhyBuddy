@@ -262,7 +262,8 @@ def load_session(session_id: str) -> Optional[V5SessionState]:
     return None
 
 def save_session(
-    state: V5SessionState, *, server_write: bool = False, require_durable: bool = False
+    state: V5SessionState, *, server_write: bool = False, require_durable: bool = False,
+    expected_control_run: dict | None = None,
 ) -> V5SessionState:
     ensure_cache_sink()  # reload 之后自愈，见该函数注释
     # Delegate guard+merge to persistence (replay append-only + monotonic_key lastTurnId+counts guard).
@@ -270,7 +271,8 @@ def save_session(
     # This ensures stale/older state passed to service save NEVER stays in the memory authority cache.
     # load_session will see only the guard-protected newer state; fixes review finding 1.
     # Python service save path now respects the persistence guard final result.
-    saved = save_session_record(state, server_write=server_write)
+    saved = save_session_record(state, server_write=server_write,
+                                expected_control_run=expected_control_run)
     if require_durable and not saved.get("ok"):
         raise PersistClosedError(
             str(saved.get("reason") or "persist_failed"), str(saved.get("message") or "")

@@ -675,6 +675,7 @@ def save_session_record(
     server_write: bool = False,
     expected_project_revision: Optional[str] = None,
     project_binding_approval: Optional[str] = None,
+    expected_control_run: Optional[Dict[str, Any]] = None,
 ) -> StoreError:
     # Use lock to serialize the entire read-prior + replay-merge + monotonic compare + write.
     # This ensures that on concurrent saves, each entrant re-reads the *latest* committed
@@ -688,13 +689,22 @@ def save_session_record(
     if store is not None:
         result = _save_session_record_db(store, state, server_write=server_write,
                                        expected_project_revision=expected_project_revision,
-                                       project_binding_approval=project_binding_approval)
+                                       project_binding_approval=project_binding_approval,
+                                       expected_control_run=expected_control_run)
         if result.get("ok"):
             ckpt_state = result.get("state") if isinstance(result.get("state"), V5SessionState) else state
             ckpt_err = _write_turn_checkpoint(ckpt_state, store_file)
             if ckpt_err:
                 return ckpt_err
         return result
+    if expected_control_run is not None:
+        return {
+            "ok": False,
+            "error": "persist_failed",
+            "reason": "control_fence_requires_durable_store",
+            "message": "control-owned session writes require a durable SQL store",
+            "sessionId": state.sessionId,
+        }
     with _save_lock:
         sessions, error = _read_store_file(store_file)
         if error:
@@ -1048,6 +1058,7 @@ def _save_session_record_db(
     store, state: V5SessionState, *, server_write: bool = False,
     expected_project_revision: Optional[str] = None,
     project_binding_approval: Optional[str] = None,
+    expected_control_run: Optional[Dict[str, Any]] = None,
 ) -> StoreError:
     """库后端的写入：读一条 prior → 同一套守卫 → CAS 写回，冲突就重来。
 
@@ -1090,18 +1101,20 @@ def _save_session_record_db(
             # 这不是微优化：一轮推演里 save_session 被调 5~8 次，而守卫判定
             # 「这是陈旧快照」时会把 prior 原样写回去——那次写入必然是无效的，
             # 却照样要驮着约 300KB 跑一趟网络（实测单次全量写 129ms）。
-            if row is not None and store.content_hash(new_payload) == store.content_hash(
+            # A control-owned write still must reach the fenced SQL predicate,
+            # even when the merged payload is byte-identical. Otherwise a stale
+            # worker could return "unchanged" after its lease was taken over.
+            if expected_control_run is None and row is not None and store.content_hash(new_payload) == store.content_hash(
                 row.payload
             ):
                 return {"ok": True, "sessionId": write_state.sessionId, "unchanged": True,
                         "state": write_state}
 
             try:
-                ok = store.save(
-                    write_state.sessionId,
-                    new_payload,
-                    expected_rev=row.rev if row is not None else None,
-                )
+                save_kwargs = {"expected_rev": row.rev if row is not None else None}
+                if expected_control_run is not None:
+                    save_kwargs["expected_control_run"] = expected_control_run
+                ok = store.save(write_state.sessionId, new_payload, **save_kwargs)
             except Exception as exc:  # noqa: BLE001
                 # ★ 请求体超限 / 大包 500 → 按档位再削一次重写（2026-08-18）。
                 #
@@ -1114,11 +1127,10 @@ def _save_session_record_db(
                     if nxt is not None:
                         slim, flag = nxt
                         try:
-                            ok = store.save(
-                                slim.sessionId,
-                                slim.model_dump(),
-                                expected_rev=row.rev if row is not None else None,
-                            )
+                            save_kwargs = {"expected_rev": row.rev if row is not None else None}
+                            if expected_control_run is not None:
+                                save_kwargs["expected_control_run"] = expected_control_run
+                            ok = store.save(slim.sessionId, slim.model_dump(), **save_kwargs)
                         except Exception as exc2:  # noqa: BLE001
                             return {
                                 "ok": False,

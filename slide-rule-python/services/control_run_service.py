@@ -47,6 +47,10 @@ class RunCheckpoint:
         self.checkpoint = copy.deepcopy(record.get("checkpoint"))
         self.stop_reason = None
 
+    def fence(self) -> dict:
+        return {"runId": self.record["runId"], "generation": self.record["generation"],
+                "workerId": self.service.worker_id, "ownerId": self.record["ownerId"]}
+
     def guard(self):
         if self.stop_reason:
             raise ControlRunStopped(self.stop_reason)

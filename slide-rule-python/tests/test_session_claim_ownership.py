@@ -171,7 +171,8 @@ def test_control_rechecks_owner_when_the_stream_begins(monkeypatch):
     async def scenario():
         payload = {"sessionId": sid, "userText": "hello", "installedSkills": [],
                    "activeConnectors": [], "preferredDevice": "desktop", "designSystemId": None}
-        response = await routes.control_turn_stream(payload, user("first-owner"), None)
+        response = await routes.control_turn_stream(payload, user("first-owner"),
+            request=None, x_internal_key=None, x_control_request_id=None)
         monkeypatch.setattr(rehearsal_control, "load_session", lambda _sid:
                             state(sid, "replacement-owner"))
         with pytest.raises(HTTPException) as denied:

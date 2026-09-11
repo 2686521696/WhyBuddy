@@ -1495,7 +1495,12 @@ def _complete(state: V5SessionState) -> Dict[str, Any]:
 def _persist_durable_state(state: V5SessionState) -> V5SessionState:
     guard_control_run()
     try:
-        return save_session(state, server_write=True, require_durable=True)
+        port = current_checkpoint.get()
+        fence = port.fence() if port is not None else None
+        if port is not None and not isinstance(fence, dict):
+            raise ControlRunStopped("control_fence_missing")
+        return save_session(state, server_write=True, require_durable=True,
+                            expected_control_run=fence)
     except Exception as exc:
         if current_checkpoint.get() is not None:
             raise ControlRunStopped("control_session_persist_failed") from exc

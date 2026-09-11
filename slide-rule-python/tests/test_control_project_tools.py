@@ -23,13 +23,14 @@ from services.slide_rule_session import load_session
 def setup(tmp_path, monkeypatch):
     monkeypatch.setenv("SLIDERULE_SESSIONS_FILE", str(tmp_path / "sessions.json"))
     from services.session_blob_store import SqlSessionBlobStore
-    sessions = SqlSessionBlobStore(f"sqlite:///{tmp_path / 'sessions.db'}")
+    database_url = f"sqlite:///{tmp_path / 'state.db'}"
+    sessions = SqlSessionBlobStore(database_url)
     monkeypatch.setattr(persistence, "_blob_store", lambda *_: sessions)
     monkeypatch.setenv("NODE_ENV", "development")
     monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
     from config.settings import settings
     monkeypatch.setattr(settings, "NODE_ENV", "development")
-    store = ProjectStore.from_url(f"sqlite:///{tmp_path / 'project.db'}")
+    store = ProjectStore.from_url(database_url)
     monkeypatch.setattr(project_store, "get_project_store", lambda: store)
     from routes import project_runtime
     monkeypatch.setattr(project_runtime, "get_project_store", lambda: store)
