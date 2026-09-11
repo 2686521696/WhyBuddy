@@ -4270,9 +4270,13 @@ async def _dispatch_tool(
             rows = coerce_user_questions(
                 [{"question": args.get("question") or "", "options": legacy}]
             )
-        if not _has_product_topic(state):
-            # 还不知道要做什么：只要一句话，不给选项——把「问候还是协议」
-            # 做成选择题是 2026-09-08 真机那条伤。
+        # 空会话的廉价闲聊不应该被模型拆成“这是哪种意思”的选择题，
+        # 但首轮产品话题通常还没来得及写进 goal（本轮 user turn 已经落入
+        # controlTranscript）。只看 `_has_product_topic(state)` 会把真实产品
+        # 的选项误删，用户最终只看到前端自动补的“其他（自己写）”。
+        # `_unstamped_product_turn` 正是为这条 live 路径准备的：有产品内容
+        # 就保留模型选项，纯问候仍然收窄成开放问句。
+        if not _has_product_topic(state) and not _unstamped_product_turn(state):
             rows = [
                 {
                     "id": "q1",

@@ -357,6 +357,36 @@ def test_ask_user_with_product_keeps_options(harness):
     assert ask[0]["options"] == ["员工", "主管"]
 
 
+def test_first_product_turn_keeps_options_before_goal_is_stamped(harness):
+    """首轮产品话题尚未写进 goal 时，也不能把选择项静默删掉。
+
+    真机截图中的形态就是这条路径：用户先说完整产品目标，控制面同一轮
+    调 ask_user_question；goal 仍是空占位，但题目已有真实选项。此前分发器
+    只看 `_has_product_topic(state)`，于是前端只能看到自动补的「其他」。
+    反向判据：廉价问候仍由上一条测试保证会收窄成开放问句。
+    """
+    sid = new_sid("ask-first-product")
+    seed_session(sid, goal={"text": "", "status": "needs_refinement"})
+    harness.llm_impl = lambda messages, **kw: llm_tool(
+        "ask_user_question",
+        {
+            "questions": [
+                {
+                    "question": "主要面向哪种终端使用？",
+                    "options": [
+                        {"label": "桌面端", "description": "适合财务和审批人员"},
+                        {"label": "移动端", "description": "适合外出审批"},
+                    ],
+                }
+            ]
+        },
+    )
+    _, events = harness.post(six_fields(sid, "做一个采购审批应用，包含采购单、经理审批、财务确认和字段权限"))
+    ask = [e for e in events if e.get("type") == "control_ask_user"]
+    assert ask, event_types(events)
+    assert [o["label"] for o in ask[0]["questions"][0]["options"]] == ["桌面端", "移动端"]
+
+
 def test_need_answer_messages_put_user_before_function_call():
     """Gemini 400：function call 不能直接跟在 system 后面。
 
