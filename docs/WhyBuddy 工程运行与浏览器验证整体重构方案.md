@@ -514,3 +514,39 @@ pnpm run smoke:project-lifecycle -- --source-db artifacts/project-runtime/<该�
 3. 之后接隔离来源的 HTTP/WebSocket 私有预览、Studio/AppsWorkbench 工程产物，再接浏览器 worker 与版本证据闸。工作台工程预览、浏览器业务验收、生成应用数据库仍未完成，P1/P2/P3 继续按能力记录部分完成。
 
 新增持久控制不改变五系统规格和旧应用的职责，也不把源码保存、命令退出 0、模型回合完成当作业务验收通过。新的接口目前由 Python 声明和测试约束；统一导出的控制运行 wire schema、历史运行保留量与清理策略将在生产开放前补齐。
+
+## 19. 2026-09-12 控制执行权进入会话实际写入
+
+本批起点为 `58389760`，落实第 18 节第一项的代码保护与 SQLite 故障注入。此前控制循环在保存前检查执行权，但旧 worker 可能检查通过后暂停，在新 worker 接管后继续写入。现在会话正文的实际 SQL 提交同时检查控制任务的执行权。
+
+对照 grok 的 [StreamOwnership](../../grok-build/crates/codegen/xai-grok-shell/src/session/acp_session.rs#L677) 与 [sampler_turn](../../grok-build/crates/codegen/xai-grok-shell/src/session/acp_session_impl/sampler_turn.rs#L1731)：grok 在 ownership 锁内完成结果归属检查和记账，使取消与迟到结果具有原子先后关系。WhyBuddy 移植这一行为合同，通过 SQL 实现跨 worker 的写入保护；数据库租约、HTTP SQL 和 E2B 配套属于 WhyBuddy 的实现。
+
+| 路径 | 本批行为 |
+|---|---|
+| 控制保存 | checkpoint port 提供 runId、ownerId、workerId、generation；普通控制保存、问卷回执和计划回执将其传到会话 SQL。 |
+| 实际 SQL | 同时校验 run/session/owner、当前 active run、generation、worker、running 状态、数据库时钟下的租约有效期、取消标记和首包前取消记录。保留会话 rev CAS 与原归属检查。 |
+| 两种数据库 | SQLite 利用单 writer 串行化；PostgreSQL 在同条 SQL 的 MATERIALIZED CTE 内 `FOR UPDATE OF cr`，持有控制行锁直到会话写提交。SQLAlchemy、Neon HTTP、自定义 HTTP 共用 SQL 构造器，HTTP 只发一条语句。 |
+| 相同内容与超限重试 | 控制写入不能靠 `unchanged` 快速返回成功；HTTP 413 后精简 payload 重试仍携带原执行权。失去执行权不更新会话正文或缓存。 |
+| 工程引用 | 创建和 patch 后同步项目引用也传执行权。若源码已保存而引用写入被拒，保留源码；新 worker 可重试恢复同一项目与 revision，不重复创建。 |
+| 存储装配 | 控制表、项目表和会话表必须位于同一数据库。缺表或存储错误明确失败；带控制执行权的会话保存不降级到 JSON 文件。单测与 TCP 烟测已统一隔离数据库，烟测启动时检查三类表均可见。 |
+
+验证使用真实 SQL 和实际入口：旧 guard 通过后，在 `SqlSessionBlobStore.save` 调用前交接租约，再执行原 SQL。普通保存、计划、问卷分别覆盖内容改变和内容不变；项目首次绑定与源码更新后的引用同步也覆盖这一竞争。均验证旧写入被拒、数据库和缓存不变，以及新 worker 能正常提交。
+
+本批证据：
+
+- 会话、控制、工程、计划和持久化回归 832 passed、2 skipped，报告：`artifacts/control-fence-pytest.xml`。跳过项为文件存储不适用的 SQL 竞争场景，对应 SQL 分支已运行。同时修正计划存储测试的新参数合同，以及一条归属测试对控制路由旧位置参数的调用，保留原失败行为断言。
+- 12 个控制链变异全部捕获，报告：`artifacts/control-run-mutations.json`。新增会话执行权传递、相同内容快路径、超限重试、SQL generation 和项目引用传递的反向验证。
+- 真实 TCP/SSE：`pnpm run smoke:control-runs`，10 项通过；报告 `artifacts/control-run-smoke/report.json`，原始事件位于 `artifacts/control-run-smoke/1789150442-27d5777d`。子进程正常退出。模型与身份仍为脚本夹具。
+- 真实 E2B：`pnpm run smoke:project-tools`，7 项通过；报告 `artifacts/project-tools/1789150442-a27a50ae/report.json`。真实类型错误后修复，新 revision 的 check/test/build 全部成功，4 个沙盒均销毁并经 provider 查询确认无遗留。工具选择仍是脚本夹具，不算真实模型自主决策或浏览器业务验收。
+
+脚本测试 56/56、工程生成合同与 Python/TS/grok 架构检查通过；三份权威架构图和本方案通过真实 Chrome Mermaid 渲染。只新增项目引用保存对 checkpoint port 的实际依赖，没有扩大循环、违规或孤儿基线。本批没有修改前端实现，也未重新执行全量 TypeScript 类型检查。
+
+**验收边界：** SQLite 的拒绝与恢复已实际执行；HTTP 测试经过真实网关的参数转换，检查一次请求中的锁定 SQL。当前机器没有 PostgreSQL 二进制，Docker 引擎也未运行，未完成真实 PostgreSQL 多连接竞争验收。不能将 SQL 形状测试写成生产并发证明。工程能力仍限定内部开发用户，本批没有开放生产。
+
+**接下来按顺序：**
+
+1. 在隔离 PostgreSQL 环境验证暂停旧 worker、并发接管、取消、HTTP 网关提交及服务重启；补真实模型网关工具合同与自主工程操作验收。
+2. 实现隔离来源的 HTTP/WebSocket 私有预览，验证短时票据、撤销、归属、上游限制和 HMR，再接 Studio 与 AppsWorkbench 的共同工程入口。
+3. 接独立浏览器 worker、固定源码版本的证据与交付闸，继续真实业务应用、持久数据和重建验收。
+
+本批推进的是运行与恢复基础，不代表右侧工程预览、浏览器验收或完整业务生成已经完成。P1/P2/P3 继续按实际能力标记部分完成。
