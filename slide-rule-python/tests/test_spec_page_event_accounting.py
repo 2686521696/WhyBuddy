@@ -269,7 +269,8 @@ class Test兜底补发:
         """⚠ 补发发生在整链跑完之后，此时页面已经打过孔。说 `False` 会让前端
         把成品当素颜页，再等一次永远不会来的覆盖。"""
         code = _code_of(DRIVER, "_fallback_page_events")
-        assert '"bound": True' in code
+        assert '"bound": _bound' in code
+        assert 'binding_status.get(_pid) == "bound"' in code
         assert '"bound": False' not in code
 
     def test_补发的事件带着标记(self):

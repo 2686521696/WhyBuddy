@@ -150,7 +150,8 @@ def test_partial_page_delivery_backfills_only_missing_or_changed_content():
     module = ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[]))
     seen = {("desktop", "p1"): ("first", True)}
     env = {"_peek_page_events": lambda: 1, "_note_page_event": lambda: None,
-           "_peek_pages_for_fallback": lambda: {"pages": {"p1": "first", "p2": "second"}},
+           "_peek_pages_for_fallback": lambda: {"pages": {"p1": "first", "p2": "second"},
+                                               "pageBindStatus": {"p1": "bound", "p2": "bound"}},
            "_delivered_pages": seen}
     exec(compile(module, str(path), "exec"), env)
 

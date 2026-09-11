@@ -1286,6 +1286,7 @@ def _reemit_pages(
     pages: Dict[str, str],
     *,
     bound: bool,
+    binding_status: Optional[Dict[str, str]] = None,
 ) -> None:
     """把统一/打孔后的整批页面再冲一遍 sink（前端按 pageId 覆盖）。
 
@@ -1296,7 +1297,8 @@ def _reemit_pages(
     total = len(pages)
     for i, (pid, html) in enumerate(pages.items(), 1):
         try:
-            sink(pid, html, i, total, bound)
+            page_bound = binding_status.get(pid) == PAGE_BIND_BOUND if binding_status is not None else bound
+            sink(pid, html, i, total, page_bound)
         except Exception as exc:  # noqa: BLE001 — 顺路推送，不打死主链
             print(f"[spec_first_pipeline] 页面重发失败（不影响产出）：{str(exc)[:120]}")
 
@@ -2500,7 +2502,7 @@ def run_spec_first(
 
         # 打完孔的成品页重发（bound=True）：前端徽标从「尚未接数据」翻成
         # 「已接数据」，不用等交付那一刻的 finalState。
-        _reemit_pages(sink, pages, bound=True)
+        _reemit_pages(sink, pages, bound=True, binding_status=page_bind_status(pages, True, bound_failed))
 
     # 断线体检：闸查悬空引用，体检查反面「东西在不在网里」。
     # 必须在打孔 + 外壳还原之后——量用户看见的孔，不量打孔前的模型网。

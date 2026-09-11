@@ -2709,8 +2709,8 @@ async def drive_full_v5_session_stream(
             全部理由：「一份能独立打开的 HTML 比最终模型早四五分钟，攒齐
             再交等于白白转圈」。
 
-            ⚠ `bound=True`：补发发生在整链跑完之后，此时页面已经打过孔，
-              说 `False` 会让前端把成品当素颜页再等一次覆盖。
+            ⚠ 2026-09-11：一跳只画页面时也会来到这里，不能把“执行结束”
+              当成“已经绑定数据”。相位必须跟随落库的每页 pageBindStatus。
             """
             if (
                 _peek_page_events is None
@@ -2740,6 +2740,7 @@ async def drive_full_v5_session_stream(
                     return
                 total = len(pages)
                 device = str(blob.get("device") or "desktop")
+                binding_status = blob.get("pageBindStatus") or {}
             except Exception as exc:  # noqa: BLE001 — 兜底自己不许炸主链路
                 print(f"[v5_full_driver] ⚠ spec_page 兜底补发跳过：{str(exc)[:120]}")
                 return
@@ -2748,9 +2749,10 @@ async def drive_full_v5_session_stream(
                 "补发尚未通知的最终页面"
             )
             for _i, (_pid, _html) in enumerate(sorted(pages.items()), start=1):
-                if _delivered_pages.get((device, _pid)) == (_html, True):
+                _bound = binding_status.get(_pid) == "bound"
+                if _delivered_pages.get((device, _pid)) == (_html, _bound):
                     continue
-                _delivered_pages[(device, _pid)] = (_html, True)
+                _delivered_pages[(device, _pid)] = (_html, _bound)
                 _note_page_event()
                 yield {
                     "type": "spec_page",
@@ -2758,7 +2760,7 @@ async def drive_full_v5_session_stream(
                     "html": _html,
                     "current": _i,
                     "total": total,
-                    "bound": True,
+                    "bound": _bound,
                     "device": device,
                     # 让下游能分出"这是补发的"——排查时最想知道的第一件事。
                     "fallback": True,

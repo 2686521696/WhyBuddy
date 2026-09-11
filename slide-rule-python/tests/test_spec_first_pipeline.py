@@ -299,6 +299,15 @@ class Test统一与打孔后重发页面:
         assert emitted[3][0] == "p2" and emitted[3][2] is True
         assert "孔2" in emitted[3][1] and "sliderule-theme" in emitted[3][1]
 
+    def test_failed_binding_stays_unbound_in_live_notifications(self, monkeypatch):
+        self._wire_full_chain(monkeypatch)
+        monkeypatch.setattr("services.html_bindings.bind_pages", lambda pages, model, **kw: {
+            "pages": {"p1": "<html>bound first page</html>"}, "failed": {"p2": "invalid field"},
+        })
+        emitted = []
+        sfp.run_spec_first("test partial binding", on_page=lambda pid, html, done, total, bound=False, device="desktop": emitted.append((pid, bound)))
+        assert emitted[-2:] == [("p1", True), ("p2", False)]
+
     def test_四参老_sink_不炸整条链(self, monkeypatch):
         """重发多带一个 bound 参数。老 sink 只收四个位置参——TypeError 必须
         被吞掉（UI 推送失败不许赔掉已经烧过 LLM 的页面，纪律同
