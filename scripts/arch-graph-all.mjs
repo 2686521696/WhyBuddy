@@ -39,6 +39,7 @@ function pythonExe() {
 /** grok-build 对照物在哪。跟 arch-graph-grok.py 同一条查找链。 */
 function grokRoot() {
   const env = (process.env.GROK_BUILD_ROOT || "").trim();
+  if (env) return env; // Python validates explicit selection; never fall back silently.
   const candidates = [
     env,
     resolve(ROOT, "..", "grok-build"),
@@ -58,17 +59,31 @@ function run(label, cmd, args, opts = {}) {
 }
 
 function main(argv) {
-  const flag = argv.find(a => ["--emit", "--check", "--report", "--overview"].includes(a)) || "--report";
+  const flags = argv.filter(a => ["--emit", "--check", "--report", "--overview", "--details"].includes(a));
+  if (flags.length > 1) {
+    console.error("[arch] 一次只选择一种生成/检查模式。");
+    return 1;
+  }
+  const flag = flags[0] || "--report";
   const onlyArg = argv.find(a => a.startsWith("--only="));
   const only = onlyArg ? onlyArg.slice("--only=".length).trim() : "";
+  if (only && !["py", "ts", "grok"].includes(only)) {
+    console.error(`[arch] 未知生成器：${only}`);
+    return 1;
+  }
+  const grokDocumentMode = ["--overview", "--details"].includes(flag);
+  if (grokDocumentMode && only && only !== "grok") {
+    console.error("[arch] overview/details 只适用于 grok。");
+    return 1;
+  }
   const wants = name => !only || only === name;
   const py = pythonExe();
   let failed = 0;
 
-  if (wants("py") && flag !== "--overview") {
+  if (wants("py") && !grokDocumentMode) {
     failed += run("Python 侧", py, ["slide-rule-python/arch_graph.py", flag]) ? 1 : 0;
   }
-  if (wants("ts") && flag !== "--overview") {
+  if (wants("ts") && !grokDocumentMode) {
     failed += run("TS 侧", process.execPath, ["scripts/arch-graph-ts.mjs", flag]) ? 1 : 0;
   }
   if (!wants("grok")) {
@@ -82,14 +97,13 @@ function main(argv) {
 
   const grok = grokRoot();
   if (!grok) {
+    if (only === "grok" || grokDocumentMode) {
+      console.error("[arch] 找不到指定任务需要的 grok-build；请设置 GROK_BUILD_ROOT。");
+      return 1;
+    }
     process.stdout.write(
       "\n───── grok-build 对照 ─────\n" +
         "跳过：没找到 grok-build。设 GROK_BUILD_ROOT，或放到仓根兄弟目录 ../grok-build。\n"
-    );
-  } else if (flag === "--check") {
-    // 对照物没有闸——它的边由 cargo 强制，我们只画不判。
-    process.stdout.write(
-      "\n───── grok-build 对照 ─────\n跳过：对照物只生成不过闸（边由 cargo 强制）。\n"
     );
   } else {
     failed += run("grok-build 对照", py, ["scripts/arch-graph-grok.py", flag], {

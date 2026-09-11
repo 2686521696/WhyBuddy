@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """从 grok-build 的 Cargo workspace **算出**架构图，不许手画。
 
-WhyBuddy 自己的图由 `arch_graph.py` / `arch-graph-ts.mjs` 生成。grok-build
-那一侧他们一张图都没有——91 来个 crate 的边写在各自 Cargo.toml 里，由
-cargo 强制。本文件只读他们的声明，画出那张他们从来没画过的图，好对照。
+读取 grok-build Cargo workspace 声明与源码，生成依赖图、模块总览和十模块详解。
+图的边来自清单；详解的人工阅读说明维护在 grok-module-notes-*.json。
 
 ⚠ 不把 grok-build 源码拷进本仓。路径按下面顺序找：
     1. `--root`
@@ -15,6 +14,8 @@ cargo 强制。本文件只读他们的声明，画出那张他们从来没画�
 
     python scripts/arch-graph-grok.py --emit
     python scripts/arch-graph-grok.py --report
+    python scripts/arch-graph-grok.py --details
+    python scripts/arch-graph-grok.py --check
 """
 
 from __future__ import annotations
@@ -28,9 +29,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
+from grok_rust_inventory import RustFile, count_rust_lines, inventory
+from grok_module_docs import load_notes, render_detail, render_index
+
 REPO = Path(__file__).resolve().parent.parent
 DIAGRAM = REPO / "docs" / "grok-build 架构图（自动生成）.md"
 OVERVIEW = REPO / "docs" / "grok-build 模块总览（自动生成）.md"
+DETAIL_DIR = REPO / "docs" / "grok-build 模块"
+DETAIL_TARGETS = (
+    "xai-grok-pager", "xai-grok-shell", "xai-grok-tools", "xai-grok-workspace",
+    "xai-grok-pager-render", "xai-grok-pager-pty-harness", "xai-fast-worktree",
+    "xai-grok-login", "xai-grok-telemetry", "xai-grok-agent",
+)
 
 # 编排环那一截：Agent / 工具 / 工作流 / 会话壳。对照 WhyBuddy 时盯这一簇，
 # 不要把 pager 的 700+ 个 rs 文件当成「我们也要长这么大」。
@@ -80,6 +90,7 @@ class Graph:
     # (src, dst) 运行时内部边，不含 dev-dependencies
     edges: Set[Tuple[str, str]] = field(default_factory=set)
     workspace_members: int = 0
+    files: Dict[str, List[RustFile]] = field(default_factory=dict)
 
 
 def _discover_root(explicit: Optional[str]) -> Path:
@@ -89,6 +100,13 @@ def _discover_root(explicit: Optional[str]) -> Path:
     env = os.environ.get("GROK_BUILD_ROOT", "").strip()
     if env:
         candidates.append(Path(env))
+    # An explicitly selected source must never silently fall back to another copy.
+    requested = explicit or env
+    if requested:
+        p = Path(requested)
+        if not ((p / "Cargo.toml").is_file() and (p / "crates").is_dir()):
+            raise SystemExit(f"指定的 grok-build 源码目录无效：{p}")
+        return p.resolve()
     candidates.append(REPO.parent / "grok-build")
     candidates.append(REPO / "grok-build")
     for p in candidates:
@@ -110,61 +128,11 @@ def _family_of(rel: str) -> str:
 
 
 def _rust_loc(path: Path) -> Tuple[int, int]:
-    """Return (raw lines, non-blank/non-comment source lines) for one Rust file.
-
-    This deliberately uses a small line scanner instead of a formatter/parser:
-    the report must work on an unbuilt checkout and the number is an orientation
-    metric, not a compiler statistic.  Block and line comments are removed;
-    strings are left intact so URLs and ``//`` in literals do not erase a line.
-    """
-    raw = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    source = 0
-    in_block = False
-    for line in raw:
-        i = 0
-        kept: List[str] = []
-        while i < len(line):
-            if in_block:
-                end = line.find("*/", i)
-                if end < 0:
-                    i = len(line)
-                    continue
-                in_block = False
-                i = end + 2
-                continue
-            start = line.find("/*", i)
-            slash = line.find("//", i)
-            if slash >= 0 and (start < 0 or slash < start):
-                kept.append(line[i:slash])
-                i = len(line)
-                continue
-            if start >= 0:
-                kept.append(line[i:start])
-                in_block = True
-                i = start + 2
-                continue
-            kept.append(line[i:])
-            i = len(line)
-        if "".join(kept).strip():
-            source += 1
-    return len(raw), source
+    return count_rust_lines(path.read_text(encoding="utf-8"))
 
 
-def _count_loc(crate_dir: Path) -> Tuple[int, int, int, int]:
-    files = raw = source = test_source = 0
-    for p in crate_dir.rglob("*.rs"):
-        # 第三方 vendored / fuzz 语料不算 crate 自己的形状
-        rel = p.relative_to(crate_dir).as_posix()
-        if "/target/" in f"/{rel}" or rel.startswith("fuzz/"):
-            continue
-        files += 1
-        file_raw, file_source = _rust_loc(p)
-        raw += file_raw
-        source += file_source
-        rel_parts = p.relative_to(crate_dir).parts
-        if "tests" in rel_parts or p.name.startswith("test_") or p.name.endswith("_test.rs"):
-            test_source += file_source
-    return files, raw, source, test_source
+def _file_inventory(crate_dir: Path) -> List[RustFile]:
+    return inventory(crate_dir)
 
 
 def _purpose(crate_dir: Path, declared: str) -> str:
@@ -244,13 +212,18 @@ def build_graph(root: Path) -> Graph:
         crate_dir = root / rel
         manifest_path = crate_dir / "Cargo.toml"
         if not manifest_path.is_file():
-            continue
+            raise ValueError(f"workspace member missing Cargo.toml: {rel}")
         man = _load_toml(manifest_path)
         pkg = man.get("package") or {}
         name = pkg.get("name")
         if not name:
-            continue
-        rs_files, raw_loc, source_loc, test_loc = _count_loc(crate_dir)
+            raise ValueError(f"workspace member missing package.name: {rel}")
+        files = _file_inventory(crate_dir)
+        g.files[name] = files
+        rs_files = len(files)
+        raw_loc = sum(f.raw for f in files)
+        source_loc = sum(f.source for f in files)
+        test_loc = sum(f.source for f in files if f.kind == "test")
         g.crates[name] = Crate(
             name=name,
             path=crate_dir,
@@ -406,8 +379,7 @@ def render_doc(g: Graph) -> str:
         "# grok-build 架构图（自动生成）",
         "",
         "> ⚠ **这份文件是 `scripts/arch-graph-grok.py --emit` 生成的，别手改。**",
-        "> grok-build 自己一张架构图都没有：边写在各 crate 的 `Cargo.toml` 里，",
-        "> cargo 编译器强制。本文件只是把那些声明画出来，方便和 WhyBuddy 对照。",
+        "> 边来自各 crate 的 `Cargo.toml`，本文件将声明画出，方便和 WhyBuddy 对照。",
         "> grok-build 源码不进本仓。",
         "> 模块用途、source LOC、叶子排行和 WhyBuddy 对照见 `docs/grok-build 模块总览（自动生成）.md`。",
         "",
@@ -590,8 +562,9 @@ def render_overview(g: Graph) -> str:
         "> ⚠ 这份文件由 `scripts/arch-graph-grok.py --overview` 生成。请修改源码后重新生成，不要手改。", "",
         f"- 对照源码：`{g.root}`", f"- SOURCE_REV：`{g.source_rev or '（未提供）'}`",
         f"- Cargo workspace 声明成员：**{g.workspace_members}**；实际读取 crate：**{len(g.crates)}**",
+        "- 十个大模块的内部拆解：[详细文档索引](grok-build%20模块/README.md)。",
         f"- 内部运行时依赖边：**{len(g.edges)}**；叶子：**{len(leaves)}**；根：**{len(roots)}**；循环：**{len(_cycles(g))}**",
-        "- 行数口径：`source LOC` = 所有 `.rs` 去掉空行和注释后的行（包含内嵌测试）；`raw LOC` = 原始行数；`测试 LOC` 只统计 tests/ 等独立测试路径。",
+        "- 行数口径：`source LOC` = 所有 `.rs` 去掉空行和注释后的非空行（保留字符串内容，包含内嵌测试）；`raw LOC` = 原始行数。`测试 LOC` 按 tests/、*_tests/、test_*.rs、*_test.rs、*_tests.rs、tests.rs 路径识别，是总数的子集；source 类文件仍可能包含内嵌测试。",
         "- 巨型叶子口径：出度为 0 且 source LOC ≥ 10,000。它们是依赖图的底层节点，但可能承载完整产品功能。",
         "",
         "## 先看结论", "",
@@ -625,8 +598,7 @@ def render_overview(g: Graph) -> str:
     lines += ["", "## 完整 crate 清单", "", "| crate | 分组 | 用途 | source LOC | raw LOC | 测试 LOC | .rs 文件 | 入度 | 出度 | 角色 | 路径 |", "|---|---|---|---:|---:|---:|---:|---:|---:|---|---|"]
     for n in sorted(g.crates):
         c = g.crates[n]
-        role = "leaf" if out[n] == 0 else "";
-        role += "/root" if inn[n] == 0 else ""
+        role = "/".join(r for r, yes in (("leaf", out[n] == 0), ("root", inn[n] == 0)) if yes)
         role = role or "internal"
         lines.append(f"| `{n}` | `{c.family}` | {c.description} | {c.source_loc:,} | {c.raw_loc:,} | {c.test_loc:,} | {c.rs_files} | {inn[n]} | {out[n]} | {role} | `{c.rel}` |")
     lines += ["", "## WhyBuddy 对照时最有价值的模块", "", "| grok-build 模块 | 价值 | WhyBuddy 当前对应方向 |", "|---|---|---|"]
@@ -634,7 +606,7 @@ def render_overview(g: Graph) -> str:
         ("xai-grok-shell", "完整会话宿主、命令循环、生命周期；是最大的产品编排层", "WhyBuddy control plane / session / SSE"),
         ("xai-grok-tools", "工具协议和实现的集中入口，决定模型能做什么", "WhyBuddy capability/tool executor"),
         ("xai-grok-workspace", "文件、VCS、执行、发现和 preview 的宿主能力", "WhyBuddy workspace + generated app runtime"),
-        ("xai-grok-pager", "终端 UI 巨型叶子，包含大量面板和交互状态", "WhyBuddy 五十多个面板的拆分参考"),
+        ("xai-grok-pager", "终端 UI 组合模块，包含大量面板和交互状态（出度非零）", "WhyBuddy 五十多个面板的拆分参考"),
         ("xai-grok-agent", "Agent 定义、提示词和工具装配", "WhyBuddy agent loop / planning"),
         ("xai-computer-hub-sdk", "浏览器/电脑控制的 SDK 与连接池", "WhyBuddy sandbox + browser runtime 缺口"),
         ("xai-grok-memory", "会话记忆和持久化相关能力", "WhyBuddy memory / charter"),
@@ -649,6 +621,23 @@ def render_overview(g: Graph) -> str:
     return "\n".join(lines)
 
 
+def generated_documents(g: Graph, mode: str) -> Dict[Path, str]:
+    documents = {}
+    if mode in {"emit", "check"}:
+        documents[DIAGRAM] = render_doc(g)
+    if mode in {"emit", "check", "overview", "details"}:
+        documents[OVERVIEW] = render_overview(g)
+    if mode in {"emit", "check", "details"}:
+        notes = load_notes(REPO, g, DETAIL_TARGETS)
+        documents[DETAIL_DIR / "README.md"] = render_index(g, DETAIL_TARGETS, notes)
+        for name in DETAIL_TARGETS:
+            crate = g.crates[name]
+            documents[DETAIL_DIR / f"{name}.md"] = render_detail(
+                g, crate, notes[name], DETAIL_DIR, REPO, _load_toml(crate.path / "Cargo.toml")
+            )
+    return documents
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         fn = getattr(stream, "reconfigure", None)
@@ -659,24 +648,30 @@ def main(argv: Optional[List[str]] = None) -> int:
                 pass
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--root", help="grok-build 源码根目录")
-    ap.add_argument("--emit", action="store_true", help="写 docs/grok-build 架构图（自动生成）.md")
-    ap.add_argument("--overview", action="store_true", help="写 docs/grok-build 模块总览（自动生成）.md")
-    ap.add_argument("--report", action="store_true", help="人看的摘要")
+    group = ap.add_mutually_exclusive_group()
+    group.add_argument("--emit", action="store_true", help="一起更新 grok 架构图、总览、十模块详解")
+    group.add_argument("--overview", action="store_true", help="更新模块总览")
+    group.add_argument("--details", action="store_true", help="更新十模块详解、索引与总览")
+    group.add_argument("--check", action="store_true", help="核验全部生成文档与当前源码同步，不构建 Rust")
+    group.add_argument("--report", action="store_true", help="人看的摘要")
     args = ap.parse_args(argv)
 
     g = build_graph(_discover_root(args.root))
-    if args.emit:
-        DIAGRAM.parent.mkdir(parents=True, exist_ok=True)
-        DIAGRAM.write_text(render_doc(g), encoding="utf-8")
-        print(f"已生成 {DIAGRAM.relative_to(REPO)}")
-        _report(g)
-    if args.overview:
-        OVERVIEW.parent.mkdir(parents=True, exist_ok=True)
-        OVERVIEW.write_text(render_overview(g), encoding="utf-8")
-        print(f"已生成 {OVERVIEW.relative_to(REPO)}")
-        _report(g)
-    if args.emit or args.overview:
-        return 0
+    mode = next((m for m in ("emit", "overview", "details", "check") if getattr(args, m)), "report")
+    documents = generated_documents(g, mode)
+    if mode == "check":
+        stale = [str(p.relative_to(REPO)) for p, text in documents.items()
+                 if not p.is_file() or p.read_text(encoding="utf-8") != text]
+        if stale:
+            print("生成文档已过期，请运行 pnpm run arch:grok:emit：\n" + "\n".join(stale), file=sys.stderr)
+            return 1
+        print(f"Grok generated documents synchronized: {len(documents)} files; evidence references checked.")
+    else:
+        for path, content in documents.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8", newline="\n")
+        if documents:
+            print(f"已生成 {len(documents)} 份 grok 文档。")
     _report(g)
     return 0
 

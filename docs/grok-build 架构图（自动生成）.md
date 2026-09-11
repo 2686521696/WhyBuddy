@@ -1,8 +1,7 @@
 # grok-build 架构图（自动生成）
 
 > ⚠ **这份文件是 `scripts/arch-graph-grok.py --emit` 生成的，别手改。**
-> grok-build 自己一张架构图都没有：边写在各 crate 的 `Cargo.toml` 里，
-> cargo 编译器强制。本文件只是把那些声明画出来，方便和 WhyBuddy 对照。
+> 边来自各 crate 的 `Cargo.toml`，本文件将声明画出，方便和 WhyBuddy 对照。
 > grok-build 源码不进本仓。
 > 模块用途、source LOC、叶子排行和 WhyBuddy 对照见 `docs/grok-build 模块总览（自动生成）.md`。
 
