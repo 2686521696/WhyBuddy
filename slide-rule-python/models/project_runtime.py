@@ -67,6 +67,32 @@ OperationStatus = Literal[
     "cancelling", "cancelled", "interrupted",
 ]
 
+RuntimeStatus = Literal["provisioning", "syncing", "installing", "starting", "ready", "stopping", "stopped", "expired", "failed", "reconciling"]
+
+
+class RuntimeInstance(ProjectContract):
+    runtimeId: str
+    workspaceId: str
+    projectId: str
+    revision: str
+    status: RuntimeStatus
+    port: int
+    previewUrl: str | None = None
+    processId: str | None = None
+    health: str | None = None
+    lastHeartbeat: str
+
+
+class PreviewDescriptor(ProjectContract):
+    kind: Literal["project"] = "project"
+    projectId: str
+    runtimeId: str
+    revision: str
+    status: RuntimeStatus
+    entryUrl: str | None = None
+    expiresAt: str | None = None
+    capabilities: list[str] = Field(default_factory=list)
+
 
 class ProjectOperation(ProjectContract):
     operationId: str

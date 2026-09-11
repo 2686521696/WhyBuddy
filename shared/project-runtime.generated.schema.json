@@ -25,6 +25,84 @@
       "title": "ManifestFile",
       "type": "object"
     },
+    "PreviewDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "project",
+          "default": "project",
+          "title": "Kind",
+          "type": "string"
+        },
+        "projectId": {
+          "title": "Projectid",
+          "type": "string"
+        },
+        "runtimeId": {
+          "title": "Runtimeid",
+          "type": "string"
+        },
+        "revision": {
+          "title": "Revision",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "provisioning",
+            "syncing",
+            "installing",
+            "starting",
+            "ready",
+            "stopping",
+            "stopped",
+            "expired",
+            "failed",
+            "reconciling"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "entryUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Entryurl"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expiresat"
+        },
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        }
+      },
+      "required": [
+        "projectId",
+        "runtimeId",
+        "revision",
+        "status"
+      ],
+      "title": "PreviewDescriptor",
+      "type": "object"
+    },
     "Project": {
       "additionalProperties": false,
       "properties": {
@@ -349,6 +427,98 @@
         "timestamp"
       ],
       "title": "RuntimeEvent",
+      "type": "object"
+    },
+    "RuntimeInstance": {
+      "additionalProperties": false,
+      "properties": {
+        "runtimeId": {
+          "title": "Runtimeid",
+          "type": "string"
+        },
+        "workspaceId": {
+          "title": "Workspaceid",
+          "type": "string"
+        },
+        "projectId": {
+          "title": "Projectid",
+          "type": "string"
+        },
+        "revision": {
+          "title": "Revision",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "provisioning",
+            "syncing",
+            "installing",
+            "starting",
+            "ready",
+            "stopping",
+            "stopped",
+            "expired",
+            "failed",
+            "reconciling"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "port": {
+          "title": "Port",
+          "type": "integer"
+        },
+        "previewUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Previewurl"
+        },
+        "processId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Processid"
+        },
+        "health": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Health"
+        },
+        "lastHeartbeat": {
+          "title": "Lastheartbeat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "runtimeId",
+        "workspaceId",
+        "projectId",
+        "revision",
+        "status",
+        "port",
+        "lastHeartbeat"
+      ],
+      "title": "RuntimeInstance",
       "type": "object"
     },
     "WorkspaceLease": {

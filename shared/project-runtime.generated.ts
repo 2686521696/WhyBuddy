@@ -6,6 +6,17 @@ export type ManifestFile = {
   "sizeBytes": number;
 };
 
+export type PreviewDescriptor = {
+  "kind"?: "project";
+  "projectId": string;
+  "runtimeId": string;
+  "revision": string;
+  "status": "provisioning" | "syncing" | "installing" | "starting" | "ready" | "stopping" | "stopped" | "expired" | "failed" | "reconciling";
+  "entryUrl"?: string | null;
+  "expiresAt"?: string | null;
+  "capabilities"?: Array<string>;
+};
+
 export type Project = {
   "projectId": string;
   "sessionId": string;
@@ -71,6 +82,19 @@ export type RuntimeEvent = {
   "payload"?: {
   [key: string]: unknown;
 };
+};
+
+export type RuntimeInstance = {
+  "runtimeId": string;
+  "workspaceId": string;
+  "projectId": string;
+  "revision": string;
+  "status": "provisioning" | "syncing" | "installing" | "starting" | "ready" | "stopping" | "stopped" | "expired" | "failed" | "reconciling";
+  "port": number;
+  "previewUrl"?: string | null;
+  "processId"?: string | null;
+  "health"?: string | null;
+  "lastHeartbeat": string;
 };
 
 export type WorkspaceLease = {

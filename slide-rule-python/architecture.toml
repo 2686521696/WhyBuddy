@@ -306,6 +306,7 @@ modules = [
   # 持久工程索引/源码版本/操作与事件的 SQL 边界。依赖 util 里的 SQL 网关，
   # 不反向调用 routes 或控制循环；归组在 persist component。
   "services.project_store",
+  "services.project_runtime",
   "services.e2b_workspace_provider",
   # 点选编辑存库前的体检。**不是叶子**：它复用 html_bindings.scan_bindings
   # 数数据孔——数孔这件事只该有一把尺子（§4），为了当叶子另写一个才是错的。
@@ -772,6 +773,13 @@ modules = [
   "services.e2b_workspace_provider",
 ]
 
+[component.runtime]
+why = "工程运行编排：把持久源码、租约和 E2B provider 组合成可恢复的运行实例。"
+may_depend_on = ["platform", "persist", "workspace"]
+modules = [
+  "services.project_runtime",
+]
+
 
 [component.platform]
 why = """最底下的共用叶子：配置、数据形状、请求域上下文、零依赖的契约与工具。
@@ -1011,7 +1019,7 @@ patterns = [
 "services.knowledge_admin_runtime" = "contract_mirror"
 "services.nl_command_runtime" = "contract_mirror"
 "services.rag_ingestion" = "unwired"
-"services.project_store" = "unwired"
+"services.project_runtime" = "unwired"
 "services.e2b_workspace_provider" = "unwired"
 "services.role_runtime" = "contract_mirror"
 "services.slide_rule_full_executor" = "superseded"
@@ -1217,7 +1225,7 @@ orphans = [
   "services.knowledge_admin_runtime",
   "services.nl_command_runtime",
   "services.rag_ingestion",
-  "services.project_store",
+  "services.project_runtime",
   "services.e2b_workspace_provider",
   "services.role_runtime",
   "services.slide_rule_full_executor",
