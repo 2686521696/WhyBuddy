@@ -27,6 +27,7 @@ from stdio_utf8 import configure_stdio_utf8
 #   漏钉 = 日志行把自己写成 LLM_GENERATE_FAILED（2026-08-20 Foclip）。
 configure_stdio_utf8()
 
+import asyncio
 import os
 import threading
 import re
@@ -109,6 +110,9 @@ from services.v5_capability_executor import _llm_generate_enabled
 from services.v5_publish_closure_response import derive_publish_closure_response
 from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
 from services.sliderule_session_sanitizer import sanitize_session_dict, sanitize_session_state
+from services.e2b_workspace_provider import E2BWorkspaceProvider
+from services.project_runtime_worker import ProjectRuntimeSupervisor
+from services.project_store import get_project_store
 from models.v5_state import V5SessionState
 
 
@@ -301,6 +305,31 @@ def _warm_storage_backends() -> None:
     threading.Thread(target=_warm, name="warm-storage", daemon=True).start()
 
 
+def _runtime_limit(name: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+    return max(minimum, min(maximum, value))
+
+
+def _start_project_runtime_supervisor() -> ProjectRuntimeSupervisor | None:
+    if (settings.NODE_ENV == "production" or os.getenv("NODE_ENV") == "production"
+            or os.getenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED") != "1"):
+        return None
+    lifetime = _runtime_limit("SLIDERULE_PROJECT_LIFETIME_SECONDS", 900, 60, 3600)
+    supervisor = ProjectRuntimeSupervisor(get_project_store(), E2BWorkspaceProvider,
+        max_workers=_runtime_limit("SLIDERULE_PROJECT_MAX_WORKERS", 2, 1, 8),
+        poll_interval=_runtime_limit("SLIDERULE_PROJECT_POLL_SECONDS", 2, 1, 30),
+        lease_ttl=_runtime_limit("SLIDERULE_PROJECT_LEASE_SECONDS", 120, 30, 3600),
+        lifetime_seconds=lifetime,
+        idle_seconds=min(lifetime, _runtime_limit("SLIDERULE_PROJECT_IDLE_SECONDS", 300, 30, 3600)),
+        install_timeout=_runtime_limit("SLIDERULE_PROJECT_INSTALL_SECONDS", 600, 10, 600),
+        ready_timeout=_runtime_limit("SLIDERULE_PROJECT_READY_SECONDS", 60, 5, 300))
+    supervisor.start()
+    return supervisor
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("[startup] SlideRule V5 Python Backend starting...")
@@ -342,8 +371,22 @@ async def lifespan(app: FastAPI):
     # 日历干跑：真编排 + 桩 host。配方缺 assemble 这类洞启动即失败。
     _dry_run_calendars()
     print("[startup] workflow calendars dry-ran (stub LLM)")
-    # TODO: init vector DB, knowledge like original Python project for RAG
-    yield
+    app.state.project_runtime_supervisor = None
+    try:
+        app.state.project_runtime_supervisor = await asyncio.to_thread(_start_project_runtime_supervisor)
+    except Exception as exc:
+        # Existing sessions remain usable when this optional internal worker is
+        # unavailable. Start commands report 503; durable reads still work.
+        print(f"[startup] project runtime worker unavailable: {type(exc).__name__}")
+    try:
+        yield
+    finally:
+        supervisor = app.state.project_runtime_supervisor
+        if supervisor is not None:
+            try:
+                await asyncio.to_thread(supervisor.shutdown)
+            finally:
+                app.state.project_runtime_supervisor = None
     # 关停时绝不 save_all：启动快照从不随运行更新，整体覆写会把运行期间
     # 落盘的所有新会话回滚到启动时刻（实测踩过：每次重启丢当轮全部推演）。
     # 所有写入已在变更时刻按单条守卫式落盘，关停无事可做。

@@ -15,9 +15,9 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **310** 个，模块 **310** 个
-- 内部依赖边 **995** 条（包含普通包初始化依赖）
-- 内部 import 语句 **907** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 扫描文件 **311** 个，模块 **311** 个
+- 内部依赖边 **1003** 条（包含普通包初始化依赖）
+- 内部 import 语句 **915** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -39,7 +39,7 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 |---|---|---|---|
 | `util` | 136 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
 | `core` | 65 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
-| `flow` | 30 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
+| `flow` | 31 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
 叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import 的全部理由，也是 `import` 不必躲进函数体的前提。
 
@@ -51,10 +51,10 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 flowchart TB
   util["util<br/>136 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
   core["core<br/>65 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
-  flow["flow<br/>30 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
+  flow["flow<br/>31 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
   core -->|148| util
-  flow -->|106| core
-  flow -->|117| util
+  flow -->|109| core
+  flow -->|118| util
 ```
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
@@ -67,7 +67,7 @@ flowchart TB
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>15 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>231 个模块<br/>业务"]
+  services["services<br/>232 个模块<br/>业务"]
   routes["routes<br/>13 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -75,7 +75,7 @@ flowchart TB
   app -->|1| config
   app -->|1| models
   app -->|13| routes
-  app -->|12 · 其中 3 条边来自函数体 import| services
+  app -->|15 · 其中 3 条边来自函数体 import| services
   app -->|2| sliderule_llm
   app -->|1| stdio_utf8
   complete_migration -->|1| models
@@ -84,8 +84,8 @@ flowchart TB
   middlewares -->|2| services
   routes -->|10| config
   routes -->|6| middlewares
-  routes -->|3| models
-  routes -->|137 · 其中 77 条边来自函数体 import| services
+  routes -->|4| models
+  routes -->|135 · 其中 77 条边来自函数体 import| services
   routes -->|30 · 其中 16 条边来自函数体 import| sliderule_llm
   scripts -->|3| app
   scripts -->|2 · 其中 2 条边来自函数体 import| config
@@ -94,7 +94,7 @@ flowchart TB
   scripts -->|16 · 其中 10 条边来自函数体 import| sliderule_llm
   scripts -->|2| stdio_utf8
   services -->|16 · 其中 7 条边来自函数体 import| config
-  services -->|34 · 其中 1 条边来自函数体 import| models
+  services -->|35 · 其中 1 条边来自函数体 import| models
   services -->|124 · 其中 90 条边来自函数体 import| sliderule_llm
   sliderule_llm -->|2 · 其中 2 条边来自函数体 import| config
 ```
@@ -137,7 +137,7 @@ flowchart LR
 
 抄 grok 的 Cargo.toml——边写在 crate 上，由编译器焊死。
 现算数字见 `docs/grok-build 架构图（自动生成）.md`。
-我们 26 个 component、95 条边，由 `architecture.toml` 声明、判据强制。
+我们 26 个 component、98 条边，由 `architecture.toml` 声明、判据强制。
 **红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。
 
 ```mermaid
@@ -163,7 +163,7 @@ flowchart LR
   persist["persist<br/>3"]
   platform["platform<br/>25"]
   run_control["run_control<br/>4"]
-  runtime["runtime<br/>1"]
+  runtime["runtime<br/>2"]
   spec_first["spec_first<br/>41"]
   task_exec["task_exec<br/>19"]
   web_aigc["web_aigc<br/>16"]
@@ -204,9 +204,12 @@ flowchart LR
   entrypoint -->|2| llm_gateway
   entrypoint -->|4| model_core
   entrypoint -->|1| permission
+  entrypoint -->|1| persist
   entrypoint -->|4| platform
+  entrypoint -->|1| runtime
   entrypoint -->|4| spec_first
   entrypoint -->|3| task_exec
+  entrypoint -->|1| workspace
   evidence -->|14| llm_gateway
   evidence -->|9| platform
   http_routes -->|25| app_store
@@ -222,11 +225,10 @@ flowchart LR
   http_routes -->|24| model_core
   http_routes -->|3| observability
   http_routes -->|4| persist
-  http_routes -->|16| platform
+  http_routes -->|17| platform
   http_routes -->|1| runtime
   http_routes -->|10| spec_first
   http_routes -->|2| task_exec
-  http_routes -->|2| workspace
   identity -->|10| platform
   llm_gateway -->|2| platform
   model_core -->|2| app_store
@@ -252,9 +254,10 @@ flowchart LR
   permission -->|1| platform
   persist -->|14| platform
   run_control -->|1| platform
-  runtime -->|1| persist
-  runtime -->|1| platform
-  runtime -->|1| workspace
+  runtime -->|1| drive
+  runtime -->|2| persist
+  runtime -->|3| platform
+  runtime -->|2| workspace
   spec_first -->|3| app_store
   spec_first -->|62| llm_gateway
   spec_first -->|3| observability

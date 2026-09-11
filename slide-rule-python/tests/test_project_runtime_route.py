@@ -1,3 +1,5 @@
+import asyncio
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -7,6 +9,9 @@ from fastapi.testclient import TestClient
 from middlewares.current_user import require_user
 from services.identity_store import User
 from services.project_store import ProjectStore
+from services.project_runtime_worker import ProjectRuntimeSupervisor
+from services import project_runtime_worker as worker
+from models.project_runtime import RuntimeInstance
 from routes import project_runtime as route
 
 
@@ -20,6 +25,7 @@ def setup(tmp_path, monkeypatch):
     project = store.create_project("s1", owner_id="u1", files={"package.json": "{}", "package-lock.json": "{}"}, template_version="vite-1", plan_ref=approval)
     monkeypatch.setattr(route, "get_project_store", lambda: store)
     monkeypatch.setattr(route, "load_session", lambda sid: state)
+    monkeypatch.setattr(worker, "load_session", lambda sid: route.load_session(sid))
     monkeypatch.delenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", raising=False)
     monkeypatch.setenv("NODE_ENV", "development")
     monkeypatch.setattr(route.settings, "NODE_ENV", "development")
@@ -31,10 +37,15 @@ def setup(tmp_path, monkeypatch):
     def forbidden_provider():
         called.append(True)
         raise AssertionError("provider must not run before authorization and internal gate")
-    monkeypatch.setattr(route, "E2BWorkspaceProvider", forbidden_provider)
+    # Exercise the real submit/authorize/persist path without starting the
+    # background scanner. Route tests must never create a cloud sandbox.
+    supervisor = ProjectRuntimeSupervisor(store, forbidden_provider)
+    supervisor._scanner = SimpleNamespace(is_alive=lambda: True)
+    app.state.project_runtime_supervisor = supervisor
     with TestClient(app) as client:
         yield SimpleNamespace(store=store, project=project, client=client, state=state,
-            viewer=viewer, called=called, body={"expectedRevision": project.currentRevision, "approvalRef": approval},
+            viewer=viewer, called=called, app=app, supervisor=supervisor,
+            body={"expectedRevision": project.currentRevision, "approvalRef": approval, "idempotencyKey": "start-1"},
             url=f"/projects/{project.projectId}/runtime/start")
     store.close()
 
@@ -72,17 +83,20 @@ def test_internal_flag_cannot_enable_production_or_nonadmin_execution(setup, mon
     assert not setup.called
 
 
-def test_internal_authorized_request_reaches_runtime_and_maps_provider_failure(setup, monkeypatch):
-    from services.workspace_provider import WorkspaceProviderError
+def test_internal_authorized_request_persists_once_and_returns_before_provider_io(setup, monkeypatch):
     monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
-    class FailingProvider:
-        def create(self, **kwargs):
-            setup.called.append(True)
-            raise WorkspaceProviderError("e2b_create_failed")
-    monkeypatch.setattr(route, "E2BWorkspaceProvider", FailingProvider)
     response = setup.client.post(setup.url, json=setup.body)
-    assert response.status_code == 502 and response.json()["detail"] == "e2b_create_failed"
-    assert setup.called == [True]
+    repeated = setup.client.post(setup.url, json=setup.body)
+    assert response.status_code == repeated.status_code == 202
+    assert response.json()["operation"]["operationId"] == repeated.json()["operation"]["operationId"]
+    operation = setup.store.get_operation(response.json()["operation"]["operationId"], owner_id="u1")
+    assert operation.status == "queued"
+    assert operation.kind == "runtime.start"
+    assert operation.input["port"] == 5173
+    assert response.json()["runtime"] is None and response.json()["lastSeq"] == 0
+    assert setup.supervisor._wake.is_set()
+    assert not setup.called
+    assert setup.client.post(setup.url, json={**setup.body, "port": 5174}).status_code == 409
 
 
 def test_settings_production_blocks_internal_flag_without_process_environment(setup, monkeypatch):
@@ -102,3 +116,163 @@ def test_lease_response_does_not_expose_provider_metadata(setup):
     assert not {"sandboxId", "leaseOwner", "processRefs"}.intersection(response.json()["lease"])
     setup.viewer["id"] = "mallory"
     assert setup.client.get(f"/projects/{setup.project.projectId}/runtime/lease").status_code == 404
+
+
+@pytest.fixture
+def operation(setup, monkeypatch):
+    monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
+    response = setup.client.post(setup.url, json=setup.body)
+    assert response.status_code == 202
+    return response.json()["operation"]["operationId"]
+
+
+def _running(setup, operation):
+    lease = setup.store.acquire_lease(setup.project.projectId, owner_id="u1", lease_owner="worker-secret")
+    setup.store.claim_operation(operation, owner_id="u1", lease_owner=lease.leaseOwner, generation=lease.generation)
+    runtime = RuntimeInstance(runtimeId="rt-1", workspaceId=lease.workspaceId,
+        projectId=setup.project.projectId, revision=setup.project.currentRevision,
+        status="ready", port=5173, previewUrl="https://sandbox-secret.example", processId="process-secret",
+        health="ready", lastHeartbeat="2026-09-11T00:00:00Z")
+    setup.store.update_runtime_operation(operation, owner_id="u1", lease_generation=lease.generation,
+        lease_owner=lease.leaseOwner, expected_status="queued", status="running", runtime=runtime,
+        result={"providerToken": "provider-secret"})
+    return lease
+
+
+def test_snapshot_and_cancel_remain_durable_while_worker_is_offline(setup, operation):
+    setup.app.state.project_runtime_supervisor = None
+    url = f"/project-operations/{operation}"
+    assert setup.client.post(setup.url, json={**setup.body, "idempotencyKey": "other"}).status_code == 503
+    snapshot = setup.client.get(url)
+    assert snapshot.status_code == 200
+    assert snapshot.json()["operation"]["status"] == "queued"
+    cancelled = setup.client.post(url + "/cancel")
+    assert cancelled.status_code == 202
+    assert cancelled.json()["operation"]["cancelRequested"] is True
+    # A persisted request is not proof that the remote process has stopped.
+    assert cancelled.json()["operation"]["status"] == "queued"
+    assert setup.store.get_operation(operation, owner_id="u1").cancelRequested is True
+    assert setup.client.post(url + "/cancel").json() == cancelled.json()
+
+
+def test_active_cancel_wakes_supervisor_without_provider_io(setup, operation):
+    setup.supervisor._wake.clear()
+    assert setup.client.post(f"/project-operations/{operation}/cancel").status_code == 202
+    assert setup.supervisor._wake.is_set()
+    assert setup.store.get_operation(operation, owner_id="u1").cancelRequested is True
+    assert not setup.called
+
+
+def test_activity_is_persisted_only_on_explicit_touch(setup, operation):
+    url = f"/project-operations/{operation}"
+    assert setup.client.get(url).json()["operation"]["lastAccessAt"] is None
+    assert setup.client.get(url + "/events").status_code == 200
+    assert setup.store.get_operation(operation, owner_id="u1").lastAccessAt is None
+    response = setup.client.post(url + "/touch")
+    assert response.status_code == 200
+    assert response.json()["operation"]["lastAccessAt"] > 0
+    assert setup.store.get_operation(operation, owner_id="u1").lastAccessAt > 0
+
+
+def test_expired_lease_cannot_display_stale_ready_snapshot(setup, operation):
+    lease = _running(setup, operation)
+    setup.store.release_lease(setup.project.projectId, owner_id="u1", lease_owner=lease.leaseOwner,
+        generation=lease.generation)
+    snapshot = setup.client.get(f"/project-operations/{operation}").json()
+    assert snapshot["runtime"]["status"] == "reconciling"
+    assert snapshot["runtime"]["health"] == "unknown"
+
+
+@pytest.mark.parametrize("suffix,method", [("", "get"), ("/events", "get"), ("/cancel", "post"), ("/touch", "post")])
+def test_operation_reads_logs_and_cancel_reject_cross_owner(setup, operation, suffix, method):
+    setup.viewer["id"] = "mallory"
+    response = getattr(setup.client, method)(f"/project-operations/{operation}{suffix}")
+    assert response.status_code == 404
+    assert setup.store.get_operation(operation, owner_id="u1").cancelRequested is False
+
+
+@pytest.mark.parametrize("suffix,method", [("", "get"), ("/events", "get"), ("/cancel", "post"), ("/touch", "post")])
+@pytest.mark.parametrize("reason", ["disabled", "nonadmin", "production"])
+def test_observation_does_not_widen_internal_access(setup, operation, monkeypatch, suffix, method, reason):
+    if reason == "disabled": monkeypatch.delenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED")
+    if reason == "nonadmin": setup.viewer["is_superuser"] = False
+    if reason == "production": monkeypatch.setenv("NODE_ENV", "production")
+    assert getattr(setup.client, method)(f"/project-operations/{operation}{suffix}").status_code == 503
+    assert setup.store.get_operation(operation, owner_id="u1").cancelRequested is False
+
+
+def test_snapshots_and_event_pages_exclude_internal_records_and_resume_by_sequence(setup, operation):
+    lease = _running(setup, operation)
+    url = f"/project-operations/{operation}"
+    snapshot = setup.client.get(url).json()
+    assert snapshot["operation"]["status"] == "running" and snapshot["runtime"]["status"] == "ready"
+    assert snapshot["lastSeq"] == 0
+    assert "secret" not in str(snapshot)
+    assert not {"leaseOwner", "pendingEvent", "result", "input", "requestHash"}.intersection(snapshot["operation"])
+    assert not {"previewUrl", "processId"}.intersection(snapshot["runtime"])
+    setup.store.flush_operation_event(operation, owner_id="u1", lease_generation=lease.generation, lease_owner=lease.leaseOwner)
+    for index in range(3):
+        setup.store.append_event(operation, owner_id="u1", event_type="runtime.log", event_id=f"process-secret:{index}",
+            payload={"processId": "process-secret", "text": f"line {index}", "nextOffset": index + 1, "truncated": False,
+                "providerToken": "provider-secret"}, lease_generation=lease.generation, lease_owner=lease.leaseOwner)
+    first = setup.client.get(url + "/events", params={"afterSeq": snapshot["lastSeq"], "limit": 2}).json()
+    assert [event["seq"] for event in first["events"]] == [1, 2]
+    assert first["hasMore"] is True and first["nextSeq"] == 2
+    assert first["events"][0]["payload"]["runtime"]["status"] == "ready"
+    assert first["events"][1]["payload"]["text"] == "line 0"
+    assert "secret" not in str(first)
+    # Returning from or abandoning observation has no cancellation side effect.
+    setup.supervisor._wake.clear()
+    second = setup.client.get(url + "/events", params={"afterSeq": first["nextSeq"], "limit": 2}).json()
+    assert [event["seq"] for event in second["events"]] == [3, 4]
+    assert second["hasMore"] is False
+    assert setup.store.get_operation(operation, owner_id="u1").cancelRequested is False
+    assert not setup.supervisor._wake.is_set()
+    empty = setup.client.get(url + "/events", params={"afterSeq": second["nextSeq"]}).json()
+    assert empty == {"events": [], "nextSeq": 4, "hasMore": False}
+    assert setup.client.get(url).json()["lastSeq"] == 4
+
+
+@pytest.mark.parametrize("params", [{"afterSeq": -1}, {"limit": 0}, {"limit": 201}, {"afterSeq": "not-a-cursor"}])
+def test_event_cursor_is_bounded(setup, operation, params):
+    assert setup.client.get(f"/project-operations/{operation}/events", params=params).status_code == 422
+
+
+@pytest.mark.parametrize("key", [None, "", " " * 3, "x" * 257])
+def test_start_requires_bounded_client_idempotency_key(setup, monkeypatch, key):
+    monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
+    body = {**setup.body, "idempotencyKey": key}
+    if key is None: body.pop("idempotencyKey")
+    assert setup.client.post(setup.url, json=body).status_code == 422
+    assert not setup.called
+
+
+def test_dropped_start_response_keeps_persisted_operation_for_idempotent_retry(setup, monkeypatch):
+    """Lose the actual ASGI response after dispatch, as a closed browser does."""
+    monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
+    raw = json.dumps(setup.body).encode()
+    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "scheme": "http",
+        "method": "POST", "path": setup.url, "raw_path": setup.url.encode(), "root_path": "",
+        "query_string": b"", "headers": [(b"content-type", b"application/json")],
+        "client": ("127.0.0.1", 1234), "server": ("testserver", 80)}
+
+    async def run():
+        async def receive():
+            return {"type": "http.request", "body": raw, "more_body": False}
+
+        async def send(message):
+            if message["type"] == "http.response.start":
+                assert message["status"] == 202
+                raise asyncio.CancelledError("browser disconnected")
+
+        with pytest.raises(asyncio.CancelledError):
+            await setup.app(scope, receive, send)
+
+    asyncio.run(run())
+    persisted = setup.store.list_runnable_operations()
+    assert len(persisted) == 1
+    operation, owner = persisted[0]
+    assert owner == "u1" and operation.status == "queued" and not operation.cancelRequested
+    retry = setup.client.post(setup.url, json=setup.body)
+    assert retry.status_code == 202 and retry.json()["operation"]["operationId"] == operation.operationId
+    assert not setup.called

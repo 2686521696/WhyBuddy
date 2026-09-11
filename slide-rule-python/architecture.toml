@@ -385,7 +385,8 @@ what = "编排：驱动器 / 流水线 / 控制面 / 会话"
 # 深度 >=3。这一层是 grok 里 xai-grok-shell 那种大块，内部随便缠没关系，
 # 但**不许被下面两层反过来依赖**。
 may_depend_on = ["util", "core"]
-modules = [
+  modules = [
+    "services.project_runtime_worker",
   "services.model_versions",
   "services.model_version_restore",
   "services.agent_loop_bridge",
@@ -575,7 +576,8 @@ why = """组合根（对应 grok 的 xai-grok-pager-bin）：只负责把东西�
 llm_gateway 是 2026-09-08 加的一条：装配根不调 LLM，但要在任何服务 import 前调
 `ensure_llm_proxy_bypass()` 设好代理绕过名单（Windows/Clash 下控制面 522），
 而算名单要读 LLM_BASE_URL。理由全文见 [layer.app]。"""
-may_depend_on = ["agent_loop", "drive", "http_routes", "llm_gateway", "model_core", "permission", "platform", "spec_first", "task_exec"]
+  # The application lifespan assembles the durable runtime supervisor and provider.
+  may_depend_on = ["agent_loop", "drive", "http_routes", "llm_gateway", "model_core", "permission", "persist", "platform", "runtime", "spec_first", "task_exec", "workspace"]
 modules = [
   "app",
 ]
@@ -599,7 +601,7 @@ modules = [
 
 [component.http_routes]
 why = """HTTP 边缘：路由只做拼装与鉴权，业务不许住在这里。"""
-may_depend_on = ["app_store", "audit", "blueprint", "capability_engine", "control", "diagnostics", "drive", "evidence", "identity", "llm_gateway", "model_core", "observability", "persist", "platform", "runtime", "spec_first", "task_exec", "workspace"]
+  may_depend_on = ["app_store", "audit", "blueprint", "capability_engine", "control", "diagnostics", "drive", "evidence", "identity", "llm_gateway", "model_core", "observability", "persist", "platform", "runtime", "spec_first", "task_exec"]
 modules = [
   "routes.account",
   "routes.audit",
@@ -776,9 +778,11 @@ modules = [
 
 [component.runtime]
 why = "工程运行编排：把持久源码、租约和 E2B provider 组合成可恢复的运行实例。"
-may_depend_on = ["platform", "persist", "workspace"]
-modules = [
-  "services.project_runtime",
+  # Recover execution using the same persisted session and approved-plan authority.
+  may_depend_on = ["platform", "persist", "workspace", "drive"]
+  modules = [
+    "services.project_runtime",
+    "services.project_runtime_worker",
 ]
 
 

@@ -31,6 +31,8 @@
     "project:contracts:emit": "node scripts/project-contracts.mjs --emit",
     "project:contracts:check": "node scripts/project-contracts.mjs --check",
     "smoke:project-runtime": "node scripts/project-runtime-smoke.mjs",
+    "smoke:project-process": "node scripts/project-runtime-smoke.mjs --process",
+    "smoke:project-lifecycle": "node scripts/project-runtime-smoke.mjs --lifecycle",
     "arch:ts": "node scripts/arch-graph-ts.mjs --report",
     "arch:ts:check": "node scripts/arch-graph-ts.mjs --check",
     "arch:ts:emit": "node scripts/arch-graph-ts.mjs --emit",

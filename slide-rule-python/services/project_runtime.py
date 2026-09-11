@@ -1,8 +1,9 @@
 """Fixed Vite runtime provisioning with real process and revision health checks.
 
-The service is an internal worker boundary. Public preview transport is gated
-until the isolated gateway and durable task dispatcher are available. A ready
-runtime means a live process serves the mounted revision, not product acceptance.
+ProjectRuntimeService is retained for the explicit primitive smoke command.
+Product HTTP starts use ProjectRuntimeSupervisor, which owns the full lifetime.
+A ready runtime means a live process serves the mounted revision, not product
+acceptance. The shared lease heartbeat is used by both execution paths.
 """
 
 from __future__ import annotations

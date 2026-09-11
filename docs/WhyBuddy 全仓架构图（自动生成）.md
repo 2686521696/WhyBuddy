@@ -29,7 +29,7 @@ flowchart TB
     py_models["py/models<br/>4 个模块"]
     py_routes["py/routes<br/>13 个模块"]
     py_scripts["py/scripts<br/>39 个模块"]
-    py_services["py/services<br/>231 个模块"]
+    py_services["py/services<br/>232 个模块"]
     py_sliderule_llm["py/sliderule_llm<br/>15 个模块"]
     py_stdio_utf8["py/stdio_utf8<br/>1 个模块"]
     py_services_web_aigc_open_adapter["services.web_aigc_open_adapter"]
@@ -44,7 +44,7 @@ flowchart TB
   py_app -->|1| py_config
   py_app -->|1| py_models
   py_app -->|13| py_routes
-  py_app -->|12| py_services
+  py_app -->|15| py_services
   py_app -->|2| py_sliderule_llm
   py_app -->|1| py_stdio_utf8
   py_complete_migration -->|1| py_models
@@ -53,8 +53,8 @@ flowchart TB
   py_middlewares -->|2| py_services
   py_routes -->|10| py_config
   py_routes -->|6| py_middlewares
-  py_routes -->|3| py_models
-  py_routes -->|137| py_services
+  py_routes -->|4| py_models
+  py_routes -->|135| py_services
   py_routes -->|30| py_sliderule_llm
   py_scripts -->|3| py_app
   py_scripts -->|2| py_config
@@ -63,7 +63,7 @@ flowchart TB
   py_scripts -->|16| py_sliderule_llm
   py_scripts -->|2| py_stdio_utf8
   py_services -->|16| py_config
-  py_services -->|34| py_models
+  py_services -->|35| py_models
   py_services -->|124| py_sliderule_llm
   py_sliderule_llm -->|2| py_config
   ts_server -.->|open| py_services_web_aigc_open_adapter

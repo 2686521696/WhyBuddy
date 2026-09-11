@@ -382,11 +382,61 @@ pnpm run arch:check
 
 执行目录、API key、公开流量、销毁重试、存储 CAS/配额、启动退出码、就绪探针与批准检查均做了变异验证。全仓 TypeScript 检查仍有 18 条错误；与起点版本使用同一依赖和编译配置比较，诊断完全一致，本轮没有新增。
 
-**下一批按以下顺序实施，不把本轮修复等同于 P1/P2 验收完成：**
+**本批结束时排定的后续顺序（第 1 项的执行结果见第 16 节）：**
 
 1. 将操作表、接管、心跳和有序事件接入受管后台任务；HTTP 提交与订阅分离，补重启扫描、取消、重复请求和 `afterSeq` 恢复验收。
 2. 从真实会话和当前批准计划创建工程，绑定服务端项目引用；将源码工具接入现有控制循环，确保修改与运行使用同一个工程版本。
 3. 建立隔离来源的预览 HTTP/WS 网关和短时票据，验证授权访问、撤销和 Vite HMR 后，再接 Studio 与 AppsWorkbench。
 4. 加独立浏览器 worker、固定版本证据与交付闸，再进入真实业务工程的失败修复闭环。
 
-尚未完成：工作台中的可用工程预览、HMR WebSocket 代理、浏览器点击/业务断言、应用数据恢复与完整服务重启恢复。第 14 节的 P1/P2 勾选保持未完成。
+本批结束时尚未完成：工作台中的可用工程预览、HMR WebSocket 代理、浏览器点击/业务断言、应用数据恢复与完整服务重启恢复。当前进度以第 16 节为准，第 14 节的 P1/P2 勾选保持未完成。
+
+## 16. 2026-09-11 持久后台运行与恢复
+
+本批起点为 `1fa4135c`，完成第 15 节第 1 项的工程操作链路。对照 grok 的 `acp_session.rs::StreamOwnership` 和 workspace handle 的资源管理职责，将 HTTP 观察者与执行持有者分开；执行仍由 Python 管理，没有新增模型主循环。
+
+| 已完成能力 | 当前真实行为 |
+|---|---|
+| 持久提交 | 启动接口返回 `202` 和 operationId。相同幂等键、相同输入只登记一次；相同键改变端口返回冲突。HTTP 响应中断不取消任务。 |
+| 后台执行与续租 | 应用 lifespan 启动有并发上限的 supervisor；任务经历 provisioning、syncing、installing、starting、ready。ready 后继续维护租约、进程健康与运行预算。 |
+| 重启接管 | 按数据库记录扫描可接管任务，增加租约 generation；重连原 sandbox/PID 并核对版本。安装、启动和就绪阶段均有恢复测试。未保存进程编号的派发窗口明确失败并清理，不盲目重放命令。 |
+| 取消与清理 | 取消意图先落库；安装、启动、ready 都能停止。只有 provider 确认销毁后才记录 cancelled/stopped 并清空资源引用。销毁失败保留 interrupted/reconciling 和原清理目标，租约到期后重试。 |
+| 创建窗口对账 | 通过 workspace metadata 遍历 E2B 全部分页，核对返回归属。创建后、保存 sandboxId 前崩溃的实例可被发现和清理；provider 查询失败不当成“没有实例”。 |
+| 状态和事件 | Runtime 嵌入操作记录，与状态版本和待发事件一起 CAS 保存。outbox 可在重启后补发，包括终态事件。阶段和分块日志先持久化，再通过 afterSeq 分页读取。 |
+| 真实退出结果 | E2B 已完成后台进程不能仅靠 SDK reconnect 取回结果；受管启动器现在原子保存真实退出码。日志最多 1 MiB，超过上限仍持续排空输出，不让子进程堵住。 |
+| 活动与过期 | 显式 touch 保存最后活动时间；读取快照/日志不延长空闲时间。空闲和总运行预算分别受限，持续活动也不能绕过总预算。租约已过期的快照显示 reconciling，不能沿用旧 ready。 |
+| HTTP 合同与权限 | 开发环境、内部开关、超管限制继续保留。归属检查覆盖读取、日志、取消和 touch。响应使用独立 Pydantic 公共模型，生成相应 TS 类型，屏蔽租约所有者、outbox、provider URL 和进程编号。 |
+
+本批 `runtime.start` 表示**受管运行的完整生命周期**：预览准备好时 operation 仍为 running，runtime 为 ready；取消、过期或失败才结束 operation。当前每个项目使用单一工作区租约，后续排队请求不能替换仍在恢复的任务。
+
+接口均位于 `/api/sliderule` 下：
+
+- `POST /projects/{projectId}/runtime/start`：必填 expectedRevision、approvalRef、idempotencyKey。
+- `GET /project-operations/{operationId}`：读取 operation、runtime 和 lastSeq。
+- `GET /project-operations/{operationId}/events?afterSeq=0&limit=200`：有界 JSON 分页，返回 events、nextSeq、hasMore；本批没有新增 SSE 长连接。
+- `POST /project-operations/{operationId}/cancel`：记录取消请求；worker 离线时仍可保存，等待恢复处理。
+- `POST /project-operations/{operationId}/touch`：显式记录用户活动，不启动或恢复已终结任务。
+
+消费端先应用快照，再补 lastSeq 之后的事件；事件按 seq 去重，状态事件只应用更大的 stateVersion，避免补发的旧状态回退快照。工作台消费在后续预览阶段接入。
+
+验证结果：相关 Python 与控制/会话回归 251 passed、3 skipped；两项为 Windows 不支持的本地 Linux helper，另一项为文件存储不适用的跨 worker SQL 场景。Provider 真实 E2B 检查 8 项通过，最新报告为 `artifacts/project-runtime/process-1789132763-17f3cb48.json`。存储 CAS/outbox、provider 退出码/分页/日志、HTTP 门控/归属/生命周期，以及 worker 取消/执行授权/禁止重放/空闲活动/真实销毁均经过变异验证。
+
+真实生命周期烟测使用固定 React/TS/Vite 源码、独立 SQLite 记录和内部烟测授权，六项通过：幂等启动、安装结果与日志持久化、新 store/worker 接回同一 sandbox/PID 与事件、取消后远端销毁且源码保留、销毁后从相同版本重建，以及确认 npm 安装进程存活后取消。最终报告为 `artifacts/project-lifecycle/1789133667-bbb5f35b.json`，所建测试资源均已清理。这不是模型生成或浏览器业务验收。
+
+```powershell
+pnpm run smoke:project-process
+# 先执行既有固定模板烟测，得到该次报告旁边的源码数据库。
+pnpm run smoke:project-runtime
+pnpm run smoke:project-lifecycle -- --source-db artifacts/project-runtime/<该次报告名>.db
+```
+
+脚本测试 56/56、生成合同检查与 Python/TS/grok 架构检查通过；架构依赖按实际装配声明，没有扩大循环或违规基线。TypeScript 全量诊断与起点 `1fa4135c` 在相同依赖下比较，均为 18 条且内容一致。配置与上下界见 `.env.example`；本批没有部署不休眠的生产 worker。
+
+边界仍然明确：目前只将工程操作从 HTTP 生命周期中分离，`run_control_turn` 的持久控制回合仍待实施。进程结果文件位于应用沙盒内，仅用于运行恢复，不是可信业务验收证据。进程异常退出的租约与派发窗口已用故障注入覆盖，真实云端验证覆盖受管 worker 停止、数据库重新打开与接管，尚未完成生产多实例崩溃和真实 PostgreSQL 网关验收。私有预览网关、浏览器验证、业务数据备份与应用交付继续待办，P1/P2 不标为整体完成。
+
+**下一批顺序：**
+
+1. 从真实会话的已批准计划创建固定工程并绑定服务端项目引用，覆盖重复创建、旧批准和版本冲突。
+2. 在现有控制循环注册工程文件、补丁、执行和状态工具；控制任务另做持久运行与订阅分离，使同一模型回合能够接收真实失败后继续修复。
+3. 建立隔离来源的 HTTP/WS 私有预览，完成票据、撤销与 HMR 验证，再接 Studio 和 AppsWorkbench 的同一产物入口。
+4. 引入独立浏览器 worker、固定版本证据与权威交付闸，完成真实业务应用的失败修复闭环。
