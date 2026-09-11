@@ -23,3 +23,18 @@ it("cart quantities never overwrite an unbound numeric badge", () => {
   applyBindings(root, { source: { rows: { item: [] }, cartRows: { item: [{ id: "a", price: 12, qty: 3 }] }, fields: { item: [{ id: "price", name: "Price" }] } } });
   expect(root.querySelector("span")?.textContent).toBe("123");
 });
+
+it.each(["div", "table"])("%s cart quantities update only explicit quantity holes", tag => {
+  const root = document.createElement("div");
+  const row = '<b data-field="price"></b><span data-cart-qty>0</span><span class="badge">123</span>';
+  root.innerHTML = tag === "table"
+    ? `<table><tbody data-rows="item" data-view="cart"><tr><td>${row}</td></tr></tbody></table>`
+    : `<div data-rows="item" data-view="cart"><p>${row}</p></div>`;
+  const source = { rows: { item: [] }, cartRows: { item: [{ id: "a", price: 12, qty: 3 }] }, fields: { item: [{ id: "price", name: "Price" }] } };
+  applyBindings(root, { source });
+  expect(root.querySelector("[data-cart-qty]")?.textContent).toBe("3");
+  source.cartRows.item[0].qty = 4;
+  applyBindings(root, { source });
+  expect(root.querySelector("[data-cart-qty]")?.textContent).toBe("4");
+  expect(root.querySelector(".badge")?.textContent).toBe("123");
+});

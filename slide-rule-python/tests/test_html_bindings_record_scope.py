@@ -167,18 +167,28 @@ class Test词表跨语言同步_绑定属性:
         )
 
     def test_python_认得的属性前端都放行(self):
-        """钉在**真实源码**上：从 scan_bindings 那行 any(...) 里抠出它认的键，
-        逐个查前端白名单。加词只改两处，漏一处这里就红。"""
-        import pathlib
+        """Exercise the parser and compare semantic keys with the sanitizer contract.
 
-        py = pathlib.Path(__file__).resolve().parents[1] / "services/html_bindings.py"
-        src = py.read_text(encoding="utf-8")
-        m = re.search(r'if any\(k in attrs for k in \(([^)]*)\)\)', src)
-        assert m, "scan_bindings 里那行 any(...) 找不到了"
-        keys = re.findall(r'"([a-z]+)"', m.group(1))
-        assert "record" in keys, "scan_bindings 还没认 data-record"
+        The old test extracted a regex implementation line; HTMLParser removed
+        that line while preserving the protocol. Mutating a parser key or a
+        sanitizer attribute must still fail this check.
+        """
+        from services.html_bindings import scan_bindings
+
         front = self._frontend_attrs()
-        missing = [k for k in keys if f"data-{k}" not in front]
+        markup = '<div ' + ' '.join(f"{key}='value'" for key in front) + '></div>'
+        parsed = scan_bindings(markup)
+        assert set(parsed[0]["attrs"]) == {key[5:] for key in front}
+        tree = ast.parse(inspect.getsource(check_bindings))
+        keys = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get" and isinstance(node.func.value, ast.Name) and node.func.value.id == "a":
+                if node.args and isinstance(node.args[0], ast.Constant):
+                    keys.add(node.args[0].value)
+            if isinstance(node, ast.Compare) and isinstance(node.left, ast.Constant) and any(isinstance(op, ast.In) for op in node.ops) and any(isinstance(c, ast.Name) and c.id == "a" for c in node.comparators):
+                keys.add(node.left.value)
+        assert {"record", "field", "metric-field"} <= keys
+        missing = [key for key in keys if f"data-{key}" not in front]
         assert not missing, f"这些属性 Python 认、前端会删：{missing}"
 
 

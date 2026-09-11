@@ -156,10 +156,6 @@ def check_bindings(markup: str, model: Dict[str, Any]) -> List[Dict[str, str]]:
 
         # ⚠ record 也要算：漏了它 `data-record="不存在的实体"` 会静默放行，
         #   然后运行时取不到数据、页面一片空白而没有任何一处报错。
-        ent = (
-            a.get("rows") or a.get("record") or a.get("value")
-            or a.get("entity") or a.get("search") or a.get("filter")
-        )
         for entity_key in ("rows", "record", "value", "entity", "search", "filter"):
             entity_ref = a.get(entity_key)
             if entity_ref and entity_ref not in entities:
@@ -352,10 +348,10 @@ data-* 属性**，把写死的示例数据换成绑定孔。
         也可以是一条记录（data-record），两种写法完全一样。
         ⚠ 字段必须属于开作用域的那个实体——拿这张表的行去取别的表的字段，
           取出来是别人的数据。
-        ⚠ **两个作用域都不在里面就不要写 data-field**：没有"当前这条"，
-          取不到东西。这种地方要么套一个 data-record，要么干脆不绑。
+        ⚠ 作用域外的普通字段要套 data-record；data-value 聚合上的 data-field
+          用于指定统计字段，不需要额外的记录作用域。
     <span data-value="<实体id>" data-aggregate="count">
-        单值。aggregate 可以是 count / sum / avg，sum/avg 加 data-field="<字段id>"。
+        单值。aggregate 可以是 count / sum / avg / min / max；除 count 外加 data-field="<字段id>"。
         购物车合计：同一个元素再加 data-view="cart"（对选中数量做 sum，行上的 qty 会乘进去）。
         **页上的件数、合计、应付，必须打这个孔，不许留生成时的死数字。**
     <input data-search="<实体id>">
@@ -369,6 +365,8 @@ data-* 属性**，把写死的示例数据换成绑定孔。
         运行时读的是选中数量，不是整张表。加减按钮：
         data-action="adjustCartQty" data-entity="<实体id>" data-delta="1" 或 "-1"，
         **必须写在这行模板里**。
+        选中数量的数字用 <span data-cart-qty>0</span>，放在同一行模板里。
+        它读购物车的选择数量，不是实体字段；不要为它虚构 data-field="qty"。
     <div data-chart="donut" data-entity="<实体id>" data-dimension="<字段id>" data-metric="count">
     <button data-action="openRecord" data-entity="<实体id>">
         记录动作：createRecord（不需要当前行）/ openRecord / editRecord。

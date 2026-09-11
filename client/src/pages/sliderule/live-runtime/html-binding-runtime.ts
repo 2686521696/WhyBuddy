@@ -77,8 +77,7 @@ export const BINDING_ATTRS = [
   // 动作
   "data-action",
   // 搜索 / 筛选 / 购物车视图（照 petite-vue v-model / v-on：指令打在标签上）
-  // ⚠ Python scan 的 data-([a-z]+) 看不见带连字符的属性，所以这些都是单段名。
-  "data-search", "data-filter", "data-match", "data-view", "data-delta",
+  "data-search", "data-filter", "data-match", "data-view", "data-delta", "data-cart-qty",
   // 运行时**写回**的三个：行 id、算好的 series、动作上锁的原因。
   // ⚠ 它们由解释器写、不由生成侧写，但消毒发生在解释之**前**也可能在之后
   //   （重新消毒一份已填好的 HTML），漏了它们等于点击丢行、图表丢数、锁丢因。
@@ -378,6 +377,17 @@ function stampRowId(rowEl: Element, rid: unknown): void {
   rowEl.setAttribute("data-row-id", id);
   selfAndDescendants<HTMLElement>(rowEl, "[data-action]").forEach(el => {
     el.setAttribute("data-row-id", id);
+  });
+}
+
+function fillCartQuantity(rowEl: Element, quantity: unknown): void {
+  const n = Number(quantity);
+  const text = quantity != null && Number.isFinite(n) ? String(n) : EMPTY_TEXT;
+  selfAndDescendants<HTMLElement>(rowEl, "[data-cart-qty]").forEach(el => {
+    // Nested row containers are filled independently, like data-field.
+    const owner = el.parentElement?.closest("[data-rows]");
+    if (owner && owner !== rowEl && rowEl.contains(owner)) return;
+    setFieldText(el, text);
   });
 }
 
@@ -832,6 +842,7 @@ export function applyBindings(
         const row = rows[i];
         if (!row) return;
         fillFields(item, row, fields, entityId, problems, filled, true);
+        if (cart) fillCartQuantity(item, row.qty);
         stampRowId(item, row[rowIdField]);
       });
       filled.rows += Math.min(painted.length, rows.length);
@@ -881,6 +892,7 @@ export function applyBindings(
       }
       // 行内 data-field：作用域是**这一行**
       fillFields(tr, row, fields, entityId, problems, filled, true);
+      if (cart) fillCartQuantity(tr, row.qty);
       stampRowId(tr, row[rowIdField]);
       host.appendChild(tr);
     });
