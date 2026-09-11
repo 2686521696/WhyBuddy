@@ -107,6 +107,13 @@ def _extract_control(data: dict[str, Any]) -> tuple[str, list[dict[str, Any]], d
     if not isinstance(content, str):
         content = str(content or "")
     tool_calls = _parse_tool_calls(msg.get("tool_calls"))
+    # A few OpenAI-compatible gateways still emit the pre-2023 singular
+    # `function_call` shape. Treat it as one tool call so an empty message
+    # body does not get misclassified as an LLM failure.
+    if not tool_calls and isinstance(msg.get("function_call"), dict):
+        tool_calls = _parse_tool_calls([msg["function_call"]])
+    if not tool_calls and isinstance(choice.get("function_call"), dict):
+        tool_calls = _parse_tool_calls([choice["function_call"]])
     return content, tool_calls, data.get("usage"), choice.get("finish_reason")
 
 
