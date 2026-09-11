@@ -940,7 +940,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     const sid = sessionState.sessionId || sessionId;
     const record = loadActiveRun(sid);
     if (!record) return;
-    fetch(`/api/sliderule/runs/${encodeURIComponent(record.runId)}`, {
+    const resource = record.kind === "control" ? "control-runs" : "runs";
+    fetch(`/api/sliderule/${resource}/${encodeURIComponent(record.runId)}`, {
       method: "DELETE",
     }).catch(() => {});
     clearActiveRun(sid);
@@ -950,7 +951,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     userText: string,
     intervention?: UserIntervention,
     // E25 续播：附着到既有后台 run（刷新/断线后自动接回），不重新发起推演
-    resumeRun?: { runId: string },
+    resumeRun?: { runId: string; kind?: "control" },
     // E26 缺口修复轮：只重跑覆盖门标红的能力，已 PASS 产物原样复用
     mode?: "repair",
     forcedTool?: string
@@ -1583,9 +1584,17 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               stopSignal: controller.signal,
               turnId,
               ...(mode === "repair" ? { mode } : {}),
+              onControlRunId: (runId: string) => {
+                sawRunId = true;
+                saveActiveRun(resolvedSid, {
+                  runId, kind: "control", userText: userText.trim(),
+                  startedAt: new Date().toISOString(),
+                });
+              },
               onRunId: (runId: string) => {
                 sawRunId = true;
                 ensureFactoryClock("factory");
+                if (loadActiveRun(resolvedSid)?.kind === "control") return;
                 // 后端 run 书签：刷新/跳页回来据此续播接回
                 saveActiveRun(resolvedSid, {
                   runId,
@@ -1964,7 +1973,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               ? previousModelVersionId(preparedState)
               : undefined;
           const pythonDrive = resumeRun
-            ? await (
+            ? resumeRun.kind === "control"
+              ? await (await import("@/lib/sliderule-marathon-driver"))
+                  .resumeControlTurnStream(resumeRun.runId, streamOpts)
+              : await (
                 await import("@/lib/sliderule-marathon-driver")
               ).resumeDriveFullStream(resumeRun.runId, streamOpts)
             : await driveStream(preparedState, postedText, {
@@ -2487,7 +2499,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const requestRehearsal = async (
     userText: string,
     intervention?: UserIntervention,
-    resumeRun?: { runId: string },
+    resumeRun?: { runId: string; kind?: "control" },
     mode?: "repair"
   ) => {
     await runTurn(userText, intervention, resumeRun, mode);
@@ -2524,6 +2536,21 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     const record = loadActiveRun(sid);
     void (async () => {
       try {
+        const controlResponse = await fetch(
+          `/api/sliderule/control-runs/latest?sessionId=${encodeURIComponent(sid)}`,
+          { credentials: "include" }
+        );
+        if (controlResponse.ok) {
+          const { run } = await controlResponse.json();
+          if (run?.runId && (["queued", "running"].includes(run.status) ||
+              (record?.kind === "control" && record.runId === run.runId))) {
+            await requestRehearsal(record?.userText || "继续上一轮任务", undefined,
+              { runId: String(run.runId), kind: "control" });
+            return;
+          }
+        } else if (record?.kind === "control" && controlResponse.status >= 500) {
+          return;
+        }
         const res = await fetch(
           `/api/sliderule/runs/active?sessionId=${encodeURIComponent(sid)}`
         );

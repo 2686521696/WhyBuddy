@@ -269,6 +269,8 @@ export type SkillId = "dataModel" | "workflow" | "rbac" | "page" | "aigc" | "app
 
 export interface DriveFullStreamOpts {
   stopSignal?: AbortSignal;
+  controlRequestId?: string;
+  onControlRunId?: (runId: string) => void;
   maxLoops?: number;
   turnId?: string;
   /** E26 缺口修复轮：只重跑覆盖门标红的能力，已 PASS 产物原样复用。 */
@@ -876,7 +878,7 @@ export async function consumeDriveStreamResponse(
 /**
  * 产品新烧：POST /api/sliderule/control-turn-stream。
  * 六字段必须带上（installedSkillsDrivePayload / pickedConnectorIds）。
- * 续播不走这里——续播是 GET /runs/{id}/stream。
+ * 控制回合续播走 GET /control-runs/{id}/stream；旧工厂仍走 /runs。
  */
 export async function postControlTurnStream(
   state: V5SessionState,
@@ -884,10 +886,14 @@ export async function postControlTurnStream(
   opts: DriveFullStreamOpts = {}
 ): Promise<{ finalState: V5SessionState; stopReason?: string; loops?: any[]; publishClosure?: any } | null> {
   if (typeof fetch !== "function") return null;
+  const controlRequestId = opts.controlRequestId ?? crypto.randomUUID();
   try {
     const res = await fetch("/api/sliderule/control-turn-stream", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Control-Request-Id": controlRequestId,
+      },
       credentials: "include",
       signal: opts.stopSignal,
       body: JSON.stringify({
@@ -924,10 +930,44 @@ export async function postControlTurnStream(
     });
     await throwIfAuthRequired(res);
     if (!res.ok || !res.body) return null;
+    const controlRunId = res.headers.get("X-Control-Run-Id");
+    if (controlRunId) opts.onControlRunId?.(controlRunId);
     return await consumeControlStreamResponse(res, opts);
   } catch (err) {
     if (err instanceof DriveAuthRequiredError) throw err;
     return null;
+  } finally {
+    if (opts.stopSignal?.aborted && state.sessionId) {
+      // Stop may precede the first response header. The request tombstone also
+      // cancels a POST that is still waiting to publish its durable run ID.
+      await fetch(`/api/sliderule/control-requests/${encodeURIComponent(controlRequestId)}?sessionId=${encodeURIComponent(state.sessionId)}`, {
+        method: "DELETE", credentials: "include", keepalive: true,
+      }).catch(() => {});
+    }
+  }
+}
+
+export async function resumeControlTurnStream(
+  runId: string,
+  opts: DriveFullStreamOpts = {}
+) {
+  try {
+    const res = await fetch(
+      `/api/sliderule/control-runs/${encodeURIComponent(runId)}/stream`,
+      { credentials: "include", signal: opts.stopSignal }
+    );
+    await throwIfAuthRequired(res);
+    if (!res.ok || !res.body) return null;
+    return await consumeControlStreamResponse(res, opts);
+  } catch (error) {
+    if (error instanceof DriveAuthRequiredError) throw error;
+    return null;
+  } finally {
+    if (opts.stopSignal?.aborted) {
+      await fetch(`/api/sliderule/control-runs/${encodeURIComponent(runId)}`, {
+        method: "DELETE", credentials: "include", keepalive: true,
+      }).catch(() => {});
+    }
   }
 }
 
@@ -944,6 +984,7 @@ export async function consumeControlStreamResponse(
     // handoff 之后第一发 complete 若没改名，只当工厂收工，继续读控制面。
     let factoryDone = false;
     let sawTerminal = false;
+    let controlSeq = 0;
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
@@ -968,6 +1009,11 @@ export async function consumeControlStreamResponse(
         let event: any;
         try { event = JSON.parse(jsonStr); } catch { continue; }
 
+        if (typeof event.controlRunId === "string" && Number.isInteger(event.seq)) {
+          if (event.seq <= controlSeq) continue;
+          controlSeq = event.seq;
+        }
+
         if (!runIdSeen && typeof event.runId === "string" && event.runId) {
           runIdSeen = true;
           opts.onRunId?.(event.runId);
@@ -975,6 +1021,22 @@ export async function consumeControlStreamResponse(
 
         {
           switch (event.type) {
+            case "control_run_started":
+              if (typeof event.controlRunId === "string") {
+                opts.onControlRunId?.(event.controlRunId);
+              }
+              continue;
+            case "control_run_settled":
+              if (event.status === "cancelled") {
+                opts.onRunSettled?.("cancelled");
+                return null;
+              } else if (event.status === "failed" || event.status === "interrupted") {
+                opts.onControlText?.("本轮已中断，已保存现有结果。请查看任务状态后继续。");
+                opts.onRunSettled?.("error");
+                return null;
+              } else opts.onRunSettled?.("complete");
+              sawTerminal = true;
+              break outer;
             case "control_text":
               opts.onControlText?.(
                 String(event.text || ""),

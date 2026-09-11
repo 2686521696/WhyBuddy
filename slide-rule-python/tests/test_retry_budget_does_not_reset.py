@@ -261,17 +261,13 @@ def test_预算开在回合上_不是开在循环里():
     """⚠ 开在 `_control_llm_loop` 里等于每次进 loop 都重新给额度——
     而一个回合可能进两次（回执路径 / forced 交回后）。那正好是这一层
     要治的「每轮成功就把额度赚回来」。"""
-    from control_turn_support import strip_python
+    import ast
     from pathlib import Path
 
-    src = strip_python(
-        Path(__file__).resolve().parents[1] / "services" / "rehearsal_control.py"
-    )
-    at = src.find("async def _run_control_turn_serial")
-    assert at > 0
-    assert "retry_budget_scope" in src[at : at + 1200], "回合入口没开预算"
-    loop_at = src.find("async def _control_llm_loop")
-    assert loop_at > 0
-    assert "retry_budget_scope" not in src[loop_at : loop_at + 1500], (
-        "预算开在了循环里——每次进 loop 都重新给额度"
-    )
+    tree = ast.parse((Path(__file__).resolve().parents[1] / "services" / "rehearsal_control.py").read_text(encoding="utf-8"))
+    functions = {node.name: node for node in tree.body if isinstance(node, ast.AsyncFunctionDef)}
+    def scopes(name):
+        return [node for node in ast.walk(functions[name]) if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name) and node.func.id == "retry_budget_scope"]
+    assert len(scopes("_run_control_turn_serial")) == 1, "回合入口必须只开一份预算"
+    assert not scopes("_control_llm_loop"), "预算开在了循环里，每次进入都会重置"

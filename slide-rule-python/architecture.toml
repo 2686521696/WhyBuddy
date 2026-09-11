@@ -123,6 +123,8 @@ what = "纯工具：不依赖 services 里任何其它模块"
 # 深度 0 实测 117 个：不依赖 services 内任何模块。对应 grok 的叶子 crate。
 may_depend_on = []
 modules = [
+  "services.control_checkpoint",
+  "services.control_run_store",
   "services.archetype_legal",
   "services.project_access",
   "services.project_tool_contracts",
@@ -388,6 +390,7 @@ what = "编排：驱动器 / 流水线 / 控制面 / 会话"
 # 但**不许被下面两层反过来依赖**。
 may_depend_on = ["util", "core"]
   modules = [
+    "services.control_run_service",
     "services.project_runtime_worker",
     "services.project_authority",
     "services.project_creation",
@@ -554,6 +557,7 @@ may_depend_on = [
   "spec_first",
 ]
 modules = [
+  "services.control_run_service",
   "services.project_tools",
   "services.action_stationarity",
   "services.done_claim",
@@ -585,8 +589,8 @@ why = """组合根（对应 grok 的 xai-grok-pager-bin）：只负责把东西�
 llm_gateway 是 2026-09-08 加的一条：装配根不调 LLM，但要在任何服务 import 前调
 `ensure_llm_proxy_bypass()` 设好代理绕过名单（Windows/Clash 下控制面 522），
 而算名单要读 LLM_BASE_URL。理由全文见 [layer.app]。"""
-  # The application lifespan assembles the durable runtime supervisor and provider.
-  may_depend_on = ["agent_loop", "drive", "http_routes", "llm_gateway", "model_core", "permission", "persist", "platform", "runtime", "spec_first", "task_exec", "workspace"]
+  # Lifespan owns both the durable control producer and project runtime worker.
+  may_depend_on = ["agent_loop", "control", "drive", "http_routes", "llm_gateway", "model_core", "permission", "persist", "platform", "runtime", "spec_first", "task_exec", "workspace"]
 modules = [
   "app",
 ]
@@ -772,6 +776,7 @@ modules = [
 why = """会话落库与单调守卫。谁写、写成什么样，只有这里说了算。"""
 may_depend_on = ["platform"]
 modules = [
+  "services.control_run_store",
   "services.project_creation",
   "services.persistence",
   "services.project_store",
@@ -804,6 +809,7 @@ why = """最底下的共用叶子：配置、数据形状、请求域上下文�
 叶子被多个组用是 grok 叶子 crate 的常态，只有**成环**时才是问题。别拿零依赖当搬家理由。"""
 may_depend_on = []
 modules = [
+  "services.control_checkpoint",
   "services.project_authority",
   "services.project_access",
   "services.project_tool_contracts",

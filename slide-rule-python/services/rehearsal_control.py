@@ -6,8 +6,9 @@
 1. Route POST /api/sliderule/control-turn-stream, _require_login. No Node twin.
 2. SSE: control_text, control_tool_start, control_tool_result, control_ask_user,
    control_plan_approval, control_handoff_factory (with runId), complete.
-   Cheap turns are request-scoped (no run_registry). Handoff starts the factory
-   run; same SSE (or client resume consumer) then factory events.
+   Legacy consumers own their generator. Internal durable consumers delegate
+   ownership to control_run_service; SSE only subscribes to persisted events.
+   Handoff starts the factory run; its restart recovery remains separate.
 3. Parking: awaitReason MUST be control_ask / control_plan_approval.
    controlTranscript is a schema field. Tool loop MUST NOT spin waiting for
    the user in the same HTTP request. The *next* POST is a NeedUserAnswer
@@ -94,6 +95,7 @@ from services.user_questions import (
     unanswered_text as unanswered_question_text,
 )
 from services.action_stationarity import IdenticalToolCallRun, step_signature, step_tool_name
+from services.control_checkpoint import current_checkpoint, guard_control_run, owned_model_sample, ControlRunStopped
 from services.model_memory import (
     recall as recall_memory,
     remember as remember_memory,
@@ -156,7 +158,7 @@ from services.turn_narration import deliverable_fingerprint as factory_deliverab
 from services.llm_error_text import humanize_llm_error
 from sliderule_llm.client import LlmError
 from sliderule_llm.control_client import ControlLlmResult, call_control_llm
-from sliderule_llm.retry_budget import retry_budget_scope
+from sliderule_llm.retry_budget import retry_budget_scope, current_budget, RetryBudget
 
 CANNED_FAILURE = (
     "我是面团的推演引擎。说一个要做的应用，或问当前应用里已经推出来的角色/页面。"
@@ -1490,6 +1492,16 @@ def _complete(state: V5SessionState) -> Dict[str, Any]:
     return {"type": "complete", "state": _dump_state(state)}
 
 
+def _persist_durable_state(state: V5SessionState) -> V5SessionState:
+    guard_control_run()
+    try:
+        return save_session(state, server_write=True, require_durable=True)
+    except Exception as exc:
+        if current_checkpoint.get() is not None:
+            raise ControlRunStopped("control_session_persist_failed") from exc
+        raise
+
+
 def _persist(state: V5SessionState) -> V5SessionState:
     """控制面的落盘口。
 
@@ -1499,6 +1511,9 @@ def _persist(state: V5SessionState) -> V5SessionState:
       丢掉。2026-09-04 真机：假设卡确认后刷新，同一张卡又摊回来
       （详见 persistence._resolve_write_state 的 server_write 头注）。
     """
+    guard_control_run()
+    if current_checkpoint.get() is not None:
+        return _persist_durable_state(state)
     return save_session(state, server_write=True)
 
 
@@ -1759,7 +1774,7 @@ async def _park_plan_approval(state: V5SessionState) -> AsyncIterator[Dict[str, 
 async def _commit_plan_state(state: V5SessionState, candidate: V5SessionState) -> None:
     """Publish plan state only after storage confirms the exact revision."""
     saved = await run_in_threadpool(
-        save_session, candidate, server_write=True, require_durable=True
+        _persist_durable_state, candidate
     )
     for field in ("controlTranscript", "awaitReason", "awaitDetail", "runtimePhase", "goal"):
         setattr(state, field, getattr(saved, field))
@@ -1768,7 +1783,7 @@ async def _commit_plan_state(state: V5SessionState, candidate: V5SessionState) -
 async def _commit_question_state(state: V5SessionState, candidate: V5SessionState) -> None:
     """Do not expose a question or consume its answer before durable storage."""
     saved = await run_in_threadpool(
-        save_session, candidate, server_write=True, require_durable=True
+        _persist_durable_state, candidate
     )
     for field in ("controlTranscript", "awaitReason", "awaitDetail", "runtimePhase",
                   "specFirstPages", "coverageGaps"):
@@ -2435,6 +2450,7 @@ async def _handoff_factory(
         payload_device=preferred_device,
         texts=[user_text, str(goal.get("text") or "")],
     )
+    await asyncio.to_thread(guard_control_run)
     run = await start_drive_full_factory_run(
         state.sessionId,
         user_text,
@@ -2450,17 +2466,48 @@ async def _handoff_factory(
         expected_owner_id=state.ownerId,
         **charter_kw,
     )
-    yield {
-        "type": "control_handoff_factory",
-        "runId": getattr(run, "run_id", None),
-    }
-    async for event in run_registry.subscribe(run, since=0):
-        if nest and str(event.get("type") or "") == "complete":
-            nested = dict(event)
-            nested["type"] = "factory_complete"
-            yield nested
-        else:
-            yield event
+    port = current_checkpoint.get()
+    stopped = None
+
+    async def watch_owner():
+        nonlocal stopped
+        while True:
+            try:
+                await asyncio.to_thread(port.guard)
+            except ControlRunStopped as exc:
+                stopped = exc
+                run_registry.cancel_run(run.run_id)
+                return
+            await asyncio.sleep(0.25)
+
+    watcher = asyncio.create_task(watch_owner()) if port is not None else None
+    try:
+        yield {
+            "type": "control_handoff_factory",
+            "runId": getattr(run, "run_id", None),
+        }
+        async with aclosing(run_registry.subscribe(run, since=0)) as stream:
+            async for event in stream:
+                if nest and str(event.get("type") or "") == "complete":
+                    nested = dict(event)
+                    nested["type"] = "factory_complete"
+                    yield nested
+                else:
+                    yield event
+    finally:
+        if watcher is not None:
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
+            # The durable host owns this child even while no factory events
+            # arrive. Closing its subscription alone would leave writes running.
+            if run_registry.is_live(run):
+                run_registry.cancel_run(run.run_id)
+            if run.task is not None:
+                await asyncio.gather(run.task, return_exceptions=True)
+            if run.hard_cancelled:
+                raise ControlRunStopped("control_factory_stop_unconfirmed")
+    if stopped is not None:
+        raise stopped
 
 
 def _challenge_target(state: V5SessionState) -> Optional[str]:
@@ -3011,8 +3058,22 @@ async def _run_control_turn_serial(
         # （回执路径 / forced 交回后），开在 loop 里等于每次进都重新给额度，
         # 那正好是这一层要治的「每轮成功就把额度赚回来」。
         # grok 把它存在 actor 的 Cell 上、不是循环局部，同一个道理。
-        with retry_budget_scope():
-            async with aclosing(_run_control_turn_body(payload, state)) as stream:
+        port = current_checkpoint.get()
+        resume = port.checkpoint if port is not None else None
+        budget = RetryBudget()
+        if resume and resume.get("phase") in {"model", "tools"}:
+            budget.spent = resume.get("retrySpent", 0)
+            budget.started -= max(0, time.time() - resume["retryStartedAt"])
+            options = dict(resume["options"])
+            options["started"] = time.monotonic() - max(0, time.time() - resume["startedAt"])
+            options["cheap_tokens"] = resume["cheapTokens"]
+            restored_messages = copy.deepcopy(resume["messages"])
+            restored_messages[0] = {"role": "system", "content": _system_prompt(state)}
+            body = _control_llm_loop(state, restored_messages, **options)
+        else:
+            body = _run_control_turn_body(payload, state)
+        with retry_budget_scope(budget):
+            async with aclosing(body) as stream:
                 async for event in stream:
                     yield event
     finally:
@@ -3550,8 +3611,38 @@ async def _control_llm_loop(
     # 上一个回合的打转记录不许漏进这一个。
     identical_tool_calls = IdenticalToolCallRun()
 
+    port = current_checkpoint.get()
+    resume = copy.deepcopy(port.checkpoint) if port is not None else None
+    resume = resume if resume and resume.get("phase") in {"model", "tools"} else None
+    first_round = int(resume["round"]) if resume else 0
+    operation_ids = list(resume.get("operationIds", [])) if resume else []
+    if resume:
+        for key, value in resume.get("stationarity", {}).items():
+            setattr(identical_tool_calls, key, value)
+
+    async def checkpoint(phase, round_index, pending_calls=None, content=""):
+        if port is None:
+            return
+        budget = current_budget()
+        await _apersist(state)
+        await port.save({"schemaVersion": 1, "phase": phase,
+            "messages": messages, "round": round_index,
+            "operationIds": operation_ids,
+            "pendingCalls": pending_calls or [], "content": content,
+            "cheapTokens": cheap_tokens,
+            "startedAt": time.time() - (time.monotonic() - started),
+            "retrySpent": budget.spent if budget else 0,
+            "retryStartedAt": time.time() - budget.elapsed() if budget else time.time(),
+            "stationarity": {key: getattr(identical_tool_calls, key)
+                             for key in IdenticalToolCallRun.__slots__},
+            "options": dict(user_text=user_text, installed_skills=installed_skills,
+                active_connectors=active_connectors, preferred_device=preferred_device,
+                design_system_id=design_system_id, original_goal=original_goal,
+                empty_text=empty_text, tools=tools)})
+
     try:
-        for _round in range(MAX_TOOL_ROUNDS):
+        for _round in range(first_round, MAX_TOOL_ROUNDS):
+            restoring_calls = bool(resume and resume.get("phase") == "tools")
             capped = await _maybe_over_cap()
             if capped:
                 reason = ControlStopReason(capped["stopReason"])
@@ -3574,7 +3665,7 @@ async def _control_llm_loop(
             # 每一轮开头第一件事是问「模型是不是在原地打转」，问完才采样。
             # 我们原来是反过来的：先问模型，再看结果——所以「同一件事干了 8 遍」
             # 只能等 MAX_TOOL_ROUNDS 兜底，还兜成一句「想得太久」的假话。
-            if identical_tool_calls.should_hard_stop():
+            if not restoring_calls and identical_tool_calls.should_hard_stop():
                 tool_name, run_len, problematic = identical_tool_calls.telemetry()
                 print(
                     f"[control] stationarity_stop tool={tool_name!r} "
@@ -3597,7 +3688,7 @@ async def _control_llm_loop(
                 ):
                     yield event
                 return
-            if identical_tool_calls.take_nudge():
+            if not restoring_calls and identical_tool_calls.take_nudge():
                 tool_name, run_len, problematic = identical_tool_calls.telemetry()
                 print(
                     f"[control] stationarity_nudge tool={tool_name!r} "
@@ -3614,10 +3705,14 @@ async def _control_llm_loop(
             messages[:] = _repair_function_call_turn_order(
                 messages, fallback_user=prior
             )
-            result = await _invoke_control_llm(
-                messages,
-                tools=offered,
-            )
+            if restoring_calls:
+                result = ControlLlmResult(content=resume["content"],
+                    tool_calls=resume["pendingCalls"], usage=None,
+                    finish_reason="tool_calls", model="checkpoint", latency_ms=0)
+            else:
+                await checkpoint("sampling", _round)
+                result = await owned_model_sample(_invoke_control_llm(messages, tools=offered))
+                await run_in_threadpool(guard_control_run)
             cheap_tokens += _usage_tokens(getattr(result, "usage", None))
             capped = await _maybe_over_cap()
             if capped:
@@ -3638,8 +3733,15 @@ async def _control_llm_loop(
             calls = [
                 call
                 for call in (result.tool_calls or [])
-                if (call.get("name") or "") in offered_names
+                if restoring_calls or (call.get("name") or "") in offered_names
             ]
+            # One normalized identity is shared by assistant, tool result and
+            # recovery receipt, including providers that omit or reuse IDs.
+            seen_ids = {m.get("tool_call_id") for m in messages if m.get("role") == "tool"}
+            for call in calls:
+                if not call.get("id") or (not restoring_calls and call["id"] in seen_ids):
+                    call["id"] = "call-" + uuid.uuid4().hex
+                seen_ids.add(call["id"])
             # ⚠ 诊断：模型**看见了什么**、**挑了什么**、**被裁掉了什么**。
             #   缺这一行时，「你好为什么点着了工厂」只能靠读代码猜——真机日志里
             #   只有 `[control] forced hop=None`，看不出模型挑了哪件工具。
@@ -3660,6 +3762,7 @@ async def _control_llm_loop(
                 calls = []
             content = (result.content or "").strip()
             if not calls:
+                await checkpoint("settling", _round + 1)
                 if (
                     tools != []
                     and not _has_product_topic(state)
@@ -3723,7 +3826,8 @@ async def _control_llm_loop(
                     for i, call in enumerate(calls)
                 ],
             }
-            messages.append(assistant_msg)
+            if not restoring_calls:
+                messages.append(assistant_msg)
 
             # 这一轮的签名记进游标。**在这儿记、到下一轮开头才判**，
             # 抄 grok 的位置（observe 在执行前、take_nudge 在下一轮循环开头）：
@@ -3732,19 +3836,22 @@ async def _control_llm_loop(
             # ⚠ 记的是 `calls`（过滤后真会跑的那批），不是 result.tool_calls。
             #   模型反复挑没列出来的工具时 calls 为空，上面早就 return 了，
             #   在这儿再算一遍只会把「被裁掉的」也当成一段打转。
-            identical_tool_calls.observe(
-                step_signature(calls),
-                step_tool_name(calls),
-                _step_is_problematically_repeating(calls),
-            )
+            if not restoring_calls:
+                identical_tool_calls.observe(
+                    step_signature(calls), step_tool_name(calls),
+                    _step_is_problematically_repeating(calls),
+                )
+            resume = None
+            await checkpoint("tools", _round, calls, content)
 
             parked = False
             aborted = False
             wrote = False
-            for call in calls:
+            for call_index, call in enumerate(calls):
                 name = str(call.get("name") or "")
                 args = call.get("arguments") if isinstance(call.get("arguments"), dict) else {}
                 tool_body: Optional[Dict[str, Any]] = None
+                await checkpoint("dispatching", _round, calls[call_index:], content)
                 with tool_scope_scope(name):
                     async with aclosing(_dispatch_tool(
                         name,
@@ -3758,12 +3865,17 @@ async def _control_llm_loop(
                         original_goal,
                     )) as stream:
                         async for event in stream:
+                            if port is not None:
+                                event = {**event, "toolCallId": call["id"]}
                             yield event
                             et = str(event.get("type") or "")
                             if et == "control_tool_result":
                                 tool_body = {
                                     k: v for k, v in event.items() if k != "type"
                                 }
+                                operation_id = tool_body.get("operationId")
+                                if operation_id and operation_id not in operation_ids:
+                                    operation_ids.append(operation_id)
                             if et == "control_ask_user":
                                 parked = True
                             elif et == "control_plan_approval":
@@ -3790,6 +3902,9 @@ async def _control_llm_loop(
                 )
                 if name in PROJECT_TOOL_NAMES or name in {"write_plan", "enter_plan_mode"}:
                     messages[0] = {"role": "system", "content": _system_prompt(state)}
+                remaining = calls[call_index + 1:]
+                await checkpoint("tools" if remaining else "model",
+                    _round if remaining else _round + 1, remaining, content)
             if wrote:
                 # 工厂墙钟不计入控制面 45s。WRITE 交回后再给便宜思考。
                 started = time.monotonic()
@@ -4225,6 +4340,7 @@ async def _dispatch_tool(
     design_system_id: Any,
     original_goal: str,
 ) -> AsyncIterator[Dict[str, Any]]:
+    await run_in_threadpool(guard_control_run)
     if name in PROJECT_TOOL_NAMES and not isinstance(args, dict):
         yield {"type": "control_tool_result", "tool": name, "ok": False, "error": "project_tool_arguments_invalid"}
         return

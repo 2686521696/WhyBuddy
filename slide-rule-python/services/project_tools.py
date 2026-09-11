@@ -15,6 +15,7 @@ import uuid
 from pydantic import ValidationError
 
 from services.persistence import PersistClosedError
+from services.control_checkpoint import guard_control_run
 from services.project_authority import approved_reference
 from services.project_creation import create_session_project, load_authorized_session, sync_session_project
 from services.project_manifest import apply_file_changes, content_hash, source_path
@@ -82,6 +83,7 @@ class ProjectTools:
         self.store, self.supervisor, self.owner_id = store, supervisor, owner_id
 
     def execute(self, name, args, state) -> dict:
+        guard_control_run()
         try:
             if name not in PROJECT_ARGUMENTS:
                 raise ValueError("unknown_project_tool")
@@ -92,6 +94,7 @@ class ProjectTools:
             authority = load_authorized_session(session_id, owner_id=self.owner_id,
                 approval_ref=parsed.approvalRef if name in PROJECT_WRITE_TOOLS else None)
             if name == "project_create":
+                guard_control_run()
                 project = create_session_project(self.store, session_id,
                     owner_id=self.owner_id, approval_ref=parsed.approvalRef)
                 return {"ok": True, **self._project_result(project)}
@@ -117,6 +120,7 @@ class ProjectTools:
             if name == "project_patch":
                 return {"ok": True, **self._patch(project, parsed)}
             if name in {"project_start", "project_exec"}:
+                guard_control_run()
                 if self.supervisor is None:
                     raise ProjectStoreUnavailable("project_worker_unavailable")
                 if project.currentRevision != parsed.expectedRevision:
@@ -200,6 +204,7 @@ class ProjectTools:
             # Check again after bounded source reads; no cached approval can be
             # carried through an arbitrarily slow storage call into publication.
             load_authorized_session(project.sessionId, owner_id=self.owner_id, approval_ref=args.approvalRef)
+            guard_control_run()
             revision = self.store.commit_revision(project.projectId, owner_id=self.owner_id,
                 expected_revision=current.revision, files=updated, template_version=current.templateVersion,
                 plan_ref=args.approvalRef, spec_revision=current.specRevision,

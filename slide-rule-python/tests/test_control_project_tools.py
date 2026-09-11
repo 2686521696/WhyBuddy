@@ -1,6 +1,7 @@
 """Exercise project creation and failure feedback through the product HTTP loop."""
 
 import json
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -21,31 +22,48 @@ from services.slide_rule_session import load_session
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
     monkeypatch.setenv("SLIDERULE_SESSIONS_FILE", str(tmp_path / "sessions.json"))
-    monkeypatch.setattr(persistence, "_blob_store", lambda *_: None)
+    from services.session_blob_store import SqlSessionBlobStore
+    sessions = SqlSessionBlobStore(f"sqlite:///{tmp_path / 'sessions.db'}")
+    monkeypatch.setattr(persistence, "_blob_store", lambda *_: sessions)
     monkeypatch.setenv("NODE_ENV", "development")
     monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
     from config.settings import settings
     monkeypatch.setattr(settings, "NODE_ENV", "development")
     store = ProjectStore.from_url(f"sqlite:///{tmp_path / 'project.db'}")
     monkeypatch.setattr(project_store, "get_project_store", lambda: store)
-    from routes import sliderule_full
-    monkeypatch.setattr(sliderule_full, "get_project_store", lambda: store)
     from routes import project_runtime
     monkeypatch.setattr(project_runtime, "get_project_store", lambda: store)
     viewer = User(id=TEST_USER_ID, is_superuser=True)
     app.dependency_overrides[optional_user] = lambda: viewer
     app.dependency_overrides[require_user] = lambda: viewer
     state = seed_approved_session(new_sid("project-control"), goal={"text": "Build a small project"})
-    yield SimpleNamespace(store=store, state=state, viewer=viewer, ref=approved_reference(state))
+    from services.control_run_store import ControlRunStore
+    from services.control_run_service import ControlRunService
+    from services.project_creation import load_authorized_session
+    control_service = ControlRunService(ControlRunStore(store._q), store, None,
+        authorize=lambda sid, owner: load_authorized_session(sid, owner_id=owner), poll_seconds=0.01)
+    @asynccontextmanager
+    async def lifespan(application):
+        application.state.control_run_service = control_service
+        await control_service.start()
+        try:
+            yield
+        finally:
+            await control_service.shutdown()
+            application.state.control_run_service = None
+    monkeypatch.setattr(app.router, "lifespan_context", lifespan)
+    with client:
+        yield SimpleNamespace(store=store, state=state, viewer=viewer, ref=approved_reference(state), control=control_service)
     app.dependency_overrides.pop(require_user, None)
     store.close()
+    sessions._engine.dispose()
 
 
 def post(state, **extra):
     response = client.post("/api/sliderule/control-turn-stream", headers=KEY,
         json=six_fields(state.sessionId, "Continue the approved project", **extra))
     assert response.status_code == 200, response.text
-    return parse_sse(response.text)
+    return [e for e in parse_sse(response.text) if e["type"] not in {"control_run_started", "control_run_settled"}]
 
 
 def test_http_creation_recovery_and_client_cannot_overwrite_reference(setup):
@@ -179,6 +197,7 @@ def test_failed_command_returns_to_same_model_loop_before_patch_and_rerun(setup,
     supervisor = ProjectRuntimeSupervisor(setup.store, lambda: provider,
         poll_interval=0.02, lease_ttl=10, lifetime_seconds=30, idle_seconds=20)
     monkeypatch.setattr(app.state, "project_runtime_supervisor", supervisor, raising=False)
+    setup.control.project_supervisor = supervisor
     adapter = ProjectTools(setup.store, supervisor, TEST_USER_ID)
     project = create_session_project(setup.store, setup.state.sessionId, owner_id=TEST_USER_ID, approval_ref=setup.ref)
     source = setup.store.read_files(project.projectId, owner_id=TEST_USER_ID)["src/main.tsx"]

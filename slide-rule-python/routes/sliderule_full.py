@@ -16,6 +16,7 @@ import binascii
 import os
 import re
 import threading
+import uuid
 
 from anyio import CancelScope
 from fastapi import APIRouter, HTTPException, Header, Request
@@ -51,8 +52,8 @@ from services.slide_rule_coverage import author_coverage_contract, evaluate_cove
 from services.capability_maps import execute_mapped_capability
 from config.settings import settings
 from services.project_access import project_access_enabled
-from services.project_store import get_project_store, ProjectStoreUnavailable
-from services.project_tools import ProjectTools
+from services.control_run_store import ControlRunConflict, ControlRunUnavailable, ControlRunNotFound
+from services.control_run_service import public_control_run
 from sliderule_llm.capabilities import execute_capability, is_python_native_capability
 from sliderule_llm.client import LlmError
 from sliderule_llm.evidence import execute_evidence_runtime
@@ -1551,6 +1552,7 @@ async def control_turn_stream(
     viewer: CurrentUserOptional,
     request: Request,
     x_internal_key: Optional[str] = Header(None),
+    x_control_request_id: Optional[str] = Header(None),
 ):
     """M1 薄控制面。产品新烧唯一点火 HTTP。无 Node twin（catch-all 转发）。"""
     import json
@@ -1563,17 +1565,21 @@ async def control_turn_stream(
     # Authorize before opening SSE; private and missing IDs have the same 404.
     sid = str(payload.get("sessionId") or "").strip()
     state = await asyncio.to_thread(_require_run_session, sid, "drive", viewer)
-    project_tools = None
     if project_access_enabled(viewer):
+        service = _control_service(request, viewer)
         try:
-            store = await asyncio.to_thread(get_project_store)
-            project_tools = ProjectTools(store, getattr(request.app.state, "project_runtime_supervisor", None), str(viewer.id))
-        except ProjectStoreUnavailable:
-            pass
-
+            record = await service.submit(payload, str(viewer.id),
+                x_control_request_id if x_control_request_id is not None else uuid.uuid4().hex)
+        except ControlRunConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except (ControlRunUnavailable, PermissionError) as exc:
+            raise HTTPException(503, "control_run_unavailable") from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        return _control_sse_response(service, record["runId"], str(viewer.id), 0)
     async def event_generator():
         async with aclosing(run_control_turn(payload, authorized_owner_id=state.ownerId,
-                reservation_held=True, project_tools=project_tools)) as stream:
+                reservation_held=True)) as stream:
             async for event in stream:
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
@@ -1587,6 +1593,94 @@ async def control_turn_stream(
             "Connection": "keep-alive",
         },
     )
+
+
+def _control_service(request, viewer):
+    if not project_access_enabled(viewer):
+        raise HTTPException(404, "Not found")
+    service = getattr(request.app.state, "control_run_service", None)
+    if service is None:
+        raise HTTPException(503, "control_run_unavailable")
+    return service
+
+
+def _control_sse_response(service, run_id, owner_id, after_seq):
+    import json
+
+    async def events():
+        yield "data: " + json.dumps({"type": "control_run_started", "controlRunId": run_id}) + "\n\n"
+        async for event in service.subscribe(run_id, owner_id, after_seq):
+            yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-store", "X-Accel-Buffering": "no",
+        "X-Control-Run-Id": run_id,
+    })
+
+
+@router.get("/control-runs/latest")
+async def latest_control_run(sessionId: str, request: Request, viewer: CurrentUserOptional,
+                             x_internal_key: Optional[str] = Header(None)):
+    _auth(x_internal_key)
+    _require_login(viewer)
+    await asyncio.to_thread(_require_run_session, sessionId, "drive", viewer)
+    service = _control_service(request, viewer)
+    record = await asyncio.to_thread(service.store.latest, sessionId, str(viewer.id))
+    return {"run": public_control_run(record) if record else None}
+
+
+@router.delete("/control-requests/{request_id}")
+async def cancel_control_request(request_id: str, sessionId: str, request: Request,
+                                 viewer: CurrentUserOptional, x_internal_key: Optional[str] = Header(None)):
+    _auth(x_internal_key)
+    _require_login(viewer)
+    await asyncio.to_thread(_require_run_session, sessionId, "drive", viewer)
+    service = _control_service(request, viewer)
+    try:
+        record = await asyncio.to_thread(service.store.cancel_request, sessionId, str(viewer.id), request_id)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"cancelRequested": record["cancelRequested"], "runId": record["runId"]}
+
+
+async def _owned_control_record(service, run_id, viewer):
+    try:
+        record = await asyncio.to_thread(service.store.get, run_id, str(viewer.id))
+    except ControlRunNotFound as exc:
+        raise HTTPException(404, "Not found") from exc
+    await asyncio.to_thread(_require_run_session, record["sessionId"], "drive", viewer)
+    return record
+
+
+@router.get("/control-runs/{run_id}")
+async def get_control_run(run_id: str, request: Request, viewer: CurrentUserOptional,
+                         x_internal_key: Optional[str] = Header(None)):
+    _auth(x_internal_key)
+    _require_login(viewer)
+    service = _control_service(request, viewer)
+    return public_control_run(await _owned_control_record(service, run_id, viewer))
+
+
+@router.get("/control-runs/{run_id}/stream")
+async def stream_control_run(run_id: str, request: Request, viewer: CurrentUserOptional,
+                            afterSeq: int = 0, x_internal_key: Optional[str] = Header(None)):
+    _auth(x_internal_key)
+    _require_login(viewer)
+    service = _control_service(request, viewer)
+    record = await _owned_control_record(service, run_id, viewer)
+    if afterSeq < 0 or afterSeq > record["lastSeq"]:
+        raise HTTPException(422, "invalid_control_event_cursor")
+    return _control_sse_response(service, run_id, str(viewer.id), afterSeq)
+
+
+@router.delete("/control-runs/{run_id}")
+async def cancel_control_run(run_id: str, request: Request, viewer: CurrentUserOptional,
+                            x_internal_key: Optional[str] = Header(None)):
+    _auth(x_internal_key)
+    _require_login(viewer)
+    service = _control_service(request, viewer)
+    await _owned_control_record(service, run_id, viewer)
+    return public_control_run(await service.cancel(run_id, str(viewer.id)))
 
 
 def _run_sse_response(run, since: int) -> StreamingResponse:

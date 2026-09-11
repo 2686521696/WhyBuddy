@@ -112,6 +112,8 @@ from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
 from services.sliderule_session_sanitizer import sanitize_session_dict, sanitize_session_state
 from services.e2b_workspace_provider import E2BWorkspaceProvider
 from services.project_runtime_worker import ProjectRuntimeSupervisor
+from services.control_run_store import ControlRunStore
+from services.control_run_service import ControlRunService
 from services.project_store import get_project_store
 from models.v5_state import V5SessionState
 
@@ -372,8 +374,15 @@ async def lifespan(app: FastAPI):
     _dry_run_calendars()
     print("[startup] workflow calendars dry-ran (stub LLM)")
     app.state.project_runtime_supervisor = None
+    app.state.control_run_service = None
     try:
         app.state.project_runtime_supervisor = await asyncio.to_thread(_start_project_runtime_supervisor)
+        if app.state.project_runtime_supervisor is not None:
+            project_store = await asyncio.to_thread(get_project_store)
+            control_store = await asyncio.to_thread(ControlRunStore, project_store._q)
+            app.state.control_run_service = ControlRunService(control_store, project_store,
+                app.state.project_runtime_supervisor)
+            await app.state.control_run_service.start()
     except Exception as exc:
         # Existing sessions remain usable when this optional internal worker is
         # unavailable. Start commands report 503; durable reads still work.
@@ -381,6 +390,10 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        control_service = app.state.control_run_service
+        if control_service is not None:
+            await control_service.shutdown()
+            app.state.control_run_service = None
         supervisor = app.state.project_runtime_supervisor
         if supervisor is not None:
             try:

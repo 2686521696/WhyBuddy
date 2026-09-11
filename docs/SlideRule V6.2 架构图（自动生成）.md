@@ -15,9 +15,9 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **316** 个，模块 **316** 个
-- 内部依赖边 **1025** 条（包含普通包初始化依赖）
-- 内部 import 语句 **937** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 扫描文件 **319** 个，模块 **319** 个
+- 内部依赖边 **1037** 条（包含普通包初始化依赖）
+- 内部 import 语句 **949** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -37,9 +37,9 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
-| `util` | 138 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `util` | 140 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
 | `core` | 65 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
-| `flow` | 34 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
+| `flow` | 35 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
 叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import 的全部理由，也是 `import` 不必躲进函数体的前提。
 
@@ -49,12 +49,12 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 ```mermaid
 flowchart TB
-  util["util<br/>138 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
+  util["util<br/>140 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
   core["core<br/>65 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
-  flow["flow<br/>34 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
+  flow["flow<br/>35 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
   core -->|148| util
-  flow -->|113| core
-  flow -->|121| util
+  flow -->|114| core
+  flow -->|127| util
 ```
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
@@ -67,7 +67,7 @@ flowchart TB
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>15 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>237 个模块<br/>业务"]
+  services["services<br/>240 个模块<br/>业务"]
   routes["routes<br/>13 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -75,7 +75,7 @@ flowchart TB
   app -->|1| config
   app -->|1| models
   app -->|13| routes
-  app -->|15 · 其中 3 条边来自函数体 import| services
+  app -->|17 · 其中 3 条边来自函数体 import| services
   app -->|2| sliderule_llm
   app -->|1| stdio_utf8
   complete_migration -->|1| models
@@ -137,7 +137,7 @@ flowchart LR
 
 抄 grok 的 Cargo.toml——边写在 crate 上，由编译器焊死。
 现算数字见 `docs/grok-build 架构图（自动生成）.md`。
-我们 26 个 component、99 条边，由 `architecture.toml` 声明、判据强制。
+我们 26 个 component、100 条边，由 `architecture.toml` 声明、判据强制。
 **红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。
 
 ```mermaid
@@ -148,7 +148,7 @@ flowchart LR
   audit["audit<br/>3"]
   blueprint["blueprint<br/>19"]
   capability_engine["capability_engine<br/>2"]
-  control["control<br/>9"]
+  control["control<br/>10"]
   diagnostics["diagnostics<br/>6"]
   drive["drive<br/>9"]
   entrypoint["entrypoint<br/>1"]
@@ -160,8 +160,8 @@ flowchart LR
   observability["observability<br/>7"]
   ops_scripts["ops_scripts<br/>40"]
   permission["permission<br/>8"]
-  persist["persist<br/>4"]
-  platform["platform<br/>28"]
+  persist["persist<br/>5"]
+  platform["platform<br/>29"]
   run_control["run_control<br/>4"]
   runtime["runtime<br/>2"]
   spec_first["spec_first<br/>41"]
@@ -179,11 +179,11 @@ flowchart LR
   capability_engine -->|1| spec_first
   control -->|handoff 7| drive
   control -->|1| evidence
-  control -->|1| identity
+  control -->|2| identity
   control -->|7| llm_gateway
   control -->|3| model_core
-  control -->|3| persist
-  control -->|12| platform
+  control -->|5| persist
+  control -->|17| platform
   control -->|1| runtime
   control -->|4| spec_first
   diagnostics -->|1| a2a
@@ -201,12 +201,13 @@ flowchart LR
   drive -->|2| run_control
   drive -->|2| spec_first
   entrypoint -->|2| agent_loop
+  entrypoint -->|1| control
   entrypoint -->|2| drive
   entrypoint -->|8| http_routes
   entrypoint -->|2| llm_gateway
   entrypoint -->|4| model_core
   entrypoint -->|1| permission
-  entrypoint -->|1| persist
+  entrypoint -->|2| persist
   entrypoint -->|4| platform
   entrypoint -->|1| runtime
   entrypoint -->|4| spec_first
