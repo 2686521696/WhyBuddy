@@ -81,6 +81,8 @@ class RuntimeInstance(ProjectContract):
     processId: str | None = None
     health: str | None = None
     lastHeartbeat: str
+    expiresAt: float | None = None
+    errorCode: str | None = None
 
 
 class PreviewDescriptor(ProjectContract):
@@ -108,6 +110,11 @@ class ProjectOperation(ProjectContract):
     result: dict[str, Any] | None = None
     leaseGeneration: int | None = None
     leaseOwner: str | None = None
+    cancelRequested: bool = False
+    lastAccessAt: float | None = None
+    runtime: RuntimeInstance | None = None
+    stateVersion: int = 0
+    pendingEvent: dict[str, Any] | None = None
     createdAt: str
     updatedAt: str
 
@@ -122,3 +129,55 @@ class RuntimeEvent(ProjectContract):
     type: str
     timestamp: str
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProjectOperationView(ProjectContract):
+    """Public operation fields; lease, dispatch and outbox data stay private."""
+
+    operationId: str
+    projectId: str
+    sessionId: str
+    kind: str
+    expectedRevision: str
+    status: OperationStatus
+    cancelRequested: bool
+    lastAccessAt: float | None
+    stateVersion: int
+    createdAt: str
+    updatedAt: str
+
+
+class RuntimeView(ProjectContract):
+    runtimeId: str
+    workspaceId: str
+    projectId: str
+    revision: str
+    status: RuntimeStatus
+    port: int
+    health: str | None
+    lastHeartbeat: str
+    expiresAt: float | None
+    errorCode: str | None
+
+
+class ProjectOperationSnapshot(ProjectContract):
+    operation: ProjectOperationView
+    runtime: RuntimeView | None
+    lastSeq: int
+
+
+class RuntimeEventView(ProjectContract):
+    schemaVersion: Literal[1]
+    sessionId: str
+    projectId: str
+    operationId: str
+    seq: int
+    type: str
+    timestamp: str
+    payload: dict[str, Any]
+
+
+class RuntimeEventPage(ProjectContract):
+    events: list[RuntimeEventView]
+    nextSeq: int
+    hasMore: bool

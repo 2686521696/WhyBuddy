@@ -22,7 +22,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool, StaticPool
 
 from config.settings import settings
-from models.project_runtime import Project, ProjectOperation, ProjectRevision, RuntimeEvent, WorkspaceLease
+from models.project_runtime import Project, ProjectOperation, ProjectRevision, RuntimeEvent, RuntimeInstance, WorkspaceLease
 from services.project_manifest import build_manifest, canonical_json, content_hash
 from services.sql_gateway import HttpSqlGateway, _sql_engine_config, http_api_credentials
 
@@ -31,6 +31,14 @@ MAX_REVISIONS = 200
 MAX_OPERATION_BYTES = 128 * 1024
 MAX_EVENT_BYTES = 32 * 1024
 MAX_OPERATION_EVENTS = 2000
+_TERMINAL_OPERATIONS = {"completed", "failed", "cancelled"}
+_OPERATION_TRANSITIONS = {
+    "queued": {"running", "cancelling", "cancelled", "failed", "interrupted"},
+    "running": {"completed", "failed", "cancelling", "waiting_user", "interrupted"},
+    "waiting_user": {"running", "cancelling", "cancelled", "interrupted"},
+    "cancelling": {"cancelled", "failed", "interrupted"},
+    "interrupted": {"running", "cancelling", "failed", "cancelled"},
+}
 
 
 class ProjectStoreUnavailable(RuntimeError):
@@ -367,6 +375,136 @@ class ProjectStore:
     def get_operation(self, operation_id: str, *, owner_id: str) -> ProjectOperation:
         return ProjectOperation.model_validate_json(self._operation_row(operation_id, owner_id)["payload"])
 
+    def list_runnable_operations(self, *, limit: int = 100) -> list[tuple[ProjectOperation, str]]:
+        """Trusted worker scan, including terminal rows whose outbox needs repair."""
+        if not 1 <= limit <= 1000:
+            raise ValueError("invalid_operation_limit")
+        selected: list[tuple[ProjectOperation, str]] = []
+        cursor = ""
+        # Filtering JSON in Python keeps both SQL backends compatible. Keyset
+        # paging must continue past completed rows and currently leased work.
+        while len(selected) < limit:
+            rows = self._q("select o.id,o.payload,p.owner_id,l.payload as lease_payload from wb_project_operation o join wb_project p on p.id=o.project_id left join wb_project_lease l on l.project_id=o.project_id where o.id>$1 and (l.project_id is null or l.expires_at<=$2) order by o.id limit $3",
+                [cursor, time.time(), max(100, limit)])
+            if not rows:
+                break
+            for row in rows:
+                operation = ProjectOperation.model_validate_json(row["payload"])
+                lease = WorkspaceLease.model_validate_json(row["lease_payload"]) if row["lease_payload"] else None
+                prior_id = lease.processRefs.get("operationId") if lease else None
+                if prior_id and prior_id != operation.operationId:
+                    prior = self.get_operation(prior_id, owner_id=row["owner_id"])
+                    if prior.status not in _TERMINAL_OPERATIONS or prior.pendingEvent is not None:
+                        continue
+                if operation.kind == "runtime.start" and (operation.status not in _TERMINAL_OPERATIONS or operation.pendingEvent is not None):
+                    selected.append((operation, row["owner_id"]))
+                    if len(selected) == limit:
+                        break
+            cursor = rows[-1]["id"]
+        return selected
+
+    def snapshot_operation(self, operation_id: str, *, owner_id: str) -> dict[str, Any]:
+        rows = self._q("select o.payload,l.expires_at as lease_expires_at,coalesce((select max(e.seq) from wb_project_event e where e.operation_id=o.id),0) as last_seq from wb_project_operation o join wb_project p on p.id=o.project_id left join wb_project_lease l on l.project_id=o.project_id where o.id=$1 and p.owner_id=$2", [operation_id, owner_id])
+        if not rows:
+            raise ProjectNotFound("project_operation_not_found")
+        operation = ProjectOperation.model_validate_json(rows[0]["payload"])
+        return {"operation": operation, "runtime": operation.runtime, "lastSeq": int(rows[0]["last_seq"]),
+            "leaseExpiresAt": rows[0]["lease_expires_at"]}
+
+    def request_operation_cancel(self, operation_id: str, *, owner_id: str) -> ProjectOperation:
+        for _ in range(12):
+            row = self._operation_row(operation_id, owner_id)
+            operation = ProjectOperation.model_validate_json(row["payload"])
+            if operation.cancelRequested or operation.status in _TERMINAL_OPERATIONS:
+                return operation
+            updated = operation.model_copy(update={"cancelRequested": True, "updatedAt": _now()})
+            if self._q("update wb_project_operation set payload=$1,rev=rev+1 where id=$2 and rev=$3 returning id",
+                       [updated.model_dump_json(), operation_id, row["rev"]]):
+                return updated
+        raise ProjectConflict("operation_state_conflict")
+
+    def touch_operation(self, operation_id: str, *, owner_id: str) -> ProjectOperation:
+        """Explicit user activity; polling/log subscriptions do not extend billing."""
+        for _ in range(12):
+            row = self._operation_row(operation_id, owner_id)
+            operation = ProjectOperation.model_validate_json(row["payload"])
+            if operation.status in _TERMINAL_OPERATIONS or operation.cancelRequested:
+                return operation
+            now = time.time()
+            updated = operation.model_copy(update={"lastAccessAt": now, "updatedAt": _now()})
+            if self._q("update wb_project_operation set payload=$1,rev=rev+1 where id=$2 and rev=$3 returning id",
+                       [updated.model_dump_json(), operation_id, row["rev"]]):
+                return updated
+        raise ProjectConflict("operation_state_conflict")
+
+    def update_runtime_operation(self, operation_id: str, *, owner_id: str, lease_generation: int,
+                                 lease_owner: str, expected_status: str, status: str,
+                                 runtime: RuntimeInstance, result: dict[str, Any] | None = None) -> ProjectOperation:
+        _bounded(result, MAX_OPERATION_BYTES)
+        for _ in range(12):
+            self.flush_operation_event(operation_id, owner_id=owner_id,
+                lease_generation=lease_generation, lease_owner=lease_owner)
+            row = self._operation_row(operation_id, owner_id)
+            operation = ProjectOperation.model_validate_json(row["payload"])
+            if operation.pendingEvent is not None:
+                continue
+            if operation.leaseGeneration != lease_generation or operation.leaseOwner != lease_owner:
+                raise ProjectConflict("workspace_lease_lost")
+            if operation.status != expected_status or operation.status in _TERMINAL_OPERATIONS or (
+                    status != expected_status and status not in _OPERATION_TRANSITIONS.get(expected_status, set())):
+                raise ProjectConflict("operation_state_conflict")
+            if runtime.projectId != operation.projectId or runtime.revision != operation.expectedRevision:
+                raise ProjectConflict("runtime_operation_mismatch")
+            lease = self.get_lease(operation.projectId, owner_id=owner_id)
+            if lease is None or runtime.workspaceId != lease.workspaceId:
+                raise ProjectConflict("runtime_operation_mismatch")
+            if operation.runtime is not None and (runtime.runtimeId != operation.runtime.runtimeId or
+                    runtime.workspaceId != operation.runtime.workspaceId):
+                raise ProjectConflict("runtime_operation_mismatch")
+            version, now = operation.stateVersion + 1, _now()
+            pending = {"eventId": f"{operation_id}:state:{version}", "type": "runtime.state", "payload": {
+                "operationId": operation_id, "status": status, "runtime": runtime.model_dump(),
+                "cancelRequested": operation.cancelRequested, "stateVersion": version, "updatedAt": now}}
+            _bounded(pending["payload"], MAX_EVENT_BYTES)
+            updated = ProjectOperation.model_validate({**operation.model_dump(), "status": status,
+                "runtime": runtime, "result": result, "stateVersion": version, "pendingEvent": pending, "updatedAt": now})
+            params: list[Any] = [updated.model_dump_json(), operation_id, row["rev"]]
+            fence = self._fence(operation.projectId, lease_generation, lease_owner, params)
+            if self._q("update wb_project_operation set payload=$1,rev=rev+1 where id=$2 and rev=$3 and " + fence + " returning id", params):
+                return updated
+            current = self.get_operation(operation_id, owner_id=owner_id)
+            # A concurrent cancel is sticky. Retry only that change; concurrent
+            # worker progress must not be overwritten by a stale runtime value.
+            ignored = {"cancelRequested", "lastAccessAt", "updatedAt"}
+            if current.model_dump(exclude=ignored) != operation.model_dump(exclude=ignored):
+                raise ProjectConflict("operation_state_or_lease_conflict")
+        raise ProjectConflict("operation_state_or_lease_conflict")
+
+    def flush_operation_event(self, operation_id: str, *, owner_id: str,
+                              lease_generation: int, lease_owner: str) -> RuntimeEvent | None:
+        for _ in range(12):
+            row = self._operation_row(operation_id, owner_id)
+            operation = ProjectOperation.model_validate_json(row["payload"])
+            if operation.leaseGeneration != lease_generation or operation.leaseOwner != lease_owner:
+                raise ProjectConflict("workspace_lease_lost")
+            pending = operation.pendingEvent
+            if pending is None:
+                return None
+            event = self.append_event(operation_id, owner_id=owner_id, event_type=pending["type"],
+                payload=pending["payload"], event_id=pending["eventId"],
+                lease_generation=lease_generation, lease_owner=lease_owner)
+            updated = operation.model_copy(update={"pendingEvent": None})
+            params: list[Any] = [updated.model_dump_json(), operation_id, row["rev"]]
+            fence = self._fence(operation.projectId, lease_generation, lease_owner, params)
+            if self._q("update wb_project_operation set payload=$1,rev=rev+1 where id=$2 and rev=$3 and " + fence + " returning id", params):
+                return event
+            current = self.get_operation(operation_id, owner_id=owner_id)
+            if current.pendingEvent != pending:
+                # A different writer flushed this event and possibly stored the
+                # next one. Never clear its outbox using this older event.
+                return event
+        raise ProjectConflict("operation_event_flush_conflict")
+
     def claim_operation(self, operation_id: str, *, owner_id: str, lease_owner: str,
                         generation: int) -> ProjectOperation:
         """Fence out the previous worker, leaving uncertain effects to reconcile."""
@@ -376,36 +514,40 @@ class ProjectStore:
         if (lease is None or lease.generation != generation or lease.leaseOwner != lease_owner
                 or lease.expiresAt <= time.time()):
             raise ProjectConflict("workspace_lease_lost")
-        if operation.status in {"completed", "failed", "cancelled"}:
+        if operation.status in _TERMINAL_OPERATIONS and operation.pendingEvent is None:
             raise ProjectConflict("operation_state_conflict")
         if operation.leaseGeneration == generation and operation.leaseOwner == lease_owner:
             return operation
         if operation.leaseGeneration is not None and operation.leaseGeneration >= generation:
             raise ProjectConflict("workspace_lease_lost")
+        managed_runtime = operation.kind == "runtime.start" and operation.runtime is not None
         updated = operation.model_copy(update={
             "leaseGeneration": generation, "leaseOwner": lease_owner,
-            "status": "queued" if operation.status == "queued" else "interrupted", "updatedAt": _now(),
+            "status": operation.status if managed_runtime or operation.status == "queued" else "interrupted", "updatedAt": _now(),
         })
         params: list[Any] = [updated.model_dump_json(), operation_id, row["rev"]]
         fence = self._fence(operation.projectId, generation, lease_owner, params)
         rows = self._q("update wb_project_operation set payload=$1,rev=rev+1 where id=$2 and rev=$3 and " + fence + " returning id", params)
         if not rows:
             raise ProjectConflict("operation_state_or_lease_conflict")
+        if managed_runtime:
+            self.flush_operation_event(operation_id, owner_id=owner_id, lease_generation=generation, lease_owner=lease_owner)
+            updated = self.get_operation(operation_id, owner_id=owner_id)
+            if operation.leaseGeneration is not None and operation.status not in _TERMINAL_OPERATIONS and operation.status != "queued":
+                updated = self.update_runtime_operation(operation_id, owner_id=owner_id,
+                    lease_generation=generation, lease_owner=lease_owner, expected_status=updated.status,
+                    status="interrupted", runtime=updated.runtime.model_copy(update={"status": "reconciling", "health": "unknown"}),
+                    result=updated.result)
         return updated
 
     def transition_operation(self, operation_id: str, *, owner_id: str, expected_status: str,
                              status: str, result: dict[str, Any] | None = None,
                              lease_generation: int | None = None, lease_owner: str | None = None) -> ProjectOperation:
-        allowed = {
-            "queued": {"running", "cancelled", "failed", "interrupted"},
-            "running": {"completed", "failed", "cancelling", "waiting_user", "interrupted"},
-            "waiting_user": {"running", "cancelling", "cancelled", "interrupted"},
-            "cancelling": {"cancelled", "failed", "interrupted"},
-            "interrupted": {"running", "failed", "cancelled"},
-        }
         row = self._operation_row(operation_id, owner_id)
         operation = ProjectOperation.model_validate_json(row["payload"])
-        if operation.status != expected_status or status not in allowed.get(expected_status, set()):
+        if operation.runtime is not None:
+            raise ProjectConflict("runtime_operation_update_required")
+        if operation.status != expected_status or status not in _OPERATION_TRANSITIONS.get(expected_status, set()):
             raise ProjectConflict("operation_state_conflict")
         if operation.leaseGeneration is not None and (lease_generation != operation.leaseGeneration or lease_owner != operation.leaseOwner):
             raise ProjectConflict("workspace_lease_lost")

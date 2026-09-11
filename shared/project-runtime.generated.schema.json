@@ -283,6 +283,52 @@
           "default": null,
           "title": "Leaseowner"
         },
+        "cancelRequested": {
+          "default": false,
+          "title": "Cancelrequested",
+          "type": "boolean"
+        },
+        "lastAccessAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lastaccessat"
+        },
+        "runtime": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RuntimeInstance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "stateVersion": {
+          "default": 0,
+          "title": "Stateversion",
+          "type": "integer"
+        },
+        "pendingEvent": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pendingevent"
+        },
         "createdAt": {
           "title": "Createdat",
           "type": "string"
@@ -305,6 +351,117 @@
         "updatedAt"
       ],
       "title": "ProjectOperation",
+      "type": "object"
+    },
+    "ProjectOperationSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/ProjectOperationView"
+        },
+        "runtime": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RuntimeView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSeq": {
+          "title": "Lastseq",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "operation",
+        "runtime",
+        "lastSeq"
+      ],
+      "title": "ProjectOperationSnapshot",
+      "type": "object"
+    },
+    "ProjectOperationView": {
+      "additionalProperties": false,
+      "description": "Public operation fields; lease, dispatch and outbox data stay private.",
+      "properties": {
+        "operationId": {
+          "title": "Operationid",
+          "type": "string"
+        },
+        "projectId": {
+          "title": "Projectid",
+          "type": "string"
+        },
+        "sessionId": {
+          "title": "Sessionid",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "expectedRevision": {
+          "title": "Expectedrevision",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "running",
+            "waiting_user",
+            "completed",
+            "failed",
+            "cancelling",
+            "cancelled",
+            "interrupted"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "cancelRequested": {
+          "title": "Cancelrequested",
+          "type": "boolean"
+        },
+        "lastAccessAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Lastaccessat"
+        },
+        "stateVersion": {
+          "title": "Stateversion",
+          "type": "integer"
+        },
+        "createdAt": {
+          "title": "Createdat",
+          "type": "string"
+        },
+        "updatedAt": {
+          "title": "Updatedat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operationId",
+        "projectId",
+        "sessionId",
+        "kind",
+        "expectedRevision",
+        "status",
+        "cancelRequested",
+        "lastAccessAt",
+        "stateVersion",
+        "createdAt",
+        "updatedAt"
+      ],
+      "title": "ProjectOperationView",
       "type": "object"
     },
     "ProjectRevision": {
@@ -429,6 +586,84 @@
       "title": "RuntimeEvent",
       "type": "object"
     },
+    "RuntimeEventPage": {
+      "additionalProperties": false,
+      "properties": {
+        "events": {
+          "items": {
+            "$ref": "#/$defs/RuntimeEventView"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "nextSeq": {
+          "title": "Nextseq",
+          "type": "integer"
+        },
+        "hasMore": {
+          "title": "Hasmore",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "events",
+        "nextSeq",
+        "hasMore"
+      ],
+      "title": "RuntimeEventPage",
+      "type": "object"
+    },
+    "RuntimeEventView": {
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "sessionId": {
+          "title": "Sessionid",
+          "type": "string"
+        },
+        "projectId": {
+          "title": "Projectid",
+          "type": "string"
+        },
+        "operationId": {
+          "title": "Operationid",
+          "type": "string"
+        },
+        "seq": {
+          "title": "Seq",
+          "type": "integer"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        },
+        "timestamp": {
+          "title": "Timestamp",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "sessionId",
+        "projectId",
+        "operationId",
+        "seq",
+        "type",
+        "timestamp",
+        "payload"
+      ],
+      "title": "RuntimeEventView",
+      "type": "object"
+    },
     "RuntimeInstance": {
       "additionalProperties": false,
       "properties": {
@@ -507,6 +742,30 @@
         "lastHeartbeat": {
           "title": "Lastheartbeat",
           "type": "string"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expiresat"
+        },
+        "errorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Errorcode"
         }
       },
       "required": [
@@ -519,6 +778,98 @@
         "lastHeartbeat"
       ],
       "title": "RuntimeInstance",
+      "type": "object"
+    },
+    "RuntimeView": {
+      "additionalProperties": false,
+      "properties": {
+        "runtimeId": {
+          "title": "Runtimeid",
+          "type": "string"
+        },
+        "workspaceId": {
+          "title": "Workspaceid",
+          "type": "string"
+        },
+        "projectId": {
+          "title": "Projectid",
+          "type": "string"
+        },
+        "revision": {
+          "title": "Revision",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "provisioning",
+            "syncing",
+            "installing",
+            "starting",
+            "ready",
+            "stopping",
+            "stopped",
+            "expired",
+            "failed",
+            "reconciling"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "port": {
+          "title": "Port",
+          "type": "integer"
+        },
+        "health": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Health"
+        },
+        "lastHeartbeat": {
+          "title": "Lastheartbeat",
+          "type": "string"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Expiresat"
+        },
+        "errorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Errorcode"
+        }
+      },
+      "required": [
+        "runtimeId",
+        "workspaceId",
+        "projectId",
+        "revision",
+        "status",
+        "port",
+        "health",
+        "lastHeartbeat",
+        "expiresAt",
+        "errorCode"
+      ],
+      "title": "RuntimeView",
       "type": "object"
     },
     "WorkspaceLease": {

@@ -12,6 +12,7 @@ import httpx
 import pytest
 from sqlalchemy import text
 
+from models.project_runtime import RuntimeInstance
 from services import project_store as module
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStore, ProjectStoreUnavailable
 from services.sql_gateway import HttpSqlGateway
@@ -421,3 +422,250 @@ def test_invalid_or_unleased_write_does_not_consume_history_budget(store):
             files={"../escape": "bad"}, template_version="v", plan_ref="p")
     budget = store._q("select * from wb_project_source_budget where project_id=$1", [project.projectId])[0]
     assert budget["reserved_revisions"] == 1 and budget["reserved_bytes"] == 10
+
+
+def runtime_operation(store, project, key="runtime-1", worker="worker", ttl=120):
+    op = store.create_operation(project.projectId, owner_id="alice", kind="runtime.start",
+        idempotency_key=key, expected_revision=project.currentRevision, approval_ref="plan-1")
+    lease = store.acquire_lease(project.projectId, owner_id="alice", lease_owner=worker, ttl_seconds=ttl)
+    op = store.claim_operation(op.operationId, owner_id="alice", generation=lease.generation, lease_owner=worker)
+    runtime = RuntimeInstance(runtimeId="rt-" + op.operationId, workspaceId=lease.workspaceId,
+        projectId=project.projectId, revision=project.currentRevision, status="provisioning", port=5173,
+        lastHeartbeat=op.updatedAt, expiresAt=2000.0)
+    return op, lease, runtime
+
+
+def runtime_update(store, op, lease, runtime, status="running", **kwargs):
+    return store.update_runtime_operation(op.operationId, owner_id="alice", expected_status=op.status,
+        status=status, runtime=runtime, lease_generation=lease.generation, lease_owner=lease.leaseOwner, **kwargs)
+
+
+def runtime_flush(store, op, lease):
+    return store.flush_operation_event(op.operationId, owner_id="alice",
+        lease_generation=lease.generation, lease_owner=lease.leaseOwner)
+
+
+def test_runtime_state_and_outbox_are_atomic_and_prior_state_flushes_before_next(store):
+    op, lease, runtime = runtime_operation(store, create(store))
+    started = runtime_update(store, op, lease, runtime)
+    assert started.stateVersion == 1 and started.pendingEvent["payload"]["runtime"]["status"] == "provisioning"
+    assert store.list_events(op.operationId, owner_id="alice") == []
+    ready = runtime_update(store, started, lease, runtime.model_copy(update={"status": "ready"}))
+    assert ready.stateVersion == 2 and ready.pendingEvent is not None
+    assert [e.payload["runtime"]["status"] for e in store.list_events(op.operationId, owner_id="alice")] == ["provisioning"]
+    event = runtime_flush(store, ready, lease)
+    assert event.seq == 2 and event.payload["runtime"]["status"] == "ready"
+    assert runtime_flush(store, ready, lease) is None
+    snapshot = store.snapshot_operation(op.operationId, owner_id="alice")
+    assert snapshot["operation"].pendingEvent is None and snapshot["runtime"].status == "ready" and snapshot["lastSeq"] == 2
+    with pytest.raises(ProjectNotFound):
+        store.snapshot_operation(op.operationId, owner_id="bob")
+
+
+def test_runtime_update_keeps_cancel_requested_between_read_and_cas(store, monkeypatch):
+    op, lease, runtime = runtime_operation(store, create(store))
+    original = store._q
+    raced = [False]
+    def cancel_before_update(sql, params=None):
+        if sql.startswith("update wb_project_operation set") and not raced[0]:
+            raced[0] = True
+            store.request_operation_cancel(op.operationId, owner_id="alice")
+        return original(sql, params)
+    monkeypatch.setattr(store, "_q", cancel_before_update)
+    updated = runtime_update(store, op, lease, runtime)
+    assert updated.cancelRequested is True and updated.runtime == runtime
+    assert updated.pendingEvent["payload"]["cancelRequested"] is True
+    assert store.request_operation_cancel(op.operationId, owner_id="alice") == updated
+
+
+def test_runtime_update_keeps_activity_between_read_and_cas(store, monkeypatch):
+    op, lease, runtime = runtime_operation(store, create(store))
+    original = store._q
+    raced = [False]
+
+    def touch_before_update(sql, params=None):
+        if sql.startswith("update wb_project_operation set") and not raced[0]:
+            raced[0] = True
+            store.touch_operation(op.operationId, owner_id="alice")
+        return original(sql, params)
+
+    monkeypatch.setattr(store, "_q", touch_before_update)
+    updated = runtime_update(store, op, lease, runtime)
+    assert updated.lastAccessAt is not None and updated.runtime == runtime
+    store.request_operation_cancel(op.operationId, owner_id="alice")
+    assert store.touch_operation(op.operationId, owner_id="alice").lastAccessAt == updated.lastAccessAt
+    with pytest.raises(ProjectNotFound):
+        store.touch_operation(op.operationId, owner_id="bob")
+
+
+def test_queued_requests_cannot_starve_or_replace_the_recovering_runtime(store):
+    project = create(store)
+    queued = [store.create_operation(project.projectId, owner_id="alice", kind="runtime.start",
+        idempotency_key=f"queued-{i}", expected_revision=project.currentRevision, approval_ref="plan-1") for i in range(12)]
+    active = max(queued, key=lambda operation: operation.operationId)
+    lease = store.acquire_lease(project.projectId, owner_id="alice", lease_owner="old-worker")
+    store.claim_operation(active.operationId, owner_id="alice", lease_owner=lease.leaseOwner, generation=lease.generation)
+    store.renew_lease(project.projectId, owner_id="alice", lease_owner=lease.leaseOwner, generation=lease.generation,
+        process_refs={"operationId": active.operationId}, sandbox_id="saved-sandbox")
+    store.release_lease(project.projectId, owner_id="alice", lease_owner=lease.leaseOwner, generation=lease.generation)
+    runnable = store.list_runnable_operations(limit=1)
+    assert [operation.operationId for operation, _ in runnable] == [active.operationId]
+
+
+def test_cancel_cas_keeps_concurrent_runtime_progress(store, monkeypatch):
+    op, lease, runtime = runtime_operation(store, create(store))
+    original = store._q
+    raced = [False]
+    def update_before_cancel(sql, params=None):
+        if sql.startswith("update wb_project_operation set") and not raced[0]:
+            raced[0] = True
+            runtime_update(store, op, lease, runtime)
+        return original(sql, params)
+    monkeypatch.setattr(store, "_q", update_before_cancel)
+    cancelled = store.request_operation_cancel(op.operationId, owner_id="alice")
+    assert cancelled.cancelRequested and cancelled.status == "running"
+    assert cancelled.runtime == runtime and cancelled.stateVersion == 1 and cancelled.pendingEvent is not None
+    with pytest.raises(ProjectNotFound):
+        store.request_operation_cancel(op.operationId, owner_id="bob")
+
+
+def test_flush_cas_does_not_clear_a_replacement_outbox(store, monkeypatch):
+    op, lease, runtime = runtime_operation(store, create(store))
+    started = runtime_update(store, op, lease, runtime)
+    original = store._q
+    raced = [False]
+    def replace_before_clear(sql, params=None):
+        if sql.startswith("update wb_project_operation set") and not raced[0]:
+            raced[0] = True
+            runtime_flush(store, started, lease)
+            runtime_update(store, started, lease, runtime.model_copy(update={"status": "ready"}))
+        return original(sql, params)
+    monkeypatch.setattr(store, "_q", replace_before_clear)
+    first = runtime_flush(store, started, lease)
+    current = store.get_operation(op.operationId, owner_id="alice")
+    assert first.seq == 1 and current.pendingEvent["payload"]["runtime"]["status"] == "ready"
+    assert runtime_flush(store, current, lease).seq == 2
+    assert [event.seq for event in store.list_events(op.operationId, owner_id="alice")] == [1, 2]
+
+
+def test_recovery_replays_old_outbox_then_records_reconciling_without_losing_cancel(store, monkeypatch):
+    project = create(store)
+    clock = [1000.0]
+    monkeypatch.setattr(module.time, "time", lambda: clock[0])
+    op, old, runtime = runtime_operation(store, project, worker="old", ttl=10)
+    runtime_update(store, op, old, runtime.model_copy(update={"status": "ready", "processId": "42"}))
+    store.request_operation_cancel(op.operationId, owner_id="alice")
+    clock[0] += 11
+    new = store.acquire_lease(project.projectId, owner_id="alice", lease_owner="new")
+    claimed = store.claim_operation(op.operationId, owner_id="alice", generation=new.generation, lease_owner="new")
+    assert claimed.status == "interrupted" and claimed.runtime.status == "reconciling" and claimed.cancelRequested
+    assert claimed.runtime.processId == "42" and claimed.stateVersion == 2
+    assert [event.payload["runtime"]["status"] for event in store.list_events(op.operationId, owner_id="alice")] == ["ready"]
+    runtime_flush(store, claimed, new)
+    assert [event.payload["runtime"]["status"] for event in store.list_events(op.operationId, owner_id="alice")] == ["ready", "reconciling"]
+    with pytest.raises(ProjectConflict, match="lease_lost"):
+        runtime_flush(store, claimed, old)
+    with pytest.raises(ProjectConflict):
+        runtime_update(store, claimed, old, runtime)
+
+
+@pytest.mark.parametrize("crash_after_event_insert", [False, True])
+def test_terminal_outbox_survives_database_reopen_and_fenced_takeover(tmp_path, monkeypatch, crash_after_event_insert):
+    url = f"sqlite:///{tmp_path / 'runtime-restart.db'}"
+    first = ProjectStore.from_url(url)
+    clock = [1000.0]
+    monkeypatch.setattr(module.time, "time", lambda: clock[0])
+    project = create(first)
+    op, old, runtime = runtime_operation(first, project, worker="old", ttl=10)
+    running = runtime_update(first, op, old, runtime)
+    failed = runtime_update(first, running, old, runtime.model_copy(update={"status": "failed", "errorCode": "install_failed"}), status="failed")
+    if crash_after_event_insert:
+        original = first._q
+        def crash_before_clear(sql, params=None):
+            if sql.startswith("update wb_project_operation set"):
+                raise ProjectStoreUnavailable("simulated_process_exit")
+            return original(sql, params)
+        monkeypatch.setattr(first, "_q", crash_before_clear)
+        with pytest.raises(ProjectStoreUnavailable):
+            runtime_flush(first, failed, old)
+    first.close()
+    clock[0] += 11
+    second = ProjectStore.from_url(url)
+    runnable = second.list_runnable_operations()
+    assert len(runnable) == 1 and runnable[0][0].status == "failed" and runnable[0][1] == "alice"
+    new = second.acquire_lease(project.projectId, owner_id="alice", lease_owner="new")
+    claimed = second.claim_operation(op.operationId, owner_id="alice", generation=new.generation, lease_owner="new")
+    assert claimed.status == "failed" and claimed.pendingEvent is None and claimed.runtime.errorCode == "install_failed"
+    snapshot = second.snapshot_operation(op.operationId, owner_id="alice")
+    assert snapshot["lastSeq"] == 2 and snapshot["runtime"].status == "failed"
+    assert [event.payload["runtime"]["status"] for event in second.list_events(op.operationId, owner_id="alice")] == ["provisioning", "failed"]
+    assert second.list_runnable_operations() == []
+    assert second.request_operation_cancel(op.operationId, owner_id="alice").cancelRequested is False
+    second.close()
+
+
+def test_runtime_update_rejects_cross_project_and_revision_identity(store):
+    op, lease, runtime = runtime_operation(store, create(store))
+    for field, value in [("projectId", "other"), ("revision", "old"), ("workspaceId", "other")]:
+        with pytest.raises(ProjectConflict, match="runtime_operation_mismatch"):
+            runtime_update(store, op, lease, runtime.model_copy(update={field: value}))
+    running = runtime_update(store, op, lease, runtime)
+    for field, value in [("runtimeId", "other"), ("workspaceId", "other")]:
+        with pytest.raises(ProjectConflict, match="runtime_operation_mismatch"):
+            runtime_update(store, running, lease, runtime.model_copy(update={field: value}))
+    with pytest.raises(ProjectConflict, match="runtime_operation_update_required"):
+        store.transition_operation(op.operationId, owner_id="alice", expected_status="running", status="failed",
+            lease_generation=lease.generation, lease_owner=lease.leaseOwner)
+
+
+def test_runtime_same_status_race_cannot_replace_newer_progress(store, monkeypatch):
+    op, lease, runtime = runtime_operation(store, create(store))
+    running = runtime_update(store, op, lease, runtime)
+    runtime_flush(store, running, lease)
+    original = store._q
+    raced = [False]
+    def progress_before_update(sql, params=None):
+        if sql.startswith("update wb_project_operation set") and not raced[0]:
+            raced[0] = True
+            runtime_update(store, running, lease, runtime.model_copy(update={"status": "ready"}))
+        return original(sql, params)
+    monkeypatch.setattr(store, "_q", progress_before_update)
+    with pytest.raises(ProjectConflict, match="state_or_lease_conflict"):
+        runtime_update(store, running, lease, runtime.model_copy(update={"status": "installing"}))
+    current = store.get_operation(op.operationId, owner_id="alice")
+    assert current.runtime.status == "ready" and current.pendingEvent["payload"]["runtime"]["status"] == "ready"
+
+
+def test_runtime_state_and_outbox_clear_are_fenced_at_database_write(store, monkeypatch):
+    op, lease, runtime = runtime_operation(store, create(store))
+    running = runtime_update(store, op, lease, runtime)
+    original = store._q
+    def expire_before_clear(sql, params=None):
+        if sql.startswith("update wb_project_operation set"):
+            original("update wb_project_lease set expires_at=0 where project_id=$1", [op.projectId])
+        return original(sql, params)
+    monkeypatch.setattr(store, "_q", expire_before_clear)
+    with pytest.raises(ProjectConflict):
+        runtime_flush(store, running, lease)
+    current = store.get_operation(op.operationId, owner_id="alice")
+    assert current.pendingEvent == running.pendingEvent
+    assert [event.seq for event in store.list_events(op.operationId, owner_id="alice")] == [1]
+    with pytest.raises(ProjectConflict):
+        runtime_update(store, running, lease, runtime.model_copy(update={"status": "ready"}))
+    assert store.get_operation(op.operationId, owner_id="alice").runtime.status == "provisioning"
+
+
+def test_runtime_scan_passes_completed_pages_and_busy_projects_to_find_expired_work(store, monkeypatch):
+    project = create(store)
+    for index in range(105):
+        op = store.create_operation(project.projectId, owner_id="alice", kind="runtime.start",
+            idempotency_key=f"old-{index}", expected_revision=project.currentRevision, approval_ref="plan-1")
+        store.transition_operation(op.operationId, owner_id="alice", expected_status="queued", status="failed")
+        store._q("update wb_project_operation set id=$1 where id=$2", [f"pop-000-{index:03}", op.operationId])
+    clock = [1000.0]
+    monkeypatch.setattr(module.time, "time", lambda: clock[0])
+    busy, _, _ = runtime_operation(store, create(store, sid="busy"), worker="busy")
+    expired, _, _ = runtime_operation(store, create(store, sid="expired"), worker="old", ttl=10)
+    clock[0] += 11
+    assert [(op.operationId, owner) for op, owner in store.list_runnable_operations(limit=1)] == [(expired.operationId, "alice")]
+    assert busy.operationId != expired.operationId

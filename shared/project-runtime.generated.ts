@@ -54,6 +54,33 @@ export type ProjectOperation = {
 } | null;
   "leaseGeneration"?: number | null;
   "leaseOwner"?: string | null;
+  "cancelRequested"?: boolean;
+  "lastAccessAt"?: number | null;
+  "runtime"?: RuntimeInstance | null;
+  "stateVersion"?: number;
+  "pendingEvent"?: {
+  [key: string]: unknown;
+} | null;
+  "createdAt": string;
+  "updatedAt": string;
+};
+
+export type ProjectOperationSnapshot = {
+  "operation": ProjectOperationView;
+  "runtime": RuntimeView | null;
+  "lastSeq": number;
+};
+
+export type ProjectOperationView = {
+  "operationId": string;
+  "projectId": string;
+  "sessionId": string;
+  "kind": string;
+  "expectedRevision": string;
+  "status": "queued" | "running" | "waiting_user" | "completed" | "failed" | "cancelling" | "cancelled" | "interrupted";
+  "cancelRequested": boolean;
+  "lastAccessAt": number | null;
+  "stateVersion": number;
   "createdAt": string;
   "updatedAt": string;
 };
@@ -84,6 +111,25 @@ export type RuntimeEvent = {
 };
 };
 
+export type RuntimeEventPage = {
+  "events": Array<RuntimeEventView>;
+  "nextSeq": number;
+  "hasMore": boolean;
+};
+
+export type RuntimeEventView = {
+  "schemaVersion": 1;
+  "sessionId": string;
+  "projectId": string;
+  "operationId": string;
+  "seq": number;
+  "type": string;
+  "timestamp": string;
+  "payload": {
+  [key: string]: unknown;
+};
+};
+
 export type RuntimeInstance = {
   "runtimeId": string;
   "workspaceId": string;
@@ -95,6 +141,21 @@ export type RuntimeInstance = {
   "processId"?: string | null;
   "health"?: string | null;
   "lastHeartbeat": string;
+  "expiresAt"?: number | null;
+  "errorCode"?: string | null;
+};
+
+export type RuntimeView = {
+  "runtimeId": string;
+  "workspaceId": string;
+  "projectId": string;
+  "revision": string;
+  "status": "provisioning" | "syncing" | "installing" | "starting" | "ready" | "stopping" | "stopped" | "expired" | "failed" | "reconciling";
+  "port": number;
+  "health": string | null;
+  "lastHeartbeat": string;
+  "expiresAt": number | null;
+  "errorCode": string | null;
 };
 
 export type WorkspaceLease = {
