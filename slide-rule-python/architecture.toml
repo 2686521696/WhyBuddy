@@ -767,8 +767,8 @@ modules = [
 ]
 
 [component.workspace]
-why = "E2B workspace provider contract and lifecycle adapter; execution details stay behind a provider boundary."
-may_depend_on = []
+why = "E2B workspace provider contract and lifecycle adapter; shared manifest validation rejects invalid source paths before remote IO."
+may_depend_on = ["platform"]
 modules = [
   "services.workspace_provider",
   "services.e2b_workspace_provider",
