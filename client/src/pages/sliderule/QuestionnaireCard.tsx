@@ -25,7 +25,7 @@
  * 用户认得这个交互（本仓 §五：判据落在用户真正看到的东西上，交互也一样）。
  */
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 /** 「其他（自己写）」那一项的 label。跟 `services/user_questions.py` 同一份。 */
 export const OTHER_LABEL = "其他（自己写）";
@@ -80,6 +80,15 @@ export function QuestionnaireCard({
     () => [...(q?.options || []), { label: OTHER_LABEL } as QuestionOption],
     [q]
   );
+
+  // A few providers still emit a valid question with an empty options array.
+  // Keep the grok-mandated Other path usable instead of showing a card with no
+  // answer selected and a hidden text field.
+  useEffect(() => {
+    if (q && q.options.length === 0) {
+      setPicked(prev => (prev[q.id]?.includes(OTHER_LABEL) ? prev : { ...prev, [q.id]: [OTHER_LABEL] }));
+    }
+  }, [q]);
 
   if (!q) return null;
 
@@ -139,6 +148,9 @@ export function QuestionnaireCard({
         <p className="text-sm font-semibold text-stone-800">{q.question}</p>
         {multi ? (
           <p className="mt-1 text-[11px] text-stone-400">可以多选</p>
+        ) : null}
+        {q.options.length === 0 ? (
+          <p className="mt-1 text-[11px] text-amber-600">这道题没有预设选项，请直接填写你的答案。</p>
         ) : null}
         <div className="mt-3 space-y-1.5">
           {options.map(opt => {

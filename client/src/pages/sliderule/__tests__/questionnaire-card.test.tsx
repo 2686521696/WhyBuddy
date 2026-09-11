@@ -109,6 +109,19 @@ describe("每项要写清选它意味着什么", () => {
   });
 });
 
+describe("模型没有给预设选项时", () => {
+  it("明确提示用户直接填写，而不是留一张看不懂的空选择卡", () => {
+    const out = renderToStaticMarkup(
+      <QuestionnaireCard
+        questions={[{ id: "q-empty", question: "主要在哪些设备使用？", options: [] }]}
+        onSubmit={() => {}}
+      />
+    );
+    expect(out).toContain("这道题没有预设选项，请直接填写你的答案");
+    expect(out).toContain(OTHER_LABEL);
+  });
+});
+
 describe("停住了要说出来", () => {
   it("paused 时分页器写「已停住，选完再继续」", () => {
     expect(html({ paused: true })).toContain("已停住，选完再继续");
