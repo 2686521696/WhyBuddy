@@ -66,6 +66,7 @@ _DDL = (
     "create table if not exists wb_project (id varchar(80) primary key, session_id varchar(240) unique not null, owner_id varchar(240) not null, current_revision varchar(80) not null, rev integer not null, payload text not null)",
     "create table if not exists wb_project_revision (id varchar(80) primary key, project_id varchar(80) not null, payload text not null)",
     "create table if not exists wb_project_content (hash varchar(64) primary key, content text not null)",
+    "create table if not exists wb_project_source_budget (project_id varchar(80) primary key, reserved_revisions integer not null, reserved_bytes bigint not null)",
     "create table if not exists wb_project_lease (project_id varchar(80) primary key, generation integer not null, lease_owner varchar(240) not null, expires_at double precision not null, payload text not null)",
     "create table if not exists wb_project_operation (id varchar(80) primary key, project_id varchar(80) not null, idempotency_key varchar(240) not null, rev integer not null, payload text not null, unique(project_id, idempotency_key))",
     "create table if not exists wb_project_event (operation_id varchar(80) not null, seq integer not null, event_id varchar(240) not null, payload text not null, primary key(operation_id, seq), unique(operation_id, event_id))",
@@ -148,6 +149,26 @@ class ProjectStore:
                 [revision.revision, project_id, revision.model_dump_json()])
         return revision
 
+    def _reserve_source(self, project_id: str, byte_count: int, *, lease_generation: int | None = None,
+                        lease_owner: str | None = None) -> None:
+        # Gateway requests cannot share a transaction. Reserve before uploading;
+        # failed uploads/publications keep their charge until explicit GC exists.
+        rows = self._q("select project_id from wb_project_source_budget where project_id=$1", [project_id])
+        if not rows:
+            existing = self._q("select payload from wb_project_revision where project_id=$1", [project_id])
+            prior_bytes = sum(ProjectRevision.model_validate_json(row["payload"]).manifest.totalBytes for row in existing)
+            self._q("insert into wb_project_source_budget(project_id,reserved_revisions,reserved_bytes) values($1,$2,$3) on conflict(project_id) do nothing",
+                    [project_id, len(existing), prior_bytes])
+        params: list[Any] = [byte_count, project_id, MAX_REVISIONS, MAX_SOURCE_HISTORY_BYTES]
+        fence = self._fence(project_id, lease_generation, lease_owner, params)
+        reserved = self._q("update wb_project_source_budget set reserved_revisions=reserved_revisions+1,reserved_bytes=reserved_bytes+$1 where project_id=$2 and reserved_revisions<$3 and reserved_bytes+$1<=$4 and " + fence + " returning project_id", params)
+        if not reserved:
+            checks: list[Any] = []
+            condition = self._fence(project_id, lease_generation, lease_owner, checks)
+            if not self._q("select 1 as valid where " + condition, checks):
+                raise ProjectConflict("workspace_lease_lost")
+            raise ValueError("project_history_limit")
+
     def create_project(self, session_id: str, *, owner_id: str, files: dict[str, str],
                        template_version: str, plan_ref: str, spec_revision: str | None = None) -> Project:
         _required(session_id, "session_id_required")
@@ -160,6 +181,10 @@ class ProjectStore:
         conflict = self._q("select owner_id from wb_project where session_id=$1", [session_id])
         if conflict:
             raise ProjectNotFound("project_not_found")
+        manifest = build_manifest(files)
+        _required(template_version, "template_version_required")
+        _required(plan_ref, "plan_ref_required")
+        self._reserve_source(project_id, manifest.totalBytes)
         revision = self._write_revision(project_id, files, parent=None, template_version=template_version,
                                         plan_ref=plan_ref, spec_revision=spec_revision)
         now = _now()
@@ -220,8 +245,9 @@ class ProjectStore:
         if project.currentRevision != expected_revision:
             raise ProjectConflict("project_revision_conflict")
         manifest = build_manifest(files)
-        if project.revisionCount >= MAX_REVISIONS or project.sourceBytesStored + manifest.totalBytes > MAX_SOURCE_HISTORY_BYTES:
-            raise ValueError("project_history_limit")
+        _required(template_version, "template_version_required")
+        _required(plan_ref, "plan_ref_required")
+        self._reserve_source(project_id, manifest.totalBytes, lease_generation=lease_generation, lease_owner=lease_owner)
         revision = self._write_revision(project_id, files, parent=expected_revision,
             template_version=template_version, plan_ref=plan_ref, spec_revision=spec_revision)
         updated = project.model_copy(update={"currentRevision": revision.revision, "updatedAt": _now(),
@@ -289,11 +315,15 @@ class ProjectStore:
             raise ProjectConflict("workspace_lease_lost")
         return lease
 
-    def release_lease(self, project_id: str, *, owner_id: str, lease_owner: str, generation: int) -> None:
+    def release_lease(self, project_id: str, *, owner_id: str, lease_owner: str, generation: int,
+                      clear_runtime: bool = False) -> None:
         prior = self.get_lease(project_id, owner_id=owner_id)
         if prior is None or prior.generation != generation or prior.leaseOwner != lease_owner:
             raise ProjectConflict("workspace_lease_lost")
-        released = prior.model_copy(update={"expiresAt": 0.0})
+        updates: dict[str, Any] = {"expiresAt": 0.0}
+        if clear_runtime:
+            updates.update(sandboxId=None, mountedRevision=None, processRefs={})
+        released = prior.model_copy(update=updates)
         rows = self._q("update wb_project_lease set expires_at=0,payload=$1 where project_id=$2 and generation=$3 and lease_owner=$4 returning project_id",
             [released.model_dump_json(), project_id, generation, lease_owner])
         if not rows:
@@ -336,6 +366,32 @@ class ProjectStore:
 
     def get_operation(self, operation_id: str, *, owner_id: str) -> ProjectOperation:
         return ProjectOperation.model_validate_json(self._operation_row(operation_id, owner_id)["payload"])
+
+    def claim_operation(self, operation_id: str, *, owner_id: str, lease_owner: str,
+                        generation: int) -> ProjectOperation:
+        """Fence out the previous worker, leaving uncertain effects to reconcile."""
+        row = self._operation_row(operation_id, owner_id)
+        operation = ProjectOperation.model_validate_json(row["payload"])
+        lease = self.get_lease(operation.projectId, owner_id=owner_id)
+        if (lease is None or lease.generation != generation or lease.leaseOwner != lease_owner
+                or lease.expiresAt <= time.time()):
+            raise ProjectConflict("workspace_lease_lost")
+        if operation.status in {"completed", "failed", "cancelled"}:
+            raise ProjectConflict("operation_state_conflict")
+        if operation.leaseGeneration == generation and operation.leaseOwner == lease_owner:
+            return operation
+        if operation.leaseGeneration is not None and operation.leaseGeneration >= generation:
+            raise ProjectConflict("workspace_lease_lost")
+        updated = operation.model_copy(update={
+            "leaseGeneration": generation, "leaseOwner": lease_owner,
+            "status": "queued" if operation.status == "queued" else "interrupted", "updatedAt": _now(),
+        })
+        params: list[Any] = [updated.model_dump_json(), operation_id, row["rev"]]
+        fence = self._fence(operation.projectId, generation, lease_owner, params)
+        rows = self._q("update wb_project_operation set payload=$1,rev=rev+1 where id=$2 and rev=$3 and " + fence + " returning id", params)
+        if not rows:
+            raise ProjectConflict("operation_state_or_lease_conflict")
+        return updated
 
     def transition_operation(self, operation_id: str, *, owner_id: str, expected_status: str,
                              status: str, result: dict[str, Any] | None = None,

@@ -672,6 +672,7 @@ def save_session_record(
     store_file: Optional[StorePath] = None,
     *,
     server_write: bool = False,
+    expected_project_revision: Optional[str] = None,
 ) -> StoreError:
     # Use lock to serialize the entire read-prior + replay-merge + monotonic compare + write.
     # This ensures that on concurrent saves, each entrant re-reads the *latest* committed
@@ -683,7 +684,8 @@ def save_session_record(
     # Serialized lock provides timestamp-equivalent ordering for same lastTurnId.
     store = _blob_store(store_file)
     if store is not None:
-        result = _save_session_record_db(store, state, server_write=server_write)
+        result = _save_session_record_db(store, state, server_write=server_write,
+                                       expected_project_revision=expected_project_revision)
         if result.get("ok"):
             ckpt_state = result.get("state") if isinstance(result.get("state"), V5SessionState) else state
             ckpt_err = _write_turn_checkpoint(ckpt_state, store_file)
@@ -696,7 +698,8 @@ def save_session_record(
             return error
 
         prior = sessions.get(state.sessionId)
-        write_state = _resolve_write_state(prior, state, server_write=server_write)
+        write_state = _resolve_write_state(prior, state, server_write=server_write,
+                                           expected_project_revision=expected_project_revision)
         sessions[write_state.sessionId] = write_state
         result = _write_store(sessions, store_file)
         if not result.get("ok"):
@@ -795,6 +798,7 @@ def _resolve_write_state(
     state: V5SessionState,
     *,
     server_write: bool = False,
+    expected_project_revision: Optional[str] = None,
 ) -> V5SessionState:
     """决定这次到底该把什么写下去——**判定逻辑的唯一副本**。
 
@@ -835,9 +839,19 @@ def _resolve_write_state(
     # Keep this under the same file lock / database CAS loop as every write.
     if prior is not None and prior.ownerId != state.ownerId:
         raise PersistClosedError("session_owner_changed", "Session ownership changed before save")
-    # A driver started before project creation still carries the old HTML
-    # defaults. Even a later turn number must not erase the new project link.
-    if prior is not None and prior.projectId and (not server_write or not state.projectId):
+    project_updates: Optional[Dict[str, Any]] = None
+    if expected_project_revision is not None:
+        if not server_write:
+            raise PersistClosedError("project_reference_server_only", "Only the project service can update the revision")
+        if prior is None or not prior.projectId or prior.projectRevision != expected_project_revision:
+            raise PersistClosedError("project_revision_conflict", "The session project revision changed before save")
+        if state.projectId != prior.projectId or state.runtimeKind != "project" or not state.projectRevision:
+            raise PersistClosedError("project_identity_changed", "A revision update cannot replace the session project")
+        project_updates = {"runtimeKind": "project", "projectId": prior.projectId,
+                           "projectRevision": state.projectRevision}
+    # Conversation turns and project versions advance independently. A server
+    # driver can carry a nonempty but obsolete revision, even in a newer turn.
+    if prior is not None and prior.projectId:
         state = state.model_copy(update={
             "runtimeKind": prior.runtimeKind,
             "projectId": prior.projectId,
@@ -991,11 +1005,14 @@ def _resolve_write_state(
                         )
                     except Exception:
                         write_state = prior
+        if project_updates is not None:
+            write_state = write_state.model_copy(update=project_updates)
         return write_state
 
 
 def _save_session_record_db(
-    store, state: V5SessionState, *, server_write: bool = False
+    store, state: V5SessionState, *, server_write: bool = False,
+    expected_project_revision: Optional[str] = None,
 ) -> StoreError:
     """库后端的写入：读一条 prior → 同一套守卫 → CAS 写回，冲突就重来。
 
@@ -1028,7 +1045,8 @@ def _save_session_record_db(
                 else:
                     prior = coerced
 
-            write_state = _resolve_write_state(prior, state, server_write=server_write)
+            write_state = _resolve_write_state(prior, state, server_write=server_write,
+                                               expected_project_revision=expected_project_revision)
             write_state, degrade_flags = _slim_to_budget(write_state)
             new_payload = write_state.model_dump()
 
