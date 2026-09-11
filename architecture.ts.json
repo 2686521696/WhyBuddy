@@ -383,7 +383,8 @@
     "shared-contracts": {
       "why": "其余共享契约：a2a、auth、cost、env、mission、permission、rag、replay、技能、UE、组织。**叶子性质**：被 client 与 server 同时依赖，不许反向依赖任何一边。",
       "paths": [
-        "shared"
+        "shared",
+        "shared/project-runtime.generated"
       ],
       "mayDependOn": [
         "shared-web-aigc",
@@ -982,6 +983,7 @@
       "shared/mission/index",
       "shared/nl-command/index",
       "shared/permission/index",
+      "shared/project-runtime.generated",
       "shared/rag/index",
       "shared/replay/index",
       "shared/skill/index",

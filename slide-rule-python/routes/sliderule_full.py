@@ -926,7 +926,7 @@ def save_sess(
     # 活儿清单同 factoryTodo：服务端拥有，客户端 PUT 一律不许带。
     client_input.pop("controlTodo", None)
     client_input.pop("subagentTasks", None)
-    for key in ("controlTranscript", "modelVersions", "currentModelVersionId", "specFirstPages", "coverageGaps", "awaitReason", "awaitDetail", "runtimePhase"):
+    for key in ("controlTranscript", "modelVersions", "currentModelVersionId", "specFirstPages", "coverageGaps", "awaitReason", "awaitDetail", "runtimePhase", "runtimeKind", "projectId", "projectRevision", "projectVerification"):
         client_input.pop(key, None)
     # publishClosure is client-side derived evidence projection (from python /drive-full); safe for client contrib roundtrip.
     # Do not pop; allow in V5SessionState parse + updates merge for frontend session store persistence (119).
@@ -984,7 +984,9 @@ def save_sess(
             #   其中就有 `scope_confirmed`——而 _scope_confirmed 正是靠它判定
             #   范围确认过没有。表现是"刚确认完范围、这轮又失败了，下次 /推演
             #   还弹卡"，而且只在第一场推演之前复现（之后 modelVersions 兜底）。
-            updates = client_contrib.model_dump(exclude={"sessionId", "ownerId", "pendingRuns", "factoryTodo", "controlTodo", "subagentTasks", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents", "modelVersions", "currentModelVersionId", "lastTurnId", "specFirstPages", "controlTranscript", "coverageGaps", "awaitReason", "awaitDetail", "runtimePhase"})
+            updates = client_contrib.model_dump(exclude={"sessionId", "ownerId", "pendingRuns", "factoryTodo", "controlTodo", "subagentTasks", "coverageGate", "capabilityRuns", "artifacts", "decisionLedger", "costLedger", "flowBoundaryLedger", "structureGateLedger", "sessionReplayLog", "reasoningEvents", "modelVersions", "currentModelVersionId", "lastTurnId", "specFirstPages", "controlTranscript", "coverageGaps", "awaitReason", "awaitDetail", "runtimePhase", "runtimeKind", "projectId", "projectRevision"})
+            if existing.runtimeKind == "project":
+                updates.pop("publishClosure", None)
             for k, v in updates.items():
                 if hasattr(merged, k):
                     setattr(merged, k, v)

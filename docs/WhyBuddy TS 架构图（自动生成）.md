@@ -14,8 +14,8 @@
 | client | 1027 |
 | server | 579 |
 | services | 32 |
-| shared | 176 |
-| **合计** | **1913** |
+| shared | 177 |
+| **合计** | **1914** |
 
 边 5929 条，其中动态 import / require 311 条、
 类型 import 2234 条。
@@ -49,7 +49,7 @@ graph LR
   server-sliderule["server-sliderule<br/>20"]
   server-tasks["server-tasks<br/>19"]
   shared-blueprint["shared-blueprint<br/>68"]
-  shared-contracts["shared-contracts<br/>76"]
+  shared-contracts["shared-contracts<br/>77"]
   shared-web-aigc["shared-web-aigc<br/>26"]
   shared-workflow["shared-workflow<br/>6"]
   agent-loop-tools --> agent-loop-src
@@ -401,7 +401,7 @@ Autopilot 路线页与右栏控制面。产品面收敛的对象（见 M17），
 
 其余共享契约：a2a、auth、cost、env、mission、permission、rag、replay、技能、UE、组织。**叶子性质**：被 client 与 server 同时依赖，不许反向依赖任何一边。
 
-路径：`shared`
+路径：`shared`、`shared/project-runtime.generated`
 
 ### shared-web-aigc
 

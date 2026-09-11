@@ -131,6 +131,9 @@ modules = [
   # 它反过来被闭环判定顶层 import——叶子层的意义就在这儿：谁都能安全引它。
   "services.gate_health",
   "services.sql_gateway",
+  # 工程源码清单是纯校验/哈希：不接 E2B、不读存储，保证路径与内容
+  # 合同可在 provider 和持久化两边复用。
+  "services.project_manifest",
   "services.stage_legal",
   # 阶段配对台账：只吃「阶段名 + start 事件字典」，出度 0 → 叶子。
   # 被驱动器顶层 import——它是**流级**状态，不许每个泵新建一本
@@ -299,6 +302,9 @@ modules = [
   # **不是叶子**：要借 identity_store 那条执行器落库（跟 product_charter 同一条，
   # 不另开数据库、也不共用它那张表）。只依赖 util，碰不到驱动器 → core。
   "services.model_memory",
+  # 持久工程索引/源码版本/操作与事件的 SQL 边界。依赖 util 里的 SQL 网关，
+  # 不反向调用 routes 或控制循环；归组在 persist component。
+  "services.project_store",
   # 点选编辑存库前的体检。**不是叶子**：它复用 html_bindings.scan_bindings
   # 数数据孔——数孔这件事只该有一把尺子（§4），为了当叶子另写一个才是错的。
   "services.page_edit_guard",
@@ -752,8 +758,10 @@ why = """会话落库与单调守卫。谁写、写成什么样，只有这里�
 may_depend_on = ["platform"]
 modules = [
   "services.persistence",
+  "services.project_store",
   "services.session_blob_store",
 ]
+
 
 [component.platform]
 why = """最底下的共用叶子：配置、数据形状、请求域上下文、零依赖的契约与工具。
@@ -768,6 +776,7 @@ modules = [
   "models.agent_loop",
   "models.blueprint_state",
   "models.v5_state",
+  "models.project_runtime",
   "services.archetype_legal",
   "services.closed_tools",
   "services.session_events",
@@ -782,6 +791,7 @@ modules = [
   "services.request_context",
   "services.schema_legal",
   "services.sql_gateway",
+  "services.project_manifest",
   "services.stage_legal",
   "services.turn_context",
   "services.turn_narration",
@@ -991,6 +1001,7 @@ patterns = [
 "services.knowledge_admin_runtime" = "contract_mirror"
 "services.nl_command_runtime" = "contract_mirror"
 "services.rag_ingestion" = "unwired"
+"services.project_store" = "unwired"
 "services.role_runtime" = "contract_mirror"
 "services.slide_rule_full_executor" = "superseded"
 "services.task_durable_mission_store_takeover" = "migration_ledger"
@@ -1195,6 +1206,7 @@ orphans = [
   "services.knowledge_admin_runtime",
   "services.nl_command_runtime",
   "services.rag_ingestion",
+  "services.project_store",
   "services.role_runtime",
   "services.slide_rule_full_executor",
   "services.task_durable_mission_store_takeover",

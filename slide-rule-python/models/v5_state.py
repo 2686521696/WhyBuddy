@@ -560,6 +560,12 @@ class V5SessionState(BaseModel):
     #
     # 语义与判定在 services/app_access.py，与应用共用同一套阶梯——不新写一套。
     ownerId: Optional[str] = None
+    # Project source/operations live in the project store. These are references,
+    # never a client-writable replacement for the stored project or its evidence.
+    # Older sessions keep their original HTML runtime on decode.
+    runtimeKind: Literal["html-prototype", "project"] = "html-prototype"
+    projectId: Optional[str] = None
+    projectRevision: Optional[str] = None
     artifacts: List[Artifact] = []
     capabilityRuns: List[CapabilityRun] = []
     coverageGaps: List[CoverageGap] = []

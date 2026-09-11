@@ -18,7 +18,7 @@ flowchart TB
     ts_client["ts/client<br/>1027 个模块"]
     ts_server["ts/server<br/>579 个模块"]
     ts_services["ts/services<br/>32 个模块"]
-    ts_shared["ts/shared<br/>176 个模块"]
+    ts_shared["ts/shared<br/>177 个模块"]
   end
   subgraph py [Python]
     py_app["py/app<br/>1 个模块"]
@@ -26,10 +26,10 @@ flowchart TB
     py_complete_migration["py/complete_migration<br/>1 个模块"]
     py_config["py/config<br/>2 个模块"]
     py_middlewares["py/middlewares<br/>2 个模块"]
-    py_models["py/models<br/>3 个模块"]
+    py_models["py/models<br/>4 个模块"]
     py_routes["py/routes<br/>12 个模块"]
     py_scripts["py/scripts<br/>39 个模块"]
-    py_services["py/services<br/>226 个模块"]
+    py_services["py/services<br/>228 个模块"]
     py_sliderule_llm["py/sliderule_llm<br/>15 个模块"]
     py_stdio_utf8["py/stdio_utf8<br/>1 个模块"]
     py_services_web_aigc_open_adapter["services.web_aigc_open_adapter"]
@@ -62,8 +62,8 @@ flowchart TB
   py_scripts -->|58| py_services
   py_scripts -->|16| py_sliderule_llm
   py_scripts -->|2| py_stdio_utf8
-  py_services -->|15| py_config
-  py_services -->|31| py_models
+  py_services -->|16| py_config
+  py_services -->|33| py_models
   py_services -->|124| py_sliderule_llm
   py_sliderule_llm -->|2| py_config
   ts_server -.->|open| py_services_web_aigc_open_adapter

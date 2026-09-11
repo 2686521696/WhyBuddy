@@ -835,6 +835,14 @@ def _resolve_write_state(
     # Keep this under the same file lock / database CAS loop as every write.
     if prior is not None and prior.ownerId != state.ownerId:
         raise PersistClosedError("session_owner_changed", "Session ownership changed before save")
+    # A driver started before project creation still carries the old HTML
+    # defaults. Even a later turn number must not erase the new project link.
+    if prior is not None and prior.projectId and (not server_write or not state.projectId):
+        state = state.model_copy(update={
+            "runtimeKind": prior.runtimeKind,
+            "projectId": prior.projectId,
+            "projectRevision": prior.projectRevision,
+        })
     if True:
         # Append-only replay log merge on save (sliderule-python-v52-session-replay-append-only-105)
         # Classification: ... -> PYTHON_COMPAT -> PYTHON_AUTHORITY

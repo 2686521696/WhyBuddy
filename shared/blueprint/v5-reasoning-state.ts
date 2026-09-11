@@ -157,6 +157,10 @@ export interface DependencyEdge {
 }
 
 export interface V5SessionState {
+  /** Server-owned references. Source revisions and evidence live in the project store. */
+  runtimeKind?: "html-prototype" | "project";
+  projectId?: string | null;
+  projectRevision?: string | null;
   goal: {
     text: string;
     status: "clear" | "needs_refinement" | "not_recommended";

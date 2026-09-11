@@ -15,14 +15,14 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **303** 个，模块 **303** 个
-- 内部依赖边 **976** 条（包含普通包初始化依赖）
-- 内部 import 语句 **888** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 扫描文件 **306** 个，模块 **306** 个
+- 内部依赖边 **981** 条（包含普通包初始化依赖）
+- 内部 import 语句 **893** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
 - services 内部越层依赖 **0** 条（基线 0 条）
-- 没人 import 的模块 **54** 个（基线 54 个）—— ⚠ **不是待删清单**，其中 4 个是跨语言入口（见全仓图，不是没人用）
+- 没人 import 的模块 **55** 个（基线 55 个）—— ⚠ **不是待删清单**，其中 4 个是跨语言入口（见全仓图，不是没人用）
 
 权威图只留自动生成的：本文件、`docs/WhyBuddy TS 架构图（自动生成）.md`、
 `docs/WhyBuddy 全仓架构图（自动生成）.md`、`docs/grok-build 架构图（自动生成）.md`。
@@ -37,8 +37,8 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
-| `util` | 134 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
-| `core` | 62 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
+| `util` | 135 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `core` | 63 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 30 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
 叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import 的全部理由，也是 `import` 不必躲进函数体的前提。
@@ -49,10 +49,10 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 ```mermaid
 flowchart TB
-  util["util<br/>134 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
-  core["core<br/>62 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
+  util["util<br/>135 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
+  core["core<br/>63 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
   flow["flow<br/>30 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
-  core -->|143| util
+  core -->|145| util
   flow -->|106| core
   flow -->|117| util
 ```
@@ -63,11 +63,11 @@ flowchart TB
 flowchart TB
   arch_graph["arch_graph<br/>1 个模块<br/>架构编译器自己"]
   config["config<br/>2 个模块<br/>配置"]
-  models["models<br/>3 个模块<br/>数据形状"]
+  models["models<br/>4 个模块<br/>数据形状"]
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>15 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>226 个模块<br/>业务"]
+  services["services<br/>228 个模块<br/>业务"]
   routes["routes<br/>12 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -93,8 +93,8 @@ flowchart TB
   scripts -->|58 · 其中 41 条边来自函数体 import| services
   scripts -->|16 · 其中 10 条边来自函数体 import| sliderule_llm
   scripts -->|2| stdio_utf8
-  services -->|15 · 其中 7 条边来自函数体 import| config
-  services -->|31 · 其中 1 条边来自函数体 import| models
+  services -->|16 · 其中 7 条边来自函数体 import| config
+  services -->|33 · 其中 1 条边来自函数体 import| models
   services -->|124 · 其中 90 条边来自函数体 import| sliderule_llm
   sliderule_llm -->|2 · 其中 2 条边来自函数体 import| config
 ```
@@ -160,8 +160,8 @@ flowchart LR
   observability["observability<br/>7"]
   ops_scripts["ops_scripts<br/>40"]
   permission["permission<br/>8"]
-  persist["persist<br/>2"]
-  platform["platform<br/>23"]
+  persist["persist<br/>3"]
+  platform["platform<br/>25"]
   run_control["run_control<br/>4"]
   spec_first["spec_first<br/>41"]
   task_exec["task_exec<br/>19"]
@@ -246,7 +246,7 @@ flowchart LR
   ops_scripts -->|24| spec_first
   permission -->|1| identity
   permission -->|1| platform
-  persist -->|10| platform
+  persist -->|14| platform
   run_control -->|1| platform
   spec_first -->|3| app_store
   spec_first -->|62| llm_gateway

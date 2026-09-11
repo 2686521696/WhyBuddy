@@ -1,0 +1,424 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "ManifestFile": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "sizeBytes": {
+          "title": "Sizebytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "sizeBytes"
+      ],
+      "title": "ManifestFile",
+      "type": "object"
+    },
+    "Project": {
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "title": "Projectid",
+          "type": "string"
+        },
+        "sessionId": {
+          "title": "Sessionid",
+          "type": "string"
+        },
+        "ownerId": {
+          "title": "Ownerid",
+          "type": "string"
+        },
+        "runtimeKind": {
+          "const": "project",
+          "default": "project",
+          "title": "Runtimekind",
+          "type": "string"
+        },
+        "currentRevision": {
+          "title": "Currentrevision",
+          "type": "string"
+        },
+        "createdAt": {
+          "title": "Createdat",
+          "type": "string"
+        },
+        "updatedAt": {
+          "title": "Updatedat",
+          "type": "string"
+        },
+        "revisionCount": {
+          "default": 1,
+          "title": "Revisioncount",
+          "type": "integer"
+        },
+        "sourceBytesStored": {
+          "default": 0,
+          "title": "Sourcebytesstored",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "projectId",
+        "sessionId",
+        "ownerId",
+        "currentRevision",
+        "createdAt",
+        "updatedAt"
+      ],
+      "title": "Project",
+      "type": "object"
+    },
+    "ProjectManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": 1,
+          "default": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "treeHash": {
+          "title": "Treehash",
+          "type": "string"
+        },
+        "totalBytes": {
+          "title": "Totalbytes",
+          "type": "integer"
+        },
+        "files": {
+          "items": {
+            "$ref": "#/$defs/ManifestFile"
+          },
+          "title": "Files",
+          "type": "array"
+        }
+      },
+      "required": [
+        "treeHash",
+        "totalBytes",
+        "files"
+      ],
+      "title": "ProjectManifest",
+      "type": "object"
+    },
+    "ProjectOperation": {
+      "additionalProperties": false,
+      "properties": {
+        "operationId": {
+          "title": "Operationid",
+          "type": "string"
+        },
+        "projectId": {
+          "title": "Projectid",
+          "type": "string"
+        },
+        "sessionId": {
+          "title": "Sessionid",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "title": "Idempotencykey",
+          "type": "string"
+        },
+        "requestHash": {
+          "title": "Requesthash",
+          "type": "string"
+        },
+        "expectedRevision": {
+          "title": "Expectedrevision",
+          "type": "string"
+        },
+        "approvalRef": {
+          "title": "Approvalref",
+          "type": "string"
+        },
+        "status": {
+          "default": "queued",
+          "enum": [
+            "queued",
+            "running",
+            "waiting_user",
+            "completed",
+            "failed",
+            "cancelling",
+            "cancelled",
+            "interrupted"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "input": {
+          "additionalProperties": true,
+          "title": "Input",
+          "type": "object"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Result"
+        },
+        "leaseGeneration": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Leasegeneration"
+        },
+        "leaseOwner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Leaseowner"
+        },
+        "createdAt": {
+          "title": "Createdat",
+          "type": "string"
+        },
+        "updatedAt": {
+          "title": "Updatedat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operationId",
+        "projectId",
+        "sessionId",
+        "kind",
+        "idempotencyKey",
+        "requestHash",
+        "expectedRevision",
+        "approvalRef",
+        "createdAt",
+        "updatedAt"
+      ],
+      "title": "ProjectOperation",
+      "type": "object"
+    },
+    "ProjectRevision": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "title": "Revision",
+          "type": "string"
+        },
+        "projectId": {
+          "title": "Projectid",
+          "type": "string"
+        },
+        "parentRevision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parentrevision"
+        },
+        "treeHash": {
+          "title": "Treehash",
+          "type": "string"
+        },
+        "manifest": {
+          "$ref": "#/$defs/ProjectManifest"
+        },
+        "templateVersion": {
+          "title": "Templateversion",
+          "type": "string"
+        },
+        "planRef": {
+          "title": "Planref",
+          "type": "string"
+        },
+        "specRevision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Specrevision"
+        },
+        "createdAt": {
+          "title": "Createdat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "revision",
+        "projectId",
+        "treeHash",
+        "manifest",
+        "templateVersion",
+        "planRef",
+        "createdAt"
+      ],
+      "title": "ProjectRevision",
+      "type": "object"
+    },
+    "RuntimeEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": 1,
+          "default": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "eventId": {
+          "title": "Eventid",
+          "type": "string"
+        },
+        "sessionId": {
+          "title": "Sessionid",
+          "type": "string"
+        },
+        "projectId": {
+          "title": "Projectid",
+          "type": "string"
+        },
+        "operationId": {
+          "title": "Operationid",
+          "type": "string"
+        },
+        "seq": {
+          "title": "Seq",
+          "type": "integer"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        },
+        "timestamp": {
+          "title": "Timestamp",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        }
+      },
+      "required": [
+        "eventId",
+        "sessionId",
+        "projectId",
+        "operationId",
+        "seq",
+        "type",
+        "timestamp"
+      ],
+      "title": "RuntimeEvent",
+      "type": "object"
+    },
+    "WorkspaceLease": {
+      "additionalProperties": false,
+      "properties": {
+        "workspaceId": {
+          "title": "Workspaceid",
+          "type": "string"
+        },
+        "projectId": {
+          "title": "Projectid",
+          "type": "string"
+        },
+        "generation": {
+          "title": "Generation",
+          "type": "integer"
+        },
+        "leaseOwner": {
+          "title": "Leaseowner",
+          "type": "string"
+        },
+        "expiresAt": {
+          "title": "Expiresat",
+          "type": "number"
+        },
+        "sandboxId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sandboxid"
+        },
+        "mountedRevision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mountedrevision"
+        },
+        "provider": {
+          "const": "e2b",
+          "default": "e2b",
+          "title": "Provider",
+          "type": "string"
+        },
+        "processRefs": {
+          "additionalProperties": true,
+          "title": "Processrefs",
+          "type": "object"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "projectId",
+        "generation",
+        "leaseOwner",
+        "expiresAt"
+      ],
+      "title": "WorkspaceLease",
+      "type": "object"
+    }
+  }
+}
