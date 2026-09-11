@@ -94,6 +94,7 @@ from routes.permissions import router as permissions_router
 from routes.blueprint_spec_docs import router as blueprint_spec_docs_router
 from routes.account import router as account_router
 from routes.sliderule_full import router as sliderule_full_router
+from routes.project_runtime import router as project_runtime_router
 from routes.agent_loop import router as agent_loop_router
 from routes.rag import router as rag_router
 # 只为触发 import 期自检：种子骨架若引用了未放开生成的区块、或把区块摆进不
@@ -384,6 +385,7 @@ else:
 # 整体删除，现在全站只有这一套身份。）
 app.include_router(account_router, prefix="/api/sliderule")
 app.include_router(sliderule_full_router, prefix="/api/sliderule")
+app.include_router(project_runtime_router, prefix="/api/sliderule")
 app.include_router(blueprint_spec_docs_router, prefix="/api/blueprint/spec-documents")
 app.include_router(blueprint_jobs_router, prefix="/api/blueprint/jobs")
 

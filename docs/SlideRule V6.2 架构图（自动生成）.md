@@ -15,14 +15,14 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **309** 个，模块 **309** 个
-- 内部依赖边 **985** 条（包含普通包初始化依赖）
-- 内部 import 语句 **897** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 扫描文件 **310** 个，模块 **310** 个
+- 内部依赖边 **990** 条（包含普通包初始化依赖）
+- 内部 import 语句 **902** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
 - services 内部越层依赖 **0** 条（基线 0 条）
-- 没人 import 的模块 **56** 个（基线 56 个）—— ⚠ **不是待删清单**，其中 4 个是跨语言入口（见全仓图，不是没人用）
+- 没人 import 的模块 **54** 个（基线 54 个）—— ⚠ **不是待删清单**，其中 4 个是跨语言入口（见全仓图，不是没人用）
 
 权威图只留自动生成的：本文件、`docs/WhyBuddy TS 架构图（自动生成）.md`、
 `docs/WhyBuddy 全仓架构图（自动生成）.md`、`docs/grok-build 架构图（自动生成）.md`。
@@ -68,13 +68,13 @@ flowchart TB
   sliderule_llm["sliderule_llm<br/>15 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
   services["services<br/>231 个模块<br/>业务"]
-  routes["routes<br/>12 个模块<br/>HTTP 路由"]
+  routes["routes<br/>13 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
   scripts["scripts<br/>39 个模块<br/>运维脚本"]
   app -->|1| config
   app -->|1| models
-  app -->|12| routes
+  app -->|13| routes
   app -->|12 · 其中 3 条边来自函数体 import| services
   app -->|2| sliderule_llm
   app -->|1| stdio_utf8
@@ -83,9 +83,9 @@ flowchart TB
   middlewares -->|1| config
   middlewares -->|2| services
   routes -->|9| config
-  routes -->|5| middlewares
+  routes -->|6| middlewares
   routes -->|3| models
-  routes -->|131 · 其中 77 条边来自函数体 import| services
+  routes -->|134 · 其中 77 条边来自函数体 import| services
   routes -->|30 · 其中 16 条边来自函数体 import| sliderule_llm
   scripts -->|3| app
   scripts -->|2 · 其中 2 条边来自函数体 import| config
@@ -137,7 +137,7 @@ flowchart LR
 
 抄 grok 的 Cargo.toml——边写在 crate 上，由编译器焊死。
 现算数字见 `docs/grok-build 架构图（自动生成）.md`。
-我们 26 个 component、92 条边，由 `architecture.toml` 声明、判据强制。
+我们 26 个 component、94 条边，由 `architecture.toml` 声明、判据强制。
 **红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。
 
 ```mermaid
@@ -153,7 +153,7 @@ flowchart LR
   drive["drive<br/>9"]
   entrypoint["entrypoint<br/>1"]
   evidence["evidence<br/>11"]
-  http_routes["http_routes<br/>8"]
+  http_routes["http_routes<br/>9"]
   identity["identity<br/>7"]
   llm_gateway["llm_gateway<br/>18"]
   model_core["model_core<br/>27"]
@@ -200,7 +200,7 @@ flowchart LR
   drive -->|2| spec_first
   entrypoint -->|2| agent_loop
   entrypoint -->|2| drive
-  entrypoint -->|7| http_routes
+  entrypoint -->|8| http_routes
   entrypoint -->|2| llm_gateway
   entrypoint -->|4| model_core
   entrypoint -->|1| permission
@@ -217,14 +217,16 @@ flowchart LR
   http_routes -->|1| diagnostics
   http_routes -->|11| drive
   http_routes -->|5| evidence
-  http_routes -->|11| identity
+  http_routes -->|12| identity
   http_routes -->|37| llm_gateway
   http_routes -->|24| model_core
   http_routes -->|3| observability
-  http_routes -->|3| persist
+  http_routes -->|4| persist
   http_routes -->|14| platform
+  http_routes -->|1| runtime
   http_routes -->|10| spec_first
   http_routes -->|2| task_exec
+  http_routes -->|1| workspace
   identity -->|10| platform
   llm_gateway -->|2| platform
   model_core -->|2| app_store

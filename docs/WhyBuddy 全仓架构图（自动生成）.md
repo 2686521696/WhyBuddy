@@ -27,7 +27,7 @@ flowchart TB
     py_config["py/config<br/>2 个模块"]
     py_middlewares["py/middlewares<br/>2 个模块"]
     py_models["py/models<br/>4 个模块"]
-    py_routes["py/routes<br/>12 个模块"]
+    py_routes["py/routes<br/>13 个模块"]
     py_scripts["py/scripts<br/>39 个模块"]
     py_services["py/services<br/>231 个模块"]
     py_sliderule_llm["py/sliderule_llm<br/>15 个模块"]
@@ -43,7 +43,7 @@ flowchart TB
   ts_services -->|23| ts_shared
   py_app -->|1| py_config
   py_app -->|1| py_models
-  py_app -->|12| py_routes
+  py_app -->|13| py_routes
   py_app -->|12| py_services
   py_app -->|2| py_sliderule_llm
   py_app -->|1| py_stdio_utf8
@@ -52,9 +52,9 @@ flowchart TB
   py_middlewares -->|1| py_config
   py_middlewares -->|2| py_services
   py_routes -->|9| py_config
-  py_routes -->|5| py_middlewares
+  py_routes -->|6| py_middlewares
   py_routes -->|3| py_models
-  py_routes -->|131| py_services
+  py_routes -->|134| py_services
   py_routes -->|30| py_sliderule_llm
   py_scripts -->|3| py_app
   py_scripts -->|2| py_config

@@ -599,13 +599,14 @@ modules = [
 
 [component.http_routes]
 why = """HTTP 边缘：路由只做拼装与鉴权，业务不许住在这里。"""
-may_depend_on = ["app_store", "audit", "blueprint", "capability_engine", "control", "diagnostics", "drive", "evidence", "identity", "llm_gateway", "model_core", "observability", "persist", "platform", "spec_first", "task_exec"]
+may_depend_on = ["app_store", "audit", "blueprint", "capability_engine", "control", "diagnostics", "drive", "evidence", "identity", "llm_gateway", "model_core", "observability", "persist", "platform", "runtime", "spec_first", "task_exec", "workspace"]
 modules = [
   "routes.account",
   "routes.audit",
   "routes.blueprint_jobs",
   "routes.blueprint_spec_docs",
   "routes.rag",
+  "routes.project_runtime",
   "routes.sliderule",
   "routes.sliderule_full",
   "routes.tasks",
@@ -1019,8 +1020,6 @@ patterns = [
 "services.knowledge_admin_runtime" = "contract_mirror"
 "services.nl_command_runtime" = "contract_mirror"
 "services.rag_ingestion" = "unwired"
-"services.project_runtime" = "unwired"
-"services.e2b_workspace_provider" = "unwired"
 "services.role_runtime" = "contract_mirror"
 "services.slide_rule_full_executor" = "superseded"
 "services.task_durable_mission_store_takeover" = "migration_ledger"
@@ -1225,8 +1224,6 @@ orphans = [
   "services.knowledge_admin_runtime",
   "services.nl_command_runtime",
   "services.rag_ingestion",
-  "services.project_runtime",
-  "services.e2b_workspace_provider",
   "services.role_runtime",
   "services.slide_rule_full_executor",
   "services.task_durable_mission_store_takeover",
