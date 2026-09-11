@@ -30,6 +30,7 @@
     "test:scripts": "node --test scripts/dev-all.test.mjs scripts/dev-stop.test.mjs scripts/generate-block-component-usage.test.mjs scripts/architecture-diagram.test.mjs scripts/arch-graph-ts.test.mjs scripts/arch-graph-grok.test.mjs scripts/project-contracts.test.mjs",
     "project:contracts:emit": "node scripts/project-contracts.mjs --emit",
     "project:contracts:check": "node scripts/project-contracts.mjs --check",
+    "smoke:project-runtime": "node scripts/project-runtime-smoke.mjs",
     "arch:ts": "node scripts/arch-graph-ts.mjs --report",
     "arch:ts:check": "node scripts/arch-graph-ts.mjs --check",
     "arch:ts:emit": "node scripts/arch-graph-ts.mjs --emit",
