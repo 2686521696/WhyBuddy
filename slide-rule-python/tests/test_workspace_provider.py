@@ -4,6 +4,7 @@ Linux-only cases execute the actual remote helper scripts against real files
 and child processes. Windows contract tests do not claim Linux execution.
 """
 
+import base64
 import json
 import os
 import shlex
@@ -163,6 +164,116 @@ def test_background_missing_pid_is_an_error(setup_provider):
     fake.process.pid = None
     with pytest.raises(WorkspaceProviderError, match="e2b_start_failed"):
         provider.start_process(handle, "npm run dev")
+
+
+@pytest.mark.parametrize("code", [0, 7, 143])
+def test_completed_process_result_uses_persisted_wrapper_wait_result(setup_provider, code):
+    provider, handle, fake, _ = setup_provider
+    fake.result = completed(stdout=json.dumps({"pid": 4242, "exitCode": code,
+        "data": base64.b64encode(b"actual combined output").decode(), "truncated": False}))
+    result = provider.process_result(handle, "4242")
+    assert result.exit_code == code and result.process_id == "4242"
+    assert result.stdout == "actual combined output"
+    assert shlex.split(fake.calls[-1][0]) == ["python3", "-I", "-S", "-c", module._RESULT_SCRIPT, "4242"]
+
+
+@pytest.mark.parametrize("body", [
+    {"pid": 3333, "exitCode": 0, "data": "", "truncated": False},
+    {"pid": 4242, "exitCode": True, "data": "", "truncated": False},
+    {"pid": 4242, "exitCode": 256, "data": "", "truncated": False},
+    {"pid": 4242, "exitCode": 0, "data": "not base64", "truncated": False},
+    {"pid": 4242, "exitCode": 0, "data": "", "truncated": "false"},
+    {},
+])
+def test_process_result_rejects_missing_mismatched_and_invalid_receipts(setup_provider, body):
+    provider, handle, fake, _ = setup_provider
+    fake.result = completed(stdout=json.dumps(body))
+    with pytest.raises(WorkspaceProviderError, match="process_result_unavailable"):
+        provider.process_result(handle, "4242")
+
+
+def test_missing_process_result_is_uncertain_even_if_result_reader_has_an_exit_code(setup_provider):
+    provider, handle, fake, _ = setup_provider
+    fake.result = completed(stderr="result file absent", exit_code=1)
+    with pytest.raises(WorkspaceProviderError, match="process_result_unavailable"):
+        provider.process_result(handle, "4242")
+
+
+def test_log_cursor_uses_remote_byte_offset_and_rejects_replayed_chunk(setup_provider):
+    provider, handle, fake, _ = setup_provider
+    fake.result = completed(stdout=json.dumps({"data": base64.b64encode(b"second\n").decode(), "nextOffset": 13, "truncated": False}))
+    chunk = provider.read_process_logs(handle, "4242", offset=6)
+    assert chunk.text == "second\n" and chunk.next_offset == 13 and not chunk.truncated
+    assert shlex.split(fake.calls[-1][0])[-2:] == ["4242", "6"]
+    with pytest.raises(WorkspaceProviderError, match="process_log_failed"):
+        provider.read_process_logs(handle, "4242", offset=0)
+
+
+@pytest.mark.parametrize("offset", [True, -1, 0.1, "0", None, 1024 * 1024 + 1])
+def test_log_cursor_rejected_before_provider_access(setup_provider, offset):
+    provider, handle, fake, _ = setup_provider
+    with pytest.raises(ValueError, match="invalid_process_log_cursor"):
+        provider.read_process_logs(handle, "4242", offset=offset)
+    assert not fake.calls
+
+
+@pytest.mark.parametrize("body", [
+    {"data": "", "nextOffset": True, "truncated": False},
+    {"data": "", "nextOffset": 0, "truncated": "false"},
+    {"data": "!", "nextOffset": 0, "truncated": False},
+    {"data": base64.b64encode(b"x" * 8193).decode(), "nextOffset": 8193, "truncated": False},
+])
+def test_log_result_shape_must_not_fabricate_a_cursor(setup_provider, body):
+    provider, handle, fake, _ = setup_provider
+    fake.result = completed(stdout=json.dumps(body))
+    with pytest.raises(WorkspaceProviderError, match="process_log_failed"):
+        provider.read_process_logs(handle, "4242")
+
+
+class FakePages:
+    def __init__(self, pages):
+        self.pages = list(pages)
+        self.read_count = 0
+
+    @property
+    def has_next(self):
+        return bool(self.pages)
+
+    def next_items(self):
+        self.read_count += 1
+        value = self.pages.pop(0)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+
+def sandbox_info(sandbox_id, workspace_id="ws-1"):
+    return types.SimpleNamespace(sandbox_id=sandbox_id, metadata={"whybuddy_workspace_id": workspace_id})
+
+
+def test_workspace_discovery_reads_all_pages_and_checks_exact_identity(monkeypatch):
+    pages = FakePages([[sandbox_info("first")], [sandbox_info("second"), sandbox_info("first")]])
+    calls = []
+
+    def list_sandboxes(**kwargs):
+        calls.append(kwargs)
+        return pages
+
+    monkeypatch.setattr(module, "_sandbox_class", lambda: types.SimpleNamespace(list=list_sandboxes))
+    provider = E2BWorkspaceProvider(api_key="discovery-key")
+    assert provider.find_workspaces(workspace_id="ws-1") == [WorkspaceHandle("ws-1", "first"), WorkspaceHandle("ws-1", "second")]
+    assert pages.read_count == 2
+    assert calls[0]["query"].metadata == {"whybuddy_workspace_id": "ws-1"}
+    assert calls[0]["api_key"] == "discovery-key"
+    assert calls[0]["request_timeout"] == 20
+
+
+@pytest.mark.parametrize("second_page", [[sandbox_info("other", "ws-2")], [sandbox_info("")], OSError("listing interrupted")])
+def test_workspace_discovery_never_returns_partial_or_mismatched_results(monkeypatch, second_page):
+    pages = FakePages([[sandbox_info("first")], second_page])
+    monkeypatch.setattr(module, "_sandbox_class", lambda: types.SimpleNamespace(list=lambda **kwargs: pages))
+    with pytest.raises(WorkspaceProviderError, match="workspace_discovery_failed"):
+        E2BWorkspaceProvider(api_key="key").find_workspaces(workspace_id="ws-1")
 
 
 @pytest.mark.parametrize("pid", ["", "0", "1", "-9", "42;true", "abc", "2147483648"])

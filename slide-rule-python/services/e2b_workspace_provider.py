@@ -7,6 +7,7 @@ Directory-fd writes avoid following symlinks left by generated project code.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -14,7 +15,7 @@ import shlex
 from typing import Any
 
 from services.project_manifest import build_manifest
-from services.workspace_provider import ProcessResult, WorkspaceHandle, WorkspaceProviderError
+from services.workspace_provider import ProcessLogChunk, ProcessResult, WorkspaceHandle, WorkspaceProviderError
 
 PROJECT_ROOT = "/home/user/workspace"
 MAX_OUTPUT_BYTES = 32 * 1024
@@ -69,10 +70,74 @@ finally:
 '''
 
 _START_SCRIPT = r'''
-import os, sys
+import json, os, subprocess, sys
 if os.getpgrp() != os.getpid():
     os.setsid()
-os.execv("/bin/bash", ["bash", "-c", sys.argv[1]])
+path = "/tmp/whybuddy-process-" + str(os.getpid()) + ".log"
+fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+with os.fdopen(fd, "wb", buffering=0) as log:
+    child = subprocess.Popen(["/bin/bash", "-c", sys.argv[1]], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    total = 0
+    while True:
+        chunk = os.read(child.stdout.fileno(), 4096)
+        if not chunk: break
+        remaining = max(0, 1024 * 1024 - total)
+        kept = chunk[:remaining]
+        if kept:
+            log.write(kept)
+            os.write(1, kept)
+        total += len(chunk)
+    code = child.wait()
+code = code if code >= 0 else 128 - code
+# envd forgets completed commands: commit the wrapper's wait result before exit.
+result_path = path[:-4] + ".result"
+fd = os.open(result_path + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+with os.fdopen(fd, "w") as result:
+    json.dump({"pid": os.getpid(), "exitCode": code}, result)
+    result.flush()
+    os.fsync(result.fileno())
+os.replace(result_path + ".tmp", result_path)
+sys.exit(code)
+'''
+
+_RESULT_SCRIPT = r'''
+import base64, json, os, stat, sys
+prefix = "/tmp/whybuddy-process-" + sys.argv[1]
+def read(path, limit, tail=False):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(fd, "rb") as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode): raise ValueError("process_result_not_regular")
+        if not tail and info.st_size > limit: raise ValueError("process_result_too_large")
+        if tail: stream.seek(max(0, info.st_size - limit))
+        return stream.read(limit), info.st_size
+body = json.loads(read(prefix + ".result", 4096)[0])
+if body.get("pid") != int(sys.argv[1]) or type(body.get("exitCode")) is not int or not 0 <= body["exitCode"] <= 255:
+    raise ValueError("invalid_process_result")
+log, size = read(prefix + ".log", 16384, tail=True)
+body.update(data=base64.b64encode(log).decode(), truncated=size > 16384)
+print(json.dumps(body))
+'''
+
+_LOG_SCRIPT = r'''
+import base64, codecs, json, os, stat, sys
+path, offset = "/tmp/whybuddy-process-" + sys.argv[1] + ".log", int(sys.argv[2])
+try:
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+except FileNotFoundError:
+    if offset: sys.exit(1)
+    print(json.dumps({"data": "", "nextOffset": offset, "truncated": False}))
+    sys.exit(0)
+with os.fdopen(fd, "rb") as stream:
+    size = os.fstat(stream.fileno()).st_size
+    if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode) or offset > size: sys.exit(1)
+    stream.seek(offset)
+    data = stream.read(8192)
+decoder = codecs.getincrementaldecoder("utf-8")("replace")
+decoder.decode(data, final=offset + len(data) == size and (os.path.isfile(path[:-4] + ".result") or size >= 1024 * 1024))
+pending = decoder.getstate()[0]
+if pending: data = data[:-len(pending)]
+print(json.dumps({"data": base64.b64encode(data).decode(), "nextOffset": offset + len(data), "truncated": size >= 1024 * 1024}))
 '''
 
 # Include npm's child server. Check captured start times before signalling so a
@@ -192,6 +257,28 @@ class E2BWorkspaceProvider:
         self._sandboxes[handle.sandbox_id] = sandbox
         return handle
 
+    def find_workspaces(self, *, workspace_id: str) -> list[WorkspaceHandle]:
+        if not isinstance(workspace_id, str) or not workspace_id.strip():
+            raise ValueError("invalid_workspace_request")
+        try:
+            from e2b import SandboxQuery
+
+            pages = _sandbox_class().list(query=SandboxQuery(metadata={"whybuddy_workspace_id": workspace_id}),
+                limit=100, api_key=self._api_key, request_timeout=20)
+            handles: dict[str, WorkspaceHandle] = {}
+            while pages.has_next:
+                for sandbox in pages.next_items():
+                    metadata = getattr(sandbox, "metadata", None)
+                    sandbox_id = getattr(sandbox, "sandbox_id", None)
+                    if not isinstance(metadata, dict) or metadata.get("whybuddy_workspace_id") != workspace_id:
+                        raise ValueError("workspace_query_identity_mismatch")
+                    if not isinstance(sandbox_id, str) or not sandbox_id:
+                        raise ValueError("workspace_query_missing_identity")
+                    handles[sandbox_id] = WorkspaceHandle(workspace_id, sandbox_id)
+            return list(handles.values())
+        except Exception as exc:
+            raise WorkspaceProviderError("e2b_workspace_discovery_failed") from exc
+
     def _sandbox(self, handle: WorkspaceHandle) -> Any:
         if handle.sandbox_id not in self._sandboxes:
             self.connect(handle)
@@ -250,6 +337,39 @@ class E2BWorkspaceProvider:
         if result.exit_code != 0 or result.stdout.strip() not in ("true", "false"):
             raise WorkspaceProviderError("e2b_process_status_failed", result=result)
         return result.stdout.strip() == "true"
+
+    def process_result(self, handle: WorkspaceHandle, process_id: str) -> ProcessResult:
+        pid = _pid(process_id)
+        result = self.run(handle, _python(_RESULT_SCRIPT) + f" {pid}", timeout_seconds=15)
+        try:
+            if result.exit_code != 0 or result.output_truncated:
+                raise ValueError("incomplete_process_result")
+            body = json.loads(result.stdout)
+            code = body["exitCode"]
+            if body["pid"] != pid or type(code) is not int or not 0 <= code <= 255 or type(body["truncated"]) is not bool:
+                raise ValueError("invalid_process_result")
+            raw = base64.b64decode(body["data"], validate=True)
+            if len(raw) > 16384:
+                raise ValueError("invalid_process_result_size")
+            return ProcessResult(process_id, raw.decode("utf-8", errors="replace"), "", code, body["truncated"])
+        except (ValueError, KeyError, TypeError) as exc:
+            raise WorkspaceProviderError("e2b_process_result_unavailable", result=result) from exc
+
+    def read_process_logs(self, handle: WorkspaceHandle, process_id: str, *, offset: int = 0) -> ProcessLogChunk:
+        pid = _pid(process_id)
+        if type(offset) is not int or not 0 <= offset <= 1024 * 1024:
+            raise ValueError("invalid_process_log_cursor")
+        result = self.run(handle, _python(_LOG_SCRIPT) + f" {pid} {offset}", timeout_seconds=15)
+        try:
+            if result.exit_code != 0 or result.output_truncated:
+                raise ValueError("invalid_log_result")
+            body = json.loads(result.stdout)
+            raw = base64.b64decode(body["data"], validate=True)
+            if len(raw) > 8192 or type(body["nextOffset"]) is not int or body["nextOffset"] != offset + len(raw) or type(body["truncated"]) is not bool:
+                raise ValueError("invalid_log_offset")
+            return ProcessLogChunk(raw.decode("utf-8", errors="replace"), body["nextOffset"], body["truncated"])
+        except (ValueError, KeyError, TypeError) as exc:
+            raise WorkspaceProviderError("e2b_process_log_failed") from exc
 
     def preview_url(self, handle: WorkspaceHandle, port: int) -> str:
         if not 1 <= port <= 65_535:
