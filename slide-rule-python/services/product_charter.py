@@ -151,13 +151,15 @@ class CharterStore:
         p = self._x.ph
         payload = json.dumps(charter, ensure_ascii=False)
         flag: Any = (1 if reuse_next else 0) if self._is_sqlite else bool(reuse_next)
-        self._x.execute(
-            f"delete from {TABLE} where scope = {p(1)} and scope_id = {p(2)}",
-            [scope, scope_id[:80]],
-        )
+        # Keep replacement atomic. The SQL executor commits each execute;
+        # DELETE followed by INSERT could lose the prior charter on a failed
+        # second statement.
         self._x.execute(
             f"insert into {TABLE} (scope, scope_id, charter_json, reuse_next, updated_at)"
-            f" values ({p(1)},{p(2)},{p(3)},{p(4)},{p(5)})",
+            f" values ({p(1)},{p(2)},{p(3)},{p(4)},{p(5)})"
+            f" on conflict (scope, scope_id) do update set"
+            f" charter_json = excluded.charter_json, reuse_next = excluded.reuse_next,"
+            f" updated_at = excluded.updated_at",
             [scope, scope_id[:80], payload, flag, _now_iso()],
         )
 

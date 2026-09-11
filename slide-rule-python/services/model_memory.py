@@ -119,13 +119,14 @@ class MemoryStore:
 
     def save(self, *, scope: str, scope_id: str, notes: List[Dict[str, str]]) -> None:
         p = self._x.ph
-        self._x.execute(
-            f"delete from {TABLE} where scope = {p(1)} and scope_id = {p(2)}",
-            [scope, scope_id[:80]],
-        )
+        # One statement keeps the previous durable value intact if the write
+        # fails midway.  DELETE then INSERT used to commit twice via the
+        # executor, so a transient INSERT error silently erased memory.
         self._x.execute(
             f"insert into {TABLE} (scope, scope_id, notes_json, updated_at)"
-            f" values ({p(1)},{p(2)},{p(3)},{p(4)})",
+            f" values ({p(1)},{p(2)},{p(3)},{p(4)})"
+            f" on conflict (scope, scope_id) do update set"
+            f" notes_json = excluded.notes_json, updated_at = excluded.updated_at",
             [scope, scope_id[:80], json.dumps(notes, ensure_ascii=False), _now_iso()],
         )
 
