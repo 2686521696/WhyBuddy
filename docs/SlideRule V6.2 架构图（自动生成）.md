@@ -15,14 +15,14 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **306** 个，模块 **306** 个
-- 内部依赖边 **981** 条（包含普通包初始化依赖）
-- 内部 import 语句 **893** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 扫描文件 **308** 个，模块 **308** 个
+- 内部依赖边 **982** 条（包含普通包初始化依赖）
+- 内部 import 语句 **894** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
 - services 内部越层依赖 **0** 条（基线 0 条）
-- 没人 import 的模块 **55** 个（基线 55 个）—— ⚠ **不是待删清单**，其中 4 个是跨语言入口（见全仓图，不是没人用）
+- 没人 import 的模块 **56** 个（基线 56 个）—— ⚠ **不是待删清单**，其中 4 个是跨语言入口（见全仓图，不是没人用）
 
 权威图只留自动生成的：本文件、`docs/WhyBuddy TS 架构图（自动生成）.md`、
 `docs/WhyBuddy 全仓架构图（自动生成）.md`、`docs/grok-build 架构图（自动生成）.md`。
@@ -37,8 +37,8 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
-| `util` | 135 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
-| `core` | 63 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
+| `util` | 136 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `core` | 64 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 30 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
 叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import 的全部理由，也是 `import` 不必躲进函数体的前提。
@@ -49,10 +49,10 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 ```mermaid
 flowchart TB
-  util["util<br/>135 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
-  core["core<br/>63 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
+  util["util<br/>136 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
+  core["core<br/>64 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
   flow["flow<br/>30 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
-  core -->|145| util
+  core -->|146| util
   flow -->|106| core
   flow -->|117| util
 ```
@@ -67,7 +67,7 @@ flowchart TB
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>15 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>228 个模块<br/>业务"]
+  services["services<br/>230 个模块<br/>业务"]
   routes["routes<br/>12 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -137,7 +137,7 @@ flowchart LR
 
 抄 grok 的 Cargo.toml——边写在 crate 上，由编译器焊死。
 现算数字见 `docs/grok-build 架构图（自动生成）.md`。
-我们 24 个 component、89 条边，由 `architecture.toml` 声明、判据强制。
+我们 25 个 component、89 条边，由 `architecture.toml` 声明、判据强制。
 **红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。
 
 ```mermaid
@@ -166,6 +166,7 @@ flowchart LR
   spec_first["spec_first<br/>41"]
   task_exec["task_exec<br/>19"]
   web_aigc["web_aigc<br/>16"]
+  workspace["workspace<br/>2"]
   agent_loop -->|1| identity
   agent_loop -->|6| platform
   app_store -->|6| identity
