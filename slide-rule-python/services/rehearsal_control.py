@@ -56,7 +56,7 @@ import json
 import re
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import aclosing, contextmanager, nullcontext
 from contextvars import ContextVar
 from enum import Enum
 from datetime import datetime, timezone
@@ -2912,22 +2912,35 @@ async def _canned(
 _ACTIVE_CONTROL_TURNS: set[str] = set()
 
 
-async def run_control_turn(
-    payload: Dict[str, Any],
-    *,
-    authorized_owner_id: Optional[str] = None,
-) -> AsyncIterator[Dict[str, Any]]:
-    """One control producer per session, including while durable writes await I/O."""
-    validate_control_turn_body(payload)
-    session_id = str(payload["sessionId"]).strip()
+@contextmanager
+def reserve_control_turn(session_id: str):
+    """Reserve before HTTP headers; hold through cancellation and producer cleanup."""
     if session_id in _ACTIVE_CONTROL_TURNS:
         raise HTTPException(409, "control_turn_in_progress")
     _ACTIVE_CONTROL_TURNS.add(session_id)
     try:
-        async for event in _run_control_turn_serial(payload, authorized_owner_id=authorized_owner_id):
-            yield event
+        yield
     finally:
         _ACTIVE_CONTROL_TURNS.discard(session_id)
+
+
+async def run_control_turn(
+    payload: Dict[str, Any],
+    *,
+    authorized_owner_id: Optional[str] = None,
+    reservation_held: bool = False,
+) -> AsyncIterator[Dict[str, Any]]:
+    """One control producer per session, including while durable writes await I/O."""
+    validate_control_turn_body(payload)
+    session_id = str(payload["sessionId"]).strip()
+    # The HTTP response owns its reservation before it sends SSE headers. Direct
+    # consumers acquire here. Closing this wrapper must close the child in the
+    # same task: deferred async-generator GC used to reset ContextVars elsewhere
+    # and release exclusivity before the producer's finally block ran.
+    with nullcontext() if reservation_held else reserve_control_turn(session_id):
+        async with aclosing(_run_control_turn_serial(payload, authorized_owner_id=authorized_owner_id)) as stream:
+            async for event in stream:
+                yield event
 
 
 async def _run_control_turn_serial(
@@ -2957,8 +2970,9 @@ async def _run_control_turn_serial(
         # 那正好是这一层要治的「每轮成功就把额度赚回来」。
         # grok 把它存在 actor 的 Cell 上、不是循环局部，同一个道理。
         with retry_budget_scope():
-            async for event in _run_control_turn_body(payload, state):
-                yield event
+            async with aclosing(_run_control_turn_body(payload, state)) as stream:
+                async for event in stream:
+                    yield event
     finally:
         clear_charter_for_run()
         _CONTROL_PAYLOAD.reset(token)
@@ -3424,7 +3438,7 @@ async def _resume_control_llm_after_write(
             yield event
         return
     messages = _messages_after_forced_write(state, user_text, tool, body)
-    async for event in _control_llm_loop(
+    async with aclosing(_control_llm_loop(
         state,
         messages,
         user_text=user_text,
@@ -3441,8 +3455,9 @@ async def _resume_control_llm_after_write(
             else POST_WRITE_FALLBACK
         ),
         tools=None,
-    ):
-        yield event
+    )) as stream:
+        async for event in stream:
+            yield event
 
 
 async def _control_llm_loop(
@@ -3688,7 +3703,7 @@ async def _control_llm_loop(
                 args = call.get("arguments") if isinstance(call.get("arguments"), dict) else {}
                 tool_body: Optional[Dict[str, Any]] = None
                 with tool_scope_scope(name):
-                    async for event in _dispatch_tool(
+                    async with aclosing(_dispatch_tool(
                         name,
                         args,
                         state,
@@ -3698,21 +3713,22 @@ async def _control_llm_loop(
                         preferred_device,
                         design_system_id,
                         original_goal,
-                    ):
-                        yield event
-                        et = str(event.get("type") or "")
-                        if et == "control_tool_result":
-                            tool_body = {
-                                k: v for k, v in event.items() if k != "type"
-                            }
-                        if et == "control_ask_user":
-                            parked = True
-                        elif et == "control_plan_approval":
-                            parked = True
-                        elif et == "control_handoff_factory":
-                            wrote = True
-                        elif et == "complete" and not wrote:
-                            aborted = True
+                    )) as stream:
+                        async for event in stream:
+                            yield event
+                            et = str(event.get("type") or "")
+                            if et == "control_tool_result":
+                                tool_body = {
+                                    k: v for k, v in event.items() if k != "type"
+                                }
+                            if et == "control_ask_user":
+                                parked = True
+                            elif et == "control_plan_approval":
+                                parked = True
+                            elif et == "control_handoff_factory":
+                                wrote = True
+                            elif et == "complete" and not wrote:
+                                aborted = True
                 if parked or aborted:
                     return
                 messages.append(
@@ -3830,15 +3846,16 @@ async def _run_control_turn_body(
             if outcome == "approved"
             else "用户取消了计划审批，请继续访谈并修改计划。反馈：" + str(raw_answer.get("feedback") or "")
         )
-        async for event in _control_llm_loop(
+        async with aclosing(_control_llm_loop(
             state,
             [{"role": "system", "content": _system_prompt(state)}, {"role": "user", "content": user_text}],
             user_text=user_text, installed_skills=installed_skills,
             active_connectors=active_connectors, preferred_device=preferred_device,
             design_system_id=design_system_id, original_goal=_goal_text(state),
             started=started, cheap_tokens=0, empty_text=CHEAP_TURN_FALLBACK,
-        ):
-            yield event
+        )) as stream:
+            async for event in stream:
+                yield event
         return
     if state.awaitReason == "control_plan_approval":
         async for event in _park_plan_approval(state):
@@ -3869,7 +3886,7 @@ async def _run_control_turn_body(
             flush=True,
         )
         if not forced or forced in ("ask_user_question", "clarify"):
-            async for event in _control_llm_loop(
+            async with aclosing(_control_llm_loop(
                 state,
                 _messages_after_need_answer(state, user_text, answer),
                 user_text=user_text,
@@ -3888,8 +3905,9 @@ async def _run_control_turn_body(
                     else CHEAP_TURN_FALLBACK
                 ),
                 tools=None,
-            ):
-                yield event
+            )) as stream:
+                async for event in stream:
+                    yield event
             return
     else:
         # 作曲家另说一句：作废摊着的澄清卡，不当答卷。
@@ -3956,7 +3974,7 @@ async def _run_control_turn_body(
         # 写权限：forcedTool 绕过 _dispatch_tool 直接进工厂，scope 要在这里设。
         handed = False
         with tool_scope_scope("refine"):
-            async for event in _handoff_factory(
+            async with aclosing(_handoff_factory(
                 state,
                 user_text,
                 installed_skills,
@@ -3966,13 +3984,14 @@ async def _run_control_turn_body(
                 repair=False,
                 profile="app",
                 nest=True,
-            ):
-                yield event
-                if str(event.get("type") or "") == "control_handoff_factory":
-                    handed = True
+            )) as stream:
+                async for event in stream:
+                    yield event
+                    if str(event.get("type") or "") == "control_handoff_factory":
+                        handed = True
         if not handed:
             return
-        async for event in _resume_control_llm_after_write(
+        async with aclosing(_resume_control_llm_after_write(
             state,
             user_text,
             "refine",
@@ -3983,8 +4002,9 @@ async def _run_control_turn_body(
             design_system_id=design_system_id,
             original_goal=original_goal,
             before_fingerprint=_fp_before,
-        ):
-            yield event
+        )) as stream:
+            async for event in stream:
+                yield event
         return
 
     if forced == "repair":
@@ -3992,7 +4012,7 @@ async def _run_control_turn_body(
         # repair 走覆盖门选材（pick_repair_capabilities），profile=full 不动。
         handed = False
         with tool_scope_scope("repair"):
-            async for event in _handoff_factory(
+            async with aclosing(_handoff_factory(
                 state,
                 user_text,
                 installed_skills,
@@ -4003,13 +4023,14 @@ async def _run_control_turn_body(
                 profile="full",
                 max_loops=2,
                 nest=True,
-            ):
-                yield event
-                if str(event.get("type") or "") == "control_handoff_factory":
-                    handed = True
+            )) as stream:
+                async for event in stream:
+                    yield event
+                    if str(event.get("type") or "") == "control_handoff_factory":
+                        handed = True
         if not handed:
             return
-        async for event in _resume_control_llm_after_write(
+        async with aclosing(_resume_control_llm_after_write(
             state,
             user_text,
             "repair",
@@ -4019,8 +4040,9 @@ async def _run_control_turn_body(
             preferred_device=preferred_device,
             design_system_id=design_system_id,
             original_goal=original_goal,
-        ):
-            yield event
+        )) as stream:
+            async for event in stream:
+                yield event
         return
 
     if forced == "challenge":
@@ -4051,7 +4073,7 @@ async def _run_control_turn_body(
         handed = False
         tool_body: Optional[Dict[str, Any]] = None
         with tool_scope_scope(forced):
-            async for event in _dispatch_tool(
+            async with aclosing(_dispatch_tool(
                 forced,
                 {},
                 state,
@@ -4061,16 +4083,17 @@ async def _run_control_turn_body(
                 preferred_device,
                 design_system_id,
                 original_goal,
-            ):
-                yield event
-                et = str(event.get("type") or "")
-                if et == "control_handoff_factory":
-                    handed = True
-                elif et == "control_tool_result":
-                    tool_body = {k: v for k, v in event.items() if k != "type"}
+            )) as stream:
+                async for event in stream:
+                    yield event
+                    et = str(event.get("type") or "")
+                    if et == "control_handoff_factory":
+                        handed = True
+                    elif et == "control_tool_result":
+                        tool_body = {k: v for k, v in event.items() if k != "type"}
         if not handed:
             return
-        async for event in _resume_control_llm_after_write(
+        async with aclosing(_resume_control_llm_after_write(
             state,
             user_text,
             forced,
@@ -4080,8 +4103,9 @@ async def _run_control_turn_body(
             preferred_device=preferred_device,
             design_system_id=design_system_id,
             original_goal=original_goal,
-        ):
-            yield event
+        )) as stream:
+            async for event in stream:
+                yield event
         return
 
     if forced in CLOSED_TOOLS:
@@ -4122,7 +4146,7 @@ async def _run_control_turn_body(
         {"role": "system", "content": _system_prompt(state)},
         {"role": "user", "content": user_text or "你好"},
     ]
-    async for event in _control_llm_loop(
+    async with aclosing(_control_llm_loop(
         state,
         messages,
         user_text=user_text,
@@ -4134,8 +4158,9 @@ async def _run_control_turn_body(
         started=started,
         cheap_tokens=cheap_tokens,
         empty_text=CHEAP_TURN_FALLBACK,
-    ):
-        yield event
+    )) as stream:
+        async for event in stream:
+            yield event
 
 
 async def _dispatch_tool(
@@ -4175,6 +4200,21 @@ async def _dispatch_tool(
         yield {
             "type": "control_text",
             "text": _hook.reason or f"这次 {name} 被拦下了。",
+        }
+        yield _complete(state)
+        return
+    if _hook.decision is HookDecision.ASK:
+        # ASK is a real tool gate: pause this invocation before any write or
+        # factory handoff. The client already knows how to render tool results;
+        # keep the machine reason explicit instead of turning it into a generic
+        # questionnaire that could be mistaken for product requirements.
+        yield {
+            "type": "control_tool_result",
+            "tool": name,
+            "ok": False,
+            "error": "hook_approval_required",
+            "human": _hook.reason or "这项操作需要先确认。",
+            **({"hookContext": list(_hook.context)} if _hook.context else {}),
         }
         yield _complete(state)
         return
@@ -4312,7 +4352,7 @@ async def _dispatch_tool(
         # scope_card 复述后改名为 spec：外层 tool_scope 仍是 READ 的
         # scope_card，信封闸会拒。内层盖成当前 name（spec 是 WRITE）。
         with tool_scope_scope(name):
-            async for event in _handoff_factory(
+            async with aclosing(_handoff_factory(
                 state,
                 user_text,
                 installed_skills,
@@ -4321,8 +4361,9 @@ async def _dispatch_tool(
                 design_system_id,
                 profile="app",
                 nest=True,
-            ):
-                yield event
+            )) as stream:
+                async for event in stream:
+                    yield event
         fresh = await run_in_threadpool(load_session, str(state.sessionId or ""))
         result_tool = name if name == "rehearse" or len(chosen) > 1 else hop
         yield {
@@ -4358,7 +4399,7 @@ async def _dispatch_tool(
         _set_goal_tools(goal, preset.tools, refine=_has_model(state))
         state.goal = goal
         await _apersist(state)
-        async for event in _handoff_factory(
+        async with aclosing(_handoff_factory(
             state,
             user_text,
             installed_skills,
@@ -4367,8 +4408,9 @@ async def _dispatch_tool(
             design_system_id,
             profile="app",
             nest=True,
-        ):
-            yield event
+        )) as stream:
+            async for event in stream:
+                yield event
         fresh = await run_in_threadpool(load_session, str(state.sessionId or ""))
         yield {
             "type": "control_tool_result",
@@ -4417,7 +4459,7 @@ async def _dispatch_tool(
         state.goal = goal
         await _apersist(state)
         _fp_before = factory_deliverable_fingerprint(state)
-        async for event in _handoff_factory(
+        async with aclosing(_handoff_factory(
             state,
             user_text,
             installed_skills,
@@ -4426,8 +4468,9 @@ async def _dispatch_tool(
             design_system_id,
             profile="app",
             nest=True,
-        ):
-            yield event
+        )) as stream:
+            async for event in stream:
+                yield event
         fresh = await run_in_threadpool(load_session, str(state.sessionId or ""))
         yield {
             "type": "control_tool_result",
@@ -4436,7 +4479,7 @@ async def _dispatch_tool(
         }
         return
     if name == "repair":
-        async for event in _handoff_factory(
+        async with aclosing(_handoff_factory(
             state,
             user_text,
             installed_skills,
@@ -4447,8 +4490,15 @@ async def _dispatch_tool(
             profile="full",
             max_loops=2,
             nest=True,
-        ):
-            yield event
+        )) as stream:
+            async for event in stream:
+                yield event
+        fresh = await run_in_threadpool(load_session, str(state.sessionId or ""))
+        yield {
+            "type": "control_tool_result",
+            "tool": "repair",
+            **_factory_tool_body(fresh or state, "repair"),
+        }
         fresh = await run_in_threadpool(load_session, str(state.sessionId or ""))
         yield {
             "type": "control_tool_result",

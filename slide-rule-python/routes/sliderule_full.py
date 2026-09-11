@@ -9,6 +9,7 @@ See audit / FINAL_MIGRATION_STATUS.md for exact coverage vs. "all historical cap
 """
 
 import asyncio
+from contextlib import aclosing
 from concurrent.futures import ThreadPoolExecutor
 import base64
 import binascii
@@ -16,6 +17,7 @@ import os
 import re
 import threading
 
+from anyio import CancelScope
 from fastapi import APIRouter, HTTPException, Header, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import ValidationError
@@ -1514,6 +1516,28 @@ async def drive_full_stream(
     return _run_sse_response(run, since=0)
 
 
+class _ExclusiveControlResponse(StreamingResponse):
+    """A busy session must be rejected before StreamingResponse sends HTTP 200."""
+
+    def __init__(self, *args, turn_reservation, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.turn_reservation = turn_reservation
+
+    async def __call__(self, scope, receive, send):
+        with self.turn_reservation:
+            await super().__call__(scope, receive, send)
+
+    async def stream_response(self, send):
+        try:
+            await super().stream_response(send)
+        finally:
+            # StreamingResponse's async-for does not close a generator suspended
+            # at yield when the browser disconnects. Close in the streaming task
+            # so ContextVar tokens and the session reservation unwind together.
+            with CancelScope(shield=True):
+                await self.body_iterator.aclose()
+
+
 @router.post("/control-turn-stream")
 async def control_turn_stream(
     payload: Dict[str, Any],
@@ -1525,7 +1549,7 @@ async def control_turn_stream(
 
     _auth(x_internal_key)
     _require_login(viewer)
-    from services.rehearsal_control import run_control_turn, validate_control_turn_body
+    from services.rehearsal_control import run_control_turn, validate_control_turn_body, reserve_control_turn
 
     validate_control_turn_body(payload)
     # Authorize before opening SSE; private and missing IDs have the same 404.
@@ -1533,11 +1557,13 @@ async def control_turn_stream(
     state = await asyncio.to_thread(_require_run_session, sid, "drive", viewer)
 
     async def event_generator():
-        async for event in run_control_turn(payload, authorized_owner_id=state.ownerId):
-            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        async with aclosing(run_control_turn(payload, authorized_owner_id=state.ownerId, reservation_held=True)) as stream:
+            async for event in stream:
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
-    return StreamingResponse(
+    return _ExclusiveControlResponse(
         event_generator(),
+        turn_reservation=reserve_control_turn(sid),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-store",

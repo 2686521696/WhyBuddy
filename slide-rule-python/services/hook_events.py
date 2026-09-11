@@ -193,9 +193,13 @@ def dispatch(event: HookEvent, payload: Dict[str, Any]) -> HookVerdict:
         return verdict
 
     gate = _GATE[event]
+    # Each sequential handler observes the previous handler's updated input,
+    # matching grok's `updatedInput` fold.  Passing the original payload to all
+    # handlers made a rewrite silently disappear for the next policy hook.
+    current_payload = dict(payload)
     for name, handler in rows:
         try:
-            out = handler(dict(payload))
+            out = handler(dict(current_payload))
         except Exception as exc:  # noqa: BLE001 — fail-open：炸了什么都不贡献
             verdict.errors.append((name, str(exc)[:200]))
             continue
@@ -209,6 +213,7 @@ def dispatch(event: HookEvent, payload: Dict[str, Any]) -> HookVerdict:
             verdict.context.append(out.additional_context.strip())
         if gate is GateKind.TOOL and isinstance(out.updated_input, dict):
             verdict.updated_input = dict(out.updated_input)
+            current_payload.update(out.updated_input)
         if gate is GateKind.OBSERVE:
             # 只是通知：判决丢掉。不丢的话，一个只想记日志的处理器
             # 返回个 deny 就能把推演掐掉，而且没有任何报错。
