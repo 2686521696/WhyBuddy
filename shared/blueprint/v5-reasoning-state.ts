@@ -13,6 +13,7 @@ import type { V5CapabilityId } from "./contracts.js";
 import type { ReasoningEvent } from "./sliderule-reasoning-events.js";
 import type { BrainstormReasoningGraph } from "./brainstorm-reasoning-graph.js";
 import type { SlideRuleReplayEvent } from "./sliderule-session-replay.js";
+import type { Project } from "../project-runtime.generated.js";
 
 export type { V5CapabilityId };
 
@@ -158,9 +159,9 @@ export interface DependencyEdge {
 
 export interface V5SessionState {
   /** Server-owned references. Source revisions and evidence live in the project store. */
-  runtimeKind?: "html-prototype" | "project";
-  projectId?: string | null;
-  projectRevision?: string | null;
+  runtimeKind?: "html-prototype" | Project["runtimeKind"];
+  projectId?: Project["projectId"] | null;
+  projectRevision?: Project["currentRevision"] | null;
   goal: {
     text: string;
     status: "clear" | "needs_refinement" | "not_recommended";

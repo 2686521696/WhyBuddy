@@ -983,7 +983,6 @@
       "shared/mission/index",
       "shared/nl-command/index",
       "shared/permission/index",
-      "shared/project-runtime.generated",
       "shared/rag/index",
       "shared/replay/index",
       "shared/skill/index",

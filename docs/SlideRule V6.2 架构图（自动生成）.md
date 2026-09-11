@@ -16,8 +16,8 @@
 ## 此刻的事实（由代码算出，不是手写）
 
 - 扫描文件 **310** 个，模块 **310** 个
-- 内部依赖边 **990** 条（包含普通包初始化依赖）
-- 内部 import 语句 **902** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 内部依赖边 **995** 条（包含普通包初始化依赖）
+- 内部 import 语句 **907** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -52,7 +52,7 @@ flowchart TB
   util["util<br/>136 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
   core["core<br/>65 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
   flow["flow<br/>30 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
-  core -->|147| util
+  core -->|148| util
   flow -->|106| core
   flow -->|117| util
 ```
@@ -82,10 +82,10 @@ flowchart TB
   complete_migration -->|3| services
   middlewares -->|1| config
   middlewares -->|2| services
-  routes -->|9| config
+  routes -->|10| config
   routes -->|6| middlewares
   routes -->|3| models
-  routes -->|134 · 其中 77 条边来自函数体 import| services
+  routes -->|137 · 其中 77 条边来自函数体 import| services
   routes -->|30 · 其中 16 条边来自函数体 import| sliderule_llm
   scripts -->|3| app
   scripts -->|2 · 其中 2 条边来自函数体 import| config
@@ -137,7 +137,7 @@ flowchart LR
 
 抄 grok 的 Cargo.toml——边写在 crate 上，由编译器焊死。
 现算数字见 `docs/grok-build 架构图（自动生成）.md`。
-我们 26 个 component、94 条边，由 `architecture.toml` 声明、判据强制。
+我们 26 个 component、95 条边，由 `architecture.toml` 声明、判据强制。
 **红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。
 
 ```mermaid
@@ -215,18 +215,18 @@ flowchart LR
   http_routes -->|2| capability_engine
   http_routes -->|1| control
   http_routes -->|1| diagnostics
-  http_routes -->|11| drive
+  http_routes -->|12| drive
   http_routes -->|5| evidence
   http_routes -->|12| identity
   http_routes -->|37| llm_gateway
   http_routes -->|24| model_core
   http_routes -->|3| observability
   http_routes -->|4| persist
-  http_routes -->|14| platform
+  http_routes -->|16| platform
   http_routes -->|1| runtime
   http_routes -->|10| spec_first
   http_routes -->|2| task_exec
-  http_routes -->|1| workspace
+  http_routes -->|2| workspace
   identity -->|10| platform
   llm_gateway -->|2| platform
   model_core -->|2| app_store
@@ -262,6 +262,7 @@ flowchart LR
   spec_first -->|1| run_control
   task_exec -->|2| evidence
   task_exec -->|4| platform
+  workspace -->|1| platform
 ```
 
 

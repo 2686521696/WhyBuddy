@@ -51,10 +51,10 @@ flowchart TB
   py_complete_migration -->|3| py_services
   py_middlewares -->|1| py_config
   py_middlewares -->|2| py_services
-  py_routes -->|9| py_config
+  py_routes -->|10| py_config
   py_routes -->|6| py_middlewares
   py_routes -->|3| py_models
-  py_routes -->|134| py_services
+  py_routes -->|137| py_services
   py_routes -->|30| py_sliderule_llm
   py_scripts -->|3| py_app
   py_scripts -->|2| py_config
