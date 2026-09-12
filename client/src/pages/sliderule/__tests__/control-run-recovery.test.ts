@@ -91,6 +91,38 @@ describe("durable control stream", () => {
     expect(out).toBeNull();
   });
 
+  it("treats a settled provider stop as an error instead of a successful turn", async () => {
+    const onRunSettled = vi.fn();
+    const onControlText = vi.fn();
+    const out = await consumeControlStreamResponse(
+      stream([
+        {
+          type: "control_text",
+          text: "模型服务返回内容过滤（content_filter），本轮已停止，未自动重试。",
+          stopReason: "llm_unavailable",
+          stoppedBy: "provider",
+          providerFinishReason: "content_filter",
+        },
+        // The durable Python run is settled after persisting the provider
+        // failure receipt.  Its status alone must not turn this into success.
+        { type: "complete", state: { sessionId: "session-1" } },
+        {
+          type: "control_run_settled",
+          status: "completed",
+          controlRunId: "ctr-filtered",
+        },
+      ]),
+      { onRunSettled, onControlText }
+    );
+    expect(onControlText).toHaveBeenCalledWith(
+      expect.stringContaining("content_filter"),
+      expect.objectContaining({ stopReason: "llm_unavailable" })
+    );
+    expect(onRunSettled).toHaveBeenCalledWith("error");
+    expect(onRunSettled).not.toHaveBeenCalledWith("complete");
+    expect(out).toBeNull();
+  });
+
   it("retains the control kind across bookmark reloads", () => {
     const data = new Map<string, string>();
     vi.stubGlobal("localStorage", {

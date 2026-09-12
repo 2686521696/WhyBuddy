@@ -16,8 +16,8 @@
 ## 此刻的事实（由代码算出，不是手写）
 
 - 扫描文件 **340** 个，模块 **340** 个
-- 内部依赖边 **1126** 条（包含普通包初始化依赖）
-- 内部 import 语句 **1038** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 内部依赖边 **1127** 条（包含普通包初始化依赖）
+- 内部 import 语句 **1039** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -85,7 +85,7 @@ flowchart TB
   routes -->|10| config
   routes -->|8| middlewares
   routes -->|6| models
-  routes -->|155 · 其中 77 条边来自函数体 import| services
+  routes -->|156 · 其中 77 条边来自函数体 import| services
   routes -->|30 · 其中 16 条边来自函数体 import| sliderule_llm
   scripts -->|3| app
   scripts -->|2 · 其中 2 条边来自函数体 import| config
@@ -226,7 +226,7 @@ flowchart LR
   http_routes -->|37| llm_gateway
   http_routes -->|24| model_core
   http_routes -->|3| observability
-  http_routes -->|14| persist
+  http_routes -->|15| persist
   http_routes -->|27| platform
   http_routes -->|3| runtime
   http_routes -->|10| spec_first

@@ -48,13 +48,25 @@ async function ready(revision) {
 }
 async function openPreview(heading) {
   await page.getByTestId("sandbox-preview-surface").waitFor({ timeout: 60000 });
-  if (!await page.getByTestId("project-preview-frame").count()) {
-    await expect(page.getByTestId("project-preview-open")).toBeEnabled({ timeout: 60000 });
-    await page.getByTestId("project-preview-open").click();
-  }
   const frame = page.frameLocator('[data-testid="project-preview-frame"]');
-  await frame.getByRole("heading", { name: heading, exact: true }).waitFor({ timeout: 60000 });
-  return frame;
+  // The iframe element can survive a failed/expired ticket while its document
+  // is gone.  Re-authorize explicitly instead of treating the stale element
+  // as a ready preview; this keeps the smoke deterministic across reloads.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (!await page.getByTestId("project-preview-frame").count() || attempt > 0) {
+      await expect(page.getByTestId("project-preview-open")).toBeEnabled({ timeout: 60000 });
+      await page.getByTestId("project-preview-open").click();
+    }
+    try {
+      await frame.getByRole("heading", { name: heading, exact: true }).waitFor({ timeout: 30000 });
+      return frame;
+    } catch (error) {
+      if (attempt === 2) throw error;
+      await page.getByRole("button", { name: "更新状态", exact: true }).click().catch(() => {});
+      await delay(1000);
+    }
+  }
+  throw new Error("tasks_preview_unavailable");
 }
 async function appLogin(frame, name) {
   await frame.getByLabel("用户名", { exact: true }).fill(name);
@@ -299,6 +311,9 @@ try {
 } catch (error) {
   report.status = "failed";
   report.error = error.name === "Error" && !error.message.includes("\n") && !error.message.includes("http") ? error.message : error.name;
+  // Keep the first stack frame in the sanitized artifact so a generic
+  // assertion failure can be located without exposing URLs or credentials.
+  if (error?.stack) report.errorStack = String(error.stack).split("\n").slice(0, 3).join("\n").replace(/https?:\/\/[^\s)]+/g, "[url]");
   if (page) {
     report.visibleText = (await page.locator("body").innerText().catch(() => "")).slice(0, 4000);
     await page.screenshot({ path: join(config.directory, "tasks-failure.png"), fullPage: true }).catch(() => {});

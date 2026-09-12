@@ -59,7 +59,7 @@ flowchart TB
   py_routes -->|10| py_config
   py_routes -->|8| py_middlewares
   py_routes -->|6| py_models
-  py_routes -->|155| py_services
+  py_routes -->|156| py_services
   py_routes -->|30| py_sliderule_llm
   py_scripts -->|3| py_app
   py_scripts -->|2| py_config

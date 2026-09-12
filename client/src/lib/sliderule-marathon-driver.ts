@@ -1034,10 +1034,25 @@ export async function consumeControlStreamResponse(
                 opts.onControlText?.("本轮已中断，已保存现有结果。请查看任务状态后继续。");
                 opts.onRunSettled?.("error");
                 return null;
+              } else if (acc.stopReason === "llm_unavailable") {
+                // The Python control loop settles the durable run after it has
+                // persisted a provider failure receipt.  A settled run is not
+                // automatically a successful turn: preserve the provider
+                // stop as an error so callers do not run success post-processing
+                // (closure, notifications, or another autonomous hop).
+                opts.onRunSettled?.("error");
+                return null;
               } else opts.onRunSettled?.("complete");
               sawTerminal = true;
               break outer;
             case "control_text":
+              if (event.stopReason === "llm_unavailable") {
+                // Keep ordinary control stop reasons (for example
+                // `tool_rounds`) on their existing completed-turn path.  Only
+                // a provider-unavailable terminal must prevent success
+                // post-processing.
+                acc.stopReason = event.stopReason;
+              }
               opts.onControlText?.(
                 String(event.text || ""),
                 typeof event.stopReason === "string"
@@ -1132,6 +1147,13 @@ export async function consumeControlStreamResponse(
                   acc
                 );
                 continue;
+              }
+              if (acc.stopReason === "llm_unavailable") {
+                // `_canned` emits `complete` after the provider failure text;
+                // this event arrives before the durable `control_run_settled`
+                // notification, so classify it here as well.
+                opts.onRunSettled?.("error");
+                return null;
               }
               if (event.state) {
                 acc.finalState = event.state as V5SessionState;
