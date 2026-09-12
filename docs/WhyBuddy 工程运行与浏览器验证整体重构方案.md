@@ -1,6 +1,6 @@
 # WhyBuddy 工程运行与浏览器验证整体重构方案
 
-日期：2026-09-11。状态：实施中，P1/P2 的部分基础能力已实现；各阶段完成条件仍按真实验收判断。本轮执行记录见第 15 节。
+日期：2026-09-11，更新：2026-09-12。状态：实施中，P1/P2/P3 的部分能力已实现；各阶段完成条件仍按真实验收判断。最新执行记录见第 20 节，包含真实 PostgreSQL、进程重启和模型工具验证；联合读改预算与工程预览仍待完成。
 
 代码基线：WhyBuddy `c9283935fed3da04c3671572ab546c469eda4d65`；grok-build `SOURCE_REV=c4ea71cfdbcdb21e32e41bc25a0043d7d4836714`。本方案依据当前函数体、调用点、存储与测试约束制定。后续执行前须重新确认入口，行号可能随提交变化。
 
@@ -550,3 +550,61 @@ pnpm run smoke:project-lifecycle -- --source-db artifacts/project-runtime/<该�
 3. 接独立浏览器 worker、固定源码版本的证据与交付闸，继续真实业务应用、持久数据和重建验收。
 
 本批推进的是运行与恢复基础，不代表右侧工程预览、浏览器验收或完整业务生成已经完成。P1/P2/P3 继续按实际能力标记部分完成。
+
+## 20. 2026-09-12 真实 PostgreSQL 竞争、进程崩溃与模型网关验证
+
+本批起点为 `df8bd977`。第 19 节尚未验证的 PostgreSQL 竞争现在有真实数据库证据；控制恢复也从替换服务对象推进到杀掉实际进程。真实模型试跑暴露了工具 schema 兼容和连续操作预算两个问题，分别记录修复与未完成范围。
+
+### 20.1 数据库等锁期间的执行权
+
+临时启动本机 PostgreSQL 16.9，以独立测试库和每次唯一 schema 运行实际 `SqlSessionBlobStore / ControlRunStore`；第二条路径启动仓库 `deploy/postgres-https-api/app.py`，经过真实 TCP/HTTP 网关执行同一条生产 SQL。使用 `pg_stat_activity / pg_blocking_pids` 确认不同连接实际在等锁。
+
+真实竞争发现两处此前 SQLite 和 SQL 形状测试无法证明的问题：
+
+| 触发条件 | 修复后的行为 |
+|---|---|
+| 保存先通过租约过滤，再等待控制行锁；锁释放前租约过期，但行未修改 | 锁定 CTE 返回租约期限；拿到锁后用数据库当前时间重新检查，过期保存返回冲突。 |
+| 保存已经持有控制行锁，又等待会话正文行锁；等待时租约过期 | PostgreSQL UPDATE 增加依赖控制锁的会话锁定 CTE，取得两把行锁后再检查期限；保留会话 rev 和 owner 条件。 |
+
+`pnpm run smoke:control-postgres --database-url-env WHYBUDDY_PG_SMOKE_URL` 的 **24 项通过**，报告为 `artifacts/control-postgres-smoke-bb10314b5988459d/report.json`。覆盖双传输、INSERT/UPDATE、相同内容、取消、接管先发生/保存先发生、两个 claimant 只能一个获租，以及记录重开后的检查点和事件序号。命令必须显式指定专用测试连接环境变量，不默认读取业务数据库地址。
+
+修复前的失败证据保留在 `artifacts/control-postgres-smoke-b80ddf1b6d834eac/report.json` 和 `artifacts/control-postgres-smoke-6cf5f5d95f21436c/report.json`。移除最终期限检查、绕过会话预锁两项内存变异，在两条传输路径分别被捕获，**4/4**；报告 `artifacts/control-postgres-mutations-report.json`。相关会话、控制、工程创建和批准存储回归 **184 passed、1 skipped**，跳过项为文件存储不适用的 SQL 场景，报告 `artifacts/control-postgres-regression.xml`。
+
+所有测试 schema 均已删除并查询确认；临时 PostgreSQL 已停止，55439 无监听。这组测试不代表生产 TLS、PgBouncer、网络故障或生产部署已经验收。
+
+### 20.2 真正杀掉控制生产者再恢复
+
+新增 `pnpm run smoke:control-restart`。每个场景共用一份独立 SQLite，包含身份、会话、控制与项目表；通过实际 HTTP 入口启动原有控制循环，在明确的落库边界强杀 Uvicorn 进程，再启动另一个进程从同库接管。模型回复和登录身份是测试夹具，工具分派、项目创建、检查点与事件存储为实际代码。
+
+- 工具副作用和回执已经保存：新进程收到原 assistant/toolCallId 和工具结果，继续原回合；项目创建只派发一次，源码与 revision 不重复。
+- 工具已经提交但回执没有保存：保留项目并进入 interrupted，不盲目重跑。
+- 模型正在采样时进程死亡：进入 interrupted，不把未知请求的消耗清零后重新采样。
+- 三种情况均检查 generation 递增、原事件前缀保留、SSE 序号连续，以及重复 POST 只接回原 run。
+
+最终 **21/21 通过**，报告 `artifacts/control-restart-smoke/1789222495-d6792c5c/report.json`，6 个子进程全部退出、端口全部关闭。禁用回执恢复、放行不确定采样的两项内存变异均使对应场景失败。Windows 子进程还检查实际配置精确指向隔离 SQLite，使用空白环境变量占位防止回读根目录的数据库配置；启动描述的短暂文件访问竞争在已有 deadline 内重试。
+
+### 20.3 真实模型的工具定义与连续操作限制
+
+新增 `pnpm run smoke:project-model`，经过实际 `control-turn-stream` HTTP 路由和持久控制服务，调用当前配置的真实模型。夹具仅提供隔离账号、已批准计划与固定起始工程；模型使用完整生产工具清单和自动选工具，未设置 forcedTool，也未提高轮数、时间或 token 上限。HTTP 使用 ASGI transport，不能将它当成另一项 TCP 断线验收。
+
+第一次真实调用在选工具前返回 HTTP 400：当前 Gemini 网关拒绝 `project_patch.changes.items` 中 Pydantic 生成的 `$ref`。修复放在控制客户端的请求序列化边界：生成独立传输副本，展开本地 schema 引用；保留原 Pydantic schema 和服务端参数校验。未知、外部、递归引用明确拒绝，不能删除校验约束来换取网关接受。对照 grok 的 `xai-tool-types` 保留规范 schema 的做法；网关适配属于 WhyBuddy 的实现，不宣称逐字移植。
+
+格式修复后，模型确实开始选择 `project_status → project_read → project_patch`；联合读改场景在第三次调用累计达到 **10,505 tokens**，触发既有 **8,000 token** 闸，补丁未执行。失败报告 `artifacts/project-model/1789222029-cf846d36/report.json` 保留。原联合读改场景继续作为默认 `--scenario combined-edit`，不以更细的用户指令替换这条验收。
+
+另设 `--scenario guided-tools` 检查由用户逐步要求读取、修改、执行和查看结果的真实工具链，引用前一步实际读取的文件与 hash。这类验证只证明分步操作与结果回填，不代表模型可以在一次批准后自主完成整个工程任务；未验收场景不能由脚本通过数代替。
+
+分步场景已实际通过：`pnpm run smoke:project-model --scenario guided-tools`，报告 `artifacts/project-model/1789222364-46df4f85/report.json`。5 个明确用户步骤、10 次真实模型调用；模型读取源码、精确修改标题并产生不可变新版本，在真实 E2B 执行 `npm run check`，退出码为 0，再通过工具读取状态与 `tsc --noEmit` 日志。每份结果与持久 assistant/toolCallId 匹配，并验证已传回后续成功的真实模型请求。1 个沙盒已清理，provider 查询确认无遗留。
+
+独立复审还修正了引用展开器的约束合并：`additionalProperties:false` 与同层 `properties` 即使没有同名键，也不能摊平成同一对象；校验字段保留 `allOf`，仅注释字段允许合并。当前项目参数的传输结构不受这条补强影响。
+
+相关 schema、客户端兼容、真实 HTTP 取消、工程控制工具和烟测证据测试 **57 passed**。移除请求边界展开、恢复错误约束合并两项变异均捕获（`artifacts/control-schema-mutations.py`）；工具结果关联、源码变化、模型收到回执及真实命令终态的四项证据判据变异也全部捕获（`artifacts/project-model-mutations.py`）。
+
+本批运行了工程生成合同检查、脚本测试 **56/56**，重新生成并检查 Python/TS/grok 架构；生成图无内容差异，没有增加依赖或循环基线。前端实现未改，本批没有重跑全量 TypeScript 检查或前端测试。
+
+### 20.4 接下来
+
+1. 根据真实模型的输入、输出及工具调用轨迹，优化上下文和不必要的往返，并重新标定工程任务的预算需求；联合读改和失败修复必须保留正反验收，不能直接提高旧常数或忽略真实 usage。
+2. 完成隔离来源的 HTTP/WebSocket 私有预览、票据、撤销、归属和 HMR，再将同一工程描述接到 Studio 与 AppsWorkbench。
+3. 接独立浏览器 worker、固定源码版本证据闸和真实业务应用验收。
+
+本批仍未开放生产工程能力。后台存储与恢复得到更强的实测证据；右侧工程预览、浏览器业务验收和生成应用数据库仍未接通，P1/P2/P3 按能力继续记录部分完成。
