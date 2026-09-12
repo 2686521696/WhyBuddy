@@ -88,6 +88,10 @@ const SKIP_DIRS = new Set([
   ".git", "coverage", "data", "static", "tmp", "public", "assets",
 ]);
 
+// Local smoke outputs and downloaded database tools are not product packages.
+// Keep this root-only: a real client/server directory named artifacts is code.
+const OUTPUT_ROOTS = new Set(["artifacts"]);
+
 /** 测试文件不算数（对应 Python 侧 skip `tests/`）。 */
 function isTestFile(rel) {
   return /\.(test|spec)\.[cm]?[jt]sx?$/.test(rel) || /(^|\/)__tests__\//.test(rel);
@@ -108,7 +112,9 @@ export function sources(root = REPO, packages = null) {
   const pkgs = packages ?? discoverPackages(root);
   /** @type {string[]} */
   const out = [];
-  for (const pkg of pkgs) walk(join(root, pkg));
+  for (const pkg of pkgs) {
+    if (!OUTPUT_ROOTS.has(pkg)) walk(join(root, pkg));
+  }
   function walk(dir) {
     let entries;
     try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
@@ -130,7 +136,7 @@ export function sources(root = REPO, packages = null) {
 export function discoverPackages(root = REPO) {
   const out = [];
   for (const name of readdirSync(root, { withFileTypes: true })) {
-    if (!name.isDirectory() || SKIP_DIRS.has(name.name) || name.name.startsWith(".")) continue;
+    if (!name.isDirectory() || SKIP_DIRS.has(name.name) || OUTPUT_ROOTS.has(name.name) || name.name.startsWith(".")) continue;
     // 一个目录算「包」的条件：里面（含子目录）有非测试的 ts/tsx 源码
     if (hasSource(join(root, name.name), 0)) out.push(name.name);
   }

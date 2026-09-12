@@ -335,6 +335,22 @@ describe("图与代码同步", () => {
 });
 
 describe("扫描器自己没瞎", () => {
+  test("root smoke artifacts cannot become packages, while product artifact modules remain scanned", () => {
+    const root = fixture({
+      "artifacts/preview-smoke/main.ts": "export const smoke = true;\n",
+      "artifacts/postgres-tools/template.js": "const servers = {{ server_types }};\n",
+      "client/src/artifacts/ledger.ts": "export const ledger = 1;\n",
+      "client/src/main.ts": "import { ledger } from './artifacts/ledger'; export const app = ledger;\n",
+    });
+    try {
+      assert.deepEqual(A.discoverPackages(root), ["client"]);
+      const g = A.buildGraph(root);
+      assert.ok(g.modules.has("client/src/artifacts/ledger"));
+      assert.equal(g.edges.length, 1);
+      assert.ok(A.sources(root, ["artifacts", "client"]).every(path => !path.startsWith("artifacts/")));
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
   test("包名单是从磁盘派生的，不是手写的", () => {
     // Python 侧的教训：手写名单漏了 stdio_utf8，而名单同时是「哪些 import 算内部边」
     // 的筛子——漏掉的包结构上不可能有入边，在零入度名单里显示成"没人用"。
