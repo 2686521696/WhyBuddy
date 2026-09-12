@@ -13,21 +13,18 @@ const python = join(
 if (!existsSync(python))
   throw new Error("Project smoke requires slide-rule-python/.venv");
 const args = process.argv.slice(2);
-const mode = ["--lifecycle", "--process", "--tools", "--control"].includes(
-  args[0]
-)
-  ? args.shift()
-  : null;
-const script =
-  mode === "--lifecycle"
-    ? "project-lifecycle-smoke.py"
-    : mode === "--process"
-      ? "project-process-smoke.py"
-      : mode === "--tools"
-        ? "project-tools-smoke.py"
-        : mode === "--control"
-          ? "control-run-smoke.py"
-          : "project-runtime-smoke.py";
+const scripts = new Map([
+  ["--lifecycle", "project-lifecycle-smoke.py"],
+  ["--process", "project-process-smoke.py"],
+  ["--tools", "project-tools-smoke.py"],
+  ["--control", "control-run-smoke.py"],
+  ["--control-restart", "control-restart-smoke.py"],
+  ["--postgres", "control-postgres-smoke.py"],
+  ["--model", "project-model-smoke.py"],
+]);
+const script = scripts.has(args[0])
+  ? scripts.get(args.shift())
+  : "project-runtime-smoke.py";
 const result = spawnSync(python, [join(root, "scripts", script), ...args], {
   cwd: root,
   stdio: "inherit",
