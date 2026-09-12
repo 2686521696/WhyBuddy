@@ -963,3 +963,11 @@ rollout 关闭时，资源所有者仍可读取工程、历史、验证、交付
 本轮复审又修正了两个真实问题：rollout 关闭且 cleanup worker 开启时，后台不再领取新的 queued 控制回合，只保留已有运行的观察、对账和显式停止；禁用模式启动时也不再强制打开 runtime store。对应提交为 `c222b5a6`、`01410541`，控制与生命周期回归共 95 项通过。匿名预览烟测改为只清理任务应用 Cookie，保留工作台和预览授权；本地浏览器验证 17 项通过。
 
 最后一次有界云端恢复烟测在 `trusted_service_setup` 的依赖安装阶段超时，报告为失败并停止继续重试；不能据此宣称云端销毁后重建、业务数据恢复和清理库存完整通过。当前可确认的是固定任务模板的登录、CRUD、刷新、reader/anonymous 拒绝、源码 CAS 修改、构建、浏览器验证、预览隔离与本地清理链路；真实模型仍因上游 `content_filter` 只完成源码修改，生产 rollout 仍为 `disabled`。
+
+### 26.2 2026-09-13 本地 1920×1080 工作台实测
+
+使用真实账号在 `http://localhost:3000/agent-loop/sliderule` 以 Chrome `1920×1080` 视口打开并登录。登录前后的截图和浏览器报告保存在 `artifacts/local-1920-audit/`：`01-home.png`、`03-login-form.png`、`04-authenticated-workbench.png`、`05-new-session.png` 以及 `authenticated-browser-report.json`、`new-session-report.json`。登录成功后历史会话、左侧会话流、右侧架构沙盘、Checks 状态和计划卡均能恢复；页面没有 pageerror、console error 或失败请求。
+
+首次实测发现：匿名新会话和空会话仍会提前查询不存在的持久会话/生成应用，浏览器控制台出现 401/404 噪音。现已修复为：未登录不探测登录门控的 control/run 接口；空会话在舞台隐藏时不查询 `generated-app`；只有已认证且舞台可见时才解析生成应用。定向前端回归 **90 项通过**，新建会话再次实测错误日志为 **0**。`/generated-app` 的 404 不再出现；登录前截图仍显示正确的登录入口，登录后截图显示真实历史和沙盘。
+
+本地默认 rollout 仍为 `disabled`，因此新工程创建、启动和预览在本机按设计保持 blocked；当前截图验证的是旧 HTML 会话兼容、架构沙盘、登录恢复和日志真实性，不把它误判成 E2B 工程验收。另一个工具 `app-wall-holes.mjs` 在本机缺少固定 `/opt/pw-browsers` 可执行文件而无法运行；本次改用仓库已验证的 Chrome channel 完成同等截图与日志采集，没有修改该工具的部署路径假设。
