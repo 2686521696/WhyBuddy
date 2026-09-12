@@ -1,6 +1,6 @@
 # WhyBuddy 工程运行与浏览器验证整体重构方案
 
-日期：2026-09-11，更新：2026-09-12。状态：实施中，P1/P2/P3 的部分能力已实现；各阶段完成条件仍按真实验收判断。最新执行记录见第 21 节：工程独立预算与真实联合读改已通过，模型终止原因和失败消耗已接入持久回执；E2B 私有 HTTP/WS 实测发现流量凭据会传入应用，工作台工程预览仍待完成。
+日期：2026-09-11，更新：2026-09-13。状态：实施中，P1/P2/P3 的部分能力已实现；各阶段完成条件仍按真实验收判断。最新执行记录见第 22 节：私有出站隧道、持久预览授权和共同工作台预览组件已接入；真实双 E2B、Chrome 点击/刷新、Vite HMR 与跨站 iframe 已通过限定范围验收。活跃源码版本同步、生产预览部署与独立浏览器证据闸仍待实施。
 
 代码基线：WhyBuddy `c9283935fed3da04c3671572ab546c469eda4d65`；grok-build `SOURCE_REV=c4ea71cfdbcdb21e32e41bc25a0043d7d4836714`。本方案依据当前函数体、调用点、存储与测试约束制定。后续执行前须重新确认入口，行号可能随提交变化。
 
@@ -688,3 +688,64 @@ Python / TS / grok 自动架构生成与检查通过，新增预算叶子及实�
 3. 继续保留单轮真实模型验收；再接独立浏览器 worker、固定 revision 的行为证据与首个真实业务应用。模型空回复、过滤或缺验证能力时如实停止。
 
 本批没有开放生产、部署新预览服务或改变旧应用的产物类型。P1/P2/P3 继续按能力标记部分完成；P2 的安全预览、P4 的浏览器验证与 P5 的业务持久化仍需各自的真实验收。
+
+## 22. 2026-09-13 私有反向预览与工作台接入
+
+本批起点为 `6fca79a8`。优先采用 [参考源码索引](<WhyBuddy 工程重构参考源码索引.md>) 中 frp、chisel、OpenSandbox 的具体连接和鉴权合同，并直接使用仓库已有的 `ws` 依赖。配置、入口与源码许可说明见 [私有工程预览运行说明](<WhyBuddy 私有工程预览运行说明.md>)。
+
+功能提交：`2efc627a` 修复运行产物误入源码扫描；`6211daad` 完成私有预览的 Python 权威、隧道/网关、双工作台入口、真机烟测与架构同步。完整链路作为同一预览功能提交，避免一半协议或只有 UI 的中间状态被当成可用功能。
+
+### 22.1 已完成的链路
+
+应用继续运行在关闭公开访问的 E2B 沙盒，主动通过 WSS 连到独立可信网关。浏览器以自己的短时授权访问网关，网关只把已授权流量送入当前 runtime/generation 的隧道。E2B 管理和流量凭据不参与这条应用流量通路；沙盒仅持有本 runtime 的低权限 tunnel token，不能用它兑换用户权限。
+
+| 功能 | 真实接入与结果 |
+|---|---|
+| 持久授权 | `project_preview_access` 使用独立 SQL 表保存凭据 hash。一次性票据用单条 CAS SQL 兑换；逐次校验资源归属、会话批准、源码版本、完整租约载荷、generation、期限和撤销。浏览器与隧道角色分开。 |
+| 网关 | `server/project-preview` 是独立进程与来源，提供 HTTP/SSE/WS。原始字节通过仅本机可达的 Unix socket/Windows named pipe 接入 Node HTTP，避免额外开放可绕过鉴权的 TCP 端口。旧 ControlID 不得登记或删除新连接。 |
+| 凭据与长连接 | 票据兑换后 303 到干净 URL；HttpOnly/Secure/SameSite=None/Partitioned Cookie 由网关持有。HTTP 与 WS 都过滤内部头、网关授权和宿主 Cookie。已有流周期复查，撤销或 authority 不可用时关闭。 |
+| 真实运行所有者 | `ProjectRuntimeSupervisor` 的 `runtime.start` 在版本健康检查后安装 agent、登记 PID；轮换先停止旧 PID，取消/停机交给原 worker 收尾。未知派发或 PID 丢失进入 blocked，不盲目重发。读取预览不创建沙盒、不执行命令、不续租。 |
+| Vite 域名 | 真实 worker 的启动命令只允许由服务端配置推导的本 runtime 专属 hostname；非法来源在任何远端创建/执行前拒绝。保留 Host、资源路径与 WebSocket，未开启通配 allowedHosts。 |
+| 共同预览组件 | Studio 和 AppsWorkbench 的当前工程会话都使用 `SandboxPreviewSurface`。按 project/runtime/revision 拒绝迟到响应，显式打开/刷新才出票，不持久化票据。历史 HTML 走原模式；工程失败不回落到 HTML。 |
+| 期限合同 | API 分开 `ticketExpiresAt` 与 `accessExpiresAt`：默认 60 秒内兑换，浏览器访问默认最多至出票后 300 秒，受 runtime 期限封顶。兑换不延长期限，UI 不在第 60 秒误关正在使用的预览。 |
+
+复用范围具体为：frp 的控制连接替换与条件删除，chisel 的出站连接、退避和双向半关闭，OpenSandbox 的先授权后转发与内部头剥离。三者按合同改写到 TS；没有导入第二套服务端 Agent。`ws` 直接打包复用，构建产物旁保留原 MIT LICENSE。SQL 权限、E2B 进程管理与 React 产品接入属于 WhyBuddy 实现。
+
+### 22.2 真机发现与修复
+
+本轮复审补掉了多个只靠函数单测不易看见的问题：Python 浮点秒经 TS 毫秒转换后回传发生精度漂移；HTTP 200 但 `ok:false` 被错误接受；误带网关管理 Authorization 时可能转入应用；取消异常被预览失败捕获；runtime 最后 15 秒重复轮换；票据与浏览器期限混淆；烟测允许预览 Host，但产品 Vite 启动命令未注入。每项均在实际入口增加正反断言，相关变异确认会失败。
+
+第一次云烟测的样式变化已发生，但判据只接受 Vite `css-update`，导致失败。读取实际协议后确认：本模板从 TS import CSS，收到的是 `/src/style.css` 的 `js-update`。修正判据仍要求真实 WS 更新、样式改变、同一 document marker 和计数器状态保留，未将完整 reload 算成 HMR。失败报告保留：`artifacts/project-preview-tunnel-smoke/1789233302-47b0ff8a/report.json`。
+
+### 22.3 本批证据
+
+最终真机命令为 `pnpm run smoke:project-preview-tunnel`，完整报告在 `artifacts/project-preview-tunnel-smoke/1789234088-b83cf194/report.json`：
+
+- **22 项云传输/清理检查通过**：两个不同沙盒；直接匿名 E2B 入口 403；匿名网关 HTTP/WS 拒绝；票据只兑换一次；真实 HTTP、WS 首帧与双向消息；应用读不到管理、流量和网关凭据；撤销关闭既有 WS；旧 generation 的浏览器授权被拒；锁文件安装成功。
+- **21 项 Chrome 检查通过**：React 点击、刷新、Vite HMR 保留状态；真实 `SandboxPreviewSurface` 的打开与刷新按钮；跨站 iframe；宿主 DOM/存储访问被浏览器拒绝；实际 CHIPS Cookie 隔离；同 context 切换顶层站点不能复用预览权限。截图为同目录 `actual-sandbox-preview-surface.png`。
+- 两个沙盒均销毁，并通过 provider 清单查询确认无遗留；Chrome 关闭，含票据的临时配置和响应文件删除。报告不保存秘密、原始帧或票据 URL。
+
+上述浏览器挂载的是产品共同组件；云 authority 和工作台两条 API 使用明确测试夹具。它没有启动完整 Studio/AppsWorkbench 宿主，也没有在公开网络调用真实 Python authority。Python 的持久授权由实际 SQL、会话批准及 FastAPI 路由测试另行覆盖，两个层次不混写成一次完整生产端到端验收。
+
+| 本地验证 | 实际结果 |
+|---|---|
+| Python 预览、worker、provider、路由、生命周期最终联合回归 | **287 passed、2 skipped**；`artifacts/project-preview-final-python.xml`。跳过项为 Windows 不支持的 Linux helper 实际执行场景。 |
+| Node 真实本机 HTTP/WS 回归 | **23 passed**；`pnpm run test:project-preview`。覆盖大请求、SSE、半关闭、首帧、单次消费、角色混淆、替换、撤销与 authority 失效。 |
+| 前端最终共同组件与双入口测试 | **31 passed**。先前扩大回归 162 passed、1 排除；恢复正文的一条旧断言已在相同 HEAD 源码复现失败。 |
+| TypeScript 全仓检查 | **18 条存量错误，0 新错误**；与本轮恢复 HEAD 得到的错误集合逐项比较，忽略改动导致的行号偏移。`artifacts/project-preview-final-tsc.json`，不能写成全仓 tsc 通过。 |
+| 格式检查 | 本批修改的 `package.json` 和 `ci.yml` 通过；全仓 `pnpm run lint` 在 8 个未修改文件上报格式问题，已检查这些文件与 HEAD 无内容差异，本批未改动它们。 |
+| 工程 JSON Schema/TS 合同、脚本测试 | 合同同步；**57/57** 脚本测试通过。 |
+| 架构与真实渲染 | Python/TS/全仓/grok 生成和检查通过；两侧架构测试 75/34 条通过，三份权威图共 6 块 Mermaid 经 Chrome 真渲染。没有扩大违规、循环或孤儿基线，TS 孤儿基线减少 1 条。 |
+
+定向变异覆盖传输、包装服务、SQL 授权、worker 接入、UI 消费、期限、Vite Host 和扫描器，结果分组汇总到 `artifacts/project-preview-all-mutations.json`。源码恢复后运行了上述最终回归。新增本地构建、测试和真机命令，并将无云依赖的预览构建/回归接入 CI；云烟测没有放入无凭据 CI。
+
+架构生成额外发现根 `artifacts` 中下载的数据库工具 JS 模板被误认作产品源码。本批只排除这个运行产物根目录，`client/src/artifacts` 等真实产品目录仍被扫描。新的 TS fixture 使 `scripts` 中 64 个实际源码模块与 19 条依赖进入自动图，CLI 入口按具体路径声明，未放宽产品层边界。
+
+### 22.4 后续顺序与阶段口径
+
+1. **持租约 worker 的活跃源码同步。** 模型 patch 形成新 revision 后，由当前写入者完成同步、版本健康确认和预览切换；冲突、取消、旧证据失效与恢复要一起验收。本轮云 HMR 直接改测试源码，只证明传输和浏览器能热更新，尚不是模型改工程到预览的一致版本闭环。
+2. **完整产品链与隔离入口部署验收。** 将真实 Python SQL authority、固定域名/TLS、运行 worker、Studio 和 AppsWorkbench 组合跑通；测试网关重启、运行重建、票据撤销及生产条件。当前仍只对内部管理员和非生产环境开放，未部署生产网关。
+3. **P4 独立浏览器 worker 与固定版本证据闸。** 优先从 Playwright/Playwright MCP 的实际执行与断言入口迁移，保留浏览器缺失为 blocked、断言失败为 failed、源码变化使证据 stale。
+4. **P5 首个真实业务样本。** 任务管理应用的 API、数据持久化、应用角色、错误修复与重建；再推进历史版本导出/恢复/复刻及 P6 编辑与发布。
+
+本批推进了 P2 的安全传输与共同预览入口，并完善 P1 的授权边界；P1/P2/P3 仍按能力记录部分完成。P4 的浏览器验收服务和 P5 的业务持久化尚未完成，不将 Chrome 烟测、截图或源码行数换算成整个重构的完成百分比。

@@ -4,7 +4,21 @@
 
 本轮从 GitHub 拉取 **28 个参考仓库**，覆盖沙盒、私有预览传输、浏览器操作与断言、Agent 工具执行、工程工作台。源码统一放在 [whybuddy-runtime-references](../../whybuddy-runtime-references)，与 WhyBuddy、grok-build 并列；已经加入 [2686WhyBuddy.code-workspace](../2686WhyBuddy.code-workspace)。打开这个 workspace 即可在资源管理器看到「工程重构参考源码」。
 
-每个仓库都固定了本轮实际读取的 commit，核验 Git 工作树和实际许可证，并标出具体函数所在文件。完整快照见 [reference-sources.lock.json](reference-sources.lock.json)。这是一份源码阅读与移植地图：本轮没有安装这些项目的依赖、运行其服务或将能力接入 WhyBuddy；工程阶段的完成状态仍以原方案中的真实验收为准。
+每个仓库都固定了收录时实际读取的 commit，核验 Git 工作树和实际许可证，并标出具体函数所在文件。完整快照见 [reference-sources.lock.json](reference-sources.lock.json)。源码收录本身不代表集成；后续已经采用的能力单列如下，工程阶段的完成状态仍以原方案中的真实验收为准。
+
+## 2026-09-13 已接入的第一批能力
+
+本批先完成私有工程预览：应用沙盒主动连到独立网关，用户在共同 React 预览组件打开真实 Vite 页面。具体配置、入口与许可说明见 [私有工程预览运行说明](<WhyBuddy 私有工程预览运行说明.md>)。
+
+| 参考来源 | 已落地位置 | 核实后的复用口径 |
+|---|---|---|
+| frp `server/control.go` | `server/project-preview/relay.ts` | 改写 ControlID、旧连接替换和工作连接一次消费；同时检查 WhyBuddy 持久 generation |
+| chisel `client/client_connect.go`、`share/cio/pipe.go` | `agent-main.ts`、`tunnel-agent.ts`、`tunnel-stream.ts` | 改写主动连接、有限退避、独立双向 FIN、出错收尾；没有引入 SSH 执行层 |
+| OpenSandbox `components/ingress/pkg/proxy/proxy.go` | `relay.ts`、`service.ts` | 改写先授权再转发和内部凭据剥离；HTTP 与 WS 都有正反判据 |
+| `ws` npm 包 | 独立网关与沙盒 agent 的构建产物 | 直接使用仓库现有依赖；构建同步拷贝原 MIT LICENSE |
+| grok-build 的资源/执行所有权 | Python `project_preview_runtime` 与现有 runtime worker | 延续已有主循环与持租约执行，恢复历史或刷新预览不重派副作用 |
+
+本轮已经运行实际双 E2B、Chrome、Vite HMR 和真实 `SandboxPreviewSurface` 跨站 iframe；报告 `artifacts/project-preview-tunnel-smoke/1789234088-b83cf194/report.json`。浏览器共 21 项检查通过，另有 22 项云传输/清理检查通过。云端 authority 与工作台两条 API 使用明确的测试夹具，Python 持久授权由另一组实际 SQL/HTTP 测试覆盖。独立浏览器验收服务、固定版本证据闸和活跃版本同步仍是下一步，不能把本次预览烟测算成完整应用验收。
 
 ## 先从哪些源码开始抄
 
