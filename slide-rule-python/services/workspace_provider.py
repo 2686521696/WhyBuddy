@@ -5,7 +5,7 @@ leases. Keeping this protocol free of HTTP routes makes it usable by workers
 and by deterministic contract tests.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 
@@ -39,6 +39,34 @@ class WorkspaceHandle:
     sandbox_id: str
 
 
+@dataclass(frozen=True, slots=True)
+class PrivatePreviewTarget:
+    """Server-only ingress capability, never a wire/event/session payload.
+
+    The runtime authority supplies its registered port. The provider verifies
+    the sandbox identity and network configuration, not the caller's ownership.
+    Target resolution never implicitly reconnects, resumes, or extends lifetime;
+    a runtime owner must explicitly establish the provider connection beforehand.
+    Deliberately separate from models.project_runtime and generated schemas.
+    Do not serialize this object with dataclasses.asdict or log headers().
+
+    2026-09-12 real HTTP and WS probes confirmed that E2B forwards this traffic
+    token into the upstream application's request headers. Until a separately
+    proven ingress boundary exists, only controlled transport probes may use
+    this capability; it must not be wired directly to generated application UI.
+    """
+
+    workspace_id: str
+    sandbox_id: str
+    port: int
+    origin: str
+    expires_at: float
+    access_token: str = field(repr=False)
+
+    def headers(self) -> dict[str, str]:
+        return {"E2B-Traffic-Access-Token": self.access_token}
+
+
 class WorkspaceProvider(Protocol):
     def create(self, *, workspace_id: str, template: str | None = None, timeout_seconds: int = 900) -> WorkspaceHandle: ...
     def find_workspaces(self, *, workspace_id: str) -> list[WorkspaceHandle]: ...
@@ -52,5 +80,6 @@ class WorkspaceProvider(Protocol):
     def probe(self, handle: WorkspaceHandle, port: int, *, expected_revision: str) -> bool: ...
     def renew(self, handle: WorkspaceHandle, *, timeout_seconds: int = 900) -> None: ...
     def preview_url(self, handle: WorkspaceHandle, port: int) -> str: ...
+    def private_preview_target(self, handle: WorkspaceHandle, port: int) -> PrivatePreviewTarget: ...
     def stop(self, handle: WorkspaceHandle, process_id: str) -> None: ...
     def destroy(self, handle: WorkspaceHandle) -> None: ...

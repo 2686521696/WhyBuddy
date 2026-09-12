@@ -21,6 +21,7 @@ const scripts = new Map([
   ["--control-restart", "control-restart-smoke.py"],
   ["--postgres", "control-postgres-smoke.py"],
   ["--model", "project-model-smoke.py"],
+  ["--private-ingress", "project-private-ingress-smoke.py"],
 ]);
 const script = scripts.has(args[0])
   ? scripts.get(args.shift())

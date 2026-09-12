@@ -38,6 +38,7 @@
     "smoke:control-restart": "node scripts/project-runtime-smoke.mjs --control-restart",
     "smoke:control-postgres": "node scripts/project-runtime-smoke.mjs --postgres",
     "smoke:project-model": "node scripts/project-runtime-smoke.mjs --model",
+    "smoke:project-private-ingress": "node scripts/project-runtime-smoke.mjs --private-ingress",
     "arch:ts": "node scripts/arch-graph-ts.mjs --report",
     "arch:ts:check": "node scripts/arch-graph-ts.mjs --check",
     "arch:ts:emit": "node scripts/arch-graph-ts.mjs --emit",

@@ -12,10 +12,12 @@ import json
 import os
 import re
 import shlex
+import time
+from datetime import datetime
 from typing import Any
 
 from services.project_manifest import build_manifest
-from services.workspace_provider import ProcessLogChunk, ProcessResult, WorkspaceHandle, WorkspaceProviderError
+from services.workspace_provider import PrivatePreviewTarget, ProcessLogChunk, ProcessResult, WorkspaceHandle, WorkspaceProviderError
 
 PROJECT_ROOT = "/home/user/workspace"
 MAX_OUTPUT_BYTES = 32 * 1024
@@ -381,6 +383,66 @@ class E2BWorkspaceProvider:
         if not re.fullmatch(r"[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?", host):
             raise WorkspaceProviderError("e2b_invalid_preview_host")
         return "https://" + host
+
+    def private_preview_target(self, handle: WorkspaceHandle, port: int) -> PrivatePreviewTarget:
+        """Resolve the runtime authority's registered port without publishing it.
+
+        secure=True protects envd, not the application. Require actual private
+        ingress metadata and its distinct traffic token, including on reconnect.
+        No SDK error text or token enters the exception/representation contract.
+        This does not strip the credential from upstream application requests;
+        the live ingress smoke deliberately fails that required security check.
+
+        Resolving access must not resume or extend billing. SDK connect() does
+        both, so the runtime owner must explicitly create/connect first; this
+        getter only inspects that existing client with read-only get_info().
+        """
+        if type(port) is not int or not 1024 <= port <= 65535:
+            raise ValueError("invalid_preview_port")
+        if (not isinstance(handle.workspace_id, str) or not handle.workspace_id.strip()
+                or not isinstance(handle.sandbox_id, str)
+                or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9-]{0,79}", handle.sandbox_id)):
+            raise ValueError("invalid_workspace_request")
+        try:
+            sandbox = self._sandboxes.get(handle.sandbox_id)
+            if sandbox is None:
+                raise WorkspaceProviderError("e2b_preview_connection_required")
+            info = sandbox.get_info(request_timeout=20)
+            metadata = getattr(info, "metadata", None)
+            if (getattr(sandbox, "sandbox_id", None) != handle.sandbox_id
+                    or getattr(info, "sandbox_id", None) != handle.sandbox_id
+                    or not isinstance(metadata, dict)
+                    or metadata.get("whybuddy_workspace_id") != handle.workspace_id):
+                raise WorkspaceProviderError("e2b_preview_identity_mismatch")
+            network = getattr(info, "network", None)
+            if not isinstance(network, dict) or network.get("allow_public_traffic") is not False:
+                raise WorkspaceProviderError("e2b_preview_private_ingress_required")
+            expiration = getattr(info, "end_at", None)
+            if (getattr(info, "state", None) != "running" or not isinstance(expiration, datetime)
+                    or expiration.tzinfo is None or expiration.utcoffset() is None
+                    or expiration.timestamp() <= time.time()):
+                raise WorkspaceProviderError("e2b_preview_sandbox_not_running")
+            token = getattr(sandbox, "traffic_access_token", None)
+            if not isinstance(token, str) or not re.fullmatch(r"[\x21-\x7e]{1,8192}", token):
+                raise WorkspaceProviderError("e2b_preview_traffic_token_unavailable")
+            domain = getattr(sandbox, "sandbox_domain", None)
+            label = r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?"
+            if (not isinstance(domain, str) or len(domain) > 253
+                    or not re.fullmatch(label + r"(?:\." + label + r")+", domain)
+                    or not any(c.isalpha() for c in domain)):
+                raise WorkspaceProviderError("e2b_invalid_preview_host")
+            expected_host = f"{port}-{handle.sandbox_id}.{domain}"
+            host = sandbox.get_host(port)
+            if host != expected_host:
+                raise WorkspaceProviderError("e2b_invalid_preview_host")
+            return PrivatePreviewTarget(handle.workspace_id, handle.sandbox_id, port,
+                "https://" + host, expiration.timestamp(), token)
+        except WorkspaceProviderError as exc:
+            # Metadata adapters can wrap SDK errors. Suppress nested causes so
+            # a later exception logger cannot include request credentials.
+            raise WorkspaceProviderError(str(exc)) from None
+        except Exception:
+            raise WorkspaceProviderError("e2b_private_preview_unavailable") from None
 
     def probe(self, handle: WorkspaceHandle, port: int, *, expected_revision: str) -> bool:
         if isinstance(port, bool) or not 1024 <= port <= 65535 or not expected_revision:
