@@ -13,11 +13,11 @@
 | agent-loop | 99 |
 | client | 1030 |
 | project-templates | 2 |
-| scripts | 64 |
+| scripts | 66 |
 | server | 587 |
 | services | 32 |
 | shared | 177 |
-| **合计** | **1991** |
+| **合计** | **1993** |
 
 边 5966 条，其中动态 import / require 317 条、
 类型 import 2238 条。
@@ -39,7 +39,7 @@ graph LR
   client-runtime["client-runtime<br/>16"]
   client-shell["client-shell<br/>36"]
   lobster-executor["lobster-executor<br/>32"]
-  ops-scripts["ops-scripts<br/>63"]
+  ops-scripts["ops-scripts<br/>65"]
   project-preview-fixtures["project-preview-fixtures<br/>1"]
   project-template-vite["project-template-vite<br/>2"]
   server-audit["server-audit<br/>26"]

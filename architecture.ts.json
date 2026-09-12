@@ -533,6 +533,8 @@
       "scripts/prod-smoke",
       "scripts/project-contracts",
       "scripts/project-preview-browser-smoke",
+      "scripts/project-product-browser-smoke",
+      "scripts/project-preview-csp",
       "scripts/project-runtime-smoke",
       "scripts/proxy-dead-proxy-test",
       "scripts/proxy-noproxy-probe",
@@ -547,7 +549,11 @@
       "scripts/task-autopilot-frontend-progress",
       "scripts/test-server",
       "scripts/ui-redesign-ia-progress"
-    ]
+    ],
+    "reasons": {
+      "scripts/project-product-browser-smoke": "Python scripts/project-product-smoke.py launches this real-browser CLI; the cross-language call is outside TypeScript imports.",
+      "scripts/project-preview-csp": "Root vite.config.ts imports this build configuration provider; root config files are outside scanned package directories. project-preview-csp.test.mjs exercises the actual Vite serve transform and production HTML build so removing that call fails."
+    }
   },
   "baseline": {
     "violations": [],

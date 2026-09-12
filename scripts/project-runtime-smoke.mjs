@@ -25,6 +25,7 @@ const scripts = new Map([
   ["--private-ingress", "project-private-ingress-smoke.py"],
   ["--preview-tunnel", "project-preview-tunnel-smoke.py"],
   ["--source-sync", "project-source-sync-smoke.py"],
+  ["--product", "project-product-smoke.py"],
 ]);
 const script = scripts.has(args[0])
   ? scripts.get(args.shift())
