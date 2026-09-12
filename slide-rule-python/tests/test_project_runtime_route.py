@@ -3,6 +3,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from project_actor_support import project_actor
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -20,7 +21,8 @@ from routes import project_runtime as route
 
 
 @pytest.fixture
-def setup(tmp_path, monkeypatch):
+def setup(tmp_path, monkeypatch, project_actor):
+    project_actor("u1")
     store = ProjectStore.from_url(f"sqlite:///{tmp_path / 'route.db'}")
     sessions = SqlSessionBlobStore(f"sqlite:///{tmp_path / 'sessions.db'}")
     monkeypatch.setattr(persistence, "_blob_store", lambda *_: sessions)

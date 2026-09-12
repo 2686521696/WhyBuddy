@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+from project_actor_support import project_actor
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -26,12 +27,13 @@ from services.project_creation import create_session_project
 from services.project_preview_access import PreviewAccessDenied, ProjectPreviewAccess
 from services.project_preview_config import origin_for_runtime, preview_configuration_enabled
 from services.project_runtime_worker import approved_reference, authorize_operation
-from services.project_store import ProjectConflict, ProjectNotFound, ProjectStore
+from services.project_store import ProjectConflict, ProjectNotFound, ProjectStore, ProjectStoreUnavailable
 from services.session_blob_store import SqlSessionBlobStore
 
 
 @pytest.fixture
-def world(tmp_path, monkeypatch):
+def world(tmp_path, monkeypatch, project_actor):
+    project_actor("u1")
     store_url = f"sqlite:///{tmp_path / 'project.db'}"
     store = ProjectStore.from_url(store_url)
     sessions = SqlSessionBlobStore(f"sqlite:///{tmp_path / 'sessions.db'}")
@@ -349,6 +351,105 @@ def test_process_binding_changed_during_authority_check_is_fenced(world, monkeyp
     assert not world.store._q("select id from wb_project_preview_access")
 
 
+@pytest.mark.parametrize("pulse", ["lease", "operation"])
+@pytest.mark.parametrize("action", ["ticket", "tunnel", "ready", "presence", "redeem", "browser", "binding"])
+def test_healthy_heartbeat_during_preview_check_reauthorizes_without_false_denial(world, monkeypatch, pulse, action):
+    tunnel, browser, ticket = _tunnel(world), _browser(world), _ticket(world)
+    real, calls = world.access.authorizer, []
+    def heartbeat(*args):
+        real(*args)
+        calls.append(True)
+        if len(calls) == 1:
+            if pulse == "lease":
+                world.store.renew_lease(world.project.projectId, owner_id="u1", lease_owner=world.lease.leaseOwner,
+                    generation=world.lease.generation, ttl_seconds=601)
+            else:
+                _runtime_change(world, lastHeartbeat="2026-09-13T00:00:01Z")
+    monkeypatch.setattr(world.access, "authorizer", heartbeat)
+    if action == "ticket": result = _ticket(world)
+    elif action == "tunnel": result = _tunnel(world)
+    elif action == "ready": result = world.access.ready_scope(world.operation.operationId, owner_id="u1", audience=world.audience)
+    elif action == "presence": result = world.access.has_active_tunnel(world.operation.operationId, owner_id="u1", audience=world.audience)
+    elif action == "redeem":
+        result = world.client.post("/internal/project-preview/redeem", headers=world.internal_headers,
+            json={"ticket": ticket.secret, "audience": world.audience})
+        assert result.status_code == 200
+        with pytest.raises(PreviewAccessDenied):
+            world.access.redeem_browser_ticket(ticket.secret, audience=world.audience)
+    else:
+        body = {"role": action, "audience": world.audience}
+        body.update({"token": browser.secret} if action == "browser" else {"binding": tunnel.scope.to_wire()})
+        result = world.client.post("/internal/project-preview/authorize", headers=world.internal_headers, json=body)
+        assert result.status_code == 200 and result.json()["ok"] is True
+    assert result and len(calls) == 2
+
+
+@pytest.mark.parametrize("change", ["cancel", "generation", "process", "mount", "runtime", "plan", "owner", "revoke"])
+def test_preview_retry_rechecks_revocation_and_complete_current_authority(world, monkeypatch, change):
+    if change == "mount":
+        _publish_runtime_patch(world)
+    browser, real = _browser(world), world.access.authorizer
+    calls = []
+    def changed(*args):
+        real(*args)
+        calls.append(True)
+        if len(calls) != 1:
+            return
+        world.store.renew_lease(world.project.projectId, owner_id="u1", lease_owner=world.lease.leaseOwner,
+            generation=world.lease.generation, ttl_seconds=601)
+        if change == "cancel": world.store.request_operation_cancel(world.operation.operationId, owner_id="u1")
+        elif change == "generation":
+            world.store.release_lease(world.project.projectId, owner_id="u1", lease_owner=world.lease.leaseOwner,
+                generation=world.lease.generation)
+            world.store.acquire_lease(world.project.projectId, owner_id="u1", lease_owner="new-worker")
+        elif change in {"process", "mount"}:
+            kwargs = {"process_refs": {"operationId": world.operation.operationId, "server": "different-process"}} if change == "process" else {"mounted_revision": world.operation.expectedRevision}
+            world.store.renew_lease(world.project.projectId, owner_id="u1", lease_owner=world.lease.leaseOwner,
+                generation=world.lease.generation, **kwargs)
+        elif change == "runtime": _runtime_change(world, status="syncing")
+        elif change in {"plan", "owner"}:
+            row = world.sessions.load("s1")
+            payload = row.payload
+            if change == "plan": payload["controlTranscript"].pop()
+            else: payload["ownerId"] = "mallory"
+            world.sessions.save("s1", payload, expected_rev=row.rev)
+        else: world.access.revoke_grant(browser.scope.grant_id, owner_id="u1")
+    monkeypatch.setattr(world.access, "authorizer", changed)
+    response = world.client.post("/internal/project-preview/authorize", headers=world.internal_headers,
+        json={"role": "browser", "token": browser.secret, "audience": world.audience})
+    assert response.status_code == (404 if change == "owner" else 403)
+    assert len(calls) == 1
+
+
+def test_continuously_changing_authority_has_a_finite_retry_budget_and_issues_no_ticket(world, monkeypatch):
+    real, calls = world.access.authorizer, []
+    def heartbeat(*args):
+        real(*args)
+        calls.append(True)
+        world.store.renew_lease(world.project.projectId, owner_id="u1", lease_owner=world.lease.leaseOwner,
+            generation=world.lease.generation, ttl_seconds=601 + len(calls))
+    monkeypatch.setattr(world.access, "authorizer", heartbeat)
+    with pytest.raises(PreviewAccessDenied, match="project_preview_changed"):
+        _ticket(world)
+    assert len(calls) == 3
+    assert not world.store._q("select id from wb_project_preview_access")
+
+
+def test_lost_ticket_insert_response_is_not_retried_as_a_heartbeat_race(world, monkeypatch):
+    real, inserts = world.store._q, []
+    def lost_response(sql, params=None):
+        result = real(sql, params)
+        if sql.startswith("insert into wb_project_preview_access"):
+            inserts.append(True)
+            raise ProjectStoreUnavailable("response_lost_after_commit")
+        return result
+    monkeypatch.setattr(world.store, "_q", lost_response)
+    with pytest.raises(ProjectStoreUnavailable):
+        _ticket(world)
+    assert inserts == [True]
+    assert len(real("select id from wb_project_preview_access")) == 1
+
+
 def test_http_owner_ticket_relay_redeem_and_revoke_end_to_end(world):
     tunnel = _tunnel(world)
     ticket_response = world.client.post(f"/project-operations/{world.operation.operationId}/preview-ticket")
@@ -562,3 +663,19 @@ def test_each_runtime_has_distinct_origin_and_local_development_is_explicit(worl
     monkeypatch.setenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE", "http://{runtimeId}.localhost:3010")
     assert origin_for_runtime("rt-one") == "http://rt-one.localhost:3010"
     assert preview_configuration_enabled() is True
+
+
+@pytest.mark.parametrize("protocol,port,suffix", [("https", 443, "preview.example.com"), ("http", 80, "localhost")])
+def test_default_port_template_matches_node_and_browser_canonical_origin(world, monkeypatch, protocol, port, suffix):
+    monkeypatch.setenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE", f"{protocol}://{{runtimeId}}.{suffix}:{port}")
+    audience = f"{protocol}://{world.runtime.runtimeId}.{suffix}"
+    assert origin_for_runtime(world.runtime.runtimeId) == audience
+    world.access.issue_tunnel_grant(world.operation.operationId, owner_id="u1", audience=audience)
+    response = world.client.post(f"/project-operations/{world.operation.operationId}/preview-ticket")
+    assert response.status_code == 200
+    entry = urlsplit(response.json()["entryUrl"])
+    assert entry.scheme + "://" + entry.netloc == audience
+    ticket = parse_qs(entry.query)["ticket"][0]
+    redeemed = world.client.post("/internal/project-preview/redeem", headers=world.internal_headers,
+        json={"ticket": ticket, "audience": audience})
+    assert redeemed.status_code == 200 and redeemed.json()["binding"]["audience"] == audience

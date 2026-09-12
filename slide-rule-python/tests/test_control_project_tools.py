@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
+from project_actor_support import project_actor
 
 from app import app
 from conftest import TEST_USER_ID
@@ -20,7 +21,8 @@ from services.slide_rule_session import load_session
 
 
 @pytest.fixture
-def setup(tmp_path, monkeypatch):
+def setup(tmp_path, monkeypatch, project_actor):
+    project_actor(TEST_USER_ID)
     monkeypatch.setenv("SLIDERULE_SESSIONS_FILE", str(tmp_path / "sessions.json"))
     from services.session_blob_store import SqlSessionBlobStore
     database_url = f"sqlite:///{tmp_path / 'state.db'}"

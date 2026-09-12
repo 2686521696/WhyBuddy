@@ -13,6 +13,7 @@ import json
 import time
 
 import pytest
+from project_actor_support import project_actor
 
 from conftest import TEST_USER_ID
 from control_turn_support import ControlHarness, llm_text, llm_tool, six_fields

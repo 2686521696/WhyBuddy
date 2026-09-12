@@ -8,6 +8,7 @@ import threading
 import time
 
 import pytest
+from project_actor_support import project_actor
 
 from services.project_runtime_worker import ProjectRuntimeSupervisor
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStore
@@ -80,7 +81,8 @@ def eventually(predicate, *, timeout=6):
 
 
 @pytest.fixture
-def setup(tmp_path):
+def setup(tmp_path, project_actor):
+    project_actor("alice")
     url = f"sqlite:///{tmp_path / 'runtime.db'}"
     store = ProjectStore.from_url(url)
     project = store.create_project("session-1", owner_id="alice",

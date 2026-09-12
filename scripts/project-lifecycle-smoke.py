@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import secrets
 import sqlite3
 import sys
 import time
@@ -17,10 +18,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "slide-rule-python"))
 
 from dotenv import dotenv_values
-from services.e2b_workspace_provider import E2BWorkspaceProvider
-from services.project_runtime_worker import ProjectRuntimeSupervisor
-from services.project_store import ProjectStore
-from services.workspace_provider import WorkspaceHandle
 
 
 def wait_for(store, operation_id, status, *, timeout=240):
@@ -44,6 +41,18 @@ def main():
     report = {"scope": "durable-fixed-project-runtime", "status": "running", "checks": [], "cleanup": []}
     api_key = os.environ.get("E2B_API_KEY") or dotenv_values(ROOT / ".env").get("E2B_API_KEY")
     store, project, provider, workers = None, None, None, []
+    url = f"sqlite:///{path.with_suffix('.db').as_posix()}"
+    # Current-account checks must resolve the fixed smoke owner in this
+    # disposable database. Session/plan authorization remains the declared
+    # lifecycle fixture; no real developer account or store is used.
+    os.environ.update({"NODE_ENV": "development", "APP_STORE_DATABASE_URL": url,
+        "APP_STORE_HTTP_API_URL": "", "APP_STORE_HTTP_API_KEY": "", "APP_STORE_NEON_HTTP": "0",
+        "SLIDERULE_IDENTITY_SQLITE": url, "SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED": "1"})
+    from services.e2b_workspace_provider import E2BWorkspaceProvider
+    from services.identity_store import get_identity_store
+    from services.project_runtime_worker import ProjectRuntimeSupervisor
+    from services.project_store import ProjectStore
+    from services.workspace_provider import WorkspaceHandle
 
     def passed(name):
         report["checks"].append(name)
@@ -65,6 +74,10 @@ def main():
         if not api_key:
             report["status"] = "blocked"
             raise RuntimeError("e2b_api_key_missing")
+        identity = get_identity_store()
+        actor = identity.create("project-lifecycle@internal.test", secrets.token_hex(32),
+            is_superuser=True, is_verified=True)
+        identity._x.execute("update sliderule_user set id=:p1 where id=:p2", ["smoke-owner", actor.id])
         provider = E2BWorkspaceProvider(api_key=api_key)
         # Read only a project created by the existing bounded fixed-template smoke.
         with sqlite3.connect(f"file:{args.source_db.resolve().as_posix()}?mode=ro", uri=True) as source:
@@ -76,7 +89,6 @@ def main():
             source_store.close()
         if json.loads(files["package.json"]).get("name") != "whybuddy-runtime-smoke":
             raise RuntimeError("fixed_smoke_source_required")
-        url = f"sqlite:///{path.with_suffix('.db').as_posix()}"
         store = ProjectStore.from_url(url)
         project = store.create_project("smoke-" + uuid.uuid4().hex, owner_id="smoke-owner",
             files=files, template_version="vite-smoke-1", plan_ref="internal-fixed-smoke")

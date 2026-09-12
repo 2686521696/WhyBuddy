@@ -20,6 +20,7 @@ import secrets
 import time
 import uuid
 from dataclasses import dataclass, field, replace
+from functools import wraps
 from typing import Callable
 
 from models.project_runtime import Project, ProjectOperation, WorkspaceLease
@@ -28,6 +29,25 @@ from services.project_store import ProjectStore
 
 class PreviewAccessDenied(PermissionError):
     """Bounded public error; never include supplied credentials or SQL values."""
+
+
+class _PreviewSnapshotChanged(Exception):
+    """A known zero-row CAS/read may race a healthy heartbeat or a revocation."""
+
+
+def _retry_snapshot(method):
+    @wraps(method)
+    def checked(*args, **kwargs):
+        # Re-run the WHOLE authority path. A lease renewal legitimately changes
+        # its payload, but removing that SQL fence would also hide process/mount
+        # replacement. Never retry provider IO, unknown SQL outcomes, or denial.
+        for _ in range(3):
+            try:
+                return method(*args, **kwargs)
+            except _PreviewSnapshotChanged:
+                continue
+        raise PreviewAccessDenied("project_preview_changed")
+    return checked
 
 
 @dataclass(frozen=True)
@@ -154,6 +174,7 @@ class ProjectPreviewAccess:
             f"and p.id={p(2)} and p.owner_id={p(3)} and p.current_revision={p(4)} "
             f"and l.generation={p(5)} and l.lease_owner={p(6)} and l.expires_at>{p(7)} and {p(8)}>{p(7)} and l.payload={p(9)})")
 
+    @_retry_snapshot
     def _issue(self, kind: str, operation_id: str, owner_id: str, audience: str,
                ttl_seconds: float) -> IssuedPreviewCredential:
         ttl_seconds = _ttl(ttl_seconds, 120 if kind == "browser-ticket" else 900)
@@ -171,7 +192,7 @@ class ProjectPreviewAccess:
             "insert into wb_project_preview_access(id,credential_hash,kind,owner_id,project_id,session_id,operation_id,runtime_id,revision,workspace_id,generation,lease_owner,port,audience,expires_at,grant_expires_at) select "
             + ",".join("$" + str(i) for i in range(1, 17)) + " where " + fence + " returning id", params)
         if not inserted:
-            raise PreviewAccessDenied("project_preview_changed")
+            raise _PreviewSnapshotChanged()
         return IssuedPreviewCredential(kind, replace(scope, grant_id=params[0], expires_at=expires), expires, secret,
             grant_expires if kind == "browser-ticket" else expires)
 
@@ -203,20 +224,23 @@ class ProjectPreviewAccess:
                 or saved["lease_owner"] != authority["lease_owner"]):
             raise PreviewAccessDenied("project_preview_binding_changed")
 
+    @_retry_snapshot
     def ready_scope(self, operation_id: str, *, owner_id: str, audience: str) -> PreviewAccessScope:
         scope, authority = self._authority(operation_id, owner_id, audience)
         params: list = []
         fence = self._fence(scope, authority, params)
         if not self.store._q("select 1 as ready where " + fence, params):
-            raise PreviewAccessDenied("project_preview_changed")
+            raise _PreviewSnapshotChanged()
         return replace(scope, expires_at=authority["runtime_expires_at"])
 
+    @_retry_snapshot
     def has_active_tunnel(self, operation_id: str, *, owner_id: str, audience: str) -> bool:
         """An issued tunnel is not proof that its socket is currently connected."""
         scope, authority = self._authority(operation_id, owner_id, audience)
         rows = self.store._q(
             "select * from wb_project_preview_access where operation_id=$1 and owner_id=$2 and audience=$3 and kind='tunnel' and revoked_at is null and expires_at>$4",
             [operation_id, owner_id, audience, self.clock()])
+        changed = False
         for saved in rows:
             try:
                 self._check_saved_scope(saved, scope, authority)
@@ -226,8 +250,12 @@ class ProjectPreviewAccess:
             fence = self._fence(scope, authority, params)
             if self.store._q("select id from wb_project_preview_access where id=$1 and kind='tunnel' and revoked_at is null and expires_at>$2 and " + fence, params):
                 return True
+            changed = True
+        if changed:
+            raise _PreviewSnapshotChanged()
         return False
 
+    @_retry_snapshot
     def redeem_browser_ticket(self, secret: str, *, audience: str) -> IssuedPreviewCredential:
         saved, scope, authority = self._lookup(secret, "browser-ticket", audience)
         grant_secret, now = secrets.token_urlsafe(32), self.clock()
@@ -240,9 +268,10 @@ class ProjectPreviewAccess:
             "update wb_project_preview_access set credential_hash=$1,kind='browser',expires_at=$2,consumed_at=$3 where id=$4 and credential_hash=$5 and kind='browser-ticket' and consumed_at is null and revoked_at is null and expires_at>$6 and "
             + fence + " returning id", params)
         if not changed:
-            raise PreviewAccessDenied("project_preview_credential_invalid")
+            raise _PreviewSnapshotChanged()
         return IssuedPreviewCredential("browser", replace(scope, expires_at=expires), expires, grant_secret, expires)
 
+    @_retry_snapshot
     def _authorize(self, secret: str, kind: str, audience: str) -> PreviewAccessScope:
         saved, scope, authority = self._lookup(secret, kind, audience)
         # Recheck the credential and authority in one read after the approval
@@ -253,7 +282,7 @@ class ProjectPreviewAccess:
             "select id from wb_project_preview_access where id=$1 and credential_hash=$2 and kind=$3 and audience=$4 and revoked_at is null and expires_at>$5 and "
             + fence, params)
         if not rows:
-            raise PreviewAccessDenied("project_preview_changed")
+            raise _PreviewSnapshotChanged()
         return scope
 
     def authorize_browser(self, secret: str, *, audience: str) -> PreviewAccessScope:
@@ -262,6 +291,7 @@ class ProjectPreviewAccess:
     def authorize_tunnel(self, secret: str, *, audience: str) -> PreviewAccessScope:
         return self._authorize(secret, "tunnel", audience)
 
+    @_retry_snapshot
     def validate_binding(self, binding: dict, *, audience: str) -> PreviewAccessScope:
         """Only for the authenticated relay, rechecking an already issued scope.
 
@@ -284,7 +314,7 @@ class ProjectPreviewAccess:
         params = [saved["id"], self.clock()]
         fence = self._fence(scope, authority, params)
         if not self.store._q("select id from wb_project_preview_access where id=$1 and revoked_at is null and expires_at>$2 and " + fence, params):
-            raise PreviewAccessDenied("project_preview_changed")
+            raise _PreviewSnapshotChanged()
         return scope
 
     def revoke_grant(self, grant_id: str, *, owner_id: str) -> None:

@@ -8,6 +8,7 @@ import threading
 from types import SimpleNamespace
 
 import pytest
+from project_actor_support import project_actor
 
 from models.v5_state import V5SessionState
 from plan_approval_support import approved_plan_rows
@@ -44,7 +45,8 @@ class SyncProvider(Provider):
 
 
 @pytest.fixture
-def live(tmp_path, monkeypatch):
+def live(tmp_path, monkeypatch, project_actor, request):
+    project_actor("alice")
     store = ProjectStore.from_url(f"sqlite:///{tmp_path / 'projects.db'}")
     sessions = SqlSessionBlobStore(f"sqlite:///{tmp_path / 'sessions.db'}")
     monkeypatch.setattr(persistence, "_blob_store", lambda *args: sessions)
@@ -57,8 +59,9 @@ def live(tmp_path, monkeypatch):
     monkeypatch.setattr(project_creation, "load_project_template", lambda: (files.copy(), "test-vite-1"))
     provider, workers = SyncProvider(), []
     def worker():
-        result = ProjectRuntimeSupervisor(store, lambda: provider, poll_interval=0.03,
-            lease_ttl=1, lifetime_seconds=90, idle_seconds=60)
+        options = {"poll_interval": 0.03, "lease_ttl": 1, "lifetime_seconds": 90,
+            "idle_seconds": 60, **getattr(request, "param", {})}
+        result = ProjectRuntimeSupervisor(store, lambda: provider, **options)
         result.start()
         workers.append(result)
         return result

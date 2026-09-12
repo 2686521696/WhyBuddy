@@ -45,6 +45,11 @@ def origin_for_runtime(runtime_id: str) -> str:
     canonical = f"{parsed.scheme}://{host}" + (f":{port}" if port is not None else "")
     if canonical != value:
         raise ValueError("project_preview_origin_invalid")
+    # WHATWG URL.origin (Node gateway and browser) omits a default port. Issue
+    # the same origin here or a valid :443/:80 template creates grants which
+    # the real gateway can never redeem despite identical network destinations.
+    if (parsed.scheme, port) in {("https", 443), ("http", 80)}:
+        return f"{parsed.scheme}://{host}"
     return canonical
 
 

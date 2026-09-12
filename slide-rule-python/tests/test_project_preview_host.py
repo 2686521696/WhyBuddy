@@ -9,6 +9,7 @@ remote provider is fake; the store, lease, manager and origin validator are real
 import shlex
 
 import pytest
+from project_actor_support import project_actor
 
 from test_project_preview_runtime import scanner
 from test_project_runtime_worker import setup, submit, eventually, state

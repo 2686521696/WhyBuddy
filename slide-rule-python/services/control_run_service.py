@@ -16,8 +16,7 @@ from contextlib import aclosing
 
 from services.control_checkpoint import ControlRunStopped, current_checkpoint
 from services.control_run_store import ControlRunConflict, ControlRunStore, TERMINAL
-from services.identity_store import get_identity_store
-from services.project_access import project_access_enabled
+from services.project_actor_access import authorize_project_actor
 from services.project_creation import load_authorized_session
 from services.project_tools import ProjectTools
 from services.project_tool_contracts import PROJECT_TOOL_NAMES
@@ -27,9 +26,10 @@ log = logging.getLogger(__name__)
 
 
 def authorize_control_run(session_id, owner_id):
-    user = get_identity_store().get_by_id_for_auth(owner_id)
-    if user is None or not user.is_active or not project_access_enabled(user):
-        raise PermissionError("control_run_access_revoked")
+    try:
+        authorize_project_actor(owner_id)
+    except PermissionError:
+        raise PermissionError("control_run_access_revoked") from None
     return load_authorized_session(session_id, owner_id=owner_id)
 
 

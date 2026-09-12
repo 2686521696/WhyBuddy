@@ -15,9 +15,9 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **325** 个，模块 **325** 个
-- 内部依赖边 **1062** 条（包含普通包初始化依赖）
-- 内部 import 语句 **974** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 扫描文件 **326** 个，模块 **326** 个
+- 内部依赖边 **1064** 条（包含普通包初始化依赖）
+- 内部 import 语句 **976** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -39,7 +39,7 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 |---|---|---|---|
 | `util` | 142 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
 | `core` | 66 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
-| `flow` | 37 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
+| `flow` | 38 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
 叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import 的全部理由，也是 `import` 不必躲进函数体的前提。
 
@@ -51,7 +51,7 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 flowchart TB
   util["util<br/>142 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
   core["core<br/>66 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
-  flow["flow<br/>37 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
+  flow["flow<br/>38 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
   core -->|148| util
   flow -->|116| core
   flow -->|135| util
@@ -67,7 +67,7 @@ flowchart TB
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>15 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>245 个模块<br/>业务"]
+  services["services<br/>246 个模块<br/>业务"]
   routes["routes<br/>14 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -137,7 +137,7 @@ flowchart LR
 
 抄 grok 的 Cargo.toml——边写在 crate 上，由编译器焊死。
 现算数字见 `docs/grok-build 架构图（自动生成）.md`。
-我们 26 个 component、99 条边，由 `architecture.toml` 声明、判据强制。
+我们 26 个 component、100 条边，由 `architecture.toml` 声明、判据强制。
 **红色虚线 = 参与组间成环的边**（模块级已清零，组级还欠着，见下）。
 
 ```mermaid
@@ -154,7 +154,7 @@ flowchart LR
   entrypoint["entrypoint<br/>1"]
   evidence["evidence<br/>11"]
   http_routes["http_routes<br/>10"]
-  identity["identity<br/>7"]
+  identity["identity<br/>8"]
   llm_gateway["llm_gateway<br/>18"]
   model_core["model_core<br/>27"]
   observability["observability<br/>7"]
@@ -183,7 +183,7 @@ flowchart LR
   control -->|7| llm_gateway
   control -->|3| model_core
   control -->|5| persist
-  control -->|18| platform
+  control -->|17| platform
   control -->|4| spec_first
   diagnostics -->|1| a2a
   diagnostics -->|1| evidence
@@ -231,7 +231,7 @@ flowchart LR
   http_routes -->|3| runtime
   http_routes -->|10| spec_first
   http_routes -->|2| task_exec
-  identity -->|10| platform
+  identity -->|11| platform
   llm_gateway -->|2| platform
   model_core -->|2| app_store
   model_core -->|5| evidence
@@ -256,6 +256,7 @@ flowchart LR
   permission -->|1| platform
   persist -->|19| platform
   run_control -->|1| platform
+  runtime -->|1| identity
   runtime -->|6| persist
   runtime -->|6| platform
   runtime -->|4| workspace

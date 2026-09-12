@@ -394,6 +394,7 @@ what = "编排：驱动器 / 流水线 / 控制面 / 会话"
 may_depend_on = ["util", "core"]
   modules = [
     "services.control_run_service",
+    "services.project_actor_access",
     "services.project_runtime_worker",
     "services.project_source_sync",
     "services.project_preview_runtime",
@@ -642,6 +643,7 @@ modules = [
   "services.auth_service",
   "services.auth_tokens",
   "services.identity_store",
+  "services.project_actor_access",
   "services.mailer",
 ]
 
@@ -798,8 +800,8 @@ modules = [
 
 [component.runtime]
 why = "工程运行编排：把持久源码、租约和 E2B provider 组合成可恢复的运行实例。"
-  # Recover execution using the same persisted session and approved-plan authority.
-  may_depend_on = ["platform", "persist", "workspace"]
+  # Recover with persisted plan authority and recheck the owner's current account access.
+  may_depend_on = ["platform", "persist", "workspace", "identity"]
   modules = [
     "services.project_runtime",
     "services.project_runtime_worker",

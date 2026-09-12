@@ -11,6 +11,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
+from project_actor_support import project_actor
 from fastapi.testclient import TestClient
 
 import app as app_module

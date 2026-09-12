@@ -58,11 +58,13 @@ def main():
         "APP_STORE_HTTP_API_URL": "", "APP_STORE_HTTP_API_KEY": "", "APP_STORE_NEON_HTTP": "0",
         "APP_STORE_FILE": str(directory / "apps.json"), "SLIDERULE_SESSIONS_FILE": str(directory / "sessions.json"),
         "SLIDERULE_SESSION_LOCAL_IMPORT": "0", "SLIDE_RULE_INTERNAL_KEY": secrets.token_hex(32),
-        "SLIDERULE_AUTH_SECRET": secrets.token_hex(32), "SLIDERULE_WEB_SEARCH": "off", "LLM_API_KEY": ""})
+        "SLIDERULE_AUTH_SECRET": secrets.token_hex(32), "SLIDERULE_WEB_SEARCH": "off", "LLM_API_KEY": "",
+        "SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED": "1", "SLIDERULE_IDENTITY_SQLITE": database})
 
     from models.v5_state import V5SessionState
     from services import persistence
     from services.e2b_workspace_provider import E2BWorkspaceProvider
+    from services.identity_store import get_identity_store
     from services.project_authority import approved_reference
     from services.project_creation import load_project_template
     from services.project_manifest import build_manifest, content_hash
@@ -96,7 +98,9 @@ def main():
     sessions = SqlSessionBlobStore(database)
     previous_blob_store = persistence._blob_store
     persistence._blob_store = lambda *_args: sessions
-    owner, session_id = "source-sync-smoke-owner", "source-sync-" + uuid.uuid4().hex
+    identity = get_identity_store()
+    actor = identity.create("source-sync@internal.test", secrets.token_hex(32), is_superuser=True, is_verified=True)
+    owner, session_id = actor.id, "source-sync-" + uuid.uuid4().hex
     supervisor = None
     project_id = parent_id = None
     state = None

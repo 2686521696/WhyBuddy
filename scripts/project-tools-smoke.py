@@ -74,7 +74,7 @@ def main():
     from models.v5_state import V5SessionState
     from services import persistence
     from services.e2b_workspace_provider import E2BWorkspaceProvider
-    from services.identity_store import User
+    from services.identity_store import get_identity_store
     from services.project_authority import approved_reference
     from services.project_creation import load_project_template
     from services.project_manifest import build_manifest
@@ -85,12 +85,13 @@ def main():
     from services.control_run_service import ControlRunService
     from services.project_creation import load_authorized_session
 
-    session_id, owner_id = "smoke-tools-" + uuid.uuid4().hex, "smoke-project-owner"
+    viewer = get_identity_store().create("project-tools@internal.test", secrets.token_hex(32),
+        is_superuser=True, is_verified=True)
+    session_id, owner_id = "smoke-tools-" + uuid.uuid4().hex, viewer.id
     store = get_project_store()
     sessions = SqlSessionBlobStore(database_url)
     original_blob_store = persistence._blob_store
     persistence._blob_store = lambda _path=None: sessions
-    viewer = User(id=owner_id, is_superuser=True)
     app.dependency_overrides[optional_user] = lambda: viewer
     app.dependency_overrides[require_user] = lambda: viewer
     provider = E2BWorkspaceProvider(api_key=api_key)

@@ -18,6 +18,7 @@ from typing import Callable
 from urllib.parse import urlsplit
 
 from models.project_runtime import ProjectOperation, RuntimeInstance
+from services.project_actor_access import authorize_project_actor
 from services.project_authority import approved_reference
 from services.project_creation import load_authorized_session
 from services.project_preview_config import origin_for_runtime
@@ -36,6 +37,7 @@ class ProjectExecutionRejected(ProjectConflict):
 
 
 def authorize_operation(store: ProjectStore, operation: ProjectOperation, owner_id: str) -> None:
+    authorize_project_actor(owner_id)
     project = store.get_project(operation.projectId, owner_id=owner_id)
     state = load_authorized_session(project.sessionId, owner_id=owner_id, approval_ref=operation.approvalRef)
     if state.runtimeKind != "project" or state.projectId != project.projectId:
@@ -291,6 +293,7 @@ class _RuntimeTask:
             raise _Shutdown()
         if self.runtime.expiresAt is not None and time.time() >= self.runtime.expiresAt:
             raise _Expired()
+        authorize_project_actor(self.owner_id)
 
     def sleep(self):
         self.supervisor._stop.wait(self.supervisor.poll_interval)

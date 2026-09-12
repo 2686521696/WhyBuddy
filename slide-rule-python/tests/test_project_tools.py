@@ -8,6 +8,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from project_actor_support import project_actor
 
 from models.v5_state import V5SessionState
 from models.project_runtime import RuntimeInstance
@@ -23,7 +24,8 @@ from services.session_blob_store import SqlSessionBlobStore
 
 
 @pytest.fixture
-def setup(tmp_path, monkeypatch):
+def setup(tmp_path, monkeypatch, project_actor):
+    project_actor("alice")
     store = ProjectStore.from_url(f"sqlite:///{tmp_path / 'projects.db'}")
     sessions = SqlSessionBlobStore(f"sqlite:///{tmp_path / 'sessions.db'}")
     monkeypatch.setattr(persistence, "_blob_store", lambda *args: sessions)
