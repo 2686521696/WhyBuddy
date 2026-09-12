@@ -165,6 +165,8 @@ def issue_project_preview_ticket(operation_id: str, request: Request, response: 
         # valid until the separate fixed deadline. Using ticket expiry for the
         # mounted iframe previously closed working applications after one minute.
         return {"entryUrl": audience + "/_whybuddy/authorize?ticket=" + credential.secret,
+            "projectId": credential.scope.project_id, "operationId": credential.scope.operation_id,
+            "runtimeId": credential.scope.runtime_id, "revision": credential.scope.revision,
             "ticketExpiresAt": _iso(credential.expires_at), "accessExpiresAt": _iso(credential.access_expires_at)}
 
 

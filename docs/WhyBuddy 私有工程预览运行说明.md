@@ -52,7 +52,9 @@ pnpm run dev:project-preview
 
 预览读取和点击页面不自动延长 runtime 空闲或总预算。现有显式活动接口及 worker 策略负责续租；运行到期后页面可能仍保留已加载 DOM，后续请求被拒，工作台轮询显示实际状态。停止控制回合、停止应用与撤销浏览器访问仍是不同操作。
 
-Vite 仅额外允许服务端推导的该 runtime 预览主机名。源文件修改仍须产生不可变 revision；当前模型写入与活跃预览同步尚待持租约 worker 的后续实现，不能通过开放任意主机或绕过项目锁完成 HMR。
+Vite 仅额外允许服务端推导的该 runtime 预览主机名。运行中模型修改已接到持租约 worker：`project_patch` 返回持久子操作，由原运行者保存不可变 revision、同步文件并检查实际版本。同步前撤销旧授权和隧道，同步后重新登记；工作台撤下旧 iframe，用户明确打开新版本。当前会话跟随服务端 ready 版本，指定历史版本不会自动替换。票据同时携带并检查 project/operation/runtime/revision。
+
+活跃同步支持源码、静态素材和测试文件，依赖与启动配置需要停止后修改并重新启动。文件同步失败保留持久源码，运行显示失败；不能把新版本 HTTP 就绪当成浏览器或业务验收通过。完整恢复与错误合同见重构方案第 23 节。
 
 ## 复用来源与许可
 
@@ -77,8 +79,9 @@ pnpm run project:contracts:check
 pnpm run test:scripts
 pnpm run arch:check
 pnpm run smoke:project-preview-tunnel
+pnpm run smoke:project-source-sync
 ```
 
-最后一条需要 E2B 配置、本机 Chrome、网络与云运行额度，按轮次将脱敏报告和截图写入 `artifacts/project-preview-tunnel-smoke/`，结束后销毁两个测试沙盒并查询确认。`SLIDERULE_CHROMIUM_PATH` 可指定浏览器路径。其网关/agent/Vite 是实际代码，云 authority 使用测试身份注册表；持久 Python 授权另由真实 SQL 与 HTTP 入口测试覆盖。
+预览 tunnel 烟测需要 E2B 配置、本机 Chrome、网络与云运行额度，按轮次将脱敏报告和截图写入 `artifacts/project-preview-tunnel-smoke/`，结束后销毁两个测试沙盒并查询确认。`SLIDERULE_CHROMIUM_PATH` 可指定浏览器路径。其网关/agent/Vite 是实际代码，云 authority 使用测试身份注册表；持久 Python 授权另由真实 SQL 与 HTTP 入口测试覆盖。源码同步烟测使用单 E2B、真实模型工具适配器、SQL worker 和 Vite HTTP/HMR，报告在 `artifacts/project-source-sync/`，同样销毁并查询确认；批准和工具选择是固定夹具，不计为模型自主或浏览器业务验收。
 
-本次不等于生产预览已部署，也不等于 P4 浏览器验收服务完成。仍需固定 revision 的独立验证 worker、交付证据闸、真实业务数据库，以及模型补丁到持租约运行实例的活跃版本同步。应用中心历史版本恢复、复刻、导出和生产发布也各自保留阶段验收。
+本次不等于生产预览已部署，也不等于 P4 浏览器验收服务完成。仍需固定 revision 的独立验证 worker、交付证据闸、真实业务数据库，以及真实 authority、隔离入口和完整工作台的联合部署验收。应用中心历史版本恢复、复刻、导出和生产发布也各自保留阶段验收。

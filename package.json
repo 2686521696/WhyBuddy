@@ -42,6 +42,7 @@
     "smoke:project-model": "node scripts/project-runtime-smoke.mjs --model",
     "smoke:project-private-ingress": "node scripts/project-runtime-smoke.mjs --private-ingress",
     "smoke:project-preview-tunnel": "node scripts/project-runtime-smoke.mjs --preview-tunnel",
+    "smoke:project-source-sync": "node scripts/project-runtime-smoke.mjs --source-sync",
     "arch:ts": "node scripts/arch-graph-ts.mjs --report",
     "arch:ts:check": "node scripts/arch-graph-ts.mjs --check",
     "arch:ts:emit": "node scripts/arch-graph-ts.mjs --emit",

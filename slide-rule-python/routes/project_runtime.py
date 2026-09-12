@@ -125,8 +125,8 @@ def start_project_runtime(project_id: str, body: StartRuntimeRequest, request: R
         if state.runtimeKind != "project" or state.projectId != project.projectId:
             raise ProjectConflict("project_session_binding_required")
         revision = store.get_revision(project_id, owner_id=owner_id)
-        if revision.revision != body.expectedRevision:
-            raise ProjectConflict("project_revision_conflict")
+        # The supervisor/store distinguish an identical historical start request
+        # from a new stale request. The runtime may already serve a child revision.
         if revision.planRef != body.approvalRef:
             raise PermissionError("project_plan_approval_required")
         _internal_gate(viewer)

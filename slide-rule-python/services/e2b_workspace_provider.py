@@ -20,10 +20,11 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from services.project_manifest import build_manifest
-from services.workspace_provider import PrivatePreviewTarget, ProcessLogChunk, ProcessResult, WorkspaceHandle, WorkspaceProviderError
+from services.workspace_provider import PROJECT_REVISION_FILE, PrivatePreviewTarget, ProcessLogChunk, ProcessResult, WorkspaceHandle, WorkspaceProviderError
 
 PROJECT_ROOT = "/home/user/workspace"
 MAX_OUTPUT_BYTES = 32 * 1024
+MAX_SYNC_PAYLOAD_BYTES = 64 * 1024 * 1024
 
 # Source arrives on stdin. Directory descriptors and atomic replacement prevent
 # symlink races and avoid truncating a hard link to a file outside the project.
@@ -72,6 +73,209 @@ try:
             os.close(parent)
 finally:
     os.close(fd)
+'''
+
+# Validate the entire expected tree before creating even temporary files. Only
+# named source paths are changed; dependency directories and app data are never
+# traversed or recursively removed. Atomic individual writes do not make this a
+# multi-file transaction: any failure after mutation starts is explicitly partial.
+_SYNC_SCRIPT = r'''
+import hashlib, json, os, re, stat, sys, uuid
+changed = False
+root_chain = []
+root_fd = None
+directory_ids = {}
+flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+
+def identity(info):
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_nlink,
+            info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+def validate_path(path):
+    if not isinstance(path, str) or not path or len(path) > 240 or re.search(r"[\\:\x00-\x1f\x7f]", path):
+        raise ValueError()
+    parts = path.split("/")
+    for part in parts:
+        lower = part.casefold()
+        if part in ("", ".", "..") or part.endswith((" ", ".")) or lower in (".git", "node_modules", ".venv"):
+            raise ValueError()
+        if lower.startswith(".env") and lower not in (".env.example", ".env.sample"):
+            raise ValueError()
+    return parts
+
+def validate_manifest(entries, content=False):
+    if not isinstance(entries, dict) or not 1 <= len(entries) <= 512:
+        raise ValueError()
+    folded, total = set(), 0
+    for path, entry in entries.items():
+        validate_path(path)
+        if path.casefold() in folded or not isinstance(entry, dict): raise ValueError()
+        folded.add(path.casefold())
+        size, digest = entry.get("size"), entry.get("sha256")
+        if type(size) is not int or not 0 <= size <= 512 * 1024 or not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest):
+            raise ValueError()
+        total += size
+        if content:
+            text = entry.get("content")
+            if not isinstance(text, str) or "\x00" in text: raise ValueError()
+            data = text.encode("utf-8")
+            if len(data) != size or hashlib.sha256(data).hexdigest() != digest: raise ValueError()
+    if total > 8 * 1024 * 1024: raise ValueError()
+    for path in folded:
+        parts = path.split("/")
+        if any("/".join(parts[:i]) in folded for i in range(1, len(parts))): raise ValueError()
+
+def verify_chain(chain):
+    for parent, name, child in root_chain + chain:
+        current = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        pinned = os.fstat(child)
+        if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != (pinned.st_dev, pinned.st_ino):
+            raise ValueError()
+
+def parent_for(path, create=False):
+    global changed
+    parts = validate_path(path)
+    chain = []
+    parent = root_fd
+    try:
+        for i, part in enumerate(parts[:-1]):
+            verify_chain(chain)
+            try:
+                child = os.open(part, flags, dir_fd=parent)
+            except FileNotFoundError:
+                if not create: return None, chain
+                changed = True
+                os.mkdir(part, 0o700, dir_fd=parent)
+                child = os.open(part, flags, dir_fd=parent)
+            chain.append((parent, part, child))
+            info = os.fstat(child)
+            key, value = tuple(parts[:i + 1]), (info.st_dev, info.st_ino)
+            if key in directory_ids and directory_ids[key] != value: raise ValueError()
+            directory_ids[key] = value
+            parent = child
+        verify_chain(chain)
+        return parent, chain
+    except Exception:
+        close_chain(chain)
+        raise
+
+def close_chain(chain):
+    for _, _, child in reversed(chain): os.close(child)
+
+def check_file(parent, name, expected):
+    before = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size != expected["size"]:
+        raise ValueError()
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+    try:
+        if identity(os.fstat(fd)) != identity(before): raise ValueError()
+        digest = hashlib.sha256()
+        remaining = expected["size"] + 1
+        while remaining:
+            data = os.read(fd, min(65536, remaining))
+            if not data: break
+            digest.update(data)
+            remaining -= len(data)
+        if digest.hexdigest() != expected["sha256"] or identity(os.fstat(fd)) != identity(before):
+            raise ValueError()
+        if identity(os.stat(name, dir_fd=parent, follow_symlinks=False)) != identity(before): raise ValueError()
+    finally:
+        os.close(fd)
+
+def absent(parent, name):
+    if parent is None: return
+    try: os.stat(name, dir_fd=parent, follow_symlinks=False)
+    except FileNotFoundError: return
+    raise ValueError()
+
+def verify(path, expected):
+    parent, chain = parent_for(path)
+    try:
+        if expected is None:
+            absent(parent, path.split("/")[-1])
+        else:
+            if parent is None: raise ValueError()
+            check_file(parent, path.split("/")[-1], expected)
+        verify_chain(chain)
+    finally:
+        close_chain(chain)
+
+def update(path, old, new):
+    global changed
+    parent, chain = parent_for(path, create=new is not None)
+    temporary = None
+    try:
+        if parent is None: raise ValueError()
+        name = path.split("/")[-1]
+        if old is None: absent(parent, name)
+        else: check_file(parent, name, old)
+        verify_chain(chain)
+        if new is None:
+            changed = True
+            os.unlink(name, dir_fd=parent)
+        else:
+            changed = True
+            temporary = ".wb-sync-" + uuid.uuid4().hex
+            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent)
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(new["content"].encode("utf-8"))
+                stream.flush()
+                os.fsync(stream.fileno())
+            verify_chain(chain)
+            if old is None:
+                # An unexpected new file must not be overwritten after preflight.
+                os.link(temporary, name, src_dir_fd=parent, dst_dir_fd=parent, follow_symlinks=False)
+                os.unlink(temporary, dir_fd=parent)
+            else:
+                check_file(parent, name, old)
+                os.replace(temporary, name, src_dir_fd=parent, dst_dir_fd=parent)
+            temporary = None
+        os.fsync(parent)
+        verify_chain(chain)
+    finally:
+        if temporary is not None:
+            try: os.unlink(temporary, dir_fd=parent)
+            except OSError: pass
+        close_chain(chain)
+
+try:
+    raw = sys.stdin.buffer.read(64 * 1024 * 1024 + 1)
+    if len(raw) > 64 * 1024 * 1024: raise ValueError()
+    root, marker, old, new = json.loads(raw)
+    validate_manifest(old)
+    validate_manifest(new, content=True)
+    if marker != "public/__whybuddy_revision.json" or marker not in old or marker not in new: raise ValueError()
+    differences = sorted(path for path in old.keys() | new.keys()
+        if path not in old or path not in new or old[path]["sha256"] != new[path]["sha256"])
+    if differences and old[marker]["sha256"] == new[marker]["sha256"]: raise ValueError()
+    if not isinstance(root, str) or not root.startswith("/") or any(p in ("", ".", "..") for p in root[1:].split("/")):
+        raise ValueError()
+    parent = os.open("/", flags)
+    root_fd = parent
+    for part in root[1:].split("/"):
+        child = os.open(part, flags, dir_fd=parent)
+        root_chain.append((parent, part, child))
+        parent = child
+    root_fd = parent
+    for path in sorted(old): verify(path, old[path])
+    for path in sorted(new.keys() - old.keys()): verify(path, None)
+    for path in differences:
+        if path != marker: update(path, old.get(path), new.get(path))
+    # Recheck unchanged sources too: the published revision names a whole tree.
+    for path in sorted(old.keys() | new.keys()):
+        if path != marker: verify(path, new.get(path))
+    if marker in differences: update(marker, old[marker], new[marker])
+    print(json.dumps({"status": "ok"}))
+except Exception:
+    print(json.dumps({"code": "e2b_source_sync_partial" if changed else "e2b_source_sync_conflict"}))
+    sys.exit(1)
+finally:
+    if root_chain:
+        first = root_chain[0][0]
+        close_chain(root_chain)
+        os.close(first)
+    elif root_fd is not None:
+        os.close(root_fd)
 '''
 
 _START_SCRIPT = r'''
@@ -291,6 +495,49 @@ class E2BWorkspaceProvider:
 
     def write_files(self, handle: WorkspaceHandle, files: dict[str, str]) -> None:
         self._write_files_at_root(handle, files, PROJECT_ROOT)
+
+    def sync_files(self, handle: WorkspaceHandle, *, expected_files: dict[str, str], files: dict[str, str]) -> None:
+        """CAS against all persisted source files; a partial write is never retried here."""
+        old_manifest, new_manifest = build_manifest(expected_files), build_manifest(files)
+        if PROJECT_REVISION_FILE not in expected_files or PROJECT_REVISION_FILE not in files:
+            raise ValueError("project_source_revision_required")
+        if expected_files != files and expected_files[PROJECT_REVISION_FILE] == files[PROJECT_REVISION_FILE]:
+            raise ValueError("project_source_revision_unchanged")
+        old = {entry.path: {"sha256": entry.sha256, "size": entry.sizeBytes} for entry in old_manifest.files}
+        new = {entry.path: {"sha256": entry.sha256, "size": entry.sizeBytes, "content": files[entry.path]}
+               for entry in new_manifest.files}
+        payload = json.dumps([PROJECT_ROOT, PROJECT_REVISION_FILE, old, new], ensure_ascii=True)
+        if len(payload) > MAX_SYNC_PAYLOAD_BYTES:
+            raise ValueError("project_source_sync_payload_too_large")
+        try:
+            sandbox = self._sandbox(handle)
+            process = sandbox.commands.run(_python(_SYNC_SCRIPT), cwd="/home/user",
+                background=True, stdin=True, timeout=60)
+            for offset in range(0, len(payload), 32 * 1024):
+                process.send_stdin(payload[offset:offset + 32 * 1024])
+            process.close_stdin()
+            try:
+                result = process.wait()
+            except Exception as exc:
+                if type(getattr(exc, "exit_code", None)) is not int:
+                    raise
+                result = exc
+            code = getattr(result, "exit_code", None)
+            stdout = getattr(result, "stdout", None)
+            if type(code) is not int or not isinstance(stdout, str) or len(stdout) > 256:
+                raise ValueError()
+            receipt = json.loads(stdout)
+            if code == 0 and receipt == {"status": "ok"}:
+                return
+            if code != 0 and receipt in ({"code": "e2b_source_sync_conflict"}, {"code": "e2b_source_sync_partial"}):
+                raise WorkspaceProviderError(receipt["code"], result=ProcessResult(exit_code=code))
+            raise ValueError()
+        except WorkspaceProviderError as exc:
+            if str(exc) in {"e2b_source_sync_conflict", "e2b_source_sync_partial"}:
+                raise exc from None
+            raise WorkspaceProviderError("e2b_source_sync_uncertain") from None
+        except Exception:
+            raise WorkspaceProviderError("e2b_source_sync_uncertain") from None
 
     def _write_files_at_root(self, handle: WorkspaceHandle, files: dict[str, str], root: str) -> None:
         build_manifest(files)

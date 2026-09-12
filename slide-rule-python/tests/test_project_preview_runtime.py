@@ -22,6 +22,7 @@ from services.project_store import ProjectConflict
 from services.workspace_provider import ProcessResult, WorkspaceProviderError
 
 from test_project_preview_access import world
+from test_project_live_source_sync import live, patch, child_done
 from test_project_runtime_worker import setup, submit, eventually, state
 from test_workspace_provider import setup_provider
 
@@ -81,6 +82,82 @@ def test_start_records_intent_before_sending_only_runtime_scoped_configuration(m
     token = provider.calls[0][1]["token"]
     assert token not in saved.model_dump_json()
     assert "sandbox-private" not in str(provider.calls) and "g" * 40 not in str(provider.calls)
+
+
+def test_actual_runtime_worker_suspends_old_preview_before_sync_then_authorizes_new_version(live, tmp_path, monkeypatch):
+    from services.project_preview_config import origin_for_runtime
+    from services.project_runtime_worker import authorize_operation
+
+    monkeypatch.setenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE", "https://{runtimeId}.preview.example.com")
+    bundle = tmp_path / "preview-agent.cjs"
+    bundle.write_text("console.log('test preview agent');", encoding="utf-8")
+    access = ProjectPreviewAccess(live.store, authorizer=authorize_operation)
+    calls, tunnels = [], set()
+    original_probe = live.provider.is_process_running
+
+    def stable_access(callback):
+        # The real scanner/heartbeat can change the snapshot during a grant CAS.
+        # Retry only that explicit race; every other authorization error fails.
+        def attempt():
+            try:
+                return callback()
+            except PreviewAccessDenied as error:
+                if str(error) != "project_preview_changed":
+                    raise
+        return eventually(attempt)
+
+    def start(handle, **kwargs):
+        pid = str(800 + len(calls))
+        calls.append(("start", pid, kwargs["token"]))
+        tunnels.add(pid)
+        return ProcessResult(pid)
+
+    def stop(handle, pid):
+        calls.append(("stop", pid))
+        assert pid in tunnels, "preview suspension tried to stop the application server"
+        tunnels.remove(pid)
+
+    monkeypatch.setattr(live.provider, "start_preview_tunnel", start, raising=False)
+    monkeypatch.setattr(live.provider, "stop", stop, raising=False)
+    monkeypatch.setattr(live.provider, "is_process_running",
+        lambda handle, pid: pid in tunnels if pid.startswith("8") else original_probe(handle, pid))
+    live.supervisor.preview_runtime = ProjectPreviewRuntime(access, agent_bundle=bundle)
+    old = eventually(lambda: live.parent() if (live.parent().result or {}).get("preview", {}).get("phase") == "active" else None)
+    audience = origin_for_runtime(old.runtime.runtimeId)
+    ticket = stable_access(lambda: access.issue_browser_ticket(old.operationId, owner_id="alice", audience=audience))
+    browser = stable_access(lambda: access.redeem_browser_ticket(ticket.secret, audience=audience))
+    pending = stable_access(lambda: access.issue_browser_ticket(old.operationId, owner_id="alice", audience=audience))
+    old_tunnel = calls[0][2]
+    synced = []
+
+    def before_sync():
+        synced.append(True)
+        assert [row[0] for row in calls] == ["start", "stop"] and not tunnels
+        lease = live.store.get_lease(old.projectId, owner_id="alice")
+        assert "preview" not in lease.processRefs and lease.processRefs["server"] == old.runtime.processId
+        for method, token in ((access.authorize_browser, browser.secret),
+                (access.authorize_tunnel, old_tunnel), (access.redeem_browser_ticket, pending.secret)):
+            with pytest.raises(PreviewAccessDenied):
+                method(token, audience=audience)
+        assert all(row["revoked_at"] is not None for row in live.store._q("select * from wb_project_preview_access"))
+
+    live.provider.before_sync = before_sync
+    submitted = patch(live)
+    done = eventually(lambda: child_done(live, submitted))
+    assert done.status == "completed" and synced == [True]
+    fresh = eventually(lambda: live.parent() if (live.parent().result or {}).get("preview", {}).get("revision") == done.result["revision"]
+        and (live.parent().result or {}).get("preview", {}).get("phase") == "active" else None)
+    assert [row[0] for row in calls] == ["start", "stop", "start"]
+    assert fresh.expectedRevision == old.expectedRevision
+    assert fresh.runtime.runtimeId == old.runtime.runtimeId
+    assert fresh.runtime.processId == old.runtime.processId
+    assert live.provider.created == 1 and len(live.provider.commands) == 2
+    fresh_ticket = stable_access(lambda: access.issue_browser_ticket(old.operationId, owner_id="alice", audience=audience))
+    fresh_browser = stable_access(lambda: access.redeem_browser_ticket(fresh_ticket.secret, audience=audience))
+    assert fresh_browser.scope.revision == done.result["revision"]
+    assert stable_access(lambda: access.authorize_tunnel(calls[-1][2], audience=audience)).revision == fresh_browser.scope.revision
+    with pytest.raises(PreviewAccessDenied):
+        access.authorize_browser(browser.secret, audience=audience)
 
 
 @pytest.mark.parametrize("control", [_Cancel, _Shutdown, _Expired, ProjectConflict])
@@ -193,6 +270,130 @@ def test_lost_active_process_identity_is_not_blindly_replaced(managed):
     managed.manager.ensure(managed.task)
     assert managed.task.result["preview"] == {"phase": "blocked", "errorCode": "preview_process_identity_missing"}
     assert [call[0] for call in managed.provider.calls].count("start") == 1
+
+
+@pytest.mark.parametrize("saved_revision", [None, "previous-source"])
+def test_active_preview_for_unknown_or_old_revision_is_rotated_even_with_same_lease(managed, saved_revision):
+    managed.manager.ensure(managed.task)
+    old = dict(managed.task.result["preview"])
+    if saved_revision is None:
+        managed.task.result["preview"].pop("revision")
+    else:
+        managed.task.result["preview"]["revision"] = saved_revision
+    managed.task.save("ready")
+    managed.manager.ensure(managed.task)
+    fresh = managed.task.result["preview"]
+    assert fresh["revision"] == managed.task.runtime.revision
+    assert fresh["generation"] == old["generation"]
+    assert fresh["grantId"] != old["grantId"]
+    assert [call[0] for call in managed.provider.calls] == ["start", "stop", "start"]
+    assert managed.world.store._q("select revoked_at from wb_project_preview_access where id=$1", [old["grantId"]])[0]["revoked_at"]
+
+
+def test_sync_revokes_all_old_access_and_stops_only_preview_before_clearing_its_refs(managed):
+    world, task, manager = managed.world, managed.task, managed.manager
+    manager.ensure(task)
+    old_token = managed.provider.calls[0][1]["token"]
+    ticket = world.access.issue_browser_ticket(task.operation_id, owner_id="u1", audience=world.audience)
+    browser = world.access.redeem_browser_ticket(ticket.secret, audience=world.audience)
+    pending_ticket = world.access.issue_browser_ticket(task.operation_id, owner_id="u1", audience=world.audience)
+    before = task.heartbeat.lease
+    manager.suspend_for_sync(task)
+    saved = world.store.get_operation(task.operation_id, owner_id="u1")
+    after = world.store.get_lease(world.project.projectId, owner_id="u1")
+    assert after.leaseOwner == before.leaseOwner and after.generation == before.generation
+    assert after.sandboxId == before.sandboxId and after.processRefs == {
+        key: value for key, value in before.processRefs.items() if key != "preview"}
+    assert saved.runtime.runtimeId == world.runtime.runtimeId and saved.runtime.processId == world.runtime.processId
+    assert saved.runtime.status == "syncing" and saved.runtime.health == "unknown"
+    assert "preview" not in saved.result and "preview" not in task.result
+    assert managed.provider.calls[-1] == ("stop", before.processRefs["preview"])
+    assert not managed.provider.running
+    assert all(row["revoked_at"] is not None for row in world.store._q("select * from wb_project_preview_access"))
+    # Even aborting the sync and returning to the SAME source must not revive
+    # old cookies/tickets; the browser needs a newly issued access grant.
+    task.save("ready")
+    manager.ensure(task)
+    for callback in (
+            lambda: world.access.authorize_tunnel(old_token, audience=world.audience),
+            lambda: world.access.authorize_browser(browser.secret, audience=world.audience),
+            lambda: world.access.redeem_browser_ticket(pending_ticket.secret, audience=world.audience)):
+        with pytest.raises(PreviewAccessDenied):
+            callback()
+    fresh = managed.provider.calls[-1][1]["token"]
+    assert world.access.authorize_tunnel(fresh, audience=world.audience).revision == world.runtime.revision
+
+
+def test_sync_without_existing_preview_keeps_server_and_records_syncing(managed):
+    before = managed.task.heartbeat.lease
+    managed.manager.suspend_for_sync(managed.task)
+    managed.manager.suspend_for_sync(managed.task)
+    assert not managed.provider.calls
+    assert managed.task.heartbeat.lease.processRefs == before.processRefs
+    assert managed.world.store.get_operation(managed.task.operation_id, owner_id="u1").runtime.status == "syncing"
+
+
+@pytest.mark.parametrize("control", [_Cancel, _Shutdown, _Expired, ProjectConflict])
+def test_sync_control_signal_prevents_access_or_process_mutation(managed, monkeypatch, control):
+    managed.manager.ensure(managed.task)
+    rows = managed.world.store._q("select * from wb_project_preview_access")
+    calls = list(managed.provider.calls)
+    def stopped():
+        raise control()
+    monkeypatch.setattr(managed.task, "check", stopped)
+    with pytest.raises(control):
+        managed.manager.suspend_for_sync(managed.task)
+    assert managed.provider.calls == calls
+    assert managed.world.store._q("select * from wb_project_preview_access") == rows
+
+
+@pytest.mark.parametrize("uncertainty", ["missing_pid", "invalid_pid", "dispatching", "blocked"])
+def test_sync_uncertain_preview_revokes_but_cannot_discard_its_recovery_record(managed, uncertainty):
+    managed.manager.ensure(managed.task)
+    task = managed.task
+    if uncertainty in {"missing_pid", "invalid_pid"}:
+        refs = dict(task.heartbeat.lease.processRefs)
+        if uncertainty == "missing_pid": refs.pop("preview")
+        else: refs["preview"] = "not-a-pid"
+        task.heartbeat.renew(process_refs=refs)
+    else:
+        task.result["preview"]["phase"] = uncertainty
+    task.save("ready")
+    before = dict(task.result["preview"])
+    with pytest.raises(WorkspaceProviderError, match="preview_(process_identity_missing|dispatch_uncertain)"):
+        managed.manager.suspend_for_sync(task)
+    assert task.result["preview"] == before
+    assert [call[0] for call in managed.provider.calls] == ["start"]
+    assert all(row["revoked_at"] is not None for row in managed.world.store._q("select * from wb_project_preview_access"))
+
+
+def test_sync_stop_failure_retains_pid_and_denies_old_access(managed, monkeypatch):
+    managed.manager.ensure(managed.task)
+    before = managed.task.heartbeat.lease
+    def failed(*_):
+        raise WorkspaceProviderError("preview_stop_failed")
+    monkeypatch.setattr(managed.provider, "stop", failed)
+    with pytest.raises(WorkspaceProviderError, match="preview_stop_failed"):
+        managed.manager.suspend_for_sync(managed.task)
+    assert managed.task.heartbeat.lease.processRefs == before.processRefs
+    assert managed.task.result["preview"]["phase"] == "active"
+    assert all(row["revoked_at"] is not None for row in managed.world.store._q("select * from wb_project_preview_access"))
+
+
+def test_sync_cancellation_during_stop_is_not_hidden_by_syncing_save(managed, monkeypatch):
+    managed.manager.ensure(managed.task)
+    original_stop = managed.provider.stop
+    def cancel(handle, pid):
+        original_stop(handle, pid)
+        managed.world.store.request_operation_cancel(managed.task.operation_id, owner_id="u1")
+    monkeypatch.setattr(managed.provider, "stop", cancel)
+    with pytest.raises(_Cancel):
+        managed.manager.suspend_for_sync(managed.task)
+    saved = managed.world.store.get_operation(managed.task.operation_id, owner_id="u1")
+    assert saved.cancelRequested and saved.runtime.status == "ready"
+    assert saved.result["preview"]["phase"] == "active"
+    assert "preview" in managed.task.heartbeat.lease.processRefs
+    assert not managed.provider.running
 
 
 @pytest.fixture

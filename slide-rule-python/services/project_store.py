@@ -29,6 +29,7 @@ from services.sql_gateway import HttpSqlGateway, _sql_engine_config, http_api_cr
 MAX_SOURCE_HISTORY_BYTES = 64 * 1024 * 1024
 MAX_REVISIONS = 200
 MAX_OPERATION_BYTES = 128 * 1024
+_PATCH_OUTCOME_RESERVE_BYTES = 4 * 1024
 MAX_EVENT_BYTES = 32 * 1024
 MAX_OPERATION_EVENTS = 2000
 _TERMINAL_OPERATIONS = {"completed", "failed", "cancelled"}
@@ -67,6 +68,18 @@ def _bounded(value: Any, limit: int) -> str:
     encoded = canonical_json(value)
     if len(encoded.encode("utf-8")) > limit:
         raise ValueError("project_record_too_large")
+    return encoded
+
+
+def _operation_payload(operation: ProjectOperation, *, admission: bool = False) -> str:
+    encoded = operation.model_dump_json()
+    if operation.kind == "runtime.patch":
+        # A request fitting 128 KiB can exceed it once IDs and result are added.
+        # Reserve outcome space before acceptance so a large queued patch can
+        # still be claimed and terminalized with a small bounded error result.
+        limit = MAX_OPERATION_BYTES - (_PATCH_OUTCOME_RESERVE_BYTES if admission else 0)
+        if len(encoded.encode("utf-8")) > limit:
+            raise ValueError("project_record_too_large")
     return encoded
 
 
@@ -145,17 +158,29 @@ class ProjectStore:
         return Project.model_validate_json(rows[0]["payload"]) if rows else None
 
     def _write_revision(self, project_id: str, files: dict[str, str], *, parent: str | None,
-                        template_version: str, plan_ref: str, spec_revision: str | None) -> ProjectRevision:
+                        template_version: str, plan_ref: str, spec_revision: str | None,
+                        revision_id: str | None = None) -> ProjectRevision:
         manifest = build_manifest(files)
         for entry in manifest.files:
             self._q("insert into wb_project_content(hash, content) values($1,$2) on conflict(hash) do nothing", [entry.sha256, files[entry.path]])
-        revision = ProjectRevision(revision="prv-" + uuid.uuid4().hex, projectId=project_id,
+        revision = ProjectRevision(revision=revision_id or "prv-" + uuid.uuid4().hex, projectId=project_id,
             parentRevision=parent, treeHash=manifest.treeHash, manifest=manifest,
             templateVersion=_required(template_version, "template_version_required"),
             planRef=_required(plan_ref, "plan_ref_required"), specRevision=spec_revision, createdAt=_now())
-        self._q("insert into wb_project_revision(id,project_id,payload) values($1,$2,$3)",
+        self._q("insert into wb_project_revision(id,project_id,payload) values($1,$2,$3) on conflict(id) do nothing",
                 [revision.revision, project_id, revision.model_dump_json()])
-        return revision
+        saved = self._q("select payload from wb_project_revision where id=$1 and project_id=$2", [revision.revision, project_id])
+        if not saved:
+            raise ProjectConflict("project_publication_identity_conflict")
+        actual = ProjectRevision.model_validate_json(saved[0]["payload"])
+        if actual.model_dump(exclude={"createdAt"}) != revision.model_dump(exclude={"createdAt"}):
+            raise ProjectConflict("project_publication_identity_conflict")
+        return actual
+
+    @staticmethod
+    def publication_revision_id(project_id: str, publication_id: str) -> str:
+        identity = [_required(project_id, "project_id_required"), _required(publication_id, "publication_id_required")]
+        return "prv-" + content_hash(canonical_json(identity))[:32]
 
     def _reserve_source(self, project_id: str, byte_count: int, *, lease_generation: int | None = None,
                         lease_owner: str | None = None) -> None:
@@ -247,21 +272,56 @@ class ProjectStore:
     def commit_revision(self, project_id: str, *, owner_id: str, expected_revision: str,
                         files: dict[str, str], template_version: str, plan_ref: str,
                         spec_revision: str | None = None, lease_generation: int | None = None,
-                        lease_owner: str | None = None) -> ProjectRevision:
+                        lease_owner: str | None = None, publication_id: str | None = None,
+                        runtime_operation_id: str | None = None) -> ProjectRevision:
         row = self._project_row(project_id, owner_id)
         project = Project.model_validate_json(row["payload"])
-        if project.currentRevision != expected_revision:
-            raise ProjectConflict("project_revision_conflict")
         manifest = build_manifest(files)
         _required(template_version, "template_version_required")
         _required(plan_ref, "plan_ref_required")
-        self._reserve_source(project_id, manifest.totalBytes, lease_generation=lease_generation, lease_owner=lease_owner)
-        revision = self._write_revision(project_id, files, parent=expected_revision,
-            template_version=template_version, plan_ref=plan_ref, spec_revision=spec_revision)
+        target_id = self.publication_revision_id(project_id, publication_id) if publication_id is not None else None
+        context = None
+        if runtime_operation_id is not None:
+            if publication_id is None:
+                raise ValueError("project_patch_publication_required")
+            context = self._runtime_patch_context(runtime_operation_id, publication_id, owner_id=owner_id,
+                lease_generation=lease_generation, lease_owner=lease_owner, require_claim=True)
+            parent, child = context["parent"], context["child"]
+            sync = (parent.result or {}).get("sourceSync", {})
+            if (context["project"].projectId != project_id or child.status != "running" or child.expectedRevision != expected_revision
+                    or child.approvalRef != plan_ref or parent.runtime.status != "syncing"
+                    or sync.get("operationId") != publication_id or sync.get("baseRevision") != expected_revision
+                    or sync.get("targetRevision") != target_id):
+                raise ProjectConflict("project_patch_publication_mismatch")
+        existing = self._q("select payload from wb_project_revision where id=$1 and project_id=$2", [target_id, project_id]) if target_id else []
+        revision = ProjectRevision.model_validate_json(existing[0]["payload"]) if existing else None
+        if revision is not None and (revision.parentRevision != expected_revision or revision.manifest != manifest
+                or revision.treeHash != manifest.treeHash or revision.planRef != plan_ref
+                or revision.templateVersion != template_version or revision.specRevision != spec_revision):
+            raise ProjectConflict("project_publication_identity_conflict")
+        if revision is not None and project.currentRevision == target_id:
+            params: list[Any] = []
+            fence = self._fence(project_id, lease_generation, lease_owner, params)
+            if context is not None:
+                fence += " and " + self._runtime_patch_fence(context, params)
+            if not self._q("select 1 as valid where " + fence, params):
+                raise ProjectConflict("project_revision_or_lease_conflict")
+            return revision
+        if project.currentRevision != expected_revision:
+            raise ProjectConflict("project_revision_conflict")
+        if revision is None:
+            # A stable revision row survives a lost publication response. A
+            # crash before that row may still consume a conservative quota
+            # reservation, matching the existing bounded failed-upload policy.
+            self._reserve_source(project_id, manifest.totalBytes, lease_generation=lease_generation, lease_owner=lease_owner)
+            revision = self._write_revision(project_id, files, parent=expected_revision,
+                template_version=template_version, plan_ref=plan_ref, spec_revision=spec_revision, revision_id=target_id)
         updated = project.model_copy(update={"currentRevision": revision.revision, "updatedAt": _now(),
             "revisionCount": project.revisionCount + 1, "sourceBytesStored": project.sourceBytesStored + manifest.totalBytes})
         params: list[Any] = [revision.revision, updated.model_dump_json(), project_id, owner_id, row["rev"], expected_revision]
         fence = self._fence(project_id, lease_generation, lease_owner, params)
+        if context is not None:
+            fence += " and " + self._runtime_patch_fence(context, params)
         rows = self._q("update wb_project set current_revision=$1,payload=$2,rev=rev+1 where id=$3 and owner_id=$4 and rev=$5 and current_revision=$6 and " + fence + " returning id", params)
         if not rows:
             raise ProjectConflict("project_revision_or_lease_conflict")
@@ -337,11 +397,136 @@ class ProjectStore:
         if not rows:
             raise ProjectConflict("workspace_lease_lost")
 
+    def _runtime_patch_context(self, parent_id: str, child_id: str | None = None, *, owner_id: str,
+                               lease_generation: int | None = None, lease_owner: str | None = None,
+                               require_claim: bool = False, cleanup: bool = False) -> dict[str, Any]:
+        rows = self._q("select o.payload as parent_payload,o.rev as parent_rev,p.payload as project_payload,p.rev as project_rev,p.current_revision,l.payload as lease_payload,l.generation,l.lease_owner,l.expires_at from wb_project_operation o join wb_project p on p.id=o.project_id join wb_project_lease l on l.project_id=p.id where o.id=$1 and p.owner_id=$2",
+            [parent_id, owner_id])
+        if not rows:
+            raise ProjectNotFound("project_runtime_not_found")
+        row = rows[0]
+        parent = ProjectOperation.model_validate_json(row["parent_payload"])
+        project = Project.model_validate_json(row["project_payload"])
+        lease = WorkspaceLease.model_validate_json(row["lease_payload"])
+        if (parent.kind != "runtime.start" or parent.runtime is None or parent.projectId != project.projectId
+                or parent.sessionId != project.sessionId or project.ownerId != owner_id
+                or project.currentRevision != row["current_revision"]
+                or lease.projectId != project.projectId or parent.runtime.workspaceId != lease.workspaceId
+                or lease.generation != row["generation"] or lease.leaseOwner != row["lease_owner"]
+                or parent.leaseGeneration != lease.generation or parent.leaseOwner != lease.leaseOwner
+                or lease.processRefs.get("operationId") != parent_id
+                or row["expires_at"] <= time.time() or lease.expiresAt <= time.time()
+                or (lease_generation is not None and lease_generation != lease.generation)
+                or (lease_owner is not None and lease_owner != lease.leaseOwner)):
+            raise ProjectConflict("workspace_lease_lost")
+        if not cleanup and (parent.status != "running" or parent.cancelRequested
+                or parent.runtime.status not in {"ready", "syncing"}
+                or parent.runtime.expiresAt is None or parent.runtime.expiresAt <= time.time()
+                or not lease.sandboxId or not parent.runtime.processId
+                or lease.processRefs.get("server") != parent.runtime.processId):
+            raise ProjectConflict("project_runtime_patch_unavailable")
+        row.update(parent=parent, project=project, lease=lease, owner_id=owner_id)
+        if child_id is not None:
+            child_row = self._operation_row(child_id, owner_id)
+            child = ProjectOperation.model_validate_json(child_row["payload"])
+            if (child.kind != "runtime.patch" or child.input.get("runtimeOperationId") != parent_id
+                    or child.projectId != project.projectId or child.sessionId != parent.sessionId):
+                raise ProjectConflict("project_patch_parent_mismatch")
+            if not cleanup and (child.cancelRequested or child.status in _TERMINAL_OPERATIONS
+                    or child.approvalRef != parent.approvalRef):
+                raise ProjectConflict("project_patch_not_runnable")
+            if require_claim and (child.leaseGeneration != lease.generation or child.leaseOwner != lease.leaseOwner):
+                raise ProjectConflict("workspace_lease_lost")
+            row.update(child=child, child_rev=child_row["rev"], child_payload=child_row["payload"])
+        return row
+
+    def _runtime_patch_fence(self, context: dict, params: list[Any]) -> str:
+        """Parent cancellation and lease metadata are part of each write CAS.
+
+        Reading JSON then checking only generation permits a cancellation or a
+        materialized-revision change between the check and SQL write. Comparing
+        the captured rows keeps SQLite and the HTTP SQL backend equivalent.
+        """
+        first = len(params) + 1
+        parent, project = context["parent"], context["project"]
+        params.extend([parent.operationId, context["parent_rev"], context["parent_payload"],
+            project.projectId, context["owner_id"], context["project_rev"], context["current_revision"],
+            context["generation"], context["lease_owner"], context["lease_payload"], time.time()])
+        p = lambda offset: "$" + str(first + offset)
+        clause = ("exists(select 1 from wb_project_operation po join wb_project pp on pp.id=po.project_id "
+            "join wb_project_lease pl on pl.project_id=pp.id "
+            f"where po.id={p(0)} and po.rev={p(1)} and po.payload={p(2)} "
+            f"and pp.id={p(3)} and pp.owner_id={p(4)} and pp.rev={p(5)} and pp.current_revision={p(6)} "
+            f"and pl.generation={p(7)} and pl.lease_owner={p(8)} and pl.payload={p(9)} and pl.expires_at>{p(10)})")
+        if "child" in context:
+            index = len(params) + 1
+            params.extend([context["child"].operationId, context["child_rev"], context["child_payload"]])
+            clause += f" and exists(select 1 from wb_project_operation pc where pc.id=${index} and pc.rev=${index + 1} and pc.payload=${index + 2})"
+        return clause
+
+    def enqueue_runtime_patch(self, parent_operation_id: str, *, owner_id: str, expected_revision: str,
+                              approval_ref: str, idempotency_key: str, changes: list[dict]) -> ProjectOperation:
+        parent = self.get_operation(parent_operation_id, owner_id=owner_id)
+        _required(idempotency_key, "idempotency_key_required")
+        _required(approval_ref, "approval_ref_required")
+        if not isinstance(changes, list) or not 1 <= len(changes) <= 64:
+            raise ValueError("invalid_project_changes")
+        input_value = {"runtimeOperationId": parent_operation_id, "changes": changes}
+        request = {"kind": "runtime.patch", "expectedRevision": expected_revision,
+            "approvalRef": approval_ref, "input": input_value}
+        digest = content_hash(_bounded(request, MAX_OPERATION_BYTES))
+        existing = self._q("select payload from wb_project_operation where project_id=$1 and idempotency_key=$2", [parent.projectId, idempotency_key])
+        if existing:
+            saved = ProjectOperation.model_validate_json(existing[0]["payload"])
+            if saved.requestHash != digest:
+                raise ProjectConflict("operation_idempotency_conflict")
+            return saved
+        context = self._runtime_patch_context(parent_operation_id, owner_id=owner_id)
+        parent, lease = context["parent"], context["lease"]
+        if (parent.runtime.status != "ready" or parent.runtime.health != "revision_verified"
+                or parent.runtime.revision != expected_revision or context["current_revision"] != expected_revision
+                or lease.mountedRevision != expected_revision or parent.approvalRef != approval_ref
+                or not lease.sandboxId or not parent.runtime.processId
+                or lease.processRefs.get("server") != parent.runtime.processId):
+            raise ProjectConflict("project_runtime_patch_unavailable")
+        now = _now()
+        operation = ProjectOperation(operationId="pop-" + uuid.uuid4().hex, projectId=parent.projectId,
+            sessionId=parent.sessionId, kind="runtime.patch", idempotencyKey=idempotency_key,
+            requestHash=digest, expectedRevision=expected_revision, approvalRef=approval_ref,
+            input=input_value, createdAt=now, updatedAt=now)
+        params: list[Any] = [operation.operationId, operation.projectId, idempotency_key, _operation_payload(operation, admission=True)]
+        fence = self._runtime_patch_fence(context, params)
+        self._q("insert into wb_project_operation(id,project_id,idempotency_key,rev,payload) select $1,$2,$3,1,$4 where "
+            + fence + " on conflict(project_id,idempotency_key) do nothing", params)
+        saved_rows = self._q("select payload from wb_project_operation where project_id=$1 and idempotency_key=$2", [parent.projectId, idempotency_key])
+        if not saved_rows:
+            raise ProjectConflict("project_runtime_patch_changed")
+        saved = ProjectOperation.model_validate_json(saved_rows[0]["payload"])
+        if saved.requestHash != digest:
+            raise ProjectConflict("operation_idempotency_conflict")
+        return saved
+
+    def list_runtime_patches(self, parent_operation_id: str, *, owner_id: str) -> list[ProjectOperation]:
+        parent = self.get_operation(parent_operation_id, owner_id=owner_id)
+        if parent.kind != "runtime.start":
+            raise ProjectConflict("project_patch_parent_mismatch")
+        result, cursor = [], ""
+        while True:
+            page = self.list_project_operations(parent.projectId, owner_id=owner_id, after_id=cursor, limit=100)
+            result.extend(item for item in page if item.kind == "runtime.patch"
+                and item.input.get("runtimeOperationId") == parent_operation_id
+                and (item.status not in _TERMINAL_OPERATIONS or item.pendingEvent is not None))
+            if len(page) < 100:
+                return sorted(result, key=lambda item: (item.createdAt, item.operationId))
+            cursor = page[-1].operationId
+
     def create_operation(self, project_id: str, *, owner_id: str, kind: str,
                          idempotency_key: str, expected_revision: str, approval_ref: str,
                          input: dict[str, Any] | None = None) -> ProjectOperation:
         project = self.get_project(project_id, owner_id=owner_id)
         _required(kind, "operation_kind_required")
+        if kind == "runtime.patch":
+            raise ValueError("runtime_patch_enqueue_required")
         _required(idempotency_key, "idempotency_key_required")
         _required(approval_ref, "approval_ref_required")
         request = {"kind": kind, "expectedRevision": expected_revision, "approvalRef": approval_ref, "input": input or {}}
@@ -428,7 +613,7 @@ class ProjectStore:
                 return operation
             updated = operation.model_copy(update={"cancelRequested": True, "updatedAt": _now()})
             if self._q("update wb_project_operation set payload=$1,rev=rev+1 where id=$2 and rev=$3 returning id",
-                       [updated.model_dump_json(), operation_id, row["rev"]]):
+                       [_operation_payload(updated), operation_id, row["rev"]]):
                 return updated
         raise ProjectConflict("operation_state_conflict")
 
@@ -442,7 +627,7 @@ class ProjectStore:
             now = time.time()
             updated = operation.model_copy(update={"lastAccessAt": now, "updatedAt": _now()})
             if self._q("update wb_project_operation set payload=$1,rev=rev+1 where id=$2 and rev=$3 returning id",
-                       [updated.model_dump_json(), operation_id, row["rev"]]):
+                       [_operation_payload(updated), operation_id, row["rev"]]):
                 return updated
         raise ProjectConflict("operation_state_conflict")
 
@@ -455,6 +640,8 @@ class ProjectStore:
                 lease_generation=lease_generation, lease_owner=lease_owner)
             row = self._operation_row(operation_id, owner_id)
             operation = ProjectOperation.model_validate_json(row["payload"])
+            if operation.kind == "runtime.patch":
+                raise ProjectConflict("runtime_patch_child_has_no_runtime")
             if operation.pendingEvent is not None:
                 continue
             if operation.leaseGeneration != lease_generation or operation.leaseOwner != lease_owner:
@@ -462,7 +649,8 @@ class ProjectStore:
             if operation.status != expected_status or operation.status in _TERMINAL_OPERATIONS or (
                     status != expected_status and status not in _OPERATION_TRANSITIONS.get(expected_status, set())):
                 raise ProjectConflict("operation_state_conflict")
-            if runtime.projectId != operation.projectId or runtime.revision != operation.expectedRevision:
+            effective_revision = operation.runtime.revision if operation.runtime is not None else operation.expectedRevision
+            if runtime.projectId != operation.projectId or runtime.revision != effective_revision:
                 raise ProjectConflict("runtime_operation_mismatch")
             lease = self.get_lease(operation.projectId, owner_id=owner_id)
             if lease is None or runtime.workspaceId != lease.workspaceId:
@@ -477,7 +665,7 @@ class ProjectStore:
             _bounded(pending["payload"], MAX_EVENT_BYTES)
             updated = ProjectOperation.model_validate({**operation.model_dump(), "status": status,
                 "runtime": runtime, "result": result, "stateVersion": version, "pendingEvent": pending, "updatedAt": now})
-            params: list[Any] = [updated.model_dump_json(), operation_id, row["rev"]]
+            params: list[Any] = [_operation_payload(updated), operation_id, row["rev"]]
             fence = self._fence(operation.projectId, lease_generation, lease_owner, params)
             if self._q("update wb_project_operation set payload=$1,rev=rev+1 where id=$2 and rev=$3 and " + fence + " returning id", params):
                 return updated
@@ -503,7 +691,7 @@ class ProjectStore:
                 payload=pending["payload"], event_id=pending["eventId"],
                 lease_generation=lease_generation, lease_owner=lease_owner)
             updated = operation.model_copy(update={"pendingEvent": None})
-            params: list[Any] = [updated.model_dump_json(), operation_id, row["rev"]]
+            params: list[Any] = [_operation_payload(updated), operation_id, row["rev"]]
             fence = self._fence(operation.projectId, lease_generation, lease_owner, params)
             if self._q("update wb_project_operation set payload=$1,rev=rev+1 where id=$2 and rev=$3 and " + fence + " returning id", params):
                 return event
@@ -523,6 +711,8 @@ class ProjectStore:
         if (lease is None or lease.generation != generation or lease.leaseOwner != lease_owner
                 or lease.expiresAt <= time.time()):
             raise ProjectConflict("workspace_lease_lost")
+        patch_context = self._runtime_patch_context(operation.input.get("runtimeOperationId"), operation_id,
+            owner_id=owner_id, lease_generation=generation, lease_owner=lease_owner, cleanup=True) if operation.kind == "runtime.patch" else None
         if operation.status in _TERMINAL_OPERATIONS and operation.pendingEvent is None:
             raise ProjectConflict("operation_state_conflict")
         if operation.leaseGeneration == generation and operation.leaseOwner == lease_owner:
@@ -534,8 +724,10 @@ class ProjectStore:
             "leaseGeneration": generation, "leaseOwner": lease_owner,
             "status": operation.status if managed_runtime or operation.status == "queued" else "interrupted", "updatedAt": _now(),
         })
-        params: list[Any] = [updated.model_dump_json(), operation_id, row["rev"]]
+        params: list[Any] = [_operation_payload(updated), operation_id, row["rev"]]
         fence = self._fence(operation.projectId, generation, lease_owner, params)
+        if patch_context is not None:
+            fence += " and " + self._runtime_patch_fence(patch_context, params)
         rows = self._q("update wb_project_operation set payload=$1,rev=rev+1 where id=$2 and rev=$3 and " + fence + " returning id", params)
         if not rows:
             raise ProjectConflict("operation_state_or_lease_conflict")
@@ -556,17 +748,78 @@ class ProjectStore:
         operation = ProjectOperation.model_validate_json(row["payload"])
         if operation.runtime is not None:
             raise ProjectConflict("runtime_operation_update_required")
-        if operation.status != expected_status or status not in _OPERATION_TRANSITIONS.get(expected_status, set()):
+        same_patch_status = operation.kind == "runtime.patch" and status == expected_status and status not in _TERMINAL_OPERATIONS
+        # A patch has no independently owned process. Its runtime owner can
+        # terminalize it in one fenced write after cancellation. Requiring a
+        # takeover to turn running into interrupted delays remote cleanup for
+        # an entire lease, because finish handles children before destruction.
+        cancel_patch = operation.kind == "runtime.patch" and expected_status == "running" and status == "cancelled"
+        if operation.status != expected_status or (not same_patch_status and not cancel_patch
+                and status not in _OPERATION_TRANSITIONS.get(expected_status, set())):
             raise ProjectConflict("operation_state_conflict")
         if operation.leaseGeneration is not None and (lease_generation != operation.leaseGeneration or lease_owner != operation.leaseOwner):
             raise ProjectConflict("workspace_lease_lost")
         _bounded(result, MAX_OPERATION_BYTES)
+        patch_context = None
+        if operation.kind == "runtime.patch":
+            patch_context = self._runtime_patch_context(operation.input.get("runtimeOperationId"), operation_id,
+                owner_id=owner_id, lease_generation=lease_generation, lease_owner=lease_owner,
+                require_claim=True, cleanup=status in {"failed", "cancelled"})
+            if status == "completed":
+                target = self.publication_revision_id(operation.projectId, operation_id)
+                parent = patch_context["parent"]
+                if (parent.runtime.status != "ready" or parent.runtime.health != "revision_verified"
+                        or parent.runtime.revision != target or patch_context["current_revision"] != target
+                        or patch_context["lease"].mountedRevision != target):
+                    raise ProjectConflict("project_patch_runtime_not_ready")
         updated = ProjectOperation.model_validate({**operation.model_dump(), "status": status,
             "result": result, "updatedAt": _now(), "leaseGeneration": lease_generation, "leaseOwner": lease_owner})
-        params: list[Any] = [updated.model_dump_json(), operation_id, row["rev"]]
+        params: list[Any] = [_operation_payload(updated), operation_id, row["rev"]]
         fence = self._fence(operation.projectId, lease_generation, lease_owner, params)
+        if patch_context is not None:
+            fence += " and " + self._runtime_patch_fence(patch_context, params)
         rows = self._q("update wb_project_operation set payload=$1,rev=rev+1 where id=$2 and rev=$3 and " + fence + " returning id", params)
         if not rows:
+            raise ProjectConflict("operation_state_or_lease_conflict")
+        return updated
+
+    def advance_runtime_revision(self, parent_operation_id: str, patch_operation_id: str, *, owner_id: str,
+                                 lease_generation: int, lease_owner: str, target_revision: str) -> ProjectOperation:
+        self.flush_operation_event(parent_operation_id, owner_id=owner_id,
+            lease_generation=lease_generation, lease_owner=lease_owner)
+        context = self._runtime_patch_context(parent_operation_id, patch_operation_id, owner_id=owner_id,
+            lease_generation=lease_generation, lease_owner=lease_owner, require_claim=True)
+        parent, child, lease = context["parent"], context["child"], context["lease"]
+        expected_target = self.publication_revision_id(parent.projectId, patch_operation_id)
+        sync = (parent.result or {}).get("sourceSync", {})
+        if (target_revision != expected_target or context["current_revision"] != target_revision
+                or lease.mountedRevision != target_revision or child.status != "running"
+                or parent.runtime.revision not in {child.expectedRevision, target_revision}
+                or sync.get("operationId") != patch_operation_id or sync.get("baseRevision") != child.expectedRevision
+                or sync.get("targetRevision") != target_revision):
+            raise ProjectConflict("project_patch_revision_mismatch")
+        revision = self.get_revision(parent.projectId, target_revision, owner_id=owner_id)
+        if revision.parentRevision != child.expectedRevision or revision.planRef != child.approvalRef:
+            raise ProjectConflict("project_patch_publication_mismatch")
+        params: list[Any] = []
+        fence = self._runtime_patch_fence(context, params)
+        if parent.runtime.revision == target_revision:
+            if not self._q("select 1 as valid where " + fence, params):
+                raise ProjectConflict("operation_state_or_lease_conflict")
+            return parent
+        if parent.runtime.status != "syncing":
+            raise ProjectConflict("project_patch_sync_required")
+        runtime = parent.runtime.model_copy(update={"revision": target_revision, "status": "syncing", "health": "unknown"})
+        version, now = parent.stateVersion + 1, _now()
+        pending = {"eventId": f"{parent_operation_id}:state:{version}", "type": "runtime.state", "payload": {
+            "operationId": parent_operation_id, "status": parent.status, "runtime": runtime.model_dump(),
+            "cancelRequested": parent.cancelRequested, "stateVersion": version, "updatedAt": now}}
+        _bounded(pending["payload"], MAX_EVENT_BYTES)
+        updated = parent.model_copy(update={"runtime": runtime, "stateVersion": version,
+            "pendingEvent": pending, "updatedAt": now})
+        params = [updated.model_dump_json(), parent_operation_id, context["parent_rev"]]
+        fence = self._runtime_patch_fence(context, params)
+        if not self._q("update wb_project_operation set payload=$1,rev=rev+1 where id=$2 and rev=$3 and " + fence + " returning id", params):
             raise ProjectConflict("operation_state_or_lease_conflict")
         return updated
 

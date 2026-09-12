@@ -20,12 +20,20 @@ const STATUS: Record<PreviewDescriptor["status"], string> = {
 export function SandboxPreviewSurface({
   projectId,
   projectRevision,
+  revisionMode = "pinned",
   appTitle = "工程预览",
 }: ProjectPreviewReference & { appTitle?: string }) {
-  const preview = useProjectPreview({ projectId, projectRevision });
+  const preview = useProjectPreview({
+    projectId,
+    projectRevision,
+    revisionMode,
+  });
   const descriptor = preview.snapshot?.descriptor;
   const mismatch =
-    descriptor && projectRevision && descriptor.revision !== projectRevision;
+    revisionMode === "pinned" &&
+    descriptor &&
+    projectRevision &&
+    descriptor.revision !== projectRevision;
   const status = preview.loading
     ? "正在读取工程状态"
     : preview.error

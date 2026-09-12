@@ -268,6 +268,7 @@ export interface AppCardDetail {
   runtimeKind?: "html-prototype" | "project";
   projectId?: string | null;
   projectRevision?: string | null;
+  projectRevisionMode?: "current" | "pinned";
   status: AppCardStatus;
   evidenceCount: number;
   blocked: boolean;
@@ -362,6 +363,7 @@ export function deriveAppCardDetail(state: unknown): AppCardDetail {
       runtimeKind: "project",
       projectId: typeof s.projectId === "string" ? s.projectId : null,
       projectRevision: typeof s.projectRevision === "string" ? s.projectRevision : null,
+      projectRevisionMode: "current",
       roles: null,
       aiCaps: null,
     };
@@ -923,7 +925,7 @@ export function AppArtifactPreview({ detail, loading = false, previewKey, appTit
         工程预览使用应用自己的数据。工程历史版本与复刻尚未接入应用中心。
       </p>
       <SandboxPreviewSurface projectId={detail.projectId} projectRevision={detail.projectRevision}
-        appTitle={appTitle} />
+        revisionMode={detail.projectRevisionMode} appTitle={appTitle} />
     </div>
   );
   if (detail?.specPages) return <SpecPagesPreview specPages={detail.specPages} model={detail.model} />;

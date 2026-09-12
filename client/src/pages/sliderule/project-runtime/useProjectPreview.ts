@@ -46,8 +46,12 @@ function errorMessage(error: unknown) {
 export function useProjectPreview({
   projectId,
   projectRevision,
+  revisionMode = "pinned",
 }: ProjectPreviewReference) {
-  const scope = `${projectId ?? ""}:${projectRevision ?? ""}`;
+  // A session's projectRevision is an eventually updated projection. Only a
+  // pinned artifact constrains the server's currently healthy source revision.
+  const pinnedRevision = revisionMode === "pinned" ? projectRevision : null;
+  const scope = `${projectId ?? ""}:${revisionMode}:${pinnedRevision ?? ""}`;
   const [state, setState] = useState<{
     scope: string;
     snapshot: ProjectPreviewSnapshot | null;
@@ -98,7 +102,7 @@ export function useProjectPreview({
           loading: false,
           error: null,
           ticket:
-            usable(snapshot, projectRevision) &&
+            usable(snapshot, pinnedRevision) &&
             prev.ticket?.identity === identity(snapshot)
               ? prev.ticket
               : null,
@@ -127,11 +131,11 @@ export function useProjectPreview({
       ticketRequest.current?.abort();
       ticketRequest.current = null;
     };
-  }, [projectId, projectRevision, scope]);
+  }, [projectId, pinnedRevision, scope]);
 
   const open = useCallback(async () => {
     const snapshot = latest.current;
-    if (ticketRequest.current || !usable(snapshot, projectRevision)) return;
+    if (ticketRequest.current || !usable(snapshot, pinnedRevision)) return;
     const current = generation.current;
     const key = identity(snapshot)!;
     const controller = new AbortController();
@@ -146,9 +150,21 @@ export function useProjectPreview({
         controller.signal.aborted ||
         generation.current !== current ||
         key !== identity(latest.current) ||
-        !usable(latest.current, projectRevision)
+        !usable(latest.current, pinnedRevision)
       )
         return;
+      // The same operation/runtime can advance between GET and ticket POST.
+      // An exact server grant must match the snapshot the user chose to open.
+      const descriptor = snapshot!.descriptor!;
+      if (
+        ticket.projectId !== descriptor.projectId ||
+        ticket.runtimeId !== descriptor.runtimeId ||
+        ticket.revision !== descriptor.revision
+      ) {
+        throw new ProjectPreviewError(
+          "预览授权与当前工程版本不一致，请更新状态后重试。"
+        );
+      }
       const entryUrl = isolatedPreviewUrl(
         ticket.entryUrl,
         window.location.href
@@ -169,7 +185,7 @@ export function useProjectPreview({
       if (generation.current === current)
         setState(prev => ({ ...prev, opening: false }));
     }
-  }, [projectRevision]);
+  }, [pinnedRevision]);
 
   useEffect(() => {
     if (!state.ticket) return;
@@ -200,7 +216,7 @@ export function useProjectPreview({
     error: current ? state.error : null,
     entryUrl: current ? (state.ticket?.entryUrl ?? null) : null,
     canOpen:
-      current && usable(state.snapshot, projectRevision) && !state.opening,
+      current && usable(state.snapshot, pinnedRevision) && !state.opening,
     refresh: () => refreshRef.current(),
     open,
   };

@@ -18,8 +18,7 @@ from services.persistence import PersistClosedError
 from services.control_checkpoint import guard_control_run
 from services.project_authority import approved_reference
 from services.project_creation import create_session_project, load_authorized_session, sync_session_project
-from services.project_manifest import apply_file_changes, content_hash, source_path
-from services.project_runtime import REVISION_FILE
+from services.project_manifest import canonical_json, content_hash, prepare_source_patch, source_path
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStoreUnavailable
 from services.project_tool_contracts import PROJECT_ARGUMENTS, PROJECT_WRITE_TOOLS
 from services.scope_authority import plan_execution_authorized
@@ -75,6 +74,11 @@ def operation_snapshot(snapshot):
     for name in ("command", "exitCode", "errorCode"):
         if name in saved and isinstance(saved[name], (str, int, type(None))):
             result[name] = saved[name][:240] if isinstance(saved[name], str) else saved[name]
+    if operation.kind == "runtime.patch":
+        for name in ("revision", "parentRevision", "runtimeOperationId", "synchronized", "sourcePublished"):
+            if name in saved and isinstance(saved[name], (str, bool)):
+                result[name] = saved[name]
+        result["verification"] = "not_run"
     return result
 
 
@@ -123,7 +127,7 @@ class ProjectTools:
                 guard_control_run()
                 if self.supervisor is None:
                     raise ProjectStoreUnavailable("project_worker_unavailable")
-                if project.currentRevision != parsed.expectedRevision:
+                if name == "project_exec" and project.currentRevision != parsed.expectedRevision:
                     raise ProjectConflict("project_revision_conflict")
                 params = dict(owner_id=self.owner_id, expected_revision=parsed.expectedRevision,
                     approval_ref=parsed.approvalRef, idempotency_key=parsed.idempotencyKey)
@@ -175,6 +179,22 @@ class ProjectTools:
         return operation_snapshot(self.store.snapshot_operation(operation_id, owner_id=self.owner_id))
 
     def _patch(self, project, args):
+        active = self.store.get_lease(project.projectId, owner_id=self.owner_id)
+        if active is not None and active.expiresAt > time.time() and active.processRefs.get("operationId"):
+            if self.supervisor is None:
+                raise ProjectStoreUnavailable("project_worker_unavailable")
+            # Queue to the existing execution owner. Never borrow its lease or
+            # write into its sandbox from a control/HTTP request thread.
+            changes = [change.model_dump() for change in args.changes]
+            before = self.store.read_files(project.projectId, args.expectedRevision, owner_id=self.owner_id)
+            prepare_source_patch(before, changes, live=True)
+            parent_id = active.processRefs["operationId"]
+            key = "live-patch-" + content_hash(canonical_json({"runtimeOperationId": parent_id, **args.model_dump()}))
+            operation = self.supervisor.submit_patch(parent_id, owner_id=self.owner_id,
+                expected_revision=args.expectedRevision, approval_ref=args.approvalRef,
+                idempotency_key=key, changes=changes)
+            return {"projectId": project.projectId, "runtimeOperationId": parent_id,
+                **self._snapshot(operation.operationId)}
         lease = self.store.acquire_lease(project.projectId, owner_id=self.owner_id,
             lease_owner="patch-" + uuid.uuid4().hex, ttl_seconds=120)
         try:
@@ -185,19 +205,7 @@ class ProjectTools:
             if current.revision != args.expectedRevision:
                 raise ProjectConflict("project_revision_conflict")
             files = self.store.read_files(project.projectId, current.revision, owner_id=self.owner_id)
-            changes = {}
-            for change in args.changes:
-                path = source_path(change.path)
-                if path == REVISION_FILE:
-                    raise ValueError("project_reserved_revision_file")
-                if path in changes:
-                    raise ValueError("project_duplicate_change_path")
-                actual = content_hash(files[path]) if path in files else None
-                if change.expectedSha256 != actual:
-                    raise ProjectConflict("project_file_hash_conflict")
-                changes[path] = change.content
-            updated = apply_file_changes(files, changes)
-            changed_paths = [path for path, content in changes.items() if files.get(path) != content]
+            updated, changed_paths = prepare_source_patch(files, [change.model_dump() for change in args.changes])
             if updated == files and current.planRef == args.approvalRef:
                 sync_session_project(self.store, project.sessionId, owner_id=self.owner_id, approval_ref=args.approvalRef)
                 return {"projectId": project.projectId, "revision": current.revision, "changedFiles": []}

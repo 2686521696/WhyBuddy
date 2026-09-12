@@ -330,7 +330,7 @@ function ProjectStudio({ projectId, projectRevision, appTitle, chatSlot,
             {resetSlot}<div className="ml-auto">{chromeSlot}</div>
           </div>}
           <SandboxPreviewSurface projectId={projectId} projectRevision={projectRevision}
-            appTitle={appTitle} />
+            revisionMode="current" appTitle={appTitle} />
         </div>
       } /> : <div className="flex h-full min-h-0 flex-col">{chatSlot}</div>}
     </StudioChrome>

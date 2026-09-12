@@ -395,6 +395,7 @@ may_depend_on = ["util", "core"]
   modules = [
     "services.control_run_service",
     "services.project_runtime_worker",
+    "services.project_source_sync",
     "services.project_preview_runtime",
     "services.project_authority",
     "services.project_creation",
@@ -549,9 +550,8 @@ why = """控制面闭集工具环。handoff 点火工厂，结果交回控制面
 回流是运行时合同（factory_complete → control_tool_result），不必画成 import 边。"""
 may_depend_on = [
   "drive",
-  # Session-bound tools reuse durable source storage and E2B operations.
+  # Session-bound tools reuse durable source storage; the runtime owner is injected.
   "persist",
-  "runtime",
   "evidence",
   # 2026-09-11 补齐既有 model_memory 归属：它借 identity_store 的执行器持久化。
   "identity",
@@ -803,6 +803,7 @@ why = "工程运行编排：把持久源码、租约和 E2B provider 组合成�
   modules = [
     "services.project_runtime",
     "services.project_runtime_worker",
+    "services.project_source_sync",
     "services.project_preview_runtime",
     "services.project_preview_access",
     "services.project_preview_config",

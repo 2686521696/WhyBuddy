@@ -97,6 +97,53 @@ def _runtime_change(world, **changes):
         runtime=operation.runtime.model_copy(update=changes))
 
 
+def _publish_runtime_patch(world, *, at_stage=lambda _: None):
+    """Exercise the durable source/lease/runtime APIs, keeping start identity.
+
+    Preview must remain unavailable until the same worker has published source,
+    confirmed its mount and projected a healthy runtime at that exact version.
+    No provider or remote browser is implied by this SQL/HTTP contract fixture.
+    """
+    store, parent = world.store, world.operation
+    fence = {"owner_id": "u1", "lease_generation": world.lease.generation,
+        "lease_owner": world.lease.leaseOwner}
+    child = store.enqueue_runtime_patch(parent.operationId, owner_id="u1",
+        expected_revision=parent.expectedRevision, approval_ref=world.approval,
+        idempotency_key="patch-preview", changes=[{
+            "path": "src/preview-proof.txt", "content": "new source", "expectedSha256": None}])
+    child = store.claim_operation(child.operationId, owner_id="u1",
+        lease_owner=world.lease.leaseOwner, generation=world.lease.generation)
+    store.transition_operation(child.operationId, expected_status=child.status, status="running", **fence)
+    target = store.publication_revision_id(parent.projectId, child.operationId)
+    intent = {"operationId": child.operationId, "baseRevision": parent.expectedRevision,
+        "targetRevision": target, "phase": "publishing"}
+    store.update_runtime_operation(parent.operationId, expected_status="running", status="running",
+        runtime=parent.runtime.model_copy(update={"status": "syncing", "health": "unknown"}),
+        result={"sourceSync": intent}, **fence)
+    at_stage("syncing")
+    base = store.get_revision(parent.projectId, parent.expectedRevision, owner_id="u1")
+    files = store.read_files(parent.projectId, parent.expectedRevision, owner_id="u1")
+    files["src/preview-proof.txt"] = "new source"
+    revision = store.commit_revision(parent.projectId, expected_revision=parent.expectedRevision,
+        files=files, template_version=base.templateVersion, plan_ref=world.approval,
+        spec_revision=base.specRevision, publication_id=child.operationId,
+        runtime_operation_id=parent.operationId, **fence)
+    assert revision.revision == target
+    at_stage("published")
+    store.renew_lease(parent.projectId, owner_id="u1", generation=world.lease.generation,
+        lease_owner=world.lease.leaseOwner, mounted_revision=target, ttl_seconds=600)
+    at_stage("mounted")
+    current = store.advance_runtime_revision(parent.operationId, child.operationId,
+        target_revision=target, **fence)
+    at_stage("advanced")
+    store.update_runtime_operation(parent.operationId, expected_status="running", status="running",
+        runtime=current.runtime.model_copy(update={"status": "ready", "health": "revision_verified"}),
+        result={"sourceSync": {**intent, "phase": "verified"}}, **fence)
+    store.transition_operation(child.operationId, expected_status="running", status="completed",
+        result={"synchronized": True, "revision": target}, **fence)
+    return revision
+
+
 def test_credentials_persist_as_hashes_and_browser_ticket_is_single_use_across_processes(world):
     ticket = _ticket(world)
     other_store = ProjectStore.from_url(world.store_url)
@@ -330,12 +377,82 @@ def test_http_owner_ticket_relay_redeem_and_revoke_end_to_end(world):
     assert "private" not in str(body)
 
 
+def test_http_preview_moves_to_published_revision_with_same_runtime_and_denies_old_credentials(world):
+    old_browser, old_tunnel, old_ticket = _browser(world), _tunnel(world), _ticket(world)
+    stages = []
+
+    def assert_unavailable(stage):
+        stages.append(stage)
+        response = world.client.get(f"/projects/{world.project.projectId}/preview")
+        assert response.status_code == 200 and response.json()["available"] is False
+        assert world.client.post(
+            f"/project-operations/{world.operation.operationId}/preview-ticket").status_code == 403
+        for role, token in (("browser", old_browser.secret), ("tunnel", old_tunnel.secret)):
+            assert world.client.post("/internal/project-preview/authorize", headers=world.internal_headers,
+                json={"role": role, "token": token, "audience": world.audience}).status_code == 403
+
+    revision = _publish_runtime_patch(world, at_stage=assert_unavailable)
+    assert stages == ["syncing", "published", "mounted", "advanced"]
+    current = world.store.get_operation(world.operation.operationId, owner_id="u1")
+    lease = world.store.get_lease(world.project.projectId, owner_id="u1")
+    assert current.expectedRevision == world.operation.expectedRevision != revision.revision
+    assert current.runtime.revision == lease.mountedRevision == revision.revision
+    assert current.runtime.runtimeId == world.runtime.runtimeId
+    assert current.runtime.processId == world.runtime.processId == lease.processRefs["server"]
+    assert lease.sandboxId == world.lease.sandboxId
+    assert (lease.generation, lease.leaseOwner) == (world.lease.generation, world.lease.leaseOwner)
+
+    # Even without an explicit revoke, the old revision cannot be rebound to the
+    # same run. In production suspend_for_sync additionally revokes these rows.
+    assert all(row["revoked_at"] is None for row in world.store._q("select * from wb_project_preview_access"))
+    for role, token in (("browser", old_browser.secret), ("tunnel", old_tunnel.secret)):
+        assert world.client.post("/internal/project-preview/authorize", headers=world.internal_headers,
+            json={"role": role, "token": token, "audience": world.audience}).status_code == 403
+    assert world.client.post("/internal/project-preview/authorize", headers=world.internal_headers,
+        json={"role": "binding", "binding": old_browser.scope.to_wire(), "audience": world.audience}).status_code == 403
+    assert world.client.post("/internal/project-preview/redeem", headers=world.internal_headers,
+        json={"ticket": old_ticket.secret, "audience": world.audience}).status_code == 403
+    assert world.client.get(f"/projects/{world.project.projectId}/preview").json()["available"] is False
+
+    fresh_tunnel = _tunnel(world)
+    observed = world.client.get(f"/projects/{world.project.projectId}/preview").json()
+    assert observed["available"] is True and observed["descriptor"]["revision"] == revision.revision
+    ticket = world.client.post(f"/project-operations/{world.operation.operationId}/preview-ticket")
+    assert ticket.status_code == 200
+    secret = parse_qs(urlsplit(ticket.json()["entryUrl"]).query)["ticket"][0]
+    redeemed = world.client.post("/internal/project-preview/redeem", headers=world.internal_headers,
+        json={"ticket": secret, "audience": world.audience})
+    assert redeemed.status_code == 200
+    body = redeemed.json()
+    assert body["binding"]["revision"] == fresh_tunnel.scope.revision == revision.revision
+    for role, token in (("browser", body["token"]), ("tunnel", fresh_tunnel.secret)):
+        response = world.client.post("/internal/project-preview/authorize", headers=world.internal_headers,
+            json={"role": role, "token": token, "audience": world.audience})
+        assert response.status_code == 200 and response.json()["ok"] is True
+
+
+def test_advanced_runtime_requires_matching_mounted_revision_for_preview(world):
+    revision = _publish_runtime_patch(world)
+    fresh = _browser(world)
+    world.store.renew_lease(world.project.projectId, owner_id="u1", generation=world.lease.generation,
+        lease_owner=world.lease.leaseOwner, mounted_revision=world.operation.expectedRevision)
+    assert world.store.get_operation(world.operation.operationId, owner_id="u1").runtime.revision == revision.revision
+    with pytest.raises(PreviewAccessDenied):
+        world.access.authorize_browser(fresh.secret, audience=world.audience)
+    with pytest.raises(PreviewAccessDenied):
+        _ticket(world)
+
+
 def test_http_ticket_and_browser_access_deadlines_match_actual_delayed_redemption(world):
     _tunnel(world)
     response = world.client.post(f"/project-operations/{world.operation.operationId}/preview-ticket")
     assert response.status_code == 200
     body = response.json()
-    assert set(body) == {"entryUrl", "ticketExpiresAt", "accessExpiresAt"}
+    assert set(body) == {"entryUrl", "ticketExpiresAt", "accessExpiresAt", "projectId", "operationId", "runtimeId", "revision"}
+    assert body["projectId"] == world.project.projectId
+    assert body["operationId"] == world.operation.operationId
+    assert body["runtimeId"] == world.runtime.runtimeId
+    assert body["revision"] == world.runtime.revision
     ticket_expiry = datetime.fromisoformat(body["ticketExpiresAt"]).timestamp()
     access_expiry = datetime.fromisoformat(body["accessExpiresAt"]).timestamp()
     assert ticket_expiry == pytest.approx(world.clock["now"] + 60, rel=0, abs=0.000001)

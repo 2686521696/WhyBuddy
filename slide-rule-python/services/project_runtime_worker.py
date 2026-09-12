@@ -22,6 +22,7 @@ from services.project_authority import approved_reference
 from services.project_creation import load_authorized_session
 from services.project_preview_config import origin_for_runtime
 from services.project_runtime import REVISION_FILE, _LeaseHeartbeat, _timestamp
+from services.project_source_sync import authorize_source_recovery, finish_pending_source_patches, sync_next_source_patch
 from services.project_store import ProjectConflict, ProjectStore, ProjectStoreUnavailable
 from services.workspace_provider import WorkspaceHandle, WorkspaceProvider, WorkspaceProviderError
 
@@ -40,7 +41,8 @@ def authorize_operation(store: ProjectStore, operation: ProjectOperation, owner_
     if state.runtimeKind != "project" or state.projectId != project.projectId:
         raise ProjectExecutionRejected("project_session_binding_required")
     revision = store.get_revision(project.projectId, owner_id=owner_id)
-    if revision.revision != operation.expectedRevision:
+    expected = operation.runtime.revision if operation.kind == "runtime.start" and operation.runtime else operation.expectedRevision
+    if revision.revision != expected:
         raise ProjectExecutionRejected("project_revision_conflict")
     if revision.planRef != operation.approvalRef:
         raise PermissionError("project_plan_approval_required")
@@ -114,7 +116,7 @@ class ProjectRuntimeSupervisor:
         # Authorization is checked before persistence and again by the worker.
         project = self.store.get_project(project_id, owner_id=owner_id)
         candidate = ProjectOperation(operationId="pending", projectId=project_id, sessionId=project.sessionId,
-            kind="runtime.start", idempotencyKey=idempotency_key, requestHash="", expectedRevision=expected_revision,
+            kind="runtime.start", idempotencyKey=idempotency_key, requestHash="", expectedRevision=project.currentRevision,
             approvalRef=approval_ref, createdAt=_timestamp(), updatedAt=_timestamp())
         self.authorizer(self.store, candidate, owner_id)
         operation = self.store.create_operation(project_id, owner_id=owner_id, kind="runtime.start",
@@ -142,6 +144,23 @@ class ProjectRuntimeSupervisor:
 
     def cancel(self, operation_id: str, *, owner_id: str) -> ProjectOperation:
         operation = self.store.request_operation_cancel(operation_id, owner_id=owner_id)
+        self._wake.set()
+        return operation
+
+    def submit_patch(self, runtime_operation_id: str, *, owner_id: str, expected_revision: str,
+                     approval_ref: str, idempotency_key: str, changes: list[dict]) -> ProjectOperation:
+        if not self.running:
+            raise ProjectStoreUnavailable("project_worker_unavailable")
+        parent = self.store.get_operation(runtime_operation_id, owner_id=owner_id)
+        # Recheck the live plan using the current source. The enqueue CAS checks
+        # the requested base, and may return an already completed identical call.
+        project = self.store.get_project(parent.projectId, owner_id=owner_id)
+        candidate = parent.model_copy(update={"runtime": None, "expectedRevision": project.currentRevision,
+                                               "approvalRef": approval_ref})
+        self.authorizer(self.store, candidate, owner_id)
+        operation = self.store.enqueue_runtime_patch(runtime_operation_id, owner_id=owner_id,
+            expected_revision=expected_revision, approval_ref=approval_ref,
+            idempotency_key=idempotency_key, changes=changes)
         self._wake.set()
         return operation
 
@@ -302,7 +321,10 @@ class _RuntimeTask:
             self.finish(**self.result["cleanup"])
             return
         self.check()
-        self.supervisor.authorizer(self.store, self.original, self.owner_id)
+        if self.result.get("sourceSync"):
+            authorize_source_recovery(self)
+        else:
+            self.supervisor.authorizer(self.store, self.operation(), self.owner_id)
         command = self.original.input.get("command") if self.original.kind == "runtime.exec" else None
         if self.original.kind == "runtime.exec" and (not isinstance(command, str) or command not in PROJECT_COMMANDS):
             raise ValueError("invalid_project_command")
@@ -350,6 +372,9 @@ class _RuntimeTask:
                 raise WorkspaceProviderError("runtime_dispatch_uncertain")
             self.provider.connect(self.handle)
             self.heartbeat.handle = self.handle
+            if self.result.get("sourceSync"):
+                self.save("syncing")
+                sync_next_source_patch(self, recovering=True)
             phase = self.result.get("phase") or self.original.runtime.status
             phases = {"installing", "executing"} if self.original.kind == "runtime.exec" else {"installing", "starting", "ready"}
             if phase not in phases:
@@ -411,6 +436,8 @@ class _RuntimeTask:
         next_health = 0
         while True:
             self.check()
+            if sync_next_source_patch(self):
+                next_health = 0
             last_access = max(self.result["readyAt"], self.operation().lastAccessAt or 0)
             if time.time() - last_access >= min(float(self.result["idleSeconds"]), self.supervisor.idle_seconds):
                 self.finish("completed", "expired", "runtime_idle_expired")
@@ -474,6 +501,8 @@ class _RuntimeTask:
             self.save("stopping", status="cancelling" if current == "cancelling" else "running", error=code)
         try:
             self.heartbeat.check()
+            if self.original.kind == "runtime.start":
+                finish_pending_source_patches(self, cancelled=status == "cancelled", error=code or "project_runtime_stopped")
             if self.supervisor.preview_runtime is not None:
                 self.supervisor.preview_runtime.revoke(self)
             if self.handle is not None:

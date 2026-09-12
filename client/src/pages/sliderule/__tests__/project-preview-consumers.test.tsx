@@ -60,6 +60,107 @@ afterEach(async () => {
 });
 
 describe("both project artifact consumers", () => {
+  it.each(["studio", "session-app"])(
+    "%s follows the server's current source despite a stale session projection",
+    async consumer => {
+      fetcher.mockImplementation(async (_url: string, init?: RequestInit) =>
+        Response.json(
+          init?.method === "POST"
+            ? {
+                projectId: "project-one",
+                operationId: "operation-one",
+                runtimeId: "runtime-one",
+                revision: "revision-two",
+                entryUrl: "https://preview.example/entry?ticket=current-source",
+                ticketExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+                accessExpiresAt: new Date(Date.now() + 300_000).toISOString(),
+              }
+            : {
+                operationId: "operation-one",
+                available: true,
+                reason: null,
+                descriptor: {
+                  kind: "project",
+                  projectId: "project-one",
+                  runtimeId: "runtime-one",
+                  revision: "revision-two",
+                  status: "ready",
+                },
+              }
+        )
+      );
+      await act(async () =>
+        root.render(
+          consumer === "studio" ? (
+            <SlideRuleStudio
+              chatSlot={<p>conversation</p>}
+              activeSkillId={null}
+              runtimeKind="project"
+              projectId={stored.projectId}
+              projectRevision={stored.projectRevision}
+            />
+          ) : (
+            <AppArtifactPreview
+              detail={deriveAppCardDetail(stored)}
+              previewKey="session:one"
+              appTitle="Task board"
+            />
+          )
+        )
+      );
+      const button = container.querySelector<HTMLButtonElement>(
+        '[data-testid="project-preview-open"]'
+      )!;
+      expect(button.disabled).toBe(false);
+      expect(container.textContent).toContain("预览就绪");
+      expect(container.querySelector("iframe")).toBeNull();
+      await act(async () => button.click());
+      expect(container.querySelector("iframe")?.getAttribute("src")).toContain(
+        "current-source"
+      );
+      expect(
+        fetcher.mock.calls.filter(([, init]) => init?.method === "POST")
+      ).toHaveLength(1);
+    }
+  );
+
+  it("an app reference without an explicit current-session policy stays pinned to its saved version", async () => {
+    fetcher.mockResolvedValue(
+      Response.json({
+        operationId: "operation-one",
+        available: true,
+        reason: null,
+        descriptor: {
+          kind: "project",
+          projectId: "project-one",
+          runtimeId: "runtime-one",
+          revision: "revision-two",
+          status: "ready",
+        },
+      })
+    );
+    const detail = {
+      ...deriveAppCardDetail(stored),
+      projectRevisionMode: undefined,
+    };
+    await act(async () =>
+      root.render(
+        <AppArtifactPreview
+          detail={detail}
+          previewKey="app:historical"
+          appTitle="Saved version"
+        />
+      )
+    );
+    expect(
+      container.querySelector<HTMLButtonElement>(
+        '[data-testid="project-preview-open"]'
+      )!.disabled
+    ).toBe(true);
+    expect(container.textContent).toContain("运行版本与当前工程不同");
+    expect(container.querySelector("iframe")).toBeNull();
+  });
+
   it.each([false, true])(
     "Studio preserves the project stage with old HTML and running=%s",
     async running => {

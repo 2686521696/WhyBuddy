@@ -749,3 +749,72 @@ Python / TS / grok 自动架构生成与检查通过，新增预算叶子及实�
 4. **P5 首个真实业务样本。** 任务管理应用的 API、数据持久化、应用角色、错误修复与重建；再推进历史版本导出/恢复/复刻及 P6 编辑与发布。
 
 本批推进了 P2 的安全传输与共同预览入口，并完善 P1 的授权边界；P1/P2/P3 仍按能力记录部分完成。P4 的浏览器验收服务和 P5 的业务持久化尚未完成，不将 Chrome 烟测、截图或源码行数换算成整个重构的完成百分比。
+
+## 23. 2026-09-13 现有运行者接收源码补丁与预览版本切换
+
+本批起点为 `10a19649`。按已确认的方向，**当前 WhyBuddy 是架构根基，grok-build 是主要参考，其他源码库补充具体能力**。继续使用原 Python 模型/工具循环、持久操作与单写租约、React 工作台以及自动生成的架构；本批没有新增另一套 Agent 主循环。grok 的会话资源持有、`search_replace` 前后内容和 `FileWritten` 结果归因是主要对照，源码位置与复用边界见 [参考源码索引](<WhyBuddy 工程重构参考源码索引.md#根基与复用顺序2026-09-13-确认>)。
+
+### 23.1 修复的真实堵点与完整调用链
+
+先前 `project_patch` 会申请自己的 `patch-*` 写租约，而正在运行的工程由 `runtime.start` 一直持有租约。因此“运行后修改源码”在真实路径上被锁拒绝。不能通过取消写锁解决这个问题。
+
+现在的真实入口是 `rehearsal_control → ProjectTools.project_patch → ProjectRuntimeSupervisor.submit_patch → ProjectStore.enqueue_runtime_patch → 原 runtime.start worker → project_source_sync → E2B.sync_files`。`runtime.patch` 是当前运行的持久子请求，扫描器不会为它创建另一个 worker 或 sandbox。
+
+| 已接入能力 | 当前实际行为 |
+|---|---|
+| 工具提交和结果 | 运行中返回补丁 operationId，模型沿原 `project_status` 查询；排队、源码已发布、同步完成明确区分。只有实际同步、版本探针和持久回执都满足时返回 `synchronized:true`，验证字段仍为 `not_run`。 |
+| 来源与发布 | 比对 expectedRevision、文件 hash 和批准版本；由项目 ID 与补丁 ID 确定稳定目标 revision，保存不可变源码后同步。恢复已写入的版本行不重复创建源码版本；父 start 请求的 expectedRevision/requestHash 保持原值。 |
+| 持租约执行 | 发布、领取、推进、完成同时检查父/子操作、项目 head、generation、租约载荷、sandbox 与 server PID 绑定。模型工具不能借走当前 worker 的租约。 |
+| 受控文件同步 | 固定 helper 从有上限的 stdin 读取新旧完整清单，先验整棵旧树和新增目的路径，再逐文件替换或删除，最后写 revision marker；阻止目录/符号链接逃逸、硬链接与新增路径覆盖。依赖目录和未列入源码的运行数据保留。 |
+| 同步范围 | 活跃运行支持 `src/`、`public/`、`tests/` 和 `index.html`；改变依赖、锁文件或启动配置明确要求停止运行后修改并重新安装/启动。补丁整条操作记录仍受 128 KiB 上限约束，入队预留 4 KiB 状态/结果空间。 |
+| 运行与会话版本 | 同步后将 mountedRevision、runtime.revision 和服务实际版本对齐；会话仅更新工程引用，不覆盖正在进行的对话。原 runtimeId、sandbox、应用 server PID 继续使用。 |
+| 预览切换 | 写文件前撤销旧浏览器/票据/隧道授权并停止旧隧道；新版本健康确认后由原 worker 重新登记隧道。旧票据不能打开新源码。 |
+| 工作台消费 | Studio 当前会话与 Apps 会话卡显式跟随服务端当前运行；历史指定版本默认固定。会话投影落后不会锁死新预览；GET 快照与 POST 票据逐项核对 project/operation/runtime/revision，拒绝版本竞态。 |
+| 原请求重试 | 工具入口和 HTTP 启动入口均允许同一历史幂等请求查询原 start；相同旧版本但不同请求仍被拒绝，不重复启动工程。 |
+
+本批沿用按 revision 绑定授权的预览设计：源码版本切换时撤下旧 iframe，用户重新打开新版本。沙盒与应用进程持续运行，但这里**不承诺跨版本保留浏览器 document、表单或 React 内存状态**；将来若做无感授权交接，需要单独验收。真实 HMR 消息证明 Vite 能响应源码更新，不能单独替代浏览器状态或业务验收。
+
+### 23.2 失败、取消和恢复
+
+父操作持久保存 `sourceSync` 阶段：`publishing → dispatching → written → verified`。保存的 intent 包含补丁、父源码和目标源码标识。发布阶段恢复可复用稳定版本；已确认写入后的恢复只做全树只读校验与版本探针，不重复应用补丁。
+
+如果在派发文件写入之后失去确认，不能判断远端是否部分成功，则如实失败并由既有生命周期清理实例，保留可重建的持久源码；不重放未知写入。多文件更新不是原子事务。provider 区分预检冲突、部分修改失败和传输结果未知，均不会自行重试。
+
+本批复审抓到并修复两条容易被短单测掩盖的边界：
+
+1. 源码提交之后、远端写入之前可能撤销计划。现在在实际 provider 写入和恢复检查前再次读取持久批准，拒绝继续执行。
+2. 原状态机不允许正在运行的补丁直接写取消终态，导致等下一次租约接管才清理。现在仅对子补丁允许受当前租约约束的取消 CAS；取消赢过发布 CAS 时也回到原生命周期收尾。判据要求使用原 generation 完成，不能靠 1 秒测试租约兜底。
+
+尚未执行的子补丁取消不会停止健康父 runtime；父任务取消、已开始同步的子补丁取消则保留真实源码结果并清理运行。竞争的旧基线补丁不能覆盖先完成的版本。已保存源码不等于运行成功，运行 ready 也不等于应用验收通过。
+
+租约 heartbeat 可能让完整载荷 CAS 安全拒绝，本轮保留接管恢复而不是放松比较。若在稳定 revision 行落库前崩溃，既有保守上传配额预约仍可能多消耗一次；尚未新增独立配额回收台账。
+
+### 23.3 实际证据和验证范围
+
+新增可重跑命令 `pnpm run smoke:project-source-sync`；缺 key 时明确 `blocked`、退出码 2。使用独立 artifact SQLite 和已批准模板夹具，避免访问真实会话库。
+
+| 真机/浏览器证据 | 实际结果与报告 |
+|---|---|
+| 真实工具 → SQL worker → 单 E2B → Vite | **17 项通过**；`artifacts/project-source-sync/1789236595-4ecf6dbd/report.json`。同 sandbox/runtime/PID 更新、增加、删除源码；真实 HTTP 新内容与 HMR WS 更新；旧请求幂等、历史不变、会话新版本、worker 重启恢复；远端未修改文件漂移导致预检失败并清理，持久源码保留。 |
+| Linux 同步 helper | **13 项通过**；`artifacts/project-source-sync-helper/1789236033-b4e610af/report.json`。实际 E2B Linux 执行正式测试函数体，覆盖真实路径、文件、竞态、部分失败与 marker 顺序；管理 key 仅留宿主。 |
+| 实际 React 组件 + Chrome | **8 项通过、0 pageerror**；`artifacts/preview-version-browser-1789236862277/report.json`。点击 r1、同步撤下 iframe、旧 props 下打开 r2、会话投影补齐仍保留新 iframe、固定历史 r1 拒绝 r2。使用受控 HTTP/应用页面，浏览器已关闭。 |
+
+所有本轮 E2B 烟测实例均销毁并查询确认无遗留。前两轮工程烟测失败发生在 Node 20 的 HMR 观察器尚未连通；为观察器显式启用其内置 WebSocket 后通过，未修改产品 Vite 启动参数来绕过检查，失败报告与清理记录保留。
+
+真实工程烟测的计划与工具选择由测试夹具提供，未调用真实模型，也没有组合私有网关、完整 Studio 和浏览器业务断言。Chrome 局部测试验证组件切换，Python SQL/HTTP 另验授权；这些结果不能合并宣称一次完整生产端到端通过。
+
+| 最终本地验证 | 结果 |
+|---|---|
+| Python 工程/工作区/控制工具与预算联合回归 | **675 passed、17 skipped**；`artifacts/project-source-sync-final-python.xml`。包括实际 SQL scanner、授权、取消、恢复、预览轮换和新旧工具入口。15 项为 Windows 下跳过的 Linux 用例，2 项为只适用 SQL CAS 而不适用文件锁的分支；新增 13 项 Linux helper 另有上述 E2B 实证。 |
+| 前端共同组件与两个工作台实际消费 | **42 passed**；当前会话跟随、历史固定、迟到快照和错版票据均有正反用例。 |
+| 全仓 TypeScript | **基线 18 项、本轮 18 项、新增 0 项**。对起点 `10a19649` 用 TypeScript CompilerHost 读取 Git 版本内容，完整编译并逐项对比；没有回退共享源码。报告 `artifacts/project-source-sync-ts-baseline-comparison.json`，不能写成 tsc 全绿。 |
+| JSON Schema/TS 合同、脚本 | 合同同步；**57/57** 脚本测试通过。 |
+| 架构与文档 | Python/TS/全仓/grok 自动生成与检查通过；三份权威图和本方案共 7 块 Mermaid 经 Chrome 实际渲染。新增编排模块有明确归属，移除已不用的 control → runtime 直接依赖声明，未扩大循环或违规基线。 |
+
+定向变异覆盖 store、运行接入、文件预检、计划复查、取消、预览轮换和 UI 版本消费；对应报告为 `artifacts/runtime-patch-store-mutations.json`、`runtime-patch-cancel-mutation.json`、`live-source-sync-mutations-report.json` 及预览/helper 目录内的报告。变异验证后恢复正常实现，再运行最终联合回归。
+
+### 23.4 下一步
+
+本批补齐了 P3 活跃运行中的源码修改，以及 P2 预览与源码版本的衔接；P1/P2/P3 继续按具体能力验收，不把阶段整体标成完成。下一步先把真实 Python authority、隔离网关、运行 worker 和两个工作台组成完整产品样本；随后进入 P4 的独立浏览器执行、固定版本证据与失败反馈。P5 的真实 API、业务持久化与应用权限仍未完成。
+
+基础继续由当前 WhyBuddy 承担：模型循环、计划授权、SQL 版本与证据权威不变；Playwright 等新增参考源码接入浏览器能力。生产工程模式仍关闭，隔离域名/TLS、线上资源预算与部署验收另行按原方案推进。

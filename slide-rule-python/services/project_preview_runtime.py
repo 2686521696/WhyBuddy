@@ -50,9 +50,10 @@ class ProjectPreviewRuntime:
                 task.save("ready")
                 return
             same_generation = preview.get("generation") == task.lease.generation
+            same_revision = preview.get("revision") == task.runtime.revision
             expiration = preview.get("expiresAt", 0)
             lasts_until_runtime_end = expiration >= (task.runtime.expiresAt or now)
-            if same_generation and expiration > now and (expiration > now + 15 or lasts_until_runtime_end):
+            if same_generation and same_revision and expiration > now and (expiration > now + 15 or lasts_until_runtime_end):
                 if now < getattr(task, "_preview_probe_after", 0):
                     return
                 task._preview_probe_after = now + 15
@@ -75,7 +76,7 @@ class ProjectPreviewRuntime:
         issued = self.access.issue_tunnel_grant(task.operation_id, owner_id=task.owner_id,
             audience=origin_for_runtime(task.runtime.runtimeId), ttl_seconds=min(900, remaining))
         task.result["preview"] = {"phase": "dispatching", "grantId": issued.scope.grant_id,
-            "generation": task.lease.generation, "expiresAt": issued.expires_at}
+            "generation": task.lease.generation, "revision": task.runtime.revision, "expiresAt": issued.expires_at}
         try:
             task.save("ready")
             task.check()
@@ -105,6 +106,33 @@ class ProjectPreviewRuntime:
             # The worker must handle cancellation/lease uncertainty itself. It
             # owns runtime destruction or reconciliation; do not retry dispatch.
             raise
+
+    def suspend_for_sync(self, task) -> None:
+        """The existing runtime owner closes preview before changing its files.
+
+        Revoke all old browser/ticket/tunnel grants, then stop the known tunnel
+        process. Unknown dispatch cannot be repaired by dropping its only record
+        or by blindly launching a replacement. The caller must reconcile it.
+        No application-server process, sandbox identity, or lease changes owner.
+        """
+        task.check()
+        self.access.revoke_runtime(task.operation_id, owner_id=task.owner_id)
+        task.check()
+        preview = task.result.get("preview") or {}
+        refs = dict(task.heartbeat.lease.processRefs)
+        pid = refs.get("preview")
+        if preview.get("phase") in {"dispatching", "blocked"}:
+            raise WorkspaceProviderError("preview_dispatch_uncertain")
+        if pid is not None or preview:
+            if not isinstance(pid, str) or not pid.isdecimal():
+                raise WorkspaceProviderError("preview_process_identity_missing")
+            task.provider.stop(task.handle, pid)
+            task.check()
+            refs.pop("preview", None)
+            task.heartbeat.renew(process_refs=refs)
+        task.result.pop("preview", None)
+        task._preview_probe_after = 0
+        task.save("syncing")
 
     def revoke(self, task) -> None:
         self.access.revoke_runtime(task.operation_id, owner_id=task.owner_id)

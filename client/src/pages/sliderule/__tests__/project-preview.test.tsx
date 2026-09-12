@@ -41,13 +41,15 @@ function ready(
 }
 async function render(
   projectId = "project-one",
-  projectRevision = "revision-one"
+  projectRevision = "revision-one",
+  revisionMode: "current" | "pinned" = "pinned"
 ) {
   await act(async () => {
     root.render(
       <SandboxPreviewSurface
         projectId={projectId}
         projectRevision={projectRevision}
+        revisionMode={revisionMode}
         appTitle="任务管理"
       />
     );
@@ -76,6 +78,10 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   snapshot = ready();
   ticket = {
+    projectId: "project-one",
+    operationId: "operation-one",
+    runtimeId: "runtime-one",
+    revision: "revision-one",
     entryUrl: "https://preview.example/entry?ticket=one-use",
     ticketExpiresAt: new Date(Date.now() + 60_000).toISOString(),
     accessExpiresAt: new Date(Date.now() + 300_000).toISOString(),
@@ -223,6 +229,86 @@ describe("authorized project preview", () => {
     expect(posts()).toHaveLength(0);
   });
 
+  it("a current session follows a healthy source update while its session projection is still old", async () => {
+    await render("project-one", "revision-one", "current");
+    await click();
+    expect(frame()).not.toBeNull();
+    snapshot.available = false;
+    snapshot.descriptor!.status = "syncing";
+    await poll();
+    expect(frame()).toBeNull();
+    expect(openButton().disabled).toBe(true);
+    snapshot = ready("project-one", "revision-two");
+    ticket.revision = "revision-two";
+    ticket.entryUrl = "https://preview.example/entry?ticket=version-two";
+    await poll();
+    expect(container.textContent).toContain("预览就绪");
+    expect(openButton().disabled).toBe(false);
+    expect(posts()).toHaveLength(1);
+    await click();
+    expect(frame()?.getAttribute("src")).toBe(ticket.entryUrl);
+    const mounted = frame();
+    await render("project-one", "revision-two", "current");
+    expect(frame()).toBe(mounted);
+    expect(posts()).toHaveLength(2);
+  });
+
+  it("a pinned historical source never silently follows a newer healthy runtime", async () => {
+    await render();
+    await click();
+    snapshot = ready("project-one", "revision-two");
+    await poll();
+    expect(frame()).toBeNull();
+    expect(openButton().disabled).toBe(true);
+    expect(container.textContent).toContain("运行版本与当前工程不同");
+    await click();
+    expect(posts()).toHaveLength(1);
+  });
+
+  it.each(["projectId", "runtimeId", "revision", "operationId"] as const)(
+    "a ticket for a changed %s cannot mount against an older observed snapshot",
+    async field => {
+      await render("project-one", "revision-one", "current");
+      ticket[field] = "changed";
+      await click();
+      expect(frame()).toBeNull();
+      expect(container.textContent).toContain("授权与当前工程版本不一致");
+    }
+  );
+
+  it("a late ticket cannot reopen the prior revision after the current runtime advances", async () => {
+    await render("project-one", "revision-one", "current");
+    let release!: (response: Response) => void;
+    fetcher.mockImplementationOnce(
+      () =>
+        new Promise<Response>(resolve => {
+          release = resolve;
+        })
+    );
+    await click();
+    snapshot = ready("project-one", "revision-two");
+    await poll();
+    await act(async () => {
+      release(Response.json(ticket));
+    });
+    expect(frame()).toBeNull();
+    expect(openButton().disabled).toBe(false);
+    ticket.revision = "revision-two";
+    await click();
+    expect(frame()).not.toBeNull();
+  });
+
+  it("switching a current session to a pinned artifact immediately clears its iframe", async () => {
+    snapshot = ready("project-one", "revision-two");
+    ticket.revision = "revision-two";
+    await render("project-one", "revision-one", "current");
+    await click();
+    expect(frame()).not.toBeNull();
+    await render("project-one", "revision-one", "pinned");
+    expect(frame()).toBeNull();
+    expect(openButton().disabled).toBe(true);
+  });
+
   it("an unrelated project in the response cannot supply a preview", async () => {
     snapshot = ready("another-project");
     await render();
@@ -237,6 +323,7 @@ describe("authorized project preview", () => {
     snapshot.descriptor!.runtimeId = "runtime-rebuilt";
     await poll();
     expect(frame()).toBeNull();
+    ticket.runtimeId = "runtime-rebuilt";
     await click();
     expect(frame()).not.toBeNull();
     snapshot.available = false;
@@ -273,18 +360,30 @@ describe("authorized project preview", () => {
     await render();
     await click();
     expect(frame()).not.toBeNull();
-    await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
     expect(frame()).toBeNull();
     expect(container.textContent).toContain("授权已过期");
     expect(posts()).toHaveLength(1);
   });
 
-  it.each(["expired-ticket", "missing-access-expiry", "invalid-access-expiry", "access-before-ticket"])(
-    "%s cannot mount an iframe even if the other deadline is in the future", async invalid => {
-      if (invalid === "expired-ticket") ticket.ticketExpiresAt = new Date(Date.now() - 1).toISOString();
-      if (invalid === "missing-access-expiry") delete (ticket as Partial<ProjectPreviewTicket>).accessExpiresAt;
-      if (invalid === "invalid-access-expiry") ticket.accessExpiresAt = "invalid";
-      if (invalid === "access-before-ticket") ticket.accessExpiresAt = new Date(Date.now() + 1000).toISOString();
+  it.each([
+    "expired-ticket",
+    "missing-access-expiry",
+    "invalid-access-expiry",
+    "access-before-ticket",
+  ])(
+    "%s cannot mount an iframe even if the other deadline is in the future",
+    async invalid => {
+      if (invalid === "expired-ticket")
+        ticket.ticketExpiresAt = new Date(Date.now() - 1).toISOString();
+      if (invalid === "missing-access-expiry")
+        delete (ticket as Partial<ProjectPreviewTicket>).accessExpiresAt;
+      if (invalid === "invalid-access-expiry")
+        ticket.accessExpiresAt = "invalid";
+      if (invalid === "access-before-ticket")
+        ticket.accessExpiresAt = new Date(Date.now() + 1000).toISOString();
       await render();
       await click();
       expect(frame()).toBeNull();

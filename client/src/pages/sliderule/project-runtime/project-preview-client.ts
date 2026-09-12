@@ -3,6 +3,8 @@ import type { PreviewDescriptor } from "@shared/project-runtime.generated";
 export interface ProjectPreviewReference {
   projectId?: string | null;
   projectRevision?: string | null;
+  /** Current sessions follow server authority; history remains explicitly pinned. */
+  revisionMode?: "current" | "pinned";
 }
 
 export interface ProjectPreviewSnapshot {
@@ -13,6 +15,10 @@ export interface ProjectPreviewSnapshot {
 }
 
 export interface ProjectPreviewTicket {
+  projectId: string;
+  operationId: string;
+  runtimeId: string;
+  revision: string;
   entryUrl: string;
   ticketExpiresAt: string;
   accessExpiresAt: string;
@@ -101,6 +107,16 @@ export async function requestProjectPreviewTicket(
     "POST"
   );
   if (
+    body?.operationId !== operationId ||
+    ![body?.projectId, body?.runtimeId, body?.revision].every(
+      value => typeof value === "string" && value.length > 0
+    )
+  ) {
+    throw new ProjectPreviewError(
+      "预览授权与当前工程版本不一致，请更新状态后重试。"
+    );
+  }
+  if (
     typeof body?.entryUrl !== "string" ||
     typeof body.ticketExpiresAt !== "string" ||
     typeof body.accessExpiresAt !== "string" ||
@@ -111,7 +127,15 @@ export async function requestProjectPreviewTicket(
   ) {
     throw new ProjectPreviewError("预览授权已过期，请重新打开预览。");
   }
-  return { entryUrl: body.entryUrl, ticketExpiresAt: body.ticketExpiresAt, accessExpiresAt: body.accessExpiresAt };
+  return {
+    projectId: body.projectId,
+    operationId: body.operationId,
+    runtimeId: body.runtimeId,
+    revision: body.revision,
+    entryUrl: body.entryUrl,
+    ticketExpiresAt: body.ticketExpiresAt,
+    accessExpiresAt: body.accessExpiresAt,
+  };
 }
 
 /** Generated code must never share the workbench's cookies or origin. */

@@ -86,3 +86,27 @@ def apply_file_changes(files: Mapping[str, str], changes: Mapping[str, str | Non
             updated[path] = content
     build_manifest(updated)
     return updated
+
+
+def prepare_source_patch(files: Mapping[str, str], changes: list[dict], *, live: bool = False) -> tuple[dict[str, str], list[str]]:
+    """Validate the model's exact before/after contract before any side effect.
+
+    A running Vite process can consume source/assets. Dependency and startup
+    configuration changes need a separately managed reinstall/restart; silently
+    writing them would make the saved revision differ from installed execution.
+    """
+    replacements = {}
+    for change in changes:
+        path = source_path(change["path"])
+        if path.casefold() == "public/__whybuddy_revision.json":
+            raise ValueError("project_reserved_revision_file")
+        if path in replacements:
+            raise ValueError("project_duplicate_change_path")
+        actual = content_hash(files[path]) if path in files else None
+        if change["expectedSha256"] != actual:
+            raise ValueError("project_file_hash_conflict")
+        replacements[path] = change["content"]
+    changed = [path for path, content in replacements.items() if files.get(path) != content]
+    if live and any(path != "index.html" and not path.startswith(("src/", "public/", "tests/")) for path in changed):
+        raise ValueError("project_live_patch_requires_restart")
+    return apply_file_changes(files, replacements), changed

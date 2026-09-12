@@ -6,6 +6,24 @@
 
 每个仓库都固定了收录时实际读取的 commit，核验 Git 工作树和实际许可证，并标出具体函数所在文件。完整快照见 [reference-sources.lock.json](reference-sources.lock.json)。源码收录本身不代表集成；后续已经采用的能力单列如下，工程阶段的完成状态仍以原方案中的真实验收为准。
 
+## 根基与复用顺序（2026-09-13 确认）
+
+**以当前 WhyBuddy 架构为根基，grok-build 为首要对照；另外 28 个源码库按具体缺口补充能力。** 现有 Python 控制循环、问卷与计划批准、持久会话与操作、单写租约、React 工作台和自动生成的依赖架构继续演进。参考仓库不能另起一套 Agent 主循环，也不能替换现有权威状态。
+
+架构仍通过 `pnpm run arch:emit` 生成，通过 `pnpm run arch:check` 检查 Python / TS / 全仓 / grok；不手改权威图，不扩大违规或循环基线。
+
+本批“运行中的源码补丁”优先对照 grok-build `SOURCE_REV=c4ea71cfdbcdb21e32e41bc25a0043d7d4836714`：
+
+| grok-build 实际源码 | 采用的行为 | WhyBuddy 落点 |
+|---|---|---|
+| [WorkspaceSession](../../grok-build/crates/codegen/xai-grok-workspace/src/session/mod.rs#L104)、[build_session_context](../../grok-build/crates/codegen/xai-grok-workspace/src/session/tool_config.rs#L345) | 会话持有 workspace 与 filesystem 能力，工具共享执行上下文 | 当前 `ProjectRuntimeSupervisor` 保持唯一运行所有者，`runtime.patch` 排入它的持久队列 |
+| [SessionToolHandle.execute](../../grok-build/crates/codegen/xai-grok-workspace/src/handle.rs#L4648) | 同一会话工具集执行并返回明确结果 | `ProjectTools.project_patch` 提交并返回 operationId；现有工具循环通过 `project_status` 查询完成/失败/取消 |
+| [search_replace](../../grok-build/crates/codegen/xai-grok-tools/src/implementations/grok_build/search_replace/mod.rs#L527)、[FileWritten](../../grok-build/crates/codegen/xai-grok-tools/src/notification/types.rs#L174) | 先读旧内容、拒绝冲突，实际写成功后才记录前后内容 | `prepare_source_patch` 校验文件 hash；不可变 revision 记录源码；同步成功并确认运行版本后才返回 `synchronized:true` |
+
+这里复用的是职责和行为合同，按现有 Python 代码改写，未整段搬入 Rust 执行器。持久补丁队列、SQL CAS、E2B 同步与私有预览版本轮换是 WhyBuddy 针对现有存储/租约补齐的能力。grok 的 `search_replace` 在真实文件 IO 前已经释放资源锁，不提供本仓的跨进程 CAS；其多文件部分成功及仅记账的部分取消路径，也不作为 WhyBuddy 的原子性或真实停止保证。当前 grok 根许可证为 Apache-2.0，见 [LICENSE](../../grok-build/LICENSE)。
+
+本轮真实结果与限制见重构方案第 23 节。其他参考库继续补充传输、浏览器和 UI，不因收录数量改变底层架构。
+
 ## 2026-09-13 已接入的第一批能力
 
 本批先完成私有工程预览：应用沙盒主动连到独立网关，用户在共同 React 预览组件打开真实 Vite 页面。具体配置、入口与许可说明见 [私有工程预览运行说明](<WhyBuddy 私有工程预览运行说明.md>)。
@@ -18,7 +36,7 @@
 | `ws` npm 包 | 独立网关与沙盒 agent 的构建产物 | 直接使用仓库现有依赖；构建同步拷贝原 MIT LICENSE |
 | grok-build 的资源/执行所有权 | Python `project_preview_runtime` 与现有 runtime worker | 延续已有主循环与持租约执行，恢复历史或刷新预览不重派副作用 |
 
-本轮已经运行实际双 E2B、Chrome、Vite HMR 和真实 `SandboxPreviewSurface` 跨站 iframe；报告 `artifacts/project-preview-tunnel-smoke/1789234088-b83cf194/report.json`。浏览器共 21 项检查通过，另有 22 项云传输/清理检查通过。云端 authority 与工作台两条 API 使用明确的测试夹具，Python 持久授权由另一组实际 SQL/HTTP 测试覆盖。独立浏览器验收服务、固定版本证据闸和活跃版本同步仍是下一步，不能把本次预览烟测算成完整应用验收。
+本轮已经运行实际双 E2B、Chrome、Vite HMR 和真实 `SandboxPreviewSurface` 跨站 iframe；报告 `artifacts/project-preview-tunnel-smoke/1789234088-b83cf194/report.json`。浏览器共 21 项检查通过，另有 22 项云传输/清理检查通过。云端 authority 与工作台两条 API 使用明确的测试夹具，Python 持久授权由另一组实际 SQL/HTTP 测试覆盖。随后已接入当前 worker 的活跃版本同步，见第 23 节。独立浏览器验收服务与固定版本证据闸仍待完成，不能把预览烟测算成完整应用验收。
 
 ## 先从哪些源码开始抄
 

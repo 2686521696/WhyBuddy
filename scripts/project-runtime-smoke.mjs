@@ -23,6 +23,7 @@ const scripts = new Map([
   ["--model", "project-model-smoke.py"],
   ["--private-ingress", "project-private-ingress-smoke.py"],
   ["--preview-tunnel", "project-preview-tunnel-smoke.py"],
+  ["--source-sync", "project-source-sync-smoke.py"],
 ]);
 const script = scripts.has(args[0])
   ? scripts.get(args.shift())

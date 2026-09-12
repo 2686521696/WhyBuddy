@@ -126,7 +126,11 @@ class ProjectPreviewAccess:
                 or project.sessionId != operation.sessionId or runtime.projectId != project.projectId
                 or lease.projectId != project.projectId or runtime.workspaceId != lease.workspaceId
                 or project.currentRevision != row["current_revision"]
-                or project.currentRevision != operation.expectedRevision or runtime.revision != operation.expectedRevision
+                # expectedRevision records the original runtime.start request.
+                # A lease-owned sync may advance this same runtime without
+                # rewriting that idempotency identity. Access follows the live
+                # mounted revision and is still exact-version scoped.
+                or project.currentRevision != runtime.revision
                 or lease.mountedRevision != runtime.revision or type(runtime.port) is not int
                 or not 1024 <= runtime.port <= 65535 or runtime.port != operation.input.get("port", 5173)):
             raise PreviewAccessDenied("project_preview_unavailable")

@@ -198,6 +198,7 @@ def main(output: Path) -> int:
                     # This temporary exchange file is never evidence. Only the
                     # Python supervisor holds the fixture administration key.
                     browser_ticket_temporary.write_text(json.dumps({"seq": requested, "ticket": {
+                        **{key: config["binding"][key] for key in ("projectId", "operationId", "runtimeId", "revision")},
                         "entryUrl": origin + "/_whybuddy/authorize?ticket=" + next_ticket,
                         "ticketExpiresAt": datetime.fromtimestamp(min(int(time.time()) + 60, expires_at), timezone.utc).isoformat(),
                         "accessExpiresAt": datetime.fromtimestamp(expires_at, timezone.utc).isoformat()}}), encoding="utf-8")
