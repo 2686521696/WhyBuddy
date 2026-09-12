@@ -845,7 +845,7 @@ class _SqlExecutor:
         from sqlalchemy import create_engine, text
         from sqlalchemy.pool import NullPool
 
-        from .sql_gateway import _sql_engine_config
+        from .sql_gateway import _sql_engine_config, configure_sqlite_journal
 
         self._text = text
         # 跟 app_store 保持一致：生产配置常写 postgresql://...，但本镜像依赖的是
@@ -854,6 +854,7 @@ class _SqlExecutor:
         url = re.sub(r"^postgresql://", "postgresql+psycopg://", url)
         connect_args, kwargs = _sql_engine_config(url, NullPool)
         self._engine = create_engine(url, connect_args=connect_args, **kwargs)
+        configure_sqlite_journal(self._engine)
         self.is_sqlite = url.startswith("sqlite")
 
     def ph(self, n: int) -> str:

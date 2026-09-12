@@ -24,7 +24,7 @@ from sqlalchemy.pool import NullPool, StaticPool
 from config.settings import settings
 from models.project_runtime import Project, ProjectOperation, ProjectRevision, RuntimeEvent, RuntimeInstance, WorkspaceLease
 from services.project_manifest import build_manifest, canonical_json, content_hash
-from services.sql_gateway import HttpSqlGateway, _sql_engine_config, http_api_credentials
+from services.sql_gateway import HttpSqlGateway, _sql_engine_config, configure_sqlite_journal, http_api_credentials
 
 MAX_SOURCE_HISTORY_BYTES = 64 * 1024 * 1024
 MAX_REVISIONS = 200
@@ -97,9 +97,17 @@ _DDL = (
 
 
 class ProjectStore:
-    """A query adapter shared by SQLAlchemy and the existing HTTPS SQL gateway."""
+    """A query adapter shared by SQLAlchemy and the existing HTTPS SQL gateway.
 
-    def __init__(self, query: Callable[[str, list[Any]], list[dict[str, Any]]]):
+    Raw query adapters default to SQLite's serial statement writes. PostgreSQL
+    adapters, including the HTTP gateway, must explicitly select its dialect so
+    live-patch admission competes with idle expiry on the parent's row lock.
+    """
+
+    def __init__(self, query: Callable[[str, list[Any]], list[dict[str, Any]]], *, dialect: str = "sqlite"):
+        if dialect not in {"sqlite", "postgresql"}:
+            raise ProjectStoreUnavailable("unsupported_project_database")
+        self._dialect = dialect
         self._query = query
         self._engine = None
         for statement in _DDL:
@@ -126,7 +134,8 @@ class ProjectStore:
                 return [dict(row) for row in result.mappings()] if result.returns_rows else []
 
         try:
-            store = cls(query)
+            configure_sqlite_journal(engine)
+            store = cls(query, dialect=engine.dialect.name)
         except Exception:
             engine.dispose()
             raise
@@ -495,9 +504,21 @@ class ProjectStore:
             requestHash=digest, expectedRevision=expected_revision, approvalRef=approval_ref,
             input=input_value, createdAt=now, updatedAt=now)
         params: list[Any] = [operation.operationId, operation.projectId, idempotency_key, _operation_payload(operation, admission=True)]
+        parent_index = len(params) + 1
         fence = self._runtime_patch_fence(context, params)
-        self._q("insert into wb_project_operation(id,project_id,idempotency_key,rev,payload) select $1,$2,$3,1,$4 where "
-            + fence + " on conflict(project_id,idempotency_key) do nothing", params)
+        prefix, admission = "", fence
+        if self._dialect == "postgresql":
+            # READ COMMITTED permits INSERT and idle UPDATE to see the same old
+            # snapshot. Bump the parent rev and insert in ONE committed statement,
+            # so both paths compete on the parent row. Direct target predicates
+            # are rechecked after a lock wait; the child and rev bump roll back
+            # together on failure. SQLite serializes writes at statement level.
+            prefix = ("with admitted_parent as (update wb_project_operation set rev=rev+1 "
+                f"where id=${parent_index} and rev=${parent_index + 1} and payload=${parent_index + 2} and "
+                + fence + " returning id) ")
+            admission = "exists(select 1 from admitted_parent)"
+        self._q(prefix + "insert into wb_project_operation(id,project_id,idempotency_key,rev,payload) select $1,$2,$3,1,$4 where "
+            + admission + " on conflict(project_id,idempotency_key) do nothing", params)
         saved_rows = self._q("select payload from wb_project_operation where project_id=$1 and idempotency_key=$2", [parent.projectId, idempotency_key])
         if not saved_rows:
             raise ProjectConflict("project_runtime_patch_changed")
@@ -506,7 +527,8 @@ class ProjectStore:
             raise ProjectConflict("operation_idempotency_conflict")
         return saved
 
-    def list_runtime_patches(self, parent_operation_id: str, *, owner_id: str) -> list[ProjectOperation]:
+    def list_runtime_patches(self, parent_operation_id: str, *, owner_id: str,
+                             include_terminal: bool = False) -> list[ProjectOperation]:
         parent = self.get_operation(parent_operation_id, owner_id=owner_id)
         if parent.kind != "runtime.start":
             raise ProjectConflict("project_patch_parent_mismatch")
@@ -515,10 +537,44 @@ class ProjectStore:
             page = self.list_project_operations(parent.projectId, owner_id=owner_id, after_id=cursor, limit=100)
             result.extend(item for item in page if item.kind == "runtime.patch"
                 and item.input.get("runtimeOperationId") == parent_operation_id
-                and (item.status not in _TERMINAL_OPERATIONS or item.pendingEvent is not None))
+                and (include_terminal or item.status not in _TERMINAL_OPERATIONS or item.pendingEvent is not None))
             if len(page) < 100:
                 return sorted(result, key=lambda item: (item.createdAt, item.operationId))
             cursor = page[-1].operationId
+
+    def runtime_patch_activity_at(self, parent_operation_id: str, *, owner_id: str) -> float:
+        """Admission and activity share the child's one durable INSERT.
+
+        2026-09-13 live model: a successful edit at second 54 was destroyed by
+        the original 60-second idle deadline. A new accepted patch is activity;
+        polling or replaying its idempotency key is not. Reading immutable
+        createdAt repairs crashes without a second parent-touch transaction or
+        advancing activity on every background retry.
+        """
+        parent = self.get_operation(parent_operation_id, owner_id=owner_id)
+        patches = self.list_runtime_patches(parent_operation_id, owner_id=owner_id, include_terminal=True)
+        latest, now = 0.0, time.time()
+        try:
+            start = datetime.fromisoformat(parent.createdAt)
+            if start.tzinfo is None:
+                raise ValueError("missing_created_at_timezone")
+            for child in patches:
+                created = datetime.fromisoformat(child.createdAt)
+                if created.tzinfo is None:
+                    raise ValueError("missing_created_at_timezone")
+                submitted = created.timestamp()
+                if submitted < start.timestamp() or submitted > now:
+                    raise ValueError("invalid_patch_creation_time")
+                latest = max(latest, submitted)
+        except (ValueError, OverflowError):
+            # Clamping a future timestamp to now would renew on every poll.
+            raise ValueError("project_patch_activity_invalid") from None
+        return latest
+
+    def project_operation_count(self, project_id: str, *, owner_id: str) -> int:
+        """Capture before reading activity; idle expiry fences later INSERTs."""
+        self.get_project(project_id, owner_id=owner_id)
+        return int(self._q("select count(*) as total from wb_project_operation where project_id=$1", [project_id])[0]["total"])
 
     def create_operation(self, project_id: str, *, owner_id: str, kind: str,
                          idempotency_key: str, expected_revision: str, approval_ref: str,
@@ -633,13 +689,20 @@ class ProjectStore:
 
     def update_runtime_operation(self, operation_id: str, *, owner_id: str, lease_generation: int,
                                  lease_owner: str, expected_status: str, status: str,
-                                 runtime: RuntimeInstance, result: dict[str, Any] | None = None) -> ProjectOperation:
+                                 runtime: RuntimeInstance, result: dict[str, Any] | None = None,
+                                 idle_operation_count: int | None = None,
+                                 idle_last_access_at: float | None = None) -> ProjectOperation | None:
         _bounded(result, MAX_OPERATION_BYTES)
         for _ in range(12):
             self.flush_operation_event(operation_id, owner_id=owner_id,
                 lease_generation=lease_generation, lease_owner=lease_owner)
             row = self._operation_row(operation_id, owner_id)
             operation = ProjectOperation.model_validate_json(row["payload"])
+            if idle_operation_count is not None and (operation.kind != "runtime.start"
+                    or operation.status != "running" or operation.cancelRequested
+                    or operation.runtime is None or operation.runtime.status != "ready"
+                    or operation.lastAccessAt != idle_last_access_at):
+                return None
             if operation.kind == "runtime.patch":
                 raise ProjectConflict("runtime_patch_child_has_no_runtime")
             if operation.pendingEvent is not None:
@@ -667,8 +730,20 @@ class ProjectStore:
                 "runtime": runtime, "result": result, "stateVersion": version, "pendingEvent": pending, "updatedAt": now})
             params: list[Any] = [_operation_payload(updated), operation_id, row["rev"]]
             fence = self._fence(operation.projectId, lease_generation, lease_owner, params)
+            if idle_operation_count is not None:
+                # SQLite patch INSERTs do not advance the parent's rev. Fence
+                # admission here too; PostgreSQL also locks and advances that
+                # rev in its admission CTE. Neither requires a client transaction.
+                index = len(params) + 1
+                params.extend([operation.projectId, idle_operation_count])
+                fence += (f" and (select count(*) from wb_project_operation pi "
+                    f"where pi.project_id=${index})=${index + 1}")
             if self._q("update wb_project_operation set payload=$1,rev=rev+1 where id=$2 and rev=$3 and " + fence + " returning id", params):
                 return updated
+            if idle_operation_count is not None:
+                # No retry from stale activity, including a concurrent touch.
+                # The worker must reread activity before any cleanup side effect.
+                return None
             current = self.get_operation(operation_id, owner_id=owner_id)
             # A concurrent cancel is sticky. Retry only that change; concurrent
             # worker progress must not be overwritten by a stale runtime value.
@@ -884,7 +959,7 @@ def get_project_store() -> ProjectStore:
             if not api_key:
                 raise ProjectStoreUnavailable("project_sql_gateway_credentials_missing")
             gateway = HttpSqlGateway(api_url, api_key)
-            store = ProjectStore(lambda sql, params: gateway.query(sql, params))
+            store = ProjectStore(lambda sql, params: gateway.query(sql, params), dialect="postgresql")
         elif database_url:
             if getattr(settings, "NODE_ENV", "") == "production" and database_url.startswith("sqlite:"):
                 raise ProjectStoreUnavailable("project_durable_database_required")

@@ -441,10 +441,14 @@ class _RuntimeTask:
             self.check()
             if sync_next_source_patch(self):
                 next_health = 0
-            last_access = max(self.result["readyAt"], self.operation().lastAccessAt or 0)
+            operation_count = self.store.project_operation_count(self.original.projectId, owner_id=self.owner_id)
+            observed = self.operation()
+            last_access = max(self.result["readyAt"], observed.lastAccessAt or 0,
+                self.store.runtime_patch_activity_at(self.operation_id, owner_id=self.owner_id))
             if time.time() - last_access >= min(float(self.result["idleSeconds"]), self.supervisor.idle_seconds):
-                self.finish("completed", "expired", "runtime_idle_expired")
-                return
+                if self.try_finish_idle(operation_count, observed.lastAccessAt):
+                    return
+                continue
             self.logs(pid)
             if time.time() >= next_health:
                 if (not self.provider.is_process_running(self.handle, pid)
@@ -491,6 +495,33 @@ class _RuntimeTask:
         if not isinstance(pid, str) or not pid.isdecimal():
             raise WorkspaceProviderError("runtime_dispatch_uncertain")
         return pid
+
+    def try_finish_idle(self, operation_count, last_access_at):
+        """An accepted edit must invalidate a concurrently prepared idle stop.
+
+        2026-09-13: SQLite child admission leaves parent rev unchanged. Counting
+        before activity fences that gap; PostgreSQL also locks the parent during
+        admission. A CAS miss is normal new
+        activity, not provider failure; keep local state and the heartbeat alive
+        until the fresh idle-loop read. Total lifetime/cancel cleanup is separate.
+        """
+        self.heartbeat.check()
+        code = "runtime_idle_expired"
+        result = {**self.result, "phase": "stopping",
+            "cleanup": {"status": "completed", "phase": "expired", "code": code}}
+        runtime = self.runtime.model_copy(update={"status": "stopping", "errorCode": code,
+            "health": "unknown", "lastHeartbeat": _timestamp()})
+        stopped = self.store.update_runtime_operation(self.operation_id, owner_id=self.owner_id,
+            lease_generation=self.lease.generation, lease_owner=self.lease.leaseOwner,
+            expected_status="running", status="running", runtime=runtime, result=result,
+            idle_operation_count=operation_count, idle_last_access_at=last_access_at)
+        if stopped is None:
+            return False
+        self.runtime, self.result = stopped.runtime, dict(stopped.result)
+        self.store.flush_operation_event(self.operation_id, owner_id=self.owner_id,
+            lease_generation=self.lease.generation, lease_owner=self.lease.leaseOwner)
+        self.finish("completed", "expired", code)
+        return True
 
     def finish(self, status, phase, code):
         if self.operation().status in TERMINAL:

@@ -170,6 +170,34 @@ def _sql_engine_config(url: str, null_pool: Any) -> tuple[dict[str, Any], dict[s
         # 本地 SQLite：无外部池，保留 pre_ping（文件库无 scale-to-zero 问题，无害）。
         engine_kwargs["pool_pre_ping"] = True
     return connect_args, engine_kwargs
+
+
+def configure_sqlite_journal(engine: Any) -> None:
+    """Use WAL before any schema/worker traffic reaches a file-backed SQLite.
+
+    2026-09-13: the full Studio smoke shared one SQLite file between session,
+    identity, project/control and app stores. DELETE journal lets a session-list
+    cursor prevent another store's commit; that pending writer can then block
+    even the control scanner's SELECT. Their cursors were scoped correctly, but
+    separate engines do not make SQLite's database-wide reader locks independent.
+
+    Configure the persistent file mode outside a transaction, before consumers
+    start. WAL lets readers retain a snapshot while the writer commits. It does
+    not admit simultaneous writers, change CAS, retry SQL, loosen durability, or
+    increase existing busy timeouts. In-memory SQLite cannot use WAL; PostgreSQL
+    is untouched. An unsupported file mode fails initialization explicitly.
+    """
+    if engine.dialect.name != "sqlite":
+        return
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        mode = str(connection.exec_driver_sql("PRAGMA journal_mode").scalar_one()).lower()
+        if mode in {"wal", "memory"}:
+            return
+        mode = str(connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one()).lower()
+        if mode != "wal":
+            raise RuntimeError("sqlite_wal_unavailable")
+
+
 _NEON_HTTP_TIMEOUT_S = 15
 def http_api_query_endpoint(api_base_url: str) -> Optional[str]:
     """把自定义 HTTPS SQL API 的 base URL 归一成 /v1/query 端点。"""

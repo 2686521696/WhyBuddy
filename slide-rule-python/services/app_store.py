@@ -67,6 +67,7 @@ from services.sql_gateway import (  # noqa: F401
     _http_gateway_error,
     _neon_http_error,
     _sql_engine_config,
+    configure_sqlite_journal,
     http_api_credentials,
     http_api_query_endpoint,
     numeric_to_format,
@@ -1027,6 +1028,7 @@ def _sqlalchemy_backend(database_url: str) -> AppStoreBackend:
             finally:
                 probe.close()
     engine = create_engine(url, connect_args=connect_args, **engine_kwargs)
+    configure_sqlite_journal(engine)
     # 建表 + 补列**共用一条连接**（2026-08-02 事故修复）。
     #
     # 原来是 create_all(engine) 一条、inspect(engine) 又一条、ALTER 再一条——

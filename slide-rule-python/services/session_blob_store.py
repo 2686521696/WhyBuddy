@@ -438,10 +438,11 @@ class SqlSessionBlobStore(SessionBlobStore):
         self._text = text
         # 连接参数与 app_store 对齐（pooler 走 NullPool + 关预编译语句缓存）：
         # 同一个库、同样的 PgBouncer 事务模式，参数不一致只会踩同一个坑两次。
-        from .sql_gateway import _sql_engine_config  # 复用，不重复实现
+        from .sql_gateway import _sql_engine_config, configure_sqlite_journal  # 复用，不重复实现
 
         connect_args, engine_kwargs = _sql_engine_config(database_url, NullPool)
         self._engine = create_engine(database_url, connect_args=connect_args, **engine_kwargs)
+        configure_sqlite_journal(self._engine)
         self._is_sqlite = database_url.startswith("sqlite")
         with self._engine.begin() as conn:
             conn.execute(text(_DDL_SQLITE if self._is_sqlite else _DDL_PG))
