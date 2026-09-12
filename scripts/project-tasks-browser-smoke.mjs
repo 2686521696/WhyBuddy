@@ -74,13 +74,16 @@ async function appLogin(frame, name) {
   await frame.getByRole("button", { name: "登录", exact: true }).click();
   await frame.getByRole("heading", { name: "任务清单", exact: true }).waitFor();
 }
-async function applicationRequest(path, data, { anonymous = false } = {}) {
+async function applicationRequest(path, data) {
   const target = page.frames().find(frame => frame.url().startsWith(previewOrigin + "/"));
   if (!target) throw new Error("tasks_application_frame_missing");
   return target.evaluate(async ({ path, data }) => {
-    const response = await fetch(path, { method: "POST", credentials: anonymous ? "omit" : "same-origin",
+    const response = await fetch(path, { method: "POST", credentials: "same-origin",
       headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
-    return { status: response.status, body: await response.json() };
+    const text = await response.text();
+    let body = null;
+    try { body = text ? JSON.parse(text) : null; } catch {}
+    return { status: response.status, body };
   }, { path, data });
 }
 async function sourceEdit(transform, label) {
@@ -201,8 +204,15 @@ try {
   const readerDenied = await applicationRequest("/api/tasks", { title: "must not write" });
   await check("independent reader account cannot write even by direct API", readerDenied.status === 403 && readerDenied.body.error === "只读成员不能修改数据");
   await frame.getByRole("button", { name: "退出登录", exact: true }).click();
-  const anonymousDenied = await applicationRequest("/api/tasks", { title: "must not write" }, { anonymous: true });
-  await check("anonymous application API cannot write", anonymousDenied.status === 401 && anonymousDenied.body.error === "请先登录");
+  // The preview is cross-origin and the browser may retain a partitioned
+  // application cookie while logout is settling. Clear only the task-app
+  // cookie before the anonymous probe, preserving the workbench and private
+  // preview grants in this context.
+  await context.clearCookies({ name: "WhyBuddyTaskSession" });
+  const anonymousDenied = await applicationRequest("/api/tasks", { title: "must not write" });
+  report.anonymousProbe = { status: anonymousDenied.status, body: anonymousDenied.body };
+  await persist();
+  await check("anonymous application API cannot write", anonymousDenied.status === 401 && anonymousDenied.body?.error === "请先登录");
   await appLogin(frame, username);
 
   report.stage = "source_selection";
