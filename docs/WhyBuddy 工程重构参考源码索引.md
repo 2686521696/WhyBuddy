@@ -22,7 +22,9 @@
 
 这里复用的是职责和行为合同，按现有 Python 代码改写，未整段搬入 Rust 执行器。持久补丁队列、SQL CAS、E2B 同步与私有预览版本轮换是 WhyBuddy 针对现有存储/租约补齐的能力。grok 的 `search_replace` 在真实文件 IO 前已经释放资源锁，不提供本仓的跨进程 CAS；其多文件部分成功及仅记账的部分取消路径，也不作为 WhyBuddy 的原子性或真实停止保证。当前 grok 根许可证为 Apache-2.0，见 [LICENSE](../../grok-build/LICENSE)。
 
-本轮真实结果与限制见重构方案第 23 节。其他参考库继续补充传输、浏览器和 UI，不因收录数量改变底层架构。
+本轮真实结果与限制见重构方案第 24 节。其他参考库继续补充传输、浏览器和 UI，不因收录数量改变底层架构。
+
+最新一批沿原有结构完成实际 Python 权威、E2B worker、独立网关和完整工作台联调，补上账号撤权、提示词与工具能力一致性、空闲活动、并发停止、SQLite 并发以及 CSP 配置边界。这里没有新引入一个参考项目来替换底座；使用当前 SQLAlchemy、Vite、Playwright 等已有能力修复真实组合。成功产品样本为 `artifacts/project-product/1789240211-907ad18a/report.json`。真实模型已完成过运行中源码修改，但完整 live-edit 因上游 content_filter 仍未通过，不能与夹具选择工具的产品样本合并为自主交付成功。下一批重点提取 Playwright 的受控操作、断言、trace 与 context 隔离，接入当前 Python 的固定版本证据闸。
 
 ## 2026-09-13 已接入的第一批能力
 

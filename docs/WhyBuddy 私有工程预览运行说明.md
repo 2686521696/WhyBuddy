@@ -1,6 +1,6 @@
 # WhyBuddy 私有工程预览运行说明
 
-更新：2026-09-13。适用本次内部工程模式；生产开关仍关闭。完整阶段状态见 [整体重构方案](<WhyBuddy 工程运行与浏览器验证整体重构方案.md#22-2026-09-13-私有反向预览与工作台接入>)。
+更新：2026-09-13。适用本次内部工程模式；生产开关仍关闭。完整阶段状态见 [整体重构方案](<WhyBuddy 工程运行与浏览器验证整体重构方案.md#24-2026-09-13-完整产品联调与运行边界修复>)。
 
 工程由现有 Python 控制循环和持久 runtime worker 管理，在私有 E2B 沙盒中启动。沙盒主动通过 WSS 连接独立预览网关；浏览器使用自己的短时授权访问网关，网关通过已登记的隧道转发 HTTP、SSE 和 WebSocket。生成应用自己的前端、路由和状态在 iframe 内运行。
 
@@ -31,6 +31,8 @@ WHYBUDDY_PROJECT_PREVIEW_GATEWAY_KEY=<单独生成的随机值，至少32个可�
 
 每个 runtime 必须占一个完整的主机名前缀。将该预览域名的 DNS/TLS 指向独立网关，保留原始 Host，支持 HTTP Upgrade、长响应和 WSS。主站认证 Cookie 必须限定主站；应用所在来源与主站分离。这里的 example.com 是部署占位，本轮没有配置生产域名。
 
+Vite 开发服务和前端构建也必须收到同一个公开的 `WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE`。配置从对应 mode 的 `.env` 读取，进程环境优先；它只为 CSP 增加 `frame-src https://*.preview.example.com`，其他资源权限保持原值。未配置时只允许本站 iframe；部署后更换预览域名需要重新构建前端。网关 key 不传给前端构建。CSP 的通配符只能限制来源后缀，精确的 runtime、账号和源码版本仍由 Python 与网关校验，因此生产使用专用预览域名。
+
 复制根目录 `.env.preview.example` 为已忽略的 `.env.preview`，填写相同的独立网关 key，以及 Python 的 `/api/sliderule/internal/project-preview` 地址。远端 authority 必须用 HTTPS；同机可使用 `http://127.0.0.1:9700`。然后运行：
 
 ```powershell
@@ -49,6 +51,8 @@ pnpm run dev:project-preview
 3. 票据兑换期限与浏览器访问期限分开：前者默认 60 秒，后者默认从出票起最多 300 秒，并受 runtime 期限约束。兑换不会重置授权时钟；刷新状态不会自动换票。
 4. 票据被网关兑换后跳转到干净的 `/`；Cookie 使用 HttpOnly，HTTPS 下附带 Secure、SameSite=None、Partitioned。页面 JavaScript 不能读取授权 Cookie。
 5. 项目、运行或版本变化时前端卸载旧 iframe；过期后通过明确点击重新申请。网关每次请求重新鉴权，并周期复查已有长连接，拒绝撤销、旧代次或 authority 不可用的访问。
+
+账号被停用、删除或撤销内部工程资格后，已经发放的浏览器/隧道凭据同样失效，运行 worker 按原清理流程停止远端工程。普通租约心跳造成的授权快照竞争最多完整重读并重验三次；明确拒绝和未知 SQL 写入结果不重试。
 
 预览读取和点击页面不自动延长 runtime 空闲或总预算。现有显式活动接口及 worker 策略负责续租；运行到期后页面可能仍保留已加载 DOM，后续请求被拒，工作台轮询显示实际状态。停止控制回合、停止应用与撤销浏览器访问仍是不同操作。
 
@@ -80,8 +84,11 @@ pnpm run test:scripts
 pnpm run arch:check
 pnpm run smoke:project-preview-tunnel
 pnpm run smoke:project-source-sync
+pnpm run smoke:project-product
 ```
 
 预览 tunnel 烟测需要 E2B 配置、本机 Chrome、网络与云运行额度，按轮次将脱敏报告和截图写入 `artifacts/project-preview-tunnel-smoke/`，结束后销毁两个测试沙盒并查询确认。`SLIDERULE_CHROMIUM_PATH` 可指定浏览器路径。其网关/agent/Vite 是实际代码，云 authority 使用测试身份注册表；持久 Python 授权另由真实 SQL 与 HTTP 入口测试覆盖。源码同步烟测使用单 E2B、真实模型工具适配器、SQL worker 和 Vite HTTP/HMR，报告在 `artifacts/project-source-sync/`，同样销毁并查询确认；批准和工具选择是固定夹具，不计为模型自主或浏览器业务验收。
 
-本次不等于生产预览已部署，也不等于 P4 浏览器验收服务完成。仍需固定 revision 的独立验证 worker、交付证据闸、真实业务数据库，以及真实 authority、隔离入口和完整工作台的联合部署验收。应用中心历史版本恢复、复刻、导出和生产发布也各自保留阶段验收。
+新增的 `smoke:project-product` 使用两个独立 E2B：可信服务实例运行真实 Python app/lifespan、隔离 SQLite 和正式 Node 网关；应用实例由正式 worker 创建并保持私有。Chrome 加载完整 Vite 工作台，账号登录、API、票据和网关回调均走实际服务，不替换响应。账号、已批准计划和源码编辑意图是夹具；初始 runtimeId 仅为匹配临时 E2B TLS 主机名而注入一次，其后沿持久状态运行。测试结束销毁两个实例并查询确认，不复制本地会话库或 `.env`。报告与截图写入 `artifacts/project-product/`；失败记录保留。模型自主选择另由 `smoke:project-model --scenario live-edit` 验证，两组结果不拼成一次自主业务验收。
+
+本次不等于生产预览已部署，也不等于 P4 浏览器验收服务完成。仍需固定 revision 的独立验证 worker、交付证据闸、真实业务数据库，以及生产 DNS/TLS 与资源配置验收。应用中心历史版本恢复、复刻、导出和生产发布也各自保留阶段验收。
