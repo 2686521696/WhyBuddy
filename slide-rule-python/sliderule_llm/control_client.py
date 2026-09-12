@@ -10,6 +10,7 @@ factory 客户端把空 content 当失败，所以控制面不能复用那条提
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import os
 import time
@@ -53,6 +54,70 @@ class ControlLlmResult:
     latency_ms: int
 
 
+def _inline_tool_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Send self-contained parameter schemas while keeping typed input checks.
+
+    2026-09-12: the first real project-model smoke failed before choosing any
+    tool. Gemini's OpenAI gateway rejected project_patch.changes.items.$ref;
+    scripted tool dispatch had never sent the Pydantic schema to a provider.
+    Keep $defs in the canonical schema and inline only this transport copy.
+    Reference siblings remain a conjunction, never overwrite target checks.
+    """
+    maps = {"properties", "patternProperties", "dependentSchemas"}
+    singles = {"items", "additionalProperties", "additionalItems", "contains", "propertyNames",
+               "not", "if", "then", "else", "unevaluatedProperties", "unevaluatedItems", "contentSchema"}
+    arrays = {"allOf", "anyOf", "oneOf", "prefixItems"}
+    annotations = {"title", "description", "default", "examples", "deprecated", "readOnly", "writeOnly", "$comment"}
+
+    def visit(node, ancestors=()):
+        if isinstance(node, bool):
+            return node
+        if not isinstance(node, dict):
+            raise ValueError("invalid_tool_schema")
+        siblings = {}
+        for key, value in node.items():
+            if key in {"$defs", "definitions", "$ref"}:
+                continue
+            if key in maps:
+                siblings[key] = {name: visit(child, ancestors) for name, child in value.items()}
+            elif key in singles:
+                siblings[key] = ([visit(child, ancestors) for child in value]
+                                 if isinstance(value, list) else visit(value, ancestors))
+            elif key in arrays:
+                siblings[key] = [visit(child, ancestors) for child in value]
+            elif key == "dependencies":
+                siblings[key] = {name: copy.deepcopy(child) if isinstance(child, list) else visit(child, ancestors)
+                                 for name, child in value.items()}
+            else:
+                # default/const/examples contain data; a literal "$ref" key in
+                # that data (or in a property name) is not a schema reference.
+                siblings[key] = copy.deepcopy(value)
+        if "$ref" not in node:
+            return siblings
+        reference = node["$ref"]
+        if not isinstance(reference, str) or not reference.startswith("#/"):
+            raise ValueError("tool_schema_reference_must_be_local_pointer")
+        if reference in ancestors:
+            raise ValueError("recursive_tool_schema_reference")
+        target = schema
+        try:
+            for part in reference[2:].split("/"):
+                target = target[part.replace("~1", "/").replace("~0", "~")]
+        except (KeyError, TypeError) as exc:
+            raise ValueError("unknown_tool_schema_reference") from exc
+        expanded = visit(target, (*ancestors, reference))
+        if not siblings:
+            return expanded
+        # Even disjoint validation keywords may interact if flattened:
+        # additionalProperties:false in the target must not start recognizing
+        # properties introduced by a reference sibling. Only annotations merge.
+        if isinstance(expanded, dict) and siblings.keys() <= annotations:
+            return {**expanded, **siblings}
+        return {"allOf": [expanded, siblings]}
+
+    return visit(schema)
+
+
 def _control_chat_payload(
     messages: list[dict[str, Any]],
     model: str,
@@ -68,7 +133,11 @@ def _control_chat_payload(
         "stream": False,
     }
     if tools:
-        payload["tools"] = tools
+        payload["tools"] = copy.deepcopy(tools)
+        for tool in payload["tools"]:
+            function = tool.get("function")
+            if isinstance(function, dict) and isinstance(function.get("parameters"), dict):
+                function["parameters"] = _inline_tool_schema(function["parameters"])
         payload["tool_choice"] = "auto"
     return payload
 
