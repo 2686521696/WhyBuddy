@@ -2920,11 +2920,17 @@ def _system_prompt(state: V5SessionState) -> str:
             f"当前工程：{getattr(state, 'projectId', None)}；源码版本：{getattr(state, 'projectRevision', None)}。"
             "创建新工程用 project_create；已有 HTML 应用转换尚未支持。"
             "工程会话使用 project_* 工具，不调用 HTML 工厂。"
-            "修改前先取消活跃运行，等停止并清理完成后再 patch；修改形成新版本。"
+            # 2026-09-13 真模型 live-edit：工具已支持运行中同步，这里仍教
+            # “修改前先取消”，模型照做 project_cancel，标题一个字没改。
+            # 初始化、工具回填和checkpoint恢复共用此装配，必须与执行合同一致。
+            "project_patch 在运行就绪时可直接修改 src/、public/、tests/ 和 index.html 的源码与静态资源，"
+            "由现有运行持有者同步，保持当前应用运行，不需要先取消。"
+            "返回 runtime.patch 的 operationId 表示补丁已排队；用 project_status 查询到 completed 且 synchronized=true，"
+            "才能确认新源码版本已同步。依赖或启动配置变更需先停止并确认清理，再修改和重启。"
             "project_exec 只运行 check/build/test，返回 operationId；用 status/logs 读取真实结果。"
             "新回合可用不带 operationId 的 project_status 找回任务；已有服务运行时先取消并等清理，再执行检查。"
             "任务未结束就如实交回 operationId，下轮继续查询，不能重复提交或宣称完成。"
-            "构建通过和服务就绪均不是业务验收；私有预览和独立浏览器验收尚未接入。"
+            "构建通过和服务就绪均不是业务验收；私有预览是否可用以授权预览状态为准，独立浏览器验收尚未接入。"
         )
         if plan_execution_authorized(state):
             facts.append(f"工程操作批准引用 approvalRef：{approved_reference(state)}。")

@@ -262,3 +262,73 @@ def test_exit_and_model_observation_must_describe_same_real_command(broken):
             smoke.require_verified_command(operation, "rev-2", evidence)
     else:
         smoke.require_verified_command(operation, "rev-2", evidence)
+
+
+def _live_receipts():
+    runtime = SimpleNamespace(runtimeId="rt-1", workspaceId="ws-1", processId="42",
+        revision="rev-1", status="ready", health="revision_verified")
+    initial = SimpleNamespace(operationId="start-1", kind="runtime.start", projectId="project-1",
+        sessionId="session-1", expectedRevision="rev-1", requestHash="original-request", runtime=runtime,
+        status="running", cancelRequested=False)
+    current = copy.deepcopy(initial)
+    current.runtime.revision = "rev-2"
+    receipt = {"runtimeOperationId": "start-1", "revision": "rev-2", "parentRevision": "rev-1",
+        "synchronized": True, "sourcePublished": True, "verification": "not_run"}
+    child = SimpleNamespace(operationId="patch-1", kind="runtime.patch", status="completed",
+        result=receipt, expectedRevision="rev-1", input={"runtimeOperationId": "start-1"},
+        projectId="project-1", sessionId="session-1", leaseGeneration=3)
+    before = SimpleNamespace(sandboxId="sb-1", workspaceId="ws-1", generation=3,
+        leaseOwner="worker-1", mountedRevision="rev-1", processRefs={"operationId": "start-1", "server": "42"})
+    after = copy.deepcopy(before)
+    after.mountedRevision = "rev-2"
+    observed = [
+        {"tool": "project_status", "result": {"ok": True, "operationId": "patch-1",
+            "kind": "runtime.patch", "status": "completed", **receipt}},
+        {"tool": "project_status", "result": {"ok": True, "operationId": "start-1", "status": "running",
+            "runtime": {"status": "ready", "revision": "rev-2"}}},
+    ]
+    return initial, current, child, before, after, observed
+
+
+@pytest.mark.parametrize("broken", [None, "queued", "not-synchronized", "not-published", "wrong-verification",
+    "wrong-parent", "old-revision", "replacement-runtime", "replacement-server", "unknown-health",
+    "original-request-mutated", "replacement-sandbox", "new-generation", "wrong-mounted",
+    "child-not-observed", "parent-not-observed", "observed-old-revision"])
+def test_live_edit_requires_same_runtime_durable_receipt_and_actual_model_observation(broken):
+    initial, current, child, before, after, observed = _live_receipts()
+    if broken == "queued": child.status = "queued"
+    elif broken == "not-synchronized": child.result["synchronized"] = 1
+    elif broken == "not-published": child.result["sourcePublished"] = False
+    elif broken == "wrong-verification": child.result["verification"] = "passed"
+    elif broken == "wrong-parent": child.input["runtimeOperationId"] = "other-runtime"
+    elif broken == "old-revision": child.result["revision"] = "rev-1"
+    elif broken == "replacement-runtime": current.runtime.runtimeId = "rt-2"
+    elif broken == "replacement-server": current.runtime.processId = "43"
+    elif broken == "unknown-health": current.runtime.health = "unknown"
+    elif broken == "original-request-mutated": current.expectedRevision = "rev-2"
+    elif broken == "replacement-sandbox": after.sandboxId = "sb-2"
+    elif broken == "new-generation": after.generation = 4
+    elif broken == "wrong-mounted": after.mountedRevision = "rev-1"
+    elif broken == "child-not-observed": observed.pop(0)
+    elif broken == "parent-not-observed": observed.pop()
+    elif broken == "observed-old-revision": observed[0]["result"]["revision"] = "rev-1"
+    if broken:
+        with pytest.raises(RuntimeError, match="live_model_patch_|model_did_not_observe"):
+            smoke.require_live_edit_receipts(initial, current, child, before, after, observed)
+    else:
+        smoke.require_live_edit_receipts(initial, current, child, before, after, observed)
+
+
+@pytest.mark.parametrize("field,value", [("synchronized", False), ("sourcePublished", False),
+    ("runtime", {"status": "ready", "revision": "different"}), ("verification", "passed")])
+def test_live_receipt_sse_cannot_disagree_with_durable_model_result(field, value):
+    record, event = _fixture()
+    record["checkpoint"]["messages"][0]["tool_calls"][0]["function"]["name"] = "project_status"
+    reply = {"tool": "project_status", "ok": True, "operationId": "patch-1", "synchronized": True,
+        "sourcePublished": True, "verification": "not_run", "runtime": {"status": "ready", "revision": "rev-2"}}
+    record["checkpoint"]["messages"][1]["content"] = json.dumps(reply)
+    event = {"type": "control_tool_result", "toolCallId": "call-1", **reply}
+    assert smoke.correlate(record, [event])[0]["result"] == reply
+    event[field] = value
+    with pytest.raises(RuntimeError, match="correlation_mismatch"):
+        smoke.correlate(record, [event])

@@ -4,7 +4,8 @@ The approved plan, isolated account and fixed starting project are fixtures.
 Tool selection, tool arguments, results and follow-up model requests use the
 production control loop unchanged. The default combined-edit smoke separates
 command observation into later user turns; single-turn-check explicitly attempts
-the whole edit/check/result in one turn. Production budgets remain intact.
+the whole edit/check/result in one turn. live-edit starts a real runtime fixture
+before the model edits it and observes synchronization. Production budgets remain intact.
 No browser, production login or business acceptance is claimed.
 """
 
@@ -20,6 +21,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shlex
 import subprocess
 import sys
 import time
@@ -193,7 +195,8 @@ def correlate(record, events):
         call, reply = calls.get(call_id), replies.get(call_id)
         if not call or not reply or call["tool"] != event.get("tool") or reply.get("tool") != call["tool"]:
             raise RuntimeError("model_tool_result_correlation_missing")
-        for key in ("ok", "revision", "operationId", "status", "exitCode", "content", "logs"):
+        for key in ("ok", "revision", "operationId", "status", "exitCode", "content", "logs", "kind",
+                    "runtimeOperationId", "parentRevision", "synchronized", "sourcePublished", "verification", "runtime"):
             if key in event and reply.get(key) != event[key]:
                 raise RuntimeError("model_tool_result_correlation_mismatch")
         evidence.append({"toolCallId": call_id, **call, "result": reply})
@@ -237,6 +240,144 @@ def require_verified_command(operation, revision, evidence):
     text = "".join(chunk["text"] for item in logs for chunk in item.get("logs", []))
     if "tsc --noEmit" not in text:
         raise RuntimeError("model_did_not_read_real_typecheck_logs")
+
+
+def require_live_edit_receipts(initial, current, child, before_lease, after_lease, observed):
+    """Require durable source, execution identity and the model's observed receipt."""
+    result = child.result or {}
+    revision = result.get("revision")
+    if (child.kind != "runtime.patch" or child.status != "completed"
+            or result.get("synchronized") is not True or result.get("sourcePublished") is not True
+            or result.get("verification") != "not_run" or revision == initial.expectedRevision
+            or not isinstance(revision, str) or child.expectedRevision != initial.expectedRevision
+            or child.input.get("runtimeOperationId") != initial.operationId
+            or result.get("runtimeOperationId") != initial.operationId
+            or child.projectId != initial.projectId or child.sessionId != initial.sessionId):
+        raise RuntimeError("live_model_patch_receipt_invalid")
+    if (current.operationId != initial.operationId or current.kind != "runtime.start"
+            or current.status != "running" or current.cancelRequested
+            or current.expectedRevision != initial.expectedRevision or current.requestHash != initial.requestHash
+            or current.runtime is None or initial.runtime is None
+            or current.runtime.status != "ready" or current.runtime.health != "revision_verified"
+            or current.runtime.revision != revision
+            or any(getattr(current.runtime, name) != getattr(initial.runtime, name)
+                   for name in ("runtimeId", "workspaceId", "processId"))
+            or not current.runtime.processId):
+        raise RuntimeError("live_model_patch_replaced_runtime")
+    if (not before_lease or not after_lease or not before_lease.sandboxId
+            or any(getattr(before_lease, name) != getattr(after_lease, name)
+                   for name in ("sandboxId", "generation", "leaseOwner", "workspaceId"))
+            or after_lease.mountedRevision != revision or child.leaseGeneration != after_lease.generation
+            or after_lease.processRefs.get("operationId") != initial.operationId
+            or after_lease.processRefs.get("server") != current.runtime.processId):
+        raise RuntimeError("live_model_patch_changed_execution_owner")
+    statuses = [item["result"] for item in observed if item["tool"] == "project_status" and item["result"].get("ok")]
+    if not any(item.get("operationId") == child.operationId and item.get("kind") == "runtime.patch"
+            and item.get("status") == "completed" and item.get("revision") == revision
+            and item.get("synchronized") is True and item.get("sourcePublished") is True
+            and item.get("verification") == "not_run" for item in statuses):
+        raise RuntimeError("model_did_not_observe_live_patch_completion")
+    if not any(item.get("operationId") == initial.operationId and item.get("status") == "running"
+            and (item.get("runtime") or {}).get("revision") == revision
+            and (item.get("runtime") or {}).get("status") == "ready" for item in statuses):
+        raise RuntimeError("model_did_not_observe_updated_running_project")
+
+
+async def live_edit_scenario(*, client, turn, store, owner_id, project_id, initial_revision,
+                             files, expected_title, approval_ref, remaining, report, persist, check):
+    """Startup is the fixture; both editing and final observation use the model."""
+    from services.e2b_workspace_provider import E2BWorkspaceProvider
+    from services.workspace_provider import WorkspaceHandle
+
+    async def wait_operation(operation_id, *, ready=False):
+        while remaining() > 0.1:
+            response = await client.get("/api/sliderule/project-operations/" + operation_id)
+            if response.status_code != 200:
+                raise RuntimeError("live_edit_operation_snapshot_unavailable")
+            operation = store.get_operation(operation_id, owner_id=owner_id)
+            if ready and operation.runtime and operation.runtime.status == "ready":
+                return operation
+            if operation.status in {"completed", "failed", "cancelled"}:
+                if ready:
+                    raise RuntimeError("live_edit_fixture_runtime_not_ready")
+                return operation
+            await asyncio.sleep(min(1, remaining()))
+        raise RuntimeError("live_edit_operation_wait_timeout")
+
+    report["stage"] = "starting_live_edit_fixture"
+    persist()
+    response = await client.post("/api/sliderule/projects/" + project_id + "/runtime/start", json={
+        "approvalRef": approval_ref, "expectedRevision": initial_revision, "idempotencyKey": "live-edit-fixture-start"})
+    if response.status_code != 202:
+        raise RuntimeError(f"live_edit_fixture_start_http_{response.status_code}")
+    parent_id = response.json()["operation"]["operationId"]
+    report["operationId"] = parent_id
+    persist()
+    initial = await wait_operation(parent_id, ready=True)
+    before_lease = store.get_lease(project_id, owner_id=owner_id)
+    report["runtimeFixture"] = {"operationId": parent_id, "runtimeId": initial.runtime.runtimeId,
+        "revision": initial.runtime.revision, "processId": initial.runtime.processId,
+        "leaseGeneration": before_lease.generation, "sandboxId": before_lease.sandboxId,
+        "startup": "actual authorized runtime/start HTTP; fixture, not selected by model"}
+    check("fixed_project_is_running_before_model_edit")
+    edited = await turn("live_edit", f"Execute the approved source edit in the project that is already running. "
+        f"Read src/main.tsx and change exactly the heading New Project to {expected_title}. "
+        "Keep every other byte and file unchanged and keep the current application running. "
+        "Save the edit through the existing runtime; finish this step after the edit request is saved. "
+        "I will ask you to inspect its final status separately. Do not launch checks, create another runtime, "
+        "publish, or claim browser or business verification.")
+    successful = [item for item in edited if item["result"].get("ok")]
+    names = [item["tool"] for item in successful]
+    edits = [item for item in successful if item["tool"] == "project_patch"]
+    if (len(edits) != 1 or "project_read" not in names
+            or names.index("project_read") > names.index("project_patch")
+            or edits[0]["result"].get("kind") != "runtime.patch"):
+        raise RuntimeError("live_model_did_not_read_and_queue_one_runtime_patch")
+    child_id = edits[0]["result"]["operationId"]
+    report["patchOperationId"] = child_id
+    report["stage"] = "waiting_for_live_source_sync"
+    persist()
+    child = await wait_operation(child_id)
+    report["patchReceipt"] = {"operationId": child.operationId, "status": child.status,
+        "expectedRevision": child.expectedRevision, "result": child.result}
+    persist()
+    if child.status != "completed":
+        raise RuntimeError("live_model_source_sync_failed:" + str((child.result or {}).get("errorCode")))
+    observed = await turn("observe_live_edit", f"The background wait for edit operation {child_id} has ended. "
+        f"Read its durable status and the status of the existing running application operation {parent_id}. "
+        "Report whether the saved edit actually synchronized and which source revision is running. "
+        "This step only observes these statuses; do not edit, start, stop or run commands. "
+        "A ready application is not browser or business verification.")
+    current = store.get_operation(parent_id, owner_id=owner_id)
+    after_lease = store.get_lease(project_id, owner_id=owner_id)
+    require_live_edit_receipts(initial, current, child, before_lease, after_lease, observed)
+    revised = store.get_project(project_id, owner_id=owner_id).currentRevision
+    require_edit(files, store.read_files(project_id, owner_id=owner_id), initial_revision, revised, expected_title)
+    if current.runtime.revision != revised or store.read_files(project_id, initial_revision, owner_id=owner_id) != files:
+        raise RuntimeError("live_model_source_revision_mismatch")
+    from services import persistence
+    if persistence.load_session_record(child.sessionId)["session"].projectRevision != revised:
+        raise RuntimeError("session_revision_not_updated")
+    operations = store.list_project_operations(project_id, owner_id=owner_id, limit=100)
+    if len(operations) != 2 or {item.operationId for item in operations} != {parent_id, child_id}:
+        raise RuntimeError("unexpected_extra_remote_operations")
+    check("live_model_receives_synchronized_receipt_for_same_runtime_and_owner")
+    provider = E2BWorkspaceProvider()
+    handle = WorkspaceHandle(after_lease.workspaceId, after_lease.sandboxId)
+    await asyncio.to_thread(provider.connect, handle)
+    if not await asyncio.to_thread(provider.probe, handle, current.runtime.port, expected_revision=revised):
+        raise RuntimeError("live_model_runtime_revision_probe_failed")
+    source = "import json,urllib.request; s=urllib.request.urlopen('http://127.0.0.1:" + str(current.runtime.port) + "/src/main.tsx').read().decode(); print(json.dumps({'headingFound': " + repr(expected_title) + " in s}))"
+    response = await asyncio.to_thread(provider.run, handle,
+        "python3 -I -S -c " + shlex.quote(source), timeout_seconds=20)
+    if response.exit_code != 0 or json.loads(response.stdout).get("headingFound") is not True:
+        raise RuntimeError("live_model_vite_did_not_serve_edited_heading")
+    report["editedRevision"] = revised
+    report["liveRuntime"] = {"operationId": parent_id, "runtimeId": current.runtime.runtimeId,
+        "revision": revised, "processId": current.runtime.processId, "sandboxId": after_lease.sandboxId,
+        "leaseGeneration": after_lease.generation, "health": current.runtime.health,
+        "httpHeadingObserved": True, "verification": "not_run"}
+    check("real_e2b_vite_serves_model_edit_from_immutable_new_revision")
 
 
 async def worker(directory, timeout, scenario):
@@ -322,7 +463,8 @@ async def worker(directory, timeout, scenario):
     report["repositoryHead"] = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
         capture_output=True, text=True, check=True, timeout=10).stdout.strip()
     source_paths = ["services/rehearsal_control.py", "services/control_run_service.py",
-        "services/project_tools.py", "sliderule_llm/control_client.py"]
+        "services/project_tools.py", "services/project_runtime_worker.py", "services/project_source_sync.py",
+        "services/project_store.py", "services/e2b_workspace_provider.py", "sliderule_llm/control_client.py"]
     report["implementationSha256"] = {path: hashlib.sha256((BACKEND / path).read_bytes()).hexdigest()
                                         for path in source_paths}
     files, template = load_project_template()
@@ -331,8 +473,13 @@ async def worker(directory, timeout, scenario):
     plan = {"planId": "model-smoke-approved-plan", "revision": 1, "reqId": "model-smoke-approval",
         "planContent": f"In the existing React/Vite project change only the New Project heading to {expected_title}. "
                        "Read the source first, preserve every other byte, then run the check command in E2B and inspect status and logs. Do not publish."}
+    if scenario == "live-edit":
+        plan["planContent"] = (f"Start the fixed React/Vite project, then change only the New Project heading to {expected_title}. "
+            "Read the source first and preserve every other byte. Synchronize the edit through the existing runtime, "
+            "keep that application running and inspect the saved edit receipt and current runtime status. Do not publish.")
     state = V5SessionState(sessionId=session_id, ownerId=owner_id,
-        goal={"text": "Edit the existing project heading and verify TypeScript in E2B", "status": "clear"},
+        goal={"text": "Edit the heading through the existing E2B runtime and observe source synchronization"
+              if scenario == "live-edit" else "Edit the existing project heading and verify TypeScript in E2B", "status": "clear"},
         controlTranscript=[{**plan, "kind": kind} for kind in ("plan_written", "plan_approval", "plan_approved")])
     saved = persistence.save_session_record(state, server_write=True)
     if not saved.get("ok"):
@@ -406,98 +553,104 @@ async def worker(directory, timeout, scenario):
             return stage["correlatedTools"]
 
         try:
-            if scenario == "single-turn-check":
-                edit = await turn("edit_check_observe", f"Carry out the approved change in the existing project: "
-                    f"read src/main.tsx, change exactly the heading New Project to {expected_title}, "
-                    "and preserve every other byte and file. Save a new source revision, then run the check command "
-                    "in E2B for that revision. Inspect the actual operation status and logs and report the result "
-                    "when you have evidence. Do not publish or claim browser/business verification.")
-            elif scenario == "combined-edit":
-                edit = await turn("edit", f"Execute only the source-edit step of the approved plan now. "
-                    f"Read src/main.tsx from the existing saved project, then change exactly the heading text "
-                    f"New Project to {expected_title}. Keep every other byte and every other file unchanged. "
-                    "Save the edit as a new revision. Stop after saving; I will request the E2B check separately.")
+            if scenario == "live-edit":
+                await live_edit_scenario(client=client, turn=turn, store=store, owner_id=owner_id,
+                    project_id=project_id, initial_revision=initial_revision, files=files,
+                    expected_title=expected_title, approval_ref=approved_reference(state),
+                    remaining=remaining, report=report, persist=lambda: write_report(directory, report), check=check)
             else:
-                read = await turn("read", f"Read only src/main.tsx at revision {initial_revision} "
-                    "using project_read, then finish this step. This fixture project is newly created with no "
-                    "operations or active runtime; no status query is needed. Only the file content and hash are "
-                    "requested. Do not change files or use other tools.")
-                reads = [item["result"] for item in read if item["tool"] == "project_read" and item["result"].get("ok")]
-                if len(reads) != 1 or reads[0].get("truncated"):
-                    raise RuntimeError("model_source_read_missing_or_truncated")
-                # This is an explicit new user step with the real previous read
-                # attached. It is not a forged tool message or model continuation.
-                context = {key: reads[0][key] for key in ("path", "content", "revision", "sha256")}
-                edit = await turn("edit", f"Apply the approved edit using the preceding real read attached below. "
-                    f"Change only the heading text New Project to {expected_title}; preserve every other byte and file. "
-                    f"Use approvalRef {approved_reference(state)}. There are no operations or active runtime. "
-                    "The tool schema takes expectedRevision once at the top level; each changes item contains only "
-                    "path, content and expectedSha256. Stop after saving the new revision; do not read again, "
-                    "query status or run commands in this step. Previous actual project_read result: " + json.dumps(context, ensure_ascii=False))
-                edit = read + edit
-            names = [item["tool"] for item in edit if item["result"].get("ok")]
-            if "project_read" not in names or "project_patch" not in names or names.index("project_read") > names.index("project_patch"):
-                raise RuntimeError("model_read_before_patch_missing")
-            project = store.get_project(project_id, owner_id=owner_id)
-            revised = project.currentRevision
-            require_edit(files, store.read_files(project_id, owner_id=owner_id), initial_revision, revised, expected_title)
-            if store.read_files(project_id, initial_revision, owner_id=owner_id) != files:
-                raise RuntimeError("immutable_original_revision_changed")
-            persisted = persistence.load_session_record(session_id)["session"]
-            if persisted.projectRevision != revised:
-                raise RuntimeError("session_revision_not_updated")
-            report["editedRevision"] = revised
-            check("live_model_reads_and_saves_exact_edit_with_immutable_parent")
+                if scenario == "single-turn-check":
+                    edit = await turn("edit_check_observe", f"Carry out the approved change in the existing project: "
+                        f"read src/main.tsx, change exactly the heading New Project to {expected_title}, "
+                        "and preserve every other byte and file. Save a new source revision, then run the check command "
+                        "in E2B for that revision. Inspect the actual operation status and logs and report the result "
+                        "when you have evidence. Do not publish or claim browser/business verification.")
+                elif scenario == "combined-edit":
+                    edit = await turn("edit", f"Execute only the source-edit step of the approved plan now. "
+                        f"Read src/main.tsx from the existing saved project, then change exactly the heading text "
+                        f"New Project to {expected_title}. Keep every other byte and every other file unchanged. "
+                        "Save the edit as a new revision. Stop after saving; I will request the E2B check separately.")
+                else:
+                    read = await turn("read", f"Read only src/main.tsx at revision {initial_revision} "
+                        "using project_read, then finish this step. This fixture project is newly created with no "
+                        "operations or active runtime; no status query is needed. Only the file content and hash are "
+                        "requested. Do not change files or use other tools.")
+                    reads = [item["result"] for item in read if item["tool"] == "project_read" and item["result"].get("ok")]
+                    if len(reads) != 1 or reads[0].get("truncated"):
+                        raise RuntimeError("model_source_read_missing_or_truncated")
+                    # This is an explicit new user step with the real previous read
+                    # attached. It is not a forged tool message or model continuation.
+                    context = {key: reads[0][key] for key in ("path", "content", "revision", "sha256")}
+                    edit = await turn("edit", f"Apply the approved edit using the preceding real read attached below. "
+                        f"Change only the heading text New Project to {expected_title}; preserve every other byte and file. "
+                        f"Use approvalRef {approved_reference(state)}. There are no operations or active runtime. "
+                        "The tool schema takes expectedRevision once at the top level; each changes item contains only "
+                        "path, content and expectedSha256. Stop after saving the new revision; do not read again, "
+                        "query status or run commands in this step. Previous actual project_read result: " + json.dumps(context, ensure_ascii=False))
+                    edit = read + edit
+                names = [item["tool"] for item in edit if item["result"].get("ok")]
+                if "project_read" not in names or "project_patch" not in names or names.index("project_read") > names.index("project_patch"):
+                    raise RuntimeError("model_read_before_patch_missing")
+                project = store.get_project(project_id, owner_id=owner_id)
+                revised = project.currentRevision
+                require_edit(files, store.read_files(project_id, owner_id=owner_id), initial_revision, revised, expected_title)
+                if store.read_files(project_id, initial_revision, owner_id=owner_id) != files:
+                    raise RuntimeError("immutable_original_revision_changed")
+                persisted = persistence.load_session_record(session_id)["session"]
+                if persisted.projectRevision != revised:
+                    raise RuntimeError("session_revision_not_updated")
+                report["editedRevision"] = revised
+                check("live_model_reads_and_saves_exact_edit_with_immutable_parent")
 
-            executed = edit if scenario == "single-turn-check" else await turn("execute", "The source-edit step is complete. Queue exactly one E2B check "
-                f"command for revision {revised} with approvalRef {approved_reference(state)}. Return the operation ID "
-                "and stop once queued; I will ask you to inspect its result when the background operation settles. "
-                "Do not modify files or start a preview.")
-            dispatched = [item for item in executed if item["tool"] == "project_exec" and item["result"].get("ok")]
-            if len(dispatched) != 1 or dispatched[0]["arguments"].get("command") != "check":
-                raise RuntimeError("model_did_not_dispatch_one_check")
-            operation_id = dispatched[0]["result"]["operationId"]
-            report["operationId"] = operation_id
-            check("live_model_selects_real_e2b_check_for_edited_revision")
-            report["stage"] = "waiting_for_e2b"
-            write_report(directory, report)
-            while remaining() > 0.1:
-                snapshot = await client.get("/api/sliderule/project-operations/" + operation_id)
-                if snapshot.status_code != 200:
-                    raise RuntimeError("operation_snapshot_unavailable")
-                lease = store.get_lease(project_id, owner_id=owner_id)
-                if lease and lease.sandboxId and lease.sandboxId not in report["sandboxIds"]:
-                    report["sandboxIds"].append(lease.sandboxId)
-                    write_report(directory, report)
-                if snapshot.json()["operation"]["status"] in {"completed", "failed", "cancelled"}:
-                    break
-                await asyncio.sleep(1)
-            else:
-                raise RuntimeError("e2b_check_wait_timeout")
-            operation = store.get_operation(operation_id, owner_id=owner_id)
-            report["command"] = {"operationId": operation_id, "revision": operation.expectedRevision,
-                "status": operation.status, "command": operation.input.get("command"),
-                "exitCode": (operation.result or {}).get("exitCode"),
-                "errorCode": (operation.result or {}).get("errorCode")}
-            write_report(directory, report)
-            if scenario == "single-turn-check":
-                observed = edit
-                if len(report["turns"]) != 1:
-                    raise RuntimeError("single_turn_scenario_added_user_turns")
-            else:
-                observed = await turn("observe_status", f"The background wait for operation {operation_id} has ended. "
-                    "Read this operation's durable status and report its actual result. This step only reads status; "
-                    "do not launch operations, read logs or edit files. Do not claim browser or business acceptance.")
-                observed += await turn("observe_logs", f"Read the command logs of operation {operation_id} and report "
-                    "what command actually ran. This step only reads logs; do not launch operations, read status or edit files. "
-                    "If needed follow the returned log cursor until you find the typecheck command.")
-            require_verified_command(operation, revised, observed)
-            all_operations = store.list_project_operations(project_id, owner_id=owner_id, limit=100)
-            if len(all_operations) != 1 or all_operations[0].operationId != operation_id:
-                raise RuntimeError("unexpected_extra_remote_operations")
-            if store.get_project(project_id, owner_id=owner_id).currentRevision != revised:
-                raise RuntimeError("model_changed_revision_after_check")
-            check("live_model_receives_terminal_exit_and_real_typecheck_logs")
+                executed = edit if scenario == "single-turn-check" else await turn("execute", "The source-edit step is complete. Queue exactly one E2B check "
+                    f"command for revision {revised} with approvalRef {approved_reference(state)}. Return the operation ID "
+                    "and stop once queued; I will ask you to inspect its result when the background operation settles. "
+                    "Do not modify files or start a preview.")
+                dispatched = [item for item in executed if item["tool"] == "project_exec" and item["result"].get("ok")]
+                if len(dispatched) != 1 or dispatched[0]["arguments"].get("command") != "check":
+                    raise RuntimeError("model_did_not_dispatch_one_check")
+                operation_id = dispatched[0]["result"]["operationId"]
+                report["operationId"] = operation_id
+                check("live_model_selects_real_e2b_check_for_edited_revision")
+                report["stage"] = "waiting_for_e2b"
+                write_report(directory, report)
+                while remaining() > 0.1:
+                    snapshot = await client.get("/api/sliderule/project-operations/" + operation_id)
+                    if snapshot.status_code != 200:
+                        raise RuntimeError("operation_snapshot_unavailable")
+                    lease = store.get_lease(project_id, owner_id=owner_id)
+                    if lease and lease.sandboxId and lease.sandboxId not in report["sandboxIds"]:
+                        report["sandboxIds"].append(lease.sandboxId)
+                        write_report(directory, report)
+                    if snapshot.json()["operation"]["status"] in {"completed", "failed", "cancelled"}:
+                        break
+                    await asyncio.sleep(1)
+                else:
+                    raise RuntimeError("e2b_check_wait_timeout")
+                operation = store.get_operation(operation_id, owner_id=owner_id)
+                report["command"] = {"operationId": operation_id, "revision": operation.expectedRevision,
+                    "status": operation.status, "command": operation.input.get("command"),
+                    "exitCode": (operation.result or {}).get("exitCode"),
+                    "errorCode": (operation.result or {}).get("errorCode")}
+                write_report(directory, report)
+                if scenario == "single-turn-check":
+                    observed = edit
+                    if len(report["turns"]) != 1:
+                        raise RuntimeError("single_turn_scenario_added_user_turns")
+                else:
+                    observed = await turn("observe_status", f"The background wait for operation {operation_id} has ended. "
+                        "Read this operation's durable status and report its actual result. This step only reads status; "
+                        "do not launch operations, read logs or edit files. Do not claim browser or business acceptance.")
+                    observed += await turn("observe_logs", f"Read the command logs of operation {operation_id} and report "
+                        "what command actually ran. This step only reads logs; do not launch operations, read status or edit files. "
+                        "If needed follow the returned log cursor until you find the typecheck command.")
+                require_verified_command(operation, revised, observed)
+                all_operations = store.list_project_operations(project_id, owner_id=owner_id, limit=100)
+                if len(all_operations) != 1 or all_operations[0].operationId != operation_id:
+                    raise RuntimeError("unexpected_extra_remote_operations")
+                if store.get_project(project_id, owner_id=owner_id).currentRevision != revised:
+                    raise RuntimeError("model_changed_revision_after_check")
+                check("live_model_receives_terminal_exit_and_real_typecheck_logs")
             report["status"] = "passed"
         except Exception as exc:
             report.update(status="failed", error=redact(str(exc) or type(exc).__name__)[:1000])
@@ -527,7 +680,11 @@ async def worker(directory, timeout, scenario):
                                            if files.get(path) != final_files.get(path)),
                     "originalRevisionUnchanged": store.read_files(project_id, initial_revision, owner_id=owner_id) == files}
                 report["finalOperations"] = [{"operationId": operation.operationId,
+                    "kind": operation.kind,
                     "revision": operation.expectedRevision, "status": operation.status,
+                    "runtimeRevision": operation.runtime.revision if operation.runtime else None,
+                    "synchronized": (operation.result or {}).get("synchronized"),
+                    "sourcePublished": (operation.result or {}).get("sourcePublished"),
                     "command": operation.input.get("command"), "exitCode": (operation.result or {}).get("exitCode"),
                     "errorCode": (operation.result or {}).get("errorCode")}
                     for operation in store.list_project_operations(project_id, owner_id=owner_id, limit=100)]
@@ -567,8 +724,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--timeout", type=int, default=600, help="Total worker seconds, followed by at most 90 seconds of cleanup")
     parser.add_argument("--without-key", action="store_true", help="Test the blocked preflight without network calls")
-    parser.add_argument("--scenario", choices=("combined-edit", "guided-tools", "single-turn-check"), default="combined-edit",
-        help="Combined edit remains the default; guided-tools supplies steps; single-turn-check allows one user request only")
+    parser.add_argument("--scenario", choices=("combined-edit", "guided-tools", "single-turn-check", "live-edit"), default="combined-edit",
+        help="Combined edit is the default; guided-tools supplies steps; single-turn-check uses one user request; live-edit updates an already running fixture")
     parser.add_argument("--worker", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--cleanup", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
@@ -608,6 +765,9 @@ def main():
         "notCovered": ["production login", "model-driven planning or approval", "private browser preview",
             "browser behavior", "application business acceptance", "unprompted autonomous task completion"],
         "checks": [], "turns": [], "sandboxIds": [], "cleanup": []}
+    if args.scenario == "live-edit":
+        report["scope"] = "live-model-durable-control-http-running-e2b-source-edit-and-synchronization"
+        report["fixtures"].append("runtime started through authorized HTTP before model editing")
     missing = []
     if args.without_key or not os.getenv("E2B_API_KEY"):
         missing.append("e2b_api_key_missing")
