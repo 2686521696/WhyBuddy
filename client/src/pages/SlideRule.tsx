@@ -12,6 +12,7 @@
 
 import { BRAND_NAME_FULL } from "@shared/brand";
 import { DEFAULT_SESSION_ID } from "@/lib/sliderule-session-id";
+import { useAuth } from "@/lib/use-auth";
 import React, {
   useCallback,
   useEffect,
@@ -1833,6 +1834,7 @@ function SlideRuleSessionBody({
   embedded: boolean;
   activeSessionId: string;
 }) {
+  const { user: authUser, ready: authReady } = useAuth();
   const {
     goal,
     uiTurns,
@@ -2034,6 +2036,11 @@ function SlideRuleSessionBody({
       pythonSkillRuntimeGraph
     )
       return;
+    // Anonymous visitors do not own a durable session. Avoid probing the
+    // login-gated session endpoint merely to discover that the empty shell has
+    // no persisted projection; this used to produce a visible 404 in the
+    // browser console on every fresh visit.
+    if (!authReady || !authUser) return;
     // Pages 演示的会话全部在 localStorage，后端 sessions API 不存在，跳过投影回捞。
     if (IS_GITHUB_PAGES) return;
     let cancelled = false;
@@ -2056,6 +2063,8 @@ function SlideRuleSessionBody({
     visiblePythonRuntimeProjection,
     pythonPublishClosure,
     pythonSkillRuntimeGraph,
+    authReady,
+    authUser,
   ]);
 
   useEffect(() => {

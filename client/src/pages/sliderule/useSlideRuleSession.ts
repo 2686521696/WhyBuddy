@@ -403,7 +403,7 @@ export type UseSlideRuleSessionOptions = {
 };
 
 export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
-  const { refresh: refreshAuth } = useAuth();
+  const { refresh: refreshAuth, user: authUser, ready: authReady } = useAuth();
   const sessionId = options.sessionId ?? DEFAULT_SESSION_ID;
   const [uiTurns, setUiTurns] = useState<UiTurn[]>([]);
   const uiTurnsRef = useRef<UiTurn[]>([]);
@@ -828,6 +828,19 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
 
   useEffect(() => {
     let cancelled = false;
+    // The empty shell is intentionally browsable without an account. Session
+    // hydration is login-gated, so do not call the persisted-session endpoint
+    // for anonymous visitors (it only returns a noisy 404). Mark hydration
+    // complete with the in-memory empty state and wait for auth before trying
+    // the durable store.
+    if (authReady === false) return () => { cancelled = true; };
+    // Some isolated hook tests provide the historical { refresh }-only auth
+    // stub. Treat an omitted readiness/user pair as the old behavior; the real
+    // provider always supplies an explicit ready boolean.
+    if (authReady === true && !authUser) {
+      setSessionHydrated(true);
+      return () => { cancelled = true; };
+    }
     (async () => {
       let loaded: V5SessionState;
       try {
@@ -918,7 +931,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, options.initialGoal]);
+  }, [sessionId, options.initialGoal, authReady, authUser]);
 
   useEffect(() => {
     if (!options.documentTitle) return;
@@ -2527,7 +2540,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   // 自动续播接回（事件日志从头补播重建本轮 UI，追平后接实时尾流）。
   const resumeAttemptedRef = useRef(false);
   useEffect(() => {
-    if (!sessionHydrated || IS_GITHUB_PAGES || resumeAttemptedRef.current) {
+    // Anonymous visitors can browse the empty shell, but they have no durable
+    // control/run bookmark to resume. Do not probe login-gated endpoints here:
+    // the old unconditional probe produced noisy 401/404 console errors on
+    // every fresh anonymous visit and made a healthy page look broken.
+    if (!sessionHydrated || !authReady || !authUser || IS_GITHUB_PAGES || resumeAttemptedRef.current) {
       return;
     }
     if (isRunning) return;
@@ -2569,7 +2586,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionHydrated]);
+  }, [sessionHydrated, authReady, authUser]);
 
   const resolveInteractiveGate = (gateNodeId: string, choice: string | null) => {
     // Pragmatic bridge to existing text-driven G_CONFIRM logic in intakeMessage.

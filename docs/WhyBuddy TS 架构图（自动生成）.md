@@ -19,7 +19,7 @@
 | shared | 179 |
 | **合计** | **2008** |
 
-边 5987 条，其中动态 import / require 317 条、
+边 5988 条，其中动态 import / require 317 条、
 类型 import 2244 条。
 
 ## component 依赖图
