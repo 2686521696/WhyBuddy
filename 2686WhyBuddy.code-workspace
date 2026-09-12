@@ -5,6 +5,10 @@
 		},
 		{
 			"path": "../grok-build"
+		},
+		{
+			"name": "工程重构参考源码",
+			"path": "../whybuddy-runtime-references"
 		}
 	],
 	"settings": {}
