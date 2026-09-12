@@ -28,6 +28,7 @@ import time
 import json
 import os
 import re
+import tempfile
 import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -324,7 +325,9 @@ def _is_same_turn_progress(prior: V5SessionState, incoming: V5SessionState) -> b
 # wrt other concurrent save calls (addresses concurrent RMW races). Re-read inside lock
 # sees prior writers' results. Combined with lastTurnId<= compare this provides version/timestamp-equivalent
 # guard (lastTurnId as version; lock order for equal-turn) using existing fields (no extra deps, no schema change).
-_save_lock = threading.Lock()
+# SQL saves also publish a local turn checkpoint under this lock. Reentrancy
+# lets the database CAS helper retain its own lock for direct callers.
+_save_lock = threading.RLock()
 
 # CAS 冲突重试次数。冲突只在「另一个进程/机器刚好写了同一个会话」时发生，
 # 重试一次基本就过了；给 3 次是留余量。用尽仍冲突就如实返回错误，不静默丢写入。
@@ -600,11 +603,23 @@ def _safe_ckpt_token(value: str, limit: int = 160) -> str:
 
 
 def _atomic_write_json(path: Path, payload: Any) -> None:
-    """temp + os.replace，与 _write_store 同一套原子落盘。OSError 原样抛给调用方。"""
+    """Each writer owns its temporary file; close it before Windows replace.
+
+    2026-09-13: the control loop and source owner reused ``<path>.tmp``.
+    One could replace/delete the other's open file, interrupting a valid model
+    turn with WinError 32 after the SQL write had already committed.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
-    os.replace(tmp, path)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                prefix=path.name + ".", suffix=".tmp", delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump(payload, stream, ensure_ascii=False, default=str)
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _write_turn_checkpoint(state: V5SessionState, store_file: Optional[StorePath] = None) -> Optional[StoreError]:
@@ -687,16 +702,21 @@ def save_session_record(
     # Serialized lock provides timestamp-equivalent ordering for same lastTurnId.
     store = _blob_store(store_file)
     if store is not None:
-        result = _save_session_record_db(store, state, server_write=server_write,
-                                       expected_project_revision=expected_project_revision,
-                                       project_binding_approval=project_binding_approval,
-                                       expected_control_run=expected_control_run)
-        if result.get("ok"):
-            ckpt_state = result.get("state") if isinstance(result.get("state"), V5SessionState) else state
-            ckpt_err = _write_turn_checkpoint(ckpt_state, store_file)
-            if ckpt_err:
-                return ckpt_err
-        return result
+        # The SQL helper used to release the process lock before checkpoint IO.
+        # A newer source reference could commit and checkpoint, then the older
+        # control snapshot overwrote that same turn's local checkpoint. Preserve
+        # commit order for local writers without retrying an unknown SQL result.
+        with _save_lock:
+            result = _save_session_record_db(store, state, server_write=server_write,
+                                           expected_project_revision=expected_project_revision,
+                                           project_binding_approval=project_binding_approval,
+                                           expected_control_run=expected_control_run)
+            if result.get("ok"):
+                ckpt_state = result.get("state") if isinstance(result.get("state"), V5SessionState) else state
+                ckpt_err = _write_turn_checkpoint(ckpt_state, store_file)
+                if ckpt_err:
+                    return ckpt_err
+            return result
     if expected_control_run is not None:
         return {
             "ok": False,
