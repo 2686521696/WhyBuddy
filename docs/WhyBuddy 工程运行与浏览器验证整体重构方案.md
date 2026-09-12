@@ -957,3 +957,9 @@ rollout 关闭时，资源所有者仍可读取工程、历史、验证、交付
 主要证据：`artifacts/project-product/1789248858-89f6c4d5/browser-report.json`（任务云端通过，实际目录内报告为准）、`artifacts/project-browser-p4/local-tasks-python-decoder.json`（真实 Chrome 回执解码）、`artifacts/project-workspace-browser-1789248031964/report.json`（共享工作台 Chrome）、`artifacts/project-model/1789248575-f3c20242/report.json`（真实模型只完成源码修改，后续 content_filter，整体失败）。模型烟测不会与夹具云样本拼接成自主交付通过。
 
 阶段判断：P1 至 P6 的代码、合同、UI 和固定任务样本已完成一轮实现与审查；P6 的公开部署、任意业务模板、生产持久库/域名、完整自主模型闭环和可视化编辑仍是后续验收项。每项均保持 `not_configured`、`blocked` 或 `failed` 的真实状态，不回退成 HTML 成功。
+
+### 26.1 2026-09-13 回滚闸与最终烟测边界
+
+本轮复审又修正了两个真实问题：rollout 关闭且 cleanup worker 开启时，后台不再领取新的 queued 控制回合，只保留已有运行的观察、对账和显式停止；禁用模式启动时也不再强制打开 runtime store。对应提交为 `c222b5a6`、`01410541`，控制与生命周期回归共 95 项通过。匿名预览烟测改为只清理任务应用 Cookie，保留工作台和预览授权；本地浏览器验证 17 项通过。
+
+最后一次有界云端恢复烟测在 `trusted_service_setup` 的依赖安装阶段超时，报告为失败并停止继续重试；不能据此宣称云端销毁后重建、业务数据恢复和清理库存完整通过。当前可确认的是固定任务模板的登录、CRUD、刷新、reader/anonymous 拒绝、源码 CAS 修改、构建、浏览器验证、预览隔离与本地清理链路；真实模型仍因上游 `content_filter` 只完成源码修改，生产 rollout 仍为 `disabled`。
