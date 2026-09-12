@@ -281,9 +281,15 @@ export function ProjectVerificationPanel({
     >
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
-          <h3 className="text-xs font-semibold text-stone-700">
-            {tasks ? "任务应用与权限检查" : "页面与计数交互检查"}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-xs font-semibold text-stone-700">
+              {tasks ? "任务应用与权限检查" : "页面与计数交互检查"}
+            </h3>
+            <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700"
+              title="由受控 Playwright 浏览器执行真实页面、网络和权限断言">
+              浏览器检查
+            </span>
+          </div>
           <p
             data-testid="project-verification-status"
             role="status"

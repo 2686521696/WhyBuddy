@@ -165,9 +165,15 @@ export function SandboxPreviewSurface({
     >
       <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-stone-200 px-4 py-3">
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold text-stone-800">
-            {appTitle}
-          </h2>
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className="truncate text-sm font-semibold text-stone-800">
+              {appTitle}
+            </h2>
+            <span className="shrink-0 rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700"
+              title="工程在 E2B 沙盒中运行，预览通过受控网关访问">
+              E2B 沙盒
+            </span>
+          </div>
           <p role="status" className="text-xs text-stone-500">
             {status}
           </p>
@@ -212,7 +218,7 @@ export function SandboxPreviewSurface({
         </p>
       ) : null}
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stone-200 px-4 py-2">
-        <div role="tablist" aria-label="工程工作台" className="flex gap-1">
+        <div role="tablist" aria-label="工程工作台 · E2B 沙盒预览" className="flex gap-1">
           {(
             [
               ["preview", "预览"],
