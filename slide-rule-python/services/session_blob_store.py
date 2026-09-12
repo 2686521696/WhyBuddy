@@ -393,7 +393,7 @@ def _controlled_save_statement(session_id, payload, expected_rev, fence, *, is_s
     lock = "" if is_sqlite else " for update of cr"
     materialized = "" if is_sqlite else "materialized "
     cte = (
-        f"with owned_control as {materialized}(select cr.id from wb_control_run cr "
+        f"with owned_control as {materialized}(select cr.id, cr.lease_expires_at from wb_control_run cr "
         "where cr.id=$9 and cr.session_id=$1 and cr.owner_id=$10 "
         "and cr.generation=$11 and cr.lease_owner=$12 and cr.status='running' "
         f"and cr.lease_expires_at > {clock} and {cancelled} "
@@ -403,16 +403,27 @@ def _controlled_save_statement(session_id, payload, expected_rev, fence, *, is_s
         "and cc.owner_id=cr.owner_id and cc.idempotency_key=cr.idempotency_key)"
         f"{lock}) "
     )
+    # 2026-09-12 real PostgreSQL contention: filters can pass before a lock
+    # wait, then an unchanged row can outlive its lease while waiting. Check
+    # time after locking, including the target session lock on UPDATE.
+    owned = f"exists(select 1 from owned_control where lease_expires_at > {clock})"
     blob = "$2" if is_sqlite else "cast($2 as jsonb)"
     if expected_rev is None:
         sql = (f"insert into {TABLE}(session_id,payload,rev,created_at,last_active,owner_id,goal_text,runtime_phase,artifact_count) "
-               f"select $1,{blob},1,$3,$3,$4,$5,$6,$7 where cast($8 as integer) is null and exists(select 1 from owned_control) "
+               f"select $1,{blob},1,$3,$3,$4,$5,$6,$7 where cast($8 as integer) is null and {owned} "
                "on conflict(session_id) do nothing returning session_id")
     else:
         owner = "json_extract(payload, '$.ownerId')" if is_sqlite else "payload->>'ownerId'"
+        if not is_sqlite:
+            cte = cte.rstrip() + (
+                f", locked_session as materialized (select s.session_id, oc.lease_expires_at from {TABLE} s "
+                "cross join owned_control oc where s.session_id=$1 and s.rev=$8 "
+                "and s.payload->>'ownerId'=$10 for update of s) "
+            )
+            owned = f"exists(select 1 from locked_session where lease_expires_at > {clock})"
         sql = (f"update {TABLE} set payload={blob},rev=rev+1,last_active=$3,owner_id=$4,goal_text=$5,runtime_phase=$6,artifact_count=$7 "
                f"where session_id=$1 and rev=$8 and {owner}=$10 "
-               "and exists(select 1 from owned_control) returning session_id")
+               f"and {owned} returning session_id")
     return cte + sql, params
 
 
