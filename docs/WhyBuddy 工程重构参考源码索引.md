@@ -740,3 +740,5 @@ Playwright 使用已有 Apache-2.0 npm 包及其许可文件；本批按公共AP
 ## 2026-09-13 本地工作台实测补充
 
 使用真实账号、Chrome `1920×1080` 视口访问 `/agent-loop/sliderule`，登录、历史会话恢复、右侧架构沙盘和新建空会话均通过。首轮浏览器日志发现匿名/空会话会产生登录门控 401/不存在资源 404；WhyBuddy 已调整为认证后才恢复 durable run，空舞台不查询尚未生成的 app。定向前端回归 90 项通过，新建会话复测日志为 0 条错误。截图与 JSON 报告见 `artifacts/local-1920-audit/`。本地 rollout 仍是 disabled，工程创建/预览显示 blocked 属于配置事实。
+
+`app-wall-holes.mjs` 现支持 Windows Chrome channel；在 `/agent-loop/workbench` 的 1920 宽度实测 24 张卡、6 列、空洞 0，截图见 `artifacts/local-1920-audit/wall-holes.png`。

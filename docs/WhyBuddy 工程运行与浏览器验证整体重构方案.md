@@ -971,3 +971,5 @@ rollout 关闭时，资源所有者仍可读取工程、历史、验证、交付
 首次实测发现：匿名新会话和空会话仍会提前查询不存在的持久会话/生成应用，浏览器控制台出现 401/404 噪音。现已修复为：未登录不探测登录门控的 control/run 接口；空会话在舞台隐藏时不查询 `generated-app`；只有已认证且舞台可见时才解析生成应用。定向前端回归 **90 项通过**，新建会话再次实测错误日志为 **0**。`/generated-app` 的 404 不再出现；登录前截图仍显示正确的登录入口，登录后截图显示真实历史和沙盘。
 
 本地默认 rollout 仍为 `disabled`，因此新工程创建、启动和预览在本机按设计保持 blocked；当前截图验证的是旧 HTML 会话兼容、架构沙盘、登录恢复和日志真实性，不把它误判成 E2B 工程验收。另一个工具 `app-wall-holes.mjs` 在本机缺少固定 `/opt/pw-browsers` 可执行文件而无法运行；本次改用仓库已验证的 Chrome channel 完成同等截图与日志采集，没有修改该工具的部署路径假设。
+
+补充：`app-wall-holes.mjs` 已增加 Windows Chrome channel 回退；在正确的 `/agent-loop/workbench` 入口以 1920 宽度实测抓到 24 张卡、6 列、0 个空洞，墙高 1425，截图为 `artifacts/local-1920-audit/wall-holes.png`。此前对 `/agent-loop/sliderule` 执行该工具没有卡片是入口职责不同，并非渲染失败。
