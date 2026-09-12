@@ -922,7 +922,7 @@ export function AppArtifactPreview({ detail, loading = false, previewKey, appTit
   if (detail?.runtimeKind === "project") return (
     <div className="flex h-full min-h-0 flex-col">
       <p className="shrink-0 px-4 py-2 text-xs text-stone-500">
-        工程预览使用应用自己的数据。工程历史版本与复刻尚未接入应用中心。
+        工程预览使用应用自己的数据；历史版本、源码和复刻操作可在下方工作区面板中使用。
       </p>
       <SandboxPreviewSurface projectId={detail.projectId} projectRevision={detail.projectRevision}
         revisionMode={detail.projectRevisionMode} appTitle={appTitle} />

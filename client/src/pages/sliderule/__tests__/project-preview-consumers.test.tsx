@@ -273,7 +273,7 @@ describe("both project artifact consumers", () => {
     );
     expect(container.textContent).toContain("应用运行失败");
     expect(container.textContent).toContain(
-      "工程历史版本与复刻尚未接入应用中心"
+      "历史版本、源码和复刻操作可在下方工作区面板中使用"
     );
     expect(container.textContent).not.toContain("HISTORICAL HTML");
     expect(container.querySelector("iframe")).toBeNull();
