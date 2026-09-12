@@ -82,6 +82,40 @@ class RunCheckpoint:
 
 
 class ControlRunService:
+    @classmethod
+    def observer(cls, project_store):
+        """Build a read/cancel facade without starting a worker or DDL.
+
+        During rollout rollback the application intentionally does not start the
+        control worker. Existing durable runs must remain observable and
+        explicitly cancellable, however. Constructing ``ControlRunStore`` via
+        its normal initializer would execute CREATE TABLE statements from a
+        GET, so this facade wires the already-open project's query function
+        directly and leaves all producer state disabled.
+        """
+        store = ControlRunStore.__new__(ControlRunStore)
+        store._query = project_store._q
+        store.max_run_bytes = 8 * 1024 * 1024
+        store.max_events = 2000
+        service = cls.__new__(cls)
+        service.store = store
+        service.project_store = project_store
+        service.project_supervisor = None
+        # Route handlers already enforce session ownership before subscribing;
+        # keep the service callback callable so the shared observation loop can
+        # run without a producer-side actor dependency.
+        service.authorize = lambda _session_id, _owner_id: None
+        service.lease_seconds = 0
+        service.poll_seconds = 0.25
+        service.max_workers = 0
+        service.worker_id = "control-observer"
+        service._tasks = {}
+        service._ports = {}
+        service._scanner = None
+        service._stopping = True
+        service._wake = asyncio.Event()
+        return service
+
     def __init__(self, store: ControlRunStore, project_store, project_supervisor,
                  *, authorize=authorize_control_run, lease_seconds=120,
                  poll_seconds=1, max_workers=2):

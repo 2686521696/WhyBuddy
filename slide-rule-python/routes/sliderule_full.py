@@ -53,7 +53,8 @@ from services.capability_maps import execute_mapped_capability
 from config.settings import settings
 from services.project_access import project_access_enabled
 from services.control_run_store import ControlRunConflict, ControlRunUnavailable, ControlRunNotFound
-from services.control_run_service import public_control_run
+from services.control_run_service import ControlRunService, public_control_run
+from services.project_store import get_project_store
 from sliderule_llm.capabilities import execute_capability, is_python_native_capability
 from sliderule_llm.client import LlmError
 from sliderule_llm.evidence import execute_evidence_runtime
@@ -1601,6 +1602,14 @@ def _control_service(request, viewer, *, read=False):
     if not viewer or (not read and not project_access_enabled(viewer)):
         raise HTTPException(404, "Not found")
     service = getattr(request.app.state, "control_run_service", None)
+    if service is None and read:
+        # Rollout rollback deliberately leaves no producer worker running, but
+        # durable control runs must still be observable and explicitly stopped.
+        # The observer facade performs no startup/DDL and cannot submit work.
+        try:
+            service = ControlRunService.observer(get_project_store())
+        except Exception as exc:
+            raise HTTPException(503, "control_run_unavailable") from exc
     if service is None:
         raise HTTPException(503, "control_run_unavailable")
     return service

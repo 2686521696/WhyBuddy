@@ -63,6 +63,21 @@ def test_filtered_http_response_is_accounted_and_never_resampled(env, monkeypatc
                 saved = env.store.get(record["runId"], env.owner)
             else:
                 saved = await settled(first, record["runId"])
+            # A filtered provider response is a terminal *turn* outcome.  The
+            # durable run may be marked completed because the control stream
+            # settled, but it must carry the provider stop receipt and may not
+            # be mistaken for a successful model turn or an implicit retry.
+                assert saved["status"] == "completed"
+                assert any(e.get("type") == "complete" for e in saved["events"])
+                assert not any(e.get("tool") == "project_exec" for e in saved["events"])
+                assert saved["checkpoint"]["phase"] == "provider_failed"
+                same = await first.submit(
+                    six_fields(env.state.sessionId, "Continue approved work"),
+                    env.owner,
+                    "provider-filter-receipt",
+                )
+                assert same["runId"] == record["runId"]
+                assert len(requests) == 1, "replaying the completed request must not resample"
         finally:
             await first.shutdown()
         cp = saved["checkpoint"]

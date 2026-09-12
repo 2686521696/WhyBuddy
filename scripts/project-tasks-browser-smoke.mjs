@@ -62,11 +62,11 @@ async function appLogin(frame, name) {
   await frame.getByRole("button", { name: "登录", exact: true }).click();
   await frame.getByRole("heading", { name: "任务清单", exact: true }).waitFor();
 }
-async function applicationRequest(path, data) {
+async function applicationRequest(path, data, { anonymous = false } = {}) {
   const target = page.frames().find(frame => frame.url().startsWith(previewOrigin + "/"));
   if (!target) throw new Error("tasks_application_frame_missing");
   return target.evaluate(async ({ path, data }) => {
-    const response = await fetch(path, { method: "POST", credentials: "same-origin",
+    const response = await fetch(path, { method: "POST", credentials: anonymous ? "omit" : "same-origin",
       headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
     return { status: response.status, body: await response.json() };
   }, { path, data });
@@ -189,7 +189,7 @@ try {
   const readerDenied = await applicationRequest("/api/tasks", { title: "must not write" });
   await check("independent reader account cannot write even by direct API", readerDenied.status === 403 && readerDenied.body.error === "只读成员不能修改数据");
   await frame.getByRole("button", { name: "退出登录", exact: true }).click();
-  const anonymousDenied = await applicationRequest("/api/tasks", { title: "must not write" });
+  const anonymousDenied = await applicationRequest("/api/tasks", { title: "must not write" }, { anonymous: true });
   await check("anonymous application API cannot write", anonymousDenied.status === 401 && anonymousDenied.body.error === "请先登录");
   await appLogin(frame, username);
 

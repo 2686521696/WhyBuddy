@@ -98,6 +98,32 @@ def test_http_is_durable_idempotent_and_owner_filtered(env, monkeypatch):
     asyncio.run(run())
 
 
+def test_rollout_rollback_keeps_existing_control_run_observable_without_worker(env, monkeypatch):
+    """Read/cancel routes must work after rollback when the producer is absent."""
+    from routes import sliderule_full
+
+    async def run():
+        service = env.service()
+        record = await service.submit(six_fields(env.state.sessionId, "Continue"), env.owner, "rollback-read")
+        # Simulate a process configured with rollout disabled: no worker/service
+        # was created during lifespan, but durable tables still contain the run.
+        monkeypatch.setattr(sliderule_full, "get_project_store", lambda: env.project)
+        monkeypatch.setattr(app.state, "control_run_service", None, raising=False)
+        monkeypatch.delenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", raising=False)
+        monkeypatch.setenv("WHYBUDDY_PROJECT_ROLLOUT", "disabled")
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
+            headers = {**KEY}
+            latest = await client.get("/api/sliderule/control-runs/latest",
+                params={"sessionId": env.state.sessionId}, headers=headers)
+            assert latest.status_code == 200 and latest.json()["run"]["runId"] == record["runId"]
+            observed = await client.get(f"/api/sliderule/control-runs/{record['runId']}", headers=headers)
+            assert observed.status_code == 200
+            cancelled = await client.delete(f"/api/sliderule/control-runs/{record['runId']}", headers=headers)
+            assert cancelled.status_code == 200 and cancelled.json()["cancelRequested"]
+
+    asyncio.run(run())
+
+
 def test_closing_subscription_does_not_stop_or_duplicate_the_model(env, monkeypatch):
     async def run():
         started, release = asyncio.Event(), asyncio.Event()
