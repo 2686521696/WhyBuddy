@@ -128,6 +128,7 @@ modules = [
   "services.control_run_store",
   "services.archetype_legal",
   "services.project_access",
+  "services.project_preview_config",
   "services.project_tool_contracts",
   # 交付面可用性：只吃 HTML 字符串与 SPEC 字典，services 里谁都不依赖 → 叶子。
   # 跟 gate_health 同一个理由被闭环判定顶层 import。
@@ -311,6 +312,7 @@ modules = [
   # 持久工程索引/源码版本/操作与事件的 SQL 边界。依赖 util 里的 SQL 网关，
   # 不反向调用 routes 或控制循环；归组在 persist component。
   "services.project_store",
+  "services.project_preview_access",
   "services.project_runtime",
   "services.e2b_workspace_provider",
   # 点选编辑存库前的体检。**不是叶子**：它复用 html_bindings.scan_bindings
@@ -393,6 +395,7 @@ may_depend_on = ["util", "core"]
   modules = [
     "services.control_run_service",
     "services.project_runtime_worker",
+    "services.project_preview_runtime",
     "services.project_authority",
     "services.project_creation",
     "services.project_tools",
@@ -623,6 +626,7 @@ modules = [
   "routes.blueprint_spec_docs",
   "routes.rag",
   "routes.project_runtime",
+  "routes.project_preview",
   "routes.sliderule",
   "routes.sliderule_full",
   "routes.tasks",
@@ -799,6 +803,9 @@ why = "工程运行编排：把持久源码、租约和 E2B provider 组合成�
   modules = [
     "services.project_runtime",
     "services.project_runtime_worker",
+    "services.project_preview_runtime",
+    "services.project_preview_access",
+    "services.project_preview_config",
 ]
 
 

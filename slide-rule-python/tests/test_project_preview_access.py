@@ -1,0 +1,447 @@
+"""Private preview uses real SQL/session approval and the actual HTTP consumer.
+
+No cloud provider is involved: observing a runtime must be sufficient to revoke
+access even with every execution worker offline. A single SQL CAS consumes the
+URL ticket because the production gateway commits each query independently.
+"""
+
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from middlewares.current_user import require_user
+from models.project_runtime import RuntimeInstance
+from models.v5_state import V5SessionState
+from routes import project_preview as route
+from services import persistence, project_access
+from services.identity_store import User
+from services.project_creation import create_session_project
+from services.project_preview_access import PreviewAccessDenied, ProjectPreviewAccess
+from services.project_preview_config import origin_for_runtime, preview_configuration_enabled
+from services.project_runtime_worker import approved_reference, authorize_operation
+from services.project_store import ProjectConflict, ProjectNotFound, ProjectStore
+from services.session_blob_store import SqlSessionBlobStore
+
+
+@pytest.fixture
+def world(tmp_path, monkeypatch):
+    store_url = f"sqlite:///{tmp_path / 'project.db'}"
+    store = ProjectStore.from_url(store_url)
+    sessions = SqlSessionBlobStore(f"sqlite:///{tmp_path / 'sessions.db'}")
+    monkeypatch.setattr(persistence, "_blob_store", lambda *_: sessions)
+    plan = {"planId": "plan-1", "revision": 1, "planContent": "Run fixed internal project", "reqId": "request-1"}
+    state = V5SessionState(sessionId="s1", ownerId="u1", goal={"text": plan["planContent"]}, controlTranscript=[
+        {**plan, "kind": "plan_written"}, {**plan, "kind": "plan_approval"}, {**plan, "kind": "plan_approved"}])
+    approval = approved_reference(state)
+    persistence.save_session_record(state, server_write=True)
+    project = create_session_project(store, "s1", owner_id="u1", approval_ref=approval)
+    operation = store.create_operation(project.projectId, owner_id="u1", kind="runtime.start",
+        expected_revision=project.currentRevision, approval_ref=approval, idempotency_key="start", input={"port": 5173})
+    lease = store.acquire_lease(project.projectId, owner_id="u1", lease_owner="worker-private", ttl_seconds=600)
+    store.claim_operation(operation.operationId, owner_id="u1", lease_owner=lease.leaseOwner, generation=lease.generation)
+    lease = store.renew_lease(project.projectId, owner_id="u1", lease_owner=lease.leaseOwner,
+        generation=lease.generation, ttl_seconds=600, sandbox_id="sandbox-private", mounted_revision=project.currentRevision,
+        process_refs={"operationId": operation.operationId, "server": "pid-private"})
+    clock = {"now": time.time()}
+    runtime = RuntimeInstance(runtimeId="rt-" + operation.operationId, projectId=project.projectId,
+        workspaceId=lease.workspaceId, revision=project.currentRevision, status="ready", port=5173,
+        health="revision_verified", processId="pid-private", previewUrl="https://provider-private.example",
+        expiresAt=clock["now"] + 900, lastHeartbeat="2026-09-13T00:00:00Z")
+    operation = store.update_runtime_operation(operation.operationId, owner_id="u1", lease_generation=lease.generation,
+        lease_owner=lease.leaseOwner, expected_status="queued", status="running", runtime=runtime)
+    access = ProjectPreviewAccess(store, authorizer=authorize_operation, clock=lambda: clock["now"])
+    monkeypatch.setenv("NODE_ENV", "development")
+    monkeypatch.setattr(project_access.settings, "NODE_ENV", "development")
+    monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
+    monkeypatch.setenv("WHYBUDDY_PROJECT_PREVIEW_GATEWAY_KEY", "g" * 40)
+    monkeypatch.setenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE", "https://{runtimeId}.preview.example.com")
+    audience = origin_for_runtime(runtime.runtimeId)
+    viewer = User(id="u1", is_superuser=True)
+    app = FastAPI()
+    app.include_router(route.router)
+    app.dependency_overrides[require_user] = lambda: viewer
+    app.state.project_preview_access = access
+    with TestClient(app) as client:
+        yield SimpleNamespace(store=store, store_url=store_url, sessions=sessions, project=project,
+            operation=operation, lease=lease, runtime=runtime, clock=clock, access=access,
+            viewer=viewer, app=app, client=client, audience=audience,
+            internal_headers={"Authorization": "Bearer " + "g" * 40}, approval=approval)
+    store.close()
+    sessions._engine.dispose()
+
+
+def _ticket(world):
+    return world.access.issue_browser_ticket(world.operation.operationId, owner_id="u1", audience=world.audience)
+
+
+def _tunnel(world):
+    return world.access.issue_tunnel_grant(world.operation.operationId, owner_id="u1", audience=world.audience)
+
+
+def _browser(world):
+    return world.access.redeem_browser_ticket(_ticket(world).secret, audience=world.audience)
+
+
+def _runtime_change(world, **changes):
+    operation = world.store.get_operation(world.operation.operationId, owner_id="u1")
+    return world.store.update_runtime_operation(operation.operationId, owner_id="u1",
+        lease_generation=world.lease.generation, lease_owner=world.lease.leaseOwner,
+        expected_status=operation.status, status=operation.status,
+        runtime=operation.runtime.model_copy(update=changes))
+
+
+def test_credentials_persist_as_hashes_and_browser_ticket_is_single_use_across_processes(world):
+    ticket = _ticket(world)
+    other_store = ProjectStore.from_url(world.store_url)
+    try:
+        other = ProjectPreviewAccess(other_store, authorizer=authorize_operation, clock=world.access.clock)
+        granted = other.redeem_browser_ticket(ticket.secret, audience=world.audience)
+        assert world.access.authorize_browser(granted.secret, audience=world.audience) == granted.scope
+        assert granted.scope.grant_id == ticket.scope.grant_id
+        assert granted.secret != ticket.secret
+        assert granted.expires_at == world.clock["now"] + 300
+        with pytest.raises(PreviewAccessDenied):
+            world.access.redeem_browser_ticket(ticket.secret, audience=world.audience)
+        stored = world.store._q("select * from wb_project_preview_access")
+        assert len(stored) == 1 and stored[0]["kind"] == "browser"
+        assert ticket.secret not in str(stored) and granted.secret not in str(stored)
+        assert ticket.secret not in repr(ticket) and granted.secret not in repr(granted)
+    finally:
+        other_store.close()
+
+
+def test_simultaneous_ticket_redemption_has_exactly_one_winner(world, monkeypatch):
+    ticket, barrier = _ticket(world), threading.Barrier(2)
+    original = world.access._lookup
+    def same_snapshot(*args):
+        result = original(*args)
+        barrier.wait(timeout=5)
+        return result
+    monkeypatch.setattr(world.access, "_lookup", same_snapshot)
+    def redeem():
+        try:
+            return world.access.redeem_browser_ticket(ticket.secret, audience=world.audience)
+        except PreviewAccessDenied:
+            return None
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: redeem(), range(2)))
+    assert sum(result is not None for result in results) == 1
+
+
+def test_browser_tunnel_and_ticket_roles_are_disjoint(world):
+    browser, tunnel, ticket = _browser(world), _tunnel(world), _ticket(world)
+    assert world.access.authorize_browser(browser.secret, audience=world.audience) == browser.scope
+    assert world.access.authorize_tunnel(tunnel.secret, audience=world.audience) == tunnel.scope
+    for credential, method in ((browser, world.access.authorize_tunnel), (tunnel, world.access.authorize_browser),
+            (ticket, world.access.authorize_browser), (ticket, world.access.authorize_tunnel)):
+        with pytest.raises(PreviewAccessDenied):
+            method(credential.secret, audience=world.audience)
+    with pytest.raises(PreviewAccessDenied):
+        world.access.validate_binding(ticket.scope.to_wire(), audience=world.audience)
+    with pytest.raises(PreviewAccessDenied):
+        world.access.authorize_browser(browser.secret, audience="https://other.preview.example.com")
+
+
+@pytest.mark.parametrize("change", ["cancel", "stopped", "reconciling", "unverified", "lease_expired", "runtime_expired",
+    "generation", "revision", "plan", "session_owner", "session_binding", "process", "port"])
+def test_all_existing_grants_and_new_tickets_obey_current_durable_authority(world, change):
+    browser, tunnel = _browser(world), _tunnel(world)
+    if change == "cancel":
+        world.store.request_operation_cancel(world.operation.operationId, owner_id="u1")
+    elif change in {"stopped", "reconciling"}:
+        _runtime_change(world, status=change)
+    elif change == "unverified":
+        _runtime_change(world, health="ready")
+    elif change == "runtime_expired":
+        _runtime_change(world, expiresAt=world.clock["now"] - 1)
+    elif change == "lease_expired":
+        world.store.release_lease(world.project.projectId, owner_id="u1", lease_owner=world.lease.leaseOwner,
+            generation=world.lease.generation)
+    elif change == "generation":
+        world.store.release_lease(world.project.projectId, owner_id="u1", lease_owner=world.lease.leaseOwner,
+            generation=world.lease.generation)
+        world.store.acquire_lease(world.project.projectId, owner_id="u1", lease_owner="replacement-worker")
+    elif change == "revision":
+        files = world.store.read_files(world.project.projectId, owner_id="u1")
+        files["changed.txt"] = "new revision makes old runtime stale"
+        world.store.commit_revision(world.project.projectId, owner_id="u1", expected_revision=world.project.currentRevision,
+            files=files, template_version="test", plan_ref=world.approval,
+            lease_generation=world.lease.generation, lease_owner=world.lease.leaseOwner)
+    elif change in {"plan", "session_owner", "session_binding"}:
+        row = world.sessions.load("s1")
+        payload = row.payload
+        if change == "plan": payload["controlTranscript"].pop()
+        if change == "session_owner": payload["ownerId"] = "mallory"
+        if change == "session_binding": payload["projectId"] = "different-project"
+        world.sessions.save("s1", payload, expected_rev=row.rev)
+    elif change == "process":
+        _runtime_change(world, processId="different-process")
+    elif change == "port":
+        _runtime_change(world, port=5174)
+    for callback in (
+            lambda: world.access.authorize_browser(browser.secret, audience=world.audience),
+            lambda: world.access.authorize_tunnel(tunnel.secret, audience=world.audience),
+            lambda: world.access.validate_binding(browser.scope.to_wire(), audience=world.audience),
+            lambda: _ticket(world)):
+        with pytest.raises((PermissionError, ProjectConflict, ProjectNotFound)):
+            callback()
+
+
+def test_owner_is_checked_before_issue_and_before_durable_revoke(world):
+    browser = _browser(world)
+    with pytest.raises(PreviewAccessDenied):
+        world.access.issue_browser_ticket(world.operation.operationId, owner_id="mallory", audience=world.audience)
+    with pytest.raises((PreviewAccessDenied, ProjectNotFound)):
+        world.access.revoke_grant(browser.scope.grant_id, owner_id="mallory")
+    with pytest.raises(ProjectNotFound):
+        world.access.revoke_runtime(world.operation.operationId, owner_id="mallory")
+    assert world.access.authorize_browser(browser.secret, audience=world.audience) == browser.scope
+
+
+def test_revoked_binding_never_resurrects_when_new_tunnel_uses_same_generation(world):
+    browser, old = _browser(world), _tunnel(world)
+    world.access.revoke_grant(old.scope.grant_id, owner_id="u1")
+    fresh = _tunnel(world)
+    assert fresh.scope.tunnel_id == old.scope.tunnel_id
+    assert fresh.scope.grant_id != old.scope.grant_id
+    with pytest.raises(PreviewAccessDenied):
+        world.access.validate_binding(old.scope.to_wire(), audience=world.audience)
+    assert world.access.validate_binding(fresh.scope.to_wire(), audience=world.audience) == fresh.scope
+    assert world.access.authorize_browser(browser.secret, audience=world.audience) == browser.scope
+    world.access.revoke_runtime(world.operation.operationId, owner_id="u1")
+    with pytest.raises(PreviewAccessDenied):
+        world.access.authorize_browser(browser.secret, audience=world.audience)
+
+
+@pytest.mark.parametrize("field,value", [("ownerId", "mallory"), ("projectId", "other"), ("sessionId", "s2"),
+    ("operationId", "other"), ("runtimeId", "other"), ("revision", "other"), ("workspaceId", "other"),
+    ("generation", 9), ("port", 5174), ("audience", "other"), ("expiresAt", 9999999999), ("tunnelId", "other")])
+def test_relay_cannot_rebind_or_extend_a_grant(world, field, value):
+    scope = _browser(world).scope
+    with pytest.raises(PreviewAccessDenied):
+        world.access.validate_binding({**scope.to_wire(), field: value}, audience=world.audience)
+
+
+def test_grant_cannot_be_repurposed_by_submitting_fresh_fields_for_stale_saved_row(world):
+    credential = _browser(world)
+    world.store._q("update wb_project_preview_access set revision=$1 where id=$2", ["old", credential.scope.grant_id])
+    with pytest.raises(PreviewAccessDenied):
+        world.access.validate_binding(credential.scope.to_wire(), audience=world.audience)
+
+
+def test_authentication_and_observation_do_not_touch_or_renew_runtime(world, monkeypatch):
+    tunnel, browser = _tunnel(world), _browser(world)
+    before = world.store._q("select * from wb_project_lease") + world.store._q("select * from wb_project_operation")
+    def forbidden(*args, **kwargs):
+        raise AssertionError("read-only preview attempted a lifecycle mutation")
+    for name in ("touch_operation", "renew_lease", "claim_operation", "request_operation_cancel", "update_runtime_operation"):
+        monkeypatch.setattr(world.store, name, forbidden)
+    for _ in range(2):
+        assert world.access.authorize_tunnel(tunnel.secret, audience=world.audience) == tunnel.scope
+        assert world.access.authorize_browser(browser.secret, audience=world.audience) == browser.scope
+        assert world.access.validate_binding(browser.scope.to_wire(), audience=world.audience) == browser.scope
+        assert world.client.get(f"/projects/{world.project.projectId}/preview").json()["available"] is True
+    after = world.store._q("select * from wb_project_lease") + world.store._q("select * from wb_project_operation")
+    assert before == after
+
+
+def test_ticket_and_grant_expiration_never_slide_on_reads_or_redemption(world):
+    ticket = _ticket(world)
+    world.clock["now"] += 59
+    browser = world.access.redeem_browser_ticket(ticket.secret, audience=world.audience)
+    assert browser.expires_at == ticket.expires_at + 240
+    world.clock["now"] = browser.expires_at
+    with pytest.raises(PreviewAccessDenied):
+        world.access.authorize_browser(browser.secret, audience=world.audience)
+    with pytest.raises(PreviewAccessDenied):
+        world.access.validate_binding(browser.scope.to_wire(), audience=world.audience)
+    expired_ticket = _ticket(world)
+    world.clock["now"] = expired_ticket.expires_at
+    with pytest.raises(PreviewAccessDenied):
+        world.access.redeem_browser_ticket(expired_ticket.secret, audience=world.audience)
+
+
+def test_cancellation_between_authority_read_and_ticket_write_is_fenced(world, monkeypatch):
+    real = world.access.authorizer
+    def cancelling_authorizer(*args):
+        real(*args)
+        world.store.request_operation_cancel(world.operation.operationId, owner_id="u1")
+    monkeypatch.setattr(world.access, "authorizer", cancelling_authorizer)
+    with pytest.raises(PreviewAccessDenied):
+        _ticket(world)
+    assert not world.store._q("select id from wb_project_preview_access")
+
+
+def test_revoke_during_relay_recheck_is_fenced(world, monkeypatch):
+    browser, real = _browser(world), world.access.authorizer
+    def revoking_authorizer(*args):
+        real(*args)
+        world.access.revoke_grant(browser.scope.grant_id, owner_id="u1")
+    monkeypatch.setattr(world.access, "authorizer", revoking_authorizer)
+    with pytest.raises(PreviewAccessDenied):
+        world.access.validate_binding(browser.scope.to_wire(), audience=world.audience)
+
+
+def test_process_binding_changed_during_authority_check_is_fenced(world, monkeypatch):
+    real = world.access.authorizer
+    def switching_process(*args):
+        real(*args)
+        world.store.renew_lease(world.project.projectId, owner_id="u1", lease_owner=world.lease.leaseOwner,
+            generation=world.lease.generation, process_refs={"operationId": world.operation.operationId,
+                "server": "replacement-process"})
+    monkeypatch.setattr(world.access, "authorizer", switching_process)
+    with pytest.raises(PreviewAccessDenied):
+        _ticket(world)
+    assert not world.store._q("select id from wb_project_preview_access")
+
+
+def test_http_owner_ticket_relay_redeem_and_revoke_end_to_end(world):
+    tunnel = _tunnel(world)
+    ticket_response = world.client.post(f"/project-operations/{world.operation.operationId}/preview-ticket")
+    assert ticket_response.status_code == 200
+    assert ticket_response.headers["cache-control"] == "no-store"
+    entry = urlsplit(ticket_response.json()["entryUrl"])
+    assert entry.path == "/_whybuddy/authorize"
+    ticket = parse_qs(entry.query)["ticket"][0]
+    redeemed = world.client.post("/internal/project-preview/redeem", headers=world.internal_headers,
+        json={"ticket": ticket, "audience": world.audience})
+    assert redeemed.status_code == 200
+    body = redeemed.json()
+    assert set(body) == {"token", "binding"}
+    for role, token in (("browser", body["token"]), ("tunnel", tunnel.secret)):
+        reply = world.client.post("/internal/project-preview/authorize", headers=world.internal_headers,
+            json={"role": role, "token": token, "audience": world.audience})
+        assert reply.status_code == 200 and reply.json()["ok"] is True
+        assert reply.json()["binding"]["grantId"]
+    assert world.client.post("/internal/project-preview/authorize", headers=world.internal_headers,
+        json={"role": "binding", "binding": body["binding"], "audience": world.audience}).status_code == 200
+    assert world.client.post("/internal/project-preview/redeem", headers=world.internal_headers,
+        json={"ticket": ticket, "audience": world.audience}).status_code == 403
+    assert world.client.post(f"/project-operations/{world.operation.operationId}/preview/revoke").status_code == 200
+    assert world.client.post("/internal/project-preview/authorize", headers=world.internal_headers,
+        json={"role": "browser", "token": body["token"], "audience": world.audience}).status_code == 403
+    assert "private" not in str(body)
+
+
+def test_http_ticket_and_browser_access_deadlines_match_actual_delayed_redemption(world):
+    _tunnel(world)
+    response = world.client.post(f"/project-operations/{world.operation.operationId}/preview-ticket")
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) == {"entryUrl", "ticketExpiresAt", "accessExpiresAt"}
+    ticket_expiry = datetime.fromisoformat(body["ticketExpiresAt"]).timestamp()
+    access_expiry = datetime.fromisoformat(body["accessExpiresAt"]).timestamp()
+    assert ticket_expiry == pytest.approx(world.clock["now"] + 60, rel=0, abs=0.000001)
+    assert access_expiry == pytest.approx(world.clock["now"] + 300, rel=0, abs=0.000001)
+    token = parse_qs(urlsplit(body["entryUrl"]).query)["ticket"][0]
+    world.clock["now"] += 59
+    redeemed = world.client.post("/internal/project-preview/redeem", headers=world.internal_headers,
+        json={"ticket": token, "audience": world.audience})
+    assert redeemed.status_code == 200
+    grant = redeemed.json()
+    assert grant["binding"]["expiresAt"] == pytest.approx(access_expiry, rel=0, abs=0.000001)
+    world.clock["now"] = ticket_expiry + 1
+    assert world.client.post("/internal/project-preview/authorize", headers=world.internal_headers,
+        json={"role": "browser", "token": grant["token"], "audience": world.audience}).status_code == 200
+    assert world.client.post("/internal/project-preview/redeem", headers=world.internal_headers,
+        json={"ticket": token, "audience": world.audience}).status_code == 403
+    world.clock["now"] = grant["binding"]["expiresAt"]
+    assert world.client.post("/internal/project-preview/authorize", headers=world.internal_headers,
+        json={"role": "browser", "token": grant["token"], "audience": world.audience}).status_code == 403
+
+
+@pytest.mark.parametrize("remaining", [30, 120])
+def test_browser_deadline_is_capped_by_runtime_not_refreshed_by_exchange(world, remaining):
+    _runtime_change(world, expiresAt=world.clock["now"] + remaining)
+    _tunnel(world)
+    body = world.client.post(f"/project-operations/{world.operation.operationId}/preview-ticket").json()
+    assert datetime.fromisoformat(body["accessExpiresAt"]).timestamp() == pytest.approx(world.clock["now"] + remaining, rel=0, abs=0.000001)
+    assert datetime.fromisoformat(body["ticketExpiresAt"]).timestamp() == pytest.approx(world.clock["now"] + min(60, remaining), rel=0, abs=0.000001)
+
+
+def test_ticket_window_never_outlives_a_short_configured_browser_access_window(world):
+    world.access.browser_grant_seconds = 20
+    ticket = _ticket(world)
+    assert ticket.expires_at == ticket.access_expires_at == world.clock["now"] + 20
+
+
+def test_configuration_and_grant_presence_are_distinct_from_runtime_ready(world, monkeypatch):
+    url = f"/projects/{world.project.projectId}/preview"
+    initial = world.client.get(url).json()
+    assert initial["descriptor"]["status"] == "ready" and not initial["available"]
+    assert initial["reason"] == "project_preview_tunnel_not_started"
+    assert world.client.post(f"/project-operations/{world.operation.operationId}/preview-ticket").status_code == 503
+    _tunnel(world)
+    assert world.client.get(url).json()["available"] is True
+    monkeypatch.delenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE")
+    missing = world.client.get(url).json()
+    assert not missing["available"] and missing["reason"] == "project_preview_not_configured"
+    world.store.request_operation_cancel(world.operation.operationId, owner_id="u1")
+    stale = world.client.get(url).json()
+    assert not stale["available"] and stale["descriptor"]["status"] == "reconciling"
+
+
+def test_latest_runtime_selection_ignores_uuid_order_and_newer_exec(world):
+    old = world.operation
+    # The actual store's public listing is sorted by random IDs, not time.
+    for key, kind, when, operation_id in (("newer-start", "runtime.start", "2099-01-01T00:00:00Z", "pop-000-new"),
+            ("newest-command", "runtime.exec", "2099-02-01T00:00:00Z", "pop-zzz-exec")):
+        item = world.store.create_operation(world.project.projectId, owner_id="u1", kind=kind,
+            idempotency_key=key, expected_revision=old.expectedRevision, approval_ref=old.approvalRef)
+        item = item.model_copy(update={"createdAt": when, "operationId": operation_id})
+        world.store._q("update wb_project_operation set id=$1,payload=$2 where project_id=$3 and idempotency_key=$4",
+            [operation_id, item.model_dump_json(), world.project.projectId, key])
+    response = world.client.get(f"/projects/{world.project.projectId}/preview")
+    assert response.status_code == 200 and response.json()["operationId"] == "pop-000-new"
+    assert response.json()["descriptor"] is None and response.json()["available"] is False
+
+
+@pytest.mark.parametrize("method,path", [("get", "/projects/{project}/preview"),
+    ("post", "/project-operations/{operation}/preview-ticket"), ("post", "/project-operations/{operation}/preview/revoke")])
+def test_all_public_preview_routes_reject_other_owner(world, method, path):
+    world.viewer["id"] = "mallory"
+    path = path.format(project=world.project.projectId, operation=world.operation.operationId)
+    assert getattr(world.client, method)(path).status_code == 404
+
+
+@pytest.mark.parametrize("blocked", ["disabled", "production", "nonadmin"])
+def test_preview_routes_do_not_open_public_rollout(world, monkeypatch, blocked):
+    if blocked == "disabled": monkeypatch.delenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED")
+    if blocked == "production": monkeypatch.setenv("NODE_ENV", "production")
+    if blocked == "nonadmin": world.viewer["is_superuser"] = False
+    assert world.client.get(f"/projects/{world.project.projectId}/preview").status_code == 503
+    assert world.client.post(f"/project-operations/{world.operation.operationId}/preview-ticket").status_code == 503
+
+
+def test_internal_relay_requires_its_own_key_even_for_logged_in_owner(world):
+    tunnel = _tunnel(world)
+    body = {"role": "tunnel", "token": tunnel.secret, "audience": world.audience}
+    for headers in ({}, {"Authorization": "Bearer wrong"}, {"Cookie": "sliderule_token=workbench-login"}):
+        assert world.client.post("/internal/project-preview/authorize", headers=headers, json=body).status_code == 401
+
+
+@pytest.mark.parametrize("template", ["https://preview.example.com", "https://{runtimeId}.example.com/",
+    "https://{runtimeId}.example.com/?upstream=secret", "https://user:pass@{runtimeId}.example.com",
+    "http://{runtimeId}.example.com", "http://{runtimeId}.localhost.evil", "https://prefix-{runtimeId}.example.com",
+    "https://{runtimeId}.example.com#fragment", "https://{runtimeId}.example.com\\@evil",
+    "https://{runtimeId}.example.com:bad", "https://{runtimeId}.example.com:0", "https://{runtimeId}.example.com:",
+    "https://{runtimeId}.example.com/{runtimeId}", "https://{runtimeId}..example.com"])
+def test_origin_template_rejects_shared_origins_proxy_targets_and_insecure_remote(world, monkeypatch, template):
+    monkeypatch.setenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE", template)
+    assert preview_configuration_enabled() is False
+    with pytest.raises(ValueError):
+        origin_for_runtime(world.runtime.runtimeId)
+
+
+def test_each_runtime_has_distinct_origin_and_local_development_is_explicit(world, monkeypatch):
+    assert origin_for_runtime("rt-one") != origin_for_runtime("rt-two")
+    monkeypatch.setenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE", "http://{runtimeId}.localhost:3010")
+    assert origin_for_runtime("rt-one") == "http://rt-one.localhost:3010"
+    assert preview_configuration_enabled() is True

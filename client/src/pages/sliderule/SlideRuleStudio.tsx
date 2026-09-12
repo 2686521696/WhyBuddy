@@ -33,6 +33,7 @@ import type { SkillId } from "@/lib/sliderule-marathon-driver";
 import { DEFAULT_SESSION_ID } from "@/lib/sliderule-session-id";
 import type { PublishClosureSummary } from "./derive-cross-runtime-summary";
 import { ArchitectureStage } from "./ArchitectureStage";
+import { SandboxPreviewSurface } from "./project-runtime/SandboxPreviewSurface";
 import { ActiveSystemScreen } from "./system-screens/ActiveSystemScreen";
 import {
   deriveSettledFiveSystemModel,
@@ -221,6 +222,9 @@ const SKILL_LABELS: Record<SkillId, string> = {
 };
 
 interface SlideRuleStudioProps {
+  runtimeKind?: "html-prototype" | "project";
+  projectId?: string | null;
+  projectRevision?: string | null;
   /** E29 模型版本史（前进/回退按钮数据源）。`model` 是闭环空着时舞台填数的货架。 */
   modelVersions?: Array<{
     id: string;
@@ -300,7 +304,40 @@ interface SlideRuleStudioProps {
   sessionEmpty?: boolean;
 }
 
-export function SlideRuleStudio({
+/** Artifact type owns the entire stage, including effects and layout preferences.
+ * A project may still carry historical HTML; mounting that renderer even while
+ * loading would execute its connector/seed/screenshot effects on the wrong app.
+ */
+export function SlideRuleStudio(props: SlideRuleStudioProps) {
+  return props.runtimeKind === "project"
+    ? <ProjectStudio {...props} /> : <HtmlSlideRuleStudio {...props} />;
+}
+
+function ProjectStudio({ projectId, projectRevision, appTitle, chatSlot,
+  stageVisible = true, sessionEmpty = false, className, chromeSlot, resetSlot,
+}: SlideRuleStudioProps) {
+  const layout = useStudioLayout();
+  const showStage = isStagePageShown(stageVisible, !!layout?.stagePageHidden);
+  useLayoutEffect(() => {
+    layout?.setMaximizeLocked(false);
+    layout?.registerCanvasSink(null);
+  }, [layout]);
+  return (
+    <StudioChrome className={className}>
+      {showStage ? <StudioSplit sessionEmpty={sessionEmpty} chat={chatSlot} stage={
+        <div className="flex h-full min-h-0 flex-col gap-3 p-4">
+          {(resetSlot || chromeSlot) && <div className="flex items-center gap-2">
+            {resetSlot}<div className="ml-auto">{chromeSlot}</div>
+          </div>}
+          <SandboxPreviewSurface projectId={projectId} projectRevision={projectRevision}
+            appTitle={appTitle} />
+        </div>
+      } /> : <div className="flex h-full min-h-0 flex-col">{chatSlot}</div>}
+    </StudioChrome>
+  );
+}
+
+function HtmlSlideRuleStudio({
   chatSlot,
   activeSkillId,
   publishClosure,

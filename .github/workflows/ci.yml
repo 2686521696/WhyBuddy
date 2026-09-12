@@ -49,6 +49,9 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Independent preview transport runs real loopback HTTP/WS without cloud keys.
+      - run: pnpm run build:project-preview
+      - run: pnpm run test:project-preview
       # 与 verify:sliderule-v5 的 server 段同清单（假 Python 夹具，hermetic）
       - run: >
           pnpm exec vitest run --config vitest.config.server.ts

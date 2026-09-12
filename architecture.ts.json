@@ -45,12 +45,22 @@
     "agent-loop": {
       "mayDependOn": [],
       "why": "独立子项目，自带 package.json。"
+    },
+    "scripts": {
+      "mayDependOn": [
+        "client",
+        "server",
+        "shared"
+      ],
+      "why": "Build, development and acceptance CLI processes. They exercise product modules but product packages must not depend on scripts."
     }
   },
   "component": {
     "project-template-vite": {
       "why": "Versioned React/TS/Vite template. index.html loads src/main.tsx after Python publishes these files to E2B.",
-      "paths": ["project-templates/react-vite"],
+      "paths": [
+        "project-templates/react-vite"
+      ],
       "mayDependOn": []
     },
     "client-pages-sliderule": {
@@ -63,7 +73,8 @@
         "client-lib",
         "client-pages",
         "client-pages-autopilot",
-        "shared-blueprint"
+        "shared-blueprint",
+        "shared-contracts"
       ]
     },
     "client-pages-autopilot": {
@@ -432,6 +443,34 @@
       "mayDependOn": [
         "shared-contracts"
       ]
+    },
+    "server-project-preview": {
+      "why": "Dedicated private-preview transport process: HTTP/WebSocket relay and sandbox tunnel agent. Python owns project access; this component has no imports of the main app, its identity store or browser code.",
+      "paths": [
+        "server/project-preview"
+      ],
+      "mayDependOn": []
+    },
+    "ops-scripts": {
+      "why": "Executable build/dev/architecture/smoke programs and their shared helpers. Exact CLI entrypoints are declared; imported helpers remain ordinary dependencies.",
+      "paths": [
+        "scripts"
+      ],
+      "mayDependOn": [
+        "client-lib",
+        "server-persist",
+        "server-sliderule",
+        "shared-blueprint"
+      ]
+    },
+    "project-preview-fixtures": {
+      "why": "Cloud acceptance fixture launches the production preview relay against a controlled test authority. This is a smoke entrypoint, not a product authentication service.",
+      "paths": [
+        "scripts/fixtures"
+      ],
+      "mayDependOn": [
+        "server-project-preview"
+      ]
     }
   },
   "entrypoints": {
@@ -443,7 +482,71 @@
       "client/src/vite-env.d",
       "agent-loop/scripts/*",
       "agent-loop/vscode-extension/*",
-      "services/lobster-executor/src/index"
+      "services/lobster-executor/src/index",
+      "server/project-preview/main",
+      "server/project-preview/agent-main",
+      "server/project-preview/vitest.config",
+      "scripts/a2a-api-smoke-python-only-105",
+      "scripts/agent-sandbox-executor-browser-smoke",
+      "scripts/agent-sandbox-executor-skill-smoke",
+      "scripts/agent-sandbox-smoke",
+      "scripts/app-shell-tour",
+      "scripts/app-wall-holes",
+      "scripts/app-wall-perf",
+      "scripts/arch-graph-all",
+      "scripts/arch-graph-ts",
+      "scripts/audit-session",
+      "scripts/b10-orchestrate-acceptance",
+      "scripts/backfill-app-shots",
+      "scripts/build-agent-sandbox-image",
+      "scripts/build-pages",
+      "scripts/build-project-preview",
+      "scripts/capture-pages-demo",
+      "scripts/check-no-node-backend-api",
+      "scripts/d1-chain-only",
+      "scripts/d1-manual-acceptance",
+      "scripts/d1-orchestrate-diag",
+      "scripts/debug-socket-trace",
+      "scripts/dev-sliderule",
+      "scripts/dev-stop",
+      "scripts/fixtures/project-preview-relay",
+      "scripts/freeform-blockref-wiring-check",
+      "scripts/freeform-trend-browser-shot",
+      "scripts/frontend-python-consolidated-browser-smoke-105",
+      "scripts/frontend-python-degraded-path-browser-smoke",
+      "scripts/frontend-python-happy-path-browser-smoke",
+      "scripts/gen-help-changelog",
+      "scripts/generate-block-component-usage",
+      "scripts/generate-design-md",
+      "scripts/generate-device-presets",
+      "scripts/generated-app-browser-smoke",
+      "scripts/identity-palette-signoff",
+      "scripts/lint-autopilot-colors",
+      "scripts/llm-bench-node",
+      "scripts/llm-blackai-5plus1-probe",
+      "scripts/lobster-executor-smoke",
+      "scripts/mermaid-render-check",
+      "scripts/mission-integration-smoke",
+      "scripts/mission-restart-smoke",
+      "scripts/model-browser-shot",
+      "scripts/persistence-smoke",
+      "scripts/prod-smoke",
+      "scripts/project-contracts",
+      "scripts/project-preview-browser-smoke",
+      "scripts/project-runtime-smoke",
+      "scripts/proxy-dead-proxy-test",
+      "scripts/proxy-noproxy-probe",
+      "scripts/secure-sandbox-smoke",
+      "scripts/sliderule-browser-smoke",
+      "scripts/sliderule-canvas-browser-smoke",
+      "scripts/sliderule-capability-browser-smoke",
+      "scripts/sliderule-real-topic-e2e",
+      "scripts/sliderule-reload-resume-e2e",
+      "scripts/sliderule-store-api-smoke",
+      "scripts/start-prod",
+      "scripts/task-autopilot-frontend-progress",
+      "scripts/test-server",
+      "scripts/ui-redesign-ia-progress"
     ]
   },
   "baseline": {
@@ -943,7 +1046,6 @@
       "server/permission/checkers/network-checker",
       "server/permission/management-python-boundary",
       "server/permission/rate-limiter-python-runtime",
-      "server/persistence/migrations",
       "server/routes/a2a-python-runtime",
       "server/routes/blueprint/brainstorm/emit-brainstorm-event",
       "server/routes/blueprint/brainstorm/tool-proxy",

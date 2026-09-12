@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import os
 import re
 import shlex
 import time
+import uuid
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 from services.project_manifest import build_manifest
 from services.workspace_provider import PrivatePreviewTarget, ProcessLogChunk, ProcessResult, WorkspaceHandle, WorkspaceProviderError
@@ -287,12 +290,15 @@ class E2BWorkspaceProvider:
         return self._sandboxes[handle.sandbox_id]
 
     def write_files(self, handle: WorkspaceHandle, files: dict[str, str]) -> None:
+        self._write_files_at_root(handle, files, PROJECT_ROOT)
+
+    def _write_files_at_root(self, handle: WorkspaceHandle, files: dict[str, str], root: str) -> None:
         build_manifest(files)
         sandbox = self._sandbox(handle)
         try:
             process = sandbox.commands.run(_python(_WRITE_SCRIPT), cwd="/home/user",
                 background=True, stdin=True, timeout=60)
-            payload = json.dumps([PROJECT_ROOT, files], ensure_ascii=True)
+            payload = json.dumps([root, files], ensure_ascii=True)
             for offset in range(0, len(payload), 32 * 1024):
                 process.send_stdin(payload[offset:offset + 32 * 1024])
             process.close_stdin()
@@ -303,6 +309,43 @@ class E2BWorkspaceProvider:
             raise
         except Exception as exc:
             raise WorkspaceProviderError("e2b_write_failed", result=_result(exc)) from exc
+
+    def start_preview_tunnel(self, handle: WorkspaceHandle, *, agent_source: str, relay_origin: str,
+                             token: str, port: int, expires_at: float) -> ProcessResult:
+        """Only a scoped tunnel capability enters the application sandbox.
+
+        Install outside the Vite root, via stdin and directory-fd writes. This
+        is not a secret boundary against application code running as the same
+        user: the capability must remain harmless outside this runtime/role.
+        No E2B or gateway management credentials are accepted by this method.
+        """
+        try:
+            origin = urlsplit(relay_origin)
+            host, origin_port = origin.hostname or "", origin.port
+            canonical = f"{origin.scheme}://{host}" + (f":{origin_port}" if origin_port is not None else "")
+            origin_valid = (canonical == relay_origin and origin.scheme in {"https", "http"}
+                and len(host) <= 253 and "." in host and all(re.fullmatch(
+                    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) for label in host.split("."))
+                and (origin_port is None or 1 <= origin_port <= 65535)
+                and (origin.scheme == "https" or host.endswith(".localhost")))
+        except (ValueError, TypeError, AttributeError):
+            origin_valid = False
+        now = time.time()
+        if (not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", token)
+                or type(port) is not int or not 1024 <= port <= 65535
+                or type(expires_at) not in (float, int) or not math.isfinite(expires_at) or not now < expires_at <= now + 901
+                or not isinstance(agent_source, str) or not agent_source.strip() or len(agent_source.encode("utf-8")) > 512 * 1024
+                or not origin_valid):
+            raise WorkspaceProviderError("e2b_preview_tunnel_config_invalid")
+        root = "/home/user/.whybuddy-preview/" + uuid.uuid4().hex
+        try:
+            self._write_files_at_root(handle, {"agent.cjs": agent_source, "config.json": json.dumps({
+                "relayOrigin": relay_origin, "token": token, "localPort": port,
+                "expiresAt": expires_at * 1000})}, root)
+            return self.start_process(handle, f"node {root}/agent.cjs {root}/config.json",
+                timeout_seconds=max(1, min(900, int(expires_at - time.time()) + 1)))
+        except Exception:
+            raise WorkspaceProviderError("e2b_preview_tunnel_start_failed") from None
 
     def run(self, handle: WorkspaceHandle, command: str, *, timeout_seconds: int = 60) -> ProcessResult:
         if not command.strip() or not 1 <= timeout_seconds <= 3600:

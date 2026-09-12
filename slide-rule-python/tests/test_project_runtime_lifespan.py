@@ -21,11 +21,14 @@ def startup(monkeypatch):
     made = []
     store = object()
     monkeypatch.setattr(app_module, "get_project_store", lambda: store)
+    monkeypatch.setattr(app_module, "ProjectPreviewAccess", lambda actual_store, **_: SimpleNamespace(store=actual_store))
+    monkeypatch.delenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE", raising=False)
 
     class Supervisor:
         def __init__(self, actual_store, provider_factory, **config):
             assert actual_store is store
             assert provider_factory is app_module.E2BWorkspaceProvider
+            self.store = actual_store
             self.config = config
             self.running = False
             self.shutdown_calls = 0

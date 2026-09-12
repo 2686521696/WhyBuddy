@@ -10,14 +10,17 @@ from __future__ import annotations
 
 import json
 import logging
+import shlex
 import threading
 import time
 import uuid
 from typing import Callable
+from urllib.parse import urlsplit
 
 from models.project_runtime import ProjectOperation, RuntimeInstance
 from services.project_authority import approved_reference
 from services.project_creation import load_authorized_session
+from services.project_preview_config import origin_for_runtime
 from services.project_runtime import REVISION_FILE, _LeaseHeartbeat, _timestamp
 from services.project_store import ProjectConflict, ProjectStore, ProjectStoreUnavailable
 from services.workspace_provider import WorkspaceHandle, WorkspaceProvider, WorkspaceProviderError
@@ -60,7 +63,7 @@ class ProjectRuntimeSupervisor:
                  authorizer: Callable[[ProjectStore, ProjectOperation, str], None] = authorize_operation,
                  max_workers: int = 2, poll_interval: float = 2, lease_ttl: float = 120,
                  lifetime_seconds: float = 900, idle_seconds: float = 300,
-                 install_timeout: float = 600, ready_timeout: float = 60):
+                 install_timeout: float = 600, ready_timeout: float = 60, preview_runtime=None):
         if not 1 <= max_workers <= 8 or not 0 < poll_interval <= 30 or not 1 <= lease_ttl <= 3600:
             raise ValueError("invalid_runtime_worker_config")
         if not 1 <= lifetime_seconds <= 3600 or not 1 <= idle_seconds <= lifetime_seconds:
@@ -71,6 +74,7 @@ class ProjectRuntimeSupervisor:
         self.max_workers, self.poll_interval, self.lease_ttl = max_workers, poll_interval, lease_ttl
         self.lifetime_seconds, self.idle_seconds = lifetime_seconds, idle_seconds
         self.install_timeout, self.ready_timeout = install_timeout, ready_timeout
+        self.preview_runtime = preview_runtime
         self._stop = threading.Event()
         self._wake = threading.Event()
         self._lock = threading.Lock()
@@ -302,6 +306,18 @@ class _RuntimeTask:
         command = self.original.input.get("command") if self.original.kind == "runtime.exec" else None
         if self.original.kind == "runtime.exec" and (not isinstance(command, str) or command not in PROJECT_COMMANDS):
             raise ValueError("invalid_project_command")
+        server_command = f"npm run dev -- --host 0.0.0.0 --port {self.runtime.port} --strictPort"
+        if self.original.kind == "runtime.start" and self.supervisor.preview_runtime is not None:
+            # The relay preserves Host (including HMR), so Vite must explicitly
+            # accept this runtime's dedicated origin. The cloud smoke supplied
+            # this env var but the real worker did not: local health passed while
+            # every authorized preview returned Vite's blocked-host response.
+            # Reuse the tunnel manager's server-owned validator before remote IO;
+            # never take allowed hosts from tool input or disable Vite's check.
+            preview_host = urlsplit(origin_for_runtime(self.runtime.runtimeId)).hostname
+            if not preview_host:
+                raise ValueError("project_preview_origin_invalid")
+            server_command = f"__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS={shlex.quote(preview_host)} {server_command}"
         if self.original.runtime is None:
             self.save("provisioning")
             files = self.store.read_files(self.original.projectId, self.original.expectedRevision, owner_id=self.owner_id)
@@ -369,7 +385,7 @@ class _RuntimeTask:
                 self.result["phaseDeadline"] = time.time() + self.supervisor.ready_timeout
                 self.save("starting")
                 started = self.provider.start_process(self.handle,
-                    f"npm run dev -- --host 0.0.0.0 --port {self.runtime.port} --strictPort", timeout_seconds=900)
+                    server_command, timeout_seconds=900)
                 self._register("server", started.process_id)
                 phase = "starting"
         if self.original.kind == "runtime.exec":
@@ -406,6 +422,8 @@ class _RuntimeTask:
                     raise WorkspaceProviderError("project_runtime_health_failed")
                 self.save("ready")
                 next_health = time.time() + min(30, self.supervisor.lease_ttl / 3)
+            if self.supervisor.preview_runtime is not None:
+                self.supervisor.preview_runtime.ensure(self)
             self.sleep()
 
     def run_command(self):
@@ -456,6 +474,8 @@ class _RuntimeTask:
             self.save("stopping", status="cancelling" if current == "cancelling" else "running", error=code)
         try:
             self.heartbeat.check()
+            if self.supervisor.preview_runtime is not None:
+                self.supervisor.preview_runtime.revoke(self)
             if self.handle is not None:
                 self.provider.destroy(self.handle)
             if self.provider is None:
@@ -481,6 +501,8 @@ class _RuntimeTask:
     def suspend(self, reason):
         phase = self.result.get("phase", self.runtime.status)
         self.save("reconciling", status="interrupted", error=reason)
+        if self.supervisor.preview_runtime is not None:
+            self.supervisor.preview_runtime.revoke(self)
         # Preserve the last dispatched phase across intentional service shutdown.
         self.result["phase"] = phase
         current = self.operation()

@@ -1185,7 +1185,7 @@ function SlideRuleUnified({
 
   // 空态（无轮次且未在跑）时 ComposerDock 渲染在首页
   // hero 里；否则贴在左栏会话流底部。二选一，永远只有一个输入条实例。
-  const isHomeEmpty = conversationTurns.length === 0 && !isRunning;
+  const isHomeEmpty = conversationTurns.length === 0 && !isRunning && sessionState.runtimeKind !== "project";
 
   // 入站判定的语境：「这个会话里到底有没有一个成形的应用」。
   //
@@ -1258,6 +1258,9 @@ function SlideRuleUnified({
           {
             <div className="relative z-0 min-h-0 flex-1">
               <SlideRuleStudio
+                runtimeKind={sessionState.runtimeKind}
+                projectId={sessionState.projectId}
+                projectRevision={sessionState.projectRevision}
                 sessionEmpty={isHomeEmpty}
                 chatSlot={
                   <ClaudeChatSurface
@@ -1329,7 +1332,7 @@ function SlideRuleUnified({
                 sessionId={sessionId}
                 appTitle={goal ? goal.slice(0, 24) : undefined}
                 // 用户还没输入时不显示右侧舞台：欢迎页独占全宽，首条消息后舞台登场
-                stageVisible={conversationTurns.length > 0 || isRunning}
+                stageVisible={sessionState.runtimeKind === "project" || conversationTurns.length > 0 || isRunning}
                 // 推演中右侧实时渲染：部分五系统模型 → 应用实时长出来；没成形前只报"推演中"
                 isRunning={isRunning}
                 llmDraft={isRunning ? llmDraft : ""}
@@ -1370,6 +1373,7 @@ function SlideRuleUnified({
                 chromeSlot={
                   showStudioChrome ? (
                     <SlideRuleTopHud
+                      allowCanvas={sessionState.runtimeKind !== "project"}
                       isRunning={isRunning}
                       onOpenDeliverables={openDeliverables}
                     />

@@ -96,6 +96,7 @@ from routes.blueprint_spec_docs import router as blueprint_spec_docs_router
 from routes.account import router as account_router
 from routes.sliderule_full import router as sliderule_full_router
 from routes.project_runtime import router as project_runtime_router
+from routes.project_preview import router as project_preview_router
 from routes.agent_loop import router as agent_loop_router
 from routes.rag import router as rag_router
 # 只为触发 import 期自检：种子骨架若引用了未放开生成的区块、或把区块摆进不
@@ -111,7 +112,10 @@ from services.v5_publish_closure_response import derive_publish_closure_response
 from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
 from services.sliderule_session_sanitizer import sanitize_session_dict, sanitize_session_state
 from services.e2b_workspace_provider import E2BWorkspaceProvider
-from services.project_runtime_worker import ProjectRuntimeSupervisor
+from services.project_runtime_worker import ProjectRuntimeSupervisor, authorize_operation
+from services.project_preview_access import ProjectPreviewAccess
+from services.project_preview_config import preview_configuration_enabled
+from services.project_preview_runtime import ProjectPreviewRuntime
 from services.control_run_store import ControlRunStore
 from services.control_run_service import ControlRunService
 from services.project_store import get_project_store
@@ -328,6 +332,18 @@ def _start_project_runtime_supervisor() -> ProjectRuntimeSupervisor | None:
         idle_seconds=min(lifetime, _runtime_limit("SLIDERULE_PROJECT_IDLE_SECONDS", 300, 30, 3600)),
         install_timeout=_runtime_limit("SLIDERULE_PROJECT_INSTALL_SECONDS", 600, 10, 600),
         ready_timeout=_runtime_limit("SLIDERULE_PROJECT_READY_SECONDS", 60, 5, 300))
+    # Observation and durable revocation remain available without relay config.
+    # Build the access schema at startup; a GET must never create tables or IO.
+    supervisor.preview_access = ProjectPreviewAccess(supervisor.store, authorizer=authorize_operation)
+    if preview_configuration_enabled():
+        bundle = Path(os.getenv("WHYBUDDY_PROJECT_PREVIEW_AGENT_BUNDLE") or
+            str(Path(__file__).resolve().parents[1] / "dist/project-preview/agent.cjs"))
+        try:
+            supervisor.preview_runtime = ProjectPreviewRuntime(supervisor.preview_access, agent_bundle=bundle)
+        except ValueError:
+            # Existing project commands remain available. No grant is issued
+            # until a built agent is installed by the runtime owner.
+            print("[startup] project preview agent bundle unavailable")
     supervisor.start()
     return supervisor
 
@@ -374,10 +390,12 @@ async def lifespan(app: FastAPI):
     _dry_run_calendars()
     print("[startup] workflow calendars dry-ran (stub LLM)")
     app.state.project_runtime_supervisor = None
+    app.state.project_preview_access = None
     app.state.control_run_service = None
     try:
         app.state.project_runtime_supervisor = await asyncio.to_thread(_start_project_runtime_supervisor)
         if app.state.project_runtime_supervisor is not None:
+            app.state.project_preview_access = getattr(app.state.project_runtime_supervisor, "preview_access", None)
             project_store = await asyncio.to_thread(get_project_store)
             control_store = await asyncio.to_thread(ControlRunStore, project_store._q)
             app.state.control_run_service = ControlRunService(control_store, project_store,
@@ -400,6 +418,7 @@ async def lifespan(app: FastAPI):
                 await asyncio.to_thread(supervisor.shutdown)
             finally:
                 app.state.project_runtime_supervisor = None
+                app.state.project_preview_access = None
     # 关停时绝不 save_all：启动快照从不随运行更新，整体覆写会把运行期间
     # 落盘的所有新会话回滚到启动时刻（实测踩过：每次重启丢当轮全部推演）。
     # 所有写入已在变更时刻按单条守卫式落盘，关停无事可做。
@@ -442,6 +461,7 @@ else:
 app.include_router(account_router, prefix="/api/sliderule")
 app.include_router(sliderule_full_router, prefix="/api/sliderule")
 app.include_router(project_runtime_router, prefix="/api/sliderule")
+app.include_router(project_preview_router, prefix="/api/sliderule")
 app.include_router(blueprint_spec_docs_router, prefix="/api/blueprint/spec-documents")
 app.include_router(blueprint_jobs_router, prefix="/api/blueprint/jobs")
 

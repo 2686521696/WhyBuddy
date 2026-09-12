@@ -62,7 +62,7 @@ function LayoutBtn({
   );
 }
 
-function StudioWorkbenchModePicker() {
+function StudioWorkbenchModePicker({ allowCanvas = true }: { allowCanvas?: boolean }) {
   const studio = useStudioLayout();
   if (!studio?.available) return null;
   const raw = resolveWorkbenchMode({
@@ -84,7 +84,7 @@ function StudioWorkbenchModePicker() {
         locked ? "opacity-40" : ""
       }`}
     >
-      {STUDIO_WORKBENCH_MODE_OPTIONS.map(opt => {
+      {STUDIO_WORKBENCH_MODE_OPTIONS.filter(opt => allowCanvas || opt.id !== "canvas").map(opt => {
         const selected = mode === opt.id;
         return (
           <button
@@ -117,7 +117,10 @@ function StudioWorkbenchModePicker() {
 
 export function SlideRuleTopHud({
   onOpenDeliverables,
+  allowCanvas = true,
 }: {
+  /** Remote engineering previews have one running app, not an HTML page canvas. */
+  allowCanvas?: boolean;
   /** @deprecated 布局锁走 StudioLayoutProvider.layoutLocked，不读这个 prop */
   isRunning?: boolean;
   /** @deprecated 已搬到标题左侧的 SlideRuleResetSessionButton；这里不再渲染 */
@@ -138,7 +141,7 @@ export function SlideRuleTopHud({
         className="flex items-center gap-0.5"
         data-testid="sliderule-layout-controls"
       >
-        {studioOn ? <StudioWorkbenchModePicker /> : null}
+        {studioOn ? <StudioWorkbenchModePicker allowCanvas={allowCanvas} /> : null}
       </div>
 
       {studioOn ? (

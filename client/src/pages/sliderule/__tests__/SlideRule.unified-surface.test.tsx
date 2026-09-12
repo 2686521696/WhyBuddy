@@ -105,6 +105,18 @@ const streamingTurn = {
 };
 
 describe("unified /sliderule surface (single mental model)", () => {
+  it("persisted project references reach the real Studio before any HTML or conversation is restored", () => {
+    const html = renderPage({ sessionState: {
+      ...baseHookReturn().sessionState,
+      runtimeKind: "project", projectId: "persisted-project", projectRevision: "revision-one",
+      specFirstPages: { pages: { home: "<h1>HISTORICAL HTML</h1>" } },
+    } });
+    expect(html).toContain('data-testid="sandbox-preview-surface"');
+    expect(html).toContain('data-project-id="persisted-project"');
+    expect(html).not.toContain("HISTORICAL HTML");
+    expect(html).not.toContain("srcdoc=");
+    expect(html).not.toContain('data-testid="sliderule-stage-view-canvas"');
+  });
   it("renders ONE surface: no 聊天/推演 pills, no surface-mode toggle, no reasoning canvas", () => {
     const html = renderPage();
 

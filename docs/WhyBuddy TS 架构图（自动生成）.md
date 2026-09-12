@@ -11,15 +11,16 @@
 | 包 | 模块数 |
 |---|---:|
 | agent-loop | 99 |
-| client | 1027 |
+| client | 1030 |
 | project-templates | 2 |
-| server | 579 |
+| scripts | 64 |
+| server | 587 |
 | services | 32 |
 | shared | 177 |
-| **合计** | **1916** |
+| **合计** | **1991** |
 
-边 5932 条，其中动态 import / require 312 条、
-类型 import 2235 条。
+边 5966 条，其中动态 import / require 317 条、
+类型 import 2238 条。
 
 ## component 依赖图
 
@@ -34,10 +35,12 @@ graph LR
   client-lib["client-lib<br/>174"]
   client-pages["client-pages<br/>74"]
   client-pages-autopilot["client-pages-autopilot<br/>192"]
-  client-pages-sliderule["client-pages-sliderule<br/>255"]
+  client-pages-sliderule["client-pages-sliderule<br/>258"]
   client-runtime["client-runtime<br/>16"]
   client-shell["client-shell<br/>36"]
   lobster-executor["lobster-executor<br/>32"]
+  ops-scripts["ops-scripts<br/>63"]
+  project-preview-fixtures["project-preview-fixtures<br/>1"]
   project-template-vite["project-template-vite<br/>2"]
   server-audit["server-audit<br/>26"]
   server-core["server-core<br/>108"]
@@ -45,6 +48,7 @@ graph LR
   server-integrations["server-integrations<br/>26"]
   server-permission["server-permission<br/>16"]
   server-persist["server-persist<br/>13"]
+  server-project-preview["server-project-preview<br/>8"]
   server-rag["server-rag<br/>35"]
   server-routes["server-routes<br/>104"]
   server-routes-blueprint["server-routes-blueprint<br/>211"]
@@ -79,6 +83,7 @@ graph LR
   client-pages-sliderule -.->|环| client-pages
   client-pages-sliderule -.->|环| client-pages-autopilot
   client-pages-sliderule --> shared-blueprint
+  client-pages-sliderule --> shared-contracts
   client-pages -.->|环| client-components
   client-pages -.->|环| client-lib
   client-pages -.->|环| client-pages-autopilot
@@ -98,6 +103,11 @@ graph LR
   client-shell --> shared-blueprint
   client-shell --> shared-contracts
   lobster-executor --> shared-contracts
+  ops-scripts --> client-lib
+  ops-scripts --> server-persist
+  ops-scripts --> server-sliderule
+  ops-scripts --> shared-blueprint
+  project-preview-fixtures --> server-project-preview
   server-audit -.->|环| server-core
   server-audit -.->|环| server-integrations
   server-audit -.->|环| server-persist
@@ -175,7 +185,7 @@ graph LR
   shared-contracts -.->|环| shared-workflow
   shared-web-aigc -.->|环| shared-contracts
   shared-workflow -.->|环| shared-contracts
-  linkStyle 1,2,3,4,5,9,10,15,16,17,18,20,21,22,23,25,26,27,28,29,32,35,36,37,38,39,40,44,45,46,47,50,51,52,53,54,55,56,71,72,73,74,78,79,81,82,84,86,87,88,91,92,93,94,95,96,97,98,104,105,109,110,111,112,117,118,119,120 stroke:#dc2626,color:#b91c1c
+  linkStyle 1,2,3,4,5,9,10,15,16,17,18,20,21,22,23,26,27,28,29,30,33,36,37,38,39,40,41,50,51,52,53,56,57,58,59,60,61,62,77,78,79,80,84,85,87,88,90,92,93,94,97,98,99,100,101,102,103,104,110,111,115,116,117,118,123,124,125,126 stroke:#dc2626,color:#b91c1c
 ```
 
 ## 欠账看板（红虚线，基线只许变短）
@@ -327,6 +337,18 @@ Autopilot 路线页与右栏控制面。产品面收敛的对象（见 M17），
 
 路径：`services/lobster-executor`
 
+### ops-scripts
+
+Executable build/dev/architecture/smoke programs and their shared helpers. Exact CLI entrypoints are declared; imported helpers remain ordinary dependencies.
+
+路径：`scripts`
+
+### project-preview-fixtures
+
+Cloud acceptance fixture launches the production preview relay against a controlled test authority. This is a smoke entrypoint, not a product authentication service.
+
+路径：`scripts/fixtures`
+
 ### project-template-vite
 
 Versioned React/TS/Vite template. index.html loads src/main.tsx after Python publishes these files to E2B.
@@ -368,6 +390,12 @@ Versioned React/TS/Vite template. index.html loads src/main.tsx after Python pub
 持久层与工作区记忆。
 
 路径：`server/db`、`server/persistence`、`server/memory`
+
+### server-project-preview
+
+Dedicated private-preview transport process: HTTP/WebSocket relay and sandbox tunnel agent. Python owns project access; this component has no imports of the main app, its identity store or browser code.
+
+路径：`server/project-preview`
 
 ### server-rag
 
