@@ -430,7 +430,11 @@ function HtmlSlideRuleStudio({
    */
   const [boundAppId, setBoundAppId] = useState<string | null>(null);
   useEffect(() => {
-    if (!sessionId) {
+    // A brand-new anonymous/empty session has no generated app yet. Avoid a
+    // guaranteed 404 probe while the welcome composer owns the whole surface;
+    // once the stage is visible, the session has a persisted/active artifact
+    // worth resolving for click-edit controls.
+    if (!sessionId || !stageVisible) {
       setBoundAppId(null);
       return;
     }
@@ -441,7 +445,7 @@ function HtmlSlideRuleStudio({
     return () => {
       alive = false;
     };
-  }, [sessionId, isRunning]);
+  }, [sessionId, isRunning, stageVisible]);
 
   const [editMode, setEditMode] = useState(false);
   const [editDirty, setEditDirty] = useState(false);
