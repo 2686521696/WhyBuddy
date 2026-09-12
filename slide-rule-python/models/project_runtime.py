@@ -181,3 +181,49 @@ class RuntimeEventPage(ProjectContract):
     events: list[RuntimeEventView]
     nextSeq: int
     hasMore: bool
+
+
+VerificationStatus = Literal["running", "passed", "failed", "blocked", "cancelled"]
+
+
+class VerificationAssertion(ProjectContract):
+    id: str = Field(min_length=1, max_length=120)
+    status: Literal["passed", "failed"]
+    expected: str | None = Field(default=None, max_length=1200)
+    actual: str | None = Field(default=None, max_length=1200)
+    detail: str | None = Field(default=None, max_length=2000)
+
+
+class VerificationArtifactRef(ProjectContract):
+    artifactId: str
+    sha256: str
+    mediaType: Literal["image/png"] = "image/png"
+    sizeBytes: int
+    label: str
+
+
+class VerificationRecord(ProjectContract):
+    verificationId: str
+    operationId: str
+    runtimeOperationId: str
+    projectId: str
+    revision: str
+    treeHash: str
+    runtimeId: str
+    specRevision: str | None
+    planRef: str
+    suiteVersion: str
+    runnerVersion: str = "whybuddy-browser-v1:pw1.61.1"
+    status: VerificationStatus = "running"
+    assertions: list[VerificationAssertion] = Field(default_factory=list)
+    artifactRefs: list[VerificationArtifactRef] = Field(default_factory=list)
+    createdAt: str
+    startedAt: str
+    completedAt: str | None = None
+    errorCode: str | None = None
+
+
+class VerificationSnapshot(ProjectContract):
+    verification: VerificationRecord
+    effectiveStatus: Literal["running", "passed", "failed", "blocked", "cancelled", "stale"]
+    deliveryEligible: Literal[False] = False

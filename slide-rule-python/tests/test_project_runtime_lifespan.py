@@ -114,16 +114,25 @@ def test_worker_configuration_bounds_reach_real_constructor(startup, monkeypatch
         monkeypatch.setenv("SLIDERULE_PROJECT_" + key, value)
     supervisor = app_module._start_project_runtime_supervisor()
     assert supervisor.config == {"max_workers": 8, "poll_interval": 1, "lease_ttl": 120,
-        "lifetime_seconds": 60, "idle_seconds": 60, "install_timeout": 600, "ready_timeout": 5}
+        "lifetime_seconds": 60, "idle_seconds": 60, "install_timeout": 600, "ready_timeout": 5,
+        "browser_provider_factory": app_module.E2BProjectBrowserProvider}
 
 
-def test_app_configuration_is_accepted_by_actual_worker(startup, monkeypatch):
+def test_app_configuration_is_accepted_by_actual_worker(startup, monkeypatch, tmp_path):
     from services.project_runtime_worker import ProjectRuntimeSupervisor
+    from services.project_store import ProjectStore
 
     monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
     monkeypatch.setenv("SLIDERULE_PROJECT_INSTALL_SECONDS", "9999")
     monkeypatch.setattr(app_module, "ProjectRuntimeSupervisor", ProjectRuntimeSupervisor)
     monkeypatch.setattr(ProjectRuntimeSupervisor, "start", lambda self: None)
-    supervisor = app_module._start_project_runtime_supervisor()
-    assert isinstance(supervisor, ProjectRuntimeSupervisor)
-    assert supervisor.install_timeout == 600
+    store = ProjectStore.from_url("sqlite:///" + (tmp_path / "lifespan.db").as_posix())
+    monkeypatch.setattr(app_module, "get_project_store", lambda: store)
+    try:
+        supervisor = app_module._start_project_runtime_supervisor()
+        assert isinstance(supervisor, ProjectRuntimeSupervisor)
+        assert supervisor.install_timeout == 600
+        assert supervisor.verification_store.store is store
+        assert supervisor.browser_provider_factory is app_module.E2BProjectBrowserProvider
+    finally:
+        store.close()

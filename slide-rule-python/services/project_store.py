@@ -408,7 +408,10 @@ class ProjectStore:
 
     def _runtime_patch_context(self, parent_id: str, child_id: str | None = None, *, owner_id: str,
                                lease_generation: int | None = None, lease_owner: str | None = None,
-                               require_claim: bool = False, cleanup: bool = False) -> dict[str, Any]:
+                               require_claim: bool = False, cleanup: bool = False,
+                               child_kind: str = "runtime.patch") -> dict[str, Any]:
+        if child_kind not in {"runtime.patch", "runtime.verify"}:
+            raise ValueError("runtime_child_kind_invalid")
         rows = self._q("select o.payload as parent_payload,o.rev as parent_rev,p.payload as project_payload,p.rev as project_rev,p.current_revision,l.payload as lease_payload,l.generation,l.lease_owner,l.expires_at from wb_project_operation o join wb_project p on p.id=o.project_id join wb_project_lease l on l.project_id=p.id where o.id=$1 and p.owner_id=$2",
             [parent_id, owner_id])
         if not rows:
@@ -438,7 +441,7 @@ class ProjectStore:
         if child_id is not None:
             child_row = self._operation_row(child_id, owner_id)
             child = ProjectOperation.model_validate_json(child_row["payload"])
-            if (child.kind != "runtime.patch" or child.input.get("runtimeOperationId") != parent_id
+            if (child.kind != child_kind or child.input.get("runtimeOperationId") != parent_id
                     or child.projectId != project.projectId or child.sessionId != parent.sessionId):
                 raise ProjectConflict("project_patch_parent_mismatch")
             if not cleanup and (child.cancelRequested or child.status in _TERMINAL_OPERATIONS
@@ -448,6 +451,9 @@ class ProjectStore:
                 raise ProjectConflict("workspace_lease_lost")
             row.update(child=child, child_rev=child_row["rev"], child_payload=child_row["payload"])
         return row
+
+    def _runtime_verification_context(self, parent_id: str, child_id: str | None = None, **kwargs):
+        return self._runtime_patch_context(parent_id, child_id, child_kind="runtime.verify", **kwargs)
 
     def _runtime_patch_fence(self, context: dict, params: list[Any]) -> str:
         """Parent cancellation and lease metadata are part of each write CAS.
@@ -475,13 +481,27 @@ class ProjectStore:
 
     def enqueue_runtime_patch(self, parent_operation_id: str, *, owner_id: str, expected_revision: str,
                               approval_ref: str, idempotency_key: str, changes: list[dict]) -> ProjectOperation:
+        if not isinstance(changes, list) or not 1 <= len(changes) <= 64:
+            raise ValueError("invalid_project_changes")
+        return self._enqueue_runtime_child(parent_operation_id, owner_id=owner_id,
+            expected_revision=expected_revision, approval_ref=approval_ref, idempotency_key=idempotency_key,
+            kind="runtime.patch", input_value={"runtimeOperationId": parent_operation_id, "changes": changes})
+
+    def enqueue_runtime_verification(self, parent_operation_id: str, *, owner_id: str,
+                                     expected_revision: str, approval_ref: str, idempotency_key: str,
+                                     suite_version: str = "react-vite-counter@1") -> ProjectOperation:
+        if suite_version != "react-vite-counter@1":
+            raise ValueError("verification_suite_unsupported")
+        return self._enqueue_runtime_child(parent_operation_id, owner_id=owner_id,
+            expected_revision=expected_revision, approval_ref=approval_ref, idempotency_key=idempotency_key,
+            kind="runtime.verify", input_value={"runtimeOperationId": parent_operation_id, "suiteVersion": suite_version})
+
+    def _enqueue_runtime_child(self, parent_operation_id: str, *, owner_id: str, expected_revision: str,
+                               approval_ref: str, idempotency_key: str, kind: str, input_value: dict) -> ProjectOperation:
         parent = self.get_operation(parent_operation_id, owner_id=owner_id)
         _required(idempotency_key, "idempotency_key_required")
         _required(approval_ref, "approval_ref_required")
-        if not isinstance(changes, list) or not 1 <= len(changes) <= 64:
-            raise ValueError("invalid_project_changes")
-        input_value = {"runtimeOperationId": parent_operation_id, "changes": changes}
-        request = {"kind": "runtime.patch", "expectedRevision": expected_revision,
+        request = {"kind": kind, "expectedRevision": expected_revision,
             "approvalRef": approval_ref, "input": input_value}
         digest = content_hash(_bounded(request, MAX_OPERATION_BYTES))
         existing = self._q("select payload from wb_project_operation where project_id=$1 and idempotency_key=$2", [parent.projectId, idempotency_key])
@@ -490,7 +510,7 @@ class ProjectStore:
             if saved.requestHash != digest:
                 raise ProjectConflict("operation_idempotency_conflict")
             return saved
-        context = self._runtime_patch_context(parent_operation_id, owner_id=owner_id)
+        context = self._runtime_patch_context(parent_operation_id, owner_id=owner_id, child_kind=kind)
         parent, lease = context["parent"], context["lease"]
         if (parent.runtime.status != "ready" or parent.runtime.health != "revision_verified"
                 or parent.runtime.revision != expected_revision or context["current_revision"] != expected_revision
@@ -500,7 +520,7 @@ class ProjectStore:
             raise ProjectConflict("project_runtime_patch_unavailable")
         now = _now()
         operation = ProjectOperation(operationId="pop-" + uuid.uuid4().hex, projectId=parent.projectId,
-            sessionId=parent.sessionId, kind="runtime.patch", idempotencyKey=idempotency_key,
+            sessionId=parent.sessionId, kind=kind, idempotencyKey=idempotency_key,
             requestHash=digest, expectedRevision=expected_revision, approvalRef=approval_ref,
             input=input_value, createdAt=now, updatedAt=now)
         params: list[Any] = [operation.operationId, operation.projectId, idempotency_key, _operation_payload(operation, admission=True)]
@@ -529,13 +549,23 @@ class ProjectStore:
 
     def list_runtime_patches(self, parent_operation_id: str, *, owner_id: str,
                              include_terminal: bool = False) -> list[ProjectOperation]:
+        return self._list_runtime_children(parent_operation_id, owner_id=owner_id,
+            include_terminal=include_terminal, kind="runtime.patch")
+
+    def list_runtime_verifications(self, parent_operation_id: str, *, owner_id: str,
+                                   include_terminal: bool = False) -> list[ProjectOperation]:
+        return self._list_runtime_children(parent_operation_id, owner_id=owner_id,
+            include_terminal=include_terminal, kind="runtime.verify")
+
+    def _list_runtime_children(self, parent_operation_id: str, *, owner_id: str,
+                               include_terminal: bool, kind: str) -> list[ProjectOperation]:
         parent = self.get_operation(parent_operation_id, owner_id=owner_id)
         if parent.kind != "runtime.start":
             raise ProjectConflict("project_patch_parent_mismatch")
         result, cursor = [], ""
         while True:
             page = self.list_project_operations(parent.projectId, owner_id=owner_id, after_id=cursor, limit=100)
-            result.extend(item for item in page if item.kind == "runtime.patch"
+            result.extend(item for item in page if item.kind == kind
                 and item.input.get("runtimeOperationId") == parent_operation_id
                 and (include_terminal or item.status not in _TERMINAL_OPERATIONS or item.pendingEvent is not None))
             if len(page) < 100:
@@ -552,7 +582,11 @@ class ProjectStore:
         advancing activity on every background retry.
         """
         parent = self.get_operation(parent_operation_id, owner_id=owner_id)
+        # Browser requests have the same durable child admission and idle race.
+        # Keep the existing public name so the real worker and its race tests
+        # continue to exercise this shared activity source.
         patches = self.list_runtime_patches(parent_operation_id, owner_id=owner_id, include_terminal=True)
+        patches += self.list_runtime_verifications(parent_operation_id, owner_id=owner_id, include_terminal=True)
         latest, now = 0.0, time.time()
         try:
             start = datetime.fromisoformat(parent.createdAt)
@@ -581,7 +615,7 @@ class ProjectStore:
                          input: dict[str, Any] | None = None) -> ProjectOperation:
         project = self.get_project(project_id, owner_id=owner_id)
         _required(kind, "operation_kind_required")
-        if kind == "runtime.patch":
+        if kind in {"runtime.patch", "runtime.verify"}:
             raise ValueError("runtime_patch_enqueue_required")
         _required(idempotency_key, "idempotency_key_required")
         _required(approval_ref, "approval_ref_required")
@@ -703,7 +737,7 @@ class ProjectStore:
                     or operation.runtime is None or operation.runtime.status != "ready"
                     or operation.lastAccessAt != idle_last_access_at):
                 return None
-            if operation.kind == "runtime.patch":
+            if operation.kind in {"runtime.patch", "runtime.verify"}:
                 raise ProjectConflict("runtime_patch_child_has_no_runtime")
             if operation.pendingEvent is not None:
                 continue
@@ -787,7 +821,8 @@ class ProjectStore:
                 or lease.expiresAt <= time.time()):
             raise ProjectConflict("workspace_lease_lost")
         patch_context = self._runtime_patch_context(operation.input.get("runtimeOperationId"), operation_id,
-            owner_id=owner_id, lease_generation=generation, lease_owner=lease_owner, cleanup=True) if operation.kind == "runtime.patch" else None
+            owner_id=owner_id, lease_generation=generation, lease_owner=lease_owner, cleanup=True,
+            child_kind=operation.kind) if operation.kind in {"runtime.patch", "runtime.verify"} else None
         if operation.status in _TERMINAL_OPERATIONS and operation.pendingEvent is None:
             raise ProjectConflict("operation_state_conflict")
         if operation.leaseGeneration == generation and operation.leaseOwner == lease_owner:
@@ -821,14 +856,16 @@ class ProjectStore:
                              lease_generation: int | None = None, lease_owner: str | None = None) -> ProjectOperation:
         row = self._operation_row(operation_id, owner_id)
         operation = ProjectOperation.model_validate_json(row["payload"])
+        if operation.kind == "runtime.verify" and status == "completed":
+            raise ProjectConflict("verification_finish_required")
         if operation.runtime is not None:
             raise ProjectConflict("runtime_operation_update_required")
-        same_patch_status = operation.kind == "runtime.patch" and status == expected_status and status not in _TERMINAL_OPERATIONS
+        same_patch_status = operation.kind in {"runtime.patch", "runtime.verify"} and status == expected_status and status not in _TERMINAL_OPERATIONS
         # A patch has no independently owned process. Its runtime owner can
         # terminalize it in one fenced write after cancellation. Requiring a
         # takeover to turn running into interrupted delays remote cleanup for
         # an entire lease, because finish handles children before destruction.
-        cancel_patch = operation.kind == "runtime.patch" and expected_status == "running" and status == "cancelled"
+        cancel_patch = operation.kind in {"runtime.patch", "runtime.verify"} and expected_status == "running" and status == "cancelled"
         if operation.status != expected_status or (not same_patch_status and not cancel_patch
                 and status not in _OPERATION_TRANSITIONS.get(expected_status, set())):
             raise ProjectConflict("operation_state_conflict")
@@ -836,10 +873,10 @@ class ProjectStore:
             raise ProjectConflict("workspace_lease_lost")
         _bounded(result, MAX_OPERATION_BYTES)
         patch_context = None
-        if operation.kind == "runtime.patch":
+        if operation.kind in {"runtime.patch", "runtime.verify"}:
             patch_context = self._runtime_patch_context(operation.input.get("runtimeOperationId"), operation_id,
                 owner_id=owner_id, lease_generation=lease_generation, lease_owner=lease_owner,
-                require_claim=True, cleanup=status in {"failed", "cancelled"})
+                require_claim=True, cleanup=status in {"failed", "cancelled"}, child_kind=operation.kind)
             if status == "completed":
                 target = self.publication_revision_id(operation.projectId, operation_id)
                 parent = patch_context["parent"]

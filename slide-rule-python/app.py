@@ -113,6 +113,7 @@ from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
 from services.sliderule_session_sanitizer import sanitize_session_dict, sanitize_session_state
 from services.e2b_workspace_provider import E2BWorkspaceProvider
 from services.project_runtime_worker import ProjectRuntimeSupervisor, authorize_operation
+from services.project_browser_provider import E2BProjectBrowserProvider
 from services.project_preview_access import ProjectPreviewAccess
 from services.project_preview_config import preview_configuration_enabled
 from services.project_preview_runtime import ProjectPreviewRuntime
@@ -331,7 +332,8 @@ def _start_project_runtime_supervisor() -> ProjectRuntimeSupervisor | None:
         lifetime_seconds=lifetime,
         idle_seconds=min(lifetime, _runtime_limit("SLIDERULE_PROJECT_IDLE_SECONDS", 300, 30, 3600)),
         install_timeout=_runtime_limit("SLIDERULE_PROJECT_INSTALL_SECONDS", 600, 10, 600),
-        ready_timeout=_runtime_limit("SLIDERULE_PROJECT_READY_SECONDS", 60, 5, 300))
+        ready_timeout=_runtime_limit("SLIDERULE_PROJECT_READY_SECONDS", 60, 5, 300),
+        browser_provider_factory=E2BProjectBrowserProvider)
     # Observation and durable revocation remain available without relay config.
     # Build the access schema at startup; a GET must never create tables or IO.
     supervisor.preview_access = ProjectPreviewAccess(supervisor.store, authorizer=authorize_operation)

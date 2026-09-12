@@ -27,6 +27,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY slide-rule-python/ ./
 COPY project-templates/ /project-templates/
+COPY server/project-verification/browser-runner.mjs /server/project-verification/browser-runner.mjs
 
 EXPOSE 9700
 

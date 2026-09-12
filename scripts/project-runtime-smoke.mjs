@@ -21,6 +21,7 @@ const scripts = new Map([
   ["--control-restart", "control-restart-smoke.py"],
   ["--postgres", "control-postgres-smoke.py"],
   ["--idle-postgres", "project-idle-postgres-smoke.py"],
+  ["--verification-postgres", "project-verification-postgres-smoke.py"],
   ["--model", "project-model-smoke.py"],
   ["--private-ingress", "project-private-ingress-smoke.py"],
   ["--preview-tunnel", "project-preview-tunnel-smoke.py"],

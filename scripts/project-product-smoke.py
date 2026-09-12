@@ -94,7 +94,7 @@ def source_archive(*, include_preview: bool = True) -> bytes:
         (path.startswith("slide-rule-python/") and path.endswith(".py") and "/tests/" not in path)
         or path.startswith("slide-rule-python/services/data/")
         or path == "slide-rule-python/requirements.txt" or path.startswith("project-templates/react-vite/"))]
-    selected += ["scripts/fixtures/project-product-backend.py"]
+    selected += ["scripts/fixtures/project-product-backend.py", "server/project-verification/browser-runner.mjs"]
     if include_preview:
         selected += ["dist/project-preview/gateway.cjs", "dist/project-preview/agent.cjs", "dist/project-preview/ws-LICENSE.txt"]
     stream = io.BytesIO()
@@ -111,6 +111,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--without-key", action="store_true")
     parser.add_argument("--timeout", type=int, default=900)
+    parser.add_argument("--browser-template", default="", help="Run the independent browser pass/fail/repair scenario with this trusted E2B template")
+    parser.add_argument("--verify-browser", action="store_true", help="Require the independent browser capability; never fall back to preview-only smoke")
     args = parser.parse_args()
     if not 180 <= args.timeout <= 1200:
         parser.error("timeout must be 180..1200 seconds")
@@ -119,6 +121,10 @@ def main() -> int:
     from e2b import SandboxQuery
     from e2b_code_interpreter import Sandbox
     from services.e2b_workspace_provider import E2BWorkspaceProvider
+    from services.project_browser_provider import E2BProjectBrowserProvider
+
+    if args.verify_browser and not args.browser_template:
+        args.browser_template = os.getenv("WHYBUDDY_PROJECT_BROWSER_TEMPLATE") or dotenv_values(ROOT / ".env").get("WHYBUDDY_PROJECT_BROWSER_TEMPLATE") or ""
 
     identity = uuid.uuid4().hex
     directory = ROOT / "artifacts/project-product" / f"{int(time.time())}-{identity[:8]}"
@@ -127,6 +133,11 @@ def main() -> int:
     report = {"schemaVersion": 1, "status": "running", "stage": "preflight", "checks": [], "cleanup": [],
         "fixtures": ["isolated accounts and approved session", "one initial runtime ID matching trusted E2B TLS host", "source edit intent"],
         "notCovered": ["model selects tools in this scenario", "production DNS and deployment", "P4 independent verification worker", "business database and acceptance"]}
+    if args.browser_template:
+        report["notCovered"].remove("P4 independent verification worker")
+        report["notCovered"].append("immutable production build and arbitrary business verification suites")
+        report["fixtures"].append("counter break and repair intent")
+        report["browserTemplate"] = args.browser_template
     def persist():
         (directory / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     def check(name, passed):
@@ -140,10 +151,16 @@ def main() -> int:
         persist()
         print(f"BLOCKED e2b_api_key_missing; report: {directory / 'report.json'}")
         return 2
+    if args.verify_browser and not args.browser_template:
+        report.update(status="blocked", error="project_browser_not_configured")
+        persist()
+        print(f"BLOCKED project_browser_not_configured; report: {directory / 'report.json'}")
+        return 2
     provider = E2BWorkspaceProvider(api_key=key)
     trusted = vite = browser = None
     trusted_requested = False
     project_id = operation_id = None
+    verification_ids = set()
     config_path = directory / "browser-config.json"
     log_handles = []
     deadline = time.monotonic() + args.timeout
@@ -185,9 +202,11 @@ def main() -> int:
                 "SLIDERULE_SESSION_LOCAL_IMPORT": "0", "SLIDERULE_WEB_SEARCH": "off",
                 "SLIDERULE_AUTH_SECRET": secrets.token_hex(32), "SLIDE_RULE_INTERNAL_KEY": secrets.token_hex(32),
                 "SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED": "1", "SLIDERULE_PROJECT_MAX_WORKERS": "1",
-                "SLIDERULE_PROJECT_LIFETIME_SECONDS": "600", "SLIDERULE_PROJECT_IDLE_SECONDS": "300",
+                "SLIDERULE_PROJECT_LIFETIME_SECONDS": "900" if args.browser_template else "600", "SLIDERULE_PROJECT_IDLE_SECONDS": "300",
                 "SLIDERULE_PROJECT_POLL_SECONDS": "1", "SLIDERULE_PROJECT_INSTALL_SECONDS": "180",
                 "WHYBUDDY_PROJECT_PREVIEW_GATEWAY_KEY": gateway_key,
+                "WHYBUDDY_PROJECT_BROWSER_TEMPLATE": args.browser_template,
+                "WHYBUDDY_PROJECT_BROWSER_TIMEOUT_SECONDS": "120",
                 "WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE": "https://{runtimeId}.e2b.app",
                 "WHYBUDDY_PROJECT_PREVIEW_AGENT_BUNDLE": "/home/user/whybuddy/dist/project-preview/agent.cjs"}}
         trusted.files.write("/home/user/whybuddy-source.tar.gz", archive)
@@ -257,7 +276,8 @@ def main() -> int:
             "authority": authority_origin, "previewOrigin": preview_origin, "fixtureKey": fixture_key,
             "ownerEmail": config["ownerEmail"], "strangerEmail": config["strangerEmail"], "password": password,
             "sessionId": config["sessionId"], "projectId": project_id, "operationId": operation_id,
-            "initialRevision": project["currentRevision"], "title": config["title"]}), encoding="utf-8")
+            "initialRevision": project["currentRevision"], "title": config["title"],
+            "verifyBrowser": bool(args.browser_template)}), encoding="utf-8")
         report["stage"] = "full_workbench_browser"
         persist()
         browser_log = (directory / "browser.log").open("w", encoding="utf-8")
@@ -275,8 +295,9 @@ def main() -> int:
         updated = state()
         parent = next(op for op in updated["operations"] if op["operationId"] == operation_id)
         children = [op for op in updated["operations"] if op["kind"] == "runtime.patch"]
-        check("source changed through one child under the original runtime", len(children) == 1 and children[0]["status"] == "completed"
-            and children[0]["result"].get("synchronized") is True and parent["expectedRevision"] == first["expectedRevision"]
+        check("source edits synchronize under the original runtime", len(children) == (3 if args.browser_template else 1)
+            and all(child["status"] == "completed" and child["result"].get("synchronized") is True for child in children)
+            and parent["expectedRevision"] == first["expectedRevision"]
             and parent["runtime"]["runtimeId"] == first["runtime"]["runtimeId"]
             and parent["runtime"]["processId"] == first["runtime"]["processId"])
         report["stage"] = "account_revocation"
@@ -337,6 +358,18 @@ def main() -> int:
                 client.post(authority_origin + "/api/sliderule/project-operations/" + operation_id + "/cancel", headers=auth_headers)
             except Exception:
                 pass
+        if project_id and args.browser_template:
+            try:
+                observed = state()
+                verification_ids.update(op["operationId"] for op in observed["operations"] if op["kind"] == "runtime.verify")
+                verifier = E2BProjectBrowserProvider(api_key=key, template=args.browser_template)
+                empty = all([verifier.cleanup(identity) for identity in sorted(verification_ids)])
+                report["cleanup"].append({"resource": "independent_browsers", "operationIds": sorted(verification_ids), "confirmedEmpty": empty})
+                if not empty:
+                    report["status"] = "failed"
+            except Exception:
+                report["cleanup"].append({"resource": "independent_browsers", "confirmedEmpty": False})
+                report["status"] = "failed"
         if project_id:
             try:
                 for handle in provider.find_workspaces(workspace_id="ws-" + project_id):

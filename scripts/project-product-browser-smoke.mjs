@@ -2,7 +2,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { chromium } from "@playwright/test";
+import { chromium, expect } from "@playwright/test";
 
 const config = JSON.parse(await readFile(process.argv[2], "utf8"));
 const report = { status: "running", stage: "launch", checks: [], pageErrors: [],
@@ -60,6 +60,74 @@ try {
     const locator = page.frameLocator('[data-testid="project-preview-frame"]');
     await locator.getByRole("heading", { name: heading, exact: true }).waitFor({ timeout: 60000 });
     return locator;
+  }
+  const verificationPath = `/api/sliderule/projects/${config.projectId}/verification`;
+  async function verifyPage(expectedStatus, revision, label) {
+    report.stage = "independent_verification_" + label;
+    await persist();
+    const button = page.getByTestId("project-verification-start");
+    await expect(button).toBeEnabled({ timeout: 30000 });
+    const sent = page.waitForRequest(request => request.method() === "POST" &&
+      new URL(request.url()).pathname === `/api/sliderule/project-operations/${config.operationId}/verify`);
+    await button.click();
+    const request = await sent;
+    await check(label + " uses actual UI command for the current revision", request.postDataJSON().expectedRevision === revision);
+    const accepted = await request.response();
+    await check(label + " enters the durable runtime verification queue", accepted?.status() === 202);
+    const operation = await accepted.json();
+    let snapshot;
+    const until = Date.now() + 160000;
+    while (Date.now() < until) {
+      const reply = await context.request.get(config.workbench + verificationPath);
+      const body = reply.ok() ? await reply.json() : null;
+      if (body?.operationId === operation.operationId && body.snapshot &&
+          ["passed", "failed", "blocked", "cancelled"].includes(body.snapshot.effectiveStatus)) {
+        snapshot = body.snapshot;
+        break;
+      }
+      await delay(500);
+    }
+    report.verifications ??= [];
+    report.verifications.push({ label, operationId: operation.operationId, snapshot });
+    await check(label + " receives the actual independent browser verdict", snapshot?.effectiveStatus === expectedStatus);
+    await check(label + " binds evidence to the exact source and limited coverage", snapshot.verification.revision === revision &&
+      snapshot.deliveryEligible === false && snapshot.verification.assertions.length === 7 &&
+      snapshot.verification.runnerVersion === "whybuddy-browser-v1:pw1.61.1");
+    await page.getByRole("button", { name: "更新检查状态", exact: true }).click();
+    await expect(page.getByTestId("project-verification-status")).toContainText(expectedStatus === "passed" ? "通过" : "失败", { timeout: 15000 });
+    const evidence = snapshot.verification;
+    await check(label + " retains real before and after browser screenshots", evidence.artifactRefs.length === 2);
+    for (const artifact of evidence.artifactRefs) {
+      const response = await context.request.get(config.workbench +
+        `/api/sliderule/project-verifications/${evidence.verificationId}/artifacts/${artifact.artifactId}`);
+      const bytes = await response.body();
+      await check(label + " serves authenticated PNG " + artifact.label,
+        response.status() === 200 && bytes.subarray(0, 8).toString("hex") === "89504e470d0a1a0a" && bytes.length === artifact.sizeBytes);
+      await writeFile(join(config.directory, "verification-" + label + "-" + artifact.artifactId + ".png"), bytes);
+    }
+    await page.screenshot({ path: join(config.directory, "verification-" + label + "-workbench.png"), fullPage: true });
+    return snapshot;
+  }
+  async function editCounter(action, previousRevision) {
+    const patch = await fixture("counter/" + action);
+    await check(action + " intent uses the actual project patch tool", patch.ok && patch.kind === "runtime.patch");
+    let revision;
+    const until = Date.now() + 90000;
+    while (Date.now() < until) {
+      const response = await context.request.get(config.workbench + `/api/sliderule/projects/${config.projectId}/preview`);
+      const body = response.ok() ? await response.json() : null;
+      if (body?.available && body.descriptor?.status === "ready" && body.descriptor.revision !== previousRevision) {
+        revision = body.descriptor.revision;
+        break;
+      }
+      await delay(500);
+    }
+    await check(action + " publishes a synchronized source revision", Boolean(revision));
+    await page.getByTestId("project-preview-frame").waitFor({ state: "detached", timeout: 20000 });
+    await openPreview("Integrated source update");
+    const latest = await (await context.request.get(config.workbench + verificationPath)).json();
+    await check(action + " makes the previous evidence stale", latest.snapshot?.effectiveStatus === "stale");
+    return revision;
   }
   report.stage = "studio";
   await persist();
@@ -132,6 +200,33 @@ try {
   await card.click();
   await openPreview("Integrated source update");
   await check("AppsWorkbench project card reopens the same current runtime", await page.getByTestId("sandbox-preview-surface").getAttribute("data-project-id") === config.projectId);
+  if (config.verifyBrowser) {
+    const passed = await verifyPage("passed", current.descriptor.revision, "initial");
+    const brokenRevision = await editCounter("break", current.descriptor.revision);
+    const failed = await verifyPage("failed", brokenRevision, "broken");
+    await check("broken counter produces actual failed click assertions", failed.verification.assertions.some(item =>
+      item.id === "counter_increment" && item.status === "failed"));
+    const repairedRevision = await editCounter("repair", brokenRevision);
+    await verifyPage("passed", repairedRevision, "repaired");
+    await page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
+    // The app center stores the selected session in the workbench route; the
+    // Studio route restores that same project from the real persisted session.
+    await page.goto(config.workbench + "/agent-loop/sliderule", { waitUntil: "domcontentloaded", timeout: 60000 });
+    await expect(page.getByTestId("project-verification-status")).toContainText("通过", { timeout: 30000 });
+    await check("Studio refresh restores the latest persisted verification", await page.getByTestId("project-verification-panel").isVisible());
+    const old = await context.request.get(config.workbench + `/api/sliderule/project-verifications/${passed.verification.verificationId}`);
+    await check("historical passed record remains stored but stale", (await old.json()).effectiveStatus === "stale");
+    const stranger = await browser.newContext();
+    try {
+      await stranger.request.post(config.authority + "/api/sliderule/account/login",
+        { data: { email: config.strangerEmail, password: config.password } });
+      const id = passed.verification.verificationId;
+      const png = passed.verification.artifactRefs[0].artifactId;
+      const deniedRecord = await stranger.request.get(config.authority + `/api/sliderule/project-verifications/${id}`);
+      const deniedImage = await stranger.request.get(config.authority + `/api/sliderule/project-verifications/${id}/artifacts/${png}`);
+      await check("another administrator cannot read browser records or images", deniedRecord.status() === 404 && deniedImage.status() === 404);
+    } finally { await stranger.close(); }
+  }
   report.observations.cspViolations = csp.length;
   await check("product browser has no uncaught JavaScript errors", report.pageErrors.length === 0);
   await check("Vite HMR WebSocket connects through authorized product preview", report.observations.hmrConnected);

@@ -15,9 +15,9 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **326** 个，模块 **326** 个
-- 内部依赖边 **1064** 条（包含普通包初始化依赖）
-- 内部 import 语句 **976** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 扫描文件 **330** 个，模块 **330** 个
+- 内部依赖边 **1077** 条（包含普通包初始化依赖）
+- 内部 import 语句 **989** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -37,9 +37,9 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
-| `util` | 142 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
-| `core` | 66 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
-| `flow` | 38 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
+| `util` | 144 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `core` | 67 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
+| `flow` | 39 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
 叶子层 `util` 不依赖 services 里任何其它模块——这是它能被所有人安全 import 的全部理由，也是 `import` 不必躲进函数体的前提。
 
@@ -49,12 +49,12 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 ```mermaid
 flowchart TB
-  util["util<br/>142 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
-  core["core<br/>66 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
-  flow["flow<br/>38 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
-  core -->|148| util
-  flow -->|116| core
-  flow -->|135| util
+  util["util<br/>144 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
+  core["core<br/>67 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
+  flow["flow<br/>39 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
+  core -->|149| util
+  flow -->|119| core
+  flow -->|137| util
 ```
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
@@ -67,7 +67,7 @@ flowchart TB
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>15 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>246 个模块<br/>业务"]
+  services["services<br/>250 个模块<br/>业务"]
   routes["routes<br/>14 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -75,7 +75,7 @@ flowchart TB
   app -->|1| config
   app -->|1| models
   app -->|14| routes
-  app -->|20 · 其中 3 条边来自函数体 import| services
+  app -->|21 · 其中 3 条边来自函数体 import| services
   app -->|2| sliderule_llm
   app -->|1| stdio_utf8
   complete_migration -->|1| models
@@ -85,7 +85,7 @@ flowchart TB
   routes -->|10| config
   routes -->|7| middlewares
   routes -->|5| models
-  routes -->|143 · 其中 77 条边来自函数体 import| services
+  routes -->|144 · 其中 77 条边来自函数体 import| services
   routes -->|30 · 其中 16 条边来自函数体 import| sliderule_llm
   scripts -->|3| app
   scripts -->|2 · 其中 2 条边来自函数体 import| config
@@ -93,8 +93,8 @@ flowchart TB
   scripts -->|58 · 其中 41 条边来自函数体 import| services
   scripts -->|16 · 其中 10 条边来自函数体 import| sliderule_llm
   scripts -->|2| stdio_utf8
-  services -->|17 · 其中 7 条边来自函数体 import| config
-  services -->|39 · 其中 1 条边来自函数体 import| models
+  services -->|18 · 其中 7 条边来自函数体 import| config
+  services -->|41 · 其中 1 条边来自函数体 import| models
   services -->|124 · 其中 90 条边来自函数体 import| sliderule_llm
   sliderule_llm -->|2 · 其中 2 条边来自函数体 import| config
 ```
@@ -160,14 +160,14 @@ flowchart LR
   observability["observability<br/>7"]
   ops_scripts["ops_scripts<br/>40"]
   permission["permission<br/>8"]
-  persist["persist<br/>5"]
-  platform["platform<br/>30"]
+  persist["persist<br/>6"]
+  platform["platform<br/>31"]
   run_control["run_control<br/>4"]
-  runtime["runtime<br/>6"]
+  runtime["runtime<br/>7"]
   spec_first["spec_first<br/>41"]
   task_exec["task_exec<br/>19"]
   web_aigc["web_aigc<br/>16"]
-  workspace["workspace<br/>2"]
+  workspace["workspace<br/>3"]
   agent_loop -->|1| identity
   agent_loop -->|6| platform
   app_store -->|6| identity
@@ -211,7 +211,7 @@ flowchart LR
   entrypoint -->|4| runtime
   entrypoint -->|4| spec_first
   entrypoint -->|3| task_exec
-  entrypoint -->|1| workspace
+  entrypoint -->|2| workspace
   evidence -->|14| llm_gateway
   evidence -->|9| platform
   http_routes -->|25| app_store
@@ -227,7 +227,7 @@ flowchart LR
   http_routes -->|24| model_core
   http_routes -->|3| observability
   http_routes -->|8| persist
-  http_routes -->|20| platform
+  http_routes -->|21| platform
   http_routes -->|3| runtime
   http_routes -->|10| spec_first
   http_routes -->|2| task_exec
@@ -254,12 +254,12 @@ flowchart LR
   ops_scripts -->|24| spec_first
   permission -->|1| identity
   permission -->|1| platform
-  persist -->|19| platform
+  persist -->|21| platform
   run_control -->|1| platform
   runtime -->|1| identity
-  runtime -->|6| persist
+  runtime -->|8| persist
   runtime -->|6| platform
-  runtime -->|4| workspace
+  runtime -->|5| workspace
   spec_first -->|3| app_store
   spec_first -->|62| llm_gateway
   spec_first -->|3| observability
@@ -267,7 +267,7 @@ flowchart LR
   spec_first -->|1| run_control
   task_exec -->|2| evidence
   task_exec -->|4| platform
-  workspace -->|1| platform
+  workspace -->|2| platform
 ```
 
 

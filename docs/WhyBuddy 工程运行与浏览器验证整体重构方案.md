@@ -1,6 +1,6 @@
 # WhyBuddy 工程运行与浏览器验证整体重构方案
 
-日期：2026-09-11，更新：2026-09-13。状态：实施中，处于 P1/P2/P3 的联合收口阶段，各阶段完成条件仍按真实验收判断。最新执行记录见第 24 节：真实 Python app/lifespan、账号与 SQL 权威、运行 worker、私有 E2B、独立网关和完整 Studio／应用中心已通过同一产品样本，含运行中改源码、旧授权撤销、刷新恢复和账号撤权后的真实清理。模型也已提交并完成过运行中的修改，但完整 live-edit 场景仍因上游 content_filter 未通过。下一阶段推进 P4 独立浏览器证据闸；P5 真实业务持久化与 P6 编辑发布仍未完成。生产工程模式仍关闭。
+日期：2026-09-11，更新：2026-09-13。状态：实施中，已进入 P4 独立浏览器检查的首批闭环，各阶段仍按真实验收判断。最新执行记录见第 25 节：完整工作台、Python/SQL、私有 E2B、网关和独立浏览器在同一次云样本中走通正常检查、故意改坏、失败存证、修复再通过；源码变化令旧证据失效，刷新恢复记录。固定模板检查不解锁业务交付。原模型循环的修复链另经测试模型验证；真实模型的完整 live-edit 仍因上游 content_filter 未通过。下一步固定构建验收产物，再推进 P5 的真实 API、数据库与应用权限；P6 编辑发布仍待完成。生产工程模式继续关闭。
 
 代码基线：WhyBuddy `c9283935fed3da04c3671572ab546c469eda4d65`；grok-build `SOURCE_REV=c4ea71cfdbcdb21e32e41bc25a0043d7d4836714`。本方案依据当前函数体、调用点、存储与测试约束制定。后续执行前须重新确认入口，行号可能随提交变化。
 
@@ -886,3 +886,62 @@ Python / TS / grok 自动架构生成与检查通过，新增预算叶子及实�
 下一步按依赖顺序进入 P4：在现有 SQL 权威中新增固定 revision 的浏览器验证记录与证据引用；独立受控 Playwright 执行器打开已经授权的工程，执行 DOM／点击／API 断言并采集原始证据；源码变化令旧证据 stale，缺浏览器或证据为 blocked，真实断言失败为 failed。最后把失败证据回填到现有模型循环，验证一次修复和复测。
 
 P4 首个用例可从本次固定模板的标题、计数按钮、资源与控制台检查开始，但要加故意破坏源码的失败样本，证明闸会拒绝。此后 P5 再完成任务应用的真实 API、数据库持久化、刷新和应用角色权限。P6 编辑、发布、灰度及旧路退出继续按原方案，生产工程开关保持关闭。
+
+## 25. 2026-09-13 独立浏览器检查与固定版本证据
+
+本批起点 `76909c06379b2deabba2c13462c55f637543d039`。继续以现有 WhyBuddy 为根基：Python 原控制循环、计划批准、SQL 版本、单写租约和 React 工作台继续承担原职责；新增 Playwright 能力作为独立浏览器执行层。grok-build 的资源所有者和工具动作/回执合同仍是结构参考，来源落点见 [参考源码索引](<WhyBuddy 工程重构参考源码索引.md>)。
+
+### 25.1 本批落地能力
+
+| 能力 | 实际行为与权威边界 |
+|---|---|
+| 持久检查子任务 | `runtime.verify` 由原 `runtime.start` worker 处理，与源码同步串行；不新开Agent、不重复占项目租约。检查时应用保持ready，避免撤掉验证器自己的预览授权。新的检查意图算活动；刷新和相同幂等请求不续费。 |
+| 独立浏览器 | `project_browser_provider` 创建单独可信E2B，上传本仓固定runner，通过单次私有票据访问已批准实例；管理key留在Python。出站只允许本次预览域名，其他流量拒绝。 |
+| 七项真实断言 | `react-vite-counter@1`：标题可见、初始计数0、第一次点击1、第二次点击2、刷新重置0、没有页面/控制台错误、没有失败的资源请求。使用实际Playwright await expect和DOM操作。 |
+| 失败信息回填 | 现有模型工具增加 `project_verify` 和 `project_verification`；失败计数提供有限数值expected/actual，其他页面原文不进回执。页面自己声称passed不构成证据，模型不能提交自定义断言结果。 |
+| SQL证据与图片 | 独立VerificationRecord绑定revision、treeHash、runtime、规格、计划和runner版本；PNG独立按hash存储并实际解码校验。记录、配额和图片写入复查当前项目及租约。 |
+| 当前结果与历史 | 源码、规格、批准或套件版本变化后，保留历史结果，当前投影为stale。此套件的deliveryEligible始终为false，不借客户端publishClosure解锁交付。 |
+| 工作台 | Studio与应用中心共用检查面板，显式开始、状态轮询、取消子检查、刷新恢复和迟到响应拒绝均已接线；两处入口检查当前服务版本。首期展示状态与断言，PNG有授权API，尚无图片查看器。 |
+| 中断与取消 | 停检查只取消浏览器子任务；父运行取消或撤权会停止对应资源。服务恢复先回收中断浏览器，再记blocked，不能盲重放可能已执行的点击。结果已经存好但子操作终态未写完时，恢复对账同一记录。 |
+
+验证前后用已有等树同步路径只读核对实际源码，并核对服务revision；检查时补丁等待，完成后修改源码使旧证据过期。当前运行的仍是固定Vite开发模板，**不是已完成正式可复现构建验收实例**。模板的刷新重置符合React内存计数设计，不是业务数据持久化通过。
+
+### 25.2 实际联调暴露的修复
+
+1. 真实Chrome发现普通请求的重定向会绕过最初route回调；执行器改用实际上游请求且禁止自动跟随重定向，检查后交付响应。外连、重定向和弹窗用例都验证外部服务器没有收到请求。
+2. E2B明确拒绝只写域名allow_out的创建请求，要求配套deny_out使用SDK常量ALL_TRAFFIC，其实际传输值是`0.0.0.0/0`。第一次修复误传了常量名称字符串，也被云端拒绝；现在按真实SDK常量同时声明单一允许域名和拒绝其他流量。未把失败改成开放互联网。SDK异常日志只含固定阶段和异常类。
+3. 检查和源码补丁入队、PNG配额写入可能碰到健康heartbeat导致零行CAS；仅在确认未写入时完整重读并重验，未知SQL回复不重试。不能把心跳竞争误报容量不足、重复扣配额，或让合法的下一次修复入队偶发失败。
+4. 浏览器恢复只能用于runtime.start；首次接线影响了独立runtime.exec恢复，现已按操作类型分流，旧命令恢复继续使用已保存PID，未知派发仍不重放。
+5. Windows下源码同步与控制回填写同一轮checkpoint，曾共用`.json.tmp`并让旧checkpoint覆盖新源码引用，实际出现WinError32并中断模型回合。现在每次写入独占临时文件，关闭句柄后替换，并让同进程SQL保存与checkpoint按同一锁顺序完成；不重试未知数据库提交，也不放松原批准/控制租约/版本CAS。
+
+SQL验收记录先落库，子操作随后对账；PostgreSQL在竞争语句中锁定并复查租约、项目、父运行与子任务，不依赖陈旧EXISTS快照来放行。PNG单张上限2MiB、项目上限16MiB，未知上传结果可能保守占用预约额度；配额回收与证据保留策略尚待后续实现。
+
+### 25.3 本批证据
+
+| 验证 | 实际范围与证据 |
+|---|---|
+| 可信浏览器模板 | 模板 `c7askhickfgju8gfrp6c`，build `22e3bedf-5b6f-4ba2-86b4-9dba8cadf955`；官方 `mcr.microsoft.com/playwright:v1.61.1-noble`，2CPU/2GiB。构建与实例启动均实际启用chromiumSandbox；云实例执行原11项runner用例通过，实例已回收查空。报告 `artifacts/project-browser-p4/cloud-template-build.json`、`cloud-template-browser.json`。 |
+| 同一次完整云产品样本 | `artifacts/project-product/1789244302-09f69356/report.json`：**18项服务检查、49项完整Chrome检查通过，0 pageerror、0 CSP违规**。实际Python app/SQL、私有E2B应用、正式网关和完整Studio/应用中心，同时接入三个独立浏览器检查任务；未替换HTTP响应。 |
+| 数据库真实并发 | PostgreSQL16.9的SQLAlchemy和产品HTTP SQL gateway共8项通过，观察6次真实行锁等待；父取消、子取消和租约失效均拒绝过期passed。新命令 `smoke:project-verification-postgres` 可复跑；报告 `artifacts/project-verification-postgres-7018ee8dadd247e2/report.json`，隔离schema已删、测试PG已停。 |
+| 两个前端消费入口 | 75项通过，实际点击两处检查按钮并核对expectedRevision；8个隔离变异被发现。另有真实Chrome的组件/CSS样本3项通过，含390px无横向溢出与无pageerror；这是局部API夹具，与完整云产品样本分别记账。 |
+| 最终Python联合回归 | 工程、控制、所有权、批准、持久化、会话、checkpoint与应用存储：**1714 passed、2 skipped、2 xfailed**，`artifacts/p4-final-python.xml`。旧命令恢复、补丁心跳竞争和模型回填checkpoint故障均修后纳入本轮通过集合。 |
+| 浏览器与网关回归 | 本机实际Chrome runner **12 passed**，正式预览网关/隧道 **23 passed**；`artifacts/p4-final-runner.log`、`p4-final-preview.log`。provider **38项**包含在Python集合中，不重复相加。 |
+| 合同、脚本与架构 | JSON Schema/TS合同同步；**97项脚本测试通过**。Python/TS/全仓/grok自动生成和过闸；三份图共6个Mermaid块及原方案时序图均经真实Chrome渲染。未增加违规/循环基线。 |
+| TypeScript存量 | 对实际起点76909c06完整编译对比，基线18项、当前18项、新增0项；`artifacts/p4-ui-ts-baseline-comparison.json`。不能记成tsc全绿。 |
+| Windows格式基线 | `lint`在8个未修改文件上失败；按真实Git checkout过滤器重建76909c06字节后同样8项失败、文件字节相同，原因是当前Windows检出的换行。`artifacts/p4-lint-baseline.json`；本批package格式通过，没有顺改无关文件。 |
+
+完整云样本先正常通过，再通过正式project_patch把`value + 1`改为`value + 2`，真实浏览器记录首次点击expected=1/actual=2、再次点击expected=2/actual=4，判为failed；修回后新revision重新passed。三轮各保存七个断言及两张PNG，源码变化后旧证据stale；完整Studio刷新恢复最新结果，另一名管理员不能读取记录或截图。应用runtimeId与server PID保持不变，最后撤销账号资格使旧凭据失效并停止应用。三个浏览器、应用和可信服务全部销毁并查询确认，浏览器与本地Vite也已关闭。
+
+同目录保存`verification-initial-workbench.png`、`verification-broken-workbench.png`、`verification-repaired-workbench.png`和实际验证PNG，可直接复看。前两轮创建配置失败报告仍保留于`1789243486-81289251`和`1789243970-83b8e159`，均记录失败与全部资源清理；修复前没有计作通过。独立创建诊断另外证明实际CIDR参数可被云API接纳。
+
+云产品样本的账号、批准计划和修改意图是夹具。原模型循环的单独测试使用scripted gateway，经实际HTTP控制入口完成10次模型回合工具交互、两次检查、一次补丁及复查；修复checkpoint竞争后连续12次通过，SQL、最终状态和本机checkpoint都指向新revision。模型与浏览器IO在该测试中明确替换，不能与云样本拼成一次模型自主开发已经验收。本批没有为P4重试真实模型；上一轮live-edit的上游content_filter失败仍按第24节记录。
+
+关键隔离变异覆盖：删除实际浏览器调度、少断言/少截图、绕过当前批准/租约、忽略源码后验、遗漏真实取消/回收、模型证据断线、旧证据继续绿、页面外连/重定向、原始DOM泄漏、SQL未知回复重试、丢失checkpoint保存顺序。对应报告在`artifacts/project-browser-owner-mutations-1789244164/`、`project-browser-p4/`、`project-verification-store-mutations.json`、`project-verification-heartbeat-mutation.json`、`project-patch-admission-mutations.json`及前端变异目录。变异均在隔离副本验证，最终正常实现已经重新回归。
+
+### 25.4 阶段判断与接下来顺序
+
+P4首批补上“实际检查→存证→同循环接收失败→修改后复查”的基础，交付闸仍按有限覆盖拒绝业务交付。P1/P2/P3的生产持久部署、域名/TLS、资源治理和完整自主模型样本保留原验收项；生产工程模式继续关闭。
+
+下一步先把验证实例固定到锁文件构建产物，补可靠的浏览器步骤/用例版本与独立受管验收合同；随后P5接入首个任务应用的Node API、数据库和应用角色权限，验证新增/编辑/筛选、刷新保留、只读拒写与失败修复。再推进源码导出、版本恢复和业务数据恢复。P6的点选编辑、复刻、发布和旧路退出仍按原依赖顺序实施。
+
+配置、模板构建和可复跑命令见 [私有工程预览运行说明](<WhyBuddy 私有工程预览运行说明.md#独立浏览器页面检查p4-首批>)。未启用worker或worker初始化失败时历史证据API当前返回不可用；trace/HAR脱敏、截图UI、任意浏览器脚本与通用业务套件尚未实现，不与本批固定模板检查混算。

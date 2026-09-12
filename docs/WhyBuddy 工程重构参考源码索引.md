@@ -22,9 +22,24 @@
 
 这里复用的是职责和行为合同，按现有 Python 代码改写，未整段搬入 Rust 执行器。持久补丁队列、SQL CAS、E2B 同步与私有预览版本轮换是 WhyBuddy 针对现有存储/租约补齐的能力。grok 的 `search_replace` 在真实文件 IO 前已经释放资源锁，不提供本仓的跨进程 CAS；其多文件部分成功及仅记账的部分取消路径，也不作为 WhyBuddy 的原子性或真实停止保证。当前 grok 根许可证为 Apache-2.0，见 [LICENSE](../../grok-build/LICENSE)。
 
-本轮真实结果与限制见重构方案第 24 节。其他参考库继续补充传输、浏览器和 UI，不因收录数量改变底层架构。
+完整预览联调见重构方案第 24 节，新增独立浏览器检查见第 25 节。其他参考库继续补充传输、浏览器和 UI，不因收录数量改变底层架构。
 
-最新一批沿原有结构完成实际 Python 权威、E2B worker、独立网关和完整工作台联调，补上账号撤权、提示词与工具能力一致性、空闲活动、并发停止、SQLite 并发以及 CSP 配置边界。这里没有新引入一个参考项目来替换底座；使用当前 SQLAlchemy、Vite、Playwright 等已有能力修复真实组合。成功产品样本为 `artifacts/project-product/1789240211-907ad18a/report.json`。真实模型已完成过运行中源码修改，但完整 live-edit 因上游 content_filter 仍未通过，不能与夹具选择工具的产品样本合并为自主交付成功。下一批重点提取 Playwright 的受控操作、断言、trace 与 context 隔离，接入当前 Python 的固定版本证据闸。
+此前沿原有结构完成实际 Python 权威、E2B worker、独立网关和完整工作台联调，补上账号撤权、提示词与工具能力一致性、空闲活动、并发停止、SQLite 并发以及 CSP 配置边界。这里没有新引入一个参考项目来替换底座；使用当前 SQLAlchemy、Vite、Playwright 等已有能力修复真实组合。成功产品样本为 `artifacts/project-product/1789240211-907ad18a/report.json`。真实模型已完成过运行中源码修改，但完整 live-edit 因上游 content_filter 仍未通过，不能与夹具选择工具的产品样本合并为自主交付成功。
+
+## 2026-09-13 独立浏览器检查的采用清单
+
+本批继续复用 grok-build 的会话资源所有者与工具动作/结果合同：`runtime.verify` 和已有 `runtime.patch` 由同一个 Python runtime worker 串行执行。SQL 记录、当前批准、revision 和租约仍由 WhyBuddy 决定；新增参考源码负责真实浏览器能力。
+
+| 来源与固定版本 | 已采用的具体部分 | WhyBuddy 落点与实际边界 |
+|---|---|---|
+| grok-build `c4ea71cfdbcdb21e32e41bc25a0043d7d4836714`，上述 WorkspaceSession / SessionToolHandle | 同一会话持有执行上下文，工具返回可检查结果；恢复先确认所有权 | 原控制循环新增 `project_verify` / `project_verification`；运行子任务和中断恢复使用现有SQL租约。没有搬入另一套Rust主循环。 |
+| Playwright `d1ead3ecca23182f2d06d761c28e3d4edafb6595`，`packages/playwright/src/matchers/matchers.ts`、`toBeTruthy.ts` | 实际执行 locator 断言、等待真实状态，而非记录一句验证描述 | `server/project-verification/browser-runner.mjs` 使用公开 `await expect`、click、reload；运行依赖和浏览器固定为已安装且实测的 **1.61.1**，参考源码快照是较新的 main，不混称同一版本。 |
+| 同一 Playwright 快照的 browserContext / frames / tracing | 独立 context、资源生命周期、真实网络/控制台观察和截图 | 单独E2B验证实例；实际请求只到本次预览来源。trace/HAR可能含票据/Cookie，脱敏合同未完，因此本批只存受限结构与PNG。 |
+| Playwright MCP `8a13ef8e9f7385a0f89477922127f31cbfde9761` 及主仓 `tools/backend/verify.ts` | 参考类型化验证意图，同时核实其 `addAction` 只记录动作的边界 | 没有把MCP的Done当作通过。七个固定断言全部实际执行，由Python验证完整性并保存；生成页面自行输出passed不起作用。 |
+
+Playwright 使用已有 Apache-2.0 npm 包及其许可文件；本批按公共API组装执行器，没有复制内部浏览器引擎代码。新增的私有票据、E2B管理、PNG配额、SQL证据围栏及React恢复由本仓实现。浏览器模板构建通过官方固定镜像和锁文件完成，普通验证不在线安装依赖。
+
+首个套件只检查模板标题、计数、刷新重置、页面错误和资源加载；它不是P5业务验收，`deliveryEligible`始终为false。源码或批准变化使旧证据stale；未配置浏览器为blocked；实际断言失败为failed。真实云、数据库并发、模型循环夹具及前端证据分别记录在重构方案第25节，不能把几组不同测试合并成模型自主交付已完成。
 
 ## 2026-09-13 已接入的第一批能力
 

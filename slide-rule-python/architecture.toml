@@ -130,6 +130,8 @@ modules = [
   "services.project_access",
   "services.project_preview_config",
   "services.project_tool_contracts",
+  "services.project_verification_gate",
+  "services.project_browser_provider",
   # 交付面可用性：只吃 HTML 字符串与 SPEC 字典，services 里谁都不依赖 → 叶子。
   # 跟 gate_health 同一个理由被闭环判定顶层 import。
   "services.deliverable_surface",
@@ -312,6 +314,7 @@ modules = [
   # 持久工程索引/源码版本/操作与事件的 SQL 边界。依赖 util 里的 SQL 网关，
   # 不反向调用 routes 或控制循环；归组在 persist component。
   "services.project_store",
+  "services.project_verification_store",
   "services.project_preview_access",
   "services.project_runtime",
   "services.e2b_workspace_provider",
@@ -397,6 +400,7 @@ may_depend_on = ["util", "core"]
     "services.project_actor_access",
     "services.project_runtime_worker",
     "services.project_source_sync",
+    "services.project_browser_verification",
     "services.project_preview_runtime",
     "services.project_authority",
     "services.project_creation",
@@ -787,6 +791,7 @@ modules = [
   "services.project_creation",
   "services.persistence",
   "services.project_store",
+  "services.project_verification_store",
   "services.session_blob_store",
 ]
 
@@ -796,6 +801,7 @@ may_depend_on = ["platform"]
 modules = [
   "services.workspace_provider",
   "services.e2b_workspace_provider",
+  "services.project_browser_provider",
 ]
 
 [component.runtime]
@@ -806,6 +812,7 @@ why = "工程运行编排：把持久源码、租约和 E2B provider 组合成�
     "services.project_runtime",
     "services.project_runtime_worker",
     "services.project_source_sync",
+    "services.project_browser_verification",
     "services.project_preview_runtime",
     "services.project_preview_access",
     "services.project_preview_config",
@@ -825,6 +832,7 @@ modules = [
   "services.project_authority",
   "services.project_access",
   "services.project_tool_contracts",
+  "services.project_verification_gate",
   "config.env_flags",
   "config.settings",
   "models.agent_loop",

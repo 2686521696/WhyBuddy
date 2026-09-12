@@ -34,7 +34,7 @@ def main(config_path: str) -> None:
     stranger = identity.create(config["strangerEmail"], hash_password(config["password"]),
                                is_superuser=True, is_verified=True)
     plan = {"planId": "product-smoke-plan", "revision": 1, "reqId": "product-smoke-approval",
-        "planContent": "Run the fixed Vite template; change its heading in the same runtime; inspect private preview in both workbenches; stop and clean up."}
+        "planContent": "Run the fixed Vite template; change its heading in the same runtime; inspect private preview in both workbenches; verify counter behavior in an independent browser, break then repair the counter and recheck; stop and clean up."}
     state = V5SessionState(sessionId=config["sessionId"], ownerId=owner.id,
         goal={"text": config["title"], "status": "clear"},
         controlTranscript=[{**plan, "kind": kind} for kind in ("plan_written", "plan_approval", "plan_approved")])
@@ -98,6 +98,23 @@ def main(config_path: str) -> None:
         guard(authorization)
         identity.set_superuser(owner.id, False)
         return {"ok": True}
+
+    @app.post("/_smoke/counter/{action}")
+    def fixture_counter(action: str, authorization: str | None = Header(default=None)):
+        guard(authorization)
+        if action not in {"break", "repair"}:
+            raise HTTPException(404, "smoke_unknown_counter_action")
+        store = get_project_store()
+        current = persistence.load_session_record(state.sessionId)["session"]
+        project = store.get_project(current.projectId, owner_id=owner.id)
+        source = store.read_files(project.projectId, owner_id=owner.id)["src/counter.mjs"]
+        expected, replacement = ("value + 1", "value + 2") if action == "break" else ("value + 2", "value + 1")
+        if source.count(expected) != 1:
+            raise HTTPException(409, "smoke_counter_patch_conflict")
+        return ProjectTools(store, app.state.project_runtime_supervisor, owner.id).execute("project_patch", {
+            "approvalRef": approval, "expectedRevision": project.currentRevision,
+            "changes": [{"path": "src/counter.mjs", "expectedSha256": content_hash(source),
+                         "content": source.replace(expected, replacement)}]}, current)
 
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=config.get("port", 5192), access_log=False, log_level="warning")

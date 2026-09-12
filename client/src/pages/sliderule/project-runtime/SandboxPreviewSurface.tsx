@@ -2,6 +2,7 @@ import React from "react";
 import type { PreviewDescriptor } from "@shared/project-runtime.generated";
 import type { ProjectPreviewReference } from "./project-preview-client";
 import { useProjectPreview } from "./useProjectPreview";
+import { ProjectVerificationPanel } from "./ProjectVerificationPanel";
 
 const STATUS: Record<PreviewDescriptor["status"], string> = {
   provisioning: "正在准备运行环境",
@@ -90,6 +91,22 @@ export function SandboxPreviewSurface({
               : "打开预览"}
         </button>
       </div>
+      <ProjectVerificationPanel
+        projectId={projectId}
+        revision={
+          revisionMode === "current"
+            ? descriptor?.revision
+            : (projectRevision ?? descriptor?.revision)
+        }
+        runtimeOperationId={preview.snapshot?.operationId}
+        runtimeId={descriptor?.runtimeId}
+        ready={Boolean(
+          !preview.error &&
+          !preview.loading &&
+          !mismatch &&
+          descriptor?.status === "ready"
+        )}
+      />
       {preview.entryUrl ? (
         <iframe
           title={`${appTitle} · 运行页面`}

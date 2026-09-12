@@ -91,4 +91,39 @@ pnpm run smoke:project-product
 
 新增的 `smoke:project-product` 使用两个独立 E2B：可信服务实例运行真实 Python app/lifespan、隔离 SQLite 和正式 Node 网关；应用实例由正式 worker 创建并保持私有。Chrome 加载完整 Vite 工作台，账号登录、API、票据和网关回调均走实际服务，不替换响应。账号、已批准计划和源码编辑意图是夹具；初始 runtimeId 仅为匹配临时 E2B TLS 主机名而注入一次，其后沿持久状态运行。测试结束销毁两个实例并查询确认，不复制本地会话库或 `.env`。报告与截图写入 `artifacts/project-product/`；失败记录保留。模型自主选择另由 `smoke:project-model --scenario live-edit` 验证，两组结果不拼成一次自主业务验收。
 
-本次不等于生产预览已部署，也不等于 P4 浏览器验收服务完成。仍需固定 revision 的独立验证 worker、交付证据闸、真实业务数据库，以及生产 DNS/TLS 与资源配置验收。应用中心历史版本恢复、复刻、导出和生产发布也各自保留阶段验收。
+本次不等于生产预览已部署。独立浏览器检查的接入与范围见下节；真实业务数据库、生产 DNS/TLS 与资源配置仍须验收。应用中心历史版本恢复、复刻、导出和生产发布也各自保留阶段验收。
+
+## 独立浏览器页面检查（P4 首批）
+
+工程已经 ready 后，Studio 与应用中心的共同预览面板提供「检查页面」。它提交 `runtime.verify` 子操作，由原 Python 运行所有者串行处理；检查期间源码补丁排队。另一台独立 E2B 运行可信 Playwright 执行器，通过一次性私有预览票据访问应用，验证前后都核对实际源码和 revision。生成工程不能修改验证脚本或写入 SQL 结果。
+
+首个套件 `react-vite-counter@1` 有七项实际断言：标题可见、初始计数 0、两次点击分别为 1 和 2、刷新按模板重置为 0、没有页面/控制台错误、没有失败的页面资源请求。保存前后两张 PNG、断言和源码版本。这里检查的是固定模板行为；`deliveryEligible` 始终为 false，不解锁业务交付或公开发布。
+
+Python 环境增加：
+
+```dotenv
+WHYBUDDY_PROJECT_BROWSER_TEMPLATE=<本团队构建的可信模板ID>
+WHYBUDDY_PROJECT_BROWSER_TIMEOUT_SECONDS=120
+```
+
+模板需包含 `@playwright/test@1.61.1` 和匹配的 Chromium。仓库的 `server/project-verification/build-template.py` 使用固定 Playwright 官方镜像，只上传明确的 package、lockfile 和 runner 三个文件，不需要本机 Docker。构建是显式云操作；事先在进程环境设置 E2B_API_KEY，然后从仓库根目录运行：
+
+```powershell
+& slide-rule-python/.venv/Scripts/python.exe server/project-verification/build-template.py --name whybuddy-browser-pw1611 --timeout-seconds 900 --report artifacts/browser-template-build.json
+```
+
+日常检查不会重新构建模板或临时安装浏览器。缺模板/key/执行器文件时如实 blocked，普通状态轮询不会创建沙盒。模板是可复用镜像，每次验证实例都独立创建并清理；Python 镜像已显式包含 runner 文件，管理 key 不进入生成工程或验证 job。
+
+当前检查能力沿用内部工程模式，生产工程入口继续关闭。验证记录保存在独立 SQL 表，PNG 按 hash 独立存储，单张最多 2 MiB、每项目最多 16 MiB；有限配额满后明确拒绝。尚未提供证据清理策略和 UI 图片查看器，图片通过需要当前归属与账号权限的接口读取。worker 未启用或初始化失败时历史检查 API 返回不可用；不假装有后台检查者。
+
+源码、规格或当前批准变化后，原始结果保留，当前投影为 stale。刷新只恢复记录；停止检查只取消该子任务；父运行取消或账号撤权会停止并清理对应资源。验证中断时先回收再记录 blocked，不自动重放可能已执行的点击。正式不可变构建验收实例、业务 API/数据库/RBAC 套件和脱敏 trace/HAR 仍在后续阶段。
+
+可复跑命令：
+
+```powershell
+pnpm run test:project-browser
+pnpm run smoke:project-browser --browser-template <可信模板ID>
+pnpm run smoke:project-verification-postgres --database-url-env WHYBUDDY_PG_VERIFY_SMOKE_URL
+```
+
+浏览器产品烟测使用实际 Python、SQL、网关、工作台和独立 E2B，依次检查通过、用正式补丁工具把计数改错、确认失败、修复后再通过；产物写入 `artifacts/project-product/`，结尾按本轮项目/操作标识清理并检查资源。账号、计划及修改意图是夹具，模型自主选择工具另行验证；缺配置时返回 blocked。PostgreSQL 命令只读取显式指定的独立测试库，验证取消和租约竞争下不能提交过期通过结果。

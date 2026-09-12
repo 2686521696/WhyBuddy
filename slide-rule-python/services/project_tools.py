@@ -16,7 +16,7 @@ from pydantic import ValidationError
 
 from services.persistence import PersistClosedError
 from services.control_checkpoint import guard_control_run
-from services.project_authority import approved_reference
+from services.project_authority import approved_reference, verification_with_current_authority
 from services.project_creation import create_session_project, load_authorized_session, sync_session_project
 from services.project_manifest import canonical_json, content_hash, prepare_source_patch, source_path
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStoreUnavailable
@@ -123,6 +123,17 @@ class ProjectTools:
                 return {"ok": True, **result}
             if name == "project_patch":
                 return {"ok": True, **self._patch(project, parsed)}
+            if name == "project_verify":
+                guard_control_run()
+                if self.supervisor is None:
+                    raise ProjectStoreUnavailable("project_worker_unavailable")
+                parent = self.store.get_operation(parsed.runtimeOperationId, owner_id=self.owner_id)
+                if parent.projectId != project.projectId or parent.sessionId != session_id:
+                    raise ProjectNotFound("project_operation_not_found")
+                operation = self.supervisor.submit_verification(parent.operationId, owner_id=self.owner_id,
+                    expected_revision=parsed.expectedRevision, approval_ref=parsed.approvalRef,
+                    idempotency_key=parsed.idempotencyKey)
+                return {"ok": True, **self._snapshot(operation.operationId)}
             if name in {"project_start", "project_exec"}:
                 guard_control_run()
                 if self.supervisor is None:
@@ -136,10 +147,12 @@ class ProjectTools:
                 else:
                     operation = self.supervisor.submit_command(project.projectId, **params, command=parsed.command)
                 return {"ok": True, **self._snapshot(operation.operationId)}
-            if name in {"project_status", "project_logs", "project_cancel"}:
+            if name in {"project_status", "project_logs", "project_cancel", "project_verification"}:
                 operation = self.store.get_operation(parsed.operationId, owner_id=self.owner_id)
                 if operation.projectId != project.projectId or operation.sessionId != session_id:
                     raise ProjectNotFound("project_operation_not_found")
+                if name == "project_verification" and operation.kind != "runtime.verify":
+                    raise ProjectNotFound("project_verification_not_found")
                 if name == "project_status" and parsed.waitSeconds:
                     deadline = time.monotonic() + parsed.waitSeconds
                     while operation.status not in _TERMINAL and time.monotonic() < deadline:
@@ -176,7 +189,25 @@ class ProjectTools:
             "sourceBytes": revision.manifest.totalBytes, "runtimeKind": "project"}
 
     def _snapshot(self, operation_id):
-        return operation_snapshot(self.store.snapshot_operation(operation_id, owner_id=self.owner_id))
+        source = self.store.snapshot_operation(operation_id, owner_id=self.owner_id)
+        result = operation_snapshot(source)
+        if source["operation"].kind == "runtime.verify" and self.supervisor is not None:
+            authority = load_authorized_session(source["operation"].sessionId,
+                owner_id=self.owner_id, approval_ref=None)
+            snapshot = verification_with_current_authority(self.supervisor.verification_store.for_operation(
+                operation_id, owner_id=self.owner_id), authority)
+            if snapshot is not None:
+                record = snapshot.verification
+                result["verification"] = {"verificationId": record.verificationId,
+                    "status": snapshot.effectiveStatus, "revision": record.revision,
+                    "suiteVersion": record.suiteVersion, "deliveryEligible": False,
+                    "errorCode": record.errorCode,
+                    "assertions": [{"id": item.id, "status": item.status,
+                        **({"expected": item.expected, "actual": item.actual}
+                            if item.status == "failed" and item.expected is not None and item.actual is not None else {})}
+                        for item in record.assertions],
+                    "artifactIds": [item.artifactId for item in record.artifactRefs]}
+        return result
 
     def _patch(self, project, args):
         active = self.store.get_lease(project.projectId, owner_id=self.owner_id)

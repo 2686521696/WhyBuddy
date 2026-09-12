@@ -2928,7 +2928,10 @@ def _system_prompt(state: V5SessionState) -> str:
             "返回 runtime.patch 的 operationId 表示补丁已排队；用 project_status 查询到 completed 且 synchronized=true，"
             "才能确认新源码版本已同步。依赖或启动配置变更需先停止并确认清理，再修改和重启。"
             "project_exec 只运行 check/build/test，返回 operationId；用 status/logs 读取真实结果。"
-            "新回合可用不带 operationId 的 project_status 找回任务；已有服务运行时先取消并等清理，再执行检查。"
+            "新回合可用不带 operationId 的 project_status 找回任务；运行 project_exec 命令前先取消已有服务并等待清理。"
+            "project_verify 则需要保留正在运行的工程：它在独立浏览器中检查固定模板页面、计数点击和刷新重置，"
+            "与源码修改由原运行者串行执行。用 project_verification 读取真实断言；缺浏览器或预览为 blocked，"
+            "源码或批准改变使旧证据 stale。失败后按断言修源码再申请新检查；这套模板检查不能代表完整业务验收。"
             "任务未结束就如实交回 operationId，下轮继续查询，不能重复提交或宣称完成。"
             "构建通过和服务就绪均不是业务验收；私有预览是否可用以授权预览状态为准，独立浏览器验收尚未接入。"
         )

@@ -11,16 +11,16 @@
 | 包 | 模块数 |
 |---|---:|
 | agent-loop | 99 |
-| client | 1030 |
+| client | 1032 |
 | project-templates | 2 |
 | scripts | 66 |
-| server | 587 |
+| server | 588 |
 | services | 32 |
 | shared | 177 |
-| **合计** | **1993** |
+| **合计** | **1996** |
 
-边 5966 条，其中动态 import / require 317 条、
-类型 import 2238 条。
+边 5969 条，其中动态 import / require 317 条、
+类型 import 2239 条。
 
 ## component 依赖图
 
@@ -35,7 +35,7 @@ graph LR
   client-lib["client-lib<br/>174"]
   client-pages["client-pages<br/>74"]
   client-pages-autopilot["client-pages-autopilot<br/>192"]
-  client-pages-sliderule["client-pages-sliderule<br/>258"]
+  client-pages-sliderule["client-pages-sliderule<br/>260"]
   client-runtime["client-runtime<br/>16"]
   client-shell["client-shell<br/>36"]
   lobster-executor["lobster-executor<br/>32"]
@@ -49,6 +49,7 @@ graph LR
   server-permission["server-permission<br/>16"]
   server-persist["server-persist<br/>13"]
   server-project-preview["server-project-preview<br/>8"]
+  server-project-verification["server-project-verification<br/>1"]
   server-rag["server-rag<br/>35"]
   server-routes["server-routes<br/>104"]
   server-routes-blueprint["server-routes-blueprint<br/>211"]
@@ -396,6 +397,12 @@ Versioned React/TS/Vite template. index.html loads src/main.tsx after Python pub
 Dedicated private-preview transport process: HTTP/WebSocket relay and sandbox tunnel agent. Python owns project access; this component has no imports of the main app, its identity store or browser code.
 
 路径：`server/project-preview`
+
+### server-project-verification
+
+Trusted fixed-suite browser CLI uploaded by the Python provider to an independent E2B sandbox. Public Playwright calls collect actual evidence; SQL authority and delivery decisions remain in Python.
+
+路径：`server/project-verification`
 
 ### server-rag
 

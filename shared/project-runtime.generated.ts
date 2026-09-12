@@ -158,6 +158,49 @@ export type RuntimeView = {
   "errorCode": string | null;
 };
 
+export type VerificationArtifactRef = {
+  "artifactId": string;
+  "sha256": string;
+  "mediaType"?: "image/png";
+  "sizeBytes": number;
+  "label": string;
+};
+
+export type VerificationAssertion = {
+  "id": string;
+  "status": "passed" | "failed";
+  "expected"?: string | null;
+  "actual"?: string | null;
+  "detail"?: string | null;
+};
+
+export type VerificationRecord = {
+  "verificationId": string;
+  "operationId": string;
+  "runtimeOperationId": string;
+  "projectId": string;
+  "revision": string;
+  "treeHash": string;
+  "runtimeId": string;
+  "specRevision": string | null;
+  "planRef": string;
+  "suiteVersion": string;
+  "runnerVersion"?: string;
+  "status"?: "running" | "passed" | "failed" | "blocked" | "cancelled";
+  "assertions"?: Array<VerificationAssertion>;
+  "artifactRefs"?: Array<VerificationArtifactRef>;
+  "createdAt": string;
+  "startedAt": string;
+  "completedAt"?: string | null;
+  "errorCode"?: string | null;
+};
+
+export type VerificationSnapshot = {
+  "verification": VerificationRecord;
+  "effectiveStatus": "running" | "passed" | "failed" | "blocked" | "cancelled" | "stale";
+  "deliveryEligible"?: false;
+};
+
 export type WorkspaceLease = {
   "workspaceId": string;
   "projectId": string;

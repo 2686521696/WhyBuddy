@@ -15,6 +15,30 @@ import {
 let root: Root;
 let container: HTMLDivElement;
 let fetcher: ReturnType<typeof vi.fn>;
+const emptyVerification = {
+  operationId: null,
+  operationStatus: null,
+  snapshot: null,
+};
+function expectObservationOnly() {
+  expect(new Set(fetcher.mock.calls.map(([url]) => url))).toEqual(
+    new Set([
+      "/api/sliderule/projects/project-one/preview",
+      "/api/sliderule/projects/project-one/verification",
+    ])
+  );
+  expect(fetcher.mock.calls.every(([, init]) => init?.method === "GET")).toBe(
+    true
+  );
+  expect(
+    container.querySelector('[data-testid="project-verification-panel"]')
+  ).not.toBeNull();
+  expect(
+    container.querySelector<HTMLButtonElement>(
+      '[data-testid="project-verification-start"]'
+    )!.disabled
+  ).toBe(true);
+}
 const stored = {
   runtimeKind: "project",
   projectId: "project-one",
@@ -33,20 +57,24 @@ const stored = {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
-  fetcher = vi.fn(async () =>
-    Response.json({
-      operationId: "operation-one",
-      available: true,
-      reason: null,
-      descriptor: {
-        kind: "project",
-        projectId: "project-one",
-        runtimeId: "runtime-one",
-        revision: "revision-one",
-        status: "failed",
-        entryUrl: null,
-      },
-    })
+  fetcher = vi.fn(async (url: string) =>
+    Response.json(
+      url.endsWith("/verification")
+        ? emptyVerification
+        : {
+            operationId: "operation-one",
+            available: true,
+            reason: null,
+            descriptor: {
+              kind: "project",
+              projectId: "project-one",
+              runtimeId: "runtime-one",
+              revision: "revision-one",
+              status: "failed",
+              entryUrl: null,
+            },
+          }
+    )
   );
   vi.stubGlobal("fetch", fetcher);
   container = document.createElement("div");
@@ -63,8 +91,22 @@ describe("both project artifact consumers", () => {
   it.each(["studio", "session-app"])(
     "%s follows the server's current source despite a stale session projection",
     async consumer => {
-      fetcher.mockImplementation(async (_url: string, init?: RequestInit) =>
-        Response.json(
+      let verificationView: object = emptyVerification;
+      fetcher.mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url.endsWith("/verification"))
+          return Response.json(verificationView);
+        if (url.endsWith("/verify")) {
+          verificationView = {
+            operationId: "verification-op",
+            operationStatus: "queued",
+            snapshot: null,
+          };
+          return Response.json({
+            operationId: "verification-op",
+            status: "queued",
+          });
+        }
+        return Response.json(
           init?.method === "POST"
             ? {
                 projectId: "project-one",
@@ -87,8 +129,8 @@ describe("both project artifact consumers", () => {
                   status: "ready",
                 },
               }
-        )
-      );
+        );
+      });
       await act(async () =>
         root.render(
           consumer === "studio" ? (
@@ -121,23 +163,46 @@ describe("both project artifact consumers", () => {
       expect(
         fetcher.mock.calls.filter(([, init]) => init?.method === "POST")
       ).toHaveLength(1);
+      const checkButton = container.querySelector<HTMLButtonElement>(
+        '[data-testid="project-verification-start"]'
+      )!;
+      expect(checkButton.disabled).toBe(false);
+      await act(async () => checkButton.click());
+      const verificationCalls = fetcher.mock.calls.filter(([url]) =>
+        url.endsWith("/verify")
+      );
+      expect(verificationCalls).toHaveLength(1);
+      expect(verificationCalls[0][0]).toBe(
+        "/api/sliderule/project-operations/operation-one/verify"
+      );
+      expect(JSON.parse(verificationCalls[0][1].body).expectedRevision).toBe(
+        "revision-two"
+      );
+      expect(
+        container.querySelector('[data-testid="project-verification-status"]')
+          ?.textContent
+      ).toBe("已排队");
     }
   );
 
   it("an app reference without an explicit current-session policy stays pinned to its saved version", async () => {
-    fetcher.mockResolvedValue(
-      Response.json({
-        operationId: "operation-one",
-        available: true,
-        reason: null,
-        descriptor: {
-          kind: "project",
-          projectId: "project-one",
-          runtimeId: "runtime-one",
-          revision: "revision-two",
-          status: "ready",
-        },
-      })
+    fetcher.mockImplementation(async (url: string) =>
+      Response.json(
+        url.endsWith("/verification")
+          ? emptyVerification
+          : {
+              operationId: "operation-one",
+              available: true,
+              reason: null,
+              descriptor: {
+                kind: "project",
+                projectId: "project-one",
+                runtimeId: "runtime-one",
+                revision: "revision-two",
+                status: "ready",
+              },
+            }
+      )
     );
     const detail = {
       ...deriveAppCardDetail(stored),
@@ -184,9 +249,7 @@ describe("both project artifact consumers", () => {
       ).not.toBeNull();
       expect(container.querySelector("iframe")).toBeNull();
       expect(container.textContent).not.toContain("HISTORICAL HTML");
-      expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
-        "/api/sliderule/projects/project-one/preview",
-      ]);
+      expectObservationOnly();
       expect(localStorage.length).toBe(0);
     }
   );
@@ -214,9 +277,7 @@ describe("both project artifact consumers", () => {
     );
     expect(container.textContent).not.toContain("HISTORICAL HTML");
     expect(container.querySelector("iframe")).toBeNull();
-    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
-      "/api/sliderule/projects/project-one/preview",
-    ]);
+    expectObservationOnly();
   });
 
   it("project modal type wins even if another caller supplies both project and HTML data", async () => {

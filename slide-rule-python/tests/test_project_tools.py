@@ -74,7 +74,7 @@ def rewrite_session(setup, **changes):
 
 def test_registry_is_closed_and_mutation_contracts_exclude_identity():
     assert {tool["function"]["name"] for tool in PROJECT_TOOLS} == PROJECT_TOOL_NAMES
-    assert PROJECT_WRITE_TOOLS == {"project_create", "project_patch", "project_start", "project_exec"}
+    assert PROJECT_WRITE_TOOLS == {"project_create", "project_patch", "project_start", "project_exec", "project_verify"}
     for tool in PROJECT_TOOLS:
         schema = tool["function"]["parameters"]
         assert schema["additionalProperties"] is False

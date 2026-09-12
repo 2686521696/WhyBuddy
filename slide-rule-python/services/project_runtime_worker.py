@@ -19,12 +19,16 @@ from urllib.parse import urlsplit
 
 from models.project_runtime import ProjectOperation, RuntimeInstance
 from services.project_actor_access import authorize_project_actor
+from services.project_browser_verification import (
+    finish_pending_verifications, recover_project_verifications, run_next_project_verification,
+)
 from services.project_authority import approved_reference
 from services.project_creation import load_authorized_session
 from services.project_preview_config import origin_for_runtime
 from services.project_runtime import REVISION_FILE, _LeaseHeartbeat, _timestamp
 from services.project_source_sync import authorize_source_recovery, finish_pending_source_patches, sync_next_source_patch
 from services.project_store import ProjectConflict, ProjectStore, ProjectStoreUnavailable
+from services.project_verification_store import ProjectVerificationStore
 from services.workspace_provider import WorkspaceHandle, WorkspaceProvider, WorkspaceProviderError
 
 logger = logging.getLogger(__name__)
@@ -67,7 +71,8 @@ class ProjectRuntimeSupervisor:
                  authorizer: Callable[[ProjectStore, ProjectOperation, str], None] = authorize_operation,
                  max_workers: int = 2, poll_interval: float = 2, lease_ttl: float = 120,
                  lifetime_seconds: float = 900, idle_seconds: float = 300,
-                 install_timeout: float = 600, ready_timeout: float = 60, preview_runtime=None):
+                 install_timeout: float = 600, ready_timeout: float = 60, preview_runtime=None,
+                 browser_provider_factory=None):
         if not 1 <= max_workers <= 8 or not 0 < poll_interval <= 30 or not 1 <= lease_ttl <= 3600:
             raise ValueError("invalid_runtime_worker_config")
         if not 1 <= lifetime_seconds <= 3600 or not 1 <= idle_seconds <= lifetime_seconds:
@@ -79,6 +84,8 @@ class ProjectRuntimeSupervisor:
         self.lifetime_seconds, self.idle_seconds = lifetime_seconds, idle_seconds
         self.install_timeout, self.ready_timeout = install_timeout, ready_timeout
         self.preview_runtime = preview_runtime
+        self.browser_provider_factory = browser_provider_factory
+        self.verification_store = ProjectVerificationStore(store)
         self._stop = threading.Event()
         self._wake = threading.Event()
         self._lock = threading.Lock()
@@ -153,18 +160,48 @@ class ProjectRuntimeSupervisor:
                      approval_ref: str, idempotency_key: str, changes: list[dict]) -> ProjectOperation:
         if not self.running:
             raise ProjectStoreUnavailable("project_worker_unavailable")
-        parent = self.store.get_operation(runtime_operation_id, owner_id=owner_id)
-        # Recheck the live plan using the current source. The enqueue CAS checks
-        # the requested base, and may return an already completed identical call.
-        project = self.store.get_project(parent.projectId, owner_id=owner_id)
-        candidate = parent.model_copy(update={"runtime": None, "expectedRevision": project.currentRevision,
-                                               "approvalRef": approval_ref})
-        self.authorizer(self.store, candidate, owner_id)
-        operation = self.store.enqueue_runtime_patch(runtime_operation_id, owner_id=owner_id,
-            expected_revision=expected_revision, approval_ref=approval_ref,
-            idempotency_key=idempotency_key, changes=changes)
-        self._wake.set()
-        return operation
+        for attempt in range(3):
+            parent = self.store.get_operation(runtime_operation_id, owner_id=owner_id)
+            # Recheck the live plan using the current source. The enqueue CAS
+            # checks the requested base and may return an identical saved call.
+            project = self.store.get_project(parent.projectId, owner_id=owner_id)
+            candidate = parent.model_copy(update={"runtime": None, "expectedRevision": project.currentRevision,
+                                                   "approvalRef": approval_ref})
+            self.authorizer(self.store, candidate, owner_id)
+            try:
+                operation = self.store.enqueue_runtime_patch(runtime_operation_id, owner_id=owner_id,
+                    expected_revision=expected_revision, approval_ref=approval_ref,
+                    idempotency_key=idempotency_key, changes=changes)
+            except ProjectConflict as exc:
+                # The lease heartbeat can invalidate a healthy admission CAS.
+                # Only confirmed zero-row writes may retry; an unknown SQL
+                # reply may already own a child and must reach the caller.
+                if str(exc) != "project_runtime_patch_changed" or attempt == 2:
+                    raise
+                continue
+            self._wake.set()
+            return operation
+
+    def submit_verification(self, runtime_operation_id: str, *, owner_id: str, expected_revision: str,
+                            approval_ref: str, idempotency_key: str) -> ProjectOperation:
+        if not self.running:
+            raise ProjectStoreUnavailable("project_worker_unavailable")
+        for attempt in range(3):
+            parent = self.store.get_operation(runtime_operation_id, owner_id=owner_id)
+            candidate = parent.model_copy(update={"approvalRef": approval_ref})
+            self.authorizer(self.store, candidate, owner_id)
+            try:
+                operation = self.store.enqueue_runtime_verification(runtime_operation_id,
+                    owner_id=owner_id, expected_revision=expected_revision, approval_ref=approval_ref,
+                    idempotency_key=idempotency_key, suite_version="react-vite-counter@1")
+            except ProjectConflict as exc:
+                # A confirmed zero-row admission may race the healthy heartbeat.
+                # Read and authorize everything again, never replay unknown IO.
+                if str(exc) != "project_runtime_patch_changed" or attempt == 2:
+                    raise
+                continue
+            self._wake.set()
+            return operation
 
     def _scan_loop(self) -> None:
         while not self._stop.is_set():
@@ -375,6 +412,8 @@ class _RuntimeTask:
                 raise WorkspaceProviderError("runtime_dispatch_uncertain")
             self.provider.connect(self.handle)
             self.heartbeat.handle = self.handle
+            if self.original.kind == "runtime.start":
+                recover_project_verifications(self)
             if self.result.get("sourceSync"):
                 self.save("syncing")
                 sync_next_source_patch(self, recovering=True)
@@ -458,6 +497,8 @@ class _RuntimeTask:
                 next_health = time.time() + min(30, self.supervisor.lease_ttl / 3)
             if self.supervisor.preview_runtime is not None:
                 self.supervisor.preview_runtime.ensure(self)
+            if run_next_project_verification(self):
+                next_health = 0
             self.sleep()
 
     def run_command(self):
@@ -537,6 +578,7 @@ class _RuntimeTask:
             self.heartbeat.check()
             if self.original.kind == "runtime.start":
                 finish_pending_source_patches(self, cancelled=status == "cancelled", error=code or "project_runtime_stopped")
+                finish_pending_verifications(self, cancelled=status == "cancelled", error=code or "project_runtime_stopped")
             if self.supervisor.preview_runtime is not None:
                 self.supervisor.preview_runtime.revoke(self)
             if self.handle is not None:

@@ -875,6 +875,268 @@
       "title": "RuntimeView",
       "type": "object"
     },
+    "VerificationArtifactRef": {
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": {
+          "title": "Artifactid",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "mediaType": {
+          "const": "image/png",
+          "default": "image/png",
+          "title": "Mediatype",
+          "type": "string"
+        },
+        "sizeBytes": {
+          "title": "Sizebytes",
+          "type": "integer"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifactId",
+        "sha256",
+        "sizeBytes",
+        "label"
+      ],
+      "title": "VerificationArtifactRef",
+      "type": "object"
+    },
+    "VerificationAssertion": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "expected": {
+          "anyOf": [
+            {
+              "maxLength": 1200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected"
+        },
+        "actual": {
+          "anyOf": [
+            {
+              "maxLength": 1200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Actual"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ],
+      "title": "VerificationAssertion",
+      "type": "object"
+    },
+    "VerificationRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "verificationId": {
+          "title": "Verificationid",
+          "type": "string"
+        },
+        "operationId": {
+          "title": "Operationid",
+          "type": "string"
+        },
+        "runtimeOperationId": {
+          "title": "Runtimeoperationid",
+          "type": "string"
+        },
+        "projectId": {
+          "title": "Projectid",
+          "type": "string"
+        },
+        "revision": {
+          "title": "Revision",
+          "type": "string"
+        },
+        "treeHash": {
+          "title": "Treehash",
+          "type": "string"
+        },
+        "runtimeId": {
+          "title": "Runtimeid",
+          "type": "string"
+        },
+        "specRevision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Specrevision"
+        },
+        "planRef": {
+          "title": "Planref",
+          "type": "string"
+        },
+        "suiteVersion": {
+          "title": "Suiteversion",
+          "type": "string"
+        },
+        "runnerVersion": {
+          "default": "whybuddy-browser-v1:pw1.61.1",
+          "title": "Runnerversion",
+          "type": "string"
+        },
+        "status": {
+          "default": "running",
+          "enum": [
+            "running",
+            "passed",
+            "failed",
+            "blocked",
+            "cancelled"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "assertions": {
+          "items": {
+            "$ref": "#/$defs/VerificationAssertion"
+          },
+          "title": "Assertions",
+          "type": "array"
+        },
+        "artifactRefs": {
+          "items": {
+            "$ref": "#/$defs/VerificationArtifactRef"
+          },
+          "title": "Artifactrefs",
+          "type": "array"
+        },
+        "createdAt": {
+          "title": "Createdat",
+          "type": "string"
+        },
+        "startedAt": {
+          "title": "Startedat",
+          "type": "string"
+        },
+        "completedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completedat"
+        },
+        "errorCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Errorcode"
+        }
+      },
+      "required": [
+        "verificationId",
+        "operationId",
+        "runtimeOperationId",
+        "projectId",
+        "revision",
+        "treeHash",
+        "runtimeId",
+        "specRevision",
+        "planRef",
+        "suiteVersion",
+        "createdAt",
+        "startedAt"
+      ],
+      "title": "VerificationRecord",
+      "type": "object"
+    },
+    "VerificationSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "verification": {
+          "$ref": "#/$defs/VerificationRecord"
+        },
+        "effectiveStatus": {
+          "enum": [
+            "running",
+            "passed",
+            "failed",
+            "blocked",
+            "cancelled",
+            "stale"
+          ],
+          "title": "Effectivestatus",
+          "type": "string"
+        },
+        "deliveryEligible": {
+          "const": false,
+          "default": false,
+          "title": "Deliveryeligible",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "verification",
+        "effectiveStatus"
+      ],
+      "title": "VerificationSnapshot",
+      "type": "object"
+    },
     "WorkspaceLease": {
       "additionalProperties": false,
       "properties": {

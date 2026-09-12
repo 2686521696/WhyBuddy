@@ -21,6 +21,14 @@ def assert_session_authorized(state: V5SessionState, *, owner_id: str, approval_
         raise PermissionError("project_plan_approval_required")
 
 
+def verification_with_current_authority(snapshot, authority):
+    """Historic evidence cannot carry a revoked or replaced plan's authority."""
+    if snapshot is not None and (not plan_execution_authorized(authority)
+            or snapshot.verification.planRef != approved_reference(authority)):
+        return snapshot.model_copy(update={"effectiveStatus": "stale"})
+    return snapshot
+
+
 def has_generated_application(state: V5SessionState) -> bool:
     pages = state.specFirstPages or {}
     if pages.get("pages") or state.modelVersions or state.currentModelVersionId:

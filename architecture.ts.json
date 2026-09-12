@@ -444,6 +444,13 @@
         "shared-contracts"
       ]
     },
+    "server-project-verification": {
+      "why": "Trusted fixed-suite browser CLI uploaded by the Python provider to an independent E2B sandbox. Public Playwright calls collect actual evidence; SQL authority and delivery decisions remain in Python.",
+      "paths": [
+        "server/project-verification"
+      ],
+      "mayDependOn": []
+    },
     "server-project-preview": {
       "why": "Dedicated private-preview transport process: HTTP/WebSocket relay and sandbox tunnel agent. Python owns project access; this component has no imports of the main app, its identity store or browser code.",
       "paths": [
@@ -486,6 +493,7 @@
       "server/project-preview/main",
       "server/project-preview/agent-main",
       "server/project-preview/vitest.config",
+      "server/project-verification/browser-runner",
       "scripts/a2a-api-smoke-python-only-105",
       "scripts/agent-sandbox-executor-browser-smoke",
       "scripts/agent-sandbox-executor-skill-smoke",
@@ -551,6 +559,7 @@
       "scripts/ui-redesign-ia-progress"
     ],
     "reasons": {
+      "server/project-verification/browser-runner": "services.project_browser_provider uploads this CLI to an independent trusted sandbox and executes Node; cross-language invocation is exercised by provider and product browser smoke tests.",
       "scripts/project-product-browser-smoke": "Python scripts/project-product-smoke.py launches this real-browser CLI; the cross-language call is outside TypeScript imports.",
       "scripts/project-preview-csp": "Root vite.config.ts imports this build configuration provider; root config files are outside scanned package directories. project-preview-csp.test.mjs exercises the actual Vite serve transform and production HTML build so removing that call fails."
     }

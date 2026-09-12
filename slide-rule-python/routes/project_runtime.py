@@ -9,7 +9,7 @@ from __future__ import annotations
 import time
 from contextlib import contextmanager
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from config.settings import settings
@@ -18,6 +18,7 @@ from models.project_runtime import ProjectOperationSnapshot, RuntimeEventPage
 from services.project_runtime_worker import approved_reference as _approved_reference
 from services.project_access import project_access_enabled
 from services.project_creation import create_session_project, load_authorized_session
+from services.project_authority import verification_with_current_authority
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStoreUnavailable, get_project_store
 
 
@@ -35,6 +36,12 @@ class StartRuntimeRequest(BaseModel):
 class CreateProjectRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     approvalRef: str = Field(min_length=1, max_length=512)
+
+
+class VerifyProjectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    expectedRevision: str = Field(min_length=1, max_length=256)
+    idempotencyKey: str = Field(min_length=1, max_length=256, pattern=r"\S")
 
 
 def _internal_gate(viewer) -> None:
@@ -193,3 +200,80 @@ def get_project_runtime_lease(project_id: str, viewer: CurrentUser):
         return {"lease": ({"workspaceId": lease.workspaceId, "projectId": lease.projectId,
             "generation": lease.generation, "expiresAt": lease.expiresAt,
             "mountedRevision": lease.mountedRevision} if lease else None)}
+
+
+def _verification_service(request):
+    supervisor = getattr(request.app.state, "project_runtime_supervisor", None)
+    if supervisor is None:
+        raise ProjectStoreUnavailable("project_worker_unavailable")
+    return supervisor
+
+
+@router.post("/project-operations/{operation_id}/verify", status_code=202)
+def verify_project_runtime(operation_id: str, body: VerifyProjectRequest, request: Request, viewer: CurrentUser):
+    with _store_errors():
+        store, owner_id = get_project_store(), str(viewer.id)
+        operation = store.get_operation(operation_id, owner_id=owner_id)
+        authority = load_authorized_session(operation.sessionId, owner_id=owner_id, approval_ref=None)
+        _internal_gate(viewer)
+        child = _verification_service(request).submit_verification(operation_id, owner_id=owner_id,
+            expected_revision=body.expectedRevision, approval_ref=_approved_reference(authority),
+            idempotency_key=body.idempotencyKey)
+        return {"operationId": child.operationId, "status": child.status}
+
+
+@router.get("/projects/{project_id}/verification")
+def latest_project_verification(project_id: str, request: Request, response: Response, viewer: CurrentUser):
+    response.headers["Cache-Control"] = "no-store"
+    with _store_errors():
+        store, owner_id = get_project_store(), str(viewer.id)
+        project = store.get_project(project_id, owner_id=owner_id)
+        authority = load_authorized_session(project.sessionId, owner_id=owner_id, approval_ref=None)
+        _internal_gate(viewer)
+        records = _verification_service(request).verification_store
+        newest, cursor = None, ""
+        while True:
+            page = store.list_project_operations(project_id, owner_id=owner_id, after_id=cursor, limit=100)
+            for item in page:
+                if item.kind == "runtime.verify" and (newest is None or
+                        (item.createdAt, item.operationId) > (newest.createdAt, newest.operationId)):
+                    newest = item
+            if len(page) < 100:
+                break
+            cursor = page[-1].operationId
+        snapshot = verification_with_current_authority(records.for_operation(newest.operationId,
+            owner_id=owner_id), authority) if newest else None
+        return {"operationId": newest.operationId if newest else None,
+            "operationStatus": newest.status if newest else None,
+            "snapshot": snapshot.model_dump(mode="json") if snapshot else None}
+
+
+@router.get("/project-verifications/{verification_id}")
+def read_project_verification(verification_id: str, request: Request, response: Response, viewer: CurrentUser):
+    response.headers["Cache-Control"] = "no-store"
+    with _store_errors():
+        store, owner_id = get_project_store(), str(viewer.id)
+        records = _verification_service(request).verification_store
+        record = records.get(verification_id, owner_id=owner_id).verification
+        child = store.get_operation(record.operationId, owner_id=owner_id)
+        authority = load_authorized_session(child.sessionId, owner_id=owner_id, approval_ref=None)
+        _internal_gate(viewer)
+        snapshot = verification_with_current_authority(records.for_operation(child.operationId, owner_id=owner_id), authority)
+        if snapshot is None:
+            raise ProjectNotFound("project_verification_not_found")
+        return snapshot.model_dump(mode="json")
+
+
+@router.get("/project-verifications/{verification_id}/artifacts/{artifact_id}")
+def read_project_verification_artifact(verification_id: str, artifact_id: str, request: Request, viewer: CurrentUser):
+    with _store_errors():
+        store, owner_id = get_project_store(), str(viewer.id)
+        records = _verification_service(request).verification_store
+        record = records.get(verification_id, owner_id=owner_id).verification
+        child = store.get_operation(record.operationId, owner_id=owner_id)
+        load_authorized_session(child.sessionId, owner_id=owner_id, approval_ref=None)
+        _internal_gate(viewer)
+        data = records.read_artifact(
+            verification_id, artifact_id, owner_id=owner_id)
+        return Response(content=data, media_type="image/png", headers={"Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff", "Content-Disposition": 'inline; filename="page-check.png"'})
