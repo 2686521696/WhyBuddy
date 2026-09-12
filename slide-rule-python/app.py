@@ -404,22 +404,10 @@ async def lifespan(app: FastAPI):
             app.state.control_run_service = ControlRunService(control_store, project_store,
                 app.state.project_runtime_supervisor)
             await app.state.control_run_service.start()
-        else:
-            # Keep a read/cancel-only control facade during rollout rollback.
-            # A zero-worker scanner never claims new runs, but existing durable
-            # records remain observable and explicitly cancellable.
-            project_store = await asyncio.to_thread(get_project_store)
-            control_store = await asyncio.to_thread(ControlRunStore, project_store._q)
-            app.state.control_run_service = ControlRunService(control_store, project_store, None, max_workers=0)
-            await app.state.control_run_service.start()
     except Exception as exc:
         # Existing sessions remain usable when this optional internal worker is
         # unavailable. Start commands report 503; durable reads still work.
         print(f"[startup] project runtime worker unavailable: {type(exc).__name__}")
-        project_store = await asyncio.to_thread(get_project_store)
-        control_store = await asyncio.to_thread(ControlRunStore, project_store._q)
-        app.state.control_run_service = ControlRunService(control_store, project_store, None, max_workers=0)
-        await app.state.control_run_service.start()
     try:
         yield
     finally:
