@@ -2,8 +2,9 @@
 
 The approved plan, isolated account and fixed starting project are fixtures.
 Tool selection, tool arguments, results and follow-up model requests use the
-production control loop unchanged. Command observation is a separate user turn
-after the remote operation settles; the production turn budgets remain intact.
+production control loop unchanged. The default combined-edit smoke separates
+command observation into later user turns; single-turn-check explicitly attempts
+the whole edit/check/result in one turn. Production budgets remain intact.
 No browser, production login or business acceptance is claimed.
 """
 
@@ -12,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import copy
+from contextvars import ContextVar
 import hashlib
 import importlib.util
 import json
@@ -42,6 +44,133 @@ def write_report(directory, report, name="report.json"):
     temporary = directory / (name + ".tmp")
     temporary.write_text(redact(json.dumps(report, ensure_ascii=False, indent=2)), encoding="utf-8")
     temporary.replace(destination)
+
+
+def wire_request_metrics(payload):
+    """Measure actual JSON payload bytes; do not infer tokens from characters.
+
+    HTTPX uses this compact UTF-8 JSON representation for its json= argument.
+    Counts contain no message text or credentials, and exclude HTTP headers.
+    Per-role message arrays are independent measurements, not additive slices
+    of messagesBytes because each array contributes brackets and separators.
+    """
+    def size(value):
+        return len(json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8"))
+
+    messages, tools = payload.get("messages") or [], payload.get("tools") or []
+    roles = sorted({str(message.get("role") or "unknown") for message in messages})
+    parameters = [{"tool": tool["function"]["name"],
+        "schemaBytes": size(tool["function"].get("parameters", {})),
+        "definitionBytes": size(tool)} for tool in tools if isinstance(tool.get("function"), dict)]
+    return {"serializedBodyBytes": size(payload), "messageCount": len(messages),
+        "messagesBytes": size(messages), "messagesByRole": {
+            role: {"count": sum(message.get("role") == role for message in messages),
+                   "bytes": size([message for message in messages if message.get("role") == role])}
+            for role in roles},
+        "toolCount": len(tools), "toolDefinitionsBytes": size(tools), "toolSchemas": parameters,
+        "maxOutputTokens": payload.get("max_tokens"), "toolChoice": payload.get("tool_choice"),
+        "measurement": "compact UTF-8 JSON bytes excluding HTTP headers; not estimated tokens"}
+
+
+def usage_metrics(samples):
+    """Keep absent provider usage unknown, including failed/retried calls."""
+    completed = [sample for sample in samples if sample.get("status") == "completed"]
+    def measured(key):
+        known, reported = [], 0
+        for sample in samples:
+            # A provider can report billed usage and then return content_filter
+            # with no usable result. That usage is still measured spend.
+            responses = sample.get("providerResponses")
+            usages = [response.get("usage") for response in responses] if responses else [sample.get("usage")]
+            values = [(usage or {}).get(key) for usage in usages]
+            present = [value for value in values if type(value) is int and value >= 0]
+            known.extend(present)
+            reported += int(len(present) == len(values))
+        return {"knownSum": sum(known), "reportedSamples": reported,
+                "unreportedSamples": len(samples) - reported}
+
+    return {"sampleCount": len(samples), "completedSamples": len(completed),
+        "promptTokens": measured("prompt_tokens"), "completionTokens": measured("completion_tokens"),
+        "totalTokens": measured("total_tokens"),
+        "wireRequestCount": sum(len(sample.get("wireRequests", [])) for sample in samples),
+        "scope": "provider-reported usage only; missing or failed-attempt usage is not zero cost"}
+
+
+def control_budget_metrics(control_module):
+    return {"legacyDefaults": {"profile": "control-v1", "maxRounds": control_module.MAX_TOOL_ROUNDS,
+        "maxTokens": control_module.MAX_CHEAP_TOKENS, "maxWallSeconds": control_module.MAX_WALL_SECONDS},
+        "projectProfile": control_module.PROJECT_BUDGET.to_wire(),
+        "source": "current production profiles; each turn's persistedBudget.budgetPolicy is the actual pinned policy"}
+
+
+def attach_transport_observer(control_client, get_sample):
+    """Observe the real payload/response seams and return their restore action."""
+    original_payload = control_client._control_chat_payload
+    original_extract = control_client._extract_control
+
+    def observe_payload(*args, **kwargs):
+        payload = original_payload(*args, **kwargs)
+        sample = get_sample()
+        if sample is not None:
+            sample["wireRequests"].append(wire_request_metrics(payload))
+        return payload
+
+    def observe_extract(data):
+        result = original_extract(data)
+        sample = get_sample()
+        if sample is not None:
+            sample.setdefault("providerResponses", []).append({
+                "finishReasons": [choice.get("finish_reason") for choice in data.get("choices") or []],
+                "normalizedContentChars": len(result[0]), "normalizedToolCallCount": len(result[1]),
+                "usage": result[2], "returnedModel": data.get("model")})
+        return result
+
+    control_client._control_chat_payload = observe_payload
+    control_client._extract_control = observe_extract
+
+    def restore():
+        control_client._control_chat_payload = original_payload
+        control_client._extract_control = original_extract
+
+    return restore
+
+
+async def observe_model_result(model, sample, messages, **kwargs):
+    """Record the real result, including rejection before response extraction.
+
+    content_filter is rejected by the production client before _extract_control.
+    Its bounded exception receipt supplies the missing observation. Empty-result
+    failures already passed that seam and must not be counted a second time.
+    """
+    try:
+        result = await model(messages, **kwargs)
+        sample.update(status="completed", returnedModel=result.model, usage=result.usage,
+            latencyMs=result.latency_ms, finishReason=result.finish_reason,
+            selectedTools=copy.deepcopy(result.tool_calls))
+        return result
+    except BaseException as exc:
+        sample.update(status="failed", error=redact(str(exc) or type(exc).__name__)[:700])
+        usage, finish = getattr(exc, "usage", None), getattr(exc, "finish_reason", None)
+        if isinstance(usage, dict):
+            sample["usage"] = copy.deepcopy(usage)
+        if finish is not None:
+            sample["finishReason"] = finish
+        if (usage is not None or finish is not None) and not sample.get("providerResponses"):
+            sample.setdefault("providerResponses", []).append({
+                "finishReasons": [finish], "usage": copy.deepcopy(usage),
+                "normalizedContentChars": None, "normalizedToolCallCount": None,
+                "observation": "client_termination_before_extraction", "responseRejected": True})
+        raise
+
+
+def turn_diagnostics(record, events):
+    return {
+        "stopDetails": [{key: e[key] for key in ("stopReason", "limit", "used", "providerFinishReason") if key in e}
+                        for e in events if e.get("stopReason")],
+        "persistedBudget": {key: value for key, value in (record.get("checkpoint") or {}).items()
+                            if key in {"round", "cheapTokens", "retrySpent", "startedAt", "retryStartedAt",
+                                       "budgetPolicy", "providerFailure"}},
+    }
 
 
 def correlate(record, events):
@@ -136,6 +265,7 @@ async def worker(directory, timeout, scenario):
     from services.project_store import get_project_store, reset_project_store
     from services.session_blob_store import SqlSessionBlobStore
     from sliderule_llm.config import get_llm_config
+    from sliderule_llm import control_client
 
     report = json.loads((directory / "report.json").read_text(encoding="utf-8"))
     sessions = SqlSessionBlobStore(os.environ["APP_STORE_DATABASE_URL"])
@@ -164,28 +294,27 @@ async def worker(directory, timeout, scenario):
         "wireApi": "chat_completions", "providerHost": urlsplit(config.base_url).hostname,
         "selection": "production auto tool choice; no model or budget overrides"}
     report["modelSamples"] = []
+    report["productionBudgets"] = control_budget_metrics(rehearsal_control)
     original_model = rehearsal_control.call_control_llm
+    current_sample = ContextVar("project_model_smoke_sample", default=None)
+    restore_transport = attach_transport_observer(control_client, current_sample.get)
 
     async def observe_model(messages, **kwargs):
         # Observe the real client result without replacing input, output or limits.
-        sample = {"stage": report.get("stage"), "offeredTools": [
+        sample = {"stage": report.get("stage"), "wireRequests": [], "offeredTools": [
             tool["function"]["name"] for tool in kwargs.get("tools") or []],
             "receivedToolResults": [
                 {"toolCallId": message.get("tool_call_id"), "content": message.get("content")}
                 for message in messages if message.get("role") == "tool"]}
         report["modelSamples"].append(sample)
+        sample_token = current_sample.set(sample)
         started = time.monotonic()
         try:
-            result = await original_model(messages, **kwargs)
-            sample.update(status="completed", returnedModel=result.model, usage=result.usage,
-                latencyMs=result.latency_ms, finishReason=result.finish_reason,
-                selectedTools=copy.deepcopy(result.tool_calls))
-            return result
-        except BaseException as exc:
-            sample.update(status="failed", error=redact(str(exc) or type(exc).__name__)[:700])
-            raise
+            return await observe_model_result(original_model, sample, messages, **kwargs)
         finally:
+            current_sample.reset(sample_token)
             sample["elapsedSeconds"] = round(time.monotonic() - started, 2)
+            report["usageSummary"] = usage_metrics(report["modelSamples"])
             write_report(directory, report)
 
     rehearsal_control.call_control_llm = observe_model
@@ -216,6 +345,23 @@ async def worker(directory, timeout, scenario):
     deadline = time.monotonic() + timeout - 60
     await control.start()
     supervisor.start()
+    resource_observation_done = asyncio.Event()
+
+    async def observe_resources():
+        while not resource_observation_done.is_set():
+            try:
+                lease = await asyncio.to_thread(store.get_lease, project_id, owner_id=owner_id)
+                if lease and lease.sandboxId and lease.sandboxId not in report["sandboxIds"]:
+                    report["sandboxIds"].append(lease.sandboxId)
+                    write_report(directory, report)
+            except Exception as exc:
+                report["resourceObservationError"] = type(exc).__name__
+            try:
+                await asyncio.wait_for(resource_observation_done.wait(), timeout=1)
+            except asyncio.TimeoutError:
+                pass
+
+    resource_observer = asyncio.create_task(observe_resources())
 
     def remaining():
         return max(0.01, deadline - time.monotonic())
@@ -242,6 +388,8 @@ async def worker(directory, timeout, scenario):
             record = control_store.get(run_id, owner_id)
             stage = {"name": name, "runId": run_id, "request": payload,
                 "status": record["status"], "stopReasons": [e["stopReason"] for e in events if e.get("stopReason")],
+                **turn_diagnostics(record, events),
+                "usage": usage_metrics([sample for sample in report["modelSamples"] if sample["stage"] == name]),
                 "eventTypes": [e.get("type") for e in events],
                 "toolResults": [e for e in events if e.get("type") == "control_tool_result"]}
             report["turns"].append(stage)
@@ -258,7 +406,13 @@ async def worker(directory, timeout, scenario):
             return stage["correlatedTools"]
 
         try:
-            if scenario == "combined-edit":
+            if scenario == "single-turn-check":
+                edit = await turn("edit_check_observe", f"Carry out the approved change in the existing project: "
+                    f"read src/main.tsx, change exactly the heading New Project to {expected_title}, "
+                    "and preserve every other byte and file. Save a new source revision, then run the check command "
+                    "in E2B for that revision. Inspect the actual operation status and logs and report the result "
+                    "when you have evidence. Do not publish or claim browser/business verification.")
+            elif scenario == "combined-edit":
                 edit = await turn("edit", f"Execute only the source-edit step of the approved plan now. "
                     f"Read src/main.tsx from the existing saved project, then change exactly the heading text "
                     f"New Project to {expected_title}. Keep every other byte and every other file unchanged. "
@@ -295,7 +449,7 @@ async def worker(directory, timeout, scenario):
             report["editedRevision"] = revised
             check("live_model_reads_and_saves_exact_edit_with_immutable_parent")
 
-            executed = await turn("execute", "The source-edit step is complete. Queue exactly one E2B check "
+            executed = edit if scenario == "single-turn-check" else await turn("execute", "The source-edit step is complete. Queue exactly one E2B check "
                 f"command for revision {revised} with approvalRef {approved_reference(state)}. Return the operation ID "
                 "and stop once queued; I will ask you to inspect its result when the background operation settles. "
                 "Do not modify files or start a preview.")
@@ -326,12 +480,17 @@ async def worker(directory, timeout, scenario):
                 "exitCode": (operation.result or {}).get("exitCode"),
                 "errorCode": (operation.result or {}).get("errorCode")}
             write_report(directory, report)
-            observed = await turn("observe_status", f"The background wait for operation {operation_id} has ended. "
-                "Read this operation's durable status and report its actual result. This step only reads status; "
-                "do not launch operations, read logs or edit files. Do not claim browser or business acceptance.")
-            observed += await turn("observe_logs", f"Read the command logs of operation {operation_id} and report "
-                "what command actually ran. This step only reads logs; do not launch operations, read status or edit files. "
-                "If needed follow the returned log cursor until you find the typecheck command.")
+            if scenario == "single-turn-check":
+                observed = edit
+                if len(report["turns"]) != 1:
+                    raise RuntimeError("single_turn_scenario_added_user_turns")
+            else:
+                observed = await turn("observe_status", f"The background wait for operation {operation_id} has ended. "
+                    "Read this operation's durable status and report its actual result. This step only reads status; "
+                    "do not launch operations, read logs or edit files. Do not claim browser or business acceptance.")
+                observed += await turn("observe_logs", f"Read the command logs of operation {operation_id} and report "
+                    "what command actually ran. This step only reads logs; do not launch operations, read status or edit files. "
+                    "If needed follow the returned log cursor until you find the typecheck command.")
             require_verified_command(operation, revised, observed)
             all_operations = store.list_project_operations(project_id, owner_id=owner_id, limit=100)
             if len(all_operations) != 1 or all_operations[0].operationId != operation_id:
@@ -354,6 +513,26 @@ async def worker(directory, timeout, scenario):
                 await asyncio.to_thread(supervisor.shutdown, 35)
             except Exception as exc:
                 report.update(status="failed", shutdownError=type(exc).__name__)
+            resource_observation_done.set()
+            await resource_observer
+            restore_transport()
+            rehearsal_control.call_control_llm = original_model
+            # Retain partial real work when the model stops before the turn
+            # succeeds (for example a provider content_filter after exec).
+            try:
+                final_project = store.get_project(project_id, owner_id=owner_id)
+                final_files = store.read_files(project_id, owner_id=owner_id)
+                report["finalProject"] = {"revision": final_project.currentRevision,
+                    "changedPaths": sorted(path for path in files.keys() | final_files.keys()
+                                           if files.get(path) != final_files.get(path)),
+                    "originalRevisionUnchanged": store.read_files(project_id, initial_revision, owner_id=owner_id) == files}
+                report["finalOperations"] = [{"operationId": operation.operationId,
+                    "revision": operation.expectedRevision, "status": operation.status,
+                    "command": operation.input.get("command"), "exitCode": (operation.result or {}).get("exitCode"),
+                    "errorCode": (operation.result or {}).get("errorCode")}
+                    for operation in store.list_project_operations(project_id, owner_id=owner_id, limit=100)]
+            except Exception as exc:
+                report["finalSnapshotError"] = type(exc).__name__
             write_report(directory, report)
             sessions._engine.dispose()
             reset_project_store()
@@ -388,8 +567,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--timeout", type=int, default=600, help="Total worker seconds, followed by at most 90 seconds of cleanup")
     parser.add_argument("--without-key", action="store_true", help="Test the blocked preflight without network calls")
-    parser.add_argument("--scenario", choices=("combined-edit", "guided-tools"), default="combined-edit",
-        help="Keep the combined edit as the default acceptance; guided-tools explicitly supplies separate user steps")
+    parser.add_argument("--scenario", choices=("combined-edit", "guided-tools", "single-turn-check"), default="combined-edit",
+        help="Combined edit remains the default; guided-tools supplies steps; single-turn-check allows one user request only")
     parser.add_argument("--worker", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--cleanup", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()

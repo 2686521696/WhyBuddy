@@ -1,11 +1,14 @@
 """The live smoke must reject model prose, fabricated events and stale exits.
 
-These tests exercise only the evidence predicates. They make no network calls;
-the separate smoke invokes the configured production model and E2B provider.
+These tests exercise evidence predicates and the actual client observation path
+with an HTTP fixture. They make no external network calls; the separate smoke
+invokes the configured production model and E2B provider.
 """
 
 import importlib.util
 import json
+import copy
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,6 +19,148 @@ _PATH = Path(__file__).resolve().parents[2] / "scripts" / "project-model-smoke.p
 _SPEC = importlib.util.spec_from_file_location("project_model_smoke", _PATH)
 smoke = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(smoke)
+
+
+def test_wire_metrics_match_actual_httpx_utf8_request_without_changing_or_exposing_input():
+    import httpx
+
+    payload = {"model": "fixture", "messages": [
+        {"role": "system", "content": "中文系统提示"},
+        {"role": "user", "content": "private-user-content"},
+        {"role": "tool", "tool_call_id": "call-1", "content": "private-tool-content"}],
+        "tools": [{"type": "function", "function": {"name": "project_read",
+            "parameters": {"type": "object", "properties": {"path": {"type": "string"}}}}}],
+        "max_tokens": 2048, "tool_choice": "auto"}
+    original = copy.deepcopy(payload)
+    metrics = smoke.wire_request_metrics(payload)
+    request = httpx.Request("POST", "https://fixture.invalid", json=payload,
+                            headers={"authorization": "Bearer private-management-key"})
+    assert metrics["serializedBodyBytes"] == len(request.content)
+    assert metrics["messagesByRole"]["system"]["count"] == 1
+    assert metrics["messagesByRole"]["tool"]["count"] == 1
+    assert metrics["toolCount"] == 1
+    assert metrics["toolSchemas"][0]["tool"] == "project_read"
+    assert metrics["toolSchemas"][0]["schemaBytes"] > 0
+    assert metrics["maxOutputTokens"] == 2048
+    assert metrics["toolChoice"] == "auto"
+    assert payload == original
+    serialized = json.dumps(metrics)
+    for private in ("中文系统提示", "private-user-content", "private-tool-content", "private-management-key"):
+        assert private not in serialized
+    changed = copy.deepcopy(payload)
+    changed["messages"][0]["content"] += "多"
+    changed_metrics = smoke.wire_request_metrics(changed)
+    assert changed_metrics["serializedBodyBytes"] - metrics["serializedBodyBytes"] == len("多".encode("utf-8"))
+    assert changed_metrics["toolDefinitionsBytes"] == metrics["toolDefinitionsBytes"]
+
+
+def test_usage_metrics_keep_missing_and_failed_sample_cost_unknown():
+    samples = [
+        {"status": "completed", "usage": {"prompt_tokens": 3000, "completion_tokens": 10, "total_tokens": 3010}, "wireRequests": [{}, {}]},
+        {"status": "completed", "usage": {"completion_tokens": 20}, "wireRequests": [{}]},
+        {"status": "failed", "wireRequests": [{}]},
+    ]
+    result = smoke.usage_metrics(samples)
+    assert result["sampleCount"] == 3
+    assert result["completedSamples"] == 2
+    assert result["wireRequestCount"] == 4
+    assert result["promptTokens"] == {"knownSum": 3000, "reportedSamples": 1, "unreportedSamples": 2}
+    assert result["completionTokens"] == {"knownSum": 30, "reportedSamples": 2, "unreportedSamples": 1}
+    assert result["totalTokens"]["knownSum"] == 3010
+
+
+def test_filtered_provider_usage_is_recorded_without_double_counting_success():
+    samples = [
+        {"status": "completed", "usage": {"total_tokens": 100},
+            "providerResponses": [{"usage": {"total_tokens": 100}}]},
+        {"status": "failed", "providerResponses": [{"finishReasons": ["content_filter"],
+            "usage": {"prompt_tokens": 5709, "completion_tokens": 50, "total_tokens": 5759}}]},
+    ]
+    result = smoke.usage_metrics(samples)
+    assert result["completedSamples"] == 1
+    assert result["totalTokens"] == {"knownSum": 5859, "reportedSamples": 2, "unreportedSamples": 0}
+    assert result["completionTokens"] == {"knownSum": 50, "reportedSamples": 1, "unreportedSamples": 1}
+
+
+def test_budget_report_reads_current_production_values_without_overriding_them():
+    project = {"profile": "fixture-project", "maxRounds": 15, "maxTokens": 40000, "maxWallSeconds": 120.0}
+    module = SimpleNamespace(MAX_TOOL_ROUNDS=9, MAX_CHEAP_TOKENS=4321, MAX_WALL_SECONDS=17.0,
+        PROJECT_BUDGET=SimpleNamespace(to_wire=lambda: dict(project)))
+    report = smoke.control_budget_metrics(module)
+    assert report["legacyDefaults"] == {"profile": "control-v1", "maxRounds": 9, "maxTokens": 4321, "maxWallSeconds": 17.0}
+    assert report["projectProfile"] == project
+    assert module.MAX_TOOL_ROUNDS == 9 and module.MAX_CHEAP_TOKENS == 4321 and module.MAX_WALL_SECONDS == 17.0
+    report["projectProfile"]["maxTokens"] = 1
+    assert module.PROJECT_BUDGET.to_wire() == project
+
+
+@pytest.mark.parametrize("finish", ["stop", "content_filter", "length"])
+def test_passive_observer_is_connected_to_actual_control_client_request_and_response(monkeypatch, finish):
+    import httpx
+    from sliderule_llm import control_client
+    from services.project_tool_contracts import PROJECT_TOOLS
+
+    observed = {"wireRequests": []}
+    received = []
+    def handle(request):
+        received.append(request)
+        return httpx.Response(200, json={"model": "fixture-model", "usage": {
+            "prompt_tokens": 3000, "completion_tokens": 50, "total_tokens": 3050},
+            "choices": [{"finish_reason": finish,
+                "message": {"content": "fixture response" if finish == "stop" else
+                    "private-filtered-partial-response" if finish == "content_filter" else ""}}]})
+
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(control_client.httpx, "AsyncClient",
+        lambda **kwargs: original_client(transport=httpx.MockTransport(handle), **kwargs))
+    monkeypatch.setattr(control_client, "get_llm_config", lambda: SimpleNamespace(
+        api_key="fixture-key", base_url="https://fixture.invalid/v1", model="fixture-model", timeout_ms=1000))
+    original_payload, original_extract = control_client._control_chat_payload, control_client._extract_control
+    restore = smoke.attach_transport_observer(control_client, lambda: observed)
+    try:
+        call = smoke.observe_model_result(control_client.call_control_llm, observed,
+            [{"role": "user", "content": "Run fixture"}], tools=PROJECT_TOOLS)
+        if finish != "stop":
+            with pytest.raises(control_client.LlmError) as failed:
+                asyncio.run(call)
+            assert observed["status"] == "failed"
+            assert failed.value.finish_reason == finish
+        else:
+            result = asyncio.run(call)
+            assert result.content == "fixture response"
+            assert observed["status"] == "completed"
+        assert len(received) == 1
+        assert observed["wireRequests"][0]["serializedBodyBytes"] == len(received[0].content)
+        assert observed["wireRequests"][0]["toolCount"] == len(PROJECT_TOOLS)
+        assert len(observed["providerResponses"]) == 1
+        response = observed["providerResponses"][0]
+        assert response["finishReasons"] == [finish]
+        assert observed["finishReason"] == finish
+        assert response["usage"]["total_tokens"] == 3050
+        assert response["normalizedContentChars"] == (None if finish == "content_filter" else
+            len("fixture response") if finish == "stop" else 0)
+        assert response["normalizedToolCallCount"] == (None if finish == "content_filter" else 0)
+        assert "private-filtered-partial-response" not in json.dumps(observed)
+        assert smoke.usage_metrics([observed])["totalTokens"] == {
+            "knownSum": 3050, "reportedSamples": 1, "unreportedSamples": 0}
+    finally:
+        restore()
+    assert control_client._control_chat_payload is original_payload
+    assert control_client._extract_control is original_extract
+
+
+def test_turn_diagnostics_retains_authoritative_provider_stop_and_budget_receipt():
+    record = {"checkpoint": {"cheapTokens": 36625, "round": 8,
+        "budgetPolicy": {"profile": "project-v1"}, "messages": ["private source"],
+        "providerFailure": {"finishReason": "content_filter", "reportedTokens": 5759}}}
+    events = [{"type": "control_stopped", "stopReason": "llm_unavailable",
+        "providerFinishReason": "content_filter", "text": "private text"}]
+    result = smoke.turn_diagnostics(record, events)
+    assert result["stopDetails"] == [{"stopReason": "llm_unavailable", "providerFinishReason": "content_filter"}]
+    assert result["persistedBudget"]["providerFailure"] == record["checkpoint"]["providerFailure"]
+    assert result["persistedBudget"]["cheapTokens"] == 36625
+    assert result["persistedBudget"]["budgetPolicy"] == {"profile": "project-v1"}
+    assert "private" not in json.dumps(result)
 
 
 def _fixture():
