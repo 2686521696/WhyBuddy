@@ -29,6 +29,44 @@ const props = {
   ready: true,
 };
 
+function taskEvidence() {
+  const result = evidence();
+  const record = result.snapshot!.verification;
+  record.suiteVersion = "react-vite-tasks@1";
+  record.treeHash = "a".repeat(64);
+  record.assertions = [
+    "setup_admin",
+    "writer_login",
+    "task_create",
+    "task_edit",
+    "task_filter",
+    "task_refresh",
+    "reader_create",
+    "reader_login",
+    "reader_ui_readonly",
+    "reader_api_forbidden",
+    "anonymous_api_forbidden",
+    "no_page_errors",
+    "no_failed_requests",
+  ].map(id => ({ id, status: "passed" }));
+  record.build = {
+    kind: "production",
+    revision: record.revision,
+    treeHash: record.treeHash,
+    lockfileHash: "b".repeat(64),
+    status: "passed",
+    installExitCode: 0,
+    buildExitCode: 0,
+    outputHash: "c".repeat(64),
+    outputFileCount: 3,
+    outputBytes: 4000,
+    serverKind: "tasks-node",
+    startedAt: record.startedAt,
+    completedAt: record.completedAt!,
+  };
+  return result;
+}
+
 function evidence(
   status: "running" | "passed" | "failed" | "blocked" | "cancelled" = "passed",
   effectiveStatus: VerificationSnapshot["effectiveStatus"] = status
@@ -485,4 +523,56 @@ describe("project browser verification consumer", () => {
     expect(fetcher).toHaveBeenCalledTimes(count);
     expect(posts()).toHaveLength(0);
   });
+
+  it("renders real task acceptance and build evidence without claiming global delivery", async () => {
+    view = taskEvidence();
+    await render();
+    expect(status()).toBe("任务应用检查通过");
+    expect(container.textContent).toContain("刷新持久化和只读权限");
+    expect(container.textContent).toContain("只读用户调用写接口被拒绝");
+    expect(container.textContent).toContain("c".repeat(64));
+    expect(container.textContent).toContain("3 个文件 · 4000 字节");
+    expect(container.textContent).toContain("整体交付仍由服务端另行判定");
+  });
+  it("accepts server-owned delivery eligibility only for the bound tasks profile", async () => {
+    view = taskEvidence();
+    view.snapshot!.deliveryEligible = true;
+    view.snapshot!.verification.specRevision = "whybuddy-tasks-acceptance@1";
+    await render();
+    expect(status()).toBe("任务应用检查通过");
+    expect(container.textContent).toContain("当前版本满足任务应用验收范围");
+    view.snapshot!.verification.specRevision = null;
+    await poll();
+    expect(status()).toBe("暂时无法读取检查状态");
+  });
+  it("uses the authoritative task capability before a first verification exists", async () => {
+    preview.descriptor.capabilities = ["verification:react-vite-tasks@1"];
+    await act(async () =>
+      root.render(
+        <SandboxPreviewSurface projectId="project-one" revisionMode="current" />
+      )
+    );
+    expect(container.textContent).toContain("任务应用与权限检查");
+    expect(container.textContent).not.toContain("页面与计数交互检查");
+    expect(start().textContent).toContain("检查任务应用");
+    expect(status()).toBe("尚未检查");
+    expect(posts()).toHaveLength(0);
+  });
+  it.each(["missing-build", "failed-build", "old-build", "partial-task-suite"])(
+    "refuses %s as passed task evidence",
+    async defect => {
+      view = taskEvidence();
+      const record = view.snapshot!.verification;
+      if (defect === "missing-build") record.build = null;
+      if (defect === "failed-build") record.build!.buildExitCode = 1;
+      if (defect === "old-build") record.build!.revision = "old-revision";
+      if (defect === "partial-task-suite")
+        record.assertions = record.assertions!.filter(
+          item => item.id !== "reader_api_forbidden"
+        );
+      await render();
+      expect(status()).toBe("暂时无法读取检查状态");
+      expect(container.textContent).not.toContain("任务应用检查通过");
+    }
+  );
 });

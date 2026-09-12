@@ -20,7 +20,7 @@ from services.project_store import MAX_OPERATION_BYTES, ProjectConflict, Project
 def runtime(tmp_path):
     url = f"sqlite:///{tmp_path / 'runtime-patch.db'}"
     store = ProjectStore.from_url(url)
-    files = {"package.json": "{}", "src/App.tsx": "export const title = 'before';"}
+    files = {"package.json": "{}", "package-lock.json": "{}", "src/App.tsx": "export const title = 'before';"}
     project = store.create_project("s1", owner_id="alice", files=files, template_version="vite-1", plan_ref="plan-1", spec_revision="spec-1")
     parent = store.create_operation(project.projectId, owner_id="alice", kind="runtime.start",
         idempotency_key="start-1", expected_revision=project.currentRevision, approval_ref="plan-1", input={"port": 5173})

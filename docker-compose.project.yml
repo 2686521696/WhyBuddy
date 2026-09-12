@@ -1,0 +1,33 @@
+# Overlay for docker-compose.prod.yml. TLS/DNS are provisioned outside Compose.
+# Python remains the session + execution owner; this adds only a preview transport.
+services:
+  python:
+    environment:
+      NODE_ENV: production
+      WHYBUDDY_PROJECT_ROLLOUT: ${WHYBUDDY_PROJECT_ROLLOUT:-disabled}
+      WHYBUDDY_PROJECT_CLEANUP_ENABLED: "1"
+      WHYBUDDY_PROJECT_ALLOWED_USERS: ${WHYBUDDY_PROJECT_ALLOWED_USERS:-}
+      WHYBUDDY_PROJECT_PREVIEW_AGENT_BUNDLE: /dist/project-preview/agent.cjs
+    restart: unless-stopped
+
+  project-preview:
+    build:
+      context: .
+      dockerfile: server/project-preview/Dockerfile
+    depends_on:
+      python:
+        condition: service_healthy
+    environment:
+      WHYBUDDY_PROJECT_PREVIEW_AUTHORITY_URL: http://python:9700/api/sliderule/internal/project-preview
+      WHYBUDDY_PROJECT_PREVIEW_GATEWAY_KEY: ${WHYBUDDY_PROJECT_PREVIEW_GATEWAY_KEY:?separate gateway key required}
+      WHYBUDDY_PROJECT_WORKBENCH_ORIGIN: ${WHYBUDDY_PROJECT_WORKBENCH_ORIGIN:?HTTPS workbench origin required}
+      WHYBUDDY_PROJECT_PREVIEW_PUBLIC_PROTOCOL: "https:"
+      WHYBUDDY_PROJECT_PREVIEW_PORT: "3002"
+    # TLS reverse proxy on the same host, never mounted under the workbench URL.
+    ports:
+      - "127.0.0.1:3002:3002"
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

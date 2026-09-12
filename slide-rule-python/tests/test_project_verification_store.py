@@ -15,6 +15,7 @@ from services.project_store import ProjectConflict, ProjectNotFound, ProjectStor
 from services.project_verification_gate import REQUIRED_ASSERTIONS, verification_snapshot
 from services.project_verification_store import ProjectVerificationStore, MAX_ARTIFACT_BYTES, MAX_PROJECT_ARTIFACT_BYTES
 from test_project_runtime_patch_store import runtime, enqueue as enqueue_patch, parent_state, child_transition
+from project_build_support import successful_build
 
 
 def png(color="red"):
@@ -49,7 +50,8 @@ def evidence():
 
 def passed(rt, records, record, **kwargs):
     return records.finish(record.verificationId, **scope(rt),
-        **{"status": "passed", "assertions": evidence(), "artifacts": {"page.png": png()}, **kwargs})
+        **{"status": "passed", "assertions": evidence(), "artifacts": {"page.png": png()},
+           "build": successful_build(rt, record), **kwargs})
 
 
 def test_verify_admission_is_idempotent_scoped_and_immutable_idle_activity(runtime):
@@ -162,6 +164,39 @@ def test_passed_requires_real_png_and_every_required_positive_assertion(runtime,
     assert not rt.store._q("select * from wb_project_verification_artifact")
 
 
+@pytest.mark.parametrize("invalid", ["missing", "revision", "treeHash", "lockfileHash", "status",
+    "installExitCode", "buildExitCode", "outputHash", "outputFileCount", "outputBytes", "serverKind", "boolean-exit"])
+def test_passed_rejects_missing_or_unbound_production_build_evidence(runtime, invalid):
+    rt = runtime
+    records, record, child = start(rt)
+    proof = successful_build(rt, record)
+    if invalid == "missing": proof = None
+    elif invalid == "revision": proof[invalid] = "old-source"
+    elif invalid in {"treeHash", "lockfileHash"}: proof[invalid] = "0" * 64
+    elif invalid == "status": proof[invalid] = "blocked"
+    elif invalid in {"installExitCode", "buildExitCode"}: proof[invalid] = 17
+    elif invalid == "outputHash": proof[invalid] = None
+    elif invalid in {"outputFileCount", "outputBytes"}: proof[invalid] = 0
+    elif invalid == "serverKind": proof[invalid] = "tasks-node"
+    else: proof["installExitCode"] = False
+    with pytest.raises(ValueError):
+        passed(rt, records, record, build=proof)
+    assert records.get(record.verificationId, owner_id="alice").effectiveStatus == "running"
+    assert rt.store.get_operation(child.operationId, owner_id="alice").status == "running"
+    assert not rt.store._q("select * from wb_project_verification_artifact")
+
+
+def test_historical_pass_without_build_is_stale_and_cannot_unlock_delivery(runtime):
+    rt = runtime
+    records, record, _ = start(rt)
+    saved = passed(rt, records, record).verification
+    historical = saved.model_copy(update={"build": None})
+    revision = rt.store.get_revision(rt.project.projectId, owner_id="alice")
+    snapshot = verification_snapshot(historical, revision=revision.revision, tree_hash=revision.treeHash,
+        spec_revision=revision.specRevision, plan_ref=revision.planRef, lockfile_hash=saved.build.lockfileHash)
+    assert snapshot.effectiveStatus == "stale" and snapshot.deliveryEligible is False
+
+
 @pytest.mark.parametrize("status,error,assertions", [("blocked", "missing_browser", []),
     ("failed", None, [{"id": "counter_increment", "status": "failed", "detail": "button did not change count"}]),
     ("cancelled", "user_cancelled", [])])
@@ -181,7 +216,7 @@ def test_current_stale_projection_preserves_historical_passed_receipt(runtime, c
     records, record, _ = start(rt)
     original = passed(rt, records, record).verification
     args = dict(revision=original.revision, tree_hash=original.treeHash,
-        spec_revision=original.specRevision, plan_ref=original.planRef)
+        spec_revision=original.specRevision, plan_ref=original.planRef, lockfile_hash=original.build.lockfileHash)
     changed = original
     if change == "revision": args["revision"] = "new"
     if change == "tree": args["tree_hash"] = "new"
@@ -313,7 +348,8 @@ def test_takeover_can_cleanup_but_cannot_finish_old_running_clicks_as_passed(run
     claimed = rt.store.claim_operation(child.operationId, owner_id="alice", generation=rt.lease.generation, lease_owner=rt.lease.leaseOwner)
     assert claimed.status == "interrupted"
     with pytest.raises(ProjectConflict):
-        records.finish(record.verificationId, **old_scope, status="passed", assertions=evidence(), artifacts={"page": png()})
+        records.finish(record.verificationId, **old_scope, status="passed", assertions=evidence(), artifacts={"page": png()},
+            build=successful_build(rt, record))
     child_transition(rt, child, "running")
     with pytest.raises(ProjectConflict, match="generation_changed"):
         passed(rt, records, record)

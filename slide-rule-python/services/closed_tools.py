@@ -82,6 +82,7 @@ CLOSED_TOOLS: Tuple[str, ...] = (
     "project_create", "project_list", "project_read", "project_search",
     "project_patch", "project_start", "project_exec", "project_status",
     "project_logs", "project_cancel", "project_verify", "project_verification",
+    "project_revisions", "project_restore", "project_export",
 )
 
 # 文本里抠闭集工具名。抄 grok-build AskUserQuestion：选项点下去是 typed

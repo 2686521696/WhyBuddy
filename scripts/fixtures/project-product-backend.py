@@ -35,6 +35,8 @@ def main(config_path: str) -> None:
                                is_superuser=True, is_verified=True)
     plan = {"planId": "product-smoke-plan", "revision": 1, "reqId": "product-smoke-approval",
         "planContent": "Run the fixed Vite template; change its heading in the same runtime; inspect private preview in both workbenches; verify counter behavior in an independent browser, break then repair the counter and recheck; stop and clean up."}
+    if config.get("runtimeIds"):
+        plan["planContent"] = "Run the fixed tasks application; create independent writer and reader accounts; check tasks CRUD, refresh and API permissions; save source, verify a production build, break and repair task status; inspect source history, export, fork and delivery; stop, checkpoint SQLite, restore source/data into a new sandbox, then stop and clean up."
     state = V5SessionState(sessionId=config["sessionId"], ownerId=owner.id,
         goal={"text": config["title"], "status": "clear"},
         controlTranscript=[{**plan, "kind": kind} for kind in ("plan_written", "plan_approval", "plan_approved")])
@@ -43,15 +45,17 @@ def main(config_path: str) -> None:
     approval = approved_reference(state)
 
     # E2B provides one exact TLS hostname, without a wildcard runtime subdomain.
-    # Choose the initial opaque ID to equal that hostname's first label. Only
-    # one runtime may be created; all subsequent IDs come from persisted SQL.
+    # Choose opaque IDs matching the exact fixture gateway TLS hosts. Tasks
+    # smoke permits a second runtime on another port after destroying the first.
     runtime_model = project_runtime_worker.RuntimeInstance
     runtime_ids = []
     def fixture_runtime(**kwargs):
-        if runtime_ids:
+        allowed = config.get("runtimeIds", [config["runtimeId"]])
+        if len(runtime_ids) >= len(allowed):
             raise RuntimeError("smoke_unexpected_second_runtime")
+        selected = allowed[len(runtime_ids)]
         runtime_ids.append(kwargs["runtimeId"])
-        return runtime_model(**{**kwargs, "runtimeId": config["runtimeId"]})
+        return runtime_model(**{**kwargs, "runtimeId": selected})
     project_runtime_worker.RuntimeInstance = fixture_runtime
 
     def guard(value):
@@ -78,6 +82,22 @@ def main(config_path: str) -> None:
         guard(authorization)
         return snapshot()
 
+    @app.post("/_smoke/process/{process_id}")
+    def fixture_process(process_id: str, authorization: str | None = Header(default=None)):
+        guard(authorization)
+        if not process_id.isdigit():
+            raise HTTPException(422, "smoke_invalid_process")
+        supervisor = app.state.project_runtime_supervisor
+        provider = supervisor.provider_factory()
+        value = snapshot()
+        lease = value.get("lease") or {}
+        handles = provider.find_workspaces(workspace_id=lease.get("workspaceId", "missing"))
+        matching = [handle for handle in handles if handle.sandbox_id == lease.get("sandboxId")]
+        if len(matching) != 1:
+            raise HTTPException(409, "smoke_workspace_unavailable")
+        provider.connect(matching[0])
+        return {"processId": process_id, "running": provider.is_process_running(matching[0], process_id)}
+
     @app.post("/_smoke/patch")
     def fixture_patch(authorization: str | None = Header(default=None)):
         guard(authorization)
@@ -85,13 +105,13 @@ def main(config_path: str) -> None:
         current = persistence.load_session_record(state.sessionId)["session"]
         project = store.get_project(current.projectId, owner_id=owner.id)
         source = store.read_files(project.projectId, owner_id=owner.id)["src/main.tsx"]
-        if source.count("<h1>New Project</h1>") != 1:
+        if source.count(">New Project</h1>") != 1:
             raise HTTPException(409, "smoke_patch_already_applied")
         tools = ProjectTools(store, app.state.project_runtime_supervisor, owner.id)
         return tools.execute("project_patch", {"approvalRef": approval,
             "expectedRevision": project.currentRevision, "changes": [{"path": "src/main.tsx",
-                "expectedSha256": content_hash(source), "content": source.replace("<h1>New Project</h1>",
-                    "<h1>Integrated source update</h1>")}]}, current)
+                "expectedSha256": content_hash(source), "content": source.replace(">New Project</h1>",
+                    ">Integrated source update</h1>")}]}, current)
 
     @app.post("/_smoke/revoke-owner")
     def fixture_revoke(authorization: str | None = Header(default=None)):

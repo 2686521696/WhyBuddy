@@ -20,6 +20,7 @@ from services.project_authority import approved_reference, verification_with_cur
 from services.project_creation import create_session_project, load_authorized_session, sync_session_project
 from services.project_manifest import canonical_json, content_hash, prepare_source_patch, source_path
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStoreUnavailable
+from services.project_source_operations import ProjectSourceOperations
 from services.project_tool_contracts import PROJECT_ARGUMENTS, PROJECT_WRITE_TOOLS
 from services.scope_authority import plan_execution_authorized
 
@@ -100,7 +101,7 @@ class ProjectTools:
             if name == "project_create":
                 guard_control_run()
                 project = create_session_project(self.store, session_id,
-                    owner_id=self.owner_id, approval_ref=parsed.approvalRef)
+                    owner_id=self.owner_id, approval_ref=parsed.approvalRef, template_id=parsed.templateId)
                 return {"ok": True, **self._project_result(project)}
             project = self.store.get_project_for_session(session_id, owner_id=self.owner_id)
             if (project is None or project.sessionId != authority.sessionId
@@ -123,6 +124,19 @@ class ProjectTools:
                 return {"ok": True, **result}
             if name == "project_patch":
                 return {"ok": True, **self._patch(project, parsed)}
+            if name == "project_revisions":
+                return {"ok": True, **ProjectSourceOperations(self.store, self.supervisor, self.owner_id).revisions(
+                    project.projectId, parsed.cursor, parsed.limit)}
+            if name == "project_restore":
+                return {"ok": True, **ProjectSourceOperations(self.store, self.supervisor, self.owner_id).restore(
+                    project.projectId, expected_revision=parsed.expectedRevision,
+                    target_revision=parsed.targetRevision, idempotency_key=parsed.idempotencyKey,
+                    approval_ref=parsed.approvalRef)}
+            if name == "project_export":
+                revision = self.store.get_revision(project.projectId, parsed.revision, owner_id=self.owner_id)
+                return {"ok": True, "revision": revision.revision, "treeHash": revision.treeHash,
+                    "downloadPath": f"/api/sliderule/projects/{project.projectId}/export?revision={revision.revision}",
+                    "businessDataIncluded": False, "deployed": False}
             if name == "project_verify":
                 guard_control_run()
                 if self.supervisor is None:
@@ -200,8 +214,14 @@ class ProjectTools:
                 record = snapshot.verification
                 result["verification"] = {"verificationId": record.verificationId,
                     "status": snapshot.effectiveStatus, "revision": record.revision,
-                    "suiteVersion": record.suiteVersion, "deliveryEligible": False,
+                    "suiteVersion": record.suiteVersion, "deliveryEligible": snapshot.deliveryEligible,
+                    "acceptanceProfile": record.specRevision if snapshot.deliveryEligible else None,
                     "errorCode": record.errorCode,
+                    "runtimeOperationId": record.runtimeOperationId,
+                    "logOperationId": record.runtimeOperationId,
+                    "build": ({key: getattr(record.build, key) for key in (
+                        "status", "installExitCode", "buildExitCode", "outputHash", "revision")}
+                        if record.build else None),
                     "assertions": [{"id": item.id, "status": item.status,
                         **({"expected": item.expected, "actual": item.actual}
                             if item.status == "failed" and item.expected is not None and item.actual is not None else {})}

@@ -7,6 +7,7 @@ the explicit cancel endpoint persists intent even while the worker is offline.
 from __future__ import annotations
 
 import time
+from typing import Literal
 from contextlib import contextmanager
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
@@ -16,10 +17,12 @@ from config.settings import settings
 from middlewares.current_user import CurrentUser
 from models.project_runtime import ProjectOperationSnapshot, RuntimeEventPage
 from services.project_runtime_worker import approved_reference as _approved_reference
-from services.project_access import project_access_enabled
+from services.project_access import project_access_enabled, project_read_access
+from services.project_rollout import rollout_readiness
 from services.project_creation import create_session_project, load_authorized_session
 from services.project_authority import verification_with_current_authority
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStoreUnavailable, get_project_store
+from services.project_verification_store import ProjectVerificationStore
 
 
 router = APIRouter(tags=["Project runtime"])
@@ -36,6 +39,7 @@ class StartRuntimeRequest(BaseModel):
 class CreateProjectRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     approvalRef: str = Field(min_length=1, max_length=512)
+    templateId: Literal["react-vite", "react-vite-tasks"] = "react-vite"
 
 
 class VerifyProjectRequest(BaseModel):
@@ -47,6 +51,11 @@ class VerifyProjectRequest(BaseModel):
 def _internal_gate(viewer) -> None:
     if not project_access_enabled(viewer):
         raise HTTPException(status_code=503, detail="project_preview_not_enabled")
+
+
+def _read_gate(viewer) -> None:
+    if not project_read_access(viewer):
+        raise HTTPException(status_code=401, detail="login_required")
 
 
 @contextmanager
@@ -80,17 +89,24 @@ def create_project(session_id: str, body: CreateProjectRequest, viewer: CurrentU
     _internal_gate(viewer)
     with _store_errors():
         project = create_session_project(get_project_store(), session_id,
-            owner_id=str(viewer.id), approval_ref=body.approvalRef)
+            owner_id=str(viewer.id), approval_ref=body.approvalRef, template_id=body.templateId)
         return {"project": project.model_dump(mode="json"), "verification": "not_run"}
 
 
 @router.get("/sessions/{session_id}/project")
 def get_session_project(session_id: str, viewer: CurrentUser):
-    _internal_gate(viewer)
+    _read_gate(viewer)
     with _store_errors():
         load_authorized_session(session_id, owner_id=str(viewer.id), approval_ref=None)
         project = get_project_store().get_project_for_session(session_id, owner_id=str(viewer.id))
         return {"project": project.model_dump(mode="json") if project else None, "verification": "not_run"}
+
+
+@router.get("/project-capabilities")
+def get_project_capabilities(viewer: CurrentUser):
+    status = rollout_readiness()
+    return {**status, "canExecute": project_access_enabled(viewer),
+        "canReadOwnedProjects": project_read_access(viewer)}
 
 
 def _snapshot_response(snapshot):
@@ -150,7 +166,7 @@ def start_project_runtime(project_id: str, body: StartRuntimeRequest, request: R
 def get_project_operation(operation_id: str, viewer: CurrentUser):
     with _store_errors():
         snapshot = get_project_store().snapshot_operation(operation_id, owner_id=str(viewer.id))
-        _internal_gate(viewer)
+        _read_gate(viewer)
         return _snapshot_response(snapshot)
 
 
@@ -160,7 +176,7 @@ def cancel_project_operation(operation_id: str, request: Request, viewer: Curren
     with _store_errors():
         store = get_project_store()
         store.get_operation(operation_id, owner_id=owner_id)
-        _internal_gate(viewer)
+        _read_gate(viewer)
         supervisor = getattr(request.app.state, "project_runtime_supervisor", None)
         if supervisor is not None and supervisor.running:
             supervisor.cancel(operation_id, owner_id=owner_id)
@@ -175,7 +191,7 @@ def list_project_operation_events(operation_id: str, viewer: CurrentUser,
     with _store_errors():
         store = get_project_store()
         store.get_operation(operation_id, owner_id=str(viewer.id))
-        _internal_gate(viewer)
+        _read_gate(viewer)
         events = store.list_events(operation_id, owner_id=str(viewer.id), after_seq=afterSeq, limit=limit + 1)
         selected = events[:limit]
         return {"events": [_event_response(event) for event in selected],
@@ -209,6 +225,11 @@ def _verification_service(request):
     return supervisor
 
 
+def _verification_records(request):
+    supervisor = getattr(request.app.state, "project_runtime_supervisor", None)
+    return supervisor.verification_store if supervisor is not None else ProjectVerificationStore(get_project_store())
+
+
 @router.post("/project-operations/{operation_id}/verify", status_code=202)
 def verify_project_runtime(operation_id: str, body: VerifyProjectRequest, request: Request, viewer: CurrentUser):
     with _store_errors():
@@ -229,8 +250,8 @@ def latest_project_verification(project_id: str, request: Request, response: Res
         store, owner_id = get_project_store(), str(viewer.id)
         project = store.get_project(project_id, owner_id=owner_id)
         authority = load_authorized_session(project.sessionId, owner_id=owner_id, approval_ref=None)
-        _internal_gate(viewer)
-        records = _verification_service(request).verification_store
+        _read_gate(viewer)
+        records = _verification_records(request)
         newest, cursor = None, ""
         while True:
             page = store.list_project_operations(project_id, owner_id=owner_id, after_id=cursor, limit=100)
@@ -253,11 +274,11 @@ def read_project_verification(verification_id: str, request: Request, response: 
     response.headers["Cache-Control"] = "no-store"
     with _store_errors():
         store, owner_id = get_project_store(), str(viewer.id)
-        records = _verification_service(request).verification_store
+        records = _verification_records(request)
         record = records.get(verification_id, owner_id=owner_id).verification
         child = store.get_operation(record.operationId, owner_id=owner_id)
         authority = load_authorized_session(child.sessionId, owner_id=owner_id, approval_ref=None)
-        _internal_gate(viewer)
+        _read_gate(viewer)
         snapshot = verification_with_current_authority(records.for_operation(child.operationId, owner_id=owner_id), authority)
         if snapshot is None:
             raise ProjectNotFound("project_verification_not_found")
@@ -268,11 +289,11 @@ def read_project_verification(verification_id: str, request: Request, response: 
 def read_project_verification_artifact(verification_id: str, artifact_id: str, request: Request, viewer: CurrentUser):
     with _store_errors():
         store, owner_id = get_project_store(), str(viewer.id)
-        records = _verification_service(request).verification_store
+        records = _verification_records(request)
         record = records.get(verification_id, owner_id=owner_id).verification
         child = store.get_operation(record.operationId, owner_id=owner_id)
         load_authorized_session(child.sessionId, owner_id=owner_id, approval_ref=None)
-        _internal_gate(viewer)
+        _read_gate(viewer)
         data = records.read_artifact(
             verification_id, artifact_id, owner_id=owner_id)
         return Response(content=data, media_type="image/png", headers={"Cache-Control": "no-store",

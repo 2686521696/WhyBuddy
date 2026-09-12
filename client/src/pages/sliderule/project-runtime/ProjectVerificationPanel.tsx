@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { ProjectEvidenceImages } from "./ProjectEvidenceImages";
 import {
   cancelProjectVerification,
   getProjectVerification,
@@ -12,6 +13,7 @@ interface Props {
   revision?: string | null;
   runtimeOperationId?: string | null;
   runtimeId?: string | null;
+  suiteVersion?: string | null;
   ready: boolean;
 }
 
@@ -29,6 +31,17 @@ const STATUS: Record<string, string> = {
   stale: "旧版本记录，需重新检查",
 };
 const ASSERTIONS: Record<string, string> = {
+  setup_admin: "首次建立应用管理员",
+  writer_login: "可写用户登录",
+  task_create: "新增任务写入真实接口",
+  task_edit: "编辑任务并保存",
+  task_filter: "筛选任务",
+  task_refresh: "刷新后任务仍然保存",
+  reader_create: "建立只读应用用户",
+  reader_login: "只读用户登录",
+  reader_ui_readonly: "只读界面不提供修改操作",
+  reader_api_forbidden: "只读用户调用写接口被拒绝",
+  anonymous_api_forbidden: "未登录调用接口被拒绝",
   heading_visible: "页面标题可见",
   counter_initial: "计数初始状态正确",
   counter_increment: "首次点击更新计数",
@@ -38,6 +51,7 @@ const ASSERTIONS: Record<string, string> = {
   no_failed_requests: "页面资源请求成功",
 };
 const ERRORS: Record<string, string> = {
+  project_build_failed: "当前源码构建失败，请先修复构建错误。",
   project_browser_not_configured: "当前环境尚未配置浏览器检查。",
   project_browser_key_missing: "当前环境缺少浏览器运行凭据。",
   project_browser_unavailable: "浏览器运行环境暂时不可用。",
@@ -63,6 +77,7 @@ export function ProjectVerificationPanel({
   revision,
   runtimeOperationId,
   runtimeId,
+  suiteVersion,
   ready,
 }: Props) {
   const scope = JSON.stringify([
@@ -152,6 +167,8 @@ export function ProjectVerificationPanel({
   const view = current ? state.view : null;
   const snapshot = view?.snapshot;
   const record = snapshot?.verification;
+  const tasks = (record?.suiteVersion ?? suiteVersion) === "react-vite-tasks@1";
+  const build = record?.build;
   const stale = Boolean(
     record &&
     (snapshot?.effectiveStatus === "stale" ||
@@ -259,13 +276,13 @@ export function ProjectVerificationPanel({
   return (
     <section
       data-testid="project-verification-panel"
-      aria-label="页面与计数交互检查"
+      aria-label={tasks ? "任务应用与权限检查" : "页面与计数交互检查"}
       className="shrink-0 border-b border-stone-200 bg-stone-50 px-4 py-3"
     >
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
           <h3 className="text-xs font-semibold text-stone-700">
-            页面与计数交互检查
+            {tasks ? "任务应用与权限检查" : "页面与计数交互检查"}
           </h3>
           <p
             data-testid="project-verification-status"
@@ -279,7 +296,11 @@ export function ProjectVerificationPanel({
                 : busy && !active
                   ? "正在提交检查"
                   : status
-                    ? STATUS[status]
+                    ? tasks && status === "passed"
+                      ? "任务应用检查通过"
+                      : tasks && status === "failed"
+                        ? "任务应用检查失败"
+                        : STATUS[status]
                     : "尚未检查"}
           </p>
         </div>
@@ -309,12 +330,25 @@ export function ProjectVerificationPanel({
           data-testid="project-verification-start"
           className="rounded-md bg-stone-800 px-3 py-1.5 text-xs text-white disabled:opacity-40"
         >
-          {record ? "重新检查页面" : "检查页面"}
+          {tasks
+            ? record
+              ? "重新检查任务应用"
+              : "检查任务应用"
+            : record
+              ? "重新检查页面"
+              : "检查页面"}
         </button>
       </div>
       <p className="mt-1 text-xs leading-5 text-stone-500">
-        仅检查固定模板的页面与计数交互；业务功能、数据持久化和角色权限仍需另行验收。
+        {tasks
+          ? "检查本次固定版本的任务新增、编辑、筛选、刷新持久化和只读权限；结果仅覆盖已执行用例，整体交付仍由服务端另行判定。"
+          : "仅检查固定模板的页面与计数交互；业务功能、数据持久化和角色权限仍需另行验收。"}
       </p>
+      {snapshot?.deliveryEligible && !stale ? (
+        <p className="mt-1 text-xs leading-5 text-stone-700">
+          当前版本满足任务应用验收范围，可在「交付」查看范围并准备源码与证据包。
+        </p>
+      ) : null}
       {current && state.error ? (
         <p role="alert" className="mt-1 text-xs text-amber-800">
           {state.error}
@@ -347,6 +381,44 @@ export function ProjectVerificationPanel({
           </ul>
         </details>
       ) : null}
+      {build ? (
+        <details
+          className="mt-2 text-xs text-stone-600"
+          data-testid="project-build-evidence"
+        >
+          <summary className="cursor-pointer">
+            {stale ? "旧版本构建证据" : "构建证据"}：
+            {
+              {
+                passed: "构建通过",
+                failed: "构建失败",
+                blocked: "缺少构建条件",
+                cancelled: "构建已取消",
+              }[build.status]
+            }
+          </summary>
+          <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
+            <dt>源码版本</dt>
+            <dd className="break-all font-mono">{build.revision}</dd>
+            <dt>安装 / 构建退出码</dt>
+            <dd>
+              {build.installExitCode ?? "未执行"} /{" "}
+              {build.buildExitCode ?? "未执行"}
+            </dd>
+            <dt>锁文件校验</dt>
+            <dd className="break-all font-mono">{build.lockfileHash}</dd>
+            <dt>构建产物校验</dt>
+            <dd className="break-all font-mono">
+              {build.outputHash ?? "无产物"}
+            </dd>
+            <dt>构建产物</dt>
+            <dd>
+              {build.outputFileCount} 个文件 · {build.outputBytes} 字节
+            </dd>
+          </dl>
+        </details>
+      ) : null}
+      {record ? <ProjectEvidenceImages record={record} stale={stale} /> : null}
     </section>
   );
 }

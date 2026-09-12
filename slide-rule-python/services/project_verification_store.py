@@ -18,7 +18,7 @@ from PIL import Image
 
 from models.project_runtime import VerificationArtifactRef, VerificationRecord
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStoreUnavailable
-from services.project_verification_gate import RUNNER_VERSION, SUITE_VERSION, validate_verification_result, verification_snapshot
+from services.project_verification_gate import RUNNER_VERSION, SUITE_ASSERTIONS, validate_build_evidence, validate_verification_result, verification_snapshot
 
 MAX_ARTIFACT_BYTES = 2 * 1024 * 1024
 MAX_PROJECT_ARTIFACT_BYTES = 16 * 1024 * 1024
@@ -53,6 +53,7 @@ class ProjectVerificationStore:
         revision = self.store.get_revision(record.projectId, owner_id=owner_id)
         return verification_snapshot(record, revision=revision.revision, tree_hash=revision.treeHash,
             spec_revision=revision.specRevision,
+            lockfile_hash=next((item.sha256 for item in revision.manifest.files if item.path == "package-lock.json"), None),
             plan_ref=revision.planRef if current_plan_ref is _UNSET else current_plan_ref)
 
     def get(self, verification_id, *, owner_id, current_plan_ref=_UNSET):
@@ -75,7 +76,7 @@ class ProjectVerificationStore:
             owner_id=owner_id, lease_generation=generation, lease_owner=lease_owner,
             require_claim=True, cleanup=cleanup)
         parent, lease = context["parent"], context["lease"]
-        if child.input.get("suiteVersion") != SUITE_VERSION:
+        if child.input.get("suiteVersion") not in SUITE_ASSERTIONS:
             raise ValueError("verification_suite_unsupported")
         if require_running and child.status not in ({"running", "interrupted"} if cleanup else {"running"}):
             raise ProjectConflict("verification_operation_not_running")
@@ -128,7 +129,7 @@ class ProjectVerificationStore:
             record = VerificationRecord(verificationId="pvr-" + hashlib.sha256(child_id.encode()).hexdigest()[:40],
                 operationId=child_id, runtimeOperationId=parent.operationId, projectId=child.projectId,
                 revision=revision.revision, treeHash=revision.treeHash, runtimeId=parent.runtime.runtimeId,
-                specRevision=revision.specRevision, planRef=child.approvalRef, suiteVersion=SUITE_VERSION,
+                specRevision=revision.specRevision, planRef=child.approvalRef, suiteVersion=child.input["suiteVersion"],
                 createdAt=child.createdAt, startedAt=_now(), runnerVersion=RUNNER_VERSION)
             params = [record.verificationId, child_id, child.projectId, lease_generation, lease_owner,
                       record.createdAt, record.model_dump_json()]
@@ -202,18 +203,24 @@ class ProjectVerificationStore:
         return refs
 
     def finish(self, verification_id, *, owner_id, lease_generation, lease_owner,
-               status, assertions=None, artifacts=None, error_code=None, cleanup=False):
+               status, assertions=None, artifacts=None, error_code=None, cleanup=False, build=None):
         cleanup = cleanup or status in {"blocked", "cancelled"}
         row = self._row(verification_id, owner_id)
         record = VerificationRecord.model_validate_json(row["payload"])
+        revision = self.store.get_revision(record.projectId, record.revision, owner_id=owner_id)
+        lockfile_hash = next((item.sha256 for item in revision.manifest.files if item.path == "package-lock.json"), None)
+        checked_build = validate_build_evidence(build, revision=record.revision, tree_hash=record.treeHash,
+            lockfile_hash=lockfile_hash, suite_version=record.suiteVersion)
         if record.status in _TERMINAL:
             if status != record.status or (error_code is not None and error_code != record.errorCode):
                 raise ProjectConflict("verification_result_conflict")
             if assertions is not None:
                 checked = validate_verification_result(status, assertions, artifact_count=len(record.artifactRefs),
-                    suite_version=record.suiteVersion, error_code=record.errorCode)
+                    suite_version=record.suiteVersion, error_code=record.errorCode, build=record.build)
                 if checked != record.assertions:
                     raise ProjectConflict("verification_result_conflict")
+            if build is not None and checked_build != record.build:
+                raise ProjectConflict("verification_result_conflict")
             if artifacts is not None:
                 expected = {ref.label: (ref.sha256, ref.sizeBytes) for ref in record.artifactRefs}
                 if (not isinstance(artifacts, dict) or set(artifacts) != set(expected)
@@ -225,13 +232,13 @@ class ProjectVerificationStore:
         if cleanup and status in {"passed", "failed"}:
             raise ValueError("verification_cleanup_cannot_pass")
         checked = validate_verification_result(status, assertions or [], artifact_count=len(artifacts or {}),
-            suite_version=record.suiteVersion, error_code=error_code)
+            suite_version=record.suiteVersion, error_code=error_code, build=checked_build)
         context = self._context(record.operationId, owner_id, lease_generation, lease_owner, cleanup=cleanup)
         if not cleanup and (row["lease_generation"] != lease_generation or row["lease_owner"] != lease_owner):
             raise ProjectConflict("verification_attempt_generation_changed")
         refs = self._artifacts(context, artifacts or {}, cleanup=cleanup)
         updated = record.model_copy(update={"status": status, "assertions": checked, "artifactRefs": refs,
-            "completedAt": _now(), "errorCode": error_code})
+            "completedAt": _now(), "errorCode": error_code, "build": checked_build})
         if len(updated.model_dump_json().encode()) > 128 * 1024:
             raise ValueError("verification_record_too_large")
         for _ in range(3):

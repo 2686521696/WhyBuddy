@@ -141,10 +141,13 @@ describe("private preview outbound tunnel", () => {
     const response = await http(f.origin, "/headers", { cookie: f.cookie.cookie + "; app_session=value",
       authorization: "Bearer app-credential", "E2B-Traffic-Access-Token": "provider-secret",
       "x-whybuddy-authority": "authority-secret", "x-internal-key": "internal-secret",
-      connection: "close, x-hop-secret", "x-hop-secret": "connection-secret", "x-forwarded-host": "evil.test" });
+      connection: "close, x-hop-secret", "x-hop-secret": "connection-secret", "x-forwarded-host": "evil.test",
+      "x-forwarded-proto": "http", forwarded: "proto=http;host=evil.test" });
     const headers = JSON.parse(response.body.toString());
     expect(headers.cookie).toBe("app_session=value");
     expect(headers.authorization).toBe("Bearer app-credential");
+    expect(headers["x-forwarded-proto"]).toBe("https");
+    expect(headers.forwarded).toBeUndefined();
     for (const key of ["e2b-traffic-access-token", "x-whybuddy-authority", "x-internal-key", "x-hop-secret", "x-forwarded-host"])
       expect(headers[key]).toBeUndefined();
     expect(response.headers["set-cookie"]).toEqual(["app_session=updated; Path=/"]);
@@ -172,7 +175,8 @@ describe("private preview outbound tunnel", () => {
   it("forwards WebSocket 101, first frame, text/binary and app headers through the same private path", async () => {
     const f = await fixture();
     const client = browserWs(f.origin, f.cookie.cookie + "; app_session=ws", {
-      authorization: "Bearer app-ws", "e2b-traffic-access-token": "leak", "x-internal-key": "leak" });
+      authorization: "Bearer app-ws", "e2b-traffic-access-token": "leak", "x-internal-key": "leak",
+      "x-forwarded-proto": "http" });
     await once(client.ws, "open");
     expect(client.ws.protocol).toBe("vite-hmr");
     await until(() => client.messages.length === 1);
@@ -183,6 +187,7 @@ describe("private preview outbound tunnel", () => {
     expect(client.messages[2]).toEqual({ data: binary, binary: true });
     expect(f.observed[0].cookie).toBe("app_session=ws");
     expect(f.observed[0].authorization).toBe("Bearer app-ws");
+    expect(f.observed[0]["x-forwarded-proto"]).toBe("https");
     expect(f.observed[0]["e2b-traffic-access-token"]).toBeUndefined();
     expect(f.observed[0]["x-internal-key"]).toBeUndefined();
     client.ws.close(); await once(client.ws, "close");

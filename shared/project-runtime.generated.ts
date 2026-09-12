@@ -27,6 +27,61 @@ export type Project = {
   "updatedAt": string;
   "revisionCount"?: number;
   "sourceBytesStored"?: number;
+  "sourceProjectId"?: string | null;
+  "sourceRevision"?: string | null;
+};
+
+export type ProjectAcceptanceProfile = {
+  "profileId": string;
+  "suiteVersion": string;
+  "requirements": Array<string>;
+  "outsideScope": Array<string>;
+  "dataRecovery": string;
+};
+
+export type ProjectDataBackup = {
+  "backupId": string;
+  "projectId": string;
+  "version": number;
+  "parentBackupId": string | null;
+  "sha256": string;
+  "sizeBytes": number;
+  "sourceRevision": string;
+  "dataSchemaVersion": 1;
+  "createdAt": string;
+};
+
+export type ProjectDataRestoreResult = {
+  "backup": ProjectDataBackup;
+};
+
+export type ProjectDataSnapshot = {
+  "backup": ProjectDataBackup | null;
+  "backups": Array<ProjectDataBackup>;
+  "checkpointIntervalSeconds": number;
+  "recoveryPolicy": "last-checkpoint";
+};
+
+export type ProjectDeliveryStatus = {
+  "projectId": string;
+  "revision": string;
+  "eligible": boolean;
+  "profile": ProjectAcceptanceProfile;
+  "blockedReasons": Array<string>;
+  "verificationId": string | null;
+  "releases": Array<ProjectRelease>;
+  "deployment": ProjectDeploymentStatus;
+};
+
+export type ProjectDeploymentStatus = {
+  "status"?: "not_configured";
+  "publicUrl"?: null;
+};
+
+export type ProjectForkResult = {
+  "projectId": string;
+  "sessionId": string;
+  "revision": string;
 };
 
 export type ProjectManifest = {
@@ -85,6 +140,26 @@ export type ProjectOperationView = {
   "updatedAt": string;
 };
 
+export type ProjectRelease = {
+  "releaseId": string;
+  "projectId": string;
+  "revision": string;
+  "verificationId": string;
+  "profileId": string;
+  "planRef": string;
+  "treeHash": string;
+  "lockfileHash": string;
+  "buildHash": string;
+  "createdAt": string;
+  "downloadPath": string;
+  "deployed"?: false;
+  "effectiveStatus"?: "ready" | "stale" | null;
+};
+
+export type ProjectReleaseResult = {
+  "release": ProjectRelease;
+};
+
 export type ProjectRevision = {
   "revision": string;
   "projectId": string;
@@ -95,6 +170,43 @@ export type ProjectRevision = {
   "planRef": string;
   "specRevision"?: string | null;
   "createdAt": string;
+};
+
+export type ProjectRevisionPage = {
+  "projectId": string;
+  "currentRevision": string;
+  "revisions": Array<ProjectRevisionSummary>;
+  "nextCursor": string | null;
+};
+
+export type ProjectRevisionSummary = {
+  "revision": string;
+  "parentRevision"?: string | null;
+  "treeHash": string;
+  "templateVersion": string;
+  "createdAt": string;
+};
+
+export type ProjectSourceCommand = {
+  "projectId": string;
+  "revision": string | null;
+  "operationId": string | null;
+  "status": "queued" | "running" | "waiting_user" | "completed" | "failed" | "cancelling" | "cancelled" | "interrupted";
+};
+
+export type ProjectSourceFile = {
+  "projectId": string;
+  "revision": string;
+  "path": string;
+  "sha256": string;
+  "content": string;
+};
+
+export type ProjectSourceIndex = {
+  "projectId": string;
+  "revision": string;
+  "currentRevision": string;
+  "files": Array<ManifestFile>;
 };
 
 export type RuntimeEvent = {
@@ -174,6 +286,22 @@ export type VerificationAssertion = {
   "detail"?: string | null;
 };
 
+export type VerificationBuildEvidence = {
+  "kind"?: "production";
+  "revision": string;
+  "treeHash": string;
+  "lockfileHash": string;
+  "status": "passed" | "failed" | "blocked" | "cancelled";
+  "installExitCode"?: number | null;
+  "buildExitCode"?: number | null;
+  "outputHash"?: string | null;
+  "outputFileCount"?: number;
+  "outputBytes"?: number;
+  "serverKind": "static-dist" | "tasks-node";
+  "startedAt": string;
+  "completedAt": string;
+};
+
 export type VerificationRecord = {
   "verificationId": string;
   "operationId": string;
@@ -188,6 +316,7 @@ export type VerificationRecord = {
   "runnerVersion"?: string;
   "status"?: "running" | "passed" | "failed" | "blocked" | "cancelled";
   "assertions"?: Array<VerificationAssertion>;
+  "build"?: VerificationBuildEvidence | null;
   "artifactRefs"?: Array<VerificationArtifactRef>;
   "createdAt": string;
   "startedAt": string;
@@ -198,7 +327,7 @@ export type VerificationRecord = {
 export type VerificationSnapshot = {
   "verification": VerificationRecord;
   "effectiveStatus": "running" | "passed" | "failed" | "blocked" | "cancelled" | "stale";
-  "deliveryEligible"?: false;
+  "deliveryEligible"?: boolean;
 };
 
 export type WorkspaceLease = {

@@ -25,6 +25,7 @@ from typing import Callable
 from urllib.parse import parse_qs, urlsplit
 
 from config.settings import settings
+from services.project_verification_gate import SUITE_ASSERTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,8 @@ ASSERTION_IDS = frozenset({"heading_visible", "counter_initial", "counter_increm
     "counter_second_increment", "reload_reset", "no_page_errors", "no_failed_requests"})
 COUNTER_EXPECTED = {"counter_initial": "0", "counter_increment": "1",
     "counter_second_increment": "2", "reload_reset": "0"}
+SUITE_ARTIFACTS = {SUITE_VERSION: frozenset({"before.png", "after.png"}),
+    "react-vite-tasks@1": frozenset({"tasks-created.png", "tasks-reader.png"})}
 MAX_IMAGE_BYTES = 2 * 1024 * 1024
 MAX_RESULT_BYTES = 6 * 1024 * 1024
 REMOTE_ROOT = "/home/user/whybuddy-browser"
@@ -56,7 +59,7 @@ def _empty(code, *, cleanup=True):
 
 
 def _input(entry_url, revision, suite_version, verification_id, scope):
-    if (not _identifier(revision) or not _identifier(verification_id) or suite_version != SUITE_VERSION
+    if (not _identifier(revision) or not _identifier(verification_id) or suite_version not in SUITE_ASSERTIONS
             or not isinstance(scope, dict) or set(scope) != {"origin", "projectId", "runtimeId"}
             or not _identifier(scope["projectId"]) or not _identifier(scope["runtimeId"])
             or not isinstance(entry_url, str) or len(entry_url) > 8192):
@@ -80,23 +83,25 @@ def _input(entry_url, revision, suite_version, verification_id, scope):
         "scope": dict(scope), "entryUrl": entry_url}
 
 
-def decode_result(raw: str, *, revision: str, verification_id: str):
+def decode_result(raw: str, *, revision: str, verification_id: str, suite_version: str = SUITE_VERSION):
     """Only bounded, typed receipts reach the worker; prose/URLs/headers cannot."""
     try:
+        required = SUITE_ASSERTIONS[suite_version]
+        artifact_names = SUITE_ARTIFACTS[suite_version]
         if not isinstance(raw, str) or len(raw.encode("utf-8")) > MAX_RESULT_BYTES:
             raise ValueError()
         value = json.loads(raw)
         keys = {"verificationId", "revision", "suiteVersion", "runnerVersion", "status", "errorCode",
             "assertions", "artifacts", "cleanupConfirmed", "revisionBefore", "revisionAfter"}
         if (not isinstance(value, dict) or set(value) != keys or value["verificationId"] != verification_id
-                or value["revision"] != revision or value["suiteVersion"] != SUITE_VERSION
+                or value["revision"] != revision or value["suiteVersion"] != suite_version
                 or value["runnerVersion"] != RUNNER_VERSION or value["status"] not in {"passed", "failed", "blocked"}
                 or value["errorCode"] not in ERROR_CODES | {None} or type(value["cleanupConfirmed"]) is not bool
-                or not isinstance(value["assertions"], list) or len(value["assertions"]) > len(ASSERTION_IDS)):
+                or not isinstance(value["assertions"], list) or len(value["assertions"]) > len(required)):
             raise ValueError()
         seen = set()
         for item in value["assertions"]:
-            if (not isinstance(item, dict) or set(item) not in ({"id", "status"}, {"id", "status", "expected", "actual"}) or item["id"] not in ASSERTION_IDS
+            if (not isinstance(item, dict) or set(item) not in ({"id", "status"}, {"id", "status", "expected", "actual"}) or item["id"] not in required
                     or item["id"] in seen or item["status"] not in {"passed", "failed"}):
                 raise ValueError()
             if "expected" in item and (item["status"] != "failed" or item["id"] not in COUNTER_EXPECTED
@@ -105,7 +110,7 @@ def decode_result(raw: str, *, revision: str, verification_id: str):
                 raise ValueError()
             seen.add(item["id"])
         source = value["artifacts"]
-        if not isinstance(source, dict) or not set(source) <= {"before.png", "after.png"}:
+        if not isinstance(source, dict) or not set(source) <= artifact_names:
             raise ValueError()
         artifacts = {}
         for name, encoded in source.items():
@@ -115,7 +120,7 @@ def decode_result(raw: str, *, revision: str, verification_id: str):
             if len(data) > MAX_IMAGE_BYTES or not data.startswith(b"\x89PNG\r\n\x1a\n"):
                 raise ValueError()
             artifacts[name] = data
-        if value["status"] == "passed" and (seen != ASSERTION_IDS or set(artifacts) != {"before.png", "after.png"}
+        if value["status"] == "passed" and (seen != required or set(artifacts) != artifact_names
                 or value["errorCode"] is not None or value["cleanupConfirmed"] is not True
                 or value["revisionBefore"] != revision or value["revisionAfter"] != revision
                 or any(item["status"] != "passed" for item in value["assertions"])):
@@ -295,7 +300,8 @@ class E2BProjectBrowserProvider:
                     result = _empty("project_browser_timeout")
                 elif "value" in outcome and getattr(outcome["value"], "exit_code", None) == 0:
                     stage = "decode_receipt"
-                    result = decode_result(outcome["value"].stdout, revision=revision, verification_id=verification_id)
+                    result = decode_result(outcome["value"].stdout, revision=revision, verification_id=verification_id,
+                        suite_version=suite_version)
         except Exception as exc:
             logger.warning("project browser stage=%s exception=%s", stage, type(exc).__name__)
             # A callback may reject only once (lease ownership can change again).

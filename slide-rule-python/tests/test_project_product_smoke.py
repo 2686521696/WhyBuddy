@@ -196,6 +196,9 @@ def test_packaged_product_smoke_runs_real_lifespan_and_account_boundary(tmp_path
     with tarfile.open(fileobj=io.BytesIO(blob)) as archive:
         names = archive.getnames()
         assert "slide-rule-python/services/data/product_archetypes.json" in names
+        assert "project-templates/react-vite-tasks/database.mjs" in names
+        assert "project-templates/react-vite-tasks/public/_whybuddy/editor.js" in names
+        assert not any("/node_modules/" in name or "/dist/" in name or name.endswith("tasks.sqlite") for name in names)
         assert not any(Path(name).name == ".env" or name.startswith("slide-rule-python/data/") for name in names)
         archive.extractall(tmp_path, filter="data")
     with socket.socket() as probe:

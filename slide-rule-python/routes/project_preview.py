@@ -17,7 +17,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from middlewares.current_user import CurrentUser
 from models.project_runtime import PreviewDescriptor
+from services.project_acceptance import template_verification_capabilities
 from services.project_access import project_access_enabled
+from services.project_rollout import rollout_readiness
 from services.project_creation import load_authorized_session
 from services.project_preview_access import PreviewAccessDenied, ProjectPreviewAccess
 from services.project_preview_config import gateway_key, origin_for_runtime, preview_configuration_enabled
@@ -82,9 +84,11 @@ def _errors():
 
 
 def _relay(request: Request) -> ProjectPreviewAccess:
-    # This synthetic capability check applies the same production/config gate;
-    # authentication is exclusively the independent gateway bearer below.
-    _gate({"is_superuser": True})
+    # Relay traffic is authenticated by its independent bearer. Do not invent a
+    # synthetic administrator here: allowlist rollout must still permit the
+    # gateway to serve already-authorized users while Python owns the grant.
+    if not rollout_readiness()["configured"]:
+        raise HTTPException(status_code=503, detail="project_preview_not_enabled")
     try:
         expected = "Bearer " + gateway_key()
     except ValueError as exc:
@@ -117,13 +121,14 @@ def get_project_preview(project_id: str, request: Request, response: Response, v
         access, owner_id = _access(request), str(viewer.id)
         project = access.store.get_project(project_id, owner_id=owner_id)
         load_authorized_session(project.sessionId, owner_id=owner_id, approval_ref=None)
-        _gate(viewer)
         operation = _latest_runtime(access, project_id, owner_id)
         if operation is None:
             return {"operationId": None, "descriptor": None, "available": False, "reason": "project_runtime_not_started"}
         runtime = operation.runtime
+        revision = access.store.get_revision(project_id, runtime.revision if runtime else None, owner_id=owner_id)
         descriptor = None if runtime is None else PreviewDescriptor(projectId=project_id,
             runtimeId=runtime.runtimeId, revision=runtime.revision, status=runtime.status,
+            capabilities=template_verification_capabilities(revision.templateVersion),
             expiresAt=_iso(runtime.expiresAt) if runtime.expiresAt else None)
         available, reason = False, "project_runtime_not_ready"
         if runtime is not None and runtime.status == "ready":

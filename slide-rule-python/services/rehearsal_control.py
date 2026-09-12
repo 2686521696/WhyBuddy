@@ -2918,7 +2918,8 @@ def _system_prompt(state: V5SessionState) -> str:
         facts.append(
             "工程工具运行在受管 E2B 中，源码版本持久保存。"
             f"当前工程：{getattr(state, 'projectId', None)}；源码版本：{getattr(state, 'projectRevision', None)}。"
-            "创建新工程用 project_create；已有 HTML 应用转换尚未支持。"
+            "创建新工程用 project_create；任务管理应用选择 templateId=react-vite-tasks，带真实 API、SQLite 和独立账号权限。"
+            "react-vite 仅是计数演示；已有 HTML 应用转换尚未支持。"
             "工程会话使用 project_* 工具，不调用 HTML 工厂。"
             # 2026-09-13 真模型 live-edit：工具已支持运行中同步，这里仍教
             # “修改前先取消”，模型照做 project_cancel，标题一个字没改。
@@ -2929,11 +2930,11 @@ def _system_prompt(state: V5SessionState) -> str:
             "才能确认新源码版本已同步。依赖或启动配置变更需先停止并确认清理，再修改和重启。"
             "project_exec 只运行 check/build/test，返回 operationId；用 status/logs 读取真实结果。"
             "新回合可用不带 operationId 的 project_status 找回任务；运行 project_exec 命令前先取消已有服务并等待清理。"
-            "project_verify 则需要保留正在运行的工程：它在独立浏览器中检查固定模板页面、计数点击和刷新重置，"
+            "project_verify 需要保留正在运行的工程：由原运行者先固定源码、锁文件安装并构建，再在独立浏览器中运行对应模板的受管用例，"
             "与源码修改由原运行者串行执行。用 project_verification 读取真实断言；缺浏览器或预览为 blocked，"
-            "源码或批准改变使旧证据 stale。失败后按断言修源码再申请新检查；这套模板检查不能代表完整业务验收。"
+            "源码或批准改变使旧证据 stale。失败后按断言修源码再申请新检查；用例通过只代表列出的验收范围。"
             "任务未结束就如实交回 operationId，下轮继续查询，不能重复提交或宣称完成。"
-            "构建通过和服务就绪均不是业务验收；私有预览是否可用以授权预览状态为准，独立浏览器验收尚未接入。"
+            "构建通过和服务就绪均不是业务验收；私有预览、验证结果和对外发布分别查看服务端真实状态。"
         )
         if plan_execution_authorized(state):
             facts.append(f"工程操作批准引用 approvalRef：{approved_reference(state)}。")

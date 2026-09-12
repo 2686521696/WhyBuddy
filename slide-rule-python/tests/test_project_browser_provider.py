@@ -15,6 +15,7 @@ from services.project_browser_provider import (
     ASSERTION_IDS, BUNDLE, E2BProjectBrowserProvider, MAX_IMAGE_BYTES,
     METADATA_KIND, REMOTE_ROOT, RUNNER_VERSION, SUITE_VERSION, decode_result,
 )
+from services.project_verification_gate import SUITE_ASSERTIONS
 
 REVISION = "prv-" + "a" * 32
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
@@ -132,6 +133,39 @@ def test_real_dispatch_uses_new_separate_sandbox_and_never_uploads_manager_crede
     assert set(sdk.writes) == {REMOTE_ROOT + "/browser-runner.mjs", REMOTE_ROOT + "/job.json"}
     assert "manager-key-canary" not in json.dumps(sdk.writes) + json.dumps(sdk.command)
     assert sdk.command[1]["background"] is True and sdk.handle.killed
+
+
+def tasks_receipt():
+    value = receipt()
+    value["suiteVersion"] = "react-vite-tasks@1"
+    value["assertions"] = [{"id": name, "status": "passed"} for name in sorted(SUITE_ASSERTIONS["react-vite-tasks@1"])]
+    value["artifacts"] = {name: base64.b64encode(PNG).decode() for name in ("tasks-created.png", "tasks-reader.png")}
+    return value
+
+
+def test_tasks_dispatch_decodes_the_task_runner_screenshots_and_assertions():
+    sdk = SDK()
+    sdk.report = tasks_receipt()
+    result = provider(sdk).run(entry_url="https://runtime.preview.test/_whybuddy/authorize?ticket=" + "t" * 32,
+        revision=REVISION, verification_id="verification-1", suite_version="react-vite-tasks@1",
+        scope={"origin": "https://runtime.preview.test", "projectId": "project-1", "runtimeId": "runtime-1"},
+        check_callback=lambda: None)
+    assert result["status"] == "passed" and result["cleanupConfirmed"] is True
+    assert result["artifacts"] == {"tasks-created.png": PNG, "tasks-reader.png": PNG}
+    assert {item["id"] for item in result["assertions"]} == SUITE_ASSERTIONS["react-vite-tasks@1"]
+    assert sdk.records == {"generated-app": {"whybuddy_workspace_id": "application-workspace"}}
+
+
+@pytest.mark.parametrize("invalid", ["counter-names", "missing-reader", "extra-artifact", "counter-assertions"])
+def test_task_receipt_cannot_substitute_another_suites_or_incomplete_evidence(invalid):
+    value = tasks_receipt()
+    if invalid == "counter-names": value["artifacts"] = receipt()["artifacts"]
+    elif invalid == "missing-reader": value["artifacts"].pop("tasks-reader.png")
+    elif invalid == "extra-artifact": value["artifacts"]["invented.png"] = next(iter(value["artifacts"].values()))
+    else: value["assertions"] = receipt()["assertions"]
+    result = decode_result(json.dumps(value), revision=REVISION, verification_id="verification-1", suite_version="react-vite-tasks@1")
+    assert result["status"] == "blocked" and result["errorCode"] == "project_browser_output_invalid"
+    assert not result["assertions"] and not result["artifacts"]
 
 
 @pytest.mark.parametrize("missing,code", [("template", "not_configured"), ("key", "key_missing"), ("bundle", "unavailable")])

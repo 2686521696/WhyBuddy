@@ -6,6 +6,8 @@ import hashlib
 
 from models.v5_state import V5SessionState
 from services.scope_authority import latest_control_plan, plan_execution_authorized
+from services.project_acceptance import TASK_ACCEPTANCE_PROFILE
+from services.project_verification_gate import validate_build_evidence, validate_verification_result
 
 
 def approved_reference(state: V5SessionState) -> str:
@@ -25,7 +27,26 @@ def verification_with_current_authority(snapshot, authority):
     """Historic evidence cannot carry a revoked or replaced plan's authority."""
     if snapshot is not None and (not plan_execution_authorized(authority)
             or snapshot.verification.planRef != approved_reference(authority)):
-        return snapshot.model_copy(update={"effectiveStatus": "stale"})
+        return snapshot.model_copy(update={"effectiveStatus": "stale", "deliveryEligible": False})
+    if snapshot is not None:
+        record = snapshot.verification
+        eligible = (snapshot.effectiveStatus == "passed" and record.suiteVersion == "react-vite-tasks@1"
+            and record.specRevision == TASK_ACCEPTANCE_PROFILE and record.build is not None)
+        if eligible:
+            try:
+                # Store snapshots already compare this lock hash with the
+                # current immutable manifest. Also bind the typed build to its
+                # receipt here, so a copied/corrupt projection cannot skip IO
+                # proof just because it contains all required assertions.
+                build = validate_build_evidence(record.build, revision=record.revision,
+                    tree_hash=record.treeHash, lockfile_hash=record.build.lockfileHash,
+                    suite_version=record.suiteVersion)
+                validate_verification_result(record.status, record.assertions,
+                    artifact_count=len(record.artifactRefs), suite_version=record.suiteVersion,
+                    error_code=record.errorCode, build=build)
+            except ValueError:
+                eligible = False
+        return snapshot.model_copy(update={"deliveryEligible": eligible})
     return snapshot
 
 

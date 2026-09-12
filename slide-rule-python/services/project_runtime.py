@@ -15,6 +15,7 @@ import uuid
 from datetime import datetime, timezone
 
 from models.project_runtime import PreviewDescriptor, RuntimeInstance
+from services.project_acceptance import template_verification_capabilities
 from services.project_store import ProjectConflict, ProjectStore
 from services.workspace_provider import WorkspaceHandle, WorkspaceProvider, WorkspaceProviderError
 
@@ -138,7 +139,8 @@ class ProjectRuntimeService:
                     processId=started.process_id, health="revision_verified", lastHeartbeat=_timestamp())
                 # No browser URL or websocket capability before the private gateway.
                 descriptor = PreviewDescriptor(projectId=project.projectId, runtimeId=runtime_id,
-                    revision=revision.revision, status="ready")
+                    revision=revision.revision, status="ready",
+                    capabilities=template_verification_capabilities(revision.templateVersion))
                 return runtime, descriptor
             except Exception as failure:
                 heartbeat.close()

@@ -1595,8 +1595,10 @@ async def control_turn_stream(
     )
 
 
-def _control_service(request, viewer):
-    if not project_access_enabled(viewer):
+def _control_service(request, viewer, *, read=False):
+    # Rollout rollback blocks new control submissions but must leave an owner
+    # able to observe and explicitly stop an already persisted run.
+    if not viewer or (not read and not project_access_enabled(viewer)):
         raise HTTPException(404, "Not found")
     service = getattr(request.app.state, "control_run_service", None)
     if service is None:
@@ -1624,7 +1626,7 @@ async def latest_control_run(sessionId: str, request: Request, viewer: CurrentUs
     _auth(x_internal_key)
     _require_login(viewer)
     await asyncio.to_thread(_require_run_session, sessionId, "drive", viewer)
-    service = _control_service(request, viewer)
+    service = _control_service(request, viewer, read=True)
     record = await asyncio.to_thread(service.store.latest, sessionId, str(viewer.id))
     return {"run": public_control_run(record) if record else None}
 
@@ -1635,7 +1637,7 @@ async def cancel_control_request(request_id: str, sessionId: str, request: Reque
     _auth(x_internal_key)
     _require_login(viewer)
     await asyncio.to_thread(_require_run_session, sessionId, "drive", viewer)
-    service = _control_service(request, viewer)
+    service = _control_service(request, viewer, read=True)
     try:
         record = await asyncio.to_thread(service.store.cancel_request, sessionId, str(viewer.id), request_id)
     except ValueError as exc:
@@ -1657,7 +1659,7 @@ async def get_control_run(run_id: str, request: Request, viewer: CurrentUserOpti
                          x_internal_key: Optional[str] = Header(None)):
     _auth(x_internal_key)
     _require_login(viewer)
-    service = _control_service(request, viewer)
+    service = _control_service(request, viewer, read=True)
     return public_control_run(await _owned_control_record(service, run_id, viewer))
 
 
@@ -1666,7 +1668,7 @@ async def stream_control_run(run_id: str, request: Request, viewer: CurrentUserO
                             afterSeq: int = 0, x_internal_key: Optional[str] = Header(None)):
     _auth(x_internal_key)
     _require_login(viewer)
-    service = _control_service(request, viewer)
+    service = _control_service(request, viewer, read=True)
     record = await _owned_control_record(service, run_id, viewer)
     if afterSeq < 0 or afterSeq > record["lastSeq"]:
         raise HTTPException(422, "invalid_control_event_cursor")
@@ -1678,7 +1680,7 @@ async def cancel_control_run(run_id: str, request: Request, viewer: CurrentUserO
                             x_internal_key: Optional[str] = Header(None)):
     _auth(x_internal_key)
     _require_login(viewer)
-    service = _control_service(request, viewer)
+    service = _control_service(request, viewer, read=True)
     await _owned_control_record(service, run_id, viewer)
     return public_control_run(await service.cancel(run_id, str(viewer.id)))
 

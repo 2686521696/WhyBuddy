@@ -9,11 +9,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { createPreviewRelay } from "./relay";
 import { validBinding, type PreviewBinding, type TunnelGrant, type BrowserGrant } from "./contracts";
+import { installPreviewSelectionBridge } from "../../shared/project-preview-selection.mjs";
 
 export interface PreviewServiceConfig {
   authorityUrl: string;
   gatewayKey: string;
   publicProtocol: "https:" | "http:";
+  workbenchOrigin?: string;
   fetch?: typeof globalThis.fetch;
 }
 
@@ -88,6 +90,13 @@ export function createPreviewService(config: PreviewServiceConfig) {
   if (authority.protocol === "http:" && !["localhost", "127.0.0.1", "[::1]"].includes(authority.hostname)) {
     throw new Error("preview_authority_https_required");
   }
+  if (config.workbenchOrigin) {
+    const workbench = new URL(config.workbenchOrigin);
+    if (workbench.origin !== config.workbenchOrigin || !["https:", "http:"].includes(workbench.protocol) ||
+        (workbench.protocol === "http:" && !["localhost", "127.0.0.1", "[::1]"].includes(workbench.hostname))) {
+      throw new Error("preview_workbench_origin_invalid");
+    }
+  }
   const fetcher = config.fetch ?? globalThis.fetch;
   const cookieName = config.publicProtocol === "https:" ? HTTPS_COOKIE : LOCAL_COOKIE;
   async function call(path: string, body: object): Promise<Record<string, unknown>> {
@@ -152,6 +161,26 @@ export function createPreviewService(config: PreviewServiceConfig) {
     },
     async beforeRequest(request, response) {
       const path = request.url?.split("?", 1)[0];
+      if (path === "/_whybuddy/editor.js") {
+        try {
+          if (request.method !== "GET") throw new Error("preview_method_invalid");
+          const audience = requestAudience(request, config.publicProtocol);
+          if (request.headers.origin && request.headers.origin !== audience) throw new Error("preview_origin_denied");
+          const token = cookie(request, cookieName);
+          if (!token) throw new Error("preview_access_denied");
+          const result = await call("/authorize", { role: "browser", token, audience });
+          if (result.ok !== true) throw new Error("preview_access_denied");
+          const scope = scopeFromWire(result.binding, audience);
+          const identity = { workbenchOrigin: config.workbenchOrigin,
+            projectId: scope.projectId, runtimeId: scope.runtimeId, revision: scope.revision };
+          response.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store",
+            "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff" });
+          response.end(config.workbenchOrigin
+            ? `(${installPreviewSelectionBridge.toString()})(${JSON.stringify(identity)});`
+            : "// Preview selection requires a configured workbench origin.\n");
+        } catch { respond(response, 403, { error: "preview_access_denied" }); }
+        return true;
+      }
       if (path === "/_whybuddy/health" || path === "/_whybuddy/status") {
         if (!secretMatches(request.headers.authorization, "Bearer " + config.gatewayKey)) {
           respond(response, 403, { error: "preview_access_denied" });

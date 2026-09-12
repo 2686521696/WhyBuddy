@@ -9,11 +9,13 @@ authority; the session pointer is a repairable projection.
 from __future__ import annotations
 
 from pathlib import Path
+import uuid
 
 from models.project_runtime import Project
 from models.v5_state import V5SessionState
 from services import persistence
 from services.control_checkpoint import current_checkpoint
+from services.project_acceptance import TASK_ACCEPTANCE_PROFILE
 from services.project_authority import approved_reference, assert_session_authorized, has_generated_application
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStore, ProjectStoreUnavailable
 
@@ -22,15 +24,26 @@ TEMPLATE_ROOT = Path(__file__).resolve().parents[2] / "project-templates" / "rea
 TEMPLATE_FILES = (
     "package.json", "package-lock.json", "tsconfig.json", "index.html",
     "src/main.tsx", "src/counter.mjs", "src/style.css", "tests/counter.test.mjs",
+    "public/_whybuddy/editor.js",
+)
+TASK_TEMPLATE_VERSION = "whybuddy-react-vite-tasks-1"
+TASK_TEMPLATE_FILES = (
+    "package.json", "package-lock.json", "tsconfig.json", "index.html", "README.md",
+    "database.mjs", "server.mjs", "src/main.tsx", "src/style.css", "tests/application.test.mjs",
+    "public/_whybuddy/editor.js",
 )
 
 
-def load_project_template() -> tuple[dict[str, str], str]:
+def load_project_template(template_id: str = "react-vite") -> tuple[dict[str, str], str]:
+    if template_id not in {"react-vite", "react-vite-tasks"}:
+        raise ValueError("project_template_unsupported")
+    root = TEMPLATE_ROOT if template_id == "react-vite" else TEMPLATE_ROOT.parent / "react-vite-tasks"
+    names = TEMPLATE_FILES if template_id == "react-vite" else TASK_TEMPLATE_FILES
     try:
-        files = {name: (TEMPLATE_ROOT / name).read_text(encoding="utf-8") for name in TEMPLATE_FILES}
+        files = {name: (root / name).read_text(encoding="utf-8") for name in names}
     except (OSError, UnicodeError) as exc:
         raise ProjectStoreUnavailable("project_template_unavailable") from exc
-    return files, TEMPLATE_VERSION
+    return files, TEMPLATE_VERSION if template_id == "react-vite" else TASK_TEMPLATE_VERSION
 
 
 def load_authorized_session(session_id: str, *, owner_id: str,
@@ -96,7 +109,7 @@ def sync_session_project(store: ProjectStore, session_id: str, *, owner_id: str,
 
 
 def create_session_project(store: ProjectStore, session_id: str, *, owner_id: str,
-                           approval_ref: str) -> Project:
+                           approval_ref: str, template_id: str = "react-vite") -> Project:
     state = load_authorized_session(session_id, owner_id=owner_id, approval_ref=approval_ref)
     if not state.projectId and has_generated_application(state):
         raise ProjectConflict("project_conversion_required")
@@ -104,8 +117,32 @@ def create_session_project(store: ProjectStore, session_id: str, *, owner_id: st
     if state.projectId and (existing is None or state.projectId != existing.projectId):
         raise ProjectConflict("project_identity_changed")
     if existing is None:
-        files, version = load_project_template()
+        files, version = load_project_template() if template_id == "react-vite" else load_project_template(template_id)
         existing = store.create_project(session_id, owner_id=owner_id, files=files,
-            template_version=version, plan_ref=approval_ref)
+            template_version=version, plan_ref=approval_ref,
+            spec_revision=TASK_ACCEPTANCE_PROFILE if template_id == "react-vite-tasks" else None)
+    elif state.projectId == existing.projectId:
+        # A fork deliberately starts without the original execution grant. Once
+        # the new session approves its own plan, adopt the same source in a new
+        # revision; never copy the parent's approval or reuse old evidence.
+        current = store.get_revision(existing.projectId, owner_id=owner_id)
+        if current.planRef != approval_ref:
+            lease = store.acquire_lease(existing.projectId, owner_id=owner_id,
+                lease_owner="adopt-plan-" + uuid.uuid4().hex, ttl_seconds=120)
+            try:
+                if lease.sandboxId or lease.processRefs:
+                    raise ProjectConflict("project_runtime_reconciliation_required")
+                load_authorized_session(session_id, owner_id=owner_id, approval_ref=approval_ref)
+                current = store.get_revision(existing.projectId, owner_id=owner_id)
+                if current.planRef != approval_ref:
+                    store.commit_revision(existing.projectId, owner_id=owner_id,
+                        expected_revision=current.revision,
+                        files=store.read_files(existing.projectId, current.revision, owner_id=owner_id),
+                        template_version=current.templateVersion, plan_ref=approval_ref,
+                        spec_revision=current.specRevision, lease_generation=lease.generation,
+                        lease_owner=lease.leaseOwner)
+            finally:
+                store.release_lease(existing.projectId, owner_id=owner_id,
+                    lease_owner=lease.leaseOwner, generation=lease.generation)
     sync_session_project(store, session_id, owner_id=owner_id, approval_ref=approval_ref)
     return store.get_project(existing.projectId, owner_id=owner_id)

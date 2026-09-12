@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 
 from models.project_runtime import ProjectOperation, RuntimeInstance
 from services.project_actor_access import authorize_project_actor
+from services.project_application_runtime import checkpoint_application_data, restore_application_data
 from services.project_browser_verification import (
     finish_pending_verifications, recover_project_verifications, run_next_project_verification,
 )
@@ -190,10 +191,12 @@ class ProjectRuntimeSupervisor:
             parent = self.store.get_operation(runtime_operation_id, owner_id=owner_id)
             candidate = parent.model_copy(update={"approvalRef": approval_ref})
             self.authorizer(self.store, candidate, owner_id)
+            revision = self.store.get_revision(parent.projectId, expected_revision, owner_id=owner_id)
+            suite_version = "react-vite-tasks@1" if revision.templateVersion == "whybuddy-react-vite-tasks-1" else "react-vite-counter@1"
             try:
                 operation = self.store.enqueue_runtime_verification(runtime_operation_id,
                     owner_id=owner_id, expected_revision=expected_revision, approval_ref=approval_ref,
-                    idempotency_key=idempotency_key, suite_version="react-vite-counter@1")
+                    idempotency_key=idempotency_key, suite_version=suite_version)
             except ProjectConflict as exc:
                 # A confirmed zero-row admission may race the healthy heartbeat.
                 # Read and authorize everything again, never replay unknown IO.
@@ -356,18 +359,7 @@ class _RuntimeTask:
             self.log_offsets[pid] = chunk.next_offset
         return chunk.next_offset
 
-    def run(self):
-        if self.result.get("cleanup"):
-            self.finish(**self.result["cleanup"])
-            return
-        self.check()
-        if self.result.get("sourceSync"):
-            authorize_source_recovery(self)
-        else:
-            self.supervisor.authorizer(self.store, self.operation(), self.owner_id)
-        command = self.original.input.get("command") if self.original.kind == "runtime.exec" else None
-        if self.original.kind == "runtime.exec" and (not isinstance(command, str) or command not in PROJECT_COMMANDS):
-            raise ValueError("invalid_project_command")
+    def development_server_command(self):
         server_command = f"npm run dev -- --host 0.0.0.0 --port {self.runtime.port} --strictPort"
         if self.original.kind == "runtime.start" and self.supervisor.preview_runtime is not None:
             # The relay preserves Host (including HMR), so Vite must explicitly
@@ -380,6 +372,21 @@ class _RuntimeTask:
             if not preview_host:
                 raise ValueError("project_preview_origin_invalid")
             server_command = f"__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS={shlex.quote(preview_host)} {server_command}"
+        return server_command
+
+    def run(self):
+        if self.result.get("cleanup"):
+            self.finish(**self.result["cleanup"])
+            return
+        self.check()
+        if self.result.get("sourceSync"):
+            authorize_source_recovery(self)
+        else:
+            self.supervisor.authorizer(self.store, self.operation(), self.owner_id)
+        command = self.original.input.get("command") if self.original.kind == "runtime.exec" else None
+        if self.original.kind == "runtime.exec" and (not isinstance(command, str) or command not in PROJECT_COMMANDS):
+            raise ValueError("invalid_project_command")
+        server_command = self.development_server_command()
         if self.original.runtime is None:
             self.save("provisioning")
             files = self.store.read_files(self.original.projectId, self.original.expectedRevision, owner_id=self.owner_id)
@@ -398,6 +405,7 @@ class _RuntimeTask:
             self.handle = self.provider.create(workspace_id=self.lease.workspaceId)
             self.heartbeat.renew(sandbox_id=self.handle.sandbox_id, process_refs={"operationId": self.operation_id})
             self.heartbeat.handle = self.handle
+            restore_application_data(self)
             self.save("syncing")
             self.provider.write_files(self.handle, {**files, REVISION_FILE: json.dumps({"revision": self.runtime.revision})})
             self.heartbeat.renew(mounted_revision=self.runtime.revision)
@@ -478,6 +486,10 @@ class _RuntimeTask:
         next_health = 0
         while True:
             self.check()
+            # A formal verification temporarily serves built assets, then starts
+            # a fresh dev process. Never retain its predecessor's PID in this loop.
+            pid = self._process("server")
+            checkpoint_application_data(self)
             if sync_next_source_patch(self):
                 next_health = 0
             operation_count = self.store.project_operation_count(self.original.projectId, owner_id=self.owner_id)
@@ -497,8 +509,10 @@ class _RuntimeTask:
                 next_health = time.time() + min(30, self.supervisor.lease_ttl / 3)
             if self.supervisor.preview_runtime is not None:
                 self.supervisor.preview_runtime.ensure(self)
+            checkpoint_application_data(self)
             if run_next_project_verification(self):
                 next_health = 0
+            checkpoint_application_data(self)
             self.sleep()
 
     def run_command(self):
@@ -581,6 +595,7 @@ class _RuntimeTask:
                 finish_pending_verifications(self, cancelled=status == "cancelled", error=code or "project_runtime_stopped")
             if self.supervisor.preview_runtime is not None:
                 self.supervisor.preview_runtime.revoke(self)
+            checkpoint_application_data(self, final=True)
             if self.handle is not None:
                 self.provider.destroy(self.handle)
             if self.provider is None:
@@ -604,6 +619,7 @@ class _RuntimeTask:
             lease_owner=self.lease.leaseOwner, generation=self.lease.generation, clear_runtime=True)
 
     def suspend(self, reason):
+        checkpoint_application_data(self, force=True)
         phase = self.result.get("phase", self.runtime.status)
         self.save("reconciling", status="interrupted", error=reason)
         if self.supervisor.preview_runtime is not None:

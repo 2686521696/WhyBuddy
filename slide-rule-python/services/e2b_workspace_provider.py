@@ -20,7 +20,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from services.project_manifest import build_manifest
-from services.workspace_provider import PROJECT_REVISION_FILE, PrivatePreviewTarget, ProcessLogChunk, ProcessResult, WorkspaceHandle, WorkspaceProviderError
+from services.project_workspace_artifacts import ARTIFACT_IO_SCRIPT, MAX_APPLICATION_DATA_BYTES, STATIC_BUILD_SERVER_SCRIPT
+from services.workspace_provider import BuildOutput, PROJECT_REVISION_FILE, PrivatePreviewTarget, ProcessLogChunk, ProcessResult, WorkspaceHandle, WorkspaceProviderError
 
 PROJECT_ROOT = "/home/user/workspace"
 MAX_OUTPUT_BYTES = 32 * 1024
@@ -495,6 +496,79 @@ class E2BWorkspaceProvider:
 
     def write_files(self, handle: WorkspaceHandle, files: dict[str, str]) -> None:
         self._write_files_at_root(handle, files, PROJECT_ROOT)
+
+    def _artifact_io(self, handle, action, **values):
+        try:
+            payload = json.dumps({"action": action, "root": PROJECT_ROOT, **values})
+            process = self._sandbox(handle).commands.run(_python(ARTIFACT_IO_SCRIPT), cwd="/home/user",
+                background=True, stdin=True, timeout=60)
+            for offset in range(0, len(payload), 32 * 1024):
+                process.send_stdin(payload[offset:offset + 32 * 1024])
+            process.close_stdin()
+            reply = process.wait()
+            limit = (MAX_APPLICATION_DATA_BYTES + 2) // 3 * 4 + 100 if action == "read-data" else 4096
+            if reply.exit_code != 0 or not isinstance(reply.stdout, str) or len(reply.stdout.encode()) > limit:
+                raise ValueError("invalid_artifact_reply")
+            value = json.loads(reply.stdout)
+            if not isinstance(value, dict):
+                raise ValueError("invalid_artifact_reply")
+            return value
+        except Exception:
+            raise WorkspaceProviderError("project_artifact_io_failed") from None
+
+    def prepare_verification(self, handle, verification_id):
+        if not isinstance(verification_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", verification_id):
+            raise ValueError("invalid_verification_id")
+        if self._artifact_io(handle, "prepare", verificationId=verification_id) != {"ok": True}:
+            raise WorkspaceProviderError("project_build_prepare_failed")
+
+    def cleanup_verification_data(self, handle, verification_id):
+        if not isinstance(verification_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", verification_id):
+            raise ValueError("invalid_verification_id")
+        if self._artifact_io(handle, "cleanup", verificationId=verification_id) != {"ok": True}:
+            raise WorkspaceProviderError("project_build_cleanup_pending")
+
+    def inspect_build_output(self, handle, *, revision):
+        value = self._artifact_io(handle, "output", revision=revision)
+        if (set(value) != {"outputHash", "fileCount", "sizeBytes"}
+                or not isinstance(value["outputHash"], str) or not re.fullmatch(r"[a-f0-9]{64}", value["outputHash"])
+                or type(value["fileCount"]) is not int or not 2 <= value["fileCount"] <= 5000
+                or type(value["sizeBytes"]) is not int or not 1 <= value["sizeBytes"] <= 104857600):
+            raise WorkspaceProviderError("project_build_output_invalid")
+        return BuildOutput(value["outputHash"], value["fileCount"], value["sizeBytes"])
+
+    def start_verification_server(self, handle, *, verification_id, suite_version, port):
+        if (not isinstance(verification_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", verification_id)
+                or type(port) is not int or not 1024 <= port <= 65535):
+            raise ValueError("invalid_verification_server")
+        if suite_version == "react-vite-tasks@1":
+            command = (f"npm start -- --host 0.0.0.0 --port {port} --static-dir {PROJECT_ROOT}/dist"
+                f" --data-dir /home/user/.whybuddy-verification/{verification_id}/data")
+        elif suite_version == "react-vite-counter@1":
+            command = _python(STATIC_BUILD_SERVER_SCRIPT) + f" {port} {PROJECT_ROOT}/dist"
+        else:
+            raise ValueError("verification_suite_unsupported")
+        return self.start_process(handle, command, timeout_seconds=900)
+
+    def read_application_data(self, handle):
+        value = self._artifact_io(handle, "read-data")
+        if set(value) != {"data"}:
+            raise WorkspaceProviderError("project_application_data_invalid")
+        if value["data"] is None:
+            return None
+        try:
+            data = base64.b64decode(value["data"], validate=True)
+            if not 16 <= len(data) <= MAX_APPLICATION_DATA_BYTES or not data.startswith(b"SQLite format 3\x00"):
+                raise ValueError()
+            return data
+        except (TypeError, ValueError):
+            raise WorkspaceProviderError("project_application_data_invalid") from None
+
+    def write_application_data(self, handle, data):
+        if not isinstance(data, bytes) or not 16 <= len(data) <= MAX_APPLICATION_DATA_BYTES or not data.startswith(b"SQLite format 3\x00"):
+            raise ValueError("project_application_data_invalid")
+        if self._artifact_io(handle, "write-data", data=base64.b64encode(data).decode()) != {"ok": True}:
+            raise WorkspaceProviderError("project_application_data_restore_failed")
 
     def sync_files(self, handle: WorkspaceHandle, *, expected_files: dict[str, str], files: dict[str, str]) -> None:
         """CAS against all persisted source files; a partial write is never retried here."""

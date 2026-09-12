@@ -84,7 +84,12 @@ export async function getProjectPreview(
         descriptor.projectId === projectId &&
         typeof descriptor.runtimeId === "string" &&
         typeof descriptor.revision === "string" &&
-        statuses.has(descriptor.status))
+        statuses.has(descriptor.status) &&
+        (descriptor.capabilities === undefined ||
+          (Array.isArray(descriptor.capabilities) &&
+            descriptor.capabilities.every(
+              (capability: unknown) => typeof capability === "string"
+            ))))
     )
   ) {
     throw new ProjectPreviewError("工程预览状态不完整，请重新查看状态。");

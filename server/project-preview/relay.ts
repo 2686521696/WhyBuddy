@@ -226,7 +226,10 @@ export function createPreviewRelay(options: PreviewRelayOptions) {
     trackBrowser(grant, () => response.destroy(), done => response.once("close", done));
     const upstream = httpRequest({ socketPath: control.socketPath, path,
       method: request.method, agent: false,
-      headers: filteredHeaders(request.headers, cookies, false, grant.authorizationIsGatewayCredential) });
+      headers: { ...filteredHeaders(request.headers, cookies, false, grant.authorizationIsGatewayCredential),
+        // TLS terminates at the preview gateway. The app needs the authenticated
+        // public scheme to issue iframe cookies; browser forwarded headers are stripped.
+        "x-forwarded-proto": new URL(grant.audience).protocol.slice(0, -1) } });
     upstream.setTimeout(limits.idleTimeoutMs, () => upstream.destroy());
     request.on("aborted", () => upstream.destroy());
     request.on("error", () => upstream.destroy());
@@ -263,6 +266,7 @@ export function createPreviewRelay(options: PreviewRelayOptions) {
     const { control, grant } = authorized;
     trackBrowser(grant, () => socket.destroy(), done => socket.once("close", done));
     const headers = filteredHeaders(request.headers, cookies, false, grant.authorizationIsGatewayCredential);
+    headers["x-forwarded-proto"] = new URL(grant.audience).protocol.slice(0, -1);
     headers.connection = "Upgrade";
     headers.upgrade = "websocket";
     const upstream = httpRequest({ socketPath: control.socketPath, path, method: "GET", headers, agent: false });

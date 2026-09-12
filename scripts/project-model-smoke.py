@@ -207,10 +207,10 @@ def correlate(record, events):
 
 def require_edit(before, after, old_revision, new_revision, expected_title):
     expected = dict(before)
-    marker = "<h1>New Project</h1>"
+    marker = ">New Project</h1>"
     if before["src/main.tsx"].count(marker) != 1:
         raise RuntimeError("fixture_heading_changed")
-    expected["src/main.tsx"] = before["src/main.tsx"].replace(marker, f"<h1>{expected_title}</h1>")
+    expected["src/main.tsx"] = before["src/main.tsx"].replace(marker, f">{expected_title}</h1>")
     if new_revision == old_revision or after != expected:
         raise RuntimeError("model_did_not_save_requested_exact_edit")
 

@@ -14,6 +14,7 @@ if (!existsSync(python))
   throw new Error("Project smoke requires slide-rule-python/.venv");
 const args = process.argv.slice(2);
 const scripts = new Map([
+  ["--preflight", "project-preflight.py"],
   ["--lifecycle", "project-lifecycle-smoke.py"],
   ["--process", "project-process-smoke.py"],
   ["--tools", "project-tools-smoke.py"],

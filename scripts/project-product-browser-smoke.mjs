@@ -65,6 +65,9 @@ try {
   async function verifyPage(expectedStatus, revision, label) {
     report.stage = "independent_verification_" + label;
     await persist();
+    const runtimeState = async () => (await context.request.get(config.authority + "/_smoke/state",
+      { headers: { Authorization: "Bearer " + config.fixtureKey } })).json();
+    const beforeRuntime = (await runtimeState()).operations.find(item => item.operationId === config.operationId).runtime;
     const button = page.getByTestId("project-verification-start");
     await expect(button).toBeEnabled({ timeout: 30000 });
     const sent = page.waitForRequest(request => request.method() === "POST" &&
@@ -90,9 +93,27 @@ try {
     report.verifications ??= [];
     report.verifications.push({ label, operationId: operation.operationId, snapshot });
     await check(label + " receives the actual independent browser verdict", snapshot?.effectiveStatus === expectedStatus);
+    let afterRuntime;
+    const restoredUntil = Date.now() + 60000;
+    while (Date.now() < restoredUntil) {
+      const parent = (await runtimeState()).operations.find(item => item.operationId === config.operationId);
+      if (parent.runtime.status === "ready" && !parent.result?.verificationBuild && parent.runtime.processId !== beforeRuntime.processId) {
+        afterRuntime = parent.runtime;
+        break;
+      }
+      await delay(500);
+    }
+    const oldProcess = await fixture("process/" + beforeRuntime.processId);
+    await check(label + " restores a new dev PID and confirms the old dev process stopped", afterRuntime?.runtimeId === beforeRuntime.runtimeId &&
+      afterRuntime.processId !== beforeRuntime.processId && oldProcess.running === false);
+    report.processTransitions ??= [];
+    report.processTransitions.push({ label, oldPid: beforeRuntime.processId, newPid: afterRuntime.processId, oldStopped: !oldProcess.running });
     await check(label + " binds evidence to the exact source and limited coverage", snapshot.verification.revision === revision &&
       snapshot.deliveryEligible === false && snapshot.verification.assertions.length === 7 &&
       snapshot.verification.runnerVersion === "whybuddy-browser-v1:pw1.61.1");
+    await check(label + " verifies the actual immutable production build", snapshot.verification.build?.status === "passed" &&
+      snapshot.verification.build.installExitCode === 0 && snapshot.verification.build.buildExitCode === 0 &&
+      snapshot.verification.build.outputFileCount > 0 && /^[a-f0-9]{64}$/.test(snapshot.verification.build.outputHash));
     await page.getByRole("button", { name: "更新检查状态", exact: true }).click();
     await expect(page.getByTestId("project-verification-status")).toContainText(expectedStatus === "passed" ? "通过" : "失败", { timeout: 15000 });
     const evidence = snapshot.verification;

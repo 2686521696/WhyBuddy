@@ -20,6 +20,7 @@ from test_project_live_source_sync import live, patch_args
 from project_actor_support import project_actor
 from test_project_runtime_worker import eventually
 from test_control_project_tools import setup as control_setup, post as control_post
+from project_build_support import enable_build_provider
 
 ASSERTIONS = ("heading_visible", "counter_initial", "counter_increment", "counter_second_increment",
               "reload_reset", "no_page_errors", "no_failed_requests")
@@ -43,6 +44,8 @@ class Browser:
         return True
 
     def run(self, **kwargs):
+        if hasattr(self, "workspace"):
+            assert self.workspace.active_server_mode == "production"
         self.calls.append({key: value for key, value in kwargs.items() if key != "check_callback"})
         self.entered.set()
         try:
@@ -61,6 +64,7 @@ class Browser:
 
 def install_browser(live, monkeypatch, browser=None):
     browser = browser or Browser()
+    browser.workspace = enable_build_provider(getattr(live, "provider", None) or live.supervisor.provider_factory())
     monkeypatch.setenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE", "https://{runtimeId}.preview.example.com")
     live.supervisor.browser_provider_factory = lambda: browser
     live.supervisor.preview_runtime = SimpleNamespace(ensure=lambda task: None, revoke=lambda task: None,
@@ -311,10 +315,13 @@ def test_restart_reconciles_interrupted_browser_without_replaying_its_clicks(liv
         assert len(browser.calls) == 1 and browser.cleaned.count(child) >= 2
         assert cleanup_sources[:2] == [live.files["src/App.tsx"], live.files["src/App.tsx"]]
         assert live.provider.contents["src/App.tsx"] == "Updated task\n"
-        assert live.parent().runtime.processId == original_parent.runtime.processId
+        assert live.parent().runtime.processId != original_parent.runtime.processId
+        assert live.provider.active_server_mode == "dev"
         assert live.parent().runtime.runtimeId == original_parent.runtime.runtimeId
         assert live.parent().leaseGeneration > original_parent.leaseGeneration
-        assert live.provider.created == 1 and len(live.provider.commands) == 2
+        assert live.provider.created == 1
+        assert live.provider.commands.count("npm run build") == 1
+        assert live.provider.commands.count("npm ci --ignore-scripts") == 2
         assert revoked == ["grant-fixture"]
         second.cancel(live.started["operationId"], owner_id="alice")
         eventually(lambda: live.parent().status == "cancelled")
@@ -488,7 +495,8 @@ def test_model_http_loop_observes_failed_assertion_patches_source_and_verifies_n
         assert len(browser.calls) == 2
         assert browser.calls[0]["revision"] == broken["revision"]
         assert browser.calls[1]["revision"] == parent().runtime.revision != broken["revision"]
-        assert parent().runtime.processId == original_pid and provider.created == 1
+        assert parent().runtime.processId != original_pid and provider.created == 1
+        assert provider.active_server_mode == "dev" and provider.processes[original_pid] == "stopped"
         assert provider.contents["src/main.tsx"] == source
         old = supervisor.verification_store.for_operation(seen[0]["operationId"], owner_id=TEST_USER_ID)
         assert old.verification.status == "failed" and old.effectiveStatus == "stale"

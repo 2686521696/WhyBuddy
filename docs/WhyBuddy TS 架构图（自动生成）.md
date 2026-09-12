@@ -11,16 +11,16 @@
 | 包 | 模块数 |
 |---|---:|
 | agent-loop | 99 |
-| client | 1032 |
-| project-templates | 2 |
-| scripts | 66 |
+| client | 1038 |
+| project-templates | 5 |
+| scripts | 67 |
 | server | 588 |
 | services | 32 |
-| shared | 177 |
-| **合计** | **1996** |
+| shared | 179 |
+| **合计** | **2008** |
 
-边 5969 条，其中动态 import / require 317 条、
-类型 import 2239 条。
+边 5987 条，其中动态 import / require 317 条、
+类型 import 2244 条。
 
 ## component 依赖图
 
@@ -35,12 +35,13 @@ graph LR
   client-lib["client-lib<br/>174"]
   client-pages["client-pages<br/>74"]
   client-pages-autopilot["client-pages-autopilot<br/>192"]
-  client-pages-sliderule["client-pages-sliderule<br/>260"]
+  client-pages-sliderule["client-pages-sliderule<br/>266"]
   client-runtime["client-runtime<br/>16"]
   client-shell["client-shell<br/>36"]
   lobster-executor["lobster-executor<br/>32"]
-  ops-scripts["ops-scripts<br/>65"]
+  ops-scripts["ops-scripts<br/>66"]
   project-preview-fixtures["project-preview-fixtures<br/>1"]
+  project-template-tasks["project-template-tasks<br/>3"]
   project-template-vite["project-template-vite<br/>2"]
   server-audit["server-audit<br/>26"]
   server-core["server-core<br/>108"]
@@ -56,7 +57,7 @@ graph LR
   server-sliderule["server-sliderule<br/>20"]
   server-tasks["server-tasks<br/>19"]
   shared-blueprint["shared-blueprint<br/>68"]
-  shared-contracts["shared-contracts<br/>77"]
+  shared-contracts["shared-contracts<br/>79"]
   shared-web-aigc["shared-web-aigc<br/>26"]
   shared-workflow["shared-workflow<br/>6"]
   agent-loop-tools --> agent-loop-src
@@ -149,6 +150,7 @@ graph LR
   server-persist -.->|环| server-core
   server-persist -.->|环| server-tasks
   server-persist --> shared-contracts
+  server-project-preview --> shared-contracts
   server-rag -.->|环| server-routes
   server-rag --> shared-contracts
   server-routes-blueprint -.->|环| server-core
@@ -186,7 +188,7 @@ graph LR
   shared-contracts -.->|环| shared-workflow
   shared-web-aigc -.->|环| shared-contracts
   shared-workflow -.->|环| shared-contracts
-  linkStyle 1,2,3,4,5,9,10,15,16,17,18,20,21,22,23,26,27,28,29,30,33,36,37,38,39,40,41,50,51,52,53,56,57,58,59,60,61,62,77,78,79,80,84,85,87,88,90,92,93,94,97,98,99,100,101,102,103,104,110,111,115,116,117,118,123,124,125,126 stroke:#dc2626,color:#b91c1c
+  linkStyle 1,2,3,4,5,9,10,15,16,17,18,20,21,22,23,26,27,28,29,30,33,36,37,38,39,40,41,50,51,52,53,56,57,58,59,60,61,62,77,78,79,80,84,85,87,88,91,93,94,95,98,99,100,101,102,103,104,105,111,112,116,117,118,119,124,125,126,127 stroke:#dc2626,color:#b91c1c
 ```
 
 ## 欠账看板（红虚线，基线只许变短）
@@ -350,6 +352,12 @@ Cloud acceptance fixture launches the production preview relay against a control
 
 路径：`scripts/fixtures`
 
+### project-template-tasks
+
+Fixed runnable task application: Node API and SQLite data, Vite development and production static output. Python publishes sources to E2B; application identities and data belong to this project.
+
+路径：`project-templates/react-vite-tasks`
+
 ### project-template-vite
 
 Versioned React/TS/Vite template. index.html loads src/main.tsx after Python publishes these files to E2B.
@@ -394,7 +402,7 @@ Versioned React/TS/Vite template. index.html loads src/main.tsx after Python pub
 
 ### server-project-preview
 
-Dedicated private-preview transport process: HTTP/WebSocket relay and sandbox tunnel agent. Python owns project access; this component has no imports of the main app, its identity store or browser code.
+Dedicated private-preview HTTP/WebSocket transport; Python owns access. The shared self-contained selection bridge only sends source locations, and the gateway binds it to current authorized runtime identity.
 
 路径：`server/project-preview`
 

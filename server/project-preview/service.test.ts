@@ -80,7 +80,7 @@ async function fixture(options: { precision?: boolean; denyRole?: "browser" | "t
   });
   const authorityPort = await listen(authority); cleanup.push(() => stop(authority));
   const service = createPreviewService({ authorityUrl: `http://127.0.0.1:${authorityPort}/authority`,
-    gatewayKey, publicProtocol: "https:" });
+    gatewayKey, publicProtocol: "https:", workbenchOrigin: "https://workbench.example.test" });
   const port = await listen(service.server); const origin = `http://127.0.0.1:${port}`;
   audience = `https://127.0.0.1:${port}`; cleanup.push(() => service.close());
   async function agent() {
@@ -98,6 +98,31 @@ async function fixture(options: { precision?: boolean; denyRole?: "browser" | "t
   return { service, agent, origin, audience, calls, observed, socket, binding,
     cookie: { cookie: "__Host-WhyBuddyPreview=" + browserToken }, unavailable: () => { unavailable = true; } };
 }
+
+it("serves a runtime-bound editor only after current browser authorization without passing credentials to code", async () => {
+  const f = await fixture();
+  const response = await send(f.origin, "/_whybuddy/editor.js", f.cookie);
+  expect(response.status).toBe(200);
+  expect(response.headers["content-type"]).toContain("text/javascript");
+  expect(response.body).toContain('"projectId":"project"');
+  expect(response.body).toContain('"revision":"revision"');
+  expect(response.body).toContain('"workbenchOrigin":"https://workbench.example.test"');
+  expect(response.body).not.toContain(gatewayKey);
+  expect(response.body).not.toContain(browserToken);
+  expect(response.body).not.toContain("ownerId");
+  expect(f.observed).toHaveLength(0);
+  expect((await send(f.origin, "/_whybuddy/editor.js")).status).toBe(403);
+  expect((await send(f.origin, "/_whybuddy/editor.js", { ...f.cookie, origin: "https://other.test" })).status).toBe(403);
+  f.unavailable();
+  expect((await send(f.origin, "/_whybuddy/editor.js", f.cookie)).status).toBe(403);
+});
+
+it("rejects invalid workbench origins before opening an editor transport", () => {
+  for (const workbenchOrigin of ["https://example.test/path", "http://example.test", "https://name:pass@example.test", "null"]) {
+    expect(() => createPreviewService({ authorityUrl: "http://127.0.0.1:1234/authority", gatewayKey,
+      publicProtocol: "https:", workbenchOrigin })).toThrow();
+  }
+});
 
 it("redeems one ticket into a bounded HttpOnly partitioned cookie and redirects to a clean URL", async () => {
   const f = await fixture();

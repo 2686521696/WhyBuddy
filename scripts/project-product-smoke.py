@@ -88,12 +88,13 @@ def source_archive(*, include_preview: bool = True) -> bytes:
 
     Ignored files, secrets and mutable application/session data are never selected.
     """
-    paths = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "slide-rule-python", "project-templates/react-vite"],
+    paths = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "slide-rule-python", "project-templates/react-vite", "project-templates/react-vite-tasks"],
         cwd=ROOT, check=True, capture_output=True).stdout.decode().split("\0")
     selected = [path for path in paths if path and (
         (path.startswith("slide-rule-python/") and path.endswith(".py") and "/tests/" not in path)
         or path.startswith("slide-rule-python/services/data/")
-        or path == "slide-rule-python/requirements.txt" or path.startswith("project-templates/react-vite/"))]
+        or path == "slide-rule-python/requirements.txt" or path.startswith("project-templates/react-vite/")
+        or path.startswith("project-templates/react-vite-tasks/"))]
     selected += ["scripts/fixtures/project-product-backend.py", "server/project-verification/browser-runner.mjs"]
     if include_preview:
         selected += ["dist/project-preview/gateway.cjs", "dist/project-preview/agent.cjs", "dist/project-preview/ws-LICENSE.txt"]
@@ -113,7 +114,10 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--browser-template", default="", help="Run the independent browser pass/fail/repair scenario with this trusted E2B template")
     parser.add_argument("--verify-browser", action="store_true", help="Require the independent browser capability; never fall back to preview-only smoke")
+    parser.add_argument("--tasks", action="store_true", help="Run the real tasks business/data/rebuild/source/delivery scenario")
     args = parser.parse_args()
+    if args.tasks:
+        args.verify_browser = True
     if not 180 <= args.timeout <= 1200:
         parser.error("timeout must be 180..1200 seconds")
     from dotenv import dotenv_values
@@ -135,9 +139,13 @@ def main() -> int:
         "notCovered": ["model selects tools in this scenario", "production DNS and deployment", "P4 independent verification worker", "business database and acceptance"]}
     if args.browser_template:
         report["notCovered"].remove("P4 independent verification worker")
-        report["notCovered"].append("immutable production build and arbitrary business verification suites")
+        report["notCovered"].append("arbitrary business verification suites")
         report["fixtures"].append("counter break and repair intent")
         report["browserTemplate"] = args.browser_template
+    if args.tasks:
+        report["notCovered"].remove("business database and acceptance")
+        report["fixtures"] = ["isolated accounts and approved tasks session", "two opaque runtime IDs matching separate trusted TLS gateway ports", "source failure and repair intent"]
+        report["template"] = "react-vite-tasks"
     def persist():
         (directory / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     def check(name, passed):
@@ -191,6 +199,10 @@ def main() -> int:
             network={"allow_public_traffic": True}, metadata={"whybuddy_product_smoke": identity})
         preview_origin = "https://" + trusted.get_host(5190)
         authority_origin = "https://" + trusted.get_host(5192)
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        workbench = "http://127.0.0.1:" + str(port)
         report["trustedSandboxId"] = trusted.sandbox_id
         config = {"fixtureKey": fixture_key, "password": password,
             "ownerEmail": "owner-" + identity + "@example.invalid", "strangerEmail": "other-" + identity + "@example.invalid",
@@ -209,6 +221,9 @@ def main() -> int:
                 "WHYBUDDY_PROJECT_BROWSER_TIMEOUT_SECONDS": "120",
                 "WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE": "https://{runtimeId}.e2b.app",
                 "WHYBUDDY_PROJECT_PREVIEW_AGENT_BUNDLE": "/home/user/whybuddy/dist/project-preview/agent.cjs"}}
+        if args.tasks:
+            config["runtimeIds"] = [trusted.get_host(port).split(".")[0] for port in (5190, 5191)]
+            config["environment"]["SLIDERULE_PROJECT_LIFETIME_SECONDS"] = str(args.timeout)
         trusted.files.write("/home/user/whybuddy-source.tar.gz", archive)
         trusted.files.write("/home/user/whybuddy-config.json", json.dumps(config))
         # The archive contains only explicit repository-relative paths selected above.
@@ -218,9 +233,13 @@ def main() -> int:
         trusted.commands.run("cd /home/user/whybuddy && python -u scripts/fixtures/project-product-backend.py /home/user/whybuddy-config.json > /home/user/backend.log 2>&1",
             background=True, timeout=args.timeout)
         gateway_environment = {"WHYBUDDY_PROJECT_PREVIEW_AUTHORITY_URL": "http://127.0.0.1:5192/api/sliderule/internal/project-preview",
-            "WHYBUDDY_PROJECT_PREVIEW_GATEWAY_KEY": gateway_key, "WHYBUDDY_PROJECT_PREVIEW_PORT": "5190"}
+            "WHYBUDDY_PROJECT_PREVIEW_GATEWAY_KEY": gateway_key, "WHYBUDDY_PROJECT_PREVIEW_PORT": "5190",
+            "WHYBUDDY_PROJECT_WORKBENCH_ORIGIN": workbench}
         trusted.commands.run("node /home/user/whybuddy/dist/project-preview/gateway.cjs > /home/user/gateway.log 2>&1",
             envs=gateway_environment, background=True, timeout=args.timeout)
+        if args.tasks:
+            trusted.commands.run("node /home/user/whybuddy/dist/project-preview/gateway.cjs > /home/user/gateway-second.log 2>&1",
+                envs={**gateway_environment, "WHYBUDDY_PROJECT_PREVIEW_PORT": "5191"}, background=True, timeout=args.timeout)
         def state():
             response = client.get(authority_origin + "/_smoke/state", headers=fixture_headers)
             return response.json() if response.status_code == 200 else None
@@ -233,7 +252,7 @@ def main() -> int:
         auth_headers = {"Authorization": "Bearer " + logged.json()["token"]}
         client.cookies.clear()
         created = client.post(authority_origin + "/api/sliderule/sessions/" + config["sessionId"] + "/project",
-            headers=auth_headers, json={"approvalRef": initial["approvalRef"]})
+            headers=auth_headers, json={"approvalRef": initial["approvalRef"], **({"templateId": "react-vite-tasks"} if args.tasks else {})})
         check("HTTP project creation uses approved persisted session", created.status_code == 201)
         project = created.json()["project"]
         project_id = project["projectId"]
@@ -261,28 +280,27 @@ def main() -> int:
         check("preview gateway denies access without its browser grant", client.get(preview_origin + "/").status_code == 403)
         # Run the real Vite config on a fresh loopback port. No existing dev
         # service is stopped and no auth/API response is intercepted in Chrome.
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
         vite_log = (directory / "vite.log").open("w", encoding="utf-8")
         log_handles.append(vite_log)
         vite = start_local_process(["node", "node_modules/vite/bin/vite.js", "--host", "127.0.0.1", "--port", str(port), "--strictPort"], cwd=ROOT,
             env={**os.environ, "PYTHON_API_TARGET": authority_origin,
                 "WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE": config["environment"]["WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE"]},
             stdout=vite_log, stderr=subprocess.STDOUT)
-        workbench = "http://127.0.0.1:" + str(port)
         wait_for(lambda: client.get(workbench).status_code == 200, 60)
         config_path.write_text(json.dumps({"directory": str(directory), "workbench": workbench,
             "authority": authority_origin, "previewOrigin": preview_origin, "fixtureKey": fixture_key,
             "ownerEmail": config["ownerEmail"], "strangerEmail": config["strangerEmail"], "password": password,
             "sessionId": config["sessionId"], "projectId": project_id, "operationId": operation_id,
             "initialRevision": project["currentRevision"], "title": config["title"],
-            "verifyBrowser": bool(args.browser_template)}), encoding="utf-8")
+            "verifyBrowser": bool(args.browser_template), "approvalRef": initial["approvalRef"],
+            "initialSandboxId": running["lease"]["sandboxId"],
+            "secondPreviewOrigin": "https://" + trusted.get_host(5191) if args.tasks else None}), encoding="utf-8")
         report["stage"] = "full_workbench_browser"
         persist()
         browser_log = (directory / "browser.log").open("w", encoding="utf-8")
         log_handles.append(browser_log)
-        browser = start_local_process(["node", "scripts/project-product-browser-smoke.mjs", str(config_path)], cwd=ROOT,
+        browser_script = "scripts/project-tasks-browser-smoke.mjs" if args.tasks else "scripts/project-product-browser-smoke.mjs"
+        browser = start_local_process(["node", browser_script, str(config_path)], cwd=ROOT,
             stdout=browser_log, stderr=subprocess.STDOUT)
         while browser.poll() is None and time.monotonic() < deadline:
             time.sleep(0.5)
@@ -298,8 +316,12 @@ def main() -> int:
         check("source edits synchronize under the original runtime", len(children) == (3 if args.browser_template else 1)
             and all(child["status"] == "completed" and child["result"].get("synchronized") is True for child in children)
             and parent["expectedRevision"] == first["expectedRevision"]
-            and parent["runtime"]["runtimeId"] == first["runtime"]["runtimeId"]
-            and parent["runtime"]["processId"] == first["runtime"]["processId"])
+            and parent["runtime"]["runtimeId"] == first["runtime"]["runtimeId"])
+        if args.tasks:
+            operation_id = report["browser"]["restartedOperationId"]
+            preview_origin = "https://" + trusted.get_host(5191)
+            check("new runtime has a distinct managed identity after source and database restoration", updated["runtimeIdFixtureCalls"] == 2
+                and report["browser"]["restartedSandboxId"] != report["applicationSandboxId"])
         report["stage"] = "account_revocation"
         ticket = client.post(authority_origin + "/api/sliderule/project-operations/" + operation_id + "/preview-ticket", headers=auth_headers)
         check("owner receives final live revision ticket", ticket.status_code == 200)

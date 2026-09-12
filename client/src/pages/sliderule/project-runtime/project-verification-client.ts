@@ -2,6 +2,7 @@ import type {
   ProjectOperationView,
   VerificationRecord,
   VerificationSnapshot,
+  VerificationBuildEvidence,
 } from "@shared/project-runtime.generated";
 
 export interface ProjectVerificationView {
@@ -33,6 +34,53 @@ const operationStatuses = new Set([
 ]);
 const nonempty = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0;
+const tasksAssertions = [
+  "setup_admin",
+  "writer_login",
+  "task_create",
+  "task_edit",
+  "task_filter",
+  "task_refresh",
+  "reader_create",
+  "reader_login",
+  "reader_ui_readonly",
+  "reader_api_forbidden",
+  "anonymous_api_forbidden",
+  "no_page_errors",
+  "no_failed_requests",
+];
+const sha256 = (value: unknown) =>
+  typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+function validBuild(
+  build: any,
+  record: any
+): build is VerificationBuildEvidence {
+  return (
+    build?.kind === "production" &&
+    build.revision === record.revision &&
+    build.treeHash === record.treeHash &&
+    sha256(build.treeHash) &&
+    sha256(build.lockfileHash) &&
+    ["passed", "failed", "blocked", "cancelled"].includes(build.status) &&
+    ["static-dist", "tasks-node"].includes(build.serverKind) &&
+    [build.startedAt, build.completedAt].every(nonempty) &&
+    [build.installExitCode, build.buildExitCode].every(
+      code =>
+        code === null || (Number.isInteger(code) && code >= 0 && code <= 255)
+    ) &&
+    (build.outputHash === null || sha256(build.outputHash)) &&
+    Number.isInteger(build.outputFileCount) &&
+    build.outputFileCount >= 0 &&
+    Number.isInteger(build.outputBytes) &&
+    build.outputBytes >= 0 &&
+    (build.status !== "passed" ||
+      (build.installExitCode === 0 &&
+        build.buildExitCode === 0 &&
+        sha256(build.outputHash) &&
+        build.outputFileCount > 0 &&
+        build.outputBytes > 0))
+  );
+}
 
 async function request(
   path: string,
@@ -97,7 +145,21 @@ function validRecord(
       (item: any) =>
         nonempty(item?.id) && ["passed", "failed"].includes(item.status)
     ) &&
-    Array.isArray(record.artifactRefs)
+    Array.isArray(record.artifactRefs) &&
+    (record.build === undefined ||
+      record.build === null ||
+      validBuild(record.build, record)) &&
+    (record.suiteVersion !== "react-vite-tasks@1" ||
+      record.status !== "passed" ||
+      (validBuild(record.build, record) &&
+        record.build.status === "passed" &&
+        record.build.serverKind === "tasks-node" &&
+        record.assertions.length === tasksAssertions.length &&
+        tasksAssertions.every(id =>
+          record.assertions.some(
+            (item: any) => item.id === id && item.status === "passed"
+          )
+        )))
   );
 }
 
@@ -115,7 +177,12 @@ export async function getProjectVerification(
     (body?.operationStatus === null ||
       operationStatuses.has(body?.operationStatus)) &&
     (snapshot === null ||
-      (snapshot?.deliveryEligible === false &&
+      (typeof snapshot?.deliveryEligible === "boolean" &&
+        (!snapshot.deliveryEligible ||
+          (snapshot.effectiveStatus === "passed" &&
+            snapshot.verification?.suiteVersion === "react-vite-tasks@1" &&
+            snapshot.verification?.specRevision ===
+              "whybuddy-tasks-acceptance@1")) &&
         effectiveStatuses.has(snapshot.effectiveStatus) &&
         validRecord(snapshot.verification, projectId) &&
         snapshot.verification.operationId === body.operationId &&
@@ -152,7 +219,7 @@ export async function requestProjectVerification(
     throw new ProjectVerificationError(
       "检查请求状态不完整，请更新状态后重试。"
     );
-  return { operationId: body.operationId, status: "queued" };
+  return { operationId: body.operationId, status: body.status };
 }
 
 export async function cancelProjectVerification(

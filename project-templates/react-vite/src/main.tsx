@@ -7,10 +7,10 @@ function App() {
   const [count, setCount] = useState(0);
   return (
     <main>
-      <h1>New Project</h1>
+      <h1 data-whybuddy-source="src/main.tsx" data-whybuddy-line="10">New Project</h1>
       <div className="counter">
         <output aria-label="Count">{count}</output>
-        <button type="button" aria-label="Increment count" title="Increment count"
+        <button data-whybuddy-source="src/main.tsx" data-whybuddy-line="13" type="button" aria-label="Increment count" title="Increment count"
           onClick={() => setCount(increment)}>
           +
         </button>

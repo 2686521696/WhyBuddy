@@ -146,6 +146,30 @@
           "default": 0,
           "title": "Sourcebytesstored",
           "type": "integer"
+        },
+        "sourceProjectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sourceprojectid"
+        },
+        "sourceRevision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sourcerevision"
         }
       },
       "required": [
@@ -157,6 +181,262 @@
         "updatedAt"
       ],
       "title": "Project",
+      "type": "object"
+    },
+    "ProjectAcceptanceProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "title": "Profileid",
+          "type": "string"
+        },
+        "suiteVersion": {
+          "title": "Suiteversion",
+          "type": "string"
+        },
+        "requirements": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Requirements",
+          "type": "array"
+        },
+        "outsideScope": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Outsidescope",
+          "type": "array"
+        },
+        "dataRecovery": {
+          "title": "Datarecovery",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "suiteVersion",
+        "requirements",
+        "outsideScope",
+        "dataRecovery"
+      ],
+      "title": "ProjectAcceptanceProfile",
+      "type": "object"
+    },
+    "ProjectDataBackup": {
+      "additionalProperties": false,
+      "properties": {
+        "backupId": {
+          "title": "Backupid",
+          "type": "string"
+        },
+        "projectId": {
+          "title": "Projectid",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "integer"
+        },
+        "parentBackupId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Parentbackupid"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "sizeBytes": {
+          "title": "Sizebytes",
+          "type": "integer"
+        },
+        "sourceRevision": {
+          "title": "Sourcerevision",
+          "type": "string"
+        },
+        "dataSchemaVersion": {
+          "const": 1,
+          "title": "Dataschemaversion",
+          "type": "integer"
+        },
+        "createdAt": {
+          "title": "Createdat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "backupId",
+        "projectId",
+        "version",
+        "parentBackupId",
+        "sha256",
+        "sizeBytes",
+        "sourceRevision",
+        "dataSchemaVersion",
+        "createdAt"
+      ],
+      "title": "ProjectDataBackup",
+      "type": "object"
+    },
+    "ProjectDataRestoreResult": {
+      "additionalProperties": false,
+      "properties": {
+        "backup": {
+          "$ref": "#/$defs/ProjectDataBackup"
+        }
+      },
+      "required": [
+        "backup"
+      ],
+      "title": "ProjectDataRestoreResult",
+      "type": "object"
+    },
+    "ProjectDataSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "backup": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectDataBackup"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "backups": {
+          "items": {
+            "$ref": "#/$defs/ProjectDataBackup"
+          },
+          "title": "Backups",
+          "type": "array"
+        },
+        "checkpointIntervalSeconds": {
+          "title": "Checkpointintervalseconds",
+          "type": "integer"
+        },
+        "recoveryPolicy": {
+          "const": "last-checkpoint",
+          "title": "Recoverypolicy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "backup",
+        "backups",
+        "checkpointIntervalSeconds",
+        "recoveryPolicy"
+      ],
+      "title": "ProjectDataSnapshot",
+      "type": "object"
+    },
+    "ProjectDeliveryStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "title": "Projectid",
+          "type": "string"
+        },
+        "revision": {
+          "title": "Revision",
+          "type": "string"
+        },
+        "eligible": {
+          "title": "Eligible",
+          "type": "boolean"
+        },
+        "profile": {
+          "$ref": "#/$defs/ProjectAcceptanceProfile"
+        },
+        "blockedReasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Blockedreasons",
+          "type": "array"
+        },
+        "verificationId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Verificationid"
+        },
+        "releases": {
+          "items": {
+            "$ref": "#/$defs/ProjectRelease"
+          },
+          "title": "Releases",
+          "type": "array"
+        },
+        "deployment": {
+          "$ref": "#/$defs/ProjectDeploymentStatus"
+        }
+      },
+      "required": [
+        "projectId",
+        "revision",
+        "eligible",
+        "profile",
+        "blockedReasons",
+        "verificationId",
+        "releases",
+        "deployment"
+      ],
+      "title": "ProjectDeliveryStatus",
+      "type": "object"
+    },
+    "ProjectDeploymentStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "const": "not_configured",
+          "default": "not_configured",
+          "title": "Status",
+          "type": "string"
+        },
+        "publicUrl": {
+          "default": null,
+          "title": "Publicurl",
+          "type": "null"
+        }
+      },
+      "title": "ProjectDeploymentStatus",
+      "type": "object"
+    },
+    "ProjectForkResult": {
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "title": "Projectid",
+          "type": "string"
+        },
+        "sessionId": {
+          "title": "Sessionid",
+          "type": "string"
+        },
+        "revision": {
+          "title": "Revision",
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId",
+        "sessionId",
+        "revision"
+      ],
+      "title": "ProjectForkResult",
       "type": "object"
     },
     "ProjectManifest": {
@@ -465,6 +745,105 @@
       "title": "ProjectOperationView",
       "type": "object"
     },
+    "ProjectRelease": {
+      "additionalProperties": false,
+      "properties": {
+        "releaseId": {
+          "title": "Releaseid",
+          "type": "string"
+        },
+        "projectId": {
+          "title": "Projectid",
+          "type": "string"
+        },
+        "revision": {
+          "title": "Revision",
+          "type": "string"
+        },
+        "verificationId": {
+          "title": "Verificationid",
+          "type": "string"
+        },
+        "profileId": {
+          "title": "Profileid",
+          "type": "string"
+        },
+        "planRef": {
+          "title": "Planref",
+          "type": "string"
+        },
+        "treeHash": {
+          "title": "Treehash",
+          "type": "string"
+        },
+        "lockfileHash": {
+          "title": "Lockfilehash",
+          "type": "string"
+        },
+        "buildHash": {
+          "title": "Buildhash",
+          "type": "string"
+        },
+        "createdAt": {
+          "title": "Createdat",
+          "type": "string"
+        },
+        "downloadPath": {
+          "title": "Downloadpath",
+          "type": "string"
+        },
+        "deployed": {
+          "const": false,
+          "default": false,
+          "title": "Deployed",
+          "type": "boolean"
+        },
+        "effectiveStatus": {
+          "anyOf": [
+            {
+              "enum": [
+                "ready",
+                "stale"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effectivestatus"
+        }
+      },
+      "required": [
+        "releaseId",
+        "projectId",
+        "revision",
+        "verificationId",
+        "profileId",
+        "planRef",
+        "treeHash",
+        "lockfileHash",
+        "buildHash",
+        "createdAt",
+        "downloadPath"
+      ],
+      "title": "ProjectRelease",
+      "type": "object"
+    },
+    "ProjectReleaseResult": {
+      "additionalProperties": false,
+      "properties": {
+        "release": {
+          "$ref": "#/$defs/ProjectRelease"
+        }
+      },
+      "required": [
+        "release"
+      ],
+      "title": "ProjectReleaseResult",
+      "type": "object"
+    },
     "ProjectRevision": {
       "additionalProperties": false,
       "properties": {
@@ -530,6 +909,205 @@
         "createdAt"
       ],
       "title": "ProjectRevision",
+      "type": "object"
+    },
+    "ProjectRevisionPage": {
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "title": "Projectid",
+          "type": "string"
+        },
+        "currentRevision": {
+          "title": "Currentrevision",
+          "type": "string"
+        },
+        "revisions": {
+          "items": {
+            "$ref": "#/$defs/ProjectRevisionSummary"
+          },
+          "title": "Revisions",
+          "type": "array"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Nextcursor"
+        }
+      },
+      "required": [
+        "projectId",
+        "currentRevision",
+        "revisions",
+        "nextCursor"
+      ],
+      "title": "ProjectRevisionPage",
+      "type": "object"
+    },
+    "ProjectRevisionSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "title": "Revision",
+          "type": "string"
+        },
+        "parentRevision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parentrevision"
+        },
+        "treeHash": {
+          "title": "Treehash",
+          "type": "string"
+        },
+        "templateVersion": {
+          "title": "Templateversion",
+          "type": "string"
+        },
+        "createdAt": {
+          "title": "Createdat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "revision",
+        "treeHash",
+        "templateVersion",
+        "createdAt"
+      ],
+      "title": "ProjectRevisionSummary",
+      "type": "object"
+    },
+    "ProjectSourceCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "title": "Projectid",
+          "type": "string"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Revision"
+        },
+        "operationId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Operationid"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "running",
+            "waiting_user",
+            "completed",
+            "failed",
+            "cancelling",
+            "cancelled",
+            "interrupted"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId",
+        "revision",
+        "operationId",
+        "status"
+      ],
+      "title": "ProjectSourceCommand",
+      "type": "object"
+    },
+    "ProjectSourceFile": {
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "title": "Projectid",
+          "type": "string"
+        },
+        "revision": {
+          "title": "Revision",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "content": {
+          "title": "Content",
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectId",
+        "revision",
+        "path",
+        "sha256",
+        "content"
+      ],
+      "title": "ProjectSourceFile",
+      "type": "object"
+    },
+    "ProjectSourceIndex": {
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "title": "Projectid",
+          "type": "string"
+        },
+        "revision": {
+          "title": "Revision",
+          "type": "string"
+        },
+        "currentRevision": {
+          "title": "Currentrevision",
+          "type": "string"
+        },
+        "files": {
+          "items": {
+            "$ref": "#/$defs/ManifestFile"
+          },
+          "title": "Files",
+          "type": "array"
+        }
+      },
+      "required": [
+        "projectId",
+        "revision",
+        "currentRevision",
+        "files"
+      ],
+      "title": "ProjectSourceIndex",
       "type": "object"
     },
     "RuntimeEvent": {
@@ -974,6 +1552,123 @@
       "title": "VerificationAssertion",
       "type": "object"
     },
+    "VerificationBuildEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "production",
+          "default": "production",
+          "title": "Kind",
+          "type": "string"
+        },
+        "revision": {
+          "title": "Revision",
+          "type": "string"
+        },
+        "treeHash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Treehash",
+          "type": "string"
+        },
+        "lockfileHash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Lockfilehash",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "blocked",
+            "cancelled"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "installExitCode": {
+          "anyOf": [
+            {
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Installexitcode"
+        },
+        "buildExitCode": {
+          "anyOf": [
+            {
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Buildexitcode"
+        },
+        "outputHash": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outputhash"
+        },
+        "outputFileCount": {
+          "default": 0,
+          "maximum": 5000,
+          "minimum": 0,
+          "title": "Outputfilecount",
+          "type": "integer"
+        },
+        "outputBytes": {
+          "default": 0,
+          "maximum": 104857600,
+          "minimum": 0,
+          "title": "Outputbytes",
+          "type": "integer"
+        },
+        "serverKind": {
+          "enum": [
+            "static-dist",
+            "tasks-node"
+          ],
+          "title": "Serverkind",
+          "type": "string"
+        },
+        "startedAt": {
+          "title": "Startedat",
+          "type": "string"
+        },
+        "completedAt": {
+          "title": "Completedat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "revision",
+        "treeHash",
+        "lockfileHash",
+        "status",
+        "serverKind",
+        "startedAt",
+        "completedAt"
+      ],
+      "title": "VerificationBuildEvidence",
+      "type": "object"
+    },
     "VerificationRecord": {
       "additionalProperties": false,
       "properties": {
@@ -1047,6 +1742,17 @@
           },
           "title": "Assertions",
           "type": "array"
+        },
+        "build": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VerificationBuildEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "artifactRefs": {
           "items": {
@@ -1124,7 +1830,6 @@
           "type": "string"
         },
         "deliveryEligible": {
-          "const": false,
           "default": false,
           "title": "Deliveryeligible",
           "type": "boolean"

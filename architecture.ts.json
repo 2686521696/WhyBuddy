@@ -63,6 +63,11 @@
       ],
       "mayDependOn": []
     },
+    "project-template-tasks": {
+      "why": "Fixed runnable task application: Node API and SQLite data, Vite development and production static output. Python publishes sources to E2B; application identities and data belong to this project.",
+      "paths": ["project-templates/react-vite-tasks"],
+      "mayDependOn": []
+    },
     "client-pages-sliderule": {
       "why": "推演产品的主页面族：会话舞台、画布、区块运行时、点选编辑。前端最大的一块。",
       "paths": [
@@ -452,11 +457,11 @@
       "mayDependOn": []
     },
     "server-project-preview": {
-      "why": "Dedicated private-preview transport process: HTTP/WebSocket relay and sandbox tunnel agent. Python owns project access; this component has no imports of the main app, its identity store or browser code.",
+      "why": "Dedicated private-preview HTTP/WebSocket transport; Python owns access. The shared self-contained selection bridge only sends source locations, and the gateway binds it to current authorized runtime identity.",
       "paths": [
         "server/project-preview"
       ],
-      "mayDependOn": []
+      "mayDependOn": ["shared-contracts"]
     },
     "ops-scripts": {
       "why": "Executable build/dev/architecture/smoke programs and their shared helpers. Exact CLI entrypoints are declared; imported helpers remain ordinary dependencies.",
@@ -483,6 +488,9 @@
   "entrypoints": {
     "patterns": [
       "project-templates/react-vite/src/main",
+      "project-templates/react-vite-tasks/src/main",
+      "project-templates/react-vite-tasks/server",
+      "shared/project-preview-selection.d",
       "server/index",
       "client/src/main",
       "client/src/App",
@@ -542,6 +550,7 @@
       "scripts/project-contracts",
       "scripts/project-preview-browser-smoke",
       "scripts/project-product-browser-smoke",
+      "scripts/project-tasks-browser-smoke",
       "scripts/project-preview-csp",
       "scripts/project-runtime-smoke",
       "scripts/proxy-dead-proxy-test",
@@ -559,8 +568,12 @@
       "scripts/ui-redesign-ia-progress"
     ],
     "reasons": {
+      "project-templates/react-vite-tasks/server": "Template package.json dev/start scripts launch the Node API in the E2B runtime; Python owns that process lifecycle.",
+      "project-templates/react-vite-tasks/src/main": "Template index.html mounts this React entry in both Vite development and built output.",
+      "shared/project-preview-selection.d": "TypeScript resolves the .d.mts declaration alongside the runtime .mjs import; it has no runtime execution or import edge.",
       "server/project-verification/browser-runner": "services.project_browser_provider uploads this CLI to an independent trusted sandbox and executes Node; cross-language invocation is exercised by provider and product browser smoke tests.",
       "scripts/project-product-browser-smoke": "Python scripts/project-product-smoke.py launches this real-browser CLI; the cross-language call is outside TypeScript imports.",
+      "scripts/project-tasks-browser-smoke": "Python scripts/project-product-smoke.py --tasks launches the actual shared workbench, API, E2B and browser acceptance scenario.",
       "scripts/project-preview-csp": "Root vite.config.ts imports this build configuration provider; root config files are outside scanned package directories. project-preview-csp.test.mjs exercises the actual Vite serve transform and production HTML build so removing that call fails."
     }
   },

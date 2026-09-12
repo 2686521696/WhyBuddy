@@ -96,6 +96,7 @@ from routes.blueprint_spec_docs import router as blueprint_spec_docs_router
 from routes.account import router as account_router
 from routes.sliderule_full import router as sliderule_full_router
 from routes.project_runtime import router as project_runtime_router
+from routes.project_sources import router as project_sources_router
 from routes.project_preview import router as project_preview_router
 from routes.agent_loop import router as agent_loop_router
 from routes.rag import router as rag_router
@@ -113,6 +114,7 @@ from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
 from services.sliderule_session_sanitizer import sanitize_session_dict, sanitize_session_state
 from services.e2b_workspace_provider import E2BWorkspaceProvider
 from services.project_runtime_worker import ProjectRuntimeSupervisor, authorize_operation
+from services.project_rollout import project_worker_enabled
 from services.project_browser_provider import E2BProjectBrowserProvider
 from services.project_preview_access import ProjectPreviewAccess
 from services.project_preview_config import preview_configuration_enabled
@@ -321,8 +323,7 @@ def _runtime_limit(name: str, default: int, minimum: int, maximum: int) -> int:
 
 
 def _start_project_runtime_supervisor() -> ProjectRuntimeSupervisor | None:
-    if (settings.NODE_ENV == "production" or os.getenv("NODE_ENV") == "production"
-            or os.getenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED") != "1"):
+    if not project_worker_enabled():
         return None
     lifetime = _runtime_limit("SLIDERULE_PROJECT_LIFETIME_SECONDS", 900, 60, 3600)
     supervisor = ProjectRuntimeSupervisor(get_project_store(), E2BWorkspaceProvider,
@@ -463,6 +464,7 @@ else:
 app.include_router(account_router, prefix="/api/sliderule")
 app.include_router(sliderule_full_router, prefix="/api/sliderule")
 app.include_router(project_runtime_router, prefix="/api/sliderule")
+app.include_router(project_sources_router, prefix="/api/sliderule")
 app.include_router(project_preview_router, prefix="/api/sliderule")
 app.include_router(blueprint_spec_docs_router, prefix="/api/blueprint/spec-documents")
 app.include_router(blueprint_jobs_router, prefix="/api/blueprint/jobs")

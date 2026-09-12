@@ -36,6 +36,8 @@ class Project(ProjectContract):
     updatedAt: str
     revisionCount: int = 1
     sourceBytesStored: int = 0
+    sourceProjectId: str | None = None
+    sourceRevision: str | None = None
 
 
 class ProjectRevision(ProjectContract):
@@ -48,6 +50,109 @@ class ProjectRevision(ProjectContract):
     planRef: str
     specRevision: str | None = None
     createdAt: str
+
+
+class ProjectSourceIndex(ProjectContract):
+    projectId: str
+    revision: str
+    currentRevision: str
+    files: list[ManifestFile]
+
+
+class ProjectSourceFile(ProjectContract):
+    projectId: str
+    revision: str
+    path: str
+    sha256: str
+    content: str
+
+
+class ProjectRevisionSummary(ProjectContract):
+    revision: str
+    parentRevision: str | None = None
+    treeHash: str
+    templateVersion: str
+    createdAt: str
+
+
+class ProjectRevisionPage(ProjectContract):
+    projectId: str
+    currentRevision: str
+    revisions: list[ProjectRevisionSummary]
+    nextCursor: str | None
+
+
+class ProjectForkResult(ProjectContract):
+    projectId: str
+    sessionId: str
+    revision: str
+
+
+class ProjectDataBackup(ProjectContract):
+    backupId: str
+    projectId: str
+    version: int
+    parentBackupId: str | None
+    sha256: str
+    sizeBytes: int
+    sourceRevision: str
+    dataSchemaVersion: Literal[1]
+    createdAt: str
+
+
+class ProjectDataSnapshot(ProjectContract):
+    backup: ProjectDataBackup | None
+    backups: list[ProjectDataBackup]
+    checkpointIntervalSeconds: int
+    recoveryPolicy: Literal["last-checkpoint"]
+
+
+class ProjectDataRestoreResult(ProjectContract):
+    backup: ProjectDataBackup
+
+
+class ProjectAcceptanceProfile(ProjectContract):
+    profileId: str
+    suiteVersion: str
+    requirements: list[str]
+    outsideScope: list[str]
+    dataRecovery: str
+
+
+class ProjectRelease(ProjectContract):
+    releaseId: str
+    projectId: str
+    revision: str
+    verificationId: str
+    profileId: str
+    planRef: str
+    treeHash: str
+    lockfileHash: str
+    buildHash: str
+    createdAt: str
+    downloadPath: str
+    deployed: Literal[False] = False
+    effectiveStatus: Literal["ready", "stale"] | None = None
+
+
+class ProjectDeploymentStatus(ProjectContract):
+    status: Literal["not_configured"] = "not_configured"
+    publicUrl: None = None
+
+
+class ProjectDeliveryStatus(ProjectContract):
+    projectId: str
+    revision: str
+    eligible: bool
+    profile: ProjectAcceptanceProfile
+    blockedReasons: list[str]
+    verificationId: str | None
+    releases: list[ProjectRelease]
+    deployment: ProjectDeploymentStatus
+
+
+class ProjectReleaseResult(ProjectContract):
+    release: ProjectRelease
 
 
 class WorkspaceLease(ProjectContract):
@@ -66,6 +171,13 @@ OperationStatus = Literal[
     "queued", "running", "waiting_user", "completed", "failed",
     "cancelling", "cancelled", "interrupted",
 ]
+
+
+class ProjectSourceCommand(ProjectContract):
+    projectId: str
+    revision: str | None
+    operationId: str | None
+    status: OperationStatus
 
 RuntimeStatus = Literal["provisioning", "syncing", "installing", "executing", "starting", "ready", "stopping", "stopped", "expired", "failed", "reconciling"]
 
@@ -202,6 +314,22 @@ class VerificationArtifactRef(ProjectContract):
     label: str
 
 
+class VerificationBuildEvidence(ProjectContract):
+    kind: Literal["production"] = "production"
+    revision: str
+    treeHash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    lockfileHash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    status: Literal["passed", "failed", "blocked", "cancelled"]
+    installExitCode: int | None = Field(default=None, ge=0, le=255, strict=True)
+    buildExitCode: int | None = Field(default=None, ge=0, le=255, strict=True)
+    outputHash: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    outputFileCount: int = Field(default=0, ge=0, le=5000, strict=True)
+    outputBytes: int = Field(default=0, ge=0, le=104857600, strict=True)
+    serverKind: Literal["static-dist", "tasks-node"]
+    startedAt: str
+    completedAt: str
+
+
 class VerificationRecord(ProjectContract):
     verificationId: str
     operationId: str
@@ -216,6 +344,7 @@ class VerificationRecord(ProjectContract):
     runnerVersion: str = "whybuddy-browser-v1:pw1.61.1"
     status: VerificationStatus = "running"
     assertions: list[VerificationAssertion] = Field(default_factory=list)
+    build: VerificationBuildEvidence | None = None
     artifactRefs: list[VerificationArtifactRef] = Field(default_factory=list)
     createdAt: str
     startedAt: str
@@ -226,4 +355,4 @@ class VerificationRecord(ProjectContract):
 class VerificationSnapshot(ProjectContract):
     verification: VerificationRecord
     effectiveStatus: Literal["running", "passed", "failed", "blocked", "cancelled", "stale"]
-    deliveryEligible: Literal[False] = False
+    deliveryEligible: bool = False

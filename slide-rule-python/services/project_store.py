@@ -212,7 +212,8 @@ class ProjectStore:
             raise ValueError("project_history_limit")
 
     def create_project(self, session_id: str, *, owner_id: str, files: dict[str, str],
-                       template_version: str, plan_ref: str, spec_revision: str | None = None) -> Project:
+                       template_version: str, plan_ref: str, spec_revision: str | None = None,
+                       source_project_id: str | None = None, source_revision: str | None = None) -> Project:
         _required(session_id, "session_id_required")
         _required(owner_id, "owner_id_required")
         existing = self.get_project_for_session(session_id, owner_id=owner_id)
@@ -232,7 +233,8 @@ class ProjectStore:
         now = _now()
         project = Project(projectId=project_id, sessionId=session_id, ownerId=owner_id,
             currentRevision=revision.revision, createdAt=now, updatedAt=now,
-            sourceBytesStored=revision.manifest.totalBytes)
+            sourceBytesStored=revision.manifest.totalBytes,
+            sourceProjectId=source_project_id, sourceRevision=source_revision)
         self._q("insert into wb_project(id,session_id,owner_id,current_revision,rev,payload) values($1,$2,$3,$4,1,$5) on conflict(session_id) do nothing",
                 [project_id, session_id, owner_id, revision.revision, project.model_dump_json()])
         return self.get_project(project_id, owner_id=owner_id)
@@ -490,7 +492,7 @@ class ProjectStore:
     def enqueue_runtime_verification(self, parent_operation_id: str, *, owner_id: str,
                                      expected_revision: str, approval_ref: str, idempotency_key: str,
                                      suite_version: str = "react-vite-counter@1") -> ProjectOperation:
-        if suite_version != "react-vite-counter@1":
+        if suite_version not in {"react-vite-counter@1", "react-vite-tasks@1"}:
             raise ValueError("verification_suite_unsupported")
         return self._enqueue_runtime_child(parent_operation_id, owner_id=owner_id,
             expected_revision=expected_revision, approval_ref=approval_ref, idempotency_key=idempotency_key,
@@ -649,6 +651,11 @@ class ProjectStore:
 
     def get_operation(self, operation_id: str, *, owner_id: str) -> ProjectOperation:
         return ProjectOperation.model_validate_json(self._operation_row(operation_id, owner_id)["payload"])
+
+    def operation_by_key(self, project_id: str, key: str, *, owner_id: str) -> ProjectOperation | None:
+        self.get_project(project_id, owner_id=owner_id)
+        rows = self._q("select payload from wb_project_operation where project_id=$1 and idempotency_key=$2", [project_id, key])
+        return ProjectOperation.model_validate_json(rows[0]["payload"]) if rows else None
 
     def list_project_operations(self, project_id: str, *, owner_id: str,
                                 after_id: str = "", limit: int = 9) -> list[ProjectOperation]:

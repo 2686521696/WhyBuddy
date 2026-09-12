@@ -634,7 +634,10 @@ def test_preview_routes_do_not_open_public_rollout(world, monkeypatch, blocked):
     if blocked == "disabled": monkeypatch.delenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED")
     if blocked == "production": monkeypatch.setenv("NODE_ENV", "production")
     if blocked == "nonadmin": world.viewer["is_superuser"] = False
-    assert world.client.get(f"/projects/{world.project.projectId}/preview").status_code == 503
+    # Rollback preserves owned observation; the descriptor is unavailable until
+    # the rollout is enabled, while ticket issuance remains a write/capability gate.
+    preview = world.client.get(f"/projects/{world.project.projectId}/preview")
+    assert preview.status_code == 200 and preview.json()["available"] is False
     assert world.client.post(f"/project-operations/{world.operation.operationId}/preview-ticket").status_code == 503
 
 

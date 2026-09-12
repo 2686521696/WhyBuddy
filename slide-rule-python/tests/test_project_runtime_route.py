@@ -215,12 +215,15 @@ def test_operation_reads_logs_and_cancel_reject_cross_owner(setup, operation, su
 
 @pytest.mark.parametrize("suffix,method", [("", "get"), ("/events", "get"), ("/cancel", "post"), ("/touch", "post")])
 @pytest.mark.parametrize("reason", ["disabled", "nonadmin", "production"])
-def test_observation_does_not_widen_internal_access(setup, operation, monkeypatch, suffix, method, reason):
+def test_rollout_removal_preserves_owned_observation_and_stop_but_not_keepalive(setup, operation, monkeypatch, suffix, method, reason):
     if reason == "disabled": monkeypatch.delenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED")
     if reason == "nonadmin": setup.viewer["is_superuser"] = False
     if reason == "production": monkeypatch.setenv("NODE_ENV", "production")
-    assert getattr(setup.client, method)(f"/project-operations/{operation}{suffix}").status_code == 503
-    assert setup.store.get_operation(operation, owner_id="u1").cancelRequested is False
+    expected = 503 if suffix == "/touch" else 202 if suffix == "/cancel" else 200
+    assert getattr(setup.client, method)(f"/project-operations/{operation}{suffix}").status_code == expected
+    setup.viewer["id"] = "other-owner"
+    assert getattr(setup.client, method)(f"/project-operations/{operation}{suffix}").status_code == 404
+    assert setup.store.get_operation(operation, owner_id="u1").cancelRequested is (suffix == "/cancel")
 
 
 def test_snapshots_and_event_pages_exclude_internal_records_and_resume_by_sequence(setup, operation):

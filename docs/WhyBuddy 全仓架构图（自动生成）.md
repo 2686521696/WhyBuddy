@@ -15,12 +15,12 @@
 flowchart TB
   subgraph ts [TypeScript]
     ts_agent_loop["ts/agent-loop<br/>99 个模块"]
-    ts_client["ts/client<br/>1032 个模块"]
-    ts_project_templates["ts/project-templates<br/>2 个模块"]
-    ts_scripts["ts/scripts<br/>66 个模块"]
+    ts_client["ts/client<br/>1038 个模块"]
+    ts_project_templates["ts/project-templates<br/>5 个模块"]
+    ts_scripts["ts/scripts<br/>67 个模块"]
     ts_server["ts/server<br/>588 个模块"]
     ts_services["ts/services<br/>32 个模块"]
-    ts_shared["ts/shared<br/>177 个模块"]
+    ts_shared["ts/shared<br/>179 个模块"]
   end
   subgraph py [Python]
     py_app["py/app<br/>1 个模块"]
@@ -29,9 +29,9 @@ flowchart TB
     py_config["py/config<br/>2 个模块"]
     py_middlewares["py/middlewares<br/>2 个模块"]
     py_models["py/models<br/>4 个模块"]
-    py_routes["py/routes<br/>14 个模块"]
+    py_routes["py/routes<br/>15 个模块"]
     py_scripts["py/scripts<br/>39 个模块"]
-    py_services["py/services<br/>250 个模块"]
+    py_services["py/services<br/>259 个模块"]
     py_sliderule_llm["py/sliderule_llm<br/>15 个模块"]
     py_stdio_utf8["py/stdio_utf8<br/>1 个模块"]
     py_services_web_aigc_open_adapter["services.web_aigc_open_adapter"]
@@ -39,17 +39,17 @@ flowchart TB
     py_services_web_aigc_web_qa_adapter["services.web_aigc_web_qa_adapter"]
     py_services_web_aigc_device_location_adapter["services.web_aigc_device_location_adapter"]
   end
-  ts_client -->|410| ts_shared
+  ts_client -->|414| ts_shared
   ts_scripts -->|2| ts_client
   ts_scripts -->|10| ts_server
   ts_scripts -->|2| ts_shared
   ts_server -->|1| ts_client
-  ts_server -->|701| ts_shared
+  ts_server -->|702| ts_shared
   ts_services -->|23| ts_shared
   py_app -->|1| py_config
   py_app -->|1| py_models
-  py_app -->|14| py_routes
-  py_app -->|21| py_services
+  py_app -->|15| py_routes
+  py_app -->|22| py_services
   py_app -->|2| py_sliderule_llm
   py_app -->|1| py_stdio_utf8
   py_complete_migration -->|1| py_models
@@ -57,9 +57,9 @@ flowchart TB
   py_middlewares -->|1| py_config
   py_middlewares -->|2| py_services
   py_routes -->|10| py_config
-  py_routes -->|7| py_middlewares
-  py_routes -->|5| py_models
-  py_routes -->|144| py_services
+  py_routes -->|8| py_middlewares
+  py_routes -->|6| py_models
+  py_routes -->|155| py_services
   py_routes -->|30| py_sliderule_llm
   py_scripts -->|3| py_app
   py_scripts -->|2| py_config
@@ -67,8 +67,8 @@ flowchart TB
   py_scripts -->|58| py_services
   py_scripts -->|16| py_sliderule_llm
   py_scripts -->|2| py_stdio_utf8
-  py_services -->|18| py_config
-  py_services -->|41| py_models
+  py_services -->|19| py_config
+  py_services -->|43| py_models
   py_services -->|124| py_sliderule_llm
   py_sliderule_llm -->|2| py_config
   ts_server -.->|open| py_services_web_aigc_open_adapter
