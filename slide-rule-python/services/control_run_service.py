@@ -21,6 +21,7 @@ from services.project_creation import load_authorized_session
 from services.project_tools import ProjectTools
 from services.project_tool_contracts import PROJECT_TOOL_NAMES
 from services.rehearsal_control import run_control_turn, validate_control_turn_body, bound_tool_result
+from services.project_rollout import rollout_readiness
 
 log = logging.getLogger(__name__)
 
@@ -167,6 +168,15 @@ class ControlRunService:
         while not self._stopping:
             self._wake.clear()
             try:
+                # Cleanup mode may keep the runtime supervisor alive while the
+                # project rollout is disabled.  In that state this service is
+                # still useful for durable observation/cancellation, but it
+                # must not claim queued control runs (claiming would execute
+                # new model work after a rollback).  Existing project
+                # resources are reconciled by the runtime supervisor instead.
+                if not rollout_readiness().get("configured", False):
+                    await asyncio.wait_for(self._wake.wait(), timeout=self.poll_seconds)
+                    continue
                 available = self.max_workers - len(self._tasks)
                 if available > 0:
                     candidates = await asyncio.to_thread(self.store.list_runnable)

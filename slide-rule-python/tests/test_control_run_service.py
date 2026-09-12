@@ -15,6 +15,7 @@ from middlewares.current_user import optional_user
 from services import persistence, rehearsal_control as control
 from services.control_checkpoint import ControlRunStopped
 from services.control_run_service import ControlRunService, RunCheckpoint
+import services.control_run_service as control_run_service_module
 from services.control_run_store import ControlRunConflict, ControlRunStore, TERMINAL
 from services.identity_store import User
 from services.project_authority import approved_reference
@@ -95,6 +96,40 @@ def test_http_is_durable_idempotent_and_owner_filtered(env, monkeypatch):
                     assert (await client.request(method, "/api/sliderule" + path, headers=KEY)).status_code == 404
         finally:
             await service.shutdown()
+    asyncio.run(run())
+
+
+def test_cleanup_worker_does_not_claim_queued_control_runs_when_rollout_disabled(env, monkeypatch):
+    """Rollback keeps cleanup alive, but must not execute queued model work."""
+    calls = {"list": 0, "claim": 0}
+    original_list = env.store.list_runnable
+    original_claim = env.store.claim
+
+    def listed(*args, **kwargs):
+        calls["list"] += 1
+        return original_list(*args, **kwargs)
+
+    def claimed(*args, **kwargs):
+        calls["claim"] += 1
+        return original_claim(*args, **kwargs)
+
+    monkeypatch.setattr(env.store, "list_runnable", listed)
+    monkeypatch.setattr(env.store, "claim", claimed)
+    monkeypatch.setattr(control_run_service_module, "rollout_readiness",
+                        lambda: {"configured": False, "mode": "disabled"})
+
+    async def run():
+        service = env.service()
+        await service.start()
+        try:
+            await service.submit(six_fields(env.state.sessionId, "Continue"), env.owner, "rollback-queued")
+            await asyncio.sleep(0.04)
+            assert calls == {"list": 0, "claim": 0}
+            record = env.store.latest(env.state.sessionId, env.owner)
+            assert record["status"] == "queued"
+        finally:
+            await service.shutdown()
+
     asyncio.run(run())
 
 
