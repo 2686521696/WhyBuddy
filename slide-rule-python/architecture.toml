@@ -123,6 +123,7 @@ what = "纯工具：不依赖 services 里任何其它模块"
 # 深度 0 实测 117 个：不依赖 services 内任何模块。对应 grok 的叶子 crate。
 may_depend_on = []
 modules = [
+  "services.control_budget",
   "services.control_checkpoint",
   "services.control_run_store",
   "services.archetype_legal",
@@ -809,6 +810,7 @@ why = """最底下的共用叶子：配置、数据形状、请求域上下文�
 叶子被多个组用是 grok 叶子 crate 的常态，只有**成环**时才是问题。别拿零依赖当搬家理由。"""
 may_depend_on = []
 modules = [
+  "services.control_budget",
   "services.control_checkpoint",
   "services.project_authority",
   "services.project_access",

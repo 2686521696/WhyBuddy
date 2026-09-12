@@ -19,6 +19,8 @@
    JSON; missing → fail-open empty digest + one human sentence.
 6. Hard caps: 8 tool rounds, 8k cheap tokens, 45s wall clock before ignition.
    Over cap → control_text 「停在控制面，未点火」+ complete, helper = 0.
+   Authorized project work uses a separate persisted control_budget policy;
+   this pre-ignition contract is not the project execution budget.
 7. Failure → canned reply 「我是面团的推演引擎。说一个要做的应用，或问当前应用里已经推出来的角色/页面。」
    FORBIDDEN open chat without tools. FORBIDDEN helper/generator.
    FORBIDDEN driveReasoningSession.
@@ -96,6 +98,7 @@ from services.user_questions import (
 )
 from services.action_stationarity import IdenticalToolCallRun, step_signature, step_tool_name
 from services.control_checkpoint import current_checkpoint, guard_control_run, owned_model_sample, ControlRunStopped
+from services.control_budget import ControlBudget, PROJECT_BUDGET, restore_budget
 from services.model_memory import (
     recall as recall_memory,
     remember as remember_memory,
@@ -504,6 +507,14 @@ def _cap_speech(state: V5SessionState, reason: ControlStopReason) -> str:
     没出过货才许说「没点火」。fail-closed：没有 SPEC、没有页面，
     仍走停因表那句罐头。
     """
+    if getattr(state, "runtimeKind", None) == "project":
+        detail = {
+            ControlStopReason.WALL_CLOCK: "本轮工程任务达到时间上限。",
+            ControlStopReason.TOKEN_BUDGET: "本轮工程任务的模型调用额度已用完。",
+            ControlStopReason.TOOL_ROUNDS: "本轮工程任务达到工具轮次上限。",
+            ControlStopReason.STATIONARITY: "模型重复执行同一步，本轮工程任务已暂停。",
+        }.get(reason, "本轮工程任务未完成。")
+        return detail + "已保存的源码仍保留；远端任务的状态和结果需要继续查询，也可以明确停止任务。"
     if _has_pages(state):
         return _delivery_speech(state)
     if _has_spec(state):
@@ -958,6 +969,14 @@ MAX_CHEAP_TOKENS = 8000
 MAX_WALL_SECONDS = 45.0
 INSPECT_MAX_ITEMS = 40
 INSPECT_MAX_CHARS = 4000
+
+
+def _project_budget_eligible(state):
+    # The adapter is injected after server authorization, never by the payload.
+    return (_PROJECT_TOOLS.get() is not None
+            and getattr(state, "runtimeKind", None) == "project"
+            and bool(getattr(state, "projectId", None))
+            and plan_execution_authorized(state))
 
 #: 单个工具结果回喂给模型时的上限。
 #:
@@ -3597,16 +3616,16 @@ async def _control_llm_loop(
           "想太久"和"额度烧完"，用户也不知道再点一次有没有用。
         """
         elapsed = time.monotonic() - started
-        if elapsed > MAX_WALL_SECONDS:
+        if elapsed > loop_budget.max_wall_seconds:
             return stop_wire(
                 ControlStopReason.WALL_CLOCK,
-                limit=MAX_WALL_SECONDS,
+                limit=loop_budget.max_wall_seconds,
                 used=round(elapsed, 1),
             )
-        if cheap_tokens > MAX_CHEAP_TOKENS:
+        if cheap_tokens > loop_budget.max_tokens:
             return stop_wire(
                 ControlStopReason.TOKEN_BUDGET,
-                limit=MAX_CHEAP_TOKENS,
+                limit=loop_budget.max_tokens,
                 used=cheap_tokens,
             )
         return None
@@ -3619,6 +3638,15 @@ async def _control_llm_loop(
     port = current_checkpoint.get()
     resume = copy.deepcopy(port.checkpoint) if port is not None else None
     resume = resume if resume and resume.get("phase") in {"model", "tools"} else None
+    legacy_budget = ControlBudget("control-v1", MAX_TOOL_ROUNDS, MAX_CHEAP_TOKENS, MAX_WALL_SECONDS)
+    try:
+        loop_budget = (restore_budget(resume.get("budgetPolicy"), legacy_budget) if resume else
+                       PROJECT_BUDGET if _project_budget_eligible(state) else legacy_budget)
+    except ValueError as exc:
+        raise ControlRunStopped("control_reconciliation_required") from exc
+    # Missing legacy snapshots must not acquire a larger budget just because
+    # their project reference was saved before a deployment/restart.
+    can_enter_project_budget = resume is None
     first_round = int(resume["round"]) if resume else 0
     operation_ids = list(resume.get("operationIds", [])) if resume else []
     if resume:
@@ -3635,6 +3663,7 @@ async def _control_llm_loop(
             "operationIds": operation_ids,
             "pendingCalls": pending_calls or [], "content": content,
             "cheapTokens": cheap_tokens,
+            "budgetPolicy": loop_budget.to_wire(),
             "startedAt": time.time() - (time.monotonic() - started),
             "retrySpent": budget.spent if budget else 0,
             "retryStartedAt": time.time() - budget.elapsed() if budget else time.time(),
@@ -3646,10 +3675,12 @@ async def _control_llm_loop(
                 empty_text=empty_text, tools=tools)})
 
     try:
-        for _round in range(first_round, MAX_TOOL_ROUNDS):
+        _round = first_round
+        while _round < loop_budget.max_rounds:
             restoring_calls = bool(resume and resume.get("phase") == "tools")
             capped = await _maybe_over_cap()
             if capped:
+                await checkpoint("budget_exhausted", _round)
                 reason = ControlStopReason(capped["stopReason"])
                 async for event in _canned(
                     state, _cap_speech(state, reason), stop=capped
@@ -3721,6 +3752,7 @@ async def _control_llm_loop(
             cheap_tokens += _usage_tokens(getattr(result, "usage", None))
             capped = await _maybe_over_cap()
             if capped:
+                await checkpoint("budget_exhausted", _round)
                 reason = ControlStopReason(capped["stopReason"])
                 async for event in _canned(
                     state, _cap_speech(state, reason), stop=capped
@@ -3907,6 +3939,11 @@ async def _control_llm_loop(
                 )
                 if name in PROJECT_TOOL_NAMES or name in {"write_plan", "enter_plan_mode"}:
                     messages[0] = {"role": "system", "content": _system_prompt(state)}
+                if (can_enter_project_budget and name == "project_create"
+                        and tool_body and tool_body.get("ok") and _project_budget_eligible(state)):
+                    # Entry changes its policy, not its already spent tokens,
+                    # model rounds, retry ledger or original wall-clock start.
+                    loop_budget = PROJECT_BUDGET
                 remaining = calls[call_index + 1:]
                 await checkpoint("tools" if remaining else "model",
                     _round if remaining else _round + 1, remaining, content)
@@ -3944,8 +3981,10 @@ async def _control_llm_loop(
                     return
                 # 没有假设：清单仍走 list_control_tools（pages 在有 SPEC
                 # 时会出现）。host 按 hint 挑下一跳，不许 tools=[]。
+            _round += 1
+        await checkpoint("budget_exhausted", _round)
         rounds_stop = stop_wire(
-            ControlStopReason.TOOL_ROUNDS, limit=MAX_TOOL_ROUNDS, used=MAX_TOOL_ROUNDS
+            ControlStopReason.TOOL_ROUNDS, limit=loop_budget.max_rounds, used=_round
         )
         async for event in _canned(
             state,

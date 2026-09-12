@@ -636,8 +636,11 @@ def test_restart_does_not_reset_exhausted_budgets(env, monkeypatch, budget, reas
         await first.shutdown()
         owned = env.store.claim(record["runId"], "budget-fixture", 3)
         checkpoint = owned["checkpoint"]
-        checkpoint[budget] = {"cheapTokens": control.MAX_CHEAP_TOKENS + 1, "round": control.MAX_TOOL_ROUNDS,
-                              "startedAt": 0}[budget]
+        # project_create has selected and persisted the project policy. Exhaust
+        # that run's actual limits; the old cheap limits no longer apply here.
+        policy = checkpoint["budgetPolicy"]
+        checkpoint[budget] = {"cheapTokens": policy["maxTokens"] + 1,
+                              "round": policy["maxRounds"], "startedAt": 0}[budget]
         env.store.save_checkpoint(record["runId"], "budget-fixture", owned["generation"], checkpoint)
         env.store.suspend(record["runId"], "budget-fixture", owned["generation"])
         second = env.service()
