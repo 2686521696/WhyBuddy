@@ -27,6 +27,7 @@ from .client import (
     _normalize_messages,
     _describe_http_error,
     _describe_timeout,
+    _empty_content_hint,
 )
 from .config import (
     clamp_max_tokens,
@@ -184,6 +185,37 @@ def _extract_control(data: dict[str, Any]) -> tuple[str, list[dict[str, Any]], d
     if not tool_calls and isinstance(choice.get("function_call"), dict):
         tool_calls = _parse_tool_calls([choice["function_call"]])
     return content, tool_calls, data.get("usage"), choice.get("finish_reason")
+
+
+def _termination_metadata(data: dict[str, Any]) -> tuple[str | None, dict[str, int] | None]:
+    """Keep fixed, bounded provider diagnostics without carrying response text.
+
+    2026-09-12: a real project turn returned content_filter and 5759 billed
+    tokens. The old empty-body error lost both facts. Read termination before
+    parsing partial tool arguments or logging provider extension fields.
+    """
+    choice = (data.get("choices") or [{}])[0] or {}
+    raw_finish = choice.get("finish_reason") if isinstance(choice, dict) else None
+    finish = raw_finish.strip().lower() if isinstance(raw_finish, str) else None
+    if finish not in {None, "stop", "length", "content_filter", "tool_calls", "function_call"}:
+        finish = "unknown"
+    raw_usage = data.get("usage")
+    if not isinstance(raw_usage, dict):
+        return finish, None
+    usage: dict[str, int] = {}
+    for key in ("prompt_tokens", "completion_tokens", "reasoning_tokens", "total_tokens"):
+        value = raw_usage.get(key)
+        # Do not interpolate arbitrary provider strings, objects, bools or
+        # huge integers into a durable error/checkpoint. JSON token counts
+        # are non-negative integers; malformed counters remain unavailable.
+        if type(value) is int and 0 <= value <= 2**63 - 1:
+            usage[key] = value
+    details = raw_usage.get("completion_tokens_details")
+    if "reasoning_tokens" not in usage and isinstance(details, dict):
+        value = details.get("reasoning_tokens")
+        if type(value) is int and 0 <= value <= 2**63 - 1:
+            usage["reasoning_tokens"] = value
+    return finish, usage or None
 
 
 async def call_control_llm(
@@ -346,6 +378,16 @@ async def _call_control_llm_once(
             f"non-JSON response: {response.text[:200]}", transient=False
         ) from exc
 
+    finish, termination_usage = _termination_metadata(data)
+    if finish == "content_filter":
+        # A partial body/tool call is not authorization to use a filtered
+        # response. No retries, fallback samples, content or tool arguments.
+        raise LlmError(
+            "control LLM response terminated by content_filter "
+            + _empty_content_hint(finish, max_tokens, termination_usage),
+            transient=False, usage=termination_usage, finish_reason=finish,
+        )
+
     # 服务端 doom-loop 信号：终局响应对象上那份冗余拷贝就挂在这份 JSON 里。
     #
     # ⚠ **当前网关不发这个字段**，所以 peek 恒返回 NONE，这段等于不存在。
@@ -362,14 +404,21 @@ async def _call_control_llm_once(
             flush=True,
         )
 
-    content, tool_calls, usage, finish = _extract_control(data)
+    content, tool_calls, usage, result_finish = _extract_control(data)
     if not content.strip() and not tool_calls:
-        raise LlmError("empty content from control LLM", transient=False)
+        # Control has its own request cap; the factory helper's instruction
+        # to increase LLM_MAX_TOKENS does not describe this call's policy.
+        cause = " (output token limit reached)" if finish == "length" else ""
+        raise LlmError(
+            "empty content from control LLM" + cause + " "
+            + _empty_content_hint(finish, max_tokens, termination_usage, include_length_advice=False),
+            transient=False, usage=termination_usage, finish_reason=finish,
+        )
     return ControlLlmResult(
         content=content,
         tool_calls=tool_calls,
         usage=usage,
-        finish_reason=finish,
+        finish_reason=result_finish,
         model=str(data.get("model") or model_name),
         latency_ms=latency,
     )

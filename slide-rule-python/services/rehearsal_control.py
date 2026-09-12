@@ -329,7 +329,7 @@ def stop_text(reason: ControlStopReason) -> str:
     return _STOP_TABLE[reason][1]
 
 
-def _provider_failure_text(exc: BaseException) -> str:
+def _provider_failure_text(exc: BaseException, state: V5SessionState | None = None) -> str:
     """网关/模型失败的人话。机器知道 522，就说 522，不许一律「连不上」。
 
     ⚠ 2026-09-08：`.env` 网关直连 200，控制面每句却端「模型网关这会儿
@@ -337,7 +337,13 @@ def _provider_failure_text(exc: BaseException) -> str:
       `except Exception → LLM_UNAVAILABLE` 盖成同一句。用户只会读成
       网关坏了，于是换 key、换供应商——都不是病。
     """
+    is_project = getattr(state, "runtimeKind", None) == "project"
+    if getattr(exc, "finish_reason", None) == "content_filter":
+        detail = "模型服务返回内容过滤（content_filter），本轮已停止，未自动重试。"
+        return detail + ("已保存的工程源码仍保留；远端任务需要继续查询状态或明确停止。" if is_project else "")
     detail = humanize_llm_error(str(exc) or "").strip()
+    if is_project:
+        return (detail or "模型调用未完成。") + " 本轮工程任务已停止；已保存的源码仍保留，远端任务需要继续查询状态或明确停止。"
     if not detail:
         return stop_text(ControlStopReason.LLM_UNAVAILABLE)
     # 只换前半句（真实错误），后半句取那一份 —— 不在这里再拼一遍。
@@ -3653,7 +3659,7 @@ async def _control_llm_loop(
         for key, value in resume.get("stationarity", {}).items():
             setattr(identical_tool_calls, key, value)
 
-    async def checkpoint(phase, round_index, pending_calls=None, content=""):
+    async def checkpoint(phase, round_index, pending_calls=None, content="", provider_failure=None):
         if port is None:
             return
         budget = current_budget()
@@ -3664,6 +3670,7 @@ async def _control_llm_loop(
             "pendingCalls": pending_calls or [], "content": content,
             "cheapTokens": cheap_tokens,
             "budgetPolicy": loop_budget.to_wire(),
+            **({"providerFailure": provider_failure} if provider_failure is not None else {}),
             "startedAt": time.time() - (time.monotonic() - started),
             "retrySpent": budget.spent if budget else 0,
             "retryStartedAt": time.time() - budget.elapsed() if budget else time.time(),
@@ -3997,6 +4004,18 @@ async def _control_llm_loop(
     except LlmError as exc:
         import logging
 
+        # A rejected/empty response can still report billable usage. Keep that
+        # receipt before announcing the stop. This phase is never auto-resumed:
+        # a crash must not turn a known rejection into a fresh model request.
+        failed_usage = getattr(exc, "usage", None)
+        cheap_tokens += _usage_tokens(failed_usage)
+        finish = getattr(exc, "finish_reason", None)
+        reported = (isinstance(failed_usage, dict)
+                    and any(key in failed_usage for key in ("total_tokens", "prompt_tokens", "completion_tokens")))
+        await checkpoint("provider_failed", _round + 1, provider_failure={
+            "finishReason": finish,
+            "reportedTokens": _usage_tokens(failed_usage) if reported else None,
+        })
         logging.getLogger(__name__).exception("control llm loop failed after write")
         # empty_text 是模型空回复的人话，不是异常的人话。
         # ⚠ 2026-09-05：网关挂了还套 CANNED_FAILURE「说一个要做的应用」。
@@ -4005,8 +4024,9 @@ async def _control_llm_loop(
         #   同一天：LlmError 是 522 仍端「连不上」——机器知道状态码。
         async for event in _canned(
             state,
-            _provider_failure_text(exc),
-            stop=stop_wire(ControlStopReason.LLM_UNAVAILABLE),
+            _provider_failure_text(exc, state),
+            stop={**stop_wire(ControlStopReason.LLM_UNAVAILABLE),
+                  **({"providerFinishReason": finish} if finish else {})},
         ):
             yield event
     except Exception:  # noqa: BLE001 — 失败合同：罐头回复，禁止点火
