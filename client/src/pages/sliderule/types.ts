@@ -50,6 +50,14 @@ export type TurnStep =
         | "observing"
         | "completed"
         | "failed";
+      /**
+       * 工程动作的**结构化**细节（真实命令 / 版本迁移 / 退出码 / 错误码），
+       * 由 `projectActionDetail` 从工具结果事件里取。
+       *
+       * ⚠ 存在的理由是「不要去解析 label 里的文字」：本仓在前缀匹配和
+       * 锚点窗口上栽过多次，文案一改判据就哑。见 `project-activity.ts` 头注。
+       */
+      projectDetail?: string;
     }
   | {
       id: string;

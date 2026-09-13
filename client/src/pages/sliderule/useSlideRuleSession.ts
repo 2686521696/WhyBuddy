@@ -88,6 +88,7 @@ import {
   isFactoryWriteTool,
 } from "@/lib/factory-hops";
 import { isContinuationTurn } from "@/pages/sliderule/turn-continuation";
+import { projectActionDetail } from "./project-activity";
 import {
   controlUserTextForSlash,
   forcedToolForRehearsalVerb,
@@ -1568,6 +1569,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               capabilityId?: string;
               realLlm?: boolean;
               progressType?: "thinking" | "acting" | "observing" | "completed" | "failed";
+              /** 工程动作的结构化细节；见 types.ts 上 projectDetail 的说明。 */
+              projectDetail?: string;
             }
           ) => {
             streamStepSeq += 1;
@@ -1580,6 +1583,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               realLlm: Boolean(opts?.realLlm),
               loopTurnId: turnId,
               progressType: opts?.progressType || "thinking",
+              ...(opts?.projectDetail ? { projectDetail: opts.projectDetail } : {}),
             });
           };
           /**
@@ -1742,9 +1746,13 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   : typeof event.message === "string" ? event.message : "";
                 const label = ok ? `${tool.replace(/^正在/, "已")}` : `${tool.replace(/^正在/, "执行失败：")}`;
                 setLiveAction({ label: detail ? `${label}（${detail}）` : label, external: true });
+                // 后端把整个工具返回体摊进了事件（`**body`）：command / exitCode /
+                // revision / parentRevision / errorCode 都在。原来只读 ok/error，
+                // 其余全扔，于是工程动作流只剩「已运行命令」这种没有信息量的行。
                 appendStreamStep(detail ? `${label}：${detail}` : label, {
                   capabilityId: String(event.tool || ""),
                   progressType: ok ? "completed" : "failed",
+                  projectDetail: projectActionDetail(event),
                 });
               },
               onControlProjectState: (project: {

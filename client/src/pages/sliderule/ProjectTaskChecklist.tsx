@@ -1,146 +1,99 @@
+/**
+ * ProjectTaskChecklist — 工程动作流（原「固定六行清单」）。
+ *
+ * ## 2026-09-13 改了什么，为什么
+ *
+ * 原来这里写死一份六行清单（创建工程 / 写入源码 / 运行命令 / 启动预览 /
+ * 浏览器检查 / 确认交付），用 `Map<capabilityId, status>` 归并。固定模板下
+ * 够用，但有两个硬伤：
+ *
+ *   · 模板之外的动作（restore / export / read …）**一行都不显示**，而
+ *     §27 第 3 项下一步就是「固定模板之外的增量需求」
+ *   · 同一工具跑多次会被折成一行，只留最后一次——连跑三次 patch、中间
+ *     那次失败了，界面上一点痕迹都没有
+ *
+ * 现在行从真实动作长出来（见 `project-activity.ts` 头注）。分母是**真实
+ * 发生的动作数**，不是写死的 6。
+ *
+ * ⚠ 原来那三条诚实性质一条没丢，判据钉着：没事件不造清单、只有
+ *   `completed` 才算完成、失败要留在台面上。
+ */
+
 import React from "react";
 import { Check, Circle, LoaderCircle, X } from "lucide-react";
-import type { UiTurn, TurnStep } from "./types";
+import {
+  deriveProjectActivity,
+  projectActivityProgress,
+  type ProjectActionRow,
+  type ProjectActionStatus,
+} from "./project-activity";
+import type { UiTurn } from "./types";
 
-export type ProjectTaskStatus = "pending" | "running" | "done" | "failed";
+export type { ProjectActionRow, ProjectActionStatus };
 
-export type ProjectTaskItem = {
-  id: string;
-  label: string;
-  status: ProjectTaskStatus;
-};
-
-const TASKS: ReadonlyArray<{ id: string; label: string }> = [
-  { id: "project_create", label: "\u521b\u5efa\u5de5\u7a0b" },
-  { id: "project_patch", label: "\u5199\u5165\u6e90\u7801" },
-  { id: "project_exec", label: "\u8fd0\u884c\u547d\u4ee4" },
-  { id: "project_start", label: "\u542f\u52a8\u9884\u89c8" },
-  { id: "project_verify", label: "\u6d4f\u89c8\u5668\u68c0\u67e5" },
-  { id: "project_delivery", label: "\u786e\u8ba4\u4ea4\u4ed8" },
-];
-
-function projectSteps(turns: UiTurn[]): TurnStep[] {
-  return turns.flatMap(turn => turn.steps || []);
-}
-
-/**
- * Derive the checklist from the persisted/live project tool steps. A task is
- * never marked complete merely because the turn exists: only a tool step with
- * `progressType=completed` can make it done. This keeps the Manus-style list
- * honest when an operation is queued, blocked, or the page is reloaded.
- */
-export function deriveProjectTaskChecklist(
-  turns: UiTurn[],
-  isRunning = false
-): ProjectTaskItem[] {
-  const observed = new Map<string, ProjectTaskStatus>();
-  for (const step of projectSteps(turns)) {
-    if (step.kind !== "chip") continue;
-    const id = String(step.capabilityId || "");
-    if (!id.startsWith("project_")) continue;
-    const status: ProjectTaskStatus =
-      step.progressType === "failed"
-        ? "failed"
-        : step.progressType === "completed"
-          ? "done"
-          : step.progressType === "acting" || step.progressType === "observing"
-            ? "running"
-            : observed.get(id) || "running";
-    observed.set(id, status);
-  }
-  const hasProjectEvent = observed.size > 0;
-  if (!hasProjectEvent) return [];
-  const lastObserved = [...observed.keys()].at(-1);
-  return TASKS.map(task => {
-    if (task.id === "project_delivery") {
-      const hasFailure = [...observed.values()].includes("failed");
-      const allRequiredDone = TASKS.slice(0, -1).every(
-        t => observed.get(t.id) === "done"
-      );
-      return {
-        ...task,
-        status: hasFailure ? "failed" : allRequiredDone ? "done" : "pending",
-      };
-    }
-    const status = observed.get(task.id);
-    if (status) return { ...task, status };
-    // Pending means the operation has not been observed. It must not be
-    // inferred from the current turn count or a fabricated percentage.
-    return {
-      ...task,
-      status: isRunning && task.id === lastObserved ? "running" : "pending",
-    };
-  });
-}
-
-function StatusIcon({ status }: { status: ProjectTaskStatus }) {
+function StatusIcon({ status }: { status: ProjectActionStatus }) {
   if (status === "done")
     return <Check className="h-3.5 w-3.5 text-emerald-600" aria-hidden />;
   if (status === "failed")
     return <X className="h-3.5 w-3.5 text-rose-600" aria-hidden />;
-  if (status === "running")
-    return (
-      <LoaderCircle
-        className="h-3.5 w-3.5 animate-spin text-blue-600"
-        aria-hidden
-      />
-    );
-  return <Circle className="h-3.5 w-3.5 text-stone-300" aria-hidden />;
+  return (
+    <LoaderCircle
+      className="h-3.5 w-3.5 animate-spin text-blue-600"
+      aria-hidden
+    />
+  );
 }
 
-export function ProjectTaskChecklist({
-  turns,
-  isRunning = false,
-}: {
-  turns: UiTurn[];
-  isRunning?: boolean;
-}) {
-  const items = React.useMemo(
-    () => deriveProjectTaskChecklist(turns, isRunning),
-    [turns, isRunning]
-  );
-  if (items.length === 0) return null;
-  const completed = items.filter(item => item.status === "done").length;
-  const current =
-    items.find(item => item.status === "running") ||
-    items.find(item => item.status === "failed");
+export function ProjectTaskChecklist({ turns }: { turns: UiTurn[] }) {
+  const rows = React.useMemo(() => deriveProjectActivity(turns), [turns]);
+  if (rows.length === 0) return null;
+  const { done, total, failed } = projectActivityProgress(rows);
   return (
     <section
       className="mb-3 rounded-lg border border-stone-200 bg-white/80 px-3 py-2.5 shadow-sm"
       data-testid="project-task-checklist"
-      aria-label="\u5de5\u7a0b\u4efb\u52a1\u8fdb\u5ea6"
+      aria-label="工程动作"
     >
       <div className="mb-1.5 flex items-center justify-between gap-2 text-[12px] text-stone-500">
-        <span className="font-medium text-stone-700">
-          \u5de5\u7a0b\u4efb\u52a1
-        </span>
+        <span className="font-medium text-stone-700">工程动作</span>
         <span data-testid="project-task-count" className="tabular-nums">
-          {completed} / {items.length - 1}
+          {done} / {total}
+          {failed > 0 ? (
+            <span className="ml-1 text-rose-600">· {failed} 失败</span>
+          ) : null}
         </span>
       </div>
       <ol className="space-y-1">
-        {items.slice(0, -1).map(item => (
+        {rows.map(row => (
           <li
-            key={item.id}
-            className="flex items-center gap-2 text-[12px]"
-            data-status={item.status}
-            data-task-id={item.id}
+            key={row.id}
+            className="flex items-start gap-2 text-[12px]"
+            data-status={row.status}
+            data-task-id={row.tool}
           >
-            <StatusIcon status={item.status} />
-            <span
-              className={
-                item.status === "pending"
-                  ? "text-stone-400"
-                  : item.status === "failed"
-                    ? "text-rose-700"
-                    : "text-stone-700"
-              }
-            >
-              {item.label}
+            <span className="mt-[3px] shrink-0">
+              <StatusIcon status={row.status} />
             </span>
-            {current?.id === item.id ? (
-              <span className="ml-auto text-[11px] text-blue-600">
-                \u8fdb\u884c\u4e2d
+            <span className="min-w-0 flex-1">
+              <span
+                className={
+                  row.status === "failed" ? "text-rose-700" : "text-stone-700"
+                }
+              >
+                {row.label}
+              </span>
+              {row.detail ? (
+                <span
+                  className="ml-1.5 break-all text-stone-400"
+                  data-testid="project-task-detail"
+                >
+                  {row.detail}
+                </span>
+              ) : null}
+            </span>
+            {row.status === "running" ? (
+              <span className="ml-auto shrink-0 text-[11px] text-blue-600">
+                进行中
               </span>
             ) : null}
           </li>

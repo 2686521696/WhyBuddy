@@ -627,7 +627,7 @@ function ImAssistantMessage() {
     <div className="mb-3 max-w-[640px]">
       {runtimeKind === "project" &&
       (ctx.latestTurnId ? turn.id === ctx.latestTurnId : turn.id === turns?.at(-1)?.id) ? (
-        <ProjectTaskChecklist turns={turns?.length ? turns : [turn]} isRunning={turn.status === "streaming"} />
+        <ProjectTaskChecklist turns={turns?.length ? turns : [turn]} />
       ) : null}
       {turn.status === "streaming" ? (
         <div className="space-y-1.5">
