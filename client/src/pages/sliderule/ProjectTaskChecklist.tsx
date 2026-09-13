@@ -11,12 +11,12 @@ export type ProjectTaskItem = {
 };
 
 const TASKS: ReadonlyArray<{ id: string; label: string }> = [
-  { id: "project_create", label: "Create project" },
-  { id: "project_patch", label: "Write source" },
-  { id: "project_exec", label: "Run command" },
-  { id: "project_start", label: "Start preview" },
-  { id: "project_verify", label: "Browser checks" },
-  { id: "project_delivery", label: "Confirm delivery" },
+  { id: "project_create", label: "\u521b\u5efa\u5de5\u7a0b" },
+  { id: "project_patch", label: "\u5199\u5165\u6e90\u7801" },
+  { id: "project_exec", label: "\u8fd0\u884c\u547d\u4ee4" },
+  { id: "project_start", label: "\u542f\u52a8\u9884\u89c8" },
+  { id: "project_verify", label: "\u6d4f\u89c8\u5668\u68c0\u67e5" },
+  { id: "project_delivery", label: "\u786e\u8ba4\u4ea4\u4ed8" },
 ];
 
 function projectSteps(turns: UiTurn[]): TurnStep[] {
@@ -108,10 +108,12 @@ export function ProjectTaskChecklist({
     <section
       className="mb-3 rounded-lg border border-stone-200 bg-white/80 px-3 py-2.5 shadow-sm"
       data-testid="project-task-checklist"
-      aria-label="Project task progress"
+      aria-label="\u5de5\u7a0b\u4efb\u52a1\u8fdb\u5ea6"
     >
       <div className="mb-1.5 flex items-center justify-between gap-2 text-[12px] text-stone-500">
-        <span className="font-medium text-stone-700">Project task</span>
+        <span className="font-medium text-stone-700">
+          \u5de5\u7a0b\u4efb\u52a1
+        </span>
         <span data-testid="project-task-count" className="tabular-nums">
           {completed} / {items.length - 1}
         </span>
@@ -138,7 +140,7 @@ export function ProjectTaskChecklist({
             </span>
             {current?.id === item.id ? (
               <span className="ml-auto text-[11px] text-blue-600">
-                In progress
+                \u8fdb\u884c\u4e2d
               </span>
             ) : null}
           </li>
