@@ -186,11 +186,24 @@ function sanitizeLegacyEmptySeed(state: V5SessionState): V5SessionState {
 }
 
 /** Build the server-owned approval reference without changing the session projection. */
+function hasApprovedProjectPlan(state: V5SessionState): boolean {
+  const rows = (state.controlTranscript || []).filter(row => row && typeof row === "object") as Array<Record<string, unknown>>;
+  const planRows = rows.filter(row => typeof row.kind === "string" && row.kind.startsWith("plan_"));
+  const plan = [...rows].reverse().find(row => row.kind === "plan_written");
+  const latest = planRows[planRows.length - 1];
+  if (!plan || !latest || latest.kind !== "plan_approved") return false;
+  if (!plan.planId || !plan.planContent || typeof plan.revision !== "number" || plan.revision < 1) return false;
+  if (["planId", "revision", "planContent"].some(key => latest[key] !== plan[key])) return false;
+  const approval = [...planRows.slice(0, -1)].reverse().find(row => row.kind === "plan_approval");
+  if (!approval || !approval.reqId) return false;
+  return ["reqId", "planId", "revision", "planContent"].every(key => latest[key] === approval[key]);
+}
+
 async function approvedPlanReference(state: V5SessionState): Promise<string | null> {
   const rows = (state.controlTranscript || []).filter(row => row && typeof row === "object") as Array<Record<string, unknown>>;
   const plan = [...rows].reverse().find(row => row.kind === "plan_written");
   const approved = [...rows].reverse().find(row => row.kind === "plan_approved");
-  if (!plan || !approved || !plan.planId || !plan.planContent || typeof plan.revision !== "number") return null;
+  if (!hasApprovedProjectPlan(state) || !plan || !approved || !plan.planId || !plan.planContent || typeof plan.revision !== "number") return null;
   if (["planId", "revision", "planContent"].some(key => approved[key] !== plan[key])) return null;
   const bytes = new TextEncoder().encode(String(plan.planContent));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
@@ -3009,6 +3022,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     status: "idle" | "creating" | "error";
     error: string | null;
   }>({ status: "idle", error: null });
+  const canCreateProject = useMemo(() => hasApprovedProjectPlan(sessionState), [sessionState.controlTranscript]);
   const createProjectFromApprovedPlan = useCallback(async (templateId: "react-vite" | "react-vite-tasks" = "react-vite-tasks") => {
     if (isRunning || projectCreateState.status === "creating") return false;
     const state = sessionStateRef.current;
@@ -3162,6 +3176,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     challengeTurn,
     resetSession,
     createProjectFromApprovedPlan,
+    canCreateProject,
     projectCreateState,
     toggleRouteExpanded,
     retryCapability,

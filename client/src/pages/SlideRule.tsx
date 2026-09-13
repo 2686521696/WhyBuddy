@@ -1071,6 +1071,7 @@ function SlideRuleUnified({
   driveFullStatus,
   projectCapabilities = null,
   onCreateProject,
+  canCreateProject = false,
   projectCreateState,
   activeSkillId = null,
   skillContents = {},
@@ -1143,6 +1144,7 @@ function SlideRuleUnified({
     | "fallback";
   projectCapabilities?: { mode?: string; blockers?: string[]; configured?: boolean; canExecute?: boolean } | null;
   onCreateProject?: () => void;
+  canCreateProject?: boolean;
   projectCreateState?: { status: "idle" | "creating" | "error"; error: string | null };
   /** SSE-driven active skill highlighting for the right rail */
   activeSkillId?: import("@/lib/sliderule-marathon-driver").SkillId | null;
@@ -1302,6 +1304,7 @@ function SlideRuleUnified({
               {sessionState.runtimeKind !== "project" &&
               projectCapabilities?.canExecute &&
               projectCapabilities.configured &&
+              canCreateProject &&
               onCreateProject ? (
                 <button
                   type="button"
@@ -1915,6 +1918,7 @@ function SlideRuleSessionBody({
     pendingPlanApproval,
     submitPlanApproval,
     createProjectFromApprovedPlan,
+    canCreateProject,
     projectCreateState,
     pendingAsk,
     submitQuestionnaire,
@@ -2447,6 +2451,7 @@ function SlideRuleSessionBody({
     driveFullStatus,
     projectCapabilities,
     onCreateProject: () => void createProjectFromApprovedPlan(),
+    canCreateProject,
     projectCreateState,
     activeSkillId,
     skillContents,
