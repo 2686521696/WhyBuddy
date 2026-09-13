@@ -976,9 +976,9 @@ rollout 关闭时，资源所有者仍可读取工程、历史、验证、交付
 
 ### 26.3 2026-09-13 工程工作台入口与可见性补齐
 
-前端工程入口已完成一轮可见性修复：应用卡片菜单增加“打开工程工作台”，有会话时直接恢复该会话，只有应用快照时复用既有 `reopenApp` 重建；工程预览标题明确标注 `E2B 沙盒`，浏览器检查区域支持展开/收起，并在源码、版本、数据、交付页自动收起，避免重复占用工作台空间。rollout 关闭时，预览接口返回稳定的 `project_rollout_disabled` 原因，页面直接显示配置未启用，而不是显示模糊的 tunnel 缺失。
+前端工程入口已完成一轮可见性修复：应用卡片菜单增加“打开工程工作台”，有会话时直接恢复该会话，只有应用快照时复用既有 `reopenApp` 重建；工程预览标题明确标注 `E2B 沙盒`，浏览器检查区域支持展开/收起，并在源码、版本、数据、交付页自动收起，避免重复占用工作台空间。`/agent-loop/sliderule` 现在会在已有会话和空会话直接标出当前 `runtimeKind`：历史会话显示 `HTML 推演兼容模式`，工程会话显示 `工程工作台模式`；rollout 关闭时同时显示 `project_rollout_disabled`，页面直接显示配置未启用，而不是显示模糊的 tunnel 缺失。
 
-对应功能提交为 `f6217702`、`8a1bb5fd`、`8fc295ca`、`6a57a827`，已推送到 `refactor/unified-entry-control-plane`。前端工程面板定向回归 **211 项通过**；Python 预览/运行/rollout 定向回归 **150 项通过**；独立浏览器验证器 **17 项通过**；`pnpm run arch:check` 通过（`crates 101 / edges 381 / cycles 0`，13 份 grok-build 对照文档同步）。
+对应功能提交为 `f6217702`、`8a1bb5fd`、`8fc295ca`、`6a57a827`、`6aee172d`，已推送到 `refactor/unified-entry-control-plane`。前端工程面板定向回归 **211 项通过**；Python 预览/运行/rollout 定向回归 **150 项通过**；独立浏览器验证器 **17 项通过**；`pnpm run arch:check` 通过（`crates 101 / edges 381 / cycles 0`，13 份 grok-build 对照文档同步）。
 
 真实工程工作台 fixture 的六个桌面面板截图已整理为 `artifacts/project-workspace-browser-1789258139220/panel-preview.png`、`panel-source.png`、`panel-history.png`、`panel-data.png`、`panel-delivery.png`、`panel-browser-check.png`，均为 **1920×1080**；同目录保留 `mobile-source.png` 作为 390×844 窄屏无横向溢出证据。该 fixture 报告 10 项全通过，但仍属于受控 API/source fixture；本地默认 rollout 关闭，不能把它描述成生产 E2B 或自主模型交付已开启。
 
