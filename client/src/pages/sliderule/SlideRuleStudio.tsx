@@ -34,6 +34,8 @@ import { DEFAULT_SESSION_ID } from "@/lib/sliderule-session-id";
 import type { PublishClosureSummary } from "./derive-cross-runtime-summary";
 import { ArchitectureStage } from "./ArchitectureStage";
 import { SandboxPreviewSurface } from "./project-runtime/SandboxPreviewSurface";
+import { ProjectComputerPanel } from "./ProjectComputerPanel";
+import type { UiTurn } from "./types";
 import { ActiveSystemScreen } from "./system-screens/ActiveSystemScreen";
 import {
   deriveSettledFiveSystemModel,
@@ -287,6 +289,8 @@ interface SlideRuleStudioProps {
    *  ⚠ 跟 specPages 不是二选一，是**同一份东西的两个来源**：推演中走 SSE
    *  逐页到达，跑完/刷新之后走这份。合并逻辑在下面一处做完，别在两处判。 */
   specFirstPages?: SpecFirstPagesBlob;
+  /** 工程执行面板的数据源：跟左栏动作流同一份真实步骤，不各算一套。 */
+  turns?: UiTurn[];
 
   className?: string;
   /** 舞台头条右侧：布局档分段（分栏/全屏/画布）+ 交付物。不另占整页顶栏。 */
@@ -315,7 +319,7 @@ export function SlideRuleStudio(props: SlideRuleStudioProps) {
 
 function ProjectStudio({ projectId, projectRevision, appTitle, chatSlot,
   stageVisible = true, sessionEmpty = false, className, chromeSlot, resetSlot,
-  isRunning = false, liveActionLabel = null,
+  isRunning = false, liveActionLabel = null, turns = [],
 }: SlideRuleStudioProps) {
   const layout = useStudioLayout();
   const showStage = isStagePageShown(stageVisible, !!layout?.stagePageHidden);
@@ -341,6 +345,9 @@ function ProjectStudio({ projectId, projectRevision, appTitle, chatSlot,
               <span>{liveActionLabel}</span>
             </div>
           ) : null}
+          {/* 「它的电脑」排在预览**之上**：动作进行中时先看见它在干什么，
+              预览要等服务起来才有内容。见 ProjectComputerPanel 头注。 */}
+          <ProjectComputerPanel turns={turns} className="max-h-[38%] shrink-0" />
           <SandboxPreviewSurface projectId={projectId} projectRevision={projectRevision}
             revisionMode="current" appTitle={appTitle} />
         </div>

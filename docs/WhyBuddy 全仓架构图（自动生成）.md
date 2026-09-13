@@ -15,7 +15,7 @@
 flowchart TB
   subgraph ts [TypeScript]
     ts_agent_loop["ts/agent-loop<br/>99 个模块"]
-    ts_client["ts/client<br/>1041 个模块"]
+    ts_client["ts/client<br/>1042 个模块"]
     ts_project_templates["ts/project-templates<br/>5 个模块"]
     ts_scripts["ts/scripts<br/>67 个模块"]
     ts_server["ts/server<br/>588 个模块"]
@@ -31,7 +31,7 @@ flowchart TB
     py_models["py/models<br/>4 个模块"]
     py_routes["py/routes<br/>15 个模块"]
     py_scripts["py/scripts<br/>39 个模块"]
-    py_services["py/services<br/>259 个模块"]
+    py_services["py/services<br/>260 个模块"]
     py_sliderule_llm["py/sliderule_llm<br/>15 个模块"]
     py_stdio_utf8["py/stdio_utf8<br/>1 个模块"]
     py_services_web_aigc_open_adapter["services.web_aigc_open_adapter"]

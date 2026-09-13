@@ -1396,6 +1396,7 @@ function SlideRuleUnified({
                 projectId={sessionState.projectId}
                 projectRevision={sessionState.projectRevision}
                 sessionEmpty={isHomeEmpty}
+                turns={conversationTurns}
                 chatSlot={
                   <ClaudeChatSurface
                     uiTurns={conversationTurns}

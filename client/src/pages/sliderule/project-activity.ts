@@ -145,7 +145,16 @@ export function deriveProjectActivity(turns: UiTurn[]): ProjectActionRow[] {
         .find(row => row.tool === tool && row.status === "running");
       if (open) {
         open.status = progress === "failed" ? "failed" : "done";
-        if (detail) open.detail = detail;
+        // ⚠ 合并规则：**坏消息优先**，其次保留开场那句「对什么动手」。
+        //
+        //   开场摘要是「src/Home.tsx、src/api/tasks.ts」，结果细节常常是
+        //   「rev-a → rev-b」。对着看的人关心的是前者——后者是版本号，
+        //   在行里说不出任何东西。但失败时反过来：错误码比文件名重要。
+        if (progress === "failed") {
+          if (detail) open.detail = detail;
+        } else if (!open.detail && detail) {
+          open.detail = detail;
+        }
         continue;
       }
       rows.push({
@@ -167,6 +176,37 @@ export function deriveProjectActivity(turns: UiTurn[]): ProjectActionRow[] {
     });
   }
   return rows;
+}
+
+/**
+ * 「它的电脑」此刻该摊开哪一条、「实时」该不该亮。
+ *
+ * 抽成纯函数是因为这个仓的组件判据走 `react-dom/server` 静态渲染，点不了
+ * 按钮。把决策放在这里，正反两面都能直接测，组件只负责画。
+ *
+ * ⚠ 「实时」只在**真有动作在跑** 且 **用户没有倒回去看历史**时亮。一个永远
+ *   亮着的实时灯比没有更坏：它让人以为还在跑。`pinned` 非空就是用户钉住了
+ *   某一条，此时哪怕后台还在跑，这块屏幕显示的也是过去，不能说「实时」。
+ */
+export function projectComputerView(
+  rows: ProjectActionRow[],
+  pinned: number | null
+): {
+  index: number;
+  current: ProjectActionRow | null;
+  live: boolean;
+  following: boolean;
+} {
+  const following = pinned == null;
+  const last = Math.max(rows.length - 1, 0);
+  const index = following ? last : Math.min(Math.max(pinned, 0), last);
+  const running = rows.some(row => row.status === "running");
+  return {
+    index,
+    current: rows[index] ?? null,
+    live: running && following,
+    following,
+  };
 }
 
 /** 已完成的条数 / 总条数——分母是**真实发生的动作数**，不是写死的 6。 */

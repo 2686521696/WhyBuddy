@@ -501,7 +501,12 @@ export interface DriveFullStreamOpts {
     projectId: string;
     projectRevision: string;
   }) => void;
-  onControlToolStart?: (tool: string) => void;
+  /**
+   * 工具开场。`summary` 是服务端按白名单生成的**脱敏**摘要（改了哪个文件 /
+   * 跑的哪条命令），见 Python 侧 `project_tool_summary`——没有就是没有，
+   * 消费侧不许自己从别处拼一个。
+   */
+  onControlToolStart?: (tool: string, summary?: string) => void;
   onControlToolResult?: (event: Record<string, unknown>) => void;
 }
 
@@ -1093,7 +1098,10 @@ export async function consumeControlStreamResponse(
               }
               continue;
             case "control_tool_start":
-              opts.onControlToolStart?.(String(event.tool || ""));
+              opts.onControlToolStart?.(
+                String(event.tool || ""),
+                typeof event.summary === "string" ? event.summary : undefined
+              );
               continue;
             case "control_tool_result":
               opts.onControlToolResult?.(event);

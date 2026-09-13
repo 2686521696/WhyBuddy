@@ -145,6 +145,7 @@ from services.closed_tools import (
 from services.drive_full_factory import start_drive_full_factory_run
 from services.project_authority import approved_reference
 from services.project_tool_contracts import PROJECT_TOOLS, PROJECT_TOOL_NAMES, PROJECT_WRITE_TOOLS
+from services.project_tool_summary import project_tool_summary
 from services.workflow_registry import workflow_for, workflow_names
 from services.workflow_select import select_workflow
 from services.scope_authority import (
@@ -4500,7 +4501,17 @@ async def _dispatch_tool(
         return
     if name in PROJECT_TOOL_NAMES:
         adapter = _PROJECT_TOOLS.get()
-        yield {"type": "control_tool_start", "tool": name}
+        # 开场就说得出「在对什么动手」，别让动作进行中的那几十秒界面是哑的。
+        #
+        # ⚠ 走白名单摘要，**不是**把 args 原样发出去：参数里有 approvalRef
+        #   （闸的钥匙）和 project_patch 的文件全文。见
+        #   `project_tool_summary` 模块头。
+        summary = project_tool_summary(name, args)
+        yield {
+            "type": "control_tool_start",
+            "tool": name,
+            **({"summary": summary} if summary else {}),
+        }
         body = await run_in_threadpool(adapter.execute, name, args, state)
         # Project operations are durable and may outlive this tool call.  Keep
         # the existing control loop alive briefly so the next model turn sees

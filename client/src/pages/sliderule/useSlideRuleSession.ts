@@ -1722,12 +1722,22 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   startedAt: new Date().toISOString(),
                 });
               },
-              onControlToolStart: (tool: string) => {
+              onControlToolStart: (tool: string, summary?: string) => {
                 ensureFactoryClock(tool);
                 const projectLabel = projectToolLabel(tool);
                 if (projectLabel) {
-                  setLiveAction({ label: projectLabel, external: true });
-                  appendStreamStep(projectLabel, { capabilityId: tool, progressType: "acting" });
+                  // 开场就带上「在对什么动手」（服务端脱敏摘要），动作进行中的
+                  // 那几十秒界面不再是哑的。拿不到就不带，不自己拼。
+                  const detail = String(summary || "").trim();
+                  setLiveAction({
+                    label: detail ? `${projectLabel}：${detail}` : projectLabel,
+                    external: true,
+                  });
+                  appendStreamStep(projectLabel, {
+                    capabilityId: tool,
+                    progressType: "acting",
+                    ...(detail ? { projectDetail: detail } : {}),
+                  });
                   return;
                 }
                 if (isFactoryWriteTool(tool)) {
