@@ -446,7 +446,12 @@ function HtmlSlideRuleStudio({
     // guaranteed 404 probe while the welcome composer owns the whole surface;
     // once the stage is visible, the session has a persisted/active artifact
     // worth resolving for click-edit controls.
-    if (!sessionId || !stageVisible) {
+    // A conversation can be visible while its HTML pages are still absent
+    // (for example immediately after creating a new session).  There is no
+    // generated-app binding to resolve in that state, and probing the legacy
+    // endpoint only creates an expected 404 in the browser console.  Existing
+    // HTML sessions with pages keep the binding lookup for click-edit.
+    if (!sessionId || !stageVisible || livePages.length === 0) {
       setBoundAppId(null);
       return;
     }
@@ -457,7 +462,7 @@ function HtmlSlideRuleStudio({
     return () => {
       alive = false;
     };
-  }, [sessionId, isRunning, stageVisible]);
+  }, [sessionId, isRunning, stageVisible, livePages.length]);
 
   const [editMode, setEditMode] = useState(false);
   const [editDirty, setEditDirty] = useState(false);
