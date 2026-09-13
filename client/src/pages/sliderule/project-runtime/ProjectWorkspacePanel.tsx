@@ -86,7 +86,18 @@ function ProjectWorkspaceBody({
         (revisionMode === "pinned"
           ? (projectRevision ?? undefined)
           : undefined));
-  const scope = JSON.stringify([projectId, requestedRevision]);
+  // 2026-09-13: model writes updated the session revision while this current
+  // source view kept showing old bytes. Treat that projection as invalidation,
+  // not a revision pin: the authoritative GET may already be a newer version.
+  // Changing read scope also hides old files and aborts their pending responses;
+  // drafts retain their original base so the existing merge guard still applies.
+  const currentRevisionSignal =
+    revisionMode === "current" ? projectRevision : null;
+  const scope = JSON.stringify([
+    projectId,
+    requestedRevision,
+    currentRevisionSignal,
+  ]);
   const readScope = useRef(scope);
   readScope.current = scope;
   const [loadedScope, setLoadedScope] = useState(scope);

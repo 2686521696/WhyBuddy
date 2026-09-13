@@ -156,6 +156,159 @@ afterEach(async () => {
 });
 
 describe("source and history through real HTTP consumers", () => {
+  it("follows a model revision signal by reading current source and preserving the selected file", async () => {
+    source.files.unshift({
+      path: "README.md",
+      sha256: "readme1",
+      sizeBytes: 6,
+    });
+    contents["README.md"] = "readme";
+    await render({ projectRevision: "r1" });
+    await click("src/main.tsx");
+    expect(editor().value).toBe("first\nsecond\nthird");
+    source = { ...source, revision: "r3", currentRevision: "r3" };
+    contents["src/main.tsx"] = "model's current source";
+    // A control_project_state projection can lag the durable current version.
+    // Its revision invalidates the view; it must not pin the next GET to r2.
+    await render({ projectRevision: "r2" });
+    expect(editor().value).toBe("model's current source");
+    expect(button("src/main.tsx").getAttribute("aria-current")).toBe("true");
+    const indexes = fetcher.mock.calls.filter(([url]) =>
+      new URL(String(url), "http://localhost").pathname.endsWith("/source")
+    );
+    expect(indexes).toHaveLength(2);
+    expect(indexes.every(([url]) => !String(url).includes("revision="))).toBe(
+      true
+    );
+    expect(container.textContent).toContain("源码版本 r3");
+    expect(posts()).toHaveLength(0);
+  });
+
+  it("preserves a dirty draft as stale after a model revision signal and saves only after merging the new hash", async () => {
+    await render({ projectRevision: "r1" });
+    await edit("my pending change");
+    source = {
+      ...source,
+      revision: "r2",
+      currentRevision: "r2",
+      files: [{ ...source.files[0], sha256: "hash2" }],
+    };
+    contents["src/main.tsx"] = "model's committed change";
+    await render({ projectRevision: "r2" });
+    expect(editor().value).toBe("my pending change");
+    expect(container.textContent).toContain("草稿基于旧版本");
+    expect(container.textContent).toContain("model's committed change");
+    expect(button("保存源码").disabled).toBe(true);
+    expect(posts()).toHaveLength(0);
+    await click("已核对差异，以最新版为保存基础");
+    await click("保存源码");
+    expect(JSON.parse(posts()[0][1].body)).toMatchObject({
+      expectedRevision: "r2",
+      changes: [
+        {
+          path: "src/main.tsx",
+          expectedSha256: "hash2",
+          content: "my pending change",
+        },
+      ],
+    });
+  });
+
+  it("keeps pinned source on its requested revision when current source advances", async () => {
+    source.currentRevision = "r2";
+    await render({ revisionMode: "pinned", projectRevision: "r1" });
+    expect(String(fetcher.mock.calls[0][0])).toContain("revision=r1");
+    expect(editor().value).toBe("first\nsecond\nthird");
+    source = { ...source, revision: "r2", currentRevision: "r2" };
+    contents["src/main.tsx"] = "new current source";
+    const reads = fetcher.mock.calls.length;
+    await render({ revisionMode: "pinned", projectRevision: "r1" });
+    expect(fetcher.mock.calls).toHaveLength(reads);
+    expect(editor().value).toBe("first\nsecond\nthird");
+    expect(container.textContent).toContain("正在查看历史版本");
+    expect(posts()).toHaveLength(0);
+  });
+
+  it("ignores an older index response after a newer model revision signal has loaded", async () => {
+    await render({ projectRevision: "r1" });
+    const original = fetcher.getMockImplementation()!;
+    let resolveOld!: (value: Response) => void;
+    let oldSignal: AbortSignal | undefined;
+    const oldIndex = new Promise<Response>(resolve => {
+      resolveOld = resolve;
+    });
+    let deferred = false;
+    fetcher.mockImplementation(async (...args) => {
+      if (String(args[0]).endsWith("/source") && !deferred) {
+        deferred = true;
+        oldSignal = args[1]?.signal as AbortSignal;
+        return oldIndex;
+      }
+      return original(...args);
+    });
+    await render({ projectRevision: "r2" });
+    expect(editor()).toBeNull();
+    source = { ...source, revision: "r3", currentRevision: "r3" };
+    contents["src/main.tsx"] = "latest r3 source";
+    await render({ projectRevision: "r3" });
+    expect(oldSignal?.aborted).toBe(true);
+    expect(editor().value).toBe("latest r3 source");
+    await act(async () => resolveOld(response({ ...source, revision: "r2" })));
+    await flush();
+    expect(editor().value).toBe("latest r3 source");
+    expect(container.textContent).toContain("源码版本 r3");
+    expect(posts()).toHaveLength(0);
+  });
+
+  it("aborts an old file read while awaiting current source after a model revision signal", async () => {
+    const original = fetcher.getMockImplementation()!;
+    let resolveFile!: (value: Response) => void;
+    let resolveIndex!: (value: Response) => void;
+    let oldSignal: AbortSignal | undefined;
+    const oldFile = new Promise<Response>(resolve => {
+      resolveFile = resolve;
+    });
+    const newIndex = new Promise<Response>(resolve => {
+      resolveIndex = resolve;
+    });
+    fetcher.mockImplementation(async (...args) => {
+      const url = new URL(String(args[0]), "http://localhost");
+      if (
+        url.pathname.endsWith("/source/file") &&
+        url.searchParams.get("revision") === "r1"
+      ) {
+        oldSignal = args[1]?.signal as AbortSignal;
+        return oldFile;
+      }
+      if (url.pathname.endsWith("/source") && source.revision === "r2")
+        return newIndex;
+      return original(...args);
+    });
+    await render({ projectRevision: "r1" });
+    source = { ...source, revision: "r2", currentRevision: "r2" };
+    contents["src/main.tsx"] = "current r2 source";
+    await render({ projectRevision: "r2" });
+    expect(oldSignal?.aborted).toBe(true);
+    await act(async () =>
+      resolveFile(
+        response({
+          projectId: "p1",
+          revision: "r1",
+          path: "src/main.tsx",
+          sha256: "hash1",
+          content: "late old source",
+        })
+      )
+    );
+    await flush();
+    expect(editor()).toBeNull();
+    expect(container.textContent).not.toContain("late old source");
+    await act(async () => resolveIndex(response(source)));
+    await flush();
+    expect(editor().value).toBe("current r2 source");
+    expect(posts()).toHaveLength(0);
+  });
+
   it("settles a failed file read and retries only that file without losing its draft", async () => {
     await render();
     await edit("unsaved user draft");
