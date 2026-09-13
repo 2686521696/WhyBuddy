@@ -29,6 +29,32 @@ const STATUS: Record<PreviewDescriptor["status"], string> = {
   reconciling: "正在核对运行状态",
 };
 
+/** Stable server reason codes are translated here so rollout gates are visible
+ * at the point where a user tries to open the project. */
+const PREVIEW_REASON: Record<string, string> = {
+  project_rollout_disabled:
+    "工程模式当前已关闭（WHYBUDDY_PROJECT_ROLLOUT=disabled）。管理员开启工程 rollout 后才能启动沙盒。",
+  project_preview_not_configured:
+    "工程预览尚未配置独立预览域名、网关密钥或其他必要参数。",
+  project_preview_gateway_not_configured:
+    "工程预览网关尚未配置，暂时不能提供私有预览。",
+  project_private_preview_origin_required:
+    "工程预览缺少独立 HTTPS 来源，不能安全打开生成应用。",
+  project_runtime_not_started:
+    "工程还没有启动运行实例。请先启动工程，系统会在沙盒准备好后提供预览。",
+  project_runtime_not_ready:
+    "工程运行实例还没有就绪，请等待启动完成后再打开预览。",
+  project_preview_tunnel_not_started:
+    "工程已启动，但私有预览通道还没有建立。请更新状态后重试。",
+  project_preview_binding_changed:
+    "工程运行授权已变化，当前预览需要重新同步或启动。",
+};
+
+function previewReasonText(reason: string | null | undefined) {
+  if (!reason) return null;
+  return PREVIEW_REASON[reason] ?? `工程预览暂不可用（${reason}）。`;
+}
+
 export function SandboxPreviewSurface({
   projectId,
   projectRevision,
@@ -156,6 +182,7 @@ export function SandboxPreviewSurface({
         : descriptor?.status === "ready"
           ? "点击打开工程预览。预览就绪不代表业务验收已通过。"
           : "这里显示工程的实际运行状态，应用启动就绪后可以打开预览。");
+  const blockedReason = previewReasonText(preview.snapshot?.reason);
 
   return (
     <section
@@ -216,6 +243,16 @@ export function SandboxPreviewSurface({
         <p role="alert" className="px-4 py-2 text-xs text-amber-800">
           {stopError}
         </p>
+      ) : null}
+      {!preview.loading && !preview.error && blockedReason ? (
+        <div
+          role="status"
+          data-testid="project-preview-blocked-reason"
+          className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900"
+        >
+          <p className="font-semibold">工程预览当前不可用</p>
+          <p className="mt-1 leading-5">{blockedReason}</p>
+        </div>
       ) : null}
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stone-200 px-4 py-2">
         <div role="tablist" aria-label="工程工作台 · E2B 沙盒预览" className="flex gap-1">
@@ -286,6 +323,7 @@ export function SandboxPreviewSurface({
           !mismatch &&
           descriptor?.status === "ready"
         )}
+        compact={tab !== "preview"}
       />
       {workspaceOpened && projectId ? (
         <div

@@ -188,6 +188,20 @@ describe("authorized project preview", () => {
     expect(frame()).toBeNull();
   });
 
+  it("shows the rollout gate and its actionable reason when project mode is disabled", async () => {
+    snapshot.available = false;
+    snapshot.reason = "project_rollout_disabled";
+    await render();
+    const blocked = container.querySelector(
+      '[data-testid="project-preview-blocked-reason"]'
+    );
+    expect(blocked).not.toBeNull();
+    expect(blocked?.textContent).toContain("工程预览当前不可用");
+    expect(blocked?.textContent).toContain("WHYBUDDY_PROJECT_ROLLOUT=disabled");
+    expect(blocked?.textContent).toContain("开启工程 rollout");
+    expect(openButton().disabled).toBe(true);
+  });
+
   it("a missing project reference cannot fall through to another artifact or fetch an undefined project", async () => {
     await render("");
     expect(container.textContent).toContain("缺少工程引用");
