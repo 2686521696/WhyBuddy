@@ -122,9 +122,18 @@ def get_project_preview(project_id: str, request: Request, response: Response, v
         project = access.store.get_project(project_id, owner_id=owner_id)
         load_authorized_session(project.sessionId, owner_id=owner_id, approval_ref=None)
         rollout = rollout_readiness()
+        # 2026-09-13: internal mode permits source work and sandbox execution
+        # without a relay. Waiting until ready to disclose that missing config
+        # sent users through a paid startup which could never provide preview.
+        # Keep runtime state intact; this is only its observation reason. Ready
+        # runtimes still recheck authority below before reporting configuration.
+        pending_reason = (
+            "project_rollout_disabled" if rollout["mode"] == "disabled" else
+            "project_preview_not_configured" if not preview_configuration_enabled() else None
+        )
         operation = _latest_runtime(access, project_id, owner_id)
         if operation is None:
-            reason = "project_rollout_disabled" if rollout["mode"] == "disabled" else "project_runtime_not_started"
+            reason = pending_reason or "project_runtime_not_started"
             return {"operationId": None, "descriptor": None, "available": False, "reason": reason}
         runtime = operation.runtime
         revision = access.store.get_revision(project_id, runtime.revision if runtime else None, owner_id=owner_id)
@@ -132,9 +141,7 @@ def get_project_preview(project_id: str, request: Request, response: Response, v
             runtimeId=runtime.runtimeId, revision=runtime.revision, status=runtime.status,
             capabilities=template_verification_capabilities(revision.templateVersion),
             expiresAt=_iso(runtime.expiresAt) if runtime.expiresAt else None)
-        available, reason = False, (
-            "project_rollout_disabled" if rollout["mode"] == "disabled" else "project_runtime_not_ready"
-        )
+        available, reason = False, pending_reason or "project_runtime_not_ready"
         if runtime is not None and runtime.status == "ready":
             # A missing relay configuration must not preserve a stale ready state
             # for a cancelled/expired/replaced runtime. Check authority regardless.

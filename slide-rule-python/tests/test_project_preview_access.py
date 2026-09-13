@@ -604,6 +604,70 @@ def test_configuration_and_grant_presence_are_distinct_from_runtime_ready(world,
     world.store.request_operation_cancel(world.operation.operationId, owner_id="u1")
     stale = world.client.get(url).json()
     assert not stale["available"] and stale["descriptor"]["status"] == "reconciling"
+    assert stale["reason"] == "project_preview_binding_changed"
+
+
+def _preview_project_at(world, phase):
+    """Persist the same early states seen before the real E2B startup begins."""
+    if phase == "starting":
+        _runtime_change(world, status="starting", health="unknown")
+        return world.project
+    plan = {"planId": "plan-2", "revision": 1, "planContent": "Run another fixed project", "reqId": "request-2"}
+    state = V5SessionState(sessionId="s2", ownerId="u1", goal={"text": plan["planContent"]}, controlTranscript=[
+        {**plan, "kind": "plan_written"}, {**plan, "kind": "plan_approval"}, {**plan, "kind": "plan_approved"}])
+    approval = approved_reference(state)
+    persistence.save_session_record(state, server_write=True)
+    project = create_session_project(world.store, "s2", owner_id="u1", approval_ref=approval)
+    if phase == "queued":
+        world.store.create_operation(project.projectId, owner_id="u1", kind="runtime.start",
+            expected_revision=project.currentRevision, approval_ref=approval, idempotency_key="start-pending",
+            input={"port": 5173})
+    return project
+
+
+@pytest.mark.parametrize("phase", ["unstarted", "queued", "starting"])
+@pytest.mark.parametrize("configured", [False, True])
+@pytest.mark.parametrize("disabled", [False, True])
+def test_http_pending_preview_reports_configuration_before_sandbox_start(world, monkeypatch, phase, configured, disabled):
+    project = _preview_project_at(world, phase)
+    if not configured:
+        monkeypatch.delenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE")
+    if disabled:
+        monkeypatch.setenv("WHYBUDDY_PROJECT_ROLLOUT", "disabled")
+    before = world.store.list_project_operations(project.projectId, owner_id="u1")
+    response = world.client.get(f"/projects/{project.projectId}/preview")
+    assert response.status_code == 200
+    body = response.json()
+    expected = ("project_rollout_disabled" if disabled else
+        "project_preview_not_configured" if not configured else
+        "project_runtime_not_started" if phase == "unstarted" else "project_runtime_not_ready")
+    assert body["reason"] == expected and body["available"] is False
+    assert (body["operationId"] is None) == (phase == "unstarted")
+    if phase == "starting":
+        assert body["descriptor"]["status"] == "starting"
+    else:
+        assert body["descriptor"] is None
+    assert world.store.list_project_operations(project.projectId, owner_id="u1") == before
+
+
+@pytest.mark.parametrize("phase", ["unstarted", "queued", "starting"])
+def test_http_pending_preview_checks_owner_before_disclosing_configuration(world, monkeypatch, phase):
+    project = _preview_project_at(world, phase)
+    monkeypatch.delenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE")
+    world.viewer["id"] = "mallory"
+    response = world.client.get(f"/projects/{project.projectId}/preview")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "project_not_found"}
+
+
+def test_missing_preview_config_cannot_hide_expired_ready_authority(world, monkeypatch):
+    monkeypatch.delenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE")
+    world.clock["now"] += 1000
+    response = world.client.get(f"/projects/{world.project.projectId}/preview")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["descriptor"]["status"] == "reconciling"
+    assert body["reason"] == "project_preview_binding_changed" and body["available"] is False
 
 
 def test_latest_runtime_selection_ignores_uuid_order_and_newer_exec(world):

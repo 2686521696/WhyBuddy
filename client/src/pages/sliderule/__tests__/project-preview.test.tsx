@@ -222,6 +222,30 @@ describe("authorized project preview", () => {
     expect(posts()).toHaveLength(0);
   });
 
+  it.each(["unstarted", "starting"] as const)(
+    "shows missing preview configuration before %s can be mistaken for preview readiness",
+    async phase => {
+      snapshot.available = false;
+      snapshot.reason = "project_preview_not_configured";
+      if (phase === "unstarted") {
+        snapshot.operationId = null;
+        snapshot.descriptor = null;
+      } else {
+        snapshot.descriptor!.status = "starting";
+      }
+      await render();
+      expect(container.textContent).toContain(
+        phase === "unstarted" ? "工程尚未启动" : "正在启动应用"
+      );
+      expect(container.textContent).toContain("尚未配置独立预览域名");
+      expect(container.textContent).not.toContain("系统会在沙盒准备好后提供预览");
+      expect(openButton().disabled).toBe(true);
+      await click();
+      expect(frame()).toBeNull();
+      expect(posts()).toHaveLength(0);
+    }
+  );
+
   it("shows the rollout gate and its actionable reason when project mode is disabled", async () => {
     snapshot.available = false;
     snapshot.reason = "project_rollout_disabled";
