@@ -534,6 +534,48 @@ describe("project browser verification consumer", () => {
     expect(container.textContent).toContain("3 个文件 · 4000 字节");
     expect(container.textContent).toContain("整体交付仍由服务端另行判定");
   });
+
+  it("collapses verification evidence on demand while keeping status and actions visible", async () => {
+    view = taskEvidence();
+    await render();
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[data-testid="project-verification-toggle"]'
+    )!;
+    const details = container.querySelector<HTMLElement>(
+      '[data-testid="project-verification-details"]'
+    )!;
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(details.hidden).toBe(false);
+    await click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(details.hidden).toBe(true);
+    expect(status()).toBe("任务应用检查通过");
+    expect(start().disabled).toBe(false);
+    await click(toggle);
+    expect(details.hidden).toBe(false);
+  });
+
+  it("automatically collapses verification details outside the preview tab", async () => {
+    view = taskEvidence();
+    await act(async () =>
+      root.render(
+        <SandboxPreviewSurface projectId="project-one" revisionMode="current" />
+      )
+    );
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[data-testid="project-verification-toggle"]'
+    )!;
+    const details = container.querySelector<HTMLElement>(
+      '[data-testid="project-verification-details"]'
+    )!;
+    expect(details.hidden).toBe(false);
+    const sourceTab = container.querySelector<HTMLButtonElement>(
+      '[role="tab"][aria-selected="false"]'
+    )!;
+    await click(sourceTab);
+    expect(details.hidden).toBe(true);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  });
   it("accepts server-owned delivery eligibility only for the bound tasks profile", async () => {
     view = taskEvidence();
     view.snapshot!.deliveryEligible = true;

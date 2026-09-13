@@ -15,6 +15,13 @@ interface Props {
   runtimeId?: string | null;
   suiteVersion?: string | null;
   ready: boolean;
+  /**
+   * Source/data/delivery tabs already occupy the workbench body.  In those
+   * views the verification details stay available behind the disclosure
+   * control, but collapse automatically so the same evidence does not consume
+   * the top half of the screen twice.
+   */
+  compact?: boolean;
 }
 
 const POLL_MS = 3000;
@@ -79,6 +86,7 @@ export function ProjectVerificationPanel({
   runtimeId,
   suiteVersion,
   ready,
+  compact = false,
 }: Props) {
   const scope = JSON.stringify([
     projectId,
@@ -106,6 +114,11 @@ export function ProjectVerificationPanel({
   const writeRequest = useRef<AbortController | null>(null);
   const idempotencyKey = useRef<string | null>(null);
   const refreshRef = useRef<() => Promise<void>>(async () => {});
+  const [collapsed, setCollapsed] = useState(compact);
+
+  useEffect(() => {
+    if (compact) setCollapsed(true);
+  }, [compact]);
 
   useEffect(() => {
     const current = ++generation.current;
@@ -344,7 +357,22 @@ export function ProjectVerificationPanel({
               ? "重新检查页面"
               : "检查页面"}
         </button>
+        <button
+          type="button"
+          data-testid="project-verification-toggle"
+          aria-expanded={!collapsed}
+          aria-controls="project-verification-details"
+          onClick={() => setCollapsed(value => !value)}
+          className="rounded-md border border-stone-300 px-3 py-1.5 text-xs text-stone-600 hover:bg-stone-100"
+        >
+          {collapsed ? "展开检查详情" : "收起检查详情"}
+        </button>
       </div>
+      <div
+        id="project-verification-details"
+        data-testid="project-verification-details"
+        hidden={collapsed}
+      >
       <p className="mt-1 text-xs leading-5 text-stone-500">
         {tasks
           ? "检查本次固定版本的任务新增、编辑、筛选、刷新持久化和只读权限；结果仅覆盖已执行用例，整体交付仍由服务端另行判定。"
@@ -425,6 +453,7 @@ export function ProjectVerificationPanel({
         </details>
       ) : null}
       {record ? <ProjectEvidenceImages record={record} stale={stale} /> : null}
+      </div>
     </section>
   );
 }
