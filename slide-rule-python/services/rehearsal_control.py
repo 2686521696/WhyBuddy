@@ -4492,6 +4492,32 @@ async def _dispatch_tool(
         adapter = _PROJECT_TOOLS.get()
         yield {"type": "control_tool_start", "tool": name}
         body = await run_in_threadpool(adapter.execute, name, args, state)
+        # Project operations are durable and may outlive this tool call.  Keep
+        # the existing control loop alive briefly so the next model turn sees
+        # the real terminal result instead of having to ask the user to
+        # "continue".  This is deliberately bounded: long work remains
+        # resumable through project_status and never blocks cancellation or
+        # consumes the control budget indefinitely.
+        operation_id = body.get("operationId") if isinstance(body, dict) else None
+        if operation_id and body.get("status") not in {"completed", "failed", "cancelled"}:
+            deadline = time.monotonic() + 15.0
+            while time.monotonic() < deadline:
+                guard_control_run()
+                try:
+                    operation = await run_in_threadpool(
+                        adapter.store.get_operation, operation_id, owner_id=adapter.owner_id
+                    )
+                    body = {**body, "status": operation.status}
+                    if operation.status in {"completed", "failed", "cancelled"}:
+                        # Preserve the original public shape while exposing
+                        # the durable terminal result to the model.
+                        body = {**body, **adapter._snapshot(operation_id)}
+                        break
+                except Exception:
+                    # The operation may be claimed by a recovering worker;
+                    # leave the original operationId for a later status poll.
+                    break
+                await asyncio.sleep(0.25)
         # Source CAS can succeed before session projection. Reload only the
         # authoritative reference; never replace the in-flight conversation.
         reloaded = await run_in_threadpool(load_session, state.sessionId)
