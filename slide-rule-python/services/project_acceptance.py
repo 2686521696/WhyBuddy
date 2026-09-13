@@ -11,8 +11,6 @@ make delivery eligible.
 
 import hashlib
 
-from services.scope_authority import plan_execution_authorized
-
 TASK_ACCEPTANCE_PROFILE = "whybuddy-tasks-acceptance@1"
 TASK_TEMPLATE_VERSION = "whybuddy-react-vite-tasks-1"
 
@@ -57,13 +55,12 @@ def normalize_acceptance_requirements(values):
 def approved_acceptance_requirements(state):
     """Extract explicit requirements approved with the current plan.
 
+    The caller must validate plan approval before invoking this helper.
     ``acceptanceRequirements`` is the preferred durable field.  ``requirements``
     and ``acceptanceCriteria`` are accepted for compatibility with older goal
     writers.  Plan prose is deliberately not parsed: free-form prose is not an
     executable assertion and must never silently become delivery evidence.
     """
-    if not plan_execution_authorized(state):
-        return []
     goal = getattr(state, "goal", None)
     goal = goal if isinstance(goal, dict) else {}
     for key in ("acceptanceRequirements", "requirements", "acceptanceCriteria"):

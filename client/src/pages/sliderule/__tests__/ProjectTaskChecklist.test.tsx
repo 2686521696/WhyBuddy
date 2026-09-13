@@ -3,7 +3,11 @@ import { deriveProjectTaskChecklist } from "../ProjectTaskChecklist";
 import type { UiTurn } from "../types";
 
 function turn(
-  steps: Array<{ id: string; capabilityId: string; progressType?: "acting" | "completed" | "failed" }>,
+  steps: Array<{
+    id: string;
+    capabilityId: string;
+    progressType?: "acting" | "completed" | "failed";
+  }>,
   status: UiTurn["status"] = "complete"
 ): UiTurn {
   return {
@@ -34,23 +38,44 @@ describe("ProjectTaskChecklist", () => {
   });
 
   it("projects observed project tools and leaves future work pending", () => {
-    const items = deriveProjectTaskChecklist([
-      turn([
-        { id: "a", capabilityId: "project_create", progressType: "completed" },
-        { id: "b", capabilityId: "project_patch", progressType: "acting" },
-      ]),
-    ], true);
-    expect(items.find(item => item.id === "project_create")?.status).toBe("done");
-    expect(items.find(item => item.id === "project_patch")?.status).toBe("running");
-    expect(items.find(item => item.id === "project_verify")?.status).toBe("pending");
-    expect(items.find(item => item.id === "project_delivery")?.status).toBe("pending");
+    const items = deriveProjectTaskChecklist(
+      [
+        turn([
+          {
+            id: "a",
+            capabilityId: "project_create",
+            progressType: "completed",
+          },
+          { id: "b", capabilityId: "project_patch", progressType: "acting" },
+        ]),
+      ],
+      true
+    );
+    expect(items.find(item => item.id === "project_create")?.status).toBe(
+      "done"
+    );
+    expect(items.find(item => item.id === "project_patch")?.status).toBe(
+      "running"
+    );
+    expect(items.find(item => item.id === "project_verify")?.status).toBe(
+      "pending"
+    );
+    expect(items.find(item => item.id === "project_delivery")?.status).toBe(
+      "pending"
+    );
   });
 
   it("keeps a failed operation visible and never marks delivery done", () => {
     const items = deriveProjectTaskChecklist([
-      turn([{ id: "a", capabilityId: "project_verify", progressType: "failed" }]),
+      turn([
+        { id: "a", capabilityId: "project_verify", progressType: "failed" },
+      ]),
     ]);
-    expect(items.find(item => item.id === "project_verify")?.status).toBe("failed");
-    expect(items.find(item => item.id === "project_delivery")?.status).toBe("failed");
+    expect(items.find(item => item.id === "project_verify")?.status).toBe(
+      "failed"
+    );
+    expect(items.find(item => item.id === "project_delivery")?.status).toBe(
+      "failed"
+    );
   });
 });
