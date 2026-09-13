@@ -17,14 +17,19 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 TERMINAL = frozenset({"completed", "waiting_user", "failed", "cancelled", "interrupted"})
-WAITING = frozenset({"waiting_operation"})
+#: 非终态的「停在这儿等一个外部条件」。**必须与 TERMINAL 互斥**：进了
+#: TERMINAL 就没人叫得醒了，而这两种都要被 scanner 叫回来。
+#:   waiting_operation —— 等一个异步工程 operation 落定
+#:   waiting_continue  —— 模型这一轮说完了，但目标还没达到可交付状态
+#:                        （2026-09-13，见 control_goal_continuation 模块头）
+WAITING = frozenset({"waiting_operation", "waiting_continue"})
 MAX_RUN_BYTES = 8 * 1024 * 1024
 MAX_PAYLOAD_BYTES = 128 * 1024
 MAX_EVENT_BYTES = 64 * 1024
 MAX_STATE_EVENT_BYTES = 2 * 1024 * 1024
 MAX_EVENTS = 2000
 _RESERVED_BYTES = 4096
-GOAL_STATUSES = frozenset({"active", "waiting_user", "waiting_operation", "completed", "failed", "cancelled"})
+GOAL_STATUSES = frozenset({"active", "waiting_user", "waiting_operation", "waiting_continue", "completed", "failed", "cancelled"})
 _DDL = (
     "create table if not exists wb_control_cancel_request (session_id varchar(240) not null, owner_id varchar(240) not null, idempotency_key varchar(240) not null, primary key(session_id,idempotency_key))",
     "create table if not exists wb_control_session (session_id varchar(240) primary key, owner_id varchar(240) not null, active_run_id varchar(80), rev integer not null)",
@@ -83,7 +88,8 @@ def _goal_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
                  if isinstance(value, str) and value.strip()), "")[:4000]
     kind = "project" if payload.get("runtimeKind") == "project" else "conversation"
     return {"text": text, "kind": kind, "status": "active",
-            "awaitingOperationIds": [], "updatedAt": _now()}
+            "awaitingOperationIds": [], "continuations": 0, "progressMark": "",
+            "updatedAt": _now()}
 
 
 class ControlRunStore:
@@ -210,6 +216,55 @@ class ControlRunStore:
                 return updated
         raise ControlRunConflict("control_goal_requeue_conflict")
 
+    def list_waiting_continue(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        """停在「说完了但没做完」上的目标。跟 list_waiting_operation 同形。"""
+        rows = self._q("select r.payload from wb_control_run r join wb_control_session s on s.active_run_id=r.id and s.session_id=r.session_id where r.status='waiting_continue' order by r.id limit $1", [limit])
+        return [json.loads(row["payload"]) for row in rows]
+
+    def wait_for_continue(self, run_id: str, worker_id: str, generation: int,
+                          *, progress_mark: str) -> dict[str, Any]:
+        """producer 把这一 run 交给续跑调度：非终态，等 scanner 叫回来。
+
+        `progressMark` 记的是**交出去那一刻的进展指纹**。下一次续跑结束时
+        指纹没变 = 这一轮一个工具都没跑成，`should_continue` 据此收手。
+        没有它，模型说一句「我这就去做」就能无限循环。
+        """
+        mark = str(progress_mark or "")[:240]
+        def transform(record):
+            goal = record.get("goal") if isinstance(record.get("goal"), dict) else {}
+            return {**record, "status": "waiting_continue", "leaseExpiresAt": 0.0,
+                "goal": {**goal, "status": "waiting_continue", "progressMark": mark,
+                         "updatedAt": _now()}}
+        return self._producer_update(run_id, worker_id, generation, transform, reserve=False)
+
+    def requeue_continue(self, run_id: str, *, progress_mark: str) -> dict[str, Any]:
+        """scanner 把它翻回 queued，并且**记一次预算**。
+
+        ⚠ 预算在这里加一，不在 producer 那边：加在这儿才跟「真的被重新排进
+        队列」这件事绑死。加在别处会出现「排队失败但预算已扣」或者反过来
+        「反复排队不扣」。
+        """
+        mark = str(progress_mark or "")[:240]
+        for _ in range(20):
+            row = self._row(run_id)
+            record = json.loads(row["payload"])
+            if record["status"] != "waiting_continue":
+                return record
+            goal = record.get("goal") if isinstance(record.get("goal"), dict) else {}
+            if str(goal.get("progressMark") or "") != mark:
+                # 指纹在我们判断之后变了：别人动过，重新走一遍判断，不硬排。
+                raise ControlRunConflict("control_goal_continue_conflict")
+            spent = goal.get("continuations")
+            spent = spent + 1 if isinstance(spent, int) and spent > 0 else 1
+            updated = {**record, "status": "queued", "leaseOwner": None,
+                "leaseExpiresAt": 0.0,
+                "goal": {**goal, "status": "active", "continuations": spent,
+                         "updatedAt": _now()}}
+            saved = self._q("update wb_control_run set status='queued',rev=rev+1,lease_owner=null,lease_expires_at=0,payload=$1 where id=$2 and rev=$3 and status='waiting_continue' returning id", [_json(updated, self.max_run_bytes), run_id, row["rev"]])
+            if saved:
+                return updated
+        raise ControlRunConflict("control_goal_requeue_conflict")
+
     def wait_for_operations(self, run_id: str, worker_id: str, generation: int,
                             operation_ids: list[str]) -> dict[str, Any]:
         ids = [item for item in operation_ids if isinstance(item, str) and item.strip()][:32]
@@ -288,6 +343,11 @@ class ControlRunStore:
             "status": value.get("status") if value.get("status") in GOAL_STATUSES else "active",
             "awaitingOperationIds": [str(item)[:240] for item in (value.get("awaitingOperationIds") or [])
                                      if isinstance(item, str)][:32],
+            # 自动续跑的账：已经续了几次、上次交出去时的进展指纹。
+            # 旧行没有这两个字段，读成 0 / "" —— 等同于「一次都没续过」，
+            # 正是想要的兼容行为。
+            "continuations": value["continuations"] if isinstance(value.get("continuations"), int) and value["continuations"] > 0 else 0,
+            "progressMark": str(value.get("progressMark") or "")[:240],
             "updatedAt": value.get("updatedAt") or record.get("updatedAt"),
         }
 

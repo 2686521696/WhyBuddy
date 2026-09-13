@@ -20,6 +20,9 @@ from services.project_actor_access import authorize_project_actor
 from services.project_creation import load_authorized_session
 from services.project_tools import ProjectTools
 from services.project_tool_contracts import PROJECT_TOOL_NAMES
+from services.control_goal_continuation import (
+    continuation_notice, progress_mark, should_continue)
+from services.project_delivery import ProjectDeliveryService
 from services.rehearsal_control import run_control_turn, validate_control_turn_body, bound_tool_result
 from services.project_rollout import rollout_readiness
 
@@ -219,6 +222,7 @@ class ControlRunService:
                     await asyncio.wait_for(self._wake.wait(), timeout=self.poll_seconds)
                     continue
                 await self._requeue_settled_goals()
+                await self._requeue_stalled_goals()
                 available = self.max_workers - len(self._tasks)
                 if available > 0:
                     candidates = await asyncio.to_thread(self.store.list_runnable)
@@ -269,6 +273,95 @@ class ControlRunService:
                 except ControlRunConflict:
                     continue
                 self._wake.set()
+
+    async def _goal_is_done(self, record) -> bool:
+        """目标达没达到可交付状态——**问证据，不问模型**。
+
+        ⚠ 这是 §7 的分界：让模型自己声明「我做完了」就是伪造绿灯，正是本仓
+          禁止的那件事。这里读的是 `ProjectDeliveryService.status()` 的
+          `eligible`，跟真正解锁交付的是同一个判断。
+
+        ⚠ fail-closed：读不出来就当**没做完**（返回 False）。这会让它多续一次
+          而不是提前收工——多跑一轮的代价远小于把没做完的东西宣布成完成。
+          续跑次数另有预算兜底，不会因此失控。
+        """
+        session_id = record.get("sessionId")
+        owner_id = record.get("ownerId")
+        try:
+            project = await asyncio.to_thread(
+                self.project_store.get_project_for_session, session_id, owner_id=owner_id)
+            if project is None:
+                return False
+            status = await asyncio.to_thread(
+                ProjectDeliveryService(self.project_store, owner_id).status, project.projectId)
+            return bool(status.get("eligible"))
+        except Exception:
+            return False
+
+    async def _goal_blocked_reasons(self, record) -> list:
+        """服务端判定「还缺什么」。拿不到就返回空——不编原因。"""
+        try:
+            project = await asyncio.to_thread(
+                self.project_store.get_project_for_session,
+                record.get("sessionId"), owner_id=record.get("ownerId"))
+            if project is None:
+                return []
+            status = await asyncio.to_thread(
+                ProjectDeliveryService(self.project_store, record.get("ownerId")).status,
+                project.projectId)
+            reasons = status.get("blockedReasons")
+            return [str(item) for item in reasons][:6] if isinstance(reasons, list) else []
+        except Exception:
+            return []
+
+    async def _hand_to_continuation(self, record, run_id, generation, status) -> bool:
+        """这一回合结束后要不要自己接着跑。真要续就落成非终态并返回 True。"""
+        if not rollout_readiness().get("configured", False):
+            return False
+        goal = record.get("goal") if isinstance(record.get("goal"), dict) else {}
+        if goal.get("kind") != "project":
+            # 便宜地先挡掉对话目标，省一次库查询。判据仍在纯函数里。
+            return False
+        done = await self._goal_is_done(record)
+        wanted, reason = should_continue(
+            status=status, goal=goal, events=record.get("events"), goal_done=done)
+        if not wanted:
+            log.info("control goal not continued run=%s reason=%s", run_id, reason)
+            return False
+        try:
+            await asyncio.to_thread(self.store.wait_for_continue, run_id, self.worker_id,
+                generation, progress_mark=progress_mark(record.get("events")))
+            return True
+        except Exception:
+            # 交不出去就按原来的终态收口——续跑是增强，不许拖垮主链路（§7）。
+            log.exception("control goal continuation handoff failed run=%s", run_id)
+            return False
+
+    async def _requeue_stalled_goals(self):
+        """把「说完了但没做完」的目标叫回来接着跑。
+
+        跟 `_requeue_settled_goals` 同一个形状、同一条路：只把状态 CAS 翻回
+        queued，由原来那个 producer 重新认领、从 checkpoint 继续。**不新建
+        第二套 Agent loop，也不重放原来那条 POST。**
+        """
+        for record in await asyncio.to_thread(self.store.list_waiting_continue):
+            goal = record.get("goal") if isinstance(record.get("goal"), dict) else {}
+            run_id = record["runId"]
+            # 叫醒之前再问一次证据：等待期间别处（比如 operation 落定）可能
+            # 已经把目标推到可交付了，那就不该再烧一轮。
+            if await self._goal_is_done(record):
+                try:
+                    await asyncio.to_thread(self.store.update_goal, run_id,
+                        self.worker_id, record["generation"], status="completed")
+                except Exception:
+                    log.exception("control goal settle failed run=%s", run_id)
+                continue
+            try:
+                await asyncio.to_thread(self.store.requeue_continue, run_id,
+                    progress_mark=str(goal.get("progressMark") or ""))
+            except ControlRunConflict:
+                continue
+            self._wake.set()
 
     async def _heartbeat(self, port, finished):
         while not finished.is_set():
@@ -329,6 +422,31 @@ class ControlRunService:
                     if operation_id and operation_id not in checkpoint.get("operationIds", []):
                         checkpoint.setdefault("operationIds", []).append(operation_id)
                     await port.save(checkpoint)
+            # 自动续跑那一轮的**显式标记**。
+            #
+            # ⚠ 必须是标记，不能靠认话。前端 `isContinuationTurn` 原来是匹配
+            #   机器排的那几句（「假设已确认」「续播上一轮推演」…），而自动
+            #   续跑**没有用户文本**——`isContinuationTurn("")` 直接 false，
+            #   折叠会静默失效，左栏退回「每轮从头演一遍开场」。见
+            #   client/src/pages/sliderule/turn-continuation.ts 头注。
+            #
+            # 两件事一起做，缺一不可：
+            #   1) 发事件 → 前端认标记折叠，用户看见的是一条连续的工作流
+            #   2) 往 checkpoint 的对话里追一句 → 模型知道自己为什么又醒了，
+            #      内容由服务端算出的 blockedReasons 生成，不是「请继续」
+            attempt = (record.get("goal") or {}).get("continuations") or 0
+            emitted = sum(1 for e in record["events"]
+                          if e.get("type") == "control_continuation")
+            if attempt > emitted:
+                blocked = await self._goal_blocked_reasons(record)
+                notice = continuation_notice(blocked, attempt)
+                if checkpoint and isinstance(checkpoint.get("messages"), list):
+                    checkpoint["messages"].append({"role": "system", "content": notice})
+                    await port.save(checkpoint)
+                await asyncio.to_thread(self.store.append_event, run_id,
+                    self.worker_id, generation,
+                    {"type": "control_continuation", "attempt": attempt,
+                     "reason": "goal_not_delivered", "blockedReasons": blocked[:6]})
             if checkpoint is not None and checkpoint.get("phase") not in {"model", "tools"}:
                 raise ControlRunStopped("control_reconciliation_required")
             if checkpoint is None:
@@ -397,6 +515,11 @@ class ControlRunService:
                     if pending:
                         await asyncio.to_thread(self.store.wait_for_operations, run_id,
                             self.worker_id, generation, waiting_ids)
+                        suspend = True
+                    elif await self._hand_to_continuation(latest_record, run_id, generation, status):
+                        # 交给续跑调度：**非终态**，scanner 会把它叫回来。
+                        # 判断与护栏在 control_goal_continuation 里，这里只负责
+                        # 「按判断结果落库」，不在这儿重新推一遍规则。
                         suspend = True
                     else:
                         goal_status = "failed" if status == "failed" else ("waiting_user" if status == "waiting_user" else "completed")

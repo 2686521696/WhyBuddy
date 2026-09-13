@@ -1722,6 +1722,19 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   startedAt: new Date().toISOString(),
                 });
               },
+              onControlContinuation: event => {
+                // 显式标记落成一个 step：`turnHasContinuationMark` 认它，
+                // 折叠因此在「没有用户文本」的自动续跑上也成立。
+                streamStepSeq += 1;
+                appendStep({
+                  id: `${turnId}-continuation-${streamStepSeq}`,
+                  kind: "continuation_mark",
+                  attempt: event.attempt,
+                  ...(event.blockedReasons.length
+                    ? { blockedReasons: event.blockedReasons.slice(0, 6) }
+                    : {}),
+                });
+              },
               onControlToolStart: (tool: string, summary?: string) => {
                 ensureFactoryClock(tool);
                 const projectLabel = projectToolLabel(tool);

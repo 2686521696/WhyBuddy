@@ -42,7 +42,8 @@ import { ActivityList } from "./sliderule/ActivityList";
 import { deriveStageBands } from "./sliderule/stage-authority";
 import {
   foldContinuationTurns,
-  isContinuationTurn,
+  turnHasContinuationMark,
+  turnIsContinuation,
 } from "./sliderule/turn-continuation";
 
 /** llm_delta 来源标签 → 实时块标题（能力 id / "five-system-model" / "closure.summary"）。 */
@@ -315,7 +316,7 @@ function TurnPhaseTimeline({
         extraTexts,
         // 续跑轮不重演开场（接收意图 / 编排 / planning）——见
         // turn-continuation 头注：一跳一件是有意的，重画开场不是。
-        continuation: isContinuationTurn(turn.user),
+        continuation: turnIsContinuation(turn),
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
@@ -326,6 +327,11 @@ function TurnPhaseTimeline({
       turn.routeFacts.planSource,
       // ⚠ 少一条依赖 = 续跑轮切换时不重算，左栏还是旧的那份。
       turn.user,
+      // ⚠ 2026-09-13：自动续跑认的是 `continuation_mark` step，而上面那条
+      //   `turn.steps.map(textFromStep)` 对这个 kind 返回空串（textFromStep
+      //   不认它，那是有意的——标记不是一步动作）。只加函数不加依赖，标记
+      //   到达时 memo 不重算，折叠**静默不生效**：又是「改了一半」。
+      turnHasContinuationMark(turn),
     ]
   );
   const stepTexts = turn.steps.map(textFromStep).filter(Boolean);

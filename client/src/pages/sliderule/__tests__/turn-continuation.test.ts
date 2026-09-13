@@ -207,9 +207,16 @@ describe("接在真链路上", () => {
     )
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/^\s*\/\/.*$/gm, "");
-    expect(src).toMatch(/continuation:\s*isContinuationTurn\(turn\.user\)/);
+    // ⚠ 2026-09-13 起必须是**认标记**那一版：自动续跑没有用户文本，
+    //   `isContinuationTurn(turn.user)` 在它身上恒为 false，折叠会静默失效。
+    expect(src).toMatch(/continuation:\s*turnIsContinuation\(turn\)/);
+    expect(src).not.toMatch(/continuation:\s*isContinuationTurn\(turn\.user\)/);
     // memo 依赖漏了 turn.user = 切换时不重算，左栏还是旧的那份
     expect(src).toMatch(/turn\.user,/);
+    // ⚠ 同理：标记是 step，而 textFromStep 不认这个 kind（有意的），所以
+    //   `turn.steps.map(textFromStep)` 那条依赖在标记到达时**不会变**。
+    //   少这一条 = 折叠不重算，等于白改。
+    expect(src).toMatch(/turnHasContinuationMark\(turn\),/);
   });
 });
 

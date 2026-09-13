@@ -36,6 +36,22 @@ export type TurnStep =
       text: string;
       round?: number;
     }
+  /**
+   * 自动续跑那一轮的**显式标记**（服务端 `control_continuation` 事件）。
+   *
+   * ⚠ 存在的唯一理由是「认标记不认话」：自动续跑没有用户文本，靠匹配机器
+   * 排的句子来识别续跑那条路在这里必然断。见 turn-continuation.ts 的
+   * `turnHasContinuationMark` 头注。
+   *
+   * 它不进左栏活动列表（linesFromTurnSteps 不认它），也不算一步——它是这一轮
+   * 的一个属性，不是一个动作。
+   */
+  | {
+      id: string;
+      kind: "continuation_mark";
+      attempt: number;
+      blockedReasons?: string[];
+    }
   | {
       id: string;
       kind: "chip";

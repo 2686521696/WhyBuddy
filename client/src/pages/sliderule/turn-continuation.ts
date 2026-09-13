@@ -56,6 +56,40 @@ export const ASSUMPTIONS_CONFIRMED_PHRASE = "假设已确认。继续画页面�
  *   后续 bind 跳又折进澄清答句。左栏看起来像智障重来：旧问答再演一遍，
  *   结构跳再烧 243 秒。认这些机器句，才能折回人真正说过的那句。
  */
+/**
+ * 这一轮**带没带自动续跑的显式标记**。
+ *
+ * ## 为什么必须有这一条（2026-09-13）
+ *
+ * 下面 `isContinuationTurn` 认的是**机器排的那几句话**（「假设已确认」
+ * 「续播上一轮推演」…）。自动续跑没有用户文本——scanner 把 run 从
+ * `waiting_continue` 翻回 queued，没人打过字，`isContinuationTurn("")`
+ * 第一行就 `return false`。
+ *
+ * 于是折叠会**静默失效**：不报错、不告警，左栏退回「每轮从头演一遍开场」，
+ * 也就是本文件头注记的那个「看起来像智障重来」。自动续跑次数比当初那次多得多，
+ * 症状只会更重。
+ *
+ * 所以服务端给续跑轮发 `control_continuation` 事件，前端落成这个标记，
+ * **认标记不认话**——没有话的时候，认话这条路必然断。
+ */
+export function turnHasContinuationMark(turn: unknown): boolean {
+  const steps = (turn as { steps?: unknown })?.steps;
+  if (!Array.isArray(steps)) return false;
+  return steps.some(
+    step =>
+      !!step &&
+      typeof step === "object" &&
+      (step as { kind?: unknown }).kind === "continuation_mark"
+  );
+}
+
+/** 认标记**或**认话：标记优先，老路径（伴随式澄清等）照旧兜住。 */
+export function turnIsContinuation(turn: unknown): boolean {
+  if (turnHasContinuationMark(turn)) return true;
+  return isContinuationTurn((turn as { user?: unknown })?.user);
+}
+
 export function isContinuationTurn(userText: unknown): boolean {
   const text = String(userText || "").trim();
   if (!text) return false;
@@ -95,14 +129,14 @@ export function isContinuationTurn(userText: unknown): boolean {
 export function foldContinuationTurns(uiTurns: UiTurn[]): UiTurn[] {
   const out: UiTurn[] = [];
   for (const turn of uiTurns) {
-    if (!isContinuationTurn(turn.user)) {
+    if (!turnIsContinuation(turn)) {
       out.push(turn);
       continue;
     }
     const carried = turn.steps.filter(step => !isOpeningStep(step));
     let realIdx = -1;
     for (let i = out.length - 1; i >= 0; i -= 1) {
-      if (!isContinuationTurn(out[i].user)) {
+      if (!turnIsContinuation(out[i])) {
         realIdx = i;
         break;
       }

@@ -507,6 +507,14 @@ export interface DriveFullStreamOpts {
    * 消费侧不许自己从别处拼一个。
    */
   onControlToolStart?: (tool: string, summary?: string) => void;
+  /**
+   * 自动续跑那一轮的显式标记。服务端在 run 被 scanner 叫回来之后发一次，
+   * 前端据此折叠（认标记不认话，见 turn-continuation 头注）。
+   */
+  onControlContinuation?: (event: {
+    attempt: number;
+    blockedReasons: string[];
+  }) => void;
   onControlToolResult?: (event: Record<string, unknown>) => void;
 }
 
@@ -1069,6 +1077,17 @@ export async function consumeControlStreamResponse(
               } else opts.onRunSettled?.("complete");
               sawTerminal = true;
               break outer;
+            case "control_continuation":
+              opts.onControlContinuation?.({
+                attempt:
+                  typeof event.attempt === "number" && event.attempt > 0
+                    ? event.attempt
+                    : 1,
+                blockedReasons: Array.isArray(event.blockedReasons)
+                  ? event.blockedReasons.map(String)
+                  : [],
+              });
+              break;
             case "control_text":
               if (event.stopReason === "llm_unavailable" || event.stopReason === "unknown") {
                 // Keep ordinary control stop reasons (for example
