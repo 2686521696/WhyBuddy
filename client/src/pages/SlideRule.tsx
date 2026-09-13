@@ -143,6 +143,7 @@ import { deriveApplication, slideRule } from "@/lib/skills/slideRule";
 import { Spin } from "antd";
 import { SlideRuleStudio } from "./sliderule/SlideRuleStudio";
 import { Response } from "@/components/ai/response";
+import { ProjectTaskChecklist } from "./sliderule/ProjectTaskChecklist";
 
 // Python full-path E2E wiring (105): /agent-loop/sliderule and /sliderule
 // render this component, while turn/evidence/report calls surface Python
@@ -516,6 +517,8 @@ const ImSurfaceContext = React.createContext<{
   onChallenge: (id: string) => void;
   /** E26：最新一轮的 id——「补齐缺口」只挂在被闸拦截的最新轮上 */
   latestTurnId?: string | null;
+  runtimeKind?: "html-prototype" | "project";
+  turns?: UiTurn[];
 }>({
   llmDraft: "",
   llmDraftLabel: null,
@@ -524,6 +527,8 @@ const ImSurfaceContext = React.createContext<{
   isRunning: false,
   onChallenge: () => {},
   latestTurnId: null,
+  runtimeKind: "html-prototype",
+  turns: [],
 });
 
 const convertImMessage = (m: ImItem): ThreadMessageLike => ({
@@ -587,12 +592,18 @@ function ImAssistantMessage() {
     goalText,
     thinkingText,
     onChallenge,
+    runtimeKind,
+    turns,
   } = ctx;
   const answer = ensureReadableChatMarkdown(
     assistantTextForTurn(turn, publishClosure, goalText)
   );
   return (
     <div className="mb-3 max-w-[640px]">
+      {runtimeKind === "project" &&
+      (ctx.latestTurnId ? turn.id === ctx.latestTurnId : turn.id === turns?.at(-1)?.id) ? (
+        <ProjectTaskChecklist turns={turns?.length ? turns : [turn]} isRunning={turn.status === "streaming"} />
+      ) : null}
       {turn.status === "streaming" ? (
         <div className="space-y-1.5">
           <div className="flex items-center gap-2 text-[13px] text-stone-500">
@@ -809,6 +820,8 @@ export function ClaudeChatSurface({
       isRunning,
       onChallenge,
       latestTurnId: latestTurn?.id ?? null,
+      runtimeKind,
+      turns: uiTurns,
     }),
     [
       publishClosure,
@@ -820,6 +833,8 @@ export function ClaudeChatSurface({
       isRunning,
       onChallenge,
       latestTurn?.id,
+      runtimeKind,
+      uiTurns,
     ]
   );
 

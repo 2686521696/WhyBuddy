@@ -1564,7 +1564,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
            */
           const appendStreamStep = (
             label: string,
-            opts?: { capabilityId?: string; realLlm?: boolean }
+            opts?: {
+              capabilityId?: string;
+              realLlm?: boolean;
+              progressType?: "thinking" | "acting" | "observing" | "completed" | "failed";
+            }
           ) => {
             streamStepSeq += 1;
             appendStep({
@@ -1575,7 +1579,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               label,
               realLlm: Boolean(opts?.realLlm),
               loopTurnId: turnId,
-              progressType: "thinking",
+              progressType: opts?.progressType || "thinking",
             });
           };
           setLlmDraft("");
@@ -1703,7 +1707,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 const projectLabel = projectToolLabel(tool);
                 if (projectLabel) {
                   setLiveAction({ label: projectLabel, external: true });
-                  appendStreamStep(projectLabel);
+                  appendStreamStep(projectLabel, { capabilityId: tool, progressType: "acting" });
                   return;
                 }
                 if (isFactoryWriteTool(tool)) {
@@ -1722,7 +1726,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   : typeof event.message === "string" ? event.message : "";
                 const label = ok ? `${tool.replace(/^正在/, "已")}` : `${tool.replace(/^正在/, "执行失败：")}`;
                 setLiveAction({ label: detail ? `${label}（${detail}）` : label, external: true });
-                appendStreamStep(detail ? `${label}：${detail}` : label);
+                appendStreamStep(detail ? `${label}：${detail}` : label, {
+                  capabilityId: String(event.tool || ""),
+                  progressType: ok ? "completed" : "failed",
+                });
               },
               onControlProjectState: (project: {
                 sessionId: string; runtimeKind: "project"; projectId: string; projectRevision: string;
