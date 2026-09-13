@@ -57,6 +57,8 @@ function ProjectWorkspaceBody({
     Record<string, { base: SourceFile; content: string }>
   >({});
   const [history, setHistory] = useState<RevisionPage | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(tab === "history");
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [revisionOverride, setRevisionOverride] = useState<
     string | null | undefined
   >(undefined);
@@ -206,12 +208,22 @@ function ProjectWorkspaceBody({
   useEffect(() => {
     if (tab !== "history") return;
     const controller = new AbortController();
+    // The source index often arrives before history. Its loading flag cannot
+    // describe this independent GET or the version tab appears empty meanwhile.
+    setHistoryLoading(true);
+    setHistoryError(null);
     void getProjectRevisions(projectId, null, controller.signal)
       .then(next => {
         if (!controller.signal.aborted) setHistory(next);
       })
       .catch(reason => {
-        if (!controller.signal.aborted) setError(failure(reason));
+        if (!controller.signal.aborted) {
+          setHistory(null);
+          setHistoryError(failure(reason));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setHistoryLoading(false);
       });
     return () => controller.abort();
   }, [projectId, tab, refresh]);
@@ -557,7 +569,24 @@ function ProjectWorkspaceBody({
           </div>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-2" aria-busy={historyLoading}>
+          {historyLoading ? (
+            <p role="status" className="text-xs leading-5 text-stone-600">
+              正在读取版本记录…
+            </p>
+          ) : null}
+          {historyError ? (
+            <p role="alert" className="text-xs leading-5 text-amber-800">
+              版本记录读取失败：{historyError} 请点击「读取最新版」重试。
+            </p>
+          ) : null}
+          {!historyLoading &&
+          !historyError &&
+          history?.revisions.length === 0 ? (
+            <p className="text-xs leading-5 text-stone-600">
+              暂无已保存的源码版本。
+            </p>
+          ) : null}
           {history?.revisions.map(row => (
             <div
               key={row.revision}

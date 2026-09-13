@@ -156,6 +156,63 @@ afterEach(async () => {
 });
 
 describe("source and history through real HTTP consumers", () => {
+  it.each(["versions", "empty", "failed"])(
+    "shows pending history separately from its %s result",
+    async outcome => {
+      const original = fetcher.getMockImplementation()!;
+      let resolveHistory!: (value: Response) => void;
+      const pending = new Promise<Response>(resolve => {
+        resolveHistory = resolve;
+      });
+      fetcher.mockImplementation(async (...args) =>
+        new URL(String(args[0]), "http://localhost").pathname.endsWith(
+          "/revisions"
+        )
+          ? pending
+          : original(...args)
+      );
+      await render({ tab: "history" });
+      // The separate source index has already loaded. History still needs its
+      // own pending state, and an unresolved request is never an empty result.
+      expect(container.textContent).toContain("源码版本 r1");
+      expect(container.querySelector('[role="status"]')?.textContent).toContain(
+        "正在读取版本记录"
+      );
+      expect(container.textContent).not.toContain("暂无已保存的源码版本");
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+      await act(async () =>
+        resolveHistory(
+          outcome === "failed"
+            ? response({ detail: "unavailable" }, 503)
+            : outcome === "empty"
+              ? response({
+                  projectId: "p1",
+                  currentRevision: "r1",
+                  revisions: [],
+                  nextCursor: null,
+                })
+              : await original("/api/sliderule/projects/p1/revisions")
+        )
+      );
+      await flush();
+      expect(container.textContent).not.toContain("正在读取版本记录");
+      if (outcome === "failed") {
+        expect(
+          container.querySelector('[role="alert"]')?.textContent
+        ).toContain("版本记录读取失败");
+        expect(container.textContent).not.toContain("暂无已保存的源码版本");
+        fetcher.mockImplementation(original);
+        await click("读取最新版");
+        expect(container.querySelector('[role="alert"]')).toBeNull();
+        expect(buttons("恢复此版本")).toHaveLength(2);
+      } else if (outcome === "empty") {
+        expect(container.textContent).toContain("暂无已保存的源码版本");
+        expect(container.querySelector('[role="alert"]')).toBeNull();
+      } else expect(buttons("恢复此版本")).toHaveLength(2);
+      expect(posts()).toHaveLength(0);
+    }
+  );
+
   it("rejects malformed preview capabilities before any component uses them", async () => {
     const original = fetcher.getMockImplementation()!;
     fetcher.mockImplementation(async (...args) =>
@@ -684,6 +741,60 @@ describe("application data backup ownership and restore", () => {
     );
     await flush();
   }
+  it.each(["backups", "empty", "failed"])(
+    "shows pending data independently of the %s result",
+    async outcome => {
+      let resolveData!: (value: Response) => void;
+      const pending = new Promise<Response>(resolve => {
+        resolveData = resolve;
+      });
+      fetcher.mockReturnValue(pending);
+      await data();
+      expect(container.querySelector('[role="status"]')?.textContent).toContain(
+        "正在读取数据备份"
+      );
+      expect(
+        container
+          .querySelector('[data-testid="project-data-panel"]')
+          ?.getAttribute("aria-busy")
+      ).toBe("true");
+      expect(container.textContent).not.toContain("尚无已保存的数据备份");
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+      await act(async () =>
+        resolveData(
+          outcome === "failed"
+            ? response({ detail: "unavailable" }, 503)
+            : response(
+                outcome === "empty"
+                  ? { ...snapshot, backup: null, backups: [] }
+                  : snapshot
+              )
+        )
+      );
+      await flush();
+      expect(container.textContent).not.toContain("正在读取数据备份");
+      expect(
+        container
+          .querySelector('[data-testid="project-data-panel"]')
+          ?.getAttribute("aria-busy")
+      ).toBe("false");
+      if (outcome === "failed") {
+        expect(
+          container.querySelector('[role="alert"]')?.textContent
+        ).toContain("工程服务尚未启用或暂时不可用");
+        expect(container.textContent).not.toContain("尚无已保存的数据备份");
+        fetcher.mockResolvedValue(response(snapshot));
+        await click("更新备份列表");
+        expect(container.querySelector('[role="alert"]')).toBeNull();
+        expect(buttons("恢复这份数据")).toHaveLength(2);
+      } else if (outcome === "empty") {
+        expect(container.textContent).toContain("尚无已保存的数据备份");
+        expect(container.querySelector('[role="alert"]')).toBeNull();
+      } else expect(buttons("恢复这份数据")).toHaveLength(2);
+      expect(posts()).toHaveLength(0);
+    }
+  );
+
   it("displays the actual checkpoint policy and requires stopped runtime plus explicit confirmation", async () => {
     fetcher.mockImplementation(async (_path, init) =>
       response(init?.method === "POST" ? { backup: backup(3) } : snapshot)

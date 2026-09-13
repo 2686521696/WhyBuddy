@@ -48,6 +48,7 @@ function DataBody({
   runtimeStopped: boolean;
 }) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [refresh, setRefresh] = useState(0);
@@ -59,6 +60,8 @@ function DataBody({
   useEffect(() => {
     const controller = new AbortController();
     read.current = controller;
+    setLoading(true);
+    setError(null);
     void requestProjectWorkspace(
       `/projects/${encodeURIComponent(projectId)}/data`,
       controller.signal
@@ -85,6 +88,9 @@ function DataBody({
           setSnapshot(null);
           setError(message(reason));
         }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
   }, [projectId, refresh]);
@@ -94,6 +100,7 @@ function DataBody({
     const controller = new AbortController();
     write.current = controller;
     read.current?.abort();
+    setLoading(false);
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -133,6 +140,7 @@ function DataBody({
     <section
       data-testid="project-data-panel"
       aria-label="应用数据备份"
+      aria-busy={loading}
       className="min-h-0 flex-1 overflow-auto bg-stone-50 p-4 text-xs"
     >
       <div className="flex items-center justify-between gap-3">
@@ -168,7 +176,12 @@ function DataBody({
           {notice}
         </p>
       ) : null}
-      {snapshot && !snapshot.backup ? (
+      {loading ? (
+        <p role="status" className="mt-3 leading-5 text-stone-600">
+          正在读取数据备份…
+        </p>
+      ) : null}
+      {!loading && !error && snapshot && !snapshot.backup ? (
         <p className="mt-3">
           尚无已保存的数据备份。源码导出和复刻不会代替数据备份。
         </p>
