@@ -92,6 +92,79 @@ it("reads explicit acceptance scope without dispatching or claiming production d
   expect(container.textContent).toContain("本验收范围之外的追加需求");
   expect(container.textContent).toContain("生产部署尚未配置");
 });
+it("settles a delivery read failure and retries without retaining earlier eligibility", async () => {
+  await render();
+  expect(button("准备交付包").disabled).toBe(false);
+  let rejectRead!: (reason: Error) => void;
+  let resolveRetry!: (value: Response) => void;
+  const failedRead = new Promise<Response>((_, reject) => {
+    rejectRead = reject;
+  });
+  const retryRead = new Promise<Response>(resolve => {
+    resolveRetry = resolve;
+  });
+  let reads = 0;
+  fetcher.mockImplementation(async () =>
+    ++reads === 1 ? failedRead : retryRead
+  );
+  await click("更新交付状态");
+  expect(container.textContent).toContain("正在读取交付状态。");
+  expect(container.textContent).not.toContain("可以准备交付包");
+  expect(button("准备交付包").disabled).toBe(true);
+  await act(async () => rejectRead(new TypeError("offline")));
+  expect(
+    container
+      .querySelector('[data-testid="project-delivery-panel"]')
+      ?.getAttribute("aria-busy")
+  ).toBe("false");
+  expect(container.textContent).not.toContain("正在读取交付状态。");
+  expect(container.textContent).toContain("交付状态暂不可用");
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  expect(button("准备交付包").disabled).toBe(true);
+  await click("准备交付包");
+  expect(posts()).toHaveLength(0);
+  await click("更新交付状态");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.textContent).toContain("正在读取交付状态。");
+  expect(button("准备交付包").disabled).toBe(true);
+  view.eligible = false;
+  view.verificationId = null;
+  view.blockedReasons = ["project_verification_required"];
+  await act(async () => resolveRetry(response(view)));
+  expect(container.textContent).not.toContain("正在读取交付状态。");
+  expect(container.textContent).toContain("尚无独立浏览器检查记录");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(button("准备交付包").disabled).toBe(true);
+  expect(posts()).toHaveLength(0);
+});
+
+it("does not apply an old delivery failure after switching projects", async () => {
+  const original = fetcher.getMockImplementation()!;
+  let rejectRead!: (reason: Error) => void;
+  let oldSignal: AbortSignal | undefined;
+  const oldRead = new Promise<Response>((_, reject) => {
+    rejectRead = reject;
+  });
+  fetcher.mockImplementation(async (...args) => {
+    if (String(args[0]).endsWith("/projects/p1/delivery")) {
+      oldSignal = args[1]?.signal;
+      return oldRead;
+    }
+    return original(...args);
+  });
+  await render();
+  expect(container.textContent).toContain("正在读取交付状态。");
+  view.projectId = "p2";
+  await render("p2");
+  expect(oldSignal?.aborted).toBe(true);
+  expect(button("准备交付包").disabled).toBe(false);
+  await act(async () => rejectRead(new TypeError("late failure")));
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.textContent).not.toContain("正在读取交付状态。");
+  expect(button("准备交付包").disabled).toBe(false);
+  expect(posts()).toHaveLength(0);
+});
+
 it("prepares one source-and-evidence-bound release and shows its saved receipt", async () => {
   await render();
   await click("准备交付包");
@@ -145,6 +218,8 @@ it.each([
   expect(button("准备交付包").disabled).toBe(true);
   expect(button("下载交付包")).toBeUndefined();
   expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  expect(container.textContent).not.toContain("正在读取交付状态。");
+  expect(container.textContent).toContain("交付状态暂不可用");
 });
 it("downloads historical ZIP with owner credentials and labels its scope as stale", async () => {
   view.releases = [{ ...release, effectiveStatus: "stale" }];

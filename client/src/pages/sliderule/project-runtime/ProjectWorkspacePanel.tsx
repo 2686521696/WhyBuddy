@@ -52,6 +52,9 @@ function ProjectWorkspaceBody({
 }: Props) {
   const [index, setIndex] = useState<SourceIndex | null>(null);
   const [file, setFile] = useState<SourceFile | null>(null);
+  const [fileLoading, setFileLoading] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [fileRetry, setFileRetry] = useState(0);
   const [path, setPath] = useState("");
   const [drafts, setDrafts] = useState<
     Record<string, { base: SourceFile; content: string }>
@@ -153,12 +156,18 @@ function ProjectWorkspaceBody({
     return () => controller.abort();
   }, [projectId, requestedRevision, scope, refresh, selection?.selectionId]);
   useEffect(() => {
+    setFileError(null);
     if (!currentIndex || !path) {
       setFile(null);
+      setFileLoading(false);
       return;
     }
     const controller = new AbortController();
     setFile(null);
+    // 2026-09-13: a failed file GET left the editor saying it was still
+    // loading forever. File reads need their own terminal state and retry;
+    // neither changing tabs nor retrying a read may discard local drafts.
+    setFileLoading(true);
     void getProjectSourceFile(
       projectId,
       currentIndex.revision,
@@ -170,10 +179,13 @@ function ProjectWorkspaceBody({
         setFile(next);
       })
       .catch(reason => {
-        if (!controller.signal.aborted) setError(failure(reason));
+        if (!controller.signal.aborted) setFileError(failure(reason));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setFileLoading(false);
       });
     return () => controller.abort();
-  }, [projectId, currentIndex?.revision, path, refresh]);
+  }, [projectId, currentIndex?.revision, path, refresh, fileRetry]);
   useEffect(() => {
     if (
       !selection ||
@@ -561,9 +573,25 @@ function ProjectWorkspaceBody({
                   className="min-h-64 flex-1 resize-y rounded border border-stone-300 bg-white p-3 font-mono text-xs leading-5 outline-none focus:border-stone-600"
                 />
               </>
+            ) : fileError ? (
+              <div className="text-xs leading-5">
+                <p role="alert" className="text-amber-800">
+                  文件读取失败：{fileError}
+                </p>
+                <button
+                  type="button"
+                  className={`${buttonClass} mt-2`}
+                  onClick={() => setFileRetry(value => value + 1)}
+                >
+                  重试读取文件
+                </button>
+              </div>
             ) : (
-              <p className="text-xs text-stone-500">
-                {path ? "正在读取文件…" : "选择一个工程文件查看源码。"}
+              <p
+                role={fileLoading ? "status" : undefined}
+                className="text-xs text-stone-500"
+              >
+                {fileLoading ? "正在读取文件…" : "选择一个工程文件查看源码。"}
               </p>
             )}
           </div>

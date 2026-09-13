@@ -90,6 +90,7 @@ export function ProjectDeliveryPanel({ projectId }: { projectId: string }) {
 }
 function DeliveryBody({ projectId }: { projectId: string }) {
   const [view, setView] = useState<Delivery | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -101,6 +102,11 @@ function DeliveryBody({ projectId }: { projectId: string }) {
   useEffect(() => {
     const controller = new AbortController();
     read.current = controller;
+    // A failed GET is a settled failure, not an indefinitely loading panel.
+    // Refresh also invalidates earlier eligibility until the server replies.
+    setLoading(true);
+    setView(null);
+    setError(null);
     void requestProjectWorkspace(
       `/projects/${encodeURIComponent(projectId)}/delivery`,
       controller.signal
@@ -120,11 +126,15 @@ function DeliveryBody({ projectId }: { projectId: string }) {
           setView(null);
           setError(errorMessage(reason));
         }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
   }, [projectId, refresh]);
   const prepare = async () => {
-    if (!view?.eligible || !view.verificationId || write.current) return;
+    if (loading || !view?.eligible || !view.verificationId || write.current)
+      return;
     const identity = `${view.revision}:${view.verificationId}`;
     const key = keys.current.get(identity) ?? `release:${crypto.randomUUID()}`;
     keys.current.set(identity, key);
@@ -201,6 +211,7 @@ function DeliveryBody({ projectId }: { projectId: string }) {
     <section
       aria-label="工程交付"
       data-testid="project-delivery-panel"
+      aria-busy={loading}
       className="min-h-0 flex-1 overflow-auto bg-stone-50 p-4 text-xs"
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -215,7 +226,7 @@ function DeliveryBody({ projectId }: { projectId: string }) {
         </button>
         <button
           type="button"
-          disabled={busy || !view?.eligible}
+          disabled={busy || loading || !view?.eligible}
           onClick={() => void prepare()}
           className="rounded bg-stone-800 px-3 py-1.5 text-white disabled:opacity-40"
         >
@@ -223,11 +234,13 @@ function DeliveryBody({ projectId }: { projectId: string }) {
         </button>
       </div>
       <p role="status" className="mt-2 leading-5">
-        {view?.eligible
-          ? "当前版本满足以下任务应用验收范围，可以准备交付包。"
-          : view
-            ? "当前版本还未满足交付条件。"
-            : "正在读取交付状态。"}
+        {loading
+          ? "正在读取交付状态。"
+          : view?.eligible
+            ? "当前版本满足以下任务应用验收范围，可以准备交付包。"
+            : view
+              ? "当前版本还未满足交付条件。"
+              : "交付状态暂不可用，请点击「更新交付状态」重试。"}
       </p>
       {error ? (
         <p role="alert" className="mt-2 text-amber-800">

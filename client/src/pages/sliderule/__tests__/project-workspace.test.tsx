@@ -156,6 +156,129 @@ afterEach(async () => {
 });
 
 describe("source and history through real HTTP consumers", () => {
+  it("settles a failed file read and retries only that file without losing its draft", async () => {
+    await render();
+    await edit("unsaved user draft");
+    const original = fetcher.getMockImplementation()!;
+    let rejectFile!: (reason: Error) => void;
+    let resolveFile!: (value: Response) => void;
+    const failedRead = new Promise<Response>((_, reject) => {
+      rejectFile = reject;
+    });
+    const retryRead = new Promise<Response>(resolve => {
+      resolveFile = resolve;
+    });
+    let fileCalls = 0;
+    fetcher.mockImplementation(async (...args) =>
+      String(args[0]).includes("/source/file?")
+        ? ++fileCalls === 1
+          ? failedRead
+          : retryRead
+        : original(...args)
+    );
+    await click("读取最新版");
+    expect(container.textContent).toContain("正在读取文件…");
+    await act(async () => rejectFile(new TypeError("offline")));
+    await flush();
+    expect(editor()).toBeNull();
+    expect(container.textContent).toContain("文件读取失败");
+    expect(container.textContent).not.toContain("正在读取文件…");
+    const indexCalls = fetcher.mock.calls.filter(([url]) =>
+      String(url).endsWith("/source")
+    ).length;
+    await click("重试读取文件");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.textContent).toContain("正在读取文件…");
+    await act(async () =>
+      resolveFile(
+        await original(
+          "/api/sliderule/projects/p1/source/file?revision=r1&path=src%2Fmain.tsx"
+        )
+      )
+    );
+    await flush();
+    expect(editor().value).toBe("unsaved user draft");
+    expect(button("保存源码").disabled).toBe(false);
+    expect(container.textContent).not.toContain("正在读取文件…");
+    expect(
+      fetcher.mock.calls.filter(([url]) => String(url).endsWith("/source"))
+    ).toHaveLength(indexCalls);
+    expect(posts()).toHaveLength(0);
+  });
+
+  it("clears the failed file state when another file is selected", async () => {
+    source.files.push({
+      path: "README.md",
+      sha256: "hash-readme",
+      sizeBytes: 6,
+    });
+    contents["README.md"] = "readme";
+    const original = fetcher.getMockImplementation()!;
+    let resolveFile!: (value: Response) => void;
+    const nextFile = new Promise<Response>(resolve => {
+      resolveFile = resolve;
+    });
+    fetcher.mockImplementation(async (...args) => {
+      const url = new URL(String(args[0]), "http://localhost");
+      if (!url.pathname.endsWith("/source/file")) return original(...args);
+      if (url.searchParams.get("path") === "src/main.tsx")
+        return response({}, 503);
+      return nextFile;
+    });
+    await render();
+    expect(container.textContent).toContain("文件读取失败");
+    await click("README.md");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.textContent).toContain("正在读取文件…");
+    await act(async () =>
+      resolveFile(
+        await original(
+          "/api/sliderule/projects/p1/source/file?revision=r1&path=README.md"
+        )
+      )
+    );
+    await flush();
+    expect(editor().value).toBe("readme");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(buttons("重试读取文件")).toHaveLength(0);
+    expect(posts()).toHaveLength(0);
+  });
+
+  it("ignores a delayed failed file response after switching files", async () => {
+    source.files.push({
+      path: "README.md",
+      sha256: "hash-readme",
+      sizeBytes: 6,
+    });
+    contents["README.md"] = "readme";
+    const original = fetcher.getMockImplementation()!;
+    let rejectFile!: (reason: Error) => void;
+    let oldSignal: AbortSignal | undefined;
+    const oldFile = new Promise<Response>((_, reject) => {
+      rejectFile = reject;
+    });
+    fetcher.mockImplementation(async (...args) => {
+      const url = new URL(String(args[0]), "http://localhost");
+      if (
+        url.pathname.endsWith("/source/file") &&
+        url.searchParams.get("path") === "src/main.tsx"
+      ) {
+        oldSignal = args[1]?.signal;
+        return oldFile;
+      }
+      return original(...args);
+    });
+    await render();
+    await click("README.md");
+    expect(oldSignal?.aborted).toBe(true);
+    expect(editor().value).toBe("readme");
+    await act(async () => rejectFile(new TypeError("late failure")));
+    await flush();
+    expect(editor().value).toBe("readme");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.textContent).not.toContain("正在读取文件…");
+  });
+
   it.each(["versions", "empty", "failed"])(
     "shows pending history separately from its %s result",
     async outcome => {
