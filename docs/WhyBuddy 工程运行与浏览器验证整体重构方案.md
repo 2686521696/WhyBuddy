@@ -1078,3 +1078,11 @@ Python/TS/全仓/grok 架构重新生成并全部过闸；方案时序图与发�
 随后补上两项面向连续执行体验的增量实现：`_dispatch_tool` 对返回未终态 `operationId` 的工程工具在同一控制回合内最多等待 15 秒，并在每次轮询前检查控制租约与取消状态；进入终态后把持久 operation 快照交回现有模型循环，超时则保留 operationId 供 `project_status` 继续恢复。这是短等待续跑，不是第二套 Agent，也不代表所有异步任务都已具备目标级持久唤醒。前端同时消费 `control_tool_start/result`，在工程工作台显示真实的创建、源码、启动、命令、日志、停止和浏览器检查动作，不显示虚构进度。对应控制测试 **60 passed**、工程预览活动测试 **20 passed**；隔离删除工程动作映射会使断言失败。当前仍需完成独立预览网关、目标级跨回合恢复和真实新增需求浏览器验收。
 
 本轮再增加持久目标信封：控制 run 保存经过裁剪的目标文本、`project`/`conversation` 类型、`active`/`waiting_operation`/`waiting_user`/终态、待观察 operationId 及更新时间；读取按 run 所有者过滤，旧记录按空目标兼容，模型提示词、工具参数和 provider 句柄不进入公开投影。控制服务在真实工具结果、问答等待和终态提交时用同一租约 CAS 更新该信封。它为刷新恢复和后续 worker 回唤醒提供稳定数据基础，但当前仍不会自行重放未知副作用或创建第二轮 Agent；跨回合自动继续需要下一项调度实现。新增 store/service 回归 **138 passed**。
+
+### 27.1 2026-09-13 工程 operation 终态自动续跑
+
+本批提交 `49bd690d` 将持久目标从“能记录等待中的 operation”推进到“operation 结束后自动恢复同一控制回合”。`ControlRunService` 的现有 scanner 仅在 rollout 配置有效时检查 `waiting_operation`，并要求 `awaitingOperationIds` 中的所有 operation 都进入 `completed`、`failed` 或 `cancelled`；随后通过 store 的 CAS 将原 run 重新置为 `queued`，由同一个 producer 重新 claim 并从 checkpoint 继续。不会创建第二套 Agent loop，也不会重复提交原工程工具。
+
+rollout 关闭时不执行 requeue，避免回滚期间产生新的模型工作。重复扫描、旧租约和 operation 仍在运行的情况均不会提前恢复；无法确认 operation 状态时保留等待状态。定向 `control_run_store` 与 `control_run_service` 回归共 123 项通过。
+
+这一步只解决已登记工程 operation 的安全唤醒。它还不等于任意目标的无限自主执行：模型采样中的不确定副作用仍进入 interrupted，用户回答仍需要真实输入，预览 ready 自动打开、用户新增需求自动生成验收用例、失败后的完整浏览器修复和生产部署仍按本方案后续阶段执行。
