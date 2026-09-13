@@ -341,6 +341,9 @@ class VerificationRecord(ProjectContract):
     specRevision: str | None
     planRef: str
     suiteVersion: str
+    # Explicit requirements approved with the session.  The fixed browser
+    # suite does not claim these until matching assertions are implemented.
+    acceptanceRequirements: list[str] = Field(default_factory=list)
     runnerVersion: str = "whybuddy-browser-v1:pw1.61.1"
     status: VerificationStatus = "running"
     assertions: list[VerificationAssertion] = Field(default_factory=list)

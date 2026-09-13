@@ -30,6 +30,7 @@ from services.project_runtime import REVISION_FILE, _LeaseHeartbeat, _timestamp
 from services.project_source_sync import authorize_source_recovery, finish_pending_source_patches, sync_next_source_patch
 from services.project_store import ProjectConflict, ProjectStore, ProjectStoreUnavailable
 from services.project_verification_store import ProjectVerificationStore
+from services.project_acceptance import normalize_acceptance_requirements
 from services.workspace_provider import WorkspaceHandle, WorkspaceProvider, WorkspaceProviderError
 
 logger = logging.getLogger(__name__)
@@ -194,7 +195,8 @@ class ProjectRuntimeSupervisor:
             return operation
 
     def submit_verification(self, runtime_operation_id: str, *, owner_id: str, expected_revision: str,
-                            approval_ref: str, idempotency_key: str) -> ProjectOperation:
+                            approval_ref: str, idempotency_key: str,
+                            acceptance_requirements: list[str] | None = None) -> ProjectOperation:
         if not self.running:
             raise ProjectStoreUnavailable("project_worker_unavailable")
         for attempt in range(3):
@@ -206,7 +208,8 @@ class ProjectRuntimeSupervisor:
             try:
                 operation = self.store.enqueue_runtime_verification(runtime_operation_id,
                     owner_id=owner_id, expected_revision=expected_revision, approval_ref=approval_ref,
-                    idempotency_key=idempotency_key, suite_version=suite_version)
+                    idempotency_key=idempotency_key, suite_version=suite_version,
+                    acceptance_requirements=normalize_acceptance_requirements(acceptance_requirements))
             except ProjectConflict as exc:
                 # A confirmed zero-row admission may race the healthy heartbeat.
                 # Read and authorize everything again, never replay unknown IO.

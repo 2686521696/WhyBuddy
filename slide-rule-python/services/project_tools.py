@@ -24,6 +24,7 @@ from services.project_source_operations import ProjectSourceOperations
 from services.project_tool_contracts import PROJECT_ARGUMENTS, PROJECT_WRITE_TOOLS
 from services.scope_authority import plan_execution_authorized
 from services.project_rollout import rollout_readiness
+from services.project_acceptance import approved_acceptance_requirements
 
 MAX_RESULT_CHARS = 3800
 _TERMINAL = {"completed", "failed", "cancelled"}
@@ -81,6 +82,9 @@ def operation_snapshot(snapshot):
             if name in saved and isinstance(saved[name], (str, bool)):
                 result[name] = saved[name]
         result["verification"] = "not_run"
+    elif operation.kind == "runtime.verify":
+        requirements = operation.input.get("acceptanceRequirements") if isinstance(operation.input, dict) else None
+        result["acceptanceRequirements"] = list(requirements or [])
     return result
 
 
@@ -178,7 +182,8 @@ class ProjectTools:
                     raise ProjectNotFound("project_operation_not_found")
                 operation = self.supervisor.submit_verification(parent.operationId, owner_id=self.owner_id,
                     expected_revision=parsed.expectedRevision, approval_ref=parsed.approvalRef,
-                    idempotency_key=parsed.idempotencyKey)
+                    idempotency_key=parsed.idempotencyKey,
+                    acceptance_requirements=approved_acceptance_requirements(authority))
                 return {"ok": True, **self._snapshot(operation.operationId)}
             if name in {"project_start", "project_exec"}:
                 guard_control_run()
@@ -248,6 +253,7 @@ class ProjectTools:
                     "status": snapshot.effectiveStatus, "revision": record.revision,
                     "suiteVersion": record.suiteVersion, "deliveryEligible": snapshot.deliveryEligible,
                     "acceptanceProfile": record.specRevision if snapshot.deliveryEligible else None,
+                    "acceptanceRequirements": list(record.acceptanceRequirements),
                     "errorCode": record.errorCode,
                     "runtimeOperationId": record.runtimeOperationId,
                     "logOperationId": record.runtimeOperationId,

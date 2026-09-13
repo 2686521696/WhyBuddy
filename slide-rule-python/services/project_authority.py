@@ -30,7 +30,8 @@ def verification_with_current_authority(snapshot, authority):
         return snapshot.model_copy(update={"effectiveStatus": "stale", "deliveryEligible": False})
     if snapshot is not None:
         record = snapshot.verification
-        eligible = (snapshot.effectiveStatus == "passed" and record.suiteVersion == "react-vite-tasks@1"
+        eligible = (snapshot.effectiveStatus == "passed" and not record.acceptanceRequirements
+            and record.suiteVersion == "react-vite-tasks@1"
             and record.specRevision == TASK_ACCEPTANCE_PROFILE and record.build is not None)
         if eligible:
             try:

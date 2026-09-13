@@ -60,6 +60,7 @@ class ProjectDeliveryService:
 
     def status(self, project_id):
         project, _authority, revision, snapshot, reasons = self._evidence(project_id)
+        extras = snapshot.verification.acceptanceRequirements if snapshot else []
         rows = self.store._q("select payload from wb_project_release where project_id=$1 order by created_at desc,id desc limit 20", [project_id])
         releases = []
         for row in rows:
@@ -67,7 +68,7 @@ class ProjectDeliveryService:
             saved["effectiveStatus"] = "ready" if not reasons and saved["revision"] == revision.revision and snapshot and saved["verificationId"] == snapshot.verification.verificationId else "stale"
             releases.append(saved)
         return {"projectId": project.projectId, "revision": revision.revision, "eligible": not reasons,
-            "profile": acceptance_profile(), "blockedReasons": reasons,
+            "profile": acceptance_profile(extras), "blockedReasons": reasons,
             "verificationId": snapshot.verification.verificationId if snapshot else None,
             "releases": releases, "deployment": {"status": "not_configured", "publicUrl": None}}
 

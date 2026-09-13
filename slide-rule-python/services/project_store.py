@@ -491,12 +491,14 @@ class ProjectStore:
 
     def enqueue_runtime_verification(self, parent_operation_id: str, *, owner_id: str,
                                      expected_revision: str, approval_ref: str, idempotency_key: str,
-                                     suite_version: str = "react-vite-counter@1") -> ProjectOperation:
+                                     suite_version: str = "react-vite-counter@1",
+                                     acceptance_requirements: list[str] | None = None) -> ProjectOperation:
         if suite_version not in {"react-vite-counter@1", "react-vite-tasks@1"}:
             raise ValueError("verification_suite_unsupported")
         return self._enqueue_runtime_child(parent_operation_id, owner_id=owner_id,
             expected_revision=expected_revision, approval_ref=approval_ref, idempotency_key=idempotency_key,
-            kind="runtime.verify", input_value={"runtimeOperationId": parent_operation_id, "suiteVersion": suite_version})
+            kind="runtime.verify", input_value={"runtimeOperationId": parent_operation_id, "suiteVersion": suite_version,
+                "acceptanceRequirements": list(acceptance_requirements or [])})
 
     def _enqueue_runtime_child(self, parent_operation_id: str, *, owner_id: str, expected_revision: str,
                                approval_ref: str, idempotency_key: str, kind: str, input_value: dict) -> ProjectOperation:

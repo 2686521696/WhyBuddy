@@ -130,6 +130,7 @@ class ProjectVerificationStore:
                 operationId=child_id, runtimeOperationId=parent.operationId, projectId=child.projectId,
                 revision=revision.revision, treeHash=revision.treeHash, runtimeId=parent.runtime.runtimeId,
                 specRevision=revision.specRevision, planRef=child.approvalRef, suiteVersion=child.input["suiteVersion"],
+                acceptanceRequirements=list(child.input.get("acceptanceRequirements") or []),
                 createdAt=child.createdAt, startedAt=_now(), runnerVersion=RUNNER_VERSION)
             params = [record.verificationId, child_id, child.projectId, lease_generation, lease_owner,
                       record.createdAt, record.model_dump_json()]
