@@ -369,8 +369,19 @@ class ControlRunStore:
             current = record.get("goal") if isinstance(record.get("goal"), dict) else {}
             kind = current.get("kind") if current.get("kind") in {"project", "conversation"} else "conversation"
             text = str(current.get("text") or "")[:4000]
+            # ⚠ 2026-09-13 真机 control-continuation-smoke 抓到：这里原来是
+            #   **重建**一个 goal 字典，`continuations` / `progressMark` 两个
+            #   字段被静静抹掉。而 `update_goal(status="active")` 在每次
+            #   control_tool_start 时都会调——于是自动续跑的计数每跑一个工具
+            #   就清零，**目标级预算永远烧不完，续跑会无限循环**。
+            #   护栏写对了，落库把它擦了，判据还全绿。
+            spent = current.get("continuations")
+            spent = spent if isinstance(spent, int) and spent > 0 else 0
             return {**record, "goal": {"text": text, "kind": kind, "status": status,
-                "awaitingOperationIds": ids, "updatedAt": _now()}}
+                "awaitingOperationIds": ids,
+                "continuations": spent,
+                "progressMark": str(current.get("progressMark") or "")[:240],
+                "updatedAt": _now()}}
         return self._producer_update(run_id, worker_id, generation, transform)
 
     def append_event(self, run_id: str, worker_id: str, generation: int, event: dict[str, Any]) -> dict[str, Any]:

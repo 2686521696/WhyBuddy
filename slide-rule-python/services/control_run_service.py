@@ -21,7 +21,7 @@ from services.project_creation import load_authorized_session
 from services.project_tools import ProjectTools
 from services.project_tool_contracts import PROJECT_TOOL_NAMES
 from services.control_goal_continuation import (
-    continuation_notice, progress_mark, should_continue)
+    continuation_checkpoint, continuation_notice, progress_mark, should_continue)
 from services.project_delivery import ProjectDeliveryService
 from services.rehearsal_control import run_control_turn, validate_control_turn_body, bound_tool_result
 from services.project_rollout import rollout_readiness
@@ -440,9 +440,14 @@ class ControlRunService:
             if attempt > emitted:
                 blocked = await self._goal_blocked_reasons(record)
                 notice = continuation_notice(blocked, attempt)
-                if checkpoint and isinstance(checkpoint.get("messages"), list):
-                    checkpoint["messages"].append({"role": "system", "content": notice})
-                    await port.save(checkpoint)
+                # ⚠ 2026-09-13 真机第一趟红在这里（control_reconciliation_required）：
+                #   上一回合是**正常收尾**的（phase="settling"），而下面那道
+                #   resume 守卫只认 model/tools——那是「回合中途被打断」的形态。
+                #   续跑要开的是新一轮，必须先把 checkpoint 转成新一轮的起点。
+                resumed = continuation_checkpoint(checkpoint, notice)
+                if resumed is not None:
+                    await port.save(resumed)
+                    checkpoint = resumed
                 await asyncio.to_thread(self.store.append_event, run_id,
                     self.worker_id, generation,
                     {"type": "control_continuation", "attempt": attempt,

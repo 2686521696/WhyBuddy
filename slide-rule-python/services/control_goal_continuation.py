@@ -39,6 +39,8 @@ run CAS 翻回 queued，由原 producer 从 checkpoint 接着跑，不新建 Age
 
 from __future__ import annotations
 
+import time
+
 from typing import Any, Dict, List, Optional
 
 #: 一个目标最多自动续跑几次。超了就停下来问人，不是继续烧。
@@ -70,6 +72,26 @@ def tool_result_count(events: Any) -> int:
 def progress_mark(events: Any) -> str:
     """把「到目前为止的进展」压成一个可比较的指纹。"""
     return f"tools:{tool_result_count(events)}"
+
+
+def turn_was_capped(events: Any) -> bool:
+    """这一轮是**被闸掐断**的，不是模型自己说完了。
+
+    ⚠ 2026-09-13 真机 `control-continuation-smoke` 之后、跑控制面回归时抓到：
+      `test_legacy_8001_tokens_still_prevent_project_creation[client-forged-policy]`
+      当场变红。那一轮是 8001 token 撞上 8000 的点火前额度被掐断的，而我的
+      续跑会**给它一个全新的单轮预算再跑一遍**——等于把预算闸整个绕过去。
+
+      「被掐断」和「说完了」是两回事：前者是我们不让它继续，后者是它自己
+      停下。只有后者才该自动续跑。同理，provider 挂了（llm_unavailable）
+      也要让人看见，不许自己重试掩盖。
+    """
+    if not isinstance(events, list):
+        return False
+    return any(
+        isinstance(event, dict) and str(event.get("stopReason") or "").strip()
+        for event in events
+    )
 
 
 def continuation_budget_left(goal: Any) -> int:
@@ -106,6 +128,9 @@ def should_continue(
         return False, "not_a_project_goal"
     if goal_done:
         return False, "goal_done"
+    if turn_was_capped(events):
+        # 闸掐断的不许自己再要一份预算。见 turn_was_capped 头注。
+        return False, "capped"
     if continuation_budget_left(goal_dict) <= 0:
         return False, "budget_exhausted"
     mark = progress_mark(events)
@@ -113,6 +138,56 @@ def should_continue(
         # 上一次续跑之后一个工具都没跑成——再叫一次只会拿到同一句话。
         return False, "no_progress"
     return True, None
+
+
+def continuation_checkpoint(checkpoint: Any, notice: str) -> Optional[Dict[str, Any]]:
+    """把「已经收尾的那一轮」的 checkpoint 改造成「新一轮的起点」。
+
+    ## 为什么必须转换（2026-09-13 真机 control-continuation-smoke 第一趟）
+
+    第一趟真机直接红在这里：`error: control_reconciliation_required`。
+
+    `_produce` 的 resume 守卫只认 `phase in {"model","tools"}`——那是「回合**中途**
+    被打断」的形态。而自动续跑面对的是另一种：**上一回合已经正常收尾了**
+    （text-only 结束，`rehearsal_control` 留下 `phase="settling"`），我们要开的是
+    **新一轮**，不是接着上一轮的半截。守卫于是当场把它判成需要人工对账。
+
+    转换做三件事：
+      · phase → "model"：新一轮从「准备采样」开始
+      · 把续跑说明追进 messages：模型得知道自己为什么又醒了
+      · **重置这一轮的预算计量**（见下）
+
+    ## 预算：这一轮重置，总量由续跑次数管
+
+    resume 会把 `startedAt` / `cheapTokens` 一起还原——那是「同一轮被打断后
+    接着算」的语义。续跑不是同一轮：不重置的话，首轮烧掉 100 秒，续跑一睁眼
+    就只剩 80 秒，基本立刻撞墙钟，续跑等于白做。
+
+    所以这里给新一轮**干净的单轮预算**，总量改由 `MAX_CONTINUATIONS` 兜底：
+    最坏情况是 8 轮完整预算，而「没进展就收手」通常在第 1~2 次就把它掐掉。
+
+    ⚠ `stationarity`（原地打转游标）**故意保留**：它防的正是模型反复调同一个
+      工具，跨轮次继承才有意义，重置了等于每次续跑都给它一次重新打转的机会。
+    """
+    if not isinstance(checkpoint, dict):
+        return None
+    messages = checkpoint.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return None
+    text = str(notice or "").strip()
+    return {
+        **checkpoint,
+        "phase": "model",
+        "messages": [*messages, {"role": "system", "content": text}] if text else list(messages),
+        # 新一轮：轮数、墙钟、token 从头算。
+        "round": 0,
+        "startedAt": time.time(),
+        "cheapTokens": 0,
+        "retrySpent": 0,
+        "retryStartedAt": time.time(),
+        "pendingCalls": [],
+        "content": "",
+    }
 
 
 def continuation_notice(blocked_reasons: Any, attempt: int) -> str:

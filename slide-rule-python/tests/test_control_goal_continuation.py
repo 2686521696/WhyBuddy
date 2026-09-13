@@ -139,3 +139,97 @@ def test_反向_拿不到缺项时不编原因():
     assert "没有给出具体缺项" in text
     # 不许出现一个看起来像服务端判定的假缺项
     assert "required" not in text
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 下面两条是 **2026-09-13 真机 `control-continuation-smoke.py` 抓出来的**。
+# 纯函数判据全绿、护栏逻辑也对，但真机上续跑一次都成不了 / 或者永远停不下来
+# ——两个 bug 都在「逻辑之外」：一个在 checkpoint 形状，一个在落库。
+# 这正是 §1 那条「改之前先确认哪条链真的在跑」的反面教材。
+# ─────────────────────────────────────────────────────────────────────────────
+
+from services.control_goal_continuation import continuation_checkpoint
+
+
+def test_真机1_已收尾回合的checkpoint要能转成新一轮的起点():
+    """真机第一趟红在 `control_reconciliation_required`。
+
+    resume 守卫只认 `phase in {model, tools}`——那是「回合**中途**被打断」。
+    自动续跑面对的是另一种：上一回合**正常收尾**了（rehearsal_control 留下
+    `phase="settling"`），要开的是新一轮。不转换就当场被判成需要人工对账，
+    模型根本不会被再次调用。
+    """
+    settled = {
+        "schemaVersion": 1, "phase": "settling", "round": 4,
+        "messages": [{"role": "system", "content": "sys"}, {"role": "user", "content": "加截止日期"}],
+        "startedAt": 1.0, "cheapTokens": 55_000, "retrySpent": 3, "retryStartedAt": 1.0,
+        "operationIds": ["op-1"], "stationarity": {"run_len": 2}, "options": {},
+        "pendingCalls": [{"id": "x"}], "content": "旧内容",
+    }
+    out = continuation_checkpoint(settled, "[自动续跑 第 1 次] 还缺验收证据。")
+    assert out["phase"] == "model", "不转成 model 就过不了 resume 守卫"
+    assert out["messages"][-1]["role"] == "system"
+    assert "自动续跑" in out["messages"][-1]["content"]
+    # 新一轮：轮数/墙钟/token 重置，否则首轮烧掉的预算会让续跑一睁眼就撞墙
+    assert out["round"] == 0 and out["cheapTokens"] == 0 and out["retrySpent"] == 0
+    assert out["startedAt"] > settled["startedAt"]
+    assert out["pendingCalls"] == [] and out["content"] == ""
+    # ⚠ 反向：打转游标**必须**继承——它防的正是模型反复调同一个工具，
+    #   每次续跑都重置等于每次都给它一次重新打转的机会。
+    assert out["stationarity"] == {"run_len": 2}
+    assert out["operationIds"] == ["op-1"]
+
+
+def test_真机1反向_没有消息的checkpoint不许硬转():
+    assert continuation_checkpoint(None, "x") is None
+    assert continuation_checkpoint({}, "x") is None
+    assert continuation_checkpoint({"phase": "settling", "messages": []}, "x") is None
+
+
+def test_真机2_续跑账不许被落库擦掉():
+    """真机第二趟：6 条里 5 条绿，`goal.continuations` 是 0。
+
+    `update_goal` 原来**重建** goal 字典，continuations/progressMark 被静静
+    抹掉。而它在每次 control_tool_start 时都会被调——于是计数每跑一个工具就
+    清零，**目标级预算永远烧不完，续跑会无限循环**。
+
+    判据直接盯产线源码的那段 transform：护栏写对了、落库把它擦了，是本仓
+    §3「闸全绿但东西没了」的又一例。
+    """
+    import pathlib
+    src = pathlib.Path(__file__).resolve().parents[1] / "services" / "control_run_store.py"
+    text = src.read_text(encoding="utf-8")
+    start = text.index("def update_goal")
+    body = text[start:start + 2400]
+    assert '"continuations": spent' in body, "update_goal 又把续跑次数抹掉了"
+    assert '"progressMark"' in body, "update_goal 又把进展指纹抹掉了"
+
+
+def test_真机3_被闸掐断的回合不许自动续跑():
+    """跑控制面回归时抓到：8001 token 撞上 8000 的点火前额度被掐断，
+
+    而续跑会给它一个全新单轮预算再跑一遍——**把预算闸整个绕过去**。
+    「被掐断」和「说完了」是两回事，只有后者该续。
+    """
+    from services.control_goal_continuation import turn_was_capped
+
+    capped = events() + [{"type": "control_text", "text": "额度用完了",
+                          "stopReason": "token_budget", "limit": 8000, "used": 8001}]
+    assert turn_was_capped(capped) is True
+    ok, reason = should_continue(
+        status="completed", goal=goal(), events=capped, goal_done=False
+    )
+    assert ok is False and reason == "capped"
+
+
+def test_真机3反向_没被掐断的正常收尾照旧能续():
+    assert turn_was_capped_import()(events()) is False
+    ok, reason = should_continue(
+        status="completed", goal=goal(), events=events(), goal_done=False
+    )
+    assert ok is True and reason is None
+
+
+def turn_was_capped_import():
+    from services.control_goal_continuation import turn_was_capped
+    return turn_was_capped
