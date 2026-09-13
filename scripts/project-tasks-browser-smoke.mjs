@@ -159,7 +159,7 @@ async function verify(expected, revision, label) {
 try {
   const chrome = process.env.SLIDERULE_CHROMIUM_PATH || ["C:/Program Files/Google/Chrome/Application/chrome.exe", "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe"].find(existsSync);
   browser = await chromium.launch({ ...(chrome ? { executablePath: chrome } : {}), headless: true });
-  context = await browser.newContext({ viewport: { width: 1600, height: 1100 } });
+  context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   await context.addInitScript(({ id, origin }) => { if (location.origin === origin) localStorage.setItem("sliderule:active-session-id", id); },
     { id: config.sessionId, origin: config.workbench });
   const login = await context.request.post(config.workbench + "/api/sliderule/account/login", { data: { email: config.ownerEmail, password: config.password } });

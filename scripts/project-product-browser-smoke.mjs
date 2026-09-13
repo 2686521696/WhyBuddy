@@ -21,7 +21,7 @@ try {
     "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
   ].find(existsSync);
   browser = await chromium.launch({ ...(chrome ? { executablePath: chrome } : {}), headless: true });
-  const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   await context.addInitScript(({ sessionId, workbench }) => {
     if (location.origin === workbench) localStorage.setItem("sliderule:active-session-id", sessionId);
   }, { sessionId: config.sessionId, workbench: config.workbench });
@@ -130,6 +130,8 @@ try {
     return snapshot;
   }
   async function editCounter(action, previousRevision) {
+    report.stage = "source_sync_" + action;
+    await persist();
     const patch = await fixture("counter/" + action);
     await check(action + " intent uses the actual project patch tool", patch.ok && patch.kind === "runtime.patch");
     let revision;
@@ -145,9 +147,15 @@ try {
     }
     await check(action + " publishes a synchronized source revision", Boolean(revision));
     await page.getByTestId("project-preview-frame").waitFor({ state: "detached", timeout: 20000 });
-    await openPreview("Integrated source update");
     const latest = await (await context.request.get(config.workbench + verificationPath)).json();
     await check(action + " makes the previous evidence stale", latest.snapshot?.effectiveStatus === "stale");
+    // Verification already removed the iframe while serving the immutable
+    // build. Its absence cannot prove this later source revision reached React.
+    // Wait for the exact revision consumed by the actual preview, since the
+    // verification panel polls independently and can observe the change first.
+    await expect(page.getByTestId("sandbox-preview-surface")).toHaveAttribute("data-project-revision", revision, { timeout: 30000 });
+    await expect(page.getByTestId("project-verification-status")).toContainText("旧版本", { timeout: 30000 });
+    await openPreview("Integrated source update");
     return revision;
   }
   report.stage = "studio";

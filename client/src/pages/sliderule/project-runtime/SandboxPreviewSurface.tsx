@@ -188,6 +188,7 @@ export function SandboxPreviewSurface({
     <section
       data-testid="sandbox-preview-surface"
       data-project-id={projectId ?? ""}
+      data-project-revision={descriptor?.revision ?? ""}
       className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-stone-200 bg-white"
     >
       <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-stone-200 px-4 py-3">
