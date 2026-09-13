@@ -1874,6 +1874,24 @@ export function AppsWorkbench() {
   };
 
   /**
+   * 项目卡片的直达入口：已有归属会话时直接回到该会话，否则按应用快照
+   * 重建一个工作区再进入。卡片主体仍保留只读预览，避免误把公开应用当成
+   * 当前用户的可编辑会话。
+   */
+  const openProjectWorkspace = async (gi: GalleryItem) => {
+    setMenuFor(null);
+    const ownedSession =
+      gi.sessionId && canOpenGalleryItem(gi, sessions, authUser)
+        ? gi.sessionId
+        : null;
+    if (ownedSession) {
+      open(ownedSession);
+      return;
+    }
+    await continueOnCard(gi);
+  };
+
+  /**
    * 复刻（②，对标 Budibase duplicateApp / Appsmith fork / ToolJet clone）：
    * 以某个 App Store 应用为起点分出一条新血缘（新 root·v1·parent 指向源），
    * 成功后重拉画廊——新卡出现在列表里，用户可点开继续改。后端 fork_app 现成。
@@ -2179,6 +2197,18 @@ export function AppsWorkbench() {
                     onClick={() => openForkModal(storeItem)}
                   >
                     <GitBranch size={13} /> 复刻到我的应用
+                  </button>
+                )}
+                {detail?.runtimeKind === "project" && (item.sessionId || item.appId) && (
+                  <button
+                    data-testid={`app-open-project-${item.sessionId || item.appId}`}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] font-medium text-[#4a5aef] hover:bg-indigo-50 disabled:opacity-40"
+                    disabled={reopenBusy}
+                    title="打开工程工作台，查看沙盒、源码、版本、数据和验证"
+                    onClick={() => void openProjectWorkspace(item)}
+                  >
+                    <Wrench size={13} />
+                    {reopenBusy ? "正在打开工程工作台…" : "打开工程工作台"}
                   </button>
                 )}
                 {storeItem && canWrite && (
