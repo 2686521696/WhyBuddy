@@ -638,6 +638,8 @@ def test_preview_routes_do_not_open_public_rollout(world, monkeypatch, blocked):
     # the rollout is enabled, while ticket issuance remains a write/capability gate.
     preview = world.client.get(f"/projects/{world.project.projectId}/preview")
     assert preview.status_code == 200 and preview.json()["available"] is False
+    if blocked == "disabled":
+        assert preview.json()["reason"] == "project_rollout_disabled"
     assert world.client.post(f"/project-operations/{world.operation.operationId}/preview-ticket").status_code == 503
 
 

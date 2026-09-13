@@ -121,31 +121,45 @@ def get_project_preview(project_id: str, request: Request, response: Response, v
         access, owner_id = _access(request), str(viewer.id)
         project = access.store.get_project(project_id, owner_id=owner_id)
         load_authorized_session(project.sessionId, owner_id=owner_id, approval_ref=None)
+        rollout = rollout_readiness()
         operation = _latest_runtime(access, project_id, owner_id)
         if operation is None:
-            return {"operationId": None, "descriptor": None, "available": False, "reason": "project_runtime_not_started"}
+            reason = "project_rollout_disabled" if rollout["mode"] == "disabled" else "project_runtime_not_started"
+            return {"operationId": None, "descriptor": None, "available": False, "reason": reason}
         runtime = operation.runtime
         revision = access.store.get_revision(project_id, runtime.revision if runtime else None, owner_id=owner_id)
         descriptor = None if runtime is None else PreviewDescriptor(projectId=project_id,
             runtimeId=runtime.runtimeId, revision=runtime.revision, status=runtime.status,
             capabilities=template_verification_capabilities(revision.templateVersion),
             expiresAt=_iso(runtime.expiresAt) if runtime.expiresAt else None)
-        available, reason = False, "project_runtime_not_ready"
+        available, reason = False, (
+            "project_rollout_disabled" if rollout["mode"] == "disabled" else "project_runtime_not_ready"
+        )
         if runtime is not None and runtime.status == "ready":
             # A missing relay configuration must not preserve a stale ready state
             # for a cancelled/expired/replaced runtime. Check authority regardless.
             try:
                 access.ready_scope(operation.operationId, owner_id=owner_id, audience="preview-observation")
             except (PermissionError, ProjectConflict):
-                descriptor = descriptor.model_copy(update={"status": "reconciling"})
-                reason = "project_preview_binding_changed"
-            else:
-                if not preview_configuration_enabled():
-                    reason = "project_preview_not_configured"
+                if rollout["mode"] == "disabled":
+                    # During rollback no preview grant is expected to exist;
+                    # keep the durable runtime observable and expose the gate.
+                    reason = "project_rollout_disabled"
                 else:
-                    audience = origin_for_runtime(runtime.runtimeId)
-                    available = access.has_active_tunnel(operation.operationId, owner_id=owner_id, audience=audience)
-                    reason = None if available else "project_preview_tunnel_not_started"
+                    descriptor = descriptor.model_copy(update={"status": "reconciling"})
+                    reason = "project_preview_binding_changed"
+            else:
+                if rollout["mode"] == "disabled":
+                    # Rollback keeps owned observation available, but must explain
+                    # why a ready runtime cannot be opened or extended.
+                    reason = "project_rollout_disabled"
+                else:
+                    if not preview_configuration_enabled():
+                        reason = "project_preview_not_configured"
+                    else:
+                        audience = origin_for_runtime(runtime.runtimeId)
+                        available = access.has_active_tunnel(operation.operationId, owner_id=owner_id, audience=audience)
+                        reason = None if available else "project_preview_tunnel_not_started"
         return {"operationId": operation.operationId,
             "descriptor": descriptor.model_dump(mode="json") if descriptor else None,
             "available": available, "reason": reason}
