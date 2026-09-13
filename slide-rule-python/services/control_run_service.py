@@ -353,8 +353,10 @@ class ControlRunService:
                     await asyncio.to_thread(self.store.complete, run_id, self.worker_id,
                         generation, status, completion, error)
                 elif not abandoned:
+                    goal_status = ("cancelled" if status == "cancelled" else
+                                   "waiting_user" if status == "waiting_user" else "failed")
                     await asyncio.to_thread(self.store.update_goal, run_id, self.worker_id,
-                        generation, status="cancelled" if status == "cancelled" else "failed")
+                        generation, status=goal_status)
                     await asyncio.to_thread(self.store.finish, run_id, self.worker_id,
                         generation, status, error)
             except Exception:
