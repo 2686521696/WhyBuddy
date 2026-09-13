@@ -144,6 +144,74 @@ describe("durable control stream", () => {
     expect(loadActiveRun("s2")?.kind).toBeUndefined();
   });
 
+  it.each(["post", "resume"] as const)("delivers the same public project projection on %s", async entry => {
+    const state = { sessionId: "session-1" } as V5SessionState;
+    const projection = { sessionId: "session-1", runtimeKind: "project", projectId: "project-1", projectRevision: "revision-1" };
+    const fetcher = vi.fn(async () => stream([
+      { type: "control_project_state", ...projection, internalCredential: "must be dropped" },
+      { type: "complete", state },
+    ]));
+    vi.stubGlobal("fetch", fetcher);
+    const onControlProjectState = vi.fn();
+    if (entry === "post") await postControlTurnStream(state, "Continue", { onControlProjectState });
+    else await resumeControlTurnStream("ctr-1", { onControlProjectState });
+    expect(onControlProjectState).toHaveBeenCalledExactlyOnceWith(projection);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("does not overwrite the provider explanation with a generic failed-settled message", async () => {
+    const onControlText = vi.fn();
+    const onRunSettled = vi.fn();
+    const text = "模型服务返回内容过滤（content_filter），本轮已停止，未自动重试。";
+    await consumeControlStreamResponse(stream([
+      { type: "control_text", text, stopReason: "llm_unavailable", stoppedBy: "provider" },
+      { type: "control_run_settled", status: "failed", error: "llm_unavailable" },
+    ]), { onControlText, onRunSettled });
+    expect(onControlText).toHaveBeenCalledExactlyOnceWith(text, expect.objectContaining({ stopReason: "llm_unavailable" }));
+    expect(onRunSettled).toHaveBeenCalledExactlyOnceWith("error");
+  });
+
+  it("reports a provider stop even when resuming from only the failed settled event", async () => {
+    const onControlText = vi.fn();
+    const onControlHostText = vi.fn();
+    const onRunSettled = vi.fn();
+    await consumeControlStreamResponse(stream([
+      { type: "control_run_settled", status: "failed", error: "llm_unavailable" },
+    ]), { onControlText, onControlHostText, onRunSettled });
+    expect(onControlText).toHaveBeenCalledWith(expect.stringContaining("模型服务"), expect.objectContaining({ stopReason: "llm_unavailable" }));
+    expect(onControlHostText).toHaveBeenCalledWith(expect.stringContaining("模型服务"));
+    expect(onRunSettled).toHaveBeenCalledExactlyOnceWith("error");
+  });
+
+  it("preserves an unexpected control failure before complete instead of exiting as success", async () => {
+    const onControlText = vi.fn();
+    const onControlState = vi.fn();
+    const onRunSettled = vi.fn();
+    const text = "运行这一轮时出了问题，现有工程已保存。";
+    const state = { sessionId: "session-1", runtimeKind: "project", projectRevision: "current-revision" };
+    const result = await consumeControlStreamResponse(stream([
+      { type: "control_text", text, stopReason: "unknown", stoppedBy: "unknown" },
+      { type: "complete", state },
+      { type: "control_run_settled", status: "failed", error: "unknown" },
+    ]), { onControlText, onControlState, onRunSettled });
+    expect(onControlText).toHaveBeenCalledExactlyOnceWith(text, expect.objectContaining({ stopReason: "unknown" }));
+    expect(onControlState).toHaveBeenCalledExactlyOnceWith(state);
+    expect(onRunSettled).toHaveBeenCalledExactlyOnceWith("error");
+    expect(result).toBeNull();
+  });
+
+  it("keeps a normal tool-round budget stop as a completed control turn", async () => {
+    const onRunSettled = vi.fn();
+    const state = { sessionId: "session-1" };
+    const result = await consumeControlStreamResponse(stream([
+      { type: "control_text", text: "本轮工具预算已用完。", stopReason: "tool_rounds", stoppedBy: "host" },
+      { type: "complete", state },
+      { type: "control_run_settled", status: "completed", error: null },
+    ]), { onRunSettled });
+    expect(onRunSettled).toHaveBeenCalledExactlyOnceWith("complete");
+    expect(result?.finalState).toEqual(state);
+  });
+
   it.each(["cancelled", "failed", "interrupted"])(
     "does not return a nested factory result when the control run is %s",
     async status => {

@@ -122,6 +122,14 @@ def test_model_creation_read_and_patch_reach_durable_sources_and_next_prompt(set
         observed.append(result)
         assert "rehearse" not in offered and "report_done" not in offered
         if result["tool"] == "project_create":
+            # The source is committed, but the model turn is still in flight.
+            # Its persisted event must already let the browser change surface.
+            active = setup.control.store.latest(setup.state.sessionId, TEST_USER_ID)
+            assert active["status"] == "running"
+            assert not any(e["type"] == "complete" for e in active["events"])
+            projection = next(e for e in active["events"] if e["type"] == "control_project_state")
+            assert projection["projectRevision"] == result["revision"]
+            assert projection["projectId"] == load_session(setup.state.sessionId).projectId
             assert result["revision"] in messages[0]["content"]
             return llm_tool("project_read", {"path": "src/main.tsx"}, "read")
         if result["tool"] == "project_read":
@@ -139,6 +147,30 @@ def test_model_creation_read_and_patch_reach_durable_sources_and_next_prompt(set
     assert setup.store.read_files(saved.projectId, owner_id=TEST_USER_ID)["src/main.tsx"].endswith("// revision from the control loop\n")
     assert not harness.helper_calls
     assert events[-1]["type"] == "complete" and events[-1]["state"]["projectRevision"] == saved.projectRevision
+    projections = [e for e in events if e["type"] == "control_project_state"]
+    assert projections[0]["projectRevision"] == observed[0]["revision"]
+    assert projections[-1]["projectRevision"] == saved.projectRevision
+    assert all(e["runtimeKind"] == "project" and e["sessionId"] == saved.sessionId for e in projections)
+    assert all(set(e) <= {"type", "sessionId", "runtimeKind", "projectId", "projectRevision",
+        "controlRunId", "toolCallId", "seq"} for e in projections)
+    first_receipt = next(e for e in events if e["type"] == "control_tool_result" and e["tool"] == "project_create")
+    assert projections[0]["seq"] < first_receipt["seq"]
+    # Resume uses the same public event log, not the private model checkpoint.
+    resumed = client.get(f"/api/sliderule/control-runs/{first_receipt['controlRunId']}/stream", headers=KEY)
+    assert resumed.status_code == 200
+    assert [e for e in parse_sse(resumed.text) if e["type"] == "control_project_state"] == projections
+
+
+def test_tool_result_cannot_claim_a_project_without_a_persisted_session_projection(setup, monkeypatch):
+    from services.project_tools import ProjectTools
+    monkeypatch.setattr(ProjectTools, "execute", lambda *_: {
+        "ok": True, "runtimeKind": "project", "projectId": "claimed-project", "revision": "claimed-revision",
+    })
+    events = post(setup.state, forcedTool="project_create", toolArgs={"approvalRef": setup.ref})
+    assert any(e.get("tool") == "project_create" and e.get("ok") for e in events)
+    assert not any(e["type"] == "control_project_state" for e in events)
+    assert load_session(setup.state.sessionId).runtimeKind != "project"
+    assert setup.store.get_project_for_session(setup.state.sessionId, owner_id=TEST_USER_ID) is None
 
 
 @pytest.mark.parametrize("mode", ["off", "nonadmin", "production", "no-approval"])
@@ -155,6 +187,7 @@ def test_payload_cannot_enable_project_writes(setup, monkeypatch, mode):
                   projectToolsEnabled=True, ownerId=TEST_USER_ID)
     assert any(e.get("ok") is False and "project_" in e.get("error", "") for e in events)
     assert setup.store.get_project_for_session(setup.state.sessionId, owner_id=TEST_USER_ID) is None
+    assert not any(e["type"] == "control_project_state" for e in events)
 
 
 @pytest.mark.parametrize("tool", ["spec", "refine", "repair", "workflow", "restore_version", "report_done"])

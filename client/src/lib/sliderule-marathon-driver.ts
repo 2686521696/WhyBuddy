@@ -492,6 +492,15 @@ export interface DriveFullStreamOpts {
     productStep?: number;
   }) => void;
   onControlPlanApproval?: (event: ControlPlanApprovalWire) => void;
+  /** A persisted terminal snapshot can still belong to a failed control run. */
+  onControlState?: (state: V5SessionState) => void;
+  /** Durable project references, independent from completion of the model turn. */
+  onControlProjectState?: (event: {
+    sessionId: string;
+    runtimeKind: "project";
+    projectId: string;
+    projectRevision: string;
+  }) => void;
   onControlToolStart?: (tool: string) => void;
   onControlToolResult?: (event: Record<string, unknown>) => void;
 }
@@ -1031,10 +1040,20 @@ export async function consumeControlStreamResponse(
                 opts.onRunSettled?.("cancelled");
                 return null;
               } else if (event.status === "failed" || event.status === "interrupted") {
-                opts.onControlText?.("本轮已中断，已保存现有结果。请查看任务状态后继续。");
+                if (!["llm_unavailable", "unknown"].includes(acc.stopReason)) {
+                  if (event.error === "llm_unavailable" || event.error === "unknown") {
+                    acc.stopReason = event.error;
+                    const text = event.error === "llm_unavailable"
+                      ? "模型服务未完成本轮请求，已保存现有结果。请查看失败原因后继续。"
+                      : "本轮任务执行失败，已保存现有结果。请查看运行记录后继续。";
+                    opts.onControlText?.(text, { stopReason: event.error,
+                      stoppedBy: event.error === "llm_unavailable" ? "provider" : "unknown" });
+                    opts.onControlHostText?.(text);
+                  } else opts.onControlText?.("本轮已中断，已保存现有结果。请查看任务状态后继续。");
+                }
                 opts.onRunSettled?.("error");
                 return null;
-              } else if (acc.stopReason === "llm_unavailable") {
+              } else if (["llm_unavailable", "unknown"].includes(acc.stopReason)) {
                 // The Python control loop settles the durable run after it has
                 // persisted a provider failure receipt.  A settled run is not
                 // automatically a successful turn: preserve the provider
@@ -1046,10 +1065,10 @@ export async function consumeControlStreamResponse(
               sawTerminal = true;
               break outer;
             case "control_text":
-              if (event.stopReason === "llm_unavailable") {
+              if (event.stopReason === "llm_unavailable" || event.stopReason === "unknown") {
                 // Keep ordinary control stop reasons (for example
                 // `tool_rounds`) on their existing completed-turn path.  Only
-                // a provider-unavailable terminal must prevent success
+                // provider and unexpected-error terminals must prevent success
                 // post-processing.
                 acc.stopReason = event.stopReason;
               }
@@ -1083,6 +1102,19 @@ export async function consumeControlStreamResponse(
                   event.human || event.summary || ""
                 ).trim();
                 if (human) opts.onControlText?.(human);
+              }
+              continue;
+            case "control_project_state":
+              if (event.runtimeKind === "project" &&
+                  typeof event.sessionId === "string" && event.sessionId.trim() &&
+                  typeof event.projectId === "string" && event.projectId.trim() &&
+                  typeof event.projectRevision === "string" && event.projectRevision.trim()) {
+                opts.onControlProjectState?.({
+                  sessionId: event.sessionId,
+                  runtimeKind: "project",
+                  projectId: event.projectId,
+                  projectRevision: event.projectRevision,
+                });
               }
               continue;
             case "control_ask_user":
@@ -1148,7 +1180,10 @@ export async function consumeControlStreamResponse(
                 );
                 continue;
               }
-              if (acc.stopReason === "llm_unavailable") {
+              if (event.state && typeof event.state.sessionId === "string") {
+                opts.onControlState?.(event.state as V5SessionState);
+              }
+              if (["llm_unavailable", "unknown"].includes(acc.stopReason)) {
                 // `_canned` emits `complete` after the provider failure text;
                 // this event arrives before the durable `control_run_settled`
                 // notification, so classify it here as well.

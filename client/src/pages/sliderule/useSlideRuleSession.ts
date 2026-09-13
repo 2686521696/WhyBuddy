@@ -185,20 +185,44 @@ function sanitizeLegacyEmptySeed(state: V5SessionState): V5SessionState {
   return { ...cleared, sessionId: state.sessionId || DEFAULT_SESSION_ID };
 }
 
-/** Build the server-owned approval reference without changing the session projection. */
+/** Mirror scope_authority.plan_execution_authorized; the server still authorizes every write. */
 function hasApprovedProjectPlan(state: V5SessionState): boolean {
   const rows = (state.controlTranscript || []).filter(row => row && typeof row === "object") as Array<Record<string, unknown>>;
   const planRows = rows.filter(row => typeof row.kind === "string" && row.kind.startsWith("plan_"));
   const plan = [...rows].reverse().find(row => row.kind === "plan_written");
   const latest = planRows[planRows.length - 1];
   if (!plan || !latest || latest.kind !== "plan_approved") return false;
-  if (!plan.planId || !plan.planContent || typeof plan.revision !== "number" || plan.revision < 1) return false;
+  if (typeof plan.planId !== "string" || !plan.planId.trim()
+    || typeof plan.planContent !== "string" || !plan.planContent.trim()
+    || typeof plan.revision !== "number" || !Number.isInteger(plan.revision) || plan.revision < 1) return false;
   if (["planId", "revision", "planContent"].some(key => latest[key] !== plan[key])) return false;
   const approval = [...planRows.slice(0, -1)].reverse().find(row => row.kind === "plan_approval");
   if (!approval || !approval.reqId) return false;
   return ["reqId", "planId", "revision", "planContent"].every(key => latest[key] === approval[key]);
 }
 
+const PROJECT_CONVERSION_REQUIRED = "当前会话已有 HTML 应用，请新建会话创建工程，或通过显式转换迁移。";
+
+function projectCreationBlockedReason(state: V5SessionState): string | null {
+  if (state.runtimeKind === "project") return null;
+  // Mirrors project_authority.has_generated_application. The create endpoint
+  // rejects these sessions; changing runtimeKind would discard their old app.
+  const source = state as V5SessionState & {
+    specFirstPages?: { pages?: unknown[] | Record<string, unknown> };
+    modelVersions?: unknown[];
+    currentModelVersionId?: string;
+  };
+  const pages = source.specFirstPages?.pages;
+  if ((pages && Object.keys(pages).length > 0) || source.modelVersions?.length || source.currentModelVersionId) {
+    return PROJECT_CONVERSION_REQUIRED;
+  }
+  const appKinds = new Set(["app_model", "model", "page", "html", "prototype", "five_system_model"]);
+  return (state.artifacts || []).some(artifact => appKinds.has(artifact.kind)
+    || Boolean(artifact.payload && typeof artifact.payload === "object" && "html" in artifact.payload && artifact.payload.html))
+    ? PROJECT_CONVERSION_REQUIRED : null;
+}
+
+/** Build the server-owned approval reference without changing the session projection. */
 async function approvedPlanReference(state: V5SessionState): Promise<string | null> {
   const rows = (state.controlTranscript || []).filter(row => row && typeof row === "object") as Array<Record<string, unknown>>;
   const plan = [...rows].reverse().find(row => row.kind === "plan_written");
@@ -503,6 +527,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   );
   const sessionStateRef = useRef(sessionState);
   sessionStateRef.current = sessionState;
+  const controlActivityRef = useRef(0);
   const [sessionHydrated, setSessionHydrated] = useState(false);
   const [driveFullStatus, setDriveFullStatus] = useState<
     | "idle"
@@ -1066,6 +1091,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     const turnStartMs = Date.now(); // E16 收口句：本轮真实计时
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    controlActivityRef.current += 1;
     isRunningRef.current = true;
     setIsRunning(true);
     // ⚠ 必须跟 setIsRunning(true) 同一拍清掉上一轮「汇合过闸」。
@@ -1086,6 +1112,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     /** 本轮已经在左栏报过的页面。同一页第二次到达不再追加一条芯片。 */
     const announcedPages = new Set<string>();
     const hostSpeechRef = { current: "" };
+    const controlFailureRef = { current: "" };
+    lastControlStopRef.current = null;
     const appendStep = (step: TurnStep) => {
       collectedSteps.push(step);
       setUiTurns(prev =>
@@ -1198,7 +1226,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       // M1：cheap 回合禁止把问候/inspect/search 写进 conversation。
       // 控制面 POST 以已持久化会话为权威起点；质疑失效在 Python 做。
       // 续播同样不 intake。
-      const preparedState = applyAnsweredGapsToState(
+      let preparedState = applyAnsweredGapsToState(
         workingState,
         intervention
       );
@@ -1650,6 +1678,25 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   setLiveAction({ label, external: false });
                 }
               },
+              onControlProjectState: (project: {
+                sessionId: string; runtimeKind: "project"; projectId: string; projectRevision: string;
+              }) => {
+                // 2026-09-13: project_create persisted successfully while the
+                // live shell stayed on HTML until the long model turn ended.
+                // Consume only the server's durable references; keep the
+                // current conversation and running turn, and perform no GET.
+                if (controller.signal.aborted || project.sessionId !== resolvedSid
+                    || projectEntrySessionRef.current !== resolvedSid
+                    || sessionStateRef.current.sessionId !== resolvedSid) return;
+                preparedState = { ...preparedState, ...project };
+                applyPersistedState({ ...sessionStateRef.current, ...project });
+              },
+              onControlState: (state: V5SessionState) => {
+                if (controller.signal.aborted || state.sessionId !== resolvedSid
+                    || projectEntrySessionRef.current !== resolvedSid) return;
+                preparedState = preservePythonEvidenceProjection(state);
+                applyPersistedState(preparedState);
+              },
               onStreamNoTerminal: () => {
                 // 断流：书签**不清**——后端 run 多半还在跑，书签是刷新后
                 // 自动接回的唯一线索（跟 onRunSettled 相反，那里才清）。
@@ -1878,6 +1925,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 // （再试可能有用）和"网关挂了"（再试一百次也一样）。
                 // 服务端已经把 stoppedBy 推导好了，这里不许再推一遍（§4）。
                 if (stop) lastControlStopRef.current = stop;
+                if (stop && ["llm_unavailable", "unknown"].includes(stop.stopReason)) controlFailureRef.current = text.trim();
                 if (!text.trim()) return;
                 appendStreamStep(text);
               },
@@ -2089,7 +2137,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           setDriveFullStatus(classifyDriveFullStatus(pythonDrive));
           if (!pythonDrive) {
             throw new Error(
-              controller.signal.aborted ? "已停止" : "控制面未返回结果"
+              controller.signal.aborted ? "已停止"
+                : controlFailureRef.current || "控制面未返回结果"
             );
           }
           drive = {
@@ -2136,7 +2185,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           runIndex: 0,
           message: stepMessage,
         });
-        // Try to at least persist the intake state so graph has something
+        // A failed model turn may have already changed the durable goal, plan
+        // and project. Never PUT its old intake snapshot: the server correctly
+        // treats a changed goal as a plan revocation (2026-09-13 real browser).
+        // Keep local failure narration; the server owns the durable failure.
         try {
           let snap = SlideRuleRuntime.deriveNodeStatus
             ? SlideRuleRuntime.deriveNodeStatus(preparedState)
@@ -2148,7 +2200,6 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             steps: collectedSteps,
             durationMs: Date.now() - turnStartMs,
           });
-          await persistSession(snap);
           applyPersistedState(snap);
         } catch {}
         setUiTurns(prev =>
@@ -2181,12 +2232,16 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         steps: collectedSteps,
         durationMs: Date.now() - turnStartMs,
       });
-      try {
-        final = await persistSession(final);
+      if (driveErrored) {
         applyPersistedState(final);
-      } catch (pErr) {
-        // non-fatal for UI
-        applyPersistedState(final);
+      } else {
+        try {
+          final = await persistSession(final);
+          applyPersistedState(final);
+        } catch (pErr) {
+          // non-fatal for UI
+          applyPersistedState(final);
+        }
       }
       if (driveErrored && toolAnswer?.kind === "plan_approval") {
         // A failed response does not tell us whether approval was accepted.
@@ -2564,18 +2619,24 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
 
   // E25 推演断线重生：刷新/跳页回来，若本会话仍有在跑的后台 run →
   // 自动续播接回（事件日志从头补播重建本轮 UI，追平后接实时尾流）。
-  const resumeAttemptedRef = useRef(false);
+  const resumeAttemptedRef = useRef<string | null>(null);
   useEffect(() => {
     // Anonymous visitors can browse the empty shell, but they have no durable
     // control/run bookmark to resume. Do not probe login-gated endpoints here:
     // the old unconditional probe produced noisy 401/404 console errors on
     // every fresh anonymous visit and made a healthy page look broken.
-    if (!sessionHydrated || !authReady || !authUser || IS_GITHUB_PAGES || resumeAttemptedRef.current) {
+    if (!sessionHydrated || !authReady || !authUser || IS_GITHUB_PAGES
+        || sessionState.sessionId !== sessionId || resumeAttemptedRef.current === sessionId) {
       return;
     }
     if (isRunning) return;
-    resumeAttemptedRef.current = true;
     const sid = sessionState.sessionId || sessionId;
+    resumeAttemptedRef.current = sid;
+    const activity = controlActivityRef.current;
+    let cancelled = false;
+    const isCurrent = () => !cancelled && projectEntrySessionRef.current === sid
+      && sessionStateRef.current.sessionId === sid && controlActivityRef.current === activity
+      && !isRunningRef.current;
     const record = loadActiveRun(sid);
     void (async () => {
       try {
@@ -2585,6 +2646,37 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         );
         if (controlResponse.ok) {
           const { run } = await controlResponse.json();
+          if (!isCurrent()) return;
+          if (run?.runId && run.sessionId === sid && run.status === "failed") {
+            // A failed run has no active bookmark after settlement. Its text
+            // lives in the existing durable SSE log. Restore that explanation
+            // only: the old complete/project events may predate source edits
+            // made after this run, so they must never replace today's session.
+            let failureText = "";
+            await Marathon.resumeControlTurnStream(String(run.runId), {
+              onControlText: (text, stop) => {
+                if (stop && ["llm_unavailable", "unknown"].includes(stop.stopReason)) {
+                  failureText = text.trim();
+                }
+              },
+            });
+            if (!isCurrent()) return;
+            const explanation = failureText || (run.error === "llm_unavailable"
+              ? "模型服务未完成上一轮请求，现有工程已保留。"
+              : "上一轮任务执行失败，现有工程已保留。请查看运行记录后继续。");
+            const noticeId = `control-failure-${run.runId}`;
+            setUiTurns(prev => {
+              const history = prev.length > 0 ? prev : deriveTurnsFromState(sessionStateRef.current);
+              return [...history.filter(turn => turn.id !== noticeId), {
+                id: noticeId, user: "", status: "complete", steps: [],
+                routeFacts: { turnId: noticeId, timestamp: new Date().toISOString() },
+                routeExpanded: false, routeLitCount: 0,
+                assistant: explanation, assistantSource: "fallback", main: null, actions: [],
+              }];
+            });
+            if (record?.runId === run.runId) clearActiveRun(sid);
+            return;
+          }
           if (run?.runId && (["queued", "running"].includes(run.status) ||
               (record?.kind === "control" && record.runId === run.runId))) {
             await requestRehearsal(record?.userText || "继续上一轮任务", undefined,
@@ -2594,10 +2686,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         } else if (record?.kind === "control" && controlResponse.status >= 500) {
           return;
         }
+        if (!isCurrent()) return;
         const res = await fetch(
           `/api/sliderule/runs/active?sessionId=${encodeURIComponent(sid)}`
         );
         const body = res.ok ? await res.json() : null;
+        if (!isCurrent()) return;
         const active = body?.active;
         if (active && active.status === "running" && active.runId) {
           await requestRehearsal(record?.userText || "（续播上一轮推演）", undefined, {
@@ -2611,8 +2705,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         // 后端暂不可达：书签保留，下次进入再试
       }
     })();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionHydrated, authReady, authUser]);
+  }, [sessionId, sessionState.sessionId, sessionHydrated, authReady, authUser]);
 
   const resolveInteractiveGate = (gateNodeId: string, choice: string | null) => {
     // Pragmatic bridge to existing text-driven G_CONFIRM logic in intakeMessage.
@@ -3022,19 +3117,36 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     status: "idle" | "creating" | "error";
     error: string | null;
   }>({ status: "idle", error: null });
-  const canCreateProject = useMemo(() => hasApprovedProjectPlan(sessionState), [sessionState.controlTranscript]);
+  const projectCreationRef = useRef<object | null>(null);
+  const projectEntrySessionRef = useRef(sessionId);
+  projectEntrySessionRef.current = sessionId;
+  useEffect(() => {
+    setProjectCreateState({ status: "idle", error: null });
+    return () => { projectCreationRef.current = null; };
+  }, [sessionId]);
+  const projectCreateBlockedReason = projectCreationBlockedReason(sessionState);
+  const canCreateProject = sessionHydrated && sessionState.sessionId === sessionId
+    && sessionState.runtimeKind !== "project" && !projectCreateBlockedReason && hasApprovedProjectPlan(sessionState);
   const createProjectFromApprovedPlan = useCallback(async (templateId: "react-vite" | "react-vite-tasks" = "react-vite-tasks") => {
-    if (isRunning || projectCreateState.status === "creating") return false;
+    if (isRunningRef.current || projectCreationRef.current) return false;
     const state = sessionStateRef.current;
-    if (state.runtimeKind === "project") return true;
-    const approvalRef = await approvedPlanReference(state);
-    if (!approvalRef) {
-      setProjectCreateState({ status: "error", error: "请先批准当前计划后再创建工程。" });
-      return false;
-    }
     const sid = state.sessionId || sessionId;
+    if (!sessionHydrated || sid !== projectEntrySessionRef.current) return false;
+    if (state.runtimeKind === "project") return Boolean(state.projectId && state.projectRevision);
+    // 2026-09-13: state-only locking happened after the digest await, allowing
+    // two clicks to POST twice. A request token also prevents an old response
+    // from replacing the shell after switching sessions or unmounting.
+    const request = {};
+    projectCreationRef.current = request;
+    const isCurrent = () => projectCreationRef.current === request && projectEntrySessionRef.current === sid;
     setProjectCreateState({ status: "creating", error: null });
+    let created = false;
     try {
+      const blockedReason = projectCreationBlockedReason(state);
+      if (blockedReason) throw new Error(blockedReason);
+      const approvalRef = await approvedPlanReference(state);
+      if (!isCurrent()) return false;
+      if (!approvalRef) throw new Error("请先批准当前计划后再创建工程。");
       const response = await fetch(`/api/sliderule/sessions/${encodeURIComponent(sid)}/project`, {
         method: "POST",
         credentials: "include",
@@ -3047,10 +3159,22 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           const payload = await response.json();
           if (payload?.detail === "project_rollout_disabled") detail = "工程模式当前未启用。";
           else if (payload?.detail === "project_plan_approval_required") detail = "当前计划授权已失效，请重新批准计划。";
+          else if (payload?.detail === "project_conversion_required") detail = PROJECT_CONVERSION_REQUIRED;
         } catch { /* keep safe generic message */ }
         throw new Error(detail);
       }
+      created = true;
+      const receipt = await response.json();
+      if (!isCurrent()) return false;
+      const project = receipt?.project;
+      if (project?.sessionId !== sid || typeof project?.projectId !== "string" || !project.projectId) {
+        throw new Error("invalid_project_receipt");
+      }
       const loaded = await SlideRuleRuntime.loadOrCreateSessionState(sid);
+      if (!isCurrent()) return false;
+      if (loaded.sessionId !== sid || loaded.runtimeKind !== "project" || loaded.projectId !== project.projectId || !loaded.projectRevision) {
+        throw new Error("project_projection_not_restored");
+      }
       const hydrated = preservePythonEvidenceProjection(loaded);
       sessionStateRef.current = hydrated;
       setSessionState(hydrated);
@@ -3059,10 +3183,14 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       setProjectCreateState({ status: "idle", error: null });
       return true;
     } catch (error) {
-      setProjectCreateState({ status: "error", error: error instanceof Error ? error.message : "工程创建未完成，请稍后重试。" });
+      if (isCurrent()) setProjectCreateState({ status: "error", error: created
+        ? "工程创建请求已完成，但未能读取工程状态。请刷新当前会话后重试。"
+        : error instanceof Error ? error.message : "工程创建未完成，请稍后重试。" });
       return false;
+    } finally {
+      if (projectCreationRef.current === request) projectCreationRef.current = null;
     }
-  }, [isRunning, projectCreateState.status, sessionId]);
+  }, [sessionId, sessionHydrated]);
 
   // G_READY clarification cards: unanswered open_question gaps with V4-style structured options.
   const pendingClarifications = useMemo<ClarificationItem[]>(
@@ -3177,6 +3305,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     resetSession,
     createProjectFromApprovedPlan,
     canCreateProject,
+    projectCreateBlockedReason,
     projectCreateState,
     toggleRouteExpanded,
     retryCapability,

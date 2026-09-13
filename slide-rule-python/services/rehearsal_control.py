@@ -4477,10 +4477,21 @@ async def _dispatch_tool(
         # Source CAS can succeed before session projection. Reload only the
         # authoritative reference; never replace the in-flight conversation.
         reloaded = await run_in_threadpool(load_session, state.sessionId)
-        if reloaded is not None and reloaded.ownerId == state.ownerId:
+        if (reloaded is not None and reloaded.ownerId == state.ownerId
+                and reloaded.sessionId == state.sessionId):
             state.runtimeKind = reloaded.runtimeKind
             state.projectId = reloaded.projectId
             state.projectRevision = reloaded.projectRevision
+            if state.runtimeKind == "project" and state.projectId and state.projectRevision:
+                # 2026-09-13 browser: creation was durable, but the workbench
+                # stayed on HTML until the entire model turn completed. Emit
+                # only the reloaded references, never trust a tool's claimed
+                # project result or overwrite the in-flight conversation.
+                # This precedes the tool receipt: receipt-based crash recovery
+                # must not skip a projection that was never persisted.
+                yield {"type": "control_project_state", "sessionId": state.sessionId,
+                    "runtimeKind": "project", "projectId": state.projectId,
+                    "projectRevision": state.projectRevision}
         yield {"type": "control_tool_result", "tool": name, **body}
         return
     if name in ("pages", "structure", "bind", "closure", "workflow", "refine", "repair") and _assumptions_awaiting(state):
