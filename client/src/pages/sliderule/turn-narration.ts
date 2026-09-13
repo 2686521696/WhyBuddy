@@ -232,6 +232,13 @@ const KNOWN_KINDS = new Set([
   "step_narration",
   "capability_fail",
   "llm_output",
+  // ⚠ 2026-09-13：漏了这个 kind，「模型动手之前的开口」就只在**直播时**
+  // 看得见，刷新后整段消失——数据其实一直在（落库两侧的 slimStep /
+  // _slim_step 都是整对象透传，schema 两侧也都是宽松的 unknown[] /
+  // Dict[str, Any]），唯独在这道回放白名单上被丢掉。
+  // 这正是本仓 §3 点名的形态：正向（实时能看见）齐全，反向（刷新后还在）
+  // 缺失，而且不报错、不告警。
+  "model_speech",
 ]);
 
 /** 刷新回放：从持久化状态取指定轮（缺省最新一轮）的叙述步骤。
