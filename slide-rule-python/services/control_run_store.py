@@ -23,6 +23,7 @@ MAX_EVENT_BYTES = 64 * 1024
 MAX_STATE_EVENT_BYTES = 2 * 1024 * 1024
 MAX_EVENTS = 2000
 _RESERVED_BYTES = 4096
+GOAL_STATUSES = frozenset({"active", "waiting_user", "waiting_operation", "completed", "failed", "cancelled"})
 _DDL = (
     "create table if not exists wb_control_cancel_request (session_id varchar(240) not null, owner_id varchar(240) not null, idempotency_key varchar(240) not null, primary key(session_id,idempotency_key))",
     "create table if not exists wb_control_session (session_id varchar(240) primary key, owner_id varchar(240) not null, active_run_id varchar(80), rev integer not null)",
@@ -64,6 +65,24 @@ def _seconds(value: float) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 1 <= value <= 3600:
         raise ValueError("invalid_control_lease_seconds")
     return float(value)
+
+
+def _goal_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Build the durable, non-secret objective envelope for a control run.
+
+    The control checkpoint already preserves model messages, but those are an
+    implementation detail and are not suitable for discovery or a UI resume
+    affordance.  Keep only the user objective and the operation ids which may
+    still need observation.  This is deliberately a data contract; it does
+    not start another agent loop.
+    """
+    candidates = (payload.get("userText"), payload.get("user_text"),
+                  payload.get("message"), payload.get("goal"))
+    text = next((value.strip() for value in candidates
+                 if isinstance(value, str) and value.strip()), "")[:4000]
+    kind = "project" if payload.get("runtimeKind") == "project" else "conversation"
+    return {"text": text, "kind": kind, "status": "active",
+            "awaitingOperationIds": [], "updatedAt": _now()}
 
 
 class ControlRunStore:
@@ -149,6 +168,7 @@ class ControlRunStore:
                     "idempotencyKey": idempotency_key, "requestHash": request_hash, "status": "queued",
                     "payload": json.loads(encoded), "checkpoint": None, "events": [], "lastSeq": 0,
                     "generation": 0, "leaseOwner": None, "leaseExpiresAt": 0.0, "cancelRequested": False,
+                    "goal": _goal_from_payload(json.loads(encoded)),
                     "createdAt": now, "updatedAt": now, "error": None}
                 self._q("insert into wb_control_run(id,session_id,owner_id,idempotency_key,status,accepted,rev,generation,lease_owner,lease_expires_at,payload) values($1,$2,$3,$4,'queued',0,0,0,null,0,$5) on conflict(session_id,idempotency_key) do nothing",
                     [run_id, session_id, owner_id, idempotency_key, _json(record, self.max_run_bytes - _RESERVED_BYTES)])
@@ -214,6 +234,49 @@ class ControlRunStore:
             raise ValueError("control_checkpoint_required")
         frozen = json.loads(_json(checkpoint, self.max_run_bytes - _RESERVED_BYTES))
         return self._producer_update(run_id, worker_id, generation, lambda record: {**record, "checkpoint": frozen})
+
+    def goal(self, run_id: str, owner_id: str) -> dict[str, Any]:
+        """Return the small objective envelope used to resume a run in the UI.
+
+        Older rows predate this field.  They remain readable and receive a
+        conservative empty conversation objective rather than exposing their
+        full payload or checkpoint.
+        """
+        record = self.get(run_id, owner_id)
+        value = record.get("goal")
+        if not isinstance(value, dict):
+            return {"text": "", "kind": "conversation", "status": "active",
+                    "awaitingOperationIds": [], "updatedAt": record.get("updatedAt")}
+        return {
+            "text": str(value.get("text") or "")[:4000],
+            "kind": value.get("kind") if value.get("kind") in {"project", "conversation"} else "conversation",
+            "status": value.get("status") if value.get("status") in GOAL_STATUSES else "active",
+            "awaitingOperationIds": [str(item)[:240] for item in (value.get("awaitingOperationIds") or [])
+                                     if isinstance(item, str)][:32],
+            "updatedAt": value.get("updatedAt") or record.get("updatedAt"),
+        }
+
+    def update_goal(self, run_id: str, worker_id: str, generation: int, *,
+                    status: str, operation_ids: list[str] | None = None) -> dict[str, Any]:
+        """Fenced goal bookkeeping for a producer or a recovery worker.
+
+        This only records whether the existing control run is active, waiting
+        for a user, or has an operation to observe.  It never dispatches work;
+        callers still use the existing ``ControlRunService`` loop.
+        """
+        if status not in GOAL_STATUSES:
+            raise ValueError("invalid_control_goal_status")
+        ids = operation_ids or []
+        if not isinstance(ids, list) or any(not isinstance(item, str) or not item.strip() for item in ids):
+            raise ValueError("invalid_control_goal_operations")
+        ids = list(dict.fromkeys(item.strip()[:240] for item in ids))[:32]
+        def transform(record):
+            current = record.get("goal") if isinstance(record.get("goal"), dict) else {}
+            kind = current.get("kind") if current.get("kind") in {"project", "conversation"} else "conversation"
+            text = str(current.get("text") or "")[:4000]
+            return {**record, "goal": {"text": text, "kind": kind, "status": status,
+                "awaitingOperationIds": ids, "updatedAt": _now()}}
+        return self._producer_update(run_id, worker_id, generation, transform)
 
     def append_event(self, run_id: str, worker_id: str, generation: int, event: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(event, dict):

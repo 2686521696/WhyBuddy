@@ -40,6 +40,19 @@ def public_control_run(record):
         "runId", "sessionId", "status", "lastSeq", "cancelRequested",
         "createdAt", "updatedAt", "error"
     )}
+    # A compact objective envelope lets a refreshed workbench explain what is
+    # being resumed without exposing model prompts, tool arguments or provider
+    # handles. Older records simply omit this optional field.
+    goal = record.get("goal")
+    if isinstance(goal, dict):
+        public["goal"] = {
+            "text": str(goal.get("text") or "")[:4000],
+            "kind": goal.get("kind") if goal.get("kind") in {"project", "conversation"} else "conversation",
+            "status": goal.get("status") if goal.get("status") in {"active", "waiting_user", "waiting_operation", "completed", "failed", "cancelled"} else "active",
+            "awaitingOperationIds": [str(item)[:240] for item in (goal.get("awaitingOperationIds") or [])
+                                     if isinstance(item, str)][:32],
+            "updatedAt": goal.get("updatedAt") or record.get("updatedAt"),
+        }
     # Older workers already committed completed after terminal provider errors.
     # Interpret their durable receipts truthfully on read without rewriting
     # history or reclaiming/replaying those finished runs.
@@ -304,6 +317,19 @@ class ControlRunService:
                         status, error = "failed", error or failure
                     elif status != "failed" and event.get("type") in {"control_ask_user", "control_plan_approval", "control_clarify"}:
                         status = "waiting_user"
+                        await asyncio.to_thread(self.store.update_goal, run_id, self.worker_id,
+                            generation, status="waiting_user")
+                    elif event.get("type") == "control_tool_result" and event.get("operationId"):
+                        # Record asynchronous work independently of the model
+                        # transcript so a refreshed client can explain what it
+                        # is waiting for. The existing loop still owns polling;
+                        # this bookkeeping does not dispatch a second loop.
+                        await asyncio.to_thread(self.store.update_goal, run_id, self.worker_id,
+                            generation, status="waiting_operation",
+                            operation_ids=[str(event["operationId"])])
+                    elif event.get("type") == "control_tool_start":
+                        await asyncio.to_thread(self.store.update_goal, run_id, self.worker_id,
+                            generation, status="active")
         except ControlRunStopped as exc:
             status = "cancelled" if exc.reason == "control_cancelled" else "interrupted"
             error = exc.reason
@@ -321,9 +347,14 @@ class ControlRunService:
                 if suspend:
                     await asyncio.to_thread(self.store.suspend, run_id, self.worker_id, generation)
                 elif completion is not None and status in {"completed", "waiting_user", "failed"} and not abandoned:
+                    goal_status = "failed" if status == "failed" else ("waiting_user" if status == "waiting_user" else "completed")
+                    await asyncio.to_thread(self.store.update_goal, run_id, self.worker_id,
+                        generation, status=goal_status)
                     await asyncio.to_thread(self.store.complete, run_id, self.worker_id,
                         generation, status, completion, error)
                 elif not abandoned:
+                    await asyncio.to_thread(self.store.update_goal, run_id, self.worker_id,
+                        generation, status="cancelled" if status == "cancelled" else "failed")
                     await asyncio.to_thread(self.store.finish, run_id, self.worker_id,
                         generation, status, error)
             except Exception:

@@ -59,6 +59,28 @@ def test_submission_is_idempotent_and_data_is_detached(store):
     assert store.latest("unknown", "alice") is None
 
 
+def test_goal_envelope_is_durable_compact_and_owner_bound(store):
+    run = submit(store, payload={"userText": "  Build a task app  ", "runtimeKind": "project",
+                                  "secret": "must-not-leak"})
+    goal = store.goal(run["runId"], "alice")
+    assert goal["text"] == "Build a task app" and goal["kind"] == "project"
+    assert goal["status"] == "active" and goal["awaitingOperationIds"] == []
+    assert "secret" not in json.dumps(goal)
+    with pytest.raises(ControlRunNotFound):
+        store.goal(run["runId"], "bob")
+
+
+def test_goal_update_is_fenced_and_survives_reopen(store):
+    run = claim(store)
+    updated = store.update_goal(run["runId"], "worker-1", 1,
+        status="waiting_operation", operation_ids=["op-1", "op-1"])
+    assert updated["goal"]["status"] == "waiting_operation"
+    assert updated["goal"]["awaitingOperationIds"] == ["op-1"]
+    with pytest.raises(ControlRunConflict, match="lease_lost"):
+        store.update_goal(run["runId"], "other-worker", 1, status="active")
+    assert store.goal(run["runId"], "alice")["awaitingOperationIds"] == ["op-1"]
+
+
 def test_other_owner_cannot_read_submit_latest_or_cancel(store):
     run = submit(store)
     for call in (lambda: store.get(run["runId"], "bob"), lambda: store.latest("session-1", "bob"),
