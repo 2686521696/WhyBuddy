@@ -36,6 +36,14 @@ const statuses = new Set([
 ]);
 const malformed = () =>
   new ProjectWorkspaceError("工程数据不完整，请更新后重试。");
+const WORKSPACE_REASONS: Record<string, string> = {
+  project_live_patch_requires_restart:
+    "这次修改包含运行配置或依赖，请先停止应用，再保存或恢复。草稿已保留。",
+  project_plan_approval_required:
+    "当前计划尚未批准或批准已失效。请先批准当前计划后重试，草稿已保留。",
+  project_rollout_disabled:
+    "工程模式当前已关闭，暂时不能执行这项操作。草稿已保留。",
+};
 
 export async function requestProjectWorkspace(
   path: string,
@@ -60,13 +68,20 @@ export async function requestProjectWorkspace(
     try {
       const payload = await response.json();
       const detail = payload?.detail;
-      code =
-        typeof detail === "string" ? detail : (detail?.code ?? payload?.reason);
+      // 2026-09-13 real browser: the owner could read/download the project,
+      // but a save without approval was described as missing ownership. The
+      // live error envelope uses message; direct Python replies use detail.
+      // Accept only our known codes from either shape, never provider prose.
+      if (response.status !== 401 && response.status !== 404) {
+        code = [detail, detail?.code, payload?.reason, payload?.message].find(
+          value =>
+            typeof value === "string" && Object.hasOwn(WORKSPACE_REASONS, value)
+        );
+      }
     } catch {}
-    const restart = code === "project_live_patch_requires_restart";
     throw new ProjectWorkspaceError(
-      restart
-        ? "这次修改包含运行配置或依赖，请先停止应用，再保存或恢复。草稿已保留。"
+      code
+        ? WORKSPACE_REASONS[code]
         : response.status === 409
           ? "工程版本或批准已变化。草稿已保留，请读取最新版并核对差异。"
           : response.status === 401
@@ -77,7 +92,7 @@ export async function requestProjectWorkspace(
                 ? "工程服务尚未启用或暂时不可用。"
                 : "工程操作未能完成，请更新状态后重试。",
       response.status === 409,
-      restart ? code : undefined
+      code
     );
   }
   return response;
