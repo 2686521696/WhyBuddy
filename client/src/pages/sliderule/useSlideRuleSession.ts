@@ -185,6 +185,19 @@ function sanitizeLegacyEmptySeed(state: V5SessionState): V5SessionState {
   return { ...cleared, sessionId: state.sessionId || DEFAULT_SESSION_ID };
 }
 
+/** Build the server-owned approval reference without changing the session projection. */
+async function approvedPlanReference(state: V5SessionState): Promise<string | null> {
+  const rows = (state.controlTranscript || []).filter(row => row && typeof row === "object") as Array<Record<string, unknown>>;
+  const plan = [...rows].reverse().find(row => row.kind === "plan_written");
+  const approved = [...rows].reverse().find(row => row.kind === "plan_approved");
+  if (!plan || !approved || !plan.planId || !plan.planContent || typeof plan.revision !== "number") return null;
+  if (["planId", "revision", "planContent"].some(key => approved[key] !== plan[key])) return null;
+  const bytes = new TextEncoder().encode(String(plan.planContent));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const hash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+  return `${String(plan.planId)}:${String(plan.revision)}:${hash}`;
+}
+
 /**
  * Frontend session store adapter for Python evidence projection persistence.
  * Explicitly carries the (python /drive-full) publishClosure and skillRuntimeGraph evidence
@@ -2992,6 +3005,51 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     setSubmittedClarifyIds([]);
   }, [isRunning, sessionState.sessionId, sessionId, options.initialGoal]);
 
+  const [projectCreateState, setProjectCreateState] = useState<{
+    status: "idle" | "creating" | "error";
+    error: string | null;
+  }>({ status: "idle", error: null });
+  const createProjectFromApprovedPlan = useCallback(async (templateId: "react-vite" | "react-vite-tasks" = "react-vite-tasks") => {
+    if (isRunning || projectCreateState.status === "creating") return false;
+    const state = sessionStateRef.current;
+    if (state.runtimeKind === "project") return true;
+    const approvalRef = await approvedPlanReference(state);
+    if (!approvalRef) {
+      setProjectCreateState({ status: "error", error: "请先批准当前计划后再创建工程。" });
+      return false;
+    }
+    const sid = state.sessionId || sessionId;
+    setProjectCreateState({ status: "creating", error: null });
+    try {
+      const response = await fetch(`/api/sliderule/sessions/${encodeURIComponent(sid)}/project`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approvalRef, templateId }),
+      });
+      if (!response.ok) {
+        let detail = "工程创建未完成，请刷新状态后重试。";
+        try {
+          const payload = await response.json();
+          if (payload?.detail === "project_rollout_disabled") detail = "工程模式当前未启用。";
+          else if (payload?.detail === "project_plan_approval_required") detail = "当前计划授权已失效，请重新批准计划。";
+        } catch { /* keep safe generic message */ }
+        throw new Error(detail);
+      }
+      const loaded = await SlideRuleRuntime.loadOrCreateSessionState(sid);
+      const hydrated = preservePythonEvidenceProjection(loaded);
+      sessionStateRef.current = hydrated;
+      setSessionState(hydrated);
+      const restored = deriveTurnsFromState(hydrated);
+      if (restored.length > 0) setUiTurns(restored);
+      setProjectCreateState({ status: "idle", error: null });
+      return true;
+    } catch (error) {
+      setProjectCreateState({ status: "error", error: error instanceof Error ? error.message : "工程创建未完成，请稍后重试。" });
+      return false;
+    }
+  }, [isRunning, projectCreateState.status, sessionId]);
+
   // G_READY clarification cards: unanswered open_question gaps with V4-style structured options.
   const pendingClarifications = useMemo<ClarificationItem[]>(
     () =>
@@ -3103,6 +3161,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     dismissAsk,
     challengeTurn,
     resetSession,
+    createProjectFromApprovedPlan,
+    projectCreateState,
     toggleRouteExpanded,
     retryCapability,
     resolveInteractiveGate,

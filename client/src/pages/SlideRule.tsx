@@ -1070,6 +1070,8 @@ function SlideRuleUnified({
   publishClosure,
   driveFullStatus,
   projectCapabilities = null,
+  onCreateProject,
+  projectCreateState,
   activeSkillId = null,
   skillContents = {},
   latestMermaid = null,
@@ -1140,6 +1142,8 @@ function SlideRuleUnified({
     | "python_unavailable"
     | "fallback";
   projectCapabilities?: { mode?: string; blockers?: string[]; configured?: boolean; canExecute?: boolean } | null;
+  onCreateProject?: () => void;
+  projectCreateState?: { status: "idle" | "creating" | "error"; error: string | null };
   /** SSE-driven active skill highlighting for the right rail */
   activeSkillId?: import("@/lib/sliderule-marathon-driver").SkillId | null;
   skillContents?: Partial<
@@ -1293,6 +1297,25 @@ function SlideRuleUnified({
                   data-testid="sliderule-project-rollout-status"
                 >
                   工程模式未启用 · project_rollout_disabled
+                </span>
+              ) : null}
+              {sessionState.runtimeKind !== "project" &&
+              projectCapabilities?.canExecute &&
+              projectCapabilities.configured &&
+              onCreateProject ? (
+                <button
+                  type="button"
+                  data-testid="sliderule-create-project"
+                  disabled={projectCreateState?.status === "creating"}
+                  onClick={onCreateProject}
+                  className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {projectCreateState?.status === "creating" ? "正在创建工程…" : "进入工程工作台"}
+                </button>
+              ) : null}
+              {projectCreateState?.status === "error" && projectCreateState.error ? (
+                <span role="alert" data-testid="sliderule-project-create-error" className="text-rose-700">
+                  {projectCreateState.error}
                 </span>
               ) : null}
             </div>
@@ -1891,6 +1914,8 @@ function SlideRuleSessionBody({
     sendMessage,
     pendingPlanApproval,
     submitPlanApproval,
+    createProjectFromApprovedPlan,
+    projectCreateState,
     pendingAsk,
     submitQuestionnaire,
     queuedTurns,
@@ -2421,6 +2446,8 @@ function SlideRuleSessionBody({
     publishClosure: visiblePublishClosure,
     driveFullStatus,
     projectCapabilities,
+    onCreateProject: () => void createProjectFromApprovedPlan(),
+    projectCreateState,
     activeSkillId,
     skillContents,
     latestMermaid,
