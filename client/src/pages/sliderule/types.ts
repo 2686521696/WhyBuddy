@@ -22,6 +22,20 @@ export type TurnStep =
       source: "llm" | "fallback";
       isFinal?: boolean;
     }
+  /**
+   * 模型在动手之前对用户说的那段话（`control_text`）。
+   *
+   * ⚠ 故意**不复用** `narration`：narration 会被 `linesFromTurnSteps` 收进
+   * 左栏活动列表，模型散文进去就变成跟「第 1 轮 · 正在执行 planning」同等
+   * 分量的一行，正是要修的那个观感。这个 kind 不被 `textFromStep` 和
+   * `linesFromTurnSteps` 认领，所以只在正文里以段落出现，不会双渲染。
+   */
+  | {
+      id: string;
+      kind: "model_speech";
+      text: string;
+      round?: number;
+    }
   | {
       id: string;
       kind: "chip";

@@ -20,8 +20,14 @@ export const REFINE_TURN_NO_PAGE_NOTE =
 /** 跟 Python `turn_narration.HOP_NO_PRODUCE_NOTE` 同一句。 */
 export const HOP_NO_PRODUCE_NOTE = "这一跳没有新的产出，上一版保留。";
 
-/** 控制面写给模型的命令，不许当对用户的收尾。 */
-const OPERATOR_SPEAK = /下一跳请调 pages|告诉用户为什么先停/;
+/**
+ * 控制面写给模型的命令，不许当对用户的收尾。
+ *
+ * ⚠ 导出是有原因的：模型有时会把这类操作员口吻原样复述出来，而
+ * `model-speech.ts` 要用**同一份**判据过滤动手前的开口。抄第二份就是
+ * §4 点名的「改一半」——过滤规则改了一处，另一处静静放行。
+ */
+export const OPERATOR_SPEAK = /下一跳请调 pages|告诉用户为什么先停/;
 
 function textFromNarration(turn: UiTurn): string {
   const finalStepText = finalNarrationStep(turn.steps)?.text?.trim();

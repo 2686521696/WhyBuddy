@@ -1582,6 +1582,22 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               progressType: opts?.progressType || "thinking",
             });
           };
+          /**
+           * 模型动手之前对用户说的那段话，进正文段落而不是芯片行。
+           *
+           * ⚠ 不复用 `appendStreamStep`：那个产 `kind: "chip"`，会被
+           * `linesFromTurnSteps` 收进左栏活动列表，于是模型散文跟
+           * 「第 1 轮 · 正在执行 planning」排成同等分量的一行——正是
+           * 这次要修的观感。见 `model-speech.ts` 头注。
+           */
+          const appendModelSpeech = (text: string) => {
+            streamStepSeq += 1;
+            appendStep({
+              id: `${turnId}-speech-${streamStepSeq}`,
+              kind: "model_speech",
+              text,
+            });
+          };
           setLlmDraft("");
           setLlmDraftLabel(null);
           setLlmStreams([]);
@@ -1980,7 +1996,14 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 if (stop) lastControlStopRef.current = stop;
                 if (stop && ["llm_unavailable", "unknown"].includes(stop.stopReason)) controlFailureRef.current = text.trim();
                 if (!text.trim()) return;
-                appendStreamStep(text);
+                // 「为什么停」留在左栏时间线里——用户已经习惯去那儿找停因，
+                // 把它挪进正文段落等于换了个地方藏。
+                if (stop) {
+                  appendStreamStep(text);
+                  return;
+                }
+                // 动手之前的开口走正文段落（model-speech 头注）。
+                appendModelSpeech(text);
               },
               onControlHostText: text => {
                 hostSpeechRef.current = text.trim();

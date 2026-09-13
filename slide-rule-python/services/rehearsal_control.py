@@ -3866,11 +3866,21 @@ async def _control_llm_loop(
                 yield _complete(state)
                 return
 
-            if (
-                content
-                and not _has_product_topic(state)
-                and any((c.get("name") or "") == "ask_user_question" for c in calls)
-            ):
+            # 模型在派发工具**之前**说的那段话，是它对用户的开口，不是日志。
+            #
+            # ⚠ 2026-09-13：原判据是「还没定产品主题 **且** 这批工具里有
+            #   ask_user_question」才发。工程模式下模型每一轮都会先说
+            #   「我会采用浅蓝工作台…接着初始化项目」再调 project_create——
+            #   两个条件都不成立，那段话只进了喂给 LLM 的 `assistant_msg`，
+            #   **一个字都没到界面上**。左栏于是只剩机器味的阶段标签
+            #   （「第 1 轮 · 正在执行 planning」），用户看不出它在想什么。
+            #   对照 Manus：每组动作前面都有一段第一人称的「我要做什么、
+            #   为什么」——那段话我们的模型本来就在产，缺的只是这里没 yield。
+            #
+            # ⚠ 不在这里过滤「操作员口吻」（"下一跳请调 pages" 之类）。那份
+            #   判据已经在消费侧 `assistant-text-for-turn.ts` 的 OPERATOR_SPEAK
+            #   里，同一条规则不许有第二处实现（§4：改一半必然静默失效）。
+            if content:
                 _append_transcript(
                     state,
                     {"role": "assistant", "kind": "control_text", "text": content},

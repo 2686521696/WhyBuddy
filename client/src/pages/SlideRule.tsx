@@ -74,6 +74,7 @@ import {
   assistantTextForTurn,
   turnDidFactoryWork,
 } from "./sliderule/assistant-text-for-turn";
+import { renderableModelSpeech } from "./sliderule/model-speech";
 import { ensureReadableChatMarkdown } from "./sliderule/readable-chat-markdown";
 import {
   RehearsalClockHud,
@@ -254,6 +255,30 @@ function textFromStep(
   if (step.kind === "chip") return step.label;
   if (step.kind === "capability_fail") return step.message;
   return "";
+}
+
+/**
+ * ModelSpeechBlocks — 模型动手之前对用户说的那几段话。
+ *
+ * 排在活动列表**上面**：先说「我要做什么、为什么」，再铺机械步骤——对照
+ * Manus 的那一列。不是芯片、不进时间线，理由见 `model-speech.ts` 头注。
+ */
+function ModelSpeechBlocks({ turn }: { turn: UiTurn }) {
+  const speech = React.useMemo(() => renderableModelSpeech(turn), [turn.steps]);
+  if (speech.length === 0) return null;
+  return (
+    <div
+      className="space-y-2 text-[14px] leading-[1.7] text-[#171717]"
+      data-testid="sliderule-model-speech"
+      data-speech-count={speech.length}
+    >
+      {speech.map(item => (
+        <p key={item.id} className="whitespace-pre-wrap">
+          {item.text}
+        </p>
+      ))}
+    </div>
+  );
 }
 
 /**
@@ -606,6 +631,9 @@ function ImAssistantMessage() {
       ) : null}
       {turn.status === "streaming" ? (
         <div className="space-y-1.5">
+          {/* 模型动手之前先开口，再铺动作——对照 Manus：散文在上，
+              机械步骤收在下面那组里。见 model-speech.ts 头注。 */}
+          <ModelSpeechBlocks turn={turn} />
           <div className="flex items-center gap-2 text-[13px] text-stone-500">
             <span className="inline-flex items-end gap-1" aria-hidden>
               <span className="sr-dot h-1.5 w-1.5 rounded-full bg-[#1677ff]" />
@@ -637,6 +665,9 @@ function ImAssistantMessage() {
           className="space-y-1.5 text-[14px] leading-6 text-[#171717]"
           data-testid="sliderule-assistant-text"
         >
+          {/* 完成后同样保留开口：它是这一轮「为什么这么做」的唯一记录，
+              收尾总结替代不了过程里的判断。 */}
+          <ModelSpeechBlocks turn={turn} />
           <TurnPhaseTimeline turn={turn} publishClosure={publishClosure} />
           {/* 思考流留档：推演中每步 LLM 的完整输出，完成后保留成可折叠
               记录（Claude 式）——想法不消失，要看随时点开 */}
