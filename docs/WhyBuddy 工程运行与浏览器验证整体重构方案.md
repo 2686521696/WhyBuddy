@@ -982,5 +982,38 @@ rollout 关闭时，资源所有者仍可读取工程、历史、验证、交付
 
 对应功能提交为 `f6217702`、`8a1bb5fd`、`8fc295ca`、`6a57a827`、`6aee172d`，已推送到 `refactor/unified-entry-control-plane`。前端工程面板定向回归 **211 项通过**；Python 预览/运行/rollout 定向回归 **150 项通过**；独立浏览器验证器 **17 项通过**；`pnpm run arch:check` 通过（`crates 101 / edges 381 / cycles 0`，13 份 grok-build 对照文档同步）。
 
-真实工程工作台 fixture 的六个桌面面板截图已整理为 `artifacts/project-workspace-browser-1789258139220/panel-preview.png`、`panel-source.png`、`panel-history.png`、`panel-data.png`、`panel-delivery.png`、`panel-browser-check.png`，均为 **1920×1080**；同目录保留 `mobile-source.png` 作为 390×844 窄屏无横向溢出证据。该 fixture 报告 10 项全通过，但仍属于受控 API/source fixture；本地默认 rollout 关闭，不能把它描述成生产 E2B 或自主模型交付已开启。
+真实工程工作台 fixture 的六个桌面面板截图已整理为 `artifacts/project-workspace-browser-1789258139220/panel-preview.png`、`panel-source.png`、`panel-history.png`、`panel-data.png`、`panel-delivery.png`、`panel-browser-check.png`，均为 **1920×1080**；同目录保留 `mobile-source.png` 作为 390×844 窄屏无横向溢出证据。该 fixture 报告 10 项全通过，但仍属于受控 API/source fixture；当时本地 rollout 关闭，不能把它描述成生产 E2B 或自主模型交付已开启。后续真实模型和本地配置变化见下节。
+
+### 26.4 2026-09-13 本地真实模型工程入口与失败恢复
+
+本轮在实际 `localhost:3000/agent-loop/sliderule`、真实登录账号、1920×1080 Chrome 中继续测试。仅本地开发配置改为 `WHYBUDDY_PROJECT_ROLLOUT=internal`，复用已验证的浏览器模板 `c7askhickfgju8gfrp6c`；生产配置和账号范围没有切换为 allowlist。
+
+真实会话 `sr-20260913111810-M1MTN6KCWN` 经过用户输入任务应用需求、选择问卷选项、模型写计划、点击批准，模型实际调用 `project_create`、`project_list`、`project_read`。创建出的工程 `prj-c4c89771f3e05361bae3f9fff0f4cfb8` 保存了 11 个 `react-vite-tasks` 源码文件，刷新可读取工程工作台、源码与版本。本轮没有用前端写入 runtimeKind，也没有用夹具伪造该会话的批准或模型工具选择。
+
+这次真机发现并修复了此前定向面板测试没有覆盖的入口与失败链路：
+
+- 快速双击在异步摘要计算前没有互斥，可能重复创建；现在同步锁覆盖完整请求。切换会话或卸载后，旧响应不能替换新会话。
+- 创建接口成功不代表回读成功；必须读到同会话、同工程和有效源码版本。已有 HTML 产物的会话显示迁移限制，不再提供必然返回 conversion_required 的创建入口。
+- 服务端已经创建工程时，长模型回合中的页面仍显示 HTML，直到整个回合结束。新增持久 `control_project_state` 事件，仅携带经归属核对后的权威引用，前端即时切换舞台，续播使用同一消费路径。
+- 模型服务返回 `content_filter` 后，控制流带失败说明正常结束，却被持久运行服务标为 completed。现在模型/协议失败与正常结束分开记录；已存历史失败通过读取投影纠正显示，不重放模型请求。
+- 刷新后，最新失败回合通过原有只读事件接口恢复失败说明，保留会话历史，不执行模型、不回写旧快照；后续在源码面板产生的新版本不能被历史 complete 事件覆盖。`unknown` 异常同样阻止前端成功收尾，普通预算停止保留现有合同。
+- 失败收尾会 PUT 回合开始前的空目标，触发后端 goal_changed 并撤销刚批准的计划。错误收尾停止写旧快照，保留已收到的服务端状态和失败说明；缺少终态时也不伪造持久状态。
+- 工程空对话区曾硬编码第二个 HTML 模式标识，已改为单一工程模式。尚未得到验证套件时显示通用浏览器检查，不能把任务工程误标为计数器检查。
+- 版本和数据页的独立请求未返回时曾短暂空白；现在显示各自的加载提示，明确区分空列表与读取失败。截图等待实际版本条目、备份状态和交付结果完成后再采集。
+
+本机该样本的上游模型因 `content_filter` 中断，后续一次启动请求又触及模型调用预算。源码已保存，但这两次请求没有启动应用或完成业务验收；日志与六个面板截图位于 `artifacts/project-entry-live/`。本机没有供 E2B 回连的独立 HTTPS/WSS 预览来源与网关，`.localhost` 来源仅供本机传输测试，不能据此声称云预览已部署。具体网络缺项见 `artifacts/local-1920-audit/private-preview-readiness.json`。
+
+另外，独立隔离云样本 `artifacts/project-product/1789269719-03e704d1/report.json` 完成 **18 项宿主检查、55 项真实工作台检查**，独立浏览器执行 **通过 → 故意改坏后失败 → 修复后通过**，0 pageerror，沙盒均回收并确认查空。工作台截图为 1920×1080。该样本采用测试账号和预先批准的计划，运行 counter 用例；它证明私有预览、固定版本证据和失败修复合同，不能与本机真实模型样本合并宣称一次自主任务应用全验收。
+
+云烟测还修正了同步判据：验证期间旧 iframe 已卸载，等待 iframe 消失不能证明源码版本已更新；验证面板与预览面板也有不同轮询周期。现在直接等待预览实际消费的 revision，再申请新票据，旧版本票据仍由正式权限边界拒绝。
+
+后端重启后，原失败运行 `ctr-8d8bf7349c425c4eaa8b7675c43149e2` 的真实 GET 已返回 `failed / llm_unavailable`。测试会话被旧错误收尾清空的需求，已使用所有者身份执行完整 GET→PUT 恢复原始输入；恢复前后计划记录相同，没有伪造批准，交付页仍如实提示当前计划尚未批准。
+
+当前 TypeScript 编译与本轮起点 `d3a7081c93cc364c80b7aa83b6340f25dc0cc03b` 的隔离 worktree 对比，均有 18 条存量错误，新增 0 条。另一个旧的 `SlideRule.unified-surface` 刷新回答标志测试也在该精确基线单独复现；本批工程模式渲染判据通过。证据为 `artifacts/project-entry-live/typecheck-baseline-comparison.json`、`typecheck-baseline.log` 和 `unified-reload-baseline.log`。不把这些结果描述为全仓测试全绿。
+
+最终联合前端回归 **256 passed**（11 个文件），另有工程模式渲染定向用例通过；后端控制运行/存储/生命周期 **124 passed**，实际 HTTP 工程工具链 **18 passed**。脚本 **97 passed**，Python/TS/全仓/grok 架构已自动生成并过闸，方案时序图通过真实 Chrome 渲染。最终类型检查仍是同一组 18 条基线问题，记录于 `typecheck-final-comparison.json`。
+
+最终六个本地面板实图在 `artifacts/project-entry-live/panel-*.png`，均核验为 **1920×1080**；该轮刷新和切换的脚本、控制台及 HTTP 错误为 0。完整早期日志仍保留最初匿名探针与错误诊断 URL 的失败，不能把全日志描述为零错误。`final-panels.json` 记录本轮采集时间与实际文字，汇总见 `report.json`。版本、源码、数据、交付读取到真实结果后才截图；应用重启和预览缺配置也已采用不同提示，不再把所有“暂不可用”都写成环境未配置。
+
+本批按功能提交：`a9019949`（持久失败状态）、`ff5708ba`（版本/数据加载）、`b9b3605f`（1920 浏览器烟测与源码版本同步）、`f678063a`（工程即时入口与失败恢复）、`36874828`（模式与检查范围）、`f4ec907e`（真实预览不可用原因）。
 

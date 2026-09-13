@@ -742,3 +742,7 @@ Playwright 使用已有 Apache-2.0 npm 包及其许可文件；本批按公共AP
 使用真实账号、Chrome `1920×1080` 视口访问 `/agent-loop/sliderule`，登录、历史会话恢复、右侧架构沙盘和新建空会话均通过。首轮浏览器日志发现匿名/空会话会产生登录门控 401/不存在资源 404；WhyBuddy 已调整为认证后才恢复 durable run，空舞台不查询尚未生成的 app。定向前端回归 90 项通过，新建会话复测日志为 0 条错误。截图与 JSON 报告见 `artifacts/local-1920-audit/`。本地 rollout 仍是 disabled，工程创建/预览显示 blocked 属于配置事实。
 
 `app-wall-holes.mjs` 现支持 Windows Chrome channel；在 `/agent-loop/workbench` 的 1920 宽度实测 24 张卡、6 列、空洞 0，截图见 `artifacts/local-1920-audit/wall-holes.png`。
+
+后续真实工程入口实测已将本地开发 rollout 开到 `internal`，真实模型通过问卷和计划批准创建了任务工程，11 个源码文件可从工作台读取。工程引用通过现有 Python 持久事件→SSE driver→React hook 即时投影，修正了模型回合未结束时仍显示 HTML、失败后旧状态覆盖需求及失败被记为完成的问题。这里沿用当前以 grok 为参考的控制与展示职责，没有引入另一套 Agent 循环。源码面板和版本恢复的权威仍在 Python。
+
+本机该模型回合实际遇到 `content_filter`，没有启动应用；本机私有预览入口仍缺配置。另一个独立 E2B 云夹具通过 18 项宿主和 55 项工作台检查，不能与真实模型样本拼接成自主交付结论。当前事实、修复和 1920×1080 实图位置见 [重构方案 §26.4](<WhyBuddy 工程运行与浏览器验证整体重构方案.md#264-2026-09-13-本地真实模型工程入口与失败恢复>)。
