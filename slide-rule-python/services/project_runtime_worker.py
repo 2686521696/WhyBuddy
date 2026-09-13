@@ -25,7 +25,7 @@ from services.project_browser_verification import (
 )
 from services.project_authority import approved_reference
 from services.project_creation import load_authorized_session
-from services.project_preview_config import origin_for_runtime
+from services.project_preview_config import origin_for_runtime, preview_configuration_enabled
 from services.project_runtime import REVISION_FILE, _LeaseHeartbeat, _timestamp
 from services.project_source_sync import authorize_source_recovery, finish_pending_source_patches, sync_next_source_patch
 from services.project_store import ProjectConflict, ProjectStore, ProjectStoreUnavailable
@@ -96,6 +96,16 @@ class ProjectRuntimeSupervisor:
     @property
     def running(self) -> bool:
         return self._scanner is not None and self._scanner.is_alive() and not self._stop.is_set()
+
+    @staticmethod
+    def preview_configuration_enabled() -> bool:
+        """Expose the canonical local preview check to planning callers.
+
+        This is configuration only; it never contacts E2B or redeems a grant.
+        Keeping the check on the runtime owner avoids a control-tools import
+        edge into the runtime layer.
+        """
+        return preview_configuration_enabled()
 
     def start(self) -> None:
         if self.running:

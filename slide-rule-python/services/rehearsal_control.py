@@ -2915,6 +2915,14 @@ def _system_prompt(state: V5SessionState) -> str:
     # （漫画第 5 格已经拆掉的 NeedPermission-on-product-type）。
     is_project = getattr(state, "runtimeKind", None) == "project"
     if _PROJECT_TOOLS.get() is not None or is_project:
+        # Planning may precede project creation, so feed the model the same
+        # local readiness facts the runtime will enforce.  This is a read-only
+        # configuration check; it does not create a sandbox or prove cloud
+        # reachability.  Browser acceptance remains mandatory when required.
+        readiness_tool = _PROJECT_TOOLS.get()
+        readiness = (readiness_tool.capability_readiness()
+                      if readiness_tool is not None and hasattr(readiness_tool, "capability_readiness")
+                      else None)
         facts.append(
             "工程工具运行在受管 E2B 中，源码版本持久保存。"
             f"当前工程：{getattr(state, 'projectId', None)}；源码版本：{getattr(state, 'projectRevision', None)}。"
@@ -2936,6 +2944,16 @@ def _system_prompt(state: V5SessionState) -> str:
             "任务未结束就如实交回 operationId，下轮继续查询，不能重复提交或宣称完成。"
             "构建通过和服务就绪均不是业务验收；私有预览、验证结果和对外发布分别查看服务端真实状态。"
         )
+        if isinstance(readiness, dict):
+            blockers = readiness.get("blockers") or []
+            facts.append(
+                "当前本地能力就绪检查（仅配置事实，不代表云端已连通）："
+                f"rollout={'ready' if readiness.get('rolloutConfigured') else 'blocked'}，"
+                f"私有预览={'ready' if readiness.get('previewConfigured') else 'blocked'}，"
+                f"独立浏览器={'ready' if readiness.get('browserConfigured') else 'blocked'}。"
+                f"缺项代码：{', '.join(str(item) for item in blockers) if blockers else 'none'}。"
+                "若独立浏览器或私有预览缺项，project_verify 必须标记 blocked，不能用构建、API 或模型自述替代。"
+            )
         if plan_execution_authorized(state):
             facts.append(f"工程操作批准引用 approvalRef：{approved_reference(state)}。")
     after_write = None if is_project else _after_write_hint(state)

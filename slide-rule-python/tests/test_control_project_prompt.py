@@ -29,6 +29,10 @@ def assert_live_guidance(messages, offered, *, has_project=True):
     assert "依赖或启动配置变更需先停止并确认清理" in prompt
     assert "修改前先取消活跃运行" not in prompt
     assert "私有预览和独立浏览器验收尚未接入" not in prompt
+    # Readiness is assembled on the live control-turn path (including before
+    # project creation), while browser acceptance remains a separate gate.
+    assert "当前本地能力就绪检查" in prompt
+    assert "不能用构建、API 或模型自述替代" in prompt
     if has_project:
         patch = next(item["function"] for item in offered if item["function"]["name"] == "project_patch")
         assert "existing worker" in patch["description"] and "synchronized=true" in patch["description"]

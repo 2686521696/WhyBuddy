@@ -81,6 +81,35 @@ def test_registry_is_closed_and_mutation_contracts_exclude_identity():
         assert not {"ownerId", "projectId", "sandboxId", "sessionId"}.intersection(schema["properties"])
 
 
+def test_capability_readiness_is_side_effect_free_and_reports_preview_browser_blockers(setup, monkeypatch):
+    monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
+    monkeypatch.delenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE", raising=False)
+    monkeypatch.delenv("WHYBUDDY_PROJECT_PREVIEW_GATEWAY_KEY", raising=False)
+    monkeypatch.delenv("WHYBUDDY_PROJECT_BROWSER_TEMPLATE", raising=False)
+    result = setup.tools.capability_readiness()
+    assert result["rolloutConfigured"] is True
+    assert result["previewConfigured"] is False
+    assert result["browserConfigured"] is False
+    assert "project_preview_not_configured" in result["blockers"]
+    assert "project_browser_not_configured" in result["blockers"]
+    assert "E2B_API_KEY" not in json.dumps(result)
+
+
+def test_capability_readiness_uses_provider_availability_contract_for_browser(setup, monkeypatch):
+    class Provider:
+        def availability_error(self):
+            return None
+
+    calls = []
+    setup.supervisor.browser_provider_factory = lambda: (calls.append(True) or Provider())
+    monkeypatch.setenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE", "https://{runtimeId}.preview.example.com")
+    monkeypatch.setenv("WHYBUDDY_PROJECT_PREVIEW_GATEWAY_KEY", "x" * 40)
+    result = setup.tools.capability_readiness()
+    assert result["browserConfigured"] is True
+    assert "project_browser_not_configured" not in result["blockers"]
+    assert calls == [True]
+
+
 def test_fresh_model_context_can_discover_and_cancel_saved_work(setup):
     project = create(setup)
     ids = set()

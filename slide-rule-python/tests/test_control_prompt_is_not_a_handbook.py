@@ -109,3 +109,24 @@ def test_scope_card_is_replaced_by_plan_tools():
     names = {tool["function"]["name"] for tool in CONTROL_TOOLS}
     assert "scope_card" not in names
     assert {"write_plan", "exit_plan_mode", "ask_user_question"} <= names
+
+
+def test_project_prompt_carries_local_readiness_without_replacing_browser_acceptance():
+    import services.rehearsal_control as control
+
+    class Readiness:
+        def capability_readiness(self):
+            return {"rolloutConfigured": True, "previewConfigured": False,
+                    "browserConfigured": True, "blockers": ["project_preview_not_configured"]}
+
+    token = control._PROJECT_TOOLS.set(Readiness())
+    try:
+        text = _system_prompt(V5SessionState(
+            sessionId="project-readiness", runtimeKind="project",
+            goal={"text": "任务管理应用", "status": "clear"}))
+    finally:
+        control._PROJECT_TOOLS.reset(token)
+    assert "私有预览=blocked" in text
+    assert "独立浏览器=ready" in text
+    assert "不能用构建、API 或模型自述替代" in text
+    assert "project_preview_not_configured" in text

@@ -16,8 +16,8 @@
 ## 此刻的事实（由代码算出，不是手写）
 
 - 扫描文件 **340** 个，模块 **340** 个
-- 内部依赖边 **1128** 条（包含普通包初始化依赖）
-- 内部 import 语句 **1040** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 内部依赖边 **1129** 条（包含普通包初始化依赖）
+- 内部 import 语句 **1041** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -54,7 +54,7 @@ flowchart TB
   flow["flow<br/>43 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
   core -->|154| util
   flow -->|126| core
-  flow -->|147| util
+  flow -->|148| util
 ```
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
@@ -183,7 +183,7 @@ flowchart LR
   control -->|7| llm_gateway
   control -->|3| model_core
   control -->|6| persist
-  control -->|18| platform
+  control -->|19| platform
   control -->|4| spec_first
   diagnostics -->|1| a2a
   diagnostics -->|1| evidence

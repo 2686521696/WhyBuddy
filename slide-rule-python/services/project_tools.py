@@ -23,6 +23,7 @@ from services.project_store import ProjectConflict, ProjectNotFound, ProjectStor
 from services.project_source_operations import ProjectSourceOperations
 from services.project_tool_contracts import PROJECT_ARGUMENTS, PROJECT_WRITE_TOOLS
 from services.scope_authority import plan_execution_authorized
+from services.project_rollout import rollout_readiness
 
 MAX_RESULT_CHARS = 3800
 _TERMINAL = {"completed", "failed", "cancelled"}
@@ -86,6 +87,37 @@ def operation_snapshot(snapshot):
 class ProjectTools:
     def __init__(self, store, supervisor, owner_id):
         self.store, self.supervisor, self.owner_id = store, supervisor, owner_id
+
+    def capability_readiness(self) -> dict:
+        """Return local capability facts for planning, without touching a provider.
+
+        The planner runs before a project exists, so ``project_status`` cannot
+        report why a preview or browser check would be blocked.  Keep this
+        deliberately side-effect free: it reads configuration and the bundled
+        runner only; it never creates an E2B sandbox or exposes credentials.
+        """
+        rollout = rollout_readiness()
+        blockers = list(rollout.get("blockers") or [])
+        preview_checker = getattr(self.supervisor, "preview_configuration_enabled", None)
+        preview_ready = bool(preview_checker()) if callable(preview_checker) else False
+        if not preview_ready and "project_preview_not_configured" not in blockers:
+            blockers.append("project_preview_not_configured")
+        browser_error = "project_browser_not_configured"
+        factory = getattr(self.supervisor, "browser_provider_factory", None) if self.supervisor is not None else None
+        if factory is not None:
+            try:
+                # The provider's availability_error is a pure local check; the
+                # factory constructor must not create or connect to a sandbox.
+                browser_error = factory().availability_error()
+            except (ValueError, TypeError, OSError, ImportError):
+                browser_error = "project_browser_unavailable"
+        browser_ready = browser_error is None
+        if not browser_ready:
+            blockers.append(browser_error)
+        # Stable, model-safe facts only; never include URLs, keys or provider handles.
+        return {"rolloutConfigured": bool(rollout.get("configured")),
+                "previewConfigured": preview_ready, "browserConfigured": browser_ready,
+                "blockers": list(dict.fromkeys(blockers))}
 
     def execute(self, name, args, state) -> dict:
         guard_control_run()
