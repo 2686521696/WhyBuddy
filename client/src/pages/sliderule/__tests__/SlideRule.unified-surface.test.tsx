@@ -105,6 +105,13 @@ const streamingTurn = {
 };
 
 describe("unified /sliderule surface (single mental model)", () => {
+  it("describes a failed control turn without claiming a legacy drive-full fallback", () => {
+    const html = renderPage({ driveFullStatus: "control_failed", goal: "任务应用", uiTurns: [streamingTurn] });
+    expect(html).toContain('data-status="control_failed"');
+    expect(html).toContain("本轮执行已中断，详见会话中的具体原因");
+    expect(html).not.toContain("/drive-full");
+    expect(html).not.toContain("fallback");
+  });
   it("persisted project references reach the real Studio before any HTML or conversation is restored", () => {
     const html = renderPage({ sessionState: {
       ...baseHookReturn().sessionState,

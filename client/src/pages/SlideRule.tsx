@@ -922,6 +922,7 @@ function DriveFullStatusBanner({
     | "python_success"
     | "timeout"
     | "python_unavailable"
+    | "control_failed"
     | "fallback";
   className?: string;
 }) {
@@ -935,11 +936,13 @@ function DriveFullStatusBanner({
   )
     return null;
   const text =
-    status === "timeout"
-      ? "/drive-full timeout"
-      : status === "python_unavailable"
-        ? "/drive-full Python unavailable"
-        : "/drive-full fallback";
+    status === "control_failed"
+      ? "本轮执行已中断，详见会话中的具体原因"
+      : status === "timeout"
+        ? "/drive-full timeout"
+        : status === "python_unavailable"
+          ? "/drive-full Python unavailable"
+          : "/drive-full fallback";
   return (
     <div
       data-testid="sliderule-drive-full-status"
@@ -1149,6 +1152,7 @@ function SlideRuleUnified({
     | "python_success"
     | "timeout"
     | "python_unavailable"
+    | "control_failed"
     | "fallback";
   projectCapabilities?: { mode?: string; blockers?: string[]; configured?: boolean; canExecute?: boolean } | null;
   onCreateProject?: () => void;
@@ -1585,6 +1589,7 @@ function SlideRuleSplitEngineering({
     | "python_success"
     | "timeout"
     | "python_unavailable"
+    | "control_failed"
     | "fallback";
   rehearsalCursor?: RehearsalClockCursor;
 }) {

@@ -535,6 +535,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     | "python_success"
     | "timeout"
     | "python_unavailable"
+    | "control_failed"
     | "fallback"
   >("idle");
   const [submittedClarifyIds, setSubmittedClarifyIds] = useState<string[]>([]);
@@ -776,12 +777,18 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const goal = useMemo(() => {
     const fromState = sessionState.goal?.text?.trim();
     if (fromState) return fromState;
-    const lastUser = [...uiTurns]
-      .reverse()
-      .find(t => t.user.trim())
+    // 2026-09-13: while approval was still running, the latest bubble renamed
+    // the project to "批准计划并执行". Python confirms the goal during approval;
+    // until that snapshot arrives, use the original request, not a tool reply.
+    const originalRequest = sessionState.controlTranscript?.find(
+      row => row.role === "user" && row.kind === "turn" && row.text?.trim()
+    )?.text?.trim();
+    if (originalRequest) return originalRequest;
+    const firstUser = uiTurns
+      .find(t => t.user.trim() && !isContinuationTurn(t.user))
       ?.user.trim();
-    return lastUser || "";
-  }, [sessionState.goal?.text, uiTurns]);
+    return firstUser || "";
+  }, [sessionState.goal?.text, sessionState.controlTranscript, uiTurns]);
 
   useEffect(() => {
     const prev = SlideRuleRuntime.getCapabilityExecutor?.();
@@ -2134,7 +2141,13 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               formatJson: key === "five-system-model",
             });
           }
-          setDriveFullStatus(classifyDriveFullStatus(pythonDrive));
+          // A failed control stream never invoked the legacy drive-full
+          // fallback. Keep its failure distinct in the visible status too.
+          setDriveFullStatus(
+            !pythonDrive && (!resumeRun || resumeRun.kind === "control")
+              ? "control_failed"
+              : classifyDriveFullStatus(pythonDrive)
+          );
           if (!pythonDrive) {
             throw new Error(
               controller.signal.aborted ? "已停止"
@@ -2165,7 +2178,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         // 走到这里时兜底已经不会发生，所以这里不需要再 throw——re-throw 只会连
         // 带跳过下面的半程落盘与收尾。只把话说对就够。
         const needsLogin = Boolean(driveErr?.needsLogin);
-        let stepMessage = `驱动执行失败（已降级显示）：${errMsg.slice(0, 140)}`;
+        let stepMessage = `执行已中断：${errMsg.slice(0, 140)}`;
         let bannerMsg = errMsg.slice(0, 200);
         if (needsLogin) {
           // 侧栏账号是启动时的缓存，这次 401 不会自动刷新。再问一次 /me，

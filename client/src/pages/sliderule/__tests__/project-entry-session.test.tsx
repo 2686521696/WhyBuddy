@@ -81,7 +81,7 @@ async function finishControlTurn() {
 
 function Harness({ sid }: { sid: string }) {
   current = useSlideRuleSession({ sessionId: sid });
-  return <div data-testid="runtime">{current.sessionState.runtimeKind}</div>;
+  return <div data-testid="runtime" data-app-title={current.goal}>{current.sessionState.runtimeKind}</div>;
 }
 
 async function mount(sid = SID) {
@@ -275,6 +275,53 @@ describe("project projection while the model's control stream is still running",
     projectId: PROJECT.projectId, projectRevision: PROJECT.currentRevision,
   } as const;
 
+  it.each(["approved", "cancelled"] as const)("keeps the original application title while a %s plan reply is running", async outcome => {
+    const originalGoal = "创建一个真实任务管理应用，新增、编辑、筛选并刷新保留数据";
+    const state = saved.get(SID)!;
+    state.goal.text = "";
+    state.awaitReason = "control_plan_approval";
+    state.controlTranscript = [
+      { role: "user", kind: "turn", text: originalGoal },
+      { role: "user", kind: "user_answer", text: "管理员与只读用户" },
+      ...state.controlTranscript!.slice(0, 2),
+    ];
+    await mount();
+    expect(current.pendingPlanApproval?.reqId).toBe("approval-entry");
+    const feedback = "请在现有计划中增加导出，不要改变任务应用的需求";
+    await act(async () => {
+      current.submitPlanApproval({ reqId: "approval-entry", outcome, ...(outcome === "cancelled" ? { feedback } : {}) });
+      await vi.waitFor(() => expect(controlStream).toBeDefined());
+    });
+    const command = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith("/control-turn-stream"))!;
+    expect(JSON.parse(String(command[1]?.body))).toMatchObject({
+      userText: outcome === "approved" ? "批准计划并执行" : feedback,
+      toolAnswer: { kind: "plan_approval", reqId: "approval-entry", outcome },
+    });
+    // The backend has confirmed its goal, but only the project reference has
+    // streamed to React. Do not invent/persist a goal to repair a display label.
+    const putsBeforeProject = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === "PUT").length;
+    saved.set(SID, { ...state, goal: { ...state.goal, text: originalGoal } });
+    await act(async () => controlStream!.enqueue(streamEvent(projection)));
+    expect(current.isRunning).toBe(true);
+    expect(current.sessionState.goal.text).toBe("");
+    expect(current.goal).toBe(originalGoal);
+    expect(container.firstElementChild?.getAttribute("data-app-title")).toBe(originalGoal);
+    expect(current.uiTurns.at(-1)?.user).toBe(outcome === "approved" ? "批准计划并执行" : feedback);
+    expect(vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === "PUT")).toHaveLength(putsBeforeProject);
+    await finishControlTurn();
+    await expect.poll(() => current.isRunning).toBe(false);
+    expect(current.goal).toBe(originalGoal);
+  });
+
+  it("keeps a confirmed goal as the title during a new read-only control turn", async () => {
+    saved.get(SID)!.goal.text = "原始任务应用目标";
+    await mount();
+    await startControlTurn();
+    expect(current.isRunning).toBe(true);
+    expect(current.goal).toBe("原始任务应用目标");
+    expect(current.uiTurns.at(-1)?.user).toBe("Continue the approved project");
+  });
+
   it("switches the shell from the persisted project event without waiting for complete or making another GET", async () => {
     await mount();
     await startControlTurn();
@@ -335,6 +382,9 @@ describe("project projection while the model's control stream is still running",
     expect(current.uiTurns.at(-1)?.assistant).toContain(failure);
     expect(current.uiTurns.at(-1)?.assistant).not.toContain("控制面未返回结果");
     expect(JSON.stringify(current.sessionState.turnNarrations)).toContain("content_filter");
+    expect(current.driveFullStatus).toBe("control_failed");
+    expect(JSON.stringify(current.sessionState.turnNarrations)).not.toContain("已降级显示");
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("/drive-full"))).toBe(false);
   });
 
   it.each([true, false])("does not PUT the stale pre-run goal after provider failure (complete snapshot: %s)", async hasComplete => {
