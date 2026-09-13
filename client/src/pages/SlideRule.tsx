@@ -350,12 +350,20 @@ function HomeEmptyState({
   isRunning,
   composerSlot,
   clarifySlot,
+  projectCapabilities,
 }: {
   isRunning: boolean;
   /** 空态时唯一的 ComposerDock 挪进首页流（开聊后贴在会话流底部，二选一渲染） */
   composerSlot?: React.ReactNode;
   /** 澄清卡叠在输入框上方（absolute），不能当 flex 孩子——会把输入顶走 */
   clarifySlot?: React.ReactNode;
+  /** 服务端工程能力状态；空态只展示状态，不伪造启动入口。 */
+  projectCapabilities?: {
+    mode?: string;
+    blockers?: string[];
+    configured?: boolean;
+    canExecute?: boolean;
+  } | null;
 }) {
   // ⚑ E41 官方示例的「点模板卡 → 暂存起手意图 → 空态预填」消费端
   //   已随示例库一起下架（2026-08-14，用户裁决清除四个官方示例）——
@@ -366,6 +374,16 @@ function HomeEmptyState({
       data-testid="sliderule-empty-state"
     >
       <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-7 px-1 py-6">
+        <div className="flex flex-wrap items-center justify-center gap-2 text-[12px]" data-testid="sliderule-runtime-mode">
+          <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-stone-600">
+            当前：HTML 推演兼容模式
+          </span>
+          {projectCapabilities?.mode === "disabled" || projectCapabilities?.blockers?.includes("project_rollout_disabled") ? (
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-800" data-testid="sliderule-project-rollout-status">
+              工程模式未启用 · project_rollout_disabled
+            </span>
+          ) : null}
+        </div>
         <div className="flex w-full flex-wrap items-center justify-center gap-3">
           <h1 className="text-[26px] font-semibold tracking-tight text-[#171717] sm:text-[28px]">
             想推演成什么应用？
@@ -724,6 +742,7 @@ export function ClaudeChatSurface({
   rehearsalClock = null,
   hud = null,
   factoryDecision = null,
+  projectCapabilities = null,
 }: {
   uiTurns: UiTurn[];
   isRunning: boolean;
@@ -740,6 +759,7 @@ export function ClaudeChatSurface({
   hud?: ContextHudFacts | null;
   /** 最近一次工厂选材。没有账本就不传——HUD 不许伪造。 */
   factoryDecision?: FactoryDecisionView | null;
+  projectCapabilities?: { mode?: string; blockers?: string[]; configured?: boolean; canExecute?: boolean } | null;
   /** 会话话题（恢复的轮次没有 turn.user，总结用它兜底） */
   goalText?: string;
   onChallenge: (id: string) => void;
@@ -847,6 +867,7 @@ export function ClaudeChatSurface({
                     灵感句只导去应用中心，不造假功能入口。 */}
                   <HomeEmptyState
                     isRunning={isRunning}
+                    projectCapabilities={projectCapabilities}
                     composerSlot={isEmptyThread ? composerSlot : undefined}
                     clarifySlot={isEmptyThread ? clarifySlot : undefined}
                   />
@@ -1048,6 +1069,7 @@ function SlideRuleUnified({
   crossRuntimeGraph,
   publishClosure,
   driveFullStatus,
+  projectCapabilities = null,
   activeSkillId = null,
   skillContents = {},
   latestMermaid = null,
@@ -1117,6 +1139,7 @@ function SlideRuleUnified({
     | "timeout"
     | "python_unavailable"
     | "fallback";
+  projectCapabilities?: { mode?: string; blockers?: string[]; configured?: boolean; canExecute?: boolean } | null;
   /** SSE-driven active skill highlighting for the right rail */
   activeSkillId?: import("@/lib/sliderule-marathon-driver").SkillId | null;
   skillContents?: Partial<
@@ -1254,6 +1277,26 @@ function SlideRuleUnified({
               className="mb-2 inline-flex"
             />
           ) : null}
+          {!isHomeEmpty ? (
+            <div
+              className="mx-3 mb-2 inline-flex flex-wrap items-center gap-2 text-[12px]"
+              data-testid="sliderule-runtime-mode"
+            >
+              <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-stone-600">
+                当前：{sessionState.runtimeKind === "project" ? "工程工作台模式" : "HTML 推演兼容模式"}
+              </span>
+              {sessionState.runtimeKind !== "project" &&
+              (projectCapabilities?.mode === "disabled" ||
+                projectCapabilities?.blockers?.includes("project_rollout_disabled")) ? (
+                <span
+                  className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-800"
+                  data-testid="sliderule-project-rollout-status"
+                >
+                  工程模式未启用 · project_rollout_disabled
+                </span>
+              ) : null}
+            </div>
+          ) : null}
 
           {/* Studio body — 图标簇在舞台头条右侧，不再独占整页顶栏。 */}
           {
@@ -1277,6 +1320,7 @@ function SlideRuleUnified({
                     rehearsalClock={rehearsalFacts.rehearsalClock}
                     hud={rehearsalFacts.hud}
                     factoryDecision={rehearsalFacts.factoryDecision}
+                    projectCapabilities={projectCapabilities}
                     onChallenge={id =>
                       dispatchChallengePrefill({ artifactId: id })
                     }
@@ -1928,6 +1972,27 @@ function SlideRuleSessionBody({
   // Python backend error/timeout/degraded/legacy status + retry for core SlideRule workflow (105)
   const [pythonApiError, setPythonApiError] = useState<any>(null);
   const [pythonStatusMsg, setPythonStatusMsg] = useState<string>("");
+  const [projectCapabilities, setProjectCapabilities] = useState<{
+    mode?: string;
+    blockers?: string[];
+    configured?: boolean;
+    canExecute?: boolean;
+  } | null>(null);
+  useEffect(() => {
+    // 工程能力属于登录后资源状态；匿名空态不发受保护请求，避免预期 401
+    // 污染浏览器日志。失败时保持 fail-closed，不显示可启动按钮。
+    if (!authReady || !authUser) return;
+    let cancelled = false;
+    void fetchJsonSafe<{
+      mode?: string;
+      blockers?: string[];
+      configured?: boolean;
+      canExecute?: boolean;
+    }>("/api/sliderule/project-capabilities").then(result => {
+      if (!cancelled && result.ok) setProjectCapabilities(result.data);
+    });
+    return () => { cancelled = true; };
+  }, [authReady, authUser]);
   const probePythonBackend = useCallback(async () => {
     // GitHub Pages 静态演示无后端：探测必 404（控制台噪音 + 无意义请求），
     // 且状态条本就在 Pages 下不渲染（见 !IS_GITHUB_PAGES 分支），直接跳过。
@@ -2355,6 +2420,7 @@ function SlideRuleSessionBody({
     crossRuntimeGraph: visibleCrossRuntimeGraph,
     publishClosure: visiblePublishClosure,
     driveFullStatus,
+    projectCapabilities,
     activeSkillId,
     skillContents,
     latestMermaid,

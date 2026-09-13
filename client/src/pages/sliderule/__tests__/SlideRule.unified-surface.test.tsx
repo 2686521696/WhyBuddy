@@ -164,6 +164,7 @@ describe("unified /sliderule surface (single mental model)", () => {
 
     expect(html.match(/data-testid="sliderule-empty-state"/g)?.length).toBe(1);
     expect(html).toContain("想推演成什么应用？");
+    expect(html).toContain("当前：HTML 推演兼容模式");
     // 不该有：落地页主张句 / logo / 回车提示。变异：把旧文案加回必红。
     expect(html).not.toContain("把一句模糊想法");
     expect(html).not.toContain("能跑起来");
