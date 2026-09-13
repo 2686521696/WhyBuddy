@@ -1703,7 +1703,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 const projectLabel = projectToolLabel(tool);
                 if (projectLabel) {
                   setLiveAction({ label: projectLabel, external: true });
-                  appendStreamStep(projectLabel, { external: true });
+                  appendStreamStep(projectLabel);
                   return;
                 }
                 if (isFactoryWriteTool(tool)) {
@@ -1722,7 +1722,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   : typeof event.message === "string" ? event.message : "";
                 const label = ok ? `${tool.replace(/^正在/, "已")}` : `${tool.replace(/^正在/, "执行失败：")}`;
                 setLiveAction({ label: detail ? `${label}（${detail}）` : label, external: true });
-                appendStreamStep(detail ? `${label}：${detail}` : label, { external: true });
+                appendStreamStep(detail ? `${label}：${detail}` : label);
               },
               onControlProjectState: (project: {
                 sessionId: string; runtimeKind: "project"; projectId: string; projectRevision: string;
