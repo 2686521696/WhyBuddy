@@ -243,11 +243,12 @@ class ControlRunStore:
             lambda record: {**record, "status": status, "error": frozen, "leaseExpiresAt": 0.0}, reserve=False)
 
     def complete(self, run_id: str, worker_id: str, generation: int,
-                 status: str, event: dict[str, Any]) -> dict[str, Any]:
-        """Publish completion and release the session in the same durable CAS."""
-        if status not in {"completed", "waiting_user"} or event.get("type") != "complete":
+                 status: str, event: dict[str, Any], error=None) -> dict[str, Any]:
+        """Publish the final state and its actual outcome in the same durable CAS."""
+        if status not in {"completed", "waiting_user", "failed"} or event.get("type") != "complete":
             raise ValueError("invalid_control_completion")
         frozen = json.loads(_json(event, MAX_STATE_EVENT_BYTES))
+        frozen_error = json.loads(_json(error, 2048))
         def finish(record):
             if record["cancelRequested"]:
                 return {**record, "status": "cancelled", "error": "control_cancelled", "leaseExpiresAt": 0.0}
@@ -256,7 +257,7 @@ class ControlRunStore:
             seq = record["lastSeq"] + 1
             saved = {**frozen, "controlRunId": run_id, "seq": seq}
             return {**record, "events": [*record["events"], saved], "lastSeq": seq,
-                    "status": status, "error": None, "leaseExpiresAt": 0.0}
+                    "status": status, "error": frozen_error, "leaseExpiresAt": 0.0}
         return self._producer_update(run_id, worker_id, generation, finish)
 
     def suspend(self, run_id: str, worker_id: str, generation: int) -> dict[str, Any]:

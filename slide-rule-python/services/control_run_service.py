@@ -36,10 +36,38 @@ def authorize_control_run(session_id, owner_id):
 
 def public_control_run(record):
     # Model messages, tool arguments and provider handles never enter discovery.
-    return {key: record[key] for key in (
+    public = {key: record[key] for key in (
         "runId", "sessionId", "status", "lastSeq", "cancelRequested",
         "createdAt", "updatedAt", "error"
     )}
+    # Older workers already committed completed after terminal provider errors.
+    # Interpret their durable receipts truthfully on read without rewriting
+    # history or reclaiming/replaying those finished runs.
+    if public["status"] in {"completed", "waiting_user"}:
+        failure = _record_failure(record)
+        if failure is not None:
+            public.update(status="failed", error=failure)
+    return public
+
+
+def _event_failure(event):
+    # 2026-09-13: a real project_create/read turn hit content_filter. The
+    # control generator caught LlmError and yielded its failure speech followed
+    # by a complete STATE snapshot; treating that envelope as success made the
+    # durable run say completed/error=null. Tool errors remain model feedback,
+    # while terminal control failures also govern discovery and reconnects.
+    if event.get("type") in {"control_text", "complete"}:
+        reason = event.get("stopReason")
+        if reason in {"llm_unavailable", "unknown"}:
+            return reason
+    if event.get("type") == "error":
+        return "control_turn_failed"
+    return None
+
+
+def _record_failure(record):
+    return next((failure for event in record["events"]
+                 if (failure := _event_failure(event))), None)
 
 
 class RunCheckpoint:
@@ -223,6 +251,12 @@ class ControlRunService:
         completion = None
         try:
             await asyncio.to_thread(port.guard)
+            # A crash after recording a terminal failure is not permission to
+            # sample the model again, including before its final state event.
+            error = _record_failure(record)
+            if error is not None:
+                status = "failed"
+                return
             if any(event.get("type") == "complete" for event in record["events"]):
                 status = "waiting_user" if any(event.get("type") in {
                     "control_ask_user", "control_plan_approval", "control_clarify"
@@ -231,6 +265,9 @@ class ControlRunService:
             checkpoint = port.checkpoint
             if checkpoint is not None and checkpoint.get("schemaVersion") != 1:
                 raise ControlRunStopped("control_reconciliation_required")
+            if checkpoint and checkpoint.get("phase") == "provider_failed":
+                status, error = "failed", "llm_unavailable"
+                return
             if checkpoint and checkpoint.get("phase") == "dispatching":
                 calls = checkpoint.get("pendingCalls", [])
                 call = calls[0] if calls else {}
@@ -262,7 +299,10 @@ class ControlRunService:
                     else:
                         await asyncio.to_thread(self.store.append_event, run_id,
                             self.worker_id, generation, event)
-                    if event.get("type") in {"control_ask_user", "control_plan_approval", "control_clarify"}:
+                    failure = _event_failure(event)
+                    if failure is not None:
+                        status, error = "failed", error or failure
+                    elif status != "failed" and event.get("type") in {"control_ask_user", "control_plan_approval", "control_clarify"}:
                         status = "waiting_user"
         except ControlRunStopped as exc:
             status = "cancelled" if exc.reason == "control_cancelled" else "interrupted"
@@ -280,9 +320,9 @@ class ControlRunService:
             try:
                 if suspend:
                     await asyncio.to_thread(self.store.suspend, run_id, self.worker_id, generation)
-                elif completion is not None and status in {"completed", "waiting_user"} and not abandoned:
+                elif completion is not None and status in {"completed", "waiting_user", "failed"} and not abandoned:
                     await asyncio.to_thread(self.store.complete, run_id, self.worker_id,
-                        generation, status, completion)
+                        generation, status, completion, error)
                 elif not abandoned:
                     await asyncio.to_thread(self.store.finish, run_id, self.worker_id,
                         generation, status, error)
@@ -311,7 +351,8 @@ class ControlRunService:
                     cursor = event["seq"]
                     yield event
             if record["status"] in TERMINAL:
+                public = public_control_run(record)
                 yield {"type": "control_run_settled", "controlRunId": run_id,
-                       "status": record["status"], "error": record["error"], "lastSeq": record["lastSeq"]}
+                       "status": public["status"], "error": public["error"], "lastSeq": record["lastSeq"]}
                 return
             await asyncio.sleep(min(self.poll_seconds, 0.25))

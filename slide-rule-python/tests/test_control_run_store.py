@@ -99,6 +99,23 @@ def test_terminal_releases_session_but_cannot_be_reclaimed(store, status):
     assert store.get(run["runId"], "alice")["status"] == status
 
 
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_failed_final_state_is_atomic_and_preserves_cancel_precedence(store, cancelled):
+    run = claim(store)
+    if cancelled:
+        store.cancel(run["runId"], "alice")
+    event = {"type": "complete", "state": {"runtimeKind": "project", "projectId": "saved-project"}}
+    final = store.complete(run["runId"], "worker-1", 1, "failed", event, "llm_unavailable")
+    assert final == store.get(run["runId"], "alice")
+    assert final["status"] == ("cancelled" if cancelled else "failed")
+    assert final["error"] == ("control_cancelled" if cancelled else "llm_unavailable")
+    assert final["lastSeq"] == (0 if cancelled else 1)
+    if not cancelled:
+        assert final["events"][0]["state"] == event["state"]
+    assert store.claim(run["runId"], "other-worker", 30) is None
+    assert submit(store, key="next-request")["runId"] != run["runId"]
+
+
 def test_claim_conflict_and_generation_fence_every_producer_write(store, monkeypatch):
     clock = [1000.0]
     monkeypatch.setattr(module.time, "time", lambda: clock[0])

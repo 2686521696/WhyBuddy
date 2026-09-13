@@ -99,6 +99,151 @@ def test_http_is_durable_idempotent_and_owner_filtered(env, monkeypatch):
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("after_project_create", [False, True])
+def test_provider_rejection_is_failed_through_http_and_replay(env, monkeypatch, after_project_create):
+    """The real loop converts LlmError to speech + state, not a successful run.
+
+    Local 2026-09-13: project_create/list/read succeeded before content_filter;
+    discovery incorrectly claimed completed/error=null. Keep the saved project,
+    final state and exact provider stop visible without resampling on reconnect.
+    """
+    from sliderule_llm.client import LlmError
+    calls = []
+
+    async def model(messages, **kwargs):
+        calls.append(messages)
+        if after_project_create and len(calls) == 1:
+            return llm_tool("project_create", {"approvalRef": env.ref}, "")
+        raise LlmError("control LLM response terminated by content_filter",
+                       finish_reason="content_filter", usage={"total_tokens": 8924})
+
+    monkeypatch.setattr(control, "_invoke_control_llm", model)
+
+    async def run():
+        service = env.service()
+        monkeypatch.setattr(app.state, "control_run_service", service, raising=False)
+        await service.start()
+        try:
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
+                response = await client.post("/api/sliderule/control-turn-stream",
+                    headers={**KEY, "x-control-request-id": "provider-rejection"},
+                    json=six_fields(env.state.sessionId, "Continue"))
+                assert response.status_code == 200
+                run_id = response.headers["x-control-run-id"]
+                events = parse_sse(response.text)
+                stopped = next(e for e in events if e.get("stopReason") == "llm_unavailable")
+                assert stopped["providerFinishReason"] == "content_filter"
+                final = env.store.get(run_id, env.owner)
+                assert final["status"] == "failed" and final["error"] == "llm_unavailable"
+                state = next(e["state"] for e in final["events"] if e["type"] == "complete")
+                if after_project_create:
+                    project = env.project.get_project_for_session(env.state.sessionId, owner_id=env.owner)
+                    assert state["runtimeKind"] == "project" and state["projectId"] == project.projectId
+                    assert env.project.read_files(project.projectId, owner_id=env.owner)["src/main.tsx"]
+                discovery = (await client.get("/api/sliderule/control-runs/latest",
+                    params={"sessionId": env.state.sessionId}, headers=KEY)).json()["run"]
+                assert (discovery["status"], discovery["error"]) == ("failed", "llm_unavailable")
+                replay = await client.get(f"/api/sliderule/control-runs/{run_id}/stream", headers=KEY)
+                replay_events = parse_sse(replay.text)
+                assert next(e for e in replay_events if e.get("stopReason") == "llm_unavailable") == stopped
+                assert replay_events[-1]["type"] == "control_run_settled"
+                assert replay_events[-1]["status"] == "failed"
+                assert replay_events[-1]["error"] == "llm_unavailable"
+                assert len(calls) == (2 if after_project_create else 1)
+                assert service.store.list_runnable() == []
+        finally:
+            await service.shutdown()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("boundary", ["failure-event", "legacy-complete", "provider-checkpoint"])
+def test_restart_after_recorded_failure_does_not_resample(env, monkeypatch, boundary):
+    calls = []
+
+    async def model(*args, **kwargs):
+        calls.append(1)
+        return llm_text("Must not retry a provider rejection")
+
+    monkeypatch.setattr(control, "_invoke_control_llm", model)
+
+    async def run():
+        service = env.service()
+        record = await service.submit(six_fields(env.state.sessionId, "Continue"), env.owner, "failed-restart")
+        claimed = env.store.claim(record["runId"], "crashed-worker", 30)
+        env.store.save_checkpoint(record["runId"], "crashed-worker", claimed["generation"],
+            {"schemaVersion": 1, "phase": "provider_failed" if boundary == "provider-checkpoint" else "model"})
+        if boundary != "provider-checkpoint":
+            env.store.append_event(record["runId"], "crashed-worker", claimed["generation"],
+                {"type": "control_text", "text": "Provider rejected the response", "stopReason": "llm_unavailable"})
+        if boundary == "legacy-complete":
+            env.store.append_event(record["runId"], "crashed-worker", claimed["generation"],
+                {"type": "complete", "state": env.state.model_dump(mode="json")})
+        env.store.suspend(record["runId"], "crashed-worker", claimed["generation"])
+        await service.start()
+        try:
+            final = await settled(service, record["runId"])
+            assert (final["status"], final["error"]) == ("failed", "llm_unavailable")
+            assert calls == []
+        finally:
+            await service.shutdown()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("stored_status", ["completed", "waiting_user", "cancelled"])
+def test_legacy_finished_provider_failure_is_truthful_on_read_without_rewriting(env, monkeypatch, stored_status):
+    """The already-finished local incident must become visible after refresh."""
+    async def run():
+        service = env.service()
+        monkeypatch.setattr(app.state, "control_run_service", service, raising=False)
+        record = await service.submit(six_fields(env.state.sessionId, "Continue"), env.owner, "legacy-failure")
+        claimed = env.store.claim(record["runId"], "old-worker", 30)
+        env.store.append_event(record["runId"], "old-worker", claimed["generation"],
+            {"type": "control_text", "text": "Provider rejected the response", "stopReason": "llm_unavailable"})
+        before = env.store.finish(record["runId"], "old-worker", claimed["generation"], stored_status)
+        expected_status = "cancelled" if stored_status == "cancelled" else "failed"
+        expected_error = None if stored_status == "cancelled" else "llm_unavailable"
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
+            discovery = (await client.get("/api/sliderule/control-runs/latest",
+                params={"sessionId": env.state.sessionId}, headers=KEY)).json()["run"]
+            assert (discovery["status"], discovery["error"]) == (expected_status, expected_error)
+            replay = await client.get(f"/api/sliderule/control-runs/{record['runId']}/stream?afterSeq=1", headers=KEY)
+            settled_event = parse_sse(replay.text)[-1]
+            assert (settled_event["status"], settled_event["error"]) == (expected_status, expected_error)
+            assert env.store.get(record["runId"], env.owner) == before
+            assert service._scanner is None and not service._tasks
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("event,status,error", [
+    ({"type": "control_text", "stopReason": "unknown", "text": "Control failed"}, "failed", "unknown"),
+    ({"type": "error", "message": "arbitrary raw error must not enter discovery"}, "failed", "control_turn_failed"),
+    ({"type": "control_tool_result", "ok": False, "error": "invalid_arguments"}, "completed", None),
+    ({"type": "control_text", "stopReason": "tool_rounds", "text": "Reached the budget"}, "completed", None),
+])
+def test_only_terminal_control_errors_change_the_durable_outcome(env, monkeypatch, event, status, error):
+    async def producer(*args, **kwargs):
+        yield event
+        yield {"type": "complete", "state": env.state.model_dump(mode="json")}
+
+    monkeypatch.setattr(control_run_service_module, "run_control_turn", producer)
+
+    async def run():
+        service = env.service()
+        await service.start()
+        try:
+            record = await service.submit(six_fields(env.state.sessionId, "Continue"), env.owner, "terminal-kind")
+            final = await settled(service, record["runId"])
+            assert (final["status"], final["error"]) == (status, error)
+            assert final["events"][-1]["type"] == "complete"
+        finally:
+            await service.shutdown()
+
+    asyncio.run(run())
+
+
 def test_cleanup_worker_does_not_claim_queued_control_runs_when_rollout_disabled(env, monkeypatch):
     """Rollback keeps cleanup alive, but must not execute queued model work."""
     calls = {"list": 0, "claim": 0}
