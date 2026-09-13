@@ -218,6 +218,7 @@ class ControlRunService:
                 if not rollout_readiness().get("configured", False):
                     await asyncio.wait_for(self._wake.wait(), timeout=self.poll_seconds)
                     continue
+                await self._requeue_settled_goals()
                 available = self.max_workers - len(self._tasks)
                 if available > 0:
                     candidates = await asyncio.to_thread(self.store.list_runnable)
@@ -238,6 +239,36 @@ class ControlRunService:
                 await asyncio.wait_for(self._wake.wait(), timeout=self.poll_seconds)
             except asyncio.TimeoutError:
                 pass
+
+    async def _requeue_settled_goals(self):
+        """Wake the same durable control run after its project operation settles.
+
+        This is a scheduler hook around the existing producer. It only changes
+        a waiting run back to ``queued``; the normal ``_produce`` path claims
+        it and resumes its saved checkpoint. No second model loop is created.
+        """
+        for record in await asyncio.to_thread(self.store.list_waiting_operation):
+            ids = (record.get("goal") or {}).get("awaitingOperationIds") or []
+            if not ids:
+                continue
+            settled = True
+            for operation_id in ids:
+                try:
+                    operation = await asyncio.to_thread(
+                        self.project_store.get_operation, operation_id,
+                        owner_id=record["ownerId"])
+                except Exception:
+                    settled = False
+                    break
+                if operation.status not in {"completed", "failed", "cancelled"}:
+                    settled = False
+                    break
+            if settled:
+                try:
+                    await asyncio.to_thread(self.store.requeue_waiting, record["runId"], operation_ids=ids)
+                except ControlRunConflict:
+                    continue
+                self._wake.set()
 
     async def _heartbeat(self, port, finished):
         while not finished.is_set():
@@ -347,11 +378,32 @@ class ControlRunService:
                 if suspend:
                     await asyncio.to_thread(self.store.suspend, run_id, self.worker_id, generation)
                 elif completion is not None and status in {"completed", "waiting_user", "failed"} and not abandoned:
-                    goal_status = "failed" if status == "failed" else ("waiting_user" if status == "waiting_user" else "completed")
-                    await asyncio.to_thread(self.store.update_goal, run_id, self.worker_id,
-                        generation, status=goal_status)
-                    await asyncio.to_thread(self.store.complete, run_id, self.worker_id,
-                        generation, status, completion, error)
+                    latest_record = self.store.get(run_id, record["ownerId"])
+                    goal = latest_record.get("goal") or {}
+                    waiting_ids = (goal or {}).get("awaitingOperationIds") or []
+                    pending = False
+                    if status == "completed" and waiting_ids:
+                        for operation_id in waiting_ids:
+                            try:
+                                operation = await asyncio.to_thread(
+                                    self.project_store.get_operation,
+                                    operation_id, owner_id=record["ownerId"])
+                            except Exception:
+                                pending = True
+                                break
+                            if operation.status not in {"completed", "failed", "cancelled"}:
+                                pending = True
+                                break
+                    if pending:
+                        await asyncio.to_thread(self.store.wait_for_operations, run_id,
+                            self.worker_id, generation, waiting_ids)
+                        suspend = True
+                    else:
+                        goal_status = "failed" if status == "failed" else ("waiting_user" if status == "waiting_user" else "completed")
+                        await asyncio.to_thread(self.store.update_goal, run_id, self.worker_id,
+                            generation, status=goal_status)
+                        await asyncio.to_thread(self.store.complete, run_id, self.worker_id,
+                            generation, status, completion, error)
                 elif not abandoned:
                     goal_status = ("cancelled" if status == "cancelled" else
                                    "waiting_user" if status == "waiting_user" else "failed")

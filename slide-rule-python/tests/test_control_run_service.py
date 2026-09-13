@@ -78,6 +78,7 @@ def test_http_is_durable_idempotent_and_owner_filtered(env, monkeypatch):
                 run_id = first.headers["x-control-run-id"]
                 assert run_id == second.headers["x-control-run-id"]
                 assert len(model_calls) == 1
+
                 events = parse_sse(first.text)
                 assert any(e["type"] == "complete" for e in events)
                 assert [e["seq"] for e in events if "seq" in e] == [1, 2]
@@ -97,6 +98,27 @@ def test_http_is_durable_idempotent_and_owner_filtered(env, monkeypatch):
         finally:
             await service.shutdown()
     asyncio.run(run())
+
+
+def test_scheduler_requeues_only_after_all_project_operations_settle(env, monkeypatch):
+    service = env.service()
+    calls = []
+    record = {"runId": "ctr-wait", "ownerId": env.owner,
+              "status": "waiting_operation",
+              "goal": {"awaitingOperationIds": ["op-1", "op-2"]}}
+    service.store.list_waiting_operation = lambda: [record]
+    class FakeProject:
+        def get_operation(self, operation_id, *, owner_id):
+            calls.append(operation_id)
+            return SimpleNamespace(status="completed" if operation_id == "op-1" else "running")
+    service.project_store = FakeProject()
+    requeued = []
+    service.store.requeue_waiting = lambda run_id, *, operation_ids: requeued.append((run_id, operation_ids))
+    asyncio.run(service._requeue_settled_goals())
+    assert calls == ["op-1", "op-2"] and requeued == []
+    service.project_store.get_operation = lambda operation_id, *, owner_id: SimpleNamespace(status="completed")
+    asyncio.run(service._requeue_settled_goals())
+    assert requeued == [("ctr-wait", ["op-1", "op-2"])]
 
 
 @pytest.mark.parametrize("after_project_create", [False, True])

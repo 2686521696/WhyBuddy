@@ -81,6 +81,16 @@ def test_goal_update_is_fenced_and_survives_reopen(store):
     assert store.goal(run["runId"], "alice")["awaitingOperationIds"] == ["op-1"]
 
 
+def test_waiting_goal_can_be_requeued_once_without_losing_operation_ids(store):
+    run = claim(store)
+    store.update_goal(run["runId"], "worker-1", 1, status="waiting_operation", operation_ids=["op-1"])
+    waiting = store.wait_for_operations(run["runId"], "worker-1", 1, ["op-1"])
+    assert waiting["status"] == "waiting_operation" and waiting["leaseExpiresAt"] == 0
+    queued = store.requeue_waiting(run["runId"], operation_ids=["op-1"])
+    assert queued["status"] == "queued" and queued["goal"]["status"] == "active"
+    assert store.requeue_waiting(run["runId"], operation_ids=["op-1"])["status"] == "queued"
+
+
 def test_other_owner_cannot_read_submit_latest_or_cancel(store):
     run = submit(store)
     for call in (lambda: store.get(run["runId"], "bob"), lambda: store.latest("session-1", "bob"),

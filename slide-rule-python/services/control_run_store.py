@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 TERMINAL = frozenset({"completed", "waiting_user", "failed", "cancelled", "interrupted"})
+WAITING = frozenset({"waiting_operation"})
 MAX_RUN_BYTES = 8 * 1024 * 1024
 MAX_PAYLOAD_BYTES = 128 * 1024
 MAX_EVENT_BYTES = 64 * 1024
@@ -185,6 +186,40 @@ class ControlRunStore:
             raise ValueError("invalid_control_scan_limit")
         rows = self._q("select r.payload from wb_control_run r join wb_control_session s on s.active_run_id=r.id and s.session_id=r.session_id where r.status in ('queued','running') and r.lease_expires_at<=$1 order by r.id limit $2", [time.time(), limit])
         return [json.loads(row["payload"]) for row in rows]
+
+    def list_waiting_operation(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        """List durable goals paused on an async project operation."""
+        rows = self._q("select r.payload from wb_control_run r join wb_control_session s on s.active_run_id=r.id and s.session_id=r.session_id where r.status='waiting_operation' order by r.id limit $1", [limit])
+        return [json.loads(row["payload"]) for row in rows]
+
+    def requeue_waiting(self, run_id: str, *, operation_ids: list[str]) -> dict[str, Any]:
+        """Atomically make a waiting goal claimable once its operation settled."""
+        ids = [item for item in operation_ids if isinstance(item, str) and item.strip()][:32]
+        for _ in range(20):
+            row = self._row(run_id)
+            record = json.loads(row["payload"])
+            goal = record.get("goal") if isinstance(record.get("goal"), dict) else {}
+            if record["status"] != "waiting_operation":
+                return record
+            if goal.get("awaitingOperationIds") != ids:
+                raise ControlRunConflict("control_goal_operation_conflict")
+            updated = {**record, "status": "queued", "leaseOwner": None,
+                "leaseExpiresAt": 0.0, "goal": {**goal, "status": "active", "updatedAt": _now()}}
+            saved = self._q("update wb_control_run set status='queued',rev=rev+1,lease_owner=null,lease_expires_at=0,payload=$1 where id=$2 and rev=$3 and status='waiting_operation' returning id", [_json(updated, self.max_run_bytes), run_id, row["rev"]])
+            if saved:
+                return updated
+        raise ControlRunConflict("control_goal_requeue_conflict")
+
+    def wait_for_operations(self, run_id: str, worker_id: str, generation: int,
+                            operation_ids: list[str]) -> dict[str, Any]:
+        ids = [item for item in operation_ids if isinstance(item, str) and item.strip()][:32]
+        if not ids:
+            raise ValueError("control_goal_operations_required")
+        def transform(record):
+            goal = record.get("goal") if isinstance(record.get("goal"), dict) else {}
+            return {**record, "status": "waiting_operation", "leaseExpiresAt": 0.0,
+                "goal": {**goal, "status": "waiting_operation", "awaitingOperationIds": ids, "updatedAt": _now()}}
+        return self._producer_update(run_id, worker_id, generation, transform, reserve=False)
 
     def claim(self, run_id: str, worker_id: str, lease_seconds: float) -> dict[str, Any] | None:
         _required(worker_id, "control_worker_required")
