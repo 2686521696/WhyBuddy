@@ -1017,3 +1017,32 @@ rollout 关闭时，资源所有者仍可读取工程、历史、验证、交付
 
 本批按功能提交：`a9019949`（持久失败状态）、`ff5708ba`（版本/数据加载）、`b9b3605f`（1920 浏览器烟测与源码版本同步）、`f678063a`（工程即时入口与失败恢复）、`36874828`（模式与检查范围）、`f4ec907e`（真实预览不可用原因）。
 
+### 26.5 2026-09-13 第二轮真实账号与故障恢复实测
+
+本轮起点 `c0acd3c5eae9ad07e65a9ebbbc62b60430fd3d40`。使用用户提供的账号，通过真实登录表单进入 `http://localhost:3000/agent-loop/sliderule`，Chrome 视口固定为 **1920×1080**。未替换业务成功响应，未伪造计划批准、工程引用或验收记录；本轮未修改 `.env`，没有创建新的云沙盒。
+
+| 实机发现 | 修复后的行为 | 证据 |
+|---|---|---|
+| 单个源码文件读取失败后仍显示“正在读取文件…” | 文件有独立加载/失败状态和“重试读取文件”；实际重试恢复 `database.mjs`，其他文件草稿保留 | `faults-before.json`、`faults-after.json`，04/12 截图 |
+| 交付读取失败后仍显示“正在读取交付状态” | 结束加载并提示更新交付状态；刷新期间不沿用旧的可交付结果 | 05/14 截图；真实刷新恢复服务端缺证据的不可交付状态 |
+| 所有者保存源码时，未批准计划的 403 被解释成无权访问 | 同时识别实际 `message` 信封与 Python `detail` 的已知错误代码，准确提示先批准计划，草稿保留；401/404 和未知错误保持访问边界 | 真实 `project_plan_approval_required` 回执；07/13 截图 |
+| 缺预览配置却要先启动工程才能看到原因 | 未启动、排队、启动中均提前返回 `project_preview_not_configured`；运行状态不变，已就绪实例仍先核验授权 | 重启后真实 `/preview`：200、`operationId=null`、`available=false`、缺配置原因 |
+| 模型首版计划猜测缺浏览器，并提出用 API/构建替代验收 | 原控制循环的 system prompt 加入本地能力事实，分别说明私有预览和独立浏览器是否配置；继续要求缺项 blocked、独立浏览器验收不可替代 | 实际 HTTP 模型消息装配、工具回填和持久恢复判据；readiness 断线变异 |
+
+运行中的工程标题此前会暂时取最近的用户气泡，把“批准计划并执行”或修改意见当成应用标题。现在未收到权威 goal 快照时取原始需求，批准载荷保持原样。控制回合失败也不再套用 `/drive-full fallback` 标签或“已降级显示”文案，而是明确显示本轮中断；实际没有调用旧入口。真实页面刷新和只读后续回合验证标题保持原任务名称。
+
+能力检查复用 `ProjectRuntimeSupervisor` 的预览配置检查和实际 browser provider 的 `availability_error()`，只查本地配置，不连接云端、不创建实例、不向模型暴露凭证。控制工具通过注入的 runtime owner 取能力，没有增加 `control → runtime` 静态越层依赖，也没有放宽架构基线。配置 ready 仍不等于网络连通或验收通过。
+
+真实“导出源码”按钮下载了有效 ZIP，13 个条目包含 11 个源码文件、锁文件、`RUNNING.md` 与导出 manifest，不含 `.env`。错误注入每次只中断一个读取请求，刻意注入的网络失败和预期 403 不计作正常浏览器操作异常。测试脚本曾遇到 CDP 下载临时目录和草稿按钮星号的定位问题，修正 harness 后重新走完整操作，未当作产品故障。
+
+新建真实会话 `sr-20260913121853-CCRD9TSQGR` 完成“需求 → 模型问卷 → 刷新恢复 → 选择固定任务模板 → 首版计划 → 修改计划 → 刷新恢复修订版 → 重启服务 → 实际批准按钮”。模型随后调用 `project_create`，创建 `prj-d73b40855dd1509a96d25d1e33c3d210`，源码版本 `prv-0fc42ca4f1ed4996a3e608cb33b4942b`，11 个文件回读成功；持久工程事件在回合结束前已使页面切到工程工作台。
+
+该回合随后调用 `project_status`，上游模型又返回 `content_filter`。真实持久状态为 `failed / llm_unavailable`，原需求、源码和批准记录保留；交付只报告 `project_verification_required`，没有误撤销批准。没有调用 `project_start`，也没有启动运行或浏览器验收，不能记作自主业务应用交付通过。模型回执与有序事件摘要见 `artifacts/local-1920-audit-round2/model-flow.json`。
+
+最终重启后，另发一轮只读状态请求 `ctr-d5b630197f7553b0ac0a60d4343cd8c2`。模型仅调用 `project_status`，准确报告私有 HTTPS/WSS 预览网关缺项并正常完成；源码版本保持原值，没有启动、执行或验证工具调用。这证明失败之后还能继续查询工程，不会把前一轮失败改记为成功，也不等于缺少的业务验收已经完成。证据为 `model-read-only.json`、`18-title-stable-during-control.png`、`19-read-only-status-completed.png`。
+
+源码/交付/预览/错误合同的前端联合回归 **100 passed**；标题/计划/问卷会话回归 **62 passed**，完整页面失败文案定向用例 **1 passed**（同文件其他 25 个用例本次未执行）。Python 预览 HTTP **109 passed**，模型能力与真实控制装配联合回归 **56 passed**；后一个集合包含恢复路径，重复定向复跑不累加。脚本 **97 passed**。最终 TypeScript 与准确起点 `c0acd3c5` 的隔离源码副本逐条比较，均有 **18 条存量错误，新增 0**；最终报告 `control-title-typecheck-comparison.json`，不写成全仓类型检查通过。
+
+Python/TS/全仓/grok 架构重新生成并全部过闸；方案时序图与发生变化的 Python 架构文档 4 块 Mermaid 经真实 Chrome 渲染。源码/交付、错误信封、预览优先级、模型能力接线、标题和失败文案的隔离变异全部被对应断言捕获，恢复后相关测试通过。最终六面板采集期间有 29 个成功响应，没有页面脚本/控制台/HTTP 错误；刷新取消了 SSE 和日志请求，切文件取消了前一个文件请求，这 3 个 `ERR_ABORTED` 原样保留在报告中。完整诊断日志另含故障注入、预期拒绝和两次开发服务重启，不能称为全日志零错误。
+
+本轮完整报告和截图在 `artifacts/local-1920-audit-round2/`：`report.json`、`final-panels.json`、`panel-preview.png`、`panel-source.png`、`panel-history.png`、`panel-data.png`、`panel-delivery.png`、`panel-browser-check.png`。六张图均为真实工程会话的 1920×1080 视口；源码、版本、备份和交付均等真实请求结束后截图。当前本机仍缺可供 E2B 使用的独立 HTTPS/WSS 预览网关，浏览器面板显示尚未检查，数据面板显示尚无备份；这些状态不能算任务应用 CRUD、刷新持久化或角色权限已在本轮复验。
