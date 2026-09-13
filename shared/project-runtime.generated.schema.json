@@ -1719,6 +1719,13 @@
           "title": "Suiteversion",
           "type": "string"
         },
+        "acceptanceRequirements": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Acceptancerequirements",
+          "type": "array"
+        },
         "runnerVersion": {
           "default": "whybuddy-browser-v1:pw1.61.1",
           "title": "Runnerversion",

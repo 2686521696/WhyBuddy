@@ -674,7 +674,17 @@ function HtmlSlideRuleStudio({
       ) {
         applyRuntime(selectRecord(htmlRuntime, ev.entityId, ev.rowId));
       }
-      if (isRecordActionKind(ev.kind)) setRecordAction(ev);
+      // ⚠ BindingActionEvent.kind 是 `ActionKind | ImplicitActionKind`，而
+      //   抽屉只认 ActionKind。上面这个判据运行期已经保证了，但整包直接塞
+      //   过去类型上说不通（TS2345）。按抽屉的契约显式取三个字段：多出来的
+      //   delta / chip 是购物车和筛选用的，抽屉本来就不看。
+      if (isRecordActionKind(ev.kind)) {
+        setRecordAction({
+          kind: ev.kind,
+          entityId: ev.entityId,
+          rowId: ev.rowId,
+        });
+      }
     },
     [fiveSystemModel, htmlRuntime, role, applyRuntime]
   );

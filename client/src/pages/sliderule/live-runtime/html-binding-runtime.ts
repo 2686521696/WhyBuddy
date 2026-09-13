@@ -176,6 +176,8 @@ export const ACTION_KINDS = [...RECORD_ACTION_KINDS, ...WORKFLOW_ACTION_KINDS, .
 
 export type ActionKind = (typeof ACTION_KINDS)[number];
 export type WorkflowActionKind = (typeof WORKFLOW_ACTION_KINDS)[number];
+/** 购物车四种。自由树的 actionRef 不负责它们，见 block-registry 的 eventByKind。 */
+export type CartActionKind = (typeof CART_ACTION_KINDS)[number];
 
 /** 使用点判断"是不是转移词"统一走这里——别再手写三个 `===` 串。 */
 export function isWorkflowActionKind(v: string): v is WorkflowActionKind {

@@ -37,7 +37,14 @@ export function ArchitectureStage({
   /** 标题行最右：工作台图标簇（隐藏页面/交付物…） */
   trailing?: React.ReactNode;
   className?: string;
-  qualityNotices?: Array<{ kind?: string; text: string }>;
+  /**
+   * ⚠ 2026-09-13：这里原来写 `kind?`，而同一个东西在
+   * `ActiveSystemScreen` / `AppBundleScreen` 都是必填、生产侧
+   * （Python `spec_first_pipeline` 产的 `{"kind":…, "text":…}`、
+   * marathon driver 的 `onQualityNotice`）也一直必填——三处声明对不上，
+   * 往下传就报 TS2322。对齐到真实契约：kind 必有。
+   */
+  qualityNotices?: Array<{ kind: string; text: string }>;
   /** 本跳公开工具。没跑 closure/bind 时不许沿用上一版 6/6。 */
   roundTools?: string[] | null;
 }) {

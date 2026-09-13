@@ -307,8 +307,10 @@ export const PRO_BASE_COMPONENTS: BaseComponentDef[] = [
     group: "数据录入",
     platform: "pc",
     source: "pro-components",
+    // autoFocusFirstInput 在 pro-components 2.8.10 已不存在（整个包搜不到），
+    // 传了也是空转。见 block-registry.tsx 里 StepsForm 包装处的说明。
     render: () => (
-      <StepsForm autoFocusFirstInput={false}>
+      <StepsForm>
         <StepsForm.StepForm name="s1" title="第一步">
           <ProFormText name="a" label="名称" placeholder="请输入" />
         </StepsForm.StepForm>

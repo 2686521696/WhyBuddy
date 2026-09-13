@@ -208,9 +208,12 @@ export function narrationTurnIdFor(
   fallbackTurnId: string
 ): string {
   const user = trimUser(userText);
+  // ⚠ 这里原本写了类型谓词 `n is { turnId: string; user?: string }`，而
+  // turnNarrations 的元素类型还带 steps/durationMs——谓词类型必须是参数类型的
+  // 子类型，少了字段就不是，于是 TS2677。元素类型本来就保证 turnId: string，
+  // 谓词一点没多给，去掉即可；运行期那两条防脏数据的检查照旧。
   const all = (state?.turnNarrations || []).filter(
-    (n): n is { turnId: string; user?: string } =>
-      !!n && typeof n.turnId === "string"
+    n => !!n && typeof n.turnId === "string"
   );
   if (user) {
     const hits = all.filter(n => usersMatch(n.user, user));

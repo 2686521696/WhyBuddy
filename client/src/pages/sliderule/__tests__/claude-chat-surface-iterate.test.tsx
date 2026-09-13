@@ -214,6 +214,9 @@ describe("产品对话列的六步钟（不打开轨迹也能看见）", () => {
           skillCount: 6,
           versionPinsChecked: false,
           topBlockers: [],
+          // 跟同一份夹具里的 tierCounts.hard_blocker 对齐：声明了一条硬拦截，
+          // blockerCount 就得是 1，不能一边说有一边说没有。
+          blockerCount: 1,
           tierCounts: { hard_blocker: 1, warning: 0, info: 0 },
         }}
       />

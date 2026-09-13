@@ -232,6 +232,41 @@ export interface V5SessionState {
     steps: unknown[];
     durationMs?: number;
   }>;
+  /**
+   * E29 模型版本史（前进/回退按钮的数据源）与当前生效版本指针。
+   *
+   * ⚠ 2026-09-13：跟 `specFirstPages` 同一笔欠账——Python 侧
+   * `v5_state.py` 一直有 `modelVersions` / `currentModelVersionId`，TS 这边
+   * 一直没声明。`previousModelVersionId(preparedState)` 于是报 TS2559
+   * 「两个类型没有任何共同属性」，而那正是回退按钮真在走的调用点。
+   */
+  modelVersions?: Array<{
+    id?: string;
+    turnId?: string;
+    instruction?: string;
+    createdAt?: string;
+    model?: unknown;
+    [key: string]: unknown;
+  }>;
+  currentModelVersionId?: string | null;
+  /**
+   * spec-first 工厂的展示投影（规格 / 逐页产物 / 质检提示）。
+   *
+   * ⚠ 2026-09-13：Python 侧 `v5_state.py:specFirstPages` 一直有，**TS 这边
+   * 一直没有** —— 正是 §4 点名的「Python 判定 / TypeScript 运行时」成对物只
+   * 写了一半。后果不是报错而是各处就地 `as any` / 内联重声明（本文件搜
+   * specFirstPages 能看到三四份形状不一的局部声明），而 `pnpm run check` 里
+   * 留着三条 TS2339——CI 第一步就挂在这儿，后面的架构闸整个被 skip。
+   *
+   * Python 那边是 `Optional[Dict[str, Any]]`，所以这里保留索引签名是诚实的：
+   * 已知字段写出来，其余不假装知道。
+   */
+  specFirstPages?: {
+    spec?: unknown;
+    pages?: unknown[] | Record<string, unknown>;
+    qualityNotices?: Array<{ kind: string; text: string }>;
+    [key: string]: unknown;
+  };
   lastTurnId?: string;
   /**
    * 工厂待办（2026-09-04 阶段 1）。模型从首轮链上摘掉的公开工具。

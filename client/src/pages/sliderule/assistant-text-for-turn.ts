@@ -81,7 +81,22 @@ export function assistantTextForTurn(
     if (paint) return paint;
     return "";
   }
-  if (!turnDidFactoryWork(turn) && !publishClosure) {
+  // 什么都没产出的轮次说什么。
+  //
+  // ⚠ 2026-09-13：这里原来无条件 `return ""`，把函数末尾那句诚实兜底
+  //   （「本轮已完成，但还没有生成可展示的回答。」）整个挡死了。后果是
+  //   **刷新回来只看见自己那句话，下面一片空白**——
+  //   `SlideRule.unified-surface` 的「reload restores」判据为此长期红着，
+  //   而 CI 第一步挂在 typecheck 上，没人看见它。
+  //
+  //   放行的口子开得很窄，只给「**已经结束的目标轮**」：
+  //     · 直播中还没产出        → 留白，别抢在结果前面说话
+  //     · 问候 / 追问（没 goal 或 user!==goal）→ 留白，它本来就没有交付物
+  //       （2026-09-08 真机：「你好」被收成「本轮没有画出新的页面」）
+  //     · 已结束的目标轮还空着  → 那不是克制，是把东西弄丢了
+  const finishedGoalTurn =
+    turn.status !== "streaming" && Boolean(user && goal && user === goal);
+  if (!turnDidFactoryWork(turn) && !publishClosure && !finishedGoalTurn) {
     return "";
   }
 

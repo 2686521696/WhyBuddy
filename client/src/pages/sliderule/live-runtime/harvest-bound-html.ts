@@ -112,7 +112,10 @@ function mergeIntoNamed(
   if (Object.keys(values).length === 0) return;
   const fid = nameFieldId(entity);
   const name = fid ? String(values[fid] ?? "").trim() : "";
-  if (name) {
+  // ⚠ `name` 非空**蕴含** fid 存在（上一行就是这么算的），但 TS 看不出这层
+  //   蕴含，于是 `r.values?.[fid]` 报 TS2538「undefined 不能当索引」。把前提
+  //   写明即可——不是放松判断，两个条件的真值组合与原来完全一致。
+  if (fid && name) {
     const prev = bucket.find(
       r => String(r.values?.[fid] ?? "").trim() === name
     );

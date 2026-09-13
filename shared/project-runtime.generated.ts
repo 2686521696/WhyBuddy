@@ -313,6 +313,7 @@ export type VerificationRecord = {
   "specRevision": string | null;
   "planRef": string;
   "suiteVersion": string;
+  "acceptanceRequirements"?: Array<string>;
   "runnerVersion"?: string;
   "status"?: "running" | "passed" | "failed" | "blocked" | "cancelled";
   "assertions"?: Array<VerificationAssertion>;

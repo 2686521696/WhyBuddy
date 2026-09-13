@@ -20,7 +20,9 @@ export type SpecFirstPagesBlob = {
   /** 页面 id 别名表（旧 id → 新 id），第 4.5 步改键时记的。
    *  见 canonicalPageId 的头注：菜单孔烧的是改名前的 id。 */
   pageIdAliases?: Record<string, string> | null;
-  qualityNotices?: Array<{ kind?: string; text: string }>;
+  /** ⚠ kind 必有：生产侧（Python spec_first_pipeline / marathon driver）一直必填，
+   *  四处声明里只有这里和 ArchitectureStage 写成可选，对不上就往下传报 TS2322。 */
+  qualityNotices?: Array<{ kind: string; text: string }>;
   capabilityPlan?: { tools?: string[] } | null;
 } | null;
 
