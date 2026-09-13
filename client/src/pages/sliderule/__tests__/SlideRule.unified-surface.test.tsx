@@ -116,6 +116,12 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain("HISTORICAL HTML");
     expect(html).not.toContain("srcdoc=");
     expect(html).not.toContain('data-testid="sliderule-stage-view-canvas"');
+    // A project restored without chat history still mounts the chat empty state.
+    // That child used to add a second, hard-coded HTML mode badge.
+    expect(html).toContain("当前：工程工作台模式");
+    expect(html).not.toContain("HTML 推演兼容模式");
+    expect(html.match(/data-testid="sliderule-runtime-mode"/g)?.length).toBe(1);
+    expect(html).toContain("继续开发这个工程");
   });
   it("renders ONE surface: no 聊天/推演 pills, no surface-mode toggle, no reasoning canvas", () => {
     const html = renderPage();

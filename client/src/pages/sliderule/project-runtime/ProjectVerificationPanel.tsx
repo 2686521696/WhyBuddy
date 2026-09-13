@@ -180,7 +180,16 @@ export function ProjectVerificationPanel({
   const view = current ? state.view : null;
   const snapshot = view?.snapshot;
   const record = snapshot?.verification;
-  const tasks = (record?.suiteVersion ?? suiteVersion) === "react-vite-tasks@1";
+  const effectiveSuite = record?.suiteVersion ?? suiteVersion;
+  const tasks = effectiveSuite === "react-vite-tasks@1";
+  const counter = effectiveSuite === "react-vite-counter@1";
+  // A newly created project has no runtime descriptor yet. Unknown capability
+  // must not label a tasks project as the counter template before its first run.
+  const title = tasks
+    ? "任务应用与权限检查"
+    : counter
+      ? "页面与计数交互检查"
+      : "浏览器检查";
   const build = record?.build;
   const stale = Boolean(
     record &&
@@ -289,14 +298,14 @@ export function ProjectVerificationPanel({
   return (
     <section
       data-testid="project-verification-panel"
-      aria-label={tasks ? "任务应用与权限检查" : "页面与计数交互检查"}
+      aria-label={title}
       className="shrink-0 border-b border-stone-200 bg-stone-50 px-4 py-3"
     >
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h3 className="text-xs font-semibold text-stone-700">
-              {tasks ? "任务应用与权限检查" : "页面与计数交互检查"}
+              {title}
             </h3>
             <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700"
               title="由受控 Playwright 浏览器执行真实页面、网络和权限断言">
@@ -353,9 +362,13 @@ export function ProjectVerificationPanel({
             ? record
               ? "重新检查任务应用"
               : "检查任务应用"
-            : record
-              ? "重新检查页面"
-              : "检查页面"}
+            : counter
+              ? record
+                ? "重新检查页面"
+                : "检查页面"
+              : record
+                ? "重新检查应用"
+                : "检查应用"}
         </button>
         <button
           type="button"
@@ -376,7 +389,9 @@ export function ProjectVerificationPanel({
       <p className="mt-1 text-xs leading-5 text-stone-500">
         {tasks
           ? "检查本次固定版本的任务新增、编辑、筛选、刷新持久化和只读权限；结果仅覆盖已执行用例，整体交付仍由服务端另行判定。"
-          : "仅检查固定模板的页面与计数交互；业务功能、数据持久化和角色权限仍需另行验收。"}
+          : counter
+            ? "仅检查固定模板的页面与计数交互；业务功能、数据持久化和角色权限仍需另行验收。"
+            : "检查范围尚未确定；工程就绪后将根据支持的检查用例验证当前版本，结果以实际执行记录为准。"}
       </p>
       {snapshot?.deliveryEligible && !stale ? (
         <p className="mt-1 text-xs leading-5 text-stone-700">

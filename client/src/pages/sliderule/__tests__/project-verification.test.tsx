@@ -587,16 +587,29 @@ describe("project browser verification consumer", () => {
     await poll();
     expect(status()).toBe("暂时无法读取检查状态");
   });
-  it("uses the authoritative task capability before a first verification exists", async () => {
-    preview.descriptor.capabilities = ["verification:react-vite-tasks@1"];
+  it.each([
+    { suite: null, title: "浏览器检查", action: "检查应用", scope: "检查范围尚未确定" },
+    { suite: "react-vite-counter@1", title: "页面与计数交互检查", action: "检查页面", scope: "仅检查固定模板的页面与计数交互" },
+    { suite: "react-vite-tasks@1", title: "任务应用与权限检查", action: "检查任务应用", scope: "任务新增、编辑、筛选、刷新持久化和只读权限" },
+  ])("shows only the authoritative $suite capability before first verification", async ({ suite, title, action, scope }) => {
+    if (suite) {
+      preview.descriptor.capabilities = ["verification:" + suite];
+    } else {
+      // Captured local creation path: a project exists before runtime.start,
+      // so there is no descriptor from which to infer its verification suite.
+      preview = { operationId: null, available: false, reason: "not_started", descriptor: null };
+    }
     await act(async () =>
       root.render(
         <SandboxPreviewSurface projectId="project-one" revisionMode="current" />
       )
     );
-    expect(container.textContent).toContain("任务应用与权限检查");
-    expect(container.textContent).not.toContain("页面与计数交互检查");
-    expect(start().textContent).toContain("检查任务应用");
+    expect(container.querySelector('[data-testid="project-verification-panel"]')?.getAttribute("aria-label")).toBe(title);
+    expect(container.textContent).toContain(scope);
+    expect(container.textContent).not.toContain(suite === "react-vite-counter@1" ? "任务应用与权限检查" : "页面与计数交互检查");
+    if (!suite) expect(container.textContent).not.toContain("仅检查固定模板");
+    expect(start().textContent).toContain(action);
+    expect(start().disabled).toBe(suite === null);
     expect(status()).toBe("尚未检查");
     expect(posts()).toHaveLength(0);
   });

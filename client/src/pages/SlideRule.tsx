@@ -351,12 +351,14 @@ function HomeEmptyState({
   composerSlot,
   clarifySlot,
   projectCapabilities,
+  runtimeKind,
 }: {
   isRunning: boolean;
   /** 空态时唯一的 ComposerDock 挪进首页流（开聊后贴在会话流底部，二选一渲染） */
   composerSlot?: React.ReactNode;
   /** 澄清卡叠在输入框上方（absolute），不能当 flex 孩子——会把输入顶走 */
   clarifySlot?: React.ReactNode;
+  runtimeKind?: "html-prototype" | "project";
   /** 服务端工程能力状态；空态只展示状态，不伪造启动入口。 */
   projectCapabilities?: {
     mode?: string;
@@ -374,19 +376,21 @@ function HomeEmptyState({
       data-testid="sliderule-empty-state"
     >
       <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-7 px-1 py-6">
-        <div className="flex flex-wrap items-center justify-center gap-2 text-[12px]" data-testid="sliderule-runtime-mode">
+        {runtimeKind !== "project" && <div className="flex flex-wrap items-center justify-center gap-2 text-[12px]" data-testid="sliderule-runtime-mode">
           <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-stone-600">
-            当前：HTML 推演兼容模式
+            {projectCapabilities?.configured && projectCapabilities.canExecute
+              ? "工程模式可用 · 确认计划后创建工程"
+              : "当前：HTML 推演兼容模式"}
           </span>
           {projectCapabilities?.mode === "disabled" || projectCapabilities?.blockers?.includes("project_rollout_disabled") ? (
             <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-800" data-testid="sliderule-project-rollout-status">
               工程模式未启用 · project_rollout_disabled
             </span>
           ) : null}
-        </div>
+        </div>}
         <div className="flex w-full flex-wrap items-center justify-center gap-3">
           <h1 className="text-[26px] font-semibold tracking-tight text-[#171717] sm:text-[28px]">
-            想推演成什么应用？
+            {runtimeKind === "project" ? "继续开发这个工程" : "想推演成什么应用？"}
           </h1>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -743,6 +747,7 @@ export function ClaudeChatSurface({
   hud = null,
   factoryDecision = null,
   projectCapabilities = null,
+  runtimeKind,
 }: {
   uiTurns: UiTurn[];
   isRunning: boolean;
@@ -760,6 +765,7 @@ export function ClaudeChatSurface({
   /** 最近一次工厂选材。没有账本就不传——HUD 不许伪造。 */
   factoryDecision?: FactoryDecisionView | null;
   projectCapabilities?: { mode?: string; blockers?: string[]; configured?: boolean; canExecute?: boolean } | null;
+  runtimeKind?: "html-prototype" | "project";
   /** 会话话题（恢复的轮次没有 turn.user，总结用它兜底） */
   goalText?: string;
   onChallenge: (id: string) => void;
@@ -868,6 +874,7 @@ export function ClaudeChatSurface({
                   <HomeEmptyState
                     isRunning={isRunning}
                     projectCapabilities={projectCapabilities}
+                    runtimeKind={runtimeKind}
                     composerSlot={isEmptyThread ? composerSlot : undefined}
                     clarifySlot={isEmptyThread ? clarifySlot : undefined}
                   />
@@ -1072,6 +1079,7 @@ function SlideRuleUnified({
   projectCapabilities = null,
   onCreateProject,
   canCreateProject = false,
+  projectCreateBlockedReason,
   projectCreateState,
   activeSkillId = null,
   skillContents = {},
@@ -1145,6 +1153,7 @@ function SlideRuleUnified({
   projectCapabilities?: { mode?: string; blockers?: string[]; configured?: boolean; canExecute?: boolean } | null;
   onCreateProject?: () => void;
   canCreateProject?: boolean;
+  projectCreateBlockedReason?: string | null;
   projectCreateState?: { status: "idle" | "creating" | "error"; error: string | null };
   /** SSE-driven active skill highlighting for the right rail */
   activeSkillId?: import("@/lib/sliderule-marathon-driver").SkillId | null;
@@ -1309,12 +1318,17 @@ function SlideRuleUnified({
                 <button
                   type="button"
                   data-testid="sliderule-create-project"
-                  disabled={projectCreateState?.status === "creating"}
+                  disabled={isRunning || projectCreateState?.status === "creating"}
                   onClick={onCreateProject}
                   className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-60"
                 >
                   {projectCreateState?.status === "creating" ? "正在创建工程…" : "进入工程工作台"}
                 </button>
+              ) : null}
+              {sessionState.runtimeKind !== "project" && projectCapabilities?.canExecute && projectCreateBlockedReason ? (
+                <span data-testid="sliderule-project-create-blocked" className="text-stone-600">
+                  {projectCreateBlockedReason}
+                </span>
               ) : null}
               {projectCreateState?.status === "error" && projectCreateState.error ? (
                 <span role="alert" data-testid="sliderule-project-create-error" className="text-rose-700">
@@ -1347,6 +1361,7 @@ function SlideRuleUnified({
                     hud={rehearsalFacts.hud}
                     factoryDecision={rehearsalFacts.factoryDecision}
                     projectCapabilities={projectCapabilities}
+                    runtimeKind={sessionState.runtimeKind}
                     onChallenge={id =>
                       dispatchChallengePrefill({ artifactId: id })
                     }
@@ -1919,6 +1934,7 @@ function SlideRuleSessionBody({
     submitPlanApproval,
     createProjectFromApprovedPlan,
     canCreateProject,
+    projectCreateBlockedReason,
     projectCreateState,
     pendingAsk,
     submitQuestionnaire,
@@ -2010,6 +2026,7 @@ function SlideRuleSessionBody({
   useEffect(() => {
     // 工程能力属于登录后资源状态；匿名空态不发受保护请求，避免预期 401
     // 污染浏览器日志。失败时保持 fail-closed，不显示可启动按钮。
+    setProjectCapabilities(null);
     if (!authReady || !authUser) return;
     let cancelled = false;
     void fetchJsonSafe<{
@@ -2452,6 +2469,7 @@ function SlideRuleSessionBody({
     projectCapabilities,
     onCreateProject: () => void createProjectFromApprovedPlan(),
     canCreateProject,
+    projectCreateBlockedReason,
     projectCreateState,
     activeSkillId,
     skillContents,

@@ -48,6 +48,16 @@ const surface = (turns: UiTurn[], isRunning = false) =>
   );
 
 describe("迭代环一期：编辑重跑 / 重新推演", () => {
+  it("an available project entry explains the plan step before a project exists", () => {
+    const html = renderToStaticMarkup(<ClaudeChatSurface
+      uiTurns={[]} isRunning={false} liveAction={null} latestTurn={null}
+      onChallenge={() => {}}
+      projectCapabilities={{ mode: "internal", configured: true, canExecute: true }}
+    />);
+    expect(html).toContain("工程模式可用 · 确认计划后创建工程");
+    expect(html).not.toContain("HTML 推演兼容模式");
+    expect(html).not.toContain("当前：工程工作台模式");
+  });
   it("完成轮带用户文本 → 两个按钮都渲染，且与质疑本轮同排", () => {
     const html = surface([completeTurn()]);
     expect(html).toContain('data-testid="sliderule-rerun-turn"');
