@@ -222,6 +222,28 @@ function projectCreationBlockedReason(state: V5SessionState): string | null {
     ? PROJECT_CONVERSION_REQUIRED : null;
 }
 
+// Project tools are emitted by the control SSE stream. Keep the UI wording
+// close to the actual tool name so the right hand workbench reflects real
+// activity rather than a fabricated percentage.
+const PROJECT_TOOL_LABELS: Record<string, string> = {
+  project_create: "正在创建工程",
+  project_list: "正在读取工程列表",
+  project_read: "正在读取工程文件",
+  project_search: "正在搜索工程源码",
+  project_patch: "正在写入工程源码",
+  project_start: "正在启动工程",
+  project_exec: "正在执行工程命令",
+  project_status: "正在读取工程运行状态",
+  project_logs: "正在读取工程日志",
+  project_cancel: "正在停止工程",
+  project_verify: "正在执行浏览器检查",
+};
+
+export function projectToolLabel(tool: unknown): string | null {
+  const key = String(tool || "").trim();
+  return PROJECT_TOOL_LABELS[key] ?? (key.startsWith("project_") ? `正在执行 ${key}` : null);
+}
+
 /** Build the server-owned approval reference without changing the session projection. */
 async function approvedPlanReference(state: V5SessionState): Promise<string | null> {
   const rows = (state.controlTranscript || []).filter(row => row && typeof row === "object") as Array<Record<string, unknown>>;
@@ -1678,12 +1700,29 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               },
               onControlToolStart: (tool: string) => {
                 ensureFactoryClock(tool);
+                const projectLabel = projectToolLabel(tool);
+                if (projectLabel) {
+                  setLiveAction({ label: projectLabel, external: true });
+                  appendStreamStep(projectLabel, { external: true });
+                  return;
+                }
                 if (isFactoryWriteTool(tool)) {
                   const label = isFactoryHop(tool)
                     ? FACTORY_HOP_LABELS[tool]
                     : tool;
                   setLiveAction({ label, external: false });
                 }
+              },
+              onControlToolResult: (event: Record<string, unknown>) => {
+                const tool = projectToolLabel(event.tool);
+                if (!tool) return;
+                const ok = event.ok !== false;
+                const detail = typeof event.error === "string"
+                  ? event.error
+                  : typeof event.message === "string" ? event.message : "";
+                const label = ok ? `${tool.replace(/^正在/, "已")}` : `${tool.replace(/^正在/, "执行失败：")}`;
+                setLiveAction({ label: detail ? `${label}（${detail}）` : label, external: true });
+                appendStreamStep(detail ? `${label}：${detail}` : label, { external: true });
               },
               onControlProjectState: (project: {
                 sessionId: string; runtimeKind: "project"; projectId: string; projectRevision: string;

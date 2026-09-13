@@ -315,6 +315,7 @@ export function SlideRuleStudio(props: SlideRuleStudioProps) {
 
 function ProjectStudio({ projectId, projectRevision, appTitle, chatSlot,
   stageVisible = true, sessionEmpty = false, className, chromeSlot, resetSlot,
+  isRunning = false, liveActionLabel = null,
 }: SlideRuleStudioProps) {
   const layout = useStudioLayout();
   const showStage = isStagePageShown(stageVisible, !!layout?.stagePageHidden);
@@ -329,6 +330,17 @@ function ProjectStudio({ projectId, projectRevision, appTitle, chatSlot,
           {(resetSlot || chromeSlot) && <div className="flex items-center gap-2">
             {resetSlot}<div className="ml-auto">{chromeSlot}</div>
           </div>}
+          {isRunning && liveActionLabel ? (
+            <div
+              className="flex shrink-0 items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[12px] text-blue-800"
+              data-testid="project-live-action"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" aria-hidden />
+              <span>{liveActionLabel}</span>
+            </div>
+          ) : null}
           <SandboxPreviewSurface projectId={projectId} projectRevision={projectRevision}
             revisionMode="current" appTitle={appTitle} />
         </div>

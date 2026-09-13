@@ -15,7 +15,23 @@
  * 首轮 explicit 本来就是 undefined。
  */
 import { describe, it, expect } from "vitest";
-import { inferForcedTool } from "../useSlideRuleSession";
+import { inferForcedTool, projectToolLabel } from "../useSlideRuleSession";
+
+describe("project tool activity labels", () => {
+  it("maps every project SSE tool to a readable live action", () => {
+    expect(projectToolLabel("project_create")).toBe("正在创建工程");
+    expect(projectToolLabel("project_patch")).toBe("正在写入工程源码");
+    expect(projectToolLabel("project_start")).toBe("正在启动工程");
+    expect(projectToolLabel("project_exec")).toBe("正在执行工程命令");
+    expect(projectToolLabel("project_verify")).toBe("正在执行浏览器检查");
+  });
+
+  it("does not turn unrelated or malformed events into activity", () => {
+    expect(projectToolLabel("control_text")).toBeNull();
+    expect(projectToolLabel("")) .toBeNull();
+    expect(projectToolLabel(null)).toBeNull();
+  });
+});
 
 /** 真机那条话题，原样。 */
 const TOPIC = "做一个社区旧物置换站，把物品、置换记录、押金的数据结构理清楚";

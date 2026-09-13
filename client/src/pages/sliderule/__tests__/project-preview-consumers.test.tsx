@@ -239,6 +239,7 @@ describe("both project artifact consumers", () => {
             projectRevision={stored.projectRevision}
             sessionId="session-one"
             isRunning={running}
+            liveActionLabel={running ? "正在启动工程" : null}
             specFirstPages={stored.specFirstPages}
           />
         )
@@ -248,6 +249,12 @@ describe("both project artifact consumers", () => {
         container.querySelector('[data-testid="sandbox-preview-surface"]')
       ).not.toBeNull();
       expect(container.querySelector("iframe")).toBeNull();
+      if (running) {
+        expect(container.querySelector('[data-testid="project-live-action"]')?.textContent)
+          .toContain("正在启动工程");
+      } else {
+        expect(container.querySelector('[data-testid="project-live-action"]')).toBeNull();
+      }
       expect(container.textContent).not.toContain("HISTORICAL HTML");
       expectObservationOnly();
       expect(localStorage.length).toBe(0);
