@@ -173,16 +173,23 @@ export function SandboxPreviewSurface({
         : descriptor
           ? STATUS[descriptor.status]
           : "工程尚未启动";
+  const blockedReason = previewReasonText(preview.snapshot?.reason);
   const description =
     preview.error ||
     (mismatch
       ? "当前运行的是另一份源码版本，请先同步或启动当前工程。"
-      : preview.snapshot?.available === false
-        ? "当前环境尚未提供可用的私有预览，工程运行状态会继续保留。"
-        : descriptor?.status === "ready"
-          ? "点击打开工程预览。预览就绪不代表业务验收已通过。"
-          : "这里显示工程的实际运行状态，应用启动就绪后可以打开预览。");
-  const blockedReason = previewReasonText(preview.snapshot?.reason);
+      : preview.loading
+        ? "正在读取工程运行状态…"
+        : blockedReason ||
+          (!descriptor
+            ? PREVIEW_REASON.project_runtime_not_started
+            : descriptor.status !== "ready"
+              ? `${STATUS[descriptor.status]}。这里会继续更新实际运行状态。`
+              : preview.snapshot?.available === false
+                ? "应用已就绪，但私有预览暂不可用，请更新状态查看具体原因。"
+                : preview.opening
+                  ? "正在申请本次预览访问授权…"
+                  : "应用已就绪。点击「打开预览」获取本次访问授权；预览就绪不代表业务验收已通过。"));
 
   return (
     <section
@@ -197,8 +204,10 @@ export function SandboxPreviewSurface({
             <h2 className="truncate text-sm font-semibold text-stone-800">
               {appTitle}
             </h2>
-            <span className="shrink-0 rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700"
-              title="工程在 E2B 沙盒中运行，预览通过受控网关访问">
+            <span
+              className="shrink-0 rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700"
+              title="工程在 E2B 沙盒中运行，预览通过受控网关访问"
+            >
               E2B 沙盒
             </span>
           </div>
@@ -256,7 +265,11 @@ export function SandboxPreviewSurface({
         </div>
       ) : null}
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stone-200 px-4 py-2">
-        <div role="tablist" aria-label="工程工作台 · E2B 沙盒预览" className="flex gap-1">
+        <div
+          role="tablist"
+          aria-label="工程工作台 · E2B 沙盒预览"
+          className="flex gap-1"
+        >
           {(
             [
               ["preview", "预览"],

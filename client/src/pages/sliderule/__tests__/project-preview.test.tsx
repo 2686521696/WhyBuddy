@@ -125,6 +125,7 @@ describe("authorized project preview", () => {
   it("reload and polling read status only; one click obtains one isolated iframe ticket", async () => {
     await render();
     expect(container.textContent).toContain("预览就绪");
+    expect(container.textContent).toContain("获取本次访问授权");
     expect(frame()).toBeNull();
     expect(posts()).toHaveLength(0);
     expect(fetcher).toHaveBeenCalledWith(
@@ -162,6 +163,9 @@ describe("authorized project preview", () => {
   });
 
   it.each([
+    ["provisioning", "正在准备运行环境"],
+    ["installing", "正在安装依赖"],
+    ["starting", "正在启动应用"],
     ["failed", "应用运行失败"],
     ["expired", "运行环境已过期"],
     ["stopped", "应用已停止"],
@@ -170,8 +174,11 @@ describe("authorized project preview", () => {
     "%s remains a real unavailable state without requesting a ticket",
     async (status, label) => {
       snapshot.descriptor!.status = status;
+      snapshot.available = false;
       await render();
       expect(container.textContent).toContain(label);
+      expect(container.textContent).not.toContain("当前环境尚未提供");
+      expect(container.textContent).not.toContain("尚未配置");
       expect(openButton().disabled).toBe(true);
       expect(frame()).toBeNull();
       await click();
@@ -181,11 +188,38 @@ describe("authorized project preview", () => {
 
   it("missing private preview infrastructure never claims the ready runtime is openable", async () => {
     snapshot.available = false;
-    snapshot.reason = "preview_gateway_not_configured";
+    snapshot.reason = "project_preview_gateway_not_configured";
     await render();
-    expect(container.textContent).toContain("尚未提供可用的私有预览");
+    expect(container.textContent).toContain("工程预览网关尚未配置");
     expect(openButton().disabled).toBe(true);
     expect(frame()).toBeNull();
+  });
+
+  it("explains an unstarted runtime without inventing missing infrastructure", async () => {
+    snapshot = {
+      operationId: null,
+      descriptor: null,
+      available: false,
+      reason: "project_runtime_not_started",
+    };
+    await render();
+    expect(container.textContent).toContain("工程还没有启动运行实例");
+    expect(container.textContent).not.toContain("尚未配置");
+    expect(container.textContent).not.toContain("当前环境尚未提供");
+    expect(openButton().disabled).toBe(true);
+    expect(posts()).toHaveLength(0);
+  });
+
+  it("uses the server's pending-runtime reason while the application is starting", async () => {
+    snapshot.descriptor!.status = "starting";
+    snapshot.available = false;
+    snapshot.reason = "project_runtime_not_ready";
+    await render();
+    expect(container.textContent).toContain("等待启动完成");
+    expect(container.textContent).not.toContain("尚未配置");
+    expect(container.textContent).not.toContain("当前环境尚未提供");
+    expect(openButton().disabled).toBe(true);
+    expect(posts()).toHaveLength(0);
   });
 
   it("shows the rollout gate and its actionable reason when project mode is disabled", async () => {
