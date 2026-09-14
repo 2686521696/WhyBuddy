@@ -927,7 +927,8 @@ def list_control_tools(state: V5SessionState) -> List[Dict[str, Any]]:
 
 
 async def _invoke_control_llm(
-    messages: List[Dict[str, Any]], *, tools: List[Dict[str, Any]]
+    messages: List[Dict[str, Any]], *, tools: List[Dict[str, Any]],
+    timeout_ms: Optional[int] = None,
 ) -> Any:
     """问一次控制面模型。**真协程直接 await，同步实现才下线程池。**
 
@@ -949,10 +950,17 @@ async def _invoke_control_llm(
     ⚠ 分派看的是**函数**不是返回值：同步阻塞实现一旦被调用就已经把循环占住了，
       拿到返回值再判断已经晚了。
     """
+    # ⚠ `timeout_ms` 只在**显式给了**的时候才透传。夹具（42 个文件共用的
+    #   ControlHarness）的替身签名是 `(messages, **kw)`，多塞一个 None 进去
+    #   会让它们记下一个本来不存在的参数；而真机上不给就退回
+    #   `control_client` 的 45 秒默认——那正是这次要治的病。
+    kwargs: Dict[str, Any] = {"tools": tools}
+    if timeout_ms is not None:
+        kwargs["timeout_ms"] = int(timeout_ms)
     fn = call_control_llm
     if inspect.iscoroutinefunction(fn):
-        return await fn(messages, tools=tools)
-    return await run_in_threadpool(lambda: fn(messages, tools=tools))
+        return await fn(messages, **kwargs)
+    return await run_in_threadpool(lambda: fn(messages, **kwargs))
 
 
 # 客户端认得的**终局事件**。少了它们，`consumeControlStreamResponse` 的
@@ -3850,7 +3858,12 @@ async def _control_llm_loop(
                     finish_reason="tool_calls", model="checkpoint", latency_ms=0)
             else:
                 await checkpoint("sampling", _round)
-                result = await owned_model_sample(_invoke_control_llm(messages, tools=offered))
+                # 单发读超时跟着 budget profile 走：对话档 45 秒、工程档 120 秒。
+                # 读完整份源码再想怎么改，45 秒不够（见 ControlBudget
+                # .max_request_seconds 头注里那一趟真机）。
+                result = await owned_model_sample(_invoke_control_llm(
+                    messages, tools=offered,
+                    timeout_ms=loop_budget.request_timeout_ms()))
                 await run_in_threadpool(guard_control_run)
             cheap_tokens += _usage_tokens(getattr(result, "usage", None))
             capped = await _maybe_over_cap()
