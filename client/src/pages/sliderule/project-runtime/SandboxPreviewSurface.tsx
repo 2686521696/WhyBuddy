@@ -226,10 +226,14 @@ export function SandboxPreviewSurface({
             >
               E2B 沙盒
             </span>
+            {/* ⚠ 状态原来自己占第二行。它就四五个字（「预览就绪」「运行环境已过期」），
+                为它单起一行等于花 18px 排一句话（2026-09-14 量的：外壳吃掉面板
+                38.6% 的竖直空间，这是其中一笔）。挪到同一行的标题后面，
+                标题 truncate、状态 shrink-0，窄屏先压标题、不压状态。 */}
+            <p role="status" className="shrink-0 text-xs text-stone-500">
+              {status}
+            </p>
           </div>
-          <p role="status" className="text-xs text-stone-500">
-            {status}
-          </p>
         </div>
         <button
           type="button"
@@ -270,7 +274,16 @@ export function SandboxPreviewSurface({
           {stopError}
         </p>
       ) : null}
-      {!preview.loading && !preview.error && blockedReason ? (
+      {/* ⚠ 2026-09-14 量出来的：这条告警占 65px，而它说的话跟 400px 下面那块
+          占位文字**一字不差**——`description` 在有 blockedReason 时就等于它
+          （见上面 description 的定义）。一屏里 9% 的竖直空间花在说第二遍。
+
+          所以只在占位区**说不到**的时候画：预览已经打开时 iframe 顶掉了占位区，
+          那时这条是唯一的载体，必须画。判据两头都钉着。 */}
+      {!preview.loading &&
+      !preview.error &&
+      blockedReason &&
+      !(!preview.entryUrl && description === blockedReason) ? (
         <div
           role="status"
           data-testid="project-preview-blocked-reason"
@@ -317,6 +330,56 @@ export function SandboxPreviewSurface({
             </option>
           ))}
         </select>
+        {/* 地址：对照 Manus——视图切换和地址在**同一条**上，不是各占一行。
+            2026-09-14 量出来的：面板 708px 里外壳吃掉 273px（38.6%），
+            地址行自己一行再加一条边框，就是那 38.6% 里的一块。合并省掉整整一行。
+
+            ⚠ 只在预览这个视图下画：切到源码/版本还挂着一条地址栏，
+              指的是另一个面板里的东西，比不画更糟。
+
+            ⚠ 只画**真的能用**的那几个。两轮各删掉一个：
+              · Manus 的「编辑 / 发布」——我们的发布通道没接通，画一个点不动的
+                按钮比不画更糟（§7 不许伪造）。
+              · 自己加的「首页」按钮——写的是 `frame.src = preview.entryUrl`，
+                而 entryUrl 里那张 ticket 是**一次性**的（useProjectPreview
+                每次 open() 换一张），重新导航过去等于拿一张用过的票。
+                本机预览网关是通配符域名 + TLS，验不了，所以不猜——删掉。
+            ⚠ 「刷新」必须是 open()，不是 refresh()：refresh() 只重拉状态快照
+              （头部那颗「更新状态」就是它），重新载入页面要的是**换一张票**。
+              第一版接错成 refresh()，点下去页面纹丝不动。 */}
+        {tab === "preview" && preview.entryUrl ? (
+          <div
+            className="flex min-w-0 flex-1 items-center gap-1.5"
+            data-testid="project-preview-addressbar"
+          >
+            <span
+              className="min-w-0 flex-1 truncate rounded border border-stone-200 bg-white px-2 py-1 font-mono text-[11px] text-stone-500"
+              title={preview.entryUrl}
+              data-testid="project-preview-url"
+            >
+              {previewPath(preview.entryUrl)}
+            </span>
+            <a
+              href={preview.entryUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              title="在新标签页打开"
+              className="flex h-6 w-6 items-center justify-center rounded text-stone-500 hover:bg-stone-200"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+            <button
+              type="button"
+              title="重新载入页面"
+              data-testid="project-preview-reload"
+              disabled={!preview.canOpen}
+              onClick={() => void preview.open()}
+              className="flex h-6 w-6 items-center justify-center rounded text-stone-500 hover:bg-stone-200 disabled:opacity-40"
+            >
+              <RotateCw className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : null}
         <button
           type="button"
           disabled={!preview.entryUrl || bridgeStatus === "waiting"}
@@ -397,53 +460,6 @@ export function SandboxPreviewSurface({
           tab === "preview" ? "flex min-h-0 flex-1 flex-col" : "hidden"
         }
       >
-        {/* 地址行：对照 Manus 那张预览截图——它上面有一条像浏览器的行，
-            一眼知道「这是一个真的在跑的站」。
-
-            ⚠ 只画**真的能用**的那几个。两轮各删掉一个（2026-09-14）：
-              · Manus 的「编辑 / 发布」——我们的发布通道没接通，画一个点不动的
-                按钮比不画更糟（§7 不许伪造）。
-              · 自己加的「首页」按钮——写的是 `frame.src = preview.entryUrl`，
-                而 entryUrl 里那张 ticket 是**一次性**的（useProjectPreview
-                每次 open() 换一张），重新导航过去等于拿一张用过的票。
-                本机预览网关是通配符域名 + TLS，验不了，所以不猜——删掉。
-            ⚠ 「刷新」必须是 open()，不是 refresh()：refresh() 只重拉状态快照
-              （头部那颗「更新状态」就是它），重新载入页面要的是**换一张票**，
-              也就是头部那颗在有 entryUrl 时显示为「刷新预览」的按钮。
-              第一版接错成 refresh()，点下去页面纹丝不动。 */}
-        {preview.entryUrl ? (
-          <div
-            className="flex shrink-0 items-center gap-1.5 border-b border-stone-200 bg-stone-50 px-2 py-1.5"
-            data-testid="project-preview-addressbar"
-          >
-            <span
-              className="min-w-0 flex-1 truncate rounded border border-stone-200 bg-white px-2 py-1 font-mono text-[11px] text-stone-500"
-              title={preview.entryUrl}
-              data-testid="project-preview-url"
-            >
-              {previewPath(preview.entryUrl)}
-            </span>
-            <a
-              href={preview.entryUrl}
-              target="_blank"
-              rel="noreferrer noopener"
-              title="在新标签页打开"
-              className="flex h-6 w-6 items-center justify-center rounded text-stone-500 hover:bg-stone-200"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-            </a>
-            <button
-              type="button"
-              title="重新载入页面"
-              data-testid="project-preview-reload"
-              disabled={!preview.canOpen}
-              onClick={() => void preview.open()}
-              className="flex h-6 w-6 items-center justify-center rounded text-stone-500 hover:bg-stone-200 disabled:opacity-40"
-            >
-              <RotateCw className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ) : null}
         {preview.entryUrl ? (
           <iframe
             ref={frame}

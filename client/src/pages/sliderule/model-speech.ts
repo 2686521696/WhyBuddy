@@ -75,9 +75,66 @@ export function dedupeAdjacentSpeech(items: ModelSpeech[]): ModelSpeech[] {
   return out;
 }
 
-/** 正文要渲染的那批（过滤 + 相邻去重），一步到位。 */
+/**
+ * 活儿清单的状态记号。
+ *
+ * ⚠ **这是 §4 那种成对物**：真正定义它的是 Python 侧
+ *   `services/plan_todo.py` 的 `_TAG`（"清单渲染唯一处"）。这里是消费侧的
+ *   镜像，两边对不上就会出现"改了一半、只有一半生效"——加了一档状态而这里
+ *   不认，那一档的清单就不再被识别成清单，于是又整份重印。
+ *   `model-speech-todo-matches-python.test.ts` 两头钉着。
+ */
+export const TODO_STATUS_MARKERS = "○◐●✕";
+
+/**
+ * 这段话是不是「整份活儿清单」。
+ *
+ * 判据：非空行**全部**以状态记号开头。只有一行也算——模型确实会只重印
+ * 剩下的那一条。夹了散文的段落不算（那是它在解释，不是在重印）。
+ */
+export function isChecklistSnapshot(text: unknown): boolean {
+  const lines = String(text ?? "")
+    .split("\n")
+    .map(line => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return false;
+  return lines.every(line =>
+    TODO_STATUS_MARKERS.includes(line[0]) && line.length > 1
+  );
+}
+
+/**
+ * 整份清单一轮只留**最后**那一份。
+ *
+ * ## 为什么（2026-09-14，真机量出来的）
+ *
+ * 工程档一轮里，`model-speech` 437px 中有**两块 143px 是同一份清单**
+ * （只差 ● / ◐ 两个记号），286px = 这块的 65%、整轮 799px 的 36%。
+ * 模型每调一次 `todo_write` 就在叙述里照抄一遍——因为提示词每轮都把
+ * 渲染好的清单喂给它（`rehearsal_control:2985`）。轮数越多印得越多。
+ *
+ * 清单是**状态**，不是事件：把状态按事件流一份份铺开，就像每改一行就把
+ * 整个文件重打一遍。留最后一份 = 留当前状态。
+ *
+ * ⚠ 不是删掉：整份清单仍然看得见（最后那一份），左栏 chip 和「后续建议」
+ *   读的也还是同一份 `controlTodo`。§3 要的那条「X 真的还在」有着落。
+ * ⚠ 也不是通用去重：`dedupeAdjacentSpeech` 只合逐字相同的，这两份**不相同**
+ *   （状态记号变了），所以它咬不住——这条判的是语义形状，不是字节。
+ */
+export function keepLatestChecklist(items: ModelSpeech[]): ModelSpeech[] {
+  let last = -1;
+  items.forEach((item, index) => {
+    if (isChecklistSnapshot(item.text)) last = index;
+  });
+  if (last < 0) return items;
+  return items.filter(
+    (item, index) => index === last || !isChecklistSnapshot(item.text)
+  );
+}
+
+/** 正文要渲染的那批（过滤 + 相邻去重 + 清单只留最新），一步到位。 */
 export function renderableModelSpeech(
   turn: UiTurn | null | undefined
 ): ModelSpeech[] {
-  return dedupeAdjacentSpeech(modelSpeechFor(turn));
+  return keepLatestChecklist(dedupeAdjacentSpeech(modelSpeechFor(turn)));
 }

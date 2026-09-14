@@ -247,17 +247,43 @@ describe("authorized project preview", () => {
   );
 
   it("shows the rollout gate and its actionable reason when project mode is disabled", async () => {
+    // ⚠ 2026-09-14 判据改了钉法：原来钉的是
+    //   `[data-testid="project-preview-blocked-reason"]` 这个**元素**在。
+    //   真机量出来那条告警条占 65px，而它说的话跟下面占位区一字不差——
+    //   一屏 9% 的竖直空间花在说第二遍，所以预览没打开时不再画它。
+    //   判据要钉的是**意图**「理由看得见、能照着做」，不是它挂在哪个盒子里。
     snapshot.available = false;
     snapshot.reason = "project_rollout_disabled";
     await render();
+    const text = container.textContent ?? "";
+    expect(text).toContain("WHYBUDDY_PROJECT_ROLLOUT=disabled");
+    expect(text).toContain("开启工程 rollout");
+    expect(openButton().disabled).toBe(true);
+    // 反向：同一句话只许出现一次。把去重那一支改回去就红——这条才是这次改动的判据。
+    expect(text.split("WHYBUDDY_PROJECT_ROLLOUT=disabled")).toHaveLength(2);
+  });
+
+  it("占位区说的是别的事时，告警条必须还在（去重不许去到一次都不剩）", async () => {
+    // ⚠ 这条判据第一版写的是「预览打开着 + 有 blockedReason」——那个状态
+    //   **在真机上不存在**：routes/project_preview.py 里 `reason = None if
+    //   available else ...`，available 为真时 reason 必为空；而 available 为假时
+    //   useProjectPreview 的 usable() 会把 ticket 丢掉，entryUrl 也就没了。
+    //   照那个前提写的判据只能证明「我拼的输入满足我的条件」（§一之二）。
+    //
+    //   真正还留给告警条的那一支是 **mismatch**：钉住的版本和跑着的版本不一样时，
+    //   占位区说的是「当前运行的是另一份源码版本」，跟 blockedReason 是两件事，
+    //   这时候把告警条去掉就真丢信息了。
+    snapshot.available = false;
+    snapshot.reason = "project_preview_not_configured";
+    snapshot.descriptor!.revision = "revision-two";
+    await render("project-one", "revision-one", "pinned");
+    const text = container.textContent ?? "";
+    expect(text).toContain("当前运行的是另一份源码版本");
     const blocked = container.querySelector(
       '[data-testid="project-preview-blocked-reason"]'
     );
-    expect(blocked).not.toBeNull();
-    expect(blocked?.textContent).toContain("工程预览当前不可用");
-    expect(blocked?.textContent).toContain("WHYBUDDY_PROJECT_ROLLOUT=disabled");
-    expect(blocked?.textContent).toContain("开启工程 rollout");
-    expect(openButton().disabled).toBe(true);
+    expect(blocked, "占位区说的是别的事，理由必须还有地方说").not.toBeNull();
+    expect(blocked?.textContent).toContain("尚未配置独立预览域名");
   });
 
   it("a missing project reference cannot fall through to another artifact or fetch an undefined project", async () => {
