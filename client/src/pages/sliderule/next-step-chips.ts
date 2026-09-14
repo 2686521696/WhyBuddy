@@ -37,8 +37,13 @@ import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 
 /** 最多给几条。跟 Manus 一样是少而准，不是列一屏。 */
 export const MAX_NEXT_STEP_CHIPS = 3;
-/** 单条最长。太长的 chip 会把输入条挤爆。 */
-const MAX_CHIP_CHARS = 40;
+/** 单条最长。
+ *
+ * ⚠ 2026-09-14 从 40 放宽到 80：一开始是小 pill 塞在输入条上，40 字就得截断成
+ *   「联调 check/build/test，确…」；改成结果卡下面的整行之后不需要截了，
+ *   整行的意义就是把话说完（见 NextStepSuggestions 头注）。
+ *   留一个上限只是防脱缰的超长待办把版面撑坏。 */
+const MAX_CHIP_CHARS = 80;
 
 type TodoItem = { id?: string; status?: string; content?: string };
 

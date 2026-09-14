@@ -14,6 +14,7 @@ import { BRAND_NAME_FULL } from "@shared/brand";
 import { DEFAULT_SESSION_ID } from "@/lib/sliderule-session-id";
 import { quietHint } from "./sliderule/quiet-time";
 import { TurnResultCard } from "./sliderule/TurnResultCard";
+import { NextStepSuggestions } from "./sliderule/NextStepSuggestions";
 import { useAuth } from "@/lib/use-auth";
 import React, {
   useCallback,
@@ -574,6 +575,8 @@ const ImSurfaceContext = React.createContext<{
   quietHint: string | null;
   /** 工程档已落库的源码版本；结果卡靠它判断「这一轮真的产出了东西」。 */
   projectRevision?: string | null;
+  /** 后续建议要读的那一小块（模型自己的待办）。整个 state 不进 context。 */
+  sessionState?: { controlTodo?: Array<{ id?: string; status?: string; content?: string }> } | null;
   isRunning: boolean;
   onChallenge: (id: string) => void;
   /** E26：最新一轮的 id——「补齐缺口」只挂在被闸拦截的最新轮上 */
@@ -587,6 +590,7 @@ const ImSurfaceContext = React.createContext<{
   thinkingText: "",
   quietHint: null,
   projectRevision: null,
+  sessionState: null,
   isRunning: false,
   onChallenge: () => {},
   latestTurnId: null,
@@ -730,6 +734,18 @@ function ImAssistantMessage() {
               );
             }}
           />
+          {/* 后续建议贴着结果，不混进输入条的通用提示（NextStepSuggestions 头注）。
+              只挂在最新一轮：历史轮次的「下一步」早就过期了。 */}
+          {(ctx.latestTurnId ? turn.id === ctx.latestTurnId : turn.id === turns?.at(-1)?.id) ? (
+            <NextStepSuggestions
+              state={ctx.sessionState}
+              onPick={text => {
+                window.dispatchEvent(
+                  new CustomEvent("sliderule:fill-prompt", { detail: { text } })
+                );
+              }}
+            />
+          ) : null}
           <TurnPhaseTimeline turn={turn} publishClosure={publishClosure} />
           {/* 思考流留档：推演中每步 LLM 的完整输出，完成后保留成可折叠
               记录（Claude 式）——想法不消失，要看随时点开 */}
@@ -853,6 +869,7 @@ export function ClaudeChatSurface({
   projectCapabilities = null,
   runtimeKind,
   projectRevision = null,
+  controlTodo = null,
 }: {
   uiTurns: UiTurn[];
   isRunning: boolean;
@@ -873,6 +890,8 @@ export function ClaudeChatSurface({
   runtimeKind?: "html-prototype" | "project";
   /** 工程档已落库的源码版本；结果卡靠它判断有没有真的产出。 */
   projectRevision?: string | null;
+  /** 模型自己的待办；后续建议行读它。 */
+  controlTodo?: Array<{ id?: string; status?: string; content?: string }> | null;
   /** 会话话题（恢复的轮次没有 turn.user，总结用它兜底） */
   goalText?: string;
   onChallenge: (id: string) => void;
@@ -920,6 +939,7 @@ export function ClaudeChatSurface({
       thinkingText,
       quietHint: quietHintText,
       projectRevision,
+      sessionState: controlTodo ? { controlTodo } : null,
       isRunning,
       onChallenge,
       latestTurnId: latestTurn?.id ?? null,
@@ -935,6 +955,7 @@ export function ClaudeChatSurface({
       thinkingText,
       quietHintText,
       projectRevision,
+      controlTodo,
       isRunning,
       onChallenge,
       latestTurn?.id,
@@ -1488,6 +1509,7 @@ function SlideRuleUnified({
                     projectCapabilities={projectCapabilities}
                     runtimeKind={sessionState.runtimeKind}
                     projectRevision={sessionState.projectRevision}
+                    controlTodo={sessionState.controlTodo}
                     onChallenge={id =>
                       dispatchChallengePrefill({ artifactId: id })
                     }

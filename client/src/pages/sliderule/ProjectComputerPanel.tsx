@@ -49,6 +49,23 @@ function StatusMark({ status }: { status: ProjectActionRow["status"] }) {
  * ⚠ 拿不到 operationId（这一步不是远端操作，比如 project_read）就整块不画。
  *   §7 增强类 fail-open：日志是加分项，不许它的缺席让面板本身变难看。
  */
+/**
+ * 一行命令行输出该用什么颜色。**只按行首那几个公认的标记判**，不做语义分析。
+ *
+ * ⚠ 判据是「这一行自己说了什么」，不是猜它的意思：`WARN`/`ERR` 是工具自己
+ *   打的前缀，`✓`/`✗` 是它自己打的符号。靠关键词猜「这行像不像错误」会在
+ *   `found 0 vulnerabilities` 这种话上翻车（含 vulnerabilities 但它是好消息）。
+ */
+function consoleLineClass(line: string): string {
+  const text = line.trimStart();
+  if (/^(ERR|ERROR|FAIL|FATAL)\b/i.test(text) || text.startsWith("✗")) return "text-rose-600";
+  if (/^(WARN|WARNING)\b/i.test(text)) return "text-amber-600";
+  if (text.startsWith("✓") || /^(DONE|SUCCESS)\b/i.test(text)) return "text-emerald-600";
+  // `>` 是包管理器回显的子命令，`$` 是提示符——都是结构行，压一级。
+  if (text.startsWith(">") || text.startsWith("$")) return "text-stone-400";
+  return "";
+}
+
 function SandboxConsole({ operationId }: { operationId?: string }) {
   const log = useSandboxLog(operationId);
   if (!operationId || !log.text) return null;
@@ -63,12 +80,19 @@ function SandboxConsole({ operationId }: { operationId?: string }) {
           </span>
         ) : null}
       </div>
-      {/* 截头保尾，所以看的是尾巴——滚动条默认停在底部才对得上。 */}
+      {/* 截头保尾，所以看的是尾巴——滚动条默认停在底部才对得上。
+          ⚠ 2026-09-14 从纯深色改成浅色：对照 Manus 那张终端截图，它是浅底
+            加**语义色**（WARN 黄、✓ 绿、链接蓝），信息一眼能分层；纯深底
+            白字看着像终端，但一屏日志全是同一个灰度，反而读不出重点。 */}
       <pre
-        className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded bg-stone-900 px-2.5 py-2 font-mono text-[11px] leading-[1.5] text-stone-100"
+        className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded border border-stone-200 bg-stone-50 px-2.5 py-2 font-mono text-[11px] leading-[1.6] text-stone-700"
         data-testid="project-computer-console-text"
       >
-        {log.text}
+        {log.text.split("\n").map((line, i) => (
+          <div key={i} className={consoleLineClass(line)}>
+            {line || "\u00a0"}
+          </div>
+        ))}
       </pre>
     </div>
   );

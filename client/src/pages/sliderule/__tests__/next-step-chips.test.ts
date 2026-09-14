@@ -87,8 +87,11 @@ describe("从模型自己的待办里取下一步", () => {
     }))).toEqual(["有效"]);
   });
 
-  it("太长的截断，重复的去掉——输入条就那么宽", () => {
-    const long = "补".repeat(80);
+  it("重复的去掉；上限只防脱缰，不再为 pill 宽度截断", () => {
+    // ⚠ 2026-09-14 上限从 40 放宽到 80：建议从输入条上的小 pill 改成了
+    //   结果卡下面的**整行**（NextStepSuggestions），整行的意义就是把话说完。
+    //   40 会把真机那条「联调 check/build/test，确保 synchronized」截掉。
+    const long = "补".repeat(300);
     const chips = deriveNextStepChips(state({
       controlTodo: [
         { status: "pending", content: long },
@@ -96,19 +99,20 @@ describe("从模型自己的待办里取下一步", () => {
         { status: "pending", content: "同一条" },
       ],
     }));
-    expect(chips[0].length).toBeLessThanOrEqual(40);
+    expect(chips[0].length).toBeLessThanOrEqual(80);
     expect(chips[0].endsWith("…")).toBe(true);
     expect(chips.filter(c => c === "同一条")).toHaveLength(1);
   });
 });
 
-describe("接进输入条：有真的就不显示通用词", () => {
-  const GENERIC = ["路线对比一下", "澄清权限边界", "分析安全风险", "生成可行性报告"];
-
-  it("正向：有未完成待办时，通用词一个都不出", () => {
+describe("输入条与建议行各管各的", () => {
+  it("反向：下一步**不许**再顶掉输入条的通用提示", () => {
+    // ⚠ 2026-09-14 改：第一版让下一步顶替通用词，对照 Manus 才看明白位置
+    //   不对——建议是关于「刚做出来的这个东西」的，归结果卡下面那几行
+    //   （NextStepSuggestions）；输入条那排是万能提示，两者不该互相顶替。
     const chips = deriveComposerHintChips(state({ controlTodo: REAL_TODO }));
-    expect(chips[0]).toContain("补丁前端");
-    for (const g of GENERIC) expect(chips).not.toContain(g);
+    expect(chips).toContain("路线对比一下");
+    expect(chips.join("|")).not.toContain("补丁前端");
   });
 
   it("反向：没有待办时照旧退回通用词（老行为不许坏）", () => {

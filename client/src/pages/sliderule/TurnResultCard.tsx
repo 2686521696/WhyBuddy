@@ -85,27 +85,29 @@ export function TurnResultCard({
       className="my-2 overflow-hidden rounded-xl border border-stone-200 bg-white"
       data-testid="turn-result-card"
     >
-      <header className="flex items-center gap-2 px-3 py-2.5">
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-600">
-          <Check className="h-3.5 w-3.5" />
+      {/* ⚠ 比例照 Manus 那张卡：图标 32、标题一行、徽章与用时降一级挂在第二行。
+          原来四样挤在同一行，标题一长就把徽章顶掉，读起来像一条日志而不是
+          一件交付物。 */}
+      <header className="flex items-start gap-2.5 px-3.5 pb-2.5 pt-3">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+          <Check className="h-4 w-4" />
         </span>
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-stone-800">
-          {model.title}
-        </span>
-        <span
-          className="shrink-0 rounded bg-stone-100 px-1.5 py-0.5 text-[11px] text-stone-500"
-          data-testid="turn-result-badge"
-        >
-          {model.badge}
-        </span>
-        {model.worked ? (
-          <span
-            className="shrink-0 tabular-nums text-[11px] text-stone-400"
-            data-testid="turn-result-worked"
-          >
-            {model.worked}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[14px] font-medium leading-5 text-stone-900">
+            {model.title}
           </span>
-        ) : null}
+          <span className="mt-0.5 flex items-center gap-2 text-[11px] text-stone-400">
+            <span data-testid="turn-result-badge">{model.badge}</span>
+            {model.worked ? (
+              <>
+                <span aria-hidden>·</span>
+                <span className="tabular-nums" data-testid="turn-result-worked">
+                  {model.worked}
+                </span>
+              </>
+            ) : null}
+          </span>
+        </span>
       </header>
 
       {/* ⚠ 拿不到缩略图就整块不画，不挂占位图（见文件头注）。 */}
@@ -113,12 +115,12 @@ export function TurnResultCard({
         <img
           src={model.thumbnailUrl}
           alt=""
-          className="max-h-52 w-full border-y border-stone-100 object-cover object-top"
+          className="max-h-64 w-full border-y border-stone-100 bg-stone-50 object-cover object-top"
           data-testid="turn-result-thumb"
         />
       ) : null}
 
-      <footer className="flex items-center gap-1 border-t border-stone-100 bg-stone-50/60 px-3 py-2">
+      <footer className="flex flex-wrap items-center gap-1 border-t border-stone-100 bg-stone-50/60 px-3 py-2">
         <span className="mr-1 inline-flex items-center gap-1 text-[12px] text-emerald-600">
           <Check className="h-3.5 w-3.5" /> 任务已完成
         </span>

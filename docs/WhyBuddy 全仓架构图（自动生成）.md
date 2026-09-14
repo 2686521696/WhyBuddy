@@ -15,7 +15,7 @@
 flowchart TB
   subgraph ts [TypeScript]
     ts_agent_loop["ts/agent-loop<br/>99 个模块"]
-    ts_client["ts/client<br/>1049 个模块"]
+    ts_client["ts/client<br/>1050 个模块"]
     ts_project_templates["ts/project-templates<br/>5 个模块"]
     ts_scripts["ts/scripts<br/>67 个模块"]
     ts_server["ts/server<br/>588 个模块"]
@@ -39,7 +39,7 @@ flowchart TB
     py_services_web_aigc_web_qa_adapter["services.web_aigc_web_qa_adapter"]
     py_services_web_aigc_device_location_adapter["services.web_aigc_device_location_adapter"]
   end
-  ts_client -->|415| ts_shared
+  ts_client -->|416| ts_shared
   ts_scripts -->|2| ts_client
   ts_scripts -->|10| ts_server
   ts_scripts -->|2| ts_shared
