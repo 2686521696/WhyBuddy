@@ -274,6 +274,15 @@ export interface V5SessionState {
    */
   factoryTodo?: string[];
   /**
+   * 老师傅自己列的活儿清单（`todo_write` 写的）。服务端拥有，客户端只读。
+   *
+   * ⚠ 2026-09-14 补：Python 侧 2026-09-09 就有了，TS 镜像一直漏着
+   *   （同 specFirstPages / modelVersions 那批的形态，§4）。
+   *   后续建议 chips（`next-step-chips.ts`）读的就是它——没有类型的话
+   *   只能靠 `as any` 硬读，那等于把这条断链继续藏着。
+   */
+  controlTodo?: Array<{ id?: string; status?: string; content?: string }>;
+  /**
    * 「一直在读、一次没写」的**跨回合**账（2026-09-14）。服务端拥有，客户端只读。
    * 回合级游标在真机上一次没响（每回合最多 3 轮只读就收尾，阈值 4），
    * 详见 `models/v5_state.py` 上 controlReadOnly 的说明。
