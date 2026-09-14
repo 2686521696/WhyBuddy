@@ -77,7 +77,12 @@ describe("通电：量的是静默，而且真的接在渲染上", () => {
   });
 
   it("真的渲染出来了，不是算完就扔（§3）", () => {
-    expect(SRC).toContain("quietHint(useQuietSeconds(");
+    // ⚠ 2026-09-14：原来写的是 toContain("quietHint(useQuietSeconds(")。
+    //   同一页别处改完跑了一次 prettier，这个调用被折成两行，判据就红了——
+    //   而行为一个字没变。判据盯的是「这两个函数套着调」，不是它们排成一行，
+    //   所以匹配前先把空白压掉（§2：盯语义，别盯字面）。
+    const flat = SRC.replace(/\s+/g, "");
+    expect(flat).toContain("quietHint(useQuietSeconds(");
     expect(SRC).toContain("{ctx.quietHint}");
   });
 

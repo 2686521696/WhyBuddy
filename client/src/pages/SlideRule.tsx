@@ -14,6 +14,7 @@ import { BRAND_NAME_FULL } from "@shared/brand";
 import { DEFAULT_SESSION_ID } from "@/lib/sliderule-session-id";
 import { quietHint } from "./sliderule/quiet-time";
 import { TurnResultCard } from "./sliderule/TurnResultCard";
+import { useProjectThumbnail } from "./sliderule/project-runtime/useProjectThumbnail";
 import { NextStepSuggestions } from "./sliderule/NextStepSuggestions";
 import { useAuth } from "@/lib/use-auth";
 import React, {
@@ -411,21 +412,34 @@ function HomeEmptyState({
       data-testid="sliderule-empty-state"
     >
       <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-7 px-1 py-6">
-        {runtimeKind !== "project" && <div className="flex flex-wrap items-center justify-center gap-2 text-[12px]" data-testid="sliderule-runtime-mode">
-          <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-stone-600">
-            {projectCapabilities?.configured && projectCapabilities.canExecute
-              ? "工程模式可用 · 确认计划后创建工程"
-              : "当前：HTML 推演兼容模式"}
-          </span>
-          {projectCapabilities?.mode === "disabled" || projectCapabilities?.blockers?.includes("project_rollout_disabled") ? (
-            <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-800" data-testid="sliderule-project-rollout-status">
-              工程模式未启用 · project_rollout_disabled
+        {runtimeKind !== "project" && (
+          <div
+            className="flex flex-wrap items-center justify-center gap-2 text-[12px]"
+            data-testid="sliderule-runtime-mode"
+          >
+            <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-stone-600">
+              {projectCapabilities?.configured && projectCapabilities.canExecute
+                ? "工程模式可用 · 确认计划后创建工程"
+                : "当前：HTML 推演兼容模式"}
             </span>
-          ) : null}
-        </div>}
+            {projectCapabilities?.mode === "disabled" ||
+            projectCapabilities?.blockers?.includes(
+              "project_rollout_disabled"
+            ) ? (
+              <span
+                className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-800"
+                data-testid="sliderule-project-rollout-status"
+              >
+                工程模式未启用 · project_rollout_disabled
+              </span>
+            ) : null}
+          </div>
+        )}
         <div className="flex w-full flex-wrap items-center justify-center gap-3">
           <h1 className="text-[26px] font-semibold tracking-tight text-[#171717] sm:text-[28px]">
-            {runtimeKind === "project" ? "继续开发这个工程" : "想推演成什么应用？"}
+            {runtimeKind === "project"
+              ? "继续开发这个工程"
+              : "想推演成什么应用？"}
           </h1>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -576,9 +590,17 @@ const ImSurfaceContext = React.createContext<{
   /** 工程档已落库的源码版本；结果卡靠它判断「这一轮真的产出了东西」。 */
   projectRevision?: string | null;
   /** 后续建议要读的那一小块（模型自己的待办）。整个 state 不进 context。 */
-  sessionState?: { controlTodo?: Array<{ id?: string; status?: string; content?: string }> } | null;
-  /** 结果卡缩略图要用：最近一次验收的截图挂在这个工程下。 */
-  projectId?: string | null;
+  sessionState?: {
+    controlTodo?: Array<{ id?: string; status?: string; content?: string }>;
+  } | null;
+  /**
+   * 最近一次验收跑出来的截图。
+   *
+   * ⚠ 2026-09-14：第一版是把 projectId 交给每张结果卡、卡片自己 useProjectThumbnail。
+   *   会话里有几轮就有几张卡，于是**同一个工程的 /verification 被重复 GET 几次**，
+   *   拿回来的还是同一份。取数提到这儿只发一次，卡片只管画。
+   */
+  thumbnailUrl?: string | null;
   isRunning: boolean;
   onChallenge: (id: string) => void;
   /** E26：最新一轮的 id——「补齐缺口」只挂在被闸拦截的最新轮上 */
@@ -593,7 +615,7 @@ const ImSurfaceContext = React.createContext<{
   quietHint: null,
   projectRevision: null,
   sessionState: null,
-  projectId: null,
+  thumbnailUrl: null,
   isRunning: false,
   onChallenge: () => {},
   latestTurnId: null,
@@ -671,7 +693,9 @@ function ImAssistantMessage() {
   return (
     <div className="mb-3 max-w-[640px]">
       {runtimeKind === "project" &&
-      (ctx.latestTurnId ? turn.id === ctx.latestTurnId : turn.id === turns?.at(-1)?.id) ? (
+      (ctx.latestTurnId
+        ? turn.id === ctx.latestTurnId
+        : turn.id === turns?.at(-1)?.id) ? (
         <ProjectTaskChecklist turns={turns?.length ? turns : [turn]} />
       ) : null}
       {turn.status === "streaming" ? (
@@ -689,7 +713,9 @@ function ImAssistantMessage() {
             <RollingText text={thinkingText} className="min-w-0 flex-1" />
             {/* 静默久了才出现。短回合一个字都不多（quiet-time.ts 头注）。 */}
             {ctx.quietHint ? (
-              <span className="shrink-0 tabular-nums text-stone-400">{ctx.quietHint}</span>
+              <span className="shrink-0 tabular-nums text-stone-400">
+                {ctx.quietHint}
+              </span>
             ) : null}
           </div>
           <TurnPhaseTimeline
@@ -724,10 +750,16 @@ function ImAssistantMessage() {
             runtimeKind={runtimeKind}
             goalText={goalText}
             projectRevision={ctx.projectRevision}
-            projectId={ctx.projectId}
+            /* ⚠ 只挂在**最新那一轮**上：验收截图拍的是工程此刻的样子，
+                 贴到三轮之前那张卡上就是张张牛头不对马嘴的图。 */
+            thumbnailUrl={
+              turn.id === ctx.latestTurnId ? ctx.thumbnailUrl : null
+            }
             hasPages={Boolean(turn.main)}
             onOpen={() => {
-              window.dispatchEvent(new CustomEvent("sliderule:open-deliverable"));
+              window.dispatchEvent(
+                new CustomEvent("sliderule:open-deliverable")
+              );
             }}
             onRetry={() => {
               if (!turn.user) return;
@@ -740,7 +772,11 @@ function ImAssistantMessage() {
           />
           {/* 后续建议贴着结果，不混进输入条的通用提示（NextStepSuggestions 头注）。
               只挂在最新一轮：历史轮次的「下一步」早就过期了。 */}
-          {(ctx.latestTurnId ? turn.id === ctx.latestTurnId : turn.id === turns?.at(-1)?.id) ? (
+          {(
+            ctx.latestTurnId
+              ? turn.id === ctx.latestTurnId
+              : turn.id === turns?.at(-1)?.id
+          ) ? (
             <NextStepSuggestions
               state={ctx.sessionState}
               onPick={text => {
@@ -784,7 +820,9 @@ function ImAssistantMessage() {
             <div
               className="max-w-none overflow-visible pb-1 text-[14px] leading-[1.7] text-[#171717]"
               data-testid="sliderule-turn-answer"
-              data-host-speech={turn.assistantSource === "llm" ? "true" : "false"}
+              data-host-speech={
+                turn.assistantSource === "llm" ? "true" : "false"
+              }
               data-answer-present={answer ? "true" : "false"}
             >
               <Response
@@ -891,12 +929,21 @@ export function ClaudeChatSurface({
   hud?: ContextHudFacts | null;
   /** 最近一次工厂选材。没有账本就不传——HUD 不许伪造。 */
   factoryDecision?: FactoryDecisionView | null;
-  projectCapabilities?: { mode?: string; blockers?: string[]; configured?: boolean; canExecute?: boolean } | null;
+  projectCapabilities?: {
+    mode?: string;
+    blockers?: string[];
+    configured?: boolean;
+    canExecute?: boolean;
+  } | null;
   runtimeKind?: "html-prototype" | "project";
   /** 工程档已落库的源码版本；结果卡靠它判断有没有真的产出。 */
   projectRevision?: string | null;
   /** 模型自己的待办；后续建议行读它。 */
-  controlTodo?: Array<{ id?: string; status?: string; content?: string }> | null;
+  controlTodo?: Array<{
+    id?: string;
+    status?: string;
+    content?: string;
+  }> | null;
   /** 结果卡缩略图要用。 */
   projectId?: string | null;
   /** 会话话题（恢复的轮次没有 turn.user，总结用它兜底） */
@@ -914,7 +961,9 @@ export function ClaudeChatSurface({
   //   thinkingText 走，有新动静就重置（见 quiet-time.ts 头注）。
   //   2026-09-14 工程档单发超时放宽到 120 秒之后，没有它的话模型思考
   //   一两分钟的页面和卡死长得一模一样。
-  const quietHintText = quietHint(useQuietSeconds(latestStepText + "|" + (liveAction?.label || ""), isRunning));
+  const quietHintText = quietHint(
+    useQuietSeconds(latestStepText + "|" + (liveAction?.label || ""), isRunning)
+  );
   const thinkingText =
     liveAction?.label ||
     latestStepText ||
@@ -936,6 +985,10 @@ export function ClaudeChatSurface({
     onNew: async () => {},
   });
 
+  // 验收截图整个会话只取一次（见 context 里 thumbnailUrl 的头注）。
+  const verifiedThumbnail = useProjectThumbnail(
+    runtimeKind === "project" ? projectId : null
+  );
   const ctxValue = useMemo(
     () => ({
       publishClosure,
@@ -947,7 +1000,7 @@ export function ClaudeChatSurface({
       quietHint: quietHintText,
       projectRevision,
       sessionState: controlTodo ? { controlTodo } : null,
-      projectId,
+      thumbnailUrl: verifiedThumbnail,
       isRunning,
       onChallenge,
       latestTurnId: latestTurn?.id ?? null,
@@ -964,7 +1017,7 @@ export function ClaudeChatSurface({
       quietHintText,
       projectRevision,
       controlTodo,
-      projectId,
+      verifiedThumbnail,
       isRunning,
       onChallenge,
       latestTurn?.id,
@@ -978,13 +1031,13 @@ export function ClaudeChatSurface({
   );
   const showRehearsalHud = Boolean(
     rehearsalClock &&
-      hud &&
-      (isRunning ||
-        hasClockProgress ||
-        publishClosure ||
-        factoryDecision ||
-        hud.gatedEvidenceCount > 0 ||
-        hud.hasServerTokenFacts)
+    hud &&
+    (isRunning ||
+      hasClockProgress ||
+      publishClosure ||
+      factoryDecision ||
+      hud.gatedEvidenceCount > 0 ||
+      hud.hasServerTokenFacts)
   );
 
   // 手机问卷固定到视口后会跨出对话栏，不能让右侧舞台截获按钮点击。
@@ -1251,8 +1304,11 @@ function SlideRuleUnified({
   liveAction: LiveAction | null;
   sessionState: ReturnType<typeof useSlideRuleSession>["sessionState"];
   sendMessage: (textOverride?: string) => void;
-  pendingPlanApproval?: import("@/lib/sliderule-marathon-driver").ControlPlanApprovalWire | null;
-  submitPlanApproval?: (result: import("./sliderule/PlanApprovalPanel").PlanApprovalOutcome) => void;
+  pendingPlanApproval?:
+    import("@/lib/sliderule-marathon-driver").ControlPlanApprovalWire | null;
+  submitPlanApproval?: (
+    result: import("./sliderule/PlanApprovalPanel").PlanApprovalOutcome
+  ) => void;
   pendingAsk?: {
     question: string;
     options?: string[];
@@ -1304,11 +1360,19 @@ function SlideRuleUnified({
     | "python_unavailable"
     | "control_failed"
     | "fallback";
-  projectCapabilities?: { mode?: string; blockers?: string[]; configured?: boolean; canExecute?: boolean } | null;
+  projectCapabilities?: {
+    mode?: string;
+    blockers?: string[];
+    configured?: boolean;
+    canExecute?: boolean;
+  } | null;
   onCreateProject?: () => void;
   canCreateProject?: boolean;
   projectCreateBlockedReason?: string | null;
-  projectCreateState?: { status: "idle" | "creating" | "error"; error: string | null };
+  projectCreateState?: {
+    status: "idle" | "creating" | "error";
+    error: string | null;
+  };
   /** SSE-driven active skill highlighting for the right rail */
   activeSkillId?: import("@/lib/sliderule-marathon-driver").SkillId | null;
   skillContents?: Partial<
@@ -1341,7 +1405,8 @@ function SlideRuleUnified({
   // 澄清卡让位——2026-08-27 真机截图里两张卡叠在一起，背后那张问的还是
   // 上一轮的 goal（服务端那半在 rehearsal_control._retire_stale_control_questions）。
   // 只是让位不是关掉：没有停泊时它照旧出现（见同名测试的反向判据）。
-  const parkedDecisionSurface = Boolean(pendingPlanApproval) || Boolean(pendingAsk);
+  const parkedDecisionSurface =
+    Boolean(pendingPlanApproval) || Boolean(pendingAsk);
   const showClarify =
     clarifications.length > 0 &&
     !clarifyHidden &&
@@ -1378,7 +1443,10 @@ function SlideRuleUnified({
 
   // 空态（无轮次且未在跑）时 ComposerDock 渲染在首页
   // hero 里；否则贴在左栏会话流底部。二选一，永远只有一个输入条实例。
-  const isHomeEmpty = conversationTurns.length === 0 && !isRunning && sessionState.runtimeKind !== "project";
+  const isHomeEmpty =
+    conversationTurns.length === 0 &&
+    !isRunning &&
+    sessionState.runtimeKind !== "project";
 
   // 入站判定的语境：「这个会话里到底有没有一个成形的应用」。
   //
@@ -1397,261 +1465,276 @@ function SlideRuleUnified({
               modelVersions?: Array<{ id?: string; model?: unknown }>;
             }
           ).modelVersions,
-          currentId: (
-            sessionState as { currentModelVersionId?: string | null }
-          ).currentModelVersionId,
+          currentId: (sessionState as { currentModelVersionId?: string | null })
+            .currentModelVersionId,
         }
       ),
-    [
-      skillContents,
-      publishClosure?.perSkillEvidence,
-      sessionState,
-    ]
+    [skillContents, publishClosure?.perSkillEvidence, sessionState]
   );
   const showStudioChrome = isStudioChromeShown(isHomeEmpty);
 
   return (
-    <StudioLayoutProvider
-      available={showStudioChrome}
-      layoutLocked={isRunning}
-    >
-        <div className={`${autopilotTheme.immersionPage} flex flex-col`}>
-          {/* 还没推演：顶栏整条不挂（交付物/重置也占一条底边，空态看着像少了一截）。 */}
-          {showStudioChrome &&
-          !IS_GITHUB_PAGES &&
-          (pythonApiError || pythonStatusMsg) ? (
-            <div
-              className="mb-2 inline-flex rounded border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-800 shadow-sm"
-              title={pythonStatusMsg}
+    <StudioLayoutProvider available={showStudioChrome} layoutLocked={isRunning}>
+      <div className={`${autopilotTheme.immersionPage} flex flex-col`}>
+        {/* 还没推演：顶栏整条不挂（交付物/重置也占一条底边，空态看着像少了一截）。 */}
+        {showStudioChrome &&
+        !IS_GITHUB_PAGES &&
+        (pythonApiError || pythonStatusMsg) ? (
+          <div
+            className="mb-2 inline-flex rounded border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-800 shadow-sm"
+            title={pythonStatusMsg}
+          >
+            Python backend: {pythonStatusMsg || "degraded/timeout"} ·
+            <button
+              type="button"
+              onClick={retryPythonBackend}
+              className="ml-2 underline"
             >
-              Python backend: {pythonStatusMsg || "degraded/timeout"} ·
+              Retry
+            </button>
+            {getLegacyFallbackReason(pythonApiError) && (
+              <span className="ml-2 text-amber-600">fallback active</span>
+            )}
+            {isDegradedApiError(pythonApiError) && (
+              <span className="ml-1">(degraded envelope)</span>
+            )}
+          </div>
+        ) : null}
+        {showStudioChrome ? (
+          <DriveFullStatusBanner
+            status={driveFullStatus}
+            className="mb-2 inline-flex"
+          />
+        ) : null}
+        {!isHomeEmpty ? (
+          <div
+            className="mx-3 mb-2 inline-flex flex-wrap items-center gap-2 text-[12px]"
+            data-testid="sliderule-runtime-mode"
+          >
+            <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-stone-600">
+              当前：
+              {sessionState.runtimeKind === "project"
+                ? "工程工作台模式"
+                : "HTML 推演兼容模式"}
+            </span>
+            {sessionState.runtimeKind !== "project" &&
+            (projectCapabilities?.mode === "disabled" ||
+              projectCapabilities?.blockers?.includes(
+                "project_rollout_disabled"
+              )) ? (
+              <span
+                className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-800"
+                data-testid="sliderule-project-rollout-status"
+              >
+                工程模式未启用 · project_rollout_disabled
+              </span>
+            ) : null}
+            {sessionState.runtimeKind !== "project" &&
+            projectCapabilities?.canExecute &&
+            projectCapabilities.configured &&
+            canCreateProject &&
+            onCreateProject ? (
               <button
                 type="button"
-                onClick={retryPythonBackend}
-                className="ml-2 underline"
+                data-testid="sliderule-create-project"
+                disabled={
+                  isRunning || projectCreateState?.status === "creating"
+                }
+                onClick={onCreateProject}
+                className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-60"
               >
-                Retry
+                {projectCreateState?.status === "creating"
+                  ? "正在创建工程…"
+                  : "进入工程工作台"}
               </button>
-              {getLegacyFallbackReason(pythonApiError) && (
-                <span className="ml-2 text-amber-600">fallback active</span>
-              )}
-              {isDegradedApiError(pythonApiError) && (
-                <span className="ml-1">(degraded envelope)</span>
-              )}
-            </div>
-          ) : null}
-          {showStudioChrome ? (
-            <DriveFullStatusBanner
-              status={driveFullStatus}
-              className="mb-2 inline-flex"
-            />
-          ) : null}
-          {!isHomeEmpty ? (
-            <div
-              className="mx-3 mb-2 inline-flex flex-wrap items-center gap-2 text-[12px]"
-              data-testid="sliderule-runtime-mode"
-            >
-              <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-stone-600">
-                当前：{sessionState.runtimeKind === "project" ? "工程工作台模式" : "HTML 推演兼容模式"}
+            ) : null}
+            {sessionState.runtimeKind !== "project" &&
+            projectCapabilities?.canExecute &&
+            projectCreateBlockedReason ? (
+              <span
+                data-testid="sliderule-project-create-blocked"
+                className="text-stone-600"
+              >
+                {projectCreateBlockedReason}
               </span>
-              {sessionState.runtimeKind !== "project" &&
-              (projectCapabilities?.mode === "disabled" ||
-                projectCapabilities?.blockers?.includes("project_rollout_disabled")) ? (
-                <span
-                  className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-800"
-                  data-testid="sliderule-project-rollout-status"
-                >
-                  工程模式未启用 · project_rollout_disabled
-                </span>
-              ) : null}
-              {sessionState.runtimeKind !== "project" &&
-              projectCapabilities?.canExecute &&
-              projectCapabilities.configured &&
-              canCreateProject &&
-              onCreateProject ? (
-                <button
-                  type="button"
-                  data-testid="sliderule-create-project"
-                  disabled={isRunning || projectCreateState?.status === "creating"}
-                  onClick={onCreateProject}
-                  className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-60"
-                >
-                  {projectCreateState?.status === "creating" ? "正在创建工程…" : "进入工程工作台"}
-                </button>
-              ) : null}
-              {sessionState.runtimeKind !== "project" && projectCapabilities?.canExecute && projectCreateBlockedReason ? (
-                <span data-testid="sliderule-project-create-blocked" className="text-stone-600">
-                  {projectCreateBlockedReason}
-                </span>
-              ) : null}
-              {projectCreateState?.status === "error" && projectCreateState.error ? (
-                <span role="alert" data-testid="sliderule-project-create-error" className="text-rose-700">
-                  {projectCreateState.error}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
+            ) : null}
+            {projectCreateState?.status === "error" &&
+            projectCreateState.error ? (
+              <span
+                role="alert"
+                data-testid="sliderule-project-create-error"
+                className="text-rose-700"
+              >
+                {projectCreateState.error}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
 
-          {/* Studio body — 图标簇在舞台头条右侧，不再独占整页顶栏。 */}
-          {
-            <div className="relative z-0 min-h-0 flex-1">
-              <SlideRuleStudio
-                runtimeKind={sessionState.runtimeKind}
-                projectId={sessionState.projectId}
-                projectRevision={sessionState.projectRevision}
-                sessionEmpty={isHomeEmpty}
-                turns={conversationTurns}
-                chatSlot={
-                  <ClaudeChatSurface
-                    uiTurns={conversationTurns}
-                    isRunning={isRunning}
-                    goalText={goal}
-                    liveAction={liveAction}
-                    latestTurn={latestTurn}
-                    publishClosure={publishClosure}
-                    llmDraft={isRunning ? llmDraft : ""}
-                    llmStreams={isRunning ? llmStreams : []}
-                    llmDraftLabel={llmDraftLabel}
-                    rehearsalClock={rehearsalFacts.rehearsalClock}
-                    hud={rehearsalFacts.hud}
-                    factoryDecision={rehearsalFacts.factoryDecision}
-                    projectCapabilities={projectCapabilities}
-                    runtimeKind={sessionState.runtimeKind}
-                    projectRevision={sessionState.projectRevision}
-                    controlTodo={sessionState.controlTodo}
-                    projectId={sessionState.projectId}
-                    onChallenge={id =>
-                      dispatchChallengePrefill({ artifactId: id })
-                    }
-                    composerSlot={
-                      <ComposerDock
-                        input={input}
-                        setInput={setInput}
-                        sendMessage={sendMessage}
-                        isRunning={isRunning}
-                        sessionId={sessionId}
-                        goal={goal}
-                        hintChips={composerHints}
-                        statusPill={
-                          publishClosure
-                            ? formatComposerClosurePill(publishClosure)
-                            : null
-                        }
-                        stop={stop}
-                        hero={isHomeEmpty}
-                        pendingPlanApproval={pendingPlanApproval}
-                        onSubmitPlanApproval={submitPlanApproval}
-                        pendingAsk={pendingAsk}
-                        onSubmitQuestionnaire={onSubmitQuestionnaire}
-                        onDismissAsk={dismissAsk}
-                        onAnswerAsk={text => sendMessage(text)}
-                        queuedTurns={queuedTurns}
-                        onRemoveQueued={removeQueuedTurn}
+        {/* Studio body — 图标簇在舞台头条右侧，不再独占整页顶栏。 */}
+        {
+          <div className="relative z-0 min-h-0 flex-1">
+            <SlideRuleStudio
+              runtimeKind={sessionState.runtimeKind}
+              projectId={sessionState.projectId}
+              projectRevision={sessionState.projectRevision}
+              sessionEmpty={isHomeEmpty}
+              turns={conversationTurns}
+              chatSlot={
+                <ClaudeChatSurface
+                  uiTurns={conversationTurns}
+                  isRunning={isRunning}
+                  goalText={goal}
+                  liveAction={liveAction}
+                  latestTurn={latestTurn}
+                  publishClosure={publishClosure}
+                  llmDraft={isRunning ? llmDraft : ""}
+                  llmStreams={isRunning ? llmStreams : []}
+                  llmDraftLabel={llmDraftLabel}
+                  rehearsalClock={rehearsalFacts.rehearsalClock}
+                  hud={rehearsalFacts.hud}
+                  factoryDecision={rehearsalFacts.factoryDecision}
+                  projectCapabilities={projectCapabilities}
+                  runtimeKind={sessionState.runtimeKind}
+                  projectRevision={sessionState.projectRevision}
+                  controlTodo={sessionState.controlTodo}
+                  projectId={sessionState.projectId}
+                  onChallenge={id =>
+                    dispatchChallengePrefill({ artifactId: id })
+                  }
+                  composerSlot={
+                    <ComposerDock
+                      input={input}
+                      setInput={setInput}
+                      sendMessage={sendMessage}
+                      isRunning={isRunning}
+                      sessionId={sessionId}
+                      goal={goal}
+                      hintChips={composerHints}
+                      statusPill={
+                        publishClosure
+                          ? formatComposerClosurePill(publishClosure)
+                          : null
+                      }
+                      stop={stop}
+                      hero={isHomeEmpty}
+                      pendingPlanApproval={pendingPlanApproval}
+                      onSubmitPlanApproval={submitPlanApproval}
+                      pendingAsk={pendingAsk}
+                      onSubmitQuestionnaire={onSubmitQuestionnaire}
+                      onDismissAsk={dismissAsk}
+                      onAnswerAsk={text => sendMessage(text)}
+                      queuedTurns={queuedTurns}
+                      onRemoveQueued={removeQueuedTurn}
+                    />
+                  }
+                  clarifySlot={
+                    showClarify ? (
+                      <ClarificationCard
+                        questions={clarifications}
+                        onSubmit={answers => answerClarifications?.(answers)}
+                        onClose={() => setClarifyHidden(true)}
                       />
-                    }
-                    clarifySlot={
-                      showClarify ? (
-                        <ClarificationCard
-                          questions={clarifications}
-                          onSubmit={answers => answerClarifications?.(answers)}
-                          onClose={() => setClarifyHidden(true)}
-                        />
-                      ) : null
-                    }
+                    ) : null
+                  }
+                />
+              }
+              activeSkillId={activeSkillId}
+              publishClosure={publishClosure}
+              latestMermaid={latestMermaid}
+              skillContents={skillContents}
+              skillRuntimeGraph={
+                (
+                  sessionState as {
+                    skillRuntimeGraph?:
+                      | import("./sliderule/system-screens/five-system-model").SkillRuntimeGraphLike
+                      | null;
+                  }
+                ).skillRuntimeGraph ?? null
+              }
+              sessionId={sessionId}
+              appTitle={goal ? goal.slice(0, 24) : undefined}
+              // 用户还没输入时不显示右侧舞台：欢迎页独占全宽，首条消息后舞台登场
+              stageVisible={
+                sessionState.runtimeKind === "project" ||
+                conversationTurns.length > 0 ||
+                isRunning
+              }
+              // 推演中右侧实时渲染：部分五系统模型 → 应用实时长出来；没成形前只报"推演中"
+              isRunning={isRunning}
+              llmDraft={isRunning ? llmDraft : ""}
+              llmDraftLabel={llmDraftLabel}
+              liveActionLabel={isRunning ? (liveAction?.label ?? null) : null}
+              // spec-first 第 3 步的页面：一页好了就上屏。恒传（不按 isRunning
+              // 掐）——掐掉的话闭环那一瞬间页面会先消失、再由应用舞台接管，
+              // 中间闪一下空白。舞台判定在 Studio 里一处做完。
+              specPages={specPages}
+              // 落库的那份：刷新之后右侧还能是新链路的页面，而不是掉回区块页
+              specFirstPages={
+                (
+                  sessionState as {
+                    specFirstPages?: {
+                      pages?: Record<string, string>;
+                    } | null;
+                  }
+                ).specFirstPages ?? null
+              }
+              modelVersions={
+                (
+                  sessionState as {
+                    modelVersions?: Array<{
+                      id: string;
+                      instruction?: string;
+                      model?: unknown;
+                    }>;
+                  }
+                ).modelVersions ?? []
+              }
+              currentModelVersionId={
+                (sessionState as { currentModelVersionId?: string | null })
+                  .currentModelVersionId ?? null
+              }
+              onRestoreVersion={restoreModelVersion}
+              onForkVariant={forkVariant}
+              isRestoringVersion={isRestoringVersion}
+              chromeSlot={
+                showStudioChrome ? (
+                  <SlideRuleTopHud
+                    allowCanvas={sessionState.runtimeKind !== "project"}
+                    isRunning={isRunning}
+                    onOpenDeliverables={openDeliverables}
                   />
-                }
-                activeSkillId={activeSkillId}
-                publishClosure={publishClosure}
-                latestMermaid={latestMermaid}
-                skillContents={skillContents}
-                skillRuntimeGraph={
-                  (
-                    sessionState as {
-                      skillRuntimeGraph?:
-                        | import("./sliderule/system-screens/five-system-model").SkillRuntimeGraphLike
-                        | null;
-                    }
-                  ).skillRuntimeGraph ?? null
-                }
-                sessionId={sessionId}
-                appTitle={goal ? goal.slice(0, 24) : undefined}
-                // 用户还没输入时不显示右侧舞台：欢迎页独占全宽，首条消息后舞台登场
-                stageVisible={sessionState.runtimeKind === "project" || conversationTurns.length > 0 || isRunning}
-                // 推演中右侧实时渲染：部分五系统模型 → 应用实时长出来；没成形前只报"推演中"
-                isRunning={isRunning}
-                llmDraft={isRunning ? llmDraft : ""}
-                llmDraftLabel={llmDraftLabel}
-                liveActionLabel={isRunning ? (liveAction?.label ?? null) : null}
-                // spec-first 第 3 步的页面：一页好了就上屏。恒传（不按 isRunning
-                // 掐）——掐掉的话闭环那一瞬间页面会先消失、再由应用舞台接管，
-                // 中间闪一下空白。舞台判定在 Studio 里一处做完。
-                specPages={specPages}
-                // 落库的那份：刷新之后右侧还能是新链路的页面，而不是掉回区块页
-                specFirstPages={
-                  (
-                    sessionState as {
-                      specFirstPages?: {
-                        pages?: Record<string, string>;
-                      } | null;
-                    }
-                  ).specFirstPages ?? null
-                }
-                modelVersions={
-                  (
-                    sessionState as {
-                      modelVersions?: Array<{
-                        id: string;
-                        instruction?: string;
-                        model?: unknown;
-                      }>;
-                    }
-                  ).modelVersions ?? []
-                }
-                currentModelVersionId={
-                  (sessionState as { currentModelVersionId?: string | null })
-                    .currentModelVersionId ?? null
-                }
-                onRestoreVersion={restoreModelVersion}
-                onForkVariant={forkVariant}
-                isRestoringVersion={isRestoringVersion}
-                chromeSlot={
-                  showStudioChrome ? (
-                    <SlideRuleTopHud
-                      allowCanvas={sessionState.runtimeKind !== "project"}
-                      isRunning={isRunning}
-                      onOpenDeliverables={openDeliverables}
-                    />
-                  ) : null
-                }
-                /* 重置会话不再走 chromeSlot：那条槽落在舞台头条**右侧**图标簇里。
+                ) : null
+              }
+              /* 重置会话不再走 chromeSlot：那条槽落在舞台头条**右侧**图标簇里。
                2026-08-24 用户反馈要它在标题左边、更大、更蓝，所以单独一条槽。 */
-                resetSlot={
-                  showStudioChrome ? (
-                    <SlideRuleResetSessionButton
-                      isRunning={isRunning}
-                      onResetSession={resetSession}
-                    />
-                  ) : null
-                }
-                className="h-full"
-              />
-              {/* 右栏「推演过程」标签页已移除：左栏对话流本身就是实时推演过程
+              resetSlot={
+                showStudioChrome ? (
+                  <SlideRuleResetSessionButton
+                    isRunning={isRunning}
+                    onResetSession={resetSession}
+                  />
+                ) : null
+              }
+              className="h-full"
+            />
+            {/* 右栏「推演过程」标签页已移除：左栏对话流本身就是实时推演过程
             （步骤流 + LLM 实时草稿），右栏只保留系统画面（用户反馈去重）。 */}
-            </div>
-          }
+          </div>
+        }
 
-          {/* 设置弹窗已收敛到侧栏「设置」整页（SettingsPage），HUD 不再挂设置入口 */}
-          <DeliverablesPanel
-            open={deliverablesOpen}
-            onClose={() => setDeliverablesOpen(false)}
-            sessionState={sessionState}
-            isRunning={isRunning}
-            onGenerate={() => generateDeliverables()}
-            onExportMd={() => onExportDeliverables()}
-            onEvidenceRefClick={onEvidenceRefClick}
-            publishClosure={publishClosure}
-          />
-        </div>
+        {/* 设置弹窗已收敛到侧栏「设置」整页（SettingsPage），HUD 不再挂设置入口 */}
+        <DeliverablesPanel
+          open={deliverablesOpen}
+          onClose={() => setDeliverablesOpen(false)}
+          sessionState={sessionState}
+          isRunning={isRunning}
+          onGenerate={() => generateDeliverables()}
+          onExportMd={() => onExportDeliverables()}
+          onEvidenceRefClick={onEvidenceRefClick}
+          publishClosure={publishClosure}
+        />
+      </div>
     </StudioLayoutProvider>
   );
 }
@@ -1921,9 +2004,7 @@ function SlideRuleSplitEngineering({
                         facts={turn.routeFacts}
                         steps={turn.steps}
                         actions={turn.actions}
-                        sessionId={
-                          sessionState.sessionId || DEFAULT_SESSION_ID
-                        }
+                        sessionId={sessionState.sessionId || DEFAULT_SESSION_ID}
                         expanded={
                           turn.routeExpanded || turn.status === "streaming"
                         }
@@ -1956,9 +2037,7 @@ function SlideRuleSplitEngineering({
                     {turn.status === "complete" && (
                       <TurnFootnote
                         turn={turn}
-                        sessionId={
-                          sessionState.sessionId || DEFAULT_SESSION_ID
-                        }
+                        sessionId={sessionState.sessionId || DEFAULT_SESSION_ID}
                         onChallenge={id =>
                           dispatchChallengePrefill({ artifactId: id })
                         }
@@ -2196,7 +2275,9 @@ function SlideRuleSessionBody({
     }>("/api/sliderule/project-capabilities").then(result => {
       if (!cancelled && result.ok) setProjectCapabilities(result.data);
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [authReady, authUser]);
   const probePythonBackend = useCallback(async () => {
     // GitHub Pages 静态演示无后端：探测必 404（控制台噪音 + 无意义请求），

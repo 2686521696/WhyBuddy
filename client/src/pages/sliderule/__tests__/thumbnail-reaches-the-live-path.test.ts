@@ -3,11 +3,15 @@
  *
  * §3「闸全绿但东西没了」在这一块的具体形态：
  *   `useProjectThumbnail` 单测全绿、`resultCardModel` 单测全绿，
- *   而 `projectId` 在 SlideRule → ClaudeChatSurface → TurnResultCard
+ *   而取到的地址在 SlideRule → ClaudeChatSurface → TurnResultCard
  *   这一路上**断在任何一节**，缩略图都永远是 null——不报错、不告警。
  *
  * 所以这里钉的不是函数对不对，是**传参真的一路传到了底**。
- * 判据扫的是剥掉注释的源码：注释里写「projectId」不算数（§2 踩过）。
+ * 判据扫的是剥掉注释的源码：注释里写这些名字不算数（§2 踩过）。
+ *
+ * ⚠ 2026-09-14 第二版：取数从卡片里提到了页面上。原因是结果卡**每轮一张**，
+ *   卡片自己取就等于同一个工程的 /verification 被重复 GET N 次。所以现在
+ *   钉的是「页面只调一次 hook」+「只有最新那一轮拿得到图」。
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -42,29 +46,38 @@ function openingTag(source: string, tag: string): string {
   throw new Error(`${tag} 的开标签没闭合`);
 }
 
-describe("projectId 一路传到结果卡", () => {
+describe("验收截图一路传到结果卡", () => {
   it("SlideRule 把会话里的 projectId 交给聊天面（钉在 ClaudeChatSurface 那一节）", () => {
     expect(openingTag(PAGE, "ClaudeChatSurface")).toMatch(
       /projectId=\{sessionState\.projectId\}/
     );
   });
 
-  it("聊天面把它交给结果卡（钉在 TurnResultCard 那一节）", () => {
-    expect(openingTag(PAGE, "TurnResultCard")).toMatch(/projectId=\{/);
+  it("页面只调一次 hook，卡片自己不取数", () => {
+    expect(PAGE.match(/useProjectThumbnail\(/g) ?? []).toHaveLength(1);
+    // ⚠ 反向：这条就是那 N 次重复 GET。卡片里再出现一次 hook 就红。
+    expect(CARD).not.toMatch(/useProjectThumbnail/);
   });
 
-  it("结果卡真的调了 hook，并且把结果喂进了 resultCardModel", () => {
-    expect(CARD).toMatch(/useProjectThumbnail\(/);
-    // 反向：调了但不用，等于没调。thumbnailUrl 必须落到 model 里。
+  it("取到的地址进了 context，再从 context 交给结果卡", () => {
+    expect(PAGE).toMatch(/thumbnailUrl:\s*verifiedThumbnail/);
+    expect(openingTag(PAGE, "TurnResultCard")).toMatch(/thumbnailUrl=\{/);
+  });
+
+  it("只挂在最新那一轮：老卡片配一张今天的截图是错的", () => {
+    const call = openingTag(PAGE, "TurnResultCard");
+    expect(call).toMatch(/turn\.id\s*===\s*ctx\.latestTurnId/);
+  });
+
+  it("结果卡把 thumbnailUrl 喂进了 resultCardModel（收了不用等于没收）", () => {
     const start = CARD.indexOf("resultCardModel(");
     expect(start).toBeGreaterThanOrEqual(0);
-    const call = CARD.slice(start, start + 400);
-    expect(call).toMatch(/thumbnailUrl:\s*thumbnailUrl\s*\|\|\s*verified/);
+    expect(CARD.slice(start, start + 400)).toMatch(/^\s*thumbnailUrl,\s*$/m);
   });
 
   it("只在工程档取缩略图：HTML 推演档没有验收产物，不该白发一次请求", () => {
-    const start = CARD.indexOf("useProjectThumbnail(");
-    const call = CARD.slice(start, CARD.indexOf(")", start) + 1);
+    const start = PAGE.indexOf("useProjectThumbnail(");
+    const call = PAGE.slice(start, PAGE.indexOf(")", start) + 1);
     expect(call).toMatch(/runtimeKind\s*===\s*"project"/);
   });
 

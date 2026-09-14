@@ -24,7 +24,6 @@
 import React from "react";
 import { Check, Copy, ExternalLink, RotateCw, Upload } from "lucide-react";
 import { resultCardModel } from "./turn-result-card";
-import { useProjectThumbnail } from "./project-runtime/useProjectThumbnail";
 import type { UiTurn } from "./types";
 
 function Star({ on, onClick }: { on: boolean; onClick: () => void }) {
@@ -45,7 +44,6 @@ export function TurnResultCard({
   runtimeKind,
   goalText,
   projectRevision,
-  projectId,
   hasPages,
   thumbnailUrl,
   onOpen,
@@ -56,21 +54,19 @@ export function TurnResultCard({
   goalText?: string | null;
   projectRevision?: string | null;
   /** 结果卡缩略图取这个工程最近一次验收的截图。 */
-  projectId?: string | null;
   hasPages?: boolean;
   thumbnailUrl?: string | null;
   onOpen?: () => void;
   onRetry?: () => void;
 }) {
-  // ⚠ hook 不能写在 early return 之后，所以在算 model 之前先取。
-  //   拿不到就是 null（验收没跑过），卡片那一块不画。见 useProjectThumbnail 头注。
-  const verified = useProjectThumbnail(runtimeKind === "project" ? projectId : null);
+  // 缩略图由调用方给（整页只取一次，见 SlideRule.tsx 里 thumbnailUrl 的头注）。
+  // 拿不到就是 null——验收还没跑过，卡片那一块不画。
   const model = resultCardModel(turn, {
     runtimeKind,
     goalText,
     projectRevision,
     hasPages,
-    thumbnailUrl: thumbnailUrl || verified,
+    thumbnailUrl,
   });
   const [rating, setRating] = React.useState(0);
   const [copied, setCopied] = React.useState(false);
@@ -172,7 +168,10 @@ export function TurnResultCard({
         ) : null}
         <span className="ml-auto inline-flex items-center gap-1.5">
           <span className="text-[11px] text-stone-400">这个结果怎么样？</span>
-          <span className="inline-flex gap-0.5" data-testid="turn-result-rating">
+          <span
+            className="inline-flex gap-0.5"
+            data-testid="turn-result-rating"
+          >
             {[1, 2, 3, 4, 5].map(n => (
               <Star key={n} on={n <= rating} onClick={() => setRating(n)} />
             ))}
