@@ -291,35 +291,32 @@ export function SandboxPreviewSurface({
               原来的 role="tab" 语义由 <select> 自带的 listbox 语义接替——
               `project-verification.test.tsx` 里那条「切走就收起验收详情」
               已经跟着改成驱动这个下拉（判据钉的是行为，不是控件长相）。 */}
-        <label className="flex shrink-0 items-center gap-1.5">
-          <span className="sr-only">工程工作台视图</span>
-          <select
-            data-testid="project-mode-select"
-            aria-label="工程工作台视图"
-            value={tab}
-            onChange={event => {
-              const value = event.target.value as typeof tab;
-              setTab(value);
-              if (value === "source" || value === "history")
-                setWorkspaceOpened(true);
-            }}
-            className="rounded-md border border-stone-300 bg-white px-2 py-1 text-xs text-stone-700 hover:bg-stone-50 focus:outline-none focus:ring-1 focus:ring-stone-400"
-          >
-            {(
-              [
-                ["preview", "预览"],
-                ["source", "源码"],
-                ["history", "版本"],
-                ["data", "数据"],
-                ["delivery", "交付"],
-              ] as const
-            ).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <select
+          data-testid="project-mode-select"
+          aria-label="工程工作台视图"
+          value={tab}
+          onChange={event => {
+            const value = event.target.value as typeof tab;
+            setTab(value);
+            if (value === "source" || value === "history")
+              setWorkspaceOpened(true);
+          }}
+          className="rounded-md border border-stone-300 bg-white px-2 py-1 text-xs text-stone-700 hover:bg-stone-50 focus:outline-none focus:ring-1 focus:ring-stone-400"
+        >
+          {(
+            [
+              ["preview", "预览"],
+              ["source", "源码"],
+              ["history", "版本"],
+              ["data", "数据"],
+              ["delivery", "交付"],
+            ] as const
+          ).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
         <button
           type="button"
           disabled={!preview.entryUrl || bridgeStatus === "waiting"}
