@@ -43,12 +43,14 @@ from conftest import TEST_USER_ID
 from control_turn_support import ControlHarness, llm_text, llm_tool
 from services.control_budget import PROJECT_BUDGET, ControlBudget, restore_budget
 from services.project_creation import create_session_project
-from services.rehearsal_control import MAX_CHEAP_TOKENS, MAX_TOOL_ROUNDS, MAX_WALL_SECONDS
+from services.rehearsal_control import (MAX_CHEAP_TOKENS, MAX_REQUEST_SECONDS,
+    MAX_TOOL_ROUNDS, MAX_WALL_SECONDS)
 from test_control_project_tools import post, setup  # noqa: F401
 
 pytest.importorskip("fastapi")
 
-LEGACY = ControlBudget("control-v1", MAX_TOOL_ROUNDS, MAX_CHEAP_TOKENS, MAX_WALL_SECONDS)
+LEGACY = ControlBudget("control-v1", MAX_TOOL_ROUNDS, MAX_CHEAP_TOKENS,
+                       MAX_WALL_SECONDS, MAX_REQUEST_SECONDS)
 
 
 def _timeouts(harness) -> list:
@@ -102,7 +104,7 @@ def test_点火前还是45秒_建完工程当场切到120秒(setup, monkeypatch)
     seen = _timeouts(harness)
     assert len(seen) >= 2, seen
     # 第一发还在点火前的对话档
-    assert seen[0] == LEGACY.request_timeout_ms() == 45_000
+    assert seen[0] == LEGACY.request_timeout_ms() == 75_000
     # project_create 成功之后切档
     assert seen[-1] == PROJECT_BUDGET.request_timeout_ms() == 120_000
     assert seen[0] != seen[-1], "档没切，说明超时没跟着 budget 走"
@@ -119,7 +121,7 @@ def test_反向_对话回合不许被顺手放宽(setup, monkeypatch):
     post(setup.state)
 
     assert _timeouts(harness) == [LEGACY.request_timeout_ms()]
-    assert LEGACY.request_timeout_ms() == 45_000
+    assert LEGACY.request_timeout_ms() == 75_000
 
 
 # ── 二、老存档不许失效 ────────────────────────────────────────────────────
@@ -146,7 +148,7 @@ def test_老存档不许因为多了这个字段而失效():
 
     old_legacy = {"profile": "control-v1", "maxRounds": MAX_TOOL_ROUNDS,
                   "maxTokens": MAX_CHEAP_TOKENS, "maxWallSeconds": MAX_WALL_SECONDS}
-    assert restore_budget(old_legacy, LEGACY).request_timeout_ms() == 45_000
+    assert restore_budget(old_legacy, LEGACY).request_timeout_ms() == 75_000
 
 
 def test_伪造的存档照旧被拒():
@@ -180,8 +182,9 @@ def test_单发超时必须装得进回合墙钟():
 
 def test_工程档比对话档宽_而且真的是它需要宽():
     assert PROJECT_BUDGET.max_request_seconds > LEGACY.max_request_seconds
-    # 45 秒是 control_client 里那个 min() 的硬上限，对话档等于它。
-    assert LEGACY.max_request_seconds == 45.0
+    # ⚠ 2026-09-14 从 45 抬到 75：45 秒写不完一份实施计划，工程模式永远
+    #   够不着（见 MAX_WALL_SECONDS 头注那三行真机数据）。
+    assert LEGACY.max_request_seconds == MAX_REQUEST_SECONDS == 75.0
 
 
 def test_客户端不许把显式传下来的值再压回45秒():

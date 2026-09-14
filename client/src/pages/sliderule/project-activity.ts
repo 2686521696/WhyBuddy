@@ -44,6 +44,8 @@ export type ProjectActionRow = {
   label: string;
   /** 真实细节（命令 / 版本 / 退出码 / 错误码）。没有就没有，不编。 */
   detail?: string;
+  /** 远端操作 id；「它的电脑」靠它订阅沙箱命令行输出。没有就订不了，不编。 */
+  operationId?: string;
   status: ProjectActionStatus;
 };
 
@@ -135,6 +137,9 @@ export function deriveProjectActivity(turns: UiTurn[]): ProjectActionRow[] {
     const detail = String(
       (step as { projectDetail?: string }).projectDetail || ""
     ).trim();
+    const operationId = String(
+      (step as { operationId?: string }).operationId || ""
+    ).trim();
 
     if (progress === "completed" || progress === "failed") {
       // 收尾：优先合进**同一工具最近一个还开着的行**。找不到说明只剩结果
@@ -155,6 +160,9 @@ export function deriveProjectActivity(turns: UiTurn[]): ProjectActionRow[] {
         } else if (!open.detail && detail) {
           open.detail = detail;
         }
+        // ⚠ operationId 只在**结果**事件上才有（开场那一发还没派发出去），
+        //   所以要补到已经开着的那一行上，否则「它的电脑」永远订阅不到。
+        if (!open.operationId && operationId) open.operationId = operationId;
         continue;
       }
       rows.push({
@@ -163,6 +171,7 @@ export function deriveProjectActivity(turns: UiTurn[]): ProjectActionRow[] {
         label: projectActionLabel(tool),
         status: progress === "failed" ? "failed" : "done",
         ...(detail ? { detail } : {}),
+        ...(operationId ? { operationId } : {}),
       });
       continue;
     }
@@ -173,6 +182,7 @@ export function deriveProjectActivity(turns: UiTurn[]): ProjectActionRow[] {
       label: projectActionLabel(tool),
       status: "running",
       ...(detail ? { detail } : {}),
+      ...(operationId ? { operationId } : {}),
     });
   }
   return rows;

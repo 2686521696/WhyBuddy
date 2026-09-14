@@ -109,11 +109,16 @@ def test_wall_clock_cap_stops_before_dispatch(harness, monkeypatch):
     harness.llm_impl = lambda messages, **kw: llm_tool("rehearse", {})
     ticks = {"n": 0}
 
+    # ⚠ 步长和断言都**从常量算**，不许再手打数字：2026-09-14 把点火前墙钟
+    #   45→90 时，这里写死的 46s / 45.0 当场变红，而它想钉的是「墙钟到顶要
+    #   在派发之前停住」，不是那个数本身。
+    step = rc.MAX_WALL_SECONDS + 1.0
+
     def fake_mono():
-        # 每次 +46s：HTTP 中间件若先调 monotonic，started 仍会与下一次
-        # _maybe_over_cap 相差超过 45s。删掉 over-cap return → helper=1。
+        # 每次 +step：HTTP 中间件若先调 monotonic，started 仍会与下一次
+        # _maybe_over_cap 相差超过墙钟。删掉 over-cap return → helper=1。
         ticks["n"] += 1
-        return 1000.0 + ticks["n"] * 46.0
+        return 1000.0 + ticks["n"] * step
 
     monkeypatch.setattr(rc.time, "monotonic", fake_mono)
     _, events = harness.post(six_fields(sid, "现在有哪些角色？"))
@@ -122,7 +127,7 @@ def test_wall_clock_cap_stops_before_dispatch(harness, monkeypatch):
     [stop] = _stops(events)
     assert stop["stopReason"] == ControlStopReason.WALL_CLOCK.value, stop
     assert stop["stoppedBy"] == "runtime"
-    assert stop["limit"] == 45.0
+    assert stop["limit"] == rc.MAX_WALL_SECONDS
     assert harness.llm_calls == []
 
 

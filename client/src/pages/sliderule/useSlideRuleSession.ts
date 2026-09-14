@@ -1572,6 +1572,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               progressType?: "thinking" | "acting" | "observing" | "completed" | "failed";
               /** 工程动作的结构化细节；见 types.ts 上 projectDetail 的说明。 */
               projectDetail?: string;
+              /** 远端操作 id；「它的电脑」靠它订阅命令行输出。 */
+              operationId?: string;
             }
           ) => {
             streamStepSeq += 1;
@@ -1585,6 +1587,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               loopTurnId: turnId,
               progressType: opts?.progressType || "thinking",
               ...(opts?.projectDetail ? { projectDetail: opts.projectDetail } : {}),
+              ...(opts?.operationId ? { operationId: opts.operationId } : {}),
             });
           };
           /**
@@ -1777,6 +1780,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   capabilityId: String(event.tool || ""),
                   progressType: ok ? "completed" : "failed",
                   projectDetail: projectActionDetail(event),
+                  // 「它的电脑」靠它订阅沙箱命令行输出；服务端一直在发，
+                  // 前端此前丢掉了（见 types.ts 上 operationId 的说明）。
+                  ...(typeof event.operationId === "string" && event.operationId
+                    ? { operationId: event.operationId }
+                    : {}),
                 });
               },
               onControlProjectState: (project: {

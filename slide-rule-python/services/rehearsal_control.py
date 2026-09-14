@@ -983,7 +983,34 @@ _TERMINAL_EVENTS = ("complete",)
 
 MAX_TOOL_ROUNDS = 8
 MAX_CHEAP_TOKENS = 8000
-MAX_WALL_SECONDS = 45.0
+
+#: 点火前（还没进工程档）一整个回合的墙钟。
+#:
+#: ⚠ 2026-09-14 真机把它从 45 抬到 90：**新链路整个进不去**。
+#:   进工程档的开关挂在 `project_create` 成功之后（见本文件 `loop_budget =
+#:   PROJECT_BUDGET` 那一处），而 `project_create` 要先有一份批准的计划——
+#:   写计划那一发就跑在这条墙钟上。三种配置量下来：
+#:
+#:       rcouyi/gemini-3.5-flash-lite   content_filter（provider 侧）
+#:       text168/grok-4.6               55s → wall_clock
+#:       控制面换 grok-4.5              小回合全过，写计划那一发 65s → wall_clock
+#:
+#:   45 秒对「一句话聊天」够用，对「写一份实施计划」不够，于是工程模式
+#:   永远够不着。这正是 CLAUDE.md §一之二：闸装在真跑的路上，
+#:   而它守的那道门后面的东西没人到得了。
+MAX_WALL_SECONDS = 90.0
+
+#: 点火前**单发** HTTP 读超时。跟上面是一对，只改一个等于没改（§4）：
+#: 墙钟抬到 90 而请求仍在 45 秒被掐，那一发照样回不来。
+#:
+#: 取 75：比真机量到的 65 秒留一点余量，又比墙钟小——这样「真的拖住了」
+#: 报出来的是墙钟（回合级），而不是让单发超时替它背锅。
+#:
+#: ⚠ 连带账，改之前先算：`call_control_llm` 单次调用最多重试 3 发，而墙钟
+#:   只在**一发采样返回之后**才对账。所以最坏情况从 3×45=135s 变成
+#:   3×75=225s 才停下。回合累计重试上限 10 次 / 600 秒窗口
+#:   （`sliderule_llm/retry_budget.py`）是兜住它的那一层。
+MAX_REQUEST_SECONDS = 75.0
 INSPECT_MAX_ITEMS = 40
 INSPECT_MAX_CHARS = 4000
 
@@ -3714,7 +3741,8 @@ async def _control_llm_loop(
     port = current_checkpoint.get()
     resume = copy.deepcopy(port.checkpoint) if port is not None else None
     resume = resume if resume and resume.get("phase") in {"model", "tools"} else None
-    legacy_budget = ControlBudget("control-v1", MAX_TOOL_ROUNDS, MAX_CHEAP_TOKENS, MAX_WALL_SECONDS)
+    legacy_budget = ControlBudget("control-v1", MAX_TOOL_ROUNDS, MAX_CHEAP_TOKENS,
+        MAX_WALL_SECONDS, MAX_REQUEST_SECONDS)
     try:
         loop_budget = (restore_budget(resume.get("budgetPolicy"), legacy_budget) if resume else
                        PROJECT_BUDGET if _project_budget_eligible(state) else legacy_budget)

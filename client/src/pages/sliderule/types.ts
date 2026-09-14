@@ -74,6 +74,12 @@ export type TurnStep =
        * 锚点窗口上栽过多次，文案一改判据就哑。见 `project-activity.ts` 头注。
        */
       projectDetail?: string;
+      /**
+       * 这一步对应的远端操作 id。服务端 `control_tool_result` 一直带着它，
+       * 前端此前全程丢掉——于是拿不到它就订阅不了沙箱命令行输出
+       * （`useSandboxLog`）。2026-09-14 补上。
+       */
+      operationId?: string;
     }
   | {
       id: string;

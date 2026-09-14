@@ -30,6 +30,7 @@ import {
   type ProjectActionRow,
 } from "./project-activity";
 import type { UiTurn } from "./types";
+import { useSandboxLog } from "./project-runtime/useSandboxLog";
 
 function StatusMark({ status }: { status: ProjectActionRow["status"] }) {
   if (status === "done")
@@ -38,6 +39,38 @@ function StatusMark({ status }: { status: ProjectActionRow["status"] }) {
     return <X className="h-4 w-4 text-rose-600" aria-hidden />;
   return (
     <LoaderCircle className="h-4 w-4 animate-spin text-blue-600" aria-hidden />
+  );
+}
+
+/**
+ * 沙箱命令行输出。**这一块才是「它的电脑」名副其实的地方**——在它之前，
+ * 面板只说得出「正在运行命令」，说不出它打印了什么。
+ *
+ * ⚠ 拿不到 operationId（这一步不是远端操作，比如 project_read）就整块不画。
+ *   §7 增强类 fail-open：日志是加分项，不许它的缺席让面板本身变难看。
+ */
+function SandboxConsole({ operationId }: { operationId?: string }) {
+  const log = useSandboxLog(operationId);
+  if (!operationId || !log.text) return null;
+  return (
+    <div className="space-y-1" data-testid="project-computer-console">
+      <div className="flex items-center gap-2 text-[11px] text-stone-400">
+        <span>命令行输出</span>
+        <span className="tabular-nums">{log.lineCount} 行</span>
+        {log.truncated ? (
+          <span className="text-amber-600" data-testid="project-computer-console-truncated">
+            · 只保留了最近部分
+          </span>
+        ) : null}
+      </div>
+      {/* 截头保尾，所以看的是尾巴——滚动条默认停在底部才对得上。 */}
+      <pre
+        className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded bg-stone-900 px-2.5 py-2 font-mono text-[11px] leading-[1.5] text-stone-100"
+        data-testid="project-computer-console-text"
+      >
+        {log.text}
+      </pre>
+    </div>
   );
 }
 
@@ -104,6 +137,7 @@ export function ProjectComputerPanel({
               // ⚠ 没摘要就明说没有，不拿工具名凑一段假细节。
               <p className="text-[12px] text-stone-400">这一步没有可展示的细节。</p>
             )}
+            <SandboxConsole operationId={current.operationId} />
           </div>
         ) : null}
       </div>
