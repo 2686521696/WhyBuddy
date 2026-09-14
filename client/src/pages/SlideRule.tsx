@@ -13,6 +13,7 @@
 import { BRAND_NAME_FULL } from "@shared/brand";
 import { DEFAULT_SESSION_ID } from "@/lib/sliderule-session-id";
 import { quietHint } from "./sliderule/quiet-time";
+import { TurnResultCard } from "./sliderule/TurnResultCard";
 import { useAuth } from "@/lib/use-auth";
 import React, {
   useCallback,
@@ -571,6 +572,8 @@ const ImSurfaceContext = React.createContext<{
   thinkingText: string;
   /** 静默久了才出现的「已等待 N 秒」；没到门槛是 null（见 quiet-time.ts）。 */
   quietHint: string | null;
+  /** 工程档已落库的源码版本；结果卡靠它判断「这一轮真的产出了东西」。 */
+  projectRevision?: string | null;
   isRunning: boolean;
   onChallenge: (id: string) => void;
   /** E26：最新一轮的 id——「补齐缺口」只挂在被闸拦截的最新轮上 */
@@ -583,6 +586,7 @@ const ImSurfaceContext = React.createContext<{
   llmStreams: [],
   thinkingText: "",
   quietHint: null,
+  projectRevision: null,
   isRunning: false,
   onChallenge: () => {},
   latestTurnId: null,
@@ -706,6 +710,26 @@ function ImAssistantMessage() {
           {/* 完成后同样保留开口：它是这一轮「为什么这么做」的唯一记录，
               收尾总结替代不了过程里的判断。 */}
           <ModelSpeechBlocks turn={turn} />
+          {/* 结果卡：这一轮真的产出了东西才出（判断在 turn-result-card.ts）。
+              没有它的话，成果只活在右侧预览列里——往上滚看历史什么都不剩。 */}
+          <TurnResultCard
+            turn={turn}
+            runtimeKind={runtimeKind}
+            goalText={goalText}
+            projectRevision={ctx.projectRevision}
+            hasPages={Boolean(turn.main)}
+            onOpen={() => {
+              window.dispatchEvent(new CustomEvent("sliderule:open-deliverable"));
+            }}
+            onRetry={() => {
+              if (!turn.user) return;
+              window.dispatchEvent(
+                new CustomEvent("sliderule:resend-prompt", {
+                  detail: { text: turn.user },
+                })
+              );
+            }}
+          />
           <TurnPhaseTimeline turn={turn} publishClosure={publishClosure} />
           {/* 思考流留档：推演中每步 LLM 的完整输出，完成后保留成可折叠
               记录（Claude 式）——想法不消失，要看随时点开 */}
@@ -828,6 +852,7 @@ export function ClaudeChatSurface({
   factoryDecision = null,
   projectCapabilities = null,
   runtimeKind,
+  projectRevision = null,
 }: {
   uiTurns: UiTurn[];
   isRunning: boolean;
@@ -846,6 +871,8 @@ export function ClaudeChatSurface({
   factoryDecision?: FactoryDecisionView | null;
   projectCapabilities?: { mode?: string; blockers?: string[]; configured?: boolean; canExecute?: boolean } | null;
   runtimeKind?: "html-prototype" | "project";
+  /** 工程档已落库的源码版本；结果卡靠它判断有没有真的产出。 */
+  projectRevision?: string | null;
   /** 会话话题（恢复的轮次没有 turn.user，总结用它兜底） */
   goalText?: string;
   onChallenge: (id: string) => void;
@@ -892,6 +919,7 @@ export function ClaudeChatSurface({
       goalText,
       thinkingText,
       quietHint: quietHintText,
+      projectRevision,
       isRunning,
       onChallenge,
       latestTurnId: latestTurn?.id ?? null,
@@ -906,6 +934,7 @@ export function ClaudeChatSurface({
       goalText,
       thinkingText,
       quietHintText,
+      projectRevision,
       isRunning,
       onChallenge,
       latestTurn?.id,
@@ -1458,6 +1487,7 @@ function SlideRuleUnified({
                     factoryDecision={rehearsalFacts.factoryDecision}
                     projectCapabilities={projectCapabilities}
                     runtimeKind={sessionState.runtimeKind}
+                    projectRevision={sessionState.projectRevision}
                     onChallenge={id =>
                       dispatchChallengePrefill({ artifactId: id })
                     }
