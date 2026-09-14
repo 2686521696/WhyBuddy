@@ -24,6 +24,7 @@
 import React from "react";
 import { Check, Copy, ExternalLink, RotateCw, Upload } from "lucide-react";
 import { resultCardModel } from "./turn-result-card";
+import { useProjectThumbnail } from "./project-runtime/useProjectThumbnail";
 import type { UiTurn } from "./types";
 
 function Star({ on, onClick }: { on: boolean; onClick: () => void }) {
@@ -44,6 +45,7 @@ export function TurnResultCard({
   runtimeKind,
   goalText,
   projectRevision,
+  projectId,
   hasPages,
   thumbnailUrl,
   onOpen,
@@ -53,17 +55,22 @@ export function TurnResultCard({
   runtimeKind?: "html-prototype" | "project" | null;
   goalText?: string | null;
   projectRevision?: string | null;
+  /** 结果卡缩略图取这个工程最近一次验收的截图。 */
+  projectId?: string | null;
   hasPages?: boolean;
   thumbnailUrl?: string | null;
   onOpen?: () => void;
   onRetry?: () => void;
 }) {
+  // ⚠ hook 不能写在 early return 之后，所以在算 model 之前先取。
+  //   拿不到就是 null（验收没跑过），卡片那一块不画。见 useProjectThumbnail 头注。
+  const verified = useProjectThumbnail(runtimeKind === "project" ? projectId : null);
   const model = resultCardModel(turn, {
     runtimeKind,
     goalText,
     projectRevision,
     hasPages,
-    thumbnailUrl,
+    thumbnailUrl: thumbnailUrl || verified,
   });
   const [rating, setRating] = React.useState(0);
   const [copied, setCopied] = React.useState(false);

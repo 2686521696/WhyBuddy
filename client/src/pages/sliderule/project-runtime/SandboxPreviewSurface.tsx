@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { ExternalLink, RotateCw } from "lucide-react";
 import type { PreviewDescriptor } from "@shared/project-runtime.generated";
 import type { ProjectPreviewReference } from "./project-preview-client";
 import { useProjectPreview } from "./useProjectPreview";
@@ -14,6 +15,21 @@ import {
   ProjectWorkspaceError,
   requestProjectWorkspace,
 } from "./project-workspace-client";
+
+/**
+ * 地址栏只显示**路径**，不显示那串 runtimeId 主机名。
+ *
+ * ⚠ 主机名是 `{runtimeId}.预览域`，对用户没有信息量，却会把这一行撑满
+ *   （Manus 那张截图里显示的也只是 `/`）。完整地址仍在 title 和外开链接上。
+ */
+function previewPath(entryUrl: string): string {
+  try {
+    const url = new URL(entryUrl);
+    return `${url.pathname}${url.search}` || "/";
+  } catch {
+    return entryUrl;
+  }
+}
 
 const STATUS: Record<PreviewDescriptor["status"], string> = {
   provisioning: "正在准备运行环境",
@@ -265,36 +281,45 @@ export function SandboxPreviewSurface({
         </div>
       ) : null}
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stone-200 px-4 py-2">
-        <div
-          role="tablist"
-          aria-label="工程工作台 · E2B 沙盒预览"
-          className="flex gap-1"
-        >
-          {(
-            [
-              ["preview", "预览"],
-              ["source", "源码"],
-              ["history", "版本"],
-              ["data", "数据"],
-              ["delivery", "交付"],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              type="button"
-              key={value}
-              role="tab"
-              aria-selected={tab === value}
-              onClick={() => {
-                setTab(value);
-                if (value === "source" || value === "history")
-                  setWorkspaceOpened(true);
-              }}
-              className={`rounded px-3 py-1 text-xs ${tab === value ? "bg-stone-800 text-white" : "text-stone-600 hover:bg-stone-100"}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {/* 视图切换：对照 Manus 那张截图——它是一枚**收起来的**下拉
+            （预览 / 代码 / 仪表盘 / 数据库 / 文件存储 / 设置），不是一排平铺按钮。
+            平铺那版在窄屏会换行，把头部顶成三行，而地址行刚加进来，正好是
+            被顶掉的那一行。
+
+            ⚠ 用原生 <select>，不自己搭浮层：键盘、读屏、移动端的原生选择器
+              全都白拿，而且不引入一个只在这里用一次的弹层组件。
+              原来的 role="tab" 语义由 <select> 自带的 listbox 语义接替——
+              `project-verification.test.tsx` 里那条「切走就收起验收详情」
+              已经跟着改成驱动这个下拉（判据钉的是行为，不是控件长相）。 */}
+        <label className="flex shrink-0 items-center gap-1.5">
+          <span className="sr-only">工程工作台视图</span>
+          <select
+            data-testid="project-mode-select"
+            aria-label="工程工作台视图"
+            value={tab}
+            onChange={event => {
+              const value = event.target.value as typeof tab;
+              setTab(value);
+              if (value === "source" || value === "history")
+                setWorkspaceOpened(true);
+            }}
+            className="rounded-md border border-stone-300 bg-white px-2 py-1 text-xs text-stone-700 hover:bg-stone-50 focus:outline-none focus:ring-1 focus:ring-stone-400"
+          >
+            {(
+              [
+                ["preview", "预览"],
+                ["source", "源码"],
+                ["history", "版本"],
+                ["data", "数据"],
+                ["delivery", "交付"],
+              ] as const
+            ).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
         <button
           type="button"
           disabled={!preview.entryUrl || bridgeStatus === "waiting"}
@@ -375,6 +400,53 @@ export function SandboxPreviewSurface({
           tab === "preview" ? "flex min-h-0 flex-1 flex-col" : "hidden"
         }
       >
+        {/* 地址行：对照 Manus 那张预览截图——它上面有一条像浏览器的行，
+            一眼知道「这是一个真的在跑的站」。
+
+            ⚠ 只画**真的能用**的那几个。两轮各删掉一个（2026-09-14）：
+              · Manus 的「编辑 / 发布」——我们的发布通道没接通，画一个点不动的
+                按钮比不画更糟（§7 不许伪造）。
+              · 自己加的「首页」按钮——写的是 `frame.src = preview.entryUrl`，
+                而 entryUrl 里那张 ticket 是**一次性**的（useProjectPreview
+                每次 open() 换一张），重新导航过去等于拿一张用过的票。
+                本机预览网关是通配符域名 + TLS，验不了，所以不猜——删掉。
+            ⚠ 「刷新」必须是 open()，不是 refresh()：refresh() 只重拉状态快照
+              （头部那颗「更新状态」就是它），重新载入页面要的是**换一张票**，
+              也就是头部那颗在有 entryUrl 时显示为「刷新预览」的按钮。
+              第一版接错成 refresh()，点下去页面纹丝不动。 */}
+        {preview.entryUrl ? (
+          <div
+            className="flex shrink-0 items-center gap-1.5 border-b border-stone-200 bg-stone-50 px-2 py-1.5"
+            data-testid="project-preview-addressbar"
+          >
+            <span
+              className="min-w-0 flex-1 truncate rounded border border-stone-200 bg-white px-2 py-1 font-mono text-[11px] text-stone-500"
+              title={preview.entryUrl}
+              data-testid="project-preview-url"
+            >
+              {previewPath(preview.entryUrl)}
+            </span>
+            <a
+              href={preview.entryUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              title="在新标签页打开"
+              className="flex h-6 w-6 items-center justify-center rounded text-stone-500 hover:bg-stone-200"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+            <button
+              type="button"
+              title="重新载入页面"
+              data-testid="project-preview-reload"
+              disabled={!preview.canOpen}
+              onClick={() => void preview.open()}
+              className="flex h-6 w-6 items-center justify-center rounded text-stone-500 hover:bg-stone-200 disabled:opacity-40"
+            >
+              <RotateCw className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : null}
         {preview.entryUrl ? (
           <iframe
             ref={frame}

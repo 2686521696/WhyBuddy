@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectWorkspacePanel } from "../project-runtime/ProjectWorkspacePanel";
 import { SandboxPreviewSurface } from "../project-runtime/SandboxPreviewSurface";
+import { selectProjectMode } from "./fixtures/select-project-mode";
 import { ProjectEvidenceImages } from "../project-runtime/ProjectEvidenceImages";
 import { ProjectDataPanel } from "../project-runtime/ProjectDataPanel";
 import { connectPreviewSelection } from "../project-runtime/preview-selection-bridge";
@@ -558,7 +559,8 @@ describe("source and history through real HTTP consumers", () => {
     expect(
       fetcher.mock.calls.some(([url]) => String(url).endsWith("/source"))
     ).toBe(false);
-    await click("源码");
+    await act(async () => selectProjectMode(container, "源码"));
+    await flush();
     expect(editor().value).toBe(contents["src/main.tsx"]);
     expect(posts()).toHaveLength(0);
   });

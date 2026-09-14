@@ -1,7 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { VerificationRecord } from "@shared/project-runtime.generated";
+import {
+  PNG_LIMIT,
+  displayableScreenshots,
+  verificationArtifactUrl,
+} from "./verification-artifacts";
 
-const PNG_LIMIT = 5 * 1024 * 1024;
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
 class EvidenceImageError extends Error {}
 
@@ -45,7 +49,7 @@ export function ProjectEvidenceImages({
     setState({ scope, busy: true });
     try {
       const response = await fetch(
-        `/api/sliderule/project-verifications/${encodeURIComponent(record.verificationId)}/artifacts/${encodeURIComponent(artifactId)}`,
+        verificationArtifactUrl(record.verificationId, artifactId),
         {
           credentials: "include",
           cache: "no-store",
@@ -83,12 +87,7 @@ export function ProjectEvidenceImages({
       if (pending.current === controller) pending.current = null;
     }
   };
-  const artifacts = (record.artifactRefs ?? []).filter(
-    ref =>
-      ref.mediaType === "image/png" &&
-      ref.sizeBytes > 0 &&
-      ref.sizeBytes <= PNG_LIMIT
-  );
+  const artifacts = displayableScreenshots(record.artifactRefs);
   if (!artifacts.length) return null;
   const visible = state.scope === scope ? state : { scope };
   return (

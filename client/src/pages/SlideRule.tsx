@@ -577,6 +577,8 @@ const ImSurfaceContext = React.createContext<{
   projectRevision?: string | null;
   /** 后续建议要读的那一小块（模型自己的待办）。整个 state 不进 context。 */
   sessionState?: { controlTodo?: Array<{ id?: string; status?: string; content?: string }> } | null;
+  /** 结果卡缩略图要用：最近一次验收的截图挂在这个工程下。 */
+  projectId?: string | null;
   isRunning: boolean;
   onChallenge: (id: string) => void;
   /** E26：最新一轮的 id——「补齐缺口」只挂在被闸拦截的最新轮上 */
@@ -591,6 +593,7 @@ const ImSurfaceContext = React.createContext<{
   quietHint: null,
   projectRevision: null,
   sessionState: null,
+  projectId: null,
   isRunning: false,
   onChallenge: () => {},
   latestTurnId: null,
@@ -721,6 +724,7 @@ function ImAssistantMessage() {
             runtimeKind={runtimeKind}
             goalText={goalText}
             projectRevision={ctx.projectRevision}
+            projectId={ctx.projectId}
             hasPages={Boolean(turn.main)}
             onOpen={() => {
               window.dispatchEvent(new CustomEvent("sliderule:open-deliverable"));
@@ -870,6 +874,7 @@ export function ClaudeChatSurface({
   runtimeKind,
   projectRevision = null,
   controlTodo = null,
+  projectId = null,
 }: {
   uiTurns: UiTurn[];
   isRunning: boolean;
@@ -892,6 +897,8 @@ export function ClaudeChatSurface({
   projectRevision?: string | null;
   /** 模型自己的待办；后续建议行读它。 */
   controlTodo?: Array<{ id?: string; status?: string; content?: string }> | null;
+  /** 结果卡缩略图要用。 */
+  projectId?: string | null;
   /** 会话话题（恢复的轮次没有 turn.user，总结用它兜底） */
   goalText?: string;
   onChallenge: (id: string) => void;
@@ -940,6 +947,7 @@ export function ClaudeChatSurface({
       quietHint: quietHintText,
       projectRevision,
       sessionState: controlTodo ? { controlTodo } : null,
+      projectId,
       isRunning,
       onChallenge,
       latestTurnId: latestTurn?.id ?? null,
@@ -956,6 +964,7 @@ export function ClaudeChatSurface({
       quietHintText,
       projectRevision,
       controlTodo,
+      projectId,
       isRunning,
       onChallenge,
       latestTurn?.id,
@@ -1510,6 +1519,7 @@ function SlideRuleUnified({
                     runtimeKind={sessionState.runtimeKind}
                     projectRevision={sessionState.projectRevision}
                     controlTodo={sessionState.controlTodo}
+                    projectId={sessionState.projectId}
                     onChallenge={id =>
                       dispatchChallengePrefill({ artifactId: id })
                     }

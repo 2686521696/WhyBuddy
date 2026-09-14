@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VerificationSnapshot } from "@shared/project-runtime.generated";
 import { ProjectVerificationPanel } from "../project-runtime/ProjectVerificationPanel";
 import { SandboxPreviewSurface } from "../project-runtime/SandboxPreviewSurface";
+import { selectProjectMode } from "./fixtures/select-project-mode";
 import type { ProjectVerificationView } from "../project-runtime/project-verification-client";
 
 let root: Root;
@@ -569,10 +570,10 @@ describe("project browser verification consumer", () => {
       '[data-testid="project-verification-details"]'
     )!;
     expect(details.hidden).toBe(false);
-    const sourceTab = container.querySelector<HTMLButtonElement>(
-      '[role="tab"][aria-selected="false"]'
-    )!;
-    await click(sourceTab);
+    // ⚠ 2026-09-14 视图切换从一排 role="tab" 按钮改成了一枚下拉（对照 Manus）。
+    //   判据跟着改成驱动那个下拉——它钉的是**行为**「切走就收起验收详情」，
+    //   不是控件长什么样。控件删掉时这条依然要红，所以先断言它在。
+    await act(async () => selectProjectMode(container, "源码"));
     expect(details.hidden).toBe(true);
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
   });

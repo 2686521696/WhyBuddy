@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ProjectDeliveryPanel } from "../project-runtime/ProjectDeliveryPanel";
 import { SandboxPreviewSurface } from "../project-runtime/SandboxPreviewSurface";
+import { selectProjectMode } from "./fixtures/select-project-mode";
 
 let root: Root, container: HTMLDivElement;
 let fetcher: ReturnType<typeof vi.fn>, view: any;
@@ -263,7 +264,7 @@ it("is wired into the shared Studio and app-center preview surface", async () =>
   await act(async () =>
     root.render(<SandboxPreviewSurface projectId="p1" revisionMode="current" />)
   );
-  await click("交付");
+  await act(async () => selectProjectMode(container, "交付"));
   expect(
     container.querySelector('[data-testid="project-delivery-panel"]')
   ).not.toBeNull();
