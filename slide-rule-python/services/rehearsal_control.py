@@ -96,8 +96,8 @@ from services.user_questions import (
     normalize_answers as normalize_user_answers,
     unanswered_text as unanswered_question_text,
 )
-from services.action_stationarity import (IdenticalToolCallRun, StagnantCallLedger,
-    call_signature, result_fingerprint, step_signature, step_tool_name)
+from services.action_stationarity import (IdenticalToolCallRun, ReadOnlyStreak,
+    StagnantCallLedger, call_signature, result_fingerprint, step_signature, step_tool_name)
 from services.control_checkpoint import current_checkpoint, guard_control_run, owned_model_sample, ControlRunStopped
 from services.control_budget import ControlBudget, PROJECT_BUDGET, restore_budget
 from services.model_memory import (
@@ -843,9 +843,31 @@ TOOL_PERMISSION: Dict[str, Any] = {
 }
 
 
+def tool_writes(name: Any) -> bool:
+    """这件工具会不会真的改东西。权威是两处：声明的 WRITE 权限 + 工程写工具名单。
+
+    ⚠ **别拿 `_step_is_problematically_repeating` 当它用。** 那个判的是
+      「这一轮要不要走紧档阈值」，而工程工具压根没进 `TOOL_SCOPE`——
+      按 closed_tools 那条「Absence is treated as Read」，`project_patch`
+      `project_create` 全被算成 READ。
+
+      2026-09-14 回归当场逮到：只读连胜那道闸复用了它，于是
+      `project_create → project_read → project_patch` 三轮被数成「连着三轮
+      只读」，提醒当场误发，而且把 `test_model_creation_read_and_patch_...`
+      的第三轮顶掉了。两个谓词长得像、名字也像，语义完全不同（§4）。
+    """
+    return (resolve_tool_scope(name) == ToolScope.WRITE
+            or str(name or "").strip() in PROJECT_WRITE_TOOLS)
+
+
+def step_is_read_only(calls: List[Dict[str, Any]]) -> bool:
+    """这一轮**一件都没写**。空轮不算（没有调用就谈不上「只读」）。"""
+    return bool(calls) and not any(tool_writes((c or {}).get("name")) for c in calls)
+
+
 def tool_requires_permission(name: Any) -> bool:
     """这个工具要不要显式批准。没声明的一律不需要。"""
-    return resolve_tool_scope(name) == ToolScope.WRITE or str(name or "").strip() in TOOL_PERMISSION or name in PROJECT_WRITE_TOOLS
+    return tool_writes(name) or str(name or "").strip() in TOOL_PERMISSION
 
 
 def tool_permission_granted(name: Any, state: V5SessionState) -> bool:
@@ -3737,6 +3759,8 @@ async def _control_llm_loop(
     # 第二道游标，同样一个回合一份。数的是「同一次调用带回同一份结果」，
     # 补的是整轮签名那道闸的洞（并行调用里有一件在变就清零）。
     stagnant_calls = StagnantCallLedger()
+    # 第三道：一直在读、一次没写。只捅不掐（读源码是正当动作）。
+    readonly_streak = ReadOnlyStreak()
 
     port = current_checkpoint.get()
     resume = copy.deepcopy(port.checkpoint) if port is not None else None
@@ -3758,6 +3782,8 @@ async def _control_llm_loop(
             setattr(identical_tool_calls, key, value)
         for key, value in resume.get("stagnantCalls", {}).items():
             setattr(stagnant_calls, key, value)
+        for key, value in resume.get("readonlyStreak", {}).items():
+            setattr(readonly_streak, key, value)
 
     async def checkpoint(phase, round_index, pending_calls=None, content="", provider_failure=None):
         if port is None:
@@ -3778,6 +3804,8 @@ async def _control_llm_loop(
                              for key in IdenticalToolCallRun.__slots__},
             "stagnantCalls": {key: getattr(stagnant_calls, key)
                               for key in StagnantCallLedger.__slots__},
+            "readonlyStreak": {key: getattr(readonly_streak, key)
+                               for key in ReadOnlyStreak.__slots__},
             "options": dict(user_text=user_text, installed_skills=installed_skills,
                 active_connectors=active_connectors, preferred_device=preferred_device,
                 design_system_id=design_system_id, original_goal=original_goal,
@@ -3874,6 +3902,16 @@ async def _control_llm_loop(
                     flush=True,
                 )
                 _push_system_reminder(messages, stagnant_calls.nudge_text())
+
+            # 第三道：一直在读、一次没写。**只捅不掐**——读源码是正当动作，
+            # 掐断会把「多读两轮再下手」的正常行为变成事故。
+            if not restoring_calls and readonly_streak.take_nudge():
+                print(
+                    f"[control] readonly_nudge rounds={readonly_streak.rounds} "
+                    f"round={_round}",
+                    flush=True,
+                )
+                _push_system_reminder(messages, readonly_streak.nudge_text())
 
             offered = list_control_tools(state) if tools is None else list(tools)
             prior = _user_turn_before_need(state, user_text) or "你好"
@@ -4032,6 +4070,10 @@ async def _control_llm_loop(
                     step_signature(calls), step_tool_name(calls),
                     _step_is_problematically_repeating(calls),
                 )
+                # ⚠ 用 `step_is_read_only` 而**不是**上面那个紧档判断：
+                #   工程工具没进 TOOL_SCOPE、缺省 READ，拿紧档判断当「没写」
+                #   会把 project_patch 也算成读（见 tool_writes 头注那次回归）。
+                readonly_streak.observe(step_is_read_only(calls))
             resume = None
             await checkpoint("tools", _round, calls, content)
 

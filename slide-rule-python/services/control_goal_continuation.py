@@ -168,7 +168,8 @@ def continuation_checkpoint(checkpoint: Any, notice: str) -> Optional[Dict[str, 
 
     ⚠ `stationarity`（原地打转游标）**故意保留**：它防的正是模型反复调同一个
       工具，跨轮次继承才有意义，重置了等于每次续跑都给它一次重新打转的机会。
-      `stagnantCalls`（同一次调用带回同一份结果的账）同理——两道闸都靠
+      `stagnantCalls`（同一次调用带回同一份结果的账）、`readonlyStreak`
+      （连着几轮只读不写）同理——三道闸都靠
       `{**checkpoint, ...}` 原样带过来，**别往下面的重置清单里加它们**。
       判据：`test_真机1_已收尾回合的checkpoint要能转成新一轮的起点`。
     """

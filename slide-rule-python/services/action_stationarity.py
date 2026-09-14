@@ -377,3 +377,102 @@ class StagnantCallLedger:
 
     def telemetry(self) -> Tuple[str, int]:
         return (self.tool_name, self.repeats)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 第三道：**一直在读，一次没写**
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# ## 病（2026-09-14 真机 `shots/build2`）
+#
+# 工程链路终于跑通之后，模型在工程工作台里干了这些：
+#
+#     工程动作 17/17
+#     创建工程 → list → 查看运行状态 → 读取源码 ×5 → 查看运行状态
+#     → list → 读取源码 ×4 → search → 读取源码
+#
+# **17 个动作，`project_patch` 零次。** 它自己写的计划里明明有
+# 「project_exec 跑 check/build/test 并修复」，连催 6 次「现在用 project_patch
+# 写实现」都不动手，整轮停在 17/17。
+#
+# 前两道闸都拦不住它，而且**它们不该拦**：
+#   · 整轮签名（第一道）——每轮读的文件不一样，签名当然不同
+#   · 同调用同结果（第二道）——同一个文件最多读了 3 次，阈值是 5
+# 两道数的都是「原地打转」。这一种不是打转，是**一直在往前走但永远不落地**：
+# 每一次读都带回新信息，只是从不转化成改动。
+#
+# ## 判据：整轮全是 READ，连着几轮
+#
+# 复用 `_step_is_problematically_repeating` 那个「这一轮**每一件**都是 READ」
+# 的判断（调用方算好传进来，本模块仍然不查权限表）——不另写一份 scope 判断
+# （CLAUDE.md §4）。一旦某一轮出现 WRITE，连胜清零。
+#
+# ⚠ **只捅不掐。** 读源码是正当动作，把它掐断会让「需要多读几轮才敢下手」的
+#   正常行为变成事故。这一道跟前两道的区别就在这儿：前两道有硬停，这一道没有。
+
+#: 连着几轮只读不写就提醒一次，以及第二次提醒的位置。
+#:
+#: ⚠ 不是从 grok 抄的——grok 没有这一档（它的 Read 紧档管的是**重复**读同一份，
+#:   不是「读了很多但不写」）。这两个数是本仓自己标的，标定集只有两个样本，
+#:   但它们正好卡住上下界：
+#:
+#:     病态（2026-09-14 真机 shots/build2）
+#:         创建工程 → list → status → 读 ×5 → status → list → 读 ×4 → search → 读
+#:         17 个动作 0 次 patch，连着只读的轮数远超 4
+#:
+#:     正当（tests/test_control_project_tools.py
+#:           ::test_failed_command_returns_to_same_model_loop_before_patch_and_rerun）
+#:         project_status → project_logs → project_read → 然后才 patch
+#:         **排查一条失败命令本来就要读三轮**，这是对的流程，不许打扰
+#:
+#: ⚠ 第一版取 3，当场把上面那条正当流程误伤了（回归变红才发现）。
+#:   4 是能同时满足「病态要抓住」和「正当三轮不许碰」的最小值。
+#:   再改之前先把这两个样本重跑一遍，别只改数字。
+#:
+#: 第二档 7：legacy 一回合最多 `MAX_TOOL_ROUNDS`(8) 轮，取 8 就等于永不触发
+#: （§一之二）。7 留出最后一轮还能再推一把。
+NUDGE_AFTER_READONLY_ROUNDS = 4
+NUDGE_AGAIN_AFTER_READONLY_ROUNDS = 7
+
+assert NUDGE_AFTER_READONLY_ROUNDS < NUDGE_AGAIN_AFTER_READONLY_ROUNDS
+
+#: 提醒文案。抄 grok nudge 模板的三段结构：观察到什么、给一条出路、说清代价。
+#: ⚠ 出路必须是**具体那一件工具**——只说「该动手了」，模型会再读一轮当作动手。
+READONLY_NUDGE_TEMPLATE = (
+    "你已经连着 {rounds} 轮只在读，一次 `project_patch` 都没有。"
+    "读到的东西只有落进源码才算数。"
+    "现在就挑**一个**最小的改动用 `project_patch` 写进去（哪怕只改一个文件），"
+    "写完用 `project_exec` 跑一次构建看结果；"
+    "真的还缺关键信息，就说清楚缺哪一处、为什么读不到，别继续翻。"
+)
+
+
+class ReadOnlyStreak:
+    """连着几轮整轮都是 READ。**一个回合一个**，跟前两道同一条纪律。"""
+
+    __slots__ = ("rounds", "nudged_at")
+
+    def __init__(self) -> None:
+        self.rounds: int = 0
+        #: 已经在第几轮提醒过。一段连胜里同一个档只提醒一次。
+        self.nudged_at: int = 0
+
+    def observe(self, read_only_step: bool) -> int:
+        """记一轮。整轮全 READ 就 +1；出现任何非 READ 就清零（真的落地了）。"""
+        if read_only_step:
+            self.rounds += 1
+        else:
+            self.rounds = 0
+            self.nudged_at = 0
+        return self.rounds
+
+    def take_nudge(self) -> bool:
+        """到档就捅一次。两个档各一次，不会每轮都刷屏。"""
+        for threshold in (NUDGE_AFTER_READONLY_ROUNDS, NUDGE_AGAIN_AFTER_READONLY_ROUNDS):
+            if self.rounds >= threshold > self.nudged_at:
+                self.nudged_at = threshold
+                return True
+        return False
+
+    def nudge_text(self) -> str:
+        return READONLY_NUDGE_TEMPLATE.format(rounds=self.rounds)

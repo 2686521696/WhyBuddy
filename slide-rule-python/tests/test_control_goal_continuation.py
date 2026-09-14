@@ -165,6 +165,7 @@ def test_真机1_已收尾回合的checkpoint要能转成新一轮的起点():
         "startedAt": 1.0, "cheapTokens": 55_000, "retrySpent": 3, "retryStartedAt": 1.0,
         "operationIds": ["op-1"], "stationarity": {"run_len": 2},
         "stagnantCalls": {"repeats": 3, "seen": {"project_read\x1f{}": ["fp", 3]}},
+        "readonlyStreak": {"rounds": 4, "nudged_at": 3},
         "options": {},
         "pendingCalls": [{"id": "x"}], "content": "旧内容",
     }
@@ -182,6 +183,8 @@ def test_真机1_已收尾回合的checkpoint要能转成新一轮的起点():
     # 同理，第二道闸（同一次调用带回同一份结果）的账也必须继承：
     # 每次续跑都清零 = 每次都白送模型一段重新打转的余地。
     assert out["stagnantCalls"] == {"repeats": 3, "seen": {"project_read\x1f{}": ["fp", 3]}}
+    # 第三道同理：每次续跑都清零 = 每次白送它一段「只读不写」的余量。
+    assert out["readonlyStreak"] == {"rounds": 4, "nudged_at": 3}
     assert out["operationIds"] == ["op-1"]
 
 
