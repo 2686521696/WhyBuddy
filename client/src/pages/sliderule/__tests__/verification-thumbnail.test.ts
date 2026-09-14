@@ -23,6 +23,7 @@ import {
   isDisplayableScreenshot,
   verificationArtifactUrl,
 } from "../project-runtime/verification-artifacts";
+import { thumbnailFromVerification } from "../project-runtime/useProjectThumbnail";
 
 const stripComments = (source: string) =>
   source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
@@ -85,6 +86,55 @@ describe("哪些验收产物能直接画到页面上", () => {
   it("反向：没跑过验收（artifactRefs 缺席/为空）就是没有，不许兜底凑一张", () => {
     expect(displayableScreenshots(undefined)).toEqual([]);
     expect(displayableScreenshots([])).toEqual([]);
+  });
+});
+
+describe("挑哪一张当缩略图", () => {
+  /** 真机那一发的形状：/projects/{id}/verification 的响应体。 */
+  const view = (effectiveStatus: string, refs = [png()]) =>
+    ({
+      operationId: "op-1",
+      operationStatus: "completed",
+      snapshot: {
+        effectiveStatus,
+        deliveryEligible: false,
+        verification: {
+          verificationId: "vf-1",
+          artifactRefs: refs,
+        },
+      },
+    }) as never;
+
+  it("正向：当前这一版跑过验收，就用它那张", () => {
+    expect(thumbnailFromVerification(view("passed"))).toBe(
+      "/api/sliderule/project-verifications/vf-1/artifacts/a1"
+    );
+  });
+
+  it("⚠ 反向：stale 的那份不算数——它拍的是上一版源码", () => {
+    // 2026-09-14 真机（待办清单那趟）：面板显示「旧版本记录，需重新检查」。
+    // 记录在、截图也在，但那是上一版的。挂到这一轮卡片上就是拿旧证据充新产出。
+    expect(thumbnailFromVerification(view("stale"))).toBeNull();
+  });
+
+  it("检查还在跑（running）时有截图也认：那是当前这一版拍的", () => {
+    expect(thumbnailFromVerification(view("running"))).not.toBeNull();
+  });
+
+  it("反向：压根没跑过验收（snapshot 为 null）", () => {
+    expect(
+      thumbnailFromVerification({
+        operationId: null,
+        operationStatus: null,
+        snapshot: null,
+      })
+    ).toBeNull();
+    expect(thumbnailFromVerification(null)).toBeNull();
+    expect(thumbnailFromVerification(undefined)).toBeNull();
+  });
+
+  it("反向：跑过但一张能画的截图都没有", () => {
+    expect(thumbnailFromVerification(view("passed", []))).toBeNull();
   });
 });
 
