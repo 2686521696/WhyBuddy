@@ -412,25 +412,35 @@ class StagnantCallLedger:
 
 #: 连着几轮只读不写就提醒一次，以及第二次提醒的位置。
 #:
+#: ⚠ **这根轴换过一次，换轴的过程比数字本身重要。**
+#:
+#:   第一版做成「回合级游标」，阈值 4。2026-09-14 真机跑下来
+#:   `readonly_nudge` **一次都没响**，而病态完整复现：
+#:
+#:       picked: project_read × 14   project_patch × 0   project_exec × 0
+#:
+#:   拿产线的 `step_is_read_only` 重算整份后端日志，按回合拆开：
+#:
+#:       回合 A  create(写→清零) → status/list(1) → read×5(2) → read+search(3)  收尾
+#:       回合 B  status/list(1) → read×4(2) → read×3(3)                        收尾
+#:       每回合出现过的最长只读连胜 = 3，阈值 = 4，每次都差那一轮
+#:
+#:   而降到 3 正好撞上正当流程（`test_failed_command_returns_to_same_model_loop_...`
+#:   的 status → logs → read，排查一条失败命令本来就要读三轮）。
+#:
+#:   **3 太急、4 够不着，说明这根轴选错了**——在「单回合」这根轴上，病态和
+#:   正当用法根本分不开。病态是「**这个目标**一路读下来从没落地过」，
+#:   是跨回合属性。同 `MAX_CONTINUATIONS` 的理由（那边头注写着「单轮预算
+#:   每次续跑都会重置，所以拦不住无限续跑」），一模一样的形状。
+#:
+#:   所以游标改成跟着 session state 跨回合累积（`controlReadOnly`），
+#:   任何一次写工具清零。换轴之后 4 就够得着了：真机那两个回合合计 6 轮只读。
+#:
 #: ⚠ 不是从 grok 抄的——grok 没有这一档（它的 Read 紧档管的是**重复**读同一份，
-#:   不是「读了很多但不写」）。这两个数是本仓自己标的，标定集只有两个样本，
-#:   但它们正好卡住上下界：
+#:   不是「读了很多但不写」）。
 #:
-#:     病态（2026-09-14 真机 shots/build2）
-#:         创建工程 → list → status → 读 ×5 → status → list → 读 ×4 → search → 读
-#:         17 个动作 0 次 patch，连着只读的轮数远超 4
-#:
-#:     正当（tests/test_control_project_tools.py
-#:           ::test_failed_command_returns_to_same_model_loop_before_patch_and_rerun）
-#:         project_status → project_logs → project_read → 然后才 patch
-#:         **排查一条失败命令本来就要读三轮**，这是对的流程，不许打扰
-#:
-#: ⚠ 第一版取 3，当场把上面那条正当流程误伤了（回归变红才发现）。
-#:   4 是能同时满足「病态要抓住」和「正当三轮不许碰」的最小值。
-#:   再改之前先把这两个样本重跑一遍，别只改数字。
-#:
-#: 第二档 7：legacy 一回合最多 `MAX_TOOL_ROUNDS`(8) 轮，取 8 就等于永不触发
-#: （§一之二）。7 留出最后一轮还能再推一把。
+#: 第二档 7：跨回合之后不再受单回合 `MAX_TOOL_ROUNDS`(8) 限制，但留着这个数
+#: 是为了「捅两次还不动就别再刷屏」。
 NUDGE_AFTER_READONLY_ROUNDS = 4
 NUDGE_AGAIN_AFTER_READONLY_ROUNDS = 7
 
@@ -448,7 +458,14 @@ READONLY_NUDGE_TEMPLATE = (
 
 
 class ReadOnlyStreak:
-    """连着几轮整轮都是 READ。**一个回合一个**，跟前两道同一条纪律。"""
+    """连着几轮整轮都是 READ。
+
+    ⚠ **跟前两道不一样：这个跨回合。** 前两道数的是「原地打转」，那是回合内
+      的性质，一个回合一份游标（grok 那条「上一个回合的记录不许漏到下一位
+      用户身上」）。这一道数的是「这个目标一路读下来从没落地过」——真机证过
+      它在回合这根轴上跟正当用法分不开（见上面阈值的头注）。
+      所以它从 session state 的 `controlReadOnly` 读出来、写回去。
+    """
 
     __slots__ = ("rounds", "nudged_at")
 
@@ -456,6 +473,22 @@ class ReadOnlyStreak:
         self.rounds: int = 0
         #: 已经在第几轮提醒过。一段连胜里同一个档只提醒一次。
         self.nudged_at: int = 0
+
+    # ── 跨回合存取（形状钉在 models/v5_state.py 的 controlReadOnly 上）──
+
+    @classmethod
+    def from_state(cls, saved: Any) -> "ReadOnlyStreak":
+        """从 session state 还原。坏数据一律当成「没读过」，不许抛。"""
+        streak = cls()
+        if isinstance(saved, dict):
+            rounds = saved.get("rounds")
+            nudged = saved.get("nudgedAt")
+            streak.rounds = rounds if isinstance(rounds, int) and rounds > 0 else 0
+            streak.nudged_at = nudged if isinstance(nudged, int) and nudged > 0 else 0
+        return streak
+
+    def to_state(self) -> Dict[str, int]:
+        return {"rounds": self.rounds, "nudgedAt": self.nudged_at}
 
     def observe(self, read_only_step: bool) -> int:
         """记一轮。整轮全 READ 就 +1；出现任何非 READ 就清零（真的落地了）。"""

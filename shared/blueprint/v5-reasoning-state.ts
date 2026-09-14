@@ -273,6 +273,12 @@ export interface V5SessionState {
    * 服务端拥有，客户端只读——PUT 不得写回。空 = 账已清。
    */
   factoryTodo?: string[];
+  /**
+   * 「一直在读、一次没写」的**跨回合**账（2026-09-14）。服务端拥有，客户端只读。
+   * 回合级游标在真机上一次没响（每回合最多 3 轮只读就收尾，阈值 4），
+   * 详见 `models/v5_state.py` 上 controlReadOnly 的说明。
+   */
+  controlReadOnly?: { rounds?: number; nudgedAt?: number };
   /** 只读子代理账本。服务端拥有，客户端只读。 */
   subagentTasks?: Array<{
     id: string;

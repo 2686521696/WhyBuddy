@@ -208,6 +208,10 @@ def test_接在真链路上_不是摆着好看():
     )
     assert "readonly_streak.observe(step_is_read_only(calls))" in src
     assert "readonly_streak.take_nudge()" in src
+    # ⚠ **跨回合**：必须从 state 读出来、写回去。只落 checkpoint 的话，
+    #   新的用户消息会让它从零开始——那正是第一版真机一次没响的原因。
+    assert "ReadOnlyStreak.from_state(" in src
+    assert "state.controlReadOnly = readonly_streak.to_state()" in src
     # ⚠ 必须用 `step_is_read_only`（权威写工具判断），**不许**退回
     #   `_step_is_problematically_repeating`——那个判的是紧档，而工程工具
     #   缺省 READ，会把 project_patch 也算成读（见 tool_writes 头注）。
@@ -241,3 +245,68 @@ def test_反向_工程写工具不许被算成只读():
     assert step_is_read_only([call("project_read"), call("project_patch")]) is False
     # 空轮不是「只读」——没有调用就谈不上。
     assert step_is_read_only([]) is False
+
+
+# ── 四、跨回合（2026-09-14 换轴之后补的）──────────────────────────────────
+
+
+def test_跨回合_账要从state还原而不是从零开始():
+    """第一版做成回合级游标，真机 `readonly_nudge` 一次都没响。
+
+    按回合拆开量出来：每回合最长只读连胜 = 3，阈值 = 4，每次都差那一轮；
+    而降到 3 正好撞上正当排障（status → logs → read）。
+    **3 太急、4 够不着 = 轴选错了**，不是数字的问题。
+    """
+    from services.action_stationarity import ReadOnlyStreak
+
+    # 上一个回合攒了 3 轮
+    streak = ReadOnlyStreak.from_state({"rounds": 3, "nudgedAt": 0})
+    assert streak.rounds == 3
+    # 这个回合再读一轮就该响——回合级游标在这里会是 1，永远响不了
+    streak.observe(True)
+    assert streak.rounds == NUDGE_AFTER_READONLY_ROUNDS
+    assert streak.take_nudge() is True
+
+
+def test_跨回合_落库形状要能原样往返():
+    from services.action_stationarity import ReadOnlyStreak
+
+    streak = ReadOnlyStreak()
+    for _ in range(NUDGE_AFTER_READONLY_ROUNDS):
+        streak.observe(True)
+    streak.take_nudge()
+    saved = streak.to_state()
+    assert saved == {"rounds": NUDGE_AFTER_READONLY_ROUNDS,
+                     "nudgedAt": NUDGE_AFTER_READONLY_ROUNDS}
+
+    import json
+    back = ReadOnlyStreak.from_state(json.loads(json.dumps(saved)))
+    assert back.rounds == streak.rounds and back.nudged_at == streak.nudged_at
+    # 同一档不许再捅一次（否则每个回合都刷一遍屏）
+    assert back.take_nudge() is False
+
+
+def test_跨回合_坏数据一律当没读过_不许抛():
+    from services.action_stationarity import ReadOnlyStreak
+
+    for bad in (None, "x", 5, [], {"rounds": "3"}, {"rounds": -1, "nudgedAt": -9}):
+        streak = ReadOnlyStreak.from_state(bad)
+        assert streak.rounds == 0 and streak.nudged_at == 0
+
+
+def test_跨回合_两侧模型都要有这个字段():
+    """§4：Python 判定 / TypeScript 运行时。少一侧就是「服务端写了、
+    客户端 PUT 回来把它抹掉」——这条链上已经栽过一次（continuations）。"""
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+    import re
+
+    py = (root / "slide-rule-python" / "models" / "v5_state.py").read_text(encoding="utf-8")
+    ts = (root / "shared" / "blueprint" / "v5-reasoning-state.ts").read_text(encoding="utf-8")
+    # ⚠ 盯**字段声明**，不是盯标识符出现过。两边的注释里都写着这个名字，
+    #   光 `"controlReadOnly" in ts` 在字段被删掉之后照样绿——CLAUDE.md §2
+    #   点名的第一种形态（「那个词同时出现在文档字符串里」），
+    #   2026-09-14 变异时当场逮到。
+    assert re.search(r"^\s*controlReadOnly\s*:", py, re.M), "Python 侧字段没了"
+    assert re.search(r"^\s*controlReadOnly\??\s*:", ts, re.M), "TS 侧字段没了"

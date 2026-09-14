@@ -685,6 +685,20 @@ class V5SessionState(BaseModel):
     # 只读子代理账本（2026-09-04 阶段 3）。服务端拥有，客户端只读。
     # 失败 fail-open：error 记在条目上，不改主链路结论。
     subagentTasks: Optional[List[Dict[str, Any]]] = None
+    # 「一直在读、一次没写」的**跨回合**账（2026-09-14）。服务端拥有，客户端只读。
+    #
+    # ⚠ 为什么必须跨回合：这道闸第一版做成回合级游标，真机上**一次都没响**。
+    #   量下来每个回合最多攒到 3 轮只读就收尾了，而阈值 4 —— 差的那一轮每次
+    #   都差。降到 3 又正好撞上正当流程（排查失败命令本来就要 status→logs→read
+    #   三轮）。3 太急、4 够不着 = **这根轴选错了**，不是数字的问题。
+    #
+    #   病态是「这个目标一路读下来从没落地过」（真机 14 次 project_read、
+    #   0 次 patch），那是目标级属性。同 `MAX_CONTINUATIONS` 的理由——
+    #   `control_goal_continuation` 头注写着「单轮预算每次续跑都会重置，
+    #   所以拦不住无限续跑」，一模一样的形状。
+    #
+    #   形状：{"rounds": int, "nudgedAt": int}。任何一次写工具清零。
+    controlReadOnly: Optional[Dict[str, Any]] = None
     # ... (add more fields as migrated from TS)
 
     @classmethod

@@ -3760,7 +3760,14 @@ async def _control_llm_loop(
     # 补的是整轮签名那道闸的洞（并行调用里有一件在变就清零）。
     stagnant_calls = StagnantCallLedger()
     # 第三道：一直在读、一次没写。只捅不掐（读源码是正当动作）。
-    readonly_streak = ReadOnlyStreak()
+    #
+    # ⚠ **从 session state 读出来，不是新建一个空的。** 前两道是回合级游标，
+    #   这一道跨回合——真机证过它在「单回合」那根轴上跟正当用法分不开
+    #   （每回合最多 3 轮只读就收尾，而正当排障也正好 3 轮）。
+    #   见 action_stationarity 里 NUDGE_AFTER_READONLY_ROUNDS 的头注。
+    readonly_streak = ReadOnlyStreak.from_state(
+        getattr(state, "controlReadOnly", None)
+    )
 
     port = current_checkpoint.get()
     resume = copy.deepcopy(port.checkpoint) if port is not None else None
@@ -4074,6 +4081,10 @@ async def _control_llm_loop(
                 #   工程工具没进 TOOL_SCOPE、缺省 READ，拿紧档判断当「没写」
                 #   会把 project_patch 也算成读（见 tool_writes 头注那次回归）。
                 readonly_streak.observe(step_is_read_only(calls))
+                # ⚠ 立刻写回 state：这道闸跨回合，只落 checkpoint 的话，
+                #   下一个回合（新的用户消息）会从零开始——那正是第一版
+                #   一次都没响的原因。`_apersist(state)` 在 checkpoint() 里。
+                state.controlReadOnly = readonly_streak.to_state()
             resume = None
             await checkpoint("tools", _round, calls, content)
 
