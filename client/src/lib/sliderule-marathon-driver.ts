@@ -55,9 +55,47 @@ export type ControlToolAnswer = {
   feedback?: string;
 };
 
+/**
+ * 控制面这一回合为什么没跑完。**跟 Python 的 `ControlStopReason` 一一对应。**
+ *
+ * ⚠ 2026-09-14 复审逮到：这里原来是一行注释
+ *   `wall_clock | token_budget | tool_rounds | llm_unavailable | unknown`
+ *   加一个 `stopReason: string`。而服务端 2026-09-09 就加了 `stationarity`，
+ *   注释一直没跟上——类型是 string，**编译不会报错**，静默漂移，
+ *   正是 CLAUDE.md §4 那张表上的「Python 判定 / TypeScript 运行时」。
+ *
+ *   现在改成真的联合类型，并且由
+ *   `__tests__/control-stop-reason-matches-python.test.ts` 直接去读
+ *   `rehearsal_control.py` 的 enum 比对——服务端再加一个原因而这里没跟，
+ *   判据当场红。光把 stationarity 补进注释治不了下一次。
+ */
+export const CONTROL_STOP_REASONS = [
+  "wall_clock",
+  "token_budget",
+  "tool_rounds",
+  "stationarity",
+  "llm_unavailable",
+  "unknown",
+] as const;
+
+export type ControlStopReason = (typeof CONTROL_STOP_REASONS)[number];
+
+/**
+ * 把线上收到的原始字符串收进闭集。
+ *
+ * 抄服务端 `ControlStopReason.UNKNOWN` 的那句注释——「新原因先落这儿，
+ * 直到有人给它起名字。**绝不构造成上面任何一种**」。认不出来的降级成
+ * `unknown`，而不是让一个没建模的字符串漏进 UI 再去 switch 它。
+ */
+export function asControlStopReason(raw: unknown): ControlStopReason {
+  const text = String(raw ?? "").trim();
+  return (CONTROL_STOP_REASONS as readonly string[]).includes(text)
+    ? (text as ControlStopReason)
+    : "unknown";
+}
+
 export type ControlStop = {
-  /** wall_clock | token_budget | tool_rounds | llm_unavailable | unknown */
-  stopReason: string;
+  stopReason: ControlStopReason;
   /** runtime（我们的闸，再试可能有用）| provider（模型/网关）| unknown */
   stoppedBy: string;
   /** 到顶的那个限额本身（抄 turn_hook 的 cancellation_context）。 */
@@ -1100,7 +1138,7 @@ export async function consumeControlStreamResponse(
                 String(event.text || ""),
                 typeof event.stopReason === "string"
                   ? {
-                      stopReason: event.stopReason,
+                      stopReason: asControlStopReason(event.stopReason),
                       stoppedBy: String(event.stoppedBy || "unknown"),
                       ...(typeof event.limit === "number"
                         ? { limit: event.limit }

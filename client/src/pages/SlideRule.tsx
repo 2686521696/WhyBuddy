@@ -12,6 +12,7 @@
 
 import { BRAND_NAME_FULL } from "@shared/brand";
 import { DEFAULT_SESSION_ID } from "@/lib/sliderule-session-id";
+import { quietHint } from "./sliderule/quiet-time";
 import { useAuth } from "@/lib/use-auth";
 import React, {
   useCallback,
@@ -536,6 +537,30 @@ export function buildImItems(uiTurns: UiTurn[]): ImItem[] {
 
 /** 轮次之外的渲染上下文（草稿流/闭环/话题），经 context 传给自定义消息组件——
  *  组件定义在模块层保持身份稳定（每帧重建会让 Messages 整列重挂）。 */
+/**
+ * 距上一次「有动静」过了多少秒。`marker` 变了就重置。
+ *
+ * ⚠ 纯粹的展示逻辑留在组件层，可判据的那部分在 `quiet-time.ts`（`quietHint`）。
+ *   这里只负责把秒数喂过去：一秒一跳的 setInterval 只在运行中挂着，
+ *   停下来就清掉，不让它在空闲页面上一直转。
+ */
+function useQuietSeconds(marker: string, running: boolean): number {
+  const [seconds, setSeconds] = React.useState(0);
+  const sinceRef = React.useRef(Date.now());
+  React.useEffect(() => {
+    sinceRef.current = Date.now();
+    setSeconds(0);
+  }, [marker, running]);
+  React.useEffect(() => {
+    if (!running) return;
+    const id = window.setInterval(() => {
+      setSeconds((Date.now() - sinceRef.current) / 1000);
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [running]);
+  return running ? seconds : 0;
+}
+
 const ImSurfaceContext = React.createContext<{
   publishClosure?: PublishClosureSummary | null;
   llmDraft: string;
@@ -544,6 +569,8 @@ const ImSurfaceContext = React.createContext<{
   llmStreams: Array<{ label: string; text: string }>;
   goalText?: string;
   thinkingText: string;
+  /** 静默久了才出现的「已等待 N 秒」；没到门槛是 null（见 quiet-time.ts）。 */
+  quietHint: string | null;
   isRunning: boolean;
   onChallenge: (id: string) => void;
   /** E26：最新一轮的 id——「补齐缺口」只挂在被闸拦截的最新轮上 */
@@ -555,6 +582,7 @@ const ImSurfaceContext = React.createContext<{
   llmDraftLabel: null,
   llmStreams: [],
   thinkingText: "",
+  quietHint: null,
   isRunning: false,
   onChallenge: () => {},
   latestTurnId: null,
@@ -648,6 +676,10 @@ function ImAssistantMessage() {
             </span>
             {/* 状态文案翻滚过渡（anime.js）——不再生硬跳变 */}
             <RollingText text={thinkingText} className="min-w-0 flex-1" />
+            {/* 静默久了才出现。短回合一个字都不多（quiet-time.ts 头注）。 */}
+            {ctx.quietHint ? (
+              <span className="shrink-0 tabular-nums text-stone-400">{ctx.quietHint}</span>
+            ) : null}
           </div>
           <TurnPhaseTimeline
             turn={turn}
@@ -825,6 +857,11 @@ export function ClaudeChatSurface({
   const latestStepText = latestTurn
     ? textFromStep(latestTurn.steps.at(-1))
     : "";
+  // 「多久没动静了」。⚠ 量的是**静默**不是回合总时长——游标跟着
+  //   thinkingText 走，有新动静就重置（见 quiet-time.ts 头注）。
+  //   2026-09-14 工程档单发超时放宽到 120 秒之后，没有它的话模型思考
+  //   一两分钟的页面和卡死长得一模一样。
+  const quietHintText = quietHint(useQuietSeconds(latestStepText + "|" + (liveAction?.label || ""), isRunning));
   const thinkingText =
     liveAction?.label ||
     latestStepText ||
@@ -854,6 +891,7 @@ export function ClaudeChatSurface({
       llmStreams,
       goalText,
       thinkingText,
+      quietHint: quietHintText,
       isRunning,
       onChallenge,
       latestTurnId: latestTurn?.id ?? null,
@@ -867,6 +905,7 @@ export function ClaudeChatSurface({
       llmStreams,
       goalText,
       thinkingText,
+      quietHintText,
       isRunning,
       onChallenge,
       latestTurn?.id,

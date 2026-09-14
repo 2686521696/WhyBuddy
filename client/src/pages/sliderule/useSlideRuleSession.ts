@@ -5,6 +5,7 @@ import type {
 } from "@shared/blueprint/capability-process-labels";
 import * as SlideRuleRuntime from "@/lib/sliderule-runtime";
 import { fetchNarration } from "@/lib/sliderule-narrator";
+import { controlStopLine } from "./control-stop";
 import { pickMainArtifact } from "./turn-main-artifact";
 import type {
   CoverageGap,
@@ -2030,7 +2031,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 // 「为什么停」留在左栏时间线里——用户已经习惯去那儿找停因，
                 // 把它挪进正文段落等于换了个地方藏。
                 if (stop) {
-                  appendStreamStep(text);
+                  // ⚠ 带上 limit/used：服务端特意量了这两个数，以前只写进
+                  //   lastControlStopRef 就没了下文（见 control-stop.ts 头注）。
+                  appendStreamStep(controlStopLine(text, stop));
                   return;
                 }
                 // 动手之前的开口走正文段落（model-speech 头注）。
