@@ -163,7 +163,9 @@ def test_真机1_已收尾回合的checkpoint要能转成新一轮的起点():
         "schemaVersion": 1, "phase": "settling", "round": 4,
         "messages": [{"role": "system", "content": "sys"}, {"role": "user", "content": "加截止日期"}],
         "startedAt": 1.0, "cheapTokens": 55_000, "retrySpent": 3, "retryStartedAt": 1.0,
-        "operationIds": ["op-1"], "stationarity": {"run_len": 2}, "options": {},
+        "operationIds": ["op-1"], "stationarity": {"run_len": 2},
+        "stagnantCalls": {"repeats": 3, "seen": {"project_read\x1f{}": ["fp", 3]}},
+        "options": {},
         "pendingCalls": [{"id": "x"}], "content": "旧内容",
     }
     out = continuation_checkpoint(settled, "[自动续跑 第 1 次] 还缺验收证据。")
@@ -177,6 +179,9 @@ def test_真机1_已收尾回合的checkpoint要能转成新一轮的起点():
     # ⚠ 反向：打转游标**必须**继承——它防的正是模型反复调同一个工具，
     #   每次续跑都重置等于每次都给它一次重新打转的机会。
     assert out["stationarity"] == {"run_len": 2}
+    # 同理，第二道闸（同一次调用带回同一份结果）的账也必须继承：
+    # 每次续跑都清零 = 每次都白送模型一段重新打转的余地。
+    assert out["stagnantCalls"] == {"repeats": 3, "seen": {"project_read\x1f{}": ["fp", 3]}}
     assert out["operationIds"] == ["op-1"]
 
 

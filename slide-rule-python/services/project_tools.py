@@ -21,12 +21,13 @@ from services.project_creation import create_session_project, load_authorized_se
 from services.project_manifest import canonical_json, content_hash, prepare_source_patch, source_path
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStoreUnavailable
 from services.project_source_operations import ProjectSourceOperations
-from services.project_tool_contracts import PROJECT_ARGUMENTS, PROJECT_WRITE_TOOLS
+from services.project_tool_contracts import PROJECT_ARGUMENTS, PROJECT_READ_MAX_RESULT_CHARS, PROJECT_WRITE_TOOLS
 from services.scope_authority import plan_execution_authorized
 from services.project_rollout import rollout_readiness
 from services.project_acceptance import approved_acceptance_requirements
 
 MAX_RESULT_CHARS = 3800
+
 _TERMINAL = {"completed", "failed", "cancelled"}
 
 
@@ -34,12 +35,13 @@ def _size(value):
     return len(json.dumps(value, ensure_ascii=False))
 
 
-def _bounded_text(value, key, text):
+def _bounded_text(value, key, text, cap=None):
     """Account for JSON escaping so the outer control result cap never cuts a cursor."""
+    cap = MAX_RESULT_CHARS if cap is None else cap
     low, high = 0, len(text)
     while low < high:
         middle = (low + high + 1) // 2
-        if _size({**value, key: text[:middle]}) <= MAX_RESULT_CHARS:
+        if _size({**value, key: text[:middle]}) <= cap:
             low = middle
         else:
             high = middle - 1
@@ -343,7 +345,13 @@ class ProjectTools:
             raise ValueError("invalid_project_offset")
         result = {"revision": revision.revision, "path": path, "sha256": content_hash(text),
             "offset": args.offset, "nextOffset": args.offset + args.limit, "truncated": True, "totalChars": len(text)}
-        result["content"] = _bounded_text(result, "content", text[args.offset:args.offset + args.limit])
+        # ⚠ `ok` 是**调用方**加的（`return {"ok": True, **self._read(...)}`），
+        #   但模型看到的是加完之后那一包。不把它算进来，夹出来的结果就必然
+        #   比上限多 12 个字符——2026-09-14 放宽读窗时被
+        #   test_literal_search_and_read_cursors_keep_exact_content_under_result_cap
+        #   逮到：老判据留了 200 字的富余，正好盖住这笔账。
+        result["content"] = _bounded_text({"ok": True, **result}, "content",
+            text[args.offset:args.offset + args.limit], cap=PROJECT_READ_MAX_RESULT_CHARS)
         result["nextOffset"] = args.offset + len(result["content"])
         result["truncated"] = result["nextOffset"] < len(text)
         return result

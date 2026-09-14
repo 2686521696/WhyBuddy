@@ -96,7 +96,8 @@ from services.user_questions import (
     normalize_answers as normalize_user_answers,
     unanswered_text as unanswered_question_text,
 )
-from services.action_stationarity import IdenticalToolCallRun, step_signature, step_tool_name
+from services.action_stationarity import (IdenticalToolCallRun, StagnantCallLedger,
+    call_signature, result_fingerprint, step_signature, step_tool_name)
 from services.control_checkpoint import current_checkpoint, guard_control_run, owned_model_sample, ControlRunStopped
 from services.control_budget import ControlBudget, PROJECT_BUDGET, restore_budget
 from services.model_memory import (
@@ -144,7 +145,8 @@ from services.closed_tools import (
 )
 from services.drive_full_factory import start_drive_full_factory_run
 from services.project_authority import approved_reference
-from services.project_tool_contracts import PROJECT_TOOLS, PROJECT_TOOL_NAMES, PROJECT_WRITE_TOOLS
+from services.project_tool_contracts import (PROJECT_READ_MAX_RESULT_CHARS, PROJECT_TOOLS,
+    PROJECT_TOOL_NAMES, PROJECT_WRITE_TOOLS)
 from services.project_tool_summary import project_tool_summary
 from services.workflow_registry import workflow_for, workflow_names
 from services.workflow_select import select_workflow
@@ -1011,6 +1013,33 @@ def _project_budget_eligible(state):
 #: 取 4000 字符 ≈ 1000 token（grok 的 4 字节/token 口径），八轮正好落在
 #: MAX_CHEAP_TOKENS 上。跟 INSPECT_MAX_CHARS 同一个数量级，是同一族常量。
 CONTROL_TOOL_RESULT_MAX_CHARS = 4000
+
+#: 按工具名覆盖上面那个默认档。抄 grok `TruncationConfig`：
+#:
+#:     /// Max total output bytes for any tool. Default: 40KB.
+#:     pub default_max_output_bytes: Option<usize>,
+#:     /// Per-tool overrides keyed by canonical tool name.
+#:     pub per_tool_max_output_bytes: HashMap<String, usize>,
+#:
+#: ⚠ 默认档**故意不动**。它挡的是 `search_evidence` 那类**长度我们说了不算**
+#:   的结果（hits 来自公网，一次胖搜索就能把下一发顶穿——见上面的头注）。
+#:   `project_read` 不一样：它的长度在我们自己手里，已经被
+#:   `PROJECT_READ_MAX_CHARS` 夹过一道了，再用 4000 夹第二道就只是把刚放宽的
+#:   读窗原样砍回去。grok 区分 default / per-tool 正是这个理由。
+#:
+#: ⚠ 这是读窗那条链的**第三道**，也是最后一道（CLAUDE.md §4）。三道齐了
+#:   读窗才真的变宽，漏一道都是"改了但一点效果没有"。
+CONTROL_TOOL_RESULT_MAX_CHARS_BY_TOOL: Dict[str, int] = {
+    "project_read": PROJECT_READ_MAX_RESULT_CHARS,
+}
+
+
+def control_tool_result_max_chars(tool_name: Any = None) -> int:
+    """这件工具的结果回喂上限。抄 grok `max_output_bytes_for` 的优先级：
+    per-tool 覆盖 > 默认档。"""
+    return CONTROL_TOOL_RESULT_MAX_CHARS_BY_TOOL.get(
+        str(tool_name or ""), CONTROL_TOOL_RESULT_MAX_CHARS
+    )
 
 CONTROL_TOOLS: List[Dict[str, Any]] = [
     *PROJECT_TOOLS,
@@ -3003,7 +3032,7 @@ def _usage_tokens(usage: Any) -> int:
         return 0
 
 
-def bound_tool_result(body: Any) -> str:
+def bound_tool_result(body: Any, tool_name: Any = None) -> str:
     """工具结果 → 回喂给模型的字符串，超限就裁并**说自己裁了**。
 
     抄 grok 三件套（见 CONTROL_TOOL_RESULT_MAX_CHARS 头注）：
@@ -3017,20 +3046,21 @@ def bound_tool_result(body: Any) -> str:
     裁法是**前缀裁**，不做二分（grok 明写 "no binary search"）——省下来的
     那点精度不值一次额外的 token 计数。
     """
+    cap = control_tool_result_max_chars(tool_name)
     text = json.dumps(
         body if body is not None else {"ok": True}, ensure_ascii=False
     )
-    if len(text) <= CONTROL_TOOL_RESULT_MAX_CHARS:
+    if len(text) <= cap:
         return text
     return json.dumps(
         {
             "truncated": True,
             "rawChars": len(text),
             "truncationHint": (
-                f"结果太长，只喂了前 {CONTROL_TOOL_RESULT_MAX_CHARS} 字"
+                f"结果太长，只喂了前 {cap} 字"
                 f"（原文 {len(text)} 字）。需要更多就换个更窄的查询词再来一次。"
             ),
-            "preview": text[:CONTROL_TOOL_RESULT_MAX_CHARS],
+            "preview": text[:cap],
         },
         ensure_ascii=False,
     )
@@ -3669,6 +3699,9 @@ async def _control_llm_loop(
     # `process_conversation_turn` 的局部变量，不是 actor 上的字段——
     # 上一个回合的打转记录不许漏进这一个。
     identical_tool_calls = IdenticalToolCallRun()
+    # 第二道游标，同样一个回合一份。数的是「同一次调用带回同一份结果」，
+    # 补的是整轮签名那道闸的洞（并行调用里有一件在变就清零）。
+    stagnant_calls = StagnantCallLedger()
 
     port = current_checkpoint.get()
     resume = copy.deepcopy(port.checkpoint) if port is not None else None
@@ -3687,6 +3720,8 @@ async def _control_llm_loop(
     if resume:
         for key, value in resume.get("stationarity", {}).items():
             setattr(identical_tool_calls, key, value)
+        for key, value in resume.get("stagnantCalls", {}).items():
+            setattr(stagnant_calls, key, value)
 
     async def checkpoint(phase, round_index, pending_calls=None, content="", provider_failure=None):
         if port is None:
@@ -3705,6 +3740,8 @@ async def _control_llm_loop(
             "retryStartedAt": time.time() - budget.elapsed() if budget else time.time(),
             "stationarity": {key: getattr(identical_tool_calls, key)
                              for key in IdenticalToolCallRun.__slots__},
+            "stagnantCalls": {key: getattr(stagnant_calls, key)
+                              for key in StagnantCallLedger.__slots__},
             "options": dict(user_text=user_text, installed_skills=installed_skills,
                 active_connectors=active_connectors, preferred_device=preferred_device,
                 design_system_id=design_system_id, original_goal=original_goal,
@@ -3771,6 +3808,36 @@ async def _control_llm_loop(
                 # 贴在上一轮的工具结果上，不另起 role:user——同 _after_write_hint
                 # 那条纪律（伪造用户消息会让模型以为是用户在下命令）。
                 _push_system_reminder(messages, identical_tool_calls.nudge_text())
+
+            # 第二道，同一个位置、同一个次序（先掐断、再捅一下、然后才采样）。
+            # 这道数的是「同一次调用带回同一份结果」——整轮签名那道闸看不见的
+            # 那种打转：并行调用里只要有一件在变，它就永远清零。
+            if not restoring_calls and stagnant_calls.should_hard_stop():
+                tool_name, repeats = stagnant_calls.telemetry()
+                print(
+                    f"[control] stagnant_stop tool={tool_name!r} "
+                    f"repeats={repeats} round={_round}",
+                    flush=True,
+                )
+                async for event in _canned(
+                    state,
+                    _cap_speech(state, ControlStopReason.STATIONARITY),
+                    stop=stop_wire(
+                        ControlStopReason.STATIONARITY,
+                        limit=stagnant_calls.hard_stop_threshold(),
+                        used=repeats,
+                    ),
+                ):
+                    yield event
+                return
+            if not restoring_calls and stagnant_calls.take_nudge():
+                tool_name, repeats = stagnant_calls.telemetry()
+                print(
+                    f"[control] stagnant_nudge tool={tool_name!r} "
+                    f"repeats={repeats} round={_round}",
+                    flush=True,
+                )
+                _push_system_reminder(messages, stagnant_calls.nudge_text())
 
             offered = list_control_tools(state) if tools is None else list(tools)
             prior = _user_turn_before_need(state, user_text) or "你好"
@@ -3969,6 +4036,15 @@ async def _control_llm_loop(
                                 aborted = True
                 if parked or aborted:
                     return
+                # 记这一次调用及其结果。**在这儿记、到下一轮开头才判**，
+                # 跟上面那道闸同一个位置纪律：提醒要贴在已经落进对话的结果后面。
+                #
+                # ⚠ 喂的是 `tool_body`——控制面手里那一份**原样载荷**，
+                #   里面带着每发都变的 seq / toolCallId，由
+                #   `result_fingerprint` 按名单剔掉。自己在这儿先挑一遍字段，
+                #   就等于把判据和产线各写一份（CLAUDE.md §4）。
+                if not restoring_calls:
+                    stagnant_calls.observe(call_signature(call), result_fingerprint(tool_body))
                 messages.append(
                     {
                         "role": "tool",
@@ -3979,7 +4055,8 @@ async def _control_llm_loop(
                         "content": bound_tool_result(
                             tool_body
                             if tool_body is not None
-                            else {"ok": True, "tool": name}
+                            else {"ok": True, "tool": name},
+                            name,
                         ),
                     }
                 )

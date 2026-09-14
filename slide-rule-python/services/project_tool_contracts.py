@@ -25,10 +25,66 @@ class ListArguments(RevisionArguments):
     limit: int = Field(default=20, ge=1, le=20)
 
 
+#: `project_read` 一次最多回多少字符。
+#:
+#: 抄的标准答案：grok-build
+#: `xai-grok-tools/src/implementations/grok_build/read_file/mod.rs` +
+#: `xai-grok-tools/src/types/context.rs`：
+#:
+#:     /// Max lines to read (read_file). Default: 1000.
+#:     pub max_lines_read: Option<usize>,
+#:     ...
+#:     Some(input.limit.unwrap_or(usize::MAX).min(max_lines))
+#:
+#: 两条形状都抄了：**不传 limit 就是"整份读完"**（再由上限夹住），以及
+#: 上限本身要大到一次能吞下一个正常源文件。grok 的默认是 1000 行 / 25k token，
+#: 我们按字符计，取 8000。
+#:
+#: ⚠ 2026-09-14 真机（text168/grok-4.6，`artifacts/control-real-model/1fcfd3d4`）
+#:   就是被这个数字烧死的。原值 2000 字符，而模板里正常源文件是：
+#:
+#:       database.mjs 7458  server.mjs 7356  src/main.tsx 7188
+#:       tests/application.test.mjs 6529  src/style.css 2775  README.md 1040
+#:
+#:   读完一遍要 19 次调用 / 4 轮。真机跑到第 5 轮（共 16 轮）时 offset 老老实实
+#:   走到 0→2000→4000，**一次都没打转**，64000 的 token 预算先烧完了：
+#:
+#:       stopReason=token_budget limit=64000 used=64488   页面落库：0 份
+#:
+#:   原地打转护栏一次都没响——它是对的，模型确实在往前走，只是窗口太小，
+#:   同样的字节被"重发历史"摊进 4 轮里。8000 之后同样这批文件 6 次调用 / 1 轮。
+#:
+#: ⚠ 这个数字**不是单独生效的**（CLAUDE.md §4）。它下游还有两道夹子，
+#:   只改这一个不会报错、只会一点效果都没有：
+#:       services/project_tools.py        `PROJECT_READ_MAX_RESULT_CHARS`（信封）
+#:       services/rehearsal_control.py    `control_tool_result_max_chars()`（回喂）
+#:   `tests/test_project_read_window_fits_real_sources.py` 把三道一起钉住。
+PROJECT_READ_MAX_CHARS = 8000
+
+
+#: `project_read` 专用的信封上限（其余工具仍走 MAX_RESULT_CHARS）。
+#:
+#: 抄 grok `TruncationConfig::per_tool_max_output_bytes`——按工具名覆盖，
+#: 默认档不动：
+#:
+#:     /// Per-tool overrides keyed by canonical tool name.
+#:     pub per_tool_max_output_bytes: HashMap<String, usize>,
+#:     ...
+#:     Precedence: per-tool override > default override > built-in fallback.
+#:
+#: ⚠ 为什么必须单列一个（CLAUDE.md §4）：`_bounded_text` 夹的是**整包 JSON**，
+#:   3800 的信封会把 8000 字的正文当场砍回 ~3500。把 PROJECT_READ_MAX_CHARS
+#:   调大而不动这里，不报错、不告警，读窗一个字都不会变宽。
+#:
+#: 取值 = 8000 正文 × JSON 转义余量（源码里的换行/引号会变两个字符）+ 信封
+#: 那几个字段（revision / path / sha256 / offset / nextOffset / totalChars）。
+PROJECT_READ_MAX_RESULT_CHARS = 10_000
+
+
 class ReadArguments(RevisionArguments):
     path: str = Field(min_length=1, max_length=240)
     offset: int = Field(default=0, ge=0)
-    limit: int = Field(default=2000, ge=1, le=2000)
+    limit: int = Field(default=PROJECT_READ_MAX_CHARS, ge=1, le=PROJECT_READ_MAX_CHARS)
 
 
 class SearchArguments(RevisionArguments):
@@ -116,7 +172,7 @@ PROJECT_WRITE_TOOLS = frozenset({"project_create", "project_patch", "project_sta
 _DESCRIPTIONS = {
     "project_create": "Create or recover this session's React/TypeScript/Vite project using the current approved plan. Select templateId=react-vite-tasks for a task application with real Node API, SQLite data, independent application login and writer/reader roles; react-vite is only a minimal counter. Existing projects retain their source. Returns saved revision, not delivery.",
     "project_list": "List immutable project files with SHA256 and source revision. Continue with nextCursor and the returned revision while truncated.",
-    "project_read": "Read a bounded character slice of a saved source file. Use returned SHA256 for patch preconditions. Continue with nextOffset and the same revision.",
+    "project_read": "Read a saved source file. Omitting limit returns up to {max_read_chars} characters, which covers an ordinary source file in one call; do not page through a file in {max_read_chars}-character steps when one call suffices. Use returned SHA256 for patch preconditions. Only when truncated is true, continue with nextOffset and the same revision; for a very large file (a lockfile, generated output) use project_search instead of reading it end to end.",
     "project_search": "Search saved source for literal text, with bounded line excerpts. Use nextCursor and the same revision to continue; this is not regex or shell execution.",
     "project_revisions": "List committed source history for this project, newest first. Continue with nextCursor. History never includes losing or uncommitted source writes.",
     "project_restore": "Restore a committed historical source tree as a new revision under the current approved plan. Does not rewind history, copy old verification, or restore business data. Live source-only changes queue runtime.patch; dependency/startup changes require stopping and confirmed cleanup first. Poll operationId before declaring completion.",
@@ -132,9 +188,24 @@ _DESCRIPTIONS = {
 }
 
 
+def interpolate_description(description: str) -> str:
+    """把真实上限填进工具描述里。
+
+    抄 grok `TruncationConfig::interpolate_description`：
+
+        .replace("{max_lines_read}", &self.max_lines_read().to_string())
+
+    grok 这么做的理由就是本仓 §4：描述里写死一个数字，改了常量不改描述，
+    模型读到的还是旧的——不报错，只是它按一个不存在的窗口去分页。
+    从常量渲染出来，两边不可能对不上。
+    """
+    return description.replace("{max_read_chars}", str(PROJECT_READ_MAX_CHARS))
+
+
 def project_tool_definitions() -> list[dict]:
     return [{"type": "function", "function": {
-        "name": name, "description": _DESCRIPTIONS[name], "parameters": model.model_json_schema(),
+        "name": name, "description": interpolate_description(_DESCRIPTIONS[name]),
+        "parameters": model.model_json_schema(),
     }} for name, model in PROJECT_ARGUMENTS.items()]
 
 

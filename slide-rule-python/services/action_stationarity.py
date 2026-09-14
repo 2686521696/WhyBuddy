@@ -196,3 +196,184 @@ class IdenticalToolCallRun:
     def telemetry(self) -> Tuple[str, int, bool]:
         """(工具名, 连了几轮, 是不是紧档)。日志和停止信封共用这一份，不各拼各的。"""
         return (self.tool_name, self.run_len, self.is_problematic())
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 第二道：**同一次调用、同一份结果**，这一回合里出现了几次
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# ## 为什么上面那道不够（2026-09-14 真机复盘）
+#
+# `IdenticalToolCallRun` 数的是「**整一轮**的签名跟上一轮一字不差」——
+# `step_signature` 把这一轮所有并行调用拼成一个串，只要**有一件**不同，
+# `observe` 就 `run_len = 1` 清零重来。
+#
+# grok 那边这个形状够用，因为它的回合多半是单件调用。我们的控制面一轮发
+# 4~6 件并行调用，于是出现一个洞：**五件原地打转、一件在变，计数器永远回到 1。**
+#
+#     轮3  read×6   database / server / main.tsx / application.test / style.css / README.md
+#     轮4  read×5 + project_status      前五个一模一样，尾巴换了一件
+#     轮5  read×4   又是前四个
+#
+# 三轮读的是同一批文件，肉眼就是在打转，而 run_len 一路停在 1。
+#
+# ⚠ 但**那一趟真机并不是打转**：落库的 offset 老老实实 0→2000→4000，模型在
+#   翻页，翻不完是因为读窗只有 2000 字（已随 `PROJECT_READ_MAX_CHARS` 修好）。
+#   这道闸是顺手补上的那个洞，**不是那次事故的成因**。别把两件事记混了。
+#
+# ## 判据不能只看实参（否则会误伤真机上的正当重复）
+#
+# 最直觉的写法是「同一个 name+args 出现 N 次就掐」。真机上它会当场误伤：
+#
+#     project_status(operationId=X)   实参一字不差，结果从 queued → running → completed
+#
+# 那是**正当轮询**，grok 的 nudge 文案里专门给它留了出路。所以判据必须再加一
+# 个条件：**结果也没变**。抄 grok `TaskOutputResult::progress_signature`：
+#
+#     /// Two results with the same signature are considered stagnant — the task
+#     /// state has not changed between polls.  Used by the doom-loop detector to
+#     /// distinguish legitimate waiting (progress) from a true polling stall.
+#
+# 同一次调用 + 同一份结果 = 这一次调用带回来的信息量是零，无论实参长什么样。
+# 而翻页读（offset 在变）、轮询（status 在变）两种正当重复都会被这条放过。
+
+#: 结果指纹要**扔掉**的键：每发都不一样的传输/排序元数据。
+#:
+#: ⚠ 这是这道闸最容易写成哑弹的地方（CLAUDE.md §一之二）。控制面回给模型的
+#:   `tool_body` 是 `{k: v for k, v in event.items() if k != "type"}`——整个事件，
+#:   `toolCallId` 和 `seq` 都在里面，而这两个**每一发都不同**。整包哈希的话
+#:   指纹永远不重复，闸装上了也永远不响，单测还会绿（判据自己拼一个干净的
+#:   载荷就行）。
+#:
+#: 下面这份名单是从真机那一发的**原样载荷**抄下来的
+#: （`artifacts/control-real-model/1fcfd3d4`，`wb_control_run.events`）：
+#:
+#:     {"content": "…", "controlRunId": "ctr-ca9f08…", "nextOffset": 2000,
+#:      "offset": 0, "ok": true, "path": "database.mjs", "revision": "prv-3c10…",
+#:      "seq": 23, "sha256": "a7579ea8…", "tool": "project_read",
+#:      "toolCallId": "call-eab3c0bb-…-6", "totalChars": 7458,
+#:      "truncated": true, "type": "control_tool_result"}
+#:
+#: `tests/test_control_stops_when_it_repeats_itself.py::test_真机载荷_易变字段不算进展`
+#: 直接喂这一份原文，不许自己拼。
+_VOLATILE_RESULT_KEYS = frozenset({"seq", "toolCallId", "controlRunId", "type"})
+
+#: 捅一下 / 掐断。**一次调用带回同一份结果**，第二次起就是零信息量。
+#:
+#: ⚠ 不是照抄 grok 的 4/8：那组数是给「连续轮数」那个轴的，而且 grok 的
+#:   `max_turns` 默认不限轮。这个轴数的是「这一回合里出现过几次」，
+#:   控制面一回合最多 `MAX_TOOL_ROUNDS`(8) ~ `PROJECT_BUDGET.max_rounds`(16) 轮。
+#:   取 3/5：留一次「报错后重试一遍」的余地（真机上确实有这种正当重复），
+#:   第三次还是同一份结果就提醒，第五次掐断。判据
+#:   `test_重复阈值必须够得着` 钉住它小于总轮数预算。
+NUDGE_AFTER_STAGNANT_REPEATS = 3
+MAX_STAGNANT_REPEATS = 5
+
+assert NUDGE_AFTER_STAGNANT_REPEATS < MAX_STAGNANT_REPEATS
+
+#: 抄 grok `ACTION_STATIONARITY_NUDGE_TEMPLATE` 的三段结构：观察到什么、
+#: 给一条出路、预告再来就掐。这里的出路跟上面那条不同——重点是
+#: 「你已经有这份结果了」，而不是「换个实参」。
+STAGNANT_NUDGE_TEMPLATE = (
+    "你在这一回合里已经第 {repeats} 次调用 `{tool_name}` 并拿回**一模一样**的结果了——"
+    "这次调用没有带来任何新信息。这份结果已经在上面的对话里，别再要一遍。"
+    "拿它往下走（该改就改、该跑就跑）；真的还缺东西就换一件工具或者换一份实参；"
+    "推进不下去就停下来用一句话告诉用户你卡在哪。再重复下去，这一轮会被自动掐断。"
+)
+
+
+def call_signature(call: Any) -> str:
+    """**单次**调用的签名（上面那个 `step_signature` 是整轮的）。
+
+    规范化沿用 `_canonical`，两个轴对「什么算同一次调用」的口径必须一致，
+    否则同一批调用在两道闸里会得出两个结论（CLAUDE.md §4）。
+    """
+    call = call if isinstance(call, dict) else {}
+    name = str(call.get("name") or "")
+    args = call.get("arguments")
+    try:
+        rendered = json.dumps(
+            _canonical(args if isinstance(args, dict) else {}),
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+    except (TypeError, ValueError):
+        rendered = repr(args)
+    return f"{name}\x1f{rendered}"
+
+
+def result_fingerprint(body: Any) -> str:
+    """一份工具结果的「有没有变」指纹。
+
+    抄 grok `progress_signature`：只取**语义上有意义**的字段，易变的传输元数据
+    （`seq` / `toolCallId` / `controlRunId`）一律扔掉——见 `_VOLATILE_RESULT_KEYS`
+    头注里那份真机载荷。
+    """
+    if not isinstance(body, dict):
+        return f"raw\x1f{body!r}"
+    kept = {k: v for k, v in body.items() if k not in _VOLATILE_RESULT_KEYS}
+    try:
+        return json.dumps(_canonical(kept), sort_keys=True, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return repr(sorted(kept))
+
+
+class StagnantCallLedger:
+    """「同一次调用 → 同一份结果」在这一回合里出现了几次。
+
+    **一个回合一个**，跟 `IdenticalToolCallRun` 同一条纪律：上一位用户的
+    记录不许漏到下一位身上。
+    """
+
+    __slots__ = ("seen", "tool_name", "repeats", "nudged")
+
+    def __init__(self) -> None:
+        # signature -> [result_fingerprint, 出现次数]
+        self.seen: Dict[str, List[Any]] = {}
+        self.tool_name: str = ""
+        self.repeats: int = 0
+        self.nudged: bool = False
+
+    def observe(self, signature: str, fingerprint: str) -> int:
+        """记一次调用及其结果，返回这次调用**带回同一份结果**的累计次数。
+
+        结果变了就从 1 重新起算——那是进展：轮询的状态推进了、翻页读到了新
+        内容。两种正当重复都靠这一条放过去。
+        """
+        previous = self.seen.get(signature)
+        if previous is not None and previous[0] == fingerprint:
+            previous[1] += 1
+        else:
+            self.seen[signature] = [fingerprint, 1]
+        # 游标跟着**当前最严重的那一条**走，不是跟着刚记的这一条。
+        # 这正是整轮签名那道闸漏掉的东西：一件在打转、同一轮里另一件在变，
+        # 不许让后者把前者的计数顶掉。
+        worst_signature, worst = max(self.seen.items(), key=lambda item: item[1][1])
+        if worst[1] < self.repeats:
+            # 最严重的那条自己往前走了 → 有进展，「捅过了」清掉，
+            # 下一段停滞要能重新被捅。
+            self.nudged = False
+        self.repeats = worst[1]
+        self.tool_name = worst_signature.split("\x1f", 1)[0]
+        return self.seen[signature][1]
+
+    def should_hard_stop(self) -> bool:
+        return self.repeats >= MAX_STAGNANT_REPEATS
+
+    def hard_stop_threshold(self) -> int:
+        return MAX_STAGNANT_REPEATS
+
+    def take_nudge(self) -> bool:
+        """一段停滞只捅一次。调用位置跟上面那条一样：在下一轮循环开头，
+        结果已经落进对话之后。"""
+        fire = (not self.nudged) and self.repeats >= NUDGE_AFTER_STAGNANT_REPEATS
+        self.nudged = self.nudged or fire
+        return fire
+
+    def nudge_text(self) -> str:
+        return STAGNANT_NUDGE_TEMPLATE.format(
+            repeats=self.repeats, tool_name=self.tool_name or "（未具名）"
+        )
+
+    def telemetry(self) -> Tuple[str, int]:
+        return (self.tool_name, self.repeats)

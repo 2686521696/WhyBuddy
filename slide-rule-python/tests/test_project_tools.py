@@ -18,7 +18,8 @@ from services.project_authority import approved_reference
 from services.project_manifest import content_hash
 from services.project_runtime_worker import ProjectRuntimeSupervisor
 from services.project_store import ProjectNotFound, ProjectStore
-from services.project_tool_contracts import PROJECT_TOOL_NAMES, PROJECT_TOOLS, PROJECT_WRITE_TOOLS
+from services.project_tool_contracts import (PROJECT_READ_MAX_RESULT_CHARS, PROJECT_TOOL_NAMES,
+    PROJECT_TOOLS, PROJECT_WRITE_TOOLS)
 from services.project_tools import ProjectTools
 from services.session_blob_store import SqlSessionBlobStore
 
@@ -259,7 +260,9 @@ def test_literal_search_and_read_cursors_keep_exact_content_under_result_cap(set
     offset, text = 0, ""
     while True:
         result = execute(setup, "project_read", {"path": "src/App.tsx", "revision": project["revision"], "offset": offset})
-        assert result["ok"] and len(json.dumps(result, ensure_ascii=False)) < 4000
+        # ⚠ 上限从常量读，不许再手打一个数字：2026-09-14 把读窗 2000→8000 时
+        #   这里写死的 4000 当场变红，而它想钉的是「有界且游标无损」，不是那个数。
+        assert result["ok"] and len(json.dumps(result, ensure_ascii=False)) <= PROJECT_READ_MAX_RESULT_CHARS
         text += result["content"]
         if not result["truncated"]: break
         assert result["nextOffset"] > offset
