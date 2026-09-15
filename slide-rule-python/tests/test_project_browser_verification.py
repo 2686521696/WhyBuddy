@@ -477,7 +477,12 @@ def test_model_http_loop_observes_failed_assertion_patches_source_and_verifies_n
 
         harness.llm_impl = model
         events = control_post(env.state)
-        assert len(seen) == 9 and len(harness.llm_calls) == 10, {
+        # ⚠ 2026-09-15：+1 是那一轮自动续跑（业务验收还没通过 → 目标未交付）。
+        #   跟 test_control_project_tools 同一个处理：把续跑正面钉住，
+        #   不是把数字改大了事。
+        assert [(e["attempt"], e["reason"]) for e in events
+                if e.get("type") == "control_continuation"] == [(1, "goal_not_delivered")]
+        assert len(seen) == 10 and len(harness.llm_calls) == 11, {
             "run": {key: value for key, value in env.control.store.get(events[0]["controlRunId"], TEST_USER_ID).items()
                     if key in {"status", "error"}},
             "seen": [(item.get("tool"), item.get("status"), item.get("error")) for item in seen],

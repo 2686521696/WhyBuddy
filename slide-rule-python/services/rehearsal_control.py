@@ -1538,8 +1538,44 @@ async def _logged_tool_events(
             # 刚 load 的会话，抢先 persist 会被那一刀盖掉。结果出来再落盘，
             # 这一发的 start/result 一起进库。checkpoint 也会再写一次。
             if entry["kind"] == "tool_result":
-                await _apersist(state)
+                await _apersist_transcript(state)
         yield event
+
+
+async def _apersist_transcript(state: V5SessionState) -> None:
+    """把会话日志落盘——**只落日志那一栏**，用读-改-写，不整份盖。
+
+    ## 为什么不能直接 `_apersist(state)`（2026-09-15）
+
+    这个包装器套在**整条流**上，手里那份 `state` 是进来时的。而流中途会有
+    别的写入者往同一个会话里写：`_handoff_factory` 起的工厂是另一条 run，
+    spec-first 跑完把 SPEC 写进 `state.specFirstPages` 并自己存了库。
+
+    直接 `_apersist(state)` 就是拿进来时那份旧快照整体覆盖——SPEC 当场没了。
+    而 `_persist` 用的是 `server_write=True`，它**绕过 persistence 的同轮
+    增长守卫**（那是 2026-09-04 为了让纯标量翻转别被丢掉才加的），
+    所以这一盖不会被拦下来，不报错、不告警。
+
+    真机形态：spec 跳交回后 `_has_spec(state)` 仍是 False → `pages` 不进
+    工具清单 → host 挑不了下一跳，整条 spec-first 链停在 spec。
+    落库的 blob 只剩 `{'assumptionsConfirmed'}`，`spec` 键整个没了。
+
+    ⚠ 头注上面那半句说的是**反方向**的同一个病（「抢先 persist 会被那一刀
+      盖掉」）。两个方向都要防：那半句靠延后落盘，这半句靠只写自己那一栏。
+
+    做法：重新 load 一份，把这一条日志接到**它**的日志后面再存。
+    没读到就退回原来那份——拿不到新的时候，落盘总比不落好。
+    """
+    sid = str(getattr(state, "sessionId", "") or "")
+    fresh = await run_in_threadpool(load_session, sid) if sid else None
+    if fresh is None:
+        await _apersist(state)
+        return
+    rows = list(getattr(state, "controlTranscript", None) or [])
+    fresh.controlTranscript = rows
+    await _apersist(fresh)
+    # 调用方后面还要读这份日志，别让它停在旧的上。
+    state.controlTranscript = list(getattr(fresh, "controlTranscript", None) or rows)
 
 
 def _goal_text(state: V5SessionState) -> str:
