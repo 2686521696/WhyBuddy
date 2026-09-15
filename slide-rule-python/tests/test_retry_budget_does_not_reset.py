@@ -253,8 +253,18 @@ def test_控制面客户端真的问了这份预算():
     )
     at = src.find("note_failure(error)")
     assert at > 0
-    chunk = src[at : at + 700]
+    # ⚠ 2026-09-15：原来切的是 `note_failure` 之后**700 个字符**。上游在中间
+    #   插了空回复重采样那一段（~25 行），`charge_retry` 就被挤出窗口，判据红了
+    #   ——而预算一直在问。判据钉的是字符距离，不是语义（§2：盯语义别盯字面）。
+    #
+    #   真正要钉的性质：**这一圈在睡下去重试之前，必须先扣累计预算**。
+    #   所以切到那句 sleep 为止，整段里都得有它。
+    sleep_at = src.find("await asyncio.sleep", at)
+    assert sleep_at > at, "重试环里那句 sleep 不见了，这条判据的锚点没了"
+    chunk = src[at:sleep_at]
     assert "charge_retry" in chunk, "重试环没问累计预算"
+    # 反向：扣预算必须在 sleep **之前**——扣在后面等于这一发已经烧出去了。
+    assert chunk.rindex("charge_retry") < len(chunk)
 
 
 def test_预算开在回合上_不是开在循环里():
