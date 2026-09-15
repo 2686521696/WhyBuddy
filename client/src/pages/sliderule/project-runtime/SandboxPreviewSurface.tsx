@@ -1,5 +1,12 @@
-import React, { useEffect, useRef, useState } from "react";
-import { ExternalLink, RotateCw } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  RotateCw,
+} from "lucide-react";
 import type { PreviewDescriptor } from "@shared/project-runtime.generated";
 import type { ProjectPreviewReference } from "./project-preview-client";
 import { useProjectPreview } from "./useProjectPreview";
@@ -15,6 +22,21 @@ import {
   ProjectWorkspaceError,
   requestProjectWorkspace,
 } from "./project-workspace-client";
+import { ProjectComputerPanel } from "../ProjectComputerPanel";
+import { StudioShareToggle } from "../StudioShareToggle";
+import { deriveProjectActivity, projectComputerView } from "../project-activity";
+import {
+  computerViewForAction,
+  dispatchFollowComputer,
+  dispatchInspectAction,
+  FOLLOW_COMPUTER_EVENT,
+  INSPECT_ACTION_EVENT,
+  inspectActionDetail,
+  resolveComputerView,
+  type ComputerView,
+} from "../project-computer-view";
+import { sandboxCommandLine } from "../sandbox-session-transcript";
+import type { UiTurn } from "../types";
 
 /**
  * 地址栏只显示**路径**，不显示那串 runtimeId 主机名。
@@ -71,21 +93,251 @@ function previewReasonText(reason: string | null | undefined) {
   return PREVIEW_REASON[reason] ?? `工程预览暂不可用（${reason}）。`;
 }
 
+const SESSION_MODES = [
+  ["computer", "终端"],
+  ["preview", "预览"],
+  ["source", "源码"],
+  ["history", "版本"],
+  ["data", "数据"],
+  ["delivery", "交付"],
+] as const;
+const APP_MODES = SESSION_MODES.filter(([value]) => value !== "computer");
+
+/**
+ * 切档。对照 Cursor 的模型/视图菜单：触发器是安静的字 + 箭头，
+ * 浮层自己画，不用系统 `<select>`——Windows 原生列表会把整条顶栏
+ * 撑成一块系统控件（2026-09-14 真机圈的）。
+ *
+ * ⚠ 2026-09-14 点开「看着没有」：菜单是 absolute，父级
+ *   `overflow-x-auto` 会把 overflow-y 也收成裁切（CSS 规定），
+ *   32px 高的顶栏把整张菜单剪没。终端又在后面画，没 z-index
+ *   也会盖住漏出来的那一点。头条要 `relative z-10`，齿轮条
+ *   不许写 overflow-x-auto。
+ */
+function ComputerModeSelect({
+  tab,
+  hasSession,
+  onPick,
+}: {
+  tab: ComputerView;
+  hasSession: boolean;
+  onPick: (value: ComputerView) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const modes = hasSession ? SESSION_MODES : APP_MODES;
+  const current = modes.find(([value]) => value === tab)?.[1] ?? modes[0][1];
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (event: MouseEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  return (
+    <div
+      ref={root}
+      className="relative"
+      data-testid="project-mode-select"
+      data-mode={tab}
+      aria-label="工程工作台视图"
+    >
+      <button
+        type="button"
+        data-testid="project-mode-trigger"
+        aria-label="工程工作台视图"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onClick={() => setOpen(value => !value)}
+        className="flex h-7 items-center gap-1 rounded-md px-2 text-[12px] text-[#3c3c3c] hover:bg-[#f4f4f5]"
+      >
+        <span>{current}</span>
+        <ChevronDown className="h-3.5 w-3.5 text-[#8a8a8a]" aria-hidden />
+      </button>
+      <ul
+        role="listbox"
+        hidden={!open}
+        className="absolute right-0 z-30 mt-1 min-w-[8rem] rounded-lg border border-[#e5e7eb] bg-white py-1 shadow-[0_8px_24px_rgb(15_23_42/0.12)]"
+      >
+        {modes.map(([value, label]) => {
+          const selected = tab === value;
+          return (
+            <li key={value}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={selected}
+                data-mode-label={label}
+                onClick={() => {
+                  onPick(value);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-center gap-2 px-2.5 py-1 text-left text-[12px] ${
+                  selected
+                    ? "bg-[#f4f4f5] font-medium text-[#1f1f1f]"
+                    : "text-[#3c3c3c] hover:bg-[#f7f7f8]"
+                }`}
+              >
+                <Check
+                  className={`h-3.5 w-3.5 ${selected ? "text-[#1f1f1f]" : "opacity-0"}`}
+                  aria-hidden
+                />
+                {label}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * 2026-09-15 对照 Manus 电脑底栏：提示符、回放轴、「实时」。
+ * 画在外壳上，不画进面板——再叠一条就是 2026-09-14 拆掉的第二层壳。
+ * 「实时」只在真有动作在跑且跟着最新时亮。
+ */
+function ComputerReplayDock({
+  rows,
+  focusId,
+}: {
+  rows: ReturnType<typeof deriveProjectActivity>;
+  focusId: string | null;
+}) {
+  const focusIndex = focusId ? rows.findIndex(row => row.id === focusId) : -1;
+  const { index, live, following } = projectComputerView(
+    rows,
+    focusIndex >= 0 ? focusIndex : null
+  );
+  const seek = (next: number) => {
+    const row = rows[next];
+    if (!row) return;
+    dispatchInspectAction({ id: row.id, tool: row.tool, keepView: true });
+  };
+  return (
+    <footer
+      data-testid="project-computer-promptbar"
+      className="flex shrink-0 items-center gap-2 border-t border-stone-200 px-3 py-1.5"
+    >
+      <span className="font-mono text-[12px] text-stone-400" aria-hidden>
+        $
+      </span>
+      <button
+        type="button"
+        aria-label="上一步"
+        data-testid="project-computer-prev"
+        disabled={index <= 0}
+        onClick={() => seek(Math.max(index - 1, 0))}
+        className="flex h-6 w-6 items-center justify-center rounded text-stone-500 hover:bg-stone-100 disabled:opacity-30"
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </button>
+      <input
+        type="range"
+        min={0}
+        max={Math.max(rows.length - 1, 0)}
+        value={index}
+        aria-label="回放进度"
+        onChange={event => seek(Number(event.target.value))}
+        className="h-1 min-w-0 flex-1 cursor-pointer accent-blue-500"
+      />
+      <button
+        type="button"
+        aria-label="下一步"
+        data-testid="project-computer-next"
+        disabled={index >= rows.length - 1}
+        onClick={() => seek(Math.min(index + 1, rows.length - 1))}
+        className="flex h-6 w-6 items-center justify-center rounded text-stone-500 hover:bg-stone-100 disabled:opacity-30"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </button>
+      {following ? (
+        <span
+          className={`shrink-0 text-[11px] ${live ? "text-blue-600" : "text-stone-400"}`}
+          data-testid="project-computer-live"
+        >
+          {live ? "实时" : `${index + 1} / ${rows.length}`}
+        </span>
+      ) : (
+        <button
+          type="button"
+          data-testid="project-computer-follow"
+          onClick={() => dispatchFollowComputer()}
+          className="shrink-0 text-[11px] text-blue-600 hover:underline"
+        >
+          跳到实时
+        </button>
+      )}
+    </footer>
+  );
+}
+
 export function SandboxPreviewSurface({
   projectId,
   projectRevision,
   revisionMode = "pinned",
   appTitle = "工程预览",
-}: ProjectPreviewReference & { appTitle?: string }) {
+  turns,
+  className = "",
+  chromeSlot,
+  resetSlot,
+  sessionId,
+  isRunning = false,
+  projectCreateError = null,
+}: ProjectPreviewReference & {
+  appTitle?: string;
+  /**
+   * 会话工作台才传。有它，「终端」才进下拉，并按 `resolveComputerView`
+   * 自动切档。应用中心那条预览链不传——那边没有正在干活的动作流。
+   */
+  turns?: UiTurn[];
+  className?: string;
+  /**
+   * 舞台头条右侧：分栏 / 全屏 + 交付物。从 ProjectStudio 挪进来，
+   * 跟「打开预览」同一条，不再在电脑壳上面另叠一行。
+   */
+  chromeSlot?: React.ReactNode;
+  /** 标题左侧：重置会话。HTML 推演顶栏同一颗，工程档也要够得着。 */
+  resetSlot?: React.ReactNode;
+  sessionId?: string;
+  isRunning?: boolean;
+  /** 会话工作台：工程还没落库时的创建失败。应用中心不传。 */
+  projectCreateError?: string | null;
+}) {
   const preview = useProjectPreview({
     projectId,
     projectRevision,
     revisionMode,
   });
   const descriptor = preview.snapshot?.descriptor;
-  const [tab, setTab] = useState<
-    "preview" | "source" | "history" | "data" | "delivery"
-  >("preview");
+  const [userPinned, setUserPinned] = useState<ComputerView | null>(null);
+  const activityRows = useMemo(
+    () => (turns ? deriveProjectActivity(turns) : []),
+    [turns]
+  );
+  const computerLive = projectComputerView(activityRows, null).live;
+  const previewReady = Boolean(preview.entryUrl);
+  const awaitingProject = Boolean(turns) && !projectId;
+  const tab: ComputerView = turns
+    ? awaitingProject
+      ? userPinned ?? "computer"
+      : resolveComputerView({
+          userPinned,
+          live: computerLive,
+          hasActivity: activityRows.length > 0,
+          previewReady,
+        })
+    : userPinned && userPinned !== "computer"
+      ? userPinned
+      : "preview";
   const [stopBusy, setStopBusy] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
   const stopRequest = useRef<AbortController | null>(null);
@@ -124,6 +376,48 @@ export function SandboxPreviewSurface({
     }
   };
   const [workspaceOpened, setWorkspaceOpened] = useState(false);
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const focusIndex = focusId
+    ? activityRows.findIndex(row => row.id === focusId)
+    : -1;
+  const computerNow = projectComputerView(
+    activityRows,
+    focusIndex >= 0 ? focusIndex : null
+  );
+  const pinView = (value: ComputerView) => {
+    setUserPinned(value);
+    if (value === "source" || value === "history") setWorkspaceOpened(true);
+  };
+  const goPreview = () => {
+    pinView("preview");
+    void preview.open();
+  };
+  const canStop = Boolean(
+    preview.snapshot?.operationId &&
+    descriptor &&
+    !["stopped", "expired", "failed"].includes(descriptor.status)
+  );
+  useEffect(() => {
+    const onInspect = (event: Event) => {
+      const detail = inspectActionDetail((event as CustomEvent).detail);
+      if (!detail) return;
+      setFocusId(detail.id);
+      if (detail.keepView) return;
+      const view = computerViewForAction(detail.tool);
+      pinView(view);
+    };
+    const onFollow = () => {
+      // 人已经在看终端，跳回最新那条——不许因为预览就绪被自动切走。
+      setFocusId(null);
+      setUserPinned("computer");
+    };
+    window.addEventListener(INSPECT_ACTION_EVENT, onInspect);
+    window.addEventListener(FOLLOW_COMPUTER_EVENT, onFollow);
+    return () => {
+      window.removeEventListener(INSPECT_ACTION_EVENT, onInspect);
+      window.removeEventListener(FOLLOW_COMPUTER_EVENT, onFollow);
+    };
+  }, []);
   const [selection, setSelection] = useState<SourceSelection | null>(null);
   const [selecting, setSelecting] = useState(false);
   const [bridgeStatus, setBridgeStatus] = useState<
@@ -134,7 +428,8 @@ export function SandboxPreviewSurface({
     null
   );
   useEffect(() => {
-    setTab("preview");
+    setUserPinned(null);
+    setFocusId(null);
     setWorkspaceOpened(false);
     setSelection(null);
   }, [projectId]);
@@ -159,7 +454,7 @@ export function SandboxPreviewSurface({
           selectionId: crypto.randomUUID(),
         });
         setWorkspaceOpened(true);
-        setTab("source");
+        pinView("source");
         setSelecting(false);
         connection.setEnabled(false);
       },
@@ -180,9 +475,12 @@ export function SandboxPreviewSurface({
     descriptor &&
     projectRevision &&
     descriptor.revision !== projectRevision;
-  const status = preview.loading
+  const previewError = awaitingProject ? projectCreateError : preview.error;
+  const status = awaitingProject
+    ? projectCreateError || "正在准备工程"
+    : preview.loading
     ? "正在读取工程状态"
-    : preview.error
+    : previewError
       ? "暂时无法打开预览"
       : mismatch
         ? "运行版本与当前工程不同"
@@ -190,35 +488,110 @@ export function SandboxPreviewSurface({
           ? STATUS[descriptor.status]
           : "工程尚未启动";
   const blockedReason = previewReasonText(preview.snapshot?.reason);
-  const description =
-    preview.error ||
-    (mismatch
-      ? "当前运行的是另一份源码版本，请先同步或启动当前工程。"
-      : preview.loading
-        ? "正在读取工程运行状态…"
-        : blockedReason ||
-          (!descriptor
-            ? PREVIEW_REASON.project_runtime_not_started
-            : descriptor.status !== "ready"
-              ? `${STATUS[descriptor.status]}。这里会继续更新实际运行状态。`
-              : preview.snapshot?.available === false
-                ? "应用已就绪，但私有预览暂不可用，请更新状态查看具体原因。"
-                : preview.opening
-                  ? "正在申请本次预览访问授权…"
-                  : "应用已就绪。点击「打开预览」获取本次访问授权；预览就绪不代表业务验收已通过。"));
+  const description = previewError
+    ? previewError
+    : awaitingProject
+      ? "计划已批准，正在创建工程工作台。"
+      : mismatch
+        ? "当前运行的是另一份源码版本，请先同步或启动当前工程。"
+        : preview.loading
+          ? "正在读取工程运行状态…"
+          : blockedReason ||
+            (!descriptor
+              ? PREVIEW_REASON.project_runtime_not_started
+              : descriptor.status !== "ready"
+                ? `${STATUS[descriptor.status]}。这里会继续更新实际运行状态。`
+                : preview.snapshot?.available === false
+                  ? "应用已就绪，但私有预览暂不可用，请更新状态查看具体原因。"
+                  : preview.opening
+                    ? "正在申请本次预览访问授权…"
+                    : "应用已就绪。点击「打开预览」获取本次访问授权；预览就绪不代表业务验收已通过。");
 
   return (
     <section
       data-testid="sandbox-preview-surface"
       data-project-id={projectId ?? ""}
       data-project-revision={descriptor?.revision ?? ""}
-      className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-stone-200 bg-white"
+      data-computer-view={tab}
+      className={`flex h-full min-h-0 flex-1 flex-col overflow-hidden border border-stone-200 bg-white ${
+        // 会话工作台贴边铺满：圆角会在四角漏出舞台底色（2026-09-14 真机圈的）。
+        // 应用中心那条链没有 turns，仍是卡片，保留 rounded-lg。
+        turns ? "" : "rounded-lg "
+      }${className}`}
     >
+      {turns ? (
+        <div
+          className="relative z-10 flex h-8 min-w-0 shrink-0 items-center gap-2 border-b border-[#e5e7eb] px-2"
+          data-testid="project-computer-chrome"
+          data-header-pattern="primer-page-header"
+        >
+          {/* ⚠ 2026-09-14：对照 HTML 推演那条 sliderule-app-stage-bar——
+              功能堆在同一行，不另叠「重置 / 分栏」在电脑壳上头。
+              只堆**已经接通**的：重置、切档、打开预览、停止、私有/开放、
+              分栏/全屏、交付物。页面/代码、关联、点选编辑、角色是 HTML
+              页的，E2B 应用上没有对应实现，不许画一个点不动的。
+              「工程尚未启动」仍是预览的话，不写在终端脸上。 */}
+          <div className="flex min-w-0 items-center gap-2">
+            {resetSlot}
+            <h2 className="truncate text-[12px] font-medium text-[#3c3c3c]">
+              它的电脑
+            </h2>
+            {tab === "computer" && computerNow.current?.status === "running" ? (
+              <p
+                role="status"
+                className="min-w-0 truncate text-[11px] text-[#8a8a8a]"
+                data-testid="project-computer-live-command"
+              >
+                正在执行{" "}
+                {sandboxCommandLine(computerNow.current) ||
+                  computerNow.current.label}
+              </p>
+            ) : tab !== "computer" ? (
+              <p role="status" className="shrink-0 text-[11px] text-[#8a8a8a]">
+                {status}
+              </p>
+            ) : null}
+          </div>
+          <div
+            className="ml-auto flex min-w-0 items-center"
+            data-testid="project-computer-gears"
+          >
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              <ComputerModeSelect tab={tab} hasSession onPick={pinView} />
+              <button
+                type="button"
+                onClick={goPreview}
+                disabled={!preview.canOpen}
+                data-testid="project-preview-open"
+                className="flex h-7 items-center rounded-md px-2 text-[12px] text-[#3c3c3c] hover:bg-[#f4f4f5] disabled:opacity-40"
+              >
+                {preview.opening
+                  ? "正在授权…"
+                  : preview.entryUrl
+                    ? "刷新预览"
+                    : "打开预览"}
+              </button>
+              {canStop ? (
+                <button
+                  type="button"
+                  disabled={stopBusy || descriptor?.status === "stopping"}
+                  onClick={() => void stopRuntime()}
+                  className="flex h-7 items-center rounded-md px-2 text-[12px] text-[#3c3c3c] hover:bg-[#f4f4f5] disabled:opacity-40"
+                >
+                  {stopBusy ? "正在请求停止…" : "停止应用"}
+                </button>
+              ) : null}
+              <StudioShareToggle sessionId={sessionId} running={isRunning} />
+              {chromeSlot}
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-stone-200 px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
             <h2 className="truncate text-sm font-semibold text-stone-800">
-              {appTitle}
+              {turns ? "它的电脑" : appTitle}
             </h2>
             <span
               className="shrink-0 rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700"
@@ -269,7 +642,8 @@ export function SandboxPreviewSurface({
           </button>
         ) : null}
       </div>
-      {stopError ? (
+      )}
+      {tab === "computer" && turns ? null : stopError ? (
         <p role="alert" className="px-4 py-2 text-xs text-amber-800">
           {stopError}
         </p>
@@ -280,7 +654,8 @@ export function SandboxPreviewSurface({
 
           所以只在占位区**说不到**的时候画：预览已经打开时 iframe 顶掉了占位区，
           那时这条是唯一的载体，必须画。判据两头都钉着。 */}
-      {!preview.loading &&
+      {!(tab === "computer" && turns) &&
+      !preview.loading &&
       !preview.error &&
       blockedReason &&
       !(!preview.entryUrl && description === blockedReason) ? (
@@ -293,43 +668,16 @@ export function SandboxPreviewSurface({
           <p className="mt-1 leading-5">{blockedReason}</p>
         </div>
       ) : null}
+      {turns && tab !== "preview" ? null : (
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stone-200 px-4 py-2">
-        {/* 视图切换：对照 Manus 那张截图——它是一枚**收起来的**下拉
-            （预览 / 代码 / 仪表盘 / 数据库 / 文件存储 / 设置），不是一排平铺按钮。
-            平铺那版在窄屏会换行，把头部顶成三行，而地址行刚加进来，正好是
-            被顶掉的那一行。
-
-            ⚠ 用原生 <select>，不自己搭浮层：键盘、读屏、移动端的原生选择器
-              全都白拿，而且不引入一个只在这里用一次的弹层组件。
-              原来的 role="tab" 语义由 <select> 自带的 listbox 语义接替——
-              `project-verification.test.tsx` 里那条「切走就收起验收详情」
-              已经跟着改成驱动这个下拉（判据钉的是行为，不是控件长相）。 */}
-        <select
-          data-testid="project-mode-select"
-          aria-label="工程工作台视图"
-          value={tab}
-          onChange={event => {
-            const value = event.target.value as typeof tab;
-            setTab(value);
-            if (value === "source" || value === "history")
-              setWorkspaceOpened(true);
-          }}
-          className="rounded-md border border-stone-300 bg-white px-2 py-1 text-xs text-stone-700 hover:bg-stone-50 focus:outline-none focus:ring-1 focus:ring-stone-400"
-        >
-          {(
-            [
-              ["preview", "预览"],
-              ["source", "源码"],
-              ["history", "版本"],
-              ["data", "数据"],
-              ["delivery", "交付"],
-            ] as const
-          ).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
+        {/* 会话工作台的切档已经在头条。应用中心没有 turns，切档仍在这一行。 */}
+        {turns ? null : (
+          <ComputerModeSelect
+            tab={tab}
+            hasSession={false}
+            onPick={pinView}
+          />
+        )}
         {/* 地址：对照 Manus——视图切换和地址在**同一条**上，不是各占一行。
             2026-09-14 量出来的：面板 708px 里外壳吃掉 273px（38.6%），
             地址行自己一行再加一条边框，就是那 38.6% 里的一块。合并省掉整整一行。
@@ -389,7 +737,7 @@ export function SandboxPreviewSurface({
             const value = !selecting;
             setSelecting(value);
             bridge.current?.setEnabled(value);
-            setTab("preview");
+            pinView("preview");
           }}
         >
           {" "}
@@ -404,30 +752,62 @@ export function SandboxPreviewSurface({
           </span>
         ) : null}
       </div>
-      <ProjectVerificationPanel
-        projectId={projectId}
-        revision={
-          revisionMode === "current"
-            ? descriptor?.revision
-            : (projectRevision ?? descriptor?.revision)
-        }
-        runtimeOperationId={preview.snapshot?.operationId}
-        runtimeId={descriptor?.runtimeId}
-        suiteVersion={descriptor?.capabilities
-          ?.find(capability => capability.startsWith("verification:"))
-          ?.slice("verification:".length)}
-        ready={Boolean(
-          !preview.error &&
-          !preview.loading &&
-          !mismatch &&
-          descriptor?.status === "ready"
-        )}
-        compact={tab !== "preview"}
-      />
+      )}
+      {tab !== "computer" ? (
+        <ProjectVerificationPanel
+          projectId={projectId}
+          revision={
+            revisionMode === "current"
+              ? descriptor?.revision
+              : (projectRevision ?? descriptor?.revision)
+          }
+          runtimeOperationId={preview.snapshot?.operationId}
+          runtimeId={descriptor?.runtimeId}
+          suiteVersion={descriptor?.capabilities
+            ?.find(capability => capability.startsWith("verification:"))
+            ?.slice("verification:".length)}
+          ready={Boolean(
+            !preview.error &&
+            !preview.loading &&
+            !mismatch &&
+            descriptor?.status === "ready"
+          )}
+          compact={tab !== "preview"}
+        />
+      ) : null}
+      {tab === "computer" ? (
+        activityRows.length > 0 ? (
+          <ProjectComputerPanel
+            turns={turns ?? []}
+            embedded
+            focusId={focusId}
+            runtimeOperationId={preview.snapshot?.operationId}
+            className="min-h-0 flex-1"
+          />
+        ) : (
+          <div
+            className="flex min-h-0 flex-1 items-center justify-center p-8"
+            data-testid="project-computer-empty"
+          >
+            <p className="max-w-md text-center text-sm leading-6 text-stone-500">
+              {awaitingProject
+                ? projectCreateError ||
+                  "计划已批准，正在创建工程。命令会写在这里。"
+                : "还没有工程动作。模型开始干活之后，这里会显示它正在跑的命令。"}
+            </p>
+          </div>
+        )
+      ) : null}
+      {tab === "computer" && turns && activityRows.length > 0 ? (
+        <ComputerReplayDock rows={activityRows} focusId={focusId} />
+      ) : null}
       {workspaceOpened && projectId ? (
         <div
           className={
-            tab === "preview" || tab === "data" || tab === "delivery"
+            tab === "preview" ||
+            tab === "data" ||
+            tab === "delivery" ||
+            tab === "computer"
               ? "hidden"
               : "flex min-h-0 flex-1 flex-col"
           }

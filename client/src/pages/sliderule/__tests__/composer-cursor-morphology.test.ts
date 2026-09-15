@@ -181,9 +181,9 @@ describe("对话列接到输入条，不要横切分隔线", () => {
       src.indexOf("<ComposerDock"),
       src.indexOf("<ComposerDock") + 900
     );
-    expect(call).toContain("hintChips={composerHints}");
-    expect(call).toContain("formatComposerClosurePill");
-    expect(call).not.toContain("statusPill={null}");
+    expect(call).toContain("hintChips={[]}");
+    expect(call).toContain("statusPill={null}");
+    expect(call).not.toContain("formatComposerClosurePill");
     expect(call).not.toContain("闭环 ${");
   });
 

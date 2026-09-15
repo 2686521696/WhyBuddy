@@ -44,6 +44,10 @@ const buttons = (text: string) =>
     button => button.textContent?.trim() === text
   );
 const button = (text: string) => {
+  const byPath = container.querySelector<HTMLButtonElement>(
+    `[data-source-path="${text}"]`
+  );
+  if (byPath) return byPath;
   const found = buttons(text)[0];
   expect(found, text).toBeTruthy();
   return found;
@@ -157,6 +161,45 @@ afterEach(async () => {
 });
 
 describe("source and history through real HTTP consumers", () => {
+  it("源码栏是整棵项目树：目录收得起，文件按 basename 点开", async () => {
+    source.files = [
+      { path: "package.json", sha256: "pkg", sizeBytes: 2 },
+      { path: "src/main.tsx", sha256: "hash1", sizeBytes: 14 },
+      { path: "src/pages/Home.tsx", sha256: "home", sizeBytes: 4 },
+    ];
+    contents["package.json"] = "{}";
+    contents["src/pages/Home.tsx"] = "home";
+    await render();
+    const tree = container.querySelector('[data-testid="project-source-tree"]');
+    expect(tree, "整棵工程必须挂出来").toBeTruthy();
+    expect(
+      tree!.querySelector('[data-source-path="src/pages/Home.tsx"]')
+        ?.textContent?.trim()
+    ).toBe("Home.tsx");
+    expect(
+      tree!.querySelector('[data-source-path="package.json"]')?.textContent?.trim()
+    ).toBe("package.json");
+    expect(tree!.querySelector('[data-source-dir="src"]')).toBeTruthy();
+    expect(tree!.querySelector('[data-source-dir="src/pages"]')).toBeTruthy();
+    expect(
+      tree!.querySelector('[data-source-path="src/pages/Home.tsx"]')
+        ?.textContent
+    ).not.toContain("src/pages/");
+    await click("src/pages/Home.tsx");
+    expect(editor().value).toBe("home");
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-source-dir="src/pages"]')!
+        .click();
+    });
+    expect(
+      container.querySelector('[data-source-path="src/pages/Home.tsx"]')
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-source-path="src/main.tsx"]')
+    ).toBeTruthy();
+  });
+
   it("follows a model revision signal by reading current source and preserving the selected file", async () => {
     source.files.unshift({
       path: "README.md",

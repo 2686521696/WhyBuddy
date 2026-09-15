@@ -210,6 +210,24 @@ describe("consumeControlStreamResponse 与工厂 case 共用", () => {
     expect(skillStartCases).toBe(0);
   });
 
+  it("第一发 complete 不许当场 onRunSettled——那是时间片，不是整轮终局", () => {
+    const consume = DRIVER.slice(
+      DRIVER.indexOf("export async function consumeControlStreamResponse"),
+      DRIVER.indexOf("export interface FrontierProposal")
+    );
+    const start = consume.lastIndexOf('case "complete"');
+    const complete = consume.slice(start, consume.indexOf("default:", start));
+    expect(complete).toContain("sawTerminal = true");
+    expect(complete).not.toContain('onRunSettled?.("complete")');
+    expect(complete).not.toContain("break outer");
+  });
+
+  it("刷新接回包含 waiting_continue / waiting_operation", () => {
+    expect(SESSION).toContain(
+      '["queued", "running", "waiting_continue", "waiting_operation"]'
+    );
+  });
+
   it("control_ask_user 回调后 complete 结束，不丢问题", async () => {
     const asked: Array<{ question: string }> = [];
     const skills: string[] = [];
@@ -420,6 +438,7 @@ describe("consumeControlStreamResponse 与工厂 case 共用", () => {
         type: "complete",
         state: { sessionId: "s1", goal: { text: "请假系统", status: "clear" } },
       },
+      { type: "control_run_settled", status: "completed", error: null },
     ];
     const body = events.map(e => `data: ${JSON.stringify(e)}\n\n`).join("");
     const res = new Response(body, {

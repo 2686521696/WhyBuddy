@@ -133,6 +133,9 @@ def _event_response(event):
         payload["runtime"] = _runtime_response(event.payload.get("runtime"))
     elif event.type == "runtime.log":
         payload = {key: event.payload.get(key) for key in ("text", "nextOffset", "truncated")}
+    elif event.type == "runtime.console":
+        # Raw PTY bytes. processId stays internal — same as runtime.log.
+        payload = {key: event.payload.get(key) for key in ("data", "nextOffset", "truncated")}
     return {"schemaVersion": event.schemaVersion, "sessionId": event.sessionId,
         "projectId": event.projectId, "operationId": event.operationId,
         "seq": event.seq, "type": event.type, "timestamp": event.timestamp, "payload": payload}

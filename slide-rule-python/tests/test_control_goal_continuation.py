@@ -217,13 +217,14 @@ def test_真机3_被闸掐断的回合不许自动续跑():
     """跑控制面回归时抓到：8001 token 撞上 8000 的点火前额度被掐断，
 
     而续跑会给它一个全新单轮预算再跑一遍——**把预算闸整个绕过去**。
-    「被掐断」和「说完了」是两回事，只有后者该续。
+    「硬闸」和「时间片」是两回事：token_budget 仍不许续。
     """
-    from services.control_goal_continuation import turn_was_capped
+    from services.control_goal_continuation import turn_was_capped, turn_was_sliced
 
     capped = events() + [{"type": "control_text", "text": "额度用完了",
                           "stopReason": "token_budget", "limit": 8000, "used": 8001}]
     assert turn_was_capped(capped) is True
+    assert turn_was_sliced(capped) is False
     ok, reason = should_continue(
         status="completed", goal=goal(), events=capped, goal_done=False
     )
@@ -241,3 +242,44 @@ def test_真机3反向_没被掐断的正常收尾照旧能续():
 def turn_was_capped_import():
     from services.control_goal_continuation import turn_was_capped
     return turn_was_capped
+
+
+def test_真机4_墙钟是时间片工程目标应当续跑():
+    """2026-09-14 `sr-20260914150256-Z3DP93VKQ9` 最后一轮的原样事件。
+
+    stopReason=wall_clock used=181.5 limit=180，工具已经跑过（create/patch/exec），
+    目标没交付。旧逻辑把任何 stopReason 都当成硬闸，续跑直接 reason=capped。
+    """
+    from services.control_goal_continuation import (
+        turn_was_capped, turn_was_sliced, unfinished_slice_waits_for_user,
+    )
+
+    live = events(tool_results=9) + [{
+        "type": "control_text",
+        "stopReason": "wall_clock",
+        "stoppedBy": "runtime",
+        "limit": 180.0,
+        "used": 181.5,
+    }]
+    assert turn_was_sliced(live) is True
+    assert turn_was_capped(live) is False
+    ok, reason = should_continue(
+        status="completed", goal=goal(), events=live, goal_done=False
+    )
+    assert ok is True and reason is None
+    # 续不上的时候（比如还是 conversation），也不许写成 completed
+    assert unfinished_slice_waits_for_user(
+        status="completed", events=live, goal_done=False
+    ) is True
+    assert unfinished_slice_waits_for_user(
+        status="completed", events=live, goal_done=True
+    ) is False
+
+
+def test_真机4反向_把墙钟当硬闸就续不上():
+    """变异：turn_was_capped 再把任意 stopReason 算进去 → 本条红。"""
+    from services.control_goal_continuation import turn_was_capped
+
+    live = events() + [{"type": "control_text", "stopReason": "wall_clock",
+                        "limit": 180.0, "used": 181.5}]
+    assert turn_was_capped(live) is False

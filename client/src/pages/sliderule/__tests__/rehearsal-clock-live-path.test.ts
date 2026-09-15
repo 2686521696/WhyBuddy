@@ -168,17 +168,15 @@ describe("轨迹折叠接在 LlmLiveOutput（不是死字段）", () => {
 });
 
 describe("产品面挂上了钟（不是只写了组件）", () => {
-  it("ClaudeChatSurface 真的渲染 RehearsalClockHud", () => {
+  it("ClaudeChatSurface 不再把六步钟挂在对话顶上", () => {
+    // 2026-09-15：用户圈了顶上那条 hop 日历说移除。工程面 StatusBar 仍吃钟。
     const src = load("../../SlideRule.tsx");
     const surface = src.slice(
       src.indexOf("export function ClaudeChatSurface"),
       src.indexOf("function DriveFullStatusBanner")
     );
-    expect(surface).toContain("<RehearsalClockHud");
-    expect(surface).toContain("clock={rehearsalClock}");
-    expect(surface).toContain("decision={factoryDecision}");
-    expect(surface).toContain("rehearsalClockShowSteps(rehearsalClock)");
-    expect(surface).not.toContain("showSteps={isRunning || hasClockProgress}");
+    expect(surface).not.toContain("<RehearsalClockHud");
+    expect(surface).not.toContain("sliderule-rehearsal-clock");
   });
 
   it("Unified 把 rehearsalFacts 喂给对话列", () => {

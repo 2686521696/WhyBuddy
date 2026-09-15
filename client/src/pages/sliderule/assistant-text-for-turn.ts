@@ -27,7 +27,8 @@ export const HOP_NO_PRODUCE_NOTE = "这一跳没有新的产出，上一版保�
  * `model-speech.ts` 要用**同一份**判据过滤动手前的开口。抄第二份就是
  * §4 点名的「改一半」——过滤规则改了一处，另一处静静放行。
  */
-export const OPERATOR_SPEAK = /下一跳请调 pages|告诉用户为什么先停/;
+export const OPERATOR_SPEAK =
+  /下一跳请调 pages|告诉用户为什么先停|\bwrite_plan\b|\benter_plan_mode\b|\bexit_plan_mode\b|currently in ["']?planning["']? mode/i;
 
 function textFromNarration(turn: UiTurn): string {
   const finalStepText = finalNarrationStep(turn.steps)?.text?.trim();
@@ -55,7 +56,8 @@ export function turnDidFactoryWork(turn: UiTurn): boolean {
 export function assistantTextForTurn(
   turn: UiTurn,
   publishClosure?: PublishClosureSummary | null,
-  goalText?: string
+  goalText?: string,
+  opts?: { runtimeKind?: "html-prototype" | "project" | null }
 ): string {
   const user = (turn.user || "").trim();
   const assistant = turn.assistant?.trim();
@@ -73,6 +75,12 @@ export function assistantTextForTurn(
 
   const goal = (goalText || "").trim();
   const isFollowUp = Boolean(user && goal && user !== goal);
+
+  // 工程档没有「画出页面」这回事。真机 TicketStream 计划批准后控制面
+  // 没点火，HTML 那句「本轮没有画出新的页面」挂在对话里，右侧还是 C4。
+  if (opts?.runtimeKind === "project") {
+    return "";
+  }
 
   // 问候 / 提问回执不是精修。goal 后来被芯片改写后，旧轮 user!==goal
   // 会把「你好」收成「本轮没有画出新的页面」（2026-09-08 真机）。

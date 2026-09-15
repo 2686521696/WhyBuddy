@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import {
   SANDBOX_LOG_MAX_CHARS,
   appendSandboxLog,
+  applyRuntimeLogPage,
   emptySandboxLog,
   replaceSandboxLog,
   sandboxLogStatus,
@@ -151,6 +152,60 @@ describe("状态三态：exit 0 才算成功", () => {
   });
 });
 
+describe("一页 events 折进缓冲", () => {
+  it("只把 runtime.log 的 text 拼进去，别的事件只推游标", () => {
+    const next = applyRuntimeLogPage(emptySandboxLog(), {
+      events: [
+        { seq: 1, type: "runtime.phase", payload: { phase: "install" } },
+        { seq: 2, type: "runtime.log", payload: { text: "added 21 packages" } },
+      ],
+      nextSeq: 3,
+      hasMore: false,
+    });
+    expect(next.text).toBe("added 21 packages");
+    expect(next.seq).toBe(3);
+    expect(next.text).not.toContain("install");
+  });
+
+  it("runtime.console 按到达顺序拼接，不许插换行——插了就把打字拆成假日志", () => {
+    const next = applyRuntimeLogPage(emptySandboxLog(), {
+      events: [
+        { seq: 1, type: "runtime.console", payload: { data: "n" } },
+        { seq: 2, type: "runtime.console", payload: { data: "p" } },
+        { seq: 3, type: "runtime.console", payload: { data: "m ci" } },
+      ],
+      nextSeq: 3,
+    });
+    expect(next.console).toBe("npm ci");
+    expect(next.text).toBe("");
+  });
+
+  it("反向：log 不许写进 console，console 也不许写进 text", () => {
+    const next = applyRuntimeLogPage(emptySandboxLog(), {
+      events: [
+        { seq: 1, type: "runtime.log", payload: { text: "added 21 packages" } },
+        { seq: 2, type: "runtime.console", payload: { data: "user@sb$ n" } },
+      ],
+      nextSeq: 2,
+    });
+    expect(next.text).toBe("added 21 packages");
+    expect(next.console).toBe("user@sb$ n");
+    expect(next.text).not.toContain("user@sb");
+    expect(next.console).not.toContain("added 21");
+  });
+
+  it("反向：空页或没有 runtime.log 不许把已有输出抹掉", () => {
+    const before = appendSandboxLog(emptySandboxLog(), "build ok", { seq: 4 });
+    expect(applyRuntimeLogPage(before, null).text).toBe("build ok");
+    expect(
+      applyRuntimeLogPage(before, {
+        events: [{ seq: 5, type: "runtime.phase" }],
+        nextSeq: 6,
+      }).text
+    ).toBe("build ok");
+  });
+});
+
 describe("通电：真的接在面板和会话链路上（§3）", () => {
   it("面板订阅了日志，且 operationId 一路串到了行上", async () => {
     const fs = await import("node:fs");
@@ -160,7 +215,34 @@ describe("通电：真的接在面板和会话链路上（§3）", () => {
 
     const panel = read("client/src/pages/sliderule/ProjectComputerPanel.tsx");
     expect(panel).toMatch(/useSandboxLog\(/);
+    expect(panel).toMatch(/useSandboxLogs\(/);
+    expect(panel).toMatch(/sandboxLogOperationIds\(/);
     expect(panel).toMatch(/<SandboxConsole[\s/>]/);
+    // 会话工作台走 SandboxSession；只留 Console = 嵌进那条链又变回说明书。
+    expect(panel).toMatch(/<SandboxSession[\s/>]/);
+    expect(panel).toMatch(/<SandboxLiveTerminal[\s/>]/);
+    expect(panel).toMatch(/logs\[id\]\?\.console/);
+    expect(panel).toMatch(/runtimeOperationId/);
+    // 反向：拼贴重回嵌进面 = 用户圈的 create/get/`$ cmd`。
+    expect(panel).not.toContain("project-computer-session");
+    expect(panel).not.toContain("sandboxActivityTranscript");
+    expect(panel).not.toMatch(/logs:\s*textById/);
+    expect(panel).toMatch(/data-testid="project-computer-pty-text" className="sr-only"/);
+    expect(panel).not.toMatch(/live\s*\?\s*"sr-only"/);
+    const surface = read("client/src/pages/sliderule/project-runtime/SandboxPreviewSurface.tsx");
+    expect(surface).toMatch(/runtimeOperationId=\{preview\.snapshot\?\.operationId\}/);
+    const worker = read("slide-rule-python/services/project_runtime_worker.py");
+    const live = worker.replace(/#[^\n]*/g, "");
+    expect(live).toMatch(/start_console/);
+    expect(live).toMatch(/_start_visible/);
+    expect(live).toMatch(/runtime\.console/);
+    // 反向：有 start_console 还只走 start_process 装依赖 = 装在不通电的插座上。
+    expect(live).toMatch(/npm ci --ignore-scripts/);
+    const provider = read("slide-rule-python/services/e2b_workspace_provider.py");
+    expect(provider).toContain("sandbox.pty");
+    expect(provider).toContain("CONSOLE_TYPE_INTERVAL");
+    const route = read("slide-rule-python/routes/project_runtime.py");
+    expect(route).toContain('event.type == "runtime.console"');
 
     // 服务端一直在发 operationId，前端此前全程丢掉——这三处缺一处就订阅不到。
     const session = read("client/src/pages/sliderule/useSlideRuleSession.ts");
@@ -169,6 +251,7 @@ describe("通电：真的接在面板和会话链路上（§3）", () => {
     expect(activity).toContain("open.operationId = operationId");
     const hook = read("client/src/pages/sliderule/project-runtime/useSandboxLog.ts");
     expect(hook).toContain("/events?afterSeq=");
-    expect(hook).toContain("runtime.log");
+    expect(hook).toContain("export function useSandboxLogs");
+    expect(hook).toContain("hotIds");
   });
 });

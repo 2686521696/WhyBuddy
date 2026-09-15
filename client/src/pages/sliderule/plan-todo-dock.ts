@@ -1,0 +1,102 @@
+/**
+ * 老师傅自己列的活儿清单——给人看进度，不进聊天。
+ *
+ * 2026-09-15 对照 Manus：待办是输入条上方一张卡，不是对话里一份
+ * ○◐● 重印。条目只来自 `controlTodo`（模型 `todo_write` 写下的）。
+ * 没有就不画，不许编一条。
+ *
+ * 卡面 2026-09-15 改成抄 Cursor Agent 那张 To-dos（见 PlanTodoDock.tsx）。
+ * 这里只认模型写下的状态，分数用 completed 计数，不编百分比。
+ */
+export type PlanTodoStatus =
+  | "pending"
+  | "in_progress"
+  | "completed"
+  | "cancelled";
+
+export type PlanTodoItem = {
+  id: string;
+  status: PlanTodoStatus;
+  content: string;
+};
+
+const STATUSES = new Set<PlanTodoStatus>([
+  "pending",
+  "in_progress",
+  "completed",
+  "cancelled",
+]);
+
+function statusOf(raw: unknown): PlanTodoStatus {
+  const value = String(raw || "").trim().toLowerCase();
+  return STATUSES.has(value as PlanTodoStatus)
+    ? (value as PlanTodoStatus)
+    : "pending";
+}
+
+/** 脏数据丢掉。空 content 不算一条。 */
+export function visiblePlanTodo(raw: unknown): PlanTodoItem[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PlanTodoItem[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== "object") continue;
+    const content = String(
+      (row as { content?: unknown }).content || ""
+    ).trim();
+    if (!content) continue;
+    const id = String((row as { id?: unknown }).id || content).trim();
+    out.push({
+      id,
+      status: statusOf((row as { status?: unknown }).status),
+      content,
+    });
+  }
+  return out;
+}
+
+export function planTodoProgress(items: readonly PlanTodoItem[]): {
+  current: number;
+  total: number;
+  currentContent: string | null;
+} {
+  const open = items.filter(item => item.status !== "cancelled");
+  const total = open.length;
+  if (!total) return { current: 0, total: 0, currentContent: null };
+  const working = open.findIndex(item => item.status === "in_progress");
+  if (working >= 0) {
+    return {
+      current: working + 1,
+      total,
+      currentContent: open[working].content,
+    };
+  }
+  const pending = open.findIndex(item => item.status === "pending");
+  if (pending >= 0) {
+    return {
+      current: pending + 1,
+      total,
+      currentContent: open[pending].content,
+    };
+  }
+  return { current: total, total, currentContent: null };
+}
+
+/**
+ * 进度条用「已完成 / 未作废」，不是「正在做的是第几条」。
+ * 后者仍走 planTodoProgress（Manus 那格 1/4）。
+ * 不许拿假百分比充分子——没有 completed 就是 0。
+ */
+export function planTodoCompleted(items: readonly PlanTodoItem[]): {
+  done: number;
+  total: number;
+  percent: number;
+} {
+  const open = items.filter(item => item.status !== "cancelled");
+  const total = open.length;
+  const done = open.filter(item => item.status === "completed").length;
+  return {
+    done,
+    total,
+    percent: total ? Math.round((done / total) * 100) : 0,
+  };
+}

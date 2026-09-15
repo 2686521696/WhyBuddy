@@ -134,7 +134,12 @@ describe("通电：真的接在输入条上（§3）", () => {
     const path = await import("node:path");
     const read = (p: string) => fs.readFileSync(path.resolve(process.cwd(), p), "utf8");
 
-    expect(read("client/src/pages/SlideRule.tsx")).toContain("hintChips={composerHints}");
+    expect(read("client/src/pages/SlideRule.tsx")).toContain("hintChips={[]}");
+    // ⚠ 2026-09-14：输入框上方芯片整排卸了。函数还在，活路径喂空。
+    //   变异：再把 deriveComposerHintChips 接回去必红。
+    const page = read("client/src/pages/SlideRule.tsx");
+    expect(page).not.toContain("deriveComposerHintChips");
+    expect(page).toContain("statusPill={null}");
     const dock = read("client/src/pages/sliderule/ComposerDock.tsx");
     expect(dock).toContain('data-testid="sliderule-composer-hint-chip"');
     // 点了是填进输入框可再编辑（现有契约），不是直接发出去。

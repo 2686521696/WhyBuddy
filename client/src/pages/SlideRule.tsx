@@ -16,6 +16,11 @@ import { quietHint } from "./sliderule/quiet-time";
 import { TurnResultCard } from "./sliderule/TurnResultCard";
 import { useProjectThumbnail } from "./sliderule/project-runtime/useProjectThumbnail";
 import { NextStepSuggestions } from "./sliderule/NextStepSuggestions";
+import { PlanTodoDock } from "./sliderule/PlanTodoDock";
+import {
+  shouldAutoCreateProject,
+  shouldShowProjectComputer,
+} from "./sliderule/project-computer-view";
 import { useAuth } from "@/lib/use-auth";
 import React, {
   useCallback,
@@ -41,6 +46,7 @@ import type { LiveAction } from "@shared/blueprint/capability-process-labels";
 import { CAPABILITY_PROCESS_LABELS } from "@shared/blueprint/capability-process-labels";
 import { LlmLiveOutput } from "./sliderule/LlmLiveOutput";
 import { RollingText } from "./sliderule/RollingText";
+import { ThinkingOrbMark } from "./sliderule/ThinkingOrbMark";
 import { turnTimelineHeader } from "./sliderule/activity-rows";
 import { ActivityList } from "./sliderule/ActivityList";
 import { deriveStageBands } from "./sliderule/stage-authority";
@@ -81,23 +87,16 @@ import {
 } from "./sliderule/assistant-text-for-turn";
 import { renderableModelSpeech } from "./sliderule/model-speech";
 import { ensureReadableChatMarkdown } from "./sliderule/readable-chat-markdown";
-import {
-  RehearsalClockHud,
-  SlideRuleStatusBar,
-} from "./sliderule/SlideRuleStatusBar";
+import { SlideRuleStatusBar } from "./sliderule/SlideRuleStatusBar";
 import {
   deriveStatusBarFacts,
   idleRehearsalCursor,
-  rehearsalClockShowSteps,
   type ContextHudFacts,
   type RehearsalClockCursor,
   type RehearsalClockView,
 } from "./sliderule/derive-status-bar";
 import type { FactoryDecisionView } from "./sliderule/derive-factory-decision";
-import {
-  SlideRuleResetSessionButton,
-  SlideRuleTopHud,
-} from "./sliderule/SlideRuleTopHud";
+import { SlideRuleResetSessionButton } from "./sliderule/SlideRuleTopHud";
 import { StudioLayoutProvider } from "./sliderule/StudioLayoutContext";
 import { isStudioChromeShown } from "./sliderule/studio-layout";
 import { SESSION_CHANGED_EVENT } from "./agent-loop/dashboard/SidebarSessions";
@@ -111,8 +110,6 @@ import { dispatchChallengePrefill } from "./sliderule/challenge-composer";
 import { HomeInspiration } from "./sliderule/home-inspiration";
 import { composerEnterHintLabel } from "./sliderule/user-prefs";
 import { EXAMPLE_INTENT_TEXTS } from "./sliderule/example-intents";
-import { deriveComposerHintChips } from "./sliderule/derive-composer-hints";
-import { formatComposerClosurePill } from "./sliderule/composer-closure-pill";
 import type { UiTurn } from "./sliderule/types";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
 import {
@@ -174,13 +171,8 @@ function LiveActionIndicator({ liveAction }: { liveAction: LiveAction }) {
       }
     >
       {!liveAction.external && (
-        <span
-          className="mr-2 inline-flex items-end gap-1 align-middle"
-          aria-hidden
-        >
-          <span className="sr-dot size-1.5 rounded-full bg-stone-400" />
-          <span className="sr-dot size-1.5 rounded-full bg-stone-400" />
-          <span className="sr-dot size-1.5 rounded-full bg-stone-400" />
+        <span className="mr-2 inline-flex align-middle" aria-hidden>
+          <ThinkingOrbMark label={liveAction.label} size={20} />
         </span>
       )}
       {liveAction.label}
@@ -386,7 +378,7 @@ function HomeEmptyState({
   isRunning,
   composerSlot,
   clarifySlot,
-  projectCapabilities,
+  todoSlot,
   runtimeKind,
 }: {
   isRunning: boolean;
@@ -394,14 +386,9 @@ function HomeEmptyState({
   composerSlot?: React.ReactNode;
   /** 澄清卡叠在输入框上方（absolute），不能当 flex 孩子——会把输入顶走 */
   clarifySlot?: React.ReactNode;
+  /** 待办卡跟输入条走；空清单时组件自己不画 */
+  todoSlot?: React.ReactNode;
   runtimeKind?: "html-prototype" | "project";
-  /** 服务端工程能力状态；空态只展示状态，不伪造启动入口。 */
-  projectCapabilities?: {
-    mode?: string;
-    blockers?: string[];
-    configured?: boolean;
-    canExecute?: boolean;
-  } | null;
 }) {
   // ⚑ E41 官方示例的「点模板卡 → 暂存起手意图 → 空态预填」消费端
   //   已随示例库一起下架（2026-08-14，用户裁决清除四个官方示例）——
@@ -412,29 +399,9 @@ function HomeEmptyState({
       data-testid="sliderule-empty-state"
     >
       <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-7 px-1 py-6">
-        {runtimeKind !== "project" && (
-          <div
-            className="flex flex-wrap items-center justify-center gap-2 text-[12px]"
-            data-testid="sliderule-runtime-mode"
-          >
-            <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-stone-600">
-              {projectCapabilities?.configured && projectCapabilities.canExecute
-                ? "工程模式可用 · 确认计划后创建工程"
-                : "当前：HTML 推演兼容模式"}
-            </span>
-            {projectCapabilities?.mode === "disabled" ||
-            projectCapabilities?.blockers?.includes(
-              "project_rollout_disabled"
-            ) ? (
-              <span
-                className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-800"
-                data-testid="sliderule-project-rollout-status"
-              >
-                工程模式未启用 · project_rollout_disabled
-              </span>
-            ) : null}
-          </div>
-        )}
+        {/* ⚠ 2026-09-14：空态不再挂「工程模式可用 · 确认计划后创建工程」。
+            人来写意图，不是来读运行时徽章。工程未启用的告警仍在开聊后的
+            HTML 兼容条上，空态这里只留问候。 */}
         <div className="flex w-full flex-wrap items-center justify-center gap-3">
           <h1 className="text-[26px] font-semibold tracking-tight text-[#171717] sm:text-[28px]">
             {runtimeKind === "project"
@@ -473,6 +440,7 @@ function HomeEmptyState({
             data-testid="sliderule-hero-composer"
           >
             {clarifySlot}
+            {todoSlot}
             {composerSlot}
           </div>
         )}
@@ -688,27 +656,29 @@ function ImAssistantMessage() {
     turns,
   } = ctx;
   const answer = ensureReadableChatMarkdown(
-    assistantTextForTurn(turn, publishClosure, goalText)
+    assistantTextForTurn(turn, publishClosure, goalText, {
+      runtimeKind,
+    })
   );
+  const showProjectChecklist =
+    runtimeKind === "project" &&
+    (ctx.latestTurnId
+      ? turn.id === ctx.latestTurnId
+      : turn.id === turns?.at(-1)?.id);
   return (
     <div className="mb-3 max-w-[640px]">
-      {runtimeKind === "project" &&
-      (ctx.latestTurnId
-        ? turn.id === ctx.latestTurnId
-        : turn.id === turns?.at(-1)?.id) ? (
-        <ProjectTaskChecklist turns={turns?.length ? turns : [turn]} />
-      ) : null}
       {turn.status === "streaming" ? (
         <div className="space-y-1.5">
           {/* 模型动手之前先开口，再铺动作——对照 Manus：散文在上，
-              机械步骤收在下面那组里。见 model-speech.ts 头注。 */}
+              机械步骤收在下面那组里。见 model-speech.ts 头注。
+              ⚠ 2026-09-14：清单曾经挂在这段外面、整列最顶上，
+              散文还没出来用户先看见一张「工程动作」卡。 */}
           <ModelSpeechBlocks turn={turn} />
+          {showProjectChecklist ? (
+            <ProjectTaskChecklist turns={turns?.length ? turns : [turn]} />
+          ) : null}
           <div className="flex items-center gap-2 text-[13px] text-stone-500">
-            <span className="inline-flex items-end gap-1" aria-hidden>
-              <span className="sr-dot h-1.5 w-1.5 rounded-full bg-[#1677ff]" />
-              <span className="sr-dot h-1.5 w-1.5 rounded-full bg-[#1677ff]" />
-              <span className="sr-dot h-1.5 w-1.5 rounded-full bg-[#1677ff]" />
-            </span>
+            <ThinkingOrbMark label={thinkingText} size={20} />
             {/* 状态文案翻滚过渡（anime.js）——不再生硬跳变 */}
             <RollingText text={thinkingText} className="min-w-0 flex-1" />
             {/* 静默久了才出现。短回合一个字都不多（quiet-time.ts 头注）。 */}
@@ -718,11 +688,15 @@ function ImAssistantMessage() {
               </span>
             ) : null}
           </div>
-          <TurnPhaseTimeline
-            turn={turn}
-            llmDraft={llmDraft}
-            publishClosure={publishClosure}
-          />
+          {/* 工程档的动作流是上面那列勾；六步钟/阶段带是 HTML 推演的词汇，
+              两套并排会把对话做成看板。 */}
+          {runtimeKind !== "project" ? (
+            <TurnPhaseTimeline
+              turn={turn}
+              llmDraft={llmDraft}
+              publishClosure={publishClosure}
+            />
+          ) : null}
           {/* LLM 实时想法默认折叠（PR-2）：点开才见 risk.analyze 原文。
               现在在哪一步看上面的六步钟，不靠散文。 */}
           {llmStreams.map(stream => (
@@ -743,6 +717,9 @@ function ImAssistantMessage() {
           {/* 完成后同样保留开口：它是这一轮「为什么这么做」的唯一记录，
               收尾总结替代不了过程里的判断。 */}
           <ModelSpeechBlocks turn={turn} />
+          {showProjectChecklist ? (
+            <ProjectTaskChecklist turns={turns?.length ? turns : [turn]} />
+          ) : null}
           {/* 结果卡：这一轮真的产出了东西才出（判断在 turn-result-card.ts）。
               没有它的话，成果只活在右侧预览列里——往上滚看历史什么都不剩。 */}
           <TurnResultCard
@@ -786,7 +763,9 @@ function ImAssistantMessage() {
               }}
             />
           ) : null}
-          <TurnPhaseTimeline turn={turn} publishClosure={publishClosure} />
+          {runtimeKind !== "project" ? (
+            <TurnPhaseTimeline turn={turn} publishClosure={publishClosure} />
+          ) : null}
           {/* 思考流留档：推演中每步 LLM 的完整输出，完成后保留成可折叠
               记录（Claude 式）——想法不消失，要看随时点开 */}
           {turn.steps.some(s => s.kind === "llm_output") && (
@@ -833,7 +812,10 @@ function ImAssistantMessage() {
               </Response>
             </div>
           )}
-          {(turn.main || turn.user) && (
+          {/* ⚠ 2026-09-14 用户指着工程档这两处说没用了：
+              「质疑本轮 / 重新推演」和输入条上的「路线对比一下」。
+              结果卡已经有重试；那几个芯片是 HTML 推演的词。工程档不画。 */}
+          {runtimeKind !== "project" && (turn.main || turn.user) && (
             <div className="flex flex-wrap items-center gap-1 text-[12px] text-stone-400">
               {/* E26：闭环被闸拦截（证据缺口）→ 主动作是「哪里缺补哪里」——
                   服务端只重跑覆盖门标红的能力，已 PASS 产物原样复用；
@@ -908,7 +890,7 @@ export function ClaudeChatSurface({
   rehearsalClock = null,
   hud = null,
   factoryDecision = null,
-  projectCapabilities = null,
+  projectCapabilities: _projectCapabilities = null,
   runtimeKind,
   projectRevision = null,
   controlTodo = null,
@@ -938,7 +920,7 @@ export function ClaudeChatSurface({
   runtimeKind?: "html-prototype" | "project";
   /** 工程档已落库的源码版本；结果卡靠它判断有没有真的产出。 */
   projectRevision?: string | null;
-  /** 模型自己的待办；后续建议行读它。 */
+  /** 模型自己的待办；浮层和后续建议行读它，不进聊天正文。 */
   controlTodo?: Array<{
     id?: string;
     status?: string;
@@ -1026,19 +1008,12 @@ export function ClaudeChatSurface({
     ]
   );
 
-  const hasClockProgress = Boolean(
-    rehearsalClock?.steps.some(s => s.status !== "pending")
-  );
-  const showRehearsalHud = Boolean(
-    rehearsalClock &&
-    hud &&
-    (isRunning ||
-      hasClockProgress ||
-      publishClosure ||
-      factoryDecision ||
-      hud.gatedEvidenceCount > 0 ||
-      hud.hasServerTokenFacts)
-  );
+  // ⚠ 2026-09-15：六步钟不再挂在对话列顶上。用户圈了那条「2 起草 SPEC …
+  //   6 汇合过闸」说移除——人在看它在想什么，不是来读工厂 hop 日历。
+  //   组件还在，工程面 StatusBar / 单测仍直接渲染。
+  void rehearsalClock;
+  void factoryDecision;
+  void hud;
 
   // 手机问卷固定到视口后会跨出对话栏，不能让右侧舞台截获按钮点击。
   return (
@@ -1049,17 +1024,6 @@ export function ClaudeChatSurface({
       <AssistantRuntimeProvider runtime={runtime}>
         <ImSurfaceContext.Provider value={ctxValue}>
           <ThreadPrimitive.Root className="relative z-10 flex min-h-0 flex-1 flex-col">
-            {showRehearsalHud && rehearsalClock && hud ? (
-              <div className="mx-auto w-full max-w-[720px] shrink-0 px-4 pb-1 pt-2 sm:px-5">
-                <RehearsalClockHud
-                  clock={rehearsalClock}
-                  hud={hud}
-                  decision={factoryDecision}
-                  show
-                  showSteps={rehearsalClockShowSteps(rehearsalClock)}
-                />
-              </div>
-            ) : null}
             {/* E16 智能滚动补件：用户上滚回看时出「回到底部」胶囊
                 （Viewport 本身已带贴底跟随；贴底时该按钮自动 disabled → 隐藏） */}
             <div className="relative flex min-h-0 flex-1 flex-col">
@@ -1076,10 +1040,14 @@ export function ClaudeChatSurface({
                     灵感句只导去应用中心，不造假功能入口。 */}
                   <HomeEmptyState
                     isRunning={isRunning}
-                    projectCapabilities={projectCapabilities}
                     runtimeKind={runtimeKind}
                     composerSlot={isEmptyThread ? composerSlot : undefined}
                     clarifySlot={isEmptyThread ? clarifySlot : undefined}
+                    todoSlot={
+                      isEmptyThread ? (
+                        <PlanTodoDock items={controlTodo} />
+                      ) : undefined
+                    }
                   />
                 </ThreadPrimitive.Empty>
                 <div className="py-0">
@@ -1100,6 +1068,7 @@ export function ClaudeChatSurface({
                 {/* Cursor / LobeChat：输入条浮在对话列里，不要横切 border-t 把步骤和输入割开。 */}
                 <div className="relative mx-auto w-full max-w-[720px]">
                   {clarifySlot}
+                  <PlanTodoDock items={controlTodo} />
                   {composerSlot}
                 </div>
               </div>
@@ -1285,7 +1254,7 @@ function SlideRuleUnified({
   projectCapabilities = null,
   onCreateProject,
   canCreateProject = false,
-  projectCreateBlockedReason,
+  projectCreateBlockedReason: _projectCreateBlockedReason,
   projectCreateState,
   activeSkillId = null,
   skillContents = {},
@@ -1388,10 +1357,6 @@ function SlideRuleUnified({
   rehearsalCursor?: RehearsalClockCursor;
 }) {
   const sessionId = sessionState.sessionId || DEFAULT_SESSION_ID;
-  const composerHints = useMemo(
-    () => deriveComposerHintChips(sessionState),
-    [sessionState]
-  );
 
   // Clarification cards can be hidden; they reappear when pending questions change.
   const clarifications = pendingClarifications ?? [];
@@ -1401,6 +1366,31 @@ function SlideRuleUnified({
   useEffect(() => {
     setClarifyHidden(false);
   }, [clarifyKey]);
+
+  // ⚠ 2026-09-15：2026-09-14 卸掉「进入工程工作台」之后，批准计划
+  //   的会话再也没人调用 onCreateProject。真机 TicketStream 待办 8 条、
+  //   计划已批准，右侧却是接线沙盘。钮可以不挂，创建必须自己走。
+  const createStatus = projectCreateState?.status ?? "idle";
+  const projectSurface = shouldShowProjectComputer({
+    runtimeKind: sessionState.runtimeKind,
+    projectId: sessionState.projectId,
+    canCreateProject,
+    creating: createStatus === "creating",
+  });
+  const createProjectRef = useRef(onCreateProject);
+  createProjectRef.current = onCreateProject;
+  useEffect(() => {
+    if (
+      !shouldAutoCreateProject({
+        canCreateProject,
+        isRunning,
+        createStatus,
+      })
+    ) {
+      return;
+    }
+    createProjectRef.current?.();
+  }, [canCreateProject, isRunning, createStatus]);
   // KD19：作曲家只留**一张**「要不要烧」的决策面。范围卡 / ask 停泊时
   // 澄清卡让位——2026-08-27 真机截图里两张卡叠在一起，背后那张问的还是
   // 上一轮的 goal（服务端那半在 rehearsal_control._retire_stale_control_questions）。
@@ -1506,78 +1496,19 @@ function SlideRuleUnified({
             className="mb-2 inline-flex"
           />
         ) : null}
-        {!isHomeEmpty ? (
-          <div
-            className="mx-3 mb-2 inline-flex flex-wrap items-center gap-2 text-[12px]"
-            data-testid="sliderule-runtime-mode"
-          >
-            <span className="rounded-full border border-stone-200 bg-white px-3 py-1 text-stone-600">
-              当前：
-              {sessionState.runtimeKind === "project"
-                ? "工程工作台模式"
-                : "HTML 推演兼容模式"}
-            </span>
-            {sessionState.runtimeKind !== "project" &&
-            (projectCapabilities?.mode === "disabled" ||
-              projectCapabilities?.blockers?.includes(
-                "project_rollout_disabled"
-              )) ? (
-              <span
-                className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-800"
-                data-testid="sliderule-project-rollout-status"
-              >
-                工程模式未启用 · project_rollout_disabled
-              </span>
-            ) : null}
-            {sessionState.runtimeKind !== "project" &&
-            projectCapabilities?.canExecute &&
-            projectCapabilities.configured &&
-            canCreateProject &&
-            onCreateProject ? (
-              <button
-                type="button"
-                data-testid="sliderule-create-project"
-                disabled={
-                  isRunning || projectCreateState?.status === "creating"
-                }
-                onClick={onCreateProject}
-                className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-60"
-              >
-                {projectCreateState?.status === "creating"
-                  ? "正在创建工程…"
-                  : "进入工程工作台"}
-              </button>
-            ) : null}
-            {sessionState.runtimeKind !== "project" &&
-            projectCapabilities?.canExecute &&
-            projectCreateBlockedReason ? (
-              <span
-                data-testid="sliderule-project-create-blocked"
-                className="text-stone-600"
-              >
-                {projectCreateBlockedReason}
-              </span>
-            ) : null}
-            {projectCreateState?.status === "error" &&
-            projectCreateState.error ? (
-              <span
-                role="alert"
-                data-testid="sliderule-project-create-error"
-                className="text-rose-700"
-              >
-                {projectCreateState.error}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
+        {/* ⚠ 2026-09-14：开聊后也不挂「当前：HTML 推演兼容模式」。
+            真机圈了三处壳——左上这颗、右上分栏/全屏/交付物、输入框上
+            已收口/再核对。人在看推演，不是来读运行时徽章。
+            进入工程工作台 / 未启用告警跟着这条一起卸，不再占顶。 */}
 
         {/* Studio body — 图标簇在舞台头条右侧，不再独占整页顶栏。 */}
         {
           <div className="relative z-0 min-h-0 flex-1">
             <SlideRuleStudio
-              runtimeKind={sessionState.runtimeKind}
+              runtimeKind={projectSurface ? "project" : sessionState.runtimeKind}
               projectId={sessionState.projectId}
               projectRevision={sessionState.projectRevision}
+              projectCreateError={projectCreateState?.error ?? null}
               sessionEmpty={isHomeEmpty}
               turns={conversationTurns}
               chatSlot={
@@ -1595,7 +1526,9 @@ function SlideRuleUnified({
                   hud={rehearsalFacts.hud}
                   factoryDecision={rehearsalFacts.factoryDecision}
                   projectCapabilities={projectCapabilities}
-                  runtimeKind={sessionState.runtimeKind}
+                  runtimeKind={
+                    projectSurface ? "project" : sessionState.runtimeKind
+                  }
                   projectRevision={sessionState.projectRevision}
                   controlTodo={sessionState.controlTodo}
                   projectId={sessionState.projectId}
@@ -1610,12 +1543,8 @@ function SlideRuleUnified({
                       isRunning={isRunning}
                       sessionId={sessionId}
                       goal={goal}
-                      hintChips={composerHints}
-                      statusPill={
-                        publishClosure
-                          ? formatComposerClosurePill(publishClosure)
-                          : null
-                      }
+                      hintChips={[]}
+                      statusPill={null}
                       stop={stop}
                       hero={isHomeEmpty}
                       pendingPlanApproval={pendingPlanApproval}
@@ -1656,7 +1585,7 @@ function SlideRuleUnified({
               appTitle={goal ? goal.slice(0, 24) : undefined}
               // 用户还没输入时不显示右侧舞台：欢迎页独占全宽，首条消息后舞台登场
               stageVisible={
-                sessionState.runtimeKind === "project" ||
+                projectSurface ||
                 conversationTurns.length > 0 ||
                 isRunning
               }
@@ -1697,15 +1626,10 @@ function SlideRuleUnified({
               onRestoreVersion={restoreModelVersion}
               onForkVariant={forkVariant}
               isRestoringVersion={isRestoringVersion}
-              chromeSlot={
-                showStudioChrome ? (
-                  <SlideRuleTopHud
-                    allowCanvas={sessionState.runtimeKind !== "project"}
-                    isRunning={isRunning}
-                    onOpenDeliverables={openDeliverables}
-                  />
-                ) : null
-              }
+              /* ⚠ 2026-09-14：分栏 / 全屏 / 交付物整簇不挂。推演中本来
+                 就锁死分栏；交付物抽屉还在，只是不占右上角。
+                 SlideRuleTopHud 组件留着，Xray / HUD 单测仍直接渲染它。 */
+              chromeSlot={null}
               /* 重置会话不再走 chromeSlot：那条槽落在舞台头条**右侧**图标簇里。
                2026-08-24 用户反馈要它在标题左边、更大、更蓝，所以单独一条槽。 */
               resetSlot={

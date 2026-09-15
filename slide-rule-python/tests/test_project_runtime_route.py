@@ -258,6 +258,28 @@ def test_snapshots_and_event_pages_exclude_internal_records_and_resume_by_sequen
     assert setup.client.get(url).json()["lastSeq"] == 4
 
 
+def test_event_pages_expose_console_bytes_and_strip_internal_fields(setup, operation):
+    lease = _running(setup, operation)
+    url = f"/project-operations/{operation}"
+    setup.store.flush_operation_event(operation, owner_id="u1", lease_generation=lease.generation,
+        lease_owner=lease.leaseOwner)
+    setup.store.append_event(operation, owner_id="u1", event_type="runtime.console",
+        event_id="pty-secret:0", payload={"processId": "pty-secret", "data": "user@sb$ n",
+            "nextOffset": 10, "truncated": False, "providerToken": "provider-secret"},
+        lease_generation=lease.generation, lease_owner=lease.leaseOwner)
+    page = setup.client.get(url + "/events", params={"afterSeq": 0}).json()
+    console = [event for event in page["events"] if event["type"] == "runtime.console"]
+    assert console and console[0]["payload"]["data"] == "user@sb$ n"
+    assert "processId" not in console[0]["payload"]
+    assert "secret" not in str(page)
+    unknown = setup.store.append_event(operation, owner_id="u1", event_type="runtime.secret",
+        event_id="hidden:1", payload={"token": "provider-secret"},
+        lease_generation=lease.generation, lease_owner=lease.leaseOwner)
+    hidden = setup.client.get(url + "/events", params={"afterSeq": unknown.seq - 1, "limit": 1}).json()
+    assert hidden["events"][0]["type"] == "runtime.secret"
+    assert hidden["events"][0]["payload"] == {}
+
+
 @pytest.mark.parametrize("params", [{"afterSeq": -1}, {"limit": 0}, {"limit": 201}, {"afterSeq": "not-a-cursor"}])
 def test_event_cursor_is_bounded(setup, operation, params):
     assert setup.client.get(f"/project-operations/{operation}/events", params=params).status_code == 422

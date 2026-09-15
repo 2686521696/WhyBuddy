@@ -73,6 +73,77 @@ def _seconds(value: float) -> float:
     return float(value)
 
 
+#: 前端审批 / 退出计划的合成句。它们是派发意图，不是业务目标。
+#: 真机 `sr-20260914150256-Z3DP93VKQ9`：userText「批准计划并执行」盖过了入职系统。
+SYNTHETIC_OBJECTIVE_TEXTS = frozenset({
+    "批准计划并执行",
+    "退出计划",
+    "请修改计划",
+})
+
+
+def session_goal_text(state: Any) -> str:
+    goal = getattr(state, "goal", None)
+    if isinstance(goal, dict):
+        return str(goal.get("text") or "").strip()
+    if goal is None:
+        return ""
+    return str(getattr(goal, "text", "") or "").strip()
+
+
+def stamp_control_goal_payload(payload: dict[str, Any], state: Any) -> dict[str, Any]:
+    """把会话权威目标盖进即将落库的控制 payload。
+
+    六字段 POST 没有 `runtimeKind` / `sessionGoal`。不盖的话
+    `_goal_from_payload` 只能看见按钮文案。
+    """
+    if not isinstance(payload, dict):
+        raise ValueError("control_payload_required")
+    stamped = dict(payload)
+    text = session_goal_text(state)
+    if text:
+        stamped["sessionGoal"] = text[:4000]
+    runtime = getattr(state, "runtimeKind", None)
+    if runtime in {"project", "html-prototype"}:
+        stamped["runtimeKind"] = runtime
+    return stamped
+
+
+def payload_objective_text(payload: dict[str, Any]) -> str:
+    """durable goal.text：会话业务目标优先，合成审批句不许赢。"""
+    session_goal = payload.get("sessionGoal")
+    if isinstance(session_goal, str) and session_goal.strip():
+        return session_goal.strip()[:4000]
+    spoken: list[str] = []
+    for key in ("userText", "user_text", "message", "goal"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            spoken.append(value.strip())
+    for value in spoken:
+        if value not in SYNTHETIC_OBJECTIVE_TEXTS:
+            return value[:4000]
+    return spoken[0][:4000] if spoken else ""
+
+
+def payload_objective_kind(payload: dict[str, Any]) -> str:
+    if payload.get("runtimeKind") == "project":
+        return "project"
+    return "conversation"
+
+
+def project_goal_promotion(event: Any) -> bool:
+    """这一发事件是否证明工程已经存在，该把 goal.kind 升成 project。"""
+    if not isinstance(event, dict):
+        return False
+    if event.get("type") == "control_project_state" and event.get("runtimeKind") == "project":
+        return True
+    return (
+        event.get("type") == "control_tool_result"
+        and event.get("tool") == "project_create"
+        and event.get("ok") is True
+    )
+
+
 def _goal_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Build the durable, non-secret objective envelope for a control run.
 
@@ -81,12 +152,12 @@ def _goal_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     affordance.  Keep only the user objective and the operation ids which may
     still need observation.  This is deliberately a data contract; it does
     not start another agent loop.
+
+    ⚠ 2026-09-14：userText 是本轮派发句（「批准计划并执行」），不是业务目标。
+    业务目标由 stamp_control_goal_payload 盖进 sessionGoal；合成句不许赢。
     """
-    candidates = (payload.get("userText"), payload.get("user_text"),
-                  payload.get("message"), payload.get("goal"))
-    text = next((value.strip() for value in candidates
-                 if isinstance(value, str) and value.strip()), "")[:4000]
-    kind = "project" if payload.get("runtimeKind") == "project" else "conversation"
+    text = payload_objective_text(payload)
+    kind = payload_objective_kind(payload)
     return {"text": text, "kind": kind, "status": "active",
             "awaitingOperationIds": [], "continuations": 0, "progressMark": "",
             "updatedAt": _now()}
@@ -352,23 +423,32 @@ class ControlRunStore:
         }
 
     def update_goal(self, run_id: str, worker_id: str, generation: int, *,
-                    status: str, operation_ids: list[str] | None = None) -> dict[str, Any]:
+                    status: str, operation_ids: list[str] | None = None,
+                    kind: str | None = None, text: str | None = None) -> dict[str, Any]:
         """Fenced goal bookkeeping for a producer or a recovery worker.
 
         This only records whether the existing control run is active, waiting
         for a user, or has an operation to observe.  It never dispatches work;
         callers still use the existing ``ControlRunService`` loop.
+
+        ``kind`` / ``text`` 只在工程创建成功后升级身份时传入。不传就沿用
+        当前值——``control_tool_start`` 每发都调这里，不许把业务目标抹回
+        按钮文案，也不许把 continuations 清零。
         """
         if status not in GOAL_STATUSES:
             raise ValueError("invalid_control_goal_status")
+        if kind is not None and kind not in {"project", "conversation"}:
+            raise ValueError("invalid_control_goal_kind")
         ids = operation_ids or []
         if not isinstance(ids, list) or any(not isinstance(item, str) or not item.strip() for item in ids):
             raise ValueError("invalid_control_goal_operations")
         ids = list(dict.fromkeys(item.strip()[:240] for item in ids))[:32]
         def transform(record):
             current = record.get("goal") if isinstance(record.get("goal"), dict) else {}
-            kind = current.get("kind") if current.get("kind") in {"project", "conversation"} else "conversation"
-            text = str(current.get("text") or "")[:4000]
+            next_kind = kind if kind in {"project", "conversation"} else (
+                current.get("kind") if current.get("kind") in {"project", "conversation"} else "conversation")
+            next_text = (str(text).strip()[:4000] if isinstance(text, str) and text.strip()
+                         else str(current.get("text") or "")[:4000])
             # ⚠ 2026-09-13 真机 control-continuation-smoke 抓到：这里原来是
             #   **重建**一个 goal 字典，`continuations` / `progressMark` 两个
             #   字段被静静抹掉。而 `update_goal(status="active")` 在每次
@@ -377,7 +457,7 @@ class ControlRunStore:
             #   护栏写对了，落库把它擦了，判据还全绿。
             spent = current.get("continuations")
             spent = spent if isinstance(spent, int) and spent > 0 else 0
-            return {**record, "goal": {"text": text, "kind": kind, "status": status,
+            return {**record, "goal": {"text": next_text, "kind": next_kind, "status": status,
                 "awaitingOperationIds": ids,
                 "continuations": spent,
                 "progressMark": str(current.get("progressMark") or "")[:240],

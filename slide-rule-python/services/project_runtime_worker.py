@@ -4,6 +4,10 @@ This is an execution supervisor, not an agent loop. A runtime.start operation
 owns the managed runtime until cancellation, idle/total budget expiry, or failure.
 A runtime.exec operation owns one fixed check/build/test command and its sandbox.
 Every side effect has a saved phase; uncertain dispatches are never replayed.
+
+2026-09-15: install / exec prefer `start_console` (a real bash PTY) when the
+provider has one. Vite stays on `start_process`. The pane reads
+`runtime.console` bytes; do not reconstruct a prompt in the worker.
 """
 
 from __future__ import annotations
@@ -348,8 +352,38 @@ class _RuntimeTask:
             raise _Expired()
         authorize_project_actor(self.owner_id)
 
-    def sleep(self):
-        self.supervisor._stop.wait(self.supervisor.poll_interval)
+    def sleep(self, *, tight=False):
+        # Console typing is ~50 cps. A 2s poll turns that into a jump. 120ms
+        # keeps the pane looking like a machine being typed on.
+        self.supervisor._stop.wait(0.12 if tight else self.supervisor.poll_interval)
+
+    def _is_console_pid(self, pid):
+        refs = self.heartbeat.lease.processRefs
+        return any(refs.get(key) == pid and refs.get(f"{key}Console") == "1"
+                   for key in ("install", "command"))
+
+    def _attach_console(self, pid):
+        if not self._is_console_pid(pid):
+            return
+        attach = getattr(self.provider, "attach_console", None)
+        if callable(attach):
+            attach(self.handle, pid)
+
+    def _start_visible(self, key, command, *, timeout_seconds):
+        """Install / exec go through a PTY when the provider has one.
+
+        2026-09-15: reconstructing `$ cmd` + `runtime.log` is a log viewer.
+        Manus types into bash. Vite stays on start_process — same command in
+        both places would run twice.
+        """
+        start_console = getattr(self.provider, "start_console", None)
+        if callable(start_console):
+            result = start_console(self.handle, command, timeout_seconds=timeout_seconds)
+            self._register(key, result.process_id, console=True)
+            return result
+        result = self.provider.start_process(self.handle, command, timeout_seconds=timeout_seconds)
+        self._register(key, result.process_id)
+        return result
 
     def logs(self, pid):
         if pid not in self.log_offsets:
@@ -357,12 +391,26 @@ class _RuntimeTask:
             while True:
                 events = self.store.list_events(self.operation_id, owner_id=self.owner_id, after_seq=seq, limit=1000)
                 for event in events:
-                    if event.type == "runtime.log" and event.payload.get("processId") == pid:
+                    if event.type in {"runtime.log", "runtime.console"} and event.payload.get("processId") == pid:
                         offset = max(offset, int(event.payload["nextOffset"]))
                 if len(events) < 1000:
                     break
                 seq = events[-1].seq
             self.log_offsets[pid] = offset
+        self._attach_console(pid)
+        if self._is_console_pid(pid):
+            read_console = getattr(self.provider, "read_console", None)
+            if not callable(read_console):
+                raise WorkspaceProviderError("project_console_reader_missing")
+            chunk = read_console(self.handle, pid, offset=self.log_offsets[pid])
+            if chunk.next_offset > self.log_offsets[pid]:
+                self.store.append_event(self.operation_id, owner_id=self.owner_id, event_type="runtime.console",
+                    event_id=f"{pid}:console:{self.log_offsets[pid]}:{chunk.next_offset}",
+                    payload={"processId": pid, "data": chunk.text, "nextOffset": chunk.next_offset,
+                             "truncated": chunk.truncated},
+                    lease_generation=self.lease.generation, lease_owner=self.lease.leaseOwner)
+                self.log_offsets[pid] = chunk.next_offset
+            return chunk.next_offset
         chunk = self.provider.read_process_logs(self.handle, pid, offset=self.log_offsets[pid])
         if chunk.next_offset > self.log_offsets[pid]:
             self.store.append_event(self.operation_id, owner_id=self.owner_id, event_type="runtime.log",
@@ -425,8 +473,7 @@ class _RuntimeTask:
             self.check()
             self.result["phaseDeadline"] = time.time() + self.supervisor.install_timeout
             self.save("installing")
-            installed = self.provider.start_process(self.handle, "npm ci --ignore-scripts", timeout_seconds=600)
-            self._register("install", installed.process_id)
+            self._start_visible("install", "npm ci --ignore-scripts", timeout_seconds=600)
             phase = "installing"
         else:
             if self.handle is None:
@@ -452,7 +499,7 @@ class _RuntimeTask:
                     break
                 if time.time() >= self.result["phaseDeadline"]:
                     raise WorkspaceProviderError("project_install_timeout")
-                self.sleep()
+                self.sleep(tight=self._is_console_pid(pid))
             installed = self.provider.process_result(self.handle, pid)
             while True:
                 previous = self.log_offsets.get(pid, 0)
@@ -466,8 +513,7 @@ class _RuntimeTask:
             self.supervisor.authorizer(self.store, self.original, self.owner_id)
             if self.original.kind == "runtime.exec":
                 self.save("executing")
-                executed = self.provider.start_process(self.handle, f"npm run {command}", timeout_seconds=900)
-                self._register("command", executed.process_id)
+                self._start_visible("command", f"npm run {command}", timeout_seconds=900)
                 phase = "executing"
             else:
                 self.result["phaseDeadline"] = time.time() + self.supervisor.ready_timeout
@@ -537,7 +583,7 @@ class _RuntimeTask:
             self.logs(pid)
             if not self.provider.is_process_running(self.handle, pid):
                 break
-            self.sleep()
+            self.sleep(tight=self._is_console_pid(pid))
         executed = self.provider.process_result(self.handle, pid)
         self.result["exitCode"] = executed.exit_code
         while True:
@@ -551,11 +597,13 @@ class _RuntimeTask:
         self.check()
         self.finish("completed", "stopped", None)
 
-    def _register(self, key, pid):
+    def _register(self, key, pid, *, console=False):
         if not pid:
             raise WorkspaceProviderError("project_process_identity_missing")
         refs = dict(self.heartbeat.lease.processRefs)
         refs[key] = pid
+        if console:
+            refs[f"{key}Console"] = "1"
         self.heartbeat.renew(process_refs=refs)
 
     def _process(self, key):

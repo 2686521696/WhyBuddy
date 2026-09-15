@@ -10,6 +10,8 @@ import os
 import shlex
 import subprocess
 import sys
+import threading
+import time
 import types
 
 import pytest
@@ -45,6 +47,70 @@ class FakeProcess:
         return self.result
 
 
+class FakePtyHandle:
+    pid = 7
+
+    def __init__(self):
+        self.killed = False
+        self._cv = threading.Condition()
+        self._q = []
+        self._closed = False
+
+    def push(self, data):
+        with self._cv:
+            self._q.append((None, None, data))
+            self._cv.notify()
+
+    def close(self):
+        with self._cv:
+            self._closed = True
+            self._cv.notify()
+
+    def kill(self):
+        self.killed = True
+        self.close()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        with self._cv:
+            while not self._q and not self._closed:
+                self._cv.wait(0.05)
+            if self._q:
+                return self._q.pop(0)
+            raise StopIteration
+
+
+class FakePty:
+    def __init__(self):
+        self.handle = FakePtyHandle()
+        self.sent = []
+        self.phase = "setup"
+        self.create_kwargs = None
+
+    def create(self, size, **kwargs):
+        self.create_kwargs = kwargs
+        return self.handle
+
+    def connect(self, pid, **kwargs):
+        return self.handle
+
+    def send_stdin(self, pid, data):
+        raw = data if isinstance(data, bytes) else str(data).encode()
+        self.sent.append(raw)
+        self.handle.push(raw)
+        if self.phase == "setup" and b"PROMPT_COMMAND" in raw:
+            self.handle.push(b"\x1b]777;wb;0\x07")
+            self.handle.push(b"user@sb:/home/user/workspace$ ")
+            self.phase = "typing"
+            return
+        if self.phase == "typing" and raw == b"\n":
+            self.handle.push(b"added 21 packages\n")
+            self.handle.push(b"\x1b]777;wb;0\x07")
+            self.phase = "done"
+
+
 class FakeSandbox:
     sandbox_id = "sb-test"
 
@@ -53,6 +119,7 @@ class FakeSandbox:
         self.result = completed()
         self.process = FakeProcess()
         self.commands = types.SimpleNamespace(run=self.run)
+        self.pty = FakePty()
         self.killed = 0
         self.kill_error = None
 
@@ -145,6 +212,41 @@ def test_transport_failure_does_not_claim_command_completed(setup_provider):
     with pytest.raises(WorkspaceProviderError, match="e2b_command_failed") as caught:
         provider.run(handle, "npm install")
     assert caught.value.result.exit_code is None
+
+
+def test_start_console_types_each_character_into_the_pty_not_commands_run(setup_provider, monkeypatch):
+    """Manus 的打字是 PTY echo。一次 send 整句命令仍会执行，但看起来像日志。"""
+    provider, handle, fake, _ = setup_provider
+    monkeypatch.setattr(module, "CONSOLE_TYPE_INTERVAL", 0)
+    command = "npm ci --ignore-scripts"
+    started = provider.start_console(handle, command)
+    assert started.process_id == "7"
+    deadline = time.time() + 2
+    while provider.is_process_running(handle, "7") and time.time() < deadline:
+        time.sleep(0.01)
+    assert not provider.is_process_running(handle, "7")
+    typed = [chunk for chunk in fake.pty.sent if len(chunk) == 1 and chunk != b"\n"]
+    assert b"".join(typed) == command.encode()
+    assert fake.calls == []
+    assert fake.pty.create_kwargs["cwd"] == module.PROJECT_ROOT
+    chunk = provider.read_console(handle, "7", offset=0)
+    assert "user@sb:/home/user/workspace$ " in chunk.text
+    assert command in chunk.text
+    assert "added 21 packages" in chunk.text
+    assert "\x1b]777;" not in chunk.text
+    assert provider.process_result(handle, "7").exit_code == 0
+
+
+def test_start_console_does_not_inject_log_bytes_without_typing(setup_provider, monkeypatch):
+    """反向：不许把 stdout 灌进假 PTY 却不敲命令——那就是日志回放。"""
+    provider, handle, fake, _ = setup_provider
+    monkeypatch.setattr(module, "CONSOLE_TYPE_INTERVAL", 0)
+    provider.start_console(handle, "npm run check")
+    deadline = time.time() + 2
+    while provider.is_process_running(handle, "7") and time.time() < deadline:
+        time.sleep(0.01)
+    assert any(chunk == b"n" for chunk in fake.pty.sent)
+    assert b"".join(chunk for chunk in fake.pty.sent if len(chunk) == 1 and chunk != b"\n") == b"npm run check"
 
 
 def test_background_start_uses_actual_sdk_pid_and_process_group(setup_provider):

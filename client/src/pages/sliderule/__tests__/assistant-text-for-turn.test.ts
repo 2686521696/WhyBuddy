@@ -201,6 +201,28 @@ describe("assistantTextForTurn", () => {
     expect(text).toBe("预约台已经加上超时红标。");
   });
 
+  it("工程档空轮不许说没画出页面", () => {
+    const text = assistantTextForTurn(
+      turn({ user: GOAL, assistant: "", steps: [] }),
+      closure(),
+      GOAL,
+      { runtimeKind: "project" }
+    );
+    expect(text).not.toBe(REFINE_TURN_NO_PAGE_NOTE);
+    expect(text).not.toContain("页面");
+    expect(text).toBe("");
+  });
+
+  it("工程档有开口仍用开口", () => {
+    const text = assistantTextForTurn(
+      turn({ assistant: "工程目录已经建好。" }),
+      closure(),
+      GOAL,
+      { runtimeKind: "project" }
+    );
+    expect(text).toBe("工程目录已经建好。");
+  });
+
   it("本轮有 assistant 就用 assistant", () => {
     const text = assistantTextForTurn(
       turn({ assistant: "红标已经画上。" }),

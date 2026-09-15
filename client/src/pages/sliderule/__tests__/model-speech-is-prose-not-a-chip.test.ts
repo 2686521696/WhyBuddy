@@ -114,6 +114,18 @@ describe("什么算一次对用户的开口", () => {
     expect(isUserFacingSpeech("告诉用户为什么先停")).toBe(false);
   });
 
+  it("规划独白不算开口——2026-09-14 真机 RBAC 左栏整段英文 write_plan 自言自语", () => {
+    // 真机 sr-20260914171745-3PCJ39MFGV 派 write_plan 之前的 content。
+    // 变异：OPERATOR_SPEAK 改回只认「下一跳请调 pages」→ 本条红。
+    const live =
+      "I'm currently in \"planning\" mode and I need to call write_plan now " +
+      "to flesh out a high-quality, structured plan for this RBAC system.";
+    expect(isUserFacingSpeech(live)).toBe(false);
+    expect(
+      isUserFacingSpeech("Okay, I'm currently in planning mode and will outline the goals.")
+    ).toBe(false);
+  });
+
   it("正常开口算", () => {
     expect(isUserFacingSpeech(SPEECH)).toBe(true);
   });

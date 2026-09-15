@@ -108,6 +108,32 @@ def test_crash_after_source_creation_is_repaired_without_duplicate_project(setup
     assert persistence.load_session_record(state.sessionId)["session"].projectRevision == project.currentRevision
 
 
+def test_lost_session_pointer_adopts_current_approved_plan(setup):
+    """会话指针丢了、源码还在：按当前批准绑回去，不许甩 initial_plan_changed。
+
+    真机 TicketStream（2026-09-15）：工程 4 个 revision 都在，会话
+    runtimeKind 掉回 html-prototype。把 `not state.projectId` 从 adopt
+    条件拿掉，这条必红。
+    """
+    store, state, _ref, _ = setup
+    project = create(setup)
+    lost = persistence.load_session_record(state.sessionId)["session"].model_copy(update={
+        "runtimeKind": "html-prototype", "projectId": None, "projectRevision": None,
+        "controlTranscript": [
+            {"kind": kind, "planId": "plan-later", "revision": 2,
+             "planContent": "TicketStream after the pointer was lost", "reqId": "approve-2"}
+            for kind in ("plan_written", "plan_approval", "plan_approved")
+        ],
+    })
+    assert persistence.save_session_record(lost, server_write=True)["ok"]
+    later = approved_reference(lost)
+    rebound = create(setup, approval_ref=later)
+    stored = persistence.load_session_record(state.sessionId)["session"]
+    assert rebound.projectId == project.projectId
+    assert stored.runtimeKind == "project" and stored.projectId == project.projectId
+    assert store.get_revision(project.projectId, owner_id="alice").planRef == later
+
+
 def test_sync_uses_source_head_and_preserves_newer_conversation(setup):
     store, state, ref, _ = setup
     project = create(setup)

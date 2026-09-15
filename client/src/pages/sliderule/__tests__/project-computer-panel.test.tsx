@@ -55,8 +55,8 @@ function turnOf(
   };
 }
 
-const html = (turn: UiTurn) =>
-  renderToStaticMarkup(<ProjectComputerPanel turns={[turn]} />);
+const html = (turn: UiTurn, embedded = false) =>
+  renderToStaticMarkup(<ProjectComputerPanel turns={[turn]} embedded={embedded} />);
 
 describe("没动作就没有面板", () => {
   it("一条工程动作都没有 → 什么都不渲染", () => {
@@ -155,5 +155,101 @@ describe("「实时」不许骗人", () => {
     const view = projectComputerView([], null);
     expect(view.current).toBeNull();
     expect(view.live).toBe(false);
+  });
+});
+
+describe("嵌进整块电脑面时画原始 PTY，不画说明书", () => {
+  it("永远是 xterm 面，不许再套工具名片或 $ cmd 拼贴", () => {
+    const out = html(
+      turnOf([
+        {
+          id: "a",
+          capabilityId: "project_exec",
+          progressType: "acting",
+          projectDetail: "pnpm run build",
+        },
+      ]),
+      true
+    );
+    expect(out).toContain('data-testid="project-computer-pty"');
+    expect(out).toContain('data-testid="project-computer-pty-text"');
+    expect(out).toMatch(/data-testid="project-computer-pty-text" class="sr-only"/);
+    expect(out).not.toContain('data-testid="project-computer-session"');
+    expect(out).not.toContain("$ pnpm run build");
+    expect(out).not.toContain('data-testid="project-computer-cursor"');
+    expect(out).not.toContain('data-testid="project-computer-promptbar"');
+    expect(out).not.toContain("跳到实时");
+    expect(out).not.toContain("没有可展示的细节");
+    expect(out).not.toContain("命令行输出");
+    expect(out).not.toContain("project_exec");
+    expect(out).not.toContain("正在运行命令");
+    expect(out).not.toMatch(/ubuntu@/);
+  });
+
+  it("反向：独立卡片仍摊开脱敏摘要——嵌进那条链不许把这条诚实边界改掉", () => {
+    const out = html(
+      turnOf([
+        {
+          id: "a",
+          capabilityId: "project_exec",
+          progressType: "acting",
+          projectDetail: "pnpm run build",
+        },
+      ])
+    );
+    expect(out).toContain('data-testid="project-computer-detail"');
+    expect(out).toContain("pnpm run build");
+    expect(out).not.toContain('data-testid="project-computer-session"');
+    expect(out).not.toContain('data-testid="project-computer-pty"');
+  });
+
+  it("反向：写入源码不是一条 shell，也不许写成 put 当脸", () => {
+    const out = html(
+      turnOf([
+        {
+          id: "a",
+          capabilityId: "project_patch",
+          progressType: "completed",
+          projectDetail: "src/Home.tsx、src/api/tasks.ts",
+        },
+      ]),
+      true
+    );
+    expect(out).toContain('data-testid="project-computer-pty"');
+    expect(out).not.toContain('data-testid="project-computer-session"');
+    expect(out).not.toContain("put src/Home.tsx");
+    expect(out).not.toContain("$ src/Home.tsx");
+    expect(out).not.toContain('data-testid="project-computer-promptbar"');
+    expect(out).not.toContain('data-testid="project-computer-idle"');
+  });
+
+  it("反向：create/get/put 不许充屏——那是传输日志，不是 PTY", () => {
+    const out = html(
+      turnOf([
+        {
+          id: "a",
+          capabilityId: "project_create",
+          progressType: "completed",
+          projectDetail: "react-vite",
+        },
+        {
+          id: "b",
+          capabilityId: "project_read",
+          progressType: "completed",
+          projectDetail: "package.json",
+        },
+        {
+          id: "c",
+          capabilityId: "project_patch",
+          progressType: "completed",
+          projectDetail: "src/i18n/translations.ts",
+        },
+      ]),
+      true
+    );
+    expect(out).toContain('data-testid="project-computer-pty"');
+    expect(out).not.toContain("create react-vite");
+    expect(out).not.toContain("get package.json");
+    expect(out).not.toContain("put src/i18n/translations.ts");
   });
 });

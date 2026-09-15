@@ -1,6 +1,11 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { activateSession } from "../../agent-loop/dashboard/SidebarSessions";
 import type { PreviewSourceLocation } from "./preview-selection-bridge";
+import {
+  sourceFileTree,
+  sourceTreeDirPaths,
+  type SourceTreeNode,
+} from "./source-file-tree";
 import {
   exportProjectRevision,
   forkProjectRevision,
@@ -36,6 +41,85 @@ const failure = (error: unknown) =>
   error instanceof ProjectWorkspaceError
     ? error.message
     : "暂时无法连接工程服务，请稍后重试。";
+
+function SourceTreeList({
+  nodes,
+  depth,
+  path,
+  drafts,
+  openDirs,
+  onToggle,
+  onOpen,
+}: {
+  nodes: SourceTreeNode[];
+  depth: number;
+  path: string;
+  drafts: Record<string, { base: SourceFile; content: string }>;
+  openDirs: Set<string>;
+  onToggle: (dir: string) => void;
+  onOpen: (file: string) => void;
+}) {
+  return (
+    <ul
+      data-testid={depth === 0 ? "project-source-tree" : undefined}
+      className="m-0 list-none p-0"
+    >
+      {nodes.map(node =>
+        node.kind === "dir" ? (
+          <li key={`dir:${node.path}`}>
+            <button
+              type="button"
+              data-testid="project-source-dir"
+              data-source-dir={node.path}
+              aria-expanded={openDirs.has(node.path)}
+              title={node.path}
+              onClick={() => onToggle(node.path)}
+              className="flex w-full items-center gap-1 py-1 pr-2 text-left text-xs text-stone-600 hover:bg-stone-100"
+              style={{ paddingLeft: 8 + depth * 12 }}
+            >
+              <span aria-hidden="true">
+                {openDirs.has(node.path) ? "▾" : "▸"}
+              </span>
+              <span className="truncate">{node.name}</span>
+            </button>
+            {openDirs.has(node.path) ? (
+              <SourceTreeList
+                nodes={node.children}
+                depth={depth + 1}
+                path={path}
+                drafts={drafts}
+                openDirs={openDirs}
+                onToggle={onToggle}
+                onOpen={onOpen}
+              />
+            ) : null}
+          </li>
+        ) : (
+          <li key={node.path}>
+            <button
+              type="button"
+              data-testid="project-source-file"
+              data-source-path={node.path}
+              aria-current={node.path === path ? "true" : undefined}
+              title={node.path}
+              onClick={() => onOpen(node.path)}
+              className={`block w-full truncate py-1 pr-2 text-left font-mono text-xs ${
+                node.path === path ? "bg-stone-200" : "hover:bg-stone-100"
+              }`}
+              style={{ paddingLeft: 8 + depth * 12 }}
+            >
+              {node.name}
+              {drafts[node.path] &&
+              drafts[node.path].content !== drafts[node.path].base.content
+                ? " *"
+                : ""}
+            </button>
+          </li>
+        )
+      )}
+    </ul>
+  );
+}
 
 export function ProjectWorkspacePanel(props: Props) {
   return <ProjectWorkspaceBody key={props.projectId} {...props} />;
@@ -116,6 +200,17 @@ function ProjectWorkspaceBody({
   const staleDraft = Boolean(
     dirty && draft?.base.revision !== currentFile?.revision
   );
+  // 2026-09-15：Manus 右侧源码是整棵工程树。GET /source 已经给了全部
+  // 文件，旧面板却把 path 摊成一条 max-h-36 窄列表——看起来像最近几份，
+  // 不像项目。树只从清单长出来，目录默认全开。
+  const tree = useMemo(
+    () => sourceFileTree((currentIndex?.files ?? []).map(row => row.path)),
+    [currentIndex]
+  );
+  const [openDirs, setOpenDirs] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    setOpenDirs(new Set(sourceTreeDirPaths(tree)));
+  }, [currentIndex?.revision, tree]);
 
   useEffect(() => {
     alive.current = true;
@@ -420,9 +515,9 @@ function ProjectWorkspaceBody({
     <section
       data-testid="project-workspace-panel"
       aria-label="工程源码与版本"
-      className="flex min-h-0 flex-1 flex-col overflow-auto bg-stone-50 p-3"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white"
     >
-      <div className="mb-2 flex flex-wrap items-center gap-2">
+      <div className="mb-0 flex shrink-0 flex-wrap items-center gap-2 border-b border-stone-200 px-3 py-2">
         <p className="min-w-0 flex-1 truncate text-xs text-stone-600">
           {loading
             ? "正在读取工程源码"
@@ -463,18 +558,24 @@ function ProjectWorkspaceBody({
         ) : null}
       </div>
       {notice ? (
-        <p role="status" className="mb-2 text-xs leading-5 text-stone-600">
+        <p
+          role="status"
+          className="shrink-0 px-3 py-2 text-xs leading-5 text-stone-600"
+        >
           {notice}
         </p>
       ) : null}
       {error ? (
-        <p role="alert" className="mb-2 text-xs leading-5 text-amber-800">
+        <p
+          role="alert"
+          className="shrink-0 px-3 py-2 text-xs leading-5 text-amber-800"
+        >
           {error}
         </p>
       ) : null}
       {fork ? (
         <a
-          className="mb-2 text-xs underline"
+          className="shrink-0 px-3 py-2 text-xs underline"
           href="/agent-loop/sliderule"
           onClick={() => activateSession(fork.sessionId)}
         >
@@ -482,31 +583,32 @@ function ProjectWorkspaceBody({
         </a>
       ) : null}
       {tab === "source" ? (
-        <div className="flex min-h-64 flex-1 flex-col gap-3 md:flex-row">
+        <div className="flex min-h-0 flex-1">
           <nav
             aria-label="工程文件"
-            className="max-h-36 shrink-0 overflow-auto rounded border border-stone-200 bg-white md:max-h-none md:w-44"
+            className="w-56 shrink-0 overflow-auto border-r border-stone-200 bg-stone-50 py-1"
           >
-            {currentIndex?.files.map(row => (
-              <button
-                key={row.path}
-                type="button"
-                onClick={() => setPath(row.path)}
-                aria-current={row.path === path ? "true" : undefined}
-                className={`block w-full break-all px-3 py-2 text-left font-mono text-xs ${row.path === path ? "bg-stone-200" : "hover:bg-stone-100"}`}
-              >
-                {row.path}
-                {drafts[row.path] &&
-                drafts[row.path].content !== drafts[row.path].base.content
-                  ? " *"
-                  : ""}
-              </button>
-            ))}
+            <SourceTreeList
+              nodes={tree}
+              depth={0}
+              path={path}
+              drafts={drafts}
+              openDirs={openDirs}
+              onToggle={dir =>
+                setOpenDirs(prior => {
+                  const next = new Set(prior);
+                  if (next.has(dir)) next.delete(dir);
+                  else next.add(dir);
+                  return next;
+                })
+              }
+              onOpen={setPath}
+            />
           </nav>
-          <div className="flex min-h-64 min-w-0 flex-1 flex-col gap-2">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {currentFile ? (
               <>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stone-200 px-3 py-2">
                   <label
                     htmlFor={`source-${projectId}`}
                     className="min-w-0 flex-1 break-all font-mono text-xs"
@@ -529,12 +631,12 @@ function ProjectWorkspaceBody({
                   </button>
                 </div>
                 {currentIndex?.revision !== currentIndex?.currentRevision ? (
-                  <p className="text-xs text-amber-800">
+                  <p className="shrink-0 px-3 py-2 text-xs text-amber-800">
                     正在查看历史版本。可导出、复刻或在版本列表中恢复。
                   </p>
                 ) : null}
                 {staleDraft ? (
-                  <div className="text-xs leading-5 text-amber-800">
+                  <div className="shrink-0 px-3 py-2 text-xs leading-5 text-amber-800">
                     <p>
                       草稿基于旧版本。下方保留你的内容；请先查看服务端源码并合并差异。
                     </p>
@@ -561,7 +663,7 @@ function ProjectWorkspaceBody({
                   </div>
                 ) : null}
                 {conflict && !staleDraft ? (
-                  <p className="text-xs text-amber-800">
+                  <p className="shrink-0 px-3 py-2 text-xs text-amber-800">
                     点击「读取最新版」核对版本与批准状态，草稿会保留。
                   </p>
                 ) : null}
@@ -581,11 +683,11 @@ function ProjectWorkspaceBody({
                       },
                     }))
                   }
-                  className="min-h-64 flex-1 resize-y rounded border border-stone-300 bg-white p-3 font-mono text-xs leading-5 outline-none focus:border-stone-600"
+                  className="min-h-0 flex-1 resize-none border-0 bg-white p-3 font-mono text-xs leading-5 outline-none"
                 />
               </>
             ) : fileError ? (
-              <div className="text-xs leading-5">
+              <div className="px-3 py-3 text-xs leading-5">
                 <p role="alert" className="text-amber-800">
                   文件读取失败：{fileError}
                 </p>
@@ -600,7 +702,7 @@ function ProjectWorkspaceBody({
             ) : (
               <p
                 role={fileLoading ? "status" : undefined}
-                className="text-xs text-stone-500"
+                className="px-3 py-3 text-xs text-stone-500"
               >
                 {fileLoading ? "正在读取文件…" : "选择一个工程文件查看源码。"}
               </p>
@@ -608,7 +710,10 @@ function ProjectWorkspaceBody({
           </div>
         </div>
       ) : (
-        <div className="space-y-2" aria-busy={historyLoading}>
+        <div
+          className="min-h-0 flex-1 space-y-2 overflow-auto px-3 py-2"
+          aria-busy={historyLoading}
+        >
           {historyLoading ? (
             <p role="status" className="text-xs leading-5 text-stone-600">
               正在读取版本记录…

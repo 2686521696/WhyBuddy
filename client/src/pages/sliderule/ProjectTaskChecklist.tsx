@@ -17,16 +17,25 @@
  *
  * ⚠ 原来那三条诚实性质一条没丢，判据钉着：没事件不造清单、只有
  *   `completed` 才算完成、失败要留在台面上。
+ *
+ * ⚠ 2026-09-14：行是按钮。点一下通过 `sliderule:inspect-action` 让右侧
+ *   打开对应档（见 `computerViewForAction`）。只画勾不让点，就是 Manus
+ *   左栏那列工具行和右边电脑对不上的那条缝。
  */
 
 import React from "react";
-import { Check, Circle, LoaderCircle, X } from "lucide-react";
+import { Check, LoaderCircle, X } from "lucide-react";
 import {
   deriveProjectActivity,
   projectActivityProgress,
   type ProjectActionRow,
   type ProjectActionStatus,
 } from "./project-activity";
+import {
+  dispatchInspectAction,
+  INSPECT_ACTION_EVENT,
+  inspectActionDetail,
+} from "./project-computer-view";
 import type { UiTurn } from "./types";
 
 export type { ProjectActionRow, ProjectActionStatus };
@@ -46,16 +55,29 @@ function StatusIcon({ status }: { status: ProjectActionStatus }) {
 
 export function ProjectTaskChecklist({ turns }: { turns: UiTurn[] }) {
   const rows = React.useMemo(() => deriveProjectActivity(turns), [turns]);
+  const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    const onInspect = (event: Event) => {
+      const detail = inspectActionDetail(
+        (event as CustomEvent).detail
+      );
+      if (detail) setSelectedId(detail.id);
+    };
+    window.addEventListener(INSPECT_ACTION_EVENT, onInspect);
+    return () => window.removeEventListener(INSPECT_ACTION_EVENT, onInspect);
+  }, []);
   if (rows.length === 0) return null;
   const { done, total, failed } = projectActivityProgress(rows);
   return (
     <section
-      className="mb-3 rounded-lg border border-stone-200 bg-white/80 px-3 py-2.5 shadow-sm"
+      className="mb-2"
       data-testid="project-task-checklist"
       aria-label="工程动作"
     >
-      <div className="mb-1.5 flex items-center justify-between gap-2 text-[12px] text-stone-500">
-        <span className="font-medium text-stone-700">工程动作</span>
+      {/* ⚠ 2026-09-14：对照 Manus 左栏——工具行是对话里的一列勾，
+          不是一张「工程动作」卡片。卡片边框把散文和动作割开，
+          整栏看起来像项目看板而不是对话。计数仍在，只是压成一行小字。 */}
+      <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-stone-400">
         <span data-testid="project-task-count" className="tabular-nums">
           {done} / {total}
           {failed > 0 ? (
@@ -63,41 +85,56 @@ export function ProjectTaskChecklist({ turns }: { turns: UiTurn[] }) {
           ) : null}
         </span>
       </div>
-      <ol className="space-y-1">
-        {rows.map(row => (
-          <li
-            key={row.id}
-            className="flex items-start gap-2 text-[12px]"
-            data-status={row.status}
-            data-task-id={row.tool}
-          >
-            <span className="mt-[3px] shrink-0">
-              <StatusIcon status={row.status} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span
-                className={
-                  row.status === "failed" ? "text-rose-700" : "text-stone-700"
+      <ol className="space-y-0.5">
+        {rows.map(row => {
+          const selected = selectedId === row.id;
+          return (
+            <li key={row.id}>
+              <button
+                type="button"
+                data-testid="project-task-row"
+                data-status={row.status}
+                data-task-id={row.tool}
+                data-selected={selected ? "true" : "false"}
+                aria-pressed={selected}
+                onClick={() =>
+                  dispatchInspectAction({ id: row.id, tool: row.tool })
                 }
+                className={`flex w-full items-start gap-2 rounded-md px-1.5 py-1 text-left text-[13px] transition ${
+                  selected
+                    ? "bg-stone-100 text-stone-900"
+                    : "text-stone-700 hover:bg-stone-50"
+                }`}
               >
-                {row.label}
-              </span>
-              {row.detail ? (
-                <span
-                  className="ml-1.5 break-all text-stone-400"
-                  data-testid="project-task-detail"
-                >
-                  {row.detail}
+                <span className="mt-[3px] shrink-0">
+                  <StatusIcon status={row.status} />
                 </span>
-              ) : null}
-            </span>
-            {row.status === "running" ? (
-              <span className="ml-auto shrink-0 text-[11px] text-blue-600">
-                进行中
-              </span>
-            ) : null}
-          </li>
-        ))}
+                <span className="min-w-0 flex-1">
+                  <span
+                    className={
+                      row.status === "failed" ? "text-rose-700" : undefined
+                    }
+                  >
+                    {row.label}
+                  </span>
+                  {row.detail ? (
+                    <span
+                      className="ml-1.5 break-all text-stone-400"
+                      data-testid="project-task-detail"
+                    >
+                      {row.detail}
+                    </span>
+                  ) : null}
+                </span>
+                {row.status === "running" ? (
+                  <span className="ml-auto shrink-0 text-[11px] text-blue-600">
+                    进行中
+                  </span>
+                ) : null}
+              </button>
+            </li>
+          );
+        })}
       </ol>
     </section>
   );

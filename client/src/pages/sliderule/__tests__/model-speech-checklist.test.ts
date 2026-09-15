@@ -70,7 +70,7 @@ describe("一轮只留最新那一份", () => {
     expect(out[0].text).toBe(LIST_B);
   });
 
-  it("反向：不许一份都不剩——整份清单还得看得见（§3）", () => {
+  it("反向：辅助函数不许一份都不剩——浮层读的是另一份，这里只证明还能认出", () => {
     expect(keepLatestChecklist(speech(LIST_A, LIST_B, LIST_A))).toHaveLength(1);
     expect(keepLatestChecklist(speech(LIST_A))).toHaveLength(1);
   });
@@ -87,12 +87,15 @@ describe("一轮只留最新那一份", () => {
 });
 
 describe("接在真跑的那条路上（§1）", () => {
-  it("renderableModelSpeech 真的过了这道筛，不是只有纯函数对", () => {
+  it("renderableModelSpeech 把清单从对话里拿掉，散文留下", () => {
     const turn = {
       steps: speech("先查看工程当前状态。", LIST_A, "运行已就绪。", LIST_B),
     } as never;
     const out = renderableModelSpeech(turn);
-    expect(out.filter(s => isChecklistSnapshot(s.text))).toHaveLength(1);
-    expect(out).toHaveLength(3);
+    expect(out.filter(s => isChecklistSnapshot(s.text))).toHaveLength(0);
+    expect(out.map(s => s.text)).toEqual([
+      "先查看工程当前状态。",
+      "运行已就绪。",
+    ]);
   });
 });

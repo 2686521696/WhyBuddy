@@ -3,6 +3,13 @@
 2026-09-11: SDK foreground CommandResult has no PID. Background commands must
 retain their actual handle; inventing an ID made cancellation ineffective.
 Directory-fd writes avoid following symlinks left by generated project code.
+
+2026-09-15: the computer pane reconstructed `$ cmd` + polled `runtime.log`.
+That is a transfer log, not a terminal. Manus types into a live bash PTY and
+the echo is the typing. `start_console` opens `sandbox.pty`, types one
+allowlisted command, and streams the raw bytes. Vite / the preview tunnel stay
+on `start_process` — two commands in one bash would be a double exec.
+Do not inject log lines into a dummy `cat` PTY and call it execution.
 """
 
 from __future__ import annotations
@@ -13,6 +20,7 @@ import math
 import os
 import re
 import shlex
+import threading
 import time
 import uuid
 from datetime import datetime
@@ -26,6 +34,20 @@ from services.workspace_provider import BuildOutput, PROJECT_REVISION_FILE, Priv
 PROJECT_ROOT = "/home/user/workspace"
 MAX_OUTPUT_BYTES = 32 * 1024
 MAX_SYNC_PAYLOAD_BYTES = 64 * 1024 * 1024
+MAX_CONSOLE_CHUNK = 8192
+# Visible command typing. 0 in tests. Do not send the whole command in one write:
+# that would still execute, but the pane would jump, not type.
+CONSOLE_TYPE_INTERVAL = 0.02
+# OSC 777 is ours: first hit = bash ready, second = command exit. Never forward
+# it to the client — it is protocol, not something the user typed.
+_CONSOLE_OSC = re.compile(rb"\x1b\]777;wb;(\d+)\x07")
+_CONSOLE_OSC_HEAD = b"\x1b]777;wb;"
+_CONSOLE_SETUP = (
+    b"stty -echo; "
+    b"PROMPT_COMMAND='printf \"\\033]777;wb;%s\\007\" \"$?\"'; "
+    b"PS1='\\u@\\h:\\w\\$ '; "
+    b"stty echo\n"
+)
 
 # Source arrives on stdin. Directory descriptors and atomic replacement prevent
 # symlink races and avoid truncating a hard link to a file outside the project.
@@ -430,12 +452,42 @@ def _pid(process_id: str) -> int:
     return value
 
 
+def _console_hold_from(pending: bytearray) -> int:
+    """Keep an incomplete OSC 777 in pending; flush everything else."""
+    esc = pending.rfind(b"\x1b")
+    if esc < 0:
+        return len(pending)
+    tail = bytes(pending[esc:])
+    if _CONSOLE_OSC_HEAD.startswith(tail) or (tail.startswith(_CONSOLE_OSC_HEAD) and b"\x07" not in tail):
+        return esc
+    return len(pending)
+
+
+class _ConsoleSession:
+    """One bash PTY. Bytes after the ready marker are what the pane may show."""
+
+    def __init__(self, *, sandbox_id: str, pid: int):
+        self.sandbox_id = sandbox_id
+        self.pid = pid
+        self.lock = threading.Lock()
+        self.buffer = bytearray()
+        self.pending = bytearray()
+        self.exit_code: int | None = None
+        self.running = True
+        self.typed = False
+        self.ready = threading.Event()
+        self.finished = threading.Event()
+        self.handle: Any = None
+        self.killed = False
+
+
 class E2BWorkspaceProvider:
     def __init__(self, *, api_key: str | None = None):
         self._api_key = (api_key or os.getenv("E2B_API_KEY") or "").strip()
         if not self._api_key:
             raise WorkspaceProviderError("e2b_api_key_missing")
         self._sandboxes: dict[str, Any] = {}
+        self._consoles: dict[str, _ConsoleSession] = {}
 
     def create(self, *, workspace_id: str, template: str | None = None, timeout_seconds: int = 900) -> WorkspaceHandle:
         if not workspace_id or not 1 <= timeout_seconds <= 86_400:
@@ -697,14 +749,164 @@ class E2BWorkspaceProvider:
         except Exception as exc:
             raise WorkspaceProviderError("e2b_start_failed", result=_result(exc)) from exc
 
+    def start_console(self, handle: WorkspaceHandle, command: str, *, timeout_seconds: int = 900) -> ProcessResult:
+        """Open a real bash PTY and type `command`. Echo is the live typing.
+
+        Returns the PTY pid immediately. The worker polls `read_console` /
+        `is_process_running` the same way it polls a background process.
+        Setup (PROMPT_COMMAND / PS1) is hidden: the pane only sees bytes after
+        the first OSC. The second OSC is the exit code; then the PTY is killed.
+        """
+        if (not isinstance(command, str) or not command.strip() or "\n" in command
+                or "\r" in command or "\x00" in command or not 1 <= timeout_seconds <= 86_400):
+            raise ValueError("invalid_workspace_command")
+        try:
+            from e2b.sandbox.commands.command_handle import PtySize
+
+            sandbox = self._sandbox(handle)
+            pty_handle = sandbox.pty.create(
+                PtySize(rows=32, cols=100),
+                cwd=PROJECT_ROOT,
+                envs={"TERM": "xterm-256color"},
+                timeout=float(timeout_seconds),
+            )
+            pid = int(getattr(pty_handle, "pid", 0) or 0)
+            _pid(str(pid))
+            console = _ConsoleSession(sandbox_id=handle.sandbox_id, pid=pid)
+            console.handle = pty_handle
+            self._consoles[str(pid)] = console
+            threading.Thread(target=self._console_read, args=(console,), daemon=True).start()
+            threading.Thread(target=self._console_boot, args=(sandbox, console, command),
+                             daemon=True).start()
+            return ProcessResult(process_id=str(pid))
+        except ValueError:
+            raise
+        except Exception as exc:
+            raise WorkspaceProviderError("e2b_console_start_failed", result=_result(exc)) from exc
+
+    def attach_console(self, handle: WorkspaceHandle, process_id: str) -> None:
+        """Reconnect a reader to a PTY that outlived this provider instance.
+
+        Worker restart must not re-type the command. First OSC after reconnect
+        is the command exit, not 'ready'.
+        """
+        self._ensure_console(handle, str(_pid(process_id)))
+
+    def read_console(self, handle: WorkspaceHandle, process_id: str, *, offset: int = 0) -> ProcessLogChunk:
+        pid = str(_pid(process_id))
+        if type(offset) is not int or not 0 <= offset <= 1024 * 1024:
+            raise ValueError("invalid_process_log_cursor")
+        console = self._ensure_console(handle, pid)
+        if console is None:
+            raise WorkspaceProviderError("e2b_console_unavailable")
+        with console.lock:
+            data = bytes(console.buffer[offset:offset + MAX_CONSOLE_CHUNK])
+        return ProcessLogChunk(data.decode("utf-8", errors="replace"), offset + len(data), False)
+
+    def _ensure_console(self, handle: WorkspaceHandle, process_id: str) -> _ConsoleSession | None:
+        existing = self._consoles.get(process_id)
+        if existing is not None:
+            return existing
+        try:
+            sandbox = self._sandbox(handle)
+            pty_handle = sandbox.pty.connect(int(process_id), timeout=86_400.0)
+        except Exception:
+            return None
+        console = _ConsoleSession(sandbox_id=handle.sandbox_id, pid=int(process_id))
+        console.handle = pty_handle
+        console.typed = True
+        console.ready.set()
+        self._consoles[process_id] = console
+        threading.Thread(target=self._console_read, args=(console,), daemon=True).start()
+        return console
+
+    def _console_read(self, console: _ConsoleSession) -> None:
+        try:
+            for _stdout, _stderr, pty_bytes in console.handle:
+                if pty_bytes:
+                    self._console_ingest(console, bytes(pty_bytes))
+        except Exception:
+            pass
+        finally:
+            console.running = False
+            console.finished.set()
+
+    def _console_boot(self, sandbox: Any, console: _ConsoleSession, command: str) -> None:
+        try:
+            sandbox.pty.send_stdin(console.pid, _CONSOLE_SETUP)
+            if not console.ready.wait(timeout=20):
+                raise TimeoutError("e2b_console_not_ready")
+            for char in command:
+                if not console.running:
+                    return
+                sandbox.pty.send_stdin(console.pid, char.encode("utf-8"))
+                if CONSOLE_TYPE_INTERVAL:
+                    time.sleep(CONSOLE_TYPE_INTERVAL)
+            sandbox.pty.send_stdin(console.pid, b"\n")
+            console.typed = True
+        except Exception:
+            console.running = False
+            self._kill_console(console)
+            console.finished.set()
+
+    def _console_ingest(self, console: _ConsoleSession, data: bytes) -> None:
+        with console.lock:
+            console.pending.extend(data)
+            while True:
+                match = _CONSOLE_OSC.search(console.pending)
+                if match is None:
+                    break
+                prefix = bytes(console.pending[:match.start()])
+                if console.ready.is_set() and console.exit_code is None:
+                    console.buffer.extend(prefix)
+                self._console_mark(console, int(match.group(1)))
+                del console.pending[:match.end()]
+            hold = _console_hold_from(console.pending)
+            if console.ready.is_set() and console.exit_code is None:
+                console.buffer.extend(console.pending[:hold])
+            del console.pending[:hold]
+
+    def _console_mark(self, console: _ConsoleSession, code: int) -> None:
+        if not 0 <= code <= 255:
+            return
+        if not console.ready.is_set():
+            console.ready.set()
+            return
+        if console.exit_code is None:
+            console.exit_code = code
+            console.running = False
+            self._kill_console(console)
+
+    def _kill_console(self, console: _ConsoleSession) -> None:
+        if console.killed:
+            return
+        console.killed = True
+        try:
+            if console.handle is not None:
+                console.handle.kill()
+        except Exception:
+            pass
+
     def is_process_running(self, handle: WorkspaceHandle, process_id: str) -> bool:
         process_id = str(_pid(process_id))
+        console = self._consoles.get(process_id)
+        if console is not None:
+            return console.running
         result = self.run(handle, _python(_PROCESS_SCRIPT) + " " + process_id + " status", timeout_seconds=20)
         if result.exit_code != 0 or result.stdout.strip() not in ("true", "false"):
             raise WorkspaceProviderError("e2b_process_status_failed", result=result)
         return result.stdout.strip() == "true"
 
     def process_result(self, handle: WorkspaceHandle, process_id: str) -> ProcessResult:
+        pid_text = str(_pid(process_id))
+        console = self._consoles.get(pid_text)
+        if console is not None:
+            if console.running or console.exit_code is None:
+                raise WorkspaceProviderError("e2b_process_result_unavailable")
+            raw = bytes(console.buffer)
+            truncated = len(raw) > 16384
+            stdout = raw[-16384:].decode("utf-8", errors="replace")
+            return ProcessResult(pid_text, stdout, "", console.exit_code, truncated)
         pid = _pid(process_id)
         result = self.run(handle, _python(_RESULT_SCRIPT) + f" {pid}", timeout_seconds=15)
         try:
@@ -834,11 +1036,20 @@ except Exception:
 
     def stop(self, handle: WorkspaceHandle, process_id: str) -> None:
         process_id = str(_pid(process_id))
+        console = self._consoles.get(process_id)
+        if console is not None:
+            console.running = False
+            self._kill_console(console)
+            return
         result = self.run(handle, _python(_PROCESS_SCRIPT) + " " + process_id + " stop", timeout_seconds=20)
         if result.exit_code != 0 or result.stdout.strip() != "false":
             raise WorkspaceProviderError("e2b_stop_failed", result=result)
 
     def destroy(self, handle: WorkspaceHandle) -> None:
+        for pid, console in list(self._consoles.items()):
+            if console.sandbox_id == handle.sandbox_id:
+                self._kill_console(console)
+                self._consoles.pop(pid, None)
         try:
             sandbox = self._sandboxes.get(handle.sandbox_id)
             if sandbox is not None:

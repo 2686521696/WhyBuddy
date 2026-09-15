@@ -24,7 +24,7 @@ from services.project_creation import create_session_project
 from services.project_tools import ProjectTools
 from services.slide_rule_session import load_session, save_session
 from test_control_project_tools import post, setup
-from test_control_run_service import env, settled
+from test_control_run_service import env, observed, settled
 
 
 PROJECT_POLICY = {"profile": "project-v1", "maxRounds": 16,
@@ -68,14 +68,16 @@ def test_measured_status_read_patch_usage_reaches_real_source_write(setup, monke
     harness.llm_impl = model
     events = post(setup.state)
     assert not stops(events), stops(events)
-    assert len(harness.llm_calls) == 4
+    # 第一轮就是 status/read/patch/收尾这 4 次。工程未交付时现在会自动续跑，
+    # 后面可能再采样——计量仍盯这一轮的 checkpoint，不把续跑算进同一份墙钟。
+    assert len(harness.llm_calls) >= 4
     saved = load_session(setup.state.sessionId)
     assert setup.store.read_files(saved.projectId, owner_id=TEST_USER_ID)["budget-proof.txt"].startswith("Measured usage")
     assert any(event.get("tool") == "project_patch" and event.get("ok") for event in events)
-    assert snapshots and snapshots[-1]["budgetPolicy"] == PROJECT_POLICY
-    assert snapshots[-1]["cheapTokens"] == 3015 + 3336 + 4154
-    assert snapshots[-1]["round"] == 3
-    assert all(abs(cp["startedAt"] - snapshots[0]["startedAt"]) < 0.5 for cp in snapshots)
+    measured = [cp for cp in snapshots if cp.get("cheapTokens") == 3015 + 3336 + 4154]
+    assert measured and measured[-1]["budgetPolicy"] == PROJECT_POLICY
+    assert measured[-1]["round"] == 3
+    assert all(abs(cp["startedAt"] - measured[0]["startedAt"]) < 0.5 for cp in measured)
     if not precreated:
         assert snapshots[0]["budgetPolicy"]["maxTokens"] == 8000
         assert any(cp["budgetPolicy"] == PROJECT_POLICY and cp["cheapTokens"] == 3015 for cp in snapshots)
@@ -209,11 +211,16 @@ def test_recovery_keeps_spent_project_budget_and_stops_before_sampling(env, monk
         second = env.service()
         await second.start()
         try:
-            final = await settled(second, owned["runId"])
-            assert calls == [1], "recovery sampled again despite exhausted persisted budget"
+            final = await observed(second, owned["runId"], lambda saved: bool(stops(saved["events"])))
             [stop] = stops(final["events"])
             assert stop["stopReason"] == {"tokens": "token_budget", "rounds": "tool_rounds", "wall": "wall_clock"}[exhausted]
             assert stop["limit"] == PROJECT_POLICY[{"tokens": "maxTokens", "rounds": "maxRounds", "wall": "maxWallSeconds"}[exhausted]]
+            # 同回合 resume 不许先再采样再停。wall_clock 之后的自动续跑是新一轮，
+            # 可以再采样，所以只数发出 stop 之前的 calls。
+            assert calls == [1], "recovery sampled again despite exhausted persisted budget"
+            if exhausted != "wall":
+                final = await settled(second, owned["runId"])
+                assert calls == [1]
         finally:
             await second.shutdown()
 

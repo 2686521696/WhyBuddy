@@ -200,6 +200,45 @@ describe("durable control stream", () => {
     expect(result).toBeNull();
   });
 
+  it("does not settle on the first complete when the durable run continues", async () => {
+    // 2026-09-14 入职系统：wall_clock 后第一发 complete 不是整轮终局。
+    const tools: string[] = [];
+    const continuations: number[] = [];
+    const onRunSettled = vi.fn();
+    const state = { sessionId: "session-1" };
+    const result = await consumeControlStreamResponse(
+      stream([
+        { type: "control_run_started", controlRunId: "ctr-slice" },
+        {
+          type: "control_text",
+          text: "本轮工程任务达到时间上限。",
+          stopReason: "wall_clock",
+          stoppedBy: "runtime",
+          limit: 180,
+          used: 181.5,
+        },
+        { type: "complete", state },
+        {
+          type: "control_continuation",
+          attempt: 1,
+          blockedReasons: ["project_verification_required"],
+        },
+        { type: "control_tool_start", tool: "project_patch", summary: "src/App.tsx" },
+        { type: "control_run_settled", status: "completed", error: null },
+      ]),
+      {
+        onRunSettled,
+        onControlContinuation: event => continuations.push(event.attempt),
+        onControlToolStart: tool => tools.push(tool),
+      }
+    );
+    expect(continuations).toEqual([1]);
+    expect(tools).toEqual(["project_patch"]);
+    expect(onRunSettled).toHaveBeenCalledTimes(1);
+    expect(onRunSettled).toHaveBeenCalledWith("complete");
+    expect(result?.finalState).toEqual(state);
+  });
+
   it("keeps a normal tool-round budget stop as a completed control turn", async () => {
     const onRunSettled = vi.fn();
     const state = { sessionId: "session-1" };

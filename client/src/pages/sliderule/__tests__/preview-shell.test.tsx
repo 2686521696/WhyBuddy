@@ -11,7 +11,11 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SandboxPreviewSurface } from "../project-runtime/SandboxPreviewSurface";
-import { selectProjectMode } from "./fixtures/select-project-mode";
+import {
+  projectModeLabels,
+  projectModeValue,
+  selectProjectMode,
+} from "./fixtures/select-project-mode";
 import type {
   ProjectPreviewSnapshot,
   ProjectPreviewTicket,
@@ -91,15 +95,18 @@ afterEach(async () => {
 describe("视图下拉（原来是一排平铺 tab）", () => {
   it("五个视图一个不少，默认停在预览", async () => {
     await render();
-    const select = $<HTMLSelectElement>("project-mode-select")!;
-    expect([...select.options].map(o => o.textContent)).toEqual([
+    expect(projectModeLabels(container)).toEqual([
       "预览",
       "源码",
       "版本",
       "数据",
       "交付",
     ]);
-    expect(select.value).toBe("preview");
+    expect(projectModeValue(container)).toBe("preview");
+    expect(
+      $("sandbox-preview-surface")?.className,
+      "应用中心仍是卡片，圆角留着"
+    ).toMatch(/rounded-lg/);
   });
 
   it("有无障碍名字（原来的 role=tablist 有 aria-label，换控件不许丢）", async () => {
@@ -109,10 +116,23 @@ describe("视图下拉（原来是一排平铺 tab）", () => {
     );
   });
 
+  it("点开菜单，浮层必须在（不许被顶栏裁掉）", async () => {
+    await render();
+    const list = $("project-mode-select")!.querySelector("[role='listbox']");
+    expect(list?.hasAttribute("hidden")).toBe(true);
+    await act(async () => $("project-mode-trigger")!.click());
+    expect(
+      $("project-mode-select")!.querySelector("[role='listbox']")?.hasAttribute(
+        "hidden"
+      ),
+      "点了还 hidden = 菜单没打开，真机就是「看着没有」"
+    ).toBe(false);
+  });
+
   it("切到源码就真的换面板", async () => {
     await render();
     await act(async () => selectProjectMode(container, "源码"));
-    expect($<HTMLSelectElement>("project-mode-select")!.value).toBe("source");
+    expect(projectModeValue(container)).toBe("source");
     // ⚠ 判据要落在真的换了面板上：只断言 select.value 变了，等于只证明
     //   「受控组件是受控的」，把 onChange 里那句 setWorkspaceOpened 删掉也绿。
     expect($("project-workspace-panel"), "源码面板必须真的挂出来").toBeTruthy();

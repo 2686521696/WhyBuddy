@@ -42,6 +42,11 @@ export type SandboxLogStatus = "running" | "done" | "failed";
 export type SandboxLogState = {
   /** 已累积的输出。 */
   text: string;
+  /**
+   * 活 PTY 的原始字节（`runtime.console`）。按到达顺序拼接，
+   * **不许**像 `text` 那样块与块之间插换行——插了就把打字拆成假日志。
+   */
+  console: string;
   /** 缓存行数：渲染不重数（grok 的 `stdout_line_count`）。 */
   lineCount: number;
   /** 黏性：一旦裁过就永远是 true。 */
@@ -51,7 +56,53 @@ export type SandboxLogState = {
 };
 
 export function emptySandboxLog(): SandboxLogState {
-  return { text: "", lineCount: 0, truncated: false, seq: 0 };
+  return { text: "", console: "", lineCount: 0, truncated: false, seq: 0 };
+}
+
+export type SandboxLogEventPage = {
+  events?: Array<{ seq?: number; type?: string; payload?: Record<string, unknown> }>;
+  nextSeq?: number;
+  hasMore?: boolean;
+};
+
+/**
+ * 把一页 `/events` 折进缓冲。
+ *
+ *   · `runtime.log` → `text`（块之间补换行，旧路径）
+ *   · `runtime.console` → `console`（原样拼接，PTY 打字）
+ *   · 别的事件只推游标
+ */
+export function applyRuntimeLogPage(
+  state: SandboxLogState,
+  body: SandboxLogEventPage | null | undefined
+): SandboxLogState {
+  if (!body) return state;
+  let next = state;
+  for (const event of body.events || []) {
+    const payload = event?.payload || {};
+    const seq = typeof event?.seq === "number" ? event.seq : undefined;
+    if (event?.type === "runtime.console") {
+      next = appendSandboxConsole(next, String(payload.data ?? ""), {
+        seq,
+        truncated: Boolean(payload.truncated),
+      });
+      continue;
+    }
+    if (event?.type !== "runtime.log") {
+      if (typeof event?.seq === "number" && event.seq > next.seq) {
+        next = { ...next, seq: event.seq };
+      }
+      continue;
+    }
+    next = appendSandboxLog(next, String(payload.text ?? ""), {
+      seq,
+      truncated: Boolean(payload.truncated),
+    });
+  }
+  if (typeof body.nextSeq === "number" && body.nextSeq > next.seq) {
+    next = { ...next, seq: body.nextSeq };
+  }
+  return next;
 }
 
 /** 从 `index` 往后找一个不会切断代理对的位置。 */
@@ -66,13 +117,32 @@ function safeCut(text: string, index: number): number {
   return cut;
 }
 
-function finish(text: string, truncated: boolean, seq: number): SandboxLogState {
-  if (text.length <= SANDBOX_LOG_MAX_CHARS) {
-    return { text, lineCount: text ? text.split("\n").length : 0, truncated, seq };
+function finish(
+  text: string,
+  truncated: boolean,
+  seq: number,
+  consoleText: string
+): SandboxLogState {
+  let nextText = text;
+  let nextConsole = consoleText;
+  let cut = truncated;
+  if (nextText.length > SANDBOX_LOG_MAX_CHARS) {
+    nextText = nextText.slice(safeCut(nextText, nextText.length - SANDBOX_LOG_MAX_CHARS));
+    cut = true;
   }
-  // 截头保尾：终端看的是最新的几行。
-  const kept = text.slice(safeCut(text, text.length - SANDBOX_LOG_MAX_CHARS));
-  return { text: kept, lineCount: kept.split("\n").length, truncated: true, seq };
+  if (nextConsole.length > SANDBOX_LOG_MAX_CHARS) {
+    nextConsole = nextConsole.slice(
+      safeCut(nextConsole, nextConsole.length - SANDBOX_LOG_MAX_CHARS)
+    );
+    cut = true;
+  }
+  return {
+    text: nextText,
+    console: nextConsole,
+    lineCount: nextText ? nextText.split("\n").length : 0,
+    truncated: cut,
+    seq,
+  };
 }
 
 /**
@@ -95,7 +165,7 @@ export function appendSandboxLog(
       : { ...state, truncated: sticky, seq };
   }
   const joined = state.text ? `${state.text}\n${piece}` : piece;
-  return finish(joined, sticky, seq);
+  return finish(joined, sticky, seq, state.console);
 }
 
 /**
@@ -118,7 +188,27 @@ export function replaceSandboxLog(
       ? state
       : { ...state, truncated: sticky, seq };
   }
-  return finish(piece, sticky, seq);
+  return finish(piece, sticky, seq, state.console);
+}
+
+/**
+ * PTY 增量。跟 `appendSandboxLog` 的差别只有一条：块之间**不**插 `\n`。
+ * `n` + `p` + `m` 必须是 `npm`，否则「实时打字」又变回一行一行的日志。
+ */
+export function appendSandboxConsole(
+  state: SandboxLogState,
+  chunk: string,
+  opts: { seq?: number; truncated?: boolean } = {}
+): SandboxLogState {
+  const piece = typeof chunk === "string" ? chunk : "";
+  const sticky = state.truncated || Boolean(opts.truncated);
+  const seq = typeof opts.seq === "number" && opts.seq > state.seq ? opts.seq : state.seq;
+  if (!piece) {
+    return sticky === state.truncated && seq === state.seq
+      ? state
+      : { ...state, truncated: sticky, seq };
+  }
+  return finish(state.text, sticky, seq, state.console + piece);
 }
 
 /**

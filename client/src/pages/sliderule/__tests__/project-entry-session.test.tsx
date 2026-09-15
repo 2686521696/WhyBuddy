@@ -243,6 +243,35 @@ describe("restoring the latest failed control run after refresh", () => {
     expect(current.uiTurns.some(turn => turn.assistant?.includes(failure))).toBe(false);
   });
 
+  it.each(["queued", "running", "waiting_continue", "waiting_operation"])(
+    "resumes a live control run whose latest status is %s",
+    async status => {
+      authentication.ready = true;
+      authentication.user = { id: "owner-entry" };
+      latestControlResponse = async () => Response.json({
+        run: { runId: "live-entry", sessionId: SID, status, error: null },
+      });
+      resumeControlResponse = async () => new Response(
+        [
+          { type: "control_run_started", controlRunId: "live-entry" },
+          { type: "control_continuation", attempt: 1, blockedReasons: [] },
+          { type: "complete", state: saved.get(SID) },
+          { type: "control_run_settled", status: "completed", error: null },
+        ].map(event => `data: ${JSON.stringify(event)}\n\n`).join("")
+      );
+      await mount();
+      await act(async () => {
+        await vi.waitFor(() =>
+          expect(
+            vi.mocked(fetch).mock.calls.some(([url]) =>
+              String(url).includes("/live-entry/stream")
+            )
+          ).toBe(true)
+        );
+      });
+    }
+  );
+
   it("ignores the old session's delayed failure and restores the newly selected session", async () => {
     configureLatest();
     const delayed = deferred<Response>();

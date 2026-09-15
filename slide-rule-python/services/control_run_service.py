@@ -15,13 +15,16 @@ import uuid
 from contextlib import aclosing
 
 from services.control_checkpoint import ControlRunStopped, current_checkpoint
-from services.control_run_store import ControlRunConflict, ControlRunStore, TERMINAL
+from services.control_run_store import (
+    ControlRunConflict, ControlRunStore, TERMINAL,
+    project_goal_promotion, session_goal_text, stamp_control_goal_payload)
 from services.project_actor_access import authorize_project_actor
 from services.project_creation import load_authorized_session
 from services.project_tools import ProjectTools
 from services.project_tool_contracts import PROJECT_TOOL_NAMES
 from services.control_goal_continuation import (
-    continuation_checkpoint, continuation_notice, progress_mark, should_continue)
+    continuation_checkpoint, continuation_notice, progress_mark, should_continue,
+    unfinished_slice_waits_for_user)
 from services.project_delivery import ProjectDeliveryService
 from services.rehearsal_control import run_control_turn, validate_control_turn_body, bound_tool_result
 from services.project_rollout import rollout_readiness
@@ -51,7 +54,7 @@ def public_control_run(record):
         public["goal"] = {
             "text": str(goal.get("text") or "")[:4000],
             "kind": goal.get("kind") if goal.get("kind") in {"project", "conversation"} else "conversation",
-            "status": goal.get("status") if goal.get("status") in {"active", "waiting_user", "waiting_operation", "completed", "failed", "cancelled"} else "active",
+            "status": goal.get("status") if goal.get("status") in {"active", "waiting_user", "waiting_operation", "waiting_continue", "completed", "failed", "cancelled"} else "active",
             "awaitingOperationIds": [str(item)[:240] for item in (goal.get("awaitingOperationIds") or [])
                                      if isinstance(item, str)][:32],
             "updatedAt": goal.get("updatedAt") or record.get("updatedAt"),
@@ -182,11 +185,14 @@ class ControlRunService:
     async def submit(self, payload, owner_id, idempotency_key):
         validate_control_turn_body(payload)
         session_id = str(payload["sessionId"]).strip()
-        await asyncio.to_thread(self.authorize, session_id, owner_id)
+        state = await asyncio.to_thread(self.authorize, session_id, owner_id)
         if self._stopping:
             raise ControlRunConflict("control_worker_stopping")
+        # 六字段 POST 没有业务目标 / runtimeKind。不盖进去，durable goal
+        # 就会把「批准计划并执行」当成目标，kind 永远停在 conversation。
+        stamped = stamp_control_goal_payload(payload, state)
         record = await asyncio.to_thread(self.store.submit, session_id, owner_id,
-                                        idempotency_key, payload)
+                                        idempotency_key, stamped)
         self._wake.set()
         return record
 
@@ -386,6 +392,7 @@ class ControlRunService:
         abandoned = False
         suspend = False
         completion = None
+        promoted = (record.get("goal") or {}).get("kind") == "project"
         try:
             await asyncio.to_thread(port.guard)
             # A crash after recording a terminal failure is not permission to
@@ -484,6 +491,20 @@ class ControlRunService:
                     elif event.get("type") == "control_tool_start":
                         await asyncio.to_thread(self.store.update_goal, run_id, self.worker_id,
                             generation, status="active")
+                    if not promoted and project_goal_promotion(event):
+                        # 工程是这一回合里才创建的：提交时 kind 还是 conversation。
+                        # 不升成 project，续跑入口会直接挡掉。
+                        try:
+                            authority = await asyncio.to_thread(
+                                self.authorize, record["sessionId"], record["ownerId"])
+                        except Exception:
+                            authority = None
+                        inherited = session_goal_text(authority) if authority is not None else ""
+                        await asyncio.to_thread(
+                            self.store.update_goal, run_id, self.worker_id, generation,
+                            status="active", kind="project",
+                            text=inherited or None)
+                        promoted = True
         except ControlRunStopped as exc:
             status = "cancelled" if exc.reason == "control_cancelled" else "interrupted"
             error = exc.reason
@@ -527,6 +548,13 @@ class ControlRunService:
                         # 「按判断结果落库」，不在这儿重新推一遍规则。
                         suspend = True
                     else:
+                        # 时间片到了但目标没交付：不许把 run/goal 写成 completed。
+                        # 2026-09-14 真机 wall_clock 之后两边都是 completed。
+                        done = await self._goal_is_done(latest_record)
+                        if unfinished_slice_waits_for_user(
+                                status=status, events=latest_record.get("events"),
+                                goal_done=done):
+                            status = "waiting_user"
                         goal_status = "failed" if status == "failed" else ("waiting_user" if status == "waiting_user" else "completed")
                         await asyncio.to_thread(self.store.update_goal, run_id, self.worker_id,
                             generation, status=goal_status)

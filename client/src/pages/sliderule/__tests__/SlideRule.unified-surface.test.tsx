@@ -125,9 +125,10 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain('data-testid="sliderule-stage-view-canvas"');
     // A project restored without chat history still mounts the chat empty state.
     // That child used to add a second, hard-coded HTML mode badge.
-    expect(html).toContain("当前：工程工作台模式");
+    // 工程档不再挂「当前：工程工作台模式」——右侧已经是「它的电脑」。
+    expect(html).not.toContain("当前：工程工作台模式");
     expect(html).not.toContain("HTML 推演兼容模式");
-    expect(html.match(/data-testid="sliderule-runtime-mode"/g)?.length).toBe(1);
+    expect(html.match(/data-testid="sliderule-runtime-mode"/g) ?? []).toHaveLength(0);
     expect(html).toContain("继续开发这个工程");
   });
   it("renders ONE surface: no 聊天/推演 pills, no surface-mode toggle, no reasoning canvas", () => {
@@ -162,10 +163,14 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain('data-testid="sliderule-mode-work"');
     expect(html).not.toContain('data-testid="sliderule-conclusion-badge"');
     expect(html).not.toContain('data-testid="sliderule-goal-display"');
-    expect(html.match(/data-testid="sliderule-status-bar"/g)?.length).toBe(1);
-    expect(html).toContain('data-testid="sliderule-deliverables-open"');
+    // ⚠ 2026-09-14：分栏 / 全屏 / 交付物不挂。重置会话还在。
+    // 左上「当前：HTML 推演兼容模式」也不挂。
+    expect(html).not.toContain('data-testid="sliderule-status-bar"');
+    expect(html).not.toContain('data-testid="sliderule-deliverables-open"');
     expect(html).toContain('data-testid="sliderule-reset-session"');
-    expect(html).toContain('data-testid="sliderule-layout-controls"');
+    expect(html).not.toContain('data-testid="sliderule-layout-controls"');
+    expect(html).not.toContain("当前：HTML 推演兼容模式");
+    expect(html).not.toContain('data-testid="sliderule-runtime-mode"');
     expect(html).not.toContain(">交付物<");
     expect(html).not.toContain(">重置会话<");
     // E28：Dev 入口移除（用户裁决）——工程驾驶舱直接访问 /sliderule/dev
@@ -177,7 +182,11 @@ describe("unified /sliderule surface (single mental model)", () => {
 
     expect(html.match(/data-testid="sliderule-empty-state"/g)?.length).toBe(1);
     expect(html).toContain("想推演成什么应用？");
-    expect(html).toContain("当前：HTML 推演兼容模式");
+    // ⚠ 2026-09-14：空态不挂运行时徽章。变异：把「工程模式可用」或
+    // 「当前：HTML 推演兼容模式」加回问候上方必红。
+    expect(html).not.toContain("当前：HTML 推演兼容模式");
+    expect(html).not.toContain("工程模式可用 · 确认计划后创建工程");
+    expect(html).not.toContain('data-testid="sliderule-runtime-mode"');
     // 不该有：落地页主张句 / logo / 回车提示。变异：把旧文案加回必红。
     expect(html).not.toContain("把一句模糊想法");
     expect(html).not.toContain("能跑起来");
@@ -266,9 +275,10 @@ describe("unified /sliderule surface (single mental model)", () => {
     );
     expect(footer).toContain("max-w-[720px]");
     expect(footer).not.toContain("border-t");
-    // 芯片 / 多行卡片。话题底行已撤（跟舞台标题重复）；没附件提示就不画。
-    expect(html).toContain('data-testid="sliderule-composer-actions"');
-    expect(html).toContain('data-testid="sliderule-composer-hint-chip"');
+    // ⚠ 2026-09-14：已收口 / 再核对一下卸了。没提问时不画芯片行。
+    expect(html).not.toContain('data-testid="sliderule-composer-actions"');
+    expect(html).not.toContain('data-testid="sliderule-composer-hint-chip"');
+    expect(html).not.toContain('data-testid="sliderule-composer-status-pill"');
     expect(html).not.toContain('data-testid="sliderule-composer-context"');
     expect(html).not.toContain('data-testid="sliderule-composer-context-spin"');
     // 活路径：会话内渲染出来的就是那张多行卡片，不是 24px 单行胶囊。
@@ -315,11 +325,9 @@ describe("unified /sliderule surface (single mental model)", () => {
     // 用户反馈：发了消息右侧还是老面板——推演中必须是 live 占位
     expect(html).toContain('data-testid="sliderule-live-stage"');
     expect(html).toContain("推演中");
-    expect(html).toContain('data-testid="sliderule-workbench-mode"');
-    expect(html).toContain("分栏");
-    expect(html).toContain("全屏");
-    expect(html).toContain("画布");
-    expect(html).toContain("推演进行中，布局锁定为分栏（对话+页面）");
+    // ⚠ 2026-09-14：右上分栏 / 全屏 / 交付物卸了。加回必红。
+    expect(html).not.toContain('data-testid="sliderule-workbench-mode"');
+    expect(html).not.toContain("推演进行中，布局锁定为分栏（对话+页面）");
     // ⚠ 2026-09-01：三颗独立开关收成互斥分段，推演中锁定分栏。
     // 缝上折钮仍叫「隐藏页面」，不许拿整页 HTML 去禁这个词。
     expect(html).not.toContain('data-testid="sliderule-layout-stage"');
@@ -396,6 +404,23 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain("版本合并冲突的可视化成本");
     // 归档态无流式光标
     expect(html).not.toContain("▊");
+  });
+
+  it("计划已批准、工程还没落库 → 右侧是电脑，不是接线沙盘", () => {
+    const html = renderPage({
+      goal: "构建一个名为“TicketStream”的服务台",
+      uiTurns: [streamingTurn],
+      canCreateProject: true,
+      sessionState: {
+        ...baseHookReturn().sessionState,
+        runtimeKind: "html-prototype",
+        projectId: null,
+      },
+    });
+    expect(html).toContain('data-testid="sandbox-preview-surface"');
+    expect(html).toContain("它的电脑");
+    expect(html).not.toContain('data-testid="sliderule-architecture-stage"');
+    expect(html).not.toContain("接线沙盘");
   });
 
   it("会话在场但未运行（无模型）→ board：接线沙盘 + Checks，不是六圆钮", () => {

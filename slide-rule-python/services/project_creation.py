@@ -121,7 +121,15 @@ def create_session_project(store: ProjectStore, session_id: str, *, owner_id: st
         existing = store.create_project(session_id, owner_id=owner_id, files=files,
             template_version=version, plan_ref=approval_ref,
             spec_revision=TASK_ACCEPTANCE_PROFILE if template_id == "react-vite-tasks" else None)
-    elif state.projectId == existing.projectId:
+    elif not state.projectId or state.projectId == existing.projectId:
+        # ⚠ 2026-09-15 TicketStream：源码已经在（4 个 revision），会话
+        #   runtimeKind 却掉回 html-prototype、projectId 空。只认
+        #   `state.projectId == existing.projectId` 时，丢失指针 + 当前
+        #   批准哈希对不上旧 planRef，会在 sync 里甩
+        #   project_initial_plan_changed，电脑永远绑不回去。
+        #   指针丢了仍是「这个会话自己的工程」，走同一条 adopt。
+        #   创建当中计划被换成未批准的新稿，仍由下面的
+        #   load_authorized_session 拒（见 test_plan_change_between_…）。
         # A fork deliberately starts without the original execution grant. Once
         # the new session approves its own plan, adopt the same source in a new
         # revision; never copy the parent's approval or reuse old evidence.

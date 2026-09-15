@@ -291,6 +291,117 @@ def test_只有SPEC没有页面时轮次到顶说规格不是额度(harness):
     assert "额度用完" not in blob
 
 
+def _written_plan_rows(content: str = "RBAC 实施计划：角色、权限、菜单与桌面端验收。"):
+    return [{
+        "role": "assistant",
+        "kind": "plan_written",
+        "planId": "plan-rbac-live",
+        "revision": 1,
+        "planContent": content,
+    }]
+
+
+def _seed_written_plan(sid: str, content: str = "RBAC 实施计划：角色、权限、菜单与桌面端验收。") -> None:
+    seed_session(
+        sid,
+        goal={"text": "做一个企业内部权限管理演示", "status": "clear"},
+        controlTranscript=_written_plan_rows(content),
+    )
+
+
+def test_write_plan后额度到顶要停在批准卡不是没点火(harness):
+    """⚠ 2026-09-14 真机 sr-20260914171745-3PCJ39MFGV：write_plan 已落库，
+    下一发采样才对上 token_budget 12458/8000。exit_plan_mode 没发出去，
+    用户看见「思考额度用完了，先停在控制面没点火」。
+
+    变异：`_settle_runtime_cap` 改回一律 `_canned` → 本条红。
+    反向：没有计划的额度帽仍说没点火（上面 test_token_cap_stops_before_rehearse_dispatch）。
+    """
+    from services.scope_authority import latest_control_plan
+    from services.slide_rule_session import load_session
+
+    sid = new_sid("cap-tok-after-plan")
+    _seed_written_plan(sid)
+    harness.llm_impl = lambda messages, **kw: llm_tool(
+        "search_evidence", {"query": "q"}, usage={"total_tokens": 8001}
+    )
+    _, events = harness.post(six_fields(sid, "按刚才的访谈写计划并执行"))
+    types = event_types(events)
+    texts = _over_cap_texts(events)
+    blob = "\n".join(t or "" for t in texts)
+    assert "control_plan_approval" in types, types
+    assert "control_handoff_factory" not in types
+    assert harness.helper_calls == []
+    assert "没点火" not in blob, texts
+    assert "额度用完" not in blob, texts
+    assert _stops(events) == []
+    persisted = load_session(sid)
+    assert persisted.awaitReason == "control_plan_approval"
+    assert latest_control_plan(persisted)["planContent"].startswith("RBAC")
+
+
+def test_write_plan后轮次到顶也要停在批准卡(harness):
+    """§4：额度闸和轮次闸是成对的。只改 token 那一处，轮次到顶仍会端没点火。"""
+    from services.slide_rule_session import load_session
+
+    sid = new_sid("cap-rounds-after-plan")
+    _seed_written_plan(sid)
+
+    def impl(messages, **kw):
+        n = len(harness.llm_calls)
+        if n <= 8:
+            return llm_tool("search_evidence", {"query": f"q{n}"}, call_id=f"c{n}")
+        return llm_tool("exit_plan_mode", {}, call_id="exit")
+
+    harness.llm_impl = impl
+    _, events = harness.post(six_fields(sid, "继续"))
+    blob = "\n".join(t or "" for t in _over_cap_texts(events))
+    assert "control_plan_approval" in event_types(events)
+    assert "没点火" not in blob
+    assert harness.helper_calls == []
+    assert load_session(sid).awaitReason == "control_plan_approval"
+
+
+def test_本发带write_plan但账已超仍要先落计划再批准(harness):
+    """真机变体：写计划那一发自己就把 8000 烧穿。账在派发前对，不落库
+    就等于计划白写，用户仍看见没点火。"""
+    from services.scope_authority import latest_control_plan
+    from services.slide_rule_session import load_session
+
+    sid = new_sid("cap-tok-on-write-plan")
+    seed_session(sid, goal={"text": "做一个企业内部权限管理演示", "status": "clear"})
+    plan = "RBAC 实施计划：角色表、权限树、菜单与桌面端验收。"
+    harness.llm_impl = lambda messages, **kw: llm_tool(
+        "write_plan",
+        {"planContent": plan},
+        usage={"total_tokens": 8001},
+    )
+    _, events = harness.post(six_fields(sid, "根据访谈写实施计划"))
+    types = event_types(events)
+    blob = "\n".join(t or "" for t in _over_cap_texts(events))
+    assert "control_plan_approval" in types, types
+    assert "control_handoff_factory" not in types
+    assert harness.helper_calls == []
+    assert "没点火" not in blob, _over_cap_texts(events)
+    persisted = load_session(sid)
+    assert latest_control_plan(persisted)["planContent"] == plan
+    assert persisted.awaitReason == "control_plan_approval"
+
+
+def test_计划已写额度到顶的人话不许再说没点火():
+    """`_cap_speech` 自己也要认计划。变异：这支删掉仍走 stop_text → 本条红。"""
+    state = V5SessionState(
+        sessionId="cap-plan-speech",
+        goal={"text": "权限演示", "status": "clear"},
+        controlTranscript=_written_plan_rows(),
+    )
+    text = _cap_speech(state, ControlStopReason.TOKEN_BUDGET)
+    assert "计划" in text
+    assert "没点火" not in text
+    assert "额度用完" not in text
+    assert "再说一次" not in text
+
+
 def test_非_LlmError_不许冒充网关连不上(harness):
     """persist / schema 自己炸了走 UNKNOWN，不许借网关那张嘴。"""
 

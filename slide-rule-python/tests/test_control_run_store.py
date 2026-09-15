@@ -8,7 +8,10 @@ import pytest
 from sqlalchemy import text
 
 from services import control_run_store as module
-from services.control_run_store import ControlRunConflict, ControlRunNotFound, ControlRunStore, ControlRunUnavailable
+from services.control_run_store import (
+    ControlRunConflict, ControlRunNotFound, ControlRunStore, ControlRunUnavailable,
+    payload_objective_text,
+)
 from services.project_store import ProjectStore
 from services.sql_gateway import HttpSqlGateway
 
@@ -59,6 +62,30 @@ def test_submission_is_idempotent_and_data_is_detached(store):
     assert store.latest("unknown", "alice") is None
 
 
+def test_反向_不盖sessionGoal时合成句才会落到目标上():
+    """先证明旧行为：只喂 userText 时「批准计划并执行」确实会赢。
+
+    没有这条，后面那条「盖了就不赢」可能是断言打空。
+    """
+    assert payload_objective_text({"userText": "批准计划并执行"}) == "批准计划并执行"
+    assert payload_objective_text({
+        "userText": "批准计划并执行",
+        "sessionGoal": "设计一个员工入职系统，包含入职流程、部门分配和 HR 权限管理",
+    }) == "设计一个员工入职系统，包含入职流程、部门分配和 HR 权限管理"
+
+
+def test_submit_live_path_stamps_and_promotes():
+    """闸全绿但东西没了：直接调纯函数绿，接在 submit / _produce 上才算数。"""
+    import pathlib
+    service = (pathlib.Path(__file__).resolve().parents[1] / "services" / "control_run_service.py").read_text(encoding="utf-8")
+    submit = service[service.index("async def submit"): service.index("async def cancel")]
+    assert "stamp_control_goal_payload" in submit
+    produce = service[service.index("async def _produce"):]
+    assert "project_goal_promotion" in produce
+    assert 'kind="project"' in produce or "kind='project'" in produce
+    assert "unfinished_slice_waits_for_user" in produce
+
+
 def test_goal_envelope_is_durable_compact_and_owner_bound(store):
     run = submit(store, payload={"userText": "  Build a task app  ", "runtimeKind": "project",
                                   "secret": "must-not-leak"})
@@ -68,6 +95,47 @@ def test_goal_envelope_is_durable_compact_and_owner_bound(store):
     assert "secret" not in json.dumps(goal)
     with pytest.raises(ControlRunNotFound):
         store.goal(run["runId"], "bob")
+
+
+def test_真机_批准计划不能盖过业务目标(store):
+    """2026-09-14 `sr-20260914150256-Z3DP93VKQ9` 的原样载荷。
+
+    用户点批准时 HTTP userText 是「批准计划并执行」，会话 goal 是入职系统。
+    旧 `_goal_from_payload` 只认 userText，durable 目标就变成了按钮文案。
+    """
+    from types import SimpleNamespace
+    from services.control_run_store import stamp_control_goal_payload
+
+    live_text = "设计一个员工入职系统，包含入职流程、部门分配和 HR 权限管理"
+    state = SimpleNamespace(goal={"text": live_text}, runtimeKind="html-prototype")
+    stamped = stamp_control_goal_payload(
+        {"userText": "批准计划并执行", "sessionId": "sr-20260914150256-Z3DP93VKQ9"},
+        state,
+    )
+    run = submit(store, payload=stamped)
+    goal = store.goal(run["runId"], "alice")
+    assert goal["text"] == live_text
+    assert "批准计划" not in goal["text"]
+    assert goal["kind"] == "conversation"
+
+
+def test_工程创建后可以升级目标身份而不擦续跑账(store):
+    run = claim(store)
+    store.update_goal(run["runId"], "worker-1", 1, status="active")
+    # 先记一笔续跑账，再升级 kind——升级不许把账抹掉。
+    waiting = store.wait_for_continue(run["runId"], "worker-1", 1, progress_mark="tools:2")
+    assert waiting["goal"]["progressMark"] == "tools:2"
+    queued = store.requeue_continue(run["runId"], progress_mark="tools:2")
+    claimed = store.claim(queued["runId"], "worker-1", 30)
+    promoted = store.update_goal(
+        claimed["runId"], "worker-1", claimed["generation"],
+        status="active", kind="project",
+        text="设计一个员工入职系统，包含入职流程、部门分配和 HR 权限管理",
+    )
+    assert promoted["goal"]["kind"] == "project"
+    assert promoted["goal"]["continuations"] == 1
+    assert promoted["goal"]["progressMark"] == "tools:2"
+    assert "入职" in promoted["goal"]["text"]
 
 
 def test_goal_update_is_fenced_and_survives_reopen(store):

@@ -256,12 +256,10 @@ describe("workbench chrome live-path wiring", () => {
     const page = stripComments(
       readFileSync(new URL("../../SlideRule.tsx", import.meta.url), "utf8")
     );
-    const hudIdx = page.indexOf("<SlideRuleTopHud");
-    expect(hudIdx).toBeGreaterThan(-1);
-    const beforeHud = page.slice(Math.max(0, hudIdx - 240), hudIdx);
-    expect(beforeHud).toContain("chromeSlot");
-    expect(beforeHud).not.toContain("border-b");
-    expect(beforeHud).not.toContain("<header");
+    // ⚠ 2026-09-14：分栏 / 全屏 / 交付物不再挂到活路径。槽还在，
+    //   喂 null。把 <SlideRuleTopHud 接回去必红。
+    expect(page).not.toContain("<SlideRuleTopHud");
+    expect(page).toContain("chromeSlot={null}");
     expect(page).not.toContain("immersionOverlayHeader");
 
     const studio = stripComments(

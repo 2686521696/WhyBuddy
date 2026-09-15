@@ -528,7 +528,31 @@ def _cap_speech(state: V5SessionState, reason: ControlStopReason) -> str:
         return _delivery_speech(state)
     if _has_spec(state):
         return POST_SPEC_USER
+    # ⚠ 2026-09-14 真机 sr-20260914171745-3PCJ39MFGV：write_plan 已经落了
+    #   中文实施计划，下一发采样才对上 token_budget 12458/8000。exit_plan_mode
+    #   没发出去，收尾却端「思考额度用完了，先停在控制面没点火」。
+    #   机器知道计划在，说话的那一版不知道——跟上面 09-09 工厂出过货还说
+    #   没点火是同一个病。计划写好了就说计划，不许再让用户「再说一次」。
+    if _unapproved_plan_ready(state):
+        return "实施计划已经写好。确认之后才会开工。"
     return stop_text(reason)
+
+
+def _unapproved_plan_ready(state: V5SessionState) -> bool:
+    """计划已经落库、还没批准。额度闸到顶时要停在批准卡，不是「没点火」。
+
+    缺 planId / revision 的旧行不够停靠批准卡（`_park_plan_approval` 要
+    拿这两把钥匙对账），退回罐头停因，不许 KeyError 把这一轮打成 500。
+    """
+    plan = latest_control_plan(state)
+    if (
+        not str(plan.get("planContent") or "").strip()
+        or not str(plan.get("planId") or "").strip()
+        or not isinstance(plan.get("revision"), int)
+        or plan["revision"] < 1
+    ):
+        return False
+    return not plan_execution_authorized(state)
 
 
 def _memory_scope_id(state: V5SessionState) -> str:
@@ -1886,6 +1910,63 @@ async def _park_plan_approval(state: V5SessionState) -> AsyncIterator[Dict[str, 
     await _commit_plan_state(state, candidate)
     yield {"type": "control_plan_approval", "reqId": request["reqId"], "planContent": plan["planContent"]}
     yield _complete(state)
+
+
+async def _settle_runtime_cap(
+    state: V5SessionState,
+    reason: ControlStopReason,
+    stop: Dict[str, Any],
+) -> AsyncIterator[Dict[str, Any]]:
+    """额度 / 轮次 / 墙钟到顶。计划已经写好就停在批准卡，不许再说没点火。
+
+    ⚠ 2026-09-14 真机 sr-20260914171745-3PCJ39MFGV：write_plan 17:47:31
+      已经落了中文实施计划，下一发采样 17:47:58 才对上 token_budget
+      12458/8000。exit_plan_mode 没发出去，用户看见的是「思考额度用完了，
+      先停在控制面没点火」。跟 2026-09-09 工厂出过货还说没点火同一个病。
+
+    停在批准卡不是点火：project_create / drive-full 仍要用户确认之后才走。
+    """
+    if _unapproved_plan_ready(state):
+        async for event in _park_plan_approval(state):
+            yield event
+        return
+    async for event in _canned(state, _cap_speech(state, reason), stop=stop):
+        yield event
+
+
+async def _flush_write_plan_from_sample(
+    state: V5SessionState,
+    result: ControlLlmResult,
+    user_text: str,
+    installed_skills: Any,
+    active_connectors: Any,
+    preferred_device: Any,
+    design_system_id: Any,
+    original_goal: str,
+) -> AsyncIterator[Dict[str, Any]]:
+    """这一发已经带了 write_plan，账却在派发前就算超了。
+
+    计划正文在 arguments 里，不派发就等于白写。点火仍被闸住。
+    """
+    if _unapproved_plan_ready(state) or plan_execution_authorized(state):
+        return
+    for call in result.tool_calls or []:
+        if str(call.get("name") or "") != "write_plan":
+            continue
+        args = call.get("arguments") if isinstance(call.get("arguments"), dict) else {}
+        async for event in _dispatch_tool(
+            "write_plan",
+            args,
+            state,
+            user_text,
+            installed_skills,
+            active_connectors,
+            preferred_device,
+            design_system_id,
+            original_goal,
+        ):
+            yield event
+        return
 
 
 async def _commit_plan_state(state: V5SessionState, candidate: V5SessionState) -> None:
@@ -3826,9 +3907,7 @@ async def _control_llm_loop(
             if capped:
                 await checkpoint("budget_exhausted", _round)
                 reason = ControlStopReason(capped["stopReason"])
-                async for event in _canned(
-                    state, _cap_speech(state, reason), stop=capped
-                ):
+                async for event in _settle_runtime_cap(state, reason, capped):
                     yield event
                 return
 
@@ -3861,10 +3940,8 @@ async def _control_llm_loop(
                 # ⚠ limit/used 不是装饰：光说「打转了」没法行动，说「同一件
                 #   inspect_model 连了 4 轮、紧档上限就是 4」才知道该不该调这个数。
                 #   跟另外两条闸（墙钟 45s / 额度 8000）同一个合同。
-                async for event in _canned(
-                    state,
-                    _cap_speech(state, ControlStopReason.STATIONARITY),
-                    stop=stationarity_stop,
+                async for event in _settle_runtime_cap(
+                    state, ControlStopReason.STATIONARITY, stationarity_stop
                 ):
                     yield event
                 return
@@ -3890,10 +3967,10 @@ async def _control_llm_loop(
                     f"repeats={repeats} round={_round}",
                     flush=True,
                 )
-                async for event in _canned(
+                async for event in _settle_runtime_cap(
                     state,
-                    _cap_speech(state, ControlStopReason.STATIONARITY),
-                    stop=stop_wire(
+                    ControlStopReason.STATIONARITY,
+                    stop_wire(
                         ControlStopReason.STATIONARITY,
                         limit=stagnant_calls.hard_stop_threshold(),
                         used=repeats,
@@ -3942,10 +4019,19 @@ async def _control_llm_loop(
             capped = await _maybe_over_cap()
             if capped:
                 await checkpoint("budget_exhausted", _round)
-                reason = ControlStopReason(capped["stopReason"])
-                async for event in _canned(
-                    state, _cap_speech(state, reason), stop=capped
+                async for event in _flush_write_plan_from_sample(
+                    state,
+                    result,
+                    user_text,
+                    installed_skills,
+                    active_connectors,
+                    preferred_device,
+                    design_system_id,
+                    original_goal,
                 ):
+                    yield event
+                reason = ControlStopReason(capped["stopReason"])
+                async for event in _settle_runtime_cap(state, reason, capped):
                     yield event
                 return
             # 抄 grok should_list：看不见的工具不能调。CLOSED_TOOLS 是闭集，
@@ -4203,10 +4289,8 @@ async def _control_llm_loop(
         rounds_stop = stop_wire(
             ControlStopReason.TOOL_ROUNDS, limit=loop_budget.max_rounds, used=_round
         )
-        async for event in _canned(
-            state,
-            _cap_speech(state, ControlStopReason.TOOL_ROUNDS),
-            stop=rounds_stop,
+        async for event in _settle_runtime_cap(
+            state, ControlStopReason.TOOL_ROUNDS, rounds_stop
         ):
             yield event
     except HTTPException:
@@ -5099,16 +5183,13 @@ async def _dispatch_tool(
             return
         state.controlTodo = rows
         await _apersist(state)
-        # 用户看得见这半句要真的成立：左栏 chip 靠这条事件。
+        # 用户看得见这半句要真的成立：前端浮层读这条事件里的 todos。
         # 只落库不发事件 = 抄了一半（工具说明第二句就成了假话）。
         yield {
             "type": "control_todo",
             "todos": rows,
             "summary": summarize_todo(rows),
-            # ⚠ 空清单时 `one_line` 返回 ''，而前端是 `if (payload.line)` 才渲染
-            #   （useSlideRuleSession:2069）——空串 = 这一发在左栏彻底隐身。
-            #   走到这里的空清单只剩"显式清空"一种，那是**有意的动作**，
-            #   得让人看见（工具说明第二句：用户看得见这份清单）。
+            # line 给日志 / 工具回执。浮层读 todos：空数组 = 人清空了，卡收起来。
             "line": todo_one_line(rows) or "活儿清单已清空",
         }
         yield {

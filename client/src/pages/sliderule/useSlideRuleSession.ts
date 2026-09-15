@@ -6,6 +6,8 @@ import type {
 import * as SlideRuleRuntime from "@/lib/sliderule-runtime";
 import { fetchNarration } from "@/lib/sliderule-narrator";
 import { controlStopLine } from "./control-stop";
+import { visiblePlanTodo } from "./plan-todo-dock";
+import { projectCreateFailureText } from "./project-create-error";
 import { pickMainArtifact } from "./turn-main-artifact";
 import type {
   CoverageGap,
@@ -2026,8 +2028,14 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 appendStreamStep(`编排 ${tools.join(" → ")}`);
               },
               onControlTodo: payload => {
-                // 左栏 chip：清单是给人看进度的，看不见就等于没做。
-                if (payload.line) appendStreamStep(`📋 ${payload.line}`);
+                // 2026-09-15：清单写进 state，浮层读同一份。再往左栏
+                // 塞 `📋 ${line}` 就是用户对照 Manus 圈出来的「嵌在聊天里」。
+                const todos = visiblePlanTodo(payload.todos);
+                setSessionState(prev => {
+                  const next = { ...prev, controlTodo: todos };
+                  sessionStateRef.current = next;
+                  return next;
+                });
               },
               onControlText: (text, stop) => {
                 // 结构化的「为什么停」先落下来再渲染文字：拿它区分"我们的闸拦的"
@@ -2801,7 +2809,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             if (record?.runId === run.runId) clearActiveRun(sid);
             return;
           }
-          if (run?.runId && (["queued", "running"].includes(run.status) ||
+          if (run?.runId && (["queued", "running", "waiting_continue", "waiting_operation"].includes(run.status) ||
               (record?.kind === "control" && record.runId === run.runId))) {
             await requestRehearsal(record?.userText || "继续上一轮任务", undefined,
               { runId: String(run.runId), kind: "control" });
@@ -3280,10 +3288,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       if (!response.ok) {
         let detail = "工程创建未完成，请刷新状态后重试。";
         try {
-          const payload = await response.json();
-          if (payload?.detail === "project_rollout_disabled") detail = "工程模式当前未启用。";
-          else if (payload?.detail === "project_plan_approval_required") detail = "当前计划授权已失效，请重新批准计划。";
-          else if (payload?.detail === "project_conversion_required") detail = PROJECT_CONVERSION_REQUIRED;
+          detail = projectCreateFailureText(await response.json());
         } catch { /* keep safe generic message */ }
         throw new Error(detail);
       }

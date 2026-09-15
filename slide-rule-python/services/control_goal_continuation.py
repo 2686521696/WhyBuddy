@@ -53,6 +53,16 @@ MAX_CONTINUATIONS = 8
 #: 这些终态不许自动续：等人回答是真的要等人；失败/取消要让人看见。
 _NEVER_CONTINUE = frozenset({"waiting_user", "failed", "cancelled", "interrupted"})
 
+#: 单轮时间片。新一轮会重置墙钟（见 continuation_checkpoint），总量由
+#: MAX_CONTINUATIONS 管。2026-09-14 真机 wall_clock 181.5/180 之后目标被
+#: 写成 completed、continuations=0——把时间片当成了整个目标做完。
+SLICE_STOP_REASONS = frozenset({"wall_clock"})
+
+#: 点火前 / 防打转的硬闸。续跑会给一份全新单轮预算，把这些当时间片
+#: 就等于绕过闸。2026-09-13 真机：8001 token 撞 8000 cheap 额度后若续跑，
+#: 点火前额度形同虚设。
+HARD_CAP_STOP_REASONS = frozenset({"token_budget", "tool_rounds", "stationarity"})
+
 
 def tool_result_count(events: Any) -> int:
     """这一 run 至今真的跑完过几次工具。
@@ -74,24 +84,49 @@ def progress_mark(events: Any) -> str:
     return f"tools:{tool_result_count(events)}"
 
 
+def turn_stop_reason(events: Any) -> str:
+    if not isinstance(events, list):
+        return ""
+    for event in events:
+        if isinstance(event, dict):
+            reason = str(event.get("stopReason") or "").strip()
+            if reason:
+                return reason
+    return ""
+
+
+def turn_was_sliced(events: Any) -> bool:
+    """这一轮是单轮时间片到了，不是整个目标做完了。"""
+    return turn_stop_reason(events) in SLICE_STOP_REASONS
+
+
 def turn_was_capped(events: Any) -> bool:
-    """这一轮是**被闸掐断**的，不是模型自己说完了。
+    """这一轮是**硬闸掐断**的，不许再领一份单轮预算。
 
     ⚠ 2026-09-13 真机 `control-continuation-smoke` 之后、跑控制面回归时抓到：
       `test_legacy_8001_tokens_still_prevent_project_creation[client-forged-policy]`
       当场变红。那一轮是 8001 token 撞上 8000 的点火前额度被掐断的，而我的
       续跑会**给它一个全新的单轮预算再跑一遍**——等于把预算闸整个绕过去。
 
-      「被掐断」和「说完了」是两回事：前者是我们不让它继续，后者是它自己
-      停下。只有后者才该自动续跑。同理，provider 挂了（llm_unavailable）
-      也要让人看见，不许自己重试掩盖。
+      「硬闸」和「时间片」是两回事。wall_clock 是时间片：新一轮重置墙钟，
+      总量由 MAX_CONTINUATIONS 管。token_budget / tool_rounds / stationarity
+      仍是硬闸。llm_unavailable 走失败终态，不从这里续。
     """
-    if not isinstance(events, list):
+    reason = turn_stop_reason(events)
+    if not reason:
         return False
-    return any(
-        isinstance(event, dict) and str(event.get("stopReason") or "").strip()
-        for event in events
-    )
+    return reason in HARD_CAP_STOP_REASONS or reason not in SLICE_STOP_REASONS
+
+
+def unfinished_slice_waits_for_user(*, status: str, events: Any, goal_done: bool) -> bool:
+    """时间片到了、目标没交付、又不能自动续时：停下来问人，不许写 completed。
+
+    2026-09-14 真机：phase=budget_exhausted / stopReason=wall_clock，
+    但 run 和 goal 都落成 completed，continuations=0。
+    """
+    if goal_done or status == "failed":
+        return False
+    return status == "completed" and turn_was_sliced(events)
 
 
 def continuation_budget_left(goal: Any) -> int:

@@ -1262,9 +1262,16 @@ export async function consumeControlStreamResponse(
                     acc.publishClosure;
                 }
               }
-              opts.onRunSettled?.("complete");
+              // ⚠ 2026-09-14 `sr-20260914150256-Z3DP93VKQ9`：producer 在
+              // wall_clock 之后仍发 `complete`，durable run 却进
+              // `waiting_continue`，subscribe 不会收口。这里若
+              // onRunSettled + break，前端清书签、用户看见「做完了」，
+              // 后面的 control_continuation / 工具事件全部丢掉。
+              // complete 只表示这一片采样结束；整轮终局是
+              // control_run_settled。流若在此后关掉（单测夹具），
+              // sawTerminal 仍让 finishDriveStream 能交结果。
               sawTerminal = true;
-              break outer;
+              continue;
             default:
               break;
           }

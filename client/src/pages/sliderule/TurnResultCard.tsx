@@ -24,6 +24,7 @@
 import React from "react";
 import { Check, Copy, ExternalLink, RotateCw, Upload } from "lucide-react";
 import { resultCardModel } from "./turn-result-card";
+import { dispatchInspectAction } from "./project-computer-view";
 import type { UiTurn } from "./types";
 
 function Star({ on, onClick }: { on: boolean; onClick: () => void }) {
@@ -130,7 +131,16 @@ export function TurnResultCard({
         {model.canOpen && onOpen ? (
           <button
             type="button"
-            onClick={onOpen}
+            onClick={() => {
+              // 结果卡上的「打开」也要带动右侧预览——Manus 那张
+              // 「查看」就是这么用的。只调 onOpen 打开交付物抽屉，
+              // 右侧还停在终端，看起来像点了没反应。
+              dispatchInspectAction({
+                id: `result:${turn.id}`,
+                tool: "project_start",
+              });
+              onOpen();
+            }}
             data-testid="turn-result-open"
             className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[12px] text-stone-600 hover:bg-stone-100"
           >

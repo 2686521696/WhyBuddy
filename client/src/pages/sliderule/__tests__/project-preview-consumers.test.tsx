@@ -21,15 +21,22 @@ const emptyVerification = {
   snapshot: null,
 };
 function expectObservationOnly() {
-  expect(new Set(fetcher.mock.calls.map(([url]) => url))).toEqual(
+  const urls = new Set(
+    fetcher.mock.calls
+      .map(([url]) => String(url))
+      .filter(url => !url.includes("/generated-app"))
+  );
+  expect(urls).toEqual(
     new Set([
       "/api/sliderule/projects/project-one/preview",
       "/api/sliderule/projects/project-one/verification",
     ])
   );
-  expect(fetcher.mock.calls.every(([, init]) => init?.method === "GET")).toBe(
-    true
-  );
+  expect(
+    fetcher.mock.calls
+      .filter(([url]) => !String(url).includes("/generated-app"))
+      .every(([, init]) => init?.method === "GET")
+  ).toBe(true);
   expect(
     container.querySelector('[data-testid="project-verification-panel"]')
   ).not.toBeNull();

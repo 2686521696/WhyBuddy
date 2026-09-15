@@ -5,7 +5,8 @@
  *
  * 分栏默认：桌面对话栏 = 左侧菜单 ×2；手机把同一宽度锁给预览列且不可拖。
  *
- * 右侧主舞台——四态：
+ * 工程档右侧是一块「它的电脑」（终端 / 预览 / 源码同一外壳切档，
+ * 见 project-computer-view.ts）。HTML 推演档右侧仍是下面四态：
  *   pages   — **成品面**：spec-first 那条链路产出的 HTML 页面，装在
  *             1920×1080 的等比缩放画布里（见 live-runtime/canvas-scale.tsx）。
  *             推演中逐页到达就开始渲染，跑完继续由它接管，中途不换面孔；
@@ -34,7 +35,6 @@ import { DEFAULT_SESSION_ID } from "@/lib/sliderule-session-id";
 import type { PublishClosureSummary } from "./derive-cross-runtime-summary";
 import { ArchitectureStage } from "./ArchitectureStage";
 import { SandboxPreviewSurface } from "./project-runtime/SandboxPreviewSurface";
-import { ProjectComputerPanel } from "./ProjectComputerPanel";
 import type { UiTurn } from "./types";
 import { ActiveSystemScreen } from "./system-screens/ActiveSystemScreen";
 import {
@@ -96,6 +96,7 @@ import {
   type RecordActionRequest,
 } from "./live-runtime/RecordFormDrawer";
 import { RollingText } from "./RollingText";
+import { ThinkingOrbMark } from "./ThinkingOrbMark";
 import { deriveAppRuntimeSchema } from "./live-runtime/app-runtime-schema";
 import {
   XrayPanel,
@@ -227,6 +228,8 @@ interface SlideRuleStudioProps {
   runtimeKind?: "html-prototype" | "project";
   projectId?: string | null;
   projectRevision?: string | null;
+  /** 计划已批准、工程还没落库时，电脑空态用来报创建失败。 */
+  projectCreateError?: string | null;
   /** E29 模型版本史（前进/回退按钮数据源）。`model` 是闭环空着时舞台填数的货架。 */
   modelVersions?: Array<{
     id: string;
@@ -319,7 +322,8 @@ export function SlideRuleStudio(props: SlideRuleStudioProps) {
 
 function ProjectStudio({ projectId, projectRevision, appTitle, chatSlot,
   stageVisible = true, sessionEmpty = false, className, chromeSlot, resetSlot,
-  isRunning = false, liveActionLabel = null, turns = [],
+  sessionId, isRunning = false, liveActionLabel = null, turns = [],
+  projectCreateError = null,
 }: SlideRuleStudioProps) {
   const layout = useStudioLayout();
   const showStage = isStagePageShown(stageVisible, !!layout?.stagePageHidden);
@@ -330,26 +334,36 @@ function ProjectStudio({ projectId, projectRevision, appTitle, chatSlot,
   return (
     <StudioChrome className={className}>
       {showStage ? <StudioSplit sessionEmpty={sessionEmpty} chat={chatSlot} stage={
-        <div className="flex h-full min-h-0 flex-col gap-3 p-4">
-          {(resetSlot || chromeSlot) && <div className="flex items-center gap-2">
-            {resetSlot}<div className="ml-auto">{chromeSlot}</div>
-          </div>}
-          {isRunning && liveActionLabel ? (
-            <div
-              className="flex shrink-0 items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[12px] text-blue-800"
-              data-testid="project-live-action"
-              role="status"
-              aria-live="polite"
-            >
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" aria-hidden />
-              <span>{liveActionLabel}</span>
+        <div className="flex h-full min-h-0 flex-col">
+          {/* ⚠ 2026-09-14：这里不许再写 p-3。真机圈出来的 12px 一圈
+              把「它的电脑」浮在舞台底色上，像没铺满。 */}
+          {/* 重置 / 分栏 / 交付物进电脑头条（跟 HTML 推演那条 stage-bar 同一套）。
+              没 turns 才在壳外报「正在运行命令」——有会话时命令在终端里。 */}
+          {isRunning && liveActionLabel && turns.length === 0 ? (
+            <div className="flex shrink-0 items-center gap-2 pb-2">
+              <span
+                className="min-w-0 truncate text-[12px] text-stone-500"
+                data-testid="project-live-action"
+                role="status"
+                aria-live="polite"
+              >
+                {liveActionLabel}
+              </span>
             </div>
           ) : null}
-          {/* 「它的电脑」排在预览**之上**：动作进行中时先看见它在干什么，
-              预览要等服务起来才有内容。见 ProjectComputerPanel 头注。 */}
-          <ProjectComputerPanel turns={turns} className="max-h-[38%] shrink-0" />
-          <SandboxPreviewSurface projectId={projectId} projectRevision={projectRevision}
-            revisionMode="current" appTitle={appTitle} />
+          <SandboxPreviewSurface
+            projectId={projectId}
+            projectRevision={projectRevision}
+            revisionMode="current"
+            appTitle={appTitle}
+            turns={turns}
+            sessionId={sessionId}
+            isRunning={isRunning}
+            chromeSlot={chromeSlot}
+            resetSlot={resetSlot}
+            projectCreateError={projectCreateError}
+            className="min-h-0 flex-1"
+          />
         </div>
       } /> : <div className="flex h-full min-h-0 flex-col">{chatSlot}</div>}
     </StudioChrome>
@@ -1274,11 +1288,7 @@ function HtmlSlideRuleStudio({
               {chromeSlot}
             </div>
           ) : null}
-          <span className="inline-flex items-end gap-1.5" aria-hidden>
-            <span className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]" />
-            <span className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]" />
-            <span className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]" />
-          </span>
+          <ThinkingOrbMark label={liveActionLabel || "推演中"} size={64} />
           <div className="text-[13px] font-medium text-stone-500">推演中</div>
           {/* 一行步骤锚点即可（用户反馈：字太多）——文案翻滚过渡 */}
           {liveActionLabel && (

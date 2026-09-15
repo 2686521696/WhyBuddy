@@ -10,8 +10,34 @@
  * ## 它跟左栏那份动作流不是一回事
  *
  * 左栏 `ProjectTaskChecklist` 回答「这一轮干了哪些事」——一眼扫完的清单。
- * 这里回答「**此刻**这一步具体在干什么」——一次只摊开一条，带细节。
- * 两者共用 `deriveProjectActivity` 的同一份真实数据，不各算一套。
+ * 这里回答「这台机器上发生了什么」。嵌进时是原始 PTY（xterm 写
+ * `runtime.console` 字节），不是 create/get/`$` 拼贴。独立卡片仍摊开
+ * 一条脱敏摘要。两者共用 `deriveProjectActivity` 的同一份真实数据。
+ *
+ * ⚠ 2026-09-14：它不再叠在预览上面各吃一截。会话工作台里它是整块
+ *   「它的电脑」的「终端」档（见 `project-computer-view.ts`）。应用中心
+ *   那条预览链没有 turns，不会走到这一档。
+ *
+ * ⚠ 2026-09-15 对照 Manus：右侧是**正在执行的 PTY**，能看见字一个一个
+ *   被敲进去。第一版把 `runtime.log` 收成 `$ cmd` + 行，用户一眼就看出来
+ *   是日志。嵌进面永远走 xterm 原字节。提示符从 PTY 的 PS1 来，
+ *   前端不许编 `ubuntu@`，也不许用 create/get/`$ cmd` 充屏。
+ *   2026-09-15 下午对照 Manus 原始终端：用户圈了 `create react-vite`
+ *   / `get package.json` 说不是 PTY。没 console 就空着等字节，
+ *   好过写死一张传输日志。
+ *   同日再圈了 `[32m` / `[1m[0K]`：那不是坏终端，是 `<pre>` 把 PTY
+ *   原字节当正文。浏览器不画 ESC，CSI 颜色/清行码就变成乱码。
+ *   译码器是 xterm.js（VS Code / Hyper / Jupyter 同一套），不要另接
+ *   一个模拟器。原字节只许呆在 sr-only 里给判据读。
+ *
+ * ⚠ 2026-09-15：stdout / console 必须按每条 exec 的 operationId 去订。
+ *   只订 current 时历史命令的输出还在 `/events` 里，面板已经换成下一步。
+ *   运行时那条 `runtime.start` 也要订——`npm ci` 打在它上面，不在
+ *   `project_exec` 上。
+ *
+ * ⚠ 2026-09-14：嵌进时不画内顶栏，也不画 `$` / 回放底栏——那两条是
+ *   叠在会话上的第二层壳。回放靠左栏点工具行。不许把预览的
+ *   「工程尚未启动」写进来。
  *
  * ## 诚实边界
  *
@@ -29,8 +55,10 @@ import {
   projectComputerView,
   type ProjectActionRow,
 } from "./project-activity";
+import { dispatchInspectAction } from "./project-computer-view";
+import { sandboxLogOperationIds } from "./sandbox-session-transcript";
 import type { UiTurn } from "./types";
-import { useSandboxLog } from "./project-runtime/useSandboxLog";
+import { useSandboxLog, useSandboxLogs } from "./project-runtime/useSandboxLog";
 
 function StatusMark({ status }: { status: ProjectActionRow["status"] }) {
   if (status === "done")
@@ -66,12 +94,21 @@ function consoleLineClass(line: string): string {
   return "";
 }
 
-function SandboxConsole({ operationId }: { operationId?: string }) {
+function SandboxConsole({
+  operationId,
+  fill = false,
+}: {
+  operationId?: string;
+  fill?: boolean;
+}) {
   const log = useSandboxLog(operationId);
   if (!operationId || !log.text) return null;
   return (
-    <div className="space-y-1" data-testid="project-computer-console">
-      <div className="flex items-center gap-2 text-[11px] text-stone-400">
+    <div
+      className={fill ? "flex min-h-0 flex-1 flex-col space-y-1" : "space-y-1"}
+      data-testid="project-computer-console"
+    >
+      <div className="flex shrink-0 items-center gap-2 text-[11px] text-stone-400">
         <span>命令行输出</span>
         <span className="tabular-nums">{log.lineCount} 行</span>
         {log.truncated ? (
@@ -83,9 +120,15 @@ function SandboxConsole({ operationId }: { operationId?: string }) {
       {/* 截头保尾，所以看的是尾巴——滚动条默认停在底部才对得上。
           ⚠ 2026-09-14 从纯深色改成浅色：对照 Manus 那张终端截图，它是浅底
             加**语义色**（WARN 黄、✓ 绿、链接蓝），信息一眼能分层；纯深底
-            白字看着像终端，但一屏日志全是同一个灰度，反而读不出重点。 */}
+            白字看着像终端，但一屏日志全是同一个灰度，反而读不出重点。
+          ⚠ 嵌进整块电脑面时不许再 max-h-56：那是叠在预览上面那版的残骸，
+            整面都是终端时要把日志铺满，否则下半截空白。 */}
       <pre
-        className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded border border-stone-200 bg-stone-50 px-2.5 py-2 font-mono text-[11px] leading-[1.6] text-stone-700"
+        className={
+          fill
+            ? "min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-all rounded border border-stone-200 bg-stone-50 px-2.5 py-2 font-mono text-[11px] leading-[1.6] text-stone-700"
+            : "max-h-56 overflow-auto whitespace-pre-wrap break-all rounded border border-stone-200 bg-stone-50 px-2.5 py-2 font-mono text-[11px] leading-[1.6] text-stone-700"
+        }
         data-testid="project-computer-console-text"
       >
         {log.text.split("\n").map((line, i) => (
@@ -98,52 +141,251 @@ function SandboxConsole({ operationId }: { operationId?: string }) {
   );
 }
 
+/**
+ * 活 PTY。字节从沙箱来，这里只写进 xterm。jsdom 没有真实终端时退回
+ * 同一份原文，判据读 `project-computer-pty-text`，不许另编一份。
+ *
+ * ⚠ 2026-09-15：这份原文**不许**当可见面。`<pre>{text}` 不会译 CSI，
+ *   浏览器再把 ESC 吃掉，`\\x1b[32m` 就印成 `[32m`——用户圈的那屏乱码。
+ */
+function SandboxLiveTerminal({ text, running }: { text: string; running: boolean }) {
+  const host = React.useRef<HTMLDivElement>(null);
+  const termRef = React.useRef<{
+    write: (data: string) => void;
+    reset: () => void;
+    dispose: () => void;
+    options?: { cursorBlink?: boolean };
+  } | null>(null);
+  const written = React.useRef(0);
+  const [ready, setReady] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!host.current) return;
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+    // xterm touches `self` / canvas. Static panel tests run in Node — keep
+    // the import off the module graph so renderToStaticMarkup still works.
+    void Promise.all([
+      import("xterm"),
+      import("@xterm/addon-fit"),
+      import("xterm/css/xterm.css"),
+    ])
+      .then(([{ Terminal }, { FitAddon }]) => {
+        if (disposed || !host.current) return;
+        const term = new Terminal({
+          disableStdin: true,
+          convertEol: false,
+          fontSize: 12,
+          scrollback: 5000,
+          fontFamily:
+            "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace",
+          theme: {
+            background: "#fafaf9",
+            foreground: "#44403c",
+            cursor: "#44403c",
+          },
+          cursorBlink: running,
+        });
+        const fit = new FitAddon();
+        term.loadAddon(fit);
+        term.open(host.current);
+        fit.fit();
+        termRef.current = term;
+        written.current = 0;
+        setReady(n => n + 1);
+        if (typeof ResizeObserver !== "undefined") {
+          const ro = new ResizeObserver(() => fit.fit());
+          ro.observe(host.current);
+          cleanup = () => ro.disconnect();
+        }
+      })
+      .catch(() => {
+        if (!disposed) termRef.current = null;
+      });
+    return () => {
+      disposed = true;
+      cleanup?.();
+      termRef.current?.dispose();
+      termRef.current = null;
+    };
+    // ⚠ 不要把 running 放进 deps：命令停下来会拆掉 xterm，短暂退回
+    //   那张 CSI 乱码脸。光标闪不闪下面另更。
+  }, []);
+
+  React.useEffect(() => {
+    const term = termRef.current;
+    if (term?.options) term.options.cursorBlink = running;
+  }, [running, ready]);
+
+  React.useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    if (text.length < written.current) {
+      term.reset();
+      written.current = 0;
+    }
+    const slice = text.slice(written.current);
+    if (slice) {
+      term.write(slice);
+      written.current = text.length;
+    }
+  }, [text, ready]);
+
+  return (
+    <div
+      className="flex min-h-0 flex-1 flex-col bg-stone-50"
+      data-testid="project-computer-pty"
+      data-running={running ? "true" : "false"}
+    >
+      <div ref={host} className="min-h-0 flex-1" />
+      <pre data-testid="project-computer-pty-text" className="sr-only">
+        {text}
+      </pre>
+    </div>
+  );
+}
+
+/**
+ * 整面原始 PTY。只写 `runtime.console` 字节。没字节就空着等，
+ * 不许用 create / get / `$ cmd` 充屏——那是传输日志，不是壳。
+ */
+function SandboxSession({
+  rows,
+  current,
+  runtimeOperationId,
+}: {
+  rows: ProjectActionRow[];
+  current: ProjectActionRow | null;
+  runtimeOperationId?: string | null;
+}) {
+  // ⚠ 2026-09-15：必须订每一条 exec，不能只订 current。只订当前一步时，
+  //   上一条 PTY 的字节还在 /events 里，面板已经换成下一步——对照
+  //   Manus 就是一台假终端。
+  const execIds = sandboxLogOperationIds(rows, { hotId: current?.operationId });
+  const runtimeId = String(runtimeOperationId || "").trim();
+  const logIds = runtimeId && !execIds.includes(runtimeId) ? [runtimeId, ...execIds] : execIds;
+  const hotIds = [
+    ...(current?.status === "running" && current.operationId ? [current.operationId] : []),
+    ...(runtimeId ? [runtimeId] : []),
+  ];
+  const logs = useSandboxLogs(logIds, { hotIds });
+  const consoleText = logIds
+    .map(id => logs[id]?.console || "")
+    .filter(Boolean)
+    .join("");
+  const truncated = logIds.some(id => logs[id]?.truncated);
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <SandboxLiveTerminal
+        text={consoleText}
+        running={current?.status === "running"}
+      />
+      {truncated ? (
+        <div
+          className="shrink-0 px-3 py-1 text-[11px] text-amber-600"
+          data-testid="project-computer-console-truncated"
+        >
+          · 只保留了最近部分
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function ProjectComputerPanel({
   turns,
   className = "",
+  embedded = false,
+  focusId = null,
+  runtimeOperationId = null,
 }: {
   turns: UiTurn[];
   className?: string;
+  /**
+   * 嵌进整块电脑面时去掉自己的卡片壳和「它的电脑」标题——
+   * 外壳已经是这一面，再套一层边框就是 2026-09-13 那版叠卡片。
+   */
+  embedded?: boolean;
+  /** 左栏点中的那一行。有它就摊开这一条，不再跟着最新走。 */
+  focusId?: string | null;
+  /** `runtime.start` 那条 operation。`npm ci` 的 PTY 挂在它上面。 */
+  runtimeOperationId?: string | null;
 }) {
   const rows = React.useMemo(() => deriveProjectActivity(turns), [turns]);
   // 游标：null = 跟着最新那条走（实时）。用户点了前后才钉住某一条。
   // 「摊开哪条 / 实时亮不亮」的决策在 projectComputerView 里，纯函数可测。
   const [pinned, setPinned] = React.useState<number | null>(null);
-  const { index, current, live, following } = projectComputerView(rows, pinned);
+  const focusIndex = focusId ? rows.findIndex(row => row.id === focusId) : -1;
+  const { index, current, live, following } = projectComputerView(
+    rows,
+    focusIndex >= 0 ? focusIndex : pinned
+  );
+  const inspectAt = (nextIndex: number) => {
+    const row = rows[nextIndex];
+    if (!row) return;
+    setPinned(nextIndex);
+    dispatchInspectAction({ id: row.id, tool: row.tool, keepView: true });
+  };
 
   if (rows.length === 0) return null;
-  const { done, total, failed } = projectActivityProgress(rows);
+  const progress = embedded ? null : projectActivityProgress(rows);
 
   return (
     <section
-      className={`flex min-h-0 flex-col rounded-lg border border-stone-200 bg-white ${className}`}
+      className={
+        embedded
+          ? `flex min-h-0 flex-1 flex-col bg-white ${className}`
+          : `flex min-h-0 flex-col rounded-lg border border-stone-200 bg-white ${className}`
+      }
       data-testid="project-computer-panel"
       data-live={live ? "true" : "false"}
       data-following={following ? "true" : "false"}
       aria-label="工程执行面板"
     >
-      <header className="flex shrink-0 items-center gap-2 border-b border-stone-100 px-3 py-2">
-        <span className="text-[13px] font-medium text-stone-700">它的电脑</span>
-        <span
-          className="text-[11px] text-stone-400"
-          data-testid="project-computer-subtitle"
-        >
-          {current
-            ? current.status === "running"
-              ? `正在${current.label}`
-              : `${current.label}${current.status === "failed" ? " · 失败" : ""}`
-            : ""}
-        </span>
-        <span className="ml-auto tabular-nums text-[11px] text-stone-400">
-          {done} / {total}
-          {failed > 0 ? <span className="ml-1 text-rose-600">· {failed} 失败</span> : null}
-        </span>
-      </header>
+      {embedded ? null : (
+        <header className="flex shrink-0 items-center gap-2 border-b border-stone-100 px-3 py-2">
+          <span className="text-[13px] font-medium text-stone-700">它的电脑</span>
+          <span
+            className="text-[11px] text-stone-400"
+            data-testid="project-computer-subtitle"
+          >
+            {current
+              ? current.status === "running"
+                ? `正在${current.label}`
+                : `${current.label}${current.status === "failed" ? " · 失败" : ""}`
+              : ""}
+          </span>
+          <span className="ml-auto tabular-nums text-[11px] text-stone-400">
+            {progress ? progress.done : 0} / {progress ? progress.total : 0}
+            {progress && progress.failed > 0 ? (
+              <span className="ml-1 text-rose-600">· {progress.failed} 失败</span>
+            ) : null}
+          </span>
+        </header>
+      )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-        {current ? (
+      <div
+        className={
+          embedded
+            ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+            : "min-h-0 flex-1 overflow-y-auto px-3 py-3"
+        }
+      >
+        {current && embedded ? (
+          <div
+            className="flex min-h-0 flex-1 flex-col"
+            data-testid="project-computer-current"
+          >
+            <SandboxSession
+              rows={rows}
+              current={current}
+              runtimeOperationId={runtimeOperationId}
+            />
+          </div>
+        ) : null}
+        {current && !embedded ? (
           <div className="space-y-2" data-testid="project-computer-current">
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               <StatusMark status={current.status} />
               <span className="text-[13px] text-stone-800">{current.label}</span>
               <code className="rounded bg-stone-50 px-1.5 py-0.5 text-[11px] text-stone-500">
@@ -152,63 +394,62 @@ export function ProjectComputerPanel({
             </div>
             {current.detail ? (
               <pre
-                className="whitespace-pre-wrap break-all rounded bg-stone-50 px-2.5 py-2 text-[12px] leading-5 text-stone-600"
+                className="shrink-0 whitespace-pre-wrap break-all rounded bg-stone-50 px-2.5 py-2 text-[12px] leading-5 text-stone-600"
                 data-testid="project-computer-detail"
               >
                 {current.detail}
               </pre>
             ) : (
               // ⚠ 没摘要就明说没有，不拿工具名凑一段假细节。
-              <p className="text-[12px] text-stone-400">这一步没有可展示的细节。</p>
+              <p className="shrink-0 text-[12px] text-stone-400">这一步没有可展示的细节。</p>
             )}
             <SandboxConsole operationId={current.operationId} />
           </div>
         ) : null}
       </div>
 
-      <footer className="flex shrink-0 items-center gap-2 border-t border-stone-100 px-3 py-2">
-        <button
-          type="button"
-          aria-label="上一步"
-          data-testid="project-computer-prev"
-          disabled={index <= 0}
-          onClick={() => setPinned(Math.max(index - 1, 0))}
-          className="flex h-6 w-6 items-center justify-center rounded text-stone-500 hover:bg-stone-100 disabled:opacity-30"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          aria-label="下一步"
-          data-testid="project-computer-next"
-          disabled={index >= rows.length - 1}
-          onClick={() =>
-            setPinned(index + 1 >= rows.length - 1 ? null : index + 1)
-          }
-          className="flex h-6 w-6 items-center justify-center rounded text-stone-500 hover:bg-stone-100 disabled:opacity-30"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
-        <div className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-stone-100">
-          <div
-            className="h-full rounded-full bg-blue-500 transition-[width]"
-            style={{ width: `${((index + 1) / rows.length) * 100}%` }}
-          />
-        </div>
-        <span
-          className="shrink-0 text-[11px]"
-          data-testid="project-computer-live"
-        >
-          {/* 「实时」只在真有动作在跑、而且用户没有倒回去看时才亮。 */}
-          {live && following ? (
-            <span className="text-blue-600">● 实时</span>
-          ) : (
-            <span className="text-stone-400 tabular-nums">
-              {index + 1} / {rows.length}
-            </span>
-          )}
-        </span>
-      </footer>
+      {embedded ? null : (
+        <footer className="flex shrink-0 items-center gap-2 border-t border-stone-100 px-3 py-2">
+          <button
+            type="button"
+            aria-label="上一步"
+            data-testid="project-computer-prev"
+            disabled={index <= 0}
+            onClick={() => inspectAt(Math.max(index - 1, 0))}
+            className="flex h-6 w-6 items-center justify-center rounded text-stone-500 hover:bg-stone-100 disabled:opacity-30"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            aria-label="下一步"
+            data-testid="project-computer-next"
+            disabled={index >= rows.length - 1}
+            onClick={() => inspectAt(Math.min(index + 1, rows.length - 1))}
+            className="flex h-6 w-6 items-center justify-center rounded text-stone-500 hover:bg-stone-100 disabled:opacity-30"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+          <div className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-stone-100">
+            <div
+              className="h-full rounded-full bg-blue-500 transition-[width]"
+              style={{ width: `${((index + 1) / rows.length) * 100}%` }}
+            />
+          </div>
+          <span
+            className="shrink-0 text-[11px]"
+            data-testid="project-computer-live"
+          >
+            {live && following ? (
+              <span className="text-blue-600">● 实时</span>
+            ) : (
+              <span className="text-stone-400 tabular-nums">
+                {index + 1} / {rows.length}
+              </span>
+            )}
+          </span>
+        </footer>
+      )}
     </section>
   );
 }

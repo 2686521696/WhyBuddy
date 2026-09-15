@@ -307,8 +307,11 @@ def test_服务端发的事件客户端必须认():
         ROOT / "client/src/pages/sliderule/useSlideRuleSession.ts"
     ).read_text("utf-8")
     assert "onControlTodo" in hook, "认了但没人接 = 清单还是看不见"
-    assert "appendStreamStep" in hook.split("onControlTodo")[1][:400], (
-        "接了但没往左栏画 = 用户仍然看不见"
+    hook_tail = hook.split("onControlTodo")[1][:600]
+    assert "controlTodo" in hook_tail, "接了但不写进 state = 浮层读不到"
+    assert "setSessionState" in hook_tail
+    assert "appendStreamStep" not in hook_tail, (
+        "再往左栏塞 📋 = 清单又嵌回聊天（2026-09-15 对照 Manus）"
     )
 
 

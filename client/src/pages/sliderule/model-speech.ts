@@ -116,8 +116,10 @@ export function isChecklistSnapshot(text: unknown): boolean {
  * 清单是**状态**，不是事件：把状态按事件流一份份铺开，就像每改一行就把
  * 整个文件重打一遍。留最后一份 = 留当前状态。
  *
- * ⚠ 不是删掉：整份清单仍然看得见（最后那一份），左栏 chip 和「后续建议」
- *   读的也还是同一份 `controlTodo`。§3 要的那条「X 真的还在」有着落。
+ * ⚠ 2026-09-15：清单从对话里拿掉。它是状态，该浮在输入条上头
+ *   （`PlanTodoDock` 读同一份 `controlTodo`）。聊天里再印一份 ○◐●，
+ *   就是用户对照 Manus 圈出来的「待办嵌在聊天里，非常不好用」。
+ *   左栏 chip 和「后续建议」仍然读 `controlTodo`。§3 的「还在」落在浮层。
  * ⚠ 也不是通用去重：`dedupeAdjacentSpeech` 只合逐字相同的，这两份**不相同**
  *   （状态记号变了），所以它咬不住——这条判的是语义形状，不是字节。
  */
@@ -132,9 +134,11 @@ export function keepLatestChecklist(items: ModelSpeech[]): ModelSpeech[] {
   );
 }
 
-/** 正文要渲染的那批（过滤 + 相邻去重 + 清单只留最新），一步到位。 */
+/** 正文要渲染的那批：散文留下，整份清单不进聊天。 */
 export function renderableModelSpeech(
   turn: UiTurn | null | undefined
 ): ModelSpeech[] {
-  return keepLatestChecklist(dedupeAdjacentSpeech(modelSpeechFor(turn)));
+  return keepLatestChecklist(dedupeAdjacentSpeech(modelSpeechFor(turn))).filter(
+    item => !isChecklistSnapshot(item.text)
+  );
 }

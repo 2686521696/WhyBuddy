@@ -1,0 +1,607 @@
+// @vitest-environment jsdom
+/**
+ * 右侧是一块电脑，不是终端卡叠预览卡。
+ *
+ * 2026-09-14 对照 Manus：干活看终端、跑起来看预览，同一块外壳切档。
+ * 判据落在**渲染后的 DOM 父子关系**上（§5），再配一条剥注释的通电链
+ * （§1 / §3）：Studio 必须把 turns 交给预览面，不许自己再叠一份面板。
+ */
+import React, { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SlideRuleStudio } from "../SlideRuleStudio";
+import { SandboxPreviewSurface } from "../project-runtime/SandboxPreviewSurface";
+import { ProjectTaskChecklist } from "../ProjectTaskChecklist";
+import {
+  projectModeLabels,
+  projectModeValue,
+  selectProjectMode,
+} from "./fixtures/select-project-mode";
+import type { TurnStep, UiTurn } from "../types";
+
+const stripComments = (source: string) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+const read = (relative: string) =>
+  stripComments(readFileSync(resolve(__dirname, relative), "utf8"));
+
+function projectTurn(
+  status: "acting" | "completed",
+  extra: { projectDetail?: string; operationId?: string } = {}
+): UiTurn {
+  return {
+    id: "t1",
+    user: "做一个任务台",
+    status: status === "acting" ? "streaming" : "complete",
+    steps: [
+      {
+        id: "a",
+        kind: "chip",
+        capabilityId: "project_exec",
+        roleId: "system",
+        label: "运行命令",
+        realLlm: false,
+        progressType: status,
+        ...extra,
+      } as unknown as TurnStep,
+    ],
+    routeFacts: {} as UiTurn["routeFacts"],
+    routeExpanded: false,
+    routeLitCount: 0,
+    assistant: "",
+    assistantSource: "llm",
+    main: null,
+    actions: [],
+  };
+}
+
+let root: Root;
+let container: HTMLDivElement;
+let fetcher: ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  fetcher = vi.fn(async (url: string) => {
+    const path = String(url);
+    if (path.includes("/source") && !path.includes("/source/file")) {
+      return Response.json({
+        projectId: "project-one",
+        revision: "revision-one",
+        currentRevision: "revision-one",
+        files: [
+          { path: "package.json", sha256: "hash-pkg", sizeBytes: 2 },
+          { path: "src/App.tsx", sha256: "hash-app", sizeBytes: 4 },
+        ],
+      });
+    }
+    return Response.json({
+      operationId: "operation-one",
+      available: true,
+      reason: null,
+      descriptor: {
+        kind: "project",
+        projectId: "project-one",
+        runtimeId: "runtime-one",
+        revision: "revision-one",
+        status: "executing",
+        entryUrl: null,
+      },
+    });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+});
+
+afterEach(async () => {
+  await act(async () => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+});
+
+const $ = <T extends Element>(testid: string) =>
+  container.querySelector<T>(`[data-testid="${testid}"]`);
+
+describe("通电链：Studio 把动作流交给电脑面，自己不再叠一份", () => {
+  it("SandboxPreviewSurface 的调用带着 turns，源码里没有叠层残骸", () => {
+    const studio = read("../SlideRuleStudio.tsx");
+    const start = studio.indexOf("<SandboxPreviewSurface");
+    expect(start, "ProjectStudio 必须渲染预览面").toBeGreaterThan(-1);
+    const open = studio.slice(start, start + 400);
+    expect(open).toMatch(/turns=\{turns\}/);
+    expect(open).toMatch(/chromeSlot=\{chromeSlot\}/);
+    expect(open).toMatch(/resetSlot=\{resetSlot\}/);
+    // 反向：叠回去那一版的特征。注释里的 max-h-[38%] 已经被剥掉。
+    expect(studio).not.toMatch(/max-h-\[38%\]/);
+    expect(studio).not.toMatch(/ProjectComputerPanel/);
+    const projectStudio = studio.slice(
+      studio.indexOf("function ProjectStudio"),
+      studio.indexOf("function HtmlSlideRuleStudio")
+    );
+    // 反向：重置/分栏再叠在电脑壳上面 = 又是两行顶栏。
+    expect(projectStudio).not.toMatch(/ml-auto">\{chromeSlot\}/);
+    // 反向：舞台再包一圈 p-3，电脑四周会空出 12px（2026-09-14 真机圈的）。
+    expect(projectStudio).not.toMatch(/\bp-3\b/);
+  });
+
+  it("预览面自己按 resolveComputerView 切档，终端是其中一档", () => {
+    const surface = read("../project-runtime/SandboxPreviewSurface.tsx");
+    expect(surface).toMatch(/resolveComputerView/);
+    expect(surface).toMatch(/<ProjectComputerPanel/);
+    expect(surface).toMatch(/embedded/);
+  });
+
+  it("终端不再去拉 GET /source 当脸——那是源码档的事", () => {
+    const panel = read("../ProjectComputerPanel.tsx");
+    expect(panel).not.toContain("getProjectSource");
+    expect(panel).not.toContain("useProjectListing");
+    expect(panel).not.toContain("projectPaths");
+    expect(panel).toContain("SandboxLiveTerminal");
+    expect(panel).not.toContain("project-computer-session");
+    expect(panel).not.toContain("sandboxActivityTranscript");
+    expect(panel).toMatch(/data-testid="project-computer-pty-text" className="sr-only"/);
+    expect(panel).not.toMatch(/live\s*\?\s*"sr-only"/);
+    const open = read("../project-runtime/SandboxPreviewSurface.tsx");
+    const call = open.slice(
+      open.indexOf("<ProjectComputerPanel"),
+      open.indexOf("<ProjectComputerPanel") + 280
+    );
+    expect(call).not.toContain("projectId=");
+  });
+});
+
+describe("渲染后：电脑在外壳里面，不在它上头", () => {
+  it("有动作在跑 → 终端档亮着，面板是预览面的孩子", async () => {
+    await act(async () =>
+      root.render(
+        <SlideRuleStudio
+          chatSlot={<p>conversation</p>}
+          activeSkillId={null}
+          runtimeKind="project"
+          projectId="project-one"
+          projectRevision="revision-one"
+          isRunning
+          liveActionLabel="正在运行命令"
+          turns={[projectTurn("acting", { projectDetail: "pnpm install" })]}
+        />
+      )
+    );
+    const surface = $<HTMLElement>("sandbox-preview-surface");
+    const computer = $<HTMLElement>("project-computer-panel");
+    expect(surface, "电脑外壳必须在").not.toBeNull();
+    expect(computer, "终端面板必须在").not.toBeNull();
+    expect(surface!.contains(computer!), "终端必须在外壳里面，不许叠在上头").toBe(
+      true
+    );
+    expect(surface!.className, "贴边铺满时圆角会漏出底色").not.toMatch(
+      /rounded-lg/
+    );
+    expect(surface!.getAttribute("data-computer-view")).toBe("computer");
+    expect(projectModeLabels(container)).toContain("终端");
+    expect(projectModeValue(container)).toBe("computer");
+    expect($("project-live-action"), "有会话时不许再占一条「正在运行命令」顶栏").toBeNull();
+    expect($("project-computer-chrome"), "会话顶栏必须在").not.toBeNull();
+    expect($("project-computer-gears"), "功能必须堆在头条右侧").not.toBeNull();
+    expect(
+      $("project-computer-gears")!.className,
+      "overflow-x-auto 会把菜单裁进 32px 顶栏"
+    ).not.toMatch(/overflow-x-auto/);
+    expect($("project-computer-chrome")!.className).toMatch(/\bz-10\b/);
+    expect($("project-preview-open"), "打开预览是真接通的，必须在头条").not.toBeNull();
+    expect($("project-computer-promptbar"), "电脑壳上要有 Manus 底栏").toBeTruthy();
+    expect(
+      computer!.querySelector('[data-testid="project-computer-promptbar"]'),
+      "底栏在外壳上，不许再叠进面板"
+    ).toBeNull();
+    expect(surface!.textContent).not.toContain("跳到实时");
+    expect(surface!.textContent).not.toContain("工程尚未启动");
+    expect(surface!.textContent).not.toContain("更新状态");
+    expect(surface!.textContent).not.toContain("E2B 沙盒");
+    expect(surface!.textContent).not.toContain("点选元素");
+    expect(surface!.textContent).not.toContain("点选编辑");
+    expect(surface!.textContent).not.toContain("关联");
+    expect($("project-computer-pty"), "嵌进的终端必须是原始 PTY，不是说明书").not.toBeNull();
+    expect($("project-computer-session")).toBeNull();
+    expect($("project-computer-panel")?.textContent).not.toContain("$ pnpm install");
+    expect($("project-computer-panel")?.textContent).not.toContain("src/App.tsx");
+    expect($("project-computer-panel")?.textContent).not.toMatch(/\bput /);
+    expect($("project-computer-panel")?.textContent).not.toMatch(/\$ find\b/);
+    expect($("project-computer-detail")).toBeNull();
+    expect(computer!.textContent).not.toContain("没有可展示的细节");
+    expect(computer!.textContent).not.toContain("命令行输出");
+  });
+
+  it("没接 turns 的预览面不加终端档（应用中心那条链）", async () => {
+    await act(async () =>
+      root.render(
+        <SandboxPreviewSurface
+          projectId="project-one"
+          projectRevision="revision-one"
+          revisionMode="current"
+          appTitle="任务管理"
+        />
+      )
+    );
+    expect(projectModeLabels(container)).toEqual([
+      "预览",
+      "源码",
+      "版本",
+      "数据",
+      "交付",
+    ]);
+    expect($("project-computer-panel")).toBeNull();
+    expect($("sandbox-preview-surface")?.getAttribute("data-computer-view")).toBe(
+      "preview"
+    );
+  });
+
+  it("用户点了预览就钉住，不因还在跑被拽回终端", async () => {
+    await act(async () =>
+      root.render(
+        <SlideRuleStudio
+          chatSlot={<p>conversation</p>}
+          activeSkillId={null}
+          runtimeKind="project"
+          projectId="project-one"
+          isRunning
+          turns={[projectTurn("acting")]}
+        />
+      )
+    );
+    expect($("sandbox-preview-surface")?.getAttribute("data-computer-view")).toBe(
+      "computer"
+    );
+    await act(async () => selectProjectMode(container, "预览"));
+    expect($("sandbox-preview-surface")?.getAttribute("data-computer-view")).toBe(
+      "preview"
+    );
+    expect($("project-computer-panel")).toBeNull();
+    expect($("project-preview-open"), "切到预览档，打开预览仍在头条").not.toBeNull();
+    expect($("project-computer-chrome"), "头条不跟档卸掉").not.toBeNull();
+  });
+
+  it("重置和分栏落在电脑头条，重置在标题左边", async () => {
+    await act(async () =>
+      root.render(
+        <SlideRuleStudio
+          chatSlot={<p>conversation</p>}
+          activeSkillId={null}
+          runtimeKind="project"
+          projectId="project-one"
+          isRunning
+          turns={[projectTurn("acting")]}
+          resetSlot={<button data-testid="sliderule-reset-session">reset</button>}
+          chromeSlot={<div data-testid="sliderule-status-bar">分栏</div>}
+        />
+      )
+    );
+    const bar = $("project-computer-chrome")!;
+    const reset = $("sliderule-reset-session")!;
+    const hud = $("sliderule-status-bar")!;
+    expect(bar.contains(reset), "重置必须进头条，不许再叠一行").toBe(true);
+    expect(bar.contains(hud), "分栏/交付物必须进头条右侧").toBe(true);
+    const html = bar.innerHTML;
+    expect(html.indexOf("sliderule-reset-session")).toBeLessThan(
+      html.indexOf("它的电脑")
+    );
+    expect(html.indexOf("它的电脑")).toBeLessThan(
+      html.indexOf("project-computer-gears")
+    );
+  });
+
+  it("runtime.log 不是 PTY 脸：不许再拼 $ cmd + 日志", async () => {
+    fetcher.mockImplementation(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.includes("/events")) {
+        return Response.json({
+          events: [
+            {
+              seq: 1,
+              type: "runtime.log",
+              payload: { text: "added 21 packages" },
+            },
+          ],
+          nextSeq: 2,
+          hasMore: false,
+        });
+      }
+      return Response.json({
+        operationId: "operation-one",
+        available: true,
+        reason: null,
+        descriptor: {
+          kind: "project",
+          projectId: "project-one",
+          runtimeId: "runtime-one",
+          revision: "revision-one",
+          status: "executing",
+          entryUrl: null,
+        },
+      });
+    });
+    await act(async () =>
+      root.render(
+        <SlideRuleStudio
+          chatSlot={<p>conversation</p>}
+          activeSkillId={null}
+          runtimeKind="project"
+          projectId="project-one"
+          isRunning
+          turns={[
+            projectTurn("acting", {
+              projectDetail: "build",
+              operationId: "op-live",
+            }),
+          ]}
+        />
+      )
+    );
+    const started = Date.now();
+    while (Date.now() - started < 1500) {
+      if (fetcher.mock.calls.some(call => String(call[0]).includes("/events"))) {
+        break;
+      }
+      await act(async () => {
+        await new Promise(resolve => setTimeout(resolve, 20));
+      });
+    }
+    expect($("project-computer-pty"), "没 console 也要空着等 PTY，不许退回拼贴").not.toBeNull();
+    expect($("project-computer-session")).toBeNull();
+    expect($("project-computer-pty-text")?.textContent || "").not.toContain(
+      "added 21 packages"
+    );
+    expect($("project-computer-panel")?.textContent).not.toContain("$ build");
+    expect($("project-computer-panel")?.textContent).not.toContain("命令行输出");
+    expect(fetcher.mock.calls.some(call => String(call[0]).includes("/events"))).toBe(
+      true
+    );
+  });
+
+  it("有 PTY 字节就画活终端，不再自己拼一行 $ cmd", async () => {
+    fetcher.mockImplementation(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.includes("/events")) {
+        return Response.json({
+          events: [
+            {
+              seq: 1,
+              type: "runtime.console",
+              payload: { data: "user@sb:/home/user/workspace$ npm ci" },
+            },
+          ],
+          nextSeq: 2,
+          hasMore: false,
+        });
+      }
+      return Response.json({
+        operationId: "operation-one",
+        available: true,
+        reason: null,
+        descriptor: {
+          kind: "project",
+          projectId: "project-one",
+          runtimeId: "runtime-one",
+          revision: "revision-one",
+          status: "executing",
+          entryUrl: null,
+        },
+      });
+    });
+    await act(async () =>
+      root.render(
+        <SlideRuleStudio
+          chatSlot={<p>conversation</p>}
+          activeSkillId={null}
+          runtimeKind="project"
+          projectId="project-one"
+          isRunning
+          turns={[
+            projectTurn("acting", {
+              projectDetail: "build",
+              operationId: "op-live",
+            }),
+          ]}
+        />
+      )
+    );
+    const started = Date.now();
+    while (Date.now() - started < 1500) {
+      if ($("project-computer-pty-text")?.textContent?.includes("npm ci")) {
+        break;
+      }
+      await act(async () => {
+        await new Promise(resolve => setTimeout(resolve, 20));
+      });
+    }
+    expect($("project-computer-pty-text")?.textContent).toContain(
+      "user@sb:/home/user/workspace$ npm ci"
+    );
+    expect($("project-computer-session")).toBeNull();
+    expect($("project-computer-panel")?.textContent).not.toContain("$ build");
+  });
+
+  it("CSI 原字节不许当可见面：ESC 被吃掉就会印出 [32m", async () => {
+    fetcher.mockImplementation(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.includes("/events")) {
+        return Response.json({
+          events: [
+            {
+              seq: 1,
+              type: "runtime.console",
+              payload: { data: "\u001b[32mvite built\u001b[39m\n\u001b[1m\u001b[0K" },
+            },
+          ],
+          nextSeq: 2,
+          hasMore: false,
+        });
+      }
+      return Response.json({
+        operationId: "operation-one",
+        available: true,
+        reason: null,
+        descriptor: {
+          kind: "project",
+          projectId: "project-one",
+          runtimeId: "runtime-one",
+          revision: "revision-one",
+          status: "executing",
+          entryUrl: null,
+        },
+      });
+    });
+    await act(async () =>
+      root.render(
+        <SlideRuleStudio
+          chatSlot={<p>conversation</p>}
+          activeSkillId={null}
+          runtimeKind="project"
+          projectId="project-one"
+          isRunning
+          turns={[
+            projectTurn("acting", {
+              projectDetail: "build",
+              operationId: "op-live",
+            }),
+          ]}
+        />
+      )
+    );
+    const started = Date.now();
+    while (Date.now() - started < 1500) {
+      if ($("project-computer-pty-text")?.textContent?.includes("vite built")) {
+        break;
+      }
+      await act(async () => {
+        await new Promise(resolve => setTimeout(resolve, 20));
+      });
+    }
+    const pre = $("project-computer-pty-text");
+    expect(pre?.textContent).toContain("\u001b[32m");
+    expect(pre?.className).toMatch(/\bsr-only\b/);
+    expect(pre?.className).not.toMatch(/flex-1/);
+    const visible = [
+      ...($("project-computer-pty")?.querySelectorAll("*") ?? []),
+    ]
+      .filter(el => !el.classList.contains("sr-only") && !el.closest(".sr-only"))
+      .map(el => el.textContent || "")
+      .join("");
+    expect(visible).not.toMatch(/\[32m/);
+    expect(visible).not.toMatch(/\[1m\[0K/);
+  });
+});
+
+function mixedTurn(): UiTurn {
+  return {
+    ...projectTurn("acting"),
+    steps: [
+      {
+        id: "patch-1",
+        kind: "chip",
+        capabilityId: "project_patch",
+        roleId: "system",
+        label: "写入源码",
+        realLlm: false,
+        progressType: "completed",
+        projectDetail: "src/Home.tsx",
+      } as unknown as TurnStep,
+      {
+        id: "exec-1",
+        kind: "chip",
+        capabilityId: "project_exec",
+        roleId: "system",
+        label: "运行命令",
+        realLlm: false,
+        progressType: "acting",
+      } as unknown as TurnStep,
+    ],
+  };
+}
+
+describe("左栏点工具，右侧跟档", () => {
+  it("通电链：清单发出 inspect，外壳听 computerViewForAction", () => {
+    const list = read("../ProjectTaskChecklist.tsx");
+    const surface = read("../project-runtime/SandboxPreviewSurface.tsx");
+    expect(list).toMatch(/dispatchInspectAction/);
+    expect(list).toMatch(/data-testid="project-task-row"/);
+    expect(surface).toMatch(/INSPECT_ACTION_EVENT/);
+    expect(surface).toMatch(/FOLLOW_COMPUTER_EVENT/);
+    expect(surface).toMatch(/computerViewForAction/);
+    // 反向：只发事件外壳不听 = 点了没反应，正是这一轮要修的缝。
+    expect(surface).toMatch(/addEventListener\(\s*INSPECT_ACTION_EVENT/);
+    expect(surface).toMatch(/addEventListener\(\s*FOLLOW_COMPUTER_EVENT/);
+  });
+
+  it("点写入源码打开代码，点运行命令打开终端，选中行亮着", async () => {
+    const turns = [mixedTurn()];
+    await act(async () =>
+      root.render(
+        <SlideRuleStudio
+          chatSlot={<ProjectTaskChecklist turns={turns} />}
+          activeSkillId={null}
+          runtimeKind="project"
+          projectId="project-one"
+          isRunning
+          turns={turns}
+        />
+      )
+    );
+    const rows = () =>
+      [...container.querySelectorAll<HTMLButtonElement>('[data-testid="project-task-row"]')];
+    expect(rows()).toHaveLength(2);
+    expect($("sandbox-preview-surface")?.getAttribute("data-computer-view")).toBe(
+      "computer"
+    );
+
+    await act(async () => {
+      rows().find(row => row.getAttribute("data-task-id") === "project_patch")!.click();
+    });
+    expect($("sandbox-preview-surface")?.getAttribute("data-computer-view")).toBe(
+      "source"
+    );
+    expect(
+      rows().find(row => row.getAttribute("data-task-id") === "project_patch")
+        ?.getAttribute("data-selected")
+    ).toBe("true");
+
+    await act(async () => {
+      rows().find(row => row.getAttribute("data-task-id") === "project_exec")!.click();
+    });
+    expect($("sandbox-preview-surface")?.getAttribute("data-computer-view")).toBe(
+      "computer"
+    );
+    expect($("project-computer-panel"), "终端必须跟过来").not.toBeNull();
+    expect(
+      rows().find(row => row.getAttribute("data-task-id") === "project_exec")
+        ?.getAttribute("data-selected")
+    ).toBe("true");
+  });
+
+  it("电脑壳上有回放底栏，面板里不再叠第二条", async () => {
+    const turns = [mixedTurn()];
+    await act(async () =>
+      root.render(
+        <SlideRuleStudio
+          chatSlot={<ProjectTaskChecklist turns={turns} />}
+          activeSkillId={null}
+          runtimeKind="project"
+          projectId="project-one"
+          isRunning
+          turns={turns}
+        />
+      )
+    );
+    expect($("project-computer-pty"), "原始 PTY 还在").not.toBeNull();
+    expect($("project-computer-session")).toBeNull();
+    expect($("project-computer-promptbar"), "底栏必须在外壳上").toBeTruthy();
+    expect($("project-computer-prev")).toBeTruthy();
+    expect(
+      $("project-computer-panel")?.querySelector(
+        '[data-testid="project-computer-promptbar"]'
+      )
+    ).toBeNull();
+    expect($("project-computer-panel")?.textContent).not.toContain("跳到实时");
+  });
+});

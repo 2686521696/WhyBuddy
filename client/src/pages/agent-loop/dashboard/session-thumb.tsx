@@ -58,11 +58,30 @@ export function sessionUsesSheet(app?: AppStoreSummary | null): boolean {
   return Boolean(app?.id && app.has_preview);
 }
 
+/**
+ * 侧栏行上的短标题。Manus 左侧是「TicketStream 服务台」，不是整段意图。
+ *
+ * 有产品名用产品名；没有就从意图里抠「名为“X”」，再不行取第一句、
+ * 超过 22 字收尾。完整意图仍可挂在行的 title 上。
+ */
+export function shortSessionGoal(goal: string): string {
+  const text = String(goal || "").trim().replace(/\s+/g, " ");
+  if (!text) return "";
+  const named = text.match(/名为[“「"']([^”」"']+)[”」"']/);
+  if (named?.[1]?.trim()) return named[1].trim();
+  const clause = text.split(/[。！？\n]/)[0] ?? text;
+  return clause.length > 22 ? `${clause.slice(0, 22)}…` : clause;
+}
+
 export function sessionRowTitle(
   goal: string,
   app?: AppStoreSummary | null
 ): string {
-  return String(app?.product_name || "").trim() || goal.trim() || "新会话";
+  return (
+    String(app?.product_name || "").trim() ||
+    shortSessionGoal(goal) ||
+    "新会话"
+  );
 }
 
 /**

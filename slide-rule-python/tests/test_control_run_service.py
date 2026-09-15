@@ -57,6 +57,15 @@ async def settled(service, run_id):
     raise AssertionError("control run did not settle")
 
 
+async def observed(service, run_id, predicate):
+    for _ in range(1000):
+        record = await asyncio.to_thread(service.store.get, run_id, TEST_USER_ID)
+        if predicate(record):
+            return record
+        await asyncio.sleep(0.005)
+    raise AssertionError("control run did not reach the expected observation")
+
+
 def test_http_is_durable_idempotent_and_owner_filtered(env, monkeypatch):
     model_calls = []
     async def model(messages, **kwargs):
@@ -457,12 +466,15 @@ def test_restart_uses_saved_messages_and_does_not_create_project_twice(env, monk
         second = env.service()
         await second.start()
         try:
-            final = await settled(second, record["runId"])
-            assert final["status"] == "completed"
-            assert len(calls) == 2 and results[0]["ok"]
+            # 第二任从 checkpoint 接着跑，不应再调一次 project_create。
+            # 工程未达可交付时现在会自动续跑，所以不再等 completed。
+            final = await observed(second, record["runId"],
+                lambda saved: results and saved["goal"]["kind"] == "project")
+            assert results[0]["ok"]
             assert results[0]["projectId"] == project_id
             assert sum(e.get("tool") == "project_create" and e["type"] == "control_tool_start"
                        for e in final["events"]) == 1
+            assert final["status"] != "failed"
         finally:
             await second.shutdown()
     asyncio.run(run())
@@ -874,9 +886,61 @@ def test_restart_does_not_reset_exhausted_budgets(env, monkeypatch, budget, reas
         second = env.service()
         await second.start()
         try:
-            final = await settled(second, record["runId"])
+            # 同回合 resume 不许把已经耗尽的预算清零。wall_clock 是时间片，
+            # 续跑会开新一轮——这里只断言第二任 worker 仍然发出同一条闸，
+            # 然后立刻停，避免续跑把 model_calls 撑大。
+            final = await observed(second, record["runId"],
+                lambda saved: any(e.get("stopReason") == reason for e in saved["events"]))
             assert len(model_calls) == 1
-            assert any(e.get("stopReason") == reason for e in final["events"]), final["events"]
+            if reason == "wall_clock":
+                assert final["status"] != "completed"
+            else:
+                final = await settled(second, record["runId"])
+                assert any(e.get("stopReason") == reason for e in final["events"])
         finally:
             await second.shutdown()
+    asyncio.run(run())
+
+
+def test_真机_批准后墙钟截断不能写成目标完成(env, monkeypatch):
+    """2026-09-14 入职系统样本：userText 是「批准计划并执行」，随后 wall_clock。
+
+    旧链路：goal.text=批准计划并执行 / kind=conversation / status=completed。
+    现在：继承会话业务目标；时间片到了要么续跑，要么 waiting_user，不许 completed。
+    """
+    async def producer(*args, **kwargs):
+        yield {"type": "control_tool_result", "tool": "project_create", "ok": True,
+               "runtimeKind": "project", "revision": "prv-b8a73f5616bc442cbc8893bd3a5e1cea"}
+        yield {"type": "control_project_state", "runtimeKind": "project"}
+        yield {"type": "control_tool_result", "tool": "project_patch", "ok": True,
+               "revision": "prv-cb008671fee045d28568e6c70a512bef"}
+        yield {"type": "control_text", "text": "本轮工程任务达到时间上限。",
+               "stopReason": "wall_clock", "stoppedBy": "runtime", "limit": 180.0, "used": 181.5}
+        yield {"type": "complete", "state": env.state.model_dump(mode="json")}
+
+    monkeypatch.setattr(control_run_service_module, "run_control_turn", producer)
+
+    async def run():
+        service = env.service()
+        await service.start()
+        try:
+            record = await service.submit(
+                six_fields(env.state.sessionId, "批准计划并执行"), env.owner, "onboarding-slice")
+            final = await observed(service, record["runId"],
+                lambda saved: saved["status"] in {"waiting_continue", "waiting_user"}
+                or any(e.get("stopReason") == "wall_clock" for e in saved["events"]))
+            # 给落库一拍：promote + continuation / waiting_user
+            for _ in range(200):
+                final = env.store.get(record["runId"], env.owner)
+                if final["goal"]["kind"] == "project" and final["status"] != "completed":
+                    break
+                await asyncio.sleep(0.005)
+            assert final["goal"]["kind"] == "project"
+            assert "Build a small project" in final["goal"]["text"]
+            assert "批准计划" not in final["goal"]["text"]
+            assert final["status"] != "completed"
+            assert final["goal"]["status"] != "completed"
+        finally:
+            await service.shutdown()
+
     asyncio.run(run())

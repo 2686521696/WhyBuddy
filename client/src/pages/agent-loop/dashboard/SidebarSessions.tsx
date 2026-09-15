@@ -582,7 +582,7 @@ export function SidebarSessions({
       >
         <button
           type="button"
-          title={title}
+          title={String(s.goal || "").trim() || title}
           data-testid={`sidebar-session-item-${s.sessionId}`}
           className="native-agent-session-item"
           onClick={() => pick(s.sessionId)}
