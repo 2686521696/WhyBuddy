@@ -1,5 +1,16 @@
 {
 	email admin@miantuan.ai
+	on_demand_tls {
+		ask http://127.0.0.1:2020/check
+	}
+}
+
+http://127.0.0.1:2020 {
+	@preview expression `{query.domain}.endsWith(".preview.miantuan.ai") || {query.domain}.endsWith(".preview.156.239.47.108.sslip.io")`
+	handle @preview {
+		respond 200
+	}
+	respond 400
 }
 
 miantuan.ai {
@@ -30,4 +41,18 @@ whybuddy.156.239.47.108.sslip.io {
 	encode zstd gzip
 	header Strict-Transport-Security "max-age=31536000"
 	reverse_proxy app:3001
+}
+
+# Isolated project preview. Each runtime is one hostname label so cookies
+# and storage never share an origin with the workbench or each other.
+# 172.18.0.1:3002 is the compose-network gateway on this host; a reverse
+# SSH tunnel binds the local preview process there. Do not put this under
+# miantuan.ai — the workbench already owns that host.
+*.preview.miantuan.ai, *.preview.156.239.47.108.sslip.io {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000"
+	tls {
+		on_demand
+	}
+	reverse_proxy 172.18.0.1:3002
 }
