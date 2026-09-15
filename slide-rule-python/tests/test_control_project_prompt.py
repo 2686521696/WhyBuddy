@@ -58,7 +58,14 @@ def test_live_http_model_assembly_uses_source_sync_guidance_before_and_after_too
         return llm_text("The saved project can synchronize source while its runtime stays active.")
     harness.llm_impl = model
     events = post(setup.state)
-    assert len(observed) == 2 and events[-1]["type"] == "complete"
+    # ⚠ 2026-09-15：第 3 次调用是自动续跑那一轮——工程目标收尾时还没交付，
+    #   `should_continue` 再醒一次（reason=goal_not_delivered），`no_progress`
+    #   那道闸保证只多这一轮。这条判据在乎的是**每一发都带着源码同步指引**
+    #   （上面 `assert_live_guidance` 在每次调用里跑），续跑那一发同样要带——
+    #   所以数字跟着到 3，同时把续跑正面钉住：没了会红，失控成两轮也会红。
+    assert [(e["attempt"], e["reason"]) for e in events
+            if e.get("type") == "control_continuation"] == [(1, "goal_not_delivered")]
+    assert len(observed) == 3 and events[-1]["type"] == "complete"
     assert not any(event.get("tool") == "project_cancel" for event in events)
 
 
@@ -81,7 +88,18 @@ def test_durable_control_recovery_replaces_old_saved_stop_before_patch_instructi
         await second.start()
         try:
             final = await settled(second, owned["runId"])
-            assert final["status"] == "completed" and len(received) == 1 and len(initial_calls) == 1
+            # ⚠ 2026-09-15：第 2 发是自动续跑那一轮（目标还没到可交付）。
+            #   与其把数字改大，不如钉住这一轮真正该有的东西：续跑说明必须
+            #   **带着服务端算出来的缺口**进到对话里——设计头注写的
+            #   「模型得知道自己为什么又醒了，内容由 blockedReasons 生成，
+            #   不是『请继续』」。那句话没了，续跑就退化成空转。
+            assert final["status"] == "completed" and len(initial_calls) == 1
+            assert len(received) == 2, [len(m) for m in received]
+            notice = received[1][-1]["content"]
+            assert "还没达到可交付状态" in notice, notice
+            assert "project_verification_required" in notice, notice
+            # 反向：续跑那一发同样不许把那条陈旧的停止指令带回来。
+            assert "STALE:" not in "".join(m["content"] for m in received[1])
         finally:
             await second.shutdown()
     asyncio.run(run())

@@ -141,7 +141,19 @@ def test_model_creation_read_and_patch_reach_durable_sources_and_next_prompt(set
 
     harness.llm_impl = model
     events = post(setup.state)
-    assert [r["tool"] for r in observed] == ["project_create", "project_read", "project_patch"]
+    # ⚠ 2026-09-15：这条判据写在自动续跑之前。工程目标收尾时若还没交付，
+    #   `should_continue` 会再醒一轮（reason=goal_not_delivered），桩模型于是
+    #   又发了一次 patch。**这是设计好的行为**，不是多写一次源码：
+    #   `no_progress` 那道闸保证第二轮没新进展就收手，所以恰好多一轮。
+    #
+    #   所以不是把数字改大了事——把续跑**正面钉住**：续跑没了会红，
+    #   续跑失控成两轮也会红。原意（create→read→patch 走到落库的源码）照旧。
+    continuations = [e for e in events if e.get("type") == "control_continuation"]
+    assert [(e["attempt"], e["reason"]) for e in continuations] == [(1, "goal_not_delivered")]
+    assert [r["tool"] for r in observed] == [
+        "project_create", "project_read", "project_patch",
+        "project_patch",  # ← 续跑那一轮
+    ]
     saved = load_session(setup.state.sessionId)
     assert saved.projectRevision == observed[-1]["revision"] != observed[0]["revision"]
     assert setup.store.read_files(saved.projectId, owner_id=TEST_USER_ID)["src/main.tsx"].endswith("// revision from the control loop\n")
@@ -277,7 +289,11 @@ def test_failed_command_returns_to_same_model_loop_before_patch_and_rerun(setup,
 
         harness.llm_impl = model
         events = post(setup.state)
-        assert len(seen) == 6 and len(harness.llm_calls) == 7
+        # ⚠ 2026-09-15：+1 是那一轮自动续跑（见上一条判据的注释）。
+        #   照旧钉住续跑本身，别只把数字改大。
+        assert [(e["attempt"], e["reason"]) for e in events
+                if e.get("type") == "control_continuation"] == [(1, "goal_not_delivered")]
+        assert len(seen) == 7 and len(harness.llm_calls) == 8
         assert seen[-1]["revision"] == seen[3]["revision"]
         assert events[-1]["type"] == "complete" and not harness.helper_calls
         assert not provider.handles
