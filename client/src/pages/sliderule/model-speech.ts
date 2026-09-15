@@ -63,7 +63,7 @@ export function modelSpeechFor(turn: UiTurn | null | undefined): ModelSpeech[] {
     (step): step is ModelSpeech =>
       !!step &&
       step.kind === "model_speech" &&
-      isUserFacingSpeech(step.text, turn.user)
+      isUserFacingSpeech(step.text, turn?.user)
   );
 }
 

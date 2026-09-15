@@ -271,7 +271,7 @@ export function chipFromControlTranscriptRow(
     return {
       id: `${id}-start`,
       kind: "chip",
-      capabilityId: tool as never,
+      capabilityId: tool as `project_${string}`,
       roleId: "system",
       label: `正在${label}`,
       realLlm: false,
@@ -284,7 +284,7 @@ export function chipFromControlTranscriptRow(
     return {
       id: `${id}-result`,
       kind: "chip",
-      capabilityId: tool as never,
+      capabilityId: tool as `project_${string}`,
       roleId: "system",
       label: ok ? `已${label}` : `执行失败：${label}`,
       realLlm: false,

@@ -51,6 +51,13 @@ export const CLOSED_TOOLS = [
   "project_create", "project_list", "project_read", "project_search",
   "project_patch", "project_start", "project_exec", "project_status",
   "project_logs", "project_cancel",
+  // ⚠ 2026-09-15 补的五个：版本史 / 导出 / 回滚 / 验收，Python 侧
+  //   `closed_tools.CLOSED_TOOLS` 早就有，TS 这份漏了。上面那句
+  //   「漏一侧 = 芯片一半不认」说的就是这个失效形态——模型调了
+  //   project_verify，芯片这边不认这个名字，左栏那一步静静地不出现。
+  //   `test_closed_tool_from_text.py::Test两侧同一张表` 钉着两头。
+  "project_revisions", "project_export", "project_restore",
+  "project_verify", "project_verification",
 ] as const;
 
 export type ClosedTool = (typeof CLOSED_TOOLS)[number];

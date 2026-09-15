@@ -35,7 +35,7 @@ beforeEach(() => {
       {
         get: () => () => {},
       }
-    )) as typeof HTMLCanvasElement.prototype.getContext;
+    )) as unknown as typeof HTMLCanvasElement.prototype.getContext;
   localStorage.removeItem("sliderule:reduce-motion");
   container = document.createElement("div");
   document.body.append(container);

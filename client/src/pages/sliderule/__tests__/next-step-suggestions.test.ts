@@ -15,7 +15,6 @@
  */
 import { describe, expect, it } from "vitest";
 import { deriveNextStepChips } from "../next-step-chips";
-import { deriveComposerHintChips } from "../derive-composer-hints";
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 
 const state = (over: Partial<V5SessionState> = {}) => over as V5SessionState;
@@ -43,11 +42,13 @@ describe("整行：把话说完", () => {
 });
 
 describe("两个 surface 各管各的", () => {
-  it("反向：输入条退回通用提示，不再被下一步顶替", () => {
-    // 有待办时输入条**照旧**是通用词——建议归结果卡下面那几行。
-    const chips = deriveComposerHintChips(state({ controlTodo: REAL }));
-    expect(chips).toContain("路线对比一下");
-    expect(chips.join("|")).not.toContain("联调 check/build/test");
+  it("反向：下一步不许爬进输入条", () => {
+    // ⚠ 2026-09-15：原来这里调 `deriveComposerHintChips` 判「输入条退回通用词」。
+    //   输入条的提示整排下线了（SlideRule 传 hintChips={[]}），那个模块随之删除。
+    //   「输入条一条都不挂」这条判据由 `next-step-chips.test.ts` 的
+    //   「通电：真的接在输入条上（§3）」独占——不在这儿再抄一份（§4）。
+    //   这里只管自己这一侧：建议确实出在结果卡下面。
+    expect(deriveNextStepChips(state({ controlTodo: REAL })).length).toBeGreaterThan(0);
   });
 });
 

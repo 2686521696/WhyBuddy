@@ -120,7 +120,7 @@ describe("视图下拉（原来是一排平铺 tab）", () => {
     await render();
     const list = $("project-mode-select")!.querySelector("[role='listbox']");
     expect(list?.hasAttribute("hidden")).toBe(true);
-    await act(async () => $("project-mode-trigger")!.click());
+    await act(async () => $<HTMLElement>("project-mode-trigger")!.click());
     expect(
       $("project-mode-select")!.querySelector("[role='listbox']")?.hasAttribute(
         "hidden"

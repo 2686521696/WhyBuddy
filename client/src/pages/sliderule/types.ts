@@ -55,7 +55,17 @@ export type TurnStep =
   | {
       id: string;
       kind: "chip";
-      capabilityId: V5CapabilityId;
+      /**
+       * ⚠ 工程档的 chip 装的是**控制面工具名**（`project_create` 等），
+       *   不是五系统能力池里的 id。产线本来就这么写，只是靠 4 处
+       *   `as never` 绕过这个字段的类型——生产侧硬转、消费侧
+       *   (`isProjectChip`) 再拿 `.startsWith("project_")` 重新解析，
+       *   正是 §4 那种「同一件事两处实现」的逃生口。
+       *
+       *   模板字面量放宽到**恰好**等于 isProjectChip 认的那一集，
+       *   那 4 处 as never 就可以去掉，判据也不必再陪着转。
+       */
+      capabilityId: V5CapabilityId | `project_${string}`;
       roleId: string;
       label: string;
       realLlm: boolean;

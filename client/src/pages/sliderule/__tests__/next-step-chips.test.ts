@@ -16,7 +16,6 @@
  */
 import { describe, expect, it } from "vitest";
 import { MAX_NEXT_STEP_CHIPS, deriveNextStepChips } from "../next-step-chips";
-import { deriveComposerHintChips } from "../derive-composer-hints";
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 
 /** 真机 `sr-20260914051427-QYYWZ17DHH` 的 controlTodo，原样。 */
@@ -105,29 +104,16 @@ describe("从模型自己的待办里取下一步", () => {
   });
 });
 
-describe("输入条与建议行各管各的", () => {
-  it("反向：下一步**不许**再顶掉输入条的通用提示", () => {
-    // ⚠ 2026-09-14 改：第一版让下一步顶替通用词，对照 Manus 才看明白位置
-    //   不对——建议是关于「刚做出来的这个东西」的，归结果卡下面那几行
-    //   （NextStepSuggestions）；输入条那排是万能提示，两者不该互相顶替。
-    const chips = deriveComposerHintChips(state({ controlTodo: REAL_TODO }));
-    expect(chips).toContain("路线对比一下");
-    expect(chips.join("|")).not.toContain("补丁前端");
-  });
-
-  it("反向：没有待办时照旧退回通用词（老行为不许坏）", () => {
-    const chips = deriveComposerHintChips(state({}));
-    expect(chips).toContain("路线对比一下");
-  });
-
-  it("反向：已交付那一支的专属文案不许被顶掉", () => {
-    // runtimePhase=done 时原来返回「继续补充想法/换个推演角度」。
-    // 没有待办就该照旧；有待办时下一步更具体，优先它。
-    expect(deriveComposerHintChips(state({ runtimePhase: "done" } as Partial<V5SessionState>)))
-      .toEqual(["继续补充想法", "换个推演角度"]);
-  });
-});
-
+/*
+ * ⚠ 2026-09-15 这里原有一块「输入条与建议行各管各的」，三条判据都在调
+ *   `deriveComposerHintChips`——输入条那排通用提示的生成器。对照 Manus，
+ *   那排词跟这一轮做了什么毫无关系，整排下线了（SlideRule 传 hintChips={[]}），
+ *   模块也随之删除，所以那三条一并去掉。
+ *
+ *   原意「两个 surface 不许互相顶替」没有丢：下面「通电」那一块正面钉着
+ *   hintChips={[]} 与 `not.toContain("deriveComposerHintChips")`，
+ *   把提示再接回去当场红。
+ */
 describe("通电：真的接在输入条上（§3）", () => {
   it("SlideRule 把 hintChips 喂给 ComposerDock，且 chip 可点", async () => {
     const fs = await import("node:fs");

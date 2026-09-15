@@ -2809,7 +2809,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 replayedChips.push({
                   id: `replay-${run.runId}-${replaySeq}`,
                   kind: "chip",
-                  capabilityId: tool as never,
+                  capabilityId: tool as `project_${string}`,
                   roleId: "system",
                   label,
                   realLlm: false,
@@ -2826,7 +2826,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 replayedChips.push({
                   id: `replay-${run.runId}-${replaySeq}`,
                   kind: "chip",
-                  capabilityId: String(event.tool || "") as never,
+                  capabilityId: String(event.tool || "") as `project_${string}`,
                   roleId: "system",
                   label: ok
                     ? `${tool.replace(/^正在/, "已")}`

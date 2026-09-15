@@ -227,7 +227,12 @@ describe("restoring the latest failed control run after refresh", () => {
     await mount();
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
     expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("/failed-entry/stream"))).toBe(false);
-    expect(current.uiTurns.some(turn => turn.assistant?.includes(failure))).toBe(false);
+    // ⚠ 2026-09-15 改了钉法。原来写的是「failure 这句话整页不许出现」，
+    //   而失败**本来就是会话历史的一部分**——它以 canned 行落在
+    //   controlTranscript 里，`turnsFromControlTranscript` 把它当历史铺回来，
+    //   这是「刷新不丢左栏」那一笔想要的。判据原意不是禁掉历史，是禁掉
+    //   **把旧失败当成一条新通知翻出来**。那条通知有确切身份，就钉它。
+    expect(current.uiTurns.filter(turn => turn.id === "control-failure-failed-entry")).toHaveLength(0);
   });
 
   it("keeps source revisions and the goal edited after the failed run while restoring only its explanation", async () => {
@@ -276,7 +281,12 @@ describe("restoring the latest failed control run after refresh", () => {
     });
     await finishControlTurn();
     expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("/failed-entry/stream"))).toBe(false);
-    expect(current.uiTurns.some(turn => turn.assistant?.includes(failure))).toBe(false);
+    // ⚠ 2026-09-15 改了钉法。原来写的是「failure 这句话整页不许出现」，
+    //   而失败**本来就是会话历史的一部分**——它以 canned 行落在
+    //   controlTranscript 里，`turnsFromControlTranscript` 把它当历史铺回来，
+    //   这是「刷新不丢左栏」那一笔想要的。判据原意不是禁掉历史，是禁掉
+    //   **把旧失败当成一条新通知翻出来**。那条通知有确切身份，就钉它。
+    expect(current.uiTurns.filter(turn => turn.id === "control-failure-failed-entry")).toHaveLength(0);
   });
 
   it.each(["queued", "running", "waiting_continue", "waiting_operation"])(
