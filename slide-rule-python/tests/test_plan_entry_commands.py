@@ -20,7 +20,14 @@ def test_plan_command_revokes_execution_without_reopening_scope(monkeypatch, com
     state = load_session(sid)
     assert not plan_execution_authorized(state)
     assert state.goal["text"] == "Leave requests"
-    assert state.controlTranscript[-1]["kind"] == "plan_entered"
+    # ⚠ 2026-09-15：日志里现在还会跟一行 `tool_result`（上游「工具事件写入
+    #   会话日志」那一笔），所以 `[-1]` 不再是 plan_entered——但那只是**位置**变了。
+    #   要钉的性质是「计划生命周期上最后发生的是进入计划模式」，
+    #   按 plan_* 这一族过滤再看末尾，比单纯断言「存在」更强：
+    #   后面若又冒出 plan_approved 把执行权发回去，这条当场红。
+    plan_rows = [r["kind"] for r in state.controlTranscript
+                 if str(r.get("kind", "")).startswith("plan_")]
+    assert plan_rows[-1] == "plan_entered", plan_rows
     assert not harness.helper_calls
     assert "control_scope_card" not in event_types(events)
 

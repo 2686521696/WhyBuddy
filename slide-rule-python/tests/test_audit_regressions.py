@@ -37,7 +37,13 @@ def test_question_storage_failure_keeps_shared_state_unchanged(monkeypatch, oper
 
     def fail_save(candidate, **kwargs):
         assert candidate is not state
-        assert kwargs == {"server_write": True, "require_durable": True}
+        # ⚠ 2026-09-15：原来这里是 kwargs 全等。上游给 save_session 加了一个
+        #   可选的 `expected_control_run`（传 None 等于旧行为，只是把 CAS
+        #   期望透传给 save_session_record），全等就红了——而这条判据在乎的
+        #   从来不是参数表长什么样，是**这一次保存必须是服务端写且要求落库**。
+        #   所以只钉这两个：任一被悄悄改成 False 当场红，新增透传参数放行。
+        assert kwargs["server_write"] is True
+        assert kwargs["require_durable"] is True
         raise RuntimeError("storage unavailable")
 
     monkeypatch.setattr(control, "save_session", fail_save)
