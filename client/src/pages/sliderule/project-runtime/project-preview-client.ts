@@ -102,6 +102,67 @@ export async function getProjectPreview(
   };
 }
 
+const START_REASONS: Record<string, string> = {
+  project_preview_not_enabled: "工程预览尚未对本账号开放。",
+  project_preview_not_configured:
+    "工程预览尚未配置独立预览域名、网关密钥或其他必要参数。",
+  project_preview_gateway_not_configured:
+    "工程预览网关尚未配置，暂时不能提供私有预览。",
+  project_worker_unavailable: "工程运行服务尚未就绪，暂时不能启动预览。",
+  project_plan_approval_required: "当前计划尚未批准或批准已失效，不能启动预览。",
+  project_runtime_unavailable: "工程运行服务暂时不可用，请稍后重试。",
+};
+
+function throwRuntimeCommandError(response: Response, payload: unknown): never {
+  const detail =
+    payload && typeof payload === "object"
+      ? (payload as { detail?: unknown; reason?: unknown; message?: unknown })
+      : null;
+  const nested =
+    detail?.detail && typeof detail.detail === "object"
+      ? (detail.detail as { code?: unknown })
+      : null;
+  const code = [detail?.detail, nested?.code, detail?.reason, detail?.message].find(
+    value => typeof value === "string" && Object.hasOwn(START_REASONS, value)
+  );
+  throw new ProjectPreviewError(
+    typeof code === "string"
+      ? START_REASONS[code]
+      : response.status === 409
+        ? "工程版本或批准已变化，请更新状态后重试。"
+        : response.status === 401
+          ? "请登录后查看工程预览。"
+          : response.status === 403 || response.status === 404
+            ? "工程不存在或当前账号无权预览。"
+            : response.status === 503
+              ? "工程预览服务尚未启用或暂时不可用。"
+              : "暂时无法启动工程预览，请稍后重试。"
+  );
+}
+
+export async function wakeProjectPreview(
+  projectId: string,
+  signal: AbortSignal
+): Promise<void> {
+  const response = await fetch(
+    `${BASE}/projects/${encodeURIComponent(projectId)}/preview/wake`,
+    {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+      signal,
+    }
+  );
+  if (response.ok || response.status === 202) return;
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    /* keep generic */
+  }
+  throwRuntimeCommandError(response, payload);
+}
+
 export async function requestProjectPreviewTicket(
   operationId: string,
   signal: AbortSignal

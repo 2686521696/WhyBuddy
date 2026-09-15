@@ -52,6 +52,8 @@ export type ProjectActionRow = {
 /** 人话标签。未知的 `project_*` 也要有行——正是「模板之外」要显示的东西。 */
 const TOOL_LABELS: Readonly<Record<string, string>> = {
   project_create: "创建工程",
+  project_list: "读取工程列表",
+  project_search: "搜索源码",
   project_patch: "写入源码",
   project_exec: "运行命令",
   project_start: "启动预览",
@@ -119,6 +121,77 @@ function isProjectChip(
 }
 
 /**
+ * 吃一枚工程 chip，按顺序配对到 `rows` 上。
+ *
+ * 新开一行 → 返回那一行（章节消费好把它放进当前组）。
+ * 收进已有行 / 不是工程 chip → 返回 null。
+ *
+ * ⚠ 配对规则跟 `deriveProjectActivity` 是同一份，不许再抄一遍。
+ *   会话章节要按开口切开，但三次 patch 中间那次失败仍得是三行。
+ */
+export function applyProjectChip(
+  rows: ProjectActionRow[],
+  step: TurnStep
+): ProjectActionRow | null {
+  if (!isProjectChip(step)) return null;
+  const tool = String(step.capabilityId);
+  const progress = step.progressType;
+  const detail = String(
+    (step as { projectDetail?: string }).projectDetail || ""
+  ).trim();
+  const operationId = String(
+    (step as { operationId?: string }).operationId || ""
+  ).trim();
+
+  if (progress === "completed" || progress === "failed") {
+    // 收尾：优先合进**同一工具最近一个还开着的行**。找不到说明只剩结果
+    // （刷新后从持久化恢复的典型形态），那就单独成行——有结果却不显示，
+    // 就是「闸全绿但东西没了」的另一种写法。
+    const open = [...rows]
+      .reverse()
+      .find(row => row.tool === tool && row.status === "running");
+    if (open) {
+      open.status = progress === "failed" ? "failed" : "done";
+      // ⚠ 合并规则：**坏消息优先**，其次保留开场那句「对什么动手」。
+      //
+      //   开场摘要是「src/Home.tsx、src/api/tasks.ts」，结果细节常常是
+      //   「rev-a → rev-b」。对着看的人关心的是前者——后者是版本号，
+      //   在行里说不出任何东西。但失败时反过来：错误码比文件名重要。
+      if (progress === "failed") {
+        if (detail) open.detail = detail;
+      } else if (!open.detail && detail) {
+        open.detail = detail;
+      }
+      // ⚠ operationId 只在**结果**事件上才有（开场那一发还没派发出去），
+      //   所以要补到已经开着的那一行上，否则「它的电脑」永远订阅不到。
+      if (!open.operationId && operationId) open.operationId = operationId;
+      return null;
+    }
+    const row: ProjectActionRow = {
+      id: step.id,
+      tool,
+      label: projectActionLabel(tool),
+      status: progress === "failed" ? "failed" : "done",
+      ...(detail ? { detail } : {}),
+      ...(operationId ? { operationId } : {}),
+    };
+    rows.push(row);
+    return row;
+  }
+  // acting / observing / thinking：开一行，等结果来收。
+  const row: ProjectActionRow = {
+    id: step.id,
+    tool,
+    label: projectActionLabel(tool),
+    status: "running",
+    ...(detail ? { detail } : {}),
+    ...(operationId ? { operationId } : {}),
+  };
+  rows.push(row);
+  return row;
+}
+
+/**
  * 把平铺的步骤配成一行一次调用。
  *
  * ⚠ **按顺序配对，不按工具名归并**。原实现用 `Map<capabilityId, status>`，
@@ -130,61 +203,7 @@ export function deriveProjectActivity(turns: UiTurn[]): ProjectActionRow[] {
     turn => (turn && Array.isArray(turn.steps) ? turn.steps : []) as TurnStep[]
   );
   const rows: ProjectActionRow[] = [];
-  for (const step of steps) {
-    if (!isProjectChip(step)) continue;
-    const tool = String(step.capabilityId);
-    const progress = step.progressType;
-    const detail = String(
-      (step as { projectDetail?: string }).projectDetail || ""
-    ).trim();
-    const operationId = String(
-      (step as { operationId?: string }).operationId || ""
-    ).trim();
-
-    if (progress === "completed" || progress === "failed") {
-      // 收尾：优先合进**同一工具最近一个还开着的行**。找不到说明只剩结果
-      // （刷新后从持久化恢复的典型形态），那就单独成行——有结果却不显示，
-      // 就是「闸全绿但东西没了」的另一种写法。
-      const open = [...rows]
-        .reverse()
-        .find(row => row.tool === tool && row.status === "running");
-      if (open) {
-        open.status = progress === "failed" ? "failed" : "done";
-        // ⚠ 合并规则：**坏消息优先**，其次保留开场那句「对什么动手」。
-        //
-        //   开场摘要是「src/Home.tsx、src/api/tasks.ts」，结果细节常常是
-        //   「rev-a → rev-b」。对着看的人关心的是前者——后者是版本号，
-        //   在行里说不出任何东西。但失败时反过来：错误码比文件名重要。
-        if (progress === "failed") {
-          if (detail) open.detail = detail;
-        } else if (!open.detail && detail) {
-          open.detail = detail;
-        }
-        // ⚠ operationId 只在**结果**事件上才有（开场那一发还没派发出去），
-        //   所以要补到已经开着的那一行上，否则「它的电脑」永远订阅不到。
-        if (!open.operationId && operationId) open.operationId = operationId;
-        continue;
-      }
-      rows.push({
-        id: step.id,
-        tool,
-        label: projectActionLabel(tool),
-        status: progress === "failed" ? "failed" : "done",
-        ...(detail ? { detail } : {}),
-        ...(operationId ? { operationId } : {}),
-      });
-      continue;
-    }
-    // acting / observing / thinking：开一行，等结果来收。
-    rows.push({
-      id: step.id,
-      tool,
-      label: projectActionLabel(tool),
-      status: "running",
-      ...(detail ? { detail } : {}),
-      ...(operationId ? { operationId } : {}),
-    });
-  }
+  for (const step of steps) applyProjectChip(rows, step);
   return rows;
 }
 
@@ -217,6 +236,89 @@ export function projectComputerView(
     live: running && following,
     following,
   };
+}
+
+function isToolChip(
+  step: TurnStep
+): step is Extract<TurnStep, { kind: "chip" }> {
+  return step.kind === "chip";
+}
+
+export function turnsHaveProjectChips(turns: readonly UiTurn[]): boolean {
+  return turns.some(turn => (turn.steps || []).some(isProjectChip));
+}
+
+/**
+ * 从 controlTranscript 里的 tool_start / tool_result 还原执行 chip。
+ *
+ * 抄 OpenHands / AI SDK：host 写的那份日志是权威。刷新读这一份，
+ * 不许只靠客户端轮末 PUT 的 turnNarrations。
+ */
+export function chipFromControlTranscriptRow(
+  row: unknown,
+  index = 0
+): TurnStep | null {
+  if (!row || typeof row !== "object") return null;
+  const item = row as Record<string, unknown>;
+  const tool = String(item.tool || "").trim();
+  if (!tool) return null;
+  const kind = String(item.kind || "");
+  const id = String(item.id || `ct-tool-${index}`);
+  const detail = String(item.detail || item.summary || "").trim();
+  const operationId = String(item.operationId || "").trim();
+  const label = projectActionLabel(tool);
+  if (kind === "tool_start") {
+    return {
+      id: `${id}-start`,
+      kind: "chip",
+      capabilityId: tool as never,
+      roleId: "system",
+      label: `正在${label}`,
+      realLlm: false,
+      progressType: "acting",
+      ...(detail ? { projectDetail: detail } : {}),
+    };
+  }
+  if (kind === "tool_result") {
+    const ok = item.ok !== false;
+    return {
+      id: `${id}-result`,
+      kind: "chip",
+      capabilityId: tool as never,
+      roleId: "system",
+      label: ok ? `已${label}` : `执行失败：${label}`,
+      realLlm: false,
+      progressType: ok ? "completed" : "failed",
+      ...(detail ? { projectDetail: detail } : {}),
+      ...(operationId ? { operationId } : {}),
+    };
+  }
+  return null;
+}
+
+export function chipsFromControlTranscript(rows: unknown): TurnStep[] {
+  if (!Array.isArray(rows)) return [];
+  return rows.flatMap((row, index) => {
+    const chip = chipFromControlTranscriptRow(row, index);
+    return chip ? [chip] : [];
+  });
+}
+
+export function attachProjectChipsToTurns(
+  turns: UiTurn[],
+  chips: TurnStep[]
+): UiTurn[] {
+  if (!turns.length || !chips.length) return turns;
+  const host =
+    [...turns]
+      .reverse()
+      .find(turn => turn.user || (turn.steps || []).length > 0) ??
+    turns[turns.length - 1];
+  return turns.map(turn => {
+    if (turn.id !== host.id) return turn;
+    const kept = (turn.steps || []).filter(step => !isToolChip(step));
+    return { ...turn, steps: [...kept, ...chips] };
+  });
 }
 
 /** 已完成的条数 / 总条数——分母是**真实发生的动作数**，不是写死的 6。 */

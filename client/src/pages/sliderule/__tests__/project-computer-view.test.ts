@@ -3,6 +3,7 @@
  *
  * ⚠ 把「有动作在跑 → 终端」改回去叠在预览上面，下面「live 优先」那条必红。
  *   把 userPinned 删掉改成永远自动切，反向那条必红。
+ *   把 lastTool 丢掉、写入仍切终端，下面「写入 → 源码」那条必红。
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -63,15 +64,59 @@ describe("没点过：按干活 / 预览自动切", () => {
     ).toBe("preview");
   });
 
-  it("跑完但预览还没开 → 留在终端回放，不扔进一块空占位", () => {
+  it("跑完命令但预览还没开 → 留在终端回放，不扔进一块空占位", () => {
     expect(
       resolveComputerView({
         userPinned: null,
         live: false,
         hasActivity: true,
         previewReady: false,
+        lastTool: "project_exec",
       })
     ).toBe("computer");
+  });
+
+  it("跑完写入 / 读取 → 源码，不许停在没 PTY 的白纸终端", () => {
+    expect(
+      resolveComputerView({
+        userPinned: null,
+        live: false,
+        hasActivity: true,
+        previewReady: false,
+        lastTool: "project_patch",
+      })
+    ).toBe("source");
+    expect(
+      resolveComputerView({
+        userPinned: null,
+        live: true,
+        hasActivity: true,
+        previewReady: true,
+        lastTool: "project_create",
+      })
+    ).toBe("source");
+    expect(
+      resolveComputerView({
+        userPinned: null,
+        live: true,
+        hasActivity: true,
+        previewReady: false,
+        lastTool: "project_list",
+      })
+    ).toBe("source");
+  });
+
+  it("反向：命令跑过但字节没了 → 也不许钉白纸，落到源码", () => {
+    expect(
+      resolveComputerView({
+        userPinned: null,
+        live: false,
+        hasActivity: true,
+        previewReady: false,
+        lastTool: "project_exec",
+        hasConsole: false,
+      })
+    ).toBe("source");
   });
 
   it("什么都没有 → 预览（跟应用中心没接 turns 的默认面孔一致）", () => {
@@ -90,6 +135,8 @@ describe("左栏点工具 → 右侧开哪一档", () => {
   it("写入 / 读取源码打开代码，运行命令打开终端，启动打开预览", () => {
     expect(computerViewForAction("project_patch")).toBe("source");
     expect(computerViewForAction("project_read")).toBe("source");
+    expect(computerViewForAction("project_list")).toBe("source");
+    expect(computerViewForAction("project_search")).toBe("source");
     expect(computerViewForAction("project_exec")).toBe("computer");
     expect(computerViewForAction("project_start")).toBe("preview");
     expect(computerViewForAction("project_revisions")).toBe("history");

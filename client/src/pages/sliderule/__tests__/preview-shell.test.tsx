@@ -140,9 +140,17 @@ describe("视图下拉（原来是一排平铺 tab）", () => {
 });
 
 describe("地址行", () => {
-  it("没打开预览就没有地址行（没有地址可显示时不画空壳）", async () => {
+  it("没打开也画地址，路径是 /（对照 Manus）；空态是唤醒不是说明书", async () => {
     await render();
-    expect($("project-preview-addressbar")).toBeNull();
+    expect($("project-preview-addressbar")).not.toBeNull();
+    expect($("project-preview-url")?.textContent).toBe("/");
+    expect($("project-preview-paused"), "Manus 空态：窗骨架 + 唤醒").not.toBeNull();
+    expect($("project-preview-wake")?.textContent).toBe("唤醒");
+    expect(container.textContent).toContain("预览已暂停，点击以唤醒。");
+    expect(container.textContent).not.toContain("检查应用");
+    expect(container.textContent).not.toContain("点选元素定位源码");
+    expect(container.textContent).not.toContain("获取本次访问授权");
+    expect(container.textContent).not.toContain("E2B 沙盒");
   });
 
   it("打开后显示**路径**，完整地址留在 title 上", async () => {
@@ -160,6 +168,8 @@ describe("地址行", () => {
     expect(link.getAttribute("href")).toContain("/tasks?view=all");
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toContain("noopener");
+    expect(link.getAttribute("data-testid")).toBe("project-preview-open-external");
+    expect(link.getAttribute("aria-label")).toBe("在新标签页打开预览");
   });
 
   it("刷新 = 重新换一张票（POST），不是重拉状态快照", async () => {

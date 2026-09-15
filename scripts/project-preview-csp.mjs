@@ -43,5 +43,8 @@ export function previewFrameSource(template) {
 /** @param {string | undefined} previewOriginTemplate */
 export function workbenchContentSecurityPolicy(previewOriginTemplate) {
   const preview = previewFrameSource(previewOriginTemplate);
-  return `default-src 'self'; frame-src 'self'${preview ? ` ${preview}` : ""}; connect-src 'self' blob: https://api.openai.com https://api.deepseek.com https://openrouter.ai https://api.anthropic.com https://api.groq.com data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:;`;
+  // Internal fallback iframes E2B's published host (sandbox.get_host).
+  // Only added when the dedicated preview suffix is already configured.
+  const published = preview ? " https://*.e2b.app https://*.e2b.dev" : "";
+  return `default-src 'self'; frame-src 'self'${preview ? ` ${preview}` : ""}${published}; connect-src 'self' blob: https://api.openai.com https://api.deepseek.com https://openrouter.ai https://api.anthropic.com https://api.groq.com data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:;`;
 }

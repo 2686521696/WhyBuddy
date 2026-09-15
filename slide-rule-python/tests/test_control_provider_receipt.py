@@ -67,7 +67,8 @@ def test_filtered_http_response_is_accounted_and_never_resampled(env, monkeypatc
             # durable run may be marked completed because the control stream
             # settled, but it must carry the provider stop receipt and may not
             # be mistaken for a successful model turn or an implicit retry.
-                assert saved["status"] == "completed"
+                assert saved["status"] == "failed"
+                assert saved["error"] == "llm_unavailable"
                 assert any(e.get("type") == "complete" for e in saved["events"])
                 assert not any(e.get("tool") == "project_exec" for e in saved["events"])
                 assert saved["checkpoint"]["phase"] == "provider_failed"
@@ -84,15 +85,15 @@ def test_filtered_http_response_is_accounted_and_never_resampled(env, monkeypatc
         assert cp["phase"] == "provider_failed"
         assert cp["round"] == 2
         assert cp["cheapTokens"] == 3015 + 5759
-        assert cp["budgetPolicy"]["profile"] == "project-v1"
+        assert cp["budgetPolicy"]["profile"] == "project-v2"
         assert cp["providerFailure"] == {"finishReason": "content_filter", "reportedTokens": 5759}
         if crash_after_receipt:
             second = env.service()
             await second.start()
             try:
                 final = await settled(second, record["runId"])
-                assert final["status"] == "interrupted"
-                assert final["error"] == "control_reconciliation_required"
+                assert final["status"] == "failed"
+                assert final["error"] == "llm_unavailable"
                 assert final["checkpoint"] == cp
             finally:
                 await second.shutdown()

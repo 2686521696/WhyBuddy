@@ -40,6 +40,21 @@ def test_real_worker_allows_only_its_runtime_relay_hostname(scanner, monkeypatch
     eventually(lambda: state(scanner.store, operation, "stopped"))
 
 
+def test_published_e2b_host_wins_vite_allowed_host(scanner, monkeypatch):
+    monkeypatch.setenv("WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE", "https://{runtimeId}.preview.example.com")
+    scanner.provider.preview_url = lambda handle, port: f"https://{port}-{handle.sandbox_id}.e2b.app"
+    worker = scanner.make_worker(preview_runtime=scanner.manager)
+    operation = submit(worker, scanner.project)
+    ready = eventually(lambda: state(scanner.store, operation, "ready"))
+    assert ready.runtime.previewUrl == "https://5173-sandbox-1.e2b.app/"
+    assert shlex.split(scanner.provider.commands[1]) == [
+        "__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=5173-sandbox-1.e2b.app",
+        "npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173", "--strictPort",
+    ]
+    worker.cancel(operation.operationId, owner_id="alice")
+    eventually(lambda: state(scanner.store, operation, "stopped"))
+
+
 def test_unconfigured_worker_keeps_default_command_and_never_uses_ambient_hosts(scanner, monkeypatch):
     # Production composition deliberately omits the manager if preview config
     # is missing; stray host-related tool/environment fields cannot enable it.

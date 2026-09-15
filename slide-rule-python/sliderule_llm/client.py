@@ -47,6 +47,7 @@ class LlmError(Exception):
     def __init__(
         self, message: str, *, status: int | None = None, transient: bool = False,
         usage: dict[str, Any] | None = None, finish_reason: str | None = None,
+        empty_reason: str | None = None,
     ):
         super().__init__(message)
         self.status = status
@@ -55,6 +56,8 @@ class LlmError(Exception):
         # must charge that usage even though no assistant message is accepted.
         self.usage = usage
         self.finish_reason = finish_reason
+        #: 控制面空采样的归类。缺省 None：工厂路径和旧构造函数不受影响。
+        self.empty_reason = empty_reason
 
 
 @dataclass

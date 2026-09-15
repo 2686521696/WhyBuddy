@@ -129,6 +129,18 @@ def unfinished_slice_waits_for_user(*, status: str, events: Any, goal_done: bool
     return status == "completed" and turn_was_sliced(events)
 
 
+def unfinished_cap_waits_for_user(*, status: str, events: Any, goal_done: bool) -> bool:
+    """硬闸掐断、目标没交付：停成等待用户，不许写成完工。
+
+    ⚠ 2026-09-15 TicketStream：token_budget 是硬闸，**不许自动续**（见
+      turn_was_capped）。但 run/goal 仍落 completed，待办停在 4/10，
+      用户读成葬礼。暂停、可以说继续，和「自己再领一份预算」是两件事。
+    """
+    if goal_done or status == "failed":
+        return False
+    return status == "completed" and turn_was_capped(events)
+
+
 def continuation_budget_left(goal: Any) -> int:
     spent = 0
     if isinstance(goal, dict):

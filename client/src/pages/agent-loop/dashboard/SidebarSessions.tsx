@@ -14,7 +14,13 @@
 
 import React from "react";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
-import { DEFAULT_SESSION_ID } from "@/lib/sliderule-session-id";
+import {
+  DEFAULT_SESSION_ID,
+  applySessionToHistory,
+  hrefFromWindow,
+  resolveActiveSessionId,
+  sessionIdFromHref,
+} from "@/lib/sliderule-session-id";
 import { listApps, type AppStoreSummary } from "./app-store-client";
 import {
   SESSION_THUMB_APP_LIMIT,
@@ -429,22 +435,42 @@ export function filterSessionsByQuery(sessions: SessionMeta[], query: string): S
   return sessions.filter(s => (s.goal || "").toLowerCase().includes(q));
 }
 
-/** 切换当前会话：落存储 + 广播（SlideRule 壳监听后整树重挂）。 */
-export function activateSession(sessionId: string): void {
+/** 切换当前会话：地址栏权威 + 存储兜底 + 广播（SlideRule 壳整树重挂）。 */
+export function activateSession(
+  sessionId: string,
+  opts?: { history?: "push" | "replace" | "none" }
+): void {
+  const id = String(sessionId || "").trim();
+  if (!id) return;
   try {
-    localStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
+    localStorage.setItem(ACTIVE_SESSION_KEY, id);
   } catch {
     /* 隐私模式降级：事件仍然广播，本次内存态生效 */
   }
-  window.dispatchEvent(new CustomEvent(SESSION_CHANGED_EVENT, { detail: { sessionId } }));
+  if (opts?.history !== "none" && typeof window !== "undefined") {
+    applySessionToHistory(
+      window.history,
+      hrefFromWindow(window),
+      id,
+      opts?.history ?? "push"
+    );
+  }
+  window.dispatchEvent(new CustomEvent(SESSION_CHANGED_EVENT, { detail: { sessionId: id } }));
+}
+
+function readStoredSessionId(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_SESSION_KEY);
+  } catch {
+    return null;
+  }
 }
 
 function readActiveSessionId(): string {
-  try {
-    return localStorage.getItem(ACTIVE_SESSION_KEY) || DEFAULT_SESSION_ID;
-  } catch {
-    return DEFAULT_SESSION_ID;
-  }
+  const url = sessionIdFromHref(
+    typeof window !== "undefined" ? hrefFromWindow(window) : ""
+  );
+  return resolveActiveSessionId({ urlSession: url, stored: readStoredSessionId() });
 }
 
 export function SidebarSessions({
@@ -489,11 +515,14 @@ export function SidebarSessions({
       setActiveId(readActiveSessionId());
       refresh();
     };
+    const onPop = () => setActiveId(readActiveSessionId());
     window.addEventListener(SESSION_CHANGED_EVENT, onChanged);
+    window.addEventListener("popstate", onPop);
     // 话题落盘/推演完成后重拉：当前会话标题从"新会话"实时变成话题
     window.addEventListener(SESSIONS_UPDATED_EVENT, refresh);
     return () => {
       window.removeEventListener(SESSION_CHANGED_EVENT, onChanged);
+      window.removeEventListener("popstate", onPop);
       window.removeEventListener(SESSIONS_UPDATED_EVENT, refresh);
     };
   }, [refresh]);

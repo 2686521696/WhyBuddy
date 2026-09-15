@@ -7,6 +7,7 @@ import AgentLoopPage, {
   getAgentLoopAdminPath,
   getAgentLoopRunPath,
   getAgentLoopSettingsPath,
+  currentSliderulePath,
   getAgentLoopSliderulePath,
   getAgentLoopWorkbenchPath,
   parseAgentLoopLocation,
@@ -69,6 +70,16 @@ describe("AgentLoopPage", () => {
 
     expect(parseAgentLoopLocation("/agent-loop")).toEqual({ kind: "sliderule" });
     expect(parseAgentLoopLocation("/agent-loop/sliderule")).toEqual({ kind: "sliderule" });
+    expect(parseAgentLoopLocation("/agent-loop/sliderule?session=sr-1")).toEqual({
+      kind: "sliderule",
+    });
+    expect(currentSliderulePath("/agent-loop/sliderule?session=sr-keep", null)).toBe(
+      "/agent-loop/sliderule?session=sr-keep"
+    );
+    expect(currentSliderulePath("/agent-loop/workbench", "sr-stored")).toBe(
+      "/agent-loop/sliderule?session=sr-stored"
+    );
+    expect(currentSliderulePath("/agent-loop/sliderule", "")).toBe("/agent-loop/sliderule");
     expect(parseAgentLoopLocation("/agent-loop/workbench")).toEqual({ kind: "workbench" });
     expect(parseAgentLoopLocation("/agent-loop/workbench/legacy")).toEqual({ kind: "workbench-legacy" });
     expect(parseAgentLoopLocation("/agent-loop/skills")).toEqual({ kind: "skills" });

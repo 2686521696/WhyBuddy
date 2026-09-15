@@ -25,7 +25,11 @@ from services import persistence, project_access
 from services.identity_store import User
 from services.project_creation import create_session_project
 from services.project_preview_access import PreviewAccessDenied, ProjectPreviewAccess
-from services.project_preview_config import origin_for_runtime, preview_configuration_enabled
+from services.project_preview_config import (
+    origin_for_runtime,
+    preview_configuration_enabled,
+    published_preview_url,
+)
 from services.project_runtime_worker import approved_reference, authorize_operation
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStore, ProjectStoreUnavailable
 from services.session_blob_store import SqlSessionBlobStore
@@ -588,6 +592,48 @@ def test_ticket_window_never_outlives_a_short_configured_browser_access_window(w
     world.access.browser_grant_seconds = 20
     ticket = _ticket(world)
     assert ticket.expires_at == ticket.access_expires_at == world.clock["now"] + 20
+
+
+def test_published_preview_url_only_accepts_e2b_https_hosts():
+    assert published_preview_url("https://5173-sb-test.e2b.app") == "https://5173-sb-test.e2b.app/"
+    assert published_preview_url("https://5173-sb-test.e2b.dev/app") == "https://5173-sb-test.e2b.dev/"
+    assert published_preview_url("https://provider-private.example") is None
+    assert published_preview_url("http://5173-sb-test.e2b.app") is None
+    assert published_preview_url("https://e2b.app") is None
+
+
+def test_internal_mode_opens_e2b_published_host_without_a_private_tunnel(world):
+    url = f"/projects/{world.project.projectId}/preview"
+    assert world.client.get(url).json()["available"] is False
+    _runtime_change(world, previewUrl="https://5173-sb-test.e2b.app")
+    body = world.client.get(url).json()
+    assert body["available"] is True and body["reason"] is None
+    ticket = world.client.post(f"/project-operations/{world.operation.operationId}/preview-ticket")
+    assert ticket.status_code == 200
+    assert ticket.json()["entryUrl"] == "https://5173-sb-test.e2b.app/"
+    assert ticket.json()["runtimeId"] == world.runtime.runtimeId
+
+
+def test_internal_mode_rejects_a_non_e2b_preview_url_as_published_host(world):
+    _runtime_change(world, previewUrl="https://provider-private.example")
+    body = world.client.get(f"/projects/{world.project.projectId}/preview").json()
+    assert body["available"] is False
+    assert body["reason"] == "project_preview_tunnel_not_started"
+    assert world.client.post(
+        f"/project-operations/{world.operation.operationId}/preview-ticket"
+    ).status_code == 503
+
+
+def test_allowlist_cannot_use_e2b_published_host_instead_of_the_private_tunnel(world, monkeypatch):
+    monkeypatch.setenv("WHYBUDDY_PROJECT_ROLLOUT", "allowlist")
+    monkeypatch.setenv("WHYBUDDY_PROJECT_ALLOWED_USERS", "u1")
+    _runtime_change(world, previewUrl="https://5173-sb-test.e2b.app")
+    body = world.client.get(f"/projects/{world.project.projectId}/preview").json()
+    assert body["available"] is False
+    assert body["reason"] is not None
+    assert world.client.post(
+        f"/project-operations/{world.operation.operationId}/preview-ticket"
+    ).status_code == 503
 
 
 def test_configuration_and_grant_presence_are_distinct_from_runtime_ready(world, monkeypatch):

@@ -418,7 +418,8 @@ describe("unified /sliderule surface (single mental model)", () => {
       },
     });
     expect(html).toContain('data-testid="sandbox-preview-surface"');
-    expect(html).toContain("它的电脑");
+    expect(html).toContain('data-testid="project-computer-chrome"');
+    expect(html).toContain('data-testid="project-preview-paused"');
     expect(html).not.toContain('data-testid="sliderule-architecture-stage"');
     expect(html).not.toContain("接线沙盘");
   });

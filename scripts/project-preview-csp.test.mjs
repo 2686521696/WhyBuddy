@@ -28,7 +28,12 @@ test("preview configuration grants only the dedicated frame suffix and preserves
   const absent = directives(workbenchContentSecurityPolicy(undefined));
   const enabled = directives(workbenchContentSecurityPolicy("https://{runtimeId}.preview.whybuddy.test"));
   assert.deepEqual(absent["frame-src"], ["'self'"]);
-  assert.deepEqual(enabled["frame-src"], ["'self'", "https://*.preview.whybuddy.test"]);
+  assert.deepEqual(enabled["frame-src"], [
+    "'self'",
+    "https://*.preview.whybuddy.test",
+    "https://*.e2b.app",
+    "https://*.e2b.dev",
+  ]);
   assert.deepEqual(enabled["default-src"], ["'self'"]);
   for (const [name, sources] of Object.entries(absent)) {
     if (name !== "frame-src") assert.deepEqual(enabled[name], sources, `${name} must not expand`);
@@ -94,7 +99,12 @@ test("actual Vite serve and production HTML build load the public origin from mo
   } finally {
     await server.close();
   }
-  assert.deepEqual(directives(policyFromHtml(served))["frame-src"], ["'self'", "https://*.preview.from-env.test"]);
+  assert.deepEqual(directives(policyFromHtml(served))["frame-src"], [
+    "'self'",
+    "https://*.preview.from-env.test",
+    "https://*.e2b.app",
+    "https://*.e2b.dev",
+  ]);
   assert.ok(!served.includes("csp-test-secret-must-never-appear"));
 
   const entry = join(fixtureDirectory, "index.html");
@@ -114,7 +124,12 @@ test("actual Vite serve and production HTML build load the public origin from mo
   const overridden = await createServer(config);
   try {
     const delivered = await overridden.transformIndexHtml("/index.html", htmlFixture);
-    assert.deepEqual(directives(policyFromHtml(delivered))["frame-src"], ["'self'", "https://*.preview.process-env.test"]);
+    assert.deepEqual(directives(policyFromHtml(delivered))["frame-src"], [
+      "'self'",
+      "https://*.preview.process-env.test",
+      "https://*.e2b.app",
+      "https://*.e2b.dev",
+    ]);
   } finally {
     await overridden.close();
   }

@@ -39,6 +39,7 @@ from services import rehearsal_control as control
 from sliderule_llm.control_client import ControlLlmResult
 from services.project_creation import create_session_project
 from services.project_tools import ProjectTools
+from services.slide_rule_session import load_session
 
 from conftest import TEST_USER_ID
 from test_control_project_tools import post, setup  # noqa: F401  (pytest fixtures)
@@ -151,6 +152,83 @@ def test_开口排在本轮工具事件之前(setup, monkeypatch):
     assert speech_at < tool_at, (
         "开口排在工具事件后面了（散文成了事后旁白）：%r" % types
     )
+
+
+def test_工程工具写入会话日志刷新才回得来(setup, monkeypatch):
+    """正向：project_read 的 start/result 必须进 controlTranscript。
+
+    2026-09-15 TicketStream：SSE 有动作，会话日志没有，一刷左栏步骤没了。
+    写入必须走派发出口 `_logged_tool_events`：只在 `_dispatch_tool` 里
+    手写 append，forced / 超限那两条出口会漏。
+    """
+    create_session_project(
+        setup.store, setup.state.sessionId, owner_id=TEST_USER_ID, approval_ref=setup.ref
+    )
+    adapter = ProjectTools(setup.store, None, TEST_USER_ID)
+    rounds = []
+
+    async def model(*a, **kw):
+        rounds.append(1)
+        if len(rounds) == 1:
+            return llm_speech_and_tool("", "project_read", {"path": "src/main.tsx"})
+        return ControlLlmResult(
+            content="读完了。", tool_calls=[], usage={"total_tokens": 12},
+            finish_reason="stop", model="ctrl-test", latency_ms=1,
+        )
+
+    monkeypatch.setattr(control, "_invoke_control_llm", model)
+    run_turn(setup, adapter)
+    saved = load_session(setup.state.sessionId) or setup.state
+    remembered = [
+        (row.get("kind"), row.get("tool"))
+        for row in (saved.controlTranscript or [])
+        if str(row.get("kind") or "").startswith("tool_")
+    ]
+    assert ("tool_start", "project_read") in remembered, remembered
+    assert ("tool_result", "project_read") in remembered, remembered
+    assert all(
+        "content" not in row
+        for row in (saved.controlTranscript or [])
+        if str(row.get("kind") or "").startswith("tool_")
+    )
+
+
+def test_非工程工具也进会话日志(setup, monkeypatch):
+    """正向：todo_write 不是 project_*，刷新也要回得来。
+
+    反向：只认 project_* 的那一版，这条会红。
+    用批准后清单里真会列出的工具，不许自己拼一个 inspect_model 再
+    假装 should_list 成立（§1.2）。
+    """
+    create_session_project(
+        setup.store, setup.state.sessionId, owner_id=TEST_USER_ID, approval_ref=setup.ref
+    )
+    adapter = ProjectTools(setup.store, None, TEST_USER_ID)
+    rounds = []
+
+    async def model(*a, **kw):
+        rounds.append(1)
+        if len(rounds) == 1:
+            return llm_speech_and_tool(
+                "",
+                "todo_write",
+                {"todos": [{"content": "搭工程", "status": "pending"}]},
+            )
+        return ControlLlmResult(
+            content="记下了。", tool_calls=[], usage={"total_tokens": 12},
+            finish_reason="stop", model="ctrl-test", latency_ms=1,
+        )
+
+    monkeypatch.setattr(control, "_invoke_control_llm", model)
+    run_turn(setup, adapter)
+    saved = load_session(setup.state.sessionId) or setup.state
+    remembered = [
+        (row.get("kind"), row.get("tool"))
+        for row in (saved.controlTranscript or [])
+        if str(row.get("kind") or "").startswith("tool_")
+    ]
+    assert ("tool_start", "todo_write") in remembered, remembered
+    assert ("tool_result", "todo_write") in remembered, remembered
 
 
 def test_没说话就不许凭空造一段开口(setup, monkeypatch):

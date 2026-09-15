@@ -252,7 +252,8 @@ def test_legacy_finished_provider_failure_is_truthful_on_read_without_rewriting(
     ({"type": "control_text", "stopReason": "unknown", "text": "Control failed"}, "failed", "unknown"),
     ({"type": "error", "message": "arbitrary raw error must not enter discovery"}, "failed", "control_turn_failed"),
     ({"type": "control_tool_result", "ok": False, "error": "invalid_arguments"}, "completed", None),
-    ({"type": "control_text", "stopReason": "tool_rounds", "text": "Reached the budget"}, "completed", None),
+    # 硬闸不是失败，但也不是完工——停成等人再说一次。
+    ({"type": "control_text", "stopReason": "tool_rounds", "text": "Reached the budget"}, "waiting_user", None),
 ])
 def test_only_terminal_control_errors_change_the_durable_outcome(env, monkeypatch, event, status, error):
     async def producer(*args, **kwargs):
@@ -879,8 +880,15 @@ def test_restart_does_not_reset_exhausted_budgets(env, monkeypatch, budget, reas
         # project_create has selected and persisted the project policy. Exhaust
         # that run's actual limits; the old cheap limits no longer apply here.
         policy = checkpoint["budgetPolicy"]
-        checkpoint[budget] = {"cheapTokens": policy["maxTokens"] + 1,
-                              "round": policy["maxRounds"], "startedAt": 0}[budget]
+        if budget == "cheapTokens":
+            # v2 的 token 闸是上下文占用。cheapTokens 累加不再停采样。
+            pad = "U" * (int(policy["maxTokens"]) * 4 + 16_000)
+            checkpoint["messages"] = [
+                {"role": "system", "content": "p"},
+                {"role": "user", "content": pad},
+            ]
+        else:
+            checkpoint[budget] = {"round": policy["maxRounds"], "startedAt": 0}[budget]
         env.store.save_checkpoint(record["runId"], "budget-fixture", owned["generation"], checkpoint)
         env.store.suspend(record["runId"], "budget-fixture", owned["generation"])
         second = env.service()

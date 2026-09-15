@@ -17,6 +17,7 @@ from services.control_goal_continuation import (
     progress_mark,
     should_continue,
     tool_result_count,
+    unfinished_cap_waits_for_user,
 )
 
 
@@ -229,6 +230,13 @@ def test_真机3_被闸掐断的回合不许自动续跑():
         status="completed", goal=goal(), events=capped, goal_done=False
     )
     assert ok is False and reason == "capped"
+    # 不许自动续，但也不许写成完工——停成等人。
+    assert unfinished_cap_waits_for_user(
+        status="completed", events=capped, goal_done=False
+    ) is True
+    assert unfinished_cap_waits_for_user(
+        status="completed", events=capped, goal_done=True
+    ) is False
 
 
 def test_真机3反向_没被掐断的正常收尾照旧能续():

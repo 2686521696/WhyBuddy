@@ -8,6 +8,7 @@ row, using a separate server credential rather than forwarding workbench auth.
 from __future__ import annotations
 
 import secrets
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Literal
@@ -22,7 +23,12 @@ from services.project_access import project_access_enabled
 from services.project_rollout import rollout_readiness
 from services.project_creation import load_authorized_session
 from services.project_preview_access import PreviewAccessDenied, ProjectPreviewAccess
-from services.project_preview_config import gateway_key, origin_for_runtime, preview_configuration_enabled
+from services.project_preview_config import (
+    gateway_key,
+    origin_for_runtime,
+    preview_configuration_enabled,
+    published_preview_url,
+)
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStoreUnavailable
 
 
@@ -166,6 +172,8 @@ def get_project_preview(project_id: str, request: Request, response: Response, v
                     else:
                         audience = origin_for_runtime(runtime.runtimeId)
                         available = access.has_active_tunnel(operation.operationId, owner_id=owner_id, audience=audience)
+                        if not available and rollout["mode"] == "internal":
+                            available = published_preview_url(runtime.previewUrl) is not None
                         reason = None if available else "project_preview_tunnel_not_started"
         return {"operationId": operation.operationId,
             "descriptor": descriptor.model_dump(mode="json") if descriptor else None,
@@ -181,19 +189,28 @@ def issue_project_preview_ticket(operation_id: str, request: Request, response: 
         _gate(viewer)
         if not preview_configuration_enabled():
             raise HTTPException(status_code=503, detail="project_preview_not_configured")
-        if operation.runtime is None:
+        if operation.runtime is None or operation.runtime.status != "ready":
             raise PreviewAccessDenied("project_runtime_not_ready")
         audience = origin_for_runtime(operation.runtime.runtimeId)
-        if not access.has_active_tunnel(operation_id, owner_id=owner_id, audience=audience):
+        published = published_preview_url(operation.runtime.previewUrl) if rollout_readiness()["mode"] == "internal" else None
+        if access.has_active_tunnel(operation_id, owner_id=owner_id, audience=audience):
+            credential = access.issue_browser_ticket(operation_id, owner_id=owner_id, audience=audience)
+            # A ticket can be exchanged for 60 seconds; its browser grant remains
+            # valid until the separate fixed deadline. Using ticket expiry for the
+            # mounted iframe previously closed working applications after one minute.
+            return {"entryUrl": audience + "/_whybuddy/authorize?ticket=" + credential.secret,
+                "projectId": credential.scope.project_id, "operationId": credential.scope.operation_id,
+                "runtimeId": credential.scope.runtime_id, "revision": credential.scope.revision,
+                "ticketExpiresAt": _iso(credential.expires_at), "accessExpiresAt": _iso(credential.access_expires_at)}
+        if published is None:
             raise HTTPException(status_code=503, detail="project_preview_tunnel_not_started")
-        credential = access.issue_browser_ticket(operation_id, owner_id=owner_id, audience=audience)
-        # A ticket can be exchanged for 60 seconds; its browser grant remains
-        # valid until the separate fixed deadline. Using ticket expiry for the
-        # mounted iframe previously closed working applications after one minute.
-        return {"entryUrl": audience + "/_whybuddy/authorize?ticket=" + credential.secret,
-            "projectId": credential.scope.project_id, "operationId": credential.scope.operation_id,
-            "runtimeId": credential.scope.runtime_id, "revision": credential.scope.revision,
-            "ticketExpiresAt": _iso(credential.expires_at), "accessExpiresAt": _iso(credential.access_expires_at)}
+        now = time.time()
+        access_expires = min(now + 300, operation.runtime.expiresAt or now + 300)
+        ticket_expires = min(now + 60, access_expires)
+        return {"entryUrl": published,
+            "projectId": operation.runtime.projectId, "operationId": operation.operationId,
+            "runtimeId": operation.runtime.runtimeId, "revision": operation.runtime.revision,
+            "ticketExpiresAt": _iso(ticket_expires), "accessExpiresAt": _iso(access_expires)}
 
 
 @router.post("/project-operations/{operation_id}/preview/revoke")

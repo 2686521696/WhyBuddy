@@ -91,7 +91,11 @@ import {
   isFactoryWriteTool,
 } from "@/lib/factory-hops";
 import { isContinuationTurn } from "@/pages/sliderule/turn-continuation";
-import { projectActionDetail } from "./project-activity";
+import {
+  attachProjectChipsToTurns,
+  projectActionDetail,
+  turnsHaveProjectChips,
+} from "./project-activity";
 import {
   controlUserTextForSlash,
   forcedToolForRehearsalVerb,
@@ -2785,11 +2789,55 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             // only: the old complete/project events may predate source edits
             // made after this run, so they must never replace today's session.
             let failureText = "";
+            const replayedChips: TurnStep[] = [];
+            let replaySeq = 0;
             await Marathon.resumeControlTurnStream(String(run.runId), {
               onControlText: (text, stop) => {
                 if (stop && ["llm_unavailable", "unknown"].includes(stop.stopReason)) {
                   failureText = text.trim();
                 }
+              },
+              // ⚠ 2026-09-15 TicketStream：失败 run 的 SSE 日志里有
+              //   project_* 全过程，turnNarrations 却只留下开口。刷新
+              //   只回放失败说明 → 左栏执行步骤整列没了。工具事件只
+              //   用来补 chip，complete/state 仍不许盖今天的工程投影。
+              onControlToolStart: (tool, summary) => {
+                const label = projectToolLabel(tool);
+                if (!label) return;
+                replaySeq += 1;
+                const detail = String(summary || "").trim();
+                replayedChips.push({
+                  id: `replay-${run.runId}-${replaySeq}`,
+                  kind: "chip",
+                  capabilityId: tool as never,
+                  roleId: "system",
+                  label,
+                  realLlm: false,
+                  progressType: "acting",
+                  ...(detail ? { projectDetail: detail } : {}),
+                });
+              },
+              onControlToolResult: event => {
+                const tool = projectToolLabel(event.tool);
+                if (!tool) return;
+                replaySeq += 1;
+                const ok = event.ok !== false;
+                const detail = projectActionDetail(event);
+                replayedChips.push({
+                  id: `replay-${run.runId}-${replaySeq}`,
+                  kind: "chip",
+                  capabilityId: String(event.tool || "") as never,
+                  roleId: "system",
+                  label: ok
+                    ? `${tool.replace(/^正在/, "已")}`
+                    : `${tool.replace(/^正在/, "执行失败：")}`,
+                  realLlm: false,
+                  progressType: ok ? "completed" : "failed",
+                  ...(detail ? { projectDetail: detail } : {}),
+                  ...(typeof event.operationId === "string" && event.operationId
+                    ? { operationId: event.operationId }
+                    : {}),
+                });
               },
             });
             if (!isCurrent()) return;
@@ -2799,7 +2847,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             const noticeId = `control-failure-${run.runId}`;
             setUiTurns(prev => {
               const history = prev.length > 0 ? prev : deriveTurnsFromState(sessionStateRef.current);
-              return [...history.filter(turn => turn.id !== noticeId), {
+              const kept = history.filter(turn => turn.id !== noticeId);
+              const withChips = turnsHaveProjectChips(kept)
+                ? kept
+                : attachProjectChipsToTurns(kept, replayedChips);
+              return [...withChips, {
                 id: noticeId, user: "", status: "complete", steps: [],
                 routeFacts: { turnId: noticeId, timestamp: new Date().toISOString() },
                 routeExpanded: false, routeLitCount: 0,

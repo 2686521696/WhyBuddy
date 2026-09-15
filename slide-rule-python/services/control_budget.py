@@ -10,6 +10,12 @@ they do not promise that arbitrary projects fit. Legacy limits stay unchanged.
 Like grok's prompt usage ledger and goal budget, cumulative spend is separate
 from its context/compaction threshold. A restored run keeps its saved policy;
 deploying a larger policy must not grant an old run another budget.
+
+⚠ 2026-09-15 团长工作台 `sr-20260915153613-QBC1VPC8ZW`：读完脚手架下一发
+  想了 120.9s 被单发读超时掐成 `llm_unavailable`；TicketStream 同日
+  `cheapTokens` 累加撞 64000 被当成硬闸。两件事都不是「上下文窗满了」。
+  工程档改走 project-v2：单发思考放宽、**窗口** 20 万、19.7 万压缩后再采样。
+  project-v1 存档仍按原数字还原，不许因为部署了 v2 就领一份新预算。
 """
 
 from dataclasses import dataclass
@@ -32,16 +38,22 @@ class ControlBudget:
     #:
     #:   45 秒是 `control_client.py` 里 `min(cfg.timeout_ms or 60000, 45_000)`
     #:   的硬上限，对「一句话聊天」够用，对「读完整份源码再想怎么改」不够。
-    #:   所以它跟着 profile 走：对话档还是 45 秒，工程档 120 秒。
+    #:   所以它跟着 profile 走：对话档还是 45 秒，工程档 v1 120 秒 / v2 600 秒。
     #:
     #: ⚠ **故意不进 `to_wire()`。** to_wire 是**校验**契约——`restore_budget`
     #:   拿 `set(snapshot) != set(policy.to_wire())` 卡存档。往里加一个字段，
     #:   所有**已经存在的 checkpoint** 会当场变成 `invalid_control_budget_policy`
     #:   → `control_reconciliation_required`，正在跑的 run 全部被判成需要人工
-    #:   对账。而 restore_budget 返回的是 PROJECT_BUDGET / legacy 这两个**规范
-    #:   对象本身**，不是重建出来的，所以不进 wire 也照样拿得到这个值。
+    #:   对账。而 restore_budget 返回的是登记过的规范对象本身，不是重建出来的，
+    #:   所以不进 wire 也照样拿得到这个值。
     #:   判据：`test_control_llm_timeout_follows_budget.py::test_老存档不许因为多了这个字段而失效`。
     max_request_seconds: float = 45.0
+    #: 上下文占用（不是累计花费）到这个数就压缩会话再采样。0 = 不压缩。
+    #: 同样不进 to_wire，理由同上。
+    compact_at_tokens: int = 0
+    #: True：token_budget 闸盯的是**当前 messages 占用**，不是 cheapTokens 累加。
+    #: v1 累加花费一超 64000 就停；v2 先压缩，压完还超窗口才停。
+    context_token_budget: bool = False
 
     def to_wire(self) -> dict:
         return {"profile": self.profile, "maxRounds": self.max_rounds,
@@ -49,6 +61,9 @@ class ControlBudget:
 
     def request_timeout_ms(self) -> int:
         return int(self.max_request_seconds * 1000)
+
+    def should_compact(self, occupancy: int) -> bool:
+        return self.compact_at_tokens > 0 and occupancy >= self.compact_at_tokens
 
 
 # About 3k repeated input/request in the real fixture, plus growing tool history
@@ -60,7 +75,30 @@ class ControlBudget:
 #:   窗口 600 秒。120 × 10 = 1200 > 600，所以真抖起来是**那个 600 秒窗口**
 #:   先兜住，不是重试次数。120 也仍然小于本档 180 秒的回合墙钟
 #:   （判据 `test_单发超时必须装得进回合墙钟` 钉着这条）。
-PROJECT_BUDGET = ControlBudget("project-v1", 16, 64_000, 180.0, 120.0)
+PROJECT_BUDGET_V1 = ControlBudget("project-v1", 16, 64_000, 180.0, 120.0)
+
+#: 2026-09-15：思考要能超过两分钟，累计花费也不该在 6.4 万停死。
+#: max_tokens 在这一档是**上下文窗口**（20 万），compact_at 是 19.7 万。
+#: 单发 600 秒 < 墙钟 900 秒，差 ≥ 60（同一条量级自洽判据）。
+#: 600 × 10 重试仍被 600 秒窗口兜住——一发想满 10 分钟就不再次重试。
+PROJECT_BUDGET = ControlBudget(
+    "project-v2", 16, 200_000, 900.0, 600.0,
+    compact_at_tokens=197_000,
+    context_token_budget=True,
+)
+
+#: 点火前对话档。control-v1 是 90/75；2026-09-15 新开会话写计划两发都
+#: 想了 ~150s 才回，墙钟 90 把计划掐掉，工程档永远进不去。
+#: 新回合走 control-v2：单发 180 / 墙钟 240。旧存档仍按 v1 还原。
+CONVERSATION_BUDGET_V1 = ControlBudget("control-v1", 8, 8_000, 90.0, 75.0)
+CONVERSATION_BUDGET = ControlBudget("control-v2", 8, 8_000, 240.0, 180.0)
+
+_PINNED_POLICIES = {
+    PROJECT_BUDGET_V1.profile: PROJECT_BUDGET_V1,
+    PROJECT_BUDGET.profile: PROJECT_BUDGET,
+    CONVERSATION_BUDGET_V1.profile: CONVERSATION_BUDGET_V1,
+    CONVERSATION_BUDGET.profile: CONVERSATION_BUDGET,
+}
 
 
 def restore_budget(snapshot, legacy: ControlBudget) -> ControlBudget:
@@ -69,7 +107,8 @@ def restore_budget(snapshot, legacy: ControlBudget) -> ControlBudget:
         return legacy
     if not isinstance(snapshot, dict):
         raise ValueError("invalid_control_budget_policy")
-    policy = PROJECT_BUDGET if snapshot.get("profile") == PROJECT_BUDGET.profile else legacy
+    catalog = {legacy.profile: legacy, **_PINNED_POLICIES}
+    policy = catalog.get(snapshot.get("profile"), legacy)
     if (set(snapshot) != set(policy.to_wire())
             or type(snapshot.get("maxRounds")) is not int
             or type(snapshot.get("maxTokens")) is not int

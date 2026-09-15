@@ -282,9 +282,12 @@ function StudioSplitLive({
 
         <PanelResizeHandle
           data-testid="sliderule-studio-split-handle"
-          /* 画布档锁死最大化时连拖都不许——第 3 个掰开它的口子。 */
+          /* 画布档锁死最大化时连拖都不许——第 3 个掰开它的口子。
+             ⚠ 2026-09-16：after 热区向右伸进预览。鼠标 10px 没事，
+             手指/设备模式会把 TicketStream 左侧导航吃掉——粗指针把
+             热区收成 0，缝本身 1px 还在。 */
           disabled={phone || layout.maximizeLocked}
-          className={`group relative z-20 flex w-px shrink-0 items-center justify-center bg-[#d1d9e0b3] outline-none after:absolute after:inset-y-0 after:-left-1 after:w-2.5 after:content-[''] ${
+          className={`group relative z-20 flex w-px shrink-0 items-center justify-center bg-[#d1d9e0b3] outline-none after:absolute after:inset-y-0 after:-left-1 after:w-2.5 after:content-[''] [@media(pointer:coarse)]:after:w-0 ${
             phone
               ? "cursor-default"
               : "hover:bg-[#d1d9e0] data-[resize-handle-active]:bg-[#d1d9e0]"

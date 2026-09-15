@@ -11,7 +11,13 @@
  */
 
 import { BRAND_NAME_FULL } from "@shared/brand";
-import { DEFAULT_SESSION_ID } from "@/lib/sliderule-session-id";
+import {
+  DEFAULT_SESSION_ID,
+  applySessionToHistory,
+  hrefFromWindow,
+  resolveActiveSessionId,
+  sessionIdFromHref,
+} from "@/lib/sliderule-session-id";
 import { quietHint } from "./sliderule/quiet-time";
 import { TurnResultCard } from "./sliderule/TurnResultCard";
 import { useProjectThumbnail } from "./sliderule/project-runtime/useProjectThumbnail";
@@ -99,7 +105,10 @@ import type { FactoryDecisionView } from "./sliderule/derive-factory-decision";
 import { SlideRuleResetSessionButton } from "./sliderule/SlideRuleTopHud";
 import { StudioLayoutProvider } from "./sliderule/StudioLayoutContext";
 import { isStudioChromeShown } from "./sliderule/studio-layout";
-import { SESSION_CHANGED_EVENT } from "./agent-loop/dashboard/SidebarSessions";
+import {
+  ACTIVE_SESSION_KEY,
+  SESSION_CHANGED_EVENT,
+} from "./agent-loop/dashboard/SidebarSessions";
 import {
   ClarificationCard,
   type ClarificationItem,
@@ -146,7 +155,7 @@ import { deriveApplication, slideRule } from "@/lib/skills/slideRule";
 import { Spin } from "antd";
 import { SlideRuleStudio } from "./sliderule/SlideRuleStudio";
 import { Response } from "@/components/ai/response";
-import { ProjectTaskChecklist } from "./sliderule/ProjectTaskChecklist";
+import { SessionStory } from "./sliderule/SessionStory";
 
 // Python full-path E2E wiring (105): /agent-loop/sliderule and /sliderule
 // render this component, while turn/evidence/report calls surface Python
@@ -660,23 +669,44 @@ function ImAssistantMessage() {
       runtimeKind,
     })
   );
-  const showProjectChecklist =
-    runtimeKind === "project" &&
-    (ctx.latestTurnId
-      ? turn.id === ctx.latestTurnId
-      : turn.id === turns?.at(-1)?.id);
+  const resultCard = (
+    <TurnResultCard
+      turn={turn}
+      runtimeKind={runtimeKind}
+      goalText={goalText}
+      projectRevision={ctx.projectRevision}
+      /* ⚠ 只挂在**最新那一轮**上：验收截图拍的是工程此刻的样子，
+           贴到三轮之前那张卡上就是张张牛头不对马嘴的图。 */
+      thumbnailUrl={
+        turn.id === ctx.latestTurnId ? ctx.thumbnailUrl : null
+      }
+      hasPages={Boolean(turn.main)}
+      onOpen={() => {
+        window.dispatchEvent(
+          new CustomEvent("sliderule:open-deliverable")
+        );
+      }}
+      onRetry={() => {
+        if (!turn.user) return;
+        window.dispatchEvent(
+          new CustomEvent("sliderule:resend-prompt", {
+            detail: { text: turn.user },
+          })
+        );
+      }}
+    />
+  );
   return (
     <div className="mb-3 max-w-[640px]">
       {turn.status === "streaming" ? (
         <div className="space-y-1.5">
-          {/* 模型动手之前先开口，再铺动作——对照 Manus：散文在上，
-              机械步骤收在下面那组里。见 model-speech.ts 头注。
-              ⚠ 2026-09-14：清单曾经挂在这段外面、整列最顶上，
-              散文还没出来用户先看见一张「工程动作」卡。 */}
-          <ModelSpeechBlocks turn={turn} />
-          {showProjectChecklist ? (
-            <ProjectTaskChecklist turns={turns?.length ? turns : [turn]} />
-          ) : null}
+          {/* ⚠ 流式 / 完成是成对物（§4）。工程档两支都走 SessionStory，
+              只改完成轮 = 跑的时候又变回三桶并排。 */}
+          {runtimeKind === "project" ? (
+            <SessionStory turn={turn} streaming productSlot={null} />
+          ) : (
+            <ModelSpeechBlocks turn={turn} />
+          )}
           <div className="flex items-center gap-2 text-[13px] text-stone-500">
             <ThinkingOrbMark label={thinkingText} size={20} />
             {/* 状态文案翻滚过渡（anime.js）——不再生硬跳变 */}
@@ -715,38 +745,22 @@ function ImAssistantMessage() {
           data-testid="sliderule-assistant-text"
         >
           {/* 完成后同样保留开口：它是这一轮「为什么这么做」的唯一记录，
-              收尾总结替代不了过程里的判断。 */}
-          <ModelSpeechBlocks turn={turn} />
-          {showProjectChecklist ? (
-            <ProjectTaskChecklist turns={turns?.length ? turns : [turn]} />
-          ) : null}
-          {/* 结果卡：这一轮真的产出了东西才出（判断在 turn-result-card.ts）。
-              没有它的话，成果只活在右侧预览列里——往上滚看历史什么都不剩。 */}
-          <TurnResultCard
-            turn={turn}
-            runtimeKind={runtimeKind}
-            goalText={goalText}
-            projectRevision={ctx.projectRevision}
-            /* ⚠ 只挂在**最新那一轮**上：验收截图拍的是工程此刻的样子，
-                 贴到三轮之前那张卡上就是张张牛头不对马嘴的图。 */
-            thumbnailUrl={
-              turn.id === ctx.latestTurnId ? ctx.thumbnailUrl : null
-            }
-            hasPages={Boolean(turn.main)}
-            onOpen={() => {
-              window.dispatchEvent(
-                new CustomEvent("sliderule:open-deliverable")
-              );
-            }}
-            onRetry={() => {
-              if (!turn.user) return;
-              window.dispatchEvent(
-                new CustomEvent("sliderule:resend-prompt", {
-                  detail: { text: turn.user },
-                })
-              );
-            }}
-          />
+              收尾总结替代不了过程里的判断。工程档走章节面——往上滚
+              过程还在，不再只挂 latestTurn。 */}
+          {runtimeKind === "project" ? (
+            <SessionStory
+              turn={turn}
+              streaming={false}
+              productSlot={resultCard}
+            />
+          ) : (
+            <>
+              <ModelSpeechBlocks turn={turn} />
+              {/* 结果卡：这一轮真的产出了东西才出（判断在 turn-result-card.ts）。
+                  没有它的话，成果只活在右侧预览列里——往上滚看历史什么都不剩。 */}
+              {resultCard}
+            </>
+          )}
           {/* 后续建议贴着结果，不混进输入条的通用提示（NextStepSuggestions 头注）。
               只挂在最新一轮：历史轮次的「下一步」早就过期了。 */}
           {(
@@ -2026,34 +2040,58 @@ function SlideRuleSplitEngineering({
   );
 }
 
-const ACTIVE_SESSION_KEY = "sliderule:active-session-id";
+function readStoredSessionId(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_SESSION_KEY);
+  } catch {
+    return null;
+  }
+}
 
 /**
  * 会话壳（Claude 式）：管理"当前会话 id"，切换/新建时以 key=sessionId
  * 整树重挂——hook 对新 id 走 loadOrCreateSessionState 完整水合，
  * 运行时排练数据（localStorage 按 id 分键）自动隔离，零状态串味。
  * 会话选择入口在侧栏（SidebarSessions），通过 window 事件通知这里。
+ *
+ * ⚠ 2026-09-15：地址栏 `?session=` 是权威。只听 localStorage 时，刷新 /
+ *   应用中心整页跳会掉进兜底桶，用户说「丢会话」。
  */
 export default function SlideRule({
   embedded = false,
 }: { embedded?: boolean } = {}) {
   const [activeSessionId, setActiveSessionId] = useState<string>(() => {
-    try {
-      const stored = localStorage.getItem(ACTIVE_SESSION_KEY);
-      if (IS_GITHUB_PAGES) {
-        // 静态演示只认画廊示例种子（E18，pages-demo-*）；其余残留 id
-        // 一律回落主演示，防止演示被指到不存在的空会话上
-        return stored?.startsWith("pages-demo-")
-          ? stored
-          : GITHUB_PAGES_DEMO_SESSION_ID;
-      }
-      return stored || DEFAULT_SESSION_ID;
-    } catch {
-      return IS_GITHUB_PAGES
-        ? GITHUB_PAGES_DEMO_SESSION_ID
-        : DEFAULT_SESSION_ID;
+    const stored = readStoredSessionId();
+    if (IS_GITHUB_PAGES) {
+      // 静态演示只认画廊示例种子（E18，pages-demo-*）；其余残留 id
+      // 一律回落主演示，防止演示被指到不存在的空会话上
+      return stored?.startsWith("pages-demo-")
+        ? stored
+        : GITHUB_PAGES_DEMO_SESSION_ID;
     }
+    return resolveActiveSessionId({
+      urlSession:
+        typeof window !== "undefined"
+          ? sessionIdFromHref(hrefFromWindow(window))
+          : null,
+      stored,
+    });
   });
+
+  useEffect(() => {
+    if (IS_GITHUB_PAGES) return;
+    try {
+      localStorage.setItem(ACTIVE_SESSION_KEY, activeSessionId);
+    } catch {
+      /* 隐私模式：地址栏仍是权威 */
+    }
+    applySessionToHistory(
+      window.history,
+      hrefFromWindow(window),
+      activeSessionId,
+      "replace"
+    );
+  }, [activeSessionId]);
 
   useEffect(() => {
     if (IS_GITHUB_PAGES) return;
@@ -2061,8 +2099,20 @@ export default function SlideRule({
       const id = (ev as CustomEvent<{ sessionId?: string }>).detail?.sessionId;
       if (id) setActiveSessionId(id);
     };
+    const onPop = () => {
+      setActiveSessionId(
+        resolveActiveSessionId({
+          urlSession: sessionIdFromHref(hrefFromWindow(window)),
+          stored: readStoredSessionId(),
+        })
+      );
+    };
     window.addEventListener(SESSION_CHANGED_EVENT, onChanged);
-    return () => window.removeEventListener(SESSION_CHANGED_EVENT, onChanged);
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener(SESSION_CHANGED_EVENT, onChanged);
+      window.removeEventListener("popstate", onPop);
+    };
   }, []);
 
   return (

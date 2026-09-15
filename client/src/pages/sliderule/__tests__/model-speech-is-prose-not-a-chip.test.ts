@@ -27,6 +27,7 @@
  * ⚠ 判据直接跑产线的 `linesFromTurnSteps`，不重抄一份分类逻辑：重抄的
  *   判据只能证明「我抄对了」（§1.2）。
  */
+import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { linesFromTurnSteps } from "../stage-authority";
 import { finalNarrationStep } from "../turn-route-steps";
@@ -128,6 +129,37 @@ describe("什么算一次对用户的开口", () => {
 
   it("正常开口算", () => {
     expect(isUserFacingSpeech(SPEECH)).toBe(true);
+  });
+
+  it("英文开口也算——2026-09-16 文种过滤弊大于利", () => {
+    // 真机 sr-20260915165800-M6JK4H3XFB 派工具前的 content。次日
+    // sr-20260916002025-Y3ZS3DZASB 同一形状被文种闸滤空，左栏只剩
+    // 「工作了 4m 40s」。变异：把 speechMismatchesUserLanguage 加回去
+    // → 本条红。
+    const user =
+      "构建一个名为“TicketStream”的服务台 SaaS 界面。目的：管理支持工单、实时聊天和知识库。";
+    const live =
+      '**Initial Assessment and Planning for "TicketStream" SaaS Interface**\n\n' +
+      'Okay, so the task is clear: build a "TicketStream" service desk SaaS interface. ' +
+      "My immediate focus is understanding the requirements.\n\n" +
+      "Here's my take on the process, playing the role of the thinking entity:\n\n" +
+      "**My Approach to Designing TicketStream**";
+    expect(isUserFacingSpeech(live, user)).toBe(true);
+    expect(
+      modelSpeechFor(
+        turnWith([{ id: "s-en", kind: "model_speech", text: live }])
+      ).map(item => item.text)
+    ).toEqual([live]);
+    expect(isUserFacingSpeech("我先把 TicketStream 工程搭起来。", user)).toBe(
+      true
+    );
+    const src = readFileSync(
+      new URL("../model-speech.ts", import.meta.url),
+      "utf8"
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^[ \t]*\/\/.*$/gm, "");
+    expect(src).not.toContain("speechMismatchesUserLanguage");
   });
 
   it("过滤掉的开口不会混进正文", () => {

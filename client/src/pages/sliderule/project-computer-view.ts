@@ -79,9 +79,14 @@ export function shouldAutoCreateProject(input: {
 /**
  * 没点过下拉时，右侧停在哪一档。
  *
- *   有动作在跑 → 终端（看着它干活）
+ * ⚠ 2026-09-15 TicketStream：左栏全是「导入源码」，自动切档却只看
+ *   hasActivity → 终端。终端脸只画 PTY 字节，导入不产生字节，右侧白纸。
+ *   人点工具行已经走 `computerViewForAction`（写入→源码），自动切档
+ *   没用——又是成对物只改一半。
+ *
+ *   有动作在跑 → 按这一步的档（写入看源码，命令看终端），预览再就绪也不拽走
  *   预览已经有能用的地址 → 预览
- *   有过动作但预览还没开 → 终端（回放最后一步，比一块「尚未启动」占位有用）
+ *   有过动作但预览还没开 → 按最后一步的档，不许停在没 PTY 的白纸上
  *   什么都没有 → 预览（空会话的默认面孔，跟没接 turns 的应用中心一致）
  */
 export function resolveComputerView(input: {
@@ -89,11 +94,18 @@ export function resolveComputerView(input: {
   live: boolean;
   hasActivity: boolean;
   previewReady: boolean;
+  lastTool?: string | null;
+  hasConsole?: boolean;
 }): ComputerView {
   if (input.userPinned) return input.userPinned;
-  if (input.live) return "computer";
+  const fromTool = input.lastTool ? computerViewForAction(input.lastTool) : null;
+  if (input.live) return fromTool ?? "computer";
   if (input.previewReady) return "preview";
-  if (input.hasActivity) return "computer";
+  if (input.hasActivity) {
+    if (fromTool && fromTool !== "computer") return fromTool;
+    if (fromTool === "computer" && input.hasConsole === false) return "source";
+    return fromTool ?? "computer";
+  }
   return "preview";
 }
 
@@ -106,6 +118,12 @@ export function resolveComputerView(input: {
  *
  * 认工具名，不解析 label。未知的 `project_*` 落到终端：那一档能摊开
  * 脱敏摘要，比把人扔进一块空预览诚实。
+ *
+ * ⚠ 2026-09-15 TicketStream `sr-20260915141613-WBPAY2T4V3`：左栏是
+ *   创建工程 / 读取工程列表，右侧钉在终端白纸。`project_list` /
+ *   `project_search` 是店里读清单，不产 PTY，却被当成未知工具落到
+ *   「computer」。终端脸只画 `runtime.console`，没有字节就空着——
+ *   不是壳坏了，是看错档。
  */
 export function computerViewForAction(tool: string): ComputerView {
   const name = String(tool || "").trim();
@@ -113,7 +131,9 @@ export function computerViewForAction(tool: string): ComputerView {
     name === "project_patch" ||
     name === "project_read" ||
     name === "project_create" ||
-    name === "project_export"
+    name === "project_export" ||
+    name === "project_list" ||
+    name === "project_search"
   ) {
     return "source";
   }

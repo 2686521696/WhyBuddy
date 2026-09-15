@@ -99,7 +99,16 @@ from services.user_questions import (
 from services.action_stationarity import (IdenticalToolCallRun, ReadOnlyStreak,
     StagnantCallLedger, call_signature, result_fingerprint, step_signature, step_tool_name)
 from services.control_checkpoint import current_checkpoint, guard_control_run, owned_model_sample, ControlRunStopped
-from services.control_budget import ControlBudget, PROJECT_BUDGET, restore_budget
+from services.control_budget import (
+    ControlBudget,
+    CONVERSATION_BUDGET,
+    PROJECT_BUDGET,
+    restore_budget,
+)
+from services.control_context_compact import (
+    compact_messages,
+    estimate_message_tokens,
+)
 from services.model_memory import (
     recall as recall_memory,
     remember as remember_memory,
@@ -160,6 +169,7 @@ from services.slide_rule_interactive_gates import (
     resolve_readiness_gaps_by_ids,
 )
 from services.slide_rule_session import load_session, save_session
+from services.control_transcript_log import tool_transcript_entry
 from services.turn_narration import deliverable_fingerprint as factory_deliverable_fingerprint  # 叙述/回执同一把尺子
 from services.llm_error_text import humanize_llm_error
 from sliderule_llm.client import LlmError
@@ -523,7 +533,10 @@ def _cap_speech(state: V5SessionState, reason: ControlStopReason) -> str:
             ControlStopReason.TOOL_ROUNDS: "本轮工程任务达到工具轮次上限。",
             ControlStopReason.STATIONARITY: "模型重复执行同一步，本轮工程任务已暂停。",
         }.get(reason, "本轮工程任务未完成。")
-        return detail + "已保存的源码仍保留；远端任务的状态和结果需要继续查询，也可以明确停止任务。"
+        return (
+            detail
+            + "已保存的源码仍保留。再说一次即可继续；远端未完成的任务也可以明确停止。"
+        )
     if _has_pages(state):
         return _delivery_speech(state)
     if _has_spec(state):
@@ -1044,18 +1057,14 @@ MAX_CHEAP_TOKENS = 8000
 #:   45 秒对「一句话聊天」够用，对「写一份实施计划」不够，于是工程模式
 #:   永远够不着。这正是 CLAUDE.md §一之二：闸装在真跑的路上，
 #:   而它守的那道门后面的东西没人到得了。
+#: ⚠ 2026-09-15 新开会话 `sr-20260915161915-B2601PBD1Q`：写计划前两发
+#:   分别想了 148s / 151s，墙钟 90 把计划掐在「没点火」。工程档的 600/900
+#:   根本轮不到。对话档改走 `CONVERSATION_BUDGET`（control-v2，180/240）。
+#:   下面两个常量仍是 **control-v1 存档** 的数字，不许原地改——改了旧
+#:   checkpoint 的 to_wire 对不上。
 MAX_WALL_SECONDS = 90.0
 
-#: 点火前**单发** HTTP 读超时。跟上面是一对，只改一个等于没改（§4）：
-#: 墙钟抬到 90 而请求仍在 45 秒被掐，那一发照样回不来。
-#:
-#: 取 75：比真机量到的 65 秒留一点余量，又比墙钟小——这样「真的拖住了」
-#: 报出来的是墙钟（回合级），而不是让单发超时替它背锅。
-#:
-#: ⚠ 连带账，改之前先算：`call_control_llm` 单次调用最多重试 3 发，而墙钟
-#:   只在**一发采样返回之后**才对账。所以最坏情况从 3×45=135s 变成
-#:   3×75=225s 才停下。回合累计重试上限 10 次 / 600 秒窗口
-#:   （`sliderule_llm/retry_budget.py`）是兜住它的那一层。
+#: 点火前 v1 **单发** HTTP 读超时。v2 见 CONVERSATION_BUDGET。
 MAX_REQUEST_SECONDS = 75.0
 INSPECT_MAX_ITEMS = 40
 INSPECT_MAX_CHARS = 4000
@@ -1139,6 +1148,7 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
                 "问用户一道或几道选择题。一次可以问几件相关的事，别拆成几轮。"
                 "每道题渲染时都会自动多一个「其他（自己写）」，你不要自己加。"
                 "把你推荐的那一项排第一，标签后面加「（推荐）」。"
+                "问句和选项跟用户同一种语言（默认简体中文）。"
                 "本请求必须结束，不得空转等待。"
             ),
             "parameters": {
@@ -1215,7 +1225,11 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "write_plan",
-            "description": "保存完整实施计划。包含目标、访谈结论、设备与设计选择、工作步骤和验收方法。每次重写使上一版批准失效。",
+            "description": (
+                "保存完整实施计划。包含目标、访谈结论、设备与设计选择、工作步骤和验收方法。"
+                "计划正文跟用户同一种语言（默认简体中文）。"
+                "每次重写使上一版批准失效。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1506,6 +1520,26 @@ def _append_transcript(state: V5SessionState, entry: Dict[str, Any]) -> None:
     item = {"id": f"ct-{uuid.uuid4().hex[:10]}", "timestamp": _now_iso(), **entry}
     rows.append(item)
     state.controlTranscript = rows
+
+
+async def _logged_tool_events(
+    state: V5SessionState, stream: AsyncIterator[Dict[str, Any]]
+) -> AsyncIterator[Dict[str, Any]]:
+    """派发出口：SSE 工具事件边 yield 边进会话日志并落盘。
+
+    抄 OpenHands EventStream.add_event。套在每一条 `_dispatch_tool` 出口上。
+    只套 LLM 主循环、漏 forced / 超限补写计划，就是 §4 改一半。
+    """
+    async for event in stream:
+        entry = tool_transcript_entry(event)
+        if entry is not None:
+            _append_transcript(state, entry)
+            # start 先只进内存：project_* 的 execute 可能自己 save 一份
+            # 刚 load 的会话，抢先 persist 会被那一刀盖掉。结果出来再落盘，
+            # 这一发的 start/result 一起进库。checkpoint 也会再写一次。
+            if entry["kind"] == "tool_result":
+                await _apersist(state)
+        yield event
 
 
 def _goal_text(state: V5SessionState) -> str:
@@ -1954,16 +1988,19 @@ async def _flush_write_plan_from_sample(
         if str(call.get("name") or "") != "write_plan":
             continue
         args = call.get("arguments") if isinstance(call.get("arguments"), dict) else {}
-        async for event in _dispatch_tool(
-            "write_plan",
-            args,
+        async for event in _logged_tool_events(
             state,
-            user_text,
-            installed_skills,
-            active_connectors,
-            preferred_device,
-            design_system_id,
-            original_goal,
+            _dispatch_tool(
+                "write_plan",
+                args,
+                state,
+                user_text,
+                installed_skills,
+                active_connectors,
+                preferred_device,
+                design_system_id,
+                original_goal,
+            ),
         ):
             yield event
         return
@@ -3145,6 +3182,16 @@ def _system_prompt(state: V5SessionState) -> str:
         #   （破坏性动作要批准）。
         "回应要对上用户的意图：明确要动手的就动手；提问、说明、评论、闲谈这类，"
         "回答就好，不要顺手造东西。不跑题。"
+        # ⚠ 2026-09-15 真机 TicketStream（sr-20260915165800-M6JK4H3XFB）：
+        #   用户中文需求、问卷和 write_plan 都已是中文，但派工具前的
+        #   content 是英文思考独白（"Initial Assessment…" / "playing the
+        #   role of the thinking entity"）。host 把它当 control_text 开口，
+        #   左栏就整段英文。技能包那句「用户输入是什么语言就用什么语言」
+        #   控制面漏了；思考模型默认用英文想，想完写进正文。
+        #
+        #   边界不是流程手册：只钉对用户开口的语言，路径仍自己挑。
+        "对用户开口、问卷和计划跟用户同一种语言（默认简体中文）。"
+        "思考过程不要写进正文。"
         "search_evidence 不计入闭环。inspect_model 只看摘要。"
         f"当前目标：{goal[:200]}。停泊：{parked}。"
         f"{fact_blob}"
@@ -3812,11 +3859,15 @@ async def _control_llm_loop(
     不会被叫到——见 `_complete_waiting_for_assumptions`。
     """
 
-    async def _maybe_over_cap() -> Optional[Dict[str, Any]]:
+    async def _maybe_over_cap(*, include_context: bool = False) -> Optional[Dict[str, Any]]:
         """到顶了就返回结构化的停止信息，没到顶返回 None。
 
         ⚠ 原来返回 bool，两条不同的闸（墙钟 / 额度）塌成同一句话。前端分不清
           "想太久"和"额度烧完"，用户也不知道再点一次有没有用。
+
+        ⚠ 2026-09-15：project-v2 的 max_tokens 是上下文窗口，不是 cheapTokens
+          累加。include_context 只在压缩之后才打开——先停再压等于压缩永远
+          走不到（§一之二）。
         """
         elapsed = time.monotonic() - started
         if elapsed > loop_budget.max_wall_seconds:
@@ -3825,12 +3876,56 @@ async def _control_llm_loop(
                 limit=loop_budget.max_wall_seconds,
                 used=round(elapsed, 1),
             )
+        if loop_budget.context_token_budget:
+            if include_context:
+                used = estimate_message_tokens(messages)
+                if used > loop_budget.max_tokens:
+                    return stop_wire(
+                        ControlStopReason.TOKEN_BUDGET,
+                        limit=loop_budget.max_tokens,
+                        used=used,
+                    )
+            return None
         if cheap_tokens > loop_budget.max_tokens:
             return stop_wire(
                 ControlStopReason.TOKEN_BUDGET,
                 limit=loop_budget.max_tokens,
                 used=cheap_tokens,
             )
+        return None
+
+    async def _compact_context_if_needed() -> Optional[Dict[str, Any]]:
+        """窗口快满就折叠较早的工具结果，然后继续采样。压完仍超窗才停。
+
+        事件必须是 control_text（不许新类型——consumeControlStreamResponse
+        的 switch 没有 default，新类型会被静默丢掉）。
+        """
+        occupancy = estimate_message_tokens(messages)
+        if not loop_budget.should_compact(occupancy):
+            return None
+        compacted, report = compact_messages(
+            messages,
+            max_tokens=loop_budget.max_tokens,
+            compact_at_tokens=loop_budget.compact_at_tokens,
+        )
+        if report.did_compact:
+            messages[:] = compacted
+            print(
+                f"[control] compact before={report.tokens_before} "
+                f"after={report.tokens_after} folded={report.folded} "
+                f"window={loop_budget.max_tokens}",
+                flush=True,
+            )
+            text = str(compacted[1].get("content") or compacted[0].get("content") or "")
+            if not text.startswith("【会话压缩】"):
+                text = next(
+                    (str(row.get("content") or "") for row in compacted
+                     if str(row.get("content") or "").startswith("【会话压缩】")),
+                    text,
+                )
+            _append_transcript(state, {"role": "assistant", "kind": "compact", "text": text})
+            await _apersist(state)
+            return {"type": "control_text", "text": text, "compacted": True}
         return None
 
     # 一个回合一份游标。抄 grok：`identical_tool_calls` 是
@@ -3853,8 +3948,7 @@ async def _control_llm_loop(
     port = current_checkpoint.get()
     resume = copy.deepcopy(port.checkpoint) if port is not None else None
     resume = resume if resume and resume.get("phase") in {"model", "tools"} else None
-    legacy_budget = ControlBudget("control-v1", MAX_TOOL_ROUNDS, MAX_CHEAP_TOKENS,
-        MAX_WALL_SECONDS, MAX_REQUEST_SECONDS)
+    legacy_budget = CONVERSATION_BUDGET
     try:
         loop_budget = (restore_budget(resume.get("budgetPolicy"), legacy_budget) if resume else
                        PROJECT_BUDGET if _project_budget_eligible(state) else legacy_budget)
@@ -3910,6 +4004,17 @@ async def _control_llm_loop(
                 async for event in _settle_runtime_cap(state, reason, capped):
                     yield event
                 return
+            if not restoring_calls:
+                compacted_event = await _compact_context_if_needed()
+                if compacted_event is not None:
+                    yield compacted_event
+                capped = await _maybe_over_cap(include_context=True)
+                if capped:
+                    await checkpoint("budget_exhausted", _round)
+                    reason = ControlStopReason(capped["stopReason"])
+                    async for event in _settle_runtime_cap(state, reason, capped):
+                        yield event
+                    return
 
             # ── 原地打转：先判断状态，再花钱问模型 ────────────────────────
             # 抄 grok 主循环的**顺序**，这一点比阈值本身重要：
@@ -4008,9 +4113,9 @@ async def _control_llm_loop(
                     finish_reason="tool_calls", model="checkpoint", latency_ms=0)
             else:
                 await checkpoint("sampling", _round)
-                # 单发读超时跟着 budget profile 走：对话档 45 秒、工程档 120 秒。
-                # 读完整份源码再想怎么改，45 秒不够（见 ControlBudget
-                # .max_request_seconds 头注里那一趟真机）。
+                # 单发读超时跟着 budget profile 走：对话档 75 秒、工程档 v2 600 秒。
+                # 读完整份源码再想怎么改，45/120 秒都不够（见 ControlBudget
+                # .max_request_seconds 头注，以及 2026-09-15 团长工作台 120.9s）。
                 result = await owned_model_sample(_invoke_control_llm(
                     messages, tools=offered,
                     timeout_ms=loop_budget.request_timeout_ms()))
@@ -4125,6 +4230,7 @@ async def _control_llm_loop(
                     state,
                     {"role": "assistant", "kind": "control_text", "text": content},
                 )
+                await _apersist(state)
                 yield {"type": "control_text", "text": content}
 
             assistant_msg: Dict[str, Any] = {
@@ -4194,7 +4300,7 @@ async def _control_llm_loop(
                         design_system_id,
                         original_goal,
                     )) as stream:
-                        async for event in stream:
+                        async for event in _logged_tool_events(state, stream):
                             if port is not None:
                                 event = {**event, "toolCallId": call["id"]}
                             yield event
@@ -4608,7 +4714,7 @@ async def _run_control_turn_body(
                 design_system_id,
                 original_goal,
             )) as stream:
-                async for event in stream:
+                async for event in _logged_tool_events(state, stream):
                     yield event
                     et = str(event.get("type") or "")
                     if et == "control_handoff_factory":
@@ -4649,18 +4755,21 @@ async def _run_control_turn_body(
             if vid:
                 tool_args["versionId"] = vid
         with tool_scope_scope(forced):
-            async for event in _settled(
+            async for event in _logged_tool_events(
                 state,
-                _dispatch_tool(
-                    forced,
-                    tool_args,
+                _settled(
                     state,
-                    user_text,
-                    installed_skills,
-                    active_connectors,
-                    preferred_device,
-                    design_system_id,
-                    original_goal,
+                    _dispatch_tool(
+                        forced,
+                        tool_args,
+                        state,
+                        user_text,
+                        installed_skills,
+                        active_connectors,
+                        preferred_device,
+                        design_system_id,
+                        original_goal,
+                    ),
                 ),
             ):
                 yield event

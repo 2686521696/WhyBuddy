@@ -23,8 +23,12 @@
  *
  * 分页 + 确认继续这套是照 `AssumptionStrip` 来的：那张卡在真机上跑通过，
  * 用户认得这个交互（本仓 §五：判据落在用户真正看到的东西上，交互也一样）。
+ *
+ * 2026-09-15 卡面抄 Cursor 文件卡（跟计划审批同一套）：12px 圆角、近黑
+ * 下一步，推荐贴在选项标题旁边，不要蓝问卷把一行撑出一块空白。
+ * 四个出口没变。
  */
-import { Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, MessageCircleQuestion } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 /** 「其他（自己写）」那一项的 label。跟 `services/user_questions.py` 同一份。 */
@@ -115,44 +119,60 @@ export function QuestionnaireCard({
     return out;
   };
 
+  const markClass = (selected: boolean) =>
+    `mt-0.5 flex size-4 shrink-0 items-center justify-center border ${
+      multi ? "rounded-[3px]" : "rounded-full"
+    } ${
+      selected
+        ? "border-[#171717] bg-[#171717] text-white"
+        : "border-[#d4d4d4] text-transparent"
+    }`;
+
   return (
     <div
-      className="rounded-lg border border-[#EBCEC0]/70 bg-white/95"
+      className="overflow-hidden rounded-[12px] border border-[#e5e7eb] bg-white text-[#171717] shadow-[0_2px_8px_rgba(31,35,40,0.06)]"
       data-testid="sliderule-questionnaire"
+      data-questionnaire-surface="cursor"
     >
-      <div className="flex items-center justify-between border-b border-[#e8eaee] px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="rounded-full bg-[#e6f4ff] px-2 py-0.5 text-[11px] font-semibold text-[#1677ff]">
-            请你定
-          </span>
-          <span
-            className="truncate text-[11px] text-stone-400"
-            data-testid="sliderule-questionnaire-pager"
-          >
-            {safeStep + 1} / {total}
-            {paused ? " · 已停住，选完再继续" : " · 选完再继续"}
-          </span>
-        </div>
+      <header className="flex h-9 shrink-0 items-center gap-2 border-b border-[#e5e7eb] px-3">
+        <MessageCircleQuestion
+          className="size-3.5 shrink-0 text-[#8b8b8b]"
+          aria-hidden
+        />
+        <h2 className="min-w-0 truncate text-[13px] font-medium text-[#333]">
+          问题
+        </h2>
+        <span
+          className="min-w-0 flex-1 truncate text-[12px] tabular-nums text-[#9a9a9a]"
+          data-testid="sliderule-questionnaire-pager"
+        >
+          {safeStep + 1} / {total}
+          {paused ? " · 已停住，选完再继续" : " · 选完再继续"}
+        </span>
         <button
           type="button"
           data-testid="sliderule-questionnaire-cancel"
           title="这些我不答，你自己定"
           onClick={() => onSubmit({ outcome: "cancelled" })}
-          className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[#71717a] transition hover:bg-[#f4f4f5] hover:text-[#171717]"
+          className="shrink-0 text-[12px] text-[#8b8b8b] outline-none hover:text-[#333] focus-visible:ring-2 focus-visible:ring-[#171717]/20"
         >
           你自己定
         </button>
-      </div>
+      </header>
 
-      <div className="px-3 py-3" data-testid="sliderule-questionnaire-question">
-        <p className="text-sm font-semibold text-stone-800">{q.question}</p>
+      <div className="px-3.5 py-3" data-testid="sliderule-questionnaire-question">
+        <p className="text-[13.5px] font-medium leading-[1.55] text-[#171717]">
+          {q.question}
+        </p>
         {multi ? (
-          <p className="mt-1 text-[11px] text-stone-400">可以多选</p>
+          <p className="mt-1 text-[12px] text-[#8b8b8b]">可以多选</p>
         ) : null}
         {q.options.length === 0 ? (
-          <p className="mt-1 text-[11px] text-amber-600">这道题没有预设选项，请直接填写你的答案。</p>
+          <p className="mt-1 text-[12px] text-[#8b8b8b]">
+            这道题没有预设选项，请直接填写你的答案。
+          </p>
         ) : null}
-        <div className="mt-3 space-y-1.5">
+        <div className="mt-2.5 space-y-0.5">
           {options.map(opt => {
             const { text, recommended } = splitRecommended(opt.label);
             const selected = current.includes(opt.label);
@@ -165,40 +185,35 @@ export function QuestionnaireCard({
                   data-recommended={recommended ? "true" : "false"}
                   data-other={isOther ? "true" : "false"}
                   onClick={() => toggle(opt.label)}
-                  className={`flex w-full items-start gap-2 rounded border px-3 py-2 text-left text-[13px] transition ${
+                  className={`flex w-full items-start gap-2.5 rounded-[8px] px-2.5 py-2 text-left text-[13px] leading-5 transition ${
                     selected
-                      ? "border-[#1677ff] bg-[#e6f4ff]/70 text-stone-800"
-                      : "border-[#e5e7eb] bg-white text-stone-600 hover:border-[#d3d8e0]"
+                      ? "bg-[#f3f4f6] text-[#171717]"
+                      : "text-[#444] hover:bg-[#f7f7f7]"
                   }`}
                 >
-                  <span
-                    className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center border ${
-                      multi ? "rounded-[3px]" : "rounded-full"
-                    } ${
-                      selected ? "border-[#1677ff] bg-[#1677ff] text-white" : "border-[#d3d8e0]"
-                    }`}
-                  >
-                    {selected ? <Check className="h-3 w-3" /> : null}
+                  <span className={markClass(selected)}>
+                    {selected ? (
+                      <Check className="size-3" strokeWidth={2.6} />
+                    ) : null}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block">{text}</span>
+                    <span className="flex flex-wrap items-baseline gap-x-1.5">
+                      <span>{text}</span>
+                      {recommended ? (
+                        <span className="text-[11px] text-[#8b8b8b]">推荐</span>
+                      ) : null}
+                    </span>
                     {opt.description ? (
-                      <span className="mt-0.5 block text-[11px] leading-relaxed text-stone-400">
+                      <span className="mt-0.5 block text-[12px] leading-relaxed text-[#8b8b8b]">
                         {opt.description}
                       </span>
                     ) : null}
                   </span>
-                  {recommended ? (
-                    <span className="mt-0.5 shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
-                      推荐
-                    </span>
-                  ) : null}
                 </button>
-                {/* 焦点时给人看的对照物（grok `Option.preview`，单选专用）。 */}
                 {selected && !multi && opt.preview ? (
                   <pre
                     data-testid="sliderule-questionnaire-preview"
-                    className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded border border-[#e5e7eb] bg-[#fafafa] px-2 py-1.5 text-[11px] leading-relaxed text-stone-500"
+                    className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-[8px] border border-[#e5e7eb] bg-[#fafafa] px-2.5 py-1.5 text-[12px] leading-relaxed text-[#666]"
                   >
                     {opt.preview}
                   </pre>
@@ -212,7 +227,7 @@ export function QuestionnaireCard({
                     onChange={e =>
                       setNotes(prev => ({ ...prev, [q.id]: e.target.value }))
                     }
-                    className="mt-1 w-full rounded border border-[#d3d8e0] px-2 py-1.5 text-[12px] text-stone-700 outline-none focus:border-[#1677ff]"
+                    className="mt-1 w-full rounded-[8px] border border-[#e5e7eb] px-3 py-1.5 text-[13px] text-[#171717] outline-none focus:border-[#171717]"
                   />
                 ) : null}
               </div>
@@ -221,13 +236,13 @@ export function QuestionnaireCard({
         </div>
       </div>
 
-      <div className="flex items-center justify-between border-t border-[#e8eaee] px-3 py-2">
+      <footer className="flex items-center justify-between gap-2 border-t border-[#e5e7eb] px-3 py-2.5">
         <button
           type="button"
           data-testid="sliderule-questionnaire-skip"
           title="别再问了，按现在知道的直接开始"
           onClick={() => onSubmit({ outcome: "skip_interview", answers: answers() })}
-          className="text-[11px] text-stone-400 transition hover:text-stone-600"
+          className="text-[12px] text-[#8b8b8b] hover:text-[#333]"
         >
           别再问了，直接开始
         </button>
@@ -236,9 +251,9 @@ export function QuestionnaireCard({
             <button
               type="button"
               onClick={() => setStep(s => Math.max(0, s - 1))}
-              className="flex items-center gap-1 rounded border border-[#e5e7eb] bg-white px-3 py-1.5 text-[12px] font-medium text-stone-600 transition hover:bg-[#eef0f4]"
+              className="inline-flex h-8 items-center gap-1 rounded-[8px] bg-[#f3f4f6] px-3 text-[13px] text-[#333]"
             >
-              <ChevronLeft className="h-3.5 w-3.5" /> 上一题
+              <ChevronLeft className="size-3.5" /> 上一题
             </button>
           ) : null}
           {safeStep < total - 1 ? (
@@ -246,9 +261,9 @@ export function QuestionnaireCard({
               type="button"
               data-testid="sliderule-questionnaire-next"
               onClick={() => setStep(s => Math.min(total - 1, s + 1))}
-              className="flex items-center gap-1 rounded bg-[#1677ff] px-3.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-[#0958d9]"
+              className="inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-[#171717] px-3 text-[13px] text-white"
             >
-              下一题 <ChevronRight className="h-3.5 w-3.5" />
+              下一题 <ChevronRight className="size-3.5" />
             </button>
           ) : (
             <button
@@ -257,13 +272,13 @@ export function QuestionnaireCard({
               onClick={() =>
                 onSubmit({ outcome: "accepted", answers: answers(), notes })
               }
-              className="rounded bg-[#1677ff] px-4 py-1.5 text-[12px] font-bold text-white transition hover:bg-[#0958d9]"
+              className="inline-flex h-8 items-center rounded-[8px] bg-[#171717] px-3 text-[13px] text-white"
             >
               确认继续
             </button>
           )}
         </div>
-      </div>
+      </footer>
     </div>
   );
 }

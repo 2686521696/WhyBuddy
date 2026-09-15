@@ -29,7 +29,11 @@ from services.project_browser_verification import (
 )
 from services.project_authority import approved_reference
 from services.project_creation import load_authorized_session
-from services.project_preview_config import origin_for_runtime, preview_configuration_enabled
+from services.project_preview_config import (
+    origin_for_runtime,
+    preview_configuration_enabled,
+    published_preview_url,
+)
 from services.project_runtime import REVISION_FILE, _LeaseHeartbeat, _timestamp
 from services.project_source_sync import authorize_source_recovery, finish_pending_source_patches, sync_next_source_patch
 from services.project_store import ProjectConflict, ProjectStore, ProjectStoreUnavailable
@@ -422,18 +426,46 @@ class _RuntimeTask:
 
     def development_server_command(self):
         server_command = f"npm run dev -- --host 0.0.0.0 --port {self.runtime.port} --strictPort"
-        if self.original.kind == "runtime.start" and self.supervisor.preview_runtime is not None:
-            # The relay preserves Host (including HMR), so Vite must explicitly
-            # accept this runtime's dedicated origin. The cloud smoke supplied
-            # this env var but the real worker did not: local health passed while
-            # every authorized preview returned Vite's blocked-host response.
-            # Reuse the tunnel manager's server-owned validator before remote IO;
-            # never take allowed hosts from tool input or disable Vite's check.
-            preview_host = urlsplit(origin_for_runtime(self.runtime.runtimeId)).hostname
-            if not preview_host:
-                raise ValueError("project_preview_origin_invalid")
-            server_command = f"__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS={shlex.quote(preview_host)} {server_command}"
+        host = self._vite_allowed_host()
+        if host:
+            server_command = f"__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS={shlex.quote(host)} {server_command}"
         return server_command
+
+    def _published_preview_url(self):
+        getter = getattr(self.provider, "preview_url", None)
+        if getter is None or self.handle is None:
+            return None
+        try:
+            return published_preview_url(getter(self.handle, self.runtime.port))
+        except Exception:
+            return None
+
+    def _remember_published_preview(self):
+        url = self._published_preview_url()
+        if url and self.runtime.previewUrl != url:
+            self.runtime = self.runtime.model_copy(update={"previewUrl": url})
+
+    def _require_relay_origin(self):
+        # Validate the private relay template before any remote IO. The actual
+        # Vite Host may later prefer E2B's published hostname; a bad template
+        # must still fail before create / npm ci (2026-09-16).
+        if self.original.kind != "runtime.start" or self.supervisor.preview_runtime is None:
+            return None
+        preview_host = urlsplit(origin_for_runtime(self.runtime.runtimeId)).hostname
+        if not preview_host:
+            raise ValueError("project_preview_origin_invalid")
+        return preview_host
+
+    def _vite_allowed_host(self):
+        published = self._published_preview_url()
+        if published:
+            return urlsplit(published).hostname
+        # The relay preserves Host (including HMR), so Vite must explicitly
+        # accept this runtime's dedicated origin. The cloud smoke supplied
+        # this env var but the real worker did not: local health passed while
+        # every authorized preview returned Vite's blocked-host response.
+        # Never take allowed hosts from tool input or disable Vite's check.
+        return self._require_relay_origin()
 
     def run(self):
         if self.result.get("cleanup"):
@@ -447,7 +479,7 @@ class _RuntimeTask:
         command = self.original.input.get("command") if self.original.kind == "runtime.exec" else None
         if self.original.kind == "runtime.exec" and (not isinstance(command, str) or command not in PROJECT_COMMANDS):
             raise ValueError("invalid_project_command")
-        server_command = self.development_server_command()
+        self._require_relay_origin()
         if self.original.runtime is None:
             self.save("provisioning")
             files = self.store.read_files(self.original.projectId, self.original.expectedRevision, owner_id=self.owner_id)
@@ -519,7 +551,7 @@ class _RuntimeTask:
                 self.result["phaseDeadline"] = time.time() + self.supervisor.ready_timeout
                 self.save("starting")
                 started = self.provider.start_process(self.handle,
-                    server_command, timeout_seconds=900)
+                    self.development_server_command(), timeout_seconds=900)
                 self._register("server", started.process_id)
                 phase = "starting"
         if self.original.kind == "runtime.exec":
@@ -541,6 +573,24 @@ class _RuntimeTask:
             self.result["readyAt"] = time.time()
         elif not self.provider.probe(self.handle, self.runtime.port, expected_revision=self.runtime.revision):
             raise WorkspaceProviderError("project_recovery_health_failed")
+        previous = published_preview_url(self.runtime.previewUrl)
+        self._remember_published_preview()
+        now = published_preview_url(self.runtime.previewUrl)
+        if phase != "starting" and now and previous != now:
+            # 2026-09-16 TicketStream：旧 Vite 只允许私有中继 Host。iframe
+            # 打开 E2B 发布域名会被 blocked host。刚拿到发布地址时停掉旧
+            # 进程再起一次，让 __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS 对上。
+            # 后续 lease 续上 previous==now，不再重启。
+            stopper = getattr(self.provider, "stop", None)
+            if callable(stopper):
+                stopper(self.handle, pid)
+            started = self.provider.start_process(
+                self.handle, self.development_server_command(), timeout_seconds=900)
+            self._register("server", started.process_id)
+            pid = started.process_id
+            self.runtime = self.runtime.model_copy(update={"processId": pid})
+            if not self.provider.probe(self.handle, self.runtime.port, expected_revision=self.runtime.revision):
+                raise WorkspaceProviderError("project_runtime_health_failed")
         self.save("ready")
         next_health = 0
         while True:
@@ -564,6 +614,7 @@ class _RuntimeTask:
                 if (not self.provider.is_process_running(self.handle, pid)
                         or not self.provider.probe(self.handle, self.runtime.port, expected_revision=self.runtime.revision)):
                     raise WorkspaceProviderError("project_runtime_health_failed")
+                self._remember_published_preview()
                 self.save("ready")
                 next_health = time.time() + min(30, self.supervisor.lease_ttl / 3)
             if self.supervisor.preview_runtime is not None:

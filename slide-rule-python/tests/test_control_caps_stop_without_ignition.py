@@ -103,6 +103,7 @@ def test_token_cap_stops_before_rehearse_dispatch(harness):
 
 def test_wall_clock_cap_stops_before_dispatch(harness, monkeypatch):
     import services.rehearsal_control as rc
+    from services.control_budget import CONVERSATION_BUDGET
 
     sid = new_sid("cap-wall")
     _confirmed(sid)
@@ -112,7 +113,7 @@ def test_wall_clock_cap_stops_before_dispatch(harness, monkeypatch):
     # ⚠ 步长和断言都**从常量算**，不许再手打数字：2026-09-14 把点火前墙钟
     #   45→90 时，这里写死的 46s / 45.0 当场变红，而它想钉的是「墙钟到顶要
     #   在派发之前停住」，不是那个数本身。
-    step = rc.MAX_WALL_SECONDS + 1.0
+    step = CONVERSATION_BUDGET.max_wall_seconds + 1.0
 
     def fake_mono():
         # 每次 +step：HTTP 中间件若先调 monotonic，started 仍会与下一次
@@ -127,7 +128,7 @@ def test_wall_clock_cap_stops_before_dispatch(harness, monkeypatch):
     [stop] = _stops(events)
     assert stop["stopReason"] == ControlStopReason.WALL_CLOCK.value, stop
     assert stop["stoppedBy"] == "runtime"
-    assert stop["limit"] == rc.MAX_WALL_SECONDS
+    assert stop["limit"] == CONVERSATION_BUDGET.max_wall_seconds
     assert harness.llm_calls == []
 
 
@@ -386,6 +387,26 @@ def test_本发带write_plan但账已超仍要先落计划再批准(harness):
     persisted = load_session(sid)
     assert latest_control_plan(persisted)["planContent"] == plan
     assert persisted.awaitReason == "control_plan_approval"
+
+
+def test_工程档额度到顶要说暂停可续不是葬礼():
+    """runtimeKind=project 时硬闸是暂停，不是完工，也不许说没点火。
+
+    标定数字 8000 / 64000 不许从这句话里改。变异：改回「没点火」或删掉
+    「再说一次」→ 本条红。
+    """
+    state = V5SessionState(
+        sessionId="cap-project-pause",
+        runtimeKind="project",
+        projectId="proj-1",
+        goal={"text": "TicketStream", "status": "clear"},
+    )
+    text = _cap_speech(state, ControlStopReason.TOKEN_BUDGET)
+    assert "再说一次" in text
+    assert "继续" in text
+    assert "源码仍保留" in text
+    assert "没点火" not in text
+    assert "思考额度用完了" not in text
 
 
 def test_计划已写额度到顶的人话不许再说没点火():

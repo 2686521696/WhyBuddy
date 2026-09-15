@@ -7,7 +7,12 @@
  * ⚠ 「自动补 Other」是**服务端对渲染侧的承诺**（工具说明里写着「你不要自己加」）。
  *   两侧成对：Python 那边判据钉「说明里那两句不许掉」，这边钉「渲染真的补了」。
  *   只钉一边的话，掉的那半会静静失效——卡上要么没有其他，要么有两个。
+ *
+ * 2026-09-15 卡面抄 Cursor 文件卡。正向钉近黑下一步，反向钉蓝问卷
+ * / 桃红边 / 「请你定」徽章不许回来——只 grep 源码会误伤注释，先剥。
  */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -41,6 +46,9 @@ const html = (extra?: Partial<React.ComponentProps<typeof QuestionnaireCard>>) =
   renderToStaticMarkup(
     <QuestionnaireCard questions={QUESTIONS} onSubmit={() => {}} {...extra} />
   );
+
+const stripComments = (source: string) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 
 describe("推荐项", () => {
   it("标签末尾那个后缀摘掉，换成角标", () => {
@@ -141,5 +149,29 @@ describe("四条路径的出口都在卡上", () => {
     // 没有出口的话，用户只能硬答或者晾着——工厂就一直停在那儿。
     expect(out).toContain('data-testid="sliderule-questionnaire-cancel"');
     expect(out).toContain('data-testid="sliderule-questionnaire-skip"');
+  });
+});
+
+describe("卡面抄 Cursor 文件卡", () => {
+  it("近黑下一步，不是蓝问卷；推荐贴在标题旁", () => {
+    const out = html();
+    expect(out).toContain('data-questionnaire-surface="cursor"');
+    expect(out).toContain("rounded-[12px]");
+    expect(out).toContain("bg-[#171717]");
+    expect(out).toContain("问题");
+    expect(out).toContain("推荐");
+    expect(out).not.toContain("#1677ff");
+    expect(out).not.toContain("#EBCEC0");
+    expect(out).not.toContain("请你定");
+    expect(out).not.toContain("bg-emerald-50");
+    const src = stripComments(
+      readFileSync(resolve(__dirname, "../QuestionnaireCard.tsx"), "utf8")
+    );
+    expect(src).toContain('data-questionnaire-surface="cursor"');
+    expect(src).toContain("bg-[#171717]");
+    expect(src).not.toContain("#1677ff");
+    expect(src).not.toContain("#EBCEC0");
+    expect(src).not.toContain("请你定");
+    expect(src).not.toContain("bg-emerald-50");
   });
 });

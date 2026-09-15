@@ -5,8 +5,9 @@
  * ○◐● 重印。条目只来自 `controlTodo`（模型 `todo_write` 写下的）。
  * 没有就不画，不许编一条。
  *
- * 卡面 2026-09-15 改成抄 Cursor Agent 那张 To-dos（见 PlanTodoDock.tsx）。
- * 这里只认模型写下的状态，分数用 completed 计数，不编百分比。
+ * 卡面 2026-09-15 改回抄 Manus：默认折叠，脸上是当前条 + 做到第几条。
+ * 清单自己滚（overflow-y-auto），底栏白底钉住——10 条长文案不许再叠上去。
+ * 这里只认模型写下的状态。`planTodoCompleted` 仍给进度条量纲，脸上不画。
  */
 export type PlanTodoStatus =
   | "pending"

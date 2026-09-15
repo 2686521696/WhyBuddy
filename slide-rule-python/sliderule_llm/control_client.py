@@ -43,6 +43,12 @@ from .gateway_circuit import (  # 叶子（顶层只有标准库），无循环�
 )
 from .retry_budget import charge_retry  # 同上：叶子，顶层 import 让这条边留在闸上
 from .doom_loop import Collector as DoomLoopCollector, peek as peek_doom_loop
+from .empty_sample import (
+    MAX_EMPTY_RESAMPLES,
+    empty_reason,
+    message_reasoning,
+    should_resample_empty,
+)
 
 
 @dataclass
@@ -240,6 +246,7 @@ async def call_control_llm(
         raise LlmError(blocked, status=525, transient=True)
 
     last_error: LlmError | None = None
+    empty_resamples = 0
     for attempt in range(1, 4):
         if attempt > 1 and not retries_allowed():
             if last_error is not None:
@@ -270,10 +277,31 @@ async def call_control_llm(
                 raise asyncio.CancelledError() from error
             last_error = error
             note_failure(error)
+            # 空回复跟 522 共用这一圈，但只许再采 1 发。TicketStream 那发
+            # 5874 token，套 522 的三次会把「只想不干」变成烧钱循环。
+            if error.empty_reason and empty_resamples >= MAX_EMPTY_RESAMPLES:
+                if error.transient:
+                    raise LlmError(
+                        str(error),
+                        status=error.status,
+                        transient=False,
+                        usage=error.usage,
+                        finish_reason=error.finish_reason,
+                        empty_reason=error.empty_reason,
+                    ) from error
+                raise
             if not error.transient or attempt >= 3:
                 raise
             if not retries_allowed():
                 raise
+            if error.empty_reason:
+                empty_resamples += 1
+                print(
+                    f"[control] empty sample empty_reason={error.empty_reason} "
+                    f"finish={error.finish_reason or 'unknown'} "
+                    f"resample={empty_resamples}/{MAX_EMPTY_RESAMPLES}",
+                    flush=True,
+                )
             # 抄 grok 的第二层：**整个回合累计**的重试上限，中途永不清零。
             #
             # ⚠ 上面那个 `attempt >= 3` 是第一层（每次调用 3 次，下一次调用
@@ -405,14 +433,31 @@ async def _call_control_llm_once(
         )
 
     content, tool_calls, usage, result_finish = _extract_control(data)
-    if not content.strip() and not tool_calls:
+    choice = (data.get("choices") or [{}])[0] or {}
+    msg = choice.get("message") if isinstance(choice, dict) else {}
+    reason = empty_reason(
+        content=content,
+        tool_calls=tool_calls,
+        reasoning=message_reasoning(msg if isinstance(msg, dict) else {}),
+    )
+    if reason is not None:
         # Control has its own request cap; the factory helper's instruction
         # to increase LLM_MAX_TOKENS does not describe this call's policy.
+        #
+        # ⚠ 思考只用来归类，不许写进 ControlLlmResult.content——写进去
+        #   host 会当成对用户说的话（TicketStream 前几发英文独白就是这样）。
         cause = " (output token limit reached)" if finish == "length" else ""
+        retry = should_resample_empty(finish, reason)
         raise LlmError(
             "empty content from control LLM" + cause + " "
-            + _empty_content_hint(finish, max_tokens, termination_usage, include_length_advice=False),
-            transient=False, usage=termination_usage, finish_reason=finish,
+            + _empty_content_hint(
+                finish, max_tokens, termination_usage, include_length_advice=False,
+            )
+            + f" empty_reason={reason.value}",
+            transient=retry,
+            usage=termination_usage,
+            finish_reason=finish,
+            empty_reason=reason.value,
         )
     return ControlLlmResult(
         content=content,

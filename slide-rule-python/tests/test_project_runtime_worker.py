@@ -116,6 +116,7 @@ def state(store, operation, expected):
 
 def test_submission_is_durable_idempotent_and_ready_keeps_lease(setup):
     store, project, provider, make_worker, _ = setup
+    provider.preview_url = lambda handle, port: f"https://{port}-{handle.sandbox_id}.e2b.app"
     worker = make_worker()
     operation = submit(worker, project)
     duplicate = submit(worker, project)
@@ -125,6 +126,7 @@ def test_submission_is_durable_idempotent_and_ready_keeps_lease(setup):
             approval_ref="plan-1", idempotency_key="request-1", port=5182)
     ready = eventually(lambda: state(store, operation, "ready"))
     assert ready.status == "running"
+    assert ready.runtime.previewUrl == f"https://5173-sandbox-1.e2b.app/"
     assert provider.created == 1 and len(provider.commands) == 2
     assert provider.renewed.wait(2)
     lease = store.get_lease(project.projectId, owner_id="alice")

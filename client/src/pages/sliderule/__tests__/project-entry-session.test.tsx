@@ -175,6 +175,42 @@ describe("restoring the latest failed control run after refresh", () => {
     expect(current.uiTurns.at(-1)?.user).toBe("");
   });
 
+  it("failed run 的工程动作刷新后还在左栏——不许只回放失败说明", async () => {
+    configureLatest();
+    saved.get(SID)!.runtimeKind = "project";
+    saved.get(SID)!.turnNarrations = [{
+      turnId: "turn-1789462833327",
+      user: "构建一个名为 TicketStream 的服务台 SaaS 界面",
+      steps: [{ id: "s1", kind: "model_speech", text: "我先把工程搭起来。" }],
+      durationMs: 127000,
+    }];
+    resumeControlResponse = async () => new Response([
+      { type: "control_run_started", controlRunId: "failed-entry" },
+      { type: "control_tool_start", tool: "project_create", summary: "react-vite-tasks" },
+      { type: "control_tool_result", tool: "project_create", ok: true },
+      { type: "control_tool_start", tool: "project_patch", summary: "src/index.html" },
+      { type: "control_tool_result", tool: "project_patch", ok: true, path: "src/index.html" },
+      { type: "control_text", text: failure, stopReason: "llm_unavailable", stoppedBy: "provider" },
+      { type: "complete", state: saved.get(SID) },
+      { type: "control_run_settled", status: "failed", error: "llm_unavailable" },
+    ].map(event => `data: ${JSON.stringify(event)}\n\n`).join(""));
+    await mount();
+    await act(async () => {
+      await vi.waitFor(() => expect(current.uiTurns.at(-1)?.assistant).toContain(failure));
+    });
+    const chips = current.uiTurns.flatMap(turn =>
+      (turn.steps || []).filter(step => step.kind === "chip")
+    );
+    expect(chips.map(step => step.capabilityId)).toEqual([
+      "project_create",
+      "project_create",
+      "project_patch",
+      "project_patch",
+    ]);
+    expect(current.uiTurns.some(turn => turn.user.includes("TicketStream"))).toBe(true);
+    expect(vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === "PUT")).toHaveLength(0);
+  });
+
   it("keeps the persisted user conversation alongside the recovered failure", async () => {
     configureLatest();
     saved.get(SID)!.turnNarrations = [{

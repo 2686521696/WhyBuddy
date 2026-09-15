@@ -83,7 +83,7 @@ const PREVIEW_REASON: Record<string, string> = {
   project_runtime_not_ready:
     "工程运行实例还没有就绪，请等待启动完成后再打开预览。",
   project_preview_tunnel_not_started:
-    "工程已启动，但私有预览通道还没有建立。请更新状态后重试。",
+    "工程已启动，但私有预览通道还没有建立。",
   project_preview_binding_changed:
     "工程运行授权已变化，当前预览需要重新同步或启动。",
 };
@@ -280,6 +280,134 @@ function ComputerReplayDock({
   );
 }
 
+/**
+ * 预览没打开时的脸。2026-09-16 第二轮对照 Manus 空态：
+ * 窗骨架 + 一句「预览已暂停，点击以唤醒。」+ 黑底「唤醒」。
+ * 配置/HTTP 错误才加第二行；「工程还没启动」那种说明书不许再写。
+ *
+ * 唤醒 = 能开就换票（open），过期/停止就 POST /preview/wake；
+ * 失败必须把原因写在第二行，不许假装刷新就好了。
+ */
+function PreviewPausedFace({
+  title,
+  detail,
+  waking,
+  disabled,
+  alert,
+  onWake,
+}: {
+  title: string;
+  detail: string | null;
+  waking: boolean;
+  disabled: boolean;
+  alert?: boolean;
+  onWake: () => void;
+}) {
+  return (
+    <div
+      className="flex min-h-0 flex-1 flex-col items-center justify-center bg-white"
+      data-testid="project-preview-paused"
+    >
+      <div
+        className="mb-5 h-[88px] w-[148px] rounded-xl bg-[#f4f4f5] p-3"
+        aria-hidden
+      >
+        <div className="mb-3 flex gap-1">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#d4d4d8]" />
+          <span className="h-1.5 w-1.5 rounded-full bg-[#d4d4d8]" />
+          <span className="h-1.5 w-1.5 rounded-full bg-[#d4d4d8]" />
+        </div>
+        <div className="flex gap-2">
+          <div className="h-10 flex-1 rounded-md bg-white/80" />
+          <div className="h-10 flex-1 rounded-md bg-white/80" />
+        </div>
+      </div>
+      <p className="text-[13px] text-[#8a8a8a]">{title}</p>
+      {detail ? (
+        <p
+          role={alert ? "alert" : undefined}
+          className="mt-1 max-w-sm px-6 text-center text-[12px] leading-5 text-[#a1a1aa]"
+        >
+          {detail}
+        </p>
+      ) : null}
+      <button
+        type="button"
+        data-testid="project-preview-wake"
+        disabled={disabled}
+        onClick={onWake}
+        className="mt-4 rounded-full bg-[#171717] px-5 py-1.5 text-[13px] text-white disabled:opacity-40"
+      >
+        {waking ? "正在打开…" : "唤醒"}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * 对照 Manus：预览档地址一直在头条，没打开也画 `/`。
+ * 完整 URL 只进 title / 外开，行里只留路径。
+ */
+function PreviewAddressBar({
+  entryUrl,
+  canReload,
+  onReload,
+}: {
+  entryUrl: string | null;
+  canReload: boolean;
+  onReload: () => void;
+}) {
+  return (
+    <div
+      className="flex min-w-0 flex-1 items-center gap-1"
+      data-testid="project-preview-addressbar"
+    >
+      <span
+        className="flex h-6 min-w-0 flex-1 items-center rounded-full bg-[#f4f4f5] px-3 font-mono text-[12px] text-[#8a8a8a]"
+        title={entryUrl ?? undefined}
+        data-testid="project-preview-url"
+      >
+        {entryUrl ? previewPath(entryUrl) : "/"}
+      </span>
+      {entryUrl ? (
+        <>
+          <a
+            href={entryUrl}
+            target="_blank"
+            rel="noreferrer noopener"
+            data-testid="project-preview-open-external"
+            title="在新标签页打开"
+            aria-label="在新标签页打开预览"
+            className="flex h-6 w-6 items-center justify-center rounded text-[#8a8a8a] hover:bg-[#f4f4f5]"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+          <button
+            type="button"
+            title="重新载入页面"
+            data-testid="project-preview-reload"
+            disabled={!canReload}
+            onClick={onReload}
+            className="flex h-6 w-6 items-center justify-center rounded text-[#8a8a8a] hover:bg-[#f4f4f5] disabled:opacity-40"
+          >
+            <RotateCw className="h-3.5 w-3.5" />
+          </button>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** 配置/通道类理由才写在空态第二行；未启动、未就绪跟 Manus 一样只说暂停。 */
+const PREVIEW_FACE_REASONS = new Set([
+  "project_preview_not_configured",
+  "project_preview_gateway_not_configured",
+  "project_private_preview_origin_required",
+  "project_preview_tunnel_not_started",
+  "project_preview_binding_changed",
+  "project_rollout_disabled",
+]);
+
 export function SandboxPreviewSurface({
   projectId,
   projectRevision,
@@ -325,16 +453,26 @@ export function SandboxPreviewSurface({
   );
   const computerLive = projectComputerView(activityRows, null).live;
   const previewReady = Boolean(preview.entryUrl);
+  const lastTool =
+    activityRows.length > 0
+      ? activityRows[activityRows.length - 1]?.tool
+      : null;
+  const hasConsole = activityRows.some(
+    row => Boolean(sandboxCommandLine(row) && row.operationId)
+  );
   const awaitingProject = Boolean(turns) && !projectId;
+  // ⚠ 2026-09-15：工程还没落库时不许改口钉死「computer」。
+  //   TicketStream 那趟 create + list 已经有动作，短接会让
+  //   resolveComputerView 根本跑不到，右侧白纸。
   const tab: ComputerView = turns
-    ? awaitingProject
-      ? userPinned ?? "computer"
-      : resolveComputerView({
-          userPinned,
-          live: computerLive,
-          hasActivity: activityRows.length > 0,
-          previewReady,
-        })
+    ? resolveComputerView({
+        userPinned,
+        live: computerLive,
+        hasActivity: activityRows.length > 0,
+        previewReady,
+        lastTool,
+        hasConsole,
+      })
     : userPinned && userPinned !== "computer"
       ? userPinned
       : "preview";
@@ -376,6 +514,8 @@ export function SandboxPreviewSurface({
     }
   };
   const [workspaceOpened, setWorkspaceOpened] = useState(false);
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
   const [focusId, setFocusId] = useState<string | null>(null);
   const focusIndex = focusId
     ? activityRows.findIndex(row => row.id === focusId)
@@ -388,6 +528,9 @@ export function SandboxPreviewSurface({
     setUserPinned(value);
     if (value === "source" || value === "history") setWorkspaceOpened(true);
   };
+  useEffect(() => {
+    if (tab === "source" || tab === "history") setWorkspaceOpened(true);
+  }, [tab]);
   const goPreview = () => {
     pinView("preview");
     void preview.open();
@@ -430,8 +573,17 @@ export function SandboxPreviewSurface({
   useEffect(() => {
     setUserPinned(null);
     setFocusId(null);
-    setWorkspaceOpened(false);
     setSelection(null);
+    // ⚠ 2026-09-15 真机团长工作台 `sr-20260915161915-B2601PBD1Q`：
+    //   计划批准后右侧已经停在「代码」等 id，projectId 落到
+    //   `prj-4ec824406ad35125a3595c4d419c9eb0` 时这里曾经无条件
+    //   `setWorkspaceOpened(false)`。tab 还是 source，下面那条
+    //   `[tab]` 不重跑；waiting 卸了（已经有 id），面板又没挂上——
+    //   标题写着「代码」，下面整面白纸。用户圈了那张图。
+    //   换工程仍要卸上一份的钉档/点选；当前已经在代码/版本档
+    //   就立刻再打开，不许经过一个空窗。
+    const view = tabRef.current;
+    setWorkspaceOpened(view === "source" || view === "history");
   }, [projectId]);
   useEffect(() => {
     setSelecting(false);
@@ -476,36 +628,64 @@ export function SandboxPreviewSurface({
     projectRevision &&
     descriptor.revision !== projectRevision;
   const previewError = awaitingProject ? projectCreateError : preview.error;
-  const status = awaitingProject
-    ? projectCreateError || "正在准备工程"
-    : preview.loading
-    ? "正在读取工程状态"
-    : previewError
-      ? "暂时无法打开预览"
-      : mismatch
-        ? "运行版本与当前工程不同"
-        : descriptor
-          ? STATUS[descriptor.status]
-          : "工程尚未启动";
+  const previewIdle =
+    !descriptor ||
+    descriptor.status === "stopped" ||
+    descriptor.status === "expired" ||
+    descriptor.status === "ready";
   const blockedReason = previewReasonText(preview.snapshot?.reason);
-  const description = previewError
+  const faceReason =
+    !previewError &&
+    !mismatch &&
+    preview.snapshot?.reason &&
+    PREVIEW_FACE_REASONS.has(preview.snapshot.reason)
+      ? blockedReason
+      : null;
+  const pausedTitle = preview.opening
+    ? "正在打开预览…"
+    : preview.starting
+      ? "正在启动应用…"
+      : preview.loading
+        ? "正在准备预览…"
+        : previewError
+          ? "暂时无法打开预览"
+          : awaitingProject
+            ? "正在准备工程"
+            : mismatch
+              ? "运行版本与当前工程不同"
+              : faceReason
+                ? "暂时无法打开预览"
+                : previewIdle
+                  ? "预览已暂停，点击以唤醒。"
+                  : STATUS[descriptor!.status];
+  const pausedDetail = previewError
     ? previewError
-    : awaitingProject
-      ? "计划已批准，正在创建工程工作台。"
-      : mismatch
-        ? "当前运行的是另一份源码版本，请先同步或启动当前工程。"
-        : preview.loading
-          ? "正在读取工程运行状态…"
-          : blockedReason ||
-            (!descriptor
-              ? PREVIEW_REASON.project_runtime_not_started
-              : descriptor.status !== "ready"
-                ? `${STATUS[descriptor.status]}。这里会继续更新实际运行状态。`
-                : preview.snapshot?.available === false
-                  ? "应用已就绪，但私有预览暂不可用，请更新状态查看具体原因。"
-                  : preview.opening
-                    ? "正在申请本次预览访问授权…"
-                    : "应用已就绪。点击「打开预览」获取本次访问授权；预览就绪不代表业务验收已通过。");
+    : mismatch
+      ? "当前运行的是另一份源码版本，请先同步或启动当前工程。"
+      : faceReason;
+  const canWake = Boolean(
+    projectId && !preview.opening && !preview.starting && !awaitingProject
+  );
+  const wakePreview = () => {
+    void preview.wake();
+  };
+  const showPreviewPick = tab === "preview" && Boolean(preview.entryUrl);
+  const previewPickButton = showPreviewPick ? (
+    <button
+      type="button"
+      disabled={bridgeStatus === "waiting"}
+      aria-pressed={selecting}
+      className="flex h-7 items-center rounded-md px-2 text-[12px] text-[#3c3c3c] hover:bg-[#f4f4f5] disabled:opacity-40"
+      onClick={() => {
+        const value = !selecting;
+        setSelecting(value);
+        bridge.current?.setEnabled(value);
+        pinView("preview");
+      }}
+    >
+      {selecting ? "退出点选" : "点选"}
+    </button>
+  ) : null;
 
   return (
     <section
@@ -513,6 +693,7 @@ export function SandboxPreviewSurface({
       data-project-id={projectId ?? ""}
       data-project-revision={descriptor?.revision ?? ""}
       data-computer-view={tab}
+      data-preview-status={descriptor?.status ?? "none"}
       className={`flex h-full min-h-0 flex-1 flex-col overflow-hidden border border-stone-200 bg-white ${
         // 会话工作台贴边铺满：圆角会在四角漏出舞台底色（2026-09-14 真机圈的）。
         // 应用中心那条链没有 turns，仍是卡片，保留 rounded-lg。
@@ -527,15 +708,33 @@ export function SandboxPreviewSurface({
         >
           {/* ⚠ 2026-09-14：对照 HTML 推演那条 sliderule-app-stage-bar——
               功能堆在同一行，不另叠「重置 / 分栏」在电脑壳上头。
-              只堆**已经接通**的：重置、切档、打开预览、停止、私有/开放、
-              分栏/全屏、交付物。页面/代码、关联、点选编辑、角色是 HTML
-              页的，E2B 应用上没有对应实现，不许画一个点不动的。
-              「工程尚未启动」仍是预览的话，不写在终端脸上。 */}
-          <div className="flex min-w-0 items-center gap-2">
+              只堆**已经接通**的。2026-09-16 预览档再对照 Manus：
+              头条只留切档 + 地址（没打开也是 `/`），打开/停止/私有
+              不进预览脸。空画布一句唤醒，验收在交付。
+
+              ⚠ 2026-09-15 真机圈的：源码档把「工程尚未启动 + 检查应用 +
+              源码版本工具条 + 编辑器路径」叠成四条顶栏。Manus 源码只有
+              「代码 + 当前路径」一行。预览状态、打开预览、停止、私有
+              都不属于代码脸，切走预览就卸掉。 */}
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             {resetSlot}
-            <h2 className="truncate text-[12px] font-medium text-[#3c3c3c]">
-              它的电脑
-            </h2>
+            {tab === "preview" ? (
+              <>
+                <ComputerModeSelect tab={tab} hasSession onPick={pinView} />
+                <PreviewAddressBar
+                  entryUrl={preview.entryUrl}
+                  canReload={preview.canOpen}
+                  onReload={() => void preview.open()}
+                />
+              </>
+            ) : (
+              <h2
+                className="truncate text-[12px] font-medium text-[#3c3c3c]"
+                data-testid="project-computer-title"
+              >
+                {tab === "source" || tab === "history" ? "代码" : "它的电脑"}
+              </h2>
+            )}
             {tab === "computer" && computerNow.current?.status === "running" ? (
               <p
                 role="status"
@@ -546,10 +745,6 @@ export function SandboxPreviewSurface({
                 {sandboxCommandLine(computerNow.current) ||
                   computerNow.current.label}
               </p>
-            ) : tab !== "computer" ? (
-              <p role="status" className="shrink-0 text-[11px] text-[#8a8a8a]">
-                {status}
-              </p>
             ) : null}
           </div>
           <div
@@ -557,90 +752,103 @@ export function SandboxPreviewSurface({
             data-testid="project-computer-gears"
           >
             <div className="ml-auto flex shrink-0 items-center gap-1">
-              <ComputerModeSelect tab={tab} hasSession onPick={pinView} />
-              <button
-                type="button"
-                onClick={goPreview}
-                disabled={!preview.canOpen}
-                data-testid="project-preview-open"
-                className="flex h-7 items-center rounded-md px-2 text-[12px] text-[#3c3c3c] hover:bg-[#f4f4f5] disabled:opacity-40"
-              >
-                {preview.opening
-                  ? "正在授权…"
-                  : preview.entryUrl
-                    ? "刷新预览"
-                    : "打开预览"}
-              </button>
-              {canStop ? (
-                <button
-                  type="button"
-                  disabled={stopBusy || descriptor?.status === "stopping"}
-                  onClick={() => void stopRuntime()}
-                  className="flex h-7 items-center rounded-md px-2 text-[12px] text-[#3c3c3c] hover:bg-[#f4f4f5] disabled:opacity-40"
-                >
-                  {stopBusy ? "正在请求停止…" : "停止应用"}
-                </button>
+              {tab === "preview" ? null : (
+                <ComputerModeSelect tab={tab} hasSession onPick={pinView} />
+              )}
+              {tab === "source" ? (
+                <div
+                  data-testid="project-source-tools-host"
+                  className="contents"
+                />
               ) : null}
-              <StudioShareToggle sessionId={sessionId} running={isRunning} />
+              {previewPickButton}
+              {tab === "source" || tab === "history" || tab === "preview" ? null : (
+                <>
+                  <button
+                    type="button"
+                    onClick={goPreview}
+                    disabled={!preview.canOpen}
+                    data-testid="project-preview-open"
+                    className="flex h-7 items-center rounded-md px-2 text-[12px] text-[#3c3c3c] hover:bg-[#f4f4f5] disabled:opacity-40"
+                  >
+                    {preview.opening
+                      ? "正在授权…"
+                      : preview.entryUrl
+                        ? "刷新预览"
+                        : "打开预览"}
+                  </button>
+                  {canStop ? (
+                    <button
+                      type="button"
+                      disabled={stopBusy || descriptor?.status === "stopping"}
+                      onClick={() => void stopRuntime()}
+                      className="flex h-7 items-center rounded-md px-2 text-[12px] text-[#3c3c3c] hover:bg-[#f4f4f5] disabled:opacity-40"
+                    >
+                      {stopBusy ? "正在请求停止…" : "停止应用"}
+                    </button>
+                  ) : null}
+                  <StudioShareToggle
+                    sessionId={sessionId}
+                    running={isRunning}
+                  />
+                </>
+              )}
               {chromeSlot}
             </div>
           </div>
         </div>
       ) : (
-      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-stone-200 px-4 py-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <h2 className="truncate text-sm font-semibold text-stone-800">
-              {turns ? "它的电脑" : appTitle}
-            </h2>
-            <span
-              className="shrink-0 rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700"
-              title="工程在 E2B 沙盒中运行，预览通过受控网关访问"
-            >
-              E2B 沙盒
-            </span>
-            {/* ⚠ 状态原来自己占第二行。它就四五个字（「预览就绪」「运行环境已过期」），
-                为它单起一行等于花 18px 排一句话（2026-09-14 量的：外壳吃掉面板
-                38.6% 的竖直空间，这是其中一笔）。挪到同一行的标题后面，
-                标题 truncate、状态 shrink-0，窄屏先压标题、不压状态。 */}
-            <p role="status" className="shrink-0 text-xs text-stone-500">
-              {status}
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => void preview.refresh()}
-          disabled={preview.loading}
-          className="rounded-md px-3 py-1.5 text-xs text-stone-600 hover:bg-stone-100 disabled:opacity-40"
-        >
-          更新状态
-        </button>
-        <button
-          type="button"
-          onClick={() => void preview.open()}
-          disabled={!preview.canOpen}
-          data-testid="project-preview-open"
-          className="rounded-md bg-stone-800 px-3 py-1.5 text-xs text-white hover:bg-stone-700 disabled:opacity-40"
-        >
-          {preview.opening
-            ? "正在授权…"
-            : preview.entryUrl
-              ? "刷新预览"
-              : "打开预览"}
-        </button>
-        {preview.snapshot?.operationId &&
-        descriptor &&
-        !["stopped", "expired", "failed"].includes(descriptor.status) ? (
+      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[#e5e7eb] px-2">
+        <ComputerModeSelect
+          tab={tab}
+          hasSession={false}
+          onPick={pinView}
+        />
+        {tab === "preview" ? (
+          <PreviewAddressBar
+            entryUrl={preview.entryUrl}
+            canReload={preview.canOpen}
+            onReload={() => void preview.open()}
+          />
+        ) : (
+          <span className="min-w-0 flex-1" />
+        )}
+        <div className="flex shrink-0 items-center gap-1">
+          {previewPickButton}
           <button
             type="button"
-            disabled={stopBusy || descriptor.status === "stopping"}
-            onClick={() => void stopRuntime()}
-            className="rounded-md border border-stone-300 px-3 py-1.5 text-xs text-stone-600 disabled:opacity-40"
+            onClick={() => void preview.refresh()}
+            disabled={preview.loading}
+            className="flex h-7 items-center rounded-md px-2 text-[12px] text-[#3c3c3c] hover:bg-[#f4f4f5] disabled:opacity-40"
           >
-            {stopBusy ? "正在请求停止…" : "停止应用"}
+            更新状态
           </button>
-        ) : null}
+          <button
+            type="button"
+            onClick={() => void preview.open()}
+            disabled={!preview.canOpen}
+            data-testid="project-preview-open"
+            className="flex h-7 items-center rounded-md px-2 text-[12px] text-[#3c3c3c] hover:bg-[#f4f4f5] disabled:opacity-40"
+          >
+            {preview.opening
+              ? "正在授权…"
+              : preview.entryUrl
+                ? "刷新预览"
+                : "打开预览"}
+          </button>
+          {preview.snapshot?.operationId &&
+          descriptor &&
+          !["stopped", "expired", "failed"].includes(descriptor.status) ? (
+            <button
+              type="button"
+              disabled={stopBusy || descriptor.status === "stopping"}
+              onClick={() => void stopRuntime()}
+              className="flex h-7 items-center rounded-md px-2 text-[12px] text-[#3c3c3c] hover:bg-[#f4f4f5] disabled:opacity-40"
+            >
+              {stopBusy ? "正在请求停止…" : "停止应用"}
+            </button>
+          ) : null}
+        </div>
       </div>
       )}
       {tab === "computer" && turns ? null : stopError ? (
@@ -648,17 +856,13 @@ export function SandboxPreviewSurface({
           {stopError}
         </p>
       ) : null}
-      {/* ⚠ 2026-09-14 量出来的：这条告警占 65px，而它说的话跟 400px 下面那块
-          占位文字**一字不差**——`description` 在有 blockedReason 时就等于它
-          （见上面 description 的定义）。一屏里 9% 的竖直空间花在说第二遍。
-
-          所以只在占位区**说不到**的时候画：预览已经打开时 iframe 顶掉了占位区，
-          那时这条是唯一的载体，必须画。判据两头都钉着。 */}
+      {/* 告警条只留给占位区说的是另一件事的时候（版本钉住对不上）。
+          未启动 / 通道未建写在空态，不再叠一条黄条。 */}
       {!(tab === "computer" && turns) &&
+      mismatch &&
       !preview.loading &&
       !preview.error &&
-      blockedReason &&
-      !(!preview.entryUrl && description === blockedReason) ? (
+      blockedReason ? (
         <div
           role="status"
           data-testid="project-preview-blocked-reason"
@@ -667,113 +871,6 @@ export function SandboxPreviewSurface({
           <p className="font-semibold">工程预览当前不可用</p>
           <p className="mt-1 leading-5">{blockedReason}</p>
         </div>
-      ) : null}
-      {turns && tab !== "preview" ? null : (
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stone-200 px-4 py-2">
-        {/* 会话工作台的切档已经在头条。应用中心没有 turns，切档仍在这一行。 */}
-        {turns ? null : (
-          <ComputerModeSelect
-            tab={tab}
-            hasSession={false}
-            onPick={pinView}
-          />
-        )}
-        {/* 地址：对照 Manus——视图切换和地址在**同一条**上，不是各占一行。
-            2026-09-14 量出来的：面板 708px 里外壳吃掉 273px（38.6%），
-            地址行自己一行再加一条边框，就是那 38.6% 里的一块。合并省掉整整一行。
-
-            ⚠ 只在预览这个视图下画：切到源码/版本还挂着一条地址栏，
-              指的是另一个面板里的东西，比不画更糟。
-
-            ⚠ 只画**真的能用**的那几个。两轮各删掉一个：
-              · Manus 的「编辑 / 发布」——我们的发布通道没接通，画一个点不动的
-                按钮比不画更糟（§7 不许伪造）。
-              · 自己加的「首页」按钮——写的是 `frame.src = preview.entryUrl`，
-                而 entryUrl 里那张 ticket 是**一次性**的（useProjectPreview
-                每次 open() 换一张），重新导航过去等于拿一张用过的票。
-                本机预览网关是通配符域名 + TLS，验不了，所以不猜——删掉。
-            ⚠ 「刷新」必须是 open()，不是 refresh()：refresh() 只重拉状态快照
-              （头部那颗「更新状态」就是它），重新载入页面要的是**换一张票**。
-              第一版接错成 refresh()，点下去页面纹丝不动。 */}
-        {tab === "preview" && preview.entryUrl ? (
-          <div
-            className="flex min-w-0 flex-1 items-center gap-1.5"
-            data-testid="project-preview-addressbar"
-          >
-            <span
-              className="min-w-0 flex-1 truncate rounded border border-stone-200 bg-white px-2 py-1 font-mono text-[11px] text-stone-500"
-              title={preview.entryUrl}
-              data-testid="project-preview-url"
-            >
-              {previewPath(preview.entryUrl)}
-            </span>
-            <a
-              href={preview.entryUrl}
-              target="_blank"
-              rel="noreferrer noopener"
-              title="在新标签页打开"
-              className="flex h-6 w-6 items-center justify-center rounded text-stone-500 hover:bg-stone-200"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-            </a>
-            <button
-              type="button"
-              title="重新载入页面"
-              data-testid="project-preview-reload"
-              disabled={!preview.canOpen}
-              onClick={() => void preview.open()}
-              className="flex h-6 w-6 items-center justify-center rounded text-stone-500 hover:bg-stone-200 disabled:opacity-40"
-            >
-              <RotateCw className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ) : null}
-        <button
-          type="button"
-          disabled={!preview.entryUrl || bridgeStatus === "waiting"}
-          aria-pressed={selecting}
-          className="ml-auto rounded border border-stone-300 px-3 py-1 text-xs disabled:opacity-40"
-          onClick={() => {
-            const value = !selecting;
-            setSelecting(value);
-            bridge.current?.setEnabled(value);
-            pinView("preview");
-          }}
-        >
-          {" "}
-          {selecting ? "退出元素选择" : "点选元素定位源码"}
-        </button>
-        {preview.entryUrl && bridgeStatus === "waiting" ? (
-          <span className="text-xs text-stone-500">此预览尚未连接源码定位</span>
-        ) : null}
-        {bridgeStatus === "missing-source" ? (
-          <span role="status" className="text-xs text-amber-800">
-            此元素没有源码映射，请从源码列表选择文件。
-          </span>
-        ) : null}
-      </div>
-      )}
-      {tab !== "computer" ? (
-        <ProjectVerificationPanel
-          projectId={projectId}
-          revision={
-            revisionMode === "current"
-              ? descriptor?.revision
-              : (projectRevision ?? descriptor?.revision)
-          }
-          runtimeOperationId={preview.snapshot?.operationId}
-          runtimeId={descriptor?.runtimeId}
-          suiteVersion={descriptor?.capabilities
-            ?.find(capability => capability.startsWith("verification:"))
-            ?.slice("verification:".length)}
-          ready={Boolean(
-            !preview.error &&
-            !preview.loading &&
-            !mismatch &&
-            descriptor?.status === "ready"
-          )}
-          compact={tab !== "preview"}
-        />
       ) : null}
       {tab === "computer" ? (
         activityRows.length > 0 ? (
@@ -801,7 +898,24 @@ export function SandboxPreviewSurface({
       {tab === "computer" && turns && activityRows.length > 0 ? (
         <ComputerReplayDock rows={activityRows} focusId={focusId} />
       ) : null}
-      {workspaceOpened && projectId ? (
+      {tab === "source" && !projectId ? (
+        <div
+          className="flex min-h-0 flex-1 items-center justify-center p-8"
+          data-testid="project-source-waiting"
+        >
+          <p className="max-w-md text-center text-sm leading-6 text-stone-500">
+            {projectCreateError ||
+              "计划已批准，正在创建工程。源码会出现在这里。"}
+          </p>
+        </div>
+      ) : null}
+      {/* ⚠ 挂面板不能只听 workspaceOpened。真机那张白纸：tab 已经是
+          source、projectId 也有了，换 id 把 opened 扳回 false，首屏
+          在 effect 跑完前（以及 [tab] 不重跑之后）什么都不画。
+          人正在看代码/版本档、有工程，就必须挂；opened 只负责切走
+          预览时把草稿藏着不卸。 */}
+      {(workspaceOpened || tab === "source" || tab === "history") &&
+      projectId ? (
         <div
           className={
             tab === "preview" ||
@@ -833,32 +947,65 @@ export function SandboxPreviewSurface({
         />
       ) : null}
       {tab === "delivery" && projectId ? (
-        <ProjectDeliveryPanel projectId={projectId} />
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <ProjectVerificationPanel
+            projectId={projectId}
+            revision={
+              revisionMode === "current"
+                ? descriptor?.revision
+                : (projectRevision ?? descriptor?.revision)
+            }
+            runtimeOperationId={preview.snapshot?.operationId}
+            runtimeId={descriptor?.runtimeId}
+            suiteVersion={descriptor?.capabilities
+              ?.find(capability => capability.startsWith("verification:"))
+              ?.slice("verification:".length)}
+            ready={Boolean(
+              !preview.error &&
+              !preview.loading &&
+              !mismatch &&
+              descriptor?.status === "ready"
+            )}
+          />
+          <ProjectDeliveryPanel projectId={projectId} />
+        </div>
       ) : null}
       <div
         className={
           tab === "preview" ? "flex min-h-0 flex-1 flex-col" : "hidden"
         }
       >
+        {/* ⚠ 2026-09-16 TicketStream 预览：工程 iframe 必须是真实 CSS
+            像素，不许套 transform:scale（HTML 舞台手机框那条会让点
+            的位置和看到的位置错开，看着能点其实点不中）。
+            touch-action:manipulation 让移动端点按落到框里，不被宿主
+            当成要滚/要拖。pointer-events-auto 钉死——拖缝时
+            [data-studio-resizing] 会临时关掉，松手必须回到能点。
+
+            ⚠ 2026-09-16 晚：粗指针上盖过一层 target=_blank。设备工具栏
+            把 pointer 收成 coarse，点登录框就新开标签——用户圈了。
+            预览点按必须进 iframe，外开只留地址行那颗。 */}
         {preview.entryUrl ? (
           <iframe
             ref={frame}
             title={`${appTitle} · 运行页面`}
             src={preview.entryUrl}
             data-testid="project-preview-frame"
-            className="min-h-0 w-full flex-1 border-0 bg-white"
+            tabIndex={-1}
+            onPointerDown={() => frame.current?.focus()}
+            className="min-h-0 w-full flex-1 border-0 bg-white pointer-events-auto [touch-action:manipulation]"
             sandbox="allow-scripts allow-forms allow-same-origin allow-modals allow-downloads"
             referrerPolicy="no-referrer"
           />
         ) : (
-          <div className="flex min-h-48 flex-1 items-center justify-center p-8">
-            <p
-              className="max-w-md text-center text-sm leading-6 text-stone-500"
-              role={preview.error ? "alert" : undefined}
-            >
-              {description}
-            </p>
-          </div>
+          <PreviewPausedFace
+            title={pausedTitle}
+            detail={pausedDetail}
+            waking={preview.opening || preview.starting}
+            disabled={!canWake}
+            alert={Boolean(previewError)}
+            onWake={wakePreview}
+          />
         )}
       </div>
     </section>

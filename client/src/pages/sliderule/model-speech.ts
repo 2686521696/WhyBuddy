@@ -36,11 +36,18 @@ export type ModelSpeech = Extract<TurnStep, { kind: "model_speech" }>;
 /**
  * 这段话值不值得作为「开口」摆给用户。
  *
- * ⚠ 判据盯**语义**不盯字面长度：空白、纯标点、以及模型复述控制面命令的那
- * 几句都不是对用户说的话。其余一律放行——替模型裁剪它想说什么，是另一种
+ * ⚠ 判据盯**语义**不盯字面长度：空白、纯标点、模型复述控制面命令，
+ * 都不是对用户说的话。其余一律放行——替模型裁剪它想说什么，是另一种
  * 「端出成功但内容为空」。
+ *
+ * ⚠ 2026-09-16 文种过滤拿掉了。前一天按 TicketStream 真机加了
+ *   「中文用户 + 拉丁独白 = 思考，不当开口」；次日同一产品批准执行
+ *   （sr-20260916002025-Y3ZS3DZASB）墙钟停住，正文只剩英文计划和
+ *   ○◐ 清单，左栏滤成「工作了 4m 40s」下面空白。用户说弊大于利。
+ *   生成侧提示词仍要求跟用户同一种语言；消费侧不再按字母表藏正文。
+ *   `userText` 留下给旧调用点，不再参与判定。
  */
-export function isUserFacingSpeech(text: unknown): boolean {
+export function isUserFacingSpeech(text: unknown, _userText?: string): boolean {
   const value = String(text ?? "").trim();
   if (!value) return false;
   if (OPERATOR_SPEAK.test(value)) return false;
@@ -54,7 +61,9 @@ export function modelSpeechFor(turn: UiTurn | null | undefined): ModelSpeech[] {
   if (!Array.isArray(steps)) return [];
   return steps.filter(
     (step): step is ModelSpeech =>
-      !!step && step.kind === "model_speech" && isUserFacingSpeech(step.text)
+      !!step &&
+      step.kind === "model_speech" &&
+      isUserFacingSpeech(step.text, turn.user)
   );
 }
 

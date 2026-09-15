@@ -1,6 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { activateSession } from "../../agent-loop/dashboard/SidebarSessions";
+import { slideruleSessionPath } from "@/lib/sliderule-session-id";
 import type { PreviewSourceLocation } from "./preview-selection-bridge";
+import { sourcePathParts } from "./source-editor-language";
 import {
   sourceFileTree,
   sourceTreeDirPaths,
@@ -22,6 +25,9 @@ import {
   type SourceIndex,
 } from "./project-workspace-client";
 
+type SourceEditorHandle = { reveal: (from: number, to: number) => void };
+const LazySourceEditor = React.lazy(() => import("./ProjectSourceEditor"));
+
 export interface SourceSelection extends PreviewSourceLocation {
   revision: string;
   selectionId: string;
@@ -35,7 +41,64 @@ interface Props {
   onChanged: () => void;
 }
 const buttonClass =
-  "rounded border border-stone-300 px-3 py-1.5 text-xs text-stone-700 disabled:opacity-40";
+  "inline-flex h-7 shrink-0 items-center rounded-md px-2 text-[12px] text-[#3c3c3c] hover:bg-[#f4f4f5] disabled:opacity-40";
+// ⚠ 2026-09-15：源码档曾经自占一条全宽「源码版本 · N 个文件 + 描边按钮」。
+//   跟会话头条、验收条、编辑器路径叠在一起，真机顶部比代码区还高。
+//   版本说明和读取/导出/复刻收进文件树头，编辑器顶栏只留路径和保存。
+//
+// ⚠ 同日第二张圈图：树头那三个字（读取最新版 / 导出源码 / 复刻工程）
+//   把目录挤成说明书。Manus 源码树是纯文件；操作在右上角「源码」旁。
+//   有电脑头条宿主就 portal 过去，没有（单测只挂面板）就落在保存旁边。
+const treeActionClass =
+  "inline-flex h-6 shrink-0 items-center rounded px-1.5 text-[11px] text-[#8b8b8b] hover:bg-[#f4f4f5] hover:text-[#3c3c3c] disabled:opacity-40";
+const menuItemClass =
+  "flex w-full items-center px-2.5 py-1 text-left text-[12px] text-[#3c3c3c] hover:bg-[#f7f7f8] disabled:opacity-40";
+
+function SourceToolsMenu({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (event: MouseEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  return (
+    <div
+      ref={root}
+      className="relative"
+      data-testid="project-source-tools"
+    >
+      <button
+        type="button"
+        data-testid="project-source-tools-trigger"
+        aria-label="源码操作"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        onClick={() => setOpen(value => !value)}
+        className="flex h-7 w-7 items-center justify-center rounded-md text-[15px] leading-none text-[#3c3c3c] hover:bg-[#f4f4f5]"
+      >
+        ⋯
+      </button>
+      <ul
+        role="menu"
+        hidden={!open}
+        className="absolute right-0 z-30 mt-1 min-w-[8rem] rounded-lg border border-[#e5e7eb] bg-white py-1 shadow-[0_8px_24px_rgb(15_23_42/0.12)]"
+      >
+        {children}
+      </ul>
+    </div>
+  );
+}
 const active = new Set(["queued", "running", "waiting_user", "cancelling"]);
 const failure = (error: unknown) =>
   error instanceof ProjectWorkspaceError
@@ -74,7 +137,7 @@ function SourceTreeList({
               aria-expanded={openDirs.has(node.path)}
               title={node.path}
               onClick={() => onToggle(node.path)}
-              className="flex w-full items-center gap-1 py-1 pr-2 text-left text-xs text-stone-600 hover:bg-stone-100"
+              className="flex w-full items-center gap-1 py-1 pr-2 text-left text-xs text-[#555] hover:bg-[#f7f7f7]"
               style={{ paddingLeft: 8 + depth * 12 }}
             >
               <span aria-hidden="true">
@@ -104,7 +167,7 @@ function SourceTreeList({
               title={node.path}
               onClick={() => onOpen(node.path)}
               className={`block w-full truncate py-1 pr-2 text-left font-mono text-xs ${
-                node.path === path ? "bg-stone-200" : "hover:bg-stone-100"
+                node.path === path ? "bg-[#f3f4f6] text-[#171717]" : "text-[#444] hover:bg-[#f7f7f7]"
               }`}
               style={{ paddingLeft: 8 + depth * 12 }}
             >
@@ -158,7 +221,9 @@ function ProjectWorkspaceBody({
   const [fork, setFork] = useState<{ sessionId: string } | null>(null);
   const [pending, setPending] = useState<SourceCommand | null>(null);
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
-  const textarea = useRef<HTMLTextAreaElement>(null);
+  const [toolsHost, setToolsHost] = useState<Element | null>(null);
+  const editor = useRef<SourceEditorHandle | null>(null);
+  const pendingReveal = useRef<{ from: number; to: number } | null>(null);
   const alive = useRef(true);
   const writes = useRef<AbortController | null>(null);
   const commandKeys = useRef(new Map<string, string>());
@@ -211,6 +276,13 @@ function ProjectWorkspaceBody({
   useEffect(() => {
     setOpenDirs(new Set(sourceTreeDirPaths(tree)));
   }, [currentIndex?.revision, tree]);
+  useLayoutEffect(() => {
+    setToolsHost(
+      tab === "source"
+        ? document.querySelector("[data-testid=project-source-tools-host]")
+        : null
+    );
+  }, [tab, projectId]);
 
   useEffect(() => {
     alive.current = true;
@@ -297,8 +369,7 @@ function ProjectWorkspaceBody({
       !selection ||
       !currentFile ||
       currentFile.path !== selection.path ||
-      currentFile.revision !== selection.revision ||
-      !textarea.current
+      currentFile.revision !== selection.revision
     )
       return;
     const lines = content.split("\n");
@@ -309,19 +380,17 @@ function ProjectWorkspaceBody({
       setError("选中元素的源码行列已失效，请重新选择。");
       return;
     }
-    const start =
+    const from =
       lines
         .slice(0, selection.line - 1)
         .reduce((sum, line) => sum + line.length + 1, 0) +
       selection.column -
       1;
-    textarea.current.focus();
-    textarea.current.setSelectionRange(
-      start,
-      start +
-        Math.max(1, lines[selection.line - 1].length - selection.column + 1)
-    );
-    textarea.current.scrollTop = Math.max(0, (selection.line - 3) * 20);
+    const to =
+      from +
+      Math.max(1, lines[selection.line - 1].length - selection.column + 1);
+    pendingReveal.current = { from, to };
+    editor.current?.reveal(from, to);
   }, [selection?.selectionId, currentFile]);
   useEffect(() => {
     if (tab !== "history") return;
@@ -511,23 +580,53 @@ function ProjectWorkspaceBody({
       );
     });
   const locked = busy || Boolean(pending);
-  return (
-    <section
-      data-testid="project-workspace-panel"
-      aria-label="工程源码与版本"
-      className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white"
-    >
-      <div className="mb-0 flex shrink-0 flex-wrap items-center gap-2 border-b border-stone-200 px-3 py-2">
-        <p className="min-w-0 flex-1 truncate text-xs text-stone-600">
-          {loading
-            ? "正在读取工程源码"
-            : currentIndex
-              ? `源码版本 ${currentIndex.revision.slice(0, 12)} · ${currentIndex.files.length} 个文件`
-              : "工程源码暂不可用"}
-        </p>
+  const indexLabel = loading
+    ? "正在读取工程源码"
+    : currentIndex
+      ? `源码版本 ${currentIndex.revision.slice(0, 12)} · ${currentIndex.files.length} 个文件`
+      : "工程源码暂不可用";
+  const sourceActions = (
+    <>
+      <button
+        className={treeActionClass}
+        type="button"
+        disabled={locked || loading}
+        onClick={() => {
+          setRevisionOverride(null);
+          setRefresh(value => value + 1);
+        }}
+      >
+        读取最新版
+      </button>
+      {currentIndex ? (
+        <>
+          <button
+            className={treeActionClass}
+            type="button"
+            disabled={locked}
+            onClick={() => download(currentIndex.revision)}
+          >
+            导出源码
+          </button>
+          <button
+            className={treeActionClass}
+            type="button"
+            disabled={locked}
+            onClick={() => duplicate(currentIndex.revision)}
+          >
+            复刻工程
+          </button>
+        </>
+      ) : null}
+    </>
+  );
+  const sourceMenu = (
+    <SourceToolsMenu>
+      <li>
         <button
-          className={buttonClass}
+          className={menuItemClass}
           type="button"
+          role="menuitem"
           disabled={locked || loading}
           onClick={() => {
             setRevisionOverride(null);
@@ -536,27 +635,41 @@ function ProjectWorkspaceBody({
         >
           读取最新版
         </button>
-        {currentIndex ? (
-          <>
+      </li>
+      {currentIndex ? (
+        <>
+          <li>
             <button
-              className={buttonClass}
+              className={menuItemClass}
               type="button"
+              role="menuitem"
               disabled={locked}
               onClick={() => download(currentIndex.revision)}
             >
               导出源码
             </button>
+          </li>
+          <li>
             <button
-              className={buttonClass}
+              className={menuItemClass}
               type="button"
+              role="menuitem"
               disabled={locked}
               onClick={() => duplicate(currentIndex.revision)}
             >
               复刻工程
             </button>
-          </>
-        ) : null}
-      </div>
+          </li>
+        </>
+      ) : null}
+    </SourceToolsMenu>
+  );
+  return (
+    <section
+      data-testid="project-workspace-panel"
+      aria-label="工程源码与版本"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white"
+    >
       {notice ? (
         <p
           role="status"
@@ -576,18 +689,29 @@ function ProjectWorkspaceBody({
       {fork ? (
         <a
           className="shrink-0 px-3 py-2 text-xs underline"
-          href="/agent-loop/sliderule"
+          href={slideruleSessionPath(fork.sessionId)}
           onClick={() => activateSession(fork.sessionId)}
         >
           打开复刻后的会话
         </a>
       ) : null}
+      {tab === "history" ? (
+        <div className="flex h-8 shrink-0 items-center gap-1 border-b border-[#e5e7eb] px-2">
+          <p className="min-w-0 flex-1 truncate text-[12px] text-[#8b8b8b]">
+            {indexLabel}
+          </p>
+          {sourceActions}
+        </div>
+      ) : null}
       {tab === "source" ? (
         <div className="flex min-h-0 flex-1">
           <nav
             aria-label="工程文件"
-            className="w-56 shrink-0 overflow-auto border-r border-stone-200 bg-stone-50 py-1"
+            className="w-56 shrink-0 overflow-auto border-r border-[#e5e7eb] bg-white py-1"
           >
+            <div className="flex h-8 shrink-0 items-center border-b border-[#e5e7eb] px-2">
+              <p className="truncate text-[11px] text-[#8b8b8b]">{indexLabel}</p>
+            </div>
             <SourceTreeList
               nodes={tree}
               depth={0}
@@ -608,13 +732,31 @@ function ProjectWorkspaceBody({
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {currentFile ? (
               <>
-                <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stone-200 px-3 py-2">
-                  <label
-                    htmlFor={`source-${projectId}`}
-                    className="min-w-0 flex-1 break-all font-mono text-xs"
+                <div className="flex h-8 shrink-0 items-center gap-1 border-b border-[#e5e7eb] px-2">
+                  <nav
+                    aria-label="当前文件路径"
+                    data-testid="project-source-crumbs"
+                    className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-[12px]"
                   >
-                    {currentFile.path}
-                  </label>
+                    {sourcePathParts(currentFile.path).map((part, index, all) => (
+                      <React.Fragment key={`${index}:${part}`}>
+                        {index > 0 ? (
+                          <span className="shrink-0 text-[#c4c4c4]" aria-hidden>
+                            /
+                          </span>
+                        ) : null}
+                        <span
+                          className={
+                            index === all.length - 1
+                              ? "truncate font-medium text-[#171717]"
+                              : "shrink-0 text-[#8b8b8b]"
+                          }
+                        >
+                          {part}
+                        </span>
+                      </React.Fragment>
+                    ))}
+                  </nav>
                   <button
                     type="button"
                     className={buttonClass}
@@ -629,6 +771,23 @@ function ProjectWorkspaceBody({
                   >
                     保存源码
                   </button>
+                  {tab === "source" && !toolsHost ? sourceMenu : null}
+                </div>
+                <div
+                  className="flex h-8 shrink-0 items-center border-b border-[#e5e7eb] bg-[#f7f7f8]"
+                  data-testid="project-source-tabs"
+                >
+                  <div
+                    data-testid="project-source-tab"
+                    className="flex h-full max-w-[14rem] items-center border-r border-[#e5e7eb] bg-white px-3 font-mono text-[12px] text-[#171717]"
+                    title={currentFile.path}
+                  >
+                    <span className="truncate">
+                      {sourcePathParts(currentFile.path).at(-1) ??
+                        currentFile.path}
+                      {dirty ? " *" : ""}
+                    </span>
+                  </div>
                 </div>
                 {currentIndex?.revision !== currentIndex?.currentRevision ? (
                   <p className="shrink-0 px-3 py-2 text-xs text-amber-800">
@@ -667,24 +826,37 @@ function ProjectWorkspaceBody({
                     点击「读取最新版」核对版本与批准状态，草稿会保留。
                   </p>
                 ) : null}
-                <textarea
-                  ref={textarea}
-                  id={`source-${projectId}`}
-                  data-testid="project-source-editor"
-                  value={content}
-                  spellCheck={false}
-                  wrap="off"
-                  onChange={event =>
-                    setDrafts(prior => ({
-                      ...prior,
-                      [path]: {
-                        base: prior[path]?.base ?? currentFile,
-                        content: event.target.value,
-                      },
-                    }))
+                <React.Suspense
+                  fallback={
+                    <div
+                      data-testid="project-source-editor-pending"
+                      className="min-h-0 flex-1 bg-white"
+                    />
                   }
-                  className="min-h-0 flex-1 resize-none border-0 bg-white p-3 font-mono text-xs leading-5 outline-none"
-                />
+                >
+                  <LazySourceEditor
+                    key={`${currentFile.revision}:${currentFile.path}`}
+                    ref={editor}
+                    path={currentFile.path}
+                    value={content}
+                    readOnly={
+                      currentIndex?.revision !== currentIndex?.currentRevision
+                    }
+                    onChange={next =>
+                      setDrafts(prior => ({
+                        ...prior,
+                        [path]: {
+                          base: prior[path]?.base ?? currentFile,
+                          content: next,
+                        },
+                      }))
+                    }
+                    onReady={() => {
+                      const pending = pendingReveal.current;
+                      if (pending) editor.current?.reveal(pending.from, pending.to);
+                    }}
+                  />
+                </React.Suspense>
               </>
             ) : fileError ? (
               <div className="px-3 py-3 text-xs leading-5">
@@ -826,6 +998,7 @@ function ProjectWorkspaceBody({
           ) : null}
         </div>
       )}
+      {tab === "source" && toolsHost ? createPortal(sourceMenu, toolsHost) : null}
     </section>
   );
 }

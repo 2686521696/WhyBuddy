@@ -60,3 +60,29 @@ def preview_configuration_enabled() -> bool:
         return True
     except ValueError:
         return False
+
+
+def published_preview_url(value: str | None) -> str | None:
+    """E2B's official published host. Internal preview copies this when the
+    private relay is unreachable from the sandbox.
+
+    2026-09-16 TicketStream：runtime 已 ready，但 agent 往
+    `{runtimeId}.preview.miantuan.ai` 拨 WSS，DNS 到公网机且 TLS 失败，
+    本机 :3002 网关永远接不到。GET 一直 `project_preview_tunnel_not_started`。
+    E2B `sandbox.get_host(port)` 是他们文档里的预览口，源与工作台隔离。
+    只认 `*.e2b.app` / `*.e2b.dev`；别的 previewUrl 不许当可打开预览。
+    allowlist / production 不许走这条。
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = urlsplit(value)
+        host = parsed.hostname or ""
+    except ValueError:
+        return None
+    if (parsed.scheme != "https" or parsed.username or parsed.password
+            or parsed.query or parsed.fragment or parsed.port not in (None, 443)
+            or not host.endswith((".e2b.app", ".e2b.dev"))
+            or host.count(".") < 2):
+        return None
+    return f"https://{host}/"

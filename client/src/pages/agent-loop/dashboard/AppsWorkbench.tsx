@@ -83,6 +83,7 @@ import {
   createSessionId,
   notifySessionsUpdated,
 } from "./SidebarSessions";
+import { slideruleSessionPath } from "@/lib/sliderule-session-id";
 import {
   listApps,
   getApp,
@@ -1752,7 +1753,7 @@ export function AppsWorkbench() {
     activateSession(sessionId);
     // Pages 子路径部署（/<repo>/）下绝对路径 404——带 BASE_URL 前缀
     const base = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
-    window.location.href = `${base}/agent-loop/sliderule`;
+    window.location.href = `${base}${slideruleSessionPath(sessionId)}`;
   };
 
   /**

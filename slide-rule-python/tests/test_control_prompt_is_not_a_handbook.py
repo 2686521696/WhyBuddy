@@ -52,6 +52,8 @@ def test_prompt_is_complete_the_job_not_a_syllabus():
     assert "不跑题" in text, "跑题那道边界丢了"
     assert "回答就好" in text, "又把「只回答一句」这条路堵死了"
     assert "不要顺手造东西" in text
+    assert "默认简体中文" in text, "对用户开口的语言边界丢了"
+    assert "思考过程不要写进正文" in text
     for banned in HANDBOOK:
         assert banned not in text, banned
 

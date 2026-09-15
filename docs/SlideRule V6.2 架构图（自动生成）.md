@@ -15,9 +15,9 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **342** 个，模块 **342** 个
-- 内部依赖边 **1134** 条（包含普通包初始化依赖）
-- 内部 import 语句 **1046** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 扫描文件 **345** 个，模块 **345** 个
+- 内部依赖边 **1137** 条（包含普通包初始化依赖）
+- 内部 import 语句 **1049** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -37,7 +37,7 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
-| `util` | 147 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `util` | 149 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
 | `core` | 71 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 43 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
@@ -49,12 +49,12 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 ```mermaid
 flowchart TB
-  util["util<br/>147 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
+  util["util<br/>149 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
   core["core<br/>71 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
   flow["flow<br/>43 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
   core -->|154| util
   flow -->|126| core
-  flow -->|152| util
+  flow -->|154| util
 ```
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
@@ -65,9 +65,9 @@ flowchart TB
   config["config<br/>2 个模块<br/>配置"]
   models["models<br/>4 个模块<br/>数据形状"]
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
-  sliderule_llm["sliderule_llm<br/>15 个模块<br/>LLM 通道"]
+  sliderule_llm["sliderule_llm<br/>16 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>261 个模块<br/>业务"]
+  services["services<br/>263 个模块<br/>业务"]
   routes["routes<br/>15 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -155,13 +155,13 @@ flowchart LR
   evidence["evidence<br/>11"]
   http_routes["http_routes<br/>11"]
   identity["identity<br/>8"]
-  llm_gateway["llm_gateway<br/>18"]
+  llm_gateway["llm_gateway<br/>19"]
   model_core["model_core<br/>27"]
   observability["observability<br/>7"]
   ops_scripts["ops_scripts<br/>40"]
   permission["permission<br/>8"]
   persist["persist<br/>10"]
-  platform["platform<br/>35"]
+  platform["platform<br/>37"]
   run_control["run_control<br/>4"]
   runtime["runtime<br/>9"]
   spec_first["spec_first<br/>41"]
@@ -183,7 +183,7 @@ flowchart LR
   control -->|7| llm_gateway
   control -->|3| model_core
   control -->|7| persist
-  control -->|22| platform
+  control -->|24| platform
   control -->|4| spec_first
   diagnostics -->|1| a2a
   diagnostics -->|1| evidence

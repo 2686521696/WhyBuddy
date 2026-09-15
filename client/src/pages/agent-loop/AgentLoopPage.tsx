@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
+import {
+  hrefFromWindow,
+  sessionIdFromHref,
+  slideruleSessionPath,
+} from "@/lib/sliderule-session-id";
+import { ACTIVE_SESSION_KEY } from "./dashboard/SidebarSessions";
 
 import { DashboardApp, DashboardDetailApp } from "./dashboard/DashboardApp";
 import { setCommandHandler } from "./dashboard/bridge";
@@ -43,6 +49,29 @@ export type AgentLoopRouteState =
 
 export function getAgentLoopSliderulePath(): string {
   return "/agent-loop/sliderule";
+}
+
+/** 切回推演页时把当前会话写进地址栏，免得导航把自己刚打开的 id 剥掉。 */
+export function currentSliderulePath(href?: string, stored?: string | null): string {
+  let fromStore = stored;
+  if (fromStore === undefined) {
+    try {
+      fromStore =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem(ACTIVE_SESSION_KEY)
+          : null;
+    } catch {
+      fromStore = null;
+    }
+  }
+  const id = String(
+    sessionIdFromHref(
+      href ?? (typeof window !== "undefined" ? hrefFromWindow(window) : "")
+    ) ||
+      fromStore ||
+      ""
+  ).trim();
+  return id ? slideruleSessionPath(id) : getAgentLoopSliderulePath();
 }
 
 export function getAgentLoopWorkbenchPath(): string {
@@ -255,7 +284,7 @@ export default function AgentLoopPage() {
     }
     const path =
       next === "sliderule"
-        ? getAgentLoopSliderulePath()
+        ? currentSliderulePath()
         : next === "settings"
           ? getAgentLoopSettingsPath()
           : next === "admin"
@@ -639,7 +668,7 @@ export default function AgentLoopPage() {
           onViewChange={showDashboardView}
           getViewPath={(next) => (
             next === "sliderule"
-              ? getAgentLoopSliderulePath()
+              ? currentSliderulePath()
               : next === "settings"
                 ? getAgentLoopSettingsPath()
                 : next === "admin"

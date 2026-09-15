@@ -2,9 +2,13 @@
  * 待办浮层：只画模型自己写的 `controlTodo`，不进聊天。
  *
  * 2026-09-15 用户对照 Manus：清单嵌在对话里不好用，该是输入条上方一张卡。
+ * 同日再圈收起态：默认折叠，脸上是当前条 + 1/4，不是摊开的 Cursor To-dos。
  *
  * 夹具是真机 `sr-20260914051427-QYYWZ17DHH` 的 controlTodo，原样
  * （跟 next-step-chips.test.ts 同一份）。自己拼干净清单测不出真机形态。
+ *
+ * 点开展开在 `plan-todo-dock.expand.test.tsx`（jsdom）。这里必须留 Node：
+ * ClaudeChatSurface 拉 assistant-stream，jsdom 没有 TransformStream。
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -124,23 +128,20 @@ describe("planTodoCompleted：进度条只认 completed，不编百分比", () =
 });
 
 describe("PlanTodoDock 卡片", () => {
-  it("正向：真机那份摊开全部条目，分数是 completed/total", () => {
+  it("正向：默认折叠，脸上是当前条 + Manus 做到第几条", () => {
     const html = renderToStaticMarkup(<PlanTodoDock items={REAL_TODO} />);
     expect(html).toContain('data-testid="plan-todo-dock"');
-    expect(html).toContain('data-plan-todo-surface="cursor"');
-    expect(html).toContain("待办");
-    expect(html).toContain("1/5");
-    expect(html).toContain("创建 react-vite-tasks 工程并读取源码");
+    expect(html).toContain('data-plan-todo-surface="manus"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('data-testid="plan-todo-current"');
     expect(html).toContain("补丁前端：中文文案、极简样式、侧栏筛选 + 宽列表");
-    expect(html).toContain("核对认证与用户隔离");
-    expect(html).toContain('data-todo-mark="completed"');
-    expect(html).toContain('data-todo-mark="in_progress"');
-    expect(html).toContain('data-todo-mark="pending"');
+    expect(html).toContain("2/5");
     expect(html).toContain("sr-todo-spin");
-    expect(html).toContain("lucide-loader-circle");
     expect(html).toContain('data-testid="plan-todo-progress"');
     expect(html).toContain('data-todo-percent="20"');
-    expect(html).not.toContain("2 / 5");
+    expect(html).not.toContain("核对认证与用户隔离");
+    expect(html).not.toContain("创建 react-vite-tasks 工程并读取源码");
+    expect(html).not.toContain("1/5");
     expect(html).not.toContain("data-todo-pie");
   });
 
@@ -194,13 +195,18 @@ describe("接在真跑的那条路上（§1 / §3）", () => {
     );
     expect(html).toContain('data-testid="plan-todo-dock"');
     expect(html).toContain("补丁前端：中文文案、极简样式、侧栏筛选 + 宽列表");
+    const dockAt = html.indexOf('data-testid="plan-todo-dock"');
+    const composerAt = html.indexOf('data-testid="sliderule-composer-dock"');
+    const dockHtml = html.slice(dockAt, composerAt);
+    expect(dockHtml).toContain('aria-expanded="false"');
+    expect(dockHtml).toContain("2/5");
+    expect(dockHtml).not.toContain("核对认证与用户隔离");
+    expect(dockHtml).not.toContain("创建 react-vite-tasks 工程并读取源码");
     const speechAt = html.indexOf('data-testid="sliderule-model-speech"');
     const speechHtml = html.slice(speechAt, speechAt + 400);
     expect(speechHtml).toContain("先查看工程当前状态。");
     expect(speechHtml).not.toContain("○ 按需补丁");
     expect(html).not.toContain(LIST_IN_CHAT);
-    const dockAt = html.indexOf('data-testid="plan-todo-dock"');
-    const composerAt = html.indexOf('data-testid="sliderule-composer-dock"');
     expect(dockAt).toBeGreaterThan(-1);
     expect(composerAt).toBeGreaterThan(dockAt);
   });
@@ -240,24 +246,29 @@ describe("接在真跑的那条路上（§1 / §3）", () => {
     expect(tail).not.toContain("📋");
   });
 
-  it("卡面抄 Cursor To-dos：12px 卡、圆点、没有饼图和进度条", () => {
+  it("卡面抄 Manus：默认折叠、当前条、做到第几条，没有饼图", () => {
     const dock = stripComments(
       readFileSync(resolve(__dirname, "../PlanTodoDock.tsx"), "utf8")
     );
-    expect(dock).toContain('data-plan-todo-surface="cursor"');
-    expect(dock).toContain("rounded-[12px]");
-    expect(dock).toContain("border-[#e5e7eb]");
+    expect(dock).toContain('data-plan-todo-surface="manus"');
+    expect(dock).toContain("planTodoProgress");
+    expect(dock).toContain("useState(false)");
+    expect(dock).toContain("plan-todo-current");
+    expect(dock).toContain("rounded-2xl");
+    expect(dock).toContain("overflow-y-auto");
+    expect(dock).toContain("overscroll-contain");
+    expect(dock).toContain("break-words");
     expect(dock).toContain("sr-todo-spin");
-    expect(dock).toContain("data-todo-mark");
-    expect(dock).toContain("useState(true)");
+    expect(dock).not.toContain("useState(true)");
+    expect(dock).not.toContain("scrollIntoView");
+    expect(dock).not.toContain("rounded-[12px]");
+    expect(dock).not.toContain('data-plan-todo-surface="cursor"');
     expect(dock).not.toContain("beui");
     expect(dock).not.toContain("ProgressPie");
     expect(dock).not.toContain("data-todo-pie");
     expect(dock).not.toContain("ListTodo");
     expect(dock).not.toContain("RollingText");
-    expect(dock).not.toContain("rounded-2xl");
     expect(dock).not.toContain("didAutoCollapse");
-    expect(dock).not.toContain("rounded-full bg-[#2f6bff]");
     const css = readFileSync(resolve(__dirname, "../../../index.css"), "utf8");
     expect(css).toContain(".sr-todo-spin");
     expect(css).toContain(".sr-reduce-motion .sr-todo-spin");

@@ -12,6 +12,46 @@ import { connectPreviewSelection } from "../project-runtime/preview-selection-br
 import { installPreviewSelectionBridge } from "@shared/project-preview-selection.mjs";
 import type { VerificationRecord } from "@shared/project-runtime.generated";
 
+vi.mock("../project-runtime/ProjectSourceEditor", async () => {
+  const React = await import("react");
+  return {
+    default: React.forwardRef(function MockSourceEditor(
+      {
+        value,
+        onChange,
+        path,
+        onReady,
+      }: {
+        value: string;
+        onChange: (next: string) => void;
+        path: string;
+        onReady?: () => void;
+      },
+      ref: React.Ref<{ reveal: (from: number, to: number) => void }>
+    ) {
+      const ta = React.useRef<HTMLTextAreaElement>(null);
+      React.useImperativeHandle(ref, () => ({
+        reveal(from: number, to: number) {
+          ta.current?.focus();
+          ta.current?.setSelectionRange(from, to);
+        },
+      }));
+      React.useEffect(() => {
+        onReady?.();
+      }, [onReady]);
+      return React.createElement("textarea", {
+        ref: ta,
+        "data-testid": "project-source-editor",
+        "data-editor-path": path,
+        value,
+        onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) =>
+          onChange(event.target.value),
+        spellCheck: false,
+      });
+    }),
+  };
+});
+
 let root: Root;
 let container: HTMLDivElement;
 let fetcher: ReturnType<typeof vi.fn>;
@@ -187,6 +227,23 @@ describe("source and history through real HTTP consumers", () => {
     ).not.toContain("src/pages/");
     await click("src/pages/Home.tsx");
     expect(editor().value).toBe("home");
+    expect(
+      container.querySelector('[data-testid="project-source-crumbs"]')
+        ?.textContent
+    ).toMatch(/src.*pages.*Home\.tsx/);
+    expect(
+      container.querySelector('[data-testid="project-source-tab"]')?.textContent
+    ).toContain("Home.tsx");
+    const treeNav = container.querySelector('[aria-label="工程文件"]');
+    expect(treeNav?.textContent, "树头不许再堆读取/导出/复刻").not.toContain(
+      "读取最新版"
+    );
+    expect(treeNav?.textContent).not.toContain("导出源码");
+    expect(treeNav?.textContent).not.toContain("复刻工程");
+    expect(
+      container.querySelector('[data-testid="project-source-tools-trigger"]'),
+      "操作收进右上角 ⋯"
+    ).toBeTruthy();
     await act(async () => {
       container
         .querySelector<HTMLButtonElement>('[data-source-dir="src/pages"]')!
@@ -588,10 +645,19 @@ describe("source and history through real HTTP consumers", () => {
     expect(posts()[0][0]).toBe(
       "/api/sliderule/project-operations/runtime-parent/cancel"
     );
-    expect(container.textContent).not.toContain("应用已停止");
+    expect(
+      container
+        .querySelector('[data-testid="sandbox-preview-surface"]')
+        ?.getAttribute("data-preview-status")
+    ).toBe("ready");
     stopped = true;
     await click("更新状态");
-    expect(container.textContent).toContain("应用已停止");
+    expect(
+      container
+        .querySelector('[data-testid="sandbox-preview-surface"]')
+        ?.getAttribute("data-preview-status"),
+      "停止之后必须看见权威 stopped，不许只换一句空态文案"
+    ).toBe("stopped");
   });
   it("opens the same source workspace from the shared preview without starting runtime", async () => {
     await act(async () =>
@@ -759,7 +825,7 @@ describe("source and history through real HTTP consumers", () => {
     ).toMatchObject({ credentials: "include", cache: "no-store" });
     await click("复刻工程");
     expect(container.querySelector("a")?.getAttribute("href")).toBe(
-      "/agent-loop/sliderule"
+      "/agent-loop/sliderule?session=s2"
     );
     const activated = vi.fn();
     window.addEventListener("sliderule:active-session-changed", activated);

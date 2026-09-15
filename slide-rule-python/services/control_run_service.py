@@ -24,7 +24,7 @@ from services.project_tools import ProjectTools
 from services.project_tool_contracts import PROJECT_TOOL_NAMES
 from services.control_goal_continuation import (
     continuation_checkpoint, continuation_notice, progress_mark, should_continue,
-    unfinished_slice_waits_for_user)
+    unfinished_slice_waits_for_user, unfinished_cap_waits_for_user)
 from services.project_delivery import ProjectDeliveryService
 from services.rehearsal_control import run_control_turn, validate_control_turn_body, bound_tool_result
 from services.project_rollout import rollout_readiness
@@ -552,6 +552,8 @@ class ControlRunService:
                         # 2026-09-14 真机 wall_clock 之后两边都是 completed。
                         done = await self._goal_is_done(latest_record)
                         if unfinished_slice_waits_for_user(
+                                status=status, events=latest_record.get("events"),
+                                goal_done=done) or unfinished_cap_waits_for_user(
                                 status=status, events=latest_record.get("events"),
                                 goal_done=done):
                             status = "waiting_user"

@@ -1,10 +1,19 @@
 // @vitest-environment jsdom
+/**
+ * 计划卡：三个出口和 Markdown 正文。2026-09-15 卡面改抄 Cursor 文件卡，
+ * 绿批准 / 粗「计划审批」标题栏不许回来。
+ */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { PlanApprovalPanel } from "../PlanApprovalPanel";
 import { ComposerDock, isComposerSendBlocked } from "../ComposerDock";
+
+const stripComments = (source: string) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 
 const plan = {
   reqId: "plan-panel-request",
@@ -117,5 +126,25 @@ describe("plan approval", () => {
     expect(
       isComposerSendBlocked({ input: "", attachments: [], isRunning: false })
     ).toBe(true);
+  });
+
+  it("卡面抄 Cursor 文件卡：近黑 Accept，不是绿审批表", () => {
+    const html = renderToStaticMarkup(
+      <PlanApprovalPanel plan={plan} onSubmit={() => {}} />
+    );
+    expect(html).toContain('data-plan-approval-surface="cursor"');
+    expect(html).toContain("rounded-[12px]");
+    expect(html).toContain("bg-[#171717]");
+    expect(html).toContain("lucide-file-text");
+    expect(html).toContain("计划");
+    expect(html).not.toContain("bg-[#166534]");
+    expect(html).not.toContain("shadow-lg");
+    const src = stripComments(
+      readFileSync(resolve(__dirname, "../PlanApprovalPanel.tsx"), "utf8")
+    );
+    expect(src).toContain('data-plan-approval-surface="cursor"');
+    expect(src).toContain("bg-[#171717]");
+    expect(src).not.toContain("#166534");
+    expect(src).not.toContain("shadow-lg");
   });
 });

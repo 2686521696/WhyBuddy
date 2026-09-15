@@ -28,6 +28,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from services.project_manifest import build_manifest
+from services.project_rollout import rollout_mode
 from services.project_workspace_artifacts import ARTIFACT_IO_SCRIPT, MAX_APPLICATION_DATA_BYTES, STATIC_BUILD_SERVER_SCRIPT
 from services.workspace_provider import BuildOutput, PROJECT_REVISION_FILE, PrivatePreviewTarget, ProcessLogChunk, ProcessResult, WorkspaceHandle, WorkspaceProviderError
 
@@ -493,8 +494,15 @@ class E2BWorkspaceProvider:
         if not workspace_id or not 1 <= timeout_seconds <= 86_400:
             raise ValueError("invalid_workspace_request")
         try:
+            # E2B docs: get_host is a public URL unless allow_public_traffic is
+            # false, in which case every request needs e2b-traffic-access-token.
+            # A browser iframe cannot set that header. Internal preview copies
+            # the documented public URL; allowlist/production stay private.
+            # 2026-09-16 TicketStream：私有沙箱 iframe 打开 e2b.app 报
+            # Missing traffic access token。
             sandbox = _sandbox_class().create(template=template, timeout=timeout_seconds,
-                api_key=self._api_key, network={"allow_public_traffic": False},
+                api_key=self._api_key,
+                network={"allow_public_traffic": rollout_mode() == "internal"},
                 metadata={"whybuddy_workspace_id": workspace_id})
         except Exception as exc:
             raise WorkspaceProviderError("e2b_create_failed") from exc

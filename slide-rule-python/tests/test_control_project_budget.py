@@ -18,7 +18,9 @@ from project_actor_support import project_actor
 from conftest import TEST_USER_ID
 from control_turn_support import ControlHarness, llm_text, llm_tool, six_fields
 from services import rehearsal_control as control
+from services.control_budget import PROJECT_BUDGET, PROJECT_BUDGET_V1
 from services.control_checkpoint import ControlRunStopped
+from services.control_context_compact import COMPACT_NOTICE_PREFIX
 from services.control_run_service import RunCheckpoint
 from services.project_creation import create_session_project
 from services.project_tools import ProjectTools
@@ -27,8 +29,8 @@ from test_control_project_tools import post, setup
 from test_control_run_service import env, observed, settled
 
 
-PROJECT_POLICY = {"profile": "project-v1", "maxRounds": 16,
-                  "maxTokens": 64000, "maxWallSeconds": 180.0}
+PROJECT_POLICY = PROJECT_BUDGET.to_wire()
+V1_POLICY = PROJECT_BUDGET_V1.to_wire()
 
 
 def stops(events):
@@ -99,14 +101,16 @@ def test_legacy_8001_tokens_still_prevent_project_creation(setup, monkeypatch, f
 
 
 def test_project_token_exhaustion_rejects_patch_before_dispatch(setup, monkeypatch):
+    """v1 累计花费仍是硬闸。v2 不许把 64001 当成窗口满了——见下一条。"""
+    monkeypatch.setattr(control, "PROJECT_BUDGET", PROJECT_BUDGET_V1)
     project = create_session_project(setup.store, setup.state.sessionId, owner_id=TEST_USER_ID, approval_ref=setup.ref)
     harness = ControlHarness(monkeypatch)
     harness.llm_impl = lambda *a, **kw: llm_tool("project_patch", {"approvalRef": setup.ref,
         "expectedRevision": project.currentRevision, "changes": [{"path": "denied.txt", "content": "forbidden", "expectedSha256": None}]},
-        usage={"total_tokens": PROJECT_POLICY["maxTokens"] + 1})
+        usage={"total_tokens": V1_POLICY["maxTokens"] + 1})
     events = post(setup.state)
     [stop] = stops(events)
-    assert stop["stopReason"] == "token_budget" and stop["limit"] == PROJECT_POLICY["maxTokens"]
+    assert stop["stopReason"] == "token_budget" and stop["limit"] == V1_POLICY["maxTokens"]
     assert "工程任务" in stop["text"] and "已用完" in stop["text"]
     assert "没点火" not in stop["text"] and "开始推演" not in stop["text"]
     saved = setup.store.get_project(project.projectId, owner_id=TEST_USER_ID)
@@ -188,7 +192,7 @@ async def parked_checkpoint(env, monkeypatch):
         await first.shutdown()
     owned = env.store.claim(record["runId"], "checkpoint-fixture", 3)
     assert owned is not None
-    assert owned["checkpoint"]["budgetPolicy"] == PROJECT_POLICY
+    assert owned["checkpoint"]["budgetPolicy"] == control.PROJECT_BUDGET.to_wire()
     assert owned["checkpoint"]["cheapTokens"] == 3015
     return owned, calls
 
@@ -201,7 +205,12 @@ def test_recovery_keeps_spent_project_budget_and_stops_before_sampling(env, monk
         owned, calls = await parked_checkpoint(env, monkeypatch)
         cp = owned["checkpoint"]
         if exhausted == "tokens":
-            cp["cheapTokens"] = PROJECT_POLICY["maxTokens"] + 1
+            # v2 不认 cheapTokens 累加。塞一条压不掉的超长 user，占用仍超窗。
+            pad = "U" * (PROJECT_POLICY["maxTokens"] * 4 + 16_000)
+            cp["messages"] = [
+                {"role": "system", "content": "p"},
+                {"role": "user", "content": pad},
+            ]
         elif exhausted == "rounds":
             cp["round"] = PROJECT_POLICY["maxRounds"]
         else:
@@ -263,6 +272,7 @@ def test_recovery_cannot_upgrade_absent_or_invalid_policy(env, monkeypatch, alte
 
 
 def test_resumed_sample_adds_to_previous_tokens_before_any_patch(env, monkeypatch):
+    monkeypatch.setattr(control, "PROJECT_BUDGET", PROJECT_BUDGET_V1)
     project = create_session_project(env.project, env.state.sessionId, owner_id=env.owner, approval_ref=env.ref)
 
     async def run():
@@ -274,7 +284,7 @@ def test_resumed_sample_adds_to_previous_tokens_before_any_patch(env, monkeypatc
             return llm_tool("project_patch", {"approvalRef": env.ref,
                 "expectedRevision": project.currentRevision, "changes": [{"path": "over-budget.txt",
                     "content": "must not be saved", "expectedSha256": None}]},
-                usage={"total_tokens": PROJECT_POLICY["maxTokens"] - 3015 + 1})
+                usage={"total_tokens": V1_POLICY["maxTokens"] - 3015 + 1})
 
         monkeypatch.setattr(control, "_invoke_control_llm", model)
         env.store.suspend(owned["runId"], "checkpoint-fixture", owned["generation"])
@@ -285,10 +295,78 @@ def test_resumed_sample_adds_to_previous_tokens_before_any_patch(env, monkeypatc
             assert calls == [1, 1]
             [stop] = stops(final["events"])
             assert stop["stopReason"] == "token_budget"
-            assert stop["used"] == PROJECT_POLICY["maxTokens"] + 1
+            assert stop["used"] == V1_POLICY["maxTokens"] + 1
             assert "over-budget.txt" not in env.project.read_files(project.projectId, owner_id=env.owner)
             assert not any(event.get("tool") == "project_patch" for event in final["events"])
         finally:
             await second.shutdown()
 
     asyncio.run(run())
+
+
+def test_v2_cumulative_spend_does_not_block_a_patch(setup, monkeypatch):
+    """反向：v1 的 64001 花费闸不许原样搬到 v2。变异：context_token_budget=False → 本条红。"""
+    project = create_session_project(setup.store, setup.state.sessionId, owner_id=TEST_USER_ID, approval_ref=setup.ref)
+    harness = ControlHarness(monkeypatch)
+
+    def model(messages, **kwargs):
+        if any(row.get("role") == "tool" for row in messages):
+            return llm_text("源码已保存。")
+        return llm_tool("project_patch", {"approvalRef": setup.ref,
+            "expectedRevision": project.currentRevision, "changes": [{"path": "spent-ok.txt", "content": "ok\n",
+                "expectedSha256": None}]},
+            usage={"total_tokens": 64_001})
+
+    harness.llm_impl = model
+    events = post(setup.state)
+    assert "spent-ok.txt" in setup.store.read_files(project.projectId, owner_id=TEST_USER_ID)
+    assert any(event.get("tool") == "project_patch" and event.get("ok") for event in events)
+    assert not any(event.get("stopReason") == "token_budget" for event in events)
+
+
+def test_接近窗口就压缩再采样(setup, monkeypatch):
+    """活路径：进 `_control_llm_loop` 的 messages 已经超阈值，采样前必须压过。
+
+    变异：把 `_compact_context_if_needed` 那次调用删掉 → 第一条采样没有
+    【会话压缩】，本条红。
+    """
+    create_session_project(setup.store, setup.state.sessionId, owner_id=TEST_USER_ID, approval_ref=setup.ref)
+    tiny = control.ControlBudget(
+        "project-v2", 16, 200_000, 900.0, 600.0,
+        compact_at_tokens=3_000,
+        context_token_budget=True,
+    )
+    monkeypatch.setattr(control, "PROJECT_BUDGET", tiny)
+    original = control._control_llm_loop
+
+    async def wrapped(state, messages, **kwargs):
+        payload = "源码" * 3_000
+        for index in range(5):
+            call_id = f"pre-{index}"
+            messages.append({
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{
+                    "id": call_id,
+                    "type": "function",
+                    "function": {"name": "project_read", "arguments": "{}"},
+                }],
+            })
+            messages.append({"role": "tool", "tool_call_id": call_id, "content": payload})
+        async for event in original(state, messages, **kwargs):
+            yield event
+
+    monkeypatch.setattr(control, "_control_llm_loop", wrapped)
+    seen = []
+    harness = ControlHarness(monkeypatch)
+
+    def model(messages, **kwargs):
+        seen.append(copy.deepcopy(messages))
+        return llm_text("压缩之后继续。")
+
+    harness.llm_impl = model
+    events = post(setup.state)
+    assert seen, "模型根本没被问到"
+    assert COMPACT_NOTICE_PREFIX in json.dumps(seen[0], ensure_ascii=False)
+    assert any(event.get("compacted") for event in events)
+    assert not any(event.get("stopReason") == "token_budget" for event in events)

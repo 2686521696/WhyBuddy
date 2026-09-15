@@ -53,19 +53,72 @@ function StatusIcon({ status }: { status: ProjectActionStatus }) {
   );
 }
 
-export function ProjectTaskChecklist({ turns }: { turns: UiTurn[] }) {
-  const rows = React.useMemo(() => deriveProjectActivity(turns), [turns]);
+/** 左栏和章节组共用：点一下发出 inspect，右侧跟档。 */
+export function useSelectedProjectActionId(): string | null {
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   React.useEffect(() => {
     const onInspect = (event: Event) => {
-      const detail = inspectActionDetail(
-        (event as CustomEvent).detail
-      );
+      const detail = inspectActionDetail((event as CustomEvent).detail);
       if (detail) setSelectedId(detail.id);
     };
     window.addEventListener(INSPECT_ACTION_EVENT, onInspect);
     return () => window.removeEventListener(INSPECT_ACTION_EVENT, onInspect);
   }, []);
+  return selectedId;
+}
+
+export function ProjectActionRowView({
+  row,
+  selected,
+}: {
+  row: ProjectActionRow;
+  selected: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      data-testid="project-task-row"
+      data-status={row.status}
+      data-task-id={row.tool}
+      data-selected={selected ? "true" : "false"}
+      aria-pressed={selected}
+      onClick={() => dispatchInspectAction({ id: row.id, tool: row.tool })}
+      className={`flex w-full items-start gap-2 rounded-md px-1.5 py-1 text-left text-[13px] transition ${
+        selected
+          ? "bg-stone-100 text-stone-900"
+          : "text-stone-700 hover:bg-stone-50"
+      }`}
+    >
+      <span className="mt-[3px] shrink-0">
+        <StatusIcon status={row.status} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span
+          className={row.status === "failed" ? "text-rose-700" : undefined}
+        >
+          {row.label}
+        </span>
+        {row.detail ? (
+          <span
+            className="ml-1.5 break-all text-stone-400"
+            data-testid="project-task-detail"
+          >
+            {row.detail}
+          </span>
+        ) : null}
+      </span>
+      {row.status === "running" ? (
+        <span className="ml-auto shrink-0 text-[11px] text-blue-600">
+          进行中
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+export function ProjectTaskChecklist({ turns }: { turns: UiTurn[] }) {
+  const rows = React.useMemo(() => deriveProjectActivity(turns), [turns]);
+  const selectedId = useSelectedProjectActionId();
   if (rows.length === 0) return null;
   const { done, total, failed } = projectActivityProgress(rows);
   return (
@@ -86,55 +139,14 @@ export function ProjectTaskChecklist({ turns }: { turns: UiTurn[] }) {
         </span>
       </div>
       <ol className="space-y-0.5">
-        {rows.map(row => {
-          const selected = selectedId === row.id;
-          return (
-            <li key={row.id}>
-              <button
-                type="button"
-                data-testid="project-task-row"
-                data-status={row.status}
-                data-task-id={row.tool}
-                data-selected={selected ? "true" : "false"}
-                aria-pressed={selected}
-                onClick={() =>
-                  dispatchInspectAction({ id: row.id, tool: row.tool })
-                }
-                className={`flex w-full items-start gap-2 rounded-md px-1.5 py-1 text-left text-[13px] transition ${
-                  selected
-                    ? "bg-stone-100 text-stone-900"
-                    : "text-stone-700 hover:bg-stone-50"
-                }`}
-              >
-                <span className="mt-[3px] shrink-0">
-                  <StatusIcon status={row.status} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span
-                    className={
-                      row.status === "failed" ? "text-rose-700" : undefined
-                    }
-                  >
-                    {row.label}
-                  </span>
-                  {row.detail ? (
-                    <span
-                      className="ml-1.5 break-all text-stone-400"
-                      data-testid="project-task-detail"
-                    >
-                      {row.detail}
-                    </span>
-                  ) : null}
-                </span>
-                {row.status === "running" ? (
-                  <span className="ml-auto shrink-0 text-[11px] text-blue-600">
-                    进行中
-                  </span>
-                ) : null}
-              </button>
-            </li>
-          );
-        })}
+        {rows.map(row => (
+          <li key={row.id}>
+            <ProjectActionRowView
+              row={row}
+              selected={selectedId === row.id}
+            />
+          </li>
+        ))}
       </ol>
     </section>
   );

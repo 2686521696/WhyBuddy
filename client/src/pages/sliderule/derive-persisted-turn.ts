@@ -1,8 +1,13 @@
 import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import { deriveTurnRoute, type TurnRouteFacts } from "@shared/blueprint/sliderule-turn-route";
-import type { UiTurn } from "./types";
+import type { TurnStep, UiTurn } from "./types";
 import { dedupeTurnNarrations, narrationStepsFor } from "./turn-narration";
 import { mainFromRuns } from "./turn-main-artifact";
+import {
+  attachProjectChipsToTurns,
+  chipFromControlTranscriptRow,
+  chipsFromControlTranscript,
+} from "./project-activity";
 
 type ModelVersionSnap = {
   id?: string;
@@ -97,6 +102,155 @@ function sameRestoredTurn(a: string, b: string): boolean {
     sb > EPOCH_MS_FLOOR &&
     Math.abs(sa - sb) <= SAME_TURN_STAMP_TOLERANCE_MS
   );
+}
+
+function transcriptUserAnswer(row: Record<string, unknown>): string {
+  const answers = row.answers;
+  if (answers && typeof answers === "object" && !Array.isArray(answers)) {
+    const parts = Object.values(answers).flatMap(value =>
+      Array.isArray(value)
+        ? value.map(item => String(item || "").trim()).filter(Boolean)
+        : String(value || "").trim()
+          ? [String(value).trim()]
+          : []
+    );
+    if (parts.length) return parts.join(" · ");
+  }
+  return String(row.text || "").trim();
+}
+
+function transcriptSpeech(row: Record<string, unknown>, id: string): TurnStep | null {
+  const text = String(row.text || "").trim();
+  if (!text) return null;
+  return { id, kind: "model_speech", text };
+}
+
+function shellTurnFromLog(
+  id: string,
+  user: string,
+  steps: TurnStep[],
+  durationMs?: number
+): UiTurn {
+  const lastSpeech = [...steps]
+    .reverse()
+    .find((step): step is Extract<TurnStep, { kind: "model_speech" }> =>
+      step.kind === "model_speech" && Boolean(step.text.trim())
+    );
+  return {
+    id,
+    user,
+    status: "complete",
+    durationMs,
+    steps,
+    routeFacts: {
+      turnId: id,
+      planSelectedCount: 0,
+      planSource: "local_heuristic",
+    } as TurnRouteFacts,
+    routeExpanded: false,
+    routeLitCount: 0,
+    assistant: lastSpeech?.text ?? "",
+    assistantSource: "llm",
+    main: null,
+    actions: [],
+  };
+}
+
+/**
+ * 叙述/版本史都空时，按 host 日志铺对话。
+ *
+ * 用户行：`turn` / 问卷 `user_answer` / `plan_approved`。
+ * 助手行：`control_text` / `canned` + 工具 chip。顺序跟日志一致，
+ * 不许先倒完全部散文再铺工具——SessionStory 靠这个顺序切章。
+ */
+export function turnsFromControlTranscript(
+  state: V5SessionState | null | undefined
+): UiTurn[] {
+  if (!state) return [];
+  const rows = Array.isArray(state.controlTranscript)
+    ? state.controlTranscript
+    : [];
+  if (!rows.length) return [];
+
+  type Acc = {
+    id: string;
+    user: string;
+    steps: TurnStep[];
+    startedAt: number | null;
+    endedAt: number | null;
+  };
+  const accs: Acc[] = [];
+  let current: Acc | null = null;
+  const goalText = String(state.goal?.text || "").trim();
+
+  const stampOf = (row: Record<string, unknown>): number | null => {
+    const raw = Date.parse(String(row.timestamp || ""));
+    return Number.isFinite(raw) ? raw : null;
+  };
+
+  const start = (id: string, user: string, stamp: number | null) => {
+    current = { id, user, steps: [], startedAt: stamp, endedAt: stamp };
+    accs.push(current);
+  };
+
+  const ensure = (stamp: number | null) => {
+    if (current) return;
+    start(
+      "restored-from-log",
+      goalText || "这一轮",
+      stamp
+    );
+  };
+
+  rows.forEach((raw, index) => {
+    if (!raw || typeof raw !== "object") return;
+    const row = raw as Record<string, unknown>;
+    const kind = String(row.kind || "");
+    const id = String(row.id || `ct-${index}`);
+    const stamp = stampOf(row);
+    if (kind === "turn" && String(row.role || "") === "user") {
+      const user = String(row.text || "").trim();
+      if (user) start(id, user, stamp);
+      return;
+    }
+    if (kind === "user_answer") {
+      const user = transcriptUserAnswer(row);
+      if (user) start(id, user, stamp);
+      return;
+    }
+    if (kind === "plan_approved") {
+      const feedback = String(row.feedback || "").trim();
+      start(id, feedback || "批准计划并执行", stamp);
+      return;
+    }
+    const chip = chipFromControlTranscriptRow(row, index);
+    if (chip) {
+      ensure(stamp);
+      current!.steps.push(chip);
+      if (stamp != null) current!.endedAt = stamp;
+      return;
+    }
+    if (kind === "control_text" || kind === "canned") {
+      const speech = transcriptSpeech(row, id);
+      if (!speech) return;
+      ensure(stamp);
+      current!.steps.push(speech);
+      if (stamp != null) current!.endedAt = stamp;
+    }
+  });
+
+  return accs
+    .filter(acc => acc.user || acc.steps.length > 0)
+    .map(acc =>
+      shellTurnFromLog(
+        acc.id,
+        acc.user,
+        acc.steps,
+        acc.startedAt != null && acc.endedAt != null && acc.endedAt >= acc.startedAt
+          ? acc.endedAt - acc.startedAt
+          : undefined
+      )
+    );
 }
 
 /**
@@ -205,15 +359,28 @@ export function deriveTurnsFromState(
         (state.capabilityRuns || []) as Array<{ outputs?: unknown }>
       );
     }
-    return out;
+    return attachProjectChipsToTurns(
+      out,
+      chipsFromControlTranscript(state.controlTranscript)
+    );
   }
+
+  // ⚠ 2026-09-16 sr-20260916010238-SFDKWYM2CG：host 日志 81 条
+  //   （用户原话 / 问卷 / 批准 / 工具 / 收尾），turnNarrations 和
+  //   modelVersions 都是 0，capabilityRuns 也是 0。旧回放只认后三样，
+  //   刷新落到「继续开发这个工程」。日志才是权威，叙述空着也要从它铺。
+  const fromLog = turnsFromControlTranscript(state);
+  if (fromLog.length > 0) return fromLog;
 
   const latest = deriveLatestTurnFromState(state);
   if (!latest) return [];
   if (!latest.user) {
     latest.user = goalText;
   }
-  return [latest];
+  return attachProjectChipsToTurns(
+    [latest],
+    chipsFromControlTranscript(state.controlTranscript)
+  );
 }
 
 function buildRestoredTurn(

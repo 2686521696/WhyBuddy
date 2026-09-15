@@ -82,7 +82,7 @@ def test_call_control_llm_retries_transient_522(monkeypatch):
     assert hits["n"] == 3
 
 
-def test_call_control_llm_does_not_retry_empty_content(monkeypatch):
+def test_call_control_llm_resamples_empty_once_then_stops(monkeypatch):
     from sliderule_llm import control_client
 
     reset_gateway_circuit()
@@ -91,15 +91,22 @@ def test_call_control_llm_does_not_retry_empty_content(monkeypatch):
 
     async def once(*_a, **_k):
         hits["n"] += 1
-        raise LlmError("empty content from control LLM", transient=False)
+        raise LlmError(
+            "empty content from control LLM",
+            transient=True,
+            empty_reason="no_visible_content",
+            finish_reason="stop",
+        )
 
     monkeypatch.setattr(control_client, "_call_control_llm_once", once)
 
     async def _run():
-        with pytest.raises(LlmError, match="empty content"):
+        with pytest.raises(LlmError, match="empty content") as caught:
             await control_client.call_control_llm(
                 [{"role": "user", "content": "hi"}]
             )
+        assert caught.value.transient is False
+        assert caught.value.empty_reason == "no_visible_content"
 
     asyncio.run(_run())
-    assert hits["n"] == 1
+    assert hits["n"] == 2, "空回复同请求只再采一发；采满三次就把 5874 token 再烧两遍"

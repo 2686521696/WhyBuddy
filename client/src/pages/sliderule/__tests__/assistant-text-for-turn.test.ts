@@ -101,6 +101,23 @@ describe("assistantTextForTurn", () => {
     expect(text).not.toContain("本轮已完成");
   });
 
+  it("英文开口也当收尾——2026-09-16 文种过滤弊大于利", () => {
+    const live =
+      '**Initial Assessment and Planning for "TicketStream" SaaS Interface**\n\n' +
+      "Okay, so the task is clear: build a TicketStream service desk SaaS interface.";
+    const text = assistantTextForTurn(
+      turn({
+        user: "构建一个名为 TicketStream 的服务台 SaaS 界面",
+        assistant: live,
+      }),
+      null,
+      "构建一个名为 TicketStream 的服务台 SaaS 界面",
+      { runtimeKind: "project" }
+    );
+    expect(text).toBe(live);
+    expect(text).toContain("Initial Assessment");
+  });
+
   it("模型命令不许当对用户的收尾", () => {
     const text = assistantTextForTurn(
       turn({
@@ -180,6 +197,9 @@ describe("assistantTextForTurn", () => {
       .replace(/^[ \t]*\/\/.*$/gm, "");
     expect(src).toContain("skillCount ?? 0");
     expect(src).not.toContain("skillCount ?? 6");
+    // 2026-09-16：文种闸已拿掉。加回去左栏又会空。
+    expect(src).not.toContain("speechMismatchesUserLanguage");
+    expect(src).not.toContain("speechIsLatin");
   });
 
   it("本轮有叙述就用叙述，不套总结", () => {

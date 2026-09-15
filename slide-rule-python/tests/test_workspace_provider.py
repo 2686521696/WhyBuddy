@@ -166,6 +166,20 @@ def test_create_forwards_explicit_key_and_requires_private_ingress(setup_provide
     assert calls[0][1]["metadata"] == {"whybuddy_workspace_id": "ws-1"}
 
 
+def test_internal_mode_creates_e2b_public_preview_host(monkeypatch):
+    monkeypatch.setenv("WHYBUDDY_PROJECT_ROLLOUT", "internal")
+    fake = FakeSandbox()
+    calls = []
+
+    def create(**kwargs):
+        calls.append(kwargs)
+        return fake
+
+    monkeypatch.setattr(module, "_sandbox_class", lambda: types.SimpleNamespace(create=create, connect=lambda *a, **k: fake))
+    E2BWorkspaceProvider(api_key="provider-test-key").create(workspace_id="ws-1")
+    assert calls[0]["network"]["allow_public_traffic"] is True
+
+
 def test_write_and_foreground_run_share_root_without_fabricating_pid(setup_provider):
     provider, handle, fake, _ = setup_provider
     provider.write_files(handle, {"package.json": "{}", "src/index.ts": "export {};"})

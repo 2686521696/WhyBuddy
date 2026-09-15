@@ -65,6 +65,78 @@ def test_public_start_remains_closed_before_private_preview(setup):
     assert not setup.called
 
 
+def test_public_wake_remains_closed_before_private_preview(setup):
+    response = setup.client.post(f"/projects/{setup.project.projectId}/preview/wake")
+    assert response.status_code == 503 and response.json()["detail"] == "project_preview_not_enabled"
+    assert not setup.called
+
+
+def test_wake_uses_bound_session_approval_without_a_client_body(setup, monkeypatch):
+    monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
+    response = setup.client.post(f"/projects/{setup.project.projectId}/preview/wake")
+    assert response.status_code == 202
+    body = response.json()
+    assert body["operation"]["kind"] == "runtime.start"
+    assert body["operation"]["expectedRevision"] == setup.project.currentRevision
+    operation = setup.store.get_operation(body["operation"]["operationId"], owner_id="u1")
+    assert operation.idempotencyKey == (
+        f"preview-wake:{setup.project.projectId}:{setup.project.currentRevision}"
+    )
+    assert not setup.called
+
+
+def test_wake_after_expired_runtime_opens_a_new_start(setup, monkeypatch):
+    monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
+    first = setup.client.post(f"/projects/{setup.project.projectId}/preview/wake")
+    assert first.status_code == 202
+    first_id = first.json()["operation"]["operationId"]
+    operation = setup.store.get_operation(first_id, owner_id="u1")
+    expired = operation.model_copy(update={
+        "status": "completed",
+        "runtime": RuntimeInstance(
+            runtimeId="rt-expired", workspaceId="ws-expired",
+            projectId=setup.project.projectId, revision=setup.project.currentRevision,
+            status="expired", port=5173, lastHeartbeat="2026-09-16T00:00:00Z"),
+    })
+    setup.store._q(
+        "update wb_project_operation set payload=$1 where id=$2",
+        [expired.model_dump_json(), first_id],
+    )
+    second = setup.client.post(f"/projects/{setup.project.projectId}/preview/wake")
+    assert second.status_code == 202
+    second_id = second.json()["operation"]["operationId"]
+    assert second_id != first_id
+    again = setup.client.post(f"/projects/{setup.project.projectId}/preview/wake")
+    assert again.json()["operation"]["operationId"] == second_id
+
+
+def test_wake_after_cancel_requested_opens_a_new_start(setup, monkeypatch):
+    monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
+    first = setup.client.post(f"/projects/{setup.project.projectId}/preview/wake")
+    first_id = first.json()["operation"]["operationId"]
+    operation = setup.store.get_operation(first_id, owner_id="u1")
+    setup.store._q(
+        "update wb_project_operation set payload=$1 where id=$2",
+        [operation.model_copy(update={"cancelRequested": True}).model_dump_json(), first_id],
+    )
+    second = setup.client.post(f"/projects/{setup.project.projectId}/preview/wake")
+    assert second.status_code == 202
+    assert second.json()["operation"]["operationId"] != first_id
+
+
+def test_wake_without_approved_plan_stays_closed(setup, monkeypatch):
+    monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
+    setup.state.controlTranscript = [
+        row for row in setup.state.controlTranscript if row["kind"] != "plan_approved"
+    ]
+    row = setup.sessions.load("s1")
+    setup.sessions.save("s1", setup.state.model_dump(mode="json"), expected_rev=row.rev)
+    response = setup.client.post(f"/projects/{setup.project.projectId}/preview/wake")
+    assert response.status_code == 403
+    assert response.json()["detail"] == "project_plan_approval_required"
+    assert not setup.called
+
+
 @pytest.mark.parametrize("scenario,status", [("wrong-owner", 404), ("missing-session", 404),
     ("session-owner", 404), ("no-approval", 403), ("changed-plan", 403),
     ("forged-approval", 403), ("stale-revision", 409), ("unknown-command", 422)])

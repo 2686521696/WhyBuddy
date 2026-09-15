@@ -271,6 +271,55 @@ describe("工程档对话：先开口再列动作，不把六步钟叠上去", (
     expect(listAt).toBeGreaterThan(-1);
     expect(listAt).toBeGreaterThan(speechAt);
     expect(html).toContain(SPEECH);
+    expect(html).toContain('data-testid="session-story"');
+  });
+
+  it("历史轮次也留章节——把 latestTurn 门加回去，上一轮开口必丢", () => {
+    const older = completeTurn({
+      id: "old",
+      durationMs: 120_000,
+      steps: [
+        { id: "s-old", kind: "model_speech", text: "先把工程搭起来。" },
+        {
+          id: "c-old",
+          kind: "chip",
+          capabilityId: "project_create",
+          roleId: "system",
+          label: "创建工程",
+          realLlm: false,
+          progressType: "completed",
+        },
+      ],
+    });
+    const newer = completeTurn({
+      id: "new",
+      durationMs: 30_000,
+      steps: [
+        { id: "s-new", kind: "model_speech", text: "接着改筛选。" },
+        {
+          id: "c-new",
+          kind: "chip",
+          capabilityId: "project_patch",
+          roleId: "system",
+          label: "写入源码",
+          realLlm: false,
+          progressType: "completed",
+        },
+      ],
+    });
+    const html = renderToStaticMarkup(
+      <ClaudeChatSurface
+        uiTurns={[older, newer]}
+        isRunning={false}
+        liveAction={null}
+        latestTurn={newer}
+        onChallenge={() => {}}
+        runtimeKind="project"
+      />
+    );
+    expect(html.match(/data-testid="session-story"/g) ?? []).toHaveLength(2);
+    expect(html).toContain("先把工程搭起来。");
+    expect(html).toContain("接着改筛选。");
   });
 
   it("工程档不挂六步钟——那是 HTML 推演的词汇", () => {

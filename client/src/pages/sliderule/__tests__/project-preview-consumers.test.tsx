@@ -11,6 +11,7 @@ import {
   AppArtifactPreview,
   deriveAppCardDetail,
 } from "@/pages/agent-loop/dashboard/AppsWorkbench";
+import { selectProjectMode } from "./fixtures/select-project-mode";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -27,10 +28,7 @@ function expectObservationOnly() {
       .filter(url => !url.includes("/generated-app"))
   );
   expect(urls).toEqual(
-    new Set([
-      "/api/sliderule/projects/project-one/preview",
-      "/api/sliderule/projects/project-one/verification",
-    ])
+    new Set(["/api/sliderule/projects/project-one/preview"])
   );
   expect(
     fetcher.mock.calls
@@ -38,13 +36,9 @@ function expectObservationOnly() {
       .every(([, init]) => init?.method === "GET")
   ).toBe(true);
   expect(
-    container.querySelector('[data-testid="project-verification-panel"]')
-  ).not.toBeNull();
-  expect(
-    container.querySelector<HTMLButtonElement>(
-      '[data-testid="project-verification-start"]'
-    )!.disabled
-  ).toBe(true);
+    container.querySelector('[data-testid="project-verification-panel"]'),
+    "预览画布不挂验收条，观察态也不许先去拉 /verification"
+  ).toBeNull();
 }
 const stored = {
   runtimeKind: "project",
@@ -159,9 +153,11 @@ describe("both project artifact consumers", () => {
       );
       const button = container.querySelector<HTMLButtonElement>(
         '[data-testid="project-preview-open"]'
+      ) ?? container.querySelector<HTMLButtonElement>(
+        '[data-testid="project-preview-wake"]'
       )!;
       expect(button.disabled).toBe(false);
-      expect(container.textContent).toContain("预览就绪");
+      expect(container.textContent).toContain("预览已暂停");
       expect(container.querySelector("iframe")).toBeNull();
       await act(async () => button.click());
       expect(container.querySelector("iframe")?.getAttribute("src")).toContain(
@@ -170,6 +166,7 @@ describe("both project artifact consumers", () => {
       expect(
         fetcher.mock.calls.filter(([, init]) => init?.method === "POST")
       ).toHaveLength(1);
+      await act(async () => selectProjectMode(container, "交付"));
       const checkButton = container.querySelector<HTMLButtonElement>(
         '[data-testid="project-verification-start"]'
       )!;

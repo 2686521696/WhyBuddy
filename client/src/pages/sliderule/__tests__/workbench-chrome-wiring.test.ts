@@ -115,6 +115,7 @@ describe("workbench chrome live-path wiring", () => {
     expect(src).toContain(
       'data-studio-resizing={layout.resizing ? "true" : undefined}'
     );
+    expect(src).toContain("[@media(pointer:coarse)]:after:w-0");
 
     const css = stripComments(
       readFileSync(
@@ -147,6 +148,14 @@ describe("workbench chrome live-path wiring", () => {
     const dragCss = css.slice(css.indexOf('[data-studio-resizing="true"]'));
     expect(dragCss).toContain("pointer-events: none");
     expect(dragCss).toContain("contain: strict");
+
+    const layout = stripComments(
+      readFileSync(new URL("../StudioLayoutContext.tsx", import.meta.url), "utf8")
+    );
+    expect(layout).toContain('addEventListener("pointerup"');
+    expect(layout).toContain('addEventListener("pointercancel"');
+    expect(layout).toContain('addEventListener("blur"');
+    expect(layout).toContain("setResizing(false)");
   });
 
   it("拖分栏时冻结舞台缩放，不每帧 setScale", () => {

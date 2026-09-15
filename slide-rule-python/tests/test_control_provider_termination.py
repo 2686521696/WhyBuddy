@@ -93,7 +93,8 @@ def test_empty_body_retains_finish_usage_and_actual_request_cap(monkeypatch, fin
     with pytest.raises(LlmError, match="empty content") as caught:
         sample()
     error = caught.value
-    assert len(requests) == 1
+    # length 不重采；stop / 未知 finish 同请求再采一发仍空才停。
+    assert len(requests) == (1 if finish == "length" else 2)
     assert error.transient is False
     assert error.finish_reason == finish
     assert error.usage == {"prompt_tokens": 5500, "completion_tokens": 259,
@@ -101,6 +102,7 @@ def test_empty_body_retains_finish_usage_and_actual_request_cap(monkeypatch, fin
     assert f"finish_reason={finish or 'unknown'}" in str(error)
     assert "reasoning_tokens=259" in str(error)
     assert "total_tokens=5759" in str(error)
+    assert "empty_reason=no_visible_content" in str(error)
     payload = json.loads(requests[0].content)
     assert f"max_tokens={payload['max_tokens']}" in str(error)
     assert ("output token limit reached" in str(error)) == (finish == "length")
@@ -116,7 +118,7 @@ def test_empty_diagnostic_drops_untrusted_metadata(monkeypatch, capsys, bad_fini
     with pytest.raises(LlmError) as caught:
         sample()
     error = caught.value
-    assert len(requests) == 1
+    assert len(requests) == 2
     assert error.usage == {"prompt_tokens": 5}
     assert error.finish_reason in (None, "unknown")
     assert "finish_reason=unknown" in str(error)
@@ -170,3 +172,4 @@ def test_existing_llm_error_constructor_still_has_compatible_defaults():
     assert error.transient is True
     assert error.usage is None
     assert error.finish_reason is None
+    assert error.empty_reason is None

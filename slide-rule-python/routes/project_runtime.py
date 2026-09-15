@@ -165,6 +165,59 @@ def start_project_runtime(project_id: str, body: StartRuntimeRequest, request: R
         return _snapshot_response(store.snapshot_operation(operation.operationId, owner_id=owner_id))
 
 
+_WAKE_DONE = {"expired", "stopped", "failed"}
+_WAKE_DONE_OP = {"completed", "cancelled", "failed"}
+
+
+def _wake_idempotency_key(store, project_id: str, revision: str, owner_id: str) -> str:
+    """Reuse the live wake start; mint a new key once that runtime is terminal.
+
+    2026-09-16 TicketStream：固定 `preview-wake:{project}:{revision}` 在第一次
+    唤醒后写死。sandbox 过期后再点唤醒，create_operation 原样交回过期那条，
+    工作台一直「正在启动」，iframe 永远不会出现。
+    """
+    prefix = f"preview-wake:{project_id}:{revision}"
+    newest, cursor = None, ""
+    while True:
+        page = store.list_project_operations(project_id, owner_id=owner_id, after_id=cursor, limit=100)
+        for operation in page:
+            if operation.kind == "runtime.start" and operation.idempotencyKey.startswith(prefix):
+                if newest is None or (operation.createdAt, operation.operationId) > (
+                        newest.createdAt, newest.operationId):
+                    newest = operation
+        if len(page) < 100:
+            break
+        cursor = page[-1].operationId
+    if newest is None:
+        return prefix
+    runtime_status = newest.runtime.status if newest.runtime else None
+    if (newest.cancelRequested or newest.status in _WAKE_DONE_OP
+            or runtime_status in _WAKE_DONE):
+        return f"{prefix}:{int(time.time())}"
+    return newest.idempotencyKey
+
+
+@router.post("/projects/{project_id}/preview/wake", status_code=202, response_model=ProjectOperationSnapshot)
+def wake_project_preview(project_id: str, request: Request, viewer: CurrentUser):
+    """Restart an expired/stopped runtime from the bound session's approved plan.
+
+    GET /preview is observation-only. The paused-face button must not invent an
+    approval hash or silently re-poll; the host already has the plan binding.
+    """
+    owner_id = str(viewer.id)
+    with _store_errors():
+        store = get_project_store()
+        project = store.get_project(project_id, owner_id=owner_id)
+        state = load_authorized_session(project.sessionId, owner_id=owner_id, approval_ref=None)
+        approval = _approved_reference(state)
+        body = StartRuntimeRequest(
+            expectedRevision=project.currentRevision,
+            approvalRef=approval,
+            idempotencyKey=_wake_idempotency_key(store, project_id, project.currentRevision, owner_id),
+        )
+    return start_project_runtime(project_id, body, request, viewer)
+
+
 @router.get("/project-operations/{operation_id}", response_model=ProjectOperationSnapshot)
 def get_project_operation(operation_id: str, viewer: CurrentUser):
     with _store_errors():

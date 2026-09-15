@@ -265,6 +265,11 @@ describe("project browser verification consumer", () => {
       )
     );
     expect(
+      container.querySelector('[data-testid="project-verification-panel"]'),
+      "预览画布不许再挂验收条"
+    ).toBeNull();
+    await act(async () => selectProjectMode(container, "交付"));
+    expect(
       container.querySelector('[data-testid="project-verification-panel"]')
     ).not.toBeNull();
     expect(start().disabled).toBe(false);
@@ -284,6 +289,7 @@ describe("project browser verification consumer", () => {
         />
       )
     );
+    await act(async () => selectProjectMode(container, "交付"));
     expect(start().disabled).toBe(true);
     await click();
     expect(posts()).toHaveLength(0);
@@ -556,26 +562,35 @@ describe("project browser verification consumer", () => {
     expect(details.hidden).toBe(false);
   });
 
-  it("automatically collapses verification details outside the preview tab", async () => {
+  it("does not keep a verification bar on the preview or source tab", async () => {
     view = taskEvidence();
     await act(async () =>
       root.render(
         <SandboxPreviewSurface projectId="project-one" revisionMode="current" />
       )
     );
-    const toggle = container.querySelector<HTMLButtonElement>(
-      '[data-testid="project-verification-toggle"]'
-    )!;
-    const details = container.querySelector<HTMLElement>(
-      '[data-testid="project-verification-details"]'
-    )!;
-    expect(details.hidden).toBe(false);
-    // ⚠ 2026-09-14 视图切换从一排 role="tab" 按钮改成了一枚下拉（对照 Manus）。
-    //   判据跟着改成驱动那个下拉——它钉的是**行为**「切走就收起验收详情」，
-    //   不是控件长什么样。控件删掉时这条依然要红，所以先断言它在。
+    // ⚠ 2026-09-16：预览画布再挂验收条，Manus 那张空态就被挤没。
+    //   验收只在「交付」。预览/源码脸上不许再出现检查应用。
+    expect(
+      container.querySelector('[data-testid="project-verification-panel"]'),
+      "预览画布不许再挂验收条"
+    ).toBeNull();
+    expect(container.textContent).not.toContain("检查应用");
+    expect(
+      container.querySelector('[data-testid="project-preview-wake"]'),
+      "没打开时要有唤醒"
+    ).not.toBeNull();
+    await act(async () => selectProjectMode(container, "交付"));
+    expect(
+      container.querySelector('[data-testid="project-verification-panel"]'),
+      "交付档才挂验收条"
+    ).not.toBeNull();
     await act(async () => selectProjectMode(container, "源码"));
-    expect(details.hidden).toBe(true);
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      container.querySelector('[data-testid="project-verification-panel"]')
+    ).toBeNull();
+    expect(container.textContent).not.toContain("检查应用");
+    expect(container.textContent).not.toContain("更新检查状态");
   });
   it("accepts server-owned delivery eligibility only for the bound tasks profile", async () => {
     view = taskEvidence();
@@ -605,6 +620,7 @@ describe("project browser verification consumer", () => {
         <SandboxPreviewSurface projectId="project-one" revisionMode="current" />
       )
     );
+    await act(async () => selectProjectMode(container, "交付"));
     expect(container.querySelector('[data-testid="project-verification-panel"]')?.getAttribute("aria-label")).toBe(title);
     expect(container.textContent).toContain(scope);
     expect(container.textContent).not.toContain(suite === "react-vite-counter@1" ? "任务应用与权限检查" : "页面与计数交互检查");

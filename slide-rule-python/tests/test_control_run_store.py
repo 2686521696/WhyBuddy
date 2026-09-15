@@ -84,6 +84,7 @@ def test_submit_live_path_stamps_and_promotes():
     assert "project_goal_promotion" in produce
     assert 'kind="project"' in produce or "kind='project'" in produce
     assert "unfinished_slice_waits_for_user" in produce
+    assert "unfinished_cap_waits_for_user" in produce
 
 
 def test_goal_envelope_is_durable_compact_and_owner_bound(store):

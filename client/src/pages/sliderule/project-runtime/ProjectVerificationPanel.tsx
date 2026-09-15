@@ -16,10 +16,9 @@ interface Props {
   suiteVersion?: string | null;
   ready: boolean;
   /**
-   * Source/data/delivery tabs already occupy the workbench body.  In those
-   * views the verification details stay available behind the disclosure
-   * control, but collapse automatically so the same evidence does not consume
-   * the top half of the screen twice.
+   * ⚠ 2026-09-15：会话工作台不再把本面板挂到源码档上。真机 compact
+   * 只收起详情，标题行「更新检查状态 / 检查应用」照样占一条。需要压
+   * 详情时（单测或其它宿主）仍可传 compact。
    */
   compact?: boolean;
 }
@@ -68,6 +67,11 @@ const ERRORS: Record<string, string> = {
   project_browser_assertion_failed: "已执行的页面检查中有断言失败。",
   project_browser_timeout: "浏览器检查超时，请稍后重试。",
   project_browser_cleanup_pending: "浏览器资源仍在回收，检查尚未完成。",
+  project_browser_preview_unavailable:
+    "私有预览通道尚未建立，浏览器进不了页面，不能当作业务验收通过。",
+  project_browser_evidence_unavailable:
+    "浏览器检查没有留下可信证据，不能当作验收通过。",
+  project_browser_verification_interrupted: "浏览器检查被中断，需要重新检查。",
 };
 const message = (error: unknown) =>
   error instanceof ProjectVerificationError

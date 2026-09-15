@@ -129,8 +129,12 @@ describe("通电链：Studio 把动作流交给电脑面，自己不再叠一份
   it("预览面自己按 resolveComputerView 切档，终端是其中一档", () => {
     const surface = read("../project-runtime/SandboxPreviewSurface.tsx");
     expect(surface).toMatch(/resolveComputerView/);
+    expect(surface).toMatch(/lastTool/);
+    expect(surface).toMatch(/hasConsole/);
     expect(surface).toMatch(/<ProjectComputerPanel/);
     expect(surface).toMatch(/embedded/);
+    // 反向：工程还没落库就钉死终端 = TicketStream 列文件时那面白纸。
+    expect(surface).not.toMatch(/awaitingProject\s*\?\s*userPinned/);
   });
 
   it("终端不再去拉 GET /source 当脸——那是源码档的事", () => {
@@ -213,6 +217,178 @@ describe("渲染后：电脑在外壳里面，不在它上头", () => {
     expect(computer!.textContent).not.toContain("命令行输出");
   });
 
+  it("只写入源码时自动开源码档，不许停在空白终端", async () => {
+    await act(async () =>
+      root.render(
+        <SlideRuleStudio
+          chatSlot={<p>conversation</p>}
+          activeSkillId={null}
+          runtimeKind="project"
+          projectId="project-one"
+          projectRevision="revision-one"
+          turns={[
+            {
+              ...projectTurn("completed"),
+              steps: [
+                {
+                  id: "a",
+                  kind: "chip",
+                  capabilityId: "project_patch",
+                  roleId: "system",
+                  label: "写入源码",
+                  realLlm: false,
+                  progressType: "completed",
+                  projectDetail: "src/components/Header.tsx",
+                } as unknown as TurnStep,
+              ],
+            },
+          ]}
+        />
+      )
+    );
+    expect($("sandbox-preview-surface")?.getAttribute("data-computer-view")).toBe(
+      "source"
+    );
+    expect($("project-computer-pty")).toBeNull();
+    expect($("project-computer-title")?.textContent).toBe("代码");
+    expect(
+      $("project-workspace-panel"),
+      "代码档必须真的挂上源码面板，不许只换标题留白纸"
+    ).toBeTruthy();
+    expect($("project-source-waiting")).toBeNull();
+    expect($("project-verification-panel"), "源码档不许再挂验收条").toBeNull();
+    expect($("project-preview-open"), "打开预览不属于代码脸").toBeNull();
+    expect($("sandbox-preview-surface")?.textContent).not.toContain("工程尚未启动");
+    expect($("sandbox-preview-surface")?.textContent).not.toContain("检查应用");
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    expect(
+      container.querySelector('[aria-label="工程文件"]')?.textContent,
+      "树头不再堆读取/导出/复刻"
+    ).not.toContain("读取最新版");
+    expect($("project-source-tools-host"), "右上角要有操作宿主").toBeTruthy();
+    const trigger = $("project-source-tools-trigger");
+    expect(trigger, "⋯ 必须在").toBeTruthy();
+    expect(
+      $("project-computer-gears")?.contains(trigger!),
+      "⋯ 在源码下拉旁边，不许在文件树里"
+    ).toBe(true);
+  });
+
+  it("列文件也开源码档——project_list 不产 PTY，钉终端必白", async () => {
+    await act(async () =>
+      root.render(
+        <SlideRuleStudio
+          chatSlot={<p>conversation</p>}
+          activeSkillId={null}
+          runtimeKind="project"
+          projectId="project-one"
+          projectRevision="revision-one"
+          isRunning
+          turns={[
+            {
+              ...projectTurn("completed"),
+              steps: [
+                {
+                  id: "a",
+                  kind: "chip",
+                  capabilityId: "project_create",
+                  roleId: "system",
+                  label: "创建工程",
+                  realLlm: false,
+                  progressType: "completed",
+                  projectDetail: "react-vite",
+                } as unknown as TurnStep,
+                {
+                  id: "b",
+                  kind: "chip",
+                  capabilityId: "project_list",
+                  roleId: "system",
+                  label: "读取工程列表",
+                  realLlm: false,
+                  progressType: "completed",
+                  projectDetail: "prv-d3a1db551ba1",
+                } as unknown as TurnStep,
+              ],
+            },
+          ]}
+        />
+      )
+    );
+    expect($("sandbox-preview-surface")?.getAttribute("data-computer-view")).toBe(
+      "source"
+    );
+    expect($("project-computer-pty"), "列文件不许停在空终端").toBeNull();
+    expect(
+      $("project-workspace-panel"),
+      "列文件开了代码档，源码面板必须在，不许标题「代码」下面白纸"
+    ).toBeTruthy();
+  });
+
+  it("工程从空落到 id，代码档要把源码面板挂上，不许卸成白纸", async () => {
+    const turns: UiTurn[] = [
+      {
+        ...projectTurn("completed"),
+        steps: [
+          {
+            id: "a",
+            kind: "chip",
+            capabilityId: "project_create",
+            roleId: "system",
+            label: "创建工程",
+            realLlm: false,
+            progressType: "completed",
+            projectDetail: "react-vite-tasks",
+          } as unknown as TurnStep,
+          {
+            id: "b",
+            kind: "chip",
+            capabilityId: "project_list",
+            roleId: "system",
+            label: "读取工程列表",
+            realLlm: false,
+            progressType: "completed",
+            projectDetail: "prv-00af4023",
+          } as unknown as TurnStep,
+        ],
+      },
+    ];
+    const studio = (projectId: string | null) => (
+      <SlideRuleStudio
+        chatSlot={<p>conversation</p>}
+        activeSkillId={null}
+        runtimeKind="project"
+        projectId={projectId}
+        projectRevision={projectId ? "revision-one" : null}
+        turns={turns}
+      />
+    );
+    await act(async () => root.render(studio(null)));
+    expect($("sandbox-preview-surface")?.getAttribute("data-computer-view")).toBe(
+      "source"
+    );
+    expect($("project-source-waiting"), "还没有 id 时要等人，不许假装有源码").toBeTruthy();
+    expect($("project-workspace-panel")).toBeNull();
+
+    await act(async () => root.render(studio("project-one")));
+    expect($("project-source-waiting"), "id 到了还在等 = 面板没挂上").toBeNull();
+    expect(
+      $("project-workspace-panel"),
+      "真机团长工作台：id 一到就把 workspaceOpened 关死，标题「代码」下面白纸"
+    ).toBeTruthy();
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    const files = [
+      ...container.querySelectorAll('[data-testid="project-source-file"]'),
+    ].map(node => node.textContent);
+    expect(files, "清单已经读过文件，树里必须看得到，不许空壳").toEqual(
+      expect.arrayContaining(["package.json", "App.tsx"])
+    );
+    expect(files).toHaveLength(2);
+  });
+
   it("没接 turns 的预览面不加终端档（应用中心那条链）", async () => {
     await act(async () =>
       root.render(
@@ -258,7 +434,18 @@ describe("渲染后：电脑在外壳里面，不在它上头", () => {
       "preview"
     );
     expect($("project-computer-panel")).toBeNull();
-    expect($("project-preview-open"), "切到预览档，打开预览仍在头条").not.toBeNull();
+    expect(
+      $("project-computer-chrome")!.querySelector(
+        '[data-testid="project-preview-open"]'
+      ),
+      "预览档头条不再堆打开预览，唤醒在画布上"
+    ).toBeNull();
+    expect($("project-preview-addressbar"), "预览档头条是地址").not.toBeNull();
+    expect($("project-preview-url")?.textContent).toBe("/");
+    expect($("project-computer-chrome")!.textContent).not.toContain("它的电脑");
+    expect($("project-preview-wake"), "画布是唤醒，不是验收条").not.toBeNull();
+    expect($("project-verification-panel")).toBeNull();
+    expect($("sandbox-preview-surface")?.textContent).not.toContain("检查应用");
     expect($("project-computer-chrome"), "头条不跟档卸掉").not.toBeNull();
   });
 
@@ -523,9 +710,14 @@ function mixedTurn(): UiTurn {
 describe("左栏点工具，右侧跟档", () => {
   it("通电链：清单发出 inspect，外壳听 computerViewForAction", () => {
     const list = read("../ProjectTaskChecklist.tsx");
+    const story = read("../SessionStory.tsx");
     const surface = read("../project-runtime/SandboxPreviewSurface.tsx");
     expect(list).toMatch(/dispatchInspectAction/);
     expect(list).toMatch(/data-testid="project-task-row"/);
+    // 对话列现网走章节面，行复用同一份 ProjectActionRowView。
+    // 只钉清单 = 只测了外壳夹具。
+    expect(story).toMatch(/ProjectActionRowView/);
+    expect(list).toMatch(/export function ProjectActionRowView/);
     expect(surface).toMatch(/INSPECT_ACTION_EVENT/);
     expect(surface).toMatch(/FOLLOW_COMPUTER_EVENT/);
     expect(surface).toMatch(/computerViewForAction/);
