@@ -32,6 +32,7 @@ import { describe, it, expect } from "vitest";
 import { linesFromTurnSteps } from "../stage-authority";
 import { finalNarrationStep } from "../turn-route-steps";
 import {
+  answerAlreadySpoken,
   dedupeAdjacentSpeech,
   isUserFacingSpeech,
   modelSpeechFor,
@@ -99,6 +100,36 @@ describe("模型开口 = 正文段落", () => {
 
   it("反向：开口不参与收尾文字（finalNarrationStep 只认 isFinal 的 narration）", () => {
     expect(finalNarrationStep([speechStep, chipStep])).toBeNull();
+  });
+});
+
+describe("完成轮收尾不许再印已经画过的开口", () => {
+  // 2026-09-16 真机：规划那句、写计划那句各印两遍。问卷卡没叠，所以不是
+  // 模型连说两次——是 control_text 进 steps 又进 assistant。
+  const live =
+    "I'll start by planning this build — but first, a couple of decisions I need from you so I don't guess wrong on scope and stack.";
+
+  it("收尾跟开口逐字相同 → 已经说过", () => {
+    const turn = turnWith([{ id: "s1", kind: "model_speech", text: live }]);
+    expect(answerAlreadySpoken(live, turn)).toBe(true);
+    expect(answerAlreadySpoken(`  ${live}  `, turn)).toBe(true);
+  });
+
+  it("反向：收尾是另一句 → 要印", () => {
+    const turn = turnWith([{ id: "s1", kind: "model_speech", text: live }]);
+    expect(answerAlreadySpoken("I'll write up the plan first, then build it.", turn)).toBe(
+      false
+    );
+  });
+
+  it("两段开口按顺序拼起来等于收尾 → 也算说过", () => {
+    const turn = turnWith([
+      { id: "s1", kind: "model_speech", text: "先问清范围。" },
+      { id: "s2", kind: "model_speech", text: "再写计划。" },
+    ]);
+    expect(answerAlreadySpoken("先问清范围。\n\n再写计划。", turn)).toBe(true);
+    expect(answerAlreadySpoken("再写计划。", turn)).toBe(true);
+    expect(answerAlreadySpoken("先问清范围。然后开工。", turn)).toBe(false);
   });
 });
 

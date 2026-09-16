@@ -22,10 +22,14 @@
  * `narration` 会被 `stage-authority.linesFromTurnSteps` 收进左栏活动列表。
  * 模型散文进去就跟「指令已接收 · 启动推理」同等分量地排成一行，正是要修
  * 的那个观感。`model_speech` 不被 `textFromStep` / `linesFromTurnSteps`
- * 认领，所以只在正文里以段落出现——**不会双渲染**。
+ * 认领，所以只在正文里以段落出现——**不会跟活动列表双渲染**。
  *
- * ⚠ 也不影响收尾文字：`assistantTextForTurn` 走的是
- * `finalNarrationStep`，那个只认 `isFinal: true` 的 narration。
+ * ⚠ 2026-09-16 TicketStream：完成轮仍会双渲染。活路径一条 `control_text`
+ *   既 `appendModelSpeech` 又写入 `turn.assistant`（`onControlHostText`）；
+ *   刷新 `turnsFromControlTranscript` 把最后一句开口再抄进 `assistant`。
+ *   `assistantTextForTurn` **先吃 `turn.assistant`**，不是只认 `isFinal`
+ *   的 narration。故事面画完开口，下面 `Response` 再印一遍。
+ *   消费侧用 `answerAlreadySpoken` 挡收尾，不许再靠这条过期注释。
  */
 
 import { OPERATOR_SPEAK } from "./assistant-text-for-turn";
@@ -150,4 +154,23 @@ export function renderableModelSpeech(
   return keepLatestChecklist(dedupeAdjacentSpeech(modelSpeechFor(turn))).filter(
     item => !isChecklistSnapshot(item.text)
   );
+}
+
+/**
+ * 收尾文字是不是故事面已经画过的开口。
+ *
+ * 只认**整段相同**（单条或按出现顺序拼起来）。半句重合可能是真的补了一句，
+ * 不许当重复吞掉。
+ */
+export function answerAlreadySpoken(
+  text: string,
+  turn: UiTurn | null | undefined
+): boolean {
+  const answer = text.trim();
+  if (!answer) return false;
+  const spoken = renderableModelSpeech(turn)
+    .map(item => item.text.trim())
+    .filter(Boolean);
+  if (spoken.includes(answer)) return true;
+  return spoken.join("\n\n") === answer || spoken.join("\n") === answer;
 }

@@ -668,7 +668,7 @@ describe("source and history through real HTTP consumers", () => {
     expect(
       fetcher.mock.calls.some(([url]) => String(url).endsWith("/source"))
     ).toBe(false);
-    await act(async () => selectProjectMode(container, "源码"));
+    await act(async () => selectProjectMode(container, "代码"));
     await flush();
     expect(editor().value).toBe(contents["src/main.tsx"]);
     expect(posts()).toHaveLength(0);

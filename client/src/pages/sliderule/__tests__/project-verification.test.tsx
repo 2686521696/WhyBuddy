@@ -585,7 +585,7 @@ describe("project browser verification consumer", () => {
       container.querySelector('[data-testid="project-verification-panel"]'),
       "交付档才挂验收条"
     ).not.toBeNull();
-    await act(async () => selectProjectMode(container, "源码"));
+    await act(async () => selectProjectMode(container, "代码"));
     expect(
       container.querySelector('[data-testid="project-verification-panel"]')
     ).toBeNull();

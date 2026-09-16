@@ -190,7 +190,7 @@ describe("渲染后：电脑在外壳里面，不在它上头", () => {
     expect(projectModeLabels(container)).toEqual([
       "终端",
       "预览",
-      "源码",
+      "代码",
       "版本",
       "数据",
       "交付",
@@ -210,6 +210,12 @@ describe("渲染后：电脑在外壳里面，不在它上头", () => {
       computer!.querySelector('[data-testid="project-computer-promptbar"]'),
       "底栏在外壳上，不许再叠进面板"
     ).toBeNull();
+    expect(
+      $("project-computer-promptbar")!.textContent,
+      "Manus 的 $ 在 PTY 里，不在回放栏上"
+    ).not.toContain("$");
+    expect($("project-computer-live")?.textContent).toBe("实时");
+    expect($("project-computer-promptbar")!.textContent).not.toMatch(/\d+\s*\/\s*\d+/);
     expect(surface!.textContent).not.toContain("跳到实时");
     expect(surface!.textContent).not.toContain("工程尚未启动");
     expect(surface!.textContent).not.toContain("更新状态");
@@ -413,7 +419,7 @@ describe("渲染后：电脑在外壳里面，不在它上头", () => {
     );
     expect(projectModeLabels(container)).toEqual([
       "预览",
-      "源码",
+      "代码",
       "版本",
       "数据",
       "交付",
@@ -460,6 +466,50 @@ describe("渲染后：电脑在外壳里面，不在它上头", () => {
     expect($("project-computer-chrome"), "头条不跟档卸掉").not.toBeNull();
   });
 
+  it("预览和代码共用同一条头条槽位，下拉不许左右跳", async () => {
+    // 2026-09-16 真机：预览把切档放左边，代码档又甩到 ml-auto，切一次
+    // 控件左右跳。Manus 是切档 | 路径 | 操作，三槽锁死。
+    await act(async () =>
+      root.render(
+        <SlideRuleStudio
+          chatSlot={<p>conversation</p>}
+          activeSkillId={null}
+          runtimeKind="project"
+          projectId="project-one"
+          projectRevision="revision-one"
+          turns={[projectTurn("completed")]}
+        />
+      )
+    );
+    const order = () => {
+      const html = $("project-computer-chrome")!.innerHTML;
+      return [
+        html.indexOf("project-mode-select"),
+        html.indexOf("project-computer-context"),
+        html.indexOf("project-computer-gears"),
+      ];
+    };
+    const assertSlots = () => {
+      const [mode, ctx, gears] = order();
+      expect(mode).toBeGreaterThan(-1);
+      expect(ctx).toBeGreaterThan(mode);
+      expect(gears).toBeGreaterThan(ctx);
+      expect(
+        $("project-computer-gears")?.querySelector(
+          '[data-testid="project-mode-select"]'
+        ),
+        "切档不许再进右侧齿轮里左右跳"
+      ).toBeNull();
+    };
+    assertSlots();
+    await act(async () => selectProjectMode(container, "预览"));
+    assertSlots();
+    expect($("project-preview-addressbar")).not.toBeNull();
+    await act(async () => selectProjectMode(container, "代码"));
+    assertSlots();
+    expect($("project-computer-title")?.textContent).toBe("代码");
+  });
+
   it("重置和分栏落在电脑头条，重置在标题左边", async () => {
     await act(async () =>
       root.render(
@@ -482,9 +532,12 @@ describe("渲染后：电脑在外壳里面，不在它上头", () => {
     expect(bar.contains(hud), "分栏/交付物必须进头条右侧").toBe(true);
     const html = bar.innerHTML;
     expect(html.indexOf("sliderule-reset-session")).toBeLessThan(
-      html.indexOf("它的电脑")
+      html.indexOf("project-mode-select")
     );
-    expect(html.indexOf("它的电脑")).toBeLessThan(
+    expect(html.indexOf("project-mode-select")).toBeLessThan(
+      html.indexOf("project-computer-context")
+    );
+    expect(html.indexOf("project-computer-context")).toBeLessThan(
       html.indexOf("project-computer-gears")
     );
   });
@@ -718,6 +771,15 @@ function mixedTurn(): UiTurn {
   };
 }
 
+function finishedMixedTurn(): UiTurn {
+  const turn = mixedTurn();
+  return {
+    ...turn,
+    status: "complete",
+    steps: turn.steps.map(step => ({ ...step, progressType: "completed" })),
+  };
+}
+
 describe("左栏点工具，右侧跟档", () => {
   it("通电链：清单发出 inspect，外壳听 computerViewForAction", () => {
     const list = read("../ProjectTaskChecklist.tsx");
@@ -732,6 +794,14 @@ describe("左栏点工具，右侧跟档", () => {
     expect(surface).toMatch(/INSPECT_ACTION_EVENT/);
     expect(surface).toMatch(/FOLLOW_COMPUTER_EVENT/);
     expect(surface).toMatch(/computerViewForAction/);
+    const dock = surface.slice(
+      surface.indexOf("function ComputerReplayDock"),
+      surface.indexOf("function PreviewPausedFace")
+    );
+    expect(dock, "底栏不许再钉 $").not.toMatch(/>\s*\$\s*</);
+    expect(dock).not.toMatch(/accent-blue-500/);
+    expect(dock).not.toMatch(/\$\{index \+ 1\} \/ \$\{rows\.length\}/);
+    expect(dock).toMatch(/rounded-full bg-\[#171717\]/);
     // 反向：只发事件外壳不听 = 点了没反应，正是这一轮要修的缝。
     expect(surface).toMatch(/addEventListener\(\s*INSPECT_ACTION_EVENT/);
     expect(surface).toMatch(/addEventListener\(\s*FOLLOW_COMPUTER_EVENT/);
@@ -806,5 +876,61 @@ describe("左栏点工具，右侧跟档", () => {
       )
     ).toBeNull();
     expect($("project-computer-panel")?.textContent).not.toContain("跳到实时");
+    expect($("project-computer-promptbar")!.textContent).not.toContain("$");
+    expect($("project-computer-live")?.textContent).toBe("实时");
+    expect($("project-computer-promptbar")!.querySelector(".accent-blue-500")).toBeNull();
+  });
+
+  it("跟在队尾写实时，不许变成播放器那种 n/total", async () => {
+    const turns = [finishedMixedTurn()];
+    await act(async () =>
+      root.render(
+        <SlideRuleStudio
+          chatSlot={<ProjectTaskChecklist turns={turns} />}
+          activeSkillId={null}
+          runtimeKind="project"
+          projectId="project-one"
+          turns={turns}
+        />
+      )
+    );
+    await act(async () => {
+      selectProjectMode(container, "终端");
+    });
+    const bar = $("project-computer-promptbar")!;
+    expect(bar.textContent).not.toContain("$");
+    expect(bar.textContent).not.toMatch(/\d+\s*\/\s*\d+/);
+    expect($("project-computer-live")?.textContent).toBe("实时");
+    expect($("project-computer-follow")).toBeNull();
+  });
+
+  it("倒回去看：跳到实时是进度条上方的深色胶囊，不是右边一条蓝链接", async () => {
+    const turns = [finishedMixedTurn()];
+    await act(async () =>
+      root.render(
+        <SlideRuleStudio
+          chatSlot={<ProjectTaskChecklist turns={turns} />}
+          activeSkillId={null}
+          runtimeKind="project"
+          projectId="project-one"
+          turns={turns}
+        />
+      )
+    );
+    await act(async () => {
+      selectProjectMode(container, "终端");
+    });
+    await act(async () => {
+      $("project-computer-prev")!.click();
+    });
+    const bar = $("project-computer-promptbar")!;
+    expect(bar.textContent).not.toContain("$");
+    expect(bar.textContent).not.toMatch(/\d+\s*\/\s*\d+/);
+    expect($("project-computer-live")).toBeNull();
+    const follow = $("project-computer-follow")!;
+    expect(follow.textContent).toContain("跳到实时");
+    expect(follow.className).toMatch(/rounded-full/);
+    expect(follow.className).toMatch(/bg-\[#171717\]/);
+    expect(follow.className).not.toMatch(/underline/);
   });
 });

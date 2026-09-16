@@ -66,7 +66,7 @@ describe("会话怎么铺", () => {
     expect(out.lines.some(line => line.startsWith("$ "))).toBe(false);
   });
 
-  it("底栏已经钉着 `$` 时，会话里不许再叠一个闲置提示符", () => {
+  it("宿主已经画了提示符时，会话里不许再叠一个闲置 `$`", () => {
     const out = sandboxSessionTranscript({
       command: "build",
       logText: "ok",

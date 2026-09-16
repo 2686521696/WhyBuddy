@@ -322,6 +322,70 @@ describe("工程档对话：先开口再列动作，不把六步钟叠上去", (
     expect(html).toContain("接着改筛选。");
   });
 
+  it("完成轮开口只出现一次——assistant 再抄同一句也不许叠影", () => {
+    // 2026-09-16 TicketStream 真机：I'll start by planning… 印两遍。
+    // SSR 下 Response 是空的，所以盯 data-answer-present：开口已经画过
+    // 就必须 false。变异：ImAssistantMessage 不再过 answerAlreadySpoken
+    // → 收尾仍宣称有回答。
+    const live =
+      "I'll start by planning this build — but first, a couple of decisions I need from you so I don't guess wrong on scope and stack.";
+    const visible = (html: string) =>
+      html
+        .replace(/&#x27;/gi, "'")
+        .replace(/&#39;/g, "'")
+        .replace(/&apos;/g, "'");
+    const turn = completeTurn({
+      assistant: live,
+      assistantSource: "llm",
+      main: null,
+      steps: [{ id: "s1", kind: "model_speech", text: live }],
+    });
+    const html = renderToStaticMarkup(
+      <ClaudeChatSurface
+        uiTurns={[turn]}
+        isRunning={false}
+        liveAction={null}
+        latestTurn={turn}
+        onChallenge={() => {}}
+        runtimeKind="project"
+      />
+    );
+    expect(html).toContain('data-testid="sliderule-model-speech"');
+    expect(visible(html).split(live).length - 1).toBe(1);
+    expect(html).toContain('data-answer-present="false"');
+
+    const other = completeTurn({
+      assistant: "I'll write up the plan first, then build it.",
+      assistantSource: "llm",
+      main: null,
+      steps: [{ id: "s1", kind: "model_speech", text: live }],
+    });
+    const otherHtml = renderToStaticMarkup(
+      <ClaudeChatSurface
+        uiTurns={[other]}
+        isRunning={false}
+        liveAction={null}
+        latestTurn={other}
+        onChallenge={() => {}}
+        runtimeKind="project"
+      />
+    );
+    expect(visible(otherHtml)).toContain("start by planning this build");
+    expect(otherHtml).toContain('data-answer-present="true"');
+
+    const src = readFileSync(
+      new URL("../../SlideRule.tsx", import.meta.url),
+      "utf8"
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^[ \t]*\/\/.*$/gm, "");
+    const assistant = src.slice(
+      src.indexOf("function ImAssistantMessage"),
+      src.indexOf("export function ClaudeChatSurface")
+    );
+    expect(assistant).toContain("answerAlreadySpoken");
+  });
+
   it("工程档不挂六步钟——那是 HTML 推演的词汇", () => {
     const runningClock = buildRehearsalClockView(startRehearsalCursor(), {
       isRunning: true,

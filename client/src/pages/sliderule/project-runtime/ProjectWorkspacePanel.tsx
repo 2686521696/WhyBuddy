@@ -222,6 +222,7 @@ function ProjectWorkspaceBody({
   const [pending, setPending] = useState<SourceCommand | null>(null);
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
   const [toolsHost, setToolsHost] = useState<Element | null>(null);
+  const [contextHost, setContextHost] = useState<Element | null>(null);
   const editor = useRef<SourceEditorHandle | null>(null);
   const pendingReveal = useRef<{ from: number; to: number } | null>(null);
   const alive = useRef(true);
@@ -278,8 +279,13 @@ function ProjectWorkspaceBody({
   }, [currentIndex?.revision, tree]);
   useLayoutEffect(() => {
     setToolsHost(
-      tab === "source"
+      tab === "source" || tab === "history"
         ? document.querySelector("[data-testid=project-source-tools-host]")
+        : null
+    );
+    setContextHost(
+      tab === "source" || tab === "history"
+        ? document.querySelector("[data-testid=project-computer-context-host]")
         : null
     );
   }, [tab, projectId]);
@@ -664,6 +670,35 @@ function ProjectWorkspaceBody({
       ) : null}
     </SourceToolsMenu>
   );
+  const contextText = currentFile
+    ? `/${currentFile.path.replace(/^\//, "")}`
+    : indexLabel;
+  const contextPill = (
+    <span
+      className="flex h-6 min-w-0 flex-1 items-center rounded-full bg-[#f4f4f5] px-3 font-mono text-[12px] text-[#8a8a8a]"
+      data-testid="project-computer-context-value"
+      title={currentFile?.path ?? indexLabel}
+    >
+      {contextText}
+    </span>
+  );
+  const saveButton = (
+    <button
+      type="button"
+      className={buttonClass}
+      disabled={
+        !currentFile ||
+        !dirty ||
+        locked ||
+        staleDraft ||
+        conflict ||
+        currentIndex?.revision !== currentIndex?.currentRevision
+      }
+      onClick={save}
+    >
+      保存源码
+    </button>
+  );
   return (
     <section
       data-testid="project-workspace-panel"
@@ -695,7 +730,7 @@ function ProjectWorkspaceBody({
           打开复刻后的会话
         </a>
       ) : null}
-      {tab === "history" ? (
+      {tab === "history" && !contextHost ? (
         <div className="flex h-8 shrink-0 items-center gap-1 border-b border-[#e5e7eb] px-2">
           <p className="min-w-0 flex-1 truncate text-[12px] text-[#8b8b8b]">
             {indexLabel}
@@ -709,9 +744,11 @@ function ProjectWorkspaceBody({
             aria-label="工程文件"
             className="w-56 shrink-0 overflow-auto border-r border-[#e5e7eb] bg-white py-1"
           >
-            <div className="flex h-8 shrink-0 items-center border-b border-[#e5e7eb] px-2">
-              <p className="truncate text-[11px] text-[#8b8b8b]">{indexLabel}</p>
-            </div>
+            {!contextHost ? (
+              <div className="flex h-8 shrink-0 items-center border-b border-[#e5e7eb] px-2">
+                <p className="truncate text-[11px] text-[#8b8b8b]">{indexLabel}</p>
+              </div>
+            ) : null}
             <SourceTreeList
               nodes={tree}
               depth={0}
@@ -732,6 +769,7 @@ function ProjectWorkspaceBody({
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {currentFile ? (
               <>
+                {!toolsHost ? (
                 <div className="flex h-8 shrink-0 items-center gap-1 border-b border-[#e5e7eb] px-2">
                   <nav
                     aria-label="当前文件路径"
@@ -757,22 +795,10 @@ function ProjectWorkspaceBody({
                       </React.Fragment>
                     ))}
                   </nav>
-                  <button
-                    type="button"
-                    className={buttonClass}
-                    disabled={
-                      !dirty ||
-                      locked ||
-                      staleDraft ||
-                      conflict ||
-                      currentIndex?.revision !== currentIndex?.currentRevision
-                    }
-                    onClick={save}
-                  >
-                    保存源码
-                  </button>
-                  {tab === "source" && !toolsHost ? sourceMenu : null}
+                  {saveButton}
+                  {tab === "source" ? sourceMenu : null}
                 </div>
+                ) : null}
                 <div
                   className="flex h-8 shrink-0 items-center border-b border-[#e5e7eb] bg-[#f7f7f8]"
                   data-testid="project-source-tabs"
@@ -998,7 +1024,19 @@ function ProjectWorkspaceBody({
           ) : null}
         </div>
       )}
-      {tab === "source" && toolsHost ? createPortal(sourceMenu, toolsHost) : null}
+      {contextHost ? createPortal(contextPill, contextHost) : null}
+      {tab === "source" && toolsHost
+        ? createPortal(
+            <>
+              {saveButton}
+              {sourceMenu}
+            </>,
+            toolsHost
+          )
+        : null}
+      {tab === "history" && toolsHost
+        ? createPortal(sourceMenu, toolsHost)
+        : null}
     </section>
   );
 }

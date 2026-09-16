@@ -105,12 +105,25 @@ const streamingTurn = {
 };
 
 describe("unified /sliderule surface (single mental model)", () => {
-  it("describes a failed control turn without claiming a legacy drive-full fallback", () => {
-    const html = renderPage({ driveFullStatus: "control_failed", goal: "任务应用", uiTurns: [streamingTurn] });
-    expect(html).toContain('data-status="control_failed"');
-    expect(html).toContain("本轮执行已中断，详见会话中的具体原因");
+  it("控制面中断只写在会话里，顶栏不再钉一条同义横幅", () => {
+    const html = renderPage({
+      driveFullStatus: "control_failed",
+      goal: "任务应用",
+      uiTurns: [
+        {
+          ...streamingTurn,
+          status: "complete" as const,
+          assistant: "推演中断：控制面未返回结果（可重试或换指令）",
+          assistantSource: "fallback",
+        },
+      ],
+    });
+    expect(html).toContain("推演中断：控制面未返回结果（可重试或换指令）");
+    expect(html).toContain("border-amber-400");
+    expect(html).not.toContain("本轮执行已中断");
+    expect(html).not.toContain('data-testid="sliderule-drive-full-status"');
+    expect(html).not.toContain('data-status="control_failed"');
     expect(html).not.toContain("/drive-full");
-    expect(html).not.toContain("fallback");
   });
   it("persisted project references reach the real Studio before any HTML or conversation is restored", () => {
     const html = renderPage({ sessionState: {

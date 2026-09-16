@@ -137,8 +137,8 @@ export function sandboxSessionTranscript(input: {
   logText: string;
   running: boolean;
   /**
-   * 底栏已经钉着一个 `$`（Manus 那条提示符 + 跳到实时）。
-   * 会话里再画一个闲置提示符就是两行 `$` 叠在一起。
+   * ⚠ 2026-09-16：底栏不再钉 `$`。Manus 的提示符在 PTY 的 PS1 里。
+   * 这个开关留给「宿主已经画了提示符」的调用方，会话面默认不要再叠一行。
    */
   dockedPrompt?: boolean;
 }): {

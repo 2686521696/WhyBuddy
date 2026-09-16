@@ -2,14 +2,14 @@
  * 驱动工程工作台的视图切换。
  *
  * ⚠ 2026-09-14：控件从 tab 改成 `<select>`，又改成 Cursor 风格的
- *   自定义菜单。三个判据文件原来各写各的 `click("源码")` /
+ *   自定义菜单。三个判据文件原来各写各的 `click("代码")` /
  *   `querySelector('[role="tab"]')` / `select.value =`。收到这里一份，
  *   下次再换控件只改一处（§4）。
  */
 export const PROJECT_MODES = {
   终端: "computer",
   预览: "preview",
-  源码: "source",
+  代码: "source",
   版本: "history",
   数据: "data",
   交付: "delivery",

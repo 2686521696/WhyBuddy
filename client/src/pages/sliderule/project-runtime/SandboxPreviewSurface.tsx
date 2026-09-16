@@ -2,10 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ExternalLink,
+  Monitor,
+  Play,
   RotateCw,
+  SkipBack,
+  SkipForward,
 } from "lucide-react";
 import type { PreviewDescriptor } from "@shared/project-runtime.generated";
 import type { ProjectPreviewReference } from "./project-preview-client";
@@ -96,11 +98,15 @@ function previewReasonText(reason: string | null | undefined) {
 const SESSION_MODES = [
   ["computer", "终端"],
   ["preview", "预览"],
-  ["source", "源码"],
+  ["source", "代码"],
   ["history", "版本"],
   ["data", "数据"],
   ["delivery", "交付"],
 ] as const;
+
+/** 头条中间那条路径槽。预览和代码同一份圆角条，切档才不会左右跳。 */
+const CONTEXT_PILL =
+  "flex h-6 min-w-0 flex-1 items-center rounded-full bg-[#f4f4f5] px-3 font-mono text-[12px] text-[#8a8a8a]";
 const APP_MODES = SESSION_MODES.filter(([value]) => value !== "computer");
 
 /**
@@ -159,13 +165,14 @@ function ComputerModeSelect({
         onClick={() => setOpen(value => !value)}
         className="flex h-7 items-center gap-1 rounded-md px-2 text-[12px] text-[#3c3c3c] hover:bg-[#f4f4f5]"
       >
-        <span>{current}</span>
+        <Monitor className="h-3.5 w-3.5 text-[#8a8a8a]" aria-hidden />
+        <span data-testid="project-computer-title">{current}</span>
         <ChevronDown className="h-3.5 w-3.5 text-[#8a8a8a]" aria-hidden />
       </button>
       <ul
         role="listbox"
         hidden={!open}
-        className="absolute right-0 z-30 mt-1 min-w-[8rem] rounded-lg border border-[#e5e7eb] bg-white py-1 shadow-[0_8px_24px_rgb(15_23_42/0.12)]"
+        className="absolute left-0 z-30 mt-1 min-w-[8rem] rounded-lg border border-[#e5e7eb] bg-white py-1 shadow-[0_8px_24px_rgb(15_23_42/0.12)]"
       >
         {modes.map(([value, label]) => {
           const selected = tab === value;
@@ -201,9 +208,16 @@ function ComputerModeSelect({
 }
 
 /**
- * 2026-09-15 对照 Manus 电脑底栏：提示符、回放轴、「实时」。
+ * Manus 右侧终端底下那条：跳转 + 细进度 + 「实时」。
  * 画在外壳上，不画进面板——再叠一条就是 2026-09-14 拆掉的第二层壳。
- * 「实时」只在真有动作在跑且跟着最新时亮。
+ *
+ * ⚠ 2026-09-16 对照 Manus 真机底栏：`$` 在 PTY 的 PS1 里，不在这条回放
+ *   栏上。第一版把 `$`、粗 `accent` 滑条、跟在队尾时的 `61 / 61` 全塞进
+ *   footer，看起来像播放器。跳到实时也不是右边一条蓝链接——倒回去看时
+ *   是进度条上方的深色胶囊。
+ *   「实时」在这里是队尾位置，不是「还在跑」灯。停了也跟在队尾就写
+ *   「实时」，还在跑用蓝色分开。独立卡片 ProjectComputerPanel 仍
+ *   fail-closed：停了不许亮「实时」。
  */
 function ComputerReplayDock({
   rows,
@@ -222,61 +236,79 @@ function ComputerReplayDock({
     if (!row) return;
     dispatchInspectAction({ id: row.id, tool: row.tool, keepView: true });
   };
+  const pct = rows.length ? ((index + 1) / rows.length) * 100 : 0;
+  const skipBtn =
+    "flex h-6 w-6 items-center justify-center rounded text-[#8c8c8c] hover:bg-stone-100 hover:text-[#3c3c3c] disabled:opacity-30";
   return (
-    <footer
-      data-testid="project-computer-promptbar"
-      className="flex shrink-0 items-center gap-2 border-t border-stone-200 px-3 py-1.5"
-    >
-      <span className="font-mono text-[12px] text-stone-400" aria-hidden>
-        $
-      </span>
-      <button
-        type="button"
-        aria-label="上一步"
-        data-testid="project-computer-prev"
-        disabled={index <= 0}
-        onClick={() => seek(Math.max(index - 1, 0))}
-        className="flex h-6 w-6 items-center justify-center rounded text-stone-500 hover:bg-stone-100 disabled:opacity-30"
-      >
-        <ChevronLeft className="h-4 w-4" />
-      </button>
-      <input
-        type="range"
-        min={0}
-        max={Math.max(rows.length - 1, 0)}
-        value={index}
-        aria-label="回放进度"
-        onChange={event => seek(Number(event.target.value))}
-        className="h-1 min-w-0 flex-1 cursor-pointer accent-blue-500"
-      />
-      <button
-        type="button"
-        aria-label="下一步"
-        data-testid="project-computer-next"
-        disabled={index >= rows.length - 1}
-        onClick={() => seek(Math.min(index + 1, rows.length - 1))}
-        className="flex h-6 w-6 items-center justify-center rounded text-stone-500 hover:bg-stone-100 disabled:opacity-30"
-      >
-        <ChevronRight className="h-4 w-4" />
-      </button>
-      {following ? (
-        <span
-          className={`shrink-0 text-[11px] ${live ? "text-blue-600" : "text-stone-400"}`}
-          data-testid="project-computer-live"
-        >
-          {live ? "实时" : `${index + 1} / ${rows.length}`}
-        </span>
-      ) : (
-        <button
-          type="button"
-          data-testid="project-computer-follow"
-          onClick={() => dispatchFollowComputer()}
-          className="shrink-0 text-[11px] text-blue-600 hover:underline"
-        >
-          跳到实时
-        </button>
+    <div className="relative shrink-0">
+      {following ? null : (
+        <div className="pointer-events-none absolute inset-x-0 bottom-full z-10 mb-3 flex justify-center">
+          <button
+            type="button"
+            data-testid="project-computer-follow"
+            onClick={() => dispatchFollowComputer()}
+            className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full bg-[#171717] px-3.5 py-1.5 text-[13px] font-medium text-white shadow-[0_8px_24px_rgba(0,0,0,.18)]"
+          >
+            <Play className="h-3.5 w-3.5 fill-current" aria-hidden />
+            跳到实时
+          </button>
+        </div>
       )}
-    </footer>
+      <footer
+        data-testid="project-computer-promptbar"
+        className="flex shrink-0 items-center gap-2.5 border-t border-[#ececec] px-3 py-2"
+      >
+        <div className="flex shrink-0 items-center">
+          <button
+            type="button"
+            aria-label="上一步"
+            data-testid="project-computer-prev"
+            disabled={index <= 0}
+            onClick={() => seek(Math.max(index - 1, 0))}
+            className={skipBtn}
+          >
+            <SkipBack className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            aria-label="下一步"
+            data-testid="project-computer-next"
+            disabled={index >= rows.length - 1}
+            onClick={() => seek(Math.min(index + 1, rows.length - 1))}
+            className={skipBtn}
+          >
+            <SkipForward className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <div className="relative h-3.5 min-w-0 flex-1">
+          <div className="pointer-events-none absolute inset-0 flex items-center">
+            <div className="h-[2px] w-full rounded-full bg-[#e8e8e8]">
+              <div
+                className="h-full rounded-full bg-[#2f6bff]"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={Math.max(rows.length - 1, 0)}
+            value={index}
+            aria-label="回放进度"
+            onChange={event => seek(Number(event.target.value))}
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          />
+        </div>
+        {following ? (
+          <span
+            className={`shrink-0 text-[12px] ${live ? "text-[#2f6bff]" : "text-[#8c8c8c]"}`}
+            data-testid="project-computer-live"
+          >
+            实时
+          </span>
+        ) : null}
+      </footer>
+    </div>
   );
 }
 
@@ -363,7 +395,7 @@ function PreviewAddressBar({
       data-testid="project-preview-addressbar"
     >
       <span
-        className="flex h-6 min-w-0 flex-1 items-center rounded-full bg-[#f4f4f5] px-3 font-mono text-[12px] text-[#8a8a8a]"
+        className={CONTEXT_PILL}
         title={entryUrl ?? undefined}
         data-testid="project-preview-url"
       >
@@ -706,95 +738,87 @@ export function SandboxPreviewSurface({
           data-testid="project-computer-chrome"
           data-header-pattern="primer-page-header"
         >
-          {/* ⚠ 2026-09-14：对照 HTML 推演那条 sliderule-app-stage-bar——
-              功能堆在同一行，不另叠「重置 / 分栏」在电脑壳上头。
-              只堆**已经接通**的。2026-09-16 预览档再对照 Manus：
-              头条只留切档 + 地址（没打开也是 `/`），打开/停止/私有
-              不进预览脸。空画布一句唤醒，验收在交付。
-
-              ⚠ 2026-09-15 真机圈的：源码档把「工程尚未启动 + 检查应用 +
-              源码版本工具条 + 编辑器路径」叠成四条顶栏。Manus 源码只有
-              「代码 + 当前路径」一行。预览状态、打开预览、停止、私有
-              都不属于代码脸，切走预览就卸掉。 */}
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            {resetSlot}
+          {/* ⚠ 2026-09-16 对照 Manus 电脑头条：切档永远在左，中间永远是
+              路径槽，操作永远在右。第一版预览把下拉放左边、代码档又把
+              下拉甩到 `ml-auto`，切一次就左右跳。源码标题「代码」和下拉
+              「源码」还各写一遍。现在三槽锁死，预览/代码同一条骨架。 */}
+          {resetSlot}
+          <ComputerModeSelect tab={tab} hasSession onPick={pinView} />
+          <div
+            data-testid="project-computer-context"
+            className="flex min-w-0 flex-1 items-center"
+          >
             {tab === "preview" ? (
-              <>
-                <ComputerModeSelect tab={tab} hasSession onPick={pinView} />
-                <PreviewAddressBar
-                  entryUrl={preview.entryUrl}
-                  canReload={preview.canOpen}
-                  onReload={() => void preview.open()}
-                />
-              </>
-            ) : (
-              <h2
-                className="truncate text-[12px] font-medium text-[#3c3c3c]"
-                data-testid="project-computer-title"
-              >
-                {tab === "source" || tab === "history" ? "代码" : "它的电脑"}
-              </h2>
-            )}
-            {tab === "computer" && computerNow.current?.status === "running" ? (
+              <PreviewAddressBar
+                entryUrl={preview.entryUrl}
+                canReload={preview.canOpen}
+                onReload={() => void preview.open()}
+              />
+            ) : tab === "computer" ? (
               <p
                 role="status"
-                className="min-w-0 truncate text-[11px] text-[#8a8a8a]"
-                data-testid="project-computer-live-command"
+                className={CONTEXT_PILL}
+                data-testid={
+                  computerNow.current?.status === "running"
+                    ? "project-computer-live-command"
+                    : "project-computer-context-value"
+                }
               >
-                正在执行{" "}
-                {sandboxCommandLine(computerNow.current) ||
-                  computerNow.current.label}
+                {computerNow.current?.status === "running"
+                  ? sandboxCommandLine(computerNow.current) ||
+                    computerNow.current.label
+                  : "/"}
               </p>
-            ) : null}
+            ) : (
+              <div
+                data-testid="project-computer-context-host"
+                className="flex min-w-0 flex-1 items-center"
+              />
+            )}
           </div>
           <div
-            className="ml-auto flex min-w-0 items-center"
+            className="ml-auto flex shrink-0 items-center gap-1"
             data-testid="project-computer-gears"
           >
-            <div className="ml-auto flex shrink-0 items-center gap-1">
-              {tab === "preview" ? null : (
-                <ComputerModeSelect tab={tab} hasSession onPick={pinView} />
-              )}
-              {tab === "source" ? (
-                <div
-                  data-testid="project-source-tools-host"
-                  className="contents"
-                />
-              ) : null}
-              {previewPickButton}
-              {tab === "source" || tab === "history" || tab === "preview" ? null : (
-                <>
+            {tab === "source" || tab === "history" ? (
+              <div
+                data-testid="project-source-tools-host"
+                className="contents"
+              />
+            ) : null}
+            {previewPickButton}
+            {tab === "source" || tab === "history" || tab === "preview" ? null : (
+              <>
+                <button
+                  type="button"
+                  onClick={goPreview}
+                  disabled={!preview.canOpen}
+                  data-testid="project-preview-open"
+                  className="flex h-7 items-center rounded-md px-2 text-[12px] text-[#3c3c3c] hover:bg-[#f4f4f5] disabled:opacity-40"
+                >
+                  {preview.opening
+                    ? "正在授权…"
+                    : preview.entryUrl
+                      ? "刷新预览"
+                      : "打开预览"}
+                </button>
+                {canStop ? (
                   <button
                     type="button"
-                    onClick={goPreview}
-                    disabled={!preview.canOpen}
-                    data-testid="project-preview-open"
+                    disabled={stopBusy || descriptor?.status === "stopping"}
+                    onClick={() => void stopRuntime()}
                     className="flex h-7 items-center rounded-md px-2 text-[12px] text-[#3c3c3c] hover:bg-[#f4f4f5] disabled:opacity-40"
                   >
-                    {preview.opening
-                      ? "正在授权…"
-                      : preview.entryUrl
-                        ? "刷新预览"
-                        : "打开预览"}
+                    {stopBusy ? "正在请求停止…" : "停止应用"}
                   </button>
-                  {canStop ? (
-                    <button
-                      type="button"
-                      disabled={stopBusy || descriptor?.status === "stopping"}
-                      onClick={() => void stopRuntime()}
-                      className="flex h-7 items-center rounded-md px-2 text-[12px] text-[#3c3c3c] hover:bg-[#f4f4f5] disabled:opacity-40"
-                    >
-                      {stopBusy ? "正在请求停止…" : "停止应用"}
-                    </button>
-                  ) : null}
-                  <StudioShareToggle
-                    sessionId={sessionId}
-                    running={isRunning}
-                  />
-                </>
-              )}
-              {chromeSlot}
-            </div>
+                ) : null}
+                <StudioShareToggle
+                  sessionId={sessionId}
+                  running={isRunning}
+                />
+              </>
+            )}
+            {chromeSlot}
           </div>
         </div>
       ) : (

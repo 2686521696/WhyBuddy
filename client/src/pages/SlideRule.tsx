@@ -91,7 +91,10 @@ import {
   assistantTextForTurn,
   turnDidFactoryWork,
 } from "./sliderule/assistant-text-for-turn";
-import { renderableModelSpeech } from "./sliderule/model-speech";
+import {
+  answerAlreadySpoken,
+  renderableModelSpeech,
+} from "./sliderule/model-speech";
 import { ensureReadableChatMarkdown } from "./sliderule/readable-chat-markdown";
 import { SlideRuleStatusBar } from "./sliderule/SlideRuleStatusBar";
 import {
@@ -664,10 +667,12 @@ function ImAssistantMessage() {
     runtimeKind,
     turns,
   } = ctx;
+  const rawAnswer = assistantTextForTurn(turn, publishClosure, goalText, {
+    runtimeKind,
+  });
+  // 完成轮故事面已经画过同一句开口，收尾再印就是用户圈出来的重影。
   const answer = ensureReadableChatMarkdown(
-    assistantTextForTurn(turn, publishClosure, goalText, {
-      runtimeKind,
-    })
+    answerAlreadySpoken(rawAnswer, turn) ? "" : rawAnswer
   );
   const resultCard = (
     <TurnResultCard
@@ -1114,21 +1119,25 @@ function DriveFullStatusBanner({
 }) {
   // "loading" 不再展示：正常运行时左栏已有思考行 + 实时步骤流，这条横幅
   // 是纯重复（用户去重审查）；横幅只保留异常态（timeout/unavailable/fallback）。
+  //
+  // ⚠ 2026-09-17 TicketStream：control_failed 也不挂。顶上一句
+  // 「本轮执行已中断，详见会话中的具体原因」，会话里已经有琥珀卡
+  // 「推演中断：控制面未返回结果（可重试或换指令）」。横幅自己都在
+  // 指会话——钉两条就是重复。
   if (
     !status ||
     status === "idle" ||
     status === "python_success" ||
-    status === "loading"
+    status === "loading" ||
+    status === "control_failed"
   )
     return null;
   const text =
-    status === "control_failed"
-      ? "本轮执行已中断，详见会话中的具体原因"
-      : status === "timeout"
-        ? "/drive-full timeout"
-        : status === "python_unavailable"
-          ? "/drive-full Python unavailable"
-          : "/drive-full fallback";
+    status === "timeout"
+      ? "/drive-full timeout"
+      : status === "python_unavailable"
+        ? "/drive-full Python unavailable"
+        : "/drive-full fallback";
   return (
     <div
       data-testid="sliderule-drive-full-status"

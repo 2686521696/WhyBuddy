@@ -97,7 +97,7 @@ describe("视图下拉（原来是一排平铺 tab）", () => {
     await render();
     expect(projectModeLabels(container)).toEqual([
       "预览",
-      "源码",
+      "代码",
       "版本",
       "数据",
       "交付",
@@ -131,7 +131,7 @@ describe("视图下拉（原来是一排平铺 tab）", () => {
 
   it("切到源码就真的换面板", async () => {
     await render();
-    await act(async () => selectProjectMode(container, "源码"));
+    await act(async () => selectProjectMode(container, "代码"));
     expect(projectModeValue(container)).toBe("source");
     // ⚠ 判据要落在真的换了面板上：只断言 select.value 变了，等于只证明
     //   「受控组件是受控的」，把 onChange 里那句 setWorkspaceOpened 删掉也绿。
