@@ -23,6 +23,9 @@
 from __future__ import annotations
 
 import os
+import pathlib
+import urllib.error
+import urllib.request
 from pathlib import Path
 import sys
 
@@ -88,6 +91,10 @@ def check_gateway_process_env() -> None:
     ⚠ 这几个**不在 Python 侧校验**——它们喂的是 Node 网关进程。这里只提示，
       不计入「服务端认不认」。
     """
+    # ⚠ 这几项按文档是写在 `.env.preview` 里的（网关用 `--env-file` 自己读），
+    #   **不在根 .env**。只看进程环境会把它们全报成「缺」——体检脚本里的假警报
+    #   比没有检查更糟：会让人去补一份本来就不该补的配置。所以两处都看。
+    gateway_env = _read_env_file(pathlib.Path(__file__).resolve().parents[1] / ".env.preview")
     for name, default, why in (
         ("WHYBUDDY_PROJECT_PREVIEW_AUTHORITY_URL", "", "网关回头找 Python 做授权校验的地址"),
         ("WHYBUDDY_PROJECT_PREVIEW_PORT", "3002", "网关监听端口"),
@@ -95,12 +102,79 @@ def check_gateway_process_env() -> None:
         ("WHYBUDDY_PROJECT_WORKBENCH_ORIGIN", "", "工作台来源，用于隔离校验"),
     ):
         value = os.getenv(name, "")
+        source = "进程环境"
+        if not value and gateway_env.get(name):
+            value, source = gateway_env[name], ".env.preview"
         if value:
-            line(OK, name, value)
+            line(OK, name, f"{value}    （来自 {source}）")
         elif default:
             line(WARN, name, f"未设置，网关会用默认 {default!r} —— {why}")
         else:
             line(BAD, name, f"未设置 —— {why}")
+
+
+def _read_env_file(path: pathlib.Path) -> dict:
+    """读一份 dotenv。只认 `KEY=VALUE`，不展开变量——这里是体检不是加载器。"""
+    out = {}
+    if not path.exists():
+        return out
+    for raw in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line_ = raw.strip()
+        if not line_ or line_.startswith("#") or "=" not in line_:
+            continue
+        key, _, value = line_.partition("=")
+        out[key.strip()] = value.strip()
+    return out
+
+
+def check_two_sides_share_one_key() -> None:
+    """Python 发票、网关兑票，用的必须是**同一把** key。
+
+    ⚠ 这是 §4 那种成对物里最阴的一种：两边各自都「配好了」，值却不一样。
+      Python 照常发票、界面照常显示「预览就绪」，用户一点——网关兑不出来。
+      不报配置错误，只是打不开；查起来会往隧道那边找半天。
+      所以单独钉一条：只比对是否相等，两边的值都不打印。
+    """
+    root = pathlib.Path(__file__).resolve().parents[1]
+    gateway_env = _read_env_file(root / ".env.preview")
+    if not gateway_env:
+        line(WARN, "两侧 key 一致性", "没有 .env.preview——网关进程没在本机按文档方式配置，跳过比对")
+        return
+    theirs = gateway_env.get("WHYBUDDY_PROJECT_PREVIEW_GATEWAY_KEY", "")
+    ours = os.getenv("WHYBUDDY_PROJECT_PREVIEW_GATEWAY_KEY", "")
+    if not theirs:
+        line(BAD, "两侧 key 一致性", ".env.preview 里没填 WHYBUDDY_PROJECT_PREVIEW_GATEWAY_KEY")
+    elif not ours:
+        line(BAD, "两侧 key 一致性", "Python 侧没有 key，无从比对")
+    elif theirs == ours:
+        line(OK, "两侧 key 一致性", "Python 与 .env.preview 用的是同一把（值不回显）")
+    else:
+        line(BAD, "两侧 key 一致性",
+             "两边的 key **不一样**——票会发出去但兑不出来，界面只会「打不开」，不报配置错")
+
+
+def check_gateway_is_listening() -> None:
+    """网关进程在不在。
+
+    ⚠ 判据是「未授权访问要被拒」而不是「端口通」：端口上蹲着别的东西也会连上，
+      而那种情况下预览同样打不开，却比没进程更难查。403/401 才证明是它。
+    """
+    port = os.getenv("WHYBUDDY_PROJECT_PREVIEW_PORT", "") or "3002"
+    url = f"http://127.0.0.1:{port}/"
+    try:
+        request = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(request, timeout=5) as response:
+            code = response.status
+    except urllib.error.HTTPError as exc:
+        code = exc.code
+    except Exception as exc:  # 连不上
+        line(BAD, f"网关进程 :{port}", f"连不上（{type(exc).__name__}）——`pnpm run dev:project-preview` 起了吗")
+        return
+    if code in (401, 403):
+        line(OK, f"网关进程 :{port}", f"在，且未授权访问被拒（HTTP {code}）")
+    else:
+        line(WARN, f"网关进程 :{port}",
+             f"端口有响应但返回 HTTP {code}——未授权请求本该 401/403，确认蹲在这个端口上的是网关")
 
 
 def main() -> int:
@@ -116,6 +190,8 @@ def main() -> int:
 
     print("\n── Node 网关进程侧（`server/project-preview/main.ts`）──")
     check_gateway_process_env()
+    check_two_sides_share_one_key()
+    check_gateway_is_listening()
 
     print("\n── rollout ──")
     status = rollout_readiness()
