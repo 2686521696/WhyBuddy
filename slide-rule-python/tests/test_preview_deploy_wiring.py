@@ -111,3 +111,47 @@ def test_预览不许绕过TLS入口直接裸露():
         assert str(entry).startswith("127.0.0.1:"), (
             f"project-preview 的 publish 必须绑 127.0.0.1，实际 {entry!r}"
         )
+
+
+def test_镜像构建必须把预览来源传进前端():
+    """CSP 的 frame-src 是**编译期**定死的，构建拿不到就等于没有。
+
+    ⚠ 2026-09-16 线上抓到：新镜像里 CSP 是 `frame-src 'self'`，
+      因为 `WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE` 从来没进过构建环境。
+      链路是 vite.config.ts 用 loadEnv 读它 → 算出允许的 iframe 来源 →
+      transformIndexHtml 塞进 <head>。Dockerfile 不接、workflow 不传，
+      这一段就永远拿到空值。
+
+      后果**不是 502**（那是网关没接通）——网关通了、地址也对，
+      但浏览器按 CSP 把 iframe 拦掉，表现成「预览就是打不开」，更难查。
+      三处缺任何一处都会退回这个形态，所以三处一起钉。
+    """
+    name = "WHYBUDDY_PROJECT_PREVIEW_ORIGIN_TEMPLATE"
+
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert f"ARG {name}" in dockerfile, f"Dockerfile 没有 ARG {name}"
+    assert f"ENV {name}" in dockerfile, (
+        f"Dockerfile 有 ARG 但没转成 ENV——ARG 不会进 `pnpm run build` 的进程环境，"
+        "loadEnv 读不到（这一半最容易漏）"
+    )
+    build_at = dockerfile.index("RUN pnpm run build")
+    assert dockerfile.index(f"ENV {name}") < build_at, (
+        f"ENV {name} 必须在 `RUN pnpm run build` **之前**，否则构建时还没有它"
+    )
+
+    workflow = (ROOT / ".github" / "workflows" / "deploy-images.yml").read_text(encoding="utf-8")
+    assert "build-args:" in workflow, "workflow 没有 build-args，ARG 收不到值"
+    assert name in workflow, f"workflow 的 build-args 里没有 {name}"
+
+
+def test_网关key不许进前端构建():
+    """⚠ 反向：前端是公开产物，网关 key 是凭据，绝不许被传进构建。
+
+    上一条要求把预览来源传进去，很容易顺手把整组 WHYBUDDY_PROJECT_PREVIEW_*
+    一起传——那就把 key 编进了公开的静态包。
+    """
+    for path in (ROOT / "Dockerfile", ROOT / ".github" / "workflows" / "deploy-images.yml"):
+        text = path.read_text(encoding="utf-8")
+        assert "WHYBUDDY_PROJECT_PREVIEW_GATEWAY_KEY" not in text, (
+            f"{path.name} 里出现了网关 key——它不许进前端构建"
+        )
