@@ -565,6 +565,10 @@ class IdentityStore:
 
         ⚠ 查库失败**不缓存**：异常照常抛给调用方（那边 fail-closed 成匿名）。
           把失败缓存 5 秒等于一次网络抖动让人掉线 5 秒。
+
+        ⚠ **空结果同样不缓存**（2026-09-16 补）。原来这条只覆盖「抛异常」，
+          而远程 SQL 网关抖一下回的是「0 行」，不是异常——缓存下来 5 秒内
+          这个 id 一律查不到，下游把它判成账号被吊销。详见下面实现处的注释。
         """
         key = str(user_id or "")
         if not key:
@@ -578,11 +582,22 @@ class IdentityStore:
                 # 就串到别人身上了。User 是个小 dict，拷贝可以忽略不计。
                 return User(cached) if cached is not None else None
         user = self.get_by_id(key)
+        if user is None:
+            # ⚠ 2026-09-16：空结果**不进缓存**。上面那条「查库失败不缓存」只挡住了
+            #   抛异常那条路，而身份存储是远程 HTTPS SQL 网关——它抖一下回「0 行」
+            #   不是异常。缓存下来就是：这 5 秒里这个 id 一律「查不到」，
+            #   而 project_actor_access.authorize_project_actor 把「查不到」判成
+            #   **账号被吊销**，正在跑的工程被当场掐掉（真机 sr-20260916212612
+            #   就是这么死的，账号一秒都没被停用过）。
+            #
+            #   代价只有「不存在的 id 每次都实查一次」——那本来就不该走缓存加速，
+            #   而且鉴权路径上的 id 来自已签发的凭据，正常情况下都存在。
+            return None
         with _AUTH_CACHE_LOCK:
             # 满了整个清空——这是 5 秒窗口的加速器，不值得维护 LRU。
             if len(_AUTH_CACHE) >= _AUTH_CACHE_MAX:
                 _AUTH_CACHE.clear()
-            _AUTH_CACHE[key] = (now, User(user) if user is not None else None)
+            _AUTH_CACHE[key] = (now, User(user))
         return user
 
     def list_users(self, limit: int = 500) -> list[User]:
