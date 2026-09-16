@@ -129,6 +129,51 @@ class RunCheckpoint:
         self.checkpoint = copy.deepcopy(checkpoint)
 
 
+#: 操作进了终态。短命操作（runtime.exec / runtime.verify / runtime.patch）
+#: 只有这一种「做完了」。
+_OPERATION_TERMINAL = frozenset({"completed", "failed", "cancelled"})
+
+
+def operation_released_the_goal(operation) -> bool:
+    """这个操作还需不需要目标继续等它。
+
+    ⚠ 2026-09-16 整个 test_project_composition_authority.py（6 条）全红查出来的。
+
+    起因是 `_produce` 收尾把 `awaitingOperationIds` 当硬闸：里面任何一个操作
+    没进终态就 `wait_for_operations` + suspend。而那些 id 是 `control_tool_result`
+    一律记下来的（见 `_produce` 里那段，注释明说 "this bookkeeping does not
+    dispatch a second loop"——它本来只是**记账**，给刷新后的前端说明「在等什么」
+    用的）。记账被当成闸，就出了这个：
+
+        project_start 的操作是一个**正在服务的运行时**，
+        它只有被空闲回收才进 completed —— 于是「等异步工作做完」实际是「等沙盒死」。
+
+    真机形态：点了启动工程，那一轮的流挂到空闲超时（默认 300 秒）才收，
+    模型在沙盒服务期间不往下做——而那恰恰是工程模式的全部意义。
+    判据侧的形态更毒：等回来时运行时已经被回收、`runtime.status` 不再是 ready，
+    `available` 永远为假，**这条路径上判据不可能绿**，怎么改判据都没用。
+
+    实测（压 `SLIDERULE_PROJECT_IDLE_SECONDS` 一压就动，分毫不差）：
+
+        idle=300（默认）  →  单条用例 call 301 秒
+        idle=30           →  单条用例 call 30.79 秒
+
+    所以对 `runtime.start` 改成**以 ready 为准**：模型等的是「应用起来了」，
+    不是「沙盒死了」。短命操作行为不变——`run_command` 结尾就是
+    `finish("completed", ...)`，它们会自然结束，等它们是对的。
+
+    ⚠ 这个判断有两个调用点（`_requeue_settled_goals` 的唤醒侧、`_produce` 收尾的
+      挂起侧）。**只改一个 = 一半不生效且不报错**：要么挂起侧不挂了而唤醒侧还按
+      老规矩，要么挂了没人叫醒。所以这里只有一个函数，两处都调它（CLAUDE.md §4）。
+    """
+    if getattr(operation, "status", None) in _OPERATION_TERMINAL:
+        return True
+    if getattr(operation, "kind", None) != "runtime.start":
+        return False
+    runtime = getattr(operation, "runtime", None)
+    return getattr(runtime, "status", None) == "ready"
+
+
 class ControlRunService:
     @classmethod
     def observer(cls, project_store):
@@ -270,7 +315,7 @@ class ControlRunService:
                 except Exception:
                     settled = False
                     break
-                if operation.status not in {"completed", "failed", "cancelled"}:
+                if not operation_released_the_goal(operation):
                     settled = False
                     break
             if settled:
@@ -535,7 +580,7 @@ class ControlRunService:
                             except Exception:
                                 pending = True
                                 break
-                            if operation.status not in {"completed", "failed", "cancelled"}:
+                            if not operation_released_the_goal(operation):
                                 pending = True
                                 break
                     if pending:

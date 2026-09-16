@@ -107,6 +107,22 @@ def check_gateway_process_env() -> None:
             value, source = gateway_env[name], ".env.preview"
         if value:
             line(OK, name, f"{value}    （来自 {source}）")
+            # ⚠ 2026-09-16：授权地址光「有值」不算数。网关自己会校验它
+            #   （createPreviewService → preview_authority_https_required）：
+            #   http: 只放行回环，写成 compose 服务名（`http://python:9700/...`）
+            #   网关**一起来就抛**，日志里是个跟"预览打不开"字面无关的 config 错。
+            #   体检不替它判合法性，只把这条最容易踩的形态点出来。
+            if name == "WHYBUDDY_PROJECT_PREVIEW_AUTHORITY_URL":
+                from urllib.parse import urlsplit
+
+                parts = urlsplit(value)
+                host = parts.hostname or ""
+                if parts.scheme == "http" and host not in {"localhost", "127.0.0.1", "::1"}:
+                    line(BAD, "  ↑ 网关收不下", (
+                        f"http: + 非回环主机 {host!r}：网关启动时抛 "
+                        "preview_authority_https_required。容器里请给 https 地址"
+                        "（通常就是工作台自己 https://域名/api/sliderule/internal/project-preview）。"
+                    ))
         elif default:
             line(WARN, name, f"未设置，网关会用默认 {default!r} —— {why}")
         else:
