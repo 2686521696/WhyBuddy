@@ -266,6 +266,11 @@ _VOLATILE_RESULT_KEYS = frozenset({"seq", "toolCallId", "controlRunId", "type"})
 #:   取 3/5：留一次「报错后重试一遍」的余地（真机上确实有这种正当重复），
 #:   第三次还是同一份结果就提醒，第五次掐断。判据
 #:   `test_重复阈值必须够得着` 钉住它小于总轮数预算。
+#: ⚠ 2026-09-16 换模型真机首次实弹命中（在此之前只有单测覆盖过）：
+#:     [control] stationarity_nudge tool='project_status' run_len=2 problematic=1 round=13
+#:   形态跟设计时设想的一致：模型反复 `project_status` 拿**同一份**结果。
+#:   注意 `problematic=1` —— 是 `result_fingerprint` 认出「结果没变」才算数的，
+#:   不是光看工具名重复（光看名字会把正当的轮询也一起拦掉）。
 NUDGE_AFTER_STAGNANT_REPEATS = 3
 MAX_STAGNANT_REPEATS = 5
 
@@ -441,6 +446,15 @@ class StagnantCallLedger:
 #:
 #: 第二档 7：跨回合之后不再受单回合 `MAX_TOOL_ROUNDS`(8) 限制，但留着这个数
 #: 是为了「捅两次还不动就别再刷屏」。
+#:
+#: ⚠ 2026-09-16 换模型（gpt-5.6-luna）真机复核：**两档都响了，而且没误伤**。
+#:     [control] readonly_nudge rounds=4 round=15
+#:     [control] readonly_nudge rounds=7 round=2
+#:   前一趟同一条链还抓到过一次「响完真的改行为」的完整形态：
+#:     readonly_nudge rounds=4 → project_cancel → project_patch（写）→ project_exec
+#:   换了一个跟标定时完全不同的模型（推理型，reasoning_tokens 占九成），
+#:   4 / 7 这两个数依旧够得着、也没在正当的 status→logs→read 诊断流上误触。
+#:   **这两个数是标定过的，照 §6 别拍脑袋改**——要动就连同这段真机记录一起重跑。
 NUDGE_AFTER_READONLY_ROUNDS = 4
 NUDGE_AGAIN_AFTER_READONLY_ROUNDS = 7
 

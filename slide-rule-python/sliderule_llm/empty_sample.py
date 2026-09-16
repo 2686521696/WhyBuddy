@@ -22,6 +22,16 @@ from typing import Any, Optional
 
 #: 同一次 `call_control_llm` 里，空回复最多再采几次。
 #: 1 = 第一发空 + 再试一发。不要抄 grok 的默认 15——那发 5874 token。
+#:
+#: ⚠ 2026-09-16 换网关（ahapi / gpt-5.6-luna）真机**第一次实弹命中**，
+#:   整条链跟设计一致：
+#:     [control] empty sample empty_reason=no_visible_content finish=unknown resample=1/1
+#:     control llm loop failed after write
+#:     LlmError: upstream 503 auth_unavailable ... last upstream error: server_is_overloaded
+#:   网关先回一发可见内容为空 → 判成 no_visible_content、重采 1 次 →
+#:   重采撞上供应商真过载 → **停下报真错，不再烧**。
+#:   这里正是「1 而不是 15」的价值：上游过载时抄 grok 的默认会连采十几发。
+#:   会话在这之后仍继续跑了 39 轮，没有被这一发拖死。
 MAX_EMPTY_RESAMPLES = 1
 
 

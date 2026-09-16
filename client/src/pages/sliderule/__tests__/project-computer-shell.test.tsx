@@ -183,7 +183,18 @@ describe("渲染后：电脑在外壳里面，不在它上头", () => {
       /rounded-lg/
     );
     expect(surface!.getAttribute("data-computer-view")).toBe("computer");
-    expect(projectModeLabels(container)).toContain("终端");
+    // ⚠ 2026-09-16 拉齐强度：这条原来是 `toContain("终端")`，而同一个文件里
+    //   应用中心那条（下面「没有会话」那个用例）钉的是**精确列表相等**。
+    //   只 contain 的话，少一档、多一档、或者顺序换了都咬不住——而会话态
+    //   这六档正是用户天天看的那个下拉。两种形态用同一种强度。
+    expect(projectModeLabels(container)).toEqual([
+      "终端",
+      "预览",
+      "源码",
+      "版本",
+      "数据",
+      "交付",
+    ]);
     expect(projectModeValue(container)).toBe("computer");
     expect($("project-live-action"), "有会话时不许再占一条「正在运行命令」顶栏").toBeNull();
     expect($("project-computer-chrome"), "会话顶栏必须在").not.toBeNull();
