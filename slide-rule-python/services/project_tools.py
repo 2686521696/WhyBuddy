@@ -101,6 +101,26 @@ def operation_snapshot(snapshot):
     return result
 
 
+def _wait_backoff(elapsed: float) -> float:
+    """等待循环每次重查之间睡多久。
+
+    ⚠ 2026-09-16：原来两个循环都写死 `time.sleep(min(0.1, ...))`。把等待上界
+      从 5 秒提到 30 秒之后，那就是**向远程 HTTPS SQL 网关打 300 次查询**去等
+      一条 build——把模型往返税换成了数据库风暴，不是省。
+
+      前 2 秒仍然密（刚提交的活经常瞬间就完，密查能立刻返回），之后拉开：
+      30 秒总共约 35 次查询，而不是 300 次。
+
+    ⚠ 两个调用点（project_status 的 waitSeconds、shell_wait 的 seconds）共用
+      这一个函数。只改一个 = 一半还在打风暴，而且不报错（CLAUDE.md §4）。
+    """
+    if elapsed < 2:
+        return 0.1
+    if elapsed < 8:
+        return 0.5
+    return 1.0
+
+
 class ProjectTools:
     def __init__(self, store, supervisor, owner_id):
         self.store, self.supervisor, self.owner_id = store, supervisor, owner_id
@@ -242,10 +262,12 @@ class ProjectTools:
                     raise ProjectNotFound("project_verification_not_found")
                 if name == "project_status" and parsed.waitSeconds:
                     deadline = time.monotonic() + parsed.waitSeconds
+                    started = time.monotonic()
                     while operation.status not in _TERMINAL and time.monotonic() < deadline:
                         if operation.runtime is not None and operation.runtime.status == "ready":
                             break
-                        time.sleep(min(0.1, max(0, deadline - time.monotonic())))
+                        time.sleep(min(_wait_backoff(time.monotonic() - started),
+                                       max(0, deadline - time.monotonic())))
                         operation = self.store.get_operation(operation.operationId, owner_id=self.owner_id)
                 if name == "project_logs":
                     return {"ok": True, **self._logs(operation, parsed)}
@@ -426,10 +448,12 @@ class ProjectTools:
         if name == "shell_wait":
             wait = parsed.seconds if parsed.seconds is not None else 2
             deadline = time.monotonic() + wait
+            started = time.monotonic()
             while operation.status not in _TERMINAL and time.monotonic() < deadline:
                 if operation.runtime is not None and operation.runtime.status == "ready":
                     break
-                time.sleep(min(0.1, max(0, deadline - time.monotonic())))
+                time.sleep(min(_wait_backoff(time.monotonic() - started),
+                               max(0, deadline - time.monotonic())))
                 operation = self.store.get_operation(operation.operationId, owner_id=self.owner_id)
             return self._snapshot(operation.operationId)
         logs = self._logs(operation, SimpleNamespace(afterSeq=0, offset=0))

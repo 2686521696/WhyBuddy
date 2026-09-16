@@ -125,9 +125,34 @@ class VerifyArguments(WriteArguments):
     idempotencyKey: str = Field(min_length=1, max_length=240, pattern=r"\S")
 
 
+#: 等待类工具（project_status.waitSeconds / shell_wait.seconds）的上界。
+#:
+#: ⚠ 2026-09-16 真机（sr-20260916212612-6N7V2BZ6XS）量出来的。原值是 5，
+#:   而真机上一条命令的实际耗时是：
+#:
+#:       npm run build 18.9s   npm run check 18.9s   npm test 19.0s
+#:       project_status 结果回来普遍 18~24s
+#:
+#:   于是等一条 build 至少要 4 次 shell_wait，而**每一次的真实代价不是 5 秒，
+#:   是 5 秒 + 一次模型往返**。同一趟真机里，`tool_result` 到下一个
+#:   `tool_start` 的间隔稳定在 12~20 秒（服务端记账是 ms 级，那一段就是模型）。
+#:
+#:       等 18 秒的活  →  4 轮 × (5 + 15) ≈ 80 秒
+#:
+#:   整趟 1127 秒里，34 轮有 9 轮是纯轮询（project_status ×5、shell_wait ×4），
+#:   全是这么烧掉的。
+#:
+#: ⚠ 调大它之所以是纯赚，靠的是那两个循环**提前返回**：操作进终态、或
+#:   runtime 变 ready 就立刻 break（services/project_tools.py）。不该等的
+#:   时候一秒都不会多等；只有真在等的时候才少跑几轮。
+#:   **哪天把提前返回改成死等满，这个数字就不再安全了** ——
+#:   `tests/test_waiting_costs_a_round_trip.py` 正面反面都钉着。
+PROJECT_WAIT_MAX_SECONDS = 30.0
+
+
 class StatusArguments(ToolArguments):
     operationId: str | None = Field(default=None, min_length=1, max_length=240)
-    waitSeconds: float = Field(default=2, ge=0, le=5)
+    waitSeconds: float = Field(default=2, ge=0, le=PROJECT_WAIT_MAX_SECONDS)
     operationCursor: str = Field(default="", max_length=240)
 
 
@@ -202,7 +227,7 @@ class ShellExecArguments(ToolArguments):
 
 class ShellSessionArguments(ToolArguments):
     id: str | None = Field(default=None, min_length=1, max_length=240)
-    seconds: float | None = Field(default=None, ge=0, le=5)
+    seconds: float | None = Field(default=None, ge=0, le=PROJECT_WAIT_MAX_SECONDS)
     sudo: bool = False
 
 
@@ -544,7 +569,7 @@ _DESCRIPTIONS = {
     "file_find_by_name": "Find saved source paths under path whose name or relative path matches glob. path may be a directory prefix or '.' for the whole tree.",
     "shell_exec": "Queue one command in this project's E2B sandbox. check/build/test (or npm/pnpm run those) stay on the managed installer. Any other one-line command runs as grok-build bash in /home/user/workspace. Newlines and sudo are rejected. Optional id is the idempotency key. Poll with shell_wait / shell_view.",
     "shell_view": "Read bounded output of a queued project command. id is the operationId from shell_exec; omit it to read the latest operation.",
-    "shell_wait": "Wait up to seconds (max 5) for a queued project command. id is the operationId; omit it to wait on the latest operation.",
+    "shell_wait": "Wait up to seconds (max 30) for a queued project command. It returns the moment the command finishes, so one generous wait beats several short polls. id is the operationId; omit it to wait on the latest operation.",
     "shell_write_to_process": "Type into the live bash PTY of a queued project command. id is the operationId from shell_exec. press_enter defaults true. The worker delivers bytes on the next poll; a finished operation is rejected.",
     "shell_kill_process": "Cancel a queued or running project operation. id is the operationId; omit it to cancel the latest active one.",
     "browser_view": "Read the current private preview and last trusted verification snapshot. This is not a live DOM dump.",
@@ -571,7 +596,7 @@ _DESCRIPTIONS = {
     "glob": "Find saved source paths whose name or relative path matches pattern. Optional path limits the directory prefix.",
     "project_start": "Queue managed installation and Vite startup for an exact approved source revision. Use one idempotencyKey per intended operation, then inspect status/logs. Ready is not verified delivery; private browser preview may remain unavailable. Prefer deploy_expose_port.",
     "project_exec": "Queue one fixed project command (check, build or test) in E2B for the approved source revision. Reuse idempotencyKey on retries. Poll status/logs for actual results. A command passing is not browser or business verification. Prefer shell_exec.",
-    "project_status": "Without operationId, discover this session's saved operations and current revision; continue with nextOperationCursor while hasMoreOperations. With operationId, read durable status and optionally wait up to waitSeconds (max 5). A status is not business acceptance. Prefer shell_wait.",
+    "project_status": "Without operationId, discover this session's saved operations and current revision; continue with nextOperationCursor while hasMoreOperations. With operationId, read durable status and optionally wait up to waitSeconds (max 30; it returns as soon as the operation settles, so asking for the full budget costs nothing). A status is not business acceptance. Prefer shell_wait.",
     "project_logs": "Read bounded durable command output. Continue using returned nextSeq and nextOffset until hasMore is false. Full logs remain available through the authorized operation HTTP endpoint. Prefer shell_view.",
     "project_cancel": "Request cancellation of this session project's operation. Cancelling is intent; wait for a terminal status to confirm remote cleanup. Approval is not needed to stop owned work. Prefer shell_kill_process.",
     "project_verify": "Queue a locked-dependency build and the trusted browser suite for this exact approved revision. The task template checks real API creation/edit/filter/refresh and independent writer/reader access; the counter template checks only counting and reload reset. The runtime owner temporarily serves built output, isolates verification data, then restores development. Reuse idempotencyKey on retries and read project_verification. Missing capabilities are blocked; passing covers only the declared suite.",
