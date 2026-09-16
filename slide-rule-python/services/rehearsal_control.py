@@ -154,8 +154,8 @@ from services.closed_tools import (
 )
 from services.drive_full_factory import start_drive_full_factory_run
 from services.project_authority import approved_reference
-from services.project_tool_contracts import (PROJECT_READ_MAX_RESULT_CHARS, PROJECT_TOOLS,
-    PROJECT_TOOL_NAMES, PROJECT_WRITE_TOOLS)
+from services.project_tool_contracts import (PROJECT_ALIAS_TOOLS, PROJECT_READ_MAX_RESULT_CHARS,
+    PROJECT_TOOLS, PROJECT_TOOL_NAMES, PROJECT_WRITE_TOOLS)
 from services.project_tool_summary import project_tool_summary
 from services.workflow_registry import workflow_for, workflow_names
 from services.workflow_select import select_workflow
@@ -838,6 +838,7 @@ TOOL_LIST_WHEN: Dict[str, Any] = {
     # 空会话没有产品可查。列出来模型会把任意话当术语去检索，再弹出
     # 「这句话是哪种意思」的选项。有记下的产品才检索。
     "search_evidence": lambda st: _has_product_topic(st),
+    "info_search_web": lambda st: _has_product_topic(st),
     "challenge": lambda st: _has_spec(st) or _has_model(st),
     "repair": lambda st: _has_spec(st) or _has_model(st),
 }
@@ -924,6 +925,8 @@ def should_list_tool(name: Any, state: V5SessionState) -> bool:
     if _project_tool_error(name, state):
         return False
     if name in PROJECT_TOOL_NAMES:
+        if name in PROJECT_ALIAS_TOOLS:
+            return False
         return name == "project_create" or bool(getattr(state, "projectId", None))
     if resolve_tool_scope(name) == ToolScope.WRITE and not plan_execution_authorized(state):
         return False
@@ -1121,6 +1124,8 @@ CONTROL_TOOL_RESULT_MAX_CHARS = 4000
 #:   读窗才真的变宽，漏一道都是"改了但一点效果没有"。
 CONTROL_TOOL_RESULT_MAX_CHARS_BY_TOOL: Dict[str, int] = {
     "project_read": PROJECT_READ_MAX_RESULT_CHARS,
+    "file_read": PROJECT_READ_MAX_RESULT_CHARS,
+    "read_file": PROJECT_READ_MAX_RESULT_CHARS,
 }
 
 
@@ -1131,8 +1136,76 @@ def control_tool_result_max_chars(tool_name: Any = None) -> int:
         str(tool_name or ""), CONTROL_TOOL_RESULT_MAX_CHARS
     )
 
+LEAKED_CONTROL_TOOLS: List[Dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "message_notify_user",
+            "description": (
+                "Show the user a short status note. This does not ask a question "
+                "and does not wait. Keep it one or two sentences in the user's language."
+            ),
+            "parameters": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "message_ask_user",
+            "description": (
+                "Ask the user one or more questions and wait. Same parking contract as "
+                "ask_user_question: pass text, or questions with options. "
+                "Every question gets an Other choice in the UI."
+            ),
+            "parameters": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "text": {"type": "string"},
+                    "question": {"type": "string"},
+                    "questions": {"type": "array", "items": {"type": "object"}},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "info_search_web",
+            "description": (
+                "Search the public web for evidence about this product topic. "
+                "Same retrieval as search_evidence. Hits are not closure."
+            ),
+            "parameters": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "idle",
+            "description": (
+                "End this turn and wait for the user. This is not a completion claim "
+                "and does not go through the done judge."
+            ),
+            "parameters": {"type": "object", "additionalProperties": False, "properties": {}},
+        },
+    },
+]
+
+
 CONTROL_TOOLS: List[Dict[str, Any]] = [
     *PROJECT_TOOLS,
+    *LEAKED_CONTROL_TOOLS,
     {
         "type": "function",
         "function": {
@@ -3173,6 +3246,16 @@ def _system_prompt(state: V5SessionState) -> str:
             # 2026-09-13 真模型 live-edit：工具已支持运行中同步，这里仍教
             # “修改前先取消”，模型照做 project_cancel，标题一个字没改。
             # 初始化、工具回填和checkpoint恢复共用此装配，必须与执行合同一致。
+            "电脑核用泄漏包那 29 件名字：file_*、shell_*、browser_*、deploy_*、message_*、info_search_web、make_manus_page、idle。"
+            "GitHub 薄核也能用：read_file / write_file / search_replace / bash / grep / list_dir / glob，接到同一份源码和沙箱命令。"
+            "日常改一个文件用 file_write（file+content）或 file_str_replace（old_str 必须只出现一次）。"
+            "读文件用 file_read；搜内容用 file_find_in_content；按名找用 file_find_by_name。"
+            "构建用 shell_exec：check/build/test 走受管安装，其它一行命令在 E2B 沙箱里跑（grok-build bash）。看输出用 shell_view / shell_wait，写入正在跑的 PTY 用 shell_write_to_process，停用 shell_kill_process。sudo 拒绝。"
+            "预览用 deploy_expose_port 或 browser_navigate（只许本工程预览地址）。deploy_apply_deployment 只亮私有预览，不是公开 CDN，deployed 永远为 false。"
+            "预览就绪后可用 browser_view 看交互节点，再用 browser_click / input / key / scroll / console_exec。外站拒绝。这不是 project_verify，点过不等于验收通过。"
+            "问用户用 message_ask_user；报个进度用 message_notify_user；检索用 info_search_web；这一轮先交给用户用 idle，那不是报完工。"
+            "这几件不要自己传 approvalRef、版本号或文件哈希。sudo=true 会被拒绝。"
+            "多文件精确对照或删除仍用 project_patch。"
             "project_patch 在运行就绪时可直接修改 src/、public/、tests/ 和 index.html 的源码与静态资源，"
             "由现有运行持有者同步，保持当前应用运行，不需要先取消。"
             "返回 runtime.patch 的 operationId 表示补丁已排队；用 project_status 查询到 completed 且 synchronized=true，"
@@ -4997,7 +5080,21 @@ async def _dispatch_tool(
         async for event in _park_plan_approval(state):
             yield event
         return
-    if name == "ask_user_question":
+    if name == "message_notify_user":
+        text = str((args or {}).get("text") or "").strip()
+        if not text:
+            yield {"type": "control_tool_result", "tool": name, "ok": False, "error": "message_text_required"}
+            return
+        yield {"type": "control_tool_start", "tool": name, "summary": text[:160]}
+        yield {"type": "control_text", "text": text}
+        yield {"type": "control_tool_result", "tool": name, "ok": True}
+        return
+    if name == "idle":
+        yield {"type": "control_tool_start", "tool": name}
+        yield {"type": "control_tool_result", "tool": name, "ok": True, "idle": True}
+        yield _complete(state)
+        return
+    if name in {"ask_user_question", "message_ask_user"}:
         # ⚠ 2026-09-09 真机 sr-20260909041801：做个水果店收银台，
         #   模型问核心功能清单。抄 grok AskUserQuestion：问是债务，
         #   不是开工考卷。已经说了产品 → 复述卡，缺的进假设卡。
@@ -5005,7 +5102,7 @@ async def _dispatch_tool(
         if not rows:
             legacy = args.get("options") if isinstance(args.get("options"), list) else []
             rows = coerce_user_questions(
-                [{"question": args.get("question") or "", "options": legacy}]
+                [{"question": args.get("question") or args.get("text") or "", "options": legacy}]
             )
         # 空会话的廉价闲聊不应该被模型拆成“这是哪种意思”的选择题，
         # 但首轮产品话题通常还没来得及写进 goal（本轮 user turn 已经落入
@@ -5028,7 +5125,7 @@ async def _dispatch_tool(
         if not rows:
             yield {
                 "type": "control_tool_result",
-                "tool": "ask_user_question",
+                "tool": name,
                 "ok": False,
                 "error": "这一笔没解析出任何一道题。questions 要是一串题，每道至少给 question。",
             }
@@ -5036,6 +5133,8 @@ async def _dispatch_tool(
         async for event in _park_ask(
             state, str(rows[0].get("question") or ""), questions=rows
         ):
+            if event.get("tool") == "ask_user_question":
+                event = {**event, "tool": name}
             yield event
         return
     # clarify 已退役（2026-09-09 用户裁决）。它当年是"开场先问几条模板题"，
@@ -5251,11 +5350,11 @@ async def _dispatch_tool(
         async for event in _tool_challenge(state, user_text):
             yield event
         return
-    if name == "search_evidence":
-        yield {"type": "control_tool_start", "tool": "search_evidence"}
+    if name in {"search_evidence", "info_search_web"}:
+        yield {"type": "control_tool_start", "tool": name}
         result = await _tool_search(state, str(args.get("query") or user_text))
         await _apersist(state)
-        yield {"type": "control_tool_result", "tool": "search_evidence", **result}
+        yield {"type": "control_tool_result", "tool": name, **result}
         return
     if name in ("remember", "recall"):
         yield {"type": "control_tool_start", "tool": name}

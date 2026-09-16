@@ -129,6 +129,19 @@ export function computerViewForAction(tool: string): ComputerView {
   const name = String(tool || "").trim();
   if (
     name === "project_patch" ||
+    name === "project_write" ||
+    name === "project_str_replace" ||
+    name === "file_read" ||
+    name === "file_write" ||
+    name === "file_str_replace" ||
+    name === "file_find_in_content" ||
+    name === "file_find_by_name" ||
+    name === "read_file" ||
+    name === "write_file" ||
+    name === "search_replace" ||
+    name === "grep" ||
+    name === "list_dir" ||
+    name === "glob" ||
     name === "project_read" ||
     name === "project_create" ||
     name === "project_export" ||
@@ -140,7 +153,16 @@ export function computerViewForAction(tool: string): ComputerView {
   if (
     name === "project_start" ||
     name === "project_verify" ||
-    name === "project_status"
+    name === "project_status" ||
+    name === "browser_view" ||
+    name === "browser_navigate" ||
+    name === "browser_restart" ||
+    name === "browser_click" ||
+    name === "browser_input" ||
+    name === "browser_console_exec" ||
+    name === "deploy_expose_port" ||
+    name === "deploy_apply_deployment" ||
+    name === "make_manus_page"
   ) {
     return "preview";
   }

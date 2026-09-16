@@ -49,7 +49,18 @@ export const CLOSED_TOOLS = [
   "restore_version",
   "fork_variant",
   "project_create", "project_list", "project_read", "project_search",
-  "project_patch", "project_start", "project_exec", "project_status",
+  "project_patch", "project_write", "project_str_replace",
+  "file_read", "file_write", "file_str_replace",
+  "file_find_in_content", "file_find_by_name",
+  "read_file", "write_file", "search_replace", "bash", "grep", "list_dir", "glob",
+  "shell_exec", "shell_view", "shell_wait", "shell_write_to_process", "shell_kill_process",
+  "browser_view", "browser_navigate", "browser_restart",
+  "browser_click", "browser_input", "browser_move_mouse", "browser_press_key",
+  "browser_select_option", "browser_scroll_up", "browser_scroll_down",
+  "browser_console_exec", "browser_console_view",
+  "message_notify_user", "message_ask_user", "info_search_web",
+  "deploy_expose_port", "deploy_apply_deployment", "make_manus_page", "idle",
+  "project_start", "project_exec", "project_status",
   "project_logs", "project_cancel",
   // ⚠ 2026-09-15 补的五个：版本史 / 导出 / 回滚 / 验收，Python 侧
   //   `closed_tools.CLOSED_TOOLS` 早就有，TS 这份漏了。上面那句
@@ -58,6 +69,7 @@ export const CLOSED_TOOLS = [
   //   `test_closed_tool_from_text.py::Test两侧同一张表` 钉着两头。
   "project_revisions", "project_export", "project_restore",
   "project_verify", "project_verification",
+  // 2026-09-17 核写：path+content / 唯一串替换。Python CLOSED_TOOLS 成对。
 ] as const;
 
 export type ClosedTool = (typeof CLOSED_TOOLS)[number];
@@ -115,8 +127,53 @@ const CLOSED_ID_RE = new RegExp(
   "gi"
 );
 
+/** 泄漏核 29 件。名字和参数按包，提示词不贴。 */
+export const FILE_KERNEL_TOOLS = [
+  "file_read",
+  "file_write",
+  "file_str_replace",
+  "file_find_in_content",
+  "file_find_by_name",
+] as const;
+
+export function isProjectWorkbenchTool(name: unknown): boolean {
+  const tool = String(name || "").trim();
+  return (
+    tool.startsWith("project_") ||
+    tool.startsWith("file_") ||
+    tool.startsWith("shell_") ||
+    tool.startsWith("browser_") ||
+    tool.startsWith("deploy_") ||
+    tool.startsWith("message_") ||
+    tool === "info_search_web" ||
+    tool === "make_manus_page" ||
+    tool === "idle" ||
+    tool === "read_file" ||
+    tool === "write_file" ||
+    tool === "search_replace" ||
+    tool === "bash" ||
+    tool === "grep" ||
+    tool === "list_dir" ||
+    tool === "glob"
+  );
+}
+
 /** 文本不得把 rehearse 当成 forcedTool。跟 `/推演` 同一条合同。 */
-const TEXT_FORCED_SKIP = new Set<string>(["rehearse", ...CLOSED_TOOLS.filter(name => name.startsWith("project_"))]);
+const TEXT_FORCED_SKIP = new Set<string>([
+  "rehearse",
+  "idle",
+  "make_manus_page",
+  "bash",
+  "grep",
+  "glob",
+  "list_dir",
+  "read_file",
+  "write_file",
+  "search_replace",
+  ...CLOSED_TOOLS.filter(name =>
+    /^(project_|file_|shell_|browser_|deploy_|message_|info_)/.test(name)
+  ),
+]);
 
 const ZH: Array<[RegExp, FactoryHop]> = [
   [/数据模型反推|数据结构/, "structure"],

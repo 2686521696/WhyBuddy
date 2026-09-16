@@ -7,6 +7,7 @@ import {
   mergePublishClosureForPersistedTurn,
 } from "../derive-persisted-turn";
 import { __sessionEvidenceTestHelpers, looksLikeNewAppIntent } from "../useSlideRuleSession";
+import { deriveSessionStory } from "../session-story";
 
 /**
  * 修复:刷新后 uiTurns 为空 → 右上角架构执行记录消失。
@@ -168,6 +169,70 @@ describe("deriveTurnsFromState (刷新后整段对话)", () => {
       "project_create",
       "project_patch",
       "project_patch",
+    ]);
+  });
+
+  it("刷新后开口和工具仍按日志发生顺序切章，不许先倒完全部散文", () => {
+    // ⚠ 2026-09-17 TicketStream：活着是「开口 → 写入 → 开口 → 写入」。
+    //   刷新走 turnNarrations（只剩两句开口）再 attachProjectChips 把日志
+    //   工具整列接到后面，章节面退化成扁平勾选。日志里顺序还在。
+    const state = {
+      runtimeKind: "project",
+      goal: { text: "构建 TicketStream", status: "clear" },
+      lastTurnId: "turn-1",
+      capabilityRuns: [
+        { capabilityId: "intent.parse", roleId: "system", turnId: "turn-1" },
+      ],
+      turnNarrations: [
+        {
+          turnId: "turn-1",
+          user: "构建 TicketStream",
+          steps: [
+            { id: "s1", kind: "model_speech", text: "我先改入口。" },
+            { id: "s2", kind: "model_speech", text: "接着补样式。" },
+          ],
+          durationMs: 60000,
+        },
+      ],
+      controlTranscript: [
+        { id: "u", kind: "turn", role: "user", text: "构建 TicketStream" },
+        { id: "t1", kind: "control_text", text: "我先改入口。" },
+        { id: "c1", kind: "tool_start", tool: "project_patch", summary: "src/main.tsx" },
+        { id: "c2", kind: "tool_result", tool: "project_patch", ok: true, detail: "src/main.tsx" },
+        { id: "t2", kind: "control_text", text: "接着补样式。" },
+        { id: "c3", kind: "tool_start", tool: "project_patch", summary: "src/style.css" },
+        {
+          id: "c4",
+          kind: "tool_result",
+          tool: "project_patch",
+          ok: false,
+          detail: "project_store_unavailable",
+        },
+      ],
+    } as unknown as V5SessionState;
+    const turn = deriveTurnsFromState(state)[0];
+    expect(
+      turn.steps.map(step =>
+        step.kind === "chip"
+          ? `chip:${String((step as { projectDetail?: string }).projectDetail || "")}`
+          : step.kind === "model_speech"
+            ? step.text
+            : step.kind
+      )
+    ).toEqual([
+      "我先改入口。",
+      "chip:src/main.tsx",
+      "chip:src/main.tsx",
+      "接着补样式。",
+      "chip:src/style.css",
+      "chip:project_store_unavailable",
+    ]);
+    expect(turn.durationMs).toBe(60000);
+    expect(deriveSessionStory(turn).map(block => block.kind)).toEqual([
+      "speech",
+      "tools",
+      "speech",
+      "tools",
     ]);
   });
 

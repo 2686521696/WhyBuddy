@@ -83,7 +83,22 @@ describe("文件动作收成传输日志，不是 shell", () => {
     expect(
       sandboxTransferLine({ tool: "project_patch", detail: "src/i18n/translations.ts" })
     ).toBe("put src/i18n/translations.ts");
+    expect(
+      sandboxTransferLine({ tool: "project_write", detail: "src/App.tsx" })
+    ).toBe("put src/App.tsx");
+    expect(
+      sandboxTransferLine({ tool: "project_str_replace", detail: "src/App.tsx" })
+    ).toBe("put src/App.tsx");
+    expect(
+      sandboxTransferLine({ tool: "file_write", detail: "src/App.tsx" })
+    ).toBe("put src/App.tsx");
+    expect(
+      sandboxTransferLine({ tool: "file_str_replace", detail: "src/App.tsx" })
+    ).toBe("put src/App.tsx");
     expect(sandboxTransferLine({ tool: "project_read", detail: "package.json" })).toBe(
+      "get package.json"
+    );
+    expect(sandboxTransferLine({ tool: "file_read", detail: "package.json" })).toBe(
       "get package.json"
     );
     expect(sandboxTransferLine({ tool: "project_create", detail: "react-vite" })).toBe(

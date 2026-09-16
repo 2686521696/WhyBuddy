@@ -51,6 +51,14 @@ def test_说得出真实命令和路径():
     assert (
         project_tool_summary("project_read", {"path": "src/main.tsx"}) == "src/main.tsx"
     )
+    assert project_tool_summary("file_write", {"file": "src/App.tsx", "content": SOURCE}) == (
+        "src/App.tsx"
+    )
+    assert project_tool_summary("file_read", {"file": "src/App.tsx"}) == "src/App.tsx"
+    assert project_tool_summary("write_file", {"path": "src/App.tsx", "content": SOURCE}) == (
+        "src/App.tsx"
+    )
+    assert project_tool_summary("grep", {"pattern": "task", "path": "src"}) == "task src"
 
 
 def test_反向_approvalRef_在任何工具下都不许出现():

@@ -43,6 +43,27 @@ MAX_PATHS = 3
 _ALLOWED: Dict[str, tuple] = {
     "project_create": ("templateId",),
     "project_read": ("path",),
+    "project_write": ("path",),
+    "project_str_replace": ("path",),
+    "file_read": ("file",),
+    "file_write": ("file",),
+    "file_str_replace": ("file",),
+    "file_find_in_content": ("file",),
+    "file_find_by_name": ("path", "glob"),
+    "read_file": ("path",),
+    "write_file": ("path",),
+    "search_replace": ("path",),
+    "bash": ("command",),
+    "grep": ("pattern", "path"),
+    "list_dir": ("path",),
+    "glob": ("pattern", "path"),
+    "shell_exec": ("command",),
+    "shell_view": ("id",),
+    "shell_wait": ("id",),
+    "shell_kill_process": ("id",),
+    "browser_navigate": ("url",),
+    "deploy_expose_port": ("port",),
+    "make_manus_page": ("file", "title"),
     "project_exec": ("command",),
     "project_restore": ("targetRevision",),
     "project_export": ("revision",),
@@ -87,7 +108,13 @@ def project_tool_summary(name: str, args: Any) -> Optional[str]:
     这里统一用 None，好让「没有摘要」在类型上看得见。
     """
     tool = str(name or "").strip()
-    if not tool.startswith("project_") or not isinstance(args, dict):
+    if not (
+        tool.startswith(("project_", "file_", "shell_", "browser_", "deploy_"))
+        or tool in {
+            "make_manus_page", "read_file", "write_file", "search_replace",
+            "bash", "grep", "list_dir", "glob",
+        }
+    ) or not isinstance(args, dict):
         return None
     if tool == "project_patch":
         return _patch_summary(args)

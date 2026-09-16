@@ -15,6 +15,7 @@ import {
   projectActionDetail,
   projectActionLabel,
   projectActivityProgress,
+  weaveTranscriptChips,
 } from "../project-activity";
 import type { UiTurn } from "../types";
 
@@ -92,6 +93,17 @@ describe("模板之外的动作也要显示（这是改它的理由）", () => {
     ]);
     expect(rows.map(r => r.tool)).toEqual(["project_restore", "project_export"]);
     expect(rows.map(r => r.label)).toEqual(["恢复到历史版本", "导出源码"]);
+  });
+
+  it("泄漏包的 file_* / shell_* 也有行，不因为不是 project_ 前缀而消失", () => {
+    const rows = deriveProjectActivity([
+      turn([
+        { id: "a", capabilityId: "file_write", progressType: "completed" },
+        { id: "b", capabilityId: "shell_exec", progressType: "completed" },
+      ]),
+    ]);
+    expect(rows.map(r => r.tool)).toEqual(["file_write", "shell_exec"]);
+    expect(rows.map(r => r.label)).toEqual(["写入源码", "运行命令"]);
   });
 
   it("完全没见过的 project_* 工具也有行，不静静消失", () => {
@@ -197,5 +209,34 @@ describe("细节来自结构化字段，不解析文案", () => {
     ]);
     expect(rows).toHaveLength(1);
     expect(rows[0].detail).toBe("pnpm run build");
+  });
+
+  it("日志工具织回叙述占位，不许把开口全部赶到工具前面", () => {
+    const speech = (id: string, text: string) =>
+      ({ id, kind: "model_speech" as const, text });
+    const slot = (id: string) =>
+      ({
+        id,
+        kind: "chip" as const,
+        capabilityId: "project_patch" as never,
+        roleId: "system",
+        label: "写入源码",
+        realLlm: false,
+        progressType: "completed" as const,
+      });
+    const log = [
+      { ...slot("log-1"), projectDetail: "src/main.tsx" },
+      { ...slot("log-2"), projectDetail: "src/style.css" },
+    ];
+    const weaved = weaveTranscriptChips(
+      [speech("s1", "先改入口。"), slot("n1"), speech("s2", "再补样式。"), slot("n2")],
+      log
+    );
+    expect(weaved.map(step => step.kind === "chip" ? step.projectDetail : step.text)).toEqual([
+      "先改入口。",
+      "src/main.tsx",
+      "再补样式。",
+      "src/style.css",
+    ]);
   });
 });

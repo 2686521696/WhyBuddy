@@ -89,6 +89,7 @@ import {
   factoryHopFromText,
   isFactoryHop,
   isFactoryWriteTool,
+  isProjectWorkbenchTool,
 } from "@/lib/factory-hops";
 import { isContinuationTurn } from "@/pages/sliderule/turn-continuation";
 import {
@@ -239,6 +240,44 @@ const PROJECT_TOOL_LABELS: Record<string, string> = {
   project_read: "正在读取工程文件",
   project_search: "正在搜索工程源码",
   project_patch: "正在写入工程源码",
+  project_write: "正在写入工程源码",
+  project_str_replace: "正在替换工程源码",
+  file_read: "正在读取工程文件",
+  file_write: "正在写入工程源码",
+  file_str_replace: "正在替换工程源码",
+  file_find_in_content: "正在搜索工程源码",
+  file_find_by_name: "正在按名查找工程文件",
+  shell_exec: "正在执行工程命令",
+  shell_view: "正在读取工程日志",
+  shell_wait: "正在等待工程命令",
+  shell_write_to_process: "正在写入进程",
+  shell_kill_process: "正在停止工程",
+  browser_view: "正在查看预览",
+  browser_navigate: "正在打开预览",
+  browser_restart: "正在重启预览",
+  browser_click: "正在点击页面",
+  browser_input: "正在输入页面",
+  browser_move_mouse: "正在移动指针",
+  browser_press_key: "正在按键",
+  browser_select_option: "正在选择选项",
+  browser_scroll_up: "正在向上滚动",
+  browser_scroll_down: "正在向下滚动",
+  browser_console_exec: "正在执行页面脚本",
+  browser_console_view: "正在读取控制台",
+  deploy_expose_port: "正在启动工程",
+  deploy_apply_deployment: "正在公开部署",
+  make_manus_page: "正在展示页面",
+  message_notify_user: "正在通知用户",
+  message_ask_user: "正在询问用户",
+  info_search_web: "正在检索资料",
+  idle: "正在等待用户",
+  read_file: "正在读取工程文件",
+  write_file: "正在写入工程源码",
+  search_replace: "正在替换工程源码",
+  bash: "正在执行工程命令",
+  grep: "正在搜索工程源码",
+  list_dir: "正在读取工程列表",
+  glob: "正在按名查找工程文件",
   project_start: "正在启动工程",
   project_exec: "正在执行工程命令",
   project_status: "正在读取工程运行状态",
@@ -249,7 +288,7 @@ const PROJECT_TOOL_LABELS: Record<string, string> = {
 
 export function projectToolLabel(tool: unknown): string | null {
   const key = String(tool || "").trim();
-  return PROJECT_TOOL_LABELS[key] ?? (key.startsWith("project_") ? `正在执行 ${key}` : null);
+  return PROJECT_TOOL_LABELS[key] ?? (isProjectWorkbenchTool(key) ? `正在执行 ${key}` : null);
 }
 
 /** Build the server-owned approval reference without changing the session projection. */

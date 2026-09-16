@@ -792,6 +792,20 @@ class E2BWorkspaceProvider:
         except Exception as exc:
             raise WorkspaceProviderError("e2b_console_start_failed", result=_result(exc)) from exc
 
+    def write_console(self, handle: WorkspaceHandle, process_id: str, data: str,
+                      *, press_enter: bool = True) -> None:
+        """Type into a live PTY. Same send_stdin grok/E2B use for interactive bash."""
+        if not isinstance(data, str) or "\x00" in data or len(data.encode("utf-8")) > 8 * 1024:
+            raise ValueError("project_shell_stdin_invalid")
+        pid = str(_pid(process_id))
+        console = self._ensure_console(handle, pid)
+        if console is None or not console.running:
+            raise WorkspaceProviderError("e2b_console_unavailable")
+        sandbox = self._sandbox(handle)
+        sandbox.pty.send_stdin(console.pid, data.encode("utf-8"))
+        if press_enter:
+            sandbox.pty.send_stdin(console.pid, b"\n")
+
     def attach_console(self, handle: WorkspaceHandle, process_id: str) -> None:
         """Reconnect a reader to a PTY that outlived this provider instance.
 

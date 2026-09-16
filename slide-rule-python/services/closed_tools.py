@@ -80,7 +80,18 @@ CLOSED_TOOLS: Tuple[str, ...] = (
     "restore_version",
     "fork_variant",
     "project_create", "project_list", "project_read", "project_search",
-    "project_patch", "project_start", "project_exec", "project_status",
+    "project_patch", "project_write", "project_str_replace",
+    "file_read", "file_write", "file_str_replace",
+    "file_find_in_content", "file_find_by_name",
+    "read_file", "write_file", "search_replace", "bash", "grep", "list_dir", "glob",
+    "shell_exec", "shell_view", "shell_wait", "shell_write_to_process", "shell_kill_process",
+    "browser_view", "browser_navigate", "browser_restart",
+    "browser_click", "browser_input", "browser_move_mouse", "browser_press_key",
+    "browser_select_option", "browser_scroll_up", "browser_scroll_down",
+    "browser_console_exec", "browser_console_view",
+    "message_notify_user", "message_ask_user", "info_search_web",
+    "deploy_expose_port", "deploy_apply_deployment", "make_manus_page", "idle",
+    "project_start", "project_exec", "project_status",
     "project_logs", "project_cancel", "project_verify", "project_verification",
     "project_revisions", "project_restore", "project_export",
 )
@@ -102,7 +113,15 @@ _CLOSED_ID_RE = re.compile(
     + r")(?:[^\w]|$)",
     re.IGNORECASE,
 )
-_TEXT_FORCED_SKIP = frozenset({"rehearse", *(name for name in CLOSED_TOOLS if name.startswith("project_"))})
+_TEXT_FORCED_SKIP = frozenset({
+    "rehearse",
+    "idle",
+    "make_manus_page",
+    "bash", "grep", "glob", "list_dir", "read_file", "write_file", "search_replace",
+    *(name for name in CLOSED_TOOLS if name.startswith(
+        ("project_", "file_", "shell_", "browser_", "deploy_", "message_", "info_")
+    )),
+})
 
 # 只列 WRITE。没写的一律 READ。
 TOOL_SCOPE: Dict[str, ToolScope] = {

@@ -33,6 +33,7 @@
  *   3. 失败要留在台面上，不许被后续动作抹掉
  */
 
+import { isProjectWorkbenchTool } from "@/lib/factory-hops";
 import type { TurnStep, UiTurn } from "./types";
 
 export type ProjectActionStatus = "running" | "done" | "failed";
@@ -55,6 +56,44 @@ const TOOL_LABELS: Readonly<Record<string, string>> = {
   project_list: "读取工程列表",
   project_search: "搜索源码",
   project_patch: "写入源码",
+  project_write: "写入源码",
+  project_str_replace: "替换源码",
+  file_read: "读取源码",
+  file_write: "写入源码",
+  file_str_replace: "替换源码",
+  file_find_in_content: "搜索源码",
+  file_find_by_name: "按名查找源码",
+  shell_exec: "运行命令",
+  shell_view: "读取运行日志",
+  shell_wait: "等待命令",
+  shell_write_to_process: "写入进程",
+  shell_kill_process: "取消运行",
+  browser_view: "查看预览",
+  browser_navigate: "打开预览",
+  browser_restart: "重启预览",
+  browser_click: "点击页面",
+  browser_input: "输入页面",
+  browser_move_mouse: "移动指针",
+  browser_press_key: "按键",
+  browser_select_option: "选择选项",
+  browser_scroll_up: "向上滚动",
+  browser_scroll_down: "向下滚动",
+  browser_console_exec: "执行页面脚本",
+  browser_console_view: "读取控制台",
+  deploy_expose_port: "启动预览",
+  deploy_apply_deployment: "公开部署",
+  make_manus_page: "展示页面",
+  message_notify_user: "通知用户",
+  message_ask_user: "询问用户",
+  info_search_web: "检索资料",
+  idle: "等待用户",
+  read_file: "读取源码",
+  write_file: "写入源码",
+  search_replace: "替换源码",
+  bash: "运行命令",
+  grep: "搜索源码",
+  list_dir: "读取工程列表",
+  glob: "按名查找源码",
   project_exec: "运行命令",
   project_start: "启动预览",
   project_verify: "浏览器检查",
@@ -70,7 +109,7 @@ const TOOL_LABELS: Readonly<Record<string, string>> = {
 };
 
 export function projectActionLabel(tool: string): string {
-  return TOOL_LABELS[tool] || tool.replace(/^project_/, "");
+  return TOOL_LABELS[tool] || tool.replace(/^(project_|file_|shell_|browser_|deploy_)/, "");
 }
 
 function short(revision: unknown): string {
@@ -114,9 +153,7 @@ function isProjectChip(
 ): step is Extract<TurnStep, { kind: "chip" }> {
   return (
     step.kind === "chip" &&
-    String((step as { capabilityId?: string }).capabilityId || "").startsWith(
-      "project_"
-    )
+    isProjectWorkbenchTool((step as { capabilityId?: string }).capabilityId)
   );
 }
 
@@ -304,6 +341,42 @@ export function chipsFromControlTranscript(rows: unknown): TurnStep[] {
   });
 }
 
+/**
+ * 叙述里的 chip 占位换成日志里的工具行，但**开口位置不许动**。
+ *
+ * ⚠ 2026-09-17：第一版 `kept + chips` 先剥光工具再整列接到散文后面。
+ *   SessionStory 靠开口切开工具组，这一接就把「开口 → 写入 → 开口」
+ *   收成扁平勾选——正是刷新后格式没了。叙述里还有 chip 占位时，按占位
+ *   把日志行织回去；没有占位才接到末尾（旧会话叙述只剩开口）。
+ */
+export function weaveTranscriptChips(
+  steps: TurnStep[],
+  chips: TurnStep[]
+): TurnStep[] {
+  if (!chips.length) return steps.filter(step => !isToolChip(step));
+  const out: TurnStep[] = [];
+  let logIndex = 0;
+  let pendingSlots = 0;
+  const flushSlots = () => {
+    while (pendingSlots > 0 && logIndex < chips.length) {
+      out.push(chips[logIndex++]);
+      pendingSlots -= 1;
+    }
+    pendingSlots = 0;
+  };
+  for (const step of steps) {
+    if (isToolChip(step)) {
+      pendingSlots += 1;
+      continue;
+    }
+    flushSlots();
+    out.push(step);
+  }
+  flushSlots();
+  while (logIndex < chips.length) out.push(chips[logIndex++]);
+  return out;
+}
+
 export function attachProjectChipsToTurns(
   turns: UiTurn[],
   chips: TurnStep[]
@@ -316,8 +389,7 @@ export function attachProjectChipsToTurns(
     turns[turns.length - 1];
   return turns.map(turn => {
     if (turn.id !== host.id) return turn;
-    const kept = (turn.steps || []).filter(step => !isToolChip(step));
-    return { ...turn, steps: [...kept, ...chips] };
+    return { ...turn, steps: weaveTranscriptChips(turn.steps || [], chips) };
   });
 }
 

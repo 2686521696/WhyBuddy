@@ -21,6 +21,17 @@ describe("project tool activity labels", () => {
   it("maps every project SSE tool to a readable live action", () => {
     expect(projectToolLabel("project_create")).toBe("正在创建工程");
     expect(projectToolLabel("project_patch")).toBe("正在写入工程源码");
+    expect(projectToolLabel("project_write")).toBe("正在写入工程源码");
+    expect(projectToolLabel("project_str_replace")).toBe("正在替换工程源码");
+    expect(projectToolLabel("file_write")).toBe("正在写入工程源码");
+    expect(projectToolLabel("file_read")).toBe("正在读取工程文件");
+    expect(projectToolLabel("file_str_replace")).toBe("正在替换工程源码");
+    expect(projectToolLabel("shell_exec")).toBe("正在执行工程命令");
+    expect(projectToolLabel("browser_navigate")).toBe("正在打开预览");
+    expect(projectToolLabel("idle")).toBe("正在等待用户");
+    expect(projectToolLabel("write_file")).toBe("正在写入工程源码");
+    expect(projectToolLabel("bash")).toBe("正在执行工程命令");
+    expect(projectToolLabel("grep")).toBe("正在搜索工程源码");
     expect(projectToolLabel("project_start")).toBe("正在启动工程");
     expect(projectToolLabel("project_exec")).toBe("正在执行工程命令");
     expect(projectToolLabel("project_verify")).toBe("正在执行浏览器检查");

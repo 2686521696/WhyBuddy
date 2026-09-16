@@ -9,6 +9,33 @@ import {
   chipsFromControlTranscript,
 } from "./project-activity";
 
+function logTurnTellsStory(turn: UiTurn): boolean {
+  let speech = false;
+  let chip = false;
+  for (const step of turn.steps || []) {
+    if (step.kind === "model_speech") speech = true;
+    if (step.kind === "chip") chip = true;
+    if (speech && chip) return true;
+  }
+  return false;
+}
+
+function overlayNarrationOntoLog(fromLog: UiTurn[], narrated: UiTurn[]): UiTurn[] {
+  const unused = [...narrated];
+  return fromLog.map(turn => {
+    const idx = unused.findIndex(item => item.user && item.user === turn.user);
+    const match = idx >= 0 ? unused.splice(idx, 1)[0] : undefined;
+    if (!match) return turn;
+    const archives = (match.steps || []).filter(step => step.kind === "llm_output");
+    return {
+      ...turn,
+      durationMs: turn.durationMs ?? match.durationMs,
+      main: turn.main ?? match.main,
+      steps: archives.length ? [...turn.steps, ...archives] : turn.steps,
+    };
+  });
+}
+
 type ModelVersionSnap = {
   id?: string;
   turnId?: string;
@@ -358,6 +385,13 @@ export function deriveTurnsFromState(
         state,
         (state.capabilityRuns || []) as Array<{ outputs?: unknown }>
       );
+    }
+    const fromLog = turnsFromControlTranscript(state);
+    // ⚠ 2026-09-17 TicketStream：叙述轮往往只剩开口，工具在日志里。
+    //   旧回放 attachProjectChips 把工具整列接到散文后面，章节面
+    //   （开口切开工具组）刷新后没了。日志里顺序还在，有穿插就听日志。
+    if (fromLog.some(logTurnTellsStory)) {
+      return overlayNarrationOntoLog(fromLog, out);
     }
     return attachProjectChipsToTurns(
       out,

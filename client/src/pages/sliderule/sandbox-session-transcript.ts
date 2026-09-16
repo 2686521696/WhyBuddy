@@ -31,7 +31,16 @@ export function sandboxCommandLine(row: {
   const tool = String(row.tool || "").trim();
   const detail = String(row.detail || "").trim();
   if (!detail) return null;
-  if (tool === "project_exec" || tool === "project_logs") return detail;
+  if (
+    tool === "project_exec" ||
+    tool === "project_logs" ||
+    tool === "shell_exec" ||
+    tool === "shell_view" ||
+    tool === "shell_wait" ||
+    tool === "bash"
+  ) {
+    return detail;
+  }
   return null;
 }
 
@@ -49,8 +58,20 @@ export function sandboxTransferLine(row: {
   const tool = String(row.tool || "").trim();
   const detail = String(row.detail || "").trim();
   if (!detail) return null;
-  if (tool === "project_patch") return `put ${detail}`;
-  if (tool === "project_read") return `get ${detail}`;
+  if (
+    tool === "project_patch" ||
+    tool === "project_write" ||
+    tool === "project_str_replace" ||
+    tool === "file_write" ||
+    tool === "file_str_replace" ||
+    tool === "write_file" ||
+    tool === "search_replace"
+  ) {
+    return `put ${detail}`;
+  }
+  if (tool === "project_read" || tool === "file_read" || tool === "read_file") {
+    return `get ${detail}`;
+  }
   if (tool === "project_create") return `create ${detail}`;
   if (tool === "project_export") return `get ${detail}`;
   return null;

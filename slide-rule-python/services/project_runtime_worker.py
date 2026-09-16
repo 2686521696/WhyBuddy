@@ -2,7 +2,8 @@
 
 This is an execution supervisor, not an agent loop. A runtime.start operation
 owns the managed runtime until cancellation, idle/total budget expiry, or failure.
-A runtime.exec operation owns one fixed check/build/test command and its sandbox.
+A runtime.exec operation owns one command and its sandbox: managed
+check/build/test (`npm run …`) or one grok-build bash line in `input.script`.
 Every side effect has a saved phase; uncertain dispatches are never replayed.
 
 2026-09-15: install / exec prefer `start_console` (a real bash PTY) when the
@@ -39,6 +40,7 @@ from services.project_source_sync import authorize_source_recovery, finish_pendi
 from services.project_store import ProjectConflict, ProjectStore, ProjectStoreUnavailable
 from services.project_verification_store import ProjectVerificationStore
 from services.project_acceptance import normalize_acceptance_requirements
+from services.project_tool_contracts import sandbox_shell_script
 from services.workspace_provider import WorkspaceHandle, WorkspaceProvider, WorkspaceProviderError
 
 logger = logging.getLogger(__name__)
@@ -100,6 +102,7 @@ class ProjectRuntimeSupervisor:
         self._wake = threading.Event()
         self._lock = threading.Lock()
         self._workers: dict[str, threading.Thread] = {}
+        self._stdin: dict[str, list[dict]] = {}
         self._scanner: threading.Thread | None = None
 
     @property
@@ -155,10 +158,15 @@ class ProjectRuntimeSupervisor:
         return operation
 
     def submit_command(self, project_id: str, *, owner_id: str, expected_revision: str,
-                       approval_ref: str, idempotency_key: str, command: str = "check") -> ProjectOperation:
+                       approval_ref: str, idempotency_key: str, command: str = "check",
+                       script: str | None = None) -> ProjectOperation:
         if not self.running:
             raise ProjectStoreUnavailable("project_worker_unavailable")
-        if not isinstance(command, str) or command not in PROJECT_COMMANDS:
+        if script is not None:
+            payload = {"command": "shell", "script": sandbox_shell_script(script)}
+        elif isinstance(command, str) and command in PROJECT_COMMANDS:
+            payload = {"command": command}
+        else:
             raise ValueError("invalid_project_command")
         project = self.store.get_project(project_id, owner_id=owner_id)
         candidate = ProjectOperation(operationId="pending", projectId=project_id, sessionId=project.sessionId,
@@ -167,9 +175,36 @@ class ProjectRuntimeSupervisor:
         self.authorizer(self.store, candidate, owner_id)
         operation = self.store.create_operation(project_id, owner_id=owner_id, kind="runtime.exec",
             idempotency_key=idempotency_key, expected_revision=expected_revision, approval_ref=approval_ref,
-            input={"command": command})
+            input=payload)
         self._wake.set()
         return operation
+
+    def enqueue_stdin(self, operation_id: str, *, owner_id: str, text: str,
+                      press_enter: bool = True) -> None:
+        """Queue PTY stdin for a live exec. Worker flushes on the next poll.
+
+        抄 grok / E2B pty.send_stdin。落在监督器内存里：租约线程才碰 PTY，
+        控制面不许自己 send。进程已经终态就拒，不许假装写进去了。
+        """
+        if not isinstance(text, str) or text == "" or len(text.encode("utf-8")) > 8 * 1024:
+            raise ValueError("project_shell_stdin_invalid")
+        if any(char in text for char in ("\x00",)):
+            raise ValueError("project_shell_stdin_invalid")
+        operation = self.store.get_operation(operation_id, owner_id=owner_id)
+        if operation.kind != "runtime.exec" or operation.status in TERMINAL:
+            raise ValueError("project_shell_stdin_not_available")
+        with self._lock:
+            self._stdin.setdefault(operation_id, []).append(
+                {"text": text, "pressEnter": bool(press_enter)})
+        self._wake.set()
+
+    def peek_stdin(self, operation_id: str) -> list[dict]:
+        with self._lock:
+            return list(self._stdin.get(operation_id) or [])
+
+    def take_stdin(self, operation_id: str) -> list[dict]:
+        with self._lock:
+            return self._stdin.pop(operation_id, [])
 
     def cancel(self, operation_id: str, *, owner_id: str) -> ProjectOperation:
         operation = self.store.request_operation_cancel(operation_id, owner_id=owner_id)
@@ -322,7 +357,8 @@ class _RuntimeTask:
         self.result = dict(original.result or {})
         self.result.setdefault("idleSeconds", supervisor.idle_seconds)
         if original.kind == "runtime.exec":
-            self.result.setdefault("command", original.input.get("command"))
+            script = original.input.get("script")
+            self.result.setdefault("command", script if isinstance(script, str) else original.input.get("command"))
             self.result.setdefault("exitCode", None)
 
     def set_provider(self, provider):
@@ -477,8 +513,12 @@ class _RuntimeTask:
         else:
             self.supervisor.authorizer(self.store, self.operation(), self.owner_id)
         command = self.original.input.get("command") if self.original.kind == "runtime.exec" else None
-        if self.original.kind == "runtime.exec" and (not isinstance(command, str) or command not in PROJECT_COMMANDS):
-            raise ValueError("invalid_project_command")
+        script = self.original.input.get("script") if self.original.kind == "runtime.exec" else None
+        if self.original.kind == "runtime.exec":
+            if isinstance(script, str):
+                script = sandbox_shell_script(script)
+            elif not isinstance(command, str) or command not in PROJECT_COMMANDS:
+                raise ValueError("invalid_project_command")
         self._require_relay_origin()
         if self.original.runtime is None:
             self.save("provisioning")
@@ -545,7 +585,8 @@ class _RuntimeTask:
             self.supervisor.authorizer(self.store, self.original, self.owner_id)
             if self.original.kind == "runtime.exec":
                 self.save("executing")
-                self._start_visible("command", f"npm run {command}", timeout_seconds=900)
+                visible = script if isinstance(script, str) else f"npm run {command}"
+                self._start_visible("command", visible, timeout_seconds=900)
                 phase = "executing"
             else:
                 self.result["phaseDeadline"] = time.time() + self.supervisor.ready_timeout
@@ -632,6 +673,7 @@ class _RuntimeTask:
         while True:
             self.check()
             self.logs(pid)
+            self._flush_stdin()
             if not self.provider.is_process_running(self.handle, pid):
                 break
             self.sleep(tight=self._is_console_pid(pid))
@@ -647,6 +689,23 @@ class _RuntimeTask:
             raise WorkspaceProviderError("project_command_failed", result=executed)
         self.check()
         self.finish("completed", "stopped", None)
+
+    def _flush_stdin(self):
+        pending = self.supervisor.peek_stdin(self.operation_id)
+        if not pending:
+            return
+        writer = getattr(self.provider, "write_console", None)
+        if not callable(writer):
+            return
+        try:
+            pid = self._process("command")
+        except WorkspaceProviderError:
+            return
+        for chunk in self.supervisor.take_stdin(self.operation_id):
+            try:
+                writer(self.handle, pid, chunk["text"], press_enter=chunk.get("pressEnter", True))
+            except Exception:
+                logger.warning("project stdin not delivered: %s", self.operation_id)
 
     def _register(self, key, pid, *, console=False):
         if not pid:

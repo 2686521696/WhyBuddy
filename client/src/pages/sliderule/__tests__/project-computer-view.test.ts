@@ -134,6 +134,19 @@ describe("没点过：按干活 / 预览自动切", () => {
 describe("左栏点工具 → 右侧开哪一档", () => {
   it("写入 / 读取源码打开代码，运行命令打开终端，启动打开预览", () => {
     expect(computerViewForAction("project_patch")).toBe("source");
+    expect(computerViewForAction("project_write")).toBe("source");
+    expect(computerViewForAction("project_str_replace")).toBe("source");
+    expect(computerViewForAction("file_write")).toBe("source");
+    expect(computerViewForAction("file_read")).toBe("source");
+    expect(computerViewForAction("file_find_by_name")).toBe("source");
+    expect(computerViewForAction("browser_navigate")).toBe("preview");
+    expect(computerViewForAction("deploy_expose_port")).toBe("preview");
+    expect(computerViewForAction("shell_exec")).toBe("computer");
+    expect(computerViewForAction("write_file")).toBe("source");
+    expect(computerViewForAction("grep")).toBe("source");
+    expect(computerViewForAction("bash")).toBe("computer");
+    expect(computerViewForAction("browser_click")).toBe("preview");
+    expect(computerViewForAction("deploy_apply_deployment")).toBe("preview");
     expect(computerViewForAction("project_read")).toBe("source");
     expect(computerViewForAction("project_list")).toBe("source");
     expect(computerViewForAction("project_search")).toBe("source");

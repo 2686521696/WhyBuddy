@@ -13,6 +13,7 @@ import {
   hopFromFactoryCapability,
   isFactoryHop,
   isFactoryWriteTool,
+  isProjectWorkbenchTool,
   looksLikeClosedToolCommand,
   looksLikeFactoryHopCommand,
 } from "../factory-hops";
@@ -54,7 +55,21 @@ describe("factoryHopFromText", () => {
     expect(looksLikeClosedToolCommand("闭环发布管理系统")).toBe(false);
     // 文本里的 rehearse 不得 yolo 点火（跟 /推演 同一条）。
     expect(closedToolFromText("开始推演（rehearse）")).toBeUndefined();
+    expect(closedToolFromText("file_write")).toBeUndefined();
+    expect(closedToolFromText("shell_exec")).toBeUndefined();
     expect(CLOSED_TOOLS).toContain("refine");
+    expect(CLOSED_TOOLS).toContain("file_write");
+    expect(CLOSED_TOOLS).toContain("shell_exec");
+    expect(CLOSED_TOOLS).toContain("idle");
+    expect(CLOSED_TOOLS).toContain("write_file");
+    expect(CLOSED_TOOLS).toContain("grep");
+    expect(isProjectWorkbenchTool("write_file")).toBe(true);
+    expect(isProjectWorkbenchTool("bash")).toBe(true);
+    expect(isProjectWorkbenchTool("file_write")).toBe(true);
+    expect(isProjectWorkbenchTool("shell_exec")).toBe(true);
+    expect(isProjectWorkbenchTool("browser_navigate")).toBe(true);
+    expect(isProjectWorkbenchTool("project_patch")).toBe(true);
+    expect(isProjectWorkbenchTool("intent.parse")).toBe(false);
   });
 
   it("账本身份按 hop 分开，不是共用信封", () => {

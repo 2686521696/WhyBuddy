@@ -115,8 +115,9 @@ def test_提醒必须给一条能立刻执行的出路():
 
     # 出路那一段：把观察句（首句）剥掉之后仍然要点名写工具。
     tail = text.split("。", 1)[1]
-    assert "project_patch" in tail, "剥掉观察句就没有出路了"
-    assert "project_exec" in tail, "没告诉它写完怎么验"
+    assert "file_write" in tail, "剥掉观察句就没有出路了"
+    assert "file_str_replace" in tail
+    assert "shell_exec" in tail, "没告诉它写完怎么验"
     # 范围收窄：没有这个，模型会继续读到「够了」为止。
     assert any(word in tail for word in ("一个", "最小", "一处")), "没把范围缩到一处"
 
@@ -156,7 +157,7 @@ def test_活路径_连着只读时提醒真的进了下一发对话(harness):
     harness.post(six_fields(sid, "帮我查查请假流程"))
 
     def _has(snapshot) -> bool:
-        return any("一次 `project_patch` 都没有" in str(m.get("content") or "")
+        return any("一次写入都没有" in str(m.get("content") or "")
                    for m in snapshot)
 
     hits = [i for i, snap in enumerate(shots) if _has(snap)]
@@ -166,7 +167,7 @@ def test_活路径_连着只读时提醒真的进了下一发对话(harness):
     )
     # 贴在工具结果上，不另起 role:user（伪造用户消息那条老伤）。
     carriers = {m.get("role") for m in shots[-1]
-                if "一次 `project_patch` 都没有" in str(m.get("content") or "")}
+                if "一次写入都没有" in str(m.get("content") or "")}
     assert carriers == {"tool"}, carriers
 
 
@@ -234,12 +235,16 @@ def test_反向_工程写工具不许被算成只读():
     def call(name):
         return {"id": "x", "name": name, "arguments": {}}
 
-    for name in ("project_create", "project_patch", "project_exec",
-                 "project_start", "project_verify", "project_restore"):
+    for name in ("project_create", "project_patch", "project_write",
+                 "project_str_replace", "file_write", "file_str_replace",
+                 "write_file", "search_replace", "shell_exec", "bash",
+                 "deploy_expose_port", "browser_navigate",
+                 "project_exec", "project_start", "project_verify", "project_restore"):
         assert tool_writes(name) is True, name
         assert step_is_read_only([call(name)]) is False, name
 
     assert step_is_read_only([call("project_read")]) is True
+    assert step_is_read_only([call("file_read")]) is True
     assert step_is_read_only([call("project_list")]) is True
     # 混着写的一轮不算只读。
     assert step_is_read_only([call("project_read"), call("project_patch")]) is False

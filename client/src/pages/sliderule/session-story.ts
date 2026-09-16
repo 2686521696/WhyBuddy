@@ -79,15 +79,36 @@ export type SessionStoryBlock =
   | SessionStoryTools
   | SessionStoryProduct;
 
-const FILE_TOOLS = new Set(["project_patch"]);
-const EXEC_TOOLS = new Set(["project_exec"]);
+const FILE_TOOLS = new Set([
+  "project_patch",
+  "project_write",
+  "project_str_replace",
+  "file_write",
+  "file_str_replace",
+  "write_file",
+  "search_replace",
+]);
+const EXEC_TOOLS = new Set(["project_exec", "shell_exec", "bash"]);
 const READ_TOOLS = new Set([
   "project_list",
   "project_search",
   "project_read",
+  "file_read",
+  "file_find_in_content",
+  "file_find_by_name",
+  "read_file",
+  "grep",
+  "list_dir",
+  "glob",
 ]);
 const CREATE_TOOLS = new Set(["project_create"]);
-const PREVIEW_TOOLS = new Set(["project_start", "project_verify"]);
+const PREVIEW_TOOLS = new Set([
+  "project_start",
+  "project_verify",
+  "browser_navigate",
+  "browser_restart",
+  "deploy_expose_port",
+]);
 const COUNTED_TOOLS = new Set([
   ...FILE_TOOLS,
   ...EXEC_TOOLS,
@@ -147,13 +168,32 @@ export function chapterTitleForRows(rows: readonly ProjectActionRow[]): string {
     tool =>
       tool === "project_start" ||
       tool === "project_verify" ||
-      tool === "project_status"
+      tool === "project_status" ||
+      tool === "browser_view" ||
+      tool === "browser_navigate" ||
+      tool === "browser_restart" ||
+      tool === "deploy_expose_port"
   );
   const building = tools.some(
     tool =>
       tool === "project_create" ||
       tool === "project_patch" ||
+      tool === "project_write" ||
+      tool === "project_str_replace" ||
+      tool === "file_write" ||
+      tool === "file_str_replace" ||
+      tool === "write_file" ||
+      tool === "search_replace" ||
+      tool === "read_file" ||
+      tool === "grep" ||
+      tool === "list_dir" ||
+      tool === "glob" ||
+      tool === "bash" ||
+      tool === "file_read" ||
+      tool === "file_find_in_content" ||
+      tool === "file_find_by_name" ||
       tool === "project_exec" ||
+      tool === "shell_exec" ||
       tool === "project_list" ||
       tool === "project_read" ||
       tool === "project_search"

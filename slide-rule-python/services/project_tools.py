@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
+from types import SimpleNamespace
 
 from pydantic import ValidationError
 
@@ -18,10 +19,20 @@ from services.persistence import PersistClosedError
 from services.control_checkpoint import guard_control_run
 from services.project_authority import approved_reference, verification_with_current_authority
 from services.project_creation import create_session_project, load_authorized_session, sync_session_project
-from services.project_manifest import canonical_json, content_hash, prepare_source_patch, source_path
+from services.project_manifest import (
+    canonical_json, content_hash, file_content_matches, file_name_matches,
+    file_tree_matches, kernel_str_replace_changes, kernel_write_changes,
+    prepare_source_patch, source_path, workspace_file_path,
+)
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStoreUnavailable
 from services.project_source_operations import ProjectSourceOperations
-from services.project_tool_contracts import PROJECT_ARGUMENTS, PROJECT_READ_MAX_RESULT_CHARS, PROJECT_WRITE_TOOLS
+from services.project_browser_interact import local_playwright_available, run_browser_action
+from services.project_tool_contracts import (
+    BROWSER_INTERACT_TOOLS, LEAKED_UNAVAILABLE, PROJECT_ARGUMENTS, PROJECT_KERNEL_WRITE_TOOLS,
+    PROJECT_READ_MAX_RESULT_CHARS, PROJECT_WRITE_TOOLS, PatchArguments,
+    classify_shell_command, compile_browser_action, leaked_browser_url_allowed,
+    leaked_shell_exec_dir_allowed,
+)
 from services.scope_authority import plan_execution_authorized
 from services.project_rollout import rollout_readiness
 from services.project_acceptance import approved_acceptance_requirements
@@ -134,8 +145,15 @@ class ProjectTools:
                 raise ValueError("project_tool_arguments_invalid")
             parsed = PROJECT_ARGUMENTS[name].model_validate(args)
             session_id = str(getattr(state, "sessionId", "") or "")
-            authority = load_authorized_session(session_id, owner_id=self.owner_id,
-                approval_ref=parsed.approvalRef if name in PROJECT_WRITE_TOOLS else None)
+            # 核写工具不让模型填 approvalRef：会话里已批准的计划就是闸。
+            # 旧的 project_patch 仍要模型回传引用，合同不能改一半。
+            if name in PROJECT_KERNEL_WRITE_TOOLS:
+                authority = load_authorized_session(session_id, owner_id=self.owner_id)
+                if not plan_execution_authorized(authority):
+                    raise PermissionError("project_plan_approval_required")
+            else:
+                authority = load_authorized_session(session_id, owner_id=self.owner_id,
+                    approval_ref=parsed.approvalRef if name in PROJECT_WRITE_TOOLS else None)
             if name == "project_create":
                 guard_control_run()
                 project = create_session_project(self.store, session_id,
@@ -162,6 +180,22 @@ class ProjectTools:
                 return {"ok": True, **result}
             if name == "project_patch":
                 return {"ok": True, **self._patch(project, parsed)}
+            if name in LEAKED_UNAVAILABLE:
+                if getattr(parsed, "sudo", False):
+                    raise ValueError("project_sudo_forbidden")
+                raise ValueError(LEAKED_UNAVAILABLE[name])
+            if name in BROWSER_INTERACT_TOOLS:
+                return {"ok": True, **self._browser_interact(project, name, parsed)}
+            if name == "shell_write_to_process":
+                return {"ok": True, **self._shell_stdin(project, parsed)}
+            if name in {"shell_exec", "bash", "deploy_expose_port", "deploy_apply_deployment",
+                        "browser_navigate", "browser_restart"}:
+                return {"ok": True, **self._kernel_runtime(project, name, parsed, authority)}
+            if name in {"shell_view", "shell_wait", "shell_kill_process", "browser_view",
+                        "browser_console_view", "make_manus_page"}:
+                return {"ok": True, **self._leaked_observe(project, name, parsed)}
+            if name in PROJECT_KERNEL_WRITE_TOOLS:
+                return {"ok": True, **self._kernel_edit(project, name, parsed, authority)}
             if name == "project_revisions":
                 return {"ok": True, **ProjectSourceOperations(self.store, self.supervisor, self.owner_id).revisions(
                     project.projectId, parsed.cursor, parsed.limit)}
@@ -221,6 +255,21 @@ class ProjectTools:
                     else:
                         self.supervisor.cancel(operation.operationId, owner_id=self.owner_id)
                 return {"ok": True, **self._snapshot(operation.operationId)}
+            if name in {"file_read", "read_file", "file_find_in_content", "file_find_by_name",
+                        "grep", "glob", "list_dir"}:
+                revision = self.store.get_revision(project.projectId, owner_id=self.owner_id)
+                files = self.store.read_files(project.projectId, revision.revision, owner_id=self.owner_id)
+                if name in {"file_read", "read_file"}:
+                    return {"ok": True, **self._file_read(files, revision, parsed)}
+                if name == "file_find_in_content":
+                    return {"ok": True, **self._file_find_in_content(files, revision, parsed)}
+                if name == "grep":
+                    return {"ok": True, **self._github_grep(files, revision, parsed)}
+                if name == "list_dir":
+                    return {"ok": True, **self._github_list_dir(files, revision, parsed)}
+                if name == "glob":
+                    return {"ok": True, **self._github_glob(files, revision, parsed)}
+                return {"ok": True, **self._file_find_by_name(files, revision, parsed)}
             revision = self.store.get_revision(project.projectId, parsed.revision, owner_id=self.owner_id)
             if name == "project_list":
                 return {"ok": True, **self._list(revision, parsed)}
@@ -268,6 +317,207 @@ class ProjectTools:
                         for item in record.assertions],
                     "artifactIds": [item.artifactId for item in record.artifactRefs]}
         return result
+
+    def _latest_operation(self, project, kinds=None):
+        operations = self.store.list_project_operations(
+            project.projectId, owner_id=self.owner_id, limit=100)
+        if kinds:
+            operations = [item for item in operations if item.kind in kinds]
+        return operations[-1] if operations else None
+
+    def _operation_by_id(self, project, session_id, operation_id, kinds=None):
+        if operation_id:
+            operation = self.store.get_operation(operation_id, owner_id=self.owner_id)
+        else:
+            operation = self._latest_operation(project, kinds=kinds)
+            if operation is None:
+                raise ProjectNotFound("project_operation_not_found")
+        if operation.projectId != project.projectId or operation.sessionId != session_id:
+            raise ProjectNotFound("project_operation_not_found")
+        return operation
+
+    def _kernel_runtime(self, project, name, parsed, authority):
+        if getattr(parsed, "sudo", False):
+            raise ValueError("project_sudo_forbidden")
+        if self.supervisor is None:
+            raise ProjectStoreUnavailable("project_worker_unavailable")
+        current = self.store.get_revision(project.projectId, owner_id=self.owner_id)
+        params = dict(
+            owner_id=self.owner_id,
+            expected_revision=current.revision,
+            approval_ref=approved_reference(authority),
+            idempotency_key=getattr(parsed, "id", None) or str(uuid.uuid4()),
+        )
+        if name in {"shell_exec", "bash"}:
+            if name == "shell_exec" and not leaked_shell_exec_dir_allowed(getattr(parsed, "exec_dir", None)):
+                raise ValueError("project_shell_exec_dir_not_supported")
+            if name == "bash":
+                params["idempotency_key"] = str(uuid.uuid4())
+            managed, script = classify_shell_command(parsed.command)
+            if script is None:
+                operation = self.supervisor.submit_command(
+                    project.projectId, **params, command=managed)
+            else:
+                operation = self.supervisor.submit_command(
+                    project.projectId, **params, command="shell", script=script)
+            return self._snapshot(operation.operationId)
+        if name in {"deploy_expose_port", "deploy_apply_deployment"}:
+            port = getattr(parsed, "port", None) or 5173
+            operation = self.supervisor.submit(project.projectId, **params, port=port)
+            result = self._snapshot(operation.operationId)
+            if name == "deploy_apply_deployment":
+                result["deployed"] = False
+                result["public"] = False
+                result["previewPrivate"] = True
+            return result
+        if name == "browser_navigate":
+            if not leaked_browser_url_allowed(parsed.url):
+                raise ValueError("project_browser_external_url_forbidden")
+            operation = self.supervisor.submit(project.projectId, **params, port=5173)
+            return {**self._snapshot(operation.operationId), "url": parsed.url, "previewPrivate": True}
+        # browser_restart: cancel latest runtime, then start again.
+        latest = self._latest_operation(project, kinds=("runtime.start", "runtime.exec", "runtime.verify"))
+        if latest is not None:
+            self.supervisor.cancel(latest.operationId, owner_id=self.owner_id)
+        operation = self.supervisor.submit(project.projectId, **params, port=5173)
+        return self._snapshot(operation.operationId)
+
+    def _leaked_observe(self, project, name, parsed):
+        if getattr(parsed, "sudo", False):
+            raise ValueError("project_sudo_forbidden")
+        session_id = project.sessionId
+        if name == "make_manus_page":
+            result = self._project_result(project)
+            if parsed.file:
+                revision = self.store.get_revision(project.projectId, owner_id=self.owner_id)
+                files = self.store.read_files(project.projectId, revision.revision, owner_id=self.owner_id)
+                path = workspace_file_path(parsed.file, files)
+                if path not in files:
+                    raise ProjectNotFound("project_file_not_found")
+                result["path"] = path
+            result["presented"] = "project"
+            if parsed.title:
+                result["title"] = parsed.title
+            return result
+        if name == "browser_view":
+            result = self._project_result(project)
+            latest = self._latest_operation(project)
+            if latest is not None:
+                result.update(self._snapshot(latest.operationId))
+            page = self._preview_page(project)
+            result["interactive"] = page is not None
+            if page is not None:
+                result["url"] = page["url"]
+                interactor = getattr(self.supervisor, "browser_interactor", None)
+                if callable(interactor):
+                    observed = interactor({"op": "snapshot"}, page)
+                    if isinstance(observed, dict):
+                        result.update(observed)
+                elif local_playwright_available():
+                    result.update(run_browser_action(page["url"], {"op": "snapshot"}))
+            return result
+        operation = self._operation_by_id(project, session_id, parsed.id)
+        if name == "shell_kill_process":
+            if self.supervisor is None:
+                self.store.request_operation_cancel(operation.operationId, owner_id=self.owner_id)
+            else:
+                self.supervisor.cancel(operation.operationId, owner_id=self.owner_id)
+            return self._snapshot(operation.operationId)
+        if name == "shell_wait":
+            wait = parsed.seconds if parsed.seconds is not None else 2
+            deadline = time.monotonic() + wait
+            while operation.status not in _TERMINAL and time.monotonic() < deadline:
+                if operation.runtime is not None and operation.runtime.status == "ready":
+                    break
+                time.sleep(min(0.1, max(0, deadline - time.monotonic())))
+                operation = self.store.get_operation(operation.operationId, owner_id=self.owner_id)
+            return self._snapshot(operation.operationId)
+        logs = self._logs(operation, SimpleNamespace(afterSeq=0, offset=0))
+        if name == "browser_console_view":
+            logs["console"] = "runtime"
+        return logs
+
+    def _preview_page(self, project):
+        resolver = getattr(self.supervisor, "preview_page", None)
+        if callable(resolver):
+            page = resolver(project)
+            if isinstance(page, dict) and isinstance(page.get("url"), str) and page["url"].strip():
+                if not leaked_browser_url_allowed(page["url"]):
+                    raise ValueError("project_browser_external_url_forbidden")
+                return page
+            return None
+        latest = self._latest_operation(project, kinds=("runtime.start",))
+        runtime = latest.runtime if latest is not None else None
+        if latest is None or latest.status not in {"running", "completed"} or runtime is None:
+            return None
+        if getattr(runtime, "status", None) != "ready":
+            return None
+        url = getattr(runtime, "previewUrl", None)
+        if not isinstance(url, str) or not leaked_browser_url_allowed(url):
+            return None
+        return {"url": url, "revision": getattr(runtime, "revision", None)}
+
+    def _browser_interact(self, project, name, parsed):
+        if getattr(parsed, "sudo", False):
+            raise ValueError("project_sudo_forbidden")
+        action = compile_browser_action(name, parsed)
+        page = self._preview_page(project)
+        if page is None:
+            raise ValueError("project_browser_preview_not_ready")
+        interactor = getattr(self.supervisor, "browser_interactor", None)
+        if callable(interactor):
+            observed = interactor(action, page)
+            if not isinstance(observed, dict):
+                raise ValueError("project_browser_action_failed")
+            return {"interactive": True, **observed}
+        if local_playwright_available():
+            return run_browser_action(page["url"], action)
+        raise ValueError("project_browser_driver_unavailable")
+
+    def _shell_stdin(self, project, parsed):
+        if getattr(parsed, "sudo", False):
+            raise ValueError("project_sudo_forbidden")
+        if self.supervisor is None:
+            raise ProjectStoreUnavailable("project_worker_unavailable")
+        operation = self._operation_by_id(project, project.sessionId, parsed.id)
+        self.supervisor.enqueue_stdin(
+            operation.operationId, owner_id=self.owner_id, text=parsed.input,
+            press_enter=parsed.press_enter)
+        return {"operationId": operation.operationId, "stdinQueued": True}
+
+    def _kernel_edit(self, project, name, parsed, authority):
+        """把 path+content / 唯一串替换展开成现行 patch，再走同一条落库。
+
+        版本和哈希从当前 revision 读，不信模型。删掉这一支、只加 schema，
+        模型会看见工具，写进去的字节却不会落库。
+        """
+        if getattr(parsed, "sudo", False):
+            raise ValueError("project_sudo_forbidden")
+        current = self.store.get_revision(project.projectId, owner_id=self.owner_id)
+        files = self.store.read_files(project.projectId, current.revision, owner_id=self.owner_id)
+        if name in {"file_write", "project_write", "write_file"}:
+            path = workspace_file_path(getattr(parsed, "file", None) or parsed.path, files)
+            content = parsed.content
+            if getattr(parsed, "leading_newline", False):
+                content = "\n" + content
+            if getattr(parsed, "trailing_newline", False) and not content.endswith("\n"):
+                content += "\n"
+            changes = kernel_write_changes(files, path, content, append=getattr(parsed, "append", False))
+        else:
+            path = workspace_file_path(getattr(parsed, "file", None) or parsed.path, files)
+            old = getattr(parsed, "old_str", None) or getattr(parsed, "old_string", None) or parsed.oldStr
+            if hasattr(parsed, "new_str"):
+                new = parsed.new_str
+            elif hasattr(parsed, "new_string"):
+                new = parsed.new_string
+            else:
+                new = parsed.newStr
+            changes = kernel_str_replace_changes(files, path, old, new)
+        return self._patch(project, PatchArguments.model_validate({
+            "approvalRef": approved_reference(authority),
+            "expectedRevision": current.revision,
+            "changes": changes,
+        }))
 
     def _patch(self, project, args):
         active = self.store.get_lease(project.projectId, owner_id=self.owner_id)
@@ -335,6 +585,73 @@ class ProjectTools:
             result["nextCursor"] += 1
         result["truncated"] = result["nextCursor"] < len(entries)
         return result
+
+    def _file_read(self, files, revision, args):
+        if getattr(args, "sudo", False):
+            raise ValueError("project_sudo_forbidden")
+        path = workspace_file_path(getattr(args, "file", None) or args.path, files)
+        if path not in files:
+            raise ProjectNotFound("project_file_not_found")
+        lines = files[path].splitlines(keepends=True)
+        if getattr(args, "start_line", None) is not None:
+            start = args.start_line
+        else:
+            start = getattr(args, "offset", None) or 0
+        if getattr(args, "end_line", None) is not None:
+            end = args.end_line
+        elif getattr(args, "limit", None) is not None:
+            end = start + args.limit
+        else:
+            end = len(lines)
+        if start > len(lines) or end < start:
+            raise ValueError("invalid_project_offset")
+        text = "".join(lines[start:end])
+        result = {"revision": revision.revision, "path": path, "sha256": content_hash(files[path]),
+            "start_line": start, "end_line": start + text.count("\n") + (0 if text.endswith("\n") or not text else 1),
+            "truncated": False, "totalChars": len(files[path])}
+        result["content"] = _bounded_text({"ok": True, **result}, "content", text,
+            cap=PROJECT_READ_MAX_RESULT_CHARS)
+        result["truncated"] = result["content"] != text
+        return result
+
+    def _file_find_in_content(self, files, revision, args):
+        if args.sudo:
+            raise ValueError("project_sudo_forbidden")
+        path = workspace_file_path(args.file, files)
+        if path not in files:
+            raise ProjectNotFound("project_file_not_found")
+        matches = file_content_matches(files[path], args.regex)
+        return {"revision": revision.revision, "path": path, "matches": matches,
+            "truncated": len(matches) >= 40}
+
+    def _github_grep(self, files, revision, args):
+        if args.sudo:
+            raise ValueError("project_sudo_forbidden")
+        target = args.path or "."
+        resolved = workspace_file_path(target, files) if target not in {".", ""} else ""
+        if resolved in files:
+            matches = [{"path": resolved, **row} for row in file_content_matches(files[resolved], args.pattern)]
+        else:
+            matches = file_tree_matches(files, args.pattern, directory=target, glob=args.glob or "*")
+        return {"revision": revision.revision, "matches": matches, "truncated": len(matches) >= 40}
+
+    def _github_list_dir(self, files, revision, args):
+        if args.sudo:
+            raise ValueError("project_sudo_forbidden")
+        found = file_name_matches(sorted(files), args.path, "*")
+        return {"revision": revision.revision, "files": found, "truncated": False}
+
+    def _github_glob(self, files, revision, args):
+        if args.sudo:
+            raise ValueError("project_sudo_forbidden")
+        found = file_name_matches(sorted(files), args.path or ".", args.pattern)
+        return {"revision": revision.revision, "files": found, "truncated": False}
+
+    def _file_find_by_name(self, files, revision, args):
+        if args.sudo:
+            raise ValueError("project_sudo_forbidden")
+        found = file_name_matches(sorted(files), args.path, args.glob)
+        return {"revision": revision.revision, "files": found, "truncated": False}
 
     def _read(self, files, revision, args):
         path = source_path(args.path)

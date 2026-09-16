@@ -92,6 +92,34 @@ def test_command_allowlist_rejects_arbitrary_dispatch(command_setup, command):
     assert not provider.created and not provider.commands
 
 
+def test_sandbox_script_runs_the_raw_line_not_npm_run_shell(command_setup):
+    store, project, provider, worker, _ = command_setup
+    operation = worker.submit_command(
+        project.projectId, owner_id="alice", expected_revision=project.currentRevision,
+        approval_ref="plan-1", idempotency_key="ls-1", command="shell", script="ls src")
+    finished = eventually(lambda: state(store, operation, "stopped"))
+    assert finished.status == "completed" and finished.result["command"] == "ls src"
+    assert provider.commands == ["npm ci --ignore-scripts", "ls src"]
+
+
+def test_pty_stdin_reaches_the_running_command(command_setup):
+    store, project, provider, worker, _ = command_setup
+    provider.command_running = True
+    provider.stdin = []
+
+    def write_console(handle, pid, data, *, press_enter=True):
+        provider.stdin.append((pid, data, press_enter))
+
+    provider.write_console = write_console
+    operation = submit(worker, project)
+    eventually(lambda: provider.commands[-1:] == ["npm run check"])
+    worker.enqueue_stdin(operation.operationId, owner_id="alice", text="yes", press_enter=True)
+    eventually(lambda: provider.stdin == [("44", "yes", True)])
+    provider.command_running = False
+    finished = eventually(lambda: state(store, operation, "stopped"))
+    assert finished.status == "completed"
+
+
 def test_reusing_idempotency_key_for_a_different_command_conflicts(command_setup):
     _, project, provider, worker, _ = command_setup
     provider.command_running = True

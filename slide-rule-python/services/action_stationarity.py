@@ -463,10 +463,10 @@ assert NUDGE_AFTER_READONLY_ROUNDS < NUDGE_AGAIN_AFTER_READONLY_ROUNDS
 #: 提醒文案。抄 grok nudge 模板的三段结构：观察到什么、给一条出路、说清代价。
 #: ⚠ 出路必须是**具体那一件工具**——只说「该动手了」，模型会再读一轮当作动手。
 READONLY_NUDGE_TEMPLATE = (
-    "你已经连着 {rounds} 轮只在读，一次 `project_patch` 都没有。"
+    "你已经连着 {rounds} 轮只在读，一次写入都没有。"
     "读到的东西只有落进源码才算数。"
-    "现在就挑**一个**最小的改动用 `project_patch` 写进去（哪怕只改一个文件），"
-    "写完用 `project_exec` 跑一次构建看结果；"
+    "现在就挑**一个**最小的改动用 `file_write` 或 `file_str_replace` 写进去（哪怕只改一个文件），"
+    "写完用 `shell_exec` 跑一次构建看结果；"
     "真的还缺关键信息，就说清楚缺哪一处、为什么读不到，别继续翻。"
 )
 

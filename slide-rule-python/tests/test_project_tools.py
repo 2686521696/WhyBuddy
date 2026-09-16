@@ -75,7 +75,13 @@ def rewrite_session(setup, **changes):
 
 def test_registry_is_closed_and_mutation_contracts_exclude_identity():
     assert {tool["function"]["name"] for tool in PROJECT_TOOLS} == PROJECT_TOOL_NAMES
-    assert PROJECT_WRITE_TOOLS == {"project_create", "project_patch", "project_start", "project_exec", "project_verify", "project_restore"}
+    assert PROJECT_WRITE_TOOLS == {
+        "project_create", "project_patch", "project_write", "project_str_replace",
+        "file_write", "file_str_replace", "write_file", "search_replace",
+        "shell_exec", "bash", "deploy_expose_port", "deploy_apply_deployment",
+        "browser_navigate", "browser_restart",
+        "project_start", "project_exec", "project_verify", "project_restore",
+    }
     for tool in PROJECT_TOOLS:
         schema = tool["function"]["parameters"]
         assert schema["additionalProperties"] is False
@@ -166,7 +172,7 @@ def test_unknown_identity_and_unbounded_or_arbitrary_inputs_rejected(setup, tool
     assert not setup.provider_calls
 
 
-@pytest.mark.parametrize("tool", ["project_create", "project_list", "project_read", "project_search", "project_patch", "project_start", "project_exec", "project_status", "project_logs", "project_cancel"])
+@pytest.mark.parametrize("tool", ["project_create", "project_list", "project_read", "project_search", "project_patch", "project_write", "project_str_replace", "file_read", "file_write", "file_str_replace", "file_find_in_content", "file_find_by_name", "project_start", "project_exec", "project_status", "project_logs", "project_cancel"])
 def test_cached_caller_cannot_bypass_durable_session_owner(setup, tool):
     project = create(setup)
     operation = setup.store.create_operation(project["projectId"], owner_id="alice", kind="runtime.start",
@@ -176,6 +182,13 @@ def test_cached_caller_cannot_bypass_durable_session_owner(setup, tool):
         "project_read": {"path": "src/App.tsx"}, "project_search": {"query": "task"},
         "project_patch": {"approvalRef": setup.approval, "expectedRevision": project["revision"],
             "changes": [{"path": "x", "content": "x", "expectedSha256": None}]},
+        "project_write": {"path": "src/App.tsx", "content": "stolen\n"},
+        "project_str_replace": {"path": "src/App.tsx", "oldStr": "First", "newStr": "Stolen"},
+        "file_read": {"file": "src/App.tsx"},
+        "file_write": {"file": "src/App.tsx", "content": "stolen\n"},
+        "file_str_replace": {"file": "src/App.tsx", "old_str": "First", "new_str": "Stolen"},
+        "file_find_in_content": {"file": "src/App.tsx", "regex": "task"},
+        "file_find_by_name": {"path": ".", "glob": "*.tsx"},
         "project_start": {"approvalRef": setup.approval, "expectedRevision": project["revision"], "idempotencyKey": "new"},
         "project_exec": {"approvalRef": setup.approval, "expectedRevision": project["revision"], "idempotencyKey": "new", "command": "build"},
         "project_logs": {"operationId": operation.operationId}, "project_cancel": {"operationId": operation.operationId},

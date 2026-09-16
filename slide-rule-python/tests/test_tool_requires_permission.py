@@ -18,7 +18,14 @@ _HTML_WRITERS = {"rehearse", "workflow", "spec", "pages", "structure", "bind", "
 #   跑命令、`project_restore` 能回滚版本，没有已批准的计划就不许动。
 #   判据原来只列 HTML 那批，工程档整批写工具在闸外面还没人发现。
 #   （只读的 project_read / project_list / project_status… 不在这里，本来就不该要审批。）
-_PROJECT_WRITERS = {"project_create", "project_start", "project_patch", "project_exec", "project_verify", "project_restore"}
+_PROJECT_WRITERS = {
+    "project_create", "project_start", "project_patch", "project_write",
+    "project_str_replace", "file_write", "file_str_replace",
+    "write_file", "search_replace",
+    "shell_exec", "bash", "deploy_expose_port", "deploy_apply_deployment",
+    "browser_navigate", "browser_restart",
+    "project_exec", "project_verify", "project_restore",
+}
 WRITERS = _HTML_WRITERS | _PROJECT_WRITERS
 
 
