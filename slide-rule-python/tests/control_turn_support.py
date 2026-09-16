@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from app import app
 from conftest import TEST_USER_ID
 from models.v5_state import V5SessionState
+from plan_approval_support import approved_plan_rows
 from services.slide_rule_session import load_session, save_session
 from sliderule_llm.control_client import ControlLlmResult
 
@@ -39,26 +40,34 @@ def _seed_hop_artifact(state: V5SessionState) -> None:
     活路径在 v5_capability_executor 把 take_last_pages 写进 specFirstPages。
     夹具若不落 SPEC，pages 不会进清单，`必须调 pages` 的提示词也拼不出来——
     测的是「工厂空转」，不是「host 下一跳」。
+
+    ⚠ 第 7 格：host 交回后再挑 pages。上一版 `if spec not in tools: return`
+      且「已有 SPEC 就整段跳过」——pages 跳 stamp=['pages'] 时夹具什么都不落，
+      下一跳 blocker 说还没有页面。有 SPEC 仍要按本跳补 pages。
     """
     goal = state.goal if isinstance(state.goal, dict) else {}
     tools = list(goal.get("tools") or [])
-    # 首轮产出链也含 spec。只认 ["spec"] 的话，开始推演一口气跑四跳时
-    # 夹具不落 SPEC，交回提示词 / hasSpec 全假绿。
-    if "spec" not in tools:
-        return
     blob = state.specFirstPages if isinstance(state.specFirstPages, dict) else {}
-    spec = blob.get("spec")
-    if isinstance(spec, dict) and (spec.get("pages") or spec.get("nodes") or spec.get("appName")):
-        return
-    state.specFirstPages = {
-        **blob,
-        "spec": {
+    out = dict(blob)
+    changed = False
+    spec = out.get("spec")
+    has_spec = isinstance(spec, dict) and bool(
+        spec.get("pages") or spec.get("nodes") or spec.get("appName")
+    )
+    if ("spec" in tools or "rehearse" in tools) and not has_spec:
+        out["spec"] = {
             "appName": str(goal.get("text") or "应用")[:40],
             "pages": [{"id": "p1", "name": "首页"}],
             "nodes": [],
-        },
-        "pages": blob.get("pages") if isinstance(blob.get("pages"), dict) else {},
-    }
+        }
+        changed = True
+    pages = out.get("pages") if isinstance(out.get("pages"), dict) else {}
+    if any(t in tools for t in ("pages", "structure", "bind")) and not pages:
+        out["pages"] = {"p1": "<html>p1</html>"}
+        changed = True
+    if not changed:
+        return
+    state.specFirstPages = out
     save_session(state)
 
 
@@ -71,6 +80,8 @@ def six_fields(sid: str, user_text: str, **extra: Any) -> Dict[str, Any]:
         "preferredDevice": extra.pop("preferredDevice", "desktop"),
         "designSystemId": extra.pop("designSystemId", None),
     }
+    if extra.get("toolAnswer") is not None:
+        body["toolAnswer"] = extra.pop("toolAnswer")
     body.update(extra)
     return body
 
@@ -105,6 +116,18 @@ def seed_session(sid: str, **kwargs: Any) -> V5SessionState:
     }
     payload.update(kwargs)
     return save_session(V5SessionState(**payload))
+
+
+def seed_approved_session(sid: str, **kwargs: Any) -> V5SessionState:
+    """Execution tests opt in to the now-required server approval precondition."""
+    kwargs["controlTranscript"] = [
+        row for row in kwargs.get("controlTranscript", [])
+        if not str(row.get("kind", "")).startswith("plan_")
+    ] + approved_plan_rows()
+    if kwargs.get("awaitReason") == "control_scope":
+        kwargs["awaitReason"] = None
+        kwargs["awaitDetail"] = None
+    return seed_session(sid, **kwargs)
 
 
 def goal_text(state: Optional[V5SessionState]) -> str:
@@ -233,7 +256,8 @@ class ControlHarness:
                 yield {"type": "complete", "state": dump}
 
             return await run_registry.start_run(
-                str(session_id), gen, user_text=user_text or ""
+                str(session_id), gen, user_text=user_text or "",
+                owner_id=getattr(loaded, "ownerId", None),
             )
 
         def fake_llm(messages, **kwargs):

@@ -52,6 +52,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
@@ -298,9 +299,14 @@ class SessionBlobStore:
         return out
 
     def save(
-        self, session_id: str, payload: dict[str, Any], *, expected_rev: Optional[int]
+        self, session_id: str, payload: dict[str, Any], *, expected_rev: Optional[int],
+        expected_control_run: Optional[dict[str, Any]] = None,
     ) -> bool:
-        """写一条。返回 False = 被别人抢先改过（CAS 失败），调用方应重读重算。"""
+        """False means CAS/fence conflict; SQL failures propagate to the caller.
+
+        expected_control_run carries runId, ownerId, workerId and generation.
+        Both control tables and the session must be in this store's database.
+        """
         raise NotImplementedError
 
     def content_hash(self, payload: dict[str, Any]) -> str:
@@ -362,6 +368,65 @@ def _payload_bind_expr(is_sqlite: bool) -> str:
     return ":p" if is_sqlite else "cast(:p as jsonb)"
 
 
+def _controlled_save_statement(session_id, payload, expected_rev, fence, *, is_sqlite):
+    """Serialize lease takeover and the session CAS in the same SQL statement.
+
+    Postgres MVCC alone does not protect a cross-table EXISTS: lock the control
+    row until the session write commits. SQLite serializes writers itself.
+    Both transports execute this as one statement, including HTTP SQL.
+    """
+    if (not isinstance(fence, dict)
+            or any(not isinstance(fence.get(key), str) or not fence[key]
+                   for key in ("runId", "ownerId", "workerId"))
+            or type(fence.get("generation")) is not int or fence["generation"] < 1):
+        raise ValueError("invalid_control_session_fence")
+    if payload.get("sessionId") != session_id:
+        raise ValueError("control_session_id_mismatch")
+    if _owner_of(payload) != fence["ownerId"]:
+        raise ValueError("control_session_owner_mismatch")
+    proj = _list_projection(payload)
+    params = [session_id, json.dumps(payload, ensure_ascii=False), _now_iso(),
+              proj["owner"], proj["goal"], proj["phase"], proj["n_art"], expected_rev,
+              fence["runId"], fence["ownerId"], fence["generation"], fence["workerId"]]
+    clock = "(julianday('now') - 2440587.5) * 86400" if is_sqlite else "extract(epoch from clock_timestamp())"
+    cancelled = "json_extract(cr.payload, '$.cancelRequested') = 0" if is_sqlite else "cast(cr.payload as jsonb)->>'cancelRequested' = 'false'"
+    lock = "" if is_sqlite else " for update of cr"
+    materialized = "" if is_sqlite else "materialized "
+    cte = (
+        f"with owned_control as {materialized}(select cr.id, cr.lease_expires_at from wb_control_run cr "
+        "where cr.id=$9 and cr.session_id=$1 and cr.owner_id=$10 "
+        "and cr.generation=$11 and cr.lease_owner=$12 and cr.status='running' "
+        f"and cr.lease_expires_at > {clock} and {cancelled} "
+        "and exists(select 1 from wb_control_session cs where cs.session_id=cr.session_id "
+        "and cs.owner_id=cr.owner_id and cs.active_run_id=cr.id) "
+        "and not exists(select 1 from wb_control_cancel_request cc where cc.session_id=cr.session_id "
+        "and cc.owner_id=cr.owner_id and cc.idempotency_key=cr.idempotency_key)"
+        f"{lock}) "
+    )
+    # 2026-09-12 real PostgreSQL contention: filters can pass before a lock
+    # wait, then an unchanged row can outlive its lease while waiting. Check
+    # time after locking, including the target session lock on UPDATE.
+    owned = f"exists(select 1 from owned_control where lease_expires_at > {clock})"
+    blob = "$2" if is_sqlite else "cast($2 as jsonb)"
+    if expected_rev is None:
+        sql = (f"insert into {TABLE}(session_id,payload,rev,created_at,last_active,owner_id,goal_text,runtime_phase,artifact_count) "
+               f"select $1,{blob},1,$3,$3,$4,$5,$6,$7 where cast($8 as integer) is null and {owned} "
+               "on conflict(session_id) do nothing returning session_id")
+    else:
+        owner = "json_extract(payload, '$.ownerId')" if is_sqlite else "payload->>'ownerId'"
+        if not is_sqlite:
+            cte = cte.rstrip() + (
+                f", locked_session as materialized (select s.session_id, oc.lease_expires_at from {TABLE} s "
+                "cross join owned_control oc where s.session_id=$1 and s.rev=$8 "
+                "and s.payload->>'ownerId'=$10 for update of s) "
+            )
+            owned = f"exists(select 1 from locked_session where lease_expires_at > {clock})"
+        sql = (f"update {TABLE} set payload={blob},rev=rev+1,last_active=$3,owner_id=$4,goal_text=$5,runtime_phase=$6,artifact_count=$7 "
+               f"where session_id=$1 and rev=$8 and {owner}=$10 "
+               f"and {owned} returning session_id")
+    return cte + sql, params
+
+
 class SqlSessionBlobStore(SessionBlobStore):
     """SQLAlchemy 后端。payload 在 Postgres 上是 jsonb、在 SQLite 上是 text——
     读写两边都归一化成 dict，调用方看不出区别。"""
@@ -373,10 +438,11 @@ class SqlSessionBlobStore(SessionBlobStore):
         self._text = text
         # 连接参数与 app_store 对齐（pooler 走 NullPool + 关预编译语句缓存）：
         # 同一个库、同样的 PgBouncer 事务模式，参数不一致只会踩同一个坑两次。
-        from .sql_gateway import _sql_engine_config  # 复用，不重复实现
+        from .sql_gateway import _sql_engine_config, configure_sqlite_journal  # 复用，不重复实现
 
         connect_args, engine_kwargs = _sql_engine_config(database_url, NullPool)
         self._engine = create_engine(database_url, connect_args=connect_args, **engine_kwargs)
+        configure_sqlite_journal(self._engine)
         self._is_sqlite = database_url.startswith("sqlite")
         with self._engine.begin() as conn:
             conn.execute(text(_DDL_SQLITE if self._is_sqlite else _DDL_PG))
@@ -447,8 +513,16 @@ class SqlSessionBlobStore(SessionBlobStore):
         return out
 
     def save(
-        self, session_id: str, payload: dict[str, Any], *, expected_rev: Optional[int]
+        self, session_id: str, payload: dict[str, Any], *, expected_rev: Optional[int],
+        expected_control_run: Optional[dict[str, Any]] = None,
     ) -> bool:
+        if expected_control_run is not None:
+            sql, params = _controlled_save_statement(session_id, payload, expected_rev,
+                                                    expected_control_run, is_sqlite=self._is_sqlite)
+            sql = re.sub(r"\$(\d+)", lambda match: ":p" + match.group(1), sql)
+            with self._engine.begin() as conn:
+                result = conn.execute(self._text(sql), {f"p{i + 1}": value for i, value in enumerate(params)})
+                return result.first() is not None
         blob = self._encode(payload)
         payload_expr = _payload_bind_expr(self._is_sqlite)
         now = _now_iso()
@@ -584,8 +658,13 @@ class NeonHttpSessionBlobStore(SessionBlobStore):
         return out
 
     def save(
-        self, session_id: str, payload: dict[str, Any], *, expected_rev: Optional[int]
+        self, session_id: str, payload: dict[str, Any], *, expected_rev: Optional[int],
+        expected_control_run: Optional[dict[str, Any]] = None,
     ) -> bool:
+        if expected_control_run is not None:
+            sql, params = _controlled_save_statement(session_id, payload, expected_rev,
+                                                    expected_control_run, is_sqlite=False)
+            return self._rows_affected(sql, params) > 0
         blob = json.dumps(payload, ensure_ascii=False)
         now = _now_iso()
         proj = _list_projection(payload)

@@ -48,6 +48,34 @@ const surface = (turns: UiTurn[], isRunning = false) =>
   );
 
 describe("迭代环一期：编辑重跑 / 重新推演", () => {
+  it("empty state hides the runtime-mode pill even when project mode is available", () => {
+    const html = renderToStaticMarkup(<ClaudeChatSurface
+      uiTurns={[]} isRunning={false} liveAction={null} latestTurn={null}
+      onChallenge={() => {}}
+      projectCapabilities={{ mode: "internal", configured: true, canExecute: true }}
+    />);
+    expect(html).not.toContain("工程模式可用 · 确认计划后创建工程");
+    expect(html).not.toContain("HTML 推演兼容模式");
+    expect(html).not.toContain("当前：工程工作台模式");
+    expect(html).not.toContain('data-testid="sliderule-runtime-mode"');
+  });
+  it("工程档不挂质疑本轮 / 重新推演（结果卡已有重试）", () => {
+    const html = renderToStaticMarkup(
+      <ClaudeChatSurface
+        uiTurns={[completeTurn()]}
+        isRunning={false}
+        liveAction={null}
+        latestTurn={completeTurn()}
+        onChallenge={() => {}}
+        runtimeKind="project"
+      />
+    );
+    expect(html).not.toContain('data-testid="sliderule-rerun-turn"');
+    expect(html).not.toContain('data-testid="sliderule-challenge-turn"');
+    expect(html).not.toContain("重新推演");
+    expect(html).not.toContain("质疑本轮");
+  });
+
   it("完成轮带用户文本 → 两个按钮都渲染，且与质疑本轮同排", () => {
     const html = surface([completeTurn()]);
     expect(html).toContain('data-testid="sliderule-rerun-turn"');
@@ -61,6 +89,20 @@ describe("迭代环一期：编辑重跑 / 重新推演", () => {
     const html = surface([completeTurn({ user: "", main: null })]);
     expect(html).not.toContain('data-testid="sliderule-rerun-turn"');
     expect(html).not.toContain('data-testid="sliderule-edit-rerun"');
+  });
+
+  it("廉价提问轮没有产物 → 不渲染重新推演（那不是推演）", () => {
+    const html = surface([
+      completeTurn({
+        user: "你是谁",
+        assistant: "想做什么应用，说一句就行。",
+        main: null,
+        steps: [],
+      }),
+    ]);
+    expect(html).toContain("你是谁");
+    expect(html).toContain('data-answer-present="true"');
+    expect(html).not.toContain('data-testid="sliderule-rerun-turn"');
   });
 
   it("运行中 → 重新推演禁用（重入保护）", () => {
@@ -127,7 +169,7 @@ describe("产品对话列的六步钟（不打开轨迹也能看见）", () => {
    *
    *   现在按那个决定重写：只画会跑的那几步，不画死日历，仍然不许有假 ETA。
    */
-  it("钟只画会跑的那几步（skipped 不占格），无假 ETA", () => {
+  it("对话列顶上不挂六步钟（2026-09-15 用户圈了要移除）", () => {
     const clock = buildRehearsalClockView(startRehearsalCursor(), {
       isRunning: true,
     });
@@ -146,20 +188,9 @@ describe("产品对话列的六步钟（不打开轨迹也能看见）", () => {
         }}
       />
     );
-    expect(html).toContain('data-testid="sliderule-rehearsal-clock"');
-    // 会跑的那几格在，第一格是当前步
-    expect(html).toContain('data-step="2"');
-    expect(html).toContain('data-step="6"');
-    expect(html).toContain("起草 SPEC");
-    expect(html).toContain("汇合过闸");
-    // ★ 反向配对：跳过的格子不占位，也不许把状态漏到页面上
-    expect(html).not.toContain('data-step="1"');
-    expect(html).not.toContain('data-status="skipped"');
-    expect(html).toContain("大约数分钟，第一页会先出现");
-    expect(html).not.toContain("8–9");
-    expect(html).not.toContain("8 分钟");
-    expect(html).not.toContain("约 2 分钟");
-    expect(html).not.toContain("20 分钟");
+    expect(html).not.toContain('data-testid="sliderule-rehearsal-clock"');
+    expect(html).not.toContain("起草 SPEC");
+    expect(html).not.toContain("汇合过闸");
   });
 
   it("不传钟就不渲染 HUD（删掉 ClaudeChatSurface 的 rehearsalClock 必红）", () => {
@@ -167,7 +198,7 @@ describe("产品对话列的六步钟（不打开轨迹也能看见）", () => {
     expect(html).not.toContain('data-testid="sliderule-rehearsal-clock"');
   });
 
-  it("刷新后无进度格仍保留证据/token 行", () => {
+  it("刷新后对话列顶上也不挂证据/token 行", () => {
     const idleClock = buildRehearsalClockView(idleRehearsalCursor(), {
       isRunning: false,
     });
@@ -190,13 +221,127 @@ describe("产品对话列的六步钟（不打开轨迹也能看见）", () => {
           skillCount: 6,
           versionPinsChecked: false,
           topBlockers: [],
+          // 跟同一份夹具里的 tierCounts.hard_blocker 对齐：声明了一条硬拦截，
+          // blockerCount 就得是 1，不能一边说有一边说没有。
+          blockerCount: 1,
           tierCounts: { hard_blocker: 1, warning: 0, info: 0 },
         }}
       />
     );
-    expect(html).toContain('data-testid="sliderule-context-hud"');
+    expect(html).not.toContain('data-testid="sliderule-context-hud"');
     expect(html).not.toContain('data-testid="sliderule-rehearsal-clock"');
-    expect(html).toContain('data-token-known="false"');
-    expect(html).toContain("—");
+  });
+});
+
+describe("工程档对话：先开口再列动作，不把六步钟叠上去", () => {
+  const SPEECH = "我先把筛选改成顶部三段按钮，再核对登录态。";
+  const projectTurn = (): UiTurn =>
+    completeTurn({
+      status: "streaming",
+      assistant: "",
+      main: null,
+      steps: [
+        { id: "s1", kind: "model_speech", text: SPEECH },
+        {
+          id: "a",
+          kind: "chip",
+          capabilityId: "project_exec",
+          roleId: "system",
+          label: "运行命令",
+          realLlm: false,
+          progressType: "acting",
+        },
+      ],
+    } as Partial<UiTurn>);
+
+  it("散文在清单上面（把清单挂回整列最顶上必红）", () => {
+    const html = renderToStaticMarkup(
+      <ClaudeChatSurface
+        uiTurns={[projectTurn()]}
+        isRunning
+        liveAction={null}
+        latestTurn={projectTurn()}
+        onChallenge={() => {}}
+        runtimeKind="project"
+      />
+    );
+    const speechAt = html.indexOf('data-testid="sliderule-model-speech"');
+    const listAt = html.indexOf('data-testid="project-task-checklist"');
+    expect(speechAt).toBeGreaterThan(-1);
+    expect(listAt).toBeGreaterThan(-1);
+    expect(listAt).toBeGreaterThan(speechAt);
+    expect(html).toContain(SPEECH);
+    expect(html).toContain('data-testid="session-story"');
+  });
+
+  it("历史轮次也留章节——把 latestTurn 门加回去，上一轮开口必丢", () => {
+    const older = completeTurn({
+      id: "old",
+      durationMs: 120_000,
+      steps: [
+        { id: "s-old", kind: "model_speech", text: "先把工程搭起来。" },
+        {
+          id: "c-old",
+          kind: "chip",
+          capabilityId: "project_create",
+          roleId: "system",
+          label: "创建工程",
+          realLlm: false,
+          progressType: "completed",
+        },
+      ],
+    });
+    const newer = completeTurn({
+      id: "new",
+      durationMs: 30_000,
+      steps: [
+        { id: "s-new", kind: "model_speech", text: "接着改筛选。" },
+        {
+          id: "c-new",
+          kind: "chip",
+          capabilityId: "project_patch",
+          roleId: "system",
+          label: "写入源码",
+          realLlm: false,
+          progressType: "completed",
+        },
+      ],
+    });
+    const html = renderToStaticMarkup(
+      <ClaudeChatSurface
+        uiTurns={[older, newer]}
+        isRunning={false}
+        liveAction={null}
+        latestTurn={newer}
+        onChallenge={() => {}}
+        runtimeKind="project"
+      />
+    );
+    expect(html.match(/data-testid="session-story"/g) ?? []).toHaveLength(2);
+    expect(html).toContain("先把工程搭起来。");
+    expect(html).toContain("接着改筛选。");
+  });
+
+  it("工程档不挂六步钟——那是 HTML 推演的词汇", () => {
+    const runningClock = buildRehearsalClockView(startRehearsalCursor(), {
+      isRunning: true,
+    });
+    const html = renderToStaticMarkup(
+      <ClaudeChatSurface
+        uiTurns={[projectTurn()]}
+        isRunning
+        liveAction={null}
+        latestTurn={projectTurn()}
+        onChallenge={() => {}}
+        runtimeKind="project"
+        rehearsalClock={runningClock}
+        hud={{
+          gatedEvidenceCount: 0,
+          narrativeTokens: 0,
+          hasServerTokenFacts: false,
+        }}
+      />
+    );
+    expect(html).not.toContain('data-testid="sliderule-rehearsal-clock"');
   });
 });

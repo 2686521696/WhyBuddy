@@ -144,42 +144,29 @@ class Test接在流式那条链上:
         )
 
     def _hold_fn_code(self) -> str:
-        """`_drain_assumption_hold` 那个函数的代码（去注释、去 docstring）。
+        """Read the manual pause block from the actual streaming main loop.
 
-        ⚠ 2026-09-06 从"`take_hold()` 之后固定 N 字符的窗口"改成按 AST 切函数。
-          原因：那个窗口是个魔数。这一轮在通知和 `await` 之间补了"停泊态落库"
-          （SSE 只服务当前连着的客户端，刷新回来读的是 state），代码长了
-          二十来行，`.wait(` 就掉到 600 字符窗口外面 —— 判据报的是
-          `ValueError: substring not found`，**不是**"顺序错了"。
-          魔数窗口每次隔壁加几行就得回来调一次，而调它的人不知道该调多少。
+        SPEC decisions return to a questionnaire; they no longer use this gate.
+        AST boundaries keep these assertions independent of adjacent comments.
         """
         import ast
+        import inspect
 
-        import services.v5_full_driver as d
+        import services.v5_full_driver as driver
 
-        src = open(d.__file__, encoding="utf-8").read()
-        tree = ast.parse(src, filename=d.__file__)
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef))
-                and node.name == "_drain_assumption_hold"
-            ):
-                body = node.body
-                if (
-                    body
-                    and isinstance(body[0], ast.Expr)
-                    and isinstance(body[0].value, ast.Constant)
-                    and isinstance(body[0].value.value, str)
-                ):
-                    body = body[1:]  # docstring 里逐字引了修复前的写法
-                lines = src.splitlines(keepends=True)
-                code = "".join(
-                    lines[body[0].lineno - 1 : max(n.end_lineno or n.lineno for n in body)]
-                )
-                return "\n".join(
-                    ln for ln in code.splitlines() if not ln.lstrip().startswith("#")
-                )
-        raise AssertionError("驱动器里找不到 _drain_assumption_hold —— 接线被拆了")
+        tree = ast.parse(inspect.getsource(driver.drive_full_v5_session_stream))
+        loop = next(
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.While) and ast.unparse(node.test) == "loop < max_loops"
+        )
+        def assigns(node, name):
+            return isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == name
+                for target in node.targets
+            )
+        first = next(i for i, node in enumerate(loop.body) if assigns(node, "_pause_res"))
+        last = next(i for i, node in enumerate(loop.body) if assigns(node, "ui"))
+        return ast.unparse(ast.Module(body=loop.body[first:last], type_ignores=[]))
 
     def test_停住之前先报一声_前端才变得了形态(self):
         """⚠ 必须在**开始等之前** yield：等上了才报，卡片在整段等待期间都是
@@ -190,10 +177,13 @@ class Test接在流式那条链上:
         更细的同款判据见 tests/test_pause_visibility.py（按 AST 认 yield，
         防"退化成普通赋值时字面量还在原地"）。
         """
-        code = self._hold_fn_code()
-        started = code.index("run_pause_started")
-        waited = code.index("gate.wait(")
-        assert started < waited, "先等上了才报「已暂停」——中间那段前端是懵的"
+        import ast
+
+        tree = ast.parse(self._hold_fn_code())
+        started = [node.lineno for node in ast.walk(tree) if isinstance(node, ast.Yield) and "run_pause_started" in ast.dump(node)]
+        waited = [node.lineno for node in ast.walk(tree) if isinstance(node, ast.Await) and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Attribute) and node.value.func.attr == "wait"]
+        assert started and waited
+        assert min(started) < min(waited), "The pause notification must be yielded before waiting"
 
     def test_流式循环里真的调了安全点(self):
         """⚠ 反向判据：机制写对了 ≠ 它被调用了。
@@ -223,28 +213,41 @@ class Test接在流式那条链上:
         nxt = code.index("orchestrate_plan", at)
         assert at < nxt
 
-    def test_假设出口之后还有一道安全点(self):
-        """2026-09-03：spec-first 在 to_thread 里出卡。循环开头那道闸
-        已经过了（max_loops=1 的 hop 甚至没有下一圈）。必须在 execute
-        返回后再等，否则卡出来工厂还在跑。
+    def test_spec_decisions_return_to_control_without_a_dedicated_pause(self):
+        """Saved SPEC decisions end the factory call before closure generation.
 
-        变异：把 `_drain_assumption_hold` 的调用点删掉 → 本条红。
+        The live HTTP/pipeline test is in test_spec_decisions_questionnaire; this
+        guards the retired pause boundary without requiring its deleted helper.
         """
-        code = self._driver_code()
-        loops = [m.start() for m in re.finditer(r"while loop < max_loops:", code)]
-        stream = code[loops[1] :]
-        # ⚠ 2026-09-06 改成认 `async for`。`_drain_assumption_hold` 从"返回 list
-        #   的协程"改成了 async generator —— 停泊通知必须在 `await` 之前就流到
-        #   前端，攒成 list 再交等于等完了才通知（真机迟到 3 秒，前端 runPaused
-        #   点不亮）。原判据认的是 `await _drain_assumption_hold()`，改完之后
-        #   量到 0 个调用点，报的是"两条 execute 都要接"而不是"形式变了"。
-        calls = list(
-            re.finditer(r"async for \w+ in _drain_assumption_hold\(\)", stream)
-        )
-        assert len(calls) >= 2, "并行批和串行两条 execute 都要在返回后等假设闸"
-        for match in calls:
-            window = stream[max(0, match.start() - 500) : match.start()]
-            assert ".result()" in window, "假设闸没接在 to_thread 返回之后——卡出来停不住"
+        import ast
+        import inspect
+
+        import services.v5_full_driver as driver
+
+        tree = ast.parse(inspect.getsource(driver.drive_full_v5_session_stream))
+        names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+        assert "_drain_assumption_hold" not in names
+        assert "_assumption_q" not in names
+        stops = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.If)
+            and isinstance(node.test, ast.Call)
+            and isinstance(node.test.func, ast.Name)
+            and node.test.func.id == "_spec_decisions_pending"
+            and any(isinstance(child, ast.Return) for child in ast.walk(node))
+        ]
+        assert len(stops) == 1
+        stop = stops[0]
+        assert any(
+            isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and any(isinstance(arg, ast.Name) and arg.id == "_park_spec_decisions" for arg in node.args)
+            for node in ast.walk(stop)
+        ), "SPEC must be persisted before the control handback"
+        assert any(
+            isinstance(node, ast.Yield) and isinstance(node.value, ast.Dict)
+            and any(isinstance(value, ast.Constant) and value.value == "complete" for value in node.value.values)
+            for node in ast.walk(stop)
+        ), "The control host needs a complete event before it can ask the questionnaire"
 
     def test_三种没答的结局都不许把这一轮判死(self):
         """暂停不是取消。真机实测取消 → publishClosure=null、白烧一轮；

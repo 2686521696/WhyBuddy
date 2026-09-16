@@ -74,4 +74,17 @@ describe("卡片渲染", () => {
     expect(html).toContain("医生与护士");
     expect(html).toContain("决定权限怎么切");
   });
+
+  it("卡面抄 Cursor 文件卡：近黑下一步，不是蓝问卷", () => {
+    const html = render({ defaultAnswer: "医生与护士" });
+    expect(html).toContain('data-clarification-surface="cursor"');
+    expect(html).toContain("rounded-[12px]");
+    expect(html).toContain("bg-[#171717]");
+    expect(html).toContain("问题");
+    expect(html).toContain("推荐");
+    expect(html).not.toContain("#1677ff");
+    expect(html).not.toContain("#EBCEC0");
+    expect(html).not.toContain("待回答问题");
+    expect(html).not.toContain("批量");
+  });
 });

@@ -73,9 +73,10 @@ def _finished_ttl_seconds() -> float:
 
 
 class Run:
-    def __init__(self, run_id: str, session_id: str):
+    def __init__(self, run_id: str, session_id: str, *, owner_id: Optional[str] = None):
         self.run_id = run_id
         self.session_id = session_id
+        self.owner_id = owner_id
         # 终态：running | complete | error | cancelled（模块头那条 LangGraph 对齐）
         # 过渡态：cancelling —— **已请求停止、但还没停**
         #
@@ -218,6 +219,7 @@ async def start_run(
     ] = None,
     *,
     user_text: str = "",
+    owner_id: Optional[str] = None,
 ) -> Run:
     """启动（或附着）一个后台推演 run。
 
@@ -228,9 +230,11 @@ async def start_run(
     _sweep_finished()
     existing = get_active_run(session_id)
     if existing is not None:
+        if existing.owner_id != owner_id:
+            raise PermissionError("run owner mismatch")
         return existing
 
-    run = Run(uuid.uuid4().hex[:16], session_id)
+    run = Run(uuid.uuid4().hex[:16], session_id, owner_id=owner_id)
     _runs[run.run_id] = run
     _active_by_session[session_id] = run.run_id
 

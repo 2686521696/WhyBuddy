@@ -61,12 +61,14 @@ export function deriveBindingSource(
     const table = (runtime?.entities?.[entity.id] ?? []).map(flatten);
     rows[entity.id] = table;
     const qty = runtime?.cartQty?.[entity.id] ?? {};
-    cartRows[entity.id] = Object.entries(qty)
-      .map(([id, n]) => {
-        const row = table.find(r => String(r.id) === id);
-        return row ? { ...row, qty: n } : null;
-      })
-      .filter((r): r is BindingRow => r != null);
+    // ⚠ 原来是 `.map(... : null).filter((r): r is BindingRow => r != null)`：
+    //   数组里混了 null（TS2322），而谓词 `r is BindingRow` 又不是元素类型
+    //   `{qty} | null` 的子类型（TS2677）。flatMap 一步不产生 null，两条
+    //   一起消掉，运行期行为不变（找不到对应行就不产出这一条）。
+    cartRows[entity.id] = Object.entries(qty).flatMap(([id, n]) => {
+      const row = table.find(r => String(r.id) === id);
+      return row ? [{ ...row, qty: n }] : [];
+    });
   }
   const selected = runtime?.selection;
   const extra =

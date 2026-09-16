@@ -235,8 +235,17 @@ export function buildRehearsalClockView(
     currentStep: current,
     currentLabel: live?.label ?? null,
     steps,
-    wallClockCopy: opts.isRunning ? REHEARSAL_WALL_CLOCK_COPY : "",
+    wallClockCopy:
+      opts.isRunning && current != null ? REHEARSAL_WALL_CLOCK_COPY : "",
   };
+}
+
+/** 钟格只在真正点火后出现。跑着但 currentStep 空 = 廉价回合，不许铺六格日历。 */
+export function rehearsalClockShowSteps(clock: RehearsalClockView): boolean {
+  return (
+    clock.currentStep != null ||
+    clock.steps.some(step => step.status !== "pending")
+  );
 }
 
 export function deriveContextHudFacts(

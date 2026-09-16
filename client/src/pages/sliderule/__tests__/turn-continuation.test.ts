@@ -70,6 +70,12 @@ describe("认出续跑", () => {
     expect(isContinuationTurn("进入数据模型反推（Structure）")).toBe(true);
   });
 
+  it("闭集芯片是 typed 答案，不是新话题", () => {
+    // ⚠ 2026-09-07 真机水果店：点「精修（refine）」左栏画成用户原话。
+    expect(isContinuationTurn("精修（refine）")).toBe(true);
+    expect(isContinuationTurn("refine")).toBe(true);
+  });
+
   it("刷新续播那句用户没说过，也是续跑", () => {
     expect(isContinuationTurn("（续播上一轮推演）")).toBe(true);
   });
@@ -201,9 +207,16 @@ describe("接在真链路上", () => {
     )
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/^\s*\/\/.*$/gm, "");
-    expect(src).toMatch(/continuation:\s*isContinuationTurn\(turn\.user\)/);
+    // ⚠ 2026-09-13 起必须是**认标记**那一版：自动续跑没有用户文本，
+    //   `isContinuationTurn(turn.user)` 在它身上恒为 false，折叠会静默失效。
+    expect(src).toMatch(/continuation:\s*turnIsContinuation\(turn\)/);
+    expect(src).not.toMatch(/continuation:\s*isContinuationTurn\(turn\.user\)/);
     // memo 依赖漏了 turn.user = 切换时不重算，左栏还是旧的那份
     expect(src).toMatch(/turn\.user,/);
+    // ⚠ 同理：标记是 step，而 textFromStep 不认这个 kind（有意的），所以
+    //   `turn.steps.map(textFromStep)` 那条依赖在标记到达时**不会变**。
+    //   少这一条 = 折叠不重算，等于白改。
+    expect(src).toMatch(/turnHasContinuationMark\(turn\),/);
   });
 });
 
@@ -441,9 +454,35 @@ describe("续跑接在上一段后面", () => {
     const from = src.indexOf("let turnId = ");
     expect(from).toBeGreaterThan(-1);
     const body = src.slice(from, src.indexOf("try {", from) + 40);
-    expect(body).toContain("if (resumeRun)");
+    expect(src).toContain("toolAnswer");
+    expect(body).toContain("if (skipUserBubble)");
     expect(body).toContain("user: \"\"");
     expect(body).toMatch(/if \(last\)/);
+    const runTurn = src.slice(
+      src.indexOf("const runTurn = async"),
+      src.indexOf("const requestRehearsal = async")
+    );
+    expect(runTurn).toContain("pendingToolAnswerRef");
+    expect(runTurn).toContain('awaitReason === "control_ask"');
+    expect(runTurn).toContain("parkedAsk");
+    expect(runTurn).toContain('kind: "ask_user"');
+    expect(runTurn).not.toContain('kind: "assumptions"');
+    expect(runTurn).toContain('kind: "clarify"');
+    expect(runTurn).toContain("skipUserBubble");
+    expect(runTurn).toContain("isContinuationTurn(userText)");
+    expect(runTurn).not.toMatch(
+      /skipUserBubble = Boolean\(resumeRun\) \|\| Boolean\(toolAnswer\)/
+    );
+    expect(runTurn).toContain("...(toolAnswer ? { toolAnswer } : {})");
+    const sendFn = src.slice(
+      src.indexOf("const sendMessage = async"),
+      src.indexOf("const repairGaps = async")
+    );
+    expect(sendFn).toContain("toolAnswer: answer");
+    expect(sendFn.indexOf("const answer = pendingNeed")).toBeLessThan(
+      sendFn.indexOf("pendingAskRef.current = null")
+    );
+    expect(sendFn).not.toContain("pendingToolAnswerRef.current =");
   });
 
   it("★ §1 接在真链路上：气泡列表真的走了折叠", () => {
@@ -502,14 +541,19 @@ describe("续跑的状态条不许报开场", () => {
     return "";
   };
 
-  it("开场芯片和「规划第一轮」都在「不是续跑」那个块**里面**", () => {
+  it("开场芯片和「规划第一轮」都在 factoryLit 且不是续跑那个块**里面**", () => {
     const src = code();
-    // ⚠ 判据不许用「往后数 900 个字符」那种窗口：把 setLiveAction 挪到 if
-    //   外面一行，它照样落在窗口里——变异不红。必须数花括号，取真正的块。
-    const block = blockAfter(src, "if (!isContinuationTurn(userText)) {");
-    expect(block).not.toBe("");
-    expect(block).toContain("指令已接收 · 启动推理");
-    expect(block).toContain("规划第一轮能力与路线");
+    const inner = blockAfter(
+      src,
+      "if (!isContinuationTurn(userText) && !toolAnswer)"
+    );
+    expect(inner).not.toBe("");
+    expect(inner).toContain("指令已接收 · 启动推理");
+    expect(inner).toContain("规划第一轮能力与路线");
+    const planAt = src.indexOf("规划第一轮能力与路线");
+    const factoryIf = src.lastIndexOf("if (factoryLit)", planAt);
+    expect(factoryIf, "规划第一轮必须包在 factoryLit 里").toBeGreaterThan(-1);
+    expect(factoryIf).toBeLessThan(planAt);
   });
 
   it("续跑那一支要说清这一跳在干什么，不许留空", () => {

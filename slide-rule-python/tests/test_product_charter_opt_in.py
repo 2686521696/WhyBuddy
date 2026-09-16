@@ -220,7 +220,7 @@ def test_control_turn信封把reuseCharter送到工厂命名字段(monkeypatch):
     from control_turn_support import (  # noqa: E402
         ControlHarness,
         new_sid,
-        seed_session,
+        seed_approved_session as seed_session,
         six_fields,
     )
 
@@ -276,11 +276,14 @@ def test_工厂命名字段即使控制面ContextVar被清也注入(monkeypatch)
     monkeypatch.setattr(run_registry, "start_run", inline_start)
 
     sid = "s-factory-named-charter"
+    from plan_approval_support import approved_plan_rows
+
     save_session(
         V5SessionState(
             sessionId=sid,
             ownerId="u-factory-named",
             goal={"text": "做个应用", "status": "clear"},
+            controlTranscript=approved_plan_rows(),
         )
     )
     pc.clear_charter_for_run()
@@ -310,7 +313,7 @@ def test_分一变体追加modelVersions且不粘源会话(monkeypatch):
         ControlHarness,
         event_types,
         new_sid,
-        seed_session,
+        seed_approved_session as seed_session,
         six_fields,
     )
 

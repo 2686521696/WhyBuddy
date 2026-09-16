@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 
 from control_turn_support import KEY, client, new_sid, seed_session
-from services.rehearsal_control import _scope_confirmed
+from services.scope_authority import plan_execution_authorized
 from services.slide_rule_session import load_session
 
 pytest.importorskip("fastapi")
@@ -23,11 +23,14 @@ PUT = "/api/sliderule/sessions/{sid}"
 
 
 def _seed_confirmed(sid: str):
+    plan = {"planId": "plan-1", "revision": 1, "planContent": "Build a leave app"}
     return seed_session(
         sid,
         goal={"text": "请假系统", "status": "clear"},
         controlTranscript=[
-            {"id": "ct-1", "kind": "scope_confirmed", "text": "请假系统"}
+            {"id": "ct-1", "kind": "plan_written", **plan},
+            {"id": "ct-2", "kind": "plan_approval", "reqId": "approval-1", **plan},
+            {"id": "ct-3", "kind": "plan_approved", "reqId": "approval-1", **plan},
         ],
     )
 
@@ -45,8 +48,8 @@ def test_stale_put_cannot_erase_scope_confirmation():
     assert res.status_code == 200, res.text[:400]
     saved = load_session(sid)
     kinds = [r.get("kind") for r in (saved.controlTranscript or [])]
-    assert "scope_confirmed" in kinds, "陈旧 PUT 把范围确认抹掉了"
-    assert _scope_confirmed(saved) is True
+    assert "plan_approved" in kinds
+    assert plan_execution_authorized(saved) is True
 
 
 def test_stale_put_cannot_erase_clarify_questions():
@@ -104,3 +107,4 @@ def test_client_still_writes_the_fields_it_owns():
     assert res.status_code == 200, res.text[:400]
     saved = load_session(sid)
     assert (saved.goal or {}).get("text") == "改成报销系统"
+    assert not plan_execution_authorized(saved), "Changed product goals require a revised plan"

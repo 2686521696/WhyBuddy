@@ -21,7 +21,7 @@ from control_turn_support import (
     event_types,
     llm_text,
     new_sid,
-    seed_session,
+    seed_approved_session as seed_session,
     six_fields,
 )
 from services.rehearsal_control import CLOSED_TOOLS, _TERMINAL_EVENTS

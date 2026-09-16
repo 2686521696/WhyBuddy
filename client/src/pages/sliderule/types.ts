@@ -22,10 +22,50 @@ export type TurnStep =
       source: "llm" | "fallback";
       isFinal?: boolean;
     }
+  /**
+   * 模型在动手之前对用户说的那段话（`control_text`）。
+   *
+   * ⚠ 故意**不复用** `narration`：narration 会被 `linesFromTurnSteps` 收进
+   * 左栏活动列表，模型散文进去就变成跟「第 1 轮 · 正在执行 planning」同等
+   * 分量的一行，正是要修的那个观感。这个 kind 不被 `textFromStep` 和
+   * `linesFromTurnSteps` 认领，所以只在正文里以段落出现，不会双渲染。
+   */
+  | {
+      id: string;
+      kind: "model_speech";
+      text: string;
+      round?: number;
+    }
+  /**
+   * 自动续跑那一轮的**显式标记**（服务端 `control_continuation` 事件）。
+   *
+   * ⚠ 存在的唯一理由是「认标记不认话」：自动续跑没有用户文本，靠匹配机器
+   * 排的句子来识别续跑那条路在这里必然断。见 turn-continuation.ts 的
+   * `turnHasContinuationMark` 头注。
+   *
+   * 它不进左栏活动列表（linesFromTurnSteps 不认它），也不算一步——它是这一轮
+   * 的一个属性，不是一个动作。
+   */
+  | {
+      id: string;
+      kind: "continuation_mark";
+      attempt: number;
+      blockedReasons?: string[];
+    }
   | {
       id: string;
       kind: "chip";
-      capabilityId: V5CapabilityId;
+      /**
+       * ⚠ 工程档的 chip 装的是**控制面工具名**（`project_create` 等），
+       *   不是五系统能力池里的 id。产线本来就这么写，只是靠 4 处
+       *   `as never` 绕过这个字段的类型——生产侧硬转、消费侧
+       *   (`isProjectChip`) 再拿 `.startsWith("project_")` 重新解析，
+       *   正是 §4 那种「同一件事两处实现」的逃生口。
+       *
+       *   模板字面量放宽到**恰好**等于 isProjectChip 认的那一集，
+       *   那 4 处 as never 就可以去掉，判据也不必再陪着转。
+       */
+      capabilityId: V5CapabilityId | `project_${string}`;
       roleId: string;
       label: string;
       realLlm: boolean;
@@ -36,6 +76,20 @@ export type TurnStep =
         | "observing"
         | "completed"
         | "failed";
+      /**
+       * 工程动作的**结构化**细节（真实命令 / 版本迁移 / 退出码 / 错误码），
+       * 由 `projectActionDetail` 从工具结果事件里取。
+       *
+       * ⚠ 存在的理由是「不要去解析 label 里的文字」：本仓在前缀匹配和
+       * 锚点窗口上栽过多次，文案一改判据就哑。见 `project-activity.ts` 头注。
+       */
+      projectDetail?: string;
+      /**
+       * 这一步对应的远端操作 id。服务端 `control_tool_result` 一直带着它，
+       * 前端此前全程丢掉——于是拿不到它就订阅不了沙箱命令行输出
+       * （`useSandboxLog`）。2026-09-14 补上。
+       */
+      operationId?: string;
     }
   | {
       id: string;

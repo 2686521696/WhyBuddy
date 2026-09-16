@@ -156,6 +156,18 @@ def set_clarifications(pairs: "Optional[List[Dict[str, str]]]") -> None:
     _clarifications_var.set(cleaned or None)
 
 
+_approved_plan_var: ContextVar[str] = ContextVar("sliderule_approved_plan", default="")
+
+
+def set_approved_plan(content: Optional[str]) -> None:
+    _approved_plan_var.set(str(content or ""))
+
+
+def approved_plan_prompt_block() -> str:
+    content = _approved_plan_var.get()
+    return f"User-approved implementation plan. Follow this exact revision:\n{content}" if content else ""
+
+
 def clarification_prompt_block() -> str:
     """开工前问清楚的那几条 → 一段"用户已经答过，按这个来"的硬约束。
 

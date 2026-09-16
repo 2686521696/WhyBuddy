@@ -102,14 +102,6 @@ describe("isAttachmentExtractPending / isComposerSendBlocked", () => {
         isRunning: false,
         input: "给社区做随访",
         attachments: [],
-        isJudging: true,
-      })
-    ).toBe(true);
-    expect(
-      isComposerSendBlocked({
-        isRunning: false,
-        input: "给社区做随访",
-        attachments: [],
         isRefining: true,
       })
     ).toBe(true);
@@ -118,7 +110,6 @@ describe("isAttachmentExtractPending / isComposerSendBlocked", () => {
         isRunning: false,
         input: "给社区做随访",
         attachments: [],
-        isJudging: false,
         isRefining: false,
       })
     ).toBe(false);
@@ -127,7 +118,6 @@ describe("isAttachmentExtractPending / isComposerSendBlocked", () => {
         isRunning: true,
         input: "给社区做随访",
         attachments: [],
-        isJudging: true,
         isRefining: true,
       })
     ).toBe(true);
@@ -136,7 +126,6 @@ describe("isAttachmentExtractPending / isComposerSendBlocked", () => {
         isRunning: true,
         input: "给社区做随访",
         attachments: [],
-        isJudging: false,
         isRefining: false,
       })
     ).toBe(false);
@@ -240,7 +229,6 @@ describe("ComposerDock 解析中发送闸接在通电链上", () => {
       src.indexOf("const [installedSkills")
     );
     expect(doSend).toContain("isComposerSendBlocked");
-    expect(doSend).toContain("isJudging");
     expect(doSend).toContain("isRefining");
     // 闸在清附件之前：否则解析中一点发送，卡立刻消失、后台偷偷发
     expect(doSend.indexOf("isComposerSendBlocked")).toBeLessThan(

@@ -525,13 +525,15 @@ def test_delete_session_unbinds_app_keeps_card(env):
 
 def test_delete_app_drops_bound_session(env):
     """对照 GitHub 删仓库：挂着的工作区一并没。"""
-    from services.slide_rule_session import create_session, load_session, save_session
+    from services.slide_rule_session import load_session, save_session
+    from models.v5_state import V5SessionState
+    from uuid import uuid4
 
     store, c = env["store"], env["client"]
-    sid = "sr-cascade-1"
-    st = create_session("工单", session_id=sid)
-    st.ownerId = env["alice"]["user"]["id"]
-    save_session(st)
+    sid = f"sr-cascade-{uuid4().hex}"
+    save_session(V5SessionState(
+        sessionId=sid, ownerId=env["alice"]["user"]["id"], goal={"text": "工单"},
+    ))
     aid = store.save_app(
         {"appbundle": {"appIdentity": {"productName": "工单"}}},
         goal="工单", session_id=sid, gate_passed=True,

@@ -57,7 +57,7 @@ export function isMotionReduced(): boolean {
   }
 }
 
-/** 把偏好落到根元素 class（CSS 覆盖 sr-dot / sr-caret 等动画）。 */
+/** 把偏好落到根元素 class（CSS 覆盖 sr-caret 等动画）。思考球走 paused。 */
 export function applyReduceMotionClass(): void {
   try {
     document.documentElement.classList.toggle(

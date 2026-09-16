@@ -15,7 +15,6 @@ import { buildStructuredReport } from "@shared/blueprint/sliderule-report-builde
 import { buildCapabilityPrompt } from "@shared/blueprint/sliderule-capability-prompts";
 // 技能库六期"推演注入"：已安装技能随 drive-full 请求进生成契约（纯本地读取，无环）
 import { installedSkillsDrivePayload } from "./installed-skills";
-import { parseSpecAssumptions } from "./spec-assumptions";
 import { layoutDevice } from "./product-archetypes";
 import {
   loadTurnCapabilities,
@@ -29,9 +28,74 @@ import {
  * 推一遍——抄 grok 的 CancelledBy："shipped anyway, so hosts do not re-derive
  * it as reasons are added"。自己推的那份，新增原因时必然漂。
  */
+/**
+ * 控制面问答的线上形状（grok `Question` / `QuestionOption`）。
+ *
+ * 声明在传输层，页面消费它；底层驱动不能反向依赖页面目录。
+ */
+export type ControlQuestionWire = {
+  id: string;
+  question: string;
+  options: { label: string; description?: string; preview?: string }[];
+  multiSelect?: boolean;
+};
+
+export type ControlPlanApprovalWire = {
+  reqId: string;
+  planContent: string;
+};
+
+export type ControlToolAnswer = {
+  kind: string;
+  text?: string;
+  reqId?: string;
+  outcome?: "accepted" | "cancelled" | "chat" | "chat_about_this" | "skip" | "skip_interview" | "approved" | "abandoned";
+  answers?: Record<string, string[]>;
+  notes?: Record<string, string>;
+  feedback?: string;
+};
+
+/**
+ * 控制面这一回合为什么没跑完。**跟 Python 的 `ControlStopReason` 一一对应。**
+ *
+ * ⚠ 2026-09-14 复审逮到：这里原来是一行注释
+ *   `wall_clock | token_budget | tool_rounds | llm_unavailable | unknown`
+ *   加一个 `stopReason: string`。而服务端 2026-09-09 就加了 `stationarity`，
+ *   注释一直没跟上——类型是 string，**编译不会报错**，静默漂移，
+ *   正是 CLAUDE.md §4 那张表上的「Python 判定 / TypeScript 运行时」。
+ *
+ *   现在改成真的联合类型，并且由
+ *   `__tests__/control-stop-reason-matches-python.test.ts` 直接去读
+ *   `rehearsal_control.py` 的 enum 比对——服务端再加一个原因而这里没跟，
+ *   判据当场红。光把 stationarity 补进注释治不了下一次。
+ */
+export const CONTROL_STOP_REASONS = [
+  "wall_clock",
+  "token_budget",
+  "tool_rounds",
+  "stationarity",
+  "llm_unavailable",
+  "unknown",
+] as const;
+
+export type ControlStopReason = (typeof CONTROL_STOP_REASONS)[number];
+
+/**
+ * 把线上收到的原始字符串收进闭集。
+ *
+ * 抄服务端 `ControlStopReason.UNKNOWN` 的那句注释——「新原因先落这儿，
+ * 直到有人给它起名字。**绝不构造成上面任何一种**」。认不出来的降级成
+ * `unknown`，而不是让一个没建模的字符串漏进 UI 再去 switch 它。
+ */
+export function asControlStopReason(raw: unknown): ControlStopReason {
+  const text = String(raw ?? "").trim();
+  return (CONTROL_STOP_REASONS as readonly string[]).includes(text)
+    ? (text as ControlStopReason)
+    : "unknown";
+}
+
 export type ControlStop = {
-  /** wall_clock | token_budget | tool_rounds | llm_unavailable | unknown */
-  stopReason: string;
+  stopReason: ControlStopReason;
   /** runtime（我们的闸，再试可能有用）| provider（模型/网关）| unknown */
   stoppedBy: string;
   /** 到顶的那个限额本身（抄 turn_hook 的 cancellation_context）。 */
@@ -243,6 +307,8 @@ export type SkillId = "dataModel" | "workflow" | "rbac" | "page" | "aigc" | "app
 
 export interface DriveFullStreamOpts {
   stopSignal?: AbortSignal;
+  controlRequestId?: string;
+  onControlRunId?: (runId: string) => void;
   maxLoops?: number;
   turnId?: string;
   /** E26 缺口修复轮：只重跑覆盖门标红的能力，已 PASS 产物原样复用。 */
@@ -327,22 +393,6 @@ export interface DriveFullStreamOpts {
    *  改名是一等事件、自带两头，且那边 `requires_reparse()` 返回
    *  `false // Only path update needed`——这里同理，只换键，HTML 不用重取。 */
   onSpecPageRenamed?: (rename: { from: string; to: string }) => void;
-  /** 伴随式澄清：spec-first 第 2 步**替用户定下的事**（2026-08-27）。
-   *
-   *  它不是提问，不阻塞，也不需要回答。推演照常往下跑，这些只是把模型
-   *  已经做的决定摊开——「员工登录我定成了手机号，也可以是工号」。
-   *  用户改哪条，就把那条改动接进中途排队（本轮结束自动发出），
-   *  走的是已经验证过的「用户 → AI」那条路，不新开通道。
-   *
-   *  ⚠ 第 2 步在整轮的第 1~2 分钟，而整轮 8~10 分钟。这个回调存在的全部
-   *  理由就是别等到最后——那时候用户唯一能做的只剩整轮重来。 */
-  onSpecAssumptions?: (items: Array<{
-    id: string;
-    topic: string;
-    decision: string;
-    alternatives: string[];
-    why: string;
-  }>) => void;
   /** 图判降级 / 孤岛 / 对比。只报不拦，必须能在交付面看见。 */
   onQualityNotice?: (note: {
     kind: string;
@@ -351,6 +401,12 @@ export interface DriveFullStreamOpts {
   }) => void;
   /** E25：后端 run id（事件里首见即回调一次）——客户端记书签供刷新后续播。 */
   onRunId?: (runId: string) => void;
+  /** 活儿清单更新（抄 grok todo_write：用户看得见才算数）。 */
+  onControlTodo?: (payload: {
+    todos: unknown[];
+    summary: string;
+    line: string;
+  }) => void;
   /** E25：仅当服务端亲口宣布 run 终局（complete / run_cancelled / error
    *  事件到达）时回调一次。纯连接断开（刷新/跳页/网络抖动）不触发——
    *  run 仍在后台跑，续播书签必须保留。 */
@@ -423,6 +479,11 @@ export interface DriveFullStreamOpts {
    *   澄清这条链 2026-08-27 之前就断在这儿：问了等于没问。
    */
   answeredGaps?: Array<{ gapId: string; answer: string }>;
+  /**
+   * 停泊提问的回执（grok NeedUserAnswer）。
+   * 有它时服务端不当成新的 user turn。
+   */
+  toolAnswer?: ControlToolAnswer;
   /** 产品宪章 opt-in。只在确认推演时带，缺省不送，免得问候把账户旗清掉。 */
   reuseCharter?: boolean;
   productCharter?: {
@@ -446,6 +507,9 @@ export interface DriveFullStreamOpts {
   onControlAskUser?: (event: {
     question: string;
     options?: string[];
+    /** 抄 grok `AskUserQuestion`：一发几道题，每项带解释。缺席 = 老形状。 */
+    questions?: ControlQuestionWire[];
+    reqId?: string;
   }) => void;
   /**
    * 开工前澄清。事件自带 questions[] / kindLabel / productStep，
@@ -465,18 +529,30 @@ export interface DriveFullStreamOpts {
     label?: string;
     productStep?: number;
   }) => void;
-  onControlScopeCard?: (event: {
-    restatement: string;
-    device?: string;
-    productArchetype?: string;
-    wiredArchetypes?: Array<{ id: string; label: string }>;
-    wiredDevices?: Array<{ id: string; label: string }>;
-    variant?: string;
-    userText?: string;
-    charterReuseNext?: boolean;
-    tools?: string[];
+  onControlPlanApproval?: (event: ControlPlanApprovalWire) => void;
+  /** A persisted terminal snapshot can still belong to a failed control run. */
+  onControlState?: (state: V5SessionState) => void;
+  /** Durable project references, independent from completion of the model turn. */
+  onControlProjectState?: (event: {
+    sessionId: string;
+    runtimeKind: "project";
+    projectId: string;
+    projectRevision: string;
   }) => void;
-  onControlToolStart?: (tool: string) => void;
+  /**
+   * 工具开场。`summary` 是服务端按白名单生成的**脱敏**摘要（改了哪个文件 /
+   * 跑的哪条命令），见 Python 侧 `project_tool_summary`——没有就是没有，
+   * 消费侧不许自己从别处拼一个。
+   */
+  onControlToolStart?: (tool: string, summary?: string) => void;
+  /**
+   * 自动续跑那一轮的显式标记。服务端在 run 被 scanner 叫回来之后发一次，
+   * 前端据此折叠（认标记不认话，见 turn-continuation 头注）。
+   */
+  onControlContinuation?: (event: {
+    attempt: number;
+    blockedReasons: string[];
+  }) => void;
   onControlToolResult?: (event: Record<string, unknown>) => void;
 }
 
@@ -600,14 +676,6 @@ function applyFactoryStreamEvent(
       if (from && to && from !== to) opts.onSpecPageRenamed?.({ from, to });
       return "continue";
     }
-    case "spec_assumption": {
-      // 服务端已经洗过一遍（spec_tree._sanitize_assumptions）。这里再洗一次
-      // 不是不信任它，是这条流也接老后端 / 续播缓存——形状不对宁可少渲染
-      // 一张卡，不许把 undefined 摊到面板上。跟落库那份同一把尺子。
-      const items = parseSpecAssumptions(event.items);
-      if (items.length > 0) opts.onSpecAssumptions?.(items);
-      return "continue";
-    }
     case "quality_notice": {
       const text = String(event.text || "").trim();
       const kind = String(event.kind || "").trim() || "note";
@@ -620,6 +688,16 @@ function applyFactoryStreamEvent(
       }
       return "continue";
     }
+    // 活儿清单（2026-09-09，抄 grok todo_write）：模型自己列的步骤。
+    // ⚠ 工具说明写着「用户看得见这张清单」——这条事件就是那半句的载体。
+    //   服务端发了、客户端不认，那半句就是假话（CLAUDE.md §4 生成侧/消费侧）。
+    case "control_todo":
+      opts.onControlTodo?.({
+        todos: Array.isArray(event.todos) ? event.todos : [],
+        summary: String(event.summary || ""),
+        line: String(event.line || ""),
+      });
+      return "continue";
     case "run_pause_started":
       opts.onRunPause?.("started", { where: String(event.where || "") });
       return "continue";
@@ -860,7 +938,7 @@ export async function consumeDriveStreamResponse(
 /**
  * 产品新烧：POST /api/sliderule/control-turn-stream。
  * 六字段必须带上（installedSkillsDrivePayload / pickedConnectorIds）。
- * 续播不走这里——续播是 GET /runs/{id}/stream。
+ * 控制回合续播走 GET /control-runs/{id}/stream；旧工厂仍走 /runs。
  */
 export async function postControlTurnStream(
   state: V5SessionState,
@@ -868,10 +946,14 @@ export async function postControlTurnStream(
   opts: DriveFullStreamOpts = {}
 ): Promise<{ finalState: V5SessionState; stopReason?: string; loops?: any[]; publishClosure?: any } | null> {
   if (typeof fetch !== "function") return null;
+  const controlRequestId = opts.controlRequestId ?? crypto.randomUUID();
   try {
     const res = await fetch("/api/sliderule/control-turn-stream", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Control-Request-Id": controlRequestId,
+      },
       credentials: "include",
       signal: opts.stopSignal,
       body: JSON.stringify({
@@ -898,6 +980,7 @@ export async function postControlTurnStream(
         ...(opts.answeredGaps?.length
           ? { answeredGaps: opts.answeredGaps }
           : {}),
+        ...(opts.toolAnswer ? { toolAnswer: opts.toolAnswer } : {}),
         ...(opts.mode ? { mode: opts.mode } : {}),
         ...(opts.reuseCharter !== undefined
           ? { reuseCharter: opts.reuseCharter }
@@ -907,10 +990,44 @@ export async function postControlTurnStream(
     });
     await throwIfAuthRequired(res);
     if (!res.ok || !res.body) return null;
+    const controlRunId = res.headers.get("X-Control-Run-Id");
+    if (controlRunId) opts.onControlRunId?.(controlRunId);
     return await consumeControlStreamResponse(res, opts);
   } catch (err) {
     if (err instanceof DriveAuthRequiredError) throw err;
     return null;
+  } finally {
+    if (opts.stopSignal?.aborted && state.sessionId) {
+      // Stop may precede the first response header. The request tombstone also
+      // cancels a POST that is still waiting to publish its durable run ID.
+      await fetch(`/api/sliderule/control-requests/${encodeURIComponent(controlRequestId)}?sessionId=${encodeURIComponent(state.sessionId)}`, {
+        method: "DELETE", credentials: "include", keepalive: true,
+      }).catch(() => {});
+    }
+  }
+}
+
+export async function resumeControlTurnStream(
+  runId: string,
+  opts: DriveFullStreamOpts = {}
+) {
+  try {
+    const res = await fetch(
+      `/api/sliderule/control-runs/${encodeURIComponent(runId)}/stream`,
+      { credentials: "include", signal: opts.stopSignal }
+    );
+    await throwIfAuthRequired(res);
+    if (!res.ok || !res.body) return null;
+    return await consumeControlStreamResponse(res, opts);
+  } catch (error) {
+    if (error instanceof DriveAuthRequiredError) throw error;
+    return null;
+  } finally {
+    if (opts.stopSignal?.aborted) {
+      await fetch(`/api/sliderule/control-runs/${encodeURIComponent(runId)}`, {
+        method: "DELETE", credentials: "include", keepalive: true,
+      }).catch(() => {});
+    }
   }
 }
 
@@ -927,6 +1044,7 @@ export async function consumeControlStreamResponse(
     // handoff 之后第一发 complete 若没改名，只当工厂收工，继续读控制面。
     let factoryDone = false;
     let sawTerminal = false;
+    let controlSeq = 0;
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
@@ -951,6 +1069,11 @@ export async function consumeControlStreamResponse(
         let event: any;
         try { event = JSON.parse(jsonStr); } catch { continue; }
 
+        if (typeof event.controlRunId === "string" && Number.isInteger(event.seq)) {
+          if (event.seq <= controlSeq) continue;
+          controlSeq = event.seq;
+        }
+
         if (!runIdSeen && typeof event.runId === "string" && event.runId) {
           runIdSeen = true;
           opts.onRunId?.(event.runId);
@@ -958,12 +1081,64 @@ export async function consumeControlStreamResponse(
 
         {
           switch (event.type) {
+            case "control_run_started":
+              if (typeof event.controlRunId === "string") {
+                opts.onControlRunId?.(event.controlRunId);
+              }
+              continue;
+            case "control_run_settled":
+              if (event.status === "cancelled") {
+                opts.onRunSettled?.("cancelled");
+                return null;
+              } else if (event.status === "failed" || event.status === "interrupted") {
+                if (!["llm_unavailable", "unknown"].includes(acc.stopReason)) {
+                  if (event.error === "llm_unavailable" || event.error === "unknown") {
+                    acc.stopReason = event.error;
+                    const text = event.error === "llm_unavailable"
+                      ? "模型服务未完成本轮请求，已保存现有结果。请查看失败原因后继续。"
+                      : "本轮任务执行失败，已保存现有结果。请查看运行记录后继续。";
+                    opts.onControlText?.(text, { stopReason: event.error,
+                      stoppedBy: event.error === "llm_unavailable" ? "provider" : "unknown" });
+                    opts.onControlHostText?.(text);
+                  } else opts.onControlText?.("本轮已中断，已保存现有结果。请查看任务状态后继续。");
+                }
+                opts.onRunSettled?.("error");
+                return null;
+              } else if (["llm_unavailable", "unknown"].includes(acc.stopReason)) {
+                // The Python control loop settles the durable run after it has
+                // persisted a provider failure receipt.  A settled run is not
+                // automatically a successful turn: preserve the provider
+                // stop as an error so callers do not run success post-processing
+                // (closure, notifications, or another autonomous hop).
+                opts.onRunSettled?.("error");
+                return null;
+              } else opts.onRunSettled?.("complete");
+              sawTerminal = true;
+              break outer;
+            case "control_continuation":
+              opts.onControlContinuation?.({
+                attempt:
+                  typeof event.attempt === "number" && event.attempt > 0
+                    ? event.attempt
+                    : 1,
+                blockedReasons: Array.isArray(event.blockedReasons)
+                  ? event.blockedReasons.map(String)
+                  : [],
+              });
+              break;
             case "control_text":
+              if (event.stopReason === "llm_unavailable" || event.stopReason === "unknown") {
+                // Keep ordinary control stop reasons (for example
+                // `tool_rounds`) on their existing completed-turn path.  Only
+                // provider and unexpected-error terminals must prevent success
+                // post-processing.
+                acc.stopReason = event.stopReason;
+              }
               opts.onControlText?.(
                 String(event.text || ""),
                 typeof event.stopReason === "string"
                   ? {
-                      stopReason: event.stopReason,
+                      stopReason: asControlStopReason(event.stopReason),
                       stoppedBy: String(event.stoppedBy || "unknown"),
                       ...(typeof event.limit === "number"
                         ? { limit: event.limit }
@@ -980,7 +1155,10 @@ export async function consumeControlStreamResponse(
               }
               continue;
             case "control_tool_start":
-              opts.onControlToolStart?.(String(event.tool || ""));
+              opts.onControlToolStart?.(
+                String(event.tool || ""),
+                typeof event.summary === "string" ? event.summary : undefined
+              );
               continue;
             case "control_tool_result":
               opts.onControlToolResult?.(event);
@@ -991,13 +1169,39 @@ export async function consumeControlStreamResponse(
                 if (human) opts.onControlText?.(human);
               }
               continue;
+            case "control_project_state":
+              if (event.runtimeKind === "project" &&
+                  typeof event.sessionId === "string" && event.sessionId.trim() &&
+                  typeof event.projectId === "string" && event.projectId.trim() &&
+                  typeof event.projectRevision === "string" && event.projectRevision.trim()) {
+                opts.onControlProjectState?.({
+                  sessionId: event.sessionId,
+                  runtimeKind: "project",
+                  projectId: event.projectId,
+                  projectRevision: event.projectRevision,
+                });
+              }
+              continue;
             case "control_ask_user":
-              opts.onControlAskUser?.({
-                question: String(event.question || ""),
-                options: Array.isArray(event.options)
-                  ? event.options.map((x: unknown) => String(x))
-                  : [],
-              });
+              {
+                const question = String(event.question || "");
+                opts.onControlAskUser?.({
+                  question,
+                  options: Array.isArray(event.options)
+                    ? event.options.map((x: unknown) => String(x))
+                    : [],
+                  // 抄 grok `AskUserQuestion`：一发可以问几道，每项带解释。
+                  // ⚠ 老字段 question/options 留着（第一道题的投影）——
+                  //   水合、左栏那句、`_last_need_question` 都按单题写的。
+                  ...(Array.isArray(event.questions) && event.questions.length
+                    ? { questions: event.questions as ControlQuestionWire[] }
+                    : {}),
+                  ...(typeof event.reqId === "string" && event.reqId
+                    ? { reqId: event.reqId }
+                    : {}),
+                });
+                // 提问进左栏；若本轮已经有 control_text，消费侧不得盖掉。
+              }
               continue;
             case "control_clarify":
               opts.onControlClarify?.({
@@ -1012,30 +1216,14 @@ export async function consumeControlStreamResponse(
                     : undefined,
               });
               continue;
-            case "control_scope_card":
-              opts.onControlScopeCard?.({
-                restatement: String(event.restatement || ""),
-                device: event.device,
-                productArchetype:
-                  typeof event.productArchetype === "string"
-                    ? event.productArchetype
-                    : undefined,
-                wiredArchetypes: Array.isArray(event.wiredArchetypes)
-                  ? event.wiredArchetypes
-                  : undefined,
-                wiredDevices: Array.isArray(event.wiredDevices)
-                  ? event.wiredDevices
-                  : undefined,
-                variant: event.variant,
-                userText: event.userText,
-                charterReuseNext:
-                  typeof event.charterReuseNext === "boolean"
-                    ? event.charterReuseNext
-                    : undefined,
-                tools: Array.isArray(event.tools)
-                  ? event.tools.map((item: unknown) => String(item))
-                  : undefined,
-              });
+            case "control_plan_approval":
+              if (typeof event.reqId === "string" && event.reqId &&
+                  typeof event.planContent === "string" && event.planContent.trim()) {
+                opts.onControlPlanApproval?.({
+                  reqId: event.reqId,
+                  planContent: event.planContent,
+                });
+              }
               continue;
             case "control_handoff_factory":
               handedOff = true;
@@ -1057,6 +1245,16 @@ export async function consumeControlStreamResponse(
                 );
                 continue;
               }
+              if (event.state && typeof event.state.sessionId === "string") {
+                opts.onControlState?.(event.state as V5SessionState);
+              }
+              if (["llm_unavailable", "unknown"].includes(acc.stopReason)) {
+                // `_canned` emits `complete` after the provider failure text;
+                // this event arrives before the durable `control_run_settled`
+                // notification, so classify it here as well.
+                opts.onRunSettled?.("error");
+                return null;
+              }
               if (event.state) {
                 acc.finalState = event.state as V5SessionState;
                 if (acc.publishClosure !== undefined) {
@@ -1064,9 +1262,16 @@ export async function consumeControlStreamResponse(
                     acc.publishClosure;
                 }
               }
-              opts.onRunSettled?.("complete");
+              // ⚠ 2026-09-14 `sr-20260914150256-Z3DP93VKQ9`：producer 在
+              // wall_clock 之后仍发 `complete`，durable run 却进
+              // `waiting_continue`，subscribe 不会收口。这里若
+              // onRunSettled + break，前端清书签、用户看见「做完了」，
+              // 后面的 control_continuation / 工具事件全部丢掉。
+              // complete 只表示这一片采样结束；整轮终局是
+              // control_run_settled。流若在此后关掉（单测夹具），
+              // sawTerminal 仍让 finishDriveStream 能交结果。
               sawTerminal = true;
-              break outer;
+              continue;
             default:
               break;
           }

@@ -10,6 +10,7 @@ import {
   deriveStatusBarFacts,
   idleRehearsalCursor,
   mapInternalEventToProductStep,
+  rehearsalClockShowSteps,
   startRehearsalCursor,
 } from "../derive-status-bar";
 import type { CapabilityCostRecord } from "@shared/blueprint/v5-reasoning-state";
@@ -257,6 +258,16 @@ describe("M8 产品六步钟只认事件上的 productStep", () => {
     expect(REHEARSAL_PRODUCT_STEPS.slice(1).every((s) => s.skippable === false)).toBe(
       true
     );
+  });
+
+  it("廉价回合 idle 钟：跑着也不报大约数分钟、六格全 pending", () => {
+    const view = buildRehearsalClockView(idleRehearsalCursor(), {
+      isRunning: true,
+    });
+    expect(view.currentStep).toBeNull();
+    expect(view.wallClockCopy).toBe("");
+    expect(view.steps.every(s => s.status === "pending")).toBe(true);
+    expect(rehearsalClockShowSteps(view)).toBe(false);
   });
 
   it("默认 rehearse 从第 2 步起跳，澄清格不占钟", () => {

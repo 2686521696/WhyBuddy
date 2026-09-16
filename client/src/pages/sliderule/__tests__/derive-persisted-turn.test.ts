@@ -105,9 +105,191 @@ describe("deriveTurnsFromState (刷新后整段对话)", () => {
     expect(turns[1].steps).toHaveLength(1);
   });
 
+  it("工程会话刷新：执行步骤以会话日志为准，不靠客户端 chip", () => {
+    const state = {
+      runtimeKind: "project",
+      goal: { text: "构建 TicketStream", status: "clear" },
+      lastTurnId: "turn-1789462833327",
+      capabilityRuns: [
+        { capabilityId: "intent.parse", roleId: "system", turnId: "turn-1789462833327" },
+      ],
+      turnNarrations: [
+        {
+          turnId: "turn-1789462833327",
+          user: "构建一个名为 TicketStream 的服务台 SaaS 界面",
+          steps: [
+            {
+              id: "s1",
+              kind: "model_speech",
+              text: "我先把工程搭起来。",
+            },
+          ],
+          durationMs: 127000,
+        },
+      ],
+      controlTranscript: [
+        { id: "ct-1", kind: "tool_start", tool: "project_create", summary: "react-vite-tasks" },
+        { id: "ct-2", kind: "tool_result", tool: "project_create", ok: true },
+        { id: "ct-3", kind: "tool_start", tool: "project_patch", summary: "src/index.html" },
+        { id: "ct-4", kind: "tool_result", tool: "project_patch", ok: true, detail: "src/index.html" },
+      ],
+    } as unknown as V5SessionState;
+    const turns = deriveTurnsFromState(state);
+    const chips = turns[0].steps.filter(step => step.kind === "chip");
+    expect(chips.map(step => step.capabilityId)).toEqual([
+      "project_create",
+      "project_create",
+      "project_patch",
+      "project_patch",
+    ]);
+    // 反向：客户端 stamp 的 chip 不许盖过会话日志。旧会话没有
+    // transcript 工具行时，叙述里的 chip 仍保留（见下一例）。
+    const withStaleChip = deriveTurnsFromState({
+      ...state,
+      turnNarrations: [
+        {
+          ...state.turnNarrations![0],
+          steps: [
+            state.turnNarrations![0].steps[0],
+            {
+              id: "live",
+              kind: "chip",
+              capabilityId: "project_read",
+              roleId: "system",
+              label: "读取源码",
+              progressType: "completed",
+            },
+          ],
+        },
+      ],
+    } as unknown as V5SessionState);
+    expect(withStaleChip[0].steps.filter(step => step.kind === "chip").map(step => step.capabilityId)).toEqual([
+      "project_create",
+      "project_create",
+      "project_patch",
+      "project_patch",
+    ]);
+  });
+
+  it("会话日志没有工具行时，叙述里的 chip 仍回放", () => {
+    const state = {
+      runtimeKind: "project",
+      goal: { text: "构建 TicketStream", status: "clear" },
+      lastTurnId: "turn-1789462833327",
+      capabilityRuns: [
+        { capabilityId: "intent.parse", roleId: "system", turnId: "turn-1789462833327" },
+      ],
+      turnNarrations: [
+        {
+          turnId: "turn-1789462833327",
+          user: "构建 TicketStream",
+          steps: [
+            {
+              id: "live",
+              kind: "chip",
+              capabilityId: "project_read",
+              roleId: "system",
+              label: "读取源码",
+              progressType: "completed",
+            },
+          ],
+        },
+      ],
+      controlTranscript: [{ kind: "control_text", text: "我先看一眼。" }],
+    } as unknown as V5SessionState;
+    const chips = deriveTurnsFromState(state)[0].steps.filter(step => step.kind === "chip");
+    expect(chips).toHaveLength(1);
+    expect(chips[0]).toMatchObject({ capabilityId: "project_read" });
+  });
+
   it("空状态不编一轮假对话", () => {
     expect(deriveTurnsFromState(null)).toEqual([]);
     expect(deriveTurnsFromState({ capabilityRuns: [], decisionLedger: [] } as any)).toEqual([]);
+  });
+
+  it("叙述为空时按会话日志铺回左栏（2026-09-16 TicketStream 刷新空会话）", () => {
+    // 真机 GET sr-20260916010238-SFDKWYM2CG：tn=0 / mv=0 / runs=0 / ledger=0，
+    // controlTranscript=81。旧回放走 deriveLatestTurnFromState 直接 []。
+    const state = {
+      runtimeKind: "project",
+      goal: {
+        text: "构建一个名为“TicketStream”的服务台 SaaS 界面",
+        status: "needs_refinement",
+      },
+      lastTurnId: null,
+      capabilityRuns: [],
+      decisionLedger: [],
+      turnNarrations: [],
+      modelVersions: [],
+      controlTranscript: [
+        {
+          id: "ct-turn",
+          kind: "turn",
+          role: "user",
+          text: "构建一个名为“TicketStream”的服务台 SaaS 界面",
+        },
+        {
+          id: "ct-ask",
+          kind: "ask_user_question",
+          role: "assistant",
+          text: "你希望 TicketStream 优先面向哪类使用设备和工作场景？",
+        },
+        {
+          id: "ct-answer",
+          kind: "user_answer",
+          role: "tool",
+          text: "用户回答了你的问题",
+          answers: {
+            q1: ["桌面端优先"],
+            q2: ["工作台优先"],
+          },
+        },
+        { id: "ct-approved", kind: "plan_approved", role: "user", feedback: "" },
+        { id: "ct-s", kind: "tool_start", tool: "project_create", summary: "react-vite-tasks" },
+        { id: "ct-r", kind: "tool_result", tool: "project_create", ok: true },
+        {
+          id: "ct-canned",
+          kind: "canned",
+          role: "assistant",
+          text: "本轮工程任务达到时间上限。已保存的源码仍保留。",
+        },
+        {
+          id: "ct-speech",
+          kind: "control_text",
+          role: "assistant",
+          text: "TicketStream 已按批准计划完成实现",
+        },
+      ],
+    } as unknown as V5SessionState;
+    const turns = deriveTurnsFromState(state);
+    expect(turns.map(turn => turn.user)).toEqual([
+      "构建一个名为“TicketStream”的服务台 SaaS 界面",
+      "桌面端优先 · 工作台优先",
+      "批准计划并执行",
+    ]);
+    const last = turns[2];
+    expect(last.steps.filter(step => step.kind === "chip").map(step => step.capabilityId)).toEqual([
+      "project_create",
+      "project_create",
+    ]);
+    expect(
+      last.steps.filter(step => step.kind === "model_speech").map(step => step.text)
+    ).toEqual([
+      "本轮工程任务达到时间上限。已保存的源码仍保留。",
+      "TicketStream 已按批准计划完成实现",
+    ]);
+    // 反向：没有日志就仍是空会话。只靠 goal / projectId 不许编一轮。
+    expect(
+      deriveTurnsFromState({
+        runtimeKind: "project",
+        goal: { text: "构建 TicketStream", status: "clear" },
+        projectId: "prj-1",
+        capabilityRuns: [],
+        decisionLedger: [],
+        turnNarrations: [],
+        controlTranscript: [],
+      } as any)
+    ).toEqual([]);
   });
 
   it("同一轮存了两份版本（步伴白屏真机数据）→ 只出一轮，id 全场唯一", () => {

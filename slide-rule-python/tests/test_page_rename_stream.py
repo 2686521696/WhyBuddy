@@ -276,6 +276,20 @@ def test_第4_5步真的推了改名():
     )
 
 
+def test_第4_5步改键也改HTML孔():
+    """别名是第二通道。新生成这一份孔必须跟键同一套，否则别名被抹掉
+    菜单又静默点不动。钉在同一个 ``if _canon`` 块里（§3：函数写对了 ≠ 接上了）。
+    """
+    src = _src("spec_first_pipeline.py")
+    i = src.find("if _canon:")
+    assert i > 0
+    window = src[i : i + 1800]
+    assert "rewrite_html_page_ids(pages, _canon)" in window, (
+        "第 4.5 步改了键却没改 HTML 孔——菜单点的还是 p1，页键已经是语义 id"
+    )
+    assert "rekey_page_map(pages, _canon)" in window
+
+
 def test_推了几条记在stages里():
     """照 grok `dedup_duplicate_tool_results` 交回条数那个习惯：
     这类"顺带推一把"的口子不留个数，出问题时只能靠猜。"""

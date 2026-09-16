@@ -13,7 +13,7 @@ from control_turn_support import (
     event_types,
     llm_text,
     new_sid,
-    seed_session,
+    seed_approved_session as seed_session,
     six_fields,
 )
 from services.slide_rule_session import load_session
@@ -63,13 +63,13 @@ def test_forced_pages_skips_llm_and_sets_goal_tools_pages(harness):
     )
     saved = load_session(sid)
     tools = (saved.goal or {}).get("tools") if saved and isinstance(saved.goal, dict) else None
-    assert tools == ["pages", "structure", "bind"], (
-        f"假设确认必须把首轮剩下的产出跳一次跑完，实际 {tools}"
+    assert tools == ["pages"], (
+        f"假设确认是 pages 这一跳，不许把剩余课表焊进来。实际 {tools}"
     )
+    todo = list(getattr(saved, "factoryTodo", None) or [])
+    assert "structure" in todo and "bind" in todo, todo
     sfp = (saved.specFirstPages or {}) if saved else {}
-    assert sfp.get("assumptionsConfirmed") is True, (
-        f"假设确认必须进盘，刷新才不复弹。实际 {sfp}"
-    )
+    assert sfp.get("assumptionsConfirmed") is not True, "Plain text is not a structured questionnaire receipt"
 
 
 def test_forced_rehearse_resets_stale_assumptions_confirmed(harness):
@@ -152,14 +152,10 @@ def test_forced_pages_survives_stale_session_reload(monkeypatch):
         six_fields(sid, "假设已确认。继续画页面。", forcedTool="pages")
     )
     assert harness.helper_calls, "确认继续没有 handoff 工厂"
-    assert harness.helper_calls[-1].get("goal_tools") == [
-        "pages",
-        "structure",
-        "bind",
-    ]
+    assert harness.helper_calls[-1].get("goal_tools") == ["pages"]
     seen = [row.get("tools") for row in harness.generator_calls]
-    assert ["pages", "structure", "bind"] in seen, (
-        f"工厂 reload 后 tools 不是首轮剩余产出链：{seen}"
+    assert ["pages"] in seen, (
+        f"工厂 reload 后 tools 必须仍是 pages 一跳：{seen}"
     )
     types = event_types(events)
     assert "control_handoff_factory" in types
@@ -293,7 +289,7 @@ def test_forced_closed_tools_bind_write_scope():
 def test_spec_hop_resume_cannot_park_scope_card(harness):
     """选完再继续：SPEC 跳交回后模型想开范围卡，不许把假设面板冲掉。
 
-    变异：把 spec_waiting 提前 complete 拿掉、再带工具交回 → 本条红。
+    已确认后 scope_card 不进清单；即便模型硬调也是 alreadyConfirmed，不 park。
     """
     from control_turn_support import llm_tool
 
@@ -305,8 +301,13 @@ def test_spec_hop_resume_cannot_park_scope_card(harness):
         awaitDetail="社区图书馆借还书系统",
     )
 
+    rounds = {"n": 0}
+
     def impl(messages, **kw):
-        return llm_tool("scope_card", {"restatement": "社区图书馆借还书系统"})
+        rounds["n"] += 1
+        if rounds["n"] == 1:
+            return llm_tool("scope_card", {"restatement": "社区图书馆借还书系统"})
+        return llm_text("页面还没有，下一步画页面。")
 
     harness.llm_impl = impl
     _, events = harness.post(
@@ -317,12 +318,11 @@ def test_spec_hop_resume_cannot_park_scope_card(harness):
     assert "control_scope_card" not in types, (
         f"SPEC 跳完又弹出范围卡，假设面板被 pendingScope 藏起来：{types}"
     )
-    assert not harness.llm_calls, "假设卡等确认还去问了控制面"
     assert types[-1] == "complete"
 
 
-def test_spec_waiting_resume_completes_before_control_llm():
-    """剥注释：spec_waiting 必须自己 complete，不许进控制面 LLM。"""
+def test_assumptions_waiting_resume_completes_before_control_llm():
+    """剥注释：假设卡等确认必须自己 complete，不许进控制面 LLM。"""
     from control_turn_support import strip_python
     from pathlib import Path
 
@@ -331,19 +331,18 @@ def test_spec_waiting_resume_completes_before_control_llm():
     end = src.find("async def _control_llm_loop")
     assert at > 0 and end > at
     body = src[at:end]
-    wait_at = body.find("spec_waiting")
-    assert wait_at > 0, "交回没有 spec_waiting 闸"
-    complete_at = body.find("_complete(state)", wait_at)
+    wait_at = body.find("_assumptions_awaiting")
+    assert wait_at > 0, "交回没有假设卡闸"
+    complete_at = body.find("_complete_waiting_for_assumptions", wait_at)
     loop_at = body.find("_control_llm_loop", wait_at)
-    assert complete_at > 0, "假设卡等确认没有 host complete"
+    assert complete_at > 0, "假设卡等确认没有提前收工"
     assert loop_at < 0 or complete_at < loop_at, (
-        "spec_waiting 仍先进控制面 LLM，确认继续会排队"
+        "假设卡等确认仍先进控制面 LLM，确认继续会排队"
     )
-    assert "POST_SPEC_HOP_FALLBACK" in body[wait_at:]
 
 
 def test_confirm_ignores_payload_tools_pages_and_keeps_first_pass_rest(harness):
-    """确认 POST 常带 tools=['pages']。stamp 之后 remaining 不许只剩 pages。"""
+    """确认 POST 常带 tools=['pages']。这一跳就是 pages，剩余进待办。"""
     sid = new_sid("confirm-payload-pages")
     seed_session(
         sid,
@@ -377,8 +376,12 @@ def test_confirm_ignores_payload_tools_pages_and_keeps_first_pass_rest(harness):
     )
     saved = load_session(sid)
     tools = (saved.goal or {}).get("tools") if saved and isinstance(saved.goal, dict) else None
-    assert tools == ["pages", "structure", "bind"], (
-        f"确认被 payload.tools=pages 削成单跳：{tools}"
+    assert tools == ["pages"], (
+        f"确认继续必须是 pages 一跳，实际 {tools}"
+    )
+    todo = list(getattr(saved, "factoryTodo", None) or [])
+    assert "structure" in todo and "bind" in todo, (
+        f"剩余产出跳必须进待办，不许丢：{todo}"
     )
 
 
@@ -448,3 +451,46 @@ def test_forced_bind_without_pages_says_so(harness):
     texts = "\n".join(str(e.get("text") or "") for e in events)
     assert "还没有页面" in texts
     assert types[-1] == "complete"
+
+
+def test_回执范围卡点火之后整轮仍有终局(harness):
+    """`gate: False` 的范围卡是**回执**，同一发后面就跟着 handoff。
+    这一轮**必须**有终局事件。
+
+    ⚠ 2026-09-10 浏览器那条路量到的：上一版把回执也记成 parked，
+      `if parked: return` 在工厂转播完之后立刻返回，整轮没有 `complete`。
+      前端 `classifyStreamFallback` 见不到终局就判 `report_interrupted`，
+      于是每一趟自动点火的推演最后都弹「推演连接中断，后台仍在进行」，
+      而且 `_resume_control_llm_after_write` 整段被跳过。
+
+      脚本那条路当时是绿的——探针读到 `factory_complete` 就 break 了，
+      根本没读到流的结尾（判据自己把证据截断了，本仓 §二）。
+    """
+    from control_turn_support import llm_tool
+
+    sid = new_sid("receipt-terminal")
+    seed_session(sid, goal={"text": "宠物美容店的预约与会员卡系统"})
+
+    def impl(messages, **kw):
+        # 复述由 `_restate` 真跑出来，判据不许自己编一句（见
+        # test_declined_scope_reaches_the_model 头注）。
+        if len(harness.llm_calls) == 1:
+            return llm_tool("spec", {}, call_id="spec")
+        return llm_text("SPEC 出来了。")
+
+    harness.llm_impl = impl
+    _, events = harness.post(six_fields(sid, "做一个宠物美容店的预约与会员卡系统"))
+    types = event_types(events)
+    assert "control_scope_card" not in types, types
+    assert "control_handoff_factory" in types, (
+        f"回执卡没点火，这条判据测的就不是那条路了：{types}"
+    )
+    # 正向：有终局。
+    assert types[-1] in ("complete", "factory_complete"), (
+        f"点了火却没有终局事件——前端会判成断线：{types}"
+    )
+    # 反向：终局不许只是工厂那一个（`factory_complete` 在前端是 "continue"，
+    # 不算 sawTerminal）。控制面自己那一发 `complete` 必须在。
+    assert "complete" in types, (
+        f"只有 factory_complete、没有控制面的 complete：{types}"
+    )

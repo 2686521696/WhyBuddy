@@ -98,7 +98,7 @@ import catalogJson from "@experience-blocks";
 import { MarkdownEditor, MarkdownView, SqlEditor } from "../base-components/custom-components";
 import type { WorkflowSection } from "../system-screens/five-system-model";
 import type { RuntimeRow } from "./live-runtime";
-import type { ActionKind } from "./html-binding-runtime";
+import type { ActionKind, CartActionKind } from "./html-binding-runtime";
 import type { AppFormFieldSchema } from "./app-runtime-schema";
 import { dedupeDenormalizedFieldIds } from "./app-runtime-schema";
 import type { NormalizedFieldOption } from "./field-display";
@@ -141,15 +141,20 @@ function QueryFilter(
   );
 }
 
+/**
+ * ⚠ 2026-09-13：这里原来传 `autoFocusFirstInput={preview ? false : …}`，
+ * 意图是「组件库预览时别抢焦点」。但 `@ant-design/pro-components@2.8.10`
+ * **整个包里已经没有这个 prop**（grep 不到，类型里也没有）——传了也是空转，
+ * 只在 `pnpm run check` 里留下三条 TS 错误，而 CI 第一步就挂在 check 上，
+ * 后面的架构闸整个被 skip。
+ *
+ * 删掉它**不改变任何运行时行为**（它本来就没生效）。「预览不抢焦点」这个
+ * 意图现在是未实现状态：真要做得换一条路（比如预览容器上 inert / 拦
+ * focus 事件），不能靠这个已经不存在的 prop。
+ */
 const StepsForm = Object.assign(
   function StepsForm(props: React.ComponentProps<typeof AntStepsForm>) {
-    const preview = useLibraryPreview();
-    return (
-      <AntStepsForm
-        {...props}
-        autoFocusFirstInput={preview ? false : props.autoFocusFirstInput}
-      />
-    );
+    return <AntStepsForm {...props} />;
   },
   { StepForm: AntStepsForm.StepForm }
 );
@@ -1330,8 +1335,12 @@ const FilterBarRenderer: ExperienceBlockRenderer = ({
       showHiddenNum
       span={{ xs: 24, sm: 24, md: 12, lg: 12, xl: 8, xxl: 8 }}
       initialValues={initialValues}
+      // ⚠ pro-components 的 onFinish 交出来的是 unknown（表单字段是运行时
+      //   拼的，它本来就不知道形状）。这里收窄成一袋键值，跟 applyValues
+      //   的入参契约对齐；不是掩盖问题，是把「表单值就是一袋键值」这句话
+      //   写进类型。
       onFinish={async values => {
-        applyValues(values);
+        applyValues((values ?? {}) as Record<string, unknown>);
         return true;
       }}
       onReset={() =>
@@ -1979,9 +1988,27 @@ function renderFreeformNode(
         submitWorkflow: "submitRequest",
         approveWorkflow: "approveRequest",
         rejectWorkflow: "rejectRequest",
-      } satisfies Record<Exclude<ActionKind, "createRecord">, string>;
-      const event = eventByKind[action.kind];
-      if (!event) return; // 类型说穷尽了，但存量 JSON 可能带认不出的词——不发比误发便宜
+        // ⚠ 2026-09-13：键集从 `Exclude<ActionKind, "createRecord">` 收窄成
+        //   再排除购物车四种。这不是把闸放松，是把它对准这条路真正负责的
+        //   范围——`CART_ACTION_KINDS`（addToCart / adjustCartQty /
+        //   clearCart / checkout）走的是**另一条路**：HTML 绑定运行时产出
+        //   `BindingActionEvent`，由 `SlideRuleStudio.tsx` 消费；自由树的
+        //   actionRef 从不负责它们。
+        //
+        //   原来没排除，于是词表 2026-08 扩了购物车之后这里一直编译不过
+        //   （TS1360 + TS7053）。闸本身是对的、也确实抓到了漏配，但因为
+        //   `pnpm run check` 整体红着、CI 第一步就挂，没人看见它在报警。
+      } satisfies Record<
+        Exclude<ActionKind, "createRecord" | CartActionKind>,
+        string
+      >;
+      // ⚠ 查表故意按「键可能不在」来取：`action.kind` 是完整的 ActionKind
+      //   （含购物车四种），而这张表按设计只覆盖记录/转移两类。下一行的兜底
+      //   本来就是为这种情况写的，类型这里要说同一句话，不能假装穷尽。
+      const event = (eventByKind as Record<string, string | undefined>)[
+        action.kind
+      ];
+      if (!event) return; // 表里没有（购物车走绑定运行时那条路）或存量 JSON 带了认不出的词——不发比误发便宜
       onAction(event, { entityRef: action.entityRef, rowId });
     };
     Object.assign(actionProps, {
@@ -5800,7 +5827,7 @@ const BulkEditPanelRenderer: ExperienceBlockRenderer = ({ block, children, entit
   const changedFields = fields.filter(field => (modes[field] ?? "unchanged") !== "unchanged");
   if (fields.length === 0) return <BlockShell block={block} title={title} testid="bulk-edit-panel"><BlockEmpty hint="当前实体没有可批量编辑的字段" /></BlockShell>;
   return <BlockShell block={block} title={title} testid="bulk-edit-panel" extra={<Badge count={rowIds.length} showZero overflowCount={999} />}>
-    {rowIds.length === 0 ? <Alert type="warning" showIcon message="请先在目标列表选择要编辑的记录" /> : <ProForm submitter={{ searchConfig: { submitText: `更新 ${rowIds.length} 条记录` }, resetButtonProps: false }} onFinish={async values => { const updates = Object.fromEntries(changedFields.map(field => [field, modes[field] === "clear" ? null : values[field]])); onAction?.("submitRequest", { entityRef: bound.entityRef, operation: "bulkEdit", rowIds, values: updates }); return true; }}>
+    {rowIds.length === 0 ? <Alert type="warning" showIcon message="请先在目标列表选择要编辑的记录" /> : <ProForm submitter={{ searchConfig: { submitText: `更新 ${rowIds.length} 条记录` }, resetButtonProps: false }} onFinish={async rawValues => { const values = (rawValues ?? {}) as Record<string, unknown>; const updates = Object.fromEntries(changedFields.map(field => [field, modes[field] === "clear" ? null : values[field]])); onAction?.("submitRequest", { entityRef: bound.entityRef, operation: "bulkEdit", rowIds, values: updates }); return true; }}>
       <Alert type="info" showIcon message={`将批量处理 ${rowIds.length} 条记录`} description="每个字段可保持不变、改成指定值或清空；保持不变的字段不会进入提交数据。" style={{ marginBottom: 12 }} />
       {fields.map(field => { const mode = modes[field] ?? "unchanged"; return <div key={field} style={{ display: "grid", gridTemplateColumns: "140px minmax(0, 1fr)", gap: 10, alignItems: "start", marginBottom: 10 }}><Select value={mode} options={[{ label: "保持不变", value: "unchanged" }, { label: "改成", value: "set" }, { label: "清空", value: "clear" }]} onChange={value => setModes(current => ({ ...current, [field]: value }))} />{mode === "set" ? formItemFor({ entityRef: bound.entityRef, fieldLabelOf, fieldTypeOf, enumOptionsOf, fieldSchemaOf, entityRows }, field) : <Typography.Text type="secondary" style={{ paddingTop: 6 }}>{fieldLabelOf?.(bound.entityRef, field) ?? field}{mode === "clear" ? "将被清空" : "保留原值"}</Typography.Text>}</div>; })}
     </ProForm>}

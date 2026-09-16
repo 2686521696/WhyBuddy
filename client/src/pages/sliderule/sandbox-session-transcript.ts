@@ -1,0 +1,161 @@
+/**
+ * 把一步工程动作收成一段「真在用的终端」。
+ *
+ * ## 为什么要这个（2026-09-14，用户对照 Manus 沙箱截图）
+ *
+ * Manus 右侧是一台正在被用的机器：提示符、刚敲的命令、stdout 往下滚。
+ * 我们这边同一份 E2B 日志被收成「运行命令 / project_exec / 命令行输出 26 行」
+ * ——卡片在解释这一步，不是在看这台机器。
+ *
+ * 活路径是 `start_console` → PTY → `runtime.console` → xterm。
+ * 嵌进面不再用这份拼贴当脸——没字节就空着等，好过写死 create/get/`$`。
+ * 函数还留着，是为了独立测「摘要该怎么收」，不是给面板回头抄。
+ *
+ * ## 诚实边界
+ *
+ *   · 提示符只写 `$`。服务端没发 hostname / cwd，不许写成
+ *     `ubuntu@sandbox:~$`——那是 Manus 的机器，不是我们的。
+ *   · 命令行只来自这一步的脱敏摘要，且只在它真的跑过命令时
+ *     （`project_exec` / `project_logs`）。`src/Home.tsx` 不是一条 shell。
+ *   · 没有输出就没有输出，不编 `ls` / `find` 来填屏。
+ *
+ * ⚠ 2026-09-15 第二趟：对照 Manus 的 `find` 输出，把 `GET /source`
+ *   的路径整页铺进终端。用户圈了那面白纸说「终端咋是这样的」——
+ *   那是源码树，不是壳。清单回「源码」档，这里不许再当脸。
+ */
+
+export function sandboxCommandLine(row: {
+  tool?: string;
+  detail?: string;
+}): string | null {
+  const tool = String(row.tool || "").trim();
+  const detail = String(row.detail || "").trim();
+  if (!detail) return null;
+  if (tool === "project_exec" || tool === "project_logs") return detail;
+  return null;
+}
+
+/**
+ * 文件类动作收成传输日志的一行。对照 FTP 的 put/get：人要看见
+ * 「哪个文件正在进沙箱」，不是再看左栏芯片。
+ *
+ * ⚠ 路径只来自脱敏摘要。没有摘要就不写——不编 `src/App.tsx`。
+ * ⚠ 不许套 `$`：那是 shell，这份判据在 `sandbox-session-transcript.test.ts`。
+ */
+export function sandboxTransferLine(row: {
+  tool?: string;
+  detail?: string;
+}): string | null {
+  const tool = String(row.tool || "").trim();
+  const detail = String(row.detail || "").trim();
+  if (!detail) return null;
+  if (tool === "project_patch") return `put ${detail}`;
+  if (tool === "project_read") return `get ${detail}`;
+  if (tool === "project_create") return `create ${detail}`;
+  if (tool === "project_export") return `get ${detail}`;
+  return null;
+}
+
+/**
+ * 整段工程动作流收成传输日志。嵌进面不许拿它当脸。
+ *
+ * ⚠ 每条 exec 只铺**自己的** `runtime.log`。2026-09-15 对照 Manus：
+ *   第一版只订「当前这一步」，上一条 `$ pnpm` 的 stdout 还在服务端，
+ *   面板已经换成 put 或下一条 `$`——看起来像假终端。对不上 id 仍不铺。
+ */
+export function sandboxLogOperationIds(
+  rows: Array<{ tool?: string; detail?: string; operationId?: string }>,
+  opts: { limit?: number; hotId?: string } = {}
+): string[] {
+  const limit = typeof opts.limit === "number" && opts.limit > 0 ? opts.limit : 12;
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const row of rows || []) {
+    if (!sandboxCommandLine(row)) continue;
+    const id = String(row.operationId || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  const hot = String(opts.hotId || "").trim();
+  if (ids.length <= limit) return ids;
+  const kept = ids.slice(-limit);
+  if (hot && seen.has(hot) && !kept.includes(hot)) {
+    return [hot, ...kept.slice(1)];
+  }
+  return kept;
+}
+
+export function sandboxActivityTranscript(input: {
+  rows: Array<{
+    tool?: string;
+    detail?: string;
+    operationId?: string;
+    status?: string;
+  }>;
+  /** 按 operationId 挂上的沙箱 stdout。优先于单条 logText。 */
+  logs?: Record<string, string>;
+  logText?: string;
+  logOperationId?: string;
+  running?: boolean;
+  dockedPrompt?: boolean;
+}): {
+  lines: string[];
+  cursor: boolean;
+  idlePrompt: boolean;
+} {
+  const lines: string[] = [];
+  const logId = String(input.logOperationId || "").trim();
+  const log = String(input.logText || "").replace(/\n+$/, "");
+  const logs = input.logs || {};
+  for (const row of input.rows || []) {
+    const command = sandboxCommandLine(row);
+    if (command) {
+      lines.push(`$ ${command}`);
+      const rowOp = String(row.operationId || "").trim();
+      const fromMap = rowOp ? String(logs[rowOp] || "").replace(/\n+$/, "") : "";
+      const fromSingle = log && rowOp && rowOp === logId ? log : "";
+      const attached = fromMap || fromSingle;
+      if (attached) {
+        for (const line of attached.split("\n")) lines.push(line);
+      }
+      continue;
+    }
+    const transfer = sandboxTransferLine(row);
+    if (transfer) lines.push(transfer);
+  }
+  const running = Boolean(input.running);
+  return {
+    lines,
+    cursor: running,
+    idlePrompt: !running && !input.dockedPrompt,
+  };
+}
+
+export function sandboxSessionTranscript(input: {
+  command: string | null | undefined;
+  logText: string;
+  running: boolean;
+  /**
+   * 底栏已经钉着一个 `$`（Manus 那条提示符 + 跳到实时）。
+   * 会话里再画一个闲置提示符就是两行 `$` 叠在一起。
+   */
+  dockedPrompt?: boolean;
+}): {
+  lines: string[];
+  cursor: boolean;
+  idlePrompt: boolean;
+} {
+  const lines: string[] = [];
+  const command = String(input.command || "").trim();
+  if (command) lines.push(`$ ${command}`);
+  const log = String(input.logText || "").replace(/\n+$/, "");
+  if (log) {
+    for (const line of log.split("\n")) lines.push(line);
+  }
+  return {
+    lines,
+    cursor: Boolean(input.running),
+    idlePrompt: !input.running && !input.dockedPrompt,
+  };
+}

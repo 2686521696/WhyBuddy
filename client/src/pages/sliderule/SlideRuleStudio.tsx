@@ -5,7 +5,8 @@
  *
  * 分栏默认：桌面对话栏 = 左侧菜单 ×2；手机把同一宽度锁给预览列且不可拖。
  *
- * 右侧主舞台——四态：
+ * 工程档右侧是一块「它的电脑」（终端 / 预览 / 源码同一外壳切档，
+ * 见 project-computer-view.ts）。HTML 推演档右侧仍是下面四态：
  *   pages   — **成品面**：spec-first 那条链路产出的 HTML 页面，装在
  *             1920×1080 的等比缩放画布里（见 live-runtime/canvas-scale.tsx）。
  *             推演中逐页到达就开始渲染，跑完继续由它接管，中途不换面孔；
@@ -33,6 +34,8 @@ import type { SkillId } from "@/lib/sliderule-marathon-driver";
 import { DEFAULT_SESSION_ID } from "@/lib/sliderule-session-id";
 import type { PublishClosureSummary } from "./derive-cross-runtime-summary";
 import { ArchitectureStage } from "./ArchitectureStage";
+import { SandboxPreviewSurface } from "./project-runtime/SandboxPreviewSurface";
+import type { UiTurn } from "./types";
 import { ActiveSystemScreen } from "./system-screens/ActiveSystemScreen";
 import {
   deriveSettledFiveSystemModel,
@@ -93,6 +96,7 @@ import {
   type RecordActionRequest,
 } from "./live-runtime/RecordFormDrawer";
 import { RollingText } from "./RollingText";
+import { ThinkingOrbMark } from "./ThinkingOrbMark";
 import { deriveAppRuntimeSchema } from "./live-runtime/app-runtime-schema";
 import {
   XrayPanel,
@@ -221,6 +225,11 @@ const SKILL_LABELS: Record<SkillId, string> = {
 };
 
 interface SlideRuleStudioProps {
+  runtimeKind?: "html-prototype" | "project";
+  projectId?: string | null;
+  projectRevision?: string | null;
+  /** 计划已批准、工程还没落库时，电脑空态用来报创建失败。 */
+  projectCreateError?: string | null;
   /** E29 模型版本史（前进/回退按钮数据源）。`model` 是闭环空着时舞台填数的货架。 */
   modelVersions?: Array<{
     id: string;
@@ -283,6 +292,8 @@ interface SlideRuleStudioProps {
    *  ⚠ 跟 specPages 不是二选一，是**同一份东西的两个来源**：推演中走 SSE
    *  逐页到达，跑完/刷新之后走这份。合并逻辑在下面一处做完，别在两处判。 */
   specFirstPages?: SpecFirstPagesBlob;
+  /** 工程执行面板的数据源：跟左栏动作流同一份真实步骤，不各算一套。 */
+  turns?: UiTurn[];
 
   className?: string;
   /** 舞台头条右侧：布局档分段（分栏/全屏/画布）+ 交付物。不另占整页顶栏。 */
@@ -300,7 +311,66 @@ interface SlideRuleStudioProps {
   sessionEmpty?: boolean;
 }
 
-export function SlideRuleStudio({
+/** Artifact type owns the entire stage, including effects and layout preferences.
+ * A project may still carry historical HTML; mounting that renderer even while
+ * loading would execute its connector/seed/screenshot effects on the wrong app.
+ */
+export function SlideRuleStudio(props: SlideRuleStudioProps) {
+  return props.runtimeKind === "project"
+    ? <ProjectStudio {...props} /> : <HtmlSlideRuleStudio {...props} />;
+}
+
+function ProjectStudio({ projectId, projectRevision, appTitle, chatSlot,
+  stageVisible = true, sessionEmpty = false, className, chromeSlot, resetSlot,
+  sessionId, isRunning = false, liveActionLabel = null, turns = [],
+  projectCreateError = null,
+}: SlideRuleStudioProps) {
+  const layout = useStudioLayout();
+  const showStage = isStagePageShown(stageVisible, !!layout?.stagePageHidden);
+  useLayoutEffect(() => {
+    layout?.setMaximizeLocked(false);
+    layout?.registerCanvasSink(null);
+  }, [layout]);
+  return (
+    <StudioChrome className={className}>
+      {showStage ? <StudioSplit sessionEmpty={sessionEmpty} chat={chatSlot} stage={
+        <div className="flex h-full min-h-0 flex-col">
+          {/* ⚠ 2026-09-14：这里不许再写 p-3。真机圈出来的 12px 一圈
+              把「它的电脑」浮在舞台底色上，像没铺满。 */}
+          {/* 重置 / 分栏 / 交付物进电脑头条（跟 HTML 推演那条 stage-bar 同一套）。
+              没 turns 才在壳外报「正在运行命令」——有会话时命令在终端里。 */}
+          {isRunning && liveActionLabel && turns.length === 0 ? (
+            <div className="flex shrink-0 items-center gap-2 pb-2">
+              <span
+                className="min-w-0 truncate text-[12px] text-stone-500"
+                data-testid="project-live-action"
+                role="status"
+                aria-live="polite"
+              >
+                {liveActionLabel}
+              </span>
+            </div>
+          ) : null}
+          <SandboxPreviewSurface
+            projectId={projectId}
+            projectRevision={projectRevision}
+            revisionMode="current"
+            appTitle={appTitle}
+            turns={turns}
+            sessionId={sessionId}
+            isRunning={isRunning}
+            chromeSlot={chromeSlot}
+            resetSlot={resetSlot}
+            projectCreateError={projectCreateError}
+            className="min-h-0 flex-1"
+          />
+        </div>
+      } /> : <div className="flex h-full min-h-0 flex-col">{chatSlot}</div>}
+    </StudioChrome>
+  );
+}
+
+function HtmlSlideRuleStudio({
   chatSlot,
   activeSkillId,
   publishClosure,
@@ -393,7 +463,16 @@ export function SlideRuleStudio({
    */
   const [boundAppId, setBoundAppId] = useState<string | null>(null);
   useEffect(() => {
-    if (!sessionId) {
+    // A brand-new anonymous/empty session has no generated app yet. Avoid a
+    // guaranteed 404 probe while the welcome composer owns the whole surface;
+    // once the stage is visible, the session has a persisted/active artifact
+    // worth resolving for click-edit controls.
+    // A conversation can be visible while its HTML pages are still absent
+    // (for example immediately after creating a new session).  There is no
+    // generated-app binding to resolve in that state, and probing the legacy
+    // endpoint only creates an expected 404 in the browser console.  Existing
+    // HTML sessions with pages keep the binding lookup for click-edit.
+    if (!sessionId || !stageVisible || livePages.length === 0) {
       setBoundAppId(null);
       return;
     }
@@ -404,7 +483,7 @@ export function SlideRuleStudio({
     return () => {
       alive = false;
     };
-  }, [sessionId, isRunning]);
+  }, [sessionId, isRunning, stageVisible, livePages.length]);
 
   const [editMode, setEditMode] = useState(false);
   const [editDirty, setEditDirty] = useState(false);
@@ -616,7 +695,17 @@ export function SlideRuleStudio({
       ) {
         applyRuntime(selectRecord(htmlRuntime, ev.entityId, ev.rowId));
       }
-      if (isRecordActionKind(ev.kind)) setRecordAction(ev);
+      // ⚠ BindingActionEvent.kind 是 `ActionKind | ImplicitActionKind`，而
+      //   抽屉只认 ActionKind。上面这个判据运行期已经保证了，但整包直接塞
+      //   过去类型上说不通（TS2345）。按抽屉的契约显式取三个字段：多出来的
+      //   delta / chip 是购物车和筛选用的，抽屉本来就不看。
+      if (isRecordActionKind(ev.kind)) {
+        setRecordAction({
+          kind: ev.kind,
+          entityId: ev.entityId,
+          rowId: ev.rowId,
+        });
+      }
     },
     [fiveSystemModel, htmlRuntime, role, applyRuntime]
   );
@@ -1199,11 +1288,7 @@ export function SlideRuleStudio({
               {chromeSlot}
             </div>
           ) : null}
-          <span className="inline-flex items-end gap-1.5" aria-hidden>
-            <span className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]" />
-            <span className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]" />
-            <span className="sr-dot h-2 w-2 rounded-full bg-[#1677ff]" />
-          </span>
+          <ThinkingOrbMark label={liveActionLabel || "推演中"} size={64} />
           <div className="text-[13px] font-medium text-stone-500">推演中</div>
           {/* 一行步骤锚点即可（用户反馈：字太多）——文案翻滚过渡 */}
           {liveActionLabel && (

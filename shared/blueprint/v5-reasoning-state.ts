@@ -13,6 +13,7 @@ import type { V5CapabilityId } from "./contracts.js";
 import type { ReasoningEvent } from "./sliderule-reasoning-events.js";
 import type { BrainstormReasoningGraph } from "./brainstorm-reasoning-graph.js";
 import type { SlideRuleReplayEvent } from "./sliderule-session-replay.js";
+import type { Project } from "../project-runtime.generated.js";
 
 export type { V5CapabilityId };
 
@@ -31,6 +32,7 @@ export type AwaitReason =
   | "closure_missing"
   | "control_ask"
   | "control_scope"
+  | "control_plan_approval"
   /** 控制面澄清停靠。缺它会让停在澄清的会话读不回来，见 models/v5_state.py 同名注释。 */
   | "control_clarify"
   /** 马拉松内层驱动失败停靠（slide_rule_marathon.py）。同上，缺它会连失败取证一起丢。 */
@@ -156,6 +158,10 @@ export interface DependencyEdge {
 }
 
 export interface V5SessionState {
+  /** Server-owned references. Source revisions and evidence live in the project store. */
+  runtimeKind?: "html-prototype" | Project["runtimeKind"];
+  projectId?: Project["projectId"] | null;
+  projectRevision?: Project["currentRevision"] | null;
   goal: {
     text: string;
     status: "clear" | "needs_refinement" | "not_recommended";
@@ -179,6 +185,11 @@ export interface V5SessionState {
     text?: string;
     kind?: string;
     timestamp?: string;
+    /** Server-owned plan revision and its correlated approval request. */
+    planContent?: string;
+    planId?: string;
+    revision?: number;
+    reqId?: string;
     [key: string]: unknown;
   }>;
   openQuestions: Array<{ id: string; text: string }>;
@@ -221,12 +232,62 @@ export interface V5SessionState {
     steps: unknown[];
     durationMs?: number;
   }>;
+  /**
+   * E29 模型版本史（前进/回退按钮的数据源）与当前生效版本指针。
+   *
+   * ⚠ 2026-09-13：跟 `specFirstPages` 同一笔欠账——Python 侧
+   * `v5_state.py` 一直有 `modelVersions` / `currentModelVersionId`，TS 这边
+   * 一直没声明。`previousModelVersionId(preparedState)` 于是报 TS2559
+   * 「两个类型没有任何共同属性」，而那正是回退按钮真在走的调用点。
+   */
+  modelVersions?: Array<{
+    id?: string;
+    turnId?: string;
+    instruction?: string;
+    createdAt?: string;
+    model?: unknown;
+    [key: string]: unknown;
+  }>;
+  currentModelVersionId?: string | null;
+  /**
+   * spec-first 工厂的展示投影（规格 / 逐页产物 / 质检提示）。
+   *
+   * ⚠ 2026-09-13：Python 侧 `v5_state.py:specFirstPages` 一直有，**TS 这边
+   * 一直没有** —— 正是 §4 点名的「Python 判定 / TypeScript 运行时」成对物只
+   * 写了一半。后果不是报错而是各处就地 `as any` / 内联重声明（本文件搜
+   * specFirstPages 能看到三四份形状不一的局部声明），而 `pnpm run check` 里
+   * 留着三条 TS2339——CI 第一步就挂在这儿，后面的架构闸整个被 skip。
+   *
+   * Python 那边是 `Optional[Dict[str, Any]]`，所以这里保留索引签名是诚实的：
+   * 已知字段写出来，其余不假装知道。
+   */
+  specFirstPages?: {
+    spec?: unknown;
+    pages?: unknown[] | Record<string, unknown>;
+    qualityNotices?: Array<{ kind: string; text: string }>;
+    [key: string]: unknown;
+  };
   lastTurnId?: string;
   /**
    * 工厂待办（2026-09-04 阶段 1）。模型从首轮链上摘掉的公开工具。
    * 服务端拥有，客户端只读——PUT 不得写回。空 = 账已清。
    */
   factoryTodo?: string[];
+  /**
+   * 老师傅自己列的活儿清单（`todo_write` 写的）。服务端拥有，客户端只读。
+   *
+   * ⚠ 2026-09-14 补：Python 侧 2026-09-09 就有了，TS 镜像一直漏着
+   *   （同 specFirstPages / modelVersions 那批的形态，§4）。
+   *   后续建议 chips（`next-step-chips.ts`）读的就是它——没有类型的话
+   *   只能靠 `as any` 硬读，那等于把这条断链继续藏着。
+   */
+  controlTodo?: Array<{ id?: string; status?: string; content?: string }>;
+  /**
+   * 「一直在读、一次没写」的**跨回合**账（2026-09-14）。服务端拥有，客户端只读。
+   * 回合级游标在真机上一次没响（每回合最多 3 轮只读就收尾，阈值 4），
+   * 详见 `models/v5_state.py` 上 controlReadOnly 的说明。
+   */
+  controlReadOnly?: { rounds?: number; nudgedAt?: number };
   /** 只读子代理账本。服务端拥有，客户端只读。 */
   subagentTasks?: Array<{
     id: string;

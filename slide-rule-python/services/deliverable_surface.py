@@ -74,6 +74,7 @@ grok 在编辑工具上**没有**这条（`apply_patch` 写盘后不回读、不
 from __future__ import annotations
 
 import re
+from html.parser import HTMLParser
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
@@ -162,13 +163,46 @@ class PageSurface:
 
 def measure_page(page_id: str, html: Any) -> PageSurface:
     body = strip_inert(html)
-    counts = {name: len(pat.findall(body)) for name, pat in _TAG_RE.items()}
+    counts = {name: 0 for name in _TAG_RE}
+    counts.update(dataHoles=0, roleClick=0, roleEntry=0)
+
+    class Parser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.stack = []
+
+        def handle_starttag(self, tag, pairs):
+            attrs = dict(reversed(pairs))
+            hidden = "hidden" in attrs or "inert" in attrs or any(row[1] for row in self.stack)
+            disabled = "disabled" in attrs or any(row[2] for row in self.stack)
+            if not hidden:
+                counts["dataHoles"] += sum(key.startswith("data-") for key in attrs)
+                editable = not disabled and "readonly" not in attrs and attrs.get("aria-readonly") != "true"
+                if tag in counts and (tag not in ("button", "input", "select", "textarea") or editable):
+                    if tag != "input" or (attrs.get("type") or "text").lower() not in ("hidden", "submit", "reset", "button", "image"):
+                        counts[tag] += 1
+                if editable:
+                    counts["roleClick"] += int(attrs.get("role") in ("button", "link", "tab", "menuitem"))
+                    counts["roleEntry"] += int(attrs.get("role") in ("textbox", "combobox", "searchbox", "spinbutton") or attrs.get("contenteditable") in ("", "true"))
+            if tag not in ("area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"):
+                self.stack.append((tag, hidden, disabled and tag == "fieldset"))
+
+        def handle_endtag(self, tag):
+            for i in range(len(self.stack) - 1, -1, -1):
+                if self.stack[i][0] == tag:
+                    del self.stack[i:]
+                    break
+
+        def handle_startendtag(self, tag, pairs):
+            self.handle_starttag(tag, pairs)
+            self.handle_endtag(tag)
+
+    parser = Parser()
+    parser.feed(body)
+    parser.close()
     return PageSurface(
         pageId=str(page_id),
         chars=len(str(html or "")),
-        dataHoles=len(_DATA_HOLE_RE.findall(body)),
-        roleClick=len(_ROLE_CLICK_RE.findall(body)),
-        roleEntry=len(_ROLE_ENTRY_RE.findall(body)),
         **counts,
     )
 

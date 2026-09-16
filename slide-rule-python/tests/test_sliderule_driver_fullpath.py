@@ -5,6 +5,8 @@ This directly proves Python driver behavior per task acceptance (no Node proxy, 
 Classification: PYTHON_AUTHORITY for PythonDriver phase transitions.
 """
 
+from plan_approval_support import approved_execution_payload
+
 import pytest
 from unittest.mock import patch
 
@@ -1229,7 +1231,7 @@ def test_execute_capability_route_wraps_work_in_to_thread_and_wait_for():
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.post(
             "/api/sliderule/execute-capability",
-            json=payload,
+            json=approved_execution_payload(payload),
             headers={"X-Internal-Key": "dev-slide-rule-internal"},
         )
         assert resp.status_code == 200, f"bad: {resp.status_code} {resp.text}"
@@ -1271,7 +1273,7 @@ def test_execute_capability_timeout_path_records_and_returns_degraded():
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.post(
             "/api/sliderule/execute-capability",
-            json=payload,
+            json=approved_execution_payload(payload),
             headers={"X-Internal-Key": "dev-slide-rule-internal"},
         )
         assert resp.status_code == 200, "timeout must degrade gracefully (200 + degraded body), not raise"

@@ -1,4 +1,6 @@
 """Runtime provenance contract: retrieved / fallback / generated / degraded stay honest."""
+
+from plan_approval_support import approved_execution_payload
 import os
 import sys
 
@@ -218,7 +220,7 @@ def _evidence_search_payload() -> dict:
 def _post_evidence_route(client):
     return client.post(
         "/api/sliderule/execute-capability",
-        json=_evidence_search_payload(),
+        json=approved_execution_payload(_evidence_search_payload()),
         headers={"X-Internal-Key": INTERNAL_KEY},
     )
 

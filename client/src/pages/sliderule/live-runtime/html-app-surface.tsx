@@ -38,8 +38,6 @@ import DOMPurify from "dompurify";
 
 import {
   applyBindings,
-  catalogEntityId,
-  findCatalogSearchInput,
   searchEntityId,
   hasAnyDataSource,
   implicitActionFromClick,
@@ -734,6 +732,7 @@ export function HtmlAppSurface({
     let fillMo: MutationObserver | null = null;
     let wired = false;
     let unwireOverlays: (() => void) | null = null;
+    let unwireSearch: (() => void) | null = null;
 
     const onLoad = () => {
       if (disposed || wired) return;
@@ -778,25 +777,24 @@ export function HtmlAppSurface({
           ...report,
           hasDataSource: hasAnyDataSource(d.body),
         });
-        const search = findCatalogSearchInput(d.body);
-        const entityId = searchEntityId(search) || catalogEntityId(d.body);
-        if (search && entityId) {
-          search.value = catalogView.current.query[entityId] || "";
-        }
-        return entityId;
+        d.body.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea").forEach(search => {
+          const entityId = searchEntityId(search);
+          if (entityId) search.value = merged.catalogQuery?.[entityId] || "";
+        });
       };
 
       bindNow();
 
-      const search0 = findCatalogSearchInput(d.body);
-      const entityId0 = searchEntityId(search0) || catalogEntityId(d.body);
-      if (search0 && entityId0) {
-        search0.addEventListener("input", () => {
-          catalogView.current.query[entityId0] = search0.value;
-          bindNow();
-          search0.focus();
-        });
-      }
+      const onSearch = (event: Event) => {
+        const search = event.target as HTMLInputElement | HTMLTextAreaElement | null;
+        if (!search || !["INPUT", "TEXTAREA"].includes(search.tagName)) return;
+        const entityId = searchEntityId(search);
+        if (!entityId) return;
+        catalogView.current.query[entityId] = search.value;
+        bindNow();
+      };
+      d.addEventListener("input", onSearch);
+      unwireSearch = () => d.removeEventListener("input", onSearch);
 
       // 抽屉开/关：页面 script 被摘了，对照 Radix Dialog 的 onOpenChange
       // 由宿主接。必须赶在切页监听之前挂到 document（捕获阶段比 body 早），
@@ -857,6 +855,7 @@ export function HtmlAppSurface({
     onLoad();
     return () => {
       disposed = true;
+      unwireSearch?.();
       unwireOverlays?.();
       fillMo?.disconnect();
       frame.removeEventListener("load", onLoad);

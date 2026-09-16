@@ -232,11 +232,11 @@ describe("四件事各自的接线点都在", () => {
      */
     expect(src).toMatch(/catalogView = React\.useRef/);
     expect(src).toContain("const bindNow = ");
-    expect(src).toContain("findCatalogSearchInput");
+    expect(src).toContain("searchEntityId(search)");
     expect(src).toContain("filterCatalog");
     const bindAt = src.indexOf("const bindNow = ");
     expect(bindAt).toBeGreaterThan(0);
-    const bindBody = src.slice(bindAt, src.indexOf("search0.addEventListener", bindAt));
+    const bindBody = src.slice(bindAt, src.indexOf('d.addEventListener("input", onSearch)', bindAt));
     expect(bindBody).not.toContain("srcdoc");
   });
 

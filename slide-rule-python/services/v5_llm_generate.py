@@ -636,11 +636,13 @@ from .turn_context import (  # noqa: F401  （下游按老路径 import，保持
     _connectors_var,
     _installed_skills_var,
     active_connectors,
+    approved_plan_prompt_block,
     clarification_prompt_block,
     connector_prompt_block,
     installed_skills_for_channel,
     set_active_connectors_cleaned as _store_connectors,
     set_clarifications,
+    set_approved_plan,
     set_installed_skills_cleaned as _store_installed_skills,
 )
 
@@ -884,6 +886,9 @@ def _build_user_content(
     clarify_block = clarification_prompt_block()
     if clarify_block:
         parts.append(clarify_block)
+    plan_block = approved_plan_prompt_block()
+    if plan_block:
+        parts.append(plan_block)
     # ①b 未验证绑定的已安装技能（软参考）：明确写"不要为它硬造能力卡"。
     # 从前它们跟上面混在一条 REQUIRED 里，模型只能二选一——要么编一个绑不上
     # 的能力被门禁拦，要么硬塞进无关实体。两种都比不提要求更糟。

@@ -45,16 +45,17 @@ def test_first_pass_is_producing_chain_without_closure():
     assert not cp.is_first_pass_chain(["spec", "pages", "closure"])
 
 
-def test_live_spec_first_tools_unions_todo_after_pages_stamp():
-    """2026-09-07 真机：stamp=['pages']，待办 structure/bind，流水线必须带 bind。
+def test_live_spec_first_tools_does_not_union_todo_after_pages_stamp():
+    """第 4 格：stamp=['pages']，待办 structure/bind，流水线只跑 pages。
 
-    变异：live_spec_first_tools 直接 return requested，本条红。
+    变异：再把待办并进菜单 → 本条红。bind 没跑由待办 + 闭环挡住，
+    不是偷跑进这一跳。
     """
     out = cp.live_spec_first_tools(
         ["pages"], ["structure", "bind"], has_spec=True
     )
-    assert out == ("pages", "structure", "bind")
-    assert "specfirst.bind" in cp.expand_tools(out)
+    assert out == ("pages",)
+    assert "specfirst.bind" not in cp.expand_tools(out)
     assert "spec" not in out
 
 
@@ -488,10 +489,11 @@ def test_goal_tools_omit_closure_on_the_live_path_without_monkeypatch(monkeypatc
     assert 'includes("closure")' in exec_src
 
 
-def test_executor_feeds_run_spec_first_the_todo_union_not_the_stamp():
+def test_executor_feeds_run_spec_first_the_stamp_not_the_todo():
     """接线：生成侧两处都必须走 _spec_first_tools_from_state。
 
-    变异：改回 tools=_goal_map.get("tools")，本条红，真机又会 6 页零孔。
+    第 4 格：真机载荷 stamp=pages、待办 structure/bind → 只跑 pages。
+    变异：改回 tools=_goal_map.get("tools") 绕过 helper，或 helper 再并待办 → 红。
     """
     from services.v5_capability_executor import (
         _build_per_skill_evidence,
@@ -513,8 +515,4 @@ def test_executor_feeds_run_spec_first_the_todo_union_not_the_stamp():
             "spec": {"appName": "邻掌柜", "pages": [{"id": "p1"}]},
         },
     )
-    assert _spec_first_tools_from_state(state) == (
-        "pages",
-        "structure",
-        "bind",
-    )
+    assert _spec_first_tools_from_state(state) == ("pages",)

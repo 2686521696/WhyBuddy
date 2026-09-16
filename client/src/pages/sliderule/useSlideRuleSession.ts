@@ -5,6 +5,9 @@ import type {
 } from "@shared/blueprint/capability-process-labels";
 import * as SlideRuleRuntime from "@/lib/sliderule-runtime";
 import { fetchNarration } from "@/lib/sliderule-narrator";
+import { controlStopLine } from "./control-stop";
+import { visiblePlanTodo } from "./plan-todo-dock";
+import { projectCreateFailureText } from "./project-create-error";
 import { pickMainArtifact } from "./turn-main-artifact";
 import type {
   CoverageGap,
@@ -32,12 +35,7 @@ import {
   mapArtifactsToWhyArtifacts,
 } from "./ui-capability-executor";
 import { mergePublishClosureForPersistedTurn } from "./derive-persisted-turn";
-import {
-  notifyDriveComplete,
-  loadPreferredDevice,
-  loadProductArchetype,
-} from "./user-prefs";
-import { loadDesignSystemId } from "./design-system";
+import { notifyDriveComplete } from "./user-prefs";
 import {
   renameAnnouncedPage,
   renameSpecPageCard,
@@ -82,50 +80,48 @@ import {
   latestMainArtifactIdFromTurns,
   resolveChallengeSend,
 } from "./challenge-composer";
-import {
-  charterHasContent,
-  hydrateScopeCharter,
-  loadCharterReuseNext,
-} from "./product-charter";
-import {
-  defaultArchetype,
-  isWiredArchetype,
-  isWiredDevice,
-  parseJudgeDevice,
-} from "./product-archetypes";
-import {
-  hydrateParkedScope,
-  lockScopeMorphology,
-  type ScopeCardChoice,
-  type ScopeCardDevice,
-  type ScopeCardPending,
-} from "./scope-card-gate";
+import type { ControlQuestionWire, ControlPlanApprovalWire } from "@/lib/sliderule-marathon-driver";
+import type { QuestionnaireOutcome } from "./QuestionnaireCard";
+import type { PlanApprovalOutcome } from "./PlanApprovalPanel";
 import {
   FACTORY_HOP_LABELS,
+  closedToolFromText,
   factoryHopFromText,
   isFactoryHop,
+  isFactoryWriteTool,
 } from "@/lib/factory-hops";
 import { isContinuationTurn } from "@/pages/sliderule/turn-continuation";
+import {
+  attachProjectChipsToTurns,
+  projectActionDetail,
+  turnsHaveProjectChips,
+} from "./project-activity";
 import {
   controlUserTextForSlash,
   forcedToolForRehearsalVerb,
   parseRehearsalSlash,
-  scopeCardRestatement,
 } from "./composer-slash";
 import {
   enqueueTurn,
-  mergeQueuedTurns,
+  combinePrefix,
+  type QueuedTurn,
   removeQueued,
 } from "./midrun-queue";
-import {
-  assumptionsWereConfirmed,
-  mergeAssumptions,
-  parseSpecAssumptions,
-  revisePhrase,
-  settleAssumption,
-  shouldResetSpecAssumptions,
-  type SpecAssumption,
-} from "./spec-assumptions";
+type QueuedToolAnswer = {
+  kind: string;
+  text: string;
+  reqId?: string;
+  // 只传选择和手写内容；模型看到的措辞由服务端按 outcome 生成。
+  outcome?: QuestionnaireOutcome["outcome"] | PlanApprovalOutcome["outcome"];
+  feedback?: string;
+  answers?: Record<string, string[]>;
+  notes?: Record<string, string>;
+};
+
+type QueuedControlTurn = QueuedTurn & {
+  toolAnswer?: QueuedToolAnswer;
+  planApproval?: ControlPlanApprovalWire;
+};
 
 /** 昂贵按钮的 forcedTool。/推演 不得在客户端带 rehearse——未确认卡由服务端 park。 */
 export function inferForcedTool(
@@ -147,7 +143,9 @@ export function inferForcedTool(
   //   POST 出去 forcedTool=structure，后端 `hasSpec=0 hasPages=0` 直接卡住。
   //   护栏挡的是「显式意图被文本盖掉」，挡不住「压根没有显式意图」。
   //   首轮那句是**产品话题**，不是针对交付物的指令：还没有东西可反推。
-  const fromText = firstPass ? undefined : factoryHopFromText(userText);
+  const fromText = firstPass
+    ? undefined
+    : closedToolFromText(userText) || factoryHopFromText(userText);
   if (fromText && (!explicit || isFactoryHop(explicit))) return fromText;
   if (explicit) return explicit;
   if (mode === "repair") return "repair";
@@ -193,6 +191,78 @@ function sanitizeLegacyEmptySeed(state: V5SessionState): V5SessionState {
     state.sessionId || DEFAULT_SESSION_ID
   );
   return { ...cleared, sessionId: state.sessionId || DEFAULT_SESSION_ID };
+}
+
+/** Mirror scope_authority.plan_execution_authorized; the server still authorizes every write. */
+function hasApprovedProjectPlan(state: V5SessionState): boolean {
+  const rows = (state.controlTranscript || []).filter(row => row && typeof row === "object") as Array<Record<string, unknown>>;
+  const planRows = rows.filter(row => typeof row.kind === "string" && row.kind.startsWith("plan_"));
+  const plan = [...rows].reverse().find(row => row.kind === "plan_written");
+  const latest = planRows[planRows.length - 1];
+  if (!plan || !latest || latest.kind !== "plan_approved") return false;
+  if (typeof plan.planId !== "string" || !plan.planId.trim()
+    || typeof plan.planContent !== "string" || !plan.planContent.trim()
+    || typeof plan.revision !== "number" || !Number.isInteger(plan.revision) || plan.revision < 1) return false;
+  if (["planId", "revision", "planContent"].some(key => latest[key] !== plan[key])) return false;
+  const approval = [...planRows.slice(0, -1)].reverse().find(row => row.kind === "plan_approval");
+  if (!approval || !approval.reqId) return false;
+  return ["reqId", "planId", "revision", "planContent"].every(key => latest[key] === approval[key]);
+}
+
+const PROJECT_CONVERSION_REQUIRED = "当前会话已有 HTML 应用，请新建会话创建工程，或通过显式转换迁移。";
+
+function projectCreationBlockedReason(state: V5SessionState): string | null {
+  if (state.runtimeKind === "project") return null;
+  // Mirrors project_authority.has_generated_application. The create endpoint
+  // rejects these sessions; changing runtimeKind would discard their old app.
+  const source = state as V5SessionState & {
+    specFirstPages?: { pages?: unknown[] | Record<string, unknown> };
+    modelVersions?: unknown[];
+    currentModelVersionId?: string;
+  };
+  const pages = source.specFirstPages?.pages;
+  if ((pages && Object.keys(pages).length > 0) || source.modelVersions?.length || source.currentModelVersionId) {
+    return PROJECT_CONVERSION_REQUIRED;
+  }
+  const appKinds = new Set(["app_model", "model", "page", "html", "prototype", "five_system_model"]);
+  return (state.artifacts || []).some(artifact => appKinds.has(artifact.kind)
+    || Boolean(artifact.payload && typeof artifact.payload === "object" && "html" in artifact.payload && artifact.payload.html))
+    ? PROJECT_CONVERSION_REQUIRED : null;
+}
+
+// Project tools are emitted by the control SSE stream. Keep the UI wording
+// close to the actual tool name so the right hand workbench reflects real
+// activity rather than a fabricated percentage.
+const PROJECT_TOOL_LABELS: Record<string, string> = {
+  project_create: "正在创建工程",
+  project_list: "正在读取工程列表",
+  project_read: "正在读取工程文件",
+  project_search: "正在搜索工程源码",
+  project_patch: "正在写入工程源码",
+  project_start: "正在启动工程",
+  project_exec: "正在执行工程命令",
+  project_status: "正在读取工程运行状态",
+  project_logs: "正在读取工程日志",
+  project_cancel: "正在停止工程",
+  project_verify: "正在执行浏览器检查",
+};
+
+export function projectToolLabel(tool: unknown): string | null {
+  const key = String(tool || "").trim();
+  return PROJECT_TOOL_LABELS[key] ?? (key.startsWith("project_") ? `正在执行 ${key}` : null);
+}
+
+/** Build the server-owned approval reference without changing the session projection. */
+async function approvedPlanReference(state: V5SessionState): Promise<string | null> {
+  const rows = (state.controlTranscript || []).filter(row => row && typeof row === "object") as Array<Record<string, unknown>>;
+  const plan = [...rows].reverse().find(row => row.kind === "plan_written");
+  const approved = [...rows].reverse().find(row => row.kind === "plan_approved");
+  if (!hasApprovedProjectPlan(state) || !plan || !approved || !plan.planId || !plan.planContent || typeof plan.revision !== "number") return null;
+  if (["planId", "revision", "planContent"].some(key => approved[key] !== plan[key])) return null;
+  const bytes = new TextEncoder().encode(String(plan.planContent));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const hash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+  return `${String(plan.planId)}:${String(plan.revision)}:${hash}`;
 }
 
 /**
@@ -413,7 +483,7 @@ export type UseSlideRuleSessionOptions = {
 };
 
 export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
-  const { refresh: refreshAuth } = useAuth();
+  const { refresh: refreshAuth, user: authUser, ready: authReady } = useAuth();
   const sessionId = options.sessionId ?? DEFAULT_SESSION_ID;
   const [uiTurns, setUiTurns] = useState<UiTurn[]>([]);
   const uiTurnsRef = useRef<UiTurn[]>([]);
@@ -441,188 +511,30 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
    *   机制通、人是懵的——ref 同步判定照旧留着（setState 异步，连点会漏），
    *   另加 state 只为了让它**看得见、撤得掉**。
    */
-  const queuedTurnRef = useRef<string[]>([]);
-  const [queuedTurns, setQueuedTurns] = useState<string[]>([]);
-  const pushQueuedTurn = (text: string) => {
-    const next = enqueueTurn(queuedTurnRef.current, text);
+  const queuedTurnRef = useRef<QueuedControlTurn[]>([]);
+  const [queuedTurns, setQueuedTurns] = useState<QueuedControlTurn[]>([]);
+  const pushQueuedTurn = (text: string, opts?: { synthetic?: boolean }) => {
+    const next = enqueueTurn(queuedTurnRef.current, text, opts);
     queuedTurnRef.current = next;
     setQueuedTurns(next);
   };
   const removeQueuedTurn = useCallback((index: number) => {
+    const plan = queuedTurnRef.current[index]?.planApproval;
     const next = removeQueued(queuedTurnRef.current, index);
     queuedTurnRef.current = next;
     setQueuedTurns(next);
+    if (plan && !pendingAskRef.current && !pendingPlanApprovalRef.current) {
+      handledRequestIdsRef.current.delete(plan.reqId);
+      pendingPlanApprovalRef.current = plan;
+      setPendingPlanApproval(plan);
+    }
   }, []);
-  /**
-   * 伴随式澄清：推演中模型**替用户定下的事**（2026-08-27）。
-   *
-   * 跟上面那条队列是同一件事的两个方向：队列是「用户 → AI」（我补一句），
-   * 这个是「AI → 用户」（我替你定了这个）。所以放在一起，改一个必看另一个。
-   *
-   * ⚠ 它**不产生等待**。没有 pending、没有 blocking，用户可以从头到尾
-   *   什么都不点——不点就是按模型定的做，那是个合法结局。
-   *   一旦哪天有人给它加上"必须处理完才能继续"，伴随式就退回成了拦路的问答，
-   *   而闸的 fail-closed 语义会当场跟着炸（见 spec-assumptions.ts 头注）。
-   */
-  /**
-   * 控制面这一回合最后一次「为什么停」。null = 正常收尾。
-   *
-   * ⚠ 存下来不是为了现在就画：是为了让"服务端发了 → 客户端收到了"这条链
-   *   可断言。只加事件字段不接消费侧，就是生成侧改了一半（CLAUDE.md §4）。
-   */
+  // Preserve the server stop reason for truthful control-plane status.
   const lastControlStopRef = useRef<import("@/lib/sliderule-marathon-driver").ControlStop | null>(
     null
   );
-  const specAssumptionsRef = useRef<SpecAssumption[]>([]);
-  const [specAssumptions, setSpecAssumptions] = useState<SpecAssumption[]>([]);
-  /**
-   * ref + state 一起写，跟上面那条队列同一个模子：ref 同步、state 只负责渲染。
-   *
-   * ⚠ 别把 pushQueuedTurn 写进 setState 的 updater 里（第一版就是）。
-   *   updater 必须是纯函数，StrictMode 下 React 会**故意调用两次**来暴露副作用——
-   *   那一次就是往队列里排了两句一模一样的补充。
-   */
-  /**
-   * 已经处理过的假设 id。
-   *
-   * ⚠ 不是可有可无的去重表，是**唯一挡得住"卡自己回来"的东西**：续播恒从
-   *   since=0 全量补播（sliderule-marathon-driver 里那句「恒从 since=0
-   *   全量补播」），所以刷新页面 / 切走再回来 / 网络抖动重连之后，用户刚
-   *   点掉的那张卡会原封不动再送一遍。理由与出处见
-   *   spec-assumptions.settleAssumption 的头注（抄 grok 的
-   *   `self_interjection_ids`：自己处理过的事按 id 记下来，回声照 id 丢掉）。
-   *
-   * ⚠ 必须跟列表**一起**清空——`_sanitize_assumptions` 的 id 兜底是
-   *   `f"a{i+1}"`，所以下一轮的 a1 跟这一轮的 a1 是**两件不同的事**。
-   *   只清列表不清集合，下一轮那条真·新假设会被当成回声吞掉。
-   *   两处重置都走 resetSpecAssumptions，别再单独调 applySpecAssumptions([])。
-   */
-  /**
-   * 当前这一轮的 runId + 有没有停住（2026-08-28 接线）。
-   *
-   * ⚠ runId 存 ref 不存 state：按「先别往下跑」时要立刻拿到它发请求，
-   *   而 setState 是异步的——存 state 会出现"按下去那一刻还是上一轮的 id"。
-   *   停住与否要上屏，所以那个存 state。
-   */
-  const activeRunIdRef = useRef<string | null>(null);
-  const [runPaused, setRunPaused] = useState(false);
-  const settledAssumptionIdsRef = useRef<Set<string>>(new Set());
-  const assumptionsConfirmedRef = useRef(false);
-  const applySpecAssumptions = useCallback((next: SpecAssumption[]) => {
-    specAssumptionsRef.current = next;
-    setSpecAssumptions(next);
-  }, []);
-  const resetSpecAssumptions = useCallback(() => {
-    settledAssumptionIdsRef.current = new Set();
-    assumptionsConfirmedRef.current = false;
-    specAssumptionsRef.current = [];
-    setSpecAssumptions([]);
-    setSessionState(prev => {
-      const sp = (prev as { specFirstPages?: Record<string, unknown> })
-        .specFirstPages;
-      if (!sp?.assumptionsConfirmed) return prev;
-      return {
-        ...prev,
-        specFirstPages: { ...sp, assumptionsConfirmed: false },
-      };
-    });
-  }, []);
-  /**
-   * 「先别往下跑」：让服务端在下一个安全点停住这一轮（2026-08-28 接线）。
-   *
-   * ⚠ 跟停止按钮**不是同一件事**：停止是取消，这一轮判死、白烧（真机实测
-   *   publishClosure=null、modelVersions=0）；这个是停住等人，答完/超时/
-   *   没人在场都会接着跑到最后一步，闭环照样绿。
-   *
-   * ⚠ 停住的位置是**能力与能力之间**，所以生效可能迟到一步（真机单步量到
-   *   过 918 秒）。这是协作式模型的固有取舍，跟取消同一条。
-   *   同一个后果：假设是 spec-first 内部第 2 步报出来的，等循环回到协程层
-   *   时页面已经画完——**这一轮停住了，但改动仍然只作用于下一轮**。要让
-   *   改动落到当前这一轮，得把安全点再往流水线里插一层，那是另一摊。
-   */
-  const holdRun = useCallback(async () => {
-    const rid = activeRunIdRef.current;
-    if (!rid || !isRunningRef.current) return false;
-    try {
-      const res = await fetch(
-        `/api/sliderule/runs/${encodeURIComponent(rid)}/hold`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ nonInteractive: false }),
-        }
-      );
-      const body = await res.json().catch(() => ({}));
-      return Boolean(body?.held);
-    } catch {
-      // 暂停是增强：按不动就当没按，绝不能把正在跑的推演带崩
-      return false;
-    }
-  }, []);
-
-  /** 放行：人答了（answer）或明确「就这样」（skip）。闸不在时静默返回。 */
-  const releaseRun = useCallback(
-    async (opts: { answer?: unknown; skip?: boolean }) => {
-      const rid = activeRunIdRef.current;
-      if (!rid) return false;
-      try {
-        const res = await fetch(
-          `/api/sliderule/runs/${encodeURIComponent(rid)}/release`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(opts),
-          }
-        );
-        const body = await res.json().catch(() => ({}));
-        return Boolean(body?.released);
-      } catch {
-        return false;
-      }
-    },
-    []
-  );
-
-  /** 「就这样」：知道了，不改。只是把卡收走，不发任何东西给后端。 */
-  const settleSpecAssumption = useCallback(
-    (id: string) => {
-      settledAssumptionIdsRef.current.add(id);
-      applySpecAssumptions(settleAssumption(specAssumptionsRef.current, id));
-      // 停住的时候点「就这样」= 人已经表态了，没必要再让它等满预算
-      if (runPaused) void releaseRun({ skip: true });
-    },
-    [applySpecAssumptions, runPaused, releaseRun]
-  );
-  /** 「改成 X」：把这条改动排进中途排队（本轮结束自动发出），并收走卡。 */
-  const reviseSpecAssumption = useCallback(
-    (id: string, alternative: string) => {
-      const row = specAssumptionsRef.current.find(r => r.id === id);
-      if (!row) return;
-      const phrase = revisePhrase(row, alternative);
-      if (!phrase) return;
-      pushQueuedTurn(phrase);
-      // 先记 id 再撤卡：不记的话续播会把这张卡送回来，用户再点一次，
-      // 同一句补充就进队列两遍（模型会被同一件事说两遍）。
-      settledAssumptionIdsRef.current.add(id);
-      applySpecAssumptions(settleAssumption(specAssumptionsRef.current, id));
-      // 停住的时候点「改成 X」：带着答案放行，让这一轮继续。
-      // ⚠ 那句话仍旧排进中途排队、作用于**下一轮**——安全点在能力之间，
-      //   等它生效时这一轮的页面已经画完了。见 holdRun 头注。
-      if (runPaused) void releaseRun({ answer: { assumptionId: id, phrase } });
-    },
-    [applySpecAssumptions, runPaused, releaseRun]
-  );
   const requestRehearsalRef = useRef<
     (userText: string) => Promise<void>
-  >(async () => {});
-  const runTurnRef = useRef<
-    (
-      userText: string,
-      intervention?: UserIntervention,
-      resumeRun?: { runId: string },
-      mode?: "repair",
-      forcedTool?: string
-    ) => Promise<void>
   >(async () => {});
   /**
    * 版本回退/前进是否有请求在飞（2026-08-16 线上实测）。
@@ -643,6 +555,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const [sessionState, setSessionState] = useState(() =>
     createEmptySessionState(sessionId)
   );
+  const sessionStateRef = useRef(sessionState);
+  sessionStateRef.current = sessionState;
+  const controlActivityRef = useRef(0);
   const [sessionHydrated, setSessionHydrated] = useState(false);
   const [driveFullStatus, setDriveFullStatus] = useState<
     | "idle"
@@ -650,121 +565,137 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     | "python_success"
     | "timeout"
     | "python_unavailable"
+    | "control_failed"
     | "fallback"
   >("idle");
-  /**
-   * PR-3 范围卡停泊。pending 被后一次 requestRehearsal 整份替换，
-   * 不许拿上一句意图劫持后面无关的发送（确认永远读 ref 里的当前卡）。
-   * skip 驱动（repair/challenge/clarify/resume）和重置必须清掉——
-   * 否则卡叠在跑着的 skip 轮上，确认会把停泊意图当第二发（PR-1 pendingChallengeRef 同类）。
-   */
-  const [pendingScope, setPendingScope] = useState<ScopeCardPending | null>(
-    null
-  );
-  const pendingScopeRef = useRef<ScopeCardPending | null>(null);
-  pendingScopeRef.current = pendingScope;
   const [submittedClarifyIds, setSubmittedClarifyIds] = useState<string[]>([]);
   const [pendingAsk, setPendingAsk] = useState<{
     question: string;
     options?: string[];
+    /** 抄 grok `AskUserQuestion`：一发几道题。缺席 = 服务端还是老形状。 */
+    questions?: ControlQuestionWire[];
+    reqId?: string;
   } | null>(null);
+  const [pendingPlanApproval, setPendingPlanApproval] =
+    useState<ControlPlanApprovalWire | null>(null);
+  const pendingPlanApprovalRef =
+    useRef<ControlPlanApprovalWire | null>(null);
+  const handledRequestIdsRef = useRef(new Set<string>());
   const pendingAskRef = useRef(pendingAsk);
   pendingAskRef.current = pendingAsk;
+  /**
+   * 点芯片时第一发可能还在收 SSE（isRunning=true）。sendMessage 会清
+   * pendingAsk，好让 finally 的 flush 不被 overlay 挡住——回执必须先
+   * 盖到这枚章上，否则 POST 只有 forcedTool、没有 toolAnswer
+   * （2026-09-08 真机：点「开始起草规范（spec）」）。
+   */
+  const pendingToolAnswerRef = useRef<QueuedToolAnswer | undefined>(undefined);
 
-  /**
-   * 停泊卡 / 提问还在时不许 flush。
-   *
-   * ⚠ 2026-08-27：第一版 finally 无条件 requestRehearsal，而 requestRehearsal
-   * 开头就 clearPendingScope——/推演 刚 park 的卡被排队文本清掉，确认没了。
-   * 队列留着（一格、仍 latest-wins），确认/先改范围/关掉提问之后再发。
-   */
   const overlayBlocksQueueFlush = () =>
-    Boolean(pendingScopeRef.current || pendingAskRef.current);
-  /**
-   * 假设卡确认后的下一跳。只在 runTurn 过了 isRunning 闸之后才取走——
-   * ⚠ 2026-09-02 真机：flush 先把 flag 清掉再进 runTurn，isRunning 仍真时
-   *   直接 return，forcedTool=pages 和排队文本一起丢了，控制面去 planning。
-   */
+    Boolean(pendingAskRef.current || pendingPlanApprovalRef.current);
   const pendingForcedToolRef = useRef<string | undefined>(undefined);
   const flushQueuedControlTurn = () => {
+    if (isRunningRef.current) return;
     if (overlayBlocksQueueFlush()) return;
     /* ⚠ 合成**一条**再发：三句补充发三轮 = 烧三次工厂，而且前两轮的产物
        立刻被后一轮推翻。用户补的是同一件事的三个细节。 */
-    const text = mergeQueuedTurns(queuedTurnRef.current);
-    queuedTurnRef.current = [];
-    setQueuedTurns([]);
-    if (text) void requestRehearsalRef.current(text);
+    // 抄 grok `combine_prefix_len`：只发**开头连续可合并的一段**，
+    // 剩下的（比如系统合成的那条）留在队列里。这一条发出去的回合完成时
+    // 会再 flush 一次——flush 挂在回合完成上，天然是个 drain 循环。
+    const queuedAnswer = queuedTurnRef.current[0]?.toolAnswer;
+    const { text, rest } = combinePrefix(queuedTurnRef.current);
+    queuedTurnRef.current = rest;
+    setQueuedTurns(rest);
+    if (text) {
+      if (queuedAnswer) pendingToolAnswerRef.current = queuedAnswer;
+      void requestRehearsalRef.current(text);
+    }
   };
 
   /**
-   * 假设卡「确认继续」：选完才往下。
+   * 问答卡提交。抄 grok `AskUserQuestion` 那四条路径。
    *
-   * ⚠ 闸可能还在 pending（人确认得比安全点早）：一律试放行，不许只在
-   *   `runPaused` 为真时才放。2026-09-02 那条竞态：卡已经撤了，工厂还在
-   *   闸上等满 30 分钟。release 在闸不在时静默返回。
+   * ⚠ 这里**只送结构**，不拼给模型看的话。回喂措辞归服务端
+   *   （`services/user_questions.py` 的四条 format），前端换个说法不该改变
+   *   模型看到的东西——本仓 §四那张「生成侧 / 消费侧」的表。
    *
-   * 已经 hop 完（空闲）= 把改动和「继续」合成一条发给控制面——不能再
-   * 挂在队列上等发送键（queued-turn-has-an-exit-when-idle 那场事故）。
+   * ⚠ `text` 仍要给一句人话：它进 transcript、进左栏气泡，是**用户视角**的
+   *   记录。两者不是一回事，别拿同一份糊弄过去。
    */
-  const confirmSpecAssumptions = useCallback(
-    (picks: Record<string, string>) => {
-      const rows =
-        specAssumptionsRef.current.length > 0
-          ? specAssumptionsRef.current
-          : parseSpecAssumptions(
-              (
-                sessionState as {
-                  specFirstPages?: { spec?: { assumptions?: unknown } };
-                }
-              ).specFirstPages?.spec?.assumptions
-            );
-      for (const id of Object.keys(picks)) {
-        if (id) settledAssumptionIdsRef.current.add(id);
-      }
-      for (const row of rows) {
-        const pick = String(picks[row.id] ?? row.decision).trim();
-        if (pick && pick !== row.decision) {
-          const phrase = revisePhrase(row, pick);
-          if (phrase) pushQueuedTurn(phrase);
-        }
-        settledAssumptionIdsRef.current.add(row.id);
-      }
-      applySpecAssumptions([]);
-      assumptionsConfirmedRef.current = true;
-      setSessionState(prev => {
-        const sp =
-          ((prev as { specFirstPages?: Record<string, unknown> }).specFirstPages) ||
-          {};
-        return {
-          ...prev,
-          specFirstPages: { ...sp, assumptionsConfirmed: true },
-        };
-      });
-      // 无论推演中还是空闲，确认 = 要继续。只 release 不排队的话，
-      // P1-1 spec-only hop 结束后面板没了、下一跳也不会自己开。
-      pendingForcedToolRef.current = "pages";
-      // 抄 grok AskUserQuestion：确认是 typed 答案，不是聊天欠条。
-      // 进 ref 等空闲立刻发 / 跑着的 finally flush，不进「本轮结束后发出」。
-      queuedTurnRef.current = enqueueTurn(
-        queuedTurnRef.current,
-        "假设已确认。继续画页面。"
-      );
-      if (isRunningRef.current) {
-        void releaseRun({ skip: true });
+  const submitQuestionnaire = useCallback(
+    (result: QuestionnaireOutcome) => {
+      const pending = pendingAskRef.current;
+      if (!pending) return;
+      const rows = pending.questions || [];
+      const reqId = pending.reqId;
+      if (reqId && handledRequestIdsRef.current.has(reqId)) return;
+      if (reqId) handledRequestIdsRef.current.add(reqId);
+      const label = (qid: string) =>
+        rows.find(r => r.id === qid)?.question || qid;
+      let human = "";
+      if (result.outcome === "accepted") {
+        const parts = Object.entries(result.answers).map(
+          ([qid, picks]) => `${label(qid)}：${picks.join("、")}`
+        );
+        human = parts.length ? parts.join("；") : "（没有选）";
+      } else if (result.outcome === "cancelled") {
+        human = "这些我不答，你自己定";
       } else {
-        const text = mergeQueuedTurns(queuedTurnRef.current);
-        queuedTurnRef.current = [];
-        setQueuedTurns([]);
-        if (text) void runTurnRef.current(text, undefined, undefined, undefined, "pages");
+        human = "别再问了，直接开始";
       }
+      const toolAnswer: QueuedToolAnswer = {
+        kind: "ask_user",
+        text: human,
+        ...(reqId ? { reqId } : {}),
+        outcome: result.outcome,
+        ...("answers" in result ? { answers: result.answers } : {}),
+        ...("notes" in result ? { notes: result.notes } : {}),
+      };
+      // 回执先解当前提问，再处理排队的补充。答案跟条目同生共死，不能留在
+      // 全局 ref 等下一条无关消息误取；出队时才给 runTurn 盖章。
+      queuedTurnRef.current = [
+        { text: human, synthetic: true, toolAnswer },
+        ...queuedTurnRef.current,
+      ];
+      setQueuedTurns(queuedTurnRef.current);
+      pendingAskRef.current = null;
+      setPendingAsk(null);
+      flushQueuedControlTurn();
     },
-    [applySpecAssumptions, releaseRun, sessionState]
+    []
   );
 
-  const clearPendingScope = () => {
-    pendingScopeRef.current = null;
-    setPendingScope(null);
-  };
+  const submitPlanApproval = useCallback((result: PlanApprovalOutcome) => {
+    const pending = pendingPlanApprovalRef.current;
+    if (
+      !pending ||
+      result.reqId !== pending.reqId ||
+      handledRequestIdsRef.current.has(result.reqId)
+    ) return;
+    handledRequestIdsRef.current.add(result.reqId);
+    const feedback = result.feedback?.trim();
+    const human =
+      result.outcome === "approved"
+        ? "批准计划并执行"
+        : result.outcome === "abandoned"
+          ? "退出计划"
+          : feedback || "请修改计划";
+    const toolAnswer: QueuedToolAnswer = {
+      kind: "plan_approval",
+      reqId: pending.reqId,
+      outcome: result.outcome,
+      text: human,
+      ...(feedback ? { feedback } : {}),
+    };
+    queuedTurnRef.current = [
+      { text: human, synthetic: true, toolAnswer, planApproval: pending },
+      ...queuedTurnRef.current,
+    ];
+    setQueuedTurns(queuedTurnRef.current);
+    pendingPlanApprovalRef.current = null;
+    setPendingPlanApproval(null);
+    flushQueuedControlTurn();
+  }, []);
 
   // SSE-driven: which of the 6 skill systems is currently executing on Python side.
   // null = none active (before run starts or after completion).
@@ -876,12 +807,18 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const goal = useMemo(() => {
     const fromState = sessionState.goal?.text?.trim();
     if (fromState) return fromState;
-    const lastUser = [...uiTurns]
-      .reverse()
-      .find(t => t.user.trim())
+    // 2026-09-13: while approval was still running, the latest bubble renamed
+    // the project to "批准计划并执行". Python confirms the goal during approval;
+    // until that snapshot arrives, use the original request, not a tool reply.
+    const originalRequest = sessionState.controlTranscript?.find(
+      row => row.role === "user" && row.kind === "turn" && row.text?.trim()
+    )?.text?.trim();
+    if (originalRequest) return originalRequest;
+    const firstUser = uiTurns
+      .find(t => t.user.trim() && !isContinuationTurn(t.user))
       ?.user.trim();
-    return lastUser || "";
-  }, [sessionState.goal?.text, uiTurns]);
+    return firstUser || "";
+  }, [sessionState.goal?.text, sessionState.controlTranscript, uiTurns]);
 
   useEffect(() => {
     const prev = SlideRuleRuntime.getCapabilityExecutor?.();
@@ -979,6 +916,19 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
 
   useEffect(() => {
     let cancelled = false;
+    // The empty shell is intentionally browsable without an account. Session
+    // hydration is login-gated, so do not call the persisted-session endpoint
+    // for anonymous visitors (it only returns a noisy 404). Mark hydration
+    // complete with the in-memory empty state and wait for auth before trying
+    // the durable store.
+    if (authReady === false) return () => { cancelled = true; };
+    // Some isolated hook tests provide the historical { refresh }-only auth
+    // stub. Treat an omitted readiness/user pair as the old behavior; the real
+    // provider always supplies an explicit ready boolean.
+    if (authReady === true && !authUser) {
+      setSessionHydrated(true);
+      return () => { cancelled = true; };
+    }
     (async () => {
       let loaded: V5SessionState;
       try {
@@ -1002,33 +952,53 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       }
       if (!cancelled) {
         const hydrated = preservePythonEvidenceProjection(loaded);
-        // 刷新后内存 ref 是空的。确认过的伴随式卡必须在摊卡之前认出来，
-        // 否则落库 spec.assumptions 会把同一张卡再铺一遍。
-        if (assumptionsWereConfirmed(hydrated)) {
-          assumptionsConfirmedRef.current = true;
-          applySpecAssumptions([]);
-        }
+        sessionStateRef.current = hydrated;
         setSessionState(hydrated);
         setSessionHydrated(true);
         // 刷新后内存 uiTurns 是空的。版本史/叙述里有用户逐轮发出的话，
         // 不在这里灌回去，左栏就只剩首轮结论（2026-08-18 烘焙店真机）。
         const restored = deriveTurnsFromState(hydrated);
         if (restored.length > 0) setUiTurns(restored);
-        if (hydrated.awaitReason === "control_scope" && hydrated.awaitDetail) {
-          const parked: ScopeCardPending = hydrateParkedScope(hydrated);
-          pendingScopeRef.current = parked;
-          setPendingScope(parked);
+        if (hydrated.awaitReason === "control_plan_approval") {
+          const lastPlan = [...(hydrated.controlTranscript || [])]
+            .reverse()
+            .find(row => row.kind === "plan_approval");
+          if (
+            typeof lastPlan?.reqId === "string" &&
+            lastPlan.reqId &&
+            typeof lastPlan.planContent === "string"
+          ) {
+            const pending = {
+              reqId: lastPlan.reqId,
+              planContent: lastPlan.planContent,
+            };
+            pendingPlanApprovalRef.current = pending;
+            setPendingPlanApproval(pending);
+          }
         }
         if (hydrated.awaitReason === "control_ask" && hydrated.awaitDetail) {
           const rows = hydrated.controlTranscript || [];
           const lastAsk = [...rows]
             .reverse()
-            .find(row => row && row.kind === "ask_user");
+            .find(row => row && (row.kind === "ask_user" || row.kind === "ask_user_question"));
           const rawOptions = lastAsk?.options;
           const options = Array.isArray(rawOptions)
             ? rawOptions.map(item => String(item))
             : undefined;
-          setPendingAsk({ question: hydrated.awaitDetail, options });
+          const reqId =
+            typeof lastAsk?.reqId === "string" && lastAsk.reqId
+              ? lastAsk.reqId
+              : undefined;
+          const parkedAsk = {
+            question: hydrated.awaitDetail,
+            options,
+            reqId,
+            ...(Array.isArray(lastAsk?.questions) && lastAsk.questions.length
+              ? { questions: lastAsk.questions as ControlQuestionWire[] }
+              : {}),
+          };
+          pendingAskRef.current = parkedAsk;
+          setPendingAsk(parkedAsk);
         }
         if (hydrated.awaitReason === "control_clarify") {
           // ClarificationCard 读 coverageGaps。这里只把钟拨到第 1 步，
@@ -1049,7 +1019,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, options.initialGoal]);
+  }, [sessionId, options.initialGoal, authReady, authUser]);
 
   useEffect(() => {
     if (!options.documentTitle) return;
@@ -1061,35 +1031,18 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   }, [options.documentTitle]);
 
   const applyPersistedState = useCallback((state: V5SessionState) => {
+    // finally 会同步出队，可能早于 React 下一次渲染；下一条消息必须看新终态。
+    sessionStateRef.current = state;
     setSessionState(state);
-    // 选完再继续：SSE 漏了也要从落库 spec 把卡摊出来。按 id 并，
-    // 已确认的不回来。变异：删掉这一段 → hop 结束后面板空、用户没得选。
-    const pages = (
-      state as { specFirstPages?: { spec?: { assumptions?: unknown }; assumptionsConfirmed?: unknown } }
-    ).specFirstPages;
-    if (assumptionsWereConfirmed(state)) {
-      assumptionsConfirmedRef.current = true;
-      applySpecAssumptions([]);
-      return;
-    }
-    const rows = parseSpecAssumptions(pages?.spec?.assumptions);
-    if (rows.length && !assumptionsConfirmedRef.current) {
-      applySpecAssumptions(
-        mergeAssumptions(
-          specAssumptionsRef.current,
-          rows,
-          settledAssumptionIdsRef.current
-        )
-      );
-    }
-  }, [applySpecAssumptions]);
+  }, []);
 
   // E25：显式取消 = 真正杀掉服务端后台 run（不再只是断开本地连接）
   const cancelActiveRunOnServer = useCallback(() => {
     const sid = sessionState.sessionId || sessionId;
     const record = loadActiveRun(sid);
     if (!record) return;
-    fetch(`/api/sliderule/runs/${encodeURIComponent(record.runId)}`, {
+    const resource = record.kind === "control" ? "control-runs" : "runs";
+    fetch(`/api/sliderule/${resource}/${encodeURIComponent(record.runId)}`, {
       method: "DELETE",
     }).catch(() => {});
     clearActiveRun(sid);
@@ -1099,11 +1052,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     userText: string,
     intervention?: UserIntervention,
     // E25 续播：附着到既有后台 run（刷新/断线后自动接回），不重新发起推演
-    resumeRun?: { runId: string },
+    resumeRun?: { runId: string; kind?: "control" },
     // E26 缺口修复轮：只重跑覆盖门标红的能力，已 PASS 产物原样复用
     mode?: "repair",
-    forcedTool?: string,
-    scopeChoice?: ScopeCardChoice
+    forcedTool?: string
   ) => {
     if (!userText.trim()) return;
 
@@ -1113,19 +1065,82 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       //   flush，flag 必须留到下一次真正进闸的 runTurn。
       return;
     }
+
+    // 抄 grok NeedUserAnswer：问卷和计划审批是当前请求的回执，
+    // 不是用户又说了一句。新气泡会把「精修（refine）」画成原话。
+    const pendingNeed = pendingAskRef.current;
+    const stamped = pendingToolAnswerRef.current;
+    pendingToolAnswerRef.current = undefined;
+    const parkedAsk =
+      sessionStateRef.current.awaitReason === "control_ask" || Boolean(pendingNeed);
+    const toolAnswer = pendingNeed
+      ? {
+          kind: "ask_user",
+          text: userText.trim(),
+          ...(pendingNeed.reqId ? { reqId: pendingNeed.reqId } : {}),
+        }
+      : stamped
+        ? {
+            kind: stamped.kind,
+            text: stamped.text || userText.trim(),
+            ...(stamped.reqId ? { reqId: stamped.reqId } : {}),
+            ...(stamped.outcome ? { outcome: stamped.outcome } : {}),
+            ...(stamped.answers ? { answers: stamped.answers } : {}),
+            ...(stamped.notes ? { notes: stamped.notes } : {}),
+            ...(stamped.feedback ? { feedback: stamped.feedback } : {}),
+          }
+        : parkedAsk
+          ? { kind: "ask_user", text: userText.trim() }
+          : /^「[^」]+」答：/.test(userText)
+            ? { kind: "clarify", text: userText.trim() }
+            : undefined;
+    if (pendingNeed) {
+      pendingAskRef.current = null;
+      setPendingAsk(null);
+    }
+    // 续播 / 芯片 typed 答案不另起用户气泡（「精修（refine）」不是人新说的一句）。
+    // 开放回执（停在「想做什么应用」时打的字）必须看见——第 3 格是纸条，
+    // 不是把字吞掉（2026-09-09 真机：sdgdfgfd 发出去左栏空白）。
+    const skipUserBubble =
+      Boolean(resumeRun) || isContinuationTurn(userText);
     const hop = forcedTool || pendingForcedToolRef.current;
     pendingForcedToolRef.current = undefined;
+    // 跟后面 POST 的 inferForcedTool 同一把尺子。问候/提问不是 WRITE，
+    // 钟保持 idle——抄 grok：Progress 跟工具走，不是一按发送就铺六格。
+    const sfpAtStart =
+      (
+        sessionState as {
+          specFirstPages?: { spec?: unknown; pages?: Record<string, unknown> };
+        }
+      ).specFirstPages || {};
+    const firstPassAtStart =
+      !sfpAtStart.spec && Object.keys(sfpAtStart.pages || {}).length === 0;
+    const earlyTool = toolAnswer?.kind === "plan_approval" ? undefined : inferForcedTool(
+      userText,
+      intervention,
+      mode,
+      hop,
+      firstPassAtStart
+    );
+    const factoryLit = isFactoryWriteTool(earlyTool);
 
     let turnId = `turn-${Date.now()}`;
     const turnStartMs = Date.now(); // E16 收口句：本轮真实计时
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    controlActivityRef.current += 1;
     isRunningRef.current = true;
     setIsRunning(true);
-    // ⚠ 必须跟 setIsRunning(true) 同一拍。放在 persist/intake 之后的话，
-    // 迭代会先继续亮着上一轮「汇合过闸」，跟右侧旧页面同一类谎。
-    rehearsalCursorRef.current = startRehearsalCursor();
-    setRehearsalCursor(startRehearsalCursor());
+    // ⚠ 必须跟 setIsRunning(true) 同一拍清掉上一轮「汇合过闸」。
+    // 廉价回合用 idle，不许 startRehearsalCursor 把第 2 格点成 current
+    // （2026-09-08 真机：发「你好」右栏演规划第一轮）。
+    if (factoryLit) {
+      rehearsalCursorRef.current = startRehearsalCursor();
+      setRehearsalCursor(startRehearsalCursor());
+    } else {
+      rehearsalCursorRef.current = idleRehearsalCursor();
+      setRehearsalCursor(idleRehearsalCursor());
+    }
 
     // E13：直播步骤同步攒进本地数组——轮次落定时随 PUT 写进
     // state.turnNarrations（刷新后回放时间线；setUiTurns 是异步状态，
@@ -1134,6 +1149,8 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     /** 本轮已经在左栏报过的页面。同一页第二次到达不再追加一条芯片。 */
     const announcedPages = new Set<string>();
     const hostSpeechRef = { current: "" };
+    const controlFailureRef = { current: "" };
+    lastControlStopRef.current = null;
     const appendStep = (step: TurnStep) => {
       collectedSteps.push(step);
       setUiTurns(prev =>
@@ -1163,9 +1180,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       );
     };
 
-    // 续播是接回已有 run，不是用户又说了一句。新气泡会把
-    // 「（续播上一轮推演）」画成用户原话（2026-09-07 烘焙店收银台）。
-    if (resumeRun) {
+    // 续播 / 提问回执都不是用户又说了一句。新气泡会把
+    // 「（续播上一轮推演）」或「精修（refine）」画成原话。
+    if (skipUserBubble) {
       const last = uiTurnsRef.current[uiTurnsRef.current.length - 1];
       if (last) {
         turnId = last.id;
@@ -1246,7 +1263,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       // M1：cheap 回合禁止把问候/inspect/search 写进 conversation。
       // 控制面 POST 以已持久化会话为权威起点；质疑失效在 Python 做。
       // 续播同样不 intake。
-      const preparedState = applyAnsweredGapsToState(
+      let preparedState = applyAnsweredGapsToState(
         workingState,
         intervention
       );
@@ -1281,7 +1298,11 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         }).length
       );
 
-      setLiveAction({ label: "正在规划本轮动作...", external: false });
+      if (factoryLit) {
+        setLiveAction({ label: "正在规划本轮动作...", external: false });
+      } else {
+        setLiveAction({ label: "正在想…", external: false });
+      }
 
       const firstLoopPlanCountRef = { value: 0 };
       const driveLoopsRef: SlideRuleRuntime.DriveReasoningResult["loops"] = [];
@@ -1322,34 +1343,33 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         });
       }
       // ⚠ 2026-09-05：续跑的一轮**不报开场**。
-      //
-      //   用户第三次指着同一处说「是伴随式澄清选择完之后」。前面几刀把左栏的
-      //   行折进了上一段，但**这两行是另一路**：`指令已接收 · 启动推理` 和
-      //   状态条上的「规划第一轮能力与路线…」是每一轮 runTurn 无条件发的，
-      //   折叠管不着——右栏于是照样写着"正在规划第一轮"，看着就是从头再来。
-      //
-      //   续跑本来就没有"第一轮"可规划：这一跳是接着上一跳走的，
-      //   路线上一轮就定了。所以开场芯片不发，状态条说这一跳在干什么。
-      if (!isContinuationTurn(userText)) {
-        appendStep({
-          id: `${turnId}-intake`,
-          kind: "chip",
-          capabilityId: "intent.parse" as any,
-          roleId: "system",
-          label: "指令已接收 · 启动推理",
-          realLlm: false,
-          loopTurnId: turnId,
-          progressType: "thinking",
-        });
-        setLiveAction({ label: "规划第一轮能力与路线...", external: false });
-      } else {
-        const hopLabel = isFactoryHop(hop)
-          ? FACTORY_HOP_LABELS[hop]
-          : "";
-        setLiveAction({
-          label: hopLabel ? `接着上一跳：${hopLabel}` : "接着上一跳往下走",
-          external: false,
-        });
+      // ⚠ 2026-09-08：问候/提问也不是开场。抄 grok Progress 跟工具走——
+      //   只有 WRITE（rehearse/spec/pages/…）才报「规划第一轮」。
+      //   「你好」对 isContinuationTurn 是新原话，旧代码于是无条件演开工，
+      //   模型其实只问了一句「我是面团的薄控制面」。
+      if (factoryLit) {
+        if (!isContinuationTurn(userText) && !toolAnswer) {
+          appendStep({
+            id: `${turnId}-intake`,
+            kind: "chip",
+            capabilityId: "intent.parse" as any,
+            roleId: "system",
+            label: "指令已接收 · 启动推理",
+            realLlm: false,
+            loopTurnId: turnId,
+            progressType: "thinking",
+          });
+          setLiveAction({ label: "规划第一轮能力与路线...", external: false });
+        } else {
+          const writeHop = earlyTool || hop;
+          const hopLabel = isFactoryHop(writeHop)
+            ? FACTORY_HOP_LABELS[writeHop]
+            : "";
+          setLiveAction({
+            label: hopLabel ? `接着上一跳：${hopLabel}` : "接着上一跳往下走",
+            external: false,
+          });
+        }
       }
 
       // M2/M3/M4/M5/M6: driveMode selects single vs marathon thin layer.
@@ -1552,7 +1572,15 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
            */
           const appendStreamStep = (
             label: string,
-            opts?: { capabilityId?: string; realLlm?: boolean }
+            opts?: {
+              capabilityId?: string;
+              realLlm?: boolean;
+              progressType?: "thinking" | "acting" | "observing" | "completed" | "failed";
+              /** 工程动作的结构化细节；见 types.ts 上 projectDetail 的说明。 */
+              projectDetail?: string;
+              /** 远端操作 id；「它的电脑」靠它订阅命令行输出。 */
+              operationId?: string;
+            }
           ) => {
             streamStepSeq += 1;
             appendStep({
@@ -1563,23 +1591,37 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               label,
               realLlm: Boolean(opts?.realLlm),
               loopTurnId: turnId,
-              progressType: "thinking",
+              progressType: opts?.progressType || "thinking",
+              ...(opts?.projectDetail ? { projectDetail: opts.projectDetail } : {}),
+              ...(opts?.operationId ? { operationId: opts.operationId } : {}),
+            });
+          };
+          /**
+           * 模型动手之前对用户说的那段话，进正文段落而不是芯片行。
+           *
+           * ⚠ 不复用 `appendStreamStep`：那个产 `kind: "chip"`，会被
+           * `linesFromTurnSteps` 收进左栏活动列表，于是模型散文跟
+           * 「第 1 轮 · 正在执行 planning」排成同等分量的一行——正是
+           * 这次要修的观感。见 `model-speech.ts` 头注。
+           */
+          const appendModelSpeech = (text: string) => {
+            streamStepSeq += 1;
+            appendStep({
+              id: `${turnId}-speech-${streamStepSeq}`,
+              kind: "model_speech",
+              text,
             });
           };
           setLlmDraft("");
           setLlmDraftLabel(null);
           setLlmStreams([]);
-          rehearsalCursorRef.current = startRehearsalCursor();
-          setRehearsalCursor(startRehearsalCursor());
+          if (factoryLit) {
+            rehearsalCursorRef.current = startRehearsalCursor();
+            setRehearsalCursor(startRehearsalCursor());
+          }
           // ⚠ 新一轮清空：不清的话右侧会先亮上一轮的页面，而用户刚说的是
           //   "改成 XXX"——看着像改完了，其实一个字都还没动。
           setSpecPages([]);
-          // 伴随式澄清：只有本轮会重新起草 SPEC 时才清已处理集合。
-          // 控制面收尾卡「进入数据模型反推（Structure）」也走 runTurn，
-          // hop 经常还没落到 forcedTool——按人话认 hop，清了就把同一张卡摊回来。
-          if (shouldResetSpecAssumptions(hop, userText)) {
-            resetSpecAssumptions();
-          }
           // 每一步 LLM 想法各自缓冲：并行批里不同能力的增量交织到达，
           // 按标签分开累积，展示最近更新的那条（不互相覆盖内容）。
           const llmDraftBuffers = new Map<string, string>();
@@ -1655,6 +1697,14 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           //
           // 实测踩到过：2026-08-10 一趟推演的 POST 流在第 2 分钟被对端 reset，
           // 而服务端一路跑到 seq 1812 正常收尾。前端在那一刻会把整轮重跑一遍。
+          const clockLitRef = { current: factoryLit };
+          const ensureFactoryClock = (tool?: string) => {
+            if (clockLitRef.current) return;
+            if (tool && tool !== "factory" && !isFactoryWriteTool(tool)) return;
+            clockLitRef.current = true;
+            rehearsalCursorRef.current = startRehearsalCursor();
+            setRehearsalCursor(startRehearsalCursor());
+          };
           let sawRunId = false;
           // 这条流见过终局事件吗。消费者读到 done 却没收到 complete /
           // run_cancelled / error 就是协议违规（见 driver 的
@@ -1663,36 +1713,104 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           const streamOpts = {
               stopSignal: controller.signal,
               turnId,
-              preferredDevice:
-                (scopeChoice && isWiredDevice(scopeChoice.device)
-                  ? scopeChoice.device
-                  : loadPreferredDevice()) || "desktop",
-              // ⚠ 2026-08-31：空态作曲家「自由类型」写 localStorage，
-              // 第一版只读 defaultArchetype()，首包永远 park 成业务后台。
-              // 跟 preferredDevice 同一句话：范围卡接通档优先，没选才读作曲家。
-              productArchetype:
-                (scopeChoice &&
-                isWiredArchetype(scopeChoice.productArchetype)
-                  ? scopeChoice.productArchetype
-                  : loadProductArchetype()) || defaultArchetype(),
-              ...(Array.isArray(scopeChoice?.tools) &&
-              scopeChoice.tools.length > 0
-                ? { tools: scopeChoice.tools }
-                : {}),
-              // 设计系统跟 preferredDevice 走同一条路：作曲家写 localStorage，
-              // 发起推演时在这里读。加一条 props 传参链没有额外好处，反而多一处
-              // 会忘记接的地方。
-              designSystemId: loadDesignSystemId() ?? undefined,
               ...(mode === "repair" ? { mode } : {}),
+              onControlRunId: (runId: string) => {
+                sawRunId = true;
+                saveActiveRun(resolvedSid, {
+                  runId, kind: "control", userText: userText.trim(),
+                  startedAt: new Date().toISOString(),
+                });
+              },
               onRunId: (runId: string) => {
                 sawRunId = true;
-                activeRunIdRef.current = runId;
+                ensureFactoryClock("factory");
+                if (loadActiveRun(resolvedSid)?.kind === "control") return;
                 // 后端 run 书签：刷新/跳页回来据此续播接回
                 saveActiveRun(resolvedSid, {
                   runId,
                   userText: userText.trim(),
                   startedAt: new Date().toISOString(),
                 });
+              },
+              onControlContinuation: event => {
+                // 显式标记落成一个 step：`turnHasContinuationMark` 认它，
+                // 折叠因此在「没有用户文本」的自动续跑上也成立。
+                streamStepSeq += 1;
+                appendStep({
+                  id: `${turnId}-continuation-${streamStepSeq}`,
+                  kind: "continuation_mark",
+                  attempt: event.attempt,
+                  ...(event.blockedReasons.length
+                    ? { blockedReasons: event.blockedReasons.slice(0, 6) }
+                    : {}),
+                });
+              },
+              onControlToolStart: (tool: string, summary?: string) => {
+                ensureFactoryClock(tool);
+                const projectLabel = projectToolLabel(tool);
+                if (projectLabel) {
+                  // 开场就带上「在对什么动手」（服务端脱敏摘要），动作进行中的
+                  // 那几十秒界面不再是哑的。拿不到就不带，不自己拼。
+                  const detail = String(summary || "").trim();
+                  setLiveAction({
+                    label: detail ? `${projectLabel}：${detail}` : projectLabel,
+                    external: true,
+                  });
+                  appendStreamStep(projectLabel, {
+                    capabilityId: tool,
+                    progressType: "acting",
+                    ...(detail ? { projectDetail: detail } : {}),
+                  });
+                  return;
+                }
+                if (isFactoryWriteTool(tool)) {
+                  const label = isFactoryHop(tool)
+                    ? FACTORY_HOP_LABELS[tool]
+                    : tool;
+                  setLiveAction({ label, external: false });
+                }
+              },
+              onControlToolResult: (event: Record<string, unknown>) => {
+                const tool = projectToolLabel(event.tool);
+                if (!tool) return;
+                const ok = event.ok !== false;
+                const detail = typeof event.error === "string"
+                  ? event.error
+                  : typeof event.message === "string" ? event.message : "";
+                const label = ok ? `${tool.replace(/^正在/, "已")}` : `${tool.replace(/^正在/, "执行失败：")}`;
+                setLiveAction({ label: detail ? `${label}（${detail}）` : label, external: true });
+                // 后端把整个工具返回体摊进了事件（`**body`）：command / exitCode /
+                // revision / parentRevision / errorCode 都在。原来只读 ok/error，
+                // 其余全扔，于是工程动作流只剩「已运行命令」这种没有信息量的行。
+                appendStreamStep(detail ? `${label}：${detail}` : label, {
+                  capabilityId: String(event.tool || ""),
+                  progressType: ok ? "completed" : "failed",
+                  projectDetail: projectActionDetail(event),
+                  // 「它的电脑」靠它订阅沙箱命令行输出；服务端一直在发，
+                  // 前端此前丢掉了（见 types.ts 上 operationId 的说明）。
+                  ...(typeof event.operationId === "string" && event.operationId
+                    ? { operationId: event.operationId }
+                    : {}),
+                });
+              },
+              onControlProjectState: (project: {
+                sessionId: string; runtimeKind: "project"; projectId: string; projectRevision: string;
+              }) => {
+                // 2026-09-13: project_create persisted successfully while the
+                // live shell stayed on HTML until the long model turn ended.
+                // Consume only the server's durable references; keep the
+                // current conversation and running turn, and perform no GET.
+                if (controller.signal.aborted || project.sessionId !== resolvedSid
+                    || projectEntrySessionRef.current !== resolvedSid
+                    || sessionStateRef.current.sessionId !== resolvedSid) return;
+                preparedState = { ...preparedState, ...project };
+                applyPersistedState({ ...sessionStateRef.current, ...project });
+              },
+              onControlState: (state: V5SessionState) => {
+                if (controller.signal.aborted || state.sessionId !== resolvedSid
+                    || projectEntrySessionRef.current !== resolvedSid) return;
+                preparedState = preservePythonEvidenceProjection(state);
+                applyPersistedState(preparedState);
               },
               onStreamNoTerminal: () => {
                 // 断流：书签**不清**——后端 run 多半还在跑，书签是刷新后
@@ -1734,23 +1852,6 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   }))
                 );
               },
-              onRunPause: (phase, info) => {
-                // ⚠ 只管上屏。三种结局都会接着跑，这里不做任何"判死"的动作
-                //   ——那是取消干的事（见 run_pause 模块头的实测）。
-                setRunPaused(phase === "started");
-                if (phase === "ended") {
-                  const rec = info.recovery;
-                  const auto =
-                    rec?.kind === "recovery_escalated"
-                      ? "；没人答且自动恢复已用尽，已升级喊人"
-                      : rec
-                        ? `；没人答，已按模型定的继续（第 ${rec.attempt} 次自动恢复）`
-                        : "";
-                  console.info(
-                    `[sliderule] 这一轮在 ${info.where} 停了 ${info.waitedSeconds ?? "?"}s，结局 ${info.outcome}${auto}`
-                  );
-                }
-              },
               onQualityNotice: note => {
                 appendStreamStep(note.text);
                 setSessionState(prev => {
@@ -1773,21 +1874,6 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                     },
                   };
                 });
-              },
-              onSpecAssumptions: items => {
-                // 按 id 并（不是追加）：续播会把同一条再送一遍，
-                // 理由见 spec-assumptions.mergeAssumptions 头注。
-                if (assumptionsConfirmedRef.current) return;
-                applySpecAssumptions(
-                  mergeAssumptions(
-                    specAssumptionsRef.current,
-                    items,
-                    settledAssumptionIdsRef.current
-                  )
-                );
-                // 停闸交给 Python `_emit_assumptions` → `hold_current`。
-                // ⚠ 2026-09-02 真机：这里 fetch /hold 会让假设卡整轮不出现
-                //   （debug-collector 拦 fetch，SSE 这条回调等于把自己掐死）。
               },
               onSpecPage: page => {
                 applyRehearsalEvent(
@@ -1945,24 +2031,55 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 });
                 appendStreamStep(`编排 ${tools.join(" → ")}`);
               },
+              onControlTodo: payload => {
+                // 2026-09-15：清单写进 state，浮层读同一份。再往左栏
+                // 塞 `📋 ${line}` 就是用户对照 Manus 圈出来的「嵌在聊天里」。
+                const todos = visiblePlanTodo(payload.todos);
+                setSessionState(prev => {
+                  const next = { ...prev, controlTodo: todos };
+                  sessionStateRef.current = next;
+                  return next;
+                });
+              },
               onControlText: (text, stop) => {
                 // 结构化的「为什么停」先落下来再渲染文字：拿它区分"我们的闸拦的"
                 // （再试可能有用）和"网关挂了"（再试一百次也一样）。
                 // 服务端已经把 stoppedBy 推导好了，这里不许再推一遍（§4）。
                 if (stop) lastControlStopRef.current = stop;
+                if (stop && ["llm_unavailable", "unknown"].includes(stop.stopReason)) controlFailureRef.current = text.trim();
                 if (!text.trim()) return;
-                appendStreamStep(text);
+                // 「为什么停」留在左栏时间线里——用户已经习惯去那儿找停因，
+                // 把它挪进正文段落等于换了个地方藏。
+                if (stop) {
+                  // ⚠ 带上 limit/used：服务端特意量了这两个数，以前只写进
+                  //   lastControlStopRef 就没了下文（见 control-stop.ts 头注）。
+                  appendStreamStep(controlStopLine(text, stop));
+                  return;
+                }
+                // 动手之前的开口走正文段落（model-speech 头注）。
+                appendModelSpeech(text);
               },
               onControlHostText: text => {
                 hostSpeechRef.current = text.trim();
               },
               onControlAskUser: event => {
+                if (event.reqId && handledRequestIdsRef.current.has(event.reqId)) return;
+                const previousPlan = pendingPlanApprovalRef.current;
+                if (previousPlan) handledRequestIdsRef.current.add(previousPlan.reqId);
+                pendingPlanApprovalRef.current = null;
+                setPendingPlanApproval(null);
                 const next = {
                   question: event.question,
                   options: event.options,
+                  ...(event.questions?.length ? { questions: event.questions } : {}),
+                  ...(event.reqId ? { reqId: event.reqId } : {}),
                 };
                 pendingAskRef.current = next;
                 setPendingAsk(next);
+                const q = String(event.question || "").trim();
+                // 已经有 control_text 开口时不要盖成同一句提问。
+                if (q && !hostSpeechRef.current) hostSpeechRef.current = q;
+                setLiveAction(null);
               },
               onControlClarify: event => {
                 // ⚠ 2026-08-31 真机：事件发了、消费侧没有 case，左栏空转
@@ -2029,45 +2146,20 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   };
                 });
               },
-              onControlScopeCard: event => {
-                const goalText =
-                  (preparedState as { goal?: { text?: string } }).goal?.text ||
-                  "";
-                const restatement = scopeCardRestatement(
-                  String(event.restatement || ""),
-                  userText,
-                  String(goalText || "")
-                );
-                const locked = lockScopeMorphology({
-                  device: parseJudgeDevice(event.device),
-                  productArchetype:
-                    String(event.productArchetype || "") || defaultArchetype(),
-                });
-                const next: ScopeCardPending = {
-                  userText: String(event.userText || userText.trim()),
-                  restatement: restatement || "未命名应用",
-                  variant: event.variant === "thin" ? "thin" : "full",
-                  device: locked.device,
-                  productArchetype: locked.productArchetype,
-                  wiredArchetypes: Array.isArray(event.wiredArchetypes)
-                    ? event.wiredArchetypes.filter(
-                        (row): row is { id: string; label: string } =>
-                          Boolean(row && typeof row === "object" && row.id)
-                      )
-                    : undefined,
-                  wiredDevices: Array.isArray(event.wiredDevices)
-                    ? event.wiredDevices.filter(
-                        (row): row is { id: string; label: string } =>
-                          Boolean(row && typeof row === "object" && row.id)
-                      )
-                    : undefined,
-                  charterReuseNext: event.charterReuseNext,
-                  tools: Array.isArray(event.tools)
-                    ? event.tools.map(item => String(item))
-                    : undefined,
-                };
-                pendingScopeRef.current = next;
-                setPendingScope(next);
+              onControlPlanApproval: (event: ControlPlanApprovalWire) => {
+                if (handledRequestIdsRef.current.has(event.reqId)) return;
+                const previousPlan = pendingPlanApprovalRef.current;
+                if (previousPlan && previousPlan.reqId !== event.reqId) {
+                  handledRequestIdsRef.current.add(previousPlan.reqId);
+                }
+                if (pendingAskRef.current?.reqId) {
+                  handledRequestIdsRef.current.add(pendingAskRef.current.reqId);
+                }
+                pendingAskRef.current = null;
+                setPendingAsk(null);
+                pendingPlanApprovalRef.current = event;
+                setPendingPlanApproval(event);
+                setLiveAction(null);
               },
           } satisfies import("@/lib/sliderule-marathon-driver").DriveFullStreamOpts;
           // 续播只 GET /runs/{id}/stream，禁止 POST control-turn-stream。
@@ -2078,7 +2170,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               .specFirstPages || {};
           const firstPassNow =
             !sfpNow.spec && Object.keys(sfpNow.pages || {}).length === 0;
-          const inferredTool = inferForcedTool(
+          const inferredTool = toolAnswer?.kind === "plan_approval" ? undefined : inferForcedTool(
             userText,
             intervention,
             mode,
@@ -2098,12 +2190,16 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               ? previousModelVersionId(preparedState)
               : undefined;
           const pythonDrive = resumeRun
-            ? await (
+            ? resumeRun.kind === "control"
+              ? await (await import("@/lib/sliderule-marathon-driver"))
+                  .resumeControlTurnStream(resumeRun.runId, streamOpts)
+              : await (
                 await import("@/lib/sliderule-marathon-driver")
               ).resumeDriveFullStream(resumeRun.runId, streamOpts)
             : await driveStream(preparedState, postedText, {
                 ...streamOpts,
                 forcedTool: inferredTool,
+                ...(toolAnswer ? { toolAnswer } : {}),
                 ...(inferredTool === "pages" ? { tools: ["pages"] } : {}),
                 ...(restoreId ? { versionId: restoreId } : {}),
                 /* ⚠ 质疑指向哪件产物、澄清卡答掉了哪几个缺口，**必须跟着
@@ -2119,30 +2215,6 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   : {}),
                 ...(intervention?.answeredGaps?.length
                   ? { answeredGaps: intervention.answeredGaps }
-                  : {}),
-                ...(inferredTool === "rehearse"
-                  ? {
-                      // 未写过 localStorage 就不要带 reuseCharter。缺键走账户
-                      // reuse_next；带 false 会被当成显式关旗，把「下一场沿用」清掉。
-                      ...(loadCharterReuseNext() !== null
-                        ? { reuseCharter: loadCharterReuseNext() as boolean }
-                        : {}),
-                      ...(() => {
-                        // 范围卡确认带了 productCharter（哪怕是 {}）就用卡上的。
-                        // 回头 loadProductCharter() 会把上一场企业服务 POST 进
-                        // 股票分析器——正是 2026-09-01 范围卡跟命题不符。
-                        const choice = scopeChoice;
-                        const fromCard =
-                          choice && "productCharter" in choice
-                            ? choice.productCharter
-                            : hydrateScopeCharter(
-                                loadCharterReuseNext() === true
-                              );
-                        return charterHasContent(fromCard)
-                          ? { productCharter: fromCard }
-                          : {};
-                      })(),
-                    }
                   : {}),
               });
           // 流断了但 run 未终局（网络抖动/代理超时，非本地停止）：
@@ -2192,10 +2264,17 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               formatJson: key === "five-system-model",
             });
           }
-          setDriveFullStatus(classifyDriveFullStatus(pythonDrive));
+          // A failed control stream never invoked the legacy drive-full
+          // fallback. Keep its failure distinct in the visible status too.
+          setDriveFullStatus(
+            !pythonDrive && (!resumeRun || resumeRun.kind === "control")
+              ? "control_failed"
+              : classifyDriveFullStatus(pythonDrive)
+          );
           if (!pythonDrive) {
             throw new Error(
-              controller.signal.aborted ? "已停止" : "控制面未返回结果"
+              controller.signal.aborted ? "已停止"
+                : controlFailureRef.current || "控制面未返回结果"
             );
           }
           drive = {
@@ -2222,7 +2301,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         // 走到这里时兜底已经不会发生，所以这里不需要再 throw——re-throw 只会连
         // 带跳过下面的半程落盘与收尾。只把话说对就够。
         const needsLogin = Boolean(driveErr?.needsLogin);
-        let stepMessage = `驱动执行失败（已降级显示）：${errMsg.slice(0, 140)}`;
+        let stepMessage = `执行已中断：${errMsg.slice(0, 140)}`;
         let bannerMsg = errMsg.slice(0, 200);
         if (needsLogin) {
           // 侧栏账号是启动时的缓存，这次 401 不会自动刷新。再问一次 /me，
@@ -2242,7 +2321,10 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
           runIndex: 0,
           message: stepMessage,
         });
-        // Try to at least persist the intake state so graph has something
+        // A failed model turn may have already changed the durable goal, plan
+        // and project. Never PUT its old intake snapshot: the server correctly
+        // treats a changed goal as a plan revocation (2026-09-13 real browser).
+        // Keep local failure narration; the server owns the durable failure.
         try {
           let snap = SlideRuleRuntime.deriveNodeStatus
             ? SlideRuleRuntime.deriveNodeStatus(preparedState)
@@ -2254,7 +2336,6 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
             steps: collectedSteps,
             durationMs: Date.now() - turnStartMs,
           });
-          await persistSession(snap);
           applyPersistedState(snap);
         } catch {}
         setUiTurns(prev =>
@@ -2287,12 +2368,41 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         steps: collectedSteps,
         durationMs: Date.now() - turnStartMs,
       });
-      try {
-        final = await persistSession(final);
+      if (driveErrored) {
         applyPersistedState(final);
-      } catch (pErr) {
-        // non-fatal for UI
-        applyPersistedState(final);
+      } else {
+        try {
+          final = await persistSession(final);
+          applyPersistedState(final);
+        } catch (pErr) {
+          // non-fatal for UI
+          applyPersistedState(final);
+        }
+      }
+      if (driveErrored && toolAnswer?.kind === "plan_approval") {
+        // A failed response does not tell us whether approval was accepted.
+        // Reload the server's waiting state before allowing the same request again.
+        try {
+          const latest = await SlideRuleRuntime.getSlideRuleSessionStore().load(sessionId);
+          if (latest) {
+            applyPersistedState(latest);
+            const plan = [...(latest.controlTranscript || [])]
+              .reverse()
+              .find(row => row.kind === "plan_approval");
+            if (
+              latest.awaitReason === "control_plan_approval" &&
+              typeof plan?.reqId === "string" && plan.reqId &&
+              typeof plan.planContent === "string" && plan.planContent.trim()
+            ) {
+              const pending = { reqId: plan.reqId, planContent: plan.planContent };
+              handledRequestIdsRef.current.delete(plan.reqId);
+              pendingPlanApprovalRef.current = pending;
+              setPendingPlanApproval(pending);
+            }
+          }
+        } catch {
+          // Keep the interrupted turn visible when the session is also unreachable.
+        }
       }
       // 推演落定：侧栏列表刷新（话题/最近活跃时间）
       import("@/pages/agent-loop/dashboard/SidebarSessions")
@@ -2614,92 +2724,18 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   /**
    * 点火闸。所有产品入口（sendMessage / resend / repair / challenge /
    * 澄清答卡 / 续播）都走这里，而不是 ComposerDock.doSend。
-   * 新烧一律 POST /control-turn-stream；未确认范围由服务端 park。
+   * 新烧一律 POST /control-turn-stream；执行授权由服务端计划审批掌管。
    */
   const requestRehearsal = async (
     userText: string,
     intervention?: UserIntervention,
-    resumeRun?: { runId: string },
+    resumeRun?: { runId: string; kind?: "control" },
     mode?: "repair"
   ) => {
-    clearPendingScope();
-    pendingAskRef.current = null;
-    setPendingAsk(null);
     await runTurn(userText, intervention, resumeRun, mode);
   };
   requestRehearsalRef.current = async (userText: string) => {
     await requestRehearsal(userText);
-  };
-
-  /**
-   * 「开始推演」：六字段 + forcedTool rehearse + 复述句当 userText。
-   * 不得 POST factoryProfile。
-   */
-  const confirmControlScope = async (choice?: ScopeCardChoice) => {
-    const pending = pendingScopeRef.current;
-    // ⚠ 2026-08-27：stop() 立刻把 isRunning 画面松开，isRunningRef 要等
-    // finally。用 state 闸会在这个窗口里 clearPendingScope 再 runTurn 空转，
-    // 卡没了、rehearse 也没 POST。闸在 ref；ref 仍真时连卡都不要清。
-    if (!pending || isRunningRef.current) return;
-    const snapshot: ScopeCardPending = {
-      ...pending,
-      ...(choice && typeof choice === "object" && !("nativeEvent" in choice)
-        ? choice
-        : {}),
-    };
-    clearPendingScope();
-    await runTurn(
-      snapshot.restatement || snapshot.userText,
-      snapshot.intervention as UserIntervention | undefined,
-      undefined,
-      snapshot.mode,
-      "rehearse",
-      {
-        device: snapshot.device,
-        productArchetype: snapshot.productArchetype || defaultArchetype(),
-        ...(Array.isArray(snapshot.tools) && snapshot.tools.length > 0
-          ? { tools: snapshot.tools }
-          : {}),
-        ...("productCharter" in snapshot
-          ? {
-              productCharter: (snapshot as ScopeCardChoice).productCharter,
-            }
-          : {}),
-      }
-    );
-  };
-
-  const dismissScopeCard = () => {
-    const pending = pendingScopeRef.current;
-    clearPendingScope();
-    if (pending?.userText) setInput(pending.userText);
-    if (IS_GITHUB_PAGES) {
-      flushQueuedControlTurn();
-      return;
-    }
-    void (async () => {
-      try {
-        const { postControlTurnStream } = await import(
-          "@/lib/sliderule-marathon-driver"
-        );
-        const out = await postControlTurnStream(
-          sessionState,
-          pending?.userText || "",
-          {
-            forcedTool: "dismiss_scope",
-            preferredDevice: loadPreferredDevice() || "desktop",
-            designSystemId: loadDesignSystemId() || undefined,
-          }
-        );
-        if (out?.finalState) {
-          setSessionState(preservePythonEvidenceProjection(out.finalState));
-        }
-      } catch {
-        // 先改范围是增强类：客户端已解锁；服务端清停泊失败不得锁死作曲家。
-      } finally {
-        flushQueuedControlTurn();
-      }
-    })();
   };
 
   const dismissAsk = () => {
@@ -2719,21 +2755,127 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
 
   // E25 推演断线重生：刷新/跳页回来，若本会话仍有在跑的后台 run →
   // 自动续播接回（事件日志从头补播重建本轮 UI，追平后接实时尾流）。
-  const resumeAttemptedRef = useRef(false);
+  const resumeAttemptedRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!sessionHydrated || IS_GITHUB_PAGES || resumeAttemptedRef.current) {
+    // Anonymous visitors can browse the empty shell, but they have no durable
+    // control/run bookmark to resume. Do not probe login-gated endpoints here:
+    // the old unconditional probe produced noisy 401/404 console errors on
+    // every fresh anonymous visit and made a healthy page look broken.
+    if (!sessionHydrated || !authReady || !authUser || IS_GITHUB_PAGES
+        || sessionState.sessionId !== sessionId || resumeAttemptedRef.current === sessionId) {
       return;
     }
     if (isRunning) return;
-    resumeAttemptedRef.current = true;
     const sid = sessionState.sessionId || sessionId;
+    resumeAttemptedRef.current = sid;
+    const activity = controlActivityRef.current;
+    let cancelled = false;
+    const isCurrent = () => !cancelled && projectEntrySessionRef.current === sid
+      && sessionStateRef.current.sessionId === sid && controlActivityRef.current === activity
+      && !isRunningRef.current;
     const record = loadActiveRun(sid);
     void (async () => {
       try {
+        const controlResponse = await fetch(
+          `/api/sliderule/control-runs/latest?sessionId=${encodeURIComponent(sid)}`,
+          { credentials: "include" }
+        );
+        if (controlResponse.ok) {
+          const { run } = await controlResponse.json();
+          if (!isCurrent()) return;
+          if (run?.runId && run.sessionId === sid && run.status === "failed") {
+            // A failed run has no active bookmark after settlement. Its text
+            // lives in the existing durable SSE log. Restore that explanation
+            // only: the old complete/project events may predate source edits
+            // made after this run, so they must never replace today's session.
+            let failureText = "";
+            const replayedChips: TurnStep[] = [];
+            let replaySeq = 0;
+            await Marathon.resumeControlTurnStream(String(run.runId), {
+              onControlText: (text, stop) => {
+                if (stop && ["llm_unavailable", "unknown"].includes(stop.stopReason)) {
+                  failureText = text.trim();
+                }
+              },
+              // ⚠ 2026-09-15 TicketStream：失败 run 的 SSE 日志里有
+              //   project_* 全过程，turnNarrations 却只留下开口。刷新
+              //   只回放失败说明 → 左栏执行步骤整列没了。工具事件只
+              //   用来补 chip，complete/state 仍不许盖今天的工程投影。
+              onControlToolStart: (tool, summary) => {
+                const label = projectToolLabel(tool);
+                if (!label) return;
+                replaySeq += 1;
+                const detail = String(summary || "").trim();
+                replayedChips.push({
+                  id: `replay-${run.runId}-${replaySeq}`,
+                  kind: "chip",
+                  capabilityId: tool as `project_${string}`,
+                  roleId: "system",
+                  label,
+                  realLlm: false,
+                  progressType: "acting",
+                  ...(detail ? { projectDetail: detail } : {}),
+                });
+              },
+              onControlToolResult: event => {
+                const tool = projectToolLabel(event.tool);
+                if (!tool) return;
+                replaySeq += 1;
+                const ok = event.ok !== false;
+                const detail = projectActionDetail(event);
+                replayedChips.push({
+                  id: `replay-${run.runId}-${replaySeq}`,
+                  kind: "chip",
+                  capabilityId: String(event.tool || "") as `project_${string}`,
+                  roleId: "system",
+                  label: ok
+                    ? `${tool.replace(/^正在/, "已")}`
+                    : `${tool.replace(/^正在/, "执行失败：")}`,
+                  realLlm: false,
+                  progressType: ok ? "completed" : "failed",
+                  ...(detail ? { projectDetail: detail } : {}),
+                  ...(typeof event.operationId === "string" && event.operationId
+                    ? { operationId: event.operationId }
+                    : {}),
+                });
+              },
+            });
+            if (!isCurrent()) return;
+            const explanation = failureText || (run.error === "llm_unavailable"
+              ? "模型服务未完成上一轮请求，现有工程已保留。"
+              : "上一轮任务执行失败，现有工程已保留。请查看运行记录后继续。");
+            const noticeId = `control-failure-${run.runId}`;
+            setUiTurns(prev => {
+              const history = prev.length > 0 ? prev : deriveTurnsFromState(sessionStateRef.current);
+              const kept = history.filter(turn => turn.id !== noticeId);
+              const withChips = turnsHaveProjectChips(kept)
+                ? kept
+                : attachProjectChipsToTurns(kept, replayedChips);
+              return [...withChips, {
+                id: noticeId, user: "", status: "complete", steps: [],
+                routeFacts: { turnId: noticeId, timestamp: new Date().toISOString() },
+                routeExpanded: false, routeLitCount: 0,
+                assistant: explanation, assistantSource: "fallback", main: null, actions: [],
+              }];
+            });
+            if (record?.runId === run.runId) clearActiveRun(sid);
+            return;
+          }
+          if (run?.runId && (["queued", "running", "waiting_continue", "waiting_operation"].includes(run.status) ||
+              (record?.kind === "control" && record.runId === run.runId))) {
+            await requestRehearsal(record?.userText || "继续上一轮任务", undefined,
+              { runId: String(run.runId), kind: "control" });
+            return;
+          }
+        } else if (record?.kind === "control" && controlResponse.status >= 500) {
+          return;
+        }
+        if (!isCurrent()) return;
         const res = await fetch(
           `/api/sliderule/runs/active?sessionId=${encodeURIComponent(sid)}`
         );
         const body = res.ok ? await res.json() : null;
+        if (!isCurrent()) return;
         const active = body?.active;
         if (active && active.status === "running" && active.runId) {
           await requestRehearsal(record?.userText || "（续播上一轮推演）", undefined, {
@@ -2747,8 +2889,9 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         // 后端暂不可达：书签保留，下次进入再试
       }
     })();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionHydrated]);
+  }, [sessionId, sessionState.sessionId, sessionHydrated, authReady, authUser]);
 
   const resolveInteractiveGate = (gateNodeId: string, choice: string | null) => {
     // Pragmatic bridge to existing text-driven G_CONFIRM logic in intakeMessage.
@@ -2790,6 +2933,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
       }
       return;
     }
+    const pendingPlan = pendingPlanApprovalRef.current;
+    if (pendingPlan) {
+      setInput("");
+      submitPlanApproval({ reqId: pendingPlan.reqId, outcome: "cancelled", feedback: text });
+      return;
+    }
     // 运行中发送排队，不许 stop()。sliderule:resend-prompt 也走这里。
     if (isRunningRef.current) {
       const hop = factoryHopFromText(text);
@@ -2797,11 +2946,19 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         // 收尾卡 / 人话 hop 是 typed 答案，盖掉确认留下的 pages。
         pendingForcedToolRef.current = hop;
       }
-      // 提问 chip / 人话 hop 都要看得见、撤得掉。静默入队 = 点了没反馈、
-      // 条目删不掉，下次 pushQueuedTurn 才蹦进可见队列。
+      const pendingNeed = pendingAskRef.current;
+      const answer = pendingNeed ? {
+        kind: "ask_user", text, ...(pendingNeed.reqId ? { reqId: pendingNeed.reqId } : {}),
+      } : undefined;
+      if (pendingNeed?.reqId) handledRequestIdsRef.current.add(pendingNeed.reqId);
       pendingAskRef.current = null;
       setPendingAsk(null);
-      pushQueuedTurn(text);
+      if (answer) {
+        queuedTurnRef.current = [{ text, synthetic: true, toolAnswer: answer }, ...queuedTurnRef.current];
+        setQueuedTurns(queuedTurnRef.current);
+      } else {
+        pushQueuedTurn(text);
+      }
       setInput("");
       return;
     }
@@ -2905,8 +3062,6 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         "从这里分一个变体",
         {
           forcedTool: "fork_variant",
-          preferredDevice: loadPreferredDevice() || "desktop",
-          designSystemId: loadDesignSystemId() || undefined,
           onControlToolResult: event => {
             if (event.tool === "fork_variant" && event.ok === false) {
               forkFailed = String(event.error || "分变体未生效");
@@ -3085,7 +3240,6 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     },
     [uiTurns, sessionState.sessionId, sessionId, applyPersistedState]
   );
-  runTurnRef.current = runTurn;
 
   // 无理由：只预填作曲家（产品面禁止 window.prompt）。有理由：整轮
   // runTurn + intent challenge，不是局部重跑。
@@ -3133,13 +3287,91 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     /* 重置会话必须清队列——遗留的补充会劫持后来无关的一发 */
     queuedTurnRef.current = [];
     setQueuedTurns([]);
-    /* 假设面板同理：上一个会话的「我替你定了手机号」留在屏幕上，
-       用户在新会话里点「改成工号」，那句话会排进一个跟它毫不相干的应用 */
-    resetSpecAssumptions();
-    clearPendingScope();
+    pendingPlanApprovalRef.current = null;
+    setPendingPlanApproval(null);
+    pendingAskRef.current = null;
     setPendingAsk(null);
+    handledRequestIdsRef.current.clear();
+    pendingToolAnswerRef.current = undefined;
+    pendingForcedToolRef.current = undefined;
     setSubmittedClarifyIds([]);
-  }, [isRunning, sessionState.sessionId, sessionId, options.initialGoal, resetSpecAssumptions]);
+  }, [isRunning, sessionState.sessionId, sessionId, options.initialGoal]);
+
+  const [projectCreateState, setProjectCreateState] = useState<{
+    status: "idle" | "creating" | "error";
+    error: string | null;
+  }>({ status: "idle", error: null });
+  const projectCreationRef = useRef<object | null>(null);
+  const projectEntrySessionRef = useRef(sessionId);
+  projectEntrySessionRef.current = sessionId;
+  useEffect(() => {
+    setProjectCreateState({ status: "idle", error: null });
+    return () => { projectCreationRef.current = null; };
+  }, [sessionId]);
+  const projectCreateBlockedReason = projectCreationBlockedReason(sessionState);
+  const canCreateProject = sessionHydrated && sessionState.sessionId === sessionId
+    && sessionState.runtimeKind !== "project" && !projectCreateBlockedReason && hasApprovedProjectPlan(sessionState);
+  const createProjectFromApprovedPlan = useCallback(async (templateId: "react-vite" | "react-vite-tasks" = "react-vite-tasks") => {
+    if (isRunningRef.current || projectCreationRef.current) return false;
+    const state = sessionStateRef.current;
+    const sid = state.sessionId || sessionId;
+    if (!sessionHydrated || sid !== projectEntrySessionRef.current) return false;
+    if (state.runtimeKind === "project") return Boolean(state.projectId && state.projectRevision);
+    // 2026-09-13: state-only locking happened after the digest await, allowing
+    // two clicks to POST twice. A request token also prevents an old response
+    // from replacing the shell after switching sessions or unmounting.
+    const request = {};
+    projectCreationRef.current = request;
+    const isCurrent = () => projectCreationRef.current === request && projectEntrySessionRef.current === sid;
+    setProjectCreateState({ status: "creating", error: null });
+    let created = false;
+    try {
+      const blockedReason = projectCreationBlockedReason(state);
+      if (blockedReason) throw new Error(blockedReason);
+      const approvalRef = await approvedPlanReference(state);
+      if (!isCurrent()) return false;
+      if (!approvalRef) throw new Error("请先批准当前计划后再创建工程。");
+      const response = await fetch(`/api/sliderule/sessions/${encodeURIComponent(sid)}/project`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approvalRef, templateId }),
+      });
+      if (!response.ok) {
+        let detail = "工程创建未完成，请刷新状态后重试。";
+        try {
+          detail = projectCreateFailureText(await response.json());
+        } catch { /* keep safe generic message */ }
+        throw new Error(detail);
+      }
+      created = true;
+      const receipt = await response.json();
+      if (!isCurrent()) return false;
+      const project = receipt?.project;
+      if (project?.sessionId !== sid || typeof project?.projectId !== "string" || !project.projectId) {
+        throw new Error("invalid_project_receipt");
+      }
+      const loaded = await SlideRuleRuntime.loadOrCreateSessionState(sid);
+      if (!isCurrent()) return false;
+      if (loaded.sessionId !== sid || loaded.runtimeKind !== "project" || loaded.projectId !== project.projectId || !loaded.projectRevision) {
+        throw new Error("project_projection_not_restored");
+      }
+      const hydrated = preservePythonEvidenceProjection(loaded);
+      sessionStateRef.current = hydrated;
+      setSessionState(hydrated);
+      const restored = deriveTurnsFromState(hydrated);
+      if (restored.length > 0) setUiTurns(restored);
+      setProjectCreateState({ status: "idle", error: null });
+      return true;
+    } catch (error) {
+      if (isCurrent()) setProjectCreateState({ status: "error", error: created
+        ? "工程创建请求已完成，但未能读取工程状态。请刷新当前会话后重试。"
+        : error instanceof Error ? error.message : "工程创建未完成，请稍后重试。" });
+      return false;
+    } finally {
+      if (projectCreationRef.current === request) projectCreationRef.current = null;
+    }
+  }, [sessionId, sessionHydrated]);
 
   // G_READY clarification cards: unanswered open_question gaps with V4-style structured options.
   const pendingClarifications = useMemo<ClarificationItem[]>(
@@ -3200,22 +3432,6 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     [sessionState.coverageGaps, requestRehearsal]
   );
 
-  const specAssumptionsView = useMemo(() => {
-    if (
-      assumptionsConfirmedRef.current ||
-      assumptionsWereConfirmed(sessionState)
-    ) {
-      return [];
-    }
-    if (specAssumptions.length > 0) return specAssumptions;
-    const rows = parseSpecAssumptions(
-      (sessionState as { specFirstPages?: { spec?: { assumptions?: unknown } } })
-        .specFirstPages?.spec?.assumptions
-    );
-    if (!rows.length) return specAssumptions;
-    return mergeAssumptions([], rows, settledAssumptionIdsRef.current);
-  }, [specAssumptions, sessionState]);
-
   return {
     goal,
     sessionHydrated,
@@ -3227,13 +3443,6 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     /** 推演中补的话（排队到下一轮）。看得见、撤得掉——见 midrun-queue 头注。 */
     queuedTurns,
     removeQueuedTurn,
-    specAssumptions: specAssumptionsView,
-    settleSpecAssumption,
-    reviseSpecAssumption,
-    confirmSpecAssumptions,
-    // 「先别往下跑」：见 holdRun 头注（跟停止不是同一件事）
-    holdRun,
-    runPaused,
     generateDeliverables,
     isRunning,
     /** 版本切换请求在飞。名字带 Version 是给消费方看的——那边同名 prop 直传按钮。 */
@@ -3268,13 +3477,17 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
     forkVariant,
     runTurn: requestRehearsal,
     requestRehearsal,
-    pendingScope,
+    pendingPlanApproval,
+    submitPlanApproval,
     pendingAsk,
-    confirmControlScope,
-    dismissScopeCard,
+    submitQuestionnaire,
     dismissAsk,
     challengeTurn,
     resetSession,
+    createProjectFromApprovedPlan,
+    canCreateProject,
+    projectCreateBlockedReason,
+    projectCreateState,
     toggleRouteExpanded,
     retryCapability,
     resolveInteractiveGate,

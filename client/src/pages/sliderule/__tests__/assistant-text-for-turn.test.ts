@@ -58,11 +58,77 @@ describe("assistantTextForTurn", () => {
   });
 
   it("精修空轮不许套首轮 chatSummary", () => {
-    const text = assistantTextForTurn(turn(), closure(), GOAL);
+    const text = assistantTextForTurn(
+      turn({
+        steps: [
+          {
+            id: "c1",
+            kind: "chip",
+            capabilityId: "intent.parse" as any,
+            roleId: "system",
+            label: "逐页画界面（并发）",
+            realLlm: false,
+          },
+        ],
+      }),
+      closure(),
+      GOAL
+    );
     expect(text).not.toContain("含 2 角色");
     expect(text).not.toContain("3 页面");
     expect(text).not.toBe(FIRST_SUMMARY);
     expect(text).toBe(REFINE_TURN_NO_PAGE_NOTE);
+  });
+
+  it("问候空轮不许套「没画出新的页面」——goal 后来被芯片改了也不许", () => {
+    const text = assistantTextForTurn(
+      turn({ user: "你好", assistant: "", steps: [] }),
+      closure(),
+      "开始设计新应用"
+    );
+    expect(text).not.toBe(REFINE_TURN_NO_PAGE_NOTE);
+    expect(text).not.toContain("含 2 角色");
+    expect(text).toBe("");
+  });
+
+  it("问候收尾不许写「本轮已完成，但还没有生成可展示的回答」", () => {
+    const text = assistantTextForTurn(
+      turn({ user: "你好", assistant: "", steps: [] }),
+      null,
+      ""
+    );
+    expect(text).toBe("");
+    expect(text).not.toContain("本轮已完成");
+  });
+
+  it("英文开口也当收尾——2026-09-16 文种过滤弊大于利", () => {
+    const live =
+      '**Initial Assessment and Planning for "TicketStream" SaaS Interface**\n\n' +
+      "Okay, so the task is clear: build a TicketStream service desk SaaS interface.";
+    const text = assistantTextForTurn(
+      turn({
+        user: "构建一个名为 TicketStream 的服务台 SaaS 界面",
+        assistant: live,
+      }),
+      null,
+      "构建一个名为 TicketStream 的服务台 SaaS 界面",
+      { runtimeKind: "project" }
+    );
+    expect(text).toBe(live);
+    expect(text).toContain("Initial Assessment");
+  });
+
+  it("模型命令不许当对用户的收尾", () => {
+    const text = assistantTextForTurn(
+      turn({
+        user: "开始设计新应用",
+        assistant: "SPEC 已经起草。下一跳请调 pages，或告诉用户为什么先停。",
+      }),
+      closure(),
+      "开始设计新应用"
+    );
+    expect(text).not.toContain("请调 pages");
+    expect(text).not.toContain("告诉用户为什么先停");
   });
 
   it("Structure / bind 跳不许把「没画出页面」改写成已完成", () => {
@@ -131,6 +197,9 @@ describe("assistantTextForTurn", () => {
       .replace(/^[ \t]*\/\/.*$/gm, "");
     expect(src).toContain("skillCount ?? 0");
     expect(src).not.toContain("skillCount ?? 6");
+    // 2026-09-16：文种闸已拿掉。加回去左栏又会空。
+    expect(src).not.toContain("speechMismatchesUserLanguage");
+    expect(src).not.toContain("speechIsLatin");
   });
 
   it("本轮有叙述就用叙述，不套总结", () => {
@@ -150,6 +219,28 @@ describe("assistantTextForTurn", () => {
       GOAL
     );
     expect(text).toBe("预约台已经加上超时红标。");
+  });
+
+  it("工程档空轮不许说没画出页面", () => {
+    const text = assistantTextForTurn(
+      turn({ user: GOAL, assistant: "", steps: [] }),
+      closure(),
+      GOAL,
+      { runtimeKind: "project" }
+    );
+    expect(text).not.toBe(REFINE_TURN_NO_PAGE_NOTE);
+    expect(text).not.toContain("页面");
+    expect(text).toBe("");
+  });
+
+  it("工程档有开口仍用开口", () => {
+    const text = assistantTextForTurn(
+      turn({ assistant: "工程目录已经建好。" }),
+      closure(),
+      GOAL,
+      { runtimeKind: "project" }
+    );
+    expect(text).toBe("工程目录已经建好。");
   });
 
   it("本轮有 assistant 就用 assistant", () => {

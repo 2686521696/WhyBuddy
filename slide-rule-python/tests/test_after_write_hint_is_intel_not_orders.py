@@ -128,8 +128,7 @@ class Test本跳跑了什么读的是本跳:
 
 
 class Test假设闸不许静静地哑掉:
-    """`tools = []` 那个降级是产品裁决 + 一条 25 分钟的延迟事故，故意保留；
-    但要让模型知道自己为什么这一轮只说话。"""
+    """假设卡等确认：本轮 HTTP 直接收工（零 LLM）。没有假设：host 按 hint 挑 pages。"""
 
     def test_假设卡等确认时把闸讲出来(self):
         state = _spec_only_state(spec={"assumptions": [{"id": "a1", "topic": "登录"}]})
@@ -147,17 +146,61 @@ class Test假设闸不许静静地哑掉:
     def test_没有假设时不提(self):
         assert "确认继续" not in _after_write_hint(_spec_only_state())
 
-    def test_只许说话那个闸还在(self):
-        """⚠ 反向：这条红 = 有人把闸拆了，模型会替用户跳过确认；
-        而且会把 2026-09-03 那次「确认继续排队 25 分钟」换回来。"""
+    def test_打孔部分failed不许说可以交付(self):
+        """真机 sr-20260909041801：p1/p2 failed、p3 bound、blocked=false。"""
+        state = V5SessionState(
+            sessionId="t-bind-fail",
+            goal={"text": "鲜果速收", "status": "clear", "tools": ["bind"]},
+            specFirstPages={
+                "pages": {"p1": "<html/>", "p2": "<html/>", "p3": "<html/>"},
+                "pageBindStatus": {"p1": "failed", "p2": "failed", "p3": "bound"},
+                "capabilityPlan": {"tools": ["bind"]},
+            },
+            publishClosure={"blocked": False, "topBlockers": []},
+        )
+        hint = _after_write_hint(state)
+        assert "failed" in hint
+        assert "p1" in hint and "p2" in hint
+        assert "可以交付" not in hint
+        assert "闭环完成" not in hint
+
+    def test_打孔全skipped不许说闭环完成(self):
+        state = V5SessionState(
+            sessionId="t-bind-skip",
+            goal={"text": "权盾后台", "status": "clear", "tools": ["bind"]},
+            specFirstPages={
+                "pages": {"p1": "<html/>", "p2": "<html/>", "p3": "<html/>"},
+                "pageBindStatus": {"p1": "skipped", "p2": "skipped", "p3": "skipped"},
+                "capabilityPlan": {"tools": ["bind"]},
+            },
+        )
+        hint = _after_write_hint(state)
+        assert "没接到任何页面" in hint
+        assert "不许说已经闭环完成" in hint
+
+    def test_没有假设时不许再把清单清成空(self):
+        """变异：把 `tools = []` 加回 host 循环 → 本条红。
+
+        那是「步骤不是 LLM 决策」的那一刀。没有假设时 pages 必须还在清单里。
+        """
         tree = ast.parse(_RC.read_text(encoding="utf-8"))
         fn = next(
-            n for n in ast.walk(tree)
+            n
+            for n in ast.walk(tree)
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and "tools = []" in ast.unparse(n)
+            and n.name == "_control_llm_loop"
         )
-        assert "if not _has_pages(state)" in ast.unparse(fn), (
-            "「没有页面就只许说话」那个闸不见了"
+        body = ast.unparse(fn)
+        assert "tools = []" not in body, "host 循环又把工具清单清掉了"
+
+    def test_假设卡等确认时两处都提前收工(self):
+        """⚠ 2026-09-03：交回还问控制面 = 确认继续排队 25 分钟。
+
+        成对：按钮路径 `_resume_control_llm_after_write` 与 host 循环。
+        """
+        src = _RC.read_text(encoding="utf-8")
+        assert src.count("_complete_waiting_for_assumptions") >= 3, (
+            "定义 1 处 + 调用至少 2 处（forced / host）。少一处 = 一半不生效。"
         )
 
 

@@ -1137,3 +1137,22 @@ describe("菜单动作的接线", () => {
     expect(append).toContain("loadedCountRef.current");
   });
 });
+
+describe("project workspace card entry", () => {
+  const raw = readFileSync(new URL("../AppsWorkbench.tsx", import.meta.url), "utf8");
+  const src = sourceWithoutComments(raw);
+
+  it("exposes a direct project workbench action and closes the menu before navigation", () => {
+    expect(src).toContain('data-testid={`app-open-project-${item.sessionId || item.appId}`}');
+    const at = src.indexOf("data-testid={`app-open-project-");
+    const block = src.slice(Math.max(0, at - 240), at + 520);
+    expect(block).toContain('detail?.runtimeKind === "project"');
+    expect(block).toContain("openProjectWorkspace(item)");
+    expect(src).toContain("const openProjectWorkspace = async (gi: GalleryItem)");
+    const start = src.indexOf("const openProjectWorkspace");
+    const fn = src.slice(start, src.indexOf("/**", start + 10));
+    expect(fn).toContain("setMenuFor(null)");
+    expect(fn).toContain("canOpenGalleryItem(gi, sessions, authUser)");
+    expect(fn).toContain("continueOnCard(gi)");
+  });
+});

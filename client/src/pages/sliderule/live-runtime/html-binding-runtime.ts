@@ -77,8 +77,7 @@ export const BINDING_ATTRS = [
   // 动作
   "data-action",
   // 搜索 / 筛选 / 购物车视图（照 petite-vue v-model / v-on：指令打在标签上）
-  // ⚠ Python scan 的 data-([a-z]+) 看不见带连字符的属性，所以这些都是单段名。
-  "data-search", "data-filter", "data-match", "data-view", "data-delta",
+  "data-search", "data-filter", "data-match", "data-view", "data-delta", "data-cart-qty",
   // 运行时**写回**的三个：行 id、算好的 series、动作上锁的原因。
   // ⚠ 它们由解释器写、不由生成侧写，但消毒发生在解释之**前**也可能在之后
   //   （重新消毒一份已填好的 HTML），漏了它们等于点击丢行、图表丢数、锁丢因。
@@ -177,6 +176,8 @@ export const ACTION_KINDS = [...RECORD_ACTION_KINDS, ...WORKFLOW_ACTION_KINDS, .
 
 export type ActionKind = (typeof ACTION_KINDS)[number];
 export type WorkflowActionKind = (typeof WORKFLOW_ACTION_KINDS)[number];
+/** 购物车四种。自由树的 actionRef 不负责它们，见 block-registry 的 eventByKind。 */
+export type CartActionKind = (typeof CART_ACTION_KINDS)[number];
 
 /** 使用点判断"是不是转移词"统一走这里——别再手写三个 `===` 串。 */
 export function isWorkflowActionKind(v: string): v is WorkflowActionKind {
@@ -230,7 +231,7 @@ export function implicitActionFromClick(
   const peers = root.querySelectorAll(
     `[data-rows="${entityId.replace(/"/g, "")}"]`
   );
-  if (peers.length >= 2 && !isCartList(box, root)) {
+  if (Array.from(peers).some(peer => isCartList(peer, root)) && !isCartList(box, root)) {
     return { kind: "addToCart", entityId, rowId };
   }
   return { kind: "openRecord", entityId, rowId };
@@ -364,24 +365,10 @@ export function rowsHost(box: Element): Element {
 }
 
 /**
- * 同一页两个 data-rows 绑同一实体：grid/表 = 货架，另一份 = 购物车。
- * 只有一份时不当购物车——后台台账仍是整表。
+ * Cart semantics require an explicit marker; layout does not identify data.
  */
 export function isCartList(box: Element, root: Element): boolean {
-  if ((box.getAttribute("data-view") || "") === "cart") return true;
-  // 存量页还没再跑 bind：同一实体两份 data-rows，非表非 grid 的当购物车。
-  const entityId = box.getAttribute("data-rows") || "";
-  if (!entityId) return false;
-  const peers = root.querySelectorAll(
-    `[data-rows="${entityId.replace(/"/g, "")}"]`
-  );
-  if (peers.length < 2) return false;
-  const host = rowsHost(box);
-  const tag = host.tagName;
-  if (tag === "TBODY" || tag === "THEAD" || tag === "TABLE") return false;
-  const cls = host.getAttribute("class") || "";
-  if (/\bgrid\b/.test(cls)) return false;
-  return true;
+  return root.contains(box) && box.getAttribute("data-view") === "cart";
 }
 
 function stampRowId(rowEl: Element, rid: unknown): void {
@@ -395,16 +382,15 @@ function stampRowId(rowEl: Element, rid: unknown): void {
   });
 }
 
-function paintCartQty(rowEl: Element, qty: unknown): void {
-  const n = Number(qty);
-  if (!Number.isFinite(n)) return;
-  const text = String(n);
-  const candidates = Array.from(rowEl.querySelectorAll("span, em, strong, b")).filter(
-    el =>
-      !el.hasAttribute("data-field") &&
-      /^\s*\d+\s*$/.test(el.textContent || "")
-  );
-  if (candidates.length) candidates[candidates.length - 1].textContent = text;
+function fillCartQuantity(rowEl: Element, quantity: unknown): void {
+  const n = Number(quantity);
+  const text = quantity != null && Number.isFinite(n) ? String(n) : EMPTY_TEXT;
+  selfAndDescendants<HTMLElement>(rowEl, "[data-cart-qty]").forEach(el => {
+    // Nested row containers are filled independently, like data-field.
+    const owner = el.parentElement?.closest("[data-rows]");
+    if (owner && owner !== rowEl && rowEl.contains(owner)) return;
+    setFieldText(el, text);
+  });
 }
 
 export function catalogEntityId(root: Element): string {
@@ -646,14 +632,15 @@ function clampLimit(raw: string | null): number | null {
   return Math.min(Math.floor(n), 200);
 }
 
-function aggregate(kind: string, rows: BindingRow[], fieldId: string): string {
+function aggregate(kind: string, rows: BindingRow[], fieldId: string, cart = false): string {
   if (kind === "count") return String(rows.length);
   const nums = rows
     .map((r) => {
+      if (r[fieldId] == null || String(r[fieldId]).trim() === "") return NaN;
       const n = Number(r[fieldId]);
       if (!Number.isFinite(n)) return NaN;
       const qty = Number(r.qty);
-      return Number.isFinite(qty) && qty > 0 ? n * qty : n;
+      return cart && kind === "sum" && Number.isFinite(qty) && qty > 0 ? n * qty : n;
     })
     .filter((n) => Number.isFinite(n));
   // 空数据不显 0 —— 0 是个真值，拿它冒充"没有"是在撒谎。
@@ -857,8 +844,8 @@ export function applyBindings(
         const row = rows[i];
         if (!row) return;
         fillFields(item, row, fields, entityId, problems, filled, true);
+        if (cart) fillCartQuantity(item, row.qty);
         stampRowId(item, row[rowIdField]);
-        if (cart) paintCartQty(item, row.qty);
       });
       filled.rows += Math.min(painted.length, rows.length);
       return;
@@ -907,8 +894,8 @@ export function applyBindings(
       }
       // 行内 data-field：作用域是**这一行**
       fillFields(tr, row, fields, entityId, problems, filled, true);
+      if (cart) fillCartQuantity(tr, row.qty);
       stampRowId(tr, row[rowIdField]);
-      if (cart) paintCartQty(tr, row.qty);
       host.appendChild(tr);
     });
     // 装饰层（当前时间线）在行之后重新挂上。absolute 相对 data-rows
@@ -986,7 +973,7 @@ export function applyBindings(
       rows = filterCatalogRows(rows, undefined, match);
     }
     const kind = (el.getAttribute("data-aggregate") || "count").toLowerCase();
-    el.textContent = aggregate(kind, rows, el.getAttribute("data-field") || "");
+    el.textContent = aggregate(kind, rows, el.getAttribute("data-field") || "", el.getAttribute("data-view") === "cart");
     filled.value += 1;
   });
 

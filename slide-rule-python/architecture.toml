@@ -53,7 +53,16 @@ may_depend_on = ["config", "models", "services", "sliderule_llm", "middlewares"]
 rank = 4
 what = "装配根"
 # 对应 grok 的 composition root（xai-grok-pager-bin）：只负责把东西装起来。
-may_depend_on = ["config", "models", "routes", "services", "middlewares", "stdio_utf8"]
+#
+# ⚠ sliderule_llm 这一项是 2026-09-08 加的，理由不是「装配要用 LLM」——
+#   装配根不调 LLM。是 `ensure_llm_proxy_bypass()`：Windows 上 HTTP_PROXY
+#   为空时 httpx 走注册表里的 Clash，NO_PROXY 环境变量不生效，控制面每句
+#   都 Cloudflare 522。绕过名单要在**任何服务 import 之前**设好，而算这份
+#   名单要读 LLM_BASE_URL——那份逻辑的家在 sliderule_llm.config，抄一份到
+#   装配根只会有两份会漂的名单。config 是叶子（顶层只有标准库、import 期
+#   不读 env、httpx 由 PEP 562 推迟），所以这条边顶层 import 就行，
+#   不必躲进函数体。
+may_depend_on = ["config", "models", "routes", "services", "sliderule_llm", "middlewares", "stdio_utf8"]
 
 [layer.scripts]
 rank = 5
@@ -114,7 +123,20 @@ what = "纯工具：不依赖 services 里任何其它模块"
 # 深度 0 实测 117 个：不依赖 services 内任何模块。对应 grok 的叶子 crate。
 may_depend_on = []
 modules = [
+  "services.control_budget",
+  "services.control_context_compact",
+  "services.control_transcript_log",
+  "services.control_goal_continuation",
+  "services.control_checkpoint",
+  "services.control_run_store",
   "services.archetype_legal",
+  "services.project_rollout",
+  "services.project_preview_config",
+  "services.project_tool_contracts",
+  "services.project_tool_summary",
+  "services.project_verification_gate",
+  "services.project_workspace_artifacts",
+  "services.project_acceptance",
   # 交付面可用性：只吃 HTML 字符串与 SPEC 字典，services 里谁都不依赖 → 叶子。
   # 跟 gate_health 同一个理由被闭环判定顶层 import。
   "services.deliverable_surface",
@@ -122,12 +144,45 @@ modules = [
   # 它反过来被闭环判定顶层 import——叶子层的意义就在这儿：谁都能安全引它。
   "services.gate_health",
   "services.sql_gateway",
+  # 工程源码清单是纯校验/哈希：不接 E2B、不读存储，保证路径与内容
+  # 合同可在 provider 和持久化两边复用。
+  "services.project_manifest",
+  "services.workspace_provider",
   "services.stage_legal",
   # 阶段配对台账：只吃「阶段名 + start 事件字典」，出度 0 → 叶子。
   # 被驱动器顶层 import——它是**流级**状态，不许每个泵新建一本
   # （真机那轮心跳全灭就是泵局部变量每几秒清零一次）。
   "services.stage_pairing",
   "services.capability_plan",
+  # 原地打转游标：只吃「这一轮的调用列表 + 一个 bool」，services 里谁都不依赖 → 叶子。
+  # 抄 grok `IdenticalToolCallRun` 的**分工**：分档（哪些工具算紧档）留在
+  # rehearsal_control，因为那要查 TOOL_SCOPE；游标本身只收算好的 bool。
+  # 把分档搬进来它就立刻不是叶子了——跟 closed_tools 那句「运行时谓词留在
+  # rehearsal_control」同一个理由。
+  "services.action_stationarity",
+  # 报完工的判决词表：只吃四个算好的值（completed / blocked_reason /
+  # 判官三态 / 已驳回次数），services 里谁都不依赖 → 叶子。
+  # 同 action_stationarity 那条分工：查 state 的活（指纹、数次数、拼理由）
+  # 留在 rehearsal_control，搬进来它就立刻不是叶子。
+  "services.done_claim",
+  # 活儿清单的纯算法：吃「旧清单 + 这一笔改动」吐新清单，services 里谁都不依赖 → 叶子。
+  # 同 action_stationarity / done_claim 那条分工：查 state、发事件、落库留在
+  # rehearsal_control，搬进来就立刻不是叶子。
+  "services.plan_todo",
+  # 问用户那几道题的形状与四条结果文案（抄 grok AskUserQuestion）：
+  # 吃「模型送来的入参」吐归一后的题、吃「选了什么」吐回喂给模型的那段话，
+  # services 里谁都不依赖 → 叶子。
+  # 同 action_stationarity / plan_todo 那条分工：查 state（上一发问了什么）、
+  # 发事件、落库留在 rehearsal_control，搬进来它就立刻不是叶子。
+  "services.user_questions",
+  # 跳的前置表达式树（抄 grok Expr<T>）：叶子怎么判由调用方那个闭包给，
+  # 本模块不认识 state → services 里谁都不依赖 → 叶子。
+  # 这也是它能当单一真相源的前提：谁都能安全 import 它去问「跑得动吗」。
+  "services.hop_requirements",
+  # 生命周期钩子的事件闭集 + 派发器：只吃「事件名 + 一份 dict」，
+  # services 里谁都不依赖 → 叶子。注册表是进程内的，不从文件发现
+  # （配置来源是产品决定，见模块头注）。
+  "services.hook_events",
   "services.closed_tools",
   "services.session_events",
   "services.workflow_registry",
@@ -257,6 +312,21 @@ what = "核心：模型 / 闸 / 闭环 / 生成件"
 # 深度 1~2。
 may_depend_on = ["util"]
 modules = [
+  "services.project_access",
+  # 模型自己攒的记忆（抄 grok xai-grok-memory 的分寸，不抄它那套向量索引）。
+  # **不是叶子**：要借 identity_store 那条执行器落库（跟 product_charter 同一条，
+  # 不另开数据库、也不共用它那张表）。只依赖 util，碰不到驱动器 → core。
+  "services.model_memory",
+  # 持久工程索引/源码版本/操作与事件的 SQL 边界。依赖 util 里的 SQL 网关，
+  # 不反向调用 routes 或控制循环；归组在 persist component。
+  "services.project_store",
+  "services.project_application_data",
+  "services.project_export",
+  "services.project_verification_store",
+  "services.project_preview_access",
+  "services.project_runtime",
+  "services.e2b_workspace_provider",
+  "services.project_browser_provider",
   # 点选编辑存库前的体检。**不是叶子**：它复用 html_bindings.scan_bindings
   # 数数据孔——数孔这件事只该有一把尺子（§4），为了当叶子另写一个才是错的。
   "services.page_edit_guard",
@@ -334,7 +404,20 @@ what = "编排：驱动器 / 流水线 / 控制面 / 会话"
 # 深度 >=3。这一层是 grok 里 xai-grok-shell 那种大块，内部随便缠没关系，
 # 但**不许被下面两层反过来依赖**。
 may_depend_on = ["util", "core"]
-modules = [
+  modules = [
+    "services.control_run_service",
+    "services.project_actor_access",
+    "services.project_runtime_worker",
+    "services.project_source_sync",
+    "services.project_browser_verification",
+    "services.project_verification_build",
+    "services.project_application_runtime",
+    "services.project_source_operations",
+    "services.project_delivery",
+    "services.project_preview_runtime",
+    "services.project_authority",
+    "services.project_creation",
+    "services.project_tools",
   "services.model_versions",
   "services.model_version_restore",
   "services.agent_loop_bridge",
@@ -485,14 +568,27 @@ why = """控制面闭集工具环。handoff 点火工厂，结果交回控制面
 回流是运行时合同（factory_complete → control_tool_result），不必画成 import 边。"""
 may_depend_on = [
   "drive",
+  # Session-bound tools reuse durable source storage; the runtime owner is injected.
+  "persist",
   "evidence",
+  # 2026-09-11 补齐既有 model_memory 归属：它借 identity_store 的执行器持久化。
+  "identity",
   "llm_gateway",
   "model_core",
   "platform",
   "spec_first",
 ]
 modules = [
+  "services.control_run_service",
+  "services.project_tools",
+  "services.action_stationarity",
+  "services.done_claim",
+  "services.hook_events",
+  "services.hop_requirements",
+  "services.model_memory",
+  "services.plan_todo",
   "services.rehearsal_control",
+  "services.user_questions",
 ]
 
 [component.drive]
@@ -511,8 +607,12 @@ modules = [
 ]
 
 [component.entrypoint]
-why = """组合根（对应 grok 的 xai-grok-pager-bin）：只负责把东西装起来。**被依赖数必须是 0**——箭头只进不出。"""
-may_depend_on = ["agent_loop", "drive", "http_routes", "model_core", "permission", "platform", "spec_first", "task_exec"]
+why = """组合根（对应 grok 的 xai-grok-pager-bin）：只负责把东西装起来。**被依赖数必须是 0**——箭头只进不出。
+llm_gateway 是 2026-09-08 加的一条：装配根不调 LLM，但要在任何服务 import 前调
+`ensure_llm_proxy_bypass()` 设好代理绕过名单（Windows/Clash 下控制面 522），
+而算名单要读 LLM_BASE_URL。理由全文见 [layer.app]。"""
+  # Lifespan owns both the durable control producer and project runtime worker.
+  may_depend_on = ["agent_loop", "control", "drive", "http_routes", "llm_gateway", "model_core", "permission", "persist", "platform", "runtime", "spec_first", "task_exec", "workspace"]
 modules = [
   "app",
 ]
@@ -536,13 +636,16 @@ modules = [
 
 [component.http_routes]
 why = """HTTP 边缘：路由只做拼装与鉴权，业务不许住在这里。"""
-may_depend_on = ["app_store", "audit", "blueprint", "capability_engine", "control", "diagnostics", "drive", "evidence", "identity", "llm_gateway", "model_core", "observability", "persist", "platform", "spec_first", "task_exec"]
+  may_depend_on = ["app_store", "audit", "blueprint", "capability_engine", "control", "diagnostics", "drive", "evidence", "identity", "llm_gateway", "model_core", "observability", "persist", "platform", "runtime", "spec_first", "task_exec"]
 modules = [
   "routes.account",
   "routes.audit",
   "routes.blueprint_jobs",
   "routes.blueprint_spec_docs",
   "routes.rag",
+  "routes.project_runtime",
+  "routes.project_sources",
+  "routes.project_preview",
   "routes.sliderule",
   "routes.sliderule_full",
   "routes.tasks",
@@ -558,6 +661,7 @@ modules = [
   "services.auth_service",
   "services.auth_tokens",
   "services.identity_store",
+  "services.project_actor_access",
   "services.mailer",
 ]
 
@@ -575,11 +679,14 @@ modules = [
   "sliderule_llm.client",
   "sliderule_llm.config",
   "sliderule_llm.control_client",
+  "sliderule_llm.doom_loop",
+  "sliderule_llm.empty_sample",
   "sliderule_llm.evidence",
   "sliderule_llm.evidence_context",
   "sliderule_llm.gateway_circuit",
   "sliderule_llm.image_client",
   "sliderule_llm.pool",
+  "sliderule_llm.retry_budget",
   "sliderule_llm.scoped",
   "sliderule_llm.structured",
   "sliderule_llm.vector",
@@ -624,7 +731,9 @@ may_depend_on = ["llm_gateway", "persist", "platform"]
 modules = [
   "services.cost_ledger",
   "services.enrich_timing",
+  "services.gate_health",
   "services.slide_rule_budget",
+  "services.stage_pairing",
   "services.telemetry",
   "services.telemetry_runtime",
 ]
@@ -665,6 +774,9 @@ modules = [
   "scripts.migrate_app_ownership",
   "scripts.overnight_device_iter",
   "scripts.overview_sheet_probe",
+  "scripts.run_full_build",
+  "scripts.run_panel7_stages",
+  "scripts.run_real_topics",
   "scripts.stock_image_fill_ab",
   "scripts.sync_block_labels",
   "scripts.thumb_recompress",
@@ -690,9 +802,44 @@ modules = [
 why = """会话落库与单调守卫。谁写、写成什么样，只有这里说了算。"""
 may_depend_on = ["platform"]
 modules = [
+  "services.control_run_store",
+  "services.project_creation",
   "services.persistence",
+  "services.project_store",
+  "services.project_application_data",
+  "services.project_export",
+  "services.project_source_operations",
+  "services.project_delivery",
+  "services.project_verification_store",
   "services.session_blob_store",
 ]
+
+[component.workspace]
+why = "E2B workspace provider contract and lifecycle adapter; shared manifest validation rejects invalid source paths before remote IO."
+may_depend_on = ["platform"]
+modules = [
+  "services.workspace_provider",
+  "services.project_workspace_artifacts",
+  "services.e2b_workspace_provider",
+  "services.project_browser_provider",
+]
+
+[component.runtime]
+why = "工程运行编排：把持久源码、租约和 E2B provider 组合成可恢复的运行实例。"
+  # Recover with persisted plan authority and recheck the owner's current account access.
+  may_depend_on = ["platform", "persist", "workspace", "identity"]
+  modules = [
+    "services.project_runtime",
+    "services.project_runtime_worker",
+    "services.project_source_sync",
+    "services.project_browser_verification",
+    "services.project_verification_build",
+    "services.project_application_runtime",
+    "services.project_preview_runtime",
+    "services.project_preview_access",
+    "services.project_preview_config",
+]
+
 
 [component.platform]
 why = """最底下的共用叶子：配置、数据形状、请求域上下文、零依赖的契约与工具。
@@ -702,11 +849,24 @@ why = """最底下的共用叶子：配置、数据形状、请求域上下文�
 叶子被多个组用是 grok 叶子 crate 的常态，只有**成环**时才是问题。别拿零依赖当搬家理由。"""
 may_depend_on = []
 modules = [
+  "services.control_budget",
+  "services.control_context_compact",
+  "services.control_transcript_log",
+  "services.control_goal_continuation",
+  "services.control_checkpoint",
+  "services.project_authority",
+  "services.project_access",
+  "services.project_rollout",
+  "services.project_acceptance",
+  "services.project_tool_contracts",
+  "services.project_tool_summary",
+  "services.project_verification_gate",
   "config.env_flags",
   "config.settings",
   "models.agent_loop",
   "models.blueprint_state",
   "models.v5_state",
+  "models.project_runtime",
   "services.archetype_legal",
   "services.closed_tools",
   "services.session_events",
@@ -721,6 +881,7 @@ modules = [
   "services.request_context",
   "services.schema_legal",
   "services.sql_gateway",
+  "services.project_manifest",
   "services.stage_legal",
   "services.turn_context",
   "services.turn_narration",
@@ -763,6 +924,8 @@ modules = [
   "services.workflow_select",
   "services.workflow_validate",
   "services.design_language",
+  "services.deliverable_surface",
+  "services.factory_plan_steps",
   "services.freeform_block",
   "services.freeform_preview_store",
   "services.html_bindings",
@@ -775,6 +938,7 @@ modules = [
   "services.page_blocks",
   "services.bind_hole_freeze",
   "services.page_edit_blocks",
+  "services.page_edit_guard",
   "services.page_id_freeze",
   "services.page_naming",
   "services.page_reconstruction",
@@ -864,8 +1028,6 @@ patterns = [
   "arch_graph",          # 架构编译器自己，命令行工具。
   "complete_migration",  # 一次性迁移记录，跟 scripts 同性质。
   "scripts.*",           # 运维/评测脚本，每个都是自己的入口。
-  "sliderule_llm.__init__",  # 包的 __init__：`import 包.模块` 时必然被加载，
-                             # 但 AST 里那条 import 指向的是子模块，永远扫不出入边。
 ]
 
 
@@ -1065,7 +1227,7 @@ why = "createPythonWebAigcAdapter 拼字符串 __import__"
 # 本来就有一条 `from services.session_events import envelope` 的函数体 import。
 # 既然要加顶层 import，那一条顺手提上去。session_events 是 util 叶子（出度 0），
 # 提上去不可能成环。
-deferred = 476
+deferred = 474
 # 明说不体检的拦截理由条数（[gate_codes] 里值为空串的）。**只许变少**。
 # 2026-09-05 建账时 9 条，第一笔要还的是 CLOSURE_DEGRADED_RUN。
 # ⚠ 同日 11 条：清单从「只扫 services/」扩到「services/ + routes/」，
@@ -1099,6 +1261,12 @@ component_cycles = [
 ]
 cycles = [
 ]
+# 2026-09-11: SCC 成环边取代 DFS 见证环作为棘轮。对照源版本
+# 527cc265b65403fae43ebad09ac2961af3f901a0 重新扫描，跨 component
+# 模块成环边与 component 成环边均为 0；未接纳任何新增循环债务。
+# cycles/component_cycles 仅保留旧诊断展示兼容，不再用于判定新增环。
+cyclic_edges = []
+component_cyclic_edges = []
 # ⚠ 没人 import 的模块。**这不是待删清单**——实测这批里绝大多数是三类
 #   各有理由的东西（Node 边界镜像 / 脚本插座 / 未挂载的基线面），
 #   详见 arch_graph.orphans() 的文档。这里给的是棘轮：**只许变少**，

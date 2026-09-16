@@ -23,6 +23,7 @@ AwaitReason = Literal[
     "closure_missing",
     "control_ask",
     "control_scope",
+    "control_plan_approval",
     # ⚠ 2026-08-27 压测挖出来的静默数据丢失：控制面澄清停靠写的是
     #   `state.awaitReason = "control_clarify"`（rehearsal_control.py:906），
     #   而这个名单里从来没有它。pydantic v2 默认**不校验赋值**，所以写的时候
@@ -290,7 +291,7 @@ class CapabilityRun(BaseModel):
         timing = dict(data.pop("timing", None) or {})
         if durationMs is not None:
             # 两处书写、一处填：老读者取 `timing.durationMs`，新读者取顶层。
-            timing.setdefault("durationMs", int(durationMs))
+            timing["durationMs"] = int(durationMs)
         elif isinstance(timing.get("durationMs"), (int, float)):
             # 反向也补：调用方只给了 timing 时，顶层别空着。
             durationMs = int(timing["durationMs"])
@@ -559,6 +560,12 @@ class V5SessionState(BaseModel):
     #
     # 语义与判定在 services/app_access.py，与应用共用同一套阶梯——不新写一套。
     ownerId: Optional[str] = None
+    # Project source/operations live in the project store. These are references,
+    # never a client-writable replacement for the stored project or its evidence.
+    # Older sessions keep their original HTML runtime on decode.
+    runtimeKind: Literal["html-prototype", "project"] = "html-prototype"
+    projectId: Optional[str] = None
+    projectRevision: Optional[str] = None
     artifacts: List[Artifact] = []
     capabilityRuns: List[CapabilityRun] = []
     coverageGaps: List[CoverageGap] = []
@@ -668,9 +675,30 @@ class V5SessionState(BaseModel):
     # persist 见 None 才 restore，[] 是驱动器清账）。
     # 摘了进待办，账不清空就不算首轮做完；闭环读它，非空不许发合格证。
     factoryTodo: Optional[List[str]] = None
+    # 老师傅自己列的活儿清单（2026-09-09，抄 grok todo_write）。
+    # 服务端拥有、客户端只读——所有权写法照 factoryTodo / pendingRuns
+    # 三处齐备：PUT pop + model_dump exclude + persist 见 None 才 restore。
+    # ⚠ 跟上面那个 factoryTodo **不是一回事**：那个是闭集五件套的待办账、
+    #   闭环读它 fail-closed；这个是模型自己写的自由清单，不参与任何判定。
+    #   合并了就会出现「模型把 closure 划掉，闭环就放行」（§7 伪造绿灯）。
+    controlTodo: Optional[List[Dict[str, Any]]] = None
     # 只读子代理账本（2026-09-04 阶段 3）。服务端拥有，客户端只读。
     # 失败 fail-open：error 记在条目上，不改主链路结论。
     subagentTasks: Optional[List[Dict[str, Any]]] = None
+    # 「一直在读、一次没写」的**跨回合**账（2026-09-14）。服务端拥有，客户端只读。
+    #
+    # ⚠ 为什么必须跨回合：这道闸第一版做成回合级游标，真机上**一次都没响**。
+    #   量下来每个回合最多攒到 3 轮只读就收尾了，而阈值 4 —— 差的那一轮每次
+    #   都差。降到 3 又正好撞上正当流程（排查失败命令本来就要 status→logs→read
+    #   三轮）。3 太急、4 够不着 = **这根轴选错了**，不是数字的问题。
+    #
+    #   病态是「这个目标一路读下来从没落地过」（真机 14 次 project_read、
+    #   0 次 patch），那是目标级属性。同 `MAX_CONTINUATIONS` 的理由——
+    #   `control_goal_continuation` 头注写着「单轮预算每次续跑都会重置，
+    #   所以拦不住无限续跑」，一模一样的形状。
+    #
+    #   形状：{"rounds": int, "nudgedAt": int}。任何一次写工具清零。
+    controlReadOnly: Optional[Dict[str, Any]] = None
     # ... (add more fields as migrated from TS)
 
     @classmethod

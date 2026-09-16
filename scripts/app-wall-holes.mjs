@@ -40,10 +40,15 @@ const url = process.argv[2] || "http://localhost:5311/agent-loop/workbench";
 const viewportWidth = Number(process.argv[3] || 1920);
 const shotPath = process.argv[4] || "app-wall.png";
 
-const browser = await chromium.launch({
-  executablePath:
-    process.env.PLAYWRIGHT_CHROMIUM || "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
-});
+// Keep the CI/container pin, while making the same audit runnable on the
+// Windows workstation where Playwright's Chrome channel is installed instead
+// of the Linux-only /opt path. An explicit path always wins.
+const explicitBrowser = process.env.PLAYWRIGHT_CHROMIUM;
+const browser = await chromium.launch(explicitBrowser
+  ? { executablePath: explicitBrowser }
+  : process.platform === "win32"
+    ? { channel: "chrome" }
+    : { executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" });
 const page = await browser.newPage({ viewport: { width: viewportWidth, height: 2400 } });
 page.on("console", m => {
   if (m.type() === "error") console.log("[console]", m.text().slice(0, 160));

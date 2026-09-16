@@ -27,10 +27,15 @@ from stdio_utf8 import configure_stdio_utf8
 #   漏钉 = 日志行把自己写成 LLM_GENERATE_FAILED（2026-08-20 Foclip）。
 configure_stdio_utf8()
 
+import asyncio
 import os
 import threading
 import re
 from contextlib import asynccontextmanager
+
+# LLM 主机的代理绕过。叶子模块（顶层只有标准库），顶层 import 安全；
+# 调用点在 `_hydrate_env_files()` 末尾，那里 env 才灌完。
+from sliderule_llm.config import ensure_llm_proxy_bypass
 
 from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.responses import JSONResponse, HTMLResponse
@@ -64,6 +69,17 @@ def _hydrate_env_files() -> None:
             key, value = key.strip(), value.strip().strip('"').strip("'")
             if key and key not in os.environ:
                 os.environ[key] = value
+    # 手起 uvicorn 也要绕过 Clash。只靠 dev:all 灌 NO_PROXY 时，
+    # Windows 系统代理仍把 LLM 送进 7890（2026-09-08 控制面 522）。
+    #
+    # ⚠ import 在文件顶层，不在这里。`sliderule_llm.config` 是叶子（顶层只有
+    #   标准库，import 期不读 env，httpx 由 PEP 562 推迟），所以没有「必须躲
+    #   进函数体」的理由——躲进来只会让这条边从架构闸上消失。要晚的是**调用**，
+    #   不是 import：env 文件得先灌完再算 NO_PROXY。
+    try:
+        ensure_llm_proxy_bypass()
+    except Exception:
+        pass
 
 
 # 必须先于 config.settings / 各服务 import（它们在 import 期就读环境）。
@@ -79,6 +95,9 @@ from routes.permissions import router as permissions_router
 from routes.blueprint_spec_docs import router as blueprint_spec_docs_router
 from routes.account import router as account_router
 from routes.sliderule_full import router as sliderule_full_router
+from routes.project_runtime import router as project_runtime_router
+from routes.project_sources import router as project_sources_router
+from routes.project_preview import router as project_preview_router
 from routes.agent_loop import router as agent_loop_router
 from routes.rag import router as rag_router
 # 只为触发 import 期自检：种子骨架若引用了未放开生成的区块、或把区块摆进不
@@ -93,6 +112,16 @@ from services.v5_capability_executor import _llm_generate_enabled
 from services.v5_publish_closure_response import derive_publish_closure_response
 from services.v5_skill_runtime_graph import derive_skill_runtime_graph_response
 from services.sliderule_session_sanitizer import sanitize_session_dict, sanitize_session_state
+from services.e2b_workspace_provider import E2BWorkspaceProvider
+from services.project_runtime_worker import ProjectRuntimeSupervisor, authorize_operation
+from services.project_rollout import project_worker_enabled
+from services.project_browser_provider import E2BProjectBrowserProvider
+from services.project_preview_access import ProjectPreviewAccess
+from services.project_preview_config import preview_configuration_enabled
+from services.project_preview_runtime import ProjectPreviewRuntime
+from services.control_run_store import ControlRunStore
+from services.control_run_service import ControlRunService
+from services.project_store import get_project_store
 from models.v5_state import V5SessionState
 
 
@@ -285,6 +314,43 @@ def _warm_storage_backends() -> None:
     threading.Thread(target=_warm, name="warm-storage", daemon=True).start()
 
 
+def _runtime_limit(name: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+    return max(minimum, min(maximum, value))
+
+
+def _start_project_runtime_supervisor() -> ProjectRuntimeSupervisor | None:
+    if not project_worker_enabled():
+        return None
+    lifetime = _runtime_limit("SLIDERULE_PROJECT_LIFETIME_SECONDS", 900, 60, 3600)
+    supervisor = ProjectRuntimeSupervisor(get_project_store(), E2BWorkspaceProvider,
+        max_workers=_runtime_limit("SLIDERULE_PROJECT_MAX_WORKERS", 2, 1, 8),
+        poll_interval=_runtime_limit("SLIDERULE_PROJECT_POLL_SECONDS", 2, 1, 30),
+        lease_ttl=_runtime_limit("SLIDERULE_PROJECT_LEASE_SECONDS", 120, 30, 3600),
+        lifetime_seconds=lifetime,
+        idle_seconds=min(lifetime, _runtime_limit("SLIDERULE_PROJECT_IDLE_SECONDS", 300, 30, 3600)),
+        install_timeout=_runtime_limit("SLIDERULE_PROJECT_INSTALL_SECONDS", 600, 10, 600),
+        ready_timeout=_runtime_limit("SLIDERULE_PROJECT_READY_SECONDS", 60, 5, 300),
+        browser_provider_factory=E2BProjectBrowserProvider)
+    # Observation and durable revocation remain available without relay config.
+    # Build the access schema at startup; a GET must never create tables or IO.
+    supervisor.preview_access = ProjectPreviewAccess(supervisor.store, authorizer=authorize_operation)
+    if preview_configuration_enabled():
+        bundle = Path(os.getenv("WHYBUDDY_PROJECT_PREVIEW_AGENT_BUNDLE") or
+            str(Path(__file__).resolve().parents[1] / "dist/project-preview/agent.cjs"))
+        try:
+            supervisor.preview_runtime = ProjectPreviewRuntime(supervisor.preview_access, agent_bundle=bundle)
+        except ValueError:
+            # Existing project commands remain available. No grant is issued
+            # until a built agent is installed by the runtime owner.
+            print("[startup] project preview agent bundle unavailable")
+    supervisor.start()
+    return supervisor
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("[startup] SlideRule V5 Python Backend starting...")
@@ -326,8 +392,36 @@ async def lifespan(app: FastAPI):
     # 日历干跑：真编排 + 桩 host。配方缺 assemble 这类洞启动即失败。
     _dry_run_calendars()
     print("[startup] workflow calendars dry-ran (stub LLM)")
-    # TODO: init vector DB, knowledge like original Python project for RAG
-    yield
+    app.state.project_runtime_supervisor = None
+    app.state.project_preview_access = None
+    app.state.control_run_service = None
+    try:
+        app.state.project_runtime_supervisor = await asyncio.to_thread(_start_project_runtime_supervisor)
+        if app.state.project_runtime_supervisor is not None:
+            app.state.project_preview_access = getattr(app.state.project_runtime_supervisor, "preview_access", None)
+            project_store = await asyncio.to_thread(get_project_store)
+            control_store = await asyncio.to_thread(ControlRunStore, project_store._q)
+            app.state.control_run_service = ControlRunService(control_store, project_store,
+                app.state.project_runtime_supervisor)
+            await app.state.control_run_service.start()
+    except Exception as exc:
+        # Existing sessions remain usable when this optional internal worker is
+        # unavailable. Start commands report 503; durable reads still work.
+        print(f"[startup] project runtime worker unavailable: {type(exc).__name__}")
+    try:
+        yield
+    finally:
+        control_service = app.state.control_run_service
+        if control_service is not None:
+            await control_service.shutdown()
+            app.state.control_run_service = None
+        supervisor = app.state.project_runtime_supervisor
+        if supervisor is not None:
+            try:
+                await asyncio.to_thread(supervisor.shutdown)
+            finally:
+                app.state.project_runtime_supervisor = None
+                app.state.project_preview_access = None
     # 关停时绝不 save_all：启动快照从不随运行更新，整体覆写会把运行期间
     # 落盘的所有新会话回滚到启动时刻（实测踩过：每次重启丢当轮全部推演）。
     # 所有写入已在变更时刻按单条守卫式落盘，关停无事可做。
@@ -369,6 +463,9 @@ else:
 # 整体删除，现在全站只有这一套身份。）
 app.include_router(account_router, prefix="/api/sliderule")
 app.include_router(sliderule_full_router, prefix="/api/sliderule")
+app.include_router(project_runtime_router, prefix="/api/sliderule")
+app.include_router(project_sources_router, prefix="/api/sliderule")
+app.include_router(project_preview_router, prefix="/api/sliderule")
 app.include_router(blueprint_spec_docs_router, prefix="/api/blueprint/spec-documents")
 app.include_router(blueprint_jobs_router, prefix="/api/blueprint/jobs")
 

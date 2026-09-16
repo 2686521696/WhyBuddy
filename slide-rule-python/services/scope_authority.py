@@ -25,6 +25,52 @@ park ≠ confirm：
 
 from __future__ import annotations
 
+
+def latest_control_plan(state):
+    """The durable document, independent from the client and approval response."""
+    for row in reversed(getattr(state, "controlTranscript", None) or []):
+        if isinstance(row, dict) and row.get("kind") == "plan_written":
+            return row
+    return {}
+
+
+def plan_execution_authorized(state):
+    """Only the exact approved revision grants writes; old scope cards never do.
+
+    Existing sessions without an approval also need a plan before their next write.
+    """
+    rows = [r for r in (getattr(state, "controlTranscript", None) or []) if isinstance(r, dict)]
+    plan_rows = [r for r in rows if str(r.get("kind", "")).startswith("plan_")]
+    if plan_rows:
+        plan = latest_control_plan(state)
+        if (
+            not plan or not str(plan.get("planContent") or "").strip()
+            or not str(plan.get("planId") or "").strip()
+            or not isinstance(plan.get("revision"), int) or plan["revision"] < 1
+        ):
+            return False
+        latest = plan_rows[-1]
+        if latest.get("kind") != "plan_approved":
+            return False
+        if any(latest.get(k) != plan.get(k) for k in ("planId", "revision", "planContent")):
+            return False
+        request = next((r for r in reversed(plan_rows[:-1]) if r.get("kind") == "plan_approval"), {})
+        return bool(request.get("reqId")) and all(
+            latest.get(k) == request.get(k)
+            for k in ("reqId", "planId", "revision", "planContent")
+        )
+    return False
+
+
+def approved_plan_instruction(state, user_text):
+    """Give every execution dialect the same approved, server-owned document."""
+    if not plan_execution_authorized(state):
+        raise ValueError("plan_approval_required")
+    plan = latest_control_plan(state)
+    return (
+        f"{user_text}\n\nApproved implementation plan (revision {plan['revision']}):\n{plan['planContent']}"
+    )
+
 from typing import Any, Dict, Iterable, Mapping, Optional
 
 from services.archetype_legal import (

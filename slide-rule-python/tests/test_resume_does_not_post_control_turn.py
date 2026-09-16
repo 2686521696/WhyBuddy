@@ -14,7 +14,7 @@ from control_turn_support import (
     client,
     event_types,
     new_sid,
-    seed_session,
+    seed_approved_session as seed_session,
     six_fields,
     strip_python,
 )

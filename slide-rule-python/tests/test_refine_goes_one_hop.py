@@ -73,9 +73,15 @@ class Test精修走逐跳:
             "精修没写 goal['tools']，工厂那边 _host_factory_hop 为假 → 走全量菜单"
         )
 
-    def test_没点名时缺省从spec起(self):
+    def test_没点名时已有SPEC从pages起(self):
+        """⚠ 2026-09-07 水果店：缺省 spec 把刚确认的假设整份重起草。
+
+        按钮点火已经是 `pages if _has_spec else spec`。模型挑 refine 不给 hop
+        必须同一缺省——只改按钮等于一半不生效。
+        """
         body = _branch("refine")
-        assert 'hop = raw_hop or "spec"' in body
+        assert "pages" in body and "_has_spec" in body
+        assert 'raw_hop or (' in body or 'raw_hop or ("pages"' in body
 
     def test_点名了生词要重问_不静默回落(self):
         """跟 `clip_factory_tools` 同一套语义（O-2 那条）：
@@ -170,4 +176,4 @@ class Test两条分支没有别的full残留:
                         apps += 1
         # repair 有两个入口（模型挑 / 按钮点），两处都该保持 full。
         assert fulls == 2, f"只有 repair 的两个入口该用 full，实际 {fulls} 处"
-        assert apps >= 5, f"点火/单跳/精修两入口至少五处 app 档，实际 {apps} 处"
+        assert apps >= 4, f"批准/单跳/精修两入口至少四处 app 档，实际 {apps} 处"

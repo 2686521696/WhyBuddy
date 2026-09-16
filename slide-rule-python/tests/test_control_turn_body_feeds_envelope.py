@@ -14,7 +14,7 @@ from control_turn_support import (
     KEY,
     CONTROL_URL,
     new_sid,
-    seed_session,
+    seed_approved_session as seed_session,
     six_fields,
 )
 from services.slide_rule_session import load_session
@@ -76,15 +76,15 @@ def test_missing_session_id_is_400_no_anon_fallback(harness):
     assert harness.helper_calls == []
 
 
-def test_unknown_session_id_is_400_before_sse(harness):
-    """未落盘的 sessionId 必须在 SSE 之前 400，helper=0。"""
+def test_unknown_session_id_is_404_before_sse(harness):
+    """未知 ID 与无权访问的会话都在 SSE 前返回 404，helper=0。"""
     sid = new_sid("never-saved")
     response = client.post(
         CONTROL_URL,
         json=six_fields(sid, "做一个请假系统", forcedTool="rehearse"),
         headers=KEY,
     )
-    assert response.status_code == 400
+    assert response.status_code == 404
     assert harness.helper_calls == []
 
 
@@ -104,8 +104,10 @@ def test_refine_does_not_overwrite_session_goal(monkeypatch):
     assert harness.helper_calls[0]["user_text"] == "把提交按钮改成红色"
     assert harness.goals_at_handoff == ["请假系统"]
     assert harness.driver_goals == ["请假系统"]
-    assert harness.generator_calls[0]["kwargs"].get("user_instruction") == (
-        "把提交按钮改成红色"
-    )
+    instruction = harness.generator_calls[0]["kwargs"].get("user_instruction", "")
+    assert instruction.startswith("把提交按钮改成红色")
+    from plan_approval_support import approved_plan_rows
+
+    assert approved_plan_rows()[0]["planContent"] in instruction
     loaded = load_session(sid)
     assert goal_text(loaded) == "请假系统"

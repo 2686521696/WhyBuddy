@@ -43,7 +43,6 @@ import {
   isComposerSendBlocked,
   queuedTurnsHeading,
 } from "../ComposerDock";
-import { assumptionsHeading } from "../spec-assumptions";
 
 /** 截图那一刻的现场：跑完了、输入框空着、队列里压着一条。 */
 const IDLE_WITH_QUEUE = {
@@ -74,14 +73,11 @@ describe("空闲时排进队列的那句话，得有出路", () => {
   });
 
   it("停泊卡开着时仍然一律挡住 —— 队列不许绕过门禁", () => {
-    expect(
-      isComposerSendBlocked({ ...IDLE_WITH_QUEUE, scopeCardOpen: true })
-    ).toBe(true);
     expect(isComposerSendBlocked({ ...IDLE_WITH_QUEUE, askOpen: true })).toBe(
       true
     );
     expect(
-      isComposerSendBlocked({ ...IDLE_WITH_QUEUE, isJudging: true })
+      isComposerSendBlocked({ ...IDLE_WITH_QUEUE, isRefining: true })
     ).toBe(true);
     expect(
       isComposerSendBlocked({
@@ -114,18 +110,11 @@ describe("抬头说的是这一刻真会发生的事", () => {
     expect(done).toContain("点发送");
   });
 
-  it("假设卡抬头说选完再继续，不再假装推演中不拦", () => {
-    expect(assumptionsHeading(3, true)).toContain("选完再继续");
-    const done = assumptionsHeading(3, false);
-    expect(done).not.toContain("推演中");
-    expect(done).toContain("选完再继续");
-  });
+
 
   it("两个抬头都得带上条数：光说状态不说几条等于没说", () => {
     expect(queuedTurnsHeading(2, true)).toContain("2");
     expect(queuedTurnsHeading(2, false)).toContain("2");
-    expect(assumptionsHeading(4, true)).toContain("4");
-    expect(assumptionsHeading(4, false)).toContain("4");
   });
 });
 

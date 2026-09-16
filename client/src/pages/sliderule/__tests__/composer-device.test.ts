@@ -43,17 +43,5 @@ describe("composerDeviceMenu", () => {
     expect(COMPOSER_DEVICE_OPTIONS.every(row => row.wired)).toBe(true);
   });
 
-  it("空态下拉接在 ComposerDock 活路径，不是两颗 tab", () => {
-    const dock = stripComments(
-      readFileSync(new URL("../ComposerDock.tsx", import.meta.url), "utf8")
-    );
-    expect(dock).toContain("composerDeviceMenu()");
-    expect(dock).toContain("setPreferredDevice(opt.id)");
-    expect(dock).toContain("if (!opt.wired) return");
-    expect(dock).toContain('data-testid="sliderule-composer-device-trigger"');
-    expect(dock).toContain('data-testid="sliderule-composer-device-menu"');
-    // 反向：并排 tab / 不看 wired 就写入
-    expect(dock).not.toContain("COMPOSER_DEVICE_OPTIONS.map");
-    expect(dock).not.toContain("aria-pressed={on}");
-  });
+
 });

@@ -299,6 +299,15 @@ class Test统一与打孔后重发页面:
         assert emitted[3][0] == "p2" and emitted[3][2] is True
         assert "孔2" in emitted[3][1] and "sliderule-theme" in emitted[3][1]
 
+    def test_failed_binding_stays_unbound_in_live_notifications(self, monkeypatch):
+        self._wire_full_chain(monkeypatch)
+        monkeypatch.setattr("services.html_bindings.bind_pages", lambda pages, model, **kw: {
+            "pages": {"p1": "<html>bound first page</html>"}, "failed": {"p2": "invalid field"},
+        })
+        emitted = []
+        sfp.run_spec_first("test partial binding", on_page=lambda pid, html, done, total, bound=False, device="desktop": emitted.append((pid, bound)))
+        assert emitted[-2:] == [("p1", True), ("p2", False)]
+
     def test_四参老_sink_不炸整条链(self, monkeypatch):
         """重发多带一个 bound 参数。老 sink 只收四个位置参——TypeError 必须
         被吞掉（UI 推送失败不许赔掉已经烧过 LLM 的页面，纪律同
@@ -397,3 +406,21 @@ class Test缺页日志不许炸交付:
             "缺页对账的 ⚠ 打不出就把交付拖死了——跟 Foclip 那轮 0/6 同一形状"
         )
         assert out["stages"]["pages"].get("missingPages") == "p2"
+
+
+class Test局部打孔只跳过已经打过孔的页:
+    def test_照搬但没打孔的页必须重打(self):
+        """真机：首轮 bind 被标 refine，reuse 页全 skip，权限没接到页面上。"""
+        pages = {
+            "p1": "<html><body>素颜页</body></html>",
+            "p2": '<div data-rows="employee"><span data-field="name"></span></div>',
+        }
+        skip = sfp.pages_to_skip_bind(
+            pages, refine=True, reuse_ids=["p1", "p2"]
+        )
+        assert "p1" not in skip
+        assert "p2" in skip
+
+    def test_非精修不跳(self):
+        pages = {"p1": '<div data-field="x"></div>'}
+        assert sfp.pages_to_skip_bind(pages, refine=False, reuse_ids=["p1"]) == set()

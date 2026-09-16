@@ -19,6 +19,7 @@ import {
   indexAppsBySession,
   sessionRowTitle,
   sessionUsesSheet,
+  shortSessionGoal,
 } from "../session-thumb";
 
 function summary(partial: Partial<AppStoreSummary>): AppStoreSummary {
@@ -78,6 +79,29 @@ describe("侧栏封面：只贴图", () => {
     );
     expect(sessionRowTitle("做一个站", summary({ product_name: "" }))).toBe("做一个站");
     expect(sessionRowTitle("", null)).toBe("新会话");
+  });
+
+  it("长意图收成短标题，名为引号里的名字优先", () => {
+    expect(
+      shortSessionGoal(
+        "构建一个名为“TicketStream”的服务台 SaaS 界面。目的：管理支持工单"
+      )
+    ).toBe("TicketStream");
+    expect(
+      sessionRowTitle(
+        "构建一个名为“TicketStream”的服务台 SaaS 界面。目的：管理支持工单",
+        null
+      )
+    ).toBe("TicketStream");
+    expect(
+      shortSessionGoal("做一个很长很长的意图句子超过二十二个汉字就会被收掉尾巴")
+    ).toMatch(/…$/);
+    expect(
+      sessionRowTitle(
+        "做一个很长很长的意图句子超过二十二个汉字就会被收掉尾巴",
+        summary({ product_name: "" })
+      )
+    ).not.toContain("就会被收掉尾巴");
   });
 
   it("有图 → 贴 <img>，URL 带版本位", () => {

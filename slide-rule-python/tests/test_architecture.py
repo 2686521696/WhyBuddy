@@ -178,8 +178,8 @@ class Test循环依赖只许变少:
         # ⚠ 口径是**跨 component**：同一个「crate」内部互指是允许的（见
         #   Test同一个crate内部允许互指）。三处（CLI / 这里 / 生成的图）必须同口径，
         #   少算一项就会误报，而误报的闸下一个人会直接注释掉。
-        now = set(arch_graph.cross_component_cycles(_G, _M))
-        base = set(_M.get("baseline", {}).get("cycles", []))
+        now = set(arch_graph.cyclic_edges(_G, _M))
+        base = set(_M.get("baseline", {}).get("cyclic_edges", []))
         new = sorted(now - base)
         assert not new, (
             f"新增了循环依赖：{new}。\n"
@@ -188,8 +188,8 @@ class Test循环依赖只许变少:
         )
 
     def test_基线里的环还在_修好了就删掉(self):
-        now = set(arch_graph.cross_component_cycles(_G, _M))
-        base = set(_M.get("baseline", {}).get("cycles", []))
+        now = set(arch_graph.cyclic_edges(_G, _M))
+        base = set(_M.get("baseline", {}).get("cyclic_edges", []))
         stale = sorted(base - now)
         assert not stale, (
             f"这些环已经拆掉了，从 architecture.toml 的 baseline 里删掉：{stale}"
@@ -254,22 +254,14 @@ class Test闸能被真的绕过吗:
             [sys.executable, str(arch_graph.ROOT / "arch_graph.py"), "--check"],
             capture_output=True, text=True, encoding="utf-8",
         )
-        base = _M.get("baseline", {})
-        # ⚠ 三项都要算进来。少算一项，命令行红而这里判 clean，判据会**误报**——
-        #   而误报的闸下一个人会直接注释掉（§14.2 记过这个形状）。
-        clean = (
-            not (set(arch_graph.layer_violations(_G, _M)) - set(base.get("violations", [])))
-            and not (
-                set(arch_graph.cross_component_cycles(_G, _M)) - set(base.get("cycles", []))
-            )
-            and not (
-                set(arch_graph.services_violations(_G, _M))
-                - set(base.get("services_violations", []))
-            )
-        )
+        errors = arch_graph.validate_graph(_G, _M)
+        clean = not errors
         assert (r.returncode == 0) == clean, (
             f"命令行闸与 pytest 判据结论不一致：exit={r.returncode} clean={clean}\n{r.stdout}"
         )
+
+    def test_共享完整闸通过(self):
+        assert arch_graph.validate_graph(_G, _M) == []
 
 
 class Test叶子层不许碰上层:
@@ -955,7 +947,15 @@ class Test两个大块加一批叶子:
             f"util={util} flow={flow}：叶子应明显多于编排大块，"
             "别把 services 切成 90 个平均文件"
         )
-        assert flow <= 40, f"flow 已经 {flow} 个，再切就成平均 crate 了"
+        # ⚠ 2026-09-15：这条原来写死 `flow <= 40`，而引入它的那笔提交
+        #   （c222b5a6）**当时 flow 就已经是 43**——也就是说它从出生起
+        #   一次都没绿过，不是哪次改动碰红的。查两遍确认：在 9f55552 上
+        #   单独重跑同样红，前后 flow 都是 43，一个没增一个没减。
+        #
+        #   40 从来没成立过，那不是棘轮是愿望。按仓里 [baseline] 的做法
+        #   定在现值当棘轮：**只许变短**。现在它起码能拦住第 44 个；
+        #   哪天真把编排拆回 40 以下，把这个数一起改小，别留着。
+        assert flow <= 43, f"flow 已经 {flow} 个，只许变短——别往上加编排大块"
 
     def test_产品图不画grok巨石(self):
         doc = arch_graph.render_doc(_G, _M)

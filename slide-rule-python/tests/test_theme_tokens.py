@@ -118,7 +118,11 @@ class Test接在活路上:
             "pages = apply_theme_to_pages(pages, _theme_lang)", bind_at
         )
         assert j2 > bind_at
-        assert src.index("_reemit_pages(sink, pages, bound=True)") > j2
+        # Binding now supplies the authoritative per-page status map; retain
+        # the ordering guarantee while allowing the richer call shape.
+        emit_after_bind = src.index("_reemit_pages(sink, pages, bound=True", j2)
+        assert emit_after_bind > j2
+        assert "binding_status=page_bind_status" in src[emit_after_bind : emit_after_bind + 180]
 
     def test_多页一起钉(self):
         tokens_lang = {"tone": "浅色底", "primary": "#2563eb"}

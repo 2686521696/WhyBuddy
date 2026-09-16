@@ -134,16 +134,16 @@ def test_waiving_questions_cannot_turn_a_red_gate_green():
     )
 
 
-def test_confirm_handler_actually_calls_it():
-    """通电：光有函数不算数——确认路径上必须真的调到它。"""
-    import inspect
-    import re
+def test_new_turn_retires_legacy_questions_on_the_live_route(monkeypatch):
+    from control_turn_support import ControlHarness, new_sid, seed_session, six_fields
+    from services.slide_rule_session import load_session
 
-    from services import rehearsal_control
-
-    src = inspect.getsource(rehearsal_control._confirm_rehearse_and_handoff)
-    src = re.sub(r'"""[\s\S]*?"""', "", src)
-    src = re.sub(r"#.*", "", src)
-    assert "_retire_stale_control_questions" in src, (
-        "确认路径没调用作废——函数写对了 ≠ 它被调用了（Claude.md §3）"
-    )
+    sid = new_sid("retire-legacy-questions")
+    state = _state_with_stale_questions()
+    seed_session(sid, goal=state.goal, coverageGaps=state.coverageGaps, awaitReason="control_clarify")
+    harness = ControlHarness(monkeypatch)
+    harness.post(six_fields(sid, "改成连锁门店的预约管理"))
+    gaps = _by_id(load_session(sid))
+    assert gaps["gap-q-ctl-a-0"]["status"] == "waived"
+    assert gaps["gap-evidence-turn-1"]["status"] == "open"
+    assert not harness.helper_calls

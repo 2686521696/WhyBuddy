@@ -16,12 +16,13 @@ from control_turn_support import (
     llm_text,
     llm_tool,
     new_sid,
-    seed_session,
+    seed_approved_session as seed_session,
     six_fields,
     strip_python,
 )
 from services.rehearsal_control import (
     CANNED_FAILURE,
+    ASSUMPTIONS_WAIT_USER,
     POST_SPEC_HOP_FALLBACK,
     POST_WRITE_FALLBACK,
     _after_write_hint,
@@ -113,7 +114,7 @@ def test_loop_does_not_return_on_handoff_flag():
 
 
 def test_forced_rehearse_rejoins_loop_after_factory(harness):
-    """按钮点火不经过 LLM；工厂收尾必须 host complete。把 handoff 后的 return 加回去，这条红。"""
+    """按钮点火不经过 LLM；工厂收尾必须交回 host，按 hint 挑下一跳。"""
     sid = new_sid("forced-rejoin")
     seed_session(
         sid,
@@ -131,7 +132,7 @@ def test_forced_rehearse_rejoins_loop_after_factory(harness):
         six_fields(sid, "将做成：请假系统", forcedTool="rehearse")
     )
     assert len(harness.helper_calls) == 1
-    assert not harness.llm_calls, "假设卡等确认还去问了控制面"
+    assert harness.llm_calls, "没有假设时工厂之后必须问控制面挑下一跳"
     types = event_types(events)
     assert "control_handoff_factory" in types
     assert "factory_complete" in types, (
@@ -144,21 +145,10 @@ def test_forced_rehearse_rejoins_loop_after_factory(harness):
     )
     assert any(
         e.get("type") == "control_text"
-        and POST_SPEC_HOP_FALLBACK in str(e.get("text") or "")
+        and "页面已经出来" in str(e.get("text") or "")
         for e in events
     ), "交回之后的人话没上屏"
     assert types[-1] == "complete"
-    fc = types.index("factory_complete")
-    speech = next(
-        i
-        for i, e in enumerate(events)
-        if e.get("type") == "control_text"
-        and POST_SPEC_HOP_FALLBACK in str(e.get("text") or "")
-    )
-    last_complete = len(types) - 1 - types[::-1].index("complete")
-    assert fc < speech < last_complete, (
-        f"流序必须是 factory_complete → control_text → complete，实际 {types}"
-    )
 
 
 def test_after_write_hint_reads_this_hop_tools_not_stale_pages():
@@ -223,6 +213,7 @@ def test_forced_rehearse_empty_llm_uses_post_spec_hop_fallback(harness):
     ]
     blob = "\n".join(texts)
     assert POST_SPEC_HOP_FALLBACK in blob
+    assert "请调 pages" not in blob
     assert POST_WRITE_FALLBACK not in blob
     assert CANNED_FAILURE not in blob
 
@@ -250,7 +241,7 @@ def test_forced_refine_rejoins_loop_after_factory(harness):
     )
     assert len(harness.helper_calls) == 1
     assert harness.helper_calls[0].get("profile") == "app"
-    assert harness.helper_calls[0].get("goal_tools") == ["spec"]
+    assert harness.helper_calls[0].get("goal_tools") == ["pages"]
     assert harness.llm_calls
     types = event_types(events)
     assert "factory_complete" in types
@@ -261,7 +252,7 @@ def test_forced_refine_rejoins_loop_after_factory(harness):
     assert types[-1] == "complete"
     saved = load_session(sid)
     tools = (saved.goal or {}).get("tools") if saved and isinstance(saved.goal, dict) else None
-    assert list(tools or []) == ["spec"], f"按钮精修缺省 spec，实际 {tools}"
+    assert list(tools or []) == ["pages"], f"已有 SPEC 的精修走 pages，实际 {tools}"
 
 
 def test_refine_branch_writes_tools_and_uses_app_profile():
@@ -326,7 +317,7 @@ def test_workflow_tool_is_listed_and_handoffs_after_scope(harness):
     assert (loaded.goal or {}).get("workflow") == "product-rehearsal"
 
 
-def test_forced_rehearse_stamps_scope_card_tools_onto_goal(harness):
+def test_forced_rehearse_does_not_read_retired_scope_card_tools(harness):
     """范围卡 tools 必须落到 goal，工厂才能少跑。只打孔 plan 会假绿。"""
     sid = new_sid("scope-tools")
     seed_session(
@@ -356,17 +347,17 @@ def test_forced_rehearse_stamps_scope_card_tools_onto_goal(harness):
     loaded = load_session(sid)
     assert loaded is not None
     tools = (loaded.goal or {}).get("tools") if isinstance(loaded.goal, dict) else None
-    assert list(tools or []) == ["spec", "pages"], (
-        "开始推演跑首轮产出链，范围卡减菜仍是上限："
-        "卡上 spec/pages/closure → 首轮只剩 spec+pages，不许把 structure/bind 塞回去，"
-        "也不许只点火 spec。"
+    assert list(tools or []) == ["spec"], (
+        "开始推演只点火 spec。卡上减菜进待办，不许把课表焊进这一跳。"
+        f"实际 {tools}"
     )
+    todo = list(getattr(loaded, "factoryTodo", None) or [])
+    assert "pages" in todo
+    assert "structure" in todo and "bind" in todo, todo
 
 
-def test_forced_rehearse_default_menu_is_first_pass_chain(harness):
-    """没减菜时开始推演必须一口气跑 spec→bind，不许再只点火 spec。"""
-    from services.capability_plan import FIRST_PASS_TOOLS
-
+def test_forced_rehearse_default_menu_is_spec_then_todo(harness):
+    """没减菜时开始推演只点火 spec，其余进待办。不许焊课表。"""
     sid = new_sid("first-pass")
     seed_session(
         sid,
@@ -374,15 +365,14 @@ def test_forced_rehearse_default_menu_is_first_pass_chain(harness):
         awaitReason="control_scope",
         awaitDetail="请假系统",
     )
-    harness.llm_impl = lambda messages, **kw: llm_text("首轮做完了。")
+    harness.llm_impl = lambda messages, **kw: llm_text("规格已经记下。")
     harness.post(six_fields(sid, "将做成：请假系统", forcedTool="rehearse"))
     loaded = load_session(sid)
     tools = (loaded.goal or {}).get("tools") if loaded and isinstance(loaded.goal, dict) else None
-    assert list(tools or []) == list(FIRST_PASS_TOOLS), (
-        f"开始推演没跑产出链：{tools}"
-    )
-    assert "closure" not in list(tools or [])
-    assert harness.helper_calls[-1].get("goal_tools") == list(FIRST_PASS_TOOLS)
+    assert list(tools or []) == ["spec"], f"开始推演焊了课表：{tools}"
+    todo = list(getattr(loaded, "factoryTodo", None) or [])
+    assert todo == ["pages", "structure", "bind"], todo
+    assert harness.helper_calls[-1].get("goal_tools") == ["spec"]
 
 
 def test_pages_preview_workflow_stamps_recipe_tools_without_override(harness):
@@ -428,8 +418,9 @@ def test_llm_pages_without_spec_does_not_handoff(harness):
     harness.llm_impl = lambda messages, **kw: llm_tool("pages", {}, call_id="p1")
     _, events = harness.post(six_fields(sid, "先出页面"))
     assert harness.helper_calls == []
-    blob = "\n".join(str(e.get("text") or "") for e in events if e.get("type") == "control_text")
-    assert "SPEC" in blob
+    types = event_types(events)
+    assert "control_handoff_factory" not in types
+    assert "control_scope_card" not in types
 
 
 def test_llm_pages_after_spec_handoffs(harness):
@@ -467,12 +458,10 @@ def test_llm_pages_after_spec_handoffs(harness):
     assert rounds["n"] >= 2
 
 
-def test_after_spec_hop_lists_pages_and_user_hint(harness):
-    """SPEC 跳交回：罐头收尾 + complete，不许再问控制面。
+def test_after_spec_hop_host_lists_pages(harness):
+    """SPEC 跳交回、没有假设卡：清单里必须有 pages，host 才能挑下一跳。
 
-    ⚠ 2026-09-02：交回时若仍列出 pages / scope_card，模型会自己点火。
-    ⚠ 2026-09-03：只许说话仍要等 `_invoke_control_llm`，确认继续排队
-      发不出去。变异：把 spec_waiting 提前 complete 拿掉 → 本条红。
+    变异：把 `tools = []` 加回去 → llm kwargs 里没有 pages，本条红。
     """
     sid = new_sid("after-spec-hint")
     seed_session(
@@ -481,27 +470,96 @@ def test_after_spec_hop_lists_pages_and_user_hint(harness):
         awaitReason="control_scope",
         awaitDetail="请假系统",
     )
-    harness.llm_impl = lambda messages, **kw: llm_text("先出页面。")
+    seen = {"names": []}
+
+    def impl(messages, **kw):
+        tools = kw.get("tools") or []
+        names = [
+            ((t.get("function") or {}).get("name") if isinstance(t, dict) else None)
+            for t in tools
+        ]
+        seen["names"] = [n for n in names if n]
+        return llm_text("先出页面。")
+
+    harness.llm_impl = impl
     _, events = harness.post(
         six_fields(sid, "将做成：请假系统", forcedTool="rehearse")
     )
-    assert not harness.llm_calls, (
-        f"假设卡还在等确认，工厂之后又问了控制面：{len(harness.llm_calls)} 次"
-    )
-    types = event_types(events)
-    assert types[-1] == "complete"
-    texts = [
-        str(e.get("text") or "")
-        for e in events
-        if e.get("type") == "control_text"
-    ]
-    assert any("下一跳请调 pages" in t or "必须调 pages" in t for t in texts), texts
+    assert harness.llm_calls, "没有假设时工厂之后必须问控制面"
+    assert "pages" in seen["names"], f"交回清单没有 pages：{seen['names']}"
+    assert "spec" not in seen["names"], f"已经有 SPEC 不该再列 spec：{seen['names']}"
     loaded = load_session(sid)
     assert loaded is not None
     body = _factory_tool_body(loaded, "spec")
     assert body.get("hasSpec") is True
     assert body.get("pageCount") == 0
     assert "pages" in str(body.get("nextHint") or "")
+
+
+def test_spec_then_pages_in_same_host_loop(harness):
+    """步骤级自主：spec 交回后同一轮 host 按 hint 挑 pages。
+
+    变异：交回 tools=[] → 第二轮 LLM 调 pages 进不了工厂，helper 仍是 1。
+    """
+    sid = new_sid("spec-then-pages")
+    _scoped(sid)
+    rounds = {"n": 0}
+
+    def impl(messages, **kw):
+        rounds["n"] += 1
+        if rounds["n"] == 1:
+            return llm_tool("spec", {}, call_id="s1")
+        if rounds["n"] == 2:
+            return llm_tool("pages", {}, call_id="p1")
+        return llm_text("页面出来了。")
+
+    harness.llm_impl = impl
+    _, events = harness.post(six_fields(sid, "做一个请假系统"))
+    assert len(harness.helper_calls) == 2, (
+        f"spec 之后 host 没挑 pages：helper={len(harness.helper_calls)} rounds={rounds['n']}"
+    )
+    loaded = load_session(sid)
+    tools = (loaded.goal or {}).get("tools") if loaded and isinstance(loaded.goal, dict) else None
+    assert list(tools or []) == ["pages"], tools
+    types = event_types(events)
+    assert types[-1] == "complete"
+
+
+def test_assumptions_awaiting_does_not_ask_control(harness):
+    """假设卡摊着：工厂之后零 LLM，确认继续才能发出去（2026-09-03）。"""
+    sid = new_sid("assumptions-wait")
+    seed_session(
+        sid,
+        goal={"text": "请假系统", "status": "clear", "tools": ["spec"]},
+        specFirstPages={
+            "spec": {
+                "appName": "请假",
+                "pages": [{"id": "p1"}],
+                "assumptions": [{"id": "a1", "topic": "登录"}],
+            },
+            "pages": {},
+            "assumptionsConfirmed": False,
+        },
+        controlTranscript=[
+            {"id": "ct-1", "kind": "scope_confirmed", "text": "请假系统"}
+        ],
+    )
+    harness.llm_impl = lambda messages, **kw: llm_text("不该被叫到")
+    _, events = harness.post(
+        six_fields(sid, "将做成：请假系统", forcedTool="spec")
+    )
+    assert not harness.llm_calls, (
+        f"假设卡还在等确认，工厂之后又问了控制面：{len(harness.llm_calls)} 次"
+    )
+    texts = [
+        str(e.get("text") or "")
+        for e in events
+        if e.get("type") == "control_text"
+    ]
+    question = next(e for e in events if e.get("type") == "control_ask_user")
+    assert [row["id"] for row in question["questions"]] == ["a1"]
+    assert not any("请调 pages" in t for t in texts)
+    assert event_types(events)[-1] == "complete"
 
 
 def test_factory_tool_body_counts_pages_from_the_dict():
@@ -548,3 +606,37 @@ def test_host_hop_clips_factory_loop_to_one():
     assert "max_loops = 1" in window, (
         "host hop 没有把工厂循环收成一跳。删掉这句，食堂那趟会再起草一遍 SPEC。"
     )
+
+
+def test_bind_partial_failed_is_not_ok():
+    """真机：3 页里 2 页 failed，不能当已经全部接好。"""
+    state = V5SessionState(
+        sessionId="bind-fail",
+        goal={"text": "鲜果速收", "tools": ["bind"]},
+        specFirstPages={
+            "pages": {"p1": "<html/>", "p2": "<html/>", "p3": "<html/>"},
+            "pageBindStatus": {"p1": "failed", "p2": "failed", "p3": "bound"},
+            "capabilityPlan": {"tools": ["bind"]},
+        },
+    )
+    body = _factory_tool_body(state, "bind", before_fingerprint="old")
+    assert body["ok"] is False
+    assert "failed" in body["human"]
+    assert "闭环" in body["human"]
+
+
+def test_bind_skip_all_pages_is_not_ok():
+    """真机：bind 三页 skipped，收尾却说闭环完成。"""
+    state = V5SessionState(
+        sessionId="bind-skip",
+        goal={"text": "权盾后台", "tools": ["bind"]},
+        specFirstPages={
+            "pages": {"p1": "<html/>", "p2": "<html/>", "p3": "<html/>"},
+            "pageBindStatus": {"p1": "skipped", "p2": "skipped", "p3": "skipped"},
+            "capabilityPlan": {"tools": ["bind"]},
+        },
+    )
+    body = _factory_tool_body(state, "bind", before_fingerprint="old")
+    assert body["ok"] is False
+    assert "skipped" in body["human"]
+    assert "闭环" in body["human"]

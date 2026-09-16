@@ -4,7 +4,7 @@
 > Python 包边来自 `arch_graph.py`，TS 包边来自 `arch-graph-ts.mjs --json-packages`，
 > 跨语言边来自 `architecture.toml` 的 `[[cross_language_edge]]`（Nx implicitDependencies）。
 
-- TS 包 **5**，包间边 **4**
+- TS 包 **7**，包间边 **7**
 - Python 包 **11**
 - 跨语言边 **4**（server/index.ts 拼字符串加载 Python adapter）
 
@@ -15,10 +15,12 @@
 flowchart TB
   subgraph ts [TypeScript]
     ts_agent_loop["ts/agent-loop<br/>99 个模块"]
-    ts_client["ts/client<br/>1038 个模块"]
-    ts_server["ts/server<br/>579 个模块"]
+    ts_client["ts/client<br/>1062 个模块"]
+    ts_project_templates["ts/project-templates<br/>5 个模块"]
+    ts_scripts["ts/scripts<br/>67 个模块"]
+    ts_server["ts/server<br/>588 个模块"]
     ts_services["ts/services<br/>32 个模块"]
-    ts_shared["ts/shared<br/>176 个模块"]
+    ts_shared["ts/shared<br/>179 个模块"]
   end
   subgraph py [Python]
     py_app["py/app<br/>1 个模块"]
@@ -26,44 +28,48 @@ flowchart TB
     py_complete_migration["py/complete_migration<br/>1 个模块"]
     py_config["py/config<br/>2 个模块"]
     py_middlewares["py/middlewares<br/>2 个模块"]
-    py_models["py/models<br/>3 个模块"]
-    py_routes["py/routes<br/>12 个模块"]
-    py_scripts["py/scripts<br/>36 个模块"]
-    py_services["py/services<br/>219 个模块"]
-    py_sliderule_llm["py/sliderule_llm<br/>13 个模块"]
+    py_models["py/models<br/>4 个模块"]
+    py_routes["py/routes<br/>15 个模块"]
+    py_scripts["py/scripts<br/>39 个模块"]
+    py_services["py/services<br/>263 个模块"]
+    py_sliderule_llm["py/sliderule_llm<br/>16 个模块"]
     py_stdio_utf8["py/stdio_utf8<br/>1 个模块"]
     py_services_web_aigc_open_adapter["services.web_aigc_open_adapter"]
     py_services_web_aigc_orchestration_adapter["services.web_aigc_orchestration_adapter"]
     py_services_web_aigc_web_qa_adapter["services.web_aigc_web_qa_adapter"]
     py_services_web_aigc_device_location_adapter["services.web_aigc_device_location_adapter"]
   end
-  ts_client -->|407| ts_shared
+  ts_client -->|415| ts_shared
+  ts_scripts -->|2| ts_client
+  ts_scripts -->|10| ts_server
+  ts_scripts -->|2| ts_shared
   ts_server -->|1| ts_client
-  ts_server -->|701| ts_shared
+  ts_server -->|702| ts_shared
   ts_services -->|23| ts_shared
   py_app -->|1| py_config
   py_app -->|1| py_models
-  py_app -->|12| py_routes
-  py_app -->|12| py_services
+  py_app -->|15| py_routes
+  py_app -->|22| py_services
+  py_app -->|2| py_sliderule_llm
   py_app -->|1| py_stdio_utf8
   py_complete_migration -->|1| py_models
   py_complete_migration -->|3| py_services
   py_middlewares -->|1| py_config
   py_middlewares -->|2| py_services
-  py_routes -->|9| py_config
-  py_routes -->|5| py_middlewares
-  py_routes -->|3| py_models
-  py_routes -->|129| py_services
-  py_routes -->|15| py_sliderule_llm
+  py_routes -->|10| py_config
+  py_routes -->|8| py_middlewares
+  py_routes -->|6| py_models
+  py_routes -->|156| py_services
+  py_routes -->|30| py_sliderule_llm
   py_scripts -->|3| py_app
   py_scripts -->|2| py_config
   py_scripts -->|1| py_models
   py_scripts -->|58| py_services
-  py_scripts -->|8| py_sliderule_llm
+  py_scripts -->|16| py_sliderule_llm
   py_scripts -->|2| py_stdio_utf8
-  py_services -->|15| py_config
-  py_services -->|31| py_models
-  py_services -->|60| py_sliderule_llm
+  py_services -->|19| py_config
+  py_services -->|43| py_models
+  py_services -->|124| py_sliderule_llm
   py_sliderule_llm -->|2| py_config
   ts_server -.->|open| py_services_web_aigc_open_adapter
   ts_server -.->|orchestration| py_services_web_aigc_orchestration_adapter

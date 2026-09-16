@@ -28,6 +28,7 @@ import time
 import json
 import os
 import re
+import tempfile
 import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -35,6 +36,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from pydantic import ValidationError
 
 from models.v5_state import V5SessionState
+from services.project_authority import assert_session_authorized, has_generated_application
 
 STORE_FILE = "data/sliderule-sessions.json"
 STORE_FILE_ENV = "SLIDERULE_SESSIONS_FILE"
@@ -323,7 +325,9 @@ def _is_same_turn_progress(prior: V5SessionState, incoming: V5SessionState) -> b
 # wrt other concurrent save calls (addresses concurrent RMW races). Re-read inside lock
 # sees prior writers' results. Combined with lastTurnId<= compare this provides version/timestamp-equivalent
 # guard (lastTurnId as version; lock order for equal-turn) using existing fields (no extra deps, no schema change).
-_save_lock = threading.Lock()
+# SQL saves also publish a local turn checkpoint under this lock. Reentrancy
+# lets the database CAS helper retain its own lock for direct callers.
+_save_lock = threading.RLock()
 
 # CAS 冲突重试次数。冲突只在「另一个进程/机器刚好写了同一个会话」时发生，
 # 重试一次基本就过了；给 3 次是留余量。用尽仍冲突就如实返回错误，不静默丢写入。
@@ -582,7 +586,7 @@ def save_all(sessions: Dict[str, V5SessionState], store_file: Optional[StorePath
 
 
 class PersistClosedError(Exception):
-    """pending / checkpoint 写失败。证据链不许假装存了。"""
+    """认领 / pending / checkpoint 写失败。归属与证据链不许假装存了。"""
 
     def __init__(self, reason: str, message: str = ""):
         self.reason = reason
@@ -599,11 +603,23 @@ def _safe_ckpt_token(value: str, limit: int = 160) -> str:
 
 
 def _atomic_write_json(path: Path, payload: Any) -> None:
-    """temp + os.replace，与 _write_store 同一套原子落盘。OSError 原样抛给调用方。"""
+    """Each writer owns its temporary file; close it before Windows replace.
+
+    2026-09-13: the control loop and source owner reused ``<path>.tmp``.
+    One could replace/delete the other's open file, interrupting a valid model
+    turn with WinError 32 after the SQL write had already committed.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, default=str), encoding="utf-8")
-    os.replace(tmp, path)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                prefix=path.name + ".", suffix=".tmp", delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump(payload, stream, ensure_ascii=False, default=str)
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _write_turn_checkpoint(state: V5SessionState, store_file: Optional[StorePath] = None) -> Optional[StoreError]:
@@ -672,6 +688,9 @@ def save_session_record(
     store_file: Optional[StorePath] = None,
     *,
     server_write: bool = False,
+    expected_project_revision: Optional[str] = None,
+    project_binding_approval: Optional[str] = None,
+    expected_control_run: Optional[Dict[str, Any]] = None,
 ) -> StoreError:
     # Use lock to serialize the entire read-prior + replay-merge + monotonic compare + write.
     # This ensures that on concurrent saves, each entrant re-reads the *latest* committed
@@ -683,20 +702,38 @@ def save_session_record(
     # Serialized lock provides timestamp-equivalent ordering for same lastTurnId.
     store = _blob_store(store_file)
     if store is not None:
-        result = _save_session_record_db(store, state, server_write=server_write)
-        if result.get("ok"):
-            ckpt_state = result.get("state") if isinstance(result.get("state"), V5SessionState) else state
-            ckpt_err = _write_turn_checkpoint(ckpt_state, store_file)
-            if ckpt_err:
-                return ckpt_err
-        return result
+        # The SQL helper used to release the process lock before checkpoint IO.
+        # A newer source reference could commit and checkpoint, then the older
+        # control snapshot overwrote that same turn's local checkpoint. Preserve
+        # commit order for local writers without retrying an unknown SQL result.
+        with _save_lock:
+            result = _save_session_record_db(store, state, server_write=server_write,
+                                           expected_project_revision=expected_project_revision,
+                                           project_binding_approval=project_binding_approval,
+                                           expected_control_run=expected_control_run)
+            if result.get("ok"):
+                ckpt_state = result.get("state") if isinstance(result.get("state"), V5SessionState) else state
+                ckpt_err = _write_turn_checkpoint(ckpt_state, store_file)
+                if ckpt_err:
+                    return ckpt_err
+            return result
+    if expected_control_run is not None:
+        return {
+            "ok": False,
+            "error": "persist_failed",
+            "reason": "control_fence_requires_durable_store",
+            "message": "control-owned session writes require a durable SQL store",
+            "sessionId": state.sessionId,
+        }
     with _save_lock:
         sessions, error = _read_store_file(store_file)
         if error:
             return error
 
         prior = sessions.get(state.sessionId)
-        write_state = _resolve_write_state(prior, state, server_write=server_write)
+        write_state = _resolve_write_state(prior, state, server_write=server_write,
+                                           expected_project_revision=expected_project_revision,
+                                           project_binding_approval=project_binding_approval)
         sessions[write_state.sessionId] = write_state
         result = _write_store(sessions, store_file)
         if not result.get("ok"):
@@ -705,7 +742,92 @@ def save_session_record(
         if ckpt_err:
             return ckpt_err
         _stamp_session_meta(write_state.sessionId, store_file)
-        return {"ok": True, "sessionId": write_state.sessionId}
+        result = {"ok": True, "sessionId": write_state.sessionId}
+        if project_binding_approval is not None:
+            result["state"] = write_state
+        return result
+
+
+def claim_session_record(
+    candidate: V5SessionState, store_file: Optional[StorePath] = None,
+) -> StoreError:
+    """Atomically insert a new session, or return the existing record unchanged.
+
+    A first stream used to exist before its owner reached durable storage. Two
+    viewers could both observe a missing session and attach to that same run.
+    Claiming must never use save's merge/retry behavior: a lost insert returns
+    the winner, and an unreadable record is not permission to replace it.
+    """
+    sid = candidate.sessionId
+
+    def failed(error: StoreError) -> StoreError:
+        return {**error, "ok": False, "sessionId": sid, "state": None, "created": False}
+
+    def existing(payload: Any) -> StoreError:
+        state, error = _coerce_state(sid, payload)
+        if error:
+            return failed(error)
+        if state is None or state.sessionId != sid:
+            return failed(_store_error("invalid_session", "Stored session id does not match its key"))
+        return {"ok": True, "sessionId": sid, "state": state, "created": False}
+
+    if not isinstance(sid, str) or not sid.strip():
+        return failed(_store_error("invalid_session", "A session id is required"))
+    try:
+        store = _blob_store(store_file)
+    except Exception as exc:  # noqa: BLE001 - ownership never falls back on backend failure
+        return failed(_store_error("store_unavailable", str(exc)[:200]))
+
+    with _save_lock:
+        if store is not None:
+            try:
+                row = store.load(sid)
+            except Exception as exc:  # noqa: BLE001
+                return failed(_store_error("db_read_failed", str(exc)[:200]))
+            if row is not None:
+                return existing(row.payload)
+            try:
+                inserted = store.save(sid, candidate.model_dump(), expected_rev=None)
+            except Exception as exc:  # noqa: BLE001
+                return failed({"error": "persist_failed", "reason": "db_write_failed",
+                               "message": str(exc)[:200]})
+            if not inserted:
+                try:
+                    winner = store.load(sid)
+                except Exception as exc:  # noqa: BLE001
+                    return failed(_store_error("db_read_failed", str(exc)[:200]))
+                if winner is None:
+                    return failed({"error": "persist_failed", "reason": "claim_conflict",
+                                   "message": "The winning session could not be read"})
+                return existing(winner.payload)
+        else:
+            path = _resolve_store_file(store_file)
+            _unreadable_by_path.pop(str(path), None)
+            try:
+                sessions, error = _read_store_file(store_file)
+            except (OSError, UnicodeError) as exc:
+                return failed(_store_error("read_failed", str(exc)[:200]))
+            if error:
+                return failed(error)
+            if any(key == sid for key, _payload in _unreadable_by_path.get(str(path), [])):
+                return failed(_store_error("invalid_session", "Existing session cannot be decoded"))
+            if sid in sessions:
+                return existing(sessions[sid].model_dump())
+            sessions[sid] = candidate
+            try:
+                result = _write_store(sessions, store_file)
+            except (OSError, TypeError, ValueError) as exc:
+                return failed({"error": "persist_failed", "reason": "write_failed",
+                               "message": str(exc)[:200]})
+            if not result.get("ok"):
+                return failed(result)
+
+        checkpoint_error = _write_turn_checkpoint(candidate, store_file)
+        if checkpoint_error:
+            return failed(checkpoint_error)
+        if store is None:
+            _stamp_session_meta(sid, store_file)
+        return {"ok": True, "sessionId": sid, "state": candidate, "created": True}
 
 
 def _resolve_write_state(
@@ -713,6 +835,8 @@ def _resolve_write_state(
     state: V5SessionState,
     *,
     server_write: bool = False,
+    expected_project_revision: Optional[str] = None,
+    project_binding_approval: Optional[str] = None,
 ) -> V5SessionState:
     """决定这次到底该把什么写下去——**判定逻辑的唯一副本**。
 
@@ -749,6 +873,54 @@ def _resolve_write_state(
     artifacts / capabilityRuns 仍是子集、对话没变短，接受这一笔就丢不了东西。
     **低轮次仍然照旧挡住**（那才是真陈旧），客户端 PUT 的判据一个字没动。
     """
+    # A late driver must not merge private data into a deleted/recreated ID.
+    # Keep this under the same file lock / database CAS loop as every write.
+    if prior is not None and prior.ownerId != state.ownerId:
+        raise PersistClosedError("session_owner_changed", "Session ownership changed before save")
+    project_updates: Optional[Dict[str, Any]] = None
+    if project_binding_approval is not None:
+        if not server_write:
+            raise PersistClosedError("project_reference_server_only", "Only the project service can bind a project")
+        if prior is None:
+            raise PersistClosedError("project_session_required", "A durable session is required")
+        try:
+            assert_session_authorized(prior, owner_id=str(state.ownerId or ""), approval_ref=project_binding_approval)
+        except PermissionError as exc:
+            raise PersistClosedError(str(exc), "The persisted plan no longer authorizes this project") from exc
+        if state.runtimeKind != "project" or not state.projectId or not state.projectRevision:
+            raise PersistClosedError("project_identity_required", "The project service must supply a complete reference")
+        if prior.projectId and prior.projectId != state.projectId:
+            raise PersistClosedError("project_identity_changed", "The session already belongs to another project")
+        if not prior.projectId and has_generated_application(prior):
+            raise PersistClosedError("project_conversion_required", "Existing applications need an explicit conversion")
+        if prior.projectId is None:
+            project_updates = {"runtimeKind": "project", "projectId": state.projectId,
+                               "projectRevision": state.projectRevision}
+    # Ordinary saves, including stale server snapshots, cannot introduce a first
+    # project pointer. The privileged binding above checks approval inside CAS.
+    if prior is None or not prior.projectId:
+        state = state.model_copy(update={"runtimeKind": "html-prototype", "projectId": None, "projectRevision": None})
+    if expected_project_revision is not None:
+        if not server_write:
+            raise PersistClosedError("project_reference_server_only", "Only the project service can update the revision")
+        if prior is None or not prior.projectId or prior.projectRevision != expected_project_revision:
+            raise PersistClosedError("project_revision_conflict", "The session project revision changed before save")
+        if state.projectId != prior.projectId or state.runtimeKind != "project" or not state.projectRevision:
+            raise PersistClosedError("project_identity_changed", "A revision update cannot replace the session project")
+        project_updates = {"runtimeKind": "project", "projectId": prior.projectId,
+                           "projectRevision": state.projectRevision}
+    if project_binding_approval is not None:
+        # A reference update is not a conversation save. A concurrent turn may
+        # have changed scalar fields without growing any collection.
+        return prior.model_copy(update=project_updates or {})
+    # Conversation turns and project versions advance independently. A server
+    # driver can carry a nonempty but obsolete revision, even in a newer turn.
+    if prior is not None and prior.projectId:
+        state = state.model_copy(update={
+            "runtimeKind": prior.runtimeKind,
+            "projectId": prior.projectId,
+            "projectRevision": prior.projectRevision,
+        })
     if True:
         # Append-only replay log merge on save (sliderule-python-v52-session-replay-append-only-105)
         # Classification: ... -> PYTHON_COMPAT -> PYTHON_AUTHORITY
@@ -807,6 +979,16 @@ def _resolve_write_state(
             if inc_todo is None:
                 merged_logs_state = merged_logs_state.model_copy(
                     update={"factoryTodo": prior_todo}
+                )
+
+        # 活儿清单：同 factoryTodo，客户端漏带 / 默认 None 不许把清单抹掉。
+        # ⚠ [] 是「模型清空了清单」，必须落盘——当成 blank 会让清空永远不生效。
+        prior_plan = getattr(prior, "controlTodo", None) if prior is not None else None
+        if prior_plan:
+            inc_plan = getattr(merged_logs_state, "controlTodo", None)
+            if inc_plan is None:
+                merged_logs_state = merged_logs_state.model_copy(
+                    update={"controlTodo": prior_plan}
                 )
 
         prior_subs = getattr(prior, "subagentTasks", None) if prior is not None else None
@@ -887,11 +1069,16 @@ def _resolve_write_state(
                         )
                     except Exception:
                         write_state = prior
+        if project_updates is not None:
+            write_state = write_state.model_copy(update=project_updates)
         return write_state
 
 
 def _save_session_record_db(
-    store, state: V5SessionState, *, server_write: bool = False
+    store, state: V5SessionState, *, server_write: bool = False,
+    expected_project_revision: Optional[str] = None,
+    project_binding_approval: Optional[str] = None,
+    expected_control_run: Optional[Dict[str, Any]] = None,
 ) -> StoreError:
     """库后端的写入：读一条 prior → 同一套守卫 → CAS 写回，冲突就重来。
 
@@ -924,7 +1111,9 @@ def _save_session_record_db(
                 else:
                     prior = coerced
 
-            write_state = _resolve_write_state(prior, state, server_write=server_write)
+            write_state = _resolve_write_state(prior, state, server_write=server_write,
+                                               expected_project_revision=expected_project_revision,
+                                               project_binding_approval=project_binding_approval)
             write_state, degrade_flags = _slim_to_budget(write_state)
             new_payload = write_state.model_dump()
 
@@ -932,18 +1121,20 @@ def _save_session_record_db(
             # 这不是微优化：一轮推演里 save_session 被调 5~8 次，而守卫判定
             # 「这是陈旧快照」时会把 prior 原样写回去——那次写入必然是无效的，
             # 却照样要驮着约 300KB 跑一趟网络（实测单次全量写 129ms）。
-            if row is not None and store.content_hash(new_payload) == store.content_hash(
+            # A control-owned write still must reach the fenced SQL predicate,
+            # even when the merged payload is byte-identical. Otherwise a stale
+            # worker could return "unchanged" after its lease was taken over.
+            if expected_control_run is None and row is not None and store.content_hash(new_payload) == store.content_hash(
                 row.payload
             ):
                 return {"ok": True, "sessionId": write_state.sessionId, "unchanged": True,
                         "state": write_state}
 
             try:
-                ok = store.save(
-                    write_state.sessionId,
-                    new_payload,
-                    expected_rev=row.rev if row is not None else None,
-                )
+                save_kwargs = {"expected_rev": row.rev if row is not None else None}
+                if expected_control_run is not None:
+                    save_kwargs["expected_control_run"] = expected_control_run
+                ok = store.save(write_state.sessionId, new_payload, **save_kwargs)
             except Exception as exc:  # noqa: BLE001
                 # ★ 请求体超限 / 大包 500 → 按档位再削一次重写（2026-08-18）。
                 #
@@ -956,11 +1147,10 @@ def _save_session_record_db(
                     if nxt is not None:
                         slim, flag = nxt
                         try:
-                            ok = store.save(
-                                slim.sessionId,
-                                slim.model_dump(),
-                                expected_rev=row.rev if row is not None else None,
-                            )
+                            save_kwargs = {"expected_rev": row.rev if row is not None else None}
+                            if expected_control_run is not None:
+                                save_kwargs["expected_control_run"] = expected_control_run
+                            ok = store.save(slim.sessionId, slim.model_dump(), **save_kwargs)
                         except Exception as exc2:  # noqa: BLE001
                             return {
                                 "ok": False,

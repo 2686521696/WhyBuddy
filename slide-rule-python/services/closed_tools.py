@@ -51,11 +51,26 @@ FACTORY_HOP_LABELS: Dict[str, str] = {
 }
 
 CLOSED_TOOLS: Tuple[str, ...] = (
-    "ask_user",
-    "clarify",
+    "ask_user_question",
+    # clarify 2026-09-09 退役：维度问题长在 SPEC 假设卡上，不再有一件
+    # 「开场先问几条模板题」的工具。答题路径（awaitReason=control_clarify
+    # 的老会话交卷）不在这张表上，照常可用——见 rehearsal_control 那段注释。
     "search_evidence",
     "inspect_model",
-    "scope_card",
+    "write_plan",
+    "enter_plan_mode",
+    "exit_plan_mode",
+    # 报完工：模型声称做完了，判官说了算（抄 grok update_goal）。
+    # 缺省 READ——它不产出新的五系统模型，只是把一次声明交给判官。
+    # 落 READ 还有一个好处：`action_stationarity` 的紧档正好接得上，
+    # 同一份产出上一遍遍重报会被 4 次掐掉。
+    "report_done",
+    # 老师傅自己列活儿清单（抄 grok todo_write）。缺省 READ——它不造五系统模型。
+    "todo_write",
+    # 模型自己攒的记忆（抄 grok MemorySearch / MemoryGet）。都是 READ——
+    # remember 写的是**记忆**不是五系统模型，不进工厂信封。
+    "remember",
+    "recall",
     "rehearse",
     "workflow",
     *FACTORY_HOPS,
@@ -64,7 +79,30 @@ CLOSED_TOOLS: Tuple[str, ...] = (
     "repair",
     "restore_version",
     "fork_variant",
+    "project_create", "project_list", "project_read", "project_search",
+    "project_patch", "project_start", "project_exec", "project_status",
+    "project_logs", "project_cancel", "project_verify", "project_verification",
+    "project_revisions", "project_restore", "project_export",
 )
+
+# 文本里抠闭集工具名。抄 grok-build AskUserQuestion：选项点下去是 typed
+# 答案（Accepted），不是把标签当新 prompt 再问一轮模型。
+#
+# ⚠ 2026-09-07 真机水果店 sr-20260907192228：芯片写着「精修（refine）」，
+#   factory_hop_from_text 只认五件套，parseRehearsalSlash 只认「/精修」，
+#   POST 不带 forcedTool，控制面重猜成 bind，弹出登录假设卡。
+#   括号里的名字必须对全表，含 refine。
+#
+# rehearse 故意不从文本回 forcedTool：跟 `/推演` 同一条合同——空会话带
+# rehearse 会跳过停泊直接点火。认不认「这句话在点工具」另说，见
+# is_closed_tool_command。
+_CLOSED_ID_RE = re.compile(
+    r"(?:^|[^\w])("
+    + "|".join(sorted(CLOSED_TOOLS, key=len, reverse=True))
+    + r")(?:[^\w]|$)",
+    re.IGNORECASE,
+)
+_TEXT_FORCED_SKIP = frozenset({"rehearse", *(name for name in CLOSED_TOOLS if name.startswith("project_"))})
 
 # 只列 WRITE。没写的一律 READ。
 TOOL_SCOPE: Dict[str, ToolScope] = {
@@ -77,6 +115,9 @@ TOOL_SCOPE: Dict[str, ToolScope] = {
     "closure": ToolScope.WRITE,
     "refine": ToolScope.WRITE,
     "repair": ToolScope.WRITE,
+    "challenge": ToolScope.WRITE,
+    "restore_version": ToolScope.WRITE,
+    "fork_variant": ToolScope.WRITE,
 }
 
 
@@ -186,5 +227,42 @@ def is_factory_hop_command(text: str) -> bool:
     if factory_hop_from_text(t):
         return True
     if _HOP_ID_RE.search(t):
+        return True
+    return False
+
+
+def closed_tool_from_text(text: str) -> Optional[str]:
+    """从人话里抠出唯一一件闭集工具。多件或新产品名 → None。
+
+    认括号里的英文名（「精修（refine）」「进入权限绑定（bind）」），
+    也认裸 id（芯片有时只给 refine）。中文启发式仍走 factory_hop_from_text
+    （「继续画页面」没有括号）。
+    """
+    t = str(text or "").strip()
+    if not t:
+        return None
+    ids = [
+        m.group(1).lower()
+        for m in _CLOSED_ID_RE.finditer(t)
+        if m.group(1).lower() not in _TEXT_FORCED_SKIP
+    ]
+    uniq = list(dict.fromkeys(ids))
+    if len(uniq) == 1:
+        return uniq[0]
+    return None
+
+
+def is_closed_tool_command(text: str) -> bool:
+    """这句话是不是在点闭集表里的某一件（可多件，含 refine）。
+
+    已有应用时 intake 用它跳过「正在审查需求」。空会话不走——
+    「闭环发布管理系统」仍交给 LLM 当新产品。
+    """
+    t = str(text or "").strip()
+    if not t:
+        return False
+    if closed_tool_from_text(t):
+        return True
+    if _CLOSED_ID_RE.search(t):
         return True
     return False

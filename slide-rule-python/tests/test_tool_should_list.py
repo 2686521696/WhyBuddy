@@ -26,6 +26,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.v5_state import V5SessionState  # noqa: E402
+from plan_approval_support import approved_plan_rows
 from services.rehearsal_control import (  # noqa: E402
     CLOSED_TOOLS,
     CONTROL_TOOLS,
@@ -47,9 +48,7 @@ def _scoped() -> V5SessionState:
     return V5SessionState(
         sessionId="lst-scoped",
         goal={"text": "请假系统", "status": "clear"},
-        controlTranscript=[
-            {"id": "c1", "role": "system", "kind": "scope_confirmed", "text": "请假系统"}
-        ],
+        controlTranscript=approved_plan_rows(),
     )
 
 
@@ -60,6 +59,7 @@ def _with_model() -> V5SessionState:
         goal={"text": "请假系统", "status": "clear"},
         modelVersions=[{"id": "v1", "model": {"systems": []}}],
         currentModelVersionId="v1",
+        controlTranscript=approved_plan_rows(),
     )
 
 
@@ -71,9 +71,16 @@ def test_default_is_list_absence_means_visible():
       别再把它加回来：加回来这条就成了"断言一个有谓词的工具没被裁"，
       测的不是缺省行为。
     """
-    assert should_list_tool("search_evidence", _fresh()) is True
-    assert should_list_tool("ask_user", _fresh()) is True
-    assert should_list_tool("scope_card", _fresh()) is True
+    assert should_list_tool("ask_user_question", _fresh()) is True
+    # ⚠ 清单不再猜意图（2026-09-09 照 grok 改：`Tool::should_list` 在 grok 全仓只被覆写 3 次、全在管道层，`ListToolsContext` 里根本没有用户消息）。保证挪到了分发那层：没有真产品就不画卡、改成再问一句——**模型硬挑 scope_card 也挡得住**，比「菜单里不摆」更强。
+    assert should_list_tool("write_plan", _fresh()) is True
+    assert should_list_tool(
+        "write_plan",
+        V5SessionState(
+            sessionId="lst-topic",
+            goal={"text": "诊所系统", "status": "needs_refinement"},
+        ),
+    ) is True
     assert should_list_tool("一个还没声明谓词的新工具", _fresh()) is True
 
 
@@ -87,10 +94,13 @@ def test_rehearse_hidden_until_scope_confirmed():
     assert "rehearse" in _names(_scoped())
     assert "spec" in _names(_scoped())
     assert "pages" not in _names(_scoped())
+    # ⚠ 清单不再猜意图（2026-09-09 照 grok 改：`Tool::should_list` 在 grok 全仓只被覆写 3 次、全在管道层，`ListToolsContext` 里根本没有用户消息）。保证挪到了分发那层：没有真产品就不画卡、改成再问一句——**模型硬挑 scope_card 也挡得住**，比「菜单里不摆」更强。
+    assert "write_plan" in _names(_fresh()), "问候空会话还列范围卡会把你好当成产品开干"
+    assert "write_plan" not in _names(_scoped()), (
+        "已确认后还列 scope_card，交回会把假设面板顶掉"
+    )
     with_model = _with_model()
-    with_model.controlTranscript = [
-        {"id": "ct-1", "kind": "scope_confirmed", "text": "请假系统"}
-    ]
+    with_model.controlTranscript = approved_plan_rows()
     assert "rehearse" not in _names(with_model)
     assert "refine" in _names(with_model)
     assert "workflow" in _names(_scoped())
@@ -132,11 +142,13 @@ def test_workflow_tool_description_lists_registered_presets():
 def test_clarify_hidden_after_one_round():
     """分发器 :1631：问过一轮再问就改开范围卡。裁掉省一次往返。"""
     st = _fresh()
-    assert "clarify" in _names(st)
-    st.controlTranscript = [
-        {"id": "c1", "role": "assistant", "kind": "clarify", "text": "问题一；问题二"}
-    ]
-    assert "clarify" not in _names(st)
+    assert "clarify" not in _names(st), "空目标还列 clarify，问候会弹出产品类型问卷"
+    st.controlTranscript = [{"role": "user", "kind": "turn", "text": "hello"}]
+    assert "clarify" not in _names(st), "当前话是 hello 但 goal 空，仍列 clarify"
+    st.goal = {"text": "继续", "status": "needs_refinement"}
+    assert "clarify" not in _names(st), "芯片「继续」当目标仍列 clarify"
+    st.goal = {"text": "诊所系统", "status": "needs_refinement"}
+    assert "clarify" not in _names(st), "问卷工具不再列给模型，避免问候被填成谁用"
 
 
 def test_restore_version_hidden_without_a_previous_version():
@@ -158,6 +170,51 @@ def test_refine_and_fork_hidden_without_a_model():
     """
     assert "refine" not in _names(_fresh())
     assert "fork_variant" not in _names(_fresh())
+
+
+def test_scope_card_listed_until_scope_is_confirmed():
+    """范围卡在**确认之前**一直摆着，确认之后撤掉。
+
+    ⚠ 2026-09-09 照 grok 改：这条原来叫「回执之后才列」，靠猜「这一轮像不像
+      产品」来决定摆不摆。查过 grok-build——`Tool::should_list` 全仓只被覆写
+      3 次且全在管道层，`ListToolsContext` 里根本没有用户消息，按"用户说了
+      什么"筛在类型上就做不到。清单只答「这件工具现在能不能用」。
+
+      「你好不许得到一张卡」那条保证没丢，只是挪到了分发那层：没有真产品就
+      不画卡、改成再问一句——模型硬挑 scope_card 也挡得住，比「菜单里不摆」
+      更强（判据在 test_cheap_followup_is_not_a_product）。
+    """
+    assert "write_plan" in _names(_fresh())
+    st = V5SessionState(
+        sessionId="lst-ask-ans",
+        goal={"text": "", "status": "needs_refinement"},
+        controlTranscript=[
+            {"role": "user", "kind": "turn", "text": "hello"},
+            {"role": "assistant", "kind": "ask_user_question", "text": "想做什么应用，说一句就行。"},
+            {"role": "tool", "kind": "user_answer", "text": "请假系统", "answerKind": "ask_user_question"},
+        ],
+    )
+    assert "write_plan" in _names(st)
+    # 反向：确认过范围就撤掉——下一步是 pages，不是再开一张卡。
+    assert "write_plan" not in _names(_scoped())
+
+
+def test_search_evidence_hidden_without_a_product_topic():
+    """空会话检索会把任意话当术语拆义。有产品才列。
+
+    反向：goal 里已经有产品时必须还能搜（test_control_search 那条路）。
+    """
+    assert "search_evidence" not in _names(_fresh())
+    assert should_list_tool("search_evidence", _fresh()) is False
+    topic = V5SessionState(
+        sessionId="lst-search-topic",
+        goal={"text": "请假系统", "status": "needs_refinement"},
+    )
+    assert "search_evidence" in _names(topic)
+    assert "challenge" not in _names(_fresh())
+    assert "repair" not in _names(_fresh())
+    assert "challenge" in _names(_with_model())
+    assert "repair" in _names(_with_model())
 
 
 def test_inspect_model_hidden_without_anything_to_inspect():
@@ -209,8 +266,8 @@ def test_manifest_is_never_empty():
         rc.TOOL_LIST_WHEN.update({n: (lambda st: False) for n in CLOSED_TOOLS})
         floor = _names(_fresh())
         assert floor, "所有谓词都为假时清单空了——兜底没顶住，模型这一轮无事可做"
-        assert floor == {"ask_user", "scope_card"}, (
-            f"兜底放行的不是「问一句 / 开范围卡」，而是 {sorted(floor)}"
+        assert floor == {"ask_user_question"}, (
+            f"兜底放行的不是「问一句」，而是 {sorted(floor)}"
         )
     finally:
         rc.TOOL_LIST_WHEN.clear()
@@ -218,9 +275,14 @@ def test_manifest_is_never_empty():
 
     for st in (_fresh(), _scoped()):
         assert len(list_control_tools(st)) > 0
-    assert {"ask_user", "scope_card"} <= _names(_fresh()), (
-        "空会话至少要留得下「问一句」和「开范围卡」，否则控制面无事可做"
+    assert "ask_user_question" in _names(_fresh()), (
+        "空会话至少要留得下「问一句」，否则问候无事可做"
     )
+    topic = V5SessionState(
+        sessionId="lst-topic2",
+        goal={"text": "诊所系统", "status": "needs_refinement"},
+    )
+    assert "write_plan" in _names(topic)
 
 
 def test_listed_tools_are_a_subset_of_the_closed_set():
@@ -261,12 +323,50 @@ def test_llm_call_site_uses_the_filtered_manifest():
 
     src = re.sub(r'"""[\s\S]*?"""', "", inspect.getsource(rc))
     src = re.sub(r"#.*", "", src)
-    assert "tools=list_control_tools(" in src, (
+    assert "list_control_tools(" in src, (
         "喂给控制模型的还是整张 CONTROL_TOOLS——裁剪没通电"
+    )
+    assert "offered_names" in src, (
+        "模型塞了本轮没列出的工具仍会分发——空会话 spec 会变成继续执行范围卡"
     )
     assert "tools=CONTROL_TOOLS" not in src, (
         "还留着直接传全量的调用点：裁剪会被绕过"
     )
+
+
+def test_a_continuation_phrase_does_not_open_a_product_card():
+    """「继续执行」不是产品——不许被复述成一张产品卡。
+
+    这是上一条判据自己写下的担心（"继续执行就会开范围卡"），但它当时用的
+    userText 是一句真产品，测不到。这里用它说的那句话真跑一遍。
+    """
+    pytest.importorskip("fastapi")
+    from control_turn_support import (  # noqa: PLC0415
+        ControlHarness,
+        event_types,
+        llm_tool,
+        new_sid,
+        seed_session,
+        six_fields,
+    )
+
+    import _pytest.monkeypatch as _mp
+
+    mp = _mp.MonkeyPatch()
+    try:
+        harness = ControlHarness(mp)
+        sid = new_sid("continuation-no-card")
+        seed_session(sid, goal={"text": "", "status": "needs_refinement"})
+        harness.llm_impl = lambda messages, **kw: llm_tool("refine", {})
+        _, events = harness.post(six_fields(sid, "继续执行"))
+        types = event_types(events)
+        assert "control_scope_card" not in types, (
+            f"「继续执行」被复述成了产品卡：{types}"
+        )
+        assert harness.helper_calls == []
+        assert "control_handoff_factory" not in types
+    finally:
+        mp.undo()
 
 
 def test_refine_without_model_reparks_instead_of_igniting():
@@ -298,12 +398,19 @@ def test_refine_without_model_reparks_instead_of_igniting():
         seed_session(sid, goal={"text": "", "status": "needs_refinement"})
         harness.llm_impl = lambda messages, **kw: llm_tool("refine", {})
         _, events = harness.post(six_fields(sid, "做一个请假系统"))
+        types = event_types(events)
         assert harness.helper_calls == [], (
             "空会话上 refine 点着了工厂——确认前 drive_full_* 必须是 0"
-            f"（验收 A / KD4）。事件：{event_types(events)}"
+            f"（验收 A / KD4）。事件：{types}"
         )
-        assert "control_scope_card" in event_types(events), (
-            "既没点火也没开范围卡：用户会看到一轮什么都没发生"
-        )
+        assert "control_handoff_factory" not in types
+        # ⚠ 2026-09-09：这条断言原本是「没列出的 refine 不许被复述成产品卡」，
+        #   理由写着「继续执行就会开范围卡」。但它用的 userText 是
+        #   「做一个请假系统」——一句**真产品**。真产品出复述卡正是第 5/7 格
+        #   要的行为，拿它来证明「继续执行」的毛病是张冠李戴。
+        #
+        #   这条判据真正贵的地方是上面两句（refine 不许点火），那两句照旧钉着。
+        #   它自己担心的那件事另立一条，用它自己说的那句话去测。
+        assert "control_handoff_factory" not in types
     finally:
         mp.undo()

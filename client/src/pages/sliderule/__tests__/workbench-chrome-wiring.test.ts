@@ -115,6 +115,7 @@ describe("workbench chrome live-path wiring", () => {
     expect(src).toContain(
       'data-studio-resizing={layout.resizing ? "true" : undefined}'
     );
+    expect(src).toContain("[@media(pointer:coarse)]:after:w-0");
 
     const css = stripComments(
       readFileSync(
@@ -147,6 +148,14 @@ describe("workbench chrome live-path wiring", () => {
     const dragCss = css.slice(css.indexOf('[data-studio-resizing="true"]'));
     expect(dragCss).toContain("pointer-events: none");
     expect(dragCss).toContain("contain: strict");
+
+    const layout = stripComments(
+      readFileSync(new URL("../StudioLayoutContext.tsx", import.meta.url), "utf8")
+    );
+    expect(layout).toContain('addEventListener("pointerup"');
+    expect(layout).toContain('addEventListener("pointercancel"');
+    expect(layout).toContain('addEventListener("blur"');
+    expect(layout).toContain("setResizing(false)");
   });
 
   it("拖分栏时冻结舞台缩放，不每帧 setScale", () => {
@@ -256,12 +265,10 @@ describe("workbench chrome live-path wiring", () => {
     const page = stripComments(
       readFileSync(new URL("../../SlideRule.tsx", import.meta.url), "utf8")
     );
-    const hudIdx = page.indexOf("<SlideRuleTopHud");
-    expect(hudIdx).toBeGreaterThan(-1);
-    const beforeHud = page.slice(Math.max(0, hudIdx - 240), hudIdx);
-    expect(beforeHud).toContain("chromeSlot");
-    expect(beforeHud).not.toContain("border-b");
-    expect(beforeHud).not.toContain("<header");
+    // ⚠ 2026-09-14：分栏 / 全屏 / 交付物不再挂到活路径。槽还在，
+    //   喂 null。把 <SlideRuleTopHud 接回去必红。
+    expect(page).not.toContain("<SlideRuleTopHud");
+    expect(page).toContain("chromeSlot={null}");
     expect(page).not.toContain("immersionOverlayHeader");
 
     const studio = stripComments(

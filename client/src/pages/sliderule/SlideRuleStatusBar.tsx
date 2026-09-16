@@ -3,6 +3,7 @@ import type { V5SessionState } from "@shared/blueprint/v5-reasoning-state";
 import {
   deriveStatusBarFacts,
   idleRehearsalCursor,
+  rehearsalClockShowSteps,
   type ContextHudFacts,
   type RehearsalClockCursor,
   type RehearsalClockView,
@@ -246,7 +247,7 @@ export function SlideRuleStatusBar({
           hud={facts.hud}
           decision={facts.factoryDecision}
           show={showHud}
-          showSteps={isRunning || hasClockProgress}
+          showSteps={rehearsalClockShowSteps(facts.rehearsalClock)}
         />
       </div>
       <div className="mt-1 flex flex-wrap gap-4 text-[10px]">

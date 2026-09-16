@@ -74,7 +74,6 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from . import env_flags as _env_flags
 from .capability_plan import CapabilityPlan
-from .run_pause import current_slot, hold_current
 from sliderule_llm.scoped import sink_scope
 
 SPEC_FIRST_VERSION = "spec-first-pipeline-v1"
@@ -131,35 +130,6 @@ def page_sink_scope(sink):
     return sink_scope(_page_sink_var, sink)
 
 
-#: 假设出口（伴随式澄清，2026-08-27）。第 2 步刚起草完 spec 就把
-#: 「我替你定了什么」推出去，**不等整轮跑完**。
-#:
-#: ⚠ 为什么必须是这条实时通道，而不是从 run_spec_first 的返回值里读：
-#:   返回值要等**整条管道**跑完——真机实测第 3 步画页 3~4 分钟、第 6 步
-#:   打孔 4~10 分钟，加起来十分钟开外。而这些假设是第 2 步（第 1~2 分钟）
-#:   就已经定死的，后面每一页都建在它们上面。等十分钟再告诉用户
-#:   「刚才我把登录定成手机号了」，那不叫伴随式澄清，那叫事后通知——
-#:   用户唯一能做的就是整轮重来。
-#:
-#: 跟 _page_sink_var 同一个模子（ContextVar 不是模块属性，多租户串台的
-#: 理由见那一条头注），装卸也在同一处。
-_assumption_sink_var: ContextVar[Optional[Callable[..., None]]] = ContextVar(
-    "sliderule_spec_first_assumption_sink", default=None
-)
-
-
-def set_assumption_sink(sink: Optional[Callable[..., None]]) -> None:
-    """装/卸假设出口。驱动器在流开始时装、finally 里卸。"""
-    _assumption_sink_var.set(sink)
-
-
-def assumption_sink_scope(sink):
-    """装了自带卸的写法（抄 grok 的 SinkGuard，见 sliderule_llm/scoped.py）。
-
-    调用方优先用这个，别用上面那个裸 setter——裸 setter 要人肉记得去别处
-    补一行卸载，而且卸成 None 而不是还原成原来那个。
-    """
-    return sink_scope(_assumption_sink_var, sink)
 
 
 _quality_sink_var: ContextVar[Optional[Callable[..., None]]] = ContextVar(
@@ -270,42 +240,12 @@ _quality_notices_var: ContextVar[Optional[List[Dict[str, Any]]]] = ContextVar(
 
 
 def _emit_assumptions(spec: Any) -> bool:
-    """把这一份 spec 里的假设推给出口。**整条 fail-open**。
+    """Return new SPEC decisions to the control questionnaire before production.
 
-    ⚠ 本仓第七条：这是增强类。出口没装（脚本方言、测试、老调用方）、
-      推的时候炸了、spec 里根本没有 assumptions——三种情况都必须让
-      推演照常往下跑。一次"顺路说一声"不许有能力打死一条已经跑了两分钟的链。
-
-    返回卡是否已经推到用户面前。调用方据此停在 SPEC——
-    2026-09-03 真机：卡出来了工厂还在跑，人选完要等 hop 结束才发。
-    闸没挂上（位子没绑进 to_thread）也要停：卡已经在屏幕上了，
-    再跑 design 就是边跑边点。脚本方言没装 sink，照旧往下跑。
+    This boundary must hold without an SSE sink or an active pause slot. The
+    caller persists the complete SPEC; the next control turn collects answers.
     """
-    sink = _assumption_sink_var.get()
-    if sink is None:
-        return False
-    try:
-        rows = (spec or {}).get("assumptions") if isinstance(spec, dict) else None
-        if not rows:
-            return False
-        sink(list(rows))
-        # 选完再继续：假设一出就请求停在下一安全点。闸没绑 / 暂停关了
-        # 都静默——不许「顺路说一声」打死已经跑了两分钟的链。
-        try:
-            hold_current()
-            slot = current_slot()
-            if slot is None or slot.pending is None:
-                _safe_print(
-                    "[spec_first_pipeline] 伴随式澄清：卡已出但暂停位子没挂上，本跳仍停在 SPEC"
-                )
-        except Exception:  # noqa: BLE001
-            _safe_print(
-                "[spec_first_pipeline] 伴随式澄清：hold 失败，本跳仍停在 SPEC"
-            )
-        return True
-    except Exception as exc:  # noqa: BLE001 — 见 docstring
-        _safe_print(f"[spec_first_pipeline] 假设出口异常（fail-open，不拦推演）：{exc}")
-        return False
+    return isinstance(spec, dict) and bool(spec.get("assumptions"))
 
 
 #: 本轮跑出来的整页 HTML，供**调用方落库**用。
@@ -467,6 +407,35 @@ def reset_page_events_emitted() -> None:
 PAGE_BIND_BOUND = "bound"
 PAGE_BIND_FAILED = "failed"
 PAGE_BIND_SKIPPED = "skipped"
+
+
+def html_already_bound(html: str) -> bool:
+    """这一页是不是已经打过 data-* 孔。
+
+    ⚠ 2026-09-09 真机：首轮 pages 之后 bind 被标成 refine（已经有模型），
+      `_skip_bind = reuse ∩ pages` 把**还没打孔的照搬页**全跳过。
+      照搬 ≠ 打过孔。有 data-rows / data-record / data-field 才算打过。
+    """
+    raw = str(html or "")
+    return "data-rows=" in raw or "data-record=" in raw or "data-field=" in raw
+
+
+def pages_to_skip_bind(
+    pages: Any,
+    *,
+    refine: bool,
+    reuse_ids: Any,
+) -> set:
+    """局部打孔只许跳过**已经打过孔**的照搬页。"""
+    if not refine:
+        return set()
+    wanted = {str(pid) for pid in (reuse_ids or ())}
+    out = set()
+    blob = pages if isinstance(pages, dict) else {}
+    for pid in wanted:
+        if pid in blob and html_already_bound(str(blob.get(pid) or "")):
+            out.add(pid)
+    return out
 
 
 def page_bind_status(
@@ -1317,6 +1286,7 @@ def _reemit_pages(
     pages: Dict[str, str],
     *,
     bound: bool,
+    binding_status: Optional[Dict[str, str]] = None,
 ) -> None:
     """把统一/打孔后的整批页面再冲一遍 sink（前端按 pageId 覆盖）。
 
@@ -1327,7 +1297,8 @@ def _reemit_pages(
     total = len(pages)
     for i, (pid, html) in enumerate(pages.items(), 1):
         try:
-            sink(pid, html, i, total, bound)
+            page_bound = binding_status.get(pid) == PAGE_BIND_BOUND if binding_status is not None else bound
+            sink(pid, html, i, total, page_bound)
         except Exception as exc:  # noqa: BLE001 — 顺路推送，不打死主链
             print(f"[spec_first_pipeline] 页面重发失败（不影响产出）：{str(exc)[:120]}")
 
@@ -1559,6 +1530,7 @@ def run_spec_first(
         rekey_page_ids,
         rekey_page_map,
         rekey_page_refs,
+        rewrite_html_page_ids,
     )
     from .run_cancel import raise_if_cancelled
 
@@ -1830,11 +1802,9 @@ def run_spec_first(
             if skeleton:
                 st["appTemplate"] = str(skeleton.get("id") or "")
             spec = spec_model.model_dump(mode="json") if hasattr(spec_model, "model_dump") else spec_model
-            # 伴随式澄清：这一步刚替用户定下的事，**当场**推给前端，
-            # 不等后面 8 分钟的画页和打孔（理由见 _assumption_sink_var 头注）。
+            # Return the saved SPEC to the control questionnaire before any
+            # design/page work starts, including synchronous driver calls.
             if _emit_assumptions(spec):
-                # 闸挂上了就本跳停在 SPEC。design 在 to_thread 里，驱动器的
-                # 异步安全点要等整段返回才到——不在这里切断，卡会边跑边点。
                 _skip_after_assumptions = True
                 rows = spec.get("assumptions") if isinstance(spec, dict) else None
                 stages["assumptionsHeld"] = {
@@ -2262,6 +2232,12 @@ def run_spec_first(
                 pages = rekey_page_map(pages, _canon)
                 failed = rekey_page_map(failed, _canon)
                 _reuse_now = rekey_page_map(_reuse_now, _canon)
+                # ⚠ 改键改不到已经烧进 HTML 的 data-page-id。别名表是第二
+                #   通道；新生成这一份孔必须跟键同一套，否则别名被抹掉菜单
+                #   又静默点不动。p1 不会误伤 p10（正则带引号）。
+                pages = rewrite_html_page_ids(pages, _canon)
+                failed = rewrite_html_page_ids(failed, _canon)
+                _reuse_now = rewrite_html_page_ids(_reuse_now, _canon)
                 spec = rekey_page_refs(spec, _canon)
                 spec_pages_declared = rekey_page_ids(spec_pages_declared, _canon)
                 spec_pages_declared_objs = rekey_page_refs(spec_pages_declared_objs, _canon)
@@ -2272,23 +2248,16 @@ def run_spec_first(
                         **style_brief,
                         "pages": rekey_page_map(style_brief["pages"], _canon),
                     }
-                # ⚠ 2026-08-28：上面这串把「以页面 id 作键或存页面 id」的载体都改了，
-                #   **唯独改不到已经烧进页面 HTML 正文的 `data-page-id`**——那是第
-                #   3.5 步 unify_shell 按当时的草稿 id 打的孔，`rekey_page_map` 只换
-                #   dict 的键、不碰 value 那串 HTML。
+                # ⚠ 2026-08-28：rekey 只换 dict 键，改不到已经烧进 HTML 的
+                #   `data-page-id`。真机（sr-20260827191954 药房、
+                #   sr-20260827201847 巡检）页键成了语义 id、孔还是 p1..p4，
+                #   宿主 resolveActivePageId 静默回落——四个菜单项全点不动，
+                #   且没有任何一处报错。
                 #
-                #   真机后果（sr-20260827191954 药房、sr-20260827201847 巡检）：页键
-                #   成了 remote_rx_audit…，孔还是 p1..p4，宿主 resolveActivePageId
-                #   查不到就静默回落当前页——**四个菜单项全点不动，且没有任何一处
-                #   报错**。8-22 那场页键本身还是 p1/p2，孔对得上，菜单是好的，所以
-                #   这是第 4.5 步引入的回归，不是一直就坏。
-                #   而 `pages_match_model` 那条兜底够不着：它比的是页键 vs 模型 id，
-                #   两边都被改过键，恒等恒绿。
-                #
-                #   修法照 friendly_id 的 History（`has_many :slugs` + 先查当前再查
-                #   历史）：**改名的这一刻**把映射记下来随页面落库，宿主解析不到时
-                #   按它回退。选它而不是重写 HTML，是因为存量应用的 HTML 已经发出去
-                #   了——回退查表连它们一起救，重写只救新生成的。
+                #   别名表（friendly_id History）救存量 / 直播。2026-09-09
+                #   再废一次：新生成这一份必须同时改孔，别名被某一跳抹掉
+                #   时菜单还能点。上面 rewrite_html_page_ids 就是改孔；
+                #   别名照记，两手都做。
                 _page_id_aliases = {**_page_id_aliases, **_canon}
                 # ⚠ 落库那份救的是**刷新之后**的宿主；正在看直播的前端一个字
                 #   都收不到——它按 pageId 认卡，第 6.5 步那批新 id 到达时会
@@ -2453,8 +2422,10 @@ def run_spec_first(
                 os.environ.get("SLIDERULE_REFINE_PARTIAL_BIND", "1")
             ).strip().lower() not in _env_flags.OFF
             _skip_bind = (
-                set(_reuse_now.keys()) & set(pages.keys())
-                if (_partial_on and refine)
+                pages_to_skip_bind(
+                    pages, refine=True, reuse_ids=_reuse_now.keys()
+                )
+                if _partial_on
                 else set()
             )
             to_bind = {pid: h for pid, h in pages.items() if pid not in _skip_bind}
@@ -2531,7 +2502,7 @@ def run_spec_first(
 
         # 打完孔的成品页重发（bound=True）：前端徽标从「尚未接数据」翻成
         # 「已接数据」，不用等交付那一刻的 finalState。
-        _reemit_pages(sink, pages, bound=True)
+        _reemit_pages(sink, pages, bound=True, binding_status=page_bind_status(pages, True, bound_failed))
 
     # 断线体检：闸查悬空引用，体检查反面「东西在不在网里」。
     # 必须在打孔 + 外壳还原之后——量用户看见的孔，不量打孔前的模型网。
@@ -2673,6 +2644,7 @@ def run_spec_first(
     bind_ran = "bind" in stages
     _last_pages_var.set({
         "version": SPEC_FIRST_VERSION,
+        **({"assumptionsConfirmed": False} if _skip_after_assumptions else {}),
         "spec": dict(spec) if isinstance(spec, dict) else None,
         "pages": dict(pages),
         "navItems": list(result["navItems"]),

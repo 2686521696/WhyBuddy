@@ -6,10 +6,13 @@ from __future__ import annotations
 def test_sql_executor_uses_psycopg_v3_for_plain_postgresql_urls(monkeypatch):
     """裸 postgresql:// 连接串不能让 SQLAlchemy 回退去找 psycopg2。"""
     from services import identity_store as ident
+    from types import SimpleNamespace
 
     made: dict[str, object] = {}
 
     class FakeEngine:
+        dialect = SimpleNamespace(name="postgresql")
+
         def connect(self):  # pragma: no cover - 本用例只测初始化 URL
             raise AssertionError("not used")
 

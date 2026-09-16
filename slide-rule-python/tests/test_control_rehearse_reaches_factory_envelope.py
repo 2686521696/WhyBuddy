@@ -14,7 +14,7 @@ from control_turn_support import (
     ControlHarness,
     event_types,
     new_sid,
-    seed_session,
+    seed_approved_session as seed_session,
     six_fields,
     strip_python,
 )
@@ -36,7 +36,7 @@ def test_m1_header_has_every_clause():
         "No Node twin",
         "control_handoff_factory",
         "control_ask",
-        "control_scope",
+        "control_plan_approval",
         "controlTranscript",
         "Cheap turns write only controlTranscript",
         "inspect_model",
@@ -51,7 +51,8 @@ def test_m1_header_has_every_clause():
         '{forcedTool, goal}',
         "forcedTool rehearse",
         "does NOT exit the tool loop",
-        "ask_user, search_evidence, inspect_model, scope_card",
+        "ask_user_question, search_evidence, inspect_model",
+        "enter_plan_mode, write_plan, exit_plan_mode",
         "No tool may write blocked=false",
     ):
         assert needle in header, f"M1 header missing clause fragment: {needle}"

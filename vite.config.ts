@@ -4,8 +4,9 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import fs from "node:fs";
 import path from "node:path";
-import { defineConfig, type Plugin, type ViteDevServer } from "vite";
+import { defineConfig, loadEnv, type Plugin, type ViteDevServer } from "vite";
 import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
+import { PROJECT_PREVIEW_ORIGIN_ENV, workbenchContentSecurityPolicy } from "./scripts/project-preview-csp.mjs";
 
 // =============================================================================
 // Manus Debug Collector - Vite Plugin
@@ -155,7 +156,7 @@ function vitePluginManusDebugCollector(): Plugin {
 import { resolveApiTarget } from "./api-target";
 export { resolveApiTarget };
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
   const repository = process.env.GITHUB_REPOSITORY || "opencroc/sliderule";
   const repositoryName = repository.split("/")[1] || "sliderule";
   const repositoryUrl = `https://github.com/${repository}`;
@@ -170,7 +171,11 @@ export default defineConfig(() => {
   // blob: 允许同文档内 createObjectURL（three.js GLTFLoader 解 GLB 内嵌贴图
   // 走 blob URL——Work 模式 3D 角色需要）；blob 只能由本页脚本创建，
   // 不放开任何外联，zero-trust 姿态不变。
-  const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' blob: https://api.openai.com https://api.deepseek.com https://openrouter.ai https://api.anthropic.com https://api.groq.com data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:;" />`;
+  // Vite does not load .env into process.env before this callback. Read the one
+  // public template in both serve/build; gateway credentials stay server-only.
+  const previewEnv = loadEnv(mode, PROJECT_ROOT, PROJECT_PREVIEW_ORIGIN_ENV);
+  const csp = workbenchContentSecurityPolicy(previewEnv[PROJECT_PREVIEW_ORIGIN_ENV]);
+  const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${csp}" />`;
   const vitePluginCspForByok = {
     name: "csp-for-byok-pages",
     transformIndexHtml(html) {

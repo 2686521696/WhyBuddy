@@ -25,6 +25,7 @@
  */
 
 import React from "react";
+import { SandboxPreviewSurface } from "@/pages/sliderule/project-runtime/SandboxPreviewSurface";
 import { canWriteApp, useAuth } from "@/lib/use-auth";
 import type { AuthUser } from "@/lib/auth-client";
 import { Pagination } from "antd";
@@ -82,6 +83,7 @@ import {
   createSessionId,
   notifySessionsUpdated,
 } from "./SidebarSessions";
+import { slideruleSessionPath } from "@/lib/sliderule-session-id";
 import {
   listApps,
   getApp,
@@ -264,6 +266,10 @@ export function orderedSpecPages(sp: SpecPagesDetail): Array<{ pageId: string; h
 }
 
 export interface AppCardDetail {
+  runtimeKind?: "html-prototype" | "project";
+  projectId?: string | null;
+  projectRevision?: string | null;
+  projectRevisionMode?: "current" | "pinned";
   status: AppCardStatus;
   evidenceCount: number;
   blocked: boolean;
@@ -350,6 +356,19 @@ export function buildDetailFromModel(
 /** 从持久化会话状态推导卡片详情（不发明数据：模型缺失就是 draft）。 */
 export function deriveAppCardDetail(state: unknown): AppCardDetail {
   const s = (state ?? {}) as Record<string, any>;
+  if (s.runtimeKind === "project") {
+    // Old closure/HTML can survive in a converted session. They cannot supply
+    // an engineering verdict or become the preview while its descriptor loads.
+    return {
+      ...buildDetailFromModel(null, { evidenceCount: 0, blocked: false, awaitReason: s.awaitReason }),
+      runtimeKind: "project",
+      projectId: typeof s.projectId === "string" ? s.projectId : null,
+      projectRevision: typeof s.projectRevision === "string" ? s.projectRevision : null,
+      projectRevisionMode: "current",
+      roles: null,
+      aiCaps: null,
+    };
+  }
   const closure = s.publishClosure ?? {};
   const model: FiveSystemModel | null = mergeFiveSystemModels(
     null,
@@ -892,6 +911,35 @@ function SpecPagesPreview({
       />
     </React.Suspense>
   );
+}
+
+/** The actual modal body shares the project renderer with Studio. */
+export function AppArtifactPreview({ detail, loading = false, previewKey, appTitle }: {
+  detail: AppCardDetail | null | undefined;
+  loading?: boolean;
+  previewKey: string;
+  appTitle: string;
+}) {
+  if (detail?.runtimeKind === "project") return (
+    <div className="flex h-full min-h-0 flex-col">
+      <p className="shrink-0 px-4 py-2 text-xs text-stone-500">
+        工程预览使用应用自己的数据；历史版本、源码和复刻操作可在下方工作区面板中使用。
+      </p>
+      <SandboxPreviewSurface projectId={detail.projectId} projectRevision={detail.projectRevision}
+        revisionMode={detail.projectRevisionMode} appTitle={appTitle} />
+    </div>
+  );
+  if (detail?.specPages) return <SpecPagesPreview specPages={detail.specPages} model={detail.model} />;
+  if (!detail?.model) return (
+    <div className="flex h-full items-center justify-center text-[13px] text-slate-400"
+      data-testid="app-preview-loading">
+      {loading ? "预览加载中…" : "这一版没有可预览的页面"}
+    </div>
+  );
+  return <React.Suspense fallback={<div className="p-6 text-[13px] text-slate-400">预览加载中…</div>}>
+    <LazyAppRuntimeScreen model={detail.model} sessionId={`preview:${previewKey}`}
+      appTitle={appTitle} scaleFit="width" />
+  </React.Suspense>;
 }
 
 /**
@@ -1705,7 +1753,7 @@ export function AppsWorkbench() {
     activateSession(sessionId);
     // Pages 子路径部署（/<repo>/）下绝对路径 404——带 BASE_URL 前缀
     const base = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
-    window.location.href = `${base}/agent-loop/sliderule`;
+    window.location.href = `${base}${slideruleSessionPath(sessionId)}`;
   };
 
   /**
@@ -1824,6 +1872,24 @@ export function AppsWorkbench() {
     // ★ 下一行就跳进会话了，重拉画廊纯属白烧一轮请求。
     notifySidebarOnly();
     open(result.sessionId);
+  };
+
+  /**
+   * 项目卡片的直达入口：已有归属会话时直接回到该会话，否则按应用快照
+   * 重建一个工作区再进入。卡片主体仍保留只读预览，避免误把公开应用当成
+   * 当前用户的可编辑会话。
+   */
+  const openProjectWorkspace = async (gi: GalleryItem) => {
+    setMenuFor(null);
+    const ownedSession =
+      gi.sessionId && canOpenGalleryItem(gi, sessions, authUser)
+        ? gi.sessionId
+        : null;
+    if (ownedSession) {
+      open(ownedSession);
+      return;
+    }
+    await continueOnCard(gi);
   };
 
   /**
@@ -1958,7 +2024,9 @@ export function AppsWorkbench() {
     //     卡片互相压盖，**不报错**。
     //   两次都不报错，所以名字必须自带含义。
     const compact = cellW < 200;
-    const meta = detail ? STATUS_META[detail.status] : null;
+    const meta = detail?.runtimeKind === "project"
+      ? { label: "工程", cls: "text-stone-500", dot: "bg-stone-400" }
+      : detail ? STATUS_META[detail.status] : null;
     const BrandIcon = detail?.identity
       ? BRAND_LUCIDE[detail.identity.icon] ?? Boxes
       : undefined;
@@ -2089,7 +2157,7 @@ export function AppsWorkbench() {
             ensureFullDetail(item);
             return setPreviewModal(item);
           }
-          if (detail?.model || detail?.specPages) return setPreviewModal(item);
+          if (detail?.runtimeKind === "project" || detail?.model || detail?.specPages) return setPreviewModal(item);
         }}
         topRight={
           <>
@@ -2130,6 +2198,18 @@ export function AppsWorkbench() {
                     onClick={() => openForkModal(storeItem)}
                   >
                     <GitBranch size={13} /> 复刻到我的应用
+                  </button>
+                )}
+                {detail?.runtimeKind === "project" && (item.sessionId || item.appId) && (
+                  <button
+                    data-testid={`app-open-project-${item.sessionId || item.appId}`}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] font-medium text-[#4a5aef] hover:bg-indigo-50 disabled:opacity-40"
+                    disabled={reopenBusy}
+                    title="打开工程工作台，查看沙盒、源码、版本、数据和验证"
+                    onClick={() => void openProjectWorkspace(item)}
+                  >
+                    <Wrench size={13} />
+                    {reopenBusy ? "正在打开工程工作台…" : "打开工程工作台"}
                   </button>
                 )}
                 {storeItem && canWrite && (
@@ -2520,10 +2600,10 @@ export function AppsWorkbench() {
                   "应用预览"}
               </span>
               <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
-                只读预览
+                {details[previewModal.key]?.runtimeKind === "project" ? "工程预览" : "只读预览"}
               </span>
               <div className="ml-auto flex shrink-0 items-center gap-2">
-                {canWriteApp(previewModal.summary?.owner_id ?? null, authUser) &&
+                {details[previewModal.key]?.runtimeKind === "project" ? null : canWriteApp(previewModal.summary?.owner_id ?? null, authUser) &&
                 previewModal.source === "app" ? (
                   <button
                     data-testid="app-reopen"
@@ -2556,43 +2636,12 @@ export function AppsWorkbench() {
               </div>
             </div>
             <div className="min-h-0 flex-1 overflow-hidden bg-[#f0f2f5]">
-              {details[previewModal.key]?.specPages ? (
-                // spec-first 应用：预览的就是交付的那几页 HTML（与推演舞台
-                // 同一个组件、同一份页面），不再拿区块渲染器另画一份。
-                <SpecPagesPreview
-                  specPages={details[previewModal.key]!.specPages!}
-                  model={details[previewModal.key]!.model}
-                />
-              ) : !details[previewModal.key]?.model ? (
-                // ⚠ 2026-08-22：整包改成点开才拉（ensureFullDetail），所以这里
-                // **必然**会有"两样都还没到"的一拍。改动前这一支直接
-                // `model={...!.model!}`——非空断言在新取数下会把 null 喂进渲染器。
-                // 拉完还是没有，就是这一版真的没东西可预览（老链路的空记录），
-                // 照实说，不要转圈到天荒地老。
-                <div
-                  className="flex h-full items-center justify-center text-[13px] text-slate-400"
-                  data-testid="app-preview-loading"
-                >
-                  {fullInflightKeys.includes(previewModal.key)
-                    ? "预览加载中…"
-                    : "这一版没有可预览的页面"}
-                </div>
-              ) : (
-                <React.Suspense
-                  fallback={<div className="p-6 text-[13px] text-slate-400">预览加载中…</div>}
-                >
-                  <LazyAppRuntimeScreen
-                    model={details[previewModal.key]!.model!}
-                    // 运行期状态（种子数据的增删改、当前角色）按这个 key 存本地。
-                    // **不能用对方真实的 sessionId**：在预览里点两下"新建"，
-                    // 就会把痕迹写进人家会话的本地状态槽位里。给预览一个独立
-                    // 命名空间，关掉即弃。
-                    sessionId={`preview:${previewModal.appId || previewModal.key}`}
-                    appTitle={previewModal.goal}
-                    scaleFit="width"
-                  />
-                </React.Suspense>
-              )}
+              <AppArtifactPreview
+                detail={details[previewModal.key]}
+                loading={fullInflightKeys.includes(previewModal.key)}
+                previewKey={previewModal.appId || previewModal.key}
+                appTitle={previewModal.goal}
+              />
             </div>
           </div>
         </div>

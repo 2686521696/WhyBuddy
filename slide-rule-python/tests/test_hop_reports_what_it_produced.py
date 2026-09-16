@@ -203,12 +203,12 @@ class Test接线真的接上了:
 
     def test_每个handoff前都取了指纹(self):
         src = self._src()
-        assert src.count("_fp_before = factory_deliverable_fingerprint(state)") >= 4, (
-            "点火 / 单跳 / 精修（模型挑）/ 精修（按钮）四条路都要取指纹"
+        assert src.count("_fp_before = factory_deliverable_fingerprint(state)") >= 3, (
+            "单跳 / 精修（模型挑）/ 精修（按钮）三条路都要取指纹"
         )
 
     def test_回执都把指纹传下去(self):
         src = self._src()
-        assert src.count("before_fingerprint=_fp_before") >= 4, (
+        assert src.count("before_fingerprint=_fp_before") >= 3, (
             "取了不传等于没接线——回执照样恒 ok"
         )

@@ -12,6 +12,8 @@
 这份测试盯的就是这条纪律不被改回去。
 """
 
+from plan_approval_support import approved_execution_payload
+
 import inspect
 import threading
 import time
@@ -85,7 +87,7 @@ def test_health_still_answers_while_a_long_drive_is_running(monkeypatch):
         def fire():
             try:
                 client.post("/api/sliderule/drive-full",
-                            json={"state": state, "userText": "阻塞测试", "max_loops": 1})
+                            json=approved_execution_payload({"state": state, "userText": "阻塞测试", "max_loops": 1}))
             except Exception:
                 pass
 

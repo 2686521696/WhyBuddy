@@ -386,3 +386,47 @@ describe("SidebarSessions 静态渲染", () => {
     expect(meta?.[1]).not.toMatch(/margin-top:\s*2px/);
   });
 });
+
+describe("切换会话必须改地址栏，不许只写 localStorage", () => {
+  const strip = (source: string) =>
+    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+
+  it("activateSession 把 id 推进历史；SlideRule 首屏听 URL", () => {
+    const activate = strip(
+      readFileSync(new URL("../SidebarSessions.tsx", import.meta.url), "utf8")
+    );
+    expect(activate).toContain("applySessionToHistory");
+    expect(activate).toContain("sessionIdFromHref");
+    // 反向：只 setItem 不写地址栏 = 刷新仍丢
+    const write = activate.slice(activate.indexOf("export function activateSession"));
+    expect(write).toMatch(/applySessionToHistory\([\s\S]*hrefFromWindow\(window\)/);
+
+    const shell = strip(
+      readFileSync(new URL("../../../SlideRule.tsx", import.meta.url), "utf8")
+    );
+    expect(shell).toContain("sessionIdFromHref(hrefFromWindow(window))");
+    expect(shell).toContain("resolveActiveSessionId");
+    expect(shell).toContain("popstate");
+  });
+
+  it("应用中心整页跳和复刻链接带着 ?session=", () => {
+    const workbench = strip(
+      readFileSync(new URL("../AppsWorkbench.tsx", import.meta.url), "utf8")
+    );
+    expect(workbench).toContain("slideruleSessionPath(sessionId)");
+    expect(workbench).not.toMatch(
+      /location\.href = `\$\{base\}\/agent-loop\/sliderule`/
+    );
+    const workspace = strip(
+      readFileSync(
+        new URL(
+          "../../../sliderule/project-runtime/ProjectWorkspacePanel.tsx",
+          import.meta.url
+        ),
+        "utf8"
+      )
+    );
+    expect(workspace).toContain("slideruleSessionPath(fork.sessionId)");
+    expect(workspace).not.toContain('href="/agent-loop/sliderule"');
+  });
+});

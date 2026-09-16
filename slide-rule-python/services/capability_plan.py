@@ -91,28 +91,24 @@ def live_spec_first_tools(
     *,
     has_spec: bool = False,
 ) -> Tuple[str, ...]:
-    """交给 `run_spec_first` 的公开工具：本跳 stamp 的菜 ∪ 待办里还挂着的首轮跳。
+    """交给 `run_spec_first` 的公开工具：host stamp 的这一跳。
 
-    ⚠ 2026-09-07 真机 sr-20260907112112（社区便利店进销存）：
-    假设确认后 remaining 一度是 pages,structure,bind；选材器 stamp 成
-    `['pages']`，待办仍是 `['structure','bind']`。执行器把 stamp **原样**
-    传进流水线 → capabilityPlan.tools=['pages']，specfirst.bind 没进计划，
-    6 页 HTML 一个 data-rows 都没有，factory.bind 账本却是 success。
+    抄 grok `Tool::execute`：点哪件跑哪件。待办是交回 host 的 reminder，
+    不是把没点的 hop 偷跑进这一跳（漫画第 4 格：你叫了 pages，推开门
+    却是固定课表）。
 
-    阶段 1 允许这一跳只画 pages，摘掉的进待办——那是 stamp / 钟面的合同。
-    流水线读的必须是「账还没清的产出跳」，否则延后等于丢失（团子 2026-09-03）。
+    ⚠ 2026-09-07 真机：stamp=['pages'] 时 bind 没跑、账本却 success。
+    修法不是把待办焊回流水线，是账本按实际 stages 销、闭环 fail-closed
+    （`factory_todo_blockers`），host 再挑 structure / bind。
+    `todo` 留在签名里，调用点不用改；本函数不再读它。
     """
+    del todo  # 待办不进这一跳的菜单。销账 / 闭环 / host 清单另读。
     requested = tuple(
         str(item).strip() for item in (tools or ()) if str(item).strip()
     )
-    if not first_pass_still_open(requested, todo):
-        return requested
-    skip = {"spec"} if has_spec else set()
-    kept = {name for name in requested if name not in skip} | {
-        name for name in factory_todo_open(todo) if name not in skip
-    }
-    out = tuple(name for name in FIRST_PASS_TOOLS if name in kept)
-    return out or requested
+    if has_spec and "spec" in requested and len(requested) > 1:
+        requested = tuple(name for name in requested if name != "spec")
+    return requested
 
 
 def is_first_pass_chain(tools: Optional[Iterable[str]]) -> bool:

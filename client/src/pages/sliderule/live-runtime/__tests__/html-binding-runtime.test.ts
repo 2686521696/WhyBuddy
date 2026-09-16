@@ -982,7 +982,7 @@ describe("收银台点得动：货架进车、车不是整张商品表", () => {
     </div>
     <div>
       <button>清空购物车</button>
-      <div class="space-y-3" data-rows="product">
+      <div class="space-y-3" data-rows="product" data-view="cart">
         <div>
           <h4 data-field="product_name">样板</h4>
           <div>

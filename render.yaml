@@ -111,6 +111,17 @@ services:
       - key: E2B_API_KEY
         sync: false
 
+      # 独立页面检查沙盒模板；工程生产入口仍保持关闭。
+      # 未配置模板时页面检查如实 blocked，不自动创建普通沙盒安装浏览器。
+      - key: WHYBUDDY_PROJECT_BROWSER_TEMPLATE
+        value: ""
+      - key: WHYBUDDY_PROJECT_BROWSER_TIMEOUT_SECONDS
+        value: "120"
+      # Free sleeping services cannot meet the persistent execution/preview contract.
+      # Use docker-compose.project.yml on an always-on deployment before allowlist rollout.
+      - key: WHYBUDDY_PROJECT_ROLLOUT
+        value: disabled
+
   # ── Node（前端 + API，免费公开 Web 服务）─────────────────────────
   - type: web
     name: whybuddy

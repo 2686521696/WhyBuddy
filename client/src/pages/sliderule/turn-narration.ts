@@ -208,9 +208,12 @@ export function narrationTurnIdFor(
   fallbackTurnId: string
 ): string {
   const user = trimUser(userText);
+  // ⚠ 这里原本写了类型谓词 `n is { turnId: string; user?: string }`，而
+  // turnNarrations 的元素类型还带 steps/durationMs——谓词类型必须是参数类型的
+  // 子类型，少了字段就不是，于是 TS2677。元素类型本来就保证 turnId: string，
+  // 谓词一点没多给，去掉即可；运行期那两条防脏数据的检查照旧。
   const all = (state?.turnNarrations || []).filter(
-    (n): n is { turnId: string; user?: string } =>
-      !!n && typeof n.turnId === "string"
+    n => !!n && typeof n.turnId === "string"
   );
   if (user) {
     const hits = all.filter(n => usersMatch(n.user, user));
@@ -232,6 +235,16 @@ const KNOWN_KINDS = new Set([
   "step_narration",
   "capability_fail",
   "llm_output",
+  // ⚠ 2026-09-13：漏了这个 kind，「模型动手之前的开口」就只在**直播时**
+  // 看得见，刷新后整段消失——数据其实一直在（落库两侧的 slimStep /
+  // _slim_step 都是整对象透传，schema 两侧也都是宽松的 unknown[] /
+  // Dict[str, Any]），唯独在这道回放白名单上被丢掉。
+  // 这正是本仓 §3 点名的形态：正向（实时能看见）齐全，反向（刷新后还在）
+  // 缺失，而且不报错、不告警。
+  "model_speech",
+  // ⚠ 同理：刷新后标记丢了，折叠就退回认话，而自动续跑没有话可认——
+  //   症状是刷新一下，连续的工作流又裂回一轮一张卡。
+  "continuation_mark",
 ]);
 
 /** 刷新回放：从持久化状态取指定轮（缺省最新一轮）的叙述步骤。

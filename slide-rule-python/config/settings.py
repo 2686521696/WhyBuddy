@@ -16,6 +16,11 @@ _REPO_ROOT = _PACKAGE_DIR.parent
 class Settings(BaseSettings):
     PORT: int = 9700
     NODE_ENV: str = "development"
+    # A separate trusted E2B image owns the fixed browser suite. Empty means
+    # blocked; the generated application sandbox never hosts its own examiner.
+    E2B_API_KEY: str = ""
+    WHYBUDDY_PROJECT_BROWSER_TEMPLATE: str = ""
+    WHYBUDDY_PROJECT_BROWSER_TIMEOUT_SECONDS: int = 120
 
     # DB (reuse cube_pets_office or dedicated). Production credentials must come from .env.
     DB_HOST: str = "localhost"

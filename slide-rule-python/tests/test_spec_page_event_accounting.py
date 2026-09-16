@@ -239,6 +239,14 @@ class Test兜底补发:
         code = _code_of(DRIVER, "_fallback_page_events")
         assert "_emitted = _peek_page_events()" in code, "补发不看事件数"
 
+    def test_take之后从落库补发(self):
+        """execute 里 take_last_pages 已取空。grok fallback_text 读终态。
+
+        变异：只 peek 暂存 → 本条红，画布补发永远跳过。
+        """
+        code = _code_of(DRIVER, "_fallback_page_events")
+        assert "specFirstPages" in code, "take 之后必须读落库页面"
+
     def test_不知道的时候不许补发(self):
         """★ 真机差点在这里翻车：计数器读不到（恒 0）时，补发会把**已经发过的
         页再发一遍**，前端每页闪两次。那一轮没重发纯属 `peek_last_pages()`
@@ -248,7 +256,7 @@ class Test兜底补发:
         → 本条红。
         """
         code = _code_of(DRIVER, "_fallback_page_events")
-        assert "if _emitted is None or _emitted > 0:" in code, (
+        assert "if _emitted is None:" in code, (
             "「不知道」时还会去补发 —— 会重发已经发过的页"
         )
 
@@ -261,7 +269,8 @@ class Test兜底补发:
         """⚠ 补发发生在整链跑完之后，此时页面已经打过孔。说 `False` 会让前端
         把成品当素颜页，再等一次永远不会来的覆盖。"""
         code = _code_of(DRIVER, "_fallback_page_events")
-        assert '"bound": True' in code
+        assert '"bound": _bound' in code
+        assert 'binding_status.get(_pid) == "bound"' in code
         assert '"bound": False' not in code
 
     def test_补发的事件带着标记(self):
@@ -286,12 +295,30 @@ class Test兜底补发:
     def test_两个调用点都接了补发(self):
         """⚠ 串行 / 并行两条执行路。只改一条不报错、只有一半不生效——
         本仓第四条那个形状。"""
-        src = DRIVER.read_text(encoding="utf-8")
-        assert src.count("async for _fb in _fallback_page_events():") == 2, (
-            "补发只接了一条执行路（串行和并行都要）"
-        )
-        assert src.count("async for _pause_ev in _drain_assumption_hold():") == 2, (
-            "停泊通知只接了一条执行路"
+        tree = ast.parse(DRIVER.read_text(encoding="utf-8"))
+        stream = next(node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "drive_full_v5_session_stream")
+        sources = []
+        for parent in ast.walk(stream):
+            body = getattr(parent, "body", None)
+            if not isinstance(body, list):
+                continue
+            for index, node in enumerate(body):
+                if not (isinstance(node, ast.AsyncFor) and isinstance(node.iter, ast.Call) and isinstance(node.iter.func, ast.Name) and node.iter.func.id == "_fallback_page_events"):
+                    continue
+                assert index > 0
+                previous = body[index - 1]
+                assert isinstance(previous, ast.Assign)
+                result = previous.value
+                assert isinstance(result, ast.Call) and isinstance(result.func, ast.Attribute)
+                assert result.func.attr == "result" and isinstance(result.func.value, ast.Name)
+                sources.append(result.func.value.id)
+                assert isinstance(node.target, ast.Name)
+                assert any(
+                    isinstance(child, ast.Yield) and isinstance(child.value, ast.Name) and child.value.id == node.target.id
+                    for child in ast.walk(node)
+                ), "Reading fallback events without yielding them still leaves the canvas blank"
+        assert sorted(sources) == ["batch_task", "exec_task"], (
+            "Serial and parallel capability results must each trigger page fallback"
         )
 
     def test_计数函数挂在已有的import上而不是新开一条(self):

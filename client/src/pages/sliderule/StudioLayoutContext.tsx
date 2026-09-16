@@ -86,6 +86,25 @@ export function StudioLayoutProvider({
   const [stagePageHidden, setStagePageHidden] = React.useState(false);
   const [resizing, setResizing] = React.useState(false);
   const [layoutGeneration, setLayoutGeneration] = React.useState(0);
+  /**
+   * ⚠ 2026-09-16 真机手机预览：react-resizable-panels 的 onDragging(true)
+   * 之后如果 pointerup 丢了（触摸取消、DevTools 设备模式），
+   * `data-studio-resizing` 会一直 true，dashboard.css 把 iframe
+   * `pointer-events:none`——右侧应用看得一清二楚，点什么都没反应。
+   * 松手/失焦/pointercancel 必须收回，不能只听库的 onDragging(false)。
+   */
+  React.useEffect(() => {
+    if (!resizing) return;
+    const stop = () => setResizing(false);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    window.addEventListener("blur", stop);
+    return () => {
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      window.removeEventListener("blur", stop);
+    };
+  }, [resizing]);
   const [maximizeLocked, setMaximizeLocked] = React.useState(false);
   const collapsed = { chat: chatCollapsed, stage: stageCollapsed };
 

@@ -44,10 +44,20 @@ _DEFAULT_PRICING_USD_PER_1K_TOKENS = {"input": 0.001, "output": 0.002}
 
 
 class LlmError(Exception):
-    def __init__(self, message: str, *, status: int | None = None, transient: bool = False):
+    def __init__(
+        self, message: str, *, status: int | None = None, transient: bool = False,
+        usage: dict[str, Any] | None = None, finish_reason: str | None = None,
+        empty_reason: str | None = None,
+    ):
         super().__init__(message)
         self.status = status
         self.transient = transient
+        # A provider can bill a response it then terminates. The control run
+        # must charge that usage even though no assistant message is accepted.
+        self.usage = usage
+        self.finish_reason = finish_reason
+        #: 控制面空采样的归类。缺省 None：工厂路径和旧构造函数不受影响。
+        self.empty_reason = empty_reason
 
 
 @dataclass
@@ -189,8 +199,13 @@ def _normalize_error(status: int, body: str) -> LlmError:
         return LlmError(f"auth failed ({status}): check API key", status=status, transient=False)
     if status == 404:
         return LlmError("404: check base URL / model id", status=status, transient=False)
-    if status == 524:
-        return LlmError(f"gateway timeout (524): {snippet}", status=status, transient=True)
+    if status in (522, 524):
+        # 522 = Cloudflare 源站连接超时；524 = 源站读超时。都是瞬时的。
+        # ⚠ 2026-09-08：522 原先掉进下面的 generic 5xx，控制面 except 再
+        #   一律说「网关连不上」。直连同一网关是 200，用户不认那句罐头。
+        return LlmError(
+            f"gateway timeout ({status}): {snippet}", status=status, transient=True
+        )
     if 500 <= status < 600:
         return LlmError(f"upstream {status}: {snippet}", status=status, transient=True)
     return LlmError(f"HTTP {status}: {snippet}", status=status, transient=False)
@@ -352,7 +367,10 @@ def _responses_payload(messages, model, temperature, max_tokens, reasoning, stre
 
 # ── response extraction (chat + responses shapes) ─────────────────────────────
 
-def _empty_content_hint(finish: str | None, max_tokens: int, usage: dict | None) -> str:
+def _empty_content_hint(
+    finish: str | None, max_tokens: int, usage: dict | None,
+    *, include_length_advice: bool = True,
+) -> str:
     """空内容报错时，把**为什么空**一起说出来（2026-08-11）。
 
     ## 差这一个词，两个完全不同的故障长得一模一样
@@ -375,7 +393,7 @@ def _empty_content_hint(finish: str | None, max_tokens: int, usage: dict | None)
             if usage.get(key) is not None:
                 bits.append(f"{key}={usage[key]}")
     tail = ""
-    if str(finish or "").lower() == "length":
+    if include_length_advice and str(finish or "").lower() == "length":
         tail = "（预算被吃光，不是服务商故障：推理模型的思考 token 与正文共用 max_tokens，调大 LLM_MAX_TOKENS——全链路就这一个旋钮）"
     return f"[{' '.join(bits)}]{tail}"
 
