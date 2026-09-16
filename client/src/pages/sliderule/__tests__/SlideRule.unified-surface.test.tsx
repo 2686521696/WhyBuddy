@@ -421,7 +421,11 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).toContain('data-testid="project-computer-chrome"');
     expect(html).toContain('data-testid="project-preview-paused"');
     expect(html).not.toContain('data-testid="sliderule-architecture-stage"');
-    expect(html).not.toContain("接线沙盘");
+    // ⚠ 2026-09-15：这里原来是 `not.toContain("接线沙盘")`——拿**用户可见文案**
+    //   当「沙盘在不在」的探针。那句文案今天改掉了（「五系统」已退役），
+    //   这条断言就会变成永远成立的空判据，而上面一行才是它真正想说的话。
+    //   改成钉空态那个 testid：文案怎么改都咬得住。
+    expect(html).not.toContain('data-testid="architecture-empty"');
   });
 
   it("会话在场但未运行（无模型）→ board：接线沙盘 + Checks，不是六圆钮", () => {

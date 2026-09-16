@@ -157,8 +157,17 @@ export function ArchitectureStage({
             className="flex h-full flex-col items-center justify-center gap-1 text-center"
             data-testid="architecture-empty"
           >
-            <div className="text-[13px] text-stone-500">推演完成后这里是五系统接线沙盘</div>
-            <div className="text-[11px] text-stone-400">六个系统是图上的组，点开看一层</div>
+            {/* ⚠ 2026-09-15 改文案。原来是「推演完成后这里是**五系统**接线沙盘」
+                / 「**六个**系统是图上的组」——两行自己就对不上（五 vs 六），
+                而且「五系统」那套已经退役，现在的方向是工程模式 + 沙盒终端 + 预览。
+                真机上新会话建工程之前看到的就是这一句，等于对用户宣传一个
+                不再做的东西。
+
+                只改文案，不动这一屏的职责：它仍然是 HTML 推演档跑完之后
+                放架构图的地方。数量写死也一并去掉——图上有几个组是模型定的，
+                写死一个数迟早又对不上。 */}
+            <div className="text-[13px] text-stone-500">推演完成后这里是应用的架构图</div>
+            <div className="text-[11px] text-stone-400">系统是图上的组，点开看一层</div>
           </div>
         )}
       </div>
