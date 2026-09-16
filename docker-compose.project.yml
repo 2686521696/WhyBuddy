@@ -30,7 +30,19 @@ services:
       python:
         condition: service_healthy
     environment:
-      WHYBUDDY_PROJECT_PREVIEW_AUTHORITY_URL: http://python:9700/api/sliderule/internal/project-preview
+      # ⚠ 2026-09-16 线上抓到：这里原本写死 `http://python:9700/...`，
+      #   而网关自己的校验（server/project-preview/service.ts，
+      #   `preview_authority_https_required`）只放行 http: + localhost/127.0.0.1/[::1]。
+      #   `python` 是服务名、不是回环 → **网关一起来就抛**。
+      #   也就是说仓里发的是一份网关自己拒收的配置，谁照着部署都起不来，
+      #   而且报的是一个跟"预览打不开"毫无字面关系的 config 错。
+      #
+      #   不放宽那条校验（网关 key 是以 Bearer 明文发给授权端的，
+      #   "同一个 compose 网络所以没事"这种判断一旦写进代码就会被复制到别处）。
+      #   改成由部署方显式给一个 https 地址——通常就是工作台自己：
+      #       WHYBUDDY_PROJECT_PREVIEW_AUTHORITY_URL=https://你的域名/api/sliderule/internal/project-preview
+      #   缺了直接起不来并打印这句话，比静默退回"尚未配置"强。
+      WHYBUDDY_PROJECT_PREVIEW_AUTHORITY_URL: ${WHYBUDDY_PROJECT_PREVIEW_AUTHORITY_URL:?HTTPS authority url required, e.g. https://example.com/api/sliderule/internal/project-preview}
       WHYBUDDY_PROJECT_PREVIEW_GATEWAY_KEY: ${WHYBUDDY_PROJECT_PREVIEW_GATEWAY_KEY:?separate gateway key required}
       WHYBUDDY_PROJECT_WORKBENCH_ORIGIN: ${WHYBUDDY_PROJECT_WORKBENCH_ORIGIN:?HTTPS workbench origin required}
       WHYBUDDY_PROJECT_PREVIEW_PUBLIC_PROTOCOL: "https:"

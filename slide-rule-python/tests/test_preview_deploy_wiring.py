@@ -155,3 +155,116 @@ def test_网关key不许进前端构建():
         assert "WHYBUDDY_PROJECT_PREVIEW_GATEWAY_KEY" not in text, (
             f"{path.name} 里出现了网关 key——它不许进前端构建"
         )
+
+
+# ---------------------------------------------------------------------------
+# 网关授权地址：仓里发的那份必须是网关自己收得下的
+#
+# ⚠ 2026-09-16 线上抓到的第二处。compose 里写死
+#     WHYBUDDY_PROJECT_PREVIEW_AUTHORITY_URL: http://python:9700/api/sliderule/internal/project-preview
+#   而网关 createPreviewService 第一件事就是校验它：http: 只放行
+#   localhost / 127.0.0.1 / [::1]。`python` 是 compose 服务名，于是
+#   **网关一起来就抛 preview_authority_https_required**。
+#
+#   这是「生成侧 / 消费侧」那一对（CLAUDE.md §4）的又一例：发配置的那侧
+#   和收配置的那侧各写各的，谁都没错，合起来起不来。而且报的错跟
+#   「预览打不开」字面上毫无关系，用户侧只看得到 502 / 一直转圈。
+#
+#   这条判据不重抄那条规则——**从 service.ts 源码里把白名单取出来再套**。
+#   重抄只能证明"我抄对了"（§一之二）；取出来则是：谁改宽了 service.ts，
+#   这里跟着变宽，谁改窄了这里跟着变窄。
+# ---------------------------------------------------------------------------
+
+GATEWAY_SERVICE = ROOT / "server" / "project-preview" / "service.ts"
+AUTHORITY_VAR = "WHYBUDDY_PROJECT_PREVIEW_AUTHORITY_URL"
+
+
+def _gateway_http_hosts() -> list[str]:
+    """从网关源码里取出「http: 还放行哪些 host」。"""
+    text = GATEWAY_SERVICE.read_text(encoding="utf-8")
+    assert "preview_authority_https_required" in text, (
+        "网关里找不到 preview_authority_https_required 了。"
+        "校验要是挪了位置/改了名，这条判据也得跟着重写——别直接删。"
+    )
+    match = re.search(
+        # ⚠ 非贪婪到 `].includes(` 为止，别写成 `[^\]]*`：白名单里的
+        #   `"[::1]"` 自带一个 `]`，字符类版本会在那里就断掉，
+        #   结果整条规则认不出来（第一版就是这么红的）。
+        r'authority\.protocol === "http:" && !\[(.*?)\]\.includes\(authority\.hostname\)',
+        text,
+    )
+    assert match, (
+        "没在 service.ts 里认出 http: 的 host 白名单。"
+        "校验改形状了，这条判据必须跟着改，不许靠重抄一份规则蒙混过去。"
+    )
+    return re.findall(r'"([^"]+)"', match.group(1))
+
+
+def _gateway_accepts_authority(url: str) -> bool:
+    """按网关自己的规则判一个授权地址收不收。"""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url)
+    if parts.scheme not in {"http", "https"}:
+        return False
+    if parts.scheme != "http":
+        return True
+    host = parts.hostname or ""
+    # ⚠ 别删这两行。JS 的 WHATWG URL 里 IPv6 的 `hostname` **带方括号**
+    #   （`new URL("http://[::1]/").hostname === "[::1]"`），Python 的
+    #   urlsplit 则把方括号剥掉给 `"::1"`。不补回来，白名单里的 `[::1]`
+    #   就永远匹配不上，这条判据会把一个网关其实收得下的地址判成红。
+    if ":" in host:
+        host = f"[{host}]"
+    return host in _gateway_http_hosts()
+
+
+def test_仓里发的网关授权地址网关自己收得下():
+    gateway_env = _services()["project-preview"]["environment"]
+    assert AUTHORITY_VAR in gateway_env, f"project-preview 服务没有 {AUTHORITY_VAR}"
+    value = str(gateway_env[AUTHORITY_VAR])
+
+    if value.startswith("${"):
+        # 交给部署方给值。那就必须是**必填**（`:?`），不许给一个默认值——
+        # 默认值等于又把一份可能被拒的地址发出去了，而且是静默的。
+        assert ":?" in value, (
+            f"{AUTHORITY_VAR} 交给部署方时必须写成 ${{...:?说明}}（必填），"
+            f"实际 {value!r}。给默认值 = 发一份网关可能拒收的地址，"
+            "而部署方不会知道自己漏填了。"
+        )
+        return
+
+    assert _gateway_accepts_authority(value), (
+        f"compose 发的 {AUTHORITY_VAR}={value!r} 会被网关自己拒掉"
+        f"（http: 只放行 {_gateway_http_hosts()}），网关一起来就抛 "
+        "preview_authority_https_required。这正是 2026-09-16 那次："
+        "写的是 http://python:9700/...，`python` 是服务名不是回环。"
+    )
+
+
+def test_那条规则确实会咬住服务名形态():
+    """反向（§3）：证明上面那条判据不是空转。
+
+    ⚠ 判据本身要能被变异咬住（§2）。这里直接喂真机当时那一发的原样值。
+    """
+    assert not _gateway_accepts_authority(
+        "http://python:9700/api/sliderule/internal/project-preview"
+    ), "服务名 + http: 居然被判成可收——白名单取错了，上面那条判据是空转的"
+    assert _gateway_accepts_authority(
+        "https://miantuan.ai/api/sliderule/internal/project-preview"
+    )
+    assert _gateway_accepts_authority(
+        "http://127.0.0.1:9700/api/sliderule/internal/project-preview"
+    ), ".env.preview.example 走的就是这条（网关跑在宿主上），不许误伤"
+
+
+def test_本地网关样例也过同一条规则():
+    """`.env.preview.example` 是另一套拓扑（网关直接跑在宿主），
+    但收它的是同一个 createPreviewService，所以过同一把尺。"""
+    sample = (ROOT / ".env.preview.example").read_text(encoding="utf-8")
+    match = re.search(rf"^{AUTHORITY_VAR}=(.+)$", sample, re.MULTILINE)
+    assert match, f".env.preview.example 里没有 {AUTHORITY_VAR}"
+    value = match.group(1).strip()
+    assert _gateway_accepts_authority(value), (
+        f".env.preview.example 发的 {value!r} 会被网关拒掉"
+    )
