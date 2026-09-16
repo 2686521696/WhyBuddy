@@ -232,7 +232,9 @@ describe("细节来自结构化字段，不解析文案", () => {
       [speech("s1", "先改入口。"), slot("n1"), speech("s2", "再补样式。"), slot("n2")],
       log
     );
-    expect(weaved.map(step => step.kind === "chip" ? step.projectDetail : step.text)).toEqual([
+    expect(weaved.map(step =>
+      step.kind === "chip" ? step.projectDetail : "text" in step ? step.text : undefined
+    )).toEqual([
       "先改入口。",
       "src/main.tsx",
       "再补样式。",

@@ -101,7 +101,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-const $ = <T extends Element>(testid: string) =>
+const $ = <T extends Element = HTMLElement>(testid: string) =>
   container.querySelector<T>(`[data-testid="${testid}"]`);
 
 describe("通电链：Studio 把动作流交给电脑面，自己不再叠一份", () => {
