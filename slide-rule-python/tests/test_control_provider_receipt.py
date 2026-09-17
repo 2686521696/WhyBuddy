@@ -85,7 +85,8 @@ def test_filtered_http_response_is_accounted_and_never_resampled(env, monkeypatc
         assert cp["phase"] == "provider_failed"
         assert cp["round"] == 2
         assert cp["cheapTokens"] == 3015 + 5759
-        assert cp["budgetPolicy"]["profile"] == "project-v2"
+        # 2026-09-17 起新回合默认 project-v3（取消轮次/墙钟上限）。
+        assert cp["budgetPolicy"]["profile"] == "project-v3"
         assert cp["providerFailure"] == {"finishReason": "content_filter", "reportedTokens": 5759}
         if crash_after_receipt:
             second = env.service()

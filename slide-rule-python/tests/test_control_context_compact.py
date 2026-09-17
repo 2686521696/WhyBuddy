@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from services.control_budget import PROJECT_BUDGET, PROJECT_BUDGET_V1
+from services.control_budget import PROJECT_BUDGET, PROJECT_BUDGET_V1, PROJECT_BUDGET_V2
 from services.control_context_compact import (
     COMPACT_NOTICE_PREFIX,
     compact_messages,
@@ -68,13 +68,22 @@ def test_到阈值就折叠较早的tool并留下最近两条():
 
 
 def test_工程档标定是20万窗口197000压缩_v1不压缩():
-    """反向：v1 compact_at=0，把 v2 的数填进 v1 等于没换档。"""
-    assert PROJECT_BUDGET.profile == "project-v2"
+    """反向：v1 compact_at=0，把 v2 的数填进 v1 等于没换档。
+
+    ⚠ 2026-09-17：默认工程档从 project-v2 换成 project-v3（取消轮次/墙钟上限）。
+      **压缩标定一个数没动**——20 万窗口、19.7 万压缩、按上下文计账全照旧，
+      变的只是 max_rounds 与 max_wall_seconds。档名保留字面量而不是写成
+      PROJECT_BUDGET.profile：那样会退化成同义反复，下次悄悄换档就不红了（§2）。
+    """
+    assert PROJECT_BUDGET.profile == "project-v3"
     assert PROJECT_BUDGET.max_tokens == 200_000
     assert PROJECT_BUDGET.compact_at_tokens == 197_000
     assert PROJECT_BUDGET.context_token_budget is True
     assert PROJECT_BUDGET.max_request_seconds == 600.0
-    assert PROJECT_BUDGET.max_wall_seconds == 900.0
+    # 旧档仍钉着自己那份标定，供 restore_budget 还原老 checkpoint。
+    assert PROJECT_BUDGET_V2.profile == "project-v2"
+    assert PROJECT_BUDGET_V2.max_wall_seconds == 900.0
+    assert PROJECT_BUDGET_V2.compact_at_tokens == 197_000
     assert PROJECT_BUDGET_V1.profile == "project-v1"
     assert PROJECT_BUDGET_V1.max_tokens == 64_000
     assert PROJECT_BUDGET_V1.compact_at_tokens == 0
