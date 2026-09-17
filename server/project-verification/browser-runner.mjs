@@ -104,6 +104,26 @@ export async function runVerification(input, options = {}) {
     // Exchange the one-use ticket without following redirects; never trace or
     // print its URL or the HttpOnly grant. APIRequestContext shares the cookie jar.
     const bootstrap = await context.request.get(input.entryUrl, { maxRedirects: 0, timeout: 15000 });
+    // ⚠ 2026-09-17 真机踩过，这个码非常容易被误读成「鉴权坏了」，其实多半是
+    //   **票发给了另一家**。完整链路是：
+    //
+    //       发票的 Python  →  验收沙盒访问 {runtimeId}.preview.<域名>
+    //                      →  那个域名的网关拿票去问**它自己配的** authority
+    //                      →  authority 不是发票那个 Python  →  403，不是 303
+    //
+    //   当天的形态：app 跑在开发机上，而 .env 的 PREVIEW_ORIGIN_TEMPLATE 指着
+    //   生产的预览域名。于是本机发的票由生产网关去问生产 Python 兑——生产根本
+    //   不认识它。实测未知票据回的就是 403：
+    //
+    //       GET https://rt-probe.preview.<域名>/_whybuddy/authorize?ticket=AAAA…  → 403
+    //
+    //   两次 project_verify 都是 blocked / deliveryEligible=false，而模型侧其实
+    //   做对了（拿到 blocked 没有硬说完成，交回 idle）。
+    //
+    //   ⚠ 所以看到这个码先问一句：**发票的实例和预览域名背后的 authority 是同一个吗？**
+    //     不是的话，浏览器验收在这台机器上永远不可能通过，跟代码无关。
+    //     （旧年代来源写 .localhost 时报的是 project_browser_not_configured，
+    //       一看就知道去配；现在配了、也通、票也发得出，反而更难判。）
     if (bootstrap.status() !== 303 || bootstrap.headers().location !== "/") throw failure("project_browser_auth_failed");
     await bootstrap.dispose();
     const marker = async () => {
