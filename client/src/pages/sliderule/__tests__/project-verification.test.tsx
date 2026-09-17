@@ -353,6 +353,20 @@ describe("project browser verification consumer", () => {
     expect(container.textContent).toContain(" / " + list.length + " 项）");
   });
 
+  it("失败的检查把真正拿到的值显示出来，且只显示封闭词表里的", async () => {
+    // ⚠ 2026-09-17 第二趟真机：reader_login 的 detail=assertion 只说明"值不对"。
+    //   现在收据带上了值，界面也得让人看见——否则等于没查（§5）。
+    view = evidence("failed");
+    const row = view.snapshot!.verification.assertions![1] as any;
+    row.detail = "assertion";
+    row.expected = "reader";
+    row.actual = "writer";
+    await render();
+    expect(container.textContent).toContain("（预期 reader，实际 writer）");
+    // 反向：detail 是失败的类别，对用户没意义，不许漏到界面上。
+    expect(container.textContent).not.toContain("assertion");
+  });
+
   it.each([401, 403, 404, 503])(
     "HTTP %s clears previous success without displaying upstream text",
     async code => {

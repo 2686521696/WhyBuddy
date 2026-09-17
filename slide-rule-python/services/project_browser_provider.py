@@ -37,6 +37,32 @@ COUNTER_EXPECTED = {"counter_initial": "0", "counter_increment": "1",
     "counter_second_increment": "2", "reload_reset": "0"}
 # 跟 browser-runner.mjs 的 DETAIL_CODES 成对，改一处必须改两处（§4）。
 DETAIL_CODES = frozenset({"timeout", "assertion", "error"})
+# ⚠ 跟 browser-runner.mjs 的 OBSERVED / bounded() 成对（§4）。
+#   2026-09-17 第二趟真机：reader_login 的 detail=assertion 只说明"值不对"，
+#   拿到 writer（登录串号）和拿到 none（session 查不到人）分不开。
+#   于是给 tasks 套件放开 expected/actual——但**只放我们自己产生**的短标记：
+#   角色名和 HTTP 状态码，页面文本一个字都不许进。每个 id 能声明什么也钉死。
+TASK_EXPECTED = {"writer_login": frozenset({"writer", "200"}),
+    "reader_login": frozenset({"reader"}),
+    "reader_api_forbidden": frozenset({"403"}),
+    "anonymous_api_forbidden": frozenset({"401"})}
+_OBSERVED = re.compile(r"writer|reader|none|[1-5][0-9]{2}")
+
+
+def _observation_is_bounded(item) -> bool:
+    """失败断言带的 expected/actual 必须落在该 id 声明的封闭集合里。"""
+    if item["status"] != "failed" or not isinstance(item["actual"], str):
+        return False
+    if item["id"] in COUNTER_EXPECTED:
+        return (item["expected"] == COUNTER_EXPECTED[item["id"]]
+                and (item["actual"] == "unexpected_value"
+                     or re.fullmatch(r"-?[0-9]{1,16}", item["actual"]) is not None))
+    allowed = TASK_EXPECTED.get(item["id"])
+    if allowed is None:
+        return False
+    return (item["expected"] in allowed
+            and (item["actual"] == "unexpected_value"
+                 or _OBSERVED.fullmatch(item["actual"]) is not None))
 _ASSERTION_SHAPES = ({"id", "status"}, {"id", "status", "detail"},
     {"id", "status", "detail", "expected", "actual"})
 SUITE_ARTIFACTS = {SUITE_VERSION: frozenset({"before.png", "after.png"}),
@@ -112,9 +138,7 @@ def decode_result(raw: str, *, revision: str, verification_id: str, suite_versio
             # 产出侧 classify() 永远给得出一个值，所以"失败但没 detail"只能是收据被改过。
             if ("detail" in item) != (item["status"] == "failed") or item.get("detail", "timeout") not in DETAIL_CODES:
                 raise ValueError()
-            if "expected" in item and (item["status"] != "failed" or item["id"] not in COUNTER_EXPECTED
-                    or item["expected"] != COUNTER_EXPECTED[item["id"]] or not isinstance(item["actual"], str)
-                    or not (item["actual"] == "unexpected_value" or re.fullmatch(r"-?[0-9]{1,16}", item["actual"]))):
+            if "expected" in item and not _observation_is_bounded(item):
                 raise ValueError()
             seen.add(item["id"])
         # ⚠ 反向判据（§3）：跑出结论的收据必须**报满整张名单**。

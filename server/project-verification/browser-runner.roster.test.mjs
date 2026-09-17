@@ -16,9 +16,11 @@
 //    tests/test_verification_receipt_reports_the_whole_roster.py 在 CI 全量看着。
 //    要跑满这 10 条：pnpm run test:project-browser（需要能起 chromium 的机器）。
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { chromium, expect } from "@playwright/test";
-import { classify, makeAssertion, runVerification, DETAIL_CODES, TASK_SUITE_VERSION, TASK_ASSERTION_IDS, SUITE_VERSION, ASSERTION_IDS } from "./browser-runner.mjs";
+import { classify, makeAssertion, runVerification, DETAIL_CODES, OBSERVED, TASK_SUITE_VERSION, TASK_ASSERTION_IDS, SUITE_VERSION, ASSERTION_IDS } from "./browser-runner.mjs";
 
 const CHROME = process.env.SLIDERULE_CHROMIUM_PATH || "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 
@@ -146,4 +148,110 @@ test("通过的条目不带归因，失败的一定带", async t => {
   for (const item of report.assertions)
     assert.equal("detail" in item, item.status === "failed");
   assert.ok(report.assertions.filter(i => i.status === "failed").every(i => DETAIL_CODES.includes(i.detail)));
+});
+
+// —— 失败断言要说清楚拿到了什么 ——
+// ⚠ 2026-09-17 第二趟真机：reader_login 的 detail=assertion 只说明"值不对"，
+//    拿到 writer（登录串号）和拿到 none（session 查不到人）分不开。
+//    note() 把那个值带进收据，但只带封闭词表里的短标记。
+
+const failing = async (note, want, got) => {
+  note(want, got);
+  expect(got).toBe(want);   // 真 expect，抛的是真 matcherResult
+};
+
+test("值不匹配时，收据带上真正拿到的那个", async () => {
+  const report = { assertions: [] };
+  const assertion = makeAssertion(report, null);
+  await assertion("reader_login", note => failing(note, "reader", "writer"));
+  assert.deepEqual(report.assertions[0], {
+    id: "reader_login", status: "failed", detail: "assertion",
+    expected: "reader", actual: "writer",
+  });
+});
+
+test("拿到 undefined 记成 none，跟拿到 writer 分得开", async () => {
+  const report = { assertions: [] };
+  const assertion = makeAssertion(report, null);
+  await assertion("reader_login", note => failing(note, "reader", undefined));
+  assert.equal(report.assertions[0].actual, "none");
+});
+
+test("词表之外的值一律收敛成 unexpected_value，不许原样进收据", async () => {
+  const report = { assertions: [] };
+  const assertion = makeAssertion(report, null);
+  for (const leak of ["provider-secret", "https://private.example/?ticket=secret",
+                      "<script>alert(1)</script>", "admin", "writer ", "1234"])
+    await assertion("reader_login", note => failing(note, "reader", leak));
+  for (const item of report.assertions) assert.equal(item.actual, "unexpected_value");
+  const receipt = JSON.stringify(report);
+  assert.ok(!receipt.includes("secret") && !receipt.includes("script"));
+});
+
+test("通过的断言不带观测值，哪怕断言体记过一笔", async () => {
+  // 反向判据：note() 只是记账，通过了就不该出现在收据里。
+  const report = { assertions: [] };
+  const assertion = makeAssertion(report, null);
+  await assertion("writer_login", note => { note("writer", "writer"); });
+  assert.deepEqual(report.assertions[0], { id: "writer_login", status: "passed" });
+});
+
+test("抛出时用最后一笔——一条断言里连比几个值也认得出是哪个挂的", async () => {
+  const report = { assertions: [] };
+  const assertion = makeAssertion(report, null);
+  await assertion("reader_api_forbidden", async note => {
+    note("403", 403); expect(403).toBe(403);      // 第一发过
+    note("403", 401); expect(401).toBe(403);      // 第二发挂
+  });
+  assert.equal(report.assertions[0].actual, "401");
+});
+
+test("词表本身只认我们自己产生的短标记", () => {
+  for (const ok of ["writer", "reader", "none", "403", "401", "200", "599"])
+    assert.ok(OBSERVED.test(ok), ok);
+  for (const no of ["admin", "writer ", "WRITER", "", "1234", "99", "600", "provider-secret", "reader\n"])
+    assert.ok(!OBSERVED.test(no), no);
+});
+
+// —— 产线套件真的在记那一笔 ——
+// ⚠ 上面那些判据都是自己造个断言体喂 makeAssertion，**证明不了产线的
+//    reader_login 真的调了 note()**——2026-09-17 早些时候同样的漏就让
+//    "删掉 detail 填充，15 条判据一条不红"发生过一次（§3）。
+//    这条照 arch_graph.py:848 handoff_is_live_from 的路子，直接查真源码。
+//    ⚠ 匹配前**先剥注释**：本仓被"标识符同时出现在注释里、变异后照样绿"
+//    咬过（§2），而上面那几段注释里正好写满了 note( 和 reader_login。
+
+const SOURCE = readFileSync(fileURLToPath(new URL("./browser-runner.mjs", import.meta.url)), "utf8");
+const stripped = SOURCE
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .split("\n").filter(line => !line.trim().startsWith("//")).join("\n");
+
+const bodyOf = id => {
+  const start = stripped.indexOf(`await assertion("${id}"`);
+  if (start < 0) return null;
+  const next = stripped.indexOf("await assertion(", start + 20);
+  return stripped.slice(start, next < 0 ? undefined : next);
+};
+
+test("剥注释这一步本身有效——否则下一条会被注释喂饱", () => {
+  assert.ok(SOURCE.includes("note("), "注释+代码里都有");
+  assert.ok(!stripped.includes("⚠"), "注释已经被剥掉了");
+});
+
+test("产线套件里，每条被授权带值的断言都真的记了那一笔", () => {
+  // 跟 Python 侧 TASK_EXPECTED 同一张表（§4）。
+  for (const id of ["writer_login", "reader_login", "reader_api_forbidden", "anonymous_api_forbidden"]) {
+    const body = bodyOf(id);
+    assert.ok(body, `源码里没有 assertion("${id}")`);
+    assert.ok(/\bnote\(/.test(body), `assertion("${id}") 的函数体里没有 note( 调用`);
+    assert.ok(/async note\b|\(note\)|note =>/.test(body), `assertion("${id}") 没有接住 note 形参`);
+  }
+});
+
+test("没被授权带值的断言不许偷偷记——反向", () => {
+  for (const id of ["task_create", "task_edit", "task_filter", "task_refresh", "reader_create", "reader_ui_readonly"]) {
+    const body = bodyOf(id);
+    assert.ok(body, id);
+    assert.ok(!/\bnote\(/.test(body), `assertion("${id}") 记了值，但收据闸不放行它`);
+  }
 });

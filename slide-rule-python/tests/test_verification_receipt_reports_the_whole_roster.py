@@ -20,7 +20,7 @@ import base64
 import pytest
 
 from services.project_browser_provider import (
-    DETAIL_CODES, RUNNER_VERSION, SUITE_VERSION, decode_result,
+    DETAIL_CODES, RUNNER_VERSION, SUITE_VERSION, TASK_EXPECTED, decode_result,
 )
 from services.project_verification_gate import SUITE_ASSERTIONS
 
@@ -166,3 +166,62 @@ def test_计数器套件同样要报满名单():
     short["artifacts"] = art
     assert any(item["status"] == "failed" for item in short["assertions"])
     assert decode(short)["errorCode"] == "project_browser_output_invalid"
+
+
+# —— 失败断言要说清楚拿到了什么 ——
+# ⚠ 2026-09-17 第二趟真机（prj-04985acd…）：reader_login 的 detail=assertion，
+#   于是知道「是值不对，不是等不到元素」，但**不知道值是什么**。拿到 writer
+#   （登录串号）和拿到 none（session 查不到人）是两个完全不同的 bug。
+#   下面这批钉住：能带值，但只能带我们自己产生的短标记。
+
+
+def observed(assertion_id, expected, actual):
+    receipt = repaired_receipt()
+    for item in receipt["assertions"]:
+        if item["id"] == assertion_id:
+            item["status"] = "failed"
+            item["detail"] = "assertion"
+            item["expected"], item["actual"] = expected, actual
+    return receipt
+
+
+def test_只读登录可以带上真正拿到的角色():
+    result = decode(observed("reader_login", "reader", "writer"))
+    assert result["errorCode"] == "project_browser_timeout"
+    row = next(item for item in result["assertions"] if item["id"] == "reader_login")
+    assert row["expected"] == "reader" and row["actual"] == "writer"
+
+
+@pytest.mark.parametrize("actual", ["writer", "reader", "none", "403", "401", "200", "unexpected_value"])
+def test_词表之内的观测值都放行(actual):
+    assert decode(observed("reader_login", "reader", actual))["errorCode"] == "project_browser_timeout"
+
+
+@pytest.mark.parametrize("actual", [
+    "provider-secret", "https://private.example/?ticket=secret", "writer ", "WRITER",
+    "1234", "12", "", "reader\n", "admin", 403, None, True,
+])
+def test_词表之外的观测值一律拒收(actual):
+    """收据里的每个字节都来自沙盒里模型生成的应用。自由文本不许进证据链。"""
+    result = decode(observed("reader_login", "reader", actual))
+    assert result["errorCode"] == "project_browser_output_invalid"
+    assert "secret" not in __import__("json").dumps(result)
+
+
+def test_每个断言只许声明自己那几个预期值():
+    # reader_login 只许说自己要 reader；拿 403 来冒充就是收据被改过。
+    assert decode(observed("reader_login", "403", "401"))["errorCode"] == "project_browser_output_invalid"
+    assert decode(observed("reader_api_forbidden", "403", "401"))["errorCode"] == "project_browser_timeout"
+
+
+def test_没被授权带值的断言不许带值():
+    """§3 反向：名单里在、但不在 TASK_EXPECTED 里的 id，带上 expected 就非法。"""
+    assert "task_filter" not in TASK_EXPECTED
+    assert decode(observed("task_filter", "reader", "writer"))["errorCode"] == "project_browser_output_invalid"
+
+
+def test_通过的断言不许带观测值():
+    receipt = repaired_receipt()
+    row = next(item for item in receipt["assertions"] if item["status"] == "passed")
+    row["expected"], row["actual"] = "writer", "reader"
+    assert decode(receipt)["errorCode"] == "project_browser_output_invalid"

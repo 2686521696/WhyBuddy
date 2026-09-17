@@ -442,6 +442,12 @@ export function ProjectVerificationPanel({
               <li key={`${assertion.id}:${index}`}>
                 {ASSERTIONS[assertion.id] ?? "页面检查项"}：
                 {ASSERTION_STATUS[assertion.status] ?? "失败"}
+                {/* ⚠ 只显示收据里的封闭词表值（角色名 / 状态码）。
+                    detail 是失败的类别，对用户没意义，不显示；
+                    页面文本从来进不了收据，这里也不会有。 */}
+                {assertion.status === "failed" && assertion.actual
+                  ? `（预期 ${assertion.expected ?? "—"}，实际 ${assertion.actual}）`
+                  : ""}
               </li>
             ))}
           </ul>

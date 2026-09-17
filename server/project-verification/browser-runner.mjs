@@ -30,6 +30,19 @@ const failure = code => Object.assign(new Error(code), { safeCode: code });
 //   不带原文：收据里的每个字节都来自模型生成的沙盒应用，
 //   "Arbitrary DOM text and URLs never enter the receipt" 那条不变。
 export const DETAIL_CODES = ["timeout", "assertion", "error"];
+
+// ⚠ 2026-09-17 第二趟真机（prj-04985acd…）：reader_login 的 detail 是
+//   assertion，于是知道「是值不对，不是等不到元素」——但**不知道值是什么**。
+//   拿到 writer（登录串号）和拿到 undefined（session 查不到人）是两个完全
+//   不同的 bug，光看 detail 分不开。
+//   所以放开 expected/actual，但只放**我们自己产生**的短标记：角色名和
+//   HTTP 状态码。页面文本一个字都不许进——收据里的每个字节都来自沙盒里
+//   模型生成的应用，自由文本等于给任意 DOM 文本开一条进证据链的路。
+export const OBSERVED = /^(?:writer|reader|none|[1-5][0-9]{2})$/;
+const bounded = value => {
+  const text = value === null || value === undefined ? "none" : String(value);
+  return OBSERVED.test(text) ? text : "unexpected_value";
+};
 export const classify = error => {
   // Playwright 的失败分两类，判据盯**语义**不盯消息字面：
   //   locator 动作到期            name === "TimeoutError"
@@ -50,10 +63,15 @@ export const classify = error => {
 //   产出侧真的会填（§3：函数写对了 ≠ 它被调用了）。现在
 //   browser-runner.roster.test.mjs 拿真 Playwright error 直接跑这个工厂。
 export const makeAssertion = (report, counter) => async (id, execute, expected) => {
-  try { await execute(); report.assertions.push({ id, status: "passed" }); }
+  // note(想要的, 拿到的)：断言体在每次值比较**之前**记一笔，抛了就用最后那笔。
+  // 两个值都过 bounded()，进不了词表的一律收敛成 unexpected_value。
+  let noted = null;
+  const note = (want, got) => { noted = { expected: bounded(want), actual: bounded(got) }; };
+  try { await execute(note); report.assertions.push({ id, status: "passed" }); }
   catch (error) {
     const failed = { id, status: "failed", detail: classify(error) };
-    if (expected !== undefined) {
+    if (noted) { failed.expected = noted.expected; failed.actual = noted.actual; }
+    else if (expected !== undefined) {
       failed.expected = expected;
       failed.actual = "unexpected_value";
       try {
@@ -273,11 +291,14 @@ async function runTaskSuite({ page, context, verify, assertion, screenshot, orig
     await page.getByRole("button", { name: "创建并登录", exact: true }).click();
     await verify(page.getByRole("heading", { name: "任务清单", exact: true })).toBeVisible();
   });
-  await assertion("writer_login", async () => {
+  await assertion("writer_login", async note => {
     await page.getByRole("button", { name: "退出登录", exact: true }).click();
     await login(writer);
     const session = await api("/api/auth/session");
-    expect(session.status).toBe(200); expect(session.body.user.role).toBe("writer");
+    note("200", session.status);
+    expect(session.status).toBe(200);
+    note("writer", session.body?.user?.role);
+    expect(session.body.user.role).toBe("writer");
   });
   await assertion("task_create", async () => {
     await page.getByLabel("任务标题", { exact: true }).fill(title);
@@ -324,10 +345,13 @@ async function runTaskSuite({ page, context, verify, assertion, screenshot, orig
     await page.getByRole("button", { name: "创建只读成员", exact: true }).click();
     await verify(page.getByRole("status")).toHaveText("只读成员已创建");
   });
-  await assertion("reader_login", async () => {
+  await assertion("reader_login", async note => {
     await page.getByRole("button", { name: "退出登录", exact: true }).click();
     await login(reader);
     const session = await api("/api/auth/session");
+    // ⚠ 这一笔就是 2026-09-17 第二趟欠下的那个值：detail=assertion 说明
+    //   「值不对」，但 writer（登录串号）和 none（session 查不到人）是两个病。
+    note("reader", session.body?.user?.role);
     expect(session.body.user.role).toBe("reader");
     await verify(page.getByRole("article", { name: edited, exact: true })).toBeVisible();
   });
@@ -338,19 +362,27 @@ async function runTaskSuite({ page, context, verify, assertion, screenshot, orig
     await page.getByLabel("筛选状态", { exact: true }).selectOption("done");
     await verify(page.getByRole("article", { name: edited, exact: true })).toBeVisible();
   });
-  await assertion("reader_api_forbidden", async () => {
-    expect((await api("/api/tasks", { method: "POST", data: { title: "unauthorized task", role: "writer" } })).status).toBe(403);
-    expect((await api("/api/tasks/" + taskId, { method: "PATCH", data: { title: "unauthorized change", status: "open" } })).status).toBe(403);
-    expect((await api("/api/users", { method: "POST", data: { username: "injected", password: "InvalidUser!2026", role: "writer" } })).status).toBe(403);
+  await assertion("reader_api_forbidden", async note => {
+    const forbidden = async (path, options) => {
+      const response = await api(path, options);
+      note("403", response.status);
+      expect(response.status).toBe(403);
+    };
+    await forbidden("/api/tasks", { method: "POST", data: { title: "unauthorized task", role: "writer" } });
+    await forbidden("/api/tasks/" + taskId, { method: "PATCH", data: { title: "unauthorized change", status: "open" } });
+    await forbidden("/api/users", { method: "POST", data: { username: "injected", password: "InvalidUser!2026", role: "writer" } });
     const saved = await api("/api/tasks");
     expect(saved.body.tasks).toHaveLength(1); expect(saved.body.tasks[0].title).toBe(edited);
   });
   await screenshot("tasks-reader.png");
-  await assertion("anonymous_api_forbidden", async () => {
+  await assertion("anonymous_api_forbidden", async note => {
     await page.getByRole("button", { name: "退出登录", exact: true }).click();
     await verify(page.getByRole("button", { name: "登录", exact: true })).toBeVisible();
-    expect((await api("/api/tasks")).status).toBe(401);
-    expect((await api("/api/tasks", { method: "POST", data: { title: "unauthorized task" } })).status).toBe(401);
+    for (const options of [undefined, { method: "POST", data: { title: "unauthorized task" } }]) {
+      const response = await api("/api/tasks", options);
+      note("401", response.status);
+      expect(response.status).toBe(401);
+    }
   });
 }
 
