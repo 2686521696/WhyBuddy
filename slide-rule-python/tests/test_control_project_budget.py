@@ -191,7 +191,20 @@ async def parked_checkpoint(env, monkeypatch):
     finally:
         await first.shutdown()
     owned = env.store.claim(record["runId"], "checkpoint-fixture", 3)
-    assert owned is not None
+    # ⚠ 2026-09-17：这条在**全量里**偶发红（单跑、甚至 4 核满载连跑 15 次都绿），
+    #   红的形态是这里 `owned is None`，而 claim 只有两种情况回 None：
+    #   run 已进终态、或租约未过期。光看 `assert owned is not None` 两种都分不出来，
+    #   读代码也读不出来（suspend 在 finally 里、_tasks.pop 在它之后，顺序是对的），
+    #   而全量跑一趟要 11 分钟——所以先把现场留下来，别让下一次红又只剩一个 None。
+    #   同一天鉴权守卫那条也是这个毛病：没有日志，查一次要穿三层。
+    if owned is None:
+        state = env.store.get(record["runId"], env.owner)
+        raise AssertionError(
+            "claim 回了 None。run 状态="
+            + f"{state.get('status')!r} leaseOwner={state.get('leaseOwner')!r} "
+            + f"leaseExpiresAt-now={state.get('leaseExpiresAt', 0) - time.time():.2f}s "
+            + f"error={state.get('error')!r} checkpoint={'有' if state.get('checkpoint') else '无'}"
+        )
     assert owned["checkpoint"]["budgetPolicy"] == control.PROJECT_BUDGET.to_wire()
     assert owned["checkpoint"]["cheapTokens"] == 3015
     return owned, calls
