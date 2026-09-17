@@ -18,7 +18,7 @@ from project_actor_support import project_actor
 from conftest import TEST_USER_ID
 from control_turn_support import ControlHarness, llm_text, llm_tool, six_fields
 from services import rehearsal_control as control
-from services.control_budget import PROJECT_BUDGET, PROJECT_BUDGET_V1
+from services.control_budget import PROJECT_BUDGET, PROJECT_BUDGET_V1, PROJECT_BUDGET_V2
 from services.control_checkpoint import ControlRunStopped
 from services.control_context_compact import COMPACT_NOTICE_PREFIX
 from services.control_run_service import RunCheckpoint
@@ -120,7 +120,22 @@ def test_project_token_exhaustion_rejects_patch_before_dispatch(setup, monkeypat
 
 
 def test_project_round_limit_is_bounded_and_does_not_revert_to_eight(setup, monkeypatch):
+    """轮次上限会被真正执行，而且用的是工程档不是对话档的 8。
+
+    ⚠ 2026-09-17：工程档换成 project-v3（max_rounds 一万 = 按要求不设限），
+      靠驱动跑到上限已经不现实。所以这条拆成两半：
+        · 这里注入一个小上限，验**执行机制**还在（停得下来、停在配置的那个数）；
+        · 下面 test_默认工程档不再设轮次与墙钟上限 验**线上默认**确实放开了。
+      只留后者会退回「名单里有名字 ≠ 埋点在」（§3）。
+    """
     create_session_project(setup.store, setup.state.sessionId, owner_id=TEST_USER_ID, approval_ref=setup.ref)
+    bounded = control.ControlBudget(
+        "project-v3", 12, PROJECT_BUDGET.max_tokens, PROJECT_BUDGET.max_wall_seconds,
+        PROJECT_BUDGET.max_request_seconds,
+        compact_at_tokens=PROJECT_BUDGET.compact_at_tokens,
+        context_token_budget=True,
+    )
+    monkeypatch.setattr(control, "PROJECT_BUDGET", bounded)
     harness = ControlHarness(monkeypatch)
 
     def model(*args, **kwargs):
@@ -131,9 +146,26 @@ def test_project_round_limit_is_bounded_and_does_not_revert_to_eight(setup, monk
     harness.llm_impl = model
     events = post(setup.state)
     [stop] = stops(events)
-    assert stop["stopReason"] == "tool_rounds" and stop["limit"] == PROJECT_POLICY["maxRounds"]
-    assert len(harness.llm_calls) == PROJECT_POLICY["maxRounds"]
-    assert len([event for event in events if event.get("tool") == "project_read" and event.get("ok")]) == PROJECT_POLICY["maxRounds"]
+    assert stop["stopReason"] == "tool_rounds" and stop["limit"] == bounded.max_rounds
+    assert len(harness.llm_calls) == bounded.max_rounds
+    assert len([event for event in events if event.get("tool") == "project_read" and event.get("ok")]) == bounded.max_rounds
+    # 反向：停在注入的 12，不是对话档的 8，也不是写死的 16。
+    assert bounded.max_rounds not in (8, 16)
+
+
+def test_默认工程档不再设轮次与墙钟上限():
+    """配套的正向判据：线上默认那一档确实放开了（§3 正反各一条）。
+
+    ⚠ 这条钉的是**用户 2026-09-17 明确要求的行为**：轮次/时间不设限。
+      要改回去先问清楚，别当成手滑。
+    """
+    assert PROJECT_BUDGET.profile == "project-v3"
+    assert PROJECT_BUDGET.max_rounds >= 10_000
+    assert PROJECT_BUDGET.max_wall_seconds >= 86_400
+    # token 这一项是上下文窗口（模型物理上限），不是我们设的闸，保持 20 万。
+    assert PROJECT_BUDGET.max_tokens == 200_000
+    # 旧存档仍按它自己那一档还原，不会被升级。
+    assert PROJECT_BUDGET_V2.max_rounds == 16 and PROJECT_BUDGET_V2.max_wall_seconds == 900.0
 
 
 @pytest.mark.parametrize("mode", ["no-adapter", "approval-revoked"])

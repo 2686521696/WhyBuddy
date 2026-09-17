@@ -81,7 +81,7 @@ PROJECT_BUDGET_V1 = ControlBudget("project-v1", 16, 64_000, 180.0, 120.0)
 #: max_tokens 在这一档是**上下文窗口**（20 万），compact_at 是 19.7 万。
 #: 单发 600 秒 < 墙钟 900 秒，差 ≥ 60（同一条量级自洽判据）。
 #: 600 × 10 重试仍被 600 秒窗口兜住——一发想满 10 分钟就不再次重试。
-PROJECT_BUDGET = ControlBudget(
+PROJECT_BUDGET_V2 = ControlBudget(
     "project-v2", 16, 200_000, 900.0, 600.0,
     compact_at_tokens=197_000,
     context_token_budget=True,
@@ -93,8 +93,36 @@ PROJECT_BUDGET = ControlBudget(
 CONVERSATION_BUDGET_V1 = ControlBudget("control-v1", 8, 8_000, 90.0, 75.0)
 CONVERSATION_BUDGET = ControlBudget("control-v2", 8, 8_000, 240.0, 180.0)
 
+#: ⚠ **名字（PROJECT_BUDGET）永远指向"新回合默认那一档"**，旧档按 _V1/_V2 留名。
+#:   判据靠 monkeypatch `control.PROJECT_BUDGET` 换档来验各种边界，
+#:   新起一个名字会把那个接缝弄断（2026-09-17 实测 13 条红）。
+#:
+#: 2026-09-17：**按要求取消轮次/时间上限**。起因是 gemini-3.7-flash 那趟
+#: （sr-20260917201230-ZRVJA6M3DH）346 秒烧完 16 轮就被截断，连 project_verify
+#: 都没跑到——它每轮先写一段"我的理解"（control_text 占全程 25%），
+#: 絮叨本身就吃轮次。v2 的 16 轮是按 gpt-6-astra 那种不絮叨的模型标定的。
+#:
+#: ⚠ **为什么是新开一档而不是改 v2 的数字**：restore_budget 要求
+#:   `snapshot == policy.to_wire()` 完全相等，就地改 v2 会让所有已存
+#:   checkpoint 当场 invalid_control_budget_policy。v2 注释自己写着
+#:   "Recalibrate and version future changes"，这就是那个 version。
+#:
+#: ⚠ **token 这一项无法真正取消**：本档 max_tokens 是**上下文窗口**（20 万），
+#:   是模型的物理上限，不是我们设的闸；compact_at 19.7 万到了就压缩。
+#:   实测那趟一轮只用 29,709，token 从来不是卡住它的那一项。
+#:
+#: ⚠ 单发仍留 600 秒：那不是"跑多久"的限制，是**卡死探测器**。
+#:   量级自洽判据钉着单发 < 回合墙钟（600 < 86400 ✓），
+#:   而 retry_budget 的 600 秒窗口也是按这个数配的。
+PROJECT_BUDGET = ControlBudget(
+    "project-v3", 10_000, 200_000, 86_400.0, 600.0,
+    compact_at_tokens=197_000,
+    context_token_budget=True,
+)
+
 _PINNED_POLICIES = {
     PROJECT_BUDGET_V1.profile: PROJECT_BUDGET_V1,
+    PROJECT_BUDGET_V2.profile: PROJECT_BUDGET_V2,
     PROJECT_BUDGET.profile: PROJECT_BUDGET,
     CONVERSATION_BUDGET_V1.profile: CONVERSATION_BUDGET_V1,
     CONVERSATION_BUDGET.profile: CONVERSATION_BUDGET,

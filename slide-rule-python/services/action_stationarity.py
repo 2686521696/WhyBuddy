@@ -262,7 +262,9 @@ _VOLATILE_RESULT_KEYS = frozenset({"seq", "toolCallId", "controlRunId", "type"})
 #:
 #: ⚠ 不是照抄 grok 的 4/8：那组数是给「连续轮数」那个轴的，而且 grok 的
 #:   `max_turns` 默认不限轮。这个轴数的是「这一回合里出现过几次」，
-#:   控制面一回合最多 `MAX_TOOL_ROUNDS`(8) ~ `PROJECT_BUDGET.max_rounds`(16) 轮。
+#:   控制面一回合最多 `MAX_TOOL_ROUNDS`(8) ~ `PROJECT_BUDGET.max_rounds` 轮。
+#:   ⚠ 2026-09-17 起工程档是 project-v3，max_rounds 一万（等于不设限），
+#:     所以**停下来这件事从此全靠这里的停滞检测**，不再有轮次兜底。
 #:   取 3/5：留一次「报错后重试一遍」的余地（真机上确实有这种正当重复），
 #:   第三次还是同一份结果就提醒，第五次掐断。判据
 #:   `test_重复阈值必须够得着` 钉住它小于总轮数预算。
