@@ -35,6 +35,10 @@ ASSERTION_IDS = frozenset({"heading_visible", "counter_initial", "counter_increm
     "counter_second_increment", "reload_reset", "no_page_errors", "no_failed_requests"})
 COUNTER_EXPECTED = {"counter_initial": "0", "counter_increment": "1",
     "counter_second_increment": "2", "reload_reset": "0"}
+# 跟 browser-runner.mjs 的 DETAIL_CODES 成对，改一处必须改两处（§4）。
+DETAIL_CODES = frozenset({"timeout", "assertion", "error"})
+_ASSERTION_SHAPES = ({"id", "status"}, {"id", "status", "detail"},
+    {"id", "status", "detail", "expected", "actual"})
 SUITE_ARTIFACTS = {SUITE_VERSION: frozenset({"before.png", "after.png"}),
     "react-vite-tasks@1": frozenset({"tasks-created.png", "tasks-reader.png"})}
 MAX_IMAGE_BYTES = 2 * 1024 * 1024
@@ -101,14 +105,24 @@ def decode_result(raw: str, *, revision: str, verification_id: str, suite_versio
             raise ValueError()
         seen = set()
         for item in value["assertions"]:
-            if (not isinstance(item, dict) or set(item) not in ({"id", "status"}, {"id", "status", "expected", "actual"}) or item["id"] not in required
-                    or item["id"] in seen or item["status"] not in {"passed", "failed"}):
+            if (not isinstance(item, dict) or set(item) not in _ASSERTION_SHAPES or item["id"] not in required
+                    or item["id"] in seen or item["status"] not in {"passed", "failed", "not_run"}):
+                raise ValueError()
+            # detail 与 failed 互为充要：失败必须带上归因，passed / not_run 不许带。
+            # 产出侧 classify() 永远给得出一个值，所以"失败但没 detail"只能是收据被改过。
+            if ("detail" in item) != (item["status"] == "failed") or item.get("detail", "timeout") not in DETAIL_CODES:
                 raise ValueError()
             if "expected" in item and (item["status"] != "failed" or item["id"] not in COUNTER_EXPECTED
                     or item["expected"] != COUNTER_EXPECTED[item["id"]] or not isinstance(item["actual"], str)
                     or not (item["actual"] == "unexpected_value" or re.fullmatch(r"-?[0-9]{1,16}", item["actual"]))):
                 raise ValueError()
             seen.add(item["id"])
+        # ⚠ 反向判据（§3）：跑出结论的收据必须**报满整张名单**。
+        #   2026-09-17 生产那趟收据只有 10 条、名单 13 条，少掉的三条是被全局超时切的，
+        #   而收据里"被切掉"和"这套本来就更短"完全同形——闸红了却查不出是哪种。
+        #   现在少一条就是 output_invalid。blocked 例外：那是连套件都没起来。
+        if value["status"] in {"passed", "failed"} and seen != required:
+            raise ValueError()
         source = value["artifacts"]
         if not isinstance(source, dict) or not set(source) <= artifact_names:
             raise ValueError()

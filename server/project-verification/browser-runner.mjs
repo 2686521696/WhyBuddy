@@ -22,6 +22,51 @@ const require = createRequire(import.meta.url);
 const allowedKeys = new Set(["verificationId", "revision", "suiteVersion", "scope", "entryUrl"]);
 const identifier = value => typeof value === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(value);
 const failure = code => Object.assign(new Error(code), { safeCode: code });
+
+// ⚠ 2026-09-17 真机（生产那趟 pvr-1247974…）：三条 reader_* 全 failed，
+//   detail / expected / actual 三个 null，验收 operation 事件流为空——
+//   闸红了但没法查，我只能猜"是超时还是真失败"。根因在下面 assertion() 的
+//   `catch {`：**error 被整个丢掉**。这里把它归成一个封闭词表再进收据。
+//   不带原文：收据里的每个字节都来自模型生成的沙盒应用，
+//   "Arbitrary DOM text and URLs never enter the receipt" 那条不变。
+export const DETAIL_CODES = ["timeout", "assertion", "error"];
+export const classify = error => {
+  // Playwright 的失败分两类，判据盯**语义**不盯消息字面：
+  //   locator 动作到期            name === "TimeoutError"
+  //   web-first 断言重试到期       matcherResult.timeout 是数字（还带 log/ariaSnapshot）
+  //   普通值比较不匹配             matcherResult 有，但没有 timeout 键
+  // ⚠ 第一版写的是 /^Timed out/ 匹配 message。实测 pw1.61 根本不是那个格式——
+  //   真机消息是 "expect(locator).toBeVisible() failed"，前缀判据直接打空，
+  //   所有超时都会被归成 assertion，归因照样是错的而闸还是绿的（§2 点名的那种）。
+  //   现在读 matcherResult.timeout 这个结构化字段，message 一个字都不读。
+  if (error?.name === "TimeoutError") return "timeout";
+  const matcher = error?.matcherResult;
+  if (matcher) return typeof matcher.timeout === "number" ? "timeout" : "assertion";
+  return "error";
+};
+
+// ⚠ 提到模块级是**为了判据能驱动它本身**。2026-09-17：把 detail 从这里删掉，
+//   Python 侧 15 条判据照样全绿——因为那些判据自己拼收据，从没验证过
+//   产出侧真的会填（§3：函数写对了 ≠ 它被调用了）。现在
+//   browser-runner.roster.test.mjs 拿真 Playwright error 直接跑这个工厂。
+export const makeAssertion = (report, counter) => async (id, execute, expected) => {
+  try { await execute(); report.assertions.push({ id, status: "passed" }); }
+  catch (error) {
+    const failed = { id, status: "failed", detail: classify(error) };
+    if (expected !== undefined) {
+      failed.expected = expected;
+      failed.actual = "unexpected_value";
+      try {
+        const value = await counter.evaluate(element => (element.textContent || "").slice(0, 18),
+          undefined, { timeout: 1000 });
+        // Recheck in trusted Node, even if the page changes its own JS
+        // prototypes. Arbitrary DOM text and URLs never enter the receipt.
+        if (typeof value === "string" && /^-?[0-9]{1,16}$/.test(value)) failed.actual = value;
+      } catch { /* A missing/ambiguous counter is the same bounded sentinel. */ }
+    }
+    report.assertions.push(failed);
+  }
+};
 const bound = (promise, ms) => Promise.race([promise, new Promise((_, reject) => {
   const timer = setTimeout(() => reject(failure("project_browser_cleanup_pending")), ms);
   timer.unref();
@@ -146,30 +191,13 @@ export async function runVerification(input, options = {}) {
     page.on("dialog", dialog => { blockedNavigation = true; dialog.dismiss().catch(() => {}); });
     const document = await page.goto(origin + "/", { waitUntil: "load" });
     if (!document || document.status() !== 200 || page.url() !== origin + "/") throw failure("project_browser_navigation_blocked");
-    const assertion = async (id, execute, expected) => {
-      try { await execute(); report.assertions.push({ id, status: "passed" }); }
-      catch {
-        const failed = { id, status: "failed" };
-        if (expected !== undefined) {
-          failed.expected = expected;
-          failed.actual = "unexpected_value";
-          try {
-            const value = await count.evaluate(element => (element.textContent || "").slice(0, 18),
-              undefined, { timeout: 1000 });
-            // Recheck in trusted Node, even if the page changes its own JS
-            // prototypes. Arbitrary DOM text and URLs never enter the receipt.
-            if (typeof value === "string" && /^-?[0-9]{1,16}$/.test(value)) failed.actual = value;
-          } catch { /* A missing/ambiguous counter is the same bounded sentinel. */ }
-        }
-        report.assertions.push(failed);
-      }
-    };
     const screenshot = async name => {
       const bytes = await page.screenshot({ type: "png", fullPage: false, timeout: 5000 });
       if (bytes.length > MAX_IMAGE_BYTES) throw failure("project_browser_artifact_too_large");
       report.artifacts[name] = bytes.toString("base64");
     };
     const count = page.getByLabel("Count", { exact: true });
+    const assertion = makeAssertion(report, count);
     const increment = page.getByRole("button", { name: "Increment count", exact: true });
     if (input.suiteVersion === TASK_SUITE_VERSION) {
       await runTaskSuite({ page, context, verify, assertion, screenshot, origin });
@@ -203,6 +231,15 @@ export async function runVerification(input, options = {}) {
   } finally {
     observing = false;
     if (timer) clearTimeout(timer);
+    // ⚠ 2026-09-17 同一趟：产线收据只有 10 条断言，而 TASK_ASSERTION_IDS 是 13 条。
+    //   anonymous_api_forbidden / no_page_errors / no_failed_requests 三条**根本没跑**——
+    //   全局超时在 reader_api_forbidden 之后把整趟切了。但"没跑"和"这套本来就只有 10 条"
+    //   在收据里长得一模一样：缺的条目只是**不出现**。
+    //   现在名单补齐，没执行到的显式记 not_run，超时再也装不成一套更短的判据。
+    //   （§3：每写一条"应该有 X"，配一条"X 真的被用到了"。）
+    const roster = report.suiteVersion === TASK_SUITE_VERSION ? TASK_ASSERTION_IDS : ASSERTION_IDS;
+    const recorded = new Set(report.assertions.map(item => item.id));
+    for (const id of roster) if (!recorded.has(id)) report.assertions.push({ id, status: "not_run" });
     let clean = true;
     if (context) try { await bound(context.close({ reason: "verification_complete" }), 3000); } catch { clean = false; }
     if (browser) try { await bound(browser.close(), 3000); } catch { clean = false; }

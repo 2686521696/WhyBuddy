@@ -299,11 +299,17 @@ VerificationStatus = Literal["running", "passed", "failed", "blocked", "cancelle
 
 
 class VerificationAssertion(ProjectContract):
+    # ⚠ 2026-09-17：not_run 与 detail 都是那趟生产验收（pvr-1247974…）逼出来的。
+    #   收据当时只有 10 条断言、名单是 13 条，缺的三条是被全局超时切掉的——
+    #   而"被切掉"和"这套判据本来就更短"在收据里没有区别。not_run 让它有区别。
+    #   detail 字段**早就在这儿**，只是从产出侧到这儿一路没人填，
+    #   三个 null 让"超时还是真失败"只能靠猜（§3：写对了 ≠ 被调用了）。
+    #   detail 是封闭词表，不是自由文本：收据的每个字节都来自模型生成的沙盒应用。
     id: str = Field(min_length=1, max_length=120)
-    status: Literal["passed", "failed"]
+    status: Literal["passed", "failed", "not_run"]
     expected: str | None = Field(default=None, max_length=1200)
     actual: str | None = Field(default=None, max_length=1200)
-    detail: str | None = Field(default=None, max_length=2000)
+    detail: Literal["timeout", "assertion", "error"] | None = None
 
 
 class VerificationArtifactRef(ProjectContract):

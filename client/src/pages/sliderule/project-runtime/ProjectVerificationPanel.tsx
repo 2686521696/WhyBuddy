@@ -56,6 +56,15 @@ const ASSERTIONS: Record<string, string> = {
   no_page_errors: "没有未捕获页面错误",
   no_failed_requests: "页面资源请求成功",
 };
+// ⚠ 2026-09-17：这张表是"名单报满"改动的**第六处**，差点漏掉（§4）。
+//   加上 not_run 之后，如果这里还是 `status === "passed" ? "通过" : "失败"`，
+//   被超时切掉、根本没跑的三条会在界面上写成"失败"——把这次修复要消灭的
+//   那个谎言原样搬到用户眼前。前端判据当时全绿，因为没有一条喂 not_run（§5）。
+const ASSERTION_STATUS: Record<string, string> = {
+  passed: "通过",
+  failed: "失败",
+  not_run: "未执行",
+};
 const ERRORS: Record<string, string> = {
   project_build_failed: "当前源码构建失败，请先修复构建错误。",
   project_browser_not_configured: "当前环境尚未配置浏览器检查。",
@@ -422,13 +431,17 @@ export function ProjectVerificationPanel({
         <details className="mt-1 text-xs text-stone-600">
           <summary className="cursor-pointer">
             {stale ? "查看旧版本检查记录" : "查看已执行检查"}（
-            {record.assertions.length} 项）
+            {record.assertions.filter(item => item.status !== "not_run").length}
+            {record.assertions.some(item => item.status === "not_run")
+              ? ` / ${record.assertions.length}`
+              : ""}
+            {" 项）"}
           </summary>
           <ul className="mt-1 max-h-32 space-y-1 overflow-y-auto">
             {record.assertions.map((assertion, index) => (
               <li key={`${assertion.id}:${index}`}>
                 {ASSERTIONS[assertion.id] ?? "页面检查项"}：
-                {assertion.status === "passed" ? "通过" : "失败"}
+                {ASSERTION_STATUS[assertion.status] ?? "失败"}
               </li>
             ))}
           </ul>

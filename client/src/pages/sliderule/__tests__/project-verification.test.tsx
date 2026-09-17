@@ -336,6 +336,23 @@ describe("project browser verification consumer", () => {
     expect(container.textContent).not.toContain("provider-secret");
   });
 
+  it("没跑到的检查写成未执行，不冒充失败", async () => {
+    // ⚠ 2026-09-17 生产那趟：收据 10 条、名单 13 条，少掉的三条是被全局超时
+    //   切的。补上 not_run 之后，如果面板还是「passed ? 通过 : 失败」，
+    //   这三条会在用户眼前变成"失败"——正是这次要消灭的那个谎言（§5）。
+    view = evidence("failed");
+    const list = view.snapshot!.verification.assertions!;
+    (list[1] as any).detail = "timeout";
+    list.push({ id: "counter_second_increment", status: "not_run" } as any);
+    await render();
+    expect(container.textContent).toContain("首次点击更新计数：失败");
+    expect(container.textContent).toContain("再次点击更新计数：未执行");
+    // 反向判据：未执行的那条不许出现在"失败"里。
+    expect(container.textContent).not.toContain("再次点击更新计数：失败");
+    // 计数只数真跑过的，总数另外交代，别拿 13 冒充 13 项都跑了。
+    expect(container.textContent).toContain(" / " + list.length + " 项）");
+  });
+
   it.each([401, 403, 404, 503])(
     "HTTP %s clears previous success without displaying upstream text",
     async code => {

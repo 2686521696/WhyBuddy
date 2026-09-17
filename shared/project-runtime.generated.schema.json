@@ -1500,7 +1500,8 @@
         "status": {
           "enum": [
             "passed",
-            "failed"
+            "failed",
+            "not_run"
           ],
           "title": "Status",
           "type": "string"
@@ -1534,7 +1535,11 @@
         "detail": {
           "anyOf": [
             {
-              "maxLength": 2000,
+              "enum": [
+                "timeout",
+                "assertion",
+                "error"
+              ],
               "type": "string"
             },
             {

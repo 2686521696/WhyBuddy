@@ -22,6 +22,10 @@ const recordStatuses = new Set([
   "cancelled",
 ]);
 const effectiveStatuses = new Set([...recordStatuses, "stale"]);
+// ⚠ 与 shared/project-runtime.generated.ts 的 VerificationAssertion 成对。
+//   not_run 是 2026-09-17 那趟加的：收据必须报满名单，没跑到的显式记一笔，
+//   否则"被超时切掉"和"这套判据本来就更短"在前端也是同一个样子。
+const assertionStatuses = new Set(["passed", "failed", "not_run"]);
 const operationStatuses = new Set([
   "queued",
   "running",
@@ -143,7 +147,7 @@ function validRecord(
     Array.isArray(record.assertions) &&
     record.assertions.every(
       (item: any) =>
-        nonempty(item?.id) && ["passed", "failed"].includes(item.status)
+        nonempty(item?.id) && assertionStatuses.has(item.status)
     ) &&
     Array.isArray(record.artifactRefs) &&
     (record.build === undefined ||

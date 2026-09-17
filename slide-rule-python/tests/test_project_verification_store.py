@@ -198,7 +198,7 @@ def test_historical_pass_without_build_is_stale_and_cannot_unlock_delivery(runti
 
 
 @pytest.mark.parametrize("status,error,assertions", [("blocked", "missing_browser", []),
-    ("failed", None, [{"id": "counter_increment", "status": "failed", "detail": "button did not change count"}]),
+    ("failed", None, [{"id": "counter_increment", "status": "failed", "detail": "assertion"}]),
     ("cancelled", "user_cancelled", [])])
 def test_truthful_outcomes_are_distinct_from_operation_execution_completion(runtime, status, error, assertions):
     rt = runtime

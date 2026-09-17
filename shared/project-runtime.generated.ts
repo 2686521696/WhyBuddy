@@ -280,10 +280,10 @@ export type VerificationArtifactRef = {
 
 export type VerificationAssertion = {
   "id": string;
-  "status": "passed" | "failed";
+  "status": "passed" | "failed" | "not_run";
   "expected"?: string | null;
   "actual"?: string | null;
-  "detail"?: string | null;
+  "detail"?: "timeout" | "assertion" | "error" | null;
 };
 
 export type VerificationBuildEvidence = {

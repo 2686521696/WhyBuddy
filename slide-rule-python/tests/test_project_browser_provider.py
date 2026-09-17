@@ -296,7 +296,7 @@ def test_failed_counter_receipt_preserves_only_bounded_expected_and_actual(actua
     value = receipt()
     value.update(status="failed", errorCode="project_browser_assertion_failed")
     failure = next(item for item in value["assertions"] if item["id"] == "counter_increment")
-    failure.update(status="failed", expected="1", actual=actual)
+    failure.update(status="failed", detail="assertion", expected="1", actual=actual)
     result = decode_result(json.dumps(value), revision=REVISION, verification_id="verification-1")
     assert result["status"] == "failed" and failure in result["assertions"]
 
@@ -311,7 +311,7 @@ def test_failed_counter_receipt_rejects_raw_text_unknown_fields_and_wrong_expect
     value = receipt()
     value.update(status="failed", errorCode="project_browser_assertion_failed")
     failure = next(item for item in value["assertions"] if item["id"] == "counter_increment")
-    failure.update(status="failed", expected="1", actual="2")
+    failure.update(status="failed", detail="assertion", expected="1", actual="2")
     failure.update(update)
     result = decode_result(json.dumps(value), revision=REVISION, verification_id="verification-1")
     assert result["status"] == "blocked" and result["errorCode"] == "project_browser_output_invalid"
