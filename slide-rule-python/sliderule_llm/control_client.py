@@ -410,6 +410,35 @@ async def _call_control_llm_once(
     if finish == "content_filter":
         # A partial body/tool call is not authorization to use a filtered
         # response. No retries, fallback samples, content or tool arguments.
+        #
+        # ⚠ 2026-09-17 换模型实测（rcouyi + gemini-3.5-flash-lite）：这条不重采
+        #   的规矩本身是对的（确定性拒答，同发再跑还是拒），但它的下游后果比
+        #   预想严重——**一发 content_filter 就打死整条运行**，而模型本可以换个
+        #   下一步继续干活。真机形态：
+        #
+        #       A1    2 轮  content_filter ×1  → 整趟作废
+        #       A1r2  9 轮  content_filter ×1  → 重跑一次，照样作废
+        #
+        #   触发条件是把那一发原样揪出来重放定位的（checkpoint 里的 messages），
+        #   结论跟"某句话犯规"完全不同：
+        #
+        #       真 system(3338 字) + 带工具调用的对话尾   5~6 / 6 被过滤
+        #       真 system + 普通用户消息                  0 / 6
+        #       假 system + 带工具调用的对话尾            0 / 6
+        #       system 切成任意一半(1669 字) 或 1/4       0 / 6   ← 没有哪一段单独犯规
+        #
+        #   也就是说是**规模 × 工具调用对话**的交互越过了那家的安全阈值，不是
+        #   内容里有什么可以删掉的东西。我们的系统提示词还会随功能继续变长，
+        #   所以这类模型只会越来越不适用——选型时要拿真机对话试，不能拿单发
+        #   问答试（见下条）。
+        #
+        # ⚠ 定位过程里的方法论教训，比结论更值得记：我**没先验证现象可复现**
+        #   就开始二分，于是二分法忠实地"找到"了元凶 `project_export`。
+        #   后来把同一个请求重复 8 次才看清：`FFF✓FFFF`——每个"通过"只是抽样
+        #   运气。**二分法的前提是现象确定性**，先测 n≥6 再定位。
+        #
+        #   同一天还栽了三次同类：拿 32 token 玩具请求、真形状小载荷、27k 大
+        #   载荷分别判断过"网关没问题"，三次都被真机推翻。自己构造的判据总会过。
         raise LlmError(
             "control LLM response terminated by content_filter "
             + _empty_content_hint(finish, max_tokens, termination_usage),
