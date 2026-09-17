@@ -366,7 +366,24 @@ async def _call_control_llm_once(
     cfg = get_llm_config()
     if not cfg.api_key or not cfg.base_url:
         raise LlmError("LLM not configured (no api_key)", transient=False)
-    max_tokens = clamp_max_tokens(max_tokens or min(default_max_tokens(), 2048))
+    # ⚠ 2026-09-17：这里原本是 `min(default_max_tokens(), 2048)`。那个 min 让
+    #   `LLM_MAX_TOKENS` 永远赢不了，恒定 2048——而 default_max_tokens() 的
+    #   docstring 写着它是"全链路唯一旋钮"，这一行正好把那个设计意图废掉。
+    #
+    #   .env.example 里早写着这个病的形态，只是当时没找到人：
+    #     「分路旋钮救不了这个病——换 DeepSeek 那趟这两个都调大了，挂掉的是
+    #       它俩都管不着的**第三处写死预算**」
+    #   第三处就是这一行。
+    #
+    #   真机 2/2 撞上（20:03 与 23:36，gemini-3.7-flash）：
+    #     finish_reason=stop  max_tokens=2048  completion_tokens=2449
+    #     empty_reason=no_visible_content
+    #   思考 token 算进 completion 却不受 max_tokens 约束，2048 被思考吃光，
+    #   正文一个字不剩——整条工程链就此停住，而且报的是"空正文"不是"超预算"，
+    #   看着像网关坏了。
+    #
+    #   clamp_max_tokens 仍兜着上游开区间（65535 含 / 65536 不含，写大了不会再 400）。
+    max_tokens = clamp_max_tokens(max_tokens or default_max_tokens())
     messages = _normalize_messages(messages)
     model_name = (
         model
