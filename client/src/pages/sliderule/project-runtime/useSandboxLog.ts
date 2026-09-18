@@ -21,8 +21,9 @@
  * ⚠ `hasMore` 为真时**立刻接着拉**，不等下一个轮询周期——不然一次跑出几千行
  *   的构建日志要几分钟才追平，用户看到的「实时」是几分钟前的。
  *
- * ⚠ 2026-09-15：嵌进会话必须订**每一条** exec 的 operationId。只订 current
- *   时历史 `$` 没有 stdout，看起来像假终端。`useSandboxLogs` 是这条管子。
+ * ⚠ 2026-09-15：嵌进会话曾经订**每一条** exec。2026-09-18 改回只订
+ *   `followSandboxOperationId` 那一条——全订会在切到终端时闪旧命令、
+ *   连打 `/events`。`useSandboxLogs` 还留着，面板默认不再走它。
  */
 import { useEffect, useRef, useState } from "react";
 import {

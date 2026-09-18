@@ -544,7 +544,7 @@ export interface DriveFullStreamOpts {
    * 跑的哪条命令），见 Python 侧 `project_tool_summary`——没有就是没有，
    * 消费侧不许自己从别处拼一个。
    */
-  onControlToolStart?: (tool: string, summary?: string) => void;
+  onControlToolStart?: (tool: string, summary?: string, operationId?: string) => void;
   /**
    * 自动续跑那一轮的显式标记。服务端在 run 被 scanner 叫回来之后发一次，
    * 前端据此折叠（认标记不认话，见 turn-continuation 头注）。
@@ -1157,7 +1157,10 @@ export async function consumeControlStreamResponse(
             case "control_tool_start":
               opts.onControlToolStart?.(
                 String(event.tool || ""),
-                typeof event.summary === "string" ? event.summary : undefined
+                typeof event.summary === "string" ? event.summary : undefined,
+                typeof event.operationId === "string" && event.operationId.trim()
+                  ? event.operationId
+                  : undefined
               );
               continue;
             case "control_tool_result":

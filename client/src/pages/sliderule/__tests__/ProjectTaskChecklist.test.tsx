@@ -10,11 +10,16 @@
  *     细节来自结构化字段而不是解析文案。
  */
 import { describe, expect, it } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
+import { ProjectTaskChecklist } from "../ProjectTaskChecklist";
 import {
+  chipFromControlTranscriptRow,
   deriveProjectActivity,
+  followProjectActionId,
   projectActionDetail,
   projectActionLabel,
   projectActivityProgress,
+  projectToolStillOpen,
   weaveTranscriptChips,
 } from "../project-activity";
 import type { UiTurn } from "../types";
@@ -25,6 +30,7 @@ function turn(
     capabilityId: string;
     progressType?: "acting" | "completed" | "failed";
     projectDetail?: string;
+    operationId?: string;
   }>,
   status: UiTurn["status"] = "complete"
 ): UiTurn {
@@ -193,6 +199,124 @@ describe("细节来自结构化字段，不解析文案", () => {
     expect(projectActionDetail({})).toBe("");
     expect(projectActionDetail(null)).toBe("");
     expect(projectActionDetail({ exitCode: 0 })).toBe("");
+  });
+
+  it("没点过：亮着队尾正在跑的那一行，不许整列都不亮", () => {
+    const html = renderToStaticMarkup(
+      <ProjectTaskChecklist
+        turns={[
+          turn(
+            [
+              { id: "a", capabilityId: "project_patch", progressType: "completed" },
+              { id: "b", capabilityId: "project_exec", progressType: "acting" },
+            ],
+            "streaming"
+          ),
+        ]}
+      />
+    );
+    expect(html).toMatch(
+      /data-task-id="project_exec"[^>]*data-selected="true"/
+    );
+    expect(html).toMatch(
+      /data-task-id="project_patch"[^>]*data-selected="false"/
+    );
+    expect(followProjectActionId(
+      deriveProjectActivity([
+        turn([
+          { id: "a", capabilityId: "project_patch", progressType: "completed" },
+          { id: "b", capabilityId: "project_exec", progressType: "acting" },
+        ]),
+      ]),
+      null
+    )).toBe("b");
+    expect(followProjectActionId(
+      [{ id: "a" }, { id: "b" }],
+      "a"
+    )).toBe("a");
+  });
+
+  it("execute 补上的 operationId 合进开着的那一行，不许裂成两步", () => {
+    const rows = deriveProjectActivity([
+      turn([
+        { id: "a", capabilityId: "project_exec", progressType: "acting", projectDetail: "npm test" },
+        {
+          id: "b",
+          capabilityId: "project_exec",
+          progressType: "acting",
+          projectDetail: "npm test",
+          operationId: "op-test",
+        },
+      ]),
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: "a",
+      status: "running",
+      detail: "npm test",
+      operationId: "op-test",
+    });
+  });
+
+  it("反向：已经有 id 的开着的命令 + 下一步同名工具，不许合成一行", () => {
+    const rows = deriveProjectActivity([
+      turn([
+        {
+          id: "a",
+          capabilityId: "project_exec",
+          progressType: "acting",
+          projectDetail: "npm test",
+          operationId: "op-test",
+        },
+        {
+          id: "b",
+          capabilityId: "project_exec",
+          progressType: "acting",
+          projectDetail: "npm run lint",
+        },
+      ]),
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows.map(row => row.detail)).toEqual(["npm test", "npm run lint"]);
+  });
+
+  it("回执还在 running：行继续开着，刷新日志也要把 id 带上", () => {
+    expect(projectToolStillOpen({ ok: true, status: "running" })).toBe(true);
+    expect(projectToolStillOpen({ ok: true, status: "queued" })).toBe(true);
+    expect(projectToolStillOpen({ ok: true, status: "completed" })).toBe(false);
+    expect(projectToolStillOpen({ ok: false, status: "running" })).toBe(false);
+    expect(projectToolStillOpen({ ok: true })).toBe(false);
+    const start = chipFromControlTranscriptRow({
+      kind: "tool_start",
+      tool: "project_exec",
+      summary: "npm test",
+      operationId: "op-test",
+    });
+    expect(start).toMatchObject({
+      progressType: "acting",
+      projectDetail: "npm test",
+      operationId: "op-test",
+    });
+    const open = chipFromControlTranscriptRow({
+      kind: "tool_result",
+      tool: "project_exec",
+      ok: true,
+      status: "running",
+      detail: "npm test",
+      operationId: "op-test",
+    });
+    expect(open).toMatchObject({
+      progressType: "acting",
+      operationId: "op-test",
+    });
+    const done = chipFromControlTranscriptRow({
+      kind: "tool_result",
+      tool: "project_exec",
+      ok: true,
+      status: "completed",
+      operationId: "op-test",
+    });
+    expect(done?.progressType).toBe("completed");
   });
 
   it("细节挂到对应那一行上", () => {

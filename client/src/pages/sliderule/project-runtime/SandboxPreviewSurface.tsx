@@ -479,16 +479,22 @@ export function SandboxPreviewSurface({
   });
   const descriptor = preview.snapshot?.descriptor;
   const [userPinned, setUserPinned] = useState<ComputerView | null>(null);
+  const [focusId, setFocusId] = useState<string | null>(null);
   const activityRows = useMemo(
     () => (turns ? deriveProjectActivity(turns) : []),
     [turns]
   );
-  const computerLive = projectComputerView(activityRows, null).live;
+  const focusIndex = focusId
+    ? activityRows.findIndex(row => row.id === focusId)
+    : -1;
+  const computerNow = projectComputerView(
+    activityRows,
+    focusIndex >= 0 ? focusIndex : null
+  );
   const previewReady = Boolean(preview.entryUrl);
-  const lastTool =
-    activityRows.length > 0
-      ? activityRows[activityRows.length - 1]?.tool
-      : null;
+  // ⚠ 2026-09-18：自动切档必须看**当前跟的那一行**，不是数组最后一项
+  //   另算一份。人没点过时跟队尾；点过就跟那一条的工具。
+  const lastTool = computerNow.current?.tool ?? null;
   const hasConsole = activityRows.some(
     row => Boolean(sandboxCommandLine(row) && row.operationId)
   );
@@ -499,7 +505,7 @@ export function SandboxPreviewSurface({
   const tab: ComputerView = turns
     ? resolveComputerView({
         userPinned,
-        live: computerLive,
+        live: computerNow.live,
         hasActivity: activityRows.length > 0,
         previewReady,
         lastTool,
@@ -548,14 +554,6 @@ export function SandboxPreviewSurface({
   const [workspaceOpened, setWorkspaceOpened] = useState(false);
   const tabRef = useRef(tab);
   tabRef.current = tab;
-  const [focusId, setFocusId] = useState<string | null>(null);
-  const focusIndex = focusId
-    ? activityRows.findIndex(row => row.id === focusId)
-    : -1;
-  const computerNow = projectComputerView(
-    activityRows,
-    focusIndex >= 0 ? focusIndex : null
-  );
   const pinView = (value: ComputerView) => {
     setUserPinned(value);
     if (value === "source" || value === "history") setWorkspaceOpened(true);
@@ -896,31 +894,39 @@ export function SandboxPreviewSurface({
           <p className="mt-1 leading-5">{blockedReason}</p>
         </div>
       ) : null}
-      {tab === "computer" ? (
-        activityRows.length > 0 ? (
+      {tab === "computer" && activityRows.length === 0 ? (
+        <div
+          className="flex min-h-0 flex-1 items-center justify-center p-8"
+          data-testid="project-computer-empty"
+        >
+          <p className="max-w-md text-center text-sm leading-6 text-stone-500">
+            {awaitingProject
+              ? projectCreateError ||
+                "计划已批准，正在创建工程。命令会写在这里。"
+              : "还没有工程动作。模型开始干活之后，这里会显示它正在跑的命令。"}
+          </p>
+        </div>
+      ) : null}
+      {/* ⚠ 2026-09-18：终端面不许随切档卸掉。卸了再挂会把 xterm 拆掉、
+          重新订 /events，内容闪一串旧命令。预览面已经是 hidden 保活，
+          终端必须同一条。没点左栏时只订当前最新在跑的那条。 */}
+      {turns && activityRows.length > 0 ? (
+        <div
+          data-testid="project-computer-stage"
+          data-active={tab === "computer" ? "true" : "false"}
+          className={
+            tab === "computer" ? "flex min-h-0 flex-1 flex-col" : "hidden"
+          }
+        >
           <ProjectComputerPanel
-            turns={turns ?? []}
+            turns={turns}
             embedded
             focusId={focusId}
             runtimeOperationId={preview.snapshot?.operationId}
             className="min-h-0 flex-1"
           />
-        ) : (
-          <div
-            className="flex min-h-0 flex-1 items-center justify-center p-8"
-            data-testid="project-computer-empty"
-          >
-            <p className="max-w-md text-center text-sm leading-6 text-stone-500">
-              {awaitingProject
-                ? projectCreateError ||
-                  "计划已批准，正在创建工程。命令会写在这里。"
-                : "还没有工程动作。模型开始干活之后，这里会显示它正在跑的命令。"}
-            </p>
-          </div>
-        )
-      ) : null}
-      {tab === "computer" && turns && activityRows.length > 0 ? (
-        <ComputerReplayDock rows={activityRows} focusId={focusId} />
+          <ComputerReplayDock rows={activityRows} focusId={focusId} />
+        </div>
       ) : null}
       {tab === "source" && !projectId ? (
         <div

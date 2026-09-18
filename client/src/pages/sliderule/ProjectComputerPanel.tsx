@@ -30,10 +30,11 @@
  *   译码器是 xterm.js（VS Code / Hyper / Jupyter 同一套），不要另接
  *   一个模拟器。原字节只许呆在 sr-only 里给判据读。
  *
- * ⚠ 2026-09-15：stdout / console 必须按每条 exec 的 operationId 去订。
- *   只订 current 时历史命令的输出还在 `/events` 里，面板已经换成下一步。
- *   运行时那条 `runtime.start` 也要订——`npm ci` 打在它上面，不在
- *   `project_exec` 上。
+ * ⚠ 2026-09-15：stdout / console 按 operationId 订。运行时那条
+ *   `runtime.start` 在**没有 exec** 时才订——`npm ci` 打在它上面。
+ * ⚠ 2026-09-18：嵌进面只订 `followSandboxOperationId` 一条。全订再
+ *   join 会在切到终端时闪旧命令、连打 `/events`。没点左栏 = 当前最新
+ *   在跑的那条；点了 = 钉住。
  *
  * ⚠ 2026-09-14：嵌进时不画内顶栏，也不画 `$` / 回放底栏——那两条是
  *   叠在会话上的第二层壳。回放靠左栏点工具行。不许把预览的
@@ -56,7 +57,7 @@ import {
   type ProjectActionRow,
 } from "./project-activity";
 import { dispatchInspectAction } from "./project-computer-view";
-import { sandboxLogOperationIds } from "./sandbox-session-transcript";
+import { followSandboxOperationId } from "./sandbox-session-transcript";
 import type { UiTurn } from "./types";
 import { useSandboxLog, useSandboxLogs } from "./project-runtime/useSandboxLog";
 
@@ -233,7 +234,7 @@ function SandboxLiveTerminal({ text, running }: { text: string; running: boolean
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col bg-stone-50"
+      className="flex min-h-0 flex-1 flex-col bg-stone-50 px-3 py-2.5"
       data-testid="project-computer-pty"
       data-running={running ? "true" : "false"}
     >
@@ -252,35 +253,34 @@ function SandboxLiveTerminal({ text, running }: { text: string; running: boolean
 function SandboxSession({
   rows,
   current,
+  focusId,
   runtimeOperationId,
 }: {
   rows: ProjectActionRow[];
   current: ProjectActionRow | null;
+  focusId?: string | null;
   runtimeOperationId?: string | null;
 }) {
-  // ⚠ 2026-09-15：必须订每一条 exec，不能只订 current。只订当前一步时，
-  //   上一条 PTY 的字节还在 /events 里，面板已经换成下一步——对照
-  //   Manus 就是一台假终端。
-  const execIds = sandboxLogOperationIds(rows, { hotId: current?.operationId });
-  const runtimeId = String(runtimeOperationId || "").trim();
-  const logIds = runtimeId && !execIds.includes(runtimeId) ? [runtimeId, ...execIds] : execIds;
-  const hotIds = [
-    ...(current?.status === "running" && current.operationId ? [current.operationId] : []),
-    ...(runtimeId ? [runtimeId] : []),
-  ];
-  const logs = useSandboxLogs(logIds, { hotIds });
-  const consoleText = logIds
-    .map(id => logs[id]?.console || "")
-    .filter(Boolean)
-    .join("");
-  const truncated = logIds.some(id => logs[id]?.truncated);
+  // ⚠ 2026-09-18：不许再订一整串 exec 再 join。切到终端档会按返回
+  //   顺序把旧命令刷进 PTY，网络连打 /events。没点左栏就只订当前
+  //   最新在跑的那条；点了才钉住。见 followSandboxOperationId。
+  const operationId = followSandboxOperationId(rows, {
+    focusId,
+    runtimeOperationId,
+  });
+  const followed = rows.find(row => row.operationId === operationId) ?? null;
+  const running =
+    followed?.status === "running" ||
+    (Boolean(operationId) &&
+      current?.operationId === operationId &&
+      current.status === "running");
+  const ids = operationId ? [operationId] : [];
+  const logs = useSandboxLogs(ids, { hotIds: running ? ids : [] });
+  const log = (operationId && logs[operationId]) || { console: "", truncated: false };
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <SandboxLiveTerminal
-        text={consoleText}
-        running={current?.status === "running"}
-      />
-      {truncated ? (
+      <SandboxLiveTerminal text={log.console} running={running} />
+      {log.truncated ? (
         <div
           className="shrink-0 px-3 py-1 text-[11px] text-amber-600"
           data-testid="project-computer-console-truncated"
@@ -379,6 +379,7 @@ export function ProjectComputerPanel({
             <SandboxSession
               rows={rows}
               current={current}
+              focusId={focusId}
               runtimeOperationId={runtimeOperationId}
             />
           </div>

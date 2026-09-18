@@ -27,12 +27,14 @@ import React from "react";
 import { Check, LoaderCircle, X } from "lucide-react";
 import {
   deriveProjectActivity,
+  followProjectActionId,
   projectActivityProgress,
   type ProjectActionRow,
   type ProjectActionStatus,
 } from "./project-activity";
 import {
   dispatchInspectAction,
+  FOLLOW_COMPUTER_EVENT,
   INSPECT_ACTION_EVENT,
   inspectActionDetail,
 } from "./project-computer-view";
@@ -61,8 +63,13 @@ export function useSelectedProjectActionId(): string | null {
       const detail = inspectActionDetail((event as CustomEvent).detail);
       if (detail) setSelectedId(detail.id);
     };
+    const onFollow = () => setSelectedId(null);
     window.addEventListener(INSPECT_ACTION_EVENT, onInspect);
-    return () => window.removeEventListener(INSPECT_ACTION_EVENT, onInspect);
+    window.addEventListener(FOLLOW_COMPUTER_EVENT, onFollow);
+    return () => {
+      window.removeEventListener(INSPECT_ACTION_EVENT, onInspect);
+      window.removeEventListener(FOLLOW_COMPUTER_EVENT, onFollow);
+    };
   }, []);
   return selectedId;
 }
@@ -118,7 +125,8 @@ export function ProjectActionRowView({
 
 export function ProjectTaskChecklist({ turns }: { turns: UiTurn[] }) {
   const rows = React.useMemo(() => deriveProjectActivity(turns), [turns]);
-  const selectedId = useSelectedProjectActionId();
+  const inspectId = useSelectedProjectActionId();
+  const selectedId = followProjectActionId(rows, inspectId);
   if (rows.length === 0) return null;
   const { done, total, failed } = projectActivityProgress(rows);
   return (

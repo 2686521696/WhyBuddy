@@ -85,7 +85,8 @@ export type TurnStep =
        */
       projectDetail?: string;
       /**
-       * 这一步对应的远端操作 id。服务端 `control_tool_result` 一直带着它，
+       * 这一步对应的远端操作 id。服务端 `control_tool_result` 一直带着它；
+       * 2026-09-18 起 `control_tool_start` 在 execute 返回后也会补一发。
        * 前端此前全程丢掉——于是拿不到它就订阅不了沙箱命令行输出
        * （`useSandboxLog`）。2026-09-14 补上。
        */

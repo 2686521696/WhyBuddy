@@ -95,6 +95,7 @@ import { isContinuationTurn } from "@/pages/sliderule/turn-continuation";
 import {
   attachProjectChipsToTurns,
   projectActionDetail,
+  projectToolStillOpen,
   turnsHaveProjectChips,
 } from "./project-activity";
 import {
@@ -1784,13 +1785,16 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                     : {}),
                 });
               },
-              onControlToolStart: (tool: string, summary?: string) => {
+              onControlToolStart: (tool: string, summary?: string, operationId?: string) => {
                 ensureFactoryClock(tool);
                 const projectLabel = projectToolLabel(tool);
                 if (projectLabel) {
                   // 开场就带上「在对什么动手」（服务端脱敏摘要），动作进行中的
                   // 那几十秒界面不再是哑的。拿不到就不带，不自己拼。
+                  // execute 刚返回时会再来一发带 operationId，合进开着的行，
+                  // 「它的电脑」才能订上正在打字的 PTY。
                   const detail = String(summary || "").trim();
+                  const op = String(operationId || "").trim();
                   setLiveAction({
                     label: detail ? `${projectLabel}：${detail}` : projectLabel,
                     external: true,
@@ -1799,6 +1803,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                     capabilityId: tool,
                     progressType: "acting",
                     ...(detail ? { projectDetail: detail } : {}),
+                    ...(op ? { operationId: op } : {}),
                   });
                   return;
                 }
@@ -1813,17 +1818,22 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 const tool = projectToolLabel(event.tool);
                 if (!tool) return;
                 const ok = event.ok !== false;
+                const stillOpen = projectToolStillOpen(event);
                 const detail = typeof event.error === "string"
                   ? event.error
                   : typeof event.message === "string" ? event.message : "";
-                const label = ok ? `${tool.replace(/^正在/, "已")}` : `${tool.replace(/^正在/, "执行失败：")}`;
+                const label = !ok
+                  ? `${tool.replace(/^正在/, "执行失败：")}`
+                  : stillOpen
+                    ? tool
+                    : `${tool.replace(/^正在/, "已")}`;
                 setLiveAction({ label: detail ? `${label}（${detail}）` : label, external: true });
                 // 后端把整个工具返回体摊进了事件（`**body`）：command / exitCode /
                 // revision / parentRevision / errorCode 都在。原来只读 ok/error，
                 // 其余全扔，于是工程动作流只剩「已运行命令」这种没有信息量的行。
                 appendStreamStep(detail ? `${label}：${detail}` : label, {
                   capabilityId: String(event.tool || ""),
-                  progressType: ok ? "completed" : "failed",
+                  progressType: !ok ? "failed" : stillOpen ? "acting" : "completed",
                   projectDetail: projectActionDetail(event),
                   // 「它的电脑」靠它订阅沙箱命令行输出；服务端一直在发，
                   // 前端此前丢掉了（见 types.ts 上 operationId 的说明）。
@@ -2840,11 +2850,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
               //   project_* 全过程，turnNarrations 却只留下开口。刷新
               //   只回放失败说明 → 左栏执行步骤整列没了。工具事件只
               //   用来补 chip，complete/state 仍不许盖今天的工程投影。
-              onControlToolStart: (tool, summary) => {
+              onControlToolStart: (tool, summary, operationId) => {
                 const label = projectToolLabel(tool);
                 if (!label) return;
                 replaySeq += 1;
                 const detail = String(summary || "").trim();
+                const op = String(operationId || "").trim();
                 replayedChips.push({
                   id: `replay-${run.runId}-${replaySeq}`,
                   kind: "chip",
@@ -2854,6 +2865,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                   realLlm: false,
                   progressType: "acting",
                   ...(detail ? { projectDetail: detail } : {}),
+                  ...(op ? { operationId: op } : {}),
                 });
               },
               onControlToolResult: event => {
@@ -2861,17 +2873,20 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
                 if (!tool) return;
                 replaySeq += 1;
                 const ok = event.ok !== false;
+                const stillOpen = projectToolStillOpen(event);
                 const detail = projectActionDetail(event);
                 replayedChips.push({
                   id: `replay-${run.runId}-${replaySeq}`,
                   kind: "chip",
                   capabilityId: String(event.tool || "") as `project_${string}`,
                   roleId: "system",
-                  label: ok
-                    ? `${tool.replace(/^正在/, "已")}`
-                    : `${tool.replace(/^正在/, "执行失败：")}`,
+                  label: !ok
+                    ? `${tool.replace(/^正在/, "执行失败：")}`
+                    : stillOpen
+                      ? tool
+                      : `${tool.replace(/^正在/, "已")}`,
                   realLlm: false,
-                  progressType: ok ? "completed" : "failed",
+                  progressType: !ok ? "failed" : stillOpen ? "acting" : "completed",
                   ...(detail ? { projectDetail: detail } : {}),
                   ...(typeof event.operationId === "string" && event.operationId
                     ? { operationId: event.operationId }

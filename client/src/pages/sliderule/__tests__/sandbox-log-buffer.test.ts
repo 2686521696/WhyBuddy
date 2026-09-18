@@ -214,15 +214,19 @@ describe("通电：真的接在面板和会话链路上（§3）", () => {
       fs.readFileSync(path.resolve(process.cwd(), p), "utf8");
 
     const panel = read("client/src/pages/sliderule/ProjectComputerPanel.tsx");
+    const panelLive = panel.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     expect(panel).toMatch(/useSandboxLog\(/);
-    expect(panel).toMatch(/useSandboxLogs\(/);
-    expect(panel).toMatch(/sandboxLogOperationIds\(/);
+    expect(panel).toMatch(/followSandboxOperationId\(/);
     expect(panel).toMatch(/<SandboxConsole[\s/>]/);
     // 会话工作台走 SandboxSession；只留 Console = 嵌进那条链又变回说明书。
     expect(panel).toMatch(/<SandboxSession[\s/>]/);
     expect(panel).toMatch(/<SandboxLiveTerminal[\s/>]/);
-    expect(panel).toMatch(/logs\[id\]\?\.console/);
     expect(panel).toMatch(/runtimeOperationId/);
+    // 反向：再订一整串 exec 再 join = 切到终端闪旧命令、连打 /events。
+    expect(panelLive).toMatch(/operationId \? \[operationId\] : \[\]/);
+    expect(panelLive).not.toMatch(/sandboxLogOperationIds\(/);
+    expect(panelLive).not.toMatch(/\.join\(""\)/);
+    expect(panel).toMatch(/px-3 py-2\.5/);
     // 反向：拼贴重回嵌进面 = 用户圈的 create/get/`$ cmd`。
     expect(panel).not.toContain("project-computer-session");
     expect(panel).not.toContain("sandboxActivityTranscript");
@@ -230,7 +234,10 @@ describe("通电：真的接在面板和会话链路上（§3）", () => {
     expect(panel).toMatch(/data-testid="project-computer-pty-text" className="sr-only"/);
     expect(panel).not.toMatch(/live\s*\?\s*"sr-only"/);
     const surface = read("client/src/pages/sliderule/project-runtime/SandboxPreviewSurface.tsx");
+    const surfaceLive = surface.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
     expect(surface).toMatch(/runtimeOperationId=\{preview\.snapshot\?\.operationId\}/);
+    expect(surface).toMatch(/data-testid="project-computer-stage"/);
+    expect(surfaceLive).toMatch(/tab === "computer" \? "flex min-h-0 flex-1 flex-col" : "hidden"/);
     const worker = read("slide-rule-python/services/project_runtime_worker.py");
     const live = worker.replace(/#[^\n]*/g, "");
     expect(live).toMatch(/start_console/);
@@ -247,8 +254,15 @@ describe("通电：真的接在面板和会话链路上（§3）", () => {
     // 服务端一直在发 operationId，前端此前全程丢掉——这三处缺一处就订阅不到。
     const session = read("client/src/pages/sliderule/useSlideRuleSession.ts");
     expect(session).toContain("operationId: event.operationId");
+    expect(session).toContain("onControlToolStart: (tool: string, summary?: string, operationId?: string)");
+    expect(session).toContain("projectToolStillOpen");
+    const driver = read("client/src/lib/sliderule-marathon-driver.ts");
+    const driverLive = driver.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    expect(driverLive).toMatch(/case "control_tool_start"/);
+    expect(driverLive).toMatch(/event\.operationId/);
     const activity = read("client/src/pages/sliderule/project-activity.ts");
     expect(activity).toContain("open.operationId = operationId");
+    expect(activity).toContain("followProjectActionId");
     const hook = read("client/src/pages/sliderule/project-runtime/useSandboxLog.ts");
     expect(hook).toContain("/events?afterSeq=");
     expect(hook).toContain("export function useSandboxLogs");

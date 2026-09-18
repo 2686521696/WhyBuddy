@@ -19,6 +19,7 @@ import {
   ProjectActionRowView,
   useSelectedProjectActionId,
 } from "./ProjectTaskChecklist";
+import { followProjectActionId } from "./project-activity";
 import {
   deriveSessionStory,
   disclosureOpen,
@@ -130,7 +131,15 @@ export function SessionStory({
   const duration = sessionStoryDuration(turn);
   const hasProcess = sessionStoryHasProcess(blocks);
   const collapsedHint = sessionStoryCollapsedHint(blocks);
-  const selectedId = useSelectedProjectActionId();
+  const inspectId = useSelectedProjectActionId();
+  const selectedId = React.useMemo(
+    () =>
+      followProjectActionId(
+        blocks.flatMap(block => (block.kind === "tools" ? block.rows : [])),
+        inspectId
+      ),
+    [blocks, inspectId]
+  );
   const canFold = Boolean(duration) && hasProcess && !streaming;
   const { open: expanded, toggle: toggleProcess } = useDisclosure(streaming);
   const insertedProduct = blocks.some(block => block.kind === "product");

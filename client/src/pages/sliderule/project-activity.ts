@@ -199,8 +199,9 @@ export function applyProjectChip(
       } else if (!open.detail && detail) {
         open.detail = detail;
       }
-      // ⚠ operationId 只在**结果**事件上才有（开场那一发还没派发出去），
-      //   所以要补到已经开着的那一行上，否则「它的电脑」永远订阅不到。
+      // ⚠ 开场那一发按设计没有 id（还没 enqueue）。execute 之后会再来
+      //   一发 acting 把 id 补上；结果事件也带。都要合进已经开着的行，
+      //   否则「它的电脑」订不到正在打字的那条 PTY。
       if (!open.operationId && operationId) open.operationId = operationId;
       return null;
     }
@@ -216,6 +217,23 @@ export function applyProjectChip(
     return row;
   }
   // acting / observing / thinking：开一行，等结果来收。
+  //
+  // ⚠ 2026-09-18：同一工具还开着、后来的 chip 带着同一个（或刚补上的）
+  //   operationId → 合进开着的那一行。真机开场没有 id，execute 之后
+  //   才补；再开一行左栏会裂成两步，右侧还订着空的。
+  //   已经有 id 的开着的行 + 新来的**没有** id = 下一步同名工具，不许合。
+  const open = [...rows]
+    .reverse()
+    .find(row => row.tool === tool && row.status === "running");
+  if (
+    open &&
+    operationId &&
+    (!open.operationId || open.operationId === operationId)
+  ) {
+    if (!open.operationId) open.operationId = operationId;
+    if (detail && !open.detail) open.detail = detail;
+    return null;
+  }
   const row: ProjectActionRow = {
     id: step.id,
     tool,
@@ -275,6 +293,44 @@ export function projectComputerView(
   };
 }
 
+const TERMINAL_OPERATION = new Set(["completed", "failed", "cancelled"]);
+
+/**
+ * 工具回执还没到终态：命令还在沙箱里跑。
+ *
+ * ⚠ 2026-09-18：`project_exec` 15 秒等不完就交回 `status=running`。
+ *   前端以前只看 `ok`，立刻勾成完成——左栏没了「进行中」，PTY 也不再
+ *   热轮询，打字字节到了也看不见。
+ */
+export function projectToolStillOpen(
+  event: Record<string, unknown> | null | undefined
+): boolean {
+  if (!event || typeof event !== "object") return false;
+  if (event.ok === false) return false;
+  const status = String(event.status || "").trim().toLowerCase();
+  if (!status) return false;
+  return !TERMINAL_OPERATION.has(status);
+}
+
+/**
+ * 左栏该亮哪一行。
+ *
+ * 人点过某一条 → 钉住。没点过 → 跟队尾（当前正在做的那一步）。
+ * 点了才亮、跟着跑的时候整列都不亮，就是 2026-09-18 真机那张图。
+ */
+export function followProjectActionId(
+  rows: Array<{ id?: string }>,
+  inspectId?: string | null
+): string | null {
+  const focus = String(inspectId || "").trim();
+  if (focus && (rows || []).some(row => String(row.id || "") === focus)) {
+    return focus;
+  }
+  const last = (rows || [])[(rows || []).length - 1];
+  const id = last ? String(last.id || "").trim() : "";
+  return id || null;
+}
+
 function isToolChip(
   step: TurnStep
 ): step is Extract<TurnStep, { kind: "chip" }> {
@@ -314,18 +370,20 @@ export function chipFromControlTranscriptRow(
       realLlm: false,
       progressType: "acting",
       ...(detail ? { projectDetail: detail } : {}),
+      ...(operationId ? { operationId } : {}),
     };
   }
   if (kind === "tool_result") {
     const ok = item.ok !== false;
+    const stillOpen = projectToolStillOpen(item);
     return {
       id: `${id}-result`,
       kind: "chip",
       capabilityId: tool as `project_${string}`,
       roleId: "system",
-      label: ok ? `已${label}` : `执行失败：${label}`,
+      label: !ok ? `执行失败：${label}` : stillOpen ? `正在${label}` : `已${label}`,
       realLlm: false,
-      progressType: ok ? "completed" : "failed",
+      progressType: !ok ? "failed" : stillOpen ? "acting" : "completed",
       ...(detail ? { projectDetail: detail } : {}),
       ...(operationId ? { operationId } : {}),
     };

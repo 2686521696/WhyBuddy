@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  followSandboxOperationId,
   sandboxActivityTranscript,
   sandboxCommandLine,
   sandboxLogOperationIds,
@@ -181,6 +182,108 @@ describe("文件动作收成传输日志，不是 shell", () => {
     expect(out.lines).toEqual(["$ build"]);
     expect(out.lines).not.toContain("secret stdout");
     expect(out.cursor).toBe(true);
+  });
+});
+
+describe("右侧终端订哪一条", () => {
+  const install = {
+    id: "row-install",
+    tool: "project_exec",
+    detail: "npm install",
+    operationId: "op-install",
+    status: "done",
+  };
+  const testCmd = {
+    id: "row-test",
+    tool: "project_exec",
+    detail: "npm test",
+    operationId: "op-test",
+    status: "running",
+  };
+  const listCmd = {
+    id: "row-list",
+    tool: "project_exec",
+    detail: "npm list",
+    operationId: "op-list",
+    status: "done",
+  };
+
+  it("没点左栏：正在跑的那条优先于后写完的 list", () => {
+    expect(
+      followSandboxOperationId([install, testCmd, listCmd])
+    ).toBe("op-test");
+  });
+
+  it("没点左栏、都停了：跟最后一条命令", () => {
+    expect(
+      followSandboxOperationId([
+        install,
+        { ...testCmd, status: "done" },
+        listCmd,
+      ])
+    ).toBe("op-list");
+  });
+
+  it("点了左栏某一条终端：只订那一条，不许偷偷跟最新", () => {
+    expect(
+      followSandboxOperationId([install, testCmd, listCmd], {
+        focusId: "row-install",
+      })
+    ).toBe("op-install");
+  });
+
+  it("反向：点的不是终端行就不订——去拉别人的 /events 就是闪旧命令", () => {
+    expect(
+      followSandboxOperationId(
+        [
+          { id: "row-patch", tool: "project_patch", detail: "src/App.tsx", operationId: "op-patch" },
+          testCmd,
+        ],
+        { focusId: "row-patch", runtimeOperationId: "op-runtime" }
+      )
+    ).toBeNull();
+  });
+
+  it("反向：没有命令时才退到 runtime.start，有 exec 不许捎带把预览那条拼进来", () => {
+    expect(
+      followSandboxOperationId([listCmd], { runtimeOperationId: "op-runtime" })
+    ).toBe("op-list");
+    expect(
+      followSandboxOperationId(
+        [{ id: "row-patch", tool: "project_patch", detail: "src/App.tsx" }],
+        { runtimeOperationId: "op-runtime" }
+      )
+    ).toBe("op-runtime");
+  });
+
+  it("正在跑但还没有 operationId：空等，不许退到 npm ci 那条 runtime", () => {
+    expect(
+      followSandboxOperationId(
+        [
+          {
+            id: "row-test",
+            tool: "project_exec",
+            detail: "npm test",
+            status: "running",
+          },
+        ],
+        { runtimeOperationId: "op-runtime" }
+      )
+    ).toBeNull();
+    expect(
+      followSandboxOperationId(
+        [
+          install,
+          {
+            id: "row-test",
+            tool: "project_exec",
+            detail: "npm test",
+            status: "running",
+          },
+        ],
+        { runtimeOperationId: "op-runtime" }
+      )
+    ).toBeNull();
   });
 });
 

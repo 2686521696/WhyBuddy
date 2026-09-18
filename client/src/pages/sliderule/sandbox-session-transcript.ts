@@ -84,6 +84,42 @@ export function sandboxTransferLine(row: {
  *   第一版只订「当前这一步」，上一条 `$ pnpm` 的 stdout 还在服务端，
  *   面板已经换成 put 或下一条 `$`——看起来像假终端。对不上 id 仍不铺。
  */
+/**
+ * 右侧终端该订哪一条 operation。
+ *
+ * ⚠ 2026-09-18：切到「终端」档时曾经把最近 12 条 exec 全订上、按返回
+ *   顺序拼进同一块 PTY。面板会闪过一串旧命令，网络面板连打 `/events`。
+ *   用户没点左栏某一条时，只该看**当前最新在执行的**那条；点了才钉住。
+ *
+ *   正在跑的 exec 优先于后写完的 `npm list`——真机那张卡把已结束的
+ *   list 当成「当前」，正在跑的 test 反而看不见。
+ */
+export function followSandboxOperationId(
+  rows: Array<{
+    id?: string;
+    tool?: string;
+    detail?: string;
+    operationId?: string;
+    status?: string;
+  }>,
+  opts: { focusId?: string | null; runtimeOperationId?: string | null } = {}
+): string | null {
+  const focus = String(opts.focusId || "").trim();
+  if (focus) {
+    const row = (rows || []).find(item => String(item.id || "") === focus);
+    if (!row || !sandboxCommandLine(row)) return null;
+    return String(row.operationId || "").trim() || null;
+  }
+  const commands = (rows || []).filter(row => sandboxCommandLine(row));
+  // ⚠ 正在跑的那条优先。还没有 operationId 时返回 null——退到
+  //   runtime.start 会把 npm ci 的残留 PTY 当成「当前命令在打字」。
+  const running = [...commands].reverse().find(row => row.status === "running");
+  if (running) return String(running.operationId || "").trim() || null;
+  const withId = commands.filter(row => String(row.operationId || "").trim());
+  if (withId.length) return String(withId[withId.length - 1].operationId).trim();
+  return String(opts.runtimeOperationId || "").trim() || null;
+}
+
 export function sandboxLogOperationIds(
   rows: Array<{ tool?: string; detail?: string; operationId?: string }>,
   opts: { limit?: number; hotId?: string } = {}

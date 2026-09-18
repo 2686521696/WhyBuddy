@@ -130,6 +130,8 @@ describe("通电链：Studio 把动作流交给电脑面，自己不再叠一份
     const surface = read("../project-runtime/SandboxPreviewSurface.tsx");
     expect(surface).toMatch(/resolveComputerView/);
     expect(surface).toMatch(/lastTool/);
+    expect(surface).toMatch(/computerNow\.current/);
+    expect(surface).toMatch(/computerNow\.live/);
     expect(surface).toMatch(/hasConsole/);
     expect(surface).toMatch(/<ProjectComputerPanel/);
     expect(surface).toMatch(/embedded/);
@@ -266,7 +268,7 @@ describe("渲染后：电脑在外壳里面，不在它上头", () => {
     expect($("sandbox-preview-surface")?.getAttribute("data-computer-view")).toBe(
       "source"
     );
-    expect($("project-computer-pty")).toBeNull();
+    expect($("project-computer-stage")?.getAttribute("data-active")).toBe("false");
     expect($("project-computer-title")?.textContent).toBe("代码");
     expect(
       $("project-workspace-panel"),
@@ -336,7 +338,10 @@ describe("渲染后：电脑在外壳里面，不在它上头", () => {
     expect($("sandbox-preview-surface")?.getAttribute("data-computer-view")).toBe(
       "source"
     );
-    expect($("project-computer-pty"), "列文件不许停在空终端").toBeNull();
+    expect(
+      $("project-computer-stage")?.getAttribute("data-active"),
+      "列文件不许把空终端当成脸"
+    ).toBe("false");
     expect(
       $("project-workspace-panel"),
       "列文件开了代码档，源码面板必须在，不许标题「代码」下面白纸"
@@ -450,7 +455,9 @@ describe("渲染后：电脑在外壳里面，不在它上头", () => {
     expect($("sandbox-preview-surface")?.getAttribute("data-computer-view")).toBe(
       "preview"
     );
-    expect($("project-computer-panel")).toBeNull();
+    // 切走终端不许卸面板：卸了再挂会重订 /events、PTY 闪一串旧命令。
+    expect($("project-computer-stage")?.getAttribute("data-active")).toBe("false");
+    expect($("project-computer-panel")).not.toBeNull();
     expect(
       $("project-computer-chrome")!.querySelector(
         '[data-testid="project-preview-open"]'
@@ -464,6 +471,9 @@ describe("渲染后：电脑在外壳里面，不在它上头", () => {
     expect($("project-verification-panel")).toBeNull();
     expect($("sandbox-preview-surface")?.textContent).not.toContain("检查应用");
     expect($("project-computer-chrome"), "头条不跟档卸掉").not.toBeNull();
+    await act(async () => selectProjectMode(container, "终端"));
+    expect($("project-computer-stage")?.getAttribute("data-active")).toBe("true");
+    expect($("project-computer-panel")).not.toBeNull();
   });
 
   it("预览和代码共用同一条头条槽位，下拉不许左右跳", async () => {
@@ -787,9 +797,12 @@ describe("左栏点工具，右侧跟档", () => {
     const surface = read("../project-runtime/SandboxPreviewSurface.tsx");
     expect(list).toMatch(/dispatchInspectAction/);
     expect(list).toMatch(/data-testid="project-task-row"/);
+    expect(list).toMatch(/followProjectActionId/);
+    expect(list).toMatch(/FOLLOW_COMPUTER_EVENT/);
     // 对话列现网走章节面，行复用同一份 ProjectActionRowView。
     // 只钉清单 = 只测了外壳夹具。
     expect(story).toMatch(/ProjectActionRowView/);
+    expect(story).toMatch(/followProjectActionId/);
     expect(list).toMatch(/export function ProjectActionRowView/);
     expect(surface).toMatch(/INSPECT_ACTION_EVENT/);
     expect(surface).toMatch(/FOLLOW_COMPUTER_EVENT/);
@@ -805,6 +818,46 @@ describe("左栏点工具，右侧跟档", () => {
     // 反向：只发事件外壳不听 = 点了没反应，正是这一轮要修的缝。
     expect(surface).toMatch(/addEventListener\(\s*INSPECT_ACTION_EVENT/);
     expect(surface).toMatch(/addEventListener\(\s*FOLLOW_COMPUTER_EVENT/);
+  });
+
+  it("没点左栏：写入进行中右侧就要切到源码，并亮着那一行", async () => {
+    const turns = [
+      {
+        ...projectTurn("acting"),
+        steps: [
+          {
+            id: "patch-live",
+            kind: "chip",
+            capabilityId: "project_patch",
+            roleId: "system",
+            label: "写入源码",
+            realLlm: false,
+            progressType: "acting",
+            projectDetail: "src/style.css",
+          } as unknown as TurnStep,
+        ],
+      },
+    ];
+    await act(async () =>
+      root.render(
+        <SlideRuleStudio
+          chatSlot={<ProjectTaskChecklist turns={turns} />}
+          activeSkillId={null}
+          runtimeKind="project"
+          projectId="project-one"
+          isRunning
+          turns={turns}
+        />
+      )
+    );
+    const row = container.querySelector<HTMLButtonElement>(
+      '[data-testid="project-task-row"]'
+    );
+    expect(row?.getAttribute("data-task-id")).toBe("project_patch");
+    expect(row?.getAttribute("data-selected")).toBe("true");
+    expect($("sandbox-preview-surface")?.getAttribute("data-computer-view")).toBe(
+      "source"
+    );
   });
 
   it("点写入源码打开代码，点运行命令打开终端，选中行亮着", async () => {
@@ -827,6 +880,11 @@ describe("左栏点工具，右侧跟档", () => {
     expect($("sandbox-preview-surface")?.getAttribute("data-computer-view")).toBe(
       "computer"
     );
+    expect(
+      rows().find(row => row.getAttribute("data-task-id") === "project_exec")
+        ?.getAttribute("data-selected"),
+      "没点过也要亮着当前在跑的那一步"
+    ).toBe("true");
 
     await act(async () => {
       rows().find(row => row.getAttribute("data-task-id") === "project_patch")!.click();
