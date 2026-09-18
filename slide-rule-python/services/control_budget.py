@@ -89,9 +89,20 @@ PROJECT_BUDGET_V2 = ControlBudget(
 
 #: 点火前对话档。control-v1 是 90/75；2026-09-15 新开会话写计划两发都
 #: 想了 ~150s 才回，墙钟 90 把计划掐掉，工程档永远进不去。
-#: 新回合走 control-v2：单发 180 / 墙钟 240。旧存档仍按 v1 还原。
+#: control-v2：单发 180 / 墙钟 240。旧存档仍按当时那一档还原。
 CONVERSATION_BUDGET_V1 = ControlBudget("control-v1", 8, 8_000, 90.0, 75.0)
-CONVERSATION_BUDGET = ControlBudget("control-v2", 8, 8_000, 240.0, 180.0)
+CONVERSATION_BUDGET_V2 = ControlBudget("control-v2", 8, 8_000, 240.0, 180.0)
+
+#: 2026-09-18：对话档也按要求放开轮次 / token / 墙钟。
+#: 起因同一趟待办工程（sr-20260918125826）：点火前 8 轮 / 8000 token /
+#: 240 秒仍会先把长思考掐死，工程档的放开根本轮不到。
+#: 新开 control-v3，不改 v2 的数字——restore_budget 要求 wire 全等。
+#: token 跟工程档同一口径：20 万是上下文窗口，不是 cheapTokens 累加硬闸。
+CONVERSATION_BUDGET = ControlBudget(
+    "control-v3", 10_000, 200_000, 86_400.0, 600.0,
+    compact_at_tokens=197_000,
+    context_token_budget=True,
+)
 
 #: ⚠ **名字（PROJECT_BUDGET）永远指向"新回合默认那一档"**，旧档按 _V1/_V2 留名。
 #:   判据靠 monkeypatch `control.PROJECT_BUDGET` 换档来验各种边界，
@@ -111,11 +122,11 @@ CONVERSATION_BUDGET = ControlBudget("control-v2", 8, 8_000, 240.0, 180.0)
 #:   是模型的物理上限，不是我们设的闸；compact_at 19.7 万到了就压缩。
 #:   实测那趟一轮只用 29,709，token 从来不是卡住它的那一项。
 #:
-#: ⚠ 单发仍留 600 秒：那不是"跑多久"的限制，是**卡死探测器**。
-#:   量级自洽判据钉着单发 < 回合墙钟（600 < 86400 ✓），
-#:   而 retry_budget 的 600 秒窗口也是按这个数配的。
+#: ⚠ 单发是**卡死探测器**，不是回合时长。2026-09-18 按要求再放宽到 1 小时：
+#:   读完整份源码再想，600 秒仍可能被当成挂死。不进 to_wire，老 checkpoint
+#:   不会因此 invalid。量级自洽：3600 < 86400，差 ≥ 60。
 PROJECT_BUDGET = ControlBudget(
-    "project-v3", 10_000, 200_000, 86_400.0, 600.0,
+    "project-v3", 10_000, 200_000, 86_400.0, 3600.0,
     compact_at_tokens=197_000,
     context_token_budget=True,
 )
@@ -125,6 +136,7 @@ _PINNED_POLICIES = {
     PROJECT_BUDGET_V2.profile: PROJECT_BUDGET_V2,
     PROJECT_BUDGET.profile: PROJECT_BUDGET,
     CONVERSATION_BUDGET_V1.profile: CONVERSATION_BUDGET_V1,
+    CONVERSATION_BUDGET_V2.profile: CONVERSATION_BUDGET_V2,
     CONVERSATION_BUDGET.profile: CONVERSATION_BUDGET,
 }
 

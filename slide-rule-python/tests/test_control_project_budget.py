@@ -18,7 +18,10 @@ from project_actor_support import project_actor
 from conftest import TEST_USER_ID
 from control_turn_support import ControlHarness, llm_text, llm_tool, six_fields
 from services import rehearsal_control as control
-from services.control_budget import PROJECT_BUDGET, PROJECT_BUDGET_V1, PROJECT_BUDGET_V2
+from services.control_budget import (
+    CONVERSATION_BUDGET, CONVERSATION_BUDGET_V2,
+    PROJECT_BUDGET, PROJECT_BUDGET_V1, PROJECT_BUDGET_V2,
+)
 from services.control_checkpoint import ControlRunStopped
 from services.control_context_compact import COMPACT_NOTICE_PREFIX
 from services.control_run_service import RunCheckpoint
@@ -81,13 +84,16 @@ def test_measured_status_read_patch_usage_reaches_real_source_write(setup, monke
     assert measured[-1]["round"] == 3
     assert all(abs(cp["startedAt"] - measured[0]["startedAt"]) < 0.5 for cp in measured)
     if not precreated:
-        assert snapshots[0]["budgetPolicy"]["maxTokens"] == 8000
+        assert snapshots[0]["budgetPolicy"]["maxTokens"] == CONVERSATION_BUDGET.max_tokens
         assert any(cp["budgetPolicy"] == PROJECT_POLICY and cp["cheapTokens"] == 3015 for cp in snapshots)
     assert not harness.helper_calls
 
 
 @pytest.mark.parametrize("forged", [False, True], ids=["legacy", "client-forged-policy"])
 def test_legacy_8001_tokens_still_prevent_project_creation(setup, monkeypatch, forged):
+    """点火前额度闸的**机制**仍在。钉 control-v2：线上默认已是窗口口径，
+    8001 再也撞不上。伪造工程档也抬不了点火前的那一档。"""
+    monkeypatch.setattr(control, "CONVERSATION_BUDGET", CONVERSATION_BUDGET_V2)
     harness = ControlHarness(monkeypatch)
     harness.llm_impl = lambda *a, **kw: llm_tool("project_create", {"approvalRef": setup.ref},
                                                 usage={"total_tokens": 8001})
@@ -168,8 +174,23 @@ def test_默认工程档不再设轮次与墙钟上限():
     assert PROJECT_BUDGET_V2.max_rounds == 16 and PROJECT_BUDGET_V2.max_wall_seconds == 900.0
 
 
+def test_默认对话档不再设轮次与墙钟上限():
+    """2026-09-18：点火前也按要求放开。只放开工程档会让写计划 / 长思考
+    先被 8/8000/240 掐死，工程档根本轮不到（§一之二）。"""
+    assert CONVERSATION_BUDGET.profile == "control-v3"
+    assert CONVERSATION_BUDGET.max_rounds >= 10_000
+    assert CONVERSATION_BUDGET.max_wall_seconds >= 86_400
+    assert CONVERSATION_BUDGET.max_tokens == 200_000
+    assert CONVERSATION_BUDGET.context_token_budget is True
+    # 旧存档仍按当时那一档还原。
+    assert CONVERSATION_BUDGET_V2.max_rounds == 8
+    assert CONVERSATION_BUDGET_V2.max_tokens == 8_000
+    assert CONVERSATION_BUDGET_V2.max_wall_seconds == 240.0
+
+
 @pytest.mark.parametrize("mode", ["no-adapter", "approval-revoked"])
 def test_project_marker_alone_cannot_choose_execution_policy(env, monkeypatch, mode):
+    monkeypatch.setattr(control, "CONVERSATION_BUDGET", CONVERSATION_BUDGET_V2)
     create_session_project(env.project, env.state.sessionId, owner_id=env.owner, approval_ref=env.ref)
     if mode == "approval-revoked":
         state = load_session(env.state.sessionId)
@@ -290,7 +311,13 @@ def test_recovery_cannot_upgrade_absent_or_invalid_policy(env, monkeypatch, alte
         cp = owned["checkpoint"]
         if alteration == "missing":
             cp.pop("budgetPolicy")
-            cp["cheapTokens"] = 8001
+            # 缺政策还原成当时的对话档。线上默认已是窗口口径，cheapTokens
+            # 8001 撞不上；塞一条压不掉的超长 user，占用仍超窗。
+            pad = "U" * (CONVERSATION_BUDGET.max_tokens * 4 + 16_000)
+            cp["messages"] = [
+                {"role": "system", "content": "p"},
+                {"role": "user", "content": pad},
+            ]
         elif alteration == "escalated":
             cp["budgetPolicy"]["maxTokens"] = 999999999
         elif alteration == "unknown":
@@ -306,7 +333,7 @@ def test_recovery_cannot_upgrade_absent_or_invalid_policy(env, monkeypatch, alte
             assert calls == [1]
             if alteration == "missing":
                 [stop] = stops(final["events"])
-                assert stop["stopReason"] == "token_budget" and stop["limit"] == 8000
+                assert stop["stopReason"] == "token_budget" and stop["limit"] == CONVERSATION_BUDGET.max_tokens
             else:
                 assert final["status"] == "interrupted"
                 assert final["error"] == "control_reconciliation_required"

@@ -50,15 +50,20 @@ from typing import Iterator, Optional
 #: 讲得通：单次调用上限 3（control_client）、一回合最多 8 次调用，
 #: 10 落在「一两次调用重试满」和「每次调用都重试满」之间——
 #: 真抖起来拦得住，偶发一两下不误伤。
+#:
+#: ⚠ 2026-09-18 放开的是下面那道**窗口**，不是这个次数。真机
+#:   `sr-20260918125826-F00TG9S16T` 墙钟 775 秒被 600 秒窗口 canned，
+#:   用户看见「npm test 已等待 8 分钟」。次数闸量的是「网关坏了」，
+#:   跟「这一回合还准不准继续想」不是一回事。
 MAX_RETRIES_PER_TURN = 10
 
-#: 墙钟窗口。抄 grok `MAX_TRANSIENT_RETRY_WINDOW`。
+#: 墙钟窗口。从回合开头起算、从不重置（WRITE 交回后控制面墙钟会重置）。
 #:
-#: ⚠ 600 秒远大于控制面自己的 45s 墙钟，看着像永远不会触发——**不是**。
-#:   控制面墙钟在 WRITE 交回后会重置（工厂时间不计控制面，见
-#:   `_control_llm_loop` 里 `started = time.monotonic()` 那一行），
-#:   而这一层从回合开头起算、从不重置。一次带几跳工厂的回合真能跑过 10 分钟。
-MAX_RETRY_WINDOW_SECONDS = 600.0
+#: ⚠ 2026-09-18 `sr-20260918125826-F00TG9S16T`：工程档 project-v3 已经
+#:   取消轮次/墙钟，这一层却还按 grok 对话标定的 600 秒先停——闸装在
+#:   通电路上、条件在真机上成立。用户看见「npm test 已等待 8 分钟」。
+#:   跟 `PROJECT_BUDGET.max_wall_seconds`（86400）对齐，不许比它更短。
+MAX_RETRY_WINDOW_SECONDS = 86_400.0
 
 
 @dataclass

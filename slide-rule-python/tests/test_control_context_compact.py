@@ -79,7 +79,7 @@ def test_工程档标定是20万窗口197000压缩_v1不压缩():
     assert PROJECT_BUDGET.max_tokens == 200_000
     assert PROJECT_BUDGET.compact_at_tokens == 197_000
     assert PROJECT_BUDGET.context_token_budget is True
-    assert PROJECT_BUDGET.max_request_seconds == 600.0
+    assert PROJECT_BUDGET.max_request_seconds == 3600.0
     # 旧档仍钉着自己那份标定，供 restore_budget 还原老 checkpoint。
     assert PROJECT_BUDGET_V2.profile == "project-v2"
     assert PROJECT_BUDGET_V2.max_wall_seconds == 900.0

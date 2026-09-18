@@ -22,6 +22,7 @@ from control_turn_support import (
     seed_session,
     six_fields,
 )
+from services.control_budget import CONVERSATION_BUDGET_V2
 from services.rehearsal_control import (
     ControlStopReason,
     POST_SPEC_USER,
@@ -36,6 +37,11 @@ pytest.importorskip("fastapi")
 
 @pytest.fixture
 def harness(monkeypatch):
+    # 闸的**机制**钉在 control-v2（8 / 8000 / 240）。线上默认已是
+    # control-v3（放开轮次/token/墙钟），用默认档跑这条会变成「跑一万轮」，
+    # 而且 8001 再也撞不上额度。默认放开见 test_默认对话档不再设上限。
+    import services.rehearsal_control as rc
+    monkeypatch.setattr(rc, "CONVERSATION_BUDGET", CONVERSATION_BUDGET_V2)
     return ControlHarness(monkeypatch)
 
 
@@ -103,17 +109,15 @@ def test_token_cap_stops_before_rehearse_dispatch(harness):
 
 def test_wall_clock_cap_stops_before_dispatch(harness, monkeypatch):
     import services.rehearsal_control as rc
-    from services.control_budget import CONVERSATION_BUDGET
 
     sid = new_sid("cap-wall")
     _confirmed(sid)
     harness.llm_impl = lambda messages, **kw: llm_tool("rehearse", {})
     ticks = {"n": 0}
 
-    # ⚠ 步长和断言都**从常量算**，不许再手打数字：2026-09-14 把点火前墙钟
-    #   45→90 时，这里写死的 46s / 45.0 当场变红，而它想钉的是「墙钟到顶要
-    #   在派发之前停住」，不是那个数本身。
-    step = CONVERSATION_BUDGET.max_wall_seconds + 1.0
+    # ⚠ 步长和断言都**从本夹具钉住的那一档算**，不许再手打数字，也不许
+    #   去读线上默认 CONVERSATION_BUDGET——那已经是 control-v3 的 86400。
+    step = rc.CONVERSATION_BUDGET.max_wall_seconds + 1.0
 
     def fake_mono():
         # 每次 +step：HTTP 中间件若先调 monotonic，started 仍会与下一次
@@ -128,7 +132,7 @@ def test_wall_clock_cap_stops_before_dispatch(harness, monkeypatch):
     [stop] = _stops(events)
     assert stop["stopReason"] == ControlStopReason.WALL_CLOCK.value, stop
     assert stop["stoppedBy"] == "runtime"
-    assert stop["limit"] == CONVERSATION_BUDGET.max_wall_seconds
+    assert stop["limit"] == rc.CONVERSATION_BUDGET.max_wall_seconds
     assert harness.llm_calls == []
 
 

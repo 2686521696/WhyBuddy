@@ -42,7 +42,8 @@ from project_actor_support import project_actor  # noqa: F401
 from conftest import TEST_USER_ID
 from control_turn_support import ControlHarness, llm_text, llm_tool
 from services.control_budget import (
-    PROJECT_BUDGET, PROJECT_BUDGET_V1, CONVERSATION_BUDGET, ControlBudget, restore_budget,
+    PROJECT_BUDGET, PROJECT_BUDGET_V1, CONVERSATION_BUDGET, CONVERSATION_BUDGET_V2,
+    ControlBudget, restore_budget,
 )
 from services.project_creation import create_session_project
 from services.rehearsal_control import (MAX_CHEAP_TOKENS, MAX_REQUEST_SECONDS,
@@ -63,7 +64,7 @@ def _timeouts(harness) -> list:
 # ── 一、活路径 ────────────────────────────────────────────────────────────
 
 
-def test_工程档的每一发请求都拿到600秒(setup, monkeypatch):
+def test_工程档的每一发请求都拿到单发超时(setup, monkeypatch):
     """真 HTTP + 真 source store，工程会话已经建好 → 全程工程档。
 
     变异咬这条：把调用点的 `timeout_ms=loop_budget.request_timeout_ms()`
@@ -82,10 +83,10 @@ def test_工程档的每一发请求都拿到600秒(setup, monkeypatch):
     post(setup.state)
 
     assert _timeouts(harness) == [PROJECT_BUDGET.request_timeout_ms()] * len(harness.llm_calls)
-    assert PROJECT_BUDGET.request_timeout_ms() == 600_000
+    assert PROJECT_BUDGET.request_timeout_ms() == 3_600_000
 
 
-def test_点火前是180秒_建完工程当场切到600秒(setup, monkeypatch):
+def test_点火前是对话档_建完工程当场切到工程档(setup, monkeypatch):
     """**切换要发生在回合中途**，跟 token 预算那条切换是同一个时刻。
 
     这是最能说明"跟着 profile 走"的一条：同一个回合里前后两发拿到不同的数。
@@ -106,9 +107,9 @@ def test_点火前是180秒_建完工程当场切到600秒(setup, monkeypatch):
     seen = _timeouts(harness)
     assert len(seen) >= 2, seen
     # 第一发还在点火前的对话档
-    assert seen[0] == CONVERSATION_BUDGET.request_timeout_ms() == 180_000
+    assert seen[0] == CONVERSATION_BUDGET.request_timeout_ms() == 600_000
     # project_create 成功之后切档
-    assert seen[-1] == PROJECT_BUDGET.request_timeout_ms() == 600_000
+    assert seen[-1] == PROJECT_BUDGET.request_timeout_ms() == 3_600_000
     assert seen[0] != seen[-1], "档没切，说明超时没跟着 budget 走"
 
 
@@ -123,7 +124,7 @@ def test_反向_对话回合不许被顺手放宽(setup, monkeypatch):
     post(setup.state)
 
     assert _timeouts(harness) == [CONVERSATION_BUDGET.request_timeout_ms()]
-    assert CONVERSATION_BUDGET.request_timeout_ms() == 180_000
+    assert CONVERSATION_BUDGET.request_timeout_ms() == 600_000
 
 
 # ── 二、老存档不许失效 ────────────────────────────────────────────────────
@@ -149,7 +150,9 @@ def test_老存档不许因为多了这个字段而失效():
     assert restored.request_timeout_ms() == 120_000
     assert restored.max_tokens == 64_000
     assert restore_budget(PROJECT_BUDGET.to_wire(), LEGACY) is PROJECT_BUDGET
-    assert PROJECT_BUDGET.request_timeout_ms() == 600_000
+    assert PROJECT_BUDGET.request_timeout_ms() == 3_600_000
+    assert restore_budget(CONVERSATION_BUDGET_V2.to_wire(), LEGACY) is CONVERSATION_BUDGET_V2
+    assert CONVERSATION_BUDGET_V2.request_timeout_ms() == 180_000
 
     old_legacy = {"profile": "control-v1", "maxRounds": MAX_TOOL_ROUNDS,
                   "maxTokens": MAX_CHEAP_TOKENS, "maxWallSeconds": MAX_WALL_SECONDS}
@@ -191,9 +194,11 @@ def test_工程档比对话档宽_而且真的是它需要宽():
     assert PROJECT_BUDGET.max_request_seconds > CONVERSATION_BUDGET.max_request_seconds
     assert CONVERSATION_BUDGET.max_request_seconds > LEGACY.max_request_seconds
     # ⚠ 2026-09-14 从 45 抬到 75：45 秒写不完一份实施计划。
-    # ⚠ 2026-09-15 75/90 仍把 ~150s 的写计划掐死，新回合改走 control-v2。
+    # ⚠ 2026-09-15 75/90 仍把 ~150s 的写计划掐死，当时新回合走 control-v2。
+    # ⚠ 2026-09-18 再开 control-v3：单发 600，工程档单发再放到 3600。
     assert LEGACY.max_request_seconds == MAX_REQUEST_SECONDS == 75.0
-    assert CONVERSATION_BUDGET.max_request_seconds == 180.0
+    assert CONVERSATION_BUDGET_V2.max_request_seconds == 180.0
+    assert CONVERSATION_BUDGET.max_request_seconds == 600.0
 
 
 def test_客户端不许把显式传下来的值再压回45秒():
