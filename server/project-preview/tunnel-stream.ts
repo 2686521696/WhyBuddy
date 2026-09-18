@@ -1,4 +1,4 @@
-import { Duplex } from "node:stream";
+import { Duplex, Transform } from "node:stream";
 import type { Socket } from "node:net";
 import WebSocket, { type RawData } from "ws";
 
@@ -83,6 +83,20 @@ export class TunnelStream extends Duplex {
   }
 }
 
+/** iframe Host is the sslip relay. Sandbox Vite 7 blocks it. Rewrite only the
+ *  request that is already inside an authorized tunnel; never allowedHosts=true. */
+export function rewritePreviewHostHeader(chunk: Buffer): Buffer {
+  if (chunk.length < 8) return chunk;
+  const text = chunk.toString("latin1");
+  if (!/^(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS|CONNECT) /i.test(text)) return chunk;
+  const split = text.indexOf("\r\n\r\n");
+  const headers = split >= 0 ? text.slice(0, split) : text;
+  if (!/^Host:/im.test(headers)) return chunk;
+  const next = headers.replace(/^Host:[^\r\n]*/im, "Host: 127.0.0.1");
+  if (next === headers) return chunk;
+  return Buffer.from(split >= 0 ? next + text.slice(split) : next, "latin1");
+}
+
 export function bridgeTunnel(socket: Socket, ws: WebSocket,
   limits: { maxFrameBytes: number; highWaterMark: number; idleTimeoutMs: number }): TunnelStream {
   const stream = new TunnelStream(ws, limits.maxFrameBytes, limits.highWaterMark);
@@ -91,7 +105,20 @@ export function bridgeTunnel(socket: Socket, ws: WebSocket,
   stream.on("error", () => socket.destroy());
   socket.on("close", () => { if (!stream.destroyed) stream.destroy(); });
   stream.on("close", () => { if (!socket.destroyed) socket.destroy(); });
-  socket.pipe(stream).pipe(socket);
+  let first = true;
+  const toLocal = new Transform({
+    transform(chunk, _encoding, callback) {
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      if (first) {
+        first = false;
+        callback(null, rewritePreviewHostHeader(bytes));
+        return;
+      }
+      callback(null, bytes);
+    },
+  });
+  socket.pipe(stream);
+  stream.pipe(toLocal).pipe(socket);
   socket.resume();
   return stream;
 }

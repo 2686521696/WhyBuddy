@@ -155,6 +155,17 @@ describe("private preview outbound tunnel", () => {
     await until(() => f.relay.snapshot()[0].streams === 0);
   });
 
+  it("rewrites the iframe Host to loopback so sandbox Vite does not block sslip", async () => {
+    const f = await fixture();
+    const iframeHost = "rt-pop-c95a3c8fe4dc4c818361260f3d722777.preview.156.239.47.108.sslip.io";
+    const response = await http(f.origin, "/headers", { cookie: f.cookie.cookie, host: iframeHost });
+    expect(response.status).toBe(200);
+    const headers = JSON.parse(response.body.toString());
+    expect(headers.host).toBe("127.0.0.1");
+    expect(headers.host).not.toBe(iframeHost);
+    await until(() => f.relay.snapshot()[0].streams === 0);
+  });
+
   it("allows health handling before auth and rejects anonymous, role-confused and mismatched resources", async () => {
     const f = await fixture();
     expect((await http(f.origin, "/_whybuddy/health")).body.toString()).toBe("health");

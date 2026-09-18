@@ -132,6 +132,9 @@ modules = [
   "services.archetype_legal",
   "services.project_rollout",
   "services.project_preview_config",
+  # 预览 Host 注入是纯字符串/命令拼装：不碰 E2B、不读存储。worker 启动
+  # Vite 时引用；Agent 源码接不接 allowedHosts 都走这一份。
+  "services.vite_preview_hosts",
   "services.project_tool_contracts",
   "services.project_browser_interact",
   "services.project_tool_summary",
@@ -839,6 +842,7 @@ why = "工程运行编排：把持久源码、租约和 E2B provider 组合成�
     "services.project_preview_runtime",
     "services.project_preview_access",
     "services.project_preview_config",
+    "services.vite_preview_hosts",
 ]
 
 

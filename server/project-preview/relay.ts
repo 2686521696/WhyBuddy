@@ -229,7 +229,12 @@ export function createPreviewRelay(options: PreviewRelayOptions) {
       headers: { ...filteredHeaders(request.headers, cookies, false, grant.authorizationIsGatewayCredential),
         // TLS terminates at the preview gateway. The app needs the authenticated
         // public scheme to issue iframe cookies; browser forwarded headers are stripped.
-        "x-forwarded-proto": new URL(grant.audience).protocol.slice(0, -1) } });
+        "x-forwarded-proto": new URL(grant.audience).protocol.slice(0, -1),
+        // 2026-09-18：iframe Host 是 `{runtimeId}.preview….sslip.io`。沙箱
+        // Vite 7 默认只放行 localhost；Agent 写的 server.mjs 又不接
+        // allowedHosts。网关已经按票选好了隧道，转给应用时改成 loopback，
+        // Vite 不再回 Blocked request。不要写成 allowedHosts:true。
+        host: "127.0.0.1" } });
     upstream.setTimeout(limits.idleTimeoutMs, () => upstream.destroy());
     request.on("aborted", () => upstream.destroy());
     request.on("error", () => upstream.destroy());
@@ -267,6 +272,7 @@ export function createPreviewRelay(options: PreviewRelayOptions) {
     trackBrowser(grant, () => socket.destroy(), done => socket.once("close", done));
     const headers = filteredHeaders(request.headers, cookies, false, grant.authorizationIsGatewayCredential);
     headers["x-forwarded-proto"] = new URL(grant.audience).protocol.slice(0, -1);
+    headers.host = "127.0.0.1";
     headers.connection = "Upgrade";
     headers.upgrade = "websocket";
     const upstream = httpRequest({ socketPath: control.socketPath, path, method: "GET", headers, agent: false });

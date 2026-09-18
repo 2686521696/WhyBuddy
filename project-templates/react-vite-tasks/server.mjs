@@ -6,6 +6,12 @@ import { openDatabase, appError, DATA_SCHEMA_VERSION } from "./database.mjs";
 
 const ROOT = fileURLToPath(new URL(".", import.meta.url));
 const MAX_BODY = 16384;
+// Worker sets __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS to the relay Host
+// (and E2B published host when present). createViteServer must pass it
+// through: Vite CLI merges the env, middleware mode still needs the option.
+function viteAllowedHosts() {
+  return String(process.env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS || "").split(",").map(h => h.trim()).filter(Boolean);
+}
 async function body(request) {
   if (!/^application\/json(?:;|$)/i.test(request.headers["content-type"] || "")) throw appError(415, "需要JSON请求");
   if (request.headers["sec-fetch-site"] === "cross-site") throw appError(403, "不允许跨站写入");
@@ -69,7 +75,7 @@ export async function startApplication({ host = "127.0.0.1", port = 5173, dev = 
   try {
     if (dev) {
       const { createServer: createViteServer } = await import("vite");
-      vite = await createViteServer({ root: ROOT, server: { middlewareMode: true, hmr: { server } }, appType: "spa" });
+      vite = await createViteServer({ root: ROOT, server: { middlewareMode: true, hmr: { server }, allowedHosts: viteAllowedHosts() }, appType: "spa" });
     }
     await new Promise((yes, no) => { server.once("error", no); server.listen(port, host, yes); });
   } catch (error) { await vite?.close(); database.close(); throw error; }

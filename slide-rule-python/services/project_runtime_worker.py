@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import logging
-import shlex
 import threading
 import time
 import uuid
@@ -35,6 +34,7 @@ from services.project_preview_config import (
     preview_configuration_enabled,
     published_preview_url,
 )
+from services.vite_preview_hosts import injected_preview_dev_command
 from services.project_runtime import REVISION_FILE, _LeaseHeartbeat, _timestamp
 from services.project_source_sync import authorize_source_recovery, finish_pending_source_patches, sync_next_source_patch
 from services.project_store import ProjectConflict, ProjectStore, ProjectStoreUnavailable
@@ -462,9 +462,16 @@ class _RuntimeTask:
 
     def development_server_command(self):
         server_command = f"npm run dev -- --host 0.0.0.0 --port {self.runtime.port} --strictPort"
-        host = self._vite_allowed_host()
-        if host:
-            server_command = f"__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS={shlex.quote(host)} {server_command}"
+        hosts = self._vite_allowed_hosts()
+        # Env alone is the Vite CLI merge. Agent `createViteServer` skips it
+        # (2026-09-18 真机 server.mjs). NODE --import wraps createServer for
+        # every project; do not patch durable source per revision.
+        if hosts:
+            logger.info("project_vite_preview_hosts relay=%s all=%s", hosts[0], hosts)
+            # ⚠ 2026-09-18：logger.info 进不了 uvicorn access 日志，重启后
+            #   仍拦时终端里完全看不到注入有没有跑。print flush 才能对上真机。
+            print(f"[project] vite preview hosts relay={hosts[0]} all={hosts}", flush=True)
+            return injected_preview_dev_command(server_command, hosts)
         return server_command
 
     def _published_preview_url(self):
@@ -482,26 +489,44 @@ class _RuntimeTask:
             self.runtime = self.runtime.model_copy(update={"previewUrl": url})
 
     def _require_relay_origin(self):
-        # Validate the private relay template before any remote IO. The actual
-        # Vite Host may later prefer E2B's published hostname; a bad template
-        # must still fail before create / npm ci (2026-09-16).
-        if self.original.kind != "runtime.start" or self.supervisor.preview_runtime is None:
+        # Validate the private relay template before any remote IO. A bad
+        # template must still fail before create / npm ci (2026-09-16).
+        # ⚠ 2026-09-18：iframe Host 来自 origin template，不是来自隧道进程。
+        #   本地缺 dist/project-preview/agent.cjs 时 preview_runtime 是 None，
+        #   上一版这里直接 return None，中继 Host 永远不进 Vite 名单——
+        #   启动日志 `[startup] project preview agent bundle unavailable`，
+        #   预览照样兑票，Vite 照样拦 sslip.io。
+        if self.original.kind != "runtime.start":
             return None
-        preview_host = urlsplit(origin_for_runtime(self.runtime.runtimeId)).hostname
+        try:
+            preview_host = urlsplit(origin_for_runtime(self.runtime.runtimeId)).hostname
+        except ValueError:
+            if self.supervisor.preview_runtime is not None:
+                raise
+            return None
         if not preview_host:
             raise ValueError("project_preview_origin_invalid")
         return preview_host
 
-    def _vite_allowed_host(self):
+    def _vite_allowed_hosts(self):
+        # ⚠ 2026-09-18 真机（allowlist + 156 sslip 中继）：上一版
+        #   `_vite_allowed_host` 让 E2B `get_host` 赢，启动命令只放行
+        #   `5173-*.e2b.app`。iframe 的 Host 是
+        #   `{runtimeId}.preview.156.239.47.108.sslip.io`，Vite 7 回
+        #   「Blocked request. This host is not allowed」——票已经兑上了，
+        #   应用自己把预览拦了。allowlist 出票走中继，internal 无隧道才走
+        #   发布域；两个 Host 都要进名单，不许互斥。Never take hosts from
+        #   tool input or set allowedHosts=true.
+        hosts = []
+        relay = self._require_relay_origin()
+        if relay:
+            hosts.append(relay)
         published = self._published_preview_url()
         if published:
-            return urlsplit(published).hostname
-        # The relay preserves Host (including HMR), so Vite must explicitly
-        # accept this runtime's dedicated origin. The cloud smoke supplied
-        # this env var but the real worker did not: local health passed while
-        # every authorized preview returned Vite's blocked-host response.
-        # Never take allowed hosts from tool input or disable Vite's check.
-        return self._require_relay_origin()
+            name = urlsplit(published).hostname
+            if name and name not in hosts:
+                hosts.append(name)
+        return hosts
 
     def run(self):
         if self.result.get("cleanup"):
@@ -618,9 +643,9 @@ class _RuntimeTask:
         self._remember_published_preview()
         now = published_preview_url(self.runtime.previewUrl)
         if phase != "starting" and now and previous != now:
-            # 2026-09-16 TicketStream：旧 Vite 只允许私有中继 Host。iframe
-            # 打开 E2B 发布域名会被 blocked host。刚拿到发布地址时停掉旧
-            # 进程再起一次，让 __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS 对上。
+            # 2026-09-16 TicketStream：刚拿到发布地址时停掉旧进程再起一次，
+            # 让 __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS 带上 E2B 发布域。
+            # 2026-09-18：中继 Host 必须一直在名单里，不能被这次重启换掉。
             # 后续 lease 续上 previous==now，不再重启。
             stopper = getattr(self.provider, "stop", None)
             if callable(stopper):

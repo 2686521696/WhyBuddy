@@ -15,9 +15,9 @@
 
 ## 此刻的事实（由代码算出，不是手写）
 
-- 扫描文件 **346** 个，模块 **346** 个
-- 内部依赖边 **1140** 条（包含普通包初始化依赖）
-- 内部 import 语句 **1052** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
+- 扫描文件 **347** 个，模块 **347** 个
+- 内部依赖边 **1141** 条（包含普通包初始化依赖）
+- 内部 import 语句 **1053** 条，其中函数体内 **474** 条语句（基线 474，只许变少）
 - 未声明的跨包依赖 **0** 条（基线 0 条）
 - 未豁免的模块级成环边 **0** 条（完整 SCC，基线 0 条）
 - component 级成环边 **0** 条（完整 SCC，基线 0 条）
@@ -37,7 +37,7 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 | 层 | 模块数 | 可以依赖 | 是什么 |
 |---|---|---|---|
-| `util` | 150 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
+| `util` | 151 | （谁都不依赖） | 纯工具：不依赖 services 里任何其它模块 |
 | `core` | 71 | util | 核心：模型 / 闸 / 闭环 / 生成件 |
 | `flow` | 43 | util、core | 编排：驱动器 / 流水线 / 控制面 / 会话 |
 
@@ -49,12 +49,12 @@ V5.x～V6.0 手画是历史实验室笔记，禁止再打新 ⚑。
 
 ```mermaid
 flowchart TB
-  util["util<br/>150 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
+  util["util<br/>151 个模块<br/>纯工具：不依赖 services 里任何其它模块"]
   core["core<br/>71 个模块<br/>核心：模型 / 闸 / 闭环 / 生成件"]
   flow["flow<br/>43 个模块<br/>编排：驱动器 / 流水线 / 控制面 / 会话"]
   core -->|155| util
   flow -->|126| core
-  flow -->|156| util
+  flow -->|157| util
 ```
 
 虚线 = 未在 `architecture.toml` 里声明的边（欠账，只许变少）。
@@ -67,7 +67,7 @@ flowchart TB
   stdio_utf8["stdio_utf8<br/>1 个模块<br/>顶层叶子：Windows 管道 UTF-8 钉桩"]
   sliderule_llm["sliderule_llm<br/>16 个模块<br/>LLM 通道"]
   middlewares["middlewares<br/>2 个模块<br/>中间件"]
-  services["services<br/>264 个模块<br/>业务"]
+  services["services<br/>265 个模块<br/>业务"]
   routes["routes<br/>15 个模块<br/>HTTP 路由"]
   app["app<br/>1 个模块<br/>装配根"]
   complete_migration["complete_migration<br/>1 个模块<br/>一次性迁移记录"]
@@ -163,7 +163,7 @@ flowchart LR
   persist["persist<br/>10"]
   platform["platform<br/>38"]
   run_control["run_control<br/>4"]
-  runtime["runtime<br/>9"]
+  runtime["runtime<br/>10"]
   spec_first["spec_first<br/>41"]
   task_exec["task_exec<br/>19"]
   web_aigc["web_aigc<br/>16"]
