@@ -21,6 +21,7 @@ from services.identity_store import User
 from services.project_authority import approved_reference
 from services.project_creation import load_authorized_session
 from services.project_store import ProjectStore
+from services import project_tools as project_tools_module
 
 
 @pytest.fixture
@@ -31,6 +32,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(persistence, "_blob_store", lambda *_: blobs)
     monkeypatch.setenv("NODE_ENV", "development")
     monkeypatch.setenv("SLIDERULE_PROJECT_RUNTIME_INTERNAL_ENABLED", "1")
+    monkeypatch.setattr(project_tools_module, "SHELL_EXEC_FOREGROUND_BLOCK_SECONDS", 0)
     from config.settings import settings
     monkeypatch.setattr(settings, "NODE_ENV", "development")
     project = ProjectStore.from_url(f"sqlite:///{tmp_path / 'state.db'}")
@@ -501,6 +503,84 @@ def test_uncertain_side_effect_is_interrupted_without_replaying_post(env, monkey
             assert final["status"] == "interrupted" and final["error"] == "control_reconciliation_required"
             assert not calls
             assert env.project.get_project_for_session(env.state.sessionId, owner_id=env.owner) is None
+        finally:
+            await service.shutdown()
+    asyncio.run(run())
+
+
+def test_settling_after_waiting_operation_opens_a_new_round(env, monkeypatch):
+    """2026-09-18 真机：问账号密码 → 模型改文件打 build → text-only 收尾
+    留下 settling，exec 还在 queued。wait_for_operations 叫醒后原来直接
+    control_reconciliation_required，黄条「控制面未返回结果」。
+
+    抄 grok auto-wake：已经收尾的回合开新一轮，不是把 settling 当中途打断。
+    反向：entry / dispatching 仍走上面那条对账，不许借这条重放不确定副作用。
+    """
+    import time
+
+    from services.control_budget import PROJECT_BUDGET
+
+    calls = []
+
+    async def model(messages, **kwargs):
+        calls.append(messages)
+        return llm_text("登录页还在创建管理员，默认账号在启动日志里。")
+
+    monkeypatch.setattr(control, "_invoke_control_llm", model)
+    record = env.store.submit(
+        env.state.sessionId, env.owner, "credentials-wake",
+        six_fields(env.state.sessionId, "用户名密码是啥"),
+    )
+    claimed = env.store.claim(record["runId"], "old-worker", 3)
+    now = time.time()
+    env.store.update_goal(
+        record["runId"], "old-worker", claimed["generation"],
+        status="waiting_operation", operation_ids=["pop-queued-build"])
+    done = SimpleNamespace(
+        operationId="pop-queued-build", kind="runtime.exec", status="completed",
+        result={"exitCode": 0, "command": "build"}, runtime=None)
+    env.project.get_operation = lambda operation_id, owner_id=None, **kwargs: done
+    env.store.save_checkpoint(record["runId"], "old-worker", claimed["generation"], {
+        "schemaVersion": 1,
+        "phase": "settling",
+        "round": 4,
+        "messages": [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "用户名密码是啥"},
+        ],
+        "startedAt": now,
+        "cheapTokens": 12,
+        "retrySpent": 0,
+        "retryStartedAt": now,
+        "operationIds": ["pop-queued-build"],
+        "pendingCalls": [],
+        "content": "旧回答",
+        "budgetPolicy": PROJECT_BUDGET.to_wire(),
+        "options": {
+            "user_text": "用户名密码是啥",
+            "installed_skills": None,
+            "active_connectors": None,
+            "preferred_device": None,
+            "design_system_id": None,
+            "original_goal": "Build a small project",
+            "empty_text": None,
+            "tools": None,
+        },
+    })
+    env.store.suspend(record["runId"], "old-worker", claimed["generation"])
+
+    async def run():
+        service = env.service()
+        await service.start()
+        try:
+            final = await settled(service, record["runId"])
+            assert final["error"] != "control_reconciliation_required", final
+            assert final["status"] == "completed", final
+            assert calls, "settling 叫醒没有开新一轮，模型根本没被再调用"
+            assert any(
+                isinstance(item, dict) and "后台命令已结束" in str(item.get("content") or "")
+                for item in calls[0]
+            ), calls[0][:4]
         finally:
             await service.shutdown()
     asyncio.run(run())

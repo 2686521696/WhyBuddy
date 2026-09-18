@@ -23,7 +23,8 @@ from services.project_creation import load_authorized_session
 from services.project_tools import ProjectTools
 from services.project_tool_contracts import PROJECT_TOOL_NAMES
 from services.control_goal_continuation import (
-    continuation_checkpoint, continuation_notice, progress_mark, should_continue,
+    continuation_checkpoint, continuation_notice, operation_settled_notice,
+    progress_mark, should_continue,
     unfinished_slice_waits_for_user, unfinished_cap_waits_for_user)
 from services.project_delivery import ProjectDeliveryService
 from services.rehearsal_control import run_control_turn, validate_control_turn_body, bound_tool_result
@@ -504,6 +505,34 @@ class ControlRunService:
                     self.worker_id, generation,
                     {"type": "control_continuation", "attempt": attempt,
                      "reason": "goal_not_delivered", "blockedReasons": blocked[:6]})
+            awaiting = (record.get("goal") or {}).get("awaitingOperationIds") or []
+            if (
+                checkpoint is not None
+                and checkpoint.get("phase") == "settling"
+                and awaiting
+            ):
+                # ⚠ 2026-09-18 真机（问账号密码那轮）：
+                #   模型 text-only 收尾留下 phase="settling"，shell_exec 还在
+                #   queued，wait_for_operations 叫醒后走这里。原来直接
+                #   control_reconciliation_required，host 黄条「控制面未返回结果」。
+                #
+                #   抄 grok-build auto-wake：后台任务结束是**新一轮合成提示**，
+                #   不是把已经收尾的 checkpoint 当「回合中途被打断」去续。
+                #   只在「真的在等操作」时转。目标续跑走上面 attempt>emitted
+                #   那条；entry / dispatching 仍对账，不许借这条重放不确定副作用。
+                op_rows = []
+                for operation_id in awaiting:
+                    try:
+                        op_rows.append(await asyncio.to_thread(
+                            self.project_store.get_operation,
+                            operation_id, owner_id=record["ownerId"]))
+                    except Exception:
+                        continue
+                resumed = continuation_checkpoint(
+                    checkpoint, operation_settled_notice(op_rows))
+                if resumed is not None:
+                    await port.save(resumed)
+                    checkpoint = resumed
             if checkpoint is not None and checkpoint.get("phase") not in {"model", "tools"}:
                 raise ControlRunStopped("control_reconciliation_required")
             if checkpoint is None:

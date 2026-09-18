@@ -169,7 +169,7 @@ from services.slide_rule_interactive_gates import (
     resolve_readiness_gaps_by_ids,
 )
 from services.slide_rule_session import load_session, save_session
-from services.control_transcript_log import tool_transcript_entry
+from services.control_transcript_log import tool_start_event, tool_transcript_entry
 from services.turn_narration import deliverable_fingerprint as factory_deliverable_fingerprint  # 叙述/回执同一把尺子
 from services.llm_error_text import humanize_llm_error
 from sliderule_llm.client import LlmError
@@ -1062,7 +1062,8 @@ MAX_CHEAP_TOKENS = 8000
 #:   而它守的那道门后面的东西没人到得了。
 #: ⚠ 2026-09-15 新开会话 `sr-20260915161915-B2601PBD1Q`：写计划前两发
 #:   分别想了 148s / 151s，墙钟 90 把计划掐在「没点火」。工程档的 600/900
-#:   根本轮不到。对话档改走 `CONVERSATION_BUDGET`（control-v2，180/240）。
+#:   根本轮不到。对话档当时改走 control-v2（180/240）。
+#: ⚠ 2026-09-18 对话档再开 control-v3（轮次/墙钟/token 跟工程档对齐），
 #:   下面两个常量仍是 **control-v1 存档** 的数字，不许原地改——改了旧
 #:   checkpoint 的 to_wire 对不上。
 MAX_WALL_SECONDS = 90.0
@@ -3301,6 +3302,16 @@ def _system_prompt(state: V5SessionState) -> str:
         #   （破坏性动作要批准）。
         "回应要对上用户的意图：明确要动手的就动手；提问、说明、评论、闲谈这类，"
         "回答就好，不要顺手造东西。不跑题。"
+        # ⚠ 2026-09-18 真机：问「用户名密码是啥」，模型仍改 src/main.tsx 又
+        #   shell_exec npm run build。work_policy 那句已经在上面，它没听。
+        #   grok 还有两句工具侧事实，我们漏了：
+        #     Claim that something is done … only when tool output supports
+        #     is_background 才立刻返回；前台等的是 exit code
+        #   没有分类器（grok 也没有）。这里只补事实，不写成「必须先…」。
+        "说已经做完、修好或测过，只能在工具结果撑得住的时候说；"
+        "还在排队、commandFinished 不是 true、没有 exitCode，就说明还没核实。"
+        "shell_exec / bash 默认会等到命令结束才交回结果；"
+        "要丢到后台跑就带 is_background=true，回来的是 running 不是做完。"
         # ⚠ 2026-09-15 真机 TicketStream（sr-20260915165800-M6JK4H3XFB）：
         #   用户中文需求、问卷和 write_plan 都已是中文，但派工具前的
         #   content 是英文思考独白（"Initial Assessment…" / "playing the
@@ -5025,11 +5036,7 @@ async def _dispatch_tool(
         #   （闸的钥匙）和 project_patch 的文件全文。见
         #   `project_tool_summary` 模块头。
         summary = project_tool_summary(name, args)
-        yield {
-            "type": "control_tool_start",
-            "tool": name,
-            **({"summary": summary} if summary else {}),
-        }
+        yield tool_start_event(name, summary=summary or "")
         body = await run_in_threadpool(adapter.execute, name, args, state)
         # Project operations are durable and may outlive this tool call.  Keep
         # the existing control loop alive briefly so the next model turn sees
@@ -5038,6 +5045,13 @@ async def _dispatch_tool(
         # resumable through project_status and never blocks cancellation or
         # consumes the control budget indefinitely.
         operation_id = body.get("operationId") if isinstance(body, dict) else None
+        # ⚠ 2026-09-18：开场那一发还没 enqueue，没有 id。execute 一返回
+        #   就把 id 补出去——否则 15 秒等待里「它的电脑」订不到这条
+        #   PTY，只能退到 runtime.start 的 npm ci 残留。
+        if operation_id:
+            yield tool_start_event(
+                name, summary=summary or "", operation_id=str(operation_id)
+            )
         if operation_id and body.get("status") not in {"completed", "failed", "cancelled"}:
             deadline = time.monotonic() + 15.0
             while time.monotonic() < deadline:

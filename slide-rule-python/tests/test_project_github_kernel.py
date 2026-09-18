@@ -67,10 +67,11 @@ def test_glob_and_list_dir(setup):
 
 def test_bash_is_the_managed_shell(setup):
     create(setup)
-    queued = execute(setup, "bash", {"command": "pnpm run check"})
+    queued = execute(setup, "bash", {"command": "pnpm run check", "is_background": True})
     assert queued["ok"], queued
     assert queued["operationId"]
-    curl = execute(setup, "bash", {"command": "curl https://example.com"})
+    assert queued["commandFinished"] is False, queued
+    curl = execute(setup, "bash", {"command": "curl https://example.com", "is_background": True})
     assert curl["ok"], curl
     assert setup.store.get_operation(curl["operationId"], owner_id="alice").input["script"] == (
         "curl https://example.com"

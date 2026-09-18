@@ -52,6 +52,10 @@ def test_prompt_is_complete_the_job_not_a_syllabus():
     assert "不跑题" in text, "跑题那道边界丢了"
     assert "回答就好" in text, "又把「只回答一句」这条路堵死了"
     assert "不要顺手造东西" in text
+    # ⚠ 2026-09-18 抄 grok claim-done / is_background。只改上面那句不够：
+    #   真机问账号时模型照样改文件打 build，把 queued 的 ok 当成跑完。
+    assert "工具结果撑得住" in text, "又把「没证据不许说做完」漏了"
+    assert "is_background=true" in text, "没告诉模型后台跑不是做完"
     assert "默认简体中文" in text, "对用户开口的语言边界丢了"
     assert "思考过程不要写进正文" in text
     for banned in HANDBOOK:

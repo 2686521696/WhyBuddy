@@ -4,7 +4,7 @@
 反向：project_patch 全文不许出现在这一行里。
 """
 
-from services.control_transcript_log import tool_transcript_entry
+from services.control_transcript_log import tool_start_event, tool_transcript_entry
 
 
 def test_start_and_result_become_transcript_rows():
@@ -43,6 +43,52 @@ def test_start_and_result_become_transcript_rows():
     assert "五系统原文" not in dumped
     assert "content" not in start
     assert "digest" not in result
+
+
+def test_start_carries_operation_id_and_result_keeps_status():
+    start = tool_start_event("project_exec", summary="npm test", operation_id="op-test")
+    assert start == {
+        "type": "control_tool_start",
+        "tool": "project_exec",
+        "summary": "npm test",
+        "operationId": "op-test",
+    }
+    logged = tool_transcript_entry(start)
+    assert logged["kind"] == "tool_start"
+    assert logged["operationId"] == "op-test"
+    result = tool_transcript_entry({
+        "type": "control_tool_result",
+        "tool": "project_exec",
+        "ok": True,
+        "command": "npm test",
+        "operationId": "op-test",
+        "status": "running",
+    })
+    assert result["status"] == "running"
+    assert result["operationId"] == "op-test"
+    assert result["detail"] == "npm test"
+
+
+def test_execute_之后立刻把_operationId_补进开场():  # noqa: RUF001
+    """execute 返回和 15 秒等待之间必须再 yield 一发带 id 的 start。
+
+    只改开场那一发 = 还没 enqueue，id 是空的。只改结果 = 等满 15 秒
+    才订得上 PTY，打字已经打完了。
+    """
+    import re
+    from pathlib import Path
+
+    raw = Path(__file__).resolve().parents[1].joinpath(
+        "services", "rehearsal_control.py"
+    ).read_text(encoding="utf-8")
+    src = re.sub(r'""".*?"""', "", raw, flags=re.S)
+    src = re.sub(r"#.*", "", src)
+    execute_at = src.find("adapter.execute")
+    wait_at = src.find("time.monotonic() + 15.0")
+    assert execute_at != -1 and wait_at != -1 and execute_at < wait_at
+    chunk = src[execute_at:wait_at]
+    assert "tool_start_event" in chunk
+    assert "operation_id" in chunk
 
 
 def test_non_tool_events_are_ignored():

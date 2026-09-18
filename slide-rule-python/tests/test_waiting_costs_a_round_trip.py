@@ -64,13 +64,28 @@ def test_两处合同用同一个上界():
 
 
 def test_模型看见的描述跟着改了():
-    """⚠ 只改 Field 不改描述 = 模型仍以为上限是 5，等于没改。"""
-    text = " ".join(str(v) for v in _DESCRIPTIONS.values())
+    """⚠ 只改 Field 不改描述 = 模型仍以为上限是 5，等于没改。
+
+    2026-09-18 前台等待秒数走 interpolate（抄 grok），盯生模板会绿、
+    模型看见的还是 `{fg_block_secs}`。所以这里跑装配后的字符串。
+    """
+    from services.project_tool_contracts import (
+        interpolate_description,
+        SHELL_EXEC_FOREGROUND_BLOCK_SECONDS,
+    )
+
+    text = " ".join(interpolate_description(str(v)) for v in _DESCRIPTIONS.values())
     assert "max 5" not in text, (
         "描述里还写着 max 5——那是模型唯一看得见的上界，"
         "Field 放宽了它也不会用"
     )
     assert f"max {int(PROJECT_WAIT_MAX_SECONDS)}" in text
+    assert "{fg_block_secs}" not in text
+    assert f"about {int(SHELL_EXEC_FOREGROUND_BLOCK_SECONDS)}s" in text, (
+        "shell_exec 描述没把前台默认等待秒数填进去，模型仍以为一交就是跑完"
+    )
+    assert "commandFinished" in text
+    assert "is_background=true" in text
 
 
 def test_退避让长等不再变成数据库风暴():
@@ -100,17 +115,23 @@ def test_退避之后整段等待的查询次数是几十不是几百():
 def test_等待循环提前返回而不是死等满():
     """⚠ 这条是上面那个 30 秒之所以安全的**前提**。
 
-    直接跑产线源码里的那两个循环形状：操作已经是终态时，一次 sleep 都不该发生。
+    2026-09-18 又给 shell_exec 前台加了第三处等待。三处必须走同一个
+    `_poll_operation`：再抄一份 while 就会漂（CLAUDE.md §4）。
     """
     import inspect
 
     source = inspect.getsource(project_tools)
-    for marker in ("while operation.status not in _TERMINAL and time.monotonic() < deadline",
-                   'if operation.runtime is not None and operation.runtime.status == "ready":'):
-        assert source.count(marker) >= 2, (
-            f"两个等待循环里少了提前返回：{marker!r}。"
-            "没有提前返回，把上界调到 30 秒就是每次都死等满，比原来更糟"
-        )
+    assert source.count("def _poll_operation") == 1
+    assert source.count("self._poll_operation(") >= 3, (
+        "project_status / shell_wait / shell_exec 少了一处走 _poll_operation。"
+        "漏掉的那处会自己写一份循环，提前返回改了也不生效"
+    )
+    helper = inspect.getsource(project_tools.ProjectTools._poll_operation)
+    assert "while operation.status not in _TERMINAL and time.monotonic() < deadline" in helper
+    assert 'getattr(operation.runtime, "status", None) == "ready"' in helper
+    assert source.count("while operation.status not in _TERMINAL and time.monotonic() < deadline") == 1, (
+        "等待循环又抄了一份。没有提前返回的那份会把 30/120 秒死等满"
+    )
 
 
 def test_系统提示词把这两件事作为事实告诉模型():

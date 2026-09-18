@@ -260,3 +260,36 @@ def continuation_notice(blocked_reasons: Any, attempt: int) -> str:
     if not reasons:
         return head + "服务端没有给出具体缺项；先用 project_status 查清当前状态再决定下一步。"
     return head + "服务端判定仍缺：" + "；".join(reasons) + "。请据此继续，不要重复已经完成的步骤。"
+
+
+def operation_settled_notice(operations: Any) -> str:
+    """后台命令进终态之后叫醒模型的那句话。
+
+    抄 grok-build `format_bash_completion`：
+        Background task "{id}" completed (exit code: {code}).
+
+    ⚠ 2026-09-18 真机：text-only 收尾留下 settling，wait_for_operations 把
+      排队的 build 等完再叫醒，resume 守卫只认 model/tools，直接
+      `control_reconciliation_required`，页面黄条「控制面未返回结果」。
+      grok 是**新开一轮合成提示**，不是把已经说完的 checkpoint 当中途打断。
+      这句话是那一轮的合成提示；checkpoint 形状由 continuation_checkpoint 转。
+    """
+    rows: List[str] = []
+    if isinstance(operations, list):
+        for item in operations:
+            oid = str(getattr(item, "operationId", "") or "").strip()
+            kind = str(getattr(item, "kind", "") or "").strip()
+            status = str(getattr(item, "status", "") or "").strip()
+            saved = getattr(item, "result", None)
+            extra = ""
+            if isinstance(saved, dict) and "exitCode" in saved:
+                extra = f"，exit code: {saved['exitCode']}"
+            piece = " ".join(part for part in (oid, kind, status) if part) + extra
+            if piece and piece not in rows:
+                rows.append(piece[:160])
+            if len(rows) >= 6:
+                break
+    head = "[后台命令已结束]"
+    if not rows:
+        return head + " 没有可读的操作结果。先用 project_status 查清当前状态。"
+    return head + " " + "；".join(rows) + "。刚才排队时的 ok 只表示接单，不是跑完。"

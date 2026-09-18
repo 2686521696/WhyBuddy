@@ -25,6 +25,18 @@ def _clip(value: Any) -> str:
     return str(value).strip()[:_MAX]
 
 
+def tool_start_event(tool: str, *, summary: str = "", operation_id: str = "") -> dict[str, Any]:
+    """控制面工具开场。``operation_id`` 只在 execute 已经返回之后才有。"""
+    event: dict[str, Any] = {"type": "control_tool_start", "tool": str(tool or "").strip()}
+    clipped = _clip(summary) if summary else ""
+    if clipped:
+        event["summary"] = clipped
+    op = _clip(operation_id) if operation_id else ""
+    if op:
+        event["operationId"] = op
+    return event
+
+
 def tool_result_detail(body: Any) -> str:
     if not isinstance(body, Mapping):
         return ""
@@ -54,6 +66,9 @@ def tool_transcript_entry(event: Any) -> dict[str, Any] | None:
         summary = _clip(event.get("summary") or "")
         if summary:
             row["summary"] = summary
+        operation_id = event.get("operationId")
+        if operation_id:
+            row["operationId"] = _clip(operation_id)
         return row
     row = {
         "role": "assistant",
@@ -67,4 +82,7 @@ def tool_transcript_entry(event: Any) -> dict[str, Any] | None:
     operation_id = event.get("operationId")
     if operation_id:
         row["operationId"] = _clip(operation_id)
+    status = event.get("status")
+    if isinstance(status, str) and status.strip():
+        row["status"] = _clip(status)
     return row

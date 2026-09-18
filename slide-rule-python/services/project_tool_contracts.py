@@ -149,6 +149,20 @@ class VerifyArguments(WriteArguments):
 #:   `tests/test_waiting_costs_a_round_trip.py` 正面反面都钉着。
 PROJECT_WAIT_MAX_SECONDS = 30.0
 
+#: shell_exec / bash 前台默认堵住这次工具调用、等到命令进终态。
+#:
+#: 抄 grok-build `xai-grok-tools/.../bash/mod.rs`：
+#:     const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
+#:     const MAX_FOREGROUND_BLOCK: Duration = Duration::from_secs(300);
+#: 前台是 `backend.run()` 真等；`is_background: true` 才立刻给 task_id。
+#: 我们没有进程级 FG，就在这次工具调用里把 `_poll_operation` 等到终态。
+#:
+#: ⚠ 2026-09-18 真机（问「用户名密码是啥」那轮）：`shell_exec npm run build`
+#:   一交就 `ok: true` + `status: queued`，模型把接单当成跑完，开口了；
+#:   左栏还亮着进行中。grok 前台路径上模型根本看不到 queued。
+SHELL_EXEC_FOREGROUND_BLOCK_SECONDS = 120.0
+SHELL_EXEC_MAX_FOREGROUND_SECONDS = 300.0
+
 
 class StatusArguments(ToolArguments):
     operationId: str | None = Field(default=None, min_length=1, max_length=240)
@@ -223,6 +237,10 @@ class ShellExecArguments(ToolArguments):
     id: str | None = Field(default=None, min_length=1, max_length=240)
     exec_dir: str | None = Field(default=None, max_length=240)
     sudo: bool = False
+    #: 抄 grok bash `is_background`：true 立刻交回 running，不是命令成功。
+    is_background: bool = False
+    #: 前台最多等几秒。不传就用 SHELL_EXEC_FOREGROUND_BLOCK_SECONDS。
+    timeout: float | None = Field(default=None, ge=0, le=SHELL_EXEC_MAX_FOREGROUND_SECONDS)
 
 
 class ShellSessionArguments(ToolArguments):
@@ -328,6 +346,8 @@ class GithubReplaceArguments(ToolArguments):
 class GithubBashArguments(ToolArguments):
     command: str = Field(min_length=1, max_length=2000)
     sudo: bool = False
+    is_background: bool = False
+    timeout: float | None = Field(default=None, ge=0, le=SHELL_EXEC_MAX_FOREGROUND_SECONDS)
 
 
 class GithubGrepArguments(ToolArguments):
@@ -567,7 +587,7 @@ _DESCRIPTIONS = {
     "file_str_replace": "Replace one unique old_str with new_str in a saved source file. old_str must occur exactly once. sudo=true is rejected. Do not send approvalRef, revision, or hashes.",
     "file_find_in_content": "Search one saved source file with a regular expression. Returns bounded line excerpts. sudo=true is rejected. This is not shell execution.",
     "file_find_by_name": "Find saved source paths under path whose name or relative path matches glob. path may be a directory prefix or '.' for the whole tree.",
-    "shell_exec": "Queue one command in this project's E2B sandbox. check/build/test (or npm/pnpm run those) stay on the managed installer. Any other one-line command runs as grok-build bash in /home/user/workspace. Newlines and sudo are rejected. Optional id is the idempotency key. Poll with shell_wait / shell_view.",
+    "shell_exec": "Run one command in this project's E2B sandbox. Foreground (default) blocks this tool until the command exits or about {fg_block_secs}s, then returns commandFinished and exitCode; ok only means the command was accepted. is_background=true returns immediately with status running and commandFinished=false — that is not completion; do not claim the command finished. check/build/test (or npm/pnpm run those) stay on the managed installer. Any other one-line command runs as grok-build bash in /home/user/workspace. Newlines and sudo are rejected. Optional id is the idempotency key. Optional timeout is foreground seconds (max 300). Poll a backgrounded command with shell_wait / shell_view.",
     "shell_view": "Read bounded output of a queued project command. id is the operationId from shell_exec; omit it to read the latest operation.",
     "shell_wait": "Wait up to seconds (max 30) for a queued project command. It returns the moment the command finishes, so one generous wait beats several short polls. id is the operationId; omit it to wait on the latest operation.",
     "shell_write_to_process": "Type into the live bash PTY of a queued project command. id is the operationId from shell_exec. press_enter defaults true. The worker delivers bytes on the next poll; a finished operation is rejected.",
@@ -590,7 +610,7 @@ _DESCRIPTIONS = {
     "read_file": "Read one saved source file. path is project-relative. Optional offset/limit are 0-based line counts. Same store as file_read. sudo=true is rejected.",
     "write_file": "Overwrite one saved source file with path and content. Do not send approvalRef or hashes. Same store as file_write. sudo=true is rejected.",
     "search_replace": "Replace one unique old_string with new_string in a saved source file. Zero or several matches fail closed. Same store as file_str_replace.",
-    "bash": "Queue one command in this project's E2B sandbox. Same worker as shell_exec: managed check/build/test, or one grok-build bash line. sudo is rejected.",
+    "bash": "Run one command in this project's E2B sandbox. Same worker and foreground/background contract as shell_exec: default waits until exit or about {fg_block_secs}s and returns commandFinished; is_background=true returns running, not completion. sudo is rejected.",
     "grep": "Search saved source with a regular expression across the tree. Optional path is a file or directory prefix; optional glob limits names. This is not shell execution.",
     "list_dir": "List saved source paths under path. path may be '.' for the whole tree.",
     "glob": "Find saved source paths whose name or relative path matches pattern. Optional path limits the directory prefix.",
@@ -615,7 +635,11 @@ def interpolate_description(description: str) -> str:
     模型读到的还是旧的——不报错，只是它按一个不存在的窗口去分页。
     从常量渲染出来，两边不可能对不上。
     """
-    return description.replace("{max_read_chars}", str(PROJECT_READ_MAX_CHARS))
+    return (
+        description
+        .replace("{max_read_chars}", str(PROJECT_READ_MAX_CHARS))
+        .replace("{fg_block_secs}", str(int(SHELL_EXEC_FOREGROUND_BLOCK_SECONDS)))
+    )
 
 
 def project_tool_definitions() -> list[dict]:

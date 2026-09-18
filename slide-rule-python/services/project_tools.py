@@ -32,6 +32,7 @@ from services.project_tool_contracts import (
     PROJECT_READ_MAX_RESULT_CHARS, PROJECT_WRITE_TOOLS, PatchArguments,
     classify_shell_command, compile_browser_action, leaked_browser_url_allowed,
     leaked_shell_exec_dir_allowed,
+    SHELL_EXEC_FOREGROUND_BLOCK_SECONDS,
 )
 from services.scope_authority import plan_execution_authorized
 from services.project_rollout import rollout_readiness
@@ -77,6 +78,7 @@ def operation_snapshot(snapshot):
         "status": operation.status, "revision": operation.expectedRevision,
         "cancelRequested": operation.cancelRequested, "lastSeq": snapshot["lastSeq"]}
     runtime = snapshot.get("runtime")
+    expired_lease = False
     if runtime is not None:
         active = operation.status not in _TERMINAL
         expired_lease = active and (snapshot.get("leaseExpiresAt") or 0) <= time.time()
@@ -87,6 +89,16 @@ def operation_snapshot(snapshot):
     # Only command outcomes are model-visible. Provider handles and the worker's
     # recovery/result payload remain private even when new fields are added.
     saved = operation.result or {}
+    # 抄 grok：接单成功 ≠ 命令跑完。queued / running 没有 exitCode，
+    # 模型不许把 ok:true 说成「已经 build 过」。runtime.start 以 ready 为准
+    # （服务中的沙盒不会进 completed，等它死就是 2026-09-16 那次钉目标）。
+    serving = (
+        operation.kind == "runtime.start"
+        and runtime is not None
+        and not expired_lease
+        and runtime.status == "ready"
+    )
+    result["commandFinished"] = operation.status in _TERMINAL or serving
     for name in ("command", "exitCode", "errorCode"):
         if name in saved and isinstance(saved[name], (str, int, type(None))):
             result[name] = saved[name][:240] if isinstance(saved[name], str) else saved[name]
@@ -111,8 +123,9 @@ def _wait_backoff(elapsed: float) -> float:
       前 2 秒仍然密（刚提交的活经常瞬间就完，密查能立刻返回），之后拉开：
       30 秒总共约 35 次查询，而不是 300 次。
 
-    ⚠ 两个调用点（project_status 的 waitSeconds、shell_wait 的 seconds）共用
-      这一个函数。只改一个 = 一半还在打风暴，而且不报错（CLAUDE.md §4）。
+    ⚠ 调用点现在有三处（project_status.waitSeconds、shell_wait.seconds、
+      shell_exec/bash 前台）。共用 `_poll_operation` → 共用这一份退避。
+      只改一个循环 = 一半还在打风暴，而且不报错（CLAUDE.md §4）。
     """
     if elapsed < 2:
         return 0.1
@@ -261,14 +274,7 @@ class ProjectTools:
                 if name == "project_verification" and operation.kind != "runtime.verify":
                     raise ProjectNotFound("project_verification_not_found")
                 if name == "project_status" and parsed.waitSeconds:
-                    deadline = time.monotonic() + parsed.waitSeconds
-                    started = time.monotonic()
-                    while operation.status not in _TERMINAL and time.monotonic() < deadline:
-                        if operation.runtime is not None and operation.runtime.status == "ready":
-                            break
-                        time.sleep(min(_wait_backoff(time.monotonic() - started),
-                                       max(0, deadline - time.monotonic())))
-                        operation = self.store.get_operation(operation.operationId, owner_id=self.owner_id)
+                    operation = self._poll_operation(operation, parsed.waitSeconds)
                 if name == "project_logs":
                     return {"ok": True, **self._logs(operation, parsed)}
                 if name == "project_cancel":
@@ -340,6 +346,26 @@ class ProjectTools:
                     "artifactIds": [item.artifactId for item in record.artifactRefs]}
         return result
 
+    def _poll_operation(self, operation, seconds):
+        """等到操作释放，或秒数用尽。秒数 <= 0 立刻把当前快照交回去。
+
+        ⚠ 2026-09-18：shell_exec 前台抄 grok bash `backend.run()`——这次工具
+          调用要堵住，直到命令进终态。project_status / shell_wait 原来各写
+          一份 while；再给 shell_exec 抄第三份就会漂（CLAUDE.md §4）。
+          提前返回（终态 / runtime.ready）必须留在这一处。
+        """
+        if seconds is None or seconds <= 0 or operation is None:
+            return operation
+        deadline = time.monotonic() + float(seconds)
+        started = time.monotonic()
+        while operation.status not in _TERMINAL and time.monotonic() < deadline:
+            if operation.runtime is not None and getattr(operation.runtime, "status", None) == "ready":
+                break
+            time.sleep(min(_wait_backoff(time.monotonic() - started),
+                           max(0, deadline - time.monotonic())))
+            operation = self.store.get_operation(operation.operationId, owner_id=self.owner_id)
+        return operation
+
     def _latest_operation(self, project, kinds=None):
         operations = self.store.list_project_operations(
             project.projectId, owner_id=self.owner_id, limit=100)
@@ -382,6 +408,12 @@ class ProjectTools:
             else:
                 operation = self.supervisor.submit_command(
                     project.projectId, **params, command="shell", script=script)
+            operation = self.store.get_operation(operation.operationId, owner_id=self.owner_id)
+            if not getattr(parsed, "is_background", False):
+                wait = getattr(parsed, "timeout", None)
+                if wait is None:
+                    wait = SHELL_EXEC_FOREGROUND_BLOCK_SECONDS
+                operation = self._poll_operation(operation, wait)
             return self._snapshot(operation.operationId)
         if name in {"deploy_expose_port", "deploy_apply_deployment"}:
             port = getattr(parsed, "port", None) or 5173
@@ -447,14 +479,7 @@ class ProjectTools:
             return self._snapshot(operation.operationId)
         if name == "shell_wait":
             wait = parsed.seconds if parsed.seconds is not None else 2
-            deadline = time.monotonic() + wait
-            started = time.monotonic()
-            while operation.status not in _TERMINAL and time.monotonic() < deadline:
-                if operation.runtime is not None and operation.runtime.status == "ready":
-                    break
-                time.sleep(min(_wait_backoff(time.monotonic() - started),
-                               max(0, deadline - time.monotonic())))
-                operation = self.store.get_operation(operation.operationId, owner_id=self.owner_id)
+            operation = self._poll_operation(operation, wait)
             return self._snapshot(operation.operationId)
         logs = self._logs(operation, SimpleNamespace(afterSeq=0, offset=0))
         if name == "browser_console_view":

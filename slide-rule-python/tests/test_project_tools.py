@@ -21,12 +21,17 @@ from services.project_store import ProjectNotFound, ProjectStore
 from services.project_tool_contracts import (PROJECT_READ_MAX_RESULT_CHARS, PROJECT_TOOL_NAMES,
     PROJECT_TOOLS, PROJECT_WRITE_TOOLS)
 from services.project_tools import ProjectTools
+from services import project_tools
 from services.session_blob_store import SqlSessionBlobStore
 
 
 @pytest.fixture
 def setup(tmp_path, monkeypatch, project_actor):
     project_actor("alice")
+    # ⚠ 2026-09-18：生产前台默认等 120 秒。夹具里的工人不会把命令做成终态，
+    #   不把默认改成 0，所有忘了带 is_background 的用例都会死等满。
+    #   真要测前台等待的用例自己再 monkeypatch 回去（test_shell_exec_waits_like_grok）。
+    monkeypatch.setattr(project_tools, "SHELL_EXEC_FOREGROUND_BLOCK_SECONDS", 0)
     store = ProjectStore.from_url(f"sqlite:///{tmp_path / 'projects.db'}")
     sessions = SqlSessionBlobStore(f"sqlite:///{tmp_path / 'sessions.db'}")
     monkeypatch.setattr(persistence, "_blob_store", lambda *args: sessions)

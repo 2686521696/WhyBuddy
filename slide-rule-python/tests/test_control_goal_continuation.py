@@ -19,6 +19,7 @@ from services.control_goal_continuation import (
     tool_result_count,
     unfinished_cap_waits_for_user,
 )
+from types import SimpleNamespace
 
 
 def goal(**over):
@@ -291,3 +292,28 @@ def test_真机4反向_把墙钟当硬闸就续不上():
     live = events() + [{"type": "control_text", "stopReason": "wall_clock",
                         "limit": 180.0, "used": 181.5}]
     assert turn_was_capped(live) is False
+
+
+def test_后台命令叫醒词带真实exit_code():
+    """抄 grok format_bash_completion：叫醒时要有 exit code，不许只说请继续。"""
+    from services.control_goal_continuation import operation_settled_notice
+
+    op = SimpleNamespace(
+        operationId="pop-5991ed5dcde344098cc26a8620aa3b41",
+        kind="runtime.exec",
+        status="completed",
+        result={"exitCode": 0, "command": "build"},
+    )
+    text = operation_settled_notice([op])
+    assert "后台命令已结束" in text
+    assert "pop-5991ed5dcde344098cc26a8620aa3b41" in text
+    assert "exit code: 0" in text
+    assert "请继续" not in text
+
+
+def test_后台命令叫醒词拿不到结果时不编exit_code():
+    from services.control_goal_continuation import operation_settled_notice
+
+    text = operation_settled_notice([])
+    assert "没有可读的操作结果" in text
+    assert "exit code" not in text

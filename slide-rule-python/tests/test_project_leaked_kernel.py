@@ -28,11 +28,16 @@ def test_leaked_kernel_is_twenty_nine_closed_names():
 
 def test_shell_exec_maps_managed_commands_and_runs_sandbox_bash(setup):
     create(setup)
-    queued = execute(setup, "shell_exec", {"command": "npm run check", "id": "check-1"})
+    queued = execute(setup, "shell_exec", {
+        "command": "npm run check", "id": "check-1", "is_background": True,
+    })
     assert queued["ok"], queued
     assert queued["operationId"]
     assert queued["kind"] == "runtime.exec"
-    curl = execute(setup, "shell_exec", {"command": "curl https://example.com", "id": "curl-1"})
+    assert queued["commandFinished"] is False, queued
+    curl = execute(setup, "shell_exec", {
+        "command": "curl https://example.com", "id": "curl-1", "is_background": True,
+    })
     assert curl["ok"], curl
     assert setup.store.get_operation(curl["operationId"], owner_id="alice").input["script"] == (
         "curl https://example.com"
@@ -49,7 +54,9 @@ def test_shell_exec_maps_managed_commands_and_runs_sandbox_bash(setup):
 
 def test_shell_wait_and_kill_use_the_operation_id(setup):
     create(setup)
-    queued = execute(setup, "shell_exec", {"command": "build", "id": "build-1"})
+    queued = execute(setup, "shell_exec", {
+        "command": "build", "id": "build-1", "is_background": True,
+    })
     waited = execute(setup, "shell_wait", {"id": queued["operationId"], "seconds": 0})
     assert waited["ok"], waited
     viewed = execute(setup, "shell_view", {"id": queued["operationId"]})
@@ -60,7 +67,9 @@ def test_shell_wait_and_kill_use_the_operation_id(setup):
 
 def test_stdin_clicks_and_private_deploy_use_real_kernels(setup):
     create(setup)
-    queued = execute(setup, "shell_exec", {"command": "ls", "id": "ls-1"})
+    queued = execute(setup, "shell_exec", {
+        "command": "ls", "id": "ls-1", "is_background": True,
+    })
     typed = execute(setup, "shell_write_to_process", {
         "id": queued["operationId"], "input": "yes",
     })
@@ -68,7 +77,9 @@ def test_stdin_clicks_and_private_deploy_use_real_kernels(setup):
     assert setup.supervisor.take_stdin(queued["operationId"]) == [
         {"text": "yes", "pressEnter": True},
     ]
-    finished = execute(setup, "shell_exec", {"command": "build", "id": "done-1"})
+    finished = execute(setup, "shell_exec", {
+        "command": "build", "id": "done-1", "is_background": True,
+    })
     done = setup.store.get_operation(finished["operationId"], owner_id="alice")
     setup.store._q(
         "update wb_project_operation set payload=$1,rev=rev+1 where id=$2",
