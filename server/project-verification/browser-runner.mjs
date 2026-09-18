@@ -13,7 +13,8 @@ export const RUNNER_VERSION = "whybuddy-browser-v1:pw1.61.1";
 export const SUITE_VERSION = "react-vite-counter@1";
 export const TASK_SUITE_VERSION = "react-vite-tasks@1";
 export const TASK_ASSERTION_IDS = ["setup_admin", "writer_login", "task_create", "task_edit", "task_filter",
-  "task_refresh", "reader_create", "reader_login", "reader_ui_readonly", "reader_api_forbidden",
+  "task_refresh", "reader_create", "reader_login", "reader_api_session",
+  "reader_ui_readonly", "reader_api_forbidden",
   "anonymous_api_forbidden", "no_page_errors", "no_failed_requests"];
 export const ASSERTION_IDS = ["heading_visible", "counter_initial", "counter_increment",
   "counter_second_increment", "reload_reset", "no_page_errors", "no_failed_requests"];
@@ -345,15 +346,30 @@ async function runTaskSuite({ page, context, verify, assertion, screenshot, orig
     await page.getByRole("button", { name: "创建只读成员", exact: true }).click();
     await verify(page.getByRole("status")).toHaveText("只读成员已创建");
   });
+  // ⚠ 2026-09-18：这里原本只用 api()（context.request）查角色，一条里混着两件事。
+  //   查出来的差异：应用发的是 `Secure; SameSite=None; Partitioned` 的 HttpOnly
+  //   cookie，页面自己的 fetch 一定带得上；而 context.request 是独立的凭据视图，
+  //   **退出登录→重新登录之后它未必跟上**。writer_login 没有这个转换所以一直过，
+  //   reader_login 有，于是 detail=assertion（拿到的值不对，不是等不到元素）。
+  //   现在拆成两条各报各的：页面那条代表用户真正经历的，API 那条守
+  //   「独立凭据上下文也该跟上」。混在一条里只能看见"红了"，看不见红在哪一侧。
   await assertion("reader_login", async note => {
     await page.getByRole("button", { name: "退出登录", exact: true }).click();
     await login(reader);
+    // 用户的浏览器就是 page，所以角色以**页面自己的凭据路径**为准（§5）。
+    const role = await page.evaluate(async () => {
+      const response = await fetch("/api/auth/session", { credentials: "same-origin" });
+      return (await response.json())?.user?.role ?? null;
+    });
+    note("reader", role);
+    expect(role).toBe("reader");
+    await verify(page.getByRole("article", { name: edited, exact: true })).toBeVisible();
+  });
+  await assertion("reader_api_session", async note => {
+    // 同一时刻、同一个账号，换 context.request 再问一次。
     const session = await api("/api/auth/session");
-    // ⚠ 这一笔就是 2026-09-17 第二趟欠下的那个值：detail=assertion 说明
-    //   「值不对」，但 writer（登录串号）和 none（session 查不到人）是两个病。
     note("reader", session.body?.user?.role);
     expect(session.body.user.role).toBe("reader");
-    await verify(page.getByRole("article", { name: edited, exact: true })).toBeVisible();
   });
   await assertion("reader_ui_readonly", async () => {
     await verify(page.getByRole("button", { name: "新增任务", exact: true })).toHaveCount(0);

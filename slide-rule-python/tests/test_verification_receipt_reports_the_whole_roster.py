@@ -77,7 +77,8 @@ def test_生产那趟的原样收据现在会被收据闸拒绝():
       它必须变红（§2）。
     """
     assert len(PRODUCTION_TEN) == 10
-    assert len(SUITE_ASSERTIONS[TASKS]) == 13
+    # 2026-09-18：reader_login 拆成两条后名单是 14；锚点仍是"报少了就红"。
+    assert len(SUITE_ASSERTIONS[TASKS]) == 14
     assert decode(production_receipt())["errorCode"] == "project_browser_output_invalid"
 
 
@@ -94,7 +95,8 @@ def test_没跑到的断言显式记一笔而不是消失():
     result = decode(repaired_receipt())
     missing = {item["id"] for item in result["assertions"] if item["status"] == "not_run"}
     # 线上被超时切掉的正是这三条。
-    assert missing == {"anonymous_api_forbidden", "no_page_errors", "no_failed_requests"}
+    assert missing == {"reader_api_session", "anonymous_api_forbidden",
+                       "no_page_errors", "no_failed_requests"}
 
 
 def test_失败的断言必须带归因():

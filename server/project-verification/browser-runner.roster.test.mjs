@@ -240,7 +240,8 @@ test("剥注释这一步本身有效——否则下一条会被注释喂饱", ()
 
 test("产线套件里，每条被授权带值的断言都真的记了那一笔", () => {
   // 跟 Python 侧 TASK_EXPECTED 同一张表（§4）。
-  for (const id of ["writer_login", "reader_login", "reader_api_forbidden", "anonymous_api_forbidden"]) {
+  for (const id of ["writer_login", "reader_login", "reader_api_session",
+                    "reader_api_forbidden", "anonymous_api_forbidden"]) {
     const body = bodyOf(id);
     assert.ok(body, `源码里没有 assertion("${id}")`);
     assert.ok(/\bnote\(/.test(body), `assertion("${id}") 的函数体里没有 note( 调用`);
@@ -254,4 +255,17 @@ test("没被授权带值的断言不许偷偷记——反向", () => {
     assert.ok(body, id);
     assert.ok(!/\bnote\(/.test(body), `assertion("${id}") 记了值，但收据闸不放行它`);
   }
+});
+
+test("两条只读登录判据必须走**不同**的凭据来源，否则拆了等于没拆", () => {
+  // ⚠ 2026-09-18：拆成 reader_login（页面 fetch）与 reader_api_session
+  //   （context.request）是为了分辨"哪一侧的凭据没跟上"。如果两条都用同一个
+  //   来源，收据里会永远一起红或一起绿，等于白拆——这条反向判据钉住这点。
+  const page_ = bodyOf("reader_login");
+  const api_ = bodyOf("reader_api_session");
+  assert.ok(page_ && api_);
+  assert.ok(/page\.evaluate\(/.test(page_), "reader_login 该走页面自己的 fetch");
+  assert.ok(!/\bawait api\(/.test(page_), "reader_login 不该再用 context.request");
+  assert.ok(/\bawait api\(/.test(api_), "reader_api_session 该走 context.request");
+  assert.ok(!/page\.evaluate\(/.test(api_), "reader_api_session 不该走页面");
 });

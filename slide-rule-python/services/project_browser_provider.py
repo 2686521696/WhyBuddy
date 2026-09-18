@@ -44,6 +44,7 @@ DETAIL_CODES = frozenset({"timeout", "assertion", "error"})
 #   角色名和 HTTP 状态码，页面文本一个字都不许进。每个 id 能声明什么也钉死。
 TASK_EXPECTED = {"writer_login": frozenset({"writer", "200"}),
     "reader_login": frozenset({"reader"}),
+    "reader_api_session": frozenset({"reader"}),
     "reader_api_forbidden": frozenset({"403"}),
     "anonymous_api_forbidden": frozenset({"401"})}
 _OBSERVED = re.compile(r"writer|reader|none|[1-5][0-9]{2}")

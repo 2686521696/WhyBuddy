@@ -11,8 +11,11 @@ RUNNER_VERSION = "whybuddy-browser-v1:pw1.61.1"
 REQUIRED_ASSERTIONS = frozenset({"heading_visible", "counter_initial", "counter_increment",
     "counter_second_increment", "reload_reset", "no_page_errors", "no_failed_requests"})
 SUITE_ASSERTIONS = {SUITE_VERSION: REQUIRED_ASSERTIONS,
+    # ⚠ 2026-09-18：reader_login 拆成两条——页面凭据路径 / 独立 API 凭据路径。
+    #   原来混在一条里，红了只知道"角色不对"，看不出是哪一侧不对。
     "react-vite-tasks@1": frozenset({"setup_admin", "writer_login", "task_create", "task_edit", "task_filter",
-        "task_refresh", "reader_create", "reader_login", "reader_ui_readonly", "reader_api_forbidden",
+        "task_refresh", "reader_create", "reader_login", "reader_api_session",
+        "reader_ui_readonly", "reader_api_forbidden",
         "anonymous_api_forbidden", "no_page_errors", "no_failed_requests"})}
 
 
