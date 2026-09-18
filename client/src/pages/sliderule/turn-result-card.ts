@@ -22,8 +22,40 @@
  *     生成过程里做自检用，没有落成会话级产物。所以这里留了入口
  *     （`thumbnailUrl`）但不去别处拼一个——界面少一块，好过挂一张别的图。
  *     真要接，是在服务端把自检那张图存成产物，不是在这儿想办法。
+ *
+ * ⚠ 2026-09-18 真机（做一个待办清单）：Manus 是网站做完才出一张带预览的卡。
+ *   我们 `produced` 吃的是**会话级** `projectRevision`，一点批准、模板落库，
+ *   前面问问题 / 写计划那两轮（34s、48s）全部重绘成「任务已完成」。计划还在
+ *   1/7，开场就是卡片墙。缩略图已经只挂最新一轮，出卡忘了同样按**这一轮
+ *   有没有写出源码**挡。会话有版本 ≠ 这一轮交付了。
  */
 import type { UiTurn } from "./types";
+
+/** 这一轮真正改了工程才算出货。读状态 / 写计划 / 提问都不算。 */
+const PROJECT_DELIVERY_TOOLS = new Set([
+  "project_create",
+  "project_patch",
+  "project_write",
+  "project_str_replace",
+  "file_write",
+  "file_str_replace",
+  "write_file",
+  "search_replace",
+]);
+
+/**
+ * 这一轮有没有把源码写进工程。会话上已经有 revision 不算——那是后面落库
+ * 回涂到历史轮上的（2026-09-18 那两张开场卡）。
+ */
+export function turnDeliveredProject(turn: UiTurn | null | undefined): boolean {
+  if (!turn || !Array.isArray(turn.steps)) return false;
+  return turn.steps.some(
+    step =>
+      step.kind === "chip" &&
+      PROJECT_DELIVERY_TOOLS.has(String(step.capabilityId || "").trim()) &&
+      step.progressType === "completed"
+  );
+}
 
 /**
  * 人话用时。Manus 写的是 `2m 45s`，不是 `165s`——超过一分钟还读秒，
@@ -98,7 +130,8 @@ export function resultCardModel(
 
   const isProject = opts.runtimeKind === "project";
   const produced = isProject
-    ? Boolean(String(opts.projectRevision || "").trim())
+    ? Boolean(String(opts.projectRevision || "").trim()) &&
+      turnDeliveredProject(turn)
     : Boolean(opts.hasPages);
   // 没产出就没有「交付物」可言。问答轮、被闸拦下的轮次都落在这儿。
   if (!produced) return null;

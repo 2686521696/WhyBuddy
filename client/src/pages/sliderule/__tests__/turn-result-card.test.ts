@@ -21,9 +21,25 @@ import { describe, expect, it } from "vitest";
 import {
   formatWorkedDuration,
   resultCardModel,
+  turnDeliveredProject,
   workedLabel,
 } from "../turn-result-card";
-import type { UiTurn } from "../types";
+import type { TurnStep, UiTurn } from "../types";
+
+function chip(
+  tool: string,
+  progressType: Extract<TurnStep, { kind: "chip" }>["progressType"] = "completed"
+): Extract<TurnStep, { kind: "chip" }> {
+  return {
+    id: `chip-${tool}`,
+    kind: "chip",
+    capabilityId: tool as Extract<TurnStep, { kind: "chip" }>["capabilityId"],
+    roleId: "control",
+    label: tool,
+    realLlm: true,
+    progressType,
+  };
+}
 
 function turn(over: Partial<UiTurn> = {}): UiTurn {
   return {
@@ -84,8 +100,8 @@ describe("有东西才出卡", () => {
     expect(model!.canPublish).toBe(false);
   });
 
-  it("正向：工程档有落库版本 → 出卡，而且谈得上发布", () => {
-    const model = resultCardModel(turn(), {
+  it("正向：工程档这一轮写了源码且有落库版本 → 出卡，而且谈得上发布", () => {
+    const model = resultCardModel(turn({ steps: [chip("project_create")] }), {
       runtimeKind: "project",
       goalText: "工单系统",
       projectRevision: "prv-abc",
@@ -117,6 +133,35 @@ describe("有东西才出卡", () => {
     ).toBeNull();
     expect(
       resultCardModel(turn(), { runtimeKind: "project", projectRevision: null })
+    ).toBeNull();
+  });
+
+  it("反向：会话已经有版本，提问/写计划轮仍不出卡——Manus 是做完才出卡", () => {
+    // 2026-09-18：批准后模板落库，开场两轮（34s / 48s）被会话级 revision
+    // 重绘成「任务已完成」。变异：produced 只看 projectRevision → 本条红。
+    const asked = turn({ user: "做一个待办清单系统", steps: [] });
+    const planned = turn({
+      user: "批准计划并执行",
+      steps: [chip("todo_write"), chip("project_status")],
+    });
+    for (const item of [asked, planned]) {
+      expect(
+        resultCardModel(item, {
+          runtimeKind: "project",
+          goalText: "做一个待办清单系统",
+          projectRevision: "prv-f34225ac76324d96854a73c69bfcd33b",
+        })
+      ).toBeNull();
+      expect(turnDeliveredProject(item)).toBe(false);
+    }
+  });
+
+  it("反向：写了但失败的轮次不出卡，不许把红灯画成任务已完成", () => {
+    expect(
+      resultCardModel(turn({ steps: [chip("file_write", "failed")] }), {
+        runtimeKind: "project",
+        projectRevision: "prv-abc",
+      })
     ).toBeNull();
   });
 
@@ -196,5 +241,20 @@ describe("通电：真的接在完成轮的渲染上（§3）", () => {
       src.indexOf("<TurnPhaseTimeline")
     );
     expect(streamingBranch).not.toContain("<TurnResultCard");
+  });
+
+  it("出卡必须看这一轮是否写了源码，不能只看会话 revision", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const raw = fs.readFileSync(
+      path.resolve(process.cwd(), "client/src/pages/sliderule/turn-result-card.ts"),
+      "utf8"
+    );
+    const code = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    const start = code.indexOf("export function resultCardModel");
+    const next = code.indexOf("export function", start + "export function resultCardModel".length);
+    const fn = code.slice(start, next === -1 ? code.length : next);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(fn).toContain("turnDeliveredProject");
   });
 });
