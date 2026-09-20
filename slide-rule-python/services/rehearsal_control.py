@@ -108,6 +108,7 @@ from services.control_budget import (
 from services.control_context_compact import (
     compact_messages,
     estimate_message_tokens,
+    microcompact_messages,
 )
 from services.model_memory import (
     recall as recall_memory,
@@ -152,10 +153,29 @@ from services.closed_tools import (
     ToolScopeViolation,
     resolve_tool_scope,
 )
+from services.control_skills import (
+    invoke_skill,
+    mentioned_skill_playbooks,
+    mentioned_skill_slugs,
+    normalize_skill_name,
+    skill_tool_description,
+)
+from services.deliverable_kind import (
+    DELIVERABLE_KINDS,
+    OFFICE_FILE,
+    normalize_deliverable_kind,
+    plan_deliverable_kind,
+)
+from services.skill_catalog_store import (
+    OFFICE_SKILL_CATEGORY,
+    installed_skill_infos,
+    skill_seed_category,
+)
 from services.drive_full_factory import start_drive_full_factory_run
 from services.project_authority import approved_reference
 from services.project_tool_contracts import (PROJECT_ALIAS_TOOLS, PROJECT_READ_MAX_RESULT_CHARS,
-    PROJECT_TOOLS, PROJECT_TOOL_NAMES, PROJECT_WRITE_TOOLS)
+    PROJECT_TOOLS, PROJECT_TOOL_NAMES, PROJECT_WRITE_TOOLS,
+    SHELL_EXEC_FOREGROUND_BLOCK_SECONDS, SHELL_EXEC_MAX_FOREGROUND_SECONDS)
 from services.project_tool_summary import project_tool_summary
 from services.workflow_registry import workflow_for, workflow_names
 from services.workflow_select import select_workflow
@@ -400,6 +420,52 @@ def _project_tool_error(name, state):
         if name in PROJECT_WRITE_TOOLS and not plan_execution_authorized(state):
             return "project_plan_approval_required"
     return None
+
+
+_SHELL_LIVE_TOOLS = frozenset({"shell_exec", "bash"})
+
+
+def _execute_project_tool(adapter, name, args, state):
+    """前台 shell 先 enqueue。id 出去之后分发处再堵，模型仍等到终态。
+
+    ⚠ 2026-09-19：execute 默认在线程里等到 exit 才返回。开场那发
+    control_tool_start 没有 operationId，补 id 的那发要等命令结束——
+    进行中右侧订不到 PTY，npm test 整段白纸。不是 SSE 假流，是 id 来晚了。
+    """
+    fn = adapter.execute
+    kwargs: Dict[str, Any] = {}
+    if name in _SHELL_LIVE_TOOLS and not (
+        isinstance(args, dict) and args.get("is_background")
+    ):
+        try:
+            if "wait" in inspect.signature(fn).parameters:
+                kwargs["wait"] = False
+        except (TypeError, ValueError):
+            pass
+    return fn(name, args, state, **kwargs)
+
+
+def _project_tool_wait_seconds(name: str, args: Any, body: Any) -> float:
+    if not isinstance(body, dict) or body.get("status") in {
+        "completed",
+        "failed",
+        "cancelled",
+    }:
+        return 0.0
+    if name in _SHELL_LIVE_TOOLS and not (
+        isinstance(args, dict) and args.get("is_background")
+    ):
+        raw = args.get("timeout") if isinstance(args, dict) else None
+        try:
+            wait = (
+                float(raw)
+                if raw is not None
+                else SHELL_EXEC_FOREGROUND_BLOCK_SECONDS
+            )
+        except (TypeError, ValueError):
+            wait = SHELL_EXEC_FOREGROUND_BLOCK_SECONDS
+        return min(max(wait, 0.0), SHELL_EXEC_MAX_FOREGROUND_SECONDS)
+    return 15.0
 
 
 @contextmanager
@@ -704,9 +770,20 @@ def _is_cheap_chat(text: str) -> bool:
     leftover = compact.lower()
     for token in sorted(_FILLER_TOKENS, key=len, reverse=True):
         leftover = leftover.replace(token, "")
-    if _cjk_len(leftover) < 4:
-        return True
-    return False
+    cjk = _cjk_len(leftover)
+    if cjk >= 4:
+        return False
+    # ⚠ 2026-09-18 真机 sr-20260918103119-06YZQ65BJE：用户说「做一个todo list」。
+    #   上一版只数汉字，3 个 < 4 就当闲聊。goal 还是空的，`_unstamped_product_turn`
+    #   也交不出这句话，分发器把模型已经拟好的功能选项整表换成 []。
+    #   落盘 questions[0].options == []，卡上只剩前端自动补的「其他（自己写）」。
+    #   中英夹杂时拉丁半边也算数——不能复用 `_latin_is_cheap`：那条要 3 个英文
+    #   词，「todo list」两个词仍会输。
+    letters = len(re.findall(r"[0-9A-Za-z]", leftover))
+    words = re.findall(r"[A-Za-z][A-Za-z0-9'-]*", leftover)
+    if cjk >= 1 and (letters >= 3 or len(words) >= 2):
+        return False
+    return True
 
 
 def _unstamped_product_turn(state: V5SessionState) -> str:
@@ -743,6 +820,17 @@ def _unstamped_product_turn(state: V5SessionState) -> str:
     if not text or _is_cheap_chat(text):
         return ""
     return text
+
+
+def _ask_is_cheap_intake(state: V5SessionState) -> bool:
+    """还没有产品话题：问卷收成开放问句，工具说明也不许带选项。
+
+    ⚠ 2026-09-18 真机 sr-20260918103947-G434QZHGQ7：分发器已经不再删
+      options，但 `list_control_tools` 只看 `_has_product_topic`。首轮
+      goal 空，说明被改成「不要给选项」，模型照做，卡上又只剩「其他」。
+      两处必须用同一条判据（CLAUDE.md §4），一边修一边留着等于没修。
+    """
+    return not _has_product_topic(state) and not _unstamped_product_turn(state)
 
 
 def _has_ask_answer_candidate(state: V5SessionState) -> bool:
@@ -975,7 +1063,7 @@ def list_control_tools(state: V5SessionState) -> List[Dict[str, Any]]:
             )
             out.append(cloned)
             continue
-        if name == "ask_user_question" and not _has_product_topic(state):
+        if name == "ask_user_question" and _ask_is_cheap_intake(state):
             cloned = copy.deepcopy(item)
             cloned["function"]["description"] = (
                 "用户在问你是谁、能做什么时：不要调这个工具，用文本回答。"
@@ -984,8 +1072,161 @@ def list_control_tools(state: V5SessionState) -> List[Dict[str, Any]]:
             )
             out.append(cloned)
             continue
+        if name == "skill":
+            cloned = copy.deepcopy(item)
+            cloned["function"]["description"] = skill_tool_description(
+                _skill_infos_for_turn(state)
+            )
+            out.append(cloned)
+            continue
         out.append(item)
     return out
+
+
+def _skill_infos_for_turn(state: V5SessionState) -> list:
+    """已安装短目录。点名只预加载正文，不把别的技能藏起来。
+
+    ⚠ 2026-09-20：selectedSkills 曾经用来 filter_selected 收窄目录。
+    用户要的是「自由 Agent 编排 + 这次 @ 的 Skills 流程」——已装的
+    都还能调，@ 只是把那份 SKILL.md 提前展开。收窄等于把搭配藏起来。
+    """
+    owner = str(getattr(state, "ownerId", None) or "").strip()
+    if not owner:
+        return []
+    try:
+        return installed_skill_infos(owner)
+    except Exception:
+        return []
+
+
+def _mentioned_skill_infos(state: V5SessionState) -> list:
+    """这一轮 @slug / selectedSkills 点名的已装技能。"""
+    payload = _CONTROL_PAYLOAD.get() or {}
+    installed = _skill_infos_for_turn(state)
+    if not installed:
+        return []
+    names = mentioned_skill_slugs(str(payload.get("userText") or ""))
+    extra = payload.get("selectedSkills")
+    if isinstance(extra, list):
+        names = list(
+            dict.fromkeys(
+                [
+                    *names,
+                    *[
+                        normalize_skill_name(str(item))
+                        for item in extra
+                        if str(item or "").strip()
+                    ],
+                ]
+            )
+        )
+    allow = {info.name for info in installed}
+    return [info for info in installed if info.name in set(names) & allow]
+
+
+def _office_named_from_transcript(state: V5SessionState) -> bool:
+    """落盘里的 @办公技能 / mentionedSkills。GET 没有本轮信封。"""
+    for row in getattr(state, "controlTranscript", None) or []:
+        if not isinstance(row, dict):
+            continue
+        extra = row.get("mentionedSkills")
+        names = [str(item) for item in extra] if isinstance(extra, list) else []
+        for key in ("text", "userText", "planContent"):
+            names.extend(mentioned_skill_slugs(str(row.get(key) or "")))
+        if any(skill_seed_category(name) == OFFICE_SKILL_CATEGORY for name in names):
+            return True
+    return False
+
+
+def _this_turn_office_skill_named(state: V5SessionState) -> bool:
+    """本轮信封里的 @slug / selectedSkills 点名了办公技能。
+
+    ⚠ 2026-09-20 真机 sr-20260920102543-OFFICE / sr-20260920105329-PPT：
+      write_plan 省略 kind 时只问已装目录。目录空或 ContextVar 里
+      点名没进 `_mentioned_skill_infos`，键写成缺省或干脆没写，
+      GET/complete 的 plan_written 没有 deliverableKind。
+      点名以本轮六字段为准（persist-as-authority），seed 类别认「办公」，
+      不猜「做一份 PPT」。
+    """
+    payload = _CONTROL_PAYLOAD.get() or {}
+    names = mentioned_skill_slugs(str(payload.get("userText") or ""))
+    extra = payload.get("selectedSkills")
+    if isinstance(extra, list):
+        names = list(
+            dict.fromkeys(
+                [
+                    *names,
+                    *[
+                        normalize_skill_name(str(item))
+                        for item in extra
+                        if str(item or "").strip()
+                    ],
+                ]
+            )
+        )
+    if any(skill_seed_category(name) == OFFICE_SKILL_CATEGORY for name in names):
+        return True
+    if any(
+        skill_seed_category(info.name) == OFFICE_SKILL_CATEGORY
+        for info in _mentioned_skill_infos(state)
+    ):
+        return True
+    return _office_named_from_transcript(state)
+
+
+def _deliverable_kind_for_write_plan(state: V5SessionState, raw: Any) -> str:
+    """模型写了类别用模型的。省略时只认本轮点名的办公技能，不猜话题。
+
+    ⚠ 2026-09-20 真机 sr-20260920090915-OFFICEAT：write_plan 没带
+      deliverableKind，normalize 成 web-app，office 闸全没合上。
+      @office-skills 是点名，不是从「做一份 PPT」猜。
+    """
+    text = str(raw or "").strip()
+    if text in DELIVERABLE_KINDS:
+        return text
+    if _this_turn_office_skill_named(state):
+        return OFFICE_FILE
+    return normalize_deliverable_kind(raw)
+
+
+def _plan_written_kind(row: Any) -> str | None:
+    if not isinstance(row, dict) or row.get("kind") != "plan_written":
+        return None
+    text = str(row.get("deliverableKind") or "").strip()
+    return text if text in DELIVERABLE_KINDS else None
+
+
+def stamp_control_plan_kind(state: V5SessionState) -> bool:
+    """plan_written 缺键或空值时补上。GET / complete 的权威投影。
+
+    ⚠ 2026-09-20 真机 complete.state 与 GET 的 plan_written 没有
+      deliverableKind。write_plan 源码写了键，落盘/快照那一刀剥了。
+      这里按 persist-as-authority 补回：有本轮点名用 office-file，
+      否则 web-app。键必须在，不许再是 None。
+    """
+    rows = list(getattr(state, "controlTranscript", None) or [])
+    changed = False
+    stamped: list[Any] = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get("kind") != "plan_written":
+            stamped.append(row)
+            continue
+        if _plan_written_kind(row):
+            stamped.append(row)
+            continue
+        stamped.append({
+            **row,
+            "deliverableKind": _deliverable_kind_for_write_plan(
+                state, row.get("deliverableKind")
+            ),
+            "mentionedSkills": list(row.get("mentionedSkills") or [
+                info.name for info in _mentioned_skill_infos(state)
+            ]),
+        })
+        changed = True
+    if changed:
+        state.controlTranscript = stamped
+    return changed
 
 
 async def _invoke_control_llm(
@@ -1075,11 +1316,41 @@ INSPECT_MAX_CHARS = 4000
 
 
 def _project_budget_eligible(state):
-    # The adapter is injected after server authorization, never by the payload.
+    """Claude ExitPlanMode：批准后就是执行档，不要求仓库已经建好。
+
+    ⚠ 2026-09-20 真机 sr-20260920105329-PPT：批准后 17 秒
+      `token_budget used=9611/8000`，bash 零次。当时还要求
+      `runtimeKind==project` 且已有 `projectId`，而 `project_create`
+      又要先批准——卡在中间，cheap 8k/90s 先爆。
+      适配器仍是服务端注入的，payload 伪造工程指针抬不了档。
+    """
     return (_PROJECT_TOOLS.get() is not None
-            and getattr(state, "runtimeKind", None) == "project"
-            and bool(getattr(state, "projectId", None))
             and plan_execution_authorized(state))
+
+
+def _is_fresh_control_round(resume: Any) -> bool:
+    """新用户回合 / 自动续跑（cheapTokens 已清零），不是中途打断的 resume。"""
+    if not resume or not isinstance(resume, dict):
+        return True
+    if resume.get("phase") not in {"model", "tools"}:
+        return True
+    return int(resume.get("round") or 0) == 0 and int(resume.get("cheapTokens") or 0) == 0
+
+
+def _loop_budget_for(state: V5SessionState, resume: Any):
+    """新回合用当前窗口档。v1/v2 花费闸只在中途 resume 那份存档上还原。
+
+    ⚠ 2026-09-20 sr-20260920120007-PPT：七次 durable 全是 control-v2/8000。
+      continuation 把旧 budgetPolicy 原样带进 phase=model / cheapTokens=0，
+      restore_budget 就把花费闸焊死。新一轮必须重选 control-v3 / project-v3。
+    """
+    current = PROJECT_BUDGET if _project_budget_eligible(state) else CONVERSATION_BUDGET
+    if _is_fresh_control_round(resume):
+        return current
+    snap = resume.get("budgetPolicy") if isinstance(resume, dict) else None
+    if not snap:
+        return current
+    return restore_budget(snap, CONVERSATION_BUDGET)
 
 #: 单个工具结果回喂给模型时的上限。
 #:
@@ -1127,6 +1398,8 @@ CONTROL_TOOL_RESULT_MAX_CHARS_BY_TOOL: Dict[str, int] = {
     "project_read": PROJECT_READ_MAX_RESULT_CHARS,
     "file_read": PROJECT_READ_MAX_RESULT_CHARS,
     "read_file": PROJECT_READ_MAX_RESULT_CHARS,
+    # SKILL.md 正文只在这件工具回。默认 4000 会裁掉说明书。
+    "skill": 100000,
 }
 
 
@@ -1303,11 +1576,16 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
                 "保存完整实施计划。包含目标、访谈结论、设备与设计选择、工作步骤和验收方法。"
                 "计划正文跟用户同一种语言（默认简体中文）。"
                 "每次重写使上一版批准失效。"
+                "deliverableKind 缺省 web-app；磁盘上的 .pptx / .docx / .xlsx 用 office-file。"
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "planContent": {"type": "string"},
+                    "deliverableKind": {
+                        "type": "string",
+                        "enum": ["web-app", "office-file"],
+                    },
                 },
                 "required": ["planContent"],
                 "additionalProperties": False,
@@ -1406,6 +1684,30 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "skill",
+            "description": (
+                "加载一份磁盘上的技能（SKILL.md）。"
+                "目录只给名字和一句话；全文只在你调用这件工具时喂回来。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "技能目录里的名字",
+                    },
+                    "args": {
+                        "type": "string",
+                        "description": "可选，传给这份技能的补充说明",
+                    },
+                },
+                "required": ["name"],
+            },
+        },
+    },
     # 抄 grok `TodoWriteTool`。工具说明两句都要——第二句「用户能看见」
     # 是它存在的理由，去掉就只剩模型自言自语。
     {
@@ -1415,6 +1717,8 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
             "description": (
                 "列一张活儿清单并维护它。**用户看得见这张清单，这是你展示进度的主要方式。**"
                 "三步以上的活儿就列；一步能做完的别列。"
+                "开始下一条或做完当前这条时立刻改 status，不要等全部做完再改。"
+                "改已有条目必须用回喂里的 id；换 id 会叠出两份。"
             ),
             "parameters": {
                 "type": "object",
@@ -1425,7 +1729,13 @@ CONTROL_TOOLS: List[Dict[str, Any]] = [
                         "items": {
                             "type": "object",
                             "properties": {
-                                "id": {"type": "string", "description": "条目唯一标识"},
+                                "id": {
+                                    "type": "string",
+                                    "description": (
+                                        "条目唯一标识。回喂里已有的条目必须用原来的 id，"
+                                        "不要另起一个。"
+                                    ),
+                                },
                                 "content": {
                                     "type": "string",
                                     "description": "这一条要做什么。改已有条目的状态时可以不带。",
@@ -1765,6 +2075,7 @@ def resolve_forced_tool(
 
 
 def _dump_state(state: V5SessionState) -> Dict[str, Any]:
+    stamp_control_plan_kind(state)
     return state.model_dump()
 
 
@@ -2046,6 +2357,7 @@ async def _park_plan_approval(state: V5SessionState) -> AsyncIterator[Dict[str, 
             "role": "assistant", "kind": "plan_approval",
             "reqId": f"plan-approval-{uuid.uuid4().hex}",
             **{k: plan[k] for k in ("planId", "revision", "planContent")},
+            "deliverableKind": plan_deliverable_kind(plan),
         }
         _append_transcript(candidate, request)
     candidate.runtimePhase = "awaiting"
@@ -2118,9 +2430,31 @@ async def _flush_write_plan_from_sample(
 
 async def _commit_plan_state(state: V5SessionState, candidate: V5SessionState) -> None:
     """Publish plan state only after storage confirms the exact revision."""
+    stamp_control_plan_kind(candidate)
+    wanted = next(
+        (
+            _plan_written_kind(row)
+            for row in reversed(getattr(candidate, "controlTranscript", None) or [])
+            if _plan_written_kind(row)
+        ),
+        None,
+    )
     saved = await run_in_threadpool(
         _persist_durable_state, candidate
     )
+    # persist-as-authority：磁盘剥了键就写回去。GET 只认落盘，不认内存。
+    if wanted and _plan_written_kind(latest_control_plan(saved)) != wanted:
+        rows = list(getattr(saved, "controlTranscript", None) or [])
+        restored: list[Any] = []
+        seen = False
+        for row in reversed(rows):
+            if not seen and isinstance(row, dict) and row.get("kind") == "plan_written":
+                restored.append({**row, "deliverableKind": wanted})
+                seen = True
+            else:
+                restored.append(row)
+        saved.controlTranscript = list(reversed(restored))
+        saved = await run_in_threadpool(_persist_durable_state, saved)
     for field in ("controlTranscript", "awaitReason", "awaitDetail", "runtimePhase", "goal"):
         setattr(state, field, getattr(saved, field))
 
@@ -2156,6 +2490,7 @@ async def _accept_plan_answer(state: V5SessionState, raw: Dict[str, Any]) -> str
     _append_transcript(candidate, {
         "role": "user", "kind": f"plan_{outcome}",
         **{k: request[k] for k in ("reqId", "planId", "revision", "planContent")},
+        "deliverableKind": plan_deliverable_kind(plan),
         "feedback": str(raw.get("feedback") or ""),
     })
     candidate.awaitReason = None
@@ -3185,6 +3520,33 @@ def _system_prompt(state: V5SessionState) -> str:
     plan = latest_control_plan(state)
     if plan:
         facts.append(f"已保存计划（第 {plan.get('revision')} 版）：\n{plan.get('planContent')}")
+        if plan_deliverable_kind(plan) == OFFICE_FILE:
+            facts.append("这份已保存计划的交付物是办公文件，不是任务管理网页。")
+    if plan_deliverable_kind(plan) == OFFICE_FILE or any(
+        skill_seed_category(info.name) == OFFICE_SKILL_CATEGORY
+        for info in _skill_infos_for_turn(state)
+    ):
+        # ⚠ 2026-09-20 真机 sr-20260920051924-QA0YXX59Q0：只写「创建工程用
+        #   project_create；任务管理应用选 tasks」，模型把做 PPT 编成任务清单。
+        #   这里只陈述交付物类别，不写「必须先调 skill 再 pip」。
+        facts.append(
+            "办公文件（.pptx / .docx / .xlsx）是磁盘上的文件，不是 Vite 网页。"
+            "react-vite-tasks 只用于任务管理网页。"
+            "办公计划下的工程是空工作区，不是 Vite 脚手架。"
+            "右侧预览 iframe 只跑 Vite，不能当幻灯片交差。"
+            "办公文件不以 project_verify 为交付证据。"
+        )
+    mentioned = _mentioned_skill_infos(state)
+    if mentioned:
+        # ⚠ 点名 = 告诉模型去哪查。不是把 SKILL.md 倒进 system
+        #   （长短记忆交叉污染），也不是写死 PPT 步骤。
+        facts.append(mentioned_skill_playbooks(mentioned))
+    if _PROJECT_TOOLS.get() is not None or getattr(state, "runtimeKind", None) == "project":
+        facts.append(
+            "源码和技能以磁盘为准。file_read / project_read 默认只回路径和摘要；"
+            "要原文带 offset/limit 或 start_line/end_line，搜内容用 grep。"
+            "旧工具输出不是全文。"
+        )
     if plan_execution_authorized(state):
         facts.append("用户已明确批准这份计划，可以按该版本执行。")
     else:
@@ -3241,8 +3603,10 @@ def _system_prompt(state: V5SessionState) -> str:
         facts.append(
             "工程工具运行在受管 E2B 中，源码版本持久保存。"
             f"当前工程：{getattr(state, 'projectId', None)}；源码版本：{getattr(state, 'projectRevision', None)}。"
-            "创建新工程用 project_create；任务管理应用选择 templateId=react-vite-tasks，带真实 API、SQLite 和独立账号权限。"
-            "react-vite 仅是计数演示；已有 HTML 应用转换尚未支持。"
+            "创建新工程用 project_create；任务管理网页才选 templateId=react-vite-tasks。"
+            "办公文件不是任务管理应用，不要为 .pptx / .docx / .xlsx 选 react-vite-tasks。"
+            "办公计划下 project_create 会开空工作区，templateId 不会变成 Vite。"
+            "react-vite 仅是网页的最小电脑；已有 HTML 应用转换尚未支持。"
             "工程会话使用 project_* 工具，不调用 HTML 工厂。"
             # 2026-09-13 真模型 live-edit：工具已支持运行中同步，这里仍教
             # “修改前先取消”，模型照做 project_cancel，标题一个字没改。
@@ -3501,6 +3865,10 @@ async def _run_control_turn_serial(
         resume = port.checkpoint if port is not None else None
         budget = RetryBudget()
         if resume and resume.get("phase") in {"model", "tools"}:
+            # 只在同一轮被打断时接着算 cheapTokens。
+            # ⚠ budget_exhausted / settling 不是中途打断：用户再说一次或
+            #   点「开始推演」必须走 _run_control_turn_body，计数器从 0、
+            #   重选当前窗口档。自动续仍禁 token_budget（HARD_CAP）。
             budget.spent = resume.get("retrySpent", 0)
             budget.started -= max(0, time.time() - resume["retryStartedAt"])
             options = dict(resume["options"])
@@ -4066,6 +4434,10 @@ async def _control_llm_loop(
         的 switch 没有 default，新类型会被静默丢掉）。
         """
         occupancy = estimate_message_tokens(messages)
+        snipped, snip_report = microcompact_messages(messages)
+        if snip_report.did_compact:
+            messages[:] = snipped
+            occupancy = estimate_message_tokens(messages)
         if not loop_budget.should_compact(occupancy):
             return None
         compacted, report = compact_messages(
@@ -4113,15 +4485,20 @@ async def _control_llm_loop(
     port = current_checkpoint.get()
     resume = copy.deepcopy(port.checkpoint) if port is not None else None
     resume = resume if resume and resume.get("phase") in {"model", "tools"} else None
-    legacy_budget = CONVERSATION_BUDGET
     try:
-        loop_budget = (restore_budget(resume.get("budgetPolicy"), legacy_budget) if resume else
-                       PROJECT_BUDGET if _project_budget_eligible(state) else legacy_budget)
+        loop_budget = _loop_budget_for(state, resume)
     except ValueError as exc:
         raise ControlRunStopped("control_reconciliation_required") from exc
-    # Missing legacy snapshots must not acquire a larger budget just because
-    # their project reference was saved before a deployment/restart.
-    can_enter_project_budget = resume is None
+    # 新一轮（含自动续跑）可以在 project_create 之后升到工程档。
+    # 中途 resume 不许因为部署了更大的档就另领一份预算。
+    can_enter_project_budget = _is_fresh_control_round(resume)
+    print(
+        f"[control] budget profile={loop_budget.profile} "
+        f"context_token_budget={int(loop_budget.context_token_budget)} "
+        f"occupancy={estimate_message_tokens(messages)} "
+        f"cheapTokens={cheap_tokens}",
+        flush=True,
+    )
     first_round = int(resume["round"]) if resume else 0
     operation_ids = list(resume.get("operationIds", [])) if resume else []
     if resume:
@@ -5037,7 +5414,9 @@ async def _dispatch_tool(
         #   `project_tool_summary` 模块头。
         summary = project_tool_summary(name, args)
         yield tool_start_event(name, summary=summary or "")
-        body = await run_in_threadpool(adapter.execute, name, args, state)
+        body = await run_in_threadpool(
+            _execute_project_tool, adapter, name, args, state
+        )
         # Project operations are durable and may outlive this tool call.  Keep
         # the existing control loop alive briefly so the next model turn sees
         # the real terminal result instead of having to ask the user to
@@ -5045,15 +5424,17 @@ async def _dispatch_tool(
         # resumable through project_status and never blocks cancellation or
         # consumes the control budget indefinitely.
         operation_id = body.get("operationId") if isinstance(body, dict) else None
-        # ⚠ 2026-09-18：开场那一发还没 enqueue，没有 id。execute 一返回
-        #   就把 id 补出去——否则 15 秒等待里「它的电脑」订不到这条
-        #   PTY，只能退到 runtime.start 的 npm ci 残留。
+        # ⚠ 2026-09-18：开场那一发还没 enqueue，没有 id。enqueue 一返回
+        #   就把 id 补出去——否则等待里「它的电脑」订不到这条 PTY。
+        # ⚠ 2026-09-19：前台 shell 必须在堵住之前补 id。等 exit 再补，
+        #   进行中整屏空白，看起来像假流。
         if operation_id:
             yield tool_start_event(
                 name, summary=summary or "", operation_id=str(operation_id)
             )
-        if operation_id and body.get("status") not in {"completed", "failed", "cancelled"}:
-            deadline = time.monotonic() + 15.0
+        wait_seconds = _project_tool_wait_seconds(name, args, body)
+        if operation_id and wait_seconds > 0:
+            deadline = time.monotonic() + wait_seconds
             while time.monotonic() < deadline:
                 guard_control_run()
                 try:
@@ -5110,9 +5491,12 @@ async def _dispatch_tool(
             yield {"type": "control_tool_result", "tool": name, "ok": False, "error": "invalid_plan_content"}
             return
         previous = latest_control_plan(state)
+        kind = _deliverable_kind_for_write_plan(state, args.get("deliverableKind"))
         candidate = state.model_copy(deep=True)
         _append_transcript(candidate, {
             "role": "assistant", "kind": "plan_written", "planContent": content,
+            "deliverableKind": kind,
+            "mentionedSkills": [info.name for info in _mentioned_skill_infos(state)],
             "planId": previous.get("planId") or f"plan-{uuid.uuid4().hex}",
             "revision": int(previous.get("revision") or 0) + 1,
         })
@@ -5157,17 +5541,23 @@ async def _dispatch_tool(
         # 但首轮产品话题通常还没来得及写进 goal（本轮 user turn 已经落入
         # controlTranscript）。只看 `_has_product_topic(state)` 会把真实产品
         # 的选项误删，用户最终只看到前端自动补的“其他（自己写）”。
-        # `_unstamped_product_turn` 正是为这条 live 路径准备的：有产品内容
-        # 就保留模型选项，纯问候仍然收窄成开放问句。
-        if not _has_product_topic(state) and not _unstamped_product_turn(state):
+        # `_ask_is_cheap_intake` 跟清单说明是同一条判据：有产品内容就保留
+        # 模型选项，纯问候仍然收窄成开放问句。
+        if _ask_is_cheap_intake(state):
+            had = len((rows[0].get("options") or []) if rows else [])
+            question = (
+                str(args.get("question") or "").strip()
+                or (rows[0]["question"] if rows else "")
+                or CHEAP_TURN_FALLBACK
+            )
+            print(
+                f"[control] cheap-chat stripped ask options question={question!r} had={had}",
+                flush=True,
+            )
             rows = [
                 {
                     "id": "q1",
-                    "question": (
-                        str(args.get("question") or "").strip()
-                        or (rows[0]["question"] if rows else "")
-                        or CHEAP_TURN_FALLBACK
-                    ),
+                    "question": question,
                     "options": [],
                 }
             ]
@@ -5438,6 +5828,18 @@ async def _dispatch_tool(
             "summary": summarize_memory(rows),
         }
         return
+    if name == "skill":
+        # 开场就带技能名。正文只回给模型（tool result），不进会话。
+        summary = project_tool_summary("skill", args)
+        yield tool_start_event("skill", summary=summary or "")
+        result = invoke_skill(
+            _skill_infos_for_turn(state),
+            str(args.get("name") or args.get("skill") or ""),
+            str(args.get("args") or "") or None,
+        )
+        # 正文只回给模型（tool result）。不要另发 control_text。
+        yield {"type": "control_tool_result", "tool": "skill", **result}
+        return
     if name == "todo_write":
         yield {"type": "control_tool_start", "tool": "todo_write"}
         raw_updates = args.get("todos")
@@ -5490,7 +5892,10 @@ async def _dispatch_tool(
             "tool": "todo_write",
             "ok": True,
             "count": len(rows),
+            # 抄 grok TodoWriteSuccess：summary 带 id，todos 也带 id。
+            # 只回文案、不回 id = 2026-09-19 坦克大战叠两份的根。
             "summary": summarize_todo(rows),
+            "todos": rows,
         }
         return
     if name == "report_done":

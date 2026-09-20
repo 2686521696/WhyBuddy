@@ -387,6 +387,96 @@ def test_first_product_turn_keeps_options_before_goal_is_stamped(harness):
     assert [o["label"] for o in ask[0]["questions"][0]["options"]] == ["桌面端", "移动端"]
 
 
+def test_mixed_script_todo_list_keeps_options_before_goal_is_stamped(harness):
+    """2026-09-18 真机 sr-20260918103119-06YZQ65BJE。
+
+    用户原话「做一个todo list」——3 个汉字 + 英文产品名。goal 仍是空占位。
+    模型问核心功能并带了选项。上一版 `_is_cheap_chat` 只数汉字 < 4，
+    当闲聊，分发器把 options 整表换成 []；落盘
+    `questions[0].options == []`，卡上只剩前端自动补的「其他（自己写）」。
+
+    判据喂这一发的原话，不另拼一句更长的中文让护栏成立。
+    反向：helo 仍由 test_ask_user_without_product_drops_meaning_chips 收窄。
+    """
+    sid = new_sid("ask-todo-list")
+    seed_session(sid, goal={"text": "", "status": "needs_refinement"})
+    harness.llm_impl = lambda messages, **kw: llm_tool(
+        "ask_user_question",
+        {
+            "questions": [
+                {
+                    "question": "您希望这个 Todo List 包含哪些核心功能？（可多选）",
+                    "multi_select": True,
+                    "options": [
+                        {"label": "添加 / 完成任务"},
+                        {"label": "截止日期与提醒"},
+                        {"label": "清单分组"},
+                    ],
+                }
+            ]
+        },
+    )
+    _, events = harness.post(six_fields(sid, "做一个todo list"))
+    ask = [e for e in events if e.get("type") == "control_ask_user"]
+    assert ask, event_types(events)
+    assert [o["label"] for o in ask[0]["questions"][0]["options"]] == [
+        "添加 / 完成任务",
+        "截止日期与提醒",
+        "清单分组",
+    ]
+    assert ask[0]["questions"][0].get("multiSelect") is True
+    parked = load_session(sid)
+    assert parked is not None
+    row = next(
+        r
+        for r in (parked.controlTranscript or [])
+        if isinstance(r, dict) and r.get("kind") == "ask_user_question"
+    )
+    assert [o.get("label") for o in (row.get("questions") or [{}])[0].get("options") or []] == [
+        "添加 / 完成任务",
+        "截止日期与提醒",
+        "清单分组",
+    ]
+
+
+def test_todo_list_live_path_does_not_offer_omit_options_schema(harness):
+    """通电：HTTP 那一发递给模型的 ask_user_question 说明不许写「不要给选项」。
+
+    只测 list_control_tools 会漏掉「清单在 user turn 落盘之前就编好了」。
+    变异：list_control_tools 仍只看 `_has_product_topic` → 本条红。
+    """
+    sid = new_sid("ask-todo-schema")
+    seed_session(sid, goal={"text": "", "status": "needs_refinement"})
+    offered: list = []
+
+    def impl(messages, **kw):
+        offered.extend(kw.get("tools") or [])
+        return llm_tool(
+            "ask_user_question",
+            {
+                "questions": [
+                    {
+                        "question": "您期望的 Todo List 具备哪些核心功能？",
+                        "options": [
+                            {"label": "添加 / 完成任务"},
+                            {"label": "截止日期与提醒"},
+                        ],
+                    }
+                ]
+            },
+        )
+
+    harness.llm_impl = impl
+    _, events = harness.post(six_fields(sid, "做一个Todo List"))
+    assert [e for e in events if e.get("type") == "control_ask_user"], event_types(events)
+    ask = next(
+        t["function"]
+        for t in offered
+        if (t.get("function") or {}).get("name") == "ask_user_question"
+    )
+    assert "不要给选项" not in str(ask.get("description") or "")
+
+
 def test_need_answer_messages_put_user_before_function_call():
     """Gemini 400：function call 不能直接跟在 system 后面。
 

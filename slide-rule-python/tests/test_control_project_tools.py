@@ -131,7 +131,7 @@ def test_model_creation_read_and_patch_reach_durable_sources_and_next_prompt(set
             assert projection["projectRevision"] == result["revision"]
             assert projection["projectId"] == load_session(setup.state.sessionId).projectId
             assert result["revision"] in messages[0]["content"]
-            return llm_tool("project_read", {"path": "src/main.tsx"}, "read")
+            return llm_tool("project_read", {"path": "src/main.tsx", "offset": 0, "limit": 8000}, "read")
         if result["tool"] == "project_read":
             return llm_tool("project_patch", {"approvalRef": setup.ref, "expectedRevision": result["revision"],
                 "changes": [{"path": "src/main.tsx", "content": result["content"] + "\n// revision from the control loop\n",
@@ -273,7 +273,7 @@ def test_failed_command_returns_to_same_model_loop_before_patch_and_rerun(setup,
                 return llm_tool("project_logs", {"operationId": failed.operationId}, "logs")
             if len(results) == 2:
                 assert result["logs"]
-                return llm_tool("project_read", {"path": "src/main.tsx"}, "read")
+                return llm_tool("project_read", {"path": "src/main.tsx", "offset": 0, "limit": 8000}, "read")
             if len(results) == 3:
                 assert "TYPE_ERROR" in result["content"]
                 return llm_tool("project_patch", {"approvalRef": setup.ref, "expectedRevision": result["revision"],

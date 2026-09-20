@@ -97,6 +97,49 @@ def test_non_tool_events_are_ignored():
     assert tool_transcript_entry({"type": "complete"}) is None
 
 
+def test_skill_start_transcript_keeps_name_not_body():
+    start = tool_transcript_entry({
+        "type": "control_tool_start",
+        "tool": "skill",
+        "summary": "frontend-design",
+        "skill_message": "# SKILL.md\n跑 scripts/hello.py",
+    })
+    assert start == {
+        "role": "assistant",
+        "kind": "tool_start",
+        "tool": "skill",
+        "summary": "frontend-design",
+    }
+    assert "scripts/hello.py" not in str(start)
+    assert "skill_message" not in start
+
+
+def test_skill_开场带名字不带正文():  # noqa: RUF001
+    """skill 的 control_tool_start 必须走 tool_start_event + 白名单摘要。
+
+    ⚠ 第一版只 yield tool=skill，没有 summary。调了也像没调——
+    会话时间线读不到技能名。变异：把 summary / tool_start_event 从
+    `if name == "skill"` 那一支拿掉，本条红。
+    """
+    import re
+    from pathlib import Path
+
+    raw = Path(__file__).resolve().parents[1].joinpath(
+        "services", "rehearsal_control.py"
+    ).read_text(encoding="utf-8")
+    src = re.sub(r'""".*?"""', "", raw, flags=re.S)
+    src = re.sub(r"#.*", "", src)
+    start = src.find('if name == "skill":')
+    end = src.find('if name == "todo_write":', start)
+    assert start != -1 and end != -1 and start < end
+    chunk = src[start:end]
+    assert "tool_start_event" in chunk
+    assert "project_tool_summary" in chunk
+    start_line = [line for line in chunk.splitlines() if "tool_start_event" in line]
+    assert start_line, "skill 开场必须 yield tool_start_event"
+    assert "summary" in start_line[0]
+
+
 def test_派发出口都套了会话日志():  # noqa: RUF001
     """`_dispatch_tool(` 与 `_logged_tool_events(` 必须同数。
 

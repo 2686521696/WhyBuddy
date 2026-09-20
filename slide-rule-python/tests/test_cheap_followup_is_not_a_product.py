@@ -34,8 +34,11 @@ from models.v5_state import V5SessionState
 from services.rehearsal_control import (
     CANNED_FAILURE,
     CHEAP_TURN_FALLBACK,
+    _ask_is_cheap_intake,
     _has_product_topic,
+    _is_cheap_chat,
     _system_prompt,
+    _unstamped_product_turn,
     list_control_tools,
 )
 from services.slide_rule_session import load_session
@@ -56,6 +59,60 @@ def _names(state) -> set:
 @pytest.fixture
 def harness(monkeypatch):
     return ControlHarness(monkeypatch)
+
+
+def test_mixed_script_todo_list_is_an_unstamped_product():
+    """2026-09-18 真机 sr-20260918103119-06YZQ65BJE 的原话。
+
+    goal 空，所以 `_has_product_topic` 仍是假；但当前这句已经是产品，
+    `_unstamped_product_turn` 必须把它交出去。上一版 `_is_cheap_chat`
+    只数汉字，3 个就当闲聊，选项被整表删掉。
+    """
+    live = "做一个todo list"
+    assert _is_cheap_chat(live) is False
+    assert _is_cheap_chat("你好") is True
+    assert _is_cheap_chat("hello") is True
+    st = V5SessionState(
+        sessionId="sr-20260918103119-06YZQ65BJE",
+        goal={"text": "", "status": "needs_refinement"},
+        controlTranscript=[{"role": "user", "kind": "turn", "text": live}],
+    )
+    assert _has_product_topic(st) is False
+    assert _unstamped_product_turn(st) == live
+    assert _ask_is_cheap_intake(st) is False
+
+
+def _ask_description(state) -> str:
+    ask = next(
+        t["function"]
+        for t in list_control_tools(state)
+        if t["function"]["name"] == "ask_user_question"
+    )
+    return str(ask.get("description") or "")
+
+
+def test_unstamped_todo_list_does_not_tell_the_model_to_omit_options():
+    """2026-09-18 真机 sr-20260918103947-G434QZHGQ7 重启后仍无选项。
+
+    分发器已经不再删 options，但 `list_control_tools` 只看 goal。
+    首轮 goal 空，工具说明被改成「不要给选项」。模型照做，
+    落盘 questions[0].options == []，卡上又只剩「其他」。
+    反向：问候仍要那句，免得 hello 又被拆成选择题。
+    """
+    live = V5SessionState(
+        sessionId="sr-20260918103947-G434QZHGQ7",
+        goal={"text": "", "status": "needs_refinement"},
+        controlTranscript=[
+            {"role": "user", "kind": "turn", "text": "做一个Todo List"}
+        ],
+    )
+    assert "不要给选项" not in _ask_description(live)
+    hello = V5SessionState(
+        sessionId="cheap-hello-desc",
+        goal={"text": "", "status": "needs_refinement"},
+        controlTranscript=[{"role": "user", "kind": "turn", "text": "你好"}],
+    )
+    assert "不要给选项" in _ask_description(hello)
 
 
 def test_empty_goal_is_not_a_product_even_if_user_said_hello():

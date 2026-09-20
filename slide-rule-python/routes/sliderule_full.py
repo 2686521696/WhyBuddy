@@ -37,6 +37,7 @@ from services.page_edit_guard import edit_losses, losses_message
 from services import app_access, run_registry
 from services.model_version_restore import restore_model_version_locked
 from services.scope_authority import plan_execution_authorized, preferred_device_for_run, approved_plan_instruction, latest_control_plan
+from services.rehearsal_control import stamp_control_plan_kind
 from services.v5_llm_generate import set_approved_plan
 from services.slide_rule_session import claim_session, create_session, delete_session, load_session, save_session, drive_reasoning_turn
 from services.engine_scheduling import pick_next_capabilities
@@ -861,6 +862,8 @@ def get_sess(
         raise HTTPException(404, "Not found")
     _require_session(state, "view", viewer)
     state, changed = sanitize_session_state(state)
+    if stamp_control_plan_kind(state):
+        changed = True
     if changed:
         # Best-effort persist of the sanitized state so subsequent GETs and the service layer
         # see the corrected version. NOTE: the persistence concurrency guard retains the prior
