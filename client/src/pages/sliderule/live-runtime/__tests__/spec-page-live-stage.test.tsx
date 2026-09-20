@@ -406,9 +406,11 @@ describe("页面装在 1920×1080 的画布里看", () => {
     expect(stage.style.width).toBe("1920px");
     expect(stage.style.height).toBe("1080px");
     expect(stage.style.height).not.toBe("1920px");
-    // 等比缩放靠 transform，不是把内容塞进小盒子（后者会裁切）
+    // 同源舞台仍走 transform。工程预览跨源才改 zoom，这边不许跟着改。
+    expect(stage.getAttribute("data-hit-fit")).toBe("transform");
     expect(stage.style.transform).toMatch(/^scale\(/);
     expect(stage.style.transformOrigin).toBe("top left");
+    expect(stage.style.zoom).toBe("");
   });
 
   it("右下角那枚自述标识报的是设计分辨率，不是容器尺寸", () => {
@@ -428,6 +430,8 @@ describe("页面装在 1920×1080 的画布里看", () => {
     const toks = canvas().className.split(/\s+/);
     expect(toks).toContain("items-center");
     expect(toks).toContain("justify-center");
+    expect(toks).toContain("min-w-0");
+    expect(toks).toContain("w-full");
     expect(toks).not.toContain("items-start");
     expect(toks).not.toContain("justify-start");
   });

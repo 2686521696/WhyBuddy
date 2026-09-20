@@ -201,12 +201,25 @@ export function useScaleToFit(
         measure();
       });
     };
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(schedule);
+      ro.observe(el);
+      // ⚠ 2026-09-19：必须先 observe 再量。react-resizable-panels 的
+      //   autoSaveId 会在首屏 defaultSize（约 70%）之后把栏收成记下的
+      //   比例。先量再订的话，订上之前那一缩 ResizeObserver 收不到，
+      //   工程预览会停在 58%、1920 画板比可见栏还宽。
+      measure();
+      const settle = requestAnimationFrame(() => {
+        requestAnimationFrame(measure);
+      });
+      return () => {
+        ro.disconnect();
+        cancelAnimationFrame(settle);
+        if (raf) cancelAnimationFrame(raf);
+      };
+    }
     measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(schedule);
-    ro.observe(el);
     return () => {
-      ro.disconnect();
       if (raf) cancelAnimationFrame(raf);
     };
   }, [readScale, commit]);

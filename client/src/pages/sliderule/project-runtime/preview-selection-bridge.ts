@@ -20,6 +20,27 @@ export function validSourcePath(value: unknown): value is string {
   );
 }
 
+/**
+ * 从工程动作的结构化细节里取出正在改的那份文件。
+ *
+ * 开场摘要是 `src/Home.tsx、src/api/tasks.ts`；命令 / 版本号不是 path。
+ * 认 validSourcePath，不解析人话 label。
+ */
+export function sourcePathFromActionDetail(detail: string): string | null {
+  const raw = String(detail || "").trim();
+  if (!raw) return null;
+  for (const part of raw.split(/[、,，\s]+/)) {
+    let path = part.trim();
+    if (path.includes("等") && /个文件$/.test(path)) {
+      path = path.split("等")[0]?.trim() ?? "";
+    }
+    if (!validSourcePath(path)) continue;
+    if (!path.includes("/") && !/\.[A-Za-z0-9]{1,8}$/.test(path)) continue;
+    return path;
+  }
+  return null;
+}
+
 /** Sandpack's source/channel lifecycle, with explicit origin and revision fencing. */
 export function connectPreviewSelection({
   frame,

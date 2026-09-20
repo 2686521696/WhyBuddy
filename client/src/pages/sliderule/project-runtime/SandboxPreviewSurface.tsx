@@ -12,14 +12,32 @@ import {
 import type { PreviewDescriptor } from "@shared/project-runtime.generated";
 import type { ProjectPreviewReference } from "./project-preview-client";
 import { useProjectPreview } from "./useProjectPreview";
+import { usePreviewPresence } from "./usePreviewPresence";
+import {
+  previewAddressPath,
+  previewAddressTitle,
+  previewFrameAfterLoad,
+  previewFrameCovered,
+  previewIsAuthorizeEntry,
+  previewOpenUrl,
+} from "./project-preview-frame";
+import {
+  PREVIEW_COMING_UP,
+  previewWakeLocked,
+} from "./project-preview-wake";
 import { ProjectVerificationPanel } from "./ProjectVerificationPanel";
 import {
   ProjectWorkspacePanel,
   type SourceSelection,
 } from "./ProjectWorkspacePanel";
-import { connectPreviewSelection } from "./preview-selection-bridge";
+import {
+  connectPreviewSelection,
+  sourcePathFromActionDetail,
+} from "./preview-selection-bridge";
 import { ProjectDataPanel } from "./ProjectDataPanel";
 import { ProjectDeliveryPanel } from "./ProjectDeliveryPanel";
+import { OfficeArtifactPane } from "./OfficeArtifactPane";
+import { isOfficeFileDeliverable } from "../deliverable-kind";
 import {
   ProjectWorkspaceError,
   requestProjectWorkspace,
@@ -35,24 +53,35 @@ import {
   INSPECT_ACTION_EVENT,
   inspectActionDetail,
   resolveComputerView,
+  shouldAutoOpenPreview,
+  shouldAutoWakePreview,
   type ComputerView,
 } from "../project-computer-view";
 import { sandboxCommandLine } from "../sandbox-session-transcript";
 import type { UiTurn } from "../types";
+import { useStudioLayout } from "../StudioLayoutContext";
+import { useScaleToFit } from "../live-runtime/canvas-scale";
+import { ScaledStageFrame } from "../live-runtime/ScaledStageFrame";
+import {
+  STAGE_FRAME_PAD,
+  phoneFramePad,
+} from "../live-runtime/stage-frame-style";
+import {
+  loadProjectPreviewViewId,
+  projectPreviewViewOptions,
+  resolveProjectPreviewView,
+  saveProjectPreviewViewId,
+} from "./project-preview-view";
 
 /**
  * 地址栏只显示**路径**，不显示那串 runtimeId 主机名。
  *
  * ⚠ 主机名是 `{runtimeId}.预览域`，对用户没有信息量，却会把这一行撑满
- *   （Manus 那张截图里显示的也只是 `/`）。完整地址仍在 title 和外开链接上。
+ *   （Manus 那张截图里显示的也只是 `/`）。授权入口外开走另开的票，
+ *   不是 iframe 那张，也不是光秃 `/`。
  */
 function previewPath(entryUrl: string): string {
-  try {
-    const url = new URL(entryUrl);
-    return `${url.pathname}${url.search}` || "/";
-  } catch {
-    return entryUrl;
-  }
+  return previewAddressPath(entryUrl);
 }
 
 const STATUS: Record<PreviewDescriptor["status"], string> = {
@@ -106,7 +135,18 @@ const SESSION_MODES = [
 
 /** 头条中间那条路径槽。预览和代码同一份圆角条，切档才不会左右跳。 */
 const CONTEXT_PILL =
-  "flex h-6 min-w-0 flex-1 items-center rounded-full bg-[#f4f4f5] px-3 font-mono text-[12px] text-[#8a8a8a]";
+  "flex h-6 w-full min-w-0 items-center rounded-full bg-[#f4f4f5] px-3 font-mono text-[12px] text-[#8a8a8a]";
+/**
+ * 对照 Manus：地址是一条居中胶囊，左图标、中路径、右刷新。
+ *
+ * ⚠ 2026-09-19 真机：`flex-1` 把胶囊拉满中间槽，设备下拉和右侧齿轮
+ *   被外壳 `overflow-hidden` 裁掉。有上限、居中，把宽度让给两侧按钮。
+ */
+const ADDRESS_PILL =
+  "flex h-6 w-full min-w-0 max-w-[18rem] items-center gap-1.5 rounded-full bg-[#f4f4f5] pl-2.5 pr-1 font-mono text-[12px] text-[#8a8a8a]";
+/** 两侧按内容占位（按钮不被挤），中间先让宽度、地址居中。 */
+const CHROME_GRID =
+  "grid h-9 min-w-0 shrink-0 grid-cols-[minmax(max-content,1fr)_minmax(0,1fr)_minmax(max-content,1fr)] items-center gap-2 border-b border-[#e5e7eb] px-3";
 const APP_MODES = SESSION_MODES.filter(([value]) => value !== "computer");
 
 /**
@@ -116,7 +156,7 @@ const APP_MODES = SESSION_MODES.filter(([value]) => value !== "computer");
  *
  * ⚠ 2026-09-14 点开「看着没有」：菜单是 absolute，父级
  *   `overflow-x-auto` 会把 overflow-y 也收成裁切（CSS 规定），
- *   32px 高的顶栏把整张菜单剪没。终端又在后面画，没 z-index
+ *   36px 高的顶栏把整张菜单剪没。终端又在后面画，没 z-index
  *   也会盖住漏出来的那一点。头条要 `relative z-10`，齿轮条
  *   不许写 overflow-x-auto。
  */
@@ -319,6 +359,13 @@ function ComputerReplayDock({
  *
  * 唤醒 = 能开就换票（open），过期/停止就 POST /preview/wake；
  * 失败必须把原因写在第二行，不许假装刷新就好了。
+ *
+ * ⚠ 2026-09-19 点唤醒后 `opening` 一把就放下，provisioning 时
+ *   按钮又变回「唤醒」，真机还能再点。路上把按钮收掉，窗骨架扫光
+ *   （对照 Manus 恢复环境），失败才把按钮还回来。
+ *
+ * ⚠ 2026-09-19 下午用户圈了：停着的两块白板没有动画，看着像坏了。
+ *   改成小浏览器 + 页骨架一直扫光；醒的时候只加快，不另发明一套。
  */
 function PreviewPausedFace({
   title,
@@ -327,6 +374,7 @@ function PreviewPausedFace({
   disabled,
   alert,
   onWake,
+  testid = "project-preview-paused",
 }: {
   title: string;
   detail: string | null;
@@ -334,24 +382,36 @@ function PreviewPausedFace({
   disabled: boolean;
   alert?: boolean;
   onWake: () => void;
+  testid?: string;
 }) {
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col items-center justify-center bg-white"
-      data-testid="project-preview-paused"
+      className="flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center bg-white"
+      data-testid={testid}
+      data-preview-waking={waking ? "true" : "false"}
+      aria-busy={waking}
     >
       <div
-        className="mb-5 h-[88px] w-[148px] rounded-xl bg-[#f4f4f5] p-3"
+        className={`sr-preview-window mb-6 w-[168px] overflow-hidden rounded-xl border border-[#ececee] bg-[#f7f7f8] shadow-[0_10px_28px_rgb(15_23_42/0.06)]${
+          waking ? " sr-preview-wake-window" : ""
+        }`}
+        data-testid="project-preview-window"
         aria-hidden
       >
-        <div className="mb-3 flex gap-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-[#d4d4d8]" />
-          <span className="h-1.5 w-1.5 rounded-full bg-[#d4d4d8]" />
-          <span className="h-1.5 w-1.5 rounded-full bg-[#d4d4d8]" />
+        <div className="flex items-center gap-1.5 px-2.5 py-2">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#e4e4e7]" />
+          <span className="h-1.5 w-1.5 rounded-full bg-[#e4e4e7]" />
+          <span className="h-1.5 w-1.5 rounded-full bg-[#e4e4e7]" />
+          <span className="ml-1 h-2 flex-1 rounded-full bg-white" />
         </div>
-        <div className="flex gap-2">
-          <div className="h-10 flex-1 rounded-md bg-white/80" />
-          <div className="h-10 flex-1 rounded-md bg-white/80" />
+        <div
+          className={`sr-preview-page mx-2 mb-2 h-[72px] overflow-hidden rounded-lg bg-white${
+            waking ? " sr-preview-wake-pane" : ""
+          }`}
+        >
+          <span className="sr-preview-page-line w-[74%]" />
+          <span className="sr-preview-page-line w-[52%]" />
+          <span className="sr-preview-page-line w-[63%]" />
         </div>
       </div>
       <p className="text-[13px] text-[#8a8a8a]">{title}</p>
@@ -363,15 +423,23 @@ function PreviewPausedFace({
           {detail}
         </p>
       ) : null}
-      <button
-        type="button"
-        data-testid="project-preview-wake"
-        disabled={disabled}
-        onClick={onWake}
-        className="mt-4 rounded-full bg-[#171717] px-5 py-1.5 text-[13px] text-white disabled:opacity-40"
-      >
-        {waking ? "正在打开…" : "唤醒"}
-      </button>
+      {waking ? (
+        <span
+          className="sr-preview-wake-spin mt-4"
+          data-testid="project-preview-wake-spin"
+          aria-hidden
+        />
+      ) : (
+        <button
+          type="button"
+          data-testid="project-preview-wake"
+          disabled={disabled}
+          onClick={onWake}
+          className="mt-4 rounded-full bg-[#171717] px-5 py-1.5 text-[13px] text-white disabled:opacity-40"
+        >
+          唤醒
+        </button>
+      )}
     </div>
   );
 }
@@ -379,53 +447,110 @@ function PreviewPausedFace({
 /**
  * 对照 Manus：预览档地址一直在头条，没打开也画 `/`。
  * 完整 URL 只进 title / 外开，行里只留路径。
+ * 设备下拉在槽外面，分辨率读数也不进槽——进了就把胶囊挤扁。
  */
+function PreviewDeviceChrome({
+  viewId,
+  scale,
+  onChange,
+}: {
+  viewId: string;
+  scale: number;
+  onChange: (id: string) => void;
+}) {
+  const view = resolveProjectPreviewView(viewId);
+  return (
+    <div className="flex shrink-0 items-center gap-1.5">
+      <select
+        value={view.id}
+        onChange={event => onChange(event.target.value)}
+        data-testid="project-preview-view"
+        aria-label="预览设备"
+        title="换一台机器看：只改预览画布尺寸，不会重新生成"
+        className="h-6 max-w-[9.5rem] shrink-0 cursor-pointer rounded border border-[#e5e7eb] bg-white px-1 text-[11px] text-[#555] outline-none hover:border-[#d3d8e0]"
+      >
+        {projectPreviewViewOptions().map(option => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <span
+        className="sr-only"
+        data-testid="project-preview-scale"
+        title={`固定 ${view.viewport.w}×${view.viewport.h} 设计分辨率，按容器等比缩放`}
+      >
+        {view.viewport.w}×{view.viewport.h} · {Math.round(scale * 100)}%
+      </span>
+    </div>
+  );
+}
+
 function PreviewAddressBar({
   entryUrl,
   canReload,
   onReload,
+  onOpenExternal,
 }: {
   entryUrl: string | null;
   canReload: boolean;
   onReload: () => void;
+  onOpenExternal: () => void;
 }) {
+  const authorize = Boolean(entryUrl && previewIsAuthorizeEntry(entryUrl));
   return (
     <div
-      className="flex min-w-0 flex-1 items-center gap-1"
+      className={ADDRESS_PILL}
       data-testid="project-preview-addressbar"
     >
+      <Monitor
+        className="h-3.5 w-3.5 shrink-0 text-[#b4b4b4]"
+        aria-hidden
+      />
       <span
-        className={CONTEXT_PILL}
-        title={entryUrl ?? undefined}
+        className="min-w-0 flex-1 truncate"
+        title={entryUrl ? previewAddressTitle(entryUrl) : undefined}
         data-testid="project-preview-url"
       >
         {entryUrl ? previewPath(entryUrl) : "/"}
       </span>
       {entryUrl ? (
-        <>
+        authorize ? (
+          <button
+            type="button"
+            onClick={onOpenExternal}
+            data-testid="project-preview-open-external"
+            title="在新标签页打开"
+            aria-label="在新标签页打开预览"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[#8a8a8a] hover:bg-white"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+          </button>
+        ) : (
           <a
-            href={entryUrl}
+            href={previewOpenUrl(entryUrl)}
             target="_blank"
             rel="noreferrer noopener"
             data-testid="project-preview-open-external"
             title="在新标签页打开"
             aria-label="在新标签页打开预览"
-            className="flex h-6 w-6 items-center justify-center rounded text-[#8a8a8a] hover:bg-[#f4f4f5]"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[#8a8a8a] hover:bg-white"
           >
             <ExternalLink className="h-3.5 w-3.5" />
           </a>
-          <button
-            type="button"
-            title="重新载入页面"
-            data-testid="project-preview-reload"
-            disabled={!canReload}
-            onClick={onReload}
-            className="flex h-6 w-6 items-center justify-center rounded text-[#8a8a8a] hover:bg-[#f4f4f5] disabled:opacity-40"
-          >
-            <RotateCw className="h-3.5 w-3.5" />
-          </button>
-        </>
+        )
       ) : null}
+      <button
+        type="button"
+        title="重新载入页面"
+        aria-label="重新载入预览"
+        data-testid="project-preview-reload"
+        disabled={!canReload}
+        onClick={onReload}
+        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[#8a8a8a] hover:bg-white disabled:opacity-40"
+      >
+        <RotateCw className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }
@@ -452,6 +577,7 @@ export function SandboxPreviewSurface({
   sessionId,
   isRunning = false,
   projectCreateError = null,
+  deliverableKind,
 }: ProjectPreviewReference & {
   appTitle?: string;
   /**
@@ -471,6 +597,8 @@ export function SandboxPreviewSurface({
   isRunning?: boolean;
   /** 会话工作台：工程还没落库时的创建失败。应用中心不传。 */
   projectCreateError?: string | null;
+  /** 办公文件不把 Vite iframe 叫醒当交付物。 */
+  deliverableKind?: string;
 }) {
   const preview = useProjectPreview({
     projectId,
@@ -480,6 +608,12 @@ export function SandboxPreviewSurface({
   const descriptor = preview.snapshot?.descriptor;
   const [userPinned, setUserPinned] = useState<ComputerView | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [frameReady, setFrameReady] = useState(false);
+  const [frameSrc, setFrameSrc] = useState<string | null>(null);
+  useEffect(() => {
+    setFrameReady(false);
+    setFrameSrc(preview.entryUrl);
+  }, [preview.entryUrl]);
   const activityRows = useMemo(
     () => (turns ? deriveProjectActivity(turns) : []),
     [turns]
@@ -491,6 +625,9 @@ export function SandboxPreviewSurface({
     activityRows,
     focusIndex >= 0 ? focusIndex : null
   );
+  // 切档只认「已经换到的票」。能不能开 ≠ 控制面挑了预览——
+  // 把 canOpen 焊进 previewReady，装依赖时右侧会被拽去唤醒脸。
+  const runtimeReady = preview.canOpen || Boolean(preview.entryUrl);
   const previewReady = Boolean(preview.entryUrl);
   // ⚠ 2026-09-18：自动切档必须看**当前跟的那一行**，不是数组最后一项
   //   另算一份。人没点过时跟队尾；点过就跟那一条的工具。
@@ -507,9 +644,12 @@ export function SandboxPreviewSurface({
         userPinned,
         live: computerNow.live,
         hasActivity: activityRows.length > 0,
-        previewReady,
+        previewReady: isOfficeFileDeliverable(deliverableKind)
+          ? false
+          : previewReady,
         lastTool,
         hasConsole,
+        deliverableKind,
       })
     : userPinned && userPinned !== "computer"
       ? userPinned
@@ -592,6 +732,39 @@ export function SandboxPreviewSurface({
     };
   }, []);
   const [selection, setSelection] = useState<SourceSelection | null>(null);
+  const [manualSelect, setManualSelect] = useState(false);
+  // 跟控制面正在写/读的那份 path（tool_start 白名单摘要），不是清单第一份 README。
+  const followPath = useMemo(() => {
+    const row = computerNow.current;
+    if (!row || computerViewForAction(row.tool) !== "source") return null;
+    return sourcePathFromActionDetail(row.detail || "");
+  }, [computerNow.current]);
+  const followActionId = computerNow.current?.id ?? "";
+  useEffect(() => {
+    setManualSelect(false);
+  }, [followActionId]);
+  useEffect(() => {
+    if (manualSelect || !followPath) return;
+    setSelection(prev => {
+      // ⚠ 2026-09-19：跟文件曾把 projectRevision 写进 selection.revision。
+      //   requestedRevision 优先吃它，清单钉死在开写那一版；文件落在新
+      //   版本上，GET 旧树 404，编辑器停在「正在写入源码…」。跟文件只
+      //   带 path，版本跟 current。
+      if (
+        prev?.path === followPath &&
+        prev.selectionId.startsWith("follow:") &&
+        !prev.revision
+      )
+        return prev;
+      return {
+        path: followPath,
+        line: 1,
+        column: 1,
+        revision: "",
+        selectionId: `follow:${followActionId}:${followPath}`,
+      };
+    });
+  }, [followPath, followActionId, manualSelect]);
   const [selecting, setSelecting] = useState(false);
   const [bridgeStatus, setBridgeStatus] = useState<
     "waiting" | "ready" | "missing-source"
@@ -630,6 +803,7 @@ export function SandboxPreviewSurface({
       },
       onStatus: setBridgeStatus,
       onSelection: location => {
+        setManualSelect(true);
         setSelection({
           ...location,
           revision: descriptor.revision,
@@ -671,34 +845,130 @@ export function SandboxPreviewSurface({
     PREVIEW_FACE_REASONS.has(preview.snapshot.reason)
       ? blockedReason
       : null;
+  const comingUpTitle =
+    descriptor && PREVIEW_COMING_UP.has(descriptor.status)
+      ? STATUS[descriptor.status]
+      : null;
+  const waking = previewWakeLocked({
+    opening: preview.opening,
+    starting: preview.starting,
+    loading: preview.loading,
+    awaitingProject,
+    status: descriptor?.status,
+  });
   const pausedTitle = preview.opening
     ? "正在打开预览…"
-    : preview.starting
-      ? "正在启动应用…"
-      : preview.loading
-        ? "正在准备预览…"
-        : previewError
-          ? "暂时无法打开预览"
-          : awaitingProject
-            ? "正在准备工程"
-            : mismatch
-              ? "运行版本与当前工程不同"
-              : faceReason
-                ? "暂时无法打开预览"
-                : previewIdle
-                  ? "预览已暂停，点击以唤醒。"
-                  : STATUS[descriptor!.status];
+    : previewError
+      ? "暂时无法打开预览"
+      : awaitingProject
+        ? "正在准备工程"
+        : mismatch
+          ? "运行版本与当前工程不同"
+          : faceReason
+            ? "暂时无法打开预览"
+            : comingUpTitle
+              ? comingUpTitle
+              : preview.starting
+                ? "正在启动应用…"
+                : preview.loading
+                  ? "正在准备预览…"
+                  : previewIdle
+                    ? "预览已暂停，点击以唤醒。"
+                    : STATUS[descriptor!.status];
   const pausedDetail = previewError
     ? previewError
     : mismatch
       ? "当前运行的是另一份源码版本，请先同步或启动当前工程。"
       : faceReason;
-  const canWake = Boolean(
-    projectId && !preview.opening && !preview.starting && !awaitingProject
+  const officeFile = isOfficeFileDeliverable(deliverableKind);
+  const canWake = Boolean(projectId) && !waking && !officeFile;
+  const [previewViewId, setPreviewViewId] = useState(loadProjectPreviewViewId);
+  const previewView = resolveProjectPreviewView(previewViewId);
+  const studioLayout = useStudioLayout();
+  const { ref: previewFitRef, scale: previewScale } = useScaleToFit(
+    previewView.viewport.w,
+    previewView.viewport.h,
+    "contain",
+    studioLayout?.resizing ?? false,
+    previewView.framed && previewView.frame
+      ? phoneFramePad(previewView.frame)
+      : STAGE_FRAME_PAD,
+    previewView.maxScale
   );
+  const changePreviewView = (id: string) => {
+    setPreviewViewId(id);
+    saveProjectPreviewViewId(id);
+  };
   const wakePreview = () => {
+    if (waking) return;
     void preview.wake();
   };
+  const reloadPreview = () => {
+    if (preview.entryUrl) {
+      void preview.open();
+      return;
+    }
+    wakePreview();
+  };
+  useEffect(() => {
+    if (
+      !shouldAutoOpenPreview({
+        hasTurns: Boolean(turns && turns.length),
+        view: tab,
+        hasTicket: Boolean(preview.entryUrl),
+        opening: preview.opening,
+        runtimeReady,
+        lastTool,
+        deliverableKind,
+      })
+    ) {
+      return;
+    }
+    void preview.open();
+  }, [
+    turns,
+    tab,
+    preview.entryUrl,
+    preview.opening,
+    runtimeReady,
+    lastTool,
+    deliverableKind,
+    preview.open,
+  ]);
+  useEffect(() => {
+    if (
+      !shouldAutoWakePreview({
+        hasTurns: Boolean(turns && turns.length),
+        view: tab,
+        hasTicket: Boolean(preview.entryUrl),
+        opening: preview.opening,
+        starting: preview.starting,
+        live: computerNow.live,
+        lastTool,
+        runtimeReady,
+        deliverableKind,
+      })
+    ) {
+      return;
+    }
+    void preview.wake();
+  }, [
+    turns,
+    tab,
+    preview.entryUrl,
+    preview.opening,
+    preview.starting,
+    computerNow.live,
+    lastTool,
+    runtimeReady,
+    deliverableKind,
+    preview.wake,
+  ]);
+  const presence = usePreviewPresence({
+    view: tab,
+    hasTicket: Boolean(preview.entryUrl),
+    operationId: preview.snapshot?.operationId,
+  });
   const showPreviewPick = tab === "preview" && Boolean(preview.entryUrl);
   const previewPickButton = showPreviewPick ? (
     <button
@@ -732,7 +1002,7 @@ export function SandboxPreviewSurface({
     >
       {turns ? (
         <div
-          className="relative z-10 flex h-8 min-w-0 shrink-0 items-center gap-2 border-b border-[#e5e7eb] px-2"
+          className={`relative z-10 ${CHROME_GRID}`}
           data-testid="project-computer-chrome"
           data-header-pattern="primer-page-header"
         >
@@ -740,17 +1010,33 @@ export function SandboxPreviewSurface({
               路径槽，操作永远在右。第一版预览把下拉放左边、代码档又把
               下拉甩到 `ml-auto`，切一次就左右跳。源码标题「代码」和下拉
               「源码」还各写一遍。现在三槽锁死，预览/代码同一条骨架。 */}
-          {resetSlot}
-          <ComputerModeSelect tab={tab} hasSession onPick={pinView} />
+          <div className="flex items-center gap-1.5 justify-self-start">
+            {resetSlot}
+            <ComputerModeSelect tab={tab} hasSession onPick={pinView} />
+            {tab === "preview" && !officeFile ? (
+              <PreviewDeviceChrome
+                viewId={previewView.id}
+                scale={previewScale}
+                onChange={changePreviewView}
+              />
+            ) : null}
+          </div>
           <div
             data-testid="project-computer-context"
-            className="flex min-w-0 flex-1 items-center"
+            className="flex min-w-0 justify-center overflow-hidden"
           >
             {tab === "preview" ? (
               <PreviewAddressBar
-                entryUrl={preview.entryUrl}
-                canReload={preview.canOpen}
-                onReload={() => void preview.open()}
+                entryUrl={officeFile ? null : preview.entryUrl}
+                canReload={
+                  officeFile
+                    ? false
+                    : preview.entryUrl
+                      ? preview.canOpen
+                      : canWake
+                }
+                onReload={reloadPreview}
+                onOpenExternal={() => void preview.openExternal()}
               />
             ) : tab === "computer" ? (
               <p
@@ -770,12 +1056,12 @@ export function SandboxPreviewSurface({
             ) : (
               <div
                 data-testid="project-computer-context-host"
-                className="flex min-w-0 flex-1 items-center"
+                className="flex min-w-0 w-full items-center"
               />
             )}
           </div>
           <div
-            className="ml-auto flex shrink-0 items-center gap-1"
+            className="flex items-center justify-end justify-self-end gap-1"
             data-testid="project-computer-gears"
           >
             {tab === "source" || tab === "history" ? (
@@ -820,22 +1106,40 @@ export function SandboxPreviewSurface({
           </div>
         </div>
       ) : (
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[#e5e7eb] px-2">
-        <ComputerModeSelect
-          tab={tab}
-          hasSession={false}
-          onPick={pinView}
-        />
-        {tab === "preview" ? (
-          <PreviewAddressBar
-            entryUrl={preview.entryUrl}
-            canReload={preview.canOpen}
-            onReload={() => void preview.open()}
+      <div className={CHROME_GRID}>
+        <div className="flex items-center gap-1.5 justify-self-start">
+          <ComputerModeSelect
+            tab={tab}
+            hasSession={false}
+            onPick={pinView}
           />
+          {tab === "preview" && !officeFile ? (
+            <PreviewDeviceChrome
+              viewId={previewView.id}
+              scale={previewScale}
+              onChange={changePreviewView}
+            />
+          ) : null}
+        </div>
+        {tab === "preview" ? (
+          <div className="flex min-w-0 justify-center overflow-hidden">
+            <PreviewAddressBar
+              entryUrl={officeFile ? null : preview.entryUrl}
+              canReload={
+                officeFile
+                  ? false
+                  : preview.entryUrl
+                    ? preview.canOpen
+                    : canWake
+              }
+              onReload={reloadPreview}
+              onOpenExternal={() => void preview.openExternal()}
+            />
+          </div>
         ) : (
-          <span className="min-w-0 flex-1" />
+          <span className="min-w-0" />
         )}
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex items-center justify-end justify-self-end gap-1">
           {previewPickButton}
           <button
             type="button"
@@ -915,7 +1219,9 @@ export function SandboxPreviewSurface({
           data-testid="project-computer-stage"
           data-active={tab === "computer" ? "true" : "false"}
           className={
-            tab === "computer" ? "flex min-h-0 flex-1 flex-col" : "hidden"
+            tab === "computer"
+              ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+              : "hidden"
           }
         >
           <ProjectComputerPanel
@@ -962,6 +1268,7 @@ export function SandboxPreviewSurface({
             revisionMode={revisionMode}
             tab={tab === "history" ? "history" : "source"}
             selection={selection}
+            followPath={manualSelect ? null : followPath}
             onChanged={() => void preview.refresh()}
           />
         </div>
@@ -976,7 +1283,7 @@ export function SandboxPreviewSurface({
           )}
         />
       ) : null}
-      {tab === "delivery" && projectId ? (
+      {tab === "delivery" && projectId && !officeFile ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <ProjectVerificationPanel
             projectId={projectId}
@@ -1002,40 +1309,91 @@ export function SandboxPreviewSurface({
       ) : null}
       <div
         className={
-          tab === "preview" ? "flex min-h-0 flex-1 flex-col" : "hidden"
+          tab === "preview"
+            ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+            : "hidden"
         }
       >
-        {/* ⚠ 2026-09-16 TicketStream 预览：工程 iframe 必须是真实 CSS
-            像素，不许套 transform:scale（HTML 舞台手机框那条会让点
-            的位置和看到的位置错开，看着能点其实点不中）。
-            touch-action:manipulation 让移动端点按落到框里，不被宿主
-            当成要滚/要拖。pointer-events-auto 钉死——拖缝时
-            [data-studio-resizing] 会临时关掉，松手必须回到能点。
-
-            ⚠ 2026-09-16 晚：粗指针上盖过一层 target=_blank。设备工具栏
-            把 pointer 收成 coarse，点登录框就新开标签——用户圈了。
-            预览点按必须进 iframe，外开只留地址行那颗。 */}
-        {preview.entryUrl ? (
-          <iframe
-            ref={frame}
-            title={`${appTitle} · 运行页面`}
-            src={preview.entryUrl}
-            data-testid="project-preview-frame"
-            tabIndex={-1}
-            onPointerDown={() => frame.current?.focus()}
-            className="min-h-0 w-full flex-1 border-0 bg-white pointer-events-auto [touch-action:manipulation]"
-            sandbox="allow-scripts allow-forms allow-same-origin allow-modals allow-downloads"
-            referrerPolicy="no-referrer"
-          />
+        {/* ⚠ 2026-09-16：iframe 自己身上不许写 transform——点按会错位。
+            以前能点，是因为框铺满、没有缩放。16:9 要缩，祖先 `scale()`
+            只对 HTML 舞台的 srcdoc 同源框有效；工程预览票跨源，
+            Chromium 命中盒还按 1920 算。zoom 写在 iframe 上，布局盒
+            和看见的盒子才是同一份。pointer-events-auto 仍钉着。 */}
+        {officeFile && projectId ? (
+          <OfficeArtifactPane projectId={projectId} />
         ) : (
-          <PreviewPausedFace
-            title={pausedTitle}
-            detail={pausedDetail}
-            waking={preview.opening || preview.starting}
-            disabled={!canWake}
-            alert={Boolean(previewError)}
-            onWake={wakePreview}
-          />
+        <ScaledStageFrame
+          viewport={previewView.viewport}
+          scale={previewScale}
+          canvasRef={previewFitRef}
+          framed={previewView.framed}
+          frame={previewView.frame ?? undefined}
+          canvasTestId="project-preview-canvas"
+          hitFit="zoom"
+        >
+          {preview.entryUrl ? (
+            <>
+              <iframe
+                ref={frame}
+                title={`${appTitle} · 运行页面`}
+                src={frameSrc ?? preview.entryUrl}
+                data-testid="project-preview-frame"
+                tabIndex={-1}
+                onLoad={() => {
+                  const loadedSrc =
+                    frame.current?.getAttribute("src") ||
+                    frameSrc ||
+                    preview.entryUrl;
+                  const next = previewFrameAfterLoad({
+                    entryUrl: preview.entryUrl,
+                    loadedSrc,
+                  });
+                  if (next.nextSrc !== loadedSrc) {
+                    setFrameSrc(next.nextSrc);
+                    return;
+                  }
+                  if (next.ready) setFrameReady(true);
+                }}
+                onPointerDown={() => {
+                  frame.current?.focus();
+                  presence.nudge();
+                }}
+                style={{
+                  width: previewView.viewport.w,
+                  height: previewView.viewport.h,
+                  zoom: previewScale,
+                }}
+                className="block border-0 bg-white pointer-events-auto [touch-action:manipulation]"
+                sandbox="allow-scripts allow-forms allow-same-origin allow-modals allow-downloads"
+                referrerPolicy="no-referrer"
+              />
+              {previewFrameCovered({
+                entryUrl: preview.entryUrl,
+                frameReady,
+              }) ? (
+                <div className="absolute inset-0 z-[1] flex min-h-0 flex-col">
+                  <PreviewPausedFace
+                    testid="project-preview-frame-loading"
+                    title="正在打开预览…"
+                    detail={null}
+                    waking
+                    disabled
+                    onWake={() => {}}
+                  />
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <PreviewPausedFace
+              title={pausedTitle}
+              detail={pausedDetail}
+              waking={waking}
+              disabled={!canWake}
+              alert={Boolean(previewError)}
+              onWake={wakePreview}
+            />
+          )}
+        </ScaledStageFrame>
         )}
       </div>
     </section>

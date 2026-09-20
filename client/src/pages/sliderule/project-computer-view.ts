@@ -8,12 +8,14 @@
  * 下半屏。Manus 右侧是**一块**电脑——干活时看终端，跑起来看预览，
  * 点了下拉就钉住。叠是第一版的权宜，不是产品形态。
  *
- * 决策抽纯函数：组件判据走静态渲染，点不了下拉；自动切档的条件
- * 必须能被变异咬住（§2），不能只写在 JSX 的三元里。
+ * 决策抽纯函数：组件判据走静态渲染，点不了下拉；跟哪一档看的是
+ * **控制面刚挑的那件工具**，不是 host 写死的课表。
  *
- * ⚠ 用户点过下拉 → 听用户的。没点过才自动切。把「预览已经能打开」
+ * ⚠ 用户点过下拉 → 听用户的。没点过才跟当前工具。把「预览已经能打开」
  *   写成强制切档，会把正在看终端回放的人拽走。
  */
+
+import { isOfficeFileDeliverable } from "./deliverable-kind";
 
 export const COMPUTER_VIEWS = [
   "computer",
@@ -68,11 +70,16 @@ export function shouldAutoCreateProject(input: {
   canCreateProject: boolean;
   isRunning: boolean;
   createStatus: "idle" | "creating" | "error";
+  planHasDeliverableKind?: boolean;
 }): boolean {
+  // ⚠ 2026-09-20 真机 sr-20260920102543-OFFICE：plan_written 丢了
+  //   deliverableKind，缺省成 web-app，自动 POST 出 react-vite-tasks，
+  //   右栏「创建管理员」。Copilot：没有计划合同就不要 Implement。
   return (
     input.canCreateProject &&
     !input.isRunning &&
-    input.createStatus === "idle"
+    input.createStatus === "idle" &&
+    input.planHasDeliverableKind === true
   );
 }
 
@@ -96,10 +103,16 @@ export function resolveComputerView(input: {
   previewReady: boolean;
   lastTool?: string | null;
   hasConsole?: boolean;
+  deliverableKind?: string | null;
 }): ComputerView {
   if (input.userPinned) return input.userPinned;
   const fromTool = input.lastTool ? computerViewForAction(input.lastTool) : null;
   if (input.live) return fromTool ?? "computer";
+  // ⚠ 2026-09-20 真机 sr-20260920090915-OFFICEAT：办公会话 bash 一跑，
+  //   hasActivity 把档钉在终端/源码，previewReady 又被强制 false，
+  //   产物面永远进不去，右边只剩 Vite 登录页。跑完（非 live）回预览档；
+  //   预览槽渲染产物，不叫醒 Vite。
+  if (isOfficeFileDeliverable(input.deliverableKind)) return "preview";
   if (input.previewReady) return "preview";
   if (input.hasActivity) {
     if (fromTool && fromTool !== "computer") return fromTool;
@@ -153,7 +166,6 @@ export function computerViewForAction(tool: string): ComputerView {
   if (
     name === "project_start" ||
     name === "project_verify" ||
-    name === "project_status" ||
     name === "browser_view" ||
     name === "browser_navigate" ||
     name === "browser_restart" ||
@@ -210,4 +222,77 @@ export const FOLLOW_COMPUTER_EVENT = "sliderule:follow-computer";
 export function dispatchFollowComputer(): void {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new Event(FOLLOW_COMPUTER_EVENT));
+}
+
+const PREVIEW_ACTION_TOOLS = new Set([
+  "project_start",
+  "project_verify",
+  "browser_view",
+  "browser_navigate",
+  "browser_restart",
+  "browser_click",
+  "browser_input",
+  "browser_console_exec",
+  "deploy_expose_port",
+  "deploy_apply_deployment",
+  "make_manus_page",
+]);
+
+/**
+ * 控制面挑了预览工具、运行已经就绪：换一张票。不是「能开就开」。
+ *
+ * ⚠ 2026-09-19：第一版只看 runtimeReady。装依赖时 project_status 被
+ *   映射成预览档，host 自己换票——那是写死流程。必须是当前这件工具
+ *   就在预览家族里。应用中心不传 turns，仍是观察。
+ */
+export function shouldAutoOpenPreview(input: {
+  hasTurns: boolean;
+  view: ComputerView;
+  hasTicket: boolean;
+  opening: boolean;
+  runtimeReady: boolean;
+  lastTool?: string | null;
+  deliverableKind?: string | null;
+}): boolean {
+  if (isOfficeFileDeliverable(input.deliverableKind)) return false;
+  return (
+    input.hasTurns &&
+    input.view === "preview" &&
+    input.runtimeReady &&
+    !input.hasTicket &&
+    !input.opening &&
+    Boolean(input.lastTool && PREVIEW_ACTION_TOOLS.has(input.lastTool))
+  );
+}
+
+/**
+ * 控制面正在调预览工具、沙箱还没起来：POST /preview/wake。
+ *
+ * 只跟这一轮还在跑的那件预览工具。刷新旧会话看到历史 project_start
+ * 不许把沙箱拉起来。写文件 / 跑命令再就绪也不许自己醒。
+ */
+export function shouldAutoWakePreview(input: {
+  hasTurns: boolean;
+  view: ComputerView;
+  hasTicket: boolean;
+  opening: boolean;
+  starting: boolean;
+  live: boolean;
+  lastTool?: string | null;
+  runtimeReady: boolean;
+  deliverableKind?: string | null;
+}): boolean {
+  if (isOfficeFileDeliverable(input.deliverableKind)) return false;
+  if (
+    !input.hasTurns ||
+    input.view !== "preview" ||
+    input.hasTicket ||
+    input.opening ||
+    input.starting ||
+    input.runtimeReady
+  ) {
+    return false;
+  }
+  if (!input.live) return false;
+  return Boolean(input.lastTool && PREVIEW_ACTION_TOOLS.has(input.lastTool));
 }

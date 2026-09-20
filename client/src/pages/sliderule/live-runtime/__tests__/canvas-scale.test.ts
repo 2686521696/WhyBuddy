@@ -2,6 +2,7 @@
  * 缩放系数必须能被变异咬住：拖分栏卡顿修的就是「每帧都 setScale」。
  * 公式写错、epsilon 放太大、paused 时仍提交，都会让修法失效。
  */
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   PHONE_STAGE_MAX_SCALE,
@@ -57,6 +58,19 @@ describe("手机舞台缩放封顶", () => {
     expect(clampCanvasScale(1.1, PHONE_STAGE_MAX_SCALE)).toBe(0.8);
     expect(clampCanvasScale(0.5, PHONE_STAGE_MAX_SCALE)).toBe(0.5);
     expect(clampCanvasScale(0.9)).toBe(0.9);
+  });
+});
+
+describe("useScaleToFit 订阅顺序", () => {
+  it("先订 ResizeObserver 再量，否则分栏 autoSave 那一缩会漏掉", () => {
+    const src = readFileSync(new URL("../canvas-scale.tsx", import.meta.url), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    const branch = src.indexOf("typeof ResizeObserver");
+    const observeAt = src.indexOf("ro.observe", branch);
+    const measureAt = src.indexOf("measure()", observeAt);
+    expect(observeAt).toBeGreaterThan(branch);
+    expect(measureAt).toBeGreaterThan(observeAt);
   });
 });
 

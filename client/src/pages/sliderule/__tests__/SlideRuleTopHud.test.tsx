@@ -1,7 +1,11 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { SlideRuleResetSessionButton, SlideRuleTopHud } from "../SlideRuleTopHud";
+import {
+  PreviewChromeLayoutButtons,
+  SlideRuleResetSessionButton,
+  SlideRuleTopHud,
+} from "../SlideRuleTopHud";
 import { StudioLayoutProvider } from "../StudioLayoutContext";
 
 vi.mock("@/lib/deploy-target", () => ({
@@ -137,5 +141,41 @@ describe("SlideRuleTopHud", () => {
     expect(locked).toContain("推演进行中，布局锁定为分栏（对话+页面）");
     expect(locked).toContain("disabled");
     expect(locked).toContain("opacity-40");
+  });
+});
+
+describe("PreviewChromeLayoutButtons", () => {
+  it("空会话不挂；有舞台时是全屏+隐藏，不是分段/交付物", () => {
+    expect(
+      renderToStaticMarkup(
+        <StudioLayoutProvider available={false}>
+          <PreviewChromeLayoutButtons />
+        </StudioLayoutProvider>
+      )
+    ).toBe("");
+    const html = renderToStaticMarkup(
+      <StudioLayoutProvider available>
+        <PreviewChromeLayoutButtons />
+      </StudioLayoutProvider>
+    );
+    expect(html).toContain('data-testid="project-preview-fullscreen"');
+    expect(html).toContain('aria-label="全屏"');
+    expect(html).toContain('data-testid="project-preview-hide-stage"');
+    expect(html).toContain('aria-label="隐藏页面"');
+    expect(html).not.toContain('data-testid="sliderule-workbench-mode"');
+    expect(html).not.toContain('data-testid="sliderule-deliverables-open"');
+    expect(html).not.toContain("分栏");
+    expect(html).not.toContain("画布");
+  });
+
+  it("推演中两颗置灰", () => {
+    const locked = renderToStaticMarkup(
+      <StudioLayoutProvider available layoutLocked>
+        <PreviewChromeLayoutButtons />
+      </StudioLayoutProvider>
+    );
+    expect(locked).toContain("disabled");
+    expect(locked).toContain("推演进行中，布局锁定为分栏（对话+页面）");
+    expect(locked).toContain('data-testid="project-preview-fullscreen"');
   });
 });

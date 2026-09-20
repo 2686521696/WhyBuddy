@@ -164,7 +164,11 @@ describe("both project artifact consumers", () => {
         "current-source"
       );
       expect(
-        fetcher.mock.calls.filter(([, init]) => init?.method === "POST")
+        fetcher.mock.calls.filter(
+          ([url, init]) =>
+            init?.method === "POST" && String(url).includes("/preview-ticket")
+        ),
+        "换票只有一发；/touch 是还在，不算第二张票"
       ).toHaveLength(1);
       await act(async () => selectProjectMode(container, "交付"));
       const checkButton = container.querySelector<HTMLButtonElement>(

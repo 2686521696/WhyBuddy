@@ -140,6 +140,26 @@ function throwRuntimeCommandError(response: Response, payload: unknown): never {
   );
 }
 
+/**
+ * 人还在看预览时续命。服务端 `touch_operation` 只认这一声；
+ * GET 状态 / 日志订阅故意不续（`test_activity_is_persisted_only_on_explicit_touch`）。
+ *
+ * ⚠ 2026-09-19 坦克大战 `sr-20260919072444-11CSR1RSM6`：前端从没打过
+ *   这个口，`lastAccessAt` 全程空，5 分钟 `runtime_idle_expired`。
+ */
+export async function touchProjectOperation(
+  operationId: string,
+  signal: AbortSignal
+): Promise<void> {
+  const id = String(operationId || "").trim();
+  if (!id) return;
+  await request(
+    `/project-operations/${encodeURIComponent(id)}/touch`,
+    signal,
+    "POST"
+  );
+}
+
 export async function wakeProjectPreview(
   projectId: string,
   signal: AbortSignal

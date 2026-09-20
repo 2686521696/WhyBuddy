@@ -1,5 +1,18 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import {
+  ChevronDown,
+  ChevronRight,
+  File,
+  FileCode,
+  FileImage,
+  FileJson,
+  FileText,
+  FileType,
+  FileType2,
+  Folder,
+  FolderOpen,
+} from "lucide-react";
 import { activateSession } from "../../agent-loop/dashboard/SidebarSessions";
 import { slideruleSessionPath } from "@/lib/sliderule-session-id";
 import type { PreviewSourceLocation } from "./preview-selection-bridge";
@@ -7,6 +20,8 @@ import { sourcePathParts } from "./source-editor-language";
 import {
   sourceFileTree,
   sourceTreeDirPaths,
+  sourceTreeIconKind,
+  type SourceTreeIconKind,
   type SourceTreeNode,
 } from "./source-file-tree";
 import {
@@ -38,6 +53,11 @@ interface Props {
   revisionMode: "current" | "pinned";
   tab: "source" | "history";
   selection: SourceSelection | null;
+  /**
+   * 控制面正在写/读的那份文件。盖过清单第一份（常常是 README.md）。
+   * 人在树里点过文件就停跟，直到控制面挑了下一份。
+   */
+  followPath?: string | null;
   onChanged: () => void;
 }
 const buttonClass =
@@ -105,6 +125,32 @@ const failure = (error: unknown) =>
     ? error.message
     : "暂时无法连接工程服务，请稍后重试。";
 
+const SOURCE_TREE_ICONS: Record<
+  SourceTreeIconKind,
+  React.ComponentType<{ className?: string; strokeWidth?: number }>
+> = {
+  folder: Folder,
+  "folder-open": FolderOpen,
+  code: FileCode,
+  html: FileType,
+  css: FileType2,
+  json: FileJson,
+  text: FileText,
+  image: FileImage,
+  file: File,
+};
+
+function SourceTreeGlyph({ kind }: { kind: SourceTreeIconKind }) {
+  const Icon = SOURCE_TREE_ICONS[kind];
+  return (
+    <Icon
+      aria-hidden="true"
+      className="h-3.5 w-3.5 shrink-0 text-[#8b8b8b]"
+      strokeWidth={1.75}
+    />
+  );
+}
+
 function SourceTreeList({
   nodes,
   depth,
@@ -134,15 +180,25 @@ function SourceTreeList({
               type="button"
               data-testid="project-source-dir"
               data-source-dir={node.path}
+              data-source-icon={sourceTreeIconKind(
+                node.name,
+                "dir",
+                openDirs.has(node.path)
+              )}
               aria-expanded={openDirs.has(node.path)}
               title={node.path}
               onClick={() => onToggle(node.path)}
               className="flex w-full items-center gap-1 py-1 pr-2 text-left text-xs text-[#555] hover:bg-[#f7f7f7]"
               style={{ paddingLeft: 8 + depth * 12 }}
             >
-              <span aria-hidden="true">
-                {openDirs.has(node.path) ? "▾" : "▸"}
-              </span>
+              {openDirs.has(node.path) ? (
+                <ChevronDown aria-hidden="true" className="h-3 w-3 shrink-0 text-[#8b8b8b]" />
+              ) : (
+                <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0 text-[#8b8b8b]" />
+              )}
+              <SourceTreeGlyph
+                kind={sourceTreeIconKind(node.name, "dir", openDirs.has(node.path))}
+              />
               <span className="truncate">{node.name}</span>
             </button>
             {openDirs.has(node.path) ? (
@@ -163,19 +219,23 @@ function SourceTreeList({
               type="button"
               data-testid="project-source-file"
               data-source-path={node.path}
+              data-source-icon={sourceTreeIconKind(node.name, "file")}
               aria-current={node.path === path ? "true" : undefined}
               title={node.path}
               onClick={() => onOpen(node.path)}
-              className={`block w-full truncate py-1 pr-2 text-left font-mono text-xs ${
+              className={`flex w-full items-center gap-1 py-1 pr-2 text-left font-mono text-xs ${
                 node.path === path ? "bg-[#f3f4f6] text-[#171717]" : "text-[#444] hover:bg-[#f7f7f7]"
               }`}
               style={{ paddingLeft: 8 + depth * 12 }}
             >
-              {node.name}
-              {drafts[node.path] &&
-              drafts[node.path].content !== drafts[node.path].base.content
-                ? " *"
-                : ""}
+              <SourceTreeGlyph kind={sourceTreeIconKind(node.name, "file")} />
+              <span className="truncate">
+                {node.name}
+                {drafts[node.path] &&
+                drafts[node.path].content !== drafts[node.path].base.content
+                  ? " *"
+                  : ""}
+              </span>
             </button>
           </li>
         )
@@ -195,6 +255,7 @@ function ProjectWorkspaceBody({
   revisionMode,
   tab,
   selection,
+  followPath = null,
   onChanged,
 }: Props) {
   const [index, setIndex] = useState<SourceIndex | null>(null);
@@ -203,6 +264,8 @@ function ProjectWorkspaceBody({
   const [fileError, setFileError] = useState<string | null>(null);
   const [fileRetry, setFileRetry] = useState(0);
   const [path, setPath] = useState("");
+  const userPickedPath = useRef<string | null>(null);
+  const fileCache = useRef<Map<string, SourceFile>>(new Map());
   const [drafts, setDrafts] = useState<
     Record<string, { base: SourceFile; content: string }>
   >({});
@@ -229,13 +292,18 @@ function ProjectWorkspaceBody({
   const writes = useRef<AbortController | null>(null);
   const commandKeys = useRef(new Map<string, string>());
   const savedDraft = useRef<{ path: string; content: string } | null>(null);
+  const followSelection = Boolean(
+    followPath && selection?.selectionId?.startsWith("follow:")
+  );
   const requestedRevision =
     revisionOverride !== undefined
       ? (revisionOverride ?? undefined)
-      : (selection?.revision ??
-        (revisionMode === "pinned"
-          ? (projectRevision ?? undefined)
-          : undefined));
+      : followSelection
+        ? undefined
+        : (selection?.revision ||
+          (revisionMode === "pinned"
+            ? (projectRevision ?? undefined)
+            : undefined));
   // 2026-09-13: model writes updated the session revision while this current
   // source view kept showing old bytes. Treat that projection as invalidation,
   // not a revision pin: the authoritative GET may already be a newer version.
@@ -301,6 +369,9 @@ function ProjectWorkspaceBody({
     setRevisionOverride(undefined);
   }, [selection?.selectionId, projectRevision, revisionMode]);
   useEffect(() => {
+    fileCache.current.clear();
+  }, [refresh, projectId]);
+  useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
@@ -311,19 +382,18 @@ function ProjectWorkspaceBody({
         setLoadedScope(scope);
         setConflict(false);
         setPath(prior => {
-          if (
-            selection &&
-            next.revision === selection.revision &&
-            next.files.some(row => row.path === selection.path)
-          )
+          if (userPickedPath.current) return userPickedPath.current;
+          if (followPath) return followPath;
+          if (selection && next.files.some(row => row.path === selection.path))
             return selection.path;
           return next.files.some(row => row.path === prior)
             ? prior
             : (next.files[0]?.path ?? "");
         });
+        // followPath / selectionId 不在这份依赖里：跟文件不许重拉整棵树。
         if (
           selection &&
-          next.revision === selection.revision &&
+          !followPath &&
           !next.files.some(row => row.path === selection.path)
         )
           setError("选中元素的源码位置不在这份工程中，请从文件列表选择。");
@@ -338,11 +408,28 @@ function ProjectWorkspaceBody({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [projectId, requestedRevision, scope, refresh, selection?.selectionId]);
+  }, [projectId, requestedRevision, scope, refresh]);
+  useEffect(() => {
+    userPickedPath.current = null;
+    if (followPath) setPath(followPath);
+  }, [followPath]);
+  useEffect(() => {
+    if (followPath || userPickedPath.current || !index || !selection?.path)
+      return;
+    if (index.files.some(row => row.path === selection.path))
+      setPath(selection.path);
+  }, [followPath, index, selection?.path, selection?.selectionId]);
   useEffect(() => {
     setFileError(null);
     if (!currentIndex || !path) {
       setFile(null);
+      setFileLoading(false);
+      return;
+    }
+    const cacheKey = `${currentIndex.revision}\0${path}`;
+    const cached = fileRetry === 0 ? fileCache.current.get(cacheKey) : undefined;
+    if (cached) {
+      setFile(cached);
       setFileLoading(false);
       return;
     }
@@ -351,6 +438,10 @@ function ProjectWorkspaceBody({
     // 2026-09-13: a failed file GET left the editor saying it was still
     // loading forever. File reads need their own terminal state and retry;
     // neither changing tabs nor retrying a read may discard local drafts.
+    //
+    // ⚠ 2026-09-19：跟文件曾把 followPath 写进清单 GET 的依赖，每换一份
+    //   就重拉整棵树再读正文，编辑器停在「正在读取文件…」。清单只跟
+    //   revision；正文命中缓存就立刻画，不许先清空。
     setFileLoading(true);
     void getProjectSourceFile(
       projectId,
@@ -360,6 +451,7 @@ function ProjectWorkspaceBody({
     )
       .then(next => {
         if (controller.signal.aborted) return;
+        fileCache.current.set(cacheKey, next);
         setFile(next);
       })
       .catch(reason => {
@@ -672,7 +764,9 @@ function ProjectWorkspaceBody({
   );
   const contextText = currentFile
     ? `/${currentFile.path.replace(/^\//, "")}`
-    : indexLabel;
+    : path
+      ? `/${path.replace(/^\//, "")}`
+      : indexLabel;
   const contextPill = (
     <span
       className="flex h-6 min-w-0 flex-1 items-center rounded-full bg-[#f4f4f5] px-3 font-mono text-[12px] text-[#8a8a8a]"
@@ -763,7 +857,10 @@ function ProjectWorkspaceBody({
                   return next;
                 })
               }
-              onOpen={setPath}
+              onOpen={next => {
+                userPickedPath.current = next;
+                setPath(next);
+              }}
             />
           </nav>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -884,6 +981,20 @@ function ProjectWorkspaceBody({
                   />
                 </React.Suspense>
               </>
+            ) : followPath &&
+              path === followPath &&
+              !currentIndex?.files.some(row => row.path === path) ? (
+              <p
+                role="status"
+                data-testid="project-source-writing"
+                className="px-3 py-3 text-xs text-stone-500"
+              >
+                {fileLoading
+                  ? "正在读取文件…"
+                  : path
+                    ? `正在写入 ${path}…`
+                    : "正在写入源码…"}
+              </p>
             ) : fileError ? (
               <div className="px-3 py-3 text-xs leading-5">
                 <p role="alert" className="text-amber-800">

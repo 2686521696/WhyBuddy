@@ -12,6 +12,8 @@ import {
   type ProjectPreviewSnapshot,
   type ProjectPreviewTicket,
 } from "../project-runtime/project-preview-client";
+import { PREVIEW_PRESENCE_MS } from "../project-runtime/project-preview-presence";
+import { selectProjectMode } from "./fixtures/select-project-mode";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -72,6 +74,10 @@ async function poll() {
 }
 const posts = () =>
   fetcher.mock.calls.filter(([, init]) => init?.method === "POST");
+const ticketPosts = () =>
+  posts().filter(([url]) => String(url).includes("/preview-ticket"));
+const touchPosts = () =>
+  posts().filter(([url]) => String(url).includes("/touch"));
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -97,6 +103,10 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => "visible",
+  });
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -145,11 +155,24 @@ describe("authorized project preview", () => {
     await poll();
     expect(posts()).toHaveLength(0);
     await click();
-    expect(posts()).toHaveLength(1);
-    expect(posts()[0][0]).toBe(
+    expect(ticketPosts()).toHaveLength(1);
+    expect(ticketPosts()[0][0]).toBe(
       "/api/sliderule/project-operations/operation-one/preview-ticket"
     );
+    expect(touchPosts()[0][0]).toBe(
+      "/api/sliderule/project-operations/operation-one/touch"
+    );
     expect(frame()?.getAttribute("src")).toBe(ticket.entryUrl);
+    expect(
+      container.querySelector('[data-testid="project-preview-frame-loading"]'),
+      "票到了框还没 load，必须盖着，真机白屏就是这缝"
+    ).not.toBeNull();
+    await act(async () => {
+      frame()!.dispatchEvent(new Event("load"));
+    });
+    expect(
+      container.querySelector('[data-testid="project-preview-frame-loading"]')
+    ).toBeNull();
     expect(frame()?.hasAttribute("srcdoc")).toBe(false);
     expect(frame()?.getAttribute("sandbox")).toContain("allow-scripts");
     expect(frame()?.getAttribute("sandbox")).not.toContain(
@@ -160,6 +183,16 @@ describe("authorized project preview", () => {
     expect(frame()?.className).toContain("[touch-action:manipulation]");
     expect(frame()?.style.transform).toBe("");
     expect(frame()?.getAttribute("style") ?? "").not.toContain("scale(");
+    expect(frame()?.style.width).toBe("1920px");
+    expect(frame()?.style.height).toBe("1080px");
+    expect(frame()?.style.height).not.toBe("1920px");
+    expect(
+      Number(frame()?.style.zoom),
+      "跨源预览 zoom 必须写在 iframe 上，祖先 scale() 点不准"
+    ).toBeGreaterThan(0);
+    expect(
+      frame()!.parentElement?.getAttribute("data-hit-fit")
+    ).toBe("zoom");
     expect(frame()?.getAttribute("tabindex")).toBe("-1");
     const focus = vi.spyOn(frame()!, "focus");
     await act(() => {
@@ -171,10 +204,15 @@ describe("authorized project preview", () => {
       "预览上不许再盖 target=_blank，点登录框会新开标签"
     ).toBeNull();
     await poll();
-    expect(posts()).toHaveLength(1);
+    expect(ticketPosts()).toHaveLength(1);
+    // pointerdown 已经 nudge 过；5s 状态轮询不许再多报。
+    expect(touchPosts().length).toBeGreaterThanOrEqual(1);
+    const afterOpenTouches = touchPosts().length;
+    await poll();
+    expect(touchPosts()).toHaveLength(afterOpenTouches);
     ticket.entryUrl = "https://preview.example/entry?ticket=fresh";
     await click();
-    expect(posts()).toHaveLength(2);
+    expect(ticketPosts()).toHaveLength(2);
     expect(frame()?.getAttribute("src")).toBe(ticket.entryUrl);
     expect(
       fetcher.mock.calls.every(([url]) => !String(url).includes("/start"))
@@ -226,6 +264,28 @@ describe("authorized project preview", () => {
       expect(container.textContent).not.toContain("尚未配置");
       expect(openButton().disabled).toBe(true);
       expect(frame()).toBeNull();
+      const comingUp = [
+        "provisioning",
+        "installing",
+        "starting",
+        "reconciling",
+      ].includes(status);
+      if (comingUp) {
+        expect(
+          container.querySelector('[data-testid="project-preview-wake"]'),
+          "沙箱在路上不许再挂可点的唤醒"
+        ).toBeNull();
+        expect(
+          container.querySelector('[data-testid="project-preview-wake-spin"]')
+        ).not.toBeNull();
+      } else {
+        expect(
+          container.querySelector('[data-testid="project-preview-wake"]')
+        ).not.toBeNull();
+        expect(
+          container.querySelector('[data-testid="project-preview-wake-spin"]')
+        ).toBeNull();
+      }
       await click();
       expect(posts()).toHaveLength(0);
     }
@@ -309,6 +369,75 @@ describe("authorized project preview", () => {
     expect(container.textContent).toContain("正在启动应用");
     expect(container.textContent).not.toContain("还没有起来");
     expect(frame()).toBeNull();
+    expect(
+      container.querySelector('[data-testid="project-preview-wake"]'),
+      "排队时按钮必须收掉，真机还能再点就是这缝"
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="project-preview-wake-spin"]')
+    ).not.toBeNull();
+  });
+
+  it("点了唤醒就不能再点，沙箱在路上按钮不许回来", async () => {
+    snapshot.descriptor!.status = "expired";
+    snapshot.available = false;
+    snapshot.reason = "project_runtime_not_ready";
+    let wakeCalls = 0;
+    fetcher.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/preview/wake")) {
+        wakeCalls += 1;
+        snapshot = {
+          operationId: "operation-two",
+          available: false,
+          reason: "project_runtime_not_ready",
+          descriptor: {
+            ...snapshot.descriptor!,
+            status: "provisioning",
+          },
+        };
+        return new Response(JSON.stringify({ operationId: "operation-two" }), {
+          status: 202,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return Response.json(init?.method === "POST" ? ticket : snapshot);
+    });
+    await render("project-one", "revision-one", "current");
+    const wake = () =>
+      container.querySelector<HTMLButtonElement>(
+        '[data-testid="project-preview-wake"]'
+      );
+    await act(async () => {
+      wake()!.click();
+      wake()?.click();
+      wake()?.click();
+    });
+    for (let i = 0; i < 8; i++) {
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+    expect(wakeCalls, "连点只许一发 /preview/wake").toBe(1);
+    expect(wake(), "provisioning 时按钮不许回来").toBeNull();
+    expect(
+      container.querySelector('[data-testid="project-preview-wake-spin"]')
+    ).not.toBeNull();
+    expect(
+      container
+        .querySelector('[data-testid="project-preview-paused"]')
+        ?.getAttribute("data-preview-waking")
+    ).toBe("true");
+    expect(container.textContent).toContain("正在准备运行环境");
+    expect(
+      container.querySelector(".sr-preview-wake-window"),
+      "路上必须有窗骨架动画，不许只改文案"
+    ).not.toBeNull();
+    await act(async () => {
+      container
+        .querySelector<HTMLElement>('[data-testid="project-preview-paused"]')!
+        .click();
+    });
+    expect(wakeCalls).toBe(1);
   });
 
   it("唤醒失败必须把原因写在预览面上，不许假装刷新就好了", async () => {
@@ -498,13 +627,13 @@ describe("authorized project preview", () => {
     await poll();
     expect(container.textContent).toContain("预览已暂停");
     expect(openButton().disabled).toBe(false);
-    expect(posts()).toHaveLength(1);
+    expect(ticketPosts()).toHaveLength(1);
     await click();
     expect(frame()?.getAttribute("src")).toBe(ticket.entryUrl);
     const mounted = frame();
     await render("project-one", "revision-two", "current");
     expect(frame()).toBe(mounted);
-    expect(posts()).toHaveLength(2);
+    expect(ticketPosts()).toHaveLength(2);
   });
 
   it("a pinned historical source never silently follows a newer healthy runtime", async () => {
@@ -516,7 +645,7 @@ describe("authorized project preview", () => {
     expect(openButton().disabled).toBe(true);
     expect(container.textContent).toContain("运行版本与当前工程不同");
     await click();
-    expect(posts()).toHaveLength(1);
+    expect(ticketPosts()).toHaveLength(1);
   });
 
   it.each(["projectId", "runtimeId", "revision", "operationId"] as const)(
@@ -596,7 +725,7 @@ describe("authorized project preview", () => {
       await vi.advanceTimersByTimeAsync(60_001);
     });
     expect(frame()).toBe(mounted);
-    expect(posts()).toHaveLength(1);
+    expect(ticketPosts()).toHaveLength(1);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(239_998);
     });
@@ -605,7 +734,7 @@ describe("authorized project preview", () => {
       await vi.advanceTimersByTimeAsync(2);
     });
     expect(frame()).toBeNull();
-    expect(posts()).toHaveLength(1);
+    expect(ticketPosts()).toHaveLength(1);
   });
 
   it("the browser access deadline removes the iframe without silently extending access", async () => {
@@ -619,7 +748,7 @@ describe("authorized project preview", () => {
     });
     expect(frame()).toBeNull();
     expect(container.textContent).toContain("授权已过期");
-    expect(posts()).toHaveLength(1);
+    expect(ticketPosts()).toHaveLength(1);
   });
 
   it.each([
@@ -665,6 +794,73 @@ describe("authorized project preview", () => {
       "project-two"
     );
     expect(posts()).toHaveLength(1);
+  });
+
+  it("iframe 挂上立刻 POST /touch；5s 轮询不再多报", async () => {
+    await render();
+    expect(touchPosts()).toHaveLength(0);
+    await click();
+    expect(frame()).not.toBeNull();
+    expect(touchPosts()).toHaveLength(1);
+    expect(touchPosts()[0][1]).toEqual(
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+      })
+    );
+    await poll();
+    expect(touchPosts()).toHaveLength(1);
+  });
+
+  it("一分钟后再报一声；切到代码立刻停", async () => {
+    await render();
+    await click();
+    expect(touchPosts()).toHaveLength(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(PREVIEW_PRESENCE_MS);
+    });
+    expect(touchPosts()).toHaveLength(2);
+    await act(async () => {
+      selectProjectMode(container, "代码");
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(PREVIEW_PRESENCE_MS);
+    });
+    expect(touchPosts()).toHaveLength(2);
+  });
+
+  it("标签藏起停报，回来再报", async () => {
+    await render();
+    await click();
+    expect(touchPosts()).toHaveLength(1);
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "hidden",
+    });
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      await vi.advanceTimersByTimeAsync(PREVIEW_PRESENCE_MS);
+    });
+    expect(touchPosts()).toHaveLength(1);
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "visible",
+    });
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(touchPosts()).toHaveLength(2);
+  });
+
+  it("点进预览框也报一声", async () => {
+    await render();
+    await click();
+    expect(touchPosts()).toHaveLength(1);
+    await act(() => {
+      frame()!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    });
+    expect(touchPosts()).toHaveLength(2);
   });
 
   it("unmount aborts observation without cancelling or touching the remote application", async () => {

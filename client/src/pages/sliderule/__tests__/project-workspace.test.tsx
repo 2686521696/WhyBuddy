@@ -257,6 +257,158 @@ describe("source and history through real HTTP consumers", () => {
     ).toBeTruthy();
   });
 
+  it("followPath 盖过清单第一份 README，不许钉在封面", async () => {
+    source.files.unshift({
+      path: "README.md",
+      sha256: "readme1",
+      sizeBytes: 6,
+    });
+    contents["README.md"] = "readme";
+    await render({ followPath: "src/main.tsx" });
+    expect(editor().getAttribute("data-editor-path")).toBe("src/main.tsx");
+    expect(editor().value).toBe("first\nsecond\nthird");
+    expect(button("src/main.tsx").getAttribute("aria-current")).toBe("true");
+    expect(button("README.md").getAttribute("aria-current")).not.toBe("true");
+  });
+
+  it("跟下一份文件不许重拉整棵树，读过的立刻画", async () => {
+    source.files.unshift({
+      path: "README.md",
+      sha256: "readme1",
+      sizeBytes: 6,
+    });
+    contents["README.md"] = "readme";
+    await render({ followPath: "src/main.tsx" });
+    const indexes = () =>
+      fetcher.mock.calls.filter(([url]) => {
+        const path = new URL(String(url), "http://localhost").pathname;
+        return path.endsWith("/source") && !path.endsWith("/source/file");
+      });
+    const files = () =>
+      fetcher.mock.calls.filter(([url]) =>
+        new URL(String(url), "http://localhost").pathname.endsWith("/source/file")
+      );
+    expect(indexes(), "第一份只要拉一次清单").toHaveLength(1);
+    expect(files()).toHaveLength(1);
+    await render({ followPath: "README.md" });
+    expect(indexes(), "换文件重拉整棵树就是慢的根因").toHaveLength(1);
+    expect(files()).toHaveLength(2);
+    expect(editor().value).toBe("readme");
+    const after = files().length;
+    await render({ followPath: "src/main.tsx" });
+    expect(files(), "读过的走缓存，不许再转圈").toHaveLength(after);
+    expect(editor().value).toBe("first\nsecond\nthird");
+    expect(container.textContent).not.toContain("正在读取文件");
+  });
+
+  it("跟文件不许把清单钉在开写那一版——钉了新文件永远 404", async () => {
+    const r1 = {
+      projectId: "p1",
+      revision: "r1",
+      currentRevision: "r1",
+      files: [{ path: "src/main.tsx", sha256: "hash1", sizeBytes: 14 }],
+    };
+    const original = fetcher.getMockImplementation()!;
+    fetcher.mockImplementation(async (path: string, init?: RequestInit) => {
+      const url = new URL(String(path), "http://localhost");
+      if (url.pathname.endsWith("/source/file")) {
+        const rev = url.searchParams.get("revision");
+        const filePath = url.searchParams.get("path") || "";
+        const at = rev === "r1" ? r1 : source;
+        if (!at.files.some((row: { path: string }) => row.path === filePath))
+          return response({ error: "missing" }, 404);
+        return response({
+          projectId: "p1",
+          revision: at.revision,
+          path: filePath,
+          sha256: "h",
+          content: contents[filePath],
+        });
+      }
+      if (url.pathname.endsWith("/source") && !url.pathname.endsWith("/source/file")) {
+        return response(
+          url.searchParams.get("revision") === "r1" ? r1 : source
+        );
+      }
+      return original(path, init);
+    });
+    await render({
+      followPath: "src/main.tsx",
+      projectRevision: "r1",
+      selection: {
+        path: "src/main.tsx",
+        line: 1,
+        column: 1,
+        revision: "r1",
+        selectionId: "follow:a:src/main.tsx",
+      },
+    });
+    expect(editor().value).toBe("first\nsecond\nthird");
+    source = {
+      ...source,
+      revision: "r2",
+      currentRevision: "r2",
+      files: [
+        ...r1.files,
+        {
+          path: "src/components/TaskDetailModal.tsx",
+          sha256: "m1",
+          sizeBytes: 9,
+        },
+      ],
+    };
+    contents["src/components/TaskDetailModal.tsx"] = "modal src";
+    await render({
+      followPath: "src/components/TaskDetailModal.tsx",
+      projectRevision: "r2",
+      selection: {
+        path: "src/components/TaskDetailModal.tsx",
+        line: 1,
+        column: 1,
+        revision: "r1",
+        selectionId: "follow:b:src/components/TaskDetailModal.tsx",
+      },
+    });
+    const indexes = fetcher.mock.calls.filter(([url]) => {
+      const parsed = new URL(String(url), "http://localhost");
+      return (
+        parsed.pathname.endsWith("/source") &&
+        !parsed.pathname.endsWith("/source/file")
+      );
+    });
+    expect(
+      indexes.some(([url]) => String(url).includes("revision=r1")),
+      "跟文件还在 GET ?revision=开写那一版"
+    ).toBe(false);
+    expect(editor().getAttribute("data-editor-path")).toBe(
+      "src/components/TaskDetailModal.tsx"
+    );
+    expect(editor().value).toBe("modal src");
+    expect(container.textContent).not.toContain("正在写入");
+  });
+
+  it("新文件还没进清单才写「正在写入」，进了就必须打开", async () => {
+    await render({ followPath: "src/New.tsx" });
+    expect(
+      container.querySelector('[data-testid="project-source-writing"]')
+        ?.textContent
+    ).toContain("正在写入 src/New.tsx");
+    expect(editor()).toBeNull();
+    source = {
+      ...source,
+      revision: "r2",
+      currentRevision: "r2",
+      files: [
+        ...source.files,
+        { path: "src/New.tsx", sha256: "n1", sizeBytes: 3 },
+      ],
+    };
+    contents["src/New.tsx"] = "new";
+    await render({ followPath: "src/New.tsx", projectRevision: "r2" });
+    expect(editor().value).toBe("new");
+    expect(container.textContent).not.toContain("正在写入");
+  });
+
   it("follows a model revision signal by reading current source and preserving the selected file", async () => {
     source.files.unshift({
       path: "README.md",

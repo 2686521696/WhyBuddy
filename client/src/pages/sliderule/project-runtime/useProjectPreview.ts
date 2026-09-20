@@ -9,6 +9,10 @@ import {
   type ProjectPreviewSnapshot,
   type ProjectPreviewTicket,
 } from "./project-preview-client";
+import {
+  previewStillStarting,
+  previewWakeLocked,
+} from "./project-preview-wake";
 
 const POLL_MS = 5000;
 
@@ -41,8 +45,12 @@ function errorMessage(error: unknown) {
 
 /**
  * Refreshing a workbench is observation, not authorization to start a sandbox.
- * Only an explicit open requests a one-use ticket; unmount never cancels a run.
+ * Only an explicit open / 外开 requests a one-use ticket; unmount never cancels a run.
  * Scope every async result to its project and revision, including ticket replies.
+ *
+ * ⚠ 2026-09-19 真机：外开走 `${origin}/` 是 401。HTTPS 预览 cookie 是
+ *   Partitioned，iframe 兑的那张新标签带不走。外开另开一张票、顶层兑。
+ *   不许复用 open()：那会先把 iframe 的 ticket 清掉，框就白了。
  */
 const STARTABLE = new Set(["stopped", "expired", "failed"]);
 
@@ -75,12 +83,17 @@ export function useProjectPreview({
   const generation = useRef(0);
   const latest = useRef<ProjectPreviewSnapshot | null>(null);
   const ticketRequest = useRef<AbortController | null>(null);
+  const externalRequest = useRef<AbortController | null>(null);
   const pollRequest = useRef<AbortController | null>(null);
   const refreshRef = useRef<() => Promise<void>>(async () => {});
+  const startingRef = useRef(false);
+  const wakingRef = useRef(false);
 
   useEffect(() => {
     const current = ++generation.current;
     latest.current = null;
+    startingRef.current = false;
+    wakingRef.current = false;
     setState({
       scope,
       snapshot: null,
@@ -101,25 +114,29 @@ export function useProjectPreview({
         const snapshot = await getProjectPreview(projectId, controller.signal);
         if (generation.current !== current || controller.signal.aborted) return;
         latest.current = snapshot;
-        setState(prev => ({
-          ...prev,
-          scope,
-          snapshot,
-          loading: false,
-          starting:
-            prev.starting &&
-            (!snapshot.descriptor ||
-              STARTABLE.has(snapshot.descriptor.status)),
-          error:
-            snapshot.descriptor?.status === "failed"
-              ? "应用运行失败，预览无法打开。"
-              : null,
-          ticket:
-            usable(snapshot, pinnedRevision) &&
-            prev.ticket?.identity === identity(snapshot)
-              ? prev.ticket
-              : null,
-        }));
+        setState(prev => {
+          const starting = previewStillStarting(
+            prev.starting,
+            snapshot.descriptor?.status
+          );
+          startingRef.current = starting;
+          return {
+            ...prev,
+            scope,
+            snapshot,
+            loading: false,
+            starting,
+            error:
+              snapshot.descriptor?.status === "failed"
+                ? "应用运行失败，预览无法打开。"
+                : null,
+            ticket:
+              usable(snapshot, pinnedRevision) &&
+              prev.ticket?.identity === identity(snapshot)
+                ? prev.ticket
+                : null,
+          };
+        });
       } catch (error) {
         if (generation.current !== current || controller.signal.aborted) return;
         latest.current = null;
@@ -143,6 +160,8 @@ export function useProjectPreview({
       pollRequest.current?.abort();
       ticketRequest.current?.abort();
       ticketRequest.current = null;
+      externalRequest.current?.abort();
+      externalRequest.current = null;
     };
   }, [projectId, pinnedRevision, scope]);
 
@@ -201,17 +220,28 @@ export function useProjectPreview({
   }, [pinnedRevision]);
 
   const wake = useCallback(async () => {
-    if (ticketRequest.current) return;
+    if (ticketRequest.current || wakingRef.current) return;
     if (usable(latest.current, pinnedRevision)) {
       await open();
       return;
     }
+    if (
+      previewWakeLocked({
+        opening: false,
+        starting: startingRef.current,
+        status: latest.current?.descriptor?.status,
+      })
+    ) {
+      return;
+    }
+    wakingRef.current = true;
     const status = latest.current?.descriptor?.status;
     const needsStart = !latest.current?.descriptor || STARTABLE.has(status || "");
     if (!needsStart) {
       const reason = latest.current?.reason;
       setState(prev => ({
         ...prev,
+        opening: true,
         error: reason
           ? reason === "project_preview_tunnel_not_started"
             ? "工程已启动，但私有预览通道还没有建立。"
@@ -220,24 +250,38 @@ export function useProjectPreview({
               : `工程预览暂不可用（${reason}）。`
           : "预览还没就绪，请稍后再试。",
       }));
-      await refreshRef.current();
-      if (usable(latest.current, pinnedRevision)) await open();
+      try {
+        await refreshRef.current();
+        if (usable(latest.current, pinnedRevision)) await open();
+      } finally {
+        wakingRef.current = false;
+        setState(prev => ({ ...prev, opening: false }));
+      }
       return;
     }
     if (!projectId) {
+      wakingRef.current = false;
       setState(prev => ({ ...prev, error: "这份会话缺少工程引用，请重新加载会话。" }));
       return;
     }
     const current = generation.current;
     const controller = new AbortController();
+    startingRef.current = true;
     ticketRequest.current = controller;
-    setState(prev => ({ ...prev, opening: true, error: null }));
+    setState(prev => ({
+      ...prev,
+      opening: true,
+      starting: true,
+      error: null,
+    }));
     try {
       await wakeProjectPreview(projectId, controller.signal);
       if (controller.signal.aborted || generation.current !== current) return;
       await refreshRef.current();
       if (usable(latest.current, pinnedRevision)) {
         ticketRequest.current = null;
+        startingRef.current = false;
+        setState(prev => ({ ...prev, starting: false }));
         await open();
         return;
       }
@@ -254,24 +298,74 @@ export function useProjectPreview({
       if (after?.descriptor?.status === "failed") {
         throw new ProjectPreviewError("应用运行失败，预览无法打开。");
       }
-      setState(prev => ({
-        ...prev,
-        starting:
-          !after?.descriptor || STARTABLE.has(after.descriptor.status),
-      }));
+      const starting = previewStillStarting(true, after?.descriptor?.status);
+      startingRef.current = starting;
+      setState(prev => ({ ...prev, starting }));
     } catch (error) {
+      startingRef.current = false;
       if (!controller.signal.aborted && generation.current === current)
         setState(prev => ({
           ...prev,
           error: errorMessage(error),
           ticket: null,
+          starting: false,
         }));
     } finally {
+      wakingRef.current = false;
       if (ticketRequest.current === controller) ticketRequest.current = null;
       if (generation.current === current)
         setState(prev => ({ ...prev, opening: false }));
     }
   }, [open, pinnedRevision, projectId]);
+
+  const openExternal = useCallback(async () => {
+    const snapshot = latest.current;
+    if (externalRequest.current || !usable(snapshot, pinnedRevision)) return;
+    const current = generation.current;
+    const key = identity(snapshot)!;
+    const controller = new AbortController();
+    externalRequest.current = controller;
+    // 先开空白页再兑票。等 fetch 完再 window.open 会被拦截。
+    const tab = window.open("about:blank", "_blank");
+    if (tab) tab.opener = null;
+    try {
+      const ticket = await requestProjectPreviewTicket(
+        snapshot!.operationId!,
+        controller.signal
+      );
+      if (
+        controller.signal.aborted ||
+        generation.current !== current ||
+        key !== identity(latest.current) ||
+        !usable(latest.current, pinnedRevision)
+      ) {
+        tab?.close();
+        return;
+      }
+      const descriptor = snapshot!.descriptor!;
+      if (
+        ticket.projectId !== descriptor.projectId ||
+        ticket.runtimeId !== descriptor.runtimeId ||
+        ticket.revision !== descriptor.revision
+      ) {
+        throw new ProjectPreviewError(
+          "预览授权与当前工程版本不一致，请更新状态后重试。"
+        );
+      }
+      const entryUrl = isolatedPreviewUrl(
+        ticket.entryUrl,
+        window.location.href
+      );
+      if (tab) tab.location.replace(entryUrl);
+      else window.open(entryUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      tab?.close();
+      if (!controller.signal.aborted && generation.current === current)
+        setState(prev => ({ ...prev, error: errorMessage(error) }));
+    } finally {
+      if (externalRequest.current === controller) externalRequest.current = null;
+    }
+  }, [pinnedRevision]);
 
   useEffect(() => {
     if (!state.ticket) return;
@@ -306,6 +400,7 @@ export function useProjectPreview({
       current && usable(state.snapshot, pinnedRevision) && !state.opening,
     refresh: () => refreshRef.current(),
     open,
+    openExternal,
     wake,
   };
 }

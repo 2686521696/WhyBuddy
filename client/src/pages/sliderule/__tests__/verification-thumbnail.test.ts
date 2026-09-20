@@ -23,7 +23,11 @@ import {
   isDisplayableScreenshot,
   verificationArtifactUrl,
 } from "../project-runtime/verification-artifacts";
-import { thumbnailFromVerification } from "../project-runtime/useProjectThumbnail";
+import {
+  previewSnapshotUrl,
+  resolveProjectThumbnail,
+  thumbnailFromVerification,
+} from "../project-runtime/useProjectThumbnail";
 
 const stripComments = (source: string) =>
   source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
@@ -89,22 +93,22 @@ describe("哪些验收产物能直接画到页面上", () => {
   });
 });
 
-describe("挑哪一张当缩略图", () => {
-  /** 真机那一发的形状：/projects/{id}/verification 的响应体。 */
-  const view = (effectiveStatus: string, refs = [png()]) =>
-    ({
-      operationId: "op-1",
-      operationStatus: "completed",
-      snapshot: {
-        effectiveStatus,
-        deliveryEligible: false,
-        verification: {
-          verificationId: "vf-1",
-          artifactRefs: refs,
-        },
+/** 真机那一发的形状：/projects/{id}/verification 的响应体。 */
+const view = (effectiveStatus: string, refs = [png()]) =>
+  ({
+    operationId: "op-1",
+    operationStatus: "completed",
+    snapshot: {
+      effectiveStatus,
+      deliveryEligible: false,
+      verification: {
+        verificationId: "vf-1",
+        artifactRefs: refs,
       },
-    }) as never;
+    },
+  }) as never;
 
+describe("挑哪一张当缩略图", () => {
   it("正向：当前这一版跑过验收，就用它那张", () => {
     expect(thumbnailFromVerification(view("passed"))).toBe(
       "/api/sliderule/project-verifications/vf-1/artifacts/a1"
@@ -138,6 +142,50 @@ describe("挑哪一张当缩略图", () => {
   });
 });
 
+describe("验收没有时才用预览截图", () => {
+  const projectId = "prj-08364d56a44e58328983886b3736389b";
+
+  it("正向：当前验收能画，不用预览图", () => {
+    expect(
+      resolveProjectThumbnail({
+        verification: view("passed"),
+        previewAvailable: true,
+        projectId,
+      })
+    ).toBe("/api/sliderule/project-verifications/vf-1/artifacts/a1");
+  });
+
+  it("正向：飞机大战那种验收空、有预览图，挂预览图", () => {
+    expect(
+      resolveProjectThumbnail({
+        verification: { operationId: null, operationStatus: null, snapshot: null },
+        previewAvailable: true,
+        projectId,
+      })
+    ).toBe(previewSnapshotUrl(projectId));
+  });
+
+  it("反向：stale 验收不算，可以退到预览图", () => {
+    expect(
+      resolveProjectThumbnail({
+        verification: view("stale"),
+        previewAvailable: true,
+        projectId,
+      })
+    ).toBe(previewSnapshotUrl(projectId));
+  });
+
+  it("反向：预览图也没有，不许编一个地址", () => {
+    expect(
+      resolveProjectThumbnail({
+        verification: { operationId: null, operationStatus: null, snapshot: null },
+        previewAvailable: false,
+        projectId,
+      })
+    ).toBeNull();
+  });
+});
+
 describe("取图地址", () => {
   it("走 owner 校验过的那个端点，两段都编码", () => {
     expect(verificationArtifactUrl("v/1", "a b")).toBe(
@@ -153,6 +201,9 @@ describe("只有一份实现（§4）", () => {
   it("缩略图走共享判据，而不是自己取 [0]", () => {
     expect(HOOK).toMatch(/displayableScreenshots\(/);
     expect(HOOK).toMatch(/verificationArtifactUrl\(/);
+    expect(HOOK).toMatch(/previewSnapshotUrl\(/);
+    expect(HOOK).toMatch(/resolveProjectThumbnail\(/);
+    expect(HOOK).toMatch(/fetch\(\s*previewSnapshotUrl\(/);
     // 变异判据：把 displayableScreenshots(...)[0] 改回 artifactRefs[0] 就红。
     expect(HOOK).not.toMatch(/artifactRefs\s*(\?\.)?\[\s*0\s*\]/);
   });

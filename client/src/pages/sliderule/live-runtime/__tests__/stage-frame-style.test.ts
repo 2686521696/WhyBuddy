@@ -19,6 +19,21 @@ function stripComments(src: string): string {
 
 const FRAMES = [
   [
+    "ScaledStageFrame.tsx",
+    new URL("../ScaledStageFrame.tsx", import.meta.url),
+  ],
+  ["AppRuntimeScreen.tsx", new URL("../AppRuntimeScreen.tsx", import.meta.url)],
+  [
+    "ClickEditStage.tsx",
+    new URL(
+      "../../../agent-loop/dashboard/ClickEditStage.tsx",
+      import.meta.url
+    ),
+  ],
+] as const;
+
+const SCALE_CALLS = [
+  [
     "SpecPageLiveStage.tsx",
     new URL("../SpecPageLiveStage.tsx", import.meta.url),
   ],
@@ -27,6 +42,13 @@ const FRAMES = [
     "ClickEditStage.tsx",
     new URL(
       "../../../agent-loop/dashboard/ClickEditStage.tsx",
+      import.meta.url
+    ),
+  ],
+  [
+    "SandboxPreviewSurface.tsx",
+    new URL(
+      "../../project-runtime/SandboxPreviewSurface.tsx",
       import.meta.url
     ),
   ],
@@ -42,7 +64,7 @@ describe("舞台预览框外观（stage-frame-style）", () => {
     expect(src).not.toContain("0 8px 32px");
   });
 
-  it.each(FRAMES)(
+  it.each(SCALE_CALLS)(
     "%s 把余量真的传给了 useScaleToFit（否则 ring 会被切掉）",
     (_name, url) => {
       const src = stripComments(readFileSync(url, "utf8"));

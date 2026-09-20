@@ -1,25 +1,18 @@
 /**
- * 结果卡那张缩略图：取**最近一次验收跑出来的页面截图**。
+ * 结果卡那张缩略图。
  *
- * ## 为什么是验收产物，不是另外截一张（2026-09-14）
+ * ## 两份诚实来源（2026-09-19）
  *
- * 对照 Manus，结果卡里那张大图是感知最强的一块。我们这边一直是空的，
- * 头注里写着「拿不到就不画，不从别处凑」。
+ * 第一份仍是验收：`project_verify` 的 PNG。stale 不算——那是上一版源码
+ * （2026-09-14 待办清单那趟，§7 不许拿旧证据充新产出）。
  *
- * 能凑的两条路都试过：
- *   · `services/app_screenshot.py` 只在**生成过程里做自检**用，截的是
- *     HTML 原型的 freeform-preview，没落成会话级产物，而且工程档根本不走它。
- *   · 直接截 E2B 里跑着的应用 —— 那要预览网关（通配符域名 + TLS），
- *     本机给不了。
+ * ⚠ 2026-09-19 飞机大战 `sr-20260919163941-977KTNMZ0K`：验收接口
+ *   `snapshot: null`，`project_verify` 一次没调。`browser_view` 看了三
+ *   次，回执里却没有图，完成卡空白。第二份来源是模型看过页面时落下的
+ *   预览截图（`/projects/{id}/preview-snapshot`）。**不是验收通过**，
+ *   有验收且当前这一版能画时仍用验收那张。
  *
- * 真正现成的是第三条：`project_verify` 的浏览器套件**跑在 E2B 内部**，
- * 不需要任何公网路由，产出 `VerificationArtifactRef`（image/png + sha256 + label），
- * 取图端点 `/project-verifications/{vid}/artifacts/{aid}` 是 owner 校验过的，
- * `ProjectEvidenceImages` 早就在用它。**这是真机上真的跑得出来的那张图。**
- *
- * ⚠ 所以缩略图**只有跑过验收才有**，而且只认**当前这一版**的那份。
- *   没跑过、或者只有一份过期的（stale），都是 null，卡片那一块不画——
- *   这是诚实的「还没有」，不是坏掉（§7：没有证据的地方不编）。
+ * HTML 原型的 freeform-preview、占位图，仍然不许凑。
  *
  * ## 为什么直接把端点 URL 交给 `<img>`
  *
@@ -31,7 +24,6 @@
  */
 import { useEffect, useState } from "react";
 import {
-  ProjectVerificationError,
   getProjectVerification,
   type ProjectVerificationView,
 } from "./project-verification-client";
@@ -39,6 +31,13 @@ import {
   displayableScreenshots,
   verificationArtifactUrl,
 } from "./verification-artifacts";
+
+export function previewSnapshotUrl(projectId: string): string {
+  return (
+    `/api/sliderule/projects/${encodeURIComponent(projectId)}` +
+    `/preview-snapshot`
+  );
+}
 
 /**
  * 从一份验收视图里挑出能当缩略图的那张；挑不出来就是 null。
@@ -61,7 +60,20 @@ export function thumbnailFromVerification(
   return verificationArtifactUrl(record.verificationId, ref.artifactId);
 }
 
-/** 取最近一次验收的第一张截图地址；没有就是 null。 */
+/** 有验收用验收；否则才用预览截图。两边都没有就是 null。 */
+export function resolveProjectThumbnail(input: {
+  verification: ProjectVerificationView | null | undefined;
+  previewAvailable: boolean;
+  projectId: string | null | undefined;
+}): string | null {
+  const verified = thumbnailFromVerification(input.verification);
+  if (verified) return verified;
+  const id = String(input.projectId || "").trim();
+  if (input.previewAvailable && id) return previewSnapshotUrl(id);
+  return null;
+}
+
+/** 取结果卡缩略图；没有就是 null。 */
 export function useProjectThumbnail(
   projectId: string | null | undefined
 ): string | null {
@@ -74,15 +86,38 @@ export function useProjectThumbnail(
 
     const controller = new AbortController();
     (async () => {
+      let verification: ProjectVerificationView | null = null;
       try {
-        const found = thumbnailFromVerification(
-          await getProjectVerification(id, controller.signal)
-        );
-        if (found) setUrl(found);
-      } catch (error) {
-        // ⚠ 拿不到就是没有：验收没跑过、被取消、无权限，都走这一支。
-        //   §7 增强类 fail-open——缩略图缺席不许让结果卡本身出问题。
-        if (!(error instanceof ProjectVerificationError)) return;
+        verification = await getProjectVerification(id, controller.signal);
+      } catch {
+        // 验收拿不到就试预览图。缩略图缺席不许让结果卡本身出问题。
+      }
+      if (controller.signal.aborted) return;
+      const verified = thumbnailFromVerification(verification);
+      if (verified) {
+        setUrl(verified);
+        return;
+      }
+      try {
+        const shot = await fetch(previewSnapshotUrl(id), {
+          credentials: "include",
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (
+          shot.ok &&
+          (shot.headers.get("content-type") || "").includes("image/png")
+        ) {
+          setUrl(
+            resolveProjectThumbnail({
+              verification: null,
+              previewAvailable: true,
+              projectId: id,
+            })
+          );
+        }
+      } catch {
+        // 预览图也没有：卡片那一块不画。
       }
     })();
     return () => controller.abort();

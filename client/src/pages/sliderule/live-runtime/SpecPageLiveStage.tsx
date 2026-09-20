@@ -54,12 +54,8 @@ import {
   specPageViewport,
   PHONE_STAGE_MAX_SCALE,
 } from "./canvas-scale";
-import {
-  PHONE_FRAME_SHADOW,
-  STAGE_FRAME_PAD,
-  STAGE_FRAME_SHADOW,
-  phoneFramePad,
-} from "./stage-frame-style";
+import { STAGE_FRAME_PAD, phoneFramePad } from "./stage-frame-style";
+import { ScaledStageFrame } from "./ScaledStageFrame";
 import {
   DEVICE_PRESETS,
   findDevicePreset,
@@ -374,100 +370,35 @@ export function SpecPageLiveStage({
           ⚠ 2026-08-20 午前满电青年：16:9 + items-center 曾让 Header 像掉下来，
           改成顶对齐。同日晚 City Walk：用户要垂直居中；正方形 1920×1920
           试过又改回 16:9，居中留下。改回 items-start，本条必须红。 */}
-          <div
-            ref={fitRef}
-            className="flex min-h-0 flex-1 items-center justify-center overflow-hidden"
-            data-testid="sliderule-spec-page-canvas"
+          <ScaledStageFrame
+            viewport={viewport}
+            scale={scale}
+            canvasRef={fitRef}
+            framed={isPhone}
+            frame={frame}
+            canvasTestId="sliderule-spec-page-canvas"
           >
-            <div
-              data-testid={isPhone ? "sliderule-phone-frame" : undefined}
-              style={
-                isPhone
-                  ? {
-                      // Flowbite device-mockups：边框就是机身（border-[14px]
-                      // rounded-[2.5rem]），内屏 rounded + overflow-hidden。
-                      // 第一版用 box-shadow 描边，overflow:hidden 把顶切掉；
-                      // 第二版用 padding + 内屏白底，圆角缝里露出白边。
-                      boxSizing: "border-box",
-                      // 机身量级随机型走（DevicePreset.frame）：平板边框更薄、圆角更小。
-                      // 写死 12/20/40 的话，选到 iPad 会得到一台"圆角 40 的巨型手机"。
-                      width: viewport.w * scale + frame.bezel * 2,
-                      border: `${frame.bezel}px solid #1c1c1e`,
-                      borderBottomWidth: frame.bezelBottom,
-                      borderRadius: frame.radius,
-                      background: "#1c1c1e",
-                      boxShadow: PHONE_FRAME_SHADOW,
-                      position: "relative",
-                    }
-                  : {
-                      width: viewport.w * scale,
-                      height: viewport.h * scale,
-                      position: "relative",
-                      borderRadius: 5,
-                      boxShadow: STAGE_FRAME_SHADOW,
-                      overflow: "hidden",
-                      background: "#fff",
-                    }
+            <HtmlAppSurface
+              key={active.pageId}
+              html={active.html}
+              fillPhone={isPhone}
+              className="bg-white"
+              source={source}
+              gates={gates}
+              onAction={onAction}
+              onNavigate={pid => {
+                const canon = canonicalPageId(pid, pages);
+                if (canon) setPicked(canon);
+              }}
+              onHoverBinding={onHoverBinding}
+              onReport={r =>
+                setReport({
+                  filled: Object.values(r.filled).reduce((a, b) => a + b, 0),
+                  problems: r.problems,
+                })
               }
-            >
-              <div
-                style={{
-                  width: viewport.w * scale,
-                  height: viewport.h * scale,
-                  position: "relative",
-                  overflow: "hidden",
-                  borderRadius: isPhone ? frame.innerRadius : 5,
-                  background: "#fff",
-                }}
-              >
-                <div
-                  style={{
-                    width: viewport.w,
-                    height: viewport.h,
-                    transform: `scale(${scale})`,
-                    transformOrigin: "top left",
-                    overflow: "hidden",
-                    background: "#fff",
-                  }}
-                >
-                  <HtmlAppSurface
-                    key={active.pageId}
-                    html={active.html}
-                    fillPhone={isPhone}
-                    className="bg-white"
-                    source={source}
-                    gates={gates}
-                    onAction={onAction}
-                    // 归一化再存：拿到的可能是改名前的旧 id（菜单孔里烧的
-                    // 就是它）。照 friendly_id 文档那条——解析到老 id 之后
-                    // 要把地址换成当前的，别一直揣着老号跑，否则别名表就从
-                    // 过渡坡道变成永久拐杖。解析不出来就不动（不冒充切页）。
-                    onNavigate={pid => {
-                      const canon = canonicalPageId(pid, pages);
-                      if (canon) setPicked(canon);
-                    }}
-                    onHoverBinding={onHoverBinding}
-                    onReport={r =>
-                      setReport({
-                        filled: Object.values(r.filled).reduce(
-                          (a, b) => a + b,
-                          0
-                        ),
-                        problems: r.problems,
-                      })
-                    }
-                  />
-                </div>
-              </div>
-              {isPhone ? (
-                <div
-                  aria-hidden
-                  className="pointer-events-none mx-auto mt-1.5 h-1 w-28 rounded-full bg-white/30"
-                  data-testid="sliderule-phone-home-indicator"
-                />
-              ) : null}
-            </div>
-          </div>
+            />
+          </ScaledStageFrame>
         </>
       )}
     </div>

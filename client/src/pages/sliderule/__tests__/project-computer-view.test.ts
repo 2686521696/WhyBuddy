@@ -14,6 +14,8 @@ import {
   isComputerView,
   resolveComputerView,
   shouldAutoCreateProject,
+  shouldAutoOpenPreview,
+  shouldAutoWakePreview,
   shouldShowProjectComputer,
 } from "../project-computer-view";
 
@@ -129,6 +131,39 @@ describe("没点过：按干活 / 预览自动切", () => {
       })
     ).toBe("preview");
   });
+
+  it("office-file 跑完回预览档，干活时仍看终端，钉住仍听用户", () => {
+    expect(
+      resolveComputerView({
+        userPinned: null,
+        live: true,
+        hasActivity: true,
+        previewReady: false,
+        lastTool: "shell_exec",
+        deliverableKind: "office-file",
+      })
+    ).toBe("computer");
+    expect(
+      resolveComputerView({
+        userPinned: null,
+        live: false,
+        hasActivity: true,
+        previewReady: false,
+        lastTool: "shell_exec",
+        deliverableKind: "office-file",
+      })
+    ).toBe("preview");
+    expect(
+      resolveComputerView({
+        userPinned: "source",
+        live: false,
+        hasActivity: true,
+        previewReady: false,
+        lastTool: "file_write",
+        deliverableKind: "office-file",
+      })
+    ).toBe("source");
+  });
 });
 
 describe("左栏点工具 → 右侧开哪一档", () => {
@@ -216,6 +251,7 @@ describe("计划批准后右侧是电脑，不是接线沙盘", () => {
         canCreateProject: true,
         isRunning: false,
         createStatus: "idle",
+        planHasDeliverableKind: true,
       })
     ).toBe(true);
     expect(
@@ -244,8 +280,134 @@ describe("计划批准后右侧是电脑，不是接线沙盘", () => {
         canCreateProject: false,
         isRunning: false,
         createStatus: "idle",
+        planHasDeliverableKind: true,
       })
     ).toBe(false);
+    expect(
+      shouldAutoCreateProject({
+        canCreateProject: true,
+        isRunning: false,
+        createStatus: "idle",
+      })
+    ).toBe(false);
+    expect(
+      shouldAutoCreateProject({
+        canCreateProject: true,
+        isRunning: false,
+        createStatus: "idle",
+        planHasDeliverableKind: false,
+      })
+    ).toBe(false);
+  });
+});
+
+describe("会话工作台跟控制面的预览工具", () => {
+  it("控制面挑了启动预览、运行已经就绪、还没换票 → 换票", () => {
+    expect(
+      shouldAutoOpenPreview({
+        hasTurns: true,
+        view: "preview",
+        hasTicket: false,
+        opening: false,
+        runtimeReady: true,
+        lastTool: "project_start",
+      })
+    ).toBe(true);
+  });
+
+  it("反向：只是运行就绪、当前不是预览工具，不许自己换票", () => {
+    expect(
+      shouldAutoOpenPreview({
+        hasTurns: true,
+        view: "preview",
+        hasTicket: false,
+        opening: false,
+        runtimeReady: true,
+        lastTool: "file_write",
+      })
+    ).toBe(false);
+    expect(
+      shouldAutoOpenPreview({
+        hasTurns: true,
+        view: "preview",
+        hasTicket: false,
+        opening: false,
+        runtimeReady: true,
+        lastTool: "shell_exec",
+      })
+    ).toBe(false);
+    expect(
+      shouldAutoOpenPreview({
+        hasTurns: true,
+        view: "preview",
+        hasTicket: false,
+        opening: false,
+        runtimeReady: true,
+        lastTool: "project_status",
+      })
+    ).toBe(false);
+  });
+
+  it("反向：没有动作流（空会话 / 应用中心），不许自己开工", () => {
+    expect(
+      shouldAutoOpenPreview({
+        hasTurns: false,
+        view: "preview",
+        hasTicket: false,
+        opening: false,
+        runtimeReady: true,
+        lastTool: "project_start",
+      })
+    ).toBe(false);
+  });
+
+  it("控制面正在调预览工具 → 唤醒", () => {
+    expect(
+      shouldAutoWakePreview({
+        hasTurns: true,
+        view: "preview",
+        hasTicket: false,
+        opening: false,
+        starting: false,
+        live: true,
+        lastTool: "project_start",
+        runtimeReady: false,
+      })
+    ).toBe(true);
+  });
+
+  it("反向：刷新旧会话看到历史 project_start，不许把沙箱拉起来", () => {
+    expect(
+      shouldAutoWakePreview({
+        hasTurns: true,
+        view: "preview",
+        hasTicket: false,
+        opening: false,
+        starting: false,
+        live: false,
+        lastTool: "project_start",
+        runtimeReady: false,
+      })
+    ).toBe(false);
+  });
+
+  it("反向：正在写文件或跑命令，不许当成预览决策去唤醒", () => {
+    expect(
+      shouldAutoWakePreview({
+        hasTurns: true,
+        view: "preview",
+        hasTicket: false,
+        opening: false,
+        starting: false,
+        live: true,
+        lastTool: "file_write",
+        runtimeReady: false,
+      })
+    ).toBe(false);
+  });
+
+  it("project_status 是轮询，不是预览决策", () => {
+    expect(computerViewForAction("project_status")).toBe("computer");
   });
 });
 
