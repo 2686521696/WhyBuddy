@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, Callable
 
@@ -13,6 +14,8 @@ from services.e2b_workspace_provider import PROJECT_ROOT, E2BWorkspaceProvider
 from services.project_store import get_project_store
 from services.skill_catalog_store import get_skill_catalog_store
 from services.workspace_provider import WorkspaceHandle
+
+log = logging.getLogger(__name__)
 
 SKILL_SANDBOX_PREFIX = ".sliderule/skills"
 _SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
@@ -70,7 +73,21 @@ def write_skill_files(write_files: Callable[..., None], handle: Any, files: dict
 
 
 def hydrate_owner_into(write_files: Callable[..., None], handle: Any, owner_id: str) -> int:
-    return write_skill_files(write_files, handle, files_for_owner(owner_id))
+    """账号已装技能写进沙盒。**整条都 fail-open**，写失败返回 0 不抛。
+
+    ⚠ 2026-09-20 review：契约只兑现了一半。files_for_owner 是全包 try/except 的，
+      但 write_skill_files 里 `write_files(handle, batch)` 是裸调——E2B 写一抖，
+      异常穿过这里落进 ProjectRuntimeService.start 的 try，
+      **except 会把刚建好的沙盒销毁、整个 project_start 失败**。
+      技能注水是增强类，按 §7 炸了不许拖垮主链路；工程本身没有它照样能跑，
+      少几个技能目录而已。
+      配套判据 tests/test_skill_hydrate_never_breaks_project_start.py。
+    """
+    try:
+        return write_skill_files(write_files, handle, files_for_owner(owner_id))
+    except Exception:
+        log.warning("skill hydration failed, project_start continues owner=%s", owner_id, exc_info=True)
+        return 0
 
 
 def try_hydrate_running_project(

@@ -325,6 +325,13 @@ export function projectToolStillOpen(
 ): boolean {
   if (!event || typeof event !== "object") return false;
   if (event.ok === false) return false;
+  // ⚠ 2026-09-20 review：后端 project_tools.py:109 每个工具回执都带
+  //   `commandFinished`，而**服务中的 runtime.start 永远停在 status=running**
+  //   （服务中的沙盒不会进 completed，等它进终态就是等它死）。只看终态集合，
+  //   project_start 成功之后那条 chip 会永远转「正在启动工程」。
+  //   后端专门加这个字段就是为了治它，前端一直没读（§4 只改一半）。
+  //   只认显式 true：旧事件没有这个字段，仍走下面的终态判定，不改行为。
+  if (event.commandFinished === true) return false;
   const status = String(event.status || "").trim().toLowerCase();
   if (!status) return false;
   return !TERMINAL_OPERATION.has(status);
