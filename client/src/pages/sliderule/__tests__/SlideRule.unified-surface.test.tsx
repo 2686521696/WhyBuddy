@@ -162,6 +162,8 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain('data-testid="sliderule-deliverables-open"');
     expect(html).not.toContain('data-testid="sliderule-reset-session"');
     expect(html).not.toContain('data-testid="sliderule-layout-controls"');
+    expect(html).not.toContain('data-testid="project-preview-fullscreen"');
+    expect(html).not.toContain('data-testid="project-preview-hide-stage"');
   });
 
   it("有轮次才挂交付物/重置，且只出现一次（不占整页顶栏）", () => {
@@ -176,10 +178,12 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain('data-testid="sliderule-mode-work"');
     expect(html).not.toContain('data-testid="sliderule-conclusion-badge"');
     expect(html).not.toContain('data-testid="sliderule-goal-display"');
-    // ⚠ 2026-09-14：分栏 / 全屏 / 交付物不挂。重置会话还在。
-    // 左上「当前：HTML 推演兼容模式」也不挂。
+    // ⚠ 2026-09-20：右上两颗（全屏/隐藏）挂回 chromeSlot。分段和交付物仍不挂。
+    expect(html).toContain('data-testid="project-preview-fullscreen"');
+    expect(html).toContain('data-testid="project-preview-hide-stage"');
     expect(html).not.toContain('data-testid="sliderule-status-bar"');
     expect(html).not.toContain('data-testid="sliderule-deliverables-open"');
+    expect(html).not.toContain('data-testid="sliderule-workbench-mode"');
     expect(html).toContain('data-testid="sliderule-reset-session"');
     expect(html).not.toContain('data-testid="sliderule-layout-controls"');
     expect(html).not.toContain("当前：HTML 推演兼容模式");
@@ -194,7 +198,10 @@ describe("unified /sliderule surface (single mental model)", () => {
     const html = renderPage();
 
     expect(html.match(/data-testid="sliderule-empty-state"/g)?.length).toBe(1);
-    expect(html).toContain("想推演成什么应用？");
+    expect(html).toContain("今天做点什么？");
+    expect(html).not.toContain("想做什么？");
+    expect(html).not.toContain("我能为你做什么？");
+    expect(html).not.toContain("想推演成什么应用？");
     // ⚠ 2026-09-14：空态不挂运行时徽章。变异：把「工程模式可用」或
     // 「当前：HTML 推演兼容模式」加回问候上方必红。
     expect(html).not.toContain("当前：HTML 推演兼容模式");
@@ -244,6 +251,7 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain("挂技能或连接器");
     expect(html).not.toContain("即可选择技能、连接器或伙伴");
     expect(html).not.toContain('data-testid="sliderule-composer-slash-hint"');
+    expect(html).not.toContain('data-testid="skill-select-bar"');
     expect(html).toContain('data-testid="sliderule-slash-hint"');
     const dockHtml = html.slice(
       html.indexOf('data-testid="sliderule-composer-dock"'),
@@ -279,6 +287,7 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain('data-testid="sliderule-empty-enter-hint"');
     expect(html).not.toContain('data-testid="sliderule-composer-device"');
     expect(html).not.toContain('data-testid="sliderule-composer-archetype"');
+    expect(html).not.toContain('data-testid="skill-select-bar"');
     expect(html).not.toContain('data-testid="sliderule-empty-dot-field"');
     expect(html).toContain('data-testid="sliderule-home-hover-dots"');
     expect(html).not.toContain("pb-[104px]");
@@ -338,9 +347,11 @@ describe("unified /sliderule surface (single mental model)", () => {
     // 用户反馈：发了消息右侧还是老面板——推演中必须是 live 占位
     expect(html).toContain('data-testid="sliderule-live-stage"');
     expect(html).toContain("推演中");
-    // ⚠ 2026-09-14：右上分栏 / 全屏 / 交付物卸了。加回必红。
+    // ⚠ 2026-09-20：两颗图标在，分段/交付物仍不挂。推演中置灰并写清原因。
+    expect(html).toContain('data-testid="project-preview-fullscreen"');
+    expect(html).toContain('data-testid="project-preview-hide-stage"');
     expect(html).not.toContain('data-testid="sliderule-workbench-mode"');
-    expect(html).not.toContain("推演进行中，布局锁定为分栏（对话+页面）");
+    expect(html).toContain("推演进行中，布局锁定为分栏（对话+页面）");
     // ⚠ 2026-09-01：三颗独立开关收成互斥分段，推演中锁定分栏。
     // 缝上折钮仍叫「隐藏页面」，不许拿整页 HTML 去禁这个词。
     expect(html).not.toContain('data-testid="sliderule-layout-stage"');
@@ -362,7 +373,7 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).not.toContain('data-testid="sliderule-rail-process"');
   });
 
-  it("+ 菜单是实用动作（文件/示例/技能库），模式选择器已删（用户裁决 2026-07-10）", () => {
+  it("+ 菜单是实用动作（文件/示例），模式选择器已删（用户裁决 2026-07-10）", () => {
     const html = renderPage({
       goal: "做一个采购审批应用",
       uiTurns: [streamingTurn],
@@ -371,7 +382,9 @@ describe("unified /sliderule surface (single mental model)", () => {
     expect(html).toContain('data-testid="sliderule-actions-menu"');
     expect(html).toContain("添加文件或图片");
     expect(html).toContain("填入示例意图");
-    expect(html).toContain("选择注入的技能"); // 就地勾选（不再直接跳走）
+    // 2026-09-19：技能勾选撤掉——装了也不进控制面
+    expect(html).not.toContain("选择注入的技能");
+    expect(html).not.toContain("去扩展中心");
     // 深思一轮/持续推演不再出现在产品面（引擎的马拉松能力保留在 Dev 面）
     expect(html).not.toContain("sliderule-mode-menu");
     expect(html).not.toContain("深思一轮");

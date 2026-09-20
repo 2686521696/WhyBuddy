@@ -234,11 +234,14 @@ function SandboxLiveTerminal({ text, running }: { text: string; running: boolean
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col bg-stone-50 px-3 py-2.5"
+      className="relative min-h-0 flex-1 overflow-hidden bg-stone-50"
       data-testid="project-computer-pty"
       data-running={running ? "true" : "false"}
     >
-      <div ref={host} className="min-h-0 flex-1" />
+      {/* ⚠ 2026-09-19：宿主若只写 flex-1，高度跟着 xterm 默认 24 行走，
+          FitAddon 再量这一圈，右侧空出一大块白。绝对铺满才是格子尺寸。
+          inset-0 又贴死顶栏/回放条，字顶到边。inset 按原来的 px-3 py-2.5。 */}
+      <div ref={host} className="absolute inset-x-3 inset-y-2.5" />
       <pre data-testid="project-computer-pty-text" className="sr-only">
         {text}
       </pre>

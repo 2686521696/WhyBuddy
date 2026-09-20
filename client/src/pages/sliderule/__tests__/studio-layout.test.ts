@@ -27,7 +27,10 @@ import {
   needsEmptySessionRestore,
   workbenchModeForDisplay,
 } from "../studio-layout";
-import { SHELL_SIDEBAR_WIDTH_PX } from "../shell-sidebar-layout";
+import {
+  SHELL_SIDEBAR_RAIL_PX,
+  SHELL_SIDEBAR_WIDTH_PX,
+} from "../shell-sidebar-layout";
 
 describe("studio-layout（VS Code 分栏对照）", () => {
   it("两侧不能同时折没：折一个时另一个不许再折", () => {
@@ -93,7 +96,7 @@ describe("对话栏默认 = 左侧菜单 ×2", () => {
     expect(studioChatDefaultPercent(100)).toBe(STUDIO_CHAT_MAX_PERCENT);
     expect(studioChatDefaultPercent(10_000)).toBe(STUDIO_CHAT_MIN_PERCENT);
     expect(guessStudioSplitWidthPx(1920)).toBe(1920 - SHELL_SIDEBAR_WIDTH_PX);
-    expect(guessStudioSplitWidthPx(1920, true)).toBe(1920);
+    expect(guessStudioSplitWidthPx(1920, true)).toBe(1920 - SHELL_SIDEBAR_RAIL_PX);
   });
 });
 
@@ -384,13 +387,20 @@ describe("通电：互斥布局档真的接在活路径上", () => {
 
   it("顶栏分段走 applyWorkbenchMode；Studio 把 stageView 接进 sink", () => {
     const hud = read("../SlideRuleTopHud.tsx");
-    expect(hud).toContain("applyWorkbenchMode");
-    expect(hud).toContain("sliderule-workbench-mode");
-    expect(hud).toContain("primer-segmented-control");
-    // 反向：三颗独立开关不许回来
+    const segmented = hud.slice(
+      hud.indexOf("function StudioWorkbenchModePicker"),
+      hud.indexOf("export function PreviewChromeLayoutButtons")
+    );
+    expect(segmented).toContain("applyWorkbenchMode");
+    expect(segmented).toContain("sliderule-workbench-mode");
+    expect(segmented).toContain("primer-segmented-control");
+    // 反向：三颗独立开关不许回来（两颗图标是另一个导出）
+    expect(segmented).not.toContain("sliderule-layout-stage");
+    expect(segmented).not.toContain("sliderule-layout-maximize");
+    expect(segmented).not.toContain("toggleStagePage");
+    expect(segmented).not.toContain("toggleMaximize");
     expect(hud).not.toContain("sliderule-layout-stage");
     expect(hud).not.toContain("sliderule-layout-maximize");
-    expect(hud).not.toContain("toggleStagePage");
     expect(hud).not.toContain("toggleMaximize");
 
     const studio = read("../SlideRuleStudio.tsx");

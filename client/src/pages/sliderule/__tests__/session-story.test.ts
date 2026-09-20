@@ -15,8 +15,12 @@ import {
   deriveSessionStory,
   disclosureOpen,
   latestToolRowTitle,
+  liveStageTitle,
   sessionStoryDuration,
   sessionStoryHasProcess,
+  isExpandableCommandRow,
+  timelineRowTitle,
+  toolFamily,
   toolGroupFace,
   toolGroupSummary,
 } from "../session-story";
@@ -67,7 +71,7 @@ function turnOf(steps: TurnStep[], over: Partial<UiTurn> = {}): UiTurn {
 const LIST = "● 创建工程 project_create\n◐ 写入源码 project_patch";
 
 describe("开口切开工具组，不许先倒完全部散文", () => {
-  it("真机那一发的形状：开口 → 创建 → 产品卡 → 开口 → 三次 patch", () => {
+  it("真机那一发的形状：开口 → 创建 → 开口 → 三次 patch；结果卡不插过程中间", () => {
     const blocks = deriveSessionStory(
       turnOf([
         speech("s1", "我先把工程搭起来，再改筛选。"),
@@ -85,10 +89,10 @@ describe("开口切开工具组，不许先倒完全部散文", () => {
     expect(blocks.map(block => block.kind)).toEqual([
       "speech",
       "tools",
-      "product",
       "speech",
       "tools",
     ]);
+    expect(blocks.some(block => block.kind === "product")).toBe(false);
     expect(
       blocks.filter(block => block.kind === "speech").map(block => block.text)
     ).toEqual(["我先把工程搭起来，再改筛选。", "接着改筛选。"]);
@@ -224,6 +228,29 @@ describe("组标题和摘要认工具名", () => {
       ])
     ).toBe("编辑了 2 个文件 · 已运行 1 个命令");
   });
+
+  it("技能行进组，脸上能读到技能名；旧的创建工程摘要还在", () => {
+    const blocks = deriveSessionStory(
+      turnOf([
+        speech("s1", "先加载设计技能。"),
+        chip("sk", "skill", "completed", "frontend-design"),
+        chip("c1", "project_create", "completed"),
+      ])
+    );
+    const tools = blocks.find(
+      (block): block is Extract<typeof block, { kind: "tools" }> =>
+        block.kind === "tools"
+    );
+    expect(tools?.rows.map(row => row.tool)).toEqual(["skill", "project_create"]);
+    expect(tools?.rows[0]).toMatchObject({
+      tool: "skill",
+      label: "加载技能",
+      detail: "frontend-design",
+    });
+    expect(tools?.summary).toContain("加载技能");
+    expect(tools?.summary).toContain("创建工程");
+    expect(timelineRowTitle(tools!.rows[0])).toBe("加载技能 frontend-design");
+  });
 });
 
 describe("用时：完成轮才写，拿不到不编", () => {
@@ -278,6 +305,106 @@ describe("折叠策略：assistant-ui Reasoning / OpenHands EventGroup", () => {
     expect(done.title).toBe("编辑了 2 个文件 · 已运行 1 个命令");
     expect(latestToolRowTitle(rows)).toBe("写入源码 src/App.tsx");
   });
+
+  it("进行中技能/命令/预览脸上是阶段，不是收尾摘要", () => {
+    expect(
+      liveStageTitle({
+        id: "s",
+        tool: "skill",
+        label: "加载技能",
+        status: "running",
+        detail: "frontend-design",
+      })
+    ).toBe("正在加载技能 frontend-design");
+    expect(
+      liveStageTitle({
+        id: "c",
+        tool: "shell_exec",
+        label: "运行命令",
+        status: "running",
+        detail: "pnpm run build",
+      })
+    ).toBe("正在运行命令");
+    expect(
+      liveStageTitle({
+        id: "p",
+        tool: "browser_navigate",
+        label: "打开预览",
+        status: "running",
+      })
+    ).toBe("正在打开预览");
+    expect(toolFamily("skill")).toBe("skill");
+    expect(toolFamily("make_manus_page")).toBe("preview");
+    expect(toolFamily("write_file")).toBe("file");
+    expect(timelineRowTitle({
+      id: "p",
+      tool: "make_manus_page",
+      label: "展示页面",
+      status: "done",
+    })).toBe("预览页面");
+    expect(isExpandableCommandRow({
+      id: "c",
+      tool: "shell_exec",
+      label: "运行命令",
+      status: "done",
+      detail: "pnpm run build",
+    })).toBe(true);
+    expect(isExpandableCommandRow({
+      id: "s",
+      tool: "skill",
+      label: "加载技能",
+      status: "done",
+      detail: "frontend-design",
+    })).toBe(false);
+    expect(
+      toolGroupFace(
+        [
+          {
+            id: "s",
+            tool: "skill",
+            label: "加载技能",
+            status: "running",
+            detail: "frontend-design",
+          },
+        ],
+        { finalized: false }
+      ).title
+    ).toBe("正在加载技能 frontend-design");
+  });
+});
+
+describe("开口长 token 必须折（2026-09-19 坦克横向滚动条）", () => {
+  it("工程档章节面和六步档开口都写 overflow-wrap:anywhere，不能只留 pre-wrap", () => {
+    const story = stripComments(
+      readFileSync(resolve(__dirname, "../SessionStory.tsx"), "utf8")
+    );
+    expect(story).toMatch(/data-testid="session-story-timeline"/);
+    expect(story).toMatch(/session-story-timeline-dot/);
+    expect(story).toMatch(/variant="timeline"/);
+    const slide = stripComments(
+      readFileSync(resolve(__dirname, "../../SlideRule.tsx"), "utf8")
+    );
+    const speech = story.slice(
+      story.indexOf('data-testid="sliderule-model-speech"'),
+      story.indexOf('data-testid="session-story-product"')
+    );
+    expect(speech).toMatch(/\[overflow-wrap:anywhere\]/);
+    expect(speech).toMatch(/whitespace-pre-wrap/);
+    // 反向：只留 pre-wrap，真机 pop-/todo_write{…} 无空格 token 照样顶栏。
+    expect(speech).not.toMatch(/<p className="whitespace-pre-wrap">/);
+
+    const blocks = slide.slice(
+      slide.indexOf("function ModelSpeechBlocks"),
+      slide.indexOf("function TurnPhaseTimeline")
+    );
+    expect(blocks).toMatch(/\[overflow-wrap:anywhere\]/);
+    expect(blocks).toMatch(/whitespace-pre-wrap/);
+    expect(blocks).not.toMatch(/<p className="whitespace-pre-wrap">/);
+
+    const surface = slide.slice(slide.indexOf("export function ClaudeChatSurface"));
+    expect(surface).toMatch(/ThreadPrimitive\.Viewport/);
+    expect(surface).toMatch(/overflow-x-hidden/);
+  });
 });
 
 describe("通电：章节面挂在工程档两支上，而且不门 latestTurn（§1 / §3）", () => {
@@ -305,6 +432,7 @@ describe("通电：章节面挂在工程档两支上，而且不门 latestTurn�
     const storyCalls = assistant.match(/<SessionStory[\s\S]*?\/>/g) ?? [];
     for (const call of storyCalls) {
       expect(call).not.toMatch(/latestTurnId/);
+      expect(call).toMatch(/deliverableKind=\{deliverableKind\}/);
     }
   });
 });

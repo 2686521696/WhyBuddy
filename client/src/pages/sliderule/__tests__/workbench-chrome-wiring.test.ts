@@ -41,17 +41,24 @@ describe("workbench chrome live-path wiring", () => {
     expect(src).toContain("applyWorkbenchMode");
     expect(src).toContain("STUDIO_WORKBENCH_MODE_OPTIONS");
     expect(src).toContain("sliderule-workbench-mode");
+    const segmented = src.slice(
+      src.indexOf("function StudioWorkbenchModePicker"),
+      src.indexOf("export function PreviewChromeLayoutButtons")
+    );
     const layout = stripComments(
       readFileSync(new URL("../studio-layout.ts", import.meta.url), "utf8")
     );
     expect(layout).toContain('label: "分栏"');
     expect(layout).toContain('label: "全屏"');
     expect(layout).toContain('label: "画布"');
-    // ⚠ 2026-09-01：隐藏页面 / 最大化独立钮撤了。缝上折钮还在。
-    expect(src).not.toContain("toggleStagePage");
+    // ⚠ 2026-09-01：分段控件里隐藏页面 / 最大化独立钮撤了。缝上折钮还在。
+    // 2026-09-20 两颗图标是另一个导出，不许算进这一簇。
+    expect(segmented).not.toContain("toggleStagePage");
+    expect(segmented).not.toContain("sliderule-layout-maximize");
+    expect(segmented).not.toContain("sliderule-layout-stage");
+    expect(segmented).not.toContain("隐藏页面");
     expect(src).not.toContain("sliderule-layout-maximize");
     expect(src).not.toContain("sliderule-layout-stage");
-    expect(src).not.toContain("隐藏页面");
     // ⚠ 2026-08-24：重置布局按钮撤了（用户："按钮一多看不懂啥意思"）。
     // 判据翻面前先剥注释——SlideRuleTopHud 的模块头正好把"重置布局"
     // 和 resetLayout 写进了事故记录里，不剥的话下面三条 not 永远假红。
@@ -265,11 +272,25 @@ describe("workbench chrome live-path wiring", () => {
     const page = stripComments(
       readFileSync(new URL("../../SlideRule.tsx", import.meta.url), "utf8")
     );
-    // ⚠ 2026-09-14：分栏 / 全屏 / 交付物不再挂到活路径。槽还在，
-    //   喂 null。把 <SlideRuleTopHud 接回去必红。
+    // ⚠ 2026-09-20：chromeSlot 只接两颗图标，不许把 TopHud 分段加回去。
     expect(page).not.toContain("<SlideRuleTopHud");
-    expect(page).toContain("chromeSlot={null}");
+    expect(page).toContain("<PreviewChromeLayoutButtons");
+    expect(page).not.toContain("chromeSlot={null}");
     expect(page).not.toContain("immersionOverlayHeader");
+
+    const hud = stripComments(
+      readFileSync(new URL("../SlideRuleTopHud.tsx", import.meta.url), "utf8")
+    );
+    const pair = hud.slice(hud.indexOf("export function PreviewChromeLayoutButtons"));
+    expect(pair).toContain("applyWorkbenchMode");
+    expect(pair).toContain("toggleStagePage");
+    expect(pair).toContain("project-preview-fullscreen");
+    expect(pair).toContain("project-preview-hide-stage");
+    expect(pair).toContain("显示页面");
+    expect(pair).not.toContain("sliderule-workbench-mode");
+    expect(pair).not.toContain("sliderule-deliverables-open");
+    expect(pair).not.toContain(".collapse(");
+    expect(pair).not.toContain("panel.collapse");
 
     const studio = stripComments(
       readFileSync(new URL("../SlideRuleStudio.tsx", import.meta.url), "utf8")

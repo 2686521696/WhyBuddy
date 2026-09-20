@@ -16,16 +16,9 @@ export function ShellSidebarProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const [collapsed, setCollapsed] = React.useState(false);
-
-  React.useEffect(() => {
-    // 2026-08-18：顶栏左边会话栏键已撤。若还读旧 localStorage
-    // 会把侧栏折没且没有展开入口。强制摊开。
-    if (readShellSidebarCollapsed()) {
-      writeShellSidebarCollapsed(false);
-    }
-    setCollapsed(false);
-  }, []);
+  /* ⚠ 2026-08-18 曾经 mount 时强制摊开——顶栏钮撤了，读旧 localStorage
+     会把侧栏折没。2026-09-20 钮回到侧栏顶，可以再记折叠。 */
+  const [collapsed, setCollapsed] = React.useState(readShellSidebarCollapsed);
 
   const toggle = React.useCallback(() => {
     setCollapsed(prev => {

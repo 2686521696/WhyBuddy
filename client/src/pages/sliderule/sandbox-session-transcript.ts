@@ -107,8 +107,11 @@ export function followSandboxOperationId(
   const focus = String(opts.focusId || "").trim();
   if (focus) {
     const row = (rows || []).find(item => String(item.id || "") === focus);
-    if (!row || !sandboxCommandLine(row)) return null;
-    return String(row.operationId || "").trim() || null;
+    if (row && sandboxCommandLine(row)) {
+      return String(row.operationId || "").trim() || null;
+    }
+    // 点的是写入/预览，不是终端行：仍跟最新命令。
+    // ⚠ 不许退到 runtime.start——那会把 npm ci 的残留 PTY 当成当前命令。
   }
   const commands = (rows || []).filter(row => sandboxCommandLine(row));
   // ⚠ 正在跑的那条优先。还没有 operationId 时返回 null——退到
@@ -117,6 +120,7 @@ export function followSandboxOperationId(
   if (running) return String(running.operationId || "").trim() || null;
   const withId = commands.filter(row => String(row.operationId || "").trim());
   if (withId.length) return String(withId[withId.length - 1].operationId).trim();
+  if (focus) return null;
   return String(opts.runtimeOperationId || "").trim() || null;
 }
 

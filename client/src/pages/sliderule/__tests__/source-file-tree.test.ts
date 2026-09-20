@@ -8,7 +8,9 @@ import {
   sourceFileTree,
   sourceTreeDirPaths,
   sourceTreeFilePaths,
+  sourceTreeIconKind,
 } from "../project-runtime/source-file-tree";
+import { sourcePathFromActionDetail } from "../project-runtime/preview-selection-bridge";
 
 const stripComments = (source: string) =>
   source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
@@ -62,6 +64,19 @@ describe("清单收成树", () => {
   });
 });
 
+describe("动作细节里的 path", () => {
+  it("开场摘要里的文件认得出，命令和版本号不算", () => {
+    expect(sourcePathFromActionDetail("src/components/CreateModal.tsx")).toBe(
+      "src/components/CreateModal.tsx"
+    );
+    expect(sourcePathFromActionDetail("src/Home.tsx、src/api/tasks.ts")).toBe(
+      "src/Home.tsx"
+    );
+    expect(sourcePathFromActionDetail("pnpm run build")).toBeNull();
+    expect(sourcePathFromActionDetail("rev-aaaa → rev-bbbb")).toBeNull();
+  });
+});
+
 describe("通电：面板画的是树，不是 files.map(path)", () => {
   it("源码面板用 sourceFileTree，文件钮钉 data-source-path", () => {
     const panel = stripComments(
@@ -71,10 +86,35 @@ describe("通电：面板画的是树，不是 files.map(path)", () => {
       )
     );
     expect(panel).toMatch(/sourceFileTree\(/);
+    expect(panel).toMatch(/sourceTreeIconKind\(/);
     expect(panel).toMatch(/project-source-tree/);
     expect(panel).toMatch(/data-source-path/);
+    expect(panel).toMatch(/data-source-icon/);
     // 反向：再摊成窄条 + 完整 path 当唯一标签，看起来又不是整个项目。
     expect(panel).not.toMatch(/max-h-36/);
     expect(panel).not.toMatch(/aria-label="工程文件"[\s\S]*\{row\.path\}/);
+  });
+});
+
+describe("树上图标只认扩展名和开合", () => {
+  it("目录开合、常见扩展各一种", () => {
+    expect(sourceTreeIconKind("src", "dir", false)).toBe("folder");
+    expect(sourceTreeIconKind("src", "dir", true)).toBe("folder-open");
+    expect(sourceTreeIconKind("App.tsx", "file")).toBe("code");
+    expect(sourceTreeIconKind("main.ts", "file")).toBe("code");
+    expect(sourceTreeIconKind("index.html", "file")).toBe("html");
+    expect(sourceTreeIconKind("style.css", "file")).toBe("css");
+    expect(sourceTreeIconKind("package.json", "file")).toBe("json");
+    expect(sourceTreeIconKind("README.md", "file")).toBe("text");
+    expect(sourceTreeIconKind("logo.svg", "file")).toBe("image");
+  });
+
+  it("反向：空名、无扩展、路径关键词都不另开一种", () => {
+    expect(sourceTreeIconKind("", "file")).toBe("file");
+    expect(sourceTreeIconKind("Makefile", "file")).toBe("file");
+    expect(sourceTreeIconKind(".env", "file")).toBe("file");
+    expect(sourceTreeIconKind("game.tsx", "file")).toBe("code");
+    expect(sourceTreeIconKind("todo.html", "file")).toBe("html");
+    expect(sourceTreeIconKind("src/pages/tank.ts", "file")).toBe("code");
   });
 });

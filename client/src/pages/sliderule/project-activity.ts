@@ -34,6 +34,7 @@
  */
 
 import { isProjectWorkbenchTool } from "@/lib/factory-hops";
+import { validSourcePath } from "./project-runtime/preview-selection-bridge";
 import type { TurnStep, UiTurn } from "./types";
 
 export type ProjectActionStatus = "running" | "done" | "failed";
@@ -87,6 +88,7 @@ const TOOL_LABELS: Readonly<Record<string, string>> = {
   message_ask_user: "询问用户",
   info_search_web: "检索资料",
   idle: "等待用户",
+  skill: "加载技能",
   read_file: "读取源码",
   write_file: "写入源码",
   search_replace: "替换源码",
@@ -139,6 +141,22 @@ export function projectActionDetail(
 
   const command = text("command");
   if (command) return command.length > 80 ? command.slice(0, 80) + "…" : command;
+
+  // ⚠ 2026-09-19：结果里常有 path / changedFiles，却被后面的
+  //   parent→revision 盖掉。代码面跟文件靠这一句，版本号说不出正在改哪份。
+  const path = text("path");
+  if (validSourcePath(path)) return path;
+  const changed = event.changedFiles;
+  if (Array.isArray(changed)) {
+    const files = changed.filter(
+      (item): item is string => typeof item === "string" && validSourcePath(item)
+    );
+    if (files.length === 1) return files[0];
+    if (files.length > 1) {
+      const head = files.slice(0, 3).join("、");
+      return files.length > 3 ? `${head} 等 ${files.length} 个文件` : head;
+    }
+  }
 
   const revision = short(event.revision);
   const parent = short(event.parentRevision);

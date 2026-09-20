@@ -19,9 +19,20 @@
  *   SegmentedControl（GitHub Code|Preview|Blame）和 VS Code layoutService
  *   （布局互斥、不跟内容视图混排）：收成一档互斥分段 分栏 | 全屏 | 画布。
  *   推演中锁定分栏（v0/bolt 同款）。「隐藏页面」不再占顶栏一片，缝上折钮还在。
+ *
+ * ⚠ 2026-09-20 Trae 预览右上角两颗：全屏 + 隐藏右栏。复用
+ *   applyWorkbenchMode / toggleStagePage，活路径只挂 PreviewChromeLayoutButtons，
+ *   不把本文件的分段控件和交付物加回去。
  */
 import React from "react";
-import { Layers, RotateCw } from "lucide-react";
+import {
+  Layers,
+  Maximize2,
+  Minimize2,
+  PanelRight,
+  PanelRightClose,
+  RotateCw,
+} from "lucide-react";
 import { useStudioLayout } from "./StudioLayoutContext";
 import {
   resolveWorkbenchMode,
@@ -32,6 +43,7 @@ import {
 function LayoutBtn({
   testId,
   label,
+  hint,
   pressed,
   disabled,
   onClick,
@@ -39,6 +51,7 @@ function LayoutBtn({
 }: {
   testId: string;
   label: string;
+  hint?: string;
   pressed?: boolean;
   disabled?: boolean;
   onClick?: () => void;
@@ -49,7 +62,7 @@ function LayoutBtn({
       type="button"
       data-testid={testId}
       aria-label={label}
-      title={label}
+      title={hint ?? label}
       aria-pressed={pressed}
       disabled={disabled}
       onClick={onClick}
@@ -161,6 +174,69 @@ export function SlideRuleTopHud({
           <Layers className="h-3.5 w-3.5" strokeWidth={1.75} />
         </LayoutBtn>
       )}
+    </div>
+  );
+}
+
+/**
+ * 预览头条右上两颗：全屏、隐藏右栏。
+ *
+ * ⚠ 2026-09-20 对照 Trae Work。动作是旧的——全屏走 applyWorkbenchMode，
+ *   隐藏走 toggleStagePage（卸舞台，不是 collapse 宽度）。不渲染
+ *   sliderule-workbench-mode / 交付物。藏掉右栏后同一颗改「显示页面」，
+ *   对话独占条还挂得着这槽，避免缝上那颗藏完就没了。
+ */
+export function PreviewChromeLayoutButtons() {
+  const studio = useStudioLayout();
+  if (!studio?.available) return null;
+
+  const raw = resolveWorkbenchMode({
+    maximizeLocked: !!studio.maximizeLocked,
+    collapsed: studio.collapsed,
+    stagePageHidden: !!studio.stagePageHidden,
+  });
+  const { mode, locked } = workbenchModeForDisplay(raw, !!studio.layoutLocked);
+  const hidden = !!studio.stagePageHidden;
+  const fullscreen = mode === "stage";
+  const lockTitle = "推演进行中，布局锁定为分栏（对话+页面）";
+
+  return (
+    <div
+      className="flex items-center gap-0.5"
+      data-testid="project-preview-layout-gears"
+    >
+      {!hidden ? (
+        <LayoutBtn
+          testId="project-preview-fullscreen"
+          label={fullscreen ? "退出全屏" : "全屏"}
+          hint={locked ? lockTitle : undefined}
+          pressed={fullscreen}
+          disabled={locked}
+          onClick={() =>
+            studio.applyWorkbenchMode(fullscreen ? "split" : "stage")
+          }
+        >
+          {fullscreen ? (
+            <Minimize2 className="h-3.5 w-3.5" strokeWidth={1.75} />
+          ) : (
+            <Maximize2 className="h-3.5 w-3.5" strokeWidth={1.75} />
+          )}
+        </LayoutBtn>
+      ) : null}
+      <LayoutBtn
+        testId="project-preview-hide-stage"
+        label={hidden ? "显示页面" : "隐藏页面"}
+        hint={locked ? lockTitle : undefined}
+        pressed={hidden}
+        disabled={locked}
+        onClick={() => studio.toggleStagePage()}
+      >
+        {hidden ? (
+          <PanelRight className="h-3.5 w-3.5" strokeWidth={1.75} />
+        ) : (
+          <PanelRightClose className="h-3.5 w-3.5" strokeWidth={1.75} />
+        )}
+      </LayoutBtn>
     </div>
   );
 }

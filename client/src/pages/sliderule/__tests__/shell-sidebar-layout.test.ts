@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   readShellSidebarCollapsed,
   SHELL_SIDEBAR_KEY,
+  SHELL_SIDEBAR_RAIL_PX,
+  SHELL_SIDEBAR_WIDTH_PX,
+  shellSidebarOccupiedPx,
   writeShellSidebarCollapsed,
 } from "../shell-sidebar-layout";
 
@@ -29,5 +32,12 @@ describe("shell-sidebar-layout", () => {
     } finally {
       (globalThis as { localStorage?: unknown }).localStorage = prev;
     }
+  });
+
+  it("收起占图标轨，不是 0", () => {
+    expect(SHELL_SIDEBAR_RAIL_PX).toBe(56);
+    expect(shellSidebarOccupiedPx(false)).toBe(SHELL_SIDEBAR_WIDTH_PX);
+    expect(shellSidebarOccupiedPx(true)).toBe(SHELL_SIDEBAR_RAIL_PX);
+    expect(shellSidebarOccupiedPx(true)).not.toBe(0);
   });
 });

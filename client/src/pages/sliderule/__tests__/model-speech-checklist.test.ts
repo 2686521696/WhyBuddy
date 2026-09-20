@@ -38,6 +38,12 @@ describe("认不认得出「这段是整份清单」", () => {
     expect(isChecklistSnapshot("◐ 按需补丁 UI/筛选/鉴权对齐")).toBe(true);
   });
 
+  it("正向：抄 grok 回喂带 id 的那一行也认（● t1: 文案）", () => {
+    expect(isChecklistSnapshot("◐ t1: 初始化坦克大战工程\n○ t2: 写游戏循环")).toBe(
+      true
+    );
+  });
+
   it("反向：夹了散文的不算（那是它在解释，不是在重印）", () => {
     expect(isChecklistSnapshot("先查看工程当前状态。\n● 创建工程")).toBe(false);
   });

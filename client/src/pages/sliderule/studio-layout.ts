@@ -13,7 +13,10 @@
  *   最大化 ≈ 折对话、舞台铺满（再按还原）
  */
 
-import { SHELL_SIDEBAR_WIDTH_PX } from "./shell-sidebar-layout";
+import {
+  SHELL_SIDEBAR_WIDTH_PX,
+  shellSidebarOccupiedPx,
+} from "./shell-sidebar-layout";
 
 export type StudioPart = "chat" | "stage";
 
@@ -186,13 +189,12 @@ export function isPhoneStudioDevice(device?: string | null): boolean {
   return device === "phone";
 }
 
-/** 猜分栏容器宽：视口减去展开侧栏。侧栏折没时整窗都是分栏。 */
+/** 猜分栏容器宽：视口减去侧栏占位。收起是图标轨，不是 0。 */
 export function guessStudioSplitWidthPx(
   viewportWidth: number,
   sidebarCollapsed = false
 ): number {
-  const side = sidebarCollapsed ? 0 : SHELL_SIDEBAR_WIDTH_PX;
-  return Math.max(0, viewportWidth - side);
+  return Math.max(0, viewportWidth - shellSidebarOccupiedPx(sidebarCollapsed));
 }
 
 /** 空会话或用户藏了预览页：右侧整块不渲染。不是把宽度收成 0。 */

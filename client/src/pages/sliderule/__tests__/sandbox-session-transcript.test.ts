@@ -232,12 +232,23 @@ describe("右侧终端订哪一条", () => {
     ).toBe("op-install");
   });
 
-  it("反向：点的不是终端行就不订——去拉别人的 /events 就是闪旧命令", () => {
+  it("点的不是终端行：仍跟正在跑的命令，不许退到 npm ci", () => {
     expect(
       followSandboxOperationId(
         [
           { id: "row-patch", tool: "project_patch", detail: "src/App.tsx", operationId: "op-patch" },
           testCmd,
+        ],
+        { focusId: "row-patch", runtimeOperationId: "op-runtime" }
+      )
+    ).toBe("op-test");
+  });
+
+  it("反向：点的不是终端行、又没有任何命令，才空着——不许订 runtime.start", () => {
+    expect(
+      followSandboxOperationId(
+        [
+          { id: "row-patch", tool: "project_patch", detail: "src/App.tsx", operationId: "op-patch" },
         ],
         { focusId: "row-patch", runtimeOperationId: "op-runtime" }
       )

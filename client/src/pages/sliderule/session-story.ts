@@ -6,8 +6,15 @@
  * 差的不是零件，是编排。Manus 一轮是一篇能折起来的故事：
  *
  *     工作了 3m 57s → 我准备怎么做 → 「构建网页」→ 工具组 →
- *     对话里弹出产品卡 → 「编辑了 4 个文件 · 已运行 1 个命令」→
- *     「TicketStream 已完成」
+ *     「编辑了 4 个文件 · 已运行 1 个命令」→ 「TicketStream 已完成」
+ *     → 结果卡贴在过程后面
+ *
+ * ⚠ 2026-09-20 番茄钟真机 sr-20260919232309-4FHP30DQPZ：第一版在
+ *   `project_create` 完成后立刻 emit 一块 product。消费侧把
+ *   TurnResultCard（标题=用户原话，「未发布·12m」「任务已完成」）
+ *   塞进「创建工程 · 读取工程」和下一段开口之间。人圈出来位置不对——
+ *   这张卡是收尾锚点，不是「工程出现了」。活页 DOM kids[2] 就是那张卡，
+ *   后面还有二十多段开口/工具。章节块不再 emit product。
  *
  * 我们 `ImAssistantMessage` 按 kind 分桶：所有开口散文一把倒，
  * 再铺扁平 `project_*` 勾，再挂结果卡。`UiTurn.steps` 里没有 chapter，
@@ -41,6 +48,7 @@
  * 这里只把那三条策略抄进纯函数，消费面继续吃 steps。
  */
 
+import { isOfficeFileDeliverable } from "./deliverable-kind";
 import {
   isChecklistSnapshot,
   isUserFacingSpeech,
@@ -117,6 +125,69 @@ const COUNTED_TOOLS = new Set([
   ...PREVIEW_TOOLS,
 ]);
 
+export type ToolFamily =
+  | "create"
+  | "file"
+  | "shell"
+  | "preview"
+  | "skill"
+  | "unknown";
+
+/** 时间线图标按家族分，未知工具仍有行。 */
+export function toolFamily(tool: string): ToolFamily {
+  const name = String(tool || "").trim();
+  if (name === "skill") return "skill";
+  if (CREATE_TOOLS.has(name)) return "create";
+  if (FILE_TOOLS.has(name) || READ_TOOLS.has(name)) return "file";
+  if (
+    EXEC_TOOLS.has(name) ||
+    name.startsWith("shell_") ||
+    name === "bash"
+  ) {
+    return "shell";
+  }
+  if (
+    PREVIEW_TOOLS.has(name) ||
+    name.startsWith("browser_") ||
+    name === "make_manus_page" ||
+    name.startsWith("deploy_")
+  ) {
+    return "preview";
+  }
+  return "unknown";
+}
+
+/** shell 命令原文收进可展开条，不摊在行上。 */
+export function isExpandableCommandRow(row: ProjectActionRow): boolean {
+  return toolFamily(row.tool) === "shell" && Boolean(String(row.detail || "").trim());
+}
+
+/** 预览/浏览器步骤脸上写「预览页面」，细节另挂。 */
+export function timelineRowTitle(row: ProjectActionRow): string {
+  const family = toolFamily(row.tool);
+  if (family === "preview") return "预览页面";
+  if (family === "skill") {
+    const name = String(row.detail || "").trim();
+    return name ? `加载技能 ${name}` : "加载技能";
+  }
+  return row.label;
+}
+
+/**
+ * 进行中脸上的阶段。收尾仍走 `toolGroupSummary`，这里只改还在跑的那一句。
+ */
+export function liveStageTitle(row: ProjectActionRow): string {
+  const family = toolFamily(row.tool);
+  const name = String(row.detail || "").trim();
+  if (family === "skill") {
+    return name ? `正在加载技能 ${name}` : "正在加载技能";
+  }
+  if (family === "shell") return "正在运行命令";
+  if (family === "preview") return "正在打开预览";
+  if (family === "create") return "正在创建工程";
+  return "";
+}
+
 function countWhere(
   rows: readonly ProjectActionRow[],
   tools: ReadonlySet<string>
@@ -161,7 +232,10 @@ export function toolGroupSummary(rows: readonly ProjectActionRow[]): string {
  * 工程档做出来的是网页工作台，所以构建/预览跟 Manus 那两章对齐。
  * 回滚单独成章——把它算进「构建」会把一次 restore 说成还在搭。
  */
-export function chapterTitleForRows(rows: readonly ProjectActionRow[]): string {
+export function chapterTitleForRows(
+  rows: readonly ProjectActionRow[],
+  deliverableKind?: string
+): string {
   const tools = rows.map(row => row.tool);
   const restored = tools.some(tool => tool === "project_restore");
   const browsing = tools.some(
@@ -199,15 +273,14 @@ export function chapterTitleForRows(rows: readonly ProjectActionRow[]): string {
       tool === "project_search"
   );
   if (restored && !building) return "回滚";
+  if (isOfficeFileDeliverable(deliverableKind)) {
+    if (browsing && !building) return "查看文件";
+    if (building) return "制作文件";
+    return "";
+  }
   if (browsing && !building) return "预览网页";
   if (building) return "构建网页";
   return "";
-}
-
-function createSucceeded(rows: readonly ProjectActionRow[]): boolean {
-  return rows.some(
-    row => row.tool === "project_create" && row.status === "done"
-  );
 }
 
 /**
@@ -240,7 +313,8 @@ function isStorySpeech(
  *   中间那句「接着改筛选」会跑到第一组工具前面——正是三桶并排的病。
  */
 export function deriveSessionStory(
-  turn: UiTurn | null | undefined
+  turn: UiTurn | null | undefined,
+  options?: { deliverableKind?: string }
 ): SessionStoryBlock[] {
   const steps = turn?.steps;
   if (!Array.isArray(steps)) return [];
@@ -248,21 +322,13 @@ export function deriveSessionStory(
   const blocks: SessionStoryBlock[] = [];
   const allRows: ProjectActionRow[] = [];
   let current: ProjectActionRow[] = [];
-  let emittedProduct = false;
   let lastChapter = "";
-
-  const emitProduct = () => {
-    if (emittedProduct || !createSucceeded(allRows)) return;
-    const anchor = current[0]?.id || allRows[0]?.id || "product";
-    blocks.push({ kind: "product", id: `product:${anchor}` });
-    emittedProduct = true;
-  };
 
   const flushTools = () => {
     if (!current.length) return;
     const rows = current;
     current = [];
-    const chapter = chapterTitleForRows(rows);
+    const chapter = chapterTitleForRows(rows, options?.deliverableKind);
     const showChapter = Boolean(chapter && chapter !== lastChapter);
     if (chapter) lastChapter = chapter;
     blocks.push({
@@ -273,7 +339,6 @@ export function deriveSessionStory(
       summary: toolGroupSummary(rows),
       rows,
     });
-    emitProduct();
   };
 
   for (const step of steps) {
@@ -292,13 +357,6 @@ export function deriveSessionStory(
 
     const created = applyProjectChip(allRows, step);
     if (created) current.push(created);
-    else if (
-      !emittedProduct &&
-      createSucceeded(allRows) &&
-      !current.some(row => row.tool === "project_create")
-    ) {
-      emitProduct();
-    }
   }
   flushTools();
   return blocks;
@@ -375,8 +433,11 @@ export function toolGroupFace(
   const running = rows.some(row => row.status === "running");
   const live = running && !opts.finalized;
   if (live) {
+    const current =
+      rows.find(row => row.status === "running") ?? rows[rows.length - 1];
+    const staged = current ? liveStageTitle(current) : "";
     return {
-      title: latestToolRowTitle(rows),
+      title: staged || latestToolRowTitle(rows),
       meta: `${done + failed}/${total}`,
       running: true,
     };

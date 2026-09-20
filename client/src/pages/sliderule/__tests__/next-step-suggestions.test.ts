@@ -52,6 +52,31 @@ describe("两个 surface 各管各的", () => {
   });
 });
 
+describe("Manus 空圈整行（2026-09-19）", () => {
+  it("每条是聊天图标 + 整句 + 箭头，不许再铺白底、方标或空圈", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const src = fs
+      .readFileSync(
+        path.resolve(__dirname, "../NextStepSuggestions.tsx"),
+        "utf8"
+      )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    expect(src).toMatch(/MessageSquare/);
+    expect(src).toMatch(/ArrowRight/);
+    expect(src).not.toMatch(/CircleArrowRight/);
+    expect(src).not.toMatch(/MianTuanMark/);
+    // 反向：白底 + 描边叠三条，又是用户圈的那张白卡。
+    expect(src).not.toMatch(/bg-white/);
+    expect(src).not.toMatch(/border-\[#ececee\]/);
+    expect(src).not.toMatch(/overflow-hidden rounded-xl border/);
+    // 反向：空心圆 / 方标退回去，用户圈的就是它们。
+    expect(src).not.toMatch(/rounded-full border/);
+    expect(src).not.toMatch(/miantuan-mark/);
+  });
+});
+
 describe("通电（§3）", () => {
   it("建议行挂在结果卡下面，且只挂最新一轮", async () => {
     const fs = await import("node:fs");

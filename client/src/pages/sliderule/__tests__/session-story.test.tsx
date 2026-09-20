@@ -20,7 +20,8 @@ beforeAll(() => {
 function chip(
   id: string,
   tool: string,
-  progress: "acting" | "completed" | "failed"
+  progress: "acting" | "completed" | "failed",
+  detail?: string
 ): TurnStep {
   return {
     id,
@@ -30,6 +31,7 @@ function chip(
     label: tool,
     realLlm: false,
     progressType: progress,
+    ...(detail ? { projectDetail: detail } : {}),
   };
 }
 
@@ -118,7 +120,7 @@ describe("完成轮默认折起过程，点开才摊", () => {
       el.querySelectorAll<HTMLButtonElement>('[data-testid="project-task-row"]');
     expect(
       el
-        .querySelector('[data-testid="project-task-checklist"]')
+        .querySelector('[data-testid="session-story-timeline"]')
         ?.parentElement?.hasAttribute("hidden")
     ).toBe(true);
     expect(rows().length).toBe(3);
@@ -129,7 +131,7 @@ describe("完成轮默认折起过程，点开才摊", () => {
     });
     expect(
       el
-        .querySelector('[data-testid="project-task-checklist"]')
+        .querySelector('[data-testid="session-story-timeline"]')
         ?.parentElement?.hasAttribute("hidden")
     ).toBe(false);
     const failed = [...rows()].filter(
@@ -193,6 +195,33 @@ describe("完成轮默认折起过程，点开才摊", () => {
     expect(summary?.getAttribute("aria-expanded")).toBe("true");
   });
 
+  it("开口里的无空格 token 必须能折，不能把对话栏顶出横向滚动条", async () => {
+    const token =
+      "pop-bf815cdd6794439faffe87cec5fca58dcomponents.call:default_api:todo_write{merge:true,todos:[{content:x}]}";
+    const el = await mount(
+      <SessionStory
+        turn={turnOf({
+          status: "streaming",
+          durationMs: undefined,
+          steps: [
+            {
+              id: "s1",
+              kind: "model_speech",
+              text: `先看 ${token} 再动手。`,
+            },
+            chip("c1", "project_create", "acting"),
+          ],
+        })}
+        streaming
+      />
+    );
+    const p = el.querySelector('[data-testid="sliderule-model-speech"] p');
+    expect(p?.textContent).toContain(token);
+    expect(p?.className).toMatch(/\[overflow-wrap:anywhere\]/);
+    expect(p?.className).toMatch(/whitespace-pre-wrap/);
+    expect(p?.className).not.toBe("whitespace-pre-wrap");
+  });
+
   it("反向：还在跑的轮次不折过程", async () => {
     const el = await mount(
       <SessionStory
@@ -214,5 +243,69 @@ describe("完成轮默认折起过程，点开才摊", () => {
         ?.parentElement?.hasAttribute("hidden")
     ).toBe(false);
     expect(el.textContent).toContain("创建工程");
+  });
+
+  it("结果卡贴在过程折页后面，不许插进创建和下一段开口之间", async () => {
+    const el = await mount(
+      <SessionStory
+        turn={turnOf({
+          steps: [
+            { id: "s1", kind: "model_speech", text: "我先把工程搭起来。" },
+            chip("c1", "project_create", "completed"),
+            chip("l1", "project_list", "completed"),
+            { id: "s2", kind: "model_speech", text: "接着改筛选。" },
+            chip("p1a", "project_patch", "acting"),
+            chip("p1b", "project_patch", "completed"),
+          ],
+        })}
+        streaming={false}
+        productSlot={<div>番茄钟结果卡</div>}
+      />
+    );
+    const body = el.querySelector('[data-testid="session-story-body"]');
+    const product = el.querySelector('[data-testid="session-story-product"]');
+    expect(product?.textContent).toContain("番茄钟结果卡");
+    expect(body?.contains(product), "卡不许进过程中间").toBe(false);
+    expect(product?.closest("[hidden]"), "折着过程时卡还在").toBeNull();
+    expect(body?.parentElement?.hasAttribute("hidden")).toBe(true);
+    const texts = [...(body?.children ?? [])].map(node =>
+      (node.textContent || "").replace(/\s+/g, " ").trim()
+    );
+    expect(texts.some(text => text.includes("番茄钟结果卡"))).toBe(false);
+    expect(texts.join("|")).toMatch(/搭起来.*创建工程.*接着改筛选/);
+    // 变异：flushTools 后再插 product 进 body → contains 为真，本条红。
+  });
+
+  it("工具组是竖轨时间线；技能行能看见名字", async () => {
+    const el = await mount(
+      <SessionStory
+        turn={turnOf({
+          status: "streaming",
+          durationMs: undefined,
+          steps: [
+            { id: "s1", kind: "model_speech", text: "先加载设计技能。" },
+            chip("sk", "skill", "acting", "frontend-design"),
+            chip("c1", "project_create", "completed"),
+            chip("sh", "shell_exec", "completed", "pnpm run build"),
+          ],
+        })}
+        streaming
+      />
+    );
+    expect(el.querySelector('[data-testid="session-story-timeline"]')).not.toBeNull();
+    expect(el.querySelectorAll('[data-testid="session-story-timeline-dot"]').length).toBeGreaterThan(0);
+    expect(el.textContent).toContain("frontend-design");
+    expect(el.textContent).toContain("加载技能");
+    expect(
+      el.querySelector('[data-testid="project-task-row"][data-task-id="skill"]')
+        ?.getAttribute("data-family")
+    ).toBe("skill");
+    expect(el.textContent).toContain("创建工程");
+    const command = el.querySelector('[data-testid="session-story-command"]');
+    expect(command?.textContent).toContain("pnpm run build");
+    const summary = el.querySelector('[data-testid="session-story-tools-summary"]');
+    expect(summary?.textContent).toContain("正在加载技能");
+    expect(summary?.textContent).toContain("frontend-design");
+    expect(summary?.textContent).not.toContain("编辑了");
   });
 });

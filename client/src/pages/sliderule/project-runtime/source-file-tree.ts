@@ -86,3 +86,46 @@ export function sourceTreeDirPaths(nodes: SourceTreeNode[]): string[] {
   walk(nodes);
   return out;
 }
+
+export type SourceTreeIconKind =
+  | "folder"
+  | "folder-open"
+  | "code"
+  | "html"
+  | "css"
+  | "json"
+  | "text"
+  | "image"
+  | "file";
+
+/**
+ * 树上那颗图标。只认名字和开合，不按路径关键词猜（`game.tsx` 仍是 code）。
+ *
+ * 无扩展 / `.env` 这种点在开头的，一律 file——别把隐藏文件当成类型。
+ */
+export function sourceTreeIconKind(
+  name: string,
+  kind: "file" | "dir",
+  open = false
+): SourceTreeIconKind {
+  if (kind === "dir") return open ? "folder-open" : "folder";
+  const base = String(name || "").trim();
+  const dot = base.lastIndexOf(".");
+  if (dot <= 0 || dot === base.length - 1) return "file";
+  const ext = base.slice(dot + 1).toLowerCase();
+  if (ext === "ts" || ext === "tsx" || ext === "js" || ext === "jsx") return "code";
+  if (ext === "html") return "html";
+  if (ext === "css") return "css";
+  if (ext === "json") return "json";
+  if (ext === "md") return "text";
+  if (
+    ext === "png" ||
+    ext === "jpg" ||
+    ext === "jpeg" ||
+    ext === "svg" ||
+    ext === "webp"
+  ) {
+    return "image";
+  }
+  return "file";
+}
