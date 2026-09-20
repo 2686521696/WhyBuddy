@@ -144,6 +144,8 @@ modules = [
   # 交付面可用性：只吃 HTML 字符串与 SPEC 字典，services 里谁都不依赖 → 叶子。
   # 跟 gate_health 同一个理由被闭环判定顶层 import。
   "services.deliverable_surface",
+  # 批准计划上的交付物类别。只吃计划字典，不读会话、不读工程库 → 叶子。
+  "services.deliverable_kind",
   # 闸的体检：谁都不依赖（只吃「结论 + 指纹」两个字符串），所以是叶子。
   # 它反过来被闭环判定顶层 import——叶子层的意义就在这儿：谁都能安全引它。
   "services.gate_health",
@@ -188,6 +190,10 @@ modules = [
   # （配置来源是产品决定，见模块头注）。
   "services.hook_events",
   "services.closed_tools",
+  # 技能商店：zip 开箱 / OSS 字节 / 控制面短目录。三个都是叶子。
+  "services.skill_package_format",
+  "services.skill_blob_store",
+  "services.control_skills",
   "services.session_events",
   "services.workflow_registry",
   "services.workflow_journal",
@@ -325,6 +331,7 @@ modules = [
   # 不反向调用 routes 或控制循环；归组在 persist component。
   "services.project_store",
   "services.project_application_data",
+  "services.project_office_artifacts",
   "services.project_export",
   "services.project_verification_store",
   "services.project_preview_access",
@@ -366,6 +373,9 @@ modules = [
   "services.html_bindings",
   "services.html_structure",
   "services.identity_store",
+  # 技能货架借 identity 执行器；开箱文件图给 runtime 写沙盒。
+  "services.skill_catalog_store",
+  "services.skill_hydrate",
   "services.intake_judge",
   "services.mailer",
   "services.model_assembly",
@@ -650,6 +660,7 @@ modules = [
   "routes.project_runtime",
   "routes.project_sources",
   "routes.project_preview",
+  "routes.skill_store",
   "routes.sliderule",
   "routes.sliderule_full",
   "routes.tasks",
@@ -665,6 +676,7 @@ modules = [
   "services.auth_service",
   "services.auth_tokens",
   "services.identity_store",
+  "services.skill_catalog_store",
   "services.project_actor_access",
   "services.mailer",
 ]
@@ -811,6 +823,7 @@ modules = [
   "services.persistence",
   "services.project_store",
   "services.project_application_data",
+  "services.project_office_artifacts",
   "services.project_export",
   "services.project_source_operations",
   "services.project_delivery",
@@ -834,6 +847,7 @@ why = "工程运行编排：把持久源码、租约和 E2B provider 组合成�
   may_depend_on = ["platform", "persist", "workspace", "identity"]
   modules = [
     "services.project_runtime",
+    "services.skill_hydrate",
     "services.project_runtime_worker",
     "services.project_source_sync",
     "services.project_browser_verification",
@@ -875,6 +889,10 @@ modules = [
   "models.project_runtime",
   "services.archetype_legal",
   "services.closed_tools",
+  "services.skill_package_format",
+  "services.skill_blob_store",
+  "services.control_skills",
+  "services.deliverable_kind",
   "services.session_events",
   "services.workflow_registry",
   "services.workflow_journal",
