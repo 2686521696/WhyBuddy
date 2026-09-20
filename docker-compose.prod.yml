@@ -53,11 +53,18 @@ services:
     environment:
       PORT: 9700
       SLIDE_RULE_INTERNAL_KEY: ${SLIDE_RULE_INTERNAL_KEY:-dev-slide-rule-internal}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-sliderule}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-sliderule_minio_change_me}
+      S3_BUCKET: ${S3_BUCKET:-sliderule-skills}
     volumes:
       - sliderule-python-data:/app/data
     networks:
       - default
       - postgres-internal
+    depends_on:
+      minio:
+        condition: service_healthy
     healthcheck:
       test:
         [
@@ -151,11 +158,37 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # 技能包货仓。API 只给 compose 内网（python 走 http://minio:9000），
+  # 9000 不映射到公网。控制台只绑 127.0.0.1，SSH 隧道再看。
+  minio:
+    # Docker Hub `minio/minio` 在这台生产机上 pull 被拒；Quay 同官方镜像。
+    image: quay.io/minio/minio:latest
+    container_name: sliderule-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-sliderule}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-sliderule_minio_change_me}
+    volumes:
+      - sliderule-minio-data:/data
+    ports:
+      - "127.0.0.1:9001:9001"
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    restart: unless-stopped
+
 volumes:
   sliderule-mysql-data:
     name: sliderule-mysql-data
   sliderule-python-data:
     name: sliderule-python-data
+  sliderule-minio-data:
+    name: sliderule-minio-data
 
 networks:
   postgres-internal:
