@@ -16,7 +16,7 @@ from services import persistence, rehearsal_control as control
 from services.control_checkpoint import ControlRunStopped
 from services.control_run_service import ControlRunService, RunCheckpoint
 import services.control_run_service as control_run_service_module
-from services.control_run_store import ControlRunConflict, ControlRunStore, TERMINAL
+from services.control_run_store import ControlRunConflict, ControlRunStore, ControlRunUnavailable, TERMINAL
 from services.identity_store import User
 from services.project_authority import approved_reference
 from services.project_creation import load_authorized_session
@@ -66,6 +66,34 @@ async def observed(service, run_id, predicate):
             return record
         await asyncio.sleep(0.005)
     raise AssertionError("control run did not reach the expected observation")
+
+
+def test_submit_during_circuit_does_not_enqueue(env):
+    """冷却期内第二次 submit 不再打上游、也不排队。"""
+    from sliderule_llm.client import LlmError
+    from sliderule_llm.gateway_circuit import note_failure, reset_gateway_circuit
+
+    reset_gateway_circuit()
+    err = LlmError(
+        'gateway timeout (524): {"error":{"message":"All available accounts exhausted"'
+        ',"type":"server_error"}}',
+        status=524,
+        transient=True,
+    )
+    note_failure(err)
+    note_failure(err)
+    service = env.service()
+    before = env.store.list_runnable()
+
+    async def run():
+        with pytest.raises(ControlRunUnavailable, match="gateway circuit open"):
+            await service.submit(
+                six_fields(env.state.sessionId, "继续"), env.owner, "cool-down",
+            )
+
+    asyncio.run(run())
+    assert env.store.list_runnable() == before
+    reset_gateway_circuit()
 
 
 def test_http_is_durable_idempotent_and_owner_filtered(env, monkeypatch):
@@ -586,6 +614,85 @@ def test_settling_after_waiting_operation_opens_a_new_round(env, monkeypatch):
     asyncio.run(run())
 
 
+def test_sampling_interrupt_opens_a_new_round(env, monkeypatch):
+    """2026-09-19 真机 ctr-372375…：checkpoint 停在 sampling，
+    resume 守卫只认 model/tools → 黄条「控制面未返回结果」。
+
+    抄 grok MidTurnAbort：不重放那次 HTTP 采样，补齐 dangling，开新一轮。
+    反向：entry / dispatching 仍走 uncertain 那条，不许借这条重放工具。
+    """
+    import time
+
+    from services.control_budget import PROJECT_BUDGET
+
+    calls = []
+
+    async def model(messages, **kwargs):
+        calls.append(messages)
+        return llm_text("验证失败我接着看现场。")
+
+    monkeypatch.setattr(control, "_invoke_control_llm", model)
+    record = env.store.submit(
+        env.state.sessionId, env.owner, "sampling-wake",
+        six_fields(env.state.sessionId, "做登录页"),
+    )
+    claimed = env.store.claim(record["runId"], "old-worker", 3)
+    now = time.time()
+    env.store.save_checkpoint(record["runId"], "old-worker", claimed["generation"], {
+        "schemaVersion": 1,
+        "phase": "sampling",
+        "round": 50,
+        "messages": [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "做登录页"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{
+                    "id": "call-verify",
+                    "type": "function",
+                    "function": {"name": "project_verify", "arguments": "{}"},
+                }],
+            },
+        ],
+        "startedAt": now,
+        "cheapTokens": 3307335,
+        "retrySpent": 0,
+        "retryStartedAt": now,
+        "operationIds": [],
+        "pendingCalls": [],
+        "content": "",
+        "budgetPolicy": PROJECT_BUDGET.to_wire(),
+        "options": {
+            "user_text": "做登录页",
+            "installed_skills": None,
+            "active_connectors": None,
+            "preferred_device": None,
+            "design_system_id": None,
+            "original_goal": "Build a small project",
+            "empty_text": None,
+            "tools": None,
+        },
+    })
+    env.store.suspend(record["runId"], "old-worker", claimed["generation"])
+
+    async def run():
+        service = env.service()
+        await service.start()
+        try:
+            final = await settled(service, record["runId"])
+            assert final["error"] != "control_reconciliation_required", final
+            assert final["error"] != "control_checkpoint_unavailable", final
+            assert final["status"] == "completed", final
+            assert calls, "sampling 中断没有开新一轮，模型根本没被再调用"
+            flat = json.dumps(calls[0], ensure_ascii=False)
+            assert "采样中断" in flat
+            assert "sampling_interrupted" in flat
+        finally:
+            await service.shutdown()
+    asyncio.run(run())
+
+
 def test_explicit_cancel_stops_sampling_but_does_not_submit_another_tool(env, monkeypatch):
     async def run():
         started, model_closed = asyncio.Event(), asyncio.Event()
@@ -1030,5 +1137,56 @@ def test_真机_批准后墙钟截断不能写成目标完成(env, monkeypatch):
             assert final["goal"]["status"] != "completed"
         finally:
             await service.shutdown()
+
+    asyncio.run(run())
+
+
+def test_owned_model_sample_retries_unavailable_then_keeps_going():
+    """存档抖一下不许把正在飞的采样掐死。租约丢了仍立刻停。"""
+    from services.control_checkpoint import (
+        ControlRunStopped, current_checkpoint, owned_model_sample,
+    )
+
+    class Port:
+        checkpoint = None
+
+        def __init__(self):
+            self.hits = 0
+
+        def guard(self):
+            self.hits += 1
+            if self.hits < 3:
+                raise ControlRunStopped("control_checkpoint_unavailable")
+
+        def fence(self):
+            return {}
+
+        async def save(self, checkpoint):
+            return None
+
+    async def run():
+        port = Port()
+        token = current_checkpoint.set(port)
+        try:
+            async def model():
+                await asyncio.sleep(0.3)
+                return "ok"
+            assert await owned_model_sample(model()) == "ok"
+            assert port.hits >= 3
+        finally:
+            current_checkpoint.reset(token)
+
+        lost = Port()
+        def lose():
+            raise ControlRunStopped("control_lease_lost")
+        lost.guard = lose
+        token = current_checkpoint.set(lost)
+        try:
+            async def model():
+                await asyncio.Future()
+            with pytest.raises(ControlRunStopped, match="control_lease_lost"):
+                await owned_model_sample(model())
+        finally:
+            current_checkpoint.reset(token)
 
     asyncio.run(run())

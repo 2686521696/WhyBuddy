@@ -35,12 +35,38 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Sequence, Tuple
 
 COMPACT_NOTICE_PREFIX = "【会话压缩】"
-_TOOL_STUB = json.dumps(
-    {"compacted": True, "note": "较早的工具输出已折叠，需要时请重新读取文件。"},
-    ensure_ascii=False,
-)
 #: 最近几条工具结果先留着——下一发 patch 往往还要用。
 _KEEP_TAIL_TOOLS = 2
+#: 这些工具的正文是磁盘上的东西。立刻 snip，不等窗口 60%。
+_POINTER_TOOLS = frozenset({
+    "file_read", "read_file", "project_read", "skill", "bash", "shell_exec",
+})
+
+
+def tool_result_stub(tool_name: str = "tool", path: str | None = None) -> str:
+    """可逆压缩桩：告诉模型去哪查，不把原文留在 messages 里。"""
+    body: Dict[str, Any] = {
+        "compacted": True,
+        "tool": str(tool_name or "tool"),
+        "hint": "用 file_read/grep 再取",
+    }
+    if path:
+        body["path"] = path
+    return json.dumps(body, ensure_ascii=False)
+
+
+def path_from_tool_content(content: Any) -> str | None:
+    try:
+        body = json.loads(content) if not isinstance(content, dict) else content
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(body, dict):
+        return None
+    for key in ("path", "file", "logPath"):
+        text = str(body.get(key) or "").strip()
+        if text:
+            return text
+    return None
 
 
 @dataclass(frozen=True)
@@ -81,6 +107,12 @@ def _tool_name(messages: Sequence[Dict[str, Any]], index: int) -> str:
     return "tool"
 
 
+def _stub_row(messages: Sequence[Dict[str, Any]], index: int) -> str:
+    name = _tool_name(messages, index)
+    path = path_from_tool_content(messages[index].get("content"))
+    return tool_result_stub(name, path)
+
+
 def _notice(folded: int, tokens_after: int, max_tokens: int, tools: Sequence[str]) -> Dict[str, Any]:
     names = "、".join(tools[:8]) if tools else "工具输出"
     extra = "…" if len(tools) > 8 else ""
@@ -119,10 +151,11 @@ def compact_messages(
     def stub(index: int) -> None:
         row = out[index]
         content = str(row.get("content") or "")
-        if len(content) <= len(_TOOL_STUB) + 8:
+        stub_text = _stub_row(out, index)
+        if len(content) <= len(stub_text) + 8:
             return
         folded_names.append(_tool_name(out, index))
-        row["content"] = _TOOL_STUB
+        row["content"] = stub_text
 
     for index in tool_indices:
         if estimate_message_tokens(out) <= target:
@@ -146,3 +179,35 @@ def compact_messages(
     noticed.insert(insert_at, _notice(len(folded_names), after, max_tokens, folded_names))
     after = estimate_message_tokens(noticed)
     return noticed, CompactReport(True, len(folded_names), before, after, tuple(folded_names))
+
+
+def microcompact_messages(messages: Sequence[Any]) -> Tuple[List[Dict[str, Any]], CompactReport]:
+    """立刻折叠较早的 file_read / skill / bash 正文，不等窗口阈值。
+
+    磁盘是权威。旧工具输出只留路径桩，最近两条完整结果留给下一发对照。
+    不另插【会话压缩】——那是窗口档的事。fail-open：折不动就原样返回。
+    """
+    source = [dict(row) if isinstance(row, dict) else {"role": "user", "content": str(row)}
+              for row in messages]
+    before = estimate_message_tokens(source)
+    bulky = [
+        i for i, row in enumerate(source)
+        if row.get("role") == "tool" and _tool_name(source, i) in _POINTER_TOOLS
+    ]
+    protected = set(bulky[-_KEEP_TAIL_TOOLS:])
+    folded_names: List[str] = []
+    out = source
+    for index in bulky:
+        if index in protected:
+            continue
+        row = out[index]
+        stub_text = _stub_row(out, index)
+        content = str(row.get("content") or "")
+        if len(content) <= len(stub_text) + 8:
+            continue
+        folded_names.append(_tool_name(out, index))
+        row["content"] = stub_text
+    after = estimate_message_tokens(out)
+    if not folded_names:
+        return source, CompactReport(False, 0, before, before)
+    return out, CompactReport(True, len(folded_names), before, after, tuple(folded_names))

@@ -46,3 +46,4 @@ def test_lifespan_does_not_call_load_all():
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             assert node.func.id != "load_all", "lifespan still hydrates every session blob"
     assert "payloads deferred until first request" in src
+    assert "startup_budget_line" in src

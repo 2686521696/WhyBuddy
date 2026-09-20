@@ -98,6 +98,7 @@ from routes.sliderule_full import router as sliderule_full_router
 from routes.project_runtime import router as project_runtime_router
 from routes.project_sources import router as project_sources_router
 from routes.project_preview import router as project_preview_router
+from routes.skill_store import router as skill_store_router
 from routes.agent_loop import router as agent_loop_router
 from routes.rag import router as rag_router
 # 只为触发 import 期自检：种子骨架若引用了未放开生成的区块、或把区块摆进不
@@ -121,6 +122,7 @@ from services.project_preview_config import preview_configuration_enabled
 from services.project_preview_runtime import ProjectPreviewRuntime
 from services.control_run_store import ControlRunStore
 from services.control_run_service import ControlRunService
+from services.control_budget import startup_budget_line
 from services.project_store import get_project_store
 from models.v5_state import V5SessionState
 
@@ -381,6 +383,9 @@ async def lifespan(app: FastAPI):
     # 叠 HTTPS 网关。这条又在 slide_rule_session **import** 时跑过一遍，
     # `--reload` 下 worker 再来一次。dev:all 卡在 Application startup complete
     # 就是在等这个。payload 改到第一次 GET /sessions 再拉。
+    # ⚠ 2026-09-20：源码是 v3、活进程仍按 v2 花。启动必须亮这一进程
+    #   实际 import 到的档，不能只看仓库里的 control_budget.py。
+    print(startup_budget_line())
     print("[startup] session archive: payloads deferred until first request")
     _warm_storage_backends()
     # skill.invoke / mcp.call production runtimes (node-bridge strangler; see
@@ -466,6 +471,7 @@ app.include_router(sliderule_full_router, prefix="/api/sliderule")
 app.include_router(project_runtime_router, prefix="/api/sliderule")
 app.include_router(project_sources_router, prefix="/api/sliderule")
 app.include_router(project_preview_router, prefix="/api/sliderule")
+app.include_router(skill_store_router, prefix="/api/sliderule")
 app.include_router(blueprint_spec_docs_router, prefix="/api/blueprint/spec-documents")
 app.include_router(blueprint_jobs_router, prefix="/api/blueprint/jobs")
 

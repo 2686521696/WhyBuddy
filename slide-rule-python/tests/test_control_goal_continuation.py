@@ -108,6 +108,11 @@ def test_反向_预算烧完就停下来问人():
     assert continuation_budget_left(goal(continuations=MAX_CONTINUATIONS + 5)) == 0
 
 
+def test_续跑次数跟工程档一样不设限():
+    """变异：把 MAX_CONTINUATIONS 改回 8 → 本条红。"""
+    assert MAX_CONTINUATIONS >= 10_000
+
+
 def test_预算按真实续跑次数递减():
     assert continuation_budget_left(goal()) == MAX_CONTINUATIONS
     assert continuation_budget_left(goal(continuations=3)) == MAX_CONTINUATIONS - 3
@@ -188,6 +193,7 @@ def test_真机1_已收尾回合的checkpoint要能转成新一轮的起点():
     # 第三道同理：每次续跑都清零 = 每次白送它一段「只读不写」的余量。
     assert out["readonlyStreak"] == {"rounds": 4, "nudged_at": 3}
     assert out["operationIds"] == ["op-1"]
+    assert "budgetPolicy" not in out
 
 
 def test_真机1反向_没有消息的checkpoint不许硬转():
@@ -317,3 +323,71 @@ def test_后台命令叫醒词拿不到结果时不编exit_code():
     text = operation_settled_notice([])
     assert "没有可读的操作结果" in text
     assert "exit code" not in text
+
+
+def test_采样中断要补齐dangling并转成新一轮():
+    """2026-09-19 真机停在 phase=sampling。抄 grok repair_dangling + MidTurnAbort。"""
+    from services.control_goal_continuation import sampling_interrupted_checkpoint
+
+    stuck = {
+        "schemaVersion": 1,
+        "phase": "sampling",
+        "round": 50,
+        "messages": [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "做登录页"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call-verify",
+                        "type": "function",
+                        "function": {"name": "project_verify", "arguments": "{}"},
+                    }
+                ],
+            },
+        ],
+        "startedAt": 1.0,
+        "cheapTokens": 3307335,
+        "pendingCalls": [],
+        "stationarity": {"run_len": 1},
+    }
+    out = sampling_interrupted_checkpoint(stuck)
+    assert out is not None
+    assert out["phase"] == "model"
+    assert out["round"] == 0 and out["cheapTokens"] == 0
+    assert out["stationarity"] == {"run_len": 1}
+    assert any(
+        item.get("role") == "tool"
+        and item.get("tool_call_id") == "call-verify"
+        and "sampling_interrupted" in str(item.get("content") or "")
+        for item in out["messages"]
+    )
+    assert "采样中断" in out["messages"][-1]["content"]
+
+
+def test_采样中断反向_已有结果不许再编一条():
+    from services.control_goal_continuation import repair_dangling_tool_calls
+
+    messages = [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"id": "call-1", "function": {"name": "project_read"}}],
+        },
+        {"role": "tool", "tool_call_id": "call-1", "content": "already"},
+    ]
+    out = repair_dangling_tool_calls(messages)
+    tools = [item for item in out if item.get("role") == "tool"]
+    assert len(tools) == 1 and tools[0]["content"] == "already"
+
+
+def test_采样中断反向_dispatching不许借这条重放工具():
+    from services.control_goal_continuation import sampling_interrupted_checkpoint
+
+    assert sampling_interrupted_checkpoint({
+        "phase": "dispatching",
+        "messages": [{"role": "user", "content": "x"}],
+    }) is None
+    assert sampling_interrupted_checkpoint({"phase": "sampling", "messages": []}) is None

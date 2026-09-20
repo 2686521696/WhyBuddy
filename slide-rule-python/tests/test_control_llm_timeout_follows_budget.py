@@ -48,6 +48,7 @@ from services.control_budget import (
 from services.project_creation import create_session_project
 from services.rehearsal_control import (MAX_CHEAP_TOKENS, MAX_REQUEST_SECONDS,
     MAX_TOOL_ROUNDS, MAX_WALL_SECONDS)
+from services.slide_rule_session import load_session, save_session
 from test_control_project_tools import post, setup  # noqa: F401
 
 pytest.importorskip("fastapi")
@@ -86,12 +87,10 @@ def test_工程档的每一发请求都拿到单发超时(setup, monkeypatch):
     assert PROJECT_BUDGET.request_timeout_ms() == 3_600_000
 
 
-def test_点火前是对话档_建完工程当场切到工程档(setup, monkeypatch):
-    """**切换要发生在回合中途**，跟 token 预算那条切换是同一个时刻。
+def test_批准后第一发就是工程档超时(setup, monkeypatch):
+    """ExitPlanMode：批准后不必等 project_create，单发超时就是工程档。
 
-    这是最能说明"跟着 profile 走"的一条：同一个回合里前后两发拿到不同的数。
-    变异：把 `max_request_seconds` 做成一个全局常量（不挂在 profile 上）
-    → 前后两发一样，本条红。
+    变异：eligible 仍要等到工程指针 → 第一发退回对话档 600s，本条红。
     """
     harness = ControlHarness(monkeypatch)
 
@@ -105,20 +104,19 @@ def test_点火前是对话档_建完工程当场切到工程档(setup, monkeypa
     post(setup.state)
 
     seen = _timeouts(harness)
-    assert len(seen) >= 2, seen
-    # 第一发还在点火前的对话档
-    assert seen[0] == CONVERSATION_BUDGET.request_timeout_ms() == 600_000
-    # project_create 成功之后切档
-    assert seen[-1] == PROJECT_BUDGET.request_timeout_ms() == 3_600_000
-    assert seen[0] != seen[-1], "档没切，说明超时没跟着 budget 走"
+    assert seen
+    assert seen[0] == PROJECT_BUDGET.request_timeout_ms() == 3_600_000
+    assert all(item == PROJECT_BUDGET.request_timeout_ms() for item in seen)
 
 
-def test_反向_对话回合不许被顺手放宽(setup, monkeypatch):
-    """没进工程档的普通对话回合仍是 45 秒。
+def test_反向_未批准对话回合不许被顺手放宽(setup, monkeypatch):
+    """没批准的普通对话回合仍是对话档超时。
 
-    放宽单发超时是有代价的（一发挂住就占住一个 producer 45→120 秒），
-    只给真的需要读源码的那一档。
+    放宽单发超时是有代价的，只给批准后的执行档。
     """
+    state = load_session(setup.state.sessionId)
+    state.controlTranscript = []
+    save_session(state)
     harness = ControlHarness(monkeypatch)
     harness.llm_impl = lambda messages, **kw: llm_text("你好。")
     post(setup.state)

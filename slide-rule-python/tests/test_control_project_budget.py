@@ -19,7 +19,7 @@ from conftest import TEST_USER_ID
 from control_turn_support import ControlHarness, llm_text, llm_tool, six_fields
 from services import rehearsal_control as control
 from services.control_budget import (
-    CONVERSATION_BUDGET, CONVERSATION_BUDGET_V2,
+    CONVERSATION_BUDGET, CONVERSATION_BUDGET_V1, CONVERSATION_BUDGET_V2,
     PROJECT_BUDGET, PROJECT_BUDGET_V1, PROJECT_BUDGET_V2,
 )
 from services.control_checkpoint import ControlRunStopped
@@ -84,16 +84,94 @@ def test_measured_status_read_patch_usage_reaches_real_source_write(setup, monke
     assert measured[-1]["round"] == 3
     assert all(abs(cp["startedAt"] - measured[0]["startedAt"]) < 0.5 for cp in measured)
     if not precreated:
-        assert snapshots[0]["budgetPolicy"]["maxTokens"] == CONVERSATION_BUDGET.max_tokens
+        # ExitPlanMode：批准后这一发就走 project-v3，不等 project_create。
+        assert snapshots[0]["budgetPolicy"] == PROJECT_POLICY
         assert any(cp["budgetPolicy"] == PROJECT_POLICY and cp["cheapTokens"] == 3015 for cp in snapshots)
     assert not harness.helper_calls
 
 
+def test_new_durable_approved_run_persists_project_v3_not_control_v2(env, monkeypatch):
+    """真机 PPT 七次 durable 全是 control-v2。新会话第一份带政策的 checkpoint 必须是 v3。"""
+    snapshots = []
+    original = RunCheckpoint.save
+
+    async def save(port, checkpoint):
+        snapshots.append(copy.deepcopy(checkpoint))
+        return await original(port, checkpoint)
+
+    async def model(*_a, **_kw):
+        return llm_text("先看计划再动手。")
+
+    monkeypatch.setattr(RunCheckpoint, "save", save)
+    monkeypatch.setattr(control, "_invoke_control_llm", model)
+
+    async def run():
+        service = env.service()
+        await service.start()
+        try:
+            record = await service.submit(
+                six_fields(env.state.sessionId, "继续做PPT"),
+                env.owner,
+                "live-v3-socket",
+            )
+            await settled(service, record["runId"])
+        finally:
+            await service.shutdown()
+
+    asyncio.run(run())
+    modeled = [cp for cp in snapshots if isinstance(cp.get("budgetPolicy"), dict)]
+    assert modeled, [cp.get("phase") for cp in snapshots[:6]]
+    assert modeled[0]["budgetPolicy"]["profile"] == "project-v3"
+    assert modeled[0]["budgetPolicy"]["maxTokens"] == 200_000
+    assert all(cp["budgetPolicy"]["profile"] != "control-v2" for cp in modeled)
+
+
+def test_new_durable_unapproved_run_persists_control_v3_not_v2(env, monkeypatch):
+    """没批准的新会话第一份 checkpoint 必须是 control-v3，不是花费闸。"""
+    state = load_session(env.state.sessionId)
+    state.controlTranscript = []
+    save_session(state)
+    snapshots = []
+    original = RunCheckpoint.save
+
+    async def save(port, checkpoint):
+        snapshots.append(copy.deepcopy(checkpoint))
+        return await original(port, checkpoint)
+
+    async def model(*_a, **_kw):
+        return llm_text("先问清楚再写计划。")
+
+    monkeypatch.setattr(RunCheckpoint, "save", save)
+    monkeypatch.setattr(control, "_invoke_control_llm", model)
+
+    async def run():
+        service = env.service()
+        await service.start()
+        try:
+            record = await service.submit(
+                six_fields(env.state.sessionId, "做个PPT"),
+                env.owner,
+                "live-v3-conversation",
+            )
+            await settled(service, record["runId"])
+        finally:
+            await service.shutdown()
+
+    asyncio.run(run())
+    modeled = [cp for cp in snapshots if isinstance(cp.get("budgetPolicy"), dict)]
+    assert modeled, [cp.get("phase") for cp in snapshots[:6]]
+    assert modeled[0]["budgetPolicy"]["profile"] == "control-v3"
+    assert modeled[0]["budgetPolicy"]["maxTokens"] == 200_000
+    assert all(cp["budgetPolicy"]["profile"] != "control-v2" for cp in modeled)
+
+
 @pytest.mark.parametrize("forged", [False, True], ids=["legacy", "client-forged-policy"])
-def test_legacy_8001_tokens_still_prevent_project_creation(setup, monkeypatch, forged):
-    """点火前额度闸的**机制**仍在。钉 control-v2：线上默认已是窗口口径，
-    8001 再也撞不上。伪造工程档也抬不了点火前的那一档。"""
+def test_legacy_8001_tokens_still_prevent_unapproved_project_creation(setup, monkeypatch, forged):
+    """没批准仍走对话档。钉 control-v2：8001 撞 8000。伪造工程指针抬不了档。"""
     monkeypatch.setattr(control, "CONVERSATION_BUDGET", CONVERSATION_BUDGET_V2)
+    state = load_session(setup.state.sessionId)
+    state.controlTranscript = []
+    save_session(state)
     harness = ControlHarness(monkeypatch)
     harness.llm_impl = lambda *a, **kw: llm_tool("project_create", {"approvalRef": setup.ref},
                                                 usage={"total_tokens": 8001})
@@ -104,6 +182,51 @@ def test_legacy_8001_tokens_still_prevent_project_creation(setup, monkeypatch, f
     assert stop["stopReason"] == "token_budget" and stop["limit"] == 8000 and stop["used"] == 8001
     assert setup.store.get_project_for_session(setup.state.sessionId, owner_id=TEST_USER_ID) is None
     assert not any(event.get("tool") == "project_create" and event.get("ok") for event in events)
+
+
+def test_approved_turn_uses_project_v3_without_waiting_for_project_id(setup, monkeypatch):
+    """真机 PPT：批准后 used=9611/8000。批准就换执行档，下一发能派 project_create。"""
+    harness = ControlHarness(monkeypatch)
+
+    def model(messages, **kwargs):
+        results = [json.loads(message["content"]) for message in messages if message["role"] == "tool"]
+        if not results:
+            return llm_tool(
+                "project_create", {"approvalRef": setup.ref}, usage={"total_tokens": 9611},
+            )
+        return llm_text("工程已建好，开始干活。")
+
+    harness.llm_impl = model
+    events = post(setup.state)
+    budget_stops = [event for event in stops(events) if event.get("stopReason") == "token_budget"]
+    assert not budget_stops, budget_stops
+    assert all(event.get("limit") != 8000 for event in stops(events))
+    assert any(event.get("tool") == "project_create" and event.get("ok") for event in events)
+    saved = load_session(setup.state.sessionId)
+    assert saved.projectId
+    assert saved.runtimeKind == "project"
+
+
+def test_project_budget_eligible_does_not_wait_for_project_id():
+    """变异：把 eligible 改回必须有 projectId / runtimeKind==project → 红。"""
+    import ast
+    from pathlib import Path
+    from control_turn_support import strip_python
+
+    src = Path(__file__).resolve().parents[1] / "services" / "rehearsal_control.py"
+    tree = ast.parse(strip_python(src))
+    fn = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "_project_budget_eligible"
+    )
+    body = "\n".join(strip_python(src).splitlines()[fn.lineno - 1:fn.end_lineno])
+    assert "plan_execution_authorized" in body
+    assert "projectId" not in body
+    assert "runtimeKind" not in body
+    assert CONVERSATION_BUDGET_V1.max_tokens == 8000
+    assert CONVERSATION_BUDGET_V1.max_wall_seconds == 90.0
+    assert PROJECT_BUDGET.profile == "project-v3"
+    assert PROJECT_BUDGET.max_tokens == 200_000
 
 
 def test_project_token_exhaustion_rejects_patch_before_dispatch(setup, monkeypatch):
@@ -182,6 +305,7 @@ def test_默认对话档不再设轮次与墙钟上限():
     assert CONVERSATION_BUDGET.max_wall_seconds >= 86_400
     assert CONVERSATION_BUDGET.max_tokens == 200_000
     assert CONVERSATION_BUDGET.context_token_budget is True
+    assert CONVERSATION_BUDGET.compact_at_tokens == 120_000
     # 旧存档仍按当时那一档还原。
     assert CONVERSATION_BUDGET_V2.max_rounds == 8
     assert CONVERSATION_BUDGET_V2.max_tokens == 8_000
@@ -421,7 +545,7 @@ def test_接近窗口就压缩再采样(setup, monkeypatch):
                 "tool_calls": [{
                     "id": call_id,
                     "type": "function",
-                    "function": {"name": "project_read", "arguments": "{}"},
+                    "function": {"name": "project_search", "arguments": "{}"},
                 }],
             })
             messages.append({"role": "tool", "tool_call_id": call_id, "content": payload})

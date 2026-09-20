@@ -16,7 +16,8 @@ from contextlib import aclosing
 
 from services.control_checkpoint import ControlRunStopped, current_checkpoint
 from services.control_run_store import (
-    ControlRunConflict, ControlRunStore, TERMINAL,
+    ControlRunConflict, ControlRunNotFound, ControlRunStore, ControlRunUnavailable,
+    TERMINAL,
     project_goal_promotion, session_goal_text, stamp_control_goal_payload)
 from services.project_actor_access import authorize_project_actor
 from services.project_creation import load_authorized_session
@@ -24,11 +25,15 @@ from services.project_tools import ProjectTools
 from services.project_tool_contracts import PROJECT_TOOL_NAMES
 from services.control_goal_continuation import (
     continuation_checkpoint, continuation_notice, operation_settled_notice,
-    progress_mark, should_continue,
+    progress_mark, sampling_interrupted_checkpoint, should_continue,
     unfinished_slice_waits_for_user, unfinished_cap_waits_for_user)
+from services.deliverable_kind import office_file_uses_task_delivery, plan_deliverable_kind
+from services.project_office_artifacts import ProjectOfficeArtifactStore
 from services.project_delivery import ProjectDeliveryService
 from services.rehearsal_control import run_control_turn, validate_control_turn_body, bound_tool_result
+from sliderule_llm.gateway_circuit import reject_reason
 from services.project_rollout import rollout_readiness
+from services.scope_authority import latest_control_plan
 
 log = logging.getLogger(__name__)
 
@@ -104,9 +109,12 @@ class RunCheckpoint:
         if self.stop_reason:
             raise ControlRunStopped(self.stop_reason)
         try:
-            record = self.service.store.get(self.record["runId"], self.record["ownerId"])
-        except Exception as exc:
+            record = self.service.store.inspect_fence(
+                self.record["runId"], self.record["ownerId"])
+        except ControlRunUnavailable as exc:
             raise ControlRunStopped("control_checkpoint_unavailable") from exc
+        except ControlRunNotFound as exc:
+            raise ControlRunStopped("control_lease_lost") from exc
         if (record["generation"] != self.record["generation"]
                 or record["leaseOwner"] != self.service.worker_id
                 or record["leaseExpiresAt"] <= time.time()
@@ -125,6 +133,10 @@ class RunCheckpoint:
             await asyncio.to_thread(self.service.store.save_checkpoint,
                 self.record["runId"], self.service.worker_id,
                 self.record["generation"], checkpoint)
+        except ControlRunConflict as exc:
+            raise ControlRunStopped("control_lease_lost") from exc
+        except ControlRunUnavailable as exc:
+            raise ControlRunStopped("control_checkpoint_unavailable") from exc
         except Exception as exc:
             raise ControlRunStopped("control_checkpoint_unavailable") from exc
         self.checkpoint = copy.deepcopy(checkpoint)
@@ -230,6 +242,12 @@ class ControlRunService:
 
     async def submit(self, payload, owner_id, idempotency_key):
         validate_control_turn_body(payload)
+        # AWS StandardRetry：熔断开着只关重试；冷却未结束连第一发都不排队。
+        # ⚠ 2026-09-20 真机 524 accounts exhausted 之后脚本立刻再 POST，
+        #   525 把门焊死。host 产品路径不许在冷却期内再 enqueue。
+        blocked = reject_reason()
+        if blocked:
+            raise ControlRunUnavailable(blocked)
         session_id = str(payload["sessionId"]).strip()
         state = await asyncio.to_thread(self.authorize, session_id, owner_id)
         if self._stopping:
@@ -340,6 +358,22 @@ class ControlRunService:
         session_id = record.get("sessionId")
         owner_id = record.get("ownerId")
         try:
+            authority = await asyncio.to_thread(self.authorize, session_id, owner_id)
+            # ⚠ 2026-09-20 真机 sr-20260920051924-QA0YXX59Q0：办公文件目标
+            #   被 tasks delivery.eligible 续跑进登录/CRUD。类别在批准计划上，
+            #   必须先于 ProjectDeliveryService 判断。没有文件证据就没做完。
+            if office_file_uses_task_delivery(
+                    plan_deliverable_kind(latest_control_plan(authority))):
+                project = await asyncio.to_thread(
+                    self.project_store.get_project_for_session, session_id, owner_id=owner_id)
+                if project is None:
+                    return False
+                try:
+                    return await asyncio.to_thread(
+                        ProjectOfficeArtifactStore(self.project_store).has_any,
+                        project.projectId, owner_id=owner_id)
+                except Exception:
+                    return False
             project = await asyncio.to_thread(
                 self.project_store.get_project_for_session, session_id, owner_id=owner_id)
             if project is None:
@@ -353,6 +387,22 @@ class ControlRunService:
     async def _goal_blocked_reasons(self, record) -> list:
         """服务端判定「还缺什么」。拿不到就返回空——不编原因。"""
         try:
+            authority = await asyncio.to_thread(
+                self.authorize, record.get("sessionId"), record.get("ownerId"))
+            if office_file_uses_task_delivery(
+                    plan_deliverable_kind(latest_control_plan(authority))):
+                try:
+                    project = await asyncio.to_thread(
+                        self.project_store.get_project_for_session,
+                        record.get("sessionId"), owner_id=record.get("ownerId"))
+                    if project is None:
+                        return ["office_file_not_found"]
+                    present = await asyncio.to_thread(
+                        ProjectOfficeArtifactStore(self.project_store).has_any,
+                        project.projectId, owner_id=record.get("ownerId"))
+                    return [] if present else ["office_file_not_found"]
+                except Exception:
+                    return ["office_file_not_found"]
             project = await asyncio.to_thread(
                 self.project_store.get_project_for_session,
                 record.get("sessionId"), owner_id=record.get("ownerId"))
@@ -369,6 +419,8 @@ class ControlRunService:
     async def _hand_to_continuation(self, record, run_id, generation, status) -> bool:
         """这一回合结束后要不要自己接着跑。真要续就落成非终态并返回 True。"""
         if not rollout_readiness().get("configured", False):
+            return False
+        if reject_reason():
             return False
         goal = record.get("goal") if isinstance(record.get("goal"), dict) else {}
         if goal.get("kind") != "project":
@@ -423,9 +475,13 @@ class ControlRunService:
                 try:
                     await asyncio.to_thread(self.store.heartbeat, port.record["runId"],
                         self.worker_id, port.record["generation"], self.lease_seconds)
-                except Exception:
+                except ControlRunConflict:
                     port.stop_reason = "control_lease_lost"
                     return
+                except Exception:
+                    # 存档抖动不许把正在采样的 run 判死。下一拍再续。
+                    # 真丢了租约会在下一拍 ControlRunConflict，或 guard 看见过期。
+                    log.exception("control heartbeat deferred run=%s", port.record["runId"])
 
     async def _produce(self, record):
         run_id, generation = record["runId"], record["generation"]
@@ -530,6 +586,16 @@ class ControlRunService:
                         continue
                 resumed = continuation_checkpoint(
                     checkpoint, operation_settled_notice(op_rows))
+                if resumed is not None:
+                    await port.save(resumed)
+                    checkpoint = resumed
+            if checkpoint is not None and checkpoint.get("phase") == "sampling":
+                # ⚠ 2026-09-19 真机 ctr-372375…：checkpoint 停在 sampling，
+                #   resume 守卫只认 model/tools → control_reconciliation_required。
+                #   抄 grok MidTurnAbort：不重放那次 HTTP POST，补齐 dangling
+                #   tool result，开新一轮。dispatching 仍对账，不许借这条
+                #   重放已经发出去的工具。
+                resumed = sampling_interrupted_checkpoint(checkpoint)
                 if resumed is not None:
                     await port.save(resumed)
                     checkpoint = resumed

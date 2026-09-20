@@ -98,9 +98,16 @@ CONVERSATION_BUDGET_V2 = ControlBudget("control-v2", 8, 8_000, 240.0, 180.0)
 #: 240 秒仍会先把长思考掐死，工程档的放开根本轮不到。
 #: 新开 control-v3，不改 v2 的数字——restore_budget 要求 wire 全等。
 #: token 跟工程档同一口径：20 万是上下文窗口，不是 cheapTokens 累加硬闸。
+#:
+#: 2026-09-20：压缩点收到窗口的约 60%（对标工作台 1M / 60% 自动压缩、
+#: Manus filesystem-as-context）。197k 太靠边，PPT 短回合永远走不到，
+#: 旧 file_read / skill 正文就一直占着。v1/v2 存档数字一个不许动。
+WINDOW_COMPACT_RATIO = 0.6
+WINDOW_COMPACT_AT_TOKENS = int(200_000 * WINDOW_COMPACT_RATIO)
+
 CONVERSATION_BUDGET = ControlBudget(
     "control-v3", 10_000, 200_000, 86_400.0, 600.0,
-    compact_at_tokens=197_000,
+    compact_at_tokens=WINDOW_COMPACT_AT_TOKENS,
     context_token_budget=True,
 )
 
@@ -127,7 +134,7 @@ CONVERSATION_BUDGET = ControlBudget(
 #:   不会因此 invalid。量级自洽：3600 < 86400，差 ≥ 60。
 PROJECT_BUDGET = ControlBudget(
     "project-v3", 10_000, 200_000, 86_400.0, 3600.0,
-    compact_at_tokens=197_000,
+    compact_at_tokens=WINDOW_COMPACT_AT_TOKENS,
     context_token_budget=True,
 )
 
@@ -139,6 +146,21 @@ _PINNED_POLICIES = {
     CONVERSATION_BUDGET_V2.profile: CONVERSATION_BUDGET_V2,
     CONVERSATION_BUDGET.profile: CONVERSATION_BUDGET,
 }
+
+
+def startup_budget_line() -> str:
+    """进程亮牌：源码是 v3、活进程却还在花 v2，这一行对不上。
+
+    ⚠ 2026-09-20 真机 sr-20260920140018-PPT：文件已是 control-v3/200000，
+      七次 durable 仍写出 control-v2/8000。只看源码不够，启动日志必须能
+      对上这一进程实际 import 到的档。
+    """
+    return (
+        f"[startup] CONVERSATION_BUDGET={CONVERSATION_BUDGET.profile}/"
+        f"{CONVERSATION_BUDGET.max_tokens} "
+        f"context={int(CONVERSATION_BUDGET.context_token_budget)} "
+        f"PROJECT_BUDGET={PROJECT_BUDGET.profile}/{PROJECT_BUDGET.max_tokens}"
+    )
 
 
 def restore_budget(snapshot, legacy: ControlBudget) -> ControlBudget:

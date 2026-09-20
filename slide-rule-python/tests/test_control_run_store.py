@@ -85,6 +85,17 @@ def test_submit_live_path_stamps_and_promotes():
     assert 'kind="project"' in produce or "kind='project'" in produce
     assert "unfinished_slice_waits_for_user" in produce
     assert "unfinished_cap_waits_for_user" in produce
+    assert "sampling_interrupted_checkpoint" in produce
+    store_src = (pathlib.Path(__file__).resolve().parents[1] / "services" / "control_run_store.py").read_text(encoding="utf-8")
+    cancel_fn = store_src[store_src.index("def cancel("): store_src.index("def cancel_request")]
+    assert "wb_control_cancel_request" in cancel_fn
+    guard = service[service.index("def guard"): service.index("async def save")]
+    assert "inspect_fence" in guard
+    assert "store.get(" not in guard
+    heartbeat = service[service.index("async def _heartbeat"): service.index("async def _produce")]
+    assert "except ControlRunConflict" in heartbeat
+    blip = heartbeat[heartbeat.rindex("except Exception"):]
+    assert "control_lease_lost" not in blip
 
 
 def test_goal_envelope_is_durable_compact_and_owner_bound(store):
@@ -305,14 +316,15 @@ def test_expiry_between_read_and_sql_cas_rejects_the_write(store, monkeypatch):
     clock = [1000.0]
     monkeypatch.setattr(module.time, "time", lambda: clock[0])
     run = claim(store, lease=10)
-    original = module._json
+    original = store._q
 
-    def expire_after_read(value, limit):
-        if isinstance(value, dict) and "generation" in value:
+    def expire_after_lease_read(sql, params=None):
+        result = original(sql, params)
+        if isinstance(sql, str) and sql.startswith("select r.* from wb_control_run"):
             clock[0] = 1011
-        return original(value, limit)
+        return result
 
-    monkeypatch.setattr(module, "_json", expire_after_read)
+    monkeypatch.setattr(store, "_q", expire_after_lease_read)
     with pytest.raises(ControlRunConflict, match="lease_lost"):
         store.append_event(run["runId"], "worker-1", 1, {"type": "text"})
     assert store.get(run["runId"], "alice")["lastSeq"] == 0
@@ -463,3 +475,87 @@ def test_request_stop_survives_arriving_before_run_publication(store, submitted)
     assert store.get(run["runId"], "alice")["cancelRequested"]
     claimed = store.claim(run["runId"], "worker", 30)
     assert claimed["cancelRequested"]
+
+
+def test_heartbeat_and_append_do_not_rewrite_the_run_blob(store, monkeypatch):
+    """2026-09-19 真机：每条事件/心跳整行改写 800KB payload。
+
+    正向：事件走 INSERT，心跳 UPDATE 只碰 lease_expires_at。
+    反向：这两条 SQL 里不许再出现 payload=。
+    """
+    seen: list[str] = []
+    original = store._q
+
+    def spy(sql, params=None):
+        if isinstance(sql, str):
+            seen.append(sql)
+        return original(sql, params)
+
+    monkeypatch.setattr(store, "_q", spy)
+    run = claim(store)
+    store.append_event(run["runId"], "worker-1", 1, {"type": "text", "text": "hello"})
+    store.heartbeat(run["runId"], "worker-1", 1, 10)
+    inserts = [sql for sql in seen if "insert into wb_control_event" in sql]
+    assert inserts, "事件必须追加进 wb_control_event"
+    heartbeats = [sql for sql in seen if sql.startswith("update wb_control_run set lease_expires_at=")]
+    assert heartbeats, "心跳必须只续租约列"
+    for sql in heartbeats:
+        assert "payload" not in sql
+    for sql in inserts:
+        assert "payload" not in sql
+
+
+def test_inspect_fence_does_not_load_payload(store, monkeypatch):
+    seen: list[str] = []
+    original = store._q
+
+    def spy(sql, params=None):
+        if isinstance(sql, str):
+            seen.append(sql)
+        return original(sql, params)
+
+    monkeypatch.setattr(store, "_q", spy)
+    run = claim(store)
+    fence = store.inspect_fence(run["runId"], "alice")
+    assert fence["generation"] == 1 and fence["leaseOwner"] == "worker-1"
+    assert not fence["cancelRequested"]
+    store.cancel(run["runId"], "alice")
+    assert store.inspect_fence(run["runId"], "alice")["cancelRequested"]
+    selects = [sql for sql in seen if sql.startswith("select r.id, r.session_id")]
+    assert selects, "fence 必须走租约列 SELECT"
+    for sql in selects:
+        assert "payload" not in sql
+
+
+def test_legacy_payload_events_hydrate_and_spill_on_append(store):
+    """旧行事件还在 payload 里。读得见；下一次追加再搬进表，不许丢。"""
+    run = claim(store)
+    row = store._row(run["runId"])
+    record = json.loads(row["payload"])
+    record["events"] = [{
+        "type": "text", "seq": 1, "controlRunId": run["runId"], "text": "legacy",
+    }]
+    record["lastSeq"] = 1
+    store._q(
+        "update wb_control_run set payload=$1 where id=$2",
+        [json.dumps(record, ensure_ascii=False, separators=(",", ":")), run["runId"]],
+    )
+    assert store.get(run["runId"], "alice")["events"][0]["text"] == "legacy"
+    added = store.append_event(run["runId"], "worker-1", 1, {"type": "text", "text": "next"})
+    assert added["seq"] == 2
+    texts = [event["text"] for event in store.get(run["runId"], "alice")["events"]]
+    assert texts == ["legacy", "next"]
+    # 反向：表是权威。漏了 spill 的话表里只有 next，旧那条会丢。
+    table = store._load_events(run["runId"])
+    assert [event["text"] for event in table] == ["legacy", "next"]
+
+
+def test_heartbeat_is_not_a_payload_cas():
+    """闸全绿但东西没了：heartbeat 若又走回 _producer_update，上面那条 SQL 间谍也会绿。"""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[1] / "services" / "control_run_store.py").read_text(encoding="utf-8")
+    start = src.index("def heartbeat")
+    body = src[start:src.index("def save_checkpoint")]
+    assert "_producer_update" not in body
+    assert "set lease_expires_at=" in body
+    assert "payload=$" not in body

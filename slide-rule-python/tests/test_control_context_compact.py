@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import json
 
-from services.control_budget import PROJECT_BUDGET, PROJECT_BUDGET_V1, PROJECT_BUDGET_V2
+from services.control_budget import (
+    PROJECT_BUDGET, PROJECT_BUDGET_V1, PROJECT_BUDGET_V2, WINDOW_COMPACT_AT_TOKENS,
+)
 from services.control_context_compact import (
     COMPACT_NOTICE_PREFIX,
     compact_messages,
     estimate_message_tokens,
     is_compact_notice,
+    microcompact_messages,
 )
 
 
@@ -67,17 +70,16 @@ def test_到阈值就折叠较早的tool并留下最近两条():
     assert tool_bodies.count(payload) <= 2
 
 
-def test_工程档标定是20万窗口197000压缩_v1不压缩():
-    """反向：v1 compact_at=0，把 v2 的数填进 v1 等于没换档。
+def test_工程档标定是20万窗口60percent压缩_v1不压缩():
+    """v3 压缩点是窗口的 60%。v1/v2 存档数字不许动。
 
-    ⚠ 2026-09-17：默认工程档从 project-v2 换成 project-v3（取消轮次/墙钟上限）。
-      **压缩标定一个数没动**——20 万窗口、19.7 万压缩、按上下文计账全照旧，
-      变的只是 max_rounds 与 max_wall_seconds。档名保留字面量而不是写成
-      PROJECT_BUDGET.profile：那样会退化成同义反复，下次悄悄换档就不红了（§2）。
+    ⚠ 2026-09-20：197k 太靠边，PPT 短回合永远压不到。Manus / 工作台
+      都是窗口占用到约六成就自动压缩。档名保留字面量。
     """
     assert PROJECT_BUDGET.profile == "project-v3"
     assert PROJECT_BUDGET.max_tokens == 200_000
-    assert PROJECT_BUDGET.compact_at_tokens == 197_000
+    assert PROJECT_BUDGET.compact_at_tokens == WINDOW_COMPACT_AT_TOKENS
+    assert WINDOW_COMPACT_AT_TOKENS == 120_000
     assert PROJECT_BUDGET.context_token_budget is True
     assert PROJECT_BUDGET.max_request_seconds == 3600.0
     # 旧档仍钉着自己那份标定，供 restore_budget 还原老 checkpoint。
@@ -88,8 +90,8 @@ def test_工程档标定是20万窗口197000压缩_v1不压缩():
     assert PROJECT_BUDGET_V1.max_tokens == 64_000
     assert PROJECT_BUDGET_V1.compact_at_tokens == 0
     assert PROJECT_BUDGET_V1.context_token_budget is False
-    assert PROJECT_BUDGET.should_compact(197_000) is True
-    assert PROJECT_BUDGET.should_compact(196_999) is False
+    assert PROJECT_BUDGET.should_compact(120_000) is True
+    assert PROJECT_BUDGET.should_compact(119_999) is False
     assert PROJECT_BUDGET_V1.should_compact(1_000_000) is False
 
 
@@ -100,3 +102,34 @@ def test_折叠后的桩仍是json():
     stub = json.loads(next(row["content"] for row in out if row.get("role") == "tool"
                            and "compacted" in str(row.get("content"))))
     assert stub["compacted"] is True
+    assert stub["tool"]
+    assert "file_read" in stub["hint"] or "grep" in stub["hint"]
+
+
+def test_microcompact_snips_old_file_reads_without_waiting_for_window():
+    payload = json.dumps({"path": "src/App.tsx", "content": "X" * 4000}, ensure_ascii=False)
+    messages = [
+        {"role": "system", "content": "你是控制面。"},
+        {"role": "user", "content": "改标题"},
+    ]
+    for index in range(4):
+        call_id = f"call-{index}"
+        messages.append({
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{
+                "id": call_id,
+                "type": "function",
+                "function": {"name": "file_read", "arguments": "{}"},
+            }],
+        })
+        messages.append({"role": "tool", "tool_call_id": call_id, "content": payload})
+    before = estimate_message_tokens(messages)
+    out, report = microcompact_messages(messages)
+    assert report.did_compact is True
+    assert report.tokens_after < before
+    tool_bodies = [row["content"] for row in out if row.get("role") == "tool"]
+    assert tool_bodies.count(payload) == 2
+    stub = json.loads(next(body for body in tool_bodies if "compacted" in body))
+    assert stub["path"] == "src/App.tsx"
+    assert stub["tool"] == "file_read"

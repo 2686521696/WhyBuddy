@@ -45,10 +45,11 @@ from typing import Any, Dict, List, Optional
 
 #: 一个目标最多自动续跑几次。超了就停下来问人，不是继续烧。
 #:
-#: ⚠ 标定说明：真机一次「加截止日期 + 逾期筛选」大致是
-#: read → patch → exec → status → verify 五步，模型偶尔多看一次源码。
-#: 8 次留了余量又不至于失控。改这个数要连同真机样本一起重估，别拍脑袋。
-MAX_CONTINUATIONS = 8
+#: ⚠ 2026-09-17 起工程档取消轮次/墙钟，对话档 09-18 对齐 control-v3。
+#:   这一层却还按 8 次续跑先停——闸装在通电路上、条件在真机长跑上成立。
+#:   用户看见「时间 / 轮次放开了，怎么还停」。跟 project-v3 同一口径：
+#:   一万 = 按要求不设限。没进展那条护栏仍在，空转续跑不会烧穿。
+MAX_CONTINUATIONS = 10_000
 
 #: 这些终态不许自动续：等人回答是真的要等人；失败/取消要让人看见。
 _NEVER_CONTINUE = frozenset({"waiting_user", "failed", "cancelled", "interrupted"})
@@ -211,7 +212,7 @@ def continuation_checkpoint(checkpoint: Any, notice: str) -> Optional[Dict[str, 
     就只剩 80 秒，基本立刻撞墙钟，续跑等于白做。
 
     所以这里给新一轮**干净的单轮预算**，总量改由 `MAX_CONTINUATIONS` 兜底：
-    最坏情况是 8 轮完整预算，而「没进展就收手」通常在第 1~2 次就把它掐掉。
+    「没进展就收手」通常在第 1~2 次就把它掐掉，不是靠次数天花板。
 
     ⚠ `stationarity`（原地打转游标）**故意保留**：它防的正是模型反复调同一个
       工具，跨轮次继承才有意义，重置了等于每次续跑都给它一次重新打转的机会。
@@ -226,7 +227,7 @@ def continuation_checkpoint(checkpoint: Any, notice: str) -> Optional[Dict[str, 
     if not isinstance(messages, list) or not messages:
         return None
     text = str(notice or "").strip()
-    return {
+    out = {
         **checkpoint,
         "phase": "model",
         "messages": [*messages, {"role": "system", "content": text}] if text else list(messages),
@@ -239,6 +240,9 @@ def continuation_checkpoint(checkpoint: Any, notice: str) -> Optional[Dict[str, 
         "pendingCalls": [],
         "content": "",
     }
+    # 花费闸存档不许焊进新一轮——否则 PPT 续跑一直是 control-v2/8000。
+    out.pop("budgetPolicy", None)
+    return out
 
 
 def continuation_notice(blocked_reasons: Any, attempt: int) -> str:
@@ -260,6 +264,98 @@ def continuation_notice(blocked_reasons: Any, attempt: int) -> str:
     if not reasons:
         return head + "服务端没有给出具体缺项；先用 project_status 查清当前状态再决定下一步。"
     return head + "服务端判定仍缺：" + "；".join(reasons) + "。请据此继续，不要重复已经完成的步骤。"
+
+
+def repair_dangling_tool_calls(messages: Any) -> List[Dict[str, Any]]:
+    """给没有结果的 tool_calls 补一条合成 tool result。
+
+    抄 grok-build `repair_dangling_tool_calls`：API 要求每个 tool_call 都有
+    配对结果，中断后下一轮采样之前必须补齐，否则网关 400。
+    只补缺的，已有结果的不许再编一条。
+    """
+    if not isinstance(messages, list):
+        return []
+    out = [item if isinstance(item, dict) else item for item in messages]
+    repairs: List[tuple[int, List[Dict[str, Any]]]] = []
+    index = 0
+    while index < len(out):
+        head = out[index]
+        if not isinstance(head, dict) or head.get("role") != "assistant":
+            index += 1
+            continue
+        calls = head.get("tool_calls")
+        if not isinstance(calls, list) or not calls:
+            index += 1
+            continue
+        answered: set[str] = set()
+        cursor = index + 1
+        while cursor < len(out):
+            follow = out[cursor]
+            if isinstance(follow, dict) and follow.get("role") == "tool":
+                call_id = str(follow.get("tool_call_id") or "")
+                if call_id:
+                    answered.add(call_id)
+                cursor += 1
+                continue
+            break
+        synthetic = []
+        for call in calls:
+            if not isinstance(call, dict):
+                continue
+            call_id = str(call.get("id") or "")
+            if not call_id or call_id in answered:
+                continue
+            fn = call.get("function") if isinstance(call.get("function"), dict) else {}
+            name = str(fn.get("name") or call.get("name") or "unknown")
+            synthetic.append({
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": (
+                    f"Tool execution was halted by the harness (sampling_interrupted); "
+                    f"the tool `{name}` was not executed."
+                ),
+            })
+        if synthetic:
+            repairs.append((cursor, synthetic))
+        index = cursor
+    for insert_at, synthetic in reversed(repairs):
+        out[insert_at:insert_at] = synthetic
+    return out
+
+
+def sampling_interrupted_notice() -> str:
+    """采样死了之后新开一轮的合成提示。
+
+    抄 grok `PriorTurnInterrupt::MidTurnAbort`：不重放那次 HTTP 推理，
+    下一句是新采样。2026-09-19 真机停在 phase=sampling，resume 守卫只认
+    model/tools，直接 `control_reconciliation_required`。
+    """
+    return (
+        "[采样中断] 上一轮模型还没返回结果，控制面心跳读档失败。"
+        "那次推理没有产出，不要假设它做完了。"
+        "未完成的工具调用已按中断补齐。"
+        "请从当前工程状态继续，不要重放未确认的副作用。"
+    )
+
+
+def sampling_interrupted_checkpoint(checkpoint: Any) -> Optional[Dict[str, Any]]:
+    """把「正在采样」的 checkpoint 转成新一轮起点。
+
+    过期的派发意图不许重放（模块头那句）。采样是一次未完成的 HTTP POST，
+    不是已经发出去的工具。补齐 dangling tool result，再走
+    `continuation_checkpoint` 开新一轮。
+    dispatching 不许走这里——工具可能已经有副作用。
+    """
+    if not isinstance(checkpoint, dict) or checkpoint.get("phase") != "sampling":
+        return None
+    messages = checkpoint.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return None
+    repaired = repair_dangling_tool_calls(messages)
+    return continuation_checkpoint(
+        {**checkpoint, "messages": repaired, "phase": "settling"},
+        sampling_interrupted_notice(),
+    )
 
 
 def operation_settled_notice(operations: Any) -> str:
