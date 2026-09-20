@@ -21,6 +21,8 @@ describe("批准计划后自动创建工程接在 Unified 上", () => {
       readFileSync(resolve(__dirname, "../../SlideRule.tsx"), "utf8")
     );
     expect(src).toContain("shouldAutoCreateProject");
+    expect(src).toContain("planWrittenHasDeliverableKind");
+    expect(src).toContain("planHasDeliverableKind");
     expect(src).toContain("shouldShowProjectComputer");
     expect(src).toContain("createProjectRef.current");
     expect(src).not.toMatch(/onCreateProject:\s*_onCreateProject/);

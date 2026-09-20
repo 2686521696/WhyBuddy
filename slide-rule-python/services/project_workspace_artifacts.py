@@ -7,6 +7,7 @@ or a bounded SQLite snapshot, never arbitrary build output.
 """
 
 MAX_APPLICATION_DATA_BYTES = 8 * 1024 * 1024
+MAX_OFFICE_COLLECT_BYTES = 16 * 1024 * 1024
 ARTIFACT_IO_SCRIPT = r'''
 import base64, hashlib, json, os, re, stat, sys, uuid
 job = json.load(sys.stdin)
@@ -144,6 +145,34 @@ elif action in ("read-data", "write-data"):
             finally: os.close(folder)
         if data is not None and not data.startswith(b"SQLite format 3\x00"): raise ValueError("application_data_invalid")
         print(json.dumps({"data": base64.b64encode(data).decode() if data is not None else None}))
+elif action == "collect-office":
+    skip = {"node_modules", ".venv", "__pycache__", ".git", "dist"}
+    suffix = (".pptx", ".docx", ".xlsx")
+    cap = 8388608
+    files, total = [], 0
+    def visit(fd, prefix="", depth=0):
+        global total
+        bounded_visit(depth)
+        for name in sorted(os.listdir(fd)):
+            bounded_visit(depth)
+            mode = os.stat(name, dir_fd=fd, follow_symlinks=False).st_mode
+            if stat.S_ISDIR(mode):
+                if name in skip: continue
+                child = os.open(name, flags, dir_fd=fd)
+                try: visit(child, prefix + name + "/", depth + 1)
+                finally: os.close(child)
+            elif stat.S_ISREG(mode):
+                if not name.lower().endswith(suffix) or len(files) >= 8: continue
+                try: data = regular(fd, name, cap)
+                except ValueError: continue
+                if not data.startswith(b"PK\x03\x04") or total + len(data) > 16777216: continue
+                total += len(data)
+                files.append({"path": prefix + name, "sha256": hashlib.sha256(data).hexdigest(),
+                    "sizeBytes": len(data), "data": base64.b64encode(data).decode()})
+    root_fd = directory(root)
+    try: visit(root_fd)
+    finally: os.close(root_fd)
+    print(json.dumps({"files": files}))
 else: raise ValueError("unknown_artifact_action")
 '''
 

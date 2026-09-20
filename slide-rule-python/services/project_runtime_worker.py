@@ -37,6 +37,8 @@ from services.project_preview_config import (
 from services.vite_preview_hosts import injected_preview_dev_command
 from services.project_runtime import REVISION_FILE, _LeaseHeartbeat, _timestamp
 from services.project_source_sync import authorize_source_recovery, finish_pending_source_patches, sync_next_source_patch
+from services.deliverable_kind import is_office_artifact_path, is_office_zip_bytes
+from services.project_office_artifacts import ProjectOfficeArtifactStore
 from services.project_store import ProjectConflict, ProjectStore, ProjectStoreUnavailable
 from services.project_verification_store import ProjectVerificationStore
 from services.project_acceptance import normalize_acceptance_requirements
@@ -708,12 +710,56 @@ class _RuntimeTask:
             previous = self.log_offsets.get(pid, 0)
             if self.logs(pid) == previous:
                 break
+        # 命令结束后都扫。失败也可能已经写出 .pptx；收集 fail-open。
+        self._collect_office_artifacts()
         if executed.exit_code is None:
             raise WorkspaceProviderError("project_command_result_unknown", result=executed)
         if executed.exit_code != 0:
             raise WorkspaceProviderError("project_command_failed", result=executed)
         self.check()
         self.finish("completed", "stopped", None)
+
+    def _collect_office_artifacts(self):
+        """命令结束后把沙箱里的办公文件提进主机产物库。
+
+        ⚠ 2026-09-20 真机：python generate_deck.py 即使当时写出了 .pptx，
+          主机 file_read 也是 project_file_not_found。收集 I/O 失败不许
+          改写这次命令的成败（fail-open）；完工闸另看产物（fail-closed）。
+        """
+        collector = getattr(self.provider, "collect_office_files", None)
+        if not callable(collector) or self.handle is None:
+            return
+        try:
+            items = collector(self.handle)
+        except Exception:
+            logger.warning("office artifact collect failed", exc_info=True)
+            return
+        if not isinstance(items, list) or not items:
+            return
+        try:
+            store = ProjectOfficeArtifactStore(self.store)
+        except Exception:
+            logger.warning("office artifact persist failed", exc_info=True)
+            return
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            data = item.get("data")
+            path = str(item.get("path") or "")
+            if not isinstance(data, (bytes, bytearray)):
+                continue
+            payload = bytes(data)
+            if not is_office_artifact_path(path) or not is_office_zip_bytes(payload):
+                continue
+            try:
+                store.put(
+                    self.original.projectId,
+                    owner_id=self.owner_id,
+                    path=path,
+                    data=payload,
+                )
+            except Exception:
+                logger.warning("office artifact persist failed", exc_info=True)
 
     def _flush_stdin(self):
         pending = self.supervisor.peek_stdin(self.operation_id)

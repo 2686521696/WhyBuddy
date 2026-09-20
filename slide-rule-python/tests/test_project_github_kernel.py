@@ -11,7 +11,7 @@
 from project_actor_support import project_actor  # noqa: F401
 from services.project_manifest import content_hash
 from services.project_tool_contracts import GITHUB_KERNEL_TOOLS
-from test_project_tools import create, execute, setup  # noqa: F401
+from test_project_tools import create, execute, read_body, setup  # noqa: F401
 
 
 def test_github_kernel_is_seven_closed_names():
@@ -30,13 +30,13 @@ def test_write_file_and_search_replace_use_github_fields(setup):
     create(setup)
     written = execute(setup, "write_file", {"path": "src/App.tsx", "content": "Hello queue\n"})
     assert written["ok"], written
-    assert execute(setup, "read_file", {"path": "src/App.tsx"})["content"] == "Hello queue\n"
+    assert read_body(setup, "src/App.tsx", tool="read_file")["content"] == "Hello queue\n"
     replaced = execute(setup, "search_replace", {
         "path": "src/App.tsx", "old_string": "Hello queue", "new_string": "Ticket queue",
     })
     assert replaced["ok"], replaced
-    assert execute(setup, "read_file", {"path": "src/App.tsx"})["content"] == "Ticket queue\n"
-    assert execute(setup, "read_file", {"path": "src/App.tsx"})["sha256"] == content_hash("Ticket queue\n")
+    assert read_body(setup, "src/App.tsx", tool="read_file")["content"] == "Ticket queue\n"
+    assert read_body(setup, "src/App.tsx", tool="read_file")["sha256"] == content_hash("Ticket queue\n")
 
 
 def test_read_file_offset_limit_are_line_windows(setup):

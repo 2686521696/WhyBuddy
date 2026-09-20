@@ -11,7 +11,7 @@
 
 from project_actor_support import project_actor  # noqa: F401
 from services.project_manifest import content_hash
-from test_project_tools import change, create, execute, setup  # noqa: F401
+from test_project_tools import change, create, execute, read_body, setup  # noqa: F401
 
 
 def test_file_write_uses_leaked_file_and_content(setup):
@@ -20,7 +20,7 @@ def test_file_write_uses_leaked_file_and_content(setup):
     assert written["ok"], written
     assert written["revision"] != project["revision"]
     assert written["changedFiles"] == ["src/App.tsx"]
-    read = execute(setup, "file_read", {"file": "src/App.tsx"})
+    read = read_body(setup, "src/App.tsx", tool="file_read")
     assert read["content"] == "Kernel write\n"
     assert read["sha256"] == content_hash("Kernel write\n")
     assert read["path"] == "src/App.tsx"
@@ -33,7 +33,7 @@ def test_file_write_strips_sandbox_absolute_prefixes(setup):
         "content": "From sandbox path\n",
     })
     assert written["ok"], written
-    assert execute(setup, "file_read", {"file": "/home/ubuntu/workspace/src/App.tsx"})["content"] == (
+    assert read_body(setup, "/home/ubuntu/workspace/src/App.tsx", tool="file_read")["content"] == (
         "From sandbox path\n"
     )
 
@@ -54,7 +54,7 @@ def test_file_write_newlines_and_append(setup):
         "trailing_newline": True,
     })
     assert appended["ok"], appended
-    assert execute(setup, "file_read", {"file": "src/new.ts"})["content"] == (
+    assert read_body(setup, "src/new.ts", tool="file_read")["content"] == (
         "export const n=1\n\nexport const m=2\n"
     )
 
@@ -65,7 +65,7 @@ def test_file_str_replace_uses_old_str_and_is_fail_closed(setup):
         "file": "src/App.tsx", "old_str": "First task", "new_str": "Ticket queue",
     })
     assert result["ok"], result
-    assert execute(setup, "file_read", {"file": "src/App.tsx"})["content"] == (
+    assert read_body(setup, "src/App.tsx", tool="file_read")["content"] == (
         "Ticket queue\nSecond task\n"
     )
     missing = execute(setup, "file_str_replace", {
@@ -90,7 +90,7 @@ def test_sudo_true_is_rejected_after_the_schema_accepts_it(setup):
     ):
         result = execute(setup, name, args)
         assert result == {"ok": False, "error": "project_sudo_forbidden"}, name
-    assert execute(setup, "file_read", {"file": "src/App.tsx"})["content"] == setup.files["src/App.tsx"]
+    assert read_body(setup, "src/App.tsx", tool="file_read")["content"] == setup.files["src/App.tsx"]
 
 
 def test_file_read_window_is_zero_based_and_exclusive_at_the_end(setup):
@@ -132,7 +132,7 @@ def test_reverse_project_patch_still_requires_the_hash(setup):
         "path": "src/App.tsx", "content": "Lost update\n", "expectedSha256": None,
     }])
     assert lost["error"] == "project_file_hash_conflict"
-    assert execute(setup, "file_read", {"file": "src/App.tsx"})["content"] == setup.files["src/App.tsx"]
+    assert read_body(setup, "src/App.tsx", tool="file_read")["content"] == setup.files["src/App.tsx"]
 
 
 def test_revoked_plan_blocks_file_write_but_keeps_reads(setup):
@@ -143,7 +143,7 @@ def test_revoked_plan_blocks_file_write_but_keeps_reads(setup):
     rewrite_session(setup, controlTranscript=approved_plan_rows()[:-1])
     blocked = execute(setup, "file_write", {"file": "src/App.tsx", "content": "Nope\n"})
     assert blocked["error"] == "project_plan_approval_required"
-    kept = execute(setup, "file_read", {"file": "src/App.tsx"})
+    kept = read_body(setup, "src/App.tsx", tool="file_read")
     assert kept["ok"] and kept["content"] == setup.files["src/App.tsx"]
 
 

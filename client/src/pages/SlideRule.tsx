@@ -23,6 +23,8 @@ import { TurnResultCard } from "./sliderule/TurnResultCard";
 import { useProjectThumbnail } from "./sliderule/project-runtime/useProjectThumbnail";
 import { NextStepSuggestions } from "./sliderule/NextStepSuggestions";
 import { PlanTodoDock } from "./sliderule/PlanTodoDock";
+import { deriveProjectActivity } from "./sliderule/project-activity";
+import { latestPlanDeliverableKind, planWrittenHasDeliverableKind } from "./sliderule/deliverable-kind";
 import {
   shouldAutoCreateProject,
   shouldShowProjectComputer,
@@ -105,7 +107,10 @@ import {
   type RehearsalClockView,
 } from "./sliderule/derive-status-bar";
 import type { FactoryDecisionView } from "./sliderule/derive-factory-decision";
-import { SlideRuleResetSessionButton } from "./sliderule/SlideRuleTopHud";
+import {
+  PreviewChromeLayoutButtons,
+  SlideRuleResetSessionButton,
+} from "./sliderule/SlideRuleTopHud";
 import { StudioLayoutProvider } from "./sliderule/StudioLayoutContext";
 import { isStudioChromeShown } from "./sliderule/studio-layout";
 import {
@@ -124,6 +129,7 @@ import { composerEnterHintLabel } from "./sliderule/user-prefs";
 import { EXAMPLE_INTENT_TEXTS } from "./sliderule/example-intents";
 import type { UiTurn } from "./sliderule/types";
 import { IS_GITHUB_PAGES } from "@/lib/deploy-target";
+import { rememberActiveProjectId } from "@/lib/skill-store-client";
 import {
   GITHUB_PAGES_DEMO_SESSION_ID,
   GITHUB_PAGES_DEMO_GOAL,
@@ -277,12 +283,15 @@ function ModelSpeechBlocks({ turn }: { turn: UiTurn }) {
   if (speech.length === 0) return null;
   return (
     <div
-      className="space-y-2 text-[14px] leading-[1.7] text-[#171717]"
+      className="min-w-0 space-y-2 text-[14px] leading-[1.7] text-[#171717]"
       data-testid="sliderule-model-speech"
       data-speech-count={speech.length}
     >
       {speech.map(item => (
-        <p key={item.id} className="whitespace-pre-wrap">
+        <p
+          key={item.id}
+          className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]"
+        >
           {item.text}
         </p>
       ))}
@@ -413,12 +422,14 @@ function HomeEmptyState({
       <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-7 px-1 py-6">
         {/* ⚠ 2026-09-14：空态不再挂「工程模式可用 · 确认计划后创建工程」。
             人来写意图，不是来读运行时徽章。工程未启用的告警仍在开聊后的
-            HTML 兼容条上，空态这里只留问候。 */}
+            HTML 兼容条上，空态这里只留问候。
+            ⚠ 2026-09-20：空态问候换过两轮。「想做什么？」像盘问；
+            「我能为你做什么？」照搬 Manus。现在用日常口气。 */}
         <div className="flex w-full flex-wrap items-center justify-center gap-3">
           <h1 className="text-[26px] font-semibold tracking-tight text-[#171717] sm:text-[28px]">
             {runtimeKind === "project"
               ? "继续开发这个工程"
-              : "想推演成什么应用？"}
+              : "今天做点什么？"}
           </h1>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -587,6 +598,7 @@ const ImSurfaceContext = React.createContext<{
   latestTurnId?: string | null;
   runtimeKind?: "html-prototype" | "project";
   turns?: UiTurn[];
+  deliverableKind?: string;
 }>({
   llmDraft: "",
   llmDraftLabel: null,
@@ -601,6 +613,7 @@ const ImSurfaceContext = React.createContext<{
   latestTurnId: null,
   runtimeKind: "html-prototype",
   turns: [],
+  deliverableKind: "web-app",
 });
 
 const convertImMessage = (m: ImItem): ThreadMessageLike => ({
@@ -666,6 +679,7 @@ function ImAssistantMessage() {
     onChallenge,
     runtimeKind,
     turns,
+    deliverableKind,
   } = ctx;
   const rawAnswer = assistantTextForTurn(turn, publishClosure, goalText, {
     runtimeKind,
@@ -702,13 +716,18 @@ function ImAssistantMessage() {
     />
   );
   return (
-    <div className="mb-3 max-w-[640px]">
+    <div className="mb-3 min-w-0 max-w-[640px]">
       {turn.status === "streaming" ? (
         <div className="space-y-1.5">
           {/* ⚠ 流式 / 完成是成对物（§4）。工程档两支都走 SessionStory，
               只改完成轮 = 跑的时候又变回三桶并排。 */}
           {runtimeKind === "project" ? (
-            <SessionStory turn={turn} streaming productSlot={null} />
+            <SessionStory
+              turn={turn}
+              streaming
+              productSlot={null}
+              deliverableKind={deliverableKind}
+            />
           ) : (
             <ModelSpeechBlocks turn={turn} />
           )}
@@ -757,6 +776,7 @@ function ImAssistantMessage() {
               turn={turn}
               streaming={false}
               productSlot={resultCard}
+              deliverableKind={deliverableKind}
             />
           ) : (
             <>
@@ -914,6 +934,7 @@ export function ClaudeChatSurface({
   projectRevision = null,
   controlTodo = null,
   projectId = null,
+  deliverableKind = "web-app",
 }: {
   uiTurns: UiTurn[];
   isRunning: boolean;
@@ -947,6 +968,8 @@ export function ClaudeChatSurface({
   }> | null;
   /** 结果卡缩略图要用。 */
   projectId?: string | null;
+  /** 批准计划上的交付物类别；办公文件章节不标「构建网页」。 */
+  deliverableKind?: string;
   /** 会话话题（恢复的轮次没有 turn.user，总结用它兜底） */
   goalText?: string;
   onChallenge: (id: string) => void;
@@ -976,6 +999,14 @@ export function ClaudeChatSurface({
 
   const items = useMemo<ImItem[]>(() => buildImItems(uiTurns), [uiTurns]);
   const isEmptyThread = uiTurns.length === 0 && !isRunning;
+  // 浮层只展示控制面刚挑的动作，不拿它改 controlTodo。
+  const todoAction = useMemo(() => {
+    const rows = deriveProjectActivity(uiTurns);
+    const last = rows[rows.length - 1];
+    return last
+      ? { id: last.id, tool: last.tool, detail: last.detail }
+      : null;
+  }, [uiTurns]);
 
   const runtime = useExternalStoreRuntime<ImItem>({
     messages: items,
@@ -1007,6 +1038,7 @@ export function ClaudeChatSurface({
       latestTurnId: latestTurn?.id ?? null,
       runtimeKind,
       turns: uiTurns,
+      deliverableKind,
     }),
     [
       publishClosure,
@@ -1024,6 +1056,7 @@ export function ClaudeChatSurface({
       latestTurn?.id,
       runtimeKind,
       uiTurns,
+      deliverableKind,
     ]
   );
 
@@ -1053,7 +1086,7 @@ export function ClaudeChatSurface({
                 <ArrowDown className="h-3 w-3" />
                 回到底部
               </ThreadPrimitive.ScrollToBottom>
-              <ThreadPrimitive.Viewport className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col overflow-y-auto px-4 pb-1 pt-3 [scrollbar-gutter:stable] sm:px-5">
+              <ThreadPrimitive.Viewport className="mx-auto flex min-h-0 min-w-0 w-full max-w-[720px] flex-1 flex-col overflow-y-auto overflow-x-hidden px-4 pb-1 pt-3 [scrollbar-gutter:stable] sm:px-5">
                 <ThreadPrimitive.Empty>
                   {/* 空态：问候 + 输入 + chips + 底栏一句。chips 走 fill-prompt，
                     灵感句只导去应用中心，不造假功能入口。 */}
@@ -1064,7 +1097,7 @@ export function ClaudeChatSurface({
                     clarifySlot={isEmptyThread ? clarifySlot : undefined}
                     todoSlot={
                       isEmptyThread ? (
-                        <PlanTodoDock items={controlTodo} />
+                        <PlanTodoDock items={controlTodo} action={todoAction} />
                       ) : undefined
                     }
                   />
@@ -1087,7 +1120,7 @@ export function ClaudeChatSurface({
                 {/* Cursor / LobeChat：输入条浮在对话列里，不要横切 border-t 把步骤和输入割开。 */}
                 <div className="relative mx-auto w-full max-w-[720px]">
                   {clarifySlot}
-                  <PlanTodoDock items={controlTodo} />
+                  <PlanTodoDock items={controlTodo} action={todoAction} />
                   {composerSlot}
                 </div>
               </div>
@@ -1400,6 +1433,12 @@ function SlideRuleUnified({
     canCreateProject,
     creating: createStatus === "creating",
   });
+  const deliverableKind = latestPlanDeliverableKind(
+    sessionState.controlTranscript as Array<Record<string, unknown>> | undefined
+  );
+  useEffect(() => {
+    rememberActiveProjectId(sessionState.projectId);
+  }, [sessionState.projectId]);
   const createProjectRef = useRef(onCreateProject);
   createProjectRef.current = onCreateProject;
   useEffect(() => {
@@ -1408,12 +1447,15 @@ function SlideRuleUnified({
         canCreateProject,
         isRunning,
         createStatus,
+        planHasDeliverableKind: planWrittenHasDeliverableKind(
+          sessionState.controlTranscript as Array<Record<string, unknown>> | undefined
+        ),
       })
     ) {
       return;
     }
     createProjectRef.current?.();
-  }, [canCreateProject, isRunning, createStatus]);
+  }, [canCreateProject, isRunning, createStatus, sessionState.controlTranscript]);
   // KD19：作曲家只留**一张**「要不要烧」的决策面。范围卡 / ask 停泊时
   // 澄清卡让位——2026-08-27 真机截图里两张卡叠在一起，背后那张问的还是
   // 上一轮的 goal（服务端那半在 rehearsal_control._retire_stale_control_questions）。
@@ -1532,6 +1574,7 @@ function SlideRuleUnified({
               projectId={sessionState.projectId}
               projectRevision={sessionState.projectRevision}
               projectCreateError={projectCreateState?.error ?? null}
+              deliverableKind={deliverableKind}
               sessionEmpty={isHomeEmpty}
               turns={conversationTurns}
               chatSlot={
@@ -1555,6 +1598,7 @@ function SlideRuleUnified({
                   projectRevision={sessionState.projectRevision}
                   controlTodo={sessionState.controlTodo}
                   projectId={sessionState.projectId}
+                  deliverableKind={deliverableKind}
                   onChallenge={id =>
                     dispatchChallengePrefill({ artifactId: id })
                   }
@@ -1649,10 +1693,12 @@ function SlideRuleUnified({
               onRestoreVersion={restoreModelVersion}
               onForkVariant={forkVariant}
               isRestoringVersion={isRestoringVersion}
-              /* ⚠ 2026-09-14：分栏 / 全屏 / 交付物整簇不挂。推演中本来
-                 就锁死分栏；交付物抽屉还在，只是不占右上角。
-                 SlideRuleTopHud 组件留着，Xray / HUD 单测仍直接渲染它。 */
-              chromeSlot={null}
+              /* ⚠ 2026-09-20 Trae 右上两颗：全屏 + 隐藏右栏。只挂这两颗，
+                 不把 SlideRuleTopHud 分段 / 交付物加回去。推演中 layoutLocked
+                 仍置灰。Xray / HUD 单测仍直接渲染 TopHud。 */
+              chromeSlot={
+                showStudioChrome ? <PreviewChromeLayoutButtons /> : null
+              }
               /* 重置会话不再走 chromeSlot：那条槽落在舞台头条**右侧**图标簇里。
                2026-08-24 用户反馈要它在标题左边、更大、更蓝，所以单独一条槽。 */
               resetSlot={

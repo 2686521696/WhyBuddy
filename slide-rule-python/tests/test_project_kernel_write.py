@@ -12,7 +12,7 @@
 
 from project_actor_support import project_actor  # noqa: F401
 from services.project_manifest import content_hash
-from test_project_tools import change, create, execute, setup  # noqa: F401
+from test_project_tools import change, create, execute, read_body, setup  # noqa: F401
 
 
 def test_write_does_not_ask_the_model_for_hashes_or_approval_ref(setup):
@@ -21,7 +21,7 @@ def test_write_does_not_ask_the_model_for_hashes_or_approval_ref(setup):
     assert written["ok"], written
     assert written["revision"] != project["revision"]
     assert written["changedFiles"] == ["src/App.tsx"]
-    read = execute(setup, "project_read", {"path": "src/App.tsx"})
+    read = read_body(setup, "src/App.tsx")
     assert read["content"] == "Kernel write\n"
     assert read["sha256"] == content_hash("Kernel write\n")
 
@@ -34,7 +34,7 @@ def test_write_can_create_and_append(setup):
         "path": "src/new.ts", "content": "export const m=2\n", "append": True,
     })
     assert appended["ok"], appended
-    assert execute(setup, "project_read", {"path": "src/new.ts"})["content"] == (
+    assert read_body(setup, "src/new.ts")["content"] == (
         "export const n=1\nexport const m=2\n"
     )
 
@@ -45,7 +45,7 @@ def test_str_replace_changes_the_only_match(setup):
         "path": "src/App.tsx", "oldStr": "First task", "newStr": "Ticket queue",
     })
     assert result["ok"], result
-    assert "Ticket queue\nSecond task\n" == execute(setup, "project_read", {"path": "src/App.tsx"})["content"]
+    assert "Ticket queue\nSecond task\n" == read_body(setup, "src/App.tsx")["content"]
 
 
 def test_str_replace_is_fail_closed_when_the_needle_is_missing_or_ambiguous(setup):
@@ -59,7 +59,7 @@ def test_str_replace_is_fail_closed_when_the_needle_is_missing_or_ambiguous(setu
         "path": "src/App.tsx", "oldStr": "task", "newStr": "item",
     })
     assert ambiguous == {"ok": False, "error": "project_str_replace_ambiguous"}
-    assert execute(setup, "project_read", {"path": "src/App.tsx"})["content"] == "task\ntask\n"
+    assert read_body(setup, "src/App.tsx")["content"] == "task\ntask\n"
 
 
 def test_kernel_rejects_the_old_patch_envelope_and_identity_fields(setup):
@@ -81,7 +81,7 @@ def test_reverse_project_patch_still_requires_the_hash(setup):
         "path": "src/App.tsx", "content": "Lost update\n", "expectedSha256": None,
     }])
     assert lost["error"] == "project_file_hash_conflict"
-    assert execute(setup, "project_read", {"path": "src/App.tsx"})["content"] == setup.files["src/App.tsx"]
+    assert read_body(setup, "src/App.tsx")["content"] == setup.files["src/App.tsx"]
 
 
 def test_revoked_plan_blocks_kernel_write(setup):
@@ -92,7 +92,7 @@ def test_revoked_plan_blocks_kernel_write(setup):
     rewrite_session(setup, controlTranscript=approved_plan_rows()[:-1])
     blocked = execute(setup, "project_write", {"path": "src/App.tsx", "content": "Nope\n"})
     assert blocked["error"] == "project_plan_approval_required"
-    assert execute(setup, "project_read", {"path": "src/App.tsx"})["content"] == setup.files["src/App.tsx"]
+    assert read_body(setup, "src/App.tsx")["content"] == setup.files["src/App.tsx"]
 
 
 def test_kernel_schema_is_flat_and_listed_only_after_the_project_exists(setup):

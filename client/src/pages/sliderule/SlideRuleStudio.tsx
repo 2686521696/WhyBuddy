@@ -230,6 +230,8 @@ interface SlideRuleStudioProps {
   projectRevision?: string | null;
   /** 计划已批准、工程还没落库时，电脑空态用来报创建失败。 */
   projectCreateError?: string | null;
+  /** 批准计划上的交付物类别；办公文件不把 Vite 预览叫醒当交差。 */
+  deliverableKind?: string;
   /** E29 模型版本史（前进/回退按钮数据源）。`model` 是闭环空着时舞台填数的货架。 */
   modelVersions?: Array<{
     id: string;
@@ -323,7 +325,7 @@ export function SlideRuleStudio(props: SlideRuleStudioProps) {
 function ProjectStudio({ projectId, projectRevision, appTitle, chatSlot,
   stageVisible = true, sessionEmpty = false, className, chromeSlot, resetSlot,
   sessionId, isRunning = false, liveActionLabel = null, turns = [],
-  projectCreateError = null,
+  projectCreateError = null, deliverableKind,
 }: SlideRuleStudioProps) {
   const layout = useStudioLayout();
   const showStage = isStagePageShown(stageVisible, !!layout?.stagePageHidden);
@@ -362,10 +364,24 @@ function ProjectStudio({ projectId, projectRevision, appTitle, chatSlot,
             chromeSlot={chromeSlot}
             resetSlot={resetSlot}
             projectCreateError={projectCreateError}
+            deliverableKind={deliverableKind}
             className="min-h-0 flex-1"
           />
         </div>
-      } /> : <div className="flex h-full min-h-0 flex-col">{chatSlot}</div>}
+      } /> : (
+        <div className="flex h-full min-h-0 flex-col">
+          {/* ⚠ 2026-09-20：工程档藏右栏也曾只渲 chatSlot。缝上那颗和
+              头条隐藏卸完舞台就没了，人开不回来。HTML 档 !showStage
+              已经挂 chromeSlot——这里同一套。 */}
+          {chromeSlot || resetSlot ? (
+            <div className="flex shrink-0 items-center justify-end gap-1 px-3 py-1">
+              {resetSlot}
+              {chromeSlot}
+            </div>
+          ) : null}
+          {chatSlot}
+        </div>
+      )}
     </StudioChrome>
   );
 }

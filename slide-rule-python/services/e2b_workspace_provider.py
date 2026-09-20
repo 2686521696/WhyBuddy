@@ -29,7 +29,10 @@ from urllib.parse import urlsplit
 
 from services.project_manifest import build_manifest
 from services.project_rollout import rollout_mode
-from services.project_workspace_artifacts import ARTIFACT_IO_SCRIPT, MAX_APPLICATION_DATA_BYTES, STATIC_BUILD_SERVER_SCRIPT
+from services.project_workspace_artifacts import (
+    ARTIFACT_IO_SCRIPT, MAX_APPLICATION_DATA_BYTES, MAX_OFFICE_COLLECT_BYTES,
+    STATIC_BUILD_SERVER_SCRIPT,
+)
 from services.workspace_provider import BuildOutput, PROJECT_REVISION_FILE, PrivatePreviewTarget, ProcessLogChunk, ProcessResult, WorkspaceHandle, WorkspaceProviderError
 
 PROJECT_ROOT = "/home/user/workspace"
@@ -566,7 +569,12 @@ class E2BWorkspaceProvider:
                 process.send_stdin(payload[offset:offset + 32 * 1024])
             process.close_stdin()
             reply = process.wait()
-            limit = (MAX_APPLICATION_DATA_BYTES + 2) // 3 * 4 + 100 if action == "read-data" else 4096
+            if action == "read-data":
+                limit = (MAX_APPLICATION_DATA_BYTES + 2) // 3 * 4 + 100
+            elif action == "collect-office":
+                limit = (MAX_OFFICE_COLLECT_BYTES + 2) // 3 * 4 + 4096
+            else:
+                limit = 4096
             if reply.exit_code != 0 or not isinstance(reply.stdout, str) or len(reply.stdout.encode()) > limit:
                 raise ValueError("invalid_artifact_reply")
             value = json.loads(reply.stdout)
@@ -609,6 +617,27 @@ class E2BWorkspaceProvider:
         else:
             raise ValueError("verification_suite_unsupported")
         return self.start_process(handle, command, timeout_seconds=900)
+
+    def collect_office_files(self, handle):
+        """沙箱里的办公文件字节。失败抛 provider 错，由 worker fail-open。"""
+        value = self._artifact_io(handle, "collect-office")
+        rows = value.get("files")
+        if not isinstance(rows, list):
+            raise WorkspaceProviderError("project_office_collect_invalid")
+        out = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            path = str(row.get("path") or "").replace("\\", "/").lstrip("/")
+            raw = row.get("data")
+            if not path or not isinstance(raw, str):
+                continue
+            try:
+                data = base64.b64decode(raw, validate=True)
+            except (ValueError, TypeError):
+                continue
+            out.append({"path": path, "data": data})
+        return out
 
     def read_application_data(self, handle):
         value = self._artifact_io(handle, "read-data")

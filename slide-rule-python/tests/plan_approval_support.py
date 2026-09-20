@@ -8,8 +8,11 @@ from models.v5_state import V5SessionState
 from services.slide_rule_session import load_session, save_session
 
 
-def approved_plan_rows(content="Build the requested application and verify its workflows."):
+def approved_plan_rows(content="Build the requested application and verify its workflows.",
+                       *, deliverable_kind=None):
     document = {"planId": "test-plan", "revision": 1, "planContent": content}
+    if deliverable_kind is not None:
+        document["deliverableKind"] = deliverable_kind
     request = {**document, "reqId": "test-plan-approval"}
     return [
         {"role": "assistant", "kind": "plan_written", **document},

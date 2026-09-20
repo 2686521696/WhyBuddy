@@ -7,6 +7,10 @@ import * as SlideRuleRuntime from "@/lib/sliderule-runtime";
 import { fetchNarration } from "@/lib/sliderule-narrator";
 import { controlStopLine } from "./control-stop";
 import { visiblePlanTodo } from "./plan-todo-dock";
+import {
+  latestPlanDeliverableKind,
+  projectTemplateForDeliverable,
+} from "./deliverable-kind";
 import { projectCreateFailureText } from "./project-create-error";
 import { pickMainArtifact } from "./turn-main-artifact";
 import type {
@@ -272,6 +276,7 @@ const PROJECT_TOOL_LABELS: Record<string, string> = {
   message_ask_user: "正在询问用户",
   info_search_web: "正在检索资料",
   idle: "正在等待用户",
+  skill: "正在加载技能",
   read_file: "正在读取工程文件",
   write_file: "正在写入工程源码",
   search_replace: "正在替换工程源码",
@@ -3365,9 +3370,12 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
   const projectCreateBlockedReason = projectCreationBlockedReason(sessionState);
   const canCreateProject = sessionHydrated && sessionState.sessionId === sessionId
     && sessionState.runtimeKind !== "project" && !projectCreateBlockedReason && hasApprovedProjectPlan(sessionState);
-  const createProjectFromApprovedPlan = useCallback(async (templateId: "react-vite" | "react-vite-tasks" = "react-vite-tasks") => {
+  const createProjectFromApprovedPlan = useCallback(async (templateId?: "react-vite" | "react-vite-tasks") => {
     if (isRunningRef.current || projectCreationRef.current) return false;
     const state = sessionStateRef.current;
+    const chosenTemplate = templateId ?? projectTemplateForDeliverable(
+      latestPlanDeliverableKind(state.controlTranscript as Array<Record<string, unknown>> | undefined)
+    );
     const sid = state.sessionId || sessionId;
     if (!sessionHydrated || sid !== projectEntrySessionRef.current) return false;
     if (state.runtimeKind === "project") return Boolean(state.projectId && state.projectRevision);
@@ -3389,7 +3397,7 @@ export function useSlideRuleSession(options: UseSlideRuleSessionOptions = {}) {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ approvalRef, templateId }),
+        body: JSON.stringify({ approvalRef, templateId: chosenTemplate }),
       });
       if (!response.ok) {
         let detail = "工程创建未完成，请刷新状态后重试。";

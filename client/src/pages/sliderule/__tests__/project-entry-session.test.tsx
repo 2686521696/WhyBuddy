@@ -507,6 +507,17 @@ describe("approved project entry through the session hook", () => {
     expect(current.canCreateProject).toBe(false);
   });
 
+  it("办公文件计划 POST react-vite，不再默认任务清单", async () => {
+    const office = approvedState();
+    office.controlTranscript = office.controlTranscript!.map(row =>
+      row.kind === "plan_written" ? { ...row, deliverableKind: "office-file" } : row
+    );
+    saved.set(SID, office);
+    await mount();
+    await act(async () => { await current.createProjectFromApprovedPlan(); });
+    expect(posts[0]?.body.templateId).toBe("react-vite");
+  });
+
   it.each([
     ["no request", (state: V5SessionState) => { state.controlTranscript!.splice(1, 1); }],
     ["mismatched request", (state: V5SessionState) => { state.controlTranscript![2].reqId = "different"; }],

@@ -16,8 +16,14 @@ from models.v5_state import V5SessionState
 from services import persistence
 from services.control_checkpoint import current_checkpoint
 from services.project_acceptance import TASK_ACCEPTANCE_PROFILE
+from services.deliverable_kind import (
+    OFFICE_FILE,
+    office_workspace_files,
+    plan_deliverable_kind,
+)
 from services.project_authority import approved_reference, assert_session_authorized, has_generated_application
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStore, ProjectStoreUnavailable
+from services.scope_authority import latest_control_plan
 
 TEMPLATE_VERSION = "whybuddy-react-vite-1"
 TEMPLATE_ROOT = Path(__file__).resolve().parents[2] / "project-templates" / "react-vite"
@@ -27,6 +33,9 @@ TEMPLATE_FILES = (
     "public/_whybuddy/editor.js",
 )
 TASK_TEMPLATE_VERSION = "whybuddy-react-vite-tasks-1"
+#: 办公计划的内部版本。不进 CreateArguments.templateId——模型仍可传
+#: react-vite*，host 按批准计划覆盖。
+WORKSPACE_TEMPLATE_VERSION = "whybuddy-workspace-1"
 TASK_TEMPLATE_FILES = (
     "package.json", "package-lock.json", "tsconfig.json", "index.html", "README.md",
     "database.mjs", "server.mjs", "src/main.tsx", "src/style.css", "tests/application.test.mjs",
@@ -108,6 +117,18 @@ def sync_session_project(store: ProjectStore, session_id: str, *, owner_id: str,
     raise ProjectConflict("project_reference_sync_conflict")
 
 
+def _source_for_create(state: V5SessionState, template_id: str) -> tuple[dict[str, str], str, str | None]:
+    """批准计划决定电脑形状。模型传来的 react-vite* 对办公计划无效。"""
+    if plan_deliverable_kind(latest_control_plan(state)) == OFFICE_FILE:
+        return office_workspace_files(), WORKSPACE_TEMPLATE_VERSION, None
+    files, version = (
+        load_project_template() if template_id == "react-vite"
+        else load_project_template(template_id)
+    )
+    spec = TASK_ACCEPTANCE_PROFILE if template_id == "react-vite-tasks" else None
+    return files, version, spec
+
+
 def create_session_project(store: ProjectStore, session_id: str, *, owner_id: str,
                            approval_ref: str, template_id: str = "react-vite") -> Project:
     state = load_authorized_session(session_id, owner_id=owner_id, approval_ref=approval_ref)
@@ -117,10 +138,13 @@ def create_session_project(store: ProjectStore, session_id: str, *, owner_id: st
     if state.projectId and (existing is None or state.projectId != existing.projectId):
         raise ProjectConflict("project_identity_changed")
     if existing is None:
-        files, version = load_project_template() if template_id == "react-vite" else load_project_template(template_id)
+        # ⚠ 2026-09-20 真机：办公计划仍建成 Vite（tasks 或最小 react-vite），
+        #   messages 里堆 package.json，右栏按网页醒。类别是批准计划上的
+        #   事实——host 覆盖 templateId，不猜用户那句话，不加办公专用工具。
+        files, version, spec_revision = _source_for_create(state, template_id)
         existing = store.create_project(session_id, owner_id=owner_id, files=files,
             template_version=version, plan_ref=approval_ref,
-            spec_revision=TASK_ACCEPTANCE_PROFILE if template_id == "react-vite-tasks" else None)
+            spec_revision=spec_revision)
     elif not state.projectId or state.projectId == existing.projectId:
         # ⚠ 2026-09-15 TicketStream：源码已经在（4 个 revision），会话
         #   runtimeKind 却掉回 html-prototype、projectId 空。只认

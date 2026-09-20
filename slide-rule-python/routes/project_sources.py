@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 import uuid
+from urllib.parse import quote
 from pydantic import BaseModel, ConfigDict, Field
 
 from middlewares.current_user import CurrentUser
@@ -11,6 +12,8 @@ from models.project_runtime import (ProjectSourceIndex, ProjectSourceFile, Proje
 from services.project_access import project_access_enabled, project_read_access
 from services.project_application_data import ProjectApplicationDataStore
 from services.project_export import source_archive
+from services.project_office_artifacts import ProjectOfficeArtifactStore
+from services.deliverable_kind import office_artifact_suffix
 from services.project_delivery import ProjectDeliveryService
 from services.project_source_operations import ProjectSourceOperations
 from services.project_store import ProjectConflict, ProjectNotFound, ProjectStoreUnavailable, get_project_store
@@ -121,7 +124,16 @@ def export_source(project_id: str, request: Request, viewer: CurrentUser,
         service.authority(project_id)
         saved = service.store.get_revision(project_id, revision, owner_id=service.owner_id)
         files = service.store.read_files(project_id, saved.revision, owner_id=service.owner_id)
-        data = source_archive(files, saved)
+        extras = {}
+        try:
+            office = ProjectOfficeArtifactStore(service.store)
+            for item in office.list(project_id, owner_id=service.owner_id):
+                _meta, payload = office.get_bytes(
+                    project_id, item["artifactId"], owner_id=service.owner_id)
+                extras[item["path"]] = payload
+        except Exception:
+            extras = {}
+        data = source_archive(files, saved, artifacts=extras)
         return Response(data, media_type="application/zip", headers={
             "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
             "Content-Disposition": 'attachment; filename="whybuddy-project.zip"'})
@@ -184,3 +196,59 @@ def download_release(project_id: str, release_id: str, request: Request, viewer:
         data = ProjectDeliveryService(service.store, service.owner_id).download(project_id, release_id)
         return Response(data, media_type="application/zip", headers={"Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff", "Content-Disposition": 'attachment; filename="whybuddy-delivery.zip"'})
+
+
+_OFFICE_TYPES = {
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+
+
+def _office_disposition(name: str, suffix: str) -> str:
+    """Starlette 头必须是 latin-1。中文文件名走 RFC 5987，不许直接塞进 filename=。"""
+    fallback = "office-file" + (suffix if suffix in _OFFICE_TYPES else "")
+    safe = quote(name, safe="")
+    return f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{safe}'
+
+
+@router.get("/projects/{project_id}/artifacts")
+def list_office_artifacts(project_id: str, request: Request, response: Response, viewer: CurrentUser):
+    response.headers["Cache-Control"] = "no-store"
+    with _service(request, viewer) as service:
+        service.authority(project_id)
+        files = ProjectOfficeArtifactStore(service.store).list(project_id, owner_id=service.owner_id)
+        return {"files": files}
+
+
+@router.get("/projects/{project_id}/artifacts/{artifact_id}")
+def download_office_artifact(project_id: str, artifact_id: str, request: Request, viewer: CurrentUser):
+    with _service(request, viewer) as service:
+        service.authority(project_id)
+        meta, data = ProjectOfficeArtifactStore(service.store).get_bytes(
+            project_id, artifact_id, owner_id=service.owner_id)
+        suffix = office_artifact_suffix(meta["path"]) or ""
+        name = str(meta["path"]).rsplit("/", 1)[-1]
+        return Response(data, media_type=_OFFICE_TYPES.get(suffix, "application/octet-stream"), headers={
+            "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": _office_disposition(name, suffix),
+        })
+
+
+@router.get("/projects/{project_id}/artifacts/{artifact_id}/preview")
+def preview_office_artifact(project_id: str, artifact_id: str, request: Request, response: Response,
+                            viewer: CurrentUser):
+    response.headers["Cache-Control"] = "no-store"
+    with _service(request, viewer) as service:
+        service.authority(project_id)
+        preview = ProjectOfficeArtifactStore(service.store).get_preview(
+            project_id, artifact_id, owner_id=service.owner_id)
+        if preview is None:
+            return {"kind": None}
+        if preview.get("kind") == "pdf":
+            import base64
+            data = base64.b64decode(preview["content"], validate=True)
+            return Response(data, media_type="application/pdf", headers={
+                "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+            })
+        return preview

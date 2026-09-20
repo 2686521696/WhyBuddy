@@ -12,7 +12,7 @@ import zipfile
 from services.project_manifest import build_manifest
 
 
-def source_archive(files, revision) -> bytes:
+def source_archive(files, revision, artifacts=None) -> bytes:
     if build_manifest(files) != revision.manifest:
         raise ValueError("project_export_manifest_mismatch")
     metadata = {
@@ -41,4 +41,11 @@ def source_archive(files, revision) -> bytes:
             item.compress_type = zipfile.ZIP_DEFLATED
             item.external_attr = 0o100644 << 16
             archive.writestr(item, content.encode("utf-8"))
+        for path, payload in sorted((artifacts or {}).items()):
+            if not isinstance(payload, (bytes, bytearray)) or not path:
+                continue
+            item = zipfile.ZipInfo("artifacts/" + str(path).lstrip("/"), date_time=(1980, 1, 1, 0, 0, 0))
+            item.compress_type = zipfile.ZIP_DEFLATED
+            item.external_attr = 0o100644 << 16
+            archive.writestr(item, bytes(payload))
     return output.getvalue()
